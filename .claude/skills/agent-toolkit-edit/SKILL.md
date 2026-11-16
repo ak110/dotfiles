@@ -36,6 +36,7 @@ description: >
 | 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` |
 | 環境変数を新設・変更する前、既存の環境変数の名称・用途・参照主体を確認する前 | `references/claude-hooks-environment.md` |
 | レビュー担当への指示・モデルの割り当てを変える前 | `references/review-eval-set.md` |
+| 確認要否を定める条文を変える前 | `references/confirmation-eval-set.md` |
 | WindowsのCodex境界試験の記録、またはpytest回収失敗時の標準エラー`resource-diagnostics:`を調べる前 | `references/agents-server-investigation-resource-diagnostics.md` |
 | `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` |
 | 次のいずれかを変更する前、および作業ツリーで改訂した配布物の挙動を確認する前: `atk`のサブコマンドと出力、MCPサーバー識別子とツール名、フックの実装と登録、遮断や警告の判定・出力・通知formatter、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` |
@@ -84,6 +85,7 @@ description: >
 - `agent-basics:writing-standards/references/agent-documents-basics-placement.md`
 - `agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`
 - `agent-basics:writing-standards/references/agent-documents-basics-ownership.md`
+
 特定のツール、データ、命名、CI、運用形態などを前提とする内容はプロジェクト側に置き、それらの固有要素を同種の別要素へ置き換えても判定基準・工程順・終了条件が成立する汎用的な内容のみを配布物の対象とする。
 
 ## 配布物としての記述方針

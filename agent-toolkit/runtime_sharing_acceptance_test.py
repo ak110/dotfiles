@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -49,7 +48,7 @@ def _copy(root: Path, label: str) -> None:
     )
 
 
-def _run(arguments: list[str], environment: dict[str, str], cwd: Path, *, input_text: str | None = None):
+def _run(arguments: list[str] | str, environment: dict[str, str], cwd: Path, *, input_text: str | None = None):
     result = subprocess.run(
         arguments,
         env=environment,
@@ -65,10 +64,20 @@ def _run(arguments: list[str], environment: dict[str, str], cwd: Path, *, input_
     return result
 
 
+@pytest.mark.windows
 @pytest.mark.usefixtures("share_package_caches")
 @pytest.mark.timeout(240)
-def test_real_shared_environment_offline_public_entries_and_current_code(tmp_path, host_environ):
+@pytest.mark.cpu_limit(
+    12.0 if os.name == "nt" else 5.75,
+    reason=(
+        "2rootの共有依存・コード版・生存保護と回収を実hook/MCP/代表CLIで確認し、重複6起動を除く。"
+        "Linux実測2.724秒/上限5.75秒、Windows実測6.328秒/上限12秒。"
+    ),
+)
+def test_real_shared_environment_offline_public_entries_and_current_code(tmp_path_factory, host_environ):
     """同じ依存を共有し、更新版と旧版のコードをそれぞれのrootから起動する。"""
+    # Windowsの共有環境のhashとDLL名を含むパスも通常のロード上限内に保つ。
+    tmp_path = tmp_path_factory.mktemp("r")
     first = tmp_path / "old-plugin"
     second = tmp_path / "new-plugin"
     _copy(first, "old")
@@ -106,7 +115,7 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         environment[key] = str(home)
     environment.update(
         {
-            "AGENT_TOOLKIT_RUNTIME_DATA": str(tmp_path / "runtime"),
+            "AGENT_TOOLKIT_RUNTIME_DATA": str(tmp_path / "v"),
             "UV_OFFLINE": "1",
             "UV_PYTHON_DOWNLOADS": "never",
             "UV_PYTHON": sys.executable,
@@ -151,14 +160,13 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         assert observed["label"] == label
         assert Path(observed["code"]).parent == root / "agent_toolkit"
         assert Path(observed["prefix"]) == selected
-        if os.name != "nt":
-            help_result = _run([str(root / "scripts/atk"), "--help"], environment, tmp_path)
-        else:
-            help_result = _run([str(root / "scripts/atk.cmd"), "--help"], environment, tmp_path)
-        assert "config" in help_result.stdout
         definitions = json.loads((root / "hooks/hooks.json").read_text())
         command = definitions["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-        arguments = shlex.split(command.removesuffix(" || exit 1").replace("${CLAUDE_PLUGIN_ROOT}", str(root)))
+        command = command.replace("${CLAUDE_PLUGIN_ROOT}", str(root))
+        shell = shutil.which("cmd" if os.name == "nt" else "sh", path=environment["PATH"])
+        assert shell is not None
+        # cmdの本文はargv用のlist2cmdlineへ渡さず、登録済みの引用符をそのまま解釈させる。
+        arguments = f'{subprocess.list2cmdline([shell])} /d /s /c "{command}"' if os.name == "nt" else [shell, "-c", command]
         _run(
             arguments,
             environment,
@@ -171,16 +179,6 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
                     "cwd": str(tmp_path),
                 }
             ),
-        )
-        _run(
-            [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/agents_server_mcp.py", "--check-dependencies"],
-            environment,
-            tmp_path,
-        )
-        _run(
-            [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/_common/pyfltr_entry.py", "--version"],
-            environment,
-            tmp_path,
         )
         asyncio.run(asyncio.wait_for(_pyfltr_tools(root, environment, tmp_path), timeout=30))
         assert not (root / ".venv").exists()

@@ -7,8 +7,8 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
-| 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
-| 初回実装で「前提を疑う観点」を適用する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
+| bugfixの初動で詳細分析を選び、不具合の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
+| 初回実装の案の前提を評価する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
 | レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
 | CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` |
@@ -39,14 +39,17 @@
    エージェントが選んだ設計・検証手段は結果・品質・認可・制約を保って変更できる。
    計画なしではAWIの要求・完成条件と引き継ぎ記録の採否・範囲を守る。
    計画凍結は`plan-file-standards.md`に従う。
+   実装中の同一計画内での変更受入と、統合後に要求が変わったWIの再開を区別する。
+   後者は`../skills/process-wi/references/lane-planning-resume.md`に従い、現在worktreeの新計画へ切り替える。
 
 2. 初回実装（CI修正では修正）の直前に、`agent-basics:check-execution`の`references/diagnostics.md`が定める基準版の一意な短縮OIDを記録し、レビュー修正や履歴統合の後も同一の基準版を使用する。
    各検証の実行後は、同資料「読む出力」の共通基準に従って診断メッセージや警告、および個別・全体の所要時間を判定し、比較対象のバージョンと、残す判断をした診断の意味・影響・帰属・理由を検証結果および進捗ログに記録する。
 
 3. 実装に着手する前に、受入シナリオの消費主体、公開されている呼び出し手段、具体的な入力値と初期状態、有効な期待結果、および検出対象とする失敗を確定する。
+   試験の追加・修正では`agent-basics:writing-standards/SKILL.md`の必要性・決定性のチェックから、検証層、対象外で差し替える依存、同期点、未到達時の上限を選び、既存の検証記録に境界と根拠を残す。
    テストの選定は`agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」に従う。
    計画を作成しない場合やレビュー修正においても、要求と完成条件から同様に対応関係を確定する。
-   不具合の再現と修正後の確認・証拠保存は、`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に従う。
+   不具合の再現と修正後の確認・証拠保存はbugfix本体の初動で行い、詳細分析を選んだ場合は`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に従う。
    計画凍結後の仕様変更は既存のレビュー指摘管理表および採否・変更記録と関連付ける。
 
 4. 初回実装では、`lane-planning.md`「計画の起草」で選んだ最も近い既存実装と契約・構造を比較し、入力値・時間経過・操作順・保持状態・反復の境界を検証する。
@@ -113,13 +116,14 @@
 15. 変更範囲の検証は、`exec.subagent.md`「操作の直前に判定する前提」で取得したコマンドを`verification-operations.md`「実行のしかた」に従って実行し、`verification-evidence-records.md`「完成条件証拠の検証記録」へ記録する。
     同一worktree内で実装を書込担当へ分けた場合は、レーン担当がそのworktreeの全書込担当の書込終了後に実行する（`exec.subagent.md`「操作区分」の広範囲検証の段落）。
     別branch・worktreeへ分けた内部群では、各群が割当要求と直接影響範囲の焦点検証、通常hookを含むcommitと本文保存を終えた順に、レーン担当が`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従って独立文脈レビューを開始する。
-    他群の編集完了を初回レビューの開始条件にせず、各群の検証を既存の共有2枠へ早期に投入する。
+    他群の編集完了を初回レビューの開始条件にせず、各群の検証を`check-execution-operations-launch.md`「統合実行ツール経由の起動」の共有実行枠へ早期に投入する。
     レーン担当は群ごとの検証対象の和集合と元の要求の対応を保持し、統合後は同じ本文・環境・契約の成功結果を再利用して、群間の契約、共有生成物、組合せ差分と未検証条件だけを追加検証する。
 
 16. 結果に影響を与える実装、テスト、入力値、および消費側の期待値を整合させ、`../skills/commit/references/commit-verification.md`「検証」に定めるタイミングで最終的な変更範囲の検証と有限回の手動観測を実施する。
     保存済みの成功結果と失敗限定の結果の統合は、`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
 
 17. 実装の完了前に、具体化した`### 受入シナリオ`を受入シナリオ検証（`workflow-phases.md`）によって自己検収し、公開されている呼び出し手段と入力値を用いて期待結果と実際の結果が一致することを確認する。
+    提出前には、変更する契約と保持する契約から正常・境界・失敗時の利用結果を差分と突き合わせ、既存試験の成功だけで要求の充足を推定しない。
     計画を作成していない場合も、WIの完成条件に対して同様に確認する。
     ドキュメントに関する条件については、送受信の主体、入力、条件、次操作、参照先の間で、渡される値と受理される値が一致しているかを検証する。
     `検証結果`にはシナリオ別のテスト名と合否、手動判定結果の保存先、検証済み・未実施・条件変更の判断を明確に区別して記載する。

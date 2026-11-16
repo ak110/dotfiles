@@ -2,9 +2,7 @@
 
 import io
 import json
-import os
 import pathlib
-import shlex
 import sys
 from typing import Any
 
@@ -61,12 +59,8 @@ def test_transcript_read_failure_keeps_public_response_and_recovers(
     assert body == expected
     assert "原本を読めない" in diagnostic and str(transcript) in diagnostic
     assert diagnostic.count("次の操作:") == 1
-    read_command = (
-        "Get-Content -LiteralPath '" + str(transcript).replace("'", "''") + "' -Encoding utf8"
-        if os.name == "nt"
-        else "cat -- " + shlex.quote(str(transcript))
-    )
-    assert f"`{read_command}`" in diagnostic and "所在と読取権限" in diagnostic
+    assert f"`{transcript}`" in diagnostic and "所在と読取権限" in diagnostic
+    assert "cat --" not in diagnostic and "Get-Content" not in diagnostic
 
     blocked = False
     transcript.write_text(

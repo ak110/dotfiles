@@ -6,10 +6,11 @@ from __future__ import annotations
 # pylint: disable=protected-access
 import json
 import pathlib
+from collections.abc import Generator
 
 import pytest
 
-from agent_toolkit._agents_server import logging_config, shared_layout
+from agent_toolkit._agents_server import logging_config, shared_layout, state
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import agents_wait_support
@@ -86,3 +87,26 @@ def _configure_provider_environment(monkeypatch):
 
 
 _wait_environment = agents_wait_support._wait_environment
+
+
+@pytest.fixture
+def _restore_session_listeners() -> Generator[None]:
+    """テストが登録した共有リスナーを、テスト終了時に元の集合へ戻す。
+
+    `SessionState.touch`のリスナー集合はプロセス全体で共有される。
+    有効化したままの`StatusFileWriter`が残ると、後続の別モジュールのテストが`touch`を呼んだ時点で
+    実行中のイベントループを要求して失敗するため、テストごとに登録を元へ戻す。
+    """
+    touch_listeners = set(state._TOUCH_LISTENERS)
+    touch_owners = dict(state._TOUCH_OWNERS)
+    terminal_listeners = set(state._TERMINAL_LISTENERS)
+    lifecycle_listeners = set(state._LIFECYCLE_LISTENERS)
+    yield
+    state._TOUCH_LISTENERS.clear()
+    state._TOUCH_LISTENERS.update(touch_listeners)
+    state._TOUCH_OWNERS.clear()
+    state._TOUCH_OWNERS.update(touch_owners)
+    state._TERMINAL_LISTENERS.clear()
+    state._TERMINAL_LISTENERS.update(terminal_listeners)
+    state._LIFECYCLE_LISTENERS.clear()
+    state._LIFECYCLE_LISTENERS.update(lifecycle_listeners)

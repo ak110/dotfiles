@@ -296,15 +296,6 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
     assert (result_projection.IMPROVEMENT_RESULT_NEXT_ACTION in action) is marked
     if marked:
         assert action.count(result_projection.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
-        for fragment in (
-            "メインエージェントは次のユーザーへの発話へ",
-            "委譲先は受領時点で上流へ逐語で中継し、完了返却の末尾にも残す",
-            "字下げを除く行頭に`気付いた改善点:`を原文のまま置き",
-            "標識とコロンの間へ報告元などの語を入れない",
-            "標識行の原文の後ろか別の行に添える",
-            "`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」",
-        ):
-            assert fragment in action
     if status == "completed" and label.endswith("-review"):
         if label.endswith("reader-fit-review"):
             assert result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION in action

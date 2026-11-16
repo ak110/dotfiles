@@ -26,6 +26,7 @@ import sys
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._common.function_hook_requests import cleanup, enqueue
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
@@ -70,6 +71,12 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
     """同じ会話のmodへStopの非同期判定を渡す。サブエージェントとCodexは対象外。"""
     if not session_id or is_codex_payload(payload) or payload.get("agent_id"):
         return
+    cleanup(session_id)
+    tasks = payload.get("background_tasks")
+    if isinstance(tasks, list) and all(
+        isinstance(task, dict) and all(isinstance(task.get(key), str) for key in ("id", "type", "status")) for task in tasks
+    ):
+        enqueue(session_id, "background_snapshot", {"ids": [task["id"] for task in tasks]})
     paths = function_hook_paths(session_id)
     if paths is None:
         return

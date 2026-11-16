@@ -38,6 +38,12 @@ def _autosquash(repo: pathlib.Path, base: str) -> None:
 
 
 @pytest.mark.parametrize("violation", ["tree", "count", "control", "patch", "ambiguous", "outside"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "最小の実commit系列でtree/親/OID対応を比較し、履歴の改変" + "と対応漏れを検出する。同群Linux CI所有CPU最大0.406秒。"
+    ),
+)
 def test_autosquash_rejects_each_independent_violation(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
 ) -> None:
@@ -78,6 +84,12 @@ def test_autosquash_rejects_each_independent_violation(
     assert expected in capsys.readouterr().err
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "最小の実commit系列でtree/親/OID対応を比較し、履歴の改変" + "と対応漏れを検出する。同群Linux CI所有CPU最大0.406秒。"
+    ),
+)
 def test_autosquash_accepts_fixup_near_untouched_change(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """近傍へのfixupで文脈が変わっても、非対象commitの内容が同じなら受理する。"""
     base = _commit(repo, "content.txt", "a\nb\nc\nd\ne\n", "準備")
@@ -96,6 +108,12 @@ def test_autosquash_accepts_fixup_near_untouched_change(repo: pathlib.Path, tmp_
     }
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "最小の実commit系列でtree/親/OID対応を比較し、履歴の改変" + "と対応漏れを検出する。同群Linux CI所有CPU最大0.406秒。"
+    ),
+)
 def test_autosquash_accepts_conflict_resolved_later_change(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """fixup競合の解消後も、後続commitの変更内容を保つ系列を受理する。"""
     base = _commit(repo, "content.txt", "before\ntarget\nlater\nafter\n", "準備")
@@ -114,6 +132,12 @@ def test_autosquash_accepts_conflict_resolved_later_change(repo: pathlib.Path, t
     }
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "最小の実commit系列でtree/親/OID対応を比較し、履歴の改変" + "と対応漏れを検出する。同群Linux CI所有CPU最大0.406秒。"
+    ),
+)
 def test_amend_mapping_is_saved_as_one_pair(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -131,6 +155,12 @@ def test_amend_mapping_is_saved_as_one_pair(
 
 
 @pytest.mark.parametrize("violation", ["base", "count", "same"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "最小の実commit系列でtree/親/OID対応を比較し、履歴の改変" + "と対応漏れを検出する。同群Linux CI所有CPU最大0.406秒。"
+    ),
+)
 def test_amend_rejects_invalid_series(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
 ) -> None:
@@ -155,6 +185,12 @@ def test_amend_rejects_invalid_series(
 
 
 @pytest.mark.parametrize("operation", ["rebase", "rebase-conflict", "autosquash"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "最小の実commit系列でtree/親/OID対応を比較し、履歴の改変" + "と対応漏れを検出する。同群Linux CI所有CPU最大0.406秒。"
+    ),
+)
 def test_generated_mapping_is_consumed_by_public_record_commands(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,
@@ -239,6 +275,12 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
     capsys.readouterr()
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "最小の実commit系列でtree/親/OID対応を比較し、履歴の改変" + "と対応漏れを検出する。同群Linux CI所有CPU最大0.406秒。"
+    ),
+)
 def test_autosquash_cli_validates_invariants_and_many_to_one_mapping(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -94,6 +94,13 @@ def _api_env_file(kind: str) -> tuple[str | None, str | None]:
     )
 
 
+def _isolation_env_files() -> tuple[str, ...]:
+    """候補として使えるかと独立に、親から隔離すべき設定済みファイルを返す。"""
+    return tuple(
+        str(pathlib.Path(raw).absolute()) for key in _ENV_FILE_KEYS.values() if (raw := config.resolve_mutable_setting(key))
+    )
+
+
 def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = False) -> Candidates:
     """役割の使用順を先頭から評価し、認証のある種別だけを候補として返す。
 
@@ -113,11 +120,11 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = F
         if warning and kind in order:
             warnings.append(warning)
     # サブスクリプションの起動環境からは、設定したAPI環境ファイルが与える変数も除く。
-    isolation = api_files.get("credits") or api_files.get("payg")
+    isolation = _isolation_env_files()
     connections: list[Connection] = []
     for kind in order:
         if kind == "subscription":
-            selected = Connection("subscription", isolation_env_file=isolation)
+            selected = Connection("subscription", isolation_env_files=isolation)
             subscription_env = env
             subscription_isolation_keys = AUTH_ENV
             if isolation:
@@ -131,7 +138,7 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = F
             if "credits" in api_files:
                 warnings.append(CLI_CREDITS_EXCLUDED)
         elif kind in api_files:
-            connections.append(Connection(kind, api_files[kind], api_files[kind]))
+            connections.append(Connection(kind, api_files[kind], isolation))
     return Candidates(tuple(connections), (*warnings, *diagnostics), tuple(warnings), role)
 
 
@@ -178,8 +185,7 @@ def apply_current_settings(
     connection = _normalize_legacy(connection)
     if outside_order(connection.kind, role):
         return candidates(role, env=env, cli=cli).require_first()
-    if connection.kind != "subscription" or connection.isolation_env_file is not None:
+    if connection.kind not in {"subscription", *API_KINDS}:
         return connection
-    choices = candidates(role, env=env, cli=cli)
-    path = next((item.isolation_env_file for item in choices.connections if item.isolation_env_file), None)
-    return dataclasses.replace(connection, isolation_env_file=path)
+    paths = tuple(dict.fromkeys((*connection.isolation_env_files, *_isolation_env_files())))
+    return dataclasses.replace(connection, isolation_env_files=paths)

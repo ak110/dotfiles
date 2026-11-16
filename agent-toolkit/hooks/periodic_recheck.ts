@@ -15,7 +15,6 @@ import { automatedMessage, changedWarning } from "./automated_message.ts";
 // Claude Codeがプラグインのstdio MCPサーバーのツールへ付ける名前（`mcp__plugin_<プラグイン名>_<サーバー名>__<ツール名>`）。
 // matcherの無い`tool.call`のhookは`send_to_user.tsx`が登録済みで同じイベントへ2件目を登録できないため、ツール名をmatcherに指定する。
 // `hooks.json`のPreToolUseの`matcher`も同じ綴りを使う。
-const START_TOOL = "mcp__plugin_agent-toolkit_agents_server__start";
 const RUNTIME_REFERENCE = "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」";
 // 定期再確認のpromptの1行目に置く標識。`agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`の`PERIODIC_RECHECK_MARKER`と
 // 同じリテラルとし、一致は`agent-toolkit/skills/delegation/references/runtime_contract_invariant_test.py`が確かめる。
@@ -37,7 +36,7 @@ function notMounted(reason: string): MountOutcome {
   return {
     note: notice(
       "warn",
-      `委譲先の起動後に待機状況を定期確認するtaskを、自動作成できなかった（理由: ${reason}）。` +
+      `待機状況の定期確認taskを自動作成できなかった（理由: ${reason}）。` +
         `理由に示したツールの許可と公開状態を確認せよ。待機方法は${RUNTIME_REFERENCE}を参照せよ。`,
     ),
     failed: true,
@@ -150,32 +149,24 @@ export function register(on: On): void {
   // 会話ごとに、最後に届けた装着失敗の本文を持つ。装着は`start`ごとに評価し直し、同じ失敗が続く間は通知だけを省く。
   // 既往はmodの読込ごとに初期化し、再読込後の最初の失敗は届ける。
   const deliveredFailures = new Map<string, string>();
-  // `start`の結果は変えず、装着の結果を同じ呼び出しの後にモデルが読む文脈として加える。
-  // 起動が拒否または失敗した呼び出しでは待機対象が生じないため装着しない。
-  on("tool.call", { tool: START_TOOL }, async ($, e, next) => {
-    const result = await next(e);
-    if (result.deny !== undefined || result.isError === true) return result;
-    // サブエージェントへは装着も通知もせず、メインの失敗の既往も変えない。
-    if (e.agentId !== undefined) return result;
-    let outcome: MountOutcome | undefined;
-    try {
-      outcome = await mount($);
-    } catch (error) {
-      // `$.tool.call`は呼び出し先のツールが公開されていない場合にrejectする。
-      outcome = notMounted(`装着の処理が例外で終わった: ${String(error)}`);
+  let initialized = false;
+  on("turn.start", { turnId: /^/ }, async ($, e, next) => {
+    if (!initialized && e.agentId === undefined) {
+      initialized = true;
+      $.clock.every(100, async () => {
+        const requested = (await $.state.get({ plugin: "agent-toolkit", key: "recheckRequested" })).value;
+        if (!requested) return;
+        await $.state.set({ plugin: "agent-toolkit", key: "recheckRequested" }, false);
+        let outcome: MountOutcome | undefined;
+        try { outcome = await mount($); }
+        catch (error) { outcome = notMounted(`装着処理の例外: ${String(error)}`); }
+        const sessionId = await $.session.id();
+        const warning = changedWarning(deliveredFailures, sessionId, outcome?.failed ? outcome.note : undefined);
+        if (outcome && (!outcome.failed || warning)) {
+          await $.prompt.submit({ text: outcome.note });
+        }
+      });
     }
-    let sessionId: string | undefined;
-    try {
-      sessionId = await $.session.id();
-    } catch {
-      // 会話を識別できない場合は抑止せずに届ける。
-      sessionId = undefined;
-    }
-    if (sessionId !== undefined) {
-      const warning = changedWarning(deliveredFailures, sessionId, outcome?.failed === true ? outcome.note : undefined);
-      if (outcome?.failed === true && warning === undefined) return result;
-    }
-    if (outcome === undefined) return result;
-    return { ...result, context: [...(result.context ?? []), outcome.note] };
-  }).catch(($, e, next) => next(e));
+    return next(e);
+  });
 }

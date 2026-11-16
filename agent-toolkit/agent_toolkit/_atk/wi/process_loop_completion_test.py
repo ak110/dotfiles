@@ -12,6 +12,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import lane
 from agent_toolkit._atk.wi import listing, readiness
 from agent_toolkit._atk.wi import process_loop as loop
+from agent_toolkit._atk.wi import process_loop_control as control
 from agent_toolkit._atk.wi import process_loop_env as env
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as session
@@ -21,6 +22,9 @@ from agent_toolkit._testing.process_loop_coordinator_support import _manifest, _
 
 @pytest.mark.parametrize("wait_kind", ["cooldown", "uwi", "external"])
 @pytest.mark.parametrize("interrupted", [False, True])
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.648秒。"
+)
 def test_public_once_accepts_deferred_candidates_and_recovers_completion(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, wait_kind: str, interrupted: bool
 ) -> None:
@@ -69,7 +73,7 @@ def test_public_once_accepts_deferred_candidates_and_recovers_completion(
             json.dumps({"repositories": {repository.repo_id: {"status": "completed", "remaining": "解除後に再開"}}}),
             encoding="utf-8",
         )
-        if interrupted:
+        if interrupted and calls == 1:
             raise KeyboardInterrupt
         return True
 
@@ -79,10 +83,11 @@ def test_public_once_accepts_deferred_candidates_and_recovers_completion(
         atk.main(argv, home=tmp_path)
     assert exited.value.code == (1 if interrupted else 0)
     if interrupted:
+        control.cmd_process_loop_resume("deferred-coordinator")
         with pytest.raises(SystemExit) as recovered:
-            atk.main([*argv, "--resume", "deferred-coordinator"], home=tmp_path)
+            atk.main(argv, home=tmp_path)
         assert recovered.value.code == 0
-    assert calls == 1
+    assert calls == (2 if interrupted else 1)
     records = [json.loads(path.read_text(encoding="utf-8")) for path in ownership.ownership_directory().glob("*.json")]
     assert len(records) == 1 and records[0]["released"] and records[0]["completed"]
     assert not listing.configured_repo_snapshot(notes)[0].candidates
@@ -177,8 +182,11 @@ def test_completed_result_preserves_actionable_work_and_unintegrated_lanes(
     assert not json.loads(next(ownership.ownership_directory().glob("*.json")).read_text(encoding="utf-8"))["completed"]
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.900秒。"
+)
 def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, monkeypatch, capsys):
-    """新統括がprocessingと公開作成した未統合laneを再利用し、保存成果から作業を進める。"""
+    """元会話がprocessingと公開作成した未統合laneを再利用し、保存成果から作業を進める。"""
     notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
     repository = snapshots[0].repository.worktree
     git.commit_all(repository, "検証元のHEAD")
@@ -190,14 +198,14 @@ def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, m
     selected.write_text("レーンの所要時間:\n- レーン: lane-01\n  統合状態: 未統合\n", encoding="utf-8")
     item = notes / "2026/10/repo-0-0.md"
     artifact = tmp_path / "lane" / "result.txt"
-    targets = []
+    targets: list[dict[str, Any]] = []
 
     def execute(args, _cwd, prompt, child_env, **kwargs):
-        assert args.resume is None
+        assert args.resume == ("fresh-coordinator-1" if targets else None)
         data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
         target = data["repositories"][0]
         targets.append(target)
-        identifier = f"fresh-coordinator-{len(targets)}"
+        identifier = args.resume or "fresh-coordinator-1"
         kwargs["on_session_started"](identifier)
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = identifier
         if len(targets) == 1:

@@ -29,6 +29,13 @@ def _question(root: pathlib.Path, filename: str, *, important: bool = False, rep
     return path
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "重要順の確認からページ横断・明示保存・最後の見送りまで標準キーで操作できる。実ブラウザーの観測と"
+        "trace回収が必要（CPU最大実測0.797秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_waiting_keyboard_save_skip_page_boundary_and_last_item(browser_harness: _BrowserHarness) -> None:
     """重要順の確認からページ横断・明示保存・最後の見送りまで標準キーで操作できる。"""
@@ -37,7 +44,6 @@ async def test_waiting_keyboard_save_skip_page_boundary_and_last_item(browser_ha
     for index, name in enumerate(names):
         _question(harness.root, name, repo="a" if index % 2 == 0 else "b")
     important = _question(harness.root, "20210101-000000-001.md", important=True, repo="b")
-    harness.operations.enable_file_mutations()
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.get_by_role("radio", name="判断待ち", exact=True).check()
@@ -111,7 +117,6 @@ async def test_initial_loading_finishing_during_answer_keeps_waiting_navigation(
     harness = browser_harness
     first = _question(harness.root, "20200101-000000-001.md", important=True)
     second = _question(harness.root, "20200101-000000-002.md")
-    harness.operations.enable_file_mutations()
     page = harness.page
     initial_started, initial_release = asyncio.Event(), asyncio.Event()
     answer_started, answer_release = asyncio.Event(), asyncio.Event()

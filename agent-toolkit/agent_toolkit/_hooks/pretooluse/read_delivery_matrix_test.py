@@ -13,8 +13,9 @@ import subprocess
 
 import pytest
 
+from agent_toolkit import hook
 from agent_toolkit._common import read_triggers, session_state
-from agent_toolkit._hooks import document_reads, rules_context
+from agent_toolkit._hooks import document_reads, repository_protection, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.pretooluse_support import run_hook_with_notice_details as _run_hook_in_process
 
@@ -33,6 +34,9 @@ def _host_samples():
 @pytest.mark.parametrize("body", ["unique", "repeated", "eof"])
 def test_positioned_receipt_matrix(tmp_path, monkeypatch, host_environ, host_samples, reader, delivery, packing, order, body):
     """期待位置は生産操作と配送時の保持行から独立に求める。"""
+    # 配送位置の判定に関係しないホスト探索・Gitの保護照会を、各行列入力で繰り返さない。
+    monkeypatch.setattr(hook, "_record_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(repository_protection, "check", lambda *_args, **_kwargs: None)
     host, method = reader.split("-")
     path = tmp_path / "reference.md"
     content = "同じ本文\n" * 4 if body == "repeated" else "第一行\n第二行\n第三行\n第四行\n"

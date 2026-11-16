@@ -4,6 +4,8 @@ import ast
 import pathlib
 import re
 
+import pytest
+
 _OLD_PROJECT_LAUNCH = re.compile(r"(?:uv\s+run\s+--project|[\"']uv[\"']\s*,\s*[\"']run[\"']\s*,\s*[\"']--project[\"'])")
 
 
@@ -59,6 +61,12 @@ def test_legacy_shim_exception_keeps_other_calls_in_scope(tmp_path: pathlib.Path
     assert _uses_old_project_launch(_runtime_source(path))
 
 
+@pytest.mark.cpu_limit(
+    3.75,
+    reason=(
+        "本体Pythonとhooks/scripts/skillの全候補を走査し、実行層をまたぐ旧起動形式を検出する（Linux CI CPU合計最大1.660秒）。"
+    ),
+)
 def test_runtime_sources_do_not_launch_plugin_scripts_with_project_uv() -> None:
     """配列形を含む旧起動を実行コードと配布手順から検出する。"""
     plugin_root = pathlib.Path(__file__).parents[1]

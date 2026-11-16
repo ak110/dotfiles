@@ -52,6 +52,13 @@ def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
     assert detail["started_at"] == "2026-09-01T00:00:00Z"
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "旧5,000件の切り詰め境界を超える最小5,002eventを読み、末尾へ到達できることを検証する。"
+        "Linux CPU合計0.560秒を基準とする。"
+    ),
+)
 def test_detail_returns_every_event_of_a_long_record(tmp_path: pathlib.Path) -> None:
     """5,000件を超えるイベントを持つ記録でも、詳細は全イベントを返し、切り詰めた件数の項目を持たない。
 

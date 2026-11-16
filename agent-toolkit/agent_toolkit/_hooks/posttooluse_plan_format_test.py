@@ -169,7 +169,7 @@ class TestPlanPostWrite:
             target.write_text("content\n", encoding="utf-8")
             result = _run(
                 {
-                    "session_id": f"skip-{target.suffix}",
+                    "session_id": f"skip-{target.suffix.lstrip('.')}",
                     "tool_name": "Write",
                     "tool_input": {"file_path": str(target), "content": "content\n"},
                 },

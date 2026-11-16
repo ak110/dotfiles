@@ -80,6 +80,11 @@ def test_commit_uses_recorded_relative_main_instead_of_birth_month(
     assert not (notes / "plans/2030/12" / saved_main.name).exists()
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.468秒。"),
+)
 def test_commit_resumes_checked_out_plan_after_push_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -117,6 +122,11 @@ def test_commit_resumes_checked_out_plan_after_push_failure(
     )
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.431秒。"),
+)
 def test_commit_keeps_checkout_when_diverged_push_is_deferred(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

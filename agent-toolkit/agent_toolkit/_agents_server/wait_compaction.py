@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Self
 
@@ -51,6 +53,46 @@ class WaitCompaction:
         self._tasks: set[asyncio.Task[None]] = set()
         self._used: set[str] = set()
         self._paused = False
+        self._reservation_key: str | None = None
+        self._deadline: float | None = None
+
+    def checkpoint(self) -> dict[str, object]:
+        """同じOS起動中の移譲へ渡すJSON値を返す。旧所有者は移譲前にcloseする。
+
+        単調時計の期限を渡し、転送と再接続に掛かった時間も予約の経過へ含める。
+        taskや配送中の処理は複製せず、配送開始済みの待機はusedで抑止する。
+        """
+        return {
+            "used": sorted(self._used),
+            "paused": self._paused,
+            "reservation_key": self._reservation_key,
+            "deadline": self._deadline,
+        }
+
+    def restore(self, checkpoint: Mapping[str, object]) -> None:
+        """休止中の新所有者へ状態だけを復元し、observeまで予約を開始しない。"""
+        if self._tasks:
+            raise RuntimeError("予約の実行中には復元できません")
+        used = checkpoint.get("used")
+        paused = checkpoint.get("paused")
+        key = checkpoint.get("reservation_key")
+        deadline = checkpoint.get("deadline")
+        if (
+            not isinstance(used, list)
+            or not all(isinstance(item, str) for item in used)
+            or not isinstance(paused, bool)
+            or (key is not None and not isinstance(key, str))
+            or (key is None) != (deadline is None)
+            or (
+                deadline is not None
+                and (isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not math.isfinite(deadline))
+            )
+        ):
+            raise ValueError("待機圧縮のcheckpointが不正です")
+        self._used = set(used)
+        self._paused = paused
+        self._reservation_key = key
+        self._deadline = float(deadline) if deadline is not None else None
 
     async def __aenter__(self) -> Self:
         return self
@@ -72,15 +114,23 @@ class WaitCompaction:
             self._task.cancel()
             self._task = None
         if key is None or key in self._used:
+            self._reservation_key = None
+            self._deadline = None
             return
+        delay = 60.0
+        if self._reservation_key != key or self._deadline is None:
+            self._deadline = time.monotonic() + 60
+        else:
+            delay = max(0.0, self._deadline - time.monotonic())
+        self._reservation_key = key
         self._task_key = key
-        self._task = asyncio.create_task(self._compact(session, key))
+        self._task = asyncio.create_task(self._compact(session, key, delay))
         self._tasks.add(self._task)
         self._task.add_done_callback(self._tasks.discard)
 
-    async def _compact(self, session: SessionState, key: str) -> None:
+    async def _compact(self, session: SessionState, key: str, delay: float) -> None:
         try:
-            await self._sleep(60)
+            await self._sleep(delay)
             if asyncio.current_task() is not self._task or wait_key(session) != key:
                 return
             usage = await self._get_usage()
@@ -99,6 +149,10 @@ class WaitCompaction:
             # 自動の付随処理の失敗は、同じ待機を再試行せず通常の結果回収へ戻す。
             self._used.add(key)
             _LOG.debug("wait_compaction_failed session_id=%s error=%s", session.session_id, error)
+        finally:
+            if asyncio.current_task() is self._task:
+                self._reservation_key = None
+                self._deadline = None
 
     async def close(self) -> None:
         """SDKを切断する前に、照会・配送を含めて予約タスクを回収する。"""

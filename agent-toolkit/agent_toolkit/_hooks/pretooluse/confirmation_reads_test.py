@@ -16,14 +16,17 @@ import pytest
 
 from agent_toolkit._common import read_triggers, session_state
 from agent_toolkit._hooks import document_reads, rules_context, work_contract
+from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
 _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
+_DECISIONS = _SKILL_REFERENCES / "user-confirmation-and-report-decisions.md"
+_QUESTIONS = _SKILL_REFERENCES / "user-confirmation-and-report-questions.md"
 _WARNING = "未取得資料"
-_DENIAL = "この質問はまだユーザーへ表示していない"
+_DENIAL = "この質問は未表示"
 _CONFIRMATION_TOOLS = ("AskUserQuestion", "request_user_input", "request_user_input_async")
 _QUESTION_INPUT = {
     "questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]
@@ -37,6 +40,16 @@ def _local_plugin_root(tmp_path, monkeypatch):
     path = tmp_path / "work-contract.md"
     path.write_text("目的: 確認操作固有の通知の検証\n", encoding="utf-8")
     monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
+    # 確認skillの実宣言と本文は使い、無関係な品質skill全件の列挙を各受領へ持ち込まない。
+    monkeypatch.setattr(
+        read_delivery,
+        "_declaration_sources",
+        lambda _cwd: [
+            _SKILL_REFERENCES.parents[2] / "share" / "read-trigger-bootstrap.md",
+            _SKILL_REFERENCES.parent / "SKILL.md",
+            *_SKILL_REFERENCES.glob("*.md"),
+        ],
+    )
 
 
 def _denial(result) -> str:
@@ -119,7 +132,11 @@ _COMPACT = {"type": "system", "subtype": "compact_boundary"}
 def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> dict:
     transcript = tmp_path / "transcript.jsonl"
     # 比較対象の2資料とは独立に、共有の読込方法を含む親スキル本文を圧縮後にも取得する。
+    omitted = extra.pop("omit_reference", None)
     entries = [*entries, *_successful_skill()]
+    for path in (_DECISIONS, _QUESTIONS):
+        if path != omitted:
+            entries.extend(_successful_read(path))
     transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     payload = {
         "tool_name": "AskUserQuestion",
@@ -167,6 +184,13 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
         pytest.param([_bash(f"cat {_APPROVAL} {_CHOICE}")], [_APPROVAL, _CHOICE], id="bash-without-result"),
     ],
 )
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "未取得/部分/圧縮/失敗/結果欠落の公開Pre2回とPostで、取得状態と毎回の拒否を照合する（Linux限定再確認のC"
+        "PU合計最大1.370秒）。"
+    ),
+)
 def test_unread_reference_is_denied_until_read(tmp_path: pathlib.Path, entries: list[dict], unread: list[pathlib.Path]) -> None:
     """最後の会話圧縮より後に読んでいない資料の絶対パスと次の操作を示して、質問の表示前に毎回拒否する。
 
@@ -178,13 +202,20 @@ def test_unread_reference_is_denied_until_read(tmp_path: pathlib.Path, entries: 
         result = _run(payload)
         assert result.returncode == 0 and not result.stderr
         reason = _denial(result)
-        assert _DENIAL in reason and "次の操作:" in reason
+        assert _DENIAL in reason
         for path in (_APPROVAL, _CHOICE):
             _assert_reference_state(path, path not in unread)
-            assert (str(path) in reason) == (path in unread)
+            assert (f"agent-toolkit:user-confirmation-and-report/references/{path.name}" in reason) == (path in unread)
 
 
 @pytest.mark.parametrize("tool", _CONFIRMATION_TOOLS)
+@pytest.mark.cpu_limit(
+    4.75,
+    reason=(
+        "各確認toolから正規2資料の未取得拒否と全文取得後通過まで公開Pre3回/Post4回で検証する（Linux限定再確認"
+        "のCPU合計最大2.207秒）。"
+    ),
+)
 def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path: pathlib.Path, tool: str) -> None:
     """3つの確認ツールを同じ判定で拒否し、2資料を全文読んだ後は通す。"""
     unread = {**_payload(tmp_path, []), "tool_name": tool}
@@ -194,6 +225,23 @@ def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path
     result = _run(read)
     assert result.returncode == 0 and not _denial(result)
     assert _WARNING not in _additional_context(result)
+
+
+@pytest.mark.parametrize("missing", [_DECISIONS, _QUESTIONS])
+@pytest.mark.cpu_limit(
+    7.0,
+    reason="実規範の宣言集合と公開Pre/Postによる取得状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大3.716秒。",
+)
+def test_split_confirmation_body_is_required_then_not_requested_again(tmp_path, missing):
+    """従来の2資料だけでは、分割された判定・手順の本文の取得を代替しない。"""
+    entries = [*_successful_read(_APPROVAL), *_successful_read(_CHOICE)]
+    result = _run(_payload(tmp_path, entries, omit_reference=missing))
+    assert f"agent-toolkit:user-confirmation-and-report/references/{missing.name}" in _denial(result)
+    assert str(_APPROVAL) not in _denial(result)
+    assert str(_CHOICE) not in _denial(result)
+    result = _run(_payload(tmp_path, [*entries, *_successful_read(missing)]))
+    assert not _denial(result)
+    assert str(missing) not in _additional_context(result)
 
 
 @pytest.mark.parametrize(
@@ -211,6 +259,13 @@ def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path
         ),
     ],
 )
+@pytest.mark.cpu_limit(
+    5.25,
+    reason=(
+        "Read/cat/sedの実記録と公開Pre/Postで正規2資料の全文取得を検証し、Codexでは外側配送観測まで通す"
+        "（Linux限定再確認のCPU合計最大2.454秒）。"
+    ),
+)
 def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]) -> None:
     codex = any(entry.get("message", {}).get("content", [{}])[0].get("name") == "Bash" for entry in entries)
     result = _run(_payload(tmp_path, entries, **({"turn_id": "turn"} if codex else {})))
@@ -223,18 +278,31 @@ def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]
 @pytest.mark.parametrize(
     "operation", ["printf '%s'", "ls", "test -e", "python3 -c \"print('approval-scope.md choice-construction.md')\""]
 )
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=(
+        "2資料への非読取言及を公開Pre/Postへ渡し、両正規資料が未取得である状態まで検証する（Linux限定再確認のCPU"
+        "合計最大0.991秒）。"
+    ),
+)
 def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.Path, operation: str) -> None:
     """成功しても対象本文を読まない操作では、未取得資料の拒否を保持する。"""
     entries = _successful_bash(f"{operation} '{_APPROVAL}' '{_CHOICE}'")
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0
     reason = _denial(result)
-    assert _DENIAL in reason and str(_APPROVAL) in reason and str(_CHOICE) in reason
+    assert _DENIAL in reason and "approval-scope.md" in reason and "choice-construction.md" in reason
     for path in (_APPROVAL, _CHOICE):
         _assert_reference_state(path, False)
 
 
 @pytest.mark.parametrize("tool", ["Read", "Bash"])
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=(
+        "別場所の同名資料の公開取得とPreで、正規2資料の未取得を状態と通知から検証する（Linux限定再確認のCPU合計最大0.909秒）。"
+    ),
+)
 def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.Path, tool: str) -> None:
     """別の場所の同名資料への成功した読取を、hookが案内する資料の取得へ変換しない。"""
     other = tmp_path / "other/skills/user-confirmation-and-report/references/approval-scope.md"
@@ -243,17 +311,24 @@ def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.
     entries = _successful_read(other) if tool == "Read" else _successful_bash(f"cat {other}")
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0 and not result.stderr
-    assert str(_APPROVAL) in _denial(result)
+    assert "agent-toolkit:user-confirmation-and-report/references/approval-scope.md" in _denial(result)
     _assert_reference_state(_APPROVAL, False)
 
 
+@pytest.mark.cpu_limit(
+    4.75,
+    reason=(
+        "2資料の途中読取・圧縮・後続取得を公開Pre2回/Post5回で照合し、未完了を取得へ補わないことを検証する（Linux"
+        "限定再確認のCPU合計最大2.182秒）。"
+    ),
+)
 def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path: pathlib.Path) -> None:
     """圧縮をまたぐ未完了の読取結果を除き、圧縮後の成功だけで不足を解消する。"""
     entries = [_read(_APPROVAL), _COMPACT, _result("read-approval-scope.md"), *_successful_read(_CHOICE)]
     first = _denial(_run(_payload(tmp_path, entries)))
     assert _DENIAL in first
-    assert str(_APPROVAL) in first
-    assert str(_CHOICE) not in first
+    assert "agent-toolkit:user-confirmation-and-report/references/approval-scope.md" in first
+    assert "agent-toolkit:user-confirmation-and-report/references/choice-construction.md" not in first
     _assert_reference_state(_APPROVAL, False)
     _assert_reference_state(_CHOICE, True)
     assert not _denial(_run(_payload(tmp_path, [*entries, *_successful_read(_APPROVAL)])))
@@ -261,6 +336,13 @@ def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path
     _assert_reference_state(_CHOICE, True)
 
 
+@pytest.mark.cpu_limit(
+    4.25,
+    reason=(
+        "sub/delegate/不明履歴の3入力を公開Pre各1回と準備Postへ渡し、誤拒否と誤案内を検証する（Linux限"
+        "定再確認のCPU合計最大1.932秒）。"
+    ),
+)
 def test_non_main_or_unreadable_context_is_neither_denied_nor_warned(tmp_path: pathlib.Path) -> None:
     """処置できない主体と判定できない入力では、拒否も警告もしない。"""
     missing = {**_payload(tmp_path, []), "transcript_path": str(tmp_path / "absent.jsonl")}
@@ -272,9 +354,12 @@ def test_non_main_or_unreadable_context_is_neither_denied_nor_warned(tmp_path: p
         assert not _denial(result) and _WARNING not in _additional_context(result)
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason="実規範の宣言集合と公開Pre/Postによる取得状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.865秒。",
+)
 def test_unresolvable_declarations_warn_without_denying(tmp_path: pathlib.Path, monkeypatch) -> None:
     """読込宣言を取得できない場合は、判定基盤の不調で質問を止めないよう警告にとどめる。"""
-    from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     def broken(*_args, **_kwargs):
         raise ValueError("宣言の検証用の失敗")
@@ -286,6 +371,13 @@ def test_unresolvable_declarations_warn_without_denying(tmp_path: pathlib.Path, 
     assert "読込表を取得できない" in _additional_context(result)
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "計画と文字化け質問の2入力を公開Pre2回/Post2回で通し、取得拒否と既存警告の併存を検証する（Linux限定再確認"
+        "のCPU合計最大1.351秒）。"
+    ),
+)
 def test_exit_plan_mode_and_mojibake_warning_are_unchanged(tmp_path: pathlib.Path) -> None:
     """`ExitPlanMode`は対象外とし、文字化けの警告は未読の拒否と並べて返す。"""
     plan = {**_payload(tmp_path, []), "tool_name": "ExitPlanMode", "tool_input": {"plan": "計画"}}

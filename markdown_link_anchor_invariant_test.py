@@ -155,6 +155,14 @@ def _unresolved_anchors(root: pathlib.Path, sources: list[pathlib.Path]) -> list
     return unresolved
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "追跡中の全Markdownのリンクを走査する不変条件。小さい入力の"
+        + "slug判定は通常区分へ残す。同群Linux CI所有CPU最大0."
+        + "497秒。"
+    ),
+)
 def test_markdown_link_anchors_resolve() -> None:
     """追跡中の全Markdownのフラグメント付きのリンクが、リンク先の見出しIDへ解決する。"""
     root = pathlib.Path(__file__).resolve().parent

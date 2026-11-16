@@ -18,7 +18,7 @@ from agent_toolkit._testing.lane_integration_support import (
     _adopt_argv,
     _integration_args,
     _integration_selection,
-    _rebased_integration,
+    _merged_integration,
     _record_wi_commit,
 )
 from agent_toolkit._testing.lane_support import _create, _invoke
@@ -26,6 +26,12 @@ from agent_toolkit._testing.lane_support import _create, _invoke
 
 @pytest.mark.parametrize("placeholder", [False, True], ids=["literal", "placeholder"])
 @pytest.mark.parametrize("expanded_note", [False, True], ids=["literal-note", "expanded-note"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.484秒。"
+    ),
+)
 def test_integrate_adopts_same_commit_with_literal_or_placeholder(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -156,15 +162,22 @@ def test_integrate_adopts_same_commit_with_literal_or_placeholder(
         "no-source",
     ],
 )
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.484秒。"
+    ),
+)
 def test_integrate_validates_adopt_commits_before_git_and_finalization(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
     """adoptのcommitが統合HEADの祖先で、対応記録の集合と一致することを確かめ、不一致ならGit統合と終了argvを実行しない。"""
-    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
+    repo, record, manifest, value, original = _merged_integration(tmp_path, monkeypatch, capsys, failed=True)
+    value["verification"] = [[sys.executable, "-c", "pass"]]
     worktree = pathlib.Path(record["worktree"])
     name = "20261023-000000-001.md"
     handoff = pathlib.Path(value["handoff"])
-    expected = [] if case in {"no-implementation", "unexpected"} else [original["new_head"]]
+    expected = [] if case in {"no-implementation", "unexpected"} else [original["old_head"]]
     head = original["new_head"]
     if case in {"correct", "planned-correct", "omitted-correction"}:
         (worktree / "correction").write_text("是正", encoding="utf-8")
@@ -200,9 +213,9 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
     if case in {"missing", "no-implementation"}:
         supplied = []
     elif case == "stale":
-        supplied = [original["old_head"]]
+        supplied = [original["new_base"]]
     elif case == "omitted-correction":
-        supplied = [original["new_head"]]
+        supplied = [original["old_head"]]
     marker = tmp_path / "finalized"
     argv = lane._atk_script(  # pylint: disable=protected-access
         "wi", "adopt", name.removesuffix(".md"), *("--commit=" + oid[:10] for oid in supplied)
@@ -225,10 +238,8 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
         return execute(*args, **kwargs)
 
     monkeypatch.setattr(lane.run_command, "execute", finalization)
-    args = _integration_args(record, repo, manifest, head if head != original["new_head"] else original["old_head"])
-    code, pending, stderr = _invoke(capsys, *args, "--restart-review")
-    assert code == 1, stderr
-    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    args = _integration_args(record, repo, manifest, head)
+    code, final, stderr = _invoke(capsys, *args, "--restart-review")
     accepted = case in {"correct", "planned-correct", "foreign-repository", "no-implementation"}
     assert code == (0 if accepted else 2), stderr
     assert marker.exists() is accepted

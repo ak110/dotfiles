@@ -85,8 +85,8 @@ async def fetch_catalog(request: Callable[[str, dict[str, Any]], Awaitable[dict[
         cursor = next_cursor
 
 
-async def list_models_from_app_server() -> list[dict[str, Any]]:
-    """短命なApp Server接続で、`atk config`が他の接続と独立してモデル一覧を取得する。"""
+async def with_app_server(operation: Callable[[Callable[..., Awaitable[dict[str, Any]]]], Awaitable[Any]]) -> Any:
+    """短命な読取接続の初期化・要求IDと応答IDの確認・子孫回収を共有する。"""
     with tempfile.TemporaryFile(mode="w+b") as diagnostics:
         try:
             # 時間上限なし: 常駐の接続であり、応答待ちは呼び出し側が`asyncio.wait_for`で打ち切る。
@@ -140,7 +140,7 @@ async def list_models_from_app_server() -> list[dict[str, Any]]:
             )
             stdin.write(b'{"method":"initialized","params":{}}\n')
             await stdin.drain()
-            return await fetch_catalog(request)
+            return await operation(request)
         finally:
             stdin.close()
             # App Serverと子孫の生成を止めてから終了させ、応答後に起動した補助プロセスも回収する。
@@ -154,6 +154,11 @@ async def list_models_from_app_server() -> list[dict[str, Any]]:
                 await process.wait()
             if result is not None:
                 process_tree.log_residual(result.descriptions(exclude_pid=process.pid), context="model/list")
+
+
+async def list_models_from_app_server() -> list[dict[str, Any]]:
+    """短命なApp Server接続で、他の接続と独立してモデル一覧を取得する。"""
+    return await with_app_server(fetch_catalog)
 
 
 def list_models() -> list[dict[str, Any]]:

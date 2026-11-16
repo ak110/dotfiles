@@ -4,6 +4,12 @@
 
 ## 公開ツールの契約
 
+共有管理サービスでは、stdio接続のEOFと会話終了を分ける。
+実ホストの死亡はPID起動世代で確認し、接続切断だけで以下の停止・資源解放を起動しない。
+世代移譲時は制御所有だけを実turn終了後に移し、旧raw資源を子・バックグラウンドタスクの終了まで保持する。
+次の本来入力で通常releaseから新SDK・App Serverのresumeへ進み、移譲自体で中断やqueryを送らない。
+旧世代の退出条件と初回旧stdioの制約は[共有管理サービスの設計](design-agents-server-service.md)を参照する。
+
 ### `kill`と`stop`
 
 `stop`は保持中で終了済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。
@@ -75,6 +81,13 @@ API失敗と未確認は解放成功にせず、同じJobを保持してcloseの
 Job登録前のrootは実行を開始していないため、登録失敗でもrootを停止して起動失敗として返す。
 仕様の根拠は[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)である。
 保持前に消えた親を一律成功とする案は、その親が残した未知の子を見失うため採らない。
+
+共有serviceの診断ランチャーも、Popenの元handleでsuspended生成した起点をJobへ所属させてから再開する。
+起点の終了だけでは回収完了とせず、Jobの所属全体とstdio readerを回収する。
+独立したserviceは転送側の回収対象から明示的に離脱させ、診断supervisor側で寿命を所有する。
+Windowsの更新bootstrapは`libexec/update_stage.ps1`の段判定と`libexec/update_stage_job.ps1`のWin32操作を分ける。
+後者がCreateProcess、Job所属、primary thread再開、所属全体の停止確認とpipe回収を所有し、停止時のCIM列挙から所属を復元しない。
+段判定の試験は起動・時計・待機・出力・終了照会を注入し、製品本文の置換を使わない。
 
 POSIXのApp Serverと、委譲先CLI・登録済み実行主体・stdio起動単位の子孫の終了は、`_common/process_tree.py`の`stop_tree`へ集約する。
 終了要求前に1回だけ列挙した一覧を回収対象にすると、列挙後に起動した子孫は一覧に含まれず、親の終了後は起点から辿れない。

@@ -17,7 +17,7 @@ from pathlib import Path
 import psutil
 import pytest
 
-from pytools._internal import claude_plugin_references, prune_claude_plugin_cache
+from pytools._internal import claude_plugin_references, log_format, prune_claude_plugin_cache
 
 from ._test_helpers import ResidentProcesses
 
@@ -369,3 +369,24 @@ def test_invalidation_cannot_be_overtaken_by_older_snapshot(plugins_root: Path, 
     alive.remove(previous)
     assert not prune_claude_plugin_cache.run().changed
     assert old.is_dir()
+
+
+def test_kept_versions_have_one_screen_summary_and_detailed_saved_reasons(
+    plugins_root: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """複数版・複数参照の保持を通常表示でまとめ、詳細はログへ残す。"""
+    old = [_make_version(plugins_root, "mkt", "tool", str(index), 30 - index) for index in range(3)]
+    current = _make_version(plugins_root, "mkt", "tool", "current", 20)
+    _write_installed(plugins_root, {"tool@mkt": [current]})
+    reasons = [f"保持候補 pid {index}が稼働中" for index in range(100, 105)]
+    monkeypatch.setattr(claude_plugin_references, "holding_reasons", lambda *_args, **_kwargs: reasons)
+    with caplog.at_level("INFO"):
+        result = prune_claude_plugin_cache.run()
+    screen = [record.getMessage() for record in caplog.records if not log_format.is_log_only(record)]
+    details = [record.getMessage() for record in caplog.records if log_format.is_log_only(record)]
+    assert result.deferred and not result.changed
+    assert all(path.is_dir() for path in [*old, current])
+    assert len(screen) == 1 and "3 件" in screen[0]
+    assert not any("pid" in message for message in screen)
+    assert len(details) == 3
+    assert all(all(reason in message for reason in reasons) for message in details)

@@ -83,6 +83,8 @@ import pathlib
 lazy import dataclasses
 lazy import hashlib
 
+lazy from agent_toolkit._atk.wi import operation_permissions
+lazy from agent_toolkit._common import delegated_session
 lazy from agent_toolkit._common import host_homes as _host_homes
 lazy from agent_toolkit._common import response_language_check as _response_language_check
 lazy from agent_toolkit._common import transcript as _transcript
@@ -92,10 +94,17 @@ lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
 )
-lazy from agent_toolkit._hooks import bugfix_gate, command_timing, repository_protection, rules_context, work_contract
+lazy from agent_toolkit._hooks import (
+    bugfix_gate,
+    command_timing,
+    repository_protection,
+    rules_context,
+    work_contract,
+)
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
+lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
@@ -178,6 +187,11 @@ def _claude_commit_attribution_disabled(cwd: str) -> bool:
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
 _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
+_MAIN_ONLY_MCP_TOOLS = frozenset(
+    f"{prefix}{name}"
+    for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
+    for name in ("send_to_user", "compact_conversation", "apply_runtime_changes")
+)
 
 
 def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
@@ -227,10 +241,20 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 decision = delivery
             elif delivery.notices:
                 decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
+        if decision.block is None and not decision.allow and not is_codex:
+            authorization = operation_permissions.pretooluse(payload)
+            if authorization is not None:
+                decision = dataclasses.replace(
+                    decision,
+                    allow=authorization.allow,
+                    notices=decision.notices + ((authorization.context,) if authorization.context else ()),
+                )
         from agent_toolkit._hooks import effort_notice  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         if (effort_advice := effort_notice.observe(payload)) is not None:
             pending_notices.append(effort_advice)
+        if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
+            pending_notices.append(warning)
         state = read_state(session_id)
         cwd = str(payload.get("cwd", ""))
         preparing = _acquiring(tool_name, tool_input, cwd) or _work_record_only(
@@ -259,11 +283,23 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
             )
         if decision.block is None:
             command_timing.start(payload)
+            if not is_codex and tool_name == "Bash" and str(payload.get("tool_use_id", "")).startswith("repl_"):
+                observe_repl_bash(payload)
         return _emit(decision, pending_notices, is_codex=is_codex)
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
     """ツールの種類ごとの判定を実行し、その結果を返す。"""
+    # Code Modeも個々のMCP呼出しをこの設定hookへ通す。MCP起動環境には無い組込みagent_idもここで判定する。
+    if tool_name in _MAIN_ONLY_MCP_TOOLS and (
+        payload.get("agent_id") is not None or delegated_session.is_delegated(os.environ)
+    ):
+        return Decision(
+            block=_block_notice(
+                "メイン専用ツールのため実行していない。表示・圧縮・反映の成功として扱わない。",
+                fix="結果本文を委譲元へ最終応答で返せ。",
+            )
+        )
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
     if (
@@ -271,6 +307,8 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         and (bugfix_block := bugfix_gate.send_block(payload)) is not None
     ):
         return Decision(block=bugfix_block)
+    if tool_name in _MAIN_ONLY_MCP_TOOLS:
+        return Decision(allow=True)
     # Skill: write-plan起動時は前の計画のパスを消去する。
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
@@ -375,7 +413,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     if record_warning is not None:
         if record_warning:
             warnings.append(record_warning)
-    elif read_warning := check_large_bash_read(command, cwd, is_codex=is_codex):
+    elif read_warning := check_large_bash_read(command, cwd):
         warnings.append(read_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:

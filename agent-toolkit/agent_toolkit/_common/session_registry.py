@@ -17,7 +17,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime
-import enum
 import json
 import os
 import pathlib
@@ -25,11 +24,12 @@ import re
 from collections.abc import Generator, Sequence
 from typing import Any, Literal
 
-from agent_toolkit._common import file_lock, reclaim_records, session_layout
+from agent_toolkit._common import file_lock, reclaim_records, registry_forwarding, session_layout
 from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.process_identity import ProcessIdentity
+from agent_toolkit._common.session_registry_state import PublicationState, Resolution, RunningOwnership
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 _STATUSES = frozenset({"starting", "running", "completed", "failed", "interrupted"})
@@ -49,49 +49,6 @@ INTERRUPTED_TURNS_LIMIT = 16
 """登録簿が保持する中断turnの履歴の件数。新しい順に保ち、超えた古い要素は参照ごと失う。"""
 
 
-class PublicationState(enum.Enum):
-    """登録簿へ書く結果公開可否とstatusの許容組。
-
-    結果を保留している間もstatusは終状態になり得るため、公開前の終状態を個別に表す。
-    """
-
-    PENDING_STARTING = (False, "starting")
-    PENDING_RUNNING = (False, "running")
-    PENDING_COMPLETED = (False, "completed")
-    PENDING_FAILED = (False, "failed")
-    PENDING_INTERRUPTED = (False, "interrupted")
-    RESULT_COMPLETED = (True, "completed")
-    RESULT_FAILED = (True, "failed")
-    RESULT_INTERRUPTED = (True, "interrupted")
-
-    @property
-    def terminal(self) -> bool:
-        """保存する結果公開可否を返す。"""
-        return self.value[0]
-
-    @property
-    def status(self) -> Literal["starting", "running", "completed", "failed", "interrupted"]:
-        """保存するstatusを返す。"""
-        return self.value[1]
-
-    @classmethod
-    def from_status(cls, status: str, *, result_available: bool) -> PublicationState:
-        """sessionの公開状態を登録簿の書込状態へ変換する。"""
-        if not isinstance(result_available, bool):
-            raise TypeError("result_available must be a bool")
-        return cls((result_available, status))
-
-
-class Resolution(enum.StrEnum):
-    """登録簿からsessionを観測した区分。"""
-
-    TERMINAL = "terminal"
-    RUNNING = "running"
-    MISSING = "missing"
-    UNREADABLE = "unreadable"
-    RELEASED = "released"
-
-
 _OWNER_PROCESS: ProcessIdentity | None = None
 _EFFORT_RECEIVER: ProcessIdentity | None = None
 
@@ -105,6 +62,8 @@ def declare_effort_receiver() -> None:
 def owner_process() -> ProcessIdentity | None:
     """登録簿を書くagents_server自身のプロセスの識別を返す。fork後は取得し直す。"""
     global _OWNER_PROCESS  # pylint: disable=global-statement
+    if selected := registry_forwarding.identity():
+        return selected.owner
     if _OWNER_PROCESS is None or _OWNER_PROCESS.pid != os.getpid():
         _OWNER_PROCESS = ProcessIdentity.of(os.getpid())
     return _OWNER_PROCESS
@@ -121,12 +80,19 @@ def set_owner_server_instance(instance_id: str | None) -> None:
 
 def owner_server_instance() -> str | None:
     """登録簿を書くagents_serverの起動単位を返す。stdio起動していないプロセスでは`None`を返す。"""
-    return _OWNER_SERVER_INSTANCE
+    selected = registry_forwarding.identity()
+    return _OWNER_SERVER_INSTANCE if selected is None else selected.server_instance
+
+
+def effort_receiver() -> ProcessIdentity | None:
+    """監視の宣言を持つ所有者を返し、代理保存では元世代の宣言を保つ。"""
+    selected = registry_forwarding.identity()
+    return _EFFORT_RECEIVER if selected is None else selected.effort_receiver
 
 
 def owner_process_is_cached() -> bool:
     """現在のプロセスの識別をI/Oなしで返せるかを示す。"""
-    return _OWNER_PROCESS is not None and _OWNER_PROCESS.pid == os.getpid()
+    return registry_forwarding.identity() is not None or _OWNER_PROCESS is not None and _OWNER_PROCESS.pid == os.getpid()
 
 
 def interruption_error(reason: InterruptionReason) -> dict[str, str]:
@@ -232,17 +198,6 @@ class ResumeInfo:
     claude_connection: str | None = None
     claude_role: str | None = None
     result_contract_recovery_consumed: bool = False
-
-
-class RunningOwnership(enum.StrEnum):
-    """`running`の記録の所有状態。`running_ownership`が記録プロセスの実在と状態ファイルの生存の印から判定する。"""
-
-    OWNED = "owned"
-    """生存の印が有効な状態ファイルがsessionを載せている。所有サーバーが終了を公開する。"""
-    OWNER_LOST = "owner_lost"
-    """所有サーバーを失った実行中。生存の印が有効な状態ファイルが無く、記録プロセスのうち委譲先CLIが実在する。"""
-    ORPHANED = "orphaned"
-    """所有者も委譲先CLIもいない。記録プロセスを持たない旧形式の記録と、委譲先CLIが実在しない記録が該当する。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -382,6 +337,9 @@ def publish(
     `preserve_server_instance`が真の場合は既存の記録の値を保つ（所有者のいない記録の引き継ぎで使う）。
     既存の記録の`interrupted_turns`は引き継ぎ、`interruption`を渡した場合は現在のturnを履歴へ加える。
     """
+    forwarded, _result = registry_forwarding.forward("publish", locals())
+    if forwarded:
+        return
     _validate_session_id(session_id)
     if not isinstance(state, PublicationState):
         raise TypeError("state must be a PublicationState")
@@ -412,8 +370,13 @@ def publish(
     if processes:
         payload["processes"] = [process_payload(process) for process in processes]
         # forkで継承した宣言や、他の所有者を公開する処理へ対応情報を流用しない。
-        if _EFFORT_RECEIVER is not None and _EFFORT_RECEIVER.pid == os.getpid() and processes[0] == _EFFORT_RECEIVER:
-            payload["effort_receiver"] = {"version": 1, "process": process_payload(_EFFORT_RECEIVER)}
+        receiver = effort_receiver()
+        if (
+            receiver is not None
+            and processes[0] == receiver
+            and (receiver.pid == os.getpid() or registry_forwarding.identity() is not None)
+        ):
+            payload["effort_receiver"] = {"version": 1, "process": process_payload(receiver)}
     if interruption is not None:
         payload["interruption"] = interruption
     if engine == "codex" and fast_mode is not None:
@@ -431,6 +394,8 @@ def publish(
     path = registry_directory(state_root) / f"{session_id}.json"
     with registry_lock(session_id, state_root=state_root):
         prior = _read_payload(path)
+        if not _proxy_owner_matches(prior, allow_claim=True):
+            return
         claim = prior.get("resume_claim")
         if (
             isinstance(claim, dict)
@@ -454,7 +419,7 @@ def publish(
         owner_root = owner_root_session_id if owner_root_session_id is not None else _recorded_owner_root(prior)
         if owner_root is not None:
             payload["owner_root_session_id"] = owner_root
-        instance = prior.get("server_instance") if preserve_server_instance else _OWNER_SERVER_INSTANCE
+        instance = prior.get("server_instance") if preserve_server_instance else owner_server_instance()
         if isinstance(instance, str) and instance:
             payload["server_instance"] = instance
         turns = _recorded_interrupted_turns(prior)
@@ -548,6 +513,9 @@ def claim_resume(session_id: str, turn_seq: int, *, state_root: pathlib.Path | N
     元の終了状態は予約中も保持する。予約したプロセスが消失した場合は次の再開が予約を取得できる。
     登録を持たないローカル保持状態は、既存のManager内の再開排他を使う。
     """
+    forwarded, result = registry_forwarding.forward("claim_resume", locals())
+    if forwarded:
+        return bool(result)
     _validate_session_id(session_id)
     with registry_lock(session_id, state_root=state_root):
         resolution = resolve(session_id, state_root=state_root)
@@ -570,8 +538,44 @@ def claim_resume(session_id: str, turn_seq: int, *, state_root: pathlib.Path | N
         return True
 
 
+def transfer_owner(
+    session_id: str,
+    expected_owner: tuple[str | None, int | None],
+    new_owner: ProcessIdentity,
+    new_server_instance: str,
+    *,
+    state_root: pathlib.Path | None = None,
+) -> bool:
+    """終了済みturnの制御所有だけをCASで移し、再開予約・turn・結果・実行資源を変更しない。"""
+    forwarded, result = registry_forwarding.forward("transfer_owner", locals())
+    if forwarded:
+        return bool(result)
+    _validate_session_id(session_id)
+    _validate_session_id(new_server_instance)
+    if not isinstance(new_owner, ProcessIdentity):
+        raise TypeError("新しい所有者のプロセス識別が不正です")
+    with registry_lock(session_id, state_root=state_root):
+        path = registry_directory(state_root) / f"{session_id}.json"
+        payload = _read_payload(path)
+        if payload.get("version") != 2 or expected_owner != (
+            _recorded_server_instance(payload),
+            _recorded_turn(payload),
+        ):
+            return False
+        processes = _recorded_processes(payload)
+        payload["processes"] = [process_payload(new_owner), *(process_payload(item) for item in processes[1:])]
+        payload["server_instance"] = new_server_instance
+        payload["effort_receiver"] = {"version": 1, "process": process_payload(new_owner)}
+        payload["updated_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+        atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n", fsync=True)
+        return True
+
+
 def release_resume_claim(session_id: str, turn_seq: int, *, state_root: pathlib.Path | None = None) -> None:
     """次turnの公開前に開始が終わった場合、同じプロセスと元turnの予約だけを解放する。"""
+    forwarded, _result = registry_forwarding.forward("release_resume_claim", locals())
+    if forwarded:
+        return
     _validate_session_id(session_id)
     with registry_lock(session_id, state_root=state_root):
         path = registry_directory(state_root) / f"{session_id}.json"
@@ -750,12 +754,17 @@ def release(
     解放済みの公開区分は保持し、7日超の掃引で他のレコードと同じく回収する。
     `expected_owner`を渡した場合は起動単位とturn番号が一致する記録だけを置換し、変更済みなら偽を返す。
     """
+    forwarded, result = registry_forwarding.forward("release", locals())
+    if forwarded:
+        return bool(result)
     _validate_session_id(session_id)
     if reason not in _RELEASE_REASONS:
         raise ValueError(f"invalid release reason: {reason}")
     with registry_lock(session_id, state_root=state_root):
         path = registry_directory(state_root) / f"{session_id}.json"
         prior_payload = _read_payload(path)
+        if not _proxy_owner_matches(prior_payload):
+            return False
         if resolve(session_id, state_root=state_root).resume_pending:
             return False
         if expected_owner is not None and expected_owner != (
@@ -809,10 +818,15 @@ def record_interrupted_turn(
 
     記録が無いか、同じturnの終了を示さない場合は書き換えない。
     """
+    forwarded, _result = registry_forwarding.forward("record_interrupted_turn", locals())
+    if forwarded:
+        return
     _validate_session_id(session_id)
     with registry_lock(session_id, state_root=state_root):
         path = registry_directory(state_root) / f"{session_id}.json"
         payload = _read_payload(path)
+        if not _proxy_owner_matches(payload):
+            return
         if payload.get("version") != 2 or payload.get("terminal") is not True or payload.get("turn_seq") != turn_seq:
             return
         payload["interruption"] = reason
@@ -825,6 +839,20 @@ def record_interrupted_turn(
             )
         )
         atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _proxy_owner_matches(payload: dict[str, Any], *, allow_claim: bool = False) -> bool:
+    """移譲後の旧writerを、保存と同じ登録ロックの中で拒否する。"""
+    identity = registry_forwarding.identity()
+    if identity is None or not payload:
+        return True
+    if allow_claim and isinstance(claim := payload.get("resume_claim"), dict) and identity.owner in _recorded_processes(claim):
+        return True
+    instance = _recorded_server_instance(payload)
+    if instance is not None and instance != identity.server_instance:
+        return False
+    processes = _recorded_processes(payload)
+    return not processes or identity.owner is not None and processes[0].compatible_with(identity.owner)
 
 
 def recorded_server_instances(state_root: pathlib.Path | None = None) -> set[str]:

@@ -12,6 +12,11 @@
 文書を定数経由で読み込む処理、間接import、共有ヘルパーを含め、変更ファイル名やテストへの直接一致だけで選定を終えない。
 ファイル単位で消費側を特定しにくい場合は、関連する機能のモジュール（下記のserveなど）までを選ぶ。
 変更した契約、消費側テスト、採否理由、実行結果の対応は、既存の計画ファイルや検証記録へ残す。
+探索候補の一覧、意味上の採否、実行ファイルとOS・browser条件、実際の合否を対応付け、未発見・未実行・環境によるskipを成功から分ける。
+設定要素の追加では、新要素名に加え既存の兄弟キー・集合全体の出力を読む試験を選ぶ。
+参照コメントの撤去では、そのコメントだけが監査見出しを現行契約へ結び付けていないかを調べ、履歴として残す参照と現行の所属を区別して監査の限定試験を加える。
+案内文の変更では旧文言を期待するbrowser試験も探索し、通常pytest成功を別の実行層の合格へ代用しない。
+Windowsの実装・fixtureを変え、Linuxで同じ境界を観測できない場合は`verification-values-publishing.md`の公開前Windows検証へ接続する。
 CIが全体を担う本リポジトリでは、列挙しきれなかった利用側を記録してCIへ委ねる。
 ローカルの上限は`agent-basics:check-execution/references/verification-scope.md`、参照追跡は同じディレクトリの`verification-scope-selection.md`に従い、下記は具体例である。
 本リポジトリで指定する具体的な値は次のとおりである。
@@ -100,7 +105,7 @@ CIが全体を担う本リポジトリでは、列挙しきれなかった利用
   使用するコンテナーイメージや導入パッケージ、バージョン情報は`Makefile`内の変数で管理されており、`ci_workflow_test.py`によってCI定義との整合性が検証される。
   なお、このチェックにはDockerが必要であり、1バージョンあたり約1分を要する。
   再検証の記録は`docs/development/audit-records-project-verification.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月18日」にある。
-- 統合後の検証: rebase後のブランチの組み合わせはコミット時には検証できないため、fast-forwardマージを行う前に専用worktree上で`make sync`を実行し、続けて以下を一括で1回実行する。
+- 統合後の検証: merge後のブランチの組み合わせはコミット時には検証できないため、fast-forwardマージを行う前に専用worktree上で`make sync`を実行し、続けて以下を一括で1回実行する。
   - 変更箇所と特定した利用側に関するpytest
     列挙が難しい場合も関連モジュールまでとし、未確認範囲を記録する
   - `uv run --frozen pyfltr fast --commands=pytest`

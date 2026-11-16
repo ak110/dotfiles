@@ -16,6 +16,7 @@ from agent_toolkit._atk.serve import entry_index, wi_operations
 from agent_toolkit._atk.serve.browser_support_test import _BrowserHarness
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
+from agent_toolkit._atk.wi import sync as wi_sync
 from agent_toolkit._testing import git_repository
 
 
@@ -237,6 +238,7 @@ async def _saved_mutation_commit_failure(
     monkeypatch.setattr(harness.operations, "private_notes", root)
     monkeypatch.setattr(harness.operations, "_entry_index", entry_index.EntryIndex(root))
     monkeypatch.setattr(harness.current_state, "root", root)
+    monkeypatch.setattr(harness.operations, "_storage", wi_sync.Storage(local_only=True, lock_timeout=30))
     for name in ("edit", "answer_uwi", "user_comment", "important", "transition", "add", "add_batch"):
         monkeypatch.setattr(
             harness.operations, name, functools.partial(getattr(wi_operations.Operations, name), harness.operations)
@@ -313,6 +315,19 @@ async def _saved_mutation_commit_failure(
         await playwright.async_api.expect(alert).to_contain_text("登録済み")
         await playwright.async_api.expect(alert).to_contain_text("重複")
         assert len(list(root.glob("**/*.md"))) == 2
+        created = [entry for entry in wi_entries.iter_entry_paths(root) if entry.name != "target.md"]
+        assert len(created) == 1
+        saved = created[0].read_text(encoding="utf-8")
+        assert wi_entries.entry_state_of(created[0]) == "inbox"
+        if operation == "batch":
+            assert saved == content
+        else:
+            parsed = wi_frontmatter.parse_frontmatter(saved)
+            assert parsed is not None
+            metadata, body = parsed
+            assert metadata["type"] == "awi"
+            assert metadata["target_repo"] == "github.com/example/repo"
+            assert body == "\n# 保存する新規要求\n\n新規本文\n"
         await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(2)
     elif operation == "delete":
         await playwright.async_api.expect(page.locator("#detail-dialog")).to_be_hidden()
@@ -326,10 +341,13 @@ async def _saved_mutation_commit_failure(
         saved = path.read_text(encoding="utf-8")
         await playwright.async_api.expect(page.locator("#detail-content")).to_be_visible()
         if operation == "save":
+            assert saved == content + "\n保存追記\n"
             await playwright.async_api.expect(page.locator("#detail-content")).to_contain_text("保存追記")
         elif operation == "answer":
+            assert saved.endswith("自由記述の回答\n")
             await playwright.async_api.expect(page.locator("#detail-content")).to_contain_text("自由記述の回答")
         elif operation == "user-comment":
+            assert saved == content + "\n## ユーザーコメント\n\nユーザーのコメント\n"
             await playwright.async_api.expect(page.locator("#detail-content")).to_contain_text("ユーザーのコメント")
         elif operation == "important":
             assert "important: true" in saved

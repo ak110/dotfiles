@@ -270,7 +270,7 @@ def _prepare_agent_toolkit_environment(total: int, *, timeout: float | None = No
     """主checkoutのatkが使う共有依存環境を、Git更新の直後に準備する。失敗は記録して後続の段を続ける。"""
     title = "agent-toolkitの共有依存環境の準備"
     launcher = update_dotfiles_runtime.DOTFILES_ROOT / "agent-toolkit" / "scripts" / "launch.py"
-    argv = ["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher)]
+    argv = ["uv", "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher)]
     returncode, _ = _run_step(
         1,
         total,
@@ -284,7 +284,7 @@ def _prepare_agent_toolkit_environment(total: int, *, timeout: float | None = No
         update_dotfiles_runtime.continue_after_failure(
             title,
             "後段のpost-applyのウォームアップが同じ準備を再試行する。続けて失敗する場合は"
-            f'`uv run --no-config --no-project --python 3.15 python "{launcher}" --prepare agent_toolkit/atk.py`'
+            f'`uv run --no-cache --no-config --no-project --python 3.15 python "{launcher}" --prepare agent_toolkit/atk.py`'
             "を実行して診断を確かめてください。",
             update_dotfiles_runtime.last_stderr_tail,
         )
@@ -430,7 +430,7 @@ def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
         daemon_pause = None
         daemon_errors: list[str] = []
         try:
-            if context.diff_output.strip() and not (dotfiles_mode.is_minimal() and context.args.prune):
+            if context.diff_output.strip() and not dotfiles_mode.is_minimal():
                 daemon_pause = _pause_codex_daemon()
             if daemon_pause is not None and daemon_pause.stop_error is not None:
                 daemon_errors.append(daemon_pause.stop_error)
@@ -510,7 +510,9 @@ def main(argv: list[str] | None = None) -> int:
             lock_dir.mkdir(parents=True, exist_ok=True)
             try:
                 with filelock.FileLock(
-                    str(update_dotfiles_runtime.LOCK_PATH), timeout=update_dotfiles_runtime.LOCK_TIMEOUT_SEC
+                    str(update_dotfiles_runtime.LOCK_PATH),
+                    timeout=update_dotfiles_runtime.LOCK_TIMEOUT_SEC,
+                    preserve_lock_file=True,
                 ):
                     dotfiles_mode.select(args.mode)
                     if args.prune:

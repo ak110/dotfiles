@@ -20,6 +20,13 @@ from agent_toolkit._testing.pretooluse_support import codex_delivered_payload, c
 
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.usefixtures("unchanged_documents_resolution")
+@pytest.mark.cpu_limit(
+    4.25,
+    reason=(
+        "公開Pre/Post/Stopを資料取得まで反復し、2sessionと両hostで状態分離・配送解消・Stop3回を確認する（Li"
+        "nux CI CPU合計最大1.987秒）。"
+    ),
+)
 def test_repeated_calls_in_one_process_follow_input_and_session_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, codex: bool
 ) -> None:

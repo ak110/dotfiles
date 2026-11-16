@@ -2,9 +2,11 @@
 
 ## Claude CodeとCodexの規範配置
 
-hookは規範本文を代替配送せず、各ホスト本来の取得手段を案内し、取得操作を観測する。
+hookは規範本文を代替配送せず、要旨とスキル名・プラグイン相対の資料名を一覧で示し、取得操作を観測する。
 Claude Codeのスキル起動登録、編集ツールの読取状態、圧縮後の復元はホストの取得操作に依存するためである。
-Claudeのメインとtask・delegateは通常Skill、AgentサブエージェントはSkillと使用不可時のRead、Codexは絶対パスの読取を使い、軽量委譲先には取得を求めない。
+取得の実行手段は各ホストの契約へ委ね、hookは導入済みスキルへの代替の読取操作を併記しない。
+別版の写しや外部ファイルなど相対名で一意にできない実体にはパスを残し、軽量委譲先には取得を求めない。
+全hook通知は必要な対象・診断・操作へ簡潔にし、既知の取得方法はホスト別ルールへ一度だけ置く（2026年11月15日のユーザー指示）。
 取得判定と履歴復元は対象パスへの読取成功を使い、必要な基準の取得と適用は担当が確認する。
 Claudeメインの`SKILL.md`は`disable-model-invocation: true`に限り成功したRead・Bashも認め、通常はSkill起動を要する。
 `allow_implicit_invocation=false`だけでは例外にせず、ユーザー専用操作の代行と設定解除も認めない。
@@ -55,7 +57,7 @@ Claude Codeでは、hookがエージェントへ操作や是正を求める通�
 2026年11月10日のユーザーの依頼と確認回答（選択肢「是正する通知を全文」）により、エージェントが気付きにくい改善案をユーザーが思いつけるようにするためである。
 現行の規定は`agent-basics/skills/writing-standards/references/claude-hooks-output.md`「出力フィールドの使い分け」にある。
 
-現行の規定は[design-hosts.md](design-hosts-rules-manifests.md#claude-codeとcodexの規範配置)の「Claude CodeとCodexの規範配置」にある。
+現行の規定は[常時規範とplugin manifestの設計記録](design-hosts-rules-manifests.md)にある。
 
 共通のルール・スキルは`agent-toolkit/`の共有原本へ置き、Codex固有の公開能力との差分は2つのファイルへ集約する。
 Codexの全主体へ適用する差分は`agent-toolkit/share/rules/rules-common.codex.md`、Codexのメインだけへ適用する差分は`agent-toolkit/share/rules/rules-main.codex.md`へ置く。

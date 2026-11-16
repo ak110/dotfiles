@@ -56,6 +56,10 @@ def _output_offenders(source: str, path: pathlib.Path) -> list[int]:
     return offenders
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="hookの全製品ソースをAST走査し、診断の直書きと標識のない配送を検出する母集団を維持する（Linux CI CPU0.528秒）。",
+)
 def test_production_output_has_no_direct_diagnostics_or_unmarked_literals() -> None:
     root = pathlib.Path(__file__).parent
     paths = [*root.rglob("*.py"), root.parent / "hook.py"]

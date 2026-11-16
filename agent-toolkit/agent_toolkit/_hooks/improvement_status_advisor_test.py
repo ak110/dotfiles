@@ -3,8 +3,6 @@
 import json
 import os
 import pathlib
-import re
-import shlex
 import types
 
 import pytest
@@ -103,13 +101,9 @@ def test_stop_aggregates_notice_without_blocking(monkeypatch: pytest.MonkeyPatch
     assert "原因を調べていない" in context
 
 
-def _assert_guidance_commands(body: str, paths: list[pathlib.Path], *, windows: bool) -> None:
-    if windows:
-        decoded = re.findall(r"(?m)^Get-Content -LiteralPath '((?:''|[^'])*)' -Encoding utf8$", body)
-        assert [value.replace("''", "'") for value in decoded] == list(map(str, paths))
-    else:
-        commands = [shlex.split(line) for line in body.splitlines() if line.startswith("cat -- ")]
-        assert commands == [["cat", "--", str(path)] for path in paths]
+def _assert_guidance_commands(body: str, paths: list[pathlib.Path]) -> None:
+    assert all(path.name in body for path in paths)
+    assert "cat --" not in body and "Get-Content" not in body
     assert all(path.is_file() for path in paths)
 
 
@@ -133,11 +127,11 @@ def test_missing_guidance_is_notified_before_report(
     )
     assert body
     paths = _guidance_documents if kind != "add-awi" else _guidance_documents[:2]
-    _assert_guidance_commands(body, paths, windows=windows)
+    _assert_guidance_commands(body, paths)
     assert "root-cause-prevention.md" in body
     assert "waiting-and-monitoring.md" in body
     assert ("immediate-fix.md" in body) == (kind != "add-awi")
-    assert "見直し" in body
+    assert "見直せ" in body
 
 
 def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,4 +175,29 @@ def test_guidance_hook_entry_returns_nonblocking_context(
     assert not result.stderr
     output = json.loads(result.stdout)
     assert "decision" not in output
-    _assert_guidance_commands(output["hookSpecificOutput"]["additionalContext"], _guidance_documents, windows=windows)
+    _assert_guidance_commands(output["hookSpecificOutput"]["additionalContext"], _guidance_documents)
+
+
+@pytest.mark.parametrize("shape", ["empty", "omitted", "other-report"])
+@pytest.mark.parametrize("missing", [None, "作り込み側の候補", "見逃し側の候補", "比較結論"])
+def test_deferral_comparison_fields_are_checked_before_delivery_and_at_stop(missing, shape, monkeypatch):
+    """項目の非空だけを両入口で検査し、比較結果の採否へ踏み込まない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    fields = {"作り込み側の候補": "既存処理へ統合", "見逃し側の候補": "境界の試行", "比較結論": "継続費用が防げる損失を上回る"}
+    if missing is not None:
+        if shape == "empty":
+            fields[missing] = ""
+        else:
+            del fields[missing]
+    text = "気付いた改善点: A。AWI化ステータス: 不要 見送り " + "; ".join(f"{key}: {value}" for key, value in fields.items())
+    if missing is not None and shape == "other-report":
+        text += "\n気付いた改善点: B。AWI化ステータス: 不要 見送り " + missing + ": 別報告の候補"
+    payload = json.loads(_payload(text))
+    before = improvement_status_advisor.read_guidance_notice(payload)
+    after = improvement_status_advisor.evaluate(_payload(text))[1]
+    if missing is None:
+        assert not before and not after
+    else:
+        assert missing in before and 'kind="warn"' in before
+        assert "permissionDecision" not in before
+        assert missing in after

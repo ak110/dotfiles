@@ -45,10 +45,16 @@ def test_directory_preserves_foreign_owner_and_symlink_target(tmp_path: pathlib.
     link.symlink_to(root, target_is_directory=True)
     try:
         with (
-            pytest.raises(managed_temp.ManagedTempError, match="所有者"),
+            pytest.raises(managed_temp.ManagedTempError, match="所有者") as failure,
             permissions.directory(root, expected=os.stat_result(metadata)),
         ):
             pytest.fail("所有者の異なる対象を開いた")
+        assert str(root) in str(failure.value)
+        assert f"uid={metadata[4]}" in str(failure.value)
+        assert "現在のOSアカウント" in str(failure.value)
+        assert str(root) in failure.value.next_action
+        assert f"uid={metadata[4]}" in failure.value.next_action
+        assert "sudo -n" in failure.value.next_action
         with pytest.raises(managed_temp.ManagedTempError), permissions.directory(link):
             pytest.fail("symlinkを追跡した")
         assert stat.S_IMODE(root.stat().st_mode) == 0

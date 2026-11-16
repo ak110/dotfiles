@@ -37,6 +37,7 @@ def test_registered_operations_do_not_fail_during_unrelated_delivery_observation
 def test_wait_requests_unread_role_acceptance_material(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
     acquired: bool,
     compacted: bool,
     outdated: bool,
@@ -46,6 +47,8 @@ def test_wait_requests_unread_role_acceptance_material(
     """取得後は再要求せず、圧縮で失効した後のdrafted回収では再要求する。"""
     root = pathlib.Path(__file__).resolve().parents[2]
     document = root / f"share/{role}.subagent.md"
+    # この役割から検収資料への配送を保ち、別の全役割の宣言は入力へ含めない。
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [document])
     material = root / relative_material
     session_registry.publish(
         "draft-child",

@@ -12,9 +12,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 import psutil
+import pytest
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import common as _common
+from pytools._internal import install_claude_plugins as _install_claude_plugins
 from pytools._internal.update_claude_settings import update_claude_settings
 
 FakeRunFunc = Callable[..., subprocess.CompletedProcess[str] | None]
@@ -266,7 +268,7 @@ class ResidentProcesses:
     """指定した実行名の常駐プロセスを起動し、psutilによるプロセス走査の結果をこれらのプロセスだけに限る。
 
     走査は実プロセスの情報（実行名、command line、作業ディレクトリ、環境変数、起動時刻）を経由する。
-    開発機で動く他のClaude CodeやCodexを判定へ混ぜないため、走査結果だけを起動したpidへ絞る。
+    開発機で動く他のClaude CodeやCodexを判定へ混ぜないため、走査結果を起動したpidに限定する。
     実行名は`sleep`へのsymlinkの名前で与えるため、Linuxでだけ使う。
     """
 
@@ -323,3 +325,24 @@ class ResidentProcesses:
     def stop_all(self) -> None:
         """起動した全てのプロセスを終了させて回収する。"""
         self._resources.close()
+
+
+@pytest.fixture(name="fake_which_present")
+def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude と uv の両方が存在する状態に見せかける。"""
+    monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+
+
+@pytest.fixture(name="fake_target_info")
+def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
+    """marketplace.json の読み込み結果を固定値に差し替える。
+
+    テストを実際の marketplace.json の内容から切り離すため。
+    対象プラグインは marketplace.json 由来で決まるため、
+    複数プラグインが正しくループで処理されることを検証できるよう 2 件返す。
+    """
+    monkeypatch.setattr(
+        _install_claude_plugins,
+        "_read_target_info",
+        lambda _root: ({"agent-toolkit": "0.2.0", "sample-plugin": "1.0.0"}, set()),
+    )

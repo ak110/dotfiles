@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from agent_toolkit._git import command as git_command
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -27,6 +29,13 @@ def _allows_conditional(node: ast.expr | None, expected: str) -> bool:
     )
 
 
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "本体Python全量のASTで全text subprocessのencoding/errorsを検査し、任意の新規呼出しも検出する"
+        "（Linux CI CPU合計最大2.320秒）。"
+    ),
+)
 def test_text_subprocesses_use_utf8_with_replacement() -> None:
     """テキストモードの全呼び出しでUTF-8と置換処理を明示する。"""
     violations: list[str] = []

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import os
@@ -12,9 +13,9 @@ import subprocess
 import sys
 import tempfile
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
-from agent_toolkit._common import claude_settings_sources, host_homes
+from agent_toolkit._common import claude_settings_sources, host_homes, runtime_environment
 from agent_toolkit._common.state_paths import state_dir
 
 AUTH_ENV = frozenset(
@@ -60,7 +61,7 @@ class Connection:
 
     kind: str
     api_env_file: str | None = None
-    isolation_env_file: str | None = None
+    isolation_env_files: tuple[str, ...] = ()
 
 
 class SettingsFile(str):
@@ -190,7 +191,7 @@ def subscription_available(
     isolation_keys: frozenset[str] = AUTH_ENV,  # pylint: disable=redefined-outer-name  # 公開キーワード名を保持する。
 ) -> bool:
     """OAuth環境またはClaude CodeのOAuth資格情報の存在を値の公開なしに判定する。"""
-    environment = os.environ if env is None else env
+    environment = runtime_environment.environment() if env is None else env
     if environment.get("CLAUDE_CODE_OAUTH_TOKEN"):
         return True
     if platform == "darwin":
@@ -229,12 +230,22 @@ def clean_environment(
     return {key: value for key, value in env.items() if key not in isolation_keys}
 
 
+def api_environment_keys(paths: Iterable[str]) -> frozenset[str]:
+    """設定済みの全APIファイルから、親と子の両境界で隔離するキーを導く。"""
+    keys = set(AUTH_ENV)
+    for path in paths:
+        # 設定不良の診断は接続候補側が所有し、他backendの起動は妨げない。
+        with contextlib.suppress(OSError, ValueError, UnicodeError):
+            keys.update(read_api_env_file(path))
+    return frozenset(keys)
+
+
 def isolation_keys(connection: Connection) -> frozenset[str]:
     """選択した接続で親から継承しない変数名を返す。"""
     if connection.kind == "inherit":
         return frozenset()
-    path = connection.isolation_env_file or connection.api_env_file
-    keys = AUTH_ENV | (read_api_env_file(path).keys() if path else frozenset())
+    paths = (*connection.isolation_env_files, *((connection.api_env_file,) if connection.api_env_file else ()))
+    keys = api_environment_keys(paths)
     if connection.kind in API_KINDS:
         keys |= {"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"}
     return frozenset(keys)

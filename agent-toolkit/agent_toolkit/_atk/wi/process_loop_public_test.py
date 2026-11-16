@@ -24,6 +24,11 @@ from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._testing.process_loop_coordinator_support import _manifest, _targets
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大1.300秒。"),
+)
 def test_public_loop_checks_eight_repositories_with_bounded_concurrency(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -105,9 +110,12 @@ def test_public_loop_alert_failure_has_diagnostics_and_retry(
     _notes, snapshots = _targets(tmp_path, monkeypatch, (0,))
     monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
-    checks = iter((False, True))
-    monkeypatch.setattr(control, "consume_process_loop_abort", lambda: next(checks))
-    monkeypatch.setattr(loop, "_wait_for_changes", lambda *_args, **_kwargs: False)
+
+    def request_abort(*_args: Any, **_kwargs: Any) -> bool:
+        control.cmd_process_loop_abort()
+        return False
+
+    monkeypatch.setattr(loop, "_wait_for_changes", request_abort)
 
     def fail(*_args: Any, **_kwargs: Any) -> None:
         raise failure
@@ -199,7 +207,7 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
     owner = ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
     assert owner is not None
     owner = ownership.update_session(owner, "saved-agy-conversation")
-    ownership.release(owner, completed=False)
+    ownership.release(owner, completed=not resume)
     monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
@@ -219,7 +227,10 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
             "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
             "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
         )
-        assert prompt == ("/goal " if engine == "claude" else "") + expected
+        if resume:
+            assert 'kind="resume"' in prompt and not prompt.startswith("/goal ")
+        else:
+            assert prompt == ("/goal " if engine == "claude" else "") + expected
         manifest = _manifest(prompt, child_env)
         capsys.readouterr()
         with monkeypatch.context() as scoped:
@@ -258,13 +269,14 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
         return subprocess.CompletedProcess(argv, 0)
 
     monkeypatch.setattr(session, "_run_cli_session", execute)
+    if resume:
+        control.cmd_process_loop_resume("saved-agy-conversation")
     with pytest.raises(SystemExit) as exited:
         atk.main(
             [
                 "wi",
                 "process-loop",
                 "--once",
-                *(["--resume", "saved-agy-conversation"] if resume else []),
                 "--no-alerts",
                 "--no-update",
             ],
@@ -291,8 +303,12 @@ def test_public_once_failure_does_not_wait(tmp_path: pathlib.Path, monkeypatch: 
     def unexpected(*_args: Any, **_kwargs: Any) -> None:
         pytest.fail("失敗・中断後に待機またはモデルを起動した")
 
+    def start_abort(*_args: Any, **_kwargs: Any) -> bool:
+        loop._control.cmd_process_loop_abort()  # pylint: disable=protected-access
+        return False
+
     monkeypatch.setattr(loop._watch, "pull_private_notes", pull)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: False)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._watch, "wait_for_start_permission", start_abort)  # pylint: disable=protected-access
     monkeypatch.setattr(loop, "_wait_for_changes", unexpected)
     monkeypatch.setattr(session, "run_process_session", unexpected)
     with pytest.raises(SystemExit) as exited:

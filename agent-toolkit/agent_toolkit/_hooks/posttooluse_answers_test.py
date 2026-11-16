@@ -62,7 +62,8 @@ def test_git_completion_notice_distinguishes_retries_commits_and_targets(
         body = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert body.count("報告を書く前に") == 1
         assert "report-completion" in body
-        assert ("SKILL.md" in body) is codex
+        assert "`agent-toolkit:report-completion`を起動せよ" in body
+        assert "SKILL.md" not in body
     payload["tool_response"] = {"exit_code": 0, "stdout": "[main 1234567] 次のcommit"}
     changed_commit = _run(payload, state_dir=tmp_path)
     assert changed_commit.returncode == 0

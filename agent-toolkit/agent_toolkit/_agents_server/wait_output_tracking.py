@@ -24,6 +24,7 @@ _CHILD_SESSION_OPERATIONS = {
     **dict.fromkeys(tool_names.RECORDED_START_OPERATIONS, "activate"),
     "send_message": "resume",
     "kill": "terminal",
+    "stop": "release",
     _AGENTS_WAIT_TOOL_USE: "collect",
 }
 
@@ -57,6 +58,8 @@ def consume_claude_agents_server_message(
         session.record_tool_use_end(tool_use_id)
         tool_use = session.child_tool_uses.pop(tool_use_id, None)
         if tool_use is None:
+            continue
+        if _block_value(block, "is_error") or _block_value(block, "isError"):
             continue
         if _CHILD_SESSION_OPERATIONS.get(tool_use[0]) == "collect":
             text = _tool_result_text(_block_value(block, "content"))
@@ -109,6 +112,10 @@ def consume_agents_server_tool_result(
     result: Mapping[str, Any],
 ) -> None:
     """agents_serverツールの結果を孫session集合へ反映する。"""
+    parsed = _structured_tool_result(result)
+    if parsed is None:
+        return
+    result = parsed
     normalized = _agents_server_tool_name(tool_name)
     operation = _CHILD_SESSION_OPERATIONS.get(normalized or "")
     if operation in {"activate", "resume"}:
@@ -118,6 +125,13 @@ def consume_agents_server_tool_result(
         if isinstance(session_id, str) and session_id:
             session.live_child_session_ids.add(session_id)
             session.terminal_child_session_ids.discard(session_id)
+        return
+    if operation == "release":
+        session_id = arguments.get("session_id")
+        # stopは終了済みsessionの解放を完了した場合だけ空JSONを返す。
+        # 登録簿の不在ではなく、この成功観測を回収の根拠にする。
+        if not result and isinstance(session_id, str) and session_id:
+            _discard_collected(session, {session_id})
         return
     if operation != "terminal":
         return
@@ -267,6 +281,10 @@ def _block_value(block: Any, name: str) -> Any:
 
 def _structured_tool_result(value: Any) -> dict[str, Any] | None:
     if isinstance(value, Mapping):
+        if value.get("isError") or value.get("is_error"):
+            return None
+        if not value:
+            return {}
         structured = value.get("structuredContent")
         if isinstance(structured, Mapping):
             return dict(structured)

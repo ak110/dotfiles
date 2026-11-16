@@ -15,6 +15,13 @@ from agent_toolkit._testing.delegation_contract_support import (
 )
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "全配布parent/subagentと埋込契約を読み、required/optionalと受信側の契約対応を全量照合する（Linu"
+        "x CI CPU合計最大0.774秒）。"
+    ),
+)
 def test_distributed_delegation_contract_is_complete() -> None:
     """配布する全ての`<役割名>.parent.md`と`<役割名>.subagent.md`が起動契約を満たす。"""
     share = pathlib.Path(__file__).resolve().parent / "share"

@@ -107,7 +107,7 @@ def _run_public_process_loop(
                 "target": target,
             }
         )
-        assert cwd == pathlib.Path.cwd()
+        assert cwd == pathlib.Path(target["worktree"])
         kwargs["on_session_started"]("worktree-coordinator")
         child_env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = "worktree-coordinator"
         entry.unlink()

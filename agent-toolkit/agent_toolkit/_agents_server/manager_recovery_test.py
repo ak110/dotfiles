@@ -296,6 +296,13 @@ async def test_live_owner_is_observed_and_cli_collects_old_root_result_and_notic
 
 
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "モデルは代用し、所有者喪失で残る実CLIの世代が終了した後だけ同じIDを再開する。"
+        "同じ最小実境界群の所有CPU観測を基準に、通常上限と分ける。"
+    ),
+)
 async def test_owner_lost_executor_stops_before_same_id_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -366,6 +373,12 @@ async def test_owner_lost_executor_stops_before_same_id_resume(
 
 @pytest.mark.parametrize("collection_order", ["writer", "observer", "between-state-and-claim"])
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "親2個の同時復帰をEventで同期し公開MCP startとwaitでwriter1個と結果消費1回を確かめる（Linux CI CPU合計最大1.047秒）。"
+    ),
+)
 async def test_simultaneous_parent_resumes_start_one_writer_and_collect_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

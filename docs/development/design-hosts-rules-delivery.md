@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、ルールの配置と配送の記録である。
 
-## Claude CodeとCodexの規範配置
-
-### ルールの配置と配送
+## ルールの配置と配送
 
 `agent-toolkit/share/rules/common/`配下にはメインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く。
 メインエージェントだけに適用する条文は`agent-toolkit/share/rules/rules-main.md`へ置き、Claude Code固有分は`agent-toolkit/share/rules/rules-main.claude-code.md`へ置く。
@@ -56,3 +54,12 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 2026年9月7日に`agents_server`の`start`で委譲先を1件起動し、受領したエージェント向け文書の一覧と個別条文の有無を返させて確認した。
 再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと`02-agent-operations.md`の任意の条文の有無を返させる。
 委譲先へ届く条文の範囲は実際に動かして確定し、届いている条文を`agent-toolkit/share/rules/rules-subagent.md`へ重複して置かない。
+
+容量超過時の整理は`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「記述量の水準」に従う。
+SessionStartの整理後の水準は、長いパス・最大の追加指示・作業契約の有無を組み合わせた最終出力で8,000文字以下とする。
+超過時は常時注入部分の場面固有の内容を判断前に読む既存資料へ移す。
+固定の規範・案内と可変の契約・パス・起動入力を分けて確認し、大入力の退避と予算内配送を維持する。
+この水準はエージェントが選んだ整理時の目安であり、10,000文字の合否上限は変えない。
+根拠と再検証手順は、`docs/development/audit-records-hooks-protocol.md`の「docs/development/design-hosts-rules-delivery.md：SessionStartの整理後の水準：2026年11月15日」にある。
+agents_serverのツール説明とserver instructionsの整理水準は、`audit-records-mcp.md`を参照する。
+該当節は「docs/development/design-hosts-rules-delivery.md：agents_serverの説明整理後の水準：2026年11月15日」である。

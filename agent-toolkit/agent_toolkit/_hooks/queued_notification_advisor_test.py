@@ -62,7 +62,7 @@ def test_enqueued_notification_reports_task_id_and_output_file(tmp_path: pathlib
     assert decision == "notify"
     assert "b6n4gipz5" in body
     assert _OUTPUT_FILE in body
-    assert "そのパスを`Read`の`file_path`に指定して全量を読み" in body
+    assert "全量を読み" in body
     assert "工程を進めよ" in body
     assert "出力先が未通知" in body and "委譲元" in body
 
@@ -103,7 +103,7 @@ def test_agent_notification_uses_returned_message(tmp_path: pathlib.Path, launch
     transcript = _write_transcript(tmp_path, entries)
     decision, body = _evaluate(transcript)
     assert decision == "notify"
-    assert "返却メッセージの本文を結果として使って" in body
+    assert "本文を結果として" in body and "再取得は不要" in body
     assert "b6n4gipz5" in body
     assert _OUTPUT_FILE not in body
     assert "そのパスを`Read`の`file_path`に指定して" not in body
@@ -136,8 +136,8 @@ def test_mixed_agent_and_bash_notifications_keep_distinct_guidance(tmp_path: pat
     )
     decision, body = _evaluate(transcript)
     assert decision == "notify"
-    assert "返却メッセージの本文を結果として使って" in body
-    assert "そのパスを`Read`の`file_path`に指定して全量を読み" in body
+    assert "本文を結果として" in body and "再取得は不要" in body
+    assert "全量を読み" in body
     assert "/tmp/agent-transcript.jsonl" not in body
     assert "/tmp/bash.output" in body
     assert _evaluate(transcript) == ("approve", "")
@@ -163,6 +163,46 @@ def test_delivery_includes_warned_notifications_without_updating_warning_state(
     payload = json.dumps({"session_id": "queued-session", "transcript_path": str(transcript)})
     assert subject.evaluate(payload, allow_delivery=True) == ("yield", "")
     assert read_state("queued-session") == before
+
+
+@pytest.mark.parametrize(
+    "phase,loop,other,yields",
+    [
+        ("resumed", True, False, False),
+        ("resumed", True, True, True),
+        ("pending", True, False, True),
+        ("resumed", False, False, True),
+    ],
+)
+def test_restarted_wait_notification_does_not_pause_loop(
+    tmp_path,
+    monkeypatch,
+    phase,
+    loop,
+    other,
+    yields,
+) -> None:
+    """再開済みwaitだけを配送yieldから除き、無関係な通知と未消費の印は従来どおり判定する。"""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1" if loop else "")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    directory = tmp_path / "agent-toolkit-function-hooks"
+    directory.mkdir()
+    (directory / "restart-queued-session.txt").write_text(
+        json.dumps(
+            {
+                "phase": phase,
+                "waits": [{"id": "b6n4gipz5", "command": "atk agents wait"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    events = [_queue("enqueue", _notification())]
+    if other:
+        events.append(_queue("enqueue", _notification("unrelated")))
+    transcript = _write_transcript(tmp_path, events)
+    payload = json.dumps({"session_id": "queued-session", "transcript_path": str(transcript)})
+    assert (subject.evaluate(payload, allow_delivery=True)[0] == "yield") is yields
 
 
 def test_new_notification_after_notified_one_is_reported_alone(tmp_path: pathlib.Path) -> None:

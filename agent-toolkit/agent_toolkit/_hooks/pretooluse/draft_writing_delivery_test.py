@@ -12,7 +12,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers
-from agent_toolkit._hooks.pretooluse import read_delivery_matching
+from agent_toolkit._hooks.pretooluse import read_delivery, read_delivery_matching
 from agent_toolkit._testing.document_delivery import run_hook
 
 _PLUGIN = pathlib.Path(__file__).resolve().parents[3]
@@ -38,8 +38,8 @@ def _matched(source: pathlib.Path, tool_name: str, tool_input: dict) -> set[str]
 @pytest.mark.parametrize(
     ("source", "content", "expected"),
     [
-        ("skills/wi-standards/SKILL.md", _AWI, {"awi-body.md", "drafting-workflow-writing.md", "analysis-records.md"}),
-        ("share/read-trigger-bootstrap.md", _AWI, {"analysis-records.md"}),
+        ("skills/wi-standards/SKILL.md", _AWI, {"awi-body.md", "drafting-workflow-writing.md"}),
+        ("share/read-trigger-bootstrap.md", _AWI, {"SKILL.md"}),
         ("skills/wi-standards/SKILL.md", _UWI, {"uwi-format.md"}),
         ("skills/write-plan/SKILL.md", _PLAN, {"plan-file-standards.md", "plan-file-standards-template.md"}),
     ],
@@ -48,6 +48,8 @@ def test_draft_in_temporary_area_reaches_drafting_standards(source: str, content
     """一時領域の原稿でも、書く時点で起草規範の行が一致し、使い捨てのコードでは一致しない。"""
     draft = managed_temp.temp_root_path() / "session-test" / "draft.md"
     assert expected <= _matched(_PLUGIN / source, "Write", {"file_path": str(draft), "content": content})
+    if content == _AWI:
+        assert "analysis-records.md" not in _matched(_PLUGIN / source, "Write", {"file_path": str(draft), "content": content})
     script = draft.with_name("count.py")
     assert not expected & _matched(_PLUGIN / source, "Write", {"file_path": str(script), "content": "print(1)\n"})
 
@@ -92,29 +94,43 @@ def _guided(tool_name: str, tool_input: dict) -> str:
 
 
 def _read_step(path: pathlib.Path) -> str:
-    return f"Readで`{path}`を取得せよ"
+    return "agent-toolkit:" + path.relative_to(_PLUGIN / "skills").as_posix()
 
 
 @pytest.mark.parametrize(
     ("content", "documents"),
     [
-        (_AWI, ("skills/wi-standards/references/awi-body.md", "skills/wi-standards/references/analysis-records.md")),
+        (_AWI, ("skills/wi-standards/references/awi-body.md", "skills/wi-standards/references/drafting-workflow-writing.md")),
         (_UWI, ("skills/wi-standards/references/uwi-format.md",)),
         (_PLAN, ("skills/write-plan/references/plan-file-standards.md",)),
     ],
+)
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "一時原稿とコードの2公開Preで、正規writing資料への案内と対象外入力の無案内を検証する（Linux限定再確認のC"
+        "PU合計最大0.580秒）。"
+    ),
 )
 def test_public_hook_guides_drafting_standards_for_temporary_drafts(content: str, documents: tuple[str, ...]) -> None:
     """一時領域の原稿を書く操作で、公開hookが起草規範の取得を案内し、使い捨てのコードでは案内しない。"""
     draft = managed_temp.temp_root_path() / "session-test" / "draft.md"
     guided = _guided("Write", {"file_path": str(draft), "content": content})
     assert all(_read_step(_PLUGIN / document) in guided for document in documents)
+    if content == _AWI:
+        assert "analysis-records.md" not in guided
     script = draft.with_name("count.py")
     unrelated = _guided("Write", {"file_path": str(script), "content": "print(1)\n"})
-    assert not any(str(_PLUGIN / document) in unrelated for document in documents)
+    assert not any(_read_step(_PLUGIN / document) in unrelated for document in documents)
 
 
-def test_public_hook_guides_trial_rule_for_default_model_settings_edit() -> None:
+def test_public_hook_guides_trial_rule_for_default_model_settings_edit(monkeypatch: pytest.MonkeyPatch) -> None:
     """工程別モデルの初期値を編集する操作で、公開hookが実作業での試行を定める候補資料の取得を案内する。"""
     path = _PLUGIN / "agent_toolkit/_atk/config_settings.py"
+    expected = _PLUGIN / "skills/delegation/references/process-model-settings-candidates.md"
+    source = _REPOSITORY / ".claude/skills/agent-toolkit-edit/SKILL.md"
+    rows = [row for row in read_triggers.parse_tables(source, _PLUGIN, strict=True) if expected in row.documents]
+    assert rows
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     guided = _guided("Edit", {"file_path": str(path), "old_string": "a", "new_string": "b"})
-    assert _read_step(_PLUGIN / "skills/delegation/references/process-model-settings-candidates.md") in guided
+    assert _read_step(expected) in guided

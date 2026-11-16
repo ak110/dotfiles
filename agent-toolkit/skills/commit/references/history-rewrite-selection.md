@@ -20,12 +20,12 @@
 **2.** 対象の位置に合う方法で修正を統合する。
 `history-rewrite-verification.md`「操作前後の確認」の手順1〜3を先に行い、fixupは`history-rewrite-fixup.md`「fixupの実行上の制約」に従う。
 
-- 直前の最終コミットのみが対象の場合: 修正、検証、ステージングを行ったあと、`amend`フェーズでプッシュ済み判定を再実行し、未プッシュであることを確認してamendを実行する
+- 直前の最終コミットのみが対象の場合: 修正、検証、ステージングを行ったあと、`amend`フェーズでプッシュ済み判定を再実行し、未プッシュであることを確認してamendを実行する。
 - 過去のコミットを含む場合: 最終コミットを含め、すべての統合先コミットに対して履歴順に1単位ずつ修正を作成、検証、ステージングしてfixupコミットを作成する。
   fixupを作成するごとに、対象のOID、件名、および作業ツリーがクリーンであることを確認してから次の単位へ進む。
   すべてのfixupを作成し終えたあとに、autosquashを1回だけ実行する。
-  各fixupの作成前に行う確認手順は`history-rewrite-verification.md`「操作前後の確認」に従う
-autosquashの単位は、レビュー識別子（指摘管理表の絶対パスとround値）と最古fixup対象の短縮OIDの組とする。
+  各fixupの作成前に行う確認手順は`history-rewrite-verification.md`「操作前後の確認」に従う。
+  autosquashの単位は、レビュー識別子（指摘管理表の絶対パスとround値）と最古fixup対象の短縮OIDの組とする。
   受渡しや再開があっても、全fixup作成後の1回だけ実行する。
   作業を再開した際は、`history-rewrite-verification.md`「履歴確認の起動形」の`git log`を実行し、件名が`fixup!`、`squash!`、または`amend!`で始まるコミットがある場合だけautosquashを実行する。
 作成済みfixupを通常commitへ再構成する場合は、元fixupごとの差分・件名・本文を個別取得し、新commitと1対1で比べる。

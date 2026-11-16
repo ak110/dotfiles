@@ -34,6 +34,8 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     ]
     selected: list[dict[str, Any]] = [*by_kind["stats-total"], *by_kind["stats-summary"], *owners]
     selected.extend(by_kind["stats-mode"])
+    selected.extend(by_kind["cost-metrics-first-pass"])
+    selected.extend(by_kind["cost-metrics-week"])
     selected.extend(by_kind["stats-hook-timings"])
     for kind in ("stats-critical-path", "stats-compaction-total"):
         for item in by_kind[kind]:
@@ -139,7 +141,11 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         ("同じ記録内の再取得・再実行", "担当別のrepeats"),
         ("大量結果の直接取込み", "担当別のlargest_resultsと大出力点検"),
         ("スキルと規範の累積読込", "skills_by_nameと担当別skills"),
-        ("委譲入力の過剰・冗長", "comparison-materials.jsonlの直接本文と参照位置"),
+        (
+            "委譲入力の過剰・冗長",
+            "comparison-materials.mdの索引で選択し、表示外はcomparison-materials.jsonlで限定する。"
+            "入力・結果の記録位置を--detailで照会",
+        ),
         ("複数担当の重複調査", "対象別のby_recordと担当別reads"),
         ("モデル段位の不適合", "stats-agent-threadのobserved_identitiesとtokens"),
         ("委譲の総費用", "全担当のtokens・api_messagesと会話の成果"),
@@ -168,6 +174,14 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         "",
         f"- 経過秒: {total.get('elapsed_seconds', 'unknown')}秒（セッションの最初の記録から準備時点まで）",
     ]
+    quality = list(by_kind["cost-metrics-first-pass"])
+    quality.extend(row for week in by_kind["cost-metrics-week"] for row in week.get("first_pass", []))
+    lines.extend(["", "## 段階別の初回品質", ""])
+    if not quality:
+        lines.append("正式判定の集計記録なし。初回成功率は不明であり、未実施や成功0件とは区別する。")
+    for row in quality:
+        lines.append(json.dumps(row, ensure_ascii=False))
+    lines.append("指摘0件だけでは検出能力を判断できない。観測分母・欠落と後続の手戻りを対照する。")
     for item in by_kind.get("stats-hook-timings", []):
         lines.extend(
             [

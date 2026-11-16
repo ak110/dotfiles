@@ -13,6 +13,7 @@
 | WIキューと要求本文 | WIは依頼・確認を記録する項目。AWIはエージェントが処理する作業項目で、キューは項目の状態と順序を管理する。キューの状態・一覧・ユーザーコメント、AWI本文の起草の分担、一括取り込みと原文保持、原因分析節の保存前の確認を扱う | [design-wi.md](design-wi.md) |
 | 継続処理の起動・隔離・制御 | process-loopは作業項目の処理を繰り返し起動する機構。worktreeは担当ごとのGit作業ツリー。オーケストレーターの選択、worktree隔離、会話IDによる識別、中断要求と追加指示、Codexセッションの終了を扱う | [design-process-loop.md](design-process-loop.md) |
 | 委譲サーバーの公開ツールと構造 | agents_serverは別のエージェントへ作業を委譲するサーバー。MCPはツールの呼び出し口、backendは委譲先を動かす実装。backend構成、公開ツールの契約、結果の保留と自動再開、起動時の指示、Antigravity CLI backend、起動ツールの統合を扱う | [design-agents-server.md](design-agents-server.md) |
+| 委譲管理の共有と世代移譲 | stdio転送と共有サービス、会話context、受付・状態writer・raw資源の所有、初回移行の制約を扱う | [design-agents-server-service.md](design-agents-server-service.md) |
 | 委譲先の稼働状態・起動診断・通知 | agents_serverで起動した会話の状態を把握する機構。statuslineはその状態を表示する欄。状態ファイルと終了時の結果の回収、statuslineの表示、API失敗と利用上限の待機、起動失敗の観測、上り通知を扱う | [design-agents-runtime.md](design-agents-runtime.md) |
 | 現行の目的・要求と残工程 | 追加指示を現行の作業契約へ統合し、実ユーザー入力の未処理位置、工程境界の再読と委譲先の記録を接続する | [design-work-contract.md](design-work-contract.md) |
 | 委譲の継続・待機・成果受渡し | 別のエージェントへ渡した作業を継続し、終了を待ち、結果を受け取る手順。大出力の分離実行、多段工程の引き継ぎ記録、工程別モデル設定を含む | [design-delegation.md](design-delegation.md) |

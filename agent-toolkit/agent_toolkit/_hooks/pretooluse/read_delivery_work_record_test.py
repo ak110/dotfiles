@@ -5,6 +5,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -21,6 +22,10 @@ def _contract(tmp_path, monkeypatch):
     path = tmp_path / "session" / "work-contract.md"
     path.parent.mkdir()
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: path)
+    # 書込対象の除外を検証する入力は、原稿に必要な1宣言だけで足りる。
+    guide = _REPOSITORY / "agent-basics/skills/writing-standards/SKILL.md"
+    rows = [read_triggers.ReadTrigger(guide, 1, "操作", ("tool:Write", "tool:apply_patch"), (guide,))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     return path
 
 
@@ -44,6 +49,13 @@ def test_main_work_contract_write_gets_no_writing_guidance(tmp_path, _contract):
     assert _WRITING_GUIDE in _guidance("Write", _write(tmp_path / "session" / "draft.md"), session_id="record-draft")
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "契約と原稿の2パスpatchとsubのWriteを公開Pre2回へ渡し、正規writing資料の案内を検証する（Linu"
+        "x限定再確認のCPU合計最大1.291秒）。"
+    ),
+)
 def test_mixed_and_subagent_writes_stay_guided(tmp_path, _contract):
     """作業記録と原稿を1回の編集でまとめて書く操作と、サブエージェントによるメインの作業契約への書込は、案内の対象に保つ。"""
     draft = tmp_path / "session" / "draft.md"

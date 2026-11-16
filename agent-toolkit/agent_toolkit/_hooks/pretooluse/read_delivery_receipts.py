@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-from typing import TYPE_CHECKING
 
 from agent_toolkit._common import delegated_session, read_triggers, shell_cwd
 from agent_toolkit._common.shell_tokens import join_words
@@ -26,9 +25,6 @@ from agent_toolkit._hooks.pretooluse.large_reads import (
 )
 from agent_toolkit._hooks.pretooluse.read_delivery_paths import _read_paths
 from agent_toolkit._hooks.pretooluse.read_delivery_selection import _select_result_documents
-
-if TYPE_CHECKING:
-    pass  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
 
 def _named_section_targets(rows: list[read_triggers.ReadTrigger], paths: list[pathlib.Path]) -> list[read_triggers.ReadTarget]:
@@ -146,6 +142,15 @@ def _record_receipts(
         path = pathlib.Path(metadata["path"])
         if path.is_file() and document_reads.content_fingerprint(path) == metadata["version"]:
             _mark(session_id, path, agent, metadata["version"], record_scopes=False, host=host, project=project)
+            if (
+                host == "codex"
+                and path.name == "SKILL.md"
+                and path.parent.name == "bugfix"
+                and read_delivery.skill_name(path) == "agent-basics:bugfix"
+            ):
+                from agent_toolkit._hooks import bugfix_gate  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
+
+                bugfix_gate.mark_started(session_id, agent)
         else:
             read_delivery.update_state(
                 session_id, operation_skills.mark_ready(read_delivery.document_key(path, metadata["version"]), agent)

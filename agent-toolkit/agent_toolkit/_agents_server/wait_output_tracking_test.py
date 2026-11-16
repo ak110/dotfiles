@@ -129,6 +129,42 @@ def test_send_message_reactivates_terminal_child_until_observed(namespace: str, 
 
 
 @pytest.mark.parametrize(
+    ("content", "is_error", "released"),
+    [
+        ({"structuredContent": {}}, False, True),
+        ([{"type": "text", "text": "{}"}], False, True),
+        ({"structuredContent": {}}, True, False),
+        ({"isError": True, "structuredContent": {}}, False, False),
+        ([{"type": "text", "text": "ToolError: session is running"}], True, False),
+        (None, False, False),
+    ],
+)
+def test_stop_after_collection_and_resume_releases_only_on_success(content, is_error, released):
+    """空JSONの成功だけで再開した子の観測を終え、失敗では自動再開の対象を維持する。"""
+    session = state.SessionState("parent", "/work")
+    _start_child(session, "start", "child")
+    wait_output_tracking.consume_agents_wait_output(session, '{"session_id":"child","status":"completed"}')
+    wait_output_tracking.consume_agents_server_tool_result(
+        session, "send_message", {"session_id": "child"}, {"delivery": "reply_started"}
+    )
+    for index in range(2):
+        identifier = f"stop-{index}"
+        wait_output_tracking.consume_claude_agents_server_message(
+            session,
+            {"content": [{"id": identifier, "name": "mcp__agents_server__stop", "input": {"session_id": "child"}}]},
+        )
+        wait_output_tracking.consume_claude_agents_server_message(
+            session, {"content": [{"tool_use_id": identifier, "content": content, "is_error": is_error}]}
+        )
+        assert resume_waits.has_pending_auto_resume_targets(session) is not released
+        assert not session.terminal_child_session_ids
+    wait_output_tracking.consume_agents_server_tool_result(
+        session, "send_message", {"session_id": "child"}, {"delivery": "reply_started"}
+    )
+    assert session.live_child_session_ids == {"child"}
+
+
+@pytest.mark.parametrize(
     ("tool_name", "command"),
     [
         ("Bash", "atk agents wait"),

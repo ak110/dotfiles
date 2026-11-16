@@ -63,6 +63,13 @@ def test_split_joined_line_separates_only_fragment_and_record(line: bytes, expec
         assert result[1] == json.loads(line[expected_start:])
 
 
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=(
+        "5万objectと深さ2万のbytesで線形処理と分割結果を確認し、小入力では検出できない二次処理を識別する（Linux CI C"
+        "PU合計最大1.226秒）。"
+    ),
+)
 def test_split_joined_line_handles_long_lines_without_quadratic_cost() -> None:
     """hookは全行を読むため、入れ子のobjectが多い行や入れ子の深い行でも行の長さに比例する時間で判定する。"""
     # 候補ごとに行の残りを解析すると、この規模では数十秒以上かかる。

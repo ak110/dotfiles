@@ -15,6 +15,11 @@ from agent_toolkit._testing.run_skill_support import _engine_env, _records, _run
 __all__ = ["_engine_env"]
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.456秒。"),
+)
 @pytest.mark.parametrize(
     "engine,arguments",
     [

@@ -22,9 +22,11 @@ from agent_toolkit import hook as _hook
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import persisted_output_reference, read_triggers, state_paths
 from agent_toolkit._common.session_state import state_path
+from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing import git_repository
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agent_id, notice, rules_context
+lazy from agent_toolkit._hooks.pretooluse import dispatch as pretooluse_dispatch
 lazy from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -234,7 +236,13 @@ def _stderr_warn_offenders(source: str) -> list[int]:
     間接的な受け渡しは検出しない。仮引数へ渡る値の由来を追跡しないためである。
     """
     tree = ast.parse(source)
+    nodes = tuple(ast.walk(tree))
+    bindings = tuple(
+        node for node in nodes if isinstance(node, ast.Assign | ast.AnnAssign | ast.FunctionDef | ast.AsyncFunctionDef)
+    )
 
+    # ASTはこの解析中に変えない。値の伝播の各反復で同じ部分木を走査し直さない。
+    @functools.cache
     def has_warn_tag(node: ast.AST) -> bool:
         return any(
             isinstance(inner, ast.keyword) and inner.arg == "tag" and getattr(inner.value, "value", None) == "warn"
@@ -254,7 +262,7 @@ def _stderr_warn_offenders(source: str) -> list[int]:
 
     while True:
         before = (len(warn_names), len(warn_functions))
-        for node in ast.walk(tree):
+        for node in bindings:
             if isinstance(node, ast.Assign) and is_warn_value(node.value):
                 warn_names.update(target.id for target in node.targets if isinstance(target, ast.Name))
             elif (
@@ -273,7 +281,7 @@ def _stderr_warn_offenders(source: str) -> list[int]:
             break
 
     offenders: list[int] = []
-    for node in ast.walk(tree):
+    for node in nodes:
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "print":
             continue
         if not any(keyword.arg == "file" and ast.unparse(keyword.value) == "sys.stderr" for keyword in node.keywords):
@@ -524,5 +532,17 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
 
 def run_after_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """宣言読込の前提を満たして、試験対象のチェックへ公開hookから到達する。"""
-    prepare_read_delivery(payload, env_overrides)
-    return _run(payload, env_overrides)
+    with read_delivery_preparation_scope():
+        prepare_read_delivery(payload, env_overrides)
+        return _run(payload, env_overrides)
+
+
+def run_without_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """資料配送が対象外の判定試験で、配送だけを空の境界へ差し替える。
+
+    取得記録・宣言・配送自体の試験はrun_after_read_deliveryか公開hookを使う。
+    対象外の全宣言解析を準備として繰り返さず、他の判定と公開応答は製品を通す。
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(pretooluse_dispatch, "read_delivery", lambda *_args, **_kwargs: Decision())
+        return _run(payload, env_overrides)

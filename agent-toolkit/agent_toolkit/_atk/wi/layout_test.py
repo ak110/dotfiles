@@ -11,6 +11,11 @@ from agent_toolkit._atk.wi import add, entries, frontmatter, layout, mutations, 
 from agent_toolkit._testing import git_repository
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大1.468秒。"),
+)
 def test_fixed_path_survives_state_and_importance_changes(tmp_path: pathlib.Path) -> None:
     """同じ実体を保持し、全状態と重要フィルターが同じ保存値を読む。"""
     notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
@@ -42,6 +47,11 @@ def test_fixed_path_survives_state_and_importance_changes(tmp_path: pathlib.Path
     )
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.427秒。"),
+)
 def test_legacy_layout_migrates_together_and_retains_late_arrivals(tmp_path: pathlib.Path) -> None:
     """旧状態配置と旧種別配置を一度で移し、旧版からの追加も次回へ取り込む。"""
     first, second, third = (f"20261020-120000-00{number}.md" for number in (1, 2, 3))
@@ -96,6 +106,11 @@ def test_non_git_read_only_queue_migrates_without_git_operations(tmp_path: pathl
     assert not (tmp_path / ".git").exists()
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.921秒。"),
+)
 @pytest.mark.parametrize("same_result", [True, False])
 def test_concurrent_terminal_commits_compare_fixed_path_state_and_result(tmp_path: pathlib.Path, same_result: bool) -> None:
     """日時だけ異なる同等終了を統合し、結果が異なる分岐は保持する。"""

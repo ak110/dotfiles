@@ -6,15 +6,13 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._hooks import plugin_resources, work_contract
+from agent_toolkit._hooks import work_contract
 from agent_toolkit._hooks.pretooluse import shell_checks
 from agent_toolkit._testing import git_repository
-from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import (
     _plan_file_state_env,
     _run,
-    codex_execution_payload,
-    run_after_read_delivery,
+    run_without_read_delivery,
 )
 
 
@@ -27,22 +25,8 @@ def _existing_work_contract(tmp_path, monkeypatch):
 
 
 def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    """主体に応じた取得を観測して、シェル・MCP固有の判定を試す。"""
-    path = plugin_resources.skill_document_path("delegation", "SKILL.md")
-    codex = "turn_id" in payload
-    acquisition = {
-        "hook_event_name": "PostToolUse",
-        "tool_name": "Bash" if codex else "Skill",
-        "tool_input": {"command": f"cat -- {path}"} if codex else {"skill": "agent-toolkit:delegation"},
-        "tool_response": path.read_text(encoding="utf-8"),
-        "session_id": payload["session_id"],
-        **({"turn_id": payload["turn_id"]} if codex else {}),
-    }
-    if codex:
-        acquisition = codex_execution_payload(acquisition, pathlib.Path(env_overrides["TMPDIR"]), exit_code=0)
-    recorded = run_hook("posttooluse", acquisition, env_overrides)
-    assert recorded.returncode == 0
-    return run_after_read_delivery(payload, env_overrides=env_overrides)
+    """対象外の資料取得を代用し、シェル・MCP固有の公開判定を試す。"""
+    return run_without_read_delivery(payload, env_overrides=env_overrides)
 
 
 def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:

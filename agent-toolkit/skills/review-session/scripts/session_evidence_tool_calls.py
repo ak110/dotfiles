@@ -80,7 +80,7 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
                 "recorded_result_utf8_bytes": len(result.encode("utf-8")) if result is not None else None,
                 **(_persisted_result_metrics(entries[call.result_line], call.call_id) if call.result_line is not None else {}),
                 "read_range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
-                "summary": call.text,
+                "summary": call.text if len(call.text) <= 1200 else call.text[:600] + "…" + call.text[-600:],
             }
             events.append(event)
     return events
@@ -162,10 +162,27 @@ def _tool_call_collection_events(
     unresolved: list[_UnresolvedRecord],
     tools: list[str] | None,
     pattern: re.Pattern[str] | None,
+    since: datetime.datetime | None = None,
 ) -> list[dict[str, Any]]:
     """単一transcriptのメイン記録と全ての委譲先の記録のツール呼び出しを時刻順に返し、末尾へ要約を置く。"""
     events = _sorted_tool_call_events([event for item in collected for event in _tool_call_events(item, tools, pattern)])
-    return [*events, *_unresolved_events(unresolved), _tool_call_summary(events, collected)]
+    missing_timestamps = 0
+    if since is not None:
+        selected = []
+        for event in events:
+            try:
+                timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else None
+            except ValueError:
+                timestamp = None
+            if timestamp is None:
+                missing_timestamps += 1
+            elif timestamp > since:
+                selected.append(event)
+        events = selected
+    summary = _tool_call_summary(events, collected)
+    if since is not None:
+        summary["missing_timestamps"] = missing_timestamps
+    return [*events, *_unresolved_events(unresolved), summary]
 
 
 __all__ = ["_conversation_tool_calls", "definition_body_read_events", "resource_usage_events"]

@@ -77,6 +77,13 @@ def _missing_references() -> list[str]:
     return problems
 
 
+@pytest.mark.cpu_limit(
+    17.5,
+    reason=(
+        "全追跡Pythonをtokenize/AST解析し、コメントとdocstringの参照先を実Gitの全追跡名へ照合する（Linux"
+        " CI CPU合計最大8.586秒）。"
+    ),
+)
 def test_comment_and_docstring_file_names_exist() -> None:
     """コメントとdocstringのファイル名が追跡中のファイルとして実在する。"""
     problems = _missing_references()

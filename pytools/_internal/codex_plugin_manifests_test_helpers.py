@@ -23,7 +23,8 @@ _CODEX_PLUGIN_VALIDATOR = _CODEX_HOME / "skills/.system/plugin-creator/scripts/v
 _CODEX_PLUGIN_VALIDATOR_AVAILABLE = shutil.which("codex") is not None and _CODEX_PLUGIN_VALIDATOR.is_file()
 
 _CODEX_HOOK_PREFIX = (
-    'uv run --no-config --no-project --python 3.15 python "${PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py '
+    "cd / && uv run --no-cache --no-config --no-project --python 3.15 python "
+    '"${PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py '
 )
 
 
@@ -111,7 +112,7 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": "uv run --no-config --no-project --python 3.15 python "
+                                    "command": "uv run --no-cache --no-config --no-project --python 3.15 python "
                                     '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py permissionrequest'
                                     " || exit 1",
                                 }
@@ -213,7 +214,14 @@ async def _ignore_proxy_notification(_message: dict[str, Any]) -> None:
 class _ProxyCodexClient(codex_backend.JsonRpcProcess):
     """試験用履歴の注入だけに実験APIを有効化する。"""
 
-    async def request(self, method: str, params: dict[str, Any] | None = None, *, on_sent: Any = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Any = None,
+        on_sent_async: Any = None,
+    ) -> dict[str, Any]:
         if method == "initialize":
             params = {**(params or {}), "capabilities": {"experimentalApi": True}}
-        return await super().request(method, params, on_sent=on_sent)
+        return await super().request(method, params, on_sent=on_sent, on_sent_async=on_sent_async)

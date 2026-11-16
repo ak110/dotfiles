@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
-from agent_toolkit._agents_server import manager_resume, notify, shared_roots, status_file, wait_targets
+from agent_toolkit._agents_server import manager_resume, notify, service_turns, shared_roots, status_file, wait_targets
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._common import recorded_process, session_registry
 from agent_toolkit._common.next_action import ActionableError
@@ -70,7 +71,9 @@ class ManagerRecovery(manager_resume.ManagerResume):
 
     async def _recover_one(self, identifier: str) -> None:
         try:
-            await self._recover_delegation(identifier)
+            gate = service_turns.current()
+            async with gate.admit(new_turn=True, session_id=identifier) if gate else contextlib.nullcontext():
+                await self._recover_delegation(identifier)
         except Exception as error:  # pylint: disable=broad-exception-caught
             # 一つの子の復旧失敗で、独立した他の子の復旧を中断しない。waitへ原因を返す。
             self._recovery_errors[identifier] = error

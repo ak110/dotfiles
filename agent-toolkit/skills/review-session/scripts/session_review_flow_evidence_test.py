@@ -69,6 +69,13 @@ def test_prepare_retains_each_main_utterance_and_input(
     assert len(document.encode("utf-8")) <= 100_000
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "3区間1800呼出しを公開prepareへ渡し、文書予算を超えた時だけ連続呼出を集約する境界を検証する（Linux CI CPU合"
+        "計最大0.595秒）。"
+    ),
+)
 def test_prepare_compacts_only_consecutive_calls_when_minimum_rows_overflow(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

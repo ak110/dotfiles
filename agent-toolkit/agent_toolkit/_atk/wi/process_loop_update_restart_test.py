@@ -95,6 +95,7 @@ def test_restart_falls_back_to_exec_without_launcher_env(monkeypatch: pytest.Mon
             [
                 "/resolved/uv",
                 "run",
+                "--no-cache",
                 "--no-config",
                 "--no-project",
                 "--python",
@@ -191,23 +192,6 @@ def test_restart_spec_targets_dotfiles_checkout_entry_point(tmp_path: pathlib.Pa
         _restart_process_loop([str(tmp_path / "old" / "atk.py"), "wi", "process-loop"], tmp_path / "dotfiles")
 
     assert spec.read_text(encoding="utf-8").splitlines()[0] == str(canonical)
-
-
-def test_restart_spec_drops_resume_option_and_value(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """ファイルで値を受け渡した場合も再開オプションの除去を維持する。"""
-    spec = tmp_path / "restart-spec"
-    monkeypatch.setenv(_RESTART_SPEC_ENV, str(spec))
-
-    with pytest.raises(SystemExit):
-        _restart_process_loop(
-            [str(tmp_path / "atk.py"), "wi", "process-loop", "--resume", "session-id", "--no-alerts"],
-            resume_consumed=True,
-        )
-
-    lines = spec.read_text(encoding="utf-8").splitlines()
-    assert "--resume" not in lines
-    assert "session-id" not in lines
-    assert "--no-alerts" in lines
 
 
 def test_has_upstream_diff_reports_stderr_on_failure(

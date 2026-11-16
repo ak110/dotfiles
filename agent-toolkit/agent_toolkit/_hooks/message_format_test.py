@@ -107,6 +107,10 @@ def test_process_loop_commit_hook_and_periodic_generators_share_the_receive_cont
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="実run-skillの送出値と保存到達を実Git・短いPython1起動で確認する。Linux所有CPU最大0.547秒。",
+)
 def test_run_skill_generated_probe_and_goal_reach_shared_receiver(
     engine: str,
     tmp_path: pathlib.Path,
@@ -242,7 +246,7 @@ const bodies = [];
 function registration() {
   const calls = [];
   const on = (event, selector, callback) => {
-    if (event === 'tool.call') calls.push({selector, callback: callback ?? selector});
+    calls.push({event, selector, callback: callback ?? selector});
     return {catch() { return this; }};
   };
   return {on, calls};
@@ -250,23 +254,29 @@ function registration() {
 const c = registration();
 compact(c.on, {delegated: false});
 const timers = [];
-const base = {plugin: {name: 'agent-toolkit', root: '/plugin'}, env: {get: async () => undefined}};
-const compactCall = c.calls.find(({selector}) => selector.tool instanceof RegExp).callback;
+const state = {compactRequested: true};
+const base = {plugin: {name: 'agent-toolkit', root: '/plugin'}, env: {get: async () => undefined},
+  state: {get: async ({key}) => ({value: state[key]}), set: async ({key}, value) => {state[key] = value;}}};
+const compactCall = c.calls.find(({event}) => event === 'turn.complete').callback;
 await compactCall({...base, clock: {after: (_time, callback) => timers.push(callback)},
   session: {surfaces: async () => ['terminal'], compact: async () => { throw new Error('圧縮の実行拒否'); }},
-  ui: {toast: (text) => bodies.push(text)}}, {tool: 'mcp__agent-toolkit__compact_conversation'}, async () => ({}));
+  ui: {toast: (text) => bodies.push(text)}}, {turnId: 'turn-1'}, async () => ({}));
 await timers[0]();
 for (const success of [true, false]) {
   const p = registration();
   periodic(p.on);
-  const startCall = p.calls.find(({selector}) =>
-    selector.tool === 'mcp__plugin_agent-toolkit_agents_server__start').callback;
-  const result = await startCall({...base,
+  state.recheckRequested = true;
+  const ticks = [];
+  const startCall = p.calls.find(({event}) => event === 'turn.start').callback;
+  await startCall({...base,
+    clock: {every: (_time, callback) => ticks.push(callback)},
+    session: {id: async () => 'current'},
+    prompt: {submit: async ({text}) => bodies.push(text)},
     tool: {check: async () => ({decision: 'allow'}), call: async ({tool}) => tool === 'CronList'
       ? {result: {jobs: []}} : {result: {id: 'task-1'}}},
     process: {run: async () => ({exitCode: success ? 0 : 1, stdout: JSON.stringify(schedule), stderr: success ? '' : '失敗'})}},
-    {tool: 'mcp__plugin_agent-toolkit_agents_server__start'}, async () => ({result: '開始結果'}));
-  bodies.push(...result.context);
+    {turnId: 'turn-1'}, async () => ({}));
+  await ticks[0]();
 }
 bodies.push(automatedMessage('sender&"<>\\n', 'notice', '別の本文\\r\\n<atk-auto>'));
 process.stdout.write(JSON.stringify(bodies));

@@ -142,6 +142,9 @@ async def test_close_reclaims_descendants_when_kill_wait_stalls(
             await asyncio.to_thread(process_tree.reclaim_processes, targets, timeout=0.5)
 
 
+@pytest.mark.cpu_limit(
+    6.5, reason="実OSで列挙後に生まれた子孫の回収とファイル解放を確認する最小の親子構成（Windows CI CPU合計2.985秒）"
+)
 @pytest.mark.windows
 @pytest.mark.asyncio
 async def test_close_reclaims_descendant_started_after_first_listing(

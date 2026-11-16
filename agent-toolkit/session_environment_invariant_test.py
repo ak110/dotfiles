@@ -4,9 +4,19 @@ import ast
 import pathlib
 import re
 
+import pytest
+
 from agent_toolkit._testing import isolation
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "全製品Pythonから環境変数の定義をAST抽出する不変条件。試験専用"
+        + "のコードは既に除外している。同群Linux CI所有CPU最大0."
+        + "372秒。"
+    ),
+)
 def test_session_environment_inputs_are_isolated() -> None:
     """入力名の定義と直接参照を収集し、ホスト識別子の登録漏れを検出する。
 

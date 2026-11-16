@@ -1,8 +1,6 @@
 # WIの登録と回答
 
-## 推奨ワークフロー
-
-### WI投入の独立実行
+## WI投入の独立実行
 
 製品の変更・公開とは独立した改善要求は、エージェントが`atk wi submit`で別の投入実行へ引き継げる。
 同時に確定した同一対象の要求は、識別子ごとのJSON objectを1つの配列にして渡す。
@@ -20,7 +18,7 @@ atk wi submit --show REQUEST_ID
 状態照会で原因と再開先を確認し、成否が不明な要求は重ねて登録しない。
 入力の詳細は`atk wi submit --help`を参照する。
 
-### 登録方法
+## 登録方法
 
 | 登録方法 | 選ぶ場面 |
 | --- | --- |
@@ -38,7 +36,7 @@ atk wi submit --show REQUEST_ID
 モードを選ぶ引数や、本文を書く前の一律の最終承認は不要である。
 考慮漏れの指摘には原因を分析し、同じ理由の見落としへの処置と再発防止策を要求へ反映する。
 
-### UWIへの回答と状態確認
+## UWIへの回答と状態確認
 
 未回答のUWIは`atk wi answer`で順に確認して回答できる。
 ファイル名と回答を指定する場合は次の形式を使う。
@@ -57,3 +55,46 @@ atk wi answer <UWIファイル名> '<回答本文>'
 - `atk wi list --status=active`: 現在の項目
 - `atk wi list --status=processable`: 自動処理へ渡せる項目
 - `atk wi list --type=uwi --answered=no`: 未回答のUWI
+
+## 処理対象と検証OS
+
+`atk config repos`で登録済みリポジトリと属性を一覧表示する。
+`edit`は編集の許可、`process_loop`はprocess-loop（`atk wi process-loop`）の対象、`platforms`はテストを実行するOSを表す。
+`platforms`を省略した登録は`linux,windows`となり、リポジトリの内容から自動判定される値ではない。
+テストをWindowsで実行する対象は、次のように変更できる。
+
+```bash
+atk config repos set github.com/ak110/gv --platforms windows
+atk config repos set github.com/ak110/lc --platforms windows
+```
+
+この指定は他の属性を変更しない。
+Linux上のエージェントは、その環境で可能なクロスビルドなどを確認し、テストの合否はWindowsのCIで判断する。
+gv・lcはLinuxでも開発用のコンパイル確認ができるため、`platforms windows`はLinuxでの作業自体を禁止する設定ではない。
+Linuxで行うテストも検証へ含めたい場合は`--platforms linux,windows`を使う。
+
+## process-loopと再開予約
+
+`atk wi process-loop`は登録した対象を継続処理する。
+各対象は独立して終了・検収されるため、別の対象が処理中でも、終了した対象の新着を次の実行へ渡せる。
+`--once`は開始時の対象を各1回処理して終了し、未完了や所有待ちが残れば非0で終了する。
+
+次回に再開する会話は、常駐が停止中でも予約できる。
+
+```bash
+atk wi process-loop resume SESSION_ID
+atk wi process-loop resume auto
+atk wi process-loop resume
+atk wi process-loop status
+atk wi process-loop resume-cancel
+```
+
+`auto`は保存した未完了会話を選び、値なしの`resume`は次の起動でホストCLIの会話選択画面を開く。
+会話選択画面には対話端末が必要で、非対応のホストではIDか`auto`を指定する。
+予約コマンド自体は会話を起動せず、後から受理した予約で置き換えられる。
+予約はCLIの実起動で1回消費され、準備・更新・起動の前に失敗した場合は残る。
+旧`--resume`・`--auto-resume`オプションは使わない。
+
+`abort`は新しい対象の起動を止め、現在の実行が終了してから常駐を終了する。
+稼働中の会話は強制終了せず、未消費の再開予約も保持する。
+`instruct '追加指示'`は次に実起動する1会話へ渡し、`instruct-cancel`で取り消せる。

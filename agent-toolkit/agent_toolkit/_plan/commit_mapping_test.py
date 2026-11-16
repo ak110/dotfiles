@@ -231,22 +231,59 @@ def test_records_range_added_by_fast_forward(repo: pathlib.Path) -> None:
     base, group = _branch_with_two_commits(repo)
     git_repository.git_output(repo, "merge", "--ff-only", "group")
     event = commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
+    assert isinstance(event["commits"], list)
     assert event == {"commits": [_short(repo, oid) for oid in group], "awi": [WI_A]}
     assert commit_mapping.get_commits(repo, [event], [WI_A], {WI_A}) == {WI_A: [_short(repo, oid) for oid in group]}
 
 
 def test_rejects_range_with_merge_or_non_ancestor(repo: pathlib.Path) -> None:
-    """マージcommitを含む範囲と、前HEADがfirst-parentの祖先でない場合を理由と次の操作を示して拒否する。"""
+    """接続mergeと他レーンのcommitを除き、first-parent外の起点は拒否する。"""
     base, group = _branch_with_two_commits(repo)
     _commit(repo, "lane")
     git_repository.git_output(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "merge", "--no-ff", "-m", "merge", "group"
     )
-    with pytest.raises(commit_mapping.CommitMappingError, match="マージcommit") as merged:
-        commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
-    assert "cherry-pick" in merged.value.next_action
+    event = commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
+    assert isinstance(event["commits"], list)
+    assert len(event["commits"]) == 1
+    assert not set(event["commits"]) & {_short(repo, oid) for oid in group}
     with pytest.raises(commit_mapping.CommitMappingError, match="first-parentの祖先ではありません"):
         commit_mapping.commit_event(repo, "HEAD", group[1], [WI_A], {WI_A})
+
+
+@pytest.mark.parametrize("resolution", ["automatic", "ours", "theirs", "edited"])
+def test_merge_assignment_preserves_parent_choice_and_original_worktree(repo: pathlib.Path, resolution: str) -> None:
+    """両親のどちらかを選ぶ競合解消も記録し、自動統合と元indexの変更は混入させない。"""
+    path = repo / "shared"
+    path.write_text("base\n" + "unchanged\n" * 20 + "end\n", encoding="utf-8")
+    git_repository.commit_all(repo, "共通内容")
+    git_repository.git_output(repo, "switch", "-c", "other")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("end" if resolution == "automatic" else "base", "theirs"), encoding="utf-8"
+    )
+    git_repository.commit_all(repo, "相手の変更")
+    git_repository.git_output(repo, "switch", "main")
+    path.write_text(path.read_text(encoding="utf-8").replace("base", "ours"), encoding="utf-8")
+    previous = git_repository.commit_all(repo, "自身の変更")
+    merge = git_repository.run_git(repo, "merge", "--no-commit", "--no-ff", "other", check=False)
+    assert merge.returncode == (0 if resolution == "automatic" else 1)
+    if resolution != "automatic":
+        path.write_text(resolution + "\n" + "unchanged\n" * 20 + "end\n", encoding="utf-8")
+    merged = git_repository.commit_all(repo, "統合")
+    path.write_text("未保存の内容\n", encoding="utf-8")
+    git_repository.git_output(repo, "add", "shared")
+    before = git_repository.git_output(repo, "status", "--porcelain=v1")
+    if resolution == "automatic":
+        with pytest.raises(commit_mapping.CommitMappingError, match="接続mergeだけ"):
+            commit_mapping.commit_event(repo, merged, previous, [WI_A], {WI_A})
+    else:
+        assert commit_mapping.commit_event(repo, merged, previous, [WI_A], {WI_A}) == {
+            "commits": [_short(repo, merged)],
+            "awi": [WI_A],
+        }
+    assert git_repository.git_output(repo, "status", "--porcelain=v1") == before
+    assert path.read_text(encoding="utf-8") == "未保存の内容\n"
+    assert git_repository.git_output(repo, "show", ":shared") == "未保存の内容"
 
 
 def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:

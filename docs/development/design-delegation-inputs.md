@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)と[担当の責務と工程間の知識境界の設計記録](design-workflow-boundaries.md)から参照する主題別の記録である。
 
-## 委譲の共通契約
-
-### 委譲プロンプトと`<役割名>.subagent.md`
+## 委譲プロンプトと`<役割名>.subagent.md`
 
 メインは委譲先専用の`<役割名>.subagent.md`および作成規範を読み込まず、`<役割名>.subagent.md`は役割名で、作成規範は絶対パスで各担当へ渡す。
 agent-toolkitプラグイン内の`<役割名>.subagent.md`は`agents_server`がメインから受け取った役割名を自身のplugin rootの`share/`直下へ解決する。

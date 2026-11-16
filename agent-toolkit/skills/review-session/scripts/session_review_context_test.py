@@ -67,8 +67,8 @@ def test_prepare_keeps_whole_flow_and_delegate_statistics(
     handoff = json.loads(capsys.readouterr().out)
     assert pathlib.Path(handoff["conversation_path"]).read_text(encoding="utf-8") == document
     assert handoff["conversation_utf8_bytes"] == result["conversation_utf8_bytes"]
-    # 引継ぎでも統計の母集団は同じ親子の全記録である。
-    assert (handoff_work / "bundle" / "stats.jsonl").read_bytes() == (work / "bundle" / "stats.jsonl").read_bytes()
+    # 全担当を同じ概要へ含め、引き継ぎで使わない分析は生成しない。
+    assert not (handoff_work / "bundle" / "stats.jsonl").exists()
 
 
 def test_resume_context_rejects_unreadable_transcript(tmp_path: pathlib.Path) -> None:

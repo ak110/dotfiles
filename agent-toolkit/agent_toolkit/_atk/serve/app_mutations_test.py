@@ -170,6 +170,11 @@ async def test_mutation_waits_for_sync_lock(
     assert "変更後の本文" in _fixed_path(notes, "entry.md").read_text(encoding="utf-8")
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.25,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.737秒。"),
+)
 @pytest.mark.asyncio
 async def test_commit_api_keeps_changed_boolean(
     tmp_path: pathlib.Path,
@@ -193,6 +198,11 @@ async def test_commit_api_keeps_changed_boolean(
     assert await repeated.get_json() == {"changed": False}
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.408秒。"),
+)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entry_state", ["inbox", "adopted", "rejected"])
 async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Path, entry_state: str) -> None:

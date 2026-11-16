@@ -166,6 +166,13 @@ async def _wait_reason(owner: manager.AgentsServerManager, session_id: str) -> d
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "write", "shell"])
 @pytest.mark.parametrize("source", ["before-init", "after-init", "after-retry", "record"])
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "模擬CLI2台を使い通知位置4種とmode4種の公開start/waitで同会話への復帰を検証する最小系列（Linux CI CP"
+        "U合計最大1.016秒）。"
+    ),
+)
 async def test_weekly_retry_continues_same_session_on_api(
     launch_kind: state.LaunchKind, source: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

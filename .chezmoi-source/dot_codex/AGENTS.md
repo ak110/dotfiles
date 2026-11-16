@@ -17,6 +17,9 @@ Codex固有の公開機能と常時規範との差分を規定し、メインエ
   stdio形式のMCPサーバーは起動から登録完了までに数秒を要する場合があるため、起動直後に見つからない場合は一定時間待機したうえで、別の`exec`から再度照会して存在の有無を判定する。
   観測結果と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日」に記載されている。
 - コマンド出力の取得と待機処理は、`02-agent-operations.md`「出力の保持と観測」「待機と背景実行」の結果契約に従う。
+  hookの対象一覧は、プラグイン名を起動通知の実在するrootへ対応付け、スキル名は`skills/<名前>/SKILL.md`、参照資料はroot直下と`skills/`配下の候補から一意な実在パスを解決して取得する。
+  明示された実パスは、その実体を取得対象とする。
+  スキル本文を取得してその手順を適用し、参照資料・保存された通知は下記の読取手段を使う。
   ファイルの読み取りには`cat -- <絶対パス>`または`sed -n '<開始行>,<終了行>p' -- <絶対パス>`を使用し、JSONには`jq`を使用する。
   これらの例はPOSIXシェルを前提とする。
   `shell`を指定しないコマンドがPowerShellで動く環境では、`Get-Command bash`などで実在を確認したbashを`exec_command`の`shell`へ指定して同じコマンドを実行し、インストール先を推測して指定することは避ける。
@@ -44,9 +47,8 @@ Codex固有の公開機能と常時規範との差分を規定し、メインエ
   `exec_command`を呼び出す場合は、返却されたオブジェクト全体を`text(r)`へ渡し、本文、診断情報、`exit_code`、`session_id`を保持する。
   外側の`cell_id`は`functions.wait`、内側の`session_id`は`write_stdin`を用いて同一ターン内に終了まで回収する。
   `exit_code`が存在せず`session_id`が存在する結果は実行中として扱い、同一実行のコマンドを重複して再発行することは避ける。
-  独立作業と受信済み通知の処理が尽きた長い終了待ちでは、外側の先頭pragma（`// @exec: {"yield_time_ms": 120000}`）、`functions.wait`、空入力の`write_stdin`の`yield_time_ms`に120,000msを指定することを目安とする。
-  起動時の上限30,000msとCLI自身の期限を保ち、独立作業・受信済み通知・対話・短い操作では早く制御を返し、待機状況の報告だけなら長めに回収する。
-  観測条件と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
+  長い終了待ちの所有者と二層の回収時間は、`agent-toolkit:delegation/references/codex-runtime-waiting.md`に従って選ぶ。
+  同一turnで回収する場合も、起動時の上限30,000msとコマンド自身の有限期限を保つ。
 - 明示的な指示がない限り、Officeファイルは原本を直接変更せずに取り扱う。
   CSVファイルは利用側の要求仕様に従って処理し、仕様が不明な場合はUTF-8（BOM付き）で保存する。
 - `apply_patch`を用いて既存ファイルを全面的に置換する場合も、同一パスに対するUpdate操作を使用する。
@@ -161,6 +163,7 @@ test "$status" -eq 0
 
 - `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「認可を要する操作」に定義された第三者の範囲
 - `01-agent.md`「役割分担」の原則
+
 依頼内容、WI、または成立済みの承認事項において明示された対象の範囲外にある第三者のシステム、外部サービス、外部リポジトリ、または個人へ作用を及ぼす操作は、対象と操作内容を明確に特定した事前承認を得てから実行する。
 該当する操作には、外部への送信、投稿、PRやIssueの作成、コードの提供、アカウントの作成、認証試行や脆弱性検証などが含まれる。
 許可範囲内であると確定できない対象は、すべて範囲外として扱う。
@@ -336,6 +339,8 @@ QCDの定義、長い工程の進捗と目標の比較、対象・操作・設�
 確認は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
 
 先送りするのは、影響調査や設計選定をそのセッションで実施できない事象、合意を同じセッションで得られない事象、時間経過や外部公開を待つ残工程、別リポジトリの新しい計画が必要な事象、是正先のリポジトリがこのホストで編集可でない場合に限る。
+process-wiでは、処理を終えたリポジトリでも律速でなく資源に余力があれば、巡回中に見つかった不良・改善を同じ巡回で処理する。
+その対象の今回分が済んだことだけを根拠とする判断は、別リポジトリの新しい計画が必要という先送り理由から除く。
 編集可でないリポジトリは、設定の扱いに従ってAWIを投入するか、必要な変更を報告する。
 スキルが定める次回送りの経路も、本節の先送り条件の内側で使う。
 進行を妨げる欠陥はその場で直す。
@@ -409,7 +414,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
 発話は常体とする。
 ハーネスやhookの英文を言語指定として引き継がない。
 内部連絡・委譲の返却と、言語の是正の扱いは`agent-toolkit/share/agent-conduct-details.md`「使用言語」に従う。
-成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章の対比フレーミングと限定の書き方は、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」に従う。
+成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章の対比・限定、防御的な説明、自明な補足の扱いは、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」に従う。
 </atk-auto>
 
 <atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/02-agent-operations.md">
@@ -509,6 +514,9 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
 
 ### `atk`の呼び出し
 
+- 同じセッションで`atk`の不具合や遅さを直した場合は、修正を検証した後の残工程で、修正を含むworktreeの`agent-toolkit/scripts/atk`（Windowsでは`agent-toolkit/scripts/atk.cmd`）から起動する。
+  起動時に通知される配布版の起動部分は、公開と配布の前の修正を含まないためである。
+  hookとMCPはセッションの途中では切り替わらず、公開後に起動したセッションから修正済みの版になる。
 - 複数対象の取得は、`atk config get execute_model chores_model`のように対応するコマンドへまとめて渡す。
   対象の指定形は公開ヘルプで確かめ、出力量は対象限定・要約の公開入力で抑える。
   `atk`はエージェント環境で長い出力を自動保存して保存先と行数を示すため、保存・選別の目的で外側の繰返しや出力接続を加えない。

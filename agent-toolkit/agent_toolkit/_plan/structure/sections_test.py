@@ -9,6 +9,7 @@ from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._plan.structure import constants as plan_constants
 from agent_toolkit._plan.structure import materials as plan_materials
 from agent_toolkit._plan.structure import parsing as plan_parsing
+from agent_toolkit._plan.structure import references as plan_references
 from agent_toolkit._plan.structure import sections as plan_sections
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_structure_support import (
@@ -27,7 +28,24 @@ from agent_toolkit._testing.plan_structure_support import (
 
 pytestmark = pytest.mark.windows
 
+
+@pytest.mark.parametrize(
+    "record", ["", "原因を訂正し、期待結果で再検証した。", "| 項目 | 内容 |\n| --- | --- |\n| 対策 | 訂正 |"]
+)
+def test_bug_file_short_record_boundary(record: str) -> None:
+    """表なし短記録だけを受理し、空や不完全な詳細表へ降格しない。"""
+    errors = plan_sections.check_bug_file_structure(f"# 調査\n\n### 事象\n\n{record}\n")
+    assert bool(errors) is (not record or "|" in record)
+
+
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
+
+
+def test_bug_file_accepts_previous_action_table_for_reading() -> None:
+    """専用行のない保存済み調査表は読み取り互換と移行案内を保つ。"""
+    previous = "\n".join(line for line in _BUG_FILE_CONTENT.splitlines() if not line.startswith("| 処置が生む問題の検討 |"))
+    assert not plan_sections.check_bug_file_structure(previous)
+    assert plan_sections.has_legacy_bug_investigation_table(previous)
 
 
 @pytest.mark.parametrize(
@@ -613,10 +631,19 @@ def test_progress_log_rows_missing_table_states_next_action(content: str) -> Non
     ],
 )
 def test_transferred_action_requires_registered_wi(
-    tmp_path: pathlib.Path, reason: str, registered: bool, notes_exist: bool, rejected: bool, *, human_format: bool
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+    registered: bool,
+    notes_exist: bool,
+    rejected: bool,
+    *,
+    human_format: bool,
 ) -> None:
     """移管にはWI名と実在が必要で、notes不在時は実在を確認できなかった旨を通知する。"""
     notes = tmp_path / "notes"
+    # この入力は登録ファイルの有無を扱い、Git履歴は持たない。
+    monkeypatch.setattr(plan_references, "_deleted_registration", lambda *_args, **_kwargs: None)
     if notes_exist:
         notes.mkdir()
     if registered:

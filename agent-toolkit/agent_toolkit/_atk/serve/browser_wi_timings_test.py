@@ -28,7 +28,6 @@ async def test_answer_save_records_whole_operation_linked_to_requests(browser_ha
     """
     harness = browser_harness
     page = harness.page
-    harness.operations.enable_file_mutations()
     await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
     # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
     sent: list[dict] = []

@@ -131,3 +131,24 @@ def test_legacy_path_lists_reject_invalid_declaration(tmp_path: pathlib.Path, pa
     declaration = task_documents.read_declaration_unchecked(path)
     assert isinstance(declaration, str)
     assert "継続入力の書式が不正" in declaration
+
+
+@pytest.mark.parametrize("heads,valid", [(["状態:"], False), ("状態:", False), (["状態: drafted"], True)])
+def test_result_heads_require_complete_values(tmp_path, heads, valid):
+    path = tmp_path / "role.subagent.md"
+    path.write_text(
+        "---\n"
+        + json.dumps(
+            {
+                "mode": "delegate",
+                "model_type": "execute",
+                "writes_worktree": False,
+                "required_inputs": [],
+                "result_heads": heads,
+            }
+        )
+        + "\n---\n",
+        encoding="utf-8",
+    )
+    result = task_documents.read_declaration_unchecked(path)
+    assert isinstance(result, task_documents.TaskDocumentDeclaration) is valid

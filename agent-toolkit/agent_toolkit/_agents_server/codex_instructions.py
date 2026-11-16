@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import typing
 import uuid
@@ -22,7 +21,7 @@ from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import inherited_venv, mcp_environment, plugin_environment
+from agent_toolkit._common import inherited_venv, mcp_environment, plugin_environment, runtime_environment
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 
 if typing.TYPE_CHECKING:
@@ -137,7 +136,7 @@ class CodexInstructionsMixin:
         plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
         parent_environment = getattr(client, "parent_environment", None)
         if parent_environment is None:
-            parent_environment = dict(os.environ)
+            parent_environment = dict(runtime_environment.environment())
             inherited_venv.strip_inherited_venv(parent_environment)
         return {
             "mcp_servers": {
@@ -157,7 +156,9 @@ class CodexInstructionsMixin:
                         _delegated_session.OWNER_SESSION_ENV: owner_session_id,
                         "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
                         _delegated_session.PLUGIN_ROOT_ENV: str(plugin_root),
-                        plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
+                        plugin_environment.RUNTIME_DATA_ENV: str(
+                            plugin_environment.runtime_data(runtime_environment.environment())
+                        ),
                     },
                     "env_vars": list(mcp_environment.runtime_environment_variable_names(parent_environment)),
                     "default_tools_approval_mode": "approve",
@@ -192,7 +193,7 @@ class CodexInstructionsMixin:
         root = plugin_roots.SERVER_PLUGIN_ROOT
         pyfltr = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
         pyfltr["args"] = [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(root)) for arg in pyfltr.get("args", [])]
-        environment = getattr(client, "parent_environment", None) or os.environ
+        environment = getattr(client, "parent_environment", None) or runtime_environment.environment()
         pyfltr["env_vars"] = list(mcp_environment.runtime_environment_variable_names(environment))
         pyfltr["default_tools_approval_mode"] = "approve"
         # pluginを無効にする探索にも、出力省略の回収案内をPostToolUse（Bash）から届ける。

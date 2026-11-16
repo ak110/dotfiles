@@ -13,6 +13,10 @@ from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("全配布資料の読込表を解析し、観測可能な条件に配送操作がない宣言を検出する（Linux CI CPU合計最大0.585秒）。"),
+)
 def test_observable_read_conditions_have_delivery_operations():
     """受領・起動・確認・保存の条件が、配送操作か対象外の理由を持つ。"""
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / "agent-basics/skills"]
@@ -40,6 +44,13 @@ def test_role_writing_skill_matches_operation_bootstrap(role):
     assert not started or set(started) == {expected}, (role, started, expected)
 
 
+@pytest.mark.cpu_limit(
+    8.5,
+    reason=(
+        "skills/share/project/basics全資料の宣言と参照を解析し、任意の資料の無効な配送経路を検出する（Linux"
+        " CI CPU合計最大4.031秒）。"
+    ),
+)
 def test_all_read_tables_have_valid_declarations_and_routes():
     """未分類、資料の不在、未登録操作、経路の無い参照を拒否する。"""
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]
@@ -64,6 +75,10 @@ def test_all_read_tables_have_valid_declarations_and_routes():
     assert not errors, "\n".join(errors)
 
 
+@pytest.mark.cpu_limit(
+    3.25,
+    reason=("全資料の宣言を解析してから同時読込の関係を照合し、別資料間の重複を検出する（Linux CI CPU合計最大1.475秒）。"),
+)
 def test_documents_read_together_do_not_repeat_read_table_rows():
     """同じ読込表の1行で同時に全文を読む資料どうしが、同じ条件と資料の行を重ねないことを確かめる。"""
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]
@@ -254,11 +269,62 @@ def test_delegation_input_material_wrapper_reaches_quality_owner():
 _SECTION_REFERENCE = re.compile(r"(?:`([^`]+\.md)`|\]\(([^)#]+\.md)(?:#[^)]*)?\))((?:「[^」]+」)+)")
 
 
+def _missing_condition_sections(source: pathlib.Path, plugin_root: pathlib.Path) -> list[str]:
+    """本文の適用・取得を名指す条件だけを検査し、判断場面の引用は含めない。"""
+    errors = []
+    for row in read_triggers.parse_tables(source, plugin_root):
+        headings = re.findall(r"「([^」]+)」(?:を適用する前|へ入る時点)", row.condition)
+        own = re.findall(r"本書「([^」]+)」", row.condition)
+        for heading in set(headings + own):
+            paths = (source,) if heading in own else (source, *row.documents)
+            if not any(
+                shown and re.fullmatch(r"#{1,6}\s+" + re.escape(heading) + r"\s*#*\s*", text)
+                for path in paths
+                for _number, text, shown in read_triggers.document_lines(path.read_text(encoding="utf-8"))
+            ):
+                errors.append(f"{source}:{row.line}: 条件が名指す「{heading}」の本文へ到達できない")
+    return errors
+
+
+@pytest.mark.cpu_limit(
+    1.5, reason="実規範全体で別ファイルの参照先の見出し到達性を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.602秒。"
+)
+def test_read_conditions_reach_named_section_bodies():
+    roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / "agent-basics/skills"]
+    errors = []
+    with read_triggers.resolution_scope():
+        for source in sorted({path for root in roots for path in root.rglob("*.md")}):
+            errors.extend(_missing_condition_sections(source, _PLUGIN_ROOT))
+    assert not errors, "\n".join(errors)
+
+
+def test_named_condition_detects_split_body_but_not_judgment_context(tmp_path):
+    """旧資料の実在だけでは通さず、移動先・自己参照・判断場面を区別する。"""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name": "agent-toolkit"}', encoding="utf-8")
+    source = tmp_path / "consumer.md"
+    old = tmp_path / "old.md"
+    detail = tmp_path / "detail.md"
+    old.write_text("# 旧資料\n", encoding="utf-8")
+    detail.write_text("# 判定\n", encoding="utf-8")
+    table = "| 時点または条件 | 全文読む資料 |\n| --- | --- |\n"
+    source.write_text(table + "| 「判定」を適用する前 | `old.md` |\n", encoding="utf-8")
+    assert _missing_condition_sections(source, tmp_path)
+    source.write_text(table + "| 「判定」を適用する前 | `detail.md` |\n", encoding="utf-8")
+    assert not _missing_condition_sections(source, tmp_path)
+    source.write_text("# 判定\n" + table + "| 本書「判定」を適用する前 | `old.md` |\n", encoding="utf-8")
+    assert not _missing_condition_sections(source, tmp_path)
+    source.write_text(table + "| 本書「判定」を適用する前 | `detail.md` |\n", encoding="utf-8")
+    assert _missing_condition_sections(source, tmp_path)
+    source.write_text(table + "| 「コードの簡潔さ」で共通化を判断する時 | `old.md` |\n", encoding="utf-8")
+    assert not _missing_condition_sections(source, tmp_path)
+
+
 def _missing_section_references(source: pathlib.Path, plugin_root: pathlib.Path) -> list[str]:
     """資料名の直後に節名を添えた参照のうち、指された資料にその見出しが無いものを返す。
 
     資料を条件別のファイルへ分けた後も、分ける前の資料名のまま節名を指す参照は、パスの実在の検査では検出できない。
-    資料名と節名の間に助詞を挟む参照（節の中の項目名を指す書き方）と、解決できない例示のパスは対象にしない。
+    資料名と節名の間に助詞を置く参照（節の中の項目名を指す書き方）と、解決できない例示のパスは対象にしない。
     """
     errors: list[str] = []
     context = ""
@@ -323,6 +389,10 @@ def _missing_bare_share_sections(source: pathlib.Path, plugin_root: pathlib.Path
     return errors
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("全配布資料の節参照を実見出しへ解決し、別資料の変更で生じる参照欠落を検出する（Linux CI CPU合計最大0.786秒）。"),
+)
 def test_section_references_point_to_documents_that_have_the_heading():
     """規範が資料名と節名で指す基準は、指された資料を全文読めば得られる。"""
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]

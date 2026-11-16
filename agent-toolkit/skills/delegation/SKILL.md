@@ -49,7 +49,7 @@ hookの通知を待たずに選び、同じ版の取得済み本文は再利用�
 | 判定不能や拒否で待機を開始できない時、`atk agents wait`が終了コード4・8・10、または待機対象0件の非ゼロで終了した時、待機呼び出しがホストの上限により失敗した時、ホストからバックグラウンド待機の停止通知を受信した時、委譲先や自身のツール呼び出しが終了ステータスを返さずに終わった時、`agents_server`のMCPサーバーが再起動した時（操作対象外: ツールと結び付かない判断） | `references/wait-anomalies.md`の該当節 | | | |
 | 稼働中の委譲先へ追加指示を送る前（操作対象外: ツールと結び付かない判断） | `references/base-contract.md` | | | |
 | 委譲済みの要求について自ら本文を読む、追加調査する、回答を作成する前（操作対象外: ツールと結び付かない判断） | 本書「継続と新規起動」、`references/routing.md` | | | |
-| 同一worktreeに対して後続または並列の書き込み担当を起動する前（shellを除く。shellは本書「explore・shellの起動」に従う） | `references/mandatory-rules.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
+| 同一worktreeに対して後続または並列の書き込み担当を起動する前（shellを除く。shellは`references/delegation-lightweight.md`「explore・shellの起動」に従う） | `references/mandatory-rules.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
 | 実装担当・レビュー担当のworktreeと書込所有権を割り当てる前、およびそれらの担当を起動する前 | `references/implementation-worktree.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/implementation-worktree.md` | |
 | 委譲先からの完了報告を受領して検収する前（explore・shellを除く） | `references/receiving.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/receiving.md` | |
 | 委譲先からの完了報告を受領して検収する前（explore・shellを除く） | `references/mandatory-rules.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |

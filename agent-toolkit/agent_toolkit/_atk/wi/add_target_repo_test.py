@@ -479,6 +479,11 @@ def test_editor_nonzero_exit_guides_body_file(
     assert "--body-file" in stderr
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.351秒。"),
+)
 @pytest.mark.parametrize("input_kind", ["editor", "body-file"])
 def test_add_preserves_remote_entry_and_draft(
     monkeypatch: pytest.MonkeyPatch,

@@ -331,6 +331,13 @@ def test_end_requires_exactly_one_mode(capsys: pytest.CaptureFixture[str], argum
 
 
 @pytest.mark.usefixtures("share_package_caches")
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "実配布launcherでsubmission beginと不足/正常endの3起動を行い、記録の保持と解消を確かめる（Linux "
+        "CI CPU合計最大1.301秒）。"
+    ),
+)
 def test_distributed_launcher_checks_findings_without_inherited_pythonpath(
     claude_home: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:

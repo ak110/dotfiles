@@ -1,6 +1,7 @@
 # レビューイーの品質基準と運用
 
 レビューイー側の品質基準は、`agent-basics:review-standards/references/reviewee.md`で定義している。
+採否と修正の判断は、先に`agent-basics:review-standards/SKILL.md`の初動を適用し、条件が成立する詳細資料へ進む。
 呼び出し元の読込条件を引き継ぎ、本書の運用条件と条件に該当する正式な資料の全文を読む。
 両方に同じ主題があれば、両方の全文を確認する。
 範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。

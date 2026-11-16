@@ -43,11 +43,9 @@ def test_start_wait_events(
     notes = _setup_notes(tmp_path)
     clock = [1000.0]
     active = [True]
-    aborted = [False]
     records: list[tuple[str, dict[str, Any]]] = []
     monkeypatch.setattr(_pl_watch.time, "time", lambda: clock[0])
     monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: active[0])
-    monkeypatch.setattr(_pl_control, "consume_process_loop_abort", lambda: aborted[0])
 
     def log(name: str, **fields: Any) -> None:
         records.append((name, fields))
@@ -64,7 +62,7 @@ def test_start_wait_events(
         elif event == "activity-ended":
             active[0] = False
         else:
-            aborted[0] = True
+            _pl_control.cmd_process_loop_abort()
         return False
 
     monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
@@ -127,6 +125,11 @@ def test_start_gate_waits_only_for_add_awi_by_user_to_target(
     assert "待機条件が解除されました" in output
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.462秒。"),
+)
 @pytest.mark.parametrize("reason", ["activity", "uwi", "both"])
 def test_enter_releases_start_wait(
     monkeypatch: pytest.MonkeyPatch,

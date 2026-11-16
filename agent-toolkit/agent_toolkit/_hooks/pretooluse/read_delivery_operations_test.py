@@ -8,8 +8,10 @@ import tempfile
 
 import pytest
 
+from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common.read_triggers import ReadTrigger, parse_tables
+from agent_toolkit._hooks import repository_protection
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
 from agent_toolkit._testing.pretooluse_support import _additional_context
@@ -45,7 +47,17 @@ def test_real_test_file_declaration_guides_both_standards_and_consumes_acquisiti
     root = pathlib.Path(__file__).resolve().parents[3]
     owner = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
     references = tuple(owner.parent / "references" / name for name in ("testing.md", "testing-selection.md"))
-    rows = parse_tables(owner, root, strict=True)
+    # 正規の試験編集行を使い、今回の取得消費に関係する2基準へ配送対象を限定する。
+    rows = [
+        row
+        for row in parse_tables(owner, root, defer_material=True)
+        if all(reference.name in row.material for reference in references)
+    ]
+    assert rows
+    assert all(set(references).issubset(target.path for target in row.targets) for row in rows)
+    # 取得状態に関係しない活動記録・Git保護と、非選択行の資料解決を反復しない。
+    monkeypatch.setattr(hook, "_record_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(repository_protection, "check", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
     target = tmp_path / filename
@@ -93,7 +105,7 @@ def test_real_test_file_declaration_guides_both_standards_and_consumes_acquisiti
     assert first.returncode == 0 and not first.stderr
     assert json.loads(first.stdout).get("hookSpecificOutput", {}).get("permissionDecision") != "deny" if first.stdout else True
     for reference in references:
-        assert (str(reference) in _additional_context(first)) is (not acquired)
+        assert (f"agent-basics:writing-standards/references/{reference.name}" in _additional_context(first)) is (not acquired)
         _assert_acquired(payload, reference, acquired)
     if not acquired:
         acquire()
@@ -105,7 +117,7 @@ def test_real_test_file_declaration_guides_both_standards_and_consumes_acquisiti
         else True
     )
     for reference in references:
-        assert str(reference) not in _additional_context(repeated)
+        assert f"agent-basics:writing-standards/references/{reference.name}" not in _additional_context(repeated)
         _assert_acquired(payload, reference, True)
 
 

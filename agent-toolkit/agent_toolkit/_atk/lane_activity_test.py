@@ -26,6 +26,9 @@ from agent_toolkit._testing.session_release_support import retained_executor
 
 
 @pytest.mark.parametrize("condition", ["unintegrated", "dirty", "unmerged", "active-session", "identity-less-session"])
+@pytest.mark.cpu_limit(
+    4.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.114秒。"
+)
 def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:
@@ -68,6 +71,9 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
     assert deleted["removed"] == ["lane-01"]
 
 
+@pytest.mark.cpu_limit(
+    3.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.764秒。"
+)
 def test_delete_treats_session_whose_recorded_processes_exited_as_finished(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -87,6 +93,9 @@ def test_delete_treats_session_whose_recorded_processes_exited_as_finished(
     assert deleted["removed"] == ["lane-01"]
 
 
+@pytest.mark.cpu_limit(
+    4.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.011秒。"
+)
 def test_cleanup_uses_branch_refs_when_tags_have_the_same_names(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -107,6 +116,9 @@ def test_cleanup_uses_branch_refs_when_tags_have_the_same_names(
     assert f"refs/tags/{record['branch']}" in refs and "refs/tags/main" in refs
 
 
+@pytest.mark.cpu_limit(
+    4.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.978秒。"
+)
 def test_live_external_process_holds_worktree_until_it_ends(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -133,6 +145,13 @@ def test_live_external_process_holds_worktree_until_it_ends(
 
 
 @pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実Git worktreeと生存所有者を保持し、稼働中/無応答で回収を拒否する代表2条件。"
+        "同じ最小実境界群の所有CPU観測を基準に、通常上限と分ける。"
+    ),
+)
 def test_lane_preserves_session_when_running_or_owner_unresponsive(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal: bool
 ) -> None:
@@ -161,6 +180,9 @@ def test_lane_preserves_session_when_running_or_owner_unresponsive(
 
 
 @pytest.mark.parametrize("entrypoint", ["exit", "process-loop"])
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.640秒。"
+)
 def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -208,6 +230,9 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     assert lane.time.monotonic() - started < 10
 
 
+@pytest.mark.cpu_limit(
+    3.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.685秒。"
+)
 def test_exit_entrypoint_cleans_resources_even_when_interactive_host_is_unidentified(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -228,6 +253,9 @@ def test_exit_entrypoint_cleans_resources_even_when_interactive_host_is_unidenti
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("exit_code", [0, 7])
+@pytest.mark.cpu_limit(
+    3.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.560秒。"
+)
 def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, exit_code: int
 ) -> None:
@@ -280,6 +308,9 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
     assert repo.is_dir() and selected.is_file()
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.901秒。"
+)
 def test_integrate_ignores_session_in_nested_lane_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -301,6 +332,12 @@ def test_integrate_ignores_session_in_nested_lane_worktree(
 
 
 @pytest.mark.parametrize("relative", [".", "direct"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実Gitの統合先/子dirを使う合意外のwriterを検出する代表2条件。同じ最小実境界群の所有CPU観測を基準に、通常上限と分ける。"
+    ),
+)
 def test_integrate_rejects_session_in_target_outside_nested_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], relative: str
 ) -> None:
@@ -311,6 +348,9 @@ def test_integrate_rejects_session_in_target_outside_nested_worktree(
     assert code == 2 and "現在の書込所有に含まれない担当が稼働中" in stderr
 
 
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.739秒。"
+)
 def test_worktree_activity_ignores_nested_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -326,6 +366,13 @@ def test_worktree_activity_ignores_nested_worktree(
 
 
 @pytest.mark.parametrize("source", ["cwd", "argv"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "プロセス列挙は代用し、実Git worktreeの入れ子所属だけをcwd/argvで検収する。"
+        "同じ最小実境界群の所有CPU観測を基準に、通常上限と分ける。"
+    ),
+)
 def test_process_activity_ignores_nested_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], source: str
 ) -> None:
@@ -382,6 +429,9 @@ def test_release_deadline_keeps_delegated_cap(
 @pytest.mark.parametrize("entrypoint", ["delete", "cli", "reuse", "fixed", "residual"])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.cpu_limit(
+    4.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.191秒。"
+)
 async def test_lane_releases_retained_executor_through_owner_monitor(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -458,6 +508,9 @@ async def test_lane_releases_retained_executor_through_owner_monitor(
 @pytest.mark.parametrize("activity", ["external-process", "new-session"])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.cpu_limit(
+    4.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.419秒。"
+)
 async def test_lane_returns_independent_activity_after_owner_release_without_repeating(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -528,6 +581,9 @@ async def test_lane_returns_independent_activity_after_owner_release_without_rep
             assert not worktree.exists() and result["removed"] == ["lane-01"]
 
 
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.734秒。"
+)
 def test_unreadable_registration_stops_destructive_operations_with_recovery(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -559,6 +615,9 @@ def test_unreadable_registration_stops_destructive_operations_with_recovery(
     assert pathlib.Path(record["record_path"]).is_file()
 
 
+@pytest.mark.cpu_limit(
+    4.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.205秒。"
+)
 def test_readable_registration_of_another_worktree_is_excluded_from_decision(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

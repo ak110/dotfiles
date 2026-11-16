@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、Codex委譲先の週次利用枠の記録である。
 
-## backend構成と起動
-
-### Codex委譲先の週次利用枠の自動reset
+## Codex委譲先の週次利用枠の自動reset
 
 `codex_auto_reset`は既存の設定保存へ接続する真偽値設定で、既定値を`false`とする。
 公開操作は`atk config get codex_auto_reset`と`atk config set codex_auto_reset true`で、無効化には値`false`を指定する。

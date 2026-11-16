@@ -64,6 +64,7 @@ H1タイトルだけでは問題と対策の内容を読み取れない場合に
 - `../../review-session/references/analysis-inputs.md`
 - `../../review-session/references/analysis-triage.md`
 - `../../review-session/references/analysis-actions.md`
+
 実施方法の見送り根拠は、同資料「コストの無駄の確認」に示された比較結果に対応付け、欠陥の有無に関する結論と、費用対効果の観点による採否とを明確に区別して記載する。
 
 候補一覧に含まれる候補に対応する行には、行末の括弧内に候補ID（`c0006`の形式。複数の場合は読点で区切る）を記載する。

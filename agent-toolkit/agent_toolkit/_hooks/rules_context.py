@@ -58,6 +58,7 @@ BACKGROUND_TASKS_DISABLED_NOTICE = (
 SHARE_DIR = plugin_resources.plugin_root() / "share"
 # SHARE_DIRはplugin rootの算出にも使うため基点を保ち、役割別の規範だけ`share/rules/`から読む。
 RULES_DIR = SHARE_DIR / "rules"
+COMMON_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-common.claude-code.md"
 MAIN_RULES_PATH = RULES_DIR / "rules-main.md"
 MAIN_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-main.claude-code.md"
 MAIN_RULES_CODEX_PATH = RULES_DIR / "rules-main.codex.md"
@@ -93,10 +94,33 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     """
     parts: list[str] = []
     if not delegated:
+        startup_instruction = ""
         if raw := os.environ.get(mcp_environment.SESSION_START_INPUT_ENV):
             data = json.loads(raw)
             if not isinstance(data, dict) or data.get("source") not in ("process-loop", "run-skill"):
                 raise ValueError("起動入力はsourceがprocess-loopまたはrun-skillのJSON objectで指定する")
+            identity_request = data.pop("identity", None)
+            resume_only = False
+            if identity_request is not None:
+                from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+                response = startup_identity.read(os.environ)
+                if response is not None and response.get("ack") and response.get("resume_only"):
+                    parts.append(
+                        message_format.auto_message(
+                            "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元のgoalを確認し、"
+                            "最初の未完了工程から続行せよ。未達goalを達成扱いに変えず、成功済みの操作を繰り返すな。",
+                            source="process-loop",
+                            kind="resume",
+                        )
+                    )
+                    resume_only = True
+                    manifest = data.get("manifest")
+                    if not isinstance(manifest, str) or not pathlib.Path(manifest).is_absolute():
+                        raise ValueError("再開時のmanifestは絶対パスで指定する")
+                    startup_instruction = json.loads(pathlib.Path(manifest).read_text(encoding="utf-8")).get("instruction", "")
+                    if not isinstance(startup_instruction, str):
+                        raise ValueError("再開時の追加指示には文字列が必要")
             references = (
                 "agent-toolkit:process-wiのreferences/all-repos.md「結果と終了」"
                 if data["source"] == "process-loop"
@@ -105,17 +129,18 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
             )
             if data["source"] == "run-skill" and data.get("batch_manifest"):
                 references += "、agent-toolkit:review-sessionのreferences/batch.md"
-            parts.append(
-                message_format.auto_message(
-                    "起動入力: "
-                    + html.escape(json.dumps(data, ensure_ascii=False))
-                    + "\n指定スキルを起動し、次の終了契約を読め: "
-                    + references,
-                    source=data["source"],
-                    kind="startup-input",
+            if not resume_only:
+                parts.append(
+                    message_format.auto_message(
+                        "起動入力: "
+                        + html.escape(json.dumps(data, ensure_ascii=False))
+                        + "\n指定スキルを起動し、次の終了契約を読め: "
+                        + references,
+                        source=data["source"],
+                        kind="startup-input",
+                    )
                 )
-            )
-        instruction = os.environ.get(PROCESS_LOOP_INSTRUCTION_ENV, "").strip()
+        instruction = os.environ.get(PROCESS_LOOP_INSTRUCTION_ENV, "").strip() or startup_instruction
         if instruction:
             parts.append(
                 xml_message(
@@ -142,6 +167,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     if not delegated:
         normative_parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
         if host == "claude":
+            normative_parts.append(COMMON_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
             normative_parts.append(MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
         elif host == "codex":
             normative_parts.append(MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip("\n"))
@@ -234,56 +260,27 @@ def reset_main_operation_skill_ready(session_id: str) -> None:
     update_state(session_id, _reset)
 
 
-def shell_acquisition_conditions() -> str:
-    """取得観測が受理するシェル実行と、取得後の再試行を案内する。"""
-    return (
-        "必要範囲の本文を実出力として返せ。省略・退避した部分は実際に回収してから進め。"
-        "取得後は、止められた元の書き込みを再発行できる"
-    )
-
-
 def acquisition_failure(
     target: read_triggers.ReadTarget,
     error: Exception,
     *,
     shell: bool,
-    agent: bool = False,
-    reference: bool = False,
     cwd: str = "",
 ) -> str:
-    """資料読取または見出し解決の失敗を、主体に応じた取得または復旧へ導く。"""
+    """失敗した実体と原因を示し、資料または参照先の修復へ導く。"""
     path = target.path
     if not path.is_file():
-        return (
-            f"資料`{path}`は存在しない。資料と読込宣言の参照先を復旧せよ。"
-            "復旧できない場合、委譲先は委譲元へ、それ以外はユーザーへ報告せよ"
-        )
-    prefix = f"`{target}`の読取または注目見出しの解決に失敗: {error}。"
+        return f"資料`{path}`は存在しない。資料と読込表の参照先を修復せよ。直せない場合は委譲元（無ければユーザー）へ報告せよ。"
+    prefix = f"`{target}`の取得に失敗: {error}。"
     if target.heading and isinstance(error, ValueError) and not isinstance(error, UnicodeError):
-        prefix += "読込宣言の見出しと資料を整合させよ。"
-    if shell:
-        return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め。" + shell_acquisition_conditions()
-    skill = document_reads.skill_document(str(path))
-    if (
-        not reference
-        and skill
-        and skill[1] == "SKILL.md"
-        and (
-            agent
-            and document_reads.skill_loadable(path, cwd=cwd)
-            or document_reads.requires_skill_invocation(path, host="claude", subject="main", cwd=cwd)
-        )
-    ):
-        owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
-        name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
-        step = f"`{name}`を起動せよ"
-        if agent:
-            step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
-        return prefix + step
-    step = f"`{path}`をReadで全文読め"
-    if skill and not document_reads.skill_loadable(path, cwd=cwd):
-        step += f"。Bashでは`cat -- {shlex.quote(str(path))}`で取得せよ"
-    return prefix + step
+        return prefix + "読込表の見出しと資料を整合させ、資料を取得して元の操作へ戻れ。"
+    try:
+        invocable = shell or read_triggers.skill_invocation_required(path, host="claude", subject="main")
+    except OSError, ValueError:
+        # 起動条件も壊れた資料は再解析せず、元の失敗と本文の修復を案内する。
+        invocable = False
+    name = document_reads.reference_name(path, cwd=cwd, invocation=invocable)
+    return prefix + f"原因を修復し、`{name}`を取得して元の操作へ戻れ。"
 
 
 def _compact_recovery_context() -> str:
@@ -491,6 +488,7 @@ def compose_subagent_start(*, host: str) -> str:
     """SubagentStartへ追加する本文を返す。"""
     parts = [SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip("\n")]
     if host == "claude":
+        parts.append(COMMON_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
         parts.append(SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
     return (
         _normative_context("\n\n".join(parts), kind=NORMATIVE_KIND_SUBAGENT)
@@ -519,6 +517,19 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
+        if source == "resume" and not delegated:
+            from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+            try:
+                startup_identity.capture(payload, host, os.environ)
+            except (OSError, ValueError) as error:
+                reason = (
+                    f"{error}。起動側workerのログを確認し、atk wi process-loop statusで予約を確認する。"
+                    "原因の解消後にatk wi process-loop resume IDで再予約する。"
+                    "予約を取り消す場合はatk wi process-loop resume-cancelを使う。"
+                )
+                print(json.dumps({"continue": False, "stopReason": reason}, ensure_ascii=False))
+                return 1
         session_temp = None
         if isinstance(session_id, str) and session_id:
             with contextlib.suppress(managed_temp.ManagedTempError, OSError):

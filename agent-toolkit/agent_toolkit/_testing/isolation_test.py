@@ -202,6 +202,8 @@ def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pa
             {
                 "npm_config_cache_dir": "/h/.cache/pnpm",
                 "npm_config_store_dir": "/h/.local/share/pnpm/store",
+                "pnpm_config_cache_dir": "/h/.cache/pnpm",
+                "pnpm_config_store_dir": "/h/.local/share/pnpm/store",
                 "COREPACK_HOME": "/h/.cache/node/corepack",
             },
             id="linux-home-only",
@@ -212,6 +214,8 @@ def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pa
             {
                 "npm_config_cache_dir": "/c/pnpm",
                 "npm_config_store_dir": "/d/pnpm/store",
+                "pnpm_config_cache_dir": "/c/pnpm",
+                "pnpm_config_store_dir": "/d/pnpm/store",
                 "COREPACK_HOME": "/c/node/corepack",
             },
             id="linux-xdg",
@@ -222,6 +226,8 @@ def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pa
             {
                 "npm_config_cache_dir": "/h/.cache/pnpm",
                 "npm_config_store_dir": "/p/store",
+                "pnpm_config_cache_dir": "/h/.cache/pnpm",
+                "pnpm_config_store_dir": "/p/store",
                 "COREPACK_HOME": "/h/.cache/node/corepack",
             },
             id="linux-pnpm-home",
@@ -229,8 +235,26 @@ def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pa
         pytest.param(
             "linux",
             {"HOME": "/h", "npm_config_cache_dir": "/x", "npm_config_store_dir": "/y", "COREPACK_HOME": "/z"},
-            {"npm_config_cache_dir": "/x", "npm_config_store_dir": "/y", "COREPACK_HOME": "/z"},
+            {
+                "npm_config_cache_dir": "/x",
+                "npm_config_store_dir": "/y",
+                "pnpm_config_cache_dir": "/x",
+                "pnpm_config_store_dir": "/y",
+                "COREPACK_HOME": "/z",
+            },
             id="explicit-values",
+        ),
+        pytest.param(
+            "linux",
+            {"HOME": "/h", "pnpm_config_cache_dir": "/x", "pnpm_config_store_dir": "/y"},
+            {
+                "npm_config_cache_dir": "/x",
+                "npm_config_store_dir": "/y",
+                "pnpm_config_cache_dir": "/x",
+                "pnpm_config_store_dir": "/y",
+                "COREPACK_HOME": "/h/.cache/node/corepack",
+            },
+            id="pnpm11-explicit-values",
         ),
         pytest.param(
             "darwin",
@@ -238,6 +262,8 @@ def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pa
             {
                 "npm_config_cache_dir": "/Users/u/Library/Caches/pnpm",
                 "npm_config_store_dir": "/Users/u/Library/pnpm/store",
+                "pnpm_config_cache_dir": "/Users/u/Library/Caches/pnpm",
+                "pnpm_config_store_dir": "/Users/u/Library/pnpm/store",
                 "COREPACK_HOME": "/Users/u/.cache/node/corepack",
             },
             id="darwin",
@@ -248,6 +274,8 @@ def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pa
             {
                 "npm_config_cache_dir": r"C:\Users\u\AppData\Local\pnpm-cache",
                 "npm_config_store_dir": r"C:\Users\u\AppData\Local\pnpm\store",
+                "pnpm_config_cache_dir": r"C:\Users\u\AppData\Local\pnpm-cache",
+                "pnpm_config_store_dir": r"C:\Users\u\AppData\Local\pnpm\store",
                 "COREPACK_HOME": r"C:\Users\u\AppData\Local\node\corepack",
             },
             id="win32",
@@ -435,6 +463,13 @@ def test_restore_host_environment_excludes_parent_venv_operation_environment(mon
 
 
 @pytest.mark.parametrize("route", ["fixture", "host_environ", "restore_host_environment"])
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "子pytestと実uvを最小projectで起動し、親venv指定を含む3経路でも外部venvのsentinelが保持される境界を検証する。"
+        "Linux CPU合計0.634秒。"
+    ),
+)
 def test_child_uv_uses_test_project_after_fixture_and_host_restoration(
     tmp_path: pathlib.Path, host_environ: typing.Callable[[], dict[str, str]], route: str
 ) -> None:

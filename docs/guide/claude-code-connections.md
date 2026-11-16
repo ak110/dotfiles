@@ -56,6 +56,28 @@ Codexの会話は移った接続を使い続け、新しい会話だけを使用
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数を設定すると保存値より優先するため、設定を変える場合はこの変数も確認する。
 切替と保持の詳細は[design-agents-runtime-connections.md](../development/design-agents-runtime-connections.md#api失敗過負荷利用上限の待機)を参照。
 
+### 緊急時だけ従量課金を許可する
+
+通常は`credits,subscription`を使い、追加支出が必要なときだけ接続使用順と上限待機方針を一時指定する。
+自動配分から従量課金を追加することはない。
+
+```sh
+atk config temporary set claude_worker_connections credits,subscription,payg
+atk config temporary set codex_worker_connections credits,subscription,payg
+atk config temporary set claude_orchestrator_connections subscription,payg
+atk config temporary set claude_usage_limit_wait never
+atk config temporary set codex_usage_limit_wait never
+atk config temporary show
+```
+
+必要なAPI認証は既存のローカル接続定義を使う。
+仕事の社内プロキシの実値や認証情報はリポジトリへ保存しない。
+設定変更だけで実行中CLIの接続は変わらず、次の継続境界で適用する。
+Claude統括が上限で停止した場合は、旧CLIの終了確認後に同じ会話IDで次の接続へ再開する既存経路を使う。
+上限待機中の巡回を手動で再開する場合は、所有する巡回を停止して終了を確認し、`atk wi process-loop --resume SESSION_ID`で同じ会話を再開する。
+緊急指定を解除する操作は`atk config temporary clear`であり、その時点の通常設定へ戻る。
+モデルの一時指定だけでは、従量課金やresetの消費を許可しない。
+
 ### 委譲先のモデルを指定して切り替える
 
 作業を依頼しているエージェントへ、委譲先と切り替え先のモデルを指示する。

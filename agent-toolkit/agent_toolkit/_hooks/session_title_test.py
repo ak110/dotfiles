@@ -7,6 +7,32 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import posttooluse, user_prompt_submit
+from agent_toolkit._hooks.pretooluse import read_delivery
+
+
+@pytest.fixture(autouse=True)
+def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """会話名の遷移を検査し、独立した資料配送の全宣言を解析しない。"""
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda *_args, **_kwargs: [])
+
+
+@pytest.mark.parametrize("codex", [False, True])
+def test_consultation_history_survives_other_skill(codex, capsys):
+    """明示起動を両ホストで記録し、後の表示種別変更でも履歴を保持する。"""
+    session = "consultation-history"
+    payload = {"session_id": session, "prompt": "/agent-toolkit:add-awi-by-user"}
+    if codex:
+        payload["turn_id"] = "turn"
+        payload["prompt"] = "$agent-toolkit:add-awi-by-user"
+    user_prompt_submit.main(json.dumps(payload))
+    capsys.readouterr()
+    assert session_state.read_state(session)["add_awi_skill_invoked"] is True
+    posttooluse.main(
+        json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:process-wi"}})
+    )
+    capsys.readouterr()
+    assert session_state.read_state(session)["session_title_kind"] == "process-wi"
+    assert session_state.read_state(session)["add_awi_skill_invoked"] is True
 
 
 @pytest.mark.parametrize(

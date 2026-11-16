@@ -35,7 +35,7 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import delegated_session, read_triggers, session_registry, task_documents
+from agent_toolkit._common import delegated_session, read_triggers, runtime_environment, session_registry, task_documents
 from agent_toolkit._common.markdown_headings import parse_headings
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
@@ -256,10 +256,11 @@ def _owner_conversation(launcher_session_id: str | None) -> str | None:
     プロセス専用ルート（`mcp-`形式）か識別子なしの場合は、Managerが解決した実際の委譲元会話を使う。
     共有状態の名前空間は会話と一致しないことがあるため、名前空間の識別子を会話の代わりに使わない。
     """
+    environment = runtime_environment.environment()
     captured = (
-        _HANDOFF_SESSION[0]
-        if _HANDOFF_SESSION is not None
-        else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
+        shared_roots.resolve_root_session_id(environment) or environment.get("CODEX_THREAD_ID")
+        if runtime_environment.current() is not None or _HANDOFF_SESSION is None
+        else _HANDOFF_SESSION[0]
     )
     for candidate in (captured, launcher_session_id):
         if candidate and not candidate.startswith(shared_roots.PROCESS_ROOT_PREFIX):

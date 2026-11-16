@@ -367,7 +367,7 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
 def test_windows_python_bootstrap_process_ownership(
     tmp_path: Path, blocked: bool, upgrade_exit: int, preview: bool, inventory_error: bool, missing: bool, report_failure: bool
 ) -> None:
-    """CIMだけを模擬し、native子の停止・更新・復帰か見送りをWindowsとpwshで実行する。"""
+    """Windowsは実Job、POSIXは段APIのProcess代用を使い、停止・更新・復帰か見送りを実行する。"""
     log = tmp_path / "calls"
     fake_uv = tmp_path / ("uv.exe" if os.name == "nt" else "uv")
     tool_python = tmp_path / "tools/pytools/Scripts/python.exe"
@@ -456,8 +456,48 @@ public class Program {
         powershell_stub.chmod(0o755)
     driver = tmp_path / "driver.ps1"
     command = "arbitrary-python" if blocked else "pytools.media_remote"
+    # POSIXでWin32 Jobを模擬せず呼ばない。段APIの契約を実native Processで検証し、Windowsでは実Jobを使う。
+    posix_stage = (
+        """Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+public sealed class UpdateStageJob : IDisposable {
+    Process process; Task<string> output; bool disposed;
+    public UpdateStageJob(string program, string arguments, bool probe) {
+        var start = new ProcessStartInfo(program, arguments);
+        start.UseShellExecute = false; start.RedirectStandardOutput = probe;
+        process = Process.Start(start);
+        if (probe) output = Task.Run(() => process.StandardOutput.ReadToEnd());
+    }
+    public bool Wait(int milliseconds) { return process.WaitForExit(milliseconds); }
+    public int ExitCode { get { return process.ExitCode; } }
+    public void Stop() {
+        if (!process.HasExited) process.Kill(true);
+        if (!process.WaitForExit(5000)) throw new TimeoutException("native Processが残っています");
+    }
+    public string ReadOutput() {
+        if (output == null) return "";
+        if (!output.Wait(5000)) throw new TimeoutException("native出力を回収できません");
+        return output.Result;
+    }
+    public void Dispose() {
+        if (disposed) return;
+        try { Stop(); if (output != null && !output.Wait(5000)) throw new TimeoutException("readerが残っています"); }
+        catch (Exception error) {
+            throw new InvalidOperationException("次の操作: 試験のstdout/stderrとdriver.ps1を確認し、"
+                + "native Processとreaderの残存を回収して再実行してください。", error);
+        }
+        finally { process.Dispose(); disposed = true; }
+    }
+}
+'@
+"""
+        if os.name != "nt"
+        else ""
+    )
     driver.write_text(
-        "if ($env:BOOTSTRAP_IS_WINDOWS -ne '1') { "
+        posix_stage + "if ($env:BOOTSTRAP_IS_WINDOWS -ne '1') { "
         "New-PSDrive -Name C -PSProvider FileSystem -Root $env:BOOTSTRAP_ROOT | Out-Null }\n"
         "$env:APPDATA = 'C:\\appdata'\n"
         "function global:Join-Path { param([string]$Path,[string]$ChildPath)\n"
@@ -470,6 +510,7 @@ public class Program {
         f"ExecutablePath='C:\\appdata\\uv\\python\\cpython-3.15.2\\python.exe'; CommandLine='{command}' }}\n"
         "}\n"
         'function global:Stop-Process { param([int]$Id,[switch]$Force) Add-Content $env:BOOTSTRAP_LOG "stop:$Id" }\n'
+        "Write-Output ('bootstrap powershell: ' + (Get-Command powershell.exe -CommandType Application).Source)\n"
         "& $env:BOOTSTRAP_SCRIPT $env:BOOTSTRAP_UV\nexit $LASTEXITCODE\n",
         encoding="utf-8-sig",
     )
@@ -496,7 +537,7 @@ public class Program {
             assert isinstance(failures, list)
             assert any(item["title"] == "管理Pythonの更新" for item in failures)
         else:
-            assert not payload.exists()
+            assert not payload.exists(), result.stdout + result.stderr + payload.read_text(encoding="utf-8-sig")
     if blocked:
         assert not log.exists()
         assert "連続1回" in result.stderr
@@ -517,43 +558,3 @@ public class Program {
         # Get-Processは列挙後に消えたPIDを返す。消滅は停止済みとして更新・復帰へ進む。
         assert log.read_text(encoding="utf-8").splitlines() == ["upgrade", "restart"]
         assert ("pre-release" in result.stderr) is preview
-
-
-@pytest.mark.skipif(POWERSHELL is None or os.name == "nt", reason="pwshで直接の子の時間切れと回収を観測する")
-def test_job_python_probe_timeout_reclaims_process(tmp_path: Path) -> None:
-    """jobが使うbootstrap探索は、実際に停止したnative子を回収して有限時間で失敗する。"""
-    uv = tmp_path / "uv"
-    pid_log = tmp_path / "pids"
-    uv.write_text(
-        '#!/usr/bin/env bash\nif [[ "$1 $2" == "python find" ]]; then\necho $$ >> "$PROBE_PIDS"\nexec sleep 60\nfi\nexit 0\n',
-        encoding="utf-8",
-    )
-    uv.chmod(0o755)
-    bootstrap = tmp_path / "update_bootstrap.ps1"
-    # 実時間の試験だけ待機値を縮め、同じProcess/WaitForExit/回収経路を使う。
-    text = _read(REPO_ROOT / "libexec/update_bootstrap.ps1").replace("$Seconds * 1000", "100")
-    # LinuxにはCIMが無い。この代用品はexecした直接の子だけなので、子孫一覧は空とする。
-    text = text.replace("CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop", "@()")
-    bootstrap.write_text(text, encoding="utf-8-sig")
-    shutil.copy2(REPO_ROOT / "libexec/locking_process.ps1", tmp_path / "locking_process.ps1")
-    environment = os.environ.copy()
-    environment.update(PATH=str(tmp_path) + os.pathsep + environment["PATH"], PROBE_PIDS=str(pid_log))
-    result = subprocess.run(
-        [str(POWERSHELL), "-NoProfile", "-File", str(bootstrap), str(uv), "-PrepareOnly", "-PrintPython"],
-        env=environment,
-        capture_output=True,
-        encoding="utf-8",
-        check=False,
-        timeout=15,
-    )
-    assert result.returncode == 1, result.stderr
-    assert "124" in result.stderr
-    assert not result.stdout.strip()
-    import psutil  # pylint: disable=import-outside-toplevel
-
-    for pid in pid_log.read_text(encoding="utf-8").splitlines():
-        assert not psutil.pid_exists(int(pid))
-    launcher = (REPO_ROOT / "bin/update-dotfiles.cmd").read_bytes().decode("cp932")
-    route = launcher[launcher.index(":job_route\r\n") :]
-    assert "-PrepareOnly -PrintPython" in route
-    assert '\'"%UV%" python find' not in route

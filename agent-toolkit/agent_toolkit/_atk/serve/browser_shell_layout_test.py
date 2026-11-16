@@ -63,6 +63,9 @@ async def test_navigation_uses_one_stylesheet(screen_harness: _ScreenHarness) ->
     )
 
 
+@pytest.mark.cpu_limit(
+    1.75, reason=("3画面ともヘッダー下の本文要素をスクロールする。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.686秒）。")
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _ScreenHarness) -> None:
     """3画面ともヘッダー下の本文要素をスクロールする。"""
@@ -121,6 +124,13 @@ async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _Scre
         assert metrics["contentTop"] >= metrics["headerBottom"] - 1, path
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "ヘッダーが折り返す幅でも、主要領域の上端がヘッダーの下端と、下端がビューポートの下端と一致する。"
+        "実ブラウザーの観測とtrace回収が必要（CPU最大実測0.635秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_panes_follow_header_height_on_narrow_width(screen_harness: _ScreenHarness) -> None:
     """ヘッダーが折り返す幅でも、主要領域の上端がヘッダーの下端と、下端がビューポートの下端と一致する。"""
@@ -146,6 +156,13 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
         assert abs((pane_box["y"] + pane_box["height"]) - viewport_height) <= 1, path
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "700・701・768pxでは一覧をメニューで開き、769pxから通常配置へ戻す。実ブラウザーの"
+        "観測とtrace回収が必要（CPU最大実測1.259秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness: _ScreenHarness) -> None:
     """700・701・768pxでは一覧をメニューで開き、769pxから通常配置へ戻す。"""

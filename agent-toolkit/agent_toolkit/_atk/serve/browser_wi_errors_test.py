@@ -163,6 +163,12 @@ async def test_work_item_warnings_identify_storage_state_and_file(screen_harness
     await playwright.async_api.expect(warnings).to_contain_text(f"WI / browser-test / {notes_root}")
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "API取得失敗の理由を保ち、通知自身が保存先と一覧操作を示す。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.553秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_list_failure_names_server_and_operation(screen_harness: _ScreenHarness) -> None:
     """API取得失敗の理由を保ち、通知自身が保存先と一覧操作を示す。"""

@@ -8,7 +8,6 @@ import dataclasses
 import datetime
 import json
 import logging
-import os
 import pathlib
 from collections.abc import Mapping
 from typing import Any
@@ -33,7 +32,7 @@ from agent_toolkit._agents_server.state import (
     add_touch_listener,
     selected_candidate,
 )
-from agent_toolkit._common import runtime_identity, session_registry
+from agent_toolkit._common import runtime_environment, runtime_identity, session_registry
 
 
 @dataclasses.dataclass
@@ -76,7 +75,8 @@ class ManagerBase:
         *,
         launcher_environment: Mapping[str, str] | None = None,
     ) -> None:
-        environment = os.environ if launcher_environment is None else launcher_environment
+        environment = runtime_environment.environment() if launcher_environment is None else launcher_environment
+        self._caller_context = runtime_environment.current()
         self._launcher_codex_thread_id = environment.get("CODEX_THREAD_ID")
         self.sessions: dict[str, SessionState] = (
             status_writer.sessions if isinstance(status_writer, status_file.StatusFileWriter) else {}
@@ -86,6 +86,7 @@ class ManagerBase:
         )
         self.stopped_sessions: dict[str, SessionResumeState] = {}
         self._pending_resumes: dict[str, PendingResume] = {}
+        self._service_paused: set[str] = set()
         self._recovery_initialized = False
         self._recovery_targets: set[str] = set()
         self._recovery_attempts: dict[str, asyncio.Task[SessionState]] = {}
@@ -117,7 +118,7 @@ class ManagerBase:
             self.stopped_sessions,
         )
         if self._status_writer is not None:
-            add_touch_listener(self._status_writer.schedule)
+            add_touch_listener(self._status_writer.schedule, sessions=self.sessions)
         add_terminal_listener(self._carry_over_unavailable_candidate)
         add_terminal_listener(self._schedule_session_expiry)
         add_lifecycle_listener(self._record_resources)
@@ -128,6 +129,13 @@ class ManagerBase:
         timer = self._retention_timers.pop(session_id, None)
         if timer is not None:
             timer.cancel()
+
+    async def save_control_state(self) -> None:
+        """生イベントの受領確認より先に、登録簿・終了結果・root射影を保存する。"""
+        if self._status_writer is not None:
+            await self._status_writer.flush_async()
+        else:
+            await asyncio.gather(*(session.drain_registration() for session in tuple(self.sessions.values())))
 
     def _cancel_expiry_on_start(self, session: SessionState, event: str) -> None:
         """同じsessionで次のturnを始めたら、旧turnの保持期限を取り消す。"""

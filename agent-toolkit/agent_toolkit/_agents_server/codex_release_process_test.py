@@ -28,6 +28,10 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGTERM無視と実子孫回収を観測する")
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    3.5,
+    reason=("実App Server/MCPの停止とregistryの整合を実プロセスで確認する。所有thread合計CPUのLinux観測最大1.864秒。"),
+)
 async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -88,6 +92,10 @@ async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
 @pytest.mark.parametrize("snapshot_has_child", [False, True] if sys.platform == "win32" else [False])
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    2.0,
+    reason="実App Serverと短命な親から生じた子の所属回収を、snapshotの子の有無で確認する代表2状態。Windows CPU合計0.672秒。",
+)
 async def test_stop_reclaims_late_descendant_with_short_lived_parent(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, snapshot_has_child: bool
 ) -> None:

@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、Codexの起動管理と更新jobの記録である。
 
-## Claude CodeとCodexの規範配置
-
-### Codexの起動管理とdaemon復旧
+## Codexの起動管理とdaemon復旧
 
 通常TUIの起動管理は`pytools/codex_launcher.py`が所有し、`bin/codex`とWindowsのペアから導入済みの`dotfiles-codex`を起動する。
 Codexの起動中は依存関係を導入せず、post-applyと同じpytools環境を使う。
@@ -44,7 +42,7 @@ daemon 0.166.0は世代ファイルを空の予約ファイルとして直接作
 通常終了・明示中止・完了済みturnを復活させず、所有TUIがdaemon交代で終了した場合だけ同じIDと保存した条件で再起動する。
 非対話の`codex exec`とagents_serverの専用App Serverは共有daemonに依存せず、その経路を置き換えない。
 
-### Codexからの更新jobと結果の保持
+## Codexからの更新jobと結果の保持
 
 `CODEX_THREAD_ID`を持つ起動では、`bin/update-dotfiles`とWindows版ランチャーが、uvの外側のnative Pythonで`libexec/update_dotfiles_job.py`へ処理を渡す。
 通常端末の更新は既存のTTYとSSH入力を保持する。
@@ -70,7 +68,7 @@ Linuxの停止ではworkerがまだ回収していない直系の子だけを操
 uv内で更新jobを待つ構成は、起動元の停止に更新処理が巻き込まれるため採用しない。
 daemon再起動後の会話復旧は既存の起動管理へ接続し、更新jobに別の常駐serverや会話復旧機構を追加しない。
 
-### 更新段の分類と失敗の扱い
+## 更新段の分類と失敗の扱い
 
 段は`libexec/update_dotfiles_stages.py`の`STAGES`で宣言し、中断集合もこの表から導出する。
 新しい処理と未知の例外は、失敗を記録して後続へ進む。

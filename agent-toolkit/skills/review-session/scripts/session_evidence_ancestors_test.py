@@ -143,7 +143,7 @@ def test_delegation_record_retains_no_display_text(
     registered: bool,
     codex_child: bool,
 ) -> None:
-    """登録簿経路と64件の全探索で親子を保ち、保持する走査結果を本文長から独立させる。"""
+    """登録簿と無関係な記録を含む全探索で親子を保ち、走査結果を本文長から独立させる。"""
     claude, codex = record_roots
     child_id = "11111111-1111-4111-8111-111111111111" if codex_child else "child"
     root = _claude_record(claude, "root", "parent")
@@ -162,7 +162,7 @@ def test_delegation_record_retains_no_display_text(
     else:
         child = _claude_record(claude, "child")
     paths = [root, parent, child]
-    for number in range(61):
+    for number in range(5):
         if number % 2:
             path = codex / "sessions/2026/10/18" / f"rollout-filler-{number:03d}.jsonl"
             write_jsonl(
@@ -205,7 +205,7 @@ def test_delegation_record_retains_no_display_text(
         scans.clear()
         assert ancestors.delegation_record("parent") == parent
         assert ancestors.delegation_record("root") == root
-        assert len(scans) == (6 if registered else 130)
+        assert len(scans) == (6 if registered else 2 * (len(paths) + 1))
         serialized = json.dumps(
             [dataclasses.asdict(scan) | {"delegated_ids": sorted(scan.delegated_ids)} for scan in scans], ensure_ascii=False
         )

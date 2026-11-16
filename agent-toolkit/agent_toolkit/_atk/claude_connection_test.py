@@ -118,6 +118,45 @@ def test_unmanaged_environment_inherits(monkeypatch: pytest.MonkeyPatch) -> None
     assert [item.kind for item in connection.candidates("orchestrator", cli=True).connections] == ["inherit"]
 
 
+@pytest.mark.parametrize("kind", ["subscription", "credits", "payg"])
+@pytest.mark.parametrize("resumed", [False, True])
+def test_all_api_files_are_isolated(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str, resumed: bool) -> None:
+    """親の接続由来にかかわらず、子環境とsettingsは選んだ接続の値だけを使う。"""
+    credits_path = tmp_path / "credits.env"
+    payg = tmp_path / "payg.env"
+    credits_path.write_text("ANTHROPIC_API_KEY=credits-key\nCREDITS_ONLY=credits\n", encoding="utf-8")
+    payg.write_text("ANTHROPIC_AUTH_TOKEN=payg-key\nPAYG_ONLY=payg\n", encoding="utf-8")
+    _configure(monkeypatch, credits_file=str(credits_path), payg=str(payg), worker_order="credits,subscription,payg")
+    parent = {"CREDITS_ONLY": "parent-credits", "PAYG_ONLY": "parent-payg", "CLAUDE_CODE_OAUTH_TOKEN": "subscription"}
+    selected = next(item for item in connection.candidates("delegate", env=parent).connections if item.kind == kind)
+    if resumed:
+        # 再開前に保存していたファイル集合が不完全でも、現在の設定から全集合を補う。
+        selected = connection.apply_current_settings(
+            connection.Connection(kind, selected.api_env_file, (str(credits_path),)), env=parent
+        )
+    child = connection.connection_environment(parent, selected)
+    merged = json.loads(
+        settings.merge_settings(json.dumps({"env": parent}), child, None, isolation_keys=connection.isolation_keys(selected))
+    )["env"]
+    for environment in (child, merged):
+        assert environment.get("CREDITS_ONLY") == ("credits" if kind == "credits" else None)
+        assert environment.get("PAYG_ONLY") == ("payg" if kind == "payg" else None)
+        assert environment.get("CLAUDE_CODE_OAUTH_TOKEN") == ("subscription" if kind == "subscription" else None)
+
+
+def test_cli_uses_all_api_isolation_files(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLIでcreditsを候補から外しても、そのファイル由来の親変数を隔離する。"""
+    credits_path = tmp_path / "credits.env"
+    payg = tmp_path / "payg.env"
+    credits_path.write_text("ANTHROPIC_API_KEY=credits-key\nCREDITS_ONLY=credits\n", encoding="utf-8")
+    payg.write_text("ANTHROPIC_AUTH_TOKEN=payg-key\nPAYG_ONLY=payg\n", encoding="utf-8")
+    _configure(monkeypatch, credits_file=str(credits_path), payg=str(payg), orchestrator_order="credits,subscription,payg")
+    parent = {"CREDITS_ONLY": "parent", "PAYG_ONLY": "parent", "CLAUDE_CODE_OAUTH_TOKEN": "subscription"}
+    selected = connection.candidates("orchestrator", env=parent, cli=True).require_first()
+    assert selected.kind == "subscription"
+    assert connection.connection_environment(parent, selected) == {"CLAUDE_CODE_OAUTH_TOKEN": "subscription"}
+
+
 @pytest.mark.parametrize("invalid", ["missing", "directory", "malformed", "unreadable", "empty-file", "comments-only"])
 def test_invalid_env_file_disables_api_candidate(
     tmp_path: pathlib.Path,

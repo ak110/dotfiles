@@ -8,7 +8,6 @@ lazy import json
 lazy from collections.abc import Callable, Generator, Sequence
 
 lazy from agent_toolkit._common import message_format as _common_message_format
-lazy from agent_toolkit._common import next_action as _next_action
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import message_format as _message_format
 
@@ -239,7 +238,7 @@ def consume_warning_blocks() -> list[str]:
 
 def _with_fix(body: str, fix: str | None) -> str:
     """解消手段があれば本文の後へ次の操作の行を続ける。"""
-    return body if fix is None else _next_action.with_next_action(body, fix)
+    return body if fix is None else f"{body}\n{fix}"
 
 
 def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
@@ -300,7 +299,7 @@ def block_formatter(hook_id: str) -> Callable[..., str]:
     def format_block(body: str, *, fix: str) -> str:
         if not fix.strip():
             raise ValueError("block通知のfixは空文字列以外で指定する必要がある")
-        return _message_format.llm_notice(_next_action.with_next_action(body, fix), hook_id, tag="block")
+        return _message_format.llm_notice(_with_fix(body, fix), hook_id, tag="block")
 
     return format_block
 
@@ -323,6 +322,6 @@ def warning_formatter(hook_id: str) -> Callable[..., str]:
         del removable_cause, escalate_on_repeat, summary
         if not _claim_notice(session_id, hook_id, cause, body, fix, tag=_WARN_TAG):
             return ""
-        return _message_format.llm_notice(_next_action.with_next_action(body, fix), hook_id, tag=_WARN_TAG)
+        return _message_format.llm_notice(_with_fix(body, fix), hook_id, tag=_WARN_TAG)
 
     return format_warning

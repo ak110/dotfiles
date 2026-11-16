@@ -18,12 +18,24 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import agents_exit_session, lane, managed_temp
+from agent_toolkit._atk import agents_exit_session, lane, lane_activity, managed_temp
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.lane_integration_support import _finalize_lane_for_cleanup, _legacy
 from agent_toolkit._testing.lane_support import _create, _create_in, _invoke, _selection
 
 
+@pytest.fixture(name="idle_lane")
+def _idle_lane(monkeypatch: pytest.MonkeyPatch) -> None:
+    """固有撤去の再開試験では、別途activity試験で扱うOSプロセス探索を隔離する。"""
+    monkeypatch.setattr(lane_activity, "process_activity", lambda _worktree: None)
+
+
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_retains_resources_and_explains_retry_after_ignore_check_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -47,6 +59,13 @@ def test_delete_retains_resources_and_explains_retry_after_ignore_check_failure(
     assert worktree.is_dir() and pathlib.Path(record["record_path"]).is_file()
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_recovers_finalized_lane_after_base_history_is_rewritten(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -67,6 +86,12 @@ def test_delete_recovers_finalized_lane_after_base_history_is_rewritten(
     assert str(worktree) not in git_repository.git_output(repo, "worktree", "list", "--porcelain")
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_keeps_finalized_lane_with_a_later_commit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -87,6 +112,12 @@ def test_delete_keeps_finalized_lane_with_a_later_commit(
     assert pathlib.Path(record["worktree"]).exists()
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_recovers_missing_worktree_registration_without_delete_procedure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -122,6 +153,12 @@ def test_delete_recovers_missing_worktree_registration_without_delete_procedure(
 
 
 @pytest.mark.parametrize("state", ["unregistered", "unready", "legacy", "recovered"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_recovers_absent_resources_for_each_registration_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], state: str
 ) -> None:
@@ -152,6 +189,12 @@ def test_delete_recovers_absent_resources_for_each_registration_state(
 @pytest.mark.skipif(os.name != "posix", reason="POSIXのディレクトリ権限を実機で検証する")
 @pytest.mark.parametrize("dirty", [False, True])
 @pytest.mark.parametrize("operation", ["delete", "recover"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_recovers_permissions_before_checking_untracked_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], dirty: bool, operation: str
 ) -> None:
@@ -195,6 +238,12 @@ def test_delete_recovers_permissions_before_checking_untracked_work(
 
 @pytest.mark.parametrize("operation", ["delete", "exit"])
 @pytest.mark.parametrize("output", ["data", "build/data"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_runs_project_teardown_before_preparing_foreign_ignored_output(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -251,6 +300,12 @@ def test_delete_runs_project_teardown_before_preparing_foreign_ignored_output(
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXのディレクトリ権限を検証する")
 @pytest.mark.parametrize("tracked", [True, False])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_protects_git_content_before_project_teardown(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -290,6 +345,13 @@ def test_delete_protects_git_content_before_project_teardown(
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの所有者保護を検証する")
 @pytest.mark.parametrize("teardown", ["none", "failure", "leftover"])
+@pytest.mark.usefixtures("idle_lane")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_delete_keeps_foreign_ignored_output_until_teardown_is_resolved(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -336,6 +398,12 @@ def test_delete_keeps_foreign_ignored_output_until_teardown_is_resolved(
     assert not worktree.exists() and not pathlib.Path(record["record_path"]).exists()
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_recover_reaches_remove_hook_with_foreign_ignored_output(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -400,6 +468,12 @@ def test_recover_reaches_remove_hook_with_foreign_ignored_output(
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの所有者とmodeを検証する")
 @pytest.mark.parametrize("operation", ["delete", "recover"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_lane_keeps_foreign_os_owner_and_reports_owner_action(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], operation: str
 ) -> None:
@@ -448,6 +522,13 @@ def test_lane_keeps_foreign_os_owner_and_reports_owner_action(
     assert payload.read_text(encoding="utf-8") == "保持する成果"
 
 
+@pytest.mark.usefixtures("idle_lane")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_project_teardown_failure_preserves_record_and_retries_remaining_cleanup(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -476,6 +557,13 @@ def test_project_teardown_failure_preserves_record_and_retries_remaining_cleanup
     assert deleted["removed"] == ["lane-01"]
 
 
+@pytest.mark.usefixtures("idle_lane")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_cleanup_rechecks_git_registration_after_project_teardown(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -496,6 +584,12 @@ def test_cleanup_rechecks_git_registration_after_project_teardown(
 
 @pytest.mark.parametrize("registration", ["retained", "pruned"])
 @pytest.mark.parametrize("branch", ["absent", "reachable", "unmerged"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_missing_worktree_cleanup_distinguishes_branch_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -544,6 +638,12 @@ def test_missing_worktree_cleanup_distinguishes_branch_state(
         assert record["branch"] not in git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.426秒。"
+    ),
+)
 def test_missing_worktree_query_error_keeps_owned_resources(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

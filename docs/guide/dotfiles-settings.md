@@ -2,9 +2,7 @@
 
 トークン、委譲先CLI、個人用プラグインの設定を扱う。
 
-## 設定（任意）
-
-### GitHubトークンの設定（任意）
+## GitHubトークンの設定（任意）
 
 mise経由でインストールされる一部ツール（`jq`・`actionlint`・`pinact`など）では
 aquaがGitHub artifact attestations検証のために`api.github.com`へアクセスする。
@@ -34,7 +32,7 @@ aquaがGitHub artifact attestations検証のために`api.github.com`へアク�
 
 7. 新しいターミナルを開き直して`update-dotfiles`を再実行する
 
-### Antigravity CLI
+## Antigravity CLI
 
 `update-dotfiles`はAntigravity CLI（`agy`）も導入する。
 日本語の技術文書の推敲に使い、`agents_server`からはモデルを明示指定したときだけ選べる。
@@ -55,7 +53,7 @@ agy models
 statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CLIのstatuslineコマンドへ
 `claude-statusline agy-statusline`を設定する。
 
-### OpenCodeの委譲先
+## OpenCodeの委譲先
 
 `update-dotfiles`は未導入のOpenCode 1を`npm install --global opencode-ai`で導入する。
 導入に失敗した場合は警告の原因を解消して再実行し、`opencode --version`で確認する。
@@ -99,7 +97,7 @@ atk config set chores_model opencode:local/qwen3.8-27b
 OpenCodeは各工程へ直接指定でき、orchestrate_modelはClaude・Codex・agyの候補を使う。
 5プリセットと7キーの対応は[工程別モデル設定](claude-code-models.md#工程別モデル設定)を参照する。
 
-### dotfilesプラグイン
+## dotfilesプラグイン
 
 リポジトリ直下の`plugins/<名前>/`に、自分用の配布物と後処理を追加できる。
 `plugins/`配下はGitの追跡対象から外れる。

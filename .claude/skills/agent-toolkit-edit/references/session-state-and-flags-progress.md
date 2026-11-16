@@ -12,6 +12,17 @@
 
 ### 振り返りとモードの状態
 
+- batch準備結果の`partial_analysis`: 欠測を明示した部分分析。
+  省略時false。
+  既存manifestとreviewedへ欠測・回復情報を保持し、`observed_through_line`は末尾欠測を含む物理境界（省略時`through_line`）を表す。
+  `bundle_scope_path`は永続scopeへ移管する前の生成元（省略時`scope_path`）を表し、同期後の既存回収に使う。
+  確定条件と単発の厳格契約はリンク先batch.md「状態定義」に集約する
+- `add_awi_skill_invoked`: add-awi-by-userを起動した会話の履歴。
+  `session_title.observe_skill`、両ホストの明示的なスキル入力、メインのスキル本文の全文取得が、既存のhook状態へ真を記録する。
+  投入完了や表示タイトルの変更では保持し、`session_review.auto_start_due`が生存する会話の履歴を読んで起動を判定する。
+  生存する相談会話だけが自動起動の抑止対象で、手動batchは従来の条件を使う。
+  生存する相談会話の履歴は期限切れ回収でも保持し、会話が閉じれば通常の回収条件へ戻す。
+  状態ファイルの回収・clear・継承は共通設計に従う
 - `AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH`: hook→run-skill試行ID。
   `session-review/launches/`のID別JSON/logは起動元・プロセス同一性・診断・状態を持つ。
   `starting`=未受付、`accepted`=manifest移管、`settled`=正常終了/見送り、`notified`=次SessionStart通知済み。

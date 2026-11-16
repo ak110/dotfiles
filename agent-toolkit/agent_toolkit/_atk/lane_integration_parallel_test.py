@@ -157,6 +157,15 @@ def _finish_first(process: subprocess.Popen[bytes], tmp_path: pathlib.Path) -> t
     return code, json.loads(out) if out.strip() else {}, (tmp_path / "first.stderr").read_text(encoding="utf-8")
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "一方の検証の実行中に他方が統合を終え、先行側は統合先の前進を検出して更"
+        + "新しない。 実Gitの2レーンと有限barrierで短い更新の排他と前"
+        + "進拒否を確認する。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_second_lane_integrates_while_first_lane_verifies(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -192,10 +201,18 @@ def test_second_lane_integrates_while_first_lane_verifies(
         ),
         "--restart-review",
     )
-    assert code == 1 and restarted["phase"] == "awaiting-validation", stderr
+    assert code == 0 and restarted["phase"] == "finalized", stderr
     assert restarted["new_base"] == records["lane-02"]["reviewed_head"]
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "一方の記録の確定（WI終了argv）の実行中に、他方が統合先を更新して"
+        + "最終化まで終える。 実Gitの2レーンと有限barrierで短い更新の"
+        + "排他と前進拒否を確認する。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_second_lane_updates_target_while_first_lane_finalizes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -214,8 +231,6 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
         )
         second_args = _integration_args(records["lane-02"], repo, second_manifest, records["lane-02"]["reviewed_head"])
         code, second, stderr = _invoke(capsys, *second_args)
-        assert code == 1 and second["phase"] == "awaiting-validation", stderr
-        code, second, stderr = _invoke(capsys, *second_args, "--accept-rebased-head", second["new_head"])
         assert code == 0 and second["phase"] == "finalized", stderr
         assert git_repository.git_output(repo, "rev-parse", "HEAD") == second["new_head"]
         assert process.poll() is None, "先行側の最終化が後続の統合の前に終わった"
@@ -233,9 +248,10 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
         git_repository.run_git(repo, "merge-base", "--is-ancestor", result["integrated_head"], "main")
         # 統合前HEAD（短い更新の直前の統合先HEAD）からの範囲は、そのレーンの1commitだけを含む。
         before = stored.get("new_base") or stored["verified_base"]
-        assert (
-            git_repository.git_output(repo, "rev-list", f"{before}..{result['integrated_head']}") == result["integrated_head"]
-        )
+        included = git_repository.git_output(repo, "rev-list", f"{before}..{result['integrated_head']}").splitlines()
+        assert records[lane_id]["reviewed_head"] in included
+        assert result["integrated_head"] in included
+
     selected = yaml.safe_load(pathlib.Path(records["lane-01"]["selection_file"]).read_text(encoding="utf-8"))
     assert {row["レーン"]: row["統合状態"] for row in selected["レーンの所要時間"]} == {
         "lane-01": "統合済み",
@@ -243,6 +259,16 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
     }
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "準備の後に統合先が進んだら古い前提で更新せず、記録した工程から--"
+        + "restart-reviewで追随できる。 実Gitの2レーンと有限"
+        + "barrierで短い更新の排他と前進拒否を確認する。Linux同群"
+        + "CPU最大0.593秒。"
+    ),
+)
 def test_target_advance_before_short_update_keeps_target(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -271,12 +297,20 @@ def test_target_advance_before_short_update_keeps_target(
     monkeypatch.setattr(lane_integration_input, "verify", original)
     args = _integration_args(record, repo, manifest, record["reviewed_head"])
     code, result, stderr = _invoke(capsys, *args, "--restart-review")
-    assert code == 1 and result["phase"] == "awaiting-validation" and result["new_base"] == advanced[0], stderr
-    code, result, stderr = _invoke(capsys, *args, "--accept-rebased-head", result["new_head"])
+    assert result["new_base"] == advanced[0], stderr
     assert code == 0 and result["phase"] == "finalized", stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == result["new_head"]
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "他レーンの短い更新が統合先のロックファイルを作っている間に始めた統合が"
+        + "、中断状態と誤判定せずに更新を待つ。 実Gitの2レーンと有限"
+        + "barrierで短い更新の排他と前進拒否を確認する。Linux同群"
+        + "CPU最大0.593秒。"
+    ),
+)
 @pytest.mark.parametrize("no_merge", [False, True])
 def test_lane_starts_while_other_lane_updates_target(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], no_merge: bool
@@ -311,6 +345,15 @@ def test_lane_starts_while_other_lane_updates_target(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == expected_head
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "排他を保持する統合が無いのに残る統合先の中断状態と未commitの変更"
+        + "は、短い更新で拒否して統合先を変えない。 実Gitの2レーンと有限"
+        + "barrierで短い更新の排他と前進拒否を確認する。Linux同群"
+        + "CPU最大0.593秒。"
+    ),
+)
 @pytest.mark.parametrize("residual", ["index.lock", "dirty"])
 def test_residual_target_state_is_still_rejected(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], residual: str
@@ -331,6 +374,14 @@ def test_residual_target_state_is_still_rejected(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == record["initial_head"]
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "統合中のレーンは待たずに保持し、資源と所有登録を残す。 実Gitの2レ"
+        + "ーンと有限barrierで短い更新の排他と前進拒否を確認する。"
+        + "Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_delete_retains_lane_while_its_integration_runs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

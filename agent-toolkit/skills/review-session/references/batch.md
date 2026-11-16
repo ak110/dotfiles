@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | 所要時間の基準を適用する前 | `agent-toolkit:review-session/references/duration-analysis.md` | | |
 | 対象の分析を始める前 | `session-analysis.md` | | |
-| AWIを投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` |
+| AWIを起草・独立検収する前 | `agent-toolkit:wi-standards`、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/wi-draft-review.parent.md` |
 | 結果報告の作成・保存に入る前に、メインが起動する | `../../report-completion/SKILL.md` | 判断 | `skill:report-completion` |
 
 ## 起動
@@ -26,7 +26,7 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
 先頭のbatchと残りの着眼点を1つの文字列引数で渡す。
 実際の分析はrun-skillが起動する別セッションで行う。
 進行中の担当がある場合は、分析をその実行へ引き続き委ねる。
-自動起動は前回batch開始から6時間以上経過した場合に限る。
+自動起動は前回batch開始から6時間以上経過し、add-awi-by-userを起動した会話が開いていない場合に限る。
 手動起動は間隔制限、自動停止設定と未完了の失敗報告AWIによる抑止を適用しないが、活動判定とアカウント共通排他は維持する。
 batch自身のセッションも振り返り対象に含める。
 非活動の選定対象がbatch自身の記録だけの場合は見送り、通常セッションと混在する場合にまとめて分析する。
@@ -44,24 +44,32 @@ batch自身のセッションも振り返り対象に含める。
 2. `session-analysis.md`の分析基準・参照資料を読み、対象ごとの `conversation_path` を通読し、候補・統計・比較材料を評価する。
    各対象の `reference_document` があれば読む。
    同じ原因をセッション横断で整理し、対象IDと候補IDの組で出典を保持する。
-   未確認の対象を成功とせず、既存の失敗対応に沿って原因と未完了範囲を報告する。
+   `partial_analysis`が真の対象は、読める全行を分析し、欠測を明示した部分分析として完了する。
+   `unconfirmed_scope`と`recovered_record_lines`を読み、欠測の記録ID・物理行・件数、回復した後半と失われた断片を結果へ残す。
+   所在未解決の記録の内容・件数は不明とし、文脈や操作対応の判断も読めた範囲に限定する。
+   これらの項目の省略時は欠測の申告なし、`partial_analysis`の省略時はfalseと解釈する。
+   準備自体の失敗、分析未完了や外部前提不足は既存の失敗対応で原因と未完了範囲を報告する。
    実行レビューの採否は、`atk run-script review-adoption -- --since <manifestのstarted_atの7日前>`で直近7日間と前の7日間を集計する。
    明示的な実装中の判断記録と、指摘箇所を`担当の記録:`で書き始めて担当が足した行はレビュー指摘から除外され、除外件数と元の表・行を出力から確認できる。
    判断記録であることが明示されていない過去の行を、集計だけで完全に識別できるとは扱わない。
    不採用率の高いモデルやlevel、同じ理由区分の不採用の反復、前の期間からの増加を分析候補にし、`review-adoption-rejection`の行の管理表を読んで不採用の理由を判断する。
    移管は`transferred`として別に数え、不採用率の分析候補から除く。
    判断主体のラベルが無い旧表は`判断主体不明`として集計する。
-   原因・対策・既存AWIの被覆を確定した要求から、分析中に手順3の起草へ渡す（`session-analysis.md`「工程5」）。
+   原因・対策・既存AWIの被覆を確定した要求から、手順3の直接起草を進める（`session-analysis.md`「工程5」）。
    モデル不明の表は件数に含めたまま報告する。
    モデル不明の表の割合が前の期間より増えた場合は、限界として報告する前に、不明の表を1件選んで表の名前を含むセッション記録を探し、帰属できない理由を確かめる。
    実行レビュー担当の記録が存在するのに帰属できていない場合は、集計の不具合として扱う。
    記録が残っていない表だけが不明である場合に、その理由を集計の限界として報告する。
-3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
-   起草は手順2と並行し、全対象の分析と横断整理後に全要求を予告してから`保存開始`を送る（`session-analysis.md`「工程5」）。
+3. 原因と対策を確定した要求から、batchのメインが `agent-toolkit:wi-standards` に従ってAWIを直接起草する。
+   WI投入担当への中継を省き、調査済みの証拠と判断を再利用する。
+   同スキルの`references/drafting-workflow-review-route.md`「直接起草と独立した検収の選択」に従い、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md`の投入前レビューを経て保存する。
+   原因分析を含む原稿の独立検収は省かない。
+   全対象の分析と横断整理後に全要求を予告し、合格した原稿を保存する（`session-analysis.md`「工程5」）。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
    所要時間目標、計測の起点と終点、超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。
    目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
 4. 終了前の保存漏れを防ぐため、AWIの保存を検収し、対象一覧、登録AWI・見送り・費用確認を対象IDと対応付けて報告本文を確定する。
+   部分分析の対象は、その限界と欠測の記録ID・物理行・件数も同じ報告本文に明示する。
 5. batchのメインが`agent-toolkit:report-completion`を起動し、その工程で振り返り結果報告書式を使って結果を事後承認型UWIへ1件保存する。
    Claude Codeでは`Skill`で起動し、Codexでは同スキルの`SKILL.md`を絶対パスで取得する。
    sourceは `run-skill`、scopeは `agent-toolkit:review-session batch`、本文frontmatterは `run_skill_report: true` とし、manifestの `target_repo` を `--target-repo` へ明示する。
@@ -91,6 +99,8 @@ run-skillの短い目的文はbatchセッション自身が担当する工程の
   委譲先・サブエージェントを除外し、成功確定か取消しまで保持する。
   batch由来のセッションのhookでは再帰的に自動起動しない
 - `reviewed/<host>-<session_id>.json`: prepareが増分を選ぶ記録別の最終完全行と同一性を保持し、旧結果が返っても確定範囲を維持する。
+  batchの部分分析は欠測情報と、末尾欠測を含む観測済み物理範囲も保持し、準備後の新規追記と区別する。
+  部分分析の完了は、欠測を残した範囲の分析と報告の完了を表す。
   元記録がすべて無く、pending・未解決失敗・未確定manifestから参照されない場合だけ回収する
 - `runs/`: 実行ID別manifestに開始日時・固定対象・報告先・準備範囲・分析結果・プロセス・失敗を保持し、中断後の報告同期と未確定範囲を検収する。
   開始日時のない旧manifestはmtimeを自動起動間隔の基準にする。
@@ -116,6 +126,9 @@ run-skillの短い目的文はbatchセッション自身が担当する工程の
 本文から再現条件を復元できない場合だけ、不足する入力を起票ホストへ問い合わせる。
 
 batchはrun-skillの報告同期検収後、手動振り返りは全体分析後の`atk run-script session-review-state -- complete --prepared <準備結果JSON>`で準備済み範囲を確定し、新世代・準備後の追記はpendingに残す。
+batchだけが欠測を明示した部分分析を確定し、単発prepareの指定なしでの厳格読込と`--allow-partial-records`、単発completeの未確認拒否は維持する。
+起動元は永続scopeへの移管時にも元bundleの所在を保ち、同期確定後に生成時と同一の消費済み全量JSONLだけを回収する。
+欠測・回復情報、scope、候補証拠と必要文書は保持する。
 `AGENT_TOOLKIT_SESSION_REVIEW_BATCH`はmanifest、`AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO`は報告先を子へ渡す。
 `session_review_auto_start`がfalseでも待ちを登録し、SessionStartで件数と手動操作を通知する。
 batch起動時の回収では、共有の起動診断`launch.log`も、pending・未確定manifestが無く最終更新から30日経過した場合だけ削除する。

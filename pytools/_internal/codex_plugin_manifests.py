@@ -45,7 +45,7 @@ SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
 
 
 # 依存導入前の起動スクリプトscripts/launch.pyを、プロジェクト設定を読まずに起動するuvの引数。
-_UV_LAUNCH_ARGS = ("run", "--no-config", "--no-project", "--python", "3.15", "python")
+_UV_LAUNCH_ARGS = ("run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python")
 
 
 # hookの起動自体の失敗（uvやPythonの起動失敗、スクリプト不在）は終了コード2で終わることがあり、
@@ -58,15 +58,15 @@ HOOK_FAILURE_SUFFIX = " || exit 1"
 def _hook_command(name: str, *, persist_environment: bool = False) -> str:
     persist = "--persist-claude-env " if persist_environment else ""
     return (
-        'uv run --no-config --no-project --python 3.15 python "${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" '
-        f"{persist}agent_toolkit/hook.py {name}{HOOK_FAILURE_SUFFIX}"
+        "cd / && uv run --no-cache --no-config --no-project --python 3.15 python "
+        f'"${{CLAUDE_PLUGIN_ROOT}}/scripts/launch.py" {persist}agent_toolkit/hook.py {name}{HOOK_FAILURE_SUFFIX}'
     )
 
 
 def _codex_hook_command(name: str) -> str:
     return (
-        'uv run --no-config --no-project --python 3.15 python "${PLUGIN_ROOT}/scripts/launch.py" '
-        f"agent_toolkit/hook.py {name}{HOOK_FAILURE_SUFFIX}"
+        "cd / && uv run --no-cache --no-config --no-project --python 3.15 python "
+        f'"${{PLUGIN_ROOT}}/scripts/launch.py" agent_toolkit/hook.py {name}{HOOK_FAILURE_SUFFIX}'
     )
 
 

@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、Stopの共通ハンドラーの記録である。
 
-## Stopフックの設計
-
-### 共通ハンドラーと連続block上限
+## 共通ハンドラーと連続block上限
 
 Stopの登録は共通ハンドラー1件とする。
 共通ハンドラーから、`agent-toolkit/agent_toolkit/_hooks/background_tasks.py`の`is_pending_async_work`による入力待ちを判定する。

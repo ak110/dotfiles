@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import session_review_prepare as prepare
+from session_review_prepare_stats import _stats_document
 
 from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.session_review_prepare_support import _FIXED_NOW, _bundle_rows, _work_dir
@@ -348,3 +349,19 @@ def test_prepare_extracts_fixed_record_problems_without_naming_them(
     assert ("cache.path`は未適用" in candidates) is problem
     assert (_FIXTURE_DEFERRAL in conversation) is problem
     assert record["elapsed_seconds"] >= 6000
+
+
+def test_first_pass_stats_keeps_missing_and_denominator() -> None:
+    """初回表示でも段階別の欠落と分母を保持する。"""
+    row = {
+        "kind": "cost-metrics-first-pass",
+        "stage": "ci",
+        "observed_count": 0,
+        "unknown_count": 1,
+        "first_success_ratio": None,
+    }
+    text = _stats_document([row])
+    assert '"unknown_count": 1' in text
+    assert '"observed_count": 0' in text
+    assert '"first_success_ratio": null' in text
+    assert "初回成功率は不明" in _stats_document([])

@@ -83,6 +83,7 @@ def test_shared_mode_documents_reach_sdk_with_distinct_inputs(monkeypatch: pytes
         encoding="utf-8",
     )
     (rules / "rules-subagent.claude-code.md").write_text("Claude固有識別", encoding="utf-8")
+    (rules / "rules-common.claude-code.md").write_text("Claude共通識別", encoding="utf-8")
     for source in (launch_prompts, claude_options):
         assert source.__file__ is not None
         path = pathlib.Path(source.__file__)
@@ -105,3 +106,4 @@ def test_shared_mode_documents_reach_sdk_with_distinct_inputs(monkeypatch: pytes
         assert result_marker in delivered
         assert (inputs["base"] in delivered) is (mode == "delegate")
         assert (rules_marker in delivered) is (mode == "delegate")
+        assert ("Claude共通識別" in delivered) is (mode == "delegate")

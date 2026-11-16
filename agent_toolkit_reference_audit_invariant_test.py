@@ -127,6 +127,7 @@ def _unresolved_audit_body_references(content: str) -> list[str]:
     ]
 
 
+@pytest.mark.cpu_limit(2.0, reason="全追跡ソースと全監査見出しの参照を走査する横断契約。Linux CIのCPU0.84秒を基準に余裕を確保")
 def test_audit_record_headings_are_referenced() -> None:
     """監査記録の各H2見出しを、索引元の条文またはコードが同じ文字列で指す。"""
     root = pathlib.Path(__file__).resolve().parent

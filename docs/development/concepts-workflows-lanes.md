@@ -31,12 +31,13 @@ Claude Codeでは各段階の全初期通常レーンの初回起動後、公開
 Codex、通常0件、追加レーン起動と実行レビュー待機は予約時点の対象外とする。
 共通予約・復元手順は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`が持つ。
 
-レーンの専用worktree・branchはatk lane createが準備と所有登録を持ち、統合後もセッション終了まで保持する。
+レーンの専用worktree・branchはatk lane createが準備と所有登録を持ち、統合・最終化の検収と消費工程の終了後に回収する。
+2026年11月15日のユーザー指示により、再生成できる資源を使い終わった時点で回収し、同じthreadの追加作業は保存したcommit・計画・引き継ぎから環境を再作成する。
 2026年10月11日のユーザー指示により、process-wiは対象リポジトリごとに1つだけ起動する前提で、レーンworktreeを主作業ツリーの.claude/worktrees/process-wi-lane-NNへ固定し、session・日時・呼出し元worktreeで配置を変えない。
 Codexのパス単位の信頼設定へ渡す作業ディレクトリをレーンの反復で増やさないためである。
 固定パスに残る前回資源は既存の回収条件で回収して再作成し、未統合・dirty・稼働中・所有不明の資源は上書きも別パスへの回避もせず、理由と回復操作を返す。
 旧managed-temp配置の登録は既存のreuse-recordと終了時回収で扱う。
-2026年10月10日のユーザー指示により、公開前回収を開始条件から外し、通常終了のagents-exit-sessionとprocess-loopの子終了後から同じ安全な回収へ接続した。
+2026年10月10日のユーザー指示で公開前回収を開始条件から外した経緯を保ち、通常終了のagents-exit-sessionとprocess-loopの子終了後も同じ安全な回収へ接続する。
 全登録を先に判定し、未統合・dirty・稼働中・不明・部分失敗は成果と記録を保持する。
 回収の結果は専用資源の外へ保存し、次回開始時のatk lane delete --listから再判定する。
 セッションのmanaged-tempと証拠の7日保持は維持する。

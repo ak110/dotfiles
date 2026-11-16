@@ -23,6 +23,16 @@ from agent_toolkit._testing.lane_integration_support import (
 from agent_toolkit._testing.lane_support import _create, _invoke
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "書き込まない担当と呼出元の委譲元の連鎖は、--writer-"
+        + "sessionなしでも統合を止めない。 実Gitの所有worktree"
+        + "と保存状態でwriterの拒否/合意後再開を確認する。Linux同群"
+        + "CPU最大0.581秒。"
+    ),
+)
 @pytest.mark.parametrize("case", ["non-writer-role", "explore", "caller-self", "launcher", "two-level", "codex-caller"])
 def test_integrate_does_not_count_non_writers_or_caller_chain(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
@@ -63,6 +73,15 @@ def test_integrate_does_not_count_non_writers_or_caller_chain(
     assert ("lane-01" in deleted.get("removed", [])) is (case in {"non-writer-role", "explore"}), stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "所有者・レーン担当・メインが別sessionでも、初回の全要素指定で"
+        + "Git統合と最終化を完了する。 実Gitの所有worktreeと保存状"
+        + "態でwriterの拒否/合意後再開を確認する。Linux同群CPU最大"
+        + "0.581秒。"
+    ),
+)
 def test_integrate_first_call_accepts_all_agreed_distinct_sessions(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -105,6 +124,15 @@ def test_integrate_first_call_accepts_all_agreed_distinct_sessions(
     assert persisted["integration"]["phase"] == "finalized"
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "書き込む担当を両worktreeから全件診断し、合意した担当を指定した"
+        + "再実行で統合へ進む。 実Gitの所有worktreeと保存状態で"
+        + "writerの拒否/合意後再開を確認する。Linux同群CPU最大0."
+        + "581秒。"
+    ),
+)
 @pytest.mark.parametrize("no_merge", [False, True])
 @pytest.mark.parametrize("spread", [False, True])
 def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
@@ -169,6 +197,14 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
     assert code == 0 and result["phase"] == "finalized", stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "解決できない担当登録は許可扱いにせず統合を拒否する。 実Gitの所有"
+        + "worktreeと保存状態でwriterの拒否/合意後再開を確認する。"
+        + "Linux同群CPU最大0.581秒。"
+    ),
+)
 def test_integrate_rejects_unresolvable_registration(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -188,6 +224,14 @@ def test_integrate_rejects_unresolvable_registration(
     assert str((directory / "broken.json").resolve()) in stderr and "atk agents show broken" in stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "計画2件の保存とAWI本文の追記へ、同じ統合後HEAD・完了時刻・稼働"
+        + "秒数を渡す。 実Gitの所有worktreeと保存状態でwriterの"
+        + "拒否/合意後再開を確認する。Linux同群CPU最大0.581秒。"
+    ),
+)
 @pytest.mark.parametrize("no_merge", [False, True])
 def test_integrate_passes_confirmed_values_to_every_consumer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], no_merge: bool
@@ -245,6 +289,16 @@ def test_integrate_passes_confirmed_values_to_every_consumer(
     assert outputs[2].read_text(encoding="utf-8") == f"予測補正記録: {expected} {{{{other}}}}"
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "途中失敗の再開では確定値を再計算せず、成功済み操作を繰り返さず、開始時"
+        + "刻の変更を拒否する。 実Gitの所有worktreeと保存状態で"
+        + "writerの拒否/合意後再開を確認する。Linux同群CPU最大0."
+        + "581秒。"
+    ),
+)
 def test_integrate_reuses_confirmed_values_after_failed_finalization(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -307,6 +361,15 @@ def test_integrate_reuses_confirmed_values_after_failed_finalization(
     assert first.read_text(encoding="utf-8").endswith(f"{values['completed_at']} {values['lane_seconds']}")
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "未知の参照、時差の無い開始時刻、未来の開始時刻、開始時刻の欠落、相対パ"
+        + "スのテンプレートはGit統合前に拒否する。 実Gitの所有"
+        + "worktreeと保存状態でwriterの拒否/合意後再開を確認する。"
+        + "Linux同群CPU最大0.581秒。"
+    ),
+)
 @pytest.mark.parametrize(
     ("extra", "command", "reason"),
     [

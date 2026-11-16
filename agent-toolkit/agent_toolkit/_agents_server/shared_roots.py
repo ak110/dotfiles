@@ -22,6 +22,7 @@ import pathlib
 import uuid
 from collections.abc import Mapping
 
+from agent_toolkit._agents_server import status_reader
 from agent_toolkit._agents_server.retained_results import read_retained_result
 from agent_toolkit._agents_server.shared_layout import (
     aliases_directory,
@@ -32,6 +33,7 @@ from agent_toolkit._agents_server.shared_layout import (
     valid_session_id,
 )
 from agent_toolkit._common import delegated_session as _delegated_session
+from agent_toolkit._common import registry_forwarding
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.next_action import ActionableError
 
@@ -198,6 +200,16 @@ def write_root_alias(
     state_root: pathlib.Path | None = None,
 ) -> None:
     """現行session識別子のルート索引を書き、参照先を失った索引を回収する。"""
+    forwarded, _ = registry_forwarding.forward(
+        "write_root_alias",
+        {
+            "current_session_id": current_session_id,
+            "root_session_id": root_session_id,
+            "state_root": state_root,
+        },
+    )
+    if forwarded:
+        return
     if not valid_session_id(current_session_id) or not valid_session_id(root_session_id):
         raise ValueError("invalid session_id")
     directory = aliases_directory(state_root)
@@ -246,14 +258,26 @@ def resolve_status_owner_identity(
             and payload.get("host_session_id") == identity.host_session_id
         ):
             writers.append(path.stem)
-    if not writers:
-        for path in list_status_files(identity.root_session_id, state_root):
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except OSError, UnicodeError, json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict) and payload.get("host_session_id") == identity.host_session_id:
-                writers.append(path.stem)
+    current_writers: list[str] = []
+    cutoff = status_reader.heartbeat_cutoff()
+    for path in list_status_files(identity.root_session_id, state_root):
+        try:
+            payload = status_reader.read_payload(path)
+        except (OSError, UnicodeError, ValueError) as error:
+            if path.stem in writers:
+                raise ActionableError(
+                    f"書込主体の現行状態を読めません: {path}: {error}",
+                    next_action="状態ファイルの読取権限とJSONを確認し、同じ待機操作を再実行する",
+                ) from error
+            continue
+        if payload.get("host_session_id") != identity.host_session_id:
+            continue
+        if status_reader.heartbeat_is_current(payload, cutoff):
+            current_writers.append(path.stem)
+    # hostsは過去の対応も保持する。現行の公開状態がある場合は、その所有者で解決する。
+    # 状態未公開の起動と保持結果を壊さないよう、失効した索引自体はここでは削除しない。
+    if current_writers:
+        writers = current_writers
     if not writers:
         return identity
     if len(writers) != 1:
@@ -328,6 +352,17 @@ def write_host_alias(
     state_root: pathlib.Path | None = None,
 ) -> None:
     """書込主体を委譲元threadへ対応付ける索引を書く。"""
+    forwarded, _ = registry_forwarding.forward(
+        "write_host_alias",
+        {
+            "root_session_id": root_session_id,
+            "writer_session_id": writer_session_id,
+            "host_session_id": host_session_id,
+            "state_root": state_root,
+        },
+    )
+    if forwarded:
+        return
     if not all(valid_session_id(value) for value in (root_session_id, writer_session_id, host_session_id)):
         raise ValueError("invalid session_id")
     payload = {"version": 1, "host_session_id": host_session_id}

@@ -18,6 +18,7 @@
 | 編集前の読解・記述順序と命名・コードの簡潔さ・言語横断のツールと構文に関する判断・作業の前 | `implementation-time-style.md` |
 | コメントの記述粒度に関する判断・作業の前 | `implementation-time-comments.md` |
 | データと計算に関する判断・作業の前 | `implementation-time-data.md` |
+| 日時処理を実装・変更・レビューする前 | `implementation-time-data.md` |
 | リソースと並行処理に関する判断・作業の前 | `implementation-time-resources.md` |
 | セキュリティ・ロギング・エラー処理に関する判断・作業の前 | `implementation-time-errors.md` |
 | 依存と自動生成物・lintと機械チェックに関する判断・作業の前 | `implementation-time-checks.md` |

@@ -6,6 +6,13 @@
 
 ## 診断とログ
 
+共有serviceの起動診断は`state_dir/services/agents-server/<generation>.stderr.log`と世代ごとのready JSONで確認する。
+終了診断は下表の既存インスタンス記録を使い、診断supervisorがserviceの終了状態と16KiBの標準エラー末尾を保持する。
+stdio転送のEOFと、会話を制御するserviceの終了は別々の停止原因として扱う。
+世代登録のPID起動世代、既存登録簿の制御所有者、raw資源のoriginを区別して照合する。
+認証値はこれらの記録の保存対象から除外する。
+資源と所有者の関係は[管理サービス設計の「受付・状態writer・実行資源の移譲」](../../../../docs/development/design-agents-server-service.md#受付状態writer実行資源の移譲)を参照する。
+
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | `atk run-script session-review-evidence` | `agents_server`のCodexバックエンド |

@@ -1,4 +1,4 @@
-"""`atk serve`の実ブラウザー統合テストが共有する擬似操作、サーバーの起動、fixtureと補助。"""
+"""`atk serve`の実ブラウザー統合テストが共有する更新制御、サーバーの起動、fixtureと補助。"""
 
 import asyncio
 import contextlib
@@ -8,7 +8,7 @@ import os
 import socket
 import tempfile
 import threading
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator, Iterable
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,27 +21,14 @@ from agent_toolkit._atk.serve import config, wi_operations
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
-from agent_toolkit._atk.wi import batch as wi_batch
-from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
-from agent_toolkit._atk.wi import user_comment as user_comment_mutations
-from agent_toolkit._atk.wi import uwi as uwi_mutations
-from agent_toolkit._atk.wi import web_input as wi_web_input
+from agent_toolkit._atk.wi import sync as wi_sync
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import wi_entry_files
 from agent_toolkit._testing.pytest_plugin import _BROWSER_EVIDENCE
 
 _SERVER_START_TIMEOUT_SEC = 10.0
 _LONG_UNKNOWN_FRONTMATTER_KEY = "unknown_" + "x" * (500 - len("unknown_"))
-
-
-def _write_fixed_entry(root: Path, filename: str, state: str, content: str) -> Path:
-    """年月固定のテスト項目へ状態と本文を保存する。"""
-    parsed = wi_frontmatter.parse_frontmatter(content)
-    metadata, body = parsed if parsed is not None else ({}, content)
-    path = wi_entry_files.entry_path(root, filename)
-    path.write_text(wi_frontmatter.serialize_frontmatter({**metadata, "state": state}, body), encoding="utf-8")
-    return path
 
 
 async def _hold_route(
@@ -117,11 +104,35 @@ async def _wait_screen_requests_consumed(page: playwright.async_api.Page, stream
     )
 
 
+class _BrowserMutation(wi_sync.Mutation):
+    """画面試験では本文保存を通し、Gitのcommit・pushだけを省く。"""
+
+    def commit(self, message: str, rel_paths: Iterable[str]) -> int | None:
+        del message, rel_paths
+        return 0
+
+
+@dataclasses.dataclass(frozen=True)
+class _BrowserStorage(wi_sync.Storage):
+    """外部Gitとプロセス間ロックを使わず、試験内の更新を直列化する。"""
+
+    lock: Any = dataclasses.field(default_factory=threading.RLock)
+
+    @contextlib.contextmanager
+    def mutation(
+        self, private_notes: Path, *, push_pending: bool = False, skip_push: bool = False
+    ) -> Generator[wi_sync.Mutation]:
+        del push_pending, skip_push
+        with self.lock:
+            yield _BrowserMutation(private_notes, skip_push=True)
+
+
 class _BrowserOperations(wi_operations.Operations):
-    """Gitを使わず、更新処理の待機を同期イベントで制御する。"""
+    """製品の更新処理を通し、画面の待機制御と呼出し記録を付加する。"""
 
     def __init__(self, private_notes: Path) -> None:
         super().__init__(private_notes)
+        self._storage = _BrowserStorage(local_only=True)
         self.delay_edit = False
         self.edit_started = threading.Event()
         self.edit_release = threading.Event()
@@ -134,7 +145,6 @@ class _BrowserOperations(wi_operations.Operations):
         self.remove_release.set()
         self.remove_calls = 0
         self.last_transition: tuple[str, list[str], str | None] | None = None
-        self.persist_mutations = False
         self.add_calls: list[dict[str, Any]] = []
         self.batch_calls: list[str] = []
         self.delay_user_comment = False
@@ -147,114 +157,39 @@ class _BrowserOperations(wi_operations.Operations):
         """テストでは外部Git操作を行わない。"""
         return True
 
+    def background_sync(self) -> bool:
+        return False
+
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
-        """Gitを使わず、ユーザーコメントの本文が期待値に一致するかを確かめて保存する。"""
         self.user_comment_calls += 1
         if self.delay_user_comment:
             self.user_comment_started.set()
             if not self.user_comment_release.wait(timeout=5):
                 raise TimeoutError("ユーザーコメント保存の解放を待機できませんでした")
             self.delay_user_comment = False
-        path = wi_entries.entry_path(self.private_notes, filename)
-        current = path.read_text(encoding="utf-8")
-        if current != expected_content:
-            raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        updated = user_comment_mutations.update_user_comment(current, comment)
-        path.write_text(updated, encoding="utf-8")
-        return True
+        return super().user_comment(state, filename, comment, expected_content)
 
-    def background_sync(self) -> bool:
-        return False
-
-    def important(self, filename: str, important: bool, expected_content: str | None = None) -> bool:
-        """Gitを使わず、状態と保存先を保って重要フラグを更新する。"""
-        path = wi_entries.entry_path(self.private_notes, filename)
-        text = path.read_text(encoding="utf-8")
-        if expected_content is not None and text != expected_content:
-            raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        parsed = wi_frontmatter.parse_frontmatter(text)
-        assert parsed is not None
-        metadata, body = parsed
-        if important:
-            metadata["important"] = True
-        else:
-            metadata.pop("important", None)
-        updated = wi_frontmatter.serialize_frontmatter(metadata, body)
-        if text == updated:
-            return False
-        path.write_text(updated, encoding="utf-8")
-        return True
-
-    def edit(
-        self,
-        state: str,
-        filename: str,
-        content: str,
-        expected_content: str | None = None,
-    ) -> bool:
+    def edit(self, state: str, filename: str, content: str, expected_content: str | None = None) -> bool:
         self.edit_calls += 1
-        if self.persist_mutations:
-            path = wi_entries.entry_path(self.private_notes, filename)
-            if expected_content is not None and path.read_text(encoding="utf-8") != expected_content:
-                raise RuntimeError("編集中に他プロセスが対象を変更しました")
-            _write_fixed_entry(self.private_notes, filename, state, content)
+        result = super().edit(state, filename, content, expected_content)
         if self.delay_edit:
             self.edit_started.set()
             if not self.edit_release.wait(timeout=5):
                 raise TimeoutError("編集処理の解放を待機できませんでした")
             self.delay_edit = False
-        return True
+        return result
 
-    def transition(
-        self,
-        action: str,
-        filenames: list[str],
-        **kwargs: Any,
-    ) -> list[str]:
+    def transition(self, action: str, filenames: list[str], **kwargs: Any) -> list[str]:
         self.last_transition = (action, filenames, kwargs.get("note"))
-        if action in {"hold", "unhold", "return-to-inbox"} and self.persist_mutations:
-            source = kwargs.get("state")
-            destination = "hold" if action == "hold" else "inbox"
-            for filename in filenames:
-                path = wi_entries.entry_path(self.private_notes, filename)
-                assert source is None or wi_entries.entry_state_of(path) == source
-                _write_fixed_entry(self.private_notes, filename, destination, path.read_text(encoding="utf-8"))
-        if action in {"adopt", "reject"} and self.persist_mutations:
-            source = kwargs.get("state")
-            destination = "adopted" if action == "adopt" else "rejected"
-            for filename in filenames:
-                path = wi_entries.entry_path(self.private_notes, filename)
-                assert source is None or wi_entries.entry_state_of(path) == source
-                _write_fixed_entry(self.private_notes, filename, destination, path.read_text(encoding="utf-8"))
+        result = super().transition(action, filenames, **kwargs)
         if action == "remove":
             self.remove_calls += 1
-            if self.persist_mutations:
-                state = kwargs.get("state")
-                expected_content = kwargs.get("expected_content")
-                force = kwargs.get("force", False)
-                for filename in filenames:
-                    state_names = (state,) if state is not None else ("processing", "inbox")
-                    for state_name in state_names:
-                        path = wi_entries.entry_path(self.private_notes, filename)
-                        if not path.exists() or wi_entries.entry_state_of(path) != state_name:
-                            continue
-                        if state_name == "processing" and not force:
-                            raise wi_operations.WebApiInputError("指定したエントリを操作できません")
-                        if expected_content is not None:
-                            try:
-                                current_content = path.read_text(encoding="utf-8")
-                            except (OSError, UnicodeError) as error:
-                                raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
-                            if current_content != expected_content:
-                                raise RuntimeError("編集中に他プロセスが対象を変更しました")
-                        path.unlink()
-                        break
             if self.delay_remove:
                 self.remove_started.set()
                 if not self.remove_release.wait(timeout=5):
                     raise TimeoutError("削除処理の解放を待機できませんでした")
                 self.delay_remove = False
-        return filenames
+        return result
 
     def add(
         self,
@@ -266,66 +201,23 @@ class _BrowserOperations(wi_operations.Operations):
         question_type: str | None = None,
         choices: list[str] | None = None,
     ) -> list[str]:
-        """Gitを使わず、対象リポジトリの必須検証と一時リポジトリへの書込みだけを行う。"""
-        del scope, question_type, choices
         self.add_calls.append({"messages": messages, "target_repo": target_repo})
-        filenames: list[str] = []
-        for index, message in enumerate(messages):
-            parsed = wi_frontmatter.parse_frontmatter(message)
-            metadata, body = parsed if parsed is not None else ({}, message)
-            repo = target_repo if target_repo is not None else metadata.get("target_repo")
-            if not isinstance(repo, str) or not repo:
-                raise wi_web_input.WebInputError(
-                    "target_repoを指定するか各メッセージのfrontmatterへ記載してください",
-                    next_action="--target-repoを指定して再実行する",
-                )
-            filename = f"created-{len(self.add_calls)}-{index}.md"
-            _write_fixed_entry(
-                self.private_notes,
-                filename,
-                "inbox",
-                f"---\ntarget_repo: {repo}\ntype: {entry_type}\n---\n\n{body.strip()}\n",
-            )
-            filenames.append(filename)
-        return filenames
+        return super().add(
+            messages,
+            entry_type=entry_type,
+            target_repo=target_repo,
+            scope=scope,
+            question_type=question_type,
+            choices=choices,
+        )
 
     def add_batch(self, text: str) -> dict[str, object]:
-        """Gitを使わず、実装と同じ解析結果を一時リポジトリへ原文保持で書き込む。"""
         self.batch_calls.append(text)
-        entries = wi_batch.parse_show_batch(text)
-        for entry in entries:
-            _write_fixed_entry(self.private_notes, entry.original_name, "inbox", entry.raw_text)
-        return {
-            "filenames": [entry.original_name for entry in entries],
-            "mapping": {entry.original_name: entry.original_name for entry in entries},
-            "warnings": [],
-        }
+        return super().add_batch(text)
 
-    def answer_uwi(
-        self,
-        filename: str,
-        answer: str,
-        expected_content: str | None = None,
-        state: str | None = None,
-    ) -> bool:
+    def answer_uwi(self, filename: str, answer: str, expected_content: str | None = None, state: str | None = None) -> bool:
         self.answer_calls += 1
-        if self.persist_mutations:
-            marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
-            state_names = (state,) if state is not None else ("processing", "inbox")
-            for state_name in state_names:
-                path = wi_entries.entry_path(self.private_notes, filename)
-                if not path.exists() or wi_entries.entry_state_of(path) != state_name:
-                    continue
-                content = path.read_text(encoding="utf-8")
-                if expected_content is not None and content != expected_content:
-                    raise RuntimeError("編集中に他プロセスが対象を変更しました")
-                updated = content.rsplit(marker, maxsplit=1)[0] + marker + "\n" + answer.strip() + "\n"
-                path.write_text(updated, encoding="utf-8")
-                # 実装（`uwi.answer_uwi`）と同じ判定で、事後承認型UWIへの肯定回答は項目を`adopted`へ移す。
-                if uwi_mutations._is_affirmative_post_approval(content, answer):  # pylint: disable=protected-access
-                    _write_fixed_entry(self.private_notes, filename, "adopted", updated)
-                break
-        return True
+        return super().answer_uwi(filename, answer, expected_content, state)
 
     def arm_edit_delay(self) -> None:
         self.delay_edit = True
@@ -341,10 +233,6 @@ class _BrowserOperations(wi_operations.Operations):
         self.delay_user_comment = True
         self.user_comment_started.clear()
         self.user_comment_release.clear()
-
-    def enable_file_mutations(self) -> None:
-        """回答・削除で一時リポジトリの実ファイルを更新する。"""
-        self.persist_mutations = True
 
 
 @dataclasses.dataclass

@@ -68,14 +68,22 @@ actionlint・editorconfig-checker・git-cliff・pinact・shellcheck・shfmt・ty
 mise・シェル基本ツール・tmux・pytools・dotfilesプラグインの反映は維持する。
 minimalのmise操作はホームを実行位置とし、作業ツリーの開発ツールとglobal nodeの追加を省く。
 
-`update-dotfiles`の成功後は実効モードがminimalの場合と明示的に`--prune`を指定した場合に、不要ツールとキャッシュを整理する。
-通常のfull更新では導入済み実体を保持する。
-更新ランチャーはuvの外から`dotfiles-post-apply --prune-only-if-minimal`へ元の`--mode`・`--prune`引数を渡し、post-applyが実効モードを解決して整理の要否を決める。
-`update-dotfiles --prune`は`DOTFILES_PRUNE=1`も後処理へ渡す。
-`dotfiles-post-apply --prune`も同じ削除工程を、他の全工程が完了した後に実行する。
+`update-dotfiles`の成功後はfull・minimalとも不要ツールと取得キャッシュを整理する。
+`--prune`は互換入力として受理し、指定の有無で整理結果を変えない。
+更新ランチャーはuvの外から`dotfiles-post-apply --prune-only-if-minimal`へ元の引数を渡す。
+この内部引数も互換名として残し、モードによらず更新と共通のロックを取得して整理する。
+単独の`dotfiles-post-apply`も通常工程の後に同じ整理をする。
 対象は現行のmise定義とモードから求める。
-fullでは作業ツリーが引き続き参照する開発ツールを保持する。
-minimalでは大型ランタイム・SDK・AI関連と作業ツリーの全ツールを除去し、`mise prune -y`・`mise reshim --force`・`mise cache clear`・`uv cache clean`を実行する。
+fullでは他プロジェクトの設定と稼働プロセスが使う版を`mise prune`の判定で保持し、固定一覧による全版削除は行わない。
+minimalでは従来の対象外ランタイム・SDK・AI関連と作業ツリーのツールを、使用中保護を確認して除去する。
+取得キャッシュはuvの通常pruneと、実キャッシュルートごとの全消去成功から30日経過した場合のcleanを使い分ける。
+初回も全消去し、競合・失敗では成功日時を更新せず次の通常更新で再試行する。
+miseはcache prune、導入済みのnpmはcache verify、pnpmはstore pruneを使う。
+Cargoは標準のグローバルキャッシュ自動回収に委ね、通常更新での回収を保証しない。
+uvの整理では再取得が増え、オフラインで再利用できる範囲が減る場合がある。
+保留でも他ツールの整理を続け、整理後にキャッシュ内の旧MCP環境を事前構築する。
+MCP・hook・atkの外側のuv起動だけをno-cacheとし、共有依存環境の内側syncは共有キャッシュを利用する。
+起動済みの旧ランチャーへ設定は遡及しないため、活動中セッションを停止せず、再接続後の通常更新で回収する。
 rustup・cargo・`.dotnet`は設定とユーザー導入物を残し、ランタイムとキャッシュの子ディレクトリを整理する。
 mise専用のdotnet-rootも削除する。
 Claude CodeとCodexの設定・会話履歴は削除対象に含めない。

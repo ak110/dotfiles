@@ -18,7 +18,7 @@
 
 工程の定義は`agent-toolkit/share/rules/common/01-agent.md`「役割分担」に従い、後述の個別UWIの条件と、権限拒否の偽陽性に対する`permission-denial.md`の手順は下表より優先する。
 表の「発話本文」はユーザーへのメッセージである。
-Claude Codeでは`agent-toolkit/share/rules/rules-main.claude-code.md`「ツールの入出力」に従って`mcp__agent-toolkit__send_to_user`で届ける。
+Claude Codeでは`agent-toolkit/share/rules/rules-main.claude-code.md`「ツールの入出力」に従って`mcp__plugin_agent-toolkit_agents_server__send_to_user`で届ける。
 Codexでは途中経過を`commentary`、通常の最終応答を必要なツール処理後の`final`で届ける。
 成果作業ではreport-completionで確定した作業完了報告の本文をそのまま用いる。
 ホスト本体を停止する場合、必要な可視報告は停止前の`commentary`で届ける。

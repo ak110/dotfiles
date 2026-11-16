@@ -25,6 +25,13 @@ pytestmark = [
 ]
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "狭幅・一覧自身の切替境界・広幅で、コピーの前後も題名を読めて横幅を超えない。実ブラウザーの観測と"
+        "trace回収が必要（CPU最大実測0.513秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize(
     ("width", "list_width"),
@@ -174,6 +181,13 @@ async def test_copy_all_is_summary_column_header(browser_harness: _BrowserHarnes
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "重要・検索・対象条件に一致する全ページを取得し、個別コピー形式でコピーする。実ブラウザーの観測と"
+        "trace回収が必要（CPU最大実測0.724秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_copy_all_work_items_preserves_filters_across_pages(browser_harness: _BrowserHarness) -> None:
     """重要・検索・対象条件に一致する全ページを取得し、個別コピー形式でコピーする。"""

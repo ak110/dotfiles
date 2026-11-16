@@ -256,3 +256,53 @@ def test_async_command_timeout_or_cancellation_reclaims_child_tree(tmp_path, mon
     asyncio.run(check())
     pid = int(pid_file.read_text())
     assert not psutil.pid_exists(pid) or psutil.Process(pid).status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+
+
+@pytest.mark.parametrize(
+    "response,expected",
+    [
+        ("{", "json"),
+        ('{"installed": []}', "uninstalled"),
+        ('{"installed": [{"pluginId": "agent-toolkit@ak110-dotfiles", "enabled": false, "version": "1.2.3"}]}', "disabled"),
+        ('{"installed": [{"pluginId": "agent-toolkit@ak110-dotfiles", "enabled": true, "version": "1.2.3"}]}', "missing"),
+        ('{"installed": "invalid"}', "schema"),
+        ('{"installed": [{"pluginId": "agent-toolkit@ak110-dotfiles", "enabled": true, "version": "../bad"}]}', "version"),
+    ],
+)
+def test_codex_candidate_diagnostic_preserves_recovery_context(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    response: str,
+    expected: str,
+) -> None:
+    """一覧解析失敗・欠損・正常な対象なしを区別し、原因側の回復を案内する。"""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setattr(_common, "resolve_executable", lambda *_args, **_kwargs: pathlib.Path("/host/codex"))
+    monkeypatch.setattr(_common, "run_subprocess", lambda *_args, **_kwargs: _FakeResult(stdout=response))
+    with caplog.at_level(logging.INFO):
+        target = _plugin_warmup.codex_plugin_script(
+            plugin_id="agent-toolkit@ak110-dotfiles",
+            plugin_name="agent-toolkit",
+            relative_path=pathlib.Path("agent_toolkit/entry.py"),
+            tag="warmup",
+        )
+    if expected == "json":
+        assert target is None
+        assert "JSON解析に失敗" in caplog.text
+        assert str(pathlib.Path("/host/codex")) in caplog.text
+        assert "ak110-dotfiles" in caplog.text
+        assert "終了状態: 0" in caplog.text
+        assert "修復してから" in caplog.text
+    elif expected == "missing":
+        assert target is not None
+        assert "有効版=1.2.3" in caplog.text
+        assert f"期待相対パス={pathlib.Path('agent_toolkit/entry.py')}" in caplog.text
+        assert "配布物を回復してから" in caplog.text
+    elif expected in {"schema", "version"}:
+        assert target is None
+        assert "修復してから" in caplog.text
+        assert any(record.levelno >= logging.WARNING for record in caplog.records)
+    else:
+        assert target is None
+        assert not any(record.levelno >= logging.WARNING for record in caplog.records)

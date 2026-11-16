@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/SKILL.md` |
 
 ## 設計品質の劣化確認
 
@@ -40,10 +40,11 @@ SSOT（単一の情報源）、責務の混在、重複、読み取り・変更�
 - `agent-documents-basics-placement.md`
 - `agent-documents-basics-read-tables.md`
 - `agent-documents-basics-ownership.md`
+
 評価結果は各観点ごとの結論として記録し、劣化がないと判断した場合も観点ごとにその根拠を記載する。
 記録先および是正手順は各工程の規範に従う。
 後続の工程では、先行工程による「劣化なし」という結論を鵜呑みにせず、自ら独立して再評価する。
-変更対象に含まれず是正の必要性も生じない既存の不備は評価対象から除外し、`../../bugfix/references/root-cause-analysis-initial.md`「問題を見つけたときの対処」に従う。
+変更対象に含まれず是正の必要性も生じない既存の不備は評価対象から除外し、`../../bugfix/SKILL.md`「初動の判断」に従う。
 
 ## 本文参照の取得条件
 

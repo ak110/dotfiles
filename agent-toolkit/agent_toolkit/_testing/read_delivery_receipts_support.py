@@ -43,10 +43,10 @@ def _read_output(command, host_environ):
 
 
 def _produce(target, host_environ):
-    """案内が生成した取得コマンドを実行し、未加工のstdout・stderrを返す。"""
-    command = json.loads(
-        (read_delivery.acquisition_step(target, "codex")).split("tools.exec_command(", 1)[1].splitlines()[0].removesuffix(");")
-    )["cmd"]
+    """ホストの標準読取で必要範囲を取得し、未加工のstdout・stderrを返す。"""
+    path = shlex.quote(str(target.path))
+    ranges = target.line_ranges() if target.heading and not read_triggers.is_normative_document(target.path) else ()
+    command = " && ".join(f"sed -n '{start},{end}p' -- {path}" for start, end in ranges) if ranges else f"cat -- {path}"
     result = _read_output(command, host_environ)
     return command, {"stdout": result.stdout, "stderr": result.stderr, "exit_code": result.returncode}
 
@@ -69,6 +69,8 @@ def _scenario(tmp_path, monkeypatch):
     notice.set_warning_session_id("")
     path = tmp_path / "reference space[1].md"
     path.write_text("# 基準\n\n## 必要節\n固有の必要本文\n\n## 別節\n固有の別本文\n", encoding="utf-8")
+    # この試験が明示した宣言とreceiptだけを使い、導入済み全skillの解析を反復しない。
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [path])
     rollout = tmp_path / "rollout.jsonl"
     rollout.write_text("", encoding="utf-8")
 

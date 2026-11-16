@@ -52,6 +52,11 @@ def test_checkout_copies_saved_bundle_into_working_root(tmp_path: pathlib.Path) 
     assert snapshots == {detail.name: detail.read_bytes(), main.name: main.read_bytes()}
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.359秒。"),
+)
 @pytest.mark.parametrize("input_source", ["name", "checkout", "list"])
 def test_cli_checkout_edit_and_commit_saved_bundle(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], input_source: str

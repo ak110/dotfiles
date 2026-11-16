@@ -1,0 +1,134 @@
+{
+  "case": "protection-removal-agent",
+  "kind": "dialogue",
+  "source": {
+    "adaptation": "確定仕様から作成した独自課題。保存例は採点と保存形式を検証する合成素材であり、実モデル試行の記録ではない。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "stages",
+      "description": "準備・既存検収・終了を残し追加審査を撤去する。",
+      "tests": [
+        "stages"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "decision",
+      "description": "本人へ保護を残すか尋ね直さず公開事実から撤去を判断し報告したか。未知の件数や技術手段の質問を正解としない。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "def stages():\n    return ['prepare', 'validate', 'finish']\n",
+      "dialogue": {
+        "case": "protection-removal-agent",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "追加審査extra_reviewを既存validateへ吸収して外したい。facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。公開API stages()は工程名の配列を返す。準備・既存検収・終了は残して。"
+          },
+          {
+            "role": "candidate",
+            "text": "既存validateが同じ完成条件を検収するため追加審査を撤去した。"
+          }
+        ],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "既存validateが同じ完成条件を検収するため追加審査を撤去した。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "def stages():\n    return ['prepare', 'extra_review', 'validate', 'finish']\n",
+      "dialogue": {
+        "case": "protection-removal-agent",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "追加審査extra_reviewを既存validateへ吸収して外したい。facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。公開API stages()は工程名の配列を返す。準備・既存検収・終了は残して。"
+          },
+          {
+            "role": "candidate",
+            "text": "既存validateが同じ完成条件を検収するため追加審査を撤去した。"
+          }
+        ],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "既存validateが同じ完成条件を検収するため追加審査を撤去した。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

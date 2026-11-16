@@ -64,9 +64,9 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
     shell = shutil.which("sh")
     assert shell is not None
     command = json.loads(definition.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    launcher = "uv run --no-config --no-project --python 3.15 python "
-    assert command.startswith(launcher)
-    command = shlex.quote(sys.executable) + " " + command.removeprefix(launcher)
+    launcher = "uv run --no-cache --no-config --no-project --python 3.15 python "
+    assert command.count(launcher) == 1
+    command = command.replace(launcher, shlex.quote(sys.executable) + " ", 1)
     environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(_SCRIPT.parents[1]), "PLUGIN_ROOT": str(_SCRIPT.parents[1])}
     # 依存導入を実行せず、試験を実行中のPythonを準備済み環境の境界へ接続する。
     environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
@@ -76,7 +76,12 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
     runner.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable) + ' "$@"\n', encoding="utf-8")
     runner.chmod(0o700)
     (selected / ".agent-toolkit-dependencies-ready").write_text("ready\n", encoding="utf-8")
-    payload = {"session_id": "registered-denial", "tool_name": "Bash", "tool_input": {"command": "pkill -f worker"}}
+    payload = {
+        "session_id": "registered-denial",
+        "cwd": str(tmp_path),
+        "tool_name": "Bash",
+        "tool_input": {"command": "pkill -f worker"},
+    }
     expected = "pkill"
     if case == "unread-rewrite":
         payload.update(tool_name="Write", tool_input={"file_path": str(tmp_path / "note.md"), "content": "本文"})
@@ -193,7 +198,6 @@ def test_internal_observation_failure_uses_one_marked_context(monkeypatch, subco
     context = response["hookSpecificOutput"]["additionalContext"]
     assert f'source="{subcommand}" kind="warn"' in context
     assert "観測の故障注入" in context
-    assert "次の操作:" in context
     assert response.get("decision") != "block"
 
 
@@ -207,13 +211,11 @@ def test_hook_launch_failure_exits_with_non_blocking_code(tmp_path: pathlib.Path
     del name
     shell = shutil.which("sh")
     assert shell is not None
-    launcher = "uv run --no-config --no-project --python 3.15 python "
-    assert command.startswith(launcher)
+    launcher = "uv run --no-cache --no-config --no-project --python 3.15 python "
+    assert command.count(launcher) == 1
     # uvの解決は実行環境（miseのshimなど）に左右されるため、同じPythonの起動に置き換えて末尾の変換だけを確かめる。
     resolved = (
-        shlex.quote(sys.executable)
-        + " "
-        + command.removeprefix(launcher)
+        command.replace(launcher, shlex.quote(sys.executable) + " ", 1)
         .replace("${CLAUDE_PLUGIN_ROOT}", str(tmp_path))
         .replace("${PLUGIN_ROOT}", str(tmp_path))
     )

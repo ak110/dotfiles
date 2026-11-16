@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import pathlib
 import shutil
 import subprocess
@@ -18,12 +17,14 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
+from agent_toolkit._agents_server.mcp_transport_test import _EXPECTED_TOOLS
 from agent_toolkit._common import plugin_environment, process_identity
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.codex_plugin_support import (
     _REAL_MCP_PREPARE_TIMEOUT,
     _cleanup_entry,
     _real_mcp_environment,
+    _stop_mcp_services,
     _wait_mcp_processes,
 )
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
@@ -74,6 +75,9 @@ def test_wait_mcp_processes_fails_for_living_process(
 @pytest.mark.timeout(180)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("share_package_caches")
+@pytest.mark.cpu_limit(
+    2.0, reason="配布物を共有する3台の実MCPで元版の更新・削除・回収を確認する最小構成。Linux CI実測CPU0.54秒"
+)
 async def test_stable_plugin_root_shared_across_processes(
     tmp_path: pathlib.Path,
     tmp_path_factory: pytest.TempPathFactory,
@@ -84,7 +88,7 @@ async def test_stable_plugin_root_shared_across_processes(
     manifest = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     version = manifest["version"]
     source = tmp_path / "distribution" / version
-    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
+    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules", "*_test.py"))
     version_file = pathlib.Path("skills/managed-temp/SKILL.md")
     original = (source / version_file).read_bytes()
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
@@ -99,7 +103,7 @@ async def test_stable_plugin_root_shared_across_processes(
     logs: list[pathlib.Path] = []
     observed: list[dict[str, Any]] = []
     area: pathlib.Path | None = None
-    expected_tools = {"start", "send_message", "kill", "stop", "list", "show"}
+    expected_tools = _EXPECTED_TOOLS
     try:
         # 配布元と保持先の2環境のcold導入に、実MCP操作の予算を加える。
         with contextlib.ExitStack() as files, anyio.fail_after(135):
@@ -123,11 +127,20 @@ async def test_stable_plugin_root_shared_across_processes(
                     records = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
                     leases = [record for record in records if "path" in record]
                     assert len(records) == len(leases)
-                    assert len(leases) == index + 1
+                    assert len(leases) == 2
+                    if owned:
+                        assert {record["pid"] for record in leases} == set(owned)
                     areas = {pathlib.Path(record["path"]) for record in leases}
                     assert len(areas) == 1
                     area = areas.pop()
                     held = area / version
+                    registries = list(state_base.rglob("generations.json"))
+                    assert len(registries) == 1
+                    registry = json.loads(registries[0].read_text(encoding="utf-8"))
+                    current = registry["generations"][registry["current"]]
+                    assert pathlib.Path(current["root"]) == held
+                    if observed:
+                        assert current["process"] == observed[0]["process"]
                     marker = json.loads((area / ".agent-toolkit-plugin-root.json").read_text(encoding="utf-8"))
                     assert marker == {"source": str(source), "version": version, "root_name": version}
                     assert list(area.parent.glob("agents-server-plugin-root-*")) == [area]
@@ -135,11 +148,16 @@ async def test_stable_plugin_root_shared_across_processes(
                     for record in leases:
                         process = psutil.Process(record["pid"])
                         assert process_identity.matches(process, record["created_at"], record.get("start_id"))
-                        ancestors = process_identity.parents(process)
-                        parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
-                        for member in (process, *ancestors[:parent_index]):
-                            owned[member.pid] = member
-                    observed.append({"server": index, "tools": sorted(tools), "leases": leases, "marker": marker})
+                        owned[process.pid] = process
+                    observed.append(
+                        {
+                            "server": index,
+                            "process": current["process"],
+                            "tools": sorted(tools),
+                            "leases": leases,
+                            "marker": marker,
+                        }
+                    )
                     if index == 1:
                         (source / version_file).write_text("更新された配布元", encoding="utf-8")
                         assert (held / version_file).read_bytes() == original
@@ -166,7 +184,7 @@ async def test_stable_plugin_root_shared_across_processes(
                 assert area is not None
                 assert (area / version / version_file).read_bytes() == original
     finally:
-        _wait_mcp_processes(owned)
+        _stop_mcp_services(state_base)
         for log in logs:
             print(f"S02 MCP診断 {log.name}:\n" + log.read_text(encoding="utf-8"))
     assert area is not None

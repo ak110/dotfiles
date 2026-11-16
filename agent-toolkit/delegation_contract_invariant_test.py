@@ -144,13 +144,14 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     expected_names = parent_names | recipient_names | contract_names
     # 入力・起動・統合の各判断で読む規範資料も、同じ役割の引き継ぎ契約を所有する。
     for owner, materials in (
+        ("rules/rules-subagent.md", (("../subagent-operations.md", "多段工程の記録・引き継ぎ"),)),
         ("add-wi.parent.md", (("add-wi-parent-inputs.md", "入力"), ("add-wi-parent-launch.md", "起動方法"))),
         ("exec.parent.md", (("exec-parent-launch.md", "入力"), ("exec-parent-integration.md", "統合"))),
         ("exec-review.parent.md", (("exec-review-parent-launch.md", "入力"),)),
         ("lane-integration.subagent.md", (("lane-integration-subagent-inputs.md", "入力"),)),
     ):
-        read_contract(share / owner, share.parent, *materials)
-        expected_names.update(name for name, _condition in materials)
+        markdown[pathlib.Path(owner).name] = read_contract(share / owner, share.parent, *materials)
+        expected_names.update(pathlib.Path(name).name for name, _condition in materials)
     actual_names = {name for name, content in markdown.items() if "引き継ぎ記録先" in content}
 
     assert actual_names == expected_names

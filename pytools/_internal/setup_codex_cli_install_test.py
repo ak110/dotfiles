@@ -533,6 +533,9 @@ def test_install_success_prunes_completed_old_packages(monkeypatch, tmp_path: Pa
 @pytest.mark.parametrize("windows", [False, True])
 @pytest.mark.parametrize("custom_install", [False, True])
 @pytest.mark.windows
+@pytest.mark.cpu_limit(
+    1.25, reason="Windowsでnative実体と可視リンクの保持を実filesystemで照合する4条件。実測0.61〜0.66秒へ余裕を確保"
+)
 def test_public_install_keeps_native_package_and_selects_recovery_launcher(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, windows: bool, custom_install: bool
 ) -> None:

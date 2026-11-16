@@ -42,6 +42,13 @@ def _payload(tmp_path, codex):
     return payload
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "原因分析を含む短文Writeを公開Pre2回へ渡し、正規Skill案内・本文非配送・未取得状態を同時に検証する（Linu"
+        "x限定再確認のCPU合計最大0.762秒）。"
+    ),
+)
 def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_path, capsys):
     payload = _payload(tmp_path, False)
     assert dispatch.main(json.dumps(payload)) == 0
@@ -56,7 +63,49 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.cpu_limit(
+    2.5,
+    reason="実規範の宣言集合と公開Pre/Postによる取得状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.190秒。",
+)
+def test_short_initial_record_does_not_require_detailed_analysis_materials(tmp_path, capsys, codex):
+    """初動の短記録は、両ホストの入口と取得後にも詳細表の資料を要求しない。"""
+    payload = _payload(tmp_path, codex)
+    if codex:
+        payload["transcript_path"] = str(tmp_path / "outer.jsonl")
+    assert dispatch.main(json.dumps(payload)) == 0
+    context = _context(capsys.readouterr())
+    assert "agent-basics" in context
+    assert "analysis-records.md" not in context
+    assert "root-cause-analysis.md" not in context
+    skill = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/SKILL.md"
+    result = {**payload, "hook_event_name": "PostToolUse"}
+    if codex:
+        result.update(
+            tool_name="Bash",
+            tool_input={"command": "cat -- " + shlex.quote(str(skill))},
+            tool_response={"stdout": skill.read_text(encoding="utf-8"), "exit_code": 0},
+        )
+    else:
+        result.update(tool_name="Skill", tool_input={"skill": "agent-basics:bugfix"}, tool_response="起動成功")
+    assert posttooluse.main(json.dumps(result)) == 0
+    capsys.readouterr()
+    if codex:
+        pretooluse_support.codex_delivered_payload(result)
+    assert dispatch.main(json.dumps(payload)) == 0
+    context = _context(capsys.readouterr())
+    assert "analysis-records.md" not in context
+    assert "root-cause-analysis.md" not in context
+
+
 @pretooluse_support.read_delivery_preparation_scope()
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "正規宣言から必要資料を選択し公開Pre/Postで全件取得して、元のWriteの案内が終了するまで検証する（Linux限"
+        "定再確認のCPU合計最大2.266秒）。"
+    ),
+)
 def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     payload = _payload(tmp_path, False)
     assert dispatch.main(json.dumps(payload)) == 0
@@ -105,11 +154,18 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
 
 
 @pretooluse_support.read_delivery_preparation_scope()
+@pytest.mark.cpu_limit(
+    4.5,
+    reason=(
+        "正規資料のまとめcatと外側配送を公開Pre/Postへ通し、元の原因分析patchの通過と案内終了を検証する（Linu"
+        "x限定再確認のCPU合計最大2.003秒）。"
+    ),
+)
 def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_path, capsys):
     payload = _payload(tmp_path, True)
     payload["transcript_path"] = str(tmp_path / "outer.jsonl")
     assert dispatch.main(json.dumps(payload)) == 0
-    assert "/agent-basics/skills/bugfix/SKILL.md" in _context(capsys.readouterr())
+    assert "`agent-basics:bugfix`" in _context(capsys.readouterr())
     status = dispatch.main(json.dumps(payload))
     assert status == 0 and not _context(capsys.readouterr())
     seen = set()
@@ -153,6 +209,11 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
 
 
 @pytest.mark.parametrize("codex", [False, True])
+@pretooluse_support.read_delivery_preparation_scope()
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="正規の2資料を選ぶ公開Preを2回通し、未取得時の継続拒否を両ホストで保証する（Linux CI CPU0.627秒）。",
+)
 def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, capsys, codex):
     """確認の前に読む2資料が未取得の間は、公開hookが質問の表示前に毎回拒否する。
 
@@ -170,7 +231,9 @@ def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, caps
         reason = _denial(dispatch.main(json.dumps(payload)), capsys.readouterr())
         assert "approval-scope.md" in reason
         assert "choice-construction.md" in reason
-        assert "取得後に確認の要否を判断し直せ" in reason
+        assert "user-confirmation-and-report-decisions.md" in reason
+        assert "user-confirmation-and-report-questions.md" in reason
+        assert "確認の要否を判断" in reason
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -187,6 +250,9 @@ def test_pattern_process_termination_stays_blocked_before_document_delivery(tmp_
 @pytest.mark.parametrize("exists", [False, True])
 @pytest.mark.parametrize("temporary", [False, True])
 @pytest.mark.parametrize("filename", ["memo.md", "wait.sh"])
+@pytest.mark.cpu_limit(
+    2.0, reason="両ホストの公開Preから正規規範群を解決し、新規/既存・一時/製品・文書/シェルを区別する。Linux CI実測0.58秒"
+)
 def test_new_body_keeps_writing_standards_without_existing_edit_materials(
     tmp_path, monkeypatch, capsys, codex, exists, temporary, filename
 ):

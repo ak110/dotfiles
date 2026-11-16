@@ -12,6 +12,9 @@
 | クリティカルパスにある工程の所要・見込みを受け取り、検収または中継する前 | `waiting-and-monitoring-progress.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | | |
 
+改善点の再受領は`receiving-followup.md`「受領後の扱い」に従い、原文・対象・観測・送達先を既存の成功記録と比べる。
+最終返却の原文再掲だけを新しい通知とは扱わない。
+
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |

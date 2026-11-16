@@ -6,6 +6,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent
 FORBIDDEN_TOKEN = "duplicate-code"
 PYLINT_DIRECTIVE = re.compile(r"#\s*pylint:\s*(?:disable|enable)\s*=\s*(?P<messages>[^#\r\n]*)")
@@ -45,6 +47,7 @@ def test_forbidden_suppression_is_detected_at_each_list_position() -> None:
     assert _forbidden_suppressions(source) == [1, 2, 3]
 
 
+@pytest.mark.cpu_limit(1.5, reason="全追跡Python本文のPylint抑止を走査する横断契約。Linux CIのCPU0.54秒を基準に余裕を確保")
 def test_tracked_python_files_do_not_suppress_duplicate_code() -> None:
     violations = [
         f"{path.relative_to(REPO_ROOT)}:{line_number}"

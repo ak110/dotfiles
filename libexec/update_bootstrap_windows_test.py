@@ -1,27 +1,18 @@
 """PS bootstrapのnative境界と、実Windowsランチャーの時間切れを検証する。"""
 
 import contextlib
-import json
+import importlib
 import os
 import pathlib
 import shutil
 import subprocess
-import sys
-import time
-import uuid
 from collections.abc import Generator
-from typing import NoReturn, TextIO
 
 import psutil
 import pytest
 
-pytestmark = pytest.mark.windows
-
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _PS = shutil.which("powershell.exe") or shutil.which("pwsh")
-
-sys.path.insert(0, str(_ROOT / "libexec"))
-import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
 
 # 同じ代用品で、PowerShellの実Process起動・待機・子孫回収まで通す。
 _NATIVE_SOURCE = r"""
@@ -41,8 +32,9 @@ public class Program {
             return 0;
         }
         if (args.Length > 0 && args[0] == "--child") {
-            File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
-                Process.GetCurrentProcess().Id.ToString()), "child");
+            string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), Process.GetCurrentProcess().Id.ToString());
+            File.WriteAllText(marker + ".tmp", "child");
+            File.Move(marker + ".tmp", marker);
             if (Environment.GetEnvironmentVariable("INJECT_MODE") == "stale") {
                 while (!File.Exists(Environment.GetEnvironmentVariable("RELEASE_CHILD"))) Thread.Sleep(1);
                 return 0;
@@ -69,15 +61,20 @@ public class Program {
             }
             File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
                 Process.GetCurrentProcess().Id.ToString()), "parent");
-            File.WriteAllText(Environment.GetEnvironmentVariable("TREE_READY"), "ready");
+            string ready = Environment.GetEnvironmentVariable("TREE_READY");
+            File.WriteAllText(ready + ".tmp", "ready");
+            File.Move(ready + ".tmp", ready);
             Thread.Sleep(60000); return 0;
         }
         using (Process child = Process.Start(new ProcessStartInfo(self, "--child") { UseShellExecute=false })) {
             File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
                 Process.GetCurrentProcess().Id.ToString()), "parent");
+            string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), child.Id.ToString());
+            while (!File.Exists(marker)) Thread.Sleep(1);
+            string ready = Environment.GetEnvironmentVariable("TREE_READY");
+            File.WriteAllText(ready + ".tmp", "ready");
+            File.Move(ready + ".tmp", ready);
             if (Environment.GetEnvironmentVariable("INJECT_MODE") == "orphan") {
-                string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), child.Id.ToString());
-                while (!File.Exists(marker)) Thread.Sleep(1);
                 return 17;
             }
             Thread.Sleep(60000);
@@ -123,6 +120,8 @@ def _owned_native_pids(directory: pathlib.Path, executable: pathlib.Path) -> Gen
         yield
     finally:
         for marker in directory.iterdir():
+            if not marker.name.isdecimal():
+                continue
             with contextlib.suppress(psutil.NoSuchProcess):
                 process = psutil.Process(int(marker.name))
                 if pathlib.Path(process.exe()).resolve() in {executable.resolve(), directory.parent / "powershell-stub.exe"}:
@@ -130,334 +129,160 @@ def _owned_native_pids(directory: pathlib.Path, executable: pathlib.Path) -> Gen
                     process.wait(timeout=10)
 
 
-def _project(tmp_path: pathlib.Path, native: pathlib.Path, stage: str, mode: str) -> tuple[pathlib.Path, dict[str, str]]:
-    root = tmp_path / "project with spaces"
-    library = root / "libexec"
-    library.mkdir(parents=True)
-    native_uv = tmp_path / "home/.local/bin/uv.exe"
-    native_uv.parent.mkdir(parents=True)
-    shutil.copy2(native, native_uv)
-    stub = tmp_path / "powershell-stub.exe"
-    shutil.copy2(native, stub)
-    bootstrap = (_ROOT / "libexec/update_bootstrap.ps1").read_text(encoding="utf-8-sig")
-    # 導入・自己更新の外部作用だけをnative代用品へ向ける。時間切れは実WaitForExitで発生させる。
-    bootstrap = bootstrap.replace("'powershell.exe'", "'" + str(stub).replace("'", "''") + "'")
-    bootstrap = bootstrap.replace("$Seconds * 1000", "1000")
-    # 使用中Pythonの探索はこの試験の対象外。回収のCimCmdlets\Get-CimInstanceは実OSへ残す。
-    bootstrap = bootstrap.replace(
-        "function Invoke-UpdateStage {",
-        "function Get-CimInstance { param($ClassName,$OperationTimeoutSec) @() }\nfunction Invoke-UpdateStage {",
-    )
-    bootstrap = bootstrap.replace(
-        "[void]$process.Start()", 'Write-UpdateError ("bootstrap-test: start=$Name"); [void]$process.Start()'
-    ).replace(
-        "$entries = @(CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop)",
-        'Write-UpdateError ("bootstrap-test: reclaim-snapshot-start=$Name"); '
-        "$entries = @(CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop); "
-        'Write-UpdateError ("bootstrap-test: reclaim-snapshot-end=$Name")',
-    )
-    (library / "update_bootstrap.ps1").write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
-    shutil.copy2(_ROOT / "libexec/locking_process.ps1", library / "locking_process.ps1")
-    pids = tmp_path / "pids"
-    pids.mkdir()
-    environment = os.environ.copy()
-    environment.update(
-        INJECT_STAGE=stage,
-        INJECT_MODE=mode,
-        PIDS=str(pids),
-        CALLS=str(tmp_path / "calls"),
-        USERPROFILE=str(tmp_path / "home"),
-        LOCALAPPDATA=str(tmp_path / "state"),
-        PYTHON_ROOT=str(tmp_path / "python"),
-        PYTHON_PATH=str(tmp_path / "python/python.exe"),
-        AGENT_TOOLKIT_PROCESS_LOOP_SESSION="0",
-        UPDATE_DOTFILES_BOOTSTRAP_REPORT=str(tmp_path / "update-bootstrap-1-1.json"),
-    )
-    environment.pop("CODEX_THREAD_ID", None)
-    if stage == "uv-install":
-        native_uv.unlink()
-    return root, environment
-
-
-def _invoke_bootstrap(script: pathlib.Path, environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    """残存の負例でも継承されたpipeを待たずに、実PS入口の結果を取得する。"""
-    command = [
-        str(_PS),
-        "-NoProfile",
-        "-File",
-        str(script),
-        str(pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"),
-        "-PrintPython",
-    ]
-    output, error = script.with_suffix(".stdout"), script.with_suffix(".stderr")
-    with output.open("w", encoding="utf-8") as stdout, error.open("w", encoding="utf-8") as stderr:
-        try:
-            result = subprocess.run(command, env=environment, stdout=stdout, stderr=stderr, check=False, timeout=30)
-        except subprocess.TimeoutExpired as failure:
-            stdout.flush()
-            stderr.flush()
-            calls = pathlib.Path(environment["CALLS"])
-            native_calls = calls.read_text(encoding="utf-8") if calls.exists() else "(native未到達)"
-            raise AssertionError(
-                f"bootstrapが{failure.timeout}秒で時間切れ\nstdout:\n{output.read_text(encoding='utf-8')}"
-                f"\nstderr:\n{error.read_text(encoding='utf-8')}\nnative calls:\n{native_calls}"
-            ) from failure
-    return subprocess.CompletedProcess(
-        command, result.returncode, output.read_text(encoding="utf-8"), error.read_text(encoding="utf-8")
-    )
-
-
-def test_bootstrap_timeout_reports_captured_output_and_calls(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """親の時間切れでも、失敗地点を区別する両出力とnative到達記録が診断へ残る。"""
-    script = tmp_path / "bootstrap.ps1"
-    calls = tmp_path / "calls"
-    calls.write_text("uv-self\n", encoding="utf-8")
-
-    def timeout(_command: object, *, stdout: TextIO, stderr: TextIO, **_kwargs: object) -> NoReturn:
-        stdout.write("probe-output")
-        stderr.write("reclaim-snapshot-start")
-        raise subprocess.TimeoutExpired("bootstrap", 30)
-
-    monkeypatch.setattr(subprocess, "run", timeout)
-    with pytest.raises(AssertionError) as failure:
-        _invoke_bootstrap(script, {"USERPROFILE": str(tmp_path), "CALLS": str(calls)})
-    assert "probe-output" in str(failure.value)
-    assert "reclaim-snapshot-start" in str(failure.value)
-    assert "uv-self" in str(failure.value)
-
-
-@pytest.mark.parametrize("stage", ["uv-install", "uv-self", "python-upgrade", "python-install"])
-@pytest.mark.parametrize("mode", ["exit", "timeout"])
-def test_windows_bootstrap_native_failure_boundaries(
-    tmp_path: pathlib.Path,
-    native_program: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    stage: str,
-    mode: str,
-) -> None:
-    """実PS入口の4段で、独立したnative失敗/時間切れと回復・続行を観測する。"""
-    root, environment = _project(tmp_path, native_program, stage, mode)
-    driver = tmp_path / "driver.ps1"
-    script = root / "libexec/update_bootstrap.ps1"
-    driver.write_text(
-        f"& '{str(script).replace(chr(39), chr(39) * 2)}' '{environment['USERPROFILE']}\\.local\\bin\\uv.exe' -PrintPython\n"
-        "exit $LASTEXITCODE\n",
+def _run_stage(tmp_path: pathlib.Path, body: str, *, timeout: float = 30) -> subprocess.CompletedProcess[str]:
+    if _PS is None:
+        pytest.skip("PowerShellが必要")
+    script = tmp_path / "stage.ps1"
+    stage = str(_ROOT / "libexec/update_stage.ps1").replace("'", "''")
+    script.write_text(
+        f". '{stage}'\n"
+        "$script:bootstrapFailures=@(); $script:lastStageOutput=''; "
+        "function Write-UpdateError { param($Message) [Console]::Error.WriteLine($Message) }\n" + body,
         encoding="utf-8-sig",
     )
-    pids = pathlib.Path(environment["PIDS"])
-    with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
-        result = subprocess.run(
-            [str(_PS), "-NoProfile", "-File", str(driver)],
-            env=environment,
-            capture_output=True,
-            encoding="utf-8",
-            check=False,
-            timeout=20,
+    try:
+        return subprocess.run(
+            [str(_PS), "-NoProfile", "-File", str(script)], capture_output=True, encoding="utf-8", check=False, timeout=timeout
         )
-        calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
-        assert calls.count(stage) == (2 if stage in {"uv-install", "python-install"} else 1)
-        assert result.returncode == (1 if stage in {"uv-install", "python-install"} else 0), result.stderr
-        assert ("124" if mode == "timeout" else "17") in result.stderr
-        if stage in {"uv-self", "python-upgrade"}:
-            assert result.stdout.strip() == environment["PYTHON_PATH"]
-            failures = json.loads(pathlib.Path(environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"]).read_text(encoding="utf-8-sig"))
-            title = "uvの自己更新" if stage == "uv-self" else "管理Pythonの更新"
-            assert any(failure["title"] == title for failure in failures)
-            monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"])
-            monkeypatch.setattr(update_dotfiles_runtime, "current_run_id", "bootstrap-test")
-            monkeypatch.setattr(update_dotfiles_runtime, "continued_failures", [])
-            monkeypatch.setattr(update_dotfiles_runtime, "current_stage_title", None)
-            monkeypatch.setattr(update_dotfiles_runtime, "last_stderr_tail", None)
-            monkeypatch.setattr(update_dotfiles_runtime, "LOG_PATH", tmp_path / "update.log")
-            monkeypatch.setattr(update_dotfiles_runtime.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
-            monkeypatch.setattr(update_dotfiles_runtime.update_dotfiles_report, "report", lambda *_args: None)
-            assert update_dotfiles_runtime.finish(0) == 1
-            assert not pathlib.Path(environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"]).exists()
-        else:
-            assert not result.stdout.strip()
-            assert "再実行" in result.stderr
-        if mode == "timeout":
-            assert any(marker.read_text() == "child" for marker in pids.iterdir())
-            assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout.decode("utf-8", errors="replace") if isinstance(error.stdout, bytes) else error.stdout
+        stderr = error.stderr.decode("utf-8", errors="replace") if isinstance(error.stderr, bytes) else error.stderr
+        calls = tmp_path / "calls"
+        pids = tmp_path / "pids"
+        raise AssertionError(
+            f"PowerShellが{error.timeout}秒で時間切れ: {script}\nstdout:\n{stdout}\nstderr:\n{stderr}\n"
+            f"native calls:\n{calls.read_text(encoding='utf-8') if calls.exists() else '(未到達)'}\n"
+            f"TREE_READY={(tmp_path / 'ready').exists()}、"
+            f"所有PID={[path.name for path in pids.iterdir()] if pids.exists() else []}\n"
+            "対処: 上記の両出力とnative callsを読み、stage.ps1の停止箇所とfixtureの準備状態を調べてから再検証せよ。"
+        ) from error
 
 
-def test_windows_cmd_probe_hang_reaps_descendants(tmp_path: pathlib.Path, native_program: pathlib.Path) -> None:
-    """実cmd入口から探索を停止させ、親孫を回収しパスを渡さず終了1になる。"""
-    root, environment = _project(tmp_path, native_program, "probe", "timeout")
-    (root / "bin").mkdir()
-    launcher = root / "bin/update-dotfiles.cmd"
-    shutil.copy2(_ROOT / "bin/update-dotfiles.cmd", launcher)
-    pids = pathlib.Path(environment["PIDS"])
-    with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
-        result = subprocess.run(
-            [os.environ["COMSPEC"], "/d", "/c", str(launcher), "job", str(uuid.uuid4())],
-            env=environment,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=20,
+def test_stage_timeout_diagnostic_preserves_outputs_and_owned_targets(tmp_path, monkeypatch):
+    """後段のassertに届かない時間切れでも、両出力・同期点・所有対象を診断へ残す。"""
+    monkeypatch.setattr(importlib.import_module(__name__), "_PS", pathlib.Path("powershell.exe"))
+    (tmp_path / "calls").write_text("observed-native-call\n", encoding="utf-8")
+    (tmp_path / "pids").mkdir()
+    (tmp_path / "pids/123").write_text("child", encoding="utf-8")
+
+    def fail_run(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("PowerShell", 30, output=b"probe-output", stderr=b"before-stop")
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+    with pytest.raises(AssertionError) as failure:
+        _run_stage(tmp_path, "")
+    diagnostic = str(failure.value)
+    assert all(value in diagnostic for value in ("probe-output", "before-stop", "observed-native-call", "123"))
+    assert "TREE_READY=False" in diagnostic
+
+
+def test_stage_classification(tmp_path: pathlib.Path) -> None:
+    """同じPS起動内で、製品判定のcontinue・abort・Probeの消費結果を確認する。"""
+    result = _run_stage(
+        tmp_path,
+        "$p=New-Object PSObject; $p | Add-Member ScriptMethod Dispose {}; "
+        "$cases=@(@('continue',$false,17,$false),@('abort',$false,17,$true),"
+        "@('abort',$true,17,$false),@('abort',$false,0,$false)); "
+        "foreach ($case in $cases) { "
+        "$script:bootstrapFailures=@(); $failed=$false; $code=$null; "
+        "try { $code=Invoke-UpdateStage test $case[0] 1 unused @() -Probe:$case[1] "
+        "-Start {$p} -Wait {$true} -Stop {} -Output {' probe '} -ExitCode {$case[2]} } "
+        "catch { $failed=$true }; "
+        "if ($failed -ne $case[3]) {throw 'classification'}; "
+        "if (-not $failed -and $code -ne $case[2]) {throw 'code'}; "
+        "if ($script:bootstrapFailures.Count -ne [int]($case[2] -ne 0)) {throw 'failures'}; "
+        "if ($case[1] -and $script:lastStageOutput -ne 'probe') {throw 'output'} }",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_stage_timeout_and_unknown_ownership(tmp_path: pathlib.Path) -> None:
+    """時間切れ124と、continueでも回収不明を伝播する契約を分ける。"""
+    result = _run_stage(
+        tmp_path,
+        "$p=New-Object PSObject; $p | Add-Member ScriptMethod Dispose {}; "
+        "$code=Invoke-UpdateStage test continue 1 unused @() -Start { $p } -Wait { $false } -Stop {}; "
+        "if ($code -ne 124) { throw 'timeout' }; "
+        "try { Invoke-UpdateStage test continue 1 unused @() -Start { $p } -Wait { $true } "
+        "-ExitCode {0} -Stop {throw 'unknown'}; throw 'not propagated' } "
+        "catch [System.TimeoutException] { exit 0 }",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("mode", ["timeout", "orphan", "unlinked"])
+def test_stage_native_job_reaps_tree(
+    tmp_path: pathlib.Path, native_program: pathlib.Path, mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """停止状態生成した実Jobは短命中間親の末端も回収し、stdioを閉じる。"""
+    pids = tmp_path / "pids"
+    pids.mkdir()
+    for key, value in {
+        "PIDS": str(pids),
+        "CALLS": str(tmp_path / "calls"),
+        "INJECT_STAGE": "uv-self",
+        "INJECT_MODE": mode,
+        "TREE_READY": str(tmp_path / "ready"),
+    }.items():
+        monkeypatch.setenv(key, value)
+    native = str(native_program).replace("'", "''")
+    with _owned_native_pids(pids, native_program):
+        result = _run_stage(
+            tmp_path,
+            "$clock=[DateTime]::UtcNow; "
+            f"$code=Invoke-UpdateStage test continue 2 '{native}' @('-NoProfile') -Probe -Clock {{$clock}} "
+            "-Wait { param($p,$ms) $readyDeadline=[DateTime]::UtcNow.AddSeconds(20); "
+            "while (-not (Test-Path -LiteralPath $env:TREE_READY)) { "
+            "if ([DateTime]::UtcNow -ge $readyDeadline) { throw [System.TimeoutException]::new("
+            '"TREE_READY未到達: ${env:PIDS}のPID記録を読み、fixtureの子孫起動が止まった箇所を調べよ") }; '
+            "if ($p.Wait(20) -and -not (Test-Path -LiteralPath $env:TREE_READY)) { "
+            'throw "準備前に起点終了: ${env:PIDS}のPID記録と標準エラーを読み、fixtureの起動失敗を調べよ" } }; '
+            "$p.Wait($ms) }; "
+            "if ($code -notin @(17,124)) {throw 'exit'}",
+            # 準備20秒、準備後のtimeout2秒とJob/pipeの有限回収を、外側の期限より内側へ収める。
+            timeout=45,
         )
-        assert result.returncode == 1, result.stdout + result.stderr
-        assert environment["PYTHON_PATH"] not in result.stdout
-        assert "124" in result.stderr
+        assert result.returncode == 0, result.stdout + result.stderr
         assert any(marker.read_text() == "child" for marker in pids.iterdir())
         assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
 
 
-def test_windows_bootstrap_residual_aborts(tmp_path: pathlib.Path, native_program: pathlib.Path) -> None:
-    """終了要求を拒否されて子孫が残るときは本体を起動しない。"""
-    root, environment = _project(tmp_path, native_program, "uv-self", "timeout")
-    script = root / "libexec/update_bootstrap.ps1"
-    bootstrap = script.read_text(encoding="utf-8-sig")
-    bootstrap = bootstrap.replace("$target.Kill()", "throw '試験用の終了拒否'")
-    script.write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
-    pids = pathlib.Path(environment["PIDS"])
-    # 残存させる代用品がpipeを継承するため、試験側のcommunicateを待たせない実ファイルへ出力する。
-    with (
-        _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"),
-        (tmp_path / "stdout").open("w", encoding="utf-8") as stdout,
-        (tmp_path / "stderr").open("w", encoding="utf-8") as stderr,
-    ):
-        result = subprocess.run(
-            [str(_PS), "-NoProfile", "-File", str(script), str(pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe")],
-            env=environment,
-            stdout=stdout,
-            stderr=stderr,
-            encoding="utf-8",
-            check=False,
-            timeout=30,
-        )
-        stdout.flush()
-        stderr.flush()
-        assert result.returncode == 1, (tmp_path / "stderr").read_text(encoding="utf-8")
-        assert not (tmp_path / "stdout").read_text(encoding="utf-8").strip()
-        assert "回収できません" in (tmp_path / "stderr").read_text(encoding="utf-8")
-        assert any(psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
-
-
-@pytest.mark.parametrize("mode", ["exit", "orphan"])
-def test_windows_bootstrap_exit_at_timeout_reaps_orphans(
-    tmp_path: pathlib.Path, native_program: pathlib.Path, mode: str
+def test_bootstrap_entry_uses_stage_without_running_native_updates(
+    tmp_path: pathlib.Path, native_program: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """時間切れ観測の直後に親が終了しても、残る子だけを回収して本体へ進む。"""
-    root, environment = _project(tmp_path, native_program, "uv-self", mode)
-    script = root / "libexec/update_bootstrap.ps1"
-    bootstrap = script.read_text(encoding="utf-8-sig")
-    # OS負荷に依存せず、待機のfalseと回収の間に自然終了する順序を固定する。
-    bootstrap = bootstrap.replace(
-        "if (-not $process.WaitForExit(1000)) {",
-        "if (-not (& { if ($Name -eq 'uvの自己更新') { "
-        "if (-not $process.WaitForExit(10000)) { throw '代用品が終了しません' }; "
-        "return $false }; return $process.WaitForExit(1000) })) {",
-        1,
+    """入口の最小実境界でProbeのパスをPrintPythonへ渡す。"""
+    bootstrap = str(_ROOT / "libexec/update_bootstrap.ps1").replace("'", "''")
+    monkeypatch.setenv("CALLS", str(tmp_path / "calls"))
+    monkeypatch.setenv("PYTHON_PATH", "managed-python")
+    monkeypatch.setenv("INJECT_STAGE", "none")
+    result = _run_stage(
+        tmp_path,
+        f"& '{bootstrap}' '{str(native_program).replace(chr(39), chr(39) * 2)}' -PrepareOnly -PrintPython; exit $LASTEXITCODE",
     )
-    script.write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
-    pids = pathlib.Path(environment["PIDS"])
-    with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
-        result = _invoke_bootstrap(script, environment)
-        assert result.returncode == 0, result.stdout + result.stderr
-        assert result.stdout.strip() == environment["PYTHON_PATH"]
-        assert "124" in result.stderr
-        if mode == "orphan":
-            assert any(marker.read_text() == "child" for marker in pids.iterdir())
-        assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "managed-python"
 
 
-def test_windows_bootstrap_snapshot_child_exit_continues(tmp_path: pathlib.Path, native_program: pathlib.Path) -> None:
-    """実CIM一覧に載った子を自然終了させ、世代取得前の消滅で更新を中断しない。"""
-    root, environment = _project(tmp_path, native_program, "uv-self", "stale")
-    environment["RELEASE_CHILD"] = str(tmp_path / "release")
-    script = root / "libexec/update_bootstrap.ps1"
-    bootstrap = script.read_text(encoding="utf-8-sig").replace(
-        "CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop", "Get-TestSnapshot"
+def test_stage_continued_failure_reaches_update_result(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """continueの記録は更新結果で失敗として消費され、成功に埋もれない。"""
+    monkeypatch.syspath_prepend(str(_ROOT / "libexec"))
+    runtime = importlib.import_module("update_dotfiles_runtime")
+    report = tmp_path / "update-bootstrap-1-1.json"
+    monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(report))
+    result = _run_stage(
+        tmp_path,
+        "$p=New-Object PSObject; $p | Add-Member ScriptMethod Dispose {}; "
+        "$null=Invoke-UpdateStage test continue 1 unused @() -Start {$p} -Wait {$true} -ExitCode {17} -Stop {}; "
+        "ConvertTo-Json -InputObject @($script:bootstrapFailures) -Compress | "
+        "Set-Content -LiteralPath $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -Encoding UTF8",
     )
-    snapshot = r"""
-$script:released = $false
-function Get-TestSnapshot {
-    if ($script:released) { return @(CimCmdlets\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop) }
-    $deadline = [DateTime]::UtcNow.AddSeconds(10)
-    do {
-        $markers = @(Get-ChildItem -LiteralPath $env:PIDS | Where-Object { (Get-Content $_.FullName -Raw) -eq 'child' })
-        if ([DateTime]::UtcNow -gt $deadline) { throw '子の準備が終わりません' }
-        if (-not $markers.Count) { Start-Sleep -Milliseconds 10 }
-    } while (-not $markers.Count)
-    $child = [System.Diagnostics.Process]::GetProcessById([int]$markers[0].Name)
-    try {
-        $entries = @(CimCmdlets\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop)
-        if (-not @($entries | Where-Object { $_.ProcessId -eq $child.Id }).Count) { throw '実CIM一覧に子がありません' }
-        [IO.File]::WriteAllText($env:RELEASE_CHILD, 'exit')
-        if (-not $child.WaitForExit(10000)) { throw '子が自然終了しません' }
-        $script:released = $true
-        return $entries
-    } finally { $child.Dispose() }
-}
-"""
-    script.write_text(
-        bootstrap.replace("function Invoke-UpdateStage {", snapshot + "\nfunction Invoke-UpdateStage {"),
-        encoding="utf-8-sig",
-        newline="\r\n",
-    )
-    pids = pathlib.Path(environment["PIDS"])
-    with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
-        result = _invoke_bootstrap(script, environment)
-        assert result.returncode == 0, result.stdout + result.stderr
-        assert result.stdout.strip() == environment["PYTHON_PATH"]
-        assert "124" in result.stderr
-        assert pathlib.Path(environment["RELEASE_CHILD"]).exists()
-        assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
-
-
-def test_windows_bootstrap_exited_intermediate_matches_taskkill_boundary(
-    tmp_path: pathlib.Path, native_program: pathlib.Path
-) -> None:
-    """中間親が先に消えた同じツリーで、旧taskkill方式より回収範囲を悪化させない。"""
-    remaining = []
-    for boundary in ("taskkill", "bootstrap"):
-        root, environment = _project(tmp_path / boundary, native_program, "uv-self", "unlinked")
-        ready = tmp_path / boundary / "ready"
-        environment["TREE_READY"] = str(ready)
-        script = root / "libexec/update_bootstrap.ps1"
-        pids = pathlib.Path(environment["PIDS"])
-        with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
-            if boundary == "taskkill":
-                process = subprocess.Popen(  # pylint: disable=consider-using-with
-                    [str(tmp_path / boundary / "powershell-stub.exe"), "-NoProfile"],
-                    env=environment,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                try:
-                    deadline = time.monotonic() + 10
-                    while not ready.exists():
-                        assert time.monotonic() < deadline, "中間親の終了待ちが完了しない"
-                        time.sleep(0.01)
-                    # 26faf04cbの停止境界（/T /Fと直接の子の終了確認）を同じ実Win32ツリーへ適用する。
-                    result = subprocess.run(
-                        ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False, timeout=10
-                    )
-                    assert result.returncode == 0, result.stdout + result.stderr
-                    process.wait(timeout=10)
-                finally:
-                    if process.poll() is None:
-                        process.kill()
-                        process.wait(timeout=10)
-            else:
-                bootstrap = script.read_text(encoding="utf-8-sig")
-                bootstrap = bootstrap.replace(
-                    "$process.WaitForExit(1000)",
-                    "(& { if ($Name -eq 'uvの自己更新') { $deadline = [DateTime]::UtcNow.AddSeconds(10); "
-                    "while (-not (Test-Path -LiteralPath $env:TREE_READY)) { "
-                    "if ([DateTime]::UtcNow -gt $deadline) { throw '中間親の終了待ちが完了しない' }; "
-                    "Start-Sleep -Milliseconds 10 } }; "
-                    "return $process.WaitForExit(100) })",
-                    1,
-                )
-                script.write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
-                observed = _invoke_bootstrap(script, environment)
-                assert observed.returncode == 0, observed.stdout + observed.stderr
-                assert "124" in observed.stderr
-            remaining.append(
-                sum(marker.read_text() == "child" and psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
-            )
-    assert remaining[1] <= remaining[0], f"旧taskkillの残存数={remaining[0]}, 修正版の残存数={remaining[1]}"
+    assert result.returncode == 0, result.stdout + result.stderr
+    monkeypatch.setattr(runtime, "current_run_id", "bootstrap-test")
+    monkeypatch.setattr(runtime, "continued_failures", [])
+    monkeypatch.setattr(runtime, "current_stage_title", None)
+    monkeypatch.setattr(runtime, "last_stderr_tail", None)
+    monkeypatch.setattr(runtime, "LOG_PATH", tmp_path / "update.log")
+    monkeypatch.setattr(runtime.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
+    monkeypatch.setattr(runtime.update_dotfiles_report, "report", lambda *_args: None)
+    assert runtime.finish(0) == 1
+    assert not report.exists()

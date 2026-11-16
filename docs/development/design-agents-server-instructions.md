@@ -101,7 +101,7 @@ Codex backendは、ユーザーが`~/.claude/rules/`配下（サブディレク�
 各ファイルは絶対パスを`path`属性に持つ`atk-auto`要素（`kind`は`user-rules`）で囲み、ユーザーの編集を次の起動と再開から反映するため`thread/start`と`thread/resume`のたびに読み直す。
 対象が無い場合は従来と同じ本文を返す。
 Codexのメインとネイティブのサブエージェントへは同じ集合を`~/.codex/AGENTS.md`の読込指示で届け、この連結は`agents_server`の委譲先へ届ける手段として併用する。
-参照先は`design-hosts-rules-manifests.md`「Claude CodeとCodexの規範配置」である。
+参照先は`design-hosts-rules-manifests.md`「常時規範とplugin manifestの設計記録」である。
 却下した代替案は、委譲元が委譲プロンプトで規範の所在を渡す契約と、ファイルのパスだけを列挙して委譲先に読ませる案である。
 前者は委譲元が必要とする規定を事前に列挙できる場合にだけ成立し、観測事象では追送するまで欠落に気付けなかった。
 後者は規範の取得と読了の確認を各委譲先へ委ねるため採らない。

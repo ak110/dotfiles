@@ -104,6 +104,13 @@ def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases:
     target_line = int(raw_line)
     if not selected.records or not 1 <= target_line <= max(record.line for record in selected.records):
         return [_error_event(f"行番号が記録の範囲外: {locator}", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
+    if any(gap.line is not None and gap.line < target_line for gap in selected.gaps):
+        return [
+            _error_event(
+                f"欠測を含むため文脈を判定できない: {locator}",
+                next_action="欠測位置を確認し、正常行の本文を--detailで取得する。文脈の完全性は未確認として扱う",
+            )
+        ], 2
     if not phrases or any(not phrase for phrase in phrases):
         return [
             _error_event(

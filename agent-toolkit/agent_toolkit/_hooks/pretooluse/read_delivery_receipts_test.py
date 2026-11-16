@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._common import read_triggers
-from agent_toolkit._hooks import document_reads, rules_context
+from agent_toolkit._hooks import bugfix_gate, document_reads, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.read_delivery_receipts_support import (
@@ -20,6 +20,37 @@ from agent_toolkit._testing.read_delivery_receipts_support import (
 __all__ = ["_assert_acquisition", "_assert_allowed_without_guidance", "_produce", "_scenario"]
 
 
+def test_bugfix_failure_is_cleared_only_after_full_codex_delivery(scenario):
+    """内側の読取成功と部分配送を起動に数えず、同じ主体への全文配送で解除する。"""
+    state, _rows, path, _rollout, invoke, delivered = scenario
+    root = path.parent / "agent-basics"
+    skill = root / "skills/bugfix/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    (root / ".claude-plugin").mkdir()
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    skill.write_text("# バグ対応\n\n失敗と契約を比較する。\n原因を確認して修正する。\n", encoding="utf-8")
+    invoke(
+        "codex",
+        "PostToolUse",
+        "Bash",
+        {"command": "pytest sample_test.py"},
+        {"exit_code": 1},
+        tool_use_id="failed-test",
+    )
+    command = {"command": f"cat -- {shlex.quote(str(skill))}"}
+    invoke("codex", "PreToolUse", "Bash", command)
+    invoke("codex", "PostToolUse", "Bash", command, skill.read_text(encoding="utf-8"))
+    assert state[bugfix_gate.FAILURE_STATE_KEY]["main"]["pending"]
+    delivered("# バグ対応\n")
+    invoke("codex", "PreToolUse", "Read", {"file_path": str(path)})
+    assert state[bugfix_gate.FAILURE_STATE_KEY]["main"]["pending"]
+    invoke("codex", "PreToolUse", "Bash", command)
+    invoke("codex", "PostToolUse", "Bash", command, skill.read_text(encoding="utf-8"))
+    delivered(skill.read_text(encoding="utf-8"))
+    invoke("codex", "PreToolUse", "Read", {"file_path": str(path)})
+    assert not state[bugfix_gate.FAILURE_STATE_KEY]["main"]["pending"]
+
+
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize("syntax", ["generated", "for", "variable", "pipe", "failed-tail", "stderr"])
 def test_generated_read_output_records_current_body(scenario, host_environ, host, syntax):
@@ -30,8 +61,7 @@ def test_generated_read_output_records_current_body(scenario, host_environ, host
     guide = invoke(host, "PreToolUse", "Write", write)
     assert str(path) in guide
     _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
-    step = read_delivery.acquisition_step(read_triggers.ReadTarget(path), "codex")
-    command = json.loads((step).split("tools.exec_command(", 1)[1].splitlines()[0].removesuffix(");"))["cmd"]
+    command = "cat -- " + shlex.quote(str(path))
     if syntax == "for":
         command = f'for f in {shlex.quote(str(path))}; do cmp -s "$f" "$f"; done && {command}'
     elif syntax == "variable":
@@ -281,3 +311,25 @@ def test_worktree_versions_share_proven_logical_document(scenario, host_environ,
         _assert_acquisition(state, read_triggers.ReadTarget(target, heading), False)
         _assert_allowed_without_guidance(invoke("claude", "PreToolUse", "Write", write))
     git_repository.run_git(repo, "worktree", "remove", "--force", str(worktree))
+
+
+def test_codex_named_skill_guidance_then_body_receipt(scenario, monkeypatch):
+    """名前案内は取得扱いせず、Codexへ届いた実本文だけで取得済みにする。"""
+    state, rows, path, _rollout, invoke, delivered = scenario
+    skill = path.parent / ".claude/skills/local/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 固有スキル\n本文\n", encoding="utf-8")
+    monkeypatch.setattr(document_reads, "skill_loadable", lambda *_args, **_kwargs: True)
+    rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (skill,)))
+    target = read_triggers.ReadTarget(skill)
+    write = {"file_path": str(path.parent / "output.md"), "content": "成果"}
+    guide = invoke("codex", "PreToolUse", "Write", write)
+    assert "`local`" in guide and "cat --" not in guide
+    assert not read_delivery.target_ready(state.get(rules_context.OPERATION_SKILL_READY_KEY, {}), target, "main")
+    command = "cat -- " + shlex.quote(str(skill))
+    invoke("codex", "PreToolUse", "Bash", {"command": command})
+    body = skill.read_text(encoding="utf-8")
+    invoke("codex", "PostToolUse", "Bash", {"command": command}, {"stdout": body, "exit_code": 0})
+    delivered(json.dumps({"output": body, "exit_code": 0}, ensure_ascii=False))
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
+    assert read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], target, "main")

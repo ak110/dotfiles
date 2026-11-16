@@ -57,9 +57,12 @@ async def test_completed_turn_with_live_child_holds_result_for_auto_resume(tmp_p
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("turn_status", ["completed", "failed", "interrupted"])
+@pytest.mark.parametrize(
+    ("turn_status", "release"),
+    [("completed", False), ("failed", False), ("interrupted", False), ("completed", True)],
+)
 async def test_send_message_child_reactivation_holds_parent_until_child_terminates(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, turn_status: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, turn_status: str, release: bool
 ) -> None:
     """再開した子が残る親の完了・失敗・中断をshowで保留し、子の終了後の再開結果をwaitへ公開する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -87,6 +90,43 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
             await backend._handle_notification(
                 {"method": "item/completed", "params": {"threadId": session.session_id, "item": item}}
             )
+            # ツール結果は実行中turnで観測する。前turnの保留へ架空の出力を注入しない。
+            if release:
+                stop_result: dict[str, Any] = {"structuredContent": {}}
+                stopped: dict[str, Any] = {
+                    "type": "mcpToolCall",
+                    "id": "stop-child",
+                    "server": "agents_server",
+                    "tool": "stop",
+                    "arguments": {"session_id": "child"},
+                    "result": stop_result,
+                }
+                # stopの失敗は空の構造化結果が付いていても解放の観測に使わない。
+                stop_result["isError"] = True
+                await backend._handle_notification(
+                    {"method": "item/completed", "params": {"threadId": session.session_id, "item": stopped}}
+                )
+                assert session.live_child_session_ids == {"child"}
+                session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path))
+                stop_result.pop("isError")
+                await backend._handle_notification(
+                    {"method": "item/completed", "params": {"threadId": session.session_id, "item": stopped}}
+                )
+                # 解放で登録が消えた後も、明示的な成功から親の最終結果を公開できる。
+                session_registry.release("child", reason="stopped")
+                final_item = {"type": "agentMessage", "id": "parent-final", "text": "親の最終結果"}
+                await backend._handle_notification(
+                    {"method": "item/completed", "params": {"threadId": session.session_id, "item": final_item}}
+                )
+                completion = _completed_turn(session)
+                completion["params"]["turn"]["items"] = [item, stopped, final_item]
+                await backend._handle_notification(completion)
+                result = await manager.wait()
+                assert result["status"] == "completed"
+                assert result["agent_message"] == "親の最終結果"
+                assert (await manager.wait())["status"] == "expired"
+                assert not session.live_child_session_ids and not session.terminal_child_session_ids
+                return
             completion = _completed_turn(session)
             completion["params"]["turn"].update(
                 {

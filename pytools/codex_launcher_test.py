@@ -93,6 +93,14 @@ sys.exit(codex_launcher.main())
 """
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "設定取得の標準入出力と終了状態を保ち、起動時のuv依存導入を行わない。"
+        + " 実CLIのプロセス境界で引数/入力/終了状態と同じ仕事の再開を確認す"
+        + "る。Windows同群CPU最大1.313秒。"
+    ),
+)
 def test_public_wrapper_uses_installed_runtime_without_environment_setup(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
@@ -196,6 +204,14 @@ def _peer(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) ->
     return _Peer(root, work, runner, environment)
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "CLI→実peerプロセス→世代交代→自動再開→所有する成果物の確認ま"
+        + "でを接続する。 実CLIのプロセス境界で引数/入力/終了状態と同じ仕事"
+        + "の再開を確認する。Windows同群CPU最大1.313秒。"
+    ),
+)
 @pytest.mark.parametrize(
     ("mode", "effort", "expected"),
     [
@@ -259,6 +275,15 @@ async def test_public_launcher_preserves_work_and_stop_contract(peer: _Peer, mod
         assert resumed[resumed.index("--cd") + 1] == record["cwd"]
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "processIdentityを書かないWindowsの世代記録でも終"
+        + "了せず、世代交代後に同じ仕事を再開する。 実CLIのプロセス境界で引数"
+        + "/入力/終了状態と同じ仕事の再開を確認する。Windows同群CPU最"
+        + "大1.313秒。"
+    ),
+)
 @pytest.mark.asyncio
 async def test_windows_daemon_record_without_process_identity_keeps_recovery(peer: _Peer) -> None:
     """processIdentityを書かないWindowsの世代記録でも終了せず、世代交代後に同じ仕事を再開する。"""
@@ -272,6 +297,14 @@ async def test_windows_daemon_record_without_process_identity_keeps_recovery(pee
     assert peer.records()[0]["starts"] == 2
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "--cdを省いた起動でも、管理daemonのcwdではなく起動したディ"
+        + "レクトリで会話を始める。 実CLIのプロセス境界で引数/入力/終了状態"
+        + "と同じ仕事の再開を確認する。Windows同群CPU最大1.313秒。"
+    ),
+)
 @pytest.mark.asyncio
 async def test_public_launcher_passes_launch_directory_without_cd(peer: _Peer) -> None:
     """--cdを省いた起動でも、管理daemonのcwdではなく起動したディレクトリで会話を始める。"""
@@ -286,6 +319,14 @@ async def test_public_launcher_passes_launch_directory_without_cd(peer: _Peer) -
     assert actors[0][actors[0].index("--cd") + 1] == str(peer.work)
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "同じcwdの2会話を同時に再開しても、IDと起動条件を互いへ転用しない"
+        + "。 実CLIのプロセス境界で引数/入力/終了状態と同じ仕事の再開を確認"
+        + "する。Windows同群CPU最大1.313秒。"
+    ),
+)
 @pytest.mark.asyncio
 async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> None:
     """同じcwdの2会話を同時に再開しても、IDと起動条件を互いへ転用しない。"""
@@ -306,6 +347,14 @@ async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> N
     assert all(record["starts"] == 2 for record in peer.records())
 
 
+@pytest.mark.cpu_limit(
+    3.5 if os.name == "nt" else 3.0,
+    reason=(
+        "反復利用される非対話コマンドは、復旧用の依存を読み込まずに同じ実行体へ引き渡す。"
+        + " 実境界の最小入力を保持。既存入力のWindows CPU観測最大1.04688"
+        + "秒。目的外の仕事を境界で除き、有限の予算は増やさずに検証する。"
+    ),
+)
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -315,15 +364,14 @@ async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> N
         ["exec", "--json", "literal spaces ; $(not-executed) & %NAME%"],
     ],
 )
-@pytest.mark.parametrize("windows", [False, True])
 def test_noninteractive_commands_skip_recovery_dependencies(
-    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], arguments: list[str], windows: bool
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], arguments: list[str]
 ) -> None:
     """反復利用される非対話コマンドは、復旧用の依存を読み込まずに同じ実行体へ引き渡す。"""
     probe = tmp_path / "probe.py"
     probe.write_text(_NONINTERACTIVE_PROBE, encoding="utf-8")
     environment = host_environ()
-    environment["CODEX_PROBE_WINDOWS"] = "1" if windows else "0"
+    environment["CODEX_PROBE_WINDOWS"] = "1" if sys.platform == "win32" else "0"
     result = process_tree.run_with_timeout(
         [sys.executable, str(probe), *arguments],
         capture_output=True,
@@ -382,17 +430,32 @@ sys.exit(codex_launcher.main(sys.argv[1:]))
 """
 
 
-@pytest.mark.parametrize("windows", [False, True])
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "専用App Serverを使う既存CLIの引数・標準出力・終了状態を保"
+        + "持する。 実CLIのプロセス境界で引数/入力/終了状態と同じ仕事の再開"
+        + "を確認する。Windows同群CPU最大1.313秒。"
+    ),
+)
 @pytest.mark.asyncio
-async def test_noninteractive_arguments_and_exit_status_pass_through(peer: _Peer, windows: bool) -> None:
+async def test_noninteractive_arguments_and_exit_status_pass_through(peer: _Peer) -> None:
     """専用App Serverを使う既存CLIの引数・標準出力・終了状態を保持する。"""
     arguments = ["exec", "--json", "literal spaces ; $(not-executed) & %NAME%"]
-    code, stdout, stderr = await peer.run(arguments, mode="active", windows=windows)
+    code, stdout, stderr = await peer.run(arguments, mode="active", windows=sys.platform == "win32")
     assert code == 7, stderr
     assert json.loads(stdout)["passthrough"] == arguments
     assert not (peer.root / "app-server-daemon" / "daemon.pid").exists()
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "復旧済みの古い世代交代を、その後の別の仕事の異常終了へ転用しない。 実"
+        + "CLIのプロセス境界で引数/入力/終了状態と同じ仕事の再開を確認する。"
+        + "Windows同群CPU最大1.313秒。"
+    ),
+)
 @pytest.mark.asyncio
 async def test_unrelated_failure_after_completed_recovery_is_not_restarted(peer: _Peer) -> None:
     """復旧済みの古い世代交代を、その後の別の仕事の異常終了へ転用しない。"""

@@ -34,7 +34,8 @@
      シェルからの起動は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の形式と3分類に従う。
    - pytestと統合検証は、開始からworker・子孫の回収まで共有実行枠を保持する。
      収集だけのpytest（`--collect-only`）は枠を取らない。
-     枠はホスト全体で2つあり（pyfltr 3.30.0以降）、3件目以降の検証は空きを待つ。
+     枠の数は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の定義に従う。
+     dotfilesのロックファイルの版では、既定で2枠になる。
      入れ子の実行は祖先の所有を継承する。
 4. 確定した対象へ全チェックを適用し、共有実行枠の占有を減らすため、静的チェックを先に通してからpytestを含む実行を1回行う。
    pyfltrは1回の実行の間ずっと枠を保持するため、静的チェックで失敗する実行にpytestを含めると、枠を数分ずつ無駄に占有する。
@@ -45,7 +46,10 @@
      このpytestが失敗した場合は直した後に同じ形で実行し直す。
      `develop`・`master`・`main`以外のブランチ（レーンと内部群の作業ブランチ）では、この実行に`--no-always-targets`を付け、変更ファイルと、変更した契約を利用する試験を実行する（pyfltr 3.31.0以降）。
      非試験モジュールのパスだけでは、そのモジュールを使う別名の試験は選ばれない。
-     `uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で利用側の候補一覧を取得し、import元や同じ接頭辞の試験を検証の引数へ加える。
+     `uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で根拠付き候補JSONを取得する。
+     `required=true`の直接import試験を引数へ加え、残る候補は実際の利用関係から採否を決める。
+     元のJSONを保持し、曖昧候補ごとに`source`・`test`・`include`（真偽値）・`reason`（非空文字列）を持つ`decisions`配列を追加して既存の検証証拠へ保存する。
+     HEAD・変更ソース・候補集合と本文のハッシュが変わった判定は作り直す。
      動的な呼出し、設定の移行、通知の旧期待値、CLI全体の一覧は候補の自動列挙だけで網羅できないため、`verification-values-scope.md`の契約別の探索で補う。
      不変条件試験の全量は、後述のレーンの統合前の実行で1回だけ実行する。
    失敗テストだけの再確認は`--only-failed --from-run <初回のrun_id>`、単一試験の確認は対象ファイルと必要なら`-k`を渡した直接pytestを使い、収集件数と想定の一致を確かめる。
@@ -60,13 +64,43 @@
      準備の受理は統合許可を出す判断であり、最終検証の成功やAWIの完成とは区別する。
    - 統合する担当は、許可後に統合先の最新内容へ追随し、最終の統合入力を確定してから、手順2で選んだ全チェックを使う`uv run --frozen pyfltr run --no-fix --commands=<選定した全コマンド> <レーンの変更ファイルと特定した利用側試験の絶対パス>`を成功させる。
      この実行では`--no-always-targets`を付けず、変更ファイル・特定した利用側・不変条件試験をまとめる。
+     起動前に`uv run --frozen python scripts/pyfltr_precommit.py --check-argv '<予定argvのJSON配列>' --consumer-review <判定JSONの絶対パス>`で引数と必須範囲を確かめる。
+     argvは`["run", "--no-fix", "--commands=...", "<対象パス>"]`の形とし、公開ヘルプと事前確認の診断を使って修正する。
+     曖昧候補が無ければ`--consumer-review`を省略できる。
+     終了0でも実run成功・版・cwd・HEAD/index・実行後不変は未確認なので、実行後のverify-runは省略しない。
      対象はこの集合であり、リポジトリ全体のpytestを意味しない。
      利用側は群の焦点検証と同じ方法で候補を列挙し、契約別の探索で補った試験も引数へ加える。
-     rebaseが必要なら新しい内容で実行し、不要なら現在の統合入力を使う。
+     mergeが必要なら新しい内容で実行し、不要なら現在の統合入力を使う。
      最終の統合入力と本文・環境・対象が同じことを既存の実行記録から確認できる成功runは再利用する。
-     ff直前に、indexと作業ツリーがその統合入力HEADと一致する場所で`uv run --frozen python scripts/pyfltr_precommit.py --verify-run <run_id>`を実行し、終了0を確かめる。
+     indexと作業ツリーを最終統合入力HEADへ一致させる。
+     ff直前に`uv run --frozen python scripts/pyfltr_precommit.py --verify-run <run_id> --consumer-review <判定JSONの絶対パス>`を実行し、終了0を確かめる。
+     意味判定が不要なら`--consumer-review`は省略する。
      このコマンドは、最終内容の単一runにおけるpytestの成功、変更状態と実行時点、および列挙できた利用側試験の被覆を確認する。
      最終run_idとverify-runの結果は、既存の検証記録と統合結果へ対応付ける。
+     manifestへ渡すときは、run成功・run_id取得・同じclean入力のverify-run成功までを失敗伝達付きの1操作へまとめる。
+     以下のshellファイルは、ログの絶対パスprefix・意味判定JSONの絶対パス・選定済みのrun引数を順に受け取る例である。
+
+     ```bash
+     #!/usr/bin/env bash
+     set -euo pipefail
+     log_prefix=$1
+     consumer_review=$2
+     shift 2
+     uv run --frozen pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err"
+     run_id=$(jq -er 'select(.kind == "header") | .run_id' "$log_prefix.out")
+     uv run --frozen python scripts/pyfltr_precommit.py --verify-run "$run_id" --consumer-review "$consumer_review"
+     ```
+
+     スクリプトは自身のmanaged-tempへ保存し、次のargvをverificationの1項目へ渡す。
+     山括弧の値を実在値へ置換し、複数の対象パスは別々の要素にする。
+
+     ```json
+     ["bash", "<スクリプトの絶対パス>", "<ログprefixの絶対パス>", "<意味判定JSONの絶対パス>", "--no-fix", "--commands=<選定した全チェック>", "<対象パス>"]
+     ```
+
+     意味判定が不要な場合は、その入力と`--consumer-review`の指定を省いたスクリプトを使う。
+     手動で最終runを完了した場合も、同入力のverify-runをff前に実行し、両成功とHEAD/indexの証拠を保持してから統合へ渡す。
+     検証だけの保存成功を理由にverificationを空にせず、空にする場合は受理まで完了した同入力の両出力・終了状態を既存記録へ対応付ける。
      最終検証が失敗した場合はffせず、既存の是正・必要な再レビュー・統合再開へ戻す。
      検証後の編集や統合先の前進で入力が変わった場合は、追随後の新しい内容で必要な検証と確認をやり直す。
      準備時の成功や過去の別内容の成功は、この最終確認へ代用しない。

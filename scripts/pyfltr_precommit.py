@@ -42,13 +42,14 @@ import io
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
 import typing
 
 from agent_toolkit._git import command as git_command
-from verification_targets import consumer_tests, uncovered_tests
+from verification_targets import consumer_tests, required_tests, uncovered_tests
 
 from pytools._internal.common import format_cli_error, run_subprocess
 
@@ -61,7 +62,8 @@ _EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
 _REUSABLE_SUBCOMMANDS = frozenset({"run", "ci", "fast"})
 # 統合先のブランチ。これらへのcommitでは従来どおり不変条件試験を含めて実行する。
 _INTEGRATION_BRANCHES = frozenset({"develop", "master", "main"})
-# 試験の対象を変えない引数。これ以外の引数（`--pytest-args`、`--only-failed`、`--disable`など）を含む実行は再利用しない。
+# 試験の対象を変えない引数。これ以外の引数を含む実行は再利用しない。
+# 例: 範囲を変える`--pytest-args`、`--only-failed`、`--disable`。
 _NEUTRAL_FLAGS = frozenset(
     {
         "--no-fix",
@@ -78,6 +80,26 @@ _NEUTRAL_FLAGS = frozenset(
 )
 # 値を取る引数のうち、試験の対象を変えないもの。`--commands`はpytestの成功を別に確かめるため受け入れる。
 _NEUTRAL_VALUE_OPTIONS = frozenset({"--output-format", "--commands"})
+# `--pytest-args`のうち、並列数と失敗時の打ち切り数だけを変える引数。統合時の検証値（`-n 2 --maxfail=10`）を受け入れる。
+# 打ち切り数は失敗時だけ作用し、pytestの成功を要件とする再利用の判定では対象を狭めない。
+_NEUTRAL_PYTEST_OPTIONS = frozenset({"-n", "--numprocesses", "--maxfail"})
+
+
+def _neutral_pytest_args(value: str) -> bool:
+    """`--pytest-args`の値が、並列数と打ち切り数の数値指定だけかを返す。"""
+    try:
+        tokens = iter(shlex.split(value))
+    except ValueError:
+        return False
+    for token in tokens:
+        name, separator, number = token.partition("=")
+        if name not in _NEUTRAL_PYTEST_OPTIONS:
+            return False
+        if not separator:
+            number = next(tokens, "")
+        if not (number.isdecimal() or (name != "--maxfail" and number == "auto")):
+            return False
+    return True
 
 
 class Reuse(typing.NamedTuple):
@@ -94,7 +116,11 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="*")
-    parser.add_argument("--consumer-tests", action="store_true", help="固定文字列参照と命名による利用試験候補をJSONで返す。")
+    parser.add_argument(
+        "--consumer-tests", action="store_true", help="HEAD・本文ハッシュと、直接import/意味判定要の根拠付き候補をJSONで返す。"
+    )
+    parser.add_argument("--consumer-review", type=pathlib.Path, help="現在の候補JSONと根拠付きdecisionsを保持した検証証拠。")
+    parser.add_argument("--check-argv", help="予定pyfltr argvのJSON配列を読み取り専用で確認する。run成功の証明ではない。")
     parser.add_argument(
         "--verify-run",
         metavar="RUN_ID",
@@ -102,8 +128,19 @@ def main(argv: list[str] | None = None) -> int:
         "統合する側が、統合入力の作業ツリーでff統合の前に使う。成立すれば終了0、しなければ終了1。",
     )
     args = parser.parse_args(argv)
-    if args.consumer_tests and args.verify_run is not None:
-        parser.error("--consumer-testsと--verify-runは併用できない")
+    if sum((args.consumer_tests, args.verify_run is not None, args.check_argv is not None)) > 1:
+        parser.error("--consumer-tests、--verify-run、--check-argvは併用できない")
+    try:
+        review = json.loads(args.consumer_review.read_text(encoding="utf-8")) if args.consumer_review is not None else None
+    except (OSError, ValueError) as exc:
+        parser.error(
+            f"意味判定を取得できない: {exc}\n"
+            "次の操作: --consumer-reviewのパス・読取権限・UTF-8 JSONを確認する。"
+            "修正できない場合は--consumer-tests <変更ファイル...>で候補を再取得し、"
+            "根拠付きdecisionsを記録したJSONのパスを--consumer-reviewへ渡して再実行する。"
+        )
+    if args.check_argv is not None:
+        return _check_planned_argv(args.check_argv, review)
     if args.consumer_tests:
         try:
             print(json.dumps(consumer_tests(pathlib.Path.cwd(), args.files), ensure_ascii=False))
@@ -123,7 +160,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.verify_run is not None:
         try:
-            verified = find_reusable_run(pathlib.Path.cwd(), pyfltr, run_id=args.verify_run)
+            options = {"review": review} if args.consumer_review is not None else {}
+            verified = find_reusable_run(pathlib.Path.cwd(), pyfltr, run_id=args.verify_run, **options)
         except (KeyError, TypeError, AttributeError, ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
             verified = Reuse(None, f"判定できない: {type(exc).__name__}: {exc}")
         if verified.run_id is None:
@@ -180,7 +218,7 @@ def current_branch(directory: pathlib.Path) -> str | None:
     return name if result.returncode == 0 and name and not name.startswith("refs/") else None
 
 
-def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | None = None) -> Reuse:
+def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | None = None, review: object = None) -> Reuse:
     """`directory`の作業ツリーの現在の内容でpytestが成功した実行を探す。
 
     `run_id`を指定した場合は、その実行だけを調べる。加えてindexとHEADの一致も求め、
@@ -237,6 +275,18 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
             return Reuse(None, shown)
         meta = shown.get("meta", {})
         cwd = meta.get("cwd")
+        if run_id is not None:
+            if not isinstance(cwd, str) or not cwd or pathlib.Path(cwd).resolve() != root:
+                return Reuse(None, "cwdが現在の作業ツリーと一致しない")
+            if f"pyfltr {meta.get('version')}" != version.stdout.strip():
+                return Reuse(None, "pyfltrの版が現在と一致しない")
+            if problem := argv_problem(meta.get("argv", [])):
+                return Reuse(None, problem)
+            if not any(
+                command.get("command") == "pytest" and command.get("status") == "succeeded"
+                for command in shown.get("commands", [])
+            ):
+                return Reuse(None, "指定runでpytestの成功を確認できない")
         # 空のパスは現在のディレクトリへ解決され、別の作業ツリーの実行と区別できないため再利用しない。
         if (
             isinstance(cwd, str)
@@ -251,12 +301,8 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
                 for command in shown.get("commands", [])
             )
         ):
-            if run_id is not None:
-                targets = _argv_targets(meta["argv"])
-                sources = [target for target in targets if target.endswith(".py")]
-                missing = uncovered_tests(root, consumer_tests(root, sources), targets)
-                if missing:
-                    return Reuse(None, f"利用試験が不足: {', '.join(missing)}。これらを加えてpyfltr runを再実行する")
+            if run_id is not None and (problem := _coverage_problem(root, meta["argv"], review)):
+                return Reuse(None, problem)
             return Reuse(run["run_id"], "")
     return Reuse(None, "現在の内容でpytestが成功した実行が無い")
 
@@ -331,21 +377,91 @@ def _query_json(pyfltr: str, root: pathlib.Path, arguments: list[str]) -> dict[s
 
 def _neutral_argv(argv: list[str]) -> bool:
     """実行の引数が、試験の対象を変えない形だけかを返す。"""
+    return not argv_problem(argv)
+
+
+def argv_problem(argv: object) -> str:
+    """予定argvと実runの中立性を同じ定義で判定する。"""
+    if not isinstance(argv, list) or any(not isinstance(token, str) for token in argv):
+        return "argvが文字列配列でない"
     if not argv or argv[0] not in _REUSABLE_SUBCOMMANDS:
-        return False
+        return "argvの先頭はrun、ci、fastのいずれかにする"
     tokens = iter(argv[1:])
     for token in tokens:
         if token in _NEUTRAL_FLAGS:
             continue
         if token in _NEUTRAL_VALUE_OPTIONS:
             if next(tokens, None) is None:
-                return False
+                return f"argv不適合: {token}の値が無い"
             continue
         if token.split("=", 1)[0] in _NEUTRAL_VALUE_OPTIONS and "=" in token:
             continue
+        if token == "--pytest-args":
+            value = next(tokens, None)
+            if value is None or not _neutral_pytest_args(value):
+                return "argv不適合: --pytest-argsの値を試験範囲を変えない引数と確認できない"
+            continue
+        if token.startswith("--pytest-args=") and _neutral_pytest_args(token.split("=", 1)[1]):
+            continue
         if token.startswith("-"):
-            return False
-    return True
+            return f"argv不適合: {token}は試験範囲を変えない引数と確認できない"
+    return ""
+
+
+def _coverage_problem(root: pathlib.Path, argv: list[str], review: object) -> str:
+    """列挙の確度と意味判定を失わず、確定した必須試験の被覆を比較する。"""
+    if argv[0] == "fast":
+        return "実行範囲不足: fastのpytestは不変条件試験だけなので、最終検証にはrunまたはciを使う"
+    tokens = iter(argv[1:])
+    for token in tokens:
+        commands = (
+            next(tokens, "") if token == "--commands" else token.partition("=")[2] if token.startswith("--commands=") else None
+        )
+        if commands is not None and "pytest" not in commands.split(","):
+            return "argv不適合: --commandsにpytestが含まれていない"
+    targets = _argv_targets(argv)
+    sources = [target for target in targets if target.endswith(".py")]
+    try:
+        snapshot = consumer_tests(root, sources)
+        required = required_tests(snapshot, review)
+    except ValueError as exc:
+        return str(exc)
+    missing = uncovered_tests(root, required, targets)
+    return f"利用試験が不足: {', '.join(missing)}。予定argvへ追加する" if missing else ""
+
+
+def _check_planned_argv(value: str, review: object) -> int:
+    """予定入力の適合と、実行後に残る未確認を分けて返す。"""
+    try:
+        planned = json.loads(value)
+        if not isinstance(planned, list) or any(not isinstance(token, str) for token in planned):
+            raise ValueError("argvは文字列のJSON配列で指定する")
+        reason = argv_problem(planned)
+        if not reason:
+            reason = _coverage_problem(pathlib.Path.cwd(), planned, review)
+    except (ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
+        print(f"事前確認を確定できない: {exc}", file=sys.stderr)
+        print(
+            "次の操作: `uv run --frozen python scripts/pyfltr_precommit.py --help`で公開入力を確認し、"
+            "予定argvのJSONと対象パスを修正して再実行する。",
+            file=sys.stderr,
+        )
+        return 2
+    if reason:
+        print(reason, file=sys.stderr)
+        if "判定" in reason or "曖昧候補" in reason:
+            action = (
+                "`uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で候補を再取得し、"
+                "現行HEADの全曖昧候補へ根拠付きdecisionsを記録して--consumer-reviewへ渡す。"
+            )
+        elif reason.startswith("argv不適合:"):
+            action = "表示した未確認の追加オプションを予定argvから外し、pytestを含むrun/ciの予定argvを--check-argvへ再度渡す。"
+        else:
+            action = "表示した必要試験と対象パスを予定argvへ加え、run/ciを使って--check-argvを再実行する。"
+        print(f"次の操作: {action}", file=sys.stderr)
+        return 1
+    print("予定argvと必須試験範囲は適合。実runの成功・版・cwd・HEAD/index・実行後不変は未確認。verify-runで確認する。")
+    return 0
 
 
 def _argv_targets(argv: list[str]) -> list[str]:
@@ -353,7 +469,7 @@ def _argv_targets(argv: list[str]) -> list[str]:
     targets: list[str] = []
     tokens = iter(argv[1:])
     for token in tokens:
-        if token in _NEUTRAL_VALUE_OPTIONS:
+        if token in _NEUTRAL_VALUE_OPTIONS or token == "--pytest-args":
             next(tokens)
         elif not token.startswith("-"):
             targets.append(token)

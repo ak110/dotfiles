@@ -15,7 +15,7 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers, session_state
 from agent_toolkit._hooks import document_reads, plugin_resources, rules_context
-from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
 from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
@@ -108,8 +108,12 @@ def test_non_search_commands_do_not_warn(command: str) -> None:
         ("-ne-R /dev/null", False),
     ],
 )
-def test_grep_long_values_preserve_public_search_guidance(tmp_path, codex, arguments, recursive):
+def test_grep_long_values_preserve_public_search_guidance(tmp_path, monkeypatch, codex, arguments, recursive):
     """長形式の値が終端や再帰指定と同形でも、実際の再帰指定だけで検索基準を案内する。"""
+    # grepの引数判定に関係しない全規範の解析を避け、検索操作の宣言だけを渡す。
+    guide = pathlib.Path(__file__).resolve().parents[4] / "agent-basics/skills/search/SKILL.md"
+    rows = [read_triggers.ReadTrigger(guide, 1, "操作", ("search",), (guide,))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     payload = _bash("grep " + arguments, "grep-value-boundary", **({"turn_id": "t"} if codex else {}))
     result = _run(payload, _plan_file_state_env(tmp_path))
     assert result.returncode == 0 and not result.stderr
@@ -571,6 +575,13 @@ def test_verification_queries_do_not_require_check_execution(payload: dict) -> N
 
 
 @pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
+@pytest.mark.cpu_limit(
+    4.0,
+    reason=(
+        "両hostの2sessionへ資料1件を取得させ、公開Pre3回/Post2回と外側配送で案内解除と取得状態を検証する（"
+        "Linux限定再確認のCPU合計最大1.848秒）。"
+    ),
+)
 def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: str) -> None:
     """資料不足を警告し、取得を観測するまで準備済みとして記録しない。"""
     env = _plan_file_state_env(tmp_path)
@@ -579,11 +590,11 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
     _record_skill(env, "ready", "agent-toolkit:delegation")
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する", "subagent_type": "specialist"}, "session_id": "ready"}
     # 起動手段の拒否とは分け、許可された専用定義で取得前後の案内を検証する。
-    assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(_run(payload, env))
+    assert "`agent-toolkit:delegation`" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
     result = _run(codex, env)
     assert result.returncode == 0
-    assert "/skills/delegation/SKILL.md" in _additional_context(result)
+    assert "`agent-toolkit:delegation`" in _additional_context(result)
     assert result.stderr == ""
     state_file = session_state.state_path("codex-delegation")
     state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
@@ -596,7 +607,7 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
         key.startswith("read-trigger:") and "/skills/delegation/SKILL.md" in key and "main" in owners
         for key, owners in state[rules_context.OPERATION_SKILL_READY_KEY].items()
     )
-    assert "/skills/delegation/SKILL.md" not in _additional_context(_run(codex, env))
+    assert "`agent-toolkit:delegation`" not in _additional_context(_run(codex, env))
 
 
 def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:
@@ -608,14 +619,13 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "deny"
     assert specific["permissionDecisionReason"]
-    assert "`agent-toolkit:delegation`を起動せよ" not in specific["permissionDecisionReason"]
     state_file = session_state.state_path("blocked")
     state = _read_session_state(tmp_path, "blocked") if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
     valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
     delivered = _run(valid, env)
     assert delivered.returncode == 0
-    assert "`agent-toolkit:delegation`を起動せよ" in _additional_context(delivered)
+    assert "`agent-toolkit:delegation`" in _additional_context(delivered)
     state = _read_session_state(tmp_path, "blocked")
     records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
     target = read_triggers.ReadTarget(plugin_resources.skill_document_path("delegation", "SKILL.md"))
@@ -693,8 +703,12 @@ def _record_read(env: dict[str, str], session_id: str, path: pathlib.Path, **ext
     ]
     + [("apply_patch", "mixed")],
 )
-def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: str) -> None:
+def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool: str, target: str) -> None:
     """記録先1件だけへの編集を許し、混在と原稿への編集では基準取得を求める。"""
+    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
+    # 記録先の除外と執筆基準の取得を求める1宣言だけを入力へ渡す。
+    rows = [read_triggers.ReadTrigger(author, 1, "操作", ("body-writing",), (author,))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     env = _plan_file_state_env(tmp_path)
     own = str(tmp_path / "handoff.md")
     other = str(tmp_path / "awi-draft.md")
@@ -715,10 +729,9 @@ def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: s
         )
     payload = {"tool_name": tool, "tool_input": inputs[tool], "session_id": "handoff-exempt"}
     result = _run(payload, env)
-    assert ("`agent-basics:writing-standards`を起動せよ" in _additional_context(result)) is (target != "own")
+    assert ("`agent-basics:writing-standards`" in _additional_context(result)) is (target != "own")
     state = _read_session_state(tmp_path, "handoff-exempt") if session_state.state_path("handoff-exempt").exists() else {}
     records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
     assert document_reads.acquisition_state(records, read_triggers.ReadTarget(author), "main") == "missing"
     assert result.returncode == 0
     assert result.stderr == ""
@@ -830,8 +843,13 @@ def test_standard_stream_alias_is_not_discarded_by_name(tmp_path: pathlib.Path, 
     assert operation_skills.operation_matches("body-writing", "Bash", data, str(tmp_path))
 
 
-def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path) -> None:
+def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """公開Pre/Post hookで破棄だけを本文編集やリポジトリ編集として扱わない。"""
+    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
+    rows = [
+        read_triggers.ReadTrigger(author, 1, "操作", ("body-writing", "existing-file-edit"), (author,)),
+    ]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     env = _plan_file_state_env(tmp_path)
     payload = _bash(f"cat > {os.devnull} <<<'本文'", "discard-public", cwd=str(tmp_path))
     result = _run(payload, env)

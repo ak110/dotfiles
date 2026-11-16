@@ -11,12 +11,20 @@ import pathlib
 
 import pytest
 
+from agent_toolkit import hook
 from agent_toolkit._common import read_triggers, session_state
-from agent_toolkit._hooks import rules_context
+from agent_toolkit._hooks import repository_protection, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.pretooluse_support import run_hook_with_notice_details as _run_hook_in_process
 
 _SAMPLES = pathlib.Path(__file__).with_name("fixtures") / "read_delivery_host_samples.json.gz"
+
+
+@pytest.fixture(autouse=True)
+def _receipt_only_dependencies(monkeypatch):
+    """実標本の配送判定と無関係な活動記録・Git保護照会は実行しない。"""
+    monkeypatch.setattr(hook, "_record_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(repository_protection, "check", lambda *_args, **_kwargs: None)
 
 
 @pytest.mark.parametrize(
@@ -32,9 +40,8 @@ _SAMPLES = pathlib.Path(__file__).with_name("fixtures") / "read_delivery_host_sa
     ],
 )
 def test_claude_produced_response_reaches_guidance_and_write(tmp_path, monkeypatch, name):
-    sample = json.loads(gzip.decompress(_SAMPLES.read_bytes()).decode("utf-8"))[name]
-    response = sample["response"]
     all_samples = json.loads(gzip.decompress(_SAMPLES.read_bytes()).decode("utf-8"))
+    response = all_samples[name]["response"]
     visible = response.get("file", {}).get("content", response.get("stdout", "")) if isinstance(response, dict) else ""
     acquired = name in {"claude_read", "claude_offset_limit", "claude_token_cap", "claude_bash"}
     body = visible if acquired else all_samples["claude_bash"]["response"]["stdout"]

@@ -51,7 +51,7 @@ test("猶予後終了は最大使用窓の解除後へ単一予約を更新し�
   expect(prompts[0]?.split("\n")[0]).toBe('<atk-auto source="usage-limit-resume" kind="notice">');
   expect(prompts[0]).toContain("最初の未完了工程から続けよ");
   expect(prompts[0]).toContain("未完了の作業が無い場合、既に続行済みの場合、ユーザーが中止を指示している場合は、何もせず終えよ");
-  const reads = [...prompts[0]!.matchAll(/Readのfile_pathに("(?:[^"\\]|\\.)*")を指定/g)];
+  const reads = [...prompts[0]!.matchAll(/("(?:[^"\\]|\\.)*")を読み/g)];
   expect(reads.length).toBe(1);
   const document: string = JSON.parse(reads[0]![1]!);
   expect(document).toMatch(/^(?:\/|[A-Za-z]:[\\/]|\\\\)/);

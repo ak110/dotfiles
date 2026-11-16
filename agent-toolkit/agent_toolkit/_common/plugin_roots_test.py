@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -409,6 +410,7 @@ def test_codex_root_uses_enabled_same_marketplace_version(tmp_path, monkeypatch,
             "timeout": 15,
             "check": False,
             "cwd": str(pathlib.Path.cwd()),
+            "env": dict(os.environ),
         }
         return cli(args, **kwargs)
 

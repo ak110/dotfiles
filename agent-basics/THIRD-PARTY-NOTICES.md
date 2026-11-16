@@ -273,6 +273,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## GoogleChrome Modern Web Guidance
+
+- 参考資料: [GoogleChrome/modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance)。
+- 参照先: `skills/writing-standards/references/ui-ux-web-rules.md`の技術選択基準。
+- 詳細ガイド、コード、文章の転載・翻訳は含めず、必要時に外部skillから取得する。
+  外部skill自体の利用には、配布元のライセンスと第三者表示を適用する。
+
 ## Vercel Web Interface Guidelines
 
 - 原典: [vercel-labs/web-interface-guidelines](https://github.com/vercel-labs/web-interface-guidelines/tree/e3d624baaf29dc1fc645aff3e38f03e564d2d6b1)（確認commit `e3d624baaf29dc1fc645aff3e38f03e564d2d6b1`）。

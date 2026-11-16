@@ -21,10 +21,9 @@ _HOOK_ID = "posttooluse"
 def _notice(path: str, size: object) -> str:
     """退避した出力の未読と保存先、次の操作を示す本文を返す。"""
     measured = f"（{size}バイト）" if isinstance(size, int) and not isinstance(size, bool) else ""
-    body = f"このコマンドの出力{measured}はホストの上限を超えたため保存先へ退避され、この本文には出力を含めていない。"
+    body = f"出力{measured}はホスト上限を超えて退避された。この本文には出力を含めていない。"
     fix = (
-        f"内容を後続の判断に使う場合は、`Read`の`file_path`に`{path}`を指定し、範囲を指定せず`allow_large: true`を付けて読め。"
-        "部分取得かエラーが返った場合は、必要な残りを`offset`と`limit`で読んでから進め。"
+        f"後続の判断に使う場合は`{path}`を全量取得せよ。部分取得かエラーなら残りを取得してから進め。"
         "全体を使わない場合は、件数や対象を限定したコマンドで取得し直せ。"
     )
     return _message_format.llm_notice(_next_action.with_next_action(body, fix), _HOOK_ID, tag="notice")

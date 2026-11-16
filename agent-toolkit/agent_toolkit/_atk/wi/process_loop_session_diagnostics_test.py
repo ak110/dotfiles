@@ -24,14 +24,17 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
         if failure != "missing":
             path.write_bytes({"format": b"invalid line\n", "unicode": b"\xff", "empty": b""}[failure])
     process = mock.MagicMock()
-    process.pid = os.getpid()
+    process.pid = 1234567890
     process.poll.return_value = 0
     process.wait.return_value = 0
     popen = mock.MagicMock()
     popen.return_value.__enter__.return_value = process
     monkeypatch.setattr(process_loop_session.subprocess, "Popen", popen)
-    if failure == "identity":
-        monkeypatch.setattr(session_registry.ProcessIdentity, "of", lambda *_args, **_kwargs: None)
+    # 診断専用の偽CLIはOS資源を所有しない。workerの子を実回収へ流さない。
+    monkeypatch.setattr(process_loop_session.process_tree, "collect_descendants", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(process_loop_session.process_tree, "stop_owned_process", lambda *_args, **_kwargs: None)
+    identity = None if failure == "identity" else session_registry.ProcessIdentity(process.pid, 1.0)
+    monkeypatch.setattr(session_registry.ProcessIdentity, "of", lambda *_args, **_kwargs: identity)
 
     def launch(_args, _notes, **_kwargs):
         process_loop_session.run_process_session(

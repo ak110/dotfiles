@@ -100,7 +100,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
         "expected_content": original,
     }
     await _wait_and_close_operation_notice(page, "ユーザーコメントを保存しました")
-    assert "## ユーザーコメント\n\n最初のコメント" in path.read_text(encoding="utf-8")
+    assert path.read_text(encoding="utf-8") == original + "\n## ユーザーコメント\n\n最初のコメント\n"
     await playwright.async_api.expect(detail).to_be_hidden()
 
     await page.locator('.entry-select[data-key="awi.md"]').click()
@@ -122,8 +122,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     await _wait_and_close_operation_notice(page, "ユーザーコメントを保存しました")
     await playwright.async_api.expect(detail).to_be_hidden()
     saved = path.read_text(encoding="utf-8")
-    assert "置換後のコメント" in saved
-    assert "最初のコメント" not in saved
+    assert saved == original + "\n## ユーザーコメント\n\n置換後のコメント\n"
 
     await page.locator('.entry-select[data-key="awi.md"]').click()
     await detail.wait_for(state="visible")
@@ -144,6 +143,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     await detail.get_by_role("alert").filter(has_text="内容を確認して再度保存してください").wait_for(state="visible")
     await playwright.async_api.expect(comment_input).to_have_value("競合後も保持する入力")
     await playwright.async_api.expect(comment_input).to_be_focused()
+    assert path.read_text(encoding="utf-8") == latest
     harness.operations.arm_user_comment_delay()
     async with page.expect_request("**/api/entries/user-comment") as retry_request_info:
         await detail.get_by_role("button", name="コメントを保存").click()

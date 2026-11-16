@@ -24,6 +24,8 @@ CASES = (
     "goal-discovery",
     "strategy-update",
     "purpose-boundary",
+    "protection-removal-agent",
+    "protection-removal-user",
 )
 
 

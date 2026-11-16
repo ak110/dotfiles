@@ -71,7 +71,7 @@ def test_codex_delegate_hook_reports_ambiguous_writer_aliases(
     assert exit_code == 0
     assert "agents_serverの待機対象を登録できない" in context
     assert "書込主体を一意に解決できません" in context
-    assert "\n次の操作: `atk agents wait`はこのセッションを待機対象として扱わないため" in context
+    assert "`atk agents wait`はこのセッションを待機対象として扱わないため" in context
     assert "`show`" in context
     for owner_status_file in ("writer-a.json", "writer-b.json", "codex-thread.json"):
         retained, error = wait_targets.read_wait_targets("root-session", owner_status_file, tmp_path)

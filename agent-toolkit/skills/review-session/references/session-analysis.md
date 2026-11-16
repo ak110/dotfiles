@@ -16,13 +16,15 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 工程2で`atk run-script session-review-prepare`の出力に含まれる`reference_document`に値が設定されている場合 | `reference_document`が示す対象リポジトリ固有の振り返り参照文書 | 判断 | `tool:Read`、`tool:Bash` | `review-reference` |
-| 工程2で`conversation.md`の全体を通読する前（工程2の判定および工程3の選別の基準として使用する） | `analysis.md`、`analysis-inputs.md`、`analysis-definition-reads.md`、`analysis-triage.md`、`analysis-cost.md` | | | |
+| 工程2で`conversation.md`の全体を通読する前（工程2の判定および工程3の選別の基準として使用する） | `analysis.md`、`analysis-inputs.md`、`analysis-triage.md`、`analysis-cost.md` | | | |
+| 定義本文の読込候補を分類する前（suspectedの読込、unresolvedの全発生位置、clearedの判定理由を確認する時） | `analysis-definition-reads.md` | | | |
 | 工程3および工程4で、問題の原因と対策を導き、既存AWIで対処済みかを確認する前 | `analysis-cost.md`、`analysis-actions.md` | | | |
 | コスト削減案の採否および所要時間300秒超過時の対応を確定する前 | `duration-analysis.md` | | | |
 | 工程3または工程4において、事実関係の調査をサブエージェントへ委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
 | 工程4で問題ごとに`agent-basics:bugfix`を起動した時点（`analysis-actions.md`「原因と対策」において、ユーザー介入を拡張原因分析の対象として扱うため） | `agent-basics:bugfix/references/root-cause-analysis.md` | | | |
-| 工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` | |
-| batchの保存開始を送る前 | `batch.md` | | | |
+| 通常モードの工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` | |
+| batchの工程5でAWIを起草・独立検収する前 | `agent-toolkit:wi-standards`、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
+| batchでAWIを保存する前 | `batch.md` | 判断 | `wi-standard-commit` | |
 | 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | | | |
 
 ## 分析と投入
@@ -117,19 +119,20 @@ WI投入担当による分析を、メインエージェント自身が行うべ
 既存未完了AWIで覆う場合も、残る原因条件、処置担当、適用機会と観測結果を同じ報告行に残す。
 見送りの根拠は工程2〜4の成果と費用の比較から記し、正常終了・規範どおり・回復済みという分類だけで代替しない。
 
-確定した原因・対策と既存AWIによる被覆を要求として整理し、`../../../share/add-wi-parent-launch.md`「起動方法」の単位でWI投入担当へ渡す。
+通常の振り返りでは、確定した原因・対策と既存AWIによる被覆を要求として整理し、`../../../share/add-wi-parent-launch.md`「起動方法」の単位でWI投入担当へ渡す。
 通常の振り返りでは、登録対象が1件以上あれば、起動前にユーザーへ`## 振り返り結果の予告`（全登録予定を`AWI登録予定`行で記載）を通知し、同じターンで担当を起動する。
-batchでは、対象ごとの工程4で要求が確定した時点で起草へ渡し、メインは残りの対象の工程2〜4を続ける。
-新規起動・追加送信は同じ起動契約で選び、後の対象で同じ根本原因を見つけた場合は保存前の要求へ要件更新として送る。
-原稿は返却時に検収してよいが、`保存開始`は全対象の工程4と`batch.md`のセッション横断整理を終えてから送る。
+batchでは、対象ごとの工程4で要求が確定した時点でメインが直接起草し、残りの対象の工程2〜4も続ける。
+起草・意味の検収・保存は`agent-toolkit:wi-standards`に従い、原因分析を含む原稿は`../../../share/wi-draft-review.parent.md`の独立した投入前レビューを経る。
+後の対象で同じ根本原因を見つけた場合は、保存前の原稿へ統合し、更新した内容を検収する。
+保存は全対象の工程4と`batch.md`のセッション横断整理を終えてから行う。
 その直前に、確定した全要求を上記の予告として通知する。
 予告のフォーマットは、`../../report-completion/references/report-formats-retrospective.md`「振り返り結果報告のフォーマット」に従う。
-メッセージの送達は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に規定された手段（Claude Code環境では`mcp__agent-toolkit__send_to_user`）を用いて行う。
+メッセージの送達は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に規定された手段（Claude Code環境では`mcp__plugin_agent-toolkit_agents_server__send_to_user`）を用いて行う。
 要求の`source`には`session-review`を指定する。
 batchが登録するAWIは、ユーザーによる内容確認を待たず、エージェント由来の要求として採否を検討する。
 要求間に依存関係がある場合は先行する成果物が必要となる理由を趣旨欄に明記する（同書「渡す入力」を参照）。
 ユーザーの発話を逐語引用して作成する要求には、原文が記録されているファイル（`conversation.md`や`atk run-script session-review-evidence`の出力ファイルなど）の絶対パスを出所として記載する。
-作成されたAWIの検収は、同書「受領と検収」に従って行う。
+通常モードで作成されたAWIの検収は、`../../../share/add-wi.parent.md`「受領と検収」に従って行う。
 
 ## 候補の抽出
 

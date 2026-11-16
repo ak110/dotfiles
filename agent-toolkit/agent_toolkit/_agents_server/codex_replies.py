@@ -8,7 +8,7 @@ import typing
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from agent_toolkit._agents_server import codex_resume_state, result_projection, resume_waits
+from agent_toolkit._agents_server import codex_resume_state, result_projection, resume_waits, service_turns
 from agent_toolkit._agents_server.codex_protocol import (
     DEFAULT_WAIT_TIMEOUT,
     AppServerError,
@@ -162,6 +162,15 @@ class CodexRepliesMixin:
             raise
 
     async def _start_reply_locked(
+        self: CodexManager,
+        session: SessionState,
+        prompt: str,
+    ) -> tuple[str, dict[str, Any], BaseException | None]:
+        gate = service_turns.current()
+        async with gate.admit(new_turn=True, session_id=session.session_id) if gate else contextlib.nullcontext():
+            return await self._start_reply_accepted(session, prompt)
+
+    async def _start_reply_accepted(
         self: CodexManager,
         session: SessionState,
         prompt: str,

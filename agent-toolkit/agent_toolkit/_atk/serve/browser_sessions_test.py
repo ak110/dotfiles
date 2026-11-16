@@ -84,6 +84,13 @@ async def test_session_previous_and_next_buttons_navigate_list(screen_harness: _
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "両engineの保存会話を実ブラウザーで一覧から表示する代表。"
+        "単独起動では共有Chromium準備と回収も同じ試験に計上する（Linux CPU実測0.811秒）。"
+    ),
+)
 async def test_session_screen_lists_and_renders_both_engines(screen_harness: _ScreenHarness) -> None:
     """左ペインを内容と非表示の識別子で限定し、右ペインへ発話とツール入力を表示する。"""
     harness = screen_harness
@@ -204,6 +211,10 @@ async def test_session_details_use_exclusive_default_closed_sections(screen_harn
     await playwright.async_api.expect(sections.nth(1)).to_have_attribute("open", "")
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("挿入本文だけを閉じ、一覧の検索値と通常発話を保つ。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.612秒）。"),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> None:
     """挿入本文だけを閉じ、一覧の検索値と通常発話を保つ。"""

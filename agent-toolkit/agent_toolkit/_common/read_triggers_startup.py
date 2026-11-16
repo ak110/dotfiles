@@ -95,7 +95,10 @@ def skill_invocation_required(path: pathlib.Path, *, host: str, subject: str) ->
     frontmatter, separator, _body = text[4:].partition("\n---\n")
     if not separator:
         raise ValueError(f"{path}: スキルのfrontmatterが閉じられていない")
-    metadata = yaml.safe_load(frontmatter)
+    try:
+        metadata = yaml.safe_load(frontmatter)
+    except yaml.YAMLError as error:
+        raise ValueError(f"{path}: スキルのfrontmatterが不正") from error
     if not isinstance(metadata, dict):
         raise ValueError(f"{path}: スキルのfrontmatterはmappingで指定する")
     return metadata.get("disable-model-invocation") is not True

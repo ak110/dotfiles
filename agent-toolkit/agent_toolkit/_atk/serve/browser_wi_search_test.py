@@ -64,7 +64,6 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await empty_dialog.locator("#detail-content table.frontmatter").count() == 0
     await page.keyboard.press("Escape")
 
-    harness.operations.enable_file_mutations()
     row = await _open_question(page)
     dialog = page.get_by_role("dialog", name="詳細")
     assert await dialog.locator("#detail-content").is_visible()
@@ -357,7 +356,6 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     """回答後に詳細を閉じたときと削除・0件化の後は、フォーカスが操作できる一覧の要素へ戻る。"""
     harness = browser_harness
     page = harness.page
-    harness.operations.enable_file_mutations()
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await playwright.async_api.expect(page.locator("#connection-status")).to_be_hidden()

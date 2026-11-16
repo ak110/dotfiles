@@ -28,6 +28,16 @@ def _cli(home: pathlib.Path, arguments: list[str]) -> None:
     assert captured.value.code == 0
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "複数commit採用、AWI別分割、無関係項目の保持、保存失敗後の再実"
+        + "行を公開操作で確かめる。 実Gitの対象/notes/remoteで採"
+        + "用後の分割と保存失敗からの再開を確認する。Linux同群CPU最大1."
+        + "014秒。"
+    ),
+)
 @pytest.mark.parametrize("failure", ["none", "push", "body-mismatch"])
 @pytest.mark.parametrize("multiple", [False, True])
 def test_adopt_multiple_then_rewrite_split_and_retry(

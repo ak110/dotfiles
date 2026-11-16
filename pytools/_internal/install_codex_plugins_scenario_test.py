@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -38,11 +39,19 @@ pathlib.Path(os.environ["HOOK_RESULT"]).write_text("|".join(sys.argv[1:]), encod
 
 
 @pytest.mark.parametrize("failure", [None, "disabled", "ambiguous", "missing", "cli-failure"])
-def test_external_hook_uses_effective_scope_and_reports_failed_resolution(tmp_path: Path, failure: str | None) -> None:
+@pytest.mark.windows
+def test_external_hook_uses_effective_scope_and_reports_failed_resolution(
+    tmp_path: Path, failure: str | None, host_environ: Callable[[], dict[str, str]]
+) -> None:
     """単独複製shimから公開CLIを経由し、project/scopeを反映した実launcherを起動する。"""
     wrapper = tmp_path / "bin/atk-hook"
     wrapper.parent.mkdir()
     shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook", wrapper)
+    wrapper.chmod(0o755)
+    entry = wrapper
+    if os.name == "nt":
+        entry = wrapper.with_suffix(".cmd")
+        shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook.cmd", entry)
     projects = [tmp_path / "project-a", tmp_path / "project-b"]
     for project in projects:
         project.mkdir()
@@ -51,7 +60,10 @@ def test_external_hook_uses_effective_scope_and_reports_failed_resolution(tmp_pa
         root = tmp_path / scope
         _write_plugin(root, scope)
         (root / "scripts/launch.py").write_text(
-            "import os,pathlib,sys\n"
+            "import json,os,pathlib,sys\n"
+            "raw = sys.stdin.buffer.read()\n"
+            "assert raw.decode('utf-8') == os.environ['EXPECTED_HOOK_INPUT']\n"
+            "assert os.getcwd() == json.loads(raw)['cwd']\n"
             f"pathlib.Path(os.environ['HOOK_RESULT']).write_text({scope!r} + '|' + '|'.join(sys.argv[1:]), encoding='utf-8')\n",
             encoding="utf-8",
         )
@@ -81,12 +93,19 @@ def test_external_hook_uses_effective_scope_and_reports_failed_resolution(tmp_pa
     if os.name == "nt":
         (wrapper.parent / "claude.cmd").write_text(f'@"{sys.executable}" "{cli}" %*\r\n', encoding="utf-8")
     output = tmp_path / "hook-output"
-    environment = {**os.environ, "PATH": str(wrapper.parent), "HOOK_RESULT": str(output)}
+    environment = {
+        **os.environ,
+        "PATH": str(wrapper.parent) + os.pathsep + host_environ()["PATH"],
+        "HOOK_RESULT": str(output),
+    }
     environment.pop("PLUGIN_ROOT", None)
     for index, project in enumerate(projects):
+        payload = json.dumps({"cwd": str(project), "hook_event_name": "PreToolUse", "message": "受入"}, ensure_ascii=False)
+        environment["EXPECTED_HOOK_INPUT"] = payload
         result = subprocess.run(
-            [sys.executable, str(wrapper), "pretooluse"],
+            [str(entry), "pretooluse"],
             cwd=project,
+            input=payload,
             env=environment,
             capture_output=True,
             encoding="utf-8",
@@ -175,6 +194,7 @@ for child in tuple(cache.iterdir()):
 
     result = subprocess.run(
         [sys.executable, str(wrapper), "pretooluse"],
+        input=json.dumps({"cwd": str(tmp_path), "hook_event_name": "PreToolUse"}),
         check=False,
         capture_output=True,
         text=True,

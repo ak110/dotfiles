@@ -7,7 +7,6 @@ import pathlib
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ast
 lazy import re
-lazy import shlex
 lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
@@ -15,7 +14,7 @@ lazy from agent_toolkit._common import host_homes, read_triggers, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import is_unknown_word
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
-lazy from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
+lazy from agent_toolkit._hooks.document_reads import reference_name
 
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
 _SEARCH_COMMANDS = frozenset({"rg", "grep", "egrep", "fgrep"})
@@ -580,6 +579,7 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         fix=(
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会せよ。"
             "今回必要な照会条件は`agent-toolkit:review-session`の`references/session-records-query.md`で選べ。"
+            "失敗文言の横断照会は`--tool-calls --failure-fixed-string <文言>`と同資料の横断走査の指定を使え。"
             "入力の選択は同スキルの`references/session-records.md`に従え。"
         ),
         removable_cause=False,
@@ -587,7 +587,7 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
     )
 
 
-def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
+def check_large_bash_read(command: str, cwd: str) -> str | None:
     """規範の見出し抽出を警告する。受信予算が不明な通常読取は警告しない。"""
     extracted = []
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
@@ -615,9 +615,6 @@ def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> 
         paths = list(dict.fromkeys(extracted))
         return _large_warning(
             "エージェント向け文書を見出しの正規表現で範囲抽出しようとしている: " + "、".join(map(str, paths)),
-            fix="エージェント向け文書は全文を取得せよ。大きい文書は行番号のsedで末尾まで分割取得できる。\n"
-            + "\n".join(
-                codex_acquisition(path) if is_codex else f"`cat -- {shlex.quote(str(path))}`で全文読め" for path in paths
-            ),
+            fix="全文を取得せよ。\n" + "\n".join(f"- {reference_name(path, cwd=cwd)}" for path in paths),
         )
     return None

@@ -59,8 +59,8 @@ def test_window_continuation_and_full_detail(tmp_path: pathlib.Path, capsys: pyt
     assert window["excerpt_count"] > 0 and window["has_more"]
     assert "末尾の原文" not in document
     assert "表示から除く機械資料" not in document
-    bundle = work / "bundle" / "conversation.jsonl"
-    assert json.loads(bundle.read_text(encoding="utf-8").split("\n")[0])["text"] == text
+    # 原本から継続できるscopeだけを保存し、表示しない全文を複製しない。
+    assert not (work / "bundle" / "conversation.jsonl").exists()
     assert _run([str(transcript), "--detail", "claude:main:1"], "session-review-evidence") == 0
     details = [json.loads(line) for line in capsys.readouterr().out.split("\n") if line.strip()]
     assert any(text in event.get("text", "") for event in details)
@@ -78,6 +78,9 @@ def test_window_continuation_and_full_detail(tmp_path: pathlib.Path, capsys: pyt
     positions = [int(value) for value in re.findall(r"^- \[(\d+)\]", continuation, re.MULTILINE)]
     assert positions and min(positions) > window["next_after"]
     assert "後から追記した発話" not in continuation
+    support.write_jsonl(transcript, [support.timestamped_entry("2026-11-01T00:00:00Z", "変更された接頭辞"), *entries[1:]])
+    assert _run(command_arguments) == 2
+    assert "前回処理済み範囲を再現できない" in capsys.readouterr().err
 
 
 def test_window_selection_unknown_time_and_incomplete_call(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -168,6 +171,12 @@ def test_window_budget_and_long_locator(tmp_path: pathlib.Path, capsys: pytest.C
 
 
 @pytest.mark.parametrize("conversation_only", [False, True])
+@pytest.mark.cpu_limit(
+    12.75,
+    reason=(
+        "3000呼出し/1000途中発話と委譲を公開prepare/detailへ渡し、全期間と詳細の両方を検証する（Linux CI CPU合計最大6.157秒）。"
+    ),
+)
 def test_long_session_overview_covers_whole_period(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, conversation_only: bool
 ) -> None:
@@ -269,6 +278,12 @@ def test_overview_shows_return_only_for_observed_assistant_utterances(
     assert document.count("\n- 委譲先への依頼 ") == 3
 
 
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=(
+        "300発話と1010委譲を公開prepareへ渡し、文書全体の上限と先頭末尾/省略表示を検証する（Linux CI CPU合計最大1.189秒）。"
+    ),
+)
 def test_many_utterances_and_delegates_fit_whole_document_budget(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -295,6 +310,13 @@ def test_many_utterances_and_delegates_fit_whole_document_budget(
     assert "（省略: " in document
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "1010子ファイルで旧1000件境界を超え、公開prepareと中間のdetailが全期間へ到達することを検証する（Linux C"
+        "I CPU合計最大0.720秒）。"
+    ),
+)
 def test_many_delegates_are_spread_over_whole_period(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """委譲先の記録が多い場合も全期間へ配分した概要を返し、省略した記録へ詳細から到達できる。"""
     transcript = tmp_path / "main.jsonl"
@@ -347,8 +369,8 @@ def test_window_exact_fixed_budget_and_saved_jsonl_diagnostic(
     assert result["conversation_window"]["unresolved_count"] == 0
     assert _run([*base, *options, "--conversation-after", "0", "--conversation-max-bytes", str(budget - 1)]) == 2
     assert "最小固定部" in capsys.readouterr().err
-    path = work / "bundle" / "conversation.jsonl"
-    path.write_text(path.read_text(encoding="utf-8") + '{"unfinished":\n', encoding="utf-8")
+    path = work / "bundle" / "unconfirmed.jsonl"
+    path.write_text('\n{"unfinished":\n', encoding="utf-8")
     assert _run([*base, "--conversation-after", "0"]) == 2
     assert f"{path}:2（物理行）" in capsys.readouterr().err
 

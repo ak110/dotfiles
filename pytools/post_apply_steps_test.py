@@ -32,6 +32,7 @@ class TestDefaultSteps:
         "OpenCode toolkit の同期": {"OpenCode CLI の導入"},
         "Codex plugin snapshot の生成": {"Claude Code plugin のインストール"},
         "Antigravity plugin の生成と登録": {"Antigravity CLI の導入", "Codex plugin snapshot の生成", "Gemini 設定"},
+        "Antigravity Web品質ガイド": {"Antigravity CLI の導入"},
         "Codex plugin のインストール": {
             "Codex の Claude MCP 登録削除",
             "Codex plugin snapshot の生成",
@@ -114,6 +115,7 @@ class TestDefaultSteps:
 
         monkeypatch.setattr(post_apply, "sys", type("_Platform", (), {"platform": platform}))
         monkeypatch.setattr(post_apply, "_home_is_substituted", lambda: False)
+        monkeypatch.setenv("DOTFILES_PRUNE_OUTSIDE_UV", "1")
         monkeypatch.setattr(
             post_apply,
             "DEFAULT_STEPS",

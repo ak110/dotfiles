@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Mapping
 from typing import Any, Self
@@ -31,7 +32,7 @@ from agent_toolkit._agents_server.state import (
     remove_terminal_listener,
     remove_touch_listener,
 )
-from agent_toolkit._common import session_registry, session_release
+from agent_toolkit._common import runtime_environment, session_registry, session_release
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -68,33 +69,45 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             self._status_writer.activate()
             self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
 
-    async def activate_async(self) -> None:
+    async def activate_async(self, *, shared_monitor: bool = False) -> None:
         """初回保存を待ってから常駐監視を開始する。"""
         session_registry.declare_effort_receiver()
         if self._status_writer is not None:
             await self._status_writer.activate_async()
-            self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
-        self._auto_resume_task = asyncio.create_task(self._monitor_auto_resume())
+            if not shared_monitor:
+                self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
+        if not shared_monitor:
+            self._auto_resume_task = asyncio.create_task(self._monitor_auto_resume())
 
     async def _monitor_auto_resume(self) -> None:
         """公開待機操作が呼ばれるかによらず、孫session終了後の自動再開を進める。"""
         while True:
+            bound = runtime_environment.bind(self._caller_context) if self._caller_context else contextlib.nullcontext()
+            with bound:
+                awaiting = await self._process_auto_resume()
+            await asyncio.sleep(0.1 if awaiting else 1.0)
+
+    async def _process_auto_resume(self, *, process_controls: bool = True) -> bool:
+        """監視の1巡を行い、共有サービスでも同じ再開条件を使う。"""
+        if process_controls:
             await effort_control.process_requests(
                 self.sessions,
                 self._effort_catalog,
                 self._apply_effort,
                 state_root=None if self._status_writer is None else self._status_writer.state_root,
             )
-            await effort_control.resume_changed(self.sessions, self._send_with_resources)
+        ready_sessions = {key: value for key, value in self.sessions.items() if key not in self._service_paused}
+        await effort_control.resume_changed(ready_sessions, self._send_with_resources)
+        if process_controls:
             await session_release.process_requests(
                 self.sessions,
                 self.stop,
                 state_root=None if self._status_writer is None else self._status_writer.state_root,
             )
-            awaiting = [session for session in self.sessions.values() if session.awaiting_auto_resume]
-            for session in awaiting:
-                await self._advance_child_session_wait(session)
-            await asyncio.sleep(0.1 if awaiting else 1.0)
+        awaiting = [session for session in ready_sessions.values() if session.awaiting_auto_resume]
+        for session in awaiting:
+            await self._advance_child_session_wait(session)
+        return bool(awaiting)
 
     async def _await_start_outcome(self, session: SessionState, timeout: float | None = None) -> None:
         """元のモジュールで外部から差し替えられる待機上限を、起動処理へ渡す。"""

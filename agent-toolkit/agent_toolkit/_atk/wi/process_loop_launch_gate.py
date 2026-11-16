@@ -5,7 +5,7 @@
 同じWI入力の間は起動を見送る。記録をWIの`cooldown_until`や`hold`で表すと、同じWIを処理できる
 別ホストの起動まで止めるため、記録はこのホストだけが読む。時間経過による再試行は置かず、
 入力の変化（WIの到着・本文や状態の変更・着手可否の区分の変化）、未判定アラート、および
-`--resume`・`--auto-resume`の明示指定が起動を再開する。アラートの判定済み除外はreview-auditへ集約する。
+`resume ID`・`resume auto`の明示指定が起動を再開する。アラートの判定済み除外はreview-auditへ集約する。
 """
 
 import dataclasses
@@ -24,7 +24,7 @@ from agent_toolkit._git import remote as _remote
 
 RESTART_CHANGES = (
     "新しいWIの到着、既存WIの本文・状態・依存・冷却期限の変更、着手可否の区分の変化、"
-    "ユーザーコメントやUWI回答の記入、新しい未判定のDependabotアラート、却下未完了の再試行、`--resume`の指定"
+    "ユーザーコメントやUWI回答の記入、新しい未判定のDependabotアラート、却下未完了の再試行、再開予約"
 )
 
 type Item = tuple[str, str, str]
@@ -151,7 +151,7 @@ def decide(repo_id: str, current: LaunchInput, *, explicit: bool = False) -> Dec
     """担当を起動する仕事（候補・診断・未判定アラート）がある反復で、起動するか見送るかを返す。
 
     無進捗記録が無いか、記録に無いWI要素または未判定アラートが起動入力にあれば起動する。
-    明示指定（`--resume`・`--auto-resume`の対象）は記録によらず起動する。アラート未観測時はWI部分を比べる。
+    明示指定（`resume ID`・`resume auto`の対象）は記録によらず起動する。アラート未観測時はWI部分を比べる。
     起動入力が空の反復の記録の削除は呼び出し側が`clear`で行う。
     """
     if explicit:

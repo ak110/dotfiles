@@ -16,6 +16,8 @@ from agent_toolkit._hooks import background_task_outputs as subject
 from agent_toolkit._hooks import posttooluse
 from agent_toolkit._hooks.pretooluse import dispatch
 
+pytestmark = pytest.mark.usefixtures("without_read_delivery")
+
 _WARNING = "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。"
 
 # 形式名 → (`toolUseResult`の追加項目, `tool_result`本文の書式, 読取コマンド)

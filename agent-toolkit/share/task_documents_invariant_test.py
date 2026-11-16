@@ -36,6 +36,7 @@ def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
         launch_kind=declaration.launch_kind,
     )
     example = body.replace("<共通契約の区分>", "owner_input")
+    example = re.sub(r"(?m)^状態: <[a-z]+(?:\|[a-z]+)+>$", "状態: completed", example)
     if path.name == "reader-fit-review.subagent.md":
         session.prompt += f"\n入力:\n成果物: {path}"
         example = body.split("```text\n", 1)[1].split("```", 1)[0]

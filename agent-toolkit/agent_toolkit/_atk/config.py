@@ -7,12 +7,13 @@ import json
 import os
 import pathlib
 import sys
+from collections.abc import Callable
 from typing import Any, cast
 
 lazy import platformdirs
 
 from agent_toolkit._atk import config_migration as _config_migration
-from agent_toolkit._atk import config_repositories_cli
+from agent_toolkit._atk import config_repositories_cli, config_usage
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
@@ -34,7 +35,7 @@ from agent_toolkit._atk.config_settings import MUTABLE_KEY_DEFAULTS as _MUTABLE_
 from agent_toolkit._atk.config_settings import RETIRED_CONNECTION_KEYS as _RETIRED_CONNECTION_KEYS
 from agent_toolkit._atk.config_settings import config_env_name as _config_env_name
 from agent_toolkit._atk.config_settings import config_file_path as _config_file_path
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import codex_models, runtime_environment
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
@@ -76,7 +77,9 @@ def connections_configured(engine: str) -> bool:
     _config_migration.check_legacy_environment()
     _config_migration.migrate_legacy_settings()
     stored = _config_settings.load_config()
-    return any(os.environ.get(_config_settings.config_env_name(key), "") or key in stored for key in keys)
+    return any(
+        runtime_environment.environment().get(_config_settings.config_env_name(key), "") or key in stored for key in keys
+    )
 
 
 def resolve_mutable_setting(key: str) -> str:
@@ -86,8 +89,10 @@ def resolve_mutable_setting(key: str) -> str:
     _config_migration.check_legacy_environment()
     _config_migration.migrate_legacy_settings()
     env_name = _config_settings.config_env_name(key)
-    env_value = os.environ.get(env_name, "")
+    env_value = runtime_environment.environment().get(env_name, "")
     value = _config_settings.raw_mutable_setting(key)
+    if not env_value:
+        value = config_usage.temporary_settings().get(key, value)
     try:
         _config_settings.validate_mutable_setting(key, value)
     except ValueError as error:
@@ -283,7 +288,13 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
 def parse_unresolved_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
     """工程名または直接候補列から候補の3つ組を返す。"""
     if model_type in _config_settings.MODEL_TYPES:
-        return parse_stage_model_candidates(resolve_mutable_setting(f"{model_type}_model"))
+        selected = parse_stage_model_candidates(resolve_mutable_setting(f"{model_type}_model"))
+        return config_usage.select_candidates(
+            selected,
+            model_type,
+            automatic=resolve_mutable_setting("usage_auto_allocation") == "true",
+            activity_mode=resolve_mutable_setting("usage_activity_mode"),
+        )[0]
     try:
         return parse_stage_model_candidates(model_type)
     except ValueError as error:
@@ -312,6 +323,7 @@ def resolve_model_candidates(model_type: str, *, catalog: list[dict[str, Any]] |
 def build_parser(config: argparse.ArgumentParser) -> None:
     """`config`サブパーサ配下にshow/get/set/apply-presetを登録する。"""
     sub = _atk_help.add_subcommands(config, dest="config_subcommand", required=False)
+    config_usage.build_parser(sub)
     _atk_help.add_command(sub, "show", **_atk_help.HELP["atk config show"])
     _atk_help.add_command(sub, "list", **_atk_help.HELP["atk config list"])
     for name in ("add", "remove"):
@@ -333,11 +345,13 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     )
 
 
-def dispatch(args: argparse.Namespace, home: pathlib.Path) -> int:
+def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[..., None] | None = None) -> int:
     """`config`サブコマンドを実行し、終了コードを返す（サブコマンド省略時は`show`扱い）。"""
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
-        if sub in {"show", "list"}:
+        if sub in {"usage", "temporary"}:
+            config_usage.dispatch(args, resolve=resolve_mutable_setting, parse=parse_stage_model_candidates, refresh=refresh)
+        elif sub in {"show", "list"}:
             _cmd_config_show(home)
         elif sub == "get":
             _cmd_config_get(args, home)

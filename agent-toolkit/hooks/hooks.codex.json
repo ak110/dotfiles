@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py rules_context_codex || exit 1",
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py rules_context_codex || exit 1",
             "additionalContextLimit": 0
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py rules_context_codex || exit 1",
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py rules_context_codex || exit 1",
             "additionalContextLimit": 0
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py pretooluse || exit 1"
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py pretooluse || exit 1"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py posttooluse || exit 1"
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py posttooluse || exit 1"
           }
         ]
       }
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py stop || exit 1"
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py stop || exit 1"
           }
         ]
       }
@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py user_prompt_submit || exit 1"
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py user_prompt_submit || exit 1"
           }
         ]
       }
@@ -69,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py subagent_stop_advisor || exit 1"
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py subagent_stop_advisor || exit 1"
           }
         ]
       }
@@ -79,7 +79,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py session_end_cleanup || exit 1",
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py session_end_cleanup || exit 1",
             "timeout": 3
           }
         ]
@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py session_activity || exit 1"
+            "command": "cd / && uv run --no-cache --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py session_activity || exit 1"
           }
         ]
       }

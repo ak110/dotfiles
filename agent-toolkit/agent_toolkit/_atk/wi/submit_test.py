@@ -147,6 +147,13 @@ def _wait_receipt(identifier: str) -> dict[str, Any]:
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのshebangと独立セッションの実境界を確認する")
 @pytest.mark.parametrize("batched", [False, True], ids=["single", "batch"])
 @pytest.mark.usefixtures("share_package_caches")
+@pytest.mark.cpu_limit(
+    4.0,
+    reason=(
+        "配布コピーと独立した実子を使い、親/配布物撤去後の完了・再送ticket同一性と同期を確認する（Linux CI CPU合計最大1"
+        ".869秒）。"
+    ),
+)
 def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatch, capsys, host_environ, batched):
     """親は受付直後に終了し、子が正式WI・finish・同一実行報告を保存する。"""
     bin_dir = tmp_path / "bin"
@@ -177,7 +184,7 @@ def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatc
     monkeypatch.setenv("AGENT_TOOLKIT_RUNTIME_DATA", str(tmp_path / "runtime"))
     uv = shutil.which("uv", path=host_environ()["PATH"])
     assert uv is not None
-    bootstrap = [uv, "run", "--no-config", "--no-project", "--python", "3.15", "python"]
+    bootstrap = [uv, "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python"]
     prepared = subprocess.run(
         [*bootstrap, str(source / "scripts/launch.py"), "--prepare", "agent_toolkit/atk.py"],
         cwd=tmp_path,
@@ -342,6 +349,7 @@ def _defer(monkeypatch):
     monkeypatch.setattr(submit, "_launch_worker", deferred)
 
 
+@pytest.mark.cpu_limit(1.5, reason="モデル起動を代用し、実Gitの保存後失敗から同じ報告1件だけへ回復する。所有CPU最大0.516秒。")
 def test_spawn_failure_is_durable_and_report_sync_recovers_without_model(notes, tmp_path, monkeypatch, capsys):
     _defer(monkeypatch)
     request = tmp_path / "request.json"
@@ -370,6 +378,10 @@ def test_spawn_failure_is_durable_and_report_sync_recovers_without_model(notes, 
     assert len(list(layout.iter_entry_paths(notes))) == 1
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("実Gitの時間切れ後に、同じ報告1件の同期だけを再開する。同じ実Git保存群の所有CPU最大0.672秒を基準にする。"),
+)
 def test_report_git_timeout_is_unreported_and_resumes_same_report(notes, monkeypatch):
     _defer(monkeypatch)
     with pytest.raises(OSError):
@@ -411,6 +423,12 @@ def test_invalid_request_has_no_acceptance(tmp_path, capsys, change):
     assert not list((state_paths.state_dir() / "wi-submit" / "requests").glob("*.json"))
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実保存したWIと受付集合を照合し、完了済み処置の上書きを拒否する。同じ実Git保存群の所有CPU最大0.672秒を基準にする。"
+    ),
+)
 def test_finish_checks_execution_set_real_wi_and_preserves_completed_dispositions(notes, monkeypatch):
     root = state_paths.state_dir() / "wi-submit"
     run_id = "a" * 32
@@ -565,6 +583,9 @@ def _executor(tmp_path, monkeypatch):
     ],
 )
 @pytest.mark.usefixtures("notes")
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.567秒。"
+)
 def test_supervisor_records_failure_and_both_streams(monkeypatch, executor, mode, reason):
     executor(mode)
     _pending("request-1")
@@ -585,6 +606,12 @@ def test_supervisor_records_failure_and_both_streams(monkeypatch, executor, mode
     assert "executor stderr" in (folder / "stderr.log").read_text(encoding="utf-8")
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実executorの開始前競合だけを再試行し、2要求を報告1件へ保存する。同じ実Git保存群の所有CPU最大0.672秒を基準にする。"
+    ),
+)
 def test_same_target_batches_requests_and_retries_only_unstarted_lock_conflict(notes, executor):
     executor("concurrent-once")
     _pending("request-1")
@@ -600,6 +627,10 @@ def test_same_target_batches_requests_and_retries_only_unstarted_lock_conflict(n
     assert len(list(layout.iter_entry_paths(notes))) == 1
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("監督消失を再観測し、同じ実保存報告へ回復して再投入しない。同じ実Git保存群の所有CPU最大0.672秒を基準にする。"),
+)
 def test_disappeared_supervisor_is_reobserved_without_resubmission(notes, monkeypatch, capsys):
     _defer(monkeypatch)
     with pytest.raises(OSError):
@@ -792,6 +823,10 @@ def test_public_resume_of_unstarted_request_keeps_execution_and_accepts_handoff(
     assert result["ticket_verified"]
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("実保存したWIを公開showで照会し、未完了処置の再実行を拒否する。同じ実Git保存群の所有CPU最大0.672秒を基準にする。"),
+)
 def test_public_show_recovers_saved_wi_before_finish_and_same_report(notes, monkeypatch, capsys):
     _defer(monkeypatch)
     with pytest.raises(OSError):
@@ -817,6 +852,10 @@ def test_public_show_recovers_saved_wi_before_finish_and_same_report(notes, monk
     assert "保存済み処置" in error
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("実保存した未回答UWIを保持し、受付の再開だけを拒否する。同じ実Git保存群の所有CPU最大0.672秒を基準にする。"),
+)
 def test_incomplete_submission_waits_for_confirmation_answer(notes, monkeypatch, capsys):
     _defer(monkeypatch)
     with pytest.raises(OSError):

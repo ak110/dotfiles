@@ -223,7 +223,7 @@ def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pyt
     monkeypatch.setattr(os, "execv", execute)
 
     with pytest.raises(SystemExit, match="7"):
-        runpy.run_path(str(wrapper), run_name="__main__")
+        raise SystemExit(runpy.run_path(str(wrapper))["main"]())
 
     if placement == "bundled":
         assert len(calls) == 1
@@ -272,7 +272,7 @@ def test_hook_wrapper_restores_missing_pinned_root_from_same_claude_version(
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("同版Claude cacheで復旧できる"))
 
     with pytest.raises(SystemExit, match="0"):
-        runpy.run_path(str(wrapper), run_name="__main__")
+        raise SystemExit(runpy.run_path(str(wrapper))["main"]())
 
     assert (pinned / "marker").read_text(encoding="utf-8") == version
     assert not (pinned / ".venv").exists()
@@ -310,7 +310,7 @@ def test_hook_wrapper_uses_current_claude_install_when_same_version_is_unavailab
     monkeypatch.setattr(subprocess, "run", run)
 
     with pytest.raises(SystemExit, match="0"):
-        runpy.run_path(str(wrapper), run_name="__main__")
+        raise SystemExit(runpy.run_path(str(wrapper))["main"]())
 
     assert not pinned.exists()
     assert calls == [[sys.executable, str(current / "scripts/launch.py"), "agent_toolkit/hook.py", "pretooluse"]]

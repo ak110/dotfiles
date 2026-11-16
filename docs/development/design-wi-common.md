@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)と[WIキューと要求本文の設計記録](design-wi.md)から参照する主題別の記録である。
 
-## WIキューと実行準備
-
-### 共通処理の構成と一覧の限定条件
+## 共通処理の構成と一覧の限定条件
 
 WIの共通処理は`agent-toolkit/agent_toolkit/_atk/wi/`配下の責務ごとのモジュールへ分ける。
 WI保存リポジトリの準備・remote同期・排他ロック・commitとpushは`sync.py`、エントリの走査・種別の判定・処理結果の追記は`entries.py`、ファイル名の検証・採番・補完候補は`filenames.py`が持つ。

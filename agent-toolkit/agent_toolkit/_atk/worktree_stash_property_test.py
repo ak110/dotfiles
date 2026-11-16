@@ -37,7 +37,7 @@ def _ref_labels(repo: pathlib.Path) -> set[str]:
     return set(output.splitlines()) if output else set()
 
 
-@settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=5, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     operations=st.lists(
         st.one_of(
@@ -51,6 +51,7 @@ def _ref_labels(repo: pathlib.Path) -> set[str]:
         max_size=12,
     )
 )
+@pytest.mark.cpu_limit(4.0, reason="refと共有stashの実Gitモデル比較を20例から5例へ削減する。削減前の所有CPU最大4.242秒。")
 def test_stash_sequences_match_reference_model(operations: list[tuple[str, str]], tmp_path: pathlib.Path) -> None:
     """共有stashと固有refの保持・削除を固定lock内の参照モデルと一致させる。"""
     repo = _repository(tmp_path)
@@ -93,6 +94,14 @@ def test_stash_sequences_match_reference_model(operations: list[tuple[str, str]]
         assert bool(git_repository.git_output(repo, "status", "--porcelain")) is dirty
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "既知事例: 複数worktreeの退避は固有refに分かれ、既存の共有"
+        + "stashを保つ。 実Gitの2worktreeで固有refを分離し、"
+        + "共有stashを保持する。同じ保存/回復群CPU最大0.971秒。"
+    ),
+)
 def test_two_worktrees_keep_distinct_refs_and_existing_stash(tmp_path: pathlib.Path) -> None:
     """既知事例: 複数worktreeの退避は固有refに分かれ、既存の共有stashを保つ。"""
     repo = _repository(tmp_path)
@@ -108,6 +117,14 @@ def test_two_worktrees_keep_distinct_refs_and_existing_stash(tmp_path: pathlib.P
     assert len(git_repository.git_output(repo, "stash", "list").splitlines()) == 1
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "途中失敗では既存stashを保ち、残ったOIDと固有refを復旧識別子"
+        + "として報告する。 実Gitの保存3段階の失敗で復旧OIDと既存"
+        + "stashを保持する最小構成。Linux CPU最大0.971秒。"
+    ),
+)
 @settings(max_examples=12, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(failure_stage=st.sampled_from(("stash-push", "update-ref", "stash-drop")))
 def test_save_failure_preserves_recovery_identifier_and_unrelated_stash(

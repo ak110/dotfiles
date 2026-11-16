@@ -30,7 +30,7 @@ _LEGACY_UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / 
 # dotfiles ホストでは post_apply の旧配布物削除が ~/.local/bin/atk を除去する。
 _LAUNCHER_TEMPLATE = """#!/bin/sh
 set -eu
-exec "{uv}" run --no-config --no-project --python 3.15 python \\
+exec "{uv}" run --no-cache --no-config --no-project --python 3.15 python \\
   "{dotfiles}/agent-toolkit/scripts/launch.py" agent_toolkit/atk.py serve "$@"
 """
 

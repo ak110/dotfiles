@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import typing
@@ -14,8 +15,9 @@ from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState, utc_now
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import usage_refresh
 from agent_toolkit._atk.usage_limit_policy import should_wait
-from agent_toolkit._common import codex_usage_limit, state_paths
+from agent_toolkit._common import codex_usage_limit, state_paths, usage_observation
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -24,6 +26,13 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 
 AUTO_RESET_CHECK_INTERVAL = 30.0
+
+
+def _reset_enabled() -> bool:
+    return (
+        _atk_config.resolve_mutable_setting("codex_auto_reset") == "true"
+        or _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
+    )
 
 
 class CodexResetMixin:
@@ -44,10 +53,7 @@ class CodexResetMixin:
             "usageLimit": {"type": limit.limit_type, "resetsAt": limit.resets_at_iso()},
         }
         session.error = error
-        auto_reset = (
-            self._auto_reset_eligible(session, before_hold=True)
-            and _atk_config.resolve_mutable_setting("codex_auto_reset") == "true"
-        )
+        auto_reset = self._auto_reset_eligible(session, before_hold=True) and _reset_enabled()
         if session.interrupt_requested or (not auto_reset and not should_wait("codex", limit.limit_type)):
             return False
         session.hold_result(
@@ -95,7 +101,7 @@ class CodexResetMixin:
             if session.result_available or session.interrupt_requested:
                 return
             try:
-                enabled = await run_file_operation(_atk_config.resolve_mutable_setting, "codex_auto_reset")
+                enabled = await run_file_operation(_reset_enabled)
             except ValueError:
                 _LOG.exception(
                     "Codex自動reset設定を解決できません: session_id=%s。"
@@ -103,7 +109,7 @@ class CodexResetMixin:
                     session.session_id,
                 )
                 continue
-            if enabled == "true" and not session.turn_control_lock.locked() and self._auto_reset_eligible(session):
+            if enabled and not session.turn_control_lock.locked() and self._auto_reset_eligible(session):
                 self._start_auto_reset_check(session)
 
     def _start_auto_reset_check(self: CodexManager, session: SessionState) -> None:
@@ -123,8 +129,8 @@ class CodexResetMixin:
         result = None
 
         async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
-            enabled = await run_file_operation(_atk_config.resolve_mutable_setting, "codex_auto_reset")
-            if enabled != "true":
+            enabled = await run_file_operation(_reset_enabled)
+            if not enabled:
                 raise AppServerError("確認中にcodex_auto_resetが無効になった")
             if (
                 session.turn_seq != turn_seq
@@ -137,7 +143,23 @@ class CodexResetMixin:
         try:
             try:
                 root = await run_file_operation(state_paths.state_dir)
-                result = await codex_auto_reset.check_auto_reset(request, state_dir=root)
+                automatic = _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
+                permissions = json.loads(_atk_config.resolve_mutable_setting("usage_reset_permissions")) if automatic else None
+                observed = usage_observation.snapshot() if automatic else {}
+                window_rates = observed.get("setting_rates", {}).get(usage_refresh.session_signature(session), {})
+                weekly_rates = [
+                    window_rates.get(usage_observation.rate_key(usage_observation.QuotaWindow(**window)))
+                    for window in observed.get("windows", [])
+                    if window["engine"] == "codex" and window.get("duration_seconds") == 604800
+                ]
+                pace = max((rate for rate in weekly_rates if rate is not None), default=None)
+                result = await codex_auto_reset.check_auto_reset(
+                    request,
+                    state_dir=root,
+                    permissions=permissions,
+                    active=not session.interrupt_requested,
+                    pace=pace,
+                )
                 if result.diagnostic:
                     _LOG.info("Codex自動reset: session_id=%s diagnostic=%s", session.session_id, result.diagnostic)
             except AppServerError, OSError, TimeoutError, ValueError:

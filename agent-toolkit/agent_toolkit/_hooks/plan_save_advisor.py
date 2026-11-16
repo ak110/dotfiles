@@ -89,10 +89,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     body = _notice(
         "現在のセッションが所有する計画バンドルが残っている。\n" + commands,
         fix=(
-            "保存の契機に達したバンドルだけを"
-            "上記の対応するコマンドで`private-notes`へ保存せよ。"
-            "保存の契機は`agent-toolkit:write-plan`の`references/plan-file-storage.md`で確認せよ。"
-            "残りのバンドルはその場に残してターンを終了せよ。"
+            "`agent-toolkit:write-plan/references/plan-file-storage.md`で保存の契機を確認し、"
+            "該当するバンドルだけを上記コマンドで`private-notes`へ保存せよ。残りは保持してターンを終了せよ。"
         ),
         removable_cause=True,
     )

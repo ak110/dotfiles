@@ -412,6 +412,13 @@ async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harne
         ).to_be_visible()
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "計画ファイルの一覧と検索の取得に失敗した場合は、エラー表示にserveのホストと、失敗した操作ま"
+        "たは検索条件を示す。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.619秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("failure", ["list", "search"])
 async def test_plan_collection_failures_show_operation(screen_harness: _ScreenHarness, failure: str) -> None:

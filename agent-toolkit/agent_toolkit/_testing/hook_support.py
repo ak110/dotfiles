@@ -10,7 +10,9 @@ from collections.abc import Iterator
 import pytest
 
 from agent_toolkit._common import read_triggers
+from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+lazy from agent_toolkit._hooks.pretooluse import dispatch
 
 _SCRIPT = (pathlib.Path(__file__).resolve().parents[1] / "hook_test.py").parent / "hook.py"
 
@@ -118,3 +120,9 @@ def _unchanged_documents_resolution() -> Iterator[None]:
     """
     with read_triggers.resolution_scope():
         yield
+
+
+@pytest.fixture(name="without_read_delivery")
+def _without_read_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """資料取得を検査しない公開hook試験で、対象外の配送だけを分離する。"""
+    monkeypatch.setattr(dispatch, "read_delivery", lambda *_args, **_kwargs: Decision())

@@ -20,6 +20,13 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
         'atk wi add --body-file "$(printf file.md)"',
     ],
 )
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "未確定のWI本文を分類し、公開Pre/Postの取得記録まで通してnull値の例外回帰を検出する。"
+        "保存コマンド自体は実行しない。Linux CPU合計最大0.603秒。"
+    ),
+)
 def test_unknown_body_preserves_pre_and_post_operation_classification(tmp_path, command):
     """元入力と別形態を前後イベントへ渡し、取得記録の例外も検出する。"""
     inputs = {"command": command}

@@ -17,7 +17,7 @@ def test_selected_connection_owns_every_injected_key(tmp_path: pathlib.Path, kin
         "ANTHROPIC_DEFAULT_SONNET_MODEL=api-model\nEXTRA_CONNECTION_OPTION=selected-option\n",
         encoding="utf-8",
     )
-    connection = claude_connection.Connection(kind, str(api) if kind == "payg" else None, str(api))
+    connection = claude_connection.Connection(kind, str(api) if kind == "payg" else None, (str(api),))
     parent = {
         "ANTHROPIC_API_KEY": "parent-key",
         "AWS_PROFILE": "parent-profile",

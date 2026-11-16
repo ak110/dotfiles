@@ -279,7 +279,19 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
     [
         pytest.param("monitor-stop", False, id="monitor-stop"),
         *[
-            pytest.param(failure, delayed, id=failure + ("-disconnect-timeout" if delayed else ""))
+            pytest.param(
+                failure,
+                delayed,
+                id=failure + ("-disconnect-timeout" if delayed else ""),
+                marks=(
+                    pytest.mark.cpu_limit(
+                        2.0,
+                        reason="実survivorを所有タスクへ渡し、回収完了後だけ所有を解く境界（Linux CPU合計最大0.780010秒）。",
+                    )
+                    if failure == "inventory-unreclaimed"
+                    else ()
+                ),
+            )
             for failure in ("inventory-unreclaimed", "inventory-unresolved", "inventory-unreaped-child")
             for delayed in (False, True)
         ],
@@ -304,21 +316,31 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
     closed = asyncio.Event()
     disconnect_cancelled = asyncio.Event()
     stops: list[bool] = []
-    # 一覧取得が回収できなかった子孫。所有タスクの後始末が同じ対象を引き取って回収することを確かめる。
-    owned = contextlib.ExitStack()
-    request.addfinalizer(owned.close)
-    survivor = owned.enter_context(late_descendant.held_process(tmp_path))
+    # 実回収は残存プロセスの引継ぎだけで検証し、監視・未確認・wait状態の伝播はdoubleで分ける。
+    survivor = None
+    if failure == "inventory-unreclaimed":
+        owned = contextlib.ExitStack()
+        request.addfinalizer(owned.close)
+        survivor = owned.enter_context(late_descendant.held_process(tmp_path))
 
-    def reap_survivor() -> None:
-        survivor.kill()
-        survivor.wait()
+        def reap_survivor() -> None:
+            assert survivor is not None
+            survivor.kill()
+            survivor.wait()
 
-    request.addfinalizer(reap_survivor)
+        request.addfinalizer(reap_survivor)
+    else:
+        # 純粋な所有状態の伝播にOS一覧走査を含めない。実回収はunreclaimedの2入力が担う。
+        def empty_tree(root: object, *, known: object = (), **_kwargs: object) -> claude_plugins.process_tree.TreeStopResult:
+            assert root is None and not known
+            return claude_plugins.process_tree.TreeStopResult([], [], [])
+
+        monkeypatch.setattr(claude_plugins.process_tree, "stop_tree", empty_tree)
 
     class HeldChild:
         """待機が時間切れのまま回収できない一覧取得の直接の子。zombie表示でpsutilの残存判定から外れる状態を表す。"""
 
-        pid = survivor.pid
+        pid = -1
         args = ["claude", "plugin", "list", "--json"]
         released = False
 
@@ -350,6 +372,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
         def _inventory(self) -> list[claude_plugins._InstalledPlugin]:
             def inventory(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
                 if failure == "inventory-unreclaimed" and reloaders:
+                    assert survivor is not None
                     # 時間上限後に子孫を回収できない結果だけが所有タスクの回収へ渡る。回収済みの時間上限は縮退する。
                     raise claude_plugins.process_tree.ReclaimError(
                         [f"{survivor.pid}: claude"], [psutil.Process(survivor.pid)], context="run_with_timeout"
@@ -412,6 +435,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
         assert session.status == "failed" and len(client.queries) == 1
         assert stops == ([True, True] if failure == "monitor-stop" else [True])
         if failure == "inventory-unreclaimed":
+            assert survivor is not None
             assert survivor.wait(timeout=10) is not None
             assert session.session_id not in backend._residual_processes
         if failure == "inventory-unresolved":

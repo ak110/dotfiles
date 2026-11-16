@@ -25,6 +25,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         help="CI取得先。autoはgithub.comならGitHub、それ以外はGitLabを使う。",
     )
     loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
+    loop.add_argument("--internal-target", type=pathlib.Path, help=argparse.SUPPRESS)
     loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
     loop.add_argument(
         "--once",
@@ -80,28 +81,19 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         default="auto",
         help="アラート検出対象のホスティング種別。省略時はautoとしてrepo_idのhostから自動判定する。",
     )
-    resume_group = loop.add_mutually_exclusive_group()
-    resume_group.add_argument(
-        "--resume",
-        default=None,
-        metavar="SESSION_ID",
-        help=(
-            "指定した統括SESSION_IDに属する登録先の未完了処理を初回に再開する。"
-            "IDは必須。同じprocess-wiの実行の未完了対象は同じ会話で継続する。"
-        ),
-    )
-    resume_group.add_argument(
-        "--auto-resume",
-        action="store_true",
-        help=(
-            "登録先の未完了所有記録を初回に再開する。統括IDが1つなら同じ会話を使い、"
-            "複数なら新しい統括へ対象別の履歴を渡す。--resumeとは同時指定できない。"
-        ),
-    )
     loop_sub = _atk_help.add_subcommands(loop, dest="process_loop_subcommand", required=False)
+    resume = _atk_help.add_command(loop_sub, "resume", **_atk_help.HELP["atk wi process-loop resume"])
+    resume.add_argument("value", nargs="?", metavar="ID|auto", help="指定会話ID。autoは未完了所有記録、省略時はCLIのpicker。")
+    _atk_help.add_command(loop_sub, "resume-cancel", **_atk_help.HELP["atk wi process-loop resume-cancel"])
     _atk_help.add_command(loop_sub, "abort", **_atk_help.HELP["atk wi process-loop abort"])
     _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])
-    _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
+    status = _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
+    status.add_argument(
+        "--check-result", type=pathlib.Path, default=None, help="起動manifestを現キュー・レーンと読み取り専用で比較する。"
+    )
+    status.add_argument(
+        "--wi", action="append", default=None, metavar="FILENAME", help="直接処置・追加分のWI識別子を比較対象へ加える。"
+    )
     instruct = _atk_help.add_command(loop_sub, "instruct", **_atk_help.HELP["atk wi process-loop instruct"])
     instruct.add_argument("body", metavar="BODY", help="次に起動する1セッションへ渡す追加指示の本文。")
     _atk_help.add_command(loop_sub, "instruct-cancel", **_atk_help.HELP["atk wi process-loop instruct-cancel"])

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import gc
 import json
 import os
 import weakref
@@ -13,7 +12,7 @@ from typing import Any
 
 import pytest
 import session_review_evidence
-from cost_metrics import _scan_sessions
+from cost_metrics import _scan_sessions, first_pass_metrics
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import session_family
@@ -160,7 +159,12 @@ def test_weekly_metrics(dataset: tuple[Path, Path, Path], capsys: pytest.Capture
     assert second["adopted_awi_count"] == 0
     assert second["tokens_per_awi"] == {"all": None, "process-wi": None}
     assert coverage["unresolved_delegate_count"] == 0
-    assert _run(dataset, capsys, "--since", "2026-10-05")[0] == first
+    automatic = _run(dataset, capsys, "--since", "2026-10-05")[0]
+    fixed_until = first["first_pass"][0]["until"]
+    for row in automatic["first_pass"]:
+        assert datetime.datetime.fromisoformat(row["until"]) >= datetime.datetime.fromisoformat(fixed_until)
+        row["until"] = fixed_until
+    assert automatic == first
 
 
 def test_tokens_match_stats_total(
@@ -631,7 +635,6 @@ def test_cost_metrics_releases_family_before_next_root(
     def tracked(path: str | None, **_kwargs: Any) -> _RecordLoad:
         assert path is not None
         group = "other" if Path(path).name == "rollout-other.jsonl" else "parent"
-        gc.collect()
         assert all(reference() is None for key, refs in references.items() if key != group for reference in refs)
         loaded = original(path)
         assert loaded.records is not None
@@ -646,5 +649,50 @@ def test_cost_metrics_releases_family_before_next_root(
     events = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")
     assert events[0]["root_session_count"]["all"] == 2
     assert set(references) == {"parent", "other"}
-    gc.collect()
     assert all(reference() is None for refs in references.values() for reference in refs)
+
+
+def test_first_pass_preserves_failure_and_period() -> None:
+    """再送・修正版で最初の失敗を消さず、初回の期間へ割り当てる。"""
+    start = datetime.datetime.fromisoformat("2026-10-01T00:00:00+00:00")
+    end = datetime.datetime.fromisoformat("2026-11-01T00:00:00+00:00")
+    first = {
+        "work": "plans/a.md",
+        "stage": "ci",
+        "timestamp": start,
+        "source": "run:1",
+        "workflow": "process-wi",
+        "outcome": "failure",
+        "version": "a",
+        "environment": "linux",
+    }
+    fixed = dict(first, timestamp=end, source="run:2", outcome="success", version="b")
+    rows = first_pass_metrics([first, first, fixed], start, end)
+    assert len(rows) == 1
+    assert rows[0]["observed_count"] == 1
+    assert rows[0]["first_success_count"] == 0
+    assert rows[0]["unresolved_count"] == 0
+    assert rows[0]["units"][0]["version"] == "a"
+    assert not first_pass_metrics([first, fixed], start + datetime.timedelta(days=1), end)
+
+
+def test_first_pass_missing_is_not_success() -> None:
+    """未実施と欠落は観測分母から除き、率を0に補わない。"""
+    now = datetime.datetime.fromisoformat("2026-10-01T00:00:00+00:00")
+    events = [
+        {"work": str(i), "stage": "review", "timestamp": now, "source": str(i), "workflow": "unknown", "outcome": outcome}
+        for i, outcome in enumerate(("unknown", "not-performed"))
+    ]
+    row = first_pass_metrics(events, now, now)[0]
+    assert row["observed_count"] == 0
+    assert row["first_success_ratio"] is None
+    assert row["unknown_count"] == row["not_performed_count"] == 1
+
+
+def test_missing_results_flow_to_week_output(dataset: Any, capsys: pytest.CaptureFixture[str]) -> None:
+    """公開集計が正式結果を持たない作業を不明として週次出力へ渡す。"""
+    rows = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")
+    quality = [item for row in rows if row.get("kind") == "cost-metrics-week" for item in row["first_pass"]]
+    assert quality
+    assert {row["stage"] for row in quality} == {"review", "final-verification", "ci"}
+    assert all(row["unknown_count"] > 0 and row["observed_count"] == 0 for row in quality)

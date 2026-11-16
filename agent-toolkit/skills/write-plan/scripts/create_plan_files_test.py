@@ -41,6 +41,11 @@ def _fix_creation_clock(monkeypatch: pytest.MonkeyPatch, clock: str) -> None:
     monkeypatch.setattr(create_plan_files, "datetime", types.SimpleNamespace(datetime=FixedDatetime, UTC=datetime.UTC))
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.400秒。"),
+)
 @pytest.mark.parametrize(
     ("clock", "option", "value", "stem", "saved_month", "recorded_date"),
     [

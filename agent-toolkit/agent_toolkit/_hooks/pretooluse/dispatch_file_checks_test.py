@@ -32,7 +32,7 @@ class TestMojibakeCheck:
         assert "U+FFFD" in context
         # エージェント宛てメッセージの規約: XMLの開始境界と終了境界が付与されていること。
         assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
-        assert "\n次の操作: U+FFFDを意図した文字へ置き換えて再実行" in context
+        assert "U+FFFDを意図した文字へ置き換えて再実行" in context
         assert context.endswith("</atk-auto>")
 
     def test_edit_with_mojibake(self):
@@ -85,10 +85,7 @@ class TestPs1EolCheck:
         assert "`LF`だけの内容" in context
         assert "`UTF-8`の`BOM`が失われて日本語が文字化け" in context
         assert "*.ps1 text eol=crlf" in context
-        assert (
-            "\n次の操作: `agent-basics:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い"
-            in context
-        )
+        assert "`agent-basics:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い" in context
         assert "既存ファイルには`Edit`ツールを使" in context
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self, tmp_path):
@@ -165,7 +162,6 @@ class TestLockfilesCheck:
         assert result.returncode == 0
         context = _additional_context(result)
         assert "直接編集" in context
-        assert "\n次の操作: " in context
 
     def test_edit_cargo_lock_warned(self):
         result = _run(
@@ -177,7 +173,6 @@ class TestLockfilesCheck:
         assert result.returncode == 0
         context = _additional_context(result)
         assert "cargo add" in context
-        assert "\n次の操作: " in context
 
     def test_normal_file_allowed(self, tmp_path):
         """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""

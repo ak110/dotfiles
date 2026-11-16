@@ -11,6 +11,7 @@ import json
 import pathlib
 import re
 import subprocess
+import tempfile
 
 from agent_toolkit._common import next_action
 from agent_toolkit._common.atomic_file import atomic_write
@@ -237,7 +238,7 @@ def read_mapping(
                 olds.append(full_old)
                 for target, names in rewrite_destinations(new):
                     # 明示した分割先のAWIは旧commitの集合外でも記録どおりに適用する（記録済みcommitへのAWIの追加）。
-                    # 範囲全体の対応表から作る記録は、書込時に記録ごとのAWIへ絞っている。
+                    # 範囲全体の対応表から作る記録は、書込時に記録ごとのAWIへ限定している。
                     if names is not None and (outside := names - allowed_wis):
                         raise _fail(f"記録に対象外AWIがあります: {sorted(outside)}")
                     inherited.setdefault(_full_oid(worktree, target, allow_missing=allow_missing), set()).update(
@@ -264,8 +265,7 @@ def commit_event(
 ) -> dict[str, object]:
     """現在のHEADのfirst-parent履歴上の未記録の区間を記録するイベントを返す。
 
-    `revision`は区間の末尾を指し、前HEADから区間の末尾までのfirst-parentの履歴がマージcommitを含まない
-    1件以上のcommitの直列である場合だけ記録する。
+    `revision`は区間の末尾を指し、前HEADから区間の末尾までのfirst-parentを辿り、通常commitと競合解消を持つmergeを記録する。
     """
     names = validate_targets(wis, allowed_wis)
     try:
@@ -291,12 +291,16 @@ def commit_event(
     except (OSError, subprocess.SubprocessError) as error:
         raise _git_fail(f"前HEADから区間の末尾までのcommitを列挙できません: {error}", worktree) from error
     chain = [line.split() for line in lines]
-    if any(len(parts) != 2 for parts in chain):
+    # first-parentだけを辿り、取り込んだ他レーンのcommitは割り当てない。
+    # mergeの再実行差分がある場合だけ競合解消の実装として記録する。
+    commits = [
+        short_oid(worktree, parts[0]) for parts in reversed(chain) if len(parts) == 2 or _merge_has_resolution(worktree, parts)
+    ]
+    if not commits:
         raise _range_fail(
-            f"前HEADから区間の末尾までの範囲にマージcommitが含まれます: {previous_head}..{revision}",
-            "マージを使わずにcherry-pickかfast-forwardで取り込み直し、取り込み直前のHEADを--previous-headへ渡して再実行する",
+            "範囲は変更のない接続mergeだけで、WI実装commitの追加がありません",
+            "この範囲のcommit記録を省き、既存のWI対応をそのまま使う",
         )
-    commits = [short_oid(worktree, parts[0]) for parts in reversed(chain)]
     mapping = read_mapping(worktree, events or [], allowed_wis, allow_missing=True)
     duplicates = [short for short in commits if any(key.startswith(short) or short.startswith(key) for key in mapping)]
     if duplicates:
@@ -305,6 +309,49 @@ def commit_event(
             "未記録の区間の直前のcommitを--previous-headへ渡し、区間の末尾commitを--commitへ渡して未記録の区間だけを記録する",
         )
     return {"commits": commits, "awi": sorted(names)}
+
+
+def _merge_has_resolution(worktree: pathlib.Path, parts: list[str]) -> bool:
+    """最低対応Gitでも、接続mergeと競合解消・追加編集を区別する。
+
+    --remerge-diffはGit 2.36以降なので、元repoのindex・HEAD・作業ファイルへ触れずにmergeを再現する。
+    objectはalternatesで参照し、作業用repoと展開したファイルは判定後に回収する。
+    """
+    oid, *parents = parts
+    with tempfile.TemporaryDirectory(prefix="atk-commit-merge-") as temporary:
+        scratch = pathlib.Path(temporary)
+        command.run(["init", "--quiet", "--template=", str(scratch)], worktree, check=True, capture_output=True)
+        objects = command.output(["rev-parse", "--path-format=absolute", "--git-path", "objects"], worktree)
+        (scratch / ".git/objects/info/alternates").write_text(objects + "\n", encoding="utf-8")
+        command.run(["-c", "submodule.recurse=false", "reset", "--hard", parents[0]], scratch, check=True, capture_output=True)
+        # --no-commitで再現だけを行い、ユーザーのhookは隔離repoでも実行しない。
+        hooks = scratch / "empty-hooks"
+        hooks.mkdir()
+        result = command.run(
+            [
+                "-c",
+                f"core.hooksPath={hooks}",
+                "-c",
+                "user.name=Merge inspection",
+                "-c",
+                "user.email=merge@example.invalid",
+                "merge",
+                "--no-commit",
+                "--no-ff",
+                "--no-edit",
+                *parents[1:],
+            ],
+            scratch,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode:
+            if command.output(["ls-files", "--unmerged"], scratch):
+                return True
+            result.check_returncode()
+        expected = command.output(["write-tree"], scratch)
+        actual = command.output(["rev-parse", f"{oid}^{{tree}}"], worktree)
+        return expected != actual
 
 
 def rewrite_destinations(value: object) -> list[tuple[str, set[str] | None]]:

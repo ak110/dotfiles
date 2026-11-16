@@ -75,6 +75,13 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
     assert [harness.requests.count(url) for url in screen_urls] == [1, 0, 0]
 
 
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=(
+        "詳細取得と全文検索の成功・失敗が遷移後に届いても、旧DOMへ書き込まない。実ブラウザーの観測とt"
+        "race回収が必要（CPU最大実測1.182秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_ignores_delayed_detail_and_search_results(
     screen_harness: _ScreenHarness,
@@ -116,6 +123,10 @@ async def test_navigation_ignores_delayed_detail_and_search_results(
     assert not errors
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=("ブラウザーの戻る操作で直前の画面が再び描画される。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.703秒）。"),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenHarness) -> None:
     """ブラウザーの戻る操作で直前の画面が再び描画される。"""
@@ -132,6 +143,10 @@ async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenH
     assert await page.evaluate("() => location.pathname") == "/"
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("3画面のURLへ直接アクセスしても各画面が描画される。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.591秒）。"),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> None:
     """3画面のURLへ直接アクセスしても各画面が描画される。"""
@@ -202,6 +217,9 @@ async def test_detail_loading_keeps_list_and_navigation_positions(browser_harnes
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
 
 
+@pytest.mark.cpu_limit(
+    1.5, reason=("WI一覧と計画プレビューの処理中表示を確認する。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.514秒）。")
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_slow_work_item_filter_and_plan_preview_show_loading(
     screen_harness: _ScreenHarness,
@@ -266,6 +284,13 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
     assert await page.locator('#sessions .session-item[aria-current="true"]').count() == 1
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "3画面で「ワークアイテム・計画ファイル・セッション」の各リンクの位置、大きさおよび算出スタイルが"
+        "一致する。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.801秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
 async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHarness, width: int) -> None:
@@ -297,6 +322,13 @@ async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHa
     assert clicked == direct
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "左一覧に付属ファイルを表示せず、右ペインから同じstemの5ファイルを相互に開ける。実ブラウザー"
+        "の観測とtrace回収が必要（CPU最大実測0.534秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarness) -> None:
     """左一覧に付属ファイルを表示せず、右ペインから同じstemの5ファイルを相互に開ける。"""
@@ -339,6 +371,13 @@ async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarn
     assert await harness.page.title() == "計画ファイル - atk serve"
 
 
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=(
+        "50件は全件表示し、100件を超えた一覧だけスクロールに応じて追加描画する。実ブラウザーの観測と"
+        "trace回収が必要（CPU最大実測1.194秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_plan_and_session_lists_expand_after_hundred_items(
     screen_harness: _ScreenHarness,

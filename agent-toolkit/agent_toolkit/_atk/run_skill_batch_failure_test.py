@@ -19,6 +19,11 @@ def _manual_identity(monkeypatch):
     monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.772秒。"),
+)
 @pytest.mark.parametrize("state", ["adopted", "rejected"])
 def test_deleted_failure_waits_for_new_version_without_duplicate_report(tmp_path, monkeypatch, state):
     notes = run_skill_batch_test._notes()  # pylint: disable=protected-access
@@ -109,6 +114,11 @@ def test_missing_record_does_not_discard_reregistered_generation(tmp_path, monke
     assert not session_review.pending()[0].get("failure_key")
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.352秒。"),
+)
 @pytest.mark.parametrize("phase", ["prepare", "model"])
 def test_failure_body_survives_manifest_and_log_removal(tmp_path, phase):
     notes = run_skill_batch_test._notes()  # pylint: disable=protected-access

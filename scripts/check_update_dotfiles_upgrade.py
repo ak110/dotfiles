@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run --script
+#!/usr/bin/env -S uv run --no-cache --script
 # /// script
 # requires-python = ">=3.15"
 # dependencies = []
@@ -434,7 +434,9 @@ def run_upgrade_check(
     # uvは0.6.0以降、起動した全ての子プロセスへ`UV`を渡す（https://docs.astral.sh/uv/reference/environment/ ）。
     uv_path = os.environ.get("UV")
     if not uv_path:
-        raise UpgradeCheckError("環境変数UVが無い。uv run --script scripts/check_update_dotfiles_upgrade.py で起動し直す。")
+        raise UpgradeCheckError(
+            "環境変数UVが無い。uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py で起動し直す。"
+        )
     current_oid = _git_value(source_repo, "rev-parse", "HEAD", runner=runner)
     old_oid = resolve_old_commit(source_repo, current_oid, runner=runner)
     if old_oid == current_oid:
@@ -645,7 +647,8 @@ def main() -> int:
     except (OSError, ValueError, UpgradeCheckError) as error:
         print(
             f"update-dotfiles旧版更新検証に失敗した: {error}。上記の対処を行い、"
-            f'uv run --script scripts/check_update_dotfiles_upgrade.py --platform {args.platform} --repo "{args.repo}"'
+            "uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py "
+            f'--platform {args.platform} --repo "{args.repo}"'
             "を再実行してください。解消しない場合はこの失敗ログをdotfilesの作者へ報告してください。",
             file=sys.stderr,
         )

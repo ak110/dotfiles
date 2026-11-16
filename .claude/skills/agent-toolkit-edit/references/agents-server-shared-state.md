@@ -32,7 +32,7 @@
 
 `agents_server`の状態は、以下の4つの形式で保持・表現される。
 
-1. MCPサーバーのメモリー
+1. 共有管理サービスの会話別メモリー
 2. 状態ディレクトリ内のファイル
 3. フックが記録するセッション状態
 4. statuslineが参照する射影データ
@@ -50,24 +50,36 @@ process-loop、レーン操作、配布物保持が共有する状態も、同�
 
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
-| MCPサーバー | 起動スクリプトは`agent-toolkit/agent_toolkit/agents_server_mcp.py`。MCPツールの実装は`_agents_server/mcp_tools.py`、セッション管理は`_agents_server/manager.py`および`manager_*.py`が担当する | ホストのMCP起動単位ごとに1プロセスが存在する。環境の会話コンテキスト、または要求の`_meta.threadId`から管理対象を確定する。同じ接続の異なる会話は、Manager・root・待機と終了処理を分離する |
+| MCP転送 | `agents_server_mcp.py`から`_agents_server/service_forward.py`を起動する。stdioと認証済みローカルIPCを中継する | 接続単位。Manager・backend・MCP SDKを読み込まず、接続EOFで会話を閉じない |
+| 共有管理サービス | `_agents_server/service.py`。公開6操作は既存の`mcp_tools.py`、会話別Managerは`service_context.py`、世代移譲は`service_coordinator.py`が担当する | 同じOSアカウント・状態領域で共有する。会話ごとに環境・cwd・親settings、Manager・root・待機を分ける。effort・release・heartbeatを中央で巡回し、実ホスト死亡はPID起動世代で確認する |
 | `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show`、`atk agents logs`、`atk lane create/integrate/delete`など | コマンド呼び出しごとに起動する短命なプロセス。現在のセッション識別子を取得して動作する。レーン操作では既存のセッション登録情報の参照のみを行う |
 | フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`。観測記録の読み書きは`_hooks/agents_server_observations.py`が担当する | ツール実行イベントごとに起動する短命なプロセス。入力JSONから現在のセッション識別子を取得する |
 | statusline | `rust/claude-statusline` | 描画更新ごとに起動する短命なプロセス。入力JSONから現在のセッション識別子を取得する |
 
-環境変数`CLAUDE_CODE_SESSION_ID`には、子プロセスの起動時に現在のセッション識別子が設定される。
-Claude Codeが同一プロセス内でセッション識別子を切り替えた場合、切り替え後に起動される短命プロセスは新しい識別子を取得できるが、常駐している長命なMCPサーバーは起動時の識別子を保持し続ける。
-そのため、`start`ツールの`task`が委譲プロンプトに付与する委譲元の記録情報（`atk-auto`の`kind="launcher-record"`。`ManagerBase.launcher_record_context`が生成）も、会話の切り替え後には以前の会話を指している可能性がある。
+環境変数`CLAUDE_CODE_SESSION_ID`には子プロセスの起動時に現在のセッション識別子が設定される。
+共有サービスは接続から受け取った`CallerContext`と要求の会話IDを使い、サービス自身の起動環境を会話の推定元から除外する。
+同一プロセス内で会話が切り替わり、要求に新しい会話IDが無い場合は、起動時の環境に基づく会話の識別に限られる。
+`start`が付与する委譲元の記録情報（`kind="launcher-record"`。`ManagerBase.launcher_record_context`が生成）も、元発話との一致を確認する。
 データを利用する側は、明示された出所情報や取得済みの`record`・`line`を優先し、対象の発話と一致しているか確認する必要がある。
 `session-review-evidence`の`--delegation-record parent`および`--delegation-record root`は、委譲先自身を起点として直接の委譲元や最上位の会話を解決する。
 親子関係の判定ロジックは`_common/session_parents.py`に共通化されており、ログ等の記録に残っている起動結果を、登録簿作成時の委譲元情報よりも優先して扱う。
-なお、MCPサーバープロセスには`CLAUDE_PID`が渡されないため、Claude Codeのプロセス識別子を環境変数から直接解決できない。
+実ホストのPID世代と親settingsは、`service.py`がOS認証した転送側peerの祖先から確認し、確認不能なら会話を保持する。
 
 `_meta.threadId`を持つ要求は、`mcp_tools.py`の要求単位のContextVarが該当会話のManagerを選ぶ。
-環境から解決した親と一致する場合は既存Managerを使い、それ以外は同じ会話IDのrootと`root.json`を所有するManagerをMCPの寿命内で保持する。
+同じ会話IDへの接続はサービス内のManagerへ合流し、会話ごとのrootとwriterを保持する。
 最初の要求を返す前に子の復旧起動と状態の公開を終え、既存aliasesの形式でCLIへの対応を保存する。
 同じ会話の初期化だけを排他し、異なる会話の接続は並行して初期化できる。
-会話IDの無い要求は従来の起動環境とプロセスごとのrootの解決を維持する。
+会話IDの無い要求は接続固有の識別子と起動環境からrootを解決し、別の匿名接続と混同しない。
+
+## 管理サービスの世代登録
+
+管理領域は`state_dir/services/agents-server`とし、既存セッション・結果領域の`state_dir/agents-server`と区別する。
+`service_generations.py`が`generations.json`へ受付先、コード実体・版、準備順、OSプロセス世代を保存する。
+これはジョブ台帳ではなく、実行の復旧には既存セッション登録簿とbackendの物理記録を使う。
+`startup.lock`・`publish.lock`・`generations.lock`は固定名で保持し、世代ごとの`<generation>.json`にreadyの接続先、`<generation>.stderr.log`に起動診断を置く。
+認証値はIPCの非永続context内だけで扱い、世代登録・ログ・再開情報へ保存しない。
+Linuxは相互UID、Windowsは現在SIDのDACL・remote拒否とpeer PID世代で相手を認証する。
+所有移譲と初回旧stdioの限界は`docs/development/design-agents-server-service.md`に記録する。
 
 ## 判定を確定する前に確認すること
 

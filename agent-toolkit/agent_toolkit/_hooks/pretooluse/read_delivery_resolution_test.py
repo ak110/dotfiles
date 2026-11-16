@@ -57,6 +57,15 @@ def test_public_small_operation_does_not_resolve_unselected_material_or_initiali
             cold.setattr(markdown_it, "MarkdownIt", unexpected_initialization)
             importlib.reload(task_document_launch)
         with monkeypatch.context() as operation:
+            # 非選択行の解決抑止を確かめるため、非該当の宣言1行だけを入力にする。
+            source = tmp_path / "SKILL.md"
+            source.write_text("# 非該当の宣言\n", encoding="utf-8")
+            rows = [
+                read_triggers.ReadTrigger(
+                    source, 1, "操作", ("tool:Write",), (), material="`unselected.md`", plugin_root=tmp_path
+                )
+            ]
+            operation.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
             operation.setattr(read_triggers, "material_targets", unexpected_initialization)
             operation.setattr(task_document_launch, "_markdown", unexpected_initialization)
             result = pretooluse_support.run_hook_with_notice_details(
@@ -195,7 +204,9 @@ _DATABASE_ROW = "| DBを書く前 | `.claude/skills/database/SKILL.md` | 操作 
 
 
 @pytest.mark.parametrize("nested", [False, True])
-def test_project_skill_resolves_repository_relative_material(tmp_path: pathlib.Path, nested: bool) -> None:
+def test_project_skill_resolves_repository_relative_material(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, nested: bool
+) -> None:
     """`.claude/`で始まる資料は、最も近い`.claude/skills`を持つリポジトリの根から解決し、hookを止めない。"""
     main = tmp_path / "main"
     if nested:
@@ -203,6 +214,7 @@ def test_project_skill_resolves_repository_relative_material(tmp_path: pathlib.P
         _project_skills(main, "")
     project = main / ".claude/worktrees/lane" if nested else main
     backend, database = _project_skills(project, _DATABASE_ROW)
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [backend])
     rows = read_triggers.parse_tables(backend, read_delivery.plugin_resources.plugin_root(), project=str(project))
     assert [row.documents for row in rows] == [(database,)]
     result = _pretooluse(project, f"repository-relative-{nested}", "Read", {"file_path": str(backend)})
@@ -210,6 +222,9 @@ def test_project_skill_resolves_repository_relative_material(tmp_path: pathlib.P
     assert "想定外のエラーが起きた" not in result.stdout
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実プロジェクト宣言の解決と公開Pre2回で、不正行の除外・正常行の配送・警告の重複防止を確認。Linux CI実測0.91秒"
+)
 def test_project_skill_missing_material_row_is_skipped_with_single_warning(tmp_path: pathlib.Path) -> None:
     """ユーザー側の表で、改名で消えたスキルを指す行だけを除き、他の行を保ち、同じ会話で警告を繰り返さない。"""
     project = tmp_path / "project"
@@ -229,6 +244,6 @@ def test_project_skill_missing_material_row_is_skipped_with_single_warning(tmp_p
     assert "想定外のエラーが起きた" not in first.stdout
     assert f"{backend}:6" in first.stdout and f"{backend}:5" not in first.stdout
     # 不備の行を除いた後も、同じ表の正常な行の読込案内は同じ呼び出しで配送される。
-    assert "`database`を起動せよ" in first.stdout
+    assert "`database`" in first.stdout
     repeated = _write_notes(project, "missing-material")
     assert repeated.returncode == 0 and f"{backend}:6" not in repeated.stdout

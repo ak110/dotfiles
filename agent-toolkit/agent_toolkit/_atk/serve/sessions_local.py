@@ -1,7 +1,5 @@
 """セッション画面のローカル記録の一覧・詳細・費用。"""
 
-import asyncio
-import contextlib
 import dataclasses
 import json
 import logging
@@ -16,7 +14,7 @@ from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import session_costs as _session_costs
 from agent_toolkit._atk.serve import session_parents, session_watch
-from agent_toolkit._atk.serve.sessions_events import deliver_refresh
+from agent_toolkit._atk.serve.sessions_events import deliver_refresh, schedule_delivery
 from agent_toolkit._atk.serve.sessions_models import (
     LOCAL_LIST_REUSE_SEC,
     MAX_LIST_ENTRIES,
@@ -212,6 +210,8 @@ def _start_background_rescan(context: SessionsContext, tracker: session_watch.Re
     """
     state = context.state
     with state.local_rescan_flag_lock:
+        if state.local_rescan_stopping:
+            return
         if state.local_rescan_running:
             state.local_rescan_again = state.local_rescan_again or changed
             return
@@ -226,10 +226,9 @@ def _start_background_rescan(context: SessionsContext, tracker: session_watch.Re
                     scanned = _scan_local_sessions(context, tracker)
                 loop = state.watch_loop
                 if scanned != previous and loop is not None:
-                    with contextlib.suppress(RuntimeError):
-                        asyncio.run_coroutine_threadsafe(deliver_refresh(state), loop)
+                    schedule_delivery(state, loop, lambda: deliver_refresh(state))
                 with state.local_rescan_flag_lock:
-                    if not state.local_rescan_again:
+                    if state.local_rescan_stopping or not state.local_rescan_again:
                         state.local_rescan_running = False
                         return
                     state.local_rescan_again = False
@@ -248,7 +247,12 @@ def _start_background_rescan(context: SessionsContext, tracker: session_watch.Re
         with state.local_rescan_flag_lock:
             state.local_rescan_running = False
 
-    threading.Thread(target=run, name="atk-serve-session-rescan", daemon=True).start()
+    with state.local_rescan_flag_lock:
+        if state.local_rescan_stopping:
+            state.local_rescan_running = False
+            return
+        state.local_rescan_thread = threading.Thread(target=run, name="atk-serve-session-rescan", daemon=True)
+        state.local_rescan_thread.start()
 
 
 def is_local_record_path(context: SessionsContext, raw: str) -> bool:

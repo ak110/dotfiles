@@ -10,6 +10,7 @@ from typing import Annotated, Any, Literal
 
 import pydantic
 
+from agent_toolkit._common import runtime_environment
 from agent_toolkit._git import command as git
 from agent_toolkit._git import remote
 
@@ -28,7 +29,14 @@ def normalize_path(value: str) -> str:
     """未指定の空文字を保ち、パスをcwd起点の絶対パスへ揃える。"""
     if any(char in value for char in ("\n", "\r", "\0")):
         raise ValueError("パスには改行とNULを含められない")
-    return str(pathlib.Path(value).expanduser().resolve()) if value else ""
+    if not value:
+        return ""
+    caller = runtime_environment.current()
+    if caller is None:
+        return str(pathlib.Path(value).expanduser().resolve())
+    parts = pathlib.Path(value).parts
+    path = runtime_environment.home().joinpath(*parts[1:]) if parts[0] == "~" else pathlib.Path(value).expanduser()
+    return str((path if path.is_absolute() else caller.cwd / path).resolve())
 
 
 @dataclasses.dataclass(frozen=True)

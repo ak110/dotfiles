@@ -32,7 +32,7 @@
 2つ以上の手順や規範が両立しない場合は、そのファイル名と節名を報告に含める。
 矛盾の解消は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の手順に従って登録する（条文修正前の由来特定は`references/conflict-resolution.md`に従う）。
 手順の前提条件が存在しないだけで規範間の矛盾がない場合は、報告にとどめる。
-委譲先の返却手順は、`agent-toolkit/share/rules/rules-subagent.md`「手順どおりに進められない場合の返却」が定める。
+委譲先の返却手順は、`agent-toolkit/share/subagent-operations.md`「手順どおりに進められない場合の返却」が定める。
 
 ## 名指し参照の読込方法
 

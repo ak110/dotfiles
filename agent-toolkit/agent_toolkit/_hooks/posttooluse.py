@@ -24,7 +24,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
    バックグラウンドタスクの所有記録へ記録 (Bash / MCP / Agent / Task)
    PostToolUseFailure: Bash・PowerShellのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了
-8. PermissionDenied: 状態を変更せず終了
+8. PermissionDenied: 承認と実入力の一致を確認するため実際の拒否を記録して終了（再試行は実行しない）
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`または`atk run-script plan-create`のBash標準出力）
@@ -41,10 +41,11 @@ import re
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import shlex
 
-from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE
+from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE, observe_verification
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-lazy from agent_toolkit._atk import run_script as _run_script
+lazy from agent_toolkit._atk.wi import operation_permissions
+lazy from agent_toolkit._common import function_hook_requests
 lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
@@ -59,7 +60,8 @@ lazy from agent_toolkit._hooks import progress_self_check as _progress_self_chec
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
-lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import dispatch as _pretooluse_dispatch
 lazy from agent_toolkit._hooks.pretooluse import read_delivery as _read_delivery
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
@@ -115,7 +117,7 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     if not any(word in text for word in _EXAMPLE_WORDS):
         return None
     body = (
-        "この発話は例示の語を含む。応答や具体化の前に、"
+        "発話に例示の語がある。応答・具体化の前に、"
         "`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`"
         "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断せよ。"
     )
@@ -250,6 +252,8 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
         payload = json.loads(payload_text)
     except json.JSONDecodeError, ValueError:
         return None
+    if not isinstance(payload, dict):
+        return None
     session_id = payload.get("session_id", "")
     if not isinstance(session_id, str) or not session_id:
         return None
@@ -258,6 +262,14 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
     if not isinstance(tool_input, dict):
         return None
     event_name = payload.get("hook_event_name", "")
+    # 後続の対象限定で捨てるイベントも、ホストから到着した元の応答で記録する。
+    if event_name == "PermissionDenied":
+        operation_permissions.observe_denial(payload)
+    elif event_name in {"PostToolUse", "PostToolUseFailure"}:
+        if event_name == "PostToolUse" and tool_name == _ASK_USER_QUESTION_TOOL:
+            operation_permissions.observe_answer(payload)
+        operation_permissions.observe_result(payload)
+        observe_verification(payload)
     if event_name == "PermissionDenied" or (event_name == "PostToolUseFailure" and tool_name not in ATK_SHELL_TOOLS):
         return None
     cwd_raw = payload.get("cwd", "")
@@ -445,6 +457,8 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
         task_id = _structured_background_task_id(payload.get("tool_response"))
     if task_id is not None:
         _record_background_task_id(session_id, task_id)
+        if is_main_agent_context(payload):
+            function_hook_requests.enqueue(session_id, "background_task", {"id": task_id, "command": command})
     _agents_server_observations.record_wait_observation_attempt(session_id, command, resolve_hook_agent_id(payload))
     _record_bash_response_state(session_id, command, payload.get("tool_response"))
 
@@ -463,13 +477,9 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
     command = tool_input.get("command")
     if not isinstance(command, str) or not termination_evidence.published_git_operations(command):
         return None
-    operation = (
-        f"`{_run_script.PLUGIN_ROOT / 'skills/report-completion/SKILL.md'}`を読め"
-        if is_codex_payload(payload) or is_antigravity_payload(payload)
-        else "Skillで`agent-toolkit:report-completion`を起動せよ"
-    )
+    operation = "`agent-toolkit:report-completion`を起動せよ"
     return _llm_notice(
-        f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
+        f"作業完了報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
         tag="notice",
         subject=json.dumps([payload.get("cwd"), command, response], ensure_ascii=False, sort_keys=True),
     )
@@ -477,6 +487,7 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
 
 def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str, event_name: str) -> list[str]:
     """ツールの種類ごとに実行結果をセッション状態へ記録し、コーディングエージェントへ返す通知を返す。"""
+    _background_tasks.observe_repl_bash(payload, completed=True)
     # 所有の根拠は、自セッションのツール呼び出しの応答がバックグラウンドタスク識別子を返したことである。
     # 起動の成否は所有の有無を変えないため、ホストのMCP移行通知で始まる応答は成否によらず記録する。
     # 本文の途中に同じ文言を含む前景の出力は、ホストの通知ではないため記録しない。
@@ -499,10 +510,17 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
             )
         )
     if event_name == "PostToolUseFailure":
-        if tool_input.get("run_in_background"):
-            failed_task_id = _background_task_id_from_response(payload.get("tool_response"))
-            if failed_task_id is not None:
-                _record_background_task_id(session_id, failed_task_id)
+        failed_task_id = (
+            _background_task_id_from_response(payload.get("tool_response"))
+            if tool_input.get("run_in_background")
+            else _structured_background_task_id(payload.get("tool_response"))
+        )
+        if failed_task_id is not None:
+            _record_background_task_id(session_id, failed_task_id)
+            if is_main_agent_context(payload) and isinstance(tool_input.get("command"), str):
+                function_hook_requests.enqueue(
+                    session_id, "background_task", {"id": failed_task_id, "command": tool_input["command"]}
+                )
         return notices
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず回答を確認し、ユーザーの回答から通知までの遅延を抑える。
@@ -558,8 +576,23 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
             payload, session_id, tool_name, tool_input, moved_to_background=notice_task_id is not None
         )
         notices.extend(_llm_notice(warning.body, tag=_WARN_TAG, fix=warning.fix, removable_cause=False) for warning in warnings)
+        if tool_name.endswith("__start") and is_main_agent_context(payload):
+            # 同じhookパッケージの受信解析を共用し、応答の解釈を二重に持たない。
+            # pylint: disable-next=protected-access
+            response = _agents_server_observations._extract_agents_server_structured_response(payload.get("tool_response"))
+            if response.get("session_id") and response.get("status") != "failed" and not response.get("isError"):
+                function_hook_requests.enqueue(session_id, "periodic_recheck", {})
     elif tool_name == "TaskStop":
         consume_completion(session_id, target_ids(tool_input))
+        response = payload.get("tool_response")
+        if (
+            is_main_agent_context(payload)
+            and isinstance(response, dict)
+            and isinstance(response.get("task_id"), str)
+            and isinstance(response.get("message"), str)
+            and response["message"].startswith(_TASK_STOP_SUCCESS_PREFIX)
+        ):
+            function_hook_requests.enqueue(session_id, "background_complete", {"id": response["task_id"]})
     elif tool_name in ("Write", "Edit", "MultiEdit", _hook_tool_input.CODEX_APPLY_PATCH_TOOL):
         notices.extend(_observe_edit_tool(session_id, tool_name, tool_input, cwd))
     elif tool_name in ATK_SHELL_TOOLS:
@@ -580,6 +613,7 @@ def main(payload_text: str) -> int:
     parsed = _parse_hook_payload(payload_text)
     if parsed is not None:
         payload, session_id, tool_name, tool_input, cwd, event_name = parsed
+        function_hook_requests.cleanup(session_id)
         set_warning_session_id(session_id)
         background_task_id = (
             _background_task_id_from_response(payload.get("tool_response"))

@@ -397,6 +397,11 @@ def _related_plan(*wis: str) -> str:
     return "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n" + related + "\n" + _plan().removeprefix("# 計画\n\n")
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.465秒。"),
+)
 @pytest.mark.parametrize("handoff", [False, True])
 def test_records_range_from_cherry_pick_and_fast_forward_in_one_call(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
@@ -714,7 +719,7 @@ def test_record_range_rejections_keep_files(
         "second-parent": (side, base, "first-parentの履歴上にありません"),
         "previous": (second, side, "first-parentの祖先ではありません"),
         "empty": (second, second, "範囲が空"),
-        "merge": ("HEAD", second, "マージcommit"),
+        "merge": ("HEAD", second, "変更のない接続mergeだけ"),
         "duplicate": (first, base, "記録済みのcommit"),
         "overlap": (second, base, "記録済みのcommit"),
     }[case]

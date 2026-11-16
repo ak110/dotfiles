@@ -146,6 +146,10 @@ def _direct_document(
             return ((root / skill.lstrip("/")) if skill.startswith("/") else (root / "skills" / skill)).resolve()
         target = pathlib.Path("references", f"{mode}.md") if mode else pathlib.Path("SKILL.md")
         return (root / "skills" / name / target).resolve()
+    # 裸の識別子は上のローカルスキル以外では資料にならない。本文中のコード名ごとに
+    # 祖先のmanifestを照会せず、パスや変数の解決が必要な参照だけを後段へ渡す。
+    if "/" not in value and ":" not in value and not value.endswith((".md", ".md.tmpl")) and value != "Makefile":
+        return None
     # share・skillsなど配置によらず、文書を所有するpluginのrootで変数を解決する。
     owner_root = next(
         (parent for parent in source.parents if (parent / ".claude-plugin/plugin.json").is_file()),

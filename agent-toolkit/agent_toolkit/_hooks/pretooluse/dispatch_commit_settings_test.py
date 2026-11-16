@@ -8,6 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
+from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing.dispatch_support import (
     _claude_commit_hook_payload,
     _claude_commit_payload,
@@ -17,6 +18,12 @@ from agent_toolkit._testing.dispatch_support import (
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
 
 _LOW_TRAILER = "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>"
+
+
+@pytest.fixture(autouse=True)
+def _without_unrelated_document_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """帰属の判定と公開応答を通し、対象外の規範配送を隔離する。"""
+    monkeypatch.setattr(pretooluse, "read_delivery", lambda *_args, **_kwargs: Decision())
 
 
 @pytest.mark.parametrize(

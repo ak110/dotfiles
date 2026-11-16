@@ -15,7 +15,7 @@ from agent_toolkit._common.next_action import ActionableError
 _REASON_PREFIX = "続行できない理由:"
 _CLASSIFICATION_PREFIX = "続行できない区分:"
 # 「返却形式の受け渡し」が全役割に定める正常結果の状態行。役割固有の固定行は宣言の`result_heads`が加える。
-_STATE_HEAD = "状態:"
+_STATE_HEAD = "状態: completed"
 RECOVERY_NEXT_ACTION = (
     "agents_server.send_messageのsession_idにこの結果のsession_idを指定し、promptで同じsessionへ、"
     "診断に従い、正常返却は所定の成功行、続行不能は同じインデントの有効な区分と非空の理由の"
@@ -86,14 +86,14 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
 def _role_head_reason(document: pathlib.Path, message: str) -> str | None:
     """役割taskの返却が、状態行か役割文書の宣言する固定行を持つかを検査する。
 
-    低い推論量の担当が作業途中で状態行も区分も無い自由文を返すと、委譲元へ完了として届く。
+    担当が作業途中で状態行も区分も無い自由文を返すと、委譲元へ完了として届く。
     固定行の一覧は返却形式を所有する役割文書の宣言から得て、検査と文書の食い違いを避ける。
     """
     declaration = task_documents.read_declaration(document)
-    if not isinstance(declaration, task_documents.TaskDocumentDeclaration):
-        # 宣言を読めない役割は返却形式も確かめられないため、正しい返却の保留を避けて検査しない。
-        return None
-    heads = (_STATE_HEAD, *declaration.result_heads)
+    heads = (
+        _STATE_HEAD,
+        *(declaration.result_heads if isinstance(declaration, task_documents.TaskDocumentDeclaration) else ()),
+    )
     for line in message.splitlines():
         stripped = line.strip().removeprefix("- ")
         if any(_head_matches(stripped, head) for head in heads):
@@ -109,6 +109,8 @@ def _head_matches(line: str, head: str) -> bool:
     """`:`で終わる固定行は前方一致、それ以外は行全体か直後の全角括弧の補足付きで一致させる。"""
     if head.endswith(":"):
         return line.startswith(head)
+    if head.startswith("状態:"):
+        return line == head
     return line == head or line.startswith(head + "（")
 
 
@@ -218,10 +220,6 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
 
 def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
     """形式違反とexploreの不足申告を同じ1回の保留・継続へ渡す。"""
-    effort_error = session.effort_request_results.get("result-contract")
-    if effort_error is not None:
-        error = result.get("error")
-        result["error"] = {**(error if isinstance(error, dict) else {}), "effortRecovery": effort_error}
     reason = invalid_result_reason(session, result)
     if reason is None:
         # 有効な不足申告の真偽は機械判定せず、exploreだけ同じ回復枠で一度再確認する。

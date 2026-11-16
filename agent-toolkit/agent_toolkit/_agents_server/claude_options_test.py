@@ -42,7 +42,15 @@ def test_build_options_inherits_parent_settings(
             captured.update(kwargs)
             self.settings = kwargs["settings"]
 
-    parent = {"env": {"CLAUDE_CODE_PROMPT_CACHE_TTL": "1h", "OTHER": "secret-parent-value"}, "disableAllHooks": True}
+    parent = {
+        "env": {
+            "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h",
+            "OTHER": "secret-parent-value",
+            "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "1",
+        },
+        "disableAllHooks": True,
+    }
+    monkeypatch.setenv("CLAUDE_CODE_EXPERIMENTAL_CODE_MODE", "1")
     path = tmp_path / "parent.json"
     path.write_text(json.dumps(parent), encoding="utf-8")
     settings = {
@@ -71,6 +79,7 @@ def test_build_options_inherits_parent_settings(
     env = captured["env"]
     assert isinstance(env, dict)
     assert all(value["env"][key] == item for key, item in env.items())
+    assert env["CLAUDE_CODE_EXPERIMENTAL_CODE_MODE"] == "0"
     if settings_kind in {"json", "file"}:
         assert value["env"]["OTHER"] == "secret-parent-value"
         assert value["disableAllHooks"] is True
@@ -142,7 +151,7 @@ def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch,
 def test_build_options_resolves_cli_from_path(monkeypatch: pytest.MonkeyPatch, cli_path: str | None) -> None:
     """PATHで見つかったCLIだけをSDKへ渡す。"""
     captured = _capture_options(monkeypatch)
-    monkeypatch.setattr(claude.shutil, "which", lambda _name: cli_path)
+    monkeypatch.setattr(claude.shutil, "which", lambda _name, **_kwargs: cli_path)
 
     claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
 
@@ -183,6 +192,7 @@ async def test_claude_options_use_owned_base_instructions(tmp_path: pathlib.Path
         "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",
         "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "1h",
+        "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "0",
     }
 
 
@@ -216,8 +226,8 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
     uv.write_text(
         f"#!{sys.executable}\n"
         "import json, os, sys\n"
-        "if sys.argv[1:4] == ['run', '--no-config', '--no-project']:\n"
-        "    os.execv(sys.executable, [sys.executable, '-B', *sys.argv[7:]])\n"
+        "if sys.argv[1:5] == ['run', '--no-cache', '--no-config', '--no-project']:\n"
+        "    os.execv(sys.executable, [sys.executable, '-B', *sys.argv[8:]])\n"
         "print(json.dumps({'args': sys.argv[1:], 'path': os.environ['PATH'], "
         "'data': os.environ['AGENT_TOOLKIT_RUNTIME_DATA'], "
         "'environment': os.environ['UV_PROJECT_ENVIRONMENT'], "

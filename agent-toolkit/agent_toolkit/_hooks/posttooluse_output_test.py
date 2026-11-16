@@ -26,7 +26,7 @@ def test_hooks_json_routes_tool_specific_processing_to_posttooluse() -> None:
 def test_posttooluse_registration_rejects_missing_webfetch() -> None:
     """外部取得の観測を公開matcherから欠落させる持込負例を検出する。"""
     with pytest.raises(AssertionError):
-        _assert_tool_specific_posttooluse_registration(_registered_posttooluse_names() - {"WebFetch"})
+        _assert_tool_specific_posttooluse_registration(_registered_posttooluse_names() - {"WebFetch", "*"})
 
 
 @pytest.mark.parametrize("tool_name", ["Bash", "PowerShell"])
@@ -48,9 +48,9 @@ def test_persisted_shell_output_excerpt_is_replaced_by_unread_notice(tmp_path: p
     assert validate_hook_output("PostToolUse", json.loads(result.stdout)) == []
     updated = output["updatedToolOutput"]
     assert excerpt not in updated["stdout"]
-    assert saved in updated["stdout"] and "50000" in updated["stdout"] and "次の操作:" in updated["stdout"]
-    # 次の操作は、Claude Code 2.1.296のReadが全文取得に受け付ける入力（`allow_large: true`）を名指しする。
-    assert "allow_large: true" in updated["stdout"]
+    assert saved in updated["stdout"] and "50000" in updated["stdout"]
+    assert "全量取得" in updated["stdout"]
+    assert "allow_large" not in updated["stdout"] and "file_path" not in updated["stdout"]
     assert {key: value for key, value in updated.items() if key != "stdout"} == {
         key: value for key, value in payload["tool_response"].items() if key != "stdout"
     }
@@ -86,7 +86,8 @@ def test_registered_task_stop_consumes_only_successful_target(tmp_path: pathlib.
         session_id,
         lambda _previous: {"stall_detection_completed_at_by_task": {"task-1": 1.0, "task-2": 2.0}},
     )
-    if "TaskStop" in _registered_posttooluse_names(event):
+    registered = _registered_posttooluse_names(event)
+    if "*" in registered or "TaskStop" in registered:
         result = _run(
             {"hook_event_name": event, "session_id": session_id, "tool_name": "TaskStop", "tool_input": {id_field: "task-1"}},
             state_dir=tmp_path,

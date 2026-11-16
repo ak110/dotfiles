@@ -89,6 +89,12 @@ def _run_plan_launcher(
 
 
 @pytest.mark.parametrize("case", ["complete", "missing", "extra"])
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "99件のWI集合と欠落/余剰を実配布plan-checkへ渡し、CLI入口から全件の照合を検証する（Linux CI CPU合計最大1.293秒）。"
+    ),
+)
 def test_cli_checks_expected_wi_set(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
@@ -109,6 +115,12 @@ def test_cli_checks_expected_wi_set(
         assert f"余剰=['{extra}']" in result.stderr
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "同じ計画の2件から3件への追加を実plan-checkの3起動で確認し、先行対象の保持を検証する（Linux CI CPU合計最大1.037秒）。"
+    ),
+)
 def test_cli_expected_wi_tracks_explicit_addition(
     repo: tuple[pathlib.Path, str], host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
@@ -128,6 +140,13 @@ def test_cli_expected_wi_tracks_explicit_addition(
 
 
 @pytest.mark.parametrize("case", ["match", "missing", "extra", "resumed", "prior", "multiple"])
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "match/missing/extra/resumed/prior/multipleの6入力を実CLIへ渡し、選定と追加WI集合の"
+        "保持を検証する（Linux CI CPU合計最大1.256秒）。"
+    ),
+)
 def test_cli_preserves_lane_selection_with_expected_wi_extension(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
@@ -163,6 +182,12 @@ def test_cli_preserves_lane_selection_with_expected_wi_extension(
 
 
 @pytest.mark.parametrize("case", ["invalid", "combined", "duplicate-expected", "duplicate-related"])
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "不正/複合/重複4入力を実配布plan-checkへ渡し、選定と先行計画を含む公開拒否を検証する（Linux CI CPU合計最大1.010秒）。"
+    ),
+)
 def test_cli_expected_wi_reports_invalid_or_duplicate_input(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
@@ -185,6 +210,10 @@ def test_cli_expected_wi_reports_invalid_or_duplicate_input(
     assert ("invalid.md" if case == "invalid" else "--expected-wi" if case == "combined" else "重複") in result.stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
+)
 def test_cli_checks_initial_plan_set_once(repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
     """初回に分割した3計画を1回の公開CLIで確かめ、各計画の構造とレーンのWI集合が一致すれば成功する。
 
@@ -206,6 +235,10 @@ def test_cli_checks_initial_plan_set_once(repo: tuple[pathlib.Path, str], monkey
         ("duplicate-wi", ("計画間で関連WIが重複する", "20260831-000000-101.md")),
         ("missing-reason", ("plan-2.md: 人間由来行の根拠がない",)),
     ],
+)
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
 )
 def test_cli_plan_set_reports_failing_plan_or_wi(
     repo: tuple[pathlib.Path, str],
@@ -237,6 +270,10 @@ def test_cli_plan_set_reports_failing_plan_or_wi(
         assert fragment in stderr, stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
+)
 def test_cli_plan_set_excludes_resumed_and_includes_prior_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -250,6 +287,10 @@ def test_cli_plan_set_excludes_resumed_and_includes_prior_plan(
     assert not stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
+)
 def test_cli_plan_set_rejects_duplicate_paths(repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
     """確かめる計画どうし、確かめる計画と先行計画に同じファイルを指定した入力は入力誤り（終了コード2）にする。"""
     work_dir, _base = repo
@@ -260,6 +301,10 @@ def test_cli_plan_set_rejects_duplicate_paths(repo: tuple[pathlib.Path, str], mo
     assert code == 2, stderr
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="計画2件の実Markdown検査をCLIで2回通し、全計画を合わせた規範パスの受理と欠落拒否を検証する（Linux CI CPU0.595秒）。",
+)
 def test_cli_plan_set_accepts_agent_rule_path_in_any_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -279,6 +324,10 @@ def test_cli_plan_set_accepts_agent_rule_path_in_any_plan(
 
 
 @pytest.mark.parametrize(("total_lines", "warned"), [(1200, False), (1201, True)])
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=("計画2件を1200/1201行境界で検査し、計画集合と個別の助言境界を同時に確認する（Linux CI CPU合計最大1.222秒）。"),
+)
 def test_cli_plan_set_keeps_line_warning_boundary_per_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, total_lines: int, warned: bool
 ) -> None:

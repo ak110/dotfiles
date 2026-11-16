@@ -11,10 +11,16 @@ import re
 import pytest
 
 from agent_toolkit._hooks import notice
-from agent_toolkit._hooks.pretooluse import dispatch
+from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
 from agent_toolkit._hooks.pretooluse.decision import Decision
 
 _RESULT = "この呼び出しは全体を実行していない（同じ呼び出しに含まれる他のコマンドや処理を含む）。"
+
+
+@pytest.fixture(autouse=True)
+def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """通知の理由と次操作を検査し、対象外の全資料の解析は繰り返さない。"""
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda *_args, **_kwargs: [])
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -79,7 +85,6 @@ def test_block_notices_preserve_cause_and_next_action(
         assert _RESULT not in captured.err
         message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
         assert 'kind="warn"' in message
-        assert "次の操作:" in message
         return
     assert code == 0, captured
     assert not captured.err
@@ -91,7 +96,7 @@ def test_block_notices_preserve_cause_and_next_action(
     assert len(blocks) == 1, captured.out
     body = blocks[0]
     assert _RESULT not in body
-    reason, action = body.split("次の操作:", 1)
+    reason, action = body.split("\n", 1)
     assert reason.strip()
     assert action.strip()
 

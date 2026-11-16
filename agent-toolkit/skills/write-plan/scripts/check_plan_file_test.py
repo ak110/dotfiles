@@ -48,6 +48,10 @@ def test_accepts_canonical_plan(repo: tuple[pathlib.Path, str], *, bug: bool, ex
 
 
 @pytest.mark.parametrize(("total_lines", "expected_warnings"), [(1200, 0), (1201, 1)])
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=("実Git計画を1200/1201行で全体検査し、入力全体を処理した上で助言境界を確認する（Linux CI CPU合計最大1.210秒）。"),
+)
 def test_warns_above_line_threshold_only(repo: tuple[pathlib.Path, str], total_lines: int, expected_warnings: int) -> None:
     """行数の閾値ちょうどでは警告せず、1行超過で警告1件を返す。"""
     work_dir, base = repo
@@ -228,6 +232,13 @@ def test_accepts_relative_target_repo_matching_worktree(repo: tuple[pathlib.Path
         (f"`{_TOOLKIT_PREFIX}:missing-skill`{{spacing}}を起動する。", f"{_TOOLKIT_PREFIX}:missing-skill"),
         ("スキル{spacing}`missing-skill`{spacing}を呼び出す。", "missing-skill"),
     ],
+)
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=(
+        "実Git計画で起動表記4種と空白2種を全体検査へ渡し、本文にあるSKILL名と起動の違いを確認する（Linux CI CPU合計最"
+        "大0.954秒）。"
+    ),
 )
 def test_rejects_missing_skill_invocations(
     repo: tuple[pathlib.Path, str], invocation: str, expected_reference: str, spacing: str

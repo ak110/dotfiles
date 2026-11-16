@@ -126,6 +126,12 @@ def run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[object
 
 @pytest.mark.parametrize("subcommand", ["add", "edit"])
 @pytest.mark.parametrize("agent", [False, True])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "改行混在2000断片を公開add/edit dry-runへ渡し、agent有無と保存前後の全bytesを照合する（Linux CI CPU合計最大0.573秒）。"
+    ),
+)
 def test_main_draft_output_preserves_large_raw_text(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, subcommand: str, agent: bool
 ) -> None:

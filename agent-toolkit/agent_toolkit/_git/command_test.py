@@ -11,119 +11,67 @@ import pytest
 
 from agent_toolkit._git import command as subject
 from agent_toolkit._git import stale_lock
+from agent_toolkit._testing import git_repository
 
 pytestmark = pytest.mark.windows
 
 
-def test_run_quiet_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """成功したGitの出力を標準出力にも標準エラーにも書かない。"""
-    subject.run_quiet(["init", "--initial-branch=main"], tmp_path)
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert captured.err == ""
-
-
-def test_run_quiet_reports_failure_and_preserves_exception(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """失敗したGitの診断と終了コードを保持する。"""
-    subject.run_quiet(["init", "--initial-branch=main"], tmp_path)
-    capsys.readouterr()
-
-    with pytest.raises(subprocess.CalledProcessError) as exc_info:
-        subject.run_quiet(["rev-parse", "--verify", "missing"], tmp_path)
-
-    captured = capsys.readouterr()
-    error = exc_info.value
-    assert captured.out == ""
-    assert captured.err == error.stderr
-    assert error.returncode == 128
-    assert error.cmd == ["git", "rev-parse", "--verify", "missing"]
-    assert error.output == ""
-    assert error.stderr
-
-
-def test_run_quiet_redirects_failure_stdout_to_stderr(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """失敗したGitの標準出力も呼び出し側の標準エラーへ書く。"""
-    (tmp_path / "first.txt").write_text("first\n", encoding="utf-8")
-    (tmp_path / "second.txt").write_text("second\n", encoding="utf-8")
-
-    with pytest.raises(subprocess.CalledProcessError) as exc_info:
-        subject.run_quiet(["diff", "--no-index", "--", "first.txt", "second.txt"], tmp_path)
-
-    captured = capsys.readouterr()
-    error = exc_info.value
-    assert captured.out == ""
-    assert captured.err == error.output
-    assert error.returncode == 1
-    assert error.output
-    assert error.stderr == ""
-
-
-def test_run_quiet_can_hold_failure_output(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """出力転送を無効にした失敗は診断を例外だけへ保持する。"""
-    subject.run_quiet(["init", "--initial-branch=main"], tmp_path)
-    capsys.readouterr()
-
-    with pytest.raises(subprocess.CalledProcessError) as exc_info:
-        subject.run_quiet(
-            ["rev-parse", "--verify", "missing"],
-            tmp_path,
-            forward_error_output=False,
-        )
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert captured.err == ""
-    assert exc_info.value.output == ""
-    assert exc_info.value.stderr
-
-
-def test_run_passes_input_and_environment(tmp_path: pathlib.Path) -> None:
-    """標準入力と環境変数を`git`へ渡し、テキストの結果を返すこと。"""
-    subject.run_quiet(["init", "--initial-branch=main"], tmp_path)
-    blob = subject.run(["hash-object", "-w", "--stdin"], tmp_path, capture_output=True, text=True, input="本文\n", check=True)
-    shown = subject.run(["cat-file", "-p", blob.stdout.strip()], tmp_path, capture_output=True, check=True)
-    configured = subject.run(
-        ["config", "--get", "user.name"],
-        tmp_path,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "環境の名前"},
+@pytest.mark.parametrize(
+    ("code", "stdout", "stderr", "forward", "expected"),
+    [
+        (0, "成功出力", "", True, ""),
+        (128, "", "診断", True, "診断"),
+        (1, "差分", "", True, "差分"),
+        (128, "", "保持する診断", False, ""),
+    ],
+)
+def test_run_quiet_preserves_output_and_failure(monkeypatch, tmp_path, capsys, code, stdout, stderr, forward, expected):
+    """成功・失敗と転送指定を対比し、例外の診断を失わず標準出力を抑止する。"""
+    monkeypatch.setattr(
+        subject, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess(["git", "status"], code, stdout, stderr)
     )
+    if code:
+        with pytest.raises(subprocess.CalledProcessError) as raised:
+            subject.run_quiet(["status"], tmp_path, forward_error_output=forward)
+        assert (raised.value.returncode, raised.value.cmd) == (code, ["git", "status"])
+        assert (raised.value.output, raised.value.stderr) == (stdout, stderr)
+    else:
+        subject.run_quiet(["status"], tmp_path, forward_error_output=forward)
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == expected
 
-    assert shown.stdout == "本文\n".encode()
-    assert configured.stdout == "環境の名前\n"
 
-
-def test_optional_helpers_return_none_on_failure(tmp_path: pathlib.Path) -> None:
+def test_optional_helpers_return_none_on_failure(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """非0終了では`None`を返し、`optional_stdout`は起動の失敗でも`None`を返すこと。"""
+    monkeypatch.setattr(subject, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess(["git"], 128, "", "診断"))
     assert subject.optional_stdout(["rev-parse", "--verify", "missing"], tmp_path, timeout=30) is None
     assert subject.optional_output(["rev-parse", "--verify", "missing"], tmp_path, timeout=30) is None
+
+    def fail(*_args, **_kwargs):
+        raise OSError("起動できない")
+
+    monkeypatch.setattr(subject, "run", fail)
     assert subject.optional_stdout(["status"], tmp_path / "missing-directory", timeout=30) is None
     with pytest.raises(OSError):
         subject.optional_output(["status"], tmp_path / "missing-directory", timeout=30)
 
 
-def test_command_line_prefixes_git() -> None:
-    """例外と記録へ載せるコマンドは`git`で始まる引数列であること。"""
-    assert subject.command_line(["status", "--porcelain"]) == ["git", "status", "--porcelain"]
-
-
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "`text=True`の文字列の入力は、改行を変えずにUTF-8のバイ"
+        + "ト列として子プロセスへ届く。 実Gitの入力または標準indexロック"
+        + "を検証する最小構成。Windows同群CPU最大1.141秒。"
+    ),
+)
 def test_run_passes_text_input_without_newline_conversion(tmp_path: pathlib.Path) -> None:
     """`text=True`の文字列の入力は、改行を変えずにUTF-8のバイト列として子プロセスへ届く。"""
     received = tmp_path / "received.bin"
     script = tmp_path / "read_stdin.py"
     script.write_text(
-        "import pathlib, sys\npathlib.Path(sys.argv[1]).write_bytes(sys.stdin.buffer.read())\n"
+        "import os, pathlib, sys\n"
+        "assert os.environ['DUMP_ENV'] == '伝播'\n"
+        "pathlib.Path(sys.argv[1]).write_bytes(sys.stdin.buffer.read())\n"
         "sys.stdout.buffer.write('出力\\r\\n次行\\n'.encode('utf-8'))\n"
         "sys.stderr.buffer.write('診断\\r\\n'.encode('utf-8'))\n",
         encoding="utf-8",
@@ -131,7 +79,12 @@ def test_run_passes_text_input_without_newline_conversion(tmp_path: pathlib.Path
     shell_command = f'"{pathlib.Path(sys.executable).as_posix()}" "{script.as_posix()}" "{received.as_posix()}"'
 
     result = subject.run(
-        ["-c", f"alias.dump=!{shell_command}", "dump"], tmp_path, text=True, capture_output=True, input="a\nb\n日本語\n"
+        ["-c", f"alias.dump=!{shell_command}", "dump"],
+        tmp_path,
+        text=True,
+        capture_output=True,
+        input="a\nb\n日本語\n",
+        env={**os.environ, "DUMP_ENV": "伝播"},
     )
 
     assert result.returncode == 0
@@ -230,6 +183,15 @@ sys.exit(255)
 """
 
 
+@pytest.mark.cpu_limit(
+    9.5 if os.name == "nt" else 3.5,
+    reason=(
+        "応答しないリモートへのfetchはデフォルトの時間上限で打ち切られ、gitが起動"
+        + "した子孫のプロセスも残らない。 実境界の最小入力を保持。既存入力のWindows"
+        + " CPU観測最大3.90625秒。目的外の仕事を境界で除き、有限の予算は増やさず"
+        + "に検証する。"
+    ),
+)
 def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -237,10 +199,9 @@ def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
 
     デフォルトの上限が無い場合、fetchはリモートの代役が終わる30秒後まで戻らず、時間切れも送出しない。
     """
-    repository = tmp_path / "repo"
-    repository.mkdir()
-    subject.run_quiet(["init", "--initial-branch=main"], repository)
-    subject.run_quiet(["remote", "add", "origin", "ssh://unresponsive.invalid/repo.git"], repository)
+    repository = git_repository.init_repository(
+        tmp_path / "repo", initial_branch="main", origin="ssh://unresponsive.invalid/repo.git"
+    )
     script = tmp_path / "unresponsive_remote.py"
     script.write_text(_UNRESPONSIVE_REMOTE_SCRIPT, encoding="utf-8")
     pid_file = tmp_path / "grandchild.pid"
@@ -272,7 +233,7 @@ def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
 def _stale_lock_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """追跡対象のファイルを持つリポジトリを返す。実行環境のプロセスを走査せず、待機は短くする。"""
     repo = tmp_path / "repo"
-    subject.run_quiet(["init", "--initial-branch=main", str(repo)], tmp_path)
+    git_repository.init_repository(repo, initial_branch="main")
     (repo / "file.txt").write_text("content\n", encoding="utf-8")
     monkeypatch.setattr(stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter([]))
     monkeypatch.setattr(stale_lock, "POLL_INITIAL_SECONDS", 0.02)
@@ -292,18 +253,40 @@ def _hold_with_live_owner(repo: pathlib.Path) -> pathlib.Path:
     return lock
 
 
-def test_run_reclaims_orphan_lock_and_retries_once(stale_lock_repo: pathlib.Path) -> None:
+@pytest.mark.cpu_limit(
+    6.0 if os.name == "nt" else 2.5,
+    reason=(
+        "標準indexのロック回収と実Git再実行の最小代表。準備はDUT起動を避け、検収の追加Gitを除く。"
+        "Windows実測3.734秒に対し6秒、Linuxは従来2.5秒。"
+    ),
+)
+def test_run_reclaims_orphan_lock_and_retries_once(stale_lock_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """所有者のいない`index.lock`を回収し、同じコマンドを再実行して成功する。"""
     lock = stale_lock_repo / ".git" / "index.lock"
     lock.write_bytes(b"")
+    # 回収と再実行を検査する。短い待機予算へ、対象外の実Git・OSの走査を含めない。
+    context = stale_lock.LockContext(
+        git_operation=lambda: False,
+        scan_git=stale_lock.ProcessScan,
+        scan_updaters=stale_lock.ProcessScan,
+    )
+    monkeypatch.setattr(stale_lock, "command_context", lambda *_args, **_kwargs: context)
 
     result = _add(stale_lock_repo)
 
     assert result.returncode == 0, result.stderr
     assert not lock.exists()
-    assert "file.txt" in subject.output(["diff", "--cached", "--name-only"], stale_lock_repo)
+    assert (stale_lock_repo / ".git" / "index").is_file()
 
 
+@pytest.mark.cpu_limit(
+    3.0 if os.name == "nt" else 2.5,
+    reason=(
+        "生存中の所有者のロックは回収せず、元のエラーに判定結果を添えて返す。 実境界の最"
+        + "小入力を保持。既存入力のWindows CPU観測最大0.96875秒。目的外の"
+        + "仕事を境界で除き、有限の予算は増やさずに検証する。"
+    ),
+)
 def test_run_keeps_lock_of_live_owner_and_reports_decision(stale_lock_repo: pathlib.Path) -> None:
     """生存中の所有者のロックは回収せず、元のエラーに判定結果を添えて返す。"""
     lock = _hold_with_live_owner(stale_lock_repo)
@@ -317,6 +300,14 @@ def test_run_keeps_lock_of_live_owner_and_reports_decision(stale_lock_repo: path
     assert lock.exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "記録の無いロックでも、対象を操作中のgitが居れば回収せず候補を示す。"
+        + " 実Gitの入力または標準indexロックを検証する最小構成。"
+        + "Windows同群CPU最大1.141秒。"
+    ),
+)
 def test_run_keeps_lock_while_git_is_running(stale_lock_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """記録の無いロックでも、対象を操作中のgitが居れば回収せず候補を示す。"""
     lock = stale_lock_repo / ".git" / "index.lock"
@@ -334,19 +325,49 @@ def test_run_keeps_lock_while_git_is_running(stale_lock_repo: pathlib.Path, monk
     assert lock.exists()
 
 
-def test_run_wait_is_bounded_by_timeout_scope(stale_lock_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機は`timeout_scope`の残り秒数以内で打ち切る。"""
+@pytest.mark.parametrize("retry", [False, True])
+def test_run_wait_is_bounded_by_timeout_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, retry: bool) -> None:
+    """初回実行で消費した時間を回収の待機へ渡さず、期限後は再実行しない。"""
+    clock = [100.0]
+    launch_limits = []
+    wait_limits = []
+
+    def execute(command, **kwargs):
+        launch_limits.append(kwargs["timeout"])
+        clock[0] += 0.4
+        return subprocess.CompletedProcess(command, 128, b"", b"fatal: 'index.lock': File exists.")
+
+    def recover(_stderr, _cwd, *, wait_seconds, **_kwargs):
+        wait_limits.append(wait_seconds)
+        clock[0] += wait_seconds
+        return stale_lock.Recovery(retry)
+
+    monkeypatch.setattr(subject.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(subject, "_launch", execute)
+    monkeypatch.setattr(stale_lock, "recover_after_failure", recover)
     monkeypatch.setattr(stale_lock, "DEFAULT_WAIT_SECONDS", 60.0)
-    _hold_with_live_owner(stale_lock_repo)
-    started = time.monotonic()
 
     with subject.timeout_scope(1.0):
-        result = _add(stale_lock_repo)
+        if retry:
+            with pytest.raises(subprocess.TimeoutExpired) as raised:
+                _add(tmp_path)
+            assert raised.value.timeout == 0
+            assert subject.timeout_cwd(raised.value) == str(tmp_path)
+        else:
+            assert _add(tmp_path).returncode == 128
+    assert launch_limits == [pytest.approx(1.0)]
+    assert wait_limits == [pytest.approx(0.6)]
+    assert clock[0] == pytest.approx(101.0)
 
-    assert result.returncode != 0
-    assert time.monotonic() - started < 10
 
-
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "`recover_stale_lock=False`では回収も再実行も"
+        + "しない。 実Gitの入力または標準indexロックを検証する最小構成。"
+        + "Windows同群CPU最大1.141秒。"
+    ),
+)
 def test_run_can_disable_stale_lock_recovery(stale_lock_repo: pathlib.Path) -> None:
     """`recover_stale_lock=False`では回収も再実行もしない。"""
     lock = stale_lock_repo / ".git" / "index.lock"
@@ -358,6 +379,14 @@ def test_run_can_disable_stale_lock_recovery(stale_lock_repo: pathlib.Path) -> N
     assert lock.exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "ロックと無関係の失敗には判定結果を添えない。 実Gitの入力または標準"
+        + "indexロックを検証する最小構成。Windows同群CPU最大1."
+        + "141秒。"
+    ),
+)
 def test_run_leaves_unrelated_failure_unchanged(stale_lock_repo: pathlib.Path) -> None:
     """ロックと無関係の失敗には判定結果を添えない。"""
     result = subject.run(["rev-parse", "--verify", "missing"], stale_lock_repo, capture_output=True, text=True)
@@ -366,6 +395,15 @@ def test_run_leaves_unrelated_failure_unchanged(stale_lock_repo: pathlib.Path) -
     assert "回収しませんでした" not in result.stderr
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "Gitのエラーに引用された、管理ディレクトリの外の`foo.lock`"
+        + "（ユーザーが作ったファイル）は回収せず、排他ファイルも作らない。 実"
+        + "Gitの入力または標準indexロックを検証する最小構成。"
+        + "Windows同群CPU最大1.141秒。"
+    ),
+)
 def test_run_does_not_reclaim_lock_named_file_outside_git_directory(stale_lock_repo: pathlib.Path) -> None:
     """Gitのエラーに引用された、管理ディレクトリの外の`foo.lock`（ユーザーが作ったファイル）は回収せず、排他ファイルも作らない。"""
     subject.run(

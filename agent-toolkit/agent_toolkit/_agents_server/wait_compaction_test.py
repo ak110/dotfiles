@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import types
 
 import pytest
 
@@ -249,3 +251,84 @@ async def test_optional_compaction_failure_keeps_waiting_without_warning(
     assert calls == (["usage"] if failure == "usage" else ["usage", "enqueue"])
     assert any(record.levelno == logging.DEBUG and "wait_compaction_failed" in record.message for record in caplog.records)
     assert not any(record.levelno >= logging.WARNING for record in caplog.records)
+
+
+@pytest.mark.parametrize("elapsed,remaining", [(25, 35), (75, 0)])
+@pytest.mark.parametrize("waiting", [("claude", "delegate"), ("codex", "delegate")], indirect=True)
+@pytest.mark.asyncio
+async def test_checkpoint_preserves_reservation_deadline(
+    waiting: state.SessionState, monkeypatch: pytest.MonkeyPatch, elapsed: int, remaining: int
+) -> None:
+    """移譲中の時間も経過に含め、復元だけでは照会も配送もしない。"""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    delays: list[float] = []
+    queued: list[str] = []
+    now = 100.0
+    monkeypatch.setattr(wait_compaction, "time", types.SimpleNamespace(monotonic=lambda: now))
+
+    async def sleep(delay: float) -> None:
+        delays.append(delay)
+        entered.set()
+        await release.wait()
+
+    async def usage() -> dict[str, int]:
+        return {"totalTokens": 500_000, "rawMaxTokens": 1_000_000}
+
+    async def enqueue(key: str) -> None:
+        queued.append(key)
+
+    old = wait_compaction.WaitCompaction(usage, enqueue, sleep=sleep)
+    old.observe(waiting)
+    await entered.wait()
+    snapshot = old.checkpoint()
+    await old.close()
+    now += elapsed
+    async with wait_compaction.WaitCompaction(usage, enqueue, sleep=sleep) as new:
+        new.restore(json.loads(json.dumps(snapshot)))
+        assert delays == [60]
+        assert not queued
+        entered.clear()
+        new.observe(waiting)
+        await entered.wait()
+        assert delays == [60, remaining]
+        release.set()
+        await asyncio.sleep(0)
+        new.observe(waiting)
+        await asyncio.sleep(0)
+        assert len(queued) == 1
+
+
+@pytest.mark.parametrize("waiting", [("claude", "delegate"), ("codex", "delegate")], indirect=True)
+@pytest.mark.asyncio
+async def test_checkpoint_preserves_used_wait_and_high_usage_pause(waiting: state.SessionState) -> None:
+    """配送済みの待機と次turnの高使用量抑止を世代更新で解除しない。"""
+    queued: list[str] = []
+
+    async def sleep(_delay: float) -> None:
+        return
+
+    async def usage() -> dict[str, int]:
+        return {"totalTokens": 500_000, "rawMaxTokens": 1_000_000}
+
+    async def enqueue(key: str) -> None:
+        queued.append(key)
+
+    async with wait_compaction.WaitCompaction(usage, enqueue, sleep=sleep) as old:
+        old.observe(waiting)
+        await asyncio.sleep(0)
+        assert len(queued) == 1
+        snapshot = old.checkpoint()
+    async with wait_compaction.WaitCompaction(usage, enqueue, sleep=sleep) as new:
+        new.restore(snapshot)
+        new.observe(waiting)
+        await asyncio.sleep(0)
+        assert len(queued) == 1
+        waiting.turn_seq += 1
+        new.observe(waiting)
+        await asyncio.sleep(0)
+        assert len(queued) == 1
+        waiting.context_tokens, waiting.context_window = 100_000, 1_000_000
+        new.observe(waiting)
+        await asyncio.sleep(0)
+        assert len(queued) == 2

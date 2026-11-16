@@ -179,11 +179,11 @@ def test_reference_to_another_root_does_not_activate_its_whole_skill_tree(tmp_pa
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
     project = tmp_path / ".claude/skills/local/SKILL.md"
     project.parent.mkdir(parents=True)
-    selected = foreign / "skills/search/SKILL.md"
+    selected = foreign / "skills/delegation/SKILL.md"
     project.write_text(
         "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n"
         "| --- | --- | --- | --- |\n"
-        f"| 選択時 | `{selected}` | 判断 | `read:*/search/SKILL.md` |\n",
+        f"| 選択時 | `{selected}` | 判断 | `read:*/delegation/SKILL.md` |\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [project])
@@ -198,9 +198,9 @@ def test_reference_to_another_root_does_not_activate_its_whole_skill_tree(tmp_pa
 @pytest.mark.parametrize("agy", [False, True])
 def test_same_named_plugin_read_uses_the_selected_physical_root(tmp_path, monkeypatch, shell, agy):
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
-    source = foreign / "skills/search/SKILL.md"
+    source = foreign / "skills/delegation/SKILL.md"
     row = parse_tables(source, active)[0]
-    path = active / "skills/search/SKILL.md"
+    path = active / "skills/delegation/SKILL.md"
     if agy:
         for root in (active, foreign):
             (root / "plugin.json").write_text((root / ".claude-plugin/plugin.json").read_text(), encoding="utf-8")
@@ -223,7 +223,7 @@ def test_same_named_plugin_read_uses_the_selected_physical_root(tmp_path, monkey
 def test_explicit_foreign_skill_keeps_startup_and_followup_declarations(tmp_path, monkeypatch, codex):
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [])
-    skill = foreign / "skills/search/SKILL.md"
+    skill = foreign / "skills/delegation/SKILL.md"
     initial, later = skill.parent / "initial.md", skill.parent / "later.md"
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
     inputs = {"file_path": str(skill)}
@@ -252,7 +252,7 @@ def test_selected_foreign_declaration_uses_current_source_and_actor(tmp_path, mo
     """明示選択した外部pluginの現行宣言だけを、選択した主体の後続操作へ再接続する。"""
     _active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [])
-    source = foreign / "skills/search/SKILL.md"
+    source = foreign / "skills/delegation/SKILL.md"
     initial = source.parent / "initial.md"
     replacement = source.parent / "replacement.md"
     replacement.write_text("# 現行資料\n現在の本文\n", encoding="utf-8")
@@ -265,7 +265,7 @@ def test_selected_foreign_declaration_uses_current_source_and_actor(tmp_path, mo
         source.write_text(
             "# 選択したskill\n| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
             + (
-                "| 初動 | `replacement.md` | 起動時 | `skill:search` |\n"
+                "| 初動 | `replacement.md` | 起動時 | `skill:delegation` |\n"
                 if change == "path"
                 else "| 別操作 | `initial.md` | 操作 | `tool:Other` |\n"
             ),
@@ -311,14 +311,14 @@ def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_re
     (root / ".claude-plugin/plugin.json").write_text(
         json.dumps({"name": "agent-toolkit", "version": "2.224.0"}), encoding="utf-8"
     )
-    skill = root / "skills/search/SKILL.md"
+    skill = root / "skills/delegation/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# 選択したskill\n", encoding="utf-8")
     initial = skill.parent / "initial.md"
     initial.write_text("# 初動\n判断前の本文\n", encoding="utf-8")
     rows = [
-        ReadTrigger(skill, 1, "起動時", ("skill:search",), (initial,)),
-        ReadTrigger(skill, 2, "判断", ("read:*/skills/search/SKILL.md",), (skill,), selector="same-document"),
+        ReadTrigger(skill, 1, "起動時", ("skill:delegation",), (initial,)),
+        ReadTrigger(skill, 2, "判断", ("read:*/skills/delegation/SKILL.md",), (skill,), selector="same-document"),
     ]
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
@@ -327,7 +327,7 @@ def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_re
 
     first = read_delivery.deliver(payload, tool, inputs, "test")
     assert not _guidance(first)
-    assert str(initial) in _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
+    assert "agent-toolkit:delegation/initial.md" in _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
     observe_received({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
     assert _guidance(read_delivery.deliver(payload, tool, inputs, "test")) is None
 
@@ -335,10 +335,10 @@ def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_re
 @pytest.mark.parametrize("case", ["full", "section", "actor", "changed", "data"])
 def test_only_current_full_actor_proof_activates_plugin_declarations(tmp_path, monkeypatch, case):
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
-    path = foreign / "skills/search/SKILL.md"
+    path = foreign / "skills/delegation/SKILL.md"
     if case == "data":
         path = tmp_path / "task-input.md"
-        path.write_text((foreign / "skills/search/SKILL.md").read_text(), encoding="utf-8")
+        path.write_text((foreign / "skills/delegation/SKILL.md").read_text(), encoding="utf-8")
     key = read_delivery.document_key(path)
     if case == "section":
         key += "#heading:選択したskill"
@@ -364,7 +364,7 @@ def test_public_hook_records_the_worktree_project_skill_invoked_in_a_nested_work
     _project_declarations(monkeypatch, read_delivery.plugin_resources.plugin_root().resolve())
     payload = {"cwd": str(worktree)}
     before = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
-    assert "`proj-skill`を起動せよ" in before
+    assert "`proj-skill`" in before
     assert str((worktree / ".claude/skills/proj-skill/SKILL.md").resolve()) not in before
     assert str((main / ".claude/skills/proj-skill/SKILL.md").resolve()) not in before
     observe_received(
@@ -420,9 +420,9 @@ def test_worktree_copy_of_a_distributed_skill_is_released_by_skill_or_read(tmp_p
     operation = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
     first = read_delivery.deliver(payload, "Write", operation, "test")
     notice = _notice_body(first)
-    assert notice.count("`agent-basics:check-execution`を起動せよ") == 1
+    assert notice.count("`agent-basics:check-execution`") == 1
     assert str(active) not in notice
-    assert f"Readで`{copy}`を取得せよ" in notice
+    assert f"`{copy}`" in notice
     assert notice.count(str(copy)) == 1
     notice_module.record_delivery("\n".join(first.notices))
     assert not _guidance(read_delivery.deliver(payload, "Write", operation, "test"))
@@ -439,8 +439,7 @@ def test_worktree_copy_of_a_distributed_skill_is_released_by_skill_or_read(tmp_p
     _assert_acquired(payload, copy, True)
 
 
-@pytest.mark.parametrize("agent", [False, True])
-def test_acquisition_failure_reads_a_worktree_copy(tmp_path, monkeypatch, agent):
+def test_acquisition_failure_reads_a_worktree_copy(tmp_path, monkeypatch):
     """取得失敗の案内は、`Skill`起動では読み込まれない写しへReadを案内する。"""
     toolkit = tmp_path / "dist/agent-toolkit"
     (toolkit / ".claude-plugin").mkdir(parents=True)
@@ -448,7 +447,6 @@ def test_acquisition_failure_reads_a_worktree_copy(tmp_path, monkeypatch, agent)
     active = _basics_root(tmp_path / "dist/agent-basics", "# 検証\n\n配布物の本文\n")
     copy = _basics_root(tmp_path / "worktree/agent-basics", "# 検証\n\n作業中の本文\n")
     monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: toolkit)
-    for path, loadable in ((active, True), (copy, False)):
-        notice = rules_context.acquisition_failure(ReadTarget(path, "不存在"), ValueError("範囲不明"), shell=False, agent=agent)
-        assert ("`agent-basics:check-execution`" in notice) is loadable
-        assert (f"`{path}`をReadで全文読め" in notice) is (not loadable or agent)
+    for path in (active, copy):
+        notice = rules_context.acquisition_failure(ReadTarget(path, "不存在"), ValueError("範囲不明"), shell=False)
+        assert str(path) + "#不存在" in notice

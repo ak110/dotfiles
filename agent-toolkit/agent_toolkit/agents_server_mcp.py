@@ -6,10 +6,10 @@ MCPホストの設定（`mcp.json`など）が本ファイルのパスを起動�
 
 from __future__ import annotations
 
+# 通常起動は軽量転送だけ、依存検査時だけMCP・backendを読み込む。
+# pylint: disable=import-outside-toplevel
 import argparse
 from collections.abc import Sequence
-
-from agent_toolkit._agents_server import mcp_tools
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -21,7 +21,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Claude Agent SDKの依存を読み込み、optionsを構築できることを確かめる。",
     )
     args = parser.parse_args(argv)
-    return mcp_tools.serve(check_dependencies=args.check_dependencies)
+    if args.check_dependencies:
+        from agent_toolkit._agents_server import mcp_tools
+
+        return mcp_tools.serve(check_dependencies=True)
+    from agent_toolkit._agents_server.service_forward import forward
+
+    return forward()
 
 
 if __name__ == "__main__":

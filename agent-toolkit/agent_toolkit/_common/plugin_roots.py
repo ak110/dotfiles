@@ -16,7 +16,7 @@ import sys
 from collections.abc import Generator
 from typing import Any
 
-from agent_toolkit._common import host_homes, process_tree
+from agent_toolkit._common import host_homes, process_tree, runtime_environment
 from agent_toolkit._common.session_state import read_state, update_state
 
 
@@ -35,9 +35,9 @@ def _managed_settings_directories() -> list[pathlib.Path]:
     if sys.platform == "darwin":
         return [pathlib.Path("/Library/Application Support/ClaudeCode")]
     if sys.platform == "win32":
-        return [pathlib.Path(os.environ.get("PROGRAMFILES", "C:/Program Files")) / "ClaudeCode"]
+        return [pathlib.Path(runtime_environment.environment().get("PROGRAMFILES", "C:/Program Files")) / "ClaudeCode"]
     directories = [pathlib.Path("/etc/claude-code")]
-    if os.environ.get("WSL_INTEROP") or os.environ.get("WSL_DISTRO_NAME"):
+    if runtime_environment.environment().get("WSL_INTEROP") or runtime_environment.environment().get("WSL_DISTRO_NAME"):
         directories.append(pathlib.Path("/mnt/c/Program Files/ClaudeCode"))
     return directories
 
@@ -46,7 +46,7 @@ def _inventory_signature(host: str, project: pathlib.Path) -> str | None:
     """設定合成を複製せず、公開一覧をファイル設定源の変更時に再取得する。"""
     if host != "claude":
         return None
-    executable = shutil.which(host)
+    executable = shutil.which(host, path=runtime_environment.environment().get("PATH", os.defpath))
     if executable is None:
         return None
     config = host_homes.claude_config_dir()
@@ -104,7 +104,7 @@ def _inventory_signature(host: str, project: pathlib.Path) -> str | None:
             except FileNotFoundError:
                 metadata.append((str(path), None))
         # 環境は選別へ作用しうる。保存するのはhashだけで、設定本文や資格情報は複製しない。
-        value = [host, sys.platform, str(project), str(config), sorted(os.environ.items()), metadata]
+        value = [host, sys.platform, str(project), str(config), sorted(runtime_environment.environment().items()), metadata]
         return hashlib.sha256(json.dumps(value).encode("utf-8")).hexdigest()
     except OSError, UnicodeError, ValueError:
         return None
@@ -198,7 +198,7 @@ def codex_installed_plugins(executable: str, project: pathlib.Path | None = None
 
 def codex_plugin_source_root(root: pathlib.Path, name: str) -> pathlib.Path | None:
     """導入済みcacheの実体と公開marketplace一覧を対応付け、配布元の実在rootを返す。"""
-    home = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex"))
+    home = pathlib.Path(runtime_environment.environment().get("CODEX_HOME", runtime_environment.home() / ".codex"))
     cache = (home / "plugins/cache").resolve()
     if not root.is_relative_to(cache):
         return None
@@ -244,6 +244,7 @@ def _host_json(host: str, command: list[str], project: pathlib.Path | None) -> o
             timeout=15,
             check=False,
             cwd=str(project) if project is not None else None,
+            env=dict(runtime_environment.environment()),
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise PluginRootError(f"{host}の導入情報の取得失敗: {error}。{shown}を確認する") from error
@@ -258,7 +259,7 @@ def _host_json(host: str, command: list[str], project: pathlib.Path | None) -> o
 def _native_recovery(host: str) -> str:
     """生成元の公開コマンドが存在する配置だけ、再生成コマンドを案内する。"""
     label = "OpenCode" if host == "opencode" else "Antigravity"
-    if generator := shutil.which("update-dotfiles"):
+    if generator := shutil.which("update-dotfiles", path=runtime_environment.environment().get("PATH", os.defpath)):
         args = [str(pathlib.Path(generator).resolve()), "--mode", "full"]
         command = subprocess.list2cmdline(args) if os.name == "nt" else shlex.join(args)
         return f"{label}の資料登録を生成元の公開コマンド`{command}`で再生成し、startを再実行する"
@@ -279,8 +280,9 @@ def _native_inventory(host: str) -> object:
     """各ホストの正式導入先から、登録された資料rootを読む。"""
     if host == "opencode":
         config = pathlib.Path(
-            os.environ.get("OPENCODE_CONFIG_DIR")
-            or pathlib.Path(os.environ.get("XDG_CONFIG_HOME") or pathlib.Path.home() / ".config") / "opencode"
+            runtime_environment.environment().get("OPENCODE_CONFIG_DIR")
+            or pathlib.Path(runtime_environment.environment().get("XDG_CONFIG_HOME") or runtime_environment.home() / ".config")
+            / "opencode"
         ).expanduser()
         path = config / "agent-toolkit.md"
         try:
@@ -291,7 +293,7 @@ def _native_inventory(host: str) -> object:
             return re.findall(r"(agent-[a-z-]+) plugin root: `([^`\n]+)`", body)
         except (OSError, UnicodeError, ValueError) as error:
             raise PluginRootError(f"OpenCodeの資料root対応表を読めない: {path}: {error}。" + _native_recovery(host)) from error
-    config = pathlib.Path.home() / ".gemini/config"
+    config = runtime_environment.home() / ".gemini/config"
     path = config / "plugins.json"
     try:
         registry = json.loads(path.read_text(encoding="utf-8"))
@@ -391,7 +393,8 @@ def resolve_plugin_root(
     if sibling is not None:
         return sibling
     # cwdとホストの設定はリクエストごとに異なる。実体検証の結果をcacheせず、一覧だけを要求内で共有する。
-    project = pathlib.Path(project or pathlib.Path.cwd()).resolve()
+    caller = runtime_environment.current()
+    project = pathlib.Path(project or (caller.cwd if caller else pathlib.Path.cwd())).resolve()
     if host not in {"claude", "codex", "agy", "opencode"}:
         raise PluginRootError(f"{host}の{name}の導入情報の解決は未対応。対応hostを指定して再実行する")
     data = _plugin_inventory(host, project)
@@ -427,7 +430,7 @@ def resolve_plugin_root(
             and item.get("installed") is True
             and item.get("enabled") is True
         ]
-        home = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex"))
+        home = pathlib.Path(runtime_environment.environment().get("CODEX_HOME", runtime_environment.home() / ".codex"))
         roots = {home / "plugins/cache" / item["marketplaceName"] / name / _codex_component(item, "version") for item in items}
     else:
         if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):

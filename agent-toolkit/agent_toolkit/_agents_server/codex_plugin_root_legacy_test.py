@@ -37,6 +37,9 @@ from agent_toolkit._testing.plugin_environment_support import prepare_plugin_env
 pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 
+@pytest.mark.cpu_limit(
+    5.5, reason="旧配布形式の実MCP起動とOSのprocess/file保護・公開cleanupを確認する必要がある（Windows CI CPU2.438秒）"
+)
 @pytest.mark.windows
 @pytest.mark.timeout(180)
 @pytest.mark.asyncio
@@ -53,12 +56,22 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
     source = tmp_path / "legacy-distribution" / version
     shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
     (source / "agent_toolkit/_agents_server/plugin_root.py").write_text(_LEGACY_PLUGIN_ROOT_SOURCE, encoding="utf-8")
+    # 旧stdio入口と旧root生成だけを合成し、現在の公開bootstrapは保証しない。
+    (source / "agent_toolkit/agents_server_mcp.py").write_text(
+        '"""旧stdio入口の試験fixture。現行公開bootstrapは対象外。"""\n'
+        "from agent_toolkit._agents_server import mcp_tools\n"
+        "raise SystemExit(mcp_tools.serve())\n",
+        encoding="utf-8",
+    )
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
     uv = shutil.which("uv", path=environment["PATH"])
     assert uv is not None
     # Windowsでは124パッケージのcopy導入に成功時53秒、失敗時60秒超を観測したため、補助関数の60秒より長い上限を使う。
     prepare_plugin_environment(source, environment, timeout=_REAL_MCP_PREPARE_TIMEOUT)
-    command = plugin_environment.launch_command(source, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
+    python = plugin_environment.prepared_python(source, environment)
+    assert python is not None
+    command = [str(python), str(source / "agent_toolkit/agents_server_mcp.py")]
+    direct_environment = plugin_environment.direct_environment(source, environment)
     log = tmp_path / "legacy-mcp.stderr"
     log.touch()
     owned: dict[int, psutil.Process] = {}
@@ -132,7 +145,9 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             with log.open("w", encoding="utf-8") as errors, anyio.fail_after(90):
                 async with contextlib.AsyncExitStack() as stack:
                     streams = await stack.enter_async_context(
-                        stdio_client(StdioServerParameters(command=uv, args=command[1:], env=environment), errlog=errors)
+                        stdio_client(
+                            StdioServerParameters(command=command[0], args=command[1:], env=direct_environment), errlog=errors
+                        )
                     )
                     client = await stack.enter_async_context(ClientSession(*streams))
                     initialized = await client.initialize()
@@ -180,11 +195,16 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                     assert not (area / ".agent-toolkit-plugin-root.json").exists()
                     leases = tmp_path / "runtime-state/agent-toolkit/plugin-root-leases"
                     assert not list(leases.glob("*.json"))
-                    direct_command = plugin_environment.launch_command(
-                        area / version, pathlib.Path("agent_toolkit/agents_server_mcp.py")
-                    )
+                    direct_command = [str(python), str(area / version / "agent_toolkit/agents_server_mcp.py")]
                     direct_streams = await stack.enter_async_context(
-                        stdio_client(StdioServerParameters(command=uv, args=direct_command[1:], env=environment), errlog=errors)
+                        stdio_client(
+                            StdioServerParameters(
+                                command=direct_command[0],
+                                args=direct_command[1:],
+                                env=plugin_environment.direct_environment(area / version, environment),
+                            ),
+                            errlog=errors,
+                        )
                     )
                     direct_client = await stack.enter_async_context(ClientSession(*direct_streams))
                     await direct_client.initialize()
@@ -222,7 +242,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                     assert {tool.name for tool in (await client.list_tools()).tools} == tools
                     observation = {
                         "fixture_origin": "90cad03:plugin_root.pyの版別root正常系保持生成",
-                        "runtime": "現行MCPと現行launcher。旧版全体の再実行には当たらない",
+                        "runtime": "現行mcp_toolsと旧stdio入口fixture。現在の公開bootstrapと旧版全体は保証しない",
                         "platform": sys.platform,
                         "launch_processes": process_diagnostics,
                         "pid": server.pid,

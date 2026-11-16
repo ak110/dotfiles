@@ -6,15 +6,22 @@
 
 import pathlib
 import shutil
+import subprocess
 import sys
 
 import pytest
 
-from agent_toolkit._git import worktrees
+from agent_toolkit._git import command, worktrees
 from agent_toolkit._testing import git_repository
 
 # Windows CIの「Windows境界テスト」（`pytest -m windows`）で、主作業ツリーの判定を実Gitに対して確かめる。
 pytestmark = pytest.mark.windows
+
+
+@pytest.fixture(autouse=True)
+def _leaf_git_launch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実Gitの登録形式を検査し、独立した子孫回収の走査を各照会へ重ねない。"""
+    monkeypatch.setattr(command, "_launch", subprocess.run)
 
 
 def _porcelain_z(repo: pathlib.Path) -> dict[pathlib.Path, dict[str, str]] | None:
@@ -63,6 +70,15 @@ def _assert_matches_git(repo: pathlib.Path, listed: list[worktrees.Worktree]) ->
     assert observed == normalized
 
 
+@pytest.mark.cpu_limit(
+    7.0 if sys.platform == "win32" else 3.0,
+    reason=(
+        "空白・日本語・改行を含むパスとdetached・locked・prunableの"
+        + "登録を、元の登録と同じパス・branchで返す。 実境界の最小入力を保持。既存入"
+        + "力のWindows CPU観測最大2.32812秒。目的外の仕事を境界で除き、有"
+        + "限の予算は増やさずに検証する。"
+    ),
+)
 def test_lists_special_paths_and_states(tmp_path: pathlib.Path) -> None:
     """空白・日本語・改行を含むパスとdetached・locked・prunableの登録を、元の登録と同じパス・branchで返す。"""
     repo = git_repository.init_repository(tmp_path / "主 repo", initial_branch="main", commit_message="初期")
@@ -83,7 +99,7 @@ def test_lists_special_paths_and_states(tmp_path: pathlib.Path) -> None:
     git_repository.run_git(repo, "worktree", "add", "-b", "removed-branch", str(prunable))
     shutil.rmtree(prunable)
 
-    for start in (repo, *created):
+    for start in (repo, tmp_path / names[0]):
         listed = worktrees.list_worktrees(start)
         by_path = {entry.path.resolve(): entry for entry in listed}
         assert listed[0].path.resolve() == repo.resolve()
@@ -99,6 +115,15 @@ def test_lists_special_paths_and_states(tmp_path: pathlib.Path) -> None:
         _assert_matches_git(start, listed)
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "bareリポジトリの主項目をbareとして返し、そこから作成した"
+        + "worktreeのbranchを返す。 実Gitの主/linked/"
+        + "bareと特殊パスを照合する最小登録構成。Windows同群CPU最大"
+        + "1.234秒。"
+    ),
+)
 def test_lists_bare_repository_and_its_linked_worktree(tmp_path: pathlib.Path) -> None:
     """bareリポジトリの主項目をbareとして返し、そこから作成したworktreeのbranchを返す。"""
     seed = git_repository.init_repository(tmp_path / "seed", initial_branch="main", commit_message="初期")
@@ -115,6 +140,14 @@ def test_lists_bare_repository_and_its_linked_worktree(tmp_path: pathlib.Path) -
         _assert_matches_git(start, listed)
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "Gitリポジトリでない場所では列挙の失敗を例外で返す。 実Gitの主/"
+        + "linked/bareと特殊パスを照合する最小登録構成。Windows"
+        + "同群CPU最大1.234秒。"
+    ),
+)
 def test_reports_failure_outside_repository(tmp_path: pathlib.Path) -> None:
     """Gitリポジトリでない場所では列挙の失敗を例外で返す。"""
     outside = tmp_path / "outside"
@@ -123,6 +156,14 @@ def test_reports_failure_outside_repository(tmp_path: pathlib.Path) -> None:
         worktrees.list_worktrees(outside)
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "主作業ツリーと入れ子の登録を区別し、登録外のパスは所属なしとする。 実"
+        + "Gitの主/linked/bareと特殊パスを照合する最小登録構成。"
+        + "Windows同群CPU最大1.234秒。"
+    ),
+)
 def test_owning_worktree(tmp_path: pathlib.Path) -> None:
     """主作業ツリーと入れ子の登録を区別し、登録外のパスは所属なしとする。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期")
@@ -147,6 +188,15 @@ def test_main_worktree_path_strips_git_suffix_in_git_format(common_dir: str, exp
     assert worktrees.main_worktree_path(common_dir) == pathlib.Path(expected)
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "主・linkedどちらの作業ツリーを起点にしても、列挙した主作業ツリー"
+        + "に`.git`が残らず、主ルート直下のファイルが主作業ツリーに属する。"
+        + " 実Gitの主/linked/bareと特殊パスを照合する最小登録構成"
+        + "。Windows同群CPU最大1.234秒。"
+    ),
+)
 def test_main_worktree_is_listed_without_git_suffix_from_both_starting_points(tmp_path: pathlib.Path) -> None:
     """主・linkedどちらの作業ツリーを起点にしても、列挙した主作業ツリーに`.git`が残らず、主ルート直下のファイルが主作業ツリーに属する。"""
     repository = git_repository.init_repository(

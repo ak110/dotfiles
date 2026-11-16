@@ -14,11 +14,17 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import time
+from collections.abc import Generator
 from pathlib import Path
 
+from filelock import FileLock
+
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import locked_rotate_and_append as _locked_rotate_and_append
 from agent_toolkit._common.process_loop_session import is_process_loop_session
 
@@ -59,7 +65,7 @@ def read_instructions() -> list[str]:
     path = instruction_path()
     try:
         body = path.read_text(encoding="utf-8")
-    except OSError:
+    except FileNotFoundError:
         return []
     return [item for item in body.split(INSTRUCTION_SEPARATOR) if item]
 
@@ -70,39 +76,49 @@ def append_instruction(body: str) -> tuple[bool, str]:
     保持済みのいずれかと完全一致する本文は、誤操作による二重投入として追記しない。
     追記後の合計が`INSTRUCTION_MAX_CHARS`を超える投入は拒否する。
     """
-    text = body.strip()
-    if not text:
-        return False, "本文が空である"
-    existing = read_instructions()
-    if text in existing:
-        return False, "同じ本文が保持済みである"
-    merged = [*existing, text]
-    total = len(INSTRUCTION_SEPARATOR.join(merged))
-    if total > INSTRUCTION_MAX_CHARS:
-        return False, f"保持中の合計が上限{INSTRUCTION_MAX_CHARS}文字を超える（投入後{total}文字）"
     path = instruction_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(INSTRUCTION_SEPARATOR.join(merged), encoding="utf-8")
-    return True, f"保持中の追加指示は{len(merged)}件である"
+    with FileLock(path.with_suffix(".lock"), timeout=10):
+        text = body.strip()
+        if not text:
+            return False, "本文が空である"
+        existing = read_instructions()
+        if text in existing:
+            return False, "同じ本文が保持済みである"
+        merged = [*existing, text]
+        total = len(INSTRUCTION_SEPARATOR.join(merged))
+        if total > INSTRUCTION_MAX_CHARS:
+            return False, f"保持中の合計が上限{INSTRUCTION_MAX_CHARS}文字を超える（投入後{total}文字）"
+        atomic_write(path, INSTRUCTION_SEPARATOR.join(merged))
+        return True, f"保持中の追加指示は{len(merged)}件である"
 
 
 def discard_instructions() -> int:
     """保持中の追加指示を全件破棄し、破棄した件数を返す。"""
-    count = len(read_instructions())
-    instruction_path().unlink(missing_ok=True)
-    return count
+    path = instruction_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(path.with_suffix(".lock"), timeout=10):
+        count = len(read_instructions())
+        instruction_path().unlink(missing_ok=True)
+        return count
 
 
-def consume_instructions() -> str:
-    """保持中の追加指示を取り出して破棄し、結合した本文を返す。
-
-    セッションを実際に起動する直前にだけ呼ぶ。保持が無い場合は空文字列を返す。
-    """
-    items = read_instructions()
-    if not items:
-        return ""
-    instruction_path().unlink(missing_ok=True)
-    return INSTRUCTION_SEPARATOR.join(items)
+@contextlib.contextmanager
+def launch_instructions(manifest: Path | None) -> Generator[None]:
+    """次の実起動へ指示を一度だけ配送し、起動失敗時は保持する。"""
+    if manifest is None:
+        yield
+        return
+    path = instruction_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(path.with_suffix(".lock"), timeout=10):
+        instructions = read_instructions()
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["instruction"] = INSTRUCTION_SEPARATOR.join(instructions)
+        atomic_write(manifest, json.dumps(data, ensure_ascii=False) + "\n")
+        yield
+        if instructions:
+            path.unlink(missing_ok=True)
 
 
 def append(event: str, *, session_id: str | None = None, **fields: object) -> None:

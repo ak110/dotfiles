@@ -39,7 +39,8 @@ def test_preflight_covers_plugin_launch_commands() -> None:
         if isinstance(node, dict):
             command = node.get("command")
             if isinstance(command, str) and command.strip():
-                launch_words.add(command.split()[0])
+                # cdはshellの組込みであり、外部起動の事前確認は後続のuvへ適用する。
+                launch_words.add(command.removeprefix("cd / && ").split()[0])
             for value in node.values():
                 collect(value)
         elif isinstance(node, list):

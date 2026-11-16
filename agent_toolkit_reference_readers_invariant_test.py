@@ -135,6 +135,9 @@ def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib
     return sorted(set(violations))
 
 
+@pytest.mark.cpu_limit(
+    9.5, reason="全追跡試験のASTと読取先を解析し、別配置の規範読取も検出するため局所化できない（Linux CI CPU4.475秒）"
+)
 def test_agent_doc_readers_are_in_invariant_tests() -> None:
     """追跡中のエージェント向け文書を読むテストをfast対象へ置く。"""
     repository = pathlib.Path(__file__).resolve().parent

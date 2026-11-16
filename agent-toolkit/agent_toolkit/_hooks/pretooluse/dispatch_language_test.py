@@ -13,7 +13,7 @@ from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing import pretooluse_support
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
 from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _write_session_state
-from agent_toolkit._testing.pretooluse_support import run_after_read_delivery as _run
+from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
 
 
 class TestResponseLanguageCheck:
@@ -163,6 +163,13 @@ class TestRemovedChecksAreSilent:
                 assert result.stderr == "", payload
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "旧11回周期の再注入を検出するため公開Preを最小12回反復する。対象外の資料配送は分離済み（Linux限定再確認のCP"
+        "U合計最大1.373秒）。"
+    ),
+)
 def test_repeated_pretooluse_does_not_reinject_language(tmp_path: pathlib.Path) -> None:
     """11回以上の呼び出しでも定期の言語指示を返さない。"""
     with pretooluse_support.read_delivery_preparation_scope():
@@ -183,7 +190,6 @@ def test_repeated_pretooluse_does_not_reinject_language(tmp_path: pathlib.Path) 
 )
 def test_bash_drive_letter_path_warning_reaches_additional_context(
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
     extra_payload: dict[str, str],
     expected_warned: bool,
 ) -> None:
@@ -198,6 +204,7 @@ def test_bash_drive_letter_path_warning_reaches_additional_context(
         "session_id": "dispatch-drive-letter-path",
         **extra_payload,
     }
-    assert pretooluse.main(json.dumps(payload)) == 0
-    out = capsys.readouterr().out
+    result = _run(payload)
+    assert result.returncode == 0
+    out = result.stdout
     assert ("`PATH`へドライブ文字形式の要素" in out) is expected_warned

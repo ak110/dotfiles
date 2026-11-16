@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gc
 import json
 import os
 import pathlib
@@ -637,7 +636,6 @@ def test_catalog_releases_previous_family_before_next_load(
     loaded_paths: list[str] = []
 
     def tracked(path: str | None, **_kwargs: Any) -> _RecordLoad:
-        gc.collect()
         assert not any(reference() is not None for reference in references), "処理済み家族の本文が次の家族へ残った"
         assert path != str(old), "期間外の独立家族の本文を再取得した"
         loaded = original(path)
@@ -655,7 +653,6 @@ def test_catalog_releases_previous_family_before_next_load(
     events = read_jsonl(capsys, raw=True)
     assert events[-1]["parent_record_count"] == 3
     assert len(loaded_paths) == 3
-    gc.collect()
     assert not any(reference() is not None for reference in references)
 
 

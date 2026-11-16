@@ -136,7 +136,6 @@ async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
             "---\ntype: awi\nstate: inbox\n---\n\n削除順序の検証\n",
             encoding="utf-8",
         )
-    harness.operations.enable_file_mutations()
     await page.goto(harness.base_url + "/")
 
     detail = page.get_by_role("dialog", name="詳細")
@@ -256,7 +255,6 @@ async def test_delete_confirmation_closes_on_detail_failure_and_content_conflict
     """一覧の更新後に詳細の再取得が失敗した場合と、削除確認の後に内容が競合した場合は、古い削除確認を閉じる。"""
     harness = browser_harness
     page = harness.page
-    harness.operations.enable_file_mutations()
     failure_path = _entry_path(harness.root, "dialog-failure.md")
     conflict_path = _entry_path(harness.root, "delete-conflict.md")
     original = "---\ntype: awi\nstate: inbox\ntarget_repo: example/old\n---\n\n変更前の要約\n"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 # Codexだけを使う場合はClaude Agent SDKを読み込まない。
 # pylint: disable=import-outside-toplevel
 import logging
@@ -15,6 +17,7 @@ from agent_toolkit._agents_server import (
     configured_model,
     result_contract,
     resume_waits,
+    service_turns,
     turn_state,
     wait_compaction,
     wait_output_tracking,
@@ -183,16 +186,30 @@ class ClaudeTurns(ClaudeRuntime):
                 future.set_result(("compact_skipped", None))
                 return iterator
             prompt = "/compact"
-        if session.awaiting_auto_resume and not resume_waits.is_observation_preserving_reply(session):
-            (await self._finalize_pending_result(session))
         held = resume_waits.HeldTurn.capture(session)
-        kind = "reply" if session.terminal or held is not None else "steer"
+        kind = "reply" if session.terminal or session.awaiting_auto_resume or held is not None else "steer"
         previous_result = session.previous_result() if kind == "reply" and held is None else None
         try:
-            if kind == "reply":
-                begin_reply(session, preserve_waits=held is not None)
-            await (query or client.query)(prompt)
-            session.record_turn_sent()
+            gate = service_turns.current()
+            channel = self._channels.get(session.session_id)
+            ticket = channel.tickets.get(future) if channel else None
+            admission = (
+                gate.admit(new_turn=kind == "reply", session_id=session.session_id, ticket=ticket)
+                if gate
+                else contextlib.nullcontext()
+            )
+            async with admission:
+                if session.awaiting_auto_resume and not resume_waits.is_observation_preserving_reply(session):
+                    await self._finalize_pending_result(session)
+                    previous_result = session.previous_result()
+                if kind == "reply":
+                    begin_reply(session, preserve_waits=held is not None)
+                await (query or client.query)(prompt)
+                session.record_turn_sent()
+        except service_turns.MoveRequired as error:
+            if not future.done():
+                future.set_exception(error)
+            return iterator
         except Exception as exc:
             if held is not None:
                 held.restore(session)

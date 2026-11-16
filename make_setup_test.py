@@ -219,11 +219,27 @@ def test_make_sync_preserves_external_project_environment(
 ) -> None:
     """実Makefileのsyncは親指定の外部venvを同期先にしない。"""
     project = tmp_path / "project"
-    shutil.copytree(
-        _REPOSITORY_ROOT,
-        project,
-        ignore=shutil.ignore_patterns(".claude", ".git", ".pytest_cache", ".venv", "__pycache__", "node_modules", "target"),
-    )
+    project.mkdir()
+    shutil.copy2(_REPOSITORY_ROOT / "Makefile", project / "Makefile")
+    shutil.copy2(_REPOSITORY_ROOT / ".python-version", project / ".python-version")
+    (project / "mise.toml").write_text("", encoding="utf-8")
+    # 同期先の保護は依存パッケージ集合によらない。実uvの同期・削除は無依存の2projectで通す。
+    for directory, name in ((project, "sync-root"), (project / "agent-toolkit", "sync-toolkit")):
+        directory.mkdir(exist_ok=True)
+        (directory / "pyproject.toml").write_text(
+            f'[project]\nname = "{name}"\nversion = "0.0.0"\nrequires-python = ">=3.15"\n', encoding="utf-8"
+        )
+        lock_environment = host_environ()
+        lock_environment.pop("UV_FROZEN", None)
+        locked = subprocess.run(
+            ["uv", "lock", "--offline", "--project", str(directory)],
+            env=lock_environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        assert locked.returncode == 0, locked.stderr
     parent_environment = tmp_path / "external-venv"
     parent_python, marker = _external_venv_with_sentinel(parent_environment)
     environment = {

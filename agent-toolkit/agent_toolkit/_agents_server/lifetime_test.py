@@ -362,7 +362,26 @@ sys.exit(3)
 
 
 @pytest.mark.windows
-@pytest.mark.parametrize("mode", ["finish", "deadline"])
+@pytest.mark.parametrize(
+    "mode",
+    [
+        pytest.param(
+            mode,
+            marks=(
+                pytest.mark.cpu_limit(
+                    3.5,
+                    reason=(
+                        "正常終了と期限到達の実子孫回収を保持。既存入力のWindows CPU観測最大1"
+                        + ".0625秒。目的外の仕事を境界で除き、有限の予算は増やさずに検証する。"
+                    ),
+                ),
+            )
+            if os.name == "nt"
+            else (),
+        )
+        for mode in ("finish", "deadline")
+    ],
+)
 def test_lifetime_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], mode: str
 ) -> None:

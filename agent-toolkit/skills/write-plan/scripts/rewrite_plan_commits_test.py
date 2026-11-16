@@ -23,6 +23,14 @@ WI_B = "20261007-040310-003.md"
 WI_S = "20261007-040310-004.md"
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "公開操作で未指定の実記録を検出し、成果物内の同名記録は探索しない。 実"
+        + "Gitの旧/新履歴とWI別の対応記録を保持し、公開保存と拒否後の全本文"
+        + "不変を確認する。Linux同群CPU最大0.909秒。"
+    ),
+)
 @pytest.mark.parametrize("location", ["working", "legacy", "saved", "handoff"])
 def test_public_discovery_visits_only_record_locations(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], location: str
@@ -54,6 +62,9 @@ def test_public_discovery_visits_only_record_locations(
     scan = os.scandir
     forbidden = {record.parent for record in ignored}
 
+    # CLI起動時の資源掃引は別契約。記録の探索範囲だけを下の監視で検収する。
+    monkeypatch.setattr(managed_temp, "sweep_managed_temp", lambda **_kwargs: managed_temp.SweepResult([], ()))
+
     def bounded_scan(path: Any = ".", **kwargs: Any) -> Any:
         if isinstance(path, (str, os.PathLike)) and pathlib.Path(path) in forbidden:
             pytest.fail(f"記録所在外への走査: {path}")
@@ -77,6 +88,16 @@ def test_public_discovery_visits_only_record_locations(
         assert resumed.value.code == 0
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "実Gitで1件のcommitを2件へ分けた対応表を`plan-"
+        + "rewrite`へ渡し、AWIの割当が欠ければ全記録のバイト列を保ち、"
+        + "欠けなければ`plan-commits`がAWIごとの新commitを"
+        + "返す。 実Gitの旧/新履歴とWI別の対応記録を保持し、公開保存と拒否"
+        + "後の全本文不変を確認する。Linux同群CPU最大0.909秒。"
+    ),
+)
 @pytest.mark.parametrize("missing", [False, True])
 def test_public_split_assigns_each_awi_and_rejects_loss_before_writing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], missing: bool
@@ -242,6 +263,15 @@ def _read_commits(capsys: pytest.CaptureFixture[str]) -> list[str]:
     return output["commits"]
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "WI対応の無いcommitを含む範囲全体の対応表で計画と引き継ぎ記録の"
+        + "両方へ追記し、`plan-commits`が新OIDを返す。 実Git"
+        + "の旧/新履歴とWI別の対応記録を保持し、公開保存と拒否後の全本文不変を"
+        + "確認する。Linux同群CPU最大0.909秒。"
+    ),
+)
 def test_range_map_appends_to_all_records(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """WI対応の無いcommitを含む範囲全体の対応表で計画と引き継ぎ記録の両方へ追記し、`plan-commits`が新OIDを返す。"""
     rewrite = rebased.range_map("a", "u", "b")
@@ -284,6 +314,15 @@ def test_range_map_appends_to_all_records(rebased: _Rebased, capsys: pytest.Capt
     assert _read_commits(capsys) == [short_b]
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "書換え対象のcommitを持たない記録はバイト列を変えず、標準出力に変"
+        + "更なしと出る。 実Gitの旧/新履歴とWI別の対応記録を保持し、公開保"
+        + "存と拒否後の全本文不変を確認する。Linux同群CPU最大0.909秒"
+        + "。"
+    ),
+)
 def test_unaffected_record_is_unchanged(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """書換え対象のcommitを持たない記録はバイト列を変えず、標準出力に変更なしと出る。"""
     before = _snapshot([rebased.unaffected])
@@ -294,6 +333,15 @@ def test_unaffected_record_is_unchanged(rebased: _Rebased, capsys: pytest.Captur
     assert _snapshot([rebased.unaffected]) == before
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "記録済みのcommitとそのfixupを1件へ統合した対応表で、統合後"
+        + "のcommitが両方のAWI集合を継承する。 実Gitの旧/新履歴と"
+        + "WI別の対応記録を保持し、公開保存と拒否後の全本文不変を確認する。"
+        + "Linux同群CPU最大0.909秒。"
+    ),
+)
 def test_fixup_squash_inherits_union(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """記録済みのcommitとそのfixupを1件へ統合した対応表で、統合後のcommitが両方のAWI集合を継承する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
@@ -329,6 +377,15 @@ def test_fixup_squash_inherits_union(tmp_path: pathlib.Path, monkeypatch: pytest
     assert commit_mapping.get_commits(repo, events, [WI_A, WI_B], {WI_A, WI_B}) == {WI_A: [short], WI_B: [short]}
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "書換え前のHEADから到達できる記録済みOIDが対応表に無いと、全記録"
+        + "を変えずに失敗し、記録・OID・次の操作を示す。 実Gitの旧/新履歴"
+        + "とWI別の対応記録を保持し、公開保存と拒否後の全本文不変を確認する。"
+        + "Linux同群CPU最大0.909秒。"
+    ),
+)
 def test_missing_recorded_oid_fails_without_writes(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """書換え前のHEADから到達できる記録済みOIDが対応表に無いと、全記録を変えずに失敗し、記録・OID・次の操作を示す。"""
     records = [rebased.plan, rebased.handoff, rebased.unaffected]
@@ -347,6 +404,15 @@ def test_missing_recorded_oid_fails_without_writes(rebased: _Rebased, capsys: py
     assert _snapshot(records) == before
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "書換え前後のどちらのHEADにも無い記録済みOIDを持つ記録は、対応表"
+        + "の不足と区別して失敗し、全記録を変えない。 実Gitの旧/新履歴とWI"
+        + "別の対応記録を保持し、公開保存と拒否後の全本文不変を確認する。"
+        + "Linux同群CPU最大0.909秒。"
+    ),
+)
 def test_past_append_omission_is_distinguished(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """書換え前後のどちらのHEADにも無い記録済みOIDを持つ記録は、対応表の不足と区別して失敗し、全記録を変えない。"""
     stale = _handoff(rebased.repo.parent / "handoff-stale.md")
@@ -363,6 +429,15 @@ def test_past_append_omission_is_distinguished(rebased: _Rebased, capsys: pytest
     assert _snapshot(records) == before
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "書換え前のHEADから到達できない旧OID、または現在のHEADに無い"
+        + "新OIDを持つ対応表は、全記録を変えずに失敗する。 実Gitの旧/新履"
+        + "歴とWI別の対応記録を保持し、公開保存と拒否後の全本文不変を確認する。"
+        + "Linux同群CPU最大0.909秒。"
+    ),
+)
 @pytest.mark.parametrize("entry", ["old-unreachable", "new-outside-head"])
 def test_invalid_map_entry_fails_without_writes(rebased: _Rebased, capsys: pytest.CaptureFixture[str], entry: str) -> None:
     """書換え前のHEADから到達できない旧OID、または現在のHEADに無い新OIDを持つ対応表は、全記録を変えずに失敗する。"""
@@ -382,6 +457,14 @@ def test_invalid_map_entry_fails_without_writes(rebased: _Rebased, capsys: pytes
     assert _snapshot(records) == before
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "保存済み計画の領域にある計画を渡すと、全記録を変えずに失敗し、取得の操"
+        + "作を示す。 実Gitの旧/新履歴とWI別の対応記録を保持し、公開保存と"
+        + "拒否後の全本文不変を確認する。Linux同群CPU最大0.909秒。"
+    ),
+)
 def test_saved_plan_is_rejected(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """保存済み計画の領域にある計画を渡すと、全記録を変えずに失敗し、取得の操作を示す。"""
     saved = rebased.repo.parent / "private-notes" / "plans" / "2026" / "10" / rebased.plan.name
@@ -399,6 +482,15 @@ def test_saved_plan_is_rejected(rebased: _Rebased, capsys: pytest.CaptureFixture
     assert _snapshot(records) == before
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "`atk run-script plan-rewrite`の公開名から"
+        + "起動し、計画の対応が新OIDへ移る。 実Gitの旧/新履歴とWI別の対"
+        + "応記録を保持し、公開保存と拒否後の全本文不変を確認する。Linux同群"
+        + "CPU最大0.909秒。"
+    ),
+)
 def test_run_script_entry_rewrites_records(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """`atk run-script plan-rewrite`の公開名から起動し、計画の対応が新OIDへ移る。"""
     args = argparse.Namespace(script_name="plan-rewrite", script_args=["--", *rebased.argv(rebased.range_map("a", "u", "b"))])
@@ -410,6 +502,15 @@ def test_run_script_entry_rewrites_records(rebased: _Rebased, capsys: pytest.Cap
     assert commit_mapping.get_commits(rebased.repo, events, [WI_A], {WI_A}) == {WI_A: [short]}
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "記録のcommitを持たない別の作業ツリーを`--worktree`へ"
+        + "渡すと、公開名の起動は全記録を変えずに終了1となる。 実Gitの旧/新"
+        + "履歴とWI別の対応記録を保持し、公開保存と拒否後の全本文不変を確認する"
+        + "。Linux同群CPU最大0.909秒。"
+    ),
+)
 def test_run_script_entry_with_other_worktree_fails_without_writes(
     rebased: _Rebased, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -435,6 +536,14 @@ def test_run_script_entry_with_other_worktree_fails_without_writes(
     assert _snapshot(records) == before
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "探索先ごとの未指定記録を公開コマンドで検出し、全入力の内容を保持する。"
+        + " 実Gitの旧/新履歴とWI別の対応記録を保持し、公開保存と拒否後の全"
+        + "本文不変を確認する。Linux同群CPU最大0.909秒。"
+    ),
+)
 @pytest.mark.parametrize("location", ["working", "saved", "handoff"])
 def test_omitted_record_is_detected_before_any_writes(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], location: str
@@ -481,6 +590,14 @@ def test_omitted_record_is_detected_before_any_writes(
         }
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "4回の書換えを順に渡し、中間OIDがHEADから消えても最終OIDへ継"
+        + "承できる。 実Gitの旧/新履歴とWI別の対応記録を保持し、公開保存と"
+        + "拒否後の全本文不変を確認する。Linux同群CPU最大0.909秒。"
+    ),
+)
 def test_four_maps_compose_before_head_validation(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """4回の書換えを順に渡し、中間OIDがHEADから消えても最終OIDへ継承できる。"""
     root = rebased.repo.parent
@@ -516,6 +633,15 @@ def test_four_maps_compose_before_head_validation(rebased: _Rebased, capsys: pyt
     }
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "他repo・過去の書換え・HEADに残るcommitの記録は入力の追加"
+        + "を要求しない。 実Gitの旧/新履歴とWI別の対応記録を保持し、公開保"
+        + "存と拒否後の全本文不変を確認する。Linux同群CPU最大0.909秒"
+        + "。"
+    ),
+)
 def test_discovery_ignores_unrelated_and_unchanged_commits(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -534,6 +660,14 @@ def test_discovery_ignores_unrelated_and_unchanged_commits(
     assert "入力に未指定の記録" not in capsys.readouterr().err
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "探索中の不正な対応記録は、指定済み記録への継承を妨げない。 実Gitの"
+        + "旧/新履歴とWI別の対応記録を保持し、公開保存と拒否後の全本文不変を確"
+        + "認する。Linux同群CPU最大0.909秒。"
+    ),
+)
 @pytest.mark.parametrize("source", ["file", "body"])
 def test_discovery_skips_candidate_with_invalid_events(rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, source: str) -> None:
     """探索中の不正な対応記録は、指定済み記録への継承を妨げない。"""
@@ -553,6 +687,14 @@ def test_discovery_skips_candidate_with_invalid_events(rebased: _Rebased, monkey
     assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"))) == 0
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "UTF-8として読めない探索候補は、指定済み記録への継承を妨げない。 "
+        + "実Gitの旧/新履歴とWI別の対応記録を保持し、公開保存と拒否後の全本"
+        + "文不変を確認する。Linux同群CPU最大0.909秒。"
+    ),
+)
 @pytest.mark.parametrize("source", ["file", "body"])
 def test_discovery_skips_unreadable_candidate(rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, source: str) -> None:
     """UTF-8として読めない探索候補は、指定済み記録への継承を妨げない。"""
@@ -570,6 +712,15 @@ def test_discovery_skips_unreadable_candidate(rebased: _Rebased, monkeypatch: py
     assert rebased.new["a"][:7] in commit_mapping.mapping_path(rebased.plan).read_text(encoding="utf-8")
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "候補評価の最終段階から送出された候補不正も候補単位で除外し、指定済み記"
+        + "録の継承を完了する。 実Gitの旧/新履歴とWI別の対応記録を保持し、"
+        + "公開保存と拒否後の全本文不変を確認する。Linux同群CPU最大0."
+        + "909秒。"
+    ),
+)
 @pytest.mark.parametrize(
     "error",
     [next_action.ActionableError("将来の検証段階が候補を不正と判定", next_action="候補を直す"), ValueError("将来の検証段階")],
@@ -601,6 +752,14 @@ def test_discovery_excludes_failures_from_any_candidate_stage(
     assert rebased.new["a"][:7] in commit_mapping.mapping_path(rebased.plan).read_text(encoding="utf-8")
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "明示指定した不正な対応記録は、保存前に失敗する。 実Gitの旧/新履歴"
+        + "とWI別の対応記録を保持し、公開保存と拒否後の全本文不変を確認する。"
+        + "Linux同群CPU最大0.909秒。"
+    ),
+)
 @pytest.mark.parametrize("source", ["file", "body"])
 def test_explicit_record_with_invalid_events_fails_without_writes(
     rebased: _Rebased, capsys: pytest.CaptureFixture[str], source: str

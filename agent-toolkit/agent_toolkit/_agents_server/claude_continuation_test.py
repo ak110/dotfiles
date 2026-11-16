@@ -12,11 +12,23 @@ import pathlib
 from types import SimpleNamespace
 from typing import Any
 
+import claude_agent_sdk
 import pytest
 from claude_agent_sdk import ToolResultBlock, UserMessage
 
-from agent_toolkit._agents_server import claude, responses, session_errors, state
+from agent_toolkit._agents_server import (
+    claude,
+    responses,
+    service_io,
+    service_rpc,
+    service_state,
+    service_turns,
+    session_errors,
+    state,
+)
 from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._agents_server.plugin_root import SERVER_PLUGIN_ROOT
+from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_claude_support import _finished_failed_claude_session
@@ -33,6 +45,137 @@ from agent_toolkit._testing.agents_server_support import (
     _without_root,
     install_backend,
 )
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_backend_adoption_changes_decoder_without_reconnecting_or_querying(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broker = ResourceBroker("G1")
+    messages: asyncio.Queue = asyncio.Queue()
+    calls = []
+    ended = asyncio.Event()
+    clients = []
+
+    class Raw:
+        _query: Any
+
+        def __init__(self, _options: Any) -> None:
+            self._query = self
+            self.owner: asyncio.Task[Any] | None = None
+
+        async def connect(self, prompt=None):
+            del prompt
+            self.owner = asyncio.current_task()
+            calls.append("connect")
+
+        async def query(self, prompt, session_id="default"):
+            del session_id
+            calls.append(prompt)
+            await messages.put(claude_agent_sdk.SystemMessage("init", {"session_id": "adopted"}))
+            await messages.put(claude_agent_sdk.SystemMessage("session_state_changed", {"state": "running"}))
+            await messages.put(claude_agent_sdk.ResultMessage("success", 1, 1, False, 1, "adopted", result="原結果"))
+            await messages.put(claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"}))
+
+        async def receive_messages(self):
+            while True:
+                yield await messages.get()
+
+        async def get_context_usage(self):
+            return {"total_tokens": 0, "max_tokens": 200000}
+
+        async def disconnect(self):
+            assert asyncio.current_task() is self.owner
+            calls.append("disconnect")
+
+    async def rpc(_origin, operation, arguments, **_kwargs):
+        return await getattr(broker, operation)(**arguments)
+
+    def boundary(_session, client):
+        client.pause()
+        clients.append(client)
+        ended.set()
+
+    monkeypatch.setattr(service_rpc, "request", rpc)
+    monkeypatch.setattr(
+        claude,
+        "_build_options",
+        lambda *_args, **_kwargs: SimpleNamespace(plugins=[{"path": str(SERVER_PLUGIN_ROOT)}]),
+    )
+    first = service_io.Runtime("G1", {"generation": "G1"}, broker, boundary=boundary)
+    third = service_io.Runtime("G3", {"generation": "G3"}, ResourceBroker("G3"))
+    async with claude.ClaudeServerManager(client_factory=Raw) as source, claude.ClaudeServerManager() as target:
+        async with asyncio.timeout(5):
+            with service_io.bind(first):
+                original = await source.start("first", str(tmp_path))
+                await ended.wait()
+                await asyncio.gather(*tuple(source._tasks))
+                auxiliary = await source.export_service_state(original.session_id)
+            descriptor = await clients[0].detach()
+            assert await broker.transfer(descriptor["identifier"], "G1", "G3")
+            copied = service_state.restore(service_state.snapshot(original))
+            with service_io.bind(third):
+                await target.adopt_session(copied, descriptor, auxiliary)
+                while copied.cli_turn_state != "idle":
+                    await asyncio.sleep(0)
+                assert calls == ["connect", "first"]
+                assert (await target.send_message(copied, "second"))["delivery"] == "reply_started"
+                while not copied.terminal:
+                    await asyncio.sleep(0)
+                assert copied is target.sessions[original.session_id]
+                assert copied.turn_seq == original.turn_seq + 1
+                await target.release_session(copied)
+    assert calls == ["connect", "first", "second", "disconnect"]
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_admitted_reply_ticket_survives_freeze(tmp_path: pathlib.Path) -> None:
+    client = FakeClaudeClient([[]])
+    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
+    session = state.SessionState("accepted", str(tmp_path), engine="claude")
+    _complete(session, message="保存済み")
+    channel = claude._CommandChannel()
+    manager._channels[session.session_id] = channel
+    gate = service_turns.TurnGate("old", {"generation": "old", "epoch": 1})
+    with service_turns.bind(gate):
+        async with gate.admit(new_turn=True, session_id=session.session_id):
+            future = channel.send("prompt", "受理済み")
+            freezing = asyncio.create_task(gate.freeze("update"))
+            await asyncio.sleep(0)
+            assert not freezing.done()
+            await manager._handle_command(client, session, await channel.get(), None)
+            assert (await future)[0] == "reply_started"
+        await asyncio.wait_for(freezing, timeout=1)
+    assert client.queries == ["受理済み"]
+    queued = channel.send("prompt", "未配送")
+    channel.close(service_turns.MoveRequired({"generation": "new", "epoch": 2}))
+    with pytest.raises(service_turns.MoveRequired):
+        await queued
+    assert client.queries == ["受理済み"]
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_old_generation_reply_is_returned_without_query(tmp_path: pathlib.Path) -> None:
+    client = FakeClaudeClient([])
+    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
+    session = state.SessionState("moved", str(tmp_path), engine="claude")
+    _complete(session, message="保存済み")
+    before = session.turn_seq
+    gate = service_turns.TurnGate("old", {"generation": "new", "epoch": 2})
+    channel = claude._CommandChannel()
+    manager._channels[session.session_id] = channel
+    future = channel.send("prompt", "続行")
+    with service_turns.bind(gate):
+        await manager._handle_command(client, session, await channel.get(), None)
+    with pytest.raises(service_turns.MoveRequired):
+        await future
+    assert not client.queries
+    assert session.turn_seq == before
+    channel.close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

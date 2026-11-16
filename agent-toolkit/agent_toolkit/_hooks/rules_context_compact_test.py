@@ -25,10 +25,10 @@ def test_acquisition_failure_uses_host_acquisition(host: str, tmp_path: pathlib.
     skill.parent.mkdir(parents=True)
     skill.write_text("# 固有スキル本文\n", encoding="utf-8")
     cwd = str(tmp_path / ("project" if inside else "outside"))
-    loadable = host == "claude" and inside
+    loadable = inside
     failure = rules_context.acquisition_failure(ReadTarget(skill), ValueError("読取失敗"), shell=host != "claude", cwd=cwd)
-    assert ("`local`を起動せよ" in failure) is loadable
-    assert ("cat --" in failure) is not loadable
+    assert ("`local`" in failure) is loadable
+    assert (f"`{skill}`を取得" in failure) is not loadable
 
 
 @pytest.mark.parametrize("host", ["claude", "codex", "agy"])
@@ -83,7 +83,7 @@ def test_compact_skill_becomes_ready_only_after_skill_success(capsys, monkeypatc
         )
     )
     output = _output(capsys)
-    assert "固有スキル本文" not in output and "`local`を起動せよ" not in output
+    assert "固有スキル本文" not in output and "`local`" not in output
     records = read_state("compact-skill").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert not read_delivery.target_ready(records, target, "main")
     read_delivery.observe(

@@ -17,6 +17,8 @@ from agent_toolkit._agents_server import (
     claude_settings,
     configured_model,
     resume_waits,
+    service_io,
+    service_turns,
     session_errors,
     session_identity,
     wait_compaction,
@@ -29,12 +31,19 @@ from agent_toolkit._agents_server.claude_messages import consume_assistant_messa
 from agent_toolkit._agents_server.claude_plugins import ClaudePluginReloader
 from agent_toolkit._agents_server.claude_turns import ClaudeTurns
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
+from agent_toolkit._agents_server.service_claude_io import SdkResource
 from agent_toolkit._agents_server.session_errors import SessionOwnerGoneError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState
 from agent_toolkit._atk import claude_connection
 from agent_toolkit._common import claude_usage_limit, process_tree
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
+
+
+def _preserve_unaccepted_client(client: SdkResource | None, initialized: asyncio.Future[SessionState]) -> None:
+    # 受入準備の失敗で、旧世代が保持する稼働中の子孫を切断しない。
+    if client is not None and (not initialized.done() or initialized.cancelled() or initialized.exception() is not None):
+        client.pause()
 
 
 async def _raise_changed_model(session: SessionState, status: object) -> None:
@@ -62,6 +71,9 @@ async def _apply_api_retry(session: SessionState, data: dict[str, Any], started_
 async def _consume_rate_limit(message: Any, session: SessionState | None) -> claude_usage_limit.UsageLimitState | None:
     """利用枠の更新と、既に429を受けた会話の再試行状態を反映する。"""
     limit = claude_usage_limit.from_event(message)
+    from agent_toolkit._atk import usage_refresh
+
+    await run_file_operation(usage_refresh.record_claude_event, getattr(message, "rate_limit_info", None))
     if limit is not None and session is not None:
         session.usage_limit = limit
         if (
@@ -116,10 +128,11 @@ class ClaudeStream(ClaudeTurns):
         request_prompt: str | None = None,
         result_contract_recovery_consumed: bool = False,
         existing_session: SessionState | None = None,
+        adopted_client: SdkResource | None = None,
+        auxiliary: dict | None = None,
     ) -> None:
-        from claude_agent_sdk import TERMINAL_TASK_STATUSES
-
         client: Any = None
+        proxy_created = False
         usage_observer: _ContextUsageObserver | None = None
         wait_compactor: wait_compaction.WaitCompaction | None = None
         session: SessionState | None = None
@@ -179,6 +192,9 @@ class ClaudeStream(ClaudeTurns):
                 await _apply_api_retry(session, early_api_retry, runtime_started_at)
             session.touch()
             self._channels[session_id] = channel
+            self._sdk_clients[session_id] = client
+            if wait_compactor is not None:
+                self._wait_compactors[session_id] = wait_compactor
             current_task = asyncio.current_task()
             if current_task is not None:
                 self._task_sessions[current_task] = session_id
@@ -189,19 +205,47 @@ class ClaudeStream(ClaudeTurns):
             await reloader.prepare()
             plugin_change_task = asyncio.create_task(self._watch_plugin_changes(reloader, channel))
             diagnostic.stage = "creating_client"
-            client = self._client_factory(options)
+            runtime = service_io.current()
+
+            async def close_io() -> None:
+                try:
+                    await reloader.close()
+                finally:
+                    await run_file_operation(claude_settings.cleanup_settings, options)
+
+            if adopted_client is not None:
+                client = adopted_client
+            elif runtime is not None:
+                client = SdkResource.create(runtime, self._client_factory, options, close_io)
+                proxy_created = True
+            else:
+                client = self._client_factory(options)
             usage_observer = _ContextUsageObserver(client)
             # 使用量APIの解決を待機時まで遅らせ、未対応SDKでも通常の起動・結果回収を保つ。
             wait_compactor = wait_compaction.WaitCompaction(
                 lambda: client.get_context_usage(),  # pylint: disable=unnecessary-lambda
                 lambda key: channel.send("compact", key),
             )
+            if auxiliary and (checkpoint := auxiliary.get("wait_compaction")):
+                wait_compactor.restore(checkpoint)
             diagnostic.stage = "connecting"
-            await client.connect()
+            if adopted_client is None:
+                await client.connect()
             diagnostic.capture_client(client)
             diagnostic.stage = "connected"
             query_with_resources = functools.partial(self._query_with_resources, client, options, reloader, cwd)
-            if isinstance(prompt, ResumePrompt):
+            if adopted_client is not None:
+                assert existing_session is not None
+                session = existing_session
+                self.sessions[session.session_id] = session
+                self._channels[session.session_id] = channel
+                self._sdk_clients[session.session_id] = client
+                self._wait_compactors[session.session_id] = wait_compactor
+                current_task = asyncio.current_task()
+                assert current_task is not None
+                self._task_sessions[current_task] = session.session_id
+                initialized.set_result(session)
+            elif isinstance(prompt, ResumePrompt):
                 await prompt.deliver(query_with_resources)
             else:
                 await query_with_resources(prompt)
@@ -209,8 +253,11 @@ class ClaudeStream(ClaudeTurns):
             iterator = aiter(client.receive_messages())
             diagnostic.stage = "receiving_messages"
             while True:
+                if isinstance(client, SdkResource) and client.transferred:
+                    break
                 await reloader.reload_if_idle(client, session)
                 if session is not None:
+                    self._wait_compactors[session.session_id] = wait_compactor
                     wait_compactor.observe(session)
                 loop = asyncio.get_running_loop()
                 now = loop.time()
@@ -301,137 +348,129 @@ class ClaudeStream(ClaudeTurns):
                                 "Claude Agent SDK message stream ended before ResultMessage"
                             ) from None
                     else:
-                        diagnostic.record_message(message)
-                        name = _message_name(message)
-                        # 公開済みのturnの後始末も同じ受信列から回収する。新queryを送るまで
-                        # assistant/resultを公開済みの状態へ適用せず、旧結果の二重公開を防ぐ。
-                        if (
-                            session is not None
-                            and session.terminal
-                            and name
-                            in {
-                                "AssistantMessage",
-                                "StreamEvent",
-                                "ResultMessage",
-                            }
-                        ):
-                            continue
-                        if name == "SystemMessage" and getattr(message, "subtype", None) == "init":
-                            data = getattr(message, "data", {})
-                            session_id = data.get("session_id") if isinstance(data, dict) else None
-                            if not isinstance(session_id, str) or not session_id:
-                                raise session_errors.DelegateBackendError("Claude init message did not contain session_id")
-                            if expected_session_id is not None and session_id != expected_session_id:
-                                raise session_errors.DelegateBackendError("Claude resume returned an unexpected session_id")
-                            # `_CommandChannel`と`SessionState`は所有タスクの生存期間で1つだけ保持する。
-                            # キューは永続session IDを要しないため所有タスクの開始時に生成する。
-                            # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
-                            # turnごとにinitが再送されても再生成しない。
-                            if session is None:
-                                await initialize_session(session_id, data)
-                            elif session_id != session.session_id:
-                                raise session_errors.DelegateBackendError("Claude init message reported a different session_id")
-                            assert session is not None
-                            usage_observer.request(session)
-                        elif (
-                            name == "SystemMessage"
-                            and getattr(message, "subtype", None) == "compact_boundary"
-                            and session is not None
-                        ):
-                            usage_observer.request(session)
-                        elif name == "SystemMessage" and getattr(message, "subtype", None) == "session_state_changed":
-                            # CLIのturn状態の報告。`idle`は次のturnが発生しないことを示すため、保留中の結果を
-                            # 確定してよい時点になる。ただしシェルのバックグラウンドタスクの稼働中も`idle`が届くため、
-                            # 追跡集合が残る間は確定せず、そのタスクの完了通知による再開turnの結果を待つ。
-                            data = getattr(message, "data", {})
-                            reported = data.get("state") if isinstance(data, dict) else None
-                            if not isinstance(reported, str) or not reported:
-                                reported = None
-                            if session is None:
-                                if reported is not None:
-                                    early_cli_turn_state = reported
-                            elif reported is not None:
-                                session.cli_turn_state = reported
-                            # 完了通知で次のturnが始まった後は、前のturnの待機期限で古い待機表明を公開させない。
-                            if session is not None and reported == "running" and resume_waits.release_auto_resume_hold(session):
-                                await self._notify_waiters()
+                        processing_failed = False
+                        try:
+                            diagnostic.record_message(message)
+                            name = _message_name(message)
+                            # 公開済みのturnの後始末も同じ受信列から回収する。新queryを送るまで
+                            # assistant/resultを公開済みの状態へ適用せず、旧結果の二重公開を防ぐ。
                             if (
                                 session is not None
-                                and reported == "idle"
-                                and resume_waits.is_background_completion_wait(session)
-                                and not resume_waits.has_pending_auto_resume_targets(session)
+                                and session.terminal
+                                and name
+                                in {
+                                    "AssistantMessage",
+                                    "StreamEvent",
+                                    "ResultMessage",
+                                }
                             ):
-                                (await self._finalize_pending_result(session))
-                                await self._notify_waiters()
-                        elif name == "SystemMessage" and getattr(message, "subtype", None) == "api_retry":
-                            data = getattr(message, "data", {})
-                            if isinstance(data, dict):
+                                continue
+                            if name == "SystemMessage" and getattr(message, "subtype", None) == "init":
+                                data = getattr(message, "data", {})
+                                session_id = data.get("session_id") if isinstance(data, dict) else None
+                                if not isinstance(session_id, str) or not session_id:
+                                    raise session_errors.DelegateBackendError("Claude init message did not contain session_id")
+                                if expected_session_id is not None and session_id != expected_session_id:
+                                    raise session_errors.DelegateBackendError("Claude resume returned an unexpected session_id")
+                                # `_CommandChannel`と`SessionState`は所有タスクの生存期間で1つだけ保持する。
+                                # キューは永続session IDを要しないため所有タスクの開始時に生成する。
+                                # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
+                                # turnごとにinitが再送されても再生成しない。
                                 if session is None:
-                                    early_api_retry = data
-                                else:
-                                    await _apply_api_retry(session, data, runtime_started_at)
+                                    await initialize_session(session_id, data)
+                                elif session_id != session.session_id:
+                                    raise session_errors.DelegateBackendError(
+                                        "Claude init message reported a different session_id"
+                                    )
+                                assert session is not None
+                                usage_observer.request(session)
+                            elif (
+                                name == "SystemMessage"
+                                and getattr(message, "subtype", None) == "compact_boundary"
+                                and session is not None
+                            ):
+                                usage_observer.request(session)
+                            elif name == "SystemMessage" and getattr(message, "subtype", None) == "session_state_changed":
+                                # CLIのturn状態の報告。`idle`は次のturnが発生しないことを示すため、保留中の結果を
+                                # 確定してよい時点になる。ただしシェルのバックグラウンドタスクの稼働中も`idle`が届くため、
+                                # 追跡集合が残る間は確定せず、そのタスクの完了通知による再開turnの結果を待つ。
+                                data = getattr(message, "data", {})
+                                reported = data.get("state") if isinstance(data, dict) else None
+                                if not isinstance(reported, str) or not reported:
+                                    reported = None
+                                if session is None:
+                                    if reported is not None:
+                                        early_cli_turn_state = reported
+                                elif reported is not None:
+                                    session.cli_turn_state = reported
+                                    if (
+                                        reported == "running"
+                                        and (runtime := service_io.current()) is not None
+                                        and runtime.started is not None
+                                    ):
+                                        runtime.started(session)
+                                # 完了通知で次のturnが始まった後は、前のturnの待機期限で古い待機表明を公開させない。
+                                if (
+                                    session is not None
+                                    and reported == "running"
+                                    and resume_waits.release_auto_resume_hold(session)
+                                ):
                                     await self._notify_waiters()
-                        elif name == "RateLimitEvent":
-                            # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
-                            usage_limit = await _consume_rate_limit(message, session)
-                            if session is None:
-                                early_usage_limit = usage_limit or early_usage_limit
-                            elif usage_limit is not None:
-                                await self._notify_waiters()
-                        elif name == "AssistantMessage" and session is not None:
-                            # 保留後のモデル出力は次のturnに属する。Stopの処理中に完了通知が先に届いた場合は、
-                            # 保留の前に`running`が報告済みで、次のturnの開始が出力でしか観測できない。
-                            resume_waits.release_auto_resume_hold(session)
-                            consume_assistant_message(session, message)
-                            if getattr(message, "error", None) is None:
-                                usage_observer.request(session)
-                            await self._notify_waiters()
-                        elif name == "StreamEvent" and session is not None:
-                            # 失敗した要求はストリーミング応答を始めないため、応答開始を可用性の確定点とする。
-                            # それ以外の部分出力は完成したメッセージで反映されるため読み捨てる。
-                            event = getattr(message, "event", None)
-                            if isinstance(event, dict) and event.get("type") == "message_start":
-                                resume_waits.release_auto_resume_hold(session)
-                                session.api_error = None
-                                session.usage_limit = None
-                                if session.usage_limit_resume_at is not None:
-                                    resume_waits.clear_usage_limit_wait(session)
-                                session.model_output_observed = True
-                                session.record_turn_started()
-                                await self._notify_waiters()
-                            elif isinstance(event, dict) and event.get("type") == "message_stop":
-                                usage_observer.request(session)
-                        elif name == "UserMessage" and session is not None:
-                            await wait_output_tracking.consume_claude_agents_server_message_async(session, message)
-                            session.touch()
-                            await self._notify_waiters()
-                        elif name == "TaskStartedMessage" and session is not None:
-                            session.live_tasks[message.task_id] = shared_state.LiveTask(
-                                task_type=str(getattr(message, "task_type", None) or ""),
-                                description=str(getattr(message, "description", None) or ""),
-                                started_at=datetime.datetime.now(datetime.UTC).isoformat(),
-                            )
-                            session.touch()
-                            await self._notify_waiters()
-                        elif name in {"TaskUpdatedMessage", "TaskNotificationMessage"} and session is not None:
-                            if getattr(message, "status", None) in TERMINAL_TASK_STATUSES:
-                                session.live_tasks.pop(message.task_id, None)
-                                session.touch()
-                                await self._notify_waiters()
-                        elif name == "ResultMessage" and session is not None:
-                            usage_observer.request(session)
-                            await self._consume_result_message(session, message)
-                            await self._notify_waiters()
+                                if (
+                                    session is not None
+                                    and reported == "idle"
+                                    and resume_waits.is_background_completion_wait(session)
+                                    and not resume_waits.has_pending_auto_resume_targets(session)
+                                ):
+                                    (await self._finalize_pending_result(session))
+                                    await self._notify_waiters()
+                            elif name == "SystemMessage" and getattr(message, "subtype", None) == "api_retry":
+                                data = getattr(message, "data", {})
+                                if isinstance(data, dict):
+                                    if session is None:
+                                        early_api_retry = data
+                                    else:
+                                        await _apply_api_retry(session, data, runtime_started_at)
+                                        await self._notify_waiters()
+                            elif name == "RateLimitEvent":
+                                # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
+                                usage_limit = await _consume_rate_limit(message, session)
+                                if session is None:
+                                    early_usage_limit = usage_limit or early_usage_limit
+                                elif usage_limit is not None:
+                                    await self._notify_waiters()
+                            elif session is not None:
+                                await self._consume_session_message(session, message, name, usage_observer)
+                        except BaseException:
+                            processing_failed = True
+                            raise
+                        finally:
+                            if not processing_failed and isinstance(client, SdkResource):
+                                await client.finish_message()
+                        if (
+                            name == "ResultMessage"
+                            and session is not None
+                            and runtime is not None
+                            and runtime.boundary is not None
+                        ):
+                            runtime.boundary(session, client)
+                        if isinstance(client, SdkResource) and client.transferred:
+                            break
 
         except asyncio.CancelledError:
+            raise
+        except service_turns.MoveRequired:
             raise
         except BaseException as exc:
             await self._receive_failed(session, exc, diagnostic, initialized)
         finally:
+            _preserve_unaccepted_client(adopted_client, initialized)
 
             async def cleanup_runtime(pins: process_tree.ProcessIdentityPins) -> None:
                 nonlocal retrieved
                 if wait_compactor is not None:
+                    if session is not None and isinstance(client, SdkResource) and client.transferred:
+                        self._service_compaction_checkpoints[session.session_id] = wait_compactor.checkpoint()
                     await wait_compactor.close()
                 if diagnostic.mcp_recovery_task is not None:
                     if not diagnostic.mcp_recovery_task.done():
@@ -446,10 +485,18 @@ class ClaudeStream(ClaudeTurns):
                 )
                 if command_task is not None and not command_task.cancelled() and command_task.exception() is None:
                     retrieved = command_task.result()
+                gate = service_turns.current()
+                moved = isinstance(client, SdkResource) and client.transferred and gate is not None
+                owner_error = (
+                    service_turns.MoveRequired(gate.current)
+                    if moved and gate is not None
+                    else SessionOwnerGoneError("the Claude session owner task has ended")
+                )
                 if retrieved is not None and not retrieved[2].done():
-                    retrieved[2].set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
+                    retrieved[2].set_exception(owner_error)
                 if active_future is not None and not active_future.done():
-                    active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
+                    active_future.set_exception(owner_error)
+                channel.close(owner_error)
                 if client is not None:
                     try:
                         try:
@@ -463,43 +510,46 @@ class ClaudeStream(ClaudeTurns):
                             if usage_observer is not None:
                                 await usage_observer.close()
                     finally:
-                        if diagnostic.child_process is None:
-                            diagnostic.capture_client(client)
-                        # CLIの正常終了を妨げず、切断中に観測した子孫のhandleを保持する。
-                        # POSIXで列挙間隔内に生成と親終了が完結した子孫は追跡できない。
-                        descendants = [diagnostic.child_process] if diagnostic.child_process is not None else []
-                        tracking_done = asyncio.Event()
+                        if not isinstance(client, SdkResource) or not client.transferred:
+                            if diagnostic.child_process is None:
+                                diagnostic.capture_client(client)
+                            # CLIの正常終了を妨げず、切断中に観測した子孫のhandleを保持する。
+                            # POSIXで列挙間隔内に生成と親終了が完結した子孫は追跡できない。
+                            descendants = [diagnostic.child_process] if diagnostic.child_process is not None else []
+                            tracking_done = asyncio.Event()
 
-                        async def track_descendants() -> None:
-                            nonlocal descendants
-                            while not tracking_done.is_set():
-                                descendants = await run_file_operation(
-                                    _owned_runtime_processes, diagnostic.child_process, tuple(descendants), pins=pins
-                                )
-                                with contextlib.suppress(TimeoutError):
-                                    await asyncio.wait_for(tracking_done.wait(), timeout=0.05)
-
-                        try:
-                            descendants = await run_file_operation(
-                                _owned_runtime_processes, diagnostic.child_process, pins=pins
-                            )
-                        finally:
-                            tracker = asyncio.create_task(track_descendants())
-                            try:
-                                await self._disconnect_client(client)
-                            finally:
-                                tracking_done.set()
-                                try:
-                                    await tracker
-                                finally:
-                                    runtime_key = (
-                                        session.session_id if session is not None else f"initialization:{diagnostic.debug_file}"
+                            async def track_descendants() -> None:
+                                nonlocal descendants
+                                while not tracking_done.is_set():
+                                    descendants = await run_file_operation(
+                                        _owned_runtime_processes, diagnostic.child_process, tuple(descendants), pins=pins
                                     )
-                                    if descendants:
-                                        self._residual_processes[runtime_key] = descendants
-                                    # 導入一覧の取得で回収できなかった子孫もCLIの子孫と同じ所有対象として保持する。
-                                    self._adopt_unreclaimed(runtime_key, reloader)
-                                    await self._reclaim_runtime(runtime_key, pins=pins)
+                                    with contextlib.suppress(TimeoutError):
+                                        await asyncio.wait_for(tracking_done.wait(), timeout=0.05)
+
+                            try:
+                                descendants = await run_file_operation(
+                                    _owned_runtime_processes, diagnostic.child_process, pins=pins
+                                )
+                            finally:
+                                tracker = asyncio.create_task(track_descendants())
+                                try:
+                                    await self._disconnect_client(client)
+                                finally:
+                                    tracking_done.set()
+                                    try:
+                                        await tracker
+                                    finally:
+                                        runtime_key = (
+                                            session.session_id
+                                            if session is not None
+                                            else f"initialization:{diagnostic.debug_file}"
+                                        )
+                                        if descendants:
+                                            self._residual_processes[runtime_key] = descendants
+                                        # 導入一覧の取得で回収できなかった子孫もCLIの子孫と同じ所有対象として保持する。
+                                        self._adopt_unreclaimed(runtime_key, reloader)
+                                        await self._reclaim_runtime(runtime_key, pins=pins)
                 elif reloader.unreclaimed:
                     # 接続前の入力準備で回収できなかった子孫は、クライアントが無く接続の後始末を実行しないため、
                     # ここで所有対象へ移す。
@@ -510,15 +560,73 @@ class ClaudeStream(ClaudeTurns):
             async def cleanup() -> None:
                 async def close_plugin_input() -> None:
                     runtime_key = session.session_id if session is not None else f"initialization:{diagnostic.debug_file}"
-                    await reloader.close(retain_input=runtime_key in self._residual_processes)
+                    if not proxy_created:
+                        await reloader.close(retain_input=runtime_key in self._residual_processes)
 
                 async with contextlib.AsyncExitStack() as resources:
                     resources.push_async_callback(close_plugin_input)
-                    resources.push_async_callback(run_file_operation, claude_settings.cleanup_settings, options)
+                    if not proxy_created:
+                        resources.push_async_callback(run_file_operation, claude_settings.cleanup_settings, options)
                     resources.callback(channel.close)
                     if session is not None:
                         resources.callback(self._channels.pop, session.session_id, None)
+                        resources.callback(self._sdk_clients.pop, session.session_id, None)
+                        resources.callback(self._wait_compactors.pop, session.session_id, None)
                         resources.push_async_callback(session.drain_registration)
                     await cleanup_runtime(resources.enter_context(process_tree.ProcessIdentityPins()))
 
             await finish_task(asyncio.create_task(cleanup()))
+
+    async def _consume_session_message(
+        self,
+        session: SessionState,
+        message: Any,
+        name: str,
+        usage_observer: _ContextUsageObserver,
+    ) -> None:
+        """初期化後の出力・背景資源・結果を、同じ保存ACKの内側で適用する。"""
+        from claude_agent_sdk import TERMINAL_TASK_STATUSES
+
+        if name == "AssistantMessage":
+            # 保留後のモデル出力だけで次turnの開始が分かる場合も、古い待機期限を解除する。
+            resume_waits.release_auto_resume_hold(session)
+            consume_assistant_message(session, message)
+            if getattr(message, "error", None) is None:
+                usage_observer.request(session)
+            await self._notify_waiters()
+        elif name == "StreamEvent":
+            event = getattr(message, "event", None)
+            if isinstance(event, dict) and event.get("type") == "message_start":
+                if (runtime := service_io.current()) is not None and runtime.started is not None:
+                    runtime.started(session)
+                resume_waits.release_auto_resume_hold(session)
+                session.api_error = None
+                session.usage_limit = None
+                if session.usage_limit_resume_at is not None:
+                    resume_waits.clear_usage_limit_wait(session)
+                session.model_output_observed = True
+                session.record_turn_started()
+                await self._notify_waiters()
+            elif isinstance(event, dict) and event.get("type") == "message_stop":
+                usage_observer.request(session)
+        elif name == "UserMessage":
+            await wait_output_tracking.consume_claude_agents_server_message_async(session, message)
+            session.touch()
+            await self._notify_waiters()
+        elif name == "TaskStartedMessage":
+            session.live_tasks[message.task_id] = shared_state.LiveTask(
+                task_type=str(getattr(message, "task_type", None) or ""),
+                description=str(getattr(message, "description", None) or ""),
+                started_at=datetime.datetime.now(datetime.UTC).isoformat(),
+            )
+            session.touch()
+            await self._notify_waiters()
+        elif name in {"TaskUpdatedMessage", "TaskNotificationMessage"}:
+            if getattr(message, "status", None) in TERMINAL_TASK_STATUSES:
+                session.live_tasks.pop(message.task_id, None)
+                session.touch()
+                await self._notify_waiters()
+        elif name == "ResultMessage":
+            usage_observer.request(session)
+            await self._consume_result_message(session, message)
+            await self._notify_waiters()

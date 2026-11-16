@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import tomllib
 from typing import Any
@@ -12,6 +11,7 @@ from agent_toolkit._atk import config_repositories
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import runtime_environment
 
 
 def claude_connection_migration(config: dict[str, str]) -> dict[str, str]:
@@ -168,7 +168,7 @@ def migrate_legacy_settings() -> None:
 
 def legacy_serve_config_path() -> pathlib.Path:
     """旧`serve.toml`の場所を返す。`AGENT_TOOLKIT_SERVE_CONFIG`があればその値、無ければ設定ディレクトリの`serve.toml`。"""
-    explicit = os.environ.get(_config_settings.SERVE_CONFIG_ENV)
+    explicit = runtime_environment.environment().get(_config_settings.SERVE_CONFIG_ENV)
     return pathlib.Path(explicit) if explicit else _config_settings.config_dir() / "serve.toml"
 
 
@@ -262,7 +262,11 @@ def migrate_serve_settings() -> None:
 def check_legacy_environment() -> None:
     """廃止キーの環境変数があれば、対応する工程別環境変数を案内する。"""
     _config_settings.check_repository_environment()
-    found = sorted(key for key in _config_settings.RETIRED_MODEL_KEYS if _config_settings.config_env_name(key) in os.environ)
+    found = sorted(
+        key
+        for key in _config_settings.RETIRED_MODEL_KEYS
+        if _config_settings.config_env_name(key) in runtime_environment.environment()
+    )
     if found:
         replacements = []
         for key in found:
@@ -291,7 +295,9 @@ def check_legacy_environment() -> None:
         )
     # 空文字列は他の設定キーと同じく未設定として扱う。
     connection_found = [
-        key for key in _config_settings.RETIRED_CONNECTION_KEYS if os.environ.get(_config_settings.config_env_name(key), "")
+        key
+        for key in _config_settings.RETIRED_CONNECTION_KEYS
+        if runtime_environment.environment().get(_config_settings.config_env_name(key), "")
     ]
     if connection_found:
         replacements = [

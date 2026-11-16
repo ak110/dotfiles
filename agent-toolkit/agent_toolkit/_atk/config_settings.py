@@ -13,9 +13,10 @@ from typing import Any
 lazy import platformdirs
 
 from agent_toolkit._atk import config_repositories
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import codex_models, runtime_environment
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.usage_settings import validate_permissions
 
 CONFIG_FILENAME = "config.json"
 
@@ -137,6 +138,10 @@ MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
     "codex_fast_mode": "false",
     "codex_auto_reset": "false",
+    "usage_auto_allocation": "false",
+    "usage_activity_mode": "continuous",
+    "usage_reset_permissions": "[]",
+    "claude_reset_inventory": "[]",
     **CONNECTION_DEFAULTS,
     "claude_usage_limit_wait": "five-hour",
     "codex_usage_limit_wait": "five-hour",
@@ -233,6 +238,20 @@ def config_dir() -> pathlib.Path:
 
     `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
+    caller = runtime_environment.current()
+    if caller is not None:
+        env = caller.environment
+        if os.name == "nt":
+            base = (
+                pathlib.Path(env["LOCALAPPDATA"])
+                if env.get("LOCALAPPDATA")
+                else runtime_environment.home() / "AppData" / "Local"
+            )
+        else:
+            base = (
+                pathlib.Path(env["XDG_CONFIG_HOME"]) if env.get("XDG_CONFIG_HOME") else runtime_environment.home() / ".config"
+            )
+        return (base if base.is_absolute() else caller.cwd / base) / "agent-toolkit"
     return pathlib.Path(platformdirs.user_config_dir("agent-toolkit", appauthor=False))
 
 
@@ -353,7 +372,12 @@ def validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: never, five-hour, always")
     elif key == "repositories":
         config_repositories.parse(value)
-    elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start"}:
+    elif key in {"usage_reset_permissions", "claude_reset_inventory"}:
+        validate_permissions(value)
+    elif key == "usage_activity_mode":
+        if value not in {"continuous", "intermittent"}:
+            raise ValueError("受理可能値: continuous, intermittent")
+    elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start", "usage_auto_allocation"}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key in MODEL_DEFAULTS:
@@ -403,7 +427,7 @@ def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]
     if migrated != data:
         save_config(migrated)
     data = migrated
-    value = os.environ.get(config_env_name("repositories")) or data.get("repositories", "{}")
+    value = runtime_environment.environment().get(config_env_name("repositories")) or data.get("repositories", "{}")
     if not isinstance(value, str):
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
     return config_repositories.parse(value, check_paths=check_paths)
@@ -411,7 +435,7 @@ def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]
 
 def check_repository_environment() -> None:
     """旧repository環境変数を新しい登録操作へ案内する。"""
-    if os.environ.get(config_env_name("process_loop_repositories")):
+    if runtime_environment.environment().get(config_env_name("process_loop_repositories")):
         raise _next_action.ActionableError(
             "廃止した環境変数AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIESが設定されている",
             next_action="旧環境変数を解除し、`atk config repos add REPO --edit allow --path PATH --process-loop`で登録する",
@@ -467,7 +491,7 @@ def mutable_setting_default(key: str) -> str:
 def raw_mutable_setting(key: str) -> str:
     """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
     default = mutable_setting_default(key)
-    explicit = os.environ.get(config_env_name(key), "")
+    explicit = runtime_environment.environment().get(config_env_name(key), "")
     if explicit:
         return explicit
     return load_config().get(key, default)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import pathlib
 import sys
@@ -13,7 +14,8 @@ from typing import Any
 import psutil
 import pytest
 
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._agents_server import service_transport
+from agent_toolkit._common import plugin_environment, process_identity, process_tree
 from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES, HOME_ENVIRONMENT_NAMES
 
 # 試験が観測する内部境界を準備する。
@@ -150,6 +152,60 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
         "そのテストのClientSessionとstdio_clientの終了処理を調べ、"
         "上記PIDの生成時刻・状態を確認して停止未達の処理を特定する。"
     )
+
+
+def _stop_mcp_services(state_base: pathlib.Path) -> None:
+    """隔離領域の世代記録とleaseの両方に一致する管理プロセスだけを回収する。"""
+    path = state_base / "agent-toolkit/services/agents-server/generations.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return
+    leases = [
+        json.loads(item.read_text(encoding="utf-8"))
+        for item in (state_base / "agent-toolkit/plugin-root-leases").glob("*.json")
+    ]
+    for generation, entry in data["generations"].items():
+        if not entry.get("ready"):
+            continue
+        identity = entry["process"]
+        recorded_pid = int(identity.split(":", 1)[0])
+        targets = []
+        # 子の終了後にも残るsupervisorを、PIDの親子関係ではなく既存leaseと世代引数で特定する。
+        for lease in leases:
+            if not pathlib.Path(entry["root"]).is_relative_to(pathlib.Path(lease["path"])):
+                continue
+            try:
+                member = psutil.Process(lease["pid"])
+                if not process_identity.matches(member, lease["created_at"], lease.get("start_id")):
+                    continue
+                if member.cmdline()[-2:] != [str(path.parent), generation]:
+                    continue
+                if member.pid == recorded_pid:
+                    assert service_transport.process_identity(member.pid) == identity
+                targets.append(member)
+            except psutil.NoSuchProcess, ProcessLookupError, FileNotFoundError:
+                continue
+        try:
+            registered = psutil.Process(recorded_pid)
+            if (
+                registered.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+                and service_transport.process_identity(recorded_pid) == identity
+            ):
+                assert any(member.pid == recorded_pid for member in targets) or registered.status() in (
+                    psutil.STATUS_ZOMBIE,
+                    psutil.STATUS_DEAD,
+                )
+        except psutil.NoSuchProcess, ProcessLookupError, FileNotFoundError:
+            pass
+        for member in targets:
+            try:
+                if not member.is_running() or member.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    continue
+                result = process_tree.stop_tree(member)
+                assert not result.residual and not result.unresolved, result.descriptions()
+            except psutil.NoSuchProcess:
+                continue
 
 
 # 90cad03ac601a24107d34758748f1d022ed5342cのplugin_root.pyにある、版別rootの

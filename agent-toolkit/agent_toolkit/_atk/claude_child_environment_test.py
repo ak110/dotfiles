@@ -59,7 +59,9 @@ def test_cli_descendants_receive_only_configured_empty_keys(
     }
     if source != "none":
         locations[source].write_text(json.dumps({"env": {"AWS_PROFILE": "source-profile"}}))
-    selected = claude_connection.Connection(kind, str(api) if kind == "payg" else None, str(api))
+    credits_path = tmp_path / "credits.env"
+    credits_path.write_text("ANTHROPIC_API_KEY=credits-key\nCREDITS_CONNECTION=credits\n", encoding="utf-8")
+    selected = claude_connection.Connection(kind, str(api) if kind == "payg" else None, (str(credits_path), str(api)))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((selected,)))
     monkeypatch.setattr(orchestrator, "_probe_model", lambda *_args, **_kwargs: "model")
     effective: list[dict[str, str]] = []
@@ -79,6 +81,7 @@ def test_cli_descendants_receive_only_configured_empty_keys(
         "AWS_PROFILE": "parent",
         "CUSTOM_CONNECTION": "parent",
         "ANTHROPIC_API_KEY": "parent",
+        "CREDITS_CONNECTION": "parent-credits",
         orchestrator.PROCESS_LOOP_SESSION_ENV: "1",
     }
     _run_cli_route(route, tmp_path, monkeypatch, environment)
@@ -86,6 +89,7 @@ def test_cli_descendants_receive_only_configured_empty_keys(
     values = effective[0]
     assert values.get("AWS_PROFILE") == ("profile" if kind == "payg" else "" if source != "none" else None)
     assert values.get("CUSTOM_CONNECTION") == ("api" if kind == "payg" else None)
+    assert "CREDITS_CONNECTION" not in values
     assert not any(value == "" for key, value in values.items() if key in {"CUSTOM_CONNECTION", "ANTHROPIC_API_KEY"})
 
 

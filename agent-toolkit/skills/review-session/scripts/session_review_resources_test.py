@@ -196,7 +196,18 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
         (2, 3),
         # 基準版でも60秒に達するため、20261108-212235-001.mdの重複解析削減まで
         # 停止上限だけを暫定で延ばす。
-        pytest.param(64, 40, marks=pytest.mark.timeout(120)),
+        pytest.param(
+            64,
+            40,
+            marks=[
+                pytest.mark.timeout(120),
+                pytest.mark.cpu_limit(
+                    12.0,
+                    reason="64担当×40読取と長いshell入力で文書予算と全証拠を同時に検査する最小の大規模ケース。"
+                    "二次regex処理を除去後のLinux CPU合計5.095秒を基にし、小規模ケースには特例を適用しない。",
+                ),
+            ],
+        ),
     ],
 )
 def test_prepare_bounds_initial_documents_and_keeps_full_evidence(
@@ -362,4 +373,5 @@ def test_prepare_counts_received_preview_and_keeps_restored_result(tmp_path, cap
     assert comparison[0]["recorded_result_utf8_bytes"] == received_bytes
     assert comparison[0]["original_utf8_bytes"] == 986_043
     conversation = [json.loads(line) for line in (work / "bundle/conversation.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert next(row["text"] for row in conversation if row["kind"] == "tool-result") == original
+    assert next(row["text"] for row in conversation if row["kind"] == "tool-result") == preview
+    assert saved.read_text(encoding="utf-8") == original

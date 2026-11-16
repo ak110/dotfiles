@@ -10,13 +10,69 @@ import asyncio
 import os
 import pathlib
 import types
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
+from claude_agent_sdk import SystemMessage
 
 from agent_toolkit._agents_server import claude, resume_waits, session_errors, state
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_claude_support import _SilentClient
+from agent_toolkit._testing.agents_server_support import AssistantMessage, QueueClaudeClient
+
+
+def test_prepare_debug_file_tolerates_disappearance(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """一覧取得後に消えた補助診断は新しい再開用パスの準備を妨げない。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    directory = tmp_path / claude._DEBUG_LOG_DIR_NAME
+    directory.mkdir()
+    missing = directory / "vanished.log"
+    original = pathlib.Path.glob
+
+    def disappear(path: pathlib.Path, pattern: str, **kwargs: Any) -> Iterator[pathlib.Path]:
+        if path == directory:
+            return iter([missing])
+        return original(path, pattern, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "glob", disappear)
+    prepared = claude._prepare_debug_file("delegate")
+    assert prepared is not None
+    assert prepared.parent == directory
+    assert prepared.name.endswith("-delegate.log")
+
+
+def test_prepare_debug_file_disables_debug_when_directory_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """補助診断の保存先が使えなければdebug指定を無効にする。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    (tmp_path / claude._DEBUG_LOG_DIR_NAME).write_text("not a directory", encoding="utf-8")
+    assert claude._prepare_debug_file("delegate") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_resume_without_debug_file_reaches_sdk(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """補助診断を作れない新規・再開でも同じ会話IDをSDKへ渡す。"""
+    monkeypatch.setattr(claude, "_prepare_debug_file", lambda _kind: None)
+    options: list[Any] = []
+
+    def factory(value: Any) -> QueueClaudeClient:
+        options.append(value)
+        return QueueClaudeClient([[SystemMessage("init", {"session_id": "without-debug"}), AssistantMessage("開始")]])
+
+    async with claude.ClaudeServerManager(client_factory=factory) as backend:
+        session = await backend.start("開始", str(tmp_path))
+        prompt = state.ResumePrompt("再開")
+        try:
+            resumed = await backend.resume(session.session_id, prompt, str(tmp_path), existing_session=session)
+        finally:
+            prompt.close()
+        assert resumed.session_id == session.session_id
+    assert len(options) == 2
+    assert all("debug-file" not in (value.extra_args or {}) for value in options)
 
 
 def test_debug_file_name_carries_session_id_after_initialization(tmp_path: pathlib.Path) -> None:
@@ -57,6 +113,7 @@ def test_prepare_debug_file_drops_records_beyond_retention(
         existing.append(path)
 
     created = claude._prepare_debug_file("delegate")  # pylint: disable=protected-access
+    assert created is not None
     created.write_text("記録", encoding="utf-8")
 
     assert created.parent == directory

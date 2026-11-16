@@ -6,10 +6,8 @@ handler出力だけを合成し、hook.mainの合流・保存・最終配送を�
 
 import importlib
 import json
-import os
 import pathlib
 import re
-import shlex
 
 import pytest
 
@@ -71,12 +69,6 @@ def test_codex_final_context_includes_long_decision_reason_in_budget(monkeypatch
     match = re.search(r"保存先: (.+)\n", context)
     assert match is not None
     saved = pathlib.Path(match[1])
-    command = (
-        "Get-Content -LiteralPath '" + str(saved).replace("'", "''") + "' -Encoding utf8"
-        if os.name == "nt"
-        else "cat -- " + shlex.quote(str(saved))
-    )
-    assert f"`{command}`を実行" in context
     full = saved.read_text(encoding="utf-8")
     assert reason in full
     assert ("追加通知の固有本文" in full) is additional
@@ -117,12 +109,6 @@ def test_codex_final_context_spills_whole_notices_without_consuming_receipt(monk
     match = re.search(r"保存先: (.+)\n", context)
     assert match is not None
     saved = pathlib.Path(match[1])
-    command = (
-        "Get-Content -LiteralPath '" + str(saved).replace("'", "''") + "' -Encoding utf8"
-        if os.name == "nt"
-        else "cat -- " + shlex.quote(str(saved))
-    )
-    assert f"`{command}`を実行" in context
     assert saved.is_absolute() and saved.parent == managed_temp.resolve_session_temp(identifier)
     full = saved.read_text(encoding="utf-8")
     assert full.startswith(original)

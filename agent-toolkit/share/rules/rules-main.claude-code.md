@@ -1,6 +1,7 @@
 # rules-main.claude-code.md: Claude Codeのメインエージェント向け規範
 
 `rules-main.md`のClaude Code固有規範を定める。
+本書のmodは、Claude Codeの会話イベントを処理するagent-toolkitのFunction hooks moduleを指す。
 
 `Usage limit reached; a short grace allowance remains`で始まる猶予通知では`agent-toolkit:user-confirmation-and-report`を起動し、状況伝達・続行・再開手順に従う。
 続行許可中は残工程を進め、再開禁止時は状況と必要なユーザー操作を伝える。
@@ -9,10 +10,11 @@
 ## ツールの入出力
 
 - Windows版Bashは引用符付きheredoc・単一引用符内でも`\\`を`\`へ縮めるため、エスケープを含むコードはWriteでmanaged-tempへ保存して実行する。
-- ユーザー向け本文は`mcp__agent-toolkit__send_to_user`の`message`で送る。
+- ユーザー向け本文は`mcp__plugin_agent-toolkit_agents_server__send_to_user`の`message`で送る。
   拡張思考は表示未確認、地の文はAPIで要約され得るためである。
   確認質問は`AskUserQuestion`を使う。
-  Function hooksの登録名は`send_to_user`、遅延時はToolSearchの`select:mcp__agent-toolkit__send_to_user`で取得する。
+  遅延時はToolSearchへ`select:`に上記ツール名を続けて渡す。
+  ユーザー画面への実描画を確認した成功応答だけを送達済みとして扱う。
   未提供なら最終応答に本文を書く。
   同手段で伝えた回答だけを委譲入力・記録に「回答済み」と書く。
 

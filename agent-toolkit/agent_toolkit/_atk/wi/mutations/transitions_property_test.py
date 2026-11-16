@@ -56,6 +56,13 @@ def _state(notes: pathlib.Path) -> str | None:
 
 @settings(max_examples=35, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(actions=st.lists(st.sampled_from(_ACTIONS), min_size=1, max_size=20))
+@pytest.mark.cpu_limit(
+    3.25,
+    reason=(
+        "35生成例の1-20状態操作を実ファイルへ適用し、受理・拒否の前後本文と状態を参照モデルへ照合する（Linux CI CPU合計最"
+        "大1.387秒）。"
+    ),
+)
 def test_transition_sequences_match_reference_model(actions: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
     """受理と拒否の操作列で、配置・本文・一意性をモデルと一致させる。"""
     _disable_git(monkeypatch)
@@ -174,11 +181,14 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
     assert returned.read_bytes() == snapshot
 
 
-@settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(
-    size=st.integers(min_value=1, max_value=6),
-    completed=st.integers(min_value=0, max_value=6),
-    terminal_state=st.sampled_from(("adopted", "rejected")),
+@pytest.mark.parametrize(
+    ("size", "completed", "terminal_state"),
+    [
+        (size, completed, terminal)
+        for size in range(1, 7)
+        for completed in range(size + 1)
+        for terminal in ("adopted", "rejected")
+    ],
 )
 def test_dependency_order_matches_reference_model(
     size: int,
@@ -189,7 +199,6 @@ def test_dependency_order_matches_reference_model(
     """依存鎖では終了済みの接頭辞に続く1件だけが処理可能になる。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
         notes = _setup_notes(pathlib.Path(directory))
-        completed = min(completed, size)
         names = [f"entry-{index}.md" for index in range(size)]
         for index, name in enumerate(names):
             path = _write_awi_file(notes, name)

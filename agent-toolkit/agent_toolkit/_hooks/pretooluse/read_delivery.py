@@ -204,9 +204,7 @@ def _deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -
             tag=_WARN_TAG,
             removable_cause=True,
             escalate_on_repeat=False,
-            fix=acquisition_step(
-                target, operation_skills.resolve_subject(payload), reference=True, cwd=str(payload.get("cwd", ""))
-            ),
+            fix=acquisition_step(target, operation_skills.resolve_subject(payload), cwd=str(payload.get("cwd", ""))),
         )
         notice_module.stage_delivery(text, session_id, rules_context.OPERATION_SKILL_READY_KEY, key, agent)
         updates.append(text)

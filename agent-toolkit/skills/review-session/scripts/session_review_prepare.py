@@ -70,6 +70,7 @@ _STATS_MAX_BYTES = 30_000
 def _build_parser() -> argparse.ArgumentParser:
     """コマンドライン引数を定義する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--allow-partial-records", action="store_true", help="欠測付きの正常行を取得する。")
     session = parser.add_mutually_exclusive_group(required=True)
     session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
@@ -89,7 +90,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--conversation-only",
         action="store_true",
-        help="引き継ぎ用の会話の流れと証拠bundleを生成して終了する。候補文書・統計・failure ledgerは更新しない。",
+        help="引き継ぎ用の会話の流れと原本範囲を保存する。全量分析・候補文書・統計・failure ledgerは生成・更新しない。",
     )
     parser.add_argument("--after", metavar="PATH", help="前回のscope JSON。処理済み位置より後だけをbatchの分析対象にする。")
     parser.add_argument("--conversation-window", action="store_true", help="会話を少量表示する。候補・統計は更新しない。")
@@ -175,14 +176,26 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
 
 
 # 未解決の対象と回復した記録行は、どのbundleファイルにも保存されず標準出力だけで届く。
-_SCOPE_EVENT_KINDS = frozenset({"unresolved-record", "unresolved-delegation", "recovered-record-line"})
+_SCOPE_EVENT_KINDS = frozenset({"unresolved-record", "unresolved-delegation", "recovered-record-line", "record-gap"})
 
 
-def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> tuple[str | None, list[dict[str, Any]]]:
+def _extract_bundle(
+    session_arguments: list[str],
+    bundle_dir: pathlib.Path,
+    *,
+    conversation_output: list[dict[str, Any]],
+    conversation_only: bool,
+    conversation_scope: pathlib.Path | None = None,
+) -> tuple[str | None, list[dict[str, Any]]]:
     """bundleの成功時も未解決通知を受け渡し、走査全量と最終JSONへ混ぜない。"""
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
-        exit_code = session_review_evidence.main([*session_arguments, "--bundle", str(bundle_dir)])
+        exit_code = session_review_evidence.main(
+            [*session_arguments, "--bundle", str(bundle_dir)],
+            conversation_output=conversation_output,
+            conversation_scope=conversation_scope,
+            conversation_only=conversation_only,
+        )
     if exit_code != 0:
         return captured.getvalue() or f"atk run-script session-review-evidenceの終了コード: {exit_code}", []
     try:
@@ -315,11 +328,15 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         session_arguments = ["--codex-thread-id", args.codex_thread_id]
     if args.after is not None:
         session_arguments.extend(["--after", args.after])
+    if args.allow_partial_records:
+        session_arguments.append("--allow-partial-records")
     bundle_dir = work_dir / "bundle"
     bundle_dir.mkdir(exist_ok=True)
     source_path = bundle_dir / "conversation-source.json"
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     observed_at = current.astimezone(datetime.UTC).isoformat()
+    lightweight = args.conversation_only or args.conversation_window
+    conversation_output: list[dict[str, Any]] = []
     if args.conversation_after is not None:
         try:
             source = json.loads(source_path.read_text(encoding="utf-8"))
@@ -331,23 +348,46 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             scope_events = [*_read_jsonl(bundle_dir / "unconfirmed.jsonl"), *_read_jsonl(bundle_dir / "recovered.jsonl")]
         except (OSError, ValueError, KeyError) as error:
             return _missing("bundle", f"継続用bundleを読めない: {error}。--conversation-afterを外して初回取得する")
-        failure = None
+        failure, _ = _extract_bundle(
+            session_arguments,
+            bundle_dir,
+            conversation_output=conversation_output,
+            conversation_scope=bundle_dir / "scope.json",
+            conversation_only=True,
+        )
     else:
-        failure, scope_events = _extract_bundle(session_arguments, bundle_dir)
+        failure, scope_events = _extract_bundle(
+            session_arguments,
+            bundle_dir,
+            conversation_output=conversation_output,
+            conversation_only=lightweight,
+        )
     unresolved = [event for event in scope_events if event["kind"] != "recovered-record-line"]
     recovered = [event for event in scope_events if event["kind"] == "recovered-record-line"]
     if failure is not None:
         return _missing("bundle", f"{failure}\n診断用に保持した作業領域: {work_dir}")
     try:
-        candidate_rows = _read_jsonl(bundle_dir / "candidates.jsonl")
-        stats = _read_jsonl(bundle_dir / "stats.jsonl")
-        stats.extend(_read_jsonl(bundle_dir / "resource-usage.jsonl"))
-        timeline = _read_jsonl(bundle_dir / "timeline.jsonl")
-        conversation = _read_jsonl(bundle_dir / "conversation.jsonl")
-        comparison = _read_jsonl(bundle_dir / "comparison-materials.jsonl")
+        candidate_rows = [] if lightweight else _read_jsonl(bundle_dir / "candidates.jsonl")
+        stats = [] if lightweight else _read_jsonl(bundle_dir / "stats.jsonl")
+        if not lightweight:
+            stats.extend(_read_jsonl(bundle_dir / "resource-usage.jsonl"))
+        timeline = conversation_output if lightweight else _read_jsonl(bundle_dir / "timeline.jsonl")
+        conversation = [
+            event
+            for event in conversation_output
+            if event.get("kind")
+            in {
+                "utterance",
+                "tool-call",
+                "tool-result",
+                "tool-failure",
+                "delegation-request",
+            }
+        ]
+        comparison = [] if lightweight else _read_jsonl(bundle_dir / "comparison-materials.jsonl")
         candidates = [row for row in candidate_rows if row.get("kind") == "candidate"]
         summary = next((row for row in candidate_rows if row.get("kind") == "candidate-summary"), {})
-        evidence_index = _read_jsonl(bundle_dir / "candidate-evidence.jsonl")
+        evidence_index = [] if lightweight else _read_jsonl(bundle_dir / "candidate-evidence.jsonl")
     except (OSError, ValueError, KeyError) as error:
         return _missing("bundle", str(error))
     (bundle_dir / "unconfirmed.jsonl").write_text(
@@ -407,6 +447,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
                     "conversation_limit_bytes": conversation_limit,
                     "conversation_window": conversation_window,
                     "unconfirmed_scope": unresolved,
+                    "partial": any(event["kind"] == "record-gap" for event in unresolved),
                     "recovered_record_lines": recovered,
                 },
                 ensure_ascii=False,
@@ -531,6 +572,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         },
         "failure_ledger_skipped": ledger_skipped,
         "unconfirmed_scope": unresolved,
+        "partial": any(event["kind"] == "record-gap" for event in unresolved),
         "recovered_record_lines": recovered,
         "improvement_lines": list(dict.fromkeys(line for event in timeline for line in event.get("reported_improvements", []))),
         "elapsed_seconds": total.get("elapsed_seconds"),

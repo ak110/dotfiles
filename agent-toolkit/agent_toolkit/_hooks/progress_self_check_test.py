@@ -8,7 +8,6 @@ import json
 import os
 import pathlib
 import re
-import shlex
 import subprocess
 import uuid
 from collections.abc import Mapping
@@ -19,12 +18,19 @@ from agent_toolkit._common import session_state
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_MARKER
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import posttooluse, progress_self_check
+from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _INTERVAL = progress_self_check.SELF_CHECK_INTERVAL_SECONDS
 _OPENING = f'<atk-auto source="{progress_self_check.SOURCE}" kind="notice">'
+
+
+@pytest.fixture(autouse=True)
+def _without_unrelated_document_observation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """通知の採用・予約・再試行を通し、対象外の本文取得の観測を隔離する。"""
+    monkeypatch.setattr(read_delivery, "observe", lambda *_args, **_kwargs: None)
 
 
 def _entries(session_id: str) -> dict:
@@ -60,13 +66,11 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
 
     notice = progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL)
     assert notice is not None and notice.startswith(_OPENING)
-    # 通知が案内する読取コマンドは、実在する規範ファイルを指す。
-    match = re.search(r"`(?:cat -- (?P<posix>[^`]+)|Get-Content -LiteralPath '(?P<nt>[^`]+?)' -Encoding utf8)`", notice)
-    assert match is not None
-    target = shlex.split(match["posix"])[0] if match["posix"] else match["nt"].replace("''", "'")
-    assert pathlib.Path(target).is_file()
+    target = progress_self_check.plugin_resources.plugin_root() / "share/agent-conduct-details.md"
+    assert "agent-conduct-details.md" in notice
+    assert "cat --" not in notice and "Get-Content" not in notice
     # 通知が名指しする節は、そのファイルに見出しとして実在する。
-    section = re.search(r"「(?P<name>[^」]+)」節", notice)
+    section = re.search(r"「(?P<name>[^」]+)」", notice)
     assert section is not None
     assert f"\n## {section['name']}\n" in pathlib.Path(target).read_text(encoding="utf-8")
     # 生成しただけでは期日を消費せず、最終出力へ採用された時点で確定する。
@@ -147,7 +151,8 @@ def test_notice_reports_elapsed_time_since_session_start(elapsed_seconds: int, e
     now = 100000.0
     _seed(sid, "main", started_at=now - elapsed_seconds, last_notified_at=now - _INTERVAL)
     notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
-    assert notice is not None and f"セッション開始から{expected}たった。" in notice
+    assert notice is not None and f"この主体の初回観測から{expected}たった。" in notice
+    assert "1970-01-02T03:46:40+00:00" in notice
 
 
 def test_agents_in_same_session_have_independent_timers() -> None:
@@ -158,6 +163,30 @@ def test_agents_in_same_session_have_independent_timers() -> None:
     assert progress_self_check.claim_notice({"session_id": sid, "agent_id": "sub-1"}, now=now) is None
     assert progress_self_check.claim_notice({"session_id": sid}, now=now) is not None
     assert _entries(sid)["sub-1"] == {"started_at": now, "last_notified_at": now}
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [(86399.0, "1970-01-01T23:59:59+00:00"), (86400.0, "1970-01-02T00:00:00+00:00")],
+)
+def test_notice_observation_keeps_the_date_at_midnight(now: float, expected: str) -> None:
+    """日付またぎでも、通知生成に使った時計をオフセット付きで伝える。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=now - _INTERVAL, last_notified_at=now - _INTERVAL)
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
+    assert notice is not None and expected in notice
+    progress_self_check.release_reservations()
+
+
+def test_notice_does_not_report_negative_elapsed_after_clock_disagreement() -> None:
+    """起点と時計が食い違っても、負の経過時間を通常の経過として示さない。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=100000.0, last_notified_at=1000.0)
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=2800.0)
+    assert notice is not None and "経過時間は不明" in notice
+    assert "-1620分" not in notice
+    assert _entries(sid)["main"]["started_at"] == 100000.0
+    progress_self_check.release_reservations()
 
 
 @pytest.mark.parametrize("payload", [{}, {"session_id": ""}, {"session_id": 1}])
@@ -230,6 +259,13 @@ def _in_process(subcommand: str, payload: dict) -> str:
     return json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "模擬時刻の11イベントを公開User/Postへ順に渡し、3周期の通知と周期保持を確認する（Linux限定再確認のCPU"
+        "合計最大0.848秒）。"
+    ),
+)
 def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
     """実発話・機械注入・PostToolUseが30分未満の間隔で続いても、期日到達後の最初のイベントで周期どおり通知する。"""
     sid = _session_id()

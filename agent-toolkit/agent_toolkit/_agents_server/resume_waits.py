@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
-from agent_toolkit._agents_server import api_credits, state, turn_state
+from agent_toolkit._agents_server import api_credits, child_environment, state, turn_state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
 from agent_toolkit._atk import claude_connection, usage_limit_policy
@@ -240,7 +240,7 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
         "first_at": session.overload_first_at,
         "count": session.overload_resume_count,
     }
-    state.notify_touch_listeners()
+    state.notify_touch_listeners(session)
     return True
 
 
@@ -301,7 +301,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     choices = (
         claude_connection.Candidates((claude_connection.Connection("inherit"),))
         if current == "inherit"
-        else claude_connection.candidates(role)
+        else claude_connection.candidates(role, env=child_environment.inherited())
     )
     session.claude_connection_failures[current] = str(original_error or result.get("agent_message") or "利用不能")
     order = [connection.kind for connection in choices.connections]
@@ -353,7 +353,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
             reason,
             limit.limit_type if limit else "credits",
         )
-        state.notify_touch_listeners()
+        state.notify_touch_listeners(session)
         return True
     if (
         auth_error
@@ -387,7 +387,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     if session.usage_limit_first_at is None:
         session.usage_limit_first_at = utc_now()
     _record_usage_limit_error(session, limit, error)
-    state.notify_touch_listeners()
+    state.notify_touch_listeners(session)
     return True
 
 

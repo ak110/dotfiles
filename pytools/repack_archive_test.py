@@ -12,6 +12,89 @@ from pytools import repack_archive
 from pytools._internal.repack_archive_test_helpers import _make_tar, _make_zip, _run_main, _zip_entries
 
 
+class TestConditionalDirectoryExclusion:
+    @pytest.mark.parametrize("source_kind", ["zip", "tar", "directory"])
+    def test_sibling_conditions_apply_before_flattening(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source_kind: str
+    ) -> None:
+        """同じ親の別フォルダーだけを条件にし、文字列規則と混在させて出力まで確認する。"""
+        files = {
+            "cover.txt": b"cover",
+            "series/one/JpG/drop.txt": b"drop",
+            "series/one/PNG/keep.txt": b"keep",
+            "series/two/jpg/keep.txt": b"keep",
+            "series/three/png": b"file",
+            "series/three/jpg/keep.txt": b"keep",
+            "raw/drop.txt": b"drop",
+            "tiff/keep.txt": b"keep",
+            "trash/drop.txt": b"drop",
+        }
+        source = tmp_path / ("book" if source_kind == "directory" else f"book.{source_kind}")
+        if source_kind == "directory":
+            for name, content in files.items():
+                path = source / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+        elif source_kind == "tar":
+            _make_tar(source, files)
+        else:
+            _make_zip(source, files)
+        config = tmp_path / "rules.yaml"
+        config.write_text(
+            "ignore_dirs:\n"
+            "  - '^trash$'\n"
+            "  - pattern: '^jp(g|eg)$'\n"
+            "    if_sibling: '^png$'\n"
+            "  - pattern: '^raw$'\n"
+            "    if_sibling: '^tiff$'\n",
+            encoding="utf-8",
+        )
+
+        assert _run_main(monkeypatch, ["--no-trash", "--config", str(config), str(source)]) == 0
+        assert _zip_entries(tmp_path / "book.zip") == {
+            "cover.txt",
+            "series/one/PNG/keep.txt",
+            "series/two/jpg/keep.txt",
+            "series/three/png",
+            "series/three/jpg/keep.txt",
+            "tiff/keep.txt",
+        }
+
+    def test_mutual_conditions_use_original_tree_and_restore_empty_result(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """相互条件の片方だけを残さず、全件除外時は空ZIPで原本を置き換えない。"""
+        source = tmp_path / "book.zip"
+        _make_zip(source, {"jpg/a.txt": b"a", "png/b.txt": b"b"})
+        original = source.read_bytes()
+        config = tmp_path / "rules.yaml"
+        config.write_text(
+            "ignore_dirs:\n  - pattern: '^jpg$'\n    if_sibling: '^png$'\n  - pattern: '^png$'\n    if_sibling: '^jpg$'\n",
+            encoding="utf-8",
+        )
+        assert _run_main(monkeypatch, ["--no-trash", "--config", str(config), str(source)]) == 1
+        assert source.read_bytes() == original
+
+    @pytest.mark.parametrize("dry_run", [False, True])
+    def test_directory_does_not_count_itself_as_sibling(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, dry_run: bool
+    ) -> None:
+        """同じ正規表現でも自分自身は条件を満たさず、dry-runも入力を保持する。"""
+        source = tmp_path / "book.zip"
+        _make_zip(source, {"jpg/keep.txt": b"keep"})
+        original = source.read_bytes()
+        config = tmp_path / "rules.yaml"
+        config.write_text("ignore_dirs: [{pattern: '^jpg$', if_sibling: '^jpg$'}]\n", encoding="utf-8")
+        arguments = ["--no-trash", "--config", str(config), str(source)]
+        if dry_run:
+            arguments.append("--dry-run")
+        assert _run_main(monkeypatch, arguments) == 0
+        if dry_run:
+            assert source.read_bytes() == original
+        else:
+            assert _zip_entries(source) == {"keep.txt"}
+
+
 class TestPreflight:
     def test_output_collision_detected(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         a = tmp_path / "foo.zip"

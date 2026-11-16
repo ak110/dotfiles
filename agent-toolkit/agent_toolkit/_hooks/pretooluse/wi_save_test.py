@@ -87,7 +87,7 @@ def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, rep
     for row in rows:
         if ("wi-report-commit" if report else "wi-standard-commit") in row.operations:
             assert all(not target.heading and target.body().strip() for target in row.targets)
-    assert ("wi-standards/SKILL.md" in result.stdout) is report
+    assert ("`agent-toolkit:wi-standards`" in result.stdout) is report
 
 
 @pytest.mark.parametrize("route", ["main", "付随型", "専念型", "omitted"])

@@ -27,6 +27,13 @@ pytestmark = [
 _MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js"
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "MermaidとSVGを描画し、更新後も能動的な内容を実行させず、古いblob URLを解放する"
+        "。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.738秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_diagrams_render_and_refresh_safely(screen_harness: _ScreenHarness) -> None:
     """MermaidとSVGを描画し、更新後も能動的な内容を実行させず、古いblob URLを解放する。"""

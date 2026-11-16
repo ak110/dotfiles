@@ -64,6 +64,7 @@ UWIに対象項目のファイル名、対象の詳細説明、必要な回答�
 
   - `agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」
   - `agent-basics:bugfix/references/root-cause-prevention-verification.md`「類似見直しと再発防止の完了」
+
   確認手段は同じ必要水準を満たす別の手段へ変更できる。
 
 この判定は完成条件の意味に対する実質的な評価である。

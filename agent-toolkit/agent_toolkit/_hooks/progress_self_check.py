@@ -7,7 +7,7 @@ PostToolUseとUserPromptSubmitの両フックから呼ばれ、ClaudeとCodex（
 状態はセッション状態ファイルの`progress_self_check`へ、呼出主体（メインは`main`、
 in-processのサブエージェントはpayloadの`agent_id`）ごとに次の値をepoch秒で保持する。
 
-- `started_at`: その主体を最初に観測した時刻。セッション開始時刻として経過時間の起点に使う
+- `started_at`: その主体を最初に観測した時刻。経過時間の起点に使い、セッションや巡回の開始とは区別する
 - `last_notified_at`: 通知が最終出力へ採用された最後の時刻。最初の観測では`started_at`と同じ値にする
 - `reserved_at`: 期日に達して通知を生成した時刻。並列なフックが同じ通知を重ねないための予約に使う
 
@@ -23,14 +23,14 @@ in-processのサブエージェントはpayloadの`agent_id`）ごとに次の�
 
 from __future__ import annotations
 
-import os
-import shlex
 import time
+from datetime import UTC, datetime
 
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
+from agent_toolkit._hooks.document_reads import reference_name
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 SELF_CHECK_INTERVAL_SECONDS = 30 * 60
@@ -56,7 +56,11 @@ _RESERVED_AT_KEY = "reserved_at"
 
 _reservations: list[tuple[str, str, float]] = []
 
-_SELF_CHECK_NOTICE_BODY = "進捗点検を行え。手順は`{read_command}`で取得する`agent-conduct-details.md`「進捗点検」節に従え。"
+_SELF_CHECK_NOTICE_BODY = (
+    "律速担当の内部工程の現在の残量・速度・待ちを確認し、構成を比較して必要な組み直しを指示せよ。"
+    "手順は`{path}`「進捗点検」と、"
+    "`agent-toolkit:delegation/references/waiting-and-monitoring-progress.md`「成果物側の観測」に従え。"
+)
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -140,13 +144,14 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         return None
     # 整形や後続の出力が例外で終わっても終了時に予約を外せるよう、整形より先に解除の対象へ登録する。
     _reservations.append((session_id, agent_id, current_time))
-    path = str(plugin_resources.plugin_root() / "share/agent-conduct-details.md")
-    read_command = (
-        "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
-        if os.name == "nt"
-        else "cat -- " + shlex.quote(path)
+    path = reference_name(plugin_resources.plugin_root() / "share/agent-conduct-details.md")
+    observed_at = datetime.fromtimestamp(current_time, tz=UTC).isoformat()
+    elapsed_text = (
+        f"この主体の初回観測から{_format_elapsed(elapsed)}たった。"
+        if elapsed >= 0
+        else "初回観測の保存時刻が通知生成時刻より後にあるため、経過時間は不明。"
     )
-    body = f"セッション開始から{_format_elapsed(elapsed)}たった。" + _SELF_CHECK_NOTICE_BODY.format(read_command=read_command)
+    body = f"通知生成時刻: {observed_at}。{elapsed_text}" + _SELF_CHECK_NOTICE_BODY.format(path=path)
     text = _llm_notice(body, tag="notice")
     if not text:
         return None
