@@ -269,6 +269,7 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
         if event_name == "PostToolUse" and tool_name == _ASK_USER_QUESTION_TOOL:
             operation_permissions.observe_answer(payload)
         operation_permissions.observe_result(payload)
+        observe_verification(payload)
     if event_name == "PermissionDenied" or (event_name == "PostToolUseFailure" and tool_name not in ATK_SHELL_TOOLS):
         return None
     cwd_raw = payload.get("cwd", "")
@@ -486,7 +487,6 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
 
 def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str, event_name: str) -> list[str]:
     """ツールの種類ごとに実行結果をセッション状態へ記録し、コーディングエージェントへ返す通知を返す。"""
-    observe_verification(payload)
     _background_tasks.observe_repl_bash(payload, completed=True)
     # 所有の根拠は、自セッションのツール呼び出しの応答がバックグラウンドタスク識別子を返したことである。
     # 起動の成否は所有の有無を変えないため、ホストのMCP移行通知で始まる応答は成否によらず記録する。

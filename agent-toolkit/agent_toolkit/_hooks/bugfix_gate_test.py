@@ -127,6 +127,7 @@ def test_verification_failure_requires_same_actor_bugfix_before_changes(tmp_path
     base = {"session_id": "verification-flow", "cwd": str(tmp_path), "agent_id": actor}
     failure = {
         **base,
+        "hook_event_name": "PostToolUse",
         "tool_use_id": "failed-1",
         "tool_name": "Bash",
         "tool_input": {"command": "uv run --frozen pytest sample_test.py"},
@@ -156,7 +157,13 @@ def test_verification_failure_requires_same_actor_bugfix_before_changes(tmp_path
     assert not pre()
     posttooluse.main(json.dumps(failure))
     assert pre(public=True)
-    skill = {**base, "tool_name": "Skill", "tool_input": {"skill": "agent-basics:bugfix"}, "tool_response": "起動成功"}
+    skill = {
+        **base,
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Skill",
+        "tool_input": {"skill": "agent-basics:bugfix"},
+        "tool_response": "起動成功",
+    }
     posttooluse.main(json.dumps({**skill, "agent_id": "other"}))
     assert bugfix_gate.read_state("verification-flow")[bugfix_gate.FAILURE_STATE_KEY][actor]["pending"]
     posttooluse.main(json.dumps(skill))
