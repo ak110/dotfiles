@@ -13,6 +13,7 @@ from agent_toolkit._agents_server import state as server_state
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import automated_prompt, session_state
 from agent_toolkit._hooks import posttooluse, pretooluse, termination_evidence, user_prompt_submit
+from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import agents_server_support
 from agent_toolkit._testing.pretooluse_support import codex_delivered_payload, codex_execution_payload
 
@@ -50,6 +51,9 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     completion_skill.parent.mkdir(parents=True)
     completion_skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", str(root))
+    # 導入済みの品質プラグインの宣言も、終了証拠の判定には不要。
+    # 実際の本文読取・配送receiptは保ち、宣言表の入力だけをこのfixtureへ限定する。
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [completion_skill])
 
 
 def _tool(

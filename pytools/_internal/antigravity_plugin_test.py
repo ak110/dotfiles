@@ -1,6 +1,7 @@
 """Antigravity 1.4.4の組込customizationsガイドに基づく配布・登録の結合試験。"""
 
 import json
+import os
 import shlex
 import shutil
 from pathlib import Path
@@ -40,6 +41,7 @@ def _source(tmp_path: Path) -> Path:
         "agent_toolkit/hook.py": "print('{}')\n",
         "agent_toolkit/hook_test.py": "# 配布しない試験。\n",
         "scripts/atk-hook": "# hook入口。\n",
+        "scripts/atk-hook.cmd": "@exit /b 0\r\n",
         "scripts/launch.py": "# MCP入口。\n",
         "pyproject.toml": "[project]\nname = 'fixture'\nversion = '1.2.3'\n",
         "uv.lock": "version = 1\n",
@@ -49,7 +51,7 @@ def _source(tmp_path: Path) -> Path:
     for relative, content in files.items():
         path = root / "agent-toolkit" / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        path.write_text(content, encoding="utf-8", newline="")
     basics = root / "agent-basics"
     (basics / ".claude-plugin").mkdir(parents=True)
     (basics / ".claude-plugin/plugin.json").write_text(
@@ -71,6 +73,7 @@ def _source(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.mark.windows
 def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     """root配置、全6イベント、MCP、規範全文とサイズ、および再同期を同時に確認する。"""
     assert subject.sync(source)
@@ -90,7 +93,9 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     for event, groups in events.items():
         handler = groups[0]["hooks"][0] if event in {"PreToolUse", "PostToolUse"} else groups[0]
         arguments = shlex.split(handler["command"])
-        assert arguments[-3:] == [str(target / "scripts/atk-hook"), "antigravity", event]
+        entry = target / ("scripts/atk-hook.cmd" if os.name == "nt" else "scripts/atk-hook")
+        assert arguments == [str(entry), "antigravity", event]
+        assert entry.is_file()
         assert "${" not in handler["command"]
     mcp = json.loads((target / "mcp_config.json").read_text())["mcpServers"]
     assert set(mcp) == {"agents_server", "pyfltr"}

@@ -107,6 +107,10 @@ def test_process_loop_commit_hook_and_periodic_generators_share_the_receive_cont
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="実run-skillの送出値と保存到達を実Git・短いPython1起動で確認する。Linux所有CPU最大0.547秒。",
+)
 def test_run_skill_generated_probe_and_goal_reach_shared_receiver(
     engine: str,
     tmp_path: pathlib.Path,
