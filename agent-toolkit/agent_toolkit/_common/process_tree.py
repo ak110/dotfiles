@@ -454,6 +454,9 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
     Windowsでは親の終了後も子の親PIDが残るため、保持した親から親を失った子孫も見つけられる。
     子の起動時刻が親より前の場合と、親PIDを別のプロセスが再利用している場合のその新しいプロセスの子は含めない。
     """
+    if not parents:
+        # 親が無ければ子孫も無いため、全プロセスの一覧と親PIDの照会を省く。
+        return []
     entries: list[tuple[psutil.Process, int]] = []
     # process_iterはPID単位でProcessを再利用し、Windowsの親PIDと起動時刻もキャッシュする。
     # PID再利用前の親子関係を所有の根拠にしないよう、今回の一覧から新しい観測を作る。
