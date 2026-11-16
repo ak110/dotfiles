@@ -52,6 +52,11 @@ def test_bom_input_keeps_body_and_entry_operations(tmp_path: pathlib.Path, newli
     assert records[0][2] == decoded
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.821秒。"),
+)
 @pytest.mark.parametrize("bom", ["", "\ufeff"])
 def test_public_wi_add_edit_show_accepts_bom(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], bom: str) -> None:
     """公開CLIの投入・編集・表示が先頭BOMの有無で同じ管理情報と本文を扱う。"""

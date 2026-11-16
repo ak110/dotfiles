@@ -34,6 +34,11 @@ from agent_toolkit.atk_test import (
 )
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.593秒。"),
+)
 def test_edit_dry_run_validates_without_changing_notes_or_remote(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

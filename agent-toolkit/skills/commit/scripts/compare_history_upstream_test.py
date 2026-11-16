@@ -227,6 +227,11 @@ def test_upstream_retention_ignores_diff_prefix_configuration(repo: pathlib.Path
     assert json.loads(output.read_text(encoding="utf-8")) == {omitted: upstream}
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.25,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.628秒。"),
+)
 @pytest.mark.parametrize("all_skipped", [False, True])
 def test_skipped_changes_merge_wis_in_plan_and_handoff(
     repo: pathlib.Path,

@@ -375,6 +375,11 @@ class TestRejectZeroArgs:
 class TestRmMultiple:
     """rmサブコマンド: 複数件指定で単一コミットへまとめる。"""
 
+    @pytest.mark.usefixtures("leaf_git_commands")
+    @pytest.mark.cpu_limit(
+        1.0,
+        reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.383秒。"),
+    )
     @pytest.mark.parametrize("entry_type", ["awi", "uwi"])
     def test_multiple_files_removed_single_commit(
         self,

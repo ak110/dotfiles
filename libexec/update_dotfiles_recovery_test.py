@@ -158,6 +158,10 @@ def test_old_stash_timeout_continues_update_and_records_diagnostics(
 class TestGitConflictRecovery:
     """一時Git上流でcommit競合と未コミット復元競合からの回復を検証する。"""
 
+    @pytest.mark.cpu_limit(
+        1.0,
+        reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.376秒。"),
+    )
     @pytest.mark.parametrize("dirty", [False, True])
     def test_rebase_conflict_preserves_original_commit_and_tracks_upstream(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, dirty: bool
@@ -190,6 +194,10 @@ class TestGitConflictRecovery:
         if dirty:
             _assert_saved_changes_survive_gc(local, tmp_path)
 
+    @pytest.mark.cpu_limit(
+        1.0,
+        reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.385秒。"),
+    )
     @pytest.mark.parametrize(
         "untracked_name",
         [
@@ -229,6 +237,10 @@ class TestGitConflictRecovery:
         assert {"tracked.txt", "staged.txt", untracked_name} <= set(saved_paths)
         _assert_saved_changes_survive_gc(local, tmp_path, untracked_name=untracked_name)
 
+    @pytest.mark.cpu_limit(
+        1.0,
+        reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.380秒。"),
+    )
     def test_foreign_unreadable_git_process_does_not_block_recovery(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
@@ -245,6 +257,10 @@ class TestGitConflictRecovery:
 class TestStashLifecycle:
     """公開された更新コマンドで復元・回収・旧退避保護の寿命を確認する。"""
 
+    @pytest.mark.cpu_limit(
+        1.0,
+        reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.361秒。"),
+    )
     @pytest.mark.parametrize("pull_code,cleanup_failure", [(0, False), (7, False), (0, True), (7, True)])
     def test_restored_changes_survive_cleanup_outcome(
         self,
@@ -413,6 +429,10 @@ def test_update_pending_operation_explains_completion_and_abort(
         assert text in update_dotfiles_runtime.LOG_PATH.read_text(encoding="utf-8")
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.400秒。"),
+)
 @pytest.mark.usefixtures("real_stash_runtime")
 @pytest.mark.parametrize("pull_code", [0, 7])
 def test_update_restore_overwrite_refusal_records_recovery(

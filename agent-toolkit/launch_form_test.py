@@ -353,6 +353,10 @@ def test_public_launcher_preserves_argument_error_exit_status(
     assert b"__invalid_launch_test__" in result.stderr
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("公開hook/CLIと実ファイル・プロセスを通す結合境界。修正前Linux4並列全件計測の所有CPU最大0.439秒。"),
+)
 @pytest.mark.parametrize("project_environment", [None, "", "別の仮想環境"])
 def test_launcher_restores_callers_project_environment_for_children(
     tmp_path: pathlib.Path,

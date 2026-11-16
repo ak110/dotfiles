@@ -38,6 +38,11 @@ def _separated_series(repo: pathlib.Path, violation: str) -> tuple[tuple[str, st
     return (base, old_head, new_base, _git(repo, "rev-parse", "HEAD")), first, target
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.25,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.747秒。"),
+)
 @pytest.mark.parametrize(
     ("violation", "expected"),
     [
@@ -106,6 +111,11 @@ def test_exclude_path_is_rejected_for_other_operations(
     assert "--exclude-path" in capsys.readouterr().err
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.400秒。"),
+)
 def test_excluded_mapping_is_consumed_by_public_record_command(
     repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

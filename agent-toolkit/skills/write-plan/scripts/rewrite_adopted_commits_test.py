@@ -28,6 +28,7 @@ def _cli(home: pathlib.Path, arguments: list[str]) -> None:
     assert captured.value.code == 0
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     3.0,
     reason=(

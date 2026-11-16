@@ -23,6 +23,7 @@ from agent_toolkit._testing.lane_integration_support import (
 from agent_toolkit._testing.lane_support import _create, _invoke
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     2.0,
     reason=(
@@ -288,6 +289,7 @@ def test_integrate_passes_confirmed_values_to_every_consumer(
     assert outputs[2].read_text(encoding="utf-8") == f"予測補正記録: {expected} {{{{other}}}}"
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     2.0,
     reason=(

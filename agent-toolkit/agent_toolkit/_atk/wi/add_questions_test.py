@@ -26,6 +26,11 @@ from agent_toolkit._testing.wi_bodies import AGENT_AWI_SECTIONS as _AGENT_AWI_SE
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.25,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.607秒。"),
+)
 @pytest.mark.parametrize("outcome", ["adopted", "rejected"])
 def test_run_report_sync_ignores_later_answer_and_state(tmp_path: pathlib.Path, outcome: str) -> None:
     """報告のpush後に回答・採否を未pushで追加しても、報告本体の未同期だけを検出する。"""

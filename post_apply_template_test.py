@@ -367,7 +367,7 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
 def test_windows_python_bootstrap_process_ownership(
     tmp_path: Path, blocked: bool, upgrade_exit: int, preview: bool, inventory_error: bool, missing: bool, report_failure: bool
 ) -> None:
-    """CIMだけを模擬し、native子の停止・更新・復帰か見送りをWindowsとpwshで実行する。"""
+    """Windowsは実Job、POSIXは段APIのProcess代用を使い、停止・更新・復帰か見送りを実行する。"""
     log = tmp_path / "calls"
     fake_uv = tmp_path / ("uv.exe" if os.name == "nt" else "uv")
     tool_python = tmp_path / "tools/pytools/Scripts/python.exe"
@@ -456,8 +456,44 @@ public class Program {
         powershell_stub.chmod(0o755)
     driver = tmp_path / "driver.ps1"
     command = "arbitrary-python" if blocked else "pytools.media_remote"
+    # POSIXでWin32 Jobを模擬せず呼ばない。段APIの契約を実native Processで検証し、Windowsでは実Jobを使う。
+    posix_stage = (
+        """Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+public sealed class UpdateStageJob : IDisposable {
+    Process process; Task<string> output; bool disposed;
+    public UpdateStageJob(string program, string arguments, bool probe) {
+        var start = new ProcessStartInfo(program, arguments);
+        start.UseShellExecute = false; start.RedirectStandardOutput = probe;
+        process = Process.Start(start);
+        if (probe) output = Task.Run(() => process.StandardOutput.ReadToEnd());
+    }
+    public bool Wait(int milliseconds) { return process.WaitForExit(milliseconds); }
+    public int ExitCode { get { return process.ExitCode; } }
+    public void Stop() {
+        if (!process.HasExited) process.Kill(true);
+        if (!process.WaitForExit(5000)) throw new TimeoutException("native Processが残っています");
+    }
+    public string ReadOutput() {
+        if (output == null) return "";
+        if (!output.Wait(5000)) throw new TimeoutException("native出力を回収できません");
+        return output.Result;
+    }
+    public void Dispose() {
+        if (disposed) return;
+        try { Stop(); if (output != null && !output.Wait(5000)) throw new TimeoutException("readerが残っています"); }
+        finally { process.Dispose(); disposed = true; }
+    }
+}
+'@
+"""
+        if os.name != "nt"
+        else ""
+    )
     driver.write_text(
-        "if ($env:BOOTSTRAP_IS_WINDOWS -ne '1') { "
+        posix_stage + "if ($env:BOOTSTRAP_IS_WINDOWS -ne '1') { "
         "New-PSDrive -Name C -PSProvider FileSystem -Root $env:BOOTSTRAP_ROOT | Out-Null }\n"
         "$env:APPDATA = 'C:\\appdata'\n"
         "function global:Join-Path { param([string]$Path,[string]$ChildPath)\n"

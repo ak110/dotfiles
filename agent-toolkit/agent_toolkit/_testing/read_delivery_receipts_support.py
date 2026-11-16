@@ -69,6 +69,8 @@ def _scenario(tmp_path, monkeypatch):
     notice.set_warning_session_id("")
     path = tmp_path / "reference space[1].md"
     path.write_text("# 基準\n\n## 必要節\n固有の必要本文\n\n## 別節\n固有の別本文\n", encoding="utf-8")
+    # この試験が明示した宣言とreceiptだけを使い、導入済み全skillの解析を反復しない。
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [path])
     rollout = tmp_path / "rollout.jsonl"
     rollout.write_text("", encoding="utf-8")
 

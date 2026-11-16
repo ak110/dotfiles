@@ -24,6 +24,11 @@ from agent_toolkit._testing.process_loop_worktree_support import (
 )
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.359秒。"),
+)
 @pytest.mark.parametrize("fails", [False, True])
 @pytest.mark.parametrize("name", ["fixed", None])
 @pytest.mark.parametrize("detached", [False, True])

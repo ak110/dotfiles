@@ -10,21 +10,24 @@ import pathlib
 import re
 import select
 import stat
+import subprocess
 import sys
 import time
 import typing
 
+import psutil
 import pytest
 
 from agent_toolkit import atk, hook
 from agent_toolkit._atk import run_skill
+from agent_toolkit._common import process_identity, process_tree
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 
 _FAKE_ENGINE = """\
 #!{python}
 import json, os, pathlib, subprocess, sys, time, uuid
-import datetime, re
+import datetime, re, psutil
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 def hold(release):
@@ -34,18 +37,16 @@ def hold(release):
     while not release.exists():
         assert time.monotonic() < deadline
         time.sleep(0.01)
-if len(sys.argv) > 2 and sys.argv[1] == '--hold-child':
-    hold(sys.argv[2])
-    sys.exit(0)
 record_dir = pathlib.Path(os.environ["FAKE_RECORD_DIR"])
 probe = "availability-probe" in args[-1]
-kind = "probe" if probe else "session"
+kind = "child" if args[:1] == ["--hold-child"] else "probe" if probe else "session"
 record = {{
     "name": name,
     "kind": kind,
     "argv": [name, *args],
     "cwd": os.getcwd(),
     "pid": os.getpid(),
+    "created_at": psutil.Process().create_time(),
     "connection": "subscription" if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") else
                   "payg" if os.environ.get("ANTHROPIC_API_KEY") else "inherit",
     "env": {{key: os.environ.get(key) for key in (
@@ -58,7 +59,13 @@ record = {{
         "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
     )}},
 }}
-(record_dir / f"{{time.time_ns()}}-{{uuid.uuid4().hex}}.json").write_text(json.dumps(record), encoding="utf-8")
+record_path = record_dir / f"{{time.time_ns()}}-{{uuid.uuid4().hex}}.json"
+pending = record_path.with_suffix('.tmp')
+pending.write_text(json.dumps(record), encoding="utf-8")
+pending.replace(record_path)
+if kind == "child":
+    hold(sys.argv[2])
+    sys.exit(0)
 if probe:
     if os.environ.get("FAKE_CONNECTION_LIMIT") and record["connection"] == "subscription" and (record_dir / "limited").exists():
         print(json.dumps({{"type": "rate_limit_event", "rate_limit_info": {{
@@ -156,7 +163,11 @@ if os.environ.get("FAKE_PROGRESS_DIR"):
     progress_dir = pathlib.Path(os.environ["FAKE_PROGRESS_DIR"])
     events = json.loads((progress_dir / "events.json").read_text())
     for index, event in enumerate(events):
+        deadline = time.monotonic() + 120
         while not (progress_dir / str(index)).exists():
+            if os.environ.get("FAKE_SESSION_HOLD_FILE") and pathlib.Path(os.environ["FAKE_SESSION_HOLD_FILE"]).exists():
+                sys.exit(int(os.environ.get("FAKE_SESSION_EXIT", "0")))
+            assert time.monotonic() < deadline
             time.sleep(0.01)
         print(json.dumps(event), flush=True)
 if os.environ.get("FAKE_SESSION_STARTED_FILE"):
@@ -194,7 +205,7 @@ class _Env(typing.NamedTuple):
 
 
 @pytest.fixture(name="engine_env")
-def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
+def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> _Env:
     """偽の実行ファイル、隔離した状態ディレクトリと対象リポジトリを用意する。"""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -218,6 +229,55 @@ def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env
     set_orchestrate_environment(monkeypatch, "claude:sonnet/high")
     for name in ("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "AGENT_TOOLKIT_RESTART_SPEC"):
         monkeypatch.delenv(name, raising=False)
+    owned: list[subprocess.Popen[typing.Any]] = []
+    stop_owned = process_tree.stop_process_tree
+
+    class OwnedPopen(subprocess.Popen):
+        def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:
+            super().__init__(*args, **kwargs)
+            if (
+                isinstance(self.args, (list, tuple))
+                and self.args
+                and pathlib.Path(os.fsdecode(self.args[0])).name in {"claude", "codex"}
+            ):
+                owned.append(self)
+
+    def reclaim() -> None:
+        """失敗位置に依存せず直接のhandleと、別controllerが記録した同世代の偽CLIを回収する。"""
+        failures: list[BaseException] = []
+        for process in owned:
+            try:
+                if process.poll() is None:
+                    stop_owned(process)
+                process.wait(timeout=5)
+                for stream in (process.stdin, process.stdout, process.stderr):
+                    if stream is not None:
+                        stream.close()
+            except BaseException as error:
+                failures.append(error)
+        # 正常終了済みはPID単独でも停止せず、親を失ったchildも起動時刻と実体で識別する。
+        for record_path in records.glob("*.json"):
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            try:
+                recorded_process = psutil.Process(record["pid"])
+                if not process_identity.matches(recorded_process, record["created_at"]):
+                    continue
+                command = recorded_process.cmdline()
+                assert any(
+                    pathlib.Path(item).is_absolute() and pathlib.Path(item).is_relative_to(tmp_path) for item in command[:2]
+                ), command[:2]
+                result = process_tree.stop_tree(recorded_process)
+                assert not result.residual and not result.unresolved, result.descriptions()
+            except psutil.NoSuchProcess:
+                continue
+            except BaseException as error:
+                failures.append(error)
+        owned.clear()
+        if failures:
+            raise BaseExceptionGroup("偽CLIの所有資源を回収できない", failures)
+
+    request.addfinalizer(reclaim)
+    monkeypatch.setattr(subprocess, "Popen", OwnedPopen)
     return _Env(repo=repo, records=records, state=state, bin_dir=bin_dir)
 
 

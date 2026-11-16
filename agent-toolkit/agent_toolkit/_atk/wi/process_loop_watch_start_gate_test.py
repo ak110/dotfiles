@@ -125,6 +125,11 @@ def test_start_gate_waits_only_for_add_awi_by_user_to_target(
     assert "待機条件が解除されました" in output
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.462秒。"),
+)
 @pytest.mark.parametrize("reason", ["activity", "uwi", "both"])
 def test_enter_releases_start_wait(
     monkeypatch: pytest.MonkeyPatch,

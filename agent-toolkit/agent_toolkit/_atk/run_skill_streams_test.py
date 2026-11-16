@@ -65,7 +65,7 @@ def test_tty_progress_arrives_before_child_exits(
     env["PYTHONPATH"] = os.pathsep.join((str(pathlib.Path(run_skill.__file__).resolve().parents[2]), env.get("PYTHONPATH", "")))
     master, slave = os.openpty()
     try:
-        with subprocess.Popen(
+        with process_tree.process_scope(
             [
                 sys.executable,
                 "-c",
@@ -117,8 +117,10 @@ def test_tty_progress_arrives_before_child_exits(
                     assert "失敗:" in received.decode()
             finally:
                 release.touch()
+                for index in range(len(events)):
+                    (progress_dir / str(index)).touch()
                 if process.poll() is None:
-                    process.kill()
+                    process_tree.stop_process_tree(process)
                     process.communicate(timeout=20)
         log = log_path.read_text(encoding="utf-8")
         for text in ("assistant: 途中の発言", tool_text, "assistant: 次の発言", "[stderr] session stderr line"):

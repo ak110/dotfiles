@@ -275,6 +275,10 @@ def test_unconfirmed_conditions_and_foreign_roles_cannot_block(tmp_path, monkeyp
     assert not document_reads.content_ready(recorded, document_reads.content_fingerprint(reference), "main")
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("公開hook/CLIと実ファイル・プロセスを通す結合境界。修正前Linux4並列全件計測の所有CPU最大0.395秒。"),
+)
 @pytest.mark.parametrize("role_name", ["exec-review.subagent.md", "session-termination.subagent.md"])
 @pytest.mark.parametrize("select_current", [False, True])
 def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypatch, state, role_name, select_current):

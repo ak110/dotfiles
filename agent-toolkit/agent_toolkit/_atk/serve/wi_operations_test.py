@@ -70,6 +70,11 @@ def test_legacy_confirmation_is_preserved_without_a_special_operation(tmp_path: 
     assert not hasattr(operations, "set_confirmation")
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.361秒。"),
+)
 @pytest.mark.parametrize("operation", ["add", "batch", "edit", "answer", "important", "transition"])
 @pytest.mark.parametrize("commit_fails", [False, True])
 def test_storage_saves_locally_and_preserves_commit_failure(

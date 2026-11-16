@@ -42,6 +42,7 @@ def test_delete_uses_held_selection_after_selection_file_expires(
         assert pathlib.Path(record["worktree"]).is_dir() and pathlib.Path(record["record_path"]).is_file()
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     2.0,
     reason=(

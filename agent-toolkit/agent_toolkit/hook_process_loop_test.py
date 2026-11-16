@@ -26,6 +26,10 @@ from agent_toolkit._testing.process_loop_support import set_process_loop_reposit
 from agent_toolkit.atk_test import _setup_notes
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("公開hook/CLIと実ファイル・プロセスを通す結合境界。修正前Linux4並列全件計測の所有CPU最大0.407秒。"),
+)
 def test_native_subagent_stop_keeps_next_process_loop_session_running(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

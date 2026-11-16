@@ -306,6 +306,11 @@ class TestSkipPush:
         assert "外部編集の差分は無い" in output
         assert "1件のcommitをpushした" in output
 
+    @pytest.mark.usefixtures("leaf_git_commands")
+    @pytest.mark.cpu_limit(
+        2.5,
+        reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大1.429秒。"),
+    )
     def test_real_git_transitions_push_and_recover_after_remote_advances(
         self,
         monkeypatch: pytest.MonkeyPatch,

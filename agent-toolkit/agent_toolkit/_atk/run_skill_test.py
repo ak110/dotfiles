@@ -144,6 +144,11 @@ def test_report_requires_remote_push(
     assert bool(out) is not push_fails
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.25,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.699秒。"),
+)
 def test_wi_save_and_edit_bind_report_to_run(
     engine_env: _Env,
     tmp_path: pathlib.Path,

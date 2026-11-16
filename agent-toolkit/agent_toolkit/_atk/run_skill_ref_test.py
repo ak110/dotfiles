@@ -10,6 +10,11 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit.atk_test import _setup_notes
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.360秒。"),
+)
 @pytest.mark.parametrize("same_name_tag", [False, True])
 def test_synced_report_with_branch_tag_collision(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, same_name_tag: bool

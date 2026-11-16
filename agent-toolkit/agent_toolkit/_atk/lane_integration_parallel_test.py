@@ -157,6 +157,7 @@ def _finish_first(process: subprocess.Popen[bytes], tmp_path: pathlib.Path) -> t
     return code, json.loads(out) if out.strip() else {}, (tmp_path / "first.stderr").read_text(encoding="utf-8")
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     2.0,
     reason=(
@@ -258,6 +259,7 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
     }
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     2.0,
     reason=(

@@ -59,6 +59,7 @@ def test_delete_retains_resources_and_explains_retry_after_ignore_check_failure(
     assert worktree.is_dir() and pathlib.Path(record["record_path"]).is_file()
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     2.0,
     reason=(

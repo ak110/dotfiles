@@ -156,6 +156,11 @@ class TestCommitSubcommand:
         assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "@{u}")
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.566秒。"),
+)
 def test_commit_reports_sent_count_then_zero(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -174,6 +179,11 @@ def test_commit_reports_sent_count_then_zero(
     assert git_repository.git_output(notes, "status", "--porcelain") == ""
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.476秒。"),
+)
 def test_local_only_commit_reports_skipped_remote_operations(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

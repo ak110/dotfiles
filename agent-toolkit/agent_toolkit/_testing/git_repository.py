@@ -7,9 +7,29 @@ commitの作者とGitのglobal・system設定の隔離は`isolation.py`が環境
 import pathlib
 import subprocess
 from collections.abc import Mapping
+from typing import Any
+
+import pytest
+
+from agent_toolkit._git import command as git_command
 
 # 一時ディレクトリの小さなリポジトリへの操作は数秒で終わる。停止した場合にテスト全体の上限より先に原因を報告させる。
 _TIMEOUT_SECONDS = 60
+
+
+@pytest.fixture
+def leaf_git_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """隔離した小さいリポジトリのGitを実行し、対象外の子孫列挙だけを省く。
+
+    hook・外部filter・通信helperを起動しない試験だけが明示的に使う。
+    時間上限・終了状態・Git出力と、製品側の変換/再試行処理は保持する。
+    子孫回収自体はprocess_treeとGitコマンドの境界試験が担う。
+    """
+
+    def launch(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(command, **kwargs)  # noqa: PLW1510  # pylint: disable=subprocess-run-check
+
+    monkeypatch.setattr(git_command, "_launch", launch)  # pylint: disable=protected-access
 
 
 def run_git(

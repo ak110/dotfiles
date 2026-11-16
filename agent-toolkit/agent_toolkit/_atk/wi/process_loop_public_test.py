@@ -24,6 +24,11 @@ from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._testing.process_loop_coordinator_support import _manifest, _targets
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大1.300秒。"),
+)
 def test_public_loop_checks_eight_repositories_with_bounded_concurrency(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

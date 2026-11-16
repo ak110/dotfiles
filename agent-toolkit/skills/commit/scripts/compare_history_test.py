@@ -10,6 +10,11 @@ from agent_toolkit._testing.history_compare_support import _commit, _compare, _g
 from agent_toolkit._testing.history_compare_support import _repo as _repo
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.408秒。"),
+)
 @pytest.mark.parametrize("violation", ["none", "unspecified", "unchanged", "outside", "subject", "paths", "order"])
 def test_conflict_resolution_requires_explicit_and_unique_mapping(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
@@ -42,6 +47,11 @@ def test_conflict_resolution_requires_explicit_and_unique_mapping(
         assert not output.exists()
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.566秒。"),
+)
 @pytest.mark.parametrize("no_prefix", [False, True])
 def test_rebase_cli_accepts_only_equal_complete_series(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], no_prefix: bool
@@ -166,6 +176,11 @@ def test_resolved_conflict_accepts_follow_up_of_upstream_rename(
         assert f"統合先に無い旧パスを外した対応: {resolved} -> {target}: shared.txt" in reported.out + reported.err
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.421秒。"),
+)
 @pytest.mark.parametrize("variant", ["conflict", "reordered", "omitted"])
 def test_rebase_repeated_patch_boundaries_and_rejection_keeps_output(
     repo: pathlib.Path, tmp_path: pathlib.Path, variant: str

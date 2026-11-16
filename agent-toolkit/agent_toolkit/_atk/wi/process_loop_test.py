@@ -24,6 +24,11 @@ from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.process_loop_coordinator_support import _manifest, _targets
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.352秒。"),
+)
 @pytest.mark.parametrize("counts", [(1, 1), (0, 9, 10, 11, 12)])
 def test_one_coordinator_receives_every_repository(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, counts: tuple[int, ...]
@@ -175,6 +180,11 @@ def test_removed_public_forms_are_rejected(argv: list[str]) -> None:
     assert raised.value.code == 2
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.447秒。"),
+)
 def test_explicit_resume_without_coordinator_registration(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """所有台帳に無い会話IDも公開CLIから再開へ渡し、対象の処理結果を検収する。"""
     notes, snapshots = _targets(tmp_path, monkeypatch, (1,))

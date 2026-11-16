@@ -32,6 +32,11 @@ def _register(path: pathlib.Path) -> dict:
     return target
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.505秒。"),
+)
 def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path, monkeypatch):
     """実ログで観測したNUL335/2157バイトと不成立な末尾を最小化し、健全対象も同じ回で処理する。"""
     notes = git_repository.init_repository(pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]))

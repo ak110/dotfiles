@@ -16,6 +16,7 @@ import pytest
 
 from agent_toolkit._common import read_triggers, session_state
 from agent_toolkit._hooks import document_reads, rules_context, work_contract
+from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
@@ -39,6 +40,16 @@ def _local_plugin_root(tmp_path, monkeypatch):
     path = tmp_path / "work-contract.md"
     path.write_text("目的: 確認操作固有の通知の検証\n", encoding="utf-8")
     monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
+    # 確認skillの実宣言と本文は使い、無関係な品質skill全件の列挙を各受領へ持ち込まない。
+    monkeypatch.setattr(
+        read_delivery,
+        "_declaration_sources",
+        lambda _cwd: [
+            _SKILL_REFERENCES.parents[2] / "share" / "read-trigger-bootstrap.md",
+            _SKILL_REFERENCES.parent / "SKILL.md",
+            *_SKILL_REFERENCES.glob("*.md"),
+        ],
+    )
 
 
 def _denial(result) -> str:
@@ -349,7 +360,6 @@ def test_non_main_or_unreadable_context_is_neither_denied_nor_warned(tmp_path: p
 )
 def test_unresolvable_declarations_warn_without_denying(tmp_path: pathlib.Path, monkeypatch) -> None:
     """読込宣言を取得できない場合は、判定基盤の不調で質問を止めないよう警告にとどめる。"""
-    from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     def broken(*_args, **_kwargs):
         raise ValueError("宣言の検証用の失敗")

@@ -25,6 +25,11 @@ from agent_toolkit._testing.plans_support import (
 __all__ = ["_isolate_state_directory"]
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(
+    1.25,
+    reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.607秒。"),
+)
 def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.Path) -> None:
     """対応する計画なしの再帰的CI失敗で同じ表を取得、更新、再保存できる。"""
     home = tmp_path / "home"
