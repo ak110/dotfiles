@@ -145,6 +145,19 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_teardown(item: pytest.Item) -> Generator[None, object, object]:
     """回収が完了してからCPU合算の判定へ進む。"""
+    if os.environ.get("CI") and item.nodeid.endswith(
+        "notation_rules_test.py::test_cli_summary_alone_decides_completion[True-True]"
+    ):
+        import cProfile  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        import pstats  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        profile = cProfile.Profile()
+        profile.enable()
+        try:
+            return (yield from _measure_cpu(item, "teardown"))
+        finally:
+            profile.disable()
+            pstats.Stats(profile, stream=sys.stderr).strip_dirs().sort_stats("cumulative").print_stats(20)
     return (yield from _measure_cpu(item, "teardown"))
 
 
