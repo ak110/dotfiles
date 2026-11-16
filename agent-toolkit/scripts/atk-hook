@@ -1,6 +1,15 @@
-#!/usr/bin/env -S uv run --no-cache --no-config --no-project --python 3.15 python
-"""配布物内では自身のroot、個人binでは保持版を復旧できる安定したrootからhookを起動する。"""
+#!/bin/sh
+""":"
+case "$0" in
+    /*) script=$0 ;;
+    *) script=$PWD/$0 ;;
+esac
+cd / || exit 1
+exec uv run --no-cache --no-config --no-project --python 3.15 python "$script" "$@"
+":"""
+# uvのshimが呼出元や配布元のプロジェクト設定を読む前にcwdを外す。相対起動のパスも保持する。
 
+import contextlib
 import json
 import os
 import shutil
@@ -8,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from collections.abc import Generator
 
 _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
 _MARKETPLACE = _PLUGIN_ID.partition("@")[2]
@@ -226,7 +236,23 @@ def _external_root() -> Path:
     return _installed_root()
 
 
-def main() -> int:
+@contextlib.contextmanager
+def _restored_hook_input() -> Generator[None]:
+    """project外でのuv起動後、保持版の選別より前に元cwdとstdinを復元する。"""
+    raw = sys.stdin.buffer.read()
+    payload = json.loads(raw)
+    cwd = payload.get("cwd") if isinstance(payload, dict) else None
+    if not isinstance(cwd, str) or not Path(cwd).is_absolute():
+        raise ValueError("hook入力のcwdには絶対パスが必要です")
+    os.chdir(cwd)
+    with tempfile.TemporaryFile() as stream:
+        stream.write(raw)
+        stream.seek(0)
+        os.dup2(stream.fileno(), sys.stdin.fileno(), inheritable=True)
+        yield
+
+
+def main(*, restore_cwd: bool = False) -> int:
     """配布内の直接呼出しと、プラグイン外へ複製した互換呼出しの配置を区別する。"""
     antigravity = len(sys.argv) == 3 and sys.argv[1] == "antigravity"
     if len(sys.argv) != 2 and not antigravity:
@@ -235,6 +261,9 @@ def main() -> int:
         return 2
     source = Path(__file__).resolve()
     try:
+        if restore_cwd:
+            with _restored_hook_input():
+                return main()
         bundled = source.parent.name == "scripts"
         root = source.parent.parent if bundled else _external_root()
         launcher = root / "scripts" / "launch.py"
@@ -267,4 +296,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(restore_cwd=True))

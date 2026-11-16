@@ -529,6 +529,5 @@ class CodexNotificationsMixin:
         elif item_type == "mcpToolCall" and item.get("server") == "agents_server":
             arguments = item.get("arguments")
             result = item.get("result")
-            structured = result.get("structuredContent") if isinstance(result, dict) else None
-            if isinstance(arguments, dict) and isinstance(structured, dict):
-                consume_agents_server_tool_result(session, str(item.get("tool", "")), arguments, structured)
+            if isinstance(arguments, dict) and isinstance(result, dict):
+                consume_agents_server_tool_result(session, str(item.get("tool", "")), arguments, result)

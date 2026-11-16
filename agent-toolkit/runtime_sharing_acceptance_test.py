@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -65,6 +64,7 @@ def _run(arguments: list[str], environment: dict[str, str], cwd: Path, *, input_
     return result
 
 
+@pytest.mark.windows
 @pytest.mark.usefixtures("share_package_caches")
 @pytest.mark.timeout(240)
 @pytest.mark.cpu_limit(
@@ -165,7 +165,10 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         assert "config" in help_result.stdout
         definitions = json.loads((root / "hooks/hooks.json").read_text())
         command = definitions["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-        arguments = shlex.split(command.removesuffix(" || exit 1").replace("${CLAUDE_PLUGIN_ROOT}", str(root)))
+        command = command.replace("${CLAUDE_PLUGIN_ROOT}", str(root))
+        shell = shutil.which("cmd" if os.name == "nt" else "sh", path=environment["PATH"])
+        assert shell is not None
+        arguments = [shell, "/d", "/s", "/c", command] if os.name == "nt" else [shell, "-c", command]
         _run(
             arguments,
             environment,

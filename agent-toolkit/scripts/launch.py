@@ -2,6 +2,7 @@
 
 agents_serverのMCPサーバーだけは子プロセスとして起動して終了を待ち、終了状態と標準エラー末尾を
 サーバーが報告した起動単位の終了診断へ追記する。サーバー自身が記録できない終了も観測するためである。
+通常hookは起動準備と本体を有限時間で監視し、終了時に同じ所有回収を使う。
 """
 
 import argparse
@@ -9,6 +10,7 @@ import contextlib
 import ctypes
 import ctypes.wintypes
 import datetime
+import json
 import os
 import shutil
 import signal
@@ -19,7 +21,7 @@ import threading
 import time
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agent_toolkit._common import dotfiles_mode, environment_usage, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -32,6 +34,7 @@ _STOP_TIMEOUT = 5.0
 _PREPARE_TIMEOUT = 600.0
 _PARENT_PID = os.getppid()
 _SERVER_SHUTDOWN_TIMEOUT = 30.0
+_HOOK_TIMEOUT = 60.0
 
 
 def main() -> int:
@@ -40,6 +43,7 @@ def main() -> int:
     parser.add_argument("--project", type=Path, default=Path(__file__).resolve().parents[1], help="配布rootの絶対パス")
     parser.add_argument("--persist-claude-env", action="store_true", help="SessionStartのBash環境ファイルへCLIのPATHを追記する")
     parser.add_argument("--prepare", action="store_true", help="共有依存環境を準備して終了する")
+    parser.add_argument("--hook-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--prepare-if-missing",
         action="store_true",
@@ -104,6 +108,8 @@ def main() -> int:
             next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。",
         )
         return 1
+    if target == root / "agent_toolkit/hook.py" and not options.hook_worker:
+        return _run_hook(root, target, options.arguments, persist_claude_env=options.persist_claude_env)
     try:
         with environment_usage.lock(plugin_environment.project_environment(root, caller_environment)):
             # 準備確認と使用開始の間に回収されていないことを、回収と同じ排他下で確かめる。
@@ -123,6 +129,53 @@ def main() -> int:
     except OSError as exc:
         next_action.report(str(exc), next_action="`update-dotfiles`を再実行して依存環境を準備してください。")
         return 1
+
+
+def _run_hook(root: Path, target: Path, arguments: list[str], *, persist_claude_env: bool) -> int:
+    """ホストの入力を保持し、起動準備と本体を同じ所有groupの時間予算へ含める。"""
+    payload = sys.stdin.buffer.read()
+    try:
+        decoded = json.loads(payload)
+    except (ValueError, UnicodeError) as exc:
+        next_action.report(str(exc), next_action="hookへ有効なJSON入力を渡して再実行してください。")
+        return 1
+    cwd = decoded.get("cwd") if isinstance(decoded, dict) else None
+    if not isinstance(cwd, str) or not Path(cwd).is_absolute():
+        next_action.report("hookのcwdが絶対パスではありません。", next_action="ホストが渡すhook入力のcwdを確認してください。")
+        return 1
+    command = [sys.executable, str(Path(__file__).resolve()), "--project", str(root), "--hook-worker"]
+    if persist_claude_env:
+        command.append("--persist-claude-env")
+    command.extend([str(target), *arguments])
+    # 元のバイト列を再シリアライズせず渡す。pipeへの書込待ちを監視側へ持ち込まない。
+    with tempfile.TemporaryFile() as input_stream:
+        input_stream.write(payload)
+        input_stream.seek(0)
+        received: list[dict[str, str]] = []
+        try:
+            with _server_lifetime(
+                command, dict(os.environ), received, bytearray(), stdin=input_stream, cwd=Path(cwd)
+            ) as process:
+                deadline = time.monotonic() + _HOOK_TIMEOUT
+                while True:
+                    if received and os.name != "nt":
+                        # ホストの短い取消猶予の内側で回収する。async hookは親の終了だけでは取り消さない。
+                        _stop_server_process(process, signum=signal.SIGKILL, graceful_timeout=0)
+                        return 128 + getattr(signal, received[0]["signal"])
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(command, _HOOK_TIMEOUT)
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        return _relay_server_exit(process.wait(timeout=min(remaining, 0.1)))
+        except subprocess.TimeoutExpired:
+            next_action.report(
+                f"hookが{_HOOK_TIMEOUT:g}秒以内に終了せず、所有する子孫を回収しました。",
+                next_action="同じイベントの入力とhookの後始末処理を確認してください。",
+            )
+            return 124
+        except OSError as exc:
+            next_action.report(str(exc), next_action="hook入力のcwdと配布rootの実在・実行権限を確認してください。")
+            return 1
 
 
 def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
@@ -269,13 +322,19 @@ def _parent_monitor() -> Generator[Callable[[], bool]]:
 
 @contextlib.contextmanager
 def _server_lifetime(
-    arguments: list[str], environment: dict[str, str], received: list[dict[str, str]], tail: bytearray
+    arguments: list[str],
+    environment: dict[str, str],
+    received: list[dict[str, str]],
+    tail: bytearray,
+    *,
+    stdin: BinaryIO | None = None,
+    cwd: Path | None = None,
 ) -> Generator[subprocess.Popen[bytes]]:
     """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。"""
     # Popen.__exit__の無期限waitを避け、bootstrap自身の有限なprocess group回収を使う。
     # 時間上限なし: 起動元（hook、MCP、CLI）へ終了状態を渡す中継であり、上限は起動元が持つ。
     process = subprocess.Popen(  # pylint: disable=consider-using-with
-        arguments, env=environment, stderr=subprocess.PIPE, start_new_session=os.name != "nt"
+        arguments, env=environment, stdin=stdin, cwd=cwd, stderr=subprocess.PIPE, start_new_session=os.name != "nt"
     )
     with contextlib.ExitStack() as cleanup:
         assert process.stderr is not None
