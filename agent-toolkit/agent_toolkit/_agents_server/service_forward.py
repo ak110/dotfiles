@@ -20,7 +20,7 @@ from typing import Any
 from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import file_lock, plugin_environment, runtime_environment, windows_job
-from agent_toolkit._common.next_action import report
+from agent_toolkit._common.next_action import report, with_next_action
 
 
 def code_identity(root: pathlib.Path) -> tuple[str, str]:
@@ -122,6 +122,13 @@ def ensure_service(
                     flags = {"creationflags": creation_flags}
                 stderr = startup.enter_context((directory / f"{generation}.stderr.log").open("wb"))
                 if host_job_warning:
+                    host_job_warning = with_next_action(
+                        host_job_warning,
+                        next_action=(
+                            "Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
+                            "確認できない場合は、起動元とこの診断を添えてagent-toolkitの管理者へ問い合わせてください。"
+                        ),
+                    )
                     print(host_job_warning, file=sys.stderr)
                     stderr.write((host_job_warning + "\n").encode("utf-8"))
                     stderr.flush()

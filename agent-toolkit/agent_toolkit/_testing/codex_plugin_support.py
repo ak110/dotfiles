@@ -156,30 +156,56 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
 
 def _stop_mcp_services(state_base: pathlib.Path) -> None:
     """隔離領域の世代記録とleaseの両方に一致する管理プロセスだけを回収する。"""
-    records = list(state_base.rglob("generations.json"))
-    for path in records:
+    path = state_base / "agent-toolkit/services/agents-server/generations.json"
+    try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        for entry in data["generations"].values():
-            if not entry.get("ready"):
+    except FileNotFoundError:
+        return
+    leases = [
+        json.loads(item.read_text(encoding="utf-8"))
+        for item in (state_base / "agent-toolkit/plugin-root-leases").glob("*.json")
+    ]
+    for generation, entry in data["generations"].items():
+        if not entry.get("ready"):
+            continue
+        identity = entry["process"]
+        recorded_pid = int(identity.split(":", 1)[0])
+        targets = []
+        # 子の終了後にも残るsupervisorを、PIDの親子関係ではなく既存leaseと世代引数で特定する。
+        for lease in leases:
+            if not pathlib.Path(entry["root"]).is_relative_to(pathlib.Path(lease["path"])):
                 continue
-            identity = entry["process"]
-            process = psutil.Process(int(identity.split(":", 1)[0]))
-            assert service_transport.process_identity(process.pid) == identity
-            assert str(path.parent) in process.cmdline()
-            parent = process.parent()
-            assert parent is not None and str(path.parent) in parent.cmdline()
-            leases = [
-                json.loads(item.read_text(encoding="utf-8"))
-                for item in (state_base / "agent-toolkit/plugin-root-leases").glob("*.json")
-            ]
-            for member in (parent, process):
-                lease = next(item for item in leases if item["pid"] == member.pid)
-                assert process_identity.matches(member, lease["created_at"], lease.get("start_id"))
-                assert pathlib.Path(entry["root"]).is_relative_to(pathlib.Path(lease["path"]))
-            pinned = process_identity.ProcessIdentity.capture(parent)
-            assert pinned.matches(parent)
-            result = process_tree.stop_tree(parent)
-            assert not result.residual and not result.unresolved, result.descriptions()
+            try:
+                member = psutil.Process(lease["pid"])
+                if not process_identity.matches(member, lease["created_at"], lease.get("start_id")):
+                    continue
+                if member.cmdline()[-2:] != [str(path.parent), generation]:
+                    continue
+                if member.pid == recorded_pid:
+                    assert service_transport.process_identity(member.pid) == identity
+                targets.append(member)
+            except psutil.NoSuchProcess, ProcessLookupError, FileNotFoundError:
+                continue
+        try:
+            registered = psutil.Process(recorded_pid)
+            if (
+                registered.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+                and service_transport.process_identity(recorded_pid) == identity
+            ):
+                assert any(member.pid == recorded_pid for member in targets) or registered.status() in (
+                    psutil.STATUS_ZOMBIE,
+                    psutil.STATUS_DEAD,
+                )
+        except psutil.NoSuchProcess, ProcessLookupError, FileNotFoundError:
+            pass
+        for member in targets:
+            try:
+                if not member.is_running() or member.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    continue
+                result = process_tree.stop_tree(member)
+                assert not result.residual and not result.unresolved, result.descriptions()
+            except psutil.NoSuchProcess:
+                continue
 
 
 # 90cad03ac601a24107d34758748f1d022ed5342cのplugin_root.pyにある、版別rootの
