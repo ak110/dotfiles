@@ -4,10 +4,27 @@ import os
 import socket
 import sys
 from multiprocessing import connection
+from types import SimpleNamespace
 
 import pytest
 
-from agent_toolkit._agents_server import service_transport
+from agent_toolkit._agents_server import service_transport, windows_service_transport
+
+
+@pytest.mark.parametrize("pid,code,missing", [(123, 87, True), (123, 5, False), (0, 87, False)])
+def test_windows_process_identity_distinguishes_missing_process_from_api_failure(monkeypatch, pid, code, missing):
+    """消滅PIDだけを再起動可能とし、拒否と不正PIDを消滅へ変換しない。"""
+    error = OSError("injected OpenProcess failure")
+    monkeypatch.setattr(windows_service_transport, "_api", lambda: (SimpleNamespace(OpenProcess=lambda *_: None), None))
+    monkeypatch.setattr(
+        windows_service_transport, "_windows", SimpleNamespace(WinError=lambda _: error, get_last_error=lambda: code)
+    )
+    with pytest.raises(ProcessLookupError if missing else OSError) as caught:
+        windows_service_transport.process_identity(pid)
+    if missing:
+        assert caught.value.__cause__ is error
+    else:
+        assert caught.value is error
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="実SO_PEERCREDが必要")

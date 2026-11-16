@@ -90,6 +90,6 @@ function Start-UpdateStageProcess {
     param([string]$Program, [string[]]$Arguments, [bool]$Probe)
     # CommandLineToArgvW互換の引用で、末尾のバックスラッシュも引数内へ保つ。
     $quoted = @($Arguments | ForEach-Object { '"' + [regex]::Replace([regex]::Replace($_, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"' }) -join ' '
-    $executable = (Get-Command -Name $Program -CommandType Application -ErrorAction Stop).Source
+    $executable = (Get-Command -Name $Program -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     return [UpdateStageJob]::new($executable, $quoted, $Probe)
 }

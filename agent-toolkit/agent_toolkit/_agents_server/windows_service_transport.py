@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import errno
 import os
 import threading
 from ctypes import wintypes as w
@@ -54,7 +55,15 @@ def _check(result: Any) -> Any:
 @contextlib.contextmanager
 def _process(pid: int):
     kernel, _ = _api()
-    handle = _check(kernel.OpenProcess(0x1000, False, pid))
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if not handle:
+        code = _windows.get_last_error()
+        error = _windows.WinError(code)
+        # 終了済みPIDのOpenProcessはERROR_INVALID_PARAMETERを返す。古い世代を
+        # 再利用しない判定へ渡し、アクセス拒否など他のAPI失敗はそのまま保持する。
+        if pid > 0 and code == 87:
+            raise ProcessLookupError(errno.ESRCH, os.strerror(errno.ESRCH), pid) from error
+        raise error
     try:
         yield handle
     finally:

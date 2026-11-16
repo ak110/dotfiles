@@ -134,6 +134,9 @@ _EXPECTED_TOOLS = {
 
 
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    2.5, reason="準備済みruntimeで実MCPのschemaを取得し、サービス・共有リスナーの回収まで確認する（Linux CI CPU合計1.084秒）。"
+)
 async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """公開stdioのschemaとinitialize診断を取得し、明示的なservice回収でclose完了を記録する。"""
     async with _stdio_client(tmp_path, launcher_environment) as client:
@@ -162,6 +165,13 @@ async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, launche
 
 
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "準備済みruntimeで実MCPの成功・失敗応答を取得し、サービス・共有リスナーの回収まで確認する。"
+        "schema試験と同じ起動・回収境界（Linux CI CPU合計1.084秒）。"
+    ),
+)
 async def test_stdio_tool_results(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """SDK経由の接続で、成功時は構造化された結果を返し、呼び出し側が修正できる入力の不備はエラーとして返す。"""
     async with _stdio_client(tmp_path, launcher_environment) as client:
