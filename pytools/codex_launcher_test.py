@@ -351,8 +351,8 @@ async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> N
     3.5 if os.name == "nt" else 3.0,
     reason=(
         "反復利用される非対話コマンドは、復旧用の依存を読み込まずに同じ実行体へ引き渡す。"
-        + " 実境界の最小入力を保持。Windows同一本文のCPU最大1.04688秒・同"
-        + "nodeの変動幅1.04688秒に2回分の余裕を持たせる。"
+        + " 実境界の最小入力を保持。既存入力のWindows CPU観測最大1.04688"
+        + "秒。目的外の仕事を境界で除き、有限の予算は増やさずに検証する。"
     ),
 )
 @pytest.mark.parametrize(

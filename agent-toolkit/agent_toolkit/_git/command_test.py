@@ -187,9 +187,9 @@ sys.exit(255)
     9.5 if os.name == "nt" else 3.5,
     reason=(
         "応答しないリモートへのfetchはデフォルトの時間上限で打ち切られ、gitが起動"
-        + "した子孫のプロセスも残らない。 実境界の最小入力を保持。Windows同一本文の"
-        + "CPU最大3.90625秒・同nodeの変動幅2.78125秒に2回分の余裕を持"
-        + "たせる。"
+        + "した子孫のプロセスも残らない。 実境界の最小入力を保持。既存入力のWindows"
+        + " CPU観測最大3.90625秒。目的外の仕事を境界で除き、有限の予算は増やさず"
+        + "に検証する。"
     ),
 )
 def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
@@ -283,8 +283,8 @@ def test_run_reclaims_orphan_lock_and_retries_once(stale_lock_repo: pathlib.Path
     3.0 if os.name == "nt" else 2.5,
     reason=(
         "生存中の所有者のロックは回収せず、元のエラーに判定結果を添えて返す。 実境界の最"
-        + "小入力を保持。Windows同一本文のCPU最大0.96875秒・同nodeの変"
-        + "動幅0.921875秒に2回分の余裕を持たせる。"
+        + "小入力を保持。既存入力のWindows CPU観測最大0.96875秒。目的外の"
+        + "仕事を境界で除き、有限の予算は増やさずに検証する。"
     ),
 )
 def test_run_keeps_lock_of_live_owner_and_reports_decision(stale_lock_repo: pathlib.Path) -> None:
@@ -325,25 +325,39 @@ def test_run_keeps_lock_while_git_is_running(stale_lock_repo: pathlib.Path, monk
     assert lock.exists()
 
 
-@pytest.mark.cpu_limit(
-    2.5,
-    reason=(
-        "待機は`timeout_scope`の残り秒数以内で打ち切る。 実"
-        + "Gitの入力または標準indexロックを検証する最小構成。"
-        + "Windows同群CPU最大1.141秒。"
-    ),
-)
-def test_run_wait_is_bounded_by_timeout_scope(stale_lock_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機は`timeout_scope`の残り秒数以内で打ち切る。"""
+@pytest.mark.parametrize("retry", [False, True])
+def test_run_wait_is_bounded_by_timeout_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, retry: bool) -> None:
+    """初回実行で消費した時間を回収の待機へ渡さず、期限後は再実行しない。"""
+    clock = [100.0]
+    launch_limits = []
+    wait_limits = []
+
+    def execute(command, **kwargs):
+        launch_limits.append(kwargs["timeout"])
+        clock[0] += 0.4
+        return subprocess.CompletedProcess(command, 128, b"", b"fatal: 'index.lock': File exists.")
+
+    def recover(_stderr, _cwd, *, wait_seconds, **_kwargs):
+        wait_limits.append(wait_seconds)
+        clock[0] += wait_seconds
+        return stale_lock.Recovery(retry)
+
+    monkeypatch.setattr(subject.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(subject, "_launch", execute)
+    monkeypatch.setattr(stale_lock, "recover_after_failure", recover)
     monkeypatch.setattr(stale_lock, "DEFAULT_WAIT_SECONDS", 60.0)
-    _hold_with_live_owner(stale_lock_repo)
-    started = time.monotonic()
 
     with subject.timeout_scope(1.0):
-        result = _add(stale_lock_repo)
-
-    assert result.returncode != 0
-    assert time.monotonic() - started < 10
+        if retry:
+            with pytest.raises(subprocess.TimeoutExpired) as raised:
+                _add(tmp_path)
+            assert raised.value.timeout == 0
+            assert subject.timeout_cwd(raised.value) == str(tmp_path)
+        else:
+            assert _add(tmp_path).returncode == 128
+    assert launch_limits == [pytest.approx(1.0)]
+    assert wait_limits == [pytest.approx(0.6)]
+    assert clock[0] == pytest.approx(101.0)
 
 
 @pytest.mark.cpu_limit(

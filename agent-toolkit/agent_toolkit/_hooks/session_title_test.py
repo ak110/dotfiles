@@ -7,6 +7,13 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import posttooluse, user_prompt_submit
+from agent_toolkit._hooks.pretooluse import read_delivery
+
+
+@pytest.fixture(autouse=True)
+def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """会話名の遷移を検査し、独立した資料配送の全宣言を解析しない。"""
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda *_args, **_kwargs: [])
 
 
 @pytest.mark.parametrize("codex", [False, True])

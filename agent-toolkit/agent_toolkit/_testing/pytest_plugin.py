@@ -601,7 +601,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         ):
             raise pytest.UsageError(f"{item.nodeid}: cpu_limitには正有限値と非空のreasonを指定してください")
         item.stash[_CPU_LIMIT] = (float(seconds), reason)
-        item.stash[_CPU_GROSS_LIMIT] = float(seconds) if marker is not None else max(2.0, default_limit)
+        # netから控除する共有初期化費用には、通常0.5/gross2と同じ余裕を重い試験にも残す。
+        item.stash[_CPU_GROSS_LIMIT] = float(seconds) + 1.5 if marker is not None else max(2.0, default_limit)
     value = config.getoption("test_shard")
     if value is None:
         return

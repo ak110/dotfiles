@@ -229,15 +229,28 @@ def test_cpu_limit_rejects_invalid_default(
 
 
 @pytest.mark.parametrize(
-    ("gross", "gc_cpu", "import_cpu", "gross_limit", "failed"),
-    [(0.8, 0.2, 0.2, 2.0, False), (1.0, 0.25, 0.25, 2.0, True), (2.1, 1.8, 0.1, 2.0, True), (2.6, 1.5, 0.0, 2.5, True)],
+    ("gross", "gc_cpu", "import_cpu", "net_limit", "failed"),
+    [
+        (0.8, 0.2, 0.2, 0.5, False),
+        (1.0, 0.25, 0.25, 0.5, True),
+        (2.1, 1.8, 0.1, 0.5, True),
+        (2.999, 1.75, 0.0, 1.5, False),
+        (3.0, 1.75, 0.0, 1.5, True),
+        (3.001, 1.75, 0.0, 1.5, True),
+        (2.0, 0.5, 0.0, 1.5, True),
+    ],
 )
-def test_exclusions_do_not_hide_budget_or_gross_overrun(gross, gc_cpu, import_cpu, gross_limit, failed) -> None:
-    """区間和を控除した予算とgrossの両上限を守り、原計測を失わない。"""
-    item = cast(pytest.Item, types.SimpleNamespace(stash=pytest.Stash(), nodeid="cpu_test.py::test_cpu"))
+def test_exclusions_do_not_hide_budget_or_gross_overrun(
+    request: pytest.FixtureRequest, gross, gc_cpu, import_cpu, net_limit, failed
+) -> None:
+    """収集で選んだnetと共有費用込みgrossの上限を守り、原計測を失わない。"""
+    assert request.node.parent is not None
+    item = pytest.Function.from_parent(request.node.parent, name="cpu_probe", callobj=lambda: None)
+    if net_limit != 0.5:
+        item.add_marker(pytest.mark.cpu_limit(net_limit, reason="必要な境界の制御入力"))
+    pytest_plugin.pytest_collection_modifyitems(request.config, [item])
     item.stash[pytest_plugin._CPU_TIMES] = {"call": gross}
     item.stash[pytest_plugin._CPU_EXCLUSIONS] = {"call": {"gc": gc_cpu, "import": import_cpu}}
-    item.stash[pytest_plugin._CPU_GROSS_LIMIT] = gross_limit
     report = pytest.TestReport(item.nodeid, ("cpu_test.py", 0, "test_cpu"), {}, "passed", None, "teardown")
     hook = pytest_plugin.pytest_runtest_makereport(item, cast(Any, None))
     next(hook)
@@ -249,6 +262,8 @@ def test_exclusions_do_not_hide_budget_or_gross_overrun(gross, gc_cpu, import_cp
     assert properties["cpu_budget_seconds"] == pytest.approx(gross - gc_cpu - import_cpu)
     assert properties["cpu_excluded_gc_seconds"] == gc_cpu
     assert properties["cpu_excluded_import_seconds"] == import_cpu
+    assert properties["cpu_limit_seconds"] == net_limit
+    assert properties["cpu_gross_limit_seconds"] == net_limit + 1.5
 
 
 @pytest.mark.parametrize(

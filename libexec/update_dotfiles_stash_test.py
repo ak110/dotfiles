@@ -2,14 +2,22 @@
 
 import os
 import pathlib
+import subprocess
 import unittest.mock
 from typing import Any
 
 import pytest
 import update_dotfiles_stash
+from agent_toolkit._git import command
 from agent_toolkit._testing import git_repository
 
 pytestmark = pytest.mark.windows
+
+
+@pytest.fixture(autouse=True)
+def _leaf_git_launch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実Gitの参照・退避の保全を検査し、各起動で子孫回収を再検証しない。"""
+    monkeypatch.setattr(command, "_launch", subprocess.run)
 
 
 def _repository(path: pathlib.Path) -> pathlib.Path:
@@ -69,8 +77,8 @@ def test_generated_only_old_stash_is_collected(
     27.5 if os.name == "nt" else 7.0,
     reason=(
         "indexだけ・未追跡・別ディレクトリの変更も保全し、保護済みは繰り返し表示しな"
-        + "い。 実境界の最小入力を保持。Windows同一本文のCPU最大10.0938秒"
-        + "・同nodeの変動幅8.5625秒に2回分の余裕を持たせる。"
+        + "い。 実境界の最小入力を保持。既存入力のWindows CPU観測最大10.0938"
+        + "秒。目的外の仕事を境界で除き、有限の予算は増やさずに検証する。"
     ),
 )
 @pytest.mark.parametrize("kind", ["tracked", "index-only", "untracked", "nested-lock"])
@@ -113,8 +121,8 @@ def test_user_content_is_protected_and_not_reported_again(
     7.5 if os.name == "nt" else 5.0,
     reason=(
         "生成差分だけでも、退避元のローカルcommitが唯一の参照ならその履歴を保持する"
-        + "。 実境界の最小入力を保持。Windows同一本文のCPU最大2.42188秒・"
-        + "同nodeの変動幅2.375秒に2回分の余裕を持たせる。"
+        + "。 実境界の最小入力を保持。既存入力のWindows CPU観測最大2.42188"
+        + "秒。目的外の仕事を境界で除き、有限の予算は増やさずに検証する。"
     ),
 )
 def test_generated_stash_preserves_otherwise_unreachable_local_commit(tmp_path: pathlib.Path) -> None:
@@ -166,8 +174,8 @@ def test_old_stash_processing_has_constant_git_process_count(tmp_path: pathlib.P
     10.5 if os.name == "nt" else 5.0,
     reason=(
         "共有保護と固有退避が不一致なら、自動生成差分でも両方を保持して止まる。 実境界の"
-        + "最小入力を保持。Windows同一本文のCPU最大3.45312秒・同nodeの"
-        + "変動幅3.35938秒に2回分の余裕を持たせる。"
+        + "最小入力を保持。既存入力のWindows CPU観測最大3.45312秒。目的外"
+        + "の仕事を境界で除き、有限の予算は増やさずに検証する。"
     ),
 )
 def test_inconsistent_protection_preserves_both_values(tmp_path: pathlib.Path) -> None:
@@ -207,8 +215,8 @@ def test_queue_repository_is_not_changed(tmp_path: pathlib.Path, monkeypatch: py
     6.5 if os.name == "nt" else 5.0,
     reason=(
         "ロックを共有しない手動更新が途中に入っても、旧値を条件にして全回収を取り消す。 "
-        + "実境界の最小入力を保持。Windows同一本文のCPU最大2.10938秒・同node"
-        + "の変動幅1.95312秒に2回分の余裕を持たせる。"
+        + "実境界の最小入力を保持。既存入力のWindows CPU観測最大2.10938秒"
+        + "。目的外の仕事を境界で除き、有限の予算は増やさずに検証する。"
     ),
 )
 def test_changed_ref_aborts_entire_cleanup_transaction(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

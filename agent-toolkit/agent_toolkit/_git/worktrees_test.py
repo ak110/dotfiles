@@ -6,15 +6,22 @@
 
 import pathlib
 import shutil
+import subprocess
 import sys
 
 import pytest
 
-from agent_toolkit._git import worktrees
+from agent_toolkit._git import command, worktrees
 from agent_toolkit._testing import git_repository
 
 # Windows CIの「Windows境界テスト」（`pytest -m windows`）で、主作業ツリーの判定を実Gitに対して確かめる。
 pytestmark = pytest.mark.windows
+
+
+@pytest.fixture(autouse=True)
+def _leaf_git_launch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実Gitの登録形式を検査し、独立した子孫回収の走査を各照会へ重ねない。"""
+    monkeypatch.setattr(command, "_launch", subprocess.run)
 
 
 def _porcelain_z(repo: pathlib.Path) -> dict[pathlib.Path, dict[str, str]] | None:
@@ -67,9 +74,9 @@ def _assert_matches_git(repo: pathlib.Path, listed: list[worktrees.Worktree]) ->
     7.0 if sys.platform == "win32" else 3.0,
     reason=(
         "空白・日本語・改行を含むパスとdetached・locked・prunableの"
-        + "登録を、元の登録と同じパス・branchで返す。 実境界の最小入力を保持。Windows"
-        + "同一本文のCPU最大2.32812秒・同nodeの変動幅2.23438秒に2回分"
-        + "の余裕を持たせる。"
+        + "登録を、元の登録と同じパス・branchで返す。 実境界の最小入力を保持。既存入"
+        + "力のWindows CPU観測最大2.32812秒。目的外の仕事を境界で除き、有"
+        + "限の予算は増やさずに検証する。"
     ),
 )
 def test_lists_special_paths_and_states(tmp_path: pathlib.Path) -> None:
