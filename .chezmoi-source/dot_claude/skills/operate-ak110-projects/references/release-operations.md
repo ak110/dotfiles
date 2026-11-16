@@ -65,6 +65,7 @@ docsサイトは`master`へのpushで`docs.yaml`が公開するため、docsサ�
 メジャーはOSSの慣例に従い、ほぼ全面的な書き直しや再構築などの場合にだけ使う。
 セマンティックバージョニングの互換性を壊す変更でも、それだけではメジャーにしない。
 エージェントはメジャーを選ばず、ユーザーが明示的に指示した場合だけ`releaser major`を実行する。
+リリースworkflowの対象外となる版数（dotfilesが配布するagent-toolkit・agent-basicsなどのプラグインの版数）の更新にも、同じ方針を適用する。
 
 `releaser`はdotfilesの`pytools/releaser.py`が提供するコマンドである。
 default branchで実行しているかと未コミット変更の有無を確認し、未pushのcommitをpushする。
