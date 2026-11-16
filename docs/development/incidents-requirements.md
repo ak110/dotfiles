@@ -45,5 +45,7 @@
   影響: dotfilesユーザーが進行を端末で確認・介入できなくなり、41時間続いた前回の会話が予約なしに再開された。
   発覚後、ユーザーが4回の是正指示で元の動作へ戻させた。
   対策: 1つの統括会話を前景の対話CLIで起動し、再開を予約時に限る構成へ戻した。
-  エージェントが補った結果のうち現在の操作・表示・起動形・既定の動作を変えるものは、保存前に確認する扱いを`agent-toolkit/skills/wi-standards/references/origin-and-approval-origin.md`「由来と`source`」へ加えた。
+  エージェントが補った結果のうち、エンドユーザーが自分で起動・操作するコマンドや画面の動作を大きく変えるものは保存前に確認する。
+  軽微な利便性の向上と細部の変更はエージェントが確定して報告する。
+  この扱いを`agent-toolkit/skills/wi-standards/references/origin-and-approval-origin.md`「由来と`source`」へ加えた。
   守る動作を`docs/development/concepts-environment.md`「実行環境と表示」へ記録し、以後の変更が方針記録との照合で衝突として検出されるようにした
