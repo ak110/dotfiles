@@ -102,6 +102,11 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
                     assert str(path.parent) in service.cmdline()
                     identity = process_identity.ProcessIdentity.capture(service)
                     yield client
+    except BaseException:
+        # CIの一時領域は終了後に消えるため、起動失敗の一次診断を試験の保存出力へ含める。
+        for diagnostic in (tmp_path / "agent-toolkit/services/agents-server").glob("*.stderr.log"):
+            print(f"{diagnostic}:\n{diagnostic.read_text(encoding='utf-8', errors='replace')}", file=sys.stderr)
+        raise
     finally:
         if service is not None and supervisor is not None and identity is not None:
             assert identity.matches(service)

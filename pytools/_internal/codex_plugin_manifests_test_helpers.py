@@ -214,7 +214,14 @@ async def _ignore_proxy_notification(_message: dict[str, Any]) -> None:
 class _ProxyCodexClient(codex_backend.JsonRpcProcess):
     """試験用履歴の注入だけに実験APIを有効化する。"""
 
-    async def request(self, method: str, params: dict[str, Any] | None = None, *, on_sent: Any = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Any = None,
+        on_sent_async: Any = None,
+    ) -> dict[str, Any]:
         if method == "initialize":
             params = {**(params or {}), "capabilities": {"experimentalApi": True}}
-        return await super().request(method, params, on_sent=on_sent)
+        return await super().request(method, params, on_sent=on_sent, on_sent_async=on_sent_async)
