@@ -14,6 +14,7 @@ from agent_toolkit._common import delegated_session, read_triggers, shell_cwd
 from agent_toolkit._common.shell_tokens import join_words
 from agent_toolkit._hooks import (
     agent_id,
+    bugfix_gate,
     codex_read_observation,
     document_reads,
     rules_context,
@@ -146,6 +147,13 @@ def _record_receipts(
         path = pathlib.Path(metadata["path"])
         if path.is_file() and document_reads.content_fingerprint(path) == metadata["version"]:
             _mark(session_id, path, agent, metadata["version"], record_scopes=False, host=host, project=project)
+            if (
+                host == "codex"
+                and path.name == "SKILL.md"
+                and path.parent.name == "bugfix"
+                and read_delivery.skill_name(path) == "agent-basics:bugfix"
+            ):
+                bugfix_gate.mark_started(session_id, agent)
         else:
             read_delivery.update_state(
                 session_id, operation_skills.mark_ready(read_delivery.document_key(path, metadata["version"]), agent)

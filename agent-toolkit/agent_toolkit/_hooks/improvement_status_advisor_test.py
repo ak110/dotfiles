@@ -182,3 +182,28 @@ def test_guidance_hook_entry_returns_nonblocking_context(
     output = json.loads(result.stdout)
     assert "decision" not in output
     _assert_guidance_commands(output["hookSpecificOutput"]["additionalContext"], _guidance_documents, windows=windows)
+
+
+@pytest.mark.parametrize("shape", ["empty", "omitted", "other-report"])
+@pytest.mark.parametrize("missing", [None, "作り込み側の候補", "見逃し側の候補", "比較結論"])
+def test_deferral_comparison_fields_are_checked_before_delivery_and_at_stop(missing, shape, monkeypatch):
+    """項目の非空だけを両入口で検査し、比較結果の採否へ踏み込まない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    fields = {"作り込み側の候補": "既存処理へ統合", "見逃し側の候補": "境界の試行", "比較結論": "継続費用が防げる損失を上回る"}
+    if missing is not None:
+        if shape == "empty":
+            fields[missing] = ""
+        else:
+            del fields[missing]
+    text = "気付いた改善点: A。AWI化ステータス: 不要 見送り " + "; ".join(f"{key}: {value}" for key, value in fields.items())
+    if missing is not None and shape == "other-report":
+        text += "\n気付いた改善点: B。AWI化ステータス: 不要 見送り " + missing + ": 別報告の候補"
+    payload = json.loads(_payload(text))
+    before = improvement_status_advisor.read_guidance_notice(payload)
+    after = improvement_status_advisor.evaluate(_payload(text))[1]
+    if missing is None:
+        assert not before and not after
+    else:
+        assert missing in before and 'kind="warn"' in before
+        assert "permissionDecision" not in before
+        assert missing in after

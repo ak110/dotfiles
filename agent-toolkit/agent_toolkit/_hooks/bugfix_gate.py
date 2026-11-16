@@ -1,7 +1,7 @@
 """ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。
 
 `send_to_user`の呼出し（PreToolUse）と、応答本文だけで終えるStopの両方が同じ判定（`bugfix_pending`）を使う。
-判定はtranscriptの観測だけで決まる。最後の人間の発話が欠陥指摘の語を含み、そのターンに`Skill`による
+この遮断の判定はtranscriptの観測だけで決まる。最後の人間の発話が欠陥指摘の語を含み、そのターンに`Skill`による
 `agent-basics:bugfix`の呼出しが無い場合に成立する。発話の意味は判定しない。語の一致は誤検出があり得るが、
 遮断された主体は`agent-basics:bugfix`を起動すれば同じ操作を通せるため、誤検出でも作業は止まらない。
 
@@ -10,8 +10,9 @@
 `agent-basics:writing-standards`の`references/claude-hooks-block-warn-eligibility.md`の遮断の条件に当たる。
 Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける。
 
-委譲先での実行可否: ユーザーの発話を受けるメインだけを対象とし、サブエージェントと委譲先は判定しない。
-`send_to_user`を持つClaude Codeだけで判定する。
+ユーザー発話に対する遮断は、`send_to_user`を持つClaude Codeのメインだけを対象とする。
+検証失敗後の起動案内は、失敗を観測したメインと委譲先へ、修正・commit・再検証の前に警告する。
+こちらは構造化した失敗と同じ主体の起動成功を使い、自然文の中継だけから失敗を断定しない。
 """
 
 import json
@@ -21,9 +22,15 @@ from agent_toolkit._hooks import notice
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
+lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.pretooluse import operation_skills
+lazy from agent_toolkit._hooks.pretooluse.shell_checks import git_subcommand_tokens
 lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn
 
 # フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
@@ -39,6 +46,105 @@ _DEFECT_RE = re.compile(
 )
 
 _block_notice = notice.block_formatter("bugfix_gate")
+_failure_notice = notice.formatter("verification-bugfix")
+FAILURE_STATE_KEY = "verification_bugfix"
+
+
+def _wait_ci_operation(tool_name: str, tool_input: dict) -> bool:
+    command = tool_input.get("command")
+    return (
+        tool_name == "Bash"
+        and isinstance(command, str)
+        and any(
+            segment.resolved and is_atk_command(segment.tokens) and segment.tokens[1:3] == ("run-script", "wait-ci")
+            for segment in extract_execution_segments(command)
+        )
+    )
+
+
+def mark_started(session_id: str, actor: str) -> None:
+    """失敗の後に同じ主体が成功させた起動だけで未対処の印を解除する。"""
+
+    def clear(state: dict) -> dict | None:
+        current = state.get(FAILURE_STATE_KEY, {}).get(actor)
+        if not isinstance(current, dict) or not current.get("pending"):
+            return None
+        current["pending"] = False
+        return state
+
+    update_state(session_id, clear)
+
+
+def observe_verification(payload: dict) -> None:
+    """現在のツール結果の失敗とSkillの起動成功を、既存セッション状態へ対応付ける。"""
+    session_id = payload.get("session_id")
+    tool_input = payload.get("tool_input")
+    if not isinstance(session_id, str) or not session_id or not isinstance(tool_input, dict):
+        return
+    actor = resolve_hook_agent_id(payload)
+    tool_name = payload.get("tool_name", "")
+    response = payload.get("tool_response")
+    failed = payload.get("hook_event_name") == "PostToolUseFailure"
+    code = response.get("exit_code") if isinstance(response, dict) else None
+    if isinstance(response, dict):
+        failed = failed or bool(
+            response.get("isError") or response.get("is_error") or response.get("interrupted") or response.get("error")
+        )
+    if tool_name == "Skill" and tool_input.get("skill") in _BUGFIX_SKILLS:
+        if response and not failed and code in (None, 0):
+            mark_started(session_id, actor)
+        return
+    if _wait_ci_operation(tool_name, tool_input):
+        # wait-ciの1はCI失敗、6は途中の新規失敗。待機timeoutやrun未登録は別の状態である。
+        failed = isinstance(code, int) and not isinstance(code, bool) and code in (1, 6)
+    elif operation_skills.operation_matches("verification", tool_name, tool_input):
+        failed = failed or isinstance(code, int) and not isinstance(code, bool) and code != 0
+    else:
+        return
+    identifier = payload.get("tool_use_id")
+    if not failed or not isinstance(identifier, str) or not identifier:
+        return
+
+    def remember(state: dict) -> dict | None:
+        actors = state.setdefault(FAILURE_STATE_KEY, {})
+        if actors.get(actor, {}).get("failure") == identifier:
+            return None
+        actors[actor] = {"failure": identifier, "pending": True}
+        return state
+
+    update_state(session_id, remember)
+
+
+def verification_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str:
+    """未起動の主体が修正や検証の再実行へ進む場合だけ、非遮断の起動案内を返す。"""
+    current = read_state(session_id).get(FAILURE_STATE_KEY, {}).get(resolve_hook_agent_id(payload), {})
+    if not isinstance(current, dict) or not current.get("pending"):
+        return ""
+    command = tool_input.get("command")
+    commit = (
+        tool_name == "Bash"
+        and isinstance(command, str)
+        and any(
+            (parsed := git_subcommand_tokens(segment)) is not None
+            and parsed[0] == "commit"
+            and not {"--dry-run", "--help", "-h"}.intersection(parsed[1])
+            for segment in extract_execution_segments(command)
+        )
+    )
+    if not (
+        commit
+        or _wait_ci_operation(tool_name, tool_input)
+        or operation_skills.operation_matches("verification", tool_name, tool_input)
+        or operation_skills.operation_matches("body-writing", tool_name, tool_input, str(payload.get("cwd", "")))
+    ):
+        return ""
+    return _failure_notice(
+        "検証・CIの失敗を観測した後、この主体のbugfix起動成功を確認できない。",
+        tag="warn",
+        removable_cause=True,
+        subject=current["failure"],
+        fix="`agent-basics:bugfix`を起動せよ。反復する失敗は同スキルの「同一症状の修正反復」に従え。",
+    )
 
 
 def is_defect_report(prompt: str) -> bool:

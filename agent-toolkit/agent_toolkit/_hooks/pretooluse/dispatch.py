@@ -253,6 +253,8 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
 
         if (effort_advice := effort_notice.observe(payload)) is not None:
             pending_notices.append(effort_advice)
+        if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
+            pending_notices.append(warning)
         state = read_state(session_id)
         cwd = str(payload.get("cwd", ""))
         preparing = _acquiring(tool_name, tool_input, cwd) or _work_record_only(

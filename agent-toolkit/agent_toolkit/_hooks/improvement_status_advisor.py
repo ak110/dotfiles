@@ -33,6 +33,8 @@ _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 _UNNEEDED_CATEGORIES = ("非欠陥", "処置済み", "被覆", "見送り")
 _UNNEEDED_STATUS = re.compile(r"AWI化ステータス:\s*不要[ \t]*")
 _CATEGORY_STATUS = re.compile(r"AWI化ステータス:\s*(不要|予定)[ \t]*")
+_DEFERRAL_FIELDS = ("作り込み側の候補", "見逃し側の候補", "比較結論")
+_DEFERRAL_FIELD = re.compile(r"(作り込み側の候補|見逃し側の候補|比較結論)\s*[:：]\s*([^;；\n]*)")
 # 原因を調べていないことを見送りの理由にした冒頭。
 # 処置・担当を定めた理由や「未調査を理由に見送らない」の説明は冒頭が一致しない。
 # 「原因は未確定だが、既存AWIへ引き継ぎ済み」のように逆接が続く形は、
@@ -82,6 +84,19 @@ def read_guidance_notice(payload: object, *, include_reads: bool = True) -> str:
                     fix="`share/rules/rules-main.md`「進捗報告」のテンプレート直下の書式・区分で報告行を直せ。"
                     "書式の修正だけなら判定資料の追加取得は不要である。",
                 )
+            if line[matched.end() :].startswith("見送り") and matched.group(1) == "不要":
+                report = line[matched.end() :].split("AWI化ステータス:", 1)[0]
+                values = {name: value.strip(" \t。）」)") for name, value in _DEFERRAL_FIELD.findall(report)}
+                missing_fields = [name for name in _DEFERRAL_FIELDS if not values.get(name)]
+                if missing_fields:
+                    set_warning_session_id(session_id)
+                    return _notice(
+                        "見送り報告の比較項目が空または欠落している: " + "、".join(missing_fields) + "。",
+                        removable_cause=True,
+                        subject=line,
+                        fix="同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、"
+                        "セミコロンで区切って記録せよ。候補と結論の妥当性は担当が判断せよ。",
+                    )
     if not include_reads:
         return ""
     state = read_state(session_id)

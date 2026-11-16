@@ -37,6 +37,8 @@ const UNINVESTIGATED_WARNING = automatedMessage(
     "`share/rules/rules-main.md`「作業中の改善点の報告」に従い、該当する理由を調査・処置の結果に基づいて更新せよ。",
 );
 const STATUS_MARKER = /AWI化ステータス:\s*(不要|予定)[ \t]*/g;
+const DEFERRAL_FIELDS = ["作り込み側の候補", "見逃し側の候補", "比較結論"] as const;
+const DEFERRAL_FIELD = /(作り込み側の候補|見逃し側の候補|比較結論)\s*[:：]\s*([^;；\n]*)/g;
 
 // 気付いた改善点の抽出はPythonのruntime_inserted.reported_improvement_linesと同じ境界にする。
 // 送達ツールでは、30分点検の「改善案:」に続く項目も報告として受け取る。
@@ -80,6 +82,16 @@ export function awiStatusWarnings(message: string): string[] {
       if (category === undefined) warnings.add(check.warning);
       const reason = rest.slice(category?.length ?? 0).replace(/^[ \t、,]+/, "");
       if (check.value === "不要" && UNINVESTIGATED_REASON.test(reason)) warnings.add(UNINVESTIGATED_WARNING);
+      if (check.value === "不要" && category === "見送り") {
+        const report = rest.split("AWI化ステータス:", 1)[0]!;
+        const values = new Map([...report.matchAll(DEFERRAL_FIELD)].map((field) => [field[1], field[2]!.replace(/[\s。）」)]+$/g, "")]));
+        const missing = DEFERRAL_FIELDS.filter((name) => !values.get(name));
+        if (missing.length > 0) warnings.add(automatedMessage(
+          "send-to-user", "warn",
+          `見送り報告の比較項目が空または欠落している: ${missing.join("、")}。` +
+            "同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、セミコロンで区切って記録せよ。候補と結論の妥当性は担当が判断せよ。",
+        ));
+      }
     }
   }
   return [...warnings];
