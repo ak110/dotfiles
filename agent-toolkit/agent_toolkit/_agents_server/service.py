@@ -211,6 +211,10 @@ async def serve_peer(
                 )
             finally:
                 tracker.transport_closed()
+    except Exception:
+        # 相手がEOFを受けて診断を読む前に、元の例外を既存の世代stderrへ確定する。
+        _LOG.exception("管理サービスの接続が失敗しました")
+        raise
     finally:
         try:
             if connection_id is not None and not peer_state.redirect_acknowledged:
@@ -411,8 +415,8 @@ async def run(
 
 def _finished(task: asyncio.Task[None], tasks: set[asyncio.Task[None]]) -> None:
     tasks.discard(task)
-    if not task.cancelled() and (error := task.exception()) is not None:
-        _LOG.error("管理サービスの接続が失敗しました", exc_info=error)
+    if not task.cancelled():
+        task.exception()
 
 
 def main() -> int:

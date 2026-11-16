@@ -1,8 +1,11 @@
 """外部CLIを隔離して任意導入の境界を検証する。"""
 
 import json
+import os
+import stat
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -68,6 +71,58 @@ def test_failed_codex_marketplace_upgrade_restores_verified_source(monkeypatch, 
     assert not guidance.run("codex")
     assert marker.read_text(encoding="utf-8") == "old"
     assert not (root / "partial").exists()
+
+
+@pytest.mark.parametrize("readonly", [True, False])
+def test_backup_cleanup_does_not_treat_all_access_denials_as_readonly(monkeypatch, tmp_path, caplog, readonly):
+    """自身の複製のreadonlyだけを戻し、通常属性の拒否や元cacheへ作用しない。"""
+    root = tmp_path / ".codex/.tmp/marketplaces/googlechrome"
+    root.mkdir(parents=True)
+    original = root / "verified"
+    original.write_text("old")
+    for name in ("modern-web-guidance", "chrome-extensions"):
+        skill = root / "skills" / name / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("verified")
+    monkeypatch.setattr(guidance.dotfiles_mode, "is_minimal", lambda: False)
+    monkeypatch.setattr(guidance.common, "resolve_executable", Path)
+
+    def execute(args, **_kwargs):
+        output = json.dumps(
+            {"installed": [{"pluginId": guidance.PLUGIN, "enabled": True, "version": "1.0.0", "path": str(root)}]}
+        )
+        if args[1:4] == ["plugin", "marketplace", "list"]:
+            output = '{"marketplaces":[{"name":"googlechrome"}]}'
+        return subprocess.CompletedProcess(args, 0, output, "")
+
+    monkeypatch.setattr(guidance.common, "run_subprocess", execute)
+    lstat = Path.lstat
+    denied = PermissionError("backup unlink denied")
+
+    def remove_backup(path, *, onexc):
+        target = path / "0/verified"
+        metadata = lstat(target)
+        with monkeypatch.context() as changed:
+            changed.setattr(
+                Path,
+                "lstat",
+                lambda item: (
+                    SimpleNamespace(
+                        st_mode=metadata.st_mode,
+                        st_file_attributes=stat.FILE_ATTRIBUTE_READONLY if readonly else 0,
+                    )
+                    if item == target
+                    else lstat(item)
+                ),
+            )
+            onexc(os.unlink, str(target), denied)
+        assert not target.exists()
+
+    monkeypatch.setattr(guidance.shutil, "rmtree", remove_backup)
+    assert guidance.run("codex") is readonly
+    if not readonly:
+        assert str(denied) in caplog.text
+    assert original.read_text() == "old"
 
 
 @pytest.mark.parametrize("failure", ["command", "verification", "state-read"])

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -90,7 +91,24 @@ def _preserve_cache(host: str, operation: Callable[[], bool]) -> bool:
         raise
     else:
         if saved is not None:
-            shutil.rmtree(saved)
+
+            def remove_readonly_backup(function, path, error):
+                # Gitのreadonly属性はcopy2で自分の複製にも引き継がれる。
+                # 生きたcacheやACLには触れず、自分のbackup内の通常ファイルだけを回収する。
+                target = Path(path)
+                metadata = target.lstat()
+                if (
+                    function is not os.unlink
+                    or not isinstance(error, PermissionError)
+                    or not stat.S_ISREG(metadata.st_mode)
+                    or not getattr(metadata, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_READONLY
+                    or not target.parent.resolve().is_relative_to(saved.resolve())
+                ):
+                    raise error
+                target.chmod(metadata.st_mode | stat.S_IWRITE)
+                function(path)
+
+            shutil.rmtree(saved, onexc=remove_readonly_backup)
     return success
 
 

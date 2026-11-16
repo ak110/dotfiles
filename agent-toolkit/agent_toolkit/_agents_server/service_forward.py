@@ -20,7 +20,25 @@ from typing import Any
 from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import file_lock, plugin_environment, runtime_environment, windows_job
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.next_action import report, with_next_action
+
+
+def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generation: str) -> None:
+    """起動・ready・接続の失敗に、同じ世代の診断末尾を一度だけ添える。"""
+    path = directory / f"{generation}.stderr.log"
+    label = f"管理サービスの診断: {path}"
+    if any(note.startswith(label) for note in getattr(error, "__notes__", ())):
+        return
+    try:
+        with path.open("rb") as stream:
+            size = stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, size - 65536))
+            detail = stream.read(65536).decode("utf-8", errors="replace")
+        limit = "（末尾65536バイト。先頭を省略）" if size > 65536 else ""
+        error.add_note(f"{label}{limit}\n{redact_secrets(detail) if detail else '診断本文は空です。'}")
+    except OSError as failure:
+        error.add_note(f"{label}（取得失敗: {failure}）")
 
 
 def code_identity(root: pathlib.Path) -> tuple[str, str]:
@@ -170,10 +188,7 @@ def ensure_service(
                                 threading.Thread(target=process.wait, name="agents-service-reaper", daemon=True).start()
                                 return published
                         if process.poll() is not None:
-                            detail = pathlib.Path(stderr.name).read_text(encoding="utf-8", errors="replace")
-                            raise RuntimeError(
-                                f"管理サービスの起動に失敗: exit={process.returncode}、診断={stderr.name}\n{detail}"
-                            )
+                            raise RuntimeError(f"管理サービスの起動に失敗: exit={process.returncode}")
                         if time.monotonic() >= deadline:
                             raise TimeoutError(f"管理サービスのreadyを確認できません。診断: {stderr.name}")
                         time.sleep(0.05)
@@ -196,6 +211,9 @@ def ensure_service(
                                 os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
                     raise
+        except Exception as error:
+            _add_service_diagnostic(error, directory, generation)
+            raise
         finally:
             file_lock.release_lock(handle)
 
@@ -345,6 +363,7 @@ def forward(
     previous_reconnect = None
     previous_progress = -1
     received_signal = 0
+    target = None
 
     def stop_forwarder(signum: int, _frame: Any) -> None:
         nonlocal received_signal
@@ -392,7 +411,9 @@ def forward(
             target = ensure_service(caller, pathlib.Path(current.get("root", root)), python=python)
     except KeyboardInterrupt:
         return 128 + (received_signal or signal.SIGINT)
-    except (OSError, ValueError, RuntimeError) as error:
+    except (EOFError, OSError, ValueError, RuntimeError) as error:
+        if target is not None:
+            _add_service_diagnostic(error, registry.directory, target["generation"])
         traceback.print_exc()
         report(
             str(error),
