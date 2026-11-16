@@ -15,8 +15,13 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 3. 終了要求が`requested`で、Stop入力に有効な非`teammate`のバックグラウンドタスクが残る: 終了要求を`consumed`へ、
    `autonomous_exit_invoked`を偽へ戻してblockし、作業の終了を確かめてから終了工程をやり直すよう求める
 4. `is_pending_async_work`が真: 非同期処理または未回収の終了時の結果が残るためapprove
-5. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
-6. 上記いずれでもない: blockし、終了工程の実行を再び促す本文を返す
+5. `autonomous_exit_invoked`が真で、終了要求が実行待ち（`requested`）か要求ファイルを使わない終了方式: 呼び出し済みのためapprove
+6. `autonomous_exit_invoked`が真でも、終了要求ファイルが`requested`以外: 過去の呼び出しの記録が残っただけで
+   `/exit`は実行されないため、記録を偽へ戻してblockし、終了工程の再実行を促す
+7. 上記いずれでもない: blockし、終了工程の実行を再び促す本文を返す
+
+6は、終了要求の後に目標の評価やユーザーの入力で作業が続いた会話が、最後のStopで古い記録によりapproveされ、
+対話CLIが終了しないまま残ることを防ぐ。
 
 3の取り下げは、バックグラウンドタスクが残ったまま同じターンの完了時に動くFunction hooksが`/exit`を実行し、
 無人のセッションが「Background work is running」の確認画面で止まることを防ぐ。
@@ -107,8 +112,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     if state.get(_STATE_KEY) is True:
-        append_stop_log(session_id, "approve_exit_invoked", {})
-        return "approve", ""
+        if not _is_stale_exit_record(session_id):
+            append_stop_log(session_id, "approve_exit_invoked", {})
+            return "approve", ""
+        update_state(session_id, lambda current: {**current, _STATE_KEY: False})
+        append_stop_log(session_id, "block_stale_exit_record", {})
 
     append_stop_log(session_id, "block_autonomous_exit", {})
     reason = _block_notice(
@@ -116,6 +124,21 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         fix="既に実行したつもりの場合も、その呼び出し結果と終了状態を確認し、`atk agents-exit-session`を単独で実行せよ。",
     )
     return "block", reason
+
+
+def _is_stale_exit_record(session_id: str) -> bool:
+    """終了要求ファイルが存在し、内容が`requested`でなければ真を返す。
+
+    要求ファイルを使わない終了方式（Function hooks未読込時のPID停止）と読取不能は、従来どおり記録を信頼する。
+    """
+    paths = function_hook_paths(session_id)
+    if paths is None:
+        return False
+    _marker, request = paths
+    try:
+        return request.read_text(encoding="utf-8") != "requested"
+    except OSError:
+        return False
 
 
 def _withdraw_exit_request(session_id: str) -> bool:
