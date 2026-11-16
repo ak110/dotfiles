@@ -194,6 +194,7 @@
 ## [実行環境と表示](concepts-environment.md#実行環境と表示)
 
 - codex呼び出しの`sandbox: danger-full-access`指定を弱めない。
+- process-loopが起動する会話は端末の前景の対話CLIとし、新しいユーザー判断なしに非対話CLIへ置き換えない（2026年11月17日にユーザーが是正）。
 
 ## [配布するブラウザー資産](concepts-environment.md#配布するブラウザー資産)
 

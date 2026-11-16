@@ -1,4 +1,4 @@
-"""対象別workerの寿命を保持し、別対象の終了を待たずに結果を回収する。"""
+"""対象別workerの寿命を保持し、終了した対象の結果を回収する。"""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ from agent_toolkit._common import mcp_environment, next_action, process_tree
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.plugin_environment import launch_command
 
-# 対象内のレーン上限とは別に、同じ常駐が起動するメイン会話を少数に保つ。
-MAX_ACTIVE_TARGETS = 2
+# 対話CLIが常駐の端末を前景で使うため、同時に起動するメイン会話を1つに保つ。
+MAX_ACTIVE_TARGETS = 1
 
 
 class WorkerInput(pydantic.BaseModel):
@@ -174,21 +174,14 @@ class RepositoryScheduler:
         env = child_environment.child_env()
         env.pop(mcp_environment.SESSION_START_INPUT_ENV, None)
         with contextlib.ExitStack() as resources:
-            stdout = resources.enter_context((directory / "stdout.log").open("wb"))
-            stderr = resources.enter_context((directory / "stderr.log").open("wb"))
             # worker自身の各外部操作とCLI監視が上限を持つ。常駐の実作業に固定期限を追加しない。
+            # workerと対話CLIは常駐の端末を引き継ぎ、ユーザーが画面を見て直接入力できる。
             process = resources.enter_context(
-                process_tree.process_scope(
-                    command,
-                    env=env,
-                    cwd=snapshots[0].repository.worktree,
-                    stdout=None if request.interactive_resume else stdout,
-                    stderr=None if request.interactive_resume else stderr,
-                )
+                process_tree.process_scope(command, env=env, cwd=snapshots[0].repository.worktree)
             )
             self.active[repo_id] = _Worker(process, resources.pop_all(), directory, repositories, request.resume_request_id)
         self.started.update(repositories)
-        print(f"{repo_id}: 対象別workerを開始した（pid={process.pid}、ログ={directory}）", flush=True)
+        print(f"{repo_id}: 対象別workerを開始した（pid={process.pid}、入出力の記録={directory}）", flush=True)
 
     def poll(self) -> dict[str, dict[str, Any]]:
         """終了した対象だけを回収し、他対象の観測と未開始集合を保持する。"""
@@ -240,8 +233,8 @@ class RepositoryScheduler:
                 print(f"{repo}: {event}: {record['status']}", flush=True)
                 if record.get("remaining"):
                     next_action.report(
-                        f"{repo}: {record['remaining']}（ログ: {worker.directory}）",
-                        next_action="ログのstderr.logを確認し、原因を解消してからatk wi process-loop resume autoで再開する",
+                        f"{repo}: {record['remaining']}（入出力の記録: {worker.directory}）",
+                        next_action="端末に出た診断を確認し、原因を解消してからatk wi process-loop resume autoで再開する",
                     )
             if code is not None:
                 del self.active[repo_id]

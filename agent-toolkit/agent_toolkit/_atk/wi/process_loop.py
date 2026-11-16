@@ -444,7 +444,6 @@ def _run_coordinator(
         session_args = argparse.Namespace(**vars(args))
         session_args.resume = resume
         session_args.instruction_manifest = manifest
-        session_args.headless = not getattr(args, "interactive_resume", False)
         if lookup:
             if engine not in {"claude", "codex"} and getattr(args, "interactive_resume", False):
                 raise ValueError("このengineにはpickerがないため、再開IDまたはautoを指定する")
