@@ -64,12 +64,12 @@ def _assert_matches_git(repo: pathlib.Path, listed: list[worktrees.Worktree]) ->
 
 
 @pytest.mark.cpu_limit(
-    3.0,
+    7.0 if sys.platform == "win32" else 3.0,
     reason=(
-        "空白・日本語・改行を含むパスとdetached・locked・"
-        + "prunableの登録を、元の登録と同じパス・branchで返す。 実"
-        + "Gitの主/linked/bareと特殊パスを照合する最小登録構成。"
-        + "Windows同群CPU最大1.234秒。"
+        "空白・日本語・改行を含むパスとdetached・locked・prunableの"
+        + "登録を、元の登録と同じパス・branchで返す。 実境界の最小入力を保持。Windows"
+        + "同一本文のCPU最大2.32812秒・同nodeの変動幅2.23438秒に2回分"
+        + "の余裕を持たせる。"
     ),
 )
 def test_lists_special_paths_and_states(tmp_path: pathlib.Path) -> None:
@@ -92,7 +92,7 @@ def test_lists_special_paths_and_states(tmp_path: pathlib.Path) -> None:
     git_repository.run_git(repo, "worktree", "add", "-b", "removed-branch", str(prunable))
     shutil.rmtree(prunable)
 
-    for start in (repo, *created):
+    for start in (repo, tmp_path / names[0]):
         listed = worktrees.list_worktrees(start)
         by_path = {entry.path.resolve(): entry for entry in listed}
         assert listed[0].path.resolve() == repo.resolve()

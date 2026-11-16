@@ -1,5 +1,6 @@
 """過去の退避を一括整理し、生成差分だけを回収する契約を実Gitで確認する。"""
 
+import os
 import pathlib
 import unittest.mock
 from typing import Any
@@ -65,12 +66,11 @@ def test_generated_only_old_stash_is_collected(
 
 
 @pytest.mark.cpu_limit(
-    7.0,
+    27.5 if os.name == "nt" else 7.0,
     reason=(
-        "indexだけ・未追跡・別ディレクトリの変更も保全し、保護済みは繰り返"
-        + "し表示しない。 実Gitの退避と保護refを実際に保存し、現在の未保存"
-        + "成果と回復元を保持する最小構成。Windows同群CPU最大4.938"
-        + "秒。"
+        "indexだけ・未追跡・別ディレクトリの変更も保全し、保護済みは繰り返し表示しな"
+        + "い。 実境界の最小入力を保持。Windows同一本文のCPU最大10.0938秒"
+        + "・同nodeの変動幅8.5625秒に2回分の余裕を持たせる。"
     ),
 )
 @pytest.mark.parametrize("kind", ["tracked", "index-only", "untracked", "nested-lock"])
@@ -92,9 +92,9 @@ def test_user_content_is_protected_and_not_reported_again(
     ref, oid = _save_old(repository, kind)
 
     assert update_dotfiles_stash.protect_old(cwd=repository) == 0
-    assert git_repository.git_output(repository, "rev-parse", ref) == oid
     shared_ref = ref.replace("refs/worktree/", "refs/atk/worktree-stash/main/")
-    assert git_repository.git_output(repository, "rev-parse", shared_ref) == oid
+    saved_refs = git_repository.git_output(repository, "for-each-ref", "--format=%(refname) %(objectname)", ref, shared_ref)
+    assert dict(line.split(" ", 1) for line in saved_refs.splitlines()) == {ref: oid, shared_ref: oid}
     capsys.readouterr()
     assert update_dotfiles_stash.protect_old(cwd=repository) == 0
     assert not capsys.readouterr().out
@@ -110,12 +110,11 @@ def test_user_content_is_protected_and_not_reported_again(
 
 
 @pytest.mark.cpu_limit(
-    5.0,
+    7.5 if os.name == "nt" else 5.0,
     reason=(
-        "生成差分だけでも、退避元のローカルcommitが唯一の参照ならその履歴"
-        + "を保持する。 実Gitの退避と保護refを実際に保存し、現在の未保存成"
-        + "果と回復元を保持する最小構成。Windows同群CPU最大4.938秒"
-        + "。"
+        "生成差分だけでも、退避元のローカルcommitが唯一の参照ならその履歴を保持する"
+        + "。 実境界の最小入力を保持。Windows同一本文のCPU最大2.42188秒・"
+        + "同nodeの変動幅2.375秒に2回分の余裕を持たせる。"
     ),
 )
 def test_generated_stash_preserves_otherwise_unreachable_local_commit(tmp_path: pathlib.Path) -> None:
@@ -164,11 +163,11 @@ def test_old_stash_processing_has_constant_git_process_count(tmp_path: pathlib.P
 
 
 @pytest.mark.cpu_limit(
-    5.0,
+    10.5 if os.name == "nt" else 5.0,
     reason=(
-        "共有保護と固有退避が不一致なら、自動生成差分でも両方を保持して止まる。"
-        + " 実Gitの退避と保護refを実際に保存し、現在の未保存成果と回復元を"
-        + "保持する最小構成。Windows同群CPU最大4.938秒。"
+        "共有保護と固有退避が不一致なら、自動生成差分でも両方を保持して止まる。 実境界の"
+        + "最小入力を保持。Windows同一本文のCPU最大3.45312秒・同nodeの"
+        + "変動幅3.35938秒に2回分の余裕を持たせる。"
     ),
 )
 def test_inconsistent_protection_preserves_both_values(tmp_path: pathlib.Path) -> None:
@@ -205,11 +204,11 @@ def test_queue_repository_is_not_changed(tmp_path: pathlib.Path, monkeypatch: py
 
 
 @pytest.mark.cpu_limit(
-    5.0,
+    6.5 if os.name == "nt" else 5.0,
     reason=(
-        "ロックを共有しない手動更新が途中に入っても、旧値を条件にして全回収を取"
-        + "り消す。 実Gitの退避と保護refを実際に保存し、現在の未保存成果と"
-        + "回復元を保持する最小構成。Windows同群CPU最大4.938秒。"
+        "ロックを共有しない手動更新が途中に入っても、旧値を条件にして全回収を取り消す。 "
+        + "実境界の最小入力を保持。Windows同一本文のCPU最大2.10938秒・同node"
+        + "の変動幅1.95312秒に2回分の余裕を持たせる。"
     ),
 )
 def test_changed_ref_aborts_entire_cleanup_transaction(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

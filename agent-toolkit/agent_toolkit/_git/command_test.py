@@ -184,7 +184,13 @@ sys.exit(255)
 
 
 @pytest.mark.cpu_limit(
-    3.5, reason="実gitが起動した無応答remoteの子孫回収を確認する。待機はCPUへ含めない（Windows CI CPU1.532秒）"
+    9.5 if os.name == "nt" else 3.5,
+    reason=(
+        "応答しないリモートへのfetchはデフォルトの時間上限で打ち切られ、gitが起動"
+        + "した子孫のプロセスも残らない。 実境界の最小入力を保持。Windows同一本文の"
+        + "CPU最大3.90625秒・同nodeの変動幅2.78125秒に2回分の余裕を持"
+        + "たせる。"
+    ),
 )
 def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -193,10 +199,9 @@ def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
 
     デフォルトの上限が無い場合、fetchはリモートの代役が終わる30秒後まで戻らず、時間切れも送出しない。
     """
-    repository = tmp_path / "repo"
-    repository.mkdir()
-    subject.run_quiet(["init", "--initial-branch=main"], repository)
-    subject.run_quiet(["remote", "add", "origin", "ssh://unresponsive.invalid/repo.git"], repository)
+    repository = git_repository.init_repository(
+        tmp_path / "repo", initial_branch="main", origin="ssh://unresponsive.invalid/repo.git"
+    )
     script = tmp_path / "unresponsive_remote.py"
     script.write_text(_UNRESPONSIVE_REMOTE_SCRIPT, encoding="utf-8")
     pid_file = tmp_path / "grandchild.pid"
@@ -268,11 +273,11 @@ def test_run_reclaims_orphan_lock_and_retries_once(stale_lock_repo: pathlib.Path
 
 
 @pytest.mark.cpu_limit(
-    2.5,
+    3.0 if os.name == "nt" else 2.5,
     reason=(
-        "生存中の所有者のロックは回収せず、元のエラーに判定結果を添えて返す。 "
-        + "実Gitの入力または標準indexロックを検証する最小構成。"
-        + "Windows同群CPU最大1.141秒。"
+        "生存中の所有者のロックは回収せず、元のエラーに判定結果を添えて返す。 実境界の最"
+        + "小入力を保持。Windows同一本文のCPU最大0.96875秒・同nodeの変"
+        + "動幅0.921875秒に2回分の余裕を持たせる。"
     ),
 )
 def test_run_keeps_lock_of_live_owner_and_reports_decision(stale_lock_repo: pathlib.Path) -> None:

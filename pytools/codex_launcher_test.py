@@ -348,11 +348,11 @@ async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> N
 
 
 @pytest.mark.cpu_limit(
-    3.0,
+    3.5 if os.name == "nt" else 3.0,
     reason=(
-        "反復利用される非対話コマンドは、復旧用の依存を読み込まずに同じ実行体へ"
-        + "引き渡す。 実CLIのプロセス境界で引数/入力/終了状態と同じ仕事の再"
-        + "開を確認する。Windows同群CPU最大1.313秒。"
+        "反復利用される非対話コマンドは、復旧用の依存を読み込まずに同じ実行体へ引き渡す。"
+        + " 実境界の最小入力を保持。Windows同一本文のCPU最大1.04688秒・同"
+        + "nodeの変動幅1.04688秒に2回分の余裕を持たせる。"
     ),
 )
 @pytest.mark.parametrize(
