@@ -7,6 +7,7 @@ import pathlib
 import re
 from typing import Any
 
+from agent_toolkit._agents_server.runtime_result_evidence import has_runtime_evidence
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._agents_server.turn_state import ResultContractWait
 from agent_toolkit._common import task_documents
@@ -39,6 +40,21 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
     """自由本文exploreの成功行と、役割taskの固定行、explore・taskの続行不能2行を検査する。"""
     if result.get("status") != "completed":
         return None
+    message = result.get("agent_message")
+    if isinstance(message, str) and session.launch_kind in {"delegate", "explore"}:
+        unavailable = re.finditer(
+            r"(?m)^(?P<indent>[ \t]*)続行できない区分:[ \t]*runtime_unavailable[ \t]*\r?\n"
+            r"(?P=indent)続行できない理由:[ \t]*(?P<reason>[^\r\n]+)",
+            message,
+        )
+        for claim in unavailable:
+            if not has_runtime_evidence(session, claim["reason"]):
+                return (
+                    "runtime_unavailableの理由に対応する当turnの実行診断を確認できません。"
+                    "続けられる作業を続けるか、当turnの失敗した呼出しの結果から"
+                    "空白正規化後24文字以上の逐語診断を引用して再提出してください。"
+                    "予算・時間枠・ツール回数枠の自己推定は実行不能の証拠になりません"
+                )
     document = task_documents.launched_task_document(session.prompt)
     freeform_explore = session.launch_kind == "explore" and document is None
     if not freeform_explore and (document is None or not task_documents.is_agent_toolkit_task_document(document)):
