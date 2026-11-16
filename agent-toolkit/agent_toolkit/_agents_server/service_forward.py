@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import uuid
 from collections.abc import Mapping
 from typing import Any
@@ -351,6 +352,7 @@ def forward(
     except KeyboardInterrupt:
         return 128 + (received_signal or signal.SIGINT)
     except (OSError, ValueError, RuntimeError) as error:
+        traceback.print_exc()
         report(
             str(error),
             next_action="状態と起動診断を確認し、未確定の操作は再送せず既存登録簿・物理記録で確認してください。",

@@ -237,6 +237,8 @@ def _stderr_warn_offenders(source: str) -> list[int]:
     """
     tree = ast.parse(source)
 
+    # ASTはこの解析中に変えない。値の伝播の各反復で同じ部分木を走査し直さない。
+    @functools.cache
     def has_warn_tag(node: ast.AST) -> bool:
         return any(
             isinstance(inner, ast.keyword) and inner.arg == "tag" and getattr(inner.value, "value", None) == "warn"

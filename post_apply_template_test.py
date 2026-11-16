@@ -510,6 +510,7 @@ public sealed class UpdateStageJob : IDisposable {
         f"ExecutablePath='C:\\appdata\\uv\\python\\cpython-3.15.2\\python.exe'; CommandLine='{command}' }}\n"
         "}\n"
         'function global:Stop-Process { param([int]$Id,[switch]$Force) Add-Content $env:BOOTSTRAP_LOG "stop:$Id" }\n'
+        "Write-Output ('bootstrap powershell: ' + (Get-Command powershell.exe -CommandType Application).Source)\n"
         "& $env:BOOTSTRAP_SCRIPT $env:BOOTSTRAP_UV\nexit $LASTEXITCODE\n",
         encoding="utf-8-sig",
     )
@@ -536,7 +537,7 @@ public sealed class UpdateStageJob : IDisposable {
             assert isinstance(failures, list)
             assert any(item["title"] == "管理Pythonの更新" for item in failures)
         else:
-            assert not payload.exists()
+            assert not payload.exists(), result.stdout + result.stderr + payload.read_text(encoding="utf-8-sig")
     if blocked:
         assert not log.exists()
         assert "連続1回" in result.stderr
