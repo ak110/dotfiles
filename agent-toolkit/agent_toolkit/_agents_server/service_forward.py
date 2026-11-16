@@ -376,14 +376,24 @@ def forward(
         target = ensure_service(caller, root, python=python)
         bridge.reader.start()
         while True:
-            with service_transport.connect(target["endpoint"], target["process"]) as peer:
-                try:
-                    if not bridge.attach(peer):
-                        return 0 if bridge.failure is None else 1
-                    with contextlib.suppress(EOFError, OSError):
-                        bridge.receive(peer)
-                finally:
-                    bridge.detach(peer)
+            try:
+                with service_transport.connect(target["endpoint"], target["process"]) as peer:
+                    try:
+                        if not bridge.attach(peer):
+                            return 0 if bridge.failure is None else 1
+                        with contextlib.suppress(EOFError, OSError):
+                            bridge.receive(peer)
+                    finally:
+                        bridge.detach(peer)
+            except (EOFError, ConnectionError, FileNotFoundError) as error:
+                # publishと初回readyの間にも旧世代は正常退出する。送信済み操作の判定は共通処理へ渡す。
+                current = registry.current()
+                if current is None or current["process"] == target["process"]:
+                    error.add_note(
+                        f"接続準備失敗時の世代: target={target['generation']} process={target['process']} "
+                        f"current={None if current is None else current['generation']}"
+                    )
+                    raise
             if bridge.input_closed:
                 if bridge.failure is not None:
                     raise bridge.failure
