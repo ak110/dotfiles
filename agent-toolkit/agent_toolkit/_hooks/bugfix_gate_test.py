@@ -7,7 +7,7 @@ import pytest
 
 from agent_toolkit._hooks import bugfix_gate, posttooluse, stop
 from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_execution_payload
 
 pytestmark = pytest.mark.usefixtures("without_read_delivery")
 
@@ -167,19 +167,44 @@ def test_verification_failure_requires_same_actor_bugfix_before_changes(tmp_path
     assert pre()
 
 
-@pytest.mark.parametrize("code,pending", [(0, False), (1, True), (2, False), (4, False), (6, True)])
-def test_ci_failure_is_distinguished_from_waiting_and_missing_runs(code, pending):
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("code,pending", [(0, False), (1, True), (2, False), (3, False), (4, False), (6, True)])
+def test_ci_failure_is_distinguished_from_waiting_and_missing_runs(tmp_path, code, pending, host):
     """CI失敗1/6だけを保持し、待機の終了を不具合の失敗にしない。"""
-    posttooluse.main(
-        json.dumps(
-            {
-                "session_id": "ci-failure",
-                "tool_use_id": "ci-1",
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk run-script wait-ci -- --baseline baseline.json"},
-                "tool_response": {"exit_code": code},
-            }
-        )
-    )
+    payload = {
+        "session_id": "ci-failure",
+        "tool_use_id": "ci-1",
+        "hook_event_name": "PostToolUseFailure" if code else "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "atk run-script wait-ci -- --baseline baseline.json"},
+        "tool_response": {"exit_code": code},
+    }
+    if host == "codex":
+        payload.update(turn_id="ci-turn", tool_response="CIの終了状態を確認した")
+        payload = codex_execution_payload(payload, tmp_path, exit_code=code)
+    posttooluse.main(json.dumps(payload))
     current = bugfix_gate.read_state("ci-failure").get(bugfix_gate.FAILURE_STATE_KEY, {}).get("main", {})
     assert bool(current.get("pending")) is pending
+    notice = bugfix_gate.verification_notice(payload, "Bash", {"command": "git commit -m fix"}, "ci-failure")
+    assert bool(notice) is pending
+
+
+@pytest.mark.parametrize("field", ["tool_use_id", "turn_id", "session_id"])
+def test_ci_failure_uses_only_the_same_native_execution(tmp_path, field):
+    """別の実行・ターン・主体の失敗や本文中の終了コードを、現在のCI失敗に流用しない。"""
+    payload = codex_execution_payload(
+        {
+            "session_id": "ci-failure",
+            "turn_id": "ci-turn",
+            "tool_use_id": "ci-1",
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Bash",
+            "tool_input": {"command": "atk run-script wait-ci -- --baseline baseline.json"},
+            "tool_response": "exit_code: 1",
+        },
+        tmp_path,
+        exit_code=1,
+    )
+    payload[field] = "different"
+    posttooluse.main(json.dumps(payload))
+    assert not bugfix_gate.read_state(payload["session_id"]).get(bugfix_gate.FAILURE_STATE_KEY)

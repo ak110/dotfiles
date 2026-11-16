@@ -17,11 +17,13 @@ Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける�
 
 import json
 import re
+lazy import os
 
 from agent_toolkit._hooks import notice
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
@@ -48,6 +50,42 @@ _DEFECT_RE = re.compile(
 _block_notice = notice.block_formatter("bugfix_gate")
 _failure_notice = notice.formatter("verification-bugfix")
 FAILURE_STATE_KEY = "verification_bugfix"
+
+
+def _ci_exit_code(payload: dict) -> int | None:
+    response = payload.get("tool_response")
+    code = response.get("exit_code") if isinstance(response, dict) else None
+    if isinstance(code, int) and not isinstance(code, bool):
+        return code
+    path = payload.get("transcript_path")
+    identifier = payload.get("tool_use_id")
+    if not is_codex_payload(payload) or not isinstance(path, str) or not isinstance(identifier, str) or not identifier:
+        return None
+    # Codexの応答文字列には終了コードがない。wait-ciの完了時だけ末尾を読み、
+    # 同じturn・実行IDのホスト記録を使う。長い会話全体を毎回解析しない。
+    try:
+        size = os.stat(path).st_size
+    except OSError, ValueError:
+        return None
+    data = transcript.read_transcript_bytes(path, offset=max(0, size - 262144))
+    for line in reversed(split_lines(data or b"")):
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        event = record.get("payload") if isinstance(record, dict) and record.get("type") == "event_msg" else None
+        if not isinstance(event, dict) or event.get("type") != "item_completed" or event.get("turn_id") != payload["turn_id"]:
+            continue
+        item = event.get("item")
+        if (
+            isinstance(item, dict)
+            and item.get("type") == "CommandExecution"
+            and item.get("id") == identifier
+            and event.get("thread_id") == payload["session_id"]
+        ):
+            code = item.get("exit_code")
+            return code if isinstance(code, int) and not isinstance(code, bool) else None
+    return None
 
 
 def _wait_ci_operation(tool_name: str, tool_input: dict) -> bool:
@@ -96,7 +134,7 @@ def observe_verification(payload: dict) -> None:
         return
     if _wait_ci_operation(tool_name, tool_input):
         # wait-ciの1はCI失敗、6は途中の新規失敗。待機timeoutやrun未登録は別の状態である。
-        failed = isinstance(code, int) and not isinstance(code, bool) and code in (1, 6)
+        failed = _ci_exit_code(payload) in (1, 6)
     elif operation_skills.operation_matches("verification", tool_name, tool_input):
         failed = failed or isinstance(code, int) and not isinstance(code, bool) and code != 0
     else:
