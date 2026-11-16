@@ -170,6 +170,7 @@ hookの通知は選択を補助する。
 - `references/writing-readers.md`
 - `references/writing-genres.md`
 - `references/writing-maintenance.md`
+
 同じ時点で、以降の技術別・工程別の表で該当する資料を読む。
 成果物として残さない使い捨ての一時コードは、言語別の必須読込の対象外とする。
 安全性、認可、データ保全の制約は維持し、成果物へ取り込む段階で該当する品質基準を適用する。

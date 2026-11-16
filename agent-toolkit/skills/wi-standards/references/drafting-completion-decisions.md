@@ -43,6 +43,7 @@
 - `agent-basics:writing-standards/references/design-heuristics-screening.md`
 - `agent-basics:writing-standards/references/design-heuristics-proportionality.md`
 - `agent-basics:writing-standards/references/design-heuristics-decisions.md`
+
 反復実行される処理では、実行ごとのモデル呼び出し、読み込み、照会、待機、再試行にかかるコストも比較し、後続の処理エージェントが方式を選択できるよう、結論と根拠を本文の適切な箇所に記録する。
 目的や要件に関する既存方針と衝突する案は、`drafting-completion-policies.md`「方針と判断の記録との比較」に従って方針を変える案として確認へ回す。
 手段に関する方針と衝突する要求は、`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」に照らしてQCDが明らかに向上する場合に限り、方針からの逸脱として採用する。

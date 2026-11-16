@@ -16,6 +16,7 @@
 
 - `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」
 - `../../wi-standards/references/wi-standards-origin.md`「由来と承認」
+
 後日の対策効果が完成条件である場合も、適用条件・観測機会と、待てば解決する見込みの根拠を特定して再開記録へ残す。
 cooldownを使える境界は`../../wi-standards/references/states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
 残りの見送り・追加認可・見込みの立たない外部変更待ちの判断は、レーン担当が必要と確定した時点で委譲元へ通知する。

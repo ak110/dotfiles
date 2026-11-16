@@ -112,6 +112,7 @@ Claude Codeでは、要約の行が最終応答に無い場合にStop hookが再
 
 - `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」
 - `../../user-confirmation-and-report/references/approval-scope.md`
+
 委譲する場合は、起動するスキル名、対象リポジトリ内の恒久変更をAWIに限定する制限範囲、対象外となる通常の判断基準、セッション終了条件を委譲プロンプトに明記する。
 
 ## 完成条件

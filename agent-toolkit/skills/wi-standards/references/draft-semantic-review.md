@@ -114,6 +114,7 @@
    - `drafting-completion-confirmation.md`
    - `drafting-completion-validation.md`
    - `drafting-completion-policies.md`
+
    「重複判定」は`drafting-completion-duplicates.md`の起点別条件に従い、手動の新規主題と作業中の独立した運用不具合を区別する。
    後者は採用済み修正と利用版・配布状況まで比較したかを確かめ、前者で免除された未知検索の未実施だけを理由に検収を止めない。
    観測された不具合を起点としbugfixを起動して起草するAWIには「原因と定義の所有者」と同資料が参照するbugfixの基準も併せて適用する。

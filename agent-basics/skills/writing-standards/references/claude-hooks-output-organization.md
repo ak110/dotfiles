@@ -25,6 +25,7 @@ Claude Code 2.1.325の実機では、背景Bashの完了通知は`session.receiv
 - `classic.`で始まるイベント
 - `prompt.section`、`prompt.context`、`prompt.attachment`、`prompt.compose`、`skill.prompt`、`attribution.text`、`session.compact`、`settings.read`
 - doorが`attachment`、`hook-context`、`compaction`である`session.append`
+
 監査記録は`docs/development/audit-records-hooks-protocol.md`にある。
 対象の節は「agent-basics/skills/writing-standards/references/claude-hooks-output-organization.md：組織向け設定：2026年11月15日」である。
 過去のガードの観測は同資料の「agent-basics/skills/writing-standards/references/claude-hooks-output-organization.md：組織向け設定：2026年10月20日」にある。

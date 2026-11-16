@@ -43,4 +43,5 @@ import error、構文エラー、fixtureの準備失敗、無関係なアサー�
 
 - `../../bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」
 - `../../bugfix/references/root-cause-prevention-verification.md`「再発防止としてのテスト」
+
 不具合修正前のバージョンにおいてテストが確実に失敗することの確認は同節の規定に従って行い、前述の費用便益評価による省略の対象外とする。

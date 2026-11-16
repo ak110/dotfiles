@@ -40,6 +40,7 @@
 
   - `agent-basics:bugfix/references/root-cause-analysis-initial.md`
   - `agent-basics:bugfix/references/root-cause-analysis-evidence.md`
+
   直接的原因を特定できない場合は是正コミットとして返さず、実施した比較検証、残された可能性、および作成した診断用コードの変更内容を、推定である旨を明記して報告する。
   診断コードを追加する場合は、CI記録が紐付けている競合仮説、観測事項、採取対象をあらかじめ確認し、識別に寄与しない網羅的な列挙や走査を避け、採取対象を絞り込んで出力量を抑える。
   修正手順は`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」におけるCI失敗の分類に従う。

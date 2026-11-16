@@ -40,6 +40,7 @@ SSOT（単一の情報源）、責務の混在、重複、読み取り・変更�
 - `agent-documents-basics-placement.md`
 - `agent-documents-basics-read-tables.md`
 - `agent-documents-basics-ownership.md`
+
 評価結果は各観点ごとの結論として記録し、劣化がないと判断した場合も観点ごとにその根拠を記載する。
 記録先および是正手順は各工程の規範に従う。
 後続の工程では、先行工程による「劣化なし」という結論を鵜呑みにせず、自ら独立して再評価する。

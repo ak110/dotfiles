@@ -16,6 +16,7 @@
 
 - `../skills/delegation/references/routing-decisions.md`
 - `../skills/delegation/references/routing-units.md`
+
 書き込みを分担させる場合は、`agent-toolkit:delegation`の`references/mandatory-rules.md`「作業ツリーの保護」に定める書き込み先の分担規律と、作業ツリー全体へ影響を及ぼす操作の扱いに従う。
 対象作業の集合と検収に対する責任、中止・変更・再開に関する指示の受領内容は、自身が保持し続ける。
 自身が起動していないエージェントの完了を待機することはせず、必要な依頼は委譲元へ返す。

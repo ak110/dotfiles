@@ -85,6 +85,7 @@ description: >
 - `agent-basics:writing-standards/references/agent-documents-basics-placement.md`
 - `agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`
 - `agent-basics:writing-standards/references/agent-documents-basics-ownership.md`
+
 特定のツール、データ、命名、CI、運用形態などを前提とする内容はプロジェクト側に置き、それらの固有要素を同種の別要素へ置き換えても判定基準・工程順・終了条件が成立する汎用的な内容のみを配布物の対象とする。
 
 ## 配布物としての記述方針
