@@ -4,14 +4,8 @@ import { awiStatusWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 
 type Request = { id: string; operation: string; input: { message?: string; targets?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
-export type BackgroundWait = { id: string; command: string; startedAt: number; used: boolean; replExpiresAt?: number };
-export type RuntimeChange = { id: string; targets: string[]; phase: "pending" | "running" | "done"; results: { target: string; text?: string; context?: readonly string[]; ref?: number; error?: string }[]; notified: boolean };
-
-declare module "claude-code" {
-  interface PluginState {
-    "agent-toolkit": { uiMessages: Record<string, string>; uiConsumed: Record<string, number>; runtimeChange: RuntimeChange | null; backgroundWaits: Record<string, BackgroundWait>; backgroundSeen: Record<string, boolean>; recheckRequested: boolean; compactRequested: boolean; turnRunning: boolean };
-  }
-}
+import type { BackgroundWait, RuntimeChange } from "./state.d.ts";
+export type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 
 function expireReplWait($: EngineInterface, wait: BackgroundWait): void {
   if (wait.replExpiresAt === undefined) return;

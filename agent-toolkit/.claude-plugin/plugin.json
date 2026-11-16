@@ -19,5 +19,6 @@
   ],
   "dependencies": [
     "agent-basics"
-  ]
+  ],
+  "types": "./hooks/state.d.ts"
 }
