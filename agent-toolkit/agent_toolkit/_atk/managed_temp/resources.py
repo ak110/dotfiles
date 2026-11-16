@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import pathlib
 import shutil
@@ -18,6 +19,18 @@ from agent_toolkit._atk.managed_temp import paths
 from agent_toolkit._git import command as git_command
 
 _CACHE_SIGNATURE = "Signature: 8a477f597d28d172789f06886806bc55"
+
+
+def log_retained(retained: list[dict[str, Any]]) -> None:
+    """通常の除外は集約し、再試行できる保持には対象と診断を残す。"""
+    logger = logging.getLogger(__name__)
+    retryable = [row for row in retained if row["retryable"]]
+    excluded = [row for row in retained if not row["retryable"]]
+    if retryable:
+        logger.info("再生成物の回収を保留（次回掃引で再試行）: %s", retryable)
+    if excluded:
+        logger.info("リンク・原本などの保護対象を回収から除外: %s件", len(excluded))
+        logger.debug("再生成物の保護対象: %s", excluded)
 
 
 def _regenerable(path: pathlib.Path) -> bool:

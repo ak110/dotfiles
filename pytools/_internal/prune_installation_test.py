@@ -110,7 +110,8 @@ def test_active_rustup_defers_minimal_cleanup(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("legacy_uvx", [False, True])
-def test_process_scan_detects_python_from_old_shared_environment(tmp_path, monkeypatch, legacy_uvx):
+@pytest.mark.parametrize("late_reference", [False, True])
+def test_process_scan_detects_python_from_old_shared_environment(tmp_path, monkeypatch, legacy_uvx, late_reference):
     """実行ファイルの実体が共通Pythonでも、argvの仮想環境パスで参照を判定する。"""
     environment = tmp_path / "environments/old"
     process = types.SimpleNamespace(
@@ -121,7 +122,11 @@ def test_process_scan_detects_python_from_old_shared_environment(tmp_path, monke
             "cmdline": (
                 [str(tmp_path / "uv-cache/bin/pyfltr"), "mcp"]
                 if legacy_uvx
-                else [str(environment / "bin/python"), "/plugin/agent_toolkit/agents_server_mcp.py"]
+                else (
+                    ["/runtime/python", "-X", "utf8", "/wrapper/dispatch.py", "--target", str(environment / "bin/python")]
+                    if late_reference
+                    else [str(environment / "bin/python"), "/plugin/agent_toolkit/agents_server_mcp.py"]
+                )
             ),
             "uids": types.SimpleNamespace(real=os.getuid()) if os.name != "nt" else None,
             "username": prune_installation.psutil.Process().username(),
@@ -143,6 +148,40 @@ def test_full_keeps_project_development_tools_and_old_environments(tmp_path, mon
     assert result.failure is None
     assert all("uninstall" not in command for command in calls)
     assert ["/fixture/uv", "cache", "clean"] in calls
+
+
+@pytest.mark.parametrize("missing", ["exe", "cmdline", "both"])
+@pytest.mark.parametrize("referenced", [False, True])
+def test_minimal_cleanup_uses_available_process_references(tmp_path, monkeypatch, missing, referenced):
+    """argvでexeの取得失敗を補い、argv不明の間接利用と実参照は保持する。"""
+    active_users = prune_installation._active_users
+    _, calls = _prepare(tmp_path, monkeypatch, "minimal")
+    target = tmp_path / "old-environment"
+    executable = str(target / "python") if referenced else str(tmp_path / "unrelated/program")
+    process = types.SimpleNamespace(
+        pid=123,
+        username=lambda: "fixture",
+        as_dict=lambda _attributes: {
+            "name": "python",
+            "exe": executable if missing == "cmdline" else None,
+            "cmdline": [executable] if missing == "exe" else None,
+            "username": "fixture",
+            "uids": types.SimpleNamespace(real=os.getuid() if os.name != "nt" else None),
+            "status": psutil.STATUS_RUNNING,
+        },
+    )
+    monkeypatch.setattr(prune_installation, "removal_paths", lambda: (target,))
+    monkeypatch.setattr(prune_installation.codex_processes, "codex_processes", lambda: [])
+    monkeypatch.setattr(psutil, "process_iter", lambda: [process])
+    monkeypatch.setattr(psutil, "Process", lambda _pid=None: process)
+    monkeypatch.setattr(prune_installation, "_active_users", active_users)
+    result = prune_installation.run()
+    if missing != "exe" or referenced:
+        assert result.failure is not None
+        assert not calls
+    else:
+        assert result.failure is None
+        assert calls
 
 
 def test_invalid_runtime_home_preserves_entire_worktree(tmp_path, monkeypatch):

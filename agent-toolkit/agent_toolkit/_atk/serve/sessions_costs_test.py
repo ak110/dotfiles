@@ -2,19 +2,90 @@
 
 # pylint: disable=protected-access
 
+import contextlib
 import errno
+import io
 import json
 import os
 import pathlib
 import subprocess
 import sys
 import time
+import types
 import typing
 
 import pytest
 
 from agent_toolkit._atk.serve import sessions
 from agent_toolkit._testing.serve_sessions_support import _claude_record, _context, _start_warmer, _wait_until
+
+
+def test_cost_warmer_preserves_unreclaimed_owner_before_restarting(tmp_path, monkeypatch):
+    """回収未確認は所有対象を保持して再試行し、解消するまで新workerを開始しない。"""
+    subject = sessions._session_costs
+    owned = typing.cast(typing.Any, object())
+    failure = subject._process_tree.ReclaimError(["fixture-owned"], [owned], context="fixture")
+    starts = []
+    retried = []
+
+    @contextlib.contextmanager
+    def start():
+        starts.append("worker")
+        process = types.SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO(), returncode=1)
+        try:
+            yield process
+        finally:
+            process.stdin.close()
+            process.stdout.close()
+            raise failure
+
+    def retry(**_kwargs):
+        retried.append(list(failure.processes))
+        return failure.residual
+
+    monkeypatch.setattr(subject, "_start_worker", start)
+    monkeypatch.setattr(failure, "retry", retry)
+    warmer = subject.FamilyCostWarmer(
+        subject.FamilyCostCache(None), claude_home=tmp_path, codex_home=tmp_path, state_dir=None, slim_directory=None
+    )
+    assert warmer._compute("claude", "unused") is None
+    assert warmer._compute("claude", "unused") is None
+    assert starts == ["worker"]
+    assert warmer._worker_failure is failure
+    with pytest.raises(subject._process_tree.ReclaimError) as caught:
+        warmer.stop()
+    assert caught.value is failure
+    assert retried == [[owned], [owned]]
+    assert warmer._worker_failure is failure
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.asyncio
+async def test_local_watch_stop_retains_unreclaimed_cost_worker(tmp_path, monkeypatch, asynchronous):
+    """同期・非同期の停止は回収未確認の所有を残し、同じ対象の再試行が成功してから解放する。"""
+    subject = sessions._session_costs
+    failure = subject._process_tree.ReclaimError(["fixture-owned"], [], context="fixture", unresolved=["not confirmed"])
+    context = _context(tmp_path)
+    warmer = subject.FamilyCostWarmer(
+        subject.FamilyCostCache(None), claude_home=tmp_path, codex_home=tmp_path, state_dir=None, slim_directory=None
+    )
+    context.state.cost_warmer = warmer
+    warmer._worker_failure = failure
+    monkeypatch.setattr(failure, "retry", lambda **_kwargs: failure.residual)
+    with pytest.raises(subject._process_tree.ReclaimError) as caught:
+        if asynchronous:
+            await sessions.stop_local_watch_async(context)
+        else:
+            sessions.stop_local_watch(context)
+    assert caught.value is failure
+    assert context.state.cost_warmer is warmer
+    monkeypatch.setattr(failure, "retry", lambda **_kwargs: [])
+    if asynchronous:
+        await sessions.stop_local_watch_async(context)
+    else:
+        sessions.stop_local_watch(context)
+    assert context.state.cost_warmer is None
+    assert warmer._worker_failure is None
 
 
 def test_family_cost_is_reused_until_a_family_record_changes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,11 +163,11 @@ def test_cost_warmer_stops_after_worker_exit_and_restarts_on_next_request(
     original = sessions._session_costs._start_worker
     started: list[str] = []
 
-    def failing_then_real() -> subprocess.Popen[str]:
+    def failing_then_real() -> contextlib.AbstractContextManager[subprocess.Popen[str]]:
         started.append("worker")
         if len(started) == 1:
-            return subprocess.Popen(  # pylint: disable=consider-using-with  # warmerが終了を待って閉じる
-                [sys.executable, "-c", "import sys; sys.exit(3)"],
+            return sessions._session_costs._process_tree.process_scope(
+                [sys.executable, "-c", "import sys; sys.stdin.readline(); sys.exit(3)"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 text=True,
@@ -132,7 +203,7 @@ def test_cost_warmer_survives_worker_start_failure_and_restarts_on_next_request(
     original = sessions._session_costs._start_worker
     started: list[str] = []
 
-    def failing_then_real() -> subprocess.Popen[str]:
+    def failing_then_real() -> contextlib.AbstractContextManager[subprocess.Popen[str]]:
         started.append("worker")
         if len(started) == 1:
             raise OSError(errno.EMFILE, "Too many open files")

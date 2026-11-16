@@ -169,9 +169,10 @@ def stop_local_watch(context: SessionsContext) -> None:
     if thread is not None:
         thread.join()
         context.state.local_rescan_thread = None
-    warmer, context.state.cost_warmer = context.state.cost_warmer, None
+    warmer = context.state.cost_warmer
     if warmer is not None:
         warmer.stop()
+        context.state.cost_warmer = None
     watch = context.state.record_watch
     if watch is None:
         return
