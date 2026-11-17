@@ -51,6 +51,28 @@ class ServiceManagers:
         self._projections = projections
         self.before_controls: Callable[[], Awaitable[bool]] | None = None
 
+    async def generations(self) -> list[dict[str, object]]:
+        """照会した世代と、同じ管理領域で退出していない全世代を区別して返す。
+
+        更新中の正常な世代の併存と、旧世代が退出できずに残る状態を、照会の応答から区別できるようにする。
+        """
+        if self._projections is None:
+            return []
+        queried = self._projections.generation
+        entries = await run_file_operation(self._projections.registry.generations)
+        current = await run_file_operation(self._projections.registry.current)
+        return [
+            {
+                "generation": name,
+                "epoch": entry.get("epoch"),
+                "server_instance": entry.get("server_instance"),
+                "current": current is not None and current.get("generation") == name,
+                "queried": name == queried,
+            }
+            for name, entry in sorted(entries.items(), key=lambda item: item[1].get("epoch", 0))
+            if not entry.get("retired")
+        ]
+
     async def __aenter__(self) -> ServiceManagers:
         self._monitor_task = asyncio.create_task(self._monitor())
         return self

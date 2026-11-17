@@ -553,8 +553,15 @@ async def list_sessions(
     表示範囲を指定しない場合は未回収結果を持たない終了済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
     全件が必要な場合は`include_terminated`へ真を渡す。除いた件数が0なら`omitted`は省く。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
+    照会したサーバーの起動単位を`queried_server_instance`へ返す。
+    共有管理サービスでは退出していない世代を`server_generations`へ返し、受付中の世代（`current`）と照会した世代（`queried`）を示す。
     """
-    return await _manager().list_sessions(include_terminated=include_terminated)
+    response = await _manager().list_sessions(include_terminated=include_terminated)
+    response["queried_server_instance"] = session_registry.owner_server_instance()
+    if _SERVICE_MANAGERS is not None and (generations := await _SERVICE_MANAGERS.generations()):
+        # 退出していない世代が複数あれば更新中か旧世代の残存であり、sessionの所有者を確かめる手掛かりにする。
+        response["server_generations"] = generations
+    return response
 
 
 @mcp.tool(

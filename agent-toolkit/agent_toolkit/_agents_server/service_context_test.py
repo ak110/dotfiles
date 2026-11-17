@@ -128,3 +128,22 @@ async def test_accepted_effort_is_drained_through_control_save(monkeypatch, tmp_
         await asyncio.gather(monitor, return_exceptions=True)
         if pause is not None:
             await pause
+
+
+@pytest.mark.asyncio
+async def test_generations_distinguish_current_queried_and_retired(tmp_path):
+    """照会した世代・受付中の世代・退出済みの世代を区別して返す。"""
+    from agent_toolkit._agents_server.service_projection import ProjectionHub  # pylint: disable=import-outside-toplevel
+
+    directory = tmp_path / "services/agents-server"
+    hub = ProjectionHub("old", directory)
+    registry = hub.registry
+    for name, version in (("gone", "0.9.0"), ("old", "1.0.0"), ("new", "1.0.1")):
+        registry.reserve(name, tmp_path, version)
+        registry.publish(name, endpoint=name, process=name, server_instance=f"instance-{name}")
+    registry.retire("gone", "gone")
+    managers = service_context.ServiceManagers(state_root=tmp_path, projections=hub)
+    assert await managers.generations() == [
+        {"generation": "old", "epoch": 2, "server_instance": "instance-old", "current": False, "queried": True},
+        {"generation": "new", "epoch": 3, "server_instance": "instance-new", "current": True, "queried": False},
+    ]
