@@ -85,6 +85,7 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | 完成条件や採否を決める値を測定する前 | `references/measurement.md` | | | |
 | 参考資料に対応する実物の調査を始める前、起草の方針を決める前（手順2の2。提示・確認の有無と、方針を伝えるかによらない）、質問ラウンドを終える前と原稿を確定する前 | `references/omission-check.md` | | | |
 | 観測された問題の証拠収集・件数集計を始める前 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`../user-confirmation-and-report/references/user-utterance.md` | | | |
+| 観測された問題が所要・費用の増大で、原因の分析を始める前 | `agent-basics:bugfix/references/root-cause-scenarios-testing.md` | | | |
 
 ## 手順
 

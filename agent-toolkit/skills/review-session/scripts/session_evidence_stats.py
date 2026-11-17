@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import session_evidence_unit_costs
 from session_evidence_extract import (
     _clip,
     _CollectedRecord,
@@ -852,6 +853,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
         else {"kind": "stats-summary", "text": "集計対象なし"}
     )
 
+    events.append(session_evidence_unit_costs.unit_cost_event(collected, summaries))
     events.extend(_stats_breakdown_events(main_records, runtime))
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
     events.extend(_stats_compaction_events(collected, compaction_record_dir))

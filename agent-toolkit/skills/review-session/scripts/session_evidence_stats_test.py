@@ -146,6 +146,12 @@ def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pa
         {"kind": "stats-slow-call", "tool": "Bash", "seconds": 3.0, "line": 2, "hint": "make test"},
     ]
     assert events_by_kind(events, "stats-token-peak")[0]["line"] == 5
+    # 1手あたりの費用: 呼び出し3秒・10秒の中央値6.5秒、応答1回の所要は経過70秒からツールの13秒を除いた57秒。
+    unit = events_by_kind(events, "stats-unit-costs")[0]
+    assert unit["tool_calls"] == 2 and unit["tool_call_median_seconds"] == 6.5
+    assert unit["responses"] == 1 and unit["response_mean_seconds"] == 57.0
+    assert unit["response_input_tokens_median"] == 80 and unit["response_output_tokens_mean"] == 20.0
+    assert unit["max_concurrent_records"] == 1 and unit["timeout_failures"] == 0
 
 
 def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, capsys) -> None:
