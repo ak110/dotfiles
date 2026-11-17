@@ -6,10 +6,11 @@
 
 作業中の数は既存の状態ファイル（30秒周期のheartbeat付き）から求め、新しい常駐の監視は作らない。
 子を持つ委譲元も自身が作業を続けていれば作業中に数える。
-子の結果を待っているだけの委譲元（最後の操作が`atk agents wait`）と、子の起動の許可を待っている委譲元は数えない。
+最後の操作が`atk agents wait`の実行である委譲元と、子の起動の許可を待っている委譲元は、子を待つだけとして数えない。
 待つだけの親が枠を持つと子や孫を起動できずに全体が止まるためである。
-上限に達していても、作業中に数えた全sessionが依頼元とその祖先だけである場合は許可する。
-このときは依頼元の系列以外に枠を空ける主体がなく、待たせると行き止まりになるためで、上限を超えるのはこの場合に限る。
+上限の判定は起動の許可時点で行う。許可を待つ間は依頼元を数えないため、許可後に依頼元が待機へ入らず作業を続けると、
+依頼元1件につき最大1件だけ一時的に上限を超える（2026年11月17日の統括の技術判断。起動を待たせたまま即時に返す方式は
+識別子をバックエンドが起動時に払い出すため採らない）。
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import time
 import uuid
 from collections.abc import Callable, Generator
@@ -41,8 +43,11 @@ ADMITTED_GRACE_SECONDS = 60.0
 # 待機が失われたものとして削除し、依頼順の先頭を塞がないようにする。
 WAITING_STALE_SECONDS = 30.0
 _WORKING_STATUSES = frozenset({"starting", "running"})
-# 委譲元が子の終了を待つ公開手段。最後の操作がこれを含むsessionは子を待っているだけとみなす。
-_WAIT_ACTION = "agents wait"
+# 委譲元が子の終了を待つ公開手段。最後の操作のコマンドがこれを実行しているsessionは子を待っているだけとみなす。
+# 検索語や引用として現れる場合と区別するため、コマンドの先頭（シェル経由の起動を含む）でatkを実行している場合に限る。
+_WAIT_ACTION = re.compile(
+    r"""command=\[?"?(?:(?:\S*/)?(?:bash|sh|zsh)"?,?\s*"?-l?c"?,?\s*"?)?(?:\S*/)?atk(?:\.cmd)?"?,?\s*"?agents"?,?\s*"?wait(?:[\s"\],]|$)"""
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -89,19 +94,6 @@ class Observation:
     waiting: int
     failures: tuple[str, ...] = ()
     working_sessions: tuple[str, ...] = ()
-    hosts: tuple[tuple[str, str], ...] = ()
-
-    def only_lineage_of(self, requester: str | None) -> bool:
-        """作業中に数えた全sessionが、依頼元とその祖先だけかを返す。"""
-        if requester is None:
-            return False
-        parents = dict(self.hosts)
-        lineage: set[str] = set()
-        current: str | None = requester
-        while current is not None and current not in lineage:
-            lineage.add(current)
-            current = parents.get(current)
-        return bool(self.working_sessions) and set(self.working_sessions) <= lineage
 
 
 def _live(pid: object) -> bool:
@@ -166,20 +158,13 @@ def observe(state_root: pathlib.Path | None = None, *, now: float | None = None)
         sorted(
             key
             for key, value in active.items()
-            if key not in waiting_hosts and _WAIT_ACTION not in str(value.get("last_action", ""))
-        )
-    )
-    hosts = tuple(
-        sorted(
-            (key, str(value["host_session_id"]))
-            for key, value in sessions.items()
-            if isinstance(value.get("host_session_id"), str)
+            if key not in waiting_hosts and not _WAIT_ACTION.search(str(value.get("last_action", "")))
         )
     )
     # 起動処理中の許可は状態ファイルへ現れる前から数える。現れた後の短い重複は上限を下げる側へ倒れるだけである。
     admitted = sum(1 for _path, payload in tickets if payload.get("admitted_at") is not None)
     waiting = sum(1 for _path, payload in tickets if payload.get("admitted_at") is None)
-    return Observation(len(working_sessions), admitted, waiting, tuple(failures), working_sessions, hosts)
+    return Observation(len(working_sessions), admitted, waiting, tuple(failures), working_sessions)
 
 
 @dataclasses.dataclass
@@ -245,8 +230,7 @@ async def acquire(
                 observation = observe(state_root, now=now)
                 waiting = sorted(path for path, payload in _read_tickets(directory, now) if payload.get("admitted_at") is None)
                 first = bool(waiting) and waiting[0] == ticket
-                free = observation.working + observation.admitted < limit.value
-                if first and (free or (observation.admitted == 0 and observation.only_lineage_of(host_session_id))):
+                if first and observation.working + observation.admitted < limit.value:
                     _atomic_write(
                         ticket,
                         {"pid": os.getpid(), "host_session_id": host_session_id, "admitted_at": now},

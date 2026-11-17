@@ -196,17 +196,39 @@ def test_parent_waiting_on_children_is_not_counted_but_working_parent_is(tmp_pat
         "w1",
         None,
         {"waiter": "running", "worker": "running"},
-        {"waiter": "Bash: atk agents wait", "worker": "Read: plan.md"},
+        {"waiter": "Bash: command=atk agents wait", "worker": "Read: file_path=plan.md"},
     )
     _write_status(tmp_path, "root", "w2", "waiter", {"child": "running"})
     assert admission.observe(tmp_path).working_sessions == ("child", "worker")
 
 
-def test_grandchild_starts_while_unrelated_work_finishes(tmp_path: pathlib.Path) -> None:
-    """上限2で祖父が子を待ち、別の担当が作業中でも、子は孫を起動できる。別担当の終了を待つ場合も止まらない。"""
+@pytest.mark.parametrize(
+    ("action", "waiting"),
+    [
+        ("Bash: command=atk agents wait description=待つ", True),
+        ("Bash: command=/home/u/.cache/agent-toolkit/plugin/agent-toolkit/scripts/atk agents wait", True),
+        ('commandExecution: command=["bash","-lc","/x/scripts/atk agents wait"]', True),
+        ('Bash: command=rg -n "agents wait" agent-toolkit', False),
+        ("Bash: command=atk agents list", False),
+        ("Read: file_path=/x/atk agents wait.md", False),
+    ],
+)
+def test_wait_detection_requires_running_atk_agents_wait(tmp_path: pathlib.Path, action: str, waiting: bool) -> None:
+    """待機とみなすのは`atk agents wait`をコマンドとして実行している場合に限り、検索語や引用は作業中に数える。"""
+    _write_status(tmp_path, "root", "w", None, {"parent": "running"}, {"parent": action})
+    assert (admission.observe(tmp_path).working == 0) is waiting
+
+
+def test_grandchild_starts_while_grandparent_waits_and_unrelated_work_finishes(tmp_path: pathlib.Path) -> None:
+    """上限2で祖父が子を待ち、別の担当が作業中でも、子は孫を起動できる。祖父が作業中なら別担当の終了を待つ。"""
     limit = admission.Limit(2, "test")
     _write_status(
-        tmp_path, "root", "w0", None, {"grandparent": "running", "other": "running"}, {"grandparent": "Bash: atk agents wait"}
+        tmp_path,
+        "root",
+        "w0",
+        None,
+        {"grandparent": "running", "other": "running"},
+        {"grandparent": "Bash: command=atk agents wait"},
     )
     _write_status(tmp_path, "root", "w1", "grandparent", {"child": "running"})
 
@@ -217,39 +239,36 @@ def test_grandchild_starts_while_unrelated_work_finishes(tmp_path: pathlib.Path)
         ticket.release()
 
     asyncio.run(scenario())
-    # 祖父が待機を示さず作業中に見える場合も、別担当が終われば系列だけになり許可される。
     _write_status(tmp_path, "root", "w0", None, {"grandparent": "running", "other": "running"})
 
     async def blocked_then_released() -> None:
         task = asyncio.create_task(
             admission.acquire("child", limit=limit, state_root=tmp_path, sleep=lambda _s: asyncio.sleep(0.01))
         )
-        # 待機として登録され、その後の判定を数回経ても許可されないことを条件で確かめる。
         await _until(lambda: admission.observe(tmp_path).waiting == 1)
         await asyncio.sleep(0.05)
         assert not task.done()
-        _write_status(tmp_path, "root", "w0", None, {"grandparent": "running", "other": "completed"})
+        # 祖父が待機へ入ると、別担当が作業中のままでも孫の起動が許可される。
+        _write_status(
+            tmp_path,
+            "root",
+            "w0",
+            None,
+            {"grandparent": "running", "other": "running"},
+            {"grandparent": "Bash: command=atk agents wait"},
+        )
         (await asyncio.wait_for(task, timeout=5)).release()
 
     asyncio.run(blocked_then_released())
 
 
-def test_limit_is_exceeded_only_when_every_working_session_is_the_requester_lineage(tmp_path: pathlib.Path) -> None:
-    """上限1で作業中が依頼元の親だけなら行き止まりを避けて許可し、無関係な作業中があれば待たせる。"""
+def test_requester_is_not_counted_while_waiting_and_counts_again_after_admission(tmp_path: pathlib.Path) -> None:
+    """上限1でも依頼中の親は数えないため子を許可し、許可後に親が作業を続ける間は一時的に1件だけ上限を超える。"""
     limit = admission.Limit(1, "test")
     _write_status(tmp_path, "root", "w0", None, {"parent": "running"})
     ticket = asyncio.run(admission.acquire("parent", limit=limit, state_root=tmp_path))
     ticket.release()
-    _write_status(tmp_path, "root", "w0", None, {"parent": "running", "unrelated": "running"})
-
-    async def waits() -> bool:
-        task = asyncio.create_task(
-            admission.acquire("parent", limit=limit, state_root=tmp_path, sleep=lambda _s: asyncio.sleep(0.01))
-        )
-        await _until(lambda: admission.observe(tmp_path).waiting == 1)
-        await asyncio.sleep(0.05)
-        done = task.done()
-        task.cancel()
-        return done
-
-    assert asyncio.run(waits()) is False
+    _write_status(tmp_path, "root", "w1", "parent", {"child": "running"})
+    assert admission.observe(tmp_path).working == 2  # 許可後に親が作業を続けた場合の一時超過（依頼元1件につき1）
+    _write_status(tmp_path, "root", "w0", None, {"parent": "running"}, {"parent": "Bash: command=atk agents wait"})
+    assert admission.observe(tmp_path).working == 1  # 親が待機へ入ると上限内へ戻る

@@ -388,3 +388,23 @@ def test_notice_distinguishes_partial_failed_and_absent_observations(
         assert "root/w.json: ValueError" in notice and "agents-server" in notice
     if case == "observe-error":
         assert "denied" in notice and "`atk config get state_dir`" in notice
+
+
+def test_notice_keeps_all_unreadable_records_reachable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """読めない状態ファイルが4件以上でも、通知が示す保存先から全件の所在と診断を取得できる。"""
+    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
+
+    failures = tuple(f"root{index}/w.json: ValueError" for index in range(4))
+    monkeypatch.setattr(
+        admission, "observe", lambda *_a, **_k: admission.Observation(working=1, admitted=0, waiting=0, failures=failures)
+    )
+    monkeypatch.setattr(admission, "configured_limit", lambda: admission.Limit(15, "test"))
+    monkeypatch.setattr(managed_temp, "find_session_temp", lambda _sid: tmp_path)
+    sid = f"progress-many-failures-{uuid.uuid4()}"
+    assert progress_self_check.claim_notice({"session_id": sid}, now=1000.0) is None
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
+    assert notice is not None and "他1件" in notice
+    report = tmp_path / "agents-concurrency-failures.txt"
+    assert str(report) in notice
+    assert all(failure in report.read_text(encoding="utf-8") for failure in failures)
