@@ -58,6 +58,10 @@ def _restore_caller(value: dict) -> runtime_environment.CallerContext:
     )
 
 
+# 所有世代への所有照会の待機上限。生存する世代は即時に応答するため、停止した世代だけを短時間で判別する。
+_OWNER_PROBE_SECONDS = 10.0
+
+
 class ServiceCoordinator:
     """一度だけの移譲と未配送要求の振り分けを、同じsession単位で直列化する。"""
 
@@ -90,6 +94,7 @@ class ServiceCoordinator:
         self._contexts: set[str] = set()
         self._pending_adoptions: dict[str, dict] = {}
         self.managers.before_controls = self.tick
+        self.managers.foreign_sessions = self._foreign_sessions
 
     async def publish(self) -> dict:
         """起動の重複は合流し、旧保存を静止してから現行受付を公開する。"""
@@ -389,6 +394,47 @@ class ServiceCoordinator:
             or self._ended_clients.get(identifier)
         )
 
+    async def parent_sessions(self, parent: str, include_terminated: bool) -> list:
+        """この世代が保持する、指定した親会話のsessionの一覧項目を返す（別世代からの照会用）。"""
+        conversation = self.managers.conversations.get(parent)
+        if conversation is None:
+            return []
+        with self.managers._bound(conversation):
+            response = await conversation.manager.list_sessions(include_terminated=include_terminated)
+        return list(response["sessions"])
+
+    async def _foreign_sessions(self, parent: str, include_terminated: bool) -> dict[str, list]:
+        """同じ親会話のsessionを別の生存世代から集める。ターンの途中の会話は終了境界まで旧世代に残るため。"""
+        sessions: list = []
+        unreachable: list = []
+        for generation, entry in self.registry.generations().items():
+            if generation == self.generation or not entry.get("ready") or entry.get("retired"):
+                continue
+            try:
+                target = service_rpc.discovery(self.directory, generation)
+            except OSError, ValueError:
+                continue
+            if not self._target_alive(target):
+                continue
+            try:
+                sessions.extend(
+                    await service_rpc.request(
+                        target,
+                        "parent_sessions",
+                        {"parent": parent, "include_terminated": include_terminated},
+                        timeout=_OWNER_PROBE_SECONDS,
+                    )
+                )
+            except (OSError, EOFError, TimeoutError, RuntimeError) as error:
+                unreachable.append(
+                    {
+                        "generation": generation,
+                        "server_instance": target.get("server_instance"),
+                        "error": f"{type(error).__name__}: {error}",
+                    }
+                )
+        return {"sessions": sessions, "unreachable": unreachable}
+
     def owns(self, parent: str, identifier: str) -> bool:
         conversation = self.managers.conversations.get(parent)
         return conversation is not None and identifier in conversation.manager.sessions
@@ -455,11 +501,7 @@ class ServiceCoordinator:
             identifier = (params.arguments or {}).get("session_id")
             if isinstance(identifier, str) and identifier not in manager.sessions:
                 owner = await self._owner(identifier)
-                if (
-                    owner is not None
-                    and owner["generation"] != self.generation
-                    and await service_rpc.request(owner, "owns", {"parent": parent, "session_id": identifier})
-                ):
+                if owner is not None and owner["generation"] != self.generation and await self._owns(owner, parent, identifier):
                     value = await service_rpc.request(
                         owner,
                         "owned_call",
@@ -499,6 +541,33 @@ class ServiceCoordinator:
                         return await mcp_tools.mcp._call_registered_tool(context, params)
                     finally:
                         mcp_tools._SELECTED_MANAGER.reset(selected)
+
+    async def _owns(self, owner: dict, parent: str, identifier: str) -> bool:
+        """所有世代へ所有を照会する。応答しない世代を待ち続けず、終了済みの世代は登録簿による判定へ委ねる。
+
+        2026-11-17、所有世代が停止・終了した後の照会と停止が、内部の待機上限（270秒）まで戻らないか生の接続エラーで終わった。
+        """
+        try:
+            return bool(
+                await service_rpc.request(
+                    owner, "owns", {"parent": parent, "session_id": identifier}, timeout=_OWNER_PROBE_SECONDS
+                )
+            )
+        except (OSError, EOFError, TimeoutError) as error:
+            if not self._target_alive(owner):
+                # 所有世代が終了している。登録簿の所有者喪失の判定（中断の公開・委譲先CLIの停止）を使う。
+                return False
+            raise ActionableError(
+                f"session {identifier}を所有する世代へ配送できない: owner_generation={owner['generation']}; "
+                f"owner_server_instance={owner.get('server_instance')}; owner_process={owner['process']}; "
+                f"queried_generation={self.generation}; error={type(error).__name__}: {error}",
+                next_action=(
+                    "配送は未確定であり、同じ前提で待機や再発行を繰り返さない。"
+                    "所有世代のプロセスが応答を再開するかを`atk agents list`の`server_generations`と`show`で確かめ、"
+                    "応答しないままなら所有世代のプロセスを処置する。処置の前に、そのプロセスが自身のMCP接続先"
+                    "（`queried_server_instance`）ではないことを確かめる"
+                ),
+            ) from error
 
     async def _owner(self, identifier: str) -> dict | None:
         resolution = await asyncio.to_thread(session_registry.resolve, identifier, state_root=self.directory.parent.parent)

@@ -555,9 +555,18 @@ async def list_sessions(
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     照会したサーバーの起動単位を`queried_server_instance`へ、各sessionを所有するサーバーの起動単位を`owner_server_instance`へ返す。
     共有管理サービスでは退出していない世代を`server_generations`へ返し、受付中の世代（`current`）と照会した世代（`queried`）を示す。
+    同じ親会話のうち別の世代がまだ所有するsessionも一覧へ含め、応答しなかった世代は`unreachable_generations`へ返す。
     """
-    response = await _manager().list_sessions(include_terminated=include_terminated)
+    manager = _manager()
+    response = await manager.list_sessions(include_terminated=include_terminated)
     response["queried_server_instance"] = session_registry.owner_server_instance()
+    if _SERVICE_MANAGERS is not None:
+        # ターンの途中で更新を迎えた会話は終了境界まで旧世代が所有するため、同じ親会話の分を加える。
+        foreign = await _SERVICE_MANAGERS.other_generation_sessions(manager, include_terminated=include_terminated)
+        listed = {item["session_id"] for item in response["sessions"]}
+        response["sessions"].extend(item for item in foreign["sessions"] if item["session_id"] not in listed)
+        if foreign["unreachable"]:
+            response["unreachable_generations"] = foreign["unreachable"]
     if _SERVICE_MANAGERS is not None and (generations := await _SERVICE_MANAGERS.generations()):
         # 退出していない世代が複数あれば更新中か旧世代の残存であり、sessionの所有者を確かめる手掛かりにする。
         response["server_generations"] = generations

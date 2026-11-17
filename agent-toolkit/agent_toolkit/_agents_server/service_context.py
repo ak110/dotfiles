@@ -50,6 +50,17 @@ class ServiceManagers:
         self._monitor_task: asyncio.Task[None] | None = None
         self._projections = projections
         self.before_controls: Callable[[], Awaitable[bool]] | None = None
+        # 同じ親会話のうち別世代がまだ所有するsessionを一覧へ加える照会。管理サービスの調停役が設定する。
+        self.foreign_sessions: Callable[[str, bool], Awaitable[dict[str, list]]] | None = None
+
+    async def other_generation_sessions(self, manager: object, *, include_terminated: bool) -> dict[str, list]:
+        """照会したmanagerの親会話について、別世代が所有するsessionと応答しなかった世代を返す。"""
+        parent = next((key for key, item in self.conversations.items() if item.manager is manager), None)
+        collect = self.foreign_sessions
+        if parent is None or collect is None:
+            return {"sessions": [], "unreachable": []}
+        # Pylintは初期値Noneだけで推論するが、調停役が型付きcallbackを登録している。
+        return await collect(parent, include_terminated)  # pylint: disable=not-callable
 
     async def generations(self) -> list[dict[str, object]]:
         """照会した世代と、同じ管理領域で退出していない全世代を区別して返す。

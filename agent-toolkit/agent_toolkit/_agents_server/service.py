@@ -275,6 +275,8 @@ async def _rpc(
             result = None
         elif operation == "accept" and isinstance(arguments, dict):
             result = await coordinator.accept(arguments)
+        elif operation == "parent_sessions" and isinstance(arguments, dict):
+            result = await coordinator.parent_sessions(arguments["parent"], bool(arguments["include_terminated"]))
         elif operation == "owns" and isinstance(arguments, dict):
             result = coordinator.owns(arguments["parent"], arguments["session_id"])
         elif operation in {"public_call", "owned_call"} and isinstance(arguments, dict):

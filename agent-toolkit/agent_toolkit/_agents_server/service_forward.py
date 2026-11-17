@@ -261,7 +261,14 @@ class _Forwarder:
                             self.initialized = True
                         if isinstance(method, str) and "id" in message:
                             self.pending[message["id"]] = method
-                        service_transport.send(self.peer, message)
+                        peer = self.peer
+                        assert peer is not None  # wait_forで接続済みを確かめた
+                        try:
+                            service_transport.send(peer, message)
+                        except OSError:
+                            # 接続先の世代が終了した。入力の終了とは扱わず、送れなかった要求は未確定として
+                            # 接続の切替後に応答し、以後の入力は切替先へ送る。
+                            self.peer = None
             if buffered.strip():
                 raise ValueError("MCPの最終メッセージが改行で終了していません")
         except Exception as error:
@@ -412,7 +419,9 @@ def forward(
                             },
                         }
                     )
-                return 1
+                # 未確定の要求は再送せずエラーで返し、接続自体は現行世代へ切り替えて続ける。
+                # ここで終了するとMCP接続が失われ、委譲元が以後の照会・回収をできなくなる（2026-11-17）。
+                bridge.pending.clear()
             current = registry.current()
             if current is None or (previous_reconnect == current["process"] and previous_progress == bridge.progress):
                 raise RuntimeError("管理サービスの接続が応答の無いまま繰り返し終了しました")
