@@ -95,7 +95,7 @@ def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, rep
 def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeypatch, route, dry_run):
     """付随型の検証は起草資料だけ、本保存は保存資料も案内する。"""
     root = pathlib.Path(__file__).resolve().parents[3]
-    # 検証の段階で届く資料が増えたら期待値の更新として表面化するよう、WI保存の語を持つ他の読込表も含める。
+    # 起草経路ごとの案内を確かめる。検証の段階の資料集合全体は別の試験で期待値と比べる。
     sources = (
         "skills/wi-standards/SKILL.md",
         "skills/wi-standards/references/uwi-format.md",
@@ -142,3 +142,34 @@ def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeyp
     for name in ("user-confirmation-and-report-decisions.md", "origin-and-approval.md"):
         assert (name in result.stdout) is not dry_run
     assert not HOOK_PAYLOAD.get()
+
+
+@pytest.mark.cpu_limit(
+    2.0,
+    reason="追加された宣言元を漏らさないよう全宣言元の読込表を解析する。Linux CPU合計0.96秒を基準とする。",
+)
+def test_dry_run_stage_documents_match_expected_set():
+    """検証の段階で届ける資料の集合を、全宣言元から集めて期待値と比べる。
+
+    新しく検証の段階を付けた行は、この期待値の更新として表面化させる。
+    追加する前に`share/read-trigger-contract-declarations.md`のWI保存の基準を満たすか確かめる。
+    """
+    root = pathlib.Path(__file__).resolve().parents[3]
+    actual = {
+        (str(row.source.relative_to(root)), str(target.path.relative_to(root)))
+        for source in read_triggers.document_sources(root, str(root))
+        for row in read_triggers.parse_tables(source, root)
+        if "wi-standard-dry-run" in row.operations
+        for target in row.targets
+    }
+    drafting = {
+        "skills/wi-standards/references/drafting-workflow-writing.md",
+        "skills/wi-standards/references/drafting-workflow-validation.md",
+        "skills/wi-standards/references/drafting-completion-validation.md",
+    }
+    assert actual == {
+        *(("skills/add-awi-by-user/SKILL.md", name) for name in drafting),
+        *(("skills/wi-standards/SKILL.md", name) for name in drafting),
+        ("skills/wi-standards/SKILL.md", "skills/wi-standards/references/wi-standards-operations.md"),
+        ("share/add-wi.subagent.md", "skills/wi-standards/SKILL.md"),
+    }
