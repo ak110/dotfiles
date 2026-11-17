@@ -105,8 +105,10 @@ dev = [
 # 記載の手順と理由は`.claude/skills/edit-dotfiles-norms/references/project-norm-designation.md`が定め、
 # 対象範囲の一致は`project_norm_spec_invariant_test.py`が確かめる。
 # `target-seconds`は本リポジトリを処理する1回の巡回の目標所要（3時間。`.claude/skills/develop-dotfiles/SKILL.md`）。
-# 選定の見込みとの差を要約へ出し、超過時に配分の代替案の比較を求める。超過を理由に項目を外す判定には使わない。
+# 実測から選定量を決める目標。選定後の超過は警告として配分を比較し、着手済みの項目は外さない。
 target-seconds = 10800
+# 目標に収まる量が少なくても、候補がある限りこの件数まで先頭から選ぶ。
+minimum-items = 21
 
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
 # 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
