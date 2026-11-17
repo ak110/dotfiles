@@ -41,7 +41,7 @@ async def test_public_start_waits_for_free_slot_and_reports_wait(
         while original(tmp_path / "state").waiting != 1:
             assert asyncio.get_running_loop().time() < deadline, "起動待ちとして登録されない"
             await asyncio.sleep(0.02)
-        assert not launch.done() and backend.start_calls == []
+        assert not launch.done() and not backend.start_calls
         busy["working"] = 0
         response = await asyncio.wait_for(launch, timeout=10)
     assert len(backend.start_calls) == 1
