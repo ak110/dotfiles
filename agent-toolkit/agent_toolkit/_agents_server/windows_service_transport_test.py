@@ -64,3 +64,19 @@ def test_listener_close_releases_pending_accept() -> None:
         reader.join(5)
         assert finished.is_set()
         assert not reader.is_alive()
+
+
+def test_accept_timeout_keeps_listening_instance() -> None:
+    """受理待ちの時間切れで呼出側へ戻り、その間も接続側が待受instanceへ到達できる。
+
+    時間切れが無いと、旧世代は次の接続を受理するまで退出条件を再確認できず残り続けた
+    （2026-11-17のWindows観測）。
+    """
+    address = rf"\\.\pipe\agent-toolkit-test-{uuid.uuid4()}"
+    with transport.listen(address) as listener:
+        with pytest.raises(TimeoutError):
+            listener.accept(timeout=0.2)
+        with connection.Client(address, family="AF_PIPE", authkey=None) as client, listener.accept(timeout=5) as peer:
+            client.send_bytes(b"ping")
+            assert peer.poll(5)
+            assert peer.recv_bytes() == b"ping"
