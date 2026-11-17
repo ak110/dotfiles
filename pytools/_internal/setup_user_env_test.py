@@ -71,23 +71,24 @@ def test_parse_reads_key_values_and_skips_comments() -> None:
     assert setup_user_env.parse_user_env(text) == [("A", "1"), ("C", "")]
 
 
+@pytest.mark.parametrize("name", ["DISABLE_TELEMETRY", "PYTHONDONTWRITEBYTECODE"])
 @pytest.mark.parametrize("previous", [None, "0", "1"])
-def test_removes_only_former_telemetry_value(
-    monkeypatch: pytest.MonkeyPatch, dotfiles_root: Path, previous: str | None
+def test_removes_only_former_distributed_value(
+    monkeypatch: pytest.MonkeyPatch, dotfiles_root: Path, previous: str | None, name: str
 ) -> None:
-    """旧配布値1だけを除き、別値・他変数を保持して変更を通知する。"""
+    """配布をやめた変数は旧配布値1だけを除き、別値・他変数を保持して変更を通知する。"""
     (dotfiles_root / "share/user.env").write_text("KEEP=yes\n", encoding="utf-8")
     registry = FakeEnvironmentRegistry()
     registry.user["KEEP"] = ("yes", registry.REG_SZ)
     if previous is not None:
-        registry.user["DISABLE_TELEMETRY"] = (previous, registry.REG_SZ)
+        registry.user[name] = (previous, registry.REG_SZ)
     registry.install(monkeypatch)
     removed: list[str] = []
     notified: list[bool] = []
 
-    def delete(_key: object, name: str, **_kwargs: object) -> None:
-        del registry.user[name]
-        removed.append(name)
+    def delete(_key: object, value_name: str, **_kwargs: object) -> None:
+        del registry.user[value_name]
+        removed.append(value_name)
 
     wr = types.SimpleNamespace(
         REG_SZ=registry.REG_SZ,
@@ -101,13 +102,13 @@ def test_removes_only_former_telemetry_value(
     outcome = setup_user_env.run()
     assert outcome.failure is None
     assert outcome.changed is (previous == "1")
-    assert removed == (["DISABLE_TELEMETRY"] if previous == "1" else [])
+    assert removed == ([name] if previous == "1" else [])
     assert bool(notified) is (previous == "1")
     assert registry.user["KEEP"][0] == "yes"
     if previous == "0":
-        assert registry.user["DISABLE_TELEMETRY"][0] == "0"
+        assert registry.user[name][0] == "0"
     else:
-        assert "DISABLE_TELEMETRY" not in registry.user
+        assert name not in registry.user
 
 
 def test_failed_telemetry_removal_is_reported(monkeypatch: pytest.MonkeyPatch, dotfiles_root: Path) -> None:

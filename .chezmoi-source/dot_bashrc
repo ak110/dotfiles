@@ -11,7 +11,10 @@ umask 022
 export PATH=${PATH//;/:}
 
 # 環境変数(非対話シェルでも設定する)
-export PYTHONDONTWRITEBYTECODE=1
+# 以前はここでPYTHONDONTWRITEBYTECODE=1を設定していた。設定を読み直したシェルや、
+# 古い値を持つ親から起動したシェルに残る値を引き継がないよう、明示的に消す。
+# 残っているとエージェントのhookとCLIが、起動のたびに全モジュールをコンパイルし直す。
+unset PYTHONDONTWRITEBYTECODE
 export MPLBACKEND=Agg
 
 # /tmpがメモリ上のtmpfsのホストで一時ファイルでメモリが尽きないよう、一時ディレクトリをディスク上へ向ける。

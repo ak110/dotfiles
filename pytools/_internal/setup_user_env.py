@@ -17,6 +17,9 @@ USER_ENV_RELATIVE = Path("share") / "user.env"
 # bashの`set -a; . <ファイル>`とPythonの読み取りが同じ値を得る書式。
 # 引用符・`$`による展開・`export`・行末コメント・空白を含む値を受け付けない。
 _LINE_PATTERN = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>[^\s'\"`$\\#;&|<>()]*)$")
+# 過去に配布し、現在は配布をやめた変数と、その配布値。配布値のまま残るユーザー環境変数だけを削除する。
+# `PYTHONDONTWRITEBYTECODE`は、hookとCLIが起動のたびに全モジュールをコンパイルし直す原因になったため配布をやめた。
+_FORMER_VALUES: dict[str, str] = {"DISABLE_TELEMETRY": "1", "PYTHONDONTWRITEBYTECODE": "1"}
 
 
 def parse_user_env(text: str) -> list[tuple[str, str]]:
@@ -61,22 +64,25 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     changed = False
     failures: list[str] = []
-    if not any(key == "DISABLE_TELEMETRY" for key, _value in entries):
+    current_keys = {key for key, _value in entries}
+    for name, former in _FORMER_VALUES.items():
+        if name in current_keys:
+            continue
         try:
-            previous, _reg_type = winutils.read_user_env_var("DISABLE_TELEMETRY")
-            if previous == "1":
+            previous, _reg_type = winutils.read_user_env_var(name)
+            if previous == former:
                 # 旧dotfilesの配布値だけを除き、他用途の値は保持する。
                 wr = winutils.import_winreg()
                 with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_SET_VALUE) as key:
                     try:
-                        wr.DeleteValue(key, "DISABLE_TELEMETRY")
+                        wr.DeleteValue(key, name)
                     except FileNotFoundError:
                         pass
                     else:
                         changed = True
-                        logger.info(log_format.format_status("user.env", "旧DISABLE_TELEMETRY設定を削除"))
+                        logger.info(log_format.format_status("user.env", f"旧{name}設定を削除"))
         except OSError as error:
-            failures.append(f"DISABLE_TELEMETRY の旧設定削除に失敗: {error}")
+            failures.append(f"{name} の旧設定削除に失敗: {error}")
     for key, value in entries:
         try:
             current, _reg_type = winutils.read_user_env_var(key)
