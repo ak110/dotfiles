@@ -91,4 +91,4 @@ rustup・cargo・`.dotnet`は設定とユーザー導入物を残し、ランタ
 mise専用のdotnet-rootも削除する。
 Claude CodeとCodexの設定・会話履歴は削除対象に含めない。
 Codexの管理daemonは公開CLIで停止し、通常セッションや対象実体を使うプロセスがあれば削除を開始せず、理由と再実行方法を返す。
-`atk config set dotfiles_mode minimal`による設定保存だけでは削除せず、次の`update-dotfiles`成功後に整理する。
+`atk config set dotfiles_mode minimal`による設定保存だけでは削除せず、次の`update-dotfiles`の本体が中断せずに終えた後（続行した失敗だけの終了を含む）に整理する。
