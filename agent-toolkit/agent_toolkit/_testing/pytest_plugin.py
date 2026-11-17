@@ -35,7 +35,7 @@ from pyfltr.command import execution_slot
 import agent_toolkit
 from agent_toolkit._agents_server import api_credits, claude, claude_stream, launch_requests
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk import config_settings, managed_temp
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk.managed_temp import sweep
 from agent_toolkit._atk.wi import process_loop_update as _process_loop_update
@@ -924,6 +924,9 @@ def agents_server_isolation(
 ) -> None:
     """agents_serverのmanagerとMCPツールのテストを、事前確認・子プロセス・共有リスナー・待機時間から切り離す。"""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
+    # 起動時の利用枠の再取得は、実行するマシンの設定とキャッシュの鮮度によって実のcodex app-serverを起動する。
+    # 試験の結果をそのマシンの利用枠の状態に左右させないよう、自動配分を無効にする。
+    monkeypatch.setenv(config_settings.config_env_name("usage_auto_allocation"), "false")
 
 
 @pytest.fixture(name="index_path")
