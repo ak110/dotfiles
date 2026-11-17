@@ -27,6 +27,21 @@ import sys
 import time
 import types
 
+# ユーザー環境の`PYTHONDONTWRITEBYTECODE`（作業ツリーへ`__pycache__`を作らない設定）の下では、
+# hookは起動のたびに約190モジュールをコンパイルし直していた（2026-11-17の計測でCPU約0.36秒、hook全体の約4割）。
+# このプロセスに限り、作業ツリーの外のキャッシュへバイトコードを保存して再利用する。子プロセスの環境は変えない。
+if sys.dont_write_bytecode:
+    if sys.pycache_prefix is None:
+        _cache_home = (
+            os.environ.get("LOCALAPPDATA")
+            if os.name == "nt"
+            else os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+        )
+        if _cache_home:
+            sys.pycache_prefix = os.path.join(_cache_home, "agent-toolkit", "pycache")
+    if sys.pycache_prefix is not None:
+        sys.dont_write_bytecode = False
+
 # 正常な呼出しで使わない診断とdump用の依存を、必要になるまで読み込まない。
 lazy import datetime
 

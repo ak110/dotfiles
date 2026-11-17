@@ -13,7 +13,7 @@ import json
 import pathlib
 import re
 
-from agent_toolkit._common import delegated_session, read_triggers
+from agent_toolkit._common import delegated_session, read_triggers, read_triggers_cache
 from agent_toolkit._common.plugin_roots import (
     codex_installed_plugins,
     plugin_resolution_scope,
@@ -121,11 +121,8 @@ def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> lis
     root = plugin_resources.plugin_root()
     # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
     with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
-        entries = [
-            # `_declaration_sources`は実体のパスを返すため、ここで解決し直さない。
-            (source, read_triggers.parse_tables(source, root, host=host, project=cwd, defer_material=True))
-            for source in _declaration_sources(cwd)
-        ]
+        # 本文が変わらない文書は、前回までのhookの解析結果を再利用する（文書数に比例する解析を避ける）。
+        entries = read_triggers_cache.parse_deferred(_declaration_sources(cwd), root, host=host, project=cwd)
     # 参照先の所有plugin全体は有効化しない。選択した実体の宣言は取得時に追加する。
     included = {row.source for source, rows in entries for row in rows if row.source != source}
     return list(dict.fromkeys(row for source, rows in entries if source not in included for row in rows))
