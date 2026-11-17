@@ -62,17 +62,7 @@ def completion_status(
         present = {entry[0].name for entry in snapshots[target.target_repo].entries}
         additional = set(additional_wis or []) & present
         unmatched -= additional
-        remaining, excluded = remaining_work(snapshots[target.target_repo], owner, additional)
-        # 選定外の候補は残件に含めないが、巡回中に削除された候補は検収と報告で確かめられるよう列挙する。
-        candidates = json.loads(target.candidate_file.read_text(encoding="utf-8"))
-        if not isinstance(candidates, list) or any(
-            not isinstance(item, dict) or not isinstance(item.get("filename"), str) for item in candidates
-        ):
-            raise ValueError("開始時の候補原本の形式が不正")
-        excluded["removed_wi"] = sorted(
-            {*excluded["removed_wi"]}
-            | {name for name in {item["filename"] for item in candidates} - present if _deleted_in_history(private_notes, name)}
-        )
+        remaining, excluded = remaining_work(snapshots[target.target_repo], owner, additional, target.candidate_file)
         results[target.target_repo] = {
             "status": "incomplete" if any(remaining.values()) else "ready",
             "observed_remaining": remaining,
@@ -84,12 +74,16 @@ def completion_status(
 
 
 def remaining_work(
-    snapshot: _listing.RepositorySnapshot, ownership: _ownership.Ownership, additional: set[str]
+    snapshot: _listing.RepositorySnapshot,
+    ownership: _ownership.Ownership,
+    additional: set[str],
+    candidate_file: pathlib.Path | None = None,
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """今回の処理範囲の残件と、残件から除いた削除済み・先送りのWIを返す。
 
     処理範囲は開始時の候補全件ではなく、レーンの選定原本で選んだWIと巡回中に追加したWIとする。
     1回の巡回は候補から一部だけを選ぶため、選定外の候補が残るのは正常である。
+    `candidate_file`を渡すと、巡回中に削除された選定外の候補も削除済みとして示す（残件には含めない）。
     """
     current = _listing.configured_repo_snapshot(snapshot.private_notes, (snapshot.repository,))[0]
     resources = _lane.list_resources(ownership.lane_session_id)
@@ -107,6 +101,21 @@ def remaining_work(
             scope.update(_lane_records.selection_state(record)["lane_wis"])
     entries = {path.name: (state, text) for path, _repo, text, state, _kind in current.entries}
     removed = sorted(name for name in scope - entries.keys() if _deleted_in_history(snapshot.private_notes, name))
+    if candidate_file is not None:
+        # 選定外の候補は残件に含めないが、巡回中に削除された候補は検収と報告で確かめられるよう列挙する。
+        candidates = json.loads(candidate_file.read_text(encoding="utf-8"))
+        if not isinstance(candidates, list) or any(
+            not isinstance(item, dict) or not isinstance(item.get("filename"), str) for item in candidates
+        ):
+            raise ValueError("開始時の候補原本の形式が不正")
+        unselected = {item["filename"] for item in candidates} - scope - entries.keys()
+        try:
+            deleted = {name for name in unselected if _deleted_in_history(snapshot.private_notes, name)}
+        except ValueError:
+            # 選定外の候補は完了の判定に使わない報告用の情報であり、履歴を照会できなくても検収を止めない。
+            # 選定WIの欠落は上の判定で従来どおり失敗にする。
+            deleted = set()
+        removed = sorted({*removed, *deleted})
     if missing := sorted(scope - entries.keys() - set(removed)):
         # 削除の記録が無い欠落は、読取失敗や取り違えを完了扱いしないため失敗にする。
         raise ValueError(f"処理対象のWIを現キューから取得できない: {missing}")

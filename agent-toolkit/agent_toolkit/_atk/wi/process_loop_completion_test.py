@@ -318,8 +318,9 @@ def test_check_result_limits_scope_to_selected_and_separates_removed_and_deferre
 
     monkeypatch.setattr(session, "run_process_session", execute)
     # 常駐の完了検収も同じ判定を使い、記録の無い欠落を完了扱いしない。
+    resident = None
     with pytest.raises(ValueError, match="現キューから取得できない") if not deletion_recorded else contextlib.nullcontext():
-        loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+        resident = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
     code, output = observed[0]
     if not deletion_recorded:
         assert code == 1
@@ -330,4 +331,7 @@ def test_check_result_limits_scope_to_selected_and_separates_removed_and_deferre
     assert unselected.name not in record["observed_remaining"]["wi"]
     assert unselected_removed.name not in record["observed_remaining"]["wi"]
     assert record["removed_wi"] == sorted([removed.name, unselected_removed.name])
+    # 常駐の終了処理が保存する結果も、公開statusと同じ削除済みの一覧を持つ。
+    assert resident is not None
+    assert resident[repository.repo_id]["removed_wi"] == record["removed_wi"]
     assert record["deferred_wi"] == [deferred.name]

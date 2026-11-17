@@ -462,7 +462,9 @@ def _run_coordinator(
             other_writers = {
                 writer for other, result in returned.items() if other != repo_id for writer in result.writer_sessions
             }
-            remaining, excluded = _completion.remaining_work(by_repo[repo_id], owner, set())
+            remaining, excluded = _completion.remaining_work(
+                by_repo[repo_id], owner, set(), pathlib.Path(targets[repo_id]["candidate_file"])
+            )
             completed = execution and record.status is RepositoryStatus.COMPLETED and not any(remaining.values())
             blocked = record.status is RepositoryStatus.BLOCKED
             saved_result = manifest.with_name(f"{manifest.stem}.{owner.token}.result.json")
