@@ -278,12 +278,12 @@ def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, m
 def test_check_result_limits_scope_to_selected_and_separates_removed_and_deferred(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], deletion_recorded: bool
 ) -> None:
-    """選定外の候補は残件に数えず、削除済みと先送りの選定WIを分けて示し、記録の無い欠落は失敗にする。"""
-    notes, snapshots = _targets(tmp_path, monkeypatch, (4,))
+    """選定外の候補は残件に数えず、削除済み（選定外を含む）と先送りの選定WIを分けて示し、記録の無い欠落は失敗にする。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch, (5,))
     repository = snapshots[0].repository
     git.init_repository(notes)
     git.commit_all(notes, "開始時の候補")
-    unselected, adopted, deferred, removed = (notes / f"2026/10/repo-0-{number}.md" for number in range(4))
+    unselected, adopted, deferred, removed, unselected_removed = (notes / f"2026/10/repo-0-{number}.md" for number in range(5))
     selected = tmp_path / "pick-wi.yaml"
     selected.write_text(
         "選定:\n" + "".join(f"- WI: {path.name}\n  レーン: lane-01\n" for path in (adopted, deferred, removed)),
@@ -303,6 +303,7 @@ def test_check_result_limits_scope_to_selected_and_separates_removed_and_deferre
             encoding="utf-8",
         )
         removed.unlink()
+        unselected_removed.unlink()
         if deletion_recorded:
             git.commit_all(notes, "chore: remove 1 entries")
         capsys.readouterr()
@@ -327,5 +328,6 @@ def test_check_result_limits_scope_to_selected_and_separates_removed_and_deferre
     record = json.loads(output)["repositories"][repository.repo_id]
     assert record["status"] == "ready"
     assert unselected.name not in record["observed_remaining"]["wi"]
-    assert record["removed_wi"] == [removed.name]
+    assert unselected_removed.name not in record["observed_remaining"]["wi"]
+    assert record["removed_wi"] == sorted([removed.name, unselected_removed.name])
     assert record["deferred_wi"] == [deferred.name]

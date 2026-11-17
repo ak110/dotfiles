@@ -63,6 +63,16 @@ def completion_status(
         additional = set(additional_wis or []) & present
         unmatched -= additional
         remaining, excluded = remaining_work(snapshots[target.target_repo], owner, additional)
+        # 選定外の候補は残件に含めないが、巡回中に削除された候補は検収と報告で確かめられるよう列挙する。
+        candidates = json.loads(target.candidate_file.read_text(encoding="utf-8"))
+        if not isinstance(candidates, list) or any(
+            not isinstance(item, dict) or not isinstance(item.get("filename"), str) for item in candidates
+        ):
+            raise ValueError("開始時の候補原本の形式が不正")
+        excluded["removed_wi"] = sorted(
+            {*excluded["removed_wi"]}
+            | {name for name in {item["filename"] for item in candidates} - present if _deleted_in_history(private_notes, name)}
+        )
         results[target.target_repo] = {
             "status": "incomplete" if any(remaining.values()) else "ready",
             "observed_remaining": remaining,
