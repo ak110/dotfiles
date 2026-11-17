@@ -350,3 +350,38 @@ def test_notice_reports_machine_concurrency_and_recent_hook_durations(
     assert notice is not None
     assert "13" in notice and "上限15" in notice and "起動待ち2" in notice
     assert "平均6.0秒" in notice and "最大12.0秒" in notice
+
+
+@pytest.mark.parametrize("case", ["partial", "observe-error", "unreadable-hooks", "no-hooks"])
+def test_notice_distinguishes_partial_failed_and_absent_observations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """部分観測・取得失敗・記録不在を区別し、取得失敗には次に確認する操作を示す。"""
+    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
+
+    def observe(*_a: object, **_k: object) -> admission.Observation:
+        if case == "observe-error":
+            raise PermissionError("denied")
+        return admission.Observation(
+            working=3, admitted=0, waiting=0, failures=("root/w.json: ValueError",) if case == "partial" else ()
+        )
+
+    monkeypatch.setattr(admission, "observe", observe)
+    monkeypatch.setattr(admission, "configured_limit", lambda: admission.Limit(15, "test"))
+    if case == "unreadable-hooks":
+        (tmp_path / "hook-timings.jsonl").write_text("{broken\n", encoding="utf-8")
+    monkeypatch.setattr(managed_temp, "find_session_temp", lambda _sid: tmp_path)
+    sid = f"progress-observation-{case}-{uuid.uuid4()}"
+    assert progress_self_check.claim_notice({"session_id": sid}, now=1000.0) is None
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
+    assert notice is not None
+    expected = {
+        "partial": "部分観測",
+        "observe-error": "取得できない（PermissionError）",
+        "unreadable-hooks": "hook所要の記録を読めない",
+        "no-hooks": "直近のhook所要の記録は無い",
+    }[case]
+    assert expected in notice
+    if case in {"partial", "observe-error"}:
+        assert "`atk agents list`" in notice

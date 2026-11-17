@@ -5,8 +5,9 @@
 このため起動経路そのものでエンジン・役割・起動ディレクトリを問わず合算する。
 
 作業中の数は既存の状態ファイル（30秒周期のheartbeat付き）から求め、新しい常駐の監視は作らない。
-子の終了を待つだけの親が枠を持ち続けると、その子を起動できずに全体が止まるため、
-稼働中の子を持つsessionと、子の起動を待っているsessionは数えない。
+子を持つ委譲元も自身が作業を続けていれば作業中に数える。
+子の起動を待っているだけの委譲元が枠を持ち続けると、その子を起動できずに全体が止まるため、
+起動待ちの記録を持つ委譲元だけを数えない。稼働中の子を待つ委譲元は、許可済みの子が終われば進むため数えてよい。
 """
 
 from __future__ import annotations
@@ -124,8 +125,9 @@ def _read_tickets(directory: pathlib.Path, now: float) -> list[tuple[pathlib.Pat
 def observe(state_root: pathlib.Path | None = None, *, now: float | None = None) -> Observation:
     """全ルートの状態ファイルと起動記録から、作業中の数を求める。
 
-    作業中は`starting`か`running`のsessionとする。ただし、稼働中の子を持つsession（状態ファイルの委譲元）と、
-    子の起動を待っているsessionは子を待つだけの親として数えない。
+    作業中は`starting`か`running`のsessionとする。子の起動の許可を待っている委譲元だけを、
+    子を待つだけの親として数えない（待つ親が枠を持つと子を許可できず、全体が止まるため）。
+    状態ファイルの一部を読めない場合は`failures`へ残し、数は部分観測であることを呼出側が示す。
     """
     now = time.time() if now is None else now
     tickets = _read_tickets(admission_directory(state_root), now)
@@ -142,8 +144,7 @@ def observe(state_root: pathlib.Path | None = None, *, now: float | None = None)
         sessions.update(snapshot.sessions)
         failures.extend(snapshot.failures)
     active = {key: value for key, value in sessions.items() if value.get("status") in _WORKING_STATUSES}
-    parents = {value.get("host_session_id") for value in active.values()} | waiting_hosts
-    working = sum(1 for key in active if key not in parents)
+    working = sum(1 for key in active if key not in waiting_hosts)
     # 起動処理中の許可は状態ファイルへ現れる前から数える。現れた後の短い重複は上限を下げる側へ倒れるだけである。
     admitted = sum(1 for _path, payload in tickets if payload.get("admitted_at") is not None)
     waiting = sum(1 for _path, payload in tickets if payload.get("admitted_at") is None)

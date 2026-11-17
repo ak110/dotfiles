@@ -47,6 +47,20 @@ from agent_toolkit._common.next_action import ActionableError
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
+def admission_wait_fields(manager: object) -> dict[str, dict[str, object]]:
+    """再開ごとの上限待ちの応答項目を、応答を組み立てる処理へ渡すための置き場を返す。"""
+    return vars(manager).setdefault("_admission_wait_fields", {})
+
+
+def note_admission_wait(session: SessionState, ticket: admission.Admission) -> None:
+    """上限待ちがあった再開を、一覧と`show`が表示する最後の操作へ記録する。"""
+    fields = ticket.response_fields()
+    if fields:
+        session.last_action = (
+            f"マシン全体の同時稼働数の上限で{fields['admission_wait_seconds']}秒待って再開した（{fields['admission_limit']}）"
+        )
+
+
 class ResumeClaimedElsewhere(ActionableError):
     """別所有者が同じ会話の再開を予約し、起動結果の観測を要する。"""
 
@@ -78,10 +92,14 @@ class ManagerResume(manager_registry.ManagerRegistry):
         )
         try:
             async with service_io.next_input(session):
-                return await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
+                result = await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
         finally:
             if ticket is not None:
                 ticket.release()
+        # 止まっていたsessionを上限待ちの後に動かした場合は、一覧・showの最後の操作から待ちを知れるようにする。
+        if ticket is not None:
+            note_admission_wait(session, ticket)
+        return result
 
     async def _child_result_is_terminal(self, session_id: str) -> bool:
         """孫sessionの共有された終了時の結果ファイルが終了を示すかを返す。
@@ -439,6 +457,9 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 )
             finally:
                 ticket.release()
+            # 再開の応答は別の箇所で組み立てるため、待った秒数をsession単位で渡す。
+            admission_wait_fields(self)[session_id] = ticket.response_fields()
+            note_admission_wait(session, ticket)
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
             session.result_contract_recovery_consumed = resume_state.result_contract_recovery_consumed
             if session.status == "starting":

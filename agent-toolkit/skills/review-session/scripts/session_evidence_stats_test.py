@@ -146,10 +146,11 @@ def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pa
         {"kind": "stats-slow-call", "tool": "Bash", "seconds": 3.0, "line": 2, "hint": "make test"},
     ]
     assert events_by_kind(events, "stats-token-peak")[0]["line"] == 5
-    # 1手あたりの費用: 呼び出し3秒・10秒の中央値6.5秒、応答1回の所要は経過70秒からツールの13秒を除いた57秒。
+    # 1手あたりの費用: 呼び出し3秒・10秒の中央値6.5秒。
+    # 応答1回の所要は直前のツール結果（00:00:11）から応答（00:01:10）までの59秒。
     unit = events_by_kind(events, "stats-unit-costs")[0]
     assert unit["tool_calls"] == 2 and unit["tool_call_median_seconds"] == 6.5
-    assert unit["responses"] == 1 and unit["response_mean_seconds"] == 57.0
+    assert unit["responses"] == 1 and unit["response_mean_seconds"] == 59.0
     assert unit["response_input_tokens_median"] == 80 and unit["response_output_tokens_mean"] == 20.0
     assert unit["max_concurrent_records"] == 1 and unit["timeout_failures"] == 0
 
@@ -566,3 +567,35 @@ def test_stats_takes_codex_hint_from_input_without_arguments(tmp_path: pathlib.P
         {"kind": "stats-slow-call", "tool": "exec", "seconds": 6.0, "line": 4, "hint": command_input},
         {"kind": "stats-slow-call", "tool": "exec", "seconds": 2.0, "line": 2, "hint": command_input},
     ]
+
+
+def test_unit_costs_exclude_human_wait_and_count_codex_reports(tmp_path: pathlib.Path, capsys) -> None:
+    """人の入力待ちは応答の所要に入れず、Codex形式のsend_to_userも報告として数える。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T00:00:05Z",
+                "message": {"role": "assistant", "id": "m1", "usage": {"input_tokens": 1, "output_tokens": 2}, "content": []},
+            },
+            # 1時間後の人の発話。応答の後から次の依頼までの待ちは応答の所要に入らない。
+            {"type": "user", "timestamp": "2026-08-19T01:00:05Z", "message": {"role": "user", "content": "続き"}},
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-19T01:00:08Z",
+                "message": {"role": "assistant", "id": "m2", "usage": {"input_tokens": 1, "output_tokens": 2}, "content": []},
+            },
+        ],
+    )
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    unit = events_by_kind(read_jsonl(capsys), "stats-unit-costs")[0]
+    assert unit["responses"] == 2 and unit["response_mean_seconds"] == 4.0
+    assert unit["unmeasured"]
+    import session_evidence_extract  # pylint: disable=import-outside-toplevel
+    import session_evidence_unit_costs  # pylint: disable=import-outside-toplevel
+
+    payload = {"payload": {"type": "function_call", "name": "send_to_user", "arguments": "abcd"}}
+    codex = [session_evidence_extract._Record(1, "", payload)]  # pylint: disable=protected-access
+    assert session_evidence_unit_costs._report_lengths(codex) == [4]  # pylint: disable=protected-access

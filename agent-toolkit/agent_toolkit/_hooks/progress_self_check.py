@@ -116,9 +116,16 @@ def _saturation_text(session_id: str) -> str:
         limit = admission.configured_limit()
         limit_text = "上限なし" if limit.value is None else f"上限{limit.value}"
         working = f"作業中の委譲先はマシン全体で{observation.working}（{limit_text}、起動待ち{observation.waiting}）。"
-    except Exception:  # pylint: disable=broad-exception-caught
-        working = "作業中の委譲先の数は取得できない。"
+        if observation.failures:
+            working += (
+                f"ただし状態ファイル{len(observation.failures)}件を読めず、この数は部分観測である"
+                "（`atk agents list`で読めない記録を確認する）。"
+            )
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        working = f"作業中の委譲先の数を取得できない（{type(error).__name__}）。`atk agents list`で稼働中の委譲先を確認する。"
     seconds: list[float] = []
+    hooks_problem = ""
+    directory = None
     try:
         directory = managed_temp.find_session_temp(session_id)
         if directory is not None:
@@ -127,14 +134,18 @@ def _saturation_text(session_id: str) -> str:
                 row = json.loads(line)
                 if isinstance(row, dict) and row.get("stage") == "total" and isinstance(row.get("seconds"), (int, float)):
                     seconds.append(float(row["seconds"]))
-    except OSError, UnicodeError, ValueError:
+    except FileNotFoundError:
         seconds = []
+    except (OSError, UnicodeError, ValueError) as error:
+        seconds = []
+        hooks_problem = f"hook所要の記録を読めない（{type(error).__name__}）。`{directory}/hook-timings.jsonl`を確認する。"
     seconds = seconds[-_RECENT_HOOK_ROWS:]
-    hooks = (
-        f"直近{len(seconds)}回のhook所要は平均{sum(seconds) / len(seconds):.1f}秒・最大{max(seconds):.1f}秒。"
-        if seconds
-        else "直近のhook所要の記録は無い。"
-    )
+    if hooks_problem:
+        hooks = hooks_problem
+    elif seconds:
+        hooks = f"直近{len(seconds)}回のhook所要は平均{sum(seconds) / len(seconds):.1f}秒・最大{max(seconds):.1f}秒。"
+    else:
+        hooks = "直近のhook所要の記録は無い。"
     return working + hooks
 
 

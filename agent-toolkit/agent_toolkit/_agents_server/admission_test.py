@@ -66,18 +66,18 @@ def test_default_setting_limits_by_cpu_count(monkeypatch: pytest.MonkeyPatch) ->
     assert admission.configured_limit().value == 10
 
 
-def test_waiting_parents_and_parents_with_live_children_are_not_counted(tmp_path: pathlib.Path) -> None:
-    """子を持つsessionと、子の起動を待つsessionは作業中に数えない。"""
+def test_working_parents_are_counted_and_only_parents_waiting_for_admission_are_not(tmp_path: pathlib.Path) -> None:
+    """子を持つ委譲元も作業中なら数え、子の起動の許可を待っている委譲元だけを除く。"""
     _write_status(tmp_path, "root", "w1", None, {"parent": "running", "leaf": "running", "done": "completed"})
     _write_status(tmp_path, "root", "w2", "parent", {"child": "running"})
-    assert admission.observe(tmp_path).working == 2  # leafとchild
+    assert admission.observe(tmp_path).working == 3  # parent・leaf・child
     tickets = admission.admission_directory(tmp_path)
     tickets.mkdir(parents=True)
     (tickets / "0001.json").write_text(
         json.dumps({"pid": os.getpid(), "host_session_id": "leaf", "requested_at": time.time()}), encoding="utf-8"
     )
     observed = admission.observe(tmp_path)
-    assert (observed.working, observed.waiting) == (1, 1)
+    assert (observed.working, observed.waiting) == (2, 1)
 
 
 def test_tickets_of_dead_processes_release_slots(tmp_path: pathlib.Path) -> None:
@@ -88,6 +88,15 @@ def test_tickets_of_dead_processes_release_slots(tmp_path: pathlib.Path) -> None
     dead.write_text(json.dumps({"pid": 2**22 + 12345, "admitted_at": 1e12}), encoding="utf-8")
     assert admission.observe(tmp_path).admitted == 0
     assert not dead.exists()
+
+
+async def _until(condition, *, timeout: float = 10.0) -> None:
+    """状態の成立を条件で待ち、上限までに成立しなければ失敗させる。"""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not condition():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("状態が上限時間内に成立しない")
+        await asyncio.sleep(0.01)
 
 
 def test_launches_beyond_limit_wait_and_proceed_in_request_order(tmp_path: pathlib.Path) -> None:
@@ -110,19 +119,19 @@ def test_launches_beyond_limit_wait_and_proceed_in_request_order(tmp_path: pathl
             peak = max(peak, admission.observe(tmp_path).working)
 
         tasks = []
-        for name in ("a", "b", "c", "d"):
+        for index, name in enumerate(("a", "b", "c", "d")):
             tasks.append(asyncio.create_task(launch(name)))
-            await asyncio.sleep(0.05)
-        await asyncio.sleep(0.2)
+            # 依頼順を固定するため、前の依頼が許可されるか待機として登録されるまで次を依頼しない。
+            await _until(lambda index=index: len(order) + admission.observe(tmp_path).waiting > index)
         assert order == ["a", "b"]  # c・dは待っている
         assert admission.observe(tmp_path).waiting == 2
         running["a"] = "completed"
         _write_status(tmp_path, "root", "w", None, running)
-        await asyncio.sleep(0.2)
-        assert order == ["a", "b", "c"]
+        await _until(lambda: order == ["a", "b", "c"])
+        assert admission.observe(tmp_path).waiting == 1
         running["b"] = "completed"
         _write_status(tmp_path, "root", "w", None, running)
-        await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=10)
 
     asyncio.run(scenario())
     assert order == ["a", "b", "c", "d"]

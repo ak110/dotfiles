@@ -782,8 +782,9 @@ def _response_usages(records: list[_Record], runtime: _Runtime) -> list[dict[str
                 "input": usage["input_tokens"] + usage["cache_read_input_tokens"] + usage["cache_creation_input_tokens"],
                 "output": usage["output_tokens"],
                 "reasoning": 0,
+                "line": record.line,
             }
-            for _, usage in _latest_claude_usages(records)
+            for record, usage in _latest_claude_usages(records)
         ]
     if runtime == "agy":
         return [
@@ -791,8 +792,9 @@ def _response_usages(records: list[_Record], runtime: _Runtime) -> list[dict[str
                 "input": usage["input_tokens"] + usage["cache_read_input_tokens"],
                 "output": usage["output_tokens"],
                 "reasoning": 0,
+                "line": record.line,
             }
-            for _, usage in _agy_token_usages(records)
+            for record, usage in _agy_token_usages(records)
         ]
     return [
         {
@@ -800,8 +802,9 @@ def _response_usages(records: list[_Record], runtime: _Runtime) -> list[dict[str
             # Codexの`output_tokens`は推論分を含むため、推論とそれ以外を分ける。
             "output": max(usage["output_tokens"] - usage.get("reasoning_output_tokens", 0), 0),
             "reasoning": usage.get("reasoning_output_tokens", 0),
+            "line": record.line,
         }
-        for _, usage in _codex_token_usages(records)
+        for record, usage in _codex_token_usages(records)
     ]
 
 
@@ -889,10 +892,9 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
     events.append(
         session_evidence_unit_costs.unit_cost_event(
             collected,
-            summaries,
             call_entries=_stats_call_entries,
             response_usages=_response_usages,
-            parse_timestamp=_parse_timestamp,
+            record_timestamp=_record_timestamp,
         )
     )
     events.extend(_stats_breakdown_events(main_records, runtime))
