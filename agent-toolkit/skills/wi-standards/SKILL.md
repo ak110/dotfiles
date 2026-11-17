@@ -88,7 +88,7 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 | 詳細分析のAWI・計画の固定表を記録する前 | `references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` | |
 | 通常AWIの本文の構成と、起票目的別の登録条件を判定する前（操作対象外: ツールと結び付かない判断） | `references/wi-standards-body.md` | | | |
 | WIの由来（`source`）と承認、人間由来の要求の不採用を判断する前 | `references/wi-standards-origin.md` | | | |
-| WIの保存先、状態、重要フラグを扱う前 | `references/wi-standards-states.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-states.md` | |
+| WIの保存先、状態、重要フラグを扱う前 | `references/wi-standards-states.md` | 判断 | `wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-states.md` | |
 | WIの投入、取得、回答済みUWIとの整合確認を行う前 | `references/wi-standards-operations.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` | |
 
 本文は`agent-basics:writing-standards`に従い、引き継いだエージェントが対象と期待する結果を正確に理解して完了まで作業を進められる粒度で書く。

@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | 回答が確認や行動の扱いを一般的に是正する内容を含む時 | `agent-basics:bugfix/SKILL.md` | | |
 | 回答を元の作業へ反映する前（計画の有無によらず） | `../../write-plan/references/plan-file-standards-design.md` | | |
-| run-skillのUWIを保存・取得する起動単位を判定する前 | `../../wi-standards/references/origin-and-approval.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| run-skillのUWIを保存・取得する起動単位を判定する前 | `../../wi-standards/references/origin-and-approval.md` | 判断 | `uwi-draft-writing`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-states.md` | | |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` | | |
 

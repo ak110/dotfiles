@@ -95,15 +95,22 @@ def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, rep
 def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeypatch, route, dry_run):
     """付随型の検証は起草資料だけ、本保存は保存資料も案内する。"""
     root = pathlib.Path(__file__).resolve().parents[3]
+    # 検証の段階で届く資料が増えたら期待値の更新として表面化するよう、WI保存の語を持つ他の読込表も含める。
+    sources = (
+        "skills/wi-standards/SKILL.md",
+        "skills/wi-standards/references/uwi-format.md",
+        "skills/user-confirmation-and-report/references/answer-transitions.md",
+    )
     rows = [
         row
-        for row in read_triggers.parse_tables(root / "skills/wi-standards/SKILL.md", root)
+        for source in sources
+        for row in read_triggers.parse_tables(root / source, root)
         if any(operation.startswith("wi-standard-") for operation in row.operations)
     ]
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     body = tmp_path / "body.md"
-    body.write_text("# 原稿\n", encoding="utf-8")
+    body.write_text("# 原稿\n\n## 反映内容と反映先\n", encoding="utf-8")
     log = tmp_path / "launch.jsonl"
     launch = "通常の依頼"
     if route != "main":
@@ -128,4 +135,10 @@ def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeyp
         assert (name in result.stdout) is not dry_run
     for name in ("drafting-workflow-review-route.md", "draft-semantic-review.md"):
         assert (name in result.stdout) is (route in {"main", "専念型"})
+    # 回答済みUWIとの整合確認は原稿の内容を左右するため、検証の段階でも届ける。
+    assert "wi-standards-operations.md" in result.stdout
+    # 保存先・状態だけの資料は本保存で、UWIだけで使う資料は通常AWIの検証へ届けない。
+    assert ("wi-standards-states.md" in result.stdout) is not dry_run
+    for name in ("user-confirmation-and-report-decisions.md", "origin-and-approval.md"):
+        assert (name in result.stdout) is not dry_run
     assert not HOOK_PAYLOAD.get()

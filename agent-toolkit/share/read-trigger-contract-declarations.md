@@ -49,6 +49,8 @@
   既存ファイルの編集には`existing-file-edit`、Claude Code固有の編集には`claude-existing-file-edit`を使う。
   WI保存は通常WIの`wi-standard-dry-run`・`wi-standard-commit`と、報告用UWIの`wi-report-dry-run`・`wi-report-commit`で本文種別と段階を指定する。
   `dry-run`は`--dry-run`付きの検証、`commit`は本保存を表す。
+  両段階を指定するのは、原稿の内容を左右し検証の段階でも判断を与える資料に限り、保存先・状態など本保存だけで判断する資料は`commit`だけを指定する。
+  UWIだけで判断する資料は、通常AWIの検証へ届かないよう`uwi-draft-writing`と`commit`で指定する。
   `wi-standard-self-review`は通常WIの検証・本保存のうち、付随型のWI投入担当を除いた主体による操作を表す。
   旧語`wi-standard-save`・`wi-report-save`は拒否する。
   ユーザー側の宣言をhook実行時に寛容に読む場合だけ両段階として受理し、置換を案内する。
