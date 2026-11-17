@@ -291,11 +291,14 @@ def _worker(job: pathlib.Path) -> int:
             libc = ctypes.CDLL(None, use_errno=True)
             if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
                 raise OSError(ctypes.get_errno(), "更新workerの子孫所有を設定できません")
+        ready = job / "prune-ready"
+        env["DOTFILES_PRUNE_READY_FILE"] = str(ready)
         code = _run_command(
             [uv, "run", "--no-project", "--script", str(_ROOT / "libexec/update_dotfiles.py"), *arguments], job, deadline, env
         )
-        if code == 0:
-            code = _run_command(
+        # 続行した失敗だけで終えた本体も、整理と事前構築へ進める。終了コードは本体の値を保つ。
+        if code == 0 or ready.exists():
+            prune_code = _run_command(
                 [
                     str(home_bin / ("dotfiles-post-apply.exe" if sys.platform == "win32" else "dotfiles-post-apply")),
                     "--prune-only-if-minimal",
@@ -305,6 +308,8 @@ def _worker(job: pathlib.Path) -> int:
                 deadline,
                 env,
             )
+            if code == 0:
+                code = prune_code
         return code
     except (OSError, subprocess.SubprocessError, RuntimeError) as error:
         print(f"更新jobを完了できませんでした: {error}。保存出力を確認して再実行してください。", file=sys.stderr, flush=True)

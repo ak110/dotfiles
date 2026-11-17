@@ -564,6 +564,9 @@ def main(
             )
             sys.exit(2)
     if args.prune_only or args.prune_only_if_minimal:
+        # ランチャーが進行可否の判定に使った印を回収する。ランチャーは外部コマンドに依存せず削除できない。
+        if ready := os.environ.get("DOTFILES_PRUNE_READY_FILE"):
+            Path(ready).unlink(missing_ok=True)
         lock = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks/update-dotfiles.lock"
         lock.parent.mkdir(parents=True, exist_ok=True)
         try:

@@ -586,6 +586,7 @@ def test_job_timeout_records_failure_and_reaps_child(
                 os.kill(int(child_marker.read_text(encoding="utf-8")), signal.SIGKILL)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのprocess groupとSIGKILLの停止経路を検証する")
 def test_tree_listing_failure_still_reaps_direct_child(monkeypatch: pytest.MonkeyPatch) -> None:
     """子孫の列挙失敗を保持し、直接の子の無期限waitも防ぐ。"""
     process = Mock(spec=subprocess.Popen)

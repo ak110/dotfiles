@@ -68,7 +68,10 @@ actionlint・editorconfig-checker・git-cliff・pinact・shellcheck・shfmt・ty
 mise・シェル基本ツール・tmux・pytools・dotfilesプラグインの反映は維持する。
 minimalのmise操作はホームを実行位置とし、作業ツリーの開発ツールとglobal nodeの追加を省く。
 
-`update-dotfiles`の成功後はfull・minimalとも不要ツールと取得キャッシュを整理する。
+`update-dotfiles`の本体が中断せずに終えた後は、full・minimalとも不要ツールと取得キャッシュを整理する。
+続行した失敗だけで終えた場合（終了コード1）も整理へ進み、本体の終了コードは変えない。
+Windowsでは常駐が使う管理Pythonの更新を見送る回が続くため、成功時だけに限ると整理とMCPの事前構築が行われない。
+本体は中断しなかった場合だけランチャーが渡したパスへ印を作成し、整理したpost-applyが印を回収する。
 `--prune`は互換入力として受理し、指定の有無で整理結果を変えない。
 更新ランチャーはuvの外から`dotfiles-post-apply --prune-only-if-minimal`へ元の引数を渡す。
 この内部引数も互換名として残し、モードによらず更新と共通のロックを取得して整理する。
