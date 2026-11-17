@@ -404,6 +404,37 @@ def test_process_activity_ignores_nested_worktree(
     assert lane._process_activity(worktree)  # pylint: disable=protected-access
 
 
+@pytest.mark.skipif(os.name == "nt", reason="シンボリックリンクの作成権限に依存しないPOSIXで確かめる")
+def test_process_activity_follows_symlinked_cwd_and_argument(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """シンボリックリンク経由のcwdと絶対引数も、解決先のworktreeの使用として検出する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    link = tmp_path / "link"
+    link.symlink_to(worktree, target_is_directory=True)
+    sources: dict[str, Any] = {"cwd": str(tmp_path), "argv": ["program"]}
+
+    class Process:
+        """照会対象のcwdと引数を差し替えられる外部プロセス。"""
+
+        pid = 12345
+        info = {"username": lane.psutil.Process().username()}
+
+        def cwd(self) -> str:
+            return sources["cwd"]
+
+        def cmdline(self) -> list[str]:
+            return sources["argv"]
+
+    monkeypatch.setattr(lane.psutil, "process_iter", lambda *_args, **_kwargs: [Process()])
+    assert lane._process_activity(worktree) is None  # pylint: disable=protected-access
+    sources["cwd"] = str(link)
+    assert lane._process_activity(worktree)  # pylint: disable=protected-access
+    sources.update(cwd=str(tmp_path), argv=["program", f"--file={link / 'file'}"])
+    assert lane._process_activity(worktree)  # pylint: disable=protected-access
+
+
 def test_process_activity_resolves_registered_roots_once_per_scan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
