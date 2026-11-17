@@ -19,6 +19,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing.agents_server_support import (
+    LISTED_SESSION_KEYS,
     FakeBackend,
     UnavailableStartBackend,
     _complete,
@@ -168,12 +169,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
             await asyncio.gather(task, return_exceptions=True)
 
         assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
-        assert all(
-            {"session_id", "status"}
-            <= set(session)
-            <= {"session_id", "status", "engine", "model", "effort", "started_at", "updated_at", "seconds_since_activity"}
-            for session in response["sessions"]
-        )
+        assert all({"session_id", "status"} <= set(session) <= LISTED_SESSION_KEYS for session in response["sessions"])
         assert response["sessions"][0]["status"] == "expired"
         assert response["sessions"][1]["status"] == "running"
         assert response["sessions"][2]["status"] == "running"
@@ -225,15 +221,16 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
         exact_label = state.SessionState("exact", str(tmp_path), label="b" * 100)
         manager.sessions = {long_label.session_id: long_label, exact_label.session_id: exact_label}
 
-        listed = (await manager.list_sessions())["sessions"]
+        session_registry.set_owner_server_instance("instance-current")
+        try:
+            listed = (await manager.list_sessions())["sessions"]
+        finally:
+            session_registry.set_owner_server_instance(None)
 
         assert [item["session_id"] for item in listed] == ["long", "exact"]
-        assert all(
-            {"session_id", "status"}
-            <= item.keys()
-            <= {"session_id", "status", "engine", "model", "effort", "started_at", "updated_at", "seconds_since_activity"}
-            for item in listed
-        )
+        # 保持中のsessionは照会したサーバーが所有し、一覧から所有先を読める。
+        assert [item["owner_server_instance"] for item in listed] == ["instance-current", "instance-current"]
+        assert all({"session_id", "status"} <= item.keys() <= LISTED_SESSION_KEYS for item in listed)
 
 
 @pytest.mark.asyncio

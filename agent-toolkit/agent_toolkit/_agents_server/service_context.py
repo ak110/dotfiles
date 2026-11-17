@@ -152,7 +152,12 @@ class ServiceManagers:
                 except Exception:
                     # 世代移行の1件の失敗で全会話の状態保存まで毎巡止めない（2026-11-17に旧世代の
                     # 状態がrunningのまま固定された）。再開は移行の成否が確定するまで見送る。
-                    _LOG.exception("世代移行の確認が失敗しました。自動再開を見送り、状態保存は続けます")
+                    _LOG.exception(
+                        "世代移行の確認が失敗しました。自動再開を見送り、状態保存は続けます。"
+                        "次の操作: この例外を直すまで旧世代の会話を新世代へ移せず、自動再開も止まる。"
+                        "`atk agents list`の`server_generations`で残っている世代を確かめ、"
+                        "例外の原因（状態の符号化・移譲先との通信）を直してからサーバーを更新する"
+                    )
                     allow_resume = False
                 for conversation in tuple(self.conversations.values()):
                     with self._bound(conversation):

@@ -46,7 +46,8 @@ def _load(path: pathlib.Path) -> dict[str, dict]:
         return {}
     except OSError, ValueError:
         # 壊れた保存結果は使わずに解析し直し、成功した解析で置き換える。
-        _LOG.warning("読込表の解析結果の保存を読めないため解析し直す: %s", path, exc_info=True)
+        # 解析し直して保存し直すため、ユーザーの対処は要らない。
+        _LOG.info("読込表の解析結果の保存を読めないため解析し直す: %s", path, exc_info=True)
         return {}
     return value if isinstance(value, dict) else {}
 
@@ -105,7 +106,12 @@ def parse_deferred(
             atomic_file.atomic_write(store, json.dumps(current, ensure_ascii=False))
             _prune(store.parent, keep=store)
         except OSError:
-            _LOG.warning("読込表の解析結果を保存できないため、次回も解析し直す: %s", store, exc_info=True)
+            _LOG.warning(
+                "読込表の解析結果を保存できないため、次回のhookも全文書を解析し直す: %s。"
+                "次の操作: 保存先ディレクトリの書込権限と空き容量を確かめる",
+                store,
+                exc_info=True,
+            )
     return results
 
 

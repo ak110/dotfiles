@@ -114,6 +114,8 @@ def listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
         public["seconds_since_activity"] = session["seconds_since_activity"]
     if "api_error" in session:
         public["api_error"] = session["api_error"]
+    if "owner_server_instance" in session:
+        public["owner_server_instance"] = session["owner_server_instance"]
     return public
 
 

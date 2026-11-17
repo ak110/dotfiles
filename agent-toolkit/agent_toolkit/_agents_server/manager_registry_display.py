@@ -105,6 +105,14 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
                     ),
                 ),
             )
+        queried = session_registry.owner_server_instance()
+        for identifier, (_started, entry) in listed.items():
+            if identifier in self.sessions or identifier in self._pending_resumes:
+                entry["owner_server_instance"] = queried
+            else:
+                # 退避した終了済みsessionは、登録簿へ最後に書いた所有サーバーを示す。
+                resolution = await run_file_operation(session_registry.resolve, identifier)
+                entry["owner_server_instance"] = resolution.server_instance
         sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: (item[0] is None, item[0] or ""))]
         if include_terminated:
             response: dict[str, Any] = {

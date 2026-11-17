@@ -177,3 +177,19 @@ __all__ = [
     "exited_process_identity",
     "install_backend",
 ]
+
+
+# listの各sessionが返し得る公開項目。
+LISTED_SESSION_KEYS = frozenset(
+    {
+        "session_id",
+        "status",
+        "engine",
+        "model",
+        "effort",
+        "started_at",
+        "updated_at",
+        "seconds_since_activity",
+        "owner_server_instance",
+    }
+)
