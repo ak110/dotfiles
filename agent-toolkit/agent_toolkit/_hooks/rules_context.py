@@ -373,6 +373,20 @@ def _existing_session_temp(session_id: object) -> str | None:
     return str(path) if path is not None else None
 
 
+def _discard_stale_digest(output: pathlib.Path | None) -> list[str]:
+    """要約の作成に失敗した時に前回の要約を消し、消せない場合は使用を禁じる行を返す。
+
+    保存先は圧縮のたびに同じファイルなので、残すと前回の圧縮までの要約を今回の復元材料と取り違える。
+    """
+    if output is None:
+        return []
+    try:
+        output.unlink(missing_ok=True)
+    except OSError:
+        return [f"前回の要約ファイル`{output}`を削除できないため、そのファイルは使用するな。"]
+    return []
+
+
 def _compaction_notice(session_id: str, transcript_path: object, session_temp: pathlib.Path | None, *, delegated: bool) -> str:
     """発話だけの要約を作り、圧縮後に読む対象を作業契約とその1ファイルに限って通知する。"""
     scope = (
@@ -411,6 +425,10 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         )
         counts = json.loads(result.stdout)["conversation_window"]
         users, assistants = int(counts["user_count"]), int(counts["assistant_count"])
+        requests = int(counts.get("request_count", 0))
+        breakdown = f"ユーザー発話{users}件、エージェント発話{assistants}件" + (
+            f"、委譲元の依頼{requests}件" if requests else ""
+        )
         if not delegated:
             key = document_reads.selected_target_key(read_triggers.ReadTarget(output))
 
@@ -424,12 +442,12 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
             update_state(session_id, select_original)
         return (
             f"会話が圧縮された。圧縮後に読むのは、作業契約と、Readのfile_pathに`{output}`を指定して読む会話の要約"
-            f"（ユーザー発話{users}件、エージェント発話{assistants}件）だけである。{scope}"
+            f"（{breakdown}）だけである。{scope}"
         )
     except process_tree.ReclaimError as error:
         # hookは同じ所有対象を次の起動まで保持できないため、その場で回収し直し、残れば対象を示す。
         remaining = error.retry()
-        lines = []
+        lines = _discard_stale_digest(output)
         if remaining:
             lines.append(
                 f"会話の要約の子プロセスを回収できない: {remaining}。"
@@ -441,12 +459,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         )
         return "\n".join(lines)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        lines = []
-        if output is not None:
-            try:
-                output.unlink(missing_ok=True)
-            except OSError:
-                lines.append(f"前回の要約ファイル`{output}`を削除できないため、そのファイルは使用するな。")
+        lines = _discard_stale_digest(output)
         lines.append(f"会話が圧縮された。会話の要約の作成に失敗した（{type(error).__name__}: {error}）。{retry}")
         return "\n".join(lines)
 

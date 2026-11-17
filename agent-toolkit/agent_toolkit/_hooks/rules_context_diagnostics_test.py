@@ -44,6 +44,9 @@ def test_public_start_reports_owned_reclaim_and_repository_failure(tmp_path, mon
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
     transcript = tmp_path / "transcript.jsonl"
     transcript.touch()
+    stale = tmp_path / "compaction-digest" / "conversation.md"
+    stale.parent.mkdir()
+    stale.write_text("前の圧縮の要約", encoding="utf-8")
     error = rules_context.process_tree.ReclaimError(["PID 123"], [], context="原文抽出")
     monkeypatch.setattr(type(error), "retry", lambda self: ["PID 123"])
 
@@ -71,6 +74,8 @@ def test_public_start_reports_owned_reclaim_and_repository_failure(tmp_path, mon
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "PID 123" in context and "所有対象" in context
     assert "ReclaimError: context=原文抽出" in context
+    # 子プロセスを回収できなかった場合も、前の圧縮の要約を今回の復元材料として残さない。
+    assert not stale.exists()
     assert "kill -KILL" not in context and "taskkill /PID" not in context
     assert "repository設定を読めない" in context and "直接編集するな" in context
 

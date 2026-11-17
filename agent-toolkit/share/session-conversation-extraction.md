@@ -32,8 +32,9 @@ atk run-script session-review-prepare -- --transcript <記録の絶対パス> --
   既存の`--after <scope JSON>`が定める振り返り対象の差分とは区別する。
 - `--conversation-max-bytes <正整数>`: 少量文書全体のUTF-8予算を指定する。
   省略時の16000バイトは、日常点検で読む量を全体概要より小さくするための値である。
-- `--conversation-digest`: メイン担当の発話だけを話者と本文で示す。
+- `--conversation-digest`: 指定した会話の発話と、委譲先の会話では委譲元から受けた依頼を、話者と本文で示す。
   会話圧縮後の復元通知が使う形式で、内容を話者と本文に限り、ツール呼び出し、記録位置、時刻を省く。
+  ユーザー発話と委譲元の依頼は全文を示し、文書全体が上限を超える場合だけ、長いものから中ほどを省いて省いた字数を行内に示す。
   `--conversation-window`とは併用せず、上限は`--conversation-max-bytes`で指定する（省略時30000バイト）。
 
 生成された`conversation_path`と、`conversation_window`が示す実バイト数、条件、対象・表示件数、省略と未確認範囲、継続案内を確認する。
