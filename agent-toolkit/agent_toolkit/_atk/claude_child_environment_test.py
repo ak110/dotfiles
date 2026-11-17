@@ -139,7 +139,7 @@ def test_explicit_subscription_without_api_file_reaches_cli_isolated(
         observed.append(effective)
         assert effective["CLAUDE_CODE_OAUTH_TOKEN"] == "subscription"
         assert not effective.get("ANTHROPIC_API_KEY")
-        assert not selected["apiKeyHelper"]
+        assert not selected.get("apiKeyHelper")
         return subprocess.CompletedProcess(argv, 0, "OK", "")
 
     monkeypatch.setattr(subprocess, "run", launched)

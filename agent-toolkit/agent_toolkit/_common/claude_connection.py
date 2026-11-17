@@ -125,7 +125,11 @@ def merge_settings(
         value = {}
     settings = value if isinstance(value, dict) else {}
     inherited = settings.get("env")
-    if isolate_auth:
+    if isolate_auth and (
+        "apiKeyHelper" in settings or "apiKeyHelper" in claude_settings_sources.setting_keys(cwd, project=project_settings)
+    ):
+        # 継承する設定のhelperだけを空値で打ち消す。定義が無いのに空値を渡すと、Claude Codeは
+        # helperの指定ありと扱い、Code Modeなどhelperと併用できない機能を無効にする（2.1.326で観測）。
         settings["apiKeyHelper"] = ""
     if key_helper_command is not None:
         settings["apiKeyHelper"] = key_helper_command

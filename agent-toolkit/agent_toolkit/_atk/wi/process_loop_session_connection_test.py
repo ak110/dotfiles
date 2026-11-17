@@ -106,7 +106,8 @@ def test_subscription_orchestrator_uses_subscription_only(tmp_path: pathlib.Path
     """API環境ファイルを適用せずサブスクリプションの認証を渡す。"""
     observed, settings = _connection_launch(tmp_path, monkeypatch, "subscription")
     assert observed["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "test-subscription"
-    assert not settings["apiKeyHelper"]
+    # 設定に無いhelperを空値で渡すと、Claude CodeがCode Modeを無効にする。
+    assert "apiKeyHelper" not in settings
     assert "api.example.test" not in str(observed) + str(settings)
 
 

@@ -14,18 +14,29 @@ def paths(repo: pathlib.Path, *, project: bool = True) -> tuple[pathlib.Path, ..
     return user + (repo / ".claude/settings.json", repo / ".claude/settings.local.json") if project else user
 
 
-def environment_keys(cwd: str | pathlib.Path | None, *, project: bool = True) -> frozenset[str]:
-    """子CLIが自ら読み込む設定のenvのキーだけを集める。"""
+def _loaded(cwd: str | pathlib.Path | None, project: bool) -> list[object]:
     repo = pathlib.Path(cwd) if cwd is not None else pathlib.Path.cwd()
     if project:
         repo = next((path for path in (repo, *repo.parents) if (path / ".git").exists()), repo)
-    keys: set[str] = set()
+    loaded: list[object] = []
     for path in paths(repo, project=project):
         try:
-            settings = json.loads(path.read_text(encoding="utf-8"))
+            loaded.append(json.loads(path.read_text(encoding="utf-8")))
         except FileNotFoundError:
             continue
+    return loaded
+
+
+def environment_keys(cwd: str | pathlib.Path | None, *, project: bool = True) -> frozenset[str]:
+    """子CLIが自ら読み込む設定のenvのキーだけを集める。"""
+    keys: set[str] = set()
+    for settings in _loaded(cwd, project):
         env = settings.get("env", {}) if isinstance(settings, dict) else {}
         if isinstance(env, dict):
             keys.update(env)
     return frozenset(keys)
+
+
+def setting_keys(cwd: str | pathlib.Path | None, *, project: bool = True) -> frozenset[str]:
+    """子CLIが自ら読み込む設定の最上位のキーだけを集める。"""
+    return frozenset(key for settings in _loaded(cwd, project) if isinstance(settings, dict) for key in settings)
