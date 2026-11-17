@@ -111,3 +111,30 @@ def test_codex_outer_exec_result_is_evidence(monkeypatch: pytest.MonkeyPatch, tm
     monkeypatch.setattr(record_paths, "find_session_record", lambda _id: record_paths.SessionRecord("codex", (path,)))
     session = state.SessionState("runtime-test", str(tmp_path), started_at=_START)
     assert result_contract.invalid_result_reason(session, _result(_DIAGNOSTIC)) is None
+
+
+@pytest.mark.parametrize("diagnostic", [False, True])
+def test_reader_fit_multiline_reason_preserves_finite_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, diagnostic: bool
+) -> None:
+    """正式な複数行理由も、実診断と自己推定を区別して1回の再提出へ渡す。"""
+    path = tmp_path / "record.jsonl"
+    _records(path)
+    monkeypatch.setattr(record_paths, "find_session_record", lambda _id: record_paths.SessionRecord("claude", (path,)))
+    session = state.SessionState("runtime-test", str(tmp_path), launch_kind="explore", started_at=_START)
+    role = Path(__file__).resolve().parents[2] / "share" / "reader-fit-review.subagent.md"
+    session.prompt = task_documents.task_prompt_header(role) + "\n成果物: /example.md\n"
+    reason = _DIAGNOSTIC if diagnostic else "この応答の実行予算では残工程を実行できない"
+    result = {
+        "status": "completed",
+        "agent_message": (
+            "- 成果物: /example.md\n  完了状態: blocked\n  比較資料: 指定HEAD\n  根拠: 調査途中\n"
+            f"  続行できない区分: runtime_unavailable\n  続行できない理由:\n     {reason}\n"
+        ),
+    }
+    assert (result_contract.invalid_result_reason(session, result) is None) is diagnostic
+    assert result_contract.hold_invalid_result(session, result)
+    session.result_contract_recovery_consumed = True
+    assert not result_contract.hold_invalid_result(session, result)
+    assert (result.get("error") is None) is diagnostic
+    assert result["status"] == ("completed" if diagnostic else "failed")

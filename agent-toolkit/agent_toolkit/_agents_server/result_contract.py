@@ -44,11 +44,19 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
     if isinstance(message, str) and session.launch_kind in {"delegate", "explore"}:
         unavailable = re.finditer(
             r"(?m)^(?P<indent>[ \t]*)続行できない区分:[ \t]*runtime_unavailable[ \t]*\r?\n"
-            r"(?P=indent)続行できない理由:[ \t]*(?P<reason>[^\r\n]+)",
+            r"(?P=indent)続行できない理由:[ \t]*(?P<reason>[^\r\n]*)",
             message,
         )
         for claim in unavailable:
-            if not has_runtime_evidence(session, claim["reason"]):
+            reason_parts = [claim["reason"]]
+            # reader-fitの欄値は次行の字下げや箇条書きも含む。同じ値から診断の引用を確認する。
+            for line in message[claim.end() :].splitlines():
+                if not line.strip():
+                    continue
+                if not (line.startswith(claim["indent"] + " ") or line.startswith(claim["indent"] + "- ")):
+                    break
+                reason_parts.append(line.strip())
+            if not has_runtime_evidence(session, "\n".join(reason_parts)):
                 return (
                     "runtime_unavailableの理由に対応する当turnの実行診断を確認できません。"
                     "続けられる作業を続けるか、当turnの失敗した呼出しの結果から"
