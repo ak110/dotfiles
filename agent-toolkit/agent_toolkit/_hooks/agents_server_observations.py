@@ -13,10 +13,12 @@ import json
 import os
 import pathlib
 
-from agent_toolkit._agents_server import launch_prompts, shared_layout, shared_roots, wait_targets
-from agent_toolkit._agents_server import state as _agents_server_state
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._common import session_launchers, state_paths, task_documents
+
+# 委譲の観測でだけ使う依存（設定・利用枠・pydanticまで読み込む）は、通常のBashのPostToolUseで毎回読み込まない。
+lazy from agent_toolkit._agents_server import launch_prompts, shared_layout, shared_roots, wait_targets
+lazy from agent_toolkit._agents_server import state as _agents_server_state
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log

@@ -13,24 +13,29 @@ import sys
 import pytest
 
 _HOOK = pathlib.Path(__file__).resolve().parent / "hook.py"
-# 2026-11-17のPreToolUse（Bash ls）の実測は379件。予算を引き上げる変更は、増えた依存と必要な理由をここへ記録する。
-_PRETOOLUSE_MODULE_BUDGET = 420
+# 2026-11-17のBash lsの実測はPreToolUse 379件、PostToolUse 456件。
+# 予算を引き上げる変更は、増えた依存と必要な理由をここへ記録する。
+_MODULE_BUDGETS = {"pretooluse": 420, "posttooluse": 500}
 
 
 @pytest.mark.skipif(os.name == "nt", reason="読込数の予算はLinuxの実測で定める")
-def test_pretooluse_for_plain_command_stays_within_module_budget(tmp_path: pathlib.Path) -> None:
-    """通常のBashコマンドのPreToolUseは予算内のモジュールだけを読み込み、承認判定器の依存を読まない。"""
+@pytest.mark.parametrize("event", ["PreToolUse", "PostToolUse"])
+def test_plain_command_hook_stays_within_module_budget(tmp_path: pathlib.Path, event: str) -> None:
+    """通常のBashコマンドのPre・PostToolUseは予算内のモジュールだけを読み込み、承認判定器や委譲観測の依存を読まない。"""
+    subcommand = event.lower()
     payload = {
         "session_id": "00000000-0000-4000-8000-000000000001",
         "transcript_path": str(tmp_path / "none.jsonl"),
         "cwd": str(tmp_path),
-        "hook_event_name": "PreToolUse",
+        "hook_event_name": event,
         "tool_name": "Bash",
         "tool_input": {"command": "ls", "description": "List"},
     }
+    if event == "PostToolUse":
+        payload["tool_response"] = {"stdout": "a", "stderr": "", "interrupted": False}
     environment = dict(os.environ, XDG_STATE_HOME=str(tmp_path / "state"), XDG_CACHE_HOME=str(tmp_path / "cache"))
     result = subprocess.run(  # noqa: S603
-        [sys.executable, "-X", "importtime", str(_HOOK), "pretooluse"],
+        [sys.executable, "-X", "importtime", str(_HOOK), subcommand],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -41,4 +46,5 @@ def test_pretooluse_for_plain_command_stays_within_module_budget(tmp_path: pathl
     assert result.returncode == 0, result.stderr
     modules = [line.rsplit("|", 1)[-1].strip() for line in result.stderr.splitlines() if line.startswith("import time:")]
     assert "pydantic" not in modules
-    assert len(modules) <= _PRETOOLUSE_MODULE_BUDGET, f"読込{len(modules)}件が予算{_PRETOOLUSE_MODULE_BUDGET}件を超えた"
+    budget = _MODULE_BUDGETS[subcommand]
+    assert len(modules) <= budget, f"{event}の読込{len(modules)}件が予算{budget}件を超えた"
