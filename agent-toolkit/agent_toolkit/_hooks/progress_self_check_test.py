@@ -378,10 +378,13 @@ def test_notice_distinguishes_partial_failed_and_absent_observations(
     assert notice is not None
     expected = {
         "partial": "部分観測",
-        "observe-error": "取得できない（PermissionError）",
+        "observe-error": "取得できない（PermissionError: denied）",
         "unreadable-hooks": "hook所要の記録を読めない",
         "no-hooks": "直近のhook所要の記録は無い",
     }[case]
     assert expected in notice
-    if case in {"partial", "observe-error"}:
-        assert "`atk agents list`" in notice
+    if case == "partial":
+        # 一覧コマンドでは見えない失敗対象の所在と診断を、通知から直接たどれる。
+        assert "root/w.json: ValueError" in notice and "agents-server" in notice
+    if case == "observe-error":
+        assert "denied" in notice and "`atk config get state_dir`" in notice

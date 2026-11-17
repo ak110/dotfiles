@@ -599,3 +599,32 @@ def test_unit_costs_exclude_human_wait_and_count_codex_reports(tmp_path: pathlib
     payload = {"payload": {"type": "function_call", "name": "send_to_user", "arguments": "abcd"}}
     codex = [session_evidence_extract._Record(1, "", payload)]  # pylint: disable=protected-access
     assert session_evidence_unit_costs._report_lengths(codex) == [4]  # pylint: disable=protected-access
+
+
+def test_unit_costs_measure_codex_response_from_request_not_intermediate_records(tmp_path: pathlib.Path, capsys) -> None:
+    """Codexの依頼→応答本文→token_countでは、応答本文の記録を始点にせず依頼からの5秒を応答の所要とする。"""
+    usage = {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5}
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {"type": "message", "role": "user", "content": "依頼"},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:05Z",
+                "payload": {"type": "message", "role": "assistant", "content": "回答"},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:05Z",
+                "payload": {"type": "token_count", "info": {"total_token_usage": usage, "last_token_usage": usage}},
+            },
+        ],
+    )
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    unit = events_by_kind(read_jsonl(capsys), "stats-unit-costs")[0]
+    assert unit["responses"] == 1 and unit["responses_unmeasured"] == 0
+    assert unit["response_mean_seconds"] == 5.0 and unit["max_concurrent_records"] == 1

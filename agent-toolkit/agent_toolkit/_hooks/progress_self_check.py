@@ -110,6 +110,7 @@ def _saturation_text(session_id: str) -> str:
     """
     from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
     from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._common import state_paths  # pylint: disable=import-outside-toplevel
 
     try:
         observation = admission.observe()
@@ -117,12 +118,19 @@ def _saturation_text(session_id: str) -> str:
         limit_text = "上限なし" if limit.value is None else f"上限{limit.value}"
         working = f"作業中の委譲先はマシン全体で{observation.working}（{limit_text}、起動待ち{observation.waiting}）。"
         if observation.failures:
+            # 一覧コマンドは読めない状態ファイルを表示しないため、診断と所在を通知へ直接載せる。
+            base = state_paths.state_dir() / "agents-server"
+            shown = "、".join(f"{base}/{failure}" for failure in observation.failures[:3])
+            more = f"（他{len(observation.failures) - 3}件）" if len(observation.failures) > 3 else ""
             working += (
-                f"ただし状態ファイル{len(observation.failures)}件を読めず、この数は部分観測である"
-                "（`atk agents list`で読めない記録を確認する）。"
+                f"ただし状態ファイル{len(observation.failures)}件を読めず、この数は部分観測である。"
+                f"読めない記録: {shown}{more}。各ファイルの内容と書込主体の稼働を確認する。"
             )
     except Exception as error:  # pylint: disable=broad-exception-caught
-        working = f"作業中の委譲先の数を取得できない（{type(error).__name__}）。`atk agents list`で稼働中の委譲先を確認する。"
+        working = (
+            f"作業中の委譲先の数を取得できない（{type(error).__name__}: {error}）。"
+            "`atk config get state_dir`が示すディレクトリの`agents-server`配下の状態ファイルの読取権限と内容を確認する。"
+        )
     seconds: list[float] = []
     hooks_problem = ""
     directory = None

@@ -15,7 +15,14 @@ from agent_toolkit._agents_server import admission
 from agent_toolkit._atk import config_settings
 
 
-def _write_status(state_root: pathlib.Path, root: str, writer: str, host: str | None, sessions: dict[str, str]) -> pathlib.Path:
+def _write_status(
+    state_root: pathlib.Path,
+    root: str,
+    writer: str,
+    host: str | None,
+    sessions: dict[str, str],
+    actions: dict[str, str] | None = None,
+) -> pathlib.Path:
     """1つの書込主体の状態ファイルを、heartbeatが有効な状態で書く。"""
     directory = state_root / "agents-server" / root
     directory.mkdir(parents=True, exist_ok=True)
@@ -28,7 +35,13 @@ def _write_status(state_root: pathlib.Path, root: str, writer: str, host: str | 
                 "host_session_id": host,
                 "heartbeat_at": now,
                 "sessions": [
-                    {"session_id": session_id, "status": status, "updated_at": now} for session_id, status in sessions.items()
+                    {
+                        "session_id": session_id,
+                        "status": status,
+                        "updated_at": now,
+                        "last_action": (actions or {}).get(session_id, ""),
+                    }
+                    for session_id, status in sessions.items()
                 ],
             }
         ),
@@ -173,3 +186,70 @@ def test_stale_waiting_ticket_does_not_block_request_order(tmp_path: pathlib.Pat
     ticket = asyncio.run(admission.acquire(None, limit=admission.Limit(1, "test"), state_root=tmp_path))
     ticket.release()
     assert not stale.exists()
+
+
+def test_parent_waiting_on_children_is_not_counted_but_working_parent_is(tmp_path: pathlib.Path) -> None:
+    """最後の操作が`atk agents wait`の委譲元は子を待つだけとして数えず、作業中の委譲元は数える。"""
+    _write_status(
+        tmp_path,
+        "root",
+        "w1",
+        None,
+        {"waiter": "running", "worker": "running"},
+        {"waiter": "Bash: atk agents wait", "worker": "Read: plan.md"},
+    )
+    _write_status(tmp_path, "root", "w2", "waiter", {"child": "running"})
+    assert admission.observe(tmp_path).working_sessions == ("child", "worker")
+
+
+def test_grandchild_starts_while_unrelated_work_finishes(tmp_path: pathlib.Path) -> None:
+    """上限2で祖父が子を待ち、別の担当が作業中でも、子は孫を起動できる。別担当の終了を待つ場合も止まらない。"""
+    limit = admission.Limit(2, "test")
+    _write_status(
+        tmp_path, "root", "w0", None, {"grandparent": "running", "other": "running"}, {"grandparent": "Bash: atk agents wait"}
+    )
+    _write_status(tmp_path, "root", "w1", "grandparent", {"child": "running"})
+
+    async def scenario() -> None:
+        ticket = await asyncio.wait_for(
+            admission.acquire("child", limit=limit, state_root=tmp_path, sleep=lambda _s: asyncio.sleep(0.01)), timeout=5
+        )
+        ticket.release()
+
+    asyncio.run(scenario())
+    # 祖父が待機を示さず作業中に見える場合も、別担当が終われば系列だけになり許可される。
+    _write_status(tmp_path, "root", "w0", None, {"grandparent": "running", "other": "running"})
+
+    async def blocked_then_released() -> None:
+        task = asyncio.create_task(
+            admission.acquire("child", limit=limit, state_root=tmp_path, sleep=lambda _s: asyncio.sleep(0.01))
+        )
+        # 待機として登録され、その後の判定を数回経ても許可されないことを条件で確かめる。
+        await _until(lambda: admission.observe(tmp_path).waiting == 1)
+        await asyncio.sleep(0.05)
+        assert not task.done()
+        _write_status(tmp_path, "root", "w0", None, {"grandparent": "running", "other": "completed"})
+        (await asyncio.wait_for(task, timeout=5)).release()
+
+    asyncio.run(blocked_then_released())
+
+
+def test_limit_is_exceeded_only_when_every_working_session_is_the_requester_lineage(tmp_path: pathlib.Path) -> None:
+    """上限1で作業中が依頼元の親だけなら行き止まりを避けて許可し、無関係な作業中があれば待たせる。"""
+    limit = admission.Limit(1, "test")
+    _write_status(tmp_path, "root", "w0", None, {"parent": "running"})
+    ticket = asyncio.run(admission.acquire("parent", limit=limit, state_root=tmp_path))
+    ticket.release()
+    _write_status(tmp_path, "root", "w0", None, {"parent": "running", "unrelated": "running"})
+
+    async def waits() -> bool:
+        task = asyncio.create_task(
+            admission.acquire("parent", limit=limit, state_root=tmp_path, sleep=lambda _s: asyncio.sleep(0.01))
+        )
+        await _until(lambda: admission.observe(tmp_path).waiting == 1)
+        await asyncio.sleep(0.05)
+        done = task.done()
+        task.cancel()
+        return done
+
+    assert asyncio.run(waits()) is False

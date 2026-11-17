@@ -6,8 +6,10 @@
 
 作業中の数は既存の状態ファイル（30秒周期のheartbeat付き）から求め、新しい常駐の監視は作らない。
 子を持つ委譲元も自身が作業を続けていれば作業中に数える。
-子の起動を待っているだけの委譲元が枠を持ち続けると、その子を起動できずに全体が止まるため、
-起動待ちの記録を持つ委譲元だけを数えない。稼働中の子を待つ委譲元は、許可済みの子が終われば進むため数えてよい。
+子の結果を待っているだけの委譲元（最後の操作が`atk agents wait`）と、子の起動の許可を待っている委譲元は数えない。
+待つだけの親が枠を持つと子や孫を起動できずに全体が止まるためである。
+上限に達していても、作業中に数えた全sessionが依頼元とその祖先だけである場合は許可する。
+このときは依頼元の系列以外に枠を空ける主体がなく、待たせると行き止まりになるためで、上限を超えるのはこの場合に限る。
 """
 
 from __future__ import annotations
@@ -39,6 +41,8 @@ ADMITTED_GRACE_SECONDS = 60.0
 # 待機が失われたものとして削除し、依頼順の先頭を塞がないようにする。
 WAITING_STALE_SECONDS = 30.0
 _WORKING_STATUSES = frozenset({"starting", "running"})
+# 委譲元が子の終了を待つ公開手段。最後の操作がこれを含むsessionは子を待っているだけとみなす。
+_WAIT_ACTION = "agents wait"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -84,6 +88,20 @@ class Observation:
     admitted: int
     waiting: int
     failures: tuple[str, ...] = ()
+    working_sessions: tuple[str, ...] = ()
+    hosts: tuple[tuple[str, str], ...] = ()
+
+    def only_lineage_of(self, requester: str | None) -> bool:
+        """作業中に数えた全sessionが、依頼元とその祖先だけかを返す。"""
+        if requester is None:
+            return False
+        parents = dict(self.hosts)
+        lineage: set[str] = set()
+        current: str | None = requester
+        while current is not None and current not in lineage:
+            lineage.add(current)
+            current = parents.get(current)
+        return bool(self.working_sessions) and set(self.working_sessions) <= lineage
 
 
 def _live(pid: object) -> bool:
@@ -125,8 +143,8 @@ def _read_tickets(directory: pathlib.Path, now: float) -> list[tuple[pathlib.Pat
 def observe(state_root: pathlib.Path | None = None, *, now: float | None = None) -> Observation:
     """全ルートの状態ファイルと起動記録から、作業中の数を求める。
 
-    作業中は`starting`か`running`のsessionとする。子の起動の許可を待っている委譲元だけを、
-    子を待つだけの親として数えない（待つ親が枠を持つと子を許可できず、全体が止まるため）。
+    作業中は`starting`か`running`のsessionとする。最後の操作が子の結果の待機（`atk agents wait`）の委譲元と、
+    子の起動の許可を待っている委譲元は、子を待つだけの親として数えない。
     状態ファイルの一部を読めない場合は`failures`へ残し、数は部分観測であることを呼出側が示す。
     """
     now = time.time() if now is None else now
@@ -144,11 +162,24 @@ def observe(state_root: pathlib.Path | None = None, *, now: float | None = None)
         sessions.update(snapshot.sessions)
         failures.extend(snapshot.failures)
     active = {key: value for key, value in sessions.items() if value.get("status") in _WORKING_STATUSES}
-    working = sum(1 for key in active if key not in waiting_hosts)
+    working_sessions = tuple(
+        sorted(
+            key
+            for key, value in active.items()
+            if key not in waiting_hosts and _WAIT_ACTION not in str(value.get("last_action", ""))
+        )
+    )
+    hosts = tuple(
+        sorted(
+            (key, str(value["host_session_id"]))
+            for key, value in sessions.items()
+            if isinstance(value.get("host_session_id"), str)
+        )
+    )
     # 起動処理中の許可は状態ファイルへ現れる前から数える。現れた後の短い重複は上限を下げる側へ倒れるだけである。
     admitted = sum(1 for _path, payload in tickets if payload.get("admitted_at") is not None)
     waiting = sum(1 for _path, payload in tickets if payload.get("admitted_at") is None)
-    return Observation(working, admitted, waiting, tuple(failures))
+    return Observation(len(working_sessions), admitted, waiting, tuple(failures), working_sessions, hosts)
 
 
 @dataclasses.dataclass
@@ -214,7 +245,8 @@ async def acquire(
                 observation = observe(state_root, now=now)
                 waiting = sorted(path for path, payload in _read_tickets(directory, now) if payload.get("admitted_at") is None)
                 first = bool(waiting) and waiting[0] == ticket
-                if first and observation.working + observation.admitted < limit.value:
+                free = observation.working + observation.admitted < limit.value
+                if first and (free or (observation.admitted == 0 and observation.only_lineage_of(host_session_id))):
                     _atomic_write(
                         ticket,
                         {"pid": os.getpid(), "host_session_id": host_session_id, "admitted_at": now},

@@ -85,6 +85,20 @@ def _report_lengths(records: list[_Record]) -> list[int]:
     return lengths
 
 
+def _is_request(entry: dict[str, Any]) -> bool:
+    """モデルへ次の応答を求める記録（人の依頼かツールの結果）かを返す。応答本文・通知・usageの記録は除く。"""
+    message = entry.get("message")
+    if entry.get("type") == "user" or (isinstance(message, dict) and message.get("role") == "user"):
+        return True
+    payload = entry.get("payload")
+    if not isinstance(payload, dict):
+        return False
+    kind = payload.get("type")
+    return kind in {"function_call_output", "custom_tool_call_output", "user_message"} or (
+        kind == "message" and payload.get("role") == "user"
+    )
+
+
 def unit_cost_event(
     collected: list[_CollectedRecord],
     *,
@@ -94,14 +108,16 @@ def unit_cost_event(
 ) -> dict[str, Any]:
     """所要の悪化を基準の時期と比べるため、1手あたりの費用・手数・並行数を全記録から集計する。
 
-    応答1回の所要は、応答のusageを持つ記録と、その直前の記録（ツール結果や依頼）との時刻差とする。
-    人の入力待ちは応答の後から次の依頼までに現れるため、この差には含まれない。
+    応答1回の所要は、応答のusageを持つ記録と、それより前で最も近い依頼の記録（人の依頼かツールの結果）との時刻差とする。
+    応答本文や通知などの中間の記録は区間の始点にしない。人の入力待ちは応答の後から次の依頼までに現れるため含まれない。
+    始点の依頼を記録から特定できない応答は`responses_unmeasured`へ数え、0秒として平均へ入れない。
     同時数は、応答とツール実行の区間を記録ごとにまとめた作業区間の重なりの最大とする。
     WI 1件あたりの所要はセッション記録に無く、計画ファイルの進捗ログから求めるため`unmeasured`へ示す。
     """
     call_seconds: list[float] = []
     usages: list[dict[str, int]] = []
     response_seconds: list[float] = []
+    unmeasured_responses = 0
     timeouts = 0
     reports: list[int] = []
     active: list[tuple[datetime.datetime, datetime.datetime]] = []
@@ -109,7 +125,7 @@ def unit_cost_event(
         if item.runtime is None:
             continue
         stamps = {record.line: stamp for record in item.records if (stamp := record_timestamp(record)) is not None}
-        lines = sorted(stamps)
+        requests = sorted(record.line for record in item.records if record.line in stamps and _is_request(record.entry))
         work: list[tuple[datetime.datetime, datetime.datetime]] = []
         for call in call_entries(item.records, item.runtime):
             call_seconds.append(call["seconds"])
@@ -121,8 +137,9 @@ def unit_cost_event(
         for usage in record_usages:
             line = usage.get("line", -1)
             end = stamps.get(line)
-            earlier = [value for value in lines if value < line]
+            earlier = [value for value in requests if value < line]
             if end is None or not earlier:
+                unmeasured_responses += 1
                 continue
             start = stamps[earlier[-1]]
             response_seconds.append(max((end - start).total_seconds(), 0.0))
@@ -134,6 +151,7 @@ def unit_cost_event(
         "kind": "stats-unit-costs",
         "tool_calls": len(call_seconds),
         "responses": len(usages),
+        "responses_unmeasured": unmeasured_responses,
         "reports": len(reports),
         "max_concurrent_records": _max_concurrency(active),
         "timeout_failures": timeouts,
