@@ -137,6 +137,10 @@ def test_public_loop_alert_failure_has_diagnostics_and_retry(
     assert "repository_alert_failed" in log.log_path().read_text(encoding="utf-8")
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("完了検収でprivate-notesの削除履歴を実Gitで照会する結合境界。統合検証の並列全件計測の所有CPU最大0.504秒。"),
+)
 @pytest.mark.parametrize("status", ["completed", "incomplete", "blocked", "owner_wait", "prepare_failed"])
 def test_public_once_finishes_one_collection(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, status: str) -> None:
     """1集合の未完了継続と所有判定を保ち、次のWI集合を起動しない。"""
@@ -199,6 +203,10 @@ def test_public_once_empty_does_not_wait(
     assert exited.value.code == 0
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("完了検収でprivate-notesの削除履歴を実Gitで照会する結合境界。統合検証の並列全件計測の所有CPU最大0.544秒。"),
+)
 @pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
 @pytest.mark.parametrize("resume", [False, True])
 def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, engine, resume) -> None:
