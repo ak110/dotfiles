@@ -205,6 +205,6 @@ def test_public_guidance_distinguishes_new_scope_target_and_compaction(tmp_path,
     restored = _run_hook_in_process("pretooluse", operation)
     assert restored.returncode == 0 and not restored.stderr
     assert str(other) in restored.stdout and str(path) not in restored.stdout
-    assert "compaction-recovery.md`を全文読め" in compact.stdout
+    assert "圧縮後に読むのは作業契約と会話の要約だけである" in compact.stdout
     assert not _run_hook_in_process("pretooluse", operation).stdout
     _assert_acquired(payload, other, False)

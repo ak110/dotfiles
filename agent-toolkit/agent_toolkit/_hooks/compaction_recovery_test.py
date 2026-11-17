@@ -60,7 +60,7 @@ def test_session_start_resolves_exact_record(
 def test_compact_extracts_original_user_events(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], delegated: bool
 ) -> None:
-    """複数の圧縮をまたぐ要求の原文と所在を保持し、生成入力を除く。"""
+    """複数の圧縮をまたぐ要求の原文を要約へ保持し、生成入力を除く。"""
     path = tmp_path / "transcript.jsonl"
     entries = [
         {"type": "user", "sessionId": "compact-test", "message": {"role": "user", "content": "最初の要求を全部保持する"}},
@@ -81,16 +81,13 @@ def test_compact_extracts_original_user_events(
         )
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert "--conversation-only" in output
-    assert "次の判断より前に" in output
-    assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in output
-    saved = tmp_path / "compaction-user-events.jsonl"
-    assert saved.exists() is not delegated
-    if not delegated:
-        events = [json.loads(line) for line in saved.read_text(encoding="utf-8").splitlines()]
-        assert [event["text"] for event in events] == ["最初の要求を全部保持する", "範囲を狭めず例も確認する"]
-        assert [event["line"] for event in events] == [1, 4]
-        assert all(event["record"] for event in events)
+    saved = tmp_path / "compaction-digest" / "conversation.md"
+    assert "圧縮後に読むのは、作業契約と" in output and str(saved) in output
+    assert "ユーザー発話2件" in output and "条件に該当した時に読め" in output
+    assert "compaction-recovery.md" not in output and "--conversation-recent" not in output
+    body = saved.read_text(encoding="utf-8")
+    assert "- ユーザー: 最初の要求を全部保持する\n- ユーザー: 範囲を狭めず例も確認する\n" in body
+    assert "atk-auto" not in body
 
 
 @pytest.mark.parametrize(
@@ -131,7 +128,7 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
         "rules_context",
         {"session_id": session, "hook_event_name": "SessionStart", "source": "compact", "transcript_path": str(transcript)},
     )
-    original = tmp_path / "compaction-user-events.jsonl"
+    original = tmp_path / "compaction-digest" / "conversation.md"
     assert compact.returncode == 0 and str(original) in compact.stdout
     operation = {
         "session_id": session,
@@ -142,7 +139,7 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
     guided = run_hook("pretooluse", operation)
     assert guided.returncode == 0 and str(original) in guided.stdout, read_state(session)
     body = original.read_text(encoding="utf-8")
-    assert [json.loads(line)["text"] for line in body.splitlines()] == instructions
+    assert all(f"- ユーザー: {prompt}\n" in body for prompt in instructions)
     received = run_hook(
         "posttooluse", {**operation, "tool_name": "Read", "tool_input": {"file_path": str(original)}, "tool_response": body}
     )
@@ -162,8 +159,9 @@ def test_failed_extraction_keeps_resume_and_removes_stale_file(
     """抽出の時間上限でも他の規範と手動の再取得コマンドを届ける。"""
     path = tmp_path / "transcript.jsonl"
     path.write_text("", encoding="utf-8")
-    saved = tmp_path / "compaction-user-events.jsonl"
-    saved.write_text("前の抽出", encoding="utf-8")
+    saved = tmp_path / "compaction-digest" / "conversation.md"
+    saved.parent.mkdir()
+    saved.write_text("前の要約", encoding="utf-8")
     original_unlink = pathlib.Path.unlink
 
     def unlink(path: pathlib.Path, *args: Any, **kwargs: Any) -> None:
@@ -194,11 +192,11 @@ def test_failed_extraction_keeps_resume_and_removes_stale_file(
         == 0
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert "TimeoutExpired" in output and "--user-events" in output
+    assert "TimeoutExpired" in output and "--conversation-digest" in output
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
     assert saved.exists() is cleanup_fails
     if cleanup_fails:
-        assert "前回の抽出ファイル" in output and "使用するな" in output
+        assert "前回の要約ファイル" in output and "使用するな" in output
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "clear"])
@@ -223,7 +221,7 @@ def test_noncompact_session_start_does_not_extract(
         == 0
     )
     assert "--conversation-only" not in capsys.readouterr().out
-    assert not (tmp_path / "compaction-user-events.jsonl").exists()
+    assert not (tmp_path / "compaction-digest").exists()
 
 
 def test_resolved_resume_notice_path_is_accepted_by_prepare(
@@ -281,10 +279,11 @@ def test_resolved_resume_notice_path_is_accepted_by_prepare(
 
 
 @pytest.mark.parametrize("delegated", [False, True])
-def test_compact_recovery_command_is_delivered_once(tmp_path, monkeypatch, capsys, delegated):
-    """圧縮時の置換本文が参照する通知は、両主体へ具体的な取得コマンドを1回届ける。"""
+def test_compact_recovery_digest_is_delivered_once(tmp_path, monkeypatch, capsys, delegated):
+    """圧縮時の置換本文が参照する通知は、両主体へ要約の所在を1回届け、取得コマンドと手順資料を案内しない。"""
     path = tmp_path / "record.jsonl"
-    path.write_text(json.dumps({"type": "user", "message": {"content": "継続する要求"}}) + "\n", encoding="utf-8")
+    entry = {"type": "user", "sessionId": "recover", "message": {"role": "user", "content": "継続する要求"}}
+    path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
@@ -297,16 +296,12 @@ def test_compact_recovery_command_is_delivered_once(tmp_path, monkeypatch, capsy
         )
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    commands = re.findall(r"`([^`\n]*run-script session-review-prepare[^`\n]*)`", output)
-    assert len(commands) == 1
-    arguments = shlex.split(commands[0])
-    assert arguments[arguments.index("--transcript") + 1] == str(path)
-    assert "--conversation-only" in arguments
-    # 直近の少量表示の引数を保ち、追加取得の手順は参照先へ集約する。
-    assert arguments[-3:] == ["--conversation-window", "--conversation-recent", "30"]
+    saved = tmp_path / "compaction-digest" / "conversation.md"
+    assert output.count(str(saved)) == 1
+    assert "- ユーザー: 継続する要求\n" in saved.read_text(encoding="utf-8")
+    # 成功時は要約の所在だけを示し、取得コマンドと手順資料への案内を重ねない。
+    assert "session-review-prepare" not in output and "session-records.md" not in output
     assert not any(line.startswith(("会話ID:", "原本ログ:", "この会話のtranscript:")) for line in output.splitlines())
-    assert "session-records.md「会話の少量取得」" in output
-    assert "それでも復元できない場合だけ" not in output
 
 
 # test-copy-contract: 原本パス不明のcompact入力から会話IDを照会CLIへ渡し、別会話の原文を取得しない回復契約。

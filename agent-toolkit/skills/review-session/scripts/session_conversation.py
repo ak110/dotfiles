@@ -185,3 +185,90 @@ def window_document(
         "next_after": cursor,
         "has_more": len(rows) < len(selected),
     }
+
+
+_DIGEST_RECENT_ASSISTANT = 8
+"""長く示す直近のエージェント発話の件数。圧縮直前の報告と判断を読み取れる量にする。"""
+
+
+_DIGEST_USER_BYTES = 6000
+
+
+_DIGEST_RECENT_BYTES = 1800
+
+
+_DIGEST_OLDER_BYTES = 300
+
+
+_DIGEST_OMISSION_RESERVE = 160
+"""省いた件数を示す1行のために残すUTF-8バイト数。"""
+
+
+def digest_document(
+    events: list[dict[str, Any]],
+    *,
+    main_record: str | None,
+    detail_command: str,
+    max_bytes: int,
+) -> tuple[str, dict[str, Any]]:
+    """メイン担当の発話だけを、話者と本文の並びで文書全体のUTF-8予算内に示す。
+
+    会話圧縮後に、依頼・回答・進捗の流れを1回の読取で取り戻すために使う。
+    ユーザー発話は全文を保ち、エージェント発話は直近を長く、古いものを短く示す。
+    予算を超える分は古いエージェント発話から省き、なお超える場合は直近のエージェント発話、古いユーザー発話の順に短くする。
+    記録位置と時刻は行へ付けない。必要になった時に冒頭の照会コマンドで本文から調べる。
+    """
+    if main_record is None:
+        main_record = next((str(event["record"]) for event in events if event.get("record")), None)
+    rows = [
+        event
+        for event in events
+        if event.get("kind") == "utterance" and str(event.get("record")) == main_record and str(event.get("text", "")).strip()
+    ]
+    header = (
+        "# 会話の要約（発話のみ）\n\n"
+        "メイン担当の発話を古い順に並べる。ユーザー発話は全文、エージェントの発話は"
+        f"直近{_DIGEST_RECENT_ASSISTANT}件を長く、それより前を短く示す。ツール呼び出しと結果は含まない。\n"
+        f"原文と前後の操作が必要になったら`{detail_command}`へ本文の一部を渡して照会する。\n\n"
+    )
+    users = [index for index, event in enumerate(rows) if event.get("role") == "user"]
+    assistants = [index for index, event in enumerate(rows) if event.get("role") != "user"]
+    recent = assistants[-_DIGEST_RECENT_ASSISTANT:]
+    older = assistants[: len(assistants) - len(recent)]
+    limits = dict.fromkeys(users, _DIGEST_USER_BYTES) | dict.fromkeys(recent, _DIGEST_RECENT_BYTES)
+    bodies = [" ".join(str(event.get("text", "")).split()) for event in rows]
+
+    def line(index: int, limit: int) -> str:
+        label = "ユーザー" if rows[index].get("role") == "user" else "エージェント"
+        return f"- {label}: {_clip(bodies[index], limit)}\n"
+
+    lines = {index: line(index, limits.get(index, _DIGEST_OLDER_BYTES)) for index in range(len(rows))}
+    total = len(header.encode("utf-8")) + sum(len(text.encode("utf-8")) for text in lines.values())
+    budget = max_bytes - _DIGEST_OMISSION_RESERVE
+    omitted = 0
+    for index in older:
+        if total <= budget:
+            break
+        total -= len(lines.pop(index).encode("utf-8"))
+        omitted += 1
+    for limit, group in ((_DIGEST_OLDER_BYTES, recent), (_DIGEST_OLDER_BYTES * 2, users)):
+        for index in group:
+            if total <= budget:
+                break
+            shorter = line(index, limit)
+            total -= len(lines[index].encode("utf-8")) - len(shorter.encode("utf-8"))
+            lines[index] = shorter
+    if total > budget:
+        raise ValueError("会話の要約が予算を超えた。次の操作: --conversation-max-bytesを増やして再実行する")
+    note = f"- （古いエージェント発話{omitted}件を省いた。残した行は元の順である）\n" if omitted else ""
+    excerpts = sum(
+        1 for index, text in lines.items() if not text.endswith(bodies[index] + "\n") or bool(rows[index].get("text_truncated"))
+    )
+    document = header + note + "".join(lines[index] for index in sorted(lines))
+    return document, {
+        "mode": "digest",
+        "user_count": len(users),
+        "assistant_count": len(assistants),
+        "omitted_assistant_count": omitted,
+        "excerpt_count": excerpts,
+    }

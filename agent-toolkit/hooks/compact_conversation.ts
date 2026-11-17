@@ -155,9 +155,9 @@ export function register(on: On, session: { delegated: boolean; backgroundChange
         role: "user" as const,
         text: automatedMessage("compact-conversation", "notice",
           // 受け取る側は圧縮が起きたことを知らない。出来事、要約が無いこと、最初の操作の順で伝える。
-          // 原本の所在はこの直後に届くSessionStartの通知が示すため、ここでは重ねない。
+          // 読む対象はこの直後に届くSessionStartの通知が示すため、ここでは重ねない。
           "会話が圧縮され、圧縮前のやり取りと要約は現在の文脈にない。" +
-          "`agent-toolkit/share/compaction-recovery.md`を全文読み、直後の復元通知が示す原本から作業状態を復元せよ。"),
+          "直後の復元通知が示す作業契約と会話の要約を読み、作業状態を復元せよ。"),
         toolUses: [],
       }],
     };
