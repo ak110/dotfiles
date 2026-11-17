@@ -280,6 +280,12 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
     ) -> dict[str, Any]:
         """実行中turnへ中断を要求し、指定時間まで終了を待つ。"""
         await self._drain_diagnostics()
+        await self._settle_recovery_before_kill(
+            session_id,
+            timeout
+            if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0
+            else DEFAULT_SEND_MESSAGE_TIMEOUT,
+        )
         observed_session = self.sessions.get(session_id)
         observed_turn = (
             None
@@ -308,7 +314,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             stopped_state = recovered_state
         if recovered_state is not None:
             response = self._recovered_result_response(recovered_state)
-            response["kill_requested"] = False
+            response["kill_requested"] = await self._cancel_owner_loss_recovery(session_id)
             return self._response_with_notices(response, await self._take_registry_notices(session_id))
         if stopped_state is not None:
             stopped_response = await self._take_stopped_result(session_id, stopped_state, collector="kill")

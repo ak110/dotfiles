@@ -12,7 +12,9 @@ import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from typing import Any
 
-from agent_toolkit._agents_server import service_rpc
+import psutil
+
+from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.codex_protocol import AppServerError, JsonRpcResponseError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 
@@ -87,6 +89,14 @@ def save_with(save: Callable[[], Awaitable[None]]) -> Generator[None]:
     runtime = current()
     with bind(dataclasses.replace(runtime, save=save)) if runtime else contextlib.nullcontext():
         yield
+
+
+def _origin_alive(origin: dict[str, Any]) -> bool:
+    """資源を所有する世代のプロセスが、記録した起動単位のまま生存しているかを返す。"""
+    try:
+        return service_transport.process_identity(int(str(origin["process"]).split(":", 1)[0])) == origin["process"]
+    except FileNotFoundError, ProcessLookupError, KeyError, ValueError:
+        return False
 
 
 class Resource:
@@ -357,10 +367,21 @@ class CodexResource:
 
     async def close(self) -> list[str]:
         """制御所有者の一致を確認して元I/Oを回収し、所属が残れば所有を保つ。"""
-        residual = await self.resource.operation("call", operation="shutdown", arguments={})
-        if residual:
-            return residual
-        await self.resource.operation("release")
+        try:
+            residual = await self.resource.operation("call", operation="shutdown", arguments={})
+        except ConnectionRefusedError, FileNotFoundError:
+            if _origin_alive(self.resource.origin):
+                raise
+            # 資源を所有した世代が先に終了した（2026-11-17、移譲途中の資源の停止で現行世代の終了が失敗した）。
+            # App Serverは元世代の子でstdinの終了とともに終わる。残っていれば停止を確認できないため所有を保つ。
+            pid = self.process.pid if self.process is not None else None
+            if pid is not None and psutil.pid_exists(pid):
+                origin = self.resource.origin.get("generation")
+                return [f"pid={pid}: 資源を所有した世代{origin}が終了し、App Serverの停止を確認できない"]
+        else:
+            if residual:
+                return residual
+            await self.resource.operation("release")
         self._closed = True
         if self._task is not None and self._task is not asyncio.current_task():
             self._task.cancel()

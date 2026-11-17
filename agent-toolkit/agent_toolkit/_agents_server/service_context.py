@@ -166,7 +166,7 @@ class ServiceManagers:
                     _LOG.exception(
                         "世代移行の確認が失敗しました。自動再開を見送り、状態保存は続けます。"
                         "次の操作: この例外を直すまで旧世代の会話を新世代へ移せず、自動再開も止まる。"
-                        "`atk agents list`の`server_generations`で残っている世代を確かめ、"
+                        "agents_serverの`list`が返す`server_generations`で残っている世代を確かめ、"
                         "例外の原因（状態の符号化・移譲先との通信）を直してからサーバーを更新する"
                     )
                     allow_resume = False

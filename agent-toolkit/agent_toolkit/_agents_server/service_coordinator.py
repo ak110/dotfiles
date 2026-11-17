@@ -13,7 +13,7 @@ import weakref
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult
+from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult, TextContent
 from pydantic import TypeAdapter
 
 from agent_toolkit._agents_server import (
@@ -431,6 +431,11 @@ class ServiceCoordinator:
                         "generation": generation,
                         "server_instance": target.get("server_instance"),
                         "error": f"{type(error).__name__}: {error}",
+                        "next_action": (
+                            "この世代が所有するsessionは一覧に含まれていない。agents_serverの`list`が返す`server_generations`で"
+                            "当該世代のプロセスの生存を確かめ、応答が再開した後にlistを再実行する。"
+                            "応答しないままなら当該プロセスを処置する（処置前に自身のMCP接続先でないことを確かめる）"
+                        ),
                     }
                 )
         return {"sessions": sessions, "unreachable": unreachable}
@@ -467,6 +472,10 @@ class ServiceCoordinator:
     async def call_tool(self, context: Any, params: CallToolRequestParams) -> Any:
         try:
             return await self._call_tool(context, params)
+        except ActionableError as error:
+            # 世代間の振り分けで生じた診断は登録ツールの外で送出されるため、ツールの例外と同じく
+            # 理由と次の操作の2行をツールのエラーとして返す。素通しするとMCPの汎用エラーとなり次の操作が落ちる。
+            return CallToolResult(content=[TextContent(type="text", text=error.message)], is_error=True)
         except service_turns.MoveRequired as moved:
             caller = runtime_environment.current()
             assert caller is not None
@@ -563,7 +572,7 @@ class ServiceCoordinator:
                 f"queried_generation={self.generation}; error={type(error).__name__}: {error}",
                 next_action=(
                     "配送は未確定であり、同じ前提で待機や再発行を繰り返さない。"
-                    "所有世代のプロセスが応答を再開するかを`atk agents list`の`server_generations`と`show`で確かめ、"
+                    "所有世代のプロセスが応答を再開するかをagents_serverの`list`が返す`server_generations`と`show`で確かめ、"
                     "応答しないままなら所有世代のプロセスを処置する。処置の前に、そのプロセスが自身のMCP接続先"
                     "（`queried_server_instance`）ではないことを確かめる"
                 ),

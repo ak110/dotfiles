@@ -41,6 +41,12 @@ def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generatio
         error.add_note(f"{label}（取得失敗: {failure}）")
 
 
+# 応答の無い要求がこの秒数を超えたら、接続先世代の生存を短い照会で確かめる。
+# 正当に長いtool処理は照会に応答するため打ち切らず、停止・凍結した世代だけを配送未確定として返す。
+_STALL_SECONDS = 10.0
+_PROBE_SECONDS = 10.0
+
+
 def code_identity(root: pathlib.Path) -> tuple[str, str]:
     """同じ配布版を合流し、開発checkoutの同版編集も別世代として識別する。"""
     manifest = root / ".claude-plugin" / "plugin.json"
@@ -218,6 +224,46 @@ def ensure_service(
             file_lock.release_lock(handle)
 
 
+def _probe(target: dict) -> str | None:
+    """接続先世代が短時間で応答するかを別接続で確かめ、応答しなければ理由を返す。"""
+    outcome: list[str | None] = []
+
+    def run() -> None:
+        try:
+            service_rpc.request_sync(target, "ping", {}, timeout=_PROBE_SECONDS)
+        except RuntimeError, ValueError:
+            # 応答は届いた（pingを持たない旧世代のエラー応答を含む）。生存している。
+            outcome.append(None)
+        except Exception as error:
+            outcome.append(f"{type(error).__name__}: {error}")
+        else:
+            outcome.append(None)
+
+    # 接続の確立自体が止まるホストでも監視を止めないよう、別threadで上限付きに待つ。
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(_PROBE_SECONDS + 5)
+    return outcome[0] if outcome else f"TimeoutError: {_PROBE_SECONDS + 5}秒以内に接続できません"
+
+
+def _stalled_response(identifier: str | int, method: str, target: dict, error: str) -> dict:
+    message = (
+        f"{method}の応答が{_STALL_SECONDS:g}秒以上無く、接続先の管理サービス（generation={target.get('generation')}; "
+        f"process={target.get('process')}）が生存確認に応答しません（{error}）。配送と実行は未確定です。"
+    )
+    next_action = (
+        "同じ要求を再送しない。上記processの接続先世代が停止・無応答かをOSのプロセス一覧"
+        "（Linuxは`ps -o pid,stat,etime -p <pid>`）で確かめ、応答が再開すれば`atk agents show <session_id>`で"
+        "対象sessionの状態を確認する。応答しないままなら当該プロセスを処置する。"
+        "このプロセスは自身のMCP接続先であり、処置するとこのMCP接続も終了する"
+    )
+    return {
+        "jsonrpc": "2.0",
+        "id": identifier,
+        "error": {"code": -32000, "message": with_next_action(message, next_action), "data": {"next_action": next_action}},
+    }
+
+
 class _Forwarder:
     """送信を静止してから接続を移し、未確定の要求は再送しない。"""
 
@@ -232,13 +278,45 @@ class _Forwarder:
         self.closed = False
         self.failure: Exception | None = None
         self.progress = 0
+        self.target: dict | None = None
+        self.sent_at: dict[str | int, float] = {}
+        self.abandoned: set[str | int] = set()
+        self._output_lock = threading.Lock()
         self._stdin = os.dup(0)
         self.reader = threading.Thread(target=self._read_input, daemon=True)
+        self.watchdog = threading.Thread(target=self._watch, daemon=True)
 
-    @staticmethod
-    def output(message: dict) -> None:
-        sys.stdout.buffer.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n")
-        sys.stdout.buffer.flush()
+    def output(self, message: dict) -> None:
+        # 受信threadと監視threadが同じstdoutへ書くため、1行単位で直列化する。
+        with self._output_lock:
+            sys.stdout.buffer.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n")
+            sys.stdout.buffer.flush()
+
+    def _watch(self) -> None:
+        """接続先世代が停止・凍結した間の要求を、無期限に待たせず配送未確定として返す。
+
+        2026-11-17、接続先の旧世代が停止した間のshow・killがMCP応答を返さず、呼出側が待ち続けた。
+        """
+        while True:
+            with self.condition:
+                self.condition.wait(_STALL_SECONDS / 2)
+                if self.closed or self.input_closed:
+                    return
+                now = time.monotonic()
+                stale = [identifier for identifier, sent in self.sent_at.items() if now - sent >= _STALL_SECONDS]
+                target = self.target
+            if not stale or target is None:
+                continue
+            error = _probe(target)
+            if error is None:
+                continue
+            with self.condition:
+                abandoned = [(identifier, self.pending.pop(identifier)) for identifier in stale if identifier in self.pending]
+                for identifier, _method in abandoned:
+                    self.sent_at.pop(identifier, None)
+                    self.abandoned.add(identifier)
+            for identifier, method in abandoned:
+                self.output(_stalled_response(identifier, method, target, error))
 
     def _read_input(self) -> None:
         buffered = b""
@@ -261,6 +339,7 @@ class _Forwarder:
                             self.initialized = True
                         if isinstance(method, str) and "id" in message:
                             self.pending[message["id"]] = method
+                            self.sent_at[message["id"]] = time.monotonic()
                         peer = self.peer
                         assert peer is not None  # wait_forで接続済みを確かめた
                         try:
@@ -328,7 +407,12 @@ class _Forwarder:
             if "method" not in message and "id" in message:
                 with self.condition:
                     self.pending.pop(message["id"], None)
+                    self.sent_at.pop(message["id"], None)
                     self.progress += 1
+                    if message["id"] in self.abandoned:
+                        # 配送未確定として応答済みの要求。同じidへ2つ目の応答を返さない。
+                        self.abandoned.discard(message["id"])
+                        continue
             self.output(message)
 
     def detach(self, peer: Any) -> None:
@@ -382,7 +466,10 @@ def forward(
     try:
         target = ensure_service(caller, root, python=python)
         bridge.reader.start()
+        bridge.watchdog.start()
         while True:
+            with bridge.condition:
+                bridge.target = target
             try:
                 with service_transport.connect(target["endpoint"], target["process"]) as peer:
                     try:
@@ -422,6 +509,8 @@ def forward(
                 # 未確定の要求は再送せずエラーで返し、接続自体は現行世代へ切り替えて続ける。
                 # ここで終了するとMCP接続が失われ、委譲元が以後の照会・回収をできなくなる（2026-11-17）。
                 bridge.pending.clear()
+                bridge.sent_at.clear()
+                bridge.abandoned.clear()
             current = registry.current()
             if current is None or (previous_reconnect == current["process"] and previous_progress == bridge.progress):
                 raise RuntimeError("管理サービスの接続が応答の無いまま繰り返し終了しました")

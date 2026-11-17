@@ -69,6 +69,37 @@ class ManagerRecovery(manager_resume.ManagerResume):
         if self._status_writer is not None:
             await self._status_writer.flush_async()
 
+    async def _settle_recovery_before_kill(self, identifier: str, delivery_timeout: float) -> None:
+        """killの前に、同じsessionの自動復旧を開始前なら取り消し、開始済みならturnの開始まで待つ。
+
+        復旧の途中は登録簿の記録が再開の準備中となり、killが記録無しの`unknown session`を返していた（2026-11-17）。
+        開始済みの復旧はturnの開始後に通常の中断を届け、開始前の復旧は中断を求めた会話を再開しない。
+        """
+        self._recovery_targets.discard(identifier)
+        attempt = self._recovery_attempts.get(identifier)
+        if attempt is None or attempt.done():
+            return
+        # 待つのはbackendへの接続とturn開始だけであり、上限はkillの配送待ちと同じ時間とする。
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(asyncio.shield(attempt), timeout=delivery_timeout)
+
+    async def _cancel_owner_loss_recovery(self, identifier: str) -> bool:
+        """所有者の喪失で中断したsessionへのkillを明示の中断として記録し、自動復旧の対象から外す。
+
+        所有者の喪失による中断は親の再開時に同じ会話を復旧する。killを受けた後もその理由のままだと、
+        中断を求めた会話を復旧してしまう（2026-11-17、所有世代の終了後にkillしたsessionが復旧された）。
+        """
+        resolution = await run_file_operation(session_registry.resolve, identifier, state_root=self._state_root())
+        info = resolution.resume_info
+        if info is None or resolution.interruption not in (
+            session_registry.OWNER_PROCESSES_EXITED,
+            session_registry.OWNER_SERVER_STOPPED,
+        ):
+            return False
+        self._recovery_targets.discard(identifier)
+        await self._publish_registry_terminal(identifier, info, "interrupted", interruption=None)
+        return True
+
     async def _recover_one(self, identifier: str) -> None:
         try:
             gate = service_turns.current()
@@ -186,6 +217,9 @@ class ManagerRecovery(manager_resume.ManagerResume):
             session_registry.OWNER_PROCESSES_EXITED,
             session_registry.OWNER_SERVER_STOPPED,
         ):
+            if identifier not in self._recovery_targets:
+                # 照会の間にkillが復旧を取り消した。中断を求めた会話を再開しない。
+                return
             # 以前のinterrupted結果は最終成果ではない。同じ会話の再開後の結果を待つ。
             pending, _ = self._start_resume(previous, _CONTINUE, None, on_failure=self._notify_recovery_failure)
             self._recovery_attempts[identifier] = pending.task

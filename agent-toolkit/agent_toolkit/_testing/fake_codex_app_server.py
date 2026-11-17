@@ -21,6 +21,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 
 import psutil
 
@@ -98,7 +99,8 @@ class _Server:
             return []
         if method == "thread/start":
             self.thread_count += 1
-            thread_id = f"thread-{os.getpid()}-{self.thread_count}"
+            # 実CodexはthreadにUUIDを割り当て、agents_serverは未保持のUUID以外の識別子を体系相違として拒否する。
+            thread_id = str(uuid.uuid4())
             self.models[thread_id] = _text(params.get("model"))
             self.load(thread_id, str(params["cwd"]))
             self.record({"event": "thread/start", "thread": thread_id})
@@ -123,6 +125,14 @@ class _Server:
             return [{"method": "thread/closed", "params": {"threadId": thread_id}}]
         if method == "turn/start":
             return self.start_turn(request_id, params)
+        if method == "turn/interrupt":
+            # 実Codexと同じく応答の後に中断したturnの終了を通知する。
+            thread_id = str(params["threadId"])
+            turn_id = str(params.get("turnId"))
+            self.record({"event": "turn/interrupt", "thread": thread_id, "turn": turn_id})
+            self.send({"id": request_id, "result": {}})
+            turn: dict[str, object] = {"id": turn_id, "status": "interrupted", "error": None, "items": []}
+            return [{"method": "turn/completed", "params": {"threadId": thread_id, "turn": turn}}]
         if method == "thread/read":
             self.send({"id": request_id, "result": {"thread": {"id": params["threadId"], "turns": []}}})
             return []
