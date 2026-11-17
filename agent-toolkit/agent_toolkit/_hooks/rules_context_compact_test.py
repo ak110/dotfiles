@@ -126,6 +126,7 @@ def test_compact_restores_selected_material_only_for_the_same_main_agent(
     document.write_text(
         "# 変更規範\n\n全文の基準\n\n## 「必要範囲」\n\n指定範囲の基準\n\n## 「別範囲」\n\n配送しない本文\n",
         encoding="utf-8",
+        newline="\n",
     )
     target = ReadTarget(document, heading)
     if selected_agent is not None:

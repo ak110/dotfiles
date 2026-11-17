@@ -129,7 +129,9 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
         {"session_id": session, "hook_event_name": "SessionStart", "source": "compact", "transcript_path": str(transcript)},
     )
     original = tmp_path / "compaction-digest" / "conversation.md"
-    assert compact.returncode == 0 and str(original) in compact.stdout
+    # hookの標準出力はJSONなので、Windowsのパス区切りはエスケープされた形で現れる。
+    shown = json.dumps(str(original), ensure_ascii=False)[1:-1]
+    assert compact.returncode == 0 and shown in compact.stdout
     operation = {
         "session_id": session,
         "cwd": str(tmp_path),
@@ -137,7 +139,7 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
         "tool_input": {"file_path": str(tmp_path / "result.md"), "content": "# 結果\n"},
     }
     guided = run_hook("pretooluse", operation)
-    assert guided.returncode == 0 and str(original) in guided.stdout, read_state(session)
+    assert guided.returncode == 0 and shown in guided.stdout, read_state(session)
     body = original.read_text(encoding="utf-8")
     assert all(f"- ユーザー: {prompt}\n" in body for prompt in instructions)
     received = run_hook(
@@ -145,7 +147,7 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
     )
     assert received.returncode == 0
     resumed = run_hook("pretooluse", operation)
-    assert resumed.returncode == 0 and str(original) not in resumed.stdout
+    assert resumed.returncode == 0 and shown not in resumed.stdout
     # 自然文の採否はエージェントの責務であり、この試験では判定済みの契約を消費側へ渡す。
     contract.write_text(f"目的: 作業を完了する\n現在の指示: {retained}\n", encoding="utf-8")
     restart = run_hook("user_prompt_submit", {"session_id": session, "prompt": "続きを進めて"})
