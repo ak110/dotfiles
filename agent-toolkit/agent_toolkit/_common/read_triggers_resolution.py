@@ -28,9 +28,15 @@ def user_side_source(path: pathlib.Path) -> bool:
 
     これらの宣言はユーザーのリポジトリやホームにあり、プラグインの不変条件テストが保存前に検査できない。
     """
-    if any((parent / ".claude-plugin/plugin.json").is_file() for parent in path.parents):
+    if any(_has_plugin_manifest(parent) for parent in path.parents):
         return False
     return any(parent.name == "skills" and parent.parent.name in _SKILL_HOMES for parent in path.parents)
+
+
+@_scope_cached
+def _has_plugin_manifest(directory: pathlib.Path) -> bool:
+    """要求内では、多数の宣言元が共有する祖先ディレクトリの照会を1回にする（Windowsではファイル照会が高価）。"""
+    return (directory / ".claude-plugin/plugin.json").is_file()
 
 
 def read_operation(path: pathlib.Path) -> str:
