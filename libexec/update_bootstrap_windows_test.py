@@ -142,7 +142,14 @@ def _run_stage(tmp_path: pathlib.Path, body: str, *, timeout: float = 30) -> sub
     )
     try:
         return subprocess.run(
-            [str(_PS), "-NoProfile", "-File", str(script)], capture_output=True, encoding="utf-8", check=False, timeout=timeout
+            [str(_PS), "-NoProfile", "-File", str(script)],
+            capture_output=True,
+            # Windows PowerShell 5.1は標準エラーをコンソールのコードページ（日本語環境ではcp932）で書く。
+            # 厳密なUTF-8復号ではreader threadが例外で止まり、stderrがNoneになって失敗の診断を失う。
+            encoding="oem" if os.name == "nt" else "utf-8",
+            errors="replace",
+            check=False,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired as error:
         stdout = error.stdout.decode("utf-8", errors="replace") if isinstance(error.stdout, bytes) else error.stdout
@@ -229,8 +236,9 @@ def test_stage_native_job_reaps_tree(
     with _owned_native_pids(pids, native_program):
         result = _run_stage(
             tmp_path,
-            "$clock=[DateTime]::UtcNow; "
-            f"$code=Invoke-UpdateStage test continue 2 '{native}' @('-NoProfile') -Probe -Clock {{$clock}} "
+            # 変数名は大文字小文字を区別しないため、`$clock`だと関数内の`$Clock`引数（scriptblock自身）を返す。
+            "$fixedNow=[DateTime]::UtcNow; "
+            f"$code=Invoke-UpdateStage test continue 2 '{native}' @('-NoProfile') -Probe -Clock {{$fixedNow}} "
             "-Wait { param($p,$ms) $readyDeadline=[DateTime]::UtcNow.AddSeconds(20); "
             "while (-not (Test-Path -LiteralPath $env:TREE_READY)) { "
             "if ([DateTime]::UtcNow -ge $readyDeadline) { throw [System.TimeoutException]::new("
