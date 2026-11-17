@@ -164,6 +164,8 @@ class _RequestManagers:
 _REQUEST_MANAGERS: contextvars.ContextVar[_RequestManagers | None] = contextvars.ContextVar(
     "agents_server_request_managers", default=None
 )
+_TOOL_USE_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("agents_server_tool_use_id", default=None)
+"""Claude CodeがMCP要求の`_meta`へ渡す呼出しのtool_use_id。送達表示を呼出し単位で区別するために使う。"""
 
 
 @contextlib.asynccontextmanager
@@ -182,6 +184,17 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
 
 @contextlib.asynccontextmanager
 async def _request_scope(params: CallToolRequestParams) -> AsyncGenerator[None]:
+    tool_use_id = (params.meta or {}).get("claudecode/toolUseId")
+    token = _TOOL_USE_ID.set(tool_use_id if isinstance(tool_use_id, str) and tool_use_id else None)
+    try:
+        async with _manager_scope(params):
+            yield
+    finally:
+        _TOOL_USE_ID.reset(token)
+
+
+@contextlib.asynccontextmanager
+async def _manager_scope(params: CallToolRequestParams) -> AsyncGenerator[None]:
     if _SELECTED_MANAGER.get() is not None:
         yield
         return
@@ -638,7 +651,9 @@ async def send_to_user(
     except Exception:  # noqa: BLE001 -- 補助案内の失敗で本文の送達を止めない
         _LOG.exception("改善点報告の取得案内を作成できない")
         guidance = "改善点の判定資料を確認できなかった。share/rules/rules-main.mdの作業中の改善点の報告を確認せよ。"
-    result = await _ui_request("send_to_user", {"message": message})
+    # 再開後の画面で、同じ本文を持つ別の呼出しの表示を取り違えないよう、呼出しの識別子を添える。
+    tool_use_id = _TOOL_USE_ID.get()
+    result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})
     result["guidance"] = guidance
     return result
 

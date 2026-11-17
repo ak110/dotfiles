@@ -157,7 +157,7 @@ test("会話の再開後は置いた行が無い送達本文をツール入力�
   queue(on, "resume-session", id);
   on("session.id", () => ({ value: "resume-session" }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
-  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message: "稼働中に置いた本文" }, expires: 99999999999 }) }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message: "稼働中に置いた本文", tool_use_id: "use-live" }, expires: 99999999999 }) }));
   on("fs.write", () => ({ value: undefined }));
   on("ui.place", () => ({ value: { isPlaced: true, requestId: "placed-row" } }));
   const resumed = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "use-resumed", props: call("再開後に読む本文") });
@@ -165,8 +165,11 @@ test("会話の再開後は置いた行が無い送達本文をツール入力�
   // 稼働中の送達で本文を置いた後は、同じ本文のツール行を描き替えない。
   await $.turn.start({ text: "操作", turnId: "resume-turn" });
   await clock.advance(100);
-  const live = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "use-live", props: call("稼働中に置いた本文") });
+  const live = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "use-live", props: { ...call("稼働中に置いた本文"), tool_use_id: "use-live" } });
   expect(JSON.stringify(live)).not.toContain('"Markdown"');
+  // 再開前に同じ本文を送った別の呼出しは、稼働中の送達の後も元の位置に描く。
+  const earlier = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "use-earlier", props: { ...call("稼働中に置いた本文"), tool_use_id: "use-earlier" } });
+  expect(JSON.stringify(earlier)).toContain('"Markdown","props":{"text":"稼働中に置いた本文"}');
 });
 
 test("再開後にまとめられた送達は展開して呼び出しごとに描く", async ($, on) => {
