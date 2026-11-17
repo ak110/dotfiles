@@ -48,7 +48,8 @@ _WORKING_STATUSES = frozenset({"starting", "running"})
 def _waiting_on_children(root_session_id: str, owner_status_file: str, state_root: pathlib.Path | None) -> bool:
     """書込主体の委譲元が`atk agents wait`で子を待っている最中かを、待機runの記録から返す。
 
-    `atk agents wait`は待機中、ルートの`wait-results/<状態ファイル名>/current.json`が指すrunを`running`に保つ。
+    `atk agents wait`は待機中、ルートの`wait-results/<状態ファイル名>/current.json`が指すrunを`running`に保ち、
+    `wait-locks/<状態ファイル名>.lock`の排他を保持する。runが実行中で排他が保持されている場合だけ待機中とする。
     コマンド文字列や表示用の要約ではなく実際の待機の記録を使い、検索語・引用・要約の省略による誤判定を避ける。
     """
     directory = shared_layout.status_directory(root_session_id, state_root) / "wait-results" / owner_status_file
@@ -57,7 +58,21 @@ def _waiting_on_children(root_session_id: str, owner_status_file: str, state_roo
         run = json.loads((directory / f"{current['run_id']}.json").read_text(encoding="utf-8"))
     except OSError, UnicodeError, ValueError, KeyError, TypeError:
         return False
-    return isinstance(run, dict) and run.get("status") == "running"
+    if not isinstance(run, dict) or run.get("status") != "running":
+        return False
+    # 実行中のrunは待機プロセスが中断した後も回復のために残るため、待機プロセスが保持する排他で生存を確かめる。
+    # 取得できた場合は待機が終わっているので直ちに解放する。取得は非ブロッキングで行い、待機中の側を待たせない。
+    lock_path = shared_layout.status_directory(root_session_id, state_root) / "wait-locks" / f"{owner_status_file}.lock"
+    try:
+        with lock_path.open("a+b") as handle:
+            try:
+                file_lock.acquire_lock(handle, blocking=False)
+            except OSError:
+                return True
+            file_lock.release_lock(handle)
+    except OSError:
+        return False
+    return False
 
 
 @dataclasses.dataclass(frozen=True)

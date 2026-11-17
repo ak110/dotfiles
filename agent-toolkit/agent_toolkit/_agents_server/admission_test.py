@@ -7,6 +7,8 @@ import datetime
 import json
 import os
 import pathlib
+import subprocess
+import sys
 import time
 
 import pytest
@@ -188,12 +190,54 @@ def test_stale_waiting_ticket_does_not_block_request_order(tmp_path: pathlib.Pat
     assert not stale.exists()
 
 
-def _record_wait(state_root: pathlib.Path, root: str, writer: str, status: str = "running") -> None:
-    """`atk agents wait`が書込主体の状態ファイルごとに保存する待機runを、指定の状態で書く。"""
+_HELD_LOCKS: list[subprocess.Popen[bytes]] = []
+
+
+def _record_wait(state_root: pathlib.Path, root: str, writer: str, status: str = "running", *, alive: bool = True) -> None:
+    """`atk agents wait`が書込主体の状態ファイルごとに保存する待機runと、待機中に保持する排他を再現する。"""
     directory = state_root / "agents-server" / root / "wait-results" / f"{writer}.json"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "current.json").write_text(json.dumps({"run_id": "run1"}), encoding="utf-8")
     (directory / "run1.json").write_text(json.dumps({"run_id": "run1", "status": status, "targets": []}), encoding="utf-8")
+    if alive:
+        # 待機プロセスが保持する排他を別プロセスで保持し、同じプロセス内のロックの再取得と区別する。
+        locks = state_root / "agents-server" / root / "wait-locks"
+        locks.mkdir(parents=True, exist_ok=True)
+        holder = subprocess.Popen(  # pylint: disable=consider-using-with
+            [sys.executable, "-c", _HOLD_LOCK, str(locks / f"{writer}.json.lock")], stdout=subprocess.PIPE
+        )
+        assert holder.stdout is not None and holder.stdout.readline().strip() == b"held"
+        _HELD_LOCKS.append(holder)
+
+
+_HOLD_LOCK = (
+    "import sys\n"
+    "from agent_toolkit._common import file_lock\n"
+    "handle = open(sys.argv[1], 'a+b')\n"
+    "file_lock.acquire_lock(handle)\n"
+    "print('held', flush=True)\n"
+    "import time\n"
+    "time.sleep(60)\n"
+)
+
+
+@pytest.fixture(autouse=True)
+def _release_held_locks():
+    yield
+    while _HELD_LOCKS:
+        holder = _HELD_LOCKS.pop()
+        holder.kill()
+        holder.wait()
+        if holder.stdout is not None:
+            holder.stdout.close()
+
+
+def test_abandoned_running_wait_run_is_not_waiting(tmp_path: pathlib.Path) -> None:
+    """待機プロセスが中断して実行中のrunだけが残った委譲元は、待機ではなく作業中に数える。"""
+    _write_status(tmp_path, "root", "w0", None, {"parent": "running"})
+    _write_status(tmp_path, "root", "w1", "parent", {"child": "running"})
+    _record_wait(tmp_path, "root", "w1", alive=False)
+    assert admission.observe(tmp_path).working_sessions == ("child", "parent")
 
 
 def test_parent_waiting_on_children_is_not_counted_but_working_parent_is(tmp_path: pathlib.Path) -> None:
