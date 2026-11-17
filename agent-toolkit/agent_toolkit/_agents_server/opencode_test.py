@@ -197,7 +197,7 @@ async def test_public_start_uses_configured_candidate_and_fallback(
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", launch_fake)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
-    # 利用者の設定でusage_auto_allocationが有効だと、起動境界の利用枠照会が実際のcodex app-serverを起動する。
+    # ユーザーの設定でusage_auto_allocationが有効だと、起動境界の利用枠照会が実際のcodex app-serverを起動する。
     # このテストは候補の順序と切替だけを確かめるため、照会を止める。
     monkeypatch.setattr(usage_refresh, "ensure_fresh", lambda **_kwargs: None)
     candidates = "claude:test/medium" if case == "empty" else "opencode:local/qwen/high,claude:test/medium"
