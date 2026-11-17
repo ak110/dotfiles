@@ -99,6 +99,7 @@ from check_selection_norms import (
 from check_selection_paths import clear_caches, reflected_paths
 from selection_merge import extend_write_targets, merge_selection, reopen_wis
 
+from agent_toolkit._agents_server import admission as _admission
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
@@ -280,7 +281,7 @@ def summary_lines(
     plan = selection.get(_selection.PROCESS_ESTIMATE_KEY)
     correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
     if plan is not None:
-        result = _estimate.forecast(plan)
+        result = _estimate.forecast(plan, machine_limit=_admission.configured_limit().value)
         total = "未確認" if result.total_seconds is None else f"{result.total_seconds:g}"
         normal = "未確認" if result.normal_seconds is None else f"{result.normal_seconds:g}"
         lines.extend(

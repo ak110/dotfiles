@@ -355,3 +355,10 @@ def test_all_required_phases_are_checked(phase: str) -> None:
             row["資源"] = "モデル"
     assert not selection_estimate.structure_errors(plan)
     assert selection_estimate.forecast(plan).issues
+
+
+def test_machine_limit_caps_model_concurrency() -> None:
+    """選定のモデル同時数がマシン全体の上限を超える場合、超えた分は順番待ちとして見込む。"""
+    capped = selection_estimate.forecast(_plan(capacity=2), machine_limit=1)
+    assert capped.total_seconds == selection_estimate.forecast(_plan(capacity=1)).total_seconds == 24
+    assert selection_estimate.forecast(_plan(capacity=2), machine_limit=5).total_seconds == 14

@@ -20,6 +20,7 @@ from check_selection_common import (
 )
 from check_selection_paths import _covers
 
+from agent_toolkit._agents_server import admission as _admission
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import selection_estimate as _estimate
 
@@ -185,7 +186,7 @@ def _process_estimate_findings(
         if item[_selection.LANE_KEY] != _LANE_NONE
     }
     prior = {str(row[_selection.LANE_KEY]): typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])) for row in costs}
-    result = _estimate.forecast(plan, assignments, prior)
+    result = _estimate.forecast(plan, assignments, prior, machine_limit=_admission.configured_limit().value)
     errors: list[Violation] = []
     warnings: list[str] = []
     for issue in result.issues:

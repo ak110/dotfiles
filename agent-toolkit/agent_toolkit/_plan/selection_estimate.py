@@ -189,8 +189,13 @@ def forecast(
     plan: object,
     wi_lanes: Mapping[str, str] | None = None,
     prior_lanes: Mapping[str, Sequence[str]] | None = None,
+    machine_limit: int | None = None,
 ) -> Forecast:
-    """依存・資源を守る決定論的な構成の見込みを返す。最短性は保証しない。"""
+    """依存・資源を守る決定論的な構成の見込みを返す。最短性は保証しない。
+
+    `machine_limit`はagents_serverがマシン全体で同時に作業させる委譲先の上限で、モデルの同時数をこの値で頭打ちにする。
+    上限を超える分は起動の順番待ちになり、並行して進まないためである。Noneは上限なしを表す。
+    """
     errors = structure_errors(plan)
     if errors:
         raise ValueError("; ".join(errors))
@@ -225,7 +230,10 @@ def forecast(
         return Forecast(None, None, issues, excluded, work, {}, None)
     durations = {node.id: typing.cast(float, node.seconds) for node in nodes}
     # 旧保存記録は当時の容量で読めるようにし、新規入力の容量とは区別する。
-    capacities = {"モデル": data["並列数"]["モデル同時数"], "検証": data["並列数"].get("検証同時数", 2), "直列": 1}
+    model_capacity = data["並列数"]["モデル同時数"]
+    if machine_limit is not None:
+        model_capacity = min(model_capacity, machine_limit)
+    capacities = {"モデル": model_capacity, "検証": data["並列数"].get("検証同時数", 2), "直列": 1}
     total, wait, dependency = _schedule(nodes, order, durations, capacities)
     normal_durations = {node.id: 0.0 if node.wis and set(node.wis) <= set(excluded) else durations[node.id] for node in nodes}
     normal, _, _ = _schedule(nodes, order, normal_durations, capacities)
