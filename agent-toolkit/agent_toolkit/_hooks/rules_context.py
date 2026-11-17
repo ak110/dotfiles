@@ -304,6 +304,9 @@ def session_temp_notice(session_temp: pathlib.Path | str, *, contract: pathlib.P
 
     所在だけを示す通知では、一時ファイルを作成する時点で`/tmp`が選ばれ、後始末の削除が権限判定に拒否された。
     置き場所の選択と結び付く語（`/tmp`）と、委譲先へ所在を渡す行動を同じ本文へ置く。
+    この規定はエージェント自身が作る一時ファイルに限る。テスト実行の`TMPDIR`をこの領域へ向けた担当が、
+    対象プロジェクトの除外設定に一致する祖先のパスでテストを失敗させ、無関係なテストを改変したため、
+    テスト・ツールの一時領域は変えないことを同じ本文で示す。
     """
     if contract is not None and contract.parent == pathlib.Path(session_temp):
         location = "このセッションのmanaged-tempは、次の原本の親ディレクトリである。\n"
@@ -313,6 +316,7 @@ def session_temp_notice(session_temp: pathlib.Path | str, *, contract: pathlib.P
         location += work_contract.short_notice(contract) + "\n"
     return location + (
         "一時ファイルは直下へ置け。`/tmp`は使うな。"
+        "テスト・ツールは`TMPDIR`などの一時領域の環境変数を変えずに実行せよ。"
         "委譲先のmanaged-temp・専用一時領域の通知を優先せよ。"
         "未通知ならこの領域を指定せよ。指定の入出力ファイルは読み書きしてよい。"
     )
@@ -485,6 +489,7 @@ def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
     return (
         f"このサブエージェント専用の一時領域: {child}\n"
         "一時ファイルはこの領域の直下へ置け。`/tmp`は使うな。"
+        "テスト・ツールは`TMPDIR`などの一時領域の環境変数を変えずに実行せよ。"
         f"親のセッションのmanaged-temp: {session_temp}\n"
         "親の領域は、委譲元が個別に指定した入力や出力のファイルの読み書きに使ってよい。"
     )
