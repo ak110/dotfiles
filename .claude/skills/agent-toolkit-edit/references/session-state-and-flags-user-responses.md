@@ -20,7 +20,11 @@
 - `uwi_answered_by_repo`・`uwi_fingerprint_by_repo`と、改名前の`tbd_answered_by_repo`・`tbd_fingerprint_by_repo`: 全WIを走査して回答を検出していた版が記録したキー。
   PostToolUseは回答済みの基準値（`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`）を見つけた時に、基準値にある対象リポジトリを1回だけ走査する。
   その会話が投入した未回答のUWIと、回答済みで基準値に無いUWIを`uwi_awaiting_answer`へ引き継ぎ、4つのキーを削除する。
-  新しい書き込みは行わない。
+  PostToolUseはこの4つのキーを読取と削除だけに使う。
+- `uwi_adopt_retry_at`: 上の引き継ぎをやり直してよい時刻（エポック秒）。
+  WIの保存先を解決できない場合と走査が不完全な場合に、PostToolUseが60秒後の時刻を書き、4つのキーを保つ。
+  その時刻まではツール実行のたびの走査を控え、`uwi_awaiting_answer`のファイルだけを確かめる。
+  引き継ぎの完了時に4つのキーと併せて削除する。
 
 ## 具体的な操作の承認
 

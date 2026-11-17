@@ -161,3 +161,51 @@ class TestAdoptScanState:
         assert key not in state
         assert fingerprint_key not in state
         assert uwi_watch.awaiting(state) == [waiting, recorded]
+
+    @pytest.mark.parametrize("failure", ["unresolved-root", "unreadable-entry"])
+    def test_keeps_scan_state_until_scan_completes(
+        self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
+    ) -> None:
+        """保存先を解決できない間と走査が不完全な間は基準値を保ち、回復後に未通知の回答を通知する。"""
+        unnotified = _put(root, 1, answer="回答\n")
+        broken = root / "2026" / "11" / _name(9)
+        legacy: dict[str, object] = {"uwi_answered_by_repo": {"main": {_REPO: []}}}
+        assert session_state.update_state(_SESSION, lambda _state: legacy)
+        monkeypatch.setattr(_uwi_completion, "_ADOPT_RETRY_SECONDS", 0.0)
+
+        with monkeypatch.context() as patch:
+            if failure == "unresolved-root":
+                patch.setattr(_uwi_scan, "private_notes_root", lambda: None)
+            else:
+                broken.write_text("frontmatterの無い本文\n", encoding="utf-8")
+            assert _uwi_completion.build_notice(_SESSION) is None
+        state = session_state.read_state(_SESSION)
+        assert state["uwi_answered_by_repo"] == {"main": {_REPO: []}}
+        assert uwi_watch.awaiting(state) == []
+
+        broken.unlink(missing_ok=True)
+        notice = _uwi_completion.build_notice(_SESSION)
+
+        assert notice is not None and unnotified in notice
+        state = session_state.read_state(_SESSION)
+        assert "uwi_answered_by_repo" not in state and "uwi_adopt_retry_at" not in state
+
+    def test_waits_before_scanning_again_after_incomplete_scan(
+        self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """引き継ぎを終えられなかった直後は全WIを走査し直さず、投入時に記録したUWIの確認は続ける。"""
+        (root / "2026" / "11").mkdir(parents=True)
+        (root / "2026" / "11" / _name(9)).write_text("frontmatterの無い本文\n", encoding="utf-8")
+        recorded = _put(root, 1, answer="回答\n")
+        assert session_state.update_state(_SESSION, lambda _state: {"uwi_answered_by_repo": {"main": {_REPO: []}}})
+        assert _uwi_completion.build_notice(_SESSION) is None
+        assert uwi_watch.add(_SESSION, [recorded])
+
+        def _fail(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("やり直しの時刻より前に全WIを走査した")
+
+        monkeypatch.setattr(_uwi_scan, "scan_active_uwis", _fail)
+        notice = _uwi_completion.build_notice(_SESSION)
+
+        assert notice is not None and recorded in notice
+        assert "uwi_answered_by_repo" in session_state.read_state(_SESSION)

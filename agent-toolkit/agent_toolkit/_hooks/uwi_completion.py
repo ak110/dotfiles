@@ -14,6 +14,7 @@ PostToolUseフックから毎回呼ばれる。確かめる対象は、`atk wi a
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import pathlib
+lazy import time
 
 lazy from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 lazy from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATE_ADOPTED, WI_STATE_REJECTED
@@ -36,14 +37,31 @@ _SCAN_ANSWERED_KEYS = ("uwi_answered_by_repo", "tbd_answered_by_repo")
 _SCAN_FINGERPRINT_KEYS = ("uwi_fingerprint_by_repo", "tbd_fingerprint_by_repo")
 """同じ版が残した、変化検出用の指紋の状態キー。引き継ぎの時に基準値と併せて消す。"""
 
+_ADOPT_RETRY_KEY = "uwi_adopt_retry_at"
+"""引き継ぎをやり直してよい時刻（エポック秒）の状態キー。
+
+引き継ぎを終えられなかった会話が、ツール実行のたびに全WIを走査し直さないために持つ。
+引き継ぎの完了時に基準値と併せて消す。
+"""
+
+_ADOPT_RETRY_SECONDS = 60.0
+"""引き継ぎを終えられなかった後、次に走査するまで空ける秒数。"""
+
 
 def _adopt_scan_state(session_id: str, state: dict) -> list[str]:
     """走査方式の基準値を持つ会話が投入した未通知のUWIを、1回だけ走査して記録へ引き継ぐ。
 
     基準値を記録済みの対象リポジトリごとに、未回答のUWIと、回答済みで基準値に無いUWIを引き継ぐ。
-    読めないWIは走査方式でも通知できなかったため、読めた範囲で引き継ぎを終える。
+    保存先を解決できない場合と走査が不完全な場合は、基準値を保って投入時の記録だけを返し、
+    `_ADOPT_RETRY_SECONDS`秒が過ぎた後の呼び出しでやり直す。
+    読めた分だけで引き継ぎを終えると、読めなかったUWIの回答を通知する機会を失うためである。
     状態を書けなかった場合は空の一覧を返し、次の呼び出しでやり直す。
     """
+    recorded = _uwi_watch.awaiting(state)
+    now = time.time()
+    retry_at = state.get(_ADOPT_RETRY_KEY)
+    if isinstance(retry_at, (int, float)) and not isinstance(retry_at, bool) and now < retry_at:
+        return recorded
     baseline: dict = {}
     for key in _SCAN_ANSWERED_KEYS:
         by_agent = state.get(key)
@@ -53,19 +71,25 @@ def _adopt_scan_state(session_id: str, state: dict) -> list[str]:
             break
     own: set[str] = set()
     root = _uwi_scan.private_notes_root()
+    complete = root is not None
     if root is not None:
         for target_repo, notified in baseline.items():
             if isinstance(target_repo, str) and isinstance(notified, list):
+                scan = _uwi_scan.scan_active_uwis(root, target_repo)
+                complete = complete and scan.complete
                 own.update(
                     entry.filename
-                    for entry in _uwi_scan.scan_active_uwis(root, target_repo).entries
+                    for entry in scan.entries
                     if entry.submitter_session == session_id and not (entry.answered and entry.filename in notified)
                 )
+    if not complete:
+        update_state(session_id, lambda current: {**current, _ADOPT_RETRY_KEY: now + _ADOPT_RETRY_SECONDS})
+        return recorded
     adopted: list[str] = []
 
     def _adopt(current: dict) -> dict:
         nonlocal adopted
-        for key in (*_SCAN_ANSWERED_KEYS, *_SCAN_FINGERPRINT_KEYS):
+        for key in (*_SCAN_ANSWERED_KEYS, *_SCAN_FINGERPRINT_KEYS, _ADOPT_RETRY_KEY):
             current.pop(key, None)
         current[_uwi_watch.STATE_KEY] = sorted(own.union(_uwi_watch.awaiting(current)))
         adopted = _uwi_watch.awaiting(current)
