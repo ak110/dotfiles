@@ -658,6 +658,10 @@ def check_bundled_read(
         except OSError, ValueError:
             current = False
         (acquired if current else remaining).append(path)
+    # 容量の比較は全文表示と確定した読取だけに限る。範囲表示や検索の入力をファイル全体の量で数えると、
+    # 正常な分割取得にも超過を断定するため。
+    full = {path.resolve() for group in bash_read_paths(command, cwd) for path in group}
+    remaining = [path for path in remaining if path in full]
     sizes = {path: path.stat().st_size for path in remaining}
     if codex:
         budget = max_output_tokens if isinstance(max_output_tokens, int) and max_output_tokens > 0 else CODEX_OUTPUT_TOKENS

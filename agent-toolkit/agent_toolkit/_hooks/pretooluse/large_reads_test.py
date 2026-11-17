@@ -486,6 +486,16 @@ def test_bundled_read_over_claude_budget_is_split(tmp_path, limit, warned):
     assert (warning is not None and "分けて取得" in warning) is warned
 
 
+def test_bundled_partial_reads_are_not_counted_as_full_text(tmp_path):
+    """範囲表示の分割取得は、ファイル全体の量が上限を超えても超過を案内しない。"""
+    paths, _command = _bundle(tmp_path, (99, 99))
+    command = "sed -n '1p' -- " + " ".join(str(path) for path in paths)
+    warning = large_reads.check_bundled_read(
+        command, str(tmp_path), records={}, agent="main", codex=False, environment={"BASH_MAX_OUTPUT_LENGTH": "100"}
+    )
+    assert warning is None
+
+
 def test_bundled_read_codex_budget_includes_envelope(tmp_path):
     """本文の見積りが予算内でも、外側のJSON包絡を含めて超える場合は分割を案内する。"""
     _paths, command = _bundle(tmp_path, (99, 99))  # UTF-8で各298バイト、見積り各100トークン
