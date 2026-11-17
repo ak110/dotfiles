@@ -142,7 +142,9 @@ def unowned_writers(trees: tuple[pathlib.Path, ...], excluded: frozenset[str]) -
 
 def process_activity(worktree: pathlib.Path) -> str | None:
     entries = git_worktrees.list_worktrees(worktree, timeout=_lane_records.TIMEOUT)
-    target = git_worktrees.owning_worktree(worktree, entries)
+    # 登録rootの解決はこの走査の中だけで共有する。次の走査は登録とプロセスを取り直す。
+    resolved = git_worktrees.resolve_worktrees(entries)
+    target = git_worktrees.owning_resolved_worktree(worktree, resolved)
     username = psutil.Process().username()
     for process in psutil.process_iter(["username"]):
         if process.info["username"] != username:
@@ -153,7 +155,7 @@ def process_activity(worktree: pathlib.Path) -> str | None:
             continue
         except psutil.AccessDenied:
             cwd = None
-        if cwd is not None and git_worktrees.owning_worktree(cwd, entries) == target:
+        if cwd is not None and git_worktrees.owning_resolved_worktree(cwd, resolved) == target:
             return f"外部プロセスが使用中: pid={process.pid}"
         # 所属の分からない別プロセスの取得失敗を、当該レーンの保持条件へ広げない。
         try:
@@ -162,7 +164,7 @@ def process_activity(worktree: pathlib.Path) -> str | None:
             continue
         for argument in argv:
             candidate = pathlib.Path(argument.split("=", 1)[-1])
-            if candidate.is_absolute() and git_worktrees.owning_worktree(candidate, entries) == target:
+            if candidate.is_absolute() and git_worktrees.owning_resolved_worktree(candidate, resolved) == target:
                 return f"外部プロセスが資源を参照中: pid={process.pid}"
     return None
 

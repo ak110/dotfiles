@@ -43,9 +43,18 @@ class Worktree:
 
 def owning_worktree(path: pathlib.Path, entries: Iterable[Worktree]) -> Worktree | None:
     """解決済みのパスを含む登録のうち、最も内側のworktreeを返す。"""
-    by_path = {entry.path.resolve(): entry for entry in entries}
-    root = path_ownership.owning_root(path, by_path)
-    return by_path.get(root) if root is not None else None
+    return owning_resolved_worktree(path, resolve_worktrees(entries))
+
+
+def resolve_worktrees(entries: Iterable[Worktree]) -> dict[pathlib.Path, Worktree]:
+    """登録rootを1回だけ解決する。結果は同じ登録集合で所属を判定する間だけ使い、走査をまたいで保持しない。"""
+    return {entry.path.resolve(): entry for entry in entries}
+
+
+def owning_resolved_worktree(path: pathlib.Path, resolved: dict[pathlib.Path, Worktree]) -> Worktree | None:
+    """`resolve_worktrees`の結果を使い、パスを含む最も内側のworktreeを返す。"""
+    root = path_ownership.owning_resolved_root(path, resolved)
+    return resolved.get(root) if root is not None else None
 
 
 def _git(repo: pathlib.Path, args: list[str], timeout: float | None) -> str:
