@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agent_toolkit._agents_server import service_context, service_io, service_turns
+from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import effort_requests, runtime_environment, session_registry, session_release
 
@@ -177,6 +178,12 @@ async def test_monitor_ticks_do_not_enumerate_host_processes(monkeypatch, tmp_pa
         caller = runtime_environment.CallerContext({"HOME": str(tmp_path)}, tmp_path)
         pool = service_context.ServiceManagers(state_root=tmp_path)
         pool.conversations["parent"] = service_context.Conversation(manager, caller)
+        # 実サービスと同じく管理サービスの周期処理（世代移行の確認）を監視の毎巡へ登録する。
+        # 周期処理が失敗すると自動再開まで進まないため、下の計数は周期処理の成功も含めて数える。
+        target = {"generation": "G1", "epoch": 1, "process": "1:owner"}
+        coordinator = ServiceCoordinator(target, tmp_path, pool, AsyncMock(), AsyncMock())
+        monkeypatch.setattr(coordinator.registry, "current", lambda: target)
+        assert getattr(pool.before_controls, "__self__", None) is coordinator
         ticks = []
         original_resume = manager._process_auto_resume
 
