@@ -889,6 +889,18 @@ class SessionResumeState:
         )
 
 
+@dataclasses.dataclass(frozen=True)
+class RegistryResumeState(SessionResumeState):
+    """別プロセスの共有登録から復元し、照会時に鮮度確認を要する再開状態。
+
+    世代移行の`move_context`で停止済みsessionとして往復するため、
+    `service_state`の状態codecから循環importなしに参照できるここへ置く。
+    """
+
+    result_root_session_id: str | None = None
+    result_owner_status_file: str = "root.json"
+
+
 def fast_mode_fields(engine: str | None, fast_mode: object) -> dict[str, bool]:
     """Codexの既知の速度だけを公開し、旧形式と他engineの表示を保持する。"""
     return {"fast_mode": fast_mode} if engine == "codex" and isinstance(fast_mode, bool) else {}

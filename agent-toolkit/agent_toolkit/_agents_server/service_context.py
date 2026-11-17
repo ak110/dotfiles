@@ -125,7 +125,13 @@ class ServiceManagers:
                 awaiting = False
                 before_controls = self.before_controls
                 # Pylintは初期値Noneだけで推論するが、型付きcallbackを同じloopで登録している。
-                allow_resume = before_controls is None or await before_controls()  # pylint: disable=not-callable
+                try:
+                    allow_resume = before_controls is None or await before_controls()  # pylint: disable=not-callable
+                except Exception:
+                    # 世代移行の1件の失敗で全会話の状態保存まで毎巡止めない（2026-11-17に旧世代の
+                    # 状態がrunningのまま固定された）。再開は移行の成否が確定するまで見送る。
+                    _LOG.exception("世代移行の確認が失敗しました。自動再開を見送り、状態保存は続けます")
+                    allow_resume = False
                 for conversation in tuple(self.conversations.values()):
                     with self._bound(conversation):
                         if allow_resume:

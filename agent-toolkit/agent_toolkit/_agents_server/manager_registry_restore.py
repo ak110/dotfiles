@@ -22,19 +22,11 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.responses import EXPIRED_KILL_NEXT_ACTION, EXPIRED_SESSION_NEXT_ACTION, SESSION_ID_NEXT_ACTION
-from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionResumeState, SessionState
+from agent_toolkit._agents_server.state import TERMINAL_STATUSES, RegistryResumeState, SessionResumeState, SessionState
 from agent_toolkit._common import recorded_process, session_registry
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
-
-
-@dataclasses.dataclass(frozen=True)
-class _RegistryResumeState(SessionResumeState):
-    """別プロセスの共有登録から復元し、照会時に鮮度確認を要する再開状態。"""
-
-    result_root_session_id: str | None = None
-    result_owner_status_file: str = "root.json"
 
 
 def _terminal_turn_status(
@@ -133,7 +125,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
     async def _refresh_resume_state(self, resume_state: SessionResumeState) -> SessionResumeState:
         """共有登録の現在turnを確認し、退避した終了を現在状態として使えるか判定する。"""
         if (
-            not isinstance(resume_state, _RegistryResumeState)
+            not isinstance(resume_state, RegistryResumeState)
             or resume_state.session_id in self.sessions
             or resume_state.session_id in self._pending_resumes
         ):
@@ -316,7 +308,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
     @staticmethod
     def _is_registry_resume_state(resume_state: object) -> bool:
         """別プロセスの共有登録から復元した再開状態かを返す。"""
-        return isinstance(resume_state, _RegistryResumeState)
+        return isinstance(resume_state, RegistryResumeState)
 
     async def _raise_if_owner_lost(self, session_id: str) -> None:
         """所有サーバーを失った実行中のsessionなら、回収した通知と待つかkillの案内を持つエラーを送出する。
@@ -483,7 +475,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
             )
         # 実行プロセスの不在から中断と解決した記録は、結果ファイルを持たなくても終了の理由を`show`へ返す。
         registry_error = result_projection.resolution_interruption_error(resolution)
-        resume_state = _RegistryResumeState(
+        resume_state = RegistryResumeState(
             session_id=session_id,
             cwd=info.cwd,
             model=info.model,
@@ -535,7 +527,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
     ) -> dict[str, Any] | None:
         """退避元の違いによらず、同じturnの排他回収に成功した本文だけを返す。"""
         session_id = resume_state.session_id
-        if isinstance(resume_state, _RegistryResumeState) and resume_state.result_root_session_id is not None:
+        if isinstance(resume_state, RegistryResumeState) and resume_state.result_root_session_id is not None:
             claimed, error = await run_file_operation(
                 retained_results.take_result,
                 resume_state.result_root_session_id,
