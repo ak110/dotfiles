@@ -642,7 +642,7 @@ def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleTy
                 detached = psutil.Process(detached_pid)
                 child = psutil.Process(child_pid)
                 assert child.is_running()
-            # JobのActiveProcessesは終了の開始で0になり、プロセスobjectのsignalは直後（実測1ms以内）に立つ。
+            # JobのActiveProcessesは終了の開始で0になり、プロセスobjectが終了の通知状態になるのは直後（実測1ms以内）である。
             # PIDの列挙はhandleが残る間も成功するため、終了signalを有限時間で待って確かめる。
             child.wait(timeout=5)
             assert detached.is_running()
