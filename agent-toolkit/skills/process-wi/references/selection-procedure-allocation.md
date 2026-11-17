@@ -26,6 +26,8 @@
 本文の反映先に記載されていない範囲を残す場合や、反映先パスを機械抽出できないUWIの書込対象については、限定調査と回答から導いた範囲を設定する。
 
 **19.** レーン分けで満たす価値は、「所要時間の均等化」「依存の連結成分を分割しないこと」「レーン数の最小化」の3点である。
+レーン数ごとの所要の比較は`docs/development/audit-records-wi.md`にある。
+該当節は「agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：調査とレーン分け：2026年11月17日」である。
 レーン分けの前に、対象リポジトリの`[tool.agent-toolkit.pick-wi-check]`に`target-seconds`があれば、次の規則で今回の集合を確定する。
 
 - 着手済みの`processing`と再開位置を持つ項目は全て含める

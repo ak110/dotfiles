@@ -27,6 +27,7 @@ import json
 import time
 from datetime import UTC, datetime
 
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
 from agent_toolkit._hooks import plugin_resources
@@ -121,7 +122,7 @@ def _saturation_text(session_id: str) -> str:
     try:
         directory = managed_temp.find_session_temp(session_id)
         if directory is not None:
-            lines = (directory / "hook-timings.jsonl").read_text(encoding="utf-8").splitlines()
+            lines = split_lines((directory / "hook-timings.jsonl").read_text(encoding="utf-8"))
             for line in lines[-_RECENT_HOOK_ROWS * 4 :]:
                 row = json.loads(line)
                 if isinstance(row, dict) and row.get("stage") == "total" and isinstance(row.get("seconds"), (int, float)):

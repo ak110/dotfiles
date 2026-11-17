@@ -61,10 +61,12 @@ def resolve_limit(setting: str, cpu_count: int | None = None) -> Limit:
 
 
 def configured_limit() -> Limit:
-    """`atk config`の設定（環境変数を含む）から上限を求める。"""
-    from agent_toolkit._atk import config  # pylint: disable=import-outside-toplevel
+    """`atk config`の設定（環境変数を含む）から上限を求める。
 
-    return resolve_limit(config.resolve_mutable_setting(CONFIG_KEY))
+    旧設定の移行を伴う`config.resolve_mutable_setting`は使わず、保存値を読むだけにする。
+    起動のたびに設定ファイルの書換えを起こさず、イベントループ上で書込を行わないためである。
+    """
+    return resolve_limit(config_settings.raw_mutable_setting(CONFIG_KEY))
 
 
 def admission_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -196,7 +198,7 @@ async def acquire(
 
     待っている間は依頼元（`host_session_id`）を子を待つ親として数えないため、親の枠が子の起動を塞がない。
     """
-    limit = configured_limit() if limit is None else limit
+    limit = await asyncio.to_thread(configured_limit) if limit is None else limit
     if limit.value is None:
         return Admission(None, 0.0, limit)
     directory = admission_directory(state_root)

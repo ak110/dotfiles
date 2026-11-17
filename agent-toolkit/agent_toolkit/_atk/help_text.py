@@ -193,7 +193,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi set-priority": {
         "summary": "AWIの優先区分と根拠を設定・解除する",
-        "description": "AWIの優先区分と根拠を設定・解除する。\n\n目的: 修正を遅らせると具体的な損失が続く項目を、process-wiの選定で古い項目と交互に先へ選ばれるようにする。\n利用場面: 起票時や処理中に、遅らせる損失（処理の停止・遮断、誤った判断・成果物、利用者環境での継続的な失敗、データ損失の危険など）を観測したとき。影響の解消を観測して優先を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ`priority: urgent`と影響・根拠・解除条件を記録するか取り除き、commitとpushを行う。`atk wi list`のJSON出力の`priority`・`priority_reason`へ現れる。\n前提: 対象がinbox、processingまたはholdのAWIであること。urgentには`--impact`・`--evidence`・`--release`がすべて必要で、単にバグという分類や改善の期待だけでは付けない。区分の無い項目は通常扱いになる。重要フラグ`important`とは別の値である。\n復元・後始末: 変更前の値はprivate-notesのGit履歴に残る。",
+        "description": "AWIの優先区分と根拠を設定・解除する。\n\n目的: 修正を遅らせると具体的な損失が続く項目を、process-wiの選定で古い項目と交互に先へ選ばれるようにする。\n利用場面: 起票時や処理中に、遅らせる損失（処理の停止・遮断、誤った判断・成果物、エンドユーザーの環境での継続的な失敗、データ損失の危険など）を観測したとき。影響の解消を観測して優先を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ`priority: urgent`と影響・根拠・解除条件を記録するか取り除き、commitとpushを行う。`atk wi list`のJSON出力の`priority`・`priority_reason`へ現れる。\n前提: 対象がinbox、processingまたはholdのAWIであること。urgentには`--impact`・`--evidence`・`--release`がすべて必要で、単にバグという分類や改善の期待だけでは付けない。区分の無い項目は通常扱いになる。重要フラグ`important`とは別の値である。\n復元・後始末: 変更前の値はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi set-priority 20260901-072734-001.md urgent --impact '委譲先が起動できない' --evidence 'agents_serverのログ 2026-09-01' --release '修正の配布'",
     },
     "atk wi answer": {

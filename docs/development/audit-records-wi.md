@@ -146,7 +146,7 @@ commitのhookは、`develop`・`master`・`main`以外のブランチではpytes
 前提失敗や品質の往復を除外せず、代表外の全規範点検・別ホスト・実機・公開CI・後始末を含む次回全量の経路へ対応付ける。
 未確認工程は0秒や成功へ置換せず、下限計算と実行可能な上側の予測を区別する。
 
-## agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：レーン数の実測比較：2026年11月17日
+## agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：調査とレーン分け：2026年11月17日
 
 効率化の仕組みの棚卸し（2026年11月10日統合）より後の巡回について、巡回の集合JSONと結果ファイル（`~/.local/state/agent-toolkit/process-loop-ownership/rounds/`）の更新時刻と結果の本文から集計した。
 所要は集合JSONの作成から結果ファイルの最終更新までで、公開・後始末を含む。

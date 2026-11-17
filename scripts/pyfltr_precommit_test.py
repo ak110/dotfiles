@@ -155,6 +155,9 @@ def _install_pyfltr(
 ) -> list[list[str]]:
     """pyfltrの照会コマンドの公開出力を差し替え、呼び出された引数を記録する。"""
     calls: list[list[str]] = []
+    pytest_command: dict[str, str] = {"command": "pytest", "status": pytest_status, "started_at": pytest_started_at}
+    if launch_boundary_at is not None:
+        pytest_command["launch_boundary_at"] = launch_boundary_at
     run = {
         "run_id": "01RUN",
         "started_at": _RUN_STARTED_AT,
@@ -170,13 +173,8 @@ def _install_pyfltr(
             "argv": argv if argv is not None else ["run", "--no-fix", "src/a.py"],
             "started_at": _RUN_STARTED_AT,
         },
-        "commands": [
-            {"command": "ruff-check", "status": "succeeded"},
-            {"command": "pytest", "status": pytest_status, "started_at": pytest_started_at},
-        ],
+        "commands": [{"command": "ruff-check", "status": "succeeded"}, pytest_command],
     }
-    if launch_boundary_at is not None:
-        shown["commands"][1]["launch_boundary_at"] = launch_boundary_at
 
     def _fake(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         del kwargs
