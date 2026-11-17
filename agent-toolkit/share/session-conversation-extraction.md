@@ -35,6 +35,7 @@ atk run-script session-review-prepare -- --transcript <記録の絶対パス> --
 - `--conversation-digest`: 指定した会話の発話と、委譲先の会話では委譲元から受けた依頼を、話者と本文で示す。
   会話圧縮後の復元通知が使う形式で、内容を話者と本文に限り、ツール呼び出し、記録位置、時刻を省く。
   ユーザー発話と委譲元の依頼は全文を示し、文書全体が上限を超える場合だけ、長いものから中ほどを省いて省いた字数を行内に示す。
+  省かれた本文は、要約の冒頭が示す照会コマンドへ`--fixed-string <本文の一部>`を続けて記録位置を調べ、`--detail <record>:<line>`を続けて取得する。
   `--conversation-window`とは併用せず、上限は`--conversation-max-bytes`で指定する（省略時30000バイト）。
 
 生成された`conversation_path`と、`conversation_window`が示す実バイト数、条件、対象・表示件数、省略と未確認範囲、継続案内を確認する。

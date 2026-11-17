@@ -90,6 +90,51 @@ def test_digest_elides_middle_of_longest_user_text_over_budget() -> None:
         session_conversation.digest_document(events, main_record=None, detail_command="atk detail", max_bytes=1200)
 
 
+@pytest.mark.parametrize("kind", ["utterance", "delegation-request"])
+def test_digest_elides_only_when_full_text_exceeds_limit(kind: str) -> None:
+    """全文の文書が上限に収まる間はユーザー発話と委譲元の依頼を省かず、1バイト超える場合だけ中ほどを省く。"""
+    text = "前提の説明。" * 200 + "最後の制約: 本番へは反映しない。"
+    event = {
+        "kind": kind,
+        "role": "user",
+        "record": "claude:main",
+        "line": 1,
+        "timestamp": "2026-01-01T00:00:00Z",
+        "text": text,
+    }
+
+    def digest(max_bytes: int) -> tuple[str, dict[str, object]]:
+        return session_conversation.digest_document([event], main_record=None, detail_command="atk detail", max_bytes=max_bytes)
+
+    full, _ = digest(30000)
+    size = len(full.encode("utf-8"))
+    assert full.endswith(f": {text}\n")
+    exact, meta = digest(size)
+    assert exact == full and meta["elided_count"] == 0
+    shorter, meta = digest(size - 1)
+    assert len(shorter.encode("utf-8")) <= size - 1
+    assert meta["elided_count"] == 1 and shorter.endswith("最後の制約: 本番へは反映しない。\n")
+
+
+def test_digest_reserves_bytes_only_for_emitted_omission_note() -> None:
+    """省いた件数の行は出す場合だけ上限に含め、省かない場合は上限いっぱいまで全行を保つ。"""
+    events = [_utterance("user", "依頼")]
+    events += [_utterance("assistant", f"{index}番目の" + "経過" * 40) for index in range(12)]
+
+    def digest(max_bytes: int) -> tuple[str, dict[str, object]]:
+        return session_conversation.digest_document(events, main_record=None, detail_command="atk detail", max_bytes=max_bytes)
+
+    full, meta = digest(30000)
+    size = len(full.encode("utf-8"))
+    assert meta["omitted_assistant_count"] == 0 and "- エージェント: 0番目の" in full
+    exact, meta = digest(size)
+    assert exact == full and meta["omitted_assistant_count"] == 0
+    reduced, meta = digest(size - 1)
+    assert len(reduced.encode("utf-8")) <= size - 1
+    assert meta["omitted_assistant_count"] == 1 and "古いエージェント発話1件を省いた" in reduced
+    assert "- ユーザー: 依頼\n" in reduced and "- エージェント: 1番目の" in reduced
+
+
 def test_digest_keeps_delegation_request_of_delegated_session() -> None:
     """委譲先の会話では、委譲元から受けた依頼を発話と同じ並びへ全文で残す。"""
     request = "実行レビューせよ。計画: /plans/a.md 引き継ぎ記録先: /temp/handoff.md"

@@ -201,8 +201,9 @@ _DIGEST_ELIDED_MIN_BYTES = 600
 """中ほどを省くユーザー発話と委譲元の依頼に残す、下限のUTF-8バイト数。"""
 
 
-_DIGEST_OMISSION_RESERVE = 160
-"""省いた件数を示す1行のために残すUTF-8バイト数。"""
+def _omission_note(omitted: int) -> str:
+    """省いたエージェント発話の件数を示す行を返す。省いていなければ空文字列を返す。"""
+    return f"- （古いエージェント発話{omitted}件を省いた。残した行は元の順である）\n" if omitted else ""
 
 
 def _elide_middle(text: str, limit: int) -> str:
@@ -251,7 +252,8 @@ def digest_document(
         "この会話の発話を古い順に並べる。ユーザー発話と委譲元の依頼は全文を示す。"
         "文書全体が上限を超える場合だけ、長いものから中ほどを省き、省いた字数をその行に示す。"
         f"エージェントの発話は直近{_DIGEST_RECENT_ASSISTANT}件を長く、それより前を短く示す。ツール呼び出しと結果は含まない。\n"
-        f"原文と前後の操作が必要になったら`{detail_command}`へ本文の一部を渡して照会する。\n\n"
+        f"原文と前後の操作が必要になったら、`{detail_command}`へ`--fixed-string <本文の一部>`を続けて"
+        "一致する記録位置（recordとline）を調べ、`--detail <record>:<line>`を続けて原文を取得する。\n\n"
     )
     requests = [index for index, event in enumerate(rows) if event.get("kind") == "delegation-request"]
     users = [index for index, event in enumerate(rows) if event.get("kind") == "utterance" and event.get("role") == "user"]
@@ -271,13 +273,15 @@ def digest_document(
     lines |= {index: line(index, _clip(bodies[index], _DIGEST_RECENT_BYTES)) for index in recent}
     lines |= {index: line(index, _clip(bodies[index], _DIGEST_OLDER_BYTES)) for index in older}
     total = len(header.encode("utf-8")) + sum(len(text.encode("utf-8")) for text in lines.values())
-    budget = max_bytes - _DIGEST_OMISSION_RESERVE
     omitted = 0
     for index in older:
-        if total <= budget:
+        if total + len(_omission_note(omitted).encode("utf-8")) <= max_bytes:
             break
         total -= len(lines.pop(index).encode("utf-8"))
         omitted += 1
+    # 実際に出す件数の行の分だけを、本文の予算から除く。
+    note = _omission_note(omitted)
+    budget = max_bytes - len(note.encode("utf-8"))
     for index in recent:
         if total <= budget:
             break
@@ -297,7 +301,6 @@ def digest_document(
         elided += 1
     if total > budget:
         raise ValueError("会話の要約が予算を超えた。次の操作: --conversation-max-bytesを増やして再実行する")
-    note = f"- （古いエージェント発話{omitted}件を省いた。残した行は元の順である）\n" if omitted else ""
     excerpts = sum(
         1 for index, text in lines.items() if not text.endswith(bodies[index] + "\n") or bool(rows[index].get("text_truncated"))
     )
