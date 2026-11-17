@@ -147,3 +147,48 @@ async def test_generations_distinguish_current_queried_and_retired(tmp_path):
         {"generation": "old", "epoch": 2, "server_instance": "instance-old", "current": False, "queried": True},
         {"generation": "new", "epoch": 3, "server_instance": "instance-new", "current": True, "queried": False},
     ]
+
+
+@pytest.mark.asyncio
+async def test_monitor_ticks_do_not_enumerate_host_processes(monkeypatch, tmp_path):
+    """常駐する管理サービスの周期処理は、待機中の会話があってもホスト全体のプロセスを列挙しない。
+
+    周期処理の仕事量がホストのプロセス数に比例すると、常駐中のCPU使用が規模とともに増える。
+    """
+    import psutil  # pylint: disable=import-outside-toplevel
+
+    from agent_toolkit._testing.agents_server_support import _manager_with_fake  # pylint: disable=import-outside-toplevel
+
+    calls: list[str] = []
+
+    def counting(name, original):
+        def wrapper(*args, **kwargs):
+            calls.append(name)
+            return original(*args, **kwargs)
+
+        return wrapper
+
+    for name in ("process_iter", "pids"):
+        monkeypatch.setattr(psutil, name, counting(name, getattr(psutil, name)))
+    monkeypatch.setattr(psutil.Process, "children", counting("children", psutil.Process.children))
+    async with _manager_with_fake("codex") as (manager, _backend):
+        waiting = SessionState(session_id="waiting", cwd=str(tmp_path), status="running", engine="codex")
+        manager.sessions["waiting"] = waiting
+        caller = runtime_environment.CallerContext({"HOME": str(tmp_path)}, tmp_path)
+        pool = service_context.ServiceManagers(state_root=tmp_path)
+        pool.conversations["parent"] = service_context.Conversation(manager, caller)
+        ticks = []
+        original_resume = manager._process_auto_resume
+
+        async def counted(**kwargs):
+            ticks.append(1)
+            return await original_resume(**kwargs)
+
+        monkeypatch.setattr(manager, "_process_auto_resume", counted)
+        async with pool:
+            async with asyncio.timeout(10):
+                while len(ticks) < 3:
+                    await asyncio.sleep(0.05)
+        manager.sessions.pop("waiting", None)
+    assert len(ticks) >= 3
+    assert not calls
