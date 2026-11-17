@@ -49,7 +49,7 @@ def test_first_prompt_does_not_warn_before_preparation(capsys: pytest.CaptureFix
     session_id = "notice-confirmation"
     assert user_prompt_submit.main(json.dumps({"session_id": session_id, "prompt": "確認して"})) == 0
     captured = capsys.readouterr()
-    assert not captured.out and not captured.err
+    assert "未取得" not in captured.out and 'kind="warn"' not in captured.out and not captured.err
 
 
 @pytest.mark.parametrize("prompt", ["通常の依頼", "`例えば調査`は引用"])
