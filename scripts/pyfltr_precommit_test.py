@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import os
 import pathlib
 import subprocess
 import time
@@ -150,6 +151,7 @@ def _install_pyfltr(
     version: str = _VERSION,
     pytest_status: str = "succeeded",
     list_returncode: int = 0,
+    launch_boundary_at: str | None = None,
 ) -> list[list[str]]:
     """pyfltrの照会コマンドの公開出力を差し替え、呼び出された引数を記録する。"""
     calls: list[list[str]] = []
@@ -173,6 +175,8 @@ def _install_pyfltr(
             {"command": "pytest", "status": pytest_status, "started_at": pytest_started_at},
         ],
     }
+    if launch_boundary_at is not None:
+        shown["commands"][1]["launch_boundary_at"] = launch_boundary_at
 
     def _fake(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         del kwargs
@@ -322,6 +326,70 @@ def test_untracked_file_added_after_pytest_start_is_not_reused(
     _install_pyfltr(monkeypatch, repository, pytest_started_at=pytest_started_at)
 
     reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr")
+
+    assert (reuse.run_id == "01RUN") is reused
+
+
+def _set_second_precision_times(repository: pathlib.Path, second: int) -> None:
+    """秒未満を記録しないファイルシステムで、整形が秒`second`の中に書き直した状態を作る。"""
+    index = pathlib.Path(
+        subprocess.run(
+            ["git", "-C", str(repository), "rev-parse", "--path-format=absolute", "--git-path", "index"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    for path in [index, *(p for p in repository.rglob("*") if p.is_file() and ".git" not in p.parts)]:
+        os.utime(path, ns=(second * 1_000_000_000, second * 1_000_000_000))
+
+
+@pytest.mark.parametrize("run_id", [None, "01RUN"])
+@pytest.mark.parametrize(
+    ("boundary", "edit_after", "reused"),
+    [
+        pytest.param(False, False, False, id="legacy-run-same-second-is-conservative"),
+        pytest.param(True, False, True, id="formatted-same-second-is-accepted"),
+        pytest.param(True, True, False, id="edit-after-boundary-is-rejected"),
+    ],
+)
+def test_launch_boundary_accepts_same_second_formatting_only(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    run_id: str | None,
+    boundary: bool,
+    edit_after: bool,
+    reused: bool,
+) -> None:
+    """整形と同じ秒に始まった試験は、整形の秒を過ぎた開始境界の記録がある場合だけ受理する。
+
+    pyfltrはテスターを整形の秒が終わってから起動し、その時刻を`launch_boundary_at`へ記録する。
+    境界の後の秒に記録された変更は、境界より後に起きた可能性があるため受理しない。
+    """
+    repository = _repository(tmp_path)
+    if edit_after:
+        # commit済みにして、指定runでもindexとHEADの一致ではなく時刻の判定で拒否されることを確かめる。
+        (repository / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
+        commit_all(repository, "edit")
+    # ctimeは書き換えられないため、秒の先頭で整形を模した更新を行い、ctimeも同じ秒に収める。
+    time.sleep(1.05 - time.time() % 1)
+    formatted_second = int(time.time())
+    epoch = datetime.datetime.fromtimestamp(formatted_second, tz=datetime.UTC)
+    _set_second_precision_times(repository, formatted_second)
+    if edit_after:
+        # 境界の後に記録された変更。秒精度の記録では境界の直後の変更と区別できない。
+        time.sleep(formatted_second + 1.05 - time.time())
+        edited = (formatted_second + 1) * 1_000_000_000
+        os.utime(repository / "src" / "a.py", ns=(edited, edited))
+    started = epoch + datetime.timedelta(seconds=1.012 if boundary else 0.012)
+    _install_pyfltr(
+        monkeypatch,
+        repository,
+        pytest_started_at=started.isoformat(),
+        launch_boundary_at=(epoch + datetime.timedelta(seconds=1)).isoformat() if boundary else None,
+    )
+
+    reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id=run_id)
 
     assert (reuse.run_id == "01RUN") is reused
 

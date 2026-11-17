@@ -23,6 +23,9 @@ pyfltrの内部構造には依存しない。次をすべて満たす実行だ�
   ただし秒未満を記録しないファイルシステム（ext3など）では、同じ秒の中の変更が秒の先頭の時刻で記録され、
   pytestの開始より前の時刻になる。秒未満が0の時刻はその秒の終わりまでに変更されたものとして扱う
   （2026年11月13日、このリポジトリの開発機のext3で更新時刻の秒未満が常に0であることを観測した）。
+  pyfltr 3.32.0以降はテスターを同じrunの整形が終わった秒を過ぎてから起動し、その時刻を`launch_boundary_at`へ記録する。
+  記録がある場合はpytestの開始の代わりにこの境界と比べ、同じ秒の整形を受理しつつ境界の後の変更を拒否する。
+  記録の無い旧版のrunは開始時刻と比べ、同じ秒の整形は再利用を控える側へ倒す。
 - 実行のcwdがこの作業ツリーで、pyfltrの版が同じで、引数が試験の範囲を変えない形だけである。
 - その実行でpytestが成功している。
 
@@ -297,7 +300,7 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
             and any(
                 command.get("command") == "pytest"
                 and command.get("status") == "succeeded"
-                and _to_ns(command.get("started_at")) > latest
+                and _to_ns(command.get("launch_boundary_at") or command.get("started_at")) > latest
                 for command in shown.get("commands", [])
             )
         ):
