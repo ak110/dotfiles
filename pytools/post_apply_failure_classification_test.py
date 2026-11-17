@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from agent_toolkit._atk import config_settings
 
 from pytools import post_apply
 from pytools._internal import (
@@ -78,7 +79,7 @@ def _raise(error: Exception) -> Callable[..., object]:
 def _mise_install_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     del tmp_path
     monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: None)
-    monkeypatch.setattr(setup_mise, "ensure_mise_installed", lambda: False)
+    monkeypatch.setattr(setup_mise.setup_mise_binary, "ensure_mise_installed", lambda: False)
 
 
 def _codex_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -410,6 +411,11 @@ def _dotfiles_plugin_post_apply_fails(monkeypatch: pytest.MonkeyPatch, tmp_path:
     _dotfiles_plugin_fails(monkeypatch, tmp_path, operation="post_apply.py")
 
 
+def _usage_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(config_settings, "config_file_path", lambda: tmp_path / "usage-config.json")
+    monkeypatch.setattr(config_settings, "save_config", _raise(PermissionError("denied")))
+
+
 # 工程名ごとに、失敗を模す手段と期待する終了コードの組を並べる。
 # 1つの工程が取得と書き換えの両方を行う場合は、両方の組を並べる。
 _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
@@ -419,6 +425,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "VSCode 設定": [(_vscode_write_fails, 1)],
     "SSH config": [(_ssh_config_write_fails, 1)],
     "旧配布物の削除": [(_cleanup_removal_fails, 1)],
+    "利用枠自動配分の初期設定": [(_usage_config_write_fails, 1)],
     "npm/pnpm サプライチェーン対策": [(_npm_config_write_fails, 1)],
     "mise セットアップ": [(_mise_install_fails, 0)],
     "pnpm サプライチェーン対策": [(_pnpm_config_write_fails, 1)],

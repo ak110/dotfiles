@@ -25,7 +25,6 @@ from __future__ import annotations
 import contextlib
 import functools
 import json
-import logging
 import os
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
@@ -74,8 +73,7 @@ def main(payload_text: str) -> int:
             area = creation.find_session_temp(session_id)
             if area is not None and not sweep.has_live_owner(area):
                 cleaned = resources.cleanup_regenerable(area, references=functools.cache(resources.process_references))
-                if cleaned["retained"]:
-                    logging.getLogger(__name__).info("再生成物を保持（消費終了後の次回掃引で再試行）: %s", cleaned["retained"])
+                resources.log_retained(cleaned["retained"])
     if payload.get("reason") != _DISCARDED_REASON or session_id is None:
         return 0
     clear_session_state(session_id)

@@ -9,7 +9,7 @@ import pytest
 from agent_toolkit._atk.run_skill_test import _engine_env, _records, _run, _startup_input
 from agent_toolkit._atk.wi import entries, frontmatter
 from agent_toolkit._atk.wi.uwi_test import _invoke_uwi_add, _make_uwi_add_fake, _setup_notes
-from agent_toolkit._common import session_review, skill_modes
+from agent_toolkit._common import session_activity, session_review, skill_modes
 from agent_toolkit._testing.normative_contract import read_contract
 
 # pytestがモジュールの属性から取得する共有fixtureを公開する。
@@ -22,6 +22,10 @@ def _skill_invocation(engine_env, tmp_path, monkeypatch, capsys):
 
     def launch(skill, arguments, expected_scope):
         if skill == "agent-toolkit:review-session" and arguments and arguments.split()[0] == "batch":
+            # この隔離transcriptは活動主体を持たない。scope検査に無関係なホスト全体の活動探索を省く。
+            monkeypatch.setattr(
+                session_activity, "review_activity", lambda *args, **kwargs: session_activity.ActivitySnapshot(frozenset(), ())
+            )
             transcript = tmp_path / "target.jsonl"
             transcript.write_text(
                 json.dumps({"type": "user", "message": {"role": "user", "content": "要求"}}) + "\n",

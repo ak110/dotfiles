@@ -61,6 +61,22 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     changed = False
     failures: list[str] = []
+    if not any(key == "DISABLE_TELEMETRY" for key, _value in entries):
+        try:
+            previous, _reg_type = winutils.read_user_env_var("DISABLE_TELEMETRY")
+            if previous == "1":
+                # 旧dotfilesの配布値だけを除き、他用途の値は保持する。
+                wr = winutils.import_winreg()
+                with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_SET_VALUE) as key:
+                    try:
+                        wr.DeleteValue(key, "DISABLE_TELEMETRY")
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        changed = True
+                        logger.info(log_format.format_status("user.env", "旧DISABLE_TELEMETRY設定を削除"))
+        except OSError as error:
+            failures.append(f"DISABLE_TELEMETRY の旧設定削除に失敗: {error}")
     for key, value in entries:
         try:
             current, _reg_type = winutils.read_user_env_var(key)

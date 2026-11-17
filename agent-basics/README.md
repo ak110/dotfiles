@@ -58,7 +58,6 @@ agent-toolkitはこれらの運用を提供し、品質判断でagent-basicsを�
 Web技術の選択基準は本プラグインだけで利用でき、Nodeやagent-toolkitは必須ではない。
 詳細ガイドの検索、Baselineによる互換性判断、実験的機能の保護、古い実装パターンの走査を補う場合は、[GoogleChrome Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance)を任意で追加できる。
 導入方法と無効化は同プロジェクトと利用ホストの案内を参照。
-テレメトリを無効にするには`DISABLE_TELEMETRY=1`を設定する。
 
 ## ライセンス
 

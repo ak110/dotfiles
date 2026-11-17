@@ -144,6 +144,7 @@ class CodexInstructionsMixin:
                     "command": "uv",
                     "args": [
                         "run",
+                        "--no-cache",
                         "--no-config",
                         "--no-project",
                         "--python",

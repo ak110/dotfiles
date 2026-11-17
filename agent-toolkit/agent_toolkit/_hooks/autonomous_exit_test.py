@@ -353,6 +353,15 @@ class TestExitRequestWithdrawal:
         assert "decision" not in decision
         assert request_path.read_text(encoding="utf-8") == "requested"
 
+    def test_stale_exit_record_blocks(self, tmp_path: pathlib.Path) -> None:
+        """終了要求が消費済みのまま実行済みの記録だけが残る場合は、記録を偽へ戻して終了工程の再実行を求める。"""
+        decision, request_path = self._run_with_request(tmp_path, "stale", request="consumed", background_tasks=[])
+
+        assert decision.get("decision") == "block"
+        assert "atk agents-exit-session" in decision["reason"]
+        assert request_path.read_text(encoding="utf-8") == "consumed"
+        assert _read_state(tmp_path, "stale")["autonomous_exit_invoked"] is False
+
     def test_outside_process_loop_does_not_withdraw(self, tmp_path: pathlib.Path) -> None:
         """process-loop外の対話セッションでは終了要求を取り下げない。"""
         decision, request_path = self._run_with_request(

@@ -52,6 +52,7 @@ def test_shared_classification_table_matches_runtime() -> None:
     document = rules_context.SHARE_DIR / "exec.subagent.md"
     session = state.SessionState("role-form", str(document.parent), prompt=task_documents.task_prompt_header(document))
     for value in values:
+        session.api_error = {"type": "unavailable", "first_at": session.started_at} if value == "runtime_unavailable" else None
         message = f"続行できない区分: {value}\n続行できない理由: 入力が必要"
         assert result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message}) is None
     assert result_contract.invalid_result_reason(

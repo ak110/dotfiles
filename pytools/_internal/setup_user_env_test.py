@@ -1,10 +1,12 @@
 """pytools._internal.setup_user_env のテスト。"""
 
+import contextlib
+import types
 from pathlib import Path
 
 import pytest
 
-from pytools._internal import common, setup_user_env
+from pytools._internal import common, setup_user_env, winutils
 
 from ._test_helpers import FakeEnvironmentRegistry
 
@@ -67,3 +69,67 @@ def test_parse_reads_key_values_and_skips_comments() -> None:
     """空行とコメント行を値として扱わず、`KEY=VALUE`を順に返す。空の値も受け付ける。"""
     text = "# header\n\nA=1\n# B='x'\nC=\n"
     assert setup_user_env.parse_user_env(text) == [("A", "1"), ("C", "")]
+
+
+@pytest.mark.parametrize("previous", [None, "0", "1"])
+def test_removes_only_former_telemetry_value(
+    monkeypatch: pytest.MonkeyPatch, dotfiles_root: Path, previous: str | None
+) -> None:
+    """旧配布値1だけを除き、別値・他変数を保持して変更を通知する。"""
+    (dotfiles_root / "share/user.env").write_text("KEEP=yes\n", encoding="utf-8")
+    registry = FakeEnvironmentRegistry()
+    registry.user["KEEP"] = ("yes", registry.REG_SZ)
+    if previous is not None:
+        registry.user["DISABLE_TELEMETRY"] = (previous, registry.REG_SZ)
+    registry.install(monkeypatch)
+    removed: list[str] = []
+    notified: list[bool] = []
+
+    def delete(_key: object, name: str, **_kwargs: object) -> None:
+        del registry.user[name]
+        removed.append(name)
+
+    wr = types.SimpleNamespace(
+        REG_SZ=registry.REG_SZ,
+        HKEY_CURRENT_USER="user",
+        KEY_SET_VALUE=2,
+        OpenKey=lambda *_args: contextlib.nullcontext("Environment"),
+        DeleteValue=delete,
+    )
+    monkeypatch.setattr(winutils, "import_winreg", lambda: wr)
+    monkeypatch.setattr(winutils, "broadcast_environment_change", lambda: notified.append(True))
+    outcome = setup_user_env.run()
+    assert outcome.failure is None
+    assert outcome.changed is (previous == "1")
+    assert removed == (["DISABLE_TELEMETRY"] if previous == "1" else [])
+    assert bool(notified) is (previous == "1")
+    assert registry.user["KEEP"][0] == "yes"
+    if previous == "0":
+        assert registry.user["DISABLE_TELEMETRY"][0] == "0"
+    else:
+        assert "DISABLE_TELEMETRY" not in registry.user
+
+
+def test_failed_telemetry_removal_is_reported(monkeypatch: pytest.MonkeyPatch, dotfiles_root: Path) -> None:
+    """削除拒否は既存の失敗結果へ入り、他変数の反映は続ける。"""
+    (dotfiles_root / "share/user.env").write_text("NEW=yes\n", encoding="utf-8")
+    registry = FakeEnvironmentRegistry()
+    registry.user["DISABLE_TELEMETRY"] = ("1", registry.REG_SZ)
+    registry.install(monkeypatch)
+
+    def denied(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("denied")
+
+    wr = types.SimpleNamespace(
+        REG_SZ=registry.REG_SZ,
+        HKEY_CURRENT_USER="user",
+        KEY_SET_VALUE=2,
+        OpenKey=lambda *_args: contextlib.nullcontext("Environment"),
+        DeleteValue=denied,
+    )
+    monkeypatch.setattr(winutils, "import_winreg", lambda: wr)
+    outcome = setup_user_env.run()
+    assert outcome.failure and "denied" in outcome.failure
+    assert outcome.next_action
+    assert registry.user["DISABLE_TELEMETRY"][0] == "1"
+    assert registry.user["NEW"][0] == "yes"
