@@ -389,6 +389,48 @@ def test_claude_root_uses_same_marketplace(tmp_path, monkeypatch):
     assert plugin_roots.resolve_plugin_root("agent-basics", tmp_path / "toolkit") == root
 
 
+def test_claude_directory_marketplace_uses_folder_actually_read(tmp_path, monkeypatch):
+    # sourceがdirectoryのmarketplaceでは、Claude Code 2.1.326のplugin list --jsonが
+    # 実際の読込元を`readFromFolder`で示し、project scopeの古い登録のinstallPathは読まれない（2026-11-17の観測）。
+    project = tmp_path / "project"
+    project.mkdir()
+    folder = tmp_path / "marketplace/agent-basics"
+    (folder / "skills").mkdir(parents=True)
+    stale = tmp_path / "cache/agent-basics/1.3.0"
+    (stale / "skills").mkdir(parents=True)
+    current = tmp_path / "cache/agent-basics/1.28.2"
+    (current / "skills").mkdir(parents=True)
+    toolkit = tmp_path / "shared-copy/agent-toolkit"
+    data = [
+        {"id": "agent-toolkit@mine", "scope": "user", "enabled": True, "installPath": str(tmp_path / "cache/toolkit")},
+        {
+            "id": "agent-basics@mine",
+            "scope": "user",
+            "enabled": True,
+            "installPath": str(current),
+            "readFromFolder": str(folder),
+        },
+        {
+            "id": "agent-basics@mine",
+            "scope": "project",
+            "enabled": True,
+            "installPath": str(stale),
+            "projectPath": str(project),
+            "readFromFolder": str(folder),
+        },
+    ]
+    monkeypatch.setattr(
+        plugin_roots.process_tree,
+        "run_with_timeout",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, json.dumps(data), ""),
+    )
+    assert plugin_roots.resolve_plugin_root("agent-basics", toolkit, "claude", project) == folder
+    # readFromFolderの無い登録（directory以外のmarketplace）は従来どおりinstallPathを使う。
+    for item in data:
+        item.pop("readFromFolder", None)
+    assert plugin_roots.resolve_plugin_root("agent-basics", toolkit, "claude", project) == stale
+
+
 @pytest.mark.parametrize("enabled", [True, False])
 def test_codex_root_uses_enabled_same_marketplace_version(tmp_path, monkeypatch, enabled):
     home = tmp_path / "codex"

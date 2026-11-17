@@ -146,7 +146,11 @@ def select_claude_plugin(installed: object, plugin_id: str, project: Path) -> Pa
     item = selected[0]
     if item.get("enabled") is not True:
         raise ValueError(f"Claude Codeの{plugin_id}は無効: claude plugin list --jsonで有効設定を確認する")
-    path = item.get("installPath")
+    # sourceがdirectoryのmarketplaceでは、Claude CodeはinstallPathのcacheではなく配布元のフォルダーを読み込み、
+    # 公開一覧がその所在を`readFromFolder`で示す。scopeの登録が古い版のcacheを指したまま残っても
+    # 実際の読込元を選ぶため、この値を優先する（ユーザーの導入登録は変更しない）。
+    folder = item.get("readFromFolder")
+    path = folder if isinstance(folder, str) and folder else item.get("installPath")
     if not isinstance(path, str) or not Path(path).is_absolute():
         raise ValueError(f"Claude Codeの{plugin_id}のinstallPathが不正: claude plugin list --jsonを確認する")
     root = Path(path).resolve()

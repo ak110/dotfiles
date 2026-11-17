@@ -441,8 +441,10 @@ def resolve_plugin_root(
             for item in data
             if isinstance(item.get("id"), str)
             and item["id"].startswith("agent-toolkit@")
-            and isinstance(item.get("installPath"), str)
-            and pathlib.Path(item["installPath"]).resolve() == toolkit_root.resolve()
+            and any(
+                isinstance(item.get(field), str) and pathlib.Path(item[field]).resolve() == toolkit_root.resolve()
+                for field in ("installPath", "readFromFolder")
+            )
         }
         marketplaces = held or {
             item["id"].split("@", 1)[1]
