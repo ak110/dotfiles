@@ -26,6 +26,8 @@ pyfltrの内部構造には依存しない。次をすべて満たす実行だ�
   pyfltr 3.32.0以降はテスターを同じrunの整形が終わった秒を過ぎてから起動し、その時刻を`launch_boundary_at`へ記録する。
   記録がある場合はpytestの開始の代わりにこの境界と比べ、同じ秒の整形を受理しつつ境界の後の変更を拒否する。
   記録の無い旧版のrunは開始時刻と比べ、同じ秒の整形は再利用を控える側へ倒す。
+  統合前の指定runの確認はindexとHEADの一致を求めるため、Git indexの時刻は比べない。
+  整形が時刻だけを更新したファイルがあると、次のGit操作がindexを書き直して時刻が境界より後になるためである。
 - 実行のcwdがこの作業ツリーで、pyfltrの版が同じで、引数が試験の範囲を変えない形だけである。
 - その実行でpytestが成功している。
 
@@ -245,7 +247,9 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
         )
         if cached.returncode:
             return Reuse(None, "indexにHEADと異なる変更がある")
-    latest = _latest_change_ns(root)
+    # 指定runの確認はindexとHEADの一致を先に求めるため、indexの内容は検証済みのHEADに固定される。
+    # 整形が時刻だけを更新したファイルは次のGit操作がindexを書き直すので、indexの時刻は比べない。
+    latest = _latest_change_ns(root, include_index=run_id is None)
     if isinstance(latest, str):
         return Reuse(None, latest)
 
@@ -310,7 +314,7 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
     return Reuse(None, "現在の内容でpytestが成功した実行が無い")
 
 
-def _latest_change_ns(root: pathlib.Path) -> int | str:
+def _latest_change_ns(root: pathlib.Path, *, include_index: bool = True) -> int | str:
     """現存する対象ファイルとGit indexの更新時刻を比較する。
 
     親ディレクトリは除外ファイルの生成・削除でも更新されるため比較しない。
@@ -336,7 +340,7 @@ def _latest_change_ns(root: pathlib.Path) -> int | str:
             f"Git indexのパスを取得できない: {format_cli_error(index)}。"
             "対象worktreeで`git rev-parse --git-path index`を実行し、Gitの診断とindexの所在を確認する"
         )
-    paths: set[pathlib.Path] = {pathlib.Path(index.stdout.strip())}
+    paths: set[pathlib.Path] = {pathlib.Path(index.stdout.strip())} if include_index else set()
     for name in listed.stdout.split(b"\0"):
         if not name:
             continue

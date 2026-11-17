@@ -585,3 +585,33 @@ def test_git_failure_reports_context_independent_index_inspection(
     if not verify:
         assert "--verify-run" not in error
     assert launched == ([] if verify else [["/bin/pyfltr", "fast"]])
+
+
+@pytest.mark.parametrize(("run_id", "reused"), [("01RUN", True), (None, False)], ids=["specified-run", "automatic"])
+def test_index_rewritten_after_boundary_by_stat_refresh(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, run_id: str | None, reused: bool
+) -> None:
+    """整形で時刻だけ変わったファイルにより後のGit操作がindexを書き直しても、指定runはHEADとの一致で受理する。
+
+    自動選択はcommitの直前にindexの内容をHEADと比べないため、従来どおりindexの時刻を保守的に比べる。
+    """
+    repository = _repository(tmp_path)
+    time.sleep(1.05 - time.time() % 1)
+    formatted_second = int(time.time())
+    _set_second_precision_times(repository, formatted_second)
+    epoch = datetime.datetime.fromtimestamp(formatted_second, tz=datetime.UTC)
+    time.sleep(formatted_second + 1.05 - time.time())
+    # 境界の後にGitがstatの再確認でindexを書き直した状態を表す。内容はHEADと同じ。
+    subprocess.run(["git", "-C", str(repository), "update-index", "--really-refresh"], check=False, capture_output=True)
+    index = repository / ".git" / "index"
+    os.utime(index)
+    _install_pyfltr(
+        monkeypatch,
+        repository,
+        pytest_started_at=(epoch + datetime.timedelta(seconds=1.012)).isoformat(),
+        launch_boundary_at=(epoch + datetime.timedelta(seconds=1)).isoformat(),
+    )
+
+    reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id=run_id)
+
+    assert (reuse.run_id == "01RUN") is reused
