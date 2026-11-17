@@ -13,12 +13,15 @@ import secrets
 import subprocess
 from typing import Any
 
-from agent_toolkit._common import approval_classifier, delegated_session, function_hook_requests, operation_approvals
+from agent_toolkit._common import delegated_session, function_hook_requests, operation_approvals
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._git import remote as git_remote
 lazy from agent_toolkit._atk.wi import entries, frontmatter, sync, uwi_scan
 lazy from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES
 lazy from agent_toolkit._atk.wi.uwi import ANSWER_MARKER
+
+# pydanticを読み込む判定器は承認を判定する時だけ使う。全ツール呼び出しのhookで毎回読み込まない。
+lazy from agent_toolkit._common import approval_classifier
 
 _PENDING = "operation_permission_denials"
 _DIRECT = "direct_operation_approvals"
