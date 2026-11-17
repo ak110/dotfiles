@@ -1,34 +1,26 @@
 """登録全体のprocess-loop。統括会話の実行とリポジトリ別の処理所有を管理する。"""
 
 import argparse
-import concurrent.futures
 import enum
 import json
 import os
 import pathlib
-import shlex
 import sys
-import time
 import uuid
 from typing import Any
 
 import pydantic
 
-from agent_toolkit._atk import config as _config
-from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk.wi import listing as _listing
-from agent_toolkit._atk.wi import process_loop_alerts as _alerts
-from agent_toolkit._atk.wi import process_loop_control as _control
+from agent_toolkit._atk.wi import process_loop_completion as _completion
 from agent_toolkit._atk.wi import process_loop_env as _env
 from agent_toolkit._atk.wi import process_loop_identity as startup_identity
 from agent_toolkit._atk.wi import process_loop_launch_gate as _gate
 from agent_toolkit._atk.wi import process_loop_log as _log
-from agent_toolkit._atk.wi import process_loop_mise as _mise
 from agent_toolkit._atk.wi import process_loop_ownership as _ownership
+from agent_toolkit._atk.wi import process_loop_scheduled as _scheduled
 from agent_toolkit._atk.wi import process_loop_scheduler as _scheduler
 from agent_toolkit._atk.wi import process_loop_session as _session
-from agent_toolkit._atk.wi import process_loop_update as _update
-from agent_toolkit._atk.wi import process_loop_watch as _watch
 from agent_toolkit._atk.wi import process_loop_worktree as _worktree
 from agent_toolkit._atk.wi import submit as _submit
 from agent_toolkit._common import console_title as _console_title
@@ -82,95 +74,6 @@ class RepositoryResult(pydantic.BaseModel):
         return self.model_dump(mode="json", exclude_unset=True)
 
 
-class _CompletionTarget(pydantic.BaseModel):
-    """報告前の確認で使う起動原本と所有の識別。"""
-
-    target_repo: str
-    ownership_record: pathlib.Path
-    ownership_token: str
-    candidate_file: pathlib.Path
-    lane_session_id: str
-
-
-class _CompletionManifest(pydantic.BaseModel):
-    """既存の起動manifestから対象と所有情報を検証して取り出す。"""
-
-    repositories: list[_CompletionTarget] = pydantic.Field(min_length=1)
-
-
-def completion_status(
-    manifest: pathlib.Path, private_notes: pathlib.Path, additional_wis: list[str] | None = None
-) -> dict[str, Any]:
-    """報告前にも常駐と同じ現キュー・最終化検収を読み取り専用で使う。"""
-    request = _CompletionManifest.model_validate_json(manifest.read_text(encoding="utf-8"))
-    snapshots = {item.repository.repo_id: item for item in _listing.configured_repo_snapshot(private_notes)}
-    results: dict[str, Any] = {}
-    unmatched = set(additional_wis or [])
-    for target in request.repositories:
-        if target.target_repo in results or target.target_repo not in snapshots:
-            raise ValueError("完了確認の対象が重複しているか、現在の登録先に存在しない")
-        record = json.loads(target.ownership_record.read_text(encoding="utf-8"))
-        if (
-            not isinstance(record, dict)
-            or record.get("token") != target.ownership_token
-            or record.get("repo_id") != target.target_repo
-        ):
-            raise ValueError("起動時と現在の所有tokenまたは対象が一致しない")
-        owner = _ownership.Ownership(
-            target.target_repo,
-            target.ownership_token,
-            target.ownership_record,
-            record.get("session_id"),
-            record.get("previous"),
-        )
-        if owner.lane_session_id != target.lane_session_id:
-            raise ValueError("起動時と現在のレーン所有が一致しない")
-        candidates = json.loads(target.candidate_file.read_text(encoding="utf-8"))
-        if not isinstance(candidates, list) or any(
-            not isinstance(item, dict) or not isinstance(item.get("filename"), str) for item in candidates
-        ):
-            raise ValueError("開始時の候補原本の形式が不正")
-        present = {entry[0].name for entry in snapshots[target.target_repo].entries}
-        additional = set(additional_wis or []) & present
-        unmatched -= additional
-        names = {item["filename"] for item in candidates} | additional
-        if missing := sorted(names - present):
-            raise ValueError(f"処理対象のWIを現キューから取得できない: {missing}")
-        remaining = _remaining_work(snapshots[target.target_repo], owner, names)
-        results[target.target_repo] = {
-            "status": "incomplete" if any(remaining.values()) else "ready",
-            "observed_remaining": remaining,
-        }
-    if unmatched:
-        raise ValueError(f"追加WIをmanifestの対象リポジトリから取得できない: {sorted(unmatched)}")
-    return {"repositories": results}
-
-
-def _remaining_work(
-    snapshot: _listing.RepositorySnapshot, ownership: _ownership.Ownership, candidates: set[str]
-) -> dict[str, list[str]]:
-    current = _listing.configured_repo_snapshot(snapshot.private_notes, (snapshot.repository,))[0]
-    resources = _lane.list_resources(ownership.lane_session_id)
-    if resources["errors"]:
-        raise ValueError(f"レーン登録を照会できない: {resources['errors']}")
-    lanes: set[str] = set()
-    for entry in resources["records"]:
-        record = entry["record"]
-        integrated = record.get("integration", {}).get("phase") == "finalized"
-        if not integrated:
-            lanes.add(record["lane"])
-    # 開始側と同じ候補・修復診断を使い、冷却・外部依存で延期したinboxを残件へ戻さない。
-    items = {name: kind.rsplit(":", 1)[-1] for name, _digest, kind in _gate.repository_input(current, None).items}
-    # 未回答UWIなど開始候補から外れる項目も、processingのままなら処理終了を待つ。
-    items.update((path.name, "processing") for path, _repo, _text, state, _kind in current.entries if state == "processing")
-    return {
-        "wi": sorted(
-            name for name, kind in items.items() if name in candidates or kind not in {"ready", "internal-dependency-wait"}
-        ),
-        "lanes": sorted(lanes),
-    }
-
-
 def _report(event: str, ownership: _ownership.Ownership, detail: str) -> None:
     _log.append(event, target_repo=ownership.repo_id, session_id=ownership.session_id, detail=detail)
     print(f"{ownership.repo_id}: {detail}", flush=True)
@@ -184,20 +87,6 @@ def _finish_repository(ownership: _ownership.Ownership, *, completed: bool) -> N
     """
     _ownership.release(ownership, completed=completed)
     _session.cleanup_lane_session(ownership.lane_session_id, target_repo=ownership.repo_id)
-
-
-def _wait_for_changes(private_notes: pathlib.Path, *, owner_wait: bool = False) -> bool:
-    """登録の変更・所有の解放・中断の要求を、キューの変更と同じ待機処理で監視する。"""
-    return _watch.wait_for_changes(
-        private_notes,
-        None,
-        timeout=3.0 if owner_wait else 600.0,
-        state_directories=(
-            _config.process_loop_configuration_path().parent,
-            _ownership.ownership_directory(),
-            _log.abort_path().parent,
-        ),
-    )
 
 
 def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.LaunchInput | None) -> None:
@@ -297,8 +186,7 @@ def _recover_completed(
     record = returned.get(owner.repo_id)
     if record is None or record.status is not RepositoryStatus.COMPLETED:
         return None
-    candidates = json.loads(pathlib.Path(target["candidate_file"]).read_text(encoding="utf-8"))
-    if any(_remaining_work(snapshot, owner, {item["filename"] for item in candidates}).values()):
+    if any(_completion.remaining_work(snapshot, owner, set())[0].values()):
         return None
     if not _writers_stopped(owner, writers=record.writer_sessions):
         return None
@@ -578,9 +466,7 @@ def _run_coordinator(
             other_writers = {
                 writer for other, result in returned.items() if other != repo_id for writer in result.writer_sessions
             }
-            candidate_records = json.loads(pathlib.Path(targets[repo_id]["candidate_file"]).read_text(encoding="utf-8"))
-            candidate_names = {record["filename"] for record in candidate_records}
-            remaining = _remaining_work(by_repo[repo_id], owner, candidate_names)
+            remaining, excluded = _completion.remaining_work(by_repo[repo_id], owner, set())
             completed = execution and record.status is RepositoryStatus.COMPLETED and not any(remaining.values())
             blocked = record.status is RepositoryStatus.BLOCKED
             saved_result = manifest.with_name(f"{manifest.stem}.{owner.token}.result.json")
@@ -594,6 +480,7 @@ def _run_coordinator(
                         else RepositoryStatus.INCOMPLETE
                     ),
                     "observed_remaining": remaining,
+                    **excluded,
                     "result_path": str(saved_result),
                     "session_id": resume,
                 }
@@ -623,344 +510,6 @@ def _run_coordinator(
                 _ownership.hold(owner)
 
 
-def _print_work(snapshots: tuple[_listing.RepositorySnapshot, ...]) -> None:
-    """取得したWIのうち、担当の起動を要する件数をリポジトリごとに表示する。"""
-    for snapshot in snapshots:
-        if snapshot.has_work:
-            print(f"  {snapshot.repository.repo_id}: 処理候補{len(snapshot.candidates)}件", flush=True)
-
-
-def _launch_plan(
-    snapshots: tuple[_listing.RepositorySnapshot, ...],
-    explicit: set[str],
-    alerts: dict[str, frozenset[int] | None],
-) -> tuple[dict[str, _gate.LaunchInput], list[str]]:
-    """起動する対象と起動入力、無進捗記録を理由に見送る対象を、共通の起動要否の判定で決める。
-
-    明示指定（`resume ID`・`resume auto`）の対象は記録によらず起動する。候補・診断・未判定アラートが無く、
-    アラートの取得に成功して0件だった対象は起動入力が空になったため記録を削除する。
-    """
-    inputs: dict[str, _gate.LaunchInput] = {}
-    skipped: list[str] = []
-    for snapshot in snapshots:
-        repo_id = snapshot.repository.repo_id
-        observed = alerts.get(repo_id)
-        current = _gate.repository_input(snapshot, observed)
-        if repo_id in explicit or ((snapshot.has_work or observed) and _gate.decide(repo_id, current).launch):
-            inputs[repo_id] = current
-        elif snapshot.has_work or observed:
-            skipped.append(repo_id)
-        elif observed is not None:
-            _gate.clear(repo_id)
-    return inputs, skipped
-
-
-def _run_scheduled_loop(
-    args: argparse.Namespace,
-    private_notes: pathlib.Path,
-    scheduler: _scheduler.RepositoryScheduler,
-) -> None:
-    """登録集合の同期・開始前更新を共有し、統括のprocess-wiの実行を繰り返す。"""
-    gate = _watch.StartGate(private_notes)
-    dotfiles_root = _update.resolve_dotfiles_root()
-    startup_hash = _update.code_hash(dotfiles_root / "agent-toolkit") if dotfiles_root else None
-    last_alert_checks: dict[str, float | None] = {}
-    mise_refreshed: float | None = None
-    once = getattr(args, "once", False)
-    last_pull: float | None = None
-    once_targets: set[str] | None = None
-    once_snapshots: tuple[_listing.RepositorySnapshot, ...] | None = None
-    failed_resume: str | None = None
-
-    def wait_idle(*, owner_wait: bool = False) -> None:
-        changed = _wait_for_changes(private_notes, owner_wait=owner_wait)
-        if not changed and not args.no_update and dotfiles_root is not None and startup_hash is not None:
-            _update.check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
-
-    print("atk wi process-loop 1回処理開始。" if once else "atk wi process-loop 常駐モード開始。Ctrl+Cで終了。", flush=True)
-    try:
-        while True:
-            finished = scheduler.poll()
-            for record in finished.values():
-                if record.get("worker_exit_code") not in (None, 0):
-                    failed_resume = record.get("resume_request_id")
-            if _log.abort_path().exists():
-                if scheduler.active:
-                    scheduler.wait()
-                    continue
-                if not _control.consume_process_loop_abort():
-                    continue
-                if once:
-                    raise SystemExit(1)
-                return
-            if finished and not scheduler.active and not once and not args.no_update:
-                _update.restart_process_loop(sys.argv, dotfiles_root, mise_refreshed=False, dotfiles_updated=False)
-            elif finished and not scheduler.active and not once:
-                wait_idle(
-                    owner_wait=any(result["status"] == "owner_wait" for result in finished.values()),
-                )
-                continue
-            if len(scheduler.active) >= _scheduler.MAX_ACTIVE_TARGETS:
-                scheduler.wait()
-                continue
-            repositories = _config.resolve_configured_repositories()
-            target_ids = {repository.repo_id for repository in repositories}
-            try:
-                reservation = _control.read_resume_request()
-            except (OSError, ValueError) as error:
-                _next_action.report(
-                    str(error), next_action="process-loop statusで診断し、resume-cancelまたはresumeで予約を直す"
-                )
-                if once and not scheduler.active:
-                    raise SystemExit(1) from error
-                if scheduler.active:
-                    scheduler.wait()
-                else:
-                    wait_idle()
-                continue
-            args.resume = None
-            args.auto_resume = False
-            args.resume_request_id = None
-            args.reservation_lookup = False
-            args.interactive_resume = False
-            if reservation is not None:
-                if reservation.request_id == failed_resume:
-                    if once and not scheduler.active:
-                        raise SystemExit(1)
-                    if scheduler.active:
-                        scheduler.wait()
-                    else:
-                        wait_idle()
-                    continue
-                related = (
-                    {repo for repo in target_ids if _ownership.coordinator_session(repo) == reservation.session_id}
-                    if reservation.mode == "id"
-                    else (
-                        _ownership.unfinished_repository_ids(tuple(target_ids))
-                        if reservation.mode == "auto"
-                        else set(target_ids)
-                    )
-                )
-                if reservation.mode != "picker" and related and scheduler.busy.intersection(related):
-                    scheduler.wait()
-                    continue
-                if reservation.mode == "auto" and not related:
-                    _next_action.report(
-                        "自動再開できる未完了会話がないため予約を保持した",
-                        next_action="再開IDを指定するか、resume-cancelで予約を取り消す",
-                    )
-                    if once:
-                        raise SystemExit(1)
-                    wait_idle()
-                    continue
-                if reservation.mode == "picker" and (not sys.stdin.isatty() or not sys.stdout.isatty()):
-                    _next_action.report("pickerを使える対話端末がない", next_action="再開IDまたはautoを指定して予約する")
-                    if once:
-                        raise SystemExit(1)
-                    wait_idle()
-                    continue
-                args.resume = "" if reservation.mode == "picker" else reservation.session_id
-                args.auto_resume = reservation.mode == "auto"
-                args.resume_request_id = reservation.request_id
-                args.reservation_lookup = reservation.mode == "picker" or (reservation.mode == "id" and not related)
-                args.interactive_resume = reservation.mode == "picker"
-            if (
-                not args.no_update
-                and not scheduler.active
-                and dotfiles_root is not None
-                and _worktree.DOTFILES_REPO_ID in target_ids
-                and (mise_refreshed is None or time.monotonic() - mise_refreshed >= _mise.MISE_REFRESH_INTERVAL_SEC)
-            ):
-                if mise_refreshed is not None or not args.internal_mise_refreshed:
-                    _mise.refresh_mise_tools(dotfiles_root)
-                mise_refreshed = time.monotonic()
-            synchronize = not scheduler.active or last_pull is None or time.monotonic() - last_pull >= 30
-            if synchronize:
-                print(f"private-notesを同期し、登録した{len(repositories)}件のリポジトリのWIを取得しています。", flush=True)
-            if synchronize and not _watch.pull_private_notes(private_notes):
-                if once:
-                    if not scheduler.active:
-                        raise SystemExit(1)
-                    scheduler.wait()
-                    continue
-                print("同期を再試行するまで変更検知を待機します。", flush=True)
-                _wait_for_changes(private_notes)
-                continue
-            if synchronize:
-                last_pull = time.monotonic()
-            snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
-            _print_work(snapshots)
-            explicit: set[str] = set()
-            if args.resume is not None:
-                explicit.update(_ownership.resume_repositories(args.resume, tuple(target_ids)))
-            elif args.auto_resume:
-                explicit.update(_ownership.unfinished_repository_ids(tuple(target_ids)))
-            alerts: dict[str, frozenset[int] | None] = {}
-            # 候補WIだけで起動する対象はアラートを数えない。見送る対象と候補の無い対象は数え、新しい未判定アラートを観測する。
-            item_launches, _skipped = _launch_plan(snapshots, explicit, alerts)
-            # APIの同時要求を少数に保つ。キュー保存はadd_entriesの既存repo_lockで直列化される。
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                checks = {
-                    snapshot.repository.repo_id: executor.submit(
-                        _alerts.check_process_loop_alerts,
-                        args,
-                        private_notes,
-                        snapshot.repository.repo_id,
-                        snapshot.repository.worktree,
-                        last_alert_checks.get(snapshot.repository.repo_id),
-                        count_dependabot=snapshot.repository.repo_id not in item_launches,
-                    )
-                    for snapshot in snapshots
-                }
-            submitted_any = False
-            for snapshot in snapshots:
-                repository = snapshot.repository
-                try:
-                    checked, submitted, pending = checks[repository.repo_id].result()
-                    last_alert_checks[repository.repo_id] = checked
-                    alerts[repository.repo_id] = pending
-                    if pending:
-                        print(f"{repository.repo_id}に未判定のDependabotアラートが{len(pending)}件あります。", flush=True)
-                    if submitted:
-                        print(f"アラート監視により{repository.repo_id}へ{submitted}件のAWIを投入しました。", flush=True)
-                        submitted_any = True
-                except (OSError, ValueError) as error:
-                    retry = "`atk wi process-loop --once`でDependabotを含む確認を再試行せよ" if once else ""
-                    next_action = (
-                        f"{_log.log_path()}のrepository_alert_failedを確認し、原因の解消後に"
-                        f"`atk wi check-alerts --target-repo {shlex.quote(str(repository.worktree))} "
-                        f"--forge {args.alert_forge}`でCI失敗を再確認せよ。" + (retry if once else "")
-                    )
-                    _log.append(
-                        "repository_alert_failed", target_repo=repository.repo_id, detail=str(error), next_action=next_action
-                    )
-                    _next_action.report(
-                        f"{repository.repo_id}のアラート確認に失敗しました: {error}。"
-                        + ("Dependabotを含む自動確認は常駐の次の取得時に再試行する。" if not once else ""),
-                        next_action=next_action,
-                        stream=sys.stdout,
-                    )
-            if submitted_any:
-                snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
-            if once:
-                if once_snapshots is None:
-                    once_snapshots = snapshots
-                snapshots = once_snapshots
-            available = tuple(
-                snapshot
-                for snapshot in snapshots
-                if snapshot.repository.repo_id not in scheduler.busy
-                and (not once or snapshot.repository.repo_id not in scheduler.started)
-                and (once_targets is None or snapshot.repository.repo_id in (once_targets or set()))
-            )
-            launch_inputs, skipped = _launch_plan(available, explicit, alerts)
-            if once and once_targets is None:
-                once_targets = set(launch_inputs)
-            for repo_id in skipped:
-                _gate.report_skip(repo_id)
-            if not launch_inputs:
-                if scheduler.active:
-                    scheduler.wait()
-                    continue
-                if once:
-                    if scheduler.results:
-                        failed = {
-                            repo: result["status"]
-                            for repo, result in scheduler.results.items()
-                            if result["status"] != "completed"
-                        }
-                        if failed:
-                            _next_action.report(
-                                f"未完了の対象があります: {json.dumps(failed, ensure_ascii=False)}",
-                                next_action="対象別の所有・結果記録と残工程を確認して再開する",
-                            )
-                        raise SystemExit(1 if failed or skipped else 0)
-                    print("今回処理できる対象は0件です。", flush=True)
-                    raise SystemExit(1 if skipped else 0)
-                print(
-                    "起動を見送った対象を除き処理対象が0件のため変更検知を待機します。"
-                    if skipped
-                    else "処理対象が0件のため変更検知を待機します。",
-                    flush=True,
-                )
-                wait_idle()
-                continue
-            if not _watch.wait_for_start_permission(private_notes, set(launch_inputs), gate):
-                # 中断の消費は先頭のdrain判定だけが所有し、他対象の終了回収を保つ。
-                continue
-            if _config.resolve_configured_repositories() != repositories:
-                # 起動前の登録変更は次の取得へ渡し、新集合の同期・監査・A/B判定をやり直す。
-                print("登録先の変更を検知したため、WIを取得し直します。", flush=True)
-                continue
-            snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
-            if not args.no_update and not args.internal_dotfiles_updated:
-                print("処理開始前にdotfilesとprivate-notesを更新します。", flush=True)
-                ready, _updated = _update.update_before_session(
-                    private_notes,
-                    dotfiles_root,
-                    startup_hash,
-                    sys.argv,
-                    _env.child_env(),
-                    mark_mise_refreshed=False,
-                    restart_on_change=not scheduler.active,
-                )
-                if _updated:
-                    mise_refreshed = time.monotonic()
-                if not ready:
-                    if once:
-                        raise SystemExit(1)
-                    print("同期を再試行するまで変更検知を待機します。", flush=True)
-                    _wait_for_changes(private_notes)
-                    continue
-                snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
-            if _config.resolve_configured_repositories() != repositories:
-                print("登録先の変更を検知したため、WIを取得し直します。", flush=True)
-                continue
-            if once and once_snapshots is not None:
-                snapshots = once_snapshots
-            available = tuple(
-                snapshot
-                for snapshot in snapshots
-                if snapshot.repository.repo_id not in scheduler.busy
-                and (not once or snapshot.repository.repo_id not in scheduler.started)
-                and (once_targets is None or snapshot.repository.repo_id in (once_targets or set()))
-            )
-            launch_inputs, skipped = _launch_plan(available, explicit, alerts)
-            for repo_id, current in tuple(launch_inputs.items()):
-                if current.alerts is None:
-                    # 起動時の未判定アラートを基準に記録し、終了後に増えたアラートだけを新しい入力として扱う。
-                    launch_inputs[repo_id] = current.with_alerts(_alerts.observe_dependabot_pending(args, repo_id))
-            launching = [snapshot for snapshot in available if snapshot.repository.repo_id in launch_inputs]
-            if args.resume is not None or (args.auto_resume and args.resume_request_id is not None):
-                launching = [snapshot for snapshot in launching if snapshot.repository.repo_id in explicit]
-            if not launching:
-                if once:
-                    print("開始待機の間に処理対象が無くなったため終了します。", flush=True)
-                    return
-                print("開始待機の間に処理対象が無くなったため、WIを取得し直します。", flush=True)
-                continue
-            if _log.abort_path().exists():
-                continue
-            names = [snapshot.repository.repo_id for snapshot in launching]
-            print(f"{len(launching)}件のリポジトリの所有・準備と統括処理を開始します: {', '.join(names)}", flush=True)
-            gate.started()
-            # 今回の全対象を1つの統括会話へ渡す。autoの再開では元会話ごとの結果をworkerが途中回収する。
-            scheduler.start(args, tuple(launching), {repo: launch_inputs[repo] for repo in names})
-            args.resume = None
-            args.auto_resume = False
-            scheduler.wait()
-    except KeyboardInterrupt:
-        print("Ctrl+Cを検知しました。process-loopを終了します。")
-        if once:
-            raise SystemExit(1) from None
-
-
-def _run_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """常駐の全反復を通じて対象別workerの観測主体を保持する。"""
-    with _scheduler.RepositoryScheduler() as scheduler:
-        _run_scheduled_loop(args, private_notes, scheduler)
-
-
 def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """登録全体のprocess-loopを開始し、呼出元の環境を復元する。"""
     previous = {
@@ -974,6 +523,6 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
             if request := getattr(args, "internal_target", None):
                 _scheduler.run_worker(pathlib.Path(request), _run_coordinator)
             else:
-                _run_loop(args, private_notes)
+                _scheduled.run_loop(args, private_notes)
     finally:
         _env.restore_process_loop_env(previous)

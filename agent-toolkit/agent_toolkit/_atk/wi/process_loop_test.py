@@ -18,6 +18,7 @@ from agent_toolkit._atk.wi import process_loop_env as env
 from agent_toolkit._atk.wi import process_loop_launch_gate as gate
 from agent_toolkit._atk.wi import process_loop_log as log
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
+from agent_toolkit._atk.wi import process_loop_scheduled as scheduled
 from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._common import process_tree, session_registry
 from agent_toolkit._testing import late_descendant
@@ -188,9 +189,9 @@ def test_removed_public_forms_are_rejected(argv: list[str]) -> None:
 def test_explicit_resume_without_coordinator_registration(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """所有台帳に無い会話IDも公開CLIから再開へ渡し、対象の処理結果を検収する。"""
     notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
-    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
     observed = []
 
     def execute(args, _cwd, prompt, child_env, **kwargs):

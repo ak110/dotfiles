@@ -9,7 +9,9 @@
 変更の監視とprivate-notesの同期は`process_loop_watch.py`、アラートの確認は`process_loop_alerts.py`が持つ。
 プロンプトとオーケストレーターの選択、セッションの起動および担当の終了後のレーン回収は`process_loop_session.py`、無進捗記録と担当の起動要否の判定は`process_loop_launch_gate.py`が持つ。
 中断要求と追加指示の状態ファイルは`process_loop_control.py`、子プロセスの環境と実行ファイルの解決は`process_loop_env.py`が持つ。
-`process_loop.py`の`cmd_process_loop`はこれらを順に呼ぶ制御だけを持つ。
+常駐の反復（登録集合の同期、開始前更新、起動要否の判定）は`process_loop_scheduled.py`、巡回の処理範囲と残件の完了検収は`process_loop_completion.py`が持つ。
+完了検収は報告前の`atk wi process-loop status --check-result`と常駐の終了処理が共有し、処理範囲をレーンの選定原本で選んだWIと追加WIに限る。
+`process_loop.py`の`cmd_process_loop`はこれらを順に呼ぶ制御と、統括会話の実行・結果の検収を持つ。
 以前は1つのファイルが全ての責務を持ち、工程を加える計画ごとに同じファイルへ追記していた。
 モジュール間の呼び出しは定義元のモジュールの属性として行い、テストは定義元を差し替える。
 テストも同じ単位で`process_loop_<責務>_test.py`へ分ける。

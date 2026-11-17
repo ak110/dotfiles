@@ -22,6 +22,7 @@ lazy from agent_toolkit._atk.wi import effect_check as _effect_check
 lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
 lazy from agent_toolkit._atk.wi import process_loop as _process_loop
+lazy from agent_toolkit._atk.wi import process_loop_completion as _process_loop_completion
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
@@ -268,7 +269,7 @@ def dispatch(
             return 2
         if process_loop_subcommand == "status" and getattr(args, "check_result", None) is not None:
             try:
-                observed = _process_loop.completion_status(
+                observed = _process_loop_completion.completion_status(
                     args.check_result, _private_notes.default_private_notes(home), args.wi
                 )
             except (OSError, ValueError) as error:

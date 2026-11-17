@@ -73,7 +73,7 @@ process-loopの対話CLIを制御する公開操作は次節の表で確認す�
   次の統括会話は、その検収の後に開始する。
   `--once`は同じ起動・検収を1集合で終え、未完了などが残れば非0で終了する。
   手動の`agent-toolkit:process-wi all-repos`は`--once`へ接続し、起動元がCLIの終了を観測する。
-  根拠は`agent_toolkit/_atk/wi/process_loop.py`の`run_coordinator`・`_run_loop`と、`../../process-wi/references/all-repos-starting.md`にある。
+  根拠は`agent_toolkit/_atk/wi/process_loop.py`の`run_coordinator`、`process_loop_scheduled.py`の`run_loop`と、`../../process-wi/references/all-repos-starting.md`にある。
 - process-loopの`resume [ID|auto]`は次の実起動への予約である。
   値省略はホストCLIの会話選択画面であり、選択した実ID/cwdをSessionStartから受領して対象の所有を確定する。
   予約は実Popen成功で1回消費し、起動前失敗・abortでは保持する。

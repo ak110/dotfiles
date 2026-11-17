@@ -16,6 +16,7 @@ from agent_toolkit._atk.wi import process_loop as loop
 from agent_toolkit._atk.wi import process_loop_control as control
 from agent_toolkit._atk.wi import process_loop_env as env
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
+from agent_toolkit._atk.wi import process_loop_scheduled as scheduled
 from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing.process_loop_coordinator_support import _manifest, _start_entry, _targets
@@ -32,9 +33,9 @@ def test_public_once_accepts_deferred_candidates_and_recovers_completion(
     """正当な延期後は再起動せず終了し、期限到来・依存解消で通常の候補へ戻る。"""
     notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
     repository = snapshots[0].repository
-    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
     clock = datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC)
     original_readiness = readiness.calculate_readiness
 
@@ -162,6 +163,13 @@ def test_completed_result_preserves_actionable_work_and_unintegrated_lanes(
         )
         return True
 
+    if remaining_kind in {"internal", "record"}:
+        # 処理範囲は選定したWIに限るため、候補をレーンの選定原本で選んだ状態にする。
+        selected = tmp_path / "pick-wi.yaml"
+        selected.write_text(f"選定:\n- WI: {item.name}\n  レーン: lane-01\n", encoding="utf-8")
+        finalized = {"lane": "lane-01", "selection_file": str(selected), "integration": {"phase": "finalized"}}
+        monkeypatch.setattr(lane, "list_resources", lambda *_args: {"errors": [], "records": [{"record": finalized}]})
+        monkeypatch.setattr(session, "cleanup_lane_session", lambda *_args, **_kwargs: None)
     if remaining_kind == "lane":
         git.commit_all(repository.worktree, "検証用のレーンHEAD")
         branch = git.run_git(repository.worktree, "branch", "--show-current").stdout.strip()
@@ -192,9 +200,9 @@ def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, m
     repository = snapshots[0].repository.worktree
     git.commit_all(repository, "検証元のHEAD")
     branch = git.run_git(repository, "branch", "--show-current").stdout.strip()
-    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
     selected = tmp_path / "pick-wi.yaml"
     selected.write_text("レーンの所要時間:\n- レーン: lane-01\n  統合状態: 未統合\n", encoding="utf-8")
     item = notes / "2026/10/repo-0-0.md"
@@ -264,3 +272,60 @@ def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, m
         assert ended.value.code == 1
         assert len(targets) == count
     assert artifact.read_text(encoding="utf-8") == "再開後の成果"
+
+
+@pytest.mark.parametrize("deletion_recorded", [True, False])
+def test_check_result_limits_scope_to_selected_and_separates_removed_and_deferred(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], deletion_recorded: bool
+) -> None:
+    """選定外の候補は残件に数えず、削除済みと先送りの選定WIを分けて示し、記録の無い欠落は失敗にする。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch, (4,))
+    repository = snapshots[0].repository
+    git.init_repository(notes)
+    git.commit_all(notes, "開始時の候補")
+    unselected, adopted, deferred, removed = (notes / f"2026/10/repo-0-{number}.md" for number in range(4))
+    selected = tmp_path / "pick-wi.yaml"
+    selected.write_text(
+        "選定:\n" + "".join(f"- WI: {path.name}\n  レーン: lane-01\n" for path in (adopted, deferred, removed)),
+        encoding="utf-8",
+    )
+    finalized = {"lane": "lane-01", "selection_file": str(selected), "integration": {"phase": "finalized"}}
+    monkeypatch.setattr(lane, "list_resources", lambda *_args: {"errors": [], "records": [{"record": finalized}]})
+    monkeypatch.setattr(session, "cleanup_lane_session", lambda *_args, **_kwargs: None)
+    observed: list[tuple[str | int | None, str]] = []
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        kwargs["on_session_started"]("checking-coordinator")
+        manifest = _manifest(prompt, child_env)
+        adopted.write_text(adopted.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
+        deferred.write_text(
+            deferred.read_text(encoding="utf-8") + "\n## 反映後の観測の再開記録\n\n- 再開区分: 反映後の観測だけが残る\n",
+            encoding="utf-8",
+        )
+        removed.unlink()
+        if deletion_recorded:
+            git.commit_all(notes, "chore: remove 1 entries")
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as status:
+            atk.main(["wi", "process-loop", "status", "--check-result", str(manifest)], home=tmp_path)
+        observed.append((status.value.code, capsys.readouterr().out))
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        pathlib.Path(data["result_file"]).write_text(
+            json.dumps({"repositories": {repository.repo_id: {"status": "completed"}}}), encoding="utf-8"
+        )
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    # 常駐の完了検収も同じ判定を使い、記録の無い欠落を完了扱いしない。
+    with pytest.raises(ValueError, match="現キューから取得できない") if not deletion_recorded else contextlib.nullcontext():
+        loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    code, output = observed[0]
+    if not deletion_recorded:
+        assert code == 1
+        return
+    assert code == 0
+    record = json.loads(output)["repositories"][repository.repo_id]
+    assert record["status"] == "ready"
+    assert unselected.name not in record["observed_remaining"]["wi"]
+    assert record["removed_wi"] == [removed.name]
+    assert record["deferred_wi"] == [deferred.name]
