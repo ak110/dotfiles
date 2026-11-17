@@ -21,7 +21,13 @@ def _process_references() -> tuple[list[str], bool]:
     username = psutil.Process().username()
     for process in psutil.process_iter():
         try:
-            if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+            try:
+                owner = process.username()
+            except psutil.AccessDenied:
+                # 所有者を読めないのは他アカウントやシステムのプロセスであり、同じアカウントの参照の根拠にならない。
+                # 不確実扱いにすると、Windowsでは常に存在するこれらのプロセスのために回収が一度も成立しない。
+                continue
+            if owner != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 continue
             command = process.cmdline()
             references.extend(command)
