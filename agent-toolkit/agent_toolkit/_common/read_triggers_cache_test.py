@@ -72,7 +72,7 @@ def test_rewritten_document_is_parsed_with_new_content(tmp_path: pathlib.Path, p
 
 
 def test_excluded_rows_report_the_same_issue_when_reused(tmp_path: pathlib.Path, parsed: list[pathlib.Path]) -> None:
-    """利用者側の宣言から除いた行の診断は、再利用した要求でも同じく記録する。"""
+    """ユーザー側の宣言から除いた行の診断は、再利用した要求でも同じく記録する。"""
     skill = tmp_path / ".claude/skills/example/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(_table("missing.md", "unregistered"), encoding="utf-8")

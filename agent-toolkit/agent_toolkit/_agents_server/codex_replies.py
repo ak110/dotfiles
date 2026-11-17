@@ -17,6 +17,7 @@ from agent_toolkit._agents_server.codex_protocol import (
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
+from agent_toolkit._agents_server.responses import KILL_NOT_DELIVERED_NEXT_ACTION
 from agent_toolkit._agents_server.state import SessionState, begin_reply, initialize_turn
 from agent_toolkit._atk.usage_limit_policy import should_wait
 from agent_toolkit._common import codex_usage_limit
@@ -146,7 +147,7 @@ class CodexRepliesMixin:
         if not session.turn_id:
             raise ActionableError(
                 "the active Codex turn has no turn_id",
-                next_action="`atk agents wait`で状態を確認し、turnが続いていて中断が必要なら`kill`を再発行する",
+                next_action=KILL_NOT_DELIVERED_NEXT_ACTION,
             )
         client = self._owned_client(session)
         if client is None:

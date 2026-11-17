@@ -70,7 +70,11 @@ SESSION_ID_NEXT_ACTION = "`start`の応答か`list`が返した`session_id`を�
 RUNNING_STOP_NEXT_ACTION = "中断が必要なら先に`kill`を発行し、終了を観測してから`stop`を再発行する"
 
 
-KILL_NOT_DELIVERED_NEXT_ACTION = "`atk agents wait`で状態を確認し、turnが続いていて中断が必要なら`kill`を再発行する"
+KILL_NOT_DELIVERED_NEXT_ACTION = (
+    "`atk agents wait`で状態を確認し、turnが続いていて中断が必要なら`kill`を再発行する。"
+    "再発行も配送を確定できなければ同じ前提で繰り返さず、`show`で所有サーバーと活動を確かめ、"
+    "`agent-toolkit:delegation`の`references/waiting-stalls.md`「停滞の検知と巻き取り」の手順へ進む"
+)
 
 
 _START_FAILED_NEXT_ACTION = "`atk agents wait`で終了時の結果の`error`を受領し、`model_type`へ別の候補を指定して起動し直す"
