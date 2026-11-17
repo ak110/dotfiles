@@ -143,3 +143,38 @@ test(`Stop一覧から独立してREPL待機の期限を守る: ${expired}`, asy
   expect(compactions).toBe(expired ? 0 : 1);
 });
 }
+
+const SEND_TO_USER = "mcp__plugin_agent-toolkit_agents_server__send_to_user";
+
+function call(message: string) {
+  return { tool_use_id: `use-${message}`, tool: SEND_TO_USER, input: { message }, isRunning: false, isErrored: false, isInterrupted: false, output: "ok" };
+}
+
+test("会話の再開後は置いた行が無い送達本文をツール入力から描き、稼働中に置いた本文は二重に描かない", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  const id = "b".repeat(32);
+  queue(on, "resume-session", id);
+  on("session.id", () => ({ value: "resume-session" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message: "稼働中に置いた本文" }, expires: 99999999999 }) }));
+  on("fs.write", () => ({ value: undefined }));
+  on("ui.place", () => ({ value: { isPlaced: true, requestId: "placed-row" } }));
+  const resumed = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "use-resumed", props: call("再開後に読む本文") });
+  expect(JSON.stringify(resumed)).toContain('"Markdown","props":{"text":"再開後に読む本文"}');
+  // 稼働中の送達で本文を置いた後は、同じ本文のツール行を描き替えない。
+  await $.turn.start({ text: "操作", turnId: "resume-turn" });
+  await clock.advance(100);
+  const live = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "use-live", props: call("稼働中に置いた本文") });
+  expect(JSON.stringify(live)).not.toContain('"Markdown"');
+});
+
+test("再開後にまとめられた送達は展開して呼び出しごとに描く", async ($, on) => {
+  const expanded: boolean[] = [];
+  on("ui.render", { component: "ToolGroup" }, (_$, e, next) => {
+    expanded.push(e.props.isExpanded);
+    return next(e);
+  });
+  await $.ui.render({ surface: "terminal", component: "ToolGroup", requestId: "group", props: { calls: [call("一つ目"), call("二つ目")], isActive: false, isExpanded: false } });
+  expect(expanded).toEqual([true]);
+});

@@ -164,7 +164,46 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
     if (e.props.plugin !== $.plugin.name) return next(e);
     const message = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value?.[e.props.id];
     if (message === undefined) return next(e);
-    const { Markdown } = $.ui.resolve(e);
-    return Markdown({ text: message });
+    const { Markdown, Box } = $.ui.resolve(e);
+    // 前後の会話行と区別しやすいよう、本文の上下に1行の余白を置く。
+    return (
+      <Box marginTop={1} marginBottom={1}>
+        <Markdown text={message} />
+      </Box>
+    );
   });
+  // 置いた行と会話状態は会話の終了・/resume・/branchで失われる。再開後の画面では、transcriptに残る
+  // send_to_userのツール入力から元の位置へ本文を描く。稼働中に置いた行がある本文は二重に描かない。
+  on("ui.render", { component: "ToolGroup" }, async ($, e, next) => {
+    const calls = e.props.calls.filter((call) => isSendToUser(call.tool) && deliveredMessage(call) !== undefined);
+    if (calls.length === 0 || e.props.isExpanded) return next(e);
+    const placed = Object.values((await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {});
+    if (calls.every((call) => placed.includes(deliveredMessage(call)!))) return next(e);
+    return next({ ...e, props: { ...e.props, isExpanded: true } });
+  });
+  on("ui.render", { component: "ToolUse" }, async ($, e, next) => {
+    if (!isSendToUser(e.props.tool)) return next(e);
+    const message = deliveredMessage(e.props);
+    if (message === undefined) return next(e);
+    const placed = Object.values((await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {});
+    if (placed.includes(message)) return next(e);
+    const { Markdown, Box } = $.ui.resolve(e);
+    return (
+      <Box marginTop={1} marginBottom={1}>
+        <Markdown text={message} />
+      </Box>
+    );
+  });
+}
+
+// agents_server MCPのsend_to_userだけを対象にし、他のツールの行は描き替えない。
+function isSendToUser(tool: string): boolean {
+  return /agents_server__send_to_user$/.test(tool);
+}
+
+// 表示に成功した呼び出しの本文を返す。実行中・失敗・中断の呼び出しは本文を描かない。
+function deliveredMessage(call: { input: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean }): string | undefined {
+  if (call.isRunning || call.isErrored || call.isInterrupted) return undefined;
+  const message = (call.input as { message?: unknown } | null)?.message;
+  return typeof message === "string" ? message : undefined;
 }
