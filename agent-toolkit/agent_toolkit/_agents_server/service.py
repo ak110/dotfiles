@@ -34,6 +34,7 @@ from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._agents_server.session_errors import DelegateBackendError
 from agent_toolkit._common import (
+    inherited_venv,
     plugin_root_leases,
     process_identity,
     registry_forwarding,
@@ -435,6 +436,9 @@ def main() -> int:
         with plugin_root_leases.plugin_root_lock(root.parent):
             plugin_root_leases.register_plugin_root_use(root.parent)
     logging_config.configure_logging()
+    # 委譲先のSDKとApp Serverは本プロセスの環境を継承し、キーの削除を表現できない。
+    # 起動層が設定した共有依存環境やコード配置の値を、委譲先へ渡る前に呼出元の値へ戻す。
+    inherited_venv.strip_inherited_venv(os.environ)
 
     async def execute() -> None:
         stop = asyncio.Event()
