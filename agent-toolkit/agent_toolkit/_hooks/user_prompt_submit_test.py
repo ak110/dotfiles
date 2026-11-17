@@ -664,6 +664,12 @@ class TestExampleScopeNotice:
             pytest.param("全体が分かりにくい。例えば表示順を簡潔にすべき", id="proposal-without-investigation"),
             pytest.param("例えば見出しを太字にして", id="example-only"),
             pytest.param("例えば`make test`を実行して", id="execution-instruction"),
+            pytest.param(
+                "コマンド実行機能って、ghコマンドとかglabコマンドとかazコマンドとかある？ "
+                "その手の便利なコマンドある程度インストール済みの状態にしておきたい。",
+                id="open-enumeration",
+            ),
+            pytest.param("ログとか設定とかを整理して", id="repeated-toka"),
         ],
     )
     def test_example_without_investigation_receives_scope_notice(
@@ -675,6 +681,7 @@ class TestExampleScopeNotice:
         assert len(bodies) == 1
         assert "「原文の保持と取り込み」" in bodies[0]
         assert "原文の対象と例示の関係を判断せよ" in bodies[0]
+        assert "例示以外の候補を探してから範囲を確定せよ" in bodies[0]
         assert "references/routing.md" not in bodies[0]
         assert "自ら調査へ着手する前に" not in bodies[0]
 
@@ -700,6 +707,8 @@ class TestExampleScopeNotice:
             pytest.param("このエラーを確認して\n```text\n例えば次のように表示される\n```", id="fenced-code"),
             pytest.param("`例えば`という語の扱いを確認して", id="inline-code"),
             pytest.param("> 例えば旧版ではこう書いていた\n上の引用の出典を確認して", id="quote"),
+            pytest.param("> ghとかglabとか\n上の引用の出典を確認して", id="quoted-enumeration"),
+            pytest.param("今日とか忙しいので後で確認して", id="single-toka"),
         ],
     )
     def test_other_prompts_do_not_receive_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:

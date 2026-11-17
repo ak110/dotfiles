@@ -103,7 +103,7 @@ _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
     "`agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」に従って目標と問題の理解を確かめよ。"
 )
-_EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
+_EXAMPLE_WORDS = ("例えば", "たとえば", "例として", "その手の")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
 
 
@@ -114,12 +114,14 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     調査を求める語も併せ持つ発話には、独立した調査を委ねる手段の所在も加える。
     """
     text = QUOTED_MATERIAL_RE.sub("", prompt)
-    if not any(word in text for word in _EXAMPLE_WORDS):
+    # 「AとかBとか」の開いた列挙も例示として扱う。単独の「とか」は意味が多いため、反復した場合に限る。
+    if not (any(word in text for word in _EXAMPLE_WORDS) or text.count("とか") >= 2):
         return None
     body = (
         "発話に例示の語がある。応答・具体化の前に、"
         "`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`"
         "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断せよ。"
+        "例示が上位の対象の一部なら、上位の対象を言葉で定め、例示以外の候補を探してから範囲を確定せよ。"
     )
     if any(word in text for word in _INVESTIGATION_WORDS):
         body += (
