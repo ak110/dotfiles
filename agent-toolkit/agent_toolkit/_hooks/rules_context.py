@@ -68,6 +68,10 @@ CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 _COMPACTION_RESERVE = 1_500
 # 作業契約の通知の囲みと固定文の文字数の見込み。本文を載せるかの判定に使う。
 _CONTRACT_NOTICE_OVERHEAD = 600
+# 要約の作成が失敗した時に、子の標準エラーから通知へ載せる文字数の上限。
+_DIGEST_FAILURE_CAUSE_CHARS = 400
+# 要約が予算を超えて失敗した時に、再実行のコマンドへ示すUTF-8上限。上限を指定しない場合の値（30000）の2倍にする。
+_DIGEST_RETRY_MAX_BYTES = 60_000
 # `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
@@ -400,8 +404,11 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
     # 保存先を固定し、圧縮のたびに同じファイルを置き換える。
     output = session_temp / "compaction-digest" / "conversation.md" if session_temp is not None else None
     options = ["--transcript", resolved, "--conversation-only", "--conversation-digest"]
-    manual = shlex.join([str(SHARE_DIR.parent / "scripts" / "atk"), "run-script", "session-review-prepare", "--", *options])
-    retry = f"手動で`{manual}`を実行し、出力のconversation_pathが示すファイルを読め。{scope}"
+
+    def manual(*extra: str) -> str:
+        command = shlex.join(["run-script", "session-review-prepare", "--", *options, *extra])
+        return f"起動部分へ`{command}`を続けて実行し、出力のconversation_pathが示すファイルを読め。{scope}"
+
     try:
         if output is None:
             raise ValueError("セッションのmanaged-tempを取得できない")
@@ -455,12 +462,20 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
             )
         lines.append(
             f"会話が圧縮された。会話の要約の作成に失敗した（{type(error).__name__}: "
-            f"context={error.context}、残存={remaining}）。{retry}"
+            f"context={error.context}、残存={remaining}）。{manual()}"
         )
+        return "\n".join(lines)
+    except subprocess.CalledProcessError as error:
+        # 終了コードだけでは原因が分からないため、子が標準エラーへ出した原因を通知へ渡す。
+        cause = " ".join(str(error.stderr or "").split())[:_DIGEST_FAILURE_CAUSE_CHARS]
+        # 予算の超過は同じ上限の再実行では解消しないため、上限を上げたコマンドを示す。
+        extra = ("--conversation-max-bytes", str(_DIGEST_RETRY_MAX_BYTES)) if "--conversation-max-bytes" in cause else ()
+        lines = _discard_stale_digest(output)
+        lines.append(f"会話が圧縮された。会話の要約の作成に失敗した（終了コード{error.returncode}: {cause}）。{manual(*extra)}")
         return "\n".join(lines)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         lines = _discard_stale_digest(output)
-        lines.append(f"会話が圧縮された。会話の要約の作成に失敗した（{type(error).__name__}: {error}）。{retry}")
+        lines.append(f"会話が圧縮された。会話の要約の作成に失敗した（{type(error).__name__}: {error}）。{manual()}")
         return "\n".join(lines)
 
 

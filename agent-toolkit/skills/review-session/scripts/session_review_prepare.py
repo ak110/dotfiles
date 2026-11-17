@@ -158,7 +158,9 @@ def _missing(item: str, detail: str | None = None) -> int:
     print(f"不足: {item}", file=sys.stderr)
     if detail:
         print(detail, file=sys.stderr)
-    print(_next_action.next_action_line(_MISSING_NEXT_ACTIONS[item]), file=sys.stderr)
+    # 原因が固有の次の操作を持つ場合は、項目の一般的な取得方法を重ねない。
+    if detail is None or _next_action.NEXT_ACTION_PREFIX not in detail:
+        print(_next_action.next_action_line(_MISSING_NEXT_ACTIONS[item]), file=sys.stderr)
     return 2
 
 
