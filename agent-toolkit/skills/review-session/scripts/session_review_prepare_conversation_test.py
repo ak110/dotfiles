@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shlex
 from typing import Any
 
 import pytest
@@ -86,7 +87,9 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert "hook_additional_context" not in conversation
     assert _LONG_INTERVENTION in conversation
     assert f"claude:{transcript.stem}:5" in conversation
-    assert f"atk run-script session-review-evidence -- {transcript.resolve()} --detail <記録位置>" in conversation
+    # 照会コマンドはシェルへ渡せる形で示すため、Windowsのパスは引用符付きで現れる。
+    quoted = shlex.quote(str(transcript.resolve()))
+    assert f"atk run-script session-review-evidence -- {quoted} --detail <記録位置>" in conversation
 
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert "- 候補: 2件（hook-notice 1件、user-intervention 1件）" in candidates
