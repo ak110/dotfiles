@@ -648,8 +648,8 @@ def check_bundled_read(
     paths = display_read_paths(command, cwd)
     if len(paths) < 2:
         return None
-    acquired = []
-    remaining = []
+    acquired: list[pathlib.Path] = []
+    remaining: list[pathlib.Path] = []
     for path in paths:
         try:
             current = read_triggers.is_normative_document(path) and (

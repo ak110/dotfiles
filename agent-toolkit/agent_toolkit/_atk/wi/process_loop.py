@@ -173,9 +173,7 @@ def _writers_stopped(
     return stopped
 
 
-def _recover_completed(
-    target: dict[str, Any], snapshot: _listing.RepositorySnapshot, owner: _ownership.Ownership
-) -> RepositoryResult | None:
+def _recover_completed(snapshot: _listing.RepositorySnapshot, owner: _ownership.Ownership) -> RepositoryResult | None:
     """親の終了処理が中断した対象について、保存済み申告と実体から完了を確定する。"""
     previous_manifest = (owner.previous or {}).get("manifest")
     if not isinstance(previous_manifest, str):
@@ -273,9 +271,7 @@ def _run_coordinator(
             if resume is not None and (owner.previous or {}).get("session_id") == resume:
                 owner = _ownership.update_session(owner, resume)
                 owners[repository.repo_id] = owner
-                recovered = (
-                    _recover_completed(target, snapshot, owner) if getattr(args, "resume_request_id", None) is None else None
-                )
+                recovered = _recover_completed(snapshot, owner) if getattr(args, "resume_request_id", None) is None else None
                 if recovered is not None:
                     saved_result = manifest.with_name(f"{manifest.stem}.{owner.token}.result.json")
                     recovered = recovered.model_copy(
