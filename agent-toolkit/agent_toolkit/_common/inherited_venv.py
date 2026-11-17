@@ -68,6 +68,26 @@ def record_launch_changes(env: MutableMapping[str, str], caller: MutableMapping[
         env[LAUNCH_RESTORE_KEY] = json.dumps(changes, ensure_ascii=True, sort_keys=True)
 
 
+def record_launch_value(env: MutableMapping[str, str], key: str, caller_value: str | None) -> None:
+    """起動層が復元記録の作成後に変えた1つの値を、既存の記録へ加える。
+
+    記録に無い変更は子へ渡す直前の復元から漏れ、起動層の値が委譲先や配下のプロセスへ残る。
+    既に記録された値は、最初の呼出元の値を保ったまま起動層の最終値だけを更新する。
+    """
+    changes: dict = {}
+    if encoded := env.get(LAUNCH_RESTORE_KEY):
+        try:
+            loaded = json.loads(encoded)
+        except json.JSONDecodeError:
+            loaded = None
+        if isinstance(loaded, dict):
+            changes = loaded
+    previous = changes.get(key)
+    original = previous[0] if isinstance(previous, list) and len(previous) == 2 else caller_value
+    changes[key] = [original, env.get(key)]
+    env[LAUNCH_RESTORE_KEY] = json.dumps(changes, ensure_ascii=True, sort_keys=True)
+
+
 def _restore_launch_environment(env: MutableMapping[str, str]) -> None:
     """記録された起動層の差分だけを呼出元の値へ戻す。"""
     encoded = env.pop(LAUNCH_RESTORE_KEY, None)

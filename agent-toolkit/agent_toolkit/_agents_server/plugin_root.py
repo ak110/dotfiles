@@ -12,7 +12,7 @@ from pathlib import Path
 
 from agent_toolkit._agents_server import role_runtime
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import plugin_environment, plugin_root_leases
+from agent_toolkit._common import inherited_venv, plugin_environment, plugin_root_leases
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.plugin-root")
 
@@ -151,6 +151,8 @@ def main(arguments: list[str]) -> int:
         raise RuntimeError("独立投入の共有依存環境が未準備。公開launcherで依存環境を準備して再実行する")
     environment = plugin_environment.cli_environment(root, os.environ)
     environment["PYTHONPATH"] = str(root)
+    # 起動先が子へ渡す前の復元で、保持rootを指すPYTHONPATHを外せるよう記録する。
+    inherited_venv.record_launch_value(environment, "PYTHONPATH", os.environ.get("PYTHONPATH"))
     command = (
         [str(executable), str(root / "agent_toolkit" / "atk.py"), "wi", "process-loop", "--internal-target", arguments[1]]
         if arguments[0] == "--process-loop-worker"

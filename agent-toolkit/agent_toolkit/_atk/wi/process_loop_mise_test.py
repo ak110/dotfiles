@@ -6,8 +6,8 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk.wi import process_loop as loop
 from agent_toolkit._atk.wi import process_loop_mise as mise
+from agent_toolkit._atk.wi import process_loop_scheduled as scheduled
 from agent_toolkit._atk.wi import process_loop_update as update
 from agent_toolkit._atk.wi import process_loop_watch as watch
 from agent_toolkit._testing import git_repository
@@ -38,7 +38,7 @@ def test_registered_dotfiles_refresh_contract(
     set_process_loop_repositories(monkeypatch, [repository])
     monkeypatch.setattr(update, "resolve_dotfiles_root", lambda: repository)
     clock = [times[0]]
-    monkeypatch.setattr(loop.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(scheduled.time, "monotonic", lambda: clock[0])
     remaining = iter(times[1:])
     refreshes: list[pathlib.Path] = []
 

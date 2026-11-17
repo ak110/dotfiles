@@ -127,6 +127,7 @@ lazy from agent_toolkit._hooks.pretooluse.content_checks import (
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._hooks.pretooluse.large_reads import (
     bash_read_paths,
+    check_bundled_read,
     check_large_bash_read,
     session_record_reference_warning,
 )
@@ -415,6 +416,17 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
             warnings.append(record_warning)
     elif read_warning := check_large_bash_read(command, cwd):
         warnings.append(read_warning)
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    if bundled_warning := check_bundled_read(
+        command,
+        cwd,
+        records=records if isinstance(records, dict) else {},
+        agent=_agent_id.resolve_hook_agent_id(payload),
+        codex=is_codex,
+        environment=dict(os.environ),
+        max_output_tokens=tool_input.get("max_output_tokens"),
+    ):
+        warnings.append(bundled_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:
         warnings.append(drive_letter_path_warning)

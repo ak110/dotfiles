@@ -121,21 +121,27 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                     startup_instruction = json.loads(pathlib.Path(manifest).read_text(encoding="utf-8")).get("instruction", "")
                     if not isinstance(startup_instruction, str):
                         raise ValueError("再開時の追加指示には文字列が必要")
-            references = (
-                "agent-toolkit:process-wiのreferences/all-repos.md「結果と終了」"
-                if data["source"] == "process-loop"
-                else "agent-toolkit:user-confirmation-and-reportのreferences/answer-transitions.md"
-                "「`atk run-skill`の過去の実行のUWI」とagent-toolkit:report-completion"
-            )
-            if data["source"] == "run-skill" and data.get("batch_manifest"):
-                references += "、agent-toolkit:review-sessionのreferences/batch.md"
+            # 参照先ごとに適用する時機が異なる。過去の実行のUWIの照会は作業開始前の契約であり、
+            # 終了契約と同じ案内に束ねると照会が報告工程まで遅れる。
+            if data["source"] == "process-loop":
+                guidance = (
+                    "指定スキルを起動し、次の終了契約を読め: agent-toolkit:process-wiのreferences/all-repos.md「結果と終了」"
+                )
+            else:
+                guidance = (
+                    "作業を始める前に、agent-toolkit:user-confirmation-and-reportのreferences/answer-transitions.mdを全文読み、"
+                    "「`atk run-skill`の過去の実行のUWI」に従って過去の実行のUWIを照会せよ。"
+                )
+                if data.get("batch_manifest"):
+                    # batch.mdは起動から保存までの手順全体であり、終了契約に含めない。
+                    guidance += (
+                        "\nbatchの起動から保存までは、agent-toolkit:review-sessionのreferences/batch.mdを全文読んで従え。"
+                    )
+                guidance += "\n指定スキルを起動し、次の終了契約を読め: agent-toolkit:report-completion"
             if not resume_only:
                 parts.append(
                     message_format.auto_message(
-                        "起動入力: "
-                        + html.escape(json.dumps(data, ensure_ascii=False))
-                        + "\n指定スキルを起動し、次の終了契約を読め: "
-                        + references,
+                        "起動入力: " + html.escape(json.dumps(data, ensure_ascii=False)) + "\n" + guidance,
                         source=data["source"],
                         kind="startup-input",
                     )

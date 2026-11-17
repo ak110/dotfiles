@@ -80,3 +80,20 @@ class TestStripInheritedVenv:
             assert "UV_PROJECT_ENVIRONMENT" not in env
         else:
             assert env["UV_PROJECT_ENVIRONMENT"] == project_environment
+
+
+@pytest.mark.parametrize("caller_pythonpath", [None, "/caller/lib"])
+def test_value_changed_after_recording_is_restored_for_children(caller_pythonpath):
+    """記録の作成後に起動層が差し替えたPYTHONPATHも、共有依存環境と同じく呼出元の値へ戻す。
+
+    管理サービスは共有依存環境を指す環境を記録した後に、PYTHONPATHを保持rootへ差し替えて起動する。
+    差し替えが記録から漏れると、委譲先のBashへ共有依存環境とコード配置が残り、
+    対象worktreeでの`uv run`が共有依存環境を書き換えた（2026-11-17の観測）。
+    """
+    caller = {"PATH": "/usr/bin", **({"PYTHONPATH": caller_pythonpath} if caller_pythonpath else {})}
+    env = {**caller, "UV_PROJECT_ENVIRONMENT": "/shared/env", "PYTHONPATH": "/dotfiles/agent-toolkit"}
+    _inherited_venv.record_launch_changes(env, caller)
+    env["PYTHONPATH"] = "/managed-temp/plugin-root-copy/agent-toolkit"
+    _inherited_venv.record_launch_value(env, "PYTHONPATH", caller.get("PYTHONPATH"))
+    _inherited_venv.strip_inherited_venv(env)
+    assert env == caller

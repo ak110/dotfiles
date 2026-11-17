@@ -410,7 +410,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     subject = operation_skills.resolve_subject(payload)
     # 短縮前後の本文量とモデル別の受信後の操作順の比較は`docs/development/audit-records.md`の
     # 「agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_guidance.py：取得案内の短縮：2026年11月13日」にある。
-    instruction = f"{label}がある。この操作の結果を使う前に、以下の取得・起動を行え。"
+    # 操作は止めないため、取得した基準は既に実行された操作の結果へ当てはめて見直させる。
+    instruction = f"{label}がある。この操作の結果を使う前に以下を取得・起動し、その基準で結果を見直せ。"
     if written and not operation_skills.is_diagnostic_operation(tool_name, tool_input, cwd):
         instruction = f"{label}がある。結果を使う前に以下を取得・起動し、成果を見直して必要なら直せ。"
     if warning_only:

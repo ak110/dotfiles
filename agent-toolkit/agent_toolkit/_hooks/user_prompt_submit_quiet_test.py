@@ -19,10 +19,13 @@ def test_initial_preparation_does_not_receive_missing_skill_warning(
 
     payload = json.dumps({"session_id": session_id, "prompt": prompt, "turn_id": "codex"})
     assert user_prompt_submit.main(payload) == 0
+    # 実ユーザー入力には受付時刻だけを届け、準備前の未取得警告は出さない。
+    for _ in range(2):
+        output = capsys.readouterr().out
+        assert "未取得" not in output and 'kind="warn"' not in output
+        assert user_prompt_submit.main(payload) == 0
     output = capsys.readouterr().out
-    assert not output
-    assert user_prompt_submit.main(payload) == 0
-    assert not capsys.readouterr().out
+    assert "未取得" not in output and 'kind="warn"' not in output
 
 
 @pytest.mark.parametrize("failure", ["observe_user", "observe_input"])

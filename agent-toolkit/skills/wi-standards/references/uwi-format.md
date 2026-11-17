@@ -10,7 +10,7 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 | --- | --- | --- | --- |
 | UWIの問い・選択肢・帰結を起草する前 | `../../user-confirmation-and-report/references/choice-construction.md` | | |
 | UWIの確認の質問文を起草・検収する前（操作対象外: 自身の成果物・評価方法の検討） | `../../user-confirmation-and-report/references/user-confirmation-and-report-questions.md` | | |
-| UWIの保存・是正で確認の要否を判定する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| UWIの保存・是正で確認の要否を判定する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `uwi-draft-writing`、`wi-standard-commit`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 | UWIの承認後の操作と影響範囲を書く前 | `../../user-confirmation-and-report/references/approval-scope-preparation.md` | | |
 
 ## 構成

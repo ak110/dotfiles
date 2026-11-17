@@ -219,7 +219,9 @@ class TestUserConfirmationSkillPrompt:
         self._session_start("compact", tmp_path, host=host)
         restored = self._prompt("次の依頼", tmp_path, host=host)
         assert not self._has_notice(restored)
-        assert first == restored
+        # 受付時刻は入力ごとに変わるため除いて比べる。
+        clock = re.compile(r"ユーザー入力の受付時刻: `[^`]*`")
+        assert clock.sub("", first) == clock.sub("", restored)
         assert not self._has_notice(self._prompt("続けて", tmp_path, host=host))
 
     @pytest.mark.parametrize("source", ["resume", "fork"])
@@ -356,7 +358,8 @@ class TestMachineInjectedTurn:
         result = _run({"session_id": sid, "prompt": "通常の入力", "source": "user"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert context.count("<atk-auto ") == 1 and "ユーザー入力の受付時刻" in context
         assert _read_state(tmp_path, sid).get("last_user_prompt_at") is None
 
     @staticmethod
@@ -419,7 +422,9 @@ class TestNonMatchingPrompts:
 
     @staticmethod
     def _assert_no_notice(result: subprocess.CompletedProcess[str]) -> None:
-        assert result.stdout == ""
+        # 実ユーザー入力には受付時刻だけを届ける。
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert context.count("<atk-auto ") == 1 and "ユーザー入力の受付時刻" in context
 
     def test_ignores_non_skill_prompt(self, tmp_path: pathlib.Path):
         sid = "non-skill"
@@ -430,7 +435,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence", "notice_fingerprints"}
         evidence = state["termination_evidence"]
         assert not evidence["works"]
         assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True, "offset": 0}
@@ -450,7 +455,7 @@ class TestNonMatchingPrompts:
         result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert set(_read_state(tmp_path, sid)) == expected_keys | {"work_contract_input_sequence"}
+        assert set(_read_state(tmp_path, sid)) == expected_keys | {"work_contract_input_sequence", "notice_fingerprints"}
 
     def test_unrelated_slash_is_treated_as_user_utterance(self, tmp_path: pathlib.Path):
         """対応スキル以外のスラッシュコマンドもユーザー自身の発話として注記の対象にする。"""
@@ -464,6 +469,7 @@ class TestNonMatchingPrompts:
         assert set(_read_state(tmp_path, sid)) == {
             "termination_evidence",
             "work_contract_input_sequence",
+            "notice_fingerprints",
         }
 
     def test_automated_prompt_receives_no_notice(self, tmp_path: pathlib.Path):
@@ -492,7 +498,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence", "notice_fingerprints"}
 
     def test_codex_treats_claude_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "codex-slash-command"
@@ -508,7 +514,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence", "notice_fingerprints"}
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
@@ -570,10 +576,10 @@ class TestRealignNoticeInjection:
             result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
             assert result.returncode == 0
             if index:
-                assert not result.stdout
+                assert "認識合わせ" not in result.stdout
                 continue
             output = json.loads(result.stdout)["hookSpecificOutput"]
-            bodies = _notice_bodies(output["additionalContext"])
+            bodies = [body for body in _notice_bodies(output["additionalContext"]) if "ユーザー入力の受付時刻" not in body]
             assert len(bodies) == 1
             assert "agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」" in bodies[0]
             assert "目標と問題の理解を確かめよ" in bodies[0]
@@ -588,7 +594,7 @@ class TestRealignNoticeInjection:
     def test_other_prompts_do_not_receive_realign_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
         result = _run({"session_id": "realign-negative", "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0
-        assert not result.stdout
+        assert "認識合わせ" not in result.stdout
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize(
@@ -658,6 +664,12 @@ class TestExampleScopeNotice:
             pytest.param("全体が分かりにくい。例えば表示順を簡潔にすべき", id="proposal-without-investigation"),
             pytest.param("例えば見出しを太字にして", id="example-only"),
             pytest.param("例えば`make test`を実行して", id="execution-instruction"),
+            pytest.param(
+                "コマンド実行機能って、ghコマンドとかglabコマンドとかazコマンドとかある？ "
+                "その手の便利なコマンドある程度インストール済みの状態にしておきたい。",
+                id="open-enumeration",
+            ),
+            pytest.param("ログとか設定とかを整理して", id="repeated-toka"),
         ],
     )
     def test_example_without_investigation_receives_scope_notice(
@@ -669,6 +681,7 @@ class TestExampleScopeNotice:
         assert len(bodies) == 1
         assert "「原文の保持と取り込み」" in bodies[0]
         assert "原文の対象と例示の関係を判断せよ" in bodies[0]
+        assert "例示以外の候補を探してから範囲を確定せよ" in bodies[0]
         assert "references/routing.md" not in bodies[0]
         assert "自ら調査へ着手する前に" not in bodies[0]
 
@@ -694,6 +707,8 @@ class TestExampleScopeNotice:
             pytest.param("このエラーを確認して\n```text\n例えば次のように表示される\n```", id="fenced-code"),
             pytest.param("`例えば`という語の扱いを確認して", id="inline-code"),
             pytest.param("> 例えば旧版ではこう書いていた\n上の引用の出典を確認して", id="quote"),
+            pytest.param("> ghとかglabとか\n上の引用の出典を確認して", id="quoted-enumeration"),
+            pytest.param("今日とか忙しいので後で確認して", id="single-toka"),
         ],
     )
     def test_other_prompts_do_not_receive_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
@@ -727,9 +742,10 @@ class TestExampleScopeNotice:
         assert result.returncode == 0, result.stderr
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 2
+        assert len(bodies) == 3
         assert "agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」" in bodies[0]
         assert "references/user-utterance.md" in bodies[1]
+        assert "ユーザー入力の受付時刻" in bodies[2]
 
 
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -742,7 +758,8 @@ def test_ordinary_prompts_keep_input_observation_without_reinjecting_procedure(t
     for prompt in ("最初の依頼", "同じ条件で続ける", "次の依頼"):
         result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
-        assert not result.stdout
+        bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
+        assert len(bodies) == 1 and "ユーザー入力の受付時刻" in bodies[0]
         state = _read_state(tmp_path, sid)
         assert state.get("last_user_prompt_at") == legacy_time
         evidence = state["termination_evidence"]
@@ -761,7 +778,8 @@ def test_plan_state_names_session_without_procedure_injection(tmp_path):
     assert result.returncode == 0, result.stderr
     output = json.loads(result.stdout)["hookSpecificOutput"]
     assert output["sessionTitle"] == "current-plan"
-    assert "additionalContext" not in output
+    bodies = _notice_bodies(output["additionalContext"])
+    assert len(bodies) == 1 and "ユーザー入力の受付時刻" in bodies[0]
 
 
 @pytest.mark.parametrize("codex", [False, True])

@@ -204,7 +204,10 @@ def test_startup_input_is_delivered_only_to_main(source, host, actor, monkeypatc
         encoded = context.split(marker, 1)[1].splitlines()[0]
         assert json.loads(html.unescape(encoded)) == data
         assert "&lt;/atk-auto&gt;" in encoded
-        assert "references/answer-transitions.md" in context and "agent-toolkit:report-completion" in context
+        # 過去の実行のUWIの照会は開始前の契約であり、終了契約の案内に含めない。
+        before, contract = context.split("終了契約", 1)
+        assert "作業を始める前" in before and "references/answer-transitions.md" in before
+        assert "agent-toolkit:report-completion" in contract and "answer-transitions" not in contract
     else:
         assert 'kind="startup-input"' not in context
 
@@ -229,3 +232,13 @@ def test_large_startup_input_keeps_all_data_within_hook_cap(tmp_path, monkeypatc
     assert str(path) in context
     assert json.loads(path.read_text(encoding="utf-8")) == data
     assert "references/answer-transitions.md" in context and "agent-toolkit:report-completion" in context
+
+
+def test_batch_startup_input_separates_procedure_from_termination(monkeypatch, capsys):
+    """batchの手順全体を終了契約として案内せず、開始前のUWI照会と区別する。"""
+    data = {"source": "run-skill", "skill": "agent-toolkit:review-session", "batch_manifest": "/batch/manifest.json"}
+    monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data))
+    assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}), host="claude") == 0
+    before, contract = _output(capsys).split("終了契約", 1)
+    assert "references/answer-transitions.md" in before and "references/batch.md" in before
+    assert "agent-toolkit:report-completion" in contract and "batch.md" not in contract

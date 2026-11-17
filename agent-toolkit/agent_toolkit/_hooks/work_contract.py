@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import pathlib
@@ -51,14 +52,61 @@ def record_path(session_id: str) -> pathlib.Path | None:
     return directory / RECORD_NAME if directory is not None else None
 
 
-def observe_input(session_id: str) -> str | None:
-    """実ユーザー入力の後に、既存の作業契約の本文を通知する。"""
-    update_state(
-        session_id,
-        lambda state: {**state, "work_contract_input_sequence": state.get("work_contract_input_sequence", 0) + 1},
+def local_time(timestamp: float | None = None) -> str:
+    """通知に添える時刻を、タイムゾーン付きの壁時計の日時で返す。"""
+    moment = (
+        datetime.datetime.now().astimezone() if timestamp is None else datetime.datetime.fromtimestamp(timestamp).astimezone()
     )
+    return moment.isoformat(timespec="seconds")
+
+
+def observe_input(session_id: str) -> str | None:
+    """実ユーザー入力の後に、既存の作業契約の本文と、最終更新後の実ユーザー発話の件数を通知する。
+
+    件数は契約ファイルの更新時刻の変化と、この関数が数える実ユーザー入力だけから求める。
+    機械入力・委譲先・会話圧縮の再通知はこの関数を通らないため数えない。
+    """
+    path = record_path(session_id)
+    try:
+        updated = path.stat().st_mtime if path is not None and path.is_file() else None
+    except OSError:
+        updated = None
+    observed: dict = {}
+
+    def count(state: dict) -> dict:
+        state = {**state, "work_contract_input_sequence": state.get("work_contract_input_sequence", 0) + 1}
+        if updated is None:
+            return state
+        previous = state.get("work_contract_observed_mtime")
+        if previous is None:
+            # 初回観測より前の入力は復元できないため、件数を下限として扱う。
+            inputs, partial = 1, True
+        elif previous != updated:
+            inputs, partial = 1, False
+        else:
+            inputs, partial = (
+                state.get("work_contract_inputs_since_update", 0) + 1,
+                state.get("work_contract_count_partial", True),
+            )
+        observed.update(inputs=inputs, partial=partial)
+        return {
+            **state,
+            "work_contract_observed_mtime": updated,
+            "work_contract_inputs_since_update": inputs,
+            "work_contract_count_partial": partial,
+        }
+
+    update_state(session_id, count)
     resolve_notice(session_id, "pretooluse", "main", subject="main")
-    return notice(session_id)
+    status = ""
+    if updated is not None and observed:
+        scope = "今回を含む。初回観測より前は不明" if observed["partial"] else "今回を含む"
+        status = (
+            f"\n作業契約の最終更新: `{local_time(updated)}`。その後の実ユーザー発話: {observed['inputs']}件（{scope}）。"
+            "件数は要求を再確認するための観測値であり、更新漏れの件数ではない。"
+        )
+    text = notice(session_id)
+    return text + status if text is not None else None
 
 
 def reset_notice(session_id: str) -> None:

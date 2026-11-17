@@ -3,7 +3,7 @@ import { exitStatePath } from "./session_exit.ts";
 import { awiStatusWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 
-type Request = { id: string; operation: string; input: { message?: string; targets?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
+type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; targets?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
 import type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 export type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 
@@ -78,6 +78,10 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           reason = placed.isPlaced ? "" : placed.reason;
           if (ok) reason = ["ユーザーの画面へ表示した。送達済み本文は再掲するな。", ...awiStatusWarnings(request.input.message)].join("\n");
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
+          else if (typeof request.input.tool_use_id === "string") {
+            const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};
+            await $.state.set({ plugin: "agent-toolkit", key: "uiCalls" }, { ...calls, [request.input.tool_use_id]: request.id });
+          }
         } else if (request.operation === "compact_conversation") {
           await $.state.set({ plugin: "agent-toolkit", key: "compactRequested" }, true);
           ok = true;
@@ -164,7 +168,57 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
     if (e.props.plugin !== $.plugin.name) return next(e);
     const message = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value?.[e.props.id];
     if (message === undefined) return next(e);
-    const { Markdown } = $.ui.resolve(e);
-    return Markdown({ text: message });
+    const { Markdown, Box } = $.ui.resolve(e);
+    // 前後の会話行と区別しやすいよう、本文の上下に1行の余白を置く。
+    return (
+      <Box marginTop={1} marginBottom={1}>
+        <Markdown text={message} />
+      </Box>
+    );
   });
+  // 置いた行と会話状態は会話の終了・/resume・/branchで失われる。再開後の画面では、transcriptに残る
+  // send_to_userのツール入力から元の位置へ本文を描く。稼働中に置いた行がある呼出しは二重に描かない。
+  on("ui.render", { component: "ToolGroup" }, async ($, e, next) => {
+    const calls = e.props.calls.filter((call) => isSendToUser(call.tool) && deliveredMessage(call) !== undefined);
+    if (calls.length === 0 || e.props.isExpanded) return next(e);
+    if ((await Promise.all(calls.map((call) => placedLive($, call)))).every(Boolean)) return next(e);
+    return next({ ...e, props: { ...e.props, isExpanded: true } });
+  });
+  on("ui.render", { component: "ToolUse" }, async ($, e, next) => {
+    if (!isSendToUser(e.props.tool)) return next(e);
+    const message = deliveredMessage(e.props);
+    if (message === undefined) return next(e);
+    if (await placedLive($, e.props)) return next(e);
+    const { Markdown, Box } = $.ui.resolve(e);
+    return (
+      <Box marginTop={1} marginBottom={1}>
+        <Markdown text={message} />
+      </Box>
+    );
+  });
+}
+
+// agents_server MCPのsend_to_userだけを対象にし、他のツールの行は描き替えない。
+function isSendToUser(tool: string): boolean {
+  return /agents_server__send_to_user$/.test(tool);
+}
+
+type SendCall = { tool_use_id?: string; input: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean };
+
+// この会話の稼働中に行を置いた呼出しかを返す。会話状態は再開で初期化されるため、再開前の呼出しは偽になる。
+// 要求がtool_use_idを持つ場合は呼出しで照合し、再開後に同じ本文を送っても再開前の呼出しの表示を消さない。
+// tool_use_idを持たない要求（MCP要求の_metaに無い場合）だけを本文の一致で照合する。
+async function placedLive($: EngineInterface, call: SendCall): Promise<boolean> {
+  const messages = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {};
+  const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};
+  if (call.tool_use_id !== undefined && Object.hasOwn(calls, call.tool_use_id)) return Object.hasOwn(messages, calls[call.tool_use_id] ?? "");
+  const keyed = new Set(Object.values(calls));
+  return Object.entries(messages).some(([id, message]) => !keyed.has(id) && message === deliveredMessage(call));
+}
+
+// 表示に成功した呼び出しの本文を返す。実行中・失敗・中断の呼び出しは本文を描かない。
+function deliveredMessage(call: { input: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean }): string | undefined {
+  if (call.isRunning || call.isErrored || call.isInterrupted) return undefined;
+  const message = (call.input as { message?: unknown } | null)?.message;
+  return typeof message === "string" ? message : undefined;
 }

@@ -17,7 +17,7 @@
 | --- | --- | --- | --- |
 | 既存WIとの比較の起点と検索対象を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `drafting-completion-duplicates.md` | | |
 | WIの投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | 判断 | `wi-standard-self-review`、`read:agent-basics:*/skills/review-standards/SKILL.md` |
-| add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前（操作対象外: 自身の成果物・評価方法の検討） | `../../add-awi-by-user/references/omission-check.md` | | |
+| add-awi-by-userまたはgrillingによるWI作成の考慮漏れと、原文の発話に例示や開いた列挙があるWI作成の範囲の限定を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `../../add-awi-by-user/references/omission-check.md` | | |
 | 資料起点の採否を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-toolkit:add-awi-by-user/SKILL.md` | | |
 | 外部資料に基づく案の提案・採否、資料起点の既存充足を評価する前（候補の十分性の検収を含む）（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/design-heuristics-proportionality.md`、`agent-basics:writing-standards/references/design-heuristics-external-evidence.md` | | |
 | 規範・手順による既存充足を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | |
@@ -77,6 +77,7 @@
 
 1. add-awi-by-userまたはgrillingによるWI作成では、原文・原稿・調査根拠から`../../add-awi-by-user/references/omission-check.md`の全類型を独立して点検する。
    範囲の限定には調査母集団も含め、起草者の点検結果だけで充足としない。
+   それ以外の経路のWI作成でも、原文のユーザー発話に例示や開いた列挙（「AとかBとか」など）があれば、同資料の類型(a)を独立して点検する。
    ユーザー固有の未確定判断があれば指摘へ含め、add-awi-by-userのメインが同じセッションで確認し、回答・認可・未達時の扱いを本文へ記録してから合格とする。
 
 2. 効率化案は、通常入力と既存の集約・共有・再利用の便益を検収者が独立に確認し、`drafting-completion-decisions.md`に従い、構造と全体費用を分け、代替案・故障時の継続手段・前後実測を検収する。

@@ -15,6 +15,7 @@
   Code Modeの有効表示とREPLによる2ファイルの読取を確認する。
   `mcp__plugin_agent-toolkit_agents_server__send_to_user`から送った原文の画面表示と`ok:true`を対応付ける。
   transcriptの実ツール呼出しが`<synthetic>`を持つ場合も、API失敗の代替本文と区別してStopの応答有無判定を確認する。
+  送達した会話を`/exit`で終えて`claude --resume`で開き、各本文が元の呼び出し位置に1回ずつ読めることを確認する。
 
 ## agent-toolkit/share/rules-main.claude-code.md：ユーザー確認（`AskUserQuestion`）：2026年8月31日
 

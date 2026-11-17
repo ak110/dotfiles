@@ -58,7 +58,9 @@ Python側が要求をatomicに保存し、modが同じ要求IDの描画・予約
 背景waitの停止後、またはprocess-loopの再起動時に、`phase: pending`と停止したwaitのID・commandをJSONで保存する。
 SessionStartが自動続行の送信前に`phase: resumed`へ変更する。
 通常終了では保持し、clearと期限切れ回収は既存の`sweep_function_hook_files`へ統合する。
-modの会話状態には描画本文・処理済みID・背景待機・反映予約を置き、再読込を越える寿命をホストへ委ねる。
+modの会話状態には描画本文・処理済みID・背景待機・反映予約を置き、稼働中の会話の再読込を越える寿命をホストへ委ねる。
+会話状態と`$.ui.place`で置いた行は、会話の終了・`/clear`・`/resume`・`/branch`で初期化される。
+切替後にも読み返す本文は、transcriptに残るツール入力から描く。
 
 Code Modeの通常awaitでは、内側Bashの`tool_use_id`を圧縮の待機識別に使う。
 設定PreToolUseが`repl_`付きBashの開始を、PostToolUse・PostToolUseFailureが終了を同じ要求形式でmodへ渡す。

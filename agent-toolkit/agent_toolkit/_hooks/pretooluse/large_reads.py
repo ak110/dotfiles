@@ -1,4 +1,4 @@
-"""原記録の直接参照と規範の見出し抽出へ、適切な取得方法を案内する。"""
+"""原記録の直接参照と規範の見出し抽出、出力の上限を超える複数ファイルの取得へ、適切な取得方法を案内する。"""
 
 from __future__ import annotations
 
@@ -618,3 +618,77 @@ def check_large_bash_read(command: str, cwd: str) -> str | None:
             fix="全文を取得せよ。\n" + "\n".join(f"- {reference_name(path, cwd=cwd)}" for path in paths),
         )
     return None
+
+
+CLAUDE_BASH_OUTPUT_CHARS = 30_000
+"""`BASH_MAX_OUTPUT_LENGTH`を設定しない場合のClaude CodeのBash出力の上限（文字）。"""
+CODEX_OUTPUT_TOKENS = 20_000
+"""Codexの資料取得で両層の`max_output_tokens`に明示する値（`share/rules/rules-common.codex.md`）。"""
+_CODEX_ENVELOPE_TOKENS = 200
+"""Codexの外側`functions.exec`のJSON包絡の見積り（トークン）。本文量が同じでも外側だけが超える場合を含める。"""
+
+
+def check_bundled_read(
+    command: str,
+    cwd: str,
+    *,
+    records: dict,
+    agent: str,
+    codex: bool,
+    environment: dict[str, str],
+    max_output_tokens: object = None,
+) -> str | None:
+    """複数ファイルの全文表示の合計を出力の上限と比べ、収まらない取得の分割と取得済み本文の再利用を案内する。
+
+    取得済みの判定は、同じ主体が同じ本文版を全文で受信した記録だけを使う。
+    本文の変更・会話圧縮後の記録消去・切り詰めで未回収の本文は取得済みに含めず、必要な再取得を妨げない。
+    """
+    from agent_toolkit._git import document_acquisition  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    paths = display_read_paths(command, cwd)
+    if len(paths) < 2:
+        return None
+    acquired: list[pathlib.Path] = []
+    remaining: list[pathlib.Path] = []
+    for path in paths:
+        try:
+            current = read_triggers.is_normative_document(path) and (
+                document_acquisition.acquisition_state(records, read_triggers.ReadTarget(path), agent) == "current"
+            )
+        except OSError, ValueError:
+            current = False
+        (acquired if current else remaining).append(path)
+    # 容量の比較は全文表示と確定した読取だけに限る。範囲表示や検索の入力をファイル全体の量で数えると、
+    # 正常な分割取得にも超過を断定するため。
+    full = {path.resolve() for group in bash_read_paths(command, cwd) for path in group}
+    remaining = [path for path in remaining if path in full]
+    sizes = {path: path.stat().st_size for path in remaining}
+    if codex:
+        budget = max_output_tokens if isinstance(max_output_tokens, int) and max_output_tokens > 0 else CODEX_OUTPUT_TOKENS
+        # 文章主体の見積りはUTF-8バイト数÷3の切上げとする（同上の規約）。
+        estimate = sum(-(-size // 3) for size in sizes.values()) + _CODEX_ENVELOPE_TOKENS
+        unit = "トークン"
+    else:
+        value = environment.get("BASH_MAX_OUTPUT_LENGTH", "")
+        budget = int(value) if value.isdigit() and int(value) > 0 else CLAUDE_BASH_OUTPUT_CHARS
+        estimate = 0
+        for path in remaining:
+            try:
+                estimate += len(path.read_bytes().decode("utf-8", errors="replace"))
+            except OSError:
+                estimate += sizes[path]
+        unit = "文字"
+    over = len(remaining) >= 2 and estimate > budget
+    if not over and not acquired:
+        return None
+    lines = []
+    if over:
+        lines.append(f"複数ファイルの合計の見積り{estimate}{unit}が出力の上限{budget}{unit}を超え、切り詰められる。")
+    if acquired:
+        lines.append("同じ本文版を全文で取得済みの資料が含まれる: " + "、".join(map(str, acquired)))
+    fix = []
+    if over:
+        fix.append("上限に収まる単位へファイルを分けて取得し、切り詰められた本文は未取得として補え。")
+    if acquired:
+        fix.append("取得済みの資料は再取得せず、取得済みの本文を使え。")
+    return _large_warning("".join(lines), fix="".join(fix))
