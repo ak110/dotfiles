@@ -11,7 +11,6 @@ import datetime
 import functools
 import hashlib
 import json
-import logging
 import os
 import pathlib
 import secrets
@@ -607,8 +606,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             ):
                 cleaned = resources.cleanup_regenerable(child, references=references)
                 deleted.extend(pathlib.Path(path) for path in cleaned["removed"])
-                if cleaned["retained"]:
-                    logging.getLogger(__name__).info("再生成物を保持（次回掃引で再試行）: %s", cleaned["retained"])
+                resources.log_retained(cleaned["retained"])
             if _examine(state_root, child, metadata, cutoff_ns, now_ns, protected_sessions, deleted):
                 deleted.append(child)
         except (OSError, ManagedTempError) as error:

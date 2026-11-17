@@ -223,6 +223,7 @@ async def test_agents_server_config_uses_the_stable_plugin_root() -> None:
     expected_root = plugin_roots.resolve_stable_plugin_root()
     assert args == [
         "run",
+        "--no-cache",
         "--no-config",
         "--no-project",
         "--python",
@@ -233,6 +234,8 @@ async def test_agents_server_config_uses_the_stable_plugin_root() -> None:
     ]
     assert pathlib.Path(args[-2]).is_file()
     assert (expected_root / args[-1]).is_file()
+    definition = json.loads((expected_root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["agents_server"]
+    assert args == [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(expected_root)) for arg in definition["args"]]
 
 
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])

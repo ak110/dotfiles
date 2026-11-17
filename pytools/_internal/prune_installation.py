@@ -152,9 +152,11 @@ def _active_users(paths: tuple[Path, ...]) -> list[str]:
         actual_owner = info.get("username") if windows else getattr(info.get("uids"), "real", None)
         if actual_owner != owner or info.get("status") in {psutil.STATUS_DEAD, psutil.STATUS_ZOMBIE}:
             continue
-        values = [info.get("exe") or "", *(info.get("cmdline") or [])[:4]]
+        values = [info.get("exe") or "", *(info.get("cmdline") or [])]
         name = str(info.get("name") or "").removesuffix(".exe")
-        if not info.get("cmdline") or not info.get("exe"):
+        # argvを読めないPython等は、実行体が対象外でも環境を間接利用し得る。
+        # exeの欠落は完全なargvで補えるが、その逆で非参照を確定しない。
+        if not info.get("cmdline"):
             active.append(f"参照先を確認できないプロセス (pid {process.pid})")
             continue
         uses_path = any(
@@ -321,7 +323,8 @@ def clean_caches() -> post_apply_outcome.PostApplyOutcome:
             logger.info("prune: %sのキャッシュ整理を完了", name)
         except _InUseError as error:
             deferred = True
-            logger.warning("prune: %sの整理を使用中のため保留。次回のupdate-dotfilesで再試行: %s", name, error)
+            logger.info("prune: %sの整理を使用中のため保留。次回のupdate-dotfilesで再試行します", name)
+            logger.debug("prune: %sの保留診断: %s", name, error)
         except (OSError, ValueError, RuntimeError) as error:
             failures.append(f"{name}: {error}")
     return post_apply_outcome.PostApplyOutcome(

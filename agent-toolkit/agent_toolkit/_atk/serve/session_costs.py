@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import json
 import logging
 import os
@@ -196,6 +197,8 @@ class FamilyCostWarmer:
         self._stopping = False
         self._thread: threading.Thread | None = None
         self._process: subprocess.Popen[str] | None = None
+        self._worker_cleanup: contextlib.ExitStack | None = None
+        self._worker_failure: _process_tree.ReclaimError | None = None
 
     def request(self, targets: typing.Sequence[tuple[str, str]]) -> None:
         """算出する記録（engine, パス）を優先順に受け取り、未処理の並びを置き換える。"""
@@ -213,13 +216,23 @@ class FamilyCostWarmer:
         with self._condition:
             self._stopping = True
             self._pending = []
-            process, thread = self._process, self._thread
+            cleanup, thread = self._worker_cleanup, self._thread
+            self._worker_cleanup = None
+            self._process = None
             self._condition.notify()
-        if process is not None:
-            _stop_worker(process)
+        if cleanup is not None:
+            failure = _stop_worker(cleanup)
+            if failure is not None:
+                with self._condition:
+                    self._worker_failure = failure
+        elif self._worker_failure is not None and not self._worker_failure.retry():
+            self._worker_failure = None
         if thread is not None:
             thread.join()
         self._cache.flush()
+        if self._worker_failure is not None:
+            # 呼出元が停止完了として所有欄を消さないよう、未確認の同じ回収対象を渡す。
+            raise self._worker_failure
 
     def _run(self) -> None:
         flushed_at = time.monotonic()
@@ -255,9 +268,21 @@ class FamilyCostWarmer:
         with self._condition:
             if self._stopping:
                 return None
+            if self._worker_failure is not None:
+                if self._worker_failure.retry():
+                    self._pending = []
+                    logger.warning(
+                        "背景計算workerの回収が未確認のため再生成しません: %s。"
+                        "一覧のPIDと起動コマンドで対象を確かめ、不要なら終了させてください",
+                        self._worker_failure.residual,
+                    )
+                    return None
+                self._worker_failure = None
             if self._process is None:
                 try:
-                    self._process = _start_worker()
+                    with contextlib.ExitStack() as cleanup:
+                        self._process = cleanup.enter_context(_start_worker())
+                        self._worker_cleanup = cleanup.pop_all()
                 except OSError as error:
                     # 起動の失敗（プロセス数やファイル記述子の上限など）でもスレッドは終えず、次の`request`で起動し直す。
                     self._pending = []
@@ -286,9 +311,16 @@ class FamilyCostWarmer:
             return result
         with self._condition:
             stopping = self._stopping
+            cleanup = self._worker_cleanup
+            self._worker_cleanup = None
             self._process = None
             self._pending = []
-        _stop_worker(process)
+        # stopとEOF処理が競合しても、所有を取得した側だけが回収する。
+        if cleanup is not None:
+            failure = _stop_worker(cleanup)
+            if failure is not None:
+                with self._condition:
+                    self._worker_failure = failure
         if not stopping:
             logger.warning(
                 "推定費用を背景で算出する別プロセスが終了コード%sで終了したため、背景の算出を止めます。"
@@ -307,7 +339,8 @@ _WORKER_START_CHECK = (
 """背景の算出の別プロセスを起動できない場合に確かめる対象。原因になりやすい資源の確認手段はOSごとに異なる。"""
 
 
-def _start_worker() -> subprocess.Popen[str]:
+@contextlib.contextmanager
+def _start_worker() -> typing.Generator[subprocess.Popen[str]]:
     """推定費用を算出する別プロセスを起動する。標準エラーはserveの出力へ引き継ぎ、例外を診断できるようにする。
 
     serveは公開launcherが`agent_toolkit`の配置元を`sys.path`へ加えて起動し、子プロセスへは引き継がれないため、
@@ -316,27 +349,38 @@ def _start_worker() -> subprocess.Popen[str]:
     env = dict(os.environ)
     source = str(pathlib.Path(__file__).resolve().parents[3])
     env["PYTHONPATH"] = source + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
-    return subprocess.Popen(  # pylint: disable=consider-using-with  # serveの稼働中に保持し、stopで終了させる
-        [sys.executable, "-m", "agent_toolkit._atk.serve.session_cost_worker"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        creationflags=windows_job.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-    )
+    process = None
+    try:
+        with _process_tree.process_scope(
+            [sys.executable, "-m", "agent_toolkit._atk.serve.session_cost_worker"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            creationflags=windows_job.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            close_streams=False,
+        ) as process:
+            yield process
+    finally:
+        if process is not None:
+            for stream in (process.stdin, process.stdout):
+                if stream is not None:
+                    # 送信失敗後のbufferをcloseが再送しても、所有回収の結果を上書きしない。
+                    with contextlib.suppress(BrokenPipeError):
+                        stream.close()
 
 
-def _stop_worker(process: subprocess.Popen[str]) -> None:
+def _stop_worker(cleanup: contextlib.ExitStack) -> _process_tree.ReclaimError | None:
     """別プロセスを終了させて回収する。算出の途中でも結果は捨ててよいため、完了を待たずに終了させる。"""
-    residual = _process_tree.stop_process_tree(process)
-    if residual:
+    try:
+        cleanup.close()
+    except _process_tree.ReclaimError as error:
         logger.warning(
             "推定費用を背景で算出する別プロセスを回収できませんでした: %s。"
             "一覧のPIDと起動コマンドで対象を確かめ、不要なら終了させてください",
-            residual,
+            error.residual,
         )
-    for stream in (process.stdin, process.stdout):
-        if stream is not None:
-            stream.close()
+        return error
+    return None
