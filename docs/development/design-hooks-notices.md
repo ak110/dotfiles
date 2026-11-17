@@ -73,7 +73,7 @@ Claude Codeの最上位メインでは、次のhookがエージェントへ返�
 本文の引用をエスケープする案は、包装の共通契約（本文の字面を加工しない）を変えるため採らない。
 
 表示しない通知は、生成元が`notice.informational`で印を付けた次の3件だけである。
-実行時間（`_hooks/command_timing.py`の測定値）は実行ごとに出て操作を求めない。
+実行時間（`_hooks/command_timing.py`の測定値）は1秒以上の実行ごとに出て操作を求めない。
 作業契約の本文の配送（`_hooks/user_prompt_submit.py`の`_work_contract_notice`）は、入力ごとに同じ本文を届ける。
 バックグラウンドタスク完了の自動通知で始まったターンの定型案内（同ファイル）は、完了通知のたびに同じ文面が出る。
 SessionStart・SubagentStartの通知（規範本文、セッションID、managed-temp、会話圧縮後の復元案内）は情報の配送であり、写しを付けない。

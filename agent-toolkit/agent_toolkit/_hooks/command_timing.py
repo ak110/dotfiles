@@ -102,6 +102,12 @@ def observe_notifications(payload: dict) -> list[str]:
     return notices
 
 
+NOTICE_SECONDS = 1.0
+"""測定値を通知する下限。1秒以上かかる処理は重いとするユーザーの基準（2026年11月16日）による。"""
+REVIEW_SECONDS = 10
+"""同じ計測種別で3件続いた時に見直しを促す、各完了の下限（2026年11月16日のユーザー回答）。"""
+
+
 def _complete(session: str, actor: str, identifier: str, duration: float | None) -> list[str]:
     now = time.time()
     result: list[tuple[str, float | None, list[float]]] = []
@@ -120,7 +126,7 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
             kind = "観測経過時間（権限待ち等を含み得る）"
         call.clear()
         call["done"] = True
-        slow = seconds is not None and seconds >= 60
+        slow = seconds is not None and seconds >= REVIEW_SECONDS
         if current["kind"] != kind or not slow:
             current.update({"kind": kind, "recent": [], "notified": False})
         if slow:
@@ -135,13 +141,16 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
     update_state(session, finish)
     notices: list[str] = []
     for kind, seconds, review in result:
-        measured = f"{kind}: {seconds:.1f}秒" if seconds is not None else "コマンド時間: 未計測（開始時刻を対応付けられない）"
-        # 実行ごとの測定値は操作を求めないため、ユーザーの画面へは写さない。
-        notices.append(informational(_notice(measured, tag="notice", subject=f"{actor}:{identifier}")))
+        # 1秒未満の測定値は判断に使えないため省く。未計測は短い実行と別の事象として常に示す。
+        if seconds is None or seconds >= NOTICE_SECONDS:
+            unmeasured = "コマンド時間: 未計測（開始時刻を対応付けられない）"
+            measured = f"{kind}: {seconds:.1f}秒" if seconds is not None else unmeasured
+            # 実行ごとの測定値は操作を求めないため、ユーザーの画面へは写さない。
+            notices.append(informational(_notice(measured, tag="notice", subject=f"{actor}:{identifier}")))
         if review:
             notices.append(
                 _notice(
-                    f"同じ計測種別で60秒以上の完了が3件続いた。{kind}: "
+                    f"同じ計測種別で{REVIEW_SECONDS}秒以上の完了が3件続いた。{kind}: "
                     + "、".join(f"{value:.1f}秒" for value in review)
                     + f"。合計{sum(review):.1f}秒。",
                     tag="warn",

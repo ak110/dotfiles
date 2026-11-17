@@ -72,14 +72,30 @@ def test_codex_original_completion_uses_full_elapsed_interval(_clock, capsys):
     assert "command_timing" in read_state("timing-tests")
 
 
+@pytest.mark.parametrize(("milliseconds", "notified"), [(999, False), (1000, True)])
+def test_measured_notice_omits_runs_under_one_second(milliseconds, notified, _clock, capsys):
+    payload = _payload(f"short-{milliseconds}")
+    _invoke(dispatch.main, payload, capsys)
+    output = _invoke(posttooluse.main, {**payload, "duration_ms": milliseconds}, capsys)
+    assert ("実行時間: 1.0秒" in output) is notified
+    assert ("実行時間:" in output) is notified
+
+
+def test_elapsed_notice_also_omits_runs_under_one_second(_clock, capsys):
+    payload = _payload("short-elapsed", turn_id="turn")
+    _invoke(dispatch.main, payload, capsys)
+    _clock[0] += 0.5
+    assert "観測経過時間" not in _invoke(posttooluse.main, payload, capsys)
+
+
 def test_slow_runs_reset_and_notify_once_per_interval(_clock, capsys):
     outputs = []
-    for index, seconds in enumerate((59.9, 60, 60, 60, 60, 0, 60, 60, 60)):
+    for index, seconds in enumerate((9.9, 10, 10, 10, 10, 0, 10, 10, 10)):
         payload = _payload(f"call-{index}")
         _invoke(dispatch.main, {**payload, "hook_event_name": "PreToolUse"}, capsys)
         outputs.append(_invoke(posttooluse.main, {**payload, "duration_ms": seconds * 1000}, capsys))
     assert all("3件続いた" not in outputs[index] for index in (0, 1, 2, 4, 5, 6, 7))
-    assert "合計180.0秒" in outputs[3] and "3件続いた" in outputs[8]
+    assert "合計30.0秒" in outputs[3] and "3件続いた" in outputs[8]
     assert "無進捗" not in outputs[3]
 
 
