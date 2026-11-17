@@ -50,6 +50,10 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
     "plan_file": (
         "frontmatterからplan_fileを除いて再実行する（plan_fileは廃止した型で保存された項目のメタデータであり、新しく書けない）"
     ),
+    "priority": "frontmatterからpriorityを除き、優先区分は`atk wi set-priority`で設定する",
+    "priority_impact": "frontmatterからpriority_impactを除き、根拠は`atk wi set-priority`で設定する",
+    "priority_evidence": "frontmatterからpriority_evidenceを除き、根拠は`atk wi set-priority`で設定する",
+    "priority_release": "frontmatterからpriority_releaseを除き、根拠は`atk wi set-priority`で設定する",
     "submitter_session": "frontmatterからsubmitter_sessionを除いて再実行する（submitter_sessionはatkが記録する）",
     "run_skill_run_id": "frontmatterからrun_skill_run_idを除いて再実行する（実行識別子はatkが記録する）",
 }

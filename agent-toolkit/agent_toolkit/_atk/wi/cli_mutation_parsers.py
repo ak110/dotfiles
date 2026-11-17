@@ -367,3 +367,17 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         help="処理完了を待つキュー項目。複数回指定でき、省略時は依存を全て解除する。",
     )
     _arguments.add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
+
+    set_priority = _atk_help.add_command(sub, "set-priority", **_atk_help.HELP["atk wi set-priority"])
+    set_priority.add_argument(
+        "filename",
+        metavar="FILENAME",
+        help="更新する`inbox`・`processing`・`hold`のいずれかにあるAWIファイル名。",
+    ).completer = _active_filename_completer  # type: ignore[attr-defined]
+    set_priority.add_argument(
+        "priority", choices=("urgent", "normal"), help="`urgent`は先送りの損失を根拠で示せる項目、`normal`は優先の解除。"
+    )
+    set_priority.add_argument("--impact", metavar="TEXT", help="urgentで必須。遅らせた場合に続く観測済みの影響。")
+    set_priority.add_argument("--evidence", metavar="TEXT", help="urgentで必須。影響を観測した条件と根拠の所在。")
+    set_priority.add_argument("--release", metavar="TEXT", help="urgentで必須。優先を解除する条件。")
+    _arguments.add_target_repo_arg(set_priority, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")

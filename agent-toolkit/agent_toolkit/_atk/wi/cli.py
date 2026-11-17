@@ -31,6 +31,7 @@ lazy from agent_toolkit._atk.wi import sync as _wi_sync
 lazy from agent_toolkit._atk.wi import uwi as _uwi
 lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
 lazy from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies
+lazy from agent_toolkit._atk.wi.mutations import priority as _mutation_priority
 lazy from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 lazy from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
 lazy from agent_toolkit._common import private_notes as _private_notes
@@ -324,6 +325,7 @@ def dispatch(
         "edit": lambda: _mutation_content.cmd_edit(args, private_notes),
         "effect-check": lambda: _effect_check.cmd_effect_check(args, private_notes),
         "set-dependencies": lambda: _mutation_dependencies.cmd_set_dependencies(args, private_notes),
+        "set-priority": lambda: _mutation_priority.cmd_set_priority(args, private_notes),
         "grep": lambda: _grep.cmd_grep(args, private_notes),
         "answer": lambda: _uwi.cmd_answer(args, private_notes),
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),

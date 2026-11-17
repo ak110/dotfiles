@@ -14,6 +14,7 @@ from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filters as _wi_filters
+from agent_toolkit._atk.wi import priority as _priority
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -82,6 +83,8 @@ class RepositorySnapshot:
                 "ready": state in WI_PROCESSABLE_STATES and path.name in self.readiness.ready,
                 "blocked_reason": _blocked_reason(self.readiness, path.name) if path.name in self.readiness.blocked else None,
                 "source": parse_source(text),
+                "priority": _priority.priority_of((parse_frontmatter(text) or ({}, ""))[0]),
+                "priority_reason": _priority.reason_of((parse_frontmatter(text) or ({}, ""))[0]),
                 "summary": uwi_body_summary(text, sys.maxsize) if kind == WI_TYPE_UWI else body_summary(text, sys.maxsize),
                 "body": text,
                 "staleness": _staleness(text, self.repository.worktree, now),
@@ -254,6 +257,7 @@ def _print_json_entries(
             else None
         )
         summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
+        metadata = (parse_frontmatter(text) or ({}, ""))[0]
         record: dict[str, object] = {
             "filename": path.name,
             "type": entry_type,
@@ -263,6 +267,8 @@ def _print_json_entries(
             "blocked_reason": reason,
             "source": parse_source(text),
             "important": _wi_filters.is_important(text),
+            "priority": _priority.priority_of(metadata),
+            "priority_reason": _priority.reason_of(metadata),
             "effect_check": (parse_frontmatter(text) or ({}, ""))[0].get("effect_check"),
             "effect_check_reason": _effect_check.pending_reason(text),
             "summary": summary,

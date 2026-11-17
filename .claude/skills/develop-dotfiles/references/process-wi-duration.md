@@ -15,7 +15,7 @@
 別cwdのall-repos統括にも適用する。
 選定時は過去の完走実測から目標に収まる量を決め、`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`の`minimum-items`を件数の下限とする。
 初期値は21件であり、候補が少なければ全件を選ぶ。
-回答済みUWI、AWIの順に、各種別内のファイル名昇順で先頭から連続して選ぶ。
+回答済みUWIを先に選び、AWIは最古の1件と優先区分`urgent`の最古の1件を交互に並べた順の先頭から連続して選ぶ（`agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md`の手順19）。
 先頭の長い項目や依存の連結成分も含める。
 長い先頭項目を選ぶ場合も下限まで後続を選び、独立した仕事を並行処理する。
 着手済みと再開項目は保持する。
