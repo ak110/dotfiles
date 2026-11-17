@@ -6,7 +6,8 @@
 
 作業中の数は既存の状態ファイル（30秒周期のheartbeat付き）から求め、新しい常駐の監視は作らない。
 子を持つ委譲元も自身が作業を続けていれば作業中に数える。
-最後の操作が`atk agents wait`の実行である委譲元と、子の起動の許可を待っている委譲元は、子を待つだけとして数えない。
+`atk agents wait`で子を待っている最中の委譲元（待機runの記録が実行中）と、子の起動の許可を待っている委譲元は、
+子を待つだけとして数えない。
 待つだけの親が枠を持つと子や孫を起動できずに全体が止まるためである。
 上限の判定は起動の許可時点で行う。許可を待つ間は依頼元を数えないため、許可後に依頼元が待機へ入らず作業を続けると、
 依頼元1件につき最大1件だけ一時的に上限を超える（2026年11月17日の統括の技術判断。起動を待たせたまま即時に返す方式は
@@ -22,7 +23,6 @@ import json
 import math
 import os
 import pathlib
-import re
 import time
 import uuid
 from collections.abc import Callable, Generator
@@ -43,11 +43,21 @@ ADMITTED_GRACE_SECONDS = 60.0
 # 待機が失われたものとして削除し、依頼順の先頭を塞がないようにする。
 WAITING_STALE_SECONDS = 30.0
 _WORKING_STATUSES = frozenset({"starting", "running"})
-# 委譲元が子の終了を待つ公開手段。最後の操作のコマンドがこれを実行しているsessionは子を待っているだけとみなす。
-# 検索語や引用として現れる場合と区別するため、コマンドの先頭（シェル経由の起動を含む）でatkを実行している場合に限る。
-_WAIT_ACTION = re.compile(
-    r"""command=\[?"?(?:(?:\S*/)?(?:bash|sh|zsh)"?,?\s*"?-l?c"?,?\s*"?)?(?:\S*/)?atk(?:\.cmd)?"?,?\s*"?agents"?,?\s*"?wait(?:[\s"\],]|$)"""
-)
+
+
+def _waiting_on_children(root_session_id: str, owner_status_file: str, state_root: pathlib.Path | None) -> bool:
+    """書込主体の委譲元が`atk agents wait`で子を待っている最中かを、待機runの記録から返す。
+
+    `atk agents wait`は待機中、ルートの`wait-results/<状態ファイル名>/current.json`が指すrunを`running`に保つ。
+    コマンド文字列や表示用の要約ではなく実際の待機の記録を使い、検索語・引用・要約の省略による誤判定を避ける。
+    """
+    directory = shared_layout.status_directory(root_session_id, state_root) / "wait-results" / owner_status_file
+    try:
+        current = json.loads((directory / "current.json").read_text(encoding="utf-8"))
+        run = json.loads((directory / f"{current['run_id']}.json").read_text(encoding="utf-8"))
+    except OSError, UnicodeError, ValueError, KeyError, TypeError:
+        return False
+    return isinstance(run, dict) and run.get("status") == "running"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -135,7 +145,7 @@ def _read_tickets(directory: pathlib.Path, now: float) -> list[tuple[pathlib.Pat
 def observe(state_root: pathlib.Path | None = None, *, now: float | None = None) -> Observation:
     """全ルートの状態ファイルと起動記録から、作業中の数を求める。
 
-    作業中は`starting`か`running`のsessionとする。最後の操作が子の結果の待機（`atk agents wait`）の委譲元と、
+    作業中は`starting`か`running`のsessionとする。`atk agents wait`で子を待っている最中の委譲元と、
     子の起動の許可を待っている委譲元は、子を待つだけの親として数えない。
     状態ファイルの一部を読めない場合は`failures`へ残し、数は部分観測であることを呼出側が示す。
     """
@@ -148,18 +158,21 @@ def observe(state_root: pathlib.Path | None = None, *, now: float | None = None)
     }
     sessions: dict[str, dict[str, object]] = {}
     failures: list[str] = []
+    waiting_parents: set[str] = set()
     cutoff = status_reader.heartbeat_cutoff()
     for root_session_id in shared_layout.list_root_session_ids(state_root):
         snapshot = status_reader.load_root(root_session_id, state_root, cutoff=cutoff)
         sessions.update(snapshot.sessions)
         failures.extend(snapshot.failures)
+        owners = {
+            (str(value["owner_status_file"]), str(value["host_session_id"]))
+            for value in snapshot.sessions.values()
+            if isinstance(value.get("owner_status_file"), str) and isinstance(value.get("host_session_id"), str)
+        }
+        waiting_parents.update(host for owner, host in owners if _waiting_on_children(root_session_id, owner, state_root))
     active = {key: value for key, value in sessions.items() if value.get("status") in _WORKING_STATUSES}
     working_sessions = tuple(
-        sorted(
-            key
-            for key, value in active.items()
-            if key not in waiting_hosts and not _WAIT_ACTION.search(str(value.get("last_action", "")))
-        )
+        sorted(key for key, value in active.items() if key not in waiting_hosts and key not in waiting_parents)
     )
     # 起動処理中の許可は状態ファイルへ現れる前から数える。現れた後の短い重複は上限を下げる側へ倒れるだけである。
     admitted = sum(1 for _path, payload in tickets if payload.get("admitted_at") is not None)
