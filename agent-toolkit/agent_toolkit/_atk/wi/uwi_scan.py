@@ -6,7 +6,6 @@ YAML表現の違いによってCLIとフックの判定が分岐しないよう�
 `is_uwi_answered`はUWI回答判定のSSOTとし、CLI・Web画面・フックはいずれも本モジュールの判定を使う。
 """
 
-import hashlib
 import pathlib
 import typing
 
@@ -64,33 +63,6 @@ def private_notes_root() -> pathlib.Path | None:
     """
     root = _private_notes.default_private_notes()
     return root if root.is_dir() else None
-
-
-def active_fingerprint(root: pathlib.Path) -> str | None:
-    """active状態のWIの内容変化を検出する指紋を返す。
-
-    `.md`ファイルごとの相対パス・`st_mtime_ns`・サイズを連結したSHA-256を返す。
-    走査（全件のread_textとYAML解析）より桁違いに安価な`stat`のみで、
-    前回観測時から内容が変化していないことを判定する用途に使う。
-    列挙に失敗した場合はNoneを返し、呼び出し側は指紋の一致を確認せず走査へ進む。
-
-    最大`st_mtime_ns`だけでは、時刻の分解能より短い間隔で内容が書き換わった場合に
-    変化を検出できない。UWIの回答は既存ファイルへの追記であり件数も変えないため、
-    回答の更新を検出できないと通知対象のセッションへ通知が届かなくなる。サイズも併せて調べることで、
-    回答の追記のように内容長が変わる更新を分解能によらず検出する。
-    """
-    digest = hashlib.sha256()
-    try:
-        for path in iter_entry_paths(root):
-            if path.is_file():
-                try:
-                    stat_result = path.stat()
-                except OSError:
-                    return None
-                digest.update(f"{path.relative_to(root)}\t{stat_result.st_mtime_ns}\t{stat_result.st_size}\n".encode())
-    except OSError:
-        return None
-    return digest.hexdigest()
 
 
 def scan_active_uwis(root: pathlib.Path, target_repo: str) -> ActiveUwiScan:

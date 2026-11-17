@@ -6,8 +6,8 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._common import session_state
-from agent_toolkit._hooks import posttooluse, uwi_completion
+from agent_toolkit._common import session_state, uwi_watch
+from agent_toolkit._hooks import posttooluse
 from agent_toolkit._testing.helpers import _read_state
 from agent_toolkit._testing.posttooluse_support import _run
 
@@ -93,7 +93,7 @@ class TestCommitSkillAttributionNotice:
 
 
 class TestUwiCompletionNotice:
-    """実回答差分の配送と、対象外イベントによる未消費を検証する。"""
+    """投入時に記録したUWIへの回答の配送と、対象外イベントによる未消費を検証する。"""
 
     @pytest.mark.parametrize(
         "excluded",
@@ -118,17 +118,17 @@ class TestUwiCompletionNotice:
             monkeypatch.delenv(name, raising=False)
         repo = "example.com/owner/repo"
         root = tmp_path / "private-notes"
-        inbox = root / "inbox"
-        inbox.mkdir(parents=True)
-        (root / "processing").mkdir()
+        directory = root / "2026" / "11"
+        directory.mkdir(parents=True)
         monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(root))
-        monkeypatch.setattr(uwi_completion, "resolve_target_repo", lambda _cwd: repo)
-        entry = "---\ntarget_repo: " + repo + "\ntype: uwi\n---\n\n## 質問\n\n本文\n\n## 回答\n\n"
-        answered = inbox / "new-answer.md"
+        entry = "---\nstate: inbox\ntarget_repo: " + repo + "\ntype: uwi\n---\n\n## 質問\n\n本文\n\n## 回答\n\n"
+        new_answer, unanswered, unrecorded = (f"20261101-000000-00{index}.md" for index in (1, 2, 3))
+        answered = directory / new_answer
         answered.write_text(entry, encoding="utf-8")
-        (inbox / "unanswered.md").write_text(entry, encoding="utf-8")
-        (inbox / "already-answered.md").write_text(entry + "既存回答\n", encoding="utf-8")
+        (directory / unanswered).write_text(entry, encoding="utf-8")
+        (directory / unrecorded).write_text(entry + "既存回答\n", encoding="utf-8")
         sid = "uwi-transition"
+        assert uwi_watch.add(sid, [new_answer, unanswered])
         payload = {
             "session_id": sid,
             "hook_event_name": "PostToolUse",
@@ -147,8 +147,7 @@ class TestUwiCompletionNotice:
             return json.loads(output.out)["hookSpecificOutput"]["additionalContext"]
 
         assert not run(payload)
-        baseline = {"main": {repo: ["already-answered.md"]}}
-        assert session_state.read_state(sid)[uwi_completion.STATE_KEY_ANSWERED] == baseline
+        assert uwi_watch.awaiting(session_state.read_state(sid)) == [new_answer, unanswered]
         answered.write_text(entry + "回答する。\n", encoding="utf-8")
         if excluded is not None:
             with monkeypatch.context() as marks:
@@ -160,14 +159,12 @@ class TestUwiCompletionNotice:
                 else:
                     event["hook_event_name"] = excluded
                 assert not run(event)
-            assert session_state.read_state(sid)[uwi_completion.STATE_KEY_ANSWERED] == baseline
+            assert uwi_watch.awaiting(session_state.read_state(sid)) == [new_answer, unanswered]
 
         context = run(payload)
         assert "新たに回答されたUWI" in context
-        assert "new-answer.md" in context
-        assert "already-answered.md" not in context
-        assert "unanswered.md" not in context
-        assert session_state.read_state(sid)[uwi_completion.STATE_KEY_ANSWERED] == {
-            "main": {repo: ["already-answered.md", "new-answer.md"]}
-        }
+        assert new_answer in context
+        assert unrecorded not in context
+        assert unanswered not in context
+        assert uwi_watch.awaiting(session_state.read_state(sid)) == [unanswered]
         assert not run(payload)

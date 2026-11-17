@@ -1,315 +1,163 @@
-"""`uwi_completion.py`のUWI回答ファイル差分通知を検証する。"""
+"""`uwi_completion.py`が、会話の投入したUWIへ付いた回答だけを通知することを検証する。"""
 
 import pathlib
-import subprocess
-import tempfile
 
 import pytest
 
-from agent_toolkit._atk.wi import add as _wi_add
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
-from agent_toolkit._common import session_state
+from agent_toolkit._common import session_state, uwi_watch
 from agent_toolkit._hooks import uwi_completion as _uwi_completion
 
 _REPO = "github.com/ak110/dotfiles"
+_SESSION = "self-session"
 
 
-def _entry(*, answer: str = "", target_repo: str = _REPO, submitter_session: str | None = None) -> str:
-    """テスト用UWIエントリ本文を返す。"""
-    submitter_line = f"submitter_session: {submitter_session}\n" if submitter_session is not None else ""
-    return (
+def _name(index: int) -> str:
+    """テスト用UWIのファイル名を返す。"""
+    return f"20261101-000000-{index:03d}.md"
+
+
+def _put(
+    root: pathlib.Path,
+    index: int,
+    *,
+    answer: str = "",
+    state: str = "inbox",
+    target_repo: str = _REPO,
+    submitter: str = _SESSION,
+) -> str:
+    """年月の固定保存先へUWIを1件置き、ファイル名を返す。"""
+    name = _name(index)
+    path = root / "2026" / "11" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         "---\n"
+        f"state: {state}\n"
         f"target_repo: {target_repo}\n"
         "type: uwi\n"
-        f"{submitter_line}"
+        f"submitter_session: {submitter}\n"
         "---\n\n"
         "## 質問\n\n本文\n\n"
         "## 回答\n\n"
         "<!-- ユーザーはこの行以降に回答を追記する -->\n"
-        f"{answer}"
+        f"{answer}",
+        encoding="utf-8",
     )
+    return name
 
 
-def _make_private_notes(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    unanswered: int,
-    answered: int,
-    other_repo: int = 0,
-) -> pathlib.Path:
-    """一時保存先へ指定件数のUWIを配置する。"""
+def _awaiting() -> list[str]:
+    """テスト対象の会話が回答を待つUWIの記録を返す。"""
+    return uwi_watch.awaiting(session_state.read_state(_SESSION))
+
+
+@pytest.fixture(name="root", autouse=True)
+def _root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """WIの保存先をテスト用の一時ディレクトリへ向ける。"""
     root = tmp_path / "private-notes"
-    inbox = root / "inbox"
-    processing = root / "processing"
-    inbox.mkdir(parents=True)
-    processing.mkdir()
-    for index in range(unanswered):
-        (inbox / f"unanswered-{index}.md").write_text(_entry(), encoding="utf-8")
-    for index in range(answered):
-        (processing / f"answered-{index}.md").write_text(_entry(answer="回答\n"), encoding="utf-8")
-    for index in range(other_repo):
-        (inbox / f"other-{index}.md").write_text(_entry(target_repo="example.com/x/y"), encoding="utf-8")
+    root.mkdir()
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(root))
-    monkeypatch.setattr(_uwi_completion, "resolve_target_repo", lambda _cwd: _REPO)
     return root
 
 
-def _answer_all(root: pathlib.Path) -> None:
-    """未回答UWIの回答欄へ回答本文を追記する。"""
-    for path in (root / "inbox").glob("unanswered-*.md"):
-        path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
-
-
-@pytest.fixture(autouse=True)
-def _isolate_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """セッション状態ファイルをテスト用一時ディレクトリへ隔離する。"""
-    for name in ("TMPDIR", "TEMP", "TMP"):
-        monkeypatch.setenv(name, str(tmp_path))
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-
-
 class TestBuildNotice:
-    """初回観測後に新しく回答されたファイル名だけを通知する。"""
+    """投入時に記録したUWIだけを確かめ、回答を1回だけ通知する。"""
 
-    def test_initial_observation_only_records_answered_filenames(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)
-        assert _uwi_completion.build_notice("initial", "/dummy") is None
-        state = session_state.read_state("initial")
-        assert state[_uwi_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: []}}
+    def test_session_without_record_does_not_read_private_notes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _fail(*_args: object, **_kwargs: object) -> None:
+            pytest.fail("記録の無い会話がWIの保存先を参照した")
 
-    def test_notifies_new_answer_while_another_uwi_remains_unanswered(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)
-        assert _uwi_completion.build_notice("new-answer", "/dummy") is None
-        path = root / "inbox/unanswered-0.md"
-        path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
+        monkeypatch.setattr(_uwi_scan, "private_notes_root", _fail)
+        assert _uwi_completion.build_notice(_SESSION) is None
 
-        notice = _uwi_completion.build_notice("new-answer", "/dummy")
+    def test_notifies_answered_uwi_once_and_keeps_unanswered(self, root: pathlib.Path) -> None:
+        answered = _put(root, 1, answer="回答\n", state="processing")
+        unanswered = _put(root, 2)
+        # 共有キューには他の会話が投入したUWIも並ぶ。記録していないUWIは回答済みでも通知しない。
+        foreign = _put(root, 3, answer="回答\n", submitter="other-session")
+        assert uwi_watch.add(_SESSION, [answered, unanswered])
+
+        notice = _uwi_completion.build_notice(_SESSION)
 
         assert notice is not None
         assert _REPO in notice
-        assert "unanswered-0.md" in notice
-        assert "unanswered-1.md" not in notice
+        assert answered in notice
+        assert unanswered not in notice
+        assert foreign not in notice
         # hookはprocess-wiの実行中かを判定しないため、実行中かどうかの条件分岐は規範の節へ置き、通知は節を参照する。
         assert "`references/answer-transitions.md`「回答後の状態遷移」" in notice
-        assert "セッションを終える前に" not in notice
+        assert _awaiting() == [unanswered]
+        assert _uwi_completion.build_notice(_SESSION) is None
 
-    def test_notifies_only_uwis_submitted_by_this_session_or_without_submitter(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # 共有キューには他のセッションが投入したUWIも並ぶ。投入元へだけ通知し、
-        # 投入元を記録していないUWI（導入前の投入分など）は反映の契機を失わないよう通知する。
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=0)
-        inbox = root / "inbox"
-        (inbox / "own.md").write_text(_entry(submitter_session="self-session"), encoding="utf-8")
-        (inbox / "foreign.md").write_text(_entry(submitter_session="other-session"), encoding="utf-8")
-        (inbox / "legacy.md").write_text(_entry(), encoding="utf-8")
-        assert _uwi_completion.build_notice("self-session", "/dummy") is None
-        for name in ("own.md", "foreign.md", "legacy.md"):
-            path = inbox / name
-            path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
+    def test_notifies_answers_of_every_target_repository(self, root: pathlib.Path) -> None:
+        first = _put(root, 1, answer="回答\n")
+        second = _put(root, 2, answer="回答\n", target_repo="example.com/x/y")
+        assert uwi_watch.add(_SESSION, [first, second])
 
-        notice = _uwi_completion.build_notice("self-session", "/dummy")
+        notice = _uwi_completion.build_notice(_SESSION)
 
         assert notice is not None
-        assert "own.md" in notice
-        assert "legacy.md" in notice
-        assert "foreign.md" not in notice
+        for target_repo, name in ((_REPO, first), ("example.com/x/y", second)):
+            assert f"{target_repo}に新たに回答されたUWIがある: {name}。" in notice
+        assert not _awaiting()
 
-        # 他のセッションの投入分は基準値へ取り込まれ、後の観測でも通知しない。
-        (inbox / "unrelated.md").write_text(_entry(), encoding="utf-8")
-        assert _uwi_completion.build_notice("self-session", "/dummy") is None
+    @pytest.mark.parametrize("state", ["adopted", "rejected"])
+    def test_finished_uwi_leaves_record_without_notice(self, root: pathlib.Path, state: str) -> None:
+        assert uwi_watch.add(_SESSION, [_put(root, 1, answer="回答\n", state=state)])
 
-    def test_codex_top_level_submitter_limits_notice_to_submitting_conversation(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # ownerを持たないCodex最上位の会話が投入したUWIは、投入元の解決で会話IDを記録し、その会話だけへ通知する。
-        for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID"):
-            monkeypatch.delenv(name, raising=False)
-        monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread")
-        submitter = _wi_add._resolve_submitter_session()  # pylint: disable=protected-access
-        assert submitter == "codex-thread"
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=0)
-        path = root / "inbox" / "codex.md"
-        path.write_text(_entry(submitter_session=submitter), encoding="utf-8")
-        assert _uwi_completion.build_notice("codex-thread", "/dummy") is None
-        assert _uwi_completion.build_notice("other-thread", "/dummy") is None
-        path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
+        assert _uwi_completion.build_notice(_SESSION) is None
+        assert not _awaiting()
 
-        assert _uwi_completion.build_notice("other-thread", "/dummy") is None
-        notice = _uwi_completion.build_notice("codex-thread", "/dummy")
-        assert notice is not None
-        assert "codex.md" in notice
+    @pytest.mark.parametrize("case", ["hold", "missing", "broken"])
+    def test_unsettled_uwi_stays_in_record(self, root: pathlib.Path, case: str) -> None:
+        """保留中のUWIと、同期の途中などで読めないUWIは、後の呼び出しで確かめ直せるよう記録へ残す。"""
+        name = _name(1)
+        if case == "hold":
+            _put(root, 1, answer="回答\n", state="hold")
+        elif case == "broken":
+            path = root / "2026" / "11" / name
+            path.parent.mkdir(parents=True)
+            path.write_text("frontmatterの無い本文\n", encoding="utf-8")
+        assert uwi_watch.add(_SESSION, [name])
 
-    def test_does_not_notify_when_only_foreign_uwi_is_answered(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=0)
-        path = root / "inbox" / "foreign.md"
-        path.write_text(_entry(submitter_session="other-session"), encoding="utf-8")
-        assert _uwi_completion.build_notice("self-session", "/dummy") is None
-        path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
+        assert _uwi_completion.build_notice(_SESSION) is None
+        assert _awaiting() == [name]
 
-        assert _uwi_completion.build_notice("self-session", "/dummy") is None
+    def test_does_not_notify_when_record_cannot_be_updated(self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """記録から外せないまま通知すると同じ回答を次回以降も繰り返し通知するため、通知しない。"""
+        assert uwi_watch.add(_SESSION, [_put(root, 1, answer="回答\n")])
 
-    def test_initial_answered_state_does_not_notify(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=1)
-        assert _uwi_completion.build_notice("stable-zero", "/dummy") is None
-        assert _uwi_completion.build_notice("stable-zero", "/dummy") is None
+        def _discard(*_args: object, **_kwargs: object) -> bool:
+            return False
 
-    def test_notifies_multiple_new_answers_together(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)
-        assert _uwi_completion.build_notice("multiple", "/dummy") is None
-        _answer_all(root)
+        monkeypatch.setattr(uwi_watch, "discard", _discard)
+        assert _uwi_completion.build_notice(_SESSION) is None
 
-        notice = _uwi_completion.build_notice("multiple", "/dummy")
 
-        assert notice is not None
-        assert "unanswered-0.md" in notice
-        assert "unanswered-1.md" in notice
+class TestAdoptScanState:
+    """全WIを走査する版の基準値を持つ会話は、投入済みのUWIを1回だけ記録へ引き継ぐ。"""
 
-    def test_answer_cancellation_does_not_notify_and_reanswer_does(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=1)
-        assert _uwi_completion.build_notice("cancel", "/dummy") is None
-        path = root / "processing/answered-0.md"
-        path.write_text(_entry(), encoding="utf-8")
-        assert _uwi_completion.build_notice("cancel", "/dummy") is None
-        path.write_text(_entry(answer="再回答\n"), encoding="utf-8")
-        notice = _uwi_completion.build_notice("cancel", "/dummy")
-        assert notice is not None
-        assert "answered-0.md" in notice
+    @pytest.mark.parametrize("key", ["uwi_answered_by_repo", "tbd_answered_by_repo"])
+    def test_adopts_own_pending_uwis_and_notifies_unnotified_answer(self, root: pathlib.Path, key: str) -> None:
+        waiting = _put(root, 1)
+        unnotified = _put(root, 2, answer="回答\n")
+        notified = _put(root, 3, answer="回答\n")
+        foreign = _put(root, 4, submitter="other-session")
+        # 基準値に無い対象リポジトリのUWIは、走査する版でも通知の対象外だった。
+        unobserved = _put(root, 5, target_repo="example.com/x/y")
+        recorded = _put(root, 6)
+        fingerprint_key = key.replace("answered", "fingerprint")
+        legacy = {key: {"main": {_REPO: [notified]}}, fingerprint_key: {"main": {"/cwd": "digest"}}}
+        assert session_state.update_state(_SESSION, lambda _state: legacy)
+        assert uwi_watch.add(_SESSION, [recorded])
 
-    def test_same_fingerprint_skips_rescan(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _uwi_completion.build_notice("same-state", "/dummy") is None
-        monkeypatch.setattr(
-            _uwi_scan,
-            "scan_active_uwis",
-            lambda *_args: pytest.fail("指紋が同じ状態で再走査された"),
-        )
-        assert _uwi_completion.build_notice("same-state", "/dummy") is None
-
-    def test_ignores_other_repositories(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0, other_repo=2)
-        assert _uwi_completion.build_notice("other", "/dummy") is None
-        state = session_state.read_state("other")
-        assert state[_uwi_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: []}}
-
-    def test_legacy_state_keys_are_carried_over_without_losing_a_notice(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """改名前のキーで基準値を持つセッションでも、新しい回答を1回目から通知する。"""
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _uwi_completion.build_notice("legacy", "/dummy") is None
-        state = session_state.read_state("legacy")
-        state["tbd_answered_by_repo"] = state.pop(_uwi_completion.STATE_KEY_ANSWERED)
-        state["tbd_fingerprint_by_repo"] = state.pop(_uwi_completion.STATE_KEY_FINGERPRINT)
-        assert session_state.update_state("legacy", lambda _previous: state)
-        _answer_all(root)
-
-        notice = _uwi_completion.build_notice("legacy", "/dummy")
+        notice = _uwi_completion.build_notice(_SESSION)
 
         assert notice is not None
-        assert "unanswered-0.md" in notice
-        updated = session_state.read_state("legacy")
-        assert updated[_uwi_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: ["unanswered-0.md"]}}
-        assert updated["tbd_answered_by_repo"] == {"main": {_REPO: []}}
-
-    def test_missing_root_does_not_write_state(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(_uwi_scan, "private_notes_root", lambda: None)
-        assert _uwi_completion.build_notice("missing-root", "/dummy") is None
-        assert not session_state.state_path("missing-root").exists()
-
-    def test_unresolved_repository_does_not_write_state(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        monkeypatch.setattr(_uwi_completion, "resolve_target_repo", lambda _cwd: None)
-        assert _uwi_completion.build_notice("missing-repo", "/dummy") is None
-        assert not session_state.state_path("missing-repo").exists()
-
-    def test_incomplete_scan_does_not_update_state_or_notify(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=1)
-        monkeypatch.setattr(
-            _uwi_scan,
-            "scan_active_uwis",
-            lambda _root, _repo: _uwi_scan.ActiveUwiScan([_uwi_scan.ActiveUwi("answered.md", True)], False),
-        )
-        assert _uwi_completion.build_notice("incomplete", "/dummy") is None
-        assert not session_state.state_path("incomplete").exists()
-
-    def test_state_write_failure_suppresses_notification(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """新規回答があっても通知状態を保存できなければ通知しない。
-
-        保存できないまま通知すると、同じ回答を次回以降も繰り返し通知する。
-        指紋による一致判定を無効化して`update_state`の呼び出しを回答記録の1回に限定し、
-        呼び出し順によらず書き込み失敗だけを模擬する。
-        """
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _uwi_completion.build_notice("write-failure", "/dummy") is None
-        _answer_all(root)
-        monkeypatch.setattr(_uwi_scan, "active_fingerprint", lambda _root: None)
-        monkeypatch.setattr(_uwi_completion, "update_state", lambda _session_id, _mutator: False)
-        assert _uwi_completion.build_notice("write-failure", "/dummy") is None
-
-    def test_missing_cwd_does_not_notify(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """作業ディレクトリを取得できないpayloadでは走査も状態記録も行わない。"""
-        _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _uwi_completion.build_notice("missing-cwd", "") is None
-        assert not session_state.state_path("missing-cwd").exists()
-
-    def test_subagent_call_does_not_consume_main_transition(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """サブエージェントの呼び出しがメインへの回答差分通知を消費しない。
-
-        メインとサブエージェントのフック呼び出しは同一`session_id`で届くため、
-        差分の判定をエージェント識別子で分けないと先に観測した側だけが通知を受け取る。
-        """
-        root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
-        assert _uwi_completion.build_notice("shared", "/dummy") is None
-        assert _uwi_completion.build_notice("shared", "/dummy", "abc123") is None
-        _answer_all(root)
-        assert _uwi_completion.build_notice("shared", "/dummy", "abc123") is not None
-        assert _uwi_completion.build_notice("shared", "/dummy") is not None
-
-
-class TestResolveTargetRepo:
-    """Git実行またはURL正規化に失敗した場合は解決不能として扱う。"""
-
-    @pytest.mark.parametrize(
-        "completed",
-        [
-            subprocess.CompletedProcess([], 1, stdout="", stderr="error"),
-            subprocess.CompletedProcess([], 0, stdout="invalid", stderr=""),
-        ],
-    )
-    def test_returns_none_for_invalid_result(
-        self, completed: subprocess.CompletedProcess[str], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        def _run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            return completed
-
-        monkeypatch.setattr(subprocess, "run", _run)
-        assert _uwi_completion.resolve_target_repo("/dummy") is None
-
-    @pytest.mark.parametrize("error", [OSError("git missing"), subprocess.TimeoutExpired("git", 5)])
-    def test_returns_none_for_execution_errors(self, error: Exception, monkeypatch: pytest.MonkeyPatch) -> None:
-        def _run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            raise error
-
-        monkeypatch.setattr(subprocess, "run", _run)
-        assert _uwi_completion.resolve_target_repo("/dummy") is None
-
-    def test_normalizes_origin(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def _run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            return subprocess.CompletedProcess([], 0, stdout="git@github.com:ak110/dotfiles.git\n", stderr="")
-
-        monkeypatch.setattr(subprocess, "run", _run)
-        assert _uwi_completion.resolve_target_repo("/dummy") == _REPO
+        assert unnotified in notice
+        for name in (waiting, notified, foreign, unobserved, recorded):
+            assert name not in notice
+        state = session_state.read_state(_SESSION)
+        assert key not in state
+        assert fingerprint_key not in state
+        assert uwi_watch.awaiting(state) == [waiting, recorded]

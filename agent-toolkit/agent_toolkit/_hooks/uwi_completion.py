@@ -1,15 +1,11 @@
-"""対象リポジトリで新たに回答されたUWIを検出し、通知本文を組み立てる。
+"""この会話が投入したUWIへの回答を検出し、通知本文を組み立てる。
 
-PostToolUseフックから毎回呼ばれる。セッション状態へ対象リポジトリごとの回答済み
-ファイル名とactive状態ディレクトリの指紋を記録し、前回観測後に回答済みとなった
-ファイル名だけを通知する。セッション開始後の初回観測は基準値の記録だけを行い、
-通知しない。
+PostToolUseフックから毎回呼ばれる。確かめる対象は、`atk wi add`が投入時にセッション状態へ記録したUWI
+（`_common/uwi_watch.py`）だけであり、記録が空の会話はprivate-notesを読まない。
+回答が付いたUWIは通知して記録から外し、採用・不採用で終了したUWIは通知せずに外す。
 
-private-notesは複数のセッションが共有するため、回答済みUWIの通知は投入元のセッションへ限る。
-frontmatterの`submitter_session`がフック入力の`session_id`と一致するUWIと、キーを持たないUWIだけを通知する。
-キーを持たないUWIは本機能の導入前の投入分と、Codexのメインのように投入元を解決できない方法での投入分であり、
-通知しないと回答の反映契機を失うため通知する。
-他のセッションが投入したUWIも回答済みファイル名の基準値へ記録し、後の観測で通知しない。
+投入元の会話は`atk wi add`が解決する。委譲先が投入したUWIは委譲の最上位の会話へ記録される。
+投入元を解決できずに投入されたUWIは、どの会話へも通知しない。
 
 `git pull`は実行しない。同一ホストのWeb UIおよびCLIからの回答はローカルファイルを
 直接更新するため、pullなしで観測できる。他端末からの回答は、このホストで次にpullが
@@ -17,153 +13,121 @@ frontmatterの`submitter_session`がフック入力の`session_id`と一致す�
 """
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
-lazy import subprocess
+lazy import pathlib
 
-from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
-lazy from agent_toolkit._common.session_state import update_state
-lazy from agent_toolkit._git import remote as _git_remote
+lazy from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATE_ADOPTED, WI_STATE_REJECTED
+lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+lazy from agent_toolkit._atk.wi.layout import entry_path, entry_state_from_metadata
+lazy from agent_toolkit._common import uwi_watch as _uwi_watch
+lazy from agent_toolkit._common.next_action import ActionableError
+lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 
-STATE_KEY_ANSWERED = "uwi_answered_by_repo"
-"""エージェント別・対象リポジトリID別の回答済みUWIファイル名を保持する状態キー。
+_SCAN_ANSWERED_KEYS = ("uwi_answered_by_repo", "tbd_answered_by_repo")
+"""全WIを走査して回答を検出していた版が残した、通知済みの基準値の状態キー。後ろは改名前のキー。
 
-値は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`の2段辞書とする。
-呼び出し元はこの通知をメインへだけ出力するため、通常はメインの識別子だけが現れる。
-2段構造を維持するのは、配布をまたいで稼働中のセッションが持つ状態ファイルの構造を変えると、
-そのセッションの次の観測が基準値の記録だけで終わり、回答済みUWIの通知が1回失われるためである。
+値は`{エージェント識別子: {対象リポジトリID: 回答済みのファイル名一覧}}`の2段辞書である。
+配布をまたいで稼働し続ける会話は、投入時の記録を持たずにこのキーだけを持つ。
+その会話が投入済みのUWIも通知の対象に保つため、`_adopt_scan_state`が1回だけ走査して記録へ引き継ぐ。
+状態ファイルの回収期限（`session_state.STALE_STATE_MAX_AGE_SECONDS`）を過ぎた後の版数更新以降に、引き継ぎごと撤去できる。
 """
 
-STATE_KEY_FINGERPRINT = "uwi_fingerprint_by_repo"
-"""エージェント別・作業ディレクトリ別のactive状態ディレクトリ指紋を保持するセッション状態キー。
-
-値は`{エージェント識別子: {作業ディレクトリ: 指紋文字列}}`の2段辞書とする。
-指紋が前回観測から変化していない間はUWIの回答状態も変化しないため、
-走査と`git remote get-url origin`をいずれも実行しない。
-"""
-
-_LEGACY_STATE_KEYS = {
-    STATE_KEY_ANSWERED: "tbd_answered_by_repo",
-    STATE_KEY_FINGERPRINT: "tbd_fingerprint_by_repo",
-}
-"""改名前の状態キーとの対応。
-
-配布をまたいで稼働し続けるセッションは、改名前のキーで基準値を記録した状態ファイルを持つ。
-新しいキーだけを読むとそのセッションの1回分がセッション開始直後と同じ扱いになり、
-回答済みのUWIが通知されないまま基準値へ取り込まれる。
-読み取りだけが本表を参照し、書き込みは常に現行のキーへ行う。
-改名前のキーを持つセッションが全て終了した後の版数更新以降に撤去できる。
-"""
-
-_GIT_TIMEOUT_SEC = 5.0
-"""`git remote get-url origin`の実行上限。フックの滞留を防ぐ。"""
+_SCAN_FINGERPRINT_KEYS = ("uwi_fingerprint_by_repo", "tbd_fingerprint_by_repo")
+"""同じ版が残した、変化検出用の指紋の状態キー。引き継ぎの時に基準値と併せて消す。"""
 
 
-def resolve_target_repo(cwd: str) -> str | None:
-    """作業ディレクトリから対象リポジトリIDを解決する。解決できない場合はNoneを返す。
+def _adopt_scan_state(session_id: str, state: dict) -> list[str]:
+    """走査方式の基準値を持つ会話が投入した未通知のUWIを、1回だけ走査して記録へ引き継ぐ。
 
-    `agent_toolkit._atk.wi.repo.resolve_repo_id`は解決失敗時にプロセスを終了し、
-    WIの共通処理を経由して依存パッケージも読み込むため使用しない。
+    基準値を記録済みの対象リポジトリごとに、未回答のUWIと、回答済みで基準値に無いUWIを引き継ぐ。
+    読めないWIは走査方式でも通知できなかったため、読めた範囲で引き継ぎを終える。
+    状態を書けなかった場合は空の一覧を返し、次の呼び出しでやり直す。
+    """
+    baseline: dict = {}
+    for key in _SCAN_ANSWERED_KEYS:
+        by_agent = state.get(key)
+        by_repo = by_agent.get(MAIN_AGENT_ID) if isinstance(by_agent, dict) else None
+        if isinstance(by_repo, dict):
+            baseline = by_repo
+            break
+    own: set[str] = set()
+    root = _uwi_scan.private_notes_root()
+    if root is not None:
+        for target_repo, notified in baseline.items():
+            if isinstance(target_repo, str) and isinstance(notified, list):
+                own.update(
+                    entry.filename
+                    for entry in _uwi_scan.scan_active_uwis(root, target_repo).entries
+                    if entry.submitter_session == session_id and not (entry.answered and entry.filename in notified)
+                )
+    adopted: list[str] = []
+
+    def _adopt(current: dict) -> dict:
+        nonlocal adopted
+        for key in (*_SCAN_ANSWERED_KEYS, *_SCAN_FINGERPRINT_KEYS):
+            current.pop(key, None)
+        current[_uwi_watch.STATE_KEY] = sorted(own.union(_uwi_watch.awaiting(current)))
+        adopted = _uwi_watch.awaiting(current)
+        return current
+
+    return adopted if update_state(session_id, _adopt) else []
+
+
+def _settled(root: pathlib.Path, filename: str) -> tuple[bool, str | None]:
+    """UWIの確認を終えてよいかと、回答済みの場合の対象リポジトリIDを返す。
+
+    終了したUWIは`(True, None)`、回答済みのUWIは`(True, 対象リポジトリID)`を返す。
+    未回答・保留中のUWIと、同期の途中などで読めないUWIは`(False, None)`を返し、次の呼び出しで確かめ直す。
     """
     try:
-        url = _git_remote.origin_url(cwd, timeout=_GIT_TIMEOUT_SEC)
-    except OSError, subprocess.SubprocessError:
+        path = entry_path(root, filename)
+        text = path.read_text(encoding="utf-8")
+        parsed = parse_frontmatter(text)
+        if parsed is None:
+            return False, None
+        state = entry_state_from_metadata(path, parsed[0])
+    except ActionableError, OSError, UnicodeDecodeError:
+        return False, None
+    if state in (WI_STATE_ADOPTED, WI_STATE_REJECTED):
+        return True, None
+    target_repo = parsed[0].get("target_repo")
+    if state in WI_PROCESSABLE_STATES and isinstance(target_repo, str) and _uwi_scan.is_uwi_answered(text):
+        return True, target_repo
+    return False, None
+
+
+def build_notice(session_id: str) -> str | None:
+    """この会話が投入したUWIに回答が付いていれば通知本文を返す。それ以外はNoneを返す。"""
+    state = read_state(session_id)
+    if any(key in state for key in _SCAN_ANSWERED_KEYS):
+        awaiting = _adopt_scan_state(session_id, state)
+    else:
+        awaiting = _uwi_watch.awaiting(state)
+    if not awaiting:
         return None
-    if url is None:
-        return None
-    try:
-        return _git_remote.normalize_remote_url(url)
-    except ValueError:
-        return None
-
-
-def _nested(state: dict, key: str, agent_id: str) -> dict:
-    """2段辞書`state[key][agent_id]`を必要に応じて用意して返す。
-
-    過去の版が記録した1段辞書や不正な型が残っていた場合は破棄して初期化する。
-    現行のキーが無い場合だけ`_LEGACY_STATE_KEYS`が示す改名前のキーの内容を引き継ぐ。
-    """
-    outer = state.get(key)
-    if not isinstance(outer, dict):
-        outer = _legacy_outer(state, key)
-        state[key] = outer
-    inner = outer.get(agent_id)
-    if not isinstance(inner, dict):
-        inner = {}
-        outer[agent_id] = inner
-    return inner
-
-
-def _legacy_outer(state: dict, key: str) -> dict:
-    """現行のキーが無い場合に、改名前のキーが持つ2段辞書の写しを返す。"""
-    legacy = state.get(_LEGACY_STATE_KEYS[key])
-    if not isinstance(legacy, dict):
-        return {}
-    return {agent: dict(value) for agent, value in legacy.items() if isinstance(value, dict)}
-
-
-def _fingerprint_unchanged(session_id: str, agent_id: str, cwd: str, fingerprint: str) -> bool:
-    """記録済みの指紋が今回の指紋と一致するかを返す。
-
-    読み取りだけを行うため、`update_state`のmutatorは書き込みを要求しない
-    （暗黙の`None`を返し、`update_state`は書き込みをスキップする）。
-    ロック下で読むのは、他プロセスの書き込み途中の状態を読まないためである。
-    """
-    previous: object = None
-
-    def _read(state: dict) -> None:
-        nonlocal previous
-        outer = state.get(STATE_KEY_FINGERPRINT)
-        if not isinstance(outer, dict):
-            outer = _legacy_outer(state, STATE_KEY_FINGERPRINT)
-        inner = outer.get(agent_id)
-        previous = inner.get(cwd) if isinstance(inner, dict) else None
-
-    update_state(session_id, _read)
-    return previous == fingerprint
-
-
-def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> str | None:
-    """前回観測後に回答されたUWIがあれば通知本文を返す。それ以外はNoneを返す。"""
-    if not cwd:
-        return None
-
     root = _uwi_scan.private_notes_root()
     if root is None:
         return None
 
-    fingerprint = _uwi_scan.active_fingerprint(root)
-    if fingerprint is not None and _fingerprint_unchanged(session_id, agent_id, cwd, fingerprint):
+    finished: list[str] = []
+    answered: dict[str, list[str]] = {}
+    for filename in awaiting:
+        settled, target_repo = _settled(root, filename)
+        if not settled:
+            continue
+        finished.append(filename)
+        if target_repo is not None:
+            answered.setdefault(target_repo, []).append(filename)
+    # 記録から外せないまま通知すると、同じ回答を次回以降も繰り返し通知する。
+    if not finished or not _uwi_watch.discard(session_id, finished) or not answered:
         return None
 
-    target_repo = resolve_target_repo(cwd)
-    if target_repo is None:
-        return None
-
-    scan = _uwi_scan.scan_active_uwis(root, target_repo)
-    if not scan.complete:
-        return None
-
-    submitters = {entry.filename: entry.submitter_session for entry in scan.entries if entry.answered}
-    answered = sorted(submitters)
-    outcome: dict[str, list[str]] = {"newly_answered": []}
-
-    def _record(state: dict) -> dict | None:
-        answers = _nested(state, STATE_KEY_ANSWERED, agent_id)
-        previous = answers.get(target_repo)
-        if isinstance(previous, list) and all(isinstance(filename, str) for filename in previous):
-            outcome["newly_answered"] = sorted(set(answered) - set(previous))
-        answers[target_repo] = answered
-        if fingerprint is not None:
-            _nested(state, STATE_KEY_FINGERPRINT, agent_id)[cwd] = fingerprint
-        return state
-
-    state_updated = update_state(session_id, _record)
-    newly_answered = [filename for filename in outcome["newly_answered"] if submitters[filename] in (None, session_id)]
-    if not newly_answered or not state_updated:
-        return None
-
-    filenames = ", ".join(newly_answered)
+    found = "".join(
+        f"リポジトリ{target_repo}に新たに回答されたUWIがある: {', '.join(filenames)}。"
+        for target_repo, filenames in sorted(answered.items())
+    )
     return (
-        f"リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
+        f"{found}"
         "`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`「回答後の状態遷移」に従って反映せよ。"
     )
