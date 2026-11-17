@@ -27,3 +27,6 @@ WIの保存状態には`inbox`、`processing`、`hold`、`adopted`、`rejected`�
 重要フラグはfrontmatterの`important: true`で設定し、キーの省略時はfalse、フラグの解除はキー自体の削除として扱う。
 一覧表示、検索、全件表示およびWeb画面の一覧では、`all`、`yes`、`no`の重要度フィルターを利用できる。
 重要フラグは、通常のprocess-wiにおける選定や優先度、状態遷移には影響せず、ユーザーが対象集合として明示的に指定した場合に参照する。
+巡回の選定量から外れた未着手項目は`inbox`のまま次回の候補に残す。
+量の調整だけを理由に保留・本文変更・依存追加を行わない。
+選ぶ順序と件数の下限は`agent-toolkit:process-wi/references/selection-procedure-allocation.md`に従う。
