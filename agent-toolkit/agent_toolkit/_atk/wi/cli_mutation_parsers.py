@@ -128,6 +128,16 @@ def _add_wi_add_parser(sub: Any) -> None:
         ),
         resolved_by_consumer=True,
     )
+    add.add_argument(
+        "--target-branch",
+        metavar="BRANCH",
+        default=None,
+        help=(
+            "宛先の系統（repository登録のbranchesの名前）。系統を登録したrepository宛てで省略するとdefault_branchの系統で保存する。"
+            "登録に無い名前と、系統を登録していないrepository宛ての指定は保存前に拒否する。"
+            "本文先頭のfrontmatterに target_branch がある場合は本オプションより優先する。"
+        ),
+    )
     add.set_defaults(subparser=add)
     _add_draft_comparison_arg(add)
 

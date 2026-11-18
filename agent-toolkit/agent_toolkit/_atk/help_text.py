@@ -238,7 +238,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop": {
         "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
-        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象を、1つの統括会話で継続処理する。\n利用場面: 登録した全対象を継続処理するとき、または--onceで開始時集合を各1回処理するとき。\n対象と出力: 常駐が同期・開始判定・所有・準備・結果検収・回収を行い、今回の全対象をprocess-wi all-reposの統括会話へ渡す。統括会話は対話CLIとしてこの端末の前景に起動する。未完了は準備済み成果を保持し、元会話はresumeで予約した場合に再開する。--onceは対象0件でも待機せず、未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。resume [ID|auto]で次回の再開を予約し、値省略はホストCLIの会話選択画面を使う。予約自体は起動せず、CLIの実起動で1回消費する。--worktreeは対象別に適用し、dotfilesは無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは新しい対象の起動を止め、稼働中の全実行が終了してから常駐を止める。abort-cancelで解除する。resume-cancelで未消費の再開予約を取り消す。停止未確認・未統合・dirtyの資源は保持する。",
+        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象を、1つの統括会話で継続処理する。\n利用場面: 登録した全対象を継続処理するとき、または--onceで開始時集合を各1回処理するとき。\n対象と出力: 常駐が同期・開始判定・所有・準備・結果検収・回収を行い、今回の全対象をprocess-wi all-reposの統括会話へ渡す。統括会話は対話CLIとしてこの端末の前景に起動する。未完了は準備済み成果を保持し、元会話はresumeで予約した場合に再開する。--onceは対象0件でも待機せず、未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。resume [ID|auto]で次回の再開を予約し、値省略はホストCLIの会話選択画面を使う。予約自体は起動せず、CLIの実起動で1回消費する。--worktreeは対象別に適用し、dotfilesは無指定でも隔離する。系統（--branches）を登録したrepositoryは系統ごとの対象になり、系統ごとのworktree（.claude/worktrees/process-loop-<系統>）をorigin/<系統>へ追随させて処理し、登録pathのブランチは切り替えない。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは新しい対象の起動を止め、稼働中の全実行が終了してから常駐を止める。abort-cancelで解除する。resume-cancelで未消費の再開予約を取り消す。停止未確認・未統合・dirtyの資源は保持する。",
         "epilog": "実行例:\n\n  atk config repos add /absolute/repository --edit allow --process-loop\n  atk wi process-loop\n  atk wi process-loop resume auto\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
     },
     "atk wi process-loop abort": {
@@ -335,18 +335,18 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk config remove serve_plans_remote_hosts remote-host",
     },
     "atk config repos": {
-        "summary": "repositoryの編集可否とprocess-loop対象・検証OSを管理する",
-        "description": "repositoryの扱いを管理する。\n\n目的: repositoriesのJSON mapを操作する。\n利用場面: 編集可否、process-loop対象、検証OSを登録するとき。\n対象と出力: ユーザー単位のconfig.jsonを読み書きする。旧process_loop_repositoriesは初回読取で同じ対象のallow・process_loop=trueへ移行する。既存登録と不整合なら上書きせず修正を案内する。\n前提: 識別子はoriginの正規化URL、originなしは元repositoryの絶対パス。worktreeも同じ扱いとなる。未登録は編集不可。\n復元・後始末: setで以前の属性へ戻し、removeで登録を削除できる。",
+        "summary": "repositoryの編集可否とprocess-loop対象・検証OS・系統を管理する",
+        "description": "repositoryの扱いを管理する。\n\n目的: repositoriesのJSON mapを操作する。\n利用場面: 編集可否、process-loop対象、検証OS、継続して作業が入るブランチ（系統）を登録するとき。\n対象と出力: ユーザー単位のconfig.jsonを読み書きする。旧process_loop_repositoriesは初回読取で同じ対象のallow・process_loop=trueへ移行する。既存登録と不整合なら上書きせず修正を案内する。\n前提: 識別子はoriginの正規化URL、originなしは元repositoryの絶対パス。worktreeも同じ扱いとなる。未登録は編集不可。\n復元・後始末: setで以前の属性へ戻し、removeで登録を削除できる。",
         "epilog": "実行例:\n\n  atk config repos list\n  atk config repos add example.org/team/repo --edit awi",
     },
     "atk config repos add": {
         "summary": "未登録repositoryを追加する",
-        "description": "未登録repositoryを追加する。\n\n目的: REPOを--edit allow|awi|denyで登録する。\n利用場面: 編集可否を初めて設定するとき。\n対象と出力: ユーザー単位のconfig.jsonを更新する。\n前提: cloneのないURLも登録できる。ローカルパスならoriginを解決する。pathは任意だがprocess-loop対象では同じrepositoryの実在するworktreeが必要。platformsはlinux,windowsのカンマ区切りで、省略時は両方を対象とする。\n復元・後始末: repos removeで登録を削除できる。",
-        "epilog": "実行例:\n\n  atk config repos add ./repo --edit allow --process-loop --platforms windows",
+        "description": "未登録repositoryを追加する。\n\n目的: REPOを--edit allow|awi|denyで登録する。\n利用場面: 編集可否を初めて設定するとき。\n対象と出力: ユーザー単位のconfig.jsonを更新する。\n前提: cloneのないURLも登録できる。ローカルパスならoriginを解決する。pathは任意だがprocess-loop対象では同じrepositoryの実在するworktreeが必要。platformsはlinux,windowsのカンマ区切りで、省略時は両方を対象とする。--branchesはoriginに実在するブランチ名のカンマ区切りで、--default-branch（系統を省略したWIの宛先）が必要。--merge-fromは<取り込む側>=<取り込み元>で、取り込む側のリリース前に取り込み元のマージを求める。系統の登録にはpathが必要。系統ごとにWIの宛先とprocess-loopの処理対象が分かれる。\n復元・後始末: repos removeで登録を削除できる。",
+        "epilog": "実行例:\n\n  atk config repos add ./repo --edit allow --process-loop --platforms windows\n  atk config repos add ./repo --edit allow --process-loop --branches release-1.x,main --default-branch main --merge-from main=release-1.x",
     },
     "atk config repos set": {
         "summary": "登録済みrepositoryの指定属性を変更する",
-        "description": "登録済みrepositoryの属性を変更する。\n\n目的: 指定した属性だけを更新して他の属性を保持する。\n利用場面: 編集可否・ローカルパス・検証OSを変えるとき。\n対象と出力: config.jsonを更新する。パスはcwd起点の絶対パスへ正規化する。\n前提: 登録済みの識別子を指定する。--no-process-loopで対象から外す。\n復元・後始末: 同じ操作で以前の値を設定できる。",
+        "description": '登録済みrepositoryの属性を変更する。\n\n目的: 指定した属性だけを更新して他の属性を保持する。\n利用場面: 編集可否・ローカルパス・検証OS・系統を変えるとき。\n対象と出力: config.jsonを更新する。パスはcwd起点の絶対パスへ正規化する。\n前提: 登録済みの識別子を指定する。--no-process-loopで対象から外す。--branches ""で系統の登録（default_branchの系統と取り込み元を含む）を外す。登録から外した系統を宛先に持つWIはblocked_reason=branch-unregisteredで着手不能になる。\n復元・後始末: 同じ操作で以前の値を設定できる。',
         "epilog": "実行例:\n\n  atk config repos set example.org/team/repo --edit deny --no-process-loop",
     },
     "atk config repos remove": {
@@ -356,7 +356,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config repos list": {
         "summary": "repository登録をJSONで一覧表示する",
-        "description": "repository登録をJSONで一覧表示する。\n\n目的: edit・path・process_loop・platformsを確認する。\n利用場面: 編集や設定変更の前に扱いを確認するとき。\n対象と出力: repositoriesの正規化済みJSON mapを表示する。旧設定がある初回は移行結果を保存する。\n前提: 登録がなければ空のmapを表示する。\n復元・後始末: 一覧表示だけなら不要。",
+        "description": "repository登録をJSONで一覧表示する。\n\n目的: edit・path・process_loop・platformsと、系統を登録したrepositoryのbranches・default_branch・merge_fromを確認する。\n利用場面: 編集や設定変更の前に扱いを確認するとき。\n対象と出力: repositoriesの正規化済みJSON mapを表示する。旧設定がある初回は移行結果を保存する。\n前提: 登録がなければ空のmapを表示する。\n復元・後始末: 一覧表示だけなら不要。",
         "epilog": "実行例:\n\n  atk config repos list",
     },
     "atk config apply-preset": {

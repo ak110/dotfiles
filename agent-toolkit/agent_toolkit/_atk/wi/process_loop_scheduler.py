@@ -43,7 +43,7 @@ class WorkerInput(pydantic.BaseModel):
     @pydantic.model_validator(mode="after")
     def validate_targets(self) -> Self:
         """対象の重複・不足と相対出力先を、実行の前に拒否する。"""
-        identifiers = [snapshot.repository.repo_id for snapshot in self.snapshots]
+        identifiers = [snapshot.repository.key for snapshot in self.snapshots]
         if not identifiers or len(set(identifiers)) != len(identifiers) or set(identifiers) != set(self.launch_inputs):
             raise ValueError("workerの対象と開始判定が一致しない")
         if not self.output.is_absolute():
@@ -57,8 +57,8 @@ def run_worker(
 ) -> None:
     """凍結した入力の一対象だけを実行し、終了検収した結果を保存する。"""
     request = WorkerInput.model_validate_json(path.read_text(encoding="utf-8"))
-    registered = {repository.repo_id: repository for repository in config.resolve_configured_repositories()}
-    if any(registered.get(snapshot.repository.repo_id) != snapshot.repository for snapshot in request.snapshots):
+    registered = {repository.key: repository for repository in config.resolve_configured_repositories()}
+    if any(registered.get(snapshot.repository.key) != snapshot.repository for snapshot in request.snapshots):
         raise ValueError("workerの対象が現在の登録と一致しない")
     args = argparse.Namespace(
         worktree=request.worktree,
@@ -73,8 +73,8 @@ def run_worker(
     if request.auto_resume:
         prior: dict[str, list[listing.RepositorySnapshot]] = {}
         for snapshot in request.snapshots:
-            repo_id = snapshot.repository.repo_id
-            key = ownership.coordinator_session(repo_id) or repo_id
+            target = snapshot.repository.key
+            key = ownership.coordinator_session(target) or target
             prior.setdefault(key, []).append(snapshot)
         groups = [tuple(group) for group in prior.values()]
     completed: dict[str, Any] = {}
@@ -82,9 +82,7 @@ def run_worker(
         results = execute(
             args,
             group,
-            launch_inputs={
-                snapshot.repository.repo_id: request.launch_inputs[snapshot.repository.repo_id] for snapshot in group
-            },
+            launch_inputs={snapshot.repository.key: request.launch_inputs[snapshot.repository.key] for snapshot in group},
         )
         completed.update((key, value.payload()) for key, value in results.items())
         atomic_write(request.output, json.dumps(completed, ensure_ascii=False))
@@ -143,7 +141,7 @@ class RepositoryScheduler:
         launches: dict[str, launch_gate.LaunchInput],
     ) -> None:
         """同じ対象を重ねず、新しく配布された実体からworkerを開始する。"""
-        repositories = tuple(snapshot.repository.repo_id for snapshot in snapshots)
+        repositories = tuple(snapshot.repository.key for snapshot in snapshots)
         lookup = getattr(args, "reservation_lookup", False)
         if not repositories or (not lookup and self.busy.intersection(repositories)):
             raise ValueError("workerの対象が空か、既に実行中の対象と重複している")

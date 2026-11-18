@@ -6,6 +6,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import config, config_repositories, config_settings
+from agent_toolkit._git import remote
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing.config_support import _isolate_platformdirs, _main, _saved, _write_config
 
@@ -155,3 +156,43 @@ def test_array_update_and_path_normalization(
     listed = capsys.readouterr().out
     assert _main(tmp_path, "config", "show") == 0
     assert capsys.readouterr().out == listed
+
+
+@pytest.mark.cpu_limit(
+    1.5, reason="bare originへ2ブランチをpushし、登録時のorigin照会を実Gitで確かめる（Linux CPU合計約0.6秒）。"
+)
+def test_branch_registration_round_trip(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """系統・default_branchの系統・取り込み元を登録・表示・解除し、originに無い名前と不整合な組は保存しない。"""
+    origin = git.init_bare_repository(tmp_path / "origin.git")
+    repository = git.init_repository(tmp_path / "repo", initial_branch="main", origin=str(origin), commit_message="base")
+    git.run_git(repository, "push", "--quiet", "origin", "main", "main:release")
+    original = remote.normalize_remote_url
+    monkeypatch.setattr(
+        remote, "normalize_remote_url", lambda value: "example.test/team/repo" if value == str(origin) else original(value)
+    )
+    repo_id = "example.test/team/repo"
+    base = ("config", "repos", "add", str(repository), "--edit", "allow", "--process-loop")
+    assert _main(tmp_path, *base, "--branches", "release,main", "--merge-from", "main=release") == 2
+    assert "default_branch" in capsys.readouterr().err
+    assert _main(tmp_path, *base, "--branches", "release,missing", "--default-branch", "release") == 2
+    assert "originに無いブランチ" in capsys.readouterr().err
+    assert _main(tmp_path, *base, "--branches", "release,main", "--default-branch", "other") == 2
+    assert "登録した系統: release, main" in capsys.readouterr().err
+    assert not config_settings.config_file_path().exists() or repo_id not in _saved(tmp_path).get("repositories", "{}")
+    assert _main(tmp_path, *base, "--branches", "release,main", "--default-branch", "main", "--merge-from", "main=release") == 0
+    capsys.readouterr()
+    assert _main(tmp_path, "config", "repos", "list") == 0
+    stored = json.loads(capsys.readouterr().out)[repo_id]
+    assert stored["branches"] == ["release", "main"]
+    assert (stored["default_branch"], stored["merge_from"]) == ("main", {"main": "release"})
+    assert [(item.key, item.branch) for item in config.resolve_configured_repositories()] == [
+        (f"{repo_id}@release", "release"),
+        (f"{repo_id}@main", "main"),
+    ]
+    assert _main(tmp_path, "config", "repos", "set", repo_id, "--branches", "") == 0
+    capsys.readouterr()
+    assert _main(tmp_path, "config", "repos", "list") == 0
+    assert set(json.loads(capsys.readouterr().out)[repo_id]) == {"edit", "path", "process_loop", "platforms"}
+    assert [(item.key, item.branch) for item in config.resolve_configured_repositories()] == [(repo_id, None)]

@@ -6,6 +6,7 @@ import pathlib
 import sys
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sections as _wi_sections
@@ -155,6 +156,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         with _wi_sync.repo_lock(private_notes):
             _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
     resolved_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in (args.target_repo or ())))
+    branch_settings = _wi_branches.registry()
 
     if validated_filenames:
         # 省略時に使う条件は対象集合を走査する照会のためのものであり、ファイル名で一意に指定した項目へは適用しない。
@@ -171,7 +173,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             if kind == WI_TYPE_UWI:
                 label = f" [{state}/{'answered' if answered else 'unanswered'}]"
             output.write(f"## target_repo: {target_repo}")
-            output.write(f"### {path.name}{label}")
+            output.write(f"### {path.name}{label}{_branch_label(text, target_repo, branch_settings)}")
             output.body(path.name, text, kind, args)
             if len(selected_by_name) > 1:
                 output.write()
@@ -186,6 +188,8 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         answered=args.answered,
         source=args.source,
         important=getattr(args, "important", "all"),
+        target_branch=_wi_branches.requested_filter(args, resolved_repos, branch_settings),
+        branch_settings=branch_settings,
     )
     for header_type in WI_TYPES:
         entries: dict[str, list[tuple[str, str, str]]] = {}
@@ -202,7 +206,13 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     label = f" [{state}]"
                     if header_type == WI_TYPE_UWI:
                         label = f" [{state}/{'answered' if _wi_uwi_scan.is_uwi_answered(text) else 'unanswered'}]"
-                    output.write(f"### {name}{label}")
+                    output.write(f"### {name}{label}{_branch_label(text, repo, branch_settings)}")
                     output.body(name, text, header_type, args)
                     output.write()
     output.finish()
+
+
+def _branch_label(text: str, target_repo: str, branch_settings: _wi_branches.Registry) -> str:
+    """系統を持つ項目の見出しへ添える宛先の系統を返す。"""
+    branch = _wi_branches.effective(text, target_repo, branch_settings)
+    return "" if branch is None else f" target_branch={branch}"

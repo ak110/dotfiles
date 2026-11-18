@@ -13,6 +13,7 @@ from typing import Any
 import filelock
 import psutil
 
+from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi.entries import EntryRecord
 from agent_toolkit._common import next_action as _next_action
@@ -93,6 +94,12 @@ class Ownership:
     path: pathlib.Path
     session_id: str | None
     previous: dict[str, Any] | None = None
+    branch: str | None = None
+
+    @property
+    def key(self) -> str:
+        """所有の単位であるrepositoryと系統の組の識別子を返す。"""
+        return _config.target_key(self.repo_id, self.branch)
 
     @property
     def lane_session_id(self) -> str:
@@ -101,8 +108,9 @@ class Ownership:
         return previous_id if isinstance(previous_id, str) else self.token
 
 
-def _path(repo_id: str) -> pathlib.Path:
-    digest = hashlib.sha256(repo_id.encode("utf-8")).hexdigest()
+def _path(key: str) -> pathlib.Path:
+    # 系統の無い対象はkeyがrepository識別子と同じになり、従来の記録を引き継ぐ。
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
     return ownership_directory() / f"{digest}.json"
 
 
@@ -289,9 +297,11 @@ def try_acquire(
     worktree: pathlib.Path,
     session_id: str | None = None,
     mode: str = "dedicated",
+    branch: str | None = None,
 ) -> Ownership | None:
-    """生存所有者が無いoriginだけを取得し、異常終了の再開情報を返す。"""
+    """生存所有者が無いoriginと系統の組だけを取得し、異常終了の再開情報を返す。"""
     repo_id = _remote.normalize_remote_url(target_repo_id)
+    key = _config.target_key(repo_id, branch)
     common = _git_command.run(
         ["-C", str(worktree), "rev-parse", "--path-format=absolute", "--git-common-dir"],
         capture_output=True,
@@ -303,7 +313,7 @@ def try_acquire(
             f"処理所有のGit共通ディレクトリを取得できない: {worktree}: {common.stderr.strip()}",
             next_action="対象がGit作業ツリーかとGitの状態を確かめ、同じコマンドを再実行する",
         )
-    path = _path(repo_id)
+    path = _path(key)
     path.parent.mkdir(parents=True, exist_ok=True)
     with filelock.FileLock(str(path.with_suffix(".lock")), timeout=10):
         try:
@@ -314,7 +324,7 @@ def try_acquire(
                 return None
         except ValueError as error:
             raise UnreadableOwnershipError(
-                f"処理所有記録を解釈できないため{repo_id}の処理を見送る: {path}: {error}",
+                f"処理所有記録を解釈できないため{key}の処理を見送る: {path}: {error}",
                 next_action=(
                     f"記録の`session_id`と`writer_sessions`の担当が終了済みかを`atk agents show <session_id>`で確かめ、"
                     f"終了済みなら{path}を退避または削除する（次の反復で同じリポジトリを再び処理する）"
@@ -345,19 +355,20 @@ def try_acquire(
                 "session_id": session_id,
                 "mode": mode,
                 "common_dir": str(pathlib.Path(common.stdout.strip()).resolve()),
+                **({} if branch is None else {"branch": branch}),
             },
         )
         if previous is not None:
             record.data["previous"] = previous
         record.data["lane_session_id"] = previous.get("lane_session_id", token) if previous is not None else token
         _save(path, record)
-        return Ownership(repo_id, token, path, session_id, previous)
+        return Ownership(repo_id, token, path, session_id, previous, branch)
 
 
-def coordinator_session(repo_id: str) -> str | None:
-    """未完了の統括会話だけを返し、旧リポジトリ担当を区別する。"""
+def coordinator_session(key: str) -> str | None:
+    """処理対象（repositoryと系統の組）の未完了の統括会話だけを返し、旧リポジトリ担当を区別する。"""
     try:
-        record = _read(_path(repo_id))
+        record = _read(_path(key))
     except ValueError:
         # 読めない記録は未完了の再開先として扱わない。取得時に`try_acquire`が対象リポジトリだけを見送り、回復手段を示す。
         return None
@@ -385,11 +396,11 @@ def update_prepared(ownership: Ownership, worktree: pathlib.Path, manifest: path
 
 
 def unfinished_repository_ids(repositories: tuple[str, ...]) -> set[str]:
-    """登録集合内で未完了のall-repos担当がある対象だけを返す。"""
+    """登録集合内で未完了のall-repos担当がある対象（処理対象の識別子）だけを返す。"""
     unfinished: set[str] = set()
     for repo_id in repositories:
         try:
-            record = _read(_path(_remote.normalize_remote_url(repo_id)))
+            record = _read(_path(repo_id))
         except ValueError:
             # 読めない記録は取得時に`try_acquire`が対象リポジトリだけを見送るため、他の対象の再開判定を止めない。
             continue

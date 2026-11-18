@@ -25,6 +25,7 @@ from typing import Any
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
+from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import repo as _wi_repo
 from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_AWI
@@ -522,8 +523,8 @@ def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[st
     return keys
 
 
-def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
-    """`add_entries`へ渡すfrontmatter付きメッセージ文字列を組み立てる。"""
+def _build_alert_message(target_repo_id: str, alert: Alert, branch: str | None = None) -> str:
+    """`add_entries`へ渡すfrontmatter付きメッセージ文字列を組み立てる。系統の監視では宛先の系統を加える。"""
     body = (
         f"# {alert.title}\n\n"
         "自動監視が未解決の事象を検知した。この事象を解消し、継続して行う自動チェックを正常な状態へ戻す。\n\n"
@@ -533,7 +534,11 @@ def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
         f"## 完成条件\n\n{alert.completion}\n\n"
         f"## 詳細\n\n{alert.details()}"
     )
-    return f"---\ntarget_repo: {target_repo_id}\nsource: alert-monitor\nalert_keys: {','.join(alert.keys)}\n---\n\n{body}\n"
+    branch_line = "" if branch is None else f"target_branch: {branch}\n"
+    return (
+        f"---\ntarget_repo: {target_repo_id}\n{branch_line}source: alert-monitor\n"
+        f"alert_keys: {','.join(alert.keys)}\n---\n\n{body}\n"
+    )
 
 
 def collect_new_alerts(
@@ -548,10 +553,13 @@ def collect_new_alerts(
     failures: list[str] | None = None,
     next_action: str = ALERT_FAILURE_NEXT_ACTION,
     repository_url: str | None = None,
+    include_repository_alerts: bool = True,
 ) -> list[Alert]:
     """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。
 
     ブランチの確認と定期実行の確認が同じ実行を見つけた場合は、同じキーの候補を1件にまとめる。
+    `include_repository_alerts`が偽の呼び出し（default_branch以外の系統）はrepository単位の定期実行を確認しない。
+    重複の除外はアラートのキー（実行の識別子）で行い、キーが実行ごとに異なるため系統を区別する。
     """
     host = repo_id.split("/", 1)[0]
     resolved_forge = forge if forge != "auto" else ("github" if host == "github.com" else "gitlab")
@@ -578,9 +586,10 @@ def collect_new_alerts(
             except AlertCollectError as exc:
                 report_failure(f"GitLab CI状態の取得に失敗しました: {exc}")
         try:
-            candidates.extend(
-                collect_gitlab_schedule_failures(host, repo_path, api_fn=glab_api_fn, repository_url=repository_url)
-            )
+            if include_repository_alerts:
+                candidates.extend(
+                    collect_gitlab_schedule_failures(host, repo_path, api_fn=glab_api_fn, repository_url=repository_url)
+                )
         except AlertCollectError as exc:
             report_failure(f"GitLabのPipeline Scheduleの状態の取得に失敗しました: {exc}")
     existing = existing_alert_keys(private_notes, repo_id)
@@ -605,12 +614,18 @@ def check_and_submit_alerts(
     ci_list_fn: GlabCiListFn = _run_glab_ci_list,
     glab_api_fn: GlabApiFn = _run_glab_api,
     next_action: str = ALERT_FAILURE_NEXT_ACTION,
+    branch: str | None = None,
+    include_repository_alerts: bool = True,
 ) -> AlertCheckResult:
-    """共有の収集・重複除外・AWI保存を実行し、保存件数と取得失敗を返す。"""
+    """共有の収集・重複除外・AWI保存を実行し、保存件数と取得失敗を返す。
+
+    系統（`branch`）を渡した場合はそのブランチのCIを照会し、起票するAWIの`target_branch`をその系統にする。
+    渡さない場合は作業ツリーの追跡先（無ければorigin/HEAD）を照会する。
+    """
     failures: list[str] = []
     alerts = collect_new_alerts(
         repo_id,
-        resolve_target_branch(local_path, git_fn=git_fn),
+        branch if branch is not None else resolve_target_branch(local_path, git_fn=git_fn),
         private_notes,
         forge=forge,
         run_list_fn=run_list_fn,
@@ -623,12 +638,13 @@ def check_and_submit_alerts(
             if forge == "gitlab" or forge == "auto" and not repo_id.startswith("github.com/")
             else None
         ),
+        include_repository_alerts=include_repository_alerts,
     )
     if not alerts:
         return AlertCheckResult(0, tuple(failures))
     generated = _add.add_entries(
         private_notes,
-        messages=[_build_alert_message(repo_id, alert) for alert in alerts],
+        messages=[_build_alert_message(repo_id, alert, branch) for alert in alerts],
         target_repo=repo_id,
         source="alert-monitor",
         now=now,
@@ -644,10 +660,28 @@ def cmd_check_alerts(args: argparse.Namespace, private_notes: pathlib.Path, now:
         "診断に示した対象・ブランチ設定と`gh auth status`（GitLabは`glab auth status`）を確認し、"
         "`atk wi check-alerts`を再実行せよ"
     )
-    result = check_and_submit_alerts(private_notes, repo_id, local_path, forge=args.forge, now=now, next_action=next_action)
-    message = f"CI失敗監視: 対象={repo_id} AWI投入={result.submitted}件"
-    if result.failures:
-        _outcome.report_failure(f"{message} 取得不能={len(result.failures)}種別", next_action=next_action)
+    settings = _wi_branches.registry().get(repo_id)
+    # 系統を登録したrepositoryは系統ごとにブランチを照会し、repository単位の確認はdefault_branchの系統だけが行う。
+    branches: tuple[str | None, ...] = (None,) if settings is None else settings.branches
+    submitted = 0
+    failures: list[str] = []
+    for branch in branches:
+        result = check_and_submit_alerts(
+            private_notes,
+            repo_id,
+            local_path,
+            forge=args.forge,
+            now=now,
+            next_action=next_action,
+            branch=branch,
+            include_repository_alerts=settings is None or branch == settings.default_branch,
+        )
+        submitted += result.submitted
+        failures.extend(result.failures)
+    scope = repo_id if settings is None else f"{repo_id}（系統: {', '.join(settings.branches)}）"
+    message = f"CI失敗監視: 対象={scope} AWI投入={submitted}件"
+    if failures:
+        _outcome.report_failure(f"{message} 取得不能={len(failures)}種別", next_action=next_action)
         return 1
     _outcome.report_success(message)
     return 0

@@ -308,9 +308,9 @@ _RESERVED_ADD_KEY_NEXT_ACTIONS = {
 
 """通常新規投入が採用しない管理キーと、指定方法の対応。保存前に存在自体を拒否する。"""
 
-_RESERVED_FRONTMATTER_KEYS = ("target_repo", "source", *_RESERVED_ADD_KEY_NEXT_ACTIONS)
+_RESERVED_FRONTMATTER_KEYS = ("target_repo", "target_branch", "source", *_RESERVED_ADD_KEY_NEXT_ACTIONS)
 
-"""生成側が所有するキー。target_repoとsourceだけは入力値を優先して採用する。"""
+"""生成側が所有するキー。target_repo・target_branch・sourceだけは入力値を優先して採用する。"""
 
 
 def normalize_cooldown_until(value: str) -> str:

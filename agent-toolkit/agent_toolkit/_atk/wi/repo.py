@@ -204,19 +204,24 @@ def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
     return resolve_repo_id(value, warn_non_origin=True), None
 
 
-def resolve_head_commit(local_worktree: pathlib.Path) -> str:
-    """ローカルworktreeのHEADを40桁または64桁OIDとして返す。"""
+def resolve_head_commit(local_worktree: pathlib.Path, *, revision: str = "HEAD") -> str:
+    """ローカルworktreeのHEAD（系統の宛先では`revision`のリモートブランチ）を40桁または64桁OIDとして返す。"""
     result = _git_command.run(
-        ["-C", str(local_worktree), "rev-parse", "--verify", "HEAD^{commit}"], capture_output=True, text=True, check=False
+        ["-C", str(local_worktree), "rev-parse", "--verify", f"{revision}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode != 0:
         detail = result.stderr.strip()
         suffix = f": {detail}" if detail else ""
         _outcome.report_failure(
-            f"HEADコミットを取得できない（git rev-parse --verify HEAD^{{commit}}）{suffix}",
+            f"HEADコミットを取得できない（git rev-parse --verify {revision}^{{commit}}）{suffix}",
             next_action=(
                 f"`git -C {local_worktree} log -1`でコミットが1件以上あるか確認し、無い場合は最初のコミットを作成してから"
                 "再実行する"
+                if revision == "HEAD"
+                else f"`git -C {local_worktree} fetch origin`で系統のリモートブランチを取得してから再実行する"
             ),
         )
         sys.exit(2)

@@ -9,11 +9,22 @@ import os
 import pathlib
 import typing
 
+from agent_toolkit._atk import config_repositories, config_settings
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk import lane_cleanup as _lane_cleanup
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._common import state_paths, worktree_hooks
 from agent_toolkit._git import command as git_command
+
+
+def _branch_scope(repo: pathlib.Path, base_branch: str) -> str | None:
+    """系統を登録したrepositoryでは、統合先ごとに固定作成先を分ける識別を返す。未登録はNoneで従来の配置を保つ。"""
+    try:
+        location = config_repositories.locate(repo)
+        registered = location is not None and location.repo_id in config_settings.repository_branch_settings()
+    except OSError, UnicodeError, ValueError:
+        registered = False
+    return config_repositories.branch_slug(base_branch) if registered else None
 
 
 def release_fixed(worktree: pathlib.Path, session_id: str) -> None:
@@ -145,7 +156,8 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
     if project_hook and commands.get("create"):
         raise ValueError("WorktreeCreate hookとcreate手順は同時に指定できない")
     source, source_owner = reuse_source(args, session_id)
-    fixed = None if args.worktree else _lane_records.fixed_worktree(repo, args.lane)
+    scope = _branch_scope(repo, args.base_branch)
+    fixed = None if args.worktree else _lane_records.fixed_worktree(repo, args.lane, scope)
     if (
         fixed is not None
         and source is None
@@ -159,6 +171,7 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
                     previous.get("common_dir") == common
                     and previous.get("lane") == args.lane
                     and previous.get("session_id") != session_id
+                    and (scope is None or previous.get("base_branch") == args.base_branch)
                 ):
                     release_fixed(pathlib.Path(previous["worktree"]), session_id)
         release_fixed(fixed, session_id)

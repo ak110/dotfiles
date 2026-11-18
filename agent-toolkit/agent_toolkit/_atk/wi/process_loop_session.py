@@ -67,10 +67,15 @@ def repository_input(
     previous_manifest = (ownership.previous or {}).get("manifest")
     if reuse_candidates and isinstance(previous_manifest, str):
         data = json.loads(pathlib.Path(previous_manifest).read_text(encoding="utf-8"))
-        previous_input = next((item for item in data["repositories"] if item["target_repo"] == snapshot.repository.repo_id), {})
+        previous_input = next(
+            (item for item in data["repositories"] if item.get("target", item["target_repo"]) == snapshot.repository.key), {}
+        )
+    branch = snapshot.repository.branch
     return {
         **previous_input,
+        "target": snapshot.repository.key,
         "target_repo": snapshot.repository.repo_id,
+        **({} if branch is None else {"target_branch": branch, "default_branch": snapshot.repository.default_branch}),
         "registered_worktree": str(snapshot.repository.worktree),
         "worktree": str(worktree),
         "common_dir": str(snapshot.repository.common_dir),

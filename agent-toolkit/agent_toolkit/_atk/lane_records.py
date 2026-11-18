@@ -204,9 +204,11 @@ def exclude_placement(main: pathlib.Path) -> None:
         raise ValueError(f"固定作成先の除外を設定できない（{error}）。`git status`と`info/exclude`を確認する") from error
 
 
-def fixed_worktree(repo: pathlib.Path, lane: str) -> pathlib.Path:
+def fixed_worktree(repo: pathlib.Path, lane: str, scope: str | None = None) -> pathlib.Path:
     # --worktreeを省略した作成先は主作業ツリーからの相対で固定し、session・日時・呼出し元を識別へ含めない。
-    return main_worktree(repo).joinpath(*worktree_exclude.WORKTREE_PARENT.parts, f"process-wi-{lane}")
+    # 系統を登録したrepositoryでは系統（scope）ごとに分け、別の系統の処理と同じレーン名で衝突しないようにする。
+    name = f"process-wi-{lane}" if scope is None else f"process-wi-{scope}-{lane}"
+    return main_worktree(repo).joinpath(*worktree_exclude.WORKTREE_PARENT.parts, name)
 
 
 def read_selection(record: dict[str, typing.Any]) -> dict[str, typing.Any] | None:

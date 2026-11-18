@@ -28,8 +28,10 @@ from agent_toolkit._atk.config_settings import (
     mutable_setting_default,
     parse_remote_hosts,
     process_loop_configuration_path,
+    repository_branch_settings,
     resolve_configured_repositories,
     serve_default_port,
+    target_key,
 )
 from agent_toolkit._atk.config_settings import MUTABLE_KEY_DEFAULTS as _MUTABLE_KEY_DEFAULTS
 from agent_toolkit._atk.config_settings import RETIRED_CONNECTION_KEYS as _RETIRED_CONNECTION_KEYS
@@ -55,8 +57,10 @@ __all__ = [
     "mutable_setting_default",
     "parse_remote_hosts",
     "process_loop_configuration_path",
+    "repository_branch_settings",
     "resolve_configured_repositories",
     "serve_default_port",
+    "target_key",
 ]
 
 

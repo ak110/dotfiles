@@ -6,6 +6,7 @@ from typing import Any
 
 import pydantic
 
+from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._atk.wi import constants as wi_constants
@@ -20,6 +21,7 @@ class _CompletionTarget(pydantic.BaseModel):
     """報告前の確認で使う起動原本と所有の識別。"""
 
     target_repo: str
+    target_branch: str | None = None
     ownership_record: pathlib.Path
     ownership_token: str
     candidate_file: pathlib.Path
@@ -37,11 +39,12 @@ def completion_status(
 ) -> dict[str, Any]:
     """報告前にも常駐と同じ現キュー・最終化検収を読み取り専用で使う。"""
     request = _CompletionManifest.model_validate_json(manifest.read_text(encoding="utf-8"))
-    snapshots = {item.repository.repo_id: item for item in _listing.configured_repo_snapshot(private_notes)}
+    snapshots = {item.repository.key: item for item in _listing.configured_repo_snapshot(private_notes)}
     results: dict[str, Any] = {}
     unmatched = set(additional_wis or [])
     for target in request.repositories:
-        if target.target_repo in results or target.target_repo not in snapshots:
+        key = _config.target_key(target.target_repo, target.target_branch)
+        if key in results or key not in snapshots:
             raise ValueError("完了確認の対象が重複しているか、現在の登録先に存在しない")
         record = json.loads(target.ownership_record.read_text(encoding="utf-8"))
         if (
@@ -56,14 +59,15 @@ def completion_status(
             target.ownership_record,
             record.get("session_id"),
             record.get("previous"),
+            target.target_branch,
         )
         if owner.lane_session_id != target.lane_session_id:
             raise ValueError("起動時と現在のレーン所有が一致しない")
-        present = {entry[0].name for entry in snapshots[target.target_repo].entries}
+        present = {entry[0].name for entry in snapshots[key].entries}
         additional = set(additional_wis or []) & present
         unmatched -= additional
-        remaining, excluded = remaining_work(snapshots[target.target_repo], owner, additional, target.candidate_file)
-        results[target.target_repo] = {
+        remaining, excluded = remaining_work(snapshots[key], owner, additional, target.candidate_file)
+        results[key] = {
             "status": "incomplete" if any(remaining.values()) else "ready",
             "observed_remaining": remaining,
             **excluded,

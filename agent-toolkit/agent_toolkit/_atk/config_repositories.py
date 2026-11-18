@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import pathlib
+import re
 from collections.abc import Sequence
 from typing import Annotated, Any, Literal
 
@@ -23,6 +25,63 @@ class RepositoryAttributes(pydantic.BaseModel):
     path: str = ""
     process_loop: bool = False
     platforms: Annotated[list[Literal["linux", "windows"]], pydantic.Field(min_length=1)] = ["linux", "windows"]
+    branches: list[str] = []
+    default_branch: str = ""
+    merge_from: dict[str, str] = {}
+
+
+@dataclasses.dataclass(frozen=True)
+class BranchSettings:
+    """1つのrepositoryで継続して作業が入るリモートのブランチ（系統）の登録。"""
+
+    branches: tuple[str, ...]
+    default_branch: str
+    merge_from: dict[str, str]
+
+
+def branch_settings(item: dict[str, Any]) -> BranchSettings | None:
+    """正規化済みの登録属性から系統の登録を返す。系統を登録していなければNoneを返す。"""
+    if not item.get("branches"):
+        return None
+    return BranchSettings(tuple(item["branches"]), item["default_branch"], dict(item.get("merge_from", {})))
+
+
+def branch_slug(branch: str) -> str:
+    """ブランチ名をworktree名・ディレクトリ名へ使える形にする。置き換えた場合は衝突を避ける短いハッシュを添える。"""
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", branch).strip("-.") or "branch"
+    if slug != branch:
+        slug = f"{slug}-{hashlib.sha256(branch.encode('utf-8')).hexdigest()[:8]}"
+    return slug
+
+
+def _validate_branches(key: str, attributes: RepositoryAttributes) -> dict[str, Any]:
+    """系統の名前・default_branchの系統・取り込み元の整合を検証し、保存する属性を返す。"""
+    if not attributes.branches:
+        if attributes.default_branch or attributes.merge_from:
+            raise ValueError(f"{key}のdefault_branchとmerge_fromはbranchesを登録した場合だけ指定できる")
+        return {}
+    names = attributes.branches
+    if len(set(names)) != len(names):
+        raise ValueError(f"{key}のbranchesに重複がある")
+    invalid = [name for name in names if not name or name.startswith("-") or any(c.isspace() or c in ",=" for c in name)]
+    if invalid:
+        raise ValueError(f"{key}のbranchesに使えない名前がある: {', '.join(map(repr, invalid))}")
+    if not attributes.default_branch:
+        raise ValueError(
+            f"{key}はbranchesを登録する場合にdefault_branchが必要。--default-branchで系統を省略したWIの宛先にする系統を指定する"
+        )
+    unknown = sorted({attributes.default_branch, *attributes.merge_from, *attributes.merge_from.values()} - set(names))
+    if unknown:
+        raise ValueError(
+            f"{key}のdefault_branchとmerge_fromはbranchesの名前だけを指定できる: {', '.join(unknown)}"
+            f"（登録した系統: {', '.join(names)}）"
+        )
+    if any(target == source for target, source in attributes.merge_from.items()):
+        raise ValueError(f"{key}のmerge_fromに同じ系統どうしの対応がある")
+    result: dict[str, Any] = {"branches": list(names), "default_branch": attributes.default_branch}
+    if attributes.merge_from:
+        result["merge_from"] = dict(attributes.merge_from)
+    return result
 
 
 def normalize_path(value: str) -> str:
@@ -109,7 +168,12 @@ def parse(value: str, *, check_paths: bool = True) -> dict[str, dict[str, Any]]:
         if len(set(platforms)) != len(platforms):
             raise ValueError(f"{key}のplatformsに重複がある")
         path = attributes.path if "path" in attributes.model_fields_set else local
-        item: dict[str, Any] = {"edit": attributes.edit, "process_loop": enabled, "platforms": platforms}
+        item: dict[str, Any] = {
+            "edit": attributes.edit,
+            "process_loop": enabled,
+            "platforms": platforms,
+            **_validate_branches(key, attributes),
+        }
         if path is not None:
             item["path"] = normalize_path(path)
         if enabled and not item.get("path"):

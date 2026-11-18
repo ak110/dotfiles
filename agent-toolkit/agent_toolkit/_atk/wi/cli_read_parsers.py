@@ -7,6 +7,7 @@ from typing import Any
 from agent_toolkit._atk.wi.cli_parser_support import (
     _add_important_filter_arg,
     _add_mq_read_sync_args,
+    _add_target_branch_filter_arg,
     _queue_filename_completer,
     _uwi_filename_completer,
 )
@@ -67,6 +68,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     )
     _arguments.add_source_arg(list_, multiple=True)
     _add_important_filter_arg(list_)
+    _add_target_branch_filter_arg(list_)
     list_.add_argument(
         "--effect-check",
         choices=("pending", "confirmed", "insufficient", "not_required"),
@@ -164,6 +166,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     )
     _arguments.add_source_arg(show, multiple=True)
     _add_important_filter_arg(show)
+    _add_target_branch_filter_arg(show)
     _add_mq_read_sync_args(show)
     show.set_defaults(subparser=show)
 
@@ -240,6 +243,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         help="ファイル名の投入日が指定日以後のWIだけを検索する。投入日を持たない旧名は含めない。",
     )
     _add_important_filter_arg(grep)
+    _add_target_branch_filter_arg(grep)
     _arguments.add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
     grep.set_defaults(subparser=grep)

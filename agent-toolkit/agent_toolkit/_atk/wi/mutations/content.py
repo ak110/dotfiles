@@ -552,6 +552,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(1)
     try:
         _require_agent_edit_source(original, edited)
+        invalidate_repo_bound_metadata(original, edited)
         if message is not None or tmp_path is not None:
             # 既存本文が旧書式でも、置換後のUWIの`直接的原因`行は判定する。
             parsed_edited = _frontmatter.parse_frontmatter(edited)

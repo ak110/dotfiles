@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filters as _wi_filters
@@ -74,12 +75,15 @@ class RepositorySnapshot:
     def candidate_records(self) -> list[dict[str, object]]:
         """担当へ渡す本文と鮮度を同じ取得済み候補から返す。"""
         now = datetime.datetime.now(datetime.UTC)
+        branch = self.repository.branch
+        base = "HEAD" if branch is None else f"refs/remotes/origin/{branch}"
         return [
             {
                 "filename": path.name,
                 "state": state,
                 "type": kind,
                 "target_repo": repo_id,
+                **({} if branch is None else {"target_branch": branch}),
                 "ready": state in WI_PROCESSABLE_STATES and path.name in self.readiness.ready,
                 "blocked_reason": _blocked_reason(self.readiness, path.name) if path.name in self.readiness.blocked else None,
                 "source": parse_source(text),
@@ -87,7 +91,7 @@ class RepositorySnapshot:
                 "priority_reason": _priority.reason_of((parse_frontmatter(text) or ({}, ""))[0]),
                 "summary": uwi_body_summary(text, sys.maxsize) if kind == WI_TYPE_UWI else body_summary(text, sys.maxsize),
                 "body": text,
-                "staleness": _staleness(text, self.repository.worktree, now),
+                "staleness": _staleness(text, self.repository.worktree, now, base=base),
             }
             for path, repo_id, text, state, kind in self.candidates
         ]
@@ -102,18 +106,28 @@ def configured_repo_snapshot(
     if not targets:
         return ()
     snapshot = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None))
+    # 系統を登録した対象が無ければ空の対応で十分である（保存済みの系統を持つ項目は全て登録外として着手不能になる）。
+    branch_settings = _wi_branches.registry() if any(repository.branch is not None for repository in targets) else {}
     return tuple(
         RepositorySnapshot(
             repository,
             tuple(
                 entry
                 for entry in snapshot
-                if (entry[4] is None and index == 0) or _wi_filters.TargetRepoMatcher(repository.repo_id).matches(entry[1])
+                if (entry[4] is None and index == 0)
+                or (
+                    _wi_filters.TargetRepoMatcher(repository.repo_id).matches(entry[1])
+                    and (
+                        repository.branch is None
+                        or _wi_branches.matches(entry[2], repository.repo_id, repository.branch, branch_settings)
+                    )
+                )
             ),
             _wi_readiness.calculate_readiness(
                 private_notes,
                 repository.repo_id,
                 snapshot=snapshot if index == 0 else tuple(entry for entry in snapshot if entry[4] is not None),
+                branch_settings=branch_settings,
             ),
             private_notes,
         )
@@ -138,6 +152,7 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     """
     reasons = (
         ("frontmatter-broken", readiness.frontmatter_broken),
+        ("branch-unregistered", readiness.unregistered_branches),
         ("invalid-cooldown", readiness.invalid_cooldowns),
         ("invalid-dependency", readiness.invalid_dependencies),
         ("missing-dependency", readiness.missing_dependencies),
@@ -153,8 +168,12 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
     return "dependency-unmet-internal" if filename in readiness.internal_dependency_waits else "dependency-unmet-external"
 
 
-def print_entries(selected: list[_wi_entries.EntryRecord], readiness: ReadinessResult) -> None:
-    """選択済みエントリを`atk wi list`の1件1行形式で出力する。"""
+def print_entries(
+    selected: list[_wi_entries.EntryRecord],
+    readiness: ReadinessResult,
+    branch_settings: _wi_branches.Registry | None = None,
+) -> None:
+    """選択済みエントリを`atk wi list`の1件1行形式で出力する。系統を持つ項目は`target_branch=`を添える。"""
     for header_type in (*WI_TYPES, None):
         group = [entry for entry in selected if entry[4] == header_type]
         if not group:
@@ -189,6 +208,9 @@ def print_entries(selected: list[_wi_entries.EntryRecord], readiness: ReadinessR
                 else None
             )
             reason_suffix = f" blocked_reason={reason}" if reason is not None and reason != "frontmatter-broken" else ""
+            branch = _wi_branches.effective(text, target_repo, branch_settings or {})
+            if branch is not None:
+                reason_suffix = f" target_branch={branch}{reason_suffix}"
             if reason == "cooldown-until":
                 cooldown_until = dict(readiness.cooldown_values)[path.name]
                 reason_suffix += f" cooldown_until={cooldown_until}"
@@ -205,8 +227,12 @@ def print_entries(selected: list[_wi_entries.EntryRecord], readiness: ReadinessR
             print(f"{prefix}{summary}")
 
 
-def _staleness(text: str, local_worktree: pathlib.Path | None, now: datetime.datetime) -> dict[str, object]:
+def _staleness(
+    text: str, local_worktree: pathlib.Path | None, now: datetime.datetime, *, base: str = "HEAD"
+) -> dict[str, object]:
     """target_commit以後に12時間以上経過したcommitがあるかを返す。
+
+    `base`は比較先のrevisionで、系統を持つ項目ではその系統のリモートブランチを渡す。
 
     履歴は項目の`target_repo`に対応するローカル作業ツリーで調べる。
     frontmatterの`target_repo`は正規化リモートURLであり`git -C`へ渡せないため、引数を作業ツリーのパスに限る。
@@ -220,7 +246,7 @@ def _staleness(text: str, local_worktree: pathlib.Path | None, now: datetime.dat
     if local_worktree is None:
         return {"status": "indeterminate", "reason": "local-worktree-unavailable"}
     result = _git_command.run(
-        ["-C", str(local_worktree), "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..HEAD"],
+        ["-C", str(local_worktree), "rev-list", "--format=%ct", "--no-commit-header", f"{target_commit}..{base}"],
         capture_output=True,
         text=True,
         check=False,
@@ -242,10 +268,12 @@ def _print_json_entries(
     include_staleness: bool = False,
     staleness_now: datetime.datetime | None = None,
     local_worktrees: Mapping[str, pathlib.Path] | None = None,
+    branch_settings: _wi_branches.Registry | None = None,
 ) -> None:
     """選択済みエントリを端末幅によらず同じ形のJSON Linesで出力する。
 
     `local_worktrees`はリポジトリ識別子からローカル作業ツリーへの対応で、鮮度の判定に使う。
+    系統を持つ項目は`target_branch`を加え、鮮度をその系統のリモートブランチと比べる。
     """
     now = staleness_now or datetime.datetime.now(datetime.UTC)
     for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
@@ -258,10 +286,12 @@ def _print_json_entries(
         )
         summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
         metadata = (parse_frontmatter(text) or ({}, ""))[0]
+        branch = _wi_branches.effective(text, target_repo, branch_settings or {})
         record: dict[str, object] = {
             "filename": path.name,
             "type": entry_type,
             "target_repo": target_repo,
+            **({} if branch is None else {"target_branch": branch}),
             "state": state,
             "ready": state in WI_PROCESSABLE_STATES and path.name in readiness.ready,
             "blocked_reason": reason,
@@ -274,7 +304,12 @@ def _print_json_entries(
             "summary": summary,
         }
         if include_staleness:
-            record["staleness"] = _staleness(text, (local_worktrees or {}).get(target_repo), now)
+            record["staleness"] = _staleness(
+                text,
+                (local_worktrees or {}).get(target_repo),
+                now,
+                base="HEAD" if branch is None else f"refs/remotes/origin/{branch}",
+            )
         print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
 
 
@@ -325,6 +360,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
     if getattr(args, "configured_repos", False):
         snapshots = configured_repo_snapshot(private_notes)
+        configured_branches = _wi_branches.registry()
         if getattr(args, "snapshot_output", None) is not None:
             _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
         total = 0
@@ -357,20 +393,25 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     snapshot.readiness,
                     include_staleness=getattr(args, "with_staleness", False),
                     local_worktrees={snapshot.repository.repo_id: snapshot.repository.worktree},
+                    branch_settings=configured_branches,
                 )
             else:
-                print_entries(selected, snapshot.readiness)
+                print_entries(selected, snapshot.readiness, configured_branches)
         if args.count:
             print(total)
         return
     target_values = args.target_repo if isinstance(args.target_repo, list) else [args.target_repo] if args.target_repo else []
     resolved_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in target_values))
     readiness_target = resolved_repos[0] if len(resolved_repos) == 1 else None
+    branch_settings = _wi_branches.registry()
+    target_branch = _wi_branches.requested_filter(args, resolved_repos, branch_settings)
     texts = EntryTexts()
     all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
     if getattr(args, "snapshot_output", None) is not None:
         _wi_snapshot.save(args.snapshot_output, all_entries)
-    readiness = _wi_readiness.calculate_readiness(private_notes, readiness_target, texts=texts, snapshot=all_entries)
+    readiness = _wi_readiness.calculate_readiness(
+        private_notes, readiness_target, texts=texts, snapshot=all_entries, branch_settings=branch_settings
+    )
 
     selected = _wi_entries.select_entries(
         private_notes,
@@ -382,6 +423,8 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         texts=texts,
         important=getattr(args, "important", "all"),
         snapshot=_wi_snapshot.new_entries(all_entries, baseline) if baseline is not None else all_entries,
+        target_branch=target_branch,
+        branch_settings=branch_settings,
     )
     if getattr(args, "effect_check", None) is not None:
         selected = [
@@ -403,7 +446,8 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             readiness,
             include_staleness=include_staleness,
             local_worktrees=_local_worktrees(args, target_values) if include_staleness else None,
+            branch_settings=branch_settings,
         )
         return
 
-    print_entries(selected, readiness)
+    print_entries(selected, readiness, branch_settings)

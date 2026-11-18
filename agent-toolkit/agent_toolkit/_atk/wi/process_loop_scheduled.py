@@ -42,7 +42,7 @@ def _print_work(snapshots: tuple[_listing.RepositorySnapshot, ...]) -> None:
     """取得したWIのうち、担当の起動を要する件数をリポジトリごとに表示する。"""
     for snapshot in snapshots:
         if snapshot.has_work:
-            print(f"  {snapshot.repository.repo_id}: 処理候補{len(snapshot.candidates)}件", flush=True)
+            print(f"  {snapshot.repository.key}: 処理候補{len(snapshot.candidates)}件", flush=True)
 
 
 def _launch_plan(
@@ -58,7 +58,7 @@ def _launch_plan(
     inputs: dict[str, _gate.LaunchInput] = {}
     skipped: list[str] = []
     for snapshot in snapshots:
-        repo_id = snapshot.repository.repo_id
+        repo_id = snapshot.repository.key
         observed = alerts.get(repo_id)
         current = _gate.repository_input(snapshot, observed)
         if repo_id in explicit or ((snapshot.has_work or observed) and _gate.decide(repo_id, current).launch):
@@ -119,7 +119,8 @@ def _run_scheduled_loop(
                 scheduler.wait()
                 continue
             repositories = _config.resolve_configured_repositories()
-            target_ids = {repository.repo_id for repository in repositories}
+            target_ids = {repository.key for repository in repositories}
+            repo_ids = {repository.repo_id for repository in repositories}
             try:
                 reservation = _control.read_resume_request()
             except (OSError, ValueError) as error:
@@ -183,7 +184,7 @@ def _run_scheduled_loop(
                 not args.no_update
                 and not scheduler.active
                 and dotfiles_root is not None
-                and _worktree.DOTFILES_REPO_ID in target_ids
+                and _worktree.DOTFILES_REPO_ID in repo_ids
                 and (mise_refreshed is None or time.monotonic() - mise_refreshed >= _mise.MISE_REFRESH_INTERVAL_SEC)
             ):
                 if mise_refreshed is not None or not args.internal_mise_refreshed:
@@ -216,14 +217,17 @@ def _run_scheduled_loop(
             # APIの同時要求を少数に保つ。キュー保存はadd_entriesの既存repo_lockで直列化される。
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 checks = {
-                    snapshot.repository.repo_id: executor.submit(
+                    snapshot.repository.key: executor.submit(
                         _alerts.check_process_loop_alerts,
                         args,
                         private_notes,
                         snapshot.repository.repo_id,
                         snapshot.repository.worktree,
-                        last_alert_checks.get(snapshot.repository.repo_id),
-                        count_dependabot=snapshot.repository.repo_id not in item_launches,
+                        last_alert_checks.get(snapshot.repository.key),
+                        # Dependabotはrepository単位の仕事のため、default_branchの系統の対象だけが数える。
+                        count_dependabot=snapshot.repository.is_default and snapshot.repository.key not in item_launches,
+                        branch=snapshot.repository.branch,
+                        include_repository_alerts=snapshot.repository.is_default,
                     )
                     for snapshot in snapshots
                 }
@@ -231,13 +235,13 @@ def _run_scheduled_loop(
             for snapshot in snapshots:
                 repository = snapshot.repository
                 try:
-                    checked, submitted, pending = checks[repository.repo_id].result()
-                    last_alert_checks[repository.repo_id] = checked
-                    alerts[repository.repo_id] = pending
+                    checked, submitted, pending = checks[repository.key].result()
+                    last_alert_checks[repository.key] = checked
+                    alerts[repository.key] = pending
                     if pending:
-                        print(f"{repository.repo_id}に未判定のDependabotアラートが{len(pending)}件あります。", flush=True)
+                        print(f"{repository.key}に未判定のDependabotアラートが{len(pending)}件あります。", flush=True)
                     if submitted:
-                        print(f"アラート監視により{repository.repo_id}へ{submitted}件のAWIを投入しました。", flush=True)
+                        print(f"アラート監視により{repository.key}へ{submitted}件のAWIを投入しました。", flush=True)
                         submitted_any = True
                 except (OSError, ValueError) as error:
                     retry = "`atk wi process-loop --once`でDependabotを含む確認を再試行せよ" if once else ""
@@ -247,10 +251,10 @@ def _run_scheduled_loop(
                         f"--forge {args.alert_forge}`でCI失敗を再確認せよ。" + (retry if once else "")
                     )
                     _log.append(
-                        "repository_alert_failed", target_repo=repository.repo_id, detail=str(error), next_action=next_action
+                        "repository_alert_failed", target_repo=repository.key, detail=str(error), next_action=next_action
                     )
                     _next_action.report(
-                        f"{repository.repo_id}のアラート確認に失敗しました: {error}。"
+                        f"{repository.key}のアラート確認に失敗しました: {error}。"
                         + ("Dependabotを含む自動確認は常駐の次の取得時に再試行する。" if not once else ""),
                         next_action=next_action,
                         stream=sys.stdout,
@@ -264,9 +268,9 @@ def _run_scheduled_loop(
             available = tuple(
                 snapshot
                 for snapshot in snapshots
-                if snapshot.repository.repo_id not in scheduler.busy
-                and (not once or snapshot.repository.repo_id not in scheduler.started)
-                and (once_targets is None or snapshot.repository.repo_id in (once_targets or set()))
+                if snapshot.repository.key not in scheduler.busy
+                and (not once or snapshot.repository.key not in scheduler.started)
+                and (once_targets is None or snapshot.repository.key in (once_targets or set()))
             )
             launch_inputs, skipped = _launch_plan(available, explicit, alerts)
             if once and once_targets is None:
@@ -300,7 +304,10 @@ def _run_scheduled_loop(
                 )
                 wait_idle()
                 continue
-            if not _watch.wait_for_start_permission(private_notes, set(launch_inputs), gate):
+            launch_repositories = {
+                snapshot.repository.repo_id for snapshot in available if snapshot.repository.key in launch_inputs
+            }
+            if not _watch.wait_for_start_permission(private_notes, launch_repositories, gate):
                 # 中断の消費は先頭のdrain判定だけが所有し、他対象の終了回収を保つ。
                 continue
             if _config.resolve_configured_repositories() != repositories:
@@ -336,18 +343,23 @@ def _run_scheduled_loop(
             available = tuple(
                 snapshot
                 for snapshot in snapshots
-                if snapshot.repository.repo_id not in scheduler.busy
-                and (not once or snapshot.repository.repo_id not in scheduler.started)
-                and (once_targets is None or snapshot.repository.repo_id in (once_targets or set()))
+                if snapshot.repository.key not in scheduler.busy
+                and (not once or snapshot.repository.key not in scheduler.started)
+                and (once_targets is None or snapshot.repository.key in (once_targets or set()))
             )
             launch_inputs, skipped = _launch_plan(available, explicit, alerts)
+            by_key = {snapshot.repository.key: snapshot.repository for snapshot in available}
             for repo_id, current in tuple(launch_inputs.items()):
                 if current.alerts is None:
                     # 起動時の未判定アラートを基準に記録し、終了後に増えたアラートだけを新しい入力として扱う。
-                    launch_inputs[repo_id] = current.with_alerts(_alerts.observe_dependabot_pending(args, repo_id))
-            launching = [snapshot for snapshot in available if snapshot.repository.repo_id in launch_inputs]
+                    launch_inputs[repo_id] = current.with_alerts(
+                        _alerts.observe_dependabot_pending(args, by_key[repo_id].repo_id)
+                        if by_key[repo_id].is_default
+                        else frozenset()
+                    )
+            launching = [snapshot for snapshot in available if snapshot.repository.key in launch_inputs]
             if args.resume is not None or (args.auto_resume and args.resume_request_id is not None):
-                launching = [snapshot for snapshot in launching if snapshot.repository.repo_id in explicit]
+                launching = [snapshot for snapshot in launching if snapshot.repository.key in explicit]
             if not launching:
                 if once:
                     print("開始待機の間に処理対象が無くなったため終了します。", flush=True)
@@ -356,7 +368,7 @@ def _run_scheduled_loop(
                 continue
             if _log.abort_path().exists():
                 continue
-            names = [snapshot.repository.repo_id for snapshot in launching]
+            names = [snapshot.repository.key for snapshot in launching]
             print(f"{len(launching)}件のリポジトリの所有・準備と統括処理を開始します: {', '.join(names)}", flush=True)
             gate.started()
             # 今回の全対象を1つの統括会話へ渡す。autoの再開では元会話ごとの結果をworkerが途中回収する。

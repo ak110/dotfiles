@@ -14,6 +14,7 @@ import tempfile
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -177,15 +178,31 @@ def commit_values_by_path(
 
 
 def invalidate_repo_bound_metadata(original: str, updated: str) -> str:
-    """target_repo変更時に旧リポジトリへ結び付くメタデータを削除する。"""
+    """target_repo・target_branchの変更時に旧宛先へ結び付くメタデータを削除し、宛先の系統を検証する。
+
+    target_repoだけを変えた編集は旧repositoryの系統を引き継がず、新しい宛先のdefault_branchの系統として扱う。
+    """
     original_parsed = _frontmatter.parse_frontmatter(original)
     updated_parsed = _frontmatter.parse_frontmatter(updated)
     if original_parsed is None or updated_parsed is None:
         return updated
     original_data, _ = original_parsed
     updated_data, updated_body = updated_parsed
-    if original_data.get("target_repo") == updated_data.get("target_repo"):
+    repo_changed = original_data.get("target_repo") != updated_data.get("target_repo")
+    branch_changed = original_data.get(_wi_branches.KEY) != updated_data.get(_wi_branches.KEY)
+    if not repo_changed and not branch_changed:
         return updated
+    if repo_changed and not branch_changed:
+        updated_data.pop(_wi_branches.KEY, None)
+    branch = updated_data.get(_wi_branches.KEY)
+    target_repo = updated_data.get("target_repo")
+    if branch is not None:
+        if not isinstance(branch, str) or not branch or not isinstance(target_repo, str):
+            raise WebInputError(
+                "target_branchは空でない文字列で指定してください",
+                next_action="frontmatterのtarget_branchへ登録した系統の名前を指定するか、行を除いてdefault_branchの系統へ戻す",
+            )
+        _wi_branches.resolve_for_save(target_repo, branch, _wi_branches.registry())
     updated_data.pop("target_commit", None)
     return _frontmatter.serialize_frontmatter(updated_data, updated_body)
 

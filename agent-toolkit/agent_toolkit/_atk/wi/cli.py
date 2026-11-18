@@ -177,6 +177,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--depends-on", args.depends_on),
                 ("--cooldown-until", args.cooldown_until),
                 ("--target-repo", args.target_repo),
+                ("--target-branch", args.target_branch),
                 ("--source", args.source),
                 ("REPO_PATH", args.repo_path_override),
             )
