@@ -172,8 +172,8 @@ MODE_DESCRIPTION = parameter_description(
 
 SUBAGENT_MD_PATH_DESCRIPTION = parameter_description(
     "taskで必須、他のmodeでは指定しない。委譲先の手順と返却契約を保持する`<役割名>.subagent.md`の役割名（例: `add-wi`）。"
-    "役割名はサーバー自身のplugin rootの`share/<役割名>.subagent.md`へ解決する。"
-    "別のplugin rootの文書を指定する場合はagent-toolkitの`share/*.subagent.md`の絶対パスを渡す。"
+    "役割名はサーバー自身のplugin rootの`<役割名>.subagent.md`へ解決する。"
+    "別のplugin rootの文書を指定する場合はagent-toolkitの`<役割名>.subagent.md`の絶対パスを渡す。"
 )
 
 
@@ -332,7 +332,7 @@ START_DESCRIPTION = "\n".join(
         "",
         "| mode | 用途 | 標準の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
-        "| `task`（省略時） | `share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path`。"
+        "| `task`（省略時） | `<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path`。"
         "保持中の`whole_contract_path`も渡す。通常起動だけが参照・配送する | "
         "`<役割名>.subagent.md`の`mode:`、対応する工程別設定 |",
         "| `delegate` | `<役割名>.subagent.md`の無い単発作業 | `prompt`・`model_type`・`whole_contract_path` | "

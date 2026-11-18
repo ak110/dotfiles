@@ -227,9 +227,11 @@ def _generated_input_errors(plugin_root: pathlib.Path) -> list[str]:
                 "リポジトリ直下で`uv run --frozen python scripts/sync_generated_files.py`を実行せよ。"
             )
             continue
+        source = task_documents.require_role_document(plugin_root, role)
+        origin = source.relative_to(plugin_root).as_posix()
         expected = (
-            f"\n<!-- 生成元: share/{role}.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->\n"
-            + task_documents.input_contract_body(plugin_root / f"share/{role}.subagent.md")
+            f"\n<!-- 生成元: {origin}のrequired_inputs・optional_inputs。手動編集しない。 -->\n"
+            + task_documents.input_contract_body(source)
             + "\n\n"
         )
         if text.split(start)[1].split(end)[0] != expected:
@@ -241,7 +243,8 @@ def _generated_input_errors(plugin_root: pathlib.Path) -> list[str]:
     return errors
 
 
-_READ_TABLE_SUBAGENT_PATTERN = re.compile(r"share/([A-Za-z0-9_.-]+\.subagent\.md)")
+_ROLE_DIRECTORY_PATTERN = "(?:" + "|".join(re.escape(directory) for directory in task_documents.ROLE_DOCUMENT_DIRECTORIES) + ")"
+_READ_TABLE_SUBAGENT_PATTERN = re.compile(_ROLE_DIRECTORY_PATTERN + r"/([A-Za-z0-9_.-]+\.subagent\.md)")
 
 
 def _read_table_subagents(recipient: pathlib.Path, launched: set[str] | None = None) -> list[str]:
@@ -283,6 +286,17 @@ def _instructed_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
     ]
 
 
+def _role_files(share: pathlib.Path, suffix: str) -> list[pathlib.Path]:
+    """`share`にある`suffix`の文書を返す。配布物の`share`では、同じplugin rootの他の置き場所の文書も含める。
+
+    隔離したテスト入力のディレクトリは、そのディレクトリだけを対象にする。
+    """
+    directories = [share]
+    if share.name == "share":
+        directories.extend(path for path in task_documents.role_document_directories(share.parent) if path != share)
+    return sorted((path for directory in directories for path in directory.glob(f"*{suffix}")), key=lambda path: path.name)
+
+
 def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
     """呼び元の見出し直後に宣言した起動契約を、節の境界を保って取得する。"""
     paths = [
@@ -290,7 +304,7 @@ def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
         *sorted(path for path in share.glob("*.md") if not path.name.endswith(".parent.md")),
     ]
     contracts = []
-    for role in sorted(share.glob("*.subagent.md")):
+    for role in _role_files(share, ".subagent.md"):
         if "<!-- parent-read-source:" not in role.read_text(encoding="utf-8"):
             continue
         for target in read_triggers.parent_contract_targets(role.name, share.parent):
@@ -330,8 +344,8 @@ def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
 
 def _contract_errors(share: pathlib.Path) -> list[str]:
     """share直下の委譲起動契約に反する箇所を返す。"""
-    parents: list[_Contract] = [*sorted(share.glob("*.parent.md")), *_embedded_contracts(share)]
-    recipients = {path.name: path for path in sorted(share.glob("*.subagent.md"))}
+    parents: list[_Contract] = [*_role_files(share, ".parent.md"), *_embedded_contracts(share)]
+    recipients = {path.name: path for path in _role_files(share, ".subagent.md")}
     pairs: list[tuple[_Contract, str]] = []
     errors: list[str] = []
     for recipient in recipients.values():
@@ -341,7 +355,7 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
         for line in content.splitlines():
             if "起動" not in line or line.startswith("|"):
                 continue
-            for name in re.findall(r"share/([A-Za-z0-9_.-]+\.parent\.md)", line):
+            for name in re.findall(_ROLE_DIRECTORY_PATTERN + r"/([A-Za-z0-9_.-]+\.parent\.md)", line):
                 if name not in table and name not in declared:
                     errors.append(f"起動手順の読込が欠けている: {recipient.name} -> {name}")
 
@@ -445,7 +459,7 @@ def _format_contract_error(error: str) -> str:
 def _assert_role_models_registered(share: pathlib.Path) -> None:
     """現行の宣言と旧版の読取互換から、役割のモデル種別へ到達できることを確かめる。"""
     missing = []
-    for path in sorted(share.glob("*.subagent.md")):
+    for path in _role_files(share, ".subagent.md"):
         text = path.read_text(encoding="utf-8")
         declaration = task_documents.read_declaration_unchecked(path, text)
         if isinstance(declaration, task_documents.TaskDocumentDeclaration) and declaration.model_type is not None:
@@ -466,7 +480,7 @@ def _declaration(task_document: pathlib.Path) -> task_documents.TaskDocumentDecl
 def _fixed_reply_errors(share: pathlib.Path) -> list[str]:
     """`## 出力`節に`text`ブロックで固定の返却形式を示しながら、返却をその形式に限る語を持たない文書を返す。"""
     errors: list[str] = []
-    for path in sorted(share.glob("*.subagent.md")):
+    for path in _role_files(share, ".subagent.md"):
         content = path.read_text(encoding="utf-8")
         if "\n## 出力\n" not in content:
             continue
@@ -483,7 +497,7 @@ def _h2_section(content: str, heading: str) -> str:
 
 def _lane_planning_contract(plugin_root: pathlib.Path) -> str:
     """exec.subagent.mdの読込表で計画の起草の時点に読む行と、その参照文書をひとつの契約として返す。"""
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    executor = task_documents.require_role_document(plugin_root, "exec").read_text(encoding="utf-8")
     entry = next(line for line in _h2_section(executor, "読込表").splitlines() if "references/lane-planning.md" in line)
     return (
         entry
@@ -510,7 +524,7 @@ def _launch_role_errors(share: pathlib.Path) -> list[str]:
     コードスパンで現れることを求める。共通節へ起動の形を委ねる旧来の記述も報告する。
     """
     errors: list[str] = []
-    for parent in sorted(share.glob("*.parent.md")):
+    for parent in _role_files(share, ".parent.md"):
         content = parent.read_text(encoding="utf-8")
         sections = content.split("\n## ")
         targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
@@ -536,7 +550,7 @@ def _launch_read_errors(share: pathlib.Path) -> list[str]:
     時点を書いた行が無い本文の名指しは、定型の条件の宣言が補われるため報告する。
     """
     errors: list[str] = []
-    contracts: list[_Contract] = [*sorted(share.glob("*.parent.md")), *_embedded_contracts(share)]
+    contracts: list[_Contract] = [*_role_files(share, ".parent.md"), *_embedded_contracts(share)]
     for contract in contracts:
         targets, valid_structure = _marker_values(contract, _LAUNCH_TARGET_PREFIX, recipient=False)
         if not valid_structure:

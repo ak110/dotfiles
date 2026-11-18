@@ -1,4 +1,6 @@
-"""agent-toolkitの`share/<役割名>.subagent.md`が宣言する起動設定を読む。
+"""agent-toolkitの役割文書（`<役割名>.subagent.md`）の所在を解決し、宣言された起動設定を読む。
+
+役割文書の置き場所は`ROLE_DOCUMENT_DIRECTORIES`だけが定める。
 
 現行形式は先頭のYAML frontmatterで、mode・モデル段位・用途・入力・継続・書込を宣言する。
 旧版の`## 入力`直後の`text`コードブロックにある宣言行は、保持された役割文書とsessionの読取互換として扱う。
@@ -39,6 +41,53 @@ INPUT_CONTRACT_NOTICE = (
 )
 
 
+ROLE_DOCUMENT_DIRECTORIES: tuple[str, ...] = ("skills/atk-mode/roles", "share")
+"""役割文書と起動・受領契約（`<役割名>.parent.md`）を置く、plugin rootからの相対ディレクトリ。
+
+先頭は入口スキル`atk-mode`の配下（移行先）、`share`は移行前の置き場所である。
+スキルの配下だけを配置するホストへも役割文書を届けるために移行しており、移行の途中は両方を解決する。
+同じ名前の文書を両方へ置かない（`share/task_documents_invariant_test.py`が確かめる）。
+"""
+
+
+def role_document_directories(plugin_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """`plugin_root`の役割文書の置き場所を、解決の優先順に返す。"""
+    return tuple(plugin_root.joinpath(*directory.split("/")) for directory in ROLE_DOCUMENT_DIRECTORIES)
+
+
+def role_document_plugin_root(path: pathlib.Path) -> pathlib.Path | None:
+    """役割文書の置き場所の直下にあるパスから、その文書が属するplugin rootを返す。置き場所の外ならNoneを返す。"""
+    for directory in ROLE_DOCUMENT_DIRECTORIES:
+        parts = tuple(directory.split("/"))
+        if path.parent.parts[-len(parts) :] == parts:
+            return path.parents[len(parts)]
+    return None
+
+
+def find_role_document(plugin_root: pathlib.Path, name: str) -> pathlib.Path | None:
+    """ファイル名（`<役割名>.subagent.md`・`<役割名>.parent.md`）に対応する実在の文書を返す。"""
+    for directory in role_document_directories(plugin_root):
+        if (candidate := directory / name).is_file():
+            return candidate
+    return None
+
+
+def require_role_document(plugin_root: pathlib.Path, role: str) -> pathlib.Path:
+    """役割名に対応する`<役割名>.subagent.md`を返す。無ければ探した置き場所を示して失敗する。"""
+    document = find_role_document(plugin_root, role + TASK_DOCUMENT_SUFFIX)
+    if document is None:
+        raise ValueError(
+            f"役割文書が存在しない: {plugin_root}の{'・'.join(ROLE_DOCUMENT_DIRECTORIES)}に{role}.subagent.mdが無い"
+        )
+    return document
+
+
+def role_documents(plugin_root: pathlib.Path, suffix: str = TASK_DOCUMENT_SUFFIX) -> list[pathlib.Path]:
+    """全ての置き場所にある、`suffix`で終わる文書をファイル名順に返す。"""
+    found = [path for directory in role_document_directories(plugin_root) for path in directory.glob(f"*{suffix}")]
+    return sorted(found, key=lambda path: path.name)
+
+
 def launch_contract_documents(plugin_root: pathlib.Path) -> list[tuple[pathlib.Path, str]]:
     """起動対象を宣言した全契約と役割名を返す。返却生成の対象表には依存しない。"""
     contracts: list[tuple[pathlib.Path, str]] = []
@@ -58,7 +107,7 @@ def launch_contract_documents(plugin_root: pathlib.Path) -> list[tuple[pathlib.P
                 if not re.fullmatch(r"[a-z][a-z0-9-]*\.subagent\.md", name):
                     raise ValueError(
                         f"{path}: 起動対象の名前が不正: {name}。"
-                        "次の操作: 表示された契約の起動対象を、shareに実在する<役割名>.subagent.mdの名前へ修正せよ。"
+                        "次の操作: 表示された契約の起動対象を、実在する<役割名>.subagent.mdの名前へ修正せよ。"
                     )
                 contracts.append((path, name.removesuffix(TASK_DOCUMENT_SUFFIX)))
     return contracts
@@ -91,7 +140,7 @@ LaunchKind = typing.Literal["delegate", "explore", "shell", "write"]
 LAUNCH_KINDS: tuple[LaunchKind, ...] = typing.get_args(LaunchKind)
 
 # 委譲プロンプトの中から`<役割名>.subagent.md`の絶対パスを抽出する。空白、バッククォートおよび引用符を区切りとし、
-# Windowsの区切り文字を含むパスも抽出する。実在とagent-toolkitのshare配下であることは抽出した後に確かめる。
+# Windowsの区切り文字を含むパスも抽出する。実在とagent-toolkitの役割文書の置き場所にあることは抽出した後に確かめる。
 _TASK_DOCUMENT_PATH_PATTERN = re.compile(r"(?:[A-Za-z]:)?[/\\][^\s`'\"<>|（）「」]*?\.subagent\.md")
 
 
@@ -140,11 +189,12 @@ class TaskDocumentDeclaration:
 
 
 def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
-    """agent-toolkit pluginのshare直下にある`<役割名>.subagent.md`だけを受理する。"""
-    if path.parent.name != "share":
+    """agent-toolkit pluginの役割文書の置き場所の直下にある`<役割名>.subagent.md`だけを受理する。"""
+    root = role_document_plugin_root(path)
+    if root is None:
         return False
     try:
-        manifest = json.loads((path.parent.parent / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     except OSError, UnicodeError, json.JSONDecodeError:
         return False
     return isinstance(manifest, dict) and manifest.get("name") == "agent-toolkit"
@@ -157,7 +207,9 @@ def read_declaration(task_document: pathlib.Path, document_text: str | None = No
     宣言行の書式違反（`mode:`の未知の値を含む）も警告文として返す。
     """
     if not is_agent_toolkit_task_document(task_document):
-        return f"必須入力を確認できません: `<役割名>.subagent.md`がshare配下ではありません: {task_document}"
+        return (
+            f"必須入力を確認できません: `<役割名>.subagent.md`がagent-toolkitの役割文書の置き場所にありません: {task_document}"
+        )
     return read_declaration_unchecked(task_document, document_text)
 
 

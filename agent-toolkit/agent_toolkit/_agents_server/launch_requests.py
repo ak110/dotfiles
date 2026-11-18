@@ -55,8 +55,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 _REQUIRED_INPUT_NAME_PATTERN = task_documents.INPUT_NAME_PATTERN
 
-_SHARE_DIRECTORY = plugin_root.SERVER_PLUGIN_ROOT / "share"
-
 _TASK_MODEL_TYPES = launch_prompts.TASK_MODEL_TYPES
 
 _TASK_DOCUMENT_SUFFIX = task_documents.TASK_DOCUMENT_SUFFIX
@@ -65,8 +63,8 @@ _TASK_DOCUMENT_SUFFIX = task_documents.TASK_DOCUMENT_SUFFIX
 # 委譲元がツールのエラー本文や状態値だけで次の行動を決められるよう、応答へ載せる次の操作の文面。
 # 同じ状況を複数の処理が返すため、処理ごとに書き分けず1か所へ置く。
 _TASK_DOCUMENT_PATH_NEXT_ACTION = (
-    "`subagent_md_path`へ役割名（`share/<役割名>.subagent.md`の`<役割名>`。例: `add-wi`）か、"
-    "agent-toolkitの`share/*.subagent.md`の絶対パスを渡す。"
+    "`subagent_md_path`へ役割名（`<役割名>.subagent.md`の`<役割名>`。例: `add-wi`）か、"
+    "agent-toolkitの`<役割名>.subagent.md`の絶対パスを渡す。"
     "役割文書の指定を直し、`mode`を省略したtaskで`start`を再発行する"
 )
 
@@ -83,29 +81,37 @@ MODEL_TYPE_NEXT_ACTION = (
 
 
 def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
-    """agent-toolkit pluginのshare直下にある`<役割名>.subagent.md`だけを受理する。"""
+    """agent-toolkit pluginの役割文書の置き場所の直下にある`<役割名>.subagent.md`だけを受理する。"""
     return task_documents.is_agent_toolkit_task_document(path)
 
 
 def _accepted_role_names() -> list[str]:
-    """サーバー自身のplugin rootの`share/`直下にある`<役割名>.subagent.md`の役割名を返す。"""
-    return sorted(path.name.removesuffix(_TASK_DOCUMENT_SUFFIX) for path in _SHARE_DIRECTORY.glob(f"*{_TASK_DOCUMENT_SUFFIX}"))
+    """サーバー自身のplugin rootにある`<役割名>.subagent.md`の役割名を返す。"""
+    return [
+        path.name.removesuffix(_TASK_DOCUMENT_SUFFIX) for path in task_documents.role_documents(plugin_root.SERVER_PLUGIN_ROOT)
+    ]
 
 
 def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
-    """`subagent_md_path`の絶対パスはそのまま、役割名はサーバー自身のplugin rootの`share/`直下の文書へ解決する。
+    """`subagent_md_path`の絶対パスはそのまま、役割名はサーバー自身のplugin rootの役割文書へ解決する。
+
+    置き場所は`task_documents.ROLE_DOCUMENT_DIRECTORIES`が定める。
 
     委譲元は自身のシェルでplugin rootを解決できないことがあり、サーバーは自身のplugin rootを一意に持つため、
     役割名を受理して委譲元と同じ版の文書へ解決する。区切り文字か接尾辞を含む相対の値は役割名として扱わずに拒否する。
     """
     task_document = pathlib.Path(subagent_md_path)
     if task_document.is_absolute():
-        root = plugin_root.resolve_stable_plugin_root(task_document.parent.parent)
-        return root / task_document.parent.name / task_document.name
+        # 置き場所の外の絶対パスは従来どおり2階層上をrootとみなし、後段の所在の検査へ渡す。
+        owner = task_documents.role_document_plugin_root(task_document) or task_document.parent.parent
+        return plugin_root.resolve_stable_plugin_root(owner) / task_document.relative_to(owner)
     is_role_name = not any(part in subagent_md_path for part in ("/", "\\", _TASK_DOCUMENT_SUFFIX))
-    candidate = _SHARE_DIRECTORY / f"{subagent_md_path}{_TASK_DOCUMENT_SUFFIX}"
-    if is_role_name and subagent_md_path and candidate.is_file():
-        return candidate
+    if is_role_name and subagent_md_path:
+        candidate = task_documents.find_role_document(
+            plugin_root.SERVER_PLUGIN_ROOT, f"{subagent_md_path}{_TASK_DOCUMENT_SUFFIX}"
+        )
+        if candidate is not None:
+            return candidate
     reason = "役割名に区切り文字か`.subagent.md`を含む" if not is_role_name else "役割名に対応する文書が無い"
     raise ActionableError(
         f"subagent_md_path is neither an absolute path nor an accepted role name: {subagent_md_path}（{reason}）; "
@@ -213,7 +219,9 @@ def _task_document_declaration(
 ) -> task_documents.TaskDocumentDeclaration | str:
     """`<役割名>.subagent.md`の宣言を読む。共有規則の判定は`_is_agent_toolkit_task_document`を経由する。"""
     if not _is_agent_toolkit_task_document(task_document):
-        return f"必須入力を確認できません: `<役割名>.subagent.md`がshare配下ではありません: {task_document}"
+        return (
+            f"必須入力を確認できません: `<役割名>.subagent.md`がagent-toolkitの役割文書の置き場所にありません: {task_document}"
+        )
     declaration = task_documents.read_declaration_unchecked(task_document, document_text)
     if isinstance(declaration, str):
         with contextlib.suppress(OSError, UnicodeError):

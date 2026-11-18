@@ -10,7 +10,7 @@ import pathlib
 import re
 from typing import TYPE_CHECKING
 
-from agent_toolkit._common import skill_modes
+from agent_toolkit._common import skill_modes, task_documents
 from agent_toolkit._common.plugin_roots import raise_for_incomplete_installation, resolve_plugin_root
 from agent_toolkit._common.read_triggers_model import _scope_cached
 lazy from agent_toolkit._common import read_triggers_model
@@ -258,23 +258,24 @@ def parent_contract_targets(
 ) -> tuple[read_triggers.ReadTarget, ...]:
     """役割が名指しした起動・受領契約を解決する。自由本文から所有者を推測しない。
 
-    `role`は役割名か役割文書のパスを受け取る。share配下の実在する絶対パスはその文書の所属rootで解決する。
+    `role`は役割名か役割文書のパスを受け取る。役割文書の置き場所にある実在の絶対パスはその文書の所属rootで解決する。
+    起動・受領契約は役割文書と別の置き場所にあっても解決する（移行の途中は組が分かれうる）。
     """
     from agent_toolkit._common import read_triggers  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
     given = pathlib.Path(role)
     # 絶対パスの役割文書は、その文書が属する版の契約と組にする（起動側と同じrootを使う）。
-    if given.is_absolute() and given.parent.name == "share" and given.is_file():
-        plugin_root = given.parent.parent
+    if given.is_absolute() and given.is_file() and (owner := task_documents.role_document_plugin_root(given)) is not None:
+        plugin_root = owner
     role = given.name.removesuffix(".subagent.md").removesuffix(".md")
     if not re.fullmatch(r"[a-z][a-z0-9-]*", role):
         raise ValueError(f"不正な役割名: {role}")
-    source = plugin_root / "share" / (role + ".subagent.md")
-    parent = source.with_name(role + ".parent.md")
-    if parent.is_file():
+    source = task_documents.find_role_document(plugin_root, role + ".subagent.md")
+    parent = task_documents.find_role_document(plugin_root, role + ".parent.md")
+    if parent is not None:
         return (read_triggers.ReadTarget(parent),)
-    if not source.is_file():
-        raise ValueError(f"役割文書が存在しない: {source}")
+    if source is None:
+        raise ValueError(f"役割文書が存在しない: {plugin_root}の{role}.subagent.md")
     values = re.findall(r"^<!-- parent-read-source: (.+) -->$", source.read_text(encoding="utf-8"), re.M)
     if not values:
         raise ValueError(f"{source}: 起動・受領契約のparent-read-source宣言が無い")

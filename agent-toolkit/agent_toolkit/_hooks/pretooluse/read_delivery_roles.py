@@ -98,7 +98,8 @@ def incidental_wi_author() -> bool:
             role = task_documents.launched_task_document(first[0]) if first else None
             if role is None:
                 continue
-            if role.resolve() != plugin_resources.plugin_root().resolve() / "share/add-wi.subagent.md":
+            expected = task_documents.find_role_document(plugin_resources.plugin_root().resolve(), "add-wi.subagent.md")
+            if role.resolve() != expected:
                 return False
             try:
                 inputs = task_documents.task_prompt_inputs(launch)

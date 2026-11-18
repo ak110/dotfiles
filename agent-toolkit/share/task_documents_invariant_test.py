@@ -14,7 +14,7 @@ from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.task_document_contract import validate_frontmatter
 
 
-@pytest.mark.parametrize("path", sorted(rules_context.SHARE_DIR.glob("*.subagent.md")), ids=lambda path: path.name)
+@pytest.mark.parametrize("path", task_documents.role_documents(rules_context.SHARE_DIR.parent), ids=lambda path: path.name)
 def test_distributed_frontmatter_is_valid(path: Path) -> None:
     """新しい定義もファイル追加だけで静的整合性の試験へ含める。"""
     result = validate_frontmatter(path, path.read_text(encoding="utf-8"))
@@ -22,7 +22,7 @@ def test_distributed_frontmatter_is_valid(path: Path) -> None:
     assert result == task_documents.read_declaration(path)
 
 
-@pytest.mark.parametrize("path", sorted(rules_context.SHARE_DIR.glob("*.subagent.md")), ids=lambda path: path.name)
+@pytest.mark.parametrize("path", task_documents.role_documents(rules_context.SHARE_DIR.parent), ids=lambda path: path.name)
 def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
     """将来の役割も共通契約へ接続し、理由の区分欠落・集合外・インデント違反を検出する。"""
     body = path.read_text(encoding="utf-8").split("## 出力", 1)[1]
@@ -124,3 +124,11 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
     else:
         assert "target_repo: example.test/team/one" in prompt
         assert "candidate_file:" in prompt and "ownership_token: test-token" in prompt
+
+
+def test_role_document_names_are_unique_across_locations() -> None:
+    """移行の途中も、同じ名前の役割文書と起動・受領契約を2つの置き場所へ置かない。"""
+    root = rules_context.SHARE_DIR.parent
+    for suffix in (".subagent.md", ".parent.md"):
+        names = [path.name for path in task_documents.role_documents(root, suffix)]
+        assert names and len(names) == len(set(names)), sorted(name for name in set(names) if names.count(name) > 1)

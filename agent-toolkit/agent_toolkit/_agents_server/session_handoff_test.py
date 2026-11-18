@@ -224,7 +224,7 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
         _complete(predecessor, message="計画に基づく進捗全文")
         response = await mcp_tools.start(handoff_from=predecessor.session_id)
         successor = manager.sessions[response["session_id"]]
-        document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"  # pylint: disable=protected-access
+        document = launch_requests.resolve_task_document_path("exec")  # pylint: disable=protected-access
         assert str(document) in successor.prompt
         assert (
             predecessor.prompt.replace(

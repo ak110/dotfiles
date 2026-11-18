@@ -23,6 +23,8 @@ UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しい
 EVENTS = ("SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop")
 _ALWAYS_ON = "---\ntrigger: always_on\n---\n\n"
 _SOURCE_DIRECTORIES = ("skills", "agents", "share", "agent_toolkit", "scripts")
+# 役割文書の置き場所。agent-toolkitの`task_documents.ROLE_DOCUMENT_DIRECTORIES`と同じ値を保つ（試験が確かめる）。
+ROLE_DOCUMENT_DIRECTORIES = ("skills/atk-mode/roles", "share")
 _EXCLUDED = frozenset({"__pycache__", ".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache"})
 _MARKDOWN_HEADING = re.compile(r"#{1,6}(?:\s|$)")
 
@@ -173,11 +175,12 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
     result[Path(".claude-plugin/plugin.json")] = ((source / ".claude-plugin/plugin.json").read_bytes(), 0o644)
     if plugin_name == "agent-basics":
         return result
-    for role in sorted((source / "share").glob("*.subagent.md")):
+    roles = [role for directory in ROLE_DOCUMENT_DIRECTORIES for role in (source / directory).glob("*.subagent.md")]
+    for role in sorted(roles, key=lambda path: path.name):
         name = role.name.removesuffix(".subagent.md")
         definition = (
             f"---\nname: {name}\ndescription: agent-toolkitの{name}担当を実行する\n---\n\n"
-            f"最初に`{target / 'share' / role.name}`を全文読み、担当の入力契約と手順に従う。\n"
+            f"最初に`{target / role.relative_to(source)}`を全文読み、担当の入力契約と手順に従う。\n"
             "必要な入力を委譲元から受け取ってから担当作業を実行する。\n"
         )
         result[Path("agents") / f"{name}.md"] = (definition.encode("utf-8"), 0o644)

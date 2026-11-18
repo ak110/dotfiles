@@ -83,7 +83,7 @@ def sync_return_contracts(root: Path = REPO_ROOT) -> None:
     plugin = root / "agent-toolkit"
     updated: dict[Path, str] = {}
     for role, relative, title, level in RETURN_TARGETS:
-        source = plugin / f"share/{role}.subagent.md"
+        source = task_documents.require_role_document(plugin, role)
         path = plugin / relative
         body = _return_body(source.read_text(encoding="utf-8"), role)
         # コード例の見出しは出力リテラルなので、フェンス外だけ階層を変える。
@@ -128,7 +128,7 @@ def sync_return_contracts(root: Path = REPO_ROOT) -> None:
         before, rest = text.split(start)
         _, after = rest.split(end)
         updated[path] = (
-            f"{before}{start}\n<!-- 生成元: share/{role}.subagent.md「出力」。手動編集しない。 -->\n"
+            f"{before}{start}\n<!-- 生成元: {source.relative_to(plugin).as_posix()}「出力」。手動編集しない。 -->\n"
             f"{'#' * level} {title}\n\n{body}\n{end}{after}"
         )
     for path, text in updated.items():
@@ -146,12 +146,13 @@ def sync_input_contracts(root: Path = REPO_ROOT) -> None:
         end = f"<!-- input-contract:{role}:end -->"
         if text.count(start) != 1 or text.count(end) != 1 or text.index(start) >= text.index(end):
             raise ValueError(f"{path}: {role}の入力生成境界が一意でない")
-        body = task_documents.input_contract_body(plugin / f"share/{role}.subagent.md")
+        source = task_documents.require_role_document(plugin, role)
+        body = task_documents.input_contract_body(source)
         before, rest = text.split(start)
         _, after = rest.split(end)
         updated[path] = (
             f"{before}{start}\n"
-            f"<!-- 生成元: share/{role}.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->\n"
+            f"<!-- 生成元: {source.relative_to(plugin).as_posix()}のrequired_inputs・optional_inputs。手動編集しない。 -->\n"
             f"{body}\n\n{end}{after}"
         )
     for path, text in updated.items():
