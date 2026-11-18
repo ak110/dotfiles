@@ -19,13 +19,13 @@
 一覧の表示条件とは独立した開始時集合を同じ実行で保持し、再開時も同じ保存集合を使う。
 
 ```text
-atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --snapshot-output <開始時集合JSONの絶対パス>
+atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --target-branch=auto --snapshot-output <開始時集合JSONの絶対パス>
 ```
 
 30分点検ごとと公開工程の開始前に、次のコマンドで開始時集合に無い最新の処理可能WIを取得する。
 
 ```text
-atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --new-since <開始時集合JSONの絶対パス>
+atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --target-branch=auto --new-since <開始時集合JSONの絶対パス>
 ```
 
 未判定の各WIの本文を`atk wi show`で取得し、本書「即時対応」で対処時機を判定する。

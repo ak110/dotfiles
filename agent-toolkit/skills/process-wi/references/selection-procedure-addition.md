@@ -57,7 +57,7 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --transfer-wi <追�
 UWIの指定がなければ、次のコマンドで処理対象外の回答済みかつ未終了のUWIをすべて取得する。
 
 ```text
-atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --pull
+atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --pull
 ```
 
 **3.** 同じ実行へ追加するために起草・投入したAWIは、投入を他担当へ委譲した場合も、保存完了後の正式なファイル名を受け取った直後に候補差分へ含める。
