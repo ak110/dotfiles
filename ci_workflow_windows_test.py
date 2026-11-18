@@ -122,6 +122,18 @@ def test_windows_job_runs_cross_platform_tests(workflow_data: dict[str, object],
     assert functions <= marked, sorted(functions - marked)
 
 
+def test_windows_job_pytest_only_records_cpu_limit(workflow_data: dict[str, object]) -> None:
+    """GitHubのWindowsランナーでは所有CPUが同一実行内で揺れるため、Windows jobの全pytestがCPU上限を記録だけにする。"""
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"]))
+    pytest_args = {
+        str(step["name"]): tokens[tokens.index("pytest") + 1 :]
+        for step in steps
+        if "run" in step and "pytest" in (tokens := shlex.split(workflow_step_source(step)))
+    }
+    assert set(pytest_args) == {"Windows境界テスト", "Windows Codex command integration", "公開入口ランチャーの動作確認"}
+    assert sorted(name for name, args in pytest_args.items() if "--cpu-limit-record-only" not in args) == []
+
+
 def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[str, object]) -> None:
     """固定版CLIを導入した所有Windows jobが、探索の開始から通常コマンドへ到達することを検査する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"])
