@@ -60,7 +60,7 @@ def codex_processes() -> tuple[CodexProcess, ...]:
     owner = psutil.Process().username() if windows else os.getuid()
     owner_attribute = "username" if windows else "uids"
     candidates: list[tuple[int, typing.Any, str, CodexRole, str | None, bool]] = []
-    attributes = ["name", "exe", "cmdline", owner_attribute, "status", "ppid"]
+    attributes = ["name", "exe", "cmdline", owner_attribute]
     # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
     # 列挙は現在のPIDの取得だけに使い、分類と実行パスは新しく構築したProcessから読む。
     for listed in psutil.process_iter():
@@ -70,7 +70,7 @@ def codex_processes() -> tuple[CodexProcess, ...]:
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         process_owner = info.get("username") if windows else getattr(info.get("uids"), "real", None)
-        if process_owner != owner or info.get("status") in _TERMINATED_STATUSES:
+        if process_owner != owner:
             continue
         cmdline, name_value, exe_value = info.get("cmdline"), info.get("name"), info.get("exe")
         cmdline_items = cmdline if isinstance(cmdline, (list, tuple)) else []
@@ -80,9 +80,20 @@ def codex_processes() -> tuple[CodexProcess, ...]:
         executable_values = [value for value in (name, exe, *cmdline_values[:1]) if value]
         argument_values = [value for value in cmdline_values[1:] if value]
         entry_point = cmdline_values[1] if len(cmdline_values) >= 2 and _is_node_executable(name, exe) else ""
-        if not executable_values and not argument_values:
+        unidentified = not executable_values and not argument_values
+        codex = any(_is_codex_process_value(value) for value in executable_values) or _is_codex_argument_value(entry_point)
+        if not unidentified and not codex:
+            continue
+        # Windowsのpsutilは状態と親PIDを1件ごとに全プロセスの一覧から引くため、Codexの候補に限って取得する。
+        try:
+            info.update(process.as_dict(["status", "ppid"], ad_value=_ACCESS_DENIED))
+        except psutil.NoSuchProcess, psutil.ZombieProcess:
+            continue
+        if info.get("status") in _TERMINATED_STATUSES:
+            continue
+        if unidentified:
             candidates.append((process.pid, info.get("ppid"), f"pid {process.pid}", "session", None, False))
-        elif any(_is_codex_process_value(value) for value in executable_values) or _is_codex_argument_value(entry_point):
+        else:
             # node系起動ではentry pointの後ろからCodexの引数が始まる。
             arguments = cmdline_values[2:] if _is_codex_argument_value(entry_point) else cmdline_values[1:]
             role = _process_role(arguments)
