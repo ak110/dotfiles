@@ -27,6 +27,7 @@ import contextlib
 import ctypes
 import ctypes.wintypes
 import dataclasses
+import functools
 import logging
 import os
 import subprocess
@@ -454,14 +455,15 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
     Windowsでは親の終了後も子の親PIDが残るため、保持した親から親を失った子孫も見つけられる。
     子の起動時刻が親より前の場合と、親PIDを別のプロセスが再利用している場合のその新しいプロセスの子は含めない。
 
-    親PID一覧は1回の照会で全プロセス分を得て、`Process`は子の候補だけに作る。
+    親PID一覧は1回の照会で得て、`Process`は子の候補だけに作る。
     Windowsの`Process.ppid()`は呼び出しごとに全プロセスのsnapshotを取るため、
     全PIDへ`ppid()`を呼ぶと1回の走査がプロセス数の2乗になる（592プロセスで約8秒）。
+    Linuxの照会は辿る親とその子だけを読み、ホストの総プロセス数に比例しない（`_parent_pids`）。
     """
     if not parents:
         # 親が無ければ子孫も無いため、全プロセスの一覧と親PIDの照会を省く。
         return []
-    parent_pids = _parent_pids()
+    parent_pids = _parent_pids({parent.pid for parent in parents})
 
     def retain_parent(process: psutil.Process, stage: str) -> bool:
         retained = retain(process)
@@ -499,7 +501,8 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
             break
         # 一覧の取得後に子が終了してPIDが再利用されると、作った`Process`は一覧の子と別の世代になる。
         # 作った後の一覧でも同じ親PIDを持つ候補だけを子とする（別世代が同じ親PIDを持てば、それも同じ親の子である）。
-        parent_pids = _parent_pids()
+        # 候補も照会に含め、次の回で辿る子の一覧を同じ照会で得る。
+        parent_pids = _parent_pids(pending | {process.pid for process, _ppid in candidates})
         next_pending: set[int] = set()
         for process, ppid in candidates:
             if parent_pids.get(process.pid) != ppid:
@@ -525,12 +528,56 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
     return found
 
 
-def _parent_pids() -> dict[int, int]:
-    """全プロセスのPIDと親PIDの対応を、1回の照会で返す。
+def descendants_of(root: psutil.Process) -> list[psutil.Process]:
+    """`root.children(recursive=True)`と同じ子孫を返す。Linuxでは子孫の/procだけを読む。
 
-    psutilの公開APIには、全プロセスの親PIDを1回で得る手段が無い（`Process.children`も内部で`_ppid_map`を使う）。
-    Linuxは`/proc/<pid>/stat`を1回ずつ、Windowsは1回のsnapshotで全件を得る。非公開APIへの依存はここに閉じる。
+    psutilの`children`はLinuxでも全プロセスの`/proc/<pid>/stat`を読んで親PID一覧を作るため、
+    1秒周期の監視や停止の猶予ループで呼ぶと、ホストの総プロセス数に比例した読取を繰り返す。
     """
+    if not _children_readable():
+        return root.children(recursive=True)
+    found: list[psutil.Process] = []
+    created = root.create_time()
+    stack, seen = [root.pid], set[int]()
+    while stack:
+        pid = stack.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        try:
+            child_pids = _proc_children(pid)
+        except PermissionError:
+            return root.children(recursive=True)
+        for child_pid in child_pids:
+            try:
+                child = psutil.Process(child_pid)
+                # psutilと同じく、起点より前に起動した子は再利用されたPIDの別プロセスとして除く。
+                if created <= child.create_time():
+                    found.append(child)
+                    stack.append(child_pid)
+            except psutil.NoSuchProcess:
+                continue
+    return found
+
+
+def _parent_pids(pids: set[int]) -> dict[int, int]:
+    """`pids`と、その直接の子のPIDから親PIDへの対応を返す。他のプロセスを含む場合がある。
+
+    Linuxは`/proc/<pid>/task/*/children`から`pids`の子だけを読み、ホストの総プロセス数に比例しない。
+    読めないカーネル（`CONFIG_PROC_CHILDREN`なし）と読取権限の無い場合は、全プロセスの一覧へ戻る。
+    psutilの公開APIには、全プロセスの親PIDを1回で得る手段が無い（`Process.children`も内部で`_ppid_map`を使う）。
+    全件の一覧は、Linuxは`/proc/<pid>/stat`を1回ずつ、Windowsは1回のsnapshotで得る。非公開APIへの依存はここに閉じる。
+    """
+    if _children_readable():
+        try:
+            narrow: dict[int, int] = {}
+            for pid in pids:
+                if (ppid := _proc_ppid(pid)) is not None:
+                    narrow[pid] = ppid
+                narrow.update(dict.fromkeys(_proc_children(pid), pid))
+            return narrow
+        except PermissionError:
+            pass
     ppid_map: Callable[[], dict[int, int]] | None = vars(psutil).get("_ppid_map")
     if ppid_map is not None:
         try:
@@ -544,6 +591,44 @@ def _parent_pids() -> dict[int, int]:
         with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             result[pid] = psutil.Process(pid).ppid()
     return result
+
+
+def _children_readable() -> bool:
+    """Linuxで`/proc/<pid>/task/<tid>/children`を読めるかを返す。"""
+    return sys.platform == "linux" and _kernel_lists_children()
+
+
+@functools.cache
+def _kernel_lists_children() -> bool:
+    # カーネルの`CONFIG_PROC_CHILDREN`が無いと、このファイルは存在しない。
+    return os.path.exists(f"/proc/{os.getpid()}/task/{os.getpid()}/children")
+
+
+def _proc_children(pid: int) -> list[int]:
+    """`pid`の全スレッドが起動した直接の子のPIDを返す。`pid`が存在しなければ空を返す。"""
+    try:
+        tasks = os.listdir(f"/proc/{pid}/task")
+    except FileNotFoundError, ProcessLookupError:
+        return []
+    children: list[int] = []
+    for tid in tasks:
+        try:
+            with open(f"/proc/{pid}/task/{tid}/children", encoding="ascii") as file:
+                children.extend(int(value) for value in file.read().split())
+        except FileNotFoundError, ProcessLookupError:
+            continue  # 読む間に終了したスレッドの子は、残るスレッドかinitへ付け替わる。
+    return children
+
+
+def _proc_ppid(pid: int) -> int | None:
+    """`pid`の親PIDを`/proc/<pid>/stat`から返す。存在しなければNoneを返す。"""
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as file:
+            stat = file.read()
+    except FileNotFoundError, ProcessLookupError:
+        return None
+    # 2番目の項目（実行名）は空白と括弧を含み得るため、最後の`)`より後ろを分割する。
+    return int(stat.rpartition(b")")[2].split()[1])
 
 
 def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
@@ -734,7 +819,7 @@ def collect_descendants(
         root = psutil.Process(pid)
         if pins is not None and not pins.retain(root):
             return []
-        children = root.children(recursive=True)
+        children = descendants_of(root)
         retained = children if pins is None else [process for process in children if pins.retain(process)]
         return [root, *retained] if include_root else retained
     except psutil.Error, OSError:

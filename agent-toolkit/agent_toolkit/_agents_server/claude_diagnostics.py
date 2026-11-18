@@ -141,7 +141,7 @@ def _owned_runtime_processes(
             if pins is not None and not pins.retain(parent):
                 continue
             if parent.is_running():
-                children = parent.children(recursive=True)
+                children = process_tree.descendants_of(parent)
                 owned.update(dict.fromkeys(children if pins is None else [child for child in children if pins.retain(child)]))
         except psutil.NoSuchProcess:
             continue
