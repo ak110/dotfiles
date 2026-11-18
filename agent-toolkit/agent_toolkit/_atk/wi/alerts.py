@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime
+import functools
 import json
 import pathlib
 import re
@@ -73,12 +74,18 @@ class Alert:
 
     `keys`は重複除外に使う安定識別子の集合。`completion`はAWIの`## 完成条件`へ書く文であり、
     アラートの種別ごとに、外部から観測できる解消後の状態と、AWIの処理主体に追加の変更を求めるかを示す。
+    `diagnostics`は失敗の診断を取得して本文の節を返す。外部CLIを複数回呼ぶため、重複除外で残った候補だけが`details`で呼ぶ。
     """
 
     keys: tuple[str, ...]
     title: str
     body: str
     completion: str
+    diagnostics: Callable[[], str] | None = None
+
+    def details(self) -> str:
+        """AWIの`## 詳細`へ書く本文を、失敗の診断を取得して返す。"""
+        return f"{self.body}\n\n{self.diagnostics()}" if self.diagnostics else self.body
 
 
 @dataclasses.dataclass(frozen=True)
@@ -218,11 +225,12 @@ def _log_excerpt(text: str) -> str:
 
     末尾だけでは、後処理の出力が続いた回に失敗した検査の行が失われるため、失敗を示す行を別に残す。
     """
-    lines = [_ANSI_ESCAPE.sub("", line)[:_DIAGNOSTIC_LINE_CHARS] for line in text.splitlines()]
+    lines = [_ANSI_ESCAPE.sub("", line) for line in text.splitlines()]
     tail_start = max(0, len(lines) - _DIAGNOSTIC_TAIL_LINES)
     errors = [line for line in lines[:tail_start] if _ERROR_LINE.search(line)][-_DIAGNOSTIC_ERROR_LINES:]
     excerpt = [*errors, *(["…"] if errors else []), *lines[tail_start:]]
-    return "\n".join("        " + redact_secrets(line) for line in excerpt)
+    # 切り詰めた後に伏せると、切り詰めた位置をまたぐ資格情報が規則に一致せず先頭が残るため、伏せてから切り詰める。
+    return "\n".join("        " + redact_secrets(line)[:_DIAGNOSTIC_LINE_CHARS] for line in excerpt)
 
 
 def _diagnostics_section(jobs: list[tuple[str, str, Callable[[], str]]]) -> str:
@@ -360,15 +368,22 @@ def collect_github_ci_failures(
             f"- 検知日時: {_now_iso()}\n\n"
             f"{_forge_cli.failure_next_action('github', repo, str(run_id))}。\n"
             f"{context.investigation()}\n"
-            "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。\n\n"
-            f"{_github_failure_diagnostics(repo, str(run_id))}"
+            "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。"
         )
         completion = (
             f"対象ワークフロー`{name}`の失敗が解消し、ブランチ`{branch}`でそのワークフローが成功する。"
             "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
             f"。{context.investigation()}"
         )
-        alerts.append(Alert(keys=(f"github-run:{run_id}",), title=f"ワークフロー{name}失敗", body=body, completion=completion))
+        alerts.append(
+            Alert(
+                keys=(f"github-run:{run_id}",),
+                title=f"ワークフロー{name}失敗",
+                body=body,
+                completion=completion,
+                diagnostics=functools.partial(_github_failure_diagnostics, repo, str(run_id)),
+            )
+        )
     return alerts
 
 
@@ -419,8 +434,7 @@ def _gitlab_pipeline_alert(pipeline: dict, repo: str, ref: str, *, context: RunC
         f"- 検知日時: {_now_iso()}\n\n"
         f"{_forge_cli.failure_next_action('gitlab', repo, str(pipeline_id), prefer_environment=True)}。\n"
         f"{context.investigation()}\n"
-        "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。\n\n"
-        f"{_gitlab_failure_diagnostics(repo, str(pipeline_id))}"
+        "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。"
     )
     completion = (
         f"対象パイプライン`{pipeline_id}`の失敗が解消し、ブランチ`{ref}`で後続のパイプラインが成功する。"
@@ -432,6 +446,7 @@ def _gitlab_pipeline_alert(pipeline: dict, repo: str, ref: str, *, context: RunC
         title=f"パイプライン{pipeline_id}失敗",
         body=body,
         completion=completion,
+        diagnostics=functools.partial(_gitlab_failure_diagnostics, repo, str(pipeline_id)),
     )
 
 
@@ -516,7 +531,7 @@ def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
         f"検知した事象を発生させる条件と該当する実装を調査し、必要な是正と検証を行う。反映先は`{target_repo_id}`とする。\n\n"
         "## 調査結果と判断根拠\n\n検知元が返した識別子と詳細から、調査対象および検収場所を確定できる。\n\n"
         f"## 完成条件\n\n{alert.completion}\n\n"
-        f"## 詳細\n\n{alert.body}"
+        f"## 詳細\n\n{alert.details()}"
     )
     return f"---\ntarget_repo: {target_repo_id}\nsource: alert-monitor\nalert_keys: {','.join(alert.keys)}\n---\n\n{body}\n"
 

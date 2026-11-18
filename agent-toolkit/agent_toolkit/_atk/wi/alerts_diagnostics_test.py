@@ -1,6 +1,7 @@
 """CI失敗の通知が、検知時に取得した失敗の診断と起動契機を本文へ保持することを検証する。"""
 
 import json
+import pathlib
 import subprocess
 from typing import Any
 
@@ -66,16 +67,15 @@ def test_alert_body_keeps_failure_diagnostics_and_trigger(monkeypatch: pytest.Mo
             "headSha": "old",
         }
         result = alerts.collect_github_ci_failures("github.com/owner/repo", "main", run_list_fn=lambda *_args: [run_record])
-        assert "起動契機: schedule" in result[0].body
-        assert "失敗したstep: Run tests" in result[0].body
+        expected = ["起動契機: schedule", "失敗したstep: Run tests"]
     else:
         pipeline = {"id": 24, "status": "failed", "source": "push", "sha": "old"}
         result = alerts.collect_gitlab_ci_failures(
             "gitlab.example.org/group/repo", "main", ci_list_fn=lambda *_args: [pipeline]
         )
-        assert "起動契機: push" in result[0].body
-        assert "script_failure" in result[0].body
-    body = result[0].body
+        expected = ["起動契機: push", "script_failure"]
+    body = result[0].details()
+    assert all(text in body for text in expected)
     assert "job `test`" in body and "job `lint`" not in body
     assert "FAILED tests/test_x.py::test_y" in body
     assert "##[error]Process completed with exit code 2." in body
@@ -94,4 +94,46 @@ def test_alert_is_saved_when_diagnostics_are_unavailable(monkeypatch: pytest.Mon
     monkeypatch.setattr(process_tree, "run_with_timeout", run)
     run_record = {"databaseId": 21, "workflowName": "CI", "status": "completed", "conclusion": "failure"}
     result = alerts.collect_github_ci_failures("owner/repo", "main", run_list_fn=lambda *_args: [run_record])
-    assert "失敗の診断を取得できなかった" in result[0].body and "HTTP 404" in result[0].body
+    body = result[0].details()
+    assert "失敗の診断を取得できなかった" in body and "HTTP 404" in body
+
+
+def _record_commands(monkeypatch: pytest.MonkeyPatch, log: str) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        calls.append(command)
+        if command[:3] == ["gh", "run", "view"]:
+            jobs = [{"databaseId": 6, "name": "test", "conclusion": "failure", "steps": []}]
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"jobs": jobs}).encode(), stderr=b"")
+        return subprocess.CompletedProcess(command, 0, stdout=log.encode(), stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(process_tree, "run_with_timeout", run)
+    return calls
+
+
+_FAILED_RUN = {"databaseId": 21, "workflowName": "CI", "status": "completed", "conclusion": "failure"}
+
+
+def test_known_failure_skips_diagnostic_fetch(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """通知済みの失敗は重複除外で除き、`gh run view`とjobログを取得しない。"""
+    calls = _record_commands(monkeypatch, _FAILED_JOB_LOG)
+    adopted = tmp_path / "adopted"
+    adopted.mkdir()
+    (adopted / "known.md").write_text(
+        "---\ntarget_repo: github.com/owner/repo\ntype: awi\nalert_keys: github-run:21\n---\n\n本文\n", encoding="utf-8"
+    )
+    result = alerts.collect_new_alerts(
+        "github.com/owner/repo", "main", tmp_path, forge="github", run_list_fn=lambda *_args: [_FAILED_RUN]
+    )
+    assert not result
+    assert not calls
+
+
+def test_log_excerpt_redacts_before_truncating_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    """行を切り詰める位置が資格情報の途中にあっても、資格情報の先頭を本文へ残さない。"""
+    token = "ghp_" + "A" * 40
+    _record_commands(monkeypatch, "x" * 280 + f" https://{token}@github.com/owner/repo\n")
+    result = alerts.collect_github_ci_failures("github.com/owner/repo", "main", run_list_fn=lambda *_args: [_FAILED_RUN])
+    assert "ghp_" not in result[0].details()
