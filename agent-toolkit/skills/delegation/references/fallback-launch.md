@@ -40,7 +40,7 @@ Claudeの`api_error.type`が`usage_limit`である場合は、後述の利用上
      残るすべての候補で失敗するか利用不能となった場合は処理を打ち切り、`process-model-settings.md`「工程別モデル設定」の手順4へ戻る
 
 6. 後任のエージェントには、前任の起動時の指示本文と、`引き継ぎ記録先`が存在する場合はそれを`（継続）`として渡す。
-     `atk run-script session-review-prepare`が生成した`conversation.md`と引き継ぎ記録の両方を読み込んで現時点の確定事項と残りの工程を復元し、追加入力および各ターンの最終応答については全文を引き渡す。
+     `atk run-script session-review-prepare`が生成した`conversation.md`と、前任が作成していれば引き継ぎ記録を読み込んで現時点の確定事項と残りの工程を復元し、追加入力および各ターンの最終応答については全文を引き渡す。
      詳細な記録を照会する場合は、`atk run-script session-review-evidence -- --codex-thread-id <id>`または`--claude-session-id <id>`に`--detail <記録位置>`を付与して実行する。
      コマンドを実行できない後任へは記録ファイルの絶対パスを渡す。
      Antigravity環境の前任を引き継ぐ場合は、`atk agents logs <session_id> --format markdown`の出力を渡す。

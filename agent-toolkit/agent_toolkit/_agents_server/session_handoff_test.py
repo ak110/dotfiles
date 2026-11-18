@@ -290,6 +290,26 @@ def test_prompt_delivers_full_history_and_record_paths(
         assert f"--{'codex-thread' if engine == 'codex' else 'claude-session'}-id predecessor --detail" in prompt
 
 
+@pytest.mark.parametrize("recorded", [True, False])
+def test_prompt_reads_handoff_record_only_when_predecessor_wrote_it(tmp_path: pathlib.Path, recorded: bool) -> None:
+    """前任が記録を作成した場合だけ最初に読む指示を渡し、作成していない場合はそのことを伝える。"""
+    handoff = tmp_path / "handoff.md"
+    if recorded:
+        handoff.write_text("稼働中のプロセス: なし\n", encoding="utf-8")
+    predecessor = state.SessionState(
+        "predecessor",
+        str(tmp_path),
+        engine="codex",
+        prompt=f"元の起動本文\n引き継ぎ記録先: {handoff}（新規）",
+        model_type="execute",
+        status="failed",
+    )
+    prompt = session_handoff.compose_prompt(predecessor, tmp_path / "conversation.md", ())
+    assert f"引き継ぎ記録先: {handoff}（継続）" in prompt
+    assert ("この引き継ぎ記録を最初に読み" in prompt) is recorded
+    assert ("前任はこの引き継ぎ記録を作成していない" in prompt) is not recorded
+
+
 @pytest.mark.asyncio
 async def test_turn_history_survives_collection_release_and_registry_restart(tmp_path: pathlib.Path) -> None:
     """回収・解放後も登録簿の同じ7日保持内で追送と応答と終了理由を引き継げる。"""
