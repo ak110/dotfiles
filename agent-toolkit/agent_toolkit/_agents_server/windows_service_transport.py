@@ -12,7 +12,7 @@ from ctypes import wintypes as w
 from multiprocessing import connection
 from typing import Any
 
-import psutil
+lazy import psutil
 
 # Windows専用属性はLinuxの型情報に無いため、OS境界内で動的に解決する。
 _windows: Any = ctypes

@@ -296,6 +296,10 @@ class _LivenessCalls(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="同じパッケージの全モジュールを構文解析して呼び出し元を集める（ローカル実測0.70秒、CI実測0.58秒）。",
+)
 def test_denied_generation_scenes_cover_every_liveness_caller() -> None:
     """他世代の生存を判定する呼び出し元を追加したら、照会を拒否された場面も上の表へ加える。"""
     found: set[str] = set()
