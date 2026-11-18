@@ -102,7 +102,7 @@ def _specified_text(data: _wi_operations.JsonObject, name: str) -> str | None:
 
 def _ignored_single_fields(data: dict[str, typing.Any]) -> list[str]:
     """一括取り込みへ切り替えた登録で、使わなかった単件用の入力項目名を返す。"""
-    ignored = [name for name in ("target_repo", "scope") if data.get(name)]
+    ignored = [name for name in ("target_repo", "target_branch", "scope") if data.get(name)]
     question_type = data.get("question_type")
     # 新規追加ダイアログが初期値として送る回答形式は、ユーザーが入力した値として扱わない。
     # 初期値を選択肢の入力が要らない形式にし、種別を選び違えたshow形式の本文も一括登録へ切り替えられるようにする。
@@ -154,7 +154,7 @@ def _validate_entry_filters(filters: dict[str, str]) -> None:
         raise _wi_operations.WebApiInputError("source_kindが不正です")
     if "source_kind" in filters and ("source" in filters or "source_empty" in filters):
         raise _wi_operations.WebApiInputError("source_kindとsource/source_emptyは同時に指定できません")
-    for name in ("target_repo", "source", "q"):
+    for name in ("target_repo", "target_branch", "source", "q"):
         if name in filters and not filters[name].strip():
             raise _wi_operations.WebApiInputError(f"{name}は空でない文字列で指定してください")
 
@@ -177,6 +177,10 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
             raise _wi_operations.WebApiInputError("statusが不正です")
         return quart.jsonify(repos=await workers.run(ops.target_repos, status_filter))
 
+    @app.get("/api/branches")
+    async def branches() -> quart.Response:
+        return quart.jsonify(repositories=await workers.run(ops.branch_registry))
+
     @app.get("/api/entries")
     async def entries() -> quart.Response:
         allowed = {
@@ -189,6 +193,7 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
             "period",
             "page",
             "target_repo",
+            "target_branch",
             "source",
             "source_empty",
             "source_kind",
@@ -376,7 +381,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
     async def add_entry() -> tuple[quart.Response, int]:
         data = _json_object(
             await _request_json(),
-            allowed={"type", "messages", "target_repo", "scope", "question_type", "choices", "raw_text"},
+            allowed={"type", "messages", "target_repo", "target_branch", "scope", "question_type", "choices", "raw_text"},
             required={"type", "messages"},
         )
         if data["type"] not in wi_constants.WI_TYPES:
@@ -390,7 +395,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
             result = await workers.run(ops.add_batch, raw_text)
             return quart.jsonify(batch=True, ignored_fields=_ignored_single_fields(data), **result), 201
         messages = _strings(data["messages"], "messages")
-        for key in ("target_repo",):
+        for key in ("target_repo", "target_branch"):
             if key in data and (not isinstance(data[key], str) or not data[key]):
                 raise _wi_operations.WebApiInputError(f"{key}は空でない文字列で指定してください")
         question_type = data.get("question_type")
@@ -399,6 +404,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
             messages,
             entry_type=data["type"],
             target_repo=data.get("target_repo"),
+            target_branch=data.get("target_branch"),
             scope=data.get("scope"),
             question_type=question_type,
             choices=_strings(data["choices"], "choices") if "choices" in data else None,

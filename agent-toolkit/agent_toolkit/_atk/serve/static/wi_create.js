@@ -1,6 +1,6 @@
 // WIの単件・一括登録フォーム。
 import {
-  byId
+  byId, wiState
 } from "./wi_state.js";
 import {
   api, clearDialogMessages, closeDialog, deliverOperationMessage, firstInvalid, openDialog, runPending, setFieldError
@@ -40,6 +40,32 @@ export function updateCreateFields() {
   if (!isChoice || choiceValues().length >= 2) {
     setFieldError(byId('create-choices'), byId('create-choices-error'), '');
   }
+  updateCreateBranchChoices();
+}
+
+// 入力した対象repositoryが系統を登録している場合だけ系統を選ぶ欄を出し、初期選択を`default_branch`の系統にする。
+// 系統を登録していないrepositoryや対象repositoryが空の入力では、欄を出さず系統を送らない。
+export function updateCreateBranchChoices() {
+  const field = byId('create-branch-fields');
+  const select = byId('create-branch');
+  const repo = byId('create-target').value.trim();
+  const settings = byId('create-repo-fields').hidden ? undefined : wiState.branchRegistry[repo];
+  field.hidden = !settings;
+  if (!settings) {
+    select.replaceChildren();
+    return;
+  }
+  const current = select.value;
+  const unchanged = [...select.children].map(option => option.value).join('\n') === settings.branches.join('\n');
+  if (!unchanged) {
+    select.replaceChildren(...settings.branches.map(branch => {
+      const option = document.createElement('option');
+      option.value = branch;
+      option.textContent = branch;
+      return option;
+    }));
+  }
+  select.value = unchanged && settings.branches.includes(current) ? current : settings.default_branch;
 }
 
 // サーバーの`is_show_batch_format`と同じく、先頭エントリより前に構造行（空行・種別見出し・target_repo見出し）だけを許す。
@@ -65,6 +91,7 @@ export function openCreateDialog(origin = null) {
 
 const IGNORED_SINGLE_FIELD_LABELS = {
   target_repo: 'target-repo',
+  target_branch: '系統',
   scope: '確認範囲',
   question_type: '回答形式',
   choices: '選択肢',
@@ -110,6 +137,9 @@ export async function createEntry(event) {
   const payload = isBatch ? {text: rawContent} : {type, messages: [message], raw_text: rawContent};
   if (!isBatch) {
     if (targetRepo) payload.target_repo = targetRepo;
+    if (!byId('create-branch-fields').hidden && byId('create-branch').value) {
+      payload.target_branch = byId('create-branch').value;
+    }
     if (type === 'uwi') {
       const scope = byId('create-scope').value.trim();
       if (scope) payload.scope = scope;

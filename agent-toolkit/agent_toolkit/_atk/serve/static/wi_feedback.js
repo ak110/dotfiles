@@ -21,6 +21,7 @@ export async function api(path, {timing = {}, ...options} = {}) {
   const operation = {
     '/api/entries': options.method ? '項目登録' : '一覧取得',
     '/api/repos': '対象リポジトリ一覧取得',
+    '/api/branches': '系統の登録取得',
     '/api/sync': 'Git同期',
     '/api/entries/batch': '一括登録',
     '/api/entries/answer': '回答保存',

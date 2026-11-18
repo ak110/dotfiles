@@ -52,7 +52,7 @@ function updateEntryStateDisplay(entry, button, badge) {
   button.setAttribute(
     'aria-label',
     [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
-      label, badge.title, entry.plan ? 'plan' : '',
+      label, badge.title, entry.plan ? 'plan' : '', entry.target_branch ? `系統 ${entry.target_branch}` : '',
       entry.important === true ? '重要' : '',
       entry.kind === 'uwi' && entry.answered === false ? '未回答' : '', entry.summary || '要約なし']
       .filter(Boolean).join('、')
@@ -157,6 +157,13 @@ function renderEntry(entry) {
     blocked.title = '未回答のUWIの回答待ち';
     status.append(blocked);
   }
+  if (entry.target_branch) {
+    const branch = document.createElement('span');
+    branch.className = 'branch-badge';
+    branch.textContent = entry.target_branch;
+    branch.title = `系統: ${entry.target_branch}`;
+    status.append(branch);
+  }
   if (entry.plan) {
     const plan = document.createElement('span');
     plan.className = 'plan-badge';
@@ -214,7 +221,7 @@ const PERIOD_LABELS = {'2w': '直近2週間', '4w': '直近4週間', '8w': '直�
 function hasNonStateFilters() {
   const query = buildQuery();
   return query.has('q') || query.get('type') !== 'all' || query.get('answered') !== 'all' ||
-    query.has('important') || query.has('target_repo') || query.has('source_kind');
+    query.has('important') || query.has('target_repo') || query.has('target_branch') || query.has('source_kind');
 }
 
 function renderEmptyState() {
@@ -311,6 +318,7 @@ export function buildQuery(page = wiState.currentPage) {
   if (byId('important-filter').value !== 'all') parameters.set('important', byId('important-filter').value);
   const values = {
     target_repo: byId('target-filter').value,
+    target_branch: byId('target-branch-filter').value,
     source_kind: byId('source-filter').value,
     q: byId('search-input').value.trim()
   };
@@ -352,7 +360,7 @@ function renderEffectiveConditions() {
   }
   const labels = [`state=${query.get('status')}`, PERIOD_LABELS[query.get('period')] || '全期間'];
   for (const [key, label] of [['q', '検索'], ['type', 'type'], ['answered', 'answered'],
-    ['important', '重要'], ['target_repo', 'target-repo'], ['source_kind', 'source kind']]) {
+    ['important', '重要'], ['target_repo', 'target-repo'], ['target_branch', '系統'], ['source_kind', 'source kind']]) {
     const value = query.get(key);
     if (value && !(value === 'all' && ['type', 'answered'].includes(key))) labels.push(`${label}=${value}`);
   }

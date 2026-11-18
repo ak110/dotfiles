@@ -1,7 +1,7 @@
 // WI画面のイベント接続・同期と初期化。
 import {
   beginUserListOperation, cancelSearchTimer, clearFilters, enableNotifications, endUserListOperation,
-  isCurrentUserListOperation, loadEntries, loadTargetRepos, movePage, refreshKnownEntries, syncNotificationButton
+  isCurrentUserListOperation, loadBranchRegistry, loadEntries, loadTargetRepos, movePage, refreshKnownEntries, syncNotificationButton
 } from "./wi_list.js";
 import {
   SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible
@@ -20,7 +20,7 @@ import {
   reloadOpenDetailFromExternalChange, restoreEntryFromUrl
 } from "./wi_detail.js";
 import {
-  createEntry, openCreateDialog, updateCreateChoices, updateCreateFields
+  createEntry, openCreateDialog, updateCreateBranchChoices, updateCreateChoices, updateCreateFields
 } from "./wi_create.js";
 import {
   deleteEntry, openDeleteDialog, saveAnswer, saveEntry, saveUserComment, toggleImportant, transitionDetail
@@ -52,6 +52,7 @@ async function synchronizeAndLoad() {
         syncFailed = true;
       }
       await loadTargetRepos({timing});
+      await loadBranchRegistry({timing});
       if (!isCurrentUserListOperation(operation)) return;
       await loadEntries({announce: true, timing});
       if (!isCurrentUserListOperation(operation)) return;
@@ -173,6 +174,7 @@ function bindEvents() {
   byId('next-page-button').addEventListener('click', () => { void movePage(1); });
   byId('refresh-button').addEventListener('click', synchronizeAndLoad);
   byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
+  byId('create-target').addEventListener('input', updateCreateBranchChoices);
   byId('create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
   byId('empty-create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
   byId('clear-filters-button').addEventListener('click', () => clearFilters());
@@ -199,6 +201,7 @@ function bindEvents() {
   byId('answer-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('important-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('target-branch-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('search-input').addEventListener('compositionstart', () => {
     wiState.searchComposing = true;
@@ -300,7 +303,7 @@ function initializeApp() {
   initialization = subscribed
     .then(() => {
       initialLoadStarted = true;
-      return Promise.all([loadEntries(), loadTargetRepos()]);
+      return Promise.all([loadEntries(), loadTargetRepos(), loadBranchRegistry()]);
     })
     .then(() => refreshKnownEntries({notify: false}))
     .catch((error) => {

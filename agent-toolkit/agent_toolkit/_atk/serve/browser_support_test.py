@@ -200,6 +200,7 @@ class _BrowserOperations(wi_operations.Operations):
         scope: str | None = None,
         question_type: str | None = None,
         choices: list[str] | None = None,
+        target_branch: str | None = None,
     ) -> list[str]:
         self.add_calls.append({"messages": messages, "target_repo": target_repo})
         return super().add(
@@ -209,6 +210,7 @@ class _BrowserOperations(wi_operations.Operations):
             scope=scope,
             question_type=question_type,
             choices=choices,
+            target_branch=target_branch,
         )
 
     def add_batch(self, text: str) -> dict[str, object]:

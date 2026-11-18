@@ -63,7 +63,7 @@ function formatMetadataKey(key) {
 
 function metadataEntries(entry) {
   const result = entry.frontmatter_entries.map(item => ({key: item.key, value: item.value}));
-  for (const key of ['target_repo', 'source']) {
+  for (const key of ['target_repo', 'target_branch', 'source']) {
     if (!result.some(item => item.key?.type === 'str' && item.key.value === key) &&
         entry[key] !== undefined && entry[key] !== null) {
       result.push({key: {type: 'str', value: key}, value: entry[key]});
