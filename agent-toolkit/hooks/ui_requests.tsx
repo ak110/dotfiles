@@ -2,6 +2,8 @@ import type { EngineInterface, On } from "claude-code";
 import { exitStatePath } from "./session_exit.ts";
 import { reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
+import { startNextTurn } from "./automated_message.ts";
+import { mountForStart } from "./periodic_recheck.ts";
 
 type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; targets?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
 import type { BackgroundWait, RuntimeChange } from "./state.d.ts";
@@ -122,7 +124,7 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           }
           ok = true;
         } else if (request.operation === "periodic_recheck") {
-          await $.state.set({ plugin: "agent-toolkit", key: "recheckRequested" }, true);
+          reason = await mountForStart($);
           ok = true;
         } else if (request.operation === "background_complete" && typeof request.input.id === "string") {
           const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
@@ -149,6 +151,9 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           const response = responseBase.replace(/\.txt$/, `-${request.id}.txt`);
           await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
           if (request.detached) cleanupNeeded = true;
+        } else if (request.operation === "periodic_recheck" && reason) {
+          // hookが応答の待機を諦めた後の装着失敗は、失わないよう次のターンの入力として届ける。
+          await startNextTurn($, reason);
         }
         }
         if (cleanupNeeded && !cleanupFailed) {

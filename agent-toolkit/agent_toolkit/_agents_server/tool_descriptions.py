@@ -359,8 +359,9 @@ START_DESCRIPTION = "\n".join(
         '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",
         "Claude Codeのメイン初回`start`でmodが定期再確認を装着する。"
-        "装着失敗時と、通知もtaskも無く`CronCreate`を使えるメインが待機でターンを終える時は、"
-        "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」に従って装着する。",
+        "装着の成功は通知せず、失敗時だけ警告をこの結果へ添える。"
+        "警告時と、警告もtaskも無く`CronCreate`を使えるメインが待機でターンを終える時は、"
+        "`agent-toolkit:delegation`の`references/claude-code-runtime-waiting.md`「待機中の定期再確認と背景転換」に従う。",
         "",
         "応答は`session_id`・`status`・担当名の`label`と、保持時の`root_session_id`。"
         "起動不能候補を除外して次を試す。切替時だけ除外候補と根拠、採用した`engine`・`model`・`effort`を加える。"

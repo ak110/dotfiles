@@ -5,7 +5,7 @@
 ## `start`の処理の中での定期再確認の装着
 
 Code Mode対応後は、設定PostToolUseが成功した`start`と主体を観測し、会話別の期限付き要求へ装着を依頼する。
-modは既存のCron操作を実行し、装着結果を生成元の明らかな通知で届ける。
+modは既存のCron操作を実行し、装着できなかった場合だけ生成元の明らかな警告を同じ`start`の結果へ添える。
 以下の作成前回収能力確認、共通prompt、durable保持、同じ失敗の反復抑止は維持する。
 ツールを監視するmodイベントへの登録は使わない。
 
@@ -14,7 +14,7 @@ modは既存のCron操作を実行し、装着結果を生成元の明らかな�
 装着が`allow`を要する`CronList`・`CronDelete`・`CronCreate`は配布原本`share/claude_settings_json_managed.json`の`permissions.allow`へ置く。
 auto modeでは一覧に無いツールの判定が`ask`となり装着を見送ることがある。
 `pytools/claude_hook/distribution_test.py`がmodの`tool.check`から抽出した全ツール名と許可一覧の対応をチェックする。
-modはメインが定期再確認のtaskを持たない場合に一覧取得・作成・削除の許可を確認し、`atk wait-schedule`と同じcron式で`CronCreate`を作成して、task IDを`start`の結果の後に届ける。
+modはメインが定期再確認のtaskを持たない場合に一覧取得・作成・削除の許可を確認し、`atk wait-schedule`と同じcron式で`CronCreate`を作成する。
 装着できない場合は、理由と許可・公開状態の確認、完了通知による待機を案内する。
 装着は成功した`start`ごとに評価し直し、許可や公開状態が回復した後の`start`で自動作成する。
 装着失敗の通知は会話（`$.session.id()`）ごとに最後に届けた本文と比べ、同じ本文なら`start`の結果へ加えない。
@@ -25,6 +25,16 @@ modはメインが定期再確認のtaskを持たない場合に一覧取得・�
 成功した`start`ごとに同じ警告を追加すると、許可が回復するまで会話へ同じ本文が積み上がり、読む費用だけが増えるためである。
 通常回収の通知（`session_exit.ts`）も同じ失敗の反復を抑える。
 モデルが手順を守らなくても装着できるようになり、起動前の`atk wait-schedule`、`ToolSearch`と`CronCreate`の呼び出しが不要になる。
+
+2026年11月18日、作成の成功の通知をやめ、失敗の警告を`start`のターンの中で届ける方式へ改めた。
+modの`$.prompt.submit`は会話がidleになってから実行されるため、成功の通知は起動したターンの終了まで保留され、全待機の回収後に通知だけを処理するターンを1回生んでいた（2026年11月17日の会話記録で、投入から約20分後の到着を観測した）。
+成功の通知は発火時の共通本文と同じ案内しか持たず、task IDも含まないため、届ける内容が無い。
+成功を知る必要がある場合は`CronList`の標識で確かめられる。
+失敗の警告は、PostToolUseのhookがmodの要求（`periodic_recheck`）の応答を待ち、応答の`reason`を`start`の結果の追加文脈へ添える。
+modの`CronList`・`CronCreate`の呼び出しにも設定hookが実行されるため、装着の完了までは2026年11月18日の観測で約5秒かかる。
+hookの待機上限（20秒）を過ぎた警告は、modが次のターンの入力として届ける。
+modの読込目印が無い会話では待たない。
+次のターンの入力として送る通知は`hooks/automated_message.ts`の`startNextTurn`を通し、届く時点を送達手段の名前で区別する。
 「委譲手段の選択と待機の装着の手掛かり」が`start`の公開説明に置いた手掛かりは、装着できなかった場合と`Agent`ツールの委譲の手順への案内へ改めた。
 定期promptの共通本文は`agent-toolkit/agent_toolkit/_common/periodic_recheck.py`だけが持ち、`atk wait-schedule --format json`がcron式とともに出力する。
 modとモデルが自ら装着する手順は、どちらもこの出力を使う。

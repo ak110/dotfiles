@@ -1,8 +1,7 @@
 import type { EngineInterface, Register } from "claude-code";
 
-import { automatedMessage } from "./automated_message.ts";
+import { automatedMessage, startNextTurn } from "./automated_message.ts";
 import { register as registerCompactConversation } from "./compact_conversation.ts";
-import { register as registerPeriodicRecheck } from "./periodic_recheck.ts";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
 import { register as registerUsageLimitResume } from "./usage_limit_resume.ts";
 import { register as registerUIRequests } from "./ui_requests.tsx";
@@ -11,10 +10,10 @@ import { register as registerAgentPanel } from "./agent_panel.ts";
 import { register as registerRuntimeChanges } from "./runtime_changes.ts";
 
 // hooks.jsonの`modules`は1つのプラグインにつき1つのhooks moduleだけを受け付け、照合条件の無い同じイベントのhookは
-// 1回しか登録できない。また`$`は別ファイルの関数へ渡せないため、各機能の`session.start`の処理をここへまとめる。
+// 1回しか登録できないため、各機能の`session.start`の処理をここへまとめる。
 
 // 委譲先セッションの判定。`agent_toolkit/_common/delegated_session.py`の`is_delegated`と同じ条件を持つ。
-// hooks moduleはPythonの関数を呼べず、`$`を受け取る関数を別ファイルへ置けないため、同じ条件をここへ置く。
+// hooks moduleはPythonの関数を呼べないため、同じ条件をここへ置く。
 // 2つの環境変数名を読むテスト以外のファイルは本ファイルだけとし、`delegated_session_env_invariant_test.py`が確かめる。
 // 条件を変える場合はPython側と両方を変える。
 // Codex backendの委譲先は`AGENT_TOOLKIT_DELEGATED_SESSION`を持たないため、`AGENT_TOOLKIT_OWNER_SESSION`も入力とする。
@@ -36,7 +35,7 @@ export const register: Register = (on) => {
     if (change?.phase === "running" && !change.notified) {
       await $.state.set({ plugin: "agent-toolkit", key: "runtimeChange" }, { ...change, phase: "done", notified: true });
       $.clock.after(0, async () => {
-        await $.prompt.submit({ text: automatedMessage("runtime-changes", "notice", "変更反映中にmodが再読込された。消費済み操作は再実行しない。再読込前の応答と、未応答の対象を次の記録で確認して続行せよ。再接続・反映の成功を未確認のまま表示するな。\n" + JSON.stringify(change)) });
+        await startNextTurn($, automatedMessage("runtime-changes", "notice", "変更反映中にmodが再読込された。消費済み操作は再実行しない。再読込前の応答と、未応答の対象を次の記録で確認して続行せよ。再接続・反映の成功を未確認のまま表示するな。\n" + JSON.stringify(change)));
       });
     }
     // `atk agents-exit-session`の終了要求を受け付ける準備ができたことを示す印を書き、前の要求を消費済みにする。
@@ -53,7 +52,7 @@ export const register: Register = (on) => {
       if (waits !== undefined && !usageLimitSession.delegated) {
         await $.fs.write(restart, JSON.stringify({ phase: "resumed", waits }));
         $.clock.after(0, async () => {
-          await $.prompt.submit({ text: automatedMessage("runtime-restart", "notice", "再起動後の会話を再開した。停止済み待機の識別: " + JSON.stringify(waits) + "。保持した作業記録と委譲先の状態を確認し、引数なしのatk agents waitを背景で発行し直して結果を回収せよ。未完了の工程から続けよ。") });
+          await startNextTurn($, automatedMessage("runtime-restart", "notice", "再起動後の会話を再開した。停止済み待機の識別: " + JSON.stringify(waits) + "。保持した作業記録と委譲先の状態を確認し、引数なしのatk agents waitを背景で発行し直して結果を回収せよ。未完了の工程から続けよ。"));
         });
       }
     }
@@ -80,7 +79,6 @@ export const register: Register = (on) => {
   registerSessionExit(on);
   registerCompactConversation(on, usageLimitSession);
   registerUIRequests(on, usageLimitSession);
-  registerPeriodicRecheck(on);
   registerUsageLimitResume(on, usageLimitSession);
   registerRuntimeRestart(on, usageLimitSession);
   registerAgentPanel(on);

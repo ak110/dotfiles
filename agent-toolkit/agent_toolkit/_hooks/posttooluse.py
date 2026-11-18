@@ -39,11 +39,13 @@ import json
 import re
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import asyncio
 lazy import shlex
 
 from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE, observe_verification
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
+lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import function_hook_requests
 lazy from agent_toolkit._common.json_lines import split_lines
@@ -71,6 +73,11 @@ lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 _HOOK_ID = "posttooluse"
 
 _llm_notice = _notice_formatter(_HOOK_ID)
+
+# modの装着（`CronList`・`atk wait-schedule`・`CronCreate`）を待つ上限。
+# modのツール呼び出しにも設定hookが実行されるため、2026年11月18日の観測では約5秒かかった。
+# 上限を過ぎた後の装着失敗はmodが次のターンの入力として届ける。
+_PERIODIC_RECHECK_WAIT_SECONDS = 20
 
 
 def _executable_name(token: str) -> str:
@@ -573,7 +580,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
             # pylint: disable-next=protected-access
             response = _agents_server_observations._extract_agents_server_structured_response(payload.get("tool_response"))
             if response.get("session_id") and response.get("status") != "failed" and not response.get("isError"):
-                function_hook_requests.enqueue(session_id, "periodic_recheck", {})
+                notices.extend(_mount_periodic_recheck(session_id))
     elif tool_name == "TaskStop":
         consume_completion(session_id, target_ids(tool_input))
         response = payload.get("tool_response")
@@ -592,6 +599,26 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         if tool_name == "Bash" and (completion_notice := _completion_report_notice(payload, tool_input)) is not None:
             notices.append(completion_notice)
     return notices
+
+
+def _mount_periodic_recheck(session_id: str) -> list[str]:
+    """modへ定期再確認のtaskの装着を依頼し、装着できなかった場合の警告を同じ`start`の結果へ添える。
+
+    `$.prompt.submit`による通知は実行中のターンの終了後にしか届かないため、modの応答を待って同じターンの中で届ける。
+    作成の成功と既にtaskを持つ場合は空の応答となり、何も添えない。
+    modを読み込んでいない会話（読込目印が`ready`でない）では待たない。
+    """
+    paths = function_hook_paths(session_id)
+    try:
+        if paths is None or paths[0].read_text(encoding="utf-8") != "ready":
+            return []
+        response = asyncio.run(
+            function_hook_requests.request(session_id, "periodic_recheck", {}, timeout=_PERIODIC_RECHECK_WAIT_SECONDS)
+        )
+    except OSError, ValueError:  # 期限切れ（TimeoutError）を含む。警告はmodが次のターンの入力として届ける
+        return []
+    warning = response.get("reason")
+    return [warning] if isinstance(warning, str) and warning else []
 
 
 def main(payload_text: str) -> int:

@@ -1,5 +1,5 @@
 import type { EngineInterface, On, SessionUsage } from "claude-code";
-import { automatedMessage } from "./automated_message.ts";
+import { automatedMessage, startNextTurn } from "./automated_message.ts";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 
 const SERVER = "plugin_agent-toolkit_agents_server";
@@ -253,7 +253,7 @@ export function register(on: On): void {
           if (state.permissions) state.permissions.pending = state.permissions.pending.map((item) => item.request.request_id === state.permissionId ? { ...item, request: { ...item.request, request_id: newId, scope: state.scope } } : item);
           state.permissionId = newId;
           state.permissionDetail = prepared.display;
-          await $.prompt.submit({ text: automatedMessage("permissions-panel", "notice", "次の要求JSON全体を質問本文に逐語で含め、既存AskUserQuestionでユーザーへ確認せよ。allow_choiceの選択肢と拒否の選択肢を提示し、回答を代筆せず実回答を待て。コード全体・実入力・出所・scopeを省略するな。\n" + prepared.display) });
+          await startNextTurn($, automatedMessage("permissions-panel", "notice", "次の要求JSON全体を質問本文に逐語で含め、既存AskUserQuestionでユーザーへ確認せよ。allow_choiceの選択肢と拒否の選択肢を提示し、回答を代筆せず実回答を待て。コード全体・実入力・出所・scopeを省略するな。\n" + prepared.display));
           state.note = "確認を依頼した。承認や実行の成功は記録していない。";
         } catch (error) { state.note = failure("確認の依頼", error); }
         finally { state.busy = false; $.ui.invalidate("ui.render"); }

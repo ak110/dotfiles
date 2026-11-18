@@ -1,10 +1,12 @@
 import { pluginLaunchCommand } from "./plugin_launch.ts";
-import type { EngineInterface, On } from "claude-code";
+import type { EngineInterface } from "claude-code";
 import { automatedMessage, changedWarning } from "./automated_message.ts";
 
-// `agents_server`の`start`の処理の中で、メインの定期再確認のtaskを`CronCreate`で装着し、結果をメインの会話へ届ける。
+// `agents_server`の`start`の処理の中で、メインの定期再確認のtaskを`CronCreate`で装着する。
 // モデルが起動前に`atk wait-schedule`と`CronCreate`を呼ぶ手順は装着漏れを残し、起動までの呼び出しも増やすため、
 // 作成前にmod自身の回収能力も確認する。装着できない場合は理由と完了通知による待機を案内する。
+// 装着はPostToolUseの要求（`ui_requests.tsx`の`periodic_recheck`）への応答として行い、警告は同じ`start`の結果へ添える。
+// 作成の成功は会話へ届けない。再利用と回収の案内は発火時の共通本文が持つ。
 // cron式とpromptの共通本文は`atk wait-schedule`の出力から得る。本文の定義元はPython側の1か所であり、
 // モデルが自ら装着する手順も同じ出力を使う。
 // `Agent`ツールのサブエージェント（`agentId`を持つ呼出主体）へは装着も通知もしない。`CronList`はメインと共有され、
@@ -12,10 +14,7 @@ import { automatedMessage, changedWarning } from "./automated_message.ts";
 // サブエージェントは完了通知で待機を解く。
 // 設計と不採用とした代替は`docs/development/design-hooks-periodic-recheck.md`「`start`の処理の中での定期再確認の装着」にある。
 
-// Claude Codeがプラグインのstdio MCPサーバーのツールへ付ける名前（`mcp__plugin_<プラグイン名>_<サーバー名>__<ツール名>`）。
-// matcherの無い`tool.call`のhookは`send_to_user.tsx`が登録済みで同じイベントへ2件目を登録できないため、ツール名をmatcherに指定する。
-// `hooks.json`のPreToolUseの`matcher`も同じ綴りを使う。
-const RUNTIME_REFERENCE = "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」";
+const RUNTIME_REFERENCE = "`agent-toolkit:delegation`の`references/claude-code-runtime-waiting.md`「待機中の定期再確認と背景転換」";
 // 定期再確認のpromptの1行目に置く標識。`agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`の`PERIODIC_RECHECK_MARKER`と
 // 同じリテラルとし、一致は`agent-toolkit/skills/delegation/references/runtime_contract_invariant_test.py`が確かめる。
 export const PERIODIC_RECHECK_MARKER = '<atk-auto source="periodic-recheck" kind="periodic-recheck">';
@@ -23,24 +22,18 @@ const CRON_EXPRESSION = /^\S+( \S+){4}$/;
 // `atk wait-schedule`は`claude auth status`を最大5秒待つ。`uv run`の環境同期を含めても収まる上限を取る。
 const WAIT_SCHEDULE_TIMEOUT_MS = 60_000;
 
-// 装着の結果は保持するtask IDを伝えるだけで対処を要さないため`notice`、
+// 会話ごとに、最後に届けた装着失敗の本文を持つ。装着は`start`ごとに評価し直し、同じ失敗が続く間は警告だけを省く。
+// 既往はmodの読込ごとに初期化し、再読込後の最初の失敗は届ける。
+const deliveredFailures = new Map<string, string>();
+
 // 装着できなかった事実は許可とツールの公開状態の確認を要するため`warn`とする。
-function notice(kind: "notice" | "warn", body: string): string {
-  return automatedMessage("periodic-recheck", kind, body);
-}
-
-// 装着の結果。`failed`は同じ会話へ同じ失敗の通知を重ねない判定に使う。
-type MountOutcome = { note: string; failed: boolean };
-
-function notMounted(reason: string): MountOutcome {
-  return {
-    note: notice(
-      "warn",
-      `待機状況の定期確認taskを自動作成できなかった（理由: ${reason}）。` +
-        `理由に示したツールの許可と公開状態を確認せよ。待機方法は${RUNTIME_REFERENCE}を参照せよ。`,
-    ),
-    failed: true,
-  };
+function notMounted(reason: string): string {
+  return automatedMessage(
+    "periodic-recheck",
+    "warn",
+    `待機状況の定期確認taskを自動作成できなかった（理由: ${reason}）。` +
+      `理由に示したツールの許可と公開状態を確認せよ。待機方法は${RUNTIME_REFERENCE}を参照せよ。`,
+  );
 }
 
 export function isMarked(prompt: string): boolean {
@@ -91,8 +84,8 @@ export function parseSchedule(stdout: string): Schedule | undefined {
   return { cron: cron.trim(), prompt };
 }
 
-// 装着の結果をメインへ届ける本文を返す。既にtaskを持つ場合は`undefined`を返し、何も届けない。
-async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
+// 装着できなかった場合の警告本文を返す。作成した場合と既にtaskを持つ場合は`undefined`を返す。
+async function mount($: EngineInterface): Promise<string | undefined> {
   const listDecision = (await $.tool.check({ tool: "CronList", input: {} })).decision;
   if (listDecision !== "allow") {
     return notMounted(`\`CronList\`の許可の判定が\`${listDecision}\``);
@@ -136,37 +129,14 @@ async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
   if (typeof createdTask !== "object" || createdTask === null || !("id" in createdTask) || typeof createdTask.id !== "string") {
     return notMounted("`CronCreate`がtask IDを返さなかった");
   }
-  return {
-    note: notice(
-      "notice",
-      `定期再確認のtaskを作成した。再利用条件は${RUNTIME_REFERENCE}に従え。`,
-    ),
-    failed: false,
-  };
+  return undefined;
 }
 
-export function register(on: On): void {
-  // 会話ごとに、最後に届けた装着失敗の本文を持つ。装着は`start`ごとに評価し直し、同じ失敗が続く間は通知だけを省く。
-  // 既往はmodの読込ごとに初期化し、再読込後の最初の失敗は届ける。
-  const deliveredFailures = new Map<string, string>();
-  let initialized = false;
-  on("turn.start", { turnId: /^/ }, async ($, e, next) => {
-    if (!initialized && e.agentId === undefined) {
-      initialized = true;
-      $.clock.every(100, async () => {
-        const requested = (await $.state.get({ plugin: "agent-toolkit", key: "recheckRequested" })).value;
-        if (!requested) return;
-        await $.state.set({ plugin: "agent-toolkit", key: "recheckRequested" }, false);
-        let outcome: MountOutcome | undefined;
-        try { outcome = await mount($); }
-        catch (error) { outcome = notMounted(`装着処理の例外: ${String(error)}`); }
-        const sessionId = await $.session.id();
-        const warning = changedWarning(deliveredFailures, sessionId, outcome?.failed ? outcome.note : undefined);
-        if (outcome && (!outcome.failed || warning)) {
-          await $.prompt.submit({ text: outcome.note });
-        }
-      });
-    }
-    return next(e);
-  });
+// 成功した`start`の要求に応じて装着し、`start`の結果へ添える警告を返す。届けるものが無ければ空文字列を返す。
+// 同じ会話へ同じ失敗の警告を重ねず、作成の成功と既にtaskを持つ場合は既往を破棄する。
+export async function mountForStart($: EngineInterface): Promise<string> {
+  let warning: string | undefined;
+  try { warning = await mount($); }
+  catch (error) { warning = notMounted(`装着処理の例外: ${String(error)}`); }
+  return changedWarning(deliveredFailures, await $.session.id(), warning) ?? "";
 }

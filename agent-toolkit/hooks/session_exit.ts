@@ -1,6 +1,6 @@
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
-import { automatedMessage, changedWarning } from "./automated_message.ts";
+import { automatedMessage, changedWarning, startNextTurn } from "./automated_message.ts";
 import { isMarked, parseCronJobs, parseSchedule } from "./periodic_recheck.ts";
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/;
@@ -10,7 +10,7 @@ function isAbsolute(path: string): boolean {
 }
 
 // 終了要求の状態ファイルのパスを、セッションIDと設定ディレクトリの環境変数の値から求める。
-// hooks moduleは`$`を別ファイルの関数へ渡せないため、`$`を受け取らない形で`register.ts`の`session.start`と共有する。
+// `$`を受け取らない形で`register.ts`の`session.start`・`ui_requests.tsx`と共有する。
 export function exitStatePath(
   sessionId: string,
   configured: string | undefined,
@@ -132,7 +132,7 @@ export function register(on: On): void {
       const note = outcome === undefined ? undefined : changedWarning(deliveredFailures, sessionId, outcome ?? undefined);
       if (note) {
         // 同じ失敗による通知ターンの反復を避け、処置できる本文を会話へ一度届ける。
-        $.clock.after(0, async () => { await $.prompt.submit({ text: note }); });
+        $.clock.after(0, async () => { await startNextTurn($, note); });
       }
       return result;
     }

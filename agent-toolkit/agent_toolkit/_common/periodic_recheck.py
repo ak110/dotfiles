@@ -9,7 +9,7 @@ TypeScriptの定数に置くと、モデルはplugin rootを解決してファ�
 `atk`とフックの双方が読むため、`_common`に置く。
 待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程は、工程が進むと事実と一致しなくなるため本文へ含めない。
 セッション固有の経過時間起動の義務は、taskを持つ主体が測定コマンドと判定閾値を同じ要素の終了タグの前へ加えてtaskを作成し直す
-（`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」）。
+（`agent-toolkit:delegation`の`references/claude-code-runtime-waiting.md`「待機中の定期再確認と背景転換」）。
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ PERIODIC_RECHECK_MARKER = _message_format.opening_tag(
 )
 """定期再確認のpromptの1行目へ置く役割標識。
 
-`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」が
+`agent-toolkit:delegation`の`references/claude-code-runtime-waiting.md`「待機中の定期再確認と背景転換」が
 同じリテラルを持ち、装着するpromptの1行目をこの標識だけの行と定める。
 """
 LEGACY_PERIODIC_RECHECK_MARKER = _message_format.opening_tag(
