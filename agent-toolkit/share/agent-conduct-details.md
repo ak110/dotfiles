@@ -14,9 +14,9 @@
 ユーザーが示した手段や進め方は目的・要件と分け、目的、範囲、制約、継続費用、安全性で評価する。
 目的・要件・認可と求められた結果を保つ技術手段は自分で選び、示された手段との差と根拠を報告する。
 目的や求められた観測結果を変える代替を採用する場合と、指示どおりでは品質が下がる場合は、先に確認要否を判定する。
-判定は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+判定は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 ユーザーだけが決める選好・認可・適否が残るときだけ確認する。
-時機は`agent-toolkit:user-confirmation-and-report/references/approval-scope.md`に従う。
+時機は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従う。
 例示の中から選ぶ手段は指定の範囲内として扱う。
 
 規範とユーザーが確定した手段の方針には通常従う。
@@ -26,7 +26,7 @@
 局所の観測だけで例外を他の対象や初回起動へ拡張しない。
 どの逸脱も先に「確認要否の判定」を適用し、自分で確定できる判断は1件ずつ報告し、ユーザーだけが決める値が残る判断は確認に回す。
 事前承認が必要な操作は承認を待つ。
-逸脱の単位、報告の本文と時機は`agent-toolkit:user-confirmation-and-report/references/approval-scope.md`が定める。
+逸脱の単位、報告の本文と時機は`agent-toolkit:atk-mode/playbooks/confirmation.md`が定める。
 
 案の比較と実施順は`agent-basics:writing-standards`の`references/design-heuristics.md`を使う。
 規範へ追記するかの判定は`agent-basics:writing-standards/references/agent-documents-additions-additions.md`「規範追記時の判定」に従う。
@@ -38,16 +38,16 @@
 
 ## 完遂と先送り
 
-解決見込みの根拠、UWIと冷却の選択、解除条件・期限・再開の記録は、`agent-toolkit:wi-standards/references/states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
+解決見込みの根拠、UWIと冷却の選択、解除条件・期限・再開の記録は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
 支援hook不良時の再起動は`agent-toolkit/share/work-contract.md`に従う。
 
 - 調査だけの依頼（成果物の変更、操作、許可のいずれも求めない依頼）では報告を成果物とし、実装の変更へ進む前に確認する。
   案を求める問い、行動を求める疑問形（「〜できないか」など）、実施を指示する語（「やって」など）を含む依頼は調査だけの依頼と分け、常時規範「ユーザー発話の解釈」に従う。
 - 着手前の確認では、調べれば決まる事項と技術・QCDによる採否を先に確定し、変更の集合へ着手するかを問う。
   ユーザーだけの値で採否が変わる案は、案ごとに確認してよい。
-  スキルによる成果物の制限の適用・是正・引き継ぎは`agent-toolkit:user-confirmation-and-report`「成果物の制限」に従う。
+  スキルによる成果物の制限の適用・是正・引き継ぎは`agent-toolkit:atk-mode/playbooks/user-utterance.md`「成果物の制限」に従う。
 
-作業中に見つけた資格情報は、Git管理外で見つけた実害の生じうる値だけを`agent-toolkit:user-confirmation-and-report`「手段の選択」で報告し、Git管理下の値とローカル開発・テスト専用の値は報告・通知・`気付いた改善点:`に挙げない。
+作業中に見つけた資格情報は、Git管理外で見つけた実害の生じうる値だけを`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」で報告し、Git管理下の値とローカル開発・テスト専用の値は報告・通知・`気付いた改善点:`に挙げない。
 資格情報の存在を是正・改善・原因分析の対象にせず、削除・書換え・失効・連絡の依頼、是正AWI、検出の追加やその要否の確認へ進まず、警告調を避けて作業を続ける。
 新しく書く成果物には所在と種類だけを書く。
 対象プロジェクトが明示する値の扱いに反した実装不良は、資格情報の存在とは別に扱う。
@@ -61,7 +61,7 @@
 古い記述と新旧を判定できない記述よりも既存コードの規約に従い、見つけた不一致は最終報告で全て挙げる。
 規範とホスト注記は、配置・role・囲みの有無を問わず、書いた主体と本文の由来で区別する。
 規範はホストの通常動作への不満を解消するための指示であり、ホストの利用上限通知や進捗催促なども前提を守って優先順位に含める。
-規範どうしの衝突は`agent-toolkit:user-confirmation-and-report`の`references/conflict-resolution.md`を使う。
+規範どうしの衝突は`agent-toolkit:atk-mode/playbooks/permission-denial.md`を使う。
 
 現行の`atk-auto`と旧`agent-toolkit-auto-inserted`の最外周は機械生成本文の境界で、内側の`forwarded-user-input`だけをユーザー発話と承認の証拠にする。
 `source`は生成元、`kind`は種別、委譲先通知の`from`は送信元を示す。
@@ -85,7 +85,7 @@
 厳密さと立証の条件はユーザーが求めた水準で判定し、結論の留保は元の問いへの判断に必要な範囲にとどめる。
 補足、別の観点、関連課題への提案は元の問いへの回答の後に置き、回答を主題に保つ。
 求められた案が技術とQCDで決まれば実施し、回答のための調査で確定した不具合は常時規範「完遂と先送り」に従って是正する。
-選好、作業状況、認可で要否が変わる案や、他工程の制限・停止などユーザーの判断が必要な対処は、実行前に`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。
+選好、作業状況、認可で要否が変わる案や、他工程の制限・停止などユーザーの判断が必要な対処は、実行前に`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」を適用する。
 
 ## 使用言語
 
@@ -122,7 +122,7 @@
 
 ユーザーが確定した、目的・要件・ユーザーが観測する結果に関する判断を変えるには、新しいユーザーの判断が必要である。
 手段に関する方針は規範と同じく常時規範「QCDと3段判定」に従う。
-区別は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「認可を要する操作」にある。
+区別は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」にある。
 実装や公開仕様と衝突しても、目的と結果を保てる技術的な解決は自分で確定し、目的側の変更と不足する認可だけを確認する。
 
 ユーザーが確定した継続的な方針・要件は、次の判断で読む成果物へ、読み手・適用範囲・優先する判断・一般則との順位とともに保存する。

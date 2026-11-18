@@ -30,7 +30,7 @@ agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメ�
 
 `agent-basics:writing-standards`の`references/pytilpack.md`「汎用処理を自作する前の確認」で、必要な汎用処理がpytilpackに無かった場合に適用する。
 作業対象が個人プロジェクトの一覧に無いプロジェクト（業務のプロジェクトなど）でも適用する。
-ユーザーへ確認せずに、pytilpackのリポジトリを対象とするAWIを`agent-toolkit:wi-standards`の通常の投入手順で投入し、投入したAWIを作業完了報告で伝える。
+ユーザーへ確認せずに、pytilpackのリポジトリを対象とするAWIを`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の手順で投入し、投入したAWIを作業完了報告で伝える。
 その場の作業は、同資料のとおりプロジェクト内へ実装して続ける。
 AWIには汎用化した要求（必要な機能、想定する入出力、利用場面の一般的な説明）だけを書き、作業中のプロジェクトに固有の名称、コード、データは除く。
 pytilpackは公開リポジトリであり、要求の内容が実装とcommitとして公開されるためである。

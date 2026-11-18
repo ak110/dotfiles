@@ -4,14 +4,14 @@
 
 2026年10月9日、ユーザーの全手順の見直し指示により、発行・委譲通知・受領・統合検収へ共通の確認要否判定を接続した。
 2026年10月10日のユーザー指示と確認回答により、会話中の選択式の確認で回答を得た事項はその場で完結させ、回答を得ないまま終わった確認とターンを越えて残る判断・行動はモードによらず個別UWIへ保存する。
-現行の規定は`agent-toolkit:user-confirmation-and-report`「手段の選択」にある。
+現行の規定は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」にある。
 読み手は各工程の実行主体とする。
 原要求、現物、既存認可とQCDで確定する事項は自ら確定して報告し、ユーザーだけの選好・認可・適否・取得不能の入力が残る事項だけを問う。
 以下の確認の時機とUWIの手段は、必要と判定した確認に適用する。
 技術的受領不能、依存待ち、レビュー不成立と工程への到達だけで確認を発行しない。
 メインは全受領事項の必要性判定と必要な発行の完了を検収し、確認不要の報告へUWIを要求しない。
 要求取消と未認可の外部操作の保護は保持する。
-現行の判定は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」が定める。
+現行の判定は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」が定める。
 通知は`rules-subagent.md`、受領・統合は`exec.parent.md`と`run-lanes.md`が定める。
 
 規範の削除・縮小は、記述の由来によらず目的とQCDでエージェントが判断する。
@@ -43,7 +43,7 @@ UWIへ回答が保存されると、メインは回答済みのUWIと元項目�
 source値だけの場合、空のコメント欄、エージェント推奨、一般的な進行指示は認可にしない。
 
 - 事前承認と事後承認の区分は、確認を要する操作の性質で選ぶ。
-  構造化質問かUWIかの手段の選択は`agent-toolkit:user-confirmation-and-report`へ集める。
+  構造化質問かUWIかの手段の選択は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」へ集める。
   自律モードの事後承認は回答を待たずに続けられる事後承認型UWIへ記録する（2026年9月7日、ユーザー指示。確認のたびに作業が止まる運用を避けることによる）。
   回答を要する事前承認は、回答期限が働く実行環境ではその場で質問し、それ以外は事前承認型UWIへ記録して元項目をそのUWIへの依存で待たせる（2026年10月4日、ユーザー回答。回答待ちを保留でなく依存で表すのは、編集中の`hold`と区別できるようにする2026年10月のユーザー指示による）。
   2026年9月30日のユーザー指示は認識合わせスキルの自律モードでの質問を求めたものであり、確認手段全体をその場の質問へ広げたcommit 4b838401bfの一般化はエージェントの判断だった。
@@ -65,7 +65,7 @@ source値だけの場合、空のコメント欄、エージェント推奨、�
 - 協調モードで動作するセッションからAWIまたはUWIを投入する主体は、本文が確定していない対象、適用範囲、外部可視の結果と除外内容の調査を投入前に完了する。
   確認の要否は調査の結果として判明するため、調査を投入後へ回さない。
   認識差で要件や結果が変わる未解決事項は回答を得てからAWIを投入する（2026年9月7日、ユーザー指示。2026年9月21日、ユーザー指示により確認対象を選好以外の要件差へ広げた）
-- `agent-toolkit:add-awi-by-user`は`agent-toolkit:user-confirmation-and-report`の`references/grilling.md`が定める質問ラウンドで、ユーザーの選好で決まる未確定判断を解消する。
+- `agent-toolkit:atk-mode`の作業`add-awi-by-user`は`agent-toolkit:atk-mode/references/choice-construction.md`「質問ラウンド」が定める質問ラウンドで、ユーザーの選好で決まる未確定判断を解消する。
   起動時の登録依頼が成立しているため、解消後に本文の全文提示と投入可否の一律確認は行わない。
   新しい未確定要件が生じた場合だけ質問ラウンドへ戻る
   （2026年9月8日の確認不足の指摘と、2026年9月28日の現行スキルに合わせるユーザー回答に基づく）
@@ -92,10 +92,10 @@ WIの完成条件の範囲外で見つけたユーザー向けの不足のうち
 確認へ回答が無い場合は新しい挙動を保留したAWIと事前承認型UWIへ回し、元の変更は通常どおり公開する。
 現行の規範は次の資料にある。
 
-- `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`
-- `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-questions.md`
+- `agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」
+- `agent-toolkit:atk-mode/references/choice-construction.md`
 
-承認区分は同スキルの`references/approval-scope.md`が定める。
+承認区分は`agent-toolkit:atk-mode/playbooks/confirmation.md`「事前承認と事後承認」が定める。
 
 ### 経緯（確認と承認）
 
@@ -108,7 +108,7 @@ WIの完成条件の範囲外で見つけたユーザー向けの不足のうち
   改善を広く任せる発話は、その変更の承認源にならない（2026年11月17日のユーザー指示）。
   確認の要否は変更の大きさと、ユーザーがその動作をどこまで意識して使っているかで決め、細部と小さな変更を一律に確認へ回さない（同日のユーザー指示）。
   経緯は`incidents-requirements.md`の2026年11月15日〜17日の事例にある。
-  現行の規範は`agent-toolkit:wi-standards`の`references/origin-and-approval-origin.md`「由来と`source`」が定める
+  現行の規範は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」が定める
 
 2026年10月30日のユーザー承認により、上記の起動スキルを統合し、単一処理は`agent-toolkit:process-wi single-lane`、登録全体は`agent-toolkit:process-wi all-repos`で選ぶ。
 通常のレーン処理は引数なしで開始する。

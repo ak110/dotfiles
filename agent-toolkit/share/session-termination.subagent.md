@@ -24,7 +24,7 @@ writes_worktree: true
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body-content.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/atk-mode/references/awi-body.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/run-lanes-completion.md` |
 
 ## 読込表
@@ -34,7 +34,7 @@ writes_worktree: true
 | 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` |
 | 全体検証かCIが失敗したとき | `agent-toolkit:process-wi`の`references/termination-ci-failure.md` |
 | CI定義判定、baseline作成、CI監視または公開後の操作を前提不足で完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` |
-| `adopt`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
+| `adopt`のメモを書く直前 | `../skills/atk-mode/playbooks/wi-drafting.md`、`../skills/atk-mode/references/states-and-dependencies.md` |
 
 ## 入力
 
@@ -63,7 +63,7 @@ push先はカレントブランチの上流追跡ブランチとし、カレン�
 ## 延期adoptの終了
 
 **3.** 未達項目を終了させないため、残る完成条件を到達可能な環境を探索して観測する。
-人が観測主体と記載されていても、`agent-toolkit:wi-standards`の`references/awi-body.md`の観測主体の規定に従う。
+人が観測主体と記載されていても、`agent-toolkit:atk-mode/references/awi-body.md`の観測主体の規定に従う。
 次は`adopt`せず`processing`を維持し、`実行した公開工程`に記録する。
 扱いは`../skills/process-wi/references/run-lanes-completion.md`「採否の確定と終了区分」に従う。
 
@@ -72,13 +72,13 @@ push先はカレントブランチの上流追跡ブランチとし、カレン�
 - 観測結果が完成条件を満たさなかった項目: 満たさなかった条件と実際の観測結果を記録する。
 
 **4.** 終了結果を正確に残すため、`adopt`のメモにおける先頭の1文は、commitの記録よりも前に記述する。
-基準は`../skills/wi-standards/references/states-and-dependencies-completion.md`「終了」に従う（用語は同スキル冒頭の基準に準拠）。
-同スキルの`../skills/wi-standards/references/awi-body-content.md`「節の構成と分担」が定めるH1直下の変更内容を、実際に実施した結果に合わせて記述する。
+基準は`../skills/atk-mode/references/states-and-dependencies.md`「終了」に従う（用語は`../skills/atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」に準拠）。
+`../skills/atk-mode/references/awi-body.md`「節の構成と分担」が定めるH1直下の変更内容を、実際に実施した結果に合わせて記述する。
 
 先行工程の正常完了後、受領したAWI名と実装commitのOIDで`adopt`する。
 公開後操作で新実装commitが生じた場合は、AWIの要求を実際に反映したOIDを選び直す。
 実装差分なしの項目は`--commit`を省き、充足根拠を`--note`か`--note-file`に記録する。
-commitを記録する際は、対象リポジトリのworktreeの絶対パスを`--target-repo`へ渡す（`../skills/wi-standards/references/wi-standards-states.md`「状態と依存」の共通前提）。
+commitを記録する際は、対象リポジトリのworktreeの絶対パスを`--target-repo`へ渡す（`../skills/atk-mode/references/states-and-dependencies.md`「状態と依存」の共通前提）。
 
 **5.** 公開結果を委譲元へ渡すため、「出力」の形式で返す。
 

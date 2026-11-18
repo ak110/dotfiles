@@ -23,7 +23,7 @@
 
 - 実装時に有効性を十分に確認した、変更頻度の低い取得・インストール・削除などを毎回動かす試験は削除する（2026年11月15日、ユーザーが再是正）。
   各完成条件の観測は必要な方法で行い、常設の自動試験の要否は変更で誤りが混入しやすい判定・境界・回帰の価値で別に決める。
-  現行の判断は`agent-basics/skills/writing-standards/references/testing.md`と`agent-toolkit/skills/wi-standards/references/awi-body-observation.md`にある
+  現行の判断は`agent-basics/skills/writing-standards/references/testing.md`と`agent-toolkit/skills/atk-mode/references/awi-body.md`にある
 
 - CIが全体の試験と静的検査を担う公開先では、手元の検証を変更箇所と関連テスト・lintに限る（2026年11月11日、ユーザー指示）。
   レーン内・統合時・公開前のいずれも、全体の試験を毎回実行する方式と、最後にまとめて全体を1回実行する方式を採用しない。
@@ -34,7 +34,7 @@
 2026年8月のユーザー指示（Qiita記事「AIが実装し、AIがテストし、AIが「問題ありません」と言う時代の品質保証」の
 考え方の取り込み）に由来する領域である。
 現行の規定は`agent-basics:writing-standards`の
-`references/testing.md`「検証単位の選定」節と、`agent-toolkit:wi-standards`の`references/awi-body-impact.md`「変更の種類ごとの記載」節にある。
+`references/testing.md`「検証単位の選定」節と、`agent-toolkit:atk-mode/references/awi-body.md`「変更の種類ごとの記載」節にある。
 
 - 細かい挙動で、不具合の害が小さく、エンドユーザーが気付いてから直せば足りる対象には、テストを書かない（2026年11月11日、ユーザー指示）。
   発端は、作業項目の一覧でコピー後の表示が2秒間だけ変わることを確かめる実ブラウザーの試験が、負荷の高い実行でまれに失敗した件である。

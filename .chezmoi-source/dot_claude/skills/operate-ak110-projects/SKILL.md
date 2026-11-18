@@ -24,7 +24,7 @@ description: >
 | 同期対象への波及を判定する前 | [references/project-synchronization.md](references/project-synchronization.md) |
 | 推奨ガイド・共有ファイルへ追従する前、同期対象を更新した時、または足回りファイルの推奨設定を判断する前 | [references/cross-project-followup.md](references/cross-project-followup.md) |
 | ドキュメント構成を変更・同期する前 | [references/doc-structure.md](references/doc-structure.md) |
-| 他プロジェクト向けの追従提案を複数リポジトリへ投入する前 | `agent-toolkit:wi-standards`の`references/cross-repository-submission.md` |
+| 他プロジェクト向けの追従提案を複数リポジトリへ投入する前 | `agent-toolkit:atk-mode/references/cross-repository-submission.md` |
 | lint違反への対応か推奨設定の緩和を判断する前 | `agent-basics:writing-standards`の`references/implementation-time.md`「lintと機械チェック」 |
 | リリースの認可・要否・実施を判断する前 | [references/release-operations.md](references/release-operations.md) |
 | 一覧の外のプロジェクトで足回り改善の適用を検討する前と、個人プロジェクトで追従台帳の記録対象に当たる変更を確定した時 | [references/followup-procedure.md](references/followup-procedure.md) |
@@ -86,9 +86,10 @@ description: >
 個人プロジェクトの性質や作業手順（開発・検証できる環境、セットアップ手順、リリース運用など）を変える要求では、WIの反映先を確定する前に、その性質を記述する規範を変更後の性質と比べる。
 比べる規範は、dotfilesが所有するプロジェクト一覧、本スキルの属性表と`references/ci-and-tooling.md`などである。
 比べた結果から、追従の要否と反映先を同じ起草段階で確定する。
-規範の所有者が対象プロジェクトと別であることは投入先を分ける根拠として扱い、必要な追従は`agent-toolkit:wi-standards`の通常の投入で所有者のリポジトリへ渡す（複数リポジトリでは読込表の`references/cross-repository-submission.md`）。
+規範の所有者が対象プロジェクトと別であることは投入先を分ける根拠として扱う。
+必要な追従は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の手順による投入で所有者のリポジトリへ渡す（複数リポジトリでは`agent-toolkit:atk-mode/references/cross-repository-submission.md`）。
 対象プロジェクトだけを編集する制約がある場合も、その制約を保ったまま所有者宛ての追従の扱いを確定する。
-ユーザー確認の要否は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+ユーザー確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 その規範の記述に影響しない変更は、この比較の対象から外す。
 
 スコープに含むのは「ツールチェインやドキュメント構成」の範囲。

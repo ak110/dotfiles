@@ -94,7 +94,7 @@
    - 別画面の新機能追加などの範囲外の観察結果: 判定の根拠から除外した上で、適用範囲を示して同一threadへ再判定を依頼する。
      既存品質と今回の変更による退行は判定対象に含める。
      その観察結果がエンドユーザーの作業停止や誤った結果を示す欠落なら、範囲外の不足区分に沿って判定する。
-     区分は`agent-toolkit:user-confirmation-and-report`の`references/user-confirmation-and-report-authorization.md`「認可を要する操作」が定める。
+     区分は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」が定める。
      バグの修正はprocess-wiの同一実行内で是正し、新たな挙動の追加は同書の「確認を要する事項」に従って確認へ送る。
      それ以外の事項は参考記録とする。
    - 範囲内の根拠: 指摘された問題の機構、対象範囲、画面状態、操作手順、表示幅、および観測結果を修正条件として整理し、同一の実装担当者（レーン工程では同一のレーン担当者）へ返却する。
@@ -107,4 +107,4 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/atk-mode/playbooks/confirmation.md` |

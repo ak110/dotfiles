@@ -27,7 +27,7 @@ bash 5.2.15で`test -e /dev/null; echo "test_e_rc=$?"`は標準出力へ`test_e_
 
 ## agent-toolkit/rules/02-agent-operations.md：ツール・コマンド運用：2026年9月25日
 
-2026年9月25日、Claude Code 2.1.282で`agent-toolkit/skills/wi-standards/SKILL.md`の309行・52,347バイトを`Read`の`offset=1, limit=309`で取得すると、末尾まで届いた。
+2026年9月25日、Claude Code 2.1.282で`agent-toolkit/skills/atk-mode/playbooks/wi-drafting.md`の309行・52,347バイトを`Read`の`offset=1, limit=309`で取得すると、末尾まで届いた。
 同じファイルを`cat <絶対パス> | cat`で取得すると、Bashは表示上限を超えた全量をセッション内のファイルへ保存した。
 保存物は309行・52,347バイトで原本と一致した。
 Claude Codeの[tools仕様](https://code.claude.com/docs/en/tools.md)の「Read tool behavior」は、上限超過時に`PARTIAL view`と先頭ページを返し、`offset`と`limit`で続きを取得する方式を説明する。

@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 返却形式を確認する時（操作対象外: 自身の返却形式の確認） | `exec-review.parent.md` |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| AWIの形式を判断する前 | `../skills/atk-mode/references/awi-body.md` |
 | 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` |
 
 ## 完成条件証拠の作成
@@ -22,7 +22,7 @@
    検証の前に対象worktreeの`git status --porcelain=v1`を取得し、空でなければ同書「未commitの変更がある作業ツリーでの検証」の作業ツリーで実行して、その記録を走査記録へ残す。
    計画の`## 検証`に記載された行や、条件で明示された公開呼び出し手段を優先し、実行したコマンド、終了コード、および判定に使用した出力の要点を記録する。
    実装担当が記録した検証結果を同じHEADで再現できた場合でも、自ら観測した結果を判定の根拠とする
-3. AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。
+3. AWIの形式は`agent-toolkit:atk-mode/references/awi-body.md`冒頭に従って判別する。
    新形式のエージェント由来AWIでは`review_contract`の条件表、旧形式のエージェント由来AWIと完成条件節を持つ人間由来AWIでは`## 完成条件`の各項目を洗い出す。
    さらに`exec-review-recording-contract.md`「記録する行と要求単位」に従って元の要求文から要求単位を切り出して番号を付ける
 4. 洗い出したすべての条件について合否を判定し、「条件別判定行の形式」に従って1つの条件につき1行で記述する。

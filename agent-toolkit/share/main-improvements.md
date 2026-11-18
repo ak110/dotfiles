@@ -38,7 +38,7 @@
   既存規範の適用漏れ、後段の確認や再実行での解消、別論点の判断、因果未確定は見送りの理由にせず、未適用規範は適用を妨げた要因へ処置する（定義元は`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）。
   費用だけの問題も区分に該当しなければ再発防止を検討する。
 
-`../skills/user-confirmation-and-report/references/communication-methods-progress.md`「起動案内と進捗通知」に従う。
+`../skills/atk-mode/references/delivery.md`「起動案内と進捗通知」に従う。
 `見送り`の報告行には`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`をセミコロンで区切って書く。
 書式検査は非空の記載だけを確認し、候補と費用比較の妥当性は報告する担当が判断する。
 改善案が無ければ`改善案: なし`とする。

@@ -34,7 +34,7 @@
 統括CLIの終了だけで配下担当の停止を仮定せず、常駐が実プロセスと登録済みwriterの生存を確認する。
 停止未確認の担当、未統合レーンとdirtyなworktreeは保持する。
 例外や利用上限で統括CLIを止める経路は所有するプロセスの子孫も回収し、残存を検知した場合は所有を保持する。
-利用上限時の同じ会話の再開と、予告を受けた統括が先に保存する内容は、`../../user-confirmation-and-report/references/usage-limit.md`「常駐から起動された統括の保存と再開」に従う。
+利用上限時の同じ会話の再開と、予告を受けた統括が先に保存する内容は、`agent-toolkit:atk-mode/references/usage-limit.md`「常駐から起動された統括の保存と再開」に従う。
 同記録の「agent-toolkit/skills/process-wi/references/all-repos-orchestration-resources.md：登録集合：2026年11月12日」を参照する。
 
 ## worktreeと資源

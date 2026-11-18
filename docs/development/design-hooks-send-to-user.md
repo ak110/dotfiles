@@ -97,7 +97,7 @@ Claude Code 2.1.292では、hooks.jsonの`modules`は1件だけを受け付け�
 両ファイルが共有する値はツールの定義と`$`を受け取らない関数に限る。
 委譲先の判定が`$.env.get`を呼ぶため、判定関数と、それを使う登録とhookを同じ`register.ts`へ置く。
 transcriptから可視本文を読むStop判定、言語判定と振り返りの証拠は、`_common/transcript.py`の`visible_text_blocks`で`send_to_user`の`message`を本文に含める。
-質問の意味と確認手段は`user-confirmation-and-report`で扱う。
+質問の意味と確認手段は`agent-toolkit:atk-mode/playbooks/confirmation.md`と`agent-toolkit:atk-mode/references/delivery.md`で扱う。
 振り返りの証拠抽出は送信を作業ツールの境界から除き、同じrecordでも本文より後に作業があるかで途中と最終を区別する。
 詳細照会は送信本文を全文で返し、他のツール入力や結果を混入させない。
 名前の前置部分はmoduleの登録が決めるため、本文抽出では末尾の`__send_to_user`で判定する。

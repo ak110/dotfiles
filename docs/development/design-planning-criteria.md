@@ -34,7 +34,7 @@ AWIを入力とする作業では、本文と現物から何をどう変える�
 
 計画ファイルの成果物契約は`agent-toolkit/skills/write-plan/references/`の3文書で定め、他の文書へ再掲しない。
 3文書は`plan-file-standards.md`、保存と参照の`plan-file-storage.md`、保持・復元を伴う契約の`plan-restoration-contracts.md`である。
-要求を書く節の書き方は、`plan-file-standards.md`が`agent-toolkit/skills/wi-standards/references/awi-body.md`とその条件別資料を参照する。
+要求を書く節の書き方は、`plan-file-standards.md`が`agent-toolkit/skills/atk-mode/references/awi-body.md`とその条件別資料を参照する。
 定義元が1か所である点で、2026年8月の成果物契約の一元化（[計画と実行の運用](concepts-planning.md#計画と実行の運用)）を保つ。
 レーン担当は初版の起草前に`plan-file-standards.md`を全文読む。
 計画ファイル固有の要件の追加先は同書へ、要求の書き方の追加先は`awi-body.md`とその条件別資料へ一元化する。

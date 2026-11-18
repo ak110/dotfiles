@@ -30,7 +30,8 @@ private-notesとGitリポジトリ外の書込は成果作業の編集へ含め�
 送達後の報告が区切りの差でも遮断され、全文の再出力を往復させたためである。
 報告の内容と書式は`agent-toolkit:report-completion`の`references/report-formats.md`と既存の完成形の例へ集約し、報告を書くメインが確かめる。
 同じ判断のユーザー指示で、Stopは`agent-toolkit:report-completion`の呼び忘れの検出へ限定した。
-`termination_order_advisor`は成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・push）を行った作業を対象とする。
+`termination_order_advisor`は成果作業を含む作業を対象とする。
+成果作業は、成功した`agent-toolkit:process-wi`・`agent-toolkit:atk-mode`の作業`add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・pushである。
 最後の会話圧縮以降の読込証拠も有効な省略判断も無ければ、Claude Codeでは非遮断通知で起動と残工程への続行を案内する。
 CodexはStopの非遮断通知を受け取れないため、関連操作の案内とreport-completionの文書に従う。
 適用するプロジェクト規範が起動を不要と定める場合は、メインが意味と優先順位を判断して`termination-evidence --decision-file`へ`omit-completion`を記録する。

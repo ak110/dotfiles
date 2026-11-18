@@ -15,12 +15,13 @@
    確認待ちの間も、ユーザーの回答を待たずに進められる他のレーンの作業を継続する。
    計画確定後の後続工程では要求の由来を再判定せず、計画内で確定した採否をそのまま適用する。
 
-2. 回答が得られない場合は、`agent-toolkit:wi-standards`に従ってUWIを登録し、同スキル「状態と依存」の承認型UWIと元項目の規定に従って元AWIの`depends_on`へUWIを加え、`inbox`へ戻す。
+2. 回答が得られない場合は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に従ってUWIを登録する。
+   続けて`agent-toolkit:atk-mode/references/states-and-dependencies.md`「承認型UWIと元項目」に従って元AWIの`depends_on`へUWIを加え、`inbox`へ戻す。
    UWIの本文には、元AWIのファイル名、対象、必要とする回答内容、および回答によって分岐する結果を明記する。
    回答後の再開工程は、`atk run-script plan-progress --`を用いて計画の`## 進捗ログ`へ記録する。
    計画ファイルが存在しない場合は、`atk wi edit <元AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`を実行して元AWI本文へ追記する。
    採否の決定は回答を受け取った後に行う。
-   完成条件の観測を求めるUWIは、`../../wi-standards/references/draft-semantic-review.md`に従って原稿と元WIの必要結果を比較し、元WIの現行完成条件と再開記録の同じ観測結果へ対応付ける。
+   完成条件の観測を求めるUWIは、`agent-toolkit:atk-mode/references/draft-semantic-review.md`に従って原稿と元WIの必要結果を比較し、元WIの現行完成条件と再開記録の同じ観測結果へ対応付ける。
    UWIの保存は観測完了ではない。
    回答受領時にも元原本と既存証拠を比較し、各完成条件の結果が得られたかを確かめて採否・再開を判断する。
    同一実行内で回答が得られた場合は、実装開始前であればレーン担当が計画へ、実装着手後であればレビュー指摘管理表へそれぞれ反映し、同一レーン内で採否を確定する。
@@ -30,7 +31,7 @@
    - 採用した要求を実装して完成条件を満たした項目、および既存の実装によって要求と完成条件がすでに満たされていることを現物で確認した項目: `adopt`
    - 必要な採否手順を経て不採用と確定した項目: `reject`
    - 回答を保存した事前承認型のUWI、およびその回答を反映して採否を確定した元AWI: いずれも`adopt`
-   - ユーザーからの回答待ちとなっている項目: 採否を確定せず、`../../wi-standards/references/wi-standards-states.md`「状態と依存」の承認型UWIと元項目の規定に従ってUWIへの依存を保存し、`inbox`へ戻す
+   - ユーザーからの回答待ちとなっている項目: 採否を確定せず、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」の承認型UWIと元項目の規定に従ってUWIへの依存を保存し、`inbox`へ戻す
    - 外部環境の状態変化や上流変更を待つ未実装項目: `finish-session-observation.md`「延期adoptと反映後の観測」の境界に従ってUWIまたは依存・冷却を設定して`inbox`へ戻す
    - 実装と統合が完了し、反映後の完成条件の観測のみが残っている項目: 延期`adopt`とし、観測専用の再開手順で確認した結果に応じて以下のとおり処理する。
      再開記録の追記、状態変更、計画への記録は`finish-session-observation.md`「延期adoptと反映後の観測」に従う。
@@ -45,8 +46,8 @@
        - 自身で前提を整えて次回観測できる項目（プロセス起動・反映待ちなど）: 実装を繰り返さず観測へ回す。
          確認要否・解決見込みの判定、委譲元から統括への通知、UWI保存・依存設定または冷却による差戻しは`finish-session-observation.md`「延期adoptと反映後の観測」に従う。
        - ユーザーによる操作や追加認可がなければ前提を整えられない項目（実行ログ等でユーザーが起動したと確認されたセッションの停止など）: 自己操作が成立しないと確認されたものに限り、完成条件を変更することなくUWIを発行して前提条件の充足を求める。
-         元AWIは`../../wi-standards/references/wi-standards-states.md`「状態と依存」の承認型UWIと元項目の規定に従い、`depends_on`へそのUWIを加えて`inbox`へ戻す。
-         操作主体と選択肢の振り分けは`agent-toolkit:wi-standards`の`references/uwi-format.md`「ユーザーへ操作を依頼する場合」に従い、実行権限はあり認可のみが不足している工程については、エージェントが実行することに対する認可を求める。
+         元AWIは`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」の承認型UWIと元項目の規定に従い、`depends_on`へそのUWIを加えて`inbox`へ戻す。
+         操作主体と選択肢の振り分けは`agent-toolkit:atk-mode/references/uwi-format.md`「ユーザーへ操作を依頼する場合」に従い、実行権限はあり認可のみが不足している工程については、エージェントが実行することに対する認可を求める。
          UWIには、必要な操作または認可、観測結果、不足している前提、および自己操作が成立しない根拠を記載する。
          同一の観測タスクを無批判に次回へ引き継ぐと、前提が整わないまま不毛な処理が繰り返されるためである。
 
@@ -66,7 +67,7 @@
 不一致がある場合は値とその出所を明確に区別し、観測できなかった場合は未観測として後続へ引き継ぐ。
 
 **17.** レーン担当から確認事項や事後承認の対象を受け取った場合は、その時点で根拠と既存の認可状況を精査する。
-発行の要否は`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」と`agent-toolkit:wi-standards`に基づいて判断する。
+発行の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に基づいて判断する。
 確認が不要な技術的判断は報告事項として扱い、事前承認が必要な確認事項は受け取り次第速やかに発行する。
 事後承認型のUWIは受領時には発行せず、実行レビュー（画面レビューを並行する場合はユーザビリティレビューを含む）が収束した後、かつ統合処理の前に、最終的な実装内容と一致する本文で発行する。
 実行レビューしないレーン（`実装なし`および`マージなし`）では、終了返却を受け取った時点で発行する。
@@ -77,4 +78,4 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |

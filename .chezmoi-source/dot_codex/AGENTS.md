@@ -161,7 +161,7 @@ test "$status" -eq 0
 
 第三者に対する作用の有無は、次の範囲と原則に基づいて判断する。
 
-- `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「認可を要する操作」に定義された第三者の範囲
+- `agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」に定義された第三者の範囲
 - `01-agent.md`「役割分担」の原則
 
 依頼内容、WI、または成立済みの承認事項において明示された対象の範囲外にある第三者のシステム、外部サービス、外部リポジトリ、または個人へ作用を及ぼす操作は、対象と操作内容を明確に特定した事前承認を得てから実行する。
@@ -169,7 +169,7 @@ test "$status" -eq 0
 許可範囲内であると確定できない対象は、すべて範囲外として扱う。
 公開資料の読み取り操作は、事前承認を必要とする作用の対象外とする。
 
-範囲外の操作が必要となった場合は、`agent-toolkit:user-confirmation-and-report`の「手段の選択」に従って事前承認の手続きへ回送し、委譲先は委譲元へ報告する。
+範囲外の操作が必要となった場合は、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従って事前承認の手続きへ回送し、委譲先は委譲元へ報告する。
 実害がないように見える設計、明示的な禁止規定の不在、代替手段の枯渇、または検証用・模擬環境であるという推測を根拠として操作を実行しない。
 また、第三者による拒否をユーザーからの作業依頼の認可によって上書きできない。
 
@@ -250,7 +250,7 @@ agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメ�
 
 `agent-basics:writing-standards`の`references/pytilpack.md`「汎用処理を自作する前の確認」で、必要な汎用処理がpytilpackに無かった場合に適用する。
 作業対象が個人プロジェクトの一覧に無いプロジェクト（業務のプロジェクトなど）でも適用する。
-ユーザーへ確認せずに、pytilpackのリポジトリを対象とするAWIを`agent-toolkit:wi-standards`の通常の投入手順で投入し、投入したAWIを作業完了報告で伝える。
+ユーザーへ確認せずに、pytilpackのリポジトリを対象とするAWIを`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の手順で投入し、投入したAWIを作業完了報告で伝える。
 その場の作業は、同資料のとおりプロジェクト内へ実装して続ける。
 AWIには汎用化した要求（必要な機能、想定する入出力、利用場面の一般的な説明）だけを書き、作業中のプロジェクトに固有の名称、コード、データは除く。
 pytilpackは公開リポジトリであり、要求の内容が実装とcommitとして公開されるためである。
@@ -334,7 +334,7 @@ QCDの定義、長い工程の進捗と目標の比較は`agent-basics:writing-s
   自動圧縮は全ホストで原則有効とみなし、使用量を理由にした引き継ぎや早めのcommitは省く。
 - 制限や検証対象の不成立があっても、認可・対象・保護の境界を守る。
   認証、料金、利用規約、操作範囲、安全目的のツール制限などの保護を別手段で無効にすることや、検証用の対象を実在の対象へ切り替えることは、完遂の認可に含まれない。
-  許容済みの代替で続行し、代替が無ければ制約と残る工程を報告して`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」へ渡す。
+  許容済みの代替で続行し、代替が無ければ制約と残る工程を報告して`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」へ渡す。
 
 ユーザーの選好や追加の認可など、ユーザーだけが決める値が必要な工程は確認に回し、技術判断で決まる工程は続ける。
 時間経過や外部公開を待つ残工程は、先送りの前に確認要否と由来・承認を判定し、記録の仕方は`agent-toolkit/share/agent-conduct-details.md`「完遂と先送り」に従う。
@@ -343,7 +343,7 @@ QCDの定義、長い工程の進捗と目標の比較は`agent-basics:writing-s
 期待からの逸脱（自分の作業ミスを含む）に気付いたら、発見者や修正の有無を問わず、診断・訂正・対処の前に`agent-basics:bugfix`を起動し、5つの問い（期待、原因、処置、広がり、確認）へ答える。
 作業中に入れた不良、見つけた機能不全、変更に伴う追随修正、回答のための調査で確定した不具合と独立した既存不良は、原則として同じセッションで是正を終える。
 ユーザーの判断が必要な事象は、協調モードではその場で確認して同じセッションで是正する。
-確認は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+確認は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 
 先送りするのは、影響調査や設計選定をそのセッションで実施できない事象、合意を同じセッションで得られない事象、時間経過や外部公開を待つ残工程、別リポジトリの新しい計画が必要な事象、是正先のリポジトリがこのホストで編集可でない場合に限る。
 process-wiでは、処理を終えたリポジトリでも律速でなく資源に余力があれば、巡回中に見つかった不良・改善を同じ巡回で処理する。
@@ -367,7 +367,7 @@ process-wiでは、処理を終えたリポジトリでも律速でなく資源�
 
 `agent-toolkit:process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。
 ユーザーが確定した継続的な方針・要件は、保存の前に`agent-toolkit/share/agent-conduct-details.md`「協調と自律」を全文読む。
-確認要否・手段・UWI・回答後の遷移は`agent-toolkit:user-confirmation-and-report`に従い、確認前に「QCDと3段判定」を適用する。
+確認要否・手段・UWI・回答後の遷移は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従い、確認前に「QCDと3段判定」を適用する。
 ユーザーが確定した目的・要件・観測される結果の判断を変えるには、新しいユーザーの判断が必要である（手段の扱いと区別は`agent-toolkit/share/agent-conduct-details.md`「協調と自律」）。
 
 実行環境の権限拒否には会話やWIの承認があってもそのまま従い、対象と種別の権限が無い操作は、委譲する場合も操作の前に限定した許可を求める。
@@ -397,7 +397,7 @@ hook通知は、結果を使う前に各項目を処置（指定資料の取得�
 
 ### 手順どおりに進められない場合
 
-規範どうしが両立しない場合、手順の前提が成り立たない場合、取得した値が目的を満たさない場合は`agent-toolkit:user-confirmation-and-report`の`references/procedure-conflict.md`を適用する。
+規範どうしが両立しない場合、手順の前提が成り立たない場合、取得した値が目的を満たさない場合は`agent-toolkit:atk-mode/playbooks/permission-denial.md`を適用する。
 
 ### ユーザー発話の解釈
 
@@ -405,7 +405,7 @@ hook通知は、結果を使う前に各項目を処置（指定資料の取得�
 要求の目的、範囲、例示の開放性、論理関係を原文のまま保ち、表現が加わった順番で範囲を狭めない。
 回答と成果物を確定する前に、ユーザーが実際に主張・質問している内容へ直接答えているかを確かめる。
 
-具体化、問い、訂正、提案、割り込みと、回答で得た事実の反映は`agent-toolkit:user-confirmation-and-report/references/user-utterance.md`「ユーザー発話の解釈」以降の各節に従う。
+具体化、問い、訂正、提案、割り込みと、回答で得た事実の反映は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「ユーザー発話の解釈」以降の各節に従う。
 案、意見、評価、是非、原因、状態、作業の有無を問う発話は回答の依頼とし、回答と対処を確定する前に`agent-toolkit/share/agent-conduct-details.md`「ユーザー発話の解釈」を全文読む。
 
 ## 委譲の要否判定
@@ -445,7 +445,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
 - 独自コマンド（`atk`の操作や補助スクリプト）の使用・追加・保持は、標準手段と比べて得られる目的上の便益と、学習・準備・実行・結果確認・保守の総費用で判断する。
   便益は目的上の効果に限り、内部の専用入力や規範がそのコマンドを必須にしていることは根拠にしない。
   保持するCLIは`show`・`get`・`set`・`list`・`grep`などの既存の語義を守り、名前から副作用が推測できる構成を保つ。
-  人間の利用と採否・認可を`user-confirmation-and-report`で判定する。
+  人間の利用と採否・認可を`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で判定する。
   削除を選んだ操作の呼び出しは、互換ラッパーを設けず標準手段へ移す。
 - CLI・API・MCPの公開操作は、実行・案内の前に、使う人が使う呼び出し手段の入力契約を確定する（親子コマンドのオプション位置、公開リクエストの項目など）。
   根拠は版を特定した公開仕様か、同じセッションで確かめたヘルプ・スキーマとする。
@@ -454,7 +454,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
   手順・規範・スキルが実行できる形で示した受理形式はそのまま使う。
 - 読み取るときの文字コードは入力に合わせ、ホストの自動選択と違うか不明なら明示する。
 - 実行基盤・権限設定・auto mode classifierが操作を拒否した場合や、classifierが判定不能を返した場合は、別の手段を試す前に診断に対応する詳細節を読む。
-  詳細節は`agent-toolkit:user-confirmation-and-report/references/permission-denial.md`「共通判断」から選ぶ。
+  詳細節は`agent-toolkit:atk-mode/playbooks/permission-denial.md`「共通判断」から選ぶ。
 
 ### 標準の読取・実行・一時領域
 
@@ -477,7 +477,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
   依存する呼出しは取得後の応答で発行する。
   圧縮後は残工程で選ぶ。
 - 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。
-  直接影響範囲の定義は`agent-toolkit:wi-standards/references/awi-body-impact.md`「直接影響範囲」にある。
+  直接影響範囲の定義は`agent-toolkit:atk-mode/references/awi-body.md`「直接影響範囲」にある。
 - Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。
   前工程から受け取ったパスや識別子は、移動や終了を伴う操作を挟んだ後で同一性を確かめ直す。
 

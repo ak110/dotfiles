@@ -37,7 +37,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body-content.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/atk-mode/references/awi-body.md` |
 
 ## 入力
 
@@ -128,13 +128,13 @@ continuations:
 - 質問者が知らない内部的な呼称を、説明なしに使用していないこと。
 
 文書の種別がWIのユーザー向け記述（AWIのタイトルおよびH1直下、UWIの冒頭）なら、以下の項目も読者への適合性として判定する。
-想定読者であるユーザーは、`agent-toolkit:wi-standards`冒頭の用語基準が前提とする知識を備えているものとする。
+想定読者であるユーザーは、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」が前提とする知識を備えているものとする。
 
-- wi-standards冒頭の基準に基づく合否を対象部分のみから判定し、説明不足な表現や多義的な用語を漏れなく指摘する。
+- `agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」に基づく合否を対象部分のみから判定し、説明不足な表現や多義的な用語を漏れなく指摘する。
   各文書の内容の定義元は次のとおりとする。
-  - AWI: `../skills/wi-standards/references/awi-body-content.md`「節の構成と分担」のH1直下の項目。
+  - AWI: `../skills/atk-mode/references/awi-body.md`「節の構成と分担」のH1直下の項目。
     目的、変更の要点、変更後の結果を判定する。
-  - UWI: 同スキルの`references/uwi-format.md`「構成」。
+  - UWI: `../skills/atk-mode/references/uwi-format.md`「構成」。
 
 1. 「観点」で判定し、「出力」の形式で返す。
    集合の記述を個別の読了・判定へ代用しない。

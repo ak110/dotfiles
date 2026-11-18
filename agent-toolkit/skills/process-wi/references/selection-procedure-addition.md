@@ -67,8 +67,8 @@ atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<
 取得した本文は`selection-procedure-candidates.md`「処理対象の決定」の回答済みUWIの条件で分類し、`run_skill_report: true`の報告用だけを除く。
 
 ユーザーから伝達された個別のUWIおよびAWIは、`atk wi show <WIファイル名> --pull`を実行して取得する。
-強制同期後も未回答、項目の不在、更新前の内容のいずれかなら、`../../wi-standards/references/wi-standards-operations.md`「投入と取得」に定める再取得条件を適用する。
-回答を確認したUWIは、`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`へ引き渡す。
+強制同期後も未回答、項目の不在、更新前の内容のいずれかなら、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に定める再取得条件を適用する。
+回答を確認したUWIは、`agent-toolkit:atk-mode/references/answer-transitions.md`へ引き渡す。
 ユーザーが名指しで指定したWIは、追加指示と対象が確定した直後に候補差分へ含める。
 いずれの場合も、他の要求の起草、検収、保存の完了を待たずに、後述の「初期選定中」または「選定完了後」の手順へ進む。
 目標から具体化した必要作業と`immediate-fix.md`「開始後に追加されたWIの確認」で今回追加と判定した項目を除き、伝達されていない新規項目や次回向けの振り返りAWIは次回へ残す。
@@ -149,5 +149,5 @@ atk run-script pick-wi-check -- <既存選定YAML> --merge <追加の意味判�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |
 | メインによるWI選定とレーン分け：処理対象の決定の基準を適用する前 | `selection-procedure-candidates.md` |

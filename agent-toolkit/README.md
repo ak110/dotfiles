@@ -86,7 +86,7 @@ Codexのフックが未信頼・変更済みの場合は、[フックの信頼�
 後で処理する要求を登録する場合は、Claude Codeで次を入力する（Codexでは先頭の`/`を`$`へ置き換える）。
 
 ```text
-/agent-toolkit:add-awi-by-user <依頼内容>
+/agent-toolkit:atk-mode add-awi-by-user <依頼内容>
 ```
 
 登録したAWIを同じリポジトリでまとめて処理する。
@@ -136,4 +136,5 @@ dotfiles管理下の環境の更新・移行補足は[詳細ガイド](https://g
 ## ライセンス
 
 [MIT License](LICENSE)。
+取り込んだ第三者素材の許諾条件と改変表示は[第三者表示](THIRD-PARTY-NOTICES.md)を参照。
 更新履歴は[Git履歴](https://github.com/ak110/dotfiles/commits/master/agent-toolkit)を参照。

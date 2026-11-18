@@ -51,7 +51,7 @@
 
 8. 複数のworktreeで並行して作業する場合、`refs/stash`はすべてのworktreeで共有される。
    そのため、承認済みの退避操作は全worktree間で排他制御する`atk worktree-stash`のみを用いて実施する。
-   `git stash push`、`pop`、`drop`を直接実行する代わりにこのコマンドを使用する（private-notesにおける扱いは`agent-toolkit:wi-standards`の`references/repository-scope.md`が定める）。
+   `git stash push`、`pop`、`drop`を直接実行する代わりにこのコマンドを使用する（private-notesにおける扱いは`agent-toolkit:atk-mode/references/states-and-dependencies.md`が定める）。
 
 9. レビュー担当および調査担当は、対象の成果物を読み取り専用として扱う。
    起動した委譲元は、担当の起動前後に`git status --porcelain=v1`を実行して対象commitと比較することで、変更が加えられていないことを担保する。

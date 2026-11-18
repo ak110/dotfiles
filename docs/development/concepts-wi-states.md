@@ -8,7 +8,7 @@ WIは作成年月ごとの固定パスへ置き、保存状態をfrontmatterの`
 現行の実装契約と配置の理由は[design-wi.md](design-wi.md)にある。
 固定配置は状態遷移で参照が変わる欠陥を是正する設計判断であり、重要フラグの操作と通常選定の関係はユーザーが指定した要求に由来する。
 
-現行の規範は`agent-toolkit:wi-standards`、`agent-toolkit:process-wi`および`agent-toolkit:write-plan`の計画ファイル基準にある。
+現行の規範は`agent-toolkit:atk-mode/references/states-and-dependencies.md`、`agent-toolkit:process-wi`および`agent-toolkit:write-plan`の計画ファイル基準にある。
 選定の詳細は`agent-toolkit/skills/process-wi/references/selection-procedure.md`と`selection-format.md`が持つ。
 WI処理の機構を設計した理由（却下した代替案など）は、[design.md](design.md)の索引から主題別の設計記録を選んで読む。
 
@@ -32,16 +32,15 @@ WI処理の機構を設計した理由（却下した代替案など）は、[de
   時間上限での自動解除は未修正の本文を処理対象へ戻すため採らない（2026年10月31日、ユーザー指示「holdにしたまま放置しないで直すべきものはさっさと直してよ。その後に他の作業やって。hold時間は最小限にすべき」）。
   実行規範は次の資料にある。
 
-  - `agent-toolkit:wi-standards/references/states-and-dependencies-editing.md`「保留と本文修正」
-  - `agent-toolkit:/share/add-wi-parent-inputs.md`
-  - `agent-toolkit:/share/add-wi-parent-acceptance.md`
+  - `agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」
+  - `agent-toolkit:atk-mode/roles/add-wi.parent.md`
 
 - エージェントが作業している項目は、開始経路を問わずキュー上で`processing`にする。
   対象は通常のAWI、作業を伴う回答済みUWI、依存の解消や`unhold`で`inbox`へ戻った元項目で、経路はprocess-wiの選定、中断した実行の再開、実行中の回答の反映、process-wiの外での回答の反映を含む。
   作業を伴わない回答済みUWIを選定直後に終了する扱いと、事後承認型UWIの肯定回答を直接`adopted`にする扱いは変えない。
   選定の手順だけが遷移を定めていたため、選定を通らずに作業した項目が`inbox`のまま終了していた。
   2026年11月のユーザー指摘（エージェントの対応が要る回答済みUWIが`processing`にならないまま採用される。AWIと同様に処理中は`processing`にする）への対処である。
-  契約の定義元は`agent-toolkit:wi-standards/references/states-and-dependencies-states.md`「状態遷移」で、作業を始める各手順はこの定義を参照する。
+  契約の定義元は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態遷移」で、作業を始める各手順はこの定義を参照する。
   `atk wi adopt`は`inbox`の項目を`--commit`付きで終了したときに遷移の抜けを警告する
 - 項目の削除は、明示`state`として`inbox`・`processing`・`hold`に加えて終了状態（`adopted`・`rejected`）も受理する。
   エージェントが自身の誤りで投入した項目を`atk serve`の画面から片付けられるようにするためであり、`processing`の削除保護は維持する

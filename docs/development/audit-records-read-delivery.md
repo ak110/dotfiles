@@ -8,7 +8,7 @@
 以下の9月29日の測定は、撤去済みの容量警告の判断根拠として残すものであり、48KiBを現行の読取可否の基準にはしない。
 
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。
-分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。
+分割前の最大の文書`agent-toolkit/skills/atk-mode/playbooks/wi-drafting.md`（60,005バイト）は16,945トークンだった。
 分割後の137件では、最大が13,176トークン（`skills/write-plan/references/plan-file-standards.md`、45,749バイト）だった。
 1トークンあたりバイト数の最小は3.10（`skills/write-plan/references/legacy-plan-file-standards.md`）だった。
 配布設定`share/codex_config.toml`（当時は`scripts/codex_config.toml`）の`tool_output_token_limit`は20000である。

@@ -3,7 +3,8 @@
 `rules-main.md`のClaude Code固有規範を定める。
 本書のmodは、Claude Codeの会話イベントを処理するagent-toolkitのFunction hooks moduleを指す。
 
-`Usage limit reached; a short grace allowance remains`で始まる猶予通知では`agent-toolkit:user-confirmation-and-report`を起動し、状況伝達・続行・再開手順に従う。
+`Usage limit reached; a short grace allowance remains`で始まる猶予通知では、`agent-toolkit:atk-mode/references/usage-limit.md`「利用上限の猶予通知を受けたときの続行と再開」を全文読む。
+同節の状況伝達・続行・再開手順に従う。
 続行許可中は残工程を進め、再開禁止時は状況と必要なユーザー操作を伝える。
 終了判断は実待機を`wait`、観測した技術的不成立を`blocked`とする。
 

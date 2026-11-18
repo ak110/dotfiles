@@ -10,10 +10,10 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/drafting-completion-policies.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-origin.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/references/origin-and-approval.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 
 ## 所要時間の分析と改善
 
@@ -92,7 +92,7 @@
 - 出した工程のうち、レーンごと・作業項目ごと・統合ごとに繰り返すもの（検証、レビュー、同期、順番待ち、それらを調整する仕組み）を挙げる。
   それぞれについて、その工程を求める規範の条文がユーザーの要求かエージェントの判断か（変更履歴と元の作業項目で確かめる）と、直前の回と比べた1回の所要と回数の変化（取れる範囲）を確かめる。
 - 対策の候補は、工程をやめる案、単純にする案、順序を変える案、仕組みを足す案の順に比べる。
-  比べる観点と採否の基準は`../../wi-standards/references/drafting-completion-decisions.md`「採否と実現方式の確定」の効率改善の規定に従う。
+  比べる観点と採否の基準は`agent-toolkit:atk-mode/references/drafting-decisions.md`「採否と実現方式の確定」の効率改善の規定に従う。
 
 - 短縮の主対象は、統計が示す律速区間（メインエージェント単独の区間と、エージェントスレッドごとの排他区間）とする。
   スレッドの排他区間が律速なら、工程、反復、待機の内訳を`stats.md`の`律速threadの内訳:`で把握し、全文が要る箇所だけを`--detail`や`--grep`で照会する。
@@ -104,14 +104,14 @@
 - 改善対象は、必須工程や検収範囲を含む全工程とする（`agent-toolkit:process-wi`や`atk wi process-loop`の手順、準拠する規範、本スキルの工程、`atk run-script session-review-prepare`を含む）。
   不要な工程の撤去、順序の変更、並行化を候補にする。
   手順や規範の撤去・置換では、条文が守る対象と成果、導入時の変更記録や計画ファイルから当初の目的を調べて採否を決める。
-  その目的と保護の必要性は現行の要件と認可の下で`../../wi-standards/references/drafting-completion-policies.md`「方針と判断の記録との比較」に沿って評価し、今も必要な目的は、より低コストな手段で確実に達成できる場合に限り置き換える。
+  その目的と保護の必要性は現行の要件と認可の下で`agent-toolkit:atk-mode/references/drafting-decisions.md`「方針と判断の記録との比較」に沿って評価し、今も必要な目的は、より低コストな手段で確実に達成できる場合に限り置き換える。
 - 重複した検証の排除と待ち時間の活用を観点に含める。
   CIが同じ全体の検証を担うなら、レーン内・統合時・公開前のいずれのローカル実行も重複とする。
   規範が要求する工程も、導入の由来と実行所要・回数から必要性を評価し、必須の前提として残さない。
   ローカルでは変更箇所と特定した利用側の部分検証を選ぶ。
-- 外部サービスの利用上限、レート制限、課金枠による待機の扱いを変える対策は、AWIとして確定する前に`../../wi-standards/references/wi-standards-origin.md`「由来と承認」の裁量と変更程度の判定を適用する。
+- 外部サービスの利用上限、レート制限、課金枠による待機の扱いを変える対策は、AWIとして確定する前に`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」の裁量と変更程度の判定を適用する。
   待機やモデル・実行環境の切り替えは、確認要否を判定する。
-  判定は`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+  判定は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
   指定された費用、サービス、待機条件を保つ技術判断は自ら確定する。
   比較では、停止、実行先の切り替え、打ち切り、上限到達の事前回避に加え、現行の待機を続ける案も残す。
 - 短時間に反復したコマンドも、呼び出しごとの所要時間と律速区間への寄与を踏まえて見直す（努力目標。無駄な呼び出しの削減）。
@@ -136,7 +136,7 @@
 超過しなかった場合は証拠から改善提案の要否を判断し、有効な対策を特定できなければ、理由の結論と再取得先を「対策を見送った問題」に書き、照会と候補比較の経過を証拠に残す。
 超過した場合は再発防止策を必須とし、律速区間に直接作用する対策を確定する（所要時間だけの問題はコスト・納期の課題として扱い、適切な改善案が無ければ`再発防止策なし`の行に書く）。
 今回の律速区間への処置は、AWI化基準など別の対象への先行回答と分けて確定し、先行回答はその質問が対象とした要求にだけ適用する。
-基準は`../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「原文からの具体化を要する軸」に従う。
+基準は`agent-toolkit:atk-mode/playbooks/confirmation.md`「原文からの具体化を要する軸」に従う。
 新しい律速原因は、過去の不採用判断や既存AWIの有無によらず、原因を解消する効果で採否を決める。
 既知の原因を既存の作業項目が扱う場合も、それを理由に所要の分析を終える前に、その項目の状態を確かめる。
 採用済みで今回の巡回より前に反映されている項目は、`analysis-actions.md`「原因と対策」の採用済み項目の見直しへ渡す。
@@ -198,4 +198,4 @@ SessionStartは規範構成、振り返り起動要求、圧縮復元の区間�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 振り返りの判断基準の基準を適用する前 | `analysis.md` |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |

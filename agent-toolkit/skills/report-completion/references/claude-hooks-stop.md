@@ -46,7 +46,7 @@ Claude Code固有のtranscript形式や非遮断通知を前提とする他のSt
 - 供給と消費: PreToolUseとPostToolUse（Claude CodeではPostToolUseFailureを含む）が実際の呼び出しと応答を供給し、UserPromptSubmitが人間からの入力を供給する。
   Claude CodeのStopにおける`termination_order_advisor`は同一の証拠から起動漏れを通知する。
   判定は報告本文を除外した証拠に基づいて行う。
-- 判定する範囲: 成果作業（成功した`agent-toolkit:process-wi`や`agent-toolkit:add-awi-by-user`の開始、リポジトリに対する直接編集、計画の保存、WIの保存、commitやpush）を実施した作業を対象とする。
+- 判定する範囲: 成果作業（成功した`agent-toolkit:process-wi`や`agent-toolkit:atk-mode`の作業`add-awi-by-user`の開始、リポジトリに対する直接編集、計画の保存、WIの保存、commitやpush）を実施した作業を対象とする。
   起動が必要な作業に対して`agent-toolkit:report-completion`の起動証拠が存在しない場合、共通noticeによって同一の原因・対象・対処の反復を抑制しつつ非遮断通知を返す。
   適用されるプロジェクト規範による有効な省略指示がある場合は、該当作業の起動不足判定のみを免除する。
   メッセージ送達や残工程の点検、報告内容・書式はreport-completionの規範が扱う。

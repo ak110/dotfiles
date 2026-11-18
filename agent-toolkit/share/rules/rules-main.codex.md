@@ -19,14 +19,14 @@ Codexの全エージェントに適用する差分は`rules-common.codex.md`が�
 
 ## ユーザー確認と終了
 
-質問する際は共通読込表の確認資料を参照し、`../../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」および「確認の選択肢を組む手順」を適用する。
+質問する際は共通読込表の確認資料を参照し、`../../skills/atk-mode/playbooks/confirmation.md`「確認要否の判定」および「確認の選択肢を組む手順」を適用する。
 目的と認可が確定しており、その範囲内の手段のみが残る事項は、エージェント自身で確定して報告する。
 
 質問には、実行環境が公開する構造化質問のうち、公開スキーマ、モード制限、用途制限およびホスト命令に適合するものを使用する。
 Plan modeで同期型の`request_user_input`を利用できる場合は、回答があるまで待機する。
 非同期型の`request_user_input_async`のみ利用できる場合は、後続のユーザーメッセージとして届く実際の回答を元の質問と対応付ける。
 発行の成功や選択肢の初期選択は、回答や承認の対象外とする。
-適合する構造化質問が存在しない場合に限り、`../../skills/user-confirmation-and-report/references/codex-format.md`を使用する。
+適合する構造化質問が存在しない場合に限り、`../../skills/atk-mode/playbooks/confirmation.md`を使用する。
 
 回答期限が設定されないDefault modeでは、協調モードの確認を前段の手順で提示して回答を待つ。
 自律モードでは回答期限のない実行環境として、同スキルの「手段の選択」の表に従う。

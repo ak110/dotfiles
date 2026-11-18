@@ -7,8 +7,8 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 計画する変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` |
-| 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:atk-mode/references/cross-repository-submission.md` |
+| 旧形式WIの節を現行の責務へ対応付ける前 | `agent-toolkit:atk-mode/references/awi-body.md` |
 | 不具合対策の計画を起草する時 | `../../../share/exec-review-criteria.md` |
 | 計画の書き込み先集合へ実装中の追加が生じた時 | `../../../share/exec-subagent-implementation.md` |
 
@@ -20,7 +20,7 @@
 自己監査と実行中の点検では、全残作業、準備済みの材料、次に必要な成果を比較し、見込み悪化時は独立準備の先行・実施順・検証再利用を見直す。
 見込みを報告する場合も現在の作業と全残工程を対応付け、固定期限は進め方を見直す目安として使う。
 
-AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従い、採否と計画を確定する前に指定箇所とユーザー記入欄を取得する。
+AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:atk-mode/references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従い、採否と計画を確定する前に指定箇所とユーザー記入欄を取得する。
 自repoの要求と共通要求を合わせ、代表AWIの終了だけを理由に読取を省かない。
 
 `先行調査記録`を受け取った場合は、取得版・対象パス・事実と仮定・残る問いを確認する。
@@ -37,15 +37,15 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi
 - 対象実装を読む前に、要求と公開契約から比較対象とする最も近い既存実装を選ぶ。
   境界の候補は、入力値、時間経過、操作順序、保持状態、反復、権限や環境の差異などの軸から選定する。
 - 調査後は、採用案の前提を客観的に評価する観点から、変更箇所が責務を負う必要性、既存機構への統合、上流ツールや共有設定への移管、機構の削除や簡素化を比較検討する。
-  結論を`../../wi-standards/references/awi-body-evidence.md`「調査結果と判断根拠の記述」の退けた案と理由の記録として`## 調査結果と判断根拠`へ反映する。
-  AWI本文の`## 調査結果と判断根拠`（旧形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う）に結論が示されている観点は、次の条件で再度の比較検討を行わない。
+  結論を`agent-toolkit:atk-mode/references/awi-body.md`「調査結果と判断根拠」の退けた案と理由の記録として`## 調査結果と判断根拠`へ反映する。
+  AWI本文の`## 調査結果と判断根拠`（旧形式は`agent-toolkit:atk-mode/references/awi-body.md`冒頭に従う）に結論が示されている観点は、次の条件で再度の比較検討を行わない。
   結論の前提（目的、現在の方針、利用条件）が今も一致し、記述との明白な食い違いが観測されないことを条件とする。
   前提が変わった観点と、エージェントが加えた手段・検証は、必要性を現在の方針に照らして判定してから計画の完成条件や検証へ写す。
   プロジェクト規範が指定する方針・障害の記録を読んだ成果は、守る条件と今回の採否・検証の対応として判断の根拠へ残し、記録の名前や取得済みであることは対応の根拠から除く。
   既存の判断を再利用する場合も、この対応付けは行う。
   一度作った対応は再利用し、同じ範囲の再調査は省く。
   `agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」は常に実施する。
-  評価条件は`../../wi-standards/references/awi-body-permanence.md`「既存箇所の見直し」に準拠する。
+  評価条件は`agent-toolkit:atk-mode/references/awi-body.md`「既存箇所の見直し」に準拠する。
   不具合対策においては、`agent-basics:review-standards/references/reviewer-initial.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
 - `選定`の各項目における`鮮度`が`notice`であることのみを理由として作業を中断することは避ける。
   現行内容との不一致、既存実装による充足済み、巻き戻しの危険のいずれかが確認された項目に限定して関連履歴を調査し、確認条件、調査した履歴、および採否への影響を計画の`## 調査結果と判断根拠`へ残す。
@@ -78,7 +78,7 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi
   編集段階で衝突に気付く事態を防ぎ、後からの判断要請や実装済み差分の取り消しを回避する。
 - 要求の一部を後続へ分ける場合は、対象、分ける理由、後続で実施する内容を`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」に従ってメインへ渡す。
   人間由来の要求は手順2のユーザー確認を経てから投入する。
-  メインは`agent-toolkit/share/add-wi.parent.md`の付随型で投入し、返ったファイル名をレーン担当へ渡す。
+  メインは`agent-toolkit/skills/atk-mode/roles/add-wi.parent.md`の付随型で投入し、返ったファイル名をレーン担当へ渡す。
   レーン担当はそのファイル名を`移管`行の根拠へ書いてから計画を確定する。
 - `上流投入結果`を受け取った場合は、`結果`が`completed`となっている要求を採用範囲に含めず、`移管`として投入先の`ファイル名`とともに記録する。
 

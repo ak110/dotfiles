@@ -7,11 +7,11 @@
 WIの起草・投入前検収は、必要事項と意味の正確さ、認可、原因分析、後続へ引き継げることに集中する。
 口語やダッシュなど意味を変えない表現だけの推敲、差戻し、表記診断の確認は行わない。
 最終成果物へ転記する際は、要件・認可・明示された逐語文言を保持し、説明・例示の表現は転記先の品質基準と妥当なlint診断に合わせる（2026年11月8日・9日のユーザー指示）。
-適用範囲は`agent-basics:review-standards`「文章成果物の実害」と`agent-toolkit:wi-standards/references/notation-rules.md`「チェックの対象範囲」にあり、実装後の実行レビューの基準は維持する。
+適用範囲は`agent-basics:review-standards`「文章成果物の実害」と`agent-toolkit:atk-mode/references/awi-body.md`「チェックの対象範囲」にあり、実装後の実行レビューの基準は維持する。
 
-`agent-toolkit:add-awi-by-user`では、要求数によらずメインが調査・起草・保存することを原則とする。
+`agent-toolkit:atk-mode`の作業`add-awi-by-user`では、要求数によらずメインが調査・起草・保存することを原則とする。
 文脈を分ける意味がある要求は同スキルの契約に従って委譲する。
-投入前レビューの要否と担当構成は`agent-toolkit:wi-standards`の`references/drafting-workflow.md`に従い、起草担当の選択と分けて決める。
+投入前レビューの要否と担当構成は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に従い、起草担当の選択と分けて決める。
 以下に記録する2026年10月16日の分担も、この現行の担当構成へ合わせる。
 WI投入担当は専念型・付随型ともexecute工程を使い、最上位のorchestrate工程と分ける。
 この担当構成は、定型要求にも独立起草とレビューを課す費用を減らすための設計判断に由来する。
@@ -20,10 +20,12 @@ WI投入担当は専念型・付随型ともexecute工程を使い、最上位�
   人向けの要点を先頭へ、エージェント向けの詳細を後へ置く。
   AWIは欠陥起点かどうかに応じた要点、UWIは問い・理由・答え方、処理後は何をどう変えたかを示す。
   原因分析の表と行は保持する（2026年10月16日、ユーザー指示）。
-  冒頭の項目の定義は`agent-toolkit:wi-standards`の`agent-toolkit:wi-standards/references/awi-body-content.md`「節の構成と分担」と`references/uwi-format.md`「構成」にあり、確認側も同じ定義を参照する。
-  2026年10月19日のユーザーコメント「説明が長いわりに分かりにくすぎる。改善して」の指摘から、ユーザーが読む部分（AWIのタイトルとH1直下、UWIの本文、`adopt`・`reject`のメモ、報告用UWIの冒頭）の語の基準を`agent-toolkit:wi-standards`冒頭の1か所へ集めた。
+  冒頭の項目の定義は`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」と`agent-toolkit:atk-mode/references/uwi-format.md`「構成」にあり、確認側も同じ定義を参照する。
+  2026年10月19日のユーザーコメント「説明が長いわりに分かりにくすぎる。改善して」の指摘から、ユーザーが読む部分の語の基準を1か所へ集めた。
+  ユーザーが読む部分は、AWIのタイトルとH1直下、UWIの本文、`adopt`・`reject`のメモ、報告用UWIの冒頭である。
   この部分はユーザーの語で書き、保存前に起草の文脈を持たない読者別探索担当へユーザーの立場で読ませて確かめる方針とした。
-  基準の所在は`agent-toolkit:wi-standards`冒頭、保存前の確認の所在は`references/draft-semantic-review.md`と`agent-toolkit/share/reader-fit-review.subagent.md`「観点」にある
+  基準の所在は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」にある。
+  保存前の確認の所在は`agent-toolkit:atk-mode/references/draft-semantic-review.md`と`agent-toolkit/share/reader-fit-review.subagent.md`「観点」にある
 
 AWIはユーザーとエージェントが非同期に共有する人間向けの未完了作業要求である。
 UWIはユーザーの判断・資料・操作が次の作業に必要な場面などの未完了事項と、手順が定める完了報告を扱う。
@@ -43,15 +45,15 @@ CIや再現テストで自己確認できる事項を、ユーザーの実機確
 [テストの本質性](concepts-design-testing.md)の2026年11月11日の判断とは、書いたとおりに動く対象に、動くかを試す手順を足さない点が共通する。
 違いは、前者が不具合の害の小ささも理由にしたのに対し、今回は害の大小を条件にしない点である。
 既知の不良と明示要件の未充足は未達として扱う。
-現行の登録要否は`agent-toolkit:user-confirmation-and-report`「手段の選択」が定める。
-完成条件は`agent-toolkit:wi-standards`の`agent-toolkit:wi-standards/references/awi-body-completion.md`「完成条件」が定める。
+現行の登録要否は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」が定める。
+完成条件は`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」が定める。
 別項目の完了待ちと時間経過待ちは依存と冷却時間で扱う。
 
 - WI作成専用のadd-awi-by-userは、独立要求の件数によらずメイン自身が調査・起草・確認・保存を原則として担う。
-  原文と反映内容の読み比べ、構造の確認と意味の読み直しを保ち、独立検収の要否はwi-standardsの共通手順で選ぶ。
+  原文と反映内容の読み比べ、構造の確認と意味の読み直しを保ち、独立検収の要否は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」で選ぶ。
   本来の作業に付随する別件の投入など、文脈を分ける意味がある場面ではWI投入担当を使う。
   付随型は原稿返却・親の意味の検収・保存開始の二段階を保つ。
-  調査と起草の共通手順はwi-standardsが所有し、既存WIの更新も同じ作成主体が取得済み証拠と差分から扱う。
+  調査と起草の共通手順は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`が所有し、既存WIの更新も同じ作成主体が取得済み証拠と差分から扱う。
   2026年10月20日のユーザー指示と恒久方針としての回答により、10月16日の専念型と付随型を分けて総費用を抑える目的を保ち、要求数で委譲を必須にする扱いを改めた。
   状態遷移とユーザー確認は各手順の共通契約に従う。
   2026年10月18日のユーザー回答（差分外の既存不良は、その場でサブエージェントを起動して原因分析からAWI投入までを任せ、同じ処理の中で行わないよう求めた）により、実行レビューの差分外の既存不良の投入を専念型へ移した。
@@ -61,11 +63,11 @@ CIや再現テストで自己確認できる事項を、ユーザーの実機確
   元レビューの収束と全体の是正完了は分け、登録完了だけを処置完了としない。
   差分外の不良は受領したエージェントの変更対象の外にあり、親の作業文脈が検収へ加える情報が少ないため、投入前レビューで検収を保ったまま総費用を下げられる。
   残りの工程を停止・遮断する不良はその場で扱い、他の付随型の投入（即時対応の対象外の不良、公開工程のキュー投入、レーン工程の上流投入など）の二段階は変えない。
-  現行の規定は`agent-toolkit:/share/exec-review-parent-existing-defects.md`「返却に含まれる既存不良の受領」、専念型を使う場面は`agent-toolkit:/share/add-wi-parent-launch.md`「起動方法」にある。
+  現行の規定は`agent-toolkit:/share/exec-review-parent-existing-defects.md`「返却に含まれる既存不良の受領」、専念型を使う場面は`agent-toolkit:atk-mode/roles/add-wi.parent.md`「起動方法」にある。
   WI投入担当の割当は、起動・規範や背景の重複読込・検収を含む総費用で決め、同じ担当へ渡す要求は原稿と根拠を分けて順に扱う。
   2026年9月30日の、独立要求ごとに担当を分けて別件を追送しない指示は、2026年10月30日のユーザー判断により、件数で分けず総費用でまとめる方針へ改めた。
   起動後に生じた要求も同じ比較で割り当てる扱いは、同じ担当による複数要求の順次処理を受け入れた判断からの技術的導出である。
-  現行の所在は`agent-toolkit:/share/add-wi-parent-launch.md`「起動方法」と`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」にある
+  現行の所在は`agent-toolkit:atk-mode/roles/add-wi.parent.md`「起動方法」と`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」にある
 - `agent-toolkit:review-session`が対策のAWIを投入する場合は、原因と対策が確定した時点で振り返り結果報告の中身を全て予告として示してからWI投入担当を起動する。
   投入が予告どおりに終わった場合の最終報告は、完了の旨と投入したAWIのファイル名・H1タイトルの一覧だけとする（2026年9月30日、ユーザー指示。AWI登録を待つ間にエージェントが何をしようとしているかをユーザーが分からないことに由来する）。
   batchでは確定要求を分析担当が直接起草し、独立した投入前レビューを経る。
@@ -99,4 +101,4 @@ CIや再現テストで自己確認できる事項を、ユーザーの実機確
 - 投入前に登録の必要性と既存実装・文書・未終了WIとの被覆を確認し、確定事実と仮説・未確定事項を区別する。
   手動で具体化を求められた要求は今回の対象別結論を投入元で確定し、途中の独立別件は共通の登録条件を満たしたうえで残る原因調査・解法選定を引き渡す。
   経路は要求と起票目的で判断し、sourceの値だけで免除しない（2026年10月26日のユーザー指示に基づく方針具体化）。
-  実行規範は`agent-toolkit:wi-standards`が所有する
+  実行規範は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`が所有する

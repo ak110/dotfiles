@@ -48,21 +48,22 @@
   `reviewer.md`の種類6で対応先の無い採取処理を指摘する。
   ログ量の固定上限と新しい必須項目は加えない
 
-- 2026年10月2日: `agent-toolkit:add-awi-by-user`のセッションで、メインはCI失敗の確定的な回帰8件の直接的原因を確定しないまま、全体検証の方針変更の認可を問う形で症状の側の案だけを選択肢とする確認を発行した。
+- 2026年10月2日: `agent-toolkit:atk-mode`の作業`add-awi-by-user`のセッションで、メインはCI失敗の確定的な回帰8件の直接的原因を確定しないまま、全体検証の方針変更の認可を問う形で症状の側の案だけを選択肢とする確認を発行した。
   ユーザーは回答の自由記述と続く2件の発話で、原因の側の対策（変更範囲の検証の対象選定）と一般規範への反映を示して是正した。
   直接原因: `agent-basics:bugfix`の初動による原因の確定を経ずに確認を発行した。
   工程上も原因の確定は確認より後のWI投入担当に置かれ、確認の前の原因確定は確認の主題の分類を発動条件とする条文1か所だけが担っていたため、方針変更の認可の形をとる確認では条文が発動しなかった。
   対策: `add-awi-by-user`手順2で観測した問題を起点とする要求の対処の選択を問わず、原因と対策の確定をWI投入担当へ渡し、担当の`needs_escalation`を受けてから対処の確認を発行する。
   `add-wi.subagent.md`の返却へ確定した原因と対策の案を含める。
-  `agent-toolkit:user-confirmation-and-report`「根拠の確定」の条文を別の形で対処を問う確認へ広げ、`judgment.md`の人間が確定した判断の変更から到達させた。
+  `agent-toolkit:atk-mode/references/choice-construction.md`「根拠の確定」の条文を別の形で対処を問う確認へ広げ、`judgment.md`の人間が確定した判断の変更から到達させた。
   `agent-toolkit:write-plan`はバグ対応の計画で`agent-basics:bugfix`の起動を確認より前の手順1へ移した
 
-- 2026年10月2日: WI投入担当が起草したAWIのタイトルが`agent-toolkit:user-confirmation-and-report`を定義の無い短い呼称で書き、本文も`user_prompt_submit.py`の注記を定義の無い名詞句へ縮めた。
+- 2026年10月2日: WI投入担当が起草したAWIのタイトルが`agent-toolkit:atk-mode/playbooks/confirmation.md`を定義の無い短い呼称で書き、本文も`user_prompt_submit.py`の注記を定義の無い名詞句へ縮めた。
   既存の対象を正式名で書く規定は5日間に3回加えられていたが、その後に起きた。
   直接原因: 起草担当は読んだコミットメッセージにある非公式の呼称をそのまま使い、自ら考案した呼称に当たらないと扱った。
   既存の規定はいずれも書くときの心得として考案した呼称を禁じる形で、書き上げた後に名詞句ごとに定義元を確かめる工程と、是正済みの呼称の書き戻しを検出する機械チェックが無かった。
   WI投入担当のタスク文書は`agent-basics:writing-standards`の起動を求めていなかった。
-  対策: 既存の対象を指す名詞句の定義元を固定文字列で検索する工程を、`agent-toolkit:wi-standards`の投入前の読み直しと`writing.md`の完成時の読み直しと`reader-fit-review.subagent.md`の観点へ加え、読んだ記録の呼称も対象にした。
+  対策: 既存の対象を指す名詞句の定義元を固定文字列で検索する工程を次の3か所へ加え、読んだ記録の呼称も対象にした。
+  3か所は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の投入前の読み直し、`writing.md`の完成時の読み直し、`reader-fit-review.subagent.md`の観点である。
   `rules-main.md`の名前の項も同じ対象へ広げ、WI投入担当には`agent-basics:writing-standards`を起動させる。
   追跡ファイルに残っていた定義の無い呼称を正式名か説明へ直し、`scripts/retired_terms_test.py`へ登録して書き戻しを検出する
 
@@ -102,7 +103,8 @@
   例も生成主体を根拠とする表現へ改め、設計記録`design-process-loop.md`へ責務境界と実際の生成主体を記した
 
 - 2026年10月5日: aichat2のAWI投入のセッションで、メインは`agent-basics:bugfix`の`references/response.md`だけを読んで原因を述べた。
-  現行の`agent-toolkit:user-confirmation-and-report`の`references/judgment.md`「認可を要する操作」の範囲外の不足の区分を根拠に、2026年10月1日に起草されたAWIの誤りを「同区分が既にあるのに適用されなかった」と委譲先への要求へ書いた。
+  メインは、事象の時点で現行だった`judgment.md`「認可を要する操作」の範囲外の不足の区分を根拠にした（今の所在は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」）。
+  2026年10月1日に起草されたAWIの誤りを「同区分が既にあるのに適用されなかった」と委譲先への要求へ書いた。
   同区分は2026年10月2日のcommit `428cd2e66`が導入したもので、事象の時点には無かった。
   WI投入担当が導入時期を示し、メインが説明を訂正した。
   直接原因: 原因に用いる値の事象時点を確かめる規定は`references/root-cause-analysis.md`の1項だけにあり、拡張原因分析へ進んだ場合にしか読まれず、対象の例も設定、依存版、外部状態で規範の条文を挙げていなかった。
@@ -111,9 +113,9 @@
   `root-cause-analysis.md`の上位規範の確認と未適用規範の是正原則の適用対象を、事象時点に存在した規範に限った
 
 - 2026年10月5日: Claude Codeのセッションで、メインは何か計上されないものが無いか確認するよう求め、「例えば」に続けて1つの呼び出し元を挙げた依頼を受けた。
-  メインは受領直後に`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`を全文読み、`agent-basics:bugfix`を起動したが、例示の呼び出し元を自らのコマンドで直列に調べた。
+  メインは受領直後に`agent-toolkit:atk-mode/playbooks/user-utterance.md`を全文読み、`agent-basics:bugfix`を起動したが、例示の呼び出し元を自らのコマンドで直列に調べた。
   ユーザーが`agents_server`の`start`の`explore`を使うべきではないかと指摘した後、メインは例示を除いた探索を2件委ね、その探索が例示の外にある2つの計上されない利用を見つけた。
-  同じ節の2026年10月2日の事例のうち、`agent-toolkit:add-awi-by-user`のセッションで範囲語と例示を併せ持つ依頼を扱った事例と同じ機構の再発である。
+  同じ節の2026年10月2日の事例のうち、`agent-toolkit:atk-mode`の作業`add-awi-by-user`のセッションで範囲語と例示を併せ持つ依頼を扱った事例と同じ機構の再発である。
   直接原因: 例示の語と調査を求める語を併せ持つ発話を受けたメインの文脈に、その発話が`user-utterance.md`の範囲語と例示を併せた依頼の項に当たることを示す手掛かりが無かった。
   同項は受領時に読む参照資料の多数の箇条の1つとしてだけ置かれていた。
   2026年10月2日の対策は手掛かりを`add-awi-by-user`手順2と`add-wi.parent.md`だけに置いたため、その工程を含まない通常の調査の依頼に届かなかった。

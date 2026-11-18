@@ -52,7 +52,7 @@
   2026年10月31日のユーザー要求により、内容確認を待つ仕組みと確認ボタンを撤去した。
   既存の`confirmation`は保持して動作へ影響させず、エージェント由来の要求の採否は懐疑的に検討する。
   通常の期限待ちの`cooldown_until`、依存関係、保留およびUWIによる認可は維持する。
-  現行の規定は`agent-toolkit/skills/wi-standards/references/states-and-dependencies.md`にある
+  現行の規定は`agent-toolkit/skills/atk-mode/references/states-and-dependencies.md`にある
 - `agent-toolkit:review-session`はユーザー介入と未解決証拠を全件保持し、blockまたはwarnのhook通知だけを
   発生源ごとの件数上位5変種と代表位置へ限定する（2026年9月14日、ユーザー指示）。
   発火した発生源は事前に防ぐ型か遮断後に対処する型かで判定し、遮断後に対処する型の発火は欠陥として扱わない

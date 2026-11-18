@@ -74,7 +74,7 @@ QCDの定義、長い工程の進捗と目標の比較は`agent-basics:writing-s
   自動圧縮は全ホストで原則有効とみなし、使用量を理由にした引き継ぎや早めのcommitは省く。
 - 制限や検証対象の不成立があっても、認可・対象・保護の境界を守る。
   認証、料金、利用規約、操作範囲、安全目的のツール制限などの保護を別手段で無効にすることや、検証用の対象を実在の対象へ切り替えることは、完遂の認可に含まれない。
-  許容済みの代替で続行し、代替が無ければ制約と残る工程を報告して`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」へ渡す。
+  許容済みの代替で続行し、代替が無ければ制約と残る工程を報告して`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」へ渡す。
 
 ユーザーの選好や追加の認可など、ユーザーだけが決める値が必要な工程は確認に回し、技術判断で決まる工程は続ける。
 時間経過や外部公開を待つ残工程は、先送りの前に確認要否と由来・承認を判定し、記録の仕方は`agent-toolkit/share/agent-conduct-details.md`「完遂と先送り」に従う。
@@ -83,7 +83,7 @@ QCDの定義、長い工程の進捗と目標の比較は`agent-basics:writing-s
 期待からの逸脱（自分の作業ミスを含む）に気付いたら、発見者や修正の有無を問わず、診断・訂正・対処の前に`agent-basics:bugfix`を起動し、5つの問い（期待、原因、処置、広がり、確認）へ答える。
 作業中に入れた不良、見つけた機能不全、変更に伴う追随修正、回答のための調査で確定した不具合と独立した既存不良は、原則として同じセッションで是正を終える。
 ユーザーの判断が必要な事象は、協調モードではその場で確認して同じセッションで是正する。
-確認は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+確認は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 
 先送りするのは、影響調査や設計選定をそのセッションで実施できない事象、合意を同じセッションで得られない事象、時間経過や外部公開を待つ残工程、別リポジトリの新しい計画が必要な事象、是正先のリポジトリがこのホストで編集可でない場合に限る。
 process-wiでは、処理を終えたリポジトリでも律速でなく資源に余力があれば、巡回中に見つかった不良・改善を同じ巡回で処理する。
@@ -107,7 +107,7 @@ process-wiでは、処理を終えたリポジトリでも律速でなく資源�
 
 `agent-toolkit:process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。
 ユーザーが確定した継続的な方針・要件は、保存の前に`agent-toolkit/share/agent-conduct-details.md`「協調と自律」を全文読む。
-確認要否・手段・UWI・回答後の遷移は`agent-toolkit:user-confirmation-and-report`に従い、確認前に「QCDと3段判定」を適用する。
+確認要否・手段・UWI・回答後の遷移は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従い、確認前に「QCDと3段判定」を適用する。
 ユーザーが確定した目的・要件・観測される結果の判断を変えるには、新しいユーザーの判断が必要である（手段の扱いと区別は`agent-toolkit/share/agent-conduct-details.md`「協調と自律」）。
 
 実行環境の権限拒否には会話やWIの承認があってもそのまま従い、対象と種別の権限が無い操作は、委譲する場合も操作の前に限定した許可を求める。
@@ -137,7 +137,7 @@ hook通知は、結果を使う前に各項目を処置（指定資料の取得�
 
 ### 手順どおりに進められない場合
 
-規範どうしが両立しない場合、手順の前提が成り立たない場合、取得した値が目的を満たさない場合は`agent-toolkit:user-confirmation-and-report`の`references/procedure-conflict.md`を適用する。
+規範どうしが両立しない場合、手順の前提が成り立たない場合、取得した値が目的を満たさない場合は`agent-toolkit:atk-mode/playbooks/permission-denial.md`を適用する。
 
 ### ユーザー発話の解釈
 
@@ -145,7 +145,7 @@ hook通知は、結果を使う前に各項目を処置（指定資料の取得�
 要求の目的、範囲、例示の開放性、論理関係を原文のまま保ち、表現が加わった順番で範囲を狭めない。
 回答と成果物を確定する前に、ユーザーが実際に主張・質問している内容へ直接答えているかを確かめる。
 
-具体化、問い、訂正、提案、割り込みと、回答で得た事実の反映は`agent-toolkit:user-confirmation-and-report/references/user-utterance.md`「ユーザー発話の解釈」以降の各節に従う。
+具体化、問い、訂正、提案、割り込みと、回答で得た事実の反映は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「ユーザー発話の解釈」以降の各節に従う。
 案、意見、評価、是非、原因、状態、作業の有無を問う発話は回答の依頼とし、回答と対処を確定する前に`agent-toolkit/share/agent-conduct-details.md`「ユーザー発話の解釈」を全文読む。
 
 ## 委譲の要否判定

@@ -6,7 +6,7 @@
 ## 確認事項の即時通知
 
 必要な調査を行い既存の認可を適用した結果、ユーザー確認または事後承認が必要と確定した事項は、確認提示項目を直ちに委譲元へ通知する。
-必要性の判定は`../../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+必要性の判定は`../../skills/atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 手段の違いや続行不能といった分類のみを理由に確認通知を発行しない。
 技術的な観点やQCDに基づいて確定できる判断は自身の担当範囲内で実施し、既存の返却や報告にその根拠を残す。
 回答を待たずに確定できる作業はそのまま継続する。

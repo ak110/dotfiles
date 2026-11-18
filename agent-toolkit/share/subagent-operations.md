@@ -66,4 +66,4 @@
 記録の更新時期は同書の規定に従い、返却時には作業成果と元の未完了作業の所在を委譲元へ引き渡す。
 
 `引き継ぎ記録先`を受け取った多段工程では、`agent-toolkit:delegation`の`references/handoff-record.md`を使用する。
-キュー操作の反映抑止は、`agent-toolkit:wi-standards`の`references/subagent-queue-ops.md`に従う。
+キュー操作の反映抑止は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`に従う。

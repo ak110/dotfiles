@@ -25,7 +25,7 @@
 | 実装担当 | `agent-toolkit/share/exec.subagent.md`の`レビュー修正の履歴統合` |
 | 実行レビュー担当 | `agent-toolkit/share/exec-review.subagent.md` |
 | 公開担当 | `agent-toolkit/share/session-termination.subagent.md` |
-| WI投入担当 | `agent-toolkit/share/add-wi.subagent.md` |
+| WI投入担当 | `agent-toolkit/skills/atk-mode/roles/add-wi.subagent.md` |
 | 監査担当 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
 | 調査担当 | `agent-toolkit/skills/delegation/references/runtime-routing.md` |
 | レビュー担当 | `agent-basics:review-standards/SKILL.md` |

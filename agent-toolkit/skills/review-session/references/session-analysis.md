@@ -8,7 +8,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| 本文の参照基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-retrospective.md` |
 
 ## 読込表
@@ -21,8 +21,8 @@
 | 工程3および工程4で、問題の原因と対策を導き、既存AWIで対処済みかを確認する前 | `analysis-cost.md`、`analysis-actions.md` | | | |
 | コスト削減案の採否および所要時間300秒超過時の対応を確定する前 | `duration-analysis.md` | | | |
 | 工程3または工程4において、事実関係の調査をサブエージェントへ委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
-| 通常モードの工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` | |
-| batchの工程5でAWIを起草・独立検収する前 | `agent-toolkit:wi-standards`、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
+| 通常モードの工程5でAWIの登録要求をWI投入担当へ渡す前 | `agent-toolkit:atk-mode/roles/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/roles/add-wi.parent.md` | |
+| batchの工程5でAWIを起草・独立検収する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`、`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/wi-draft-review.parent.md` | |
 | batchでAWIを保存する前 | `batch.md` | 判断 | `wi-standard-commit` | |
 | 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | | | |
 
@@ -117,20 +117,20 @@ WI投入担当による分析を、メインエージェント自身が行うべ
 既存未完了AWIで覆う場合も、残る原因条件、処置担当、適用機会と観測結果を同じ報告行に残す。
 見送りの根拠は工程2〜4の成果と費用の比較から記し、正常終了・規範どおり・回復済みという分類だけで代替しない。
 
-通常の振り返りでは、確定した原因・対策と既存AWIによる被覆を要求として整理し、`../../../share/add-wi-parent-launch.md`「起動方法」の単位でWI投入担当へ渡す。
+通常の振り返りでは、確定した原因・対策と既存AWIによる被覆を要求として整理し、`agent-toolkit:atk-mode/roles/add-wi.parent.md`「起動方法」の単位でWI投入担当へ渡す。
 通常の振り返りでは、登録対象が1件以上あれば、起動前にユーザーへ`## 振り返り結果の予告`（全登録予定を`AWI登録予定`行で記載）を通知し、同じターンで担当を起動する。
 batchでは、対象ごとの工程4で要求が確定した時点でメインが直接起草し、残りの対象の工程2〜4も続ける。
-起草・意味の検収・保存は`agent-toolkit:wi-standards`に従い、原因分析を含む原稿は`../../../share/wi-draft-review.parent.md`の独立した投入前レビューを経る。
+起草・意味の検収・保存は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に従い、原因分析を含む原稿は`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`の独立した投入前レビューを経る。
 後の対象で同じ根本原因を見つけた場合は、保存前の原稿へ統合し、更新した内容を検収する。
 保存は全対象の工程4と`batch.md`のセッション横断整理を終えてから行う。
 その直前に、確定した全要求を上記の予告として通知する。
 予告のフォーマットは、`../../report-completion/references/report-formats-retrospective.md`「振り返り結果報告のフォーマット」に従う。
-メッセージの送達は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に規定された手段（Claude Code環境では`mcp__plugin_agent-toolkit_agents_server__send_to_user`）を用いて行う。
+メッセージの送達は、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に規定された手段（Claude Code環境では`mcp__plugin_agent-toolkit_agents_server__send_to_user`）を用いて行う。
 要求の`source`には`session-review`を指定する。
 batchが登録するAWIは、ユーザーによる内容確認を待たず、エージェント由来の要求として採否を検討する。
 要求間に依存関係がある場合は先行する成果物が必要となる理由を趣旨欄に明記する（同書「渡す入力」を参照）。
 ユーザーの発話を逐語引用して作成する要求には、原文が記録されているファイル（`conversation.md`や`atk run-script session-review-evidence`の出力ファイルなど）の絶対パスを出所として記載する。
-通常モードで作成されたAWIの検収は、`../../../share/add-wi.parent.md`「受領と検収」に従って行う。
+通常モードで作成されたAWIの検収は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`「受領と検収」に従って行う。
 
 ## 候補の抽出
 

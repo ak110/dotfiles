@@ -76,12 +76,12 @@ WIの選定・追加・状態管理と本文の受渡しの方針は、[WI選定
 sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 移管先ファイル名を記録して元項目を終了する。
-`agent-toolkit:add-awi-by-user`と`agent-toolkit:process-wi`を起動したセッションでは、成果物種別を制限する指示が対象とする作業・工程・主体を確定し、その範囲内で制限を主題分類より先に適用する。
+`agent-toolkit:atk-mode`の作業`add-awi-by-user`と`agent-toolkit:process-wi`を起動したセッションでは、成果物種別を制限する指示が対象とする作業・工程・主体を確定し、その範囲内で制限を主題分類より先に適用する。
 限定範囲外の是正には通常の依頼範囲・認可・確認要否を適用し、後続工程と委譲先へも種類と限定範囲を一体で引き継ぐ。
 対象名の変更、修正を求める表現、主題の変化は、AWI投入専用のセッションへ直接実装の権限を加えない。
 主題分類は許容された成果物種別の内側で既存項目への反映と別項目の投入を選ぶためにだけ用いる
 （2026年9月21日、ユーザー指示。主題継続の判定を成果物境界より先に置き、直接実装へ分岐した観測に由来する）。
-`agent-toolkit:add-awi-by-user`が新規項目を起票する場合は、ユーザー発話を原文とする手動起動を含めて`source: add-awi-by-user`を`atk wi add --source`へ必ず渡す。
+`agent-toolkit:atk-mode`の作業`add-awi-by-user`が新規項目を起票する場合は、ユーザー発話を原文とする手動起動を含めて`source: add-awi-by-user`を`atk wi add --source`へ必ず渡す。
 別リポジトリ項目の移管では、移管元に保存済みのsourceがある場合に同じ値を保持する。
 
 ### 経緯（process-wiとレーン）
@@ -103,7 +103,7 @@ WI作成、計画、実行、実行レビューは、それぞれ要求と完成
 CI成功の待機を省く局所公開の手順は撤去し、公開工程は全体検証とCI成功を確認する（2026年9月28日、ユーザー指示）。
 投入前レビューは2026年9月29日に全投入を委譲することを条件に廃止した。
 2026年10月16日の専念型の完結する手順への変更で、親が意味を検収しない手順へ投入前レビューを戻した。
-現行の定義は`agent-toolkit/share/wi-draft-review.parent.md`冒頭にある。
+現行の定義は`agent-toolkit/skills/atk-mode/roles/wi-draft-review.parent.md`冒頭にある。
 付随型は親の意味の検収を使う。
 
 ## 計画ファイルの体裁の扱い
@@ -124,7 +124,7 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
   条件の理由と採らなかった案は[計画の作成要否と成果物基準の一本化](design-planning-criteria.md#計画の作成要否と成果物基準の一本化)にある
 - 現行の計画ファイルは`<計画名>.md`の単一資料とする。
   H1と直下の要約、`### 計画メタ情報`、`## 実施内容`、要求を書く節、`## 検証`、`## 進捗ログ`を持ち、実装と実行レビューの基準に使う。
-  要求を書く節は通常AWIの本文と同じ見出し・順序とし、書き方の定義元は`agent-toolkit/skills/wi-standards/references/awi-body.md`とその条件別資料の1か所とする（2026年11月16日の同じ決定）。
+  要求を書く節は通常AWIの本文と同じ見出し・順序とし、書き方の定義元は`agent-toolkit/skills/atk-mode/references/awi-body.md`とその条件別資料の1か所とする（2026年11月16日の同じ決定）。
   人間による計画自体の承認は求めず、実装着手後は進捗ログ以外を凍結する。
   保存済みの8節形式とそれ以前の形式の計画は、読み取り、進捗ログの追記、対応commitの記録で引き続き受け付け、書き換えない
 - 観測した欠陥を起点とする作業の原因分析はAWIの`## 原因分析`節へ書き、計画はその節をWIファイル名で参照する。
@@ -134,8 +134,8 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
   同じ分析をAWIと計画ファイル（バグ）の双方へ書いていた二重記述の解消に由来する。
   現在は次の資料が定める。
 
-  - `agent-toolkit:wi-standards/references/wi-standards-body.md`「通常AWIの本文」
-  - `agent-toolkit:wi-standards`の`references/analysis-records.md`「原因分析の記録先」
+  - `agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」
+  - `agent-toolkit:atk-mode/references/analysis-records.md`「原因分析の記録先」
   - `agent-toolkit:write-plan`の計画ファイル基準「原因分析」
 
 - WIを入力とする計画は、WIが確定した目的、要件、原因分析、適用範囲、実現方式と成立の根拠を再調査・再記述せずWIファイル名で参照する。
@@ -143,7 +143,7 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
   計画側で導出し直すのは、入力にWIが無い計画、WIが該当する節を持たない場合、WIの記述と現物の食い違いを観測した場合に限る。
   協調モードの計画でも先にAWIを作成する手順の1本化は採らない（2026年9月30日、ユーザー回答。AWIの投入と計画の起草が同じ調査と記述を二重に行っていたことに由来する）。
   現在は`agent-toolkit:write-plan`の計画ファイル基準「計画ファイルの構成」「実施内容」と`agent-toolkit/skills/process-wi/references/lane-planning.md`が定める。
-  要件の成立性は`agent-toolkit:wi-standards`の`references/awi-body-impact.md`「要件の成立性」が定める
+  要件の成立性は`agent-toolkit:atk-mode/references/awi-body-completion.md`「要件の成立性」が定める
 - 実行時進捗ログは中断再開用の粗い工程記録、レビュー指摘管理表は個別指摘の詳細として維持する。
   用途の異なる記録を件数で結合しない
 

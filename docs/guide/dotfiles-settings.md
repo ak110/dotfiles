@@ -60,7 +60,7 @@ statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CL
 OpenCodeは`agents_server`の委譲先として使い、作業全体を統括するorchestratorには使わない。
 
 対話ホストとして使うOpenCodeには、後処理がagent-toolkitとagent-basicsのスキル、agent-toolkitの常時規範を導入する。
-グローバルの`skills/agent-toolkit-<名前>/`と`skills/agent-basics-<名前>/`から検出し、例えば`agent-toolkit-wi-standards`を`skill`ツールで読める。
+グローバルの`skills/agent-toolkit-<名前>/`と`skills/agent-basics-<名前>/`から検出し、例えば`agent-toolkit-atk-mode`を`skill`ツールで読める。
 配置先は`XDG_CONFIG_HOME`、未設定ならLinux・Windowsとも`~/.config`配下の`opencode/`である。
 `OPENCODE_CONFIG_DIR`でOpenCodeの設定ディレクトリを明示している場合は、その場所へ導入する。
 既存設定の`instructions`へ専用の`agent-toolkit.md`だけを追加し、既存の接続設定・権限・規範を保持する。

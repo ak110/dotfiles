@@ -42,7 +42,7 @@
 
 自身の作業によって持ち込まれたものではない既存の不具合について、AWIを起草せずに不具合を発見したエージェント自身が元のコンテキストで修正する場合に、調査担当の起動および受領検収の手順を適用する。
 コンテキストを分離するのは調査工程のみとし、実際の修正作業は不具合を発見したエージェント自身が担当する。
-AWIとして登録して処理する場合（`agent-toolkit:process-wi`における即時対応や、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:/share/add-wi.parent.md`の手順を用いる。
+AWIとして登録して処理する場合（`agent-toolkit:process-wi`における即時対応や、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の手順を用いる。
 委譲先の手順は、`agent-toolkit:/share/defect-investigation.subagent.md`に定められている（所在参照）。
 返却形式は本書「調査担当の返却契約」に従う。
 

@@ -5,7 +5,7 @@
 両方に同じ主題があれば、両方の全文を確認する。
 範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-検証対象を選定する際は、`../skills/wi-standards/references/awi-body-completion.md`「完成条件」に定められた自己観測の原則と未確認範囲の扱いを適用する。
+検証対象を選定する際は、`../skills/atk-mode/references/awi-body-completion.md`「完成条件」に定められた自己観測の原則と未確認範囲の扱いを適用する。
 また、公開前に行う全体検証については、`agent-toolkit:commit`の`references/publish.md`「検証とCI」の規定に従う。
 
 ## 名指し参照の読込方法
@@ -16,7 +16,7 @@
 | --- | --- |
 | 検証の開始前と未コミット結果の再利用前 | `verification-evidence-observation.md` |
 | 変更範囲の検証対象と直接影響範囲を選ぶ前 | `agent-basics:check-execution/references/verification-scope.md`、`agent-basics:check-execution/references/verification-scope-selection.md` |
-| 完成条件の観測手段と未確認範囲を判定する前 | `../skills/wi-standards/references/awi-body-completion.md` |
+| 完成条件の観測手段と未確認範囲を判定する前 | `../skills/atk-mode/references/awi-body.md` |
 | 公開前の全体検証を選ぶ前 | `agent-toolkit:commit/references/publish.md` |
 | 検証コマンドを起動する前 | `check-execution-operations-launch.md` |
 | 計画の検証表を作成・訂正・引き継ぐ前 | `../skills/write-plan/references/plan-file-standards-verification.md` |

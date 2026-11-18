@@ -6,12 +6,12 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 参照基準の適用前 | `../../wi-standards/references/wi-standards-origin.md` |
+| 参照基準の適用前 | `agent-toolkit:atk-mode/references/origin-and-approval.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/notation-rules.md` |
 
 ## 実施内容
 
-完成条件の転記前に`../../wi-standards/references/awi-body-completion.md`「完成条件」で目的上の必要性と由来を判定し、不要条件の除外根拠を採否記録に残す。
+完成条件の転記前に`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」で目的上の必要性と由来を判定し、不要条件の除外根拠を採否記録に残す。
 明示要求や必要な品質の変更は既存の確認手順へ渡す。
 
 後続要求単位は`部分採用`の残りも含め`移管`の別行にし、計画確定前に登録済みWIのファイル名を根拠へ書く。
@@ -22,12 +22,12 @@
 同じWIでも、要求・判断ごとに出所、承認範囲、採否が異なる内容は行を分ける。
 内部方式の選定理由は`## 調査結果と判断根拠`、検証コマンドは`## 検証`へ記し、必要な成果と区別する。
 競合するWIの組合せと採った対応は`実施内容`へ書き、見送る除外項目と現状を保つ保持項目も行にする。
-計画で加える継続的な方針の保存と既存箇所の見直し（`../../wi-standards/references/awi-body-permanence.md`）も、行として計上する。
+計画で加える継続的な方針の保存と既存箇所の見直し（`agent-toolkit:atk-mode/references/awi-body.md`）も、行として計上する。
 
 `由来`列は`人間由来のWI`、`エージェント由来のWI`、`ユーザー指示`、`エージェント提案`のいずれかとする。
 
 - WI由来の行は、区分名、半角スペース、半角丸括弧で囲んだWIファイル名の順に書き（例: `エージェント由来のWI (20260831-000000-001.md)`）、`関連WI`と一致させる。
-  区分の判定は`../../wi-standards/references/wi-standards-origin.md`「由来と承認」に従う
+  区分の判定は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従う
 - 構造検査は意味上の由来・承認を保証しない。
   `source`・見出し・既存の`[対話由来]`注記で一括分類せず、原文・回答から要求単位の出所と採用範囲を根拠欄へ記録する。
   旧形式も受理する
@@ -62,11 +62,11 @@
   改善見込みを書く場合は、起動・必読資料・変換・検収・修正・検証・統合を含む同じ対象集合で方式を比べ、記録から分離できる実測と推定を区別する。
   検証プロセスの負荷と担当の分担数の効果は別の項目として扱う
 
-人間由来のWIの要求を全部または一部不採用とする行は、`../../wi-standards/references/wi-standards-origin.md`「由来と承認」に従ってユーザーの確認を得る（確認が要る範囲縮小と、事後報告で済む裁量の境界も同節に従う）。
+人間由来のWIの要求を全部または一部不採用とする行は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従ってユーザーの確認を得る（確認が要る範囲縮小と、事後報告で済む裁量の境界も同節に従う）。
 ユーザーがAWIの`## ユーザーコメント`やUWIの`## 回答`に作業担当者宛ての質問を直接書いた要求単位は、回答をUWIに記録してユーザーへ返す工程を`## 実施内容`に置く（AWI本文へ転記された質問は対象外とし、同節に従う）。
 
 ## 本文参照の取得条件
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |

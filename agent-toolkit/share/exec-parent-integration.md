@@ -6,10 +6,10 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | | |
+| AWIの形式を判断する前 | `../skills/atk-mode/references/awi-body.md` | | |
 | 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
 | 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | | |
-| 統合結果のWI状態を一括取得する前 | `../skills/wi-standards/references/wi-show-bulk.md` | | |
+| 統合結果のWI状態を一括取得する前 | `../skills/atk-mode/references/states-and-dependencies.md` | | |
 | 全レーンの統合後に公開工程へ進む条件を確かめる時 | `../skills/process-wi/references/finish-session.md` | | |
 | レーン担当の統合の返却が、merge進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` |
 
@@ -47,7 +47,7 @@
 `マージあり`の場合は、統合指示を出す前に以下の条件を確認する。
 
 1. レビュー単位ごとに受理した最終実行レビューの返却ファイル（`atk agents wait`の`agent_message_path`）および`レビューHEAD`を保持していること。
-   AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。
+   AWIの形式は`agent-toolkit:atk-mode/references/awi-body.md`冒頭に従って判別する。
    新形式のエージェント由来AWIを含む計画は同じ`review_contract`の絶対パスも保持し、条件表の各条件に判定行が対応することを確かめる。
    欠落時はレビュー起動元へ差し戻す。
    各返却の完成条件証拠を計画名とAWI集合へ対応付け、採用予定のAWI全体が重複や漏れなく網羅されていることを確かめる。
@@ -110,7 +110,8 @@
    後続レーンの短い更新で統合先branchが`統合後のHEAD`より先へ進んでいても、その子孫であれば満たす。
 3. 資源の`record_path`における所有登録情報で、`jq -r '.integration.phase' <record_path>`が`finalized`を返すこと。
 4. `保存した計画ファイル`が統合指示の`計画ファイル名一覧`と順序を含めて一致しており、各計画が`atk plans list`の出力に残っておらず、`atk config get private_notes`が返すrootの`plans/`配下に正しく保存されていること。
-5. `adoptしたWI`、`rejectしたWI`、`終了しない`および延期の項目を、`wi-show-bulk.md`の一括取得に従い、`atk wi show <ファイル名>... --target-repo=<統合先worktree> --skip-pull --summary-only`で1回取得する。
+5. `adoptしたWI`、`rejectしたWI`、`終了しない`および延期の項目を、`atk wi show <ファイル名>... --target-repo=<統合先worktree> --skip-pull --summary-only`で1回取得する。
+   取得は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「複数件の`atk wi show`の取得」に従う。
    終了0と要求した全識別子が揃っていることを確認し、各状態を`AWI終了区分`と比較する。
    採否に応じて`adopted`または`rejected`であり、`終了しない`や延期の項目は状態が未変更であること。
 6. `adoptを延期したAWIとcommit`の各commitを統合先worktree上で`git rev-parse --verify <commit>^{commit}`で解決できること。

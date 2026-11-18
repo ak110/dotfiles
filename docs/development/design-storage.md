@@ -191,7 +191,7 @@ turnごとの一律回収は使用中の作業を失い、別の恒常監視と�
 
 ## MQ管理リポジトリの分岐回復
 
-private-notesのGit操作と分岐回復に実行時に適用する規範は、[`agent-toolkit:wi-standards`の`repository-scope.md`](../../agent-toolkit/skills/wi-standards/references/repository-scope.md)が定める。
+private-notesのGit操作と分岐回復に実行時に適用する規範は、[`agent-toolkit:atk-mode/references/states-and-dependencies.md`「対象リポジトリとprivate-notesの区別」](../../agent-toolkit/skills/atk-mode/references/states-and-dependencies.md)が定める。
 
 `atk wi`の更新は管理リポジトリの同じGit common directoryに属するプロセス間だけを
 共通ロックで直列化する。

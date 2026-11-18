@@ -12,8 +12,8 @@
 追加発話・工程境界・圧縮後も同書で目的・現行要求を復元する。
 採用案の維持が目的化したら、縮小・撤回・代替案も比較する。
 
-継続的な方針の反映先は`../skills/wi-standards/references/awi-body-permanence.md`「継続的な方針の保存」で判定する。
-対象には、受領した指摘・WIコメント・UWI回答から`agent-toolkit:user-confirmation-and-report`で分けた候補を含む。
+継続的な方針の反映先は`../skills/atk-mode/references/awi-body.md`「継続的な方針の保存」で判定する。
+対象には、受領した指摘・WIコメント・UWI回答から`agent-toolkit:atk-mode/playbooks/user-utterance.md`「方針の候補の取り込み」で分けた候補を含む。
 計画の凍結後は変更受入・レビュー指摘管理表を使う。
 担当外は方針と出所を所有者へ渡す。
 
@@ -25,7 +25,7 @@
 エラー本文の可視性・原因調査を再開条件にせず、継続の合図で目的・要件・方針・認可を変えない。
 同じ発言の変更・訂正・中止・回答だけを統合する。
 
-委譲先の返却をユーザー確認へ回す前に、`../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」を適用する。
+委譲先の返却をユーザー確認へ回す前に、`../skills/atk-mode/playbooks/confirmation.md`「確認要否の判定」を適用する。
 原要求・現物・既存認可に「ユーザー固有の判断である根拠」が無ければ同じ担当へ差し戻す。
 技術判断は自身か同じ担当が確定し、本人が決める結果・許容する影響を尋ねる。
 
@@ -35,10 +35,10 @@
 
 実ユーザーの成果物・行動・説明への指摘、訂正、是正要求、異議（疑問形も含む）には、調査・修正・再評価前の応答冒頭に「指摘の理解」を置く。
 問題・要求の理解を論点別に自分の言葉で箇条書きにし、原文による理解と補った前提を分ける。
-指摘の理由が同じ規則・方針の他の使用箇所にも当てはまるかは、`../skills/user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」で判断する。
+指摘の理由が同じ規則・方針の他の使用箇所にも当てはまるかは、`../skills/atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」で判断する。
 確認を求めず、回答を待たずに続行する。
 指摘の無い新規依頼・確認への回答・単なる継続指示は対象外とする。
-解釈で結果が分かれる部分の確認は`agent-toolkit:user-confirmation-and-report`「ユーザー指摘の受領」「認識合わせ」に従う。
+解釈で結果が分かれる部分の確認は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「ユーザー指摘の受領」と`agent-toolkit:atk-mode/references/delivery.md`「認識合わせ」に従う。
 
 説明・報告・確認は`agent-basics:writing-standards/references/writing.md`の品質基準に従い、結論・補足の順に書く。
 未達・失敗・予想との差・判断理由・制約・必要な証拠は残す。
@@ -57,7 +57,7 @@
 長ければ最新版1ファイルの絶対パスを示す。
 
 発話の冒頭に主題・結果・問い・現在の判断を置く。
-ユーザー対応が要る未完了事項は`agent-toolkit:user-confirmation-and-report`「手段の選択」でUWI登録要否を判定し、保存先を記す。
+ユーザー対応が要る未完了事項は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」でUWI登録要否を判定し、保存先を記す。
 ユーザー操作は結果の利用に必要な場合に添える。
 
 - 複数案が未決定なら確認の有無によらず同じ発話で推奨案・根拠を示す。

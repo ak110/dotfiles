@@ -9,19 +9,19 @@
   機能の正しさ・安全性・公開契約の検証を保ち、効率化を目的としない不具合修正・機能追加と、性能改善を主目的とする場合の既存の比較測定は区別する。
   専用計測環境、自然発生待ち、複数セッションの蓄積、ユーザーへの効果判定の依頼は一律に求めない。
   ユーザーは2026年11月10日に撤去・単純化案との比較と全体所要の実測を求め、2026年10月18日の推定で進める基準を置き換えた。
-  現行の規範は`agent-toolkit:wi-standards`の次の資料にある。
+  現行の規範は次の資料にある。
 
-  - `agent-toolkit:wi-standards/references/awi-body-completion.md`「完成条件」
-  - `agent-toolkit:wi-standards/references/drafting-completion-decisions.md`「採否と実現方式の確定」
+  - `agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」
+  - `agent-toolkit:atk-mode/references/drafting-decisions.md`「採否と実現方式の確定」
 
 - 効率化の前後実測と実測未取得時の採否、性能改善を主目的とする比較測定は、前項の基準を適用する。
   それ以外の測定や動作確認をAWI本文の`完成条件`と判断材料で要求できるのは、低コストで1回実行すれば結果を得られる場合に限る。
   事象の発生の待機、専用の計測手順の構築または複数のセッションにわたる蓄積を要する測定や確認は、任意の判断材料として書くか要求そのものを書かない。
   その結果を得られないために元の項目を実施できなくなる構造は設けない（2026年9月7日、ユーザー指示。費用の大きい計測を次のセッションの担当へ完成条件として課さないことによる）。
-  現行の規範は`agent-toolkit:wi-standards/references/awi-body-completion.md`「完成条件」にある
+  現行の規範は`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」にある
 - AWIの完成条件の観測はその項目を処理するエージェントが行い、人の観測はエージェントが到達できる環境の不在を確かめた条件に限る（2026年10月6日、ユーザー指示）。
   完成条件が配備後の観測主体を「運用者」と書き、エージェントが到達できる配備先があるのに観測されないまま残った観測に由来する。
-  判定規則は`agent-toolkit:wi-standards`の`references/awi-body.md`の完成条件の規定にある。
+  判定規則は`agent-toolkit:atk-mode/references/awi-body.md`の完成条件の規定にある。
   公開担当の工程（`agent-toolkit/share/session-termination.subagent.md`）とメインの工程（`agent-toolkit/skills/process-wi/references/finish-session.md`）は同じ規定を参照する
 - すぐ解消しない外部依存待ちの項目は、無視期間（数日のcooldown）や依存指定で空転を防ぐ
 - 作業対象リポジトリとprivate-notesは別のリポジトリとして扱い、コーディングエージェントはprivate-notesを`atk wi`・`atk plans`・`atk serve`が提供するコマンドや画面から変更する。
@@ -49,20 +49,20 @@
   2026年9月30日のユーザー回答では、書き忘れ防止のため必須節と節ごとの分担を維持し、本文の添付ファイルへの分離を採らなかった。
   AWI本文の文字数が月ごとに増え続けている観測に由来する。
   2026年10月26日のユーザー指示で、原文と調査事実を保持しつつ必須節と引用位置の記録を簡素化した。
-  現在の節の分担は`agent-toolkit:wi-standards`の`agent-toolkit:wi-standards/references/awi-body-content.md`「節の構成と分担」が定める
+  現在の節の分担は`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」が定める
 - AWIの`## ユーザー指摘の逐語引用`はそのAWIを投入したセッション（投入元のセッション）へユーザーが向けた発話であり、解決の明記の有無によらず投入元のセッションで解決済みとして扱う。
   処理側（実行レビューと統合時の完成条件判定）は逐語引用を達成を確かめる要求単位にせず、`## 反映内容と反映先`と`## 完成条件`を解釈する根拠として読む。
   この方針は2026年10月7日のユーザー指示であり、投入元のセッションでその場の作業を求めた発話を処理側が証拠不足とし、返却が止まったことに由来する。
-  現行の規範は`agent-toolkit/skills/wi-standards/references/origin-and-approval.md`の逐語引用の段落にある
+  現行の規範は`agent-toolkit/skills/atk-mode/references/origin-and-approval.md`の逐語引用の段落にある
 - 手動で具体化する要求は採否・外部仕様・必要なユーザー判断を登録前に確定する。
   途中の独立別件では原因未確定の範囲と次の問いを正直に残せる。
   取得済みの証拠は対象・版・前提の変化部分だけ再確認し、必要な結論と再取得できる根拠を引き渡す。
   2026年9月16日の一律確定条件を2026年10月26日に起票目的別へ更新した。
   重複登録と調査のやり直しを防ぐ目的は、共通の被覆比較と既存証拠の再利用で維持する。
-  現在は`agent-toolkit:wi-standards`の起票目的別の出口と「起草完了の条件」が定める
+  現在は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」と`agent-toolkit:atk-mode/references/awi-body.md`「起草完了の条件」が定める
 - 規範が常に必須と定める本文の構成要素は、個別スキルの手順へ再掲せず、投入時の自動チェックが判定する（2026年9月16日、ユーザー回答）。
   投入手段ごとに必須節の列挙を置くと、同じ定義を複数箇所が保持することになるためである。
-  現在は`agent-toolkit:wi-standards/references/wi-standards-body.md`「通常AWIの本文」と、`agent-toolkit/agent_toolkit/_atk/wi/add_validation.py`の必須節チェックが定める
+  現在は`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」と、`agent-toolkit/agent_toolkit/_atk/wi/add_validation.py`の必須節チェックが定める
 
 `atk serve`では、inboxとholdにあるエージェント由来（frontmatterの`source`が未設定でない）のawiがユーザーコメントを編集できる。
   初回は末尾へ追記し、再編集は同じ節だけを置換する。

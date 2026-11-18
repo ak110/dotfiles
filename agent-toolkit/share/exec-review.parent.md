@@ -56,7 +56,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` | | |
+| 形式判別前 | `../skills/atk-mode/references/awi-body.md` | | |
 | 基準の参照時 | `agent-basics:review-standards/SKILL.md` | | |
 | 検証結果を記録する前 | `verification-evidence-records.md` | | |
 | 手動観測を保存する前 | `verification-evidence-observation.md` | | |
@@ -68,9 +68,9 @@
 | 基準の参照時 | `reader-fit-review.parent.md` | | |
 | 基準の参照時 | `../skills/delegation/references/base-contract-handoff.md` | | |
 | 基準の参照時 | `exec.parent.md`、`exec-parent-integration.md` | | |
-| 基準の参照時 | `../skills/wi-standards/references/origin-and-approval.md` | | |
+| 基準の参照時 | `../skills/atk-mode/references/origin-and-approval.md` | | |
 | 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
-| 基準の参照時 | `../skills/wi-standards/references/wi-standards-origin.md` | | |
+| 基準の参照時 | `../skills/atk-mode/references/origin-and-approval.md` | | |
 | 基準の参照時 | `../skills/report-completion/references/report-formats-completion.md` | | |
 | 基準の参照時 | `agent-basics:bugfix/SKILL.md` | | |
 | 基準の参照時 | `../skills/commit/references/history-rewrite-wi-records.md` | | |
@@ -79,7 +79,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` |
+| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/states-and-dependencies.md` |
 | `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` | | |
 
 <!-- return-contract:exec-review:start -->

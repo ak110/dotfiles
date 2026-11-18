@@ -51,7 +51,7 @@ upstreamがある場合は実remoteへのpush到達も確かめ、全て成立�
 保存済みならWI保存先のcommit・pushを完了し、次回の実行を待つ。
 
 過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う。
-手順は`agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。
+手順は`agent-toolkit/skills/atk-mode/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。
 process-wiとprocess-loopは、回答済みの承認用UWIを`source`によらず処理対象へ含め、`run_skill_report: true`の報告用だけを除外する。
 承認された操作を次回の定期起動まで待たせないためであり、処理担当は`scope`のスキルを起動して承認後の操作を実施し、結果を記録する。
 次回定期実行は処理中の項目を取り込まず、終了済みの項目はactiveの取得に入らない。

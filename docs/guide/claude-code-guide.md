@@ -64,7 +64,8 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 
 - `agent-toolkit:atk-mode <作業> [入力]`: 作業の入口。
   `add-awi-by-user`、`process-wi`、`review-session`、`export-session`を作業の名前として渡せる。
-  作業ごとのスキルは順に入口の配下へ移すため、移行が済むまでは今の名前での起動も使える
+  AWIの登録は`/agent-toolkit:atk-mode add-awi-by-user <要求>`で起動する。
+  `process-wi`、`review-session`、`export-session`は順に入口の配下へ移すため、移行が済むまでは今の名前での起動も使える
 - `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。
   引数で着眼点を追加できる
 - `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。
@@ -76,6 +77,12 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 一般の更新・削除は[READMEの更新と削除](../../agent-toolkit/README.md#更新と削除)を参照。
 dotfiles管理下のマシンでは`chezmoi apply`でも更新できる。
 ここでは既存環境の移行時に必要な補足を扱う。
+
+AWIの登録は、スキル`add-awi-by-user`を直接起動する形から`/agent-toolkit:atk-mode add-awi-by-user`へ変わった（Codexでは`$atk-mode add-awi-by-user`）。
+古い名前のスキルは無くなったため、更新後は新しい形で起動する。
+あわせて、内部用のスキル`wi-standards`と`user-confirmation-and-report`を廃止し、内容を入口`atk-mode`の配下の手順書へ移した。
+プラグインとして導入した環境と`update-dotfiles`で更新する環境では、更新時に古いスキルのディレクトリも置き換わる。
+スキルのディレクトリを手作業で複製した環境では、`add-awi-by-user`、`wi-standards`、`user-confirmation-and-report`のディレクトリを削除する。
 
 接続ごとに管理する旧版から共有管理サービスへ初めて更新する場合、起動中のClaude Code・Codexの会話は終了まで旧接続を使う。
 旧版には状態を引き継ぐ通信機能が無いため、会話を強制終了せず、次の通常起動から新版へ移る。

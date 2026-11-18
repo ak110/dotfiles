@@ -3,7 +3,7 @@
 ## auto modeと許可ルール
 
 - auto mode classifierの拒否後に、ユーザー承認なしで同一操作を再発行する許可と手順を廃止する。
-  偽陽性と判断できる最初の拒否から、`agent-toolkit/skills/user-confirmation-and-report/references/permission-denial.md`の確認へ進む。
+  偽陽性と判断できる最初の拒否から、`agent-toolkit/skills/atk-mode/playbooks/permission-denial.md`の確認へ進む。
   メインの操作と委譲先から受領した拒否に適用し、偽陽性の明示回答を受けた後の実行は維持する。
   同じ操作の反復がサーバー側に攻撃的な挙動と見なされるリスクを避けるというユーザーの判断によるもので、実際に攻撃判定されるという技術的事実を示すものではない
   （2026年10月7日、ユーザー指示）。
@@ -18,7 +18,7 @@
   （2026年10月9日、ユーザー指示）。
   読み手は偽陽性承認後の判断をするエージェント、適用範囲は`hard_deny`の外である。
   通常のsource優先の編集先判断よりこの分類を優先する。
-  文面・包含・独自追記・取消方法・実効化の手順は`agent-toolkit/skills/user-confirmation-and-report/references/permission-denial.md`の手順6が持つ
+  文面・包含・独自追記・取消方法・実効化の手順は`agent-toolkit/skills/atk-mode/playbooks/permission-denial.md`の手順6が持つ
 - auto modeの許可ルールは、操作の種別と除外条件で対象を決める。
   remoteのホスト、由来（AWI処理かどうか）および所有者による限定は条件として置かない
   （2026年9月17日、ユーザー指示。「現状のプロンプトが全体的に禁止事項が多すぎるのでいっそもっと全体的に緩和して統一感を持たせてほしい」）。

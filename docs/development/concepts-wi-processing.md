@@ -62,12 +62,12 @@
   保存内容を実行主体間で共有せず、保存ファイルを読めない場合だけ分割取得へ移る。
   保存したファイルは回収せず、managed-tempの7日の自動削除へ委ねる（2026年9月26日、ユーザー回答「managed-temp周りの手順がそもそも煩雑すぎる」により、個別の領域作成とcleanupを取得手順から外した）。
   2026年10月4日に、取得主体がセッションのmanaged-tempへ標準出力を保存する手順も外し、`atk`が保存する形へ移した。
-  現行の手順は`agent-toolkit:wi-standards`の`references/wi-show-bulk.md`が定める
+  現行の手順は`agent-toolkit:atk-mode/references/states-and-dependencies.md`が定める
 - 各項目の`depends_on`は安全な実施・完成判定に不可欠な先行成果の完了待ちだけを表し、書込の競合と実装順はレーン割当で扱う。
   後続本文には待つ成果、成立しない工程と現行成果物で代替できない理由を対応付ける。
   同じ開始時候補内の同一リポジトリ依存は推移的な成分も同じ処理回・同じレーンで依存先から扱い、成果を得られない後続は待機する（2026年9月30日、ユーザー指示と提案の採用）。
   人間の回答待ちは元項目から確認のUWIへの依存で表し、依存を本文から再構築しない。
-  現行の規範は`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`とメインの選定とレーンの担当手順にある
+  現行の規範は`agent-toolkit:atk-mode/references/states-and-dependencies.md`とメインの選定とレーンの担当手順にある
 - 選定工程のメインは要求の採否と既存の変更による充足を確定せず、計画担当が対象実装を読解して確定し、実行レビューが要求の被覆と根拠を検証する。
   即時対応済みと本文へ記載した項目も次セッションで計画レーンへ送る（2026年9月、ユーザー指示）
 - 着手不能の要因は解除される契機で分類する。
@@ -99,7 +99,7 @@
 
 実行時に従う規範は`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」に置く。
 計画での実施方式の比較は`../../agent-toolkit/skills/write-plan/references/plan-file-standards-scope.md`「実施内容」が定める。
-一括置換の手順は`agent-toolkit:wi-standards/references/notation-rules.md`「表記の一括置換」が定める。
+一括置換の手順は`agent-basics:writing-standards/references/notation-rules.md`「表記の一括置換」が定める。
 
 - 簡単な反復作業は、一括置換と変更箇所の軽量レビューを使えるかを先に比べる（2026年10月1日のユーザー指示）。
 - 単純作業を多数の対象へ行うときは、作業量に合わせてうまく並列化する。

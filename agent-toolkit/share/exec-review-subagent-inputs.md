@@ -9,16 +9,16 @@
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | | | |
 | 本文でこの資料の基準を参照・取得する時 | `exec-subagent-implementation.md` | | | |
 | 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` | | | |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | | | |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | | | |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/atk-mode/references/origin-and-approval.md` | | | |
+| AWIの形式を判断する前 | `../skills/atk-mode/references/awi-body.md` | | | |
 | 条件表を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `exec-review-recording-contract.md` | | | |
 | 初回レビューに入る前 | `exec-review-criteria.md` | | | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
-| `計画`を受領し、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-verification.md`、`../skills/wi-standards/references/awi-body.md` | | | |
+| `計画`を受領し、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-verification.md`、`../skills/atk-mode/references/awi-body.md` | | | |
 | `計画`が8節形式などの旧形式で、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/legacy-plan-file-standards.md` | | | |
 | `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合（操作対象外: 役割の開始入力） | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
-| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | | | |
+| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | | | |
 | 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
 | 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` | | | |
@@ -46,7 +46,7 @@
   計画がない場合の検証結果は、受け取ったWI記録または引き継ぎ記録が示す場所から読み取る
 - `review_contract`: `CI記録`、計画外の`WI`、新形式AWIでは必須とする。
   単一条項の直接契約か、`条項`・`内容`・`出典`と判定対象外commitを記したMarkdownの絶対パスを受け取る。
-  AWI形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭で判別する。
+  AWI形式は`agent-toolkit:atk-mode/references/awi-body.md`冒頭で判別する。
   新形式AWIでは`exec-review-recording-contract.md`「記録する行と要求単位」の条件表を含むファイルを検収する。
   原要求から期待結果を確定後に契約全文を読み、必要性・整合性を評価する。
   再レビューでは前回契約を維持し、更新時は旧版を保存する
@@ -103,7 +103,7 @@
 計画の有無にかかわらず、対象WIは`評価用WI原本`の指定時にはその一覧から、それ以外は対象worktree上の`atk wi show`から取得する。
 frontmatterの`type`が`awi`や`uwi`である項目の要求および完成条件を差分と比較する。
 ユーザーコメントやUWIの回答は要求単位ごとに分割し、元の文面と出所を保持した状態で比較する。
-`## ユーザー指摘の逐語引用`は起草時点で解決済みの発話であるため（`agent-toolkit:wi-standards`の`references/origin-and-approval.md`）、個別の要求単位には分割せず、`## 反映内容と反映先`や`## 完成条件`を解釈するための補足根拠として参照する。
+`## ユーザー指摘の逐語引用`は起草時点で解決済みの発話であるため（`agent-toolkit:atk-mode/references/origin-and-approval.md`）、個別の要求単位には分割せず、`## 反映内容と反映先`や`## 完成条件`を解釈するための補足根拠として参照する。
 計画内の`ユーザー指示`に由来する行も要求単位に分割し、WI本文に含まれない追加要求として突き合わせる。
 WIの鮮度（staleness）は、`計画`がある場合は`## 調査結果と判断根拠`（8節形式では`## 変更履歴`）に記録された条件付き履歴確認の判断を参照し、記録が無い項目の`staleness`は`atk wi list --with-staleness`で取得する。
 `WI`のみで`評価用WI原本`が未指定の場合は、対象worktree上で`atk wi list --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を1回実行して対象WIの`staleness`を取得する。

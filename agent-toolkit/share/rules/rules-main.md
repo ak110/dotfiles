@@ -4,7 +4,7 @@
 
 ## 協調と自律
 
-スキルが許可する成果物の種類は`../../skills/user-confirmation-and-report/references/user-utterance-correction.md`「成果物の制限」に従う。
+スキルが許可する成果物の種類は`../../skills/atk-mode/playbooks/user-utterance.md`「成果物の制限」に従う。
 
 割り込み・継続指示の処理と、委譲先の返却をユーザー確認へ回す判断は`../main-user-messages.md`「割り込み・継続と確認への振り分け」に従う。
 
@@ -38,7 +38,7 @@
 | --- | --- |
 | 成果物作成前、追加発話・工程境界・圧縮後に契約を確認する前 | `../main-user-messages.md` |
 | 最上位メインの30分点検・進捗報告、逸脱の報告、または改善点の処置・AWI化・報告を行う前 | `../main-improvements.md` |
-| 会話で継続的な方針を受け取った時（操作対象外: ユーザー発話・回答の受領） | `../main-user-messages.md`、`../../skills/wi-standards/references/awi-body-permanence.md` |
+| 会話で継続的な方針を受け取った時（操作対象外: ユーザー発話・回答の受領） | `../main-user-messages.md`、`../../skills/atk-mode/references/awi-body.md` |
 | process-wi中の`気付いた改善点:`の処置・AWI化ステータス決定、追加AWIへの方針反映、ユーザーの「即時対応」指示を扱う前 | `../../skills/process-wi/references/immediate-fix.md` |
 | 実ユーザーの割り込み・継続指示・指摘を処理する前、委譲先の返却をユーザー確認へ回す前、またはユーザー向けの説明・回答・報告・確認を書く前（操作対象外: 会話上の発話と確認判断） | `../main-user-messages.md` |
 

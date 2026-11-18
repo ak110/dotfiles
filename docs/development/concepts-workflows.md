@@ -135,7 +135,7 @@ branchの公開またはCIが失敗した場合は`master`を保持し、同じc
   現行規範は次の資料にある。
 
   - `agent-toolkit/share/rules/common/02-agent-operations.md`「引用と引数」
-  - `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「認可を要する操作」
+  - `agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」
 
 - キュー管理リポジトリを更新する`atk`のサブコマンドは、内部で実行する`git`の標準出力と標準エラーを取り込み、成功した場合は出力しない。
   失敗した場合は取り込んだ内容を標準エラーへ出力してから例外を送出する（2026年9月7日、ユーザー指示。`atk`の出力を、各サブコマンドが自ら意味を定めた行に限るため）

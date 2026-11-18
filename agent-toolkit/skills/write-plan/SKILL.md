@@ -11,7 +11,7 @@ description: >
 
 本スキルは、事前調査から計画ファイルの作成、実装、そして`起動経路`に応じた完了までの一連の流れを定めている。
 各工程の役割分担は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`、計画ファイルが満たすべき仕様（成果物契約）は`references/plan-file-standards.md`で規定する。
-また、WI本文の要求や由来の扱いは`agent-toolkit:wi-standards`、実装や実行レビューの詳細な手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.subagent.md`に従う。
+また、WI本文の要求や由来の扱いは`agent-toolkit:atk-mode/references/origin-and-approval.md`、実装や実行レビューの詳細な手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.subagent.md`に従う。
 計画は、WIの本文から決まらない部分を要件や外部仕様の粒度で補い、起草したエージェントがそのまま実装を進める。
 レビューは実装が終わった後の実行レビューのみで実施する。
 
@@ -25,14 +25,14 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | | | |
-| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md`、`../wi-standards/references/awi-body.md` | 操作 | `plan-draft-writing` | |
+| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md`、`agent-toolkit:atk-mode/references/awi-body.md` | 操作 | `plan-draft-writing` | |
 | 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | | | |
 | 観測で計画の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | | | |
 | 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing-selection.md` | | | |
@@ -50,8 +50,8 @@ description: >
 
 ## 確認と起動経路
 
-確認する基準や手順、UWIへの退避方法は`agent-toolkit:user-confirmation-and-report`に従う。
-協調モードでメインエージェントが起動した場合は、同スキルの`references/grilling.md`に沿ってユーザーと認識を合わせてから起草する。
+確認する基準や手順、UWIへの退避方法は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従う。
+協調モードでメインエージェントが起動した場合は、`agent-toolkit:atk-mode/references/choice-construction.md`「質問ラウンド」に沿ってユーザーと認識を合わせてから起草する。
 入力となるWIで確定済みの事項は、改めて確認し直す必要はない。
 `agent-toolkit:process-wi`のレーン担当は、確認事項が生じた際に`agent-toolkit/share/rules/rules-subagent.md`の「確認事項の即時通知」に従って委譲元へ通知し、回答を得てから作業を再開する（UWIの登録は委譲元が担当する）。
 起草と待機の区切りは、`agent-toolkit:process-wi`の`references/lane-planning.md`で定める。
@@ -74,12 +74,12 @@ AWIを入力とする作業では、AWIの本文と対象リポジトリの現�
 保存済みの旧形式で書かれた`## 原因分析`も、原因が確定していれば確定した原因分析として扱う。
 
 - 判定は`source`の値、分類の名前、作業の種類ではなく、本文を読んで事項ごとに行う。
-  1〜3は、通常AWIの登録条件（`agent-toolkit:wi-standards`の`references/wi-standards-body.md`「起票目的別の調査出口」の「ユーザーが手動作成で具体化を求めた要求」）が登録前に確定を求める事項と同じである。
-  4は`agent-toolkit:wi-standards`の`references/awi-body.md`が`## 原因分析`を置く条件とする事項である
+  1〜3は、通常AWIの登録条件（`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の表のうち、ユーザーが手動作成で具体化を求めた要求の行）が登録前に確定を求める事項と同じである。
+  4は`agent-toolkit:atk-mode/references/awi-body.md`が`## 原因分析`を置く条件とする事項である
 - 複数のAWIを1つの作業で扱う時は、AWIごとに判定する。
   計画が要るAWIだけを計画へ含め、要らないAWIは計画なしで処理する
 - 人間由来の要求の縮小が必要な場合は、計画ファイルを作って採否を記録し、`## 反映内容と反映先`へ縮小後の範囲を書く
-- 計画を作らない場合も、継続的な方針の保存（`agent-toolkit:wi-standards`の`references/awi-body-permanence.md`）と採否の記録は行う。
+- 計画を作らない場合も、継続的な方針の保存（`agent-toolkit:atk-mode/references/awi-body.md`）と採否の記録は行う。
   記録先と実行レビューの手順は、起動元の工程の規定に従う
 
 入力にWIが無い作業（協調モードで直接受けた依頼）では、リポジトリを変更するなら原則として計画ファイルを作成し、バグ対応では必ず作成する。
@@ -93,7 +93,7 @@ AWIを入力とする作業では、AWIの本文と対象リポジトリの現�
 実装後は計画を凍結し、管理表へ記録する。
 
 計画の起草は、通常AWIの起草と同じ調査と確認を、AWIの本文から決まらない部分に対して行う。
-要求を書く節の書き方は`agent-toolkit:wi-standards`の`references/awi-body.md`とその条件別資料に従う。
+要求を書く節の書き方は`agent-toolkit:atk-mode/references/awi-body.md`とその条件別資料に従う。
 
 1. 変更対象、外部仕様、テスト、検証内容のうち、WIの本文と現物から決まらない部分を確定するために調査する。
    WIで確定している事項は`references/plan-file-standards-structure.md`「計画ファイルの構成」に従って参照し、重複した調査は行わない。
@@ -102,10 +102,10 @@ AWIを入力とする作業では、AWIの本文と対象リポジトリの現�
    - 作業種別が`バグ対応`で、入力にWIがない場合やWIの原因分析を修正・追加する計画では、手順2の確認前に`agent-basics:bugfix`を起動し、5つの問いへの答えを書き出す。
      WIの原因分析をそのまま使う場合も、対症療法を採用する前に同スキルの問い3で処置を比べる。
      不足がある場合は原因分析を追加する。
-   - 参照側や別の発生源（`agent-toolkit:wi-standards`の`references/awi-body-impact.md`「直接影響範囲」）をたどり、変更対象や影響が波及する範囲を`## 反映内容と反映先`に記述する。
+   - 参照側や別の発生源（`agent-toolkit:atk-mode/references/awi-body.md`「直接影響範囲」）をたどり、変更対象や影響が波及する範囲を`## 反映内容と反映先`に記述する。
    - 依頼やWIで指定された明示的な禁止条件と採用する手段は、比較しやすいよう`## 実施内容`の同じ行に並べて記述する。
 2. 変更対象や方針の決定に影響する未確定の判断事項を、依存関係や前後関係を含めて整理する（WIで確定済みの事項を除く）。
-   その上で`../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」を適用する。
+   その上で`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」を適用する。
    実装中に生じた同様の判断も同様に扱う。
    確認方法は「確認と起動経路」に従う。
 3. `references/plan-file-standards-template.md`「初回起草の雛形」に案件の具体的な内容を記入し、`atk run-script plan-create --`を実行して計画ファイルを作成する。

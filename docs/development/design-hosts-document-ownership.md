@@ -10,7 +10,7 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 ガイドだけを読む契機の追加、ガイドの内容をプラグインへ移して縮める案、工程責務の契約へ運用概要を追記する案は、この境界または読込費用を守れないため採用しない。
 
 複数の実行主体が使う契約は、契約本文を1箇所の基準文書へ集約し、各主体の文書には読む時点と利用場面固有の差分だけを残す。
-一括取得は`agent-toolkit:add-awi-by-user`、採否レコードは`agent-toolkit:process-wi`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-basics:review-standards`が定める。
+一括取得は`agent-toolkit:atk-mode`の作業`add-awi-by-user`、採否レコードは`agent-toolkit:process-wi`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-basics:review-standards`が定める。
 スキル本体には起動判断、工程順序および停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
 
 判断から一意に導出できる実装順序・分解粒度・コマンド列は、安全性、データ保全または公開契約を保護する場合を除き、各エージェント文書へ常設しない。

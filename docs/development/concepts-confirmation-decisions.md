@@ -1,7 +1,7 @@
 # 方針・意向: 確認要否の判定
 
 現在はルールファイルの「協調と自律」「指示の解釈と優先順位」と、`agent-toolkit/share/rules/rules-main.md`の「協調と自律」「目的との一致の確認」が定める。
-確認要否の判定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」と`SKILL.md`「判定の細則」が定める。
+確認要否の判定は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`SKILL.md`「判定の細則」が定める。
 
 ## 確認要否の判定
 
@@ -24,8 +24,8 @@
   必要な認可とユーザーだけが持つ値の確認は保つ。
   既存の`agent-toolkit/share/rules/common/01-agent.md`「役割分担」「QCDと3段判定」を適用し、一般原則の重複追記を省く。
   Qualityを優先し、その範囲で不要なユーザー作業を最小化する。
-  現行の手順は`agent-toolkit:user-confirmation-and-report`「手段の選択」にある。
-  完成条件の規定は`agent-toolkit:wi-standards`の`agent-toolkit:wi-standards/references/awi-body-completion.md`「完成条件」にある
+  現行の手順は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」にある。
+  完成条件の規定は`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」にある
 - 2026年10月9日、ユーザーは確認せず正しく行動することを最善、必要な確認をして正しく行動することを次善、必要な確認を怠り誤った成果物を作成するか求められた作業を未実施にすることを最悪とする優先順位を示した。
   同日のユーザーの補足は、必要な確認に技術とQCDで決まる事項を含めないことを示す。
   必要な確認は答えをユーザーだけの値で決めるものに限り、技術とQCDで確定する判断をユーザーへ委ねない。
@@ -37,7 +37,7 @@
   現行の規定は次の資料にある。
 
   - `agent-toolkit/share/rules/common/01-agent.md`「確認を要する事項」
-  - `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」
+  - `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」
 
 - 2026年10月9日、ユーザーは承認・確認・操作を求める全手順を見直し、エージェントが判断できない事項だけを問うよう指示した。
   読み手は確認を発行する主体、委譲通知を送る主体と、その受領・統合を検収する主体とする。
@@ -51,7 +51,7 @@
   確認不要の報告へUWIを要求しない。
   現行の規定は次の資料にある。
 
-  - `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」
+  - `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」
   - `agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」
 
   受領・統合条件は`exec.parent.md`・`run-lanes.md`にある
@@ -67,7 +67,7 @@
   入力資料にある未指定の実装内部の数値・対象範囲は実際の値へ補正し、補正の事実と根拠を成果物へ記録することも同じ判断に含む。
   能動的な指定と確定した方針の復元要求は、内部でだけ使う値にも先に適用する。
   内部効果だけを理由に明示要件を裁量へ分類しない。
-  現行の判定は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「判定の細則」にある。
+  現行の判定は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」にある。
   依頼範囲、明示された制約および権限の内側にある内部改善は、規模と可逆性を問わず同じ扱いとする
 - 前項の1判定は、2026年10月3日に目的・期待結果・認可の確定と、その範囲内の手段の選択を分ける判定へ改めた。
   読み手は確認要否を判定する全ての実行主体と、その判定を参照するWI・UWI・ホスト別規範の編集者とする。
@@ -100,16 +100,16 @@
   規範に従えるがQCDが明らかに悪化して外れる場合の事後承認は、この時点では10月2日の判断のとおり維持した
   （2026年10月5日、ユーザー回答。統合手順の文言が想定しない計画の扱いを事後承認で問うたUWIへ、ユーザーは「エージェントが判断できないことだけユーザーに聞いて」と回答した）。
   維持した逸脱の事後承認へ2026年10月7日に同じ回答が返されたため、規範からの逸脱も確認を発行せず報告へ記録する扱いへ改めた（前項）。
-  現行の規定は`agent-toolkit:user-confirmation-and-report`の`references/procedure-conflict.md`判定順3にある
+  現行の規定は`agent-toolkit:atk-mode/playbooks/permission-denial.md`判定順3にある
 - 要件・意図の曖昧さ（目的、対象範囲、期待結果、制約、外部から観測できる挙動など、ユーザーしか答えを持たない事項の解釈が調査を経ても1つに定まらない状態）は、どの解釈を採用するかでエンドユーザーが観測する結果が少しでも変わるなら、着手前に全件を列挙してユーザーへ確認する。
   結果の違いの大きさは判定の入力にしない。
   目的と認可が確定した範囲の技術選択は従来どおり自ら決め、技術判断をユーザーへ委ねない。
   協調モードと自律モードの両方に適用し、自律モードでは曖昧な判断を必要とする元項目を、その確認のUWIへの依存で待たせる。
   曖昧さはなるべくWI作成工程（AWIの登録時）で全件確認し、処理時に残る保留を減らす。
-  確認と認識合わせの規範は`agent-toolkit:user-confirmation-and-report`へ集約し、`agent-toolkit:realign-with-user`を廃止して手順を同スキルへ統合する。
+  確認と認識合わせの規範は確認を扱う1つのスキルへ集約し、`agent-toolkit:realign-with-user`を廃止して手順を同スキルへ統合する。
   読み手は確認要否を判定する全ての実行主体とWIの起草者とし、確認の件数を減らす一般則より優先する。
-  現行の規定は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」「認識合わせ」にある
-  （2026年10月6日、ユーザー指示と確認回答。主要なモデルが必要な数より少ない質問で着手するとする研究の要旨をユーザーが共有したことが契機）
+  現行の規定は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`agent-toolkit:atk-mode/references/delivery.md`「認識合わせ」にある。
+  経緯は2026年10月6日のユーザー指示と確認回答である（主要なモデルが必要な数より少ない質問で着手するとする研究の要旨をユーザーが共有したことが契機）
 - 区分や解釈を決めかねる場合と、人間が確定した判断の記録の文言から外れる場合に確認を選ぶ扱いを置かない。
   元の要求と、関わる判断が達成しようとした目的（判断の記録、当時の確認本文、提示した選択肢と回答）に照らしてエージェントが結論を確定し、自ら確定した判断として報告する。
   確認するのは、判断の目的を変える場合、判断が退けた案を採用する場合、ユーザーが選んだ結果を取り消す場合、ユーザーだけが持つ値（判断の目的を記録からも当時の確認本文からも特定できない場合を含む）が欠ける場合、目的に照らしても解釈が1つに定まらずエンドユーザーが観測する結果が分かれる場合に限る。
@@ -121,4 +121,4 @@
   技術判断を確認へ回す事象への対策は、バグの修正と新しい挙動の追加の区分、規範の不整合、先行成果物の提案集合、回答中に見つけた既存不良と場面ごとの例外として追加されてきた。
   保護の条文には決めかねた場合は確認する扱いが残り、例外の無い新しい場面でその扱いが働いたため、場面ごとの例外の追加では再発が止まらなかった。
   このため決めかねた場合の扱いそのものを除き、目的との比較を確認要否の判定の共通の段へ置いた。
-  現行の規定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」と`SKILL.md`「認可を要する操作」にある
+  現行の規定は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`SKILL.md`「認可を要する操作」にある

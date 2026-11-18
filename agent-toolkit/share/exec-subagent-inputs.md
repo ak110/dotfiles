@@ -10,7 +10,7 @@
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
 | CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) |
-| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） |
+| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`（語の基準） |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` |
 
 ## 入力
@@ -44,7 +44,7 @@ AWI本文を読み込んだ時点で、本文に明示されている担当と�
 レーン全体を別の`レーン担当`へ渡さず、同一threadで担当し続ける。
 レーン数によらず単一担当の実行契約でレビュー起動・指摘対応・統合検収を行い、初期選定が複数レーンなら`統合許可`受領後にメインworktreeへ統合する。
 
-要求単位の由来は、`agent-toolkit:wi-standards`の`## 由来と承認`に従い、`atk wi show`で得られるAWI本文およびfrontmatterから判定する。
+要求単位の由来は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従い、`atk wi show`で得られるAWI本文およびfrontmatterから判定する。
 判定結果は、計画ありでは`agent-toolkit:write-plan`の`references/plan-file-standards.md`の書式に従って計画の`由来`欄に、計画なしでは引き継ぎ記録に記入する。
 以後は、確定したときの前提（目的、現在の方針、利用条件）が変わっていない範囲で、確定した出所・採否・終了区分を再利用する。
 前提が変わった単位だけを判定し直し、一致する要求と認可は調べ直さない。
@@ -60,7 +60,7 @@ AWI本文を読み込んだ時点で、本文に明示されている担当と�
 計画なしの場合は引き継ぎ記録へ、計画確定後は本文を凍結したまま進捗ログ、レビュー指摘管理表、実行レビューの`review_contract`へ記録する。
 除外した条件と根拠は、メインへ報告用UWIの自ら確定した判断として引き渡す。
 レビューと統合が旧条件を追跡できるよう、条件番号と判断記録の所在を`review_contract`に含める。
-人間由来の条件の除外は、`../skills/wi-standards/references/wi-standards-origin.md`「由来と承認」に従ってユーザー確認へ回す。
+人間由来の条件の除外は、`../skills/atk-mode/references/origin-and-approval.md`「由来と承認」に従ってユーザー確認へ回す。
 
 `レビュー修正担当`は、同一スレッドの継続であれば保持している選定結果を引き継ぐ。
 `レビュー指摘管理表`は、単一の絶対パス、または全計画の管理表の絶対パスを保持する空でないJSON配列として受け取る。

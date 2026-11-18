@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:atk-mode/playbooks/add-awi-by-user.md` |
 | 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/causes.md` |
 
 ## 作業完了報告のフォーマット
@@ -49,13 +49,13 @@
   ユーザーに対応が委ねられている判断や行動を保存した個別UWIの所在も、ここで伝える。
   表示形式は`- <ファイル名>: <H1タイトル>`（UWIの場合は質問本文の先頭行）とし、`target_repo`が現在の対象リポジトリと異なる場合にのみ、末尾に半角スペース1文字と`(target_repo=<正規化リモートURLか絶対パス>)`を追加する。
   該当する項目が0件の場合は`- なし`とする
-- `agent-toolkit:add-awi-by-user`の投入作業: `atk wi submission end --findings-file`が表示した報告用要約（`指摘の分類と処置:`で始まる行の組）を、行を変えずに`### 成果`の後へ置く。
+- `agent-toolkit:atk-mode`の作業`add-awi-by-user`の投入作業: `atk wi submission end --findings-file`が表示した報告用要約（`指摘の分類と処置:`で始まる行の組）を、行を変えずに`### 成果`の後へ置く。
   要約は作業期間の指摘対応記録から作られ、確認の往復回数、指摘ごとの分類、再発防止策の採否と登録先を示す。
   Claude Codeでは行が欠けるとStop hookが再報告を求める
 - 途中報告で`予定`とした改善点の確定結果（`SKILL.md`「工程」の手順5）: `済`のうち新規に投入した項目は`### 投入したWI`へ、再利用した既存項目と`不要`は`### 成果`へ`- 改善点<対象>: <既存項目のファイル名または不要の理由>`として記載する。
   確定できない対象は`### 成果`の未達として理由と残工程を記載する
 - `### 自ら確定した判断`: ユーザーに質問せず自ら確定した判断のうち、別の合理的なエージェントであれば異なる判断をする可能性があるものについてのみ、`### 成果`の後に配置し、ユーザーが異論を持ちそうな順に次の書式で記載する。
-  ユーザー要求の対象範囲を定める決定事項については、`../../user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」に定められた範囲記録の書式に従う。
+  ユーザー要求の対象範囲を定める決定事項については、`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」に定められた範囲記録の書式に従う。
   `agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」は「ドキュメントと既存コードの不一致」への言及を定めている。
   この不一致のうちドキュメントを修正せず残したものを、従った側とともに本節へ1件ずつ記載する（ドキュメント側を修正したものは`### 成果`に記載する）。
   未検証の仮説や未確定の原因を理由に対策を見送った判断には、検証AWIのファイル名か、その仮説が対策の採否を左右しない理由を併記する（検証AWIへ書く仮説と確かめる方法は、`agent-basics:bugfix/references/causes.md`「観測と推測の区別」の後続へ渡す場合の項目に従う）
@@ -76,12 +76,12 @@
 本節はユーザーからの承認を求めるものではなく、報告後に追加の承認を待つこともない。
 ユーザーから後日異論が示された場合には、該当する判断と、それを前提としていた後続の判断を更新する。
 
-作業完了報告および報告用UWIの判断欄に決定内容や対案を記録する前に、`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」4を適用する。
+作業完了報告および報告用UWIの判断欄に決定内容や対案を記録する前に、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」4を適用する。
 元の指示内容との突き合わせにより、ユーザー固有の判断が必要な値が残っている場合は、報告によって確定済みとしてしまう前に確認する。
 
 ## 本文参照の取得条件
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 | 報告のフォーマット：検証結果と実行記録の基準を適用する前 | `report-formats-verification.md` |

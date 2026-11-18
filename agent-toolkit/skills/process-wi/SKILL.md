@@ -44,7 +44,7 @@ OSの指定がない登録はLinuxとWindowsの両方を対象とし、必要な
 そのためpushは`git push --dry-run --porcelain origin HEAD:refs/heads/<系統>`で到達先を確定し、同じrefspecで実行する。
 公開状態の4項目のうちブランチ名の項目は、`# branch.upstream`が`origin/<系統>`であることで確かめる。
 処理中に投入するUWIとAWIは、`atk wi add --target-branch <系統>`で処理中の系統を宛先にする。
-両方の系統に必要な修正のAWIは、`agent-toolkit:wi-standards`の`references/wi-standards-operations.md`「投入と取得」に従って取り込み元の系統を宛先にする。
+両方の系統に必要な修正のAWIは、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に従って取り込み元の系統を宛先にする。
 GitHub CopilotのレビューとDependabotアラートの監査はリポジトリ単位の作業のため、`default_branch`の系統（系統を省略したWIの宛先）の処理だけが行う。
 
 ## 名指し参照の読込方法

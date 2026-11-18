@@ -23,6 +23,6 @@
 役割名`external-write-review`、公開CLIの`session-review-evidence`・`session-review-prepare`・`session-review-state`、状態ディレクトリとWIの`source`値は保持する。
 これらはスキル名と別の契約であり、改名に合わせて保存済みデータを移行すると要求範囲を超えるためである。
 新しいUWIは新名のscopeで保存し、過去の通常起動とbatchの3形式を対応する起動単位で取り込む。
-取込規則は`agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md`に置く。
+取込規則は`agent-toolkit/skills/atk-mode/references/answer-transitions.md`に置く。
 実行目的へのscope列挙は`agent-toolkit/agent_toolkit/_common/skill_modes.py`と`agent-toolkit/agent_toolkit/_atk/run_skill.py`が担う。
 旧配布先はpost_applyの撤去表で回収し、Codexのリンクは新名へ切り替える。

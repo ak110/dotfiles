@@ -6,23 +6,23 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` | | |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:atk-mode/playbooks/add-awi-by-user.md` | | |
+| 報告用UWIを確認・保存する前 | `agent-toolkit:atk-mode/references/uwi-format.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/atk-mode/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `agent-toolkit:atk-mode/playbooks/wi-saving.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/atk-mode/playbooks/wi-saving.md` |
 
 ## 報告用UWIのフォーマット
 
 振り返り結果を記載するときは、`report-formats-retrospective.md`「振り返り結果報告のフォーマット」の対象化から解消までの区別と残条件を、`### 振り返り`の既存結果行へ引き継ぐ。
 未完了AWIによる被覆も、残る原因条件、処置担当、適用機会と観測結果を保ち、登録と原因解消を区別する。
 
-報告用UWI（`SKILL.md`「工程」にて定義）の冒頭の問いには次の一文を用い、`## 選択肢と帰結`には`agent-toolkit:wi-standards`の事後承認型における2択の記述を使用する。
+報告用UWI（`SKILL.md`「工程」にて定義）の冒頭の問いには次の一文を用い、`## 選択肢と帰結`には`agent-toolkit:atk-mode/references/uwi-format.md`「承認型ごとの内容」の事後承認型における2択の記述を使用する。
 
 ```text
 <実行日>の<対象リポジトリ名>の作業結果について、この対応で問題ありませんか？
 ```
 
 この固定の問いに続けて、成果の要点と、回答前に確認してほしい項目（未達・持ち越し事項、自ら確定した判断の有無）を1〜2文で記載する。
-冒頭の語句の選定は、`agent-toolkit:wi-standards`の冒頭の語に関する基準に従う。
+冒頭の語句の選定は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」に従う。
 
 `## 判断材料`に含める各H3見出しは、次の順序に従い該当する項目がある場合にのみ配置する。
 対話のやり取りをそのまま転記することは避け、1件1行の要点に整理して記載し、同一の内容を複数のH3見出しに重複して記載しないようにする。
@@ -69,9 +69,9 @@
 
 本節は`report-completion`が定義する報告用UWIに適用する。
 通常の事後承認型UWIには共通起草手順を適用し、`--question-type=post-approval`だけでは報告用と判定しない。
-報告を作成するメインは、本書と`agent-toolkit:wi-standards`の`references/uwi-format.md`で確認する。
+報告を作成するメインは、本書と`agent-toolkit:atk-mode/references/uwi-format.md`で確認する。
 通常WIの共通起草3資料を報告だけの保存のために取得しない。
-由来・認可・保存先・回答済みUWIとの整合は、`wi-standards`の当該操作の契約を維持する。
+由来・認可・保存先・回答済みUWIとの整合は、`agent-toolkit:atk-mode/playbooks/wi-saving.md`の該当する操作の契約を維持する。
 
 1. 未達を正しく伝えるため、原要求と実施結果・根拠を比較し、未達・未確認・持ち越しを成果と区別する。
    検証根拠は`report-formats-verification.md`「検証結果と実行記録」に従う。
@@ -79,22 +79,22 @@
 2. 原稿をファイルへ保存し、dry-runで検証する。
    新規は`atk wi add --type=uwi --question-type=post-approval --dry-run --body-file <原稿の絶対パス> --source <起動スキル由来のsource>`を使う。
    更新は`atk wi edit <UWI名> --dry-run --body-file <原稿の絶対パス>`を使う。
-   sourceは`wi-standards`「由来と承認」に従い、原稿のfrontmatterで指定済みなら`--source`は省略できる。
+   sourceは`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従い、原稿のfrontmatterで指定済みなら`--source`は省略できる。
    入力原稿と抽出保存先、終了状態、両出力を対応付け、検証・抽出保存に失敗した結果は使わない。
-3. dry-runの抽出を先に読み、問い、成果の要点、確認してほしい項目が冒頭だけで分かることを、`wi-standards`冒頭の語の基準で判定する。
+3. dry-runの抽出を先に読み、問い、成果の要点、確認してほしい項目が冒頭だけで分かることを、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」で判定する。
    その後で全文を読み、本文単独の可読性、節間の重複と原稿・抽出の一致を確認する。
    一致確認は同じdry-runに`--compare-opening-file <抽出の絶対パス>`を指定し、原改行・前後空白・末尾空行を含む完全一致で判定する。
    不一致なら対応を確かめ、原稿変更時は手順2へ戻って新しい抽出で確認する。
    本保存へ同じ指定を付けると一致時だけ保存する。
-4. `wi-standards`「投入と取得」に従って保存し、保存本文一致確認、終了コード0、成功メッセージと警告を検収する。
+4. `agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に従って保存し、保存本文一致確認、終了コード0、成功メッセージと警告を検収する。
    表記警告は該当行を確認し、その他の警告やエラーは修復する。
    失敗時にファイル名を取得済みなら、同じUWIを`atk wi edit --body-file`で修復する。
    未プッシュ通知は既存の投入手順で反映し、保存成功と警告の検収を終えて伝達完了とする。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
+| 報告用UWIを確認・保存する前 | `agent-toolkit:atk-mode/references/uwi-format.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/atk-mode/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `agent-toolkit:atk-mode/playbooks/wi-saving.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/atk-mode/playbooks/wi-saving.md` |
 
 ## 本文参照の取得条件
 

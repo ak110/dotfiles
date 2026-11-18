@@ -6,9 +6,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
+| 共通参照AWI読解前 | `agent-toolkit:atk-mode/references/cross-repository-submission.md` |
 | 参照基準の適用前 | `../../../share/exec-review-responses.md` |
-| 要求を書く節を書く前 | `../../wi-standards/references/awi-body.md` |
+| 要求を書く節を書く前 | `agent-toolkit:atk-mode/references/awi-body.md` |
 
 ## 計画ファイルの構成
 
@@ -26,7 +26,7 @@
 
 要求を書く節は、通常AWIの本文と同じ見出しを同じ順に置く。
 `## 反映内容と反映先`、`## 原因分析`、`## 調査結果と判断根拠`、`## 完成条件`、`## ユーザー指摘の逐語引用`の順で、`## 反映内容と反映先`を必須とし、ほかは書く内容がある場合に置く。
-各節に書く内容と書き方は、定義元である`../../wi-standards/references/awi-body.md`とその条件別資料だけが定める。
+各節に書く内容と書き方は、定義元である`agent-toolkit:atk-mode/references/awi-body.md`とその条件別資料だけが定める。
 同書の「AWI」は計画、「起草者」は計画の起草者、「処理担当」は実装担当と読み替える。
 構造の検査も、要求を書く節には通常AWIの本文と同じ検査を使う。
 見出しを加えられるのは要求を書く節の配下に限る。
@@ -40,7 +40,7 @@
 WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認時に限り、影響項目だけに行う。
 完成条件と手段の必要性を現在の目的・方針で判定することは再導出に当たらず、`plan-file-standards-scope.md`「実施内容」に従って常に行う。
 乖離の事実・結論は`## 調査結果と判断根拠`へ記録する。
-人間由来の要求範囲変更は`../../wi-standards/references/wi-standards-origin.md`「由来と承認」、原因分析の乖離は`plan-file-standards-verification.md`「原因分析」で扱う。
+人間由来の要求範囲変更は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」、原因分析の乖離は`plan-file-standards-verification.md`「原因分析」で扱う。
 `agent-basics:bugfix`の基準への不適合も、原因分析の乖離に含む。
 固有の公開後の操作（PR/MRの作成とタイトル・本文の指定、リリース作成、タグ付けなど）と合意した公開範囲は、ある場合だけ`## 反映内容と反映先`の項目として書く。
 
@@ -58,7 +58,7 @@ WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認
 ## 要約と計画メタ情報
 
 H1直下の要約は全体像・目的・対象範囲の順に簡潔に書き、変更時は全体を書き直す。
-`../../wi-standards/references/drafting-completion-evidence.md`「既存証拠の再利用」に従う。
+`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「既存証拠の再利用」に従う。
 
 要約の後ろ、最初のH2より前に`### 計画メタ情報`を置き、H1直下の見出しはこの1件だけとする。
 項目と順序は`plan-file-standards-template.md`「初回起草の雛形」に従う。

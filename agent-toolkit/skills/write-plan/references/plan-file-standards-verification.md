@@ -6,16 +6,16 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 参照基準の適用前 | `../../wi-standards/references/awi-body-completion.md` |
+| 参照基準の適用前 | `agent-toolkit:atk-mode/references/awi-body.md` |
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/verification-operations.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:atk-mode/references/analysis-records.md` |
 | 訂正済み検証表の更新後に成功結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 
 ## 検証
 
 受入と通常検証の比較・統合は`agent-toolkit:/share/verification-operations.md`に従う。
 
-完成条件と検証手段を具体化するときは、`../../wi-standards/references/awi-body-completion.md`「完成条件」の自己観測と未確認範囲の規定を適用する。
+完成条件と検証手段を具体化するときは、`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」の自己観測と未確認範囲の規定を適用する。
 
 `## 検証`には、`区分`と`検証コマンド`の2列で`変更範囲の検証`の1行だけを持つ固定表を置き、変更対象に応じた検証（対象ファイルを限定したformat、lint、対象テストなど）を書く。
 統合時に`atk lane integrate`がこの表を検証コマンドとして読む。
@@ -49,7 +49,7 @@
 計画本体に`## 原因分析`を置くのは、入力WIがない計画（`関連WI: なし`）か、起草時にWIの原因分析を訂正・追加した計画に限る（`## 原因分析`を持たない登録済みAWIを処理する計画もこの追加に当たる）。
 記録先は計画本体のこの節だけとする。
 訂正・追加では対象のバグ単位だけを書き、実態との乖離の観測結果と導いた結論を`## 調査結果と判断根拠`に記録する。
-記録の形と各行に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」に、統合・分割の規則は`agent-toolkit:wi-standards/references/analysis-records.md`「バグ単位の分け方」に従う。
+記録の形と各行に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」に、統合・分割の規則は`agent-toolkit:atk-mode/references/analysis-records.md`「バグ単位の分け方」に従う。
 構造の検査は、計画の`## 原因分析`を通常AWIの`## 原因分析`と同じ検査で確かめる。
 `関連WI`が`なし`のバグ対応計画ではこの節を必須とし、作業種別が`通常変更`の計画には置かない。
 

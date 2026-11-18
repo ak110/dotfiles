@@ -49,7 +49,7 @@ cloneの無い対象も`atk config repos add github.com/example/project --edit a
 dotfilesリポジトリでは自動で専用worktreeを使い、ほかのリポジトリでworktreeを分ける場合は`--worktree[=NAME]`を指定する。
 統括担当をCodexにする場合は、起動前に`atk config set orchestrate_model codex:sol/medium,claude:opus[1m]/medium`を実行する。
 
-`/agent-toolkit:add-awi-by-user`でAWIを登録している間や、未回答のUWIがある間は、処理の開始を最長10分程度待つ。
+`/agent-toolkit:atk-mode add-awi-by-user`でAWIを登録している間や、未回答のUWIがある間は、処理の開始を最長10分程度待つ。
 待機理由と期限は端末に表示される。
 すぐに始めたい場合は、process-loopを動かす端末（tmuxではそのペイン）でEnterを押すと今回だけ待機を解除できる。
 

@@ -34,7 +34,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 
 ## 読込表
 
@@ -183,7 +183,7 @@ description: >
 6. 元の意図を保つため、メインエージェントは重複や関連する指摘をまとめ、`agent-basics:review-standards`と同スキルの`references/reviewee.md`に基づいて採否を判定する。
    転記を求める指摘は`agent-basics:writing-standards/references/agent-documents-basics-ownership.md`「定義の所有者」で評価し、採用する指摘の改善案をdiffで作る。
    評価担当の出力はユーザーへ直接表示されないため、指摘の原表現をできる限り保持する。
-7. `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に沿って、技術的な指摘の採否を自ら判断して反映する。
+7. `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に沿って、技術的な指摘の採否を自ら判断して反映する。
    目的や期待される結果の変更、あるいはユーザー固有の好みや認可が必要な事項に限ってユーザーに確認する。
 8. 元の依頼を完遂するため、反映後は対象の編集手順を定めたスキルと`agent-basics:check-execution`に従う。
    必要な評価と反映の後は、確認を挟まず元の残工程へ進む。
@@ -195,4 +195,4 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 固定課題による多ターン試行：両役の入力と返却の基準を適用する前 | `references/multi-turn-trials-dialogue.md` |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |

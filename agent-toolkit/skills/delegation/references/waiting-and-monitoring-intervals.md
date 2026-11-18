@@ -105,7 +105,7 @@
 ## ホストが待機コマンドを停止した場合
 
 ホストが`atk agents wait`などの待機コマンドを停止し、再開にユーザーの指示を要する場合は、取得済みの結果を保持する。
-再開の可否は`agent-toolkit:user-confirmation-and-report`に従ってユーザーへ確認する。
+再開の可否は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従ってユーザーへ確認する。
 
 ## 本文参照の取得条件
 

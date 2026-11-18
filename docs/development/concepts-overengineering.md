@@ -17,7 +17,7 @@
 対策自身の誤判定、状態の欠落、例外や他の処理との相互作用から生じる最悪の結果を、元の問題の最大影響と比較する。
 認可・セキュリティ・データの完全性を守る保護は保持し、主経路の成果を失う案をテストや完成条件との一致だけで正当化しない。
 現行の比較基準は`agent-basics/skills/writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」が持つ。
-記録欄は`agent-toolkit/skills/wi-standards/references/analysis-records.md`が持つ。
+記録欄は`agent-toolkit/skills/atk-mode/references/analysis-records.md`が持つ。
 
 - ユーザー本人が設定して使い、原因が分かれば運用で直せる機能では、設定ミスなどへ備える専用処理やフォールバックを増やさずエラーで終了させる。
   開発者向け・システム管理者向け機能もシステムの前提に応じて当てはめる。

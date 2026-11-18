@@ -6,12 +6,12 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/playbooks/user-utterance.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `../SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/references/analysis-records.md` |
 
 ## 原因と対策
 
@@ -51,9 +51,9 @@
 規範以外の仕組みも対応commitと通常操作から判断し、読込や起動だけで効果を確認済みとしない。
 判定は「効果を確認」「効果不足（同原因の再発・未適用・範囲不足）」「適用機会なし・観測不能（確認待ち）」「後日の確認不要」とし、適用機会、観測位置、未確認または不要の理由を残す。
 目的を達していない項目と、増やした負担が効果を上回ると判定した項目は、効果不足として保存し、是正のAWIを登録する。
-是正のAWIは、元の変更をやめる案と単純にする案を先に比べる（`../../wi-standards/references/drafting-completion-decisions.md`「採否と実現方式の確定」の効率改善の規定に従う）。
+是正のAWIは、元の変更をやめる案と単純にする案を先に比べる（`agent-toolkit:atk-mode/references/drafting-decisions.md`「採否と実現方式の確定」の効率改善の規定に従う）。
 効果不足は本節の過去対策比較へ渡す。
-判定の保存、是正AWIの指定と保存結果の取得は、`../../wi-standards/references/states-and-dependencies-effect.md`「採用済みAWIの効果記録」に従う。
+判定の保存、是正AWIの指定と保存結果の取得は、`agent-toolkit:atk-mode/references/effect-records.md`「採用済みAWIの効果記録」に従う。
 変更を実装したセッションの中で測れる部分（同じ条件での前後の比較）は、そのAWIの完成条件で確かめる。
 巡回の所要のように実装の後の巡回でしか測れない部分は、後の振り返りが採用の前の巡回と後の巡回を比べて確かめ、効果確認へ保存する。
 目標所要時間を持つ巡回の所要の改善は、元の項目が定めた同等の入力（件数、由来の内訳、レーンの数、検証・CI・成果の範囲）の巡回で、開始から終了までの所要を目標と比べて判定する。
@@ -65,7 +65,7 @@
 改善機会の見送りは、維持すべき成果、作業量、代替案、採否の比較に対応付ける。
 選別した問題と所要分析の律速条件は、発見元の分類・過去事例の有無を問わず`agent-basics:bugfix`を起動して共通手順へ渡す。
 選別・見送りは、同スキルの「書き出す場面」と`agent-basics:bugfix/references/prevention.md`で判断する。
-介入の判定は`../../user-confirmation-and-report/references/analysis-operations-intervention.md`に従う。
+介入の判定は`agent-toolkit:atk-mode/playbooks/user-utterance.md`に従う。
 
 過去の対応項目は、`candidates.md`の同種記録と、由来や状態を限定しない`atk wi grep --summary-only --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull -F -- '<語>'`が返す候補から取る。
 本文は`atk wi show`で確かめる。
@@ -94,23 +94,24 @@
 - 欠陥への恒久処置は通常のAWIとして起草する。
   1件の再発防止策で複数の問題を覆う場合も、それぞれの原因と処置の対応を分析記録と対策要求に残す。
 
-起草と原因分析の検収は`../../wi-standards/references/analysis-records.md`「原因分析の記録先」の書式で行う。
+起草と原因分析の検収は`agent-toolkit:atk-mode/references/analysis-records.md`「原因分析の記録先」の書式で行う。
 `処置:`の行と`再発防止:`の行は`agent-basics:bugfix/references/prevention.md`「言葉の区別」で区別する。
 
-報告、確認、UWIの選定手段、回答待ちの手順は`agent-toolkit:user-confirmation-and-report`に従う。
+報告、確認、UWIの選定手段、回答待ちの手順は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従う。
 
 ### 情報探索の問題
 
 情報探索の証拠と原因は、`agent-basics:bugfix/references/causes.md`「場面ごとの確かめ方」で確定する。
 対策要求には、探していた情報、探索した区間、参照した文書の順、定義元、探索を妨げた要因を書く（資料の陳腐化が原因なら、参照した記述、現行仕様との差、判断への影響も書く）。
 これらを根拠の絶対パスと記録位置に対応付けて渡す。
-AWIの各節の記述分担は`agent-toolkit:wi-standards`、原稿と根拠の検収は`${CLAUDE_PLUGIN_ROOT}/share/add-wi-parent-acceptance.md`「受領と検収」に従い、振り返り結果報告からAWIのファイル名で直接たどれるようにする。
+AWIの各節の記述分担は`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」に従う。
+原稿と根拠の検収は`agent-toolkit:atk-mode/roles/add-wi.parent.md`「受領と検収」に従い、振り返り結果報告からAWIのファイル名で直接たどれるようにする。
 
 ## 既存キュー項目との重複確認
 
 既存の未完了AWIで覆う場合も登録と今回条件での解消を分け、残る原因条件、処置担当、適用機会と観測結果を「確定した問題と対策」の同じ行へ書く。
 
-完了していない既存のキュー項目との比較は、`../../wi-standards/references/drafting-completion-duplicates.md`「重複判定」に従う。
+完了していない既存のキュー項目との比較は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「重複判定」に従う。
 既存項目の作用機構が、今回の具体案の事象、根本原因、完了条件をすべて覆うかを確かめる。
 完全に覆うなら新規投入を見送り、対象のファイル名と根拠を「確定した問題と対策」に書く。
 一部しか覆わないときや新しい証拠があるときは、不足分の採否を確定して起草する。

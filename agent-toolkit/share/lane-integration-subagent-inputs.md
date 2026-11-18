@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| AWIの形式を判断する前 | `../skills/atk-mode/references/awi-body.md` |
 | `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
 
 ## 入力
@@ -21,7 +21,7 @@
   `マージなし`の場合は`なし`を指定する。
 - `完成条件証拠`: `マージあり`で受け取る順序付きJSON配列。
   計画ファイル名（計画を作成していない場合は`なし`）、対応するAWI群、最後に受理した実行レビューの返却ファイルへの絶対パス、その`レビューHEAD`、および`review_contract`の絶対パス（新形式のエージェント由来AWIがなければ`なし`も可）を各項目に含む。
-  AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。
+  AWIの形式は`agent-toolkit:atk-mode/references/awi-body.md`冒頭に従って判別する。
   新形式のエージェント由来AWIは契約の条件表の各条件に判定行が対応することを確かめる。
   契約が欠落または読取不能である場合や判定行が欠落する場合は委譲元へ差し戻す。
   統合開始時にすべての返却ファイルを読み、採用予定のAWI群が重複や漏れなく網羅されていることを確認する。

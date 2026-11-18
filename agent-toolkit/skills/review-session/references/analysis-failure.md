@@ -3,7 +3,7 @@
 `agent-toolkit:review-session`の`references/current-session.md`「工程」の工程1において、`atk run-script session-review-prepare`が失敗した場合の取り扱いを定める。
 
 出力された診断が一過性の原因を示している場合に限り、同一の入力で再実行する。
-再実行しても同じ診断で失敗する場合や、原因が一過性でない場合は、`agent-toolkit:wi-standards`に従って欠陥AWIを登録する。
+再実行しても同じ診断で失敗する場合や、原因が一過性でない場合は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に従って欠陥AWIを登録する。
 このAWIにはセッションID、失敗した事象、原因、解除条件、再現手順を記載し、再開時の工程を「そのセッションをresumeしてreview-sessionを再実行する」と設定する。
 transcriptのパスは記録に含めない。
 また、記録全体をメインエージェントのコンテキストへ直接読み込んで分析することも避ける。
