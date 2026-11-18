@@ -5,6 +5,7 @@
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import pathlib
 import types
@@ -14,9 +15,19 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mcp.types import CallToolRequestParams
 
-from agent_toolkit._agents_server import service_io, service_rpc, service_state, state, turn_state
+from agent_toolkit._agents_server import (
+    service_io,
+    service_rpc,
+    service_state,
+    service_transport,
+    shared_roots,
+    state,
+    turn_state,
+)
 from agent_toolkit._agents_server.service_context import Conversation, ServiceManagers
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
+from agent_toolkit._agents_server.service_projection import ProjectionHub
+from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._common import runtime_environment
 from agent_toolkit._common.next_action import ActionableError
@@ -316,3 +327,44 @@ async def test_registry_derived_stopped_sessions_move_with_their_context(
         "local": state.SessionResumeState,
     }
     received.save_control_state.assert_awaited_once()
+
+
+@pytest.mark.parametrize("exited", [True, False])
+@pytest.mark.asyncio
+async def test_prepare_left_by_exited_generation_is_released_on_next_tick(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    exited: bool,
+) -> None:
+    """準備させた新世代が受付を公開せず終了したら、旧世代は次の巡回で静止を解き、状態保存と新しいturnの受付を続ける。
+
+    この場合は受付公開の確定が届かず、静止したままだと状態保存・新しいturn・自動再開が止まり続ける。
+    新世代が生存している間は、準備中の引継ぎを失わないよう静止を保つ。
+    """
+    directory = tmp_path / "services" / "generations"
+    target = {"generation": "G1", "epoch": 1, "process": "1:owner"}
+    coordinator = ServiceCoordinator(
+        target, directory, ServiceManagers(), ProjectionHub("G1", directory), RegistryForwarder("G1", directory)
+    )
+    for registry in (coordinator.registry, coordinator.projections.registry, coordinator.registrations.registry):
+        monkeypatch.setattr(registry, "current", lambda: target)
+    monkeypatch.setattr(service_transport, "process_alive", lambda process: not exited or process == target["process"])
+    await coordinator.prepare("token", {"generation": "G2", "epoch": 2, "process": "2:new"})
+    allow_resume = await coordinator.tick()
+    save = {
+        "identity": dataclasses.asdict(shared_roots.StatusFileIdentity("root", "root.json", None)),
+        "source": "G1",
+        "operation": "seed",
+        "arguments": {"groups": {}, "published": []},
+    }
+    if not exited:
+        assert not allow_resume
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.2):
+                await coordinator.projections.apply(save)
+        return
+    async with asyncio.timeout(2):
+        await coordinator.projections.apply(save)
+        async with coordinator.gate.admit(new_turn=True):
+            pass
+    assert allow_resume
