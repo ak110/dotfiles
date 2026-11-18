@@ -80,3 +80,11 @@ def test_accept_timeout_keeps_listening_instance() -> None:
             client.send_bytes(b"ping")
             assert peer.poll(5)
             assert peer.recv_bytes() == b"ping"
+
+
+def test_listed_process_alive_matches_open_identity_of_running_process() -> None:
+    """開けるプロセスの起動単位は、開かずにプロセス一覧で判定しても一致し、作成時刻が1つ違えば別の世代とする。"""
+    identity = transport.process_identity(os.getpid())
+    pid, created = identity.split(":")
+    assert transport.listed_process_alive(identity)
+    assert not transport.listed_process_alive(f"{pid}:{int(created) + 1}")
