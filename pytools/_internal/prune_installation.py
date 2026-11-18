@@ -38,6 +38,7 @@ FULL_TOOLS = frozenset(
     {
         "dotnet",
         "node",
+        "pnpm",
         "rust",
         "gcloud",
         "npm:aws-cdk",
@@ -45,6 +46,8 @@ FULL_TOOLS = frozenset(
         "npm:opencode-ai",
         "npm:@anthropic-ai/claude-code",
         "npm:@openai/codex",
+        "npm:typescript",
+        "npm:typescript-language-server",
     }
 )
 
