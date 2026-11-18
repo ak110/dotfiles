@@ -165,6 +165,29 @@ async def test_generations_distinguish_current_queried_and_retired(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_generations_omit_generation_whose_process_cannot_be_queried(monkeypatch, tmp_path):
+    """死んだ世代のPIDを別アカウントのプロセスが再利用し照会が拒否されても、一覧を失敗させずその世代を除く。"""
+    from agent_toolkit._agents_server.service_projection import ProjectionHub  # pylint: disable=import-outside-toplevel
+
+    hub = ProjectionHub("new", tmp_path / "services/agents-server")
+    alive = service_transport.process_identity(os.getpid())
+    for name, process in (("reused", "4242:1"), ("new", alive)):
+        hub.registry.reserve(name, tmp_path, "1.0.0")
+        hub.registry.publish(name, endpoint=name, process=process, server_instance=f"instance-{name}")
+    real = service_transport.process_identity
+
+    def identity(pid: int) -> str:
+        if pid == 4242:
+            # WindowsのOpenProcessがERROR_ACCESS_DENIEDで失敗した場合と同じ例外。
+            raise PermissionError(13, "Access is denied", None, 5)
+        return real(pid)
+
+    monkeypatch.setattr(service_transport, "process_identity", identity)
+    managers = service_context.ServiceManagers(state_root=tmp_path, projections=hub)
+    assert [item["generation"] for item in await managers.generations()] == ["new"]
+
+
+@pytest.mark.asyncio
 async def test_monitor_ticks_do_not_enumerate_host_processes(monkeypatch, tmp_path):
     """常駐する管理サービスの周期処理は、待機中の会話があってもホスト全体のプロセスを列挙しない。
 

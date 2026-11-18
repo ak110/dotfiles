@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from agent_toolkit._agents_server import service_io, service_rpc, state, turn_state
+from agent_toolkit._agents_server import service_io, service_rpc, service_transport, state, turn_state
 from agent_toolkit._agents_server.service_context import Conversation, ServiceManagers
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.service_resources import ResourceBroker
@@ -135,3 +135,23 @@ async def test_abort_waits_for_inflight_commit_and_reports_the_committed_owner(
         assert not abort.done()
         coordinator._received[identifier] = "transfer", {"generation": "origin"}
     assert await abort == {"owned": True}
+
+
+@pytest.mark.asyncio
+async def test_foreign_sessions_skip_generation_whose_process_cannot_be_queried(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """別世代のPIDの照会が拒否されても、親会話のsession一覧を失敗させず、その世代へ配送しない。"""
+    coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
+    monkeypatch.setattr(coordinator.registry, "generations", lambda: {"G2": {"ready": True}})
+    monkeypatch.setattr(service_rpc, "discovery", lambda *_: {"process": "4242:1", "server_instance": "instance-G2"})
+    request = AsyncMock()
+    monkeypatch.setattr(service_rpc, "request", request)
+
+    def identity(pid: int) -> str:
+        raise PermissionError(13, "Access is denied", None, 5)
+
+    monkeypatch.setattr(service_transport, "process_identity", identity)
+    assert await coordinator._foreign_sessions("parent", include_terminated=False) == {"sessions": [], "unreachable": []}
+    request.assert_not_awaited()

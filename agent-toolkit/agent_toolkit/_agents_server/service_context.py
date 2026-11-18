@@ -91,7 +91,7 @@ class ServiceManagers:
                 "queried": name == queried,
             }
             for name, entry in sorted(entries.items(), key=lambda item: item[1].get("epoch", 0))
-            if not entry.get("retired") and ("process" not in entry or service_transport.process_alive(entry["process"]))
+            if not entry.get("retired") and ("process" not in entry or service_transport.process_listed(entry["process"]))
         ]
 
     async def __aenter__(self) -> ServiceManagers:
