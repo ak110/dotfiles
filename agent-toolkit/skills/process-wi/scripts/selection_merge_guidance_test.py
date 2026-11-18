@@ -47,4 +47,38 @@ def test_merge_missing_record_guidance_leads_to_accepted_record(
     assert _merge_into_existing(repo, existing, added, mapping) == 0, capsys.readouterr().err
 
 
+def test_merge_rejects_temporary_lane_named_after_other_existing_lane(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """既存レーンと同じ名前の仮名を別の最終レーンへ写す合流は、付け替えの案内とともに保存前に拒否する。
+
+    合流前の配置では仮名の追加分と同じ名前の既存分が同じレーンに並ぶため、その組を判定する記録を書けない。
+    """
+    repo, existing, added = inputs
+    saved = existing.read_text(encoding="utf-8")
+    addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+    addition["選定"] = [_item("c.md", "lane-02")]
+    addition["レーンの所要時間"] = [_cost("lane-02")]
+    addition["レーン間の重なり"] = []
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-02": "lane-01"}), encoding="utf-8")
+    capsys.readouterr()
+    assert _merge_into_existing(repo, existing, added, mapping) == 2
+    err = capsys.readouterr().err
+    assert "lane-02" in err
+    assert "仮名を既存レーン名と重ならない名前へ付け替えて同じコマンドを再実行する" in err
+    assert existing.read_text(encoding="utf-8") == saved
+    addition["選定"] = [_item("c.md", "lane-09")]
+    addition["レーンの所要時間"] = [_cost("lane-09")]
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping.write_text(json.dumps({"lane-09": "lane-01"}), encoding="utf-8")
+    assert _merge_into_existing(repo, existing, added, mapping) == 1
+    err = capsys.readouterr().err
+    assert "（未判定の組: b.md（lane-02）とc.md（lane-09））" in err
+    addition["レーン間の重なり"] = _guided_records(err)
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    assert _merge_into_existing(repo, existing, added, mapping) == 0, capsys.readouterr().err
+
+
 __all__ = ["fixture_inputs"]
