@@ -309,6 +309,43 @@ def test_report_shapes_get_guidance_only_before_delivery(case: str, monkeypatch:
     assert improvement_status_advisor.evaluate(_payload(text)) == ("", "")
 
 
+# 実際の報告で一人称の逸脱を述べていた形。名詞だけの一致を外した判定語でも逸脱の報告として扱う。
+_FIRST_PERSON_DEVIATIONS = (
+    "原稿の件数とファイル数を誤って伝えていた。",
+    "誤って作業ツリーのファイルを削除した。",
+    "起票の前に所有範囲を判定していなかったことが根本の誤りで、費用の比較はその次だった。",
+    "**統括の作業ミス**\n割当ファイルを作るスクリプトを統合先worktreeのcwdで実行したため、別のworktreeに書いた。",
+    "前回の誤り: 確かめたのは現行のコードだけだった。",
+    "判断の誤り: 担当の提案を選んだ。",
+    "記録の対応付けを誤り、応答の約1%しか拾っていなかった。",
+    "隔離HOMEへ共有RUSTUP_HOMEが継承される不備を検出した。",
+    "全OSの子孫再走査へ入り、性能退行を確認した。",
+    "確認を忘れた。",
+    "失敗していた試験を直した。",
+    "自分の対応で同じ失敗を繰り返していた。",
+)
+
+
+@pytest.mark.parametrize("text", _FIRST_PERSON_DEVIATIONS)
+def test_first_person_deviation_is_deviation_cue(text: str) -> None:
+    """自分の誤りを認める形は、誤りの名詞に発見・是正の述語が続かなくても逸脱の手掛かりになる。"""
+    assert "deviation" in runtime_inserted.report_cues(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "登録し直しを忘れたまま判定する操作は、CLIが受け付けない。",
+        "記録を忘れた場合の扱いを先に洗い出す。",
+        "やり方のどこが誤っているかを調べる。",
+        "設定は誤っていない。",
+    ],
+)
+def test_hypothetical_or_negated_error_is_not_deviation_cue(text: str) -> None:
+    """仮定・問い・否定の形は逸脱の報告として扱わない。"""
+    assert "deviation" not in runtime_inserted.report_cues(text)
+
+
 # test-copy-contract: 2つの言語の判定語が同じ文字列で、送達後に求める記録の行頭語がbugfixの`SKILL.md`にあること。
 def test_report_cues_match_send_to_user() -> None:
     """送達後に使う判定語をTypeScript側の定義と、記録の行頭語をbugfixの`SKILL.md`と比べる。"""
