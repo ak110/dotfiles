@@ -99,7 +99,7 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
         cmd: list[str], _env: dict[str, str], cwd: pathlib.Path, **_kwargs: Any
     ) -> subprocess.CompletedProcess[bytes]:
         assert cmd[0] == "claude" and cwd == myrepo
-        assert any(argument.startswith("/goal ") for argument in cmd)
+        assert not any(argument.startswith("/goal ") for argument in cmd)
         manifest = pathlib.Path(json.loads(_env["AGENT_TOOLKIT_SESSION_START_INPUT"])["manifest"])
         data = json.loads(manifest.read_text(encoding="utf-8"))
         assert len(data["repositories"]) == 1

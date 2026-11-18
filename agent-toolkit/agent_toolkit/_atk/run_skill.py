@@ -380,7 +380,7 @@ def _run_locked(
             model,
             "--effort",
             effort,
-            _USAGE_LIMIT_RESUME_PROMPT if record is not None else f"/goal {goal}",
+            _USAGE_LIMIT_RESUME_PROMPT if record is not None else goal,
         ]
         argv[-1:-1] = ["--output-format", "stream-json", "--verbose"]
     elif orchestrator == "agy":
@@ -392,7 +392,6 @@ def _run_locked(
             timeout=max(1, int(remaining)),
         )
     else:
-        # Codexの非対話起動は`/goal`を目標として扱わず通常の入力として残すため、目的文だけを渡す。
         argv = [
             "codex",
             "exec",

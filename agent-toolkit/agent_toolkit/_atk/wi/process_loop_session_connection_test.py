@@ -176,7 +176,7 @@ def test_codex_orchestrator_probe_start_and_resume_use_selected_provider(
     for resume_pending, resume in ((False, None), (True, "orchestrator-thread")):
         argv, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
             argparse.Namespace(resume=resume),
-            "/goal 作業",
+            "作業",
             dict(env),
             orchestrator="codex",
             model="gpt-5.6-sol",

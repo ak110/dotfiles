@@ -89,15 +89,15 @@ def repository_input(
 def build_process_loop_prompt() -> str:
     """統括セッション自身の担当範囲の完遂を目的にする。
 
-    工程・終了条件はprocess-wiが所有する。目的文にも持つと定義が二重化し、
-    各ターンの目標評価へ再掲されるため、可変入力はSessionStartへ分離する。
+    工程・終了条件はprocess-wiが所有する。目的文にも持つと定義が二重化するため、
+    可変入力はSessionStartへ分離する。完了まで続行させる働きはStop hook（autonomous_exit）が担い、
+    ホストの`/goal`は使わない。
     """
-    goal = _automated_prompt.wrap(
+    return _automated_prompt.wrap(
         _wi_constants.PROCESS_LOOP_GOAL_BODY,
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind=_automated_prompt.KIND_GOAL,
     )
-    return f"/goal {goal}"
 
 
 def resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
@@ -290,8 +290,8 @@ def _build_session_argv(
             env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
         elif resume_pending:
             raise ValueError("このengineには会話pickerがないため、再開IDまたはautoを指定する")
-        # 再開時も今回のmanifest・結果保存先を配送する。/goalはClaude専用。
-        argv.extend(("-i", prompt.removeprefix("/goal ")))
+        # 再開時も今回のmanifest・結果保存先を配送する。
+        argv.extend(("-i", prompt))
         return argv, None
 
     argv = ["codex"]
@@ -304,7 +304,7 @@ def _build_session_argv(
         argv.append(args.resume)
         env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
     if prompt:
-        argv.append(prompt.removeprefix("/goal "))
+        argv.append(prompt)
     return argv, None
 
 
