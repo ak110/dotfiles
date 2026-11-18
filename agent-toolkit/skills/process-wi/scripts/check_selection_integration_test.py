@@ -141,6 +141,27 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
     assert path.read_bytes() == saved
 
 
+def test_reopen_wi_keeps_explicit_pending_item_of_other_integrated_lane(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """統合済みレーンで明示的に未統合の項目は、別レーンのWIの再開後も未統合のまま公開前確認に残る。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変更する。")
+    _awi(notes, "b.md", "`src/model.py`を変更する。")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"], "統合状態": "未統合"},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": ["src/model.py"]},
+        ],
+        [{"レーン": "lane-01", "統合状態": "統合済み"}, {"レーン": "lane-02", "統合状態": "統合済み"}],
+    )
+    assert _dispatch(str(path), "--reopen-wi", "b.md", "--output", str(path), "--work-dir", str(repo)) == 0
+    after = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert [item["統合状態"] for item in after["選定"]] == ["未統合", "未統合"]
+    assert _dispatch(str(path), "--require-integrated", "--publication-lane", "lane-01") == 1
+
+
 @pytest.mark.parametrize("state,expected", [(None, 1), ("未統合", 1), ("統合済み", 0)])
 def test_public_check_overlap_uses_integration_state(
     env: tuple[pathlib.Path, pathlib.Path],

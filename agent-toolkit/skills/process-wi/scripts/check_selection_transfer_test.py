@@ -99,52 +99,94 @@ def test_transfer_records_new_overlap_with_extend_write_targets(
     assert after["レーン間の重なり"] == [record]
 
 
-@pytest.mark.parametrize("case", ["emptied", "partner", "kept"])
+@pytest.mark.parametrize("case", ["emptied", "partner", "merged"])
 def test_transfer_retargets_overlap_records(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, case: str) -> None:
     """移したWIの重なりの記録を移管先へ付け替え、同じレーン同士・重ならなくなった組の記録を除く。"""
     repo, notes = env
-    sharing, existing, wi, lane, updated = {
-        "emptied": ({"b.md", "d.md"}, _overlap("lane-02", "lane-03", ["bの節"], ["dの節"]), "d.md", "lane-02", ["lane-02"]),
+    sharing, existing, wi, lane, updated, expected = {
+        "emptied": (
+            {"b.md", "d.md"},
+            [_overlap("lane-02", "lane-03", ["bの節"], ["dの節"])],
+            "d.md",
+            "lane-02",
+            ["lane-02"],
+            [],
+        ),
         "partner": (
             {"a.md", "c.md"},
-            _overlap("lane-01", "lane-02", ["aの節"], ["cの節"]),
+            [_overlap("lane-01", "lane-02", ["aの節"], ["cの節"])],
             "c.md",
             "lane-03",
             ["lane-02", "lane-03"],
+            [_overlap("lane-01", "lane-03", ["aの節"], ["cの節"])],
         ),
-        "kept": (
-            {"a.md", "b.md", "c.md"},
-            _overlap("lane-01", "lane-02", ["aの節"], ["bの節", "cの節"]),
+        "merged": (
+            {"a.md", "c.md", "d.md"},
+            [
+                _overlap("lane-01", "lane-02", ["aの節"], ["cの節"]),
+                _overlap("lane-01", "lane-03", ["aの節"], ["dの節"]),
+                _overlap("lane-02", "lane-03", ["cの節"], ["dの節"]),
+            ],
             "c.md",
             "lane-03",
             ["lane-02", "lane-03"],
+            [_overlap("lane-01", "lane-03", ["aの節"], ["cの節", "dの節"])],
         ),
     }[case]
 
     def edit(data: dict[str, typing.Any]) -> None:
         _share_readme(notes, data, sharing)
-        data["レーン間の重なり"] = [existing]
+        data["レーン間の重なり"] = existing
 
     path = _selection(tmp_path, repo, notes, edit=edit)
-    extra: list[str] = []
-    if case == "kept":
-        addition = tmp_path / "overlaps.yaml"
-        new = _overlap("lane-02", "lane-03", ["bの節"], ["cの節"])
-        addition.write_text(yaml.safe_dump({"レーン間の重なり": [new]}, allow_unicode=True), encoding="utf-8")
-        extra = ["--extend-write-targets", str(addition)]
-    assert _transfer(path, repo, tmp_path, wi, lane, dict.fromkeys(updated, _COST), *extra) == 0
-    records = yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"]
-    if case == "emptied":
-        assert records == []
-    elif case == "partner":
-        assert records == [_overlap("lane-01", "lane-03", ["aの節"], ["cの節"])]
-    else:
-        assert existing in records
-        assert sorted((record["レーン1"], record["レーン2"]) for record in records) == [
-            ("lane-01", "lane-02"),
-            ("lane-01", "lane-03"),
-            ("lane-02", "lane-03"),
-        ]
+    assert _transfer(path, repo, tmp_path, wi, lane, dict.fromkeys(updated, _COST)) == 0
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"] == expected
+
+
+@pytest.mark.parametrize("case", ["new-pair-under-existing-record", "split-record"])
+def test_transfer_drops_records_whose_wi_pairs_change(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """移管で組が加わる・分かれる記録は残さず、全体検査の記録不足を--extend-write-targetsの再判定で解消させる。
+
+    移管元に残るbと移したcは移管前は同じレーンで直列に書くため、移管元・移管先の既存記録はこの組を判定していない。
+    移管元の定義もbとcのどちらの定義かを記録から区別できない。
+    """
+    repo, notes = env
+    sharing, existing, rejudged = {
+        "new-pair-under-existing-record": (
+            {"b.md", "c.md", "d.md"},
+            [_overlap("lane-02", "lane-03", ["節X"], ["dの節"])],
+            [_overlap("lane-02", "lane-03", ["bの節"], ["cの節", "dの節"])],
+        ),
+        "split-record": (
+            {"a.md", "b.md", "c.md"},
+            [_overlap("lane-01", "lane-02", ["aの節"], ["bの節", "cの節"])],
+            [
+                _overlap("lane-01", "lane-02", ["aの節"], ["bの節"]),
+                _overlap("lane-01", "lane-03", ["aの節"], ["cの節"]),
+                _overlap("lane-02", "lane-03", ["bの節"], ["cの節"]),
+            ],
+        ),
+    }[case]
+
+    def edit(data: dict[str, typing.Any]) -> None:
+        _share_readme(notes, data, sharing)
+        data["レーン間の重なり"] = existing
+
+    path = _selection(tmp_path, repo, notes, edit=edit)
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    before = path.read_bytes()
+    updates = {"lane-02": _COST, "lane-03": _COST}
+    capsys.readouterr()
+    assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates) == 1
+    err = capsys.readouterr().err
+    assert all(f"{r['レーン1']}と{r['レーン2']}: 重複パスの記録不足: README.md" in err for r in rejudged)
+    assert path.read_bytes() == before
+    addition = tmp_path / "overlaps.yaml"
+    addition.write_text(yaml.safe_dump({"レーン間の重なり": rejudged}, allow_unicode=True), encoding="utf-8")
+    assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates, "--extend-write-targets", str(addition)) == 0
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"] == rejudged
 
 
 def test_transfer_moves_added_wi_and_updates_costs(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
@@ -201,10 +243,18 @@ def test_transfer_drops_emptied_source_lane(env: tuple[pathlib.Path, pathlib.Pat
     assert [row["レーン"] for row in after["レーンの所要時間"]] == ["lane-01", "lane-02"]
 
 
+@pytest.mark.parametrize(("final_lane", "code"), [("lane-04", 1), ("lane-03", 0)])
 def test_emptied_source_lane_still_counts_toward_cumulative_bound(
-    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    final_lane: str,
+    code: int,
 ) -> None:
-    """移管で空にしたレーンも累計のレーン数に数え、後の追加で上限B=3を超える新設を拒否する。"""
+    """移管で空にしたレーンも累計のレーン数に数え、後の追加で上限B=3を超える新設を拒否する。
+
+    空にしたレーン名を後の追加で再び使うのは同じレーン名の再利用であり、累計のレーン名数を増やさない。
+    """
     repo, notes = env
     path = _selection(tmp_path, repo, notes)
     assert _transfer(path, repo, tmp_path, "d.md", "lane-02", {"lane-02": _COST}) == 0
@@ -232,15 +282,21 @@ def test_emptied_source_lane_still_counts_toward_cumulative_bound(
         encoding="utf-8",
     )
     lane_map = tmp_path / "lane-map.json"
-    lane_map.write_text(json.dumps({"lane-new": "lane-04"}), encoding="utf-8")
+    lane_map.write_text(json.dumps({"lane-new": final_lane}), encoding="utf-8")
     before = path.read_bytes()
     capsys.readouterr()
-    code = _dispatch(
-        str(path), "--merge", str(addition), "--lane-map", str(lane_map), "--output", str(path), "--work-dir", str(repo)
+    assert (
+        _dispatch(
+            str(path), "--merge", str(addition), "--lane-map", str(lane_map), "--output", str(path), "--work-dir", str(repo)
+        )
+        == code
     )
-    assert code == 1
-    assert "上限B=3、実レーン数=4" in capsys.readouterr().err
-    assert path.read_bytes() == before
+    if code:
+        assert "上限B=3、実レーン数=4" in capsys.readouterr().err
+        assert path.read_bytes() == before
+    else:
+        lanes = [row["レーン"] for row in yaml.safe_load(path.read_text(encoding="utf-8"))["レーンの所要時間"]]
+        assert lanes == ["lane-01", "lane-02", "lane-03"]
 
 
 @pytest.mark.parametrize(
