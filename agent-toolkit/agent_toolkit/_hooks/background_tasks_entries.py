@@ -259,8 +259,11 @@ def _collect_nested_agent_launches(
             continue
         result = _cached_result(cached.get(child_path.name), stamp)
         if result is None:
-            launched_ids, task_ids = _child_agent_launches(child_path, metadata_path)
-            result = _ChildLaunches(stamp=stamp, launched=launched_ids, task_ids=task_ids)
+            parsed = _child_agent_launches(child_path, metadata_path)
+            if parsed is None:
+                # 一時的な読取失敗は同じ鍵のまま固定されないよう保存せず、次回に読み直す。
+                continue
+            result = _ChildLaunches(stamp=stamp, launched=parsed[0], task_ids=parsed[1])
         current[child_path.name] = result
         launched.update(result["launched"])
         for agent_id, launch_ids in result["task_ids"].items():
@@ -314,15 +317,25 @@ def _cached_result(value: object, stamp: list[int]) -> _ChildLaunches | None:
     return None
 
 
-def _child_agent_launches(child_path: pathlib.Path, metadata_path: pathlib.Path) -> tuple[list[str], dict[str, list[str]]]:
-    """1件の子transcriptが起動した孫Agentの起動IDと、agent IDから起動IDへの対応を返す。"""
+def _child_agent_launches(
+    child_path: pathlib.Path, metadata_path: pathlib.Path
+) -> tuple[list[str], dict[str, list[str]]] | None:
+    """1件の子transcriptが起動した孫Agentの起動IDと、agent IDから起動IDへの対応を返す。
+
+    直接の子でないと確定した場合と、transcriptを読めて解析できた場合だけ結果を返す。
+    metadataまたはtranscriptの読取失敗・破損は一時的な失敗の可能性があるため`None`を返し、呼び出し側は保存しない。
+    """
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
+    except OSError:
+        return None
+    except ValueError:
         return [], {}
     if not _is_direct_subagent_metadata(metadata):
         return [], {}
     child_entries = _read_child_transcript_entries(str(child_path))
+    if child_entries is None:
+        return None
     if not child_entries:
         return [], {}
     agent_ids = _collect_agent_tool_use_ids(child_entries, include_sidechain=True)

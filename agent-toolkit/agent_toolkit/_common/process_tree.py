@@ -531,16 +531,19 @@ def _parent_pids() -> dict[int, int]:
     psutilの公開APIには、全プロセスの親PIDを1回で得る手段が無い（`Process.children`も内部で`_ppid_map`を使う）。
     Linuxは`/proc/<pid>/stat`を1回ずつ、Windowsは1回のsnapshotで全件を得る。非公開APIへの依存はここに閉じる。
     """
-    ppid_map: Callable[[], dict[int, int]] = vars(psutil)["_ppid_map"]
-    try:
-        return ppid_map()
-    except psutil.AccessDenied:
-        # 他ユーザーの/proc/<pid>を読めない環境（hidepid=1）では一括取得が失敗するため、読めるプロセスだけで作る。
-        result: dict[int, int] = {}
-        for pid in psutil.pids():
-            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-                result[pid] = psutil.Process(pid).ppid()
-        return result
+    ppid_map: Callable[[], dict[int, int]] | None = vars(psutil).get("_ppid_map")
+    if ppid_map is not None:
+        try:
+            return ppid_map()
+        except psutil.AccessDenied:
+            # 他ユーザーの/proc/<pid>を読めない環境（hidepid=1）では一括取得が失敗するため、読めるプロセスだけで作る。
+            pass
+    # psutilの版が変わって非公開関数が無い場合も、公開APIだけで作る。
+    result: dict[int, int] = {}
+    for pid in psutil.pids():
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            result[pid] = psutil.Process(pid).ppid()
+    return result
 
 
 def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:

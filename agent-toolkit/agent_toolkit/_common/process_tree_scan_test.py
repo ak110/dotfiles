@@ -48,3 +48,17 @@ def test_short_command_does_not_list_host_processes(monkeypatch):
     monkeypatch.setattr(psutil, "pids", list_all)
     result = process_tree.run_with_timeout([sys.executable, "-c", "print('ok')"], capture_output=True, text=True, timeout=30)
     assert (result.returncode, result.stdout.strip()) == (0, "ok")
+
+
+def test_parent_pids_falls_back_to_public_api_when_private_function_is_missing(monkeypatch):
+    """psutilが非公開の一括取得関数を持たない版でも、公開APIだけで親PIDの対応を作る。"""
+    monkeypatch.delattr(psutil, "_ppid_map", raising=False)
+    monkeypatch.setattr(psutil, "pids", lambda: [11, 12, 13])
+
+    def process(pid):
+        if pid == 13:
+            raise psutil.NoSuchProcess(pid)
+        return mock.Mock(ppid=mock.Mock(return_value=pid - 10))
+
+    monkeypatch.setattr(psutil, "Process", process)
+    assert process_tree._parent_pids() == {11: 1, 12: 2}  # pylint: disable=protected-access

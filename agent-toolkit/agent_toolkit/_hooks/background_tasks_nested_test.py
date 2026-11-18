@@ -34,6 +34,21 @@ _AGENT_MESSAGE = "<agent-message>委譲先からの途中報告</agent-message>"
 _TEXT = "作業途中です。"
 
 
+_COMPLETED_CHILD_ENTRIES = [
+    _user_entry("hello"),
+    _user_async_launched_entry("toolu_child", agent_id="child-id"),
+    _user_task_notification_entry("toolu_child", task_id="child-id"),
+    _user_entry("続き"),
+    _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+]
+
+
+_GRANDCHILD_ENTRIES = [
+    _assistant_agent_entry("toolu_grandchild"),
+    _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+]
+
+
 class TestIsPendingAsyncWork:
     """`is_pending_async_work` の判定を網羅するテスト。
 
@@ -105,6 +120,24 @@ class TestIsPendingAsyncWork:
                 stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
         assert stop_hook() is True
         assert reads.call_count == 2
+
+    def test_transient_child_read_failure_is_not_cached(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """子transcriptの一時的な読取失敗は同じ鍵で保存せず、次の判定で読めたら孫Agentを待機中と判定する。"""
+        transcript = _write_nested_subagent_fixture(tmp_path, _COMPLETED_CHILD_ENTRIES, _GRANDCHILD_ENTRIES)
+        real_read = background_tasks_entries._transcript.read_transcript_lines  # pylint: disable=protected-access
+        child_name = "agent-child-id.jsonl"
+
+        def fail_child(path: str, *args: object, **kwargs: object):
+            return None if pathlib.Path(path).name == child_name else real_read(path, *args, **kwargs)
+
+        def stop_hook() -> bool:
+            _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+            return is_pending_async_work(str(transcript), "", session_state=None)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(background_tasks_entries._transcript, "read_transcript_lines", fail_child)  # pylint: disable=protected-access
+            assert stop_hook() is False
+        assert stop_hook() is True
 
     @pytest.mark.parametrize(("operation", "pending"), [("enqueue", True), ("remove", False)])
     def test_queue_operation_completion_completes_grandchild(
