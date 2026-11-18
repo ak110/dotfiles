@@ -36,8 +36,8 @@ def test_show_filters_rows_by_round(tmp_path: pathlib.Path, capsys: pytest.Captu
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "1件目")
-    table.add(path, "2", _TRACK, "module.py:20", "2件目")
     table.add(path, "1", _TRACK, "module.py:30", "3件目")
+    table.add(path, "2", _TRACK, "module.py:20", "2件目")
     capsys.readouterr()
 
     assert table.show(path, round_value=1) == 0

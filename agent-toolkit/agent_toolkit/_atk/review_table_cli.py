@@ -151,7 +151,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     add_command_parser.add_argument(
         "--round",
         required=True,
-        help="指摘を登録するレビューのラウンド番号。1以上の整数で指定する。",
+        help="指摘を登録するレビューのラウンド番号。1以上で、同じtrackの指摘の行と判定の行の最大のround以上の整数を指定する。",
     )
     add_command_parser.add_argument(
         "--track",
@@ -220,7 +220,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     recheck_parser.add_argument(
         "--round",
         required=True,
-        help="現在の再レビューのラウンド番号。2以上で、同じtrackの最大のround以上の整数を指定する。",
+        help="現在の再レビューのラウンド番号。2以上で、同じtrackの指摘の行と判定の行の最大のround以上の整数を指定する。",
     )
     recheck_parser.add_argument(
         "--verdict",

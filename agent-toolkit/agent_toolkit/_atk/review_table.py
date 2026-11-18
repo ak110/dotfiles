@@ -219,11 +219,40 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
     return _add_rows(_path(str(path)), [row])
 
 
+def _current_round(rows: list[list[str]], track: str) -> int:
+    """同じtrackの指摘の行と判定の行に使われた最大のround（現在のround）を返す。行が無ければ0を返す。"""
+    rounds = [0]
+    for row in rows:
+        if row[1] == track:
+            rounds.append(int(_normalized(row[0])))
+            rounds.extend(entry[0] for cell in (row[5], row[6]) for entry in recheck_entries(cell))
+    return max(rounds)
+
+
+def _require_current_round(rows: list[list[str]], track: str, round_number: int) -> None:
+    """記録するroundが現在のround以上であることを確かめる。
+
+    前のroundへ書けると、残りの指摘や訂正した判定が現在のroundのsummaryが見ないroundへ入り、
+    未解決のまま収束と判定できるため（2026年11月18日の第12・第13ラウンドで観測）。
+    """
+    current = _current_round(rows, track)
+    if round_number < current:
+        raise _ActionableError(
+            f"同じtrackの現在のroundは{current}で、ラウンド{round_number}へは記録できない",
+            next_action=(
+                f"--roundへ現在のレビューのラウンド番号（{current}以上）を指定する。"
+                "現在のroundは指摘の行と判定の行の最大のroundで、前のroundの記録は変えない"
+            ),
+        )
+
+
 def _add_rows(target: Path, additions: list[list[str]]) -> int:
     """全入力を検証して1回追記し、ロック内で保存した全行を読み戻す。"""
     _validate_rows(additions)
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
+        for row in additions:
+            _require_current_round(rows, row[1], int(_normalized(row[0])))
         if {_key(row) for row in additions} & {_key(existing) for existing in rows}:
             raise _ActionableError(
                 "先頭4列の複合キーが重複している",
@@ -311,7 +340,8 @@ def respond(
     該当行を特定する。該当行が1件でない場合は複合キー解決不能として拒否する。
     対応要否は対応内容と対応不要理由のどちらを渡したかで決まる。双方を渡した場合と
     どちらも渡さなかった場合は`ValueError`で拒否する。
-    既存の`再確認:`の行（レビュー担当の判定）は、記録する本文の末尾へ引き継ぐ。
+    `再確認:`の行（レビュー担当の判定）がある行は、記録済みと同じ本文の場合だけ表を変えずに受け付け、
+    それ以外は拒否する。
     """
     target = _path(str(path))
     replacement = response.strip()
@@ -372,15 +402,30 @@ def respond(
                 next_action="`atk review-table show <PATH>`でrow-idを確認し、--row-idで指定し直す",
             )
         row = rows[matches[0]]
-        # レビュー担当の判定の行は応答を記録し直しても消さず、新しい本文の末尾へ引き継ぐ。
-        verdict_lines = [*recheck_lines(row[5]), *recheck_lines(row[6])]
-        body = "\n".join([replacement or reason, *verdict_lines])
-        expected.append(body)
+        column = 5 if replacement else 6
+        if recheck_lines(row[5]) or recheck_lines(row[6]):
+            # レビュー担当が判定した応答は変えない。変えると、古い判定のまま完了として数えられるため。
+            # 同じ本文の再記録は、結果の分からない実行の再試行として表を変えずに受け付ける。
+            recorded = "\n".join(line for line in row[column].splitlines() if not line.strip().startswith(RECHECK_LABEL))
+            if recorded.strip() != (replacement or reason):
+                raise _ActionableError(
+                    f"{_row_position(matches[0] + 1)}はレビュー担当の判定（{RECHECK_LABEL}の行）があり、応答を変更できない",
+                    next_action=(
+                        "判定が対応不十分・未対応なら、判定の行の末尾の`行<row-id>`が指す行へ応答する。"
+                        "判定の後に対応を変えた場合は、指摘箇所を`担当の記録:`で始めた行を現在のroundへ"
+                        "`atk review-table add`で追加して記録し、変更を次の再レビューの対象に含める"
+                    ),
+                )
+            unchanged.append(True)
+            expected.append(row[column])
+            return rows
+        expected.append(replacement or reason)
         updated = [*rows]
-        updated[matches[0]] = [*row[:_KEY_COLUMN_COUNT], row[4], body if replacement else "", "" if replacement else body]
+        updated[matches[0]] = [*row[:_KEY_COLUMN_COUNT], row[4], replacement, reason]
         return updated
 
     expected: list[str] = []
+    unchanged: list[bool] = []
     _locked_update(target, updater)
     current_rows = _read(target)
     saved_rows = (
@@ -406,7 +451,10 @@ def respond(
             f"保存本文:\n{saved_body}",
             next_action=_SAVED_RESPONSE_MISMATCH_NEXT_ACTION,
         )
-    _outcome.report_success(f"応答欄を更新した: {target}")
+    if unchanged:
+        _outcome.report_success(f"判定済みの行と同じ応答のため、表を変更しなかった: {target}")
+    else:
+        _outcome.report_success(f"応答欄を更新した: {target}")
     return 0
 
 
@@ -417,7 +465,7 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
     このコマンドが登録し、判定の行へその行の識別子を書く。登録先の行をレビュー担当に選ばせると、
     別の指摘の行を指しても収束と判定できたためである。
     判定の行は消さずに追記し、集計は最も新しいroundの最後の有効な行を使う。
-    記録できるroundは、同じtrackの最大のround以上（現在の再レビュー）に限る。
+    記録できるroundは、現在のround（同じtrackの指摘の行と判定の行の最大のround）以上に限る。
     同じroundで記録し直すと、登録済みの未応答の行を書き換える（対応不十分・未対応）か、
     レビュー担当の撤回として対応不要理由を書く（完了）。作業中の表はGit管理外に置かれるため、誤った判定の訂正手段を兼ねる。
     """
@@ -465,13 +513,7 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
                 f"{_row_position(row_id)}は未応答である",
                 next_action="レビューイーの応答の記録を待ってから再確認する。未応答の指摘は未解決として扱う",
             )
-        # 判定と登録する行は現在のroundに限る。過去のroundへ記録すると、現在のroundのsummaryが見ない行に残りの指摘が入るため。
-        current_round = max(int(_normalized(existing[0])) for existing in rows if existing[1] == row[1])
-        if round_number < current_round:
-            raise _ActionableError(
-                f"同じtrackにround {current_round}の指摘があり、ラウンド{round_number}の判定は記録できない",
-                next_action=f"--roundへ現在の再レビューのラウンド番号（{current_round}以上）を指定する。前のroundの判定は直さない",
-            )
+        _require_current_round(rows, row[1], round_number)
         updated = [[*existing] for existing in rows]
         carried_id = _carried_row_id(rows, row_id, round_number, row[1])
         withdrawn = withdrawn_reason(row_id, round_number)

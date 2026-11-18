@@ -245,17 +245,35 @@ def test_recheck_rejects_round_before_current_round(tmp_path: pathlib.Path) -> N
     assert state.get("recheck_pending_row_ids") == [3]
 
 
-def test_respond_keeps_recheck_verdicts(tmp_path: pathlib.Path) -> None:
-    """応答を記録し直しても、対応内容と対応不要理由のどちらへ変えても、レビュー担当の判定の行を消さない。"""
+def test_recheck_and_add_reject_round_before_verdict_only_round(tmp_path: pathlib.Path) -> None:
+    """判定だけを記録したroundも現在のroundに数え、それより前のroundへの判定と指摘を表を変えずに拒否する。"""
     path = tmp_path / "plan.exec-review.tsv"
     _answered_round_one(path)
     assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
-    table.respond(path, "", "", "", "", review_bodies.response_body("書き直した"), "", row_id=1)
-    assert table.read_rows(path)[0][5].endswith("書き直した\n採用しない修正方針: なし\n再確認: ラウンド2 完了")
-    table.respond(path, "", "", "", "", "", review_bodies.reason_body("README.md:10の既存契約"), row_id=1)
-    row = table.read_rows(path)[0]
-    assert not row[5]
-    assert row[6].endswith("\n再確認: ラウンド2 完了")
+    assert _cli_recheck(tmp_path, path, 2, "2", "完了") == 0
+    assert _cli_recheck(tmp_path, path, 1, "3", "完了") == 0
+    assert table.summary(path, 3).get("recheck_pending_count") == 0
+    saved = path.read_bytes()
+    assert _cli_recheck(tmp_path, path, 1, "2", "未対応", review_bodies.issue_body("指摘Aの残り")) != 0
+    assert _cli_add(tmp_path, path, "2", "module.py:30", review_bodies.issue_body("指摘C", "新しい変更")) != 0
+    assert path.read_bytes() == saved
+    assert _cli_add(tmp_path, path, "3", "module.py:30", review_bodies.issue_body("指摘C", "新しい変更")) == 0
+    assert table.summary(path, 3).get("unanswered_count") == 1
+
+
+def test_respond_rejects_changes_after_recheck_verdict(tmp_path: pathlib.Path) -> None:
+    """判定済みの行の応答は、対応内容の書き換えも対応不要理由への切り替えも拒否し、同じ本文の再記録だけを受け付ける。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
+    saved = path.read_bytes()
+    with pytest.raises(ValueError):
+        table.respond(path, "", "", "", "", review_bodies.response_body("書き直した"), "", row_id=1)
+    with pytest.raises(ValueError):
+        table.respond(path, "", "", "", "", "", review_bodies.reason_body("README.md:10の既存契約"), row_id=1)
+    assert path.read_bytes() == saved
+    assert table.respond(path, "", "", "", "", review_bodies.response_body("直した"), "", row_id=1) == 0
+    assert path.read_bytes() == saved
     assert table.summary(path, 2).get("recheck_counts") == {"完了": 1, "対応不十分": 0, "未対応": 0}
 
 
