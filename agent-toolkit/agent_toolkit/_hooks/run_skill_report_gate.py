@@ -41,7 +41,7 @@ _HOOK_ID = "run_skill_report_gate"
 RUN_ID_ENV = "AGENT_TOOLKIT_RUN_SKILL_ID"
 
 _REASON_BODY = """\
-`atk run-skill`が起動したこのセッションで、当該実行の報告用UWIの保存（commitと必要なpush）を確認できず、終了を止めた。
+`atk run-skill`が起動したこのセッションで、当該実行の報告用UWIの保存（コミットと必要なプッシュ）を確認できず、終了を止めた。
 作業の完了・未完了は判定していない。"""
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
@@ -96,7 +96,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     reason = _block_notice(
         _REASON_BODY,
         fix=(
-            "残る工程を進め、`agent-toolkit:report-completion`の手順で報告用UWIを保存してcommit・pushせよ。"
+            "残る工程を進め、`agent-toolkit:report-completion`の手順で報告用UWIを保存してコミット・プッシュせよ。"
             "前提不足などで完了できない場合も、未完了の内容を報告用UWIへ保存してから終えよ。"
         ),
     )
