@@ -242,7 +242,7 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
             "ready": False,
             "teardown_done": False,
             "project_hook": project_hook,
-            "hook_name": f"process-wi-{args.lane}",
+            "hook_name": _lane_records.resource_name(args.lane, scope),
         }
         _lane_records.require_selection(record)
         _lane_records.save(path, record)

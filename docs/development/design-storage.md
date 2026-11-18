@@ -177,6 +177,7 @@ worktreeパスが無い登録ではdeleteコマンドを省き、Git登録だけ
 祖先判定でbranchを削除する通常回収や、成果を引き継ぐreuse-recordでは作成先を成果を失わずに解放できないためである。
 作成先を指定しない場合は同じGitリポジトリの主作業ツリーの`.claude/worktrees/process-wi-<lane>`に固定する。
 系統を登録したリポジトリでは`.claude/worktrees/process-wi-<統合先ブランチ>-<lane>`とし、系統ごとに並行する処理の同名レーンを分ける。
+WorktreeCreate hookへ渡す名前も同じ名前とし、hookが名前から作成先やbranchを決めるリポジトリでも同名レーンを分ける。
 Codexなどパス単位で信頼設定を保存するホストへ渡すcwdを、同じリポジトリ・レーンの反復で増やさないためである。
 主作業ツリーは`git worktree list`の先頭から解決し、process-loopのworktreeから呼んでもその内側へ入れ子にしない。
 配置の決定はcreateだけが持ち、process-wiのメインと対象リポジトリが定めたcreateのコマンドはcreateの返値を使う。
