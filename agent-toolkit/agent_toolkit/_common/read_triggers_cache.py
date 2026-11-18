@@ -70,6 +70,8 @@ def parse_deferred(
 ) -> list[tuple[pathlib.Path, list[ReadTrigger]]]:
     """`parse_tables(..., defer_material=True)`と同じ結果を、本文が変わらない文書では保存結果から返す。
 
+    `sources`は実体のパスで渡す（ここでは解決し直さない）。
+
     行単位で除いた宣言の診断も保存し、再利用時に同じ要求の診断として記録し直す。
     保存の失敗は解析結果を変えないため、警告だけを残して続ける。
     """
@@ -79,16 +81,17 @@ def parse_deferred(
     current: dict[str, dict] = {}
     results: list[tuple[pathlib.Path, list[ReadTrigger]]] = []
     changed = False
-    for source in sources:
-        resolved = source.resolve()
-        text = resolved.read_bytes()
+    for resolved in sources:
+        data = resolved.read_bytes()
         # 宣言元がplugin外のスキル置き場かどうかで不備行の扱いが変わるため、鍵へ含める。
         side = read_triggers_resolution.user_side_source(resolved)
-        key = "\0".join((str(resolved), hashlib.sha256(text).hexdigest(), str(side)))
+        key = "\0".join((str(resolved), hashlib.sha256(data).hexdigest(), str(side)))
         entry: dict[str, list] | None = saved.get(key)
         if entry is None:
             before = set(declaration_issues())
-            rows = read_triggers.parse_tables(resolved, plugin_root, host=host, project=project, defer_material=True)
+            # 鍵に使った本文をそのまま解析し、同じ文書を読み直さない。改行は`read_text`と同じく正規化する。
+            text = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+            rows = read_triggers.parse_deferred_text(resolved, text, plugin_root, host=host, project=project)
             entry = {
                 "rows": [_row_values(row) for row in rows],
                 "issues": [issue for issue in declaration_issues() if issue not in before],

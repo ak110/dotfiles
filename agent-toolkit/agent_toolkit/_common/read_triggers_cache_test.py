@@ -21,13 +21,13 @@ def _parsed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[pat
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
     calls: list[pathlib.Path] = []
-    original = read_triggers.parse_tables
+    original = read_triggers.parse_deferred_text
 
     def counted(source, *args, **kwargs):
         calls.append(source)
         return original(source, *args, **kwargs)
 
-    monkeypatch.setattr(read_triggers, "parse_tables", counted)
+    monkeypatch.setattr(read_triggers, "parse_deferred_text", counted)
     return calls
 
 

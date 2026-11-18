@@ -28,15 +28,23 @@ def user_side_source(path: pathlib.Path) -> bool:
 
     これらの宣言はユーザーのリポジトリやホームにあり、プラグインの不変条件テストが保存前に検査できない。
     """
-    if any(_has_plugin_manifest(parent) for parent in path.parents):
-        return False
-    return any(parent.name == "skills" and parent.parent.name in _SKILL_HOMES for parent in path.parents)
+    in_plugin, in_skill_home = _directory_placement(path.parent)
+    return in_skill_home and not in_plugin
 
 
 @_scope_cached
-def _has_plugin_manifest(directory: pathlib.Path) -> bool:
-    """要求内では、多数の宣言元が共有する祖先ディレクトリの照会を1回にする（Windowsではファイル照会が高価）。"""
-    return (directory / ".claude-plugin/plugin.json").is_file()
+def _directory_placement(directory: pathlib.Path) -> tuple[bool, bool]:
+    """自身か祖先にplugin manifestを持つか、スキル置き場の`skills`の内側かを返す。
+
+    要求内では多数の宣言元が共有する祖先を1回だけ照会する（Windowsではファイル照会が高価）。
+    """
+    in_plugin = (directory / ".claude-plugin/plugin.json").is_file()
+    in_skill_home = directory.name == "skills" and directory.parent.name in _SKILL_HOMES
+    if directory.parent != directory:
+        parent_in_plugin, parent_in_skill_home = _directory_placement(directory.parent)
+        in_plugin = in_plugin or parent_in_plugin
+        in_skill_home = in_skill_home or parent_in_skill_home
+    return in_plugin, in_skill_home
 
 
 def read_operation(path: pathlib.Path) -> str:
