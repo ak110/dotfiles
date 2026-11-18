@@ -107,7 +107,7 @@ fullの通常更新では共有Python依存環境を保持し、どちらのモ�
 
 miseが導入するコマンドと同じ名前のコマンドをdotfiles外で導入している場合、`update-dotfiles`はmiseが同じ名前のコマンドを解決できる場合に、導入元の手順で削除する。
 対象はWinGetのportable導入、npmのグローバル導入、pnpmのstandalone導入（`PNPM_HOME`とその環境変数・PATHの登録）である。
-管理者権限が要る導入（Program Filesなど）は削除せず、mise管理版より先にPATHにある場合に削除を案内する。
+管理者権限が要る導入（Program Filesなど）は削除せず、Windowsでmise管理版より先にPATHにある場合に削除を案内する。
 
 ## 使い方
 

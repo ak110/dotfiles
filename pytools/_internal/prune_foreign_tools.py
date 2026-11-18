@@ -8,8 +8,9 @@ dotfilesの更新や設定が反映されない。miseの管理版を実行で�
 - pnpmのstandalone導入（`PNPM_HOME`直下の`pnpm`）: pnpm公式の削除手順どおり`PNPM_HOME`を削除し、
   Windowsではユーザー環境変数`PNPM_HOME`とユーザーPATHの該当エントリーも除く
 
-管理者権限が必要な導入（Program Files、`/usr/bin`など）は自動では削除せず、
-miseの管理版より先にPATHへ現れて実際に優先される場合だけ削除を案内する。
+管理者権限が必要な導入（Program Filesなど）は自動では削除せず、Windowsでmiseの管理版より先にPATHへ現れる場合だけ削除を案内する。
+WindowsはシステムのPATHがユーザーのPATHより前に並ぶため、この順序は対話シェルでも同じである。
+Linuxは対話シェルでmiseを有効化してmiseの管理版を先頭に置くため、更新処理のPATHの順序では判定しない。
 削除できなかった導入物は警告して次回の`update-dotfiles`で再試行する。
 """
 
@@ -66,7 +67,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     for name, found, shadows in _foreign_executables(managed, path_entries, layout):
         removal = classify(found, name, layout)
         if removal is None:
-            if shadows:
+            if shadows and sys.platform == "win32":
                 logger.warning(
                     log_format.format_status(
                         _TAG,
@@ -224,18 +225,26 @@ def _has_pnpm_binary(home: Path) -> bool:
 
 
 def _npm_global_package(found: Path, name: str) -> tuple[Path, str] | None:
-    """npmのグローバルprefixのbinにある実行ファイルなら、prefixと所有パッケージ名を返す。"""
+    """npmのグローバルprefixのbinにある実行ファイルなら、prefixと所有パッケージ名を返す。
+
+    Node.js本体の導入先（Program Filesの`nodejs`や`/usr`など）は同梱のnpmを含むが、
+    npmのグローバルprefixではなく本体のインストーラーが管理するため対象外とする。
+    """
     directory = found.parent
     candidates = [(directory, directory / "node_modules")]
     if directory.name == "bin":
         candidates.append((directory.parent, directory.parent / "lib" / "node_modules"))
     for prefix, modules in candidates:
-        if not modules.is_dir():
+        if not modules.is_dir() or _is_node_installation(prefix):
             continue
         for manifest in (*modules.glob("*/package.json"), *modules.glob("@*/*/package.json")):
             if name in _package_bins(manifest):
                 return prefix, json.loads(manifest.read_text(encoding="utf-8")).get("name") or manifest.parent.name
     return None
+
+
+def _is_node_installation(prefix: Path) -> bool:
+    return any(path.is_file() for path in (prefix / "node.exe", prefix / "node", prefix / "bin" / "node"))
 
 
 def _package_bins(manifest: Path) -> set[str]:

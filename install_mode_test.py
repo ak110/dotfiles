@@ -81,7 +81,7 @@ def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_
     )
     assert result.returncode == 0, result.stderr
     tools = tomllib.loads(result.stdout)["tools"]
-    assert {"chezmoi", "fzf", "gh", "glab", "glow", "jq", "pnpm", "ripgrep"} == set(tools) - (
+    assert {"chezmoi", "fzf", "gh", "glab", "glow", "jq", "ripgrep"} == set(tools) - (
         {
             "dotnet",
             "gcloud",
@@ -90,6 +90,7 @@ def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_
             "npm:@google/gemini-cli",
             "npm:typescript",
             "npm:typescript-language-server",
+            "pnpm",
         }
         if mode == "full"
         else set()
