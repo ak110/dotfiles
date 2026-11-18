@@ -9,7 +9,6 @@ import queue
 import re
 import shutil
 import subprocess
-import tempfile
 import threading
 import time
 import tomllib
@@ -34,6 +33,11 @@ _TIMEOUT = 60.0
 # https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/app-server-daemon
 _DAEMON_RESTART_TIMEOUT = 750.0
 _VERSION_PATTERN = re.compile(r"[A-Za-z0-9._+-]+\Z")
+# 旧cacheを退避先から戻せなかった場合の案内。退避先は次回の実行が戻す。
+_SAVED_CACHE_RETRY = (
+    "次回のupdate-dotfilesが退避先から戻します。解消しない場合は退避先を変更せず、"
+    "表示された内容とパスをdotfilesの作者へ報告してください。"
+)
 # 自動更新タイマーを持たないホストで、延期した更新を反映する操作。
 _MANUAL_RETRY = "Codexのセッションを全て終了してから`update-dotfiles`を再実行してください。"
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
@@ -443,41 +447,58 @@ def _codex_processes_using_plugin() -> tuple[str, ...]:
     return tuple(process.label for process in codex_processes.codex_processes() if process.role == "session")
 
 
-def _snapshot_plugin_caches(cache_root: Path, saved_root: Path) -> tuple[str, ...]:
-    """CLI更新前の通常versionディレクトリを退避する。"""
+def _saved_cache_root(marketplace_name: str, plugin_name: str) -> Path:
+    """CLI更新中に旧versionを退避する場所を返す。
+
+    cacheと同じボリュームに置いて版ディレクトリを移動だけで退避・復元し、CLIが旧versionを削除する手間も省く。
+    場所を固定し、中断した実行が残した退避は次回の実行が戻す。
+    """
+    return _codex_home() / ".dotfiles-plugin-cache-saved" / marketplace_name / plugin_name
+
+
+def _snapshot_plugin_caches(cache_root: Path, saved_root: Path, target_version: str) -> None:
+    """CLI更新前の通常versionディレクトリを退避する。
+
+    目標versionはCLIが置き換えるため元の場所に残して複製し、`plugin add`の失敗時に戻せるようにする。
+    """
     if not cache_root.is_dir():
-        return ()
-    versions = []
+        return
+    saved_root.mkdir(parents=True, exist_ok=True)
     for path in cache_root.iterdir():
         if not path.is_dir() or _is_link(path) or not _valid_version_name(path.name):
             continue
-        shutil.copytree(path, saved_root / path.name, symlinks=True)
-        versions.append(path.name)
-    return tuple(versions)
+        if path.name != target_version:
+            # Windowsは使用中のファイルを含むディレクトリを移動できないため、移動できない版は複製する。
+            with contextlib.suppress(OSError):
+                path.rename(saved_root / path.name)
+        if path.exists():
+            shutil.copytree(path, saved_root / path.name, symlinks=True)
 
 
-def _restore_plugin_caches(
-    cache_root: Path,
-    saved_root: Path,
-    versions: tuple[str, ...],
-    *,
-    installed_version: str | None,
-) -> None:
-    """CLIが削除したversionを戻し、失敗時は退避済みの全versionを元へ戻す。"""
-    for version in versions:
-        if version == installed_version:
-            continue
-        source = saved_root / version
-        destination = cache_root / version
-        if installed_version is None and _path_exists(destination):
+def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_version: str | None, rollback: bool) -> None:
+    """退避したversionを元のパスへ戻し、退避先を削除する。
+
+    `rollback`では元のパスに現れた内容を退避した内容で置き換え、それ以外では既存の内容を残す。
+    `installed_version`の退避はCLIが作成した内容を残すため戻さない。
+    """
+    if not saved_root.is_dir():
+        return
+    for source in saved_root.iterdir():
+        destination = cache_root / source.name
+        if rollback and _path_exists(destination):
             if _is_link(destination):
                 _unlink(destination)
             else:
                 shutil.rmtree(destination)
-        elif _path_exists(destination):
+        if source.name == installed_version or _path_exists(destination):
+            shutil.rmtree(source)
             continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source, destination, symlinks=True)
+        cache_root.mkdir(parents=True, exist_ok=True)
+        source.rename(destination)
+    saved_root.rmdir()
+    for parent in (saved_root.parent, saved_root.parent.parent):
+        with contextlib.suppress(OSError):
+            parent.rmdir()
 
 
 def _sync_local_plugin(
@@ -489,6 +510,14 @@ def _sync_local_plugin(
     notices: list[post_apply_outcome.PostApplyNotice],
 ) -> tuple[bool, bool]:
     """Local marketplaceのpluginを目標版へ同期し、変更の有無を返す。"""
+    cache_root = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name
+    saved_root = _saved_cache_root(marketplace_name, plugin_name)
+    try:
+        _restore_plugin_caches(cache_root, saved_root, installed_version=None, rollback=False)
+    except OSError as error:
+        raise RuntimeError(
+            f"前回の実行が退避した旧cacheの復旧に失敗。退避先を保持: {saved_root}: {error}。{_SAVED_CACHE_RETRY}"
+        ) from error
     if current is not None and current.get("enabled") is False:
         # plugin addは有効化を伴うため、明示的に無効なpluginは版更新も保留する。
         return False, False
@@ -497,22 +526,18 @@ def _sync_local_plugin(
     toolkit_plugin = plugin_name == "agent-toolkit"
     wrapper_changed = _install_hook_wrapper(root) if toolkit_plugin else False
     if needs_plugin_add:
-        cache_root = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name
-        saved_root = Path(tempfile.mkdtemp(prefix="codex-plugin-cache-"))
         try:
-            saved_versions = _snapshot_plugin_caches(cache_root, saved_root)
+            _snapshot_plugin_caches(cache_root, saved_root, version)
         except OSError:
-            shutil.rmtree(saved_root, ignore_errors=True)
+            _restore_plugin_caches(cache_root, saved_root, installed_version=None, rollback=False)
             raise
         if not _command(["plugin", "add", plugin_id]):
             try:
-                _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=None)
+                _restore_plugin_caches(cache_root, saved_root, installed_version=None, rollback=True)
             except OSError as error:
                 raise RuntimeError(
-                    f"Codex plugin addと旧cacheの復旧に失敗。退避先を保持: {saved_root}: {error}。"
-                    "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+                    f"Codex plugin addと旧cacheの復旧に失敗。退避先を保持: {saved_root}: {error}。{_SAVED_CACHE_RETRY}"
                 ) from error
-            shutil.rmtree(saved_root)
             raise RuntimeError("Codex plugin addに失敗")
         try:
             _verify_expected_state(plugin_id, version)
@@ -526,14 +551,11 @@ def _sync_local_plugin(
         finally:
             try:
                 # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
-                _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=version)
+                _restore_plugin_caches(cache_root, saved_root, installed_version=version, rollback=False)
             except OSError as error:
                 raise RuntimeError(
-                    f"Codex plugin更新後の旧cache復旧に失敗。退避先を保持: {saved_root}: {error}。"
-                    "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+                    f"Codex plugin更新後の旧cache復旧に失敗。退避先を保持: {saved_root}: {error}。{_SAVED_CACHE_RETRY}"
                 ) from error
-            else:
-                shutil.rmtree(saved_root)
     elif toolkit_plugin and _hook_trust_notice_required(_hooks_list(), plugin_id):
         notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
     removed_legacy_links = _remove_legacy_links(root) if toolkit_plugin else False

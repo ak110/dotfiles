@@ -47,6 +47,7 @@ OLD_DIR=""
 # 差し替え完了後は OLD_DIR を削除扱いとするため本フラグで区別する（エラー時の復元を抑止）
 REPLACED=0
 CODEX_PLUGIN_UPDATED=0
+CODEX_SAVED_CACHE_RETRY="次回の実行が退避先から戻します。解消しない場合は退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
 
 _cleanup() {
     # エラー終了時に既存の TARGET_DIR を可能な限り復元する。
@@ -237,14 +238,23 @@ raise SystemExit(1)
 PY
 }
 
+# 旧versionはcacheと同じボリュームの固定の退避先へ移動し、移動できない版だけ複製する。
+# 中断した実行が残した退避は、次回の実行が_restore_codex_plugin_cachesで戻す。
+# 目標versionはCLIが置き換えるため元の場所に残して複製し、plugin addの失敗時に戻せるようにする。
 _snapshot_codex_plugin_caches() {
     local destination="$1"
+    local target_version="$2"
     local cache=""
-    mkdir -p "$destination"
     [ -d "$CODEX_PLUGIN_CACHE_ROOT" ] || return 0
+    mkdir -p "$destination" || return 1
     for cache in "$CODEX_PLUGIN_CACHE_ROOT"/*; do
         [ -d "$cache" ] && [ ! -L "$cache" ] || continue
-        cp -a "$cache" "$destination/"
+        if [ "${cache##*/}" != "$target_version" ]; then
+            mv "$cache" "$destination/" 2>/dev/null || true
+        fi
+        if [ -e "$cache" ]; then
+            cp -a "$cache" "$destination/" || return 1
+        fi
     done
 }
 
@@ -255,19 +265,23 @@ _restore_codex_plugin_caches() {
     local saved=""
     local version=""
     local destination=""
+    [ -d "$saved_root" ] || return 0
     for saved in "$saved_root"/*; do
         [ -d "$saved" ] || continue
         version=${saved##*/}
-        [ "$version" != "$installed_version" ] || continue
         destination="$CODEX_PLUGIN_CACHE_ROOT/$version"
         if [ "$replace_existing" -eq 1 ] && { [ -e "$destination" ] || [ -L "$destination" ]; }; then
             rm -rf "$destination" || return 1
-        elif [ -e "$destination" ] || [ -L "$destination" ]; then
+        fi
+        if [ "$version" = "$installed_version" ] || [ -e "$destination" ] || [ -L "$destination" ]; then
+            rm -rf "$saved" || return 1
             continue
         fi
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT" || return 1
-        cp -a "$saved" "$destination" || return 1
+        mv "$saved" "$destination" || return 1
     done
+    rmdir "$saved_root" || return 1
+    rmdir "${saved_root%/*}" "${saved_root%/*/*}" 2>/dev/null || true
 }
 
 # 期待する版はGitHubのmarketplace（ak110/dotfiles）を登録したCodexが取得したmanifestから読む。
@@ -286,11 +300,16 @@ _install_codex_plugin() {
     local after_enabled="false"
     local hook_wrapper="$HOME/.local/bin/atk-hook"
     local hook_stage=""
-    local migration_dir=""
+    local saved_root="$CODEX_HOME_DIR/.dotfiles-plugin-cache-saved/ak110-dotfiles/$plugin_name"
     local post_add_error=""
     local skill=""
     local skills_present=0
     echo "Codex側の$plugin_name プラグインを設定します..."
+    if ! _restore_codex_plugin_caches "$saved_root" "" 0; then
+        echo "前回の実行が退避した旧cacheの復旧に失敗しました。退避先を保持します: $saved_root" >&2
+        echo "$CODEX_SAVED_CACHE_RETRY" >&2
+        return 1
+    fi
     codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
     codex plugin marketplace upgrade ak110-dotfiles --json >/dev/null
     expected_version=$(_codex_expected_plugin_version "$plugin_name")
@@ -309,15 +328,16 @@ _install_codex_plugin() {
         chmod 755 "$hook_stage"
         mv "$hook_stage" "$hook_wrapper"
     fi
-    migration_dir=$(mktemp -d)
-    _snapshot_codex_plugin_caches "$migration_dir"
+    if ! _snapshot_codex_plugin_caches "$saved_root" "$expected_version"; then
+        echo "Codex plugin更新前の旧cacheを退避できませんでした。" >&2
+        _restore_codex_plugin_caches "$saved_root" "" 0 || echo "$CODEX_SAVED_CACHE_RETRY 退避先: $saved_root" >&2
+        return 1
+    fi
     if ! codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null; then
-        if ! _restore_codex_plugin_caches "$migration_dir" "" 1; then
-            echo "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $migration_dir" >&2
-            echo "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。" >&2
-            return 1
+        if ! _restore_codex_plugin_caches "$saved_root" "" 1; then
+            echo "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $saved_root" >&2
+            echo "$CODEX_SAVED_CACHE_RETRY" >&2
         fi
-        rm -rf "$migration_dir"
         return 1
     fi
     if ! after_state=$(_codex_plugin_state); then
@@ -346,12 +366,11 @@ _install_codex_plugin() {
         fi
     fi
     # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
-    if ! _restore_codex_plugin_caches "$migration_dir" "$expected_version" 0; then
-        echo "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $migration_dir" >&2
-        echo "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。" >&2
+    if ! _restore_codex_plugin_caches "$saved_root" "$expected_version" 0; then
+        echo "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $saved_root" >&2
+        echo "$CODEX_SAVED_CACHE_RETRY" >&2
         return 1
     fi
-    rm -rf "$migration_dir"
     if [ -n "$post_add_error" ]; then
         echo "$post_add_error" >&2
         return 1

@@ -271,7 +271,7 @@ def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib
 
 @pytest.mark.parametrize("kind", installer_runners())
 def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """更新と復元を失敗させ、全退避bytesと失敗理由・保存先・次の操作を保持する。"""
+    """更新と復元を失敗させ、全退避bytesと失敗理由・保存先・次の操作を保持し、次回の実行で戻す。"""
     home = tmp_path / "home"
     home.mkdir()
     cache_root = home / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit"
@@ -306,13 +306,28 @@ def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: path
     assert "stub failure: codex plugin add agent-toolkit" in result.stderr
     assert "復旧に失敗" in result.stderr
     assert "退避先を変更せず" in result.stderr and "作者へ報告" in result.stderr
-    backups = [path for path in tmp_path.iterdir() if path.is_dir() and (path / "1.2.0/data.bin").is_file()]
-    assert len(backups) == 1
-    backup = backups[0]
+    backup = home / ".codex/.dotfiles-plugin-cache-saved/ak110-dotfiles/agent-toolkit"
     assert str(backup) in result.stderr
     for relative, body in original.items():
         assert (backup / relative).read_bytes() == body
     assert (backup / "1.2.2/scripts/hook.py").read_bytes() == b"old hook\n"
+
+    # 次回の実行が退避先から全versionを戻す。
+    cache_root.unlink()
+    stub.write_text(source, encoding="utf-8")
+    run_installer(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.3", True),
+        codex_home=home / ".codex",
+    )
+    for relative, body in original.items():
+        assert (cache_root / relative).read_bytes() == body
+    assert (cache_root / "1.2.2/scripts/hook.py").read_bytes() == b"old hook\n"
+    assert not (home / ".codex/.dotfiles-plugin-cache-saved").exists()
 
 
 @pytest.mark.parametrize("kind", installer_runners())

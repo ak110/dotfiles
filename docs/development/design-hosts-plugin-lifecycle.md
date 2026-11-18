@@ -23,7 +23,12 @@ Codex 0.166.0の操作lock待機375秒、停止猶予最大300秒、強制終了
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
 公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、導入先の実体をCodexが読み込むと定める。
 現行versionの導入はCodex CLIへ委ねる。
-更新処理は`plugin add`の前に通常のversionディレクトリを複製し、導入後の状態確認とdaemon処理を含む最後のCodex CLI呼出後に、CLIが削除した旧versionだけを同じ絶対パスへ戻す。
+更新処理は`plugin add`の前に、通常のversionディレクトリを`CODEX_HOME`直下の固定の退避先（`.dotfiles-plugin-cache-saved/<marketplace>/<plugin>/`）へ移動する。
+導入後の状態確認とdaemon処理を含む最後のCodex CLI呼出後に、目標version以外を同じ絶対パスへ戻す。
+退避先はcacheと同じボリュームにあるため、退避と復元はversionごとの名前の変更で済み、旧versionの数とファイル数に比例する複製・削除を伴わない。
+目標versionと、Windowsで使用中のファイルを含むなどの理由で移動できないversionは元の場所に残して複製し、元の実体はCLIの処理に任せる。
+移動先と同じversionが元のパスに再作成されていた場合（`atk-hook`の復旧など）は、再作成された実体を残して退避した側を削除する。
+強制終了などで復元前に中断した場合は退避先が残り、次回の更新処理が`plugin add`の判定より前に同じ規則で戻す。
 退避から復旧までを1つの保護区間とし、復旧後はCodexを使う処理へ戻らず更新関数を終了する。
 これにより個別コマンドのcache副作用を前提とせず、更新関数の終了時に既存セッションが参照する全旧パスの存在を保証する。
 Codex 0.163.0では、App Serverの`plugin/list` RPCもlocal marketplaceの新versionを自動導入し、更新関数の外で全旧cacheを削除する。
@@ -61,8 +66,8 @@ agent-toolkitの更新では旧versionを自動復旧し、Codexの稼働状態�
 
 | 処理 | 参照の判定 | 延期後の再開 |
 | --- | --- | --- |
-| Codexのpost-apply更新（`install_codex_plugins.py`） | 更新前の全通常versionディレクトリを複製し、CLIが削除した旧versionを同じ絶対パスへ復旧する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗は導入成功と区別して報告する |
-| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | post-apply更新と同じく、更新前の全通常versionディレクトリを複製する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗時は退避先と報告先を表示して非0で終わる |
+| Codexのpost-apply更新（`install_codex_plugins.py`） | 更新前の全通常versionディレクトリを同じボリュームの退避先へ移動し、CLIの処理後に同じ絶対パスへ戻す | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗は導入成功と区別して報告し、退避先を残して次回の実行で戻す |
+| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | post-apply更新と同じ退避先へ、更新前の全通常versionディレクトリを移動する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗時は退避先と報告先を表示して非0で終わり、次回の実行で戻す |
 | Claude Codeの旧版cache整理（`prune_claude_plugin_cache.py`） | `claude_plugin_references.py`。その版の配下を指すプロセスと、その版が現行だった期間に起動したClaude Codeセッション | 参照の終了後の`update-dotfiles`で削除する |
 | Claude Codeの現行版cache欠落修復（`install_claude_plugins.py`） | `claude_plugin_references.py`。導入先を指すプロセスと、起動時刻を問わない稼働中のClaude Codeセッション | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではClaude Codeのセッションを全て終了してから`update-dotfiles`を再実行する |
 | Codexの不要pluginの除去（`install_codex_plugins.py`の`_remove_unused_plugins`） | `codex_processes.py`の役割分類。`session`だけを数え、管理daemonとその補助実行体・更新ループは数えない | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |
@@ -75,7 +80,12 @@ Claude Code 2.1.303の`claude plugin uninstall`とmarketplaceの削除は、plug
 `plugin.json`は設定項目を持たない。
 このため通常の環境では稼働中のセッションのhook・MCPはデータ領域を参照せず、削除しても動作は変わらないので、この修復は参照の終了を待つ延期の対象にしない。
 daemon自動再起動と旧versionの保持は独立している。
-旧cacheを移動して退避する案は、移動中に元のパスから実体へ到達できないため採らない。
-更新前の実体を残したまま複製し、CLIの完了後に削除された旧versionを復旧する。
+旧versionは移動して退避し、複製しない。
+複製する方式でも、CLIが`plugin add`で旧versionを削除してから復元の複製を終えるまで元のパスから実体へ到達できない。
+その区間は旧versionの総量に比例して伸びる。
+移動する方式ではこの区間が`plugin add`と導入後の確認の時間に縮み、旧versionの数に依存しない。
+sthenoの34版（約7.6万ファイル、約1.6GiB）を実際のCodex CLIで更新した計測では、更新関数の所要が中央値165秒から14秒に、元のパスから到達できない区間が91秒から14秒に縮んだ（各5回、2026年11月18日）。
 最新版へhookを付け替える案は、旧版のskill・MCP・遅延importを守れないため採らない。
 プロセス終了まで更新を延期する案は、後から再開できる保存済みセッションを判定できず、Codexを常用する環境で更新が完了しないため採らない。
+稼働中のCodexの起動時刻より前に置き換わった旧versionを回収する案も、同じ理由で採らない。
+`codex resume`で再開したプロセスは起動時刻が新しく、再開した会話の履歴が指す旧versionの絶対パスを使い続ける。
