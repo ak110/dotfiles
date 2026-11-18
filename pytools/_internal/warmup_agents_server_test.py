@@ -442,9 +442,14 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
 
 @pytest.mark.parametrize("failed", [None, "dependency", "startup", "exception"])
 def test_parallel_checks_keep_order_and_collect_other_roots(monkeypatch, failed):
-    """独立rootを重ね、1root失敗でも残るrootの確認を終了まで回収する。"""
+    """依存確認は独立rootを重ね、MCP起動確認は重ねず、1root失敗でも残るrootの確認を終了まで回収する。
+
+    Windowsでは先に終わった起動確認が、共有の管理サービスを他の確認の接続中に止めるため、起動確認を重ねない。
+    """
     commands = [["python", name] for name in ("first", "second", "third")]
     observed = []
+    active_startups = [0]
+    max_active_startups = [0]
 
     async def exercise():
         all_started = asyncio.Event()
@@ -462,6 +467,11 @@ def test_parallel_checks_keep_order_and_collect_other_roots(monkeypatch, failed)
 
         async def startup(command):
             observed.append((command[-1], "startup"))
+            active_startups[0] += 1
+            max_active_startups[0] = max(max_active_startups[0], active_startups[0])
+            # 並列に起動していれば、ここで他の起動確認が開始する。
+            await asyncio.sleep(0.01)
+            active_startups[0] -= 1
             return _STARTUP_OUTCOME(not (command[-1] == "second" and failed == "startup"), command[-1])
 
         monkeypatch.setattr(_warmup.plugin_warmup, "check_command", dependency)
@@ -476,6 +486,7 @@ def test_parallel_checks_keep_order_and_collect_other_roots(monkeypatch, failed)
     assert first[1] is not None and first[1].ok
     assert third[1] is not None and third[1].ok
     assert ("first", "startup") in observed and ("third", "startup") in observed
+    assert max_active_startups[0] == 1
     if failed == "exception":
         assert isinstance(second, RuntimeError)
     else:
