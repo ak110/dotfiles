@@ -67,7 +67,7 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 <!-- return-contract:exec:end -->
 
 <!-- return-contract:lane-integration:start -->
-<!-- 生成元: share/lane-integration.subagent.md「出力」。手動編集しない。 -->
+<!-- 生成元: skills/atk-mode/roles/lane-integration.subagent.md「出力」。手動編集しない。 -->
 ## 統合の返却契約
 
 `変更したエージェント向け文書`には、統合先worktreeで`atk run-script agent-doc-changes -- <統合前HEAD> <統合後のHEAD>`を単独実行し、終了コード0で取得したJSON配列をそのまま使用する。
@@ -88,7 +88,7 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 変更したエージェント向け文書: <["リポジトリ相対パス"]形式のJSON配列。無い場合は[]>
 ```
 
-続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:lane-integration:end -->
 
 ## 条件別資料

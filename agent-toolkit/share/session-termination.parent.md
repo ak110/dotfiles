@@ -35,7 +35,7 @@
 ## 渡す入力
 
 <!-- input-contract:session-termination:start -->
-<!-- 生成元: share/session-termination.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+<!-- 生成元: skills/atk-mode/roles/session-termination.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 起動準備はこの契約の入力一覧で完結する。
 
@@ -93,7 +93,7 @@
 CI検収と公開後操作が完了し、新commitがなければ再起動せず、手順6へ進む。
 
 <!-- return-contract:session-termination:start -->
-<!-- 生成元: share/session-termination.subagent.md「出力」。手動編集しない。 -->
+<!-- 生成元: skills/atk-mode/roles/session-termination.subagent.md「出力」。手動編集しない。 -->
 ## 公開担当の返却契約
 
 次の固有形式のみを返す。
@@ -110,7 +110,7 @@ CIの結果: <CI成功|CI定義なし|CI実行対象外。後二者は共通判�
 延期後にadoptしたAWI: <実際にadoptしたAWIファイル名のJSON文字列配列。反映後の新プロセスでしか観測できない条件が残る項目と、観測が完成条件を満たさなかった項目を含めない。無い場合は[]>
 ```
 
-続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 `CI実行対象外`では`実行した公開工程`に終了8の出力、project・commit・ref・errorsの保存先とローカル全体検証の成功を記す。
 CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）や公開後操作の前提不足に起因する場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能の受渡し」に従う。
 対象、失敗した操作とその対象、診断結果、確認済みの工程、成功済みの公開後操作、残りの工程、再開位置を記載する。
