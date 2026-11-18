@@ -4,14 +4,20 @@
 import dataclasses
 import datetime
 import json
+import os
 import pathlib
+import shlex
+import subprocess
+import sys
 
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import config, lane_create, lane_records
+from agent_toolkit._atk import config, lane, lane_create, lane_records
 from agent_toolkit._atk.wi import alerts, listing
+from agent_toolkit._atk.wi import process_loop_launch_gate as launch_gate
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
+from agent_toolkit._atk.wi import process_loop_scheduled as scheduled
 from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._atk.wi import process_loop_worktree as worktree
 from agent_toolkit._atk.wi.mutations import targets
@@ -266,6 +272,71 @@ def test_process_loop_targets_each_branch_without_switching_registered_worktree(
     assert plain.name == "process-wi-lane-01"
 
 
+def test_branch_without_work_is_not_launched_for_other_branch(
+    branch_repo: BranchRepository, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """別の系統の着手可能なWI・修復診断・依存先は、その系統の候補・起動入力・内部依存待ちに数えない。"""
+    _write(branch_repo.notes, "main-only.md", REPO_ID, "target_branch: main\n")
+    _write(branch_repo.notes, "main-broken.md", REPO_ID, "target_branch: main\ndepends_on: 20990101-000000-001.md\n")
+    _write(branch_repo.notes, "rel-waits.md", REPO_ID, "target_branch: release\ndepends_on: [main-only.md]\n")
+    repositories = tuple(item for item in config.resolve_configured_repositories() if item.repo_id == REPO_ID)
+    release, main = listing.configured_repo_snapshot(branch_repo.notes, repositories)
+    assert (release.candidates, release.has_work, release.readiness.ready) == ((), False, ())
+    assert not launch_gate.repository_input(release, None).items
+    assert main.readiness.ready == ("main-only.md",)
+    assert main.readiness.invalid_dependencies == ("main-broken.md",)
+    inputs, skipped = scheduled._launch_plan((release, main), set(), {})  # pylint: disable=protected-access  # noqa: SLF001
+    assert (sorted(inputs), skipped) == ([f"{REPO_ID}@main"], [])
+    code, out, _err = _list(tmp_path, capsys, f"--target-repo={branch_repo.repo}", "--target-branch=release", "--jsonl")
+    assert code == 0
+    assert [(record["filename"], record["blocked_reason"]) for record in map(json.loads, out.splitlines())] == [
+        ("rel-waits.md", "dependency-unmet-external")
+    ]
+
+
+def test_lane_hook_names_differ_per_branch(
+    branch_repo: BranchRepository,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """WorktreeCreate hookを使うrepositoryでも、系統ごとの処理が同じレーン名で別の作業ツリーを作る。"""
+    created = tmp_path / "hook-created"
+    script = tmp_path / "hook.py"
+    script.write_text(
+        "import json,pathlib,subprocess,sys\n"
+        "name=json.load(sys.stdin)['name']\n"
+        "path=pathlib.Path(sys.argv[1],name)\n"
+        "subprocess.run(['git','worktree','add','--quiet','-b','worktree-'+name,str(path)],check=True,stdout=sys.stderr)\n"
+        "print(path)\n",
+        encoding="utf-8",
+    )
+    argv = [sys.executable, str(script), str(created)]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    settings = branch_repo.repo / ".claude/settings.local.json"
+    settings.parent.mkdir(exist_ok=True)
+    settings.write_text(
+        json.dumps({"hooks": {"WorktreeCreate": [{"hooks": [{"type": "command", "command": command}]}]}}), encoding="utf-8"
+    )
+    git.run_git(branch_repo.repo, "branch", "--quiet", "release", "origin/release")
+    selected = tmp_path / "selection.yaml"
+    selected.write_text(json.dumps({"レーンの所要時間": [{"レーン": "lane-01", "統合状態": "未統合"}]}), encoding="utf-8")
+    worktrees = {}
+    for name in ("release", "main"):
+        monkeypatch.setenv(lane.SESSION_ENV, f"branch-session-{name}")
+        capsys.readouterr()
+        arguments = ["lane", "create", "--repo", str(branch_repo.repo), "--base-branch", name, "--lane", "lane-01"]
+        with pytest.raises(SystemExit) as result:
+            atk.main([*arguments, "--selection-file", str(selected)])
+        output = capsys.readouterr()
+        assert result.value.code == 0, output.err
+        worktrees[name] = json.loads(output.out)["worktree"]
+    assert sorted(pathlib.Path(path).name for path in worktrees.values()) == [
+        "process-wi-main-lane-01",
+        "process-wi-release-lane-01",
+    ]
+
+
 def test_coordinator_input_carries_branch(branch_repo: BranchRepository) -> None:
     """統括へ渡す対象は系統を含み、結果の対応に使う識別子を持つ。系統の無い対象はtarget_repoと同じ識別子になる。"""
 
@@ -304,6 +375,7 @@ def test_ci_failures_are_filed_per_branch(
         return [{**run, "databaseId": 10, "url": "https://example.test/run/10", "headSha": "a" * 40}]
 
     monkeypatch.setattr(alerts, "_github_head", lambda _repo, _branch: "a" * 40)
+    monkeypatch.setattr(alerts, "_github_failure_diagnostics", lambda _repo, run_id: f"失敗run{run_id}の診断")
     for branch in ("release", "main"):
         alerts.check_and_submit_alerts(
             branch_repo.notes,
@@ -319,6 +391,7 @@ def test_ci_failures_are_filed_per_branch(
     (saved,) = _saved(branch_repo.notes)
     assert "target_branch: release" in saved
     assert "source: alert-monitor" in saved
+    assert "失敗run10の診断" in saved
     calls: list[tuple[str | None, bool]] = []
 
     def record(*_args: object, branch: str | None = None, include_repository_alerts: bool = True, **_kwargs: object):

@@ -128,6 +128,7 @@ def configured_repo_snapshot(
                 repository.repo_id,
                 snapshot=snapshot if index == 0 else tuple(entry for entry in snapshot if entry[4] is not None),
                 branch_settings=branch_settings,
+                target_branch=repository.branch,
             ),
             private_notes,
         )
@@ -410,7 +411,12 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if getattr(args, "snapshot_output", None) is not None:
         _wi_snapshot.save(args.snapshot_output, all_entries)
     readiness = _wi_readiness.calculate_readiness(
-        private_notes, readiness_target, texts=texts, snapshot=all_entries, branch_settings=branch_settings
+        private_notes,
+        readiness_target,
+        texts=texts,
+        snapshot=all_entries,
+        branch_settings=branch_settings,
+        target_branch=target_branch if readiness_target is not None else None,
     )
 
     selected = _wi_entries.select_entries(

@@ -414,10 +414,13 @@ def calculate_readiness(
     snapshot: tuple[_wi_entries.EntryRecord, ...] | None = None,
     texts: EntryTexts | None = None,
     branch_settings: _wi_branches.Registry | None = None,
+    target_branch: str | None = None,
 ) -> ReadinessResult:
     """`active`全件と参照された終了項目から対象リポジトリの着手可否を算出する。
 
     `branch_settings`を渡した場合は、登録に無い系統を宛先に持つ項目を着手不能にする。
+    `target_branch`を渡した場合は、対象をその系統のWIに限る。別の系統のWIは着手可否・修復診断に数えず、
+    依存先としては内部依存待ちの外側になる。
     """
     if now is None:
         now = datetime.datetime.now(datetime.UTC)
@@ -440,7 +443,15 @@ def calculate_readiness(
         else tuple(
             entry
             for entry in all_active
-            if entry.frontmatter_broken or (canonical_target is not None and entry.target_repo == canonical_target)
+            if entry.frontmatter_broken
+            or (
+                canonical_target is not None
+                and entry.target_repo == canonical_target
+                and (
+                    target_branch is None
+                    or _wi_branches.matches(entry.text, entry.target_repo, target_branch, branch_settings or {})
+                )
+            )
         )
     )
     all_dependency_map = {
