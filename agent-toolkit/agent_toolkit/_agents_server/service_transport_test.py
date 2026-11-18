@@ -99,6 +99,24 @@ def test_windows_process_alive_matches_unopenable_process_by_process_list(
     assert service_transport.process_alive(f"{os.getpid()}:{created}") is alive
 
 
+@pytest.mark.parametrize("error", [psutil.NoSuchProcess(4242), psutil.AccessDenied(4242)])
+def test_windows_process_alive_treats_unlisted_unopenable_process_as_exited(
+    monkeypatch: pytest.MonkeyPatch, error: psutil.Error
+) -> None:
+    """開けない世代の作成時刻をプロセス一覧からも得られなければ、呼び出し元の場面表と同じく終了した世代とする。"""
+
+    def denied(_pid: int) -> str:
+        raise PermissionError(13, "Access is denied", None, 5)
+
+    def unlisted(_pid: int) -> Any:
+        raise error
+
+    monkeypatch.setattr(service_transport, "process_identity", denied)
+    monkeypatch.setattr(service_transport, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(psutil, "Process", unlisted)
+    assert service_transport.process_alive("4242:1") is False
+
+
 # 終了した世代の起動単位。PIDは別アカウントのプロセスが再利用し、照会がアクセス拒否で失敗する。
 _REUSED_PID = 4242
 _REUSED = f"{_REUSED_PID}:1"

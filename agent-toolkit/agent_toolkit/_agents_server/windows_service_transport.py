@@ -95,11 +95,12 @@ def listed_process_alive(identity: str) -> bool:
 
     psutilは開けないプロセスの作成時刻をプロセス一覧から秒の浮動小数で返すため、丸め誤差を許す。
     PIDの再利用は元のプロセスの終了後に限られ、作成時刻の差は元のプロセスの生存時間を超える。
+    プロセス一覧でも作成時刻を得られない場合は記録した起動単位と確かめられず、Linuxの拒否と同じく終了した世代として扱う。
     """
     pid, created = (int(part) for part in identity.split(":", 1))
     try:
         listed = psutil.Process(pid).create_time()
-    except psutil.NoSuchProcess:
+    except psutil.NoSuchProcess, psutil.AccessDenied:
         return False
     return abs(listed - (created - _FILETIME_UNIX_EPOCH) / 10_000_000) < 0.001
 

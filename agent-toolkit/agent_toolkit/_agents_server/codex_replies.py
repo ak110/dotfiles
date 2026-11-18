@@ -17,13 +17,11 @@ from agent_toolkit._agents_server.codex_protocol import (
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
+from agent_toolkit._agents_server.session_errors import KILL_NOT_DELIVERED_NEXT_ACTION
 from agent_toolkit._agents_server.state import SessionState, begin_reply, initialize_turn
 from agent_toolkit._atk.usage_limit_policy import should_wait
 from agent_toolkit._common import codex_usage_limit
 from agent_toolkit._common.next_action import ActionableError
-
-# responsesはmanager_base→backends→codexを読むため、codexの初期化中に読むと循環importになる。
-lazy from agent_toolkit._agents_server.responses import KILL_NOT_DELIVERED_NEXT_ACTION
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
