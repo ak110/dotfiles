@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import contextvars
 import dataclasses
+import logging
 import types
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
@@ -14,6 +15,8 @@ from typing import Any
 from agent_toolkit._agents_server import service_rpc
 from agent_toolkit._agents_server.codex_protocol import AppServerError, JsonRpcResponseError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
+
+_LOG = logging.getLogger(__name__)
 
 
 async def _no_save() -> None:
@@ -267,6 +270,21 @@ class CodexResource:
         await self.resource.operation("call", operation="send", arguments={"message": message})
 
     async def _consume(self) -> None:
+        # 例外で止まると既読が進まず、元I/O側のイベント上限で要求の送信まで止まる。
+        # 停止を記録し、接続障害として所有sessionへ反映して、終了しない「実行中」を残さない。
+        try:
+            await self._consume_events()
+        except Exception as error:
+            _LOG.exception("App Serverイベントの受信処理が停止しました: sequence=%d", self._sequence)
+            if self._closed or self._detached:
+                return
+            self._reader_failure = AppServerError(
+                f"App Serverイベントの受信処理が停止しました: {error!r}。"
+                "次の操作: 管理サービスのログで停止の原因を確認し、同じ作業を新しい委譲先で起動し直してください。"
+            )
+            await self._failure(self._reader_failure)
+
+    async def _consume_events(self) -> None:
         while not self._closed and not self._detached:
             events = await self.resource.operation("events", after_sequence=self._sequence, wait=30)
             if not events:
