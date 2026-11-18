@@ -360,3 +360,21 @@ def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathl
     assert result.returncode == 0 and not result.stderr
     specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
     assert specific.get("permissionDecision") != "deny"
+
+
+def test_versioned_distribution_document_is_checked_in_place(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """版別ディレクトリの役割文書も、配布物を一時rootへ複製せず、本文が指した文書の宣言で入力を検査する。"""
+    cache_home = tmp_path / "cache-home"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_home))
+    monkeypatch.setenv("LOCALAPPDATA", str(cache_home))
+    root = tmp_path / "plugins" / "agent-toolkit" / "9.9.9"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit","version":"9.9.9"}', encoding="utf-8")
+    (root / "share").mkdir()
+    document = root / "share" / "exec.subagent.md"
+    shutil.copyfile(_EXEC_DOCUMENT, document)
+    result = _invoke("Agent", f"{document}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path / "work")
+    reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "引き継ぎ記録先" in reason
+    assert str(document) in reason
+    assert not list(cache_home.rglob("agents-server-plugin-root-*"))

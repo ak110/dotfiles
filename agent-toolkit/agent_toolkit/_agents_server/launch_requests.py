@@ -18,8 +18,8 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.launch_requests_continuation import continuation_prompt
 from agent_toolkit._agents_server.launch_requests_inputs import (
     _PLUGIN_ROOT_VARIABLE,
-    _check_declared_inputs,
     _input_section,
+    check_declared_inputs,
     named_input_lines,
     with_launcher_record,
     with_startup_documents,
@@ -209,7 +209,7 @@ def _validate_required_prompt_inputs(
     )
     if isinstance(declaration, str):
         return declaration
-    _check_declared_inputs(task_document, declaration, extra_params)
+    check_declared_inputs(task_document, declaration, extra_params)
     return None
 
 
@@ -540,7 +540,7 @@ def task_document_request(
             handoff_path = _default_handoff_path(launcher_session_id)
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
-        _check_declared_inputs(task_document, declaration, extra_params)
+        check_declared_inputs(task_document, declaration, extra_params)
     # 起動時の資料は、受領した役割の判断が始まる前に同じ会話へ届ける。
     initial_documents = (
         plugin_root.SERVER_RUNTIME_CODE.check_role(

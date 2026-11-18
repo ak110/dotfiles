@@ -52,7 +52,7 @@ def _with_task_reference(body: str, reference: str) -> str:
     return instructions + boundary + reference + "\n\n" + remainder
 
 
-def _check_declared_inputs(
+def check_declared_inputs(
     task_document: pathlib.Path,
     declaration: task_documents.TaskDocumentDeclaration,
     extra_params: Mapping[str, str],
