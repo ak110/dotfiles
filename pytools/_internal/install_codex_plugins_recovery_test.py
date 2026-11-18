@@ -338,6 +338,29 @@ def test_disabled_plugin_still_recovers_saved_versions(plugin_env: Path, monkeyp
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
 
 
+def test_interrupted_restore_leftovers_are_cleaned_by_next_run(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """復元の途中で中断した実行が残した印と複製は、次回の実行が片付けて退避先を空にする。
+
+    版を元のパスへ戻した直後の中断では退避の無い`~replace`の印だけが残り、
+    複製の途中の中断後に元のパスが再作成されると`~restoring`の複製が残る。
+    """
+    saved = _saved_root() / "ak110-dotfiles/agent-toolkit"
+    saved.mkdir(parents=True)
+    (saved / "1.2.0~replace").touch()
+    (saved / "1.2.1").mkdir()
+    (saved / "1.2.1/marker").write_text("1.2.1", encoding="utf-8")
+    for version in ("1.2.0", "1.2.1", "1.2.1~restoring"):
+        (_cache() / version).mkdir(parents=True)
+        (_cache() / version / "marker").write_text(version, encoding="utf-8")
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([]))
+
+    install_codex_plugins.run()
+
+    assert {path.name for path in _cache().iterdir()} == {"1.2.0", "1.2.1", "1.2.3"}
+    assert not _saved_root().exists()
+
+
 def test_post_install_verification_failure_keeps_legacy_link(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -348,6 +348,41 @@ def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: path
     assert not (home / ".codex/.dotfiles-plugin-cache-saved").exists()
 
 
+@pytest.mark.parametrize("kind", installer_runners())
+def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """復元の途中で中断した実行が残した印と複製は、次回以降の実行が片付けて版として扱わない。
+
+    版を元のパスへ戻した直後の中断では退避の無い`~replace`の印だけが残り、
+    複製の途中の中断後に元のパスが再作成されると`~restoring`の複製が残る。
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = home / ".codex"
+    cache_root = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"
+    saved_root = codex_home / ".dotfiles-plugin-cache-saved/ak110-dotfiles/agent-toolkit"
+    for path in (cache_root / "1.2.0", cache_root / "1.2.1", cache_root / "1.2.1~restoring", saved_root / "1.2.1"):
+        (path / "scripts").mkdir(parents=True)
+        (path / "scripts/hook.py").write_text("older hook\n", encoding="utf-8")
+    (saved_root / "1.2.0~replace").touch()
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+
+    for _ in range(2):
+        run_installer(
+            kind,
+            home,
+            rules_url,
+            stub_bin=stub_bin,
+            stub_log=stub_log,
+            codex_plugin_before=("1.2.2", True),
+            codex_home=codex_home,
+        )
+
+    assert not [path.name for path in cache_root.iterdir() if "~" in path.name]
+    assert (cache_root / "1.2.0/scripts/hook.py").read_text(encoding="utf-8") == "older hook\n"
+    assert (cache_root / "1.2.1/scripts/hook.py").read_text(encoding="utf-8") == "older hook\n"
+    assert not (codex_home / ".dotfiles-plugin-cache-saved").exists()
+
+
 @pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0, reason="権限で削除と移動を妨げられる一般利用者で試す")
 @pytest.mark.parametrize("kind", installer_runners())
 def test_partial_rollback_is_replaced_from_backup_by_next_run(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:

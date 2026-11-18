@@ -198,6 +198,8 @@ function Move-CodexPluginCacheSnapshot {
     New-Item -ItemType Directory -Path $destination -Force | Out-Null
     foreach ($cache in @(Get-ChildItem -LiteralPath $codexPluginCacheRoot -Directory)) {
         if ($cache.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        # 復元途中の複製（~restoring）など、版でない名前は退避しない。
+        if ($cache.Name.Contains('~')) { continue }
         $saved = Join-Path $destination $cache.Name
         if ($cache.Name -ne $targetVersion) {
             try { [IO.Directory]::Move($cache.FullName, $saved) } catch { Write-Verbose "移動できないため複製する: $($cache.FullName)" }
@@ -215,6 +217,8 @@ function Restore-CodexPluginCacheSnapshot {
         $destination = Join-Path $codexPluginCacheRoot $saved.Name
         # 置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
         $replaceMarker = Join-Path $savedRoot "$($saved.Name)~replace"
+        $staging = "$destination~restoring"
+        if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
         if (($replaceExisting -or (Test-Path -LiteralPath $replaceMarker)) -and (Test-Path -LiteralPath $destination)) {
             New-Item -ItemType File -Path $replaceMarker -Force | Out-Null
             Remove-Item -LiteralPath $destination -Recurse -Force
@@ -225,8 +229,6 @@ function Restore-CodexPluginCacheSnapshot {
             continue
         }
         New-Item -ItemType Directory -Path $codexPluginCacheRoot -Force | Out-Null
-        $staging = "$destination~restoring"
-        if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
         try {
             [IO.Directory]::Move($saved.FullName, $destination)
             Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
@@ -239,6 +241,8 @@ function Restore-CodexPluginCacheSnapshot {
             Remove-Item -LiteralPath $saved.FullName -Recurse -Force
         }
     }
+    # 版を元のパスへ戻した直後に中断すると、対応する退避の無い印だけが残る。
+    Get-ChildItem -LiteralPath $savedRoot -File -Force -Filter '*~replace' | Remove-Item -Force
     # 退避先は名前が.で始まり、Linux・macOSのPowerShellでは隠し項目になるため-Forceで削除する。
     Remove-Item -LiteralPath $savedRoot -Force
     foreach ($parent in @((Split-Path -Parent $savedRoot), (Split-Path -Parent (Split-Path -Parent $savedRoot)))) {

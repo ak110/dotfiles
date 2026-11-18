@@ -249,6 +249,8 @@ _snapshot_codex_plugin_caches() {
     mkdir -p "$destination" || return 1
     for cache in "$CODEX_PLUGIN_CACHE_ROOT"/*; do
         [ -d "$cache" ] && [ ! -L "$cache" ] || continue
+        # 復元途中の複製（~restoring）など、版でない名前は退避しない。
+        case "${cache##*/}" in *'~'*) continue ;; esac
         if [ "${cache##*/}" != "$target_version" ]; then
             mv "$cache" "$destination/" 2>/dev/null || true
         fi
@@ -283,6 +285,8 @@ _restore_codex_plugin_caches() {
         destination="$CODEX_PLUGIN_CACHE_ROOT/$version"
         # 置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
         replace_marker="$saved_root/$version~replace"
+        staging="$destination~restoring"
+        rm -rf "$staging" || return 1
         if { [ "$replace_existing" -eq 1 ] || [ -e "$replace_marker" ]; } && { [ -e "$destination" ] || [ -L "$destination" ]; }; then
             : >"$replace_marker" || return 1
             rm -rf "$destination" || return 1
@@ -292,8 +296,6 @@ _restore_codex_plugin_caches() {
             rm -rf "$saved" || return 1
             continue
         fi
-        staging="$destination~restoring"
-        rm -rf "$staging" || return 1
         if [ "$same_volume" -eq 1 ]; then
             mv "$saved" "$destination" || return 1
             rm -f "$replace_marker" || return 1
@@ -306,6 +308,8 @@ _restore_codex_plugin_caches() {
             rm -rf "$saved" || return 1
         fi
     done
+    # 版を元のパスへ戻した直後に中断すると、対応する退避の無い印だけが残る。
+    rm -f "$saved_root"/*~replace || return 1
     rmdir "$saved_root" || return 1
     rmdir "${saved_root%/*}" "${saved_root%/*/*}" 2>/dev/null || true
 }

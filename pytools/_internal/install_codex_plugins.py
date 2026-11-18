@@ -489,6 +489,9 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
             continue
         destination = cache_root / source.name
         replace_marker = saved_root / f"{source.name}~replace"
+        staging = cache_root / f"{source.name}~restoring"
+        if _path_exists(staging):
+            _remove_tree(staging)
         if (rollback or replace_marker.exists()) and _path_exists(destination):
             replace_marker.touch()
             _remove_tree(destination)
@@ -497,9 +500,6 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
             shutil.rmtree(source)
             continue
         cache_root.mkdir(parents=True, exist_ok=True)
-        staging = cache_root / f"{source.name}~restoring"
-        if _path_exists(staging):
-            _remove_tree(staging)
         try:
             source.rename(destination)
         except OSError:
@@ -511,6 +511,9 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
             shutil.rmtree(source)
         else:
             replace_marker.unlink(missing_ok=True)
+    # 版を元のパスへ戻した直後に中断すると、対応する退避の無い印だけが残る。
+    for orphan_marker in saved_root.glob("*~replace"):
+        orphan_marker.unlink()
     saved_root.rmdir()
     for parent in (saved_root.parent, saved_root.parent.parent):
         with contextlib.suppress(OSError):
