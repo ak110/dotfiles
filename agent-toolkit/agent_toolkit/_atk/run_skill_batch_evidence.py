@@ -1,7 +1,8 @@
-"""振り返り失敗の入力メタ情報と有限のログ抜粋を、移送できる本文へ変換する。"""
+"""振り返り失敗の入力メタ情報と、実行ログから抜き出した有限の診断を、移送できる本文へ変換する。"""
 
 from __future__ import annotations
 
+import collections
 import datetime
 import json
 import pathlib
@@ -10,7 +11,13 @@ import stat
 import sys
 from typing import Any
 
+from agent_toolkit._common import diagnostic_process, session_review
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
+
 _LOG_TAIL_BYTES = 8192
+_HEADER_LINES = 20
+_EVENT_LIMIT = 20
+_EVENT_CHARS = 2000
 _TARGET_FIELDS = (
     "host",
     "session_id",
@@ -53,51 +60,82 @@ def _record_state(raw: Any) -> dict[str, Any]:
     return {"kind": "ディレクトリ" if stat.S_ISDIR(info.st_mode) else "その他"}
 
 
-def _log_tail(raw: Any) -> dict[str, Any]:
+def _log_diagnostics(raw: Any) -> dict[str, Any]:
+    """実行ログ全体から、会話本文を除いた診断を有限の量で抜き出す。
+
+    末尾だけを切り出すと、会話出力が末尾を占めた回に診断イベントと実行条件が失われるため、全行を走査して種類ごとに上限を設ける。
+    """
     if not raw:
         return {"status": "実行ログなし（モデル未起動、または所在未記録）"}
+    header: list[str] = []
+    events: collections.deque[str] = collections.deque(maxlen=_EVENT_LIMIT)
+    event_count = 0
+    tail: collections.deque[str] = collections.deque()
+    tail_bytes = 0
+    tail_truncated = False
+    omitted = 0
+    child_output = False
     try:
         path = pathlib.Path(raw)
         if not path.is_file():
             return {"status": "読取不能", "error": "実行ログが通常ファイルでない、または存在しない"}
-        with path.open("rb") as stream:
-            size = stream.seek(0, 2)
-            stream.seek(max(0, size - _LOG_TAIL_BYTES))
-            tail = stream.read(_LOG_TAIL_BYTES)
+        size = path.stat().st_size
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for raw_line in stream:
+                line = raw_line.rstrip("\r\n")
+                child_output = child_output or line.startswith(("[stdout] ", "[stderr] "))
+                if line.startswith("[stdout] "):
+                    payload = line.removeprefix("[stdout] ")
+                    # 構造化イベントには会話本文やツール入力が含まれるため、診断のイベントだけを転載する。
+                    if diagnostic_process.is_error_event(payload):
+                        event_count += 1
+                        events.append(redact_secrets(payload[:_EVENT_CHARS]))
+                    else:
+                        omitted += 1
+                    continue
+                if not child_output and len(header) < _HEADER_LINES:
+                    # 子の出力より前の行は、run-skillが書く実行条件（対象、引数、候補）である。
+                    header.append(redact_secrets(line))
+                    continue
+                tail.append(redact_secrets(line))
+                tail_bytes += len(tail[-1].encode()) + 1
+                while tail_bytes > _LOG_TAIL_BYTES and len(tail) > 1:
+                    tail_bytes -= len(tail.popleft().encode()) + 1
+                    tail_truncated = True
     except OSError as error:
         return {"status": "読取不能", "error": str(error)}
-    # stdoutの構造化イベントには会話本文やツール入力が含まれるため、診断以外のJSONは転載しない。
-    lines = tail.decode("utf-8", errors="replace").splitlines()
-    if size > _LOG_TAIL_BYTES:
-        lines = lines[1:]
-    excerpt = []
-    omitted = False
-    for line in lines:
-        payload = line.removeprefix("[stdout] ")
-        if line.startswith("[stdout] "):
-            try:
-                event = json.loads(payload)
-            except ValueError:
-                event = None
-            if not isinstance(event, dict) or event.get("type") != "error":
-                excerpt.append("[stdout] （会話本文を含みうる出力を省略）")
-                omitted = True
-                continue
-        excerpt.append(line)
     return {
         "status": "取得済み",
-        "limit_bytes": _LOG_TAIL_BYTES,
         "total_bytes": size,
-        "truncated": size > _LOG_TAIL_BYTES,
-        "conversation_output_omitted": omitted,
-        "stdout_stderr_tail": "\n".join(excerpt),
+        "header": header,
+        "error_events": list(events),
+        "error_events_dropped": event_count - len(events),
+        "conversation_lines_omitted": omitted,
+        "tail_limit_bytes": _LOG_TAIL_BYTES,
+        "tail_truncated": tail_truncated,
+        "tail": "\n".join(tail),
     }
+
+
+def _previous_scope(target: dict[str, Any]) -> dict[str, Any] | None:
+    """準備が`--after`で読む前回の処理範囲を返す。行数とdigestだけを持ち、会話本文を含まない。"""
+    if not target.get("host") or not target.get("session_id"):
+        return None
+    path = session_review.previous_scope(target)
+    try:
+        return session_review.read(path) if path is not None else None
+    except (OSError, ValueError) as error:
+        return {"読取不能": str(error)}
 
 
 def failure_details(manifest: dict[str, Any], root: pathlib.Path) -> str:
     """会話ファイルを読まず、失敗時の入力・診断をJSONとして本文に固定する。"""
     targets = [
-        {**{field: target.get(field) for field in _TARGET_FIELDS}, "record_state": _record_state(target.get("transcript_path"))}
+        {
+            **{field: target.get(field) for field in _TARGET_FIELDS},
+            "record_state": _record_state(target.get("transcript_path")),
+            "previous_scope": _previous_scope(target),
+        }
         for target in manifest["targets"]
     ]
     details = {
@@ -105,11 +143,11 @@ def failure_details(manifest: dict[str, Any], root: pathlib.Path) -> str:
         "os": sys.platform,
         "plugin_version": manifest.get("failure_version") or plugin_version(root),
         "targets": targets,
-        "error": manifest.get("error"),
+        "error": redact_secrets(manifest["error"]) if manifest.get("error") else manifest.get("error"),
         "prepared_count": len(manifest.get("prepared", [])),
         "prepared_session_ids": [item.get("session_id") for item in manifest.get("prepared", [])],
         "exit_code": manifest.get("exit_code"),
-        "log": _log_tail(manifest.get("log_path")),
+        "log": _log_diagnostics(manifest.get("log_path")),
     }
     # JSONの文字列内に改行やコード囲みがあっても、本文の構造として解釈されないようインデントする。
     return (

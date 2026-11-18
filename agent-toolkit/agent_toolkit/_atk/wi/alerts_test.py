@@ -45,6 +45,8 @@ def _isolate_branch_head(monkeypatch: pytest.MonkeyPatch) -> None:
     """一覧を注入する既存試験ではHEADの外部通信も隔離する。"""
     monkeypatch.setattr(alerts, "_github_head", lambda _repo, _branch: "current-head")
     monkeypatch.setattr(alerts, "_gitlab_head", lambda _repo, _branch: "current-head")
+    monkeypatch.setattr(alerts, "_github_failure_diagnostics", lambda _repo, _run_id: "")
+    monkeypatch.setattr(alerts, "_gitlab_failure_diagnostics", lambda _repo, _pipeline_id: "")
 
 
 def test_collect_github_ci_failures_latest_completed_only() -> None:

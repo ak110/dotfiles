@@ -16,6 +16,8 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import re
+import subprocess
 import urllib.parse
 from collections.abc import Callable
 from typing import Any
@@ -27,6 +29,8 @@ from agent_toolkit._atk.wi import repo as _wi_repo
 from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_AWI
 from agent_toolkit._atk.wi.formatters import parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
+from agent_toolkit._common import process_tree as _process_tree
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import forge_cli as _forge_cli
 from agent_toolkit._git import refs as _git_refs
@@ -37,6 +41,12 @@ _GLAB_SUBPROCESS_TIMEOUT = 30.0
 _GIT_SUBPROCESS_TIMEOUT = 10.0
 _FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure"})
 _ALL_AWI_STATES = WI_STATES
+_DIAGNOSTIC_JOBS = 3
+_DIAGNOSTIC_ERROR_LINES = 10
+_DIAGNOSTIC_TAIL_LINES = 20
+_DIAGNOSTIC_LINE_CHARS = 300
+_ERROR_LINE = re.compile(r"##\[error\]|error|fail|traceback|exception", re.IGNORECASE)
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 """重複投入の判定で走査する保存状態。全ての保存状態を対象とする。"""
 
 GhRunListFn = Callable[[str, str], list[dict]]
@@ -189,6 +199,110 @@ def _run_alert_json_command(
     return payload
 
 
+def _run_alert_text_command(command: list[str], *, timeout: float, operation: str, env: dict[str, str] | None = None) -> str:
+    """ログ本文など、JSONでない応答を返す外部CLIを実行する。"""
+    try:
+        result = _process_tree.run_with_timeout(command, capture_output=True, check=False, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired as exc:
+        raise AlertCollectError(f"{operation}がタイムアウトしました") from exc
+    except FileNotFoundError as exc:
+        raise AlertCollectError(f"{command[0]}コマンドが見つかりません") from exc
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="backslashreplace").strip()
+        raise AlertCollectError(f"{operation}が失敗しました（exit={result.returncode}）: {stderr}")
+    return result.stdout.decode("utf-8", errors="replace")
+
+
+def _log_excerpt(text: str) -> str:
+    """失敗jobのログから、失敗を示す行と末尾を有限の量で抜き出し、秘匿値を伏せる。
+
+    末尾だけでは、後処理の出力が続いた回に失敗した検査の行が失われるため、失敗を示す行を別に残す。
+    """
+    lines = [_ANSI_ESCAPE.sub("", line)[:_DIAGNOSTIC_LINE_CHARS] for line in text.splitlines()]
+    tail_start = max(0, len(lines) - _DIAGNOSTIC_TAIL_LINES)
+    errors = [line for line in lines[:tail_start] if _ERROR_LINE.search(line)][-_DIAGNOSTIC_ERROR_LINES:]
+    excerpt = [*errors, *(["…"] if errors else []), *lines[tail_start:]]
+    return "\n".join("        " + redact_secrets(line) for line in excerpt)
+
+
+def _diagnostics_section(jobs: list[tuple[str, str, Callable[[], str]]]) -> str:
+    """失敗jobごとの要約とログの抜粋を、本文の節へ組み立てる。jobは(名前, 要約, ログ取得)の組で渡す。"""
+    parts = ["### 失敗の診断（検知時に取得）\n"]
+    for name, summary, fetch_log in jobs[:_DIAGNOSTIC_JOBS]:
+        try:
+            excerpt = _log_excerpt(fetch_log())
+        except AlertCollectError as exc:
+            excerpt = f"        ログを取得できなかった: {redact_secrets(str(exc))}"
+        parts.append(f"- job `{name}`（{summary}）\n\n{excerpt}\n")
+    if len(jobs) > _DIAGNOSTIC_JOBS:
+        parts.append(f"- ほか{len(jobs) - _DIAGNOSTIC_JOBS}件の失敗jobは上記の取得手順で確認する。\n")
+    if not jobs:
+        parts.append("失敗したjobを特定できなかった。上記の取得手順で確認する。\n")
+    return "\n".join(parts)
+
+
+def _unavailable_diagnostics(exc: Exception) -> str:
+    return f"### 失敗の診断（検知時に取得）\n\n失敗の診断を取得できなかった: {redact_secrets(str(exc))}\n"
+
+
+def _github_failure_diagnostics(repo: str, run_id: str) -> str:
+    """失敗runのjob・step・ログの抜粋を取得する。取得の失敗は通知を止めず、理由を本文へ残す。"""
+    try:
+        payload = _run_alert_json_command(
+            ["gh", "run", "view", run_id, "--repo", repo, "--json", "jobs"],
+            timeout=_GH_SUBPROCESS_TIMEOUT,
+            operation=f"gh run view {run_id}",
+            expected_type=dict,
+        )
+        failed = [
+            job
+            for job in payload.get("jobs") or []
+            if isinstance(job, dict) and job.get("conclusion") in _FAILURE_CONCLUSIONS and job.get("databaseId") is not None
+        ]
+    except AlertCollectError as exc:
+        return _unavailable_diagnostics(exc)
+
+    def job_entry(job: dict) -> tuple[str, str, Callable[[], str]]:
+        steps = [str(step.get("name")) for step in job.get("steps") or [] if step.get("conclusion") in _FAILURE_CONCLUSIONS]
+        summary = f"{job.get('conclusion')}。失敗したstep: {', '.join(steps) or '不明'}"
+        command = list(_forge_cli.failure_log_commands("github", repo, str(job["databaseId"]), job=True)[0])
+        return (
+            str(job.get("name")),
+            summary,
+            lambda: _run_alert_text_command(command, timeout=_GH_SUBPROCESS_TIMEOUT, operation="gh api（jobログ）"),
+        )
+
+    return _diagnostics_section([job_entry(job) for job in failed])
+
+
+def _gitlab_failure_diagnostics(repo: str, pipeline_id: str) -> str:
+    """失敗パイプラインのjob・失敗理由・traceの抜粋を取得する。取得の失敗は通知を止めず、理由を本文へ残す。"""
+    glab_repo = _forge_cli.glab_repository(repo, prefer_environment=True)
+    env = _forge_cli.glab_environment(repo, prefer_environment=True)
+    try:
+        payload = _run_alert_json_command(
+            ["glab", "ci", "get", "--repo", glab_repo, "-p", pipeline_id, "-d", "--status=failed", "-F", "json"],
+            timeout=_GLAB_SUBPROCESS_TIMEOUT,
+            operation=f"glab ci get {pipeline_id}",
+            expected_type=dict,
+            env=env,
+        )
+        failed = [job for job in payload.get("jobs") or [] if isinstance(job, dict) and job.get("id") is not None]
+    except AlertCollectError as exc:
+        return _unavailable_diagnostics(exc)
+
+    def job_entry(job: dict) -> tuple[str, str, Callable[[], str]]:
+        summary = f"stage {job.get('stage')}、{job.get('status')}。失敗理由: {job.get('failure_reason') or '不明'}"
+        command = ["glab", "ci", "trace", str(job["id"]), "--repo", glab_repo]
+        return (
+            str(job.get("name")),
+            summary,
+            lambda: _run_alert_text_command(command, timeout=_GLAB_SUBPROCESS_TIMEOUT, operation="glab ci trace", env=env),
+        )
+
+    return _diagnostics_section([job_entry(job) for job in failed])
+
+
 def _run_gh_run_list(repo: str, branch: str) -> list[dict]:
     """`gh run list`結果を返す。"""
     return _run_alert_json_command(
@@ -241,11 +355,13 @@ def collect_github_ci_failures(
         body = (
             f"ワークフロー`{name}`がブランチ`{branch}`で失敗している。\n\n"
             f"- 実行URL: {run.get('url', '')}\n"
+            f"- 起動契機: {run.get('event') or '応答に起動契機が無い'}\n"
             f"{context.description()}"
             f"- 検知日時: {_now_iso()}\n\n"
             f"{_forge_cli.failure_next_action('github', repo, str(run_id))}。\n"
             f"{context.investigation()}\n"
-            "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。"
+            "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。\n\n"
+            f"{_github_failure_diagnostics(repo, str(run_id))}"
         )
         completion = (
             f"対象ワークフロー`{name}`の失敗が解消し、ブランチ`{branch}`でそのワークフローが成功する。"
@@ -298,11 +414,13 @@ def _gitlab_pipeline_alert(pipeline: dict, repo: str, ref: str, *, context: RunC
     body = (
         f"{origin}パイプライン`{pipeline_id}`がブランチ`{ref}`で失敗している。\n\n"
         f"- 実行URL: {pipeline.get('web_url', '')}\n"
+        f"- 起動契機: {pipeline.get('source') or '応答に起動契機が無い'}\n"
         f"{context.description()}"
         f"- 検知日時: {_now_iso()}\n\n"
         f"{_forge_cli.failure_next_action('gitlab', repo, str(pipeline_id), prefer_environment=True)}。\n"
         f"{context.investigation()}\n"
-        "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。"
+        "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。\n\n"
+        f"{_gitlab_failure_diagnostics(repo, str(pipeline_id))}"
     )
     completion = (
         f"対象パイプライン`{pipeline_id}`の失敗が解消し、ブランチ`{ref}`で後続のパイプラインが成功する。"

@@ -821,7 +821,7 @@ def _copy_stream(
                 if log.closed:
                     # 読み取りを打ち切った後に届いた出力は、閉じたログへ書けないため捨てる。
                     return
-                diagnostic = label == "stderr" or _error_event(line)
+                diagnostic = label == "stderr" or diagnostic_process.is_error_event(line)
                 saved = line
                 if diagnostic:
                     saved, private_key = diagnostic_process.redact_stream_line(line, private_key)
@@ -897,15 +897,3 @@ def _log_line(log: typing.TextIO, text: str) -> None:
     """ログへ1行書いて直ちに反映する。"""
     log.write(f"{redact_secrets(text)}\n")
     log.flush()
-
-
-def _error_event(line: str) -> bool:
-    try:
-        event = json.loads(line)
-    except ValueError:
-        return False
-    return isinstance(event, dict) and (
-        event.get("is_error") is True
-        or event.get("type") in {"error", "turn.failed"}
-        or isinstance(event.get("error"), (dict, str))
-    )
