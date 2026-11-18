@@ -383,7 +383,9 @@ def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_pa
     assert not (codex_home / ".dotfiles-plugin-cache-saved").exists()
 
 
-@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0, reason="権限で削除と移動を妨げられる一般利用者で試す")
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0, reason="権限で削除と移動を妨げられる一般のOSアカウントで試す"
+)
 @pytest.mark.parametrize("kind", installer_runners())
 def test_partial_rollback_is_replaced_from_backup_by_next_run(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """巻き戻しが元のパスを途中まで消して失敗しても、次回の実行が退避した完全な版で置き換える。"""
