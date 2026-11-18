@@ -389,10 +389,14 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_
 
 def _live(manifest: dict[str, Any]) -> bool:
     stable = manifest.get("process_identities", [])
-    for index, raw in enumerate(manifest.get("processes", [])):
-        if session_registry.ProcessIdentity.from_payload(raw, stable=stable[index] if index < len(stable) else None).exists():
-            return True
-    # 別会話の環境読取権限には依存せず、起動argvの固有manifestパスで対象の子を特定する。
+    processes = manifest.get("processes", [])
+    if processes:
+        # 保存済みの実行プロセスの世代だけで判定し、ホストの全プロセスの起動argvは読まない。
+        return any(
+            session_registry.ProcessIdentity.from_payload(raw, stable=stable[index] if index < len(stable) else None).exists()
+            for index, raw in enumerate(processes)
+        )
+    # PIDの保存より前に親が中断した回だけ、別会話の環境読取権限には依存せず、起動argvの固有manifestパスで子を特定する。
     marker = f"batch manifest: {manifest['manifest_path']}"
     username = psutil.Process().username()
     for process in psutil.process_iter():

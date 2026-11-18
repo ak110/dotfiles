@@ -19,7 +19,11 @@ def test_batch_live_checks_process_state_on_both_routes(monkeypatch, tmp_path, r
     current = ObservedProcess(pid=2147483001)
     monkeypatch.setattr(process_identity, "start_id", lambda process, **kwargs: f"test:{process.create_time()}")
     monkeypatch.setattr(psutil, "Process", lambda pid=None, **_kwargs: current if pid is None else process)
-    monkeypatch.setattr(psutil, "process_iter", lambda **_kwargs: iter([process] if route == "argv" else []))
+    if route == "argv":
+        monkeypatch.setattr(psutil, "process_iter", lambda **_kwargs: iter([process]))
+    else:
+        # 保存identityを持つ回は、そのidentityの照会だけで判定し、ホストの全プロセスを列挙しない。
+        monkeypatch.setattr(psutil, "process_iter", lambda **_kwargs: pytest.fail("全プロセスを列挙した"))
     if route == "identity":
         manifest["processes"] = [{"pid": process.pid, "create_time": 42.0, "start_id": "test:42.0"}]
     expected = observation == "running" or route == "identity" and observation == "access-denied"
