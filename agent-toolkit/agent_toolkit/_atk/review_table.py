@@ -451,13 +451,14 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, rereg
                 next_action="レビューイーの応答の記録を待ってから再確認する。未応答の指摘は未解決として扱う",
             )
         if reregistered_row_id is not None:
-            reason = _reregistration_problem(rows, reregistered_row_id, int(normalized_round), row[1])
+            reason = _reregistration_problem(rows, reregistered_row_id, int(normalized_round), row[1], row_id)
             if reason is not None:
                 raise _ActionableError(
                     f"--reregistered-row-id {reregistered_row_id}は{reason}",
                     next_action=(
-                        f"今回のround {normalized_round}・同じtrackへ`{REREGISTERED_CLASSIFICATION}`の区分で登録した"
-                        "レビュー担当の指摘行を`atk review-table show <PATH>`で確かめて指定する"
+                        f"前回の指摘1行ごとに、今回のround {normalized_round}・同じtrackへ"
+                        f"`{REREGISTERED_CLASSIFICATION}`の区分で別の行として登録し直し、"
+                        "その行を`atk review-table show <PATH>`で確かめて指定する"
                     ),
                 )
         column_holder.append(column)
@@ -474,8 +475,12 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, rereg
     return 0
 
 
-def _reregistration_problem(rows: list[list[str]], row_id: int, round_value: int, track: str) -> str | None:
-    """登録し直した指摘として指定された行が、判定と同じround・trackの前回から残存の指摘でなければ理由を返す。"""
+def _reregistration_problem(rows: list[list[str]], row_id: int, round_value: int, track: str, source_row_id: int) -> str | None:
+    """登録し直した指摘として指定された行が、判定と同じround・trackの前回から残存の指摘でなければ理由を返す。
+
+    前回の指摘1行ごとに別の行を求め、他の前回指摘の判定が同じroundで指す行も拒否する。
+    1行を複数の前回指摘が指すと、その行の一部だけを直して収束したときに残りの指摘が表から消えるためである。
+    """
     if not 1 <= row_id <= len(rows):
         return "表に無い行である"
     row = rows[row_id - 1]
@@ -485,6 +490,13 @@ def _reregistration_problem(rows: list[list[str]], row_id: int, round_value: int
         return "担当の記録である"
     if classification(row[3]) != REREGISTERED_CLASSIFICATION:
         return f"区分が{REREGISTERED_CLASSIFICATION}ではない"
+    for other_id, other in enumerate(rows, start=1):
+        if other_id == source_row_id:
+            continue
+        if any(
+            entry[0] == round_value and entry[2] == row_id for cell in (other[5], other[6]) for entry in recheck_entries(cell)
+        ):
+            return f"{_row_position(other_id)}の判定が既に指している"
     return None
 
 
@@ -492,7 +504,7 @@ def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple
     """現在より前で指摘のある最新ラウンドについて、有効な判定の無い行と判定別の件数を返す。
 
     有効な判定は、そのラウンドより後で現在のround以前に記録したものに限る。
-    対応不十分・未対応は、判定と同じroundへ前回から残存として登録し直した行を指すものに限る。
+    対応不十分・未対応は、判定と同じroundへ前回から残存として登録し直し、他の前回指摘の判定が指さない行を指すものに限る。
     """
     candidates = [
         (row_id, row)
@@ -507,20 +519,20 @@ def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple
     for row_id, row in candidates:
         if int(_normalized(row[0])) != latest:
             continue
-        entries = [
+        valid = [
             entry
             for cell in (row[5], row[6])
             for entry in recheck_entries(cell)
             if latest < entry[0] <= round_value
             and (
                 entry[1] == RECHECK_DONE
-                or (entry[2] is not None and _reregistration_problem(rows, entry[2], entry[0], track) is None)
+                or (entry[2] is not None and _reregistration_problem(rows, entry[2], entry[0], track, row_id) is None)
             )
         ]
-        if not entries:
+        if not valid:
             pending.append(row_id)
             continue
-        counts[entries[-1][1]] += 1
+        counts[valid[-1][1]] += 1
     return latest, pending, counts
 
 

@@ -133,10 +133,11 @@ def test_recheck_records_verdict_and_summary_reports_pending_previous_rows(tmp_p
     assert after.get("recheck_pending_count") == 0
     assert after.get("recheck_counts") == {"完了": 1, "対応不十分": 1, "未対応": 0}
 
-    assert _cli_recheck(tmp_path, path, 1, "2", "未対応", reregistered=3) == 0
+    table.add(path, "2", _TRACK, "module.py:10", review_bodies.issue_body("指摘Aの残り", "前回から残存"), "仕様")
+    assert _cli_recheck(tmp_path, path, 1, "2", "未対応", reregistered=4) == 0
     corrected = table.read_rows(path)[0][5]
     assert corrected.count("再確認:") == 1
-    assert corrected.endswith("\n再確認: ラウンド2 未対応 行3")
+    assert corrected.endswith("\n再確認: ラウンド2 未対応 行4")
     assert corrected.startswith(rows[0][5].removesuffix("\n再確認: ラウンド2 完了"))
     assert table.summary(path, 2).get("recheck_counts") == {"完了": 0, "対応不十分": 1, "未対応": 1}
 
@@ -164,6 +165,34 @@ def test_recheck_requires_link_to_reregistered_finding(
     assert path.read_bytes() == saved
 
 
+def test_recheck_rejects_row_already_linked_by_another_finding(tmp_path: pathlib.Path) -> None:
+    """登録し直した1行を複数の前回指摘から指させず、前回の指摘1行ごとに別の行を求める。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    table.add(path, "2", _TRACK, "module.py:20", review_bodies.issue_body("指摘Bの残り", "前回から残存"), "仕様")
+    assert _cli_recheck(tmp_path, path, 2, "2", "対応不十分", reregistered=3) == 0
+    saved = path.read_bytes()
+    assert _cli_recheck(tmp_path, path, 1, "2", "未対応", reregistered=3) != 0
+    assert path.read_bytes() == saved
+    assert _cli_recheck(tmp_path, path, 2, "2", "未対応", reregistered=3) == 0
+
+
+def _write_rows(path: pathlib.Path, rows: list[list[str]]) -> None:
+    path.write_text("".join("\t".join(json.dumps(cell, ensure_ascii=False) for cell in row) + "\n" for row in rows), "utf-8")
+
+
+def test_summary_keeps_findings_sharing_one_reregistered_row_pending(tmp_path: pathlib.Path) -> None:
+    """表を直接書き換えて2つの前回指摘が同じ行を指した場合も、どちらも判定として数えない。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    table.add(path, "2", _TRACK, "module.py:20", review_bodies.issue_body("指摘Bの残り", "前回から残存"), "仕様")
+    rows = table.read_rows(path)
+    rows[0][5] = f"{rows[0][5]}\n再確認: ラウンド2 未対応 行3"
+    rows[1][6] = f"{rows[1][6]}\n再確認: ラウンド2 対応不十分 行3"
+    _write_rows(path, rows)
+    assert table.summary(path, 2).get("recheck_pending_row_ids") == [1, 2]
+
+
 @pytest.mark.parametrize(
     "line",
     ["再確認: ラウンド2 対応不十分", "再確認: ラウンド3 完了", "再確認:"],
@@ -176,7 +205,7 @@ def test_summary_keeps_rows_without_valid_verdict_pending(tmp_path: pathlib.Path
 
     rows = table.read_rows(path)
     rows[0][5] = f"{rows[0][5]}\n{line}"
-    path.write_text("".join("\t".join(json.dumps(cell, ensure_ascii=False) for cell in row) + "\n" for row in rows), "utf-8")
+    _write_rows(path, rows)
     state = table.summary(path, 2)
     assert state.get("recheck_pending_row_ids") == [1, 2]
     assert state.get("recheck_counts") == {"完了": 0, "対応不十分": 0, "未対応": 0}

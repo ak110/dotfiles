@@ -36,6 +36,7 @@
   未解決の指摘件数は、`atk review-table show <表の絶対パス> --format=summary --round <round>`の出力に含まれる`unanswered_count`から取得する
 - 再レビューでは、前回の指摘ラウンドの各行を`atk review-table recheck <表の絶対パス> --row-id <ROW_ID> --round <round> --verdict <完了|対応不十分|未対応>`で判定する。
   対応不十分・未対応の行は、先に今回のroundの指摘として`区分: 前回から残存`で登録し直して詳細を書き、その行のrow-idを`--reregistered-row-id`へ渡す。
+  登録し直す行は前回の指摘1行ごとに分ける（CLIが他の判定の指す行を拒否する）。
   誤った判定は同じ行へ再実行して置き換える。
   新しい指摘が無い場合も、同じsummaryの`recheck_pending_count`が0になるまで判定する
 - 完成条件証拠の判定は返却メッセージ内の判定行に直接記述するため、判定行そのものを対象とした指摘はレビュー指摘管理表への登録対象から外す。
