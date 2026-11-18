@@ -351,8 +351,9 @@ def merge_selection(
         return mapping.get(lane, lane)
 
     _pin_integrated_items(first, _selection.integrated_lanes(existing))
-    # 追加側の記録は、レーン対応のキーを追加分の仮名、それ以外を既存レーンの名前として合流前の配置で判定したものとする。
-    added_placed = [*(dict(item) for item in second), *(item for item in first if item[_selection.LANE_KEY] not in mapping)]
+    # 追加側の記録は、追加分を仮名、既存分を既存レーンの名前に置いた合流前の配置で判定したものとする。
+    # 仮名が同じ名前の既存レーンへ写る場合、その名前の記録は追加分と既存分の双方を判定する。
+    added_placed = [*(dict(item) for item in second), *first]
     for item in second:
         item[_selection.LANE_KEY] = destination(str(item[_selection.LANE_KEY]))
         item.pop(_selection.INTEGRATION_STATE_KEY, None)
