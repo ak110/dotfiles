@@ -448,25 +448,20 @@ def _retain_windows_process(process: psutil.Process) -> Generator[bool]:
 
 
 def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil.Process], bool]) -> list[psutil.Process]:
-    """`parents`の子孫を、1回のプロセス一覧から親PIDを辿って返す。
+    """`parents`の子孫を、全プロセスの親PID一覧から辿って返す。
 
     終了済みの親は、同じ世代のhandleを保持している場合だけ辿る。
     Windowsでは親の終了後も子の親PIDが残るため、保持した親から親を失った子孫も見つけられる。
     子の起動時刻が親より前の場合と、親PIDを別のプロセスが再利用している場合のその新しいプロセスの子は含めない。
+
+    親PID一覧は1回の照会で全プロセス分を得て、`Process`は子の候補だけに作る。
+    Windowsの`Process.ppid()`は呼び出しごとに全プロセスのsnapshotを取るため、
+    全PIDへ`ppid()`を呼ぶと1回の走査がプロセス数の2乗になる（592プロセスで約8秒）。
     """
     if not parents:
         # 親が無ければ子孫も無いため、全プロセスの一覧と親PIDの照会を省く。
         return []
-    entries: list[tuple[psutil.Process, int]] = []
-    # process_iterはPID単位でProcessを再利用し、Windowsの親PIDと起動時刻もキャッシュする。
-    # PID再利用前の親子関係を所有の根拠にしないよう、今回の一覧から新しい観測を作る。
-    for pid in psutil.pids():
-        try:
-            process = psutil.Process(pid)
-            entries.append((process, process.ppid()))
-        except psutil.NoSuchProcess, psutil.AccessDenied:
-            continue
-    holders = {process.pid: process for process, _ in entries}
+    parent_pids = _parent_pids()
 
     def retain_parent(process: psutil.Process, stage: str) -> bool:
         retained = retain(process)
@@ -477,10 +472,10 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
                 stage,
                 _key(process),
                 identity(process.pid),
-                process.pid in holders,
+                process.pid in parent_pids,
                 [
-                    {"pid": child.pid, "snapshot_ppid": ppid, "observed": _key(child), "current": identity(child.pid)}
-                    for child, ppid in entries
+                    {"pid": pid, "snapshot_ppid": ppid, "current": identity(pid)}
+                    for pid, ppid in parent_pids.items()
                     if ppid == process.pid
                 ],
             )
@@ -492,17 +487,30 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
             if retain_parent(parent, "known"):
                 created[parent.pid] = process_identity.start_order(parent)
     found: list[psutil.Process] = []
+    holders: dict[int, psutil.Process | None] = {}
     pending = set(created)
     while pending:
+        candidates: list[tuple[psutil.Process, int]] = []
+        for pid, ppid in parent_pids.items():
+            if ppid in pending and pid not in created:
+                with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                    candidates.append((psutil.Process(pid), ppid))
+        if not candidates:
+            break
+        # 一覧の取得後に子が終了してPIDが再利用されると、作った`Process`は一覧の子と別の世代になる。
+        # 作った後の一覧でも同じ親PIDを持つ候補だけを子とする（別世代が同じ親PIDを持てば、それも同じ親の子である）。
+        parent_pids = _parent_pids()
         next_pending: set[int] = set()
-        for process, ppid in entries:
-            if ppid not in pending or process.pid in created:
+        for process, ppid in candidates:
+            if parent_pids.get(process.pid) != ppid:
                 continue
             try:
                 child_created = process_identity.start_order(process)
                 if child_created < created[ppid]:
                     continue
-                holder = holders.get(ppid)
+                if ppid not in holders:
+                    holders[ppid] = psutil.Process(ppid) if ppid in parent_pids else None
+                holder = holders[ppid]
                 # 親PIDを別の新しいプロセスが再利用していれば、その後に起動した子は再利用側の子である。
                 if holder is not None and created[ppid] != process_identity.start_order(holder) <= child_created:
                     continue
@@ -515,6 +523,24 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
                 next_pending.add(process.pid)
         pending = next_pending
     return found
+
+
+def _parent_pids() -> dict[int, int]:
+    """全プロセスのPIDと親PIDの対応を、1回の照会で返す。
+
+    psutilの公開APIには、全プロセスの親PIDを1回で得る手段が無い（`Process.children`も内部で`_ppid_map`を使う）。
+    Linuxは`/proc/<pid>/stat`を1回ずつ、Windowsは1回のsnapshotで全件を得る。非公開APIへの依存はここに閉じる。
+    """
+    ppid_map: Callable[[], dict[int, int]] = vars(psutil)["_ppid_map"]
+    try:
+        return ppid_map()
+    except psutil.AccessDenied:
+        # 他ユーザーの/proc/<pid>を読めない環境（hidepid=1）では一括取得が失敗するため、読めるプロセスだけで作る。
+        result: dict[int, int] = {}
+        for pid in psutil.pids():
+            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                result[pid] = psutil.Process(pid).ppid()
+        return result
 
 
 def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
@@ -605,7 +631,7 @@ def process_scope(
     owns_pins = pins is None
     pins = ProcessIdentityPins() if pins is None else pins
     known = [] if known is None else known
-    known.extend(collect_descendants(process.pid, pins=pins, include_root=True))
+    known.extend(_retained_root(process.pid, pins))
     try:
         yield process
     finally:
@@ -636,6 +662,19 @@ def process_scope(
                     for stream in (process.stdin, process.stdout, process.stderr):
                         if stream is not None:
                             cleanup.callback(stream.close)
+
+
+def _retained_root(pid: int, pins: ProcessIdentityPins) -> list[psutil.Process]:
+    """起動直後の子の世代を、子を生成する前から保持して所有に加える。
+
+    起動直後の子孫は列挙しない。列挙は全プロセスの照会を伴うのに、起動の直後には子孫がまだ無く、
+    回収の範囲を広げないためである。起点が終了前なら、終了時の`stop_tree`が起点から子孫を辿る。
+    """
+    try:
+        root = psutil.Process(pid)
+        return [root] if pins.retain(root) else []
+    except psutil.Error, OSError:
+        return []
 
 
 def run_with_timeout(

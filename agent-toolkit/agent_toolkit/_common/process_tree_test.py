@@ -287,6 +287,9 @@ def _mock_process_snapshot(monkeypatch, entries):
     def pids(**_kwargs):
         return [process.pid for process in entries]
 
+    def ppid_map():
+        return {process.pid: process.info["ppid"] for process in entries}
+
     def process(pid, **_kwargs):
         result = next((item for item in entries if item.pid == pid), None)
         if result is None:
@@ -295,6 +298,7 @@ def _mock_process_snapshot(monkeypatch, entries):
         return result
 
     monkeypatch.setattr(psutil, "pids", pids)
+    monkeypatch.setattr(psutil, "_ppid_map", ppid_map)
     monkeypatch.setattr(psutil, "Process", process)
 
 
@@ -435,7 +439,7 @@ def test_process_scope_reaps_child_after_stop_failure(monkeypatch):
     process = mock.Mock()
     process.poll.return_value = None
     monkeypatch.setattr(subprocess, "Popen", mock.Mock(return_value=process))
-    monkeypatch.setattr(process_tree, "collect_descendants", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(process_tree, "_retained_root", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(process_tree, "stop_owned_process", mock.Mock(side_effect=RuntimeError("停止失敗")))
     with pytest.raises(RuntimeError, match="停止失敗"), process_tree.process_scope([]):
         pass
