@@ -17,7 +17,7 @@ from agent_toolkit._common import dotfiles_mode
 from pytools._internal import _test_helpers, common, prune_installation, setup_mise
 
 
-def _prepare(tmp_path, monkeypatch, mode):
+def _prepare(tmp_path, monkeypatch, mode, installed=None):
     home = tmp_path / "isolated-home"
     home.mkdir()
     # HOMEだけでは、ホストから継承した共有ランタイムの明示配置が残る。
@@ -57,7 +57,11 @@ def _prepare(tmp_path, monkeypatch, mode):
             str(tmp_path / "uv-cache")
             if command[1:] == ["cache", "dir"]
             else (
-                json.dumps({"node": [{"version": "24"}], "rust": [{"version": "1"}], "actionlint": [{"version": "1"}]})
+                json.dumps(
+                    installed
+                    if installed is not None
+                    else {"node": [{"version": "24"}], "rust": [{"version": "1"}], "actionlint": [{"version": "1"}]}
+                )
                 if command[1:4] == ["ls", "--installed", "--json"]
                 else ""
             )
@@ -253,6 +257,33 @@ def test_npm_prune_uses_installed_node_without_configured_version(tmp_path, monk
         assert result.failure is None
         assert len(uninstalls) == 1
         assert uninstalls[0] < calls.index(node_removal)
+
+
+def test_minimal_prunes_npm_of_every_installed_node_version(tmp_path, monkeypatch):
+    """miseに複数の版のNodeが残っていれば、どの版のnpmからもNode削除前に外す。"""
+    versions = ["20.19.5", "22.21.1", "24.11.1"]
+    _, calls = _prepare(tmp_path, monkeypatch, "minimal", installed={"node": [{"version": version} for version in versions]})
+    monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: None)
+    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
+    result = prune_installation.run()
+    assert result.failure is None
+    node_removal = calls.index(["/fixture/mise", "uninstall", "--all", "node"])
+    for version in versions:
+        command = ["/fixture/mise", "exec", f"node@{version}", "--", "npm", "uninstall", "--global"]
+        uninstalls = [index for index, called in enumerate(calls) if called[: len(command)] == command]
+        assert len(uninstalls) == 1, version
+        assert uninstalls[0] < node_removal
+
+
+def test_minimal_without_node_skips_npm_prune(tmp_path, monkeypatch):
+    """miseにもPATHにもNodeが無いminimalでは、npmの整理を行わずに成功する。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "minimal", installed={"actionlint": [{"version": "1"}]})
+    monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: None)
+    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
+    result = prune_installation.run()
+    assert result.failure is None
+    assert not [command for command in calls if "npm" in command or Path(command[0]).stem == "npm"]
+    assert ["/fixture/mise", "uninstall", "--all", "actionlint"] in calls
 
 
 @pytest.mark.parametrize("npm_fails", [False, True])
