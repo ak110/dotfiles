@@ -56,6 +56,7 @@ class BundleKind:
 
 MAIN = BundleKind("main", ".md", Role.MAIN, current=True, display_name="メイン")
 DETAIL = BundleKind("detail", ".detail.md", Role.ATTACHMENT, current=False, display_name="詳細")
+# 新しい計画は原因分析を本体へ書くが、作成済みで実装中の8節形式の計画が保存まで完了できるよう、保存対象に残す。
 BUGS = BundleKind("bugs", ".bugs.md", Role.ATTACHMENT, current=True, display_name="バグ")
 PLAN_REVIEW = BundleKind(
     "plan-review", ".plan-review.tsv", Role.ATTACHMENT, current=False, display_name="計画レビュー指摘管理表", review_table=True

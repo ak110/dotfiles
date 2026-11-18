@@ -131,8 +131,8 @@ _TOOLKIT_PREFIX = "agent-" + "toolkit"
 )
 def test_optional_design_section_rejects_invalid_structure(section: str, target: str, expected: str) -> None:
     """任意の設計節も空欄・配置違い・重複を拒否する。"""
-    content = _plan_fixture.current_plan().replace(f"## {target}\n", f"{section}## {target}\n", 1)
-    errors = plan_sections.check_plan_single_file_structure(content)[1]
+    content = _plan_fixture.eight_section_plan().replace(f"## {target}\n", f"{section}## {target}\n", 1)
+    errors = plan_sections.check_plan_eight_section_structure(content)[1]
     assert any(expected in error for error in errors), errors
 
 
@@ -410,7 +410,7 @@ def test_metadata_prefers_canonical_placement() -> None:
     metadata, errors = _plan_format.parse_plan_metadata(content)
     assert not errors
     assert metadata is not None
-    assert metadata.is_canonical
+    assert metadata.parent == _plan_format.PLAN_H2_OVERVIEW
     assert metadata.values["ベースコミット"] == _BASE
 
 
@@ -619,7 +619,7 @@ def test_transferred_action_requires_registered_wi(
         directory.mkdir(parents=True)
         (directory / "20261027-162634-999.md").write_text("# 後続要求\n", encoding="utf-8")
     if human_format:
-        content = _plan_fixture.current_plan().replace(
+        content = _plan_fixture.eight_section_plan().replace(
             _plan_fixture.USER_ACTION_ROW,
             f"| 公開契約に必要な変更を実装する | ユーザー指示 | 移管 | {reason} |",
             1,
@@ -639,7 +639,7 @@ def test_transferred_action_requires_registered_wi(
             1,
         )
     skips: list[str] = []
-    check = plan_sections.check_plan_single_file_structure if human_format else plan_sections.check_plan_main_structure
+    check = plan_sections.check_plan_eight_section_structure if human_format else plan_sections.check_plan_main_structure
     errors = check(content, private_notes=notes, origin_skips=skips)[1]
     assert bool(errors) is rejected, errors
     if not notes_exist:

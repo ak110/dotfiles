@@ -44,5 +44,5 @@ push先のリモート、更新対象のref、runの監視、ならびに証拠�
 該当するAWIが存在する場合は、`atk wi show <filename> --skip-pull`で本文に記載された緩和策を確認し、`agent-basics:bugfix/references/ci-failures.md`「対処」の選択肢と比べる。
 
 **4.** 選択した対処、基準情報、CIの生の観測事実、および分析結果を引き継ぐ。
-計画が必要な場合はその調査工程へ記録し、計画を要しない事象に別のバグ調査ファイルを要求しない。
+計画が必要な場合はその調査工程へ記録する。
 公開工程においては、公開担当がこれらの情報をCI記録として保持し、CI修正担当へ引き渡す（`agent-toolkit:process-wi/references/ci-fix-series.md`）。

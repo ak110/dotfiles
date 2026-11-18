@@ -35,22 +35,50 @@ PLAN_H2_PROGRESS: str = "進捗ログ（実行時）"
 
 PLAN_H2_REQUIREMENTS: str = "要件・外部仕様"
 PLAN_H2_DESIGN: str = "設計・実装方針"
-PLAN_H2_CURRENT_PERMANENCE: str = "恒久化・リファクタリング"
-PLAN_H2_CURRENT_HISTORY: str = "変更履歴"
+PLAN_H2_EIGHT_SECTION_PERMANENCE: str = "恒久化・リファクタリング"
+PLAN_H2_EIGHT_SECTION_HISTORY: str = "変更履歴"
 PLAN_H2_CURRENT_VERIFICATION: str = "検証"
 PLAN_H2_CURRENT_PROGRESS: str = "進捗ログ"
 
-PLAN_SINGLE_FILE_H2_ORDER: tuple[str, ...] = (
+REQUEST_H2_REQUEST: str = "反映内容と反映先"
+REQUEST_H2_CAUSE: str = "原因分析"
+REQUEST_H2_QUOTATION: str = "ユーザー指摘の逐語引用"
+REQUEST_H2_ORDER: tuple[str, ...] = (
+    REQUEST_H2_REQUEST,
+    REQUEST_H2_CAUSE,
+    "調査結果と判断根拠",
+    "完成条件",
+    REQUEST_H2_QUOTATION,
+)
+"""要求を書く節のH2と並び順。通常AWIの本文と、計画ファイルの要求を書く部分が共有する。
+
+定義元は`agent-toolkit:wi-standards`の`references/awi-body.md`で、節を変える改訂では本定数も同じ変更で更新する。
+"""
+
+REQUEST_H2_REQUIRED: tuple[str, ...] = (REQUEST_H2_REQUEST,)
+"""要求を書く節のうち必須の節。ほかの節は書く内容がある場合に置く。"""
+
+REQUEST_H2_LEGACY: tuple[str, ...] = ("適用範囲", "実現性")
+"""保存済みの旧形式AWIだけが持つ節。読み取りと順序の判定で受け付ける。"""
+
+REQUEST_H2_USER_COMMENT: str = "ユーザーコメント"
+"""WIの末尾に置くユーザー専用の記入欄。空のまま保存できる。"""
+
+PLAN_H2_ORDER_HEAD: tuple[str, ...] = (PLAN_H2_ACTION,)
+PLAN_H2_ORDER_TAIL: tuple[str, ...] = (PLAN_H2_CURRENT_VERIFICATION, PLAN_H2_CURRENT_PROGRESS)
+"""現行の計画ファイルが、要求を書く節の前と後ろに固定順で持つH2。"""
+
+PLAN_EIGHT_SECTION_H2_ORDER: tuple[str, ...] = (
     PLAN_H2_OVERVIEW,
     PLAN_H2_ACTION,
     PLAN_H2_REQUIREMENTS,
-    PLAN_H2_CURRENT_PERMANENCE,
-    PLAN_H2_CURRENT_HISTORY,
+    PLAN_H2_EIGHT_SECTION_PERMANENCE,
+    PLAN_H2_EIGHT_SECTION_HISTORY,
     PLAN_H2_CURRENT_VERIFICATION,
     PLAN_H2_TERMINATION,
     PLAN_H2_CURRENT_PROGRESS,
 )
-"""現行の1ファイル計画が固定順で持つH2。"""
+"""8節形式の1ファイル計画が固定順で持つH2。読み取り互換専用。"""
 
 PLAN_H2_LEGACY_HISTORY: str = "変更履歴"
 PLAN_H2_LEGACY_PROGRESS: str = "進捗ログ"
@@ -184,10 +212,10 @@ PLAN_METADATA_CURRENT_FIELDS: tuple[str, ...] = (
     PLAN_METADATA_RELATED_WI_FIELD,
     "作業種別",
 )
-"""現行の1ファイル計画が持つ計画メタ情報の固定4項目。"""
+"""現行の計画ファイルと8節形式の計画が持つ計画メタ情報の固定4項目。"""
 
 PLAN_METADATA_BUG_FIELD: str = "計画ファイル（バグ）"
-"""バグ対応の1ファイル計画だけが末尾に持つ計画メタ情報。"""
+"""8節形式のバグ対応計画だけが末尾に持つ計画メタ情報。読み取り互換専用。"""
 
 PLAN_METADATA_TWO_FILE_FIELDS: tuple[str, ...] = (*PLAN_METADATA_FIELDS, PLAN_METADATA_DETAIL_FIELD)
 """改訂前の二ファイル計画が持つ計画メタ情報の項目と順序。読み取り互換専用。"""
@@ -273,7 +301,7 @@ PLAN_WI_ORIGIN_PATTERN = re.compile(
 PLAN_WI_SOURCE_KEY: str = "source"
 """WIファイルのfrontmatterで投入元スキルを表すキー。"""
 
-PLAN_WI_USER_COMMENT_HEADING: str = "ユーザーコメント"
+PLAN_WI_USER_COMMENT_HEADING: str = REQUEST_H2_USER_COMMENT
 """WIファイルの末尾に置く、ユーザー専用の記入欄の見出し。"""
 
 PLAN_WI_ANSWER_HEADING: str = "回答"

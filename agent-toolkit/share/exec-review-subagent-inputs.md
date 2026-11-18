@@ -15,7 +15,8 @@
 | 初回レビューに入る前 | `exec-review-criteria.md` | | | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
-| `計画`を受領し、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | | | |
+| `計画`を受領し、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-verification.md`、`../skills/wi-standards/references/awi-body.md` | | | |
+| `計画`が8節形式などの旧形式で、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/legacy-plan-file-standards.md` | | | |
 | `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合（操作対象外: 役割の開始入力） | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | | | |
 | 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
@@ -94,7 +95,7 @@
 差分を取得する直前に開始時点とレビュー対象HEADを具体的なcommitへ解決し、差分が計画から生成した条項、受け取った`review_contract`、および各基準の次の情報に個別に適合しているかを確認する。
 差分を読む際は、まず`git diff --stat`や`git diff --name-status`で変更規模を把握し、判定に必要な範囲から優先して読み進める（努力目標。必要な差分から読むため）。
 
-- `計画`: `## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`
+- `計画`: H1直下の要約、`## 実施内容`、要求を書く節（8節形式では`## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`）
 - `CI記録`: 受け取ったCI記録の各項目
 - `WI`: 要求、完成条件、由来、採否
 
@@ -104,7 +105,7 @@ frontmatterの`type`が`awi`や`uwi`である項目の要求および完成条�
 ユーザーコメントやUWIの回答は要求単位ごとに分割し、元の文面と出所を保持した状態で比較する。
 `## ユーザー指摘の逐語引用`は起草時点で解決済みの発話であるため（`agent-toolkit:wi-standards`の`references/origin-and-approval.md`）、個別の要求単位には分割せず、`## 反映内容と反映先`や`## 完成条件`を解釈するための補足根拠として参照する。
 計画内の`ユーザー指示`に由来する行も要求単位に分割し、WI本文に含まれない追加要求として突き合わせる。
-WIの鮮度（staleness）は、`計画`がある場合は`## 変更履歴`に記録された設計時の`staleness`ならびに条件付き履歴確認の判断を参照する。
+WIの鮮度（staleness）は、`計画`がある場合は`## 調査結果と判断根拠`（8節形式では`## 変更履歴`）に記録された条件付き履歴確認の判断を参照し、記録が無い項目の`staleness`は`atk wi list --with-staleness`で取得する。
 `WI`のみで`評価用WI原本`が未指定の場合は、対象worktree上で`atk wi list --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を1回実行して対象WIの`staleness`を取得する。
 レビューの対象には、状態を問わずすべての対象WI（`processing`、`adopted`、`rejected`など）を含める。
 現行キューの取得経路で全状態の一覧に対象WIが1件も見当たらない場合、または指定された保存版を取得できない場合は、不足する原本と再開条件を返す。
@@ -123,7 +124,7 @@ WIの鮮度（staleness）は、`計画`がある場合は`## 変更履歴`に�
 
 **4.** 判定の根拠と認可を揃えるため、条項を生成・確認する。
 
-`計画`を受け取った場合は、計画の`## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`、および開始時点の実態からレビュー条項を生成する。
+`計画`を受け取った場合は、「差分とWIの取得」で挙げた計画の各節と開始時点の実態からレビュー条項を生成する。
 条項は、ユーザーの目的、現行の公開契約、ユーザーとの合意事項、認可の範囲、除外・保持事項、通常入力、対象外入力、ならびに誤許可・誤拒否がユーザーや消費側に及ぼす影響について、出典を明記した独立した単位として記述する。
 変更対象の成果物に適用される作成規範やプロジェクト規範も条項に追加する。
 対象集合は条件によって定義し、件数自体が合否判定の条件となっている場合に限り、実際に計測した値と計測時点を記録する。

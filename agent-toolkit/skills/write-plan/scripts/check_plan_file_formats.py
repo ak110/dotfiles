@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+from collections.abc import Callable
 
 from check_plan_file_common import _ClassifiedWarning
 from check_plan_file_migration import (
@@ -208,17 +209,17 @@ def _check_new_format(
     return errors, warnings
 
 
-def _check_single_file_format(
-    plan_path: pathlib.Path,
+def _check_one_file_structure(
+    check_structure: Callable[..., tuple[str | None, list[str]]],
     text: str,
     work_dir: pathlib.Path,
-    private_notes: pathlib.Path | str | None = None,
-    home: pathlib.Path | str | None = None,
-) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """現行の1ファイル計画が基準を満たすか判定し、エラーと警告を返す。"""
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> tuple[str | None, list[str], list[_ClassifiedWarning]]:
+    """1ファイルの計画の構造と対象リポジトリを確かめ、(作業種別, エラー, 警告)を返す。"""
     origin_notices: list[str] = []
     origin_skips: list[str] = []
-    work_type, errors = structure.check_plan_single_file_structure(
+    work_type, errors = check_structure(
         text,
         origin_notices=origin_notices,
         origin_skips=origin_skips,
@@ -230,12 +231,41 @@ def _check_single_file_format(
     metadata, _metadata_errors = structure.parse_plan_metadata(text)
     values = metadata.values if metadata is not None else {}
     errors.extend(_check_target_repo(values.get("対象リポジトリ"), work_dir))
+    return work_type, errors, warnings
+
+
+def _check_eight_section_format(
+    plan_path: pathlib.Path,
+    text: str,
+    work_dir: pathlib.Path,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+) -> tuple[list[str], list[_ClassifiedWarning]]:
+    """8節形式の1ファイル計画が基準を満たすか判定し、エラーと警告を返す。保存済みの計画の読み取り専用である。"""
+    work_type, errors, warnings = _check_one_file_structure(
+        structure.check_plan_eight_section_structure, text, work_dir, private_notes, home
+    )
     bug_errors, bug_warnings = _check_bug_file_reference(plan_path, text, work_type, private_notes, home)
     errors.extend(bug_errors)
     warnings.extend(bug_warnings)
     warnings.extend(_legacy_refactoring_warnings(text))
     warnings.extend(_legacy_acceptance_warnings(text))
     warnings.extend(_legacy_verification_name_warnings(text))
+    errors.extend(_check_references(text, work_dir))
+    warnings.extend(_check_plan_size(text.splitlines()))
+    return errors, warnings
+
+
+def _check_request_format(
+    text: str,
+    work_dir: pathlib.Path,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+) -> tuple[list[str], list[_ClassifiedWarning]]:
+    """現行の計画（要求を書く節を通常AWIの本文と同じ見出しで持つ形式）が基準を満たすか判定し、エラーと警告を返す。"""
+    _work_type, errors, warnings = _check_one_file_structure(
+        structure.check_plan_request_structure, text, work_dir, private_notes, home
+    )
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(text.splitlines()))
     return errors, warnings

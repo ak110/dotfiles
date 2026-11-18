@@ -50,7 +50,7 @@
   依存する呼出しは取得後の応答で発行する。
   圧縮後は残工程で選ぶ。
 - 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。
-  直接影響範囲の定義は`agent-toolkit:write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」にある。
+  直接影響範囲の定義は`agent-toolkit:wi-standards/references/awi-body-impact.md`「直接影響範囲」にある。
 - Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。
   前工程から受け取ったパスや識別子は、移動や終了を伴う操作を挟んだ後で同一性を確かめ直す。
 

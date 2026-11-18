@@ -12,10 +12,10 @@
 追加発話・工程境界・圧縮後も同書で目的・現行要求を復元する。
 採用案の維持が目的化したら、縮小・撤回・代替案も比較する。
 
-継続的な方針の反映先は`../skills/write-plan/references/plan-file-standards-design.md`「恒久化・リファクタリング」で判定する。
+継続的な方針の反映先は`../skills/wi-standards/references/awi-body-permanence.md`「継続的な方針の保存」で判定する。
 対象には、受領した指摘・WIコメント・UWI回答から`agent-toolkit:user-confirmation-and-report`で分けた候補を含む。
 計画の凍結後は変更受入・レビュー指摘管理表を使う。
-計画がなくても必要時に読む成果物へ反映し、担当外は方針と出所を所有者へ渡す。
+担当外は方針と出所を所有者へ渡す。
 
 ## 割り込み・継続と確認への振り分け
 

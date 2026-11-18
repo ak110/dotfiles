@@ -2,8 +2,8 @@
 name: write-plan
 user-invocable: false
 description: >
-  対象リポジトリを変更する作業で計画ファイルを作成し、
-  計画から実装・レビューへ引き継ぐ場合に起動する。
+  対象リポジトリを変更する作業で計画ファイルの要否を判定し、
+  必要な計画を作成して実装・レビューへ引き継ぐ場合に起動する。
   作成要否は本文「計画ファイルの作成要否」に従う。
 ---
 
@@ -12,7 +12,7 @@ description: >
 本スキルは、事前調査から計画ファイルの作成、実装、そして`起動経路`に応じた完了までの一連の流れを定めている。
 各工程の役割分担は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`、計画ファイルが満たすべき仕様（成果物契約）は`references/plan-file-standards.md`で規定する。
 また、WI本文の要求や由来の扱いは`agent-toolkit:wi-standards`、実装や実行レビューの詳細な手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.subagent.md`に従う。
-計画は要件や外部仕様の粒度で記述し、起草したエージェントがそのまま実装を進める。
+計画は、WIの本文から決まらない部分を要件や外部仕様の粒度で補い、起草したエージェントがそのまま実装を進める。
 レビューは実装が終わった後の実行レビューのみで実施する。
 
 計画バンドルの作成、検証、保存、および実装へ進むには、対象リポジトリへのアクセス、プラグイン全体の参照資料、ファイル操作、CLI実行環境が必要となる。
@@ -32,21 +32,21 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | | | |
-| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-requirements.md`、`references/plan-file-standards-design.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md` | 操作 | `plan-draft-writing` | |
+| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md`、`../wi-standards/references/awi-body.md` | 操作 | `plan-draft-writing` | |
 | 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | | | |
 | 観測で計画の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | | | |
 | 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing-selection.md` | | | |
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-time.md` | | | |
 | テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:write-plan/references/testing-branch-verification.md` | | | |
 | 計画ファイルの文章を起草し、textlintなどの文章チェックの違反を予防する前 | `references/textlint-prevention.md` | | | |
-| WIの原因分析を補うか計画ファイル（バグ）を書く前 | `references/plan-file-standards-verification.md` | | | |
+| WIの原因分析を補うか計画の`## 原因分析`を書く前 | `references/plan-file-standards-verification.md` | | | |
 | 進捗を記録する前と、中断後に再開する前 | `references/plan-file-standards-progress.md` | | | |
 | 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` | 操作 | `bash:atk plans commit` | |
 | 保持、不変性、完全復元のいずれかを計画の契約か確認の選択肢へ書く前と、過去の契約へ戻す変更か過去の契約を撤去する変更を計画する前 | `references/plan-restoration-contracts.md` | | | |
 | `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前（メインが自ら実装に着手する直前） | `references/main-launch.md`、`../../share/exec-review.parent.md` | | | |
 | 計画構造を検証する前 | `references/plan-structure-check.md` | | | |
 | `検証結果`を記録する前 | `../../share/verification-evidence-records.md` | | | |
-| 旧単一ファイル形式または旧二ファイル形式の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` | | | |
+| 保存済みの旧形式（8節形式、旧単一ファイル形式、旧二ファイル形式）の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` | | | |
 
 ## 確認と起動経路
 
@@ -58,39 +58,59 @@ description: >
 
 ## 計画ファイルの作成要否
 
-リポジトリを変更する作業では、原則として計画ファイルを作成し、要求の採否、恒久化、リファクタリング、中断時の再開情報などを後続の工程へ引き継ぐ（これはユーザー向けの承認資料ではない）。
-バグ対応では、原因分析資料との対応関係を保つため、必ず計画ファイルを作成する。
-原因分析資料はWIの`## 原因分析`または計画ファイル（バグ）を指す。
-作成を省略できるのは、バグ対応以外の作業で、既存の値や文字列の差し替えだけで完結し、恒久化やリファクタリングの候補が構造上発生しない場合に限られる。
-ここでの恒久化は、WI本文・コメント・確認回答・変更履歴が示す、今回の作業後も守る判断基準を、判断時に読む場所へ保存する作業を指す。
-省略した場合の実行レビューの手順は、起動元の工程の規定に従う。
+計画ファイルは、要求の詳細化が必要な作業でだけ作り、採否、検証、中断時の再開情報を後続の工程へ引き継ぐ（ユーザー向けの承認資料ではない）。
+
+AWIを入力とする作業では、AWIの本文と対象リポジトリの現物から次の4つの事項が決まる場合、計画ファイルを作らず、AWIの本文を実装と実行レビューの基準にする。
+
+1. 何をどう変えるか（対象と、要求に固有の条件）
+2. 外部から見える仕様
+3. 完成を判定する条件（本文から一意に導けるものを含む）
+4. バグ対応では、確定した原因分析（`## 原因分析`）
+
+4つのどれかが本文と現物から決まらず、処理時の調査か設計判断で内容を補う必要がある場合は、計画ファイルを作る。
+計画ファイルには足りない部分だけを書き、WIが確定した内容は再調査・再記述しない。
+登録後に対象の現物が変わって本文の前提が成り立たなくなった事項も、決まらない事項として扱う。
+4つの事項が決まっていれば、本文が処理時へ残した内部方式の選択（本文が「計画で決める」と書いたものを含む）は実装時に決め、結論を引き継ぎ記録へ残す。
+保存済みの旧形式で書かれた`## 原因分析`も、原因が確定していれば確定した原因分析として扱う。
+
+- 判定は`source`の値、分類の名前、作業の種類ではなく、本文を読んで事項ごとに行う。
+  1〜3は、通常AWIの登録条件（`agent-toolkit:wi-standards`の`references/wi-standards-body.md`「起票目的別の調査出口」の「ユーザーが手動作成で具体化を求めた要求」）が登録前に確定を求める事項と同じである。
+  4は`agent-toolkit:wi-standards`の`references/awi-body.md`が`## 原因分析`を置く条件とする事項である
+- 複数のAWIを1つの作業で扱う時は、AWIごとに判定する。
+  計画が要るAWIだけを計画へ含め、要らないAWIは計画なしで処理する
+- 人間由来の要求の縮小が必要な場合は、計画ファイルを作って採否を記録し、`## 反映内容と反映先`へ縮小後の範囲を書く
+- 計画を作らない場合も、継続的な方針の保存（`agent-toolkit:wi-standards`の`references/awi-body-permanence.md`）と採否の記録は行う。
+  記録先と実行レビューの手順は、起動元の工程の規定に従う
+
+入力にWIが無い作業（協調モードで直接受けた依頼）では、リポジトリを変更するなら原則として計画ファイルを作成し、バグ対応では必ず作成する。
+省略できるのは、バグ対応以外の作業で、既存の値や文字列の差し替えだけで完結し、保存する継続的な方針や見直す既存箇所が構造上発生しない場合に限られる。
 
 ## 進め方
 
-本スキルを起動した後にエージェント向け文書（`agent-toolkit/`など）を編集する場合は、必ず計画ファイルを作成してから着手する。
+本スキルを起動した後にエージェント向け文書（`agent-toolkit/`など）を編集する場合は、「計画ファイルの作成要否」を判定してから着手する。
 追加発話・レビュー指摘を受けたら要求と現物を比較し、調査不足は手順1、判断は2、起草の修正は3へ戻り、4で再検査する。
 前提が崩れた場合は`agent-basics:writing-standards/references/investigation-hypotheses.md`「仮説から次の確認を選ぶ」で成果と方針を保つ。
 実装後は計画を凍結し、管理表へ記録する。
 
-1. 変更対象、外部仕様、テスト、検証内容を確定するために調査する。
+計画の起草は、通常AWIの起草と同じ調査と確認を、AWIの本文から決まらない部分に対して行う。
+要求を書く節の書き方は`agent-toolkit:wi-standards`の`references/awi-body.md`とその条件別資料に従う。
+
+1. 変更対象、外部仕様、テスト、検証内容のうち、WIの本文と現物から決まらない部分を確定するために調査する。
    WIで確定している事項は`references/plan-file-standards-structure.md`「計画ファイルの構成」に従って参照し、重複した調査は行わない。
    採否を左右する技術的不確実性は、読込表の設計基準で試作の要否を判断し、計画確定前に解消する。
    問い・条件・観測・判断・未証明範囲は既存の根拠記録へ残し、計画とレビューから参照する。
    - 作業種別が`バグ対応`で、入力にWIがない場合やWIの原因分析を修正・追加する計画では、手順2の確認前に`agent-basics:bugfix`を起動し、5つの問いへの答えを書き出す。
      WIの原因分析をそのまま使う場合も、対症療法を採用する前に同スキルの問い3で処置を比べる。
      不足がある場合は原因分析を追加する。
-   - 参照側や別の発生源（`references/plan-file-standards-requirements.md`「要件・外部仕様」）をたどり、変更対象や影響が波及する範囲を`## 要件・外部仕様`に記述する。
-   - 出力内容、診断件数、条件分岐の結果などを完了条件に設定する場合は、生成元と利用先、分岐が有効になる条件、修正前の状態と修正後の期待値を正しく対応付ける。
-     修正前後で値が変わらない条件、該当の分岐が無効な条件、正常時に出力されないメッセージの不在などは判定基準にせず、公開されている状態や直接の契約テストで確認する。
+   - 参照側や別の発生源（`agent-toolkit:wi-standards`の`references/awi-body-impact.md`「直接影響範囲」）をたどり、変更対象や影響が波及する範囲を`## 反映内容と反映先`に記述する。
    - 依頼やWIで指定された明示的な禁止条件と採用する手段は、比較しやすいよう`## 実施内容`の同じ行に並べて記述する。
 2. 変更対象や方針の決定に影響する未確定の判断事項を、依存関係や前後関係を含めて整理する（WIで確定済みの事項を除く）。
    その上で`../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」を適用する。
    実装中に生じた同様の判断も同様に扱う。
    確認方法は「確認と起動経路」に従う。
 3. `references/plan-file-standards-template.md`「初回起草の雛形」に案件の具体的な内容を記入し、`atk run-script plan-create --`を実行して計画ファイルを作成する。
-   バグ対応で入力WIがない場合や、WIの原因分析を修正・追加する場合は、先に計画ファイル（バグ）を完成させる。
-   `agent-basics:bugfix`の5つの問いを適用する。
-   WIの`## 原因分析`をそのまま使う場合は計画ファイル（バグ）を新設せず、WIファイル名で参照する。
+   バグ対応で入力WIがない場合や、WIの原因分析を修正・追加する場合は、計画の`## 原因分析`へ`agent-basics:bugfix`の5つの問いの答えを記録する。
+   WIの`## 原因分析`をそのまま使う場合は計画に`## 原因分析`を置かず、WIファイル名で参照する。
 4. メインエージェントによる起動では、`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独で実行する。
    レーン担当の場合は、`agent-toolkit:process-wi`の`references/lane-planning.md`で定められた選定結果とレーン識別子を指定して単独実行する。
    どちらの場合も終了コードが0になることを確認する。

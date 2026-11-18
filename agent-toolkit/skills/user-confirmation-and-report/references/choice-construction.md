@@ -10,7 +10,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 繰り返す操作の承認候補を組む前と発行前点検時 | `approval-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards-requirements.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body-impact.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/drafting-completion-policies.md` |
 
 ## 根拠の確定
@@ -23,7 +23,7 @@
    - 前提・影響・副作用は、推測・未確認の注記を付ける場合もコード・規範・実行結果で確認する。
      既存の機能や経路を使う案では、その存在に加え、案が使う起動形、終了時の動き、状態、権限などの条件でも成立することを実装か実行結果で確かめる。
      他者の報告や文書も一次資料で確かめ、裏付けの無い内容は確認文から外す。
-     共通の仕組みを変更する時は、手元の実行例だけで影響を判断せず、`../../write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」に従って、従来の動作を前提とする指定を網羅して確認する。
+     共通の仕組みを変更する時は、手元の実行例だけで影響を判断せず、`../../wi-standards/references/awi-body-impact.md`「直接影響範囲」に従って、従来の動作を前提とする指定を網羅して確認する。
    - 実行環境が会話を自動で圧縮して作業を継続するため、作業を完遂できるかやコンテキスト容量の不足は前提から外す。
      所要時間やコストの許容範囲の扱いは、`user-confirmation-and-report-decisions.md`「確認要否の判定」の項目4に従う。
    - 既存の値や設定、規範の規定を変更する案を提示する時は、`../../wi-standards/references/drafting-completion-policies.md`「方針と判断の記録との比較」に従い、その値を明記している記録や規範と照らし合わせる。

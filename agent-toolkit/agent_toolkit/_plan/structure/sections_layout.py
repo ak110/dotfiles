@@ -22,7 +22,13 @@ from agent_toolkit._plan.structure.markdown import (
     heading_subtree_range,
     lines_within,
 )
-from agent_toolkit._plan.structure.parsing import PlanMetadata, _strip_backticks, canonical_metadata_field, parse_plan_metadata
+from agent_toolkit._plan.structure.parsing import (
+    PlanMetadata,
+    _strip_backticks,
+    canonical_metadata_field,
+    metadata_parent_label,
+    parse_plan_metadata,
+)
 
 
 def _check_fixed_h2_layout(
@@ -86,17 +92,18 @@ def _check_child_heading_sequence(
 
 
 def _check_metadata_block(
-    content: str, *, expected_fields: tuple[str, ...] = PLAN_METADATA_FIELDS
+    content: str, *, expected_fields: tuple[str, ...] = PLAN_METADATA_FIELDS, parent: str = PLAN_H2_OVERVIEW
 ) -> tuple[str | None, list[str]]:
     """計画メタ情報の配置、項目、順序、記法、値が基準を満たすか判定し、(作業種別, エラー)を返す。
 
-    `expected_fields`は対象書式が定める計画メタ情報の項目順を渡す。
+    `expected_fields`は対象書式が定める計画メタ情報の項目順、`parent`は対象書式が定める配置を渡す。
     """
     metadata, errors = parse_plan_metadata(content)
+    expected_place = metadata_parent_label(parent)
     if metadata is None:
-        return None, errors or [f"`## {PLAN_H2_OVERVIEW}`直下の`### {PLAN_METADATA_H3}`の構造を判定できない"]
-    if not metadata.is_canonical:
-        errors.append(f"計画メタ情報は`## {PLAN_H2_OVERVIEW}`直下へ置く: 実際=`## {metadata.parent}`直下")
+        return None, errors or [f"{expected_place}の`### {PLAN_METADATA_H3}`の構造を判定できない"]
+    if metadata.parent != parent:
+        errors.append(f"計画メタ情報は{expected_place}へ置く: 実際={metadata_parent_label(metadata.parent)}")
     fields = [canonical_metadata_field(field) for field, _value in metadata.entries]
     if fields != list(expected_fields):
         errors.append(f"計画メタ情報は{list(expected_fields)}をこの順序で1行ずつ置く: 実際={fields}")

@@ -1,7 +1,7 @@
 # agent-doc-tone: test-data
 """計画本文のテスト入力を`_plan_format`の構造定数から組み立てる。
 
-計画ファイル（メイン）、計画ファイル（詳細）、計画ファイル（バグ）の正常系本文を書式ごとに1箇所で組み立て、
+現行の計画ファイルと、保存済みの各形式（8節形式、計画ファイル（メイン）・（詳細）・（バグ）など）の正常系本文を書式ごとに1箇所で組み立て、
 固定H2名、表の列名および表の行名を構造定数から導出する。
 書式の改訂で追随が必要な値を本ファイルへ集約し、各テストが同じ値を文字列リテラルとして個別に持たない状態を保つ。
 違反を含むテスト入力は、本ファイルが公開する行・表・見出しの定数を用いた置換で各テストが組み立てる。
@@ -211,14 +211,60 @@ def human_action_table(*, wi: bool) -> str:
     return "\n".join([_header_row(_plan_format.PLAN_HUMAN_ACTION_TABLE_HEADER), *rows])
 
 
-def current_plan(
+REQUEST_BODY: str = "公開契約の判定を更新し、対象の検査で結果を確認する。"
+EVIDENCE_BODY: str = "既存の判定処理を読み、更新が必要な箇所を確かめた。"
+QUOTATION_SECTION: str = f"```text\n{USER_EVENT_TEXT}\n```"
+
+
+def request_plan(
+    *,
+    repo: str | pathlib.Path = REPOSITORY,
+    work_type: str = "通常変更",
+    related_wi: tuple[tuple[str, str], ...] = (),
+    cause: bool = False,
+) -> str:
+    """現行の計画ファイルの正常系本文を返す。``cause``が真なら`## 原因分析`を置く。"""
+    bodies = dict(
+        zip(
+            _plan_format.REQUEST_H2_ORDER,
+            (REQUEST_BODY, cause_record(), EVIDENCE_BODY, COMPLETION_BODY, QUOTATION_SECTION),
+            strict=True,
+        )
+    )
+    if not cause:
+        del bodies[_plan_format.REQUEST_H2_CAUSE]
+    request_sections = "".join(f"## {name}\n\n{body}\n\n" for name, body in bodies.items())
+    return f"""# 計画の主題
+
+対象の公開契約を更新する。
+
+### {_plan_format.PLAN_METADATA_H3}
+
+- 起動経路: `agent-toolkit:write-plan`
+- 対象リポジトリ: `{repo}`
+{_related_wi_block(related_wi)}
+- 作業種別: {work_type}
+
+## {_plan_format.PLAN_H2_ACTION}
+
+{human_action_table(wi=bool(related_wi))}
+
+{request_sections}## {_plan_format.PLAN_H2_CURRENT_VERIFICATION}
+
+{CURRENT_VERIFICATION_TABLE}
+## {_plan_format.PLAN_H2_CURRENT_PROGRESS}
+
+{PROGRESS_TABLE}"""
+
+
+def eight_section_plan(
     *,
     repo: str | pathlib.Path = REPOSITORY,
     work_type: str = "通常変更",
     related_wi: tuple[tuple[str, str], ...] = (),
     bug_reference: str | None = None,
 ) -> str:
-    """現行の1ファイル計画の正常系本文を返す。"""
+    """8節形式の1ファイル計画の正常系本文を返す。保存済みの計画の読み取り互換の試験に使う。"""
     bug_line = f"\n- {_plan_format.PLAN_METADATA_BUG_FIELD}: `{bug_reference}`" if bug_reference is not None else ""
     return f"""# 計画の主題
 
@@ -247,7 +293,7 @@ def current_plan(
 | 公開契約の判定 | ユーザー指示 | ユーザーと公開入口 | 判定から次へ進む | \
 判定を実行する | 更新後の結果を得る | 公開入口のテスト |
 
-## {_plan_format.PLAN_H2_CURRENT_PERMANENCE}
+## {_plan_format.PLAN_H2_EIGHT_SECTION_PERMANENCE}
 
 ### {_plan_format.PLAN_PERMANENCE_H3[0]}
 
@@ -257,7 +303,7 @@ def current_plan(
 
 {REFACTORING_TABLE}
 
-## {_plan_format.PLAN_H2_CURRENT_HISTORY}
+## {_plan_format.PLAN_H2_EIGHT_SECTION_HISTORY}
 
 {USER_EVENT_HEADING}
 

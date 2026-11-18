@@ -4,6 +4,7 @@
 
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
+| 本文だけで実装に入れるAWIにも原則として計画ファイルを作り、バグ対応では必ず作る | 2026-11-18（本行を含む撤去commit） | 通常AWIの登録条件が、何をどう変えるか、外部から観測できる仕様、完成を判定する条件、バグ対応の原因分析の確定を求めており、計画で同じ要求を書き直していた。 | AWIの本文と現物からこの4事項が決まれば計画を作らず、決まらない事項がある時だけ足りない部分を書く計画を作る。docs/development/concepts-workflows-lanes.md「計画ファイルの体裁の扱い」、docs/development/design-planning-criteria.md「計画の作成要否と成果物基準の一本化」 | 撤去理由を解消できることを示した場合 |
 | process-loopが対象ごとに独立した会話を非対話CLIで最大2並行に起動し、未完了の対象では予約がなくても前回の会話を再開する | 2026-11-17（本行を含む撤去commitと直前の2commit） | ユーザーが求めたのは統括が柔軟に采配して単位時間あたりのWI処理数を上げることで、会話の分割、端末で進行を確認・介入できない起動、予約のない再開は求めていなかった。 | 1つの統括会話を端末の前景の対話CLIで起動し、再開は`resume`の予約時に限る。docs/development/concepts-environment.md「実行環境と表示」、docs/development/design-process-loop-ownership.md | 会話の分割・非対話化・予約のない再開を認める新しいユーザー判断がある場合 |
 | 返却形式外の早期返却や探索の不足申告に対し、回復前にeffortを自動で1段上げる | 2026-11-15（本行を含む撤去commit） | 入力不足や結果検査の欠落は根本原因を修正するというユーザー判断による。 | `agent-toolkit/skills/delegation/references/model-and-effort.md`「成果が受入れ基準に届かないときの引き上げ順」 | 早期返却への自動引上げを認める新しいユーザー判断がある場合 |
 | batch振り返りの分析結果をWI投入担当へ渡し、別担当が原稿を起草して保存開始を往復する工程 | 2026-11-15（本行を含む撤去commit） | 分析済みの証拠と背景を再取得する仕事を減らすため、batchのメインによる直接起草へ統合した。 | `agent-toolkit/skills/review-session/references/batch.md`「分析と保存」、`docs/development/design-session-review-preparation.md` | 独立検収を保ち、直接起草より総費用が小さいことを同条件で確認できる場合 |

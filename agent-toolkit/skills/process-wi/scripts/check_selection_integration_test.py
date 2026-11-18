@@ -484,7 +484,7 @@ def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     other_before = other_source.read_bytes()
     old = notes / "plans" / "2026" / "10" / "23-1000_old.md"
     old.parent.mkdir(parents=True)
-    old.write_text(plan_fixture.current_plan(repo=tmp_path / "reclaimed-worktree"), encoding="utf-8")
+    old.write_text(plan_fixture.eight_section_plan(repo=tmp_path / "reclaimed-worktree"), encoding="utf-8")
     old_before = old.read_bytes()
     document = yaml.safe_load(selected.read_text(encoding="utf-8"))
     document["選定"][0]["再開位置"] = str(old)
@@ -503,7 +503,7 @@ def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     worktree = pathlib.Path(record["worktree"])
     plan = locations.working_plans_root(pathlib.Path.home()) / "15-1400_requirement-change.md"
     plan.parent.mkdir(parents=True, exist_ok=True)
-    plan.write_text(plan_fixture.current_plan(repo=worktree), encoding="utf-8")
+    plan.write_text(plan_fixture.eight_section_plan(repo=worktree), encoding="utf-8")
     _plan_operation(capsys, "plan-check", "--reject-migration-warnings", "--work-dir", str(worktree), str(plan))
     # 対象worktree不一致の拒否も維持する。
     _plan_operation(capsys, "plan-check", "--work-dir", str(repo), str(plan), expected=1)

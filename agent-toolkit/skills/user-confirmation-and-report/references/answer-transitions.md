@@ -9,7 +9,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 回答が確認や行動の扱いを一般的に是正する内容を含む時 | `agent-basics:bugfix/SKILL.md` | | |
-| 回答を元の作業へ反映する前（計画の有無によらず） | `../../write-plan/references/plan-file-standards-design.md` | | |
+| 回答を元の作業へ反映する前 | `../../wi-standards/references/awi-body-permanence.md` | | |
 | run-skillのUWIを保存・取得する起動単位を判定する前 | `../../wi-standards/references/origin-and-approval.md` | 判断 | `uwi-draft-writing`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-states.md` | | |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` | | |
@@ -46,9 +46,9 @@ WIの投入前や着手前に回答済みUWIとの整合性を確かめる手順
    回答が確認の要否や担当の扱い方を一般的に是正する内容（今後の扱いの指示、確認自体が不要という指摘、過去にも伝えたという指摘など）を含む場合は、個別項目の反映に加えて`agent-basics:bugfix`を起動し、この確認や行動を生んだ規定・出力・試験・手順を特定する。
    既存の条文があることだけで充足と判定せず、その生成元が今回の発生に作用した理由を確かめ、生成元を同じ処理で是正するか、権限外ならAWIを登録する。
    個別項目を終了しただけでは、同じ生成元が次の確認や行動を生む。
-3. 回答が継続適用を明示している場合は、`../../write-plan/references/plan-file-standards-design.md`「恒久化・リファクタリング」で、読み手・適用範囲・出所を保って既存の方針原本へ反映する。
+3. 回答が継続適用を明示している場合は、`../../wi-standards/references/awi-body-permanence.md`「継続的な方針の保存」で、読み手・適用範囲・出所を保って既存の方針原本へ反映する。
    `user-utterance-incorporation.md`「原文の保持と取り込み」で以後の方針の候補と判定した回答も、同じ基準で扱う。
-   計画がなくても同じ基準で判定し、今回限りの回答を無断で一般化しない。
+   今回限りの回答を無断で一般化しない。
    回答の保存と実装・方針原本への反映完了を区別し、必要な認可とレビューは元の作業の契約を保つ。
    反映を完了したUWIは`atk wi adopt <UWIファイル名>`を実行して終了させる。
    回答が提案や質問を退ける内容だった場合は`reject`を使い、退けた理由を回答内容と対応づけて記録する。

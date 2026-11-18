@@ -1,4 +1,4 @@
-"""現行の1ファイル計画作成処理を検証する。"""
+"""計画ファイルの作成処理を検証する。"""
 
 import datetime
 import json
@@ -67,8 +67,7 @@ def test_created_date_survives_edit_save_checkout_and_resave(
 ) -> None:
     """命名と同時に確定した日付を、月年跨ぎの編集と取得後にも保持する。"""
     _fix_creation_clock(monkeypatch, clock)
-    source, bug_source = _source(repo, tmp_path, bug=True)
-    assert bug_source is not None
+    source = _source(repo, tmp_path)
     home = tmp_path / "home"
     notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
@@ -77,8 +76,6 @@ def test_created_date_survives_edit_save_checkout_and_resave(
             [
                 "--main-source",
                 str(source),
-                "--bugs-source",
-                str(bug_source),
                 option,
                 value,
                 "--home",
@@ -93,7 +90,7 @@ def test_created_date_survives_edit_save_checkout_and_resave(
     record = main.with_suffix(".created.json")
     assert json.loads(record.read_text(encoding="utf-8")) == {"date": recorded_date}
     main.write_bytes(main.read_bytes() + "\n追記\n".encode())
-    contents = {path.name: path.read_bytes() for path in (main, main.with_suffix(".bugs.md"))}
+    contents = {main.name: main.read_bytes()}
 
     def unavailable_creation(_path: pathlib.Path, **_kwargs: object) -> None:
         return None
@@ -133,7 +130,7 @@ def test_document_template_rejects_invalid_initial_structure(
     invalid: str,
 ) -> None:
     """雛形から記入しても、列数が違う表と起草時の進捗内容行は作成しない。"""
-    source, _ = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     content = source.read_text(encoding="utf-8")
     if invalid == "columns":
         content = content.replace("| 実施内容 | 由来 | 採否 | 根拠 |", "| 実施内容 | 由来 | 採否 |")
@@ -164,103 +161,16 @@ def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
     return _make_repo(tmp_path, monkeypatch)
 
 
-def _source(
-    repo: pathlib.Path,
-    directory: pathlib.Path,
-    *,
-    bug: bool = False,
-    bug_reference: str | None = None,
-) -> tuple[pathlib.Path, pathlib.Path | None]:
-    """計画の基準を満たす入力本文を保存する。
-
-    `bug_reference`は計画本文へ書く計画ファイル（バグ）の参照値を差し替える。
-    """
+def _source(repo: pathlib.Path, directory: pathlib.Path) -> pathlib.Path:
+    """現行の構成で計画の基準を満たす入力本文を保存する。"""
     main_source = directory / "main.md"
-    bug_source = directory / "bug.md" if bug else None
-    reference = (
-        bug_reference or f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
-        if bug
-        else None
-    )
-    bug_line = f"\n- 計画ファイル（バグ）: `{reference}`" if reference is not None else ""
-    content = f"""# 計画の主題
-
-## 概要
-
-対象の公開契約を更新する。
-
-### 計画メタ情報
-
-- 起動経路: `agent-toolkit:write-plan`
-- 対象リポジトリ: `{repo.resolve()}`
-- 関連WI: なし
-- 作業種別: {"バグ対応" if bug else "通常変更"}{bug_line}
-
-## 実施内容
-
-| 実施内容 | 由来 | 採否 | 根拠 |
-| --- | --- | --- | --- |
-| 公開契約を更新する | ユーザー指示 | 採用 | 原文の要求単位は1件であり、開放性を保ったまま実施範囲とする。 |
-
-## 要件・外部仕様
-
-公開契約の判定を更新する。
-
-### 受入シナリオ
-
-| シナリオ | 由来 | 消費主体と入口 | 利用目的と後続行動 | 操作 | 期待結果 | テスト |
-| --- | --- | --- | --- | --- | --- | --- |
-| 公開契約 | ユーザー指示 | ユーザーと公開入口 | 判定結果から次の作業を選ぶ | 判定する | 更新結果を得る | 対象の公開テスト |
-
-## 恒久化・リファクタリング
-
-### 恒久化
-
-| 知見 | 出所 | 反映先 | 根拠 |
-| --- | --- | --- | --- |
-| 判定契約 | ユーザー指示 | 対象コード | 実装で参照するため。 |
-
-### リファクタリング
-
-| 対象 | 現状の問題 | 対応 |
-| --- | --- | --- |
-| 判定処理 | 契約が旧い。 | 更新する。 |
-
-## 変更履歴
-
-### ユーザー発言1
-
-```text
-公開契約を更新する。
-```
-
-## 検証
-
-| 区分 | 検証コマンド |
-| --- | --- |
-| 変更範囲の検証 | `pytest` |
-
-## 公開工程
-
-なし
-
-## 進捗ログ
-
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-"""
-    main_source.write_text(content, encoding="utf-8")
-    if bug_source is not None:
-        bug_source.write_text(
-            _plan_fixture.bug_file(title=f"計画の主題 {create_plan_files.PLAN_STEM_PLACEHOLDER}"),
-            encoding="utf-8",
-        )
-    return main_source, bug_source
+    main_source.write_text(_plan_fixture.request_plan(repo=repo.resolve()), encoding="utf-8")
+    return main_source
 
 
 def test_creates_single_file_with_supplied_stem(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """呼び出し側が渡したstemを変更せず通常計画へ使う。"""
-    source, _bug_source = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
 
     (path,) = create_plan_files.create_plan_files(source, "13-0217_計画保存先移行", home=tmp_path / "home", work_dir=repo)
 
@@ -273,7 +183,7 @@ def test_wrong_execution_worktree_guides_recovery_without_changing_source(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """対象と別の場所からの作成・確認は実行場所を案内し、その指定だけで同じ本文を作成できる。"""
-    source, _bug_source = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     before = source.read_bytes()
     other = tmp_path / "other"
     other.mkdir()
@@ -295,7 +205,7 @@ def test_prior_plan_repository_mismatch_names_values_and_recovery(
 ) -> None:
     """先行計画だけ対象が異なる場合も、両値と入力・宣言の修正先を示す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
-    source, _ = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     prior = tmp_path / "prior.md"
     other = tmp_path / "other"
     prior.write_text(source.read_text(encoding="utf-8").replace(str(repo.resolve()), str(other)), encoding="utf-8")
@@ -327,7 +237,7 @@ def test_cli_accepts_bom_source_and_preserves_bytes(
     bom: bool,
 ) -> None:
     """BOMの有無によらず計画を作成・構造チェックでき、原稿と本文中の文字を保持する。"""
-    source, _ = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     content = source.read_text(encoding="utf-8").replace("対象の公開契約を更新する。", "対象の公開\ufeff契約を更新する。", 1)
     original = (("\ufeff" if bom else "") + content).encode("utf-8")
     source.write_bytes(original)
@@ -358,7 +268,7 @@ def test_prior_plan_repository_accepts_equivalent_path_notation(
 ) -> None:
     """先行計画の対象リポジトリは、区切り文字や末尾の区切りが違っても同じ場所なら一致とする。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
-    source, _ = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     prior = tmp_path / "prior.md"
     prior.write_text(
         source.read_text(encoding="utf-8")
@@ -409,7 +319,7 @@ def test_cli_accepts_bare_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """CLIの--nameへ名称だけを渡して日時付きファイルを作成できる。"""
-    source, _bug_source = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     _fix_creation_clock(monkeypatch, "2026-09-18T23:34:00+09:00")
 
     result = create_plan_files.main(
@@ -433,33 +343,29 @@ def test_cli_accepts_bare_name(
     assert json.loads(path.with_suffix(".created.json").read_text(encoding="utf-8")) == {"date": "2026-09-18"}
 
 
-def test_cli_accepts_source_alias_and_creates_bug_file(
+def test_cli_replaces_stem_placeholder_in_adjunct_reference(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """CLIのsource別名とbugs入力から同じstemの2ファイルを作成する。"""
-    source, bug_source = _source(repo, tmp_path, bug=True)
-    assert bug_source is not None
+    """CLIのsource別名で作成し、付属ファイル参照のstemプレースホルダーを確定したstemへ置換する。"""
+    source = _source(repo, tmp_path)
+    placeholder = f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.exec-review.tsv"
+    content = source.read_text(encoding="utf-8")
+    source.write_text(
+        content.replace(_plan_fixture.REQUEST_BODY, f"{_plan_fixture.REQUEST_BODY}指摘は`{placeholder}`へ記録する。", 1),
+        encoding="utf-8",
+    )
 
     result = create_plan_files.main(
-        [
-            "--source",
-            str(source),
-            "--bugs-source",
-            str(bug_source),
-            "--name",
-            "13-0217_バグ対応",
-            "--home",
-            str(tmp_path / "home"),
-            "--work-dir",
-            str(repo),
-        ]
+        ["--source", str(source), "--name", "13-0217_参照", "--home", str(tmp_path / "home"), "--work-dir", str(repo)]
     )
 
     captured = capsys.readouterr()
     assert result == 0, captured.err
-    paths = [pathlib.Path(line) for line in captured.out.splitlines()]
-    assert [path.name for path in paths] == ["13-0217_バグ対応.md", "13-0217_バグ対応.bugs.md"]
-    assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
+    (path,) = [pathlib.Path(line) for line in captured.out.splitlines()]
+    assert path.name == "13-0217_参照.md"
+    created = path.read_text(encoding="utf-8")
+    assert f"`{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}13-0217_参照.exec-review.tsv`" in created
+    assert create_plan_files.PLAN_STEM_PLACEHOLDER not in created
 
 
 def test_process_lane_plan_name_uses_local_time_and_two_digit_lane() -> None:
@@ -481,7 +387,7 @@ def test_cli_creates_process_lane_plan_with_generated_name(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """CLIのlane入力では呼び出し側から自由名を受け取らない。"""
-    source, _bug_source = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     _fix_creation_clock(monkeypatch, "2026-09-14T23:05:00+09:00")
 
     result = create_plan_files.main(
@@ -512,7 +418,7 @@ def test_adds_hex_suffix_only_after_collision(
     plans = tmp_path / "home/.claude/plans"
     plans.mkdir(parents=True)
     (plans / "13-0217_計画.md").write_text("既存\n", encoding="utf-8")
-    source, _bug_source = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
 
     (path,) = create_plan_files.create_plan_files(source, "13-0217_計画", home=tmp_path / "home", work_dir=repo)
@@ -520,86 +426,65 @@ def test_adds_hex_suffix_only_after_collision(
     assert path.name == "13-0217_計画-a1b2.md"
 
 
-@pytest.mark.parametrize(
-    ("work_type", "bug_field", "provide_bug", "message"),
-    [
-        ("バグ対応", True, False, "行がある場合は計画ファイル（バグ）の入力が必要"),
-        ("バグ対応", False, True, "行が無い場合は計画ファイル（バグ）の入力を指定できません"),
-        ("通常変更", False, True, "作業種別が通常変更の場合"),
-    ],
-)
-def test_rejects_work_type_and_bug_input_mismatch(
-    repo: pathlib.Path, tmp_path: pathlib.Path, work_type: str, bug_field: bool, provide_bug: bool, message: str
+@pytest.mark.parametrize("saved_format", ["eight-section", "legacy"])
+def test_cli_rejects_saved_plan_formats(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], saved_format: str
 ) -> None:
-    """作業種別・計画ファイル（バグ）の行・バグ入力の有無が一致しない本文を拒否する。"""
-    reference = f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
-    source = _related_wi_source(repo, tmp_path, work_type=work_type, bug_reference=reference if bug_field else None)
-    bug_source = tmp_path / "bug.md"
-    bug_source.write_text(_plan_fixture.bug_file(), encoding="utf-8")
-
-    with pytest.raises(create_plan_files.PlanCreationError, match=message):
-        create_plan_files.create_plan_files(
-            source,
-            "13-0217_入力不一致",
-            bug_source=bug_source if provide_bug else None,
-            home=tmp_path / "home",
-            work_dir=repo,
-        )
-
-
-def _related_wi_source(
-    repo: pathlib.Path, directory: pathlib.Path, *, work_type: str = "バグ対応", bug_reference: str | None = None
-) -> pathlib.Path:
-    """関連WIを持つ計画本文を保存してパスを返す。"""
-    source = directory / "related-wi.md"
-    source.write_text(
-        _plan_fixture.current_plan(
-            repo=repo.resolve(),
-            work_type=work_type,
-            related_wi=_plan_fixture.WI_FILES,
-            bug_reference=bug_reference,
-        ),
-        encoding="utf-8",
+    """保存済みの計画の形式（8節形式、旧単一ファイル形式）の原稿からは新しい計画を作成しない。"""
+    source = tmp_path / "saved-format.md"
+    content = (
+        _plan_fixture.eight_section_plan(repo=repo.resolve())
+        if saved_format == "eight-section"
+        else _plan_fixture.single_file_plan(repo=repo.resolve())
     )
-    return source
-
-
-def test_cli_creates_bug_plan_without_bug_file_when_related_wi_exists(
-    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """関連WIの原因分析に従うバグ対応計画は、計画ファイル（バグ）なしで作成する。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
-    source = _related_wi_source(repo, tmp_path)
+    source.write_text(content, encoding="utf-8")
 
     result = create_plan_files.main(
-        [
-            "--main-source",
-            str(source),
-            "--name",
-            "13-0217_WI参照のバグ対応",
-            "--home",
-            str(tmp_path / "home"),
-            "--work-dir",
-            str(repo),
-        ]
+        ["--main-source", str(source), "--name", "13-0217_旧形式", "--home", str(tmp_path / "home"), "--work-dir", str(repo)]
+    )
+
+    assert result == 1
+    assert "新しく作る計画ファイルは現行の構成" in capsys.readouterr().err
+    assert not list((tmp_path / "home").rglob("*.md"))
+
+
+@pytest.mark.parametrize(
+    ("related_wi", "cause"),
+    [(_plan_fixture.WI_FILES, False), ((), True)],
+    ids=["related-wi", "cause-analysis"],
+)
+def test_cli_creates_bug_plan_as_single_file(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    related_wi: tuple[tuple[str, str], ...],
+    cause: bool,
+) -> None:
+    """バグ対応の計画は、関連WIの原因分析に従う場合も計画の`## 原因分析`に書く場合も1ファイルで作成する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
+    source = tmp_path / "bug.md"
+    source.write_text(
+        _plan_fixture.request_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related_wi, cause=cause),
+        encoding="utf-8",
+    )
+
+    result = create_plan_files.main(
+        ["--main-source", str(source), "--name", "13-0217_バグ対応", "--home", str(tmp_path / "home"), "--work-dir", str(repo)]
     )
 
     captured = capsys.readouterr()
     assert result == 0, captured.err
-    paths = [pathlib.Path(line) for line in captured.out.splitlines()]
-    assert [path.name for path in paths] == ["13-0217_WI参照のバグ対応.md"]
+    assert [pathlib.Path(line).name for line in captured.out.splitlines()] == ["13-0217_バグ対応.md"]
     assert not list((tmp_path / "home").rglob("*.bugs.md"))
 
 
-def test_cli_rejects_bug_plan_without_bug_file_and_related_wi(
+def test_cli_rejects_bug_plan_without_cause_analysis_and_related_wi(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """関連WIが無いバグ対応計画は計画ファイル（バグ）の行と入力なしでは作成しない。"""
+    """関連WIが無いバグ対応の計画は、`## 原因分析`が無ければ作成しない。"""
     source = tmp_path / "no-wi.md"
-    source.write_text(
-        _plan_fixture.current_plan(repo=repo.resolve(), work_type="バグ対応"),
-        encoding="utf-8",
-    )
+    source.write_text(_plan_fixture.request_plan(repo=repo.resolve(), work_type="バグ対応"), encoding="utf-8")
 
     result = create_plan_files.main(
         [
@@ -615,8 +500,16 @@ def test_cli_rejects_bug_plan_without_bug_file_and_related_wi(
     )
 
     assert result != 0
-    assert "関連WIが無いバグ対応の計画" in capsys.readouterr().err
+    assert "関連WIが無いバグ対応の計画には`## 原因分析`が必要" in capsys.readouterr().err
     assert not list((tmp_path / "home").rglob("*.md"))
+
+
+def test_cli_rejects_removed_bugs_source() -> None:
+    """廃止した計画ファイル（バグ）の入力をCLIが受理しない。"""
+    with pytest.raises(SystemExit) as raised:
+        create_plan_files.main(["--main-source", "main.md", "--bugs-source", "bug.md", "--name", "13-0217_計画"])
+
+    assert raised.value.code == 2
 
 
 def test_cli_rejects_removed_detail_source() -> None:
@@ -681,7 +574,7 @@ def test_public_plan_create_owner_reaches_listing_and_save_advisor(
     home = tmp_path / "home"
     notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
-    source, _bug_source = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     arguments = ["--main-source", str(source), "--name", "所有会話", "--home", str(home), "--work-dir", str(repo)]
     with pytest.raises(SystemExit) as created:
         atk.main(["run-script", "plan-create", "--", *arguments], home=home)

@@ -1,7 +1,7 @@
 """write-planが使う新規計画ファイルの内部作成処理。
 
 このスクリプトは、write-planがmanaged-tempの中へ準備した
-メイン本文と任意のバグ本文を`~/.claude/plans`へ確定するための内部APIを提供する。
+計画ファイルの本文を`~/.claude/plans`へ確定するための内部APIを提供する。
 """
 
 from __future__ import annotations
@@ -237,6 +237,14 @@ def _check_structure(
     """確定した計画ファイル群を、構造が基準を満たすかを判定する関数へ渡す。"""
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
+    if check_plan_file.detect_plan_format(main_path, main_path.read_text(encoding="utf-8")) != check_plan_file.FORMAT_REQUEST:
+        raise PlanCreationError(
+            "新しく作る計画ファイルは現行の構成（H1と要約、計画メタ情報、実施内容、要求を書く節、検証、進捗ログ）で書きます",
+            next_action=(
+                "agent-toolkit/skills/write-plan/references/plan-file-standards-template.md「初回起草の雛形」の構成へ"
+                "本文を書き直し、同じ引数で再実行する"
+            ),
+        )
     errors, _warnings = check_plan_file.check(
         main_path,
         work_dir,
@@ -261,7 +269,6 @@ def _finalize_candidate(
     plans_root: pathlib.Path,
     stem: str,
     main_content: bytes,
-    bug_content: bytes | None,
     work_dir: pathlib.Path,
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
@@ -275,8 +282,6 @@ def _finalize_candidate(
     """
     main_path = directory / _bundle_kinds.MAIN.name_for(stem)
     targets = [(main_path, main_content, f"{_bundle_kinds.MAIN.suffix}.tmp")]
-    if bug_content is not None:
-        targets.append((directory / _bundle_kinds.BUGS.name_for(stem), bug_content, f"{_bundle_kinds.BUGS.suffix}.tmp"))
     plan_targets = tuple(targets)
     if creation_date is not None:
         targets.append(
@@ -322,35 +327,10 @@ def _finalize_candidate(
                 temporary_path.unlink()
 
 
-def _check_bug_input(metadata: _plan_format.PlanMetadata, *, has_bug_input: bool) -> None:
-    """バグ対応計画の`計画ファイル（バグ）`行と入力の有無が一致するか確かめる。
-
-    関連WIの`## 原因分析`が原因分析の記録先となる計画は計画ファイル（バグ）を持たない。
-    関連WIが無い計画は原因分析の記録先が他に無いため、計画内の同行と入力を必須とする。
-    """
-    has_bug_field = _plan_format.PLAN_METADATA_BUG_FIELD in metadata.values
-    if has_bug_field and not has_bug_input:
-        raise PlanCreationError(
-            "計画メタ情報に計画ファイル（バグ）の行がある場合は計画ファイル（バグ）の入力が必要です",
-            next_action="計画ファイル（バグ）の本文を`--bugs-source`で渡すか、計画メタ情報から`計画ファイル（バグ）`の行を除いて再実行する",
-        )
-    if not has_bug_field and has_bug_input:
-        raise PlanCreationError(
-            "計画メタ情報に計画ファイル（バグ）の行が無い場合は計画ファイル（バグ）の入力を指定できません",
-            next_action="`--bugs-source`を外すか、計画メタ情報へ`計画ファイル（バグ）`の行を加えて再実行する",
-        )
-    if not has_bug_field and not metadata.related_wi:
-        raise PlanCreationError(
-            "関連WIが無いバグ対応の計画は、原因分析の記録先として計画ファイル（バグ）の行と入力が必要です",
-            next_action="計画メタ情報へ`計画ファイル（バグ）`の行を加え、その本文を`--bugs-source`で渡して再実行する",
-        )
-
-
 def create_plan_files(
     main_source: pathlib.Path | str,
     plan_name: str,
     *,
-    bug_source: pathlib.Path | str | None = None,
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
     work_dir: pathlib.Path | str | None = None,
@@ -359,7 +339,7 @@ def create_plan_files(
 ) -> tuple[pathlib.Path, ...]:
     """入力本文を`~/.claude/plans`へ作成し、確定済みパスを返す。
 
-    ``main_source``および任意の``bug_source``はmanaged-tempの中にあるUTF-8本文を指す。
+    ``main_source``はmanaged-tempの中にあるUTF-8本文を指す。
     private-notesは既存の可搬参照の妥当性を判定するときだけ使い、計画本文は`~/.claude/plans`へ保存する。
     ``creation_date``は命名と同時に確定した保存日付とし、完全stemだけで日付を決められない場合は省く。
     """
@@ -367,25 +347,9 @@ def create_plan_files(
         raise ValueError("max_attemptsは1以上にしてください")
     name = _validate_plan_name(plan_name)
     main_content = _read_source(main_source)
-    bug_content = _read_source(bug_source) if bug_source is not None else None
-    sources = [pathlib.Path(main_source)]
-    if bug_source is not None:
-        sources.append(pathlib.Path(bug_source))
-    resolved_sources = [source.expanduser().resolve() for source in sources]
-    if len(set(resolved_sources)) != len(resolved_sources):
-        raise ValueError("計画ファイルと計画ファイル（バグ）に同じ入力ファイルを指定できません")
-
-    metadata, metadata_errors = _plan_format.parse_plan_metadata(main_content.decode("utf-8"))
+    _metadata, metadata_errors = _plan_format.parse_plan_metadata(main_content.decode("utf-8"))
     if metadata_errors:
         raise PlanCreationError("計画メタ情報を解析できません: " + " / ".join(metadata_errors), next_action=_SOURCE_NEXT_ACTION)
-    work_type = metadata.values.get("作業種別") if metadata is not None else None
-    if work_type == "通常変更" and bug_content is not None:
-        raise PlanCreationError(
-            "作業種別が通常変更の場合は計画ファイル（バグ）の入力を指定できません",
-            next_action="`--bugs-source`を外すか、計画メタ情報の作業種別を`バグ対応`へ直して再実行する",
-        )
-    if work_type == "バグ対応" and metadata is not None:
-        _check_bug_input(metadata, has_bug_input=bug_content is not None)
 
     plans_root = _resolved_plans_root(home)
     plans_root.mkdir(parents=True, exist_ok=True)
@@ -414,7 +378,6 @@ def create_plan_files(
                         plans_root,
                         stem,
                         _replace_placeholder(main_content, stem),
-                        _replace_placeholder(bug_content, stem) if bug_content is not None else None,
                         checked_work_dir,
                         notes_for_resolver,
                         home,
@@ -446,12 +409,6 @@ def main(argv: list[str] | None = None) -> int:
         type=pathlib.Path,
         metavar="PATH",
         help="`--main-source`の別名。計画ファイルの本文を保存したファイルのパス",
-    )
-    parser.add_argument(
-        "--bugs-source",
-        type=pathlib.Path,
-        metavar="PATH",
-        help="計画ファイル（バグ）の本文を保存したファイルのパス（本文そのものは受け取らない）",
     )
     name_group = parser.add_mutually_exclusive_group(required=True)
     name_group.add_argument(
@@ -493,7 +450,6 @@ def main(argv: list[str] | None = None) -> int:
         paths = create_plan_files(
             args.main_source,
             plan_name,
-            bug_source=args.bugs_source,
             private_notes=args.private_notes,
             home=args.home,
             work_dir=args.work_dir,

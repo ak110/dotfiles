@@ -132,6 +132,15 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}/skills/realign-with-user/SKILL.md", _NORM_RESTRUCTURE_README): 1,
     # 切り出しスクリプトのテストが一時リポジトリへ作成するスキルのパス
     (f"{_PLUGIN_PREFIX}/skills/demo/SKILL.md", _NORM_RESTRUCTURE_CLAUSES_TEST): 1,
+    # 対象版を固定した監査記録が、後に削除した計画ファイルの基準を当時の所在で記す
+    **{
+        (f"{_PLUGIN_PREFIX}/skills/write-plan/references/plan-file-standards-{name}.md", pathlib.Path(audit)): 1
+        for name in ("design", "requirements")
+        for audit in (
+            "docs/development/audit-opus55-hosts-2026-11-15.json",
+            "docs/development/audit-sol-2026-11-14.json",
+        )
+    },
 }
 
 

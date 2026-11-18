@@ -42,8 +42,8 @@
 | 全体検証 | 検証の範囲 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
 | 受入シナリオ検証 | 検証の種類 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
 | 公開工程判定 | 完成条件の判定 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
-| 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」 |
-| 変更範囲の検証 | 検証の範囲 | `agent-toolkit:write-plan/references/plan-file-standards-verification.md`「検証と公開工程」 |
+| 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:wi-standards/references/awi-body-impact.md`「直接影響範囲」 |
+| 変更範囲の検証 | 検証の範囲 | `agent-toolkit:write-plan/references/plan-file-standards-verification.md`「検証」 |
 | 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:/share/exec-review-recording-integration.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
 | 再レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
@@ -80,8 +80,7 @@
 | プロジェクト規範 | 規範の種別 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
 | プロジェクト方針 | 方針の範囲 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
 | 作成規範 | 品質基準 | `agent-basics:review-standards/SKILL.md`「対象成果物の作成規範」 |
-| 完成条件 | WIの条件 | `agent-toolkit:wi-standards/references/wi-standards-body.md`「通常AWIの本文」 |
-| 完了条件 | 計画の条件 | `agent-toolkit:write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」 |
+| 完成条件 | WI・計画の条件 | `agent-toolkit:wi-standards/references/wi-standards-body.md`「通常AWIの本文」 |
 | レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
 | CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
 | セッション記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records.md`冒頭 |

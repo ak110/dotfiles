@@ -4,23 +4,27 @@ from __future__ import annotations
 
 import pathlib
 
+from agent_toolkit._common import markdown_headings
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan.structure.constants import (
     PLAN_ACCEPTANCE_H3,
     PLAN_ACCEPTANCE_TABLE_HEADER,
     PLAN_CURRENT_VERIFICATION_TABLE_ROWS,
+    PLAN_EIGHT_SECTION_H2_ORDER,
     PLAN_H2_ACTION,
     PLAN_H2_AGENT_JUDGMENT,
     PLAN_H2_BUG,
-    PLAN_H2_CURRENT_HISTORY,
-    PLAN_H2_CURRENT_PERMANENCE,
     PLAN_H2_CURRENT_PROGRESS,
     PLAN_H2_CURRENT_VERIFICATION,
     PLAN_H2_DESIGN,
+    PLAN_H2_EIGHT_SECTION_HISTORY,
+    PLAN_H2_EIGHT_SECTION_PERMANENCE,
     PLAN_H2_HISTORY,
     PLAN_H2_IMPLEMENTATION,
     PLAN_H2_LEGACY_AGENT_JUDGMENT,
     PLAN_H2_MATERIALS,
+    PLAN_H2_ORDER_HEAD,
+    PLAN_H2_ORDER_TAIL,
     PLAN_H2_OVERVIEW,
     PLAN_H2_PERMANENCE,
     PLAN_H2_PROGRESS,
@@ -36,15 +40,19 @@ from agent_toolkit._plan.structure.constants import (
     PLAN_METADATA_BUG_FIELD,
     PLAN_METADATA_CURRENT_FIELDS,
     PLAN_METADATA_DETAIL_FIELD,
+    PLAN_METADATA_H3,
     PLAN_METADATA_MAIN_FIELDS,
     PLAN_METADATA_RELATED_WI_FIELD,
     PLAN_METADATA_TWO_FILE_FIELDS,
-    PLAN_SINGLE_FILE_H2_ORDER,
     PLAN_TWO_FILE_MAIN_H2_ORDER,
     PLAN_VERIFICATION_TABLE_HEADER,
+    REQUEST_H2_CAUSE,
+    REQUEST_H2_ORDER,
+    REQUEST_H2_QUOTATION,
 )
 from agent_toolkit._plan.structure.markdown import (
     _EMPTY_CELL_FIX,
+    MarkdownTable,
     PlanHeading,
     _column_count_error,
     check_duplicate_headings,
@@ -58,12 +66,14 @@ from agent_toolkit._plan.structure.markdown import (
 )
 from agent_toolkit._plan.structure.materials import PlanMaterials, parse_plan_materials
 from agent_toolkit._plan.structure.parsing import (
+    PLAN_METADATA_TOP_PARENT,
     _detail_expected_h2,
     _find_table_with_rows,
     _legacy_expected_h2,
     parse_plan_implementation_units,
     parse_plan_metadata,
 )
+from agent_toolkit._plan.structure.request_sections import request_section_problems, request_sections
 from agent_toolkit._plan.structure.sections_actions import (
     _check_action_section,
     _check_agent_judgment_section,
@@ -303,7 +313,38 @@ def check_plan_main_structure(
     return work_type, errors
 
 
-def check_plan_single_file_structure(
+def _check_human_action(
+    content: str,
+    body: list[tuple[int, str]],
+    headings: list[PlanHeading],
+    related_wi: frozenset[str],
+    origin_notices: list[str] | None,
+    origin_skips: list[str] | None,
+    *,
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> list[str]:
+    """1ファイルの計画の`## 実施内容`が、由来・採否・根拠を持つ4列表の基準を満たすか確かめる。"""
+    errors = _check_action_section(
+        body,
+        headings,
+        find_heading_index(headings, 2, PLAN_H2_ACTION),
+        None,
+        set(),
+        set(),
+        set(),
+        related_wi,
+        origin_notices=origin_notices,
+        origin_skips=origin_skips,
+        private_notes=private_notes,
+        home=home,
+    )
+    if not has_human_action_table(content):
+        errors.append(f"`## {PLAN_H2_ACTION}`には{list(PLAN_HUMAN_ACTION_TABLE_HEADER)}の4列表が必要")
+    return errors
+
+
+def check_plan_eight_section_structure(
     content: str,
     *,
     origin_notices: list[str] | None = None,
@@ -311,7 +352,7 @@ def check_plan_single_file_structure(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[str | None, list[str]]:
-    """現行の1ファイル計画が基準を満たすか判定し、(作業種別, 違反一覧)を返す。"""
+    """8節形式の1ファイル計画が基準を満たすか判定し、(作業種別, 違反一覧)を返す。保存済みの計画の読み取り専用である。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
@@ -330,7 +371,7 @@ def check_plan_single_file_structure(
         expected_metadata = (*expected_metadata, PLAN_METADATA_BUG_FIELD)
     work_type, metadata_errors = _check_metadata_block(content, expected_fields=expected_metadata)
     errors.extend(metadata_errors)
-    expected_h2 = list(PLAN_SINGLE_FILE_H2_ORDER)
+    expected_h2 = list(PLAN_EIGHT_SECTION_H2_ORDER)
     if find_heading_index(headings, 2, PLAN_H2_DESIGN) is not None:
         expected_h2.insert(expected_h2.index(PLAN_H2_REQUIREMENTS) + 1, PLAN_H2_DESIGN)
     errors.extend(_check_fixed_h2_layout(headings, expected_h2))
@@ -339,25 +380,13 @@ def check_plan_single_file_structure(
     if overview_index is not None:
         errors.extend(_check_overview_section(body, headings, overview_index))
 
+    related_wi = frozenset(filename for filename, _summary in parsed.related_wi) if parsed is not None else frozenset()
     action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
     errors.extend(
-        _check_action_section(
-            body,
-            headings,
-            action_index,
-            None,
-            set(),
-            set(),
-            set(),
-            frozenset(filename for filename, _summary in parsed.related_wi) if parsed is not None else frozenset(),
-            origin_notices=origin_notices,
-            origin_skips=origin_skips,
-            private_notes=private_notes,
-            home=home,
+        _check_human_action(
+            content, body, headings, related_wi, origin_notices, origin_skips, private_notes=private_notes, home=home
         )
     )
-    if not has_human_action_table(content):
-        errors.append(f"`## {PLAN_H2_ACTION}`には{list(PLAN_HUMAN_ACTION_TABLE_HEADER)}の4列表が必要")
 
     errors.extend(_check_nonempty_section(body, headings, PLAN_H2_REQUIREMENTS))
     errors.extend(_check_nonempty_section(body, headings, PLAN_H2_DESIGN))
@@ -418,7 +447,7 @@ def check_plan_single_file_structure(
         elif [line.strip() for _lineno, line in acceptance_lines if line.strip()] != ["なし"]:
             errors.append(f"採用行が無い場合は`### {PLAN_ACCEPTANCE_H3}`の本文を`なし`にする")
 
-    permanence_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_PERMANENCE)
+    permanence_index = find_heading_index(headings, 2, PLAN_H2_EIGHT_SECTION_PERMANENCE)
     if permanence_index is not None:
         errors.extend(
             _check_permanence_sections(
@@ -426,12 +455,12 @@ def check_plan_single_file_structure(
                 headings,
                 permanence_index,
                 work_type,
-                parent_label=f"`## {PLAN_H2_CURRENT_PERMANENCE}`",
+                parent_label=f"`## {PLAN_H2_EIGHT_SECTION_PERMANENCE}`",
                 current_format=True,
             )
         )
 
-    history_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_HISTORY)
+    history_index = find_heading_index(headings, 2, PLAN_H2_EIGHT_SECTION_HISTORY)
     errors.extend(
         _check_human_history_section(
             headings,
@@ -442,37 +471,16 @@ def check_plan_single_file_structure(
     )
 
     if verification_index is not None:
-        table = _find_table_with_rows(verification_tables, PLAN_CURRENT_VERIFICATION_TABLE_ROWS)
-        if table is None:
-            table = _find_table_with_rows(verification_tables, PLAN_LEGACY_CURRENT_SINGLE_VERIFICATION_TABLE_ROWS)
-        if table is None:
-            table = _find_table_with_rows(verification_tables, PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS)
-        if table is None or table.header != PLAN_VERIFICATION_TABLE_HEADER:
-            errors.append(
-                f"`## {PLAN_H2_CURRENT_VERIFICATION}`は{list(PLAN_VERIFICATION_TABLE_HEADER)}の2列と"
-                f"固定行（{list(PLAN_CURRENT_VERIFICATION_TABLE_ROWS)}）の表にする"
+        errors.extend(
+            _check_changed_scope_verification(
+                verification_tables,
+                (
+                    PLAN_CURRENT_VERIFICATION_TABLE_ROWS,
+                    PLAN_LEGACY_CURRENT_SINGLE_VERIFICATION_TABLE_ROWS,
+                    PLAN_LEGACY_CURRENT_VERIFICATION_TABLE_ROWS,
+                ),
             )
-        else:
-            for index, row in enumerate(table.rows):
-                if len(row) != len(PLAN_VERIFICATION_TABLE_HEADER):
-                    errors.append(
-                        _column_count_error(
-                            f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表",
-                            len(PLAN_VERIFICATION_TABLE_HEADER),
-                            row,
-                            table.row_location(index),
-                        )
-                    )
-                elif not row[1]:
-                    errors.append(
-                        f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}。"
-                        f"{_EMPTY_CELL_FIX}"
-                    )
-                elif table.row_labels() == PLAN_CURRENT_VERIFICATION_TABLE_ROWS:
-                    try:
-                        commands_from_cell(row[1])
-                    except ActionableError as error:
-                        errors.append(f"{table.row_location(index)}: {error.message}")
+        )
 
     termination_index = find_heading_index(headings, 2, PLAN_H2_TERMINATION)
     errors.extend(_check_termination_section(body, headings, termination_index))
@@ -483,17 +491,162 @@ def check_plan_single_file_structure(
         PLAN_H2_OVERVIEW,
         PLAN_H2_REQUIREMENTS,
         PLAN_H2_DESIGN,
-        PLAN_H2_CURRENT_PERMANENCE,
-        PLAN_H2_CURRENT_HISTORY,
+        PLAN_H2_EIGHT_SECTION_PERMANENCE,
+        PLAN_H2_EIGHT_SECTION_HISTORY,
         PLAN_H2_HISTORY,
     }
     errors.extend(
         _check_h3_and_deeper(
             headings,
             allowed_h3_parents,
-            frozenset({PLAN_H2_REQUIREMENTS, PLAN_H2_CURRENT_HISTORY, PLAN_H2_HISTORY}),
+            frozenset({PLAN_H2_REQUIREMENTS, PLAN_H2_EIGHT_SECTION_HISTORY, PLAN_H2_HISTORY}),
         )
     )
+    return work_type, errors
+
+
+def _check_changed_scope_verification(tables: list[MarkdownTable], accepted_rows: tuple[tuple[str, ...], ...]) -> list[str]:
+    """`## 検証`の固定表の行名、列数、検証コマンドの形を確かめる。
+
+    `accepted_rows`は受け付ける行名の組を優先順に渡す。先頭の組が現行の行名である。
+    """
+    errors: list[str] = []
+    table = next(
+        (found for rows in accepted_rows if (found := _find_table_with_rows(tables, rows)) is not None),
+        None,
+    )
+    if table is None or table.header != PLAN_VERIFICATION_TABLE_HEADER:
+        return [
+            f"`## {PLAN_H2_CURRENT_VERIFICATION}`は{list(PLAN_VERIFICATION_TABLE_HEADER)}の2列と"
+            f"固定行（{list(PLAN_CURRENT_VERIFICATION_TABLE_ROWS)}）の表にする"
+        ]
+    for index, row in enumerate(table.rows):
+        if len(row) != len(PLAN_VERIFICATION_TABLE_HEADER):
+            errors.append(
+                _column_count_error(
+                    f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表",
+                    len(PLAN_VERIFICATION_TABLE_HEADER),
+                    row,
+                    table.row_location(index),
+                )
+            )
+        elif not row[1]:
+            errors.append(
+                f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}。"
+                f"{_EMPTY_CELL_FIX}"
+            )
+        elif table.row_labels() == PLAN_CURRENT_VERIFICATION_TABLE_ROWS:
+            try:
+                commands_from_cell(row[1])
+            except ActionableError as error:
+                errors.append(f"{table.row_location(index)}: {error.message}")
+    return errors
+
+
+def _check_request_plan_layout(headings: list[PlanHeading]) -> list[str]:
+    """現行の計画の見出しの配置（H1直下、固定H2と要求を書く節の並び、固定H2の配下）を確かめる。"""
+    errors: list[str] = []
+    first_h2 = next((index for index, heading in enumerate(headings) if heading.level == 2), len(headings))
+    if [(heading.level, heading.text) for heading in headings[1:first_h2]] != [(3, PLAN_METADATA_H3)]:
+        errors.append(f"H1直下の見出しは`### {PLAN_METADATA_H3}`1件だけにする")
+
+    frame = (*PLAN_H2_ORDER_HEAD, *PLAN_H2_ORDER_TAIL)
+    h2_names = [heading.text for heading in headings if heading.level == 2]
+    for name in frame:
+        if (count := h2_names.count(name)) != 1:
+            errors.append(f"固定H2`## {name}`は1件必要: 実際={count}件")
+    if unknown := [name for name in h2_names if name not in frame and name not in REQUEST_H2_ORDER]:
+        errors.append(
+            f"H2は{list(PLAN_H2_ORDER_HEAD)}、要求を書く節{list(REQUEST_H2_ORDER)}、{list(PLAN_H2_ORDER_TAIL)}だけを置く: "
+            f"実際={unknown}"
+        )
+    known = [name for name in h2_names if name in frame or name in REQUEST_H2_ORDER]
+    expected = [
+        *PLAN_H2_ORDER_HEAD,
+        *(name for name in known if name in REQUEST_H2_ORDER),
+        *PLAN_H2_ORDER_TAIL,
+    ]
+    if all(h2_names.count(name) == 1 for name in frame) and known != expected:
+        errors.append(f"H2は{list(PLAN_H2_ORDER_HEAD)}、要求を書く節、{list(PLAN_H2_ORDER_TAIL)}の順に置く: 実際={h2_names}")
+    parent = ""
+    for heading in headings:
+        if heading.level == 2:
+            parent = heading.text
+        elif heading.level > 2 and parent in frame:
+            errors.append(f"`## {parent}`の配下に見出しは置かない: `{'#' * heading.level} {heading.text}`")
+    return errors
+
+
+def check_plan_request_structure(
+    content: str,
+    *,
+    origin_notices: list[str] | None = None,
+    origin_skips: list[str] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+) -> tuple[str | None, list[str]]:
+    """現行の計画ファイルが基準を満たすか判定し、(作業種別, 違反一覧)を返す。
+
+    H1と要約、計画メタ情報、`## 実施内容`、要求を書く節、`## 検証`、`## 進捗ログ`をこの順に持つ。
+    要求を書く節の必須節、空の節、順序は、通常AWIの本文と同じ`request_section_problems`で判定する。
+    `## 原因分析`は`cause_record_errors`で判定し、関連WIが無いバグ対応の計画では必須とする。
+    """
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    errors = _check_h1(headings)
+    errors.extend(check_duplicate_headings(content))
+
+    parsed, _parse_errors = parse_plan_metadata(content)
+    work_type, metadata_errors = _check_metadata_block(
+        content, expected_fields=PLAN_METADATA_CURRENT_FIELDS, parent=PLAN_METADATA_TOP_PARENT
+    )
+    errors.extend(metadata_errors)
+    related_wi = frozenset(filename for filename, _summary in parsed.related_wi) if parsed is not None else frozenset()
+
+    if headings and headings[0].level == 1:
+        summary_end = headings[1].lineno if len(headings) > 1 else None
+        if not any(line.strip() for _lineno, line in lines_within(body, headings[0].lineno, summary_end)):
+            errors.append("H1直下に要約（全体像、目的、対象範囲）を書く")
+    errors.extend(_check_request_plan_layout(headings))
+
+    errors.extend(
+        _check_human_action(
+            content, body, headings, related_wi, origin_notices, origin_skips, private_notes=private_notes, home=home
+        )
+    )
+
+    frame = (*PLAN_H2_ORDER_HEAD, *PLAN_H2_ORDER_TAIL)
+    sections = [(name, has_body) for name, has_body in request_sections(content) if name not in frame]
+    errors.extend(f"要求を書く節: {problem}" for problem in request_section_problems(sections))
+    filled = {name for name, has_body in sections if has_body}
+    cause = next(
+        (lines for name, lines in markdown_headings.h2_section_bodies(content) if name == REQUEST_H2_CAUSE),
+        None,
+    )
+    if cause is not None and work_type == "通常変更":
+        errors.append(f"作業種別が`通常変更`の計画に`## {REQUEST_H2_CAUSE}`は置かない")
+    elif cause is not None:
+        errors.extend(f"`## {REQUEST_H2_CAUSE}`: {error}" for error in cause_record_errors("\n".join(cause)))
+    elif work_type == "バグ対応" and not related_wi:
+        errors.append(
+            f"関連WIが無いバグ対応の計画には`## {REQUEST_H2_CAUSE}`が必要。"
+            "`agent-basics:bugfix`の`SKILL.md`「記録」の行頭語で始まる行で書く"
+        )
+    if has_adopted_human_user_instruction(content) and REQUEST_H2_QUOTATION not in filled:
+        errors.append(
+            f"`ユーザー指示`の行を`採用`か`部分採用`とした計画には、ユーザーの原文を転記した`## {REQUEST_H2_QUOTATION}`が必要"
+        )
+
+    verification_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_VERIFICATION)
+    if verification_index is not None:
+        start, end = heading_subtree_range(headings, verification_index)
+        errors.extend(
+            _check_changed_scope_verification(
+                extract_tables(lines_within(body, start, end)), (PLAN_CURRENT_VERIFICATION_TABLE_ROWS,)
+            )
+        )
+    progress_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_PROGRESS)
+    errors.extend(_check_progress_section(body, headings, progress_index))
     return work_type, errors
 
 

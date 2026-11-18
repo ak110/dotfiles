@@ -336,7 +336,7 @@ def test_accepts_current_single_file_plan(repo: tuple[pathlib.Path, str]) -> Non
     """現行の8節1ファイル計画を移行警告なしで受理する。"""
     work_dir, _base = repo
 
-    errors, warnings = _check(work_dir, _plan_fixture.current_plan(repo=work_dir.resolve()))
+    errors, warnings = _check(work_dir, _plan_fixture.eight_section_plan(repo=work_dir.resolve()))
 
     assert not errors, errors
     assert not warnings, warnings
@@ -346,7 +346,7 @@ def test_cli_checks_all_returned_agent_rule_paths(repo: tuple[pathlib.Path, str]
     """返却するパス一覧の全件が同じ本文に含まれるか確かめ、全欠落と修正後の成功を公開されたコマンドから確認する。"""
     work_dir, _base = repo
     path = work_dir / "paths.md"
-    content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     path.write_text(content, encoding="utf-8")
     paths = ("AGENTS.md", ".claude/rules/new[1]+.md")
     args = ["--work-dir", str(work_dir), str(path)]

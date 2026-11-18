@@ -25,7 +25,7 @@ def _write_set_plan(work_dir: pathlib.Path, name: str, awi: str, *, padding: int
     実施内容の人間由来の行も担当AWIを指すように置き換え、計画ごとの関連WIと由来を一致させる。
     `padding`行の本文を加えると、計画の行数の警告の境界を計画ごとに作成できる。
     """
-    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((awi, "分割した要求"),)).replace(
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((awi, "分割した要求"),)).replace(
         _plan_fixture.WI_FILES[0][0], awi
     )
     if padding:
@@ -104,7 +104,7 @@ def test_cli_checks_expected_wi_set(
     extra = "20261018-000000-100.md"
     actual = expected[:5] if case == "missing" else (*expected, extra) if case == "extra" else expected
     path = _write_set_plan(work_dir, "expected.md", actual[0])
-    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=tuple((name, "要求") for name in actual))
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=tuple((name, "要求") for name in actual))
     path.write_text(content.replace(_plan_fixture.WI_FILES[0][0], actual[0]), encoding="utf-8")
     result = _run_plan_launcher(work_dir, [path], host_environ, *(arg for name in expected for arg in ("--expected-wi", name)))
     assert result.returncode == (0 if case == "complete" else 1), result.stderr

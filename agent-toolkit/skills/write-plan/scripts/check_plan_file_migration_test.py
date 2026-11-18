@@ -184,7 +184,7 @@ def test_rejects_current_single_file_structure_violations(
 ) -> None:
     """現行書式の固定節、固定表、見出し深度の違反を拒否する。"""
     work_dir, _base = repo
-    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(old, new, 1)
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).replace(old, new, 1)
 
     errors, _warnings = _check(work_dir, content)
 
@@ -396,7 +396,7 @@ def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, st
 def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
     """改訂用CLI入力は移行警告を拒否しても実行工程の進捗行を保持する。"""
     work_dir, _base = repo
-    main_content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    main_content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     main_content = main_content.replace(
         _plan_fixture.PROGRESS_TABLE,
         _plan_fixture.PROGRESS_TABLE + _plan_fixture.PROGRESS_ROW,

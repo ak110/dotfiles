@@ -77,7 +77,7 @@ class PlanMetadata:
     """計画メタ情報の解析結果を表す。"""
 
     parent: str
-    """メタ情報を収めていた親H2の見出し文。正規形では`概要`となる。"""
+    """メタ情報を収めていた親H2の見出し文。現行の計画ではH1直下を表す空文字列、8節形式までの計画では`概要`となる。"""
 
     entries: tuple[tuple[str, str], ...]
     """記載順の(項目名, 生の値)。項目の順序と記法が基準を満たすかの判定に使う。"""
@@ -90,11 +90,6 @@ class PlanMetadata:
 
     base_commit_candidates: tuple[str, ...]
     """`ベースコミット`と旧別名`基準コミット`から抽出した16進値の全候補。"""
-
-    @property
-    def is_canonical(self) -> bool:
-        """正規配置（`## 概要`直下）から読み取ったかを返す。"""
-        return self.parent == PLAN_H2_OVERVIEW
 
 
 _METADATA_ENTRY_PATTERN = re.compile(r"^- (?P<field>[^:]+):(?: (?P<value>.*?))?\s*$")
@@ -115,11 +110,20 @@ def _strip_backticks(value: str) -> str:
     return value
 
 
+PLAN_METADATA_TOP_PARENT: str = ""
+"""計画メタ情報をH1直下（最初のH2より前）に置く現行の配置を表す、親H2の値。"""
+
+
+def metadata_parent_label(parent: str) -> str:
+    """計画メタ情報の配置を診断へ書く表記で返す。"""
+    return "H1直下" if parent == PLAN_METADATA_TOP_PARENT else f"`## {parent}`直下"
+
+
 def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     """計画メタ情報を正規配置優先で解析し、(解析結果, 曖昧性エラー)を返す。
 
-    `## 概要`直下の`### 計画メタ情報`を正規配置とする。
-    正規配置が無い既存計画に限り`PLAN_METADATA_FALLBACK_H2`の旧配置を読み取り互換として使う。
+    8節形式までの計画は`## 概要`直下、現行の計画はH1直下（最初のH2より前）の`### 計画メタ情報`を読む。
+    どちらも無い既存計画に限り`PLAN_METADATA_FALLBACK_H2`の旧配置を読み取り互換として使う。
     同一親に複数の`### 計画メタ情報`がある場合と、旧配置の候補が複数の親に散在する場合は
     曖昧として解析結果を返さない。
     """
@@ -137,6 +141,8 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
 
     if PLAN_H2_OVERVIEW in sections:
         parent = PLAN_H2_OVERVIEW
+    elif PLAN_METADATA_TOP_PARENT in sections:
+        parent = PLAN_METADATA_TOP_PARENT
     else:
         fallback_parents = [name for name in PLAN_METADATA_FALLBACK_H2 if name in sections]
         if not fallback_parents:
@@ -147,7 +153,7 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
 
     indices = sections[parent]
     if len(indices) > 1:
-        return None, [f"`## {parent}`直下の`### {PLAN_METADATA_H3}`が1件ではありません: 実際={len(indices)}件"]
+        return None, [f"{metadata_parent_label(parent)}の`### {PLAN_METADATA_H3}`が1件ではありません: 実際={len(indices)}件"]
 
     start, end = heading_subtree_range(headings, indices[0])
     section = lines_within(body, start, end)

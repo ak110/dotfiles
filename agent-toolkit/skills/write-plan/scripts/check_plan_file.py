@@ -14,9 +14,10 @@ import sys
 import yaml
 from check_plan_file_common import _ClassifiedWarning
 from check_plan_file_formats import (
+    _check_eight_section_format,
     _check_legacy_format,
     _check_new_format,
-    _check_single_file_format,
+    _check_request_format,
     _check_working_plan_filename,
     _detail_path_for,
     _outside_fences,
@@ -26,6 +27,35 @@ from check_plan_file_selection import _check_lane_selection, _check_wi_selection
 
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import structure
+
+FORMAT_REQUEST = "request"
+"""現行の形式。要求を書く節を通常AWIの本文と同じ見出しで持つ。新規作成はこの形式だけを受け付ける。"""
+FORMAT_EIGHT_SECTION = "eight-section"
+"""`## 要件・外部仕様`などの固定8節を持つ1ファイル形式。保存済みの計画の読み取りと進行中の計画の完了に使う。"""
+FORMAT_TWO_FILE = "two-file"
+FORMAT_LEGACY = "legacy"
+
+
+def detect_plan_format(plan_path: pathlib.Path, text: str) -> str:
+    """計画ファイルの形式を返す。
+
+    対応する`<stem>.detail.md`があれば旧二ファイル形式とする。
+    それ以外は、8節形式の2節を両方持てば8節形式とする。
+    `## 反映内容と反映先`を持つか、計画メタ情報をH1直下に置いていれば現行の形式とする。
+    必須節を欠いた現行の形式の原稿を旧形式と誤認しないよう、計画メタ情報の配置でも判別する。
+    どれでもなければ旧単一ファイル形式とする。
+    """
+    if _detail_path_for(plan_path).is_file():
+        return FORMAT_TWO_FILE
+    h2_names = {heading.text for heading in structure.extract_headings(text) if heading.level == 2}
+    if {structure.PLAN_H2_REQUIREMENTS, structure.PLAN_H2_EIGHT_SECTION_PERMANENCE} <= h2_names:
+        return FORMAT_EIGHT_SECTION
+    metadata, _errors = structure.parse_plan_metadata(text)
+    if structure.REQUEST_H2_REQUEST in h2_names or (
+        metadata is not None and metadata.parent == structure.PLAN_METADATA_TOP_PARENT
+    ):
+        return FORMAT_REQUEST
+    return FORMAT_LEGACY
 
 
 def check(
@@ -47,8 +77,7 @@ def check(
 
     `~/.claude/plans`直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
     `~/.claude/plans`直下の対象では、保存工程と同じ条件でファイル名が所定の形式であるかも確かめる。
-    対応する`<stem>.detail.md`があれば旧二ファイル形式として扱う。
-    detailが無く、現行H2集合を持つ場合は現行の1ファイル形式、それ以外は旧単一ファイル形式として扱う。
+    形式は`detect_plan_format`で判別し、現行の形式以外は読み取り互換として扱う。
     警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
     種類を分けずに新規作成を失敗させると、行数の助言だけを伴う現行形式の計画まで遮断する。
     移行警告の拒否と、起草時の`## 進捗ログ`内容行の拒否は呼び出し側が独立に指定する。
@@ -61,23 +90,20 @@ def check(
     _outside, errors = _outside_fences(structure_lines)
     errors.extend(_check_working_plan_filename(plan_path, home))
 
-    detail_path = _detail_path_for(plan_path)
+    plan_format = detect_plan_format(plan_path, text)
     progress_heading = structure.PLAN_H2_PROGRESS
-    if detail_path.is_file():
-        format_errors, classified_warnings = _check_new_format(detail_path, text, work_dir, private_notes, home)
+    if plan_format == FORMAT_TWO_FILE:
+        format_errors, classified_warnings = _check_new_format(_detail_path_for(plan_path), text, work_dir, private_notes, home)
         if not any(kind == "migration" for kind, _message in classified_warnings):
             classified_warnings.append(("migration", "旧二ファイル書式である。新規作成・改訂では現行の1ファイル書式へ移行する"))
+    elif plan_format == FORMAT_REQUEST:
+        progress_heading = structure.PLAN_H2_CURRENT_PROGRESS
+        format_errors, classified_warnings = _check_request_format(text, work_dir, private_notes, home)
+    elif plan_format == FORMAT_EIGHT_SECTION:
+        progress_heading = structure.PLAN_H2_CURRENT_PROGRESS
+        format_errors, classified_warnings = _check_eight_section_format(plan_path, text, work_dir, private_notes, home)
     else:
-        h2_names = {heading.text for heading in structure.extract_headings(text) if heading.level == 2}
-        current_markers = {
-            structure.PLAN_H2_REQUIREMENTS,
-            structure.PLAN_H2_CURRENT_PERMANENCE,
-        }
-        if current_markers <= h2_names:
-            progress_heading = structure.PLAN_H2_CURRENT_PROGRESS
-            format_errors, classified_warnings = _check_single_file_format(plan_path, text, work_dir, private_notes, home)
-        else:
-            format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
+        format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
     errors.extend(
         f"返却予定のエージェント向け文書のパスが計画本文にない: {relative}。"

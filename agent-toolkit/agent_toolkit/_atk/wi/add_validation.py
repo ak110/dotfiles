@@ -47,35 +47,11 @@ _EMPTY_AWI_ERROR = "AWI本文が実質空です"
 
 _EMPTY_AWI_NEXT_ACTION = "本文を記入して再投入する"
 
-_REQUIRED_AWI_HEADINGS: tuple[str, ...] = ("反映内容と反映先",)
-
-"""`source`を持つ通常AWIが必須とするH2見出し。
-
-`agent-toolkit:wi-standards`の`## 通常AWIの本文`が定める必須節をそのまま写す。
-規範が必須と定める集合を1箇所で定義し、本処理もその集合を使って判定することで、
-規範の一部だけを判定する状態が生じないようにする。規範側の必須節を変える改訂では本定数も同じ変更単位で更新する。
-"""
-
-_CAUSE_ANALYSIS_HEADING = "原因分析"
+_CAUSE_ANALYSIS_HEADING = _plan_structure.REQUEST_H2_CAUSE
 
 """観測した欠陥を起点とする通常AWIだけが持つH2見出し。
 
 起点が観測した欠陥かは本文から機械判定できないため、必須集合へ加えず、置いた場合の順序と非空だけを判定する。
-"""
-
-_AWI_HEADING_ORDER: tuple[str, ...] = (
-    "反映内容と反映先",
-    _CAUSE_ANALYSIS_HEADING,
-    "適用範囲",
-    "実現性",
-    "調査結果と判断根拠",
-    "完成条件",
-    "ユーザー指摘の逐語引用",
-)
-
-"""同じ規範が定めるH2の並び順。
-
-`原因分析`と`ユーザー指摘の逐語引用`は条件付きで必須なため順序の判定にだけ用いる。
 """
 
 
@@ -99,6 +75,7 @@ def require_agent_awi_sections(
 ) -> None:
     """`source`を持つ通常AWIが必須H2を全件持ち、規定順序に従うことを検証する。
 
+    節の定義と判定は、計画ファイルの要求を書く節と同じ`request_section_problems`を使う。
     不足と順序の不一致は1件の例外へまとめて返す。
     1件ずつ返すと、起草側が本文を書き直して再投入する往復が不足節の件数だけ生じるためである。
     """
@@ -106,31 +83,17 @@ def require_agent_awi_sections(
     item_source = raw_source if isinstance(raw_source, str) else source
     if entry_type != WI_TYPE_AWI or not item_source:
         return
-    sections = _headings.h2_sections(body)
-    filled = {name for name, has_body in sections if has_body}
-    appeared = [name for name, _has_body in sections if name in _AWI_HEADING_ORDER]
-    problems: list[str] = []
-    if missing := [name for name in _REQUIRED_AWI_HEADINGS if name not in filled]:
-        problems.append(f"非空の必須節がありません: {'、'.join(missing)}")
-    if empty := [
-        name for name, has_body in sections if not has_body and name not in (*_REQUIRED_AWI_HEADINGS, "ユーザーコメント")
-    ]:
-        problems.append(f"本文が空の節があります: {'、'.join(empty)}")
-    order_indexes = [_AWI_HEADING_ORDER.index(name) for name in appeared]
-    if order_indexes != sorted(order_indexes):
-        problems.append(f"H2の順序が規定と異なります: {'、'.join(appeared)}")
+    problems = _plan_structure.request_section_problems(_plan_structure.request_sections(body))
     if not problems:
         return
-    current_order = tuple(name for name in _AWI_HEADING_ORDER if name not in ("適用範囲", "実現性"))
+    order = "、".join(_plan_structure.REQUEST_H2_ORDER)
+    required = "、".join(_plan_structure.REQUEST_H2_REQUIRED)
     raise WebInputError(
         "。".join(problems)
-        + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{'、'.join(current_order)}の順に置くこと、"
-        + f"{'、'.join(_REQUIRED_AWI_HEADINGS)}を必須とすること、"
+        + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{order}の順に置くこと、"
+        + f"{required}を必須とすること、"
         + "設置した節には本文を書くことを定めます。",
-        next_action=(
-            f"本文のH2を{'、'.join(current_order)}の順に並べ、{'、'.join(_REQUIRED_AWI_HEADINGS)}へ本文を書いてから"
-            "再投入する。設置した節にも本文を書く"
-        ),
+        next_action=(f"本文のH2を{order}の順に並べ、{required}へ本文を書いてから再投入する。設置した節にも本文を書く"),
     )
 
 
