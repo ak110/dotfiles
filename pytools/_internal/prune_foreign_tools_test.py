@@ -47,6 +47,15 @@ def test_classify_selects_removal_by_installer(tmp_path: Path) -> None:
     _package(posix_prefix / "lib" / "node_modules", "typescript", {"tsc": "bin/tsc"})
     posix_launcher = _executable(posix_prefix / "bin" / "tsc")
     machine = _executable(tmp_path / "Program Files" / "GitHub CLI" / "gh.exe")
+    # Node.js本体の導入先に同梱されたnpmは、グローバルprefixの導入物として扱わない。
+    node_windows = tmp_path / "Program Files" / "nodejs"
+    _executable(node_windows / "node.exe")
+    _package(node_windows / "node_modules", "npm", {"npm": "bin/npm-cli.js"})
+    node_windows_npm = _executable(node_windows / "npm.cmd")
+    node_posix = tmp_path / "usr"
+    _executable(node_posix / "bin" / "node")
+    _package(node_posix / "lib" / "node_modules", "npm", {"npm": "bin/npm-cli.js"})
+    node_posix_npm = _executable(node_posix / "bin" / "npm")
 
     assert prune_foreign_tools.classify(winget_rg, "rg", layout) == prune_foreign_tools.Removal(
         "winget", "BurntSushi.ripgrep.MSVC", common.safe_resolve(winget_rg)
@@ -61,6 +70,8 @@ def test_classify_selects_removal_by_installer(tmp_path: Path) -> None:
         "npm", "typescript", posix_prefix
     )
     assert prune_foreign_tools.classify(machine, "gh", layout) is None
+    assert prune_foreign_tools.classify(node_windows_npm, "npm", layout) is None
+    assert prune_foreign_tools.classify(node_posix_npm, "npm", layout) is None
 
 
 class _Host(typing.NamedTuple):
@@ -128,8 +139,11 @@ def test_run_removes_standalone_pnpm_and_warns_shadowing_install(host: _Host, ca
         assert host.registry == {"Path": host.registry["Path"]}
         assert "%PNPM_HOME%" not in host.registry["Path"]
         assert host.registry["Path"].endswith("keep")
-    # PATHでmise shimより前にある導入元不明の版は削除せず、案内だけ出す。
-    assert any("machine" in record.getMessage() and "先にPATH" in record.getMessage() for record in caplog.records)
+    # Windowsでは、PATHでmise shimより前にある導入元不明の版を削除せず案内だけ出す。Linuxでは案内しない。
+    shadow_notices = [
+        record for record in caplog.records if "machine" in record.getMessage() and "先にPATH" in record.getMessage()
+    ]
+    assert bool(shadow_notices) == (sys.platform == "win32")
 
 
 def test_run_keeps_standalone_pnpm_when_mise_version_is_unavailable(host: _Host) -> None:

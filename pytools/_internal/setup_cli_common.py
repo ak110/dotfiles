@@ -124,7 +124,7 @@ def migrate_npm_launchers(
 
     `excluded_launchers`には呼出側自身が配置した起動管理を渡し、移行の候補と保持警告から除く。
     """
-    changed = False
+    changed = _remove_orphan_npm_launchers(cli_name, package_name, extra_search_directories)
     for launcher in _iter_noncanonical_launchers(
         cli_name,
         canonical_launcher,
@@ -268,6 +268,55 @@ def _iter_noncanonical_launchers(
             if resolved == canonical_real or resolved in excluded or _is_relative_to(resolved, prefix_real):
                 continue
             yield launcher
+
+
+def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_directories: Iterable[Path]) -> bool:
+    """npmのパッケージ本体が無いのに残った起動スクリプト（`.cmd`・`.ps1`・拡張子なし）を削除する。
+
+    PowerShellはPATH上の`.ps1`を`.cmd`より先に使うため、本体の無い起動スクリプトが残ると
+    正規の導入先より前で起動に失敗する。npmの起動スクリプトは同じディレクトリの
+    `node_modules/<パッケージ>`を参照するため、その参照を含み本体が不在のものだけを対象とする。
+    """
+    reference = f"node_modules/{package_name}/"
+    changed = False
+    path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
+    for directory in {common.safe_resolve(path) for path in (*path_directories, *extra_search_directories)}:
+        if (directory / "node_modules").joinpath(*package_name.split("/")).exists():
+            continue
+        for name in (cli_name, f"{cli_name}.cmd", f"{cli_name}.ps1"):
+            launcher = directory / name
+            try:
+                content = launcher.read_text(encoding="utf-8", errors="replace") if launcher.is_file() else ""
+                normalized = content.replace("\\", "/")
+                if reference not in normalized or _references_existing_package(normalized, package_name):
+                    continue
+                launcher.unlink()
+            except OSError as error:
+                logger.warning(
+                    log_format.format_status(
+                        cli_name, f"本体の無いnpm起動スクリプトを削除できない: {launcher}: {error}。手で削除する"
+                    )
+                )
+                continue
+            logger.info(log_format.format_status(cli_name, f"本体の無いnpm起動スクリプトを削除しました: {launcher}"))
+            changed = True
+    return changed
+
+
+def _references_existing_package(content: str, package_name: str) -> bool:
+    """起動スクリプトが絶対パスで参照するパッケージ本体が実在するかを返す。
+
+    npmが生成する起動スクリプトは自身のディレクトリからの相対参照だが、手で置いた起動スクリプトは
+    別の導入先を絶対パスで指すことがある。本体が実在する参照は孤立とみなさず削除しない。
+    """
+    pattern = re.compile(r'([^"\'\s]*)node_modules/' + re.escape(package_name) + "/")
+    for match in pattern.finditer(content):
+        prefix = match.group(1)
+        if not (prefix.startswith("/") or re.match(r"[A-Za-z]:/", prefix)):
+            continue
+        if Path(prefix, "node_modules", *package_name.split("/")).is_dir():
+            return True
+    return False
 
 
 def _adjacent_npm(directory: Path) -> Path | None:

@@ -99,6 +99,22 @@ class TestWindowsProcessPathPriority:
 
         assert os.environ["PATH"] == str(windows_env["shims_dir"])
 
+    def test_appends_mise_binary_directory_missing_from_path(
+        self,
+        windows_env: dict[str, typing.Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """shimが本体を起動できるよう、PATHに無いmise本体の配置も加える。"""
+        links = Path(os.environ["LOCALAPPDATA"]) / "Microsoft" / "WinGet" / "Links"
+        links.mkdir(parents=True)
+        (links / "mise.exe").write_bytes(b"")
+        node_path = r"C:\DATA\Apps\node"
+        monkeypatch.setenv("PATH", node_path)
+
+        _setup_mise.run()
+
+        assert os.environ["PATH"] == os.pathsep.join((node_path, str(windows_env["shims_dir"]), str(links)))
+
 
 class TestWindowsMiseSubprocessEnvironment:
     """Windowsのmise子プロセスが管理対象の.NET共有ルートを優先することを検証する。"""

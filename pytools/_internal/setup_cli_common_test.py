@@ -676,3 +676,25 @@ def test_windows_cli_running_reads_current_generation(monkeypatch: pytest.Monkey
         finally:
             child.kill()
     assert not running
+
+
+def test_migrate_removes_npm_launchers_left_without_package(monkeypatch, tmp_path):
+    """本体の無いnpm起動スクリプトだけを削除し、本体のあるものと無関係のものは残す。"""
+    orphan = tmp_path / "orphan"
+    orphan.mkdir()
+    for name in ("codex.ps1", "codex.cmd", "codex"):
+        (orphan / name).write_text('"$basedir/node_modules\\@openai\\codex\\bin\\codex.js"\n', encoding="utf-8")
+    installed = tmp_path / "installed"
+    (installed / "node_modules" / "@openai" / "codex").mkdir(parents=True)
+    (installed / "codex.ps1").write_text('"$basedir/node_modules/@openai/codex/bin/codex.js"\n', encoding="utf-8")
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    (unrelated / "codex.ps1").write_text("& codex.exe @args\n", encoding="utf-8")
+    monkeypatch.setenv("PATH", os.pathsep.join(str(path) for path in (orphan, installed, unrelated)))
+    canonical = tmp_path / "canonical"
+
+    assert setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical / "codex.cmd", canonical)
+
+    assert not any(orphan.iterdir())
+    assert (installed / "codex.ps1").is_file()
+    assert (unrelated / "codex.ps1").is_file()
