@@ -789,7 +789,7 @@ _POSSIBLE_DEFINITION_READS = [
     'cat "$ROLE_PATH"',
     "cat docs/$f.md",
     "cat $(resolve /p/x.subagent.md)",
-    'cat "$W/agent-toolkit/share/add-wi.subagent.md"',
+    'cat "$W/agent-toolkit/skills/atk-mode/roles/add-wi.subagent.md"',
     'x=$(cat "$f")',
     'env -u X cat "$f"',
     "$CAT /p/x.subagent.md",

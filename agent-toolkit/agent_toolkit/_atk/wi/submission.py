@@ -38,7 +38,7 @@ def cmd_submission(args: argparse.Namespace) -> int:
     if session_id is None:
         _outcome.report_failure(
             "会話IDを決められないため記録しなかった",
-            next_action="add-awi-by-userを実行する会話から実行するか、`--session-id`で会話IDを指定する",
+            next_action="AWI投入（`/atk-mode add-awi-by-user`）を実行する会話から実行するか、`--session-id`で会話IDを指定する",
         )
         return 1
     if args.submission_subcommand == "end":
@@ -112,7 +112,7 @@ def _checked_summary(args: argparse.Namespace, session_id: str) -> list[str] | N
         _outcome.report_failure(
             "指摘対応記録に不足があるため、投入作業の記録を保持した:\n" + "\n".join(f"- {problem}" for problem in problems),
             next_action="不足する項目を指摘対応記録へ補い、同じコマンドを再実行する。分類と処置は"
-            "add-awi-by-user「指摘の分類と処置」に従う",
+            "`agent-toolkit:atk-mode/playbooks/add-awi-by-user.md`「指摘の分類と処置」に従う",
         )
         return None
     return _findings.summary_lines(findings)

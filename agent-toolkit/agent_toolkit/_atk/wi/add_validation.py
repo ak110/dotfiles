@@ -56,7 +56,7 @@ _CAUSE_ANALYSIS_HEADING = _plan_structure.REQUEST_H2_CAUSE
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
-    """先頭frontmatterと論理本文を返し、`agent-toolkit:wi-standards`「通常AWIの本文」の要件のうち種別共通のものを検証する。"""
+    """先頭frontmatterと論理本文を返し、`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」の要件のうち種別共通のものを検証する。"""
     frontmatter, body = _parse_leading_frontmatter(_frontmatter.normalize_newlines(message))
     if entry_type == WI_TYPE_AWI and body_is_effectively_empty(body):
         raise WebInputError(_EMPTY_AWI_ERROR, next_action=_EMPTY_AWI_NEXT_ACTION)
@@ -90,7 +90,7 @@ def require_agent_awi_sections(
     required = "、".join(_plan_structure.REQUEST_H2_REQUIRED)
     raise WebInputError(
         "。".join(problems)
-        + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{order}の順に置くこと、"
+        + f"。`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」が、H2を{order}の順に置くこと、"
         + f"{required}を必須とすること、"
         + "設置した節には本文を書くことを定めます。",
         next_action=(f"本文のH2を{order}の順に並べ、{required}へ本文を書いてから再投入する。設置した節にも本文を書く"),
@@ -216,8 +216,9 @@ def _require_agent_source(frontmatter: dict[str, object], source: str | None) ->
         raise WebInputError(
             "エージェント環境ではsourceにhumanを指定できません。",
             next_action=(
-                "--sourceまたは本文先頭のfrontmatterのsourceへ、起動スキル名（プラグイン接頭辞を除く）を指定する。"
-                "スキルが無い場合はagentを指定して再実行する"
+                "--sourceまたは本文先頭のfrontmatterのsourceへ、起動中の作業かスキルの名前を指定する"
+                "（プラグイン接頭辞を除く。`/atk-mode add-awi-by-user`なら`add-awi-by-user`）。"
+                "該当する作業もスキルも無い場合はagentを指定して再実行する"
             ),
         )
 

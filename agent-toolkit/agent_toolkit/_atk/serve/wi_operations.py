@@ -206,7 +206,7 @@ def _created_at(filename: str) -> datetime.datetime | None:
 def _source_kind(source: typing.Any) -> str:
     """保存された投入元を一覧フィルターの分類へ変換する。
 
-    `agent-toolkit:wi-standards`の由来判定に従い、`source`の欠落だけを人間由来とし、
+    `agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」の由来判定に従い、`source`の欠落だけを人間由来とし、
     値を持つ項目をすべてエージェント由来とする。
     既知値の列挙を持たないため、新しい`source`値の追加で本関数を更新しない。
     """

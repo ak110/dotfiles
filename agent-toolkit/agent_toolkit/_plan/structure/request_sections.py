@@ -1,6 +1,6 @@
 """要求を書く節（通常AWIの本文と、計画ファイルの要求を書く部分）の見出しの検査。
 
-節の構成は`agent-toolkit:wi-standards`の`references/awi-body.md`が定める。
+節の構成は`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」が定める。
 `atk wi add`・`atk wi edit`と計画の構造の検査が、同じ定義と同じ関数で判定する。
 """
 

@@ -52,7 +52,7 @@ REQUEST_H2_ORDER: tuple[str, ...] = (
 )
 """要求を書く節のH2と並び順。通常AWIの本文と、計画ファイルの要求を書く部分が共有する。
 
-定義元は`agent-toolkit:wi-standards`の`references/awi-body.md`で、節を変える改訂では本定数も同じ変更で更新する。
+定義元は`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」で、節を変える改訂では本定数も同じ変更で更新する。
 """
 
 REQUEST_H2_REQUIRED: tuple[str, ...] = (REQUEST_H2_REQUEST,)

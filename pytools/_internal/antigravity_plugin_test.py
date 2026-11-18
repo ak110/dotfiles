@@ -128,7 +128,7 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     (source / "agent-toolkit" / _CHECK_SKILL).write_text("新しい定義")
     assert subject.check_diagnostics(source)
     assert subject.sync(source)
-    assert not stale.exists()
+    assert not stale.parent.exists()
     assert (target / _CHECK_SKILL).read_text() == "新しい定義"
 
 

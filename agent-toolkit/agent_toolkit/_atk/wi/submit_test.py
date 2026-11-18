@@ -49,6 +49,10 @@ from agent_toolkit._atk.wi import add, submit
 from agent_toolkit._common import private_notes
 startup = json.loads(os.environ["AGENT_TOOLKIT_SESSION_START_INPUT"])
 path = pathlib.Path(re.search(r"独立WI受付: (.*?)。", startup["arguments"]).group(1))
+playbook = pathlib.Path(re.search(r"手順書: (.*?)。", startup["arguments"]).group(1))
+assert playbook.is_absolute() and playbook.parts[-4:] == ("skills", "atk-mode", "playbooks", "wi-submission.md")
+assert startup["skill"] == submit.SKILL and startup["accepted_scopes"] == [submit.SKILL]
+assert "同名のスキルは起動しない。入口のスキル`agent-toolkit:atk-mode`を起動し" in sys.argv[-1]
 run = json.loads(path.read_text(encoding="utf-8"))
 assert pathlib.Path.cwd() == pathlib.Path(run["work_dir"])
 assert not any(name in os.environ for name in (
@@ -112,6 +116,12 @@ if not concurrent and mode in {"normal", "concurrent-once"}:
 (path.parent / "exit.json").write_text(json.dumps({"code": code, "concurrent": concurrent}))
 sys.exit(code)
 """
+
+
+def test_child_playbook_exists_with_session_contract() -> None:
+    """子セッションへ案内する手順書が配布物にあり、起動入力が名指しする節を持つ。"""
+    playbook = pathlib.Path(submit.__file__).resolve().parents[3] / submit._PLAYBOOK  # pylint: disable=protected-access
+    assert "\n## 投入セッション契約\n" in playbook.read_text(encoding="utf-8")
 
 
 @pytest.fixture(name="notes")

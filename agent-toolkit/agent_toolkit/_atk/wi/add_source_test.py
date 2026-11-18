@@ -246,7 +246,7 @@ def test_public_add_validates_effective_source(
         assert rejected.value.code == 1
         error = capsys.readouterr().err
         assert "human" in error
-        assert "起動スキル名（プラグイン接頭辞を除く）" in error
+        assert "起動中の作業かスキルの名前を指定する（プラグイン接頭辞を除く。" in error
         assert "agent" in error
     saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     assert len(saved) == int(accepted)

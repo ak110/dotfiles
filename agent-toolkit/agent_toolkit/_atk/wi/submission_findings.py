@@ -1,9 +1,10 @@
 """`atk wi submission end`の正常終了で、投入作業中の発話・投入前レビューの指摘と指摘対応記録に対応付いているかを検査する。
 
 URLを含む発話を受けた投入では、資料の主張別の対応表`material_claims`の欄も検査する。
-URLの判定には、作業中の発話に加えて`begin`の直前の発話（`/add-awi-by-user <URL>`のように投入作業を起動した発話）も含める。
+URLの判定には、作業中の発話に加えて起動発話（`/atk-mode add-awi-by-user <URL>`のような直近の起動コマンドから
+`begin`までの全発話）も含める。起動コマンドと`begin`の間にユーザーが資料を足す場合があるためである。
 検査するのは対応の有無と必須欄の欠落だけである。考慮漏れか新しい情報かという分類の意味と処置の十分性は、
-add-awi-by-userのメインと投入前レビューが検収する。実発話は`session-review-evidence --user-events`と同じ抽出処理で
+AWI投入のメインと投入前レビューが検収する。実発話は`session-review-evidence --user-events`と同じ抽出処理で
 得るため、機械注入・子会話の除外規則を別に持たない。
 """
 
@@ -22,11 +23,11 @@ from typing import Any
 
 from agent_toolkit._atk import run_script as _run_script
 from agent_toolkit._atk import session_records as _session_records
-from agent_toolkit._common import plugin_environment, process_tree
+from agent_toolkit._common import plugin_environment, process_tree, session_activity, skill_modes
 from agent_toolkit._common.json_lines import split_lines
 
 CLASSIFICATIONS = ("考慮漏れ", "ユーザーだけが持つ新しい情報", "前提の誤り", "採用しない提案")
-"""add-awi-by-user「指摘の分類と処置」の4分類。追加要求などの要求管理上の扱いは分類の代わりにならない。"""
+"""`agent-toolkit:atk-mode/playbooks/add-awi-by-user.md`「指摘の分類と処置」の4分類。追加要求などの要求管理上の扱いは分類の代わりにならない。"""
 
 OMISSION = CLASSIFICATIONS[0]
 
@@ -77,7 +78,7 @@ def _normalized(text: str) -> str:
 
 
 _NO_FINDING_PATTERN = re.compile(r"なし(?:\s*(?:（[^（）]*）|\([^()]*\)))?")
-"""指摘0件を表す箇条。返却契約（`wi-draft-review.subagent.md`「出力」）は、前回の指摘の解消などの補足を
+"""指摘0件を表す箇条。返却契約（`agent-toolkit:atk-mode/roles/wi-draft-review.subagent.md`「出力」）は、前回の指摘の解消などの補足を
 `なし`に続く全角または半角の丸括弧の中へ書く形を許す。括弧の注記でない文が続く箇条は指摘として数える。"""
 
 
@@ -131,8 +132,8 @@ def _transcript(session_id: str) -> pathlib.Path:
 class Utterances:
     """検査する実ユーザー発話。"""
 
-    invocation: dict[str, Any] | None
-    """`begin`の直前の発話。投入作業を起動した発話であり、URLの判定にだけ使い、指摘対応記録の項目は求めない。"""
+    invocation: list[dict[str, Any]]
+    """起動発話。直近の起動コマンドから`begin`までの発話であり、URLの判定にだけ使い、指摘対応記録の項目は求めない。"""
     after_begin: list[dict[str, Any]]
     """作業開始より後の発話のうち、指摘対応記録へ対応付ける対象。"""
 
@@ -178,15 +179,44 @@ def _position(event: dict[str, Any]) -> str:
     return f"{event.get('record')}:{event.get('line')}"
 
 
+_COMMAND_NAME = re.compile(r"<command-name>\s*[/$](\S+?)\s*</command-name>")
+_COMMAND_ARGS = re.compile(r"<command-args>([\s\S]*?)</command-args>")
+_TYPED_COMMAND = re.compile(r"\s*[/$](\S+)(?:\s+|$)")
+
+
+def _starts_submission(event: dict[str, Any]) -> bool:
+    """発話がAWI投入の起動コマンドかを返す。
+
+    Claude Codeはスラッシュコマンドを`<command-name>`と`<command-args>`の要素で記録し、Codexは入力した本文
+    （`$atk-mode add-awi-by-user <入力>`）のまま記録する。入口の起動は`skill_modes.resolve_work`で作業の名前へ読み替え、
+    移行前の記録にあるスキルの直接の起動（`/add-awi-by-user`）は名前の一致で受ける。
+    """
+    text = str(event.get("text", ""))
+    if name := _COMMAND_NAME.search(text):
+        arguments = _COMMAND_ARGS.search(text)
+        skill, rest = name[1], arguments[1] if arguments else None
+    elif typed := _TYPED_COMMAND.match(text):
+        skill, rest = typed[1], text[typed.end() :]
+    else:
+        return False
+    work, _ = skill_modes.resolve_work(skill, rest)
+    return work.removeprefix("agent-toolkit:") == session_activity.SUBMISSION_KIND
+
+
 def user_events(session_id: str, started_at: str) -> Utterances:
-    """`begin`の直前の起動発話と、作業開始より後の実ユーザー発話を返す。"""
+    """起動発話と、作業開始より後の実ユーザー発話を返す。
+
+    起動発話は、`begin`より前の直近の起動コマンドから`begin`までの全発話とする。
+    記録に起動コマンドが無い場合（エージェントが作業を始めた会話など）は、`begin`の直前の1件とする。
+    """
     transcript = _transcript(session_id)
     after_begin = _extracted_events(transcript, started_at)
     positions = {_position(event) for event in after_begin}
     before_begin = list(
         itertools.takewhile(lambda event: _position(event) not in positions, _extracted_events(transcript, None))
     )
-    return Utterances(before_begin[-1] if before_begin else None, after_begin)
+    starts = [index for index, event in enumerate(before_begin) if _starts_submission(event)]
+    return Utterances(before_begin[starts[-1] :] if starts else before_begin[-1:], after_begin)
 
 
 def _missing_fields(entry: dict[str, Any], names: Sequence[str]) -> list[str]:
@@ -217,7 +247,7 @@ def _material_claim_problems(findings: Findings, utterances: Utterances) -> list
 
     資料を1文ずつ覆ったか、観測が判定を裏付けるかは投入前レビューが資料と対応表を読み比べて確かめる。
     """
-    events = [*([utterances.invocation] if utterances.invocation else []), *utterances.after_begin]
+    events = [*utterances.invocation, *utterances.after_begin]
     if not any(_URL.search(str(event.get("text", ""))) for event in events):
         return []
     if not findings.material_claims:

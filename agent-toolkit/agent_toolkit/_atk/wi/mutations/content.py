@@ -177,8 +177,9 @@ def _require_agent_edit_source(original: str, content: str) -> None:
         raise WebInputError(
             "エージェント環境ではsourceを新しくhumanに変更できません。",
             next_action=(
-                "本文先頭のfrontmatterのsourceへ、起動スキル名（プラグイン接頭辞を除く）を指定する。"
-                "スキルが無い場合はagentを指定して再実行する"
+                "本文先頭のfrontmatterのsourceへ、起動中の作業かスキルの名前を指定する"
+                "（プラグイン接頭辞を除く。`/atk-mode add-awi-by-user`なら`add-awi-by-user`）。"
+                "該当する作業もスキルも無い場合はagentを指定して再実行する"
             ),
         )
 

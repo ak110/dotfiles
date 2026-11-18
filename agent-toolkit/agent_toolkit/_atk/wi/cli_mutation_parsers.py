@@ -113,7 +113,8 @@ def _add_wi_add_parser(sub: Any) -> None:
         default=None,
         help=(
             "投入元の識別子をfrontmatterのsourceへ記録する。"
-            "エージェントは起動スキル名（プラグイン接頭辞を除く）、スキルが無い場合はagentを指定する。"
+            "エージェントは起動中の作業かスキルの名前（プラグイン接頭辞を除く。"
+            "`/atk-mode add-awi-by-user`なら`add-awi-by-user`）、該当が無い場合はagentを指定する。"
             "エージェント環境の通常追加ではhumanを拒否する。人間の直接投入ではsourceを省略する。"
             "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),

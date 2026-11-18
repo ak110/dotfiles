@@ -246,14 +246,19 @@ def _dispatch_once(args: argparse.Namespace) -> int:
                 )
 
 
-def build_goal(skill: str, skill_args: str | None) -> str:
+def build_goal(skill: str, skill_args: str | None, *, launch: str | None = None) -> str:
     """起動したセッション自身が担当するスキルとモードの工程の完遂を目的にする。
 
     工程・終了条件を目的文へ加えるとスキルと定義が二重化するため、起動データと終了契約の参照先はSessionStartで渡す。
     完了はStop hookが報告用UWIの保存で判定するため、主語をセッション自身に限り、
     子の終了後に起動元が行う検収と確定を担当範囲から外すことを短く示す。
+
+    `launch`は、`skill`が保存上の作業名で同名のスキルを持たない起動（`atk wi submit`）が、作業の始め方を1文で渡す。
+    起動単位の名前（ロック、ログ、報告用UWIの`scope`）は`skill`のまま保ち、スキルの実在に依存させない。
     """
     scope = skill_modes.invocation_scope(skill, skill_args)
+    if launch is not None:
+        return f"このセッションが担当する作業`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{launch}"
     return f"このセッションが担当するスキル`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）"
 
 
@@ -338,7 +343,7 @@ def _run_locked(
     candidate = f"{orchestrator}:{model}/{effort}"
     _log_line(log, f"採用した候補: {candidate}")
     goal = _automated_prompt.wrap(
-        build_goal(args.skill, args.args),
+        build_goal(args.skill, args.args, launch=getattr(args, "launch", None)),
         source=_automated_prompt.SOURCE_RUN_SKILL,
         kind=_automated_prompt.KIND_GOAL,
     )

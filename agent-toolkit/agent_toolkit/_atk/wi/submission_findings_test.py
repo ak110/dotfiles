@@ -459,6 +459,94 @@ def test_material_claims_are_required_when_only_invocation_has_urls(
     assert not _recorded()
 
 
+def _command(name: str, arguments: str, *, seconds: int) -> dict[str, Any]:
+    """Claude Codeがスラッシュコマンドの入力を記録する形の発話を返す。"""
+    return _user(
+        f"<command-message>{name}</command-message>\n<command-name>/{name}</command-name>\n"
+        f"<command-args>{arguments}</command-args>",
+        seconds=seconds,
+    )
+
+
+_URL_TEXT = "この記事も参考にして https://example.com/post"
+
+
+@pytest.mark.parametrize(
+    "launch",
+    [
+        _command("atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-40),
+        _command("agent-toolkit:atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-40),
+        _user("$atk-mode add-awi-by-user 検索画面を直したい", seconds=-40),
+        _command("add-awi-by-user", "検索画面を直したい", seconds=-40),
+        _command("agent-toolkit:add-awi-by-user", "検索画面を直したい", seconds=-40),
+    ],
+    ids=["entry", "qualified-entry", "codex-entry", "legacy", "qualified-legacy"],
+)
+def test_material_claims_cover_utterances_between_launch_and_begin(
+    claude_home: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    launch: dict[str, Any],
+) -> None:
+    """起動コマンドと`begin`の間の発話にだけURLがある投入でも、資料の主張別の対応表を求める。
+
+    `begin`より前の発話は指摘対応記録の項目を求めず、`begin`の後の発話の対応付けは変わらない。
+    """
+    entries = [launch, _user(_URL_TEXT, seconds=-30), _user("対象は検索画面だけにして", seconds=-20), _user("手順も短くして")]
+    path = _write_session(claude_home, entries)
+    _begin()
+    assert _end(_material_findings(tmp_path, path, None)) == 1
+    error = capsys.readouterr().err
+    assert "`material_claims`が無い" in error and "の項目が無い" not in error
+    assert _end(_material_findings(tmp_path, path, [_CLAIM])) == 0
+    assert not _recorded()
+
+
+@pytest.mark.parametrize(
+    ("before_begin", "required"),
+    [
+        ([_user(_URL_TEXT, seconds=-40), _user("対象は検索画面だけにして", seconds=-20)], False),
+        (
+            [_command("atk-mode", f"review-session {_URL_TEXT}", seconds=-40), _user("検索画面を直したい", seconds=-20)],
+            False,
+        ),
+        (
+            [
+                _command("atk-mode", f"add-awi-by-user {_URL_TEXT}", seconds=-80),
+                _user("やはり中止して", seconds=-60),
+                _command("atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-40),
+                _user("対象は検索画面だけにして", seconds=-20),
+            ],
+            False,
+        ),
+        (
+            [
+                _command("atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-80),
+                _user("やはり中止して", seconds=-60),
+                _command("atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-40),
+                _user(_URL_TEXT, seconds=-30),
+                _user("対象は検索画面だけにして", seconds=-20),
+            ],
+            True,
+        ),
+    ],
+    ids=["no-launch-command", "other-work-command", "relaunch-without-url", "relaunch-with-url"],
+)
+def test_launch_range_starts_at_latest_launch_command(
+    claude_home: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    before_begin: list[dict[str, Any]],
+    required: bool,
+) -> None:
+    """起動発話は直近の起動コマンドから始まり、起動コマンドが記録に無ければ`begin`の直前の1件だけになる。"""
+    path = _write_session(claude_home, [*before_begin, _user("手順も短くして")])
+    _begin()
+    assert _end(_material_findings(tmp_path, path, None)) == (1 if required else 0)
+    assert ("`material_claims`が無い" in capsys.readouterr().err) is required
+    assert _recorded() is required
+
+
 def test_help_describes_material_claim_fields() -> None:
     """`--help`の形式の説明が、検査する欄と同じ名前を持つ。"""
     epilog = help_text.HELP["atk wi submission end"]["epilog"]

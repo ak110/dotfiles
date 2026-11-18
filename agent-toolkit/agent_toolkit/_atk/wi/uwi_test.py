@@ -73,7 +73,7 @@ def test_public_uwi_add_self_containment_warning(
     assert _invoke_uwi_add(tmp_path, str(myrepo), body=body).code == 0
     stderr = capsys.readouterr().err
     assert ("一時識別子の単独使用" in stderr) is warned
-    assert ("自己完結要件" in stderr) is warned
+    assert ("「載せる情報」" in stderr) is warned
     saved = _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
     assert body in saved
     assert saved.count(uwi_module.ANSWER_MARKER) == 1
