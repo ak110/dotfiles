@@ -1,5 +1,5 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""保守ブランチと次期開発ブランチ（系統）をWIと常駐処理で別々に扱う動作を、2ブランチのoriginで確かめる。"""
+"""保守ブランチと次期開発ブランチ（系統）を、WIとprocess-loopで別々に扱う動作を2ブランチのoriginで確かめる。"""
 
 import dataclasses
 import datetime
