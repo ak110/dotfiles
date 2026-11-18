@@ -70,8 +70,6 @@ _COMPACTION_RESERVE = 1_500
 _CONTRACT_NOTICE_OVERHEAD = 600
 # 要約の作成が失敗した時に、子の標準エラーから通知へ載せる文字数の上限。
 _DIGEST_FAILURE_CAUSE_CHARS = 400
-# 要約が予算を超えて失敗した時に、再実行のコマンドへ示すUTF-8上限。上限を指定しない場合の値（30000）の2倍にする。
-_DIGEST_RETRY_MAX_BYTES = 60_000
 # `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
@@ -468,8 +466,9 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
     except subprocess.CalledProcessError as error:
         # 終了コードだけでは原因が分からないため、子が標準エラーへ出した原因を通知へ渡す。
         cause = " ".join(str(error.stderr or "").split())[:_DIGEST_FAILURE_CAUSE_CHARS]
-        # 予算の超過は同じ上限の再実行では解消しないため、上限を上げたコマンドを示す。
-        extra = ("--conversation-max-bytes", str(_DIGEST_RETRY_MAX_BYTES)) if "--conversation-max-bytes" in cause else ()
+        # 予算の超過は同じ上限の再実行では解消しないため、子が示した収まる上限を付けたコマンドを示す。
+        needed = re.search(r"--conversation-max-bytes (\d+)", cause)
+        extra = ("--conversation-max-bytes", needed.group(1)) if needed else ()
         lines = _discard_stale_digest(output)
         lines.append(f"会話が圧縮された。会話の要約の作成に失敗した（終了コード{error.returncode}: {cause}）。{manual(*extra)}")
         return "\n".join(lines)

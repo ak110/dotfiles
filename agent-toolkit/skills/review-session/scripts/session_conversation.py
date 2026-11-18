@@ -253,7 +253,8 @@ def digest_document(
         "文書全体が上限を超える場合だけ、長いものから中ほどを省き、省いた字数をその行に示す。"
         f"エージェントの発話は直近{_DIGEST_RECENT_ASSISTANT}件を長く、それより前を短く示す。ツール呼び出しと結果は含まない。\n"
         f"原文と前後の操作が必要になったら、`{detail_command}`へ`--fixed-string <本文の一部>`を続けて"
-        "一致する記録位置（recordとline）を調べ、`--detail <record>:<line>`を続けて原文を取得する。\n\n"
+        "一致する記録位置（recordとline）を調べ、`--detail <record>:<line>`を続けて原文を取得する。"
+        "要約は原文の改行を空白にしているため、本文の一部には改行を含まない短い語句を選び、一致しなければ別の短い語句で調べ直す。\n\n"
     )
     requests = [index for index, event in enumerate(rows) if event.get("kind") == "delegation-request"]
     users = [index for index, event in enumerate(rows) if event.get("kind") == "utterance" and event.get("role") == "user"]
@@ -300,7 +301,12 @@ def digest_document(
         lines[index] = shorter
         elided += 1
     if total > budget:
-        raise ValueError("会話の要約が予算を超えた。次の操作: --conversation-max-bytesを増やして再実行する")
+        # 省略を尽くした後の文書量を示し、同じ失敗を繰り返さない上限で再実行できるようにする。
+        needed = total + len(note.encode("utf-8"))
+        raise ValueError(
+            f"会話の要約が上限{max_bytes}バイトを超えた（省略を尽くしても{needed}バイト）。"
+            f"次の操作: --conversation-max-bytes {needed}を指定して再実行する"
+        )
     excerpts = sum(
         1 for index, text in lines.items() if not text.endswith(bodies[index] + "\n") or bool(rows[index].get("text_truncated"))
     )

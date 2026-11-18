@@ -43,12 +43,16 @@ def test_compaction_notice_preserves_managed_temp_failure(tmp_path, monkeypatch,
 @pytest.mark.parametrize(
     ("stderr", "raised_limit"),
     [
-        ("不足: bundle\n会話の要約が予算を超えた。次の操作: --conversation-max-bytesを増やして再実行する\n", True),
+        (
+            "不足: bundle\n会話の要約が上限30000バイトを超えた（省略を尽くしても123456バイト）。"
+            "次の操作: --conversation-max-bytes 123456を指定して再実行する\n",
+            True,
+        ),
         ("不足: transcript_path\n", False),
     ],
 )
 def test_compaction_notice_passes_child_cause_and_effective_retry(tmp_path, monkeypatch, capsys, stderr, raised_limit):
-    """要約の子プロセスが失敗した原因を通知へ渡し、予算の超過では上限を上げた再実行を示す。"""
+    """要約の子プロセスが失敗した原因を通知へ渡し、予算の超過では子が示した上限での再実行を示す。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
@@ -76,7 +80,7 @@ def test_compaction_notice_passes_child_cause_and_effective_retry(tmp_path, monk
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     failure = context[context.index("会話の要約の作成に失敗した") :].splitlines()[0]
     assert "終了コード2: " + " ".join(stderr.split()) in failure
-    assert ("--conversation-digest --conversation-max-bytes 60000`" in failure) is raised_limit
+    assert ("--conversation-digest --conversation-max-bytes 123456`" in failure) is raised_limit
     assert ("--conversation-digest`" in failure) is not raised_limit
 
 

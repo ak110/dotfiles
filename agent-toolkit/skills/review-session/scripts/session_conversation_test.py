@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 import session_conversation
 
@@ -86,8 +88,15 @@ def test_digest_elides_middle_of_longest_user_text_over_budget() -> None:
     assert elided.endswith("最後の制約: 本番へは反映しない。")
     assert "字を省いた。原文は冒頭のコマンドで照会する）" in elided
     assert meta["elided_count"] == 1 and meta["excerpt_count"] == 1
-    with pytest.raises(ValueError, match="--conversation-max-bytes"):
+    with pytest.raises(ValueError, match="--conversation-max-bytes") as raised:
         session_conversation.digest_document(events, main_record=None, detail_command="atk detail", max_bytes=1200)
+    # 失敗が示す上限で再実行すると、同じ失敗を繰り返さずに要約を作れる。
+    needed = re.search(r"--conversation-max-bytes (\d+)", str(raised.value))
+    assert needed is not None and int(needed.group(1)) > 1200
+    retried, _ = session_conversation.digest_document(
+        events, main_record=None, detail_command="atk detail", max_bytes=int(needed.group(1))
+    )
+    assert len(retried.encode("utf-8")) <= int(needed.group(1))
 
 
 @pytest.mark.parametrize("kind", ["utterance", "delegation-request"])
