@@ -12,7 +12,14 @@ from typing import Any
 
 import psutil
 
-from agent_toolkit._common import atomic_file, delegated_session, process_identity, session_layout, session_registry
+from agent_toolkit._common import (
+    atomic_file,
+    delegated_session,
+    process_identity,
+    registry_requests,
+    session_layout,
+    session_registry,
+)
 
 
 def _actor_session(environment: Mapping[str, str], state_root: pathlib.Path | None) -> str | None:
@@ -134,7 +141,9 @@ def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Pat
     if owner is None:
         return []
     result = []
-    for path in session_registry.registry_directory(state_root).glob("*.effort-request"):
+    for path in registry_requests.request_paths(
+        session_registry.registry_directory(state_root), registry_requests.EFFORT_REQUEST_SUFFIX
+    ):
         if path.with_suffix(".effort-response").exists():
             continue
         try:

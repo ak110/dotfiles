@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
-from agent_toolkit._common import atomic_file, path_ownership, session_layout, session_registry
+from agent_toolkit._common import atomic_file, path_ownership, registry_requests, session_layout, session_registry
 
 
 class OwnedSession(Protocol):
@@ -132,7 +132,9 @@ async def process_requests(
     owner = session_registry.owner_process()
     if owner is None:
         return
-    for request in session_registry.registry_directory(state_root).glob("*.release-request"):
+    for request in registry_requests.request_paths(
+        session_registry.registry_directory(state_root), registry_requests.RELEASE_REQUEST_SUFFIX
+    ):
         response_path = request.with_suffix(".release-response")
         if response_path.exists():
             continue
