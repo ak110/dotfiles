@@ -33,7 +33,7 @@
 | 参照基準の適用前 | `plan-restoration-contracts.md` |
 | 参照基準の適用前 | `plan-structure-check.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/SKILL.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/writing-readers.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/writing.md` |
 | 参照基準の適用前 | `../../process-wi/SKILL.md` |
 | レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
 | 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` |

@@ -113,7 +113,7 @@ Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキ�
 組み込み委譲の要求JSONは公開生成CLIのヘルプが形式を所有し、親契約は役割固有の入力名と値を所有する。
 
 委譲の分担は、各工程の調査・判断の所有者を1つにし、次の担当へ確定した成果と原本の所在を渡す形にそろえる。
-基準は`agent-basics:writing-standards`の`references/sub-agents.md`と`agent-basics:writing-standards/references/design-heuristics-decisions.md`「案の採否と実施順の判定」にある。
+基準は`agent-basics:writing-standards`の`references/sub-agents.md`と`agent-basics:writing-standards/references/design-heuristics.md`「案の採否と実施順の判定」にある。
 工程ごとの対応は次のとおりである。
 
 - 選定理由への質問: 選定したメインが保存済みの選定結果と判断から答える。

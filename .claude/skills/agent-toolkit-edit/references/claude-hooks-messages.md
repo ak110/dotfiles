@@ -1,6 +1,6 @@
 # エージェント宛てメッセージ
 
-品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks-messages.md`である。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`である。
 呼び出し元の読込条件を引き継ぎ、本書の運用条件と条件に該当する正式な資料の全文を読む。
 両方に同じ主題があれば、両方の全文を確認する。
 範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
@@ -27,7 +27,7 @@ _llm_notice = formatter("myplugin/myhook")
 遮断か警告かの選択、および反復時の昇格方針は`claude-hooks-block-warn.md`「遮断と警告の選択」に従う。
 
 対象にはTypeScript製hookの`automated_message.ts`の`automatedMessage`が包む本文と、`agent_toolkit/_common/next_action.py`の次の操作を含む。
-これらにも`agent-basics:writing-standards/references/claude-hooks-messages-format.md`「通知本文の整形」を適用する。
+これらにも`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「通知本文の整形」を適用する。
 
 - block通知は専用の整形関数（`block_formatter`）、warn通知は同モジュールの整形関数を用いて生成し、いずれも解消手段を`fix`引数へ渡す。
   `fix`が空または空白のみの場合は`ValueError`を送出する。
@@ -37,7 +37,7 @@ _llm_notice = formatter("myplugin/myhook")
   文面の基準は、`agent-basics:writing-standards/references/program-messages.md`「出力の基準」に従う。
 
 - 通知本文は、検出した事実、読み手に必要な操作、規範の節への参照だけにする。
-  判断の手順と条件の本文は規範の節に置いて参照する（`agent-basics:writing-standards/references/agent-documents-placement-selection.md`「置き場所の選定」）。
+  判断の手順と条件の本文は規範の節に置いて参照する（`agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所の選定」）。
 
 閾値および記録先は`agent-toolkit/agent_toolkit/_hooks/notice.py`で管理する。
 
@@ -45,4 +45,4 @@ _llm_notice = formatter("myplugin/myhook")
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| エージェント宛てメッセージ：通知本文の整形の基準を適用する前 | `agent-basics:writing-standards/references/claude-hooks-messages-format.md` |
+| エージェント宛てメッセージ：通知本文の整形の基準を適用する前 | `agent-basics:writing-standards/references/claude-hooks-block-warn.md` |

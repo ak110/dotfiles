@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| テストとCIの所要基準を使う前 | `../../../../agent-basics/skills/writing-standards/references/testing-speed.md` |
+| テストとCIの所要基準を使う前 | `../../../../agent-basics/skills/writing-standards/references/testing.md` |
 | テストとCIの所要基準を使う前 | `agent-basics:check-execution/references/diagnostics-results.md` |
 
 ## テストとCIの所要基準
@@ -14,7 +14,7 @@
 執筆者は追加・変更するテストを次の段階へ分類し、レビュー担当はその段階の必要性と削減余地、結果確認担当は実測を確認する。
 共通の評価方法は次の資料に従う。
 
-- `../../../../agent-basics/skills/writing-standards/references/testing-speed.md`「速度」
+- `../../../../agent-basics/skills/writing-standards/references/testing.md`「速度」
 - `agent-basics:check-execution/references/diagnostics-results.md`「読む出力」
 
 | 必要な仕事 | テスト本体の改善判断値 |

@@ -58,7 +58,7 @@ dotfilesがホストを限って配る`*.local.md`もある。
 再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと`02-agent-operations.md`の任意の条文の有無を返させる。
 委譲先へ届く条文の範囲は実際に動かして確定し、届いている条文を`agent-toolkit/share/rules/rules-subagent.md`へ重複して置かない。
 
-容量超過時の整理は`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「記述量の水準」に従う。
+容量超過時の整理は`agent-basics/skills/writing-standards/references/agent-documents-additions.md`「記述量の水準」に従う。
 SessionStartの整理後の水準は、長いパス・最大の追加指示・作業契約の有無を組み合わせた最終出力で8,000文字以下とする。
 超過時は常時注入部分の場面固有の内容を判断前に読む既存資料へ移す。
 固定の規範・案内と可変の契約・パス・起動入力を分けて確認し、大入力の退避と予算内配送を維持する。

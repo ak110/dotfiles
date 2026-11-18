@@ -60,7 +60,7 @@ WIの原稿を書く操作と保存する操作の前に読む手順書と形式
 | --- | --- |
 | 配送操作の語彙と記法を選ぶ前 | `read-trigger-contract-declarations.md` |
 | 成果作業を終える作業完了報告を送る前 | `../skills/report-completion/SKILL.md` |
-| 採否・手段・進め方を判断する前 | `agent-basics:writing-standards/references/quality-principles-qcd.md`、`agent-basics:writing-standards/references/quality-design-judgment.md` |
+| 採否・手段・進め方を判断する前 | `agent-basics:writing-standards/references/quality-principles-qcd.md`、`agent-basics:writing-standards/references/design-heuristics.md` |
 | 完了・成功・不在・件数・互換性を述べる前と、要約・中継・報告を書く前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |
 | 常時規範の節が名指す時点（手段・規範・確定方針から外れる案の評価、資格情報の扱い、方針の衝突の判定、発話への回答の確定、進捗点検の通知を受けた時など） | `agent-conduct-details.md` |
 
@@ -83,7 +83,7 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/delegation-sending.md` | | |
 | 人間向け文書の役割と残す内容を選ぶ時 | `agent-toolkit:workflow-overview/references/document-types.md` | | |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `agent-toolkit:workflow-overview/references/defined-names.md` | | |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-time.md` | | |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-data-interfaces.md` | | |
 | テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:write-plan/references/testing-branch-verification.md` | | |
 | エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:/share/ui-ux-operations.md` | | |
 | `ps1`・`ps1.tmpl`・`psm1`・`psd1`を編集する時 | `agent-toolkit:/share/powershell-operations.md` | | |

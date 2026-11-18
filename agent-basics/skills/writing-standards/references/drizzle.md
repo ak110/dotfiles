@@ -1,34 +1,32 @@
 # Drizzle ORM／Drizzle Kit記述スタイル
 
-本書は、Drizzle ORMおよびDrizzle Kitを使用する際の実装コードの記述スタイル基準をまとめたものである。
-対象バージョンは、drizzle-orm/drizzle-kitの0.x系（参考となる実利用バージョン: drizzle-orm 0.45、drizzle-kit 0.31）である。
-公式ドキュメントは <https://orm.drizzle.team/docs/overview> を参照する。
+対象の版: drizzle-orm・drizzle-kitの0.x系（参考とした実利用の版はdrizzle-orm 0.45、drizzle-kit 0.31。公式ドキュメント <https://orm.drizzle.team/docs/overview>）。
+観測の記録は`docs/development/audit-records-languages.md`にある。
 該当節は「agent-basics/skills/writing-standards/references/drizzle.md：Drizzle ORM／Drizzle Kit記述スタイル：2026年9月16日」である。
+本書は、Drizzle ORMとDrizzle Kitを使うコードとマイグレーションを書く・直す時に読む。
+マイグレーションの履歴とSQLの組み立ての規定は`agent-basics:writing-standards/references/quality-principles-constraints.md`の適用である。
 
 ## スキーマ定義
 
-- スキーマ定義を型の基準とし、TypeScriptの型はスキーマから推論させて二重管理を防ぐ。
-  Relational Query APIで利用するリレーションは明示的に定義する。
+- TypeScriptの型はスキーマから推論させて二重に管理せず、Relational Query APIで使うリレーションは明示して定義する。
 
 ## マイグレーション運用
 
-- 本番環境向けのマイグレーションは、`drizzle-kit generate`によるSQL生成と、`drizzle-kit migrate`による適用の2段階に分ける。
-  生成された成果物（`drizzle/`配下の`*.sql`および`snapshot.json`）はGitにコミットする。
-- `drizzle-kit push`はマイグレーション履歴が残らないため、ローカルでのプロトタイプ開発でのみ使用する。
-- 本番環境への適用専用の設定ファイル（例: `drizzle-prod.config.ts`）を個別に用意し、`migrate`の実行時に`--config`オプションで切り替える。
+- 本番のマイグレーションは、`drizzle-kit generate`によるSQLの生成と`drizzle-kit migrate`による適用の2段階に分け、生成物（`drizzle/`の`*.sql`と`snapshot.json`）をGitへcommitする。
+- `drizzle-kit push`は履歴が残らないため、ローカルの試作だけで使う。
+- 本番へ適用する専用の設定ファイル（例: `drizzle-prod.config.ts`）を用意し、`migrate`の`--config`で切り替える。
 
 ## クエリとトランザクション
 
-- 条件の組み立てや集計処理にはQuery Builderを使い、リレーションを含むデータ取得にはRelational Query APIを選んでN+1問題を防ぐ。
-- 複数テーブルにまたがる更新処理は`db.transaction(async (tx) => { ... })`でひとまとめにし、すべてのクエリを`tx`経由で実行する（`db`を直接呼び出すと個別にコミットされてしまう）。
-- 行ロックが必要な場合は、対応しているDB方言（PostgreSQLやMySQLなど）において、トランザクション内で`.for('update')`や`.skipLocked()`などを使用する。
-  SQLiteなどの行ロック構文を持たない方言では対象外とする。
+- 条件の組み立てと集計はQuery Builder、リレーションを含む取得はRelational Query APIで行い、N+1を避ける。
+- 複数のテーブルにまたがる更新は`db.transaction(async (tx) => { ... })`でまとめ、全てのクエリを`tx`で実行する（`db`を直接呼ぶと個別にcommitされる）。
+- 行ロックは、対応する方言（PostgreSQL、MySQLなど）のトランザクションの中で`.for('update')`や`.skipLocked()`を使う（SQLiteなど行ロックの構文が無い方言は対象外）。
 
 ## SQLインジェクション対策
 
-- 動的な値を含む生のSQL文は`sql`タグ付きテンプレートリテラルで安全に組み立て、文字列結合は行わない。
-- ユーザー入力に由来するテーブル名やカラム名を動的に指定することは避け、定義済みのテーブルオブジェクトやカラムオブジェクトを参照する（識別子はSQLのプレースホルダーとしてバインドできないため）。
+- 動的な値を含む生のSQLは`sql`タグ付きテンプレートで組み立て、文字列を結合しない。
+- 入力に由来するテーブル名とカラム名を動的に指定せず、定義済みのテーブルとカラムのオブジェクトを参照する（識別子はプレースホルダーでバインドできないため）。
 
 ## drizzle.config.ts
 
-- 設定ファイルではschema、out、dialect、dbCredentialsを明示的に指定し、`dbCredentials.url`の値は環境変数から注入する。
+- `schema`、`out`、`dialect`、`dbCredentials`を明示し、`dbCredentials.url`は環境変数から渡す。

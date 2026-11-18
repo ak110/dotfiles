@@ -30,7 +30,7 @@
 初回レビューは採用案とテストの期待値を読む前に、利用場面から消費主体が必要とする期待結果を導く。
 レビューイーは是正要求を目的、事実の認識と変更要求に分けて受け取る。
 2026年10月3日に、実装、テストの期待値とレビューが同じ採用前提を共有し、互いの一致で目的に適さない表示が合格した観測に由来する。
-判断基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」が所有し、レビュー側は導出の時点だけを定めて基準を複製しない。
+判断基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics.md`「設計案の予備選別」が所有し、レビュー側は導出の時点だけを定めて基準を複製しない。
 役割ごとに別スキルへ分ける案は、両役割が同じ場面で一方だけを起動するため、起動手順と常時ロードされる`description`を二重に持つだけとなり採用しない。
 
 レビュー担当は`review-standards/references/reviewee.md`を読まず、レビューイーは`review-standards/references/reviewer.md`を読まない。

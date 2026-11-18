@@ -6,8 +6,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing-selection.md` |
-| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` |
+| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing.md` |
+| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing.md` |
 
 ## ユーザビリティレビューの判定
 
@@ -41,7 +41,7 @@
 Apache License 2.0の著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。
 
 受入シナリオの期待結果との一致、データの正確な反映、操作の成否といった機能的な正しさは、本レビューの判定対象から外す。
-これらは`../../writing-standards/references/testing-selection.md`「検証単位の選定」で選んだ層の自動テストや実行レビューへ委ねる。
+これらは`../../writing-standards/references/testing.md`「検証単位の選定」で選んだ層の自動テストや実行レビューへ委ねる。
 同じ確認を繰り返すと、使いやすさを評価する本来の目的が損なわれるためである。
 テストが不足している受入シナリオは、実行レビューの種類5として扱う。
 提出された試験の開始状態・経路・結果が観測対象と一致するか確認し、不足を明示する。

@@ -45,7 +45,7 @@ Claude Codeのpermissionsとauto mode classifierによる実際の拒否に適�
 
 権限はpermissionsルール（deny、ask、allowの順で最初に一致したもの）、作業ディレクトリ内の編集などの自動承認、auto mode classifierの順で評価される。
 PreToolUseフックの`permissionDecision: "allow"`より前にpermissionsの評価が確定するため、拒否ルールに当たる操作は拒否ルールそのものを見直して解決する。
-permissionsの設定が出す確認ダイアログの扱いは`agent-basics:writing-standards/references/claude-hooks-output-events.md`「PermissionRequest」に従う。
+permissionsの設定が出す確認ダイアログの扱いは`agent-basics:writing-standards/references/claude-hooks.md`「PermissionRequest」に従う。
 
 ## 既知の誤拒否パターンと対応
 
@@ -116,7 +116,7 @@ permissionsの明示的なdeny・askも上書きしない。
    許可には、手順3の承認、拒否の後の発話での実行の指示、ホストの許可ダイアログによる同じ操作の許可を含む。
    委譲先から報告された拒否もメインが担当し、承認済みの操作の実行を先に終えてから追加する。
    - 文面: 個別の識別子を操作の種別へ一般化する。
-     書き方は`agent-basics:writing-standards/references/auto-mode.md`「カスタムルール記述の注意点」に従う。
+     書き方は`agent-basics:writing-standards/references/claude-hooks.md`「カスタムルール記述の注意点」に従う。
      有効な規則との比較と追加は`agent-toolkit:atk-mode/references/auto-mode-rule-addition.md`「カスタムルール追加のワークフロー」に従う。
      既存の規則が対象を全て網羅する時は追記を省く。
    - 環境に固有のルール（マシンの構成、ローカルの設定、接続先などを前提とする規則）: 配布元のソースの有無によらず、`~/.claude/settings.json`の`autoMode.allow`へ直接追記する。

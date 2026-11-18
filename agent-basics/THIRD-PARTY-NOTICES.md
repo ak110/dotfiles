@@ -245,7 +245,7 @@ SOFTWARE.
 
 - 原典: [szilu/ux-designer-skill](https://github.com/szilu/ux-designer-skill/tree/c869d32fd8df7bd7fcd1db68e93bd3e89eed5161)（確認commit `c869d32fd8df7bd7fcd1db68e93bd3e89eed5161`）。
 - 取り込んだ資料: `SKILL.md`。
-- 取り込み先: `skills/writing-standards/references/ui-ux.md`、`skills/writing-standards/references/ui-ux-patterns.md`。
+- 取り込み先: `skills/writing-standards/references/ui-ux.md`。
 - 改変: 日本語へ翻訳し、判断基準として要約・再構成して条件や説明を加えた。
 - 許諾: [MIT License](https://github.com/szilu/ux-designer-skill/blob/c869d32fd8df7bd7fcd1db68e93bd3e89eed5161/LICENSE)。
 
@@ -277,7 +277,7 @@ SOFTWARE.
 
 - 原典: [overseek944/frontend-ui-ux-skill](https://github.com/overseek944/frontend-ui-ux-skill/tree/fa25478d1f50f5dbd4f8119a03524fb14bb4277e)（確認commit `fa25478d1f50f5dbd4f8119a03524fb14bb4277e`）。
 - 取り込んだ資料: `SKILL.md`。
-- 取り込み先: `skills/writing-standards/references/ui-ux.md`、`skills/writing-standards/references/ui-ux-patterns.md`。
+- 取り込み先: `skills/writing-standards/references/ui-ux.md`。
 - 改変: 日本語へ翻訳し、判断基準として要約・再構成して条件や説明を加えた。
 - 許諾: [MIT License](https://github.com/overseek944/frontend-ui-ux-skill/blob/fa25478d1f50f5dbd4f8119a03524fb14bb4277e/LICENSE)。
 

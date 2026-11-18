@@ -41,7 +41,7 @@ QCD、3段判定、事実と推論、硬い制約と努力目標の定義は、`
 | --- | --- |
 | 規範追記を含む案の必要性を判定する前 | `../writing-standards/references/agent-documents-additions.md` |
 | 初回レビューで対象成果物の作成規範を適用する時 | `../writing-standards/references/review-only-criteria.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/design-heuristics-screening.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/design-heuristics.md` |
 
 ## 判断の初動
 
@@ -71,9 +71,9 @@ QCD、3段判定、事実と推論、硬い制約と努力目標の定義は、`
 | 起動時 | `agent-basics:writing-standards/references/quality-principles.md` | 起動時 | `skill:review-standards` | |
 | いずれの役割でも、判定を始める前 | 対象成果物に対応する作成規範 | 判断 | `skill:review-standards` | `artifact-standards` |
 
-どちらの役割でも、判定は`agent-basics:writing-standards`の`references/quality-design-judgment.md`にある3段判定（許容性、必要性、実装品質の順）に沿って行う。
+どちらの役割でも、判定は`agent-basics:writing-standards`の`references/design-heuristics.md`にある3段判定（許容性、必要性、実装品質の順）に沿って行う。
 目的上の必要性を仕様適合より先に判定し、契約・テスト・計画に書いたこと自体を必要性の独立した根拠にしない。
-案の必要性、既存機構の活用、過剰設計の回避、局所修正と共通原因修正の選択、責務の割り振りの比較は、`../writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」に従う。
+案の必要性、既存機構の活用、過剰設計の回避、局所修正と共通原因修正の選択、責務の割り振りの比較は、`../writing-standards/references/design-heuristics.md`「設計案の予備選別」に従う。
 レビュー担当とレビューイーの間で元の要求の解釈が分かれ、成果物や操作に違いが出る場合は、原文、これまでの発話、実際の回答、現物の成果物を突き合わせて差異を解消する。
 判断材料としてユーザー固有の意図や情報がまだ必要な場合は、双方の解釈とそれぞれの結果をまとめ、ユーザーへ確認できるメインエージェントに返す。
 実際の回答が得られるまでは、その解釈を前提とする指摘の採否と修正を保留し、影響のない独立した作業を進める。
@@ -83,7 +83,7 @@ QCD、3段判定、事実と推論、硬い制約と努力目標の定義は、`
 作成規範とは、対象成果物の種類ごとに適用する作成時の品質基準である。
 `agent-basics:writing-standards`の該当資料に加え、対象リポジトリに実在する`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`配下の文書を指す。
 変更要求・方針・作業項目・計画を検収するときは、その文書自体と、要求が変更する成果物の双方に、それぞれの作成規範を適用する。
-規範追記案では、案が成立するかと追記自体が必要かを分け、`../writing-standards/references/agent-documents-additions-additions.md`「規範追記時の判定」に従い、既存記述の削除・集約でも目的を満たせるかを採用前に判断する。
+規範追記案では、案が成立するかと追記自体が必要かを分け、`../writing-standards/references/agent-documents-additions.md`「規範追記時の判定」に従い、既存記述の削除・集約でも目的を満たせるかを採用前に判断する。
 レビュー担当は初回レビューにおいて、作成規範と合わせて`agent-basics:writing-standards`の`references/review-only-criteria.md`を一括して適用する。
 レビューイーは、指摘で言及された基準のみを同資料から読み取る。
 

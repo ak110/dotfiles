@@ -21,8 +21,8 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 判断対象と検索の母集団を決める時 | `../writing-standards/references/quality-principles-facts.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/investigation-sources.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/agent-documents-basics-read-tables.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/agent-documents-basics.md` |
 
 ## 手段の選定
 
@@ -84,7 +84,7 @@ source mapやminifyされたファイルの極端に長い単一行にも注意�
 
 不在、件数、網羅性、終了条件の成立を結論づける際は、対象母集団全体をカバーし、本文が省略されていない取得結果を用いる。
 件数制限、行長制限、ファイルサイズ上限や、`head`、`cut`などによって一部が切り詰められた結果はあくまで限定的な観測であり、結論を出す前に省略のない完全な形で再取得する（データ全量が大きすぎる場合は、コンテキストを分離した環境で取得して要約を受け取る）。
-一般的な原則は`../writing-standards/references/investigation-sources.md`「不在の主張」に従う。
+一般的な原則は`../writing-standards/references/investigation.md`「不在の主張」に従う。
 出力の切り詰めへの対処や保存された出力の読み取りでは、自らの権限で取得可能な不足分を担当内で補う。
 権限不足、ネットワーク到達不能、入力情報不足など自力で解消できない要因がある場合は、確認できた範囲と続行できない理由を分けて報告する。
-なお、検索によって資料内の該当節を特定できた場合であっても、読込表において「全文読む」と定められている資料は全文を読み通す（`../writing-standards/references/agent-documents-basics-read-tables.md`「読込表」）。
+なお、検索によって資料内の該当節を特定できた場合であっても、読込表において「全文読む」と定められている資料は全文を読み通す（`../writing-standards/references/agent-documents-basics.md`「読込表」）。

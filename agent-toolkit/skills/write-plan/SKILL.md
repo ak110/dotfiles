@@ -33,10 +33,10 @@ description: >
 | --- | --- | --- | --- | --- |
 | Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | | | |
 | 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md`、`agent-toolkit:atk-mode/references/awi-body.md` | 操作 | `plan-draft-writing` | |
-| 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | | | |
-| 観測で計画の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | | | |
-| 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing-selection.md` | | | |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-time.md` | | | |
+| 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics.md` | | | |
+| 観測で計画の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation.md` | | | |
+| 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing.md` | | | |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-data-interfaces.md` | | | |
 | テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:write-plan/references/testing-branch-verification.md` | | | |
 | 計画ファイルの文章を起草し、textlintなどの文章チェックの違反を予防する前 | `references/textlint-prevention.md` | | | |
 | WIの原因分析を補うか計画の`## 原因分析`を書く前 | `references/plan-file-standards-verification.md` | | | |
@@ -89,7 +89,7 @@ AWIを入力とする作業では、AWIの本文と対象リポジトリの現�
 
 本スキルを起動した後にエージェント向け文書（`agent-toolkit/`など）を編集する場合は、「計画ファイルの作成要否」を判定してから着手する。
 追加発話・レビュー指摘を受けたら要求と現物を比較し、調査不足は手順1、判断は2、起草の修正は3へ戻り、4で再検査する。
-前提が崩れた場合は`agent-basics:writing-standards/references/investigation-hypotheses.md`「仮説から次の確認を選ぶ」で成果と方針を保つ。
+前提が崩れた場合は`agent-basics:writing-standards/references/investigation.md`「仮説から次の確認を選ぶ」で成果と方針を保つ。
 実装後は計画を凍結し、管理表へ記録する。
 
 計画の起草は、通常AWIの起草と同じ調査と確認を、AWIの本文から決まらない部分に対して行う。

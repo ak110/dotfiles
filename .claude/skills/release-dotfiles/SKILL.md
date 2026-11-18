@@ -48,7 +48,7 @@ auto-mergeの有効化や、失敗時の自動再試行、自動ロールバッ�
    ただし、マージ済みの`master`の不具合修正を`develop`へ公開した場合は、不具合を残さないため同じセッションでも追加のリリースPRを作成してマージする（ユーザー指示、2026年10月28日）。
 3. 重複PRを防ぐため、同じheadとbaseを持つopenなPRを確認する。
    1件なら再利用し、複数なら候補の番号とURLを報告して停止する。
-   0件なら、タイトルに今回の変更の主題を1文で記し、本文を`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に沿ってmanaged-tempへ保存する。
+   0件なら、タイトルに今回の変更の主題を1文で記し、本文を`agent-basics:writing-standards/references/writing.md`「文章の共通規定」に沿ってmanaged-tempへ保存する。
    作成直前に`agent-toolkit:review-external-writes`を起動し、PRを作成する。
 4. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチ同期、CI確認、および必要なリリースの検収まで完了させる。
    今回masterへ反映した変更の採用記録からエンドユーザー側の未実施操作を拾う。

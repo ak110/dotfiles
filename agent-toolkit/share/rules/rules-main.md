@@ -46,4 +46,4 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ドキュメント品質：文章の共通規定の基準を適用する前 | `agent-basics:writing-standards/references/writing-common.md` |
+| ドキュメント品質：文章の共通規定の基準を適用する前 | `agent-basics:writing-standards/references/writing.md` |

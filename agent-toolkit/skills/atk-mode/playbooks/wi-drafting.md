@@ -38,7 +38,7 @@ AWIは後続の`process-wi`の担当への作業依頼、UWIはユーザーへ�
 
 | 起票の目的 | 登録前に満たす条件 | 後続工程へ渡す内容 |
 | --- | --- | --- |
-| 全ての起点に共通 | 要求か観測事実、期待との差、対象と期待結果、対応が要る根拠を確かめ、既存の実装・文書・WIとの被覆を比べる（本書「重複判定」）。規範・手順の被覆は`agent-basics:writing-standards/references/agent-documents-basics-ownership.md`「既存規範による被覆の判定」で判定する | 確かめた結論と再取得できる根拠 |
+| 全ての起点に共通 | 要求か観測事実、期待との差、対象と期待結果、対応が要る根拠を確かめ、既存の実装・文書・WIとの被覆を比べる（本書「重複判定」）。規範・手順の被覆は`agent-basics:writing-standards/references/agent-documents-basics.md`「既存規範による被覆の判定」で判定する | 確かめた結論と再取得できる根拠 |
 | ユーザーが手動作成で具体化を求めた要求 | 対象ごとの採否、外部から観測できる仕様、必要なユーザー判断を投入元で確定し、投入前レビューを経る | 確定した変更の内部設計、実装単位、実装後の検証 |
 | 作業の途中で見つけた、現在の要求から独立した別件 | 共通の条件を満たし、確定した事実、原因の仮説、未確定事項を分ける | 原因の解明と解法の選定の残り、次に確定する問いと期待結果 |
 | 完了の工程の後に見つけた独立した問題（軽い引き継ぎ） | 本節の軽い引き継ぎの条件を満たす | 原因分析、類似の見直し、対策の選定、実装と検証 |
@@ -191,8 +191,8 @@ AWIの冒頭は`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と
 
 ### エージェント向け文書の構成
 
-エージェント向け文書を追加・変更するAWIは、`agent-basics:writing-standards/references/agent-documents-additions-additions.md`に従う。
-記述量は`agent-basics:writing-standards/references/agent-documents-additions-volume.md`に従う。
+エージェント向け文書を追加・変更するAWIは、`agent-basics:writing-standards/references/agent-documents-additions.md`に従う。
+記述量は`agent-basics:writing-standards/references/agent-documents-additions.md`に従う。
 `## 反映内容と反映先`には目的と対象の文書を書き、ユーザーの要件か公開契約が配置を指定する場合を除き、節の位置や追記の形は計画で統合・分割を選べるよう開いておく。
 多数のファイルを作り替える要求は、対象をファイル単位で棚卸しし、変更前の読込量、構成の目安、削ると誤りの再発が見込まれる保護を本文に書く。
 細則の多い対象を整理する要求は、置き場所の対応付けより前に、細則が守ろうとしている結果を上位の原則へまとめる案を比べる。

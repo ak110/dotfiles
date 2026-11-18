@@ -31,7 +31,7 @@
   指定した手段でなければ性質を満たせない根拠を併記する（2026年9月、ユーザー指示。
   目的に合致しない厳しすぎる制約を手順へ書かないことと、既存の同種の制約も是正することの2点を受領した）
 - `agent-basics:writing-standards`の`references/implementation-time.md`が持つ言語横断の標準ツールの表は現行のまま維持する。
-  同`references/independent-html.md`が定めるCDN経由のCSSフレームワークの採用と取得方式も維持する
+  同`references/ui-ux-web-rules.md`が定めるCDN経由のCSSフレームワークの採用と取得方式も維持する
   （2026年9月16日、ユーザー回答。全文見直しが同じ2件を繰り返し検出する事態を避けるために記録する）
 - コーディング基準を編集する主体は、一般的な構文・API操作・汎用的な目安を、守る価値と判断方針、知識を想起する代表語へ整理する。
   作者固有の選好、対象版の差、特定の環境で生じる失敗、公開契約・データ保全・セキュリティの条件と例外は具体的に保持する。
@@ -45,7 +45,7 @@
   記述量は手掛かりの不足で観点を想起できないことと、詳細な手段・例への固執の双方を比べて決め、文字数や例の件数で一律に決めない。
   従来の「明示しないと考慮されない観点は自明導出に当たらない」という扱いは、観点を代表語で残す扱いへ改め、一般知識の細則を一括して保護する根拠にはしない。
   2026年10月7日のユーザー依頼と、確認への回答「既知の知識は方針と語だけ」「委譲プロンプトと計画にも適用」による。
-  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/writing-readers.md`「読み手別の追加注意点」が定義元であり、
+  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」が定義元であり、
   `agent-documents-basics.md`、`agent-documents-additions.md`、`agent-toolkit:delegation`の`references/base-contract.md`、
   `agent-toolkit:write-plan`の`references/plan-file-standards.md`、`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`が参照する
 - エージェント向け文書は、読み手のエージェントが広い知識を持つ前提で書き、常識的に判断できることを細かく手順化しない。
@@ -59,8 +59,8 @@
   手順として書く「実際に誤った箇所」は、目的と守る価値が示されていても誤った箇所に限る。
   現行の規定は`agent-basics:writing-standards`の次の資料にある。
 
-  - `agent-basics:writing-standards/references/writing-readers.md`「読み手別の追加注意点」
-  - `agent-basics:writing-standards/references/agent-documents-additions-volume.md`「削減の判定根拠」
+  - `agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」
+  - `agent-basics:writing-standards/references/agent-documents-additions.md`「削減の判定根拠」
 
 - 工程・レビュー・検証・判定・担当などの名前はその場で作成せず、定義して統一する（2026年10月2日、ユーザー指示）。
   方針は次の7点とする。
@@ -76,7 +76,7 @@
   `agent-documents-basics.md`「主要用語の初出定義先」の一般的な語の優先は方針1と同じ向きであり、方針2と合わせて読む。
   「実在する名前が無い対象は説明で書く」規定（`share/rules/rules-main.md`、`writing.md`）は名前が要らない対象に適用し、繰り返し参照する工程などの名前ではこの方針を優先する
 - エージェントが特定の場面で従う手順は、常時規範の短い箇条と`share/`の長文を組み合わせず、標準のスキルへ置く（2026年9月25日のユーザー指示）。
-  実行時に従う規範は`agent-basics/skills/writing-standards/references/agent-documents-basics.md`「責務と構成」と各スキルに置く
+  実行時に従う規範は`agent-basics/skills/writing-standards/references/agent-documents-basics.md`「規範の構成」と各スキルに置く
 - 明示的な手動起動を前提としないスキルは`user-invocable: false`とする。
   この方針の実行手順は`agent-basics:writing-standards`が定める
 - `agent-toolkit:refine-prompt`は、エージェントが必要な場面で自分から起動する内部スキルとする。

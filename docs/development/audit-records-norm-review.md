@@ -12,7 +12,7 @@
 この記録は`.claude/skills/edit-dotfiles-norms/references/model-host-audit.md`が点検の要否の判定に使う。
 
 - 基準にしたモデルID: `claude-fable-5-2`
-- 基準にしたガイド: [Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)と、`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「見直す契機と点検観点」
+- 基準にしたガイド: [Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)と、`agent-basics/skills/writing-standards/references/agent-documents-additions.md`「見直す契機と点検観点」
 - ホストごとの確認済みの版: Claude Code 2.1.322、codex-cli 0.167.1
 - 対象の版: 2026年11月10日のdevelopからmasterへのマージcommit（`6ec5050fa`）の本文
 - 対象: 572ファイル

@@ -43,7 +43,7 @@ description: >
 | 改善案を作成する前（エージェント向け文書が対象の場合） | `agent-basics:writing-standards/SKILL.md` | | | |
 | 対話と成果物を評価する多ターン試行を選んだ時と結果を受領する時 | `references/multi-turn-trials.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials.md` | |
 | 実セッションから小課題を作り、条文変更の効果を比較する方法を選んだ時 | `references/multi-turn-trials.md` | | | |
-| `audit`で文書を点検する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md`、`agent-basics:writing-standards/references/host-official-references.md` | 判断 | `skill:refine-prompt` | |
+| `audit`で文書を点検する前 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-basics:writing-standards/references/claude-hooks.md` | 判断 | `skill:refine-prompt` | |
 
 ## 使用条件
 
@@ -59,12 +59,12 @@ description: >
 
 引数`audit`で起動する点検は、モデルやホストの更新を契機に文書を見直すための、読み取り専用の点検である。
 費用のかかる通読を必要な文書に限るため、検索による判定と評価担当の通読の2段階で行う。
-点検観点と削減の判断基準は`agent-basics:writing-standards/references/agent-documents-additions-volume.md`「文書記述量の管理」に従う。
+点検観点と削減の判断基準は`agent-basics:writing-standards/references/agent-documents-additions.md`「文書記述量の管理」に従う。
 
 1. 常時配送される規範（`share/rules/common/`と`share/rules/rules-main*.md`などの起動時本文）、agent-basics・agent-toolkitのスキル本体とreferences、hookがエージェントへ返す通知文を列挙する。
    配送元の定義を使い、点検済みと未点検を区別する。
    ホストの更新による点検では、変更履歴の該当項目と関係する規範だけを対象にする。
-2. 処理するセッションのモデル・ホストに対応する公式プロンプトガイドを、`agent-basics:writing-standards/references/host-official-references.md`から確認する。
+2. 処理するセッションのモデル・ホストに対応する公式プロンプトガイドを、`agent-basics:writing-standards/references/claude-hooks.md`から確認する。
    対象の版と適用条件を確かめ、点検対象の一覧と取得した一次資料の保存先を点検資料へまとめる。
 3. 1段階目として、対象の全ファイルを点検の観点ごとに検索し、該当箇所を読んで判定する。
    ファイルごとに、該当なし、提案あり、本文を読まないと判定できない、のいずれかと、検索語・一致件数を記録する。
@@ -181,7 +181,7 @@ description: >
 ## 指摘の集約と改善案作成
 
 6. 元の意図を保つため、メインエージェントは重複や関連する指摘をまとめ、`agent-basics:review-standards`と同スキルの`references/reviewee.md`に基づいて採否を判定する。
-   転記を求める指摘は`agent-basics:writing-standards/references/agent-documents-basics-ownership.md`「定義の所有者」で評価し、採用する指摘の改善案をdiffで作る。
+   転記を求める指摘は`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」で評価し、採用する指摘の改善案をdiffで作る。
    評価担当の出力はユーザーへ直接表示されないため、指摘の原表現をできる限り保持する。
 7. `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に沿って、技術的な指摘の採否を自ら判断して反映する。
    目的や期待される結果の変更、あるいはユーザー固有の好みや認可が必要な事項に限ってユーザーに確認する。

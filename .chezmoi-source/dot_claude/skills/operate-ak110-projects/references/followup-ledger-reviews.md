@@ -46,7 +46,7 @@
 - 当てはまる条件: 自動テストを持つ
 - 適用方法:
   - 各試験の主張・実行経路・期待値の出所を比較し、該当処理だけを外す変異で識別力を確かめ、公開操作の入力や競合を制御する補助を用意する
-  - ツールで変異を作る場合は`agent-basics:writing-standards/references/testing-conditions.md`に従い、対象と対応試験の範囲を指定して生存変異を全件分類する
+  - ツールで変異を作る場合は`agent-basics:writing-standards/references/testing.md`に従い、対象と対応試験の範囲を指定して生存変異を全件分類する
 - 参照先: `github.com/ak110/pytilpack`の`tests/functools_test.py`と、`github.com/ak110/gv`の`src/image/exif_reader.rs`・`src/test_helpers.rs`
 - 適用済みの見分け方: 試験が対象の製品処理を呼び、契約由来の期待値を持ち、主張する処理だけの退行で失敗し、名前と実際の検証内容が一致する
 

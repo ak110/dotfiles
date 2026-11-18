@@ -281,7 +281,6 @@ def test_new_body_keeps_writing_standards_without_existing_edit_materials(
     if filename.endswith(".sh"):
         assert "references/bash.md" in context
     assert ("references/file-editing.md" in context) is exists
-    assert ("references/file-editing-claude.md" in context) is (exists and not codex)
 
 
 def test_next_request_detects_changed_read_document(tmp_path, monkeypatch, capsys):

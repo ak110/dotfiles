@@ -19,7 +19,7 @@ writes_worktree: true
 
 変更画面を独立した担当として描画・操作し、エンドユーザーが理解して迷わず作業を完了できるか評価する。
 自動テストで検出できないUXの観点（配置、状態表示、文言、フォーカス移動、操作の分かりやすさ、狭い表示幅や拡大表示、キーボード操作など）を評価対象とする。
-期待結果との一致、データの反映、操作の成否などの機能的な正しさは、`agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」で選んだ層の自動テストおよび実行レビューが担当するため、本タスクの評価範囲からは除外する。
+期待結果との一致、データの反映、操作の成否などの機能的な正しさは、`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選んだ層の自動テストおよび実行レビューが担当するため、本タスクの評価範囲からは除外する。
 着手時に`agent-basics:review-standards`と`agent-basics:writing-standards`を起動し、読込表の着手時資料を読む。
 
 ## 名指し参照の読込方法
@@ -29,7 +29,7 @@ writes_worktree: true
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` |
-| 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing-selection.md` |
+| 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/references/spread.md` |
 | 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:/share/ui-ux-operations.md` |
 
@@ -39,7 +39,7 @@ writes_worktree: true
 | --- | --- | --- | --- | --- |
 | 着手時 | `exec-review-criteria.md`、`ui-ux-operations.md` | 起動時 | `role:usability-review` | |
 | `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | | | |
-| `変更画面`がフォーム、一覧、検索、通知、自動で切り替わる表示、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | | | |
+| `変更画面`がフォーム、一覧、検索、通知、自動で切り替わる表示、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux.md` | | | |
 
 ## 入力
 

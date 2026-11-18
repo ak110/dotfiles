@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
+| 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics.md` |
 | 初回実装の案の前提を評価する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
 | レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
@@ -28,7 +28,7 @@
 検証前に、受入条件と通常検証を`agent-toolkit:/share/verification-operations.md`に従って比較し、初回の実行単位・条件・出力を確定する。
 対象定義と公開入力から選んだ起動形を、計画か訂正済み検証表と`検証結果`へ記す。
 試験では入力の由来、生産側・変換・最終消費を確認し、差し替えた境界と観測結果を`検証結果`へ記す。
-観測手段・環境とテストの有効性は`agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」と冒頭の基準を適用し、実行後は要求された結果を観測できた範囲を`検証結果`へ対応付ける。
+観測手段・環境とテストの有効性は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」と冒頭の基準を適用し、実行後は要求された結果を観測できた範囲を`検証結果`へ対応付ける。
 
 `実装開始`を受領した`レーン担当`、待機を要しない`計画検査完了`を通知した`レーン担当`、および修正入力を受領した他の担当種別が本節の作業を実施する。
 本節が進捗ログへ記録する内容は、計画ありでは計画の`## 進捗ログ`、計画なしでは引き継ぎ記録へ記録する。
@@ -47,14 +47,14 @@
 
 3. 実装に着手する前に、計画またはWIの要求と完成条件から、受入シナリオの消費主体、公開されている呼び出し手段、具体的な入力値と初期状態、有効な期待結果、および検出対象とする失敗を確定する。
    試験の追加・修正では`agent-basics:writing-standards/SKILL.md`の必要性・決定性のチェックから、検証層、対象外で差し替える依存、同期点、未到達時の上限を選び、既存の検証記録に境界と根拠を残す。
-   テストの選定は`agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」に従う。
+   テストの選定は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」に従う。
    レビュー修正においても同様に対応関係を確定する。
    不具合の再現と修正後の確認・証拠保存は、`agent-basics:bugfix`の問い2（原因）と問い5（確認）で行う。
    計画凍結後の仕様変更は既存のレビュー指摘管理表および採否・変更記録と関連付ける。
 
 4. 初回実装では、`lane-planning.md`「計画の起草」で選んだ最も近い既存実装と契約・構造を比較し、入力値・時間経過・操作順・保持状態・反復の境界を検証する。
    採用案の必要性を既存構造への一致と分け、「前提を疑う観点」で責務移動・既存機構や上流への統合・削除・簡素化を比較する。
-   採否は`agent-basics:writing-standards/references/design-heuristics-decisions.md`「案の採否と実施順の判定」に従う。
+   採否は`agent-basics:writing-standards/references/design-heuristics.md`「案の採否と実施順の判定」に従う。
    不具合対策は`exec-review-criteria.md`「初回レビュー」で害の解消と呼び出し側修正も比較する。
 
 5. 書き込み認可の境界はWIの要求（目的・対象・完成条件）とする。
@@ -97,7 +97,7 @@
 
 12. `レーン担当`自身はバージョン更新コマンドを実行せず、bumpの種別と根拠を計画または引き継ぎ記録に記載して公開工程へ引き渡す。
 
-13. 最終実装コミット前に変更ファイル全体と関連成果物を`agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」で評価し、各観点の結論を検証結果へ残す。
+13. 最終実装コミット前に変更ファイル全体と関連成果物を`agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」で評価し、各観点の結論を検証結果へ残す。
     機能不全・必要な責務是正と選好による構造変更を区別し、必要性・総費用で選ぶ。
     対象内というだけで処置を増やさず、認可内の品質劣化は同じコミットで解消する。
 
@@ -154,5 +154,5 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
-| 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` |
+| 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics.md` |
 | レーン実行タスクの基準を適用する前 | `exec.subagent.md` |

@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-basics/skills/writing-standards/references/claude-hooks-output-organization.md：組織向け設定：2026年11月15日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：組織向け設定：2026年11月15日
 
 - 観測日: 2026年11月12日までの既存調査と、2026年11月15日の公式資料の確認。
 - 観測した版数: 既存調査はClaude Code 2.1.322。
@@ -16,12 +16,12 @@
   PreCompactの短文化と実タスク完了による待機除外を比べる。
   組織modにした対照では通知と要約生成省略を別々に確認する。
 
-## agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：出力フィールドの使い分け：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。
 再検証ではこの2つの資料を読み、対象の文字列がどちらに由来するか確認する。
 
-## agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：出力上限：2026年10月20日
 
 - 観測日: 2026年10月20日に[公式Hooksリファレンス](https://code.claude.com/docs/en/hooks#json-output)を再取得した。
   10,000文字の制限は各JSON文字列と通常の標準出力へ個別に適用され、超過時はセッション内の保存ファイルと最大2,000文字のプレビューへ置き換わる。
@@ -33,7 +33,7 @@
   JSON各値と通常の標準出力は10,000文字の前後で保存先とプレビューを確認する。
   標準エラーの単一条件の成功から、配送量が無制限とは判断しない
 
-## agent-basics/skills/writing-standards/references/claude-hooks-output-organization.md：組織向け設定：2026年10月20日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：組織向け設定：2026年10月20日
 
 - 観測日: 2026年10月20日の起草時調査記録にある、本体の読解と組織設定のユーザー表示の観測による。
   今回の文書追随では本体の読解を再実行していない
@@ -42,7 +42,7 @@
 - 再検証手段: 対象版の`PASSED_OVER_EVENTS`・`PASSED_OVER_DOORS`・`passedOverPatterns`を公開仕様と比べ、全Function hooks登録へ同じ判定を適用する不変条件テストを実行する。
   組織設定下でセッション名の自動設定、手動名の保持と`rate_limit`後の再開予約を確認する
 
-## agent-basics/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：入力：2026年9月4日
 
 2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節および`SubagentStop`節で前段の入力仕様を確認した。
 同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。
@@ -87,7 +87,7 @@
 出力は`hookSpecificOutput.retry`だけを受理する。
 再検証は同ドキュメントの両節を読み、発火条件と受理する出力を確かめる。
 
-## agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年11月11日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：出力フィールドの使い分け：2026年11月11日
 
 - 観測日: 2026年11月10日と11月11日。
 - 確認版: Claude Code 2.1.322、公式Hooksリファレンス（<https://code.claude.com/docs/en/hooks>、2026年11月11日取得）。
@@ -103,7 +103,7 @@
 固定規範・案内に加え、最大2,000文字の追加指示、長いパス、契約の囲みと通知、圧縮後の案内が生成時に増えるため、単一の短い起動結果から選ばない。
 既存のrules_context_startup_test.pyが使うパス長21・241文字、Windows・Linux、契約なし・短い契約・長い契約の組合せで最終出力を比較する。
 上限との差2,000文字は、数回の段落追記を吸収する余裕として選んだ見積もりであり、固定部分の必須条件を削る許可にはしない。
-共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「記述量の水準」に従い、上限以下では整理水準のための測定・削減を追加しない。
+共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions.md`「記述量の水準」に従い、上限以下では整理水準のための測定・削減を追加しない。
 2026年11月15日、規範の場面固有部分を条件別資料へ移設し、既存の容量条件21件が成功した。
 変更後の生成を手動で観測したWindows・241文字パス・最大追加指示・長い契約の条件は7,978文字、WindowsのSubagentStartは7,538文字だった。
 これは当該条件の観測であり、全環境の最大値ではない。

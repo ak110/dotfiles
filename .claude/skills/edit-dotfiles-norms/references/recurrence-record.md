@@ -16,7 +16,7 @@
 記録は振り返りが原因の違いを問わず同じ害の再発を数え、同じ対策を繰り返す前に条文や仕組みを見直す材料になる。
 
 - `docs/development/incidents*.md`の該当事例へ`再発（YYYY年M月D日）:`行を加え、分類、事象、是正の内容を書く。
-  公開する文書のため、作業項目のファイル名などの個人記録の識別子は書かない（`agent-basics:writing-standards/references/writing-common.md`の個人記録の規定）。
+  公開する文書のため、作業項目のファイル名などの個人記録の識別子は書かない（`agent-basics:writing-standards/references/writing.md`の個人記録の規定）。
   事例が無ければ元の事象を事例として`incidents.md`「区分」の所在ファイルへ置いてから行を加える
 - ユーザーから反復の指摘（「何度も」「散々」「前にも」など）を受けた決定は、是正と同じ変更で`docs/development/concepts.md`の該当節へ決定の要旨（何を守るか、何をしてはならないか）を1行で加える。
   要旨が既にあれば、是正の内容に合わせて更新する。

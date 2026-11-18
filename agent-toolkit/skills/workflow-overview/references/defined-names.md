@@ -74,11 +74,11 @@
 | 委譲プロンプト | 委譲の指示 | `agent-toolkit:delegation/references/base-contract-preparation.md` |
 | 返却値 | 委譲先の出力 | `agent-toolkit:delegation/references/base-contract-preparation.md` |
 | エージェント向け文書 | エージェントが直接読み込む文書の種別 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
-| 読込表 | 文書内の表 | `agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`「読込表」 |
+| 読込表 | 文書内の表 | `agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」 |
 | 配送範囲表 | 文書内の表 | `agent-toolkit:delegation/references/delivery-scope.md`冒頭 |
-| 常時規範 | 規範の種別 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
-| プロジェクト規範 | 規範の種別 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
-| プロジェクト方針 | 方針の範囲 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
+| 常時規範 | 規範の種別 | `agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
+| プロジェクト規範 | 規範の種別 | `agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
+| プロジェクト方針 | 方針の範囲 | `agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
 | 作成規範 | 品質基準 | `agent-basics:review-standards/SKILL.md`「対象成果物の作成規範」 |
 | 完成条件 | WI・計画の条件 | `agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」 |
 | レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |

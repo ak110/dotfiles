@@ -1,42 +1,33 @@
 # Dockerfile記述スタイル
 
-本書では、Dockerfileにおける記述スタイルの基準を定める。
-
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| ベースイメージの版を選ぶ・変える前 | `dependency-management.md` |
+Dockerfileを書く時とレビューする時の、BuildKitとAPTのキャッシュ、公開待機設定との組み合わせなどの決まりを示す。
+原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用として、Dockerfileに固有の決まりだけを置く。
 
 ## 基本
 
-- 先頭の`# syntax`ディレクティブでBuildKitの安定版フロントエンドを明示的に指定する。
-- ベースイメージのtagには最新の安定版を示すものを選ぶ。
-  `image:tag@sha256:...`でdigestを固定する場合は、依存更新ツールでdigestとtagの両方をメジャー版も含めて更新する。
-  更新ツールを使えない場合は、`dependency-management.md`「最新版への追従」の浮動参照の規定に従う。
-- マルチステージビルドを活用し、ビルド環境の基盤と最終成果物の責務や変更頻度を適切に分離する。
-- コンテナー実行時のセキュリティを確保するため、非rootユーザーで実行するように構成する。
+- 先頭の`# syntax`ディレクティブで、BuildKitの安定版のフロントエンドを指定する。
+- ベースイメージのtagは最新の安定版を指すものにする（hadolintの`DL3006`、`DL3007`）。
+  `image:tag@sha256:...`の形でdigestを固定する時は依存更新ツールを使い、digestとtagの両方をメジャー版まで更新する。
+  更新ツールが無ければ`agent-basics:writing-standards/references/dependency-management.md`「最新版への追従」の浮動参照に従う。
+- コンテナーは非rootユーザーで実行する（hadolintの`DL3002`）。
 
 ## レイヤー設計とキャッシュ
 
-- Dockerfileのレイヤーは、変更頻度や処理内容の関連性に基づいて適切に分割し、BuildKitのキャッシュマウント（`RUN --mount=type=cache,...`）を活用してビルド時間を短縮する。
-- APTパッケージキャッシュではキャッシュの排他共有設定を用い、Debian系ディストリビューションに存在する`/etc/apt/apt.conf.d/docker-clean`による自動削除設定を事前に除去してキャッシュを有効利用する。
+- BuildKitのキャッシュマウント（`RUN --mount=type=cache,...`）でビルドを短くする。
+- APTのキャッシュは`sharing=locked`で共有し、Debian系の`/etc/apt/apt.conf.d/docker-clean`（自動削除の設定）を先に消す。
 
 ## サプライチェーン保護
 
-- `apt-get install`コマンドを実行する際は、不要な推奨パッケージの混入を防ぐために`--no-install-recommends`オプションを付与する。
-- `dependency-management.md`「公開待機設定」に記載された設定をコンテナーイメージ内のパッケージマネージャーでも有効化する。
-  自リポジトリのパッケージをコンテナービルド内で`uv tool install`などを用いてインストールする場合は、同節に示された対処手順に従う。
+- `apt-get install`には`--no-install-recommends`を付ける（hadolintの`DL3015`）。
+- コンテナー内のパッケージマネージャーでも公開待機設定を有効にする。
+  自リポジトリのパッケージをビルドの中で入れる時は、`agent-basics:writing-standards/references/dependency-management.md`「公開待機設定」の対処に従う。
 
 ## hadolint
 
-- hadolintを用いた静的コード解析を実施し、Dockerfileの品質を検証する。
-  ルールの警告抑制（インラインコメントや設定ファイルによる無視）は、真に必要な最小限の範囲に限定する。
+hadolintで検証してその診断に従い、警告の抑制（インラインのコメント、設定ファイル）は必要な最小の範囲に限る。
 
 ## 実行時設定
 
-- `ENTRYPOINT`命令は、シグナルを正しく伝播させるために配列形式（exec form）で記述する。
-- `HEALTHCHECK`命令はWebサーバーや常駐デーモン用途のコンテナーで設定し、単発実行されるCLIツール用途のイメージでは設定を省略する。
-- ユーザーが環境変数等で変更可能な設定項目は、`ENV`命令を用いて初期値（デフォルト値）を明示的に定義する。
+- `ENTRYPOINT`はシグナルを伝えるため配列形式で書く（hadolintの`DL3025`）。
+- `HEALTHCHECK`はWebサーバーと常駐デーモンのコンテナーで設定し、単発で実行するCLIのイメージでは省く。
+- 環境変数で変えられる設定は、`ENV`で初期値を定義する。

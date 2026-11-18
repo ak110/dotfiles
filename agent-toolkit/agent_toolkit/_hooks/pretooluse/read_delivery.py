@@ -163,7 +163,7 @@ def _declaration_issue_notice(issue: str) -> str:
         escalate_on_repeat=False,
         fix=(
             "作業はそのまま続けよ。宣言元を編集する担当は、"
-            "`agent-basics:writing-standards`の`references/agent-documents-basics-read-tables.md`「読込表」に合わせて該当行を直せ。"
+            "`agent-basics:writing-standards`の`references/agent-documents-basics.md`「読込表」に合わせて該当行を直せ。"
         ),
     )
 

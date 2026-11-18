@@ -44,7 +44,7 @@
 `.pre-commit-config.yaml`・`.github/workflows/`配下はpyfltr配布の推奨ガイドに揃える。
 推奨ガイドは`~/pyfltr/docs/guide/recommended.md`と`~/pyfltr/docs/guide/recommended-nonpython.md`である。
 
-- lint違反への対応と推奨設定の緩和は、`agent-basics:writing-standards`の`agent-basics:writing-standards/references/implementation-time-checks.md`「lintと機械チェック」の原則に従う。
+- lint違反への対応と推奨設定の緩和は、`agent-basics:writing-standards`の`agent-basics:writing-standards/references/implementation-time.md`「lintと機械チェック」の原則に従う。
   設定の緩和（ruff・pylint・textlint等の設定ファイルへのignore追加、lint設定の弱体化）は根本原因の修正と行単位の無視で足りない場合に限る慎重な手段とする。
   推奨から逸脱する設定を導入する場合は、該当箇所に理由を述べたコメントを直接記述する
 - 推奨ガイド自体の改訂を要する場合の投入順は「追従作業と複数リポジトリ横断投入」節に従う

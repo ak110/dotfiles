@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 委譲する部分を選び、起動手段とモデルを確定する前 | `process-model-settings.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 定型処理の実行先をモデル選定前に比較する時 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` | | |
+| 定型処理の実行先をモデル選定前に比較する時 | `agent-basics:writing-standards/references/design-heuristics.md` | | |
 
 ## 要否判定
 
@@ -18,7 +18,7 @@
 まずタスクに必要な能力と、現在使えるツール・資料・権限を比べる。
 不足は必要になった時点で補い、能力の追加だけで完遂できる場合も分担案と比較する。
 必須資料、検証、認可の条件を維持する。
-定型処理は`agent-basics:writing-standards/references/design-heuristics-decisions.md`「案の採否と実施順の判定」に従い、モデル選定前に既存CLI・API・標準コマンドで実行する案と比較する。
+定型処理は`agent-basics:writing-standards/references/design-heuristics.md`「案の採否と実施順の判定」に従い、モデル選定前に既存CLI・API・標準コマンドで実行する案と比較する。
 プログラムで実行する場合も、役割担当者が終了状態、診断、必要な出力を検収し、失敗や未完了の結果を確定結果として使わず、検収済みの結果を判断担当へ渡す。
 工程表に記載された`model_type`は、役割文書を渡して起動する工程に適用する。
 役割の内部では、判断を持つ仕事と、内容・完成判定が確定した作業を区別する。

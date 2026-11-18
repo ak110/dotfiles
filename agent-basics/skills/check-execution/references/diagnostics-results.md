@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing-speed.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing.md` |
 | 警告が欠陥を示すかを判断し、対処を始める前 | `../../bugfix/SKILL.md` |
 
 ## 読む出力
@@ -34,7 +34,7 @@ pytestの`skip`・`skipif`・`xfail(run=False)`、Playwrightの`test.skip`など
 この評価は、メインエージェントと委譲先、ローカル環境での実行とCI環境での結果確認のいずれにおいても共通して実施する。
 
 - 個別のテストの所要時間は、setup、テスト本体、後始末の契約を満たすために必要な実仕事量に対応付けて評価する。
-  `../../writing-standards/references/testing-speed.md`「速度」の段階に対応するプロジェクト基準を実行前に確認し、成功時も実測と比較する。
+  `../../writing-standards/references/testing.md`「速度」の段階に対応するプロジェクト基準を実行前に確認し、成功時も実測と比較する。
   全体は事前準備、対象テスト群、並列実行数、終了処理を含めた実時間をプロジェクトの全体基準と比較する。
   CIでは対象HEADの実行開始から必須ジョブ終了までを取り、キュー待ち・人間の承認待ちを分け、律速ジョブの準備・本体・終了処理の内訳を確認する。
   並列実行されたテストケースの累積CPU時間は、壁時計の実経過時間と区別して扱う。
@@ -51,9 +51,9 @@ pytestの`skip`・`skipif`・`xfail(run=False)`、Playwrightの`test.skip`など
 基準を超えた場合は、必要な仕事に由来する理由、その層に固有の検出契約、最小構成である根拠、削減余地と改善時機を同じ記録へ残す。
 現在の範囲と認可で成立する改善は同じ作業で行い、外部前提や別計画が必要な残作業は原因・具体策・解除条件とともに後続担当へ渡す。
 公開工程と必要な検証は、所要超過時も継続する。
-設計時の不要仕事の排除は`../../writing-standards/references/testing-speed.md`「速度」に従う。
+設計時の不要仕事の排除は`../../writing-standards/references/testing.md`「速度」に従う。
 ハングと意図しない遅延を検出する時間上限と改善判断を区別する。
-時間上限は正常所要とその変動から`../../writing-standards/references/testing-stability.md`「安定性: flakyテスト防止」に従って決める。
+時間上限は正常所要とその変動から`../../writing-standards/references/testing.md`「安定性: flakyテスト防止」に従って決める。
 改善判断には、固定秒数による機械的な合否判定、専用台帳、常時監視、毎回の全件再計測を追加しない。
 
 ## 合否の判定

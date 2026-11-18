@@ -64,4 +64,4 @@ agent-toolkit配下のファイルを編集する際は、`pytools/claude_hook/p
 ## 複数hook共存時の識別子
 
 `atk-auto`タグの`source`属性には、agent-toolkit由来のメッセージであれば接頭辞を付けない生成元名を指定し、それ以外の生成元であれば`<所有者>/<生成元>`という形式を指定する。
-XMLタグの境界や属性の記述規約については、`agent-basics:writing-standards/references/claude-hooks-messages.md`「エージェント宛てメッセージの標識」を参照する。
+XMLタグの境界や属性の記述規約については、`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「エージェント宛てメッセージの標識」を参照する。

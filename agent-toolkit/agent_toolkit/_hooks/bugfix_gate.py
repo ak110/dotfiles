@@ -7,7 +7,7 @@
 
 通知を遮断にする根拠: 警告だけでは、欠陥指摘の後にbugfixを起動せず原因の推測をユーザーへ報告した事例があった
 （2026年11月12日の統括セッション）。起動の有無は機械的に確定でき、起動で回復できるため、
-`agent-basics:writing-standards`の`references/claude-hooks-block-warn-eligibility.md`の遮断の条件に当たる。
+`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`の遮断の条件に当たる。
 Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける。
 
 委譲先での実行可否: ユーザー発話に対する遮断は、`send_to_user`を持つClaude Codeのメインだけを対象とする。

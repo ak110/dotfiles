@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/investigation-sources.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/investigation.md` |
 
 ## commitの実行前確認
 
@@ -14,7 +14,7 @@
 マージの競合を解決したあとは、競合マーカー（`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`）が残っていないことを確認する。
 プロジェクトの規範でCIを主要な検証関門と定めている場合は、CIが無条件に実行するチェックをローカルの事前確認から省いてよい。
 
-保存する内容は、`agent-basics:writing-standards/references/investigation-sources.md`「根拠と主張の一致」に従い、要求・計画から今回保存すべき担当変更を先に確定する。
+保存する内容は、`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」に従い、要求・計画から今回保存すべき担当変更を先に確定する。
 その集合とステージ済み実差分を比べ、担当外の混入と担当変更の欠落を判定する。
 担当外の未ステージ差分を保護し、不足する担当差分だけを追加して再比較する。
 status・diffの表示やhook成功の確認とは別に、保存対象とステージ済み実差分を比べる。

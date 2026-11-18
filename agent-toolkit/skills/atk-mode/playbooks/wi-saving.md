@@ -78,14 +78,14 @@
   条件の定義は`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」にある。
 - 名詞句と名称: タイトルと本文で既存の要素（スキル、工程、担当、hookの通知など）を指す名詞句は、定義元が実在し、本文から定義へ到達できる。
   会話やcommitメッセージで使った呼称も確かめる。
-  別の文書の節名・用語・略号の表記は`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に従う。
+  別の文書の節名・用語・略号の表記は`agent-basics:writing-standards/references/writing.md`「文章の共通規定」に従う。
   新しい名称は`agent-basics:writing-standards/references/defined-names.md`「命名の方針」に従い、長い正式名称でもタイトルで不当に省かない。
   ユーザーが読む部分は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」を満たす。
 - 節の内容: 各節が`agent-toolkit:atk-mode/references/awi-body.md`「要求固有性と記載量」と「節の構成と分担」を満たし、要求に固有でない一般論と他の節の再掲を含まない。
   既存の値を変える対象ごとに、`agent-toolkit:atk-mode/references/drafting-decisions.md`「方針と判断の記録との比較」の結果を書いている。
 - 採用案: `agent-toolkit:atk-mode/references/drafting-decisions.md`「実現方式の成立」の各項目を満たし、確かめた結論と再取得先を本文と成立性の証拠に書いている。
   観測した事象を契機とする要求では、対策が直接の原因と主要な害に確実に作用する。
-  採否と適用範囲を左右する技術的な主張は、`agent-basics:writing-standards/references/investigation-sources.md`「根拠と主張の一致」に従い、入力の生成・変換の手順と観測から保証できる範囲を突き合わせる。
+  採否と適用範囲を左右する技術的な主張は、`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」に従い、入力の生成・変換の手順と観測から保証できる範囲を突き合わせる。
 - 原因分析: `agent-basics:bugfix`を起動して起草し原因を確定した通常AWIでは、`## 原因分析`のバグ単位ごとに`agent-basics:review-standards`「文章成果物の実害」の不具合対応の条件を満たす。
   推測だけの原因は確定とせず、調査を続けるか「続行できない理由」として報告する。
   `広がり:`は、ユーザーが指定した対象集合を覆う。

@@ -15,7 +15,7 @@
 ユーザーは対策を文書の追記だけに頼る再発防止を否定し、Stopフックでの対策を提案した。
 既存の`termination_order_advisor`は起動順だけを再入時に判定して初回Stopを許可し、`user_response_advisor`は可視本文の有無だけを調べるため、どちらの不足も検出できなかった。
 本機構が判定するのは、実際の準備結果と可視発話から機械的に確定する不足である。
-現行の判定基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn-eligibility.md`「遮断・警告フックの成立条件」にある。
+現行の判定基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
 旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。
 
 判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`へ集約する。

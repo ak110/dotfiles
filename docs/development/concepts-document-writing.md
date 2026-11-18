@@ -10,7 +10,7 @@
   `send_to_user`の送達成功後に要約などの本文で終えるターンは、言語によらず、待機の有無とも独立にStop hookで遮断し、`…`で閉じさせる（2026年11月12日、ユーザー指摘「send_to_userしたものを追加で同じ発話するなって何度も指摘してるんだけど。しかも英語になってるし」）。
   途中待機の英語を言語だけで止めない上記の方針は変えない
   ホスト別の境界は`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」にある。
-  共通の選択基準は`agent-basics/skills/writing-standards/references/claude-hooks-block-warn-behavior.md`「遮断と警告の選択」にある
+  共通の選択基準は`agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`「遮断と警告の選択」にある
 
 - 既存のエージェント向け文書と今後の執筆指針をともに整え、主体・対象・動作が分かる指示を先に書く。
   適用条件、例外、拘束力と、選択に必要な理由を保持する。
@@ -30,7 +30,7 @@
 
 - 本文の一部しか読めない二次資料を調査に使う場合は、依拠する一次資料を探して本文まで調べ、結論の根拠を一次資料へ置く。
   資料間の対応が未確認ならその旨と特定根拠を示す（2026年10月20日、ユーザー指示）。
-  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/investigation-sources.md`「情報源と裏付けの手段」にある
+  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/investigation.md`「情報源と裏付けの手段」にある
 
 - エージェントが書く全ての文章は、読み手と読む時点に合わせて極力簡潔に必要十分な情報で書く。
   簡潔さは、読み手が文脈から容易に補える情報を書かないことであり、語の文字数で測らない。
@@ -50,7 +50,7 @@
 - 恒久成果物は対話の経緯を要件・挙動・根拠へ変換し、口調例は執筆者とレビュアーが必要時に同じ正しい例と機構の説明を参照する。
   2026年10月13日のユーザー指示により、比較用の違反例を保持する方針を変更した。
   例は通常の文章チェックへ渡し、原文の引用、検出用データと保存形式の識別子は役割を区別して保持する。
-  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/agent-documents-basics-tone.md`「語調と現行規則の表現」にある
+  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/agent-documents-basics.md`「語調と現行規則の表現」にある
 - ユーザーはエンドユーザーに含まれる。
   ユーザーはコーディングエージェントへ要求・指示・判断を与える人、エンドユーザーは成果物を使う人の総称とし、1人が複数の役割を兼ねられる（2026年10月3日、ユーザー指示「ユーザーはエンドユーザーに含まれるべき」）。
   範囲のあいまいな「利用者」は新しい説明文に使わず、製品別の呼称は「dotfilesユーザー」「agent-toolkitユーザー」とする。
@@ -91,7 +91,7 @@
   （2026年8月。問題起点の6行表が知見の書き残しに適合しない不整合の是正に由来）
 - 文体統制はlintによる自動チェックを一次手段とする（2026年8月。編集時フックの文体チェックは2026年9月26日のユーザー回答「英語応答警告だけ残す」により撤去した）。
   検査が強制する規則の文章は規範文書から削除し、直し方は検査の診断文に持たせる（2026年11月16日、規範の作り替えのユーザー指示に基づく変更。それまでは規範文書を生成時の予防ガイドとして維持し、重複する細則は細かすぎるものだけを削減していた）。
-  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/agent-documents-additions-volume.md`「文書記述量の管理」にある
+  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/agent-documents-additions.md`「文書記述量の管理」にある
 - 地の文へ日本語以外の言語の語句を混在させない（2026年8月、ユーザー指示）。
   gitなどのツール・外部技術に由来する語と識別子は原表記を維持し、
   由来の無い一般英単語の内部用語化（旧称wave・lane等）は行わない。

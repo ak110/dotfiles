@@ -40,12 +40,12 @@ WIの起草で、原因と変更する定義の所有者を決め、採否と実
 害の発生源を定める既存の方針や仕様があることは、それだけでは残す理由に数えず、本書「方針と判断の記録との比較」で変更案として扱う。
 
 完成条件を固定する前に、起点の資料の目的と、エージェントが選んだ中間の手段（安全策、検収用のログ、例外処理、フォールバックなど）を分ける。
-新しい機構を作らずに既存の操作で消費側に要る結果が得られるかを、`agent-basics:writing-standards/references/design-heuristics-mechanisms.md`「自作機構の兆候と自問」で比べて結論を本文に書く。
+新しい機構を作らずに既存の操作で消費側に要る結果が得られるかを、`agent-basics:writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」で比べて結論を本文に書く。
 新しい処理の追加は、消費側に要る結果から、既存機構の流用、統合、追加しない案、新設を、次の資料で比べる。
 
-- `agent-basics:writing-standards/references/design-heuristics-screening.md`
-- `agent-basics:writing-standards/references/design-heuristics-proportionality.md`
-- `agent-basics:writing-standards/references/design-heuristics-decisions.md`
+- `agent-basics:writing-standards/references/design-heuristics.md`
+- `agent-basics:writing-standards/references/design-heuristics.md`
+- `agent-basics:writing-standards/references/design-heuristics.md`
 
 類似の見直しや再発防止として新設する要素と、完成条件で必須にする観測手段・比較・検収・工程は、明示の要件、規範上の制約、観測済みの欠陥のどれに応じて要るかを要素ごとに示す。
 処理しない・延期するといった保護の条件と、期待結果・完成条件・反映内容に書いた省略・拒否・保存しない分岐も同じ根拠に対応付け、処置自身の失敗の最悪の結果を元の問題の最大の影響と比べる。
@@ -83,7 +83,7 @@ WIの起草で、原因と変更する定義の所有者を決め、採否と実
 - 対象リポジトリの規範との整合: 変更の順序、段階の間の移行条件、完了の判定など方式を制約する規約を、`agent-toolkit:atk-mode/references/awi-body.md`「配置規約と導入目的の調査」に従って方式の決定前に読み、案と比べる。
 
 整合を確かめられない案は投入を止めて調査を続け、自力で取得できない資料とユーザーの判断が要る事項だけを確認へ回す。
-成果物を新設・分割・移設・統合する方式は、`agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」で評価し、採否を左右する結論と再取得先を本文に書く。
+成果物を新設・分割・移設・統合する方式は、`agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」で評価し、採否を左右する結論と再取得先を本文に書く。
 観点ごとの確認の過程と比べた対象は成立性の証拠に残し、後続の担当が成立性を判断して着手できるよう、結論と根拠の再取得先を本文に書く。
 
 ## 方針と判断の記録との比較

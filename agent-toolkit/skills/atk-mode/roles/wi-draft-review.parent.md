@@ -67,7 +67,7 @@
    元の要求の解釈でレビュー担当と作成主体の見解が分かれ、結果や作業範囲が変わる時は`agent-basics:review-standards`の共通規定に戻る。
    原文、実際の回答、現物を確かめても解けず、ユーザー自身の判断に委ねる事項が残れば、その修正を保留し、双方の解釈と結果をユーザーへ確認できるメインへ報告する。
 5. 修正は部分的な追記で済ませず、開始、終了、途中の失敗からの再開までの一連の流れについて、変えた方式全体の整合を`agent-toolkit:atk-mode/references/drafting-decisions.md`「実現方式の成立」で確かめてから再提出する。
-   修正のたびに状態管理や照会手段を足す指摘が続く時は、方式の維持、縮小、代替案への切り替えを`agent-basics:writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」で比べる。
+   修正のたびに状態管理や照会手段を足す指摘が続く時は、方式の維持、縮小、代替案への切り替えを`agent-basics:writing-standards/references/design-heuristics.md`「問題と手段の比例性」で比べる。
    指摘が繰り返される原因は`agent-basics:bugfix/references/recurrence.md`に従って分析し、成立性の未解決事項は繰り返されても解消してから合格とする。
 6. 修正後は、変えた要求識別子、現行の原稿、差分、直接の影響範囲を同じレビュー担当へ渡して再判定を頼む。
    変更の無い共通資料と合格済みの要求の結果は保ち、変わらない抽出は読者別探索の再点検を省く条件に従って再利用する。

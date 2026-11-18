@@ -88,7 +88,7 @@ CIや再現テストで自己確認できる事項を、ユーザーの実機確
   2026年10月15日のユーザーの終了フック案に基づき、起動済みの成果作業にも同じ作業・人間入力につき一度、終了時点で送達と新たな指摘の残処置を判断する通知を追加した。
   通知の事実だけを重複抑止へ使い、本文の書式判定と完了の自己申告は導入しない。
   意味上の充足はメインが元要求と実際の結果から判断し、充足時は本文を再出力せず終了する。
-  現行の規定は`agent-toolkit:report-completion`の`SKILL.md`「工程」と`writing-standards`の`references/claude-hooks-stop.md`「終了工程の証拠」にある
+  現行の規定は`agent-toolkit:report-completion`の`SKILL.md`「工程」と`agent-toolkit:report-completion/references/claude-hooks-stop.md`「終了工程の証拠」にある
 - 振り返りの予告は`## 振り返り結果の予告`で始め、最後の報告だけに完了の固定文を添える（2026年10月8日、ユーザー指示）。
   固定文の文面は`agent-toolkit:report-completion/references/report-formats-retrospective.md`「振り返り結果報告のフォーマット」が定める。
   投入がある場合はAWI投入結果、無い場合は振り返り結果を最後の報告とする。

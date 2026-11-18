@@ -282,7 +282,7 @@ def test_report_mode_prints_metrics_without_judging(tmp_path: pathlib.Path, caps
     assert lines[1].split("\t") == ["1", "1", "0", str(path)]
 
 
-@pytest.mark.parametrize("name", ["tone-examples.md", "tone-examples-llm-tone.md", "textlint-violations.md"])
+@pytest.mark.parametrize("name", ["tone-examples.md", "textlint-violations.md"])
 def test_norm_example_paths_are_checked(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
     """例を置く各ファイルも密度の判定へ到達し、超過した指標を報告する。"""
     owner = (

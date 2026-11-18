@@ -14,7 +14,7 @@
 1. 計画ファイルの`## 反映内容と反映先`と`## 完成条件`に沿って実装を進める（成果物の品質基準は`agent-basics:writing-standards`の該当資料を確認し、配送・状態・工程記録を扱う場合は`agent-basics:writing-standards`の運用表も適用する）。
    - 8節形式の計画では、`legacy-plan-file-standards.md`「8節形式」の対応表で節を読み替える。
    - 実装に着手する前に、完成条件で規定された公開呼び出し手段、入力値と初期状態、期待される結果、および検出すべき失敗様態を具体化する。
-     `agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」に基づいてテスト手法を選定する。
+     `agent-basics:writing-standards/references/testing.md`「検証単位の選定」に基づいてテスト手法を選定する。
      レビュー指摘への修正時も同様に適用し、不具合は該当する入力を用いて再現させた上で修正する。
    - Gitの管理対象外となっているファイルを変更する場合は、初回の変更前に事前のバックアップ（複製）を作成し、元ファイルと複製ファイルの対応関係を`## 進捗ログ`に記録する。
    - `../../../share/workflow-phases.md`の「受入シナリオ検証」に従い、各完成条件の必要な結果を自己検収する。
@@ -22,7 +22,7 @@
      その上で、自身が担当する残工程の担当者と再開先を記録して実行レビューへ引き渡す。
      記述方法は`../../../share/verification-evidence-records.md`「完成条件証拠の検証記録」に従い、手動での観測結果やテスト出力は同書の「手動観測の保存」に沿って、実行時の版とともにmanaged-tempへ保存する。
      取得後にリポジトリの版（コミット）が変化した記録を再利用する際は、`../../../share/exec-review-recording-grounds.md`「根拠の書き方」に従う。
-   - 実装の最終コミットを作成する前に、変更差分を`agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」に基づいて評価する。
+   - 実装の最終コミットを作成する前に、変更差分を`agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」に基づいて評価する。
      設計品質の劣化が認められる場合は修正し、観点ごとの評価結論を検証結果へ記録する。
    - `## 検証`に記載されたコマンドを実行し、`agent-toolkit:commit`の規定に従ってコミットを作成する。
 2. `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビューを起動し、その結果を受領する。

@@ -6,12 +6,12 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| モデルとホストの更新時の点検で、基準にする公式ガイドの掲載を確かめる前 | `agent-basics:writing-standards/references/host-official-references.md` |
+| モデルとホストの更新時の点検で、基準にする公式ガイドの掲載を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` |
 
 ## モデルとホストの更新時の点検
 
 規範を編集する作業の開始時に、自分のモデルIDとホスト（Claude Code、Codex）の版を、`docs/development/audit-records.md`の最新の「規範の点検記録」と比べる。
-公式ガイドが`agent-basics:writing-standards/references/host-official-references.md`に挙がっていることは、点検済みの根拠にしない。
+公式ガイドが`agent-basics:writing-standards/references/claude-hooks.md`に挙がっていることは、点検済みの根拠にしない。
 
 - モデルIDが点検記録に無い場合（記録が1件も無い場合を含む）は、そのモデルを基準にした規範全体の点検（`agent-toolkit:refine-prompt`の`audit`。所在参照）を求めるAWIを登録する。
   同じモデルの点検を求める未終了のAWIがあれば登録しない。

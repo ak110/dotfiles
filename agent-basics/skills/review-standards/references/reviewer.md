@@ -8,7 +8,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` |
+| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing.md` |
 
 ## 適用契約
 

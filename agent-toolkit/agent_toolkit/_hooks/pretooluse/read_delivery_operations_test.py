@@ -46,12 +46,12 @@ def test_real_test_file_declaration_guides_both_standards_and_consumes_acquisiti
     """現物宣言から試験編集の両基準を初回に案内し、取得済み本文は再要求しない。"""
     root = pathlib.Path(__file__).resolve().parents[3]
     owner = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
-    references = tuple(owner.parent / "references" / name for name in ("testing.md", "testing-selection.md"))
+    references = tuple(owner.parent / "references" / name for name in ("testing.md",))
     # 正規の試験編集行を使い、今回の取得消費に関係する2基準へ配送対象を限定する。
     rows = [
         row
         for row in parse_tables(owner, root, defer_material=True)
-        if all(reference.name in row.material for reference in references)
+        if row.kind == "操作" and all(reference.name in row.material for reference in references)
     ]
     assert rows
     assert all(set(references).issubset(target.path for target in row.targets) for row in rows)

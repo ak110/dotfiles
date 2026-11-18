@@ -1,31 +1,24 @@
 # C#記述スタイル
 
-本書では、C#のプロダクションコードおよびテストコードにおける記述スタイルの基準を定める。
-
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+C#のコードとテストを書く時とレビューする時の、プロジェクト設定、非同期と例外の決まり、セキュリティで採る手段を示す。
+原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用として、C#に固有の決まりだけを置く。
+.NETのコード分析（`CA`の規則）が有効な環境では、その診断に従う。
 
 ## 言語スタイル
 
-- 現行の.NET LTS以降のバージョンを前提とし、プロジェクト設定でNullable（Null許容参照型）とTreatWarningsAsErrors（警告をエラーとして処理）を有効にする。
-- `async void`はWindows FormsやWPFのイベントハンドラーにのみ限定して使用し、ハンドラー内部で例外を確実にキャッチする。
-- `ConfigureAwait(false)`はUIに依存しないライブラリ層やユーティリティ層で付与し、SynchronizationContextに依存するアプリケーション層（Windows Forms、WPF、Blazorなど）では付与しない。
-- フックのコールバック、`WndProc`、ワーカースレッドの最上位防御層など、広範囲な例外キャッチが正当化される場面では、`when`フィルターを使用するか、対象箇所に限定して`#pragma warning disable CA1031`を指定した上で理由をコメントに明記する。
-  例外を再スローする場合はスタックトレースを維持するために`throw;`を用いる。
-- イベントの発行元オブジェクトが購読側よりも長く生存する場合は、`+=`によるイベント購読を対応する`-=`で明示的に解除する。
-- Entity Framework Core（EF Core）ではデータ取得量とN+1問題に配慮し、必要に応じて先行読み込み（eager loading）や射影（Select句による特定列の取得）を選択する。
-- 公開APIの設計意図はXMLドキュメントコメントのsummaryタグに記述する。
-  自明な内容であれば記述を省略してよい。
-- セキュリティ全般の一般的な指針は`implementation-time-errors.md`「セキュリティ・ロギング・エラー処理」に従う。
-  C#固有の実装では次の手段を採用する。
-  - SQLクエリのパラメーター化（`SqlCommand.Parameters`、Dapper、EF Coreの利用）および外部プロセス実行時の`ProcessStartInfo.ArgumentList`の使用
-  - 外部由来の信頼できないXMLを処理する際の`XmlResolver = null`の設定、および非推奨となった`BinaryFormatter`の代用としての`System.Text.Json`やMessagePackの採用
-  - セキュリティ用途で乱数を生成する際の`RandomNumberGenerator`の利用
+- 現行の.NET LTS以降を前提にし、`Nullable`と`TreatWarningsAsErrors`を有効にする。
+- `async void`はWindows FormsとWPFのイベントハンドラーに限り、ハンドラーの中で例外を捕捉する。
+- `ConfigureAwait(false)`はUIに依存しないライブラリ層で付け、`SynchronizationContext`に依存するアプリケーション層（Windows Forms、WPF、Blazorなど）では付けない。
+- 広い例外の捕捉は、フックのコールバック、`WndProc`、ワーカースレッドの最上位などに限る。
+  `when`フィルターか、箇所を限った`#pragma warning disable CA1031`と理由のコメントで書く。
+- 再送出は`throw;`で書く（`CA2200`）。
+- SQLはパラメーター化し（`CA2100`）、外部プロセスは`ProcessStartInfo.ArgumentList`で起動する。
+- 信頼できないXMLは`XmlResolver = null`で読み（`CA3075`）、`BinaryFormatter`の代わりに`System.Text.Json`かMessagePackを使う（`CA2300`）。
+- セキュリティ用途の乱数は`RandomNumberGenerator`で作る（`CA5394`）。
 
 ## テストコード（xUnit）
 
-- テストフレームワークは対象プロジェクトで採用されているものに合わせる。
-  新規に選定する場合は、`dotnet test`で実行可能であり、並列実行とパラメーター指定テスト（データ駆動テスト）を標準でサポートしているもの（`xUnit`など）を採用する。
-- 現在時刻に依存する処理のテストでは、`TimeProvider`（.NET 8以降）などを利用して外部から時刻を注入できる設計にする。
-- テストプロジェクトの名称は、対象に合わせて`xxx.Tests`という命名規約に統一する。
+- フレームワークは対象プロジェクトの採用に合わせる。
+  新しく選ぶ時は、`dotnet test`で動き、並列実行とデータ駆動のテストを標準で持つもの（xUnitなど）にする。
+- 現在時刻は`TimeProvider`（.NET 8以降）などで外から注入できる設計にする。
+- テストプロジェクトの名前は`<対象>.Tests`にする。

@@ -15,7 +15,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` | | |
-| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing-selection.md` | | |
+| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing.md` | | |
 | 実装に着手する前、実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review.parent.md` |
 | WI要求の範囲で実装・修正に着手する前 | `exec-subagent-implementation.md` | | |
 | 実行レビュー担当を起動する前 | `exec-review-parent-launch.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/exec-review-parent-launch.md` |

@@ -236,9 +236,8 @@ def test_relative_reference_outside_owner_plugin_is_rejected(tmp_path, line):
     [
         ("check-script-design.md", "program-messages.md"),
         ("mcp-server-design.md", "program-messages.md"),
-        ("claude-hooks-messages-format.md", "program-messages.md"),
-        ("notation-checks.md", "input-material.md"),
-        ("textlint-violations.md", "input-material.md"),
+        ("claude-hooks-block-warn.md", "program-messages.md"),
+        ("textlint-violations.md", "writing-genres.md"),
     ],
 )
 def test_writing_consumers_reach_split_material_without_obsolete_sections(consumer, material):
@@ -249,7 +248,7 @@ def test_writing_consumers_reach_split_material_without_obsolete_sections(consum
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
     assert any(item.path == target and item.body().strip() for row in rows for item in row.targets)
-    obsolete = {"読み手別の追加注意点", "ユーザー入力素材の取扱い"}
+    obsolete = {"ユーザー入力素材の取扱い"}
     assert not [
         item
         for row in rows
@@ -261,7 +260,7 @@ def test_writing_consumers_reach_split_material_without_obsolete_sections(consum
 def test_delegation_input_material_wrapper_reaches_quality_owner():
     """WI起草等が使うtoolkit側の素材節も、移設した品質基準の本文へ到達する。"""
     source = _PLUGIN_ROOT / "share/writing-operations.md"
-    target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/input-material.md"
+    target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/writing-genres.md"
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
     assert any(item.path == target and item.body().strip() for row in rows for item in row.targets)

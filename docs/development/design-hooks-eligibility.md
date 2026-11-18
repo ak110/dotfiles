@@ -105,4 +105,4 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 
 2026年10月1日、3日、5日および6日の各節が維持するとした「規範の想起を目的とするチェックをhookに置かない」方針は、この旧基準（元へ戻せない結果を防ぐものだけを残す）から導かれた。
 旧基準は2026年10月2日のユーザー指示で現行の費用比較へ改められた。
-以後の採否は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn-eligibility.md`「遮断・警告フックの成立条件」で判定する。
+以後の採否は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」で判定する。

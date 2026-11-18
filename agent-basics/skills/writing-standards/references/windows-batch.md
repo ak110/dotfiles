@@ -1,24 +1,18 @@
 # Windowsバッチファイル記述スタイル
 
-本書は、cmd.exeで実行されるバッチファイル（`.cmd`および`.bat`）を作成・編集する際の記述スタイル基準をまとめたものである。
+cmd.exeで実行するバッチファイル（`.cmd`、`.bat`）を作る時と編集する時の、採用の判断と文字コード・改行の扱いを示す。
+原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用として、cmd.exeに固有の決まりだけを置く。
 
-- 文字エンコーディング
-  - ファイルはCP932（Shift_JIS）で記述する。
-    cmd.exeのコマンドパーサーはシステムのACP（日本語Windows環境ではCP932）に基づいて動作し、スクリプト内で`chcp 65001`を実行してもコンソール入出力のコードページが変わるだけである点に留意する
-  - ファイルの読み書き手順は`encoding.md`の「書込ツールの改行・BOM保全」に従う。
-    iconvを使用する場合の文字コード名には`cp932`を指定する（例: `iconv -f cp932 -t utf-8 file.cmd`）。
-    `git show`もCP932のバイト列をそのまま出力するため、文字化けの回避策にはならない
-- 改行コード
-  - 改行コードはCRLFを必須とする。
-    `.gitattributes`ファイルで`*.cmd text eol=crlf`を指定して改行コードを保持する
-- 基本構造
-  - `@echo off`などでコマンドのエコー表示を無効化し、`setlocal`を用いて環境変数の影響範囲を限定し、終了ステータス（エラーレベル）を明確に制御する
-- 変数展開
-  - 即時展開（`%VAR%`）と遅延展開（`!VAR!`）の実行タイミングの違いを意識して使い分け、必要な処理ブロックでのみ遅延環境変数（`setlocal enabledelayedexpansion`）を有効にする
-- セキュリティに関する一般的な留意事項は、`implementation-time-errors.md`「セキュリティ・ロギング・エラー処理」を参照する。
-  cmd.exeでは任意の入力をそのままコマンドとして実行せず、`if`や`goto`を用いてあらかじめ定義した固定の分岐候補へ振り分ける設計とする（努力目標）
-- 新しくスクリプトを作成する場合はPowerShellを第一の選択肢とし、`.cmd`は過去のバージョンとの互換性が必要な場合や、PowerShellが利用できない制約がある環境に限定して採用する
+## 基本構造
 
-## 名指し参照の読込方法
+- 新しいスクリプトはPowerShellで書き、`.cmd`は旧版との互換が要る時とPowerShellを使えない環境に限る。
+- 遅延環境変数（`setlocal enabledelayedexpansion`）は`!VAR!`が要るブロックだけで有効にする。
+- 任意の入力をそのままコマンドとして実行せず、`if`と`goto`で固定の候補へ振り分ける（努力目標）。
 
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+## 文字エンコーディングと改行コード
+
+- ファイルはCP932で書く。
+  cmd.exeはシステムのACP（日本語のWindowsではCP932）で解析し、`chcp 65001`はコンソールの入出力のコードページだけを変える。
+- 読み書きは`agent-basics:writing-standards/references/encoding.md`「書込ツールの改行・BOM保全」に従い、`iconv`の文字コード名は`cp932`にする。
+- `git show`もCP932のバイト列をそのまま出すため、文字化けの回避には使えない。
+- 改行はCRLFにし、`.gitattributes`で`*.cmd text eol=crlf`を指定する。

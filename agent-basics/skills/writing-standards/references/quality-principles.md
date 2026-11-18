@@ -16,7 +16,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 設計の判定順（3段判定）に関する判断・作業の前 | `quality-design-judgment.md` |
-| 変更と検証の範囲に関する判断・作業の前 | `quality-change-scope.md` |
-| 文書と既存コードの不一致に関する判断・作業の前 | `quality-source-consistency.md` |
-| 外部部品の版の追従に関する判断・作業の前 | `quality-dependencies.md` |
+| 設計の判定順（3段判定）に関する判断・作業の前 | `design-heuristics.md` |
+| 変更と検証の範囲に関する判断・作業の前 | `design-heuristics.md` |
+| 文書と既存コードの不一致に関する判断・作業の前 | `investigation.md` |
+| 外部部品の版の追従に関する判断・作業の前 | `dependency-management.md` |

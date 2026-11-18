@@ -79,7 +79,7 @@ GitLab CIでは、ジョブと同じイメージdigestとRunnerの版で`gitlab-
 | VRTの基準画像の再生成 | テストコードの欠陥で、差分が実装意図に伴うUI変更 | 環境起因ならローカルをCIに合わせる。データ差分なら初期データを固定する |
 | 画面マスクの追加 | テストコードの欠陥で、差分が動的な値によるデータ差分 | 初期データの固定を先に比べる |
 | 失敗ジョブの再実行 | 再現性が「非決定性の疑い」。同じ原因につき1回 | 診断として行う。広域の障害では待機を優先する |
-| 失敗した試験や処理の撤去・縮小 | `agent-basics:writing-standards`の`references/design-heuristics-necessity.md`「存在意義の点検」で不要と判定した | 失敗を通すことだけが目的なら使わない。エンドユーザーが観測する機能の撤去と、CIの検査・lint規則の無効化は、撤去の前にユーザーへ確かめる |
+| 失敗した試験や処理の撤去・縮小 | `agent-basics:writing-standards`の`references/design-heuristics.md`「存在意義の点検」で不要と判定した | 失敗を通すことだけが目的なら使わない。エンドユーザーが観測する機能の撤去と、CIの検査・lint規則の無効化は、撤去の前にユーザーへ確かめる |
 | 旧版への一時的な固定 | 環境起因で、新しい版との差が原因と確かめ、同じ作業で追随を終えられない | `agent-basics:writing-standards/references/dependency-management.md`「最新版への追従」に従い、理由と解除条件を残す |
 
 - ジョブの除外（`rules:changes`など）、試験の`.skip`・`xfail`、`allow_failure`、差分のない空commitの再pushは使わない。

@@ -17,10 +17,10 @@
   ユーザーが示した手段を評価する一般則は「置き場所」「保存先」の語を持たず、想起されなかった。
   対策: `agent-basics:writing-standards`の次の資料へ、置き場所が届く読み手の範囲と規定の理由が求める範囲を双方向に比べる項を加えた。
 
-  - `agent-basics:writing-standards/references/agent-documents-basics-purpose.md`
-  - `agent-basics:writing-standards/references/agent-documents-basics-placement.md`
-  - `agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`
-  - `agent-basics:writing-standards/references/agent-documents-basics-ownership.md`
+  - `agent-basics:writing-standards/references/agent-documents-basics.md`
+  - `agent-basics:writing-standards/references/agent-documents-basics.md`
+  - `agent-basics:writing-standards/references/agent-documents-basics.md`
+  - `agent-basics:writing-standards/references/agent-documents-basics.md`
 
   ユーザーの指定と合わない場合は、指定どおり書いて同じ応答で代替を示す
 
@@ -40,7 +40,7 @@
   再発（2026年11月13日）: 範囲不足。
   通知比較の編集先が一時領域に置かれ、成果物編集向けの通知を測れなかった。
   代表条件の合格がコマンド終了までで、隔離のための配置が対象の分岐も変える条件を判別できなかった。
-  `investigation-results.md`の代表条件で隔離と対象経路の成立を分け、関係する配置・登録・環境変数と期待通知・状態遷移の直接観測を確認する形へ改めた
+  `investigation-results.md`（現行は`agent-basics:writing-standards/references/investigation.md`「実行結果の検証」）の代表条件で隔離と対象経路の成立を分け、関係する配置・登録・環境変数と期待通知・状態遷移の直接観測を確認する形へ改めた
 
 - 2026年10月2日: hookの配置を調べるCI診断コードがcacheの全ファイル名を`rglob`で出力し、独立レビューで限定出力へ直す修正と再レビューが生じた。
   直接原因: CI記録は必要な採取対象を持っていたが、診断コードの各走査をその判別用途へ対応付けないまま実装できた。
@@ -84,7 +84,7 @@
   構造は`atk run-script review-contract`が、参照と認可は受信したレビュー担当が評価する。
   再発防止として、WI起草の完成条件の固定と実行レビューの詳細確認より前に必要性を比べ、直接影響範囲の既存機構にも適用する。
   必要性の比較の手順は`agent-toolkit:/share/exec-review-criteria.md`「初回レビュー」にある。
-  比較の基準は`../../agent-basics/skills/writing-standards/references/design-heuristics-mechanisms.md`「自作機構の兆候と自問」、方式は[design-planning.md](design-planning-review-contract.md#review_contractとレビュー指摘管理表)にある
+  比較の基準は`../../agent-basics/skills/writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」、方式は[design-planning.md](design-planning-review-contract.md#review_contractとレビュー指摘管理表)にある
 
 - 2026年10月3日: Stop hookへの対処をWI投入担当へ委譲したメインが、機能の目的と比べずに不具合と文面の直し方を述べ、ユーザーに2回是正された。
   直接原因: `agent-basics:bugfix`の起動条件が対処への着手に結び付き、委譲中に判断を述べる場面を含まなかった。

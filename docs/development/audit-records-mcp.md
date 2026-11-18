@@ -117,7 +117,7 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 これはエージェントの選定値であり、ホストの制限や通常の追記量の実測値ではない。
 必須入力・modeの選択・最小例・結果受領の説明を残す固定部分と、引数自身の説明へ整理できる部分を区別する。
 896文字の余裕は数回の短い説明段落の追記を見込み、行数の60%を一律適用せずに選んだ。
-共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「記述量の水準」に従う。
+共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions.md`「記述量の水準」に従う。
 上限以下のstart・showなどをこの目安だけで削減せず、既存のtool_descriptions_test.pyの合否上限と全引数説明の検査を保つ。
 2026年11月15日の登録済み説明の手動観測では、startは3,650文字、showは2,685文字、instructionsは1,954文字だった。
 全6ツールとinstructionsが4,096文字以下であり、上限超過が無いため、3,200文字の目安を理由にstartを削減しなかった。

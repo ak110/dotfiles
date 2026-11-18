@@ -91,7 +91,7 @@ bugfixの`SKILL.md`と確認観点を変える時は、`.claude/skills/agent-too
 改善では、正しい手順を求める規定を足す前に、正しい手順が最も手間の少ない手順になる形を探す。
 例は、指定を省いた時に正しい値が使われるようにする、公開コマンドが正しい形の入力だけを受け付ける、手順をまとめて工程を減らす、正しい手順を妨げる手間を撤去する、などである。
 現行の規定は`agent-basics:bugfix`の`references/prevention.md`「案を比べる順」と`references/recurrence.md`「対策の種類を変える」にある。
-費用の定義は`agent-basics:writing-standards`の`references/design-heuristics-decisions.md`「案の採否と実施順の判定」にある。
+費用の定義は`agent-basics:writing-standards`の`references/design-heuristics.md`「案の採否と実施順の判定」にある。
 
 2026年8月〜11月の個別の改訂の経緯（2系統の段階、6区分の処置、重大度別の方針、初動と詳細分析の2段）は、上の現行の決定へ置き換わった。
 経緯の全文はこのファイルの変更履歴で読める。

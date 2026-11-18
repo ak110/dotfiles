@@ -81,7 +81,7 @@ SessionStartの文脈だけで起動を促す案は、観測した起動の欠�
 この注記は字面の一致した発話へ規範の所在を示す関連配送であり、発火・重複・受信量・再取得の費用も比較する。
 同じ条件の同じ本文は共通noticeで抑止し、遮断へ昇格しない。
 規範の想起を目的とするチェックをhookに置かないとした2026年9月26日以降の方針は、操作を判定して警告や遮断を返すチェックを対象とし、本注記とは区別する。
-現行の判定基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn-eligibility.md`「遮断・警告フックの成立条件」にある。
+現行の判定基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
 旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。
 字面の一致は資料の所在を示す契機に限る。
 発話が同項に当たるかは受領したメインが同項を読んで判断し、hookは発話の意味を判断しない。

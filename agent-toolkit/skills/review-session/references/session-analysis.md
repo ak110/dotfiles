@@ -24,7 +24,7 @@
 | 通常モードの工程5でAWIの登録要求をWI投入担当へ渡す前 | `agent-toolkit:atk-mode/roles/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/roles/add-wi.parent.md` | |
 | batchの工程5でAWIを起草・独立検収する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`、`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/wi-draft-review.parent.md` | |
 | batchでAWIを保存する前 | `batch.md` | 判断 | `wi-standard-commit` | |
-| 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | | | |
+| 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation.md`、`agent-basics:writing-standards/references/agent-documents-basics.md` | | | |
 
 ## 分析と投入
 

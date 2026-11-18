@@ -4,7 +4,7 @@
 起動対象: bulk-replace-review.subagent.md
 ```
 
-品質基準の正式な提供元は`agent-basics:writing-standards/references/bulk-replacement.md`である。
+品質基準の正式な提供元は`agent-basics:writing-standards/references/notation-rules.md`である。
 呼び出し元の読込条件を引き継ぎ、本書の運用条件と条件に該当する正式な資料の全文を読む。
 両方に同じ主題があれば、両方の全文を確認する。
 範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。

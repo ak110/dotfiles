@@ -554,7 +554,7 @@ _RETIRED_TERMS = (
             ("帰属情報", "`Co-Authored-By:`"),
             ("保存依存", "`depends_on`"),
             ("口調の対比集", "ファイル名"),
-            ("lint緩和の判定", "`lint-relax-criteria.md`"),
+            ("lint緩和の判定", "`implementation-time.md`「緩和判断のフレーム」"),
             ("選定結果ファイル", "入力名`選定結果の出力先ファイル`"),
             ("固定出力ファイル", "入力名`選定結果の出力先ファイル`"),
             ("直前push OID", "なし（入力`直前にpushしたcommit`ごと撤去）"),

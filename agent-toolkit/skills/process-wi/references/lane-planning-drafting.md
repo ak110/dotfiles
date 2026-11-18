@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 計画する変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
+| 計画する変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics.md` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:atk-mode/references/cross-repository-submission.md` |
 | 旧形式WIの節を現行の責務へ対応付ける前 | `agent-toolkit:atk-mode/references/awi-body.md` |
 | 不具合対策の計画を起草する時 | `../../../share/exec-review-criteria.md` |
@@ -44,7 +44,7 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:at
   プロジェクト規範が指定する方針・障害の記録を読んだ成果は、守る条件と今回の採否・検証の対応として判断の根拠へ残し、記録の名前や取得済みであることは対応の根拠から除く。
   既存の判断を再利用する場合も、この対応付けは行う。
   一度作った対応は再利用し、同じ範囲の再調査は省く。
-  `agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」は常に実施する。
+  `agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」は常に実施する。
   評価条件は`agent-toolkit:atk-mode/references/awi-body.md`「既存箇所の見直し」に準拠する。
   不具合対策においては、`agent-basics:review-standards/references/reviewer-initial.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
 - `選定`の各項目における`鮮度`が`notice`であることのみを理由として作業を中断することは避ける。
@@ -65,7 +65,7 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:at
   同条件の受理済みレビューと検証を再利用し、各群のレビューは他群の完了を待たずに始める。
   文単位の大量書換えで意味の保持を確認する分担は、レーン担当の役割文書「操作区分」に従う。
 - 独立した複製環境での対照実験など時間を要する比較調査は、入力と版を固定でき独立複製へ出力可能であれば、通常の修正作業と並行して開始する。
-  開始前に`agent-basics:writing-standards/references/investigation-results.md`「実行結果の検証」の準備確認を終える。
+  開始前に`agent-basics:writing-standards/references/investigation.md`「実行結果の検証」の準備確認を終える。
   結果の到着を待つ工程のみを直列化する。
   作業順序は、先行成果、書き込み先、観測リソースの競合状況を考慮して決定し、`## 実施内容`へ明記する。
 - 検証コマンドを確定する前に`agent-basics:check-execution`を起動し、`references/verification-scope.md`の類型に基づいて変更範囲の検証対象を確定した上で、`## 検証`の`変更範囲の検証`へ追加する。
