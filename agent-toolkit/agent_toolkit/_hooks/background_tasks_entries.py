@@ -327,10 +327,8 @@ def _child_agent_launches(
     """
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except OSError:
+    except OSError, ValueError:
         return None
-    except ValueError:
-        return [], {}
     if not _is_direct_subagent_metadata(metadata):
         return [], {}
     child_entries = _read_child_transcript_entries(str(child_path))

@@ -1,6 +1,7 @@
 """background_tasks_nestedの契約テスト。"""
 
 import json
+import os
 import pathlib
 from unittest import mock
 
@@ -120,6 +121,25 @@ class TestIsPendingAsyncWork:
                 stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
         assert stop_hook() is True
         assert reads.call_count == 2
+
+    def test_corrupt_child_metadata_is_not_cached(self, tmp_path: pathlib.Path) -> None:
+        """破損した子metadataは保存せず、同じサイズ・mtime_nsの正しいmetadataへ置き換わった次の判定で孫Agentを待機中と判定する。"""
+        transcript = _write_nested_subagent_fixture(tmp_path, _COMPLETED_CHILD_ENTRIES, _GRANDCHILD_ENTRIES)
+        metadata_path = transcript.with_suffix("") / "subagents" / "agent-child-id.meta.json"
+        valid = metadata_path.read_text(encoding="utf-8")
+        metadata_path.write_text(valid[:-1] + "!", encoding="utf-8")
+        stat = metadata_path.stat()
+
+        def stop_hook() -> bool:
+            _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+            return is_pending_async_work(str(transcript), "", session_state=None)
+
+        assert stop_hook() is False
+        metadata_path.write_text(valid, encoding="utf-8")
+        os.utime(metadata_path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        assert metadata_path.stat().st_size == stat.st_size
+        assert metadata_path.stat().st_mtime_ns == stat.st_mtime_ns
+        assert stop_hook() is True
 
     def test_transient_child_read_failure_is_not_cached(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """子transcriptの一時的な読取失敗は同じ鍵で保存せず、次の判定で読めたら孫Agentを待機中と判定する。"""
