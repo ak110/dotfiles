@@ -306,9 +306,18 @@ class JsonRpcProcess:
             for future in tuple(self._pending.values()):
                 if not future.done():
                     future.set_exception(AppServerError(str(exc)))
+            # 失敗の報告を受けたsessionは終了として公開される。読まれない出力のままturnを続けさせないよう、先に止める。
+            try:
+                residual = await self.close()
+            except Exception as error:
+                _LOG.exception("出力を読めなくなったCodex App Serverを停止できません")
+                residual = [f"停止処理の失敗: {error!r}"]
+            reported = (
+                exc if not residual else AppServerError(f"{exc}; App Serverの停止を確認できない対象: {'; '.join(residual)}")
+            )
             if self._on_failure is not None:
                 with contextlib.suppress(Exception):
-                    await self._on_failure(exc)
+                    await self._on_failure(reported)
 
     async def _dispatch_stdout_line(self, raw_line: bytes) -> None:
         """復元済みの1 JSON-RPC recordを既存の応答・要求・通知処理へ渡す。"""
@@ -394,10 +403,10 @@ class JsonRpcProcess:
         """
         task = self._close_task
         if task is None or task.done() and (task.cancelled() or task.exception() is not None or task.result()):
-            task = self._close_task = asyncio.create_task(self._close())
+            task = self._close_task = asyncio.create_task(self._close(asyncio.current_task()))
         return await finish_task(task)
 
-    async def _close(self) -> list[str]:
+    async def _close(self, caller: asyncio.Task[Any] | None) -> list[str]:
         if self._closed and self.process is None and self._job is None and not self._residual and not self._unresolved:
             return []
         process = self.process
@@ -413,11 +422,8 @@ class JsonRpcProcess:
             )
         if not self._closed:
             self._closed = True
-            tasks = tuple(
-                task
-                for task in (self._reader_task, self._stderr_task)
-                if task is not None and task is not asyncio.current_task()
-            )
+            # 読取の失敗から閉じる読取task自身は、停止の完了を待つ側であり取り消さない。
+            tasks = tuple(task for task in (self._reader_task, self._stderr_task) if task is not None and task is not caller)
             self._reader_task = None
             self._stderr_task = None
             for task in tasks:

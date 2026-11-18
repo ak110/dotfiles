@@ -154,7 +154,13 @@ class CodexRepliesMixin:
             )
         client = self._owned_client(session)
         if client is None:
-            raise AppServerError("Codex App Server client is unavailable for interrupt")
+            failed = self._clients.get(session.session_id)
+            if failed is None or getattr(failed, "reader_failure", None) is None:
+                raise AppServerError("Codex App Server client is unavailable for interrupt")
+            # 受信を失った接続はApp Serverを止めてから失敗を報告する。中断要求は届かないため、その公開を終了として待つ。
+            async with self._condition:
+                await self._condition.wait_for(lambda: session.terminal)
+            return
         turn_id = session.turn_id
         stage = "送出確認待ち"
 

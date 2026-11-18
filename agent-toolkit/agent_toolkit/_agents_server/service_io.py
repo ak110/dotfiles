@@ -305,10 +305,23 @@ class CodexResource:
             _LOG.exception("App Serverイベントの受信処理が停止しました: sequence=%d", self._sequence)
             if self._closed or self._detached:
                 return
+            cause = f"App Serverイベントの受信処理が停止しました: {error!r}。"
+            # 先に失敗を記録し、停止中の要求を接続へ送らせない。
             self._reader_failure = AppServerError(
-                f"App Serverイベントの受信処理が停止しました: {error!r}。"
-                "次の操作: 管理サービスのログで停止の原因を確認し、同じ作業を新しい委譲先で起動し直してください。"
+                f"{cause}次の操作: 管理サービスのログで停止の原因を確認し、同じ作業を新しい委譲先で起動し直してください。"
             )
+            # 失敗の報告を受けたsessionは終了として公開される。turnを続けさせないよう、App Serverを先に止める。
+            # brokerの登録解除は`close`が行う。送出通知の空き待ちで止まった要求が残ると解除が終わらないため、ここでは待たない。
+            try:
+                residual = await self.resource.operation("call", operation="shutdown", arguments={})
+            except Exception as stop_error:
+                _LOG.exception("受信処理が停止したApp Serverを停止できません: sequence=%d", self._sequence)
+                residual = [f"停止要求の失敗: {stop_error!r}"]
+            if residual:
+                self._reader_failure = AppServerError(
+                    f"{cause}App Serverの停止を確認できない対象: {'; '.join(residual)}。"
+                    "次の操作: この対象の終了を確かめてから、同じ作業を新しい委譲先で起動し直してください。"
+                )
             await self._failure(self._reader_failure)
 
     async def _consume_events(self) -> None:
