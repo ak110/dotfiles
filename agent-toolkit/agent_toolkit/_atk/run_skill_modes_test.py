@@ -69,7 +69,7 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
     value = session_review.read(manifests[0])
     assert value["status"] == "completed" and len(value["prepared"]) == 2
     assert records[0]["argv"][-1] == (
-        ("/goal " if engine == "claude" else "") + '<atk-auto source="run-skill" kind="goal">\n'
+        '<atk-auto source="run-skill" kind="goal">\n'
         "このセッションが担当するスキル`agent-toolkit:review-session batch`の工程を完遂する"
         "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
     )
@@ -93,7 +93,7 @@ def test_final_goal_is_only_skill_completion(engine_env, monkeypatch, capsys, en
         '<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`my-skill`の工程を完遂する'
         "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
     )
-    assert _records(engine_env, "session")[0]["argv"][-1] == ("/goal " if engine == "claude" else "") + expected
+    assert _records(engine_env, "session")[0]["argv"][-1] == expected
     data = _startup_input(_records(engine_env, "session")[0], monkeypatch, capsys)
     assert data["arguments"] == data["free_text"] == arguments
     assert data["accepted_scopes"] == ["my-skill"]
@@ -138,4 +138,4 @@ def test_process_modes_reach_public_runner_with_original_arguments(engine_env, m
         f'<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`{expected_skill}`の工程を完遂する'
         "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
     )
-    assert record["argv"][-1] == ("/goal " if engine == "claude" else "") + expected
+    assert record["argv"][-1] == expected

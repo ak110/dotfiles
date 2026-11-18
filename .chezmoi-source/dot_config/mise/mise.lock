@@ -163,6 +163,23 @@ aube = { path = ".mise/locks/npm-typescript-language-server/6.0.3", digest = "sh
 backend = "npm:typescript-language-server"
 specifiers = ["latest"]
 
+[[tools.pnpm]]
+version = "12.19.0"
+backend = "aqua:pnpm/pnpm"
+specifiers = ["latest"]
+
+[tools.pnpm."platforms.linux-x64"]
+checksum = "sha256:bf37edf4e26c3b31c1cac42c769ffabcb9231e9bc728762aeb1ee86bc711684a"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.19.0/pnpm-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/729563509"
+provenance = "github-attestations"
+
+[tools.pnpm."platforms.windows-x64"]
+checksum = "sha256:1fa21198d4b9dfebabac985b6ab863bd4138d83ad07457d4eb0910cc2b3286c5"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.19.0/pnpm-win32-x64.zip"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/729563500"
+provenance = "github-attestations"
+
 [[tools.ripgrep]]
 version = "15.2.0"
 backend = "aqua:BurntSushi/ripgrep"

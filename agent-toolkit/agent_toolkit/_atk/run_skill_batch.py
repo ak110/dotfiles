@@ -88,11 +88,17 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         return notice
     env = plugin_environment.direct_environment(PLUGIN_ROOT, orchestrator.child_env(drop=(session_review.BATCH_ENV,)))
     # セッションのstdin/stdoutを保持せず、受付前の試行と受付後の実行記録で責任を分ける。
-    flags: dict[str, Any]
+    # Windowsのhook本体はlaunch.pyが所有するJob（KILL_ON_JOB_CLOSE）の中で動く。
+    # Jobから離脱しない子は、受付前にhookの終了と一緒に回収される。
+    attempts: list[dict[str, Any]]
     if sys.platform == "win32":
-        flags = {"creationflags": windows_job.HIDDEN_DETACHED_CREATIONFLAGS}
+        attempts = [
+            {"creationflags": windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_BREAKAWAY_FROM_JOB},
+            # 離脱を許さないJobの中では離脱指定の起動が失敗するため、所属を継承して起動する。
+            {"creationflags": windows_job.HIDDEN_DETACHED_CREATIONFLAGS},
+        ]
     else:
-        flags = {"start_new_session": True}
+        attempts = [{"start_new_session": True}]
     launch_id = uuid.uuid4().hex
     env[session_review.LAUNCH_ENV] = launch_id
     launch_path = session_review.directory() / "launches" / f"{launch_id}.json"
@@ -111,28 +117,33 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         value.save(launch_path)
         with log_path.open("ab") as log:
             # hook終了後も生存確認できるようPIDを保存し、親が存続する間はスレッドで回収する。
-            try:
-                # 時間上限なし: 長時間の子セッションの実行そのものであり、終了は監督の仕組みが扱う。
-                process = subprocess.Popen(  # pylint: disable=consider-using-with
-                    diagnostic_process.command(
-                        [
-                            sys.executable,
-                            str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
-                            "run-skill",
-                            "--args",
-                            "batch",
-                            "agent-toolkit:review-session",
-                        ]
-                    ),
-                    cwd=PLUGIN_ROOT,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=log,
-                    **flags,
-                )
-            except OSError as error:
-                log.write(redact_secrets(str(error)).encode("utf-8"))
+            # 時間上限なし: 長時間の子セッションの実行そのものであり、終了は監督の仕組みが扱う。
+            failures: list[str] = []
+            for flags in attempts:
+                try:
+                    process = subprocess.Popen(  # pylint: disable=consider-using-with
+                        diagnostic_process.command(
+                            [
+                                sys.executable,
+                                str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
+                                "run-skill",
+                                "--args",
+                                "batch",
+                                "agent-toolkit:review-session",
+                            ]
+                        ),
+                        cwd=PLUGIN_ROOT,
+                        env=env,
+                        stdin=subprocess.DEVNULL,
+                        stdout=log,
+                        stderr=log,
+                        **flags,
+                    )
+                    break
+                except OSError as error:
+                    failures.append(redact_secrets(f"{flags}: {error}"))
+            else:
+                log.write("\n".join(failures).encode("utf-8"))
                 value.attach(None).save(launch_path)
                 return notice
         identity = session_registry.ProcessIdentity.of(process.pid)

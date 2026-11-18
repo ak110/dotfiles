@@ -574,6 +574,8 @@ _CODEX_HOOK_TRUST_NOTICE = (
 _UV_HARDLINK_FALLBACK = "warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance."
 """uvがhardlinkできず複製へ切り替えたときの診断。導入は完了しており、更新の失敗ではない。"""
 
+_SHADOWING_INSTALL = re.compile(r"重複ツールの削除: (?P<found>.+?)がmise管理の\S+より先にPATHへあるため、")
+
 _MISSING_PATH_ENTRY = re.compile(r"PATH 整理: ユーザー PATH に存在しないエントリーを検出: \S.* \(展開: (?P<expanded>.+?)\)。")
 
 
@@ -590,6 +592,12 @@ def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
         return True
     # 隔離homeへUSERPROFILE等を差し替えると、ランナー本来のユーザーPATHの`%USERPROFILE%`などを含む項目が
     # 隔離home配下へ展開され、実在しない項目として報告される。展開先が隔離home配下の項目だけを許容する。
+    # 検証はmiseを有効化しないPATHで動くため、ランナーに導入済みの同名コマンドがmise管理版より先に見つかる。
+    # 隔離home外の導入物への削除案内だけを許容し、隔離home内の導入物（dotfilesが作ったもの）の警告は失敗とする。
+    if (match := _SHADOWING_INSTALL.match(message)) is not None:
+        found = os.path.normcase(os.path.normpath(match["found"]))
+        root = os.path.normcase(os.path.normpath(home))
+        return not (found == root or found.startswith(root + os.sep))
     if (match := _MISSING_PATH_ENTRY.match(message)) is not None:
         expanded = os.path.normcase(os.path.normpath(match["expanded"]))
         root = os.path.normcase(os.path.normpath(home))

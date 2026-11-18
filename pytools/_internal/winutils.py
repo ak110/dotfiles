@@ -68,6 +68,16 @@ def write_user_env_var(name: str, value: str, reg_type: int) -> None:
         wr.SetValueEx(key, name, 0, reg_type, value)
 
 
+def delete_user_env_var(name: str) -> None:
+    r"""`HKCU\\Environment`からユーザー環境変数を削除する。未登録なら何もしない。"""
+    wr = import_winreg()
+    with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_SET_VALUE) as key:
+        try:
+            wr.DeleteValue(key, name)
+        except FileNotFoundError:
+            return
+
+
 def broadcast_environment_change() -> None:
     """Explorer等に環境変数変更を通知する（`WM_SETTINGCHANGE` / `Environment`）。
 

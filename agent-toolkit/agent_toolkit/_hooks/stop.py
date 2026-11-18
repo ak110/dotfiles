@@ -39,6 +39,7 @@ CHECK_MODULE_NAMES = (
     "response_language_advisor",
     "busy_loop_guard",
     "autonomous_exit",
+    "run_skill_report_gate",
     "plan_save_advisor",
     "agents_server_session_advisor",
     "user_response_advisor",

@@ -20,7 +20,7 @@ __all__ = ["_engine_env", "_records", "_run", "_startup_input"]
 
 
 def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, capsys: pytest.CaptureFixture[str]) -> None:
-    """Claude候補を採用した起動は非対話の`/goal`付きで対象リポジトリのrootから始まり、成功行でログの場所を示す。
+    """Claude候補を採用した起動はホストの`/goal`を付けない目的文で対象リポジトリのrootから始まり、成功行でログの場所を示す。
 
     目的文に報告用UWIの保存と過去の実行のUWIの適用が欠けると、定期実行の結果がユーザーへ届かず、
     回答済みの対応も実施されない。
@@ -44,7 +44,7 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
         assert argv[argv.index(option) + 1] == value
     session_id = argv[argv.index("--session-id") + 1]
     assert argv[-1] == (
-        '/goal <atk-auto source="run-skill" kind="goal">\n'
+        '<atk-auto source="run-skill" kind="goal">\n'
         "このセッションが担当するスキル`example-plugin:check-logs`の工程を完遂する"
         "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
     )
@@ -87,7 +87,7 @@ def test_background_setting_is_limited_to_claude_child(engine_env, monkeypatch, 
 def test_codex_session_receives_goal_without_slash_command(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Codexは非対話起動で`/goal`を目標として扱わないため、`atk-auto`要素の目的文だけを渡す。"""
+    """Codexにも`atk-auto`要素の目的文だけを渡す。"""
     set_orchestrate_environment(monkeypatch, "codex:gpt-5.6-sol/low")
 
     code, _out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)

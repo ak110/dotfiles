@@ -90,11 +90,13 @@ def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_
             "npm:@google/gemini-cli",
             "npm:typescript",
             "npm:typescript-language-server",
+            "pnpm",
         }
         if mode == "full"
         else set()
     )
     assert ("node" in tools) == (mode == "full")
+    assert ("pnpm" in tools) == (mode == "full")
     development = {
         "actionlint",
         "github:editorconfig-checker/editorconfig-checker",

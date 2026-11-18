@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit._agents_server import service, service_io, service_transport
+from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._common import runtime_environment
 from agent_toolkit._common.atomic_file import atomic_write
@@ -138,6 +139,59 @@ async def test_origin_resource_survives_three_owners_without_old_decoder(tmp_pat
             assert raw.closed == 1
     finally:
         for client in clients:
+            await client.detach()
+        stop.set()
+        await asyncio.wait_for(serving, 10)
+
+
+@pytest.mark.asyncio
+async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.Path) -> None:
+    caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
+    directory = service_transport.namespace(caller)
+    broker = ResourceBroker("G1")
+    stop = asyncio.Event()
+    serving = asyncio.create_task(service.run(directory, "G1", stop=stop, resources=broker))
+    raw: _RawCodex | None = None
+    client: service_io.CodexResource | None = None
+    failures: asyncio.Queue[BaseException] = asyncio.Queue()
+
+    async def save() -> None:
+        raise RuntimeError("保存の失敗")
+
+    async def notification(_message: dict) -> None:
+        pass
+
+    async def unexpected(_value: Any) -> None:
+        pytest.fail("未発生のイベントを受信した")
+
+    async def failure(error: BaseException) -> None:
+        failures.put_nowait(error)
+
+    def factory(*args: Any) -> _RawCodex:
+        nonlocal raw
+        raw = _RawCodex(*args)
+        return raw
+
+    try:
+        async with asyncio.timeout(10):
+            ready = directory / "G1.json"
+            while not ready.exists():
+                if serving.done():
+                    await serving
+                await asyncio.sleep(0)
+            origin = json.loads(ready.read_text(encoding="utf-8"))
+            broker.owner_identity = origin["server_instance"]
+            runtime = service_io.Runtime("G1", origin, broker, save)
+            client = service_io.CodexResource.create(runtime, factory, notification, unexpected, failure)
+            await client.start()
+            assert raw is not None
+            await raw.notification({"value": "1"})
+            error = await failures.get()
+            assert isinstance(error, AppServerError)
+            assert "保存の失敗" in str(error)
+            assert client.reader_failure is error
+    finally:
+        if client is not None:
             await client.detach()
         stop.set()
         await asyncio.wait_for(serving, 10)

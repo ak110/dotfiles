@@ -45,6 +45,7 @@ from pytools._internal import (
     log_format,
     post_apply_outcome,
     prune_claude_plugin_cache,
+    prune_foreign_tools,
     prune_installation,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
@@ -402,6 +403,7 @@ _CODEX_SNAPSHOT = "Codex plugin snapshot の生成"
 _LEGACY_CODEX_MCP = "旧Codex User scope MCP登録の移行"
 _ATK_SERVE = "atk serve 自動起動セットアップ (Linux)"
 _AGENTS_WARMUP = "agents_serverのuv環境ウォームアップ"
+_FOREIGN_TOOLS = "mise 管理ツールと重複する導入物の削除"
 
 # 先行工程は、同じ資源（設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、
 # plugin cache、Claude Code pluginの複製元である`agent-toolkit/`（`.venv`を含む）、systemd、
@@ -419,7 +421,10 @@ DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec(_NPM_SUPPLY_CHAIN, update_npmrc.run),
     # Windowsでは bin PATH 登録と同じユーザーPATHを読んで書き戻す。
     _StepSpec(_MISE, setup_mise.run, after=(_NPM_SUPPLY_CHAIN, _BIN_PATH)),
-    _StepSpec("pnpm サプライチェーン対策", update_npmrc.configure_pnpm, after=(_MISE,)),
+    # mise管理版を確かめてから削除する。npmのグローバル領域とユーザーPATHを書き換える。
+    _StepSpec(_FOREIGN_TOOLS, prune_foreign_tools.run, after=(_MISE, _BIN_PATH)),
+    # 削除後に残るmise管理版のpnpmを設定する。
+    _StepSpec("pnpm サプライチェーン対策", update_npmrc.configure_pnpm, after=(_MISE, _FOREIGN_TOOLS)),
     # miseのinstalls・shimsを操作し、codexを起動するため診断ログの復元後に実行する。
     _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, _CODEX_LOGS), full_only=True),
     _StepSpec(_CODEX_CLAUDE_MCP, remove_codex_claude_mcp.run, after=(_CODEX_CLI,), full_only=True),

@@ -38,7 +38,7 @@ class TestProcessLoopPromptAndEnv:
     def test_manifest_goal_keeps_host_specific_delivery(
         self, tmp_path: pathlib.Path, orchestrator: str, resume: str | None
     ) -> None:
-        """manifest付き目標は新規・再開ともClaudeだけに/goalを付けて配送する。"""
+        """目的文は新規・再開とも全engineへホストの/goalを付けずに配送する。"""
         prompt = _pl_session.build_process_loop_prompt()
         argv, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
             argparse.Namespace(resume=resume),
@@ -55,7 +55,7 @@ class TestProcessLoopPromptAndEnv:
             "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
             "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
         )
-        assert argv[-1] == ("/goal " if orchestrator == "claude" else "") + expected
+        assert argv[-1] == expected
 
     def test_prompt_does_not_inject_publish_destination(self) -> None:
         """対象リポジトリ固有の公開先をprocess-loopが目的文へ注入しない。"""
