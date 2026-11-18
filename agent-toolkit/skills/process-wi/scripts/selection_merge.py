@@ -132,6 +132,8 @@ def transfer_wi(existing: dict[str, object], name: str, destination: str, cost_u
     初回割当・統合済み・凍結した再開計画を持つWIは移さない。
     所要時間の更新は、移した後に残る移管元と移管先の最終値を受け取る。
     移管元が空になる場合は、そのレーン行を除く。
+    移管元は移したWIの`移管元レーン`へ残し、累計のレーン上限に数える。
+    レーン間の重なりの記録は移管先へ付け替え、同じレーン同士・移管後に重ならない組の記録を除く。
     """
     result = copy.deepcopy(existing)
     items = _rows(result)
@@ -166,6 +168,8 @@ def transfer_wi(existing: dict[str, object], name: str, destination: str, cost_u
     _pin_integrated_items(items, _selection.integrated_lanes(result))
     item[_selection.LANE_KEY] = destination
     item.pop(_selection.INTEGRATION_STATE_KEY, None)
+    history = typing.cast(list[str], item.get(_selection.TRANSFERRED_FROM_KEY, []))
+    item[_selection.TRANSFERRED_FROM_KEY] = list(dict.fromkeys([*history, source]))
     for lane, update in typing.cast(dict[str, dict[str, object]], cost_updates).items():
         rows[lane].update(update)
     rows[destination][_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED

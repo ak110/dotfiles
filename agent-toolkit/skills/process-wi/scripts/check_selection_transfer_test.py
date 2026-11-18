@@ -201,6 +201,48 @@ def test_transfer_drops_emptied_source_lane(env: tuple[pathlib.Path, pathlib.Pat
     assert [row["レーン"] for row in after["レーンの所要時間"]] == ["lane-01", "lane-02"]
 
 
+def test_emptied_source_lane_still_counts_toward_cumulative_bound(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """移管で空にしたレーンも累計のレーン数に数え、後の追加で上限B=3を超える新設を拒否する。"""
+    repo, notes = env
+    path = _selection(tmp_path, repo, notes)
+    assert _transfer(path, repo, tmp_path, "d.md", "lane-02", {"lane-02": _COST}) == 0
+    saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert next(item for item in saved["選定"] if item["WI"] == "d.md")["移管元レーン"] == ["lane-03"]
+    (repo / "target-4.md").write_text("x", encoding="utf-8")
+    _awi(notes, "e.md", "`target-4.md`を変える。")
+    addition = tmp_path / "addition.yaml"
+    addition.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [
+                    {
+                        "WI": "e.md",
+                        "レーン": "lane-new",
+                        "鮮度": {"status": "current", "later_commit_count": 0},
+                        "書込対象": ["target-4.md"],
+                    }
+                ],
+                "レーンの所要時間": [{"レーン": "lane-new", **_COST}],
+                "見込みの補正": saved["見込みの補正"],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    lane_map = tmp_path / "lane-map.json"
+    lane_map.write_text(json.dumps({"lane-new": "lane-04"}), encoding="utf-8")
+    before = path.read_bytes()
+    capsys.readouterr()
+    code = _dispatch(
+        str(path), "--merge", str(addition), "--lane-map", str(lane_map), "--output", str(path), "--work-dir", str(repo)
+    )
+    assert code == 1
+    assert "上限B=3、実レーン数=4" in capsys.readouterr().err
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize(
     "case", ["initial", "integrated", "frozen-plan", "unknown-wi", "same-lane", "unknown-lane", "no-update"]
 )
