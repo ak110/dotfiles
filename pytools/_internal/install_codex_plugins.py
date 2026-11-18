@@ -450,7 +450,7 @@ def _codex_processes_using_plugin() -> tuple[str, ...]:
 def _saved_cache_root(marketplace_name: str, plugin_name: str) -> Path:
     """CLI更新中に旧versionを退避する場所を返す。
 
-    cacheと同じボリュームに置いて版ディレクトリを移動だけで退避・復元し、CLIが旧versionを削除する手間も省く。
+    cacheと同じ`CODEX_HOME`の配下に置き、通常は版ディレクトリの名前の変更だけで退避・復元する。
     場所を固定し、中断した実行が残した退避は次回の実行が戻す。
     """
     return _codex_home() / ".dotfiles-plugin-cache-saved" / marketplace_name / plugin_name
@@ -479,26 +479,49 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
     """退避したversionを元のパスへ戻し、退避先を削除する。
 
     `rollback`では元のパスに現れた内容を退避した内容で置き換え、それ以外では既存の内容を残す。
+    置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
     `installed_version`の退避はCLIが作成した内容を残すため戻さない。
     """
     if not saved_root.is_dir():
         return
     for source in saved_root.iterdir():
+        if not source.is_dir():
+            continue
         destination = cache_root / source.name
-        if rollback and _path_exists(destination):
-            if _is_link(destination):
-                _unlink(destination)
-            else:
-                shutil.rmtree(destination)
+        replace_marker = saved_root / f"{source.name}~replace"
+        if (rollback or replace_marker.exists()) and _path_exists(destination):
+            replace_marker.touch()
+            _remove_tree(destination)
         if source.name == installed_version or _path_exists(destination):
+            replace_marker.unlink(missing_ok=True)
             shutil.rmtree(source)
             continue
         cache_root.mkdir(parents=True, exist_ok=True)
-        source.rename(destination)
+        staging = cache_root / f"{source.name}~restoring"
+        if _path_exists(staging):
+            _remove_tree(staging)
+        try:
+            source.rename(destination)
+        except OSError:
+            # cacheが別ボリュームへのリンクやマウントの配下にあると名前の変更ができないため、
+            # 複製を仕上げてから元のパスへ置き、その後に退避を削除する。
+            shutil.copytree(source, staging, symlinks=True)
+            staging.rename(destination)
+            replace_marker.unlink(missing_ok=True)
+            shutil.rmtree(source)
+        else:
+            replace_marker.unlink(missing_ok=True)
     saved_root.rmdir()
     for parent in (saved_root.parent, saved_root.parent.parent):
         with contextlib.suppress(OSError):
             parent.rmdir()
+
+
+def _remove_tree(path: Path) -> None:
+    if _is_link(path):
+        _unlink(path)
+    else:
+        shutil.rmtree(path)
 
 
 def _sync_local_plugin(

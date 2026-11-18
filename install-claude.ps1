@@ -189,7 +189,7 @@ function Test-CodexPluginStateChanged {
         $beforeState.Enabled -ne $afterState.Enabled
 }
 
-# 旧versionはcacheと同じボリュームの固定の退避先へ移動し、使用中で移動できない版だけ複製する。
+# 旧versionはCODEX_HOME直下の固定の退避先へ移動し、使用中や別ボリュームで移動できない版だけ複製する。
 # 中断した実行が残した退避は、次回の実行がRestore-CodexPluginCacheSnapshotで戻す。
 # 目標versionはCLIが置き換えるため元の場所に残して複製し、plugin addの失敗時に戻せるようにする。
 function Move-CodexPluginCacheSnapshot {
@@ -213,15 +213,31 @@ function Restore-CodexPluginCacheSnapshot {
     if (-not (Test-Path -LiteralPath $savedRoot -PathType Container)) { return }
     foreach ($saved in @(Get-ChildItem -LiteralPath $savedRoot -Directory)) {
         $destination = Join-Path $codexPluginCacheRoot $saved.Name
-        if ($replaceExisting -and (Test-Path -LiteralPath $destination)) {
+        # 置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
+        $replaceMarker = Join-Path $savedRoot "$($saved.Name)~replace"
+        if (($replaceExisting -or (Test-Path -LiteralPath $replaceMarker)) -and (Test-Path -LiteralPath $destination)) {
+            New-Item -ItemType File -Path $replaceMarker -Force | Out-Null
             Remove-Item -LiteralPath $destination -Recurse -Force
         }
         if ($saved.Name -eq $installedVersion -or (Test-Path -LiteralPath $destination)) {
+            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $saved.FullName -Recurse -Force
             continue
         }
         New-Item -ItemType Directory -Path $codexPluginCacheRoot -Force | Out-Null
-        [IO.Directory]::Move($saved.FullName, $destination)
+        $staging = "$destination~restoring"
+        if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+        try {
+            [IO.Directory]::Move($saved.FullName, $destination)
+            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
+        } catch {
+            # cacheが別ボリュームへのリンクやjunctionの配下にあると移動できないため、
+            # 複製を仕上げてから元のパスへ置き、その後に退避を削除する。
+            Copy-Item -LiteralPath $saved.FullName -Destination $staging -Recurse
+            [IO.Directory]::Move($staging, $destination)
+            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $saved.FullName -Recurse -Force
+        }
     }
     # 退避先は名前が.で始まり、Linux・macOSのPowerShellでは隠し項目になるため-Forceで削除する。
     Remove-Item -LiteralPath $savedRoot -Force

@@ -238,7 +238,7 @@ raise SystemExit(1)
 PY
 }
 
-# 旧versionはcacheと同じボリュームの固定の退避先へ移動し、移動できない版だけ複製する。
+# 旧versionはCODEX_HOME直下の固定の退避先へ移動する。別ボリュームではmvが複製する。
 # 中断した実行が残した退避は、次回の実行が_restore_codex_plugin_cachesで戻す。
 # 目標versionはCLIが置き換えるため元の場所に残して複製し、plugin addの失敗時に戻せるようにする。
 _snapshot_codex_plugin_caches() {
@@ -258,6 +258,10 @@ _snapshot_codex_plugin_caches() {
     done
 }
 
+_path_device() {
+    stat -L -c %d -- "$1" 2>/dev/null || stat -L -f %d -- "$1"
+}
+
 _restore_codex_plugin_caches() {
     local saved_root="$1"
     local installed_version="$2"
@@ -265,20 +269,42 @@ _restore_codex_plugin_caches() {
     local saved=""
     local version=""
     local destination=""
+    local replace_marker=""
+    local staging=""
+    local same_volume=0
     [ -d "$saved_root" ] || return 0
+    mkdir -p "$CODEX_PLUGIN_CACHE_ROOT" || return 1
+    if [ "$(_path_device "$saved_root")" = "$(_path_device "$CODEX_PLUGIN_CACHE_ROOT")" ]; then
+        same_volume=1
+    fi
     for saved in "$saved_root"/*; do
         [ -d "$saved" ] || continue
         version=${saved##*/}
         destination="$CODEX_PLUGIN_CACHE_ROOT/$version"
-        if [ "$replace_existing" -eq 1 ] && { [ -e "$destination" ] || [ -L "$destination" ]; }; then
+        # 置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
+        replace_marker="$saved_root/$version~replace"
+        if { [ "$replace_existing" -eq 1 ] || [ -e "$replace_marker" ]; } && { [ -e "$destination" ] || [ -L "$destination" ]; }; then
+            : >"$replace_marker" || return 1
             rm -rf "$destination" || return 1
         fi
         if [ "$version" = "$installed_version" ] || [ -e "$destination" ] || [ -L "$destination" ]; then
+            rm -f "$replace_marker" || return 1
             rm -rf "$saved" || return 1
             continue
         fi
-        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT" || return 1
-        mv "$saved" "$destination" || return 1
+        staging="$destination~restoring"
+        rm -rf "$staging" || return 1
+        if [ "$same_volume" -eq 1 ]; then
+            mv "$saved" "$destination" || return 1
+            rm -f "$replace_marker" || return 1
+        else
+            # 別ボリュームのmvは複製と削除を兼ね、途中の失敗で元のパスに欠けた版を残し得るため、
+            # 複製を仕上げてから元のパスへ置き、その後に退避を削除する。
+            cp -a "$saved" "$staging" || return 1
+            mv "$staging" "$destination" || return 1
+            rm -f "$replace_marker" || return 1
+            rm -rf "$saved" || return 1
+        fi
     done
     rmdir "$saved_root" || return 1
     rmdir "${saved_root%/*}" "${saved_root%/*/*}" 2>/dev/null || true

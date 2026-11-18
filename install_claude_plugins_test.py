@@ -1,9 +1,11 @@
 """統合インストーラーの主題別公開契約を検証する。"""
 
 import json
+import os
 import pathlib
 import shutil
 import sys
+import tempfile
 
 import pytest
 
@@ -56,11 +58,25 @@ def test_restart_notice_requires_codex_plugin_state_change(
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_plugin_update_preserves_all_previous_cache_versions(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """更新時は全ての通常versionディレクトリを保持し、互換リンクは復元しない。"""
+@pytest.mark.parametrize("other_volume", [False, True], ids=["same-volume", "other-volume"])
+def test_plugin_update_preserves_all_previous_cache_versions(
+    kind: str, other_volume: bool, tmp_path: pathlib.Path, rules_url: str, request: pytest.FixtureRequest
+) -> None:
+    """更新時は全ての通常versionディレクトリを保持し、互換リンクは復元しない。
+
+    Codexのpluginsが別ボリュームへのリンクの配下にあり、退避先との間で名前の変更による移動ができない構成も含む。
+    """
     home = tmp_path / "home"
     home.mkdir()
     codex_home = tmp_path / "custom-codex"
+    codex_home.mkdir()
+    if other_volume:
+        shm = pathlib.Path("/dev/shm")
+        if not shm.is_dir() or shm.stat().st_dev == tmp_path.stat().st_dev:
+            pytest.skip("試験用の一時ディレクトリと別のボリュームが無い")
+        plugins = pathlib.Path(tempfile.mkdtemp(prefix="codex-plugins-", dir=shm))
+        request.addfinalizer(lambda: shutil.rmtree(plugins))
+        (codex_home / "plugins").symlink_to(plugins, target_is_directory=True)
     cache_root = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"
     old_compat = cache_root / "1.2.1"
     old_compat.parent.mkdir(parents=True)
@@ -83,8 +99,10 @@ def test_plugin_update_preserves_all_previous_cache_versions(kind: str, tmp_path
 
     assert not (codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions").exists()
     assert not old_compat.is_symlink()
+    assert {path.name for path in cache_root.iterdir()} == {"1.2.0", "1.2.2", "1.2.3"}
     assert (cache_root / "1.2.0" / "scripts" / "hook.py").read_text(encoding="utf-8") == "older hook\n"
     assert (cache_root / "1.2.2" / "scripts" / "hook.py").read_text(encoding="utf-8") == "old hook\n"
+    assert not (codex_home / ".dotfiles-plugin-cache-saved").exists()
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
@@ -328,6 +346,54 @@ def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: path
         assert (cache_root / relative).read_bytes() == body
     assert (cache_root / "1.2.2/scripts/hook.py").read_bytes() == b"old hook\n"
     assert not (home / ".codex/.dotfiles-plugin-cache-saved").exists()
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0, reason="権限で削除と移動を妨げられる一般利用者で試す")
+@pytest.mark.parametrize("kind", installer_runners())
+def test_partial_rollback_is_replaced_from_backup_by_next_run(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """巻き戻しが元のパスを途中まで消して失敗しても、次回の実行が退避した完全な版で置き換える。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = home / ".codex"
+    locked = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.1"
+    (locked / "scripts").mkdir(parents=True)
+    (locked / "scripts/hook.py").write_text("older hook\n", encoding="utf-8")
+    # 書込みを拒む版は移動できずに複製で退避され、配下の削除は中身だけ消えて途中で失敗する。
+    locked.chmod(0o555)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+    try:
+        result = run_installer(
+            kind,
+            home,
+            rules_url,
+            stub_bin=stub_bin,
+            stub_log=stub_log,
+            fail_pattern="codex plugin add agent-toolkit",
+            codex_plugin_before=("1.2.2", True),
+            codex_home=codex_home,
+            delete_cache_before_failure=True,
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "復旧に失敗" in result.stderr
+        assert not (locked / "scripts/hook.py").exists()
+    finally:
+        # 使用の終了に当たる。複製が権限を引き継ぐ実装もあるため、退避した側も戻す。
+        for path in (locked, codex_home / ".dotfiles-plugin-cache-saved/ak110-dotfiles/agent-toolkit/1.2.1"):
+            if path.is_dir():
+                path.chmod(0o755)
+
+    run_installer(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.3", True),
+        codex_home=codex_home,
+    )
+    assert (locked / "scripts/hook.py").read_text(encoding="utf-8") == "older hook\n"
+    assert not (codex_home / ".dotfiles-plugin-cache-saved").exists()
 
 
 @pytest.mark.parametrize("kind", installer_runners())

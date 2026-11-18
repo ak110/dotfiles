@@ -25,9 +25,14 @@ Codex 0.166.0の操作lock待機375秒、停止猶予最大300秒、強制終了
 現行versionの導入はCodex CLIへ委ねる。
 更新処理は`plugin add`の前に、通常のversionディレクトリを`CODEX_HOME`直下の固定の退避先（`.dotfiles-plugin-cache-saved/<marketplace>/<plugin>/`）へ移動する。
 導入後の状態確認とdaemon処理を含む最後のCodex CLI呼出後に、目標version以外を同じ絶対パスへ戻す。
-退避先はcacheと同じボリュームにあるため、退避と復元はversionごとの名前の変更で済み、旧versionの数とファイル数に比例する複製・削除を伴わない。
+退避先とcacheが同じボリュームにある通常の構成では、退避と復元はversionごとの名前の変更で済み、旧versionの数とファイル数に比例する複製・削除を伴わない。
+`plugins`や`plugins/cache`が別ボリュームへのリンク・マウント・junctionの配下にある構成も許容し、名前の変更が失敗したversionは複製で退避・復元する。
+複製で戻す場合は元のパスの隣（`<version>~restoring`）で複製を仕上げてから名前の変更で元のパスへ置き、その後に退避を削除するため、途中で失敗しても欠けた版を元のパスに残さない。
 目標versionと、Windowsで使用中のファイルを含むなどの理由で移動できないversionは元の場所に残して複製し、元の実体はCLIの処理に任せる。
 移動先と同じversionが元のパスに再作成されていた場合（`atk-hook`の復旧など）は、再作成された実体を残して退避した側を削除する。
+`plugin add`の失敗後の巻き戻しは元のパスの内容を退避した内容で置き換える。
+元のパスの削除が途中で失敗した場合に備えて、削除の前に退避先へ`<version>~replace`の印を置き、置き換えを終えてから消す。
+印の残るversionは、次回の実行も途中まで消えた元のパスより退避した内容を優先して置き換える。
 強制終了などで復元前に中断した場合は退避先が残り、次回の更新処理が`plugin add`の判定より前に同じ規則で戻す。
 退避から復旧までを1つの保護区間とし、復旧後はCodexを使う処理へ戻らず更新関数を終了する。
 これにより個別コマンドのcache副作用を前提とせず、更新関数の終了時に既存セッションが参照する全旧パスの存在を保証する。
@@ -66,7 +71,7 @@ agent-toolkitの更新では旧versionを自動復旧し、Codexの稼働状態�
 
 | 処理 | 参照の判定 | 延期後の再開 |
 | --- | --- | --- |
-| Codexのpost-apply更新（`install_codex_plugins.py`） | 更新前の全通常versionディレクトリを同じボリュームの退避先へ移動し、CLIの処理後に同じ絶対パスへ戻す | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗は導入成功と区別して報告し、退避先を残して次回の実行で戻す |
+| Codexのpost-apply更新（`install_codex_plugins.py`） | 更新前の全通常versionディレクトリを`CODEX_HOME`直下の退避先へ移動し、CLIの処理後に同じ絶対パスへ戻す | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗は導入成功と区別して報告し、退避先を残して次回の実行で戻す |
 | 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | post-apply更新と同じ退避先へ、更新前の全通常versionディレクトリを移動する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗時は退避先と報告先を表示して非0で終わり、次回の実行で戻す |
 | Claude Codeの旧版cache整理（`prune_claude_plugin_cache.py`） | `claude_plugin_references.py`。その版の配下を指すプロセスと、その版が現行だった期間に起動したClaude Codeセッション | 参照の終了後の`update-dotfiles`で削除する |
 | Claude Codeの現行版cache欠落修復（`install_claude_plugins.py`） | `claude_plugin_references.py`。導入先を指すプロセスと、起動時刻を問わない稼働中のClaude Codeセッション | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではClaude Codeのセッションを全て終了してから`update-dotfiles`を再実行する |
