@@ -17,6 +17,18 @@ CLIのスキーマ記述は`idle`を、保留した結果の送出と背景エ�
 同じ版の組で上記の環境変数を与えた委譲先へ背景実行の`sleep 2`と即時のturn終了を指示して再検証する。
 Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の全メッセージの種別、`subtype`、`state`、`origin`を到着順に保存して比べる。
 
+## agent-toolkit/agent_toolkit/_agents_server/claude.py：CLIプロセスの終了とバックグラウンドタスクの通知：2026年11月19日
+
+2026年11月19日、Claude Code 2.1.327とClaude Agent SDK 0.2.182で、バックグラウンドタスクの終了が`ClaudeSDKClient.receive_messages()`へ届く形を確かめた。
+haikuの会話に`sleep 901`と`sleep 902`を背景実行させ、前者だけを同じturnで停止させて返答させた後、`disconnect()`でCLIを終了し、同じ会話IDを`resume`に指定した新しいクライアントで1turnを実行した。
+同じturnで止めたタスクには`TaskUpdatedMessage`（`status`は`killed`）と`TaskNotificationMessage`（`status`は`stopped`）が続けて届いた。
+`disconnect()`の時点で稼働していたタスクについては、受信列は何も届けずに終端し、`sleep`のプロセスは残らなかった。
+会話記録には、CLIの終了時刻の`queue-operation`（`enqueue`）として`<status>killed</status>`を持つ`<task-notification>`が残った。
+新しいクライアントでは、そのタスクの`TaskNotificationMessage`（`status`は`stopped`）が`SystemMessage`（`init`）より前に届いた。
+`summary`は前の会話の終了までに完了しなかった旨である。
+続いて、`origin.kind`が`task-notification`で本文が空の`ResultMessage`、2つ目の`init`、依頼したturnの`ResultMessage`の順に届いた。
+再検証は同じ版の組で同じ手順を実行し、`receive_messages()`の全メッセージの種別、`task_id`、`status`を到着順に保存して、会話記録の`queue-operation`と比べる。
+
 ## agent-toolkit/agent_toolkit/_agents_server/codex.py：コンパクション計測通知：2026年9月10日
 
 2026年9月10日、Codex CLI 0.153.4の`codex app-server generate-json-schema --out <管理対象一時領域の絶対パス>`が終了コード0で生成したJSON Schemaを検証した。

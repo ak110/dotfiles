@@ -229,6 +229,9 @@ class ClaudeServerManager(ClaudeStream):
         isolation_env_files = selected_connection.isolation_env_files
         await self._stop_owned_task(session_id)
         if existing_session is not None:
+            # バックグラウンドタスクは止めた旧CLIプロセスに属し、プロセスの終了で止まる。旧プロセスは受信列へ
+            # 終了を通知せず、新しいプロセスの`stopped`の通知は初期化メッセージより前に届くため、ここで追跡を終える。
+            existing_session.live_tasks.clear()
             begin_reply(existing_session, preserve_waits=True)
         selected = connection_kind
         role = "orchestrator" if model_type == "orchestrate" else "delegate"
