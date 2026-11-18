@@ -486,10 +486,12 @@ HELP: dict[str, dict[str, str]] = {
         "\n前提: `--round`と`--track`は全件共通。単数形は`--level`・`--location-file`・`--issue-file`を使う。"
         "複数件は`--items-file`へUTF-8の非空JSON配列を渡す。"
         "各要素は文字列location・issue・levelの3必須キーだけを持ち、levelは要件・仕様・詳細・実装から選ぶ。"
-        '例: [{"location":"対象の位置","issue":"指摘本文","level":"仕様"}]。'
+        '例（--round=2）: [{"location":"対象の位置","issue":"指摘本文\\n類似見直し完了件数: 2\\n区分: 新しい変更","level":"仕様"}]。'
+        "round 1では区分の行を省ける。"
         "単数形の3オプションと配列入力は併用できない。"
         "指摘内容は`類似見直し完了件数:`を行頭に置き、同じ行へ類似見直しで確かめた箇所の件数を整数だけで書く。"
-        "2以上のroundでは`区分:`の行を1つ置き、同じ行へ前回から残存・修正に起因・前回の見落とし・新しい変更・要求追加のいずれか1つだけを書く（補足は別の行へ書く）。"
+        "2以上のroundでは`区分:`の行を1つ置き、同じ行へ修正に起因・前回の見落とし・新しい変更・要求追加のいずれか1つだけを書く（補足は別の行へ書く）。"
+        "前回の指摘が残る区分「前回から残存」の行は、`atk review-table recheck`の対応不十分・未対応が登録するため、addでは受け付けない。"
         "指摘箇所が`担当の記録:`で始まる行は、この2つのラベルを求めない。"
         "各ラベルに書く内容は`agent-toolkit:/share/exec-review-recording-issues.md`「レビュー指摘管理表への登録」が定める。"
         "不正な入力は表を変更せず終了する。"
@@ -516,7 +518,8 @@ HELP: dict[str, dict[str, str]] = {
         "同じtrackの過去roundに指摘がある場合、直前の指摘roundをrecheck_round、その中で有効な`atk review-table recheck`の判定が無い"
         "レビュー担当の指摘行をrecheck_pending_row_ids・recheck_pending_count、判定別の件数をrecheck_countsで返す。"
         "有効な判定は、recheck_roundより後で指定round以前に記録したものに限り、対応不十分・未対応は"
-        "判定と同じroundへ区分「前回から残存」で登録し直し、他の前回指摘の判定が指さない行を指すものに限る。"
+        "判定と同じroundへrecheckがその指摘から登録した行を指すものに限る。"
+        "1行に複数の有効な判定があれば、最も新しいroundの保存順で最後の判定を使う。"
         "エージェント環境の長い出力は全量を保存し、保存先と行数を返す。表は変更しない。\n"
         "前提: --trackと--roundで行を限定できる。summaryは1以上の--roundが必須で、track省略時はexec-review。"
         "--row-id Nで保存順の既存識別子により1行を選び、--field responseか--field no-response-reasonでデコード済み本文だけを全文取得できる。"
@@ -531,15 +534,19 @@ HELP: dict[str, dict[str, str]] = {
         "目的: 再レビューで、前のラウンドの指摘1件ごとに、レビューイーの修正または対応不要理由を確かめた判定（完了・対応不十分・未対応）を表へ残す。"
         "\n利用場面: 再レビューを始めたレビュー担当が、直前の指摘ラウンドの各行を確かめたとき。"
         "\n対象と出力: 指定した表をロックし、指定行の応答のある列（対応内容か対応不要理由）の末尾へ"
-        "`再確認: ラウンド<round> <判定>`（対応不十分・未対応は末尾に` 行<登録し直した行のrow-id>`）の1行を記録して保存し、読み戻して確かめる。"
+        "`再確認: ラウンド<round> <判定>`の1行を追記して保存し、読み戻して確かめる。"
+        "対応不十分・未対応では、`--issue-file`の本文の先頭へ`区分: 前回から残存`と`元の指摘: 行<指定行のrow-id>`の行を加えた指摘行を、"
+        "指定行と同じtrack・指摘箇所・levelで現在のroundへ登録し、判定の行の末尾へ` 行<登録した行のrow-id>`を書く。"
         "現在のroundより前の行、担当の記録ではない行、応答済みの行だけを受け付け、それ以外は表を変更せず非0で終了する。"
         "\n前提: `--row-id`は`show`が出力した識別子、`--round`は現在の再レビューのラウンド番号（2以上）とする。"
-        "判定の根拠は書かない。対応不十分・未対応とする指摘は、先に現在のroundの指摘として`区分: 前回から残存`で`atk review-table add`により登録し直して詳細を書き、"
-        "その行のrow-idを`--reregistered-row-id`へ指定する。登録し直す行は前回の指摘1行ごとに分け、他の判定が同じroundで指す行は拒否する。"
-        "未記録の行は`show --format=summary`のrecheck_pending_row_idsで確かめる。"
-        "\n復元・後始末: 誤った判定は、同じ行へ同じroundで正しい判定を再実行すると置き換わる。別のroundの判定と応答の他の行は残る。",
+        "判定の根拠は書かない。対応不十分・未対応では、`--issue-file`へ`類似見直し完了件数:`の行（整数だけ）と残る問題を書き、区分と元の指摘の行は書かない。"
+        "完了では`--issue-file`を指定しない。未記録の行は`show --format=summary`のrecheck_pending_row_idsで確かめる。"
+        "\n復元・後始末: 誤った判定は、同じ行へ同じroundで正しい判定を再実行して直す。判定の行は追記され、集計は後の行を使う。"
+        "そのroundで登録した行が未応答なら、対応不十分・未対応では同じ行を書き換え、完了ではレビュー担当の撤回として対応不要理由を書く。"
+        "登録した行が応答済みなら、記録し直しは表を変更せず非0で終了する。別のroundの判定と応答の他の行は残る。",
         "epilog": "実行例:\n\n  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=3 --round=2 --verdict=完了\n"
-        "  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=4 --round=2 --verdict=対応不十分 --reregistered-row-id=7",
+        "  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=4 --round=2 --verdict=対応不十分 "
+        "--issue-file=/home/aki/.cache/agent-toolkit/tmp/remaining.md",
     },
     "atk review-table validate": {
         "summary": "レビュー指摘管理表を検証する",

@@ -72,14 +72,17 @@ _ISSUE_LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-recording-issues.md
 # レビュー担当の指摘ではない担当の記録の書き出し（`agent-toolkit:/share/review-table-operations.md`）。
 # この行は指摘本文の必須ラベルと再確認の対象外とする。
 _OWN_RECORD_PREFIX = "担当の記録:"
-# 再レビューでレビュー担当が前回の指摘行の応答を確かめた判定。応答のある列の末尾へ1行で追記する。
-# 対応不十分・未対応の詳細は現在のroundの指摘として登録し直すため、判定の行には根拠の文章を書かせず、
-# 登録し直した行の識別子だけを書かせる。識別子が無いと、登録し忘れても未回答・未再確認がともに0になるためである。
+# 再レビューでレビュー担当が前回の指摘行の応答を確かめた判定。応答のある列の末尾へ1行ずつ追記する。
+# 対応不十分・未対応の詳細は`recheck`が現在のroundへ登録する行に書くため、判定の行には根拠の文章を書かせず、
+# 登録した行の識別子だけを書く。登録先の行をレビュー担当に選ばせると、別の指摘の行を指しても収束と判定できたため、
+# 登録はこのCLIだけが行い、登録した行へ元の指摘の識別子（`元の指摘: 行<row-id>`）を書く。
 RECHECK_LABEL = "再確認:"
 RECHECK_VERDICTS = ("完了", "対応不十分", "未対応")
 RECHECK_DONE = RECHECK_VERDICTS[0]
 REREGISTERED_CLASSIFICATION = "前回から残存"
+ORIGIN_LABEL = "元の指摘:"
 _RECHECK_LINE_RE = re.compile(rf"{RECHECK_LABEL} ラウンド([1-9][0-9]*) ({'|'.join(RECHECK_VERDICTS)})(?: 行([1-9][0-9]*))?")
+_ORIGIN_LINE_RE = re.compile(rf"{ORIGIN_LABEL} 行([1-9][0-9]*)")
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -292,6 +295,15 @@ def _require_issue_labels(location: str, issue: str, round_value: str, option: s
                 f"各区分の意味は{_ISSUE_LABEL_DEFINITION}が定める"
             ),
         )
+    if values[0] == REREGISTERED_CLASSIFICATION:
+        raise _ActionableError(
+            f"{option}の区分{REREGISTERED_CLASSIFICATION}はaddでは登録できない",
+            next_action=(
+                "前回の指摘が残る場合は`atk review-table recheck <PATH> --row-id <前回の指摘の行> --round <現在のround> "
+                "--verdict <対応不十分|未対応> --issue-file <残る問題の本文>`で記録する。"
+                "区分と元の指摘の行を書いた指摘行をrecheckが登録する"
+            ),
+        )
 
 
 def classification(issue: str) -> str | None:
@@ -301,7 +313,7 @@ def classification(issue: str) -> str | None:
 
 
 def recheck_entries(body: str) -> list[tuple[int, str, int | None]]:
-    """recheckが記録した判定行を、記録したround・判定・登録し直した行へ分解する。形式外の行は判定として扱わない。"""
+    """recheckが記録した判定行を、記録したround・判定・登録した行へ分解する。形式外の行は判定として扱わない。"""
     entries: list[tuple[int, str, int | None]] = []
     for line in body.splitlines():
         matched = _RECHECK_LINE_RE.fullmatch(line.strip())
@@ -311,13 +323,30 @@ def recheck_entries(body: str) -> list[tuple[int, str, int | None]]:
     return entries
 
 
-def without_recheck_line(body: str, round_value: int) -> str:
-    """同じroundの判定を記録し直すため、そのroundの判定行だけを除き、別のroundの判定と他の行を残す。"""
-    return "\n".join(
-        line
-        for line in body.rstrip().splitlines()
-        if not ((matched := _RECHECK_LINE_RE.fullmatch(line.strip())) and int(matched.group(1)) == round_value)
-    )
+def carried_origin(issue: str) -> int | None:
+    """recheckが登録した指摘本文の`元の指摘: 行<row-id>`を1件だけ持つ場合に、その識別子を返す。"""
+    origins = [matched.group(1) for line in issue.splitlines() if (matched := _ORIGIN_LINE_RE.fullmatch(line.strip()))]
+    return int(origins[0]) if len(origins) == 1 else None
+
+
+def require_carried_issue(issue: str, option: str) -> None:
+    """recheckへ渡す残る問題の本文が類似見直し完了件数を持ち、CLIが書く区分と元の指摘の行を持たないことを確かめる。"""
+    _require_labels(issue, ISSUE_LABELS, option, _ISSUE_LABEL_DEFINITION)
+    if any(line.strip().startswith((CLASSIFICATION_LABEL, ORIGIN_LABEL)) for line in issue.splitlines()):
+        raise _ActionableError(
+            f"{option}の本文に{CLASSIFICATION_LABEL}か{ORIGIN_LABEL}で始まる行がある",
+            next_action="区分と元の指摘の行はrecheckが書くため、その行を除いて同じコマンドを再実行する",
+        )
+
+
+def carried_issue(issue: str, origin_row_id: int) -> str:
+    """recheckが登録する指摘本文を、区分と元の指摘の行を先頭に置いて組み立てる。"""
+    return f"{CLASSIFICATION_LABEL} {REREGISTERED_CLASSIFICATION}\n{ORIGIN_LABEL} 行{origin_row_id}\n{issue}"
+
+
+def withdrawn_reason(origin_row_id: int, round_value: int) -> str:
+    """同じroundの判定を完了へ記録し直したときに、recheckが登録済みの行へ書く対応不要理由（レビュー担当の撤回）を返す。"""
+    return f"根拠の所在: 行{origin_row_id}のラウンド{round_value}の再確認を完了へ記録し直した\n判断主体: レビュー担当"
 
 
 def reject_recheck_label(body: str, option: str) -> None:
