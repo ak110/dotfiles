@@ -41,6 +41,9 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
     for path in sorted(paths):
         if not (path.stem.endswith("_test") or path.name.startswith("test_")):
             continue
+        # 作業ツリーで削除しただけの試験は実行できず、削除をstageした場合はls-filesに現れないため、同じく候補にしない。
+        if not path.is_file():
+            continue
         body = path.read_text(encoding="utf-8")
         if not changed:
             continue
