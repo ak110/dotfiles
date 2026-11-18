@@ -26,7 +26,7 @@ MCPサーバーの`SessionState`やセッション登録簿自体の更新は、
 
 ## 対象別workerと再開予約
 
-持続する`process_loop.py`のschedulerが、対象別workerのPID世代と実行中の集合を保持する。
+持続する`process_loop_scheduled.py`の常駐反復のschedulerが、対象別workerのPID世代と実行中の集合を保持する。
 通常は1対象1worker、旧集合会話の再開では元会話の対象群を1つの実行単位にする。
 対象別の候補・所有・lane_session_idの保存先は上表と同じで、独立した完了台帳は設けない。
 
@@ -40,5 +40,5 @@ MCPサーバーの`SessionState`やセッション登録簿自体の更新は、
 
 CLI終了後のレーン検収はintegration.phaseが`finalized`のものだけを完了として受理する。
 `git-integrated`は後処理が残る中間状態として保持する。
-報告前のstatus検収も同じ`_remaining_work`と開始側gateを使う。
+報告前のstatus検収も`process_loop_completion.py`の同じ`remaining_work`と開始側gateを使う。
 レーン管理が登録簿へ書く権限は追加せず、process-loopが起動・観測する本体CLIの公開と、agents_serverの委譲turnの公開を区別する。

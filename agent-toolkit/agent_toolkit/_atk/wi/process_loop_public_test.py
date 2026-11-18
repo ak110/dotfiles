@@ -20,6 +20,7 @@ from agent_toolkit._atk.wi import process_loop_control as control
 from agent_toolkit._atk.wi import process_loop_env as env
 from agent_toolkit._atk.wi import process_loop_log as log
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
+from agent_toolkit._atk.wi import process_loop_scheduled as scheduled
 from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._testing.process_loop_coordinator_support import _manifest, _targets
 
@@ -34,8 +35,8 @@ def test_public_loop_checks_eight_repositories_with_bounded_concurrency(
 ) -> None:
     """8対象を最大3並行で確認し、結果は登録順で表示して候補を一度だけ再取得する。"""
     _notes, snapshots = _targets(tmp_path, monkeypatch, (0,) * 8)
-    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
     lock = threading.Lock()
     group = threading.Barrier(3)
     active = maximum = 0
@@ -64,7 +65,7 @@ def test_public_loop_checks_eight_repositories_with_bounded_concurrency(
             timings.append(time.monotonic())
         return 1.0, 1, frozenset()
 
-    monkeypatch.setattr(loop._alerts, "check_process_loop_alerts", check)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._alerts, "check_process_loop_alerts", check)  # pylint: disable=protected-access
     original = listing.configured_repo_snapshot
     reads = []
 
@@ -73,7 +74,7 @@ def test_public_loop_checks_eight_repositories_with_bounded_concurrency(
         return original(*args, **kwargs)
 
     monkeypatch.setattr(listing, "configured_repo_snapshot", snapshot)
-    pool = loop.concurrent.futures.ThreadPoolExecutor
+    pool = scheduled.concurrent.futures.ThreadPoolExecutor
     elapsed = []
     for parallel in (False, True):
         seen.clear()
@@ -83,7 +84,7 @@ def test_public_loop_checks_eight_repositories_with_bounded_concurrency(
         maximum = 0
         with monkeypatch.context() as scoped:
             scoped.setattr(
-                loop.concurrent.futures,
+                scheduled.concurrent.futures,
                 "ThreadPoolExecutor",
                 lambda workers=3 if parallel else 1, **_kwargs: pool(max_workers=workers),
             )
@@ -108,19 +109,19 @@ def test_public_loop_alert_failure_has_diagnostics_and_retry(
 ) -> None:
     """アラート照会例外でも常駐を継続し、対象付きの診断取得と再確認を案内する。"""
     _notes, snapshots = _targets(tmp_path, monkeypatch, (0,))
-    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
 
     def request_abort(*_args: Any, **_kwargs: Any) -> bool:
         control.cmd_process_loop_abort()
         return False
 
-    monkeypatch.setattr(loop, "_wait_for_changes", request_abort)
+    monkeypatch.setattr(scheduled, "_wait_for_changes", request_abort)
 
     def fail(*_args: Any, **_kwargs: Any) -> None:
         raise failure
 
-    monkeypatch.setattr(loop._alerts, "check_process_loop_alerts", fail)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._alerts, "check_process_loop_alerts", fail)  # pylint: disable=protected-access
     with pytest.raises(SystemExit) as exited:
         atk.main(["wi", "process-loop", "--no-update", *(["--once"] if once else [])], home=tmp_path)
     assert exited.value.code == 0
@@ -136,13 +137,17 @@ def test_public_loop_alert_failure_has_diagnostics_and_retry(
     assert "repository_alert_failed" in log.log_path().read_text(encoding="utf-8")
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("完了検収でprivate-notesの削除履歴を実Gitで照会する結合境界。統合検証の並列全件計測の所有CPU最大0.504秒。"),
+)
 @pytest.mark.parametrize("status", ["completed", "incomplete", "blocked", "owner_wait", "prepare_failed"])
 def test_public_once_finishes_one_collection(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, status: str) -> None:
     """1集合の未完了継続と所有判定を保ち、次のWI集合を起動しない。"""
     notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
-    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
     calls = 0
 
     def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
@@ -185,19 +190,23 @@ def test_public_once_empty_does_not_wait(
 ) -> None:
     """登録対象の候補0件ではモデル・待機・所有を開始しない。"""
     _targets(tmp_path, monkeypatch, counts)
-    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
 
     def unexpected(*_args: Any, **_kwargs: Any) -> None:
         pytest.fail("候補0件で待機または起動した")
 
-    monkeypatch.setattr(loop, "_wait_for_changes", unexpected)
+    monkeypatch.setattr(scheduled, "_wait_for_changes", unexpected)
     monkeypatch.setattr(session, "run_process_session", unexpected)
     with pytest.raises(SystemExit) as exited:
         atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)
     assert exited.value.code == 0
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("完了検収でprivate-notesの削除履歴を実Gitで照会する結合境界。統合検証の並列全件計測の所有CPU最大0.544秒。"),
+)
 @pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
 @pytest.mark.parametrize("resume", [False, True])
 def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, engine, resume) -> None:
@@ -208,9 +217,9 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
     assert owner is not None
     owner = ownership.update_session(owner, "saved-agy-conversation")
     ownership.release(owner, completed=not resume)
-    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
     monkeypatch.setattr(
         session, "select_available_orchestrator", lambda *_args, **_kwargs: (engine, "model", "medium", None, None)
     )
@@ -293,7 +302,7 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
 def test_public_once_failure_does_not_wait(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
     """1回処理の同期失敗・開始前中断・Ctrl+Cは成功にせず、再試行待機も始めない。"""
     _targets(tmp_path, monkeypatch, (1,))
-    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
 
     def pull(*_args: Any, **_kwargs: Any) -> bool:
         if failure == "interrupt":
@@ -304,12 +313,12 @@ def test_public_once_failure_does_not_wait(tmp_path: pathlib.Path, monkeypatch: 
         pytest.fail("失敗・中断後に待機またはモデルを起動した")
 
     def start_abort(*_args: Any, **_kwargs: Any) -> bool:
-        loop._control.cmd_process_loop_abort()  # pylint: disable=protected-access
+        scheduled._control.cmd_process_loop_abort()  # pylint: disable=protected-access
         return False
 
-    monkeypatch.setattr(loop._watch, "pull_private_notes", pull)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop._watch, "wait_for_start_permission", start_abort)  # pylint: disable=protected-access
-    monkeypatch.setattr(loop, "_wait_for_changes", unexpected)
+    monkeypatch.setattr(scheduled._watch, "pull_private_notes", pull)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled._watch, "wait_for_start_permission", start_abort)  # pylint: disable=protected-access
+    monkeypatch.setattr(scheduled, "_wait_for_changes", unexpected)
     monkeypatch.setattr(session, "run_process_session", unexpected)
     with pytest.raises(SystemExit) as exited:
         atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)

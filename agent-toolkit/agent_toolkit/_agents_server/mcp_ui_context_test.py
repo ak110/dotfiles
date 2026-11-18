@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import CallToolResult
+from mcp.types import CallToolRequestParams, CallToolResult
 
 from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._common import function_hook_requests, runtime_environment
@@ -47,3 +47,24 @@ async def test_ui_authorization_uses_bound_caller(monkeypatch: pytest.MonkeyPatc
                         expected["guidance"] = ""
                     assert isinstance(response, CallToolResult)
                     assert response.structured_content == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("meta", [{"claudecode/toolUseId": "toolu_01"}, None])
+async def test_send_to_user_carries_tool_use_id_from_request_meta(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, meta: dict[str, str] | None
+) -> None:
+    """MCP要求の`_meta`にある呼出しIDを表示要求へ添え、無い場合は本文だけを渡す。"""
+    request = AsyncMock(side_effect=lambda *_args: {"status": "confirmed"})
+    monkeypatch.setattr(function_hook_requests, "request", request)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    params = CallToolRequestParams.model_validate(
+        {"name": "send_to_user", "arguments": {"message": "確認が完了した。"}, **({"_meta": meta} if meta else {})}
+    )
+    with runtime_environment.bind(runtime_environment.CallerContext({}, tmp_path)):
+        async with mcp_tools._request_scope(params):  # pylint: disable=protected-access
+            await mcp_tools.mcp.call_tool("send_to_user", {"message": "確認が完了した。"})
+    expected = {"message": "確認が完了した。", **({"tool_use_id": "toolu_01"} if meta else {})}
+    request.assert_awaited_once_with("launcher-main", "send_to_user", expected)

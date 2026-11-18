@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import (
+    admission,
     advice_request,
     backends,
     child_environment,
@@ -131,6 +132,41 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         return remaining, excluded | unsupported
 
     async def start(
+        self,
+        model_type: str,
+        prompt: str,
+        cwd: str,
+        *,
+        launch_kind: LaunchKind = "delegate",
+        label: str | None = None,
+        excluded_candidates: Mapping[ModelCandidate, str] | None = None,
+        startup_document: pathlib.Path | None = None,
+        startup_inputs: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """マシン全体の同時稼働数の上限に空きが出るまで待ってから起動する。
+
+        待った場合は待機秒数と上限の由来を応答へ加え、依頼側が既存の起動結果から待ちを知れるようにする。
+        """
+        validate_prompt(prompt)
+        validate_cwd(cwd)
+        ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
+        try:
+            response = await self._start_admitted(
+                model_type,
+                prompt,
+                cwd,
+                launch_kind=launch_kind,
+                label=label,
+                excluded_candidates=excluded_candidates,
+                startup_document=startup_document,
+                startup_inputs=startup_inputs,
+            )
+        finally:
+            ticket.release()
+        response.update(ticket.response_fields())
+        return response
+
+    async def _start_admitted(
         self,
         model_type: str,
         prompt: str,

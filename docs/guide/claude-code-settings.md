@@ -19,6 +19,9 @@ agent-toolkitの実効設定は`atk config list`で一覧表示し、`atk config
 - `permissions`: 許可・拒否するツールやパターンを記述
  （[例](https://github.com/ak110/dotfiles/blob/master/share/claude_settings_json_managed.json)）
 
+自動圧縮の時期は、Claude Codeの標準の動作とagent-toolkitの待機中の圧縮に任せる。
+以前に配布していた`env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`と`env.CLAUDE_CODE_AUTO_COMPACT_WINDOW`は設定更新時に除去する。
+
 ### Code Mode
 
 Code ModeはClaude Code 2.1.323以降のネイティブ版と対応アカウント・モデルを必要とする。
@@ -86,9 +89,11 @@ agent-toolkitのIDは`agent-toolkit@ak110-dotfiles`である。
 `strictKnownMarketplaces`はインストールできるmarketplaceを制限する設定であり、Modを組織のModとして区分する設定ではない。
 旧版2.1.322時点のdigestを使う設定例とは版を区別し、導入版に対応する[公式の組織Mod配布手順](https://code.claude.com/docs/en/plugins/mods/admin#install-your-organizations-mods-and-set-the-order)を参照。
 
-`prependPlugins: []`を管理設定へ指定すると、組み込みガード全体が外れる。
-特定のhookだけを有効にする設定ではないため、通常の配布手順には含めない。
+組み込みガードを使わない組織では、管理設定へ`{"prependPlugins": []}`を指定する方法もある。
+この指定は組み込みガード全体を外し、すべてのModのhookが省略されずに動く。
+特定のhookだけを有効にする設定ではないため、ガードを保持したい組織では前述の組織Modの配布を使う。
 server-managed settingsで配信する場合は、サーバーがその会話の設定を確認するまでガードが残ることがある。
+設定を保存した直後は効いていないように見えても、反映まで時間をおいてから新しい会話で確認する。
 適用後は`/plugin`で対象Modの制限通知を確認する。
 必要なら新しい会話を`claude --debug`で起動し、対象Modが`tier prepend`で読み込まれたかを確認する。
 管理設定の実配信は組織ごとに異なり、ここでは個別組織での適用成功を確認していない。

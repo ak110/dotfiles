@@ -35,7 +35,7 @@ def test_acquisition_failure_uses_host_acquisition(host: str, tmp_path: pathlib.
 @pytest.mark.parametrize("waiting", [False, True])
 @pytest.mark.parametrize("history", [False, True])
 def test_compact_public_notice_uses_current_stage_without_history_paths(tmp_path, monkeypatch, capsys, host, waiting, history):
-    """履歴と待受けに依存せず、最初の判断前に工程文書と読込表へ戻す。"""
+    """履歴と待機の有無に依存せず、圧縮後に読む範囲を通知する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
@@ -58,9 +58,8 @@ def test_compact_public_notice_uses_current_stage_without_history_paths(tmp_path
     output = _output(capsys)
     assert str(document) not in output
     assert "会話が圧縮された" in output
-    assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in output
-    assert "compaction-recovery.md" in output
-    assert "復元先:" in output
+    assert "圧縮後に読むのは作業契約と会話の要約だけである" in output
+    assert "compaction-recovery.md" not in output
     assert not read_delivery.target_ready(
         read_state("stage").get(rules_context.OPERATION_SKILL_READY_KEY, {}), ReadTarget(document), "main"
     )
@@ -127,6 +126,7 @@ def test_compact_restores_selected_material_only_for_the_same_main_agent(
     document.write_text(
         "# 変更規範\n\n全文の基準\n\n## 「必要範囲」\n\n指定範囲の基準\n\n## 「別範囲」\n\n配送しない本文\n",
         encoding="utf-8",
+        newline="\n",
     )
     target = ReadTarget(document, heading)
     if selected_agent is not None:
@@ -170,7 +170,7 @@ def test_compact_keeps_large_target_unread_without_listing_it(
     output = _output(capsys)
     records = read_state("compact-budget").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert str(document) not in output
-    assert "compaction-recovery.md" in output
+    assert "会話が圧縮された" in output
     assert not read_delivery.target_ready(records, target, "main")
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 

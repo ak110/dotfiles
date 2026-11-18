@@ -195,6 +195,8 @@ def test_guidance_lists_targets_without_marking_acquired(tmp_path, monkeypatch, 
     notice = _notice_body(decision)
     instruction = notice.splitlines()[1]
     assert "結果を使う前に" in instruction and "取得・起動" in instruction
+    # 書込以外の操作でも、取得した基準で既に得た結果を見直させる。
+    assert "見直" in instruction
     assert all(notice.count(str(path)) == 1 for path in paths)
     assert "必須基準0" not in notice and decision.block is None
     assert "functions.exec" not in notice and "cat --" not in notice

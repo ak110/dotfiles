@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from agent_toolkit._agents_server import (
+    admission,
     backends,
     claude,
     codex_providers,
@@ -46,6 +47,20 @@ from agent_toolkit._common.next_action import ActionableError
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
+def admission_wait_fields(manager: object) -> dict[str, dict[str, object]]:
+    """再開ごとの上限待ちの応答項目を、応答を組み立てる処理へ渡すための置き場を返す。"""
+    return vars(manager).setdefault("_admission_wait_fields", {})
+
+
+def note_admission_wait(session: SessionState, ticket: admission.Admission) -> None:
+    """上限待ちがあった再開を、一覧と`show`が表示する最後の操作へ記録する。"""
+    fields = ticket.response_fields()
+    if fields:
+        session.last_action = (
+            f"マシン全体の同時稼働数の上限で{fields['admission_wait_seconds']}秒待って再開した（{fields['admission_limit']}）"
+        )
+
+
 class ResumeClaimedElsewhere(ActionableError):
     """別所有者が同じ会話の再開を予約し、起動結果の観測を要する。"""
 
@@ -69,8 +84,22 @@ class ManagerResume(manager_registry.ManagerRegistry):
         resources = await run_file_operation(
             launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
         )
-        async with service_io.next_input(session):
-            return await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
+        # 実行中のturnへの入力は作業中の数を増やさないため、止まっているsessionを動かす場合だけ上限を待つ。
+        ticket = (
+            await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
+            if session.status != "running"
+            else None
+        )
+        try:
+            async with service_io.next_input(session):
+                result = await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
+        finally:
+            if ticket is not None:
+                ticket.release()
+        # 止まっていたsessionを上限待ちの後に動かした場合は、一覧・showの最後の操作から待ちを知れるようにする。
+        if ticket is not None:
+            note_admission_wait(session, ticket)
+        return result
 
     async def _child_result_is_terminal(self, session_id: str) -> bool:
         """孫sessionの共有された終了時の結果ファイルが終了を示すかを返す。
@@ -408,21 +437,29 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 resume_state = dataclasses.replace(resume_state, result_delivered=True)
             if self._status_writer is not None:
                 await self._status_writer.delete_result_async(session_id, collector="send-message")
-            session = await backend.resume(
-                session_id,
-                prompt,
-                resume_state.cwd,
-                resume_state.model,
-                resume_state.effort,
-                model_type=resume_state.model_type,
-                launch_kind=resume_state.launch_kind,
-                excluded_candidates=resume_state.excluded_candidates,
-                turn_seq=resume_state.turn_seq,
-                fast_mode=resume_state.fast_mode,
-                request_prompt=resume_state.prompt,
-                result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
-                **provider_args,
-            )
+            # 止まっているsessionを再び動かす追送も、マシン全体の同時稼働数の上限に空きが出るまで待つ。
+            ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
+            try:
+                session = await backend.resume(
+                    session_id,
+                    prompt,
+                    resume_state.cwd,
+                    resume_state.model,
+                    resume_state.effort,
+                    model_type=resume_state.model_type,
+                    launch_kind=resume_state.launch_kind,
+                    excluded_candidates=resume_state.excluded_candidates,
+                    turn_seq=resume_state.turn_seq,
+                    fast_mode=resume_state.fast_mode,
+                    request_prompt=resume_state.prompt,
+                    result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
+                    **provider_args,
+                )
+            finally:
+                ticket.release()
+            # 再開の応答は別の箇所で組み立てるため、待った秒数をsession単位で渡す。
+            admission_wait_fields(self)[session_id] = ticket.response_fields()
+            note_admission_wait(session, ticket)
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
             session.result_contract_recovery_consumed = resume_state.result_contract_recovery_consumed
             if session.status == "starting":

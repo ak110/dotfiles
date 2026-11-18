@@ -58,7 +58,7 @@ def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeyp
                 "rules_context_codex", {**payload, "hook_event_name": "SessionStart", "source": "compact"}
             )
             assert result.returncode == 0 and not result.stderr
-            assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in result.stdout
+            assert "圧縮後に読むのは作業契約と会話の要約だけである" in result.stdout
             assert str(reference) not in result.stdout
             resumed = _run_hook_in_process("pretooluse", writing)
             assert resumed.returncode == 0 and not resumed.stderr

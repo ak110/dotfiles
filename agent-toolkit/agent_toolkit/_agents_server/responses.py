@@ -135,6 +135,10 @@ def public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
         public["root_session_id"] = response["root_session_id"]
     if response.get("warnings"):
         public["warnings"] = response["warnings"]
+    for key in ("admission_wait_seconds", "admission_limit"):
+        # マシン全体の同時稼働数の上限で待たせた起動だけが持つ。依頼側が待ちの発生と時間を知るために公開する。
+        if key in response:
+            public[key] = response[key]
     if response.get("excluded_candidates"):
         public["excluded_candidates"] = response["excluded_candidates"]
         public["engine"] = response["engine"]
@@ -417,4 +421,5 @@ class ManagerResponses(manager_base.ManagerBase):
         previous_result = pending.take_previous_result()
         if previous_result:
             response["previous_result"] = previous_result
+        response.update(vars(self).get("_admission_wait_fields", {}).pop(session.session_id, {}))
         return response

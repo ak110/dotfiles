@@ -19,7 +19,7 @@ def main(payload_text: str) -> int:
     # PreCompactのstdoutはモデルへの要約指示であり、要約API呼出し自体を省く契約ではない。
     print(
         "圧縮後は原本記録から復元できるため、要約は次の復元案内を中心に短くせよ。"
-        "要約にはagent-toolkit/share/compaction-recovery.mdを最初に読み、SessionStartの復元通知に従う旨を残せ。"
+        "要約にはSessionStartの復元通知に従う旨を残せ。"
         "未保存の判断・要求・承認・未回収の実行識別子がある場合は、その必要情報を省かず残せ。"
     )
     return 0

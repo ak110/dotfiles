@@ -91,7 +91,9 @@ def _check_wi_selection(
         if prior_errors or prior_metadata is None:
             errors.extend(f"先行計画{prior_plan}: {error}" for error in prior_errors or ["計画メタ情報がない"])
             continue
-        if prior_metadata.values.get("対象リポジトリ") != str(work_dir.resolve()):
+        declared = prior_metadata.values.get("対象リポジトリ")
+        # 区切り文字や末尾の区切りだけが違う宣言を、同じ場所として扱う。
+        if declared is None or pathlib.Path(declared).expanduser().resolve() != work_dir.resolve():
             errors.append(
                 f"先行計画の対象リポジトリが異なる: {prior_plan}。"
                 f"宣言={prior_metadata.values.get('対象リポジトリ')}、--work-dir={work_dir.resolve()}。"

@@ -95,15 +95,22 @@ def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, rep
 def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeypatch, route, dry_run):
     """付随型の検証は起草資料だけ、本保存は保存資料も案内する。"""
     root = pathlib.Path(__file__).resolve().parents[3]
+    # 起草経路ごとの案内を確かめる。検証の段階の資料集合全体は別の試験で期待値と比べる。
+    sources = (
+        "skills/wi-standards/SKILL.md",
+        "skills/wi-standards/references/uwi-format.md",
+        "skills/user-confirmation-and-report/references/answer-transitions.md",
+    )
     rows = [
         row
-        for row in read_triggers.parse_tables(root / "skills/wi-standards/SKILL.md", root)
+        for source in sources
+        for row in read_triggers.parse_tables(root / source, root)
         if any(operation.startswith("wi-standard-") for operation in row.operations)
     ]
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     body = tmp_path / "body.md"
-    body.write_text("# 原稿\n", encoding="utf-8")
+    body.write_text("# 原稿\n\n## 反映内容と反映先\n", encoding="utf-8")
     log = tmp_path / "launch.jsonl"
     launch = "通常の依頼"
     if route != "main":
@@ -128,4 +135,41 @@ def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeyp
         assert (name in result.stdout) is not dry_run
     for name in ("drafting-workflow-review-route.md", "draft-semantic-review.md"):
         assert (name in result.stdout) is (route in {"main", "専念型"})
+    # 回答済みUWIとの整合確認は原稿の内容を左右するため、検証の段階でも届ける。
+    assert "wi-standards-operations.md" in result.stdout
+    # 保存先・状態だけの資料は本保存で、UWIだけで使う資料は通常AWIの検証へ届けない。
+    assert ("wi-standards-states.md" in result.stdout) is not dry_run
+    for name in ("user-confirmation-and-report-decisions.md", "origin-and-approval.md"):
+        assert (name in result.stdout) is not dry_run
     assert not HOOK_PAYLOAD.get()
+
+
+@pytest.mark.cpu_limit(
+    2.0,
+    reason="追加された宣言元を漏らさないよう全宣言元の読込表を解析する。Linux CPU合計0.96秒を基準とする。",
+)
+def test_dry_run_stage_documents_match_expected_set():
+    """検証の段階で届ける資料の集合を、全宣言元から集めて期待値と比べる。
+
+    新しく検証の段階を付けた行は、この期待値の更新として表面化させる。
+    追加する前に`share/read-trigger-contract-declarations.md`のWI保存の基準を満たすか確かめる。
+    """
+    root = pathlib.Path(__file__).resolve().parents[3]
+    actual = {
+        (str(row.source.relative_to(root)), str(target.path.relative_to(root)))
+        for source in read_triggers.document_sources(root, str(root))
+        for row in read_triggers.parse_tables(source, root)
+        if "wi-standard-dry-run" in row.operations
+        for target in row.targets
+    }
+    drafting = {
+        "skills/wi-standards/references/drafting-workflow-writing.md",
+        "skills/wi-standards/references/drafting-workflow-validation.md",
+        "skills/wi-standards/references/drafting-completion-validation.md",
+    }
+    assert actual == {
+        *(("skills/add-awi-by-user/SKILL.md", name) for name in drafting),
+        *(("skills/wi-standards/SKILL.md", name) for name in drafting),
+        ("skills/wi-standards/SKILL.md", "skills/wi-standards/references/wi-standards-operations.md"),
+        ("share/add-wi.subagent.md", "skills/wi-standards/SKILL.md"),
+    }

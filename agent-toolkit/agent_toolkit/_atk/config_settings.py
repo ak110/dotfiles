@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import os
 import pathlib
 import re
@@ -147,6 +148,8 @@ MUTABLE_KEY_DEFAULTS = {
     "codex_usage_limit_wait": "five-hour",
     "repositories": "{}",
     "session_review_auto_start": "true",
+    # agents_serverが同時に作業させる委譲先の上限。論理CPU数への係数（例: 2.5x）、絶対値、offを受け付ける。
+    "agents_concurrency": "2.5x",
     "dotfiles_mode": "full",
     **SERVE_KEY_DEFAULTS,
 }
@@ -343,6 +346,21 @@ def parse_engine_order(value: str) -> tuple[str, ...]:
     return engines
 
 
+def parse_agents_concurrency(value: str) -> tuple[str, float] | None:
+    """`agents_concurrency`の設定値を(種別, 数値)へ変換する。`off`はNone、不正な値はValueErrorとする。"""
+    text = value.strip()
+    if text == "off":
+        return None
+    if text.endswith("x"):
+        factor = float(text[:-1])
+        if not math.isfinite(factor) or factor <= 0:
+            raise ValueError("係数は正の数で指定する")
+        return "factor", factor
+    if text.isdecimal() and int(text) >= 1:
+        return "absolute", float(int(text))
+    raise ValueError("受理可能書式: 論理CPU数への係数（例: 2.5x）、1以上の整数（絶対値）、off（無効化）")
+
+
 def validate_mutable_setting(key: str, value: str) -> None:
     """速度、接続先列、工程別モデル候補をそれぞれの受理形式で確かめる。"""
     if key == "dotfiles_mode":
@@ -377,6 +395,8 @@ def validate_mutable_setting(key: str, value: str) -> None:
     elif key == "usage_activity_mode":
         if value not in {"continuous", "intermittent"}:
             raise ValueError("受理可能値: continuous, intermittent")
+    elif key == "agents_concurrency":
+        parse_agents_concurrency(value)
     elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start", "usage_auto_allocation"}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")

@@ -329,3 +329,82 @@ def test_output_failure_after_claim_does_not_consume_the_due_time(monkeypatch: p
     assert _OPENING in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
     clock["now"] = 2802.0
     assert _OPENING not in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+
+
+def test_notice_reports_machine_concurrency_and_recent_hook_durations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """点検の通知に、マシン全体の作業中の数と直近のhook所要が現れ、飽和を進め方と分けて判定できる。"""
+    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.setattr(admission, "observe", lambda *_a, **_k: admission.Observation(working=13, admitted=0, waiting=2))
+    monkeypatch.setattr(admission, "configured_limit", lambda: admission.Limit(15, "test"))
+    (tmp_path / "hook-timings.jsonl").write_text(
+        "\n".join(json.dumps({"stage": "total", "seconds": value}) for value in (2.0, 4.0, 12.0)) + "\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(managed_temp, "find_session_temp", lambda _sid: tmp_path)
+    sid = f"progress-saturation-{uuid.uuid4()}"
+    assert progress_self_check.claim_notice({"session_id": sid}, now=1000.0) is None
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
+    assert notice is not None
+    assert "13" in notice and "上限15" in notice and "起動待ち2" in notice
+    assert "平均6.0秒" in notice and "最大12.0秒" in notice
+
+
+@pytest.mark.parametrize("case", ["partial", "observe-error", "unreadable-hooks", "no-hooks"])
+def test_notice_distinguishes_partial_failed_and_absent_observations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """部分観測・取得失敗・記録不在を区別し、取得失敗には次に確認する操作を示す。"""
+    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
+
+    def observe(*_a: object, **_k: object) -> admission.Observation:
+        if case == "observe-error":
+            raise PermissionError("denied")
+        return admission.Observation(
+            working=3, admitted=0, waiting=0, failures=("root/w.json: ValueError",) if case == "partial" else ()
+        )
+
+    monkeypatch.setattr(admission, "observe", observe)
+    monkeypatch.setattr(admission, "configured_limit", lambda: admission.Limit(15, "test"))
+    if case == "unreadable-hooks":
+        (tmp_path / "hook-timings.jsonl").write_text("{broken\n", encoding="utf-8")
+    monkeypatch.setattr(managed_temp, "find_session_temp", lambda _sid: tmp_path)
+    sid = f"progress-observation-{case}-{uuid.uuid4()}"
+    assert progress_self_check.claim_notice({"session_id": sid}, now=1000.0) is None
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
+    assert notice is not None
+    expected = {
+        "partial": "部分観測",
+        "observe-error": "取得できない（PermissionError: denied）",
+        "unreadable-hooks": "hook所要の記録を読めない",
+        "no-hooks": "直近のhook所要の記録は無い",
+    }[case]
+    assert expected in notice
+    if case == "partial":
+        # 一覧コマンドでは見えない失敗対象の所在と診断を、通知から直接たどれる。
+        assert "root/w.json: ValueError" in notice and "agents-server" in notice
+    if case == "observe-error":
+        assert "denied" in notice and "`atk config get state_dir`" in notice
+
+
+def test_notice_keeps_all_unreadable_records_reachable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """読めない状態ファイルが4件以上でも、通知が示す保存先から全件の所在と診断を取得できる。"""
+    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
+
+    failures = tuple(f"root{index}/w.json: ValueError" for index in range(4))
+    monkeypatch.setattr(
+        admission, "observe", lambda *_a, **_k: admission.Observation(working=1, admitted=0, waiting=0, failures=failures)
+    )
+    monkeypatch.setattr(admission, "configured_limit", lambda: admission.Limit(15, "test"))
+    monkeypatch.setattr(managed_temp, "find_session_temp", lambda _sid: tmp_path)
+    sid = f"progress-many-failures-{uuid.uuid4()}"
+    assert progress_self_check.claim_notice({"session_id": sid}, now=1000.0) is None
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
+    assert notice is not None and "他1件" in notice
+    report = tmp_path / "agents-concurrency-failures.txt"
+    assert str(report) in notice
+    assert all(failure in report.read_text(encoding="utf-8") for failure in failures)

@@ -124,3 +124,56 @@ def test_cleanup_retains_unknown_usage_and_continues_after_delete_failure(
     monkeypatch.setattr(subject.shutil, "rmtree", remove)
     subject.cleanup([], environment)
     assert not blocked.exists()
+
+
+def test_cleanup_skips_processes_whose_owner_is_unreadable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """他アカウント・システムのプロセスがあっても、使用中と必要版を残して未使用の旧環境を回収する。"""
+    environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path)}
+    required, live, unused = [tmp_path / "environments" / name for name in ("required", "live", "unused")]
+    for path in (required, live, unused):
+        path.mkdir(parents=True)
+
+    def denied() -> str:
+        raise subject.psutil.AccessDenied()
+
+    foreign = types.SimpleNamespace(
+        username=denied,
+        status=denied,
+        cmdline=denied,
+        exe=denied,
+    )
+    own = types.SimpleNamespace(
+        username=subject.psutil.Process().username,
+        status=lambda: subject.psutil.STATUS_RUNNING,
+        cmdline=lambda: [str(live / "bin/python")],
+        exe=lambda: str(live / "bin/python"),
+    )
+    monkeypatch.setattr(subject.psutil, "process_iter", lambda: [foreign, own, foreign])
+    subject.cleanup([required], environment)
+    assert required.is_dir() and live.is_dir() and not unused.exists()
+
+
+def test_cleanup_retains_all_when_own_process_is_unreadable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同じアカウントのプロセスの参照を読めない場合は、使用中かを判定できないため全環境を残す。"""
+    environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path)}
+    unused = tmp_path / "environments" / "unused"
+    unused.mkdir(parents=True)
+
+    def denied() -> str:
+        raise subject.psutil.AccessDenied()
+
+    own = types.SimpleNamespace(
+        username=subject.psutil.Process().username,
+        status=lambda: subject.psutil.STATUS_RUNNING,
+        cmdline=denied,
+        exe=denied,
+    )
+    monkeypatch.setattr(subject.psutil, "process_iter", lambda: [own])
+    subject.cleanup([], environment)
+    assert unused.is_dir()

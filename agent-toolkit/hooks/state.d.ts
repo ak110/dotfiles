@@ -3,6 +3,6 @@ export type RuntimeChange = { id: string; targets: string[]; phase: "pending" | 
 
 declare module "claude-code" {
   interface PluginState {
-    "agent-toolkit": { uiMessages: Record<string, string>; uiConsumed: Record<string, number>; runtimeChange: RuntimeChange | null; backgroundWaits: Record<string, BackgroundWait>; backgroundSeen: Record<string, boolean>; recheckRequested: boolean; compactRequested: boolean; turnRunning: boolean };
+    "agent-toolkit": { uiMessages: Record<string, string>; uiCalls: Record<string, string>; uiConsumed: Record<string, number>; runtimeChange: RuntimeChange | null; backgroundWaits: Record<string, BackgroundWait>; backgroundSeen: Record<string, boolean>; recheckRequested: boolean; compactRequested: boolean; turnRunning: boolean };
   }
 }

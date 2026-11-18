@@ -98,6 +98,10 @@ def test_discard_instructions_reports_count(monkeypatch, tmp_path) -> None:
     assert process_loop_log.discard_instructions() == 0
 
 
+@pytest.mark.cpu_limit(
+    1.0,
+    reason=("完了検収でprivate-notesの削除履歴を実Gitで照会する結合境界。統合検証の並列全件計測の所有CPU最大0.544秒。"),
+)
 def test_instruction_is_consumed_only_when_a_session_launches(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

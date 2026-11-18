@@ -170,6 +170,17 @@ def _work_contract_notice(session_id: str, body: str) -> str:
     return informational(_llm_notice(body))
 
 
+def _clock_notice(session_id: str) -> str:
+    """実ユーザー入力ごとに、受付時の壁時計の日時を届ける。
+
+    時刻を推測で記録しないためで、点検通知の生成時刻とは区別する。
+    入力ごとに本文が変わるため、前回の重複抑止の記録を同じ原因だけ解除して状態の増加を防ぐ。
+    """
+    resolve_notice(session_id, "user_prompt_submit", "_clock_notice")
+    # 入力ごとに出る定型の情報であり、ユーザーの画面へは写さない。
+    return informational(_llm_notice(f"ユーザー入力の受付時刻: `{work_contract.local_time()}`"))
+
+
 def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
     begin_delivery()
@@ -254,6 +265,7 @@ def main(payload_text: str) -> int:
             if contract_notice is not None:
                 notices.append(_work_contract_notice(session_id, contract_notice))
         notices.extend(content_notices(prompt, "user_prompt_submit"))
+        notices.append(_clock_notice(session_id))
     if self_check_notice is not None:
         notices.append(self_check_notice)
     additional_context = "\n".join(notice for notice in notices if notice) or None

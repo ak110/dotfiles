@@ -115,3 +115,14 @@
   保護設定、レジストリ、Python本体、他リンク、PATHは維持した。
   同じSSHのuv python find 3.15と、稼働中serveの記録一覧APIが警告なしで成功した。
   非管理者のuv更新がリンクを再生成すると再発しうるため、その場合も対象とリンク先を再確認し、保護を維持した管理者によるリンクの修復を選ぶ
+
+- 2026年11月18日: sthenoの`~/.claude/settings.json`に自動圧縮の上書きが残り、会話が約45万トークンに達するたびに圧縮されていた。
+  残っていた値は`env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`の45と`env.CLAUDE_CODE_AUTO_COMPACT_WINDOW`の1000000である。
+  同じ日のeuryaleの設定には2つのキーが無かった。
+  直接原因: 2026年9月13日のcommit `bcef935bf`が2つのキーを`share/claude_settings_json_managed.json`から削除した。
+  このcommitは`pytools/_internal/update_claude_settings.py`の`_REMOVED_ENV_KEYS`へ2つのキーを登録しなかった。
+  配布処理は`env`を再帰マージするため、配布元から削除したキーは配布先に残る。
+  削除の理由はcommitメッセージと設計記録に無い。
+  影響: 2026年11月17日のセッションでは約1時間に3回の圧縮が入り、圧縮のたびに復元と規範の読み直しが発生した。
+  エージェントは残った値をこのPCだけの手書きの設定と誤認し、閾値の変更をユーザーへ確認した。
+  対策: 2つのキーを`_REMOVED_ENV_KEYS`へ登録し、次の配布で除去する

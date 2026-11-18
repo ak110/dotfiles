@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import session_evidence_unit_costs
 from session_evidence_extract import (
     _clip,
     _CollectedRecord,
@@ -771,6 +772,42 @@ def _thread_breakdown_events(thread: _CollectedRecord, runtime: _Runtime) -> lis
     return events
 
 
+def _response_usages(records: list[_Record], runtime: _Runtime) -> list[dict[str, int]]:
+    """応答1回ごとの入力・出力トークンを、エンジンの差を除いた形で返す。"""
+    if runtime == "opencode":
+        return _response_usages(_opencode_records(records), "claude")
+    if runtime == "claude":
+        return [
+            {
+                "input": usage["input_tokens"] + usage["cache_read_input_tokens"] + usage["cache_creation_input_tokens"],
+                "output": usage["output_tokens"],
+                "reasoning": 0,
+                "line": record.line,
+            }
+            for record, usage in _latest_claude_usages(records)
+        ]
+    if runtime == "agy":
+        return [
+            {
+                "input": usage["input_tokens"] + usage["cache_read_input_tokens"],
+                "output": usage["output_tokens"],
+                "reasoning": 0,
+                "line": record.line,
+            }
+            for record, usage in _agy_token_usages(records)
+        ]
+    return [
+        {
+            "input": usage["input_tokens"],
+            # Codexの`output_tokens`は推論分を含むため、推論とそれ以外を分ける。
+            "output": max(usage["output_tokens"] - usage.get("reasoning_output_tokens", 0), 0),
+            "reasoning": usage.get("reasoning_output_tokens", 0),
+            "line": record.line,
+        }
+        for record, usage in _codex_token_usages(records)
+    ]
+
+
 def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path) -> list[dict[str, Any]]:
     """セッション全体を対象とした集計イベント列を返す。
 
@@ -852,6 +889,14 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
         else {"kind": "stats-summary", "text": "集計対象なし"}
     )
 
+    events.append(
+        session_evidence_unit_costs.unit_cost_event(
+            collected,
+            call_entries=_stats_call_entries,
+            response_usages=_response_usages,
+            record_timestamp=_record_timestamp,
+        )
+    )
     events.extend(_stats_breakdown_events(main_records, runtime))
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
     events.extend(_stats_compaction_events(collected, compaction_record_dir))

@@ -11,9 +11,9 @@
 ## hookの診断計測
 
 - `command_timing`: `_hooks/command_timing.py`がシェルコマンドのPreToolUse時刻をsession・呼出主体・tool_use_idで対応付ける。
-  PostToolUse/FailureとClaude背景完了のUserPromptSubmitが、全体の実行時間または観測経過時間を一度だけ通知する。
+  PostToolUse/FailureとClaude背景完了のUserPromptSubmitが、1秒以上の全体の実行時間または観測経過時間を一度だけ通知する。
   保持対象は、実行中の開始時刻と背景task-id、完了後の重複判定用tool_use_idとdoneに限定する。
-  見直し用履歴は主体ごとの同じ計測種別の直近3件だけとし、60秒未満・未計測・種別変更でリセットする。
+  見直し用履歴は主体ごとの同じ計測種別の直近3件だけとし、10秒未満・未計測・種別変更でリセットする。
   識別子はsession状態と同じ寿命で保持し、再開・継承で重複を防ぎ、clear・期限切れ回収で除く。
   hook自身の診断計測とは独立する。
 

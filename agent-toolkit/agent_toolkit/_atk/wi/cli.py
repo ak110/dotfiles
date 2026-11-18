@@ -22,6 +22,7 @@ lazy from agent_toolkit._atk.wi import effect_check as _effect_check
 lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
 lazy from agent_toolkit._atk.wi import process_loop as _process_loop
+lazy from agent_toolkit._atk.wi import process_loop_completion as _process_loop_completion
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
@@ -31,6 +32,7 @@ lazy from agent_toolkit._atk.wi import sync as _wi_sync
 lazy from agent_toolkit._atk.wi import uwi as _uwi
 lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
 lazy from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies
+lazy from agent_toolkit._atk.wi.mutations import priority as _mutation_priority
 lazy from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 lazy from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
 lazy from agent_toolkit._common import private_notes as _private_notes
@@ -268,7 +270,7 @@ def dispatch(
             return 2
         if process_loop_subcommand == "status" and getattr(args, "check_result", None) is not None:
             try:
-                observed = _process_loop.completion_status(
+                observed = _process_loop_completion.completion_status(
                     args.check_result, _private_notes.default_private_notes(home), args.wi
                 )
             except (OSError, ValueError) as error:
@@ -324,6 +326,7 @@ def dispatch(
         "edit": lambda: _mutation_content.cmd_edit(args, private_notes),
         "effect-check": lambda: _effect_check.cmd_effect_check(args, private_notes),
         "set-dependencies": lambda: _mutation_dependencies.cmd_set_dependencies(args, private_notes),
+        "set-priority": lambda: _mutation_priority.cmd_set_priority(args, private_notes),
         "grep": lambda: _grep.cmd_grep(args, private_notes),
         "answer": lambda: _uwi.cmd_answer(args, private_notes),
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),

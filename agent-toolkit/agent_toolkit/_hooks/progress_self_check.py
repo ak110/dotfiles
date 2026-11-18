@@ -23,9 +23,11 @@ in-processのサブエージェントはpayloadの`agent_id`）ごとに次の�
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
 from agent_toolkit._hooks import plugin_resources
@@ -96,6 +98,76 @@ def _parse(value: object) -> object:
     return value
 
 
+_RECENT_HOOK_ROWS = 50
+"""hook所要の平均に使う直近の計測件数。"""
+
+
+def _saturation_text(session_id: str) -> str:
+    """マシンの飽和を担当の進め方と分けて判定できるよう、同時稼働数と直近のhook所要を既存の記録から読む。
+
+    新しい常駐の監視は作らず、agents_serverの状態ファイルとセッションの`hook-timings.jsonl`だけを読む。
+    読めない値は不明と示し、点検の通知自体は止めない。
+    """
+    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._common import state_paths  # pylint: disable=import-outside-toplevel
+
+    try:
+        observation = admission.observe()
+        limit = admission.configured_limit()
+        limit_text = "上限なし" if limit.value is None else f"上限{limit.value}"
+        working = f"作業中の委譲先はマシン全体で{observation.working}（{limit_text}、起動待ち{observation.waiting}）。"
+        if observation.failures:
+            # 一覧コマンドは読めない状態ファイルを表示しないため、全件の診断をセッションの一時領域へ保存して所在を示す。
+            base = state_paths.state_dir() / "agents-server"
+            lines = [f"{base}/{failure}" for failure in observation.failures]
+            saved = ""
+            directory = managed_temp.find_session_temp(session_id)
+            if directory is not None:
+                try:
+                    report = directory / "agents-concurrency-failures.txt"
+                    report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                    saved = f"全{len(lines)}件の所在と診断: {report}。"
+                except OSError:
+                    saved = ""
+            shown = "、".join(lines[:3]) + (f"（他{len(lines) - 3}件）" if len(lines) > 3 else "")
+            if len(lines) > 3 and not saved:
+                shown = "、".join(lines)
+            working += (
+                f"ただし状態ファイル{len(lines)}件を読めず、この数は部分観測である。"
+                f"読めない記録: {shown}。{saved}各ファイルの内容と書込主体の稼働を確認する。"
+            )
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        working = (
+            f"作業中の委譲先の数を取得できない（{type(error).__name__}: {error}）。"
+            "`atk config get state_dir`が示すディレクトリの`agents-server`配下の状態ファイルの読取権限と内容を確認する。"
+        )
+    seconds: list[float] = []
+    hooks_problem = ""
+    directory = None
+    try:
+        directory = managed_temp.find_session_temp(session_id)
+        if directory is not None:
+            lines = split_lines((directory / "hook-timings.jsonl").read_text(encoding="utf-8"))
+            for line in lines[-_RECENT_HOOK_ROWS * 4 :]:
+                row = json.loads(line)
+                if isinstance(row, dict) and row.get("stage") == "total" and isinstance(row.get("seconds"), (int, float)):
+                    seconds.append(float(row["seconds"]))
+    except FileNotFoundError:
+        seconds = []
+    except (OSError, UnicodeError, ValueError) as error:
+        seconds = []
+        hooks_problem = f"hook所要の記録を読めない（{type(error).__name__}）。`{directory}/hook-timings.jsonl`を確認する。"
+    seconds = seconds[-_RECENT_HOOK_ROWS:]
+    if hooks_problem:
+        hooks = hooks_problem
+    elif seconds:
+        hooks = f"直近{len(seconds)}回のhook所要は平均{sum(seconds) / len(seconds):.1f}秒・最大{max(seconds):.1f}秒。"
+    else:
+        hooks = "直近のhook所要の記録は無い。"
+    return working + hooks
+
+
 def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
     """点検の期日に達していれば通知本文を返し、配送時に通知時刻を確定する予約をする。達していなければ`None`を返す。
 
@@ -151,7 +223,11 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         if elapsed >= 0
         else "初回観測の保存時刻が通知生成時刻より後にあるため、経過時間は不明。"
     )
-    body = f"通知生成時刻: {observed_at}。{elapsed_text}" + _SELF_CHECK_NOTICE_BODY.format(path=path)
+    body = (
+        f"通知生成時刻: {observed_at}。{elapsed_text}"
+        + _saturation_text(session_id)
+        + _SELF_CHECK_NOTICE_BODY.format(path=path)
+    )
     text = _llm_notice(body, tag="notice")
     if not text:
         return None

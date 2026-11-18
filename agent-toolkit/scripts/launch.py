@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from agent_toolkit._common import dotfiles_mode, environment_usage, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common import dotfiles_mode, environment_usage, inherited_venv, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 lazy from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
@@ -137,6 +137,8 @@ def main() -> int:
                     stable = plugin_root.resolve_stable_plugin_root(root, independent=True)
                 arguments = [str(python), str(stable / _AGENTS_SERVICE_TARGET), *options.arguments]
                 environment["PYTHONPATH"] = str(stable)
+                # 委譲先へ渡す前の復元で、管理サービスのコード配置を指すPYTHONPATHも外せるよう記録する。
+                inherited_venv.record_launch_value(environment, "PYTHONPATH", caller_environment.get("PYTHONPATH"))
                 return _run_agents_server(arguments, environment, independent=True)
             if target == root / _AGENTS_SERVER_TARGET:
                 return _run_agents_server(arguments, environment)

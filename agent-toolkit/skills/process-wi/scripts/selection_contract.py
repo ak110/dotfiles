@@ -5,9 +5,10 @@ from __future__ import annotations
 import copy
 import math
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from agent_toolkit._atk import config as _model_config
+from agent_toolkit._atk.wi import priority as _wi_priority
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import selection_estimate as _estimate
@@ -124,6 +125,36 @@ def require_shared_wait_basis(correction: object) -> None:
         )
 
 
+def _check_selection_order(facts: Mapping[str, Mapping[str, typing.Any]], selected: set[str], excluded: set[str]) -> None:
+    """新しく着手するAWIの選定が、最古枠とurgent枠の交互の順の先頭からの連続になっているかを確かめる。
+
+    処理中・再開位置の項目と回答済みUWIは順序の対象外とする。除外候補は意味判断で外した項目として順から除く。
+    意味（損失の根拠が妥当か）は起票・観測担当が判断し、ここでは順序と根拠の欠落だけを扱う。
+    """
+    new_awis = [
+        (name, str(fact.get("priority") or "normal"))
+        for name, fact in facts.items()
+        if fact.get("type") == "awi" and fact.get("state") == "inbox" and fact.get("ready") is True and name not in excluded
+    ]
+    for name, fact in facts.items():
+        if fact.get("priority") == _wi_priority.URGENT:
+            reason = fact.get("priority_reason")
+            if not isinstance(reason, dict) or any(not str(reason.get(key, "")).strip() for key in _wi_priority.REASON_KEYS):
+                raise ValueError(
+                    f"{name}: urgentに影響・根拠・解除条件のいずれかが無い。"
+                    "`atk wi set-priority`で根拠を補うか、損失を示せなければnormalへ戻してから候補を取り直す"
+                )
+    order = _wi_priority.selection_order(new_awis)
+    chosen = [name for name in order if name in selected]
+    expected = order[: len(chosen)]
+    if set(chosen) != set(expected):
+        raise ValueError(
+            "新しく着手するAWIが選定順の先頭からの連続になっていない。"
+            f"先頭{len(chosen)}件の期待: {', '.join(expected)}。"
+            "最古の1件とurgentの最古の1件を交互に選ぶ順で選び直すか、外す項目を除外候補へ理由とともに記録する"
+        )
+
+
 def generate_selection(
     judgments: object,
     candidates: list[dict[str, typing.Any]],
@@ -177,6 +208,7 @@ def generate_selection(
         or set(excluded) & seen
     ):
         raise ValueError("除外候補は候補にある未選定WIだけを重複なく指定する")
+    _check_selection_order(facts, seen, set(excluded))
     assignments = {item[_selection.WI_KEY]: item[_selection.LANE_KEY] for item in decisions if _selection.LANE_KEY in item}
     if len(assignments) != len(decisions):
         raise ValueError("レーン割当は意味判断として全WIへ明示する")
