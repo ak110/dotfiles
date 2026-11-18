@@ -19,8 +19,8 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | セッション記録を復元・進捗・操作の観測へ使う前 | `../../../share/session-conversation-extraction.md` |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` |
+| 本文の参照基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/wi-saving.md` |
 
 ## 読込表
 
@@ -39,7 +39,7 @@
 各セッションの終了時には本スキルを呼ばず、SessionStartで登録された待ちをbatchの担当が非活動時にまとめて処理する。
 中断・利用上限・未再開の記録も、最終報告の有無にかかわらず待ち集合と実際の処理範囲で扱う。
 作業完了報告・公開・ホスト停止は元作業のメインが担い、非同期振り返りとは独立して進める。
-再発防止策となるAWIの本文起草とキューへの登録は、`../../wi-standards/references/wi-standards-operations.md`「投入と取得」に従い、WI投入担当へ委譲して行う。
+再発防止策となるAWIの本文起草とキューへの登録は、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に従い、WI投入担当へ委譲して行う。
 振り返りのメインは原因分析と類似見直しを実施し、具体策を選定して結果をWI投入担当へ渡す。
 投入担当と実行担当は確定済みの調査を繰り返さず、対象の変化や新たな証拠がある場合に必要な範囲を再確認する。
 
@@ -138,17 +138,18 @@ AWIの保存と検収、全候補と未確認範囲の判定を終え、今回�
 時間超過に伴って追加のAWI登録が必要となった場合は、工程5と同様に追加分の予告を出力した上で、既存のWI投入担当による起草、メインエージェントによる検収、ファイル保存を実施する。
 既存のAWIで対処済みであるという結論や、再発防止策を策定しないという判断に至った場合も、その妥当な根拠とともに今回の最終報告に記載する。
 今回のセッションにおける処理の律速要因に対する対応は、AWI起草基準の見直しといった別の課題に対する事前の回答とは明確に区別して確定させる（詳細は`duration-analysis.md`「所要時間の分析と改善」を参照）。
+ユーザーが対話で起動した振り返りで、登録する要求が巡回や作業の進め方の改善である時は、`agent-toolkit:atk-mode/playbooks/add-awi-by-user.md`「稼働中の巡回への連絡」に従う。
 手動起動では分析・必要なAWI保存・結果本文の確定を終え、準備時の1行JSONを保存した絶対パスを`atk run-script session-review-state -- complete --prepared <準備結果JSONの絶対パス>`へ渡す。
 成功と残る待ち件数を確認し、結果本文を送達する前に必要なツール処理を終える。
 この操作の確定対象は準備済み範囲の分析に限る。
 本文の送達は実際の送達結果で確かめ、分析に失敗した範囲は未処理として保持する。
 結果本文は`agent-toolkit:report-completion`の`references/report-formats.md`に従う。
 AWIを1件以上投入した場合は「AWI投入結果報告のフォーマット」、それ以外は「振り返り結果報告のフォーマット」を使う。
-送達は`agent-toolkit:user-confirmation-and-report`に従う。
+送達は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
 本スキルは結果報告の送達で終え、通常作業の完了処理と同期振り返りの再起動は対象外とする。
 
 ## 本文参照の取得条件
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |

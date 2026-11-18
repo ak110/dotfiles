@@ -2,7 +2,7 @@
 
 WI作成から実行レビューに至る一連の成果物を連携させ、消費主体が利用する公開インターフェース（コマンド、画面、APIなど）を通じて要求が確実に満たされるようにする。
 後続の工程は前工程の出口条件を入力として扱い、前工程で確定した判断を改めて起草し直すことはしない。
-WIの説明・例示を最終成果物へ転記する工程では、`../skills/wi-standards/references/notation-rules.md`「チェックの対象範囲」に従い、要件と逐語指定を保持して転記先の品質基準・lintへ合わせる。
+WIの説明・例示を最終成果物へ転記する工程では、`../skills/atk-mode/references/awi-body.md`「チェックの対象範囲」に従い、要件と逐語指定を保持して転記先の品質基準・lintへ合わせる。
 
 ## 名指し参照の読込方法
 
@@ -10,11 +10,11 @@ WIの説明・例示を最終成果物へ転記する工程では、`../skills/w
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| WIの説明・例示を最終成果物へ転記する前 | `../skills/wi-standards/references/notation-rules.md` |
+| WIの説明・例示を最終成果物へ転記する前 | `../skills/atk-mode/references/awi-body.md` |
 | 目標起点の責務を判断する前 | `work-contract.md` |
 | 目標起点の処理対象を判断する前 | `../skills/process-wi/references/lanes-goals.md` |
-| 本文が起票目的別の登録条件を判定する時 | `../skills/wi-standards/references/wi-standards-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion-duplicates.md` |
+| 本文が起票目的別の登録条件を判定する時 | `../skills/atk-mode/references/awi-body.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/atk-mode/playbooks/wi-drafting.md` |
 
 ## 工程表
 
@@ -36,12 +36,14 @@ WIの説明・例示を最終成果物へ転記する工程では、`../skills/w
 
 専念型では作成主体が調査から保存までを一貫して完結させる。
 一方、付随型（他の作業中に投入する場合）では、独立したWI投入担当による原稿の返却、親エージェントによる意味の検収、および同じ担当への保存指示という2段階の手順を維持する。
-専念型を適用する場面は、`add-wi-parent-launch.md`「起動方法」に定める。
-調査、引用、原因分析、重複確認、成立性の確認、起草、および保存の手順はwi-standardsの共通手順に集約されており、作成主体の種類を問わず適用する。
-重複確認の要否は`../skills/wi-standards/references/drafting-completion-duplicates.md`「重複判定」で起点ごとに決める。
+専念型を適用する場面は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`「起動方法」に定める。
+調査、引用、原因分析、重複確認、成立性の確認、起草、および保存の手順は、作成主体の種類を問わず同じものを適用する。
+手順は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`と`agent-toolkit:atk-mode/playbooks/wi-saving.md`にある。
+重複確認の要否は`../skills/atk-mode/playbooks/wi-drafting.md`「重複判定」で起点ごとに決める。
 調査済み事項、独立別件の引き渡し先、再発防止の選定方針と未実施の実装・検証を後続工程へ渡す。
-WI作成専用セッションの担当は、要求の件数にかかわらず原則としてメインエージェントが務め、検収の構成はwi-standardsの共通手順に従う。
-現在の問いに対する回答と、後続工程へ登録する成果物を提供するタイミングは、`agent-toolkit:user-confirmation-and-report`のSKILL.md「成果物の制限」に従って判定する。
+完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
+WI作成専用セッションの担当は、要求の件数にかかわらず原則としてメインエージェントが務め、検収の構成は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」に従う。
+現在の問いに対する回答と、後続工程へ登録する成果物を提供するタイミングは、`agent-toolkit:atk-mode/playbooks/user-utterance.md`「成果物の制限」に従って判定する。
 
 ## 用語
 
@@ -65,10 +67,10 @@ WI作成専用セッションの担当は、要求の件数にかかわらず原
 
 実行レビューおよび統合における「公開工程判定」とは、全体検証やCIの成功を条件とする完成条件を、個別のWIの完成条件判定行には含めず、公開工程（`agent-toolkit:commit`の`references/publish.md`冒頭）で判定することを指す。
 
-WI起草工程の登録条件は、`../skills/wi-standards/references/wi-standards-body.md`「起票目的別の調査出口」に従う。
+WI起草工程の登録条件は、`../skills/atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」に従う。
 
 ## 本文参照の取得条件
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../skills/wi-standards/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `../skills/atk-mode/playbooks/wi-drafting.md` |
