@@ -275,6 +275,16 @@ def _require_labels(body: str, labels: tuple[str, ...], option: str, definition:
             )
 
 
+def _require_issue_description(issue: str, option: str) -> None:
+    """指摘本文が、ラベルの行のほかに問題を書いた行を持つことを確かめる。件数や区分だけの行では、直す内容を読めないため。"""
+    labels = (*ISSUE_LABELS, CLASSIFICATION_LABEL, ORIGIN_LABEL)
+    if not any(line.strip() and not line.strip().startswith(labels) for line in issue.splitlines()):
+        raise _ActionableError(
+            f"{option}の本文にラベルの行のほかの記述が無い",
+            next_action="違反した規約・契約、観測した事象、本来の結果を書いた行を加えて同じコマンドを再実行する",
+        )
+
+
 def _require_issue_labels(location: str, issue: str, round_value: str, option: str) -> None:
     """レビュー担当の指摘本文が類似見直し完了件数と、2回目以降のラウンドでは区分を持つことを確かめる。
 
@@ -283,25 +293,26 @@ def _require_issue_labels(location: str, issue: str, round_value: str, option: s
     if location.strip().startswith(_OWN_RECORD_PREFIX):
         return
     _require_labels(issue, ISSUE_LABELS, option, _ISSUE_LABEL_DEFINITION)
-    normalized_round = _normalized(round_value)
-    if _ROUND_RE.match(normalized_round) is None or int(normalized_round) < 2:
-        return
+    _require_issue_description(issue, option)
     values = _label_values(issue, CLASSIFICATION_LABEL)
-    if len(values) != 1 or values[0] not in CLASSIFICATION_VALUES:
-        raise _ActionableError(
-            f"{option}の本文に2回目以降のラウンドで必須の区分が1件ない",
-            next_action=(
-                f"{CLASSIFICATION_LABEL} の行を1つ置き、値を{', '.join(CLASSIFICATION_VALUES)}のいずれか1つだけにする。"
-                f"各区分の意味は{_ISSUE_LABEL_DEFINITION}が定める"
-            ),
-        )
-    if values[0] == REREGISTERED_CLASSIFICATION:
+    if REREGISTERED_CLASSIFICATION in values:
         raise _ActionableError(
             f"{option}の区分{REREGISTERED_CLASSIFICATION}はaddでは登録できない",
             next_action=(
                 "前回の指摘が残る場合は`atk review-table recheck <PATH> --row-id <前回の指摘の行> --round <現在のround> "
                 "--verdict <対応不十分|未対応> --issue-file <残る問題の本文>`で記録する。"
                 "区分と元の指摘の行を書いた指摘行をrecheckが登録する"
+            ),
+        )
+    normalized_round = _normalized(round_value)
+    if _ROUND_RE.match(normalized_round) is None or int(normalized_round) < 2:
+        return
+    if len(values) != 1 or values[0] not in CLASSIFICATION_VALUES:
+        raise _ActionableError(
+            f"{option}の本文に2回目以降のラウンドで必須の区分が1件ない",
+            next_action=(
+                f"{CLASSIFICATION_LABEL} の行を1つ置き、値を{', '.join(CLASSIFICATION_VALUES)}のいずれか1つだけにする。"
+                f"各区分の意味は{_ISSUE_LABEL_DEFINITION}が定める"
             ),
         )
 
@@ -330,13 +341,14 @@ def carried_origin(issue: str) -> int | None:
 
 
 def require_carried_issue(issue: str, option: str) -> None:
-    """recheckへ渡す残る問題の本文が類似見直し完了件数を持ち、CLIが書く区分と元の指摘の行を持たないことを確かめる。"""
+    """recheckへ渡す残る問題の本文が類似見直し完了件数と問題の記述を持ち、CLIが書く区分と元の指摘の行を持たないことを確かめる。"""
     _require_labels(issue, ISSUE_LABELS, option, _ISSUE_LABEL_DEFINITION)
     if any(line.strip().startswith((CLASSIFICATION_LABEL, ORIGIN_LABEL)) for line in issue.splitlines()):
         raise _ActionableError(
             f"{option}の本文に{CLASSIFICATION_LABEL}か{ORIGIN_LABEL}で始まる行がある",
             next_action="区分と元の指摘の行はrecheckが書くため、その行を除いて同じコマンドを再実行する",
         )
+    _require_issue_description(issue, option)
 
 
 def carried_issue(issue: str, origin_row_id: int) -> str:
@@ -347,6 +359,11 @@ def carried_issue(issue: str, origin_row_id: int) -> str:
 def withdrawn_reason(origin_row_id: int, round_value: int) -> str:
     """同じroundの判定を完了へ記録し直したときに、recheckが登録済みの行へ書く対応不要理由（レビュー担当の撤回）を返す。"""
     return f"根拠の所在: 行{origin_row_id}のラウンド{round_value}の再確認を完了へ記録し直した\n判断主体: レビュー担当"
+
+
+def recheck_lines(body: str) -> list[str]:
+    """セルの`再確認:`で始まる行を保存順に返す。応答を記録し直すときに、レビュー担当の判定を消さず引き継ぐために使う。"""
+    return [line.strip() for line in body.splitlines() if line.strip().startswith(RECHECK_LABEL)]
 
 
 def reject_recheck_label(body: str, option: str) -> None:

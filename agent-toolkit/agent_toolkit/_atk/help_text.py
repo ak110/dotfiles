@@ -486,10 +486,10 @@ HELP: dict[str, dict[str, str]] = {
         "\n前提: `--round`と`--track`は全件共通。単数形は`--level`・`--location-file`・`--issue-file`を使う。"
         "複数件は`--items-file`へUTF-8の非空JSON配列を渡す。"
         "各要素は文字列location・issue・levelの3必須キーだけを持ち、levelは要件・仕様・詳細・実装から選ぶ。"
-        '例（--round=2）: [{"location":"対象の位置","issue":"指摘本文\\n類似見直し完了件数: 2\\n区分: 新しい変更","level":"仕様"}]。'
-        "round 1では区分の行を省ける。"
+        "次は--round=2で受け付ける例（round 1では区分の行を省ける）。\n"
+        '  [{"location":"対象の位置","issue":"指摘本文\\n類似見直し完了件数: 2\\n区分: 新しい変更","level":"仕様"}]\n'
         "単数形の3オプションと配列入力は併用できない。"
-        "指摘内容は`類似見直し完了件数:`を行頭に置き、同じ行へ類似見直しで確かめた箇所の件数を整数だけで書く。"
+        "指摘内容は`類似見直し完了件数:`を行頭に置き、同じ行へ類似見直しで確かめた箇所の件数を整数だけで書き、ラベルの行のほかに問題を書いた行を置く。"
         "2以上のroundでは`区分:`の行を1つ置き、同じ行へ修正に起因・前回の見落とし・新しい変更・要求追加のいずれか1つだけを書く（補足は別の行へ書く）。"
         "前回の指摘が残る区分「前回から残存」の行は、`atk review-table recheck`の対応不十分・未対応が登録するため、addでは受け付けない。"
         "指摘箇所が`担当の記録:`で始まる行は、この2つのラベルを求めない。"
@@ -500,7 +500,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
-        "description": "レビューイーの応答を更新する。\n\n目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの対応内容または対応不要理由を記録する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方が、送信した本文と一致するかを確かめる。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換の指定方法として利用できる。本文は対応するファイル指定オプションで渡し、`--response-file`と`--no-response-reason-file`のいずれか一方だけを指定する。`--response-file`の本文は`違反を確認した規定:`・`類似見直し完了件数:`・`採用する修正範囲:`・`採用しない修正方針:`を、`--no-response-reason-file`の本文は`根拠の所在:`・`判断主体:`を、それぞれ行頭に置き、同じ行のラベルの後へ空でない内容を書く。`類似見直し完了件数:`には確かめた箇所の件数を整数で書く。判断主体はメイン・レーン担当・統括・ユーザー・レビュー担当の1値を指定する。移管時は登録済みWIのファイル名を任意の`移管先:`へ1件書く。CLIは形式を検査し、登録確認は記録する担当が行う。ラベルの欠落・空値・重複、不正な判断主体と移管先は表を変更せず非0で終了する。各ラベルに書く内容は`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘管理表への応答」が定める。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
+        "description": "レビューイーの応答を更新する。\n\n目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの対応内容または対応不要理由を記録する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方が、送信した本文（引き継いだ`再確認:`の行を含む）と一致するかを確かめる。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換の指定方法として利用できる。本文は対応するファイル指定オプションで渡し、`--response-file`と`--no-response-reason-file`のいずれか一方だけを指定する。`--response-file`の本文は`違反を確認した規定:`・`類似見直し完了件数:`・`採用する修正範囲:`・`採用しない修正方針:`を、`--no-response-reason-file`の本文は`根拠の所在:`・`判断主体:`を、それぞれ行頭に置き、同じ行のラベルの後へ空でない内容を書く。`類似見直し完了件数:`には確かめた箇所の件数を整数で書く。判断主体はメイン・レーン担当・統括・ユーザー・レビュー担当の1値を指定する。移管時は登録済みWIのファイル名を任意の`移管先:`へ1件書く。CLIは形式を検査し、登録確認は記録する担当が行う。ラベルの欠落・空値・重複、不正な判断主体と移管先は表を変更せず非0で終了する。各ラベルに書く内容は`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘管理表への応答」が定める。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。上書きの前からある`再確認:`の行（レビュー担当の判定）は、記録する本文の末尾へ引き継ぐ。",
         "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-file=/home/aki/.cache/agent-toolkit/tmp/response.md",
     },
     "atk review-table show": {
@@ -538,12 +538,12 @@ HELP: dict[str, dict[str, str]] = {
         "対応不十分・未対応では、`--issue-file`の本文の先頭へ`区分: 前回から残存`と`元の指摘: 行<指定行のrow-id>`の行を加えた指摘行を、"
         "指定行と同じtrack・指摘箇所・levelで現在のroundへ登録し、判定の行の末尾へ` 行<登録した行のrow-id>`を書く。"
         "現在のroundより前の行、担当の記録ではない行、応答済みの行だけを受け付け、それ以外は表を変更せず非0で終了する。"
-        "\n前提: `--row-id`は`show`が出力した識別子、`--round`は現在の再レビューのラウンド番号（2以上）とする。"
-        "判定の根拠は書かない。対応不十分・未対応では、`--issue-file`へ`類似見直し完了件数:`の行（整数だけ）と残る問題を書き、区分と元の指摘の行は書かない。"
+        "\n前提: `--row-id`は`show`が出力した識別子、`--round`は現在の再レビューのラウンド番号（2以上で、同じtrackの最大のround以上）とする。"
+        "判定の根拠は書かない。対応不十分・未対応では、`--issue-file`へ`類似見直し完了件数:`の行（整数だけ）と残る問題を書いた行を書き、区分と元の指摘の行は書かない。"
         "完了では`--issue-file`を指定しない。未記録の行は`show --format=summary`のrecheck_pending_row_idsで確かめる。"
         "\n復元・後始末: 誤った判定は、同じ行へ同じroundで正しい判定を再実行して直す。判定の行は追記され、集計は後の行を使う。"
         "そのroundで登録した行が未応答なら、対応不十分・未対応では同じ行を書き換え、完了ではレビュー担当の撤回として対応不要理由を書く。"
-        "登録した行が応答済みなら、記録し直しは表を変更せず非0で終了する。別のroundの判定と応答の他の行は残る。",
+        "登録した行が応答済みなら、記録し直しは表を変更せず非0で終了する。前のroundの判定は記録し直せない。別のroundの判定と応答の他の行は残る。",
         "epilog": "実行例:\n\n  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=3 --round=2 --verdict=完了\n"
         "  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=4 --round=2 --verdict=対応不十分 "
         "--issue-file=/home/aki/.cache/agent-toolkit/tmp/remaining.md",
@@ -727,7 +727,10 @@ class JapaneseHelpFormatter(argparse.HelpFormatter):
             break_long_words=False,
             break_on_hyphens=False,
         )
-        return "\n".join(wrapper.fill(line) if line else "" for line in text.splitlines())
+        # 空白2つで始まる行は実行例・入力例であり、折り返すと貼り付けた入力が別の行や改行入りの文字列になるため、そのまま出す。
+        return "\n".join(
+            f"{indent}{line}" if line.startswith("  ") else wrapper.fill(line) if line else "" for line in text.splitlines()
+        )
 
 
 class GuidedSubcommandParser(argparse.ArgumentParser):

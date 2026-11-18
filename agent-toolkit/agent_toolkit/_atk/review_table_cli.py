@@ -220,7 +220,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     recheck_parser.add_argument(
         "--round",
         required=True,
-        help="現在の再レビューのラウンド番号。2以上の整数で指定する。",
+        help="現在の再レビューのラウンド番号。2以上で、同じtrackの最大のround以上の整数を指定する。",
     )
     recheck_parser.add_argument(
         "--verdict",

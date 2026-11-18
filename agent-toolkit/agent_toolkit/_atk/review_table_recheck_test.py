@@ -51,6 +51,8 @@ def _cli_add(tmp_path: pathlib.Path, path: pathlib.Path, round_value: str, locat
         ("2", "module.py:10", review_bodies.issue_body("指摘", "新しい変更ではない"), False),
         ("2", "module.py:10", review_bodies.issue_body("指摘", "新しい変更"), True),
         ("2", "module.py:10", review_bodies.issue_body("指摘", "前回から残存"), False),
+        ("1", "module.py:10", review_bodies.issue_body("指摘", "前回から残存"), False),
+        ("1", "module.py:10", "類似見直し完了件数: 3", False),
         ("2", "担当の記録: 統合時の競合解消", "競合を解消した", True),
     ],
     ids=[
@@ -63,6 +65,8 @@ def _cli_add(tmp_path: pathlib.Path, path: pathlib.Path, round_value: str, locat
         "round2-negated-classification",
         "round2-classified",
         "round2-carried-only-by-recheck",
+        "round1-carried-only-by-recheck",
+        "labels-only",
         "own-record",
     ],
 )
@@ -189,8 +193,9 @@ def test_recheck_correction_appends_and_reuses_or_withdraws_carried_row(tmp_path
         ("対応不十分", review_bodies.issue_body("指摘Bの残り", "前回から残存")),
         ("対応不十分", review_bodies.issue_body("指摘Bの残り") + "\n元の指摘: 行1"),
         ("完了", review_bodies.issue_body("指摘Bの残り")),
+        ("未対応", "類似見直し完了件数: 1\n"),
     ],
-    ids=["missing-issue", "missing-count", "classification-line", "origin-line", "issue-on-done"],
+    ids=["missing-issue", "missing-count", "classification-line", "origin-line", "issue-on-done", "labels-only"],
 )
 def test_recheck_requires_remaining_issue_only_for_unresolved(tmp_path: pathlib.Path, verdict: str, issue: str | None) -> None:
     """対応不十分・未対応は件数を持つ残る問題の本文を必須とし、区分と元の指摘の行はCLIだけが書く。完了には本文を渡させない。"""
@@ -202,21 +207,56 @@ def test_recheck_requires_remaining_issue_only_for_unresolved(tmp_path: pathlib.
 
 
 def test_recheck_appends_and_keeps_other_lines(tmp_path: pathlib.Path) -> None:
-    """判定は追記だけとし、形式外の旧行と別のroundの判定を残す。集計は最も新しいroundの判定を使う。"""
+    """判定は追記だけとし、形式外の旧行と前の判定を残す。集計は同じroundの最後の判定を使い、次のroundは登録した行を対象にする。"""
     path = tmp_path / "plan.exec-review.tsv"
     _answered_round_one(path)
     rows = table.read_rows(path)
     rows[0][5] = f"{rows[0][5]}\n再確認: 旧形式の検証メモ\n再確認: ラウンド2 対応不十分"
     _write_rows(path, rows)
     assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
-    assert _cli_recheck(tmp_path, path, 1, "3", "対応不十分", review_bodies.issue_body("指摘Aの残り")) == 0
-    assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
+    assert _cli_recheck(tmp_path, path, 1, "2", "未対応", review_bodies.issue_body("指摘Aの残り")) == 0
+    assert _cli_recheck(tmp_path, path, 1, "3", "完了") == 0
     body = table.read_rows(path)[0][5]
-    assert "\n再確認: 旧形式の検証メモ\n再確認: ラウンド2 対応不十分\n" in body
-    assert body.count("再確認: ラウンド2 完了") == 2
-    assert "\n再確認: ラウンド3 対応不十分 行3\n" in body
-    assert table.summary(path, 2).get("recheck_pending_row_ids") == [2]
-    assert table.summary(path, 3).get("recheck_counts") == {"完了": 0, "対応不十分": 1, "未対応": 0}
+    assert body.splitlines()[-5:] == [
+        "再確認: 旧形式の検証メモ",
+        "再確認: ラウンド2 対応不十分",
+        "再確認: ラウンド2 完了",
+        "再確認: ラウンド2 未対応 行3",
+        "再確認: ラウンド3 完了",
+    ]
+    assert table.summary(path, 2).get("recheck_counts") == {"完了": 0, "対応不十分": 0, "未対応": 1}
+    assert table.summary(path, 3).get("recheck_pending_row_ids") == [3]
+
+
+def test_recheck_rejects_round_before_current_round(tmp_path: pathlib.Path) -> None:
+    """後のroundの指摘がある表では前のroundの判定を記録させず、現在のroundのsummaryが見ない行へ残りを登録しない。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
+    assert _cli_recheck(tmp_path, path, 2, "2", "完了") == 0
+    table.add(path, "3", _TRACK, "module.py:30", review_bodies.issue_body("指摘C", "新しい変更"), "仕様")
+    table.respond(path, "", "", "", "", review_bodies.response_body("直した"), "", row_id=3)
+    saved = path.read_bytes()
+    assert _cli_recheck(tmp_path, path, 1, "2", "未対応", review_bodies.issue_body("指摘Aの残り")) != 0
+    assert path.read_bytes() == saved
+    assert _cli_recheck(tmp_path, path, 1, "4", "未対応", review_bodies.issue_body("指摘Aの残り")) == 0
+    state = table.summary(path, 4)
+    assert state.get("unanswered_count") == 1
+    assert state.get("recheck_pending_row_ids") == [3]
+
+
+def test_respond_keeps_recheck_verdicts(tmp_path: pathlib.Path) -> None:
+    """応答を記録し直しても、対応内容と対応不要理由のどちらへ変えても、レビュー担当の判定の行を消さない。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
+    table.respond(path, "", "", "", "", review_bodies.response_body("書き直した"), "", row_id=1)
+    assert table.read_rows(path)[0][5].endswith("書き直した\n採用しない修正方針: なし\n再確認: ラウンド2 完了")
+    table.respond(path, "", "", "", "", "", review_bodies.reason_body("README.md:10の既存契約"), row_id=1)
+    row = table.read_rows(path)[0]
+    assert not row[5]
+    assert row[6].endswith("\n再確認: ラウンド2 完了")
+    assert table.summary(path, 2).get("recheck_counts") == {"完了": 1, "対応不十分": 0, "未対応": 0}
 
 
 def _write_rows(path: pathlib.Path, rows: list[list[str]]) -> None:
@@ -273,3 +313,23 @@ def test_summary_without_previous_round_omits_recheck_fields(tmp_path: pathlib.P
     path = tmp_path / "plan.exec-review.tsv"
     table.add(path, "1", _TRACK, "module.py:10", review_bodies.issue_body("指摘"), "仕様")
     assert "recheck_pending_count" not in table.summary(path, 1)
+
+
+def test_add_help_items_example_is_accepted_as_displayed(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """狭い端末幅で表示したadd --helpの一括入力例を、表示された行のまま--items-fileへ渡すと受け付ける。"""
+    monkeypatch.setenv("COLUMNS", "40")
+    with pytest.raises(SystemExit):
+        atk.main(["review-table", "add", "--help"], home=tmp_path)
+    examples = [line.strip() for line in capsys.readouterr().out.splitlines() if line.startswith("  [{")]
+    assert len(examples) == 1
+    items_file = tmp_path / "items.json"
+    items_file.write_text(examples[0], encoding="utf-8")
+    path = tmp_path / "plan.exec-review.tsv"
+    with pytest.raises(SystemExit) as returned:
+        atk.main(
+            ["review-table", "add", str(path), "--round=2", f"--track={_TRACK}", f"--items-file={items_file}"], home=tmp_path
+        )
+    assert returned.value.code == 0
+    assert len(table.read_rows(path)) == 1
