@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # 一方の追加が失われるため、このロックで直列化する。
 PROCESS_PATH_LOCK = threading.Lock()
 # 複数のCLI工程が同じnpmのグローバル領域を同時に変更しないよう、旧npm版の削除を直列化する。
-_NPM_GLOBAL_LOCK = threading.Lock()
+NPM_GLOBAL_LOCK = threading.Lock()
 
 
 def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
@@ -150,7 +150,7 @@ def migrate_npm_launchers(
         if not _launcher_belongs_to_package(launcher, package_dir, package_name):
             _warn_unconfirmed_launcher(cli_name, launcher, f"{package_dir}配下の実体ではない: {_launcher_kind(launcher)}")
             continue
-        with _NPM_GLOBAL_LOCK:
+        with NPM_GLOBAL_LOCK:
             result = common.run_subprocess(
                 [str(npm), "uninstall", "--global", package_name],
                 timeout=common.COMMAND_TIMEOUT,
