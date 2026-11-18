@@ -1,5 +1,5 @@
 import type { EngineInterface, On } from "claude-code";
-import { exitStatePath } from "./session_exit.ts";
+import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
 import { reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
@@ -125,6 +125,11 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           ok = true;
         } else if (request.operation === "periodic_recheck") {
           reason = await mountForStart($);
+          ok = true;
+        } else if (request.operation === "periodic_recheck_collect") {
+          // Stopが全待機の終了を判定した時点で回収し、ターンの終了直後のidleで実行中に発火時刻を迎えた発火分が届くのを防ぐ。
+          // 削除できなかった場合は`turn.complete`の回収が再評価して警告を届けるため、ここでは理由を応答へ返すだけにする。
+          reason = (await collectCommonTasks($)) ?? "";
           ok = true;
         } else if (request.operation === "background_complete" && typeof request.input.id === "string") {
           const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};

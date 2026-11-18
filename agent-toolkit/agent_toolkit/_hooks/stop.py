@@ -22,11 +22,14 @@ import importlib
 import json
 import os
 import sys
+lazy import asyncio
 
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._common import delegated_session as _delegated_session
+lazy from agent_toolkit._common import function_hook_requests
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.function_hook_requests import cleanup, enqueue
+lazy from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
@@ -60,6 +63,10 @@ _TERMINATION_ISSUED = frozenset({"exit_requested", "terminating"})
 
 _CONSECUTIVE_BLOCK_LIMIT = 7
 _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"
+
+# modが定期再確認のtaskを回収する（`CronList`・`atk wait-schedule`・`CronDelete`）のを待つ上限。
+# modのツール呼び出しにも設定hookが実行されるため、2026年11月18日の観測では約4秒かかった。
+_RECHECK_COLLECT_WAIT_SECONDS = 20
 
 
 def _set_consecutive_block_count(state: dict, count: int) -> dict:
@@ -108,6 +115,32 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
         return
     except Exception as exc:  # noqa: BLE001 -- 回収判定の故障を他のStop判定から隔離する
         append_stop_log(session_id, "periodic_recheck_error", {"error": f"{type(exc).__name__}: {exc}"})
+        return
+    if not pending and _holds_common_recheck_task(payload.get("session_crons")):
+        _collect_recheck_before_idle(session_id)
+
+
+def _holds_common_recheck_task(crons: object) -> bool:
+    """Stop入力の`session_crons`に、共通promptの定期再確認taskがあるかを返す。"""
+    return isinstance(crons, list) and any(
+        isinstance(cron, dict) and cron.get("prompt") == PERIODIC_RECHECK_PROMPT for cron in crons
+    )
+
+
+def _collect_recheck_before_idle(session_id: str) -> None:
+    """全待機の終了を判定したStopの中で、modに共通promptの定期再確認taskを回収させる。
+
+    Claude Codeはターンの実行中に発火時刻を迎えたcronを保留し、ターンの終了直後のidleで発火させる。
+    ターンの終了後（`turn.complete`）の回収はこの発火に間に合わず、確認する対象の無いターンが1回始まる。
+    Stopが終わるまでターンはidleにならないため、Stopの中で回収を終えればこの発火は起きない。
+    削除できなかった場合は、`turn.complete`の回収が再評価して警告を届ける。
+    """
+    try:
+        asyncio.run(
+            function_hook_requests.request(session_id, "periodic_recheck_collect", {}, timeout=_RECHECK_COLLECT_WAIT_SECONDS)
+        )
+    except (OSError, ValueError) as exc:
+        append_stop_log(session_id, "periodic_recheck_collect_error", {"error": f"{type(exc).__name__}: {exc}"})
 
 
 def evaluate(payload_text: str) -> dict[str, object]:

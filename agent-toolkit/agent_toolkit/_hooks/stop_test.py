@@ -14,6 +14,7 @@ from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi.process_loop_test import _manifest, _targets
 from agent_toolkit._common import session_state
 from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import stop
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
@@ -128,6 +129,89 @@ def test_internal_stop_failure_keeps_approval_and_existing_log(tmp_path, monkeyp
     assert not captured.out and not captured.err
     log = (tmp_path / "claude-agent-toolkit-stop-stop-internal.log").read_text(encoding="utf-8")
     assert expected in log
+
+
+def _recheck_stop(monkeypatch, tmp_path, *, crons, background_tasks=(), decision=("approve", "")):
+    """modの読込済みの会話で、全待機の終了か継続中かを判定するStopを1回実行し、modへの回収要求を返す。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    _replace_checks(monkeypatch, {"autonomous_exit": decision})
+    marker = tmp_path / "marker-recheck.txt"
+    marker.write_text("ready", encoding="utf-8")
+    monkeypatch.setattr(stop, "function_hook_paths", lambda _session: (marker, tmp_path / "request-recheck.txt"))
+    requests: list[str] = []
+
+    async def request(_session_id, operation, _inputs, *, timeout):
+        assert timeout > 0
+        # 回収はStopの応答より前、判定を書いた後に終える。
+        assert (tmp_path / "recheck-recheck.txt").read_text(encoding="utf-8") == "complete"
+        requests.append(operation)
+        return {"ok": True, "reason": ""}
+
+    monkeypatch.setattr(stop.function_hook_requests, "request", request)
+    _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+    _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+    transcript = _write_transcript(tmp_path, [{"type": "assistant", "message": {"stop_reason": "end_turn", "content": []}}])
+    payload = {
+        "session_id": "recheck",
+        "transcript_path": str(transcript),
+        "background_tasks": list(background_tasks),
+        "session_crons": crons,
+    }
+    stop.evaluate(json.dumps(payload))
+    return requests
+
+
+_COMMON_CRON = {"id": "c1", "schedule": "*/30 * * * *", "recurring": True, "prompt": PERIODIC_RECHECK_PROMPT}
+
+
+def test_all_waits_done_collects_common_task_before_turn_ends(monkeypatch, tmp_path):
+    """全待機の終了を判定したStopの中で回収を終え、実行中に発火時刻を迎えた発火分がidleで届かないようにする。"""
+    assert _recheck_stop(monkeypatch, tmp_path, crons=[_COMMON_CRON]) == ["periodic_recheck_collect"]
+
+
+@pytest.mark.parametrize(
+    ("crons", "background_tasks", "decision"),
+    [
+        ([], (), ("approve", "")),
+        (
+            [{**_COMMON_CRON, "prompt": PERIODIC_RECHECK_PROMPT.replace("</atk-auto>", "期限監視\n</atk-auto>")}],
+            (),
+            ("approve", ""),
+        ),
+        ([_COMMON_CRON], ({"id": "b1", "type": "local_bash", "status": "running"},), ("approve", "")),
+        ([_COMMON_CRON], (), ("block", "継続")),
+    ],
+    ids=["no-task", "obligation-task", "pending-background", "continued-turn"],
+)
+def test_stop_keeps_task_without_collect_request(monkeypatch, tmp_path, crons, background_tasks, decision):
+    """共通promptのtaskが無い、待機が残る、ターンが続く場合はmodを待たない。"""
+    assert not _recheck_stop(monkeypatch, tmp_path, crons=crons, background_tasks=background_tasks, decision=decision)
+
+
+def test_collect_timeout_keeps_stop_approval(monkeypatch, tmp_path):
+    """modが期限内に応答しなくてもStopの判定を変えず、診断を常時ログへ残す。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    marker = tmp_path / "marker-recheck.txt"
+    marker.write_text("ready", encoding="utf-8")
+    monkeypatch.setattr(stop, "function_hook_paths", lambda _session: (marker, tmp_path / "request-recheck.txt"))
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+
+    async def request(*_args, **_kwargs):
+        raise TimeoutError("会話内modの確認応答が期限内にない")
+
+    monkeypatch.setattr(stop.function_hook_requests, "request", request)
+    _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+    transcript = _write_transcript(tmp_path, [{"type": "assistant", "message": {"stop_reason": "end_turn", "content": []}}])
+    payload = {
+        "session_id": "recheck",
+        "transcript_path": str(transcript),
+        "background_tasks": [],
+        "session_crons": [_COMMON_CRON],
+    }
+    assert not stop.evaluate(json.dumps(payload))
+    log = (tmp_path / "claude-agent-toolkit-stop-recheck.log").read_text(encoding="utf-8")
+    assert "periodic_recheck_collect_error" in log
 
 
 @pytest.mark.parametrize("delegated", [False, True])
