@@ -127,7 +127,14 @@ class ProjectionHub:
         while True:
             target = self.registry.current()
             if target is not None and target["generation"] != self.generation:
-                return await service_rpc.request(target, "projection", payload)
+                try:
+                    return await service_rpc.request(target, "projection", payload)
+                except FileNotFoundError, ConnectionRefusedError:
+                    # 受付先の世代は終了している。接続前の失敗なので配送は起きておらず、戻した受付先で保存し直せる。
+                    restored = await run_file_operation(self.registry.restore)
+                    if restored is None or restored["process"] == target["process"]:
+                        raise
+                    continue
             await self._available.wait()
             try:
                 return await self._apply_local(payload)

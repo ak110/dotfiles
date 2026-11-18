@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit._agents_server import service_forward
-from agent_toolkit._common import runtime_environment
+from agent_toolkit._common import runtime_environment, windows_job
 
 # 中継の監視と受信の内部状態を、公開のstdio経路を起動せずに確かめる。
 # pylint: disable=protected-access
@@ -73,3 +73,24 @@ def test_request_to_live_generation_is_not_abandoned(monkeypatch: pytest.MonkeyP
     _stop(bridge)
     assert not outputs
     assert bridge.pending == {1: "tools/call"}
+
+
+def test_service_launch_inherits_job_when_breakaway_is_denied(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """離脱を許さないJobの中では、離脱を指定した起動の拒否後に所属を継承して起動し、生存を保証しない旨を診断へ残す。"""
+    detached = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
+    calls: list[int] = []
+
+    service: Any = object()
+
+    def spawn(_command: list[str], **kwargs: Any) -> Any:
+        calls.append(kwargs["creationflags"])
+        if kwargs["creationflags"] & windows_job.CREATE_BREAKAWAY_FROM_JOB:
+            raise PermissionError(5, "アクセスが拒否されました。")
+        return service
+
+    monkeypatch.setattr(service_forward.subprocess, "Popen", spawn)
+    attempts = [{"creationflags": detached | windows_job.CREATE_BREAKAWAY_FROM_JOB}, {"creationflags": detached}]
+    with (tmp_path / "stderr.log").open("wb") as stderr:
+        assert service_forward._launch_service(["python"], attempts, stderr=stderr, cwd=tmp_path, env={}) is service
+    assert calls == [detached | windows_job.CREATE_BREAKAWAY_FROM_JOB, detached]
+    assert "離脱を許可していません" in (tmp_path / "stderr.log").read_text(encoding="utf-8")

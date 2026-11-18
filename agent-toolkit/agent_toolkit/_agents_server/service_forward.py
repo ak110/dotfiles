@@ -41,6 +41,10 @@ def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generatio
         error.add_note(f"{label}（取得失敗: {failure}）")
 
 
+# 起動した世代を受付先として公開せず、候補のまま接続する指定。update-dotfilesの起動確認が、
+# 確認の終了後も候補が生存することを確かめてから`publish_service`で公開するために使う。
+DEFER_PUBLISH_ENV = "AGENT_TOOLKIT_DEFER_SERVICE_PUBLISH"
+
 # 応答の無い要求がこの秒数を超えたら、接続先世代の生存を短い照会で確かめる。
 # 正当に長いtool処理は照会に応答するため打ち切らず、停止・凍結した世代だけを配送未確定として返す。
 _STALL_SECONDS = 10.0
@@ -61,10 +65,44 @@ def code_identity(root: pathlib.Path) -> tuple[str, str]:
     return digest.hexdigest(), version
 
 
+def _launch_service(
+    command: list[str], attempts: list[dict[str, Any]], *, stderr: Any, cwd: pathlib.Path, env: dict[str, str]
+) -> subprocess.Popen[Any]:
+    """起動元からの分離を強い指定から順に試し、起動元に拒否された指定だけを次の指定へ替えて管理サービスを起動する。"""
+    for flags in attempts[:-1]:
+        try:
+            return subprocess.Popen(  # pylint: disable=consider-using-with
+                command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=cwd, env=env, **flags
+            )
+        except PermissionError:
+            warning = with_next_action(
+                "起動元のWindows Jobは離脱を許可していません。起動元のJobの制限を継承して管理サービスを起動します。"
+                "そのJob終了後のサービス生存は保証しません。",
+                next_action=(
+                    "Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
+                    "確認できない場合は、起動元とこの診断を添えてagent-toolkitの管理者へ問い合わせてください。"
+                ),
+            )
+            print(warning, file=sys.stderr)
+            stderr.write((warning + "\n").encode("utf-8"))
+            stderr.flush()
+    try:
+        return subprocess.Popen(  # pylint: disable=consider-using-with
+            command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=cwd, env=env, **attempts[-1]
+        )
+    except OSError as error:
+        error.add_note(f"管理サービス起動: executable={command[0]} cwd={cwd} flags={attempts[-1]}")
+        raise
+
+
 def ensure_service(
     caller: runtime_environment.CallerContext, root: pathlib.Path, *, python: pathlib.Path | None = None
 ) -> dict[str, Any]:
-    """起動を世代ごとに合流し、MCPの通常導入経路だけでreadyへ到達させる。"""
+    """起動を世代ごとに合流し、MCPの通常導入経路だけでreadyへ到達させる。
+
+    呼出元の環境が`DEFER_PUBLISH_ENV`を指定していれば、readyの世代を受付先として公開せずに返す。
+    """
+    publish = caller.environment.get(DEFER_PUBLISH_ENV) != "1"
     directory = service_transport.namespace(caller)
     generation, version = code_identity(root)
     registry = GenerationRegistry(directory)
@@ -81,7 +119,7 @@ def ensure_service(
             if ready.exists():
                 record = json.loads(ready.read_text(encoding="utf-8"))
                 if service_transport.process_alive(record["process"]):
-                    return service_rpc.request_sync(record, "publish", {})
+                    return service_rpc.request_sync(record, "publish", {}) if publish else record
             python = plugin_environment.prepared_python(root, caller.environment) or python or pathlib.Path(sys.executable)
             env = {
                 key: value
@@ -118,48 +156,23 @@ def ensure_service(
                 str(directory),
                 generation,
             ]
-            flags: dict[str, Any] = {"start_new_session": True}
+            attempts: list[dict[str, Any]] = [{"start_new_session": True}]
             with contextlib.ExitStack() as startup:
                 job = None
-                host_job_warning = ""
                 if os.name == "nt":
                     # 成功後のserviceは転送側から独立する。準備失敗時だけ全所属を回収する。
                     job = startup.enter_context(windows_job.WindowsJob(kill_on_close=False))
-                    creation_flags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
-                    parent_limits = job.current_job_limit_flags()
-                    if parent_limits is not None:
-                        host_job_warning = (
-                            f"起動元のWindows即時JobのLimitFlags={parent_limits:#x}。上位Jobの制限は変更しません。"
-                            "離脱を許可しない上位Jobがある場合、そのJob終了後のサービス生存は保証しません。"
-                        )
-                    if parent_limits is None or parent_limits & 0x00000800:
-                        creation_flags |= 0x01000000
-                    elif not parent_limits & 0x00001000:
-                        host_job_warning = (
-                            "起動元のWindows Jobは離脱を許可していません。外側Jobの制限を継承して管理サービスを起動します。"
-                            "そのJob終了後のサービス生存は保証しません。"
-                        )
-                    flags = {"creationflags": creation_flags}
+                    detached = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
+                    # 起動元のJobからの離脱を指定する。子を自動で離脱させるJob（venvのpython.exeが作るJobなど）の中でも、
+                    # 指定の無い子は外側のJob（SSHのセッションなど）に残り、そのJobの終了とともに止まる。
+                    # 離脱を許さないJobの中では離脱を指定した起動が拒否されるため、所属を継承して起動する。
+                    attempts = [
+                        {"creationflags": detached | windows_job.CREATE_BREAKAWAY_FROM_JOB},
+                        {"creationflags": detached},
+                    ]
                 stderr = startup.enter_context((directory / f"{generation}.stderr.log").open("wb"))
-                if host_job_warning:
-                    host_job_warning = with_next_action(
-                        host_job_warning,
-                        next_action=(
-                            "Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
-                            "確認できない場合は、起動元とこの診断を添えてagent-toolkitの管理者へ問い合わせてください。"
-                        ),
-                    )
-                    print(host_job_warning, file=sys.stderr)
-                    stderr.write((host_job_warning + "\n").encode("utf-8"))
-                    stderr.flush()
                 # サービスの寿命を転送側へ結び付けない。終了診断はサービスの起動単位が保存する。
-                try:
-                    process = subprocess.Popen(  # pylint: disable=consider-using-with
-                        command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=root, env=env, **flags
-                    )
-                except OSError as error:
-                    error.add_note(f"管理サービス起動: executable={command[0]} cwd={root} flags={flags}")
-                    raise
+                process = _launch_service(command, attempts, stderr=stderr, cwd=root, env=env)
                 try:
                     if job is not None:
                         native_process: Any = process
@@ -182,10 +195,11 @@ def ensure_service(
                                     response = service_transport.receive(peer)
                                 if response != {"result": {"generation": generation}}:
                                     raise ValueError("管理サービスの世代が不正")
-                            except FileNotFoundError, ConnectionRefusedError:
+                            except FileNotFoundError, ConnectionRefusedError, TimeoutError:
+                                # 受付を始めた直後のサービスは最初の応答が遅れることがある。readyの期限まで確かめ直す。
                                 pass
                             else:
-                                published = service_rpc.request_sync(record, "publish", {})
+                                published = service_rpc.request_sync(record, "publish", {}) if publish else record
                                 # stdio終了から独立した子を保持し、退出した旧supervisorは親の生存中にもreapする。
                                 threading.Thread(target=process.wait, name="agents-service-reaper", daemon=True).start()
                                 return published
@@ -218,6 +232,39 @@ def ensure_service(
             raise
         finally:
             file_lock.release_lock(handle)
+
+
+def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Path, *, timeout: float) -> dict[str, Any]:
+    """公開を保留して起動した候補の世代が生存していれば受付先として公開し、公開後の受付先を返す。
+
+    候補の起動と接続確認に使った子プロセスの終了後に呼び出す。候補が終了していれば公開せず、受付先を変更しない。
+    公開した受付先が直後に終了していれば、生存する世代へ受付を戻してから失敗を送出する。
+    """
+    directory = service_transport.namespace(caller)
+    generation, version = code_identity(root)
+    registry = GenerationRegistry(directory)
+    generation = registry.reserve(generation, root, version)["generation"]
+    try:
+        try:
+            record = service_rpc.discovery(directory, generation)
+        except FileNotFoundError as error:
+            raise RuntimeError(f"候補の世代が起動していないため公開しません: generation={generation}") from error
+        if not service_transport.process_alive(record["process"]):
+            raise RuntimeError(
+                f"候補の世代が起動確認の終了後に生存していないため公開しません: "
+                f"generation={generation} process={record['process']}"
+            )
+        accepted = service_rpc.request_sync(record, "publish", {}, timeout=timeout)
+        if not service_transport.process_alive(accepted["process"]):
+            restored = registry.restore()
+            raise RuntimeError(
+                f"公開した受付先の世代が終了しました: generation={accepted['generation']} process={accepted['process']} "
+                f"現在の受付先={None if restored is None else restored['generation']}"
+            )
+        return accepted
+    except Exception as error:
+        _add_service_diagnostic(error, directory, generation)
+        raise
 
 
 def _probe(target: dict) -> str | None:

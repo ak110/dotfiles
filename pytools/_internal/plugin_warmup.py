@@ -10,7 +10,7 @@ import shlex
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -425,14 +425,14 @@ class CommandOutcome:
         return False
 
 
-async def check_command(command: Sequence[str]) -> CommandOutcome:
+async def check_command(command: Sequence[str], *, environment: Mapping[str, str] | None = None) -> CommandOutcome:
     """依存確認を非同期に待ち、取消し・時間切れでも所有する子孫を回収する。"""
     started = time.monotonic()
     result = None
     error = ""
     try:
         process = await asyncio.create_subprocess_exec(
-            *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=_WARMUP_TIMEOUT)

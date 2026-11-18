@@ -15,7 +15,9 @@ from typing import Any
 CREATE_SUSPENDED = 0x00000004
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
-# 起動元のJobがJOB_OBJECT_LIMIT_BREAKAWAY_OKを許す場合だけ有効で、許さないJobではCreateProcessが失敗する。
+# 起動元が属するJobのうち離脱を許すJobから子を外す。離脱を許さないJobの中ではCreateProcessが失敗する。
+# 子を自動で離脱させるJob（JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK。venvのpython.exeが作るJobなど）の中でも、
+# 指定が無ければ子は外側のJobに残る（2026-11-19、SSHのセッションのJobで観測）。
 CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 # 端末から切り離して背景で動かす子の生成フラグ。DETACHED_PROCESSはコンソール自体を持たせないため、
 # その子が起動するコンソールアプリ（venvのpython.exeが中継する本体を含む）へWindowsが新しい可視コンソールを割り当てる。
@@ -82,8 +84,6 @@ class WindowsJob:
             "SetInformationJobObject": ([wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32], wintypes.BOOL),
             "AssignProcessToJobObject": ([wintypes.HANDLE, wintypes.HANDLE], wintypes.BOOL),
             "GetProcessId": ([wintypes.HANDLE], ctypes.c_uint32),
-            "GetCurrentProcess": ([], wintypes.HANDLE),
-            "IsProcessInJob": ([wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)], wintypes.BOOL),
             "CreateToolhelp32Snapshot": ([ctypes.c_uint32, ctypes.c_uint32], wintypes.HANDLE),
             "Thread32First": ([wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)], wintypes.BOOL),
             "Thread32Next": ([wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)], wintypes.BOOL),
@@ -118,18 +118,6 @@ class WindowsJob:
 
     def __exit__(self, *_exception: object) -> None:
         self.close()
-
-    def current_job_limit_flags(self) -> int | None:
-        """起動元の即時Jobの制限を照会し、所属が無ければNoneを返す。制限は変更しない。"""
-        in_job = wintypes.BOOL(0)
-        if not self._kernel.IsProcessInJob(self._kernel.GetCurrentProcess(), None, ctypes.byref(in_job)):
-            raise self._error()
-        if not in_job.value:
-            return None
-        limits = _ExtendedLimits()
-        if not self._kernel.QueryInformationJobObject(None, 9, ctypes.byref(limits), ctypes.sizeof(limits), None):
-            raise self._error()
-        return limits.basic.flags
 
     def assign_suspended(self, process_handle: int, pid: int) -> None:
         """元世代のhandleをJobへ登録してから、その世代だけを再開する。"""

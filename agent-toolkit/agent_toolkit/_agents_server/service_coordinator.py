@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import logging
 import pathlib
 import uuid
 import weakref
@@ -33,6 +34,7 @@ from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._common import file_lock, runtime_environment, session_registry
 from agent_toolkit._common.next_action import ActionableError
 
+_LOG = logging.getLogger("agent-toolkit.agents-server.service")
 _RESULT = TypeAdapter(CallToolResult | InputRequiredResult)
 
 
@@ -57,6 +59,9 @@ def _restore_caller(value: dict) -> runtime_environment.CallerContext:
         value.get("host_process"),
     )
 
+
+# 保存を静止させた公開元の生存を確かめる間隔。
+_PUBLISHER_PROBE_SECONDS = 1.0
 
 # 所有世代への所有照会の待機上限。生存する世代は即時に応答するため、停止した世代だけを短時間で判別する。
 _OWNER_PROBE_SECONDS = 10.0
@@ -93,6 +98,7 @@ class ServiceCoordinator:
         self._uncertain: dict[str, str] = {}
         self._contexts: set[str] = set()
         self._pending_adoptions: dict[str, dict] = {}
+        self._watchers: set[asyncio.Task[None]] = set()
         self.managers.before_controls = self.tick
         self.managers.foreign_sessions = self._foreign_sessions
 
@@ -104,7 +110,13 @@ class ServiceCoordinator:
                 previous = None
                 token = uuid.uuid4().hex
                 try:
-                    current = self.registry.current()
+                    # 終了した受付先を残して公開すると、生存する世代の保存を静止せずに受付を切り替える。
+                    # 先に受付を戻し、生存する世代を引継ぎの相手にする。
+                    current = await run_file_operation(self.registry.restore)
+                    # 受付を戻すと、起動済みの未公開の世代のepochは戻した世代より新しい値へ振り直される。
+                    entry = self.registry.generations().get(self.generation)
+                    if entry is not None:
+                        self.target["epoch"] = entry["epoch"]
                     if (
                         current is not None
                         and current["epoch"] >= self.target["epoch"]
@@ -198,7 +210,11 @@ class ServiceCoordinator:
                 child.active -= 1
 
     def _current(self) -> dict:
-        return self.registry.current() or self.target
+        current = self.registry.current()
+        if current is not None and current["process"] == self.target["process"]:
+            # 受付を戻された世代は終了した受付先のepochを引き継ぐ。退出の判定が自身を旧世代と扱わないよう追従する。
+            self.target["epoch"] = current["epoch"]
+        return current or self.target
 
     def can_retire(self) -> bool:
         """接続数や経過時間で強制終了せず、元資源と担当状態がなくなったことだけで退出する。"""
@@ -247,6 +263,9 @@ class ServiceCoordinator:
     async def prepare(self, token: str, target: dict) -> dict:
         """新しいmodel実行だけを静止し、進行中turnや背景taskの終了は待たない。"""
         self._intents[token] = target
+        watcher = asyncio.create_task(self._release_abandoned_update(token, target))
+        self._watchers.add(watcher)
+        watcher.add_done_callback(self._watched)
         await self.gate.freeze(token)
         await self._retry_adoptions()
         await self.projections.freeze(token)
@@ -262,6 +281,23 @@ class ServiceCoordinator:
             # 準備の途中で新世代が終了すると、その間の巡回が静止を解いた後に残りの静止が掛かる。
             await self._thaw(token)
         return self.projections.inventory()
+
+    async def _release_abandoned_update(self, token: str, target: dict) -> None:
+        """公開の途中で終了した世代は確定を通知しないため、静止を解除して保存と新しいturnを再開する。
+
+        静止中は監視の周期処理も保存の待機で止まり得るため、周期処理に頼らず公開元の生存を確かめる。
+        """
+        while token in self._intents:
+            if not service_transport.process_alive(target["process"]):
+                await run_file_operation(self.registry.restore)
+                await self.commit_update(token, self._current())
+                return
+            await asyncio.sleep(_PUBLISHER_PROBE_SECONDS)
+
+    def _watched(self, watcher: asyncio.Task[None]) -> None:
+        self._watchers.discard(watcher)
+        if not watcher.cancelled() and (error := watcher.exception()) is not None:
+            _LOG.error("公開元が終了した更新の静止を解除できませんでした", exc_info=error)
 
     async def commit_update(self, token: str, current: dict) -> None:
         """遅れた準備で受付を戻さず、保存先を開いてから終了済み会話を移す。"""
@@ -316,6 +352,9 @@ class ServiceCoordinator:
         for identifier, packet in tuple(self._incoming.items()):
             if not service_transport.process_alive(packet["source"]["process"]):
                 self._incoming.pop(identifier, None)
+        if self._current()["generation"] != self.generation:
+            # 受付先の世代が公開後に終了していれば、生存する世代へ受付を戻して既存の会話を続ける。
+            await run_file_operation(self.registry.restore)
         current = self._current()
         await self.gate.observe_current(current)
         if current["generation"] == self.generation:

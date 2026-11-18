@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import json
 import os
 import pathlib
 import subprocess
@@ -13,13 +14,14 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from agent_toolkit._agents_server import service_io, service_transport
+from agent_toolkit._agents_server import service_forward, service_io, service_rpc, service_transport
 from agent_toolkit._agents_server.service_context import ServiceManagers
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
 from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._agents_server.service_resources import ResourceBroker
+from agent_toolkit._common import runtime_environment
 
 # 終了した受付先への接続の失敗はOSごとに例外が異なる（Windowsの名前付きパイプは`FileNotFoundError`）ため、Windowsでも確かめる。
 pytestmark = pytest.mark.windows
@@ -64,14 +66,14 @@ def _superseded(tmp_path: pathlib.Path, *, publish_new: bool = True) -> tuple[pa
 
 
 def _coordinator(directory: pathlib.Path, target: dict[str, Any]) -> ServiceCoordinator:
-    coordinator = ServiceCoordinator(
-        target, directory, ServiceManagers(), Mock(freeze=AsyncMock(), thaw=AsyncMock()), Mock(freeze=AsyncMock())
-    )
+    projections = Mock(freeze=AsyncMock(), thaw=AsyncMock(), seed=AsyncMock(), activate=AsyncMock())
+    coordinator = ServiceCoordinator(target, directory, ServiceManagers(), projections, Mock(freeze=AsyncMock()))
     coordinator.bind_runtime(service_io.Runtime(target["generation"], target, ResourceBroker(target["generation"])))
     return coordinator
 
 
-def test_registry_mutation_is_saved_by_surviving_generation_after_published_one_exited(
+@pytest.mark.asyncio
+async def test_registry_mutation_is_saved_by_surviving_generation_after_published_one_exited(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """旧世代の会話の登録更新を、終了した受付先へ転送して失敗させず、生存する旧世代が保存する。
@@ -84,7 +86,7 @@ def test_registry_mutation_is_saved_by_surviving_generation_after_published_one_
     saved: list[dict[str, Any]] = []
     monkeypatch.setattr(forwarder, "_save", saved.append)
     payload = {"operation": "publish"}
-    forwarder._apply_sync(payload)
+    await forwarder.apply(payload)
     assert saved == [payload]
     current = GenerationRegistry(directory).current()
     assert current is not None and current["generation"] == "old"
@@ -123,11 +125,75 @@ async def test_surviving_generation_releases_update_abandoned_by_exited_publishe
     directory, old, new = _superseded(tmp_path, publish_new=False)
     coordinator = _coordinator(directory, old)
     await coordinator.prepare("token", new)
-    assert await coordinator.tick()
-    assert not coordinator._intents
+    # 静止中は監視の周期処理も保存の待機で止まり得るため、周期処理を呼ばずに解除を待つ。
+    async with asyncio.timeout(5), coordinator.gate.admit(new_turn=True):
+        pass
     registrations: Any = coordinator.registrations
     projections: Any = coordinator.projections
     registrations.thaw.assert_called_once_with("token")
     projections.thaw.assert_awaited_once_with("token")
-    async with asyncio.timeout(5), coordinator.gate.admit(new_turn=True):
-        pass
+
+
+@pytest.mark.asyncio
+async def test_relaunched_generation_takes_over_from_survivor_after_acceptance_returned(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """終了した世代を起動し直すと、生存する旧世代の保存を静止して引き継いでから受付先になる。
+
+    起動し直した世代は受付を戻す前のepochで起動していても、戻した世代より新しい候補として公開できる。
+    """
+    directory, _old, new = _superseded(tmp_path)
+    relaunched = dict(new, process=service_transport.process_identity(os.getpid()))
+    coordinator = _coordinator(directory, relaunched)
+    handed_over: list[tuple[str, str]] = []
+
+    async def request(target: dict[str, Any], operation: str, _arguments: dict) -> dict:
+        handed_over.append((target["generation"], operation))
+        return {}
+
+    monkeypatch.setattr(service_rpc, "request", request)
+    accepted = await coordinator.publish()
+    assert accepted["generation"] == "new"
+    current = GenerationRegistry(directory).current()
+    assert current is not None and (current["generation"], current["process"]) == ("new", relaunched["process"])
+    assert handed_over == [("old", "prepare_update"), ("old", "commit_update")]
+
+
+def test_exited_candidate_is_not_published(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動確認の終了後に生存していない候補の世代は公開せず、生存する世代を受付先に保つ。"""
+    directory, _old, new = _superseded(tmp_path, publish_new=False)
+    (directory / "new.json").write_text(json.dumps(new), encoding="utf-8")
+    monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("new", "1.0.1"))
+    request = Mock()
+    monkeypatch.setattr(service_rpc, "request_sync", request)
+    caller = runtime_environment.CallerContext({}, tmp_path)
+    with pytest.raises(RuntimeError, match="生存していないため公開しません"):
+        service_forward.publish_service(caller, tmp_path / "new", timeout=5)
+    request.assert_not_called()
+    current = GenerationRegistry(directory).current()
+    assert current is not None and current["generation"] == "old"
+
+
+def test_publication_fails_and_restores_live_generation_when_published_one_exits(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開の直後に終了した世代を公開成功として扱わず、生存する世代へ受付を戻す。"""
+    directory, _old, new = _superseded(tmp_path, publish_new=False)
+    live = dict(new, process=service_transport.process_identity(os.getpid()))
+    (directory / "new.json").write_text(json.dumps(live), encoding="utf-8")
+    monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("new", "1.0.1"))
+
+    def publish_then_exit(record: dict[str, Any], operation: str, _arguments: dict, **_kwargs: Any) -> dict[str, Any]:
+        assert (record, operation) == (live, "publish")
+        return GenerationRegistry(directory).publish(
+            "new", endpoint=new["endpoint"], process=new["process"], server_instance=new["server_instance"]
+        )
+
+    monkeypatch.setattr(service_rpc, "request_sync", publish_then_exit)
+    caller = runtime_environment.CallerContext({}, tmp_path)
+    with pytest.raises(RuntimeError, match="公開した受付先の世代が終了しました"):
+        service_forward.publish_service(caller, tmp_path / "new", timeout=5)
+    current = GenerationRegistry(directory).current()
+    assert current is not None and current["generation"] == "old"

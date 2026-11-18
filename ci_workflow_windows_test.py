@@ -105,6 +105,7 @@ _WINDOWS_CROSS_PLATFORM_TESTS = {
     },
     "pytools/_internal/warmup_agents_server_test.py": {
         "test_published_service_outlives_startup_check",
+        "test_service_outlives_killing_job_of_its_launcher",
     },
     "pytools/_internal/update_claude_settings_test.py": {
         "test_placeholder_replaced_in_string",

@@ -19,7 +19,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_toolkit._common import dotfiles_mode, process_tree
+from agent_toolkit._agents_server import service_forward
+from agent_toolkit._common import dotfiles_mode, process_tree, runtime_environment
 
 from pytools._internal import claude_common, common, log_format, plugin_warmup, post_apply_cache, post_apply_outcome
 
@@ -93,10 +94,8 @@ async def _check_targets(
 ) -> list[tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None] | BaseException]:
     """独立rootの依存確認を並列に進め、MCP起動確認は1件ずつ行い、1rootの失敗でも全対象を回収する。
 
-    同じ世代の転送側は1つの管理サービスを共有し、最初の転送側がそのサービスを起動する。
-    WindowsではMCP SDKが起動したサーバーをKILL_ON_JOB_CLOSEのJobへ入れ、接続を閉じるとJobの全プロセスを止める。
-    管理サービスも起動した転送側のJobに属するため、起動確認を並列に進めると、先に終わった確認が
-    他の確認の接続中の管理サービスを止める。
+    起動確認は管理サービスの世代を1件ずつ公開する。同じ世代の転送側は1つの管理サービスを共有するため、
+    並列に進めると、ある確認の候補の世代を別の確認が先に公開する。
     """
     dependencies = await asyncio.gather(
         *(plugin_warmup.check_command([*command, "--check-dependencies"]) for command in commands), return_exceptions=True
@@ -110,23 +109,51 @@ async def _check_targets(
         elif skip_startup:
             outcomes.append((dependency, _StartupOutcome(True, "コード・起動条件が同じためMCP起動確認を省略")))
         else:
-            outcomes.append((dependency, await _check_startup(command)))
+            try:
+                outcomes.append((dependency, await _check_startup(command)))
+            except process_tree.ReclaimError as error:
+                outcomes.append(error)
     return outcomes
 
 
 async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
-    """準備済みの公開stdioへ接続し、ホストの起動上限内にツール一覧を得る。"""
+    """準備済みの公開stdioへ接続してホストの起動上限内にツール一覧を得てから、管理サービスの世代を公開する。
+
+    常駐する管理サービスは、確認用の接続より先に、MCP SDKが所有しない子プロセスから公開を保留して起動する。
+    WindowsのMCP SDKは起動したサーバーを離脱不可のKILL_ON_JOB_CLOSEのJobへ入れ、接続を閉じるとJobの全プロセスを止める。
+    確認用の転送側が管理サービスを起動すると、サービスも同じJobに属して確認の終了とともに止まる
+    （2026-11-18、受付先が終了した世代を指し、稼働中の会話の状態保存と送達が失敗した）。
+    世代は、確認用の接続と子プロセスの終了後も生存することを確かめてから受付先として公開する。
+    """
     # minimal導入と単なる対象解決ではMCP SDKを読み込まない。
     import anyio  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
     from mcp import ClientSession  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
     from mcp.client.stdio import StdioServerParameters, stdio_client  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     started = time.monotonic()
-    phase = "process-start"
+    phase = "service-start"
+    root = _service_root(command)
+    environment = dict(os.environ)
+    if root is not None:
+        environment[service_forward.DEFER_PUBLISH_ENV] = "1"
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors:
         try:
-            parameters = StdioServerParameters(command=command[0], args=list(command[1:]), env=dict(os.environ))
-            with anyio.fail_after(_STARTUP_TIMEOUT):
+            parameters = StdioServerParameters(command=command[0], args=list(command[1:]), env=environment)
+            remaining = _STARTUP_TIMEOUT
+            if root is not None:
+                # 入力の無い転送側は、管理サービスをreadyにした後で接続せずに終了する。
+                # anyioの期限は取消しを回収処理の待機にも届け続けるため、子の回収を待つ区間はasyncioの期限で区切る。
+                async with asyncio.timeout(remaining):
+                    service = await plugin_warmup.check_command(command, environment=environment)
+                if not service.ok:
+                    raise RuntimeError(
+                        "管理サービスを起動できません: " + (service.error or common.format_cli_error(service.result))
+                    )
+                remaining -= time.monotonic() - started
+                if remaining <= 0:
+                    raise TimeoutError("管理サービスの起動だけで起動上限に達しました")
+            phase = "process-start"
+            with anyio.fail_after(remaining):
                 async with stdio_client(parameters, errlog=errors) as streams:
                     read, write = streams
                     async with ClientSession(read, write) as client:
@@ -137,7 +164,12 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
                         if not tools.tools:
                             raise RuntimeError("MCPの公開ツールが0件")
                         phase = "close"
-
+            if root is not None:
+                phase = "publish"
+                caller = runtime_environment.CallerContext(os.environ, Path.cwd())
+                await asyncio.to_thread(service_forward.publish_service, caller, root, timeout=_STARTUP_TIMEOUT)
+        except process_tree.ReclaimError:
+            raise
         except Exception as exc:  # noqa: BLE001  # 公開transportの例外群とstderrをpost-applyへ伝える。
             errors.seek(0)
             return _StartupOutcome(
@@ -146,7 +178,18 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
                 + "".join(traceback.format_exception(exc))
                 + errors.read(),
             )
-    return _StartupOutcome(True, f"MCPのinitialize・tools/list・終了を確認 ({time.monotonic() - started:.1f}秒): {command[-1]}")
+    published = "・管理サービスの公開" if root is not None else ""
+    return _StartupOutcome(
+        True, f"MCPのinitialize・tools/list・終了{published}を確認 ({time.monotonic() - started:.1f}秒): {command[-1]}"
+    )
+
+
+def _service_root(command: Sequence[str]) -> Path | None:
+    """起動コマンドが共有の管理サービスへ転送する配布rootを返す。管理サービスを持たない旧版のrootはNone。"""
+    if "--project" not in command:
+        return None
+    root = Path(command[command.index("--project") + 1])
+    return root if (root / "agent_toolkit" / "_agents_server" / "service.py").is_file() else None
 
 
 def _targets() -> list[Path]:

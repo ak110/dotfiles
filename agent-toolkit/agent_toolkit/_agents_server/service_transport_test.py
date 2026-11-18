@@ -261,6 +261,40 @@ async def _ensure_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     request.assert_not_called()
 
 
+async def _release_abandoned_update(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """保存を静止させた公開元の世代が終了していれば、確定の通知を待たずに静止を解除する。"""
+    coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
+    coordinator.projections = cast(Any, SimpleNamespace(thaw=AsyncMock()))
+    coordinator._intents["token"] = {"generation": "G4", "epoch": 4, "process": _REUSED}
+    await coordinator._release_abandoned_update("token", coordinator._intents["token"])
+    assert not coordinator._intents
+
+
+async def _restore(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """受付先の世代が終了していれば、生存する世代へ受付を戻す。"""
+    del monkeypatch
+    registry = GenerationRegistry(tmp_path)
+    for name, process in (("live", service_transport.process_identity(os.getpid())), ("reused", _REUSED)):
+        registry.reserve(name, tmp_path, "1.0.0")
+        registry.publish(name, endpoint=name, process=process)
+    restored = registry.restore()
+    assert restored is not None and restored["generation"] == "live"
+
+
+async def _publish_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """候補の世代が終了していれば、その世代へ公開を要求しない。"""
+    directory = tmp_path / "services/agents-server"
+    monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("G1", "1.0.0"))
+    GenerationRegistry(directory).reserve("G1", tmp_path, "1.0.0")
+    (directory / "G1.json").write_text(json.dumps({"generation": "G1", "process": _REUSED}), encoding="utf-8")
+    request = AsyncMock()
+    monkeypatch.setattr(service_rpc, "request_sync", request)
+    with pytest.raises(RuntimeError, match="生存していないため公開しません"):
+        service_forward.publish_service(runtime_environment.CallerContext({}, tmp_path), tmp_path, timeout=5)
+    request.assert_not_called()
+
+
 # 起動単位の生存判定を呼ぶ箇所ごとの、照会を拒否された終了済み世代の場面。
 _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch], Awaitable[None]]] = {
     "service_coordinator.ServiceCoordinator.publish": _publish,
@@ -268,9 +302,12 @@ _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch]
     "service_coordinator.ServiceCoordinator.prepare": _prepare,
     "service_coordinator.ServiceCoordinator._foreign_sessions": _foreign_sessions,
     "service_coordinator.ServiceCoordinator._owns": _owns,
+    "service_coordinator.ServiceCoordinator._release_abandoned_update": _release_abandoned_update,
     "service_context.ServiceManagers.generations": _generations,
     "service_io.CodexResource.close": _close,
     "service_forward.ensure_service": _ensure_service,
+    "service_forward.publish_service": _publish_service,
+    "service_generations.GenerationRegistry.restore": _restore,
 }
 
 
