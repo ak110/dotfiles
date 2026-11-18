@@ -397,6 +397,7 @@ class CodexResource:
 
     async def close(self) -> list[str]:
         """制御所有者の一致を確認して元I/Oを回収し、所属が残れば所有を保つ。"""
+        released = False
         try:
             residual = await self.resource.operation("call", operation="shutdown", arguments={})
         except ConnectionRefusedError, FileNotFoundError:
@@ -412,8 +413,12 @@ class CodexResource:
             if residual:
                 return residual
             await self.resource.operation("release")
+            released = True
         self._closed = True
         if self._task is not None and self._task is not asyncio.current_task():
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
+        if released:
+            # 受信処理を止めた後の未確認イベントを読む主体は無い。残すとbrokerが資源を保持し続け、元世代が退出できない。
+            await self.resource.operation("discard")
         return []

@@ -246,6 +246,7 @@ async def _rpc(
         "events": resources.events,
         "acknowledge": resources.acknowledge,
         "release": resources.release,
+        "discard": resources.discard,
     }
     try:
         operation = payload.get("operation")

@@ -36,6 +36,7 @@ class ResourceBroker:
             "sequence": 0,
             "released": False,
             "moving": False,
+            "closing": False,
             "inflight": 0,
         }
         return identifier
@@ -83,9 +84,14 @@ class ResourceBroker:
         payload = _json_value(payload)
         resource = self._resources[resource_id]
         async with resource["condition"]:
-            await resource["condition"].wait_for(lambda: resource["released"] or len(resource["events"]) < self._event_limit)
+            await resource["condition"].wait_for(
+                lambda: resource["released"] or resource["closing"] or len(resource["events"]) < self._event_limit
+            )
             if resource["released"]:
                 raise PermissionError("資源は解放されています")
+            if len(resource["events"]) >= self._event_limit:
+                # 解放中は空きを待たない。読む主体が止まると空きは生じず、解放はこの操作の終了を待ち続ける。
+                raise PermissionError("解放中の資源のイベントが上限に達しています")
             resource["sequence"] += 1
             resource["events"].append({"sequence": resource["sequence"], "payload": payload})
             resource["condition"].notify_all()
@@ -125,6 +131,19 @@ class ResourceBroker:
                 self._resources.pop(resource_id, None)
             resource["condition"].notify_all()
 
+    async def discard(self, resource_id: str, owner_generation: str) -> None:
+        """解放後に読む主体の無くなった未確認イベントを捨て、資源の登録を除く。除かれた資源には何もしない。"""
+        resource = self._resources.get(resource_id)
+        if resource is None:
+            return
+        async with resource["condition"]:
+            self._owned(resource, owner_generation)
+            if not resource["released"]:
+                raise PermissionError("解放前の資源のイベントは捨てられません")
+            resource["events"].clear()
+            self._resources.pop(resource_id, None)
+            resource["condition"].notify_all()
+
     async def release(self, resource_id: str, owner_generation: str) -> None:
         resource = self._resources[resource_id]
         async with resource["lock"]:
@@ -132,11 +151,12 @@ class ResourceBroker:
                 self._owned(resource, owner_generation)
                 if resource["released"]:
                     raise PermissionError("資源は解放されています")
-                resource["moving"] = True
+                resource["moving"] = resource["closing"] = True
+                resource["condition"].notify_all()
                 try:
                     await resource["condition"].wait_for(lambda: resource["inflight"] == 0)
                 except BaseException:
-                    resource["moving"] = False
+                    resource["moving"] = resource["closing"] = False
                     resource["condition"].notify_all()
                     raise
             try:
@@ -147,7 +167,7 @@ class ResourceBroker:
                     self._resources.pop(resource_id, None)
             finally:
                 async with resource["condition"]:
-                    resource["moving"] = False
+                    resource["moving"] = resource["closing"] = False
                     resource["condition"].notify_all()
 
 
