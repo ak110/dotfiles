@@ -49,3 +49,6 @@ runs:
     - name: 主要ファイルの存在確認
       shell: pwsh
       run: '& "$env:DOTFILES_DIR\scripts\ci_verify_windows.ps1"'
+    - name: 失敗時の診断ログを保存
+      if: failure()
+      uses: ./dotfiles/.github/actions/upload-diagnostic-logs
