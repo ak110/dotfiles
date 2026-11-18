@@ -1,10 +1,15 @@
 """記録を走査した起動と完了集合の構築。"""
 
+import contextlib
+import hashlib
 import json
 import pathlib
+import typing
 lazy import collections.abc
 
+lazy from agent_toolkit._common import state_paths
 lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._common.atomic_file import atomic_write
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_NOTIFICATION_RE
 lazy from agent_toolkit._hooks.background_tasks_launches import (
     _collect_agent_tool_use_ids,
@@ -223,6 +228,9 @@ def _collect_nested_agent_launches(
     `subagents`ディレクトリへ配置される。入力値のagent IDをパスへ連結せず、固定の
     `agent-*.jsonl`列挙とmetadataの親子関係だけで直接の子を選別する。サブエージェント記録の欠落、
     破損または不正なmetadataは、最上位transcriptの既存判定を維持するため無視する。
+
+    子ごとの結果は、子transcriptとmetadataのサイズ・更新時刻を鍵に保存し、変わった子だけを解析し直す。
+    Stopごとに全ての子を解析すると、子の多い会話（子149件・207MB）でStop 1回にCPU約1.9秒を使っていた。
     """
     if not isinstance(transcript_path, str) or not transcript_path:
         return set(), {}
@@ -232,37 +240,111 @@ def _collect_nested_agent_launches(
     except OSError:
         return set(), {}
 
+    cache_path = nested_launch_cache_directory() / f"{hashlib.sha256(transcript_path.encode()).hexdigest()[:32]}.json"
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        cached = {}
+    if not isinstance(cached, dict):
+        cached = {}
+    current: dict[str, _ChildLaunches] = {}
     launched: set[str] = set()
     task_id_map: dict[str, set[str]] = {}
     for child_path in child_paths:
         metadata_path = child_path.with_name(f"{child_path.stem}.meta.json")
         try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except OSError, ValueError:
+            # 解析より前に取得し、解析中の追記は次回の鍵の不一致で読み直す。
+            stamp = [*_file_stamp(child_path), *_file_stamp(metadata_path)]
+        except OSError:
             continue
-        if not _is_direct_subagent_metadata(metadata):
-            continue
-        child_entries = _read_child_transcript_entries(str(child_path))
-        if not child_entries:
-            continue
-        agent_ids = _collect_agent_tool_use_ids(child_entries, include_sidechain=True)
-        for entry in child_entries:
-            if entry.get("type") != "user":
-                continue
-            tool_use_result = entry.get("toolUseResult")
-            if not isinstance(tool_use_result, dict):
-                continue
-            message = entry.get("message")
-            if not isinstance(message, dict):
-                continue
-            agent_launch_id = _extract_agent_launch_id(message, tool_use_result, agent_ids)
-            if agent_launch_id is None:
-                continue
-            launched.add(agent_launch_id)
-            agent_id = tool_use_result.get("agentId")
-            if isinstance(agent_id, str) and agent_id:
-                task_id_map.setdefault(agent_id, set()).add(agent_launch_id)
+        result = _cached_result(cached.get(child_path.name), stamp)
+        if result is None:
+            launched_ids, task_ids = _child_agent_launches(child_path, metadata_path)
+            result = _ChildLaunches(stamp=stamp, launched=launched_ids, task_ids=task_ids)
+        current[child_path.name] = result
+        launched.update(result["launched"])
+        for agent_id, launch_ids in result["task_ids"].items():
+            task_id_map.setdefault(agent_id, set()).update(launch_ids)
+    if current != cached:
+        with contextlib.suppress(OSError):
+            atomic_write(cache_path, json.dumps(current, ensure_ascii=False))
     return launched, task_id_map
+
+
+def nested_launch_cache_directory() -> pathlib.Path:
+    """子transcriptの解析結果を会話ごとに保存するディレクトリを返す。"""
+    return state_paths.state_dir() / "nested-agent-launches"
+
+
+def sweep_nested_launch_caches(*, max_age_seconds: float, now: float) -> None:
+    """更新が`max_age_seconds`より古い会話の解析結果を回収する。個別の失敗は次回の掃引で再試行する。"""
+    try:
+        paths = tuple(nested_launch_cache_directory().glob("*.json"))
+    except OSError:
+        return
+    for path in paths:
+        with contextlib.suppress(OSError):
+            if now - path.stat().st_mtime > max_age_seconds:
+                path.unlink()
+
+
+def _file_stamp(path: pathlib.Path) -> list[int]:
+    metadata = path.stat()
+    return [metadata.st_size, metadata.st_mtime_ns]
+
+
+class _ChildLaunches(typing.TypedDict):
+    stamp: list[int]
+    launched: list[str]
+    task_ids: dict[str, list[str]]
+
+
+def _cached_result(value: object, stamp: list[int]) -> _ChildLaunches | None:
+    """同じ鍵で記録され、起動IDの一覧と対応表の形を保つ保存結果だけを返す。"""
+    if not isinstance(value, dict) or value.get("stamp") != stamp:
+        return None
+    launched, task_ids = value.get("launched"), value.get("task_ids")
+    if (
+        isinstance(launched, list)
+        and all(isinstance(item, str) for item in launched)
+        and isinstance(task_ids, dict)
+        and all(isinstance(ids, list) and all(isinstance(item, str) for item in ids) for ids in task_ids.values())
+    ):
+        return _ChildLaunches(stamp=stamp, launched=launched, task_ids=task_ids)
+    return None
+
+
+def _child_agent_launches(child_path: pathlib.Path, metadata_path: pathlib.Path) -> tuple[list[str], dict[str, list[str]]]:
+    """1件の子transcriptが起動した孫Agentの起動IDと、agent IDから起動IDへの対応を返す。"""
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return [], {}
+    if not _is_direct_subagent_metadata(metadata):
+        return [], {}
+    child_entries = _read_child_transcript_entries(str(child_path))
+    if not child_entries:
+        return [], {}
+    agent_ids = _collect_agent_tool_use_ids(child_entries, include_sidechain=True)
+    launched: set[str] = set()
+    task_ids: dict[str, set[str]] = {}
+    for entry in child_entries:
+        if entry.get("type") != "user":
+            continue
+        tool_use_result = entry.get("toolUseResult")
+        if not isinstance(tool_use_result, dict):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        agent_launch_id = _extract_agent_launch_id(message, tool_use_result, agent_ids)
+        if agent_launch_id is None:
+            continue
+        launched.add(agent_launch_id)
+        agent_id = tool_use_result.get("agentId")
+        if isinstance(agent_id, str) and agent_id:
+            task_ids.setdefault(agent_id, set()).add(agent_launch_id)
+    return sorted(launched), {key: sorted(value) for key, value in task_ids.items()}
 
 
 def _is_direct_subagent_metadata(metadata: object) -> bool:

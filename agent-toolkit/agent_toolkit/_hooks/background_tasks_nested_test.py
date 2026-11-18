@@ -2,10 +2,12 @@
 
 import json
 import pathlib
+from unittest import mock
 
 import pytest
 
 from agent_toolkit._hooks import background_tasks as _background_tasks
+from agent_toolkit._hooks import background_tasks_entries
 from agent_toolkit._hooks.background_tasks import is_pending_async_work
 from agent_toolkit._testing.background_tasks_support import (
     _assistant_agent_entry,
@@ -70,6 +72,39 @@ class TestIsPendingAsyncWork:
         ]
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
         assert is_pending_async_work(str(transcript), "", session_state=None) is True
+
+    def test_child_transcript_is_parsed_again_only_after_it_changes(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """変わっていない子transcriptは次の判定で解析し直さず、追記された子は読み直して新しい孫Agentを待機中と判定する。"""
+        entries = [
+            _user_entry("hello"),
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_nested_subagent_fixture(tmp_path, entries, [_user_entry("子の作業")])
+        reads = mock.Mock(wraps=background_tasks_entries._read_child_transcript_entries)  # pylint: disable=protected-access
+        monkeypatch.setattr(background_tasks_entries, "_read_child_transcript_entries", reads)
+
+        def stop_hook() -> bool:
+            # Stop hookは呼び出しごとに別プロセスで動くため、プロセス内の判定結果を持ち越さない。
+            _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+            return is_pending_async_work(str(transcript), "", session_state=None)
+
+        assert stop_hook() is False
+        assert stop_hook() is False
+        assert reads.call_count == 1
+        child = transcript.with_suffix("") / "subagents" / "agent-child-id.jsonl"
+        with child.open("a", encoding="utf-8") as stream:
+            for entry in (
+                _assistant_agent_entry("toolu_grandchild"),
+                _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+            ):
+                stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        assert stop_hook() is True
+        assert reads.call_count == 2
 
     @pytest.mark.parametrize(("operation", "pending"), [("enqueue", True), ("remove", False)])
     def test_queue_operation_completion_completes_grandchild(

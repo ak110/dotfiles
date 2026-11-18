@@ -27,6 +27,7 @@ import contextlib
 import functools
 import json
 import os
+import time
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._agents_server import shared_roots, shared_sweep
@@ -34,9 +35,11 @@ lazy from agent_toolkit._atk.agents_exit_session import sweep_function_hook_file
 lazy from agent_toolkit._atk.managed_temp import creation, resources, sweep
 lazy from agent_toolkit._common import interval_gate, session_activity, session_registry, state_paths
 lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    STALE_STATE_MAX_AGE_SECONDS,
     clear_session_state,
     sweep_stale_states,
 )
+lazy from agent_toolkit._hooks.background_tasks_entries import sweep_nested_launch_caches
 
 _DISCARDED_REASON = "clear"
 
@@ -76,6 +79,7 @@ def main(payload_text: str) -> int:
         sweep_stale_states(keep_session_id=session_id)
         with contextlib.suppress(OSError):
             session_activity.sweep_exited_records()
+        sweep_nested_launch_caches(max_age_seconds=STALE_STATE_MAX_AGE_SECONDS, now=time.time())
     elif discarded:
         with contextlib.suppress(OSError):
             sweep_function_hook_files(keep_session_id=session_id, clear=True)
