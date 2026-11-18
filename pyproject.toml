@@ -138,7 +138,6 @@ ty-args = [
     "--output-format", "concise", "--error-on-warning",
     "--extra-search-path", "scripts",
     "--extra-search-path", "libexec",
-    "--extra-search-path", "agent-toolkit/skills/process-wi/scripts",
     "--extra-search-path", "agent-toolkit/skills/review-session/scripts",
     "--extra-search-path", "agent-toolkit/skills/atk-mode/scripts",
 ]
@@ -519,7 +518,7 @@ extend-aliases = { datetime = "datetime" }
 
 [tool.pyright]
 # agent-toolkitの計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
-extraPaths = ["agent-toolkit/skills/atk-mode/scripts", "agent-toolkit/skills/process-wi/scripts", "agent-toolkit/skills/review-session/scripts"]
+extraPaths = ["agent-toolkit/skills/atk-mode/scripts", "agent-toolkit/skills/review-session/scripts"]
 
 [tool.mypy]
 allow_redefinition = true
