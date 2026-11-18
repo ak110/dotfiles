@@ -38,16 +38,18 @@ def test_scan_queries_do_not_grow_with_host_processes(monkeypatch, unrelated):
     assert sorted(call.args[0] for call in constructed.call_args_list) == [root.pid, child.pid]
 
 
-def test_short_command_does_not_list_host_processes(monkeypatch):
-    """子孫を残さず終わる短いコマンドの起動・終了では、ホストの全プロセスを照会しない。"""
+def test_short_command_lists_host_processes_a_bounded_number_of_times(monkeypatch):
+    """子孫を残さず終わる短いコマンドの起動・終了で、親PID一覧の照会は定数回に収まり、全PIDの列挙には使わない。
 
-    def list_all(*_args, **_kwargs):
-        pytest.fail("ホストの全プロセスを照会した")
-
-    monkeypatch.setattr(psutil, "_ppid_map", list_all)
-    monkeypatch.setattr(psutil, "pids", list_all)
+    終了済みの親も世代のhandleを保持していれば辿るため、終了時の走査で一覧を1回は取る。
+    """
+    ppid_map = vars(psutil)["_ppid_map"]
+    calls = mock.Mock(side_effect=ppid_map)
+    monkeypatch.setattr(psutil, "_ppid_map", calls)
+    monkeypatch.setattr(psutil, "pids", lambda: pytest.fail("全PIDを列挙した"))
     result = process_tree.run_with_timeout([sys.executable, "-c", "print('ok')"], capture_output=True, text=True, timeout=30)
     assert (result.returncode, result.stdout.strip()) == (0, "ok")
+    assert calls.call_count <= 6
 
 
 def test_parent_pids_falls_back_to_public_api_when_private_function_is_missing(monkeypatch):
