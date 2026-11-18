@@ -285,6 +285,23 @@ def apply_development_state_isolation(tmp_path: pathlib.Path, monkeypatch: pytes
     monkeypatch.setenv("PATH", path_value)
 
 
+@contextlib.contextmanager
+def isolated_development_state(root: pathlib.Path) -> Generator[None]:
+    """pytestの外の単発スクリプトへ、各テストと同じ6つの次元の隔離を区間の間だけ適用する。
+
+    ホーム・設定・状態の保存先と一時ディレクトリを`root`配下へ向け、区間の終了時に元の値へ戻す。
+    hook入力の再生などで製品の公開コマンドを呼ぶ検証が作る振り返り待ちなどの状態を、`root`配下へ書き込ませる。
+    保存先を呼出しごとに解決するモジュールは、区間に入る前にimportしたものも隔離先を使う。
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    # 同じrootへ入り直すと既存のリンクの作成が失敗し、CLIと同じディレクトリのツールがPATHから外れるため、区間ごとに作る。
+    links = pathlib.Path(tempfile.mkdtemp(prefix="isolated-path-", dir=root))
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        path_value = build_isolated_path(without_parent_venv_path(_HOST_ENVIRON.get("PATH", "")), links)
+        apply_development_state_isolation(root, monkeypatch, path_value)
+        yield
+
+
 def build_host_environ() -> dict[str, str]:
     """ホーム、設定、PATHとmiseの探索範囲だけを隔離前の値へ戻す。"""
     environ = dict(os.environ)
