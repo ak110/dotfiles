@@ -58,7 +58,7 @@ def _launched(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *, bound:
 def test_preflight_child_receives_caller_project_environment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, bound: bool, user: str | None
 ) -> None:
-    """委譲先の作業ディレクトリで実行する子は、共有依存環境ではなく利用者の指定（未設定を含む）を受け取る。"""
+    """委譲先の作業ディレクトリで実行する子は、共有依存環境ではなく呼び出し元の指定（未設定を含む）を受け取る。"""
     output = tmp_path / "child-env.json"
     command = (
         sys.executable,
