@@ -518,7 +518,19 @@ class ServiceCoordinator:
                     )
                     if not value.get("move_required"):
                         return _RESULT.validate_python(value["result"])
-                    moved = await service_rpc.request(owner, "move", {"session_id": identifier})
+                    try:
+                        moved = await service_rpc.request(owner, "move", {"session_id": identifier})
+                    except (RuntimeError, OSError, EOFError, TimeoutError) as error:
+                        # 汎用の内部エラーで返すと、追送の配送と所有の状態を呼出元が判断できない。
+                        # 応答だけを失った場合は移譲が成立していることもあるが、入力はまだ渡していない。
+                        raise ActionableError(
+                            f"session {identifier}の所有世代からの移譲を確認できず、新しい入力は未配送: "
+                            f"owner_generation={owner['generation']}; error={type(error).__name__}: {error}",
+                            next_action=(
+                                "showで状態と所有世代を確認してから同じ入力を送り直す。"
+                                "同じ失敗が続く場合は、errorが示す所有世代での失敗の原因を解消してから送り直す"
+                            ),
+                        ) from error
                     if not moved.get("moved"):
                         raise ActionableError(
                             "移譲可能な終了境界を待っています。新しい入力は未配送です",
@@ -622,21 +634,22 @@ class ServiceCoordinator:
                     if session.engine == "codex":
                         await backend._stop_auto_reset(identifier)
                     descriptor = await client.detach()
-                    if session.engine == "claude":
+                # 切り離した後、移譲先が受入を予約するまでに失敗したら所有を移さず、実行資源と制御の受付を旧側へ戻す。
+                try:
+                    if client is not None and session.engine == "claude":
                         tasks = [task for task, name in backend._task_sessions.items() if name == identifier]
                         await asyncio.gather(*tasks)
-                await manager.save_control_state()
-                packet = {
-                    "transfer_id": uuid.uuid4().hex,
-                    "source": self.target,
-                    "parent": parent,
-                    "caller": _caller_payload(conversation.caller),
-                    "session": service_state.snapshot(session),
-                    "resource": descriptor,
-                    "auxiliary": auxiliary,
-                    "writer_session_id": getattr(backend, "_writer_session_ids", {}).get(identifier),
-                }
-                try:
+                    await manager.save_control_state()
+                    packet = {
+                        "transfer_id": uuid.uuid4().hex,
+                        "source": self.target,
+                        "parent": parent,
+                        "caller": _caller_payload(conversation.caller),
+                        "session": await service_state.snapshot(session),
+                        "resource": descriptor,
+                        "auxiliary": auxiliary,
+                        "writer_session_id": getattr(backend, "_writer_session_ids", {}).get(identifier),
+                    }
                     prepared = await service_rpc.request(current, "prepare_move", packet)
                 except Exception:
                     await self._restore_source(backend, session, descriptor, auxiliary)

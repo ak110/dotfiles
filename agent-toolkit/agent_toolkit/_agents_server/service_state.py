@@ -60,10 +60,15 @@ class _StateCodec(DataclassCodec):
         return super().decode(value)
 
 
-def snapshot(session: state.SessionState) -> dict[str, Any]:
-    """所有側の保存完了後に呼び、保留・期限・追跡・配送段階を損失なく写す。"""
-    if session._registration_task is not None and not session._registration_task.done():
-        raise RuntimeError("session登録の保存完了前には移譲できません")
+async def snapshot(session: state.SessionState) -> dict[str, Any]:
+    """登録公開の完了を待ってから、保留・期限・追跡・配送段階を損失なく写す。
+
+    完了を待つ間に、届いた通知が新しい登録公開を始めることがある。
+    未保存の登録を写して移譲しないよう、未完了が無いことを確かめてから待機なしで写す。
+    2026-11-17、世代移譲の状態保存の応答を待つ間に始まった公開を写せず、継続指示の実行が失敗した。
+    """
+    while session.registration_pending:
+        await session.drain_registration()
     codec = _StateCodec()
     return {
         field.name: codec.encode(getattr(session, field.name))

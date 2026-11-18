@@ -115,7 +115,7 @@ async def test_backend_adoption_changes_decoder_without_reconnecting_or_querying
                 auxiliary = await source.export_service_state(original.session_id)
             descriptor = await clients[0].detach()
             assert await broker.transfer(descriptor["identifier"], "G1", "G3")
-            copied = service_state.restore(service_state.snapshot(original))
+            copied = service_state.restore(await service_state.snapshot(original))
             with service_io.bind(third):
                 await target.adopt_session(copied, descriptor, auxiliary)
                 while copied.cli_turn_state != "idle":
