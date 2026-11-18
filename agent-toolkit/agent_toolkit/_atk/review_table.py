@@ -48,7 +48,7 @@ from agent_toolkit._atk.review_table_format import (
     classification,
     recheck_entries,
     reject_recheck_label,
-    without_recheck_lines,
+    without_recheck_line,
 )
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
@@ -402,7 +402,8 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, rereg
     """再レビューでレビュー担当が前回の指摘行の応答を確かめた判定を、応答のある列の末尾へ1行で記録する。
 
     対応不十分・未対応は、今回のroundへ`区分: 前回から残存`で登録し直した行の識別子を必須とし、判定の行へ書く。
-    同じ行の判定は記録し直すと置き換わる。作業中の表はGit管理外に置かれるため、誤った判定の訂正手段を兼ねる。
+    同じ行・同じroundの判定は記録し直すと置き換わり、別のroundの判定と応答の他の行は残る。
+    作業中の表はGit管理外に置かれるため、誤った判定の訂正手段を兼ねる。
     """
     target = _path(str(path))
     normalized_round = _normalized(round_value)
@@ -464,7 +465,7 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, rereg
         column_holder.append(column)
         updated = [*rows]
         updated[index] = [*row]
-        updated[index][column] = f"{without_recheck_lines(row[column])}\n{block}"
+        updated[index][column] = f"{without_recheck_line(row[column], int(normalized_round))}\n{block}"
         return updated
 
     _locked_update(target, updater)

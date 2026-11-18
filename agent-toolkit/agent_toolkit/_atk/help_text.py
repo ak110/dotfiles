@@ -488,8 +488,8 @@ HELP: dict[str, dict[str, str]] = {
         "各要素は文字列location・issue・levelの3必須キーだけを持ち、levelは要件・仕様・詳細・実装から選ぶ。"
         '例: [{"location":"対象の位置","issue":"指摘本文","level":"仕様"}]。'
         "単数形の3オプションと配列入力は併用できない。"
-        "指摘内容は`類似見直し完了件数:`を行頭に置き、同じ行へ類似見直しで確かめた箇所の件数を整数で書く。"
-        "2以上のroundでは`区分:`の行を1つ置き、値を前回から残存・修正に起因・前回の見落とし・新しい変更・要求追加のいずれかで書き始める。"
+        "指摘内容は`類似見直し完了件数:`を行頭に置き、同じ行へ類似見直しで確かめた箇所の件数を整数だけで書く。"
+        "2以上のroundでは`区分:`の行を1つ置き、同じ行へ前回から残存・修正に起因・前回の見落とし・新しい変更・要求追加のいずれか1つだけを書く（補足は別の行へ書く）。"
         "指摘箇所が`担当の記録:`で始まる行は、この2つのラベルを求めない。"
         "各ラベルに書く内容は`agent-toolkit:/share/exec-review-recording-issues.md`「レビュー指摘管理表への登録」が定める。"
         "不正な入力は表を変更せず終了する。"
@@ -537,7 +537,7 @@ HELP: dict[str, dict[str, str]] = {
         "判定の根拠は書かない。対応不十分・未対応とする指摘は、先に現在のroundの指摘として`区分: 前回から残存`で`atk review-table add`により登録し直して詳細を書き、"
         "その行のrow-idを`--reregistered-row-id`へ指定する。登録し直す行は前回の指摘1行ごとに分け、他の判定が同じroundで指す行は拒否する。"
         "未記録の行は`show --format=summary`のrecheck_pending_row_idsで確かめる。"
-        "\n復元・後始末: 誤った判定は、同じ行へ正しい判定で再実行すると置き換わる。他の応答・証拠は変わらない。",
+        "\n復元・後始末: 誤った判定は、同じ行へ同じroundで正しい判定を再実行すると置き換わる。別のroundの判定と応答の他の行は残る。",
         "epilog": "実行例:\n\n  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=3 --round=2 --verdict=完了\n"
         "  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=4 --round=2 --verdict=対応不十分 --reregistered-row-id=7",
     },

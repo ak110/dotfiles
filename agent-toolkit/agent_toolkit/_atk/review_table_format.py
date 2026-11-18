@@ -311,9 +311,13 @@ def recheck_entries(body: str) -> list[tuple[int, str, int | None]]:
     return entries
 
 
-def without_recheck_lines(body: str) -> str:
-    """判定を記録し直すため、本文から再確認ラベルで始まる行を除く。"""
-    return "\n".join(line for line in body.rstrip().splitlines() if not line.strip().startswith(RECHECK_LABEL))
+def without_recheck_line(body: str, round_value: int) -> str:
+    """同じroundの判定を記録し直すため、そのroundの判定行だけを除き、別のroundの判定と他の行を残す。"""
+    return "\n".join(
+        line
+        for line in body.rstrip().splitlines()
+        if not ((matched := _RECHECK_LINE_RE.fullmatch(line.strip())) and int(matched.group(1)) == round_value)
+    )
 
 
 def reject_recheck_label(body: str, option: str) -> None:

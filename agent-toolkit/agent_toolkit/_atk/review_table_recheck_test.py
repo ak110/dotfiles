@@ -165,6 +165,22 @@ def test_recheck_requires_link_to_reregistered_finding(
     assert path.read_bytes() == saved
 
 
+def test_recheck_keeps_other_round_verdicts_and_lines(tmp_path: pathlib.Path) -> None:
+    """記録し直しは同じroundの判定だけを置き換え、別のroundの判定と応答の他の行を残す。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    rows = table.read_rows(path)
+    rows[0][5] = f"{rows[0][5]}\n再確認: 旧形式の検証メモ"
+    _write_rows(path, rows)
+    assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
+    assert _cli_recheck(tmp_path, path, 1, "3", "完了") == 0
+    body = table.read_rows(path)[0][5]
+    assert "\n再確認: 旧形式の検証メモ" in body
+    assert "\n再確認: ラウンド2 完了" in body
+    assert body.endswith("\n再確認: ラウンド3 完了")
+    assert table.summary(path, 2).get("recheck_pending_row_ids") == [2]
+
+
 def test_recheck_rejects_row_already_linked_by_another_finding(tmp_path: pathlib.Path) -> None:
     """登録し直した1行を複数の前回指摘から指させず、前回の指摘1行ごとに別の行を求める。"""
     path = tmp_path / "plan.exec-review.tsv"
