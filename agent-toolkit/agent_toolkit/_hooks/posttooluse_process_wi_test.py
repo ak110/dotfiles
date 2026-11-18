@@ -12,20 +12,24 @@ from agent_toolkit._testing.helpers import _read_state
 from agent_toolkit._testing.posttooluse_support import _run, _state_path
 
 
-class TestAwiSkillFlags:
-    """自動振り返りの起点となるスキル呼び出しの状態フラグ記録。"""
+class TestAgentLaunchDoesNotEnterAutonomousMode:
+    """エージェントによるスキルの起動からは自律モードの状態を立てない。"""
 
     @pytest.mark.parametrize(
-        ("skill", "flag"),
+        ("skill", "arguments"),
         [
-            ("agent-toolkit:process-wi", "process_wi_skill_invoked"),
-            ("process-wi", "process_wi_skill_invoked"),
+            ("agent-toolkit:atk-mode", "process-wi"),
+            ("agent-toolkit:atk-mode", "process-wi all-repos"),
+            ("atk-mode", "process-wi single-lane 追加"),
+            ("agent-toolkit:process-wi", None),
         ],
     )
-    def test_skill_records_flag(self, tmp_path: pathlib.Path, skill: str, flag: str) -> None:
-        sid = f"fb-{skill.replace(':', '-')}"
-        _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get(flag) is True
+    def test_skill_launch_keeps_flag_unset(self, tmp_path: pathlib.Path, skill: str, arguments: str | None) -> None:
+        sid = f"agent-launch-{skill.replace(':', '-')}"
+        tool_input = {"skill": skill} if arguments is None else {"skill": skill, "args": arguments}
+        result = _run({"session_id": sid, "tool_name": "Skill", "tool_input": tool_input}, state_dir=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert not _read_state(tmp_path, sid).get("process_wi_skill_invoked")
 
 
 class TestExitSessionResetsProcessAwisFlag:
@@ -117,22 +121,11 @@ class TestExitSessionResetsProcessAwisFlag:
 
 
 class TestProcessAwisInvokedNonIdempotent:
-    """process-wiスキル再起動時のフラグ強制上書き。"""
+    """終了CLIで戻した状態を、エージェントによる入口の起動で立て直さない。"""
 
-    def test_reset_and_reinvoke_sets_flag_true(self, tmp_path: pathlib.Path) -> None:
-        """終了CLI起動後の再起動でフラグが確実にTrueへ戻る。"""
+    def test_reset_then_agent_launch_keeps_flag_false(self, tmp_path: pathlib.Path) -> None:
         sid = "reinvoke"
-        # 事前にフラグを立てる。
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-wi"},
-            },
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
-        # 終了CLI起動でリセット。
+        _state_path(sid).write_text(json.dumps({"process_wi_skill_invoked": True}, ensure_ascii=False), encoding="utf-8")
         _run(
             {
                 "session_id": sid,
@@ -143,13 +136,12 @@ class TestProcessAwisInvokedNonIdempotent:
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is False
-        # 再起動でTrueへ確実に戻ることを確認する。
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-wi"},
+                "tool_input": {"skill": "agent-toolkit:atk-mode", "args": "process-wi"},
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
+        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is False

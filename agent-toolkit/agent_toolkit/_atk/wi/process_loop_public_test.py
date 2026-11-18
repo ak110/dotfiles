@@ -234,7 +234,8 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
         expected = (
             '<atk-auto source="process-loop" kind="goal">\n'
             "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
-            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
+            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）。"
+            "スキル`agent-toolkit:atk-mode`を作業`process-wi all-repos`で起動して始める。\n</atk-auto>"
         )
         if resume:
             assert 'kind="resume"' in prompt and not prompt.startswith("/goal ")
@@ -265,7 +266,7 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
                 context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
         assert 'kind="startup-input"' in context
         assert str(manifest) in html.unescape(context)
-        assert "references/all-repos.md「結果と終了」" in context
+        assert "`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」" in context
         data = json.loads(manifest.read_text(encoding="utf-8"))
         manifests.append(data)
         target = data["repositories"][0]

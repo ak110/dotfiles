@@ -50,7 +50,7 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
         "assignment": "GIT_EDITOR=true git commit -m 変更",
         "git-C": f"git -C {shlex.quote(str(repo))} commit -m 変更",
         "commit-wrapper": "atk run-script commit-with-timeout -- --timeout 3 -- -m 変更",
-        "codex-skill": f"cd {shlex.quote(str(repo))} && cat plugin/skills/process-wi/SKILL.md",
+        "codex-skill": f"cd {shlex.quote(str(repo))} && cat plugin/skills/atk-mode/playbooks/process-wi.md",
         "other-cd": f"cd {shlex.quote(str(other))} && git commit -m 変更",
         "other-redirect": f"echo x > {shlex.quote(str(other / 'README.md'))}",
         "unknown": 'cd "$D" && git commit -m 変更',
@@ -70,7 +70,7 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
         tool, data = "Bash", {"command": commands[case]}
     response = "---\nname: process-wi\n---\n" if case == "codex-skill" else {"exit_code": 0}
     if case == "codex-skill":
-        skill = repo / "plugin/skills/process-wi/SKILL.md"
+        skill = repo / "plugin/skills/atk-mode/playbooks/process-wi.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("---\nname: process-wi\n---\n", encoding="utf-8")
         manifest = repo / "plugin/.claude-plugin/plugin.json"

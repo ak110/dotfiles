@@ -15,7 +15,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log, submit
-from agent_toolkit._common import plugin_environment, plugin_roots
+from agent_toolkit._common import plugin_environment, plugin_roots, session_state
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
@@ -234,16 +234,58 @@ def test_large_startup_input_keeps_all_data_within_hook_cap(tmp_path, monkeypatc
     assert "references/answer-transitions.md" in context and "playbooks/report-completion.md" in context
 
 
-@pytest.mark.parametrize(("skill", "launches"), [("agent-toolkit:review-session", True), (submit.SKILL, False)])
-def test_startup_input_asks_to_launch_only_existing_skill(skill, launches, monkeypatch, capsys):
-    """保存上の名前だけを持つ起動単位（`atk wi submit`）では、存在しないスキルの起動を求めない。"""
+@pytest.mark.parametrize("skill", ["agent-toolkit:review-session", "agent-toolkit:process-wi", submit.SKILL])
+def test_startup_input_does_not_inject_launch(skill, monkeypatch, capsys):
+    """作業の始め方は目的文が示し、SessionStartは起動を差し込まずに終了契約の所在だけを示す。"""
     data = {"source": "run-skill", "skill": skill, "arguments": "入力"}
     monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data))
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}), host="claude") == 0
     context = _output(capsys)
-    assert ("指定スキルを起動し" in context) is launches
-    assert ("目的文が示す始め方" in context) is not launches
+    assert "指定スキルを起動し" not in context and "目的文が示す始め方" not in context
     assert "playbooks/report-completion.md" in context.split("終了契約", 1)[1]
+
+
+def test_process_loop_startup_points_to_result_contract(monkeypatch, capsys):
+    """常駐の統括には、移した手順書の「結果と終了」を終了契約として示す。"""
+    data = {"source": "process-loop", "skill": "agent-toolkit:process-wi", "mode": "all-repos", "manifest": "/m.json"}
+    monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data))
+    assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}), host="claude") == 0
+    contract = _output(capsys).split("終了契約", 1)[1]
+    assert "`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」" in contract
+    assert "指定スキルを起動し" not in contract
+
+
+@pytest.mark.parametrize(
+    ("data", "autonomous", "kind"),
+    [
+        ({"source": "process-loop", "skill": "agent-toolkit:process-wi", "mode": "all-repos"}, True, "all-repos"),
+        ({"source": "run-skill", "skill": "agent-toolkit:process-wi", "arguments": "single-lane 追加"}, True, "single-lane"),
+        ({"source": "run-skill", "skill": "agent-toolkit:atk-mode", "arguments": "process-wi"}, True, "process-wi"),
+        ({"source": "run-skill", "skill": "agent-toolkit:review-session", "arguments": "batch"}, False, None),
+        ({"source": "run-skill", "skill": "example:check", "arguments": "process-wi"}, False, None),
+    ],
+)
+@pytest.mark.parametrize("actor", ["main", "delegated", "compact"])
+def test_startup_input_sets_autonomous_state(data, autonomous, kind, actor, monkeypatch, capsys, tmp_path):
+    """自律モードの状態は起動入力が作業`process-wi`を名指しした最上位のセッションでだけ立てる。
+
+    圧縮後のSessionStartでは立て直さない。エージェントによる入口の起動から立てないことは、
+    PostToolUseの試験（`posttooluse_process_wi_test.py`）が確かめる。
+    """
+    session_id = f"autonomous-{actor}-{data['skill'].replace(':', '-')}-{autonomous}"
+    monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data, ensure_ascii=False))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    if actor == "delegated":
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    source = "compact" if actor == "compact" else "startup"
+    payload = {"hook_event_name": "SessionStart", "source": source, "session_id": session_id}
+    assert rules_context.main(json.dumps(payload), host="claude") == 0
+    capsys.readouterr()
+    state = session_state.read_state(session_id)
+    expected = autonomous and actor == "main"
+    assert bool(state.get(session_state.PROCESS_WI_STATE_KEY)) is expected
+    assert state.get("session_title_kind") == (kind if expected else None)
 
 
 def test_batch_startup_input_separates_procedure_from_termination(monkeypatch, capsys):

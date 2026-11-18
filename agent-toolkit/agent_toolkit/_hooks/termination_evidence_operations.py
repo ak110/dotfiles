@@ -28,7 +28,6 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
     COMPLETION_REPORT,
     STATE_KEY,
     TARGET_ENTRY_WORKS,
-    TARGET_SKILLS,
     completion_playbook_path,
 )
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
@@ -98,10 +97,7 @@ def _saved_operations(command: str) -> list[str]:
 # 読取が本文を返したかの判定は`document_reads.py`が持つ。
 def _started_work(skill: object, arguments: object) -> str | None:
     """Skillの起動が始める対象の名前を返す。入口の起動は引数の先頭語から作業の名前を読む。"""
-    name = _skill_name(skill)
-    if name in TARGET_SKILLS:
-        return name
-    if name == skill_modes.ENTRY_SKILL:
+    if _skill_name(skill) == skill_modes.ENTRY_SKILL:
         work = (arguments.split() or [""])[0] if isinstance(arguments, str) else ""
         return work if work in {COMPLETION_REPORT, *TARGET_ENTRY_WORKS} else None
     return None
@@ -114,11 +110,9 @@ def _start_label(work: str) -> str:
 
 
 def _read_work(read: _document_reads.DocumentRead) -> str | None:
-    """読取の対象が開始資料（対象スキルの`SKILL.md`か、入口の作業の手順書）であれば、対象の名前を返す。"""
+    """読取の対象が開始資料（入口の作業の手順書）であれば、対象の名前を返す。"""
     if read.plugin != "agent-toolkit":
         return None
-    if read.relative_path == "SKILL.md":
-        return read.skill if read.skill in TARGET_SKILLS else None
     if read.skill == skill_modes.ENTRY_SKILL:
         works = (COMPLETION_REPORT, *TARGET_ENTRY_WORKS)
         return next((work for work in works if read.relative_path == f"playbooks/{work}.md"), None)

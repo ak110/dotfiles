@@ -46,9 +46,12 @@ def _skill_invocation(engine_env, tmp_path, monkeypatch, capsys):
         code, _out, error = _run([*options, skill], capsys)
         assert code == 0, error
         record = _records(engine_env, "session")[0]
+        work = expected_scope.removeprefix("agent-toolkit:")
         assert record["argv"][-1] == (
             f'<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`{expected_scope}`の工程を完遂する'
-            "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
+            "（起動元が終了後に行う検収と確定は含まない）。"
+            f"スキル`agent-toolkit:atk-mode`を作業`{work}`で起動して始める"
+            "（起動入力の`free_text`が空でなければ引数の後ろへ続ける）。\n</atk-auto>"
         )
         return _startup_input(record, monkeypatch, capsys)
 

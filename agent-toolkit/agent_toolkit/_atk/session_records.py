@@ -1,4 +1,4 @@
-"""保存済みセッション記録（Claude Code・Codex・Antigravity）からprocess-wiの起動と終了工程の到達を判定する。
+"""保存済みセッション記録（Claude Code・Codex・Antigravity）から作業process-wiの起動と終了工程の到達を判定する。
 
 記録の形式（保存先の規約、行の解析）は`session_record_format`が解釈し、本モジュールはその上の判定を持つ。
 """
@@ -16,13 +16,15 @@ from typing import Any
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY, PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.repo import resolve_repo_id
-from agent_toolkit._common import host_homes, session_state
+from agent_toolkit._common import host_homes, session_state, skill_modes
 from agent_toolkit._common.agy_records import normalize_entries
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_session_command
 
 # Claude Codeのハーネスが、`Skill`ツールの起動の`tool_result`として記録する起動確認文言。
+# スキル`process-wi`を廃止する前の記録を判別するために残す。入口`atk-mode`の起動は引数を含まないため、
+# 起動の`tool_use`の引数か目的文で判別する。
 _CLAUDE_PROCESS_WI_MARKERS = (
     "Launching skill: agent-toolkit:process-wi",
     "Launching skill: agent-toolkit:process-wi all-repos",
@@ -32,7 +34,9 @@ _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 
 # 記録にはホストの前置きや/goalの境界が含まれるため、目的文本体の包含で判定する。
 # 登録全体の統括へ移行した後も、手動process-wiと過去の記録を検出対象に残す。
+# 入口`atk-mode`へ移した後の目的文（process-loopと`atk run-skill`）は、作業の起動の文で判別する。
 _PROCESS_WI_GOAL_BODIES = (
+    skill_modes.PROCESS_WI_LAUNCH_MARKER,
     PROCESS_LOOP_GOAL_BODY,
     PROCESS_WI_GOAL_BODY,
     "agent-toolkit:process-wi all-reposを完遂する",
@@ -103,14 +107,7 @@ def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
             for event in session_record_format.agy_events([record])
         )
     if engine == "claude":
-        message = record.get("message")
-        if record.get("type") != "user" or not isinstance(message, dict):
-            return False
-        content = message.get("content")
-        return isinstance(content, list) and any(
-            isinstance(item, dict) and item.get("type") == "tool_result" and item.get("content") in _CLAUDE_PROCESS_WI_MARKERS
-            for item in content
-        )
+        return _claude_process_wi_marker(record)
 
     payload = record.get("payload")
     if record.get("type") != "response_item" or not isinstance(payload, dict):
@@ -128,6 +125,38 @@ def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
             for item in content
         )
     )
+
+
+def _claude_process_wi_marker(record: dict[str, Any]) -> bool:
+    """Claude Codeの記録から作業process-wiの起動を判別する。
+
+    目的文（ユーザー入力の本文）、エージェントによる入口`atk-mode`の`Skill`起動の引数、廃止前のスキルの起動確認文言を見る。
+    """
+    message = record.get("message")
+    if record.get("type") not in {"user", "assistant"} or not isinstance(message, dict):
+        return False
+    content = message.get("content")
+    if record.get("type") == "user" and isinstance(content, str):
+        return any(body in content for body in _PROCESS_WI_GOAL_BODIES)
+    if not isinstance(content, list):
+        return False
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("type")
+        if record.get("type") == "user" and kind == "tool_result" and item.get("content") in _CLAUDE_PROCESS_WI_MARKERS:
+            return True
+        is_user_text = record.get("type") == "user" and kind == "text" and isinstance(item.get("text"), str)
+        if is_user_text and any(body in item["text"] for body in _PROCESS_WI_GOAL_BODIES):
+            return True
+        if record.get("type") == "assistant" and kind == "tool_use" and item.get("name") == "Skill":
+            tool_input = item.get("input")
+            if isinstance(tool_input, dict) and isinstance(tool_input.get("skill"), str):
+                arguments = tool_input.get("args")
+                work, _ = skill_modes.resolve_work(tool_input["skill"], arguments if isinstance(arguments, str) else None)
+                if work == "agent-toolkit:process-wi":
+                    return True
+    return False
 
 
 def invoked_process_wi(path: pathlib.Path, engine: str) -> bool:

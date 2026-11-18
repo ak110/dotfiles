@@ -6,7 +6,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import posttooluse, user_prompt_submit
+from agent_toolkit._hooks import posttooluse, rules_context, user_prompt_submit
 from agent_toolkit._hooks.pretooluse import read_delivery
 
 
@@ -59,21 +59,17 @@ def test_command_hooks_name_session(
     session = "title-test"
     session_state.update_state(session, lambda state: {**state, "current_plan_file_path": "C:\\plans\\18-1921_画像整理.md"})
     if not manual:
-        posttooluse.main(
-            json.dumps(
-                {
-                    "session_id": session,
-                    "hook_event_name": "PostToolUse",
-                    "tool_name": "Skill",
-                    "tool_input": {"skill": f"agent-toolkit:{skill}", "args": arguments},
-                }
-            )
-        )
+        # 子セッションの種別は起動入力から記録する（エージェントによる入口の起動からは記録しない）。
+        launch = {"source": "run-skill", "skill": f"agent-toolkit:{skill}", "arguments": arguments}
+        monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(launch, ensure_ascii=False))
+        payload = {"hook_event_name": "SessionStart", "source": "startup", "session_id": session}
+        assert rules_context.main(json.dumps(payload), host="claude") == 0
         capsys.readouterr()
+        monkeypatch.delenv("AGENT_TOOLKIT_SESSION_START_INPUT")
     # 一時ディレクトリが変わる再開でも種別を保持する。
     (tmp_path / "after-restart").mkdir()
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path / "after-restart"))
-    payload = {"session_id": session, "prompt": f"/agent-toolkit:{skill} {arguments}" if manual else "続ける"}
+    payload = {"session_id": session, "prompt": f"/atk-mode {skill} {arguments}" if manual else "続ける"}
     user_prompt_submit.main(json.dumps(payload))
     title = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["sessionTitle"]
     # 複数リポジトリの統括は個別計画を連結せず、全体の処理範囲を示す固定名にする。

@@ -71,7 +71,9 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
     assert records[0]["argv"][-1] == (
         '<atk-auto source="run-skill" kind="goal">\n'
         "このセッションが担当するスキル`agent-toolkit:review-session batch`の工程を完遂する"
-        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
+        "（起動元が終了後に行う検収と確定は含まない）。"
+        "スキル`agent-toolkit:atk-mode`を作業`review-session batch`で起動して始める"
+        "（起動入力の`free_text`が空でなければ引数の後ろへ続ける）。\n</atk-auto>"
     )
     assert data["arguments"] == "batch auto 任意の着眼点"
     assert data["free_text"] == "auto 任意の着眼点"
@@ -91,7 +93,8 @@ def test_final_goal_is_only_skill_completion(engine_env, monkeypatch, capsys, en
     assert code == 0, error
     expected = (
         '<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`my-skill`の工程を完遂する'
-        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
+        "（起動元が終了後に行う検収と確定は含まない）。"
+        "スキル`my-skill`を起動して始める（起動入力の`free_text`が空でなければ引数として渡す）。\n</atk-auto>"
     )
     assert _records(engine_env, "session")[0]["argv"][-1] == expected
     data = _startup_input(_records(engine_env, "session")[0], monkeypatch, capsys)
@@ -134,8 +137,11 @@ def test_process_modes_reach_public_runner_with_original_arguments(engine_env, m
     )
     assert data["mode"] == mode
     expected_skill = "agent-toolkit:process-wi" + (" " + mode if mode else "")
+    expected_work = "process-wi" + (" " + mode if mode else "")
     expected = (
         f'<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`{expected_skill}`の工程を完遂する'
-        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
+        "（起動元が終了後に行う検収と確定は含まない）。"
+        f"スキル`agent-toolkit:atk-mode`を作業`{expected_work}`で起動して始める"
+        "（起動入力の`free_text`が空でなければ引数の後ろへ続ける）。\n</atk-auto>"
     )
     assert record["argv"][-1] == expected

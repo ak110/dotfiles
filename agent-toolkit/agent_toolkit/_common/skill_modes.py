@@ -12,6 +12,19 @@ ENTRY_SKILL = "atk-mode"
 ENTRY_WORKS = ("add-awi-by-user", "process-wi", "review-session", "export-session")
 """入口が受け付ける、ユーザーが名指しする作業の名前。"""
 
+PROCESS_WI_LAUNCH_MARKER = f"スキル`agent-toolkit:{ENTRY_SKILL}`を作業`process-wi"
+"""子セッションの目的文のうち、作業`process-wi`の起動を表す部分。会話記録から起動を判別する側も使う。"""
+
+
+def entry_launch(scope: str, *, free_text: bool) -> str:
+    """子セッションの目的文へ書く、入口を作業と引数で起動させる文を返す。
+
+    スキルは入力の先頭でしか展開されず、目的文は`atk-auto`要素で包まれるため、先頭の`/atk-mode`ではなく文で起動させる。
+    `free_text`は、起動入力の自由記述を引数の後ろへ続けさせる場合に真にする。
+    """
+    tail = "（起動入力の`free_text`が空でなければ引数の後ろへ続ける）" if free_text else ""
+    return f"スキル`agent-toolkit:{ENTRY_SKILL}`を作業`{scope}`で起動して始める{tail}。"
+
 
 def resolve_work(skill: str, arguments: str | None) -> tuple[str, str | None]:
     """入口の起動を`agent-toolkit:<作業>`と残りの引数へ読み替える。入口以外と作業名の無い起動はそのまま返す。

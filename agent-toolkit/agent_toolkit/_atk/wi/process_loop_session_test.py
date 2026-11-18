@@ -53,7 +53,8 @@ class TestProcessLoopPromptAndEnv:
         expected = (
             '<atk-auto source="process-loop" kind="goal">\n'
             "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
-            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
+            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）。"
+            "スキル`agent-toolkit:atk-mode`を作業`process-wi all-repos`で起動して始める。\n</atk-auto>"
         )
         assert argv[-1] == expected
 

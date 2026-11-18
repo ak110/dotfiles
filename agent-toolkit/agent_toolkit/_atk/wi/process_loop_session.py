@@ -28,7 +28,7 @@ from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_identity as startup_identity
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._atk.wi import process_loop_ownership as _ownership
-from agent_toolkit._common import antigravity_cli, process_tree
+from agent_toolkit._common import antigravity_cli, process_tree, skill_modes
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_connection as _claude_settings
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
@@ -93,14 +93,14 @@ def repository_input(
 
 
 def build_process_loop_prompt() -> str:
-    """統括セッション自身の担当範囲の完遂を目的にする。
+    """統括セッション自身の担当範囲の完遂と、その始め方（入口`atk-mode`の作業`process-wi all-repos`の起動）を目的にする。
 
-    工程・終了条件はprocess-wiが所有する。目的文にも持つと定義が二重化するため、
+    工程・終了条件は作業process-wiの手順書が所有する。目的文にも持つと定義が二重化するため、
     可変入力はSessionStartへ分離する。完了まで続行させる働きはStop hook（autonomous_exit）が担い、
-    ホストの`/goal`は使わない。
+    ホストの`/goal`は使わない。起動は全てのホストで目的文が示し、SessionStartは起動を差し込まない。
     """
     return _automated_prompt.wrap(
-        _wi_constants.PROCESS_LOOP_GOAL_BODY,
+        f"{_wi_constants.PROCESS_LOOP_GOAL_BODY}。{skill_modes.entry_launch('process-wi all-repos', free_text=False)}",
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind=_automated_prompt.KIND_GOAL,
     )

@@ -26,16 +26,10 @@ COMPLETION_PLAYBOOK = f"playbooks/{COMPLETION_REPORT}.md"
 """完了報告の手順書の、入口`atk-mode`のディレクトリからの相対パス。"""
 
 
-TARGET_SKILLS = ("process-wi",)
+TARGET_ENTRY_WORKS = ("add-awi-by-user", "process-wi")
 
 
-"""開始した時点で成果作業となるスキルの短縮名。適用条件は完了報告の手順書「適用の判定」に従う。"""
-
-
-TARGET_ENTRY_WORKS = ("add-awi-by-user",)
-
-
-"""入口`atk-mode`の作業のうち、開始した時点で成果作業となる名前。
+"""入口`atk-mode`の作業のうち、開始した時点で成果作業となる名前。適用条件は完了報告の手順書「適用の判定」に従う。
 
 入口の起動の引数の先頭語か、手順書`playbooks/<名前>.md`の読取（スキルを読取で始めるホスト）で開始を観測する。
 開始の記録は終了時の報告の要求に使い、認可には使わない。
