@@ -1,15 +1,20 @@
-"""MCP中継が、接続先世代の停止中の要求を有限時間で配送未確定として返す契約を確かめる。"""
+"""MCP中継が、接続先世代の停止中の要求を有限時間で配送未確定として返す契約と、管理サービスの起動・公開を確かめる。"""
 
+import contextlib
+import json
 import os
 import pathlib
+import sys
 import threading
 import time
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import service_forward
-from agent_toolkit._common import runtime_environment, windows_job
+from agent_toolkit._agents_server import service_forward, service_rpc, service_transport
+from agent_toolkit._agents_server.service_generations import GenerationRegistry
+from agent_toolkit._common import plugin_environment, runtime_environment, windows_job
 
 # 中継の監視と受信の内部状態を、公開のstdio経路を起動せずに確かめる。
 # pylint: disable=protected-access
@@ -94,3 +99,108 @@ def test_service_launch_inherits_job_when_breakaway_is_denied(monkeypatch: pytes
         assert service_forward._launch_service(["python"], attempts, stderr=stderr, cwd=tmp_path, env={}) is service
     assert calls == [detached | windows_job.CREATE_BREAKAWAY_FROM_JOB, detached]
     assert "離脱を許可していません" in (tmp_path / "stderr.log").read_text(encoding="utf-8")
+
+
+_DETACHED = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
+_WINDOWS_ATTEMPTS = [{"creationflags": _DETACHED | windows_job.CREATE_BREAKAWAY_FROM_JOB}, {"creationflags": _DETACHED}]
+
+
+@pytest.mark.parametrize("attempts", [_WINDOWS_ATTEMPTS, [{"start_new_session": True}]], ids=["windows", "posix"])
+def test_service_launch_failure_carries_launch_diagnostic(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, attempts: list[dict[str, Any]]
+) -> None:
+    """起動の失敗には、どの試行で失敗しても実行ファイル・作業ディレクトリ・指定を診断として添える。"""
+
+    def spawn(_command: list[str], **_kwargs: Any) -> Any:
+        raise FileNotFoundError(2, "指定されたファイルが見つかりません。")
+
+    monkeypatch.setattr(service_forward.subprocess, "Popen", spawn)
+    with (tmp_path / "stderr.log").open("wb") as stderr, pytest.raises(FileNotFoundError) as caught:
+        service_forward._launch_service(["python"], attempts, stderr=stderr, cwd=tmp_path, env={})
+    assert any(note.startswith("管理サービス起動: executable=python") for note in getattr(caught.value, "__notes__", ()))
+
+
+def test_service_launch_denied_without_breakaway_is_not_reported_as_job_denial(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """離脱の指定によらず拒否される起動（実行ファイルへの権限不足など）を、Jobによる離脱の拒否と案内しない。"""
+
+    def spawn(_command: list[str], **_kwargs: Any) -> Any:
+        raise PermissionError(5, "アクセスが拒否されました。")
+
+    monkeypatch.setattr(service_forward.subprocess, "Popen", spawn)
+    with (tmp_path / "stderr.log").open("wb") as stderr, pytest.raises(PermissionError) as caught:
+        service_forward._launch_service(["python"], _WINDOWS_ATTEMPTS, stderr=stderr, cwd=tmp_path, env={})
+    assert "離脱を許可していません" not in (tmp_path / "stderr.log").read_text(encoding="utf-8")
+    assert any(note.startswith("管理サービス起動: executable=python") for note in getattr(caught.value, "__notes__", ()))
+
+
+def _service_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    directory = tmp_path / "services" / "agents-server"
+    monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("G1", "1.0.0"))
+    GenerationRegistry(directory).reserve("G1", tmp_path, "1.0.0")
+    return directory
+
+
+def _launched_service(
+    directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, slow_first_ping: bool
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """起動するとreadyを書く管理サービスを代用し、ready記録と送ったpingを返す。指定すれば最初のpingへ1秒以内に応答しない。"""
+    record = {"generation": "G1", "endpoint": "G1", "process": service_transport.process_identity(os.getpid())}
+    service = SimpleNamespace(pid=0, returncode=None, poll=lambda: None, wait=lambda timeout=None: 0)
+
+    def launch(*_args: Any, **_kwargs: Any) -> Any:
+        (directory / "G1.json").write_text(json.dumps(record), encoding="utf-8")
+        return service
+
+    pings: list[dict[str, Any]] = []
+
+    @contextlib.contextmanager
+    def connect(_address: str, _expected: str):
+        yield SimpleNamespace(poll=lambda _timeout: not (slow_first_ping and len(pings) == 1))
+
+    monkeypatch.setattr(service_forward, "_launch_service", launch)
+    monkeypatch.setattr(plugin_environment, "prepared_python", lambda *_args: pathlib.Path(sys.executable))
+    monkeypatch.setattr(service_transport, "connect", connect)
+    monkeypatch.setattr(service_transport, "send", lambda _peer, payload: pings.append(payload))
+    monkeypatch.setattr(service_transport, "receive", lambda _peer: {"result": {"generation": "G1"}})
+    # 起動の失敗時の回収が、代用したプロセスのPIDで実在のプロセスグループへ届かないようにする。
+    monkeypatch.setattr(service_forward.os, "killpg", lambda *_args: None)
+    return record, pings
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの起動処理を代用する")
+@pytest.mark.parametrize("running", [True, False], ids=["running", "launched"])
+@pytest.mark.parametrize("defer", [True, False], ids=["deferred", "published"])
+def test_ensure_service_publishes_only_without_deferral(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, running: bool, defer: bool
+) -> None:
+    """公開の保留を指定した起動確認には、起動済みでも新しく起動しても候補のまま返し、受付先として公開しない。"""
+    directory = _service_directory(tmp_path, monkeypatch)
+    record, _pings = _launched_service(directory, monkeypatch, slow_first_ping=False)
+    if running:
+        (directory / "G1.json").write_text(json.dumps(record), encoding="utf-8")
+    published: list[str] = []
+
+    def request_sync(target: dict[str, Any], operation: str, _arguments: dict, **_kwargs: Any) -> dict[str, Any]:
+        published.append(operation)
+        return dict(target, published=True)
+
+    monkeypatch.setattr(service_rpc, "request_sync", request_sync)
+    environment = {service_forward.DEFER_PUBLISH_ENV: "1"} if defer else {}
+    returned = service_forward.ensure_service(runtime_environment.CallerContext(environment, tmp_path), tmp_path)
+    assert published == ([] if defer else ["publish"])
+    assert returned == (record if defer else dict(record, published=True))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの起動処理を代用する")
+def test_ensure_service_waits_past_slow_first_ping_until_ready_deadline(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """受付を始めた直後の管理サービスが最初のpingへ1秒以内に応答しなくても、起動の失敗とせずreadyの期限まで確かめ直す。"""
+    directory = _service_directory(tmp_path, monkeypatch)
+    record, pings = _launched_service(directory, monkeypatch, slow_first_ping=True)
+    environment = {service_forward.DEFER_PUBLISH_ENV: "1"}
+    assert service_forward.ensure_service(runtime_environment.CallerContext(environment, tmp_path), tmp_path) == record
+    assert len(pings) == 2

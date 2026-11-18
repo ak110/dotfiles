@@ -233,6 +233,40 @@ async def test_failed_save_before_transfer_returns_detached_resources_to_source(
 
 
 @pytest.mark.asyncio
+async def test_client_stopped_at_boundary_resumes_when_acceptance_returns_before_move(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """終了境界で止めたclientは、移譲を待つ間に受付先が自世代へ戻れば取り込み直し、次の応答を受け取れる状態へ戻す。
+
+    公開を確定した新世代が終了すると、生存する旧世代へ受付が戻る。止めたままでは、その会話のdecodeが再開しない。
+    """
+    coordinator, session, backend = _coordinator(tmp_path, monkeypatch, current=False)
+    runtime = coordinator._runtime
+    assert runtime is not None
+    descriptor = {
+        "identifier": runtime.broker.register({"close": AsyncMock()}),
+        "origin": {"generation": runtime.generation, "process": runtime.target["process"]},
+    }
+    client = backend._clients[session.session_id]
+    client.detach.return_value = descriptor
+    client.transferred = False
+    client.pause.side_effect = lambda: setattr(client, "transferred", True)
+    backend._wait_compaction_turns = {}
+    current = [{"generation": "G3", "epoch": 3, "process": "3:new"}]
+    monkeypatch.setattr(coordinator.registry, "current", lambda: current[0])
+    # 同じsessionの別のtool呼出しがsessionの直列化を保持している間に、turnが終わる。
+    async with coordinator._locks.setdefault(session.session_id, asyncio.Lock()):
+        coordinator.boundary(session, client)
+        assert client.transferred
+        # 受付先の新世代が終了し、受付が旧世代へ戻る。
+        current[0] = coordinator.target
+    async with asyncio.timeout(5):
+        assert await coordinator.move(session.session_id) == {"moved": False}
+    backend.adopt_session.assert_awaited_once_with(session, descriptor, {})
+
+
+@pytest.mark.asyncio
 async def test_failed_move_on_owner_reports_undelivered_input_and_next_action(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

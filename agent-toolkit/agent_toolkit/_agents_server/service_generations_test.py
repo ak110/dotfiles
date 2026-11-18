@@ -70,6 +70,19 @@ def test_restore_returns_acceptance_to_live_generation_after_published_one_exite
     assert registry.publish("new", endpoint="new", process="relaunched")["generation"] == "new"
 
 
+def test_restore_returns_acceptance_to_newest_of_several_live_generations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """生存する公開済みの世代が複数あれば、最も新しく準備された世代へ受付を戻す。"""
+    registry = GenerationRegistry(tmp_path)
+    for name, version in (("oldest", "1.0.0"), ("middle", "1.0.1"), ("exited", "1.0.2")):
+        registry.reserve(name, tmp_path / name, version)
+        registry.publish(name, endpoint=name, process=name)
+    monkeypatch.setattr(service_transport, "process_alive", lambda identity: identity != "exited")
+    restored = registry.restore()
+    assert restored is not None and restored["generation"] == "middle"
+
+
 def test_restore_keeps_newer_candidate_ahead_of_exited_generation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
