@@ -18,6 +18,7 @@ from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
 from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_notes, _write_awi_file
 
 
+@pytest.mark.windows
 def test_edit_accepts_minimal_agent_awi(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -29,8 +30,10 @@ def test_edit_accepts_minimal_agent_awi(
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     body_path = tmp_path / "edit.md"
     body_path.write_text(_AGENT_AWI_BODY, encoding="utf-8")
+    # 実行元の作業ツリーを暗黙の対象にせず、試験が書いたWIの対象を明示する。
+    argv = ["wi", "edit", "entry.md", "--body-file", str(body_path), "--target-repo", "github.com/example/foo"]
     with pytest.raises(SystemExit) as result:
-        atk.main(["wi", "edit", "entry.md", "--body-file", str(body_path)], home=tmp_path)
+        atk.main(argv, home=tmp_path)
     assert result.value.code == 0, capsys.readouterr().err
     assert "## 完成条件" not in path.read_text(encoding="utf-8")
 
@@ -288,12 +291,13 @@ def test_public_add_preserves_human_environment_source(
     assert parsed[0].get("source") == source
 
 
+@pytest.mark.windows
 @pytest.mark.parametrize("source", [None, "human", "agent", "session-review", "unknown-skill"])
 def test_public_batch_preserves_source(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str | None) -> None:
     """エージェント環境のbatchは明示sourceと欠落を原文どおり保持する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setenv("AI_AGENT", "1")
-    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    _patch_cmd_add_operations(monkeypatch)
     source_line = f"source: {source}\n" if source is not None else ""
     original = f"---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/repo\n{source_line}---\n\n本文\n"
     body_file = tmp_path / "batch.md"

@@ -11,6 +11,7 @@ from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._hooks.pretooluse.decision import Decision
+from agent_toolkit._testing.document_delivery import hook_text
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
 from agent_toolkit._testing.git_repository import init_repository, run_git
 
@@ -160,9 +161,9 @@ def _copies(tmp_path, monkeypatch, *, same=True):
     worktree = tmp_path / "repo/.claude/worktrees/lane/references/rule.md"
     for path in (checkout, worktree):
         path.parent.mkdir(parents=True)
-        path.write_text(body, encoding="utf-8")
+        path.write_text(body, encoding="utf-8", newline="\n")
     if not same:
-        worktree.write_text(body.replace("二行目", "別本文"), encoding="utf-8")
+        worktree.write_text(body.replace("二行目", "別本文"), encoding="utf-8", newline="\n")
     rows = [
         ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (checkout,)),
         ReadTrigger(tmp_path / "SKILL.md", 2, "操作", ("tool:Other",), (worktree,)),
@@ -277,9 +278,9 @@ def _guided_without_acquisition(operation, path):
     assert first.returncode == 0 and not first.stderr
     if path.name == "SKILL.md":
         skill = read_delivery.skill_name(path)
-        assert skill is not None and skill in first.stdout
+        assert skill is not None and skill in hook_text(first.stdout)
     else:
-        assert str(path) in first.stdout
+        assert str(path) in hook_text(first.stdout)
     assert '"permissionDecision": "deny"' not in first.stdout
     second = _run_hook_in_process("pretooluse", operation)
     assert second.returncode == 0 and not second.stdout and not second.stderr

@@ -9,6 +9,7 @@ fixtureは`conftest.py`に置き、テストからimportして使うヘルパー
 import json
 import pathlib
 import re
+import sys
 
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common.session_state import state_path
@@ -30,6 +31,21 @@ _RESOURCE_PREFIX_PATTERN = re.compile(
     rf".*?\n</{_AUTO}>\n\n(?P<delivery>.*)\Z",
     re.DOTALL,
 )
+
+
+def link_directory(link: pathlib.Path, target: pathlib.Path) -> None:
+    """`link`を`target`へ解決するディレクトリのリンクとして作る。
+
+    Windowsのシンボリックリンク作成は特権か開発者モードを要するため、通常ユーザーでも作れるジャンクションを使う。
+    どちらも`Path.resolve`で`target`へ解決する。
+    """
+    if sys.platform == "win32":
+        # pylint: disable=import-outside-toplevel,import-error
+        import _winapi  # noqa: PLC0415 -- Windows専用で、他のOSではimportできない。
+
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        link.symlink_to(target, target_is_directory=True)
 
 
 def auto_message_opening_attributes(text: str) -> dict[str, str]:

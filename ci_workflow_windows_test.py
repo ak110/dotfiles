@@ -1,5 +1,6 @@
 """CI workflowの主題別契約を検証する。"""
 
+import ast
 import os
 import shlex
 import shutil
@@ -65,6 +66,57 @@ def test_windows_job_runs_link_and_prepare_lock_boundaries(workflow_data: dict[s
     tokens = shlex.split(str(step["run"]))
     assert tokens[tokens.index("-m") + 1] == "windows"
     assert "pytestmark = pytest.mark.windows" in (REPO_ROOT / target).read_text(encoding="utf-8").splitlines()
+
+
+# Windowsで失敗していたクロスプラットフォーム試験。Windows境界テストが収集するよう`windows` markerを保つ。
+_WINDOWS_CROSS_PLATFORM_TESTS = {
+    "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_acquisition_commands_test.py": {
+        "test_hook_chain_records_acquisition_without_blocking_write",
+        "test_executed_static_read_records_acquisition_without_blocking_write",
+    },
+    "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_acquisition_test.py": {
+        "test_unchecked_condition_keeps_notice_suppressed_until_actual_resolution",
+        "test_skill_acquisition_respects_model_invocation",
+        "test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct",
+        "test_role_finding_save_keeps_current_acquisition_evidence",
+        "test_selected_shared_skill_keeps_current_role_boundary",
+    },
+    "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_compaction_test.py": {
+        "test_public_hook_reuses_received_content_across_paths",
+        "test_compaction_resets_acquisition_read_through_a_same_content_copy",
+        "test_compaction_reguides_only_current_documents_without_blocking",
+        "test_public_guidance_distinguishes_new_scope_target_and_compaction",
+    },
+    "agent-toolkit/agent_toolkit/_atk/wi/add_source_test.py": {
+        "test_edit_accepts_minimal_agent_awi",
+        "test_public_batch_preserves_source",
+    },
+    "agent-toolkit/agent_toolkit/_hooks/document_reads_test.py": {
+        "test_receipt_candidates_share_document_scan_and_refresh_changed_body",
+        "test_basics_reference_uses_observed_manifest_and_path",
+        "test_chezmoi_source_and_distribution_link_require_full_body",
+    },
+    "pytools/_internal/update_claude_settings_test.py": {
+        "test_placeholder_replaced_in_string",
+        "test_placeholder_replaced_recursively_in_nested_structures",
+    },
+}
+
+
+@pytest.mark.parametrize(("target", "functions"), sorted(_WINDOWS_CROSS_PLATFORM_TESTS.items()))
+def test_windows_job_runs_cross_platform_tests(workflow_data: dict[str, object], target: str, functions: set[str]) -> None:
+    """Windowsで失敗していた試験を、Windows境界テストの`-m windows`が収集・実行する指定を保つ。"""
+    _, step = _windows_step(
+        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "Windows境界テスト"
+    )
+    tokens = shlex.split(str(step["run"]))
+    assert tokens[tokens.index("-m") + 1] == "windows"
+    marked = {
+        node.name
+        for node in ast.walk(ast.parse((REPO_ROOT / target).read_text(encoding="utf-8")))
+        if isinstance(node, ast.FunctionDef) and "pytest.mark.windows" in map(ast.unparse, node.decorator_list)
+    }
+    assert functions <= marked, sorted(functions - marked)
 
 
 def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[str, object]) -> None:
