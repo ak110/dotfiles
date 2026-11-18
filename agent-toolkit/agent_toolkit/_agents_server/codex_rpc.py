@@ -110,6 +110,13 @@ class JsonRpcProcess:
             "stderr": self._stderr_text.strip(),
         }
 
+    def diagnostic(self) -> dict[str, Any]:
+        """要求が進まない時に、読取の停止と受信済みの種別ごとの件数を返す。"""
+        return {
+            "reader_failure": None if self._reader_failure is None else str(self._reader_failure),
+            "received_message_types": dict(sorted(self._received_message_types.items())),
+        }
+
     async def start(self) -> None:
         """子プロセスを起動し、initialize/initializedを完了する。"""
         if self.process is not None:

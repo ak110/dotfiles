@@ -101,11 +101,16 @@ class Resource:
         params = {"resource_id": self.identifier, **arguments}
         if name != "transfer":
             params["owner_generation"] = self.runtime.owner
-        if self.origin["generation"] == self.runtime.generation and self.origin.get("process") == self.runtime.target.get(
-            "process"
-        ):
+        if self.local:
             return await getattr(self.runtime.broker, name)(**params)
         return await service_rpc.request(self.origin, name, params)
+
+    @property
+    def local(self) -> bool:
+        """元I/Oが同じプロセスのbrokerにあるかを返す。"""
+        return self.origin["generation"] == self.runtime.generation and self.origin.get("process") == self.runtime.target.get(
+            "process"
+        )
 
     def descriptor(self) -> dict[str, Any]:
         """環境や実行可能オブジェクトを含めず、元資源への参照だけを渡す。"""
@@ -226,6 +231,26 @@ class CodexResource:
     def reader_failure(self) -> BaseException | None:
         """元I/O側から通知された接続障害を返す。"""
         return self._reader_failure
+
+    def diagnostic(self) -> dict[str, Any]:
+        """要求が進まない時に、受信処理の生存と元I/O側の未確認イベント数を返す。
+
+        未確認イベントが上限に達すると、元I/Oは送出通知と後続の受信を止める。
+        元I/Oが別プロセスにある場合、未確認数はこのプロセスから読めない。
+        """
+        if not self.resource.local:
+            backlog = "別プロセス"
+        elif (counts := self.resource.runtime.broker.backlog(self.resource.identifier)) is None:
+            backlog = "解放済み"
+        else:
+            backlog = f"{counts[0]}/{counts[1]}"
+        return {
+            "consumer": "稼働中" if self._task is not None and not self._task.done() else "停止",
+            "acknowledged_sequence": self._sequence,
+            "transferred": self._detached,
+            "reader_failure": None if self._reader_failure is None else str(self._reader_failure),
+            "backlog": backlog,
+        }
 
     async def start(self) -> None:
         """通知consumerを先に有効化してから元I/Oを開始する。"""

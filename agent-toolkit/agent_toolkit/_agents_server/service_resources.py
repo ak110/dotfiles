@@ -90,6 +90,11 @@ class ResourceBroker:
             resource["events"].append({"sequence": resource["sequence"], "payload": payload})
             resource["condition"].notify_all()
 
+    def backlog(self, resource_id: str) -> tuple[int, int] | None:
+        """未確認イベント数と、emitが空きを待ち始める上限を返す。解放済みの資源はNoneを返す。"""
+        resource = self._resources.get(resource_id)
+        return None if resource is None else (len(resource["events"]), self._event_limit)
+
     async def events(self, resource_id: str, owner_generation: str, after_sequence: int, wait: float = 0) -> list[dict]:
         resource = self._resources[resource_id]
         async with resource["condition"]:

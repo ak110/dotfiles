@@ -9,8 +9,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from asyncio.subprocess import Process
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -55,6 +56,7 @@ class _MemoryAppServer(codex.JsonRpcProcess):
         self.refresh_failures = 0
         self.primary_usage: Any = 10
         self.other_buckets: dict[str, Any] = {}
+        self.silent: set[str] = set()
 
     async def start(self) -> None:
         self.process = cast(Process, SimpleNamespace(stdin=object(), stdout=self.stream, pid=None))
@@ -66,6 +68,8 @@ class _MemoryAppServer(codex.JsonRpcProcess):
             return
         params = message.get("params", {})
         self.requests.append((method, params))
+        if method in self.silent:
+            return
         if method in {"thread/start", "thread/resume"}:
             result: dict[str, Any] = {"thread": {"id": "reset-thread"}, "modelProvider": "openai"}
         elif method == "config/read":
@@ -489,10 +493,29 @@ class _Hub:
         return {"published": [], "delivered": []}
 
 
+async def _no_save() -> None:
+    pass
+
+
 def _flood(client: _MemoryAppServer) -> None:
     # 元I/O側の未確認イベント上限（256件）を超える通知を、照会の応答より先に読ませる。
     for index in range(300):
         client.emit("thread/tokenUsage/updated", {"index": index})
+
+
+@contextlib.asynccontextmanager
+async def _service_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, save: Callable[[], Awaitable[None]]
+) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
+    """管理サービスと同じく、App Serverの生I/Oをbroker経由の受信処理と保存に通す。"""
+    with service_io.bind(service_io.Runtime("G1", _LOCAL_ORIGIN, ResourceBroker("G1"), save)):
+        async with _environment(tmp_path, monkeypatch) as environment:
+            yield environment
+
+
+def _timeout_record(caplog: pytest.LogCaptureFixture) -> logging.LogRecord:
+    [record] = [record for record in caplog.records if "照会が時間内に終わりません" in record.getMessage()]
+    return record
 
 
 @pytest.mark.parametrize("permitted", [True, False])
@@ -548,3 +571,59 @@ async def test_account_read_proceeds_while_save_waits_registration_under_event_f
     assert raced.is_set()
     assert not failures
     assert (result.reset_confirmed, consumed) == ((True, 1) if permitted else (False, 0))
+
+
+@pytest.mark.parametrize("service", [False, True])
+@pytest.mark.asyncio
+async def test_unanswered_account_read_ends_with_response_stage_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, service: bool
+) -> None:
+    """送出後に応答が無い照会も時間内に終わり、応答待ちで止まったことを記録する。"""
+    monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
+    environment = _service_environment(tmp_path, monkeypatch, _no_save) if service else _environment(tmp_path, monkeypatch)
+    async with environment as (_owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        clients[0].silent.add("account/read")
+        with caplog.at_level(logging.ERROR, logger="agent-toolkit.agents-server.codex"):
+            backend._start_auto_reset_check(session)
+            await _until(backend, lambda: not session.codex_auto_reset_pending)
+        assert not clients[0].consume_started.is_set()
+    record = _timeout_record(caplog)
+    assert "method=account/read stage=応答待ち" in record.getMessage()
+    assert "'reader_failure': None" in record.getMessage()
+    assert isinstance(record.exc_info, tuple)
+    assert str(record.exc_info[1]) == "account/readが0.5秒以内に完了しない"
+
+
+@pytest.mark.asyncio
+async def test_account_read_blocked_by_full_event_queue_reports_backlog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """受信処理の保存が止まって未確認イベントが上限に達すると、送出通知の空き待ちで止まったことを記録する。"""
+    monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
+    hold = asyncio.Event()
+    release = asyncio.Event()
+
+    async def save() -> None:
+        if hold.is_set():
+            await release.wait()
+
+    async with _service_environment(tmp_path, monkeypatch, save) as (_owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        resource = cast(service_io.CodexResource, backend._clients[session.session_id]).resource
+        hold.set()
+        _flood(clients[0])
+        try:
+            async with asyncio.timeout(5):
+                while resource.runtime.broker.backlog(resource.identifier) != (256, 256):
+                    await asyncio.sleep(0.01)
+            with caplog.at_level(logging.ERROR, logger="agent-toolkit.agents-server.codex"):
+                backend._start_auto_reset_check(session)
+                await _until(backend, lambda: not session.codex_auto_reset_pending)
+        finally:
+            release.set()
+        assert not clients[0].consume_started.is_set()
+    message = _timeout_record(caplog).getMessage()
+    assert "method=account/read stage=送出確認待ち" in message
+    assert "'consumer': '稼働中'" in message
+    assert "'backlog': '256/256'" in message
