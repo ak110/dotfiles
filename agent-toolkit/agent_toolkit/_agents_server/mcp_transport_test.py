@@ -19,7 +19,6 @@ import time
 from collections.abc import AsyncGenerator, Callable, Generator
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
 
 import anyio
 import claude_agent_sdk
@@ -29,11 +28,10 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.message import SessionMessage
-from mcp.types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
+from mcp.types import CallToolRequestParams, CallToolResult, ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import (
-    lifetime,
     logging_config,
     mcp_tools,
     mcp_transport,
@@ -46,12 +44,6 @@ from agent_toolkit._testing.codex_plugin_support import _stop_mcp_services
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
-
-
-@pytest.fixture
-def transport_tracker(monkeypatch: pytest.MonkeyPatch) -> None:
-    """通信の判定だけを検証し、interpreter共用資源の実回収を実行しない。"""
-    monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda *_args, **_kwargs: [])
 
 
 @contextlib.asynccontextmanager
@@ -187,86 +179,63 @@ async def test_stdio_tool_results(tmp_path: pathlib.Path, launcher_environment: 
 
 
 @pytest.mark.asyncio
-@pytest.mark.cpu_limit(
-    1.5,
-    reason=(
-        "実MCP ClientSessionとmemory transportのinitialize/list往復で処理例外の公開応答を確"
-        "認する（Linux CI CPU合計最大0.519秒）。"
-    ),
-)
-@pytest.mark.usefixtures("transport_tracker")
-async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ツール処理で起きた例外も、公開transportでは理由と次の操作を持つエラーとして返る。"""
-    # 同一プロセスの合成transportはpytestのtracker等を所有しない。実回収は別プロセスで検証する。
-    monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda _self: [])
+async def test_registered_tool_processing_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """共有管理サービスが振り分けたツール呼出しでも、処理の例外は理由と次の操作を持つエラー結果として返る。"""
 
     def fail_list(**_kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("injected processing failure")
 
     monkeypatch.setattr(mcp_tools._MANAGER, "list_sessions", fail_list)
-    client_write, server_read = anyio.create_memory_object_stream[SessionMessage | Exception](10)
-    server_write, client_read = anyio.create_memory_object_stream[SessionMessage](10)
-
-    @contextlib.asynccontextmanager
-    async def transport() -> AsyncGenerator[Any]:
-        async with server_read, server_write:
-            yield server_read, server_write
-
-    monkeypatch.setattr(mcp_transport, "stdio_server", transport)
-    async with anyio.create_task_group() as group:
-        group.start_soon(mcp_tools.mcp.run_stdio_async)
-        async with client_read, client_write, ClientSession(client_read, client_write) as client:
-            await client.initialize()
-            result = await client.call_tool("list", {})
-            assert result.is_error
-            assert any(
-                "injected processing failure" in part.text and NEXT_ACTION_PREFIX in part.text
-                for part in result.content
-                if part.type == "text"
-            )
+    result = await mcp_tools.mcp._call_registered_tool(None, CallToolRequestParams(name="list", arguments={}))
+    assert isinstance(result, CallToolResult) and result.is_error
+    assert any(
+        "injected processing failure" in part.text and NEXT_ACTION_PREFIX in part.text
+        for part in result.content
+        if part.type == "text"
+    )
 
 
-@pytest.mark.cpu_limit(
-    2.0,
-    reason=(
-        "実SDK型のinitialize4結果を公開mainで処理し、永続ログの成功・失敗・未完了を識別する（Linux CI CPU合計最大0.867秒）。"
-    ),
-)
-@pytest.mark.usefixtures("transport_tracker")
-def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """stdio起動でinitializeの受信、応答完了および失敗を永続ログへ記録する。"""
-    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    # pytestが所有するtracker等は旧stdio単位の回収対象にしない。
-    monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda _self: [])
+class _FailingSend:
+    """id=3の応答だけ送信に失敗する送信先。"""
 
-    # SDK 2.3.0のJSON-RPC型から、受信と送信の公式構造を生成する。
-    requests = [SessionMessage(JSONRPCRequest(jsonrpc="2.0", method="initialize", id=i)) for i in range(1, 5)]
-
-    async def send(message: SessionMessage) -> None:
-        if getattr(message.message, "id", None) == 3:
+    async def send(self, item: SessionMessage) -> None:
+        if getattr(item.message, "id", None) == 3:
             raise OSError("write failed")
 
-    @contextlib.asynccontextmanager
-    async def transport() -> AsyncGenerator[Any]:
-        yield SimpleNamespace(receive=AsyncMock(side_effect=requests)), SimpleNamespace(send=send)
+    async def aclose(self) -> None:
+        pass
 
-    async def run(_server: Any, read: Any, write: Any, _options: Any) -> None:
-        for i in range(1, 5):
-            await read.receive()
-            if i == 4:
-                return
-            response = (
-                JSONRPCError(jsonrpc="2.0", id=i, error=ErrorData(code=-32602, message="invalid initialize"))
-                if i == 2
-                else JSONRPCResponse(jsonrpc="2.0", id=i, result={})
-            )
-            with contextlib.suppress(OSError):
-                await write.send(SessionMessage(response))
 
-    monkeypatch.setattr(mcp_transport, "stdio_server", transport)
-    monkeypatch.setattr(mcp_transport.Server, "run", run)
-
-    assert mcp_tools.serve() == 0
+@pytest.mark.asyncio
+async def test_initialization_streams_persist_initialize_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """共有管理サービスの接続と同じ組み立てで、initializeの受信、応答完了および失敗を永続ログへ記録する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    logging_config.configure_logging()
+    # SDK 2.3.0のJSON-RPC型から、受信と送信の公式構造を生成する。
+    sender, receiver = anyio.create_memory_object_stream[SessionMessage | Exception](4)
+    for i in range(1, 5):
+        sender.send_nowait(SessionMessage(JSONRPCRequest(jsonrpc="2.0", method="initialize", id=i)))
+    tracker = mcp_transport._InitializationLogTracker()
+    read = mcp_transport._InitializationLoggingReceiveStream(receiver, tracker)
+    write = mcp_transport._InitializationLoggingSendStream(_FailingSend(), tracker)
+    try:
+        async with sender, receiver:
+            for i in range(1, 5):
+                await read.receive()
+                if i == 4:
+                    break
+                response = (
+                    JSONRPCError(jsonrpc="2.0", id=i, error=ErrorData(code=-32602, message="invalid initialize"))
+                    if i == 2
+                    else JSONRPCResponse(jsonrpc="2.0", id=i, result={})
+                )
+                with contextlib.suppress(OSError):
+                    await write.send(SessionMessage(response))
+    finally:
+        tracker.transport_closed()
+        logging_config.close_logging()
 
     content = (tmp_path / "agents-server.log").read_text(encoding="utf-8")
     assert "MCP initializeを受信しました: request_id=1" in content

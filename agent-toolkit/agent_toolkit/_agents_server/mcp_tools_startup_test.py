@@ -8,15 +8,13 @@ import json
 import logging
 import os
 import pathlib
-from multiprocessing import resource_tracker
 from typing import Any
 from unittest.mock import AsyncMock
 
-import psutil
 import pytest
 
 import agent_toolkit.agents_server_mcp as entry_script
-from agent_toolkit._agents_server import child_environment, launch_requests, lifetime, logging_config, mcp_tools
+from agent_toolkit._agents_server import child_environment, launch_requests, logging_config, mcp_tools, service
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._common import mcp_environment, session_registry, state_paths
 
@@ -143,42 +141,34 @@ async def test_mcp_lifespan_persists_activate_failure(
     assert "RuntimeError: activate failed" in content
 
 
-@pytest.mark.parametrize("stop_requested", [False, True])
+@pytest.mark.asyncio
 @pytest.mark.parametrize("secret_message", [False, True])
-def test_serve_records_exception_exit(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, stop_requested: bool, secret_message: bool
+async def test_service_records_exception_exit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, secret_message: bool
 ) -> None:
-    """stdio起動が例外で終わると、起動単位の終了診断へ例外型とメッセージを記録し、例外を呼出元へ伝える。
-
-    `serve`はこの試験ではpytestのプロセスの中で動く。終了時の回収は自プロセスの全子孫を対象にするため、
-    そのまま動かすと、pytestのインタープリターが終了まで使うresource_trackerと常駐のfork-serverまで止める。
-    止まったtrackerは、同じworkerで次にspawnの資源を使う試験で`process died unexpectedly, relaunching`の
-    警告とともに起動し直される。回収そのものは`lifetime_test.py`が別プロセスの`serve`で確かめる。
-    """
-    monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda _self: [])
-    resource_tracker.ensure_running()
-    # 起動PIDは公開APIを持たないため、標準ライブラリの内部属性から読む。
-    tracker = getattr(resource_tracker._resource_tracker, "_pid", None)
-    assert tracker is not None
+    """共有管理サービスが例外で終わると、起動単位の終了診断へ例外型と秘匿済みメッセージを記録し、例外を呼出元へ伝える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", None)
-    for name in ("CLAUDE_CODE_SESSION_ID", logging_config.LAUNCH_RECORD_ENV):
-        monkeypatch.delenv(name, raising=False)
-
+    monkeypatch.delenv(logging_config.LAUNCH_RECORD_ENV, raising=False)
     message = "token=" + "fake-long-value" * 300 + " stage=start" if secret_message else "transport broke"
 
-    def fail(**_kwargs: Any) -> None:
-        if stop_requested:
-            assert mcp_tools.mcp.server_lifetime is not None
-            mcp_tools.mcp.server_lifetime.request_stop()
-        raise RuntimeError(message)
+    class FailingManagers:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
 
-    monkeypatch.setattr(mcp_tools.mcp, "run", fail)
+        async def __aenter__(self) -> None:
+            raise RuntimeError(message)
+
+        async def __aexit__(self, *_exc: object) -> None:
+            pass
+
+    monkeypatch.setattr(service, "ServiceManagers", FailingManagers)
+    state_root = tmp_path / "service-state"
     with pytest.raises(RuntimeError):
-        mcp_tools.serve()
+        await service.run(state_root / "services" / "agents-server", "G1")
 
-    [path] = logging_config.instance_directory(tmp_path).glob("*.jsonl")
+    [path] = logging_config.instance_directory(state_root).glob("*.jsonl")
     events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert [event["event"] for event in events] == ["started", "exited"]
     assert events[1] | {"at": None} == {
@@ -192,7 +182,3 @@ def test_serve_records_exception_exit(
     # 終えた起動単位は同じプロセスの後続の記録へ書かない。
     assert logging_config.current_server_instance() is None
     assert session_registry.owner_server_instance() is None
-    # 試験のプロセスが使うtrackerを止めていない。止めていれば次の利用でPIDが変わる。
-    assert psutil.Process(tracker).status() != psutil.STATUS_ZOMBIE
-    resource_tracker.ensure_running()
-    assert getattr(resource_tracker._resource_tracker, "_pid", None) == tracker

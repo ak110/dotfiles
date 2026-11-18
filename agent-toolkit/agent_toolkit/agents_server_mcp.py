@@ -1,7 +1,8 @@
 """CodexとClaudeの委譲先を非同期MCPとして公開するagents_serverの起動スクリプト。
 
 MCPホストの設定（`mcp.json`など）が本ファイルのパスを起動する。実装は`agent_toolkit._agents_server`配下に置き、
-本ファイルは引数の解釈と`_agents_server.mcp_tools.serve`の呼び出しだけを持つ。
+本ファイルは引数の解釈と、依存の確認（`_agents_server.mcp_tools.check_dependencies`）または
+共有管理サービスへの転送（`_agents_server.service_forward.forward`）の呼び出しだけを持つ。
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from collections.abc import Sequence
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """引数に応じて依存の確認またはMCP stdio transportの起動を行う。"""
+    """引数に応じて依存の確認、またはMCP stdioから共有管理サービスへの転送を行う。"""
     parser = argparse.ArgumentParser(description="CodexとClaudeの委譲先を非同期MCPとして公開する。")
     parser.add_argument(
         "--check-dependencies",
@@ -24,7 +25,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.check_dependencies:
         from agent_toolkit._agents_server import mcp_tools
 
-        return mcp_tools.serve(check_dependencies=True)
+        return mcp_tools.check_dependencies()
     from agent_toolkit._agents_server.service_forward import forward
 
     return forward()

@@ -222,7 +222,7 @@ def end_server_instance() -> None:
 
 
 def current_server_instance() -> ServerInstance | None:
-    """このプロセスが開始した起動単位を返す。stdio起動を開始していなければ`None`を返す。"""
+    """このプロセスが開始した起動単位を返す。起動単位を開始していなければ`None`を返す。"""
     return _CURRENT_INSTANCE
 
 
