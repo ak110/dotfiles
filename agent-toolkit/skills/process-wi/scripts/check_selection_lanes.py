@@ -331,6 +331,29 @@ def _check_lane_stages(items: collections.abc.Sequence[object], costs: collectio
     return errors
 
 
+def overlapping_pairs(
+    items: collections.abc.Sequence[object],
+) -> collections.abc.Iterator[tuple[dict[str, object], dict[str, object], tuple[str, str], set[str]]]:
+    """別レーンに属し書込対象を共有する項目の組を、昇順のレーン名の組と共通パスとともに返す。統合済みの項目も含む。"""
+    assigned = [
+        item
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get(_selection.LANE_KEY), str) and item[_selection.LANE_KEY] != _LANE_NONE
+    ]
+    for left, right in itertools.combinations(assigned, 2):
+        low, high = sorted((str(left[_selection.LANE_KEY]), str(right[_selection.LANE_KEY])))
+        if low == high:
+            continue
+        overlaps = {
+            second if _covers(first, second) else first
+            for first in _string_list(left, _selection.WRITE_FILES_KEY)
+            for second in _string_list(right, _selection.WRITE_FILES_KEY)
+            if _covers(first, second) or _covers(second, first)
+        }
+        if overlaps:
+            yield left, right, (low, high), overlaps
+
+
 def _check_lane_overlaps(
     items: collections.abc.Sequence[object],
     costs: collections.abc.Sequence[object],
@@ -346,26 +369,12 @@ def _check_lane_overlaps(
         and isinstance(row.get(_selection.STAGE_KEY, 1), int)
         and isinstance(row.get(_selection.PRIOR_LANES_KEY, []), list)
     }
-    assigned = [
-        item
-        for item in items
-        if isinstance(item, dict) and isinstance(item.get(_selection.LANE_KEY), str) and item[_selection.LANE_KEY] != _LANE_NONE
-    ]
     expected: set[tuple[str, str, str]] = set()
     shared: set[tuple[str, str, str]] = set()
     dependencies: dict[str, set[str]] = {}
-    for left, right in itertools.combinations(assigned, 2):
-        lanes = sorted((left[_selection.LANE_KEY], right[_selection.LANE_KEY]))
-        if lanes[0] == lanes[1]:
-            continue
-        overlaps = {
-            second if _covers(first, second) else first
-            for first in _string_list(left, _selection.WRITE_FILES_KEY)
-            for second in _string_list(right, _selection.WRITE_FILES_KEY)
-            if _covers(first, second) or _covers(second, first)
-        }
-        shared.update((lanes[0], lanes[1], path) for path in overlaps)
-        if _is_integrated(left, integrated) or _is_integrated(right, integrated) or not overlaps:
+    for left, right, lanes, overlaps in overlapping_pairs(items):
+        shared.update((*lanes, path) for path in overlaps)
+        if _is_integrated(left, integrated) or _is_integrated(right, integrated):
             continue
         left_stage, right_stage = (stages.get(lane, (1, []))[0] for lane in lanes)
         if left_stage == right_stage:

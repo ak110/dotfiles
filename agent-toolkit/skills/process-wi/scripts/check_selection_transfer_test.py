@@ -99,6 +99,54 @@ def test_transfer_records_new_overlap_with_extend_write_targets(
     assert after["レーン間の重なり"] == [record]
 
 
+@pytest.mark.parametrize("case", ["emptied", "partner", "kept"])
+def test_transfer_retargets_overlap_records(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, case: str) -> None:
+    """移したWIの重なりの記録を移管先へ付け替え、同じレーン同士・重ならなくなった組の記録を除く。"""
+    repo, notes = env
+    sharing, existing, wi, lane, updated = {
+        "emptied": ({"b.md", "d.md"}, _overlap("lane-02", "lane-03", ["bの節"], ["dの節"]), "d.md", "lane-02", ["lane-02"]),
+        "partner": (
+            {"a.md", "c.md"},
+            _overlap("lane-01", "lane-02", ["aの節"], ["cの節"]),
+            "c.md",
+            "lane-03",
+            ["lane-02", "lane-03"],
+        ),
+        "kept": (
+            {"a.md", "b.md", "c.md"},
+            _overlap("lane-01", "lane-02", ["aの節"], ["bの節", "cの節"]),
+            "c.md",
+            "lane-03",
+            ["lane-02", "lane-03"],
+        ),
+    }[case]
+
+    def edit(data: dict[str, typing.Any]) -> None:
+        _share_readme(notes, data, sharing)
+        data["レーン間の重なり"] = [existing]
+
+    path = _selection(tmp_path, repo, notes, edit=edit)
+    extra: list[str] = []
+    if case == "kept":
+        addition = tmp_path / "overlaps.yaml"
+        new = _overlap("lane-02", "lane-03", ["bの節"], ["cの節"])
+        addition.write_text(yaml.safe_dump({"レーン間の重なり": [new]}, allow_unicode=True), encoding="utf-8")
+        extra = ["--extend-write-targets", str(addition)]
+    assert _transfer(path, repo, tmp_path, wi, lane, dict.fromkeys(updated, _COST), *extra) == 0
+    records = yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"]
+    if case == "emptied":
+        assert records == []
+    elif case == "partner":
+        assert records == [_overlap("lane-01", "lane-03", ["aの節"], ["cの節"])]
+    else:
+        assert existing in records
+        assert sorted((record["レーン1"], record["レーン2"]) for record in records) == [
+            ("lane-01", "lane-02"),
+            ("lane-01", "lane-03"),
+            ("lane-02", "lane-03"),
+        ]
+
+
 def test_transfer_moves_added_wi_and_updates_costs(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
     """追加済みで未着手のWIを移し、所要時間・未統合状態を更新し、初回配分を保つ。"""
     repo, notes = env

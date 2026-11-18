@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import collections.abc
 import copy
 import typing
 
 import selection_contract
-from check_selection_lanes import _resume_plan_id
+from check_selection_lanes import _resume_plan_id, overlapping_pairs
 
 from agent_toolkit._plan import selection as _selection
 
@@ -27,6 +28,47 @@ def _covers(entry: str, path: str) -> bool:
 
 def _rows(data: dict[str, object], *, costs: bool = False) -> _Rows:
     return typing.cast(_Rows, _selection.lane_costs(data) if costs else _selection.decisions(data))
+
+
+def _same_lane(lane: str) -> str:
+    return lane
+
+
+def _retarget_overlaps(
+    records: collections.abc.Iterable[tuple[dict[str, object], collections.abc.Callable[[str], str]]],
+    keep: collections.abc.Callable[[tuple[str, str, str]], bool] = lambda _key: True,
+) -> _Rows:
+    """重なりの記録を組ごとの写像でレーン名を付け替えて合わせる。
+
+    同じレーン同士になった記録と`keep`が偽を返す組は除き、同じレーンの組と共通パスの記録は双方の定義を合わせて1件にする。
+    """
+    overlaps: dict[tuple[str, str, str], dict[str, object]] = {}
+    for record, rename in records:
+        left, right = rename(str(record["レーン1"])), rename(str(record["レーン2"]))
+        if left == right:
+            continue
+        definitions = (record["レーン1の定義"], record["レーン2の定義"])
+        if right < left:
+            left, right = right, left
+            definitions = definitions[::-1]
+        key = (left, right, str(record["共通パス"]))
+        if not keep(key):
+            continue
+        if key not in overlaps:
+            overlaps[key] = {
+                "レーン1": left,
+                "レーン2": right,
+                "共通パス": record["共通パス"],
+                "レーン1の定義": [],
+                "レーン2の定義": [],
+                "判定": record["判定"],
+            }
+        target = overlaps[key]
+        if target["判定"] != record["判定"]:
+            raise ValueError(f"{key}: 合わせる重なりの判定が異なる。メインの意味判断で入力をそろえる")
+        for field, values in zip(("レーン1の定義", "レーン2の定義"), definitions, strict=True):
+            target[field] = list(dict.fromkeys([*typing.cast(list[str], target[field]), *typing.cast(list[str], values)]))
+    return list(overlaps.values())
 
 
 def _costs(data: dict[str, object]) -> _Rows:
@@ -123,6 +165,18 @@ def transfer_wi(existing: dict[str, object], name: str, destination: str, cost_u
         if any(source in typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])) for row in costs):
             raise ValueError(f"{source}: 移管で空になるレーンを先行レーンとして参照するレーンがある")
         costs = [row for row in costs if row[_selection.LANE_KEY] != source]
+
+    def moved(lane: str) -> str:
+        return destination if lane == source else lane
+
+    # 移管元に残るWIがあると、移管元の記録のどの重なりを移したWIが作ったかを記録から区別できない。
+    # 移管元と移管先の両方へ記録を残し、移管後の書込対象で重ならない組を除く。
+    renames = [moved, _same_lane] if remains else [moved]
+    shared = {(*lanes, path) for *_, lanes, paths in overlapping_pairs(items) for path in paths}
+    records = typing.cast(_Rows, result.get(_selection.LANE_OVERLAPS_KEY, []))
+    result[_selection.LANE_OVERLAPS_KEY] = _retarget_overlaps(
+        [(record, rename) for record in records for rename in renames], keep=shared.__contains__
+    )
     result.pop("decisions", None)
     result.pop("lane_costs", None)
     result[_selection.DECISIONS_KEY] = items
@@ -285,37 +339,16 @@ def merge_selection(
         )
     for lane, update in typing.cast(dict[str, dict[str, object]], cost_updates or {}).items():
         costs[lane].update(update)
-    overlaps: dict[tuple[str, str, str], dict[str, object]] = {}
-    for data, convert in ((existing, False), (added, True)):
-        for record in typing.cast(_Rows, data.get(_selection.LANE_OVERLAPS_KEY, [])):
-            left, right = str(record["レーン1"]), str(record["レーン2"])
-            if convert:
-                left, right = destination(left), destination(right)
-            if left == right:
-                continue
-            definitions = (record["レーン1の定義"], record["レーン2の定義"])
-            if right < left:
-                left, right = right, left
-                definitions = definitions[::-1]
-            key = (left, right, str(record["共通パス"]))
-            if key not in overlaps:
-                overlaps[key] = {
-                    "レーン1": left,
-                    "レーン2": right,
-                    "共通パス": record["共通パス"],
-                    "レーン1の定義": [],
-                    "レーン2の定義": [],
-                    "判定": record["判定"],
-                }
-            target = overlaps[key]
-            if target["判定"] != record["判定"]:
-                raise ValueError(f"{key}: 合流する重なりの判定が異なる。メインの意味判断で入力をそろえる")
-            for field, values in zip(("レーン1の定義", "レーン2の定義"), definitions, strict=True):
-                target[field] = list(dict.fromkeys([*typing.cast(list[str], target[field]), *typing.cast(list[str], values)]))
+    overlaps = _retarget_overlaps(
+        [
+            *((record, _same_lane) for record in typing.cast(_Rows, existing.get(_selection.LANE_OVERLAPS_KEY, []))),
+            *((record, destination) for record in typing.cast(_Rows, added.get(_selection.LANE_OVERLAPS_KEY, []))),
+        ]
+    )
     result: dict[str, object] = {
         _selection.DECISIONS_KEY: [*first, *second],
         _selection.LANE_COSTS_KEY: list(costs.values()),
-        _selection.LANE_OVERLAPS_KEY: list(overlaps.values()),
+        _selection.LANE_OVERLAPS_KEY: overlaps,
         "続行できない理由": ["なし"],
         correction_key: {
             **correction,
