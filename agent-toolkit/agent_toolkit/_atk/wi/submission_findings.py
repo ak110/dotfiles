@@ -1,5 +1,6 @@
 """`atk wi submission end`の正常終了で、投入作業中の発話・投入前レビューの指摘と指摘対応記録に対応付いているかを検査する。
 
+URLを含む発話を受けた投入では、資料の主張別の対応表`material_claims`の欄も検査する。
 検査するのは対応の有無と必須欄の欠落だけである。考慮漏れか新しい情報かという分類の意味と処置の十分性は、
 add-awi-by-userのメインと投入前レビューが検収する。実発話は`session-review-evidence --user-events`と同じ抽出処理で
 得るため、機械注入・子会話の除外規則を別に持たない。
@@ -27,6 +28,13 @@ CLASSIFICATIONS = ("考慮漏れ", "ユーザーだけが持つ新しい情報",
 
 OMISSION = CLASSIFICATIONS[0]
 
+MATERIAL_CLAIM_FIELDS = ("material", "claim", "judgement", "observation")
+"""資料の主張別の対応表`material_claims`の各項目が持つ欄。"""
+
+SATISFIED = "充足"
+
+_URL = re.compile(r"https?://\S+")
+
 _EVIDENCE_TIMEOUT_SECONDS = 120
 """実発話の抽出に許す時間。セッション記録全体の解析を含むため、通常の数秒に余裕を持たせる。"""
 
@@ -37,6 +45,7 @@ class Findings:
 
     confirmation_rounds: int
     entries: list[dict[str, Any]]
+    material_claims: list[dict[str, Any]] | None = None
 
 
 def load_findings(path: pathlib.Path) -> Findings:
@@ -55,7 +64,10 @@ def load_findings(path: pathlib.Path) -> Findings:
         raise ValueError("指摘対応記録の`confirmation_rounds`が0以上の整数ではない")
     if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
         raise ValueError("指摘対応記録の`entries`がobjectの配列ではない")
-    return Findings(rounds, entries)
+    claims = document.get("material_claims")
+    if claims is not None and (not isinstance(claims, list) or not all(isinstance(claim, dict) for claim in claims)):
+        raise ValueError("指摘対応記録の`material_claims`がobjectの配列ではない")
+    return Findings(rounds, entries, claims)
 
 
 def _normalized(text: str) -> str:
@@ -171,6 +183,32 @@ def _entry_problems(label: str, entry: dict[str, Any]) -> list[str]:
     return problems
 
 
+def _material_claim_problems(findings: Findings, events: Sequence[dict[str, Any]]) -> list[str]:
+    """URLを含む発話を受けた投入で、資料の主張ごとの判定と観測の欄がそろっているかを返す。
+
+    資料を1文ずつ覆ったか、観測が判定を裏付けるかは投入前レビューが資料と対応表を読み比べて確かめる。
+    """
+    if not any(_URL.search(str(event.get("text", ""))) for event in events):
+        return []
+    if not findings.material_claims:
+        return [
+            "URLを含む発話を受けた投入なのに、資料の主張別の対応表`material_claims`が無い。"
+            f"資料の主張1文ごとに`{'`・`'.join(MATERIAL_CLAIM_FIELDS)}`を持つ項目を加える"
+        ]
+    problems: list[str] = []
+    for index, claim in enumerate(findings.material_claims):
+        label = f"`material_claims[{index}]`"
+        missing = _missing_fields(claim, MATERIAL_CLAIM_FIELDS)
+        if claim.get("judgement") == SATISFIED and "observation" in missing:
+            problems.append(
+                f"{label}: 充足と判定した観測`observation`が無い。"
+                "主張が実際に働いていることの観測（検査の実物、commit、記録の件数など）の所在を書くか、判定を未確認にする"
+            )
+            missing.remove("observation")
+        problems += [f"{label}: `{name}`が無い" for name in missing]
+    return problems
+
+
 def check(findings: Findings, events: Sequence[dict[str, Any]], reviews: Sequence[str]) -> list[str]:
     """発話・レビュー指摘と指摘対応記録の対応、および必須欄の欠落を1件1行で返す。"""
     problems: list[str] = []
@@ -195,7 +233,7 @@ def check(findings: Findings, events: Sequence[dict[str, Any]], reviews: Sequenc
             problems.append(f"{label}の項目が無い")
             continue
         problems += _entry_problems(label, entry)
-    return problems
+    return problems + _material_claim_problems(findings, events)
 
 
 def summary_lines(findings: Findings) -> list[str]:

@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import run_script
+from agent_toolkit._atk import help_text, run_script
 from agent_toolkit._atk.wi import submission_findings
 from agent_toolkit._common import plugin_environment, session_activity
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
@@ -376,3 +376,68 @@ def test_distributed_launcher_checks_findings_without_inherited_pythonpath(
     assert "指摘の分類と処置:" in accepted.stdout
     assert "前提がおかしい" not in accepted.stderr
     assert not _recorded()
+
+
+_CLAIM = {
+    "material": "https://example.com/post",
+    "claim": "規範は検査で強制する",
+    "judgement": "不足",
+    "observation": "pre-commitの設定に該当の検査が無い",
+}
+
+
+def _material_findings(tmp_path: pathlib.Path, path: pathlib.Path, claims: list[dict[str, Any]] | None) -> pathlib.Path:
+    """URLを含む発話へ指摘でない項目を付け、資料の主張別の対応表を加えた指摘対応記録を作る。"""
+    findings = _findings(
+        tmp_path, [{"source": "user", "position": _user_events_position(path), "finding": False, "reason": "依頼"}]
+    )
+    if claims is not None:
+        document = json.loads(findings.read_text(encoding="utf-8"))
+        findings.write_text(json.dumps({**document, "material_claims": claims}, ensure_ascii=False), encoding="utf-8")
+    return findings
+
+
+@pytest.mark.parametrize(
+    ("claims", "expected"),
+    [
+        (None, "`material_claims`が無い"),
+        ([], "`material_claims`が無い"),
+        ([{**_CLAIM, "judgement": ""}], "`judgement`が無い"),
+        ([{**_CLAIM, "observation": " "}], "`observation`が無い"),
+        ([{**_CLAIM, "judgement": "充足", "observation": ""}], "充足と判定した観測`observation`が無い"),
+    ],
+)
+def test_material_claims_are_required_for_url_submissions(
+    claude_home: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    claims: list[dict[str, Any]] | None,
+    expected: str,
+) -> None:
+    """URLを含む発話を受けた投入では、資料の主張別の対応表の欠けと空欄を不足の行で拒否する。"""
+    _begin()
+    path = _write_session(claude_home, [_user("この記事を参考に改善して https://example.com/post")])
+    assert _end(_material_findings(tmp_path, path, claims)) == 1
+    assert expected in capsys.readouterr().err
+    assert _recorded()
+
+
+@pytest.mark.parametrize("text", ["この記事を参考に改善して https://example.com/post", "URLを含まない依頼"])
+def test_complete_material_claims_and_url_free_submissions_finish(
+    claude_home: pathlib.Path, tmp_path: pathlib.Path, text: str
+) -> None:
+    """欄のそろった対応表は受理し、URLを含まない投入では対応表を求めない。"""
+    _begin()
+    path = _write_session(claude_home, [_user(text)])
+    claims = (
+        [_CLAIM, {**_CLAIM, "judgement": "未確認", "observation": "記録を取得できなかった"}] if "https://" in text else None
+    )
+    assert _end(_material_findings(tmp_path, path, claims)) == 0
+    assert not _recorded()
+
+
+def test_help_describes_material_claim_fields() -> None:
+    """`--help`の形式の説明が、検査する欄と同じ名前を持つ。"""
+    epilog = help_text.HELP["atk wi submission end"]["epilog"]
+    for name in ("material_claims", *submission_findings.MATERIAL_CLAIM_FIELDS):
+        assert f"`{name}`" in epilog
