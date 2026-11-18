@@ -40,16 +40,20 @@ auto-mergeの有効化や、失敗時の自動再試行、自動ロールバッ�
 なお、公開範囲について明示的な指示がある場合は、それを最優先とする。
 
 1. 公開工程でのpushとCIの成功後、公開する差分を判定する。
-   `agent-toolkit:commit`のGit識別子規定で解決した`origin/develop`と`origin/master`が同じcommitなら、その旨を報告してPR作成を見送る。
+   `agent-toolkit:atk-mode/references/git-identifier.md`で解決した`origin/develop`と`origin/master`が同じcommitなら、その旨を報告してPR作成を見送る。
    差分があれば、WIキューの消化状態や変更を利用する主体によらず次へ進む。
 2. 同一の最上位セッションでリリースPRを1件マージ済みなら、追加分は`develop`へのpushとCI成功まで確認する。
-   長い継続中は`agent-toolkit:workflow-overview/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で追加のリリースPRを作成し、セッション終了を待たない。
+   長い継続中は`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で追加のリリースPRを作成し、セッション終了を待たない。
    期限より前にセッションを終える場合は、追加分を次のセッションのPRへまとめる。
    ただし、マージ済みの`master`の不具合修正を`develop`へ公開した場合は、不具合を残さないため同じセッションでも追加のリリースPRを作成してマージする（ユーザー指示、2026年10月28日）。
 3. 重複PRを防ぐため、同じheadとbaseを持つopenなPRを確認する。
    1件なら再利用し、複数なら候補の番号とURLを報告して停止する。
-   0件なら、タイトルに今回の変更の主題を1文で記し、本文を`agent-basics:writing-standards/references/writing.md`「文章の共通規定」に沿ってmanaged-tempへ保存する。
-   作成直前に`agent-toolkit:review-external-writes`を起動し、PRを作成する。
+   0件なら、タイトルと本文を書く前に`agent-basics:writing-standards/references/writing-genres.md`「判断と行動を求める記述」を読み、その変更説明の基準でタイトルと本文を書いてmanaged-tempへ保存する。
+   本文は、エンドユーザーに影響する変更を先頭の章に置き、変更の種類ごとに章を分け、変更を1件ずつ項目にして、エンドユーザーが読んで分かる粒度で書く。
+   版数は末尾の章にまとめる。
+   章の名前と数はその回の変更に合わせ、変更が1件だけのPRは章を設けずに書く。
+   手本は#209である（エンドユーザーに影響する変更、エージェントの作業手順の変更、不具合の修正と試験、版数の4章に分け、タイトルは「リポジトリごとの編集制約と推論量の途中変更、一括処理の所要短縮」）。
+   作成直前に`agent-toolkit:review-external-writes`を起動し（タイトルも文面ファイルへ含める）、PRを作成する。
 4. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチ同期、CI確認、および必要なリリースの検収まで完了させる。
    今回masterへ反映した変更の採用記録からエンドユーザー側の未実施操作を拾う。
    `agent-toolkit:process-wi/references/finish-session.md`「エンドユーザー側の操作が必要な変更」に従って設定を進め、専用案内UWIを登録する。
