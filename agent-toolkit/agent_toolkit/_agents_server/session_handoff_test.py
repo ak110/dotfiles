@@ -290,12 +290,22 @@ def test_prompt_delivers_full_history_and_record_paths(
         assert f"--{'codex-thread' if engine == 'codex' else 'claude-session'}-id predecessor --detail" in prompt
 
 
-@pytest.mark.parametrize("recorded", [True, False])
-def test_prompt_reads_handoff_record_only_when_predecessor_wrote_it(tmp_path: pathlib.Path, recorded: bool) -> None:
-    """前任が記録を作成した場合だけ最初に読む指示を渡し、作成していない場合はそのことを伝える。"""
+@pytest.mark.parametrize(
+    ("observed", "expected"),
+    [
+        ("file", "この引き継ぎ記録を最初に読み"),
+        ("missing", "この引き継ぎ記録は存在しないため、以下の資料から復元する"),
+        ("directory", "前任が書いた値を読めない可能性があるため"),
+    ],
+    ids=["file", "missing", "directory"],
+)
+def test_prompt_instruction_follows_observed_handoff_record(tmp_path: pathlib.Path, observed: str, expected: str) -> None:
+    """記録がある場合だけ最初に読ませ、不在は資料からの復元、読めない記録先は値の欠落の可能性として区別する。"""
     handoff = tmp_path / "handoff.md"
-    if recorded:
+    if observed == "file":
         handoff.write_text("稼働中のプロセス: なし\n", encoding="utf-8")
+    elif observed == "directory":
+        handoff.mkdir()
     predecessor = state.SessionState(
         "predecessor",
         str(tmp_path),
@@ -306,8 +316,8 @@ def test_prompt_reads_handoff_record_only_when_predecessor_wrote_it(tmp_path: pa
     )
     prompt = session_handoff.compose_prompt(predecessor, tmp_path / "conversation.md", ())
     assert f"引き継ぎ記録先: {handoff}（継続）" in prompt
-    assert ("この引き継ぎ記録を最初に読み" in prompt) is recorded
-    assert ("前任はこの引き継ぎ記録を作成していない" in prompt) is not recorded
+    assert expected in prompt
+    assert ("この引き継ぎ記録を最初に読み" in prompt) is (observed == "file")
 
 
 @pytest.mark.asyncio
