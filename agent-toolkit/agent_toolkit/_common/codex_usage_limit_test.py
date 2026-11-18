@@ -86,3 +86,22 @@ def test_rollout_waits_until_all_exhausted_windows_reset(tmp_path: pathlib.Path)
     state = codex_usage_limit.from_rollout(path)
     assert state is not None and state.delay_seconds(1000) == 500
     assert state.limit_type == "seven_day"
+
+
+def test_rollout_skips_line_cut_inside_multibyte_character(tmp_path: pathlib.Path) -> None:
+    """マルチバイト文字の途中で終わる行を解析の対象から除き、後続の上限停止を読む。"""
+    # 2026年10月22日・23日のCodexの実記録に、マルチバイト文字の途中で終わる行があった。
+    cut = json.dumps({"type": "event_msg", "payload": {"message": "時間上限"}}, ensure_ascii=False).encode("utf-8")
+    events = [
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "rate_limits": {"primary": {"used_percent": 100, "window_minutes": 300, "resets_at": 1200}},
+            },
+        },
+        {"type": "event_msg", "payload": {"type": "task_complete", "error": {"codex_error_info": "usage_limit_exceeded"}}},
+    ]
+    path = tmp_path / "rollout.jsonl"
+    path.write_bytes(cut[: cut.index("限".encode()) + 1] + b"\n" + "\n".join(json.dumps(event) for event in events).encode())
+    assert codex_usage_limit.from_rollout(path) == codex_usage_limit.UsageLimitState(1200, "five_hour")

@@ -50,7 +50,8 @@ def thread_id_from_stream_lines(lines: Iterable[str]) -> str | None:
 
 
 def _records(path: pathlib.Path) -> Iterator[dict[str, Any]]:
-    with path.open(encoding="utf-8") as stream:
+    # マルチバイト文字の途中で終わる行も、JSONとして解析できない行と同じく解析の対象から除く。
+    with path.open(encoding="utf-8", errors="replace") as stream:
         for line in stream:
             try:
                 record = json.loads(line)
