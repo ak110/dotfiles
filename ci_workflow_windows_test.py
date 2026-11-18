@@ -103,6 +103,9 @@ _WINDOWS_CROSS_PLATFORM_TESTS = {
         "test_run_connects_and_repeats_without_changing_link",
         "test_run_preserves_custom_entries_and_updates_old_managed_link",
     },
+    "pytools/_internal/warmup_agents_server_test.py": {
+        "test_published_service_outlives_startup_check",
+    },
     "pytools/_internal/update_claude_settings_test.py": {
         "test_placeholder_replaced_in_string",
         "test_placeholder_replaced_recursively_in_nested_structures",

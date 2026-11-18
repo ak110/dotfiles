@@ -8,14 +8,20 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import sys
+from collections.abc import Callable
 
 import anyio
 import pytest
-from agent_toolkit._common import session_review
+from agent_toolkit._agents_server import service_forward, service_transport
+from agent_toolkit._agents_server.service_generations import GenerationRegistry
+from agent_toolkit._common import plugin_environment, process_tree, session_review
 from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT, _stop_mcp_services
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 from pytools._internal import common as _common
 from pytools._internal import post_apply_outcome
@@ -438,6 +444,72 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
         assert str(server) in outcome.message
     if behavior == "exit":
         assert "startup failed" in outcome.message
+
+
+@pytest.mark.windows
+@pytest.mark.timeout(240)
+@pytest.mark.cpu_limit(
+    3.0,
+    reason="実のlauncher・転送側・管理サービスを起動し、MCPのinitializeとtools/listを通して世代を公開する。",
+)
+def test_published_service_outlives_startup_check(
+    tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """起動確認が公開した管理サービスの世代は、確認用の接続と子プロセスの終了後も生存する。
+
+    WindowsのMCP SDKは確認用の子プロセスを離脱不可のKILL_ON_JOB_CLOSEのJobへ入れ、接続を閉じるとJobの全プロセスを止める。
+    2026-11-18、確認用の転送側が起動した新世代が確認の終了とともに終了し、受付先が終了した世代を指し続けた。
+    """
+    root = pathlib.Path(plugin_environment.__file__).resolve().parents[2]
+    environment = {
+        key: value
+        for key, value in host_environ().items()
+        if key not in {"AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "VIRTUAL_ENV", "CLAUDECODE", "UV_FROZEN"}
+    }
+    # Windowsは依存環境のDLLを260文字を超えるパスから読み込めないため、試験名を含まない短い領域へ準備する。
+    runtime = tmp_path_factory.mktemp("rt")
+    environment.update(AGENT_TOOLKIT_RUNTIME_DATA=str(runtime), XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
+    prepare_plugin_environment(root, environment, timeout=_REAL_MCP_PREPARE_TIMEOUT)
+    # 起動確認は自身の環境を、起動する子プロセスと公開先の管理領域の解決に使う。
+    monkeypatch.setattr(os, "environ", environment)
+    monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 120.0)
+    command = [
+        sys.executable,
+        str(root / "scripts" / "launch.py"),
+        "--project",
+        str(root),
+        str(root / "agent_toolkit" / "agents_server_mcp.py"),
+    ]
+    try:
+        outcome = asyncio.run(_CHECK_STARTUP(command))
+        assert outcome.ok, outcome.message
+        current = GenerationRegistry(tmp_path / "agent-toolkit" / "services" / "agents-server").current()
+        assert current is not None and current["generation"] == service_forward.code_identity(root)[0]
+        assert service_transport.process_alive(current["process"])
+    finally:
+        _stop_mcp_services(tmp_path)
+
+
+def test_unreclaimed_startup_process_is_reported_apart_from_startup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動確認が回収できなかった子プロセスを、起動の失敗へ混ぜず回収不能として返し、残る対象の確認を続ける。"""
+    commands = [["python", "first"], ["python", "second"]]
+
+    async def dependency(command):
+        return _warmup.plugin_warmup.CommandOutcome(command, subprocess.CompletedProcess(command, 0, "", ""), 0)
+
+    async def startup(command):
+        if command[-1] == "first":
+            raise process_tree.ReclaimError(["1: 残存"], [], context="起動確認")
+        return _STARTUP_OUTCOME(True, command[-1])
+
+    monkeypatch.setattr(_warmup.plugin_warmup, "check_command", dependency)
+    monkeypatch.setattr(_warmup, "_check_startup", startup)
+    first, second = asyncio.run(_CHECK_TARGETS(commands))
+    assert isinstance(first, process_tree.ReclaimError)
+    assert not isinstance(second, BaseException) and second[1] is not None and second[1].ok
 
 
 @pytest.mark.parametrize("failed", [None, "dependency", "startup", "exception"])
