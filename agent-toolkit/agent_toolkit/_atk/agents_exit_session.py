@@ -86,6 +86,39 @@ _NONINTERACTIVE = frozenset(
     }
 )
 _SHORT_WITH_VALUE = frozenset("cmp sCai".replace(" ", ""))
+# agy 1.5.10の`agy --help`が示すフラグ名（先頭の`-`を除く）。Goのflag解析は`-name`と`--name`を同じに扱う。
+# `i`（`prompt-interactive`）は対話起動の最初の入力を値に取る。`p`・`print`・`prompt`は非対話実行のため含めない。
+_AGY_ONE_VALUE = frozenset(
+    {
+        "add-dir",
+        "agent",
+        "conversation",
+        "effort",
+        "i",
+        "prompt-interactive",
+        "input-format",
+        "json-schema",
+        "log-file",
+        "mode",
+        "model",
+        "output-format",
+        "print-timeout",
+        "project",
+        "settings",
+    }
+)
+_AGY_NO_VALUE = frozenset(
+    {
+        "c",
+        "continue",
+        "dangerously-skip-permissions",
+        "disable-slash-commands",
+        "new-project",
+        "remote-agent",
+        "remote-control",
+        "sandbox",
+    }
+)
 _SESSION_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 _FUNCTION_HOOK_DIR = "agent-toolkit-function-hooks"
 _STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
@@ -158,6 +191,29 @@ def is_interactive_codex(argv: list[str]) -> bool:
     return True
 
 
+def is_interactive_agy(argv: list[str]) -> bool:
+    """agyの対話起動だけを受理する。
+
+    Goのflag解析は最初の位置引数で解析を終えるため、位置引数（サブコマンドを含む）を持つ起動と、
+    `-p`などの非対話実行・未知のフラグを含む起動は受理しない。
+    """
+    if not argv or pathlib.Path(argv[0]).name not in {"agy", "agy.exe"}:
+        return False
+    index = 1
+    while index < len(argv):
+        value = argv[index]
+        if not value.startswith("-") or value == "--":
+            return False
+        name, has_value, _ = value.lstrip("-").partition("=")
+        if name in _AGY_NO_VALUE or name in _AGY_ONE_VALUE and has_value:
+            index += 1
+        elif name in _AGY_ONE_VALUE and index + 1 < len(argv):
+            index += 2
+        else:
+            return False
+    return True
+
+
 def _target(process: psutil.Process) -> Target | None:
     try:
         argv = process.cmdline()
@@ -173,6 +229,10 @@ def _target(process: psutil.Process) -> Target | None:
             if not sys.platform.startswith("linux") or process.terminal() in {None, "", "?"} or not is_interactive_codex(argv):
                 return None
             host = "codex"
+        elif names & {"agy", "agy.exe"}:
+            if not sys.platform.startswith("linux") or process.terminal() in {None, "", "?"} or not is_interactive_agy(argv):
+                return None
+            host = "agy"
         elif names & {"claude", "claude.exe", "claude-code", "claude-code.exe"}:
             host = "claude"
         else:
@@ -355,7 +415,8 @@ def main() -> int:
 
     reservation = process_loop_control.read_resume_request() if identifier else None
     restarting = reservation is not None and reservation.mode == "id" and reservation.session_id == identifier
-    # 未達goalはStopで継続するため、turn.completeにある旧modの/exitを待つと循環する。
+    # 変更前にホストの目標評価付きで始まった会話は、未達の評価がStopで継続させるため、
+    # turn.completeにある旧modの/exitを待つと循環する。
     # 本人IDの保存済み予約がある再起動だけ、既存のPID・起動時刻の一致確認と直接終了を使う。
     status, target = request_termination(before_signal=_before_signal, defer_to_hook=not restarting)
     if status == "terminating":

@@ -3,13 +3,14 @@
 環境変数`AGENT_TOOLKIT_RUN_SKILL_ID`と起動入力（`AGENT_TOOLKIT_SESSION_START_INPUT`のskill）を持つ最上位のセッションを対象とする。
 対象セッションで、当該実行の報告用UWIが起動元の検収と同じ基準（`has_synced_run_report`）で保存されていなければ、
 ターンの終了を遮断して報告の保存を促す。
-起動元の`atk run-skill`はホストの`/goal`を使わないため、完了まで続行させる働きを本判定が担う。
+完了まで続行させる働きは本判定が担う。
 
 判定順序は以下のとおり。
 
 1. run-skillが起動したセッションでない、または起動入力からskillを得られない: approve
 2. hookの呼出主体が最上位でない（`Agent`ツールの委譲先、agents_serverの委譲先）: approve
-3. `is_pending_async_work`が真: 非同期処理または未回収の結果が残るためapprove（再開後のStopで改めて判定する）
+3. `is_pending_async_work`が真: 非同期処理または未回収の結果が残るためapprove
+   （再開後のStopで改めて判定する。Codexでは判定せず偽とする）
 4. 報告用UWIの保存を確認できる: approve
 5. 上記いずれでもない（保存確認の失敗を含む）: blockし、報告の保存を促す
 

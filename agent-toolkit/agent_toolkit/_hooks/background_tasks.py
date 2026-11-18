@@ -76,6 +76,7 @@ lazy from agent_toolkit._hooks.background_tasks_notifications import (
     is_agent_task_notification,
     queued_task_notification_contents,
 )
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.transcript_scan import (
     entry_in_scan_scope,
@@ -166,7 +167,13 @@ def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool
 
 
 def is_pending_async_work_from_payload(payload: dict, session_id: str, *, session_state: object) -> bool:
-    """Stop入力のtranscriptパスを正規化し、入力と保存状態から非同期待機を判定する。"""
+    """Stop入力のtranscriptパスを正規化し、入力と保存状態から非同期待機を判定する。
+
+    Codexの入力では常に偽を返す。Codexの最上位には背景の完了通知で同じ会話を再開する待機が無く、
+    待機を理由に終了を許すと対話の統括が入力待ちで止まるためである（結果は同じターンの中で回収する）。
+    """
+    if is_codex_payload(payload):
+        return False
     raw_transcript = payload.get("transcript_path", "")
     return is_pending_async_work(
         raw_transcript if isinstance(raw_transcript, str) else "",

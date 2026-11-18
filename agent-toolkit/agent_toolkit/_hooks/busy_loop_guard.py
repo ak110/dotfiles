@@ -4,6 +4,10 @@
 権限拒否などで工程が進まない状態では、ツール呼び出しを伴わないターンと続行要求だけが繰り返され、
 ユーザーが介入するまでトークンを消費し続ける。本判定はこの反復を検知し、そのセッションへ終了要求を送る。
 
+統括への終了要求は本モジュールの`terminate`だけが送る。
+無進捗の停止（`halt`）と、`stop.py`が連続blockの上限で遮断を打ち切る場合の終了はどちらも`terminate`を呼び、
+対話型の統括は入力待ちのまま残らずに常駐側の検収へ戻る。
+
 適用対象はprocess-loopが起動した会話IDを持つ最上位セッションに限り、委譲先セッションと対話セッションは対象外とする。
 
 無進捗ターンは、前回のStop判定から今回のStop判定までにセッション記録へ加わったエントリの中に、
@@ -16,10 +20,10 @@
 Stopの共通ハンドラー（`stop.py`）が全判定を終えてから`halt`を呼び、終了要求の成否に合わせて他の判定の継続要求を扱う。
 判定の途中で終了要求を送ると、後続の判定が終了済みのセッションへ継続を求める応答と矛盾するためである。
 
-停止工程（`halt`）の順序は次のとおりとする。
+停止工程（`terminate`）の順序は次のとおりとする。
 
 1. 現在の対話CLI本体を再識別する。Function hooksが読み込まれたClaude Codeではターン後の`/exit`を要求する。
-   それ以外では一致した単一PIDへ終了要求を送る
+   それ以外（Codex・agyの対話CLIを含む）では一致した単一PIDへ終了要求を送る
 2. 判定根拠と終了要求の結果を常時ログへ記録する
 3. 停止の事実と終了要求の結果を`systemMessage`でユーザーへ伝える本文を返す
 
@@ -27,6 +31,7 @@ Stopの共通ハンドラー（`stop.py`）が全判定を終えてから`halt`�
 """
 
 import os
+from collections.abc import Mapping
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session
@@ -67,25 +72,30 @@ def _store(session_id: str, count: int, observed: int) -> None:
     update_state(session_id, _update)
 
 
-def _is_target_session(session_id: str, payload: dict) -> bool:
+def is_target_session(session_id: str, payload: dict) -> bool:
     """常駐ループの最上位セッションである場合に真を返す。"""
     return is_process_loop_session(session_id, os.environ) and is_main_agent_context(payload)
 
 
 def halt(session_id: str, count: int) -> tuple[str, str]:
+    """無進捗の反復を理由に現在の会話へ終了を要求し、その状態とユーザーへ伝える本文を返す。"""
+    return terminate(
+        session_id,
+        f"無進捗のターンが{count}回続いた。",
+        "halt_busy_loop",
+        {"count": count, "threshold": _THRESHOLD},
+    )
+
+
+def terminate(session_id: str, cause: str, log_decision: str, log_context: Mapping[str, object]) -> tuple[str, str]:
     """現在の会話へ終了を要求し、その状態とユーザーへ伝える本文を返す。
 
     状態は`agents_exit_session.request_termination`の戻り値（`exit_requested`・`terminating`・`changed`・`unsupported`）とする。
+    `cause`は本文の1行目に置く終了の理由、`log_decision`と`log_context`は常時ログの判定名と根拠とする。
     """
     status, target = _agents_exit_session.request_termination(session_id=session_id)
-    append_stop_log(
-        session_id,
-        "halt_busy_loop",
-        {"count": count, "threshold": _THRESHOLD, "termination": status},
-    )
-    lines = [
-        f"無進捗のターンが{count}回続いた。",
-    ]
+    append_stop_log(session_id, log_decision, {**log_context, "termination": status})
+    lines = [cause]
     if status == "exit_requested":
         lines.append("現在のセッションの終了を要求した。ターン終了後に/exitで終了する。")
     elif status == "terminating" and target is not None:
@@ -109,7 +119,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     session_id, payload = resolved
 
-    if not _is_target_session(session_id, payload):
+    if not is_target_session(session_id, payload):
         append_stop_log(session_id, "approve_busy_loop_not_applicable", {})
         return "approve", ""
 
