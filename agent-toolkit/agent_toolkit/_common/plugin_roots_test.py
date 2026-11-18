@@ -586,3 +586,91 @@ async def test_resolution_scope_keeps_concurrent_requests_separate_and_rechecks_
         with pytest.raises(plugin_roots.PluginRootError, match="実体またはskills"):
             plugin_roots.resolve_plugin_root("agent-basics", toolkit, "claude", tmp_path)
     assert calls == roots
+
+
+@pytest.mark.parametrize(
+    "changed",
+    ["config", "project-config", "marketplace", "plugin-manifest", "installed-version", "environment", "executable"],
+)
+def test_hook_codex_inventory_reuses_only_unchanged_inputs(tmp_path, monkeypatch, changed):
+    """Codexの導入一覧はhookをまたいで再利用し、設定・marketplace・導入cache・環境の変更で取り直す。"""
+    home = tmp_path / "codex-home"
+    source = tmp_path / "marketplace"
+    project = tmp_path / "project"
+    project.mkdir()
+    (home / "plugins/cache/mine/agent-basics/1").mkdir(parents=True)
+    (home / "config.toml").write_text(
+        f'[marketplaces.mine]\nsource = "{source.as_posix()}"\nsource_type = "local"\n', encoding="utf-8"
+    )
+    (source / ".agents/plugins").mkdir(parents=True)
+    (source / ".agents/plugins/marketplace.json").write_text(
+        json.dumps({"plugins": [{"name": "agent-basics", "source": {"source": "local", "path": "./basics"}}]}),
+        encoding="utf-8",
+    )
+    manifest = source / "basics/.codex-plugin/plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"version": "1"}', encoding="utf-8")
+    executable = tmp_path / "codex"
+    executable.write_text("host", encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.setattr(shutil, "which", lambda *_args, **_kw: str(executable))
+    state: dict = {}
+    monkeypatch.setattr(plugin_roots, "read_state", lambda _session: state.copy())
+    monkeypatch.setattr(plugin_roots, "update_state", lambda _session, mutate: state.update(mutate(state)))
+    calls: list[list[str]] = []
+    installed = [{"name": "agent-basics", "marketplaceName": "mine", "installed": True, "enabled": True, "version": "1"}]
+    monkeypatch.setattr(
+        plugin_roots.process_tree, "run_with_timeout", codex_plugin_cli(installed, marketplaces=["mine"], calls=calls)
+    )
+
+    def request() -> object:
+        with plugin_roots.plugin_resolution_scope(session_id="hook"):
+            return _plugin_inventory("codex", project)
+
+    first = request()
+    assert request() == first
+    assert len(calls) == 2
+    if changed == "config":
+        with (home / "config.toml").open("a", encoding="utf-8") as stream:
+            stream.write('[plugins."agent-basics@mine"]\nenabled = false\n')
+    elif changed == "project-config":
+        (project / ".codex").mkdir()
+        (project / ".codex/config.toml").write_text("", encoding="utf-8")
+    elif changed == "marketplace":
+        (source / ".agents/plugins/marketplace.json").write_text('{"plugins": []}', encoding="utf-8")
+    elif changed == "plugin-manifest":
+        manifest.write_text('{"version": "2"}', encoding="utf-8")
+    elif changed == "installed-version":
+        (home / "plugins/cache/mine/agent-basics/2").mkdir()
+    elif changed == "environment":
+        monkeypatch.setenv("CODEX_HOME_FIXTURE", "changed")
+    else:
+        executable.write_text("updated host", encoding="utf-8")
+    request()
+    assert len(calls) == 4
+    request()
+    assert len(calls) == 4
+    with plugin_roots.plugin_resolution_scope(session_id="another"):
+        state.clear()
+        _plugin_inventory("codex", project)
+    assert len(calls) == 6
+
+
+def test_hook_codex_inventory_ignores_unrelated_environment(tmp_path, monkeypatch):
+    """要求ごとに変わりうる無関係な環境変数では、Codexの導入一覧を取り直さない。"""
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    executable = tmp_path / "codex"
+    executable.touch()
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.setattr(shutil, "which", lambda *_args, **_kw: str(executable))
+    state: dict = {}
+    monkeypatch.setattr(plugin_roots, "read_state", lambda _session: state.copy())
+    monkeypatch.setattr(plugin_roots, "update_state", lambda _session, mutate: state.update(mutate(state)))
+    calls: list[list[str]] = []
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", codex_plugin_cli([], calls=calls))
+    for value in ("1", "2"):
+        monkeypatch.setenv("UNRELATED_PER_CALL", value)
+        with plugin_roots.plugin_resolution_scope(session_id="hook"):
+            _plugin_inventory("codex", tmp_path)
+    assert len(calls) == 2

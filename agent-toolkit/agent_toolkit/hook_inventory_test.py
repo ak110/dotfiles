@@ -114,13 +114,15 @@ def test_public_hook_owns_one_inventory_scope_per_session(tmp_path, monkeypatch,
     for session_id in ("one", "one", "two"):
         _call_hook_in_process(monkeypatch, command, {"session_id": session_id, "hook_event_name": "PostToolUse"})
     assert observed == [("one", True), ("one", True), ("two", True)]
-    assert len(acquired) == (2 if host == "claude" else 3)
+    # 設定から一覧の入力を特定できるClaude CodeとCodexは、同じsessionの2回目のhookで一覧を取り直さない。
+    reused = host in {"claude", "codex"}
+    assert len(acquired) == (2 if reused else 3)
     fail = True
     _call_hook_in_process(monkeypatch, command, {"session_id": "three", "hook_event_name": "PostToolUse"})
     assert _inventories.get() is None and _reusable.get() is None
     fail = False
     _call_hook_in_process(monkeypatch, command, {"session_id": "four", "hook_event_name": "PostToolUse"})
-    assert len(acquired) == (4 if host == "claude" else 5)
+    assert len(acquired) == (4 if reused else 5)
 
 
 @pytest.mark.parametrize(
