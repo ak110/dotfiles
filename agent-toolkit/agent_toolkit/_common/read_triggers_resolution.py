@@ -10,10 +10,10 @@ import pathlib
 import re
 from typing import TYPE_CHECKING
 
-from agent_toolkit._common import skill_modes, task_documents
+from agent_toolkit._common import skill_modes
 from agent_toolkit._common.plugin_roots import raise_for_incomplete_installation, resolve_plugin_root
 from agent_toolkit._common.read_triggers_model import _scope_cached
-lazy from agent_toolkit._common import read_triggers_model
+lazy from agent_toolkit._common import read_triggers_model, task_documents
 
 if TYPE_CHECKING:
     from agent_toolkit._common import read_triggers  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
