@@ -72,7 +72,7 @@ jobs:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'update-dotfiles-upgrade (windows) (non-owner)' || 'update-dotfiles-upgrade (windows)' }}
     runs-on: windows-latest
-    timeout-minutes: 16
+    timeout-minutes: 19
     steps:
       - name: 共通CI非所有経路
         if: needs.common-ci-owner.outputs.owns == 'false'
