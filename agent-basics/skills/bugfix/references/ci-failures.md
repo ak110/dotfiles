@@ -41,7 +41,6 @@ CIの失敗を扱う時に確かめる。
 帰属を否定しきれない失敗は、実装（競合、順序、共有状態、時刻、待機）、試験（fixtureの汚染、順序、並列の干渉、固定していないデータ）、CI環境（設定、キャッシュ、資源、版やイメージの差、Runnerの生成するシェル）、外部要因を対立する仮説として、肯定と否定の事実を記録して切り分ける。
 ローカルの再現がCIの層（Runner、Executor、サービスコンテナー）を含まない場合は、その層を含めて再現する。
 GitLab CIでは、ジョブと同じイメージdigestとRunnerの版で`gitlab-runner run-single`を実行すると終了状態を比べられる。
-検証の記録は`docs/development/audit-records-commit-ci.md`の「agent-basics/skills/bugfix/references/ci-failures.md：分類：2026年10月7日」にある。
 再現していない層に原因があるとする結論は推定と書く。
 
 ## 再実行と広域の障害
