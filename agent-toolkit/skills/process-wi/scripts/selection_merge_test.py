@@ -937,7 +937,9 @@ def test_merge_rejudges_new_pair_under_existing_record(
     before = existing.read_bytes()
     capsys.readouterr()
     assert _merge_into_existing(repo, existing, added, mapping) == 1
-    assert "lane-01とlane-02: 重複パスの記録不足: README.md" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "lane-01とlane-02: 重複パスの記録不足: README.md（未判定の組: b.md（lane-02）とc.md（lane-03））" in err
+    assert "表示のレーン名は合流後の名前" in err and "追加WIの側を追加YAMLのレーン名（仮名）" in err
     assert existing.read_bytes() == before
     addition["レーン間の重なり"] = [_overlap("lane-02", "lane-03")]
     added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")

@@ -181,7 +181,12 @@ def test_transfer_drops_records_whose_wi_pairs_change(
     capsys.readouterr()
     assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates) == 1
     err = capsys.readouterr().err
-    assert all(f"{r['レーン1']}と{r['レーン2']}: 重複パスの記録不足: README.md" in err for r in rejudged)
+    assert all(f"{r['レーン1']}と{r['レーン2']}: 重複パスの記録不足: README.md（未判定の組: " in err for r in rejudged)
+    assert "--extend-write-targets" in err and "移管後のレーン名" in err
+    assert {
+        "new-pair-under-existing-record": "（未判定の組: b.md（lane-02）とc.md（lane-03）、b.md（lane-02）とd.md（lane-03））",
+        "split-record": "lane-01とlane-02: 重複パスの記録不足: README.md（未判定の組: a.md（lane-01）とb.md（lane-02））",
+    }[case] in err
     assert path.read_bytes() == before
     addition = tmp_path / "overlaps.yaml"
     addition.write_text(yaml.safe_dump({"レーン間の重なり": rejudged}, allow_unicode=True), encoding="utf-8")
