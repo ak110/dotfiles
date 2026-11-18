@@ -119,6 +119,9 @@ class ServiceManagers:
     async def _monitor(self) -> None:
         """PID宛ての要求を一度だけ読み、対象会話の環境で操作する。"""
         next_heartbeat = 0.0
+        # 毎巡（1秒）同じ例外の全文を記録するとログが埋まるため、失敗の種類が変わった時と回復した時だけ記録する。
+        migration_failure: tuple[str, str] | None = None
+        repeated_failures = 0
         while True:
             try:
                 owners = {
@@ -160,16 +163,26 @@ class ServiceManagers:
                 # Pylintは初期値Noneだけで推論するが、型付きcallbackを同じloopで登録している。
                 try:
                     allow_resume = before_controls is None or await before_controls()  # pylint: disable=not-callable
-                except Exception:
+                except Exception as error:
                     # 世代移行の1件の失敗で全会話の状態保存まで毎巡止めない（2026-11-17に旧世代の
                     # 状態がrunningのまま固定された）。再開は移行の成否が確定するまで見送る。
-                    _LOG.exception(
-                        "世代移行の確認が失敗しました。自動再開を見送り、状態保存は続けます。"
-                        "次の操作: この例外を直すまで旧世代の会話を新世代へ移せず、自動再開も止まる。"
-                        "agents_serverの`list`が返す`server_generations`で残っている世代を確かめ、"
-                        "例外の原因（状態の符号化・移譲先との通信）を直してからサーバーを更新する"
-                    )
                     allow_resume = False
+                    failure = (type(error).__qualname__, str(error))
+                    if failure == migration_failure:
+                        repeated_failures += 1
+                    else:
+                        migration_failure, repeated_failures = failure, 1
+                        _LOG.exception(
+                            "世代移行の確認が失敗しました。自動再開を見送り、状態保存は続けます。"
+                            "次の巡回（約1秒後）で自動的に再確認し、同じ失敗が続く間はこの記録を繰り返さず、回復時に失敗の回数を記録します。"
+                            "次の操作: 回復の記録が続かない場合、旧世代の会話を新世代へ移せず自動再開も止まったままになる。"
+                            "agents_serverの`list`が返す`server_generations`で退出していない世代を確かめ、"
+                            "この記録の例外（状態の符号化・移譲先との通信）を直してからサーバーを更新する"
+                        )
+                else:
+                    if migration_failure is not None:
+                        _LOG.info("世代移行の確認が回復しました（連続失敗%d回）。自動再開を再開します", repeated_failures)
+                        migration_failure, repeated_failures = None, 0
                 for conversation in tuple(self.conversations.values()):
                     with self._bound(conversation):
                         if allow_resume:

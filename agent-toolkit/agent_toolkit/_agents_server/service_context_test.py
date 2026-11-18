@@ -199,3 +199,48 @@ async def test_monitor_ticks_do_not_enumerate_host_processes(monkeypatch, tmp_pa
         manager.sessions.pop("waiting", None)
     assert len(ticks) >= 3
     assert not calls
+
+
+@pytest.mark.asyncio
+async def test_monitor_keeps_saving_state_while_migration_check_fails(monkeypatch, tmp_path, caplog):
+    """世代移行の確認が毎巡失敗しても状態保存は続け、自動再開だけを見送り、同じ失敗は1回だけ記録する。"""
+    from agent_toolkit._testing.agents_server_support import _manager_with_fake  # pylint: disable=import-outside-toplevel
+
+    async with _manager_with_fake("codex") as (manager, _backend):
+        # 空の会話は監視の1巡目で閉じられるため、待機中のsessionを持たせる。
+        manager.sessions["waiting"] = SessionState(session_id="waiting", cwd=str(tmp_path), status="running", engine="codex")
+        caller = runtime_environment.CallerContext({"HOME": str(tmp_path)}, tmp_path)
+        pool = service_context.ServiceManagers(state_root=tmp_path)
+        pool.conversations["parent"] = service_context.Conversation(manager, caller)
+        checks: list[int] = []
+        saves: list[int] = []
+        resumes: list[int] = []
+
+        async def failing_check() -> bool:
+            checks.append(1)
+            if len(checks) > 2:
+                return True
+            raise RuntimeError("移譲先が応答しない")
+
+        async def save_control_state() -> None:
+            saves.append(len(checks))
+
+        async def auto_resume(**_kwargs) -> bool:
+            resumes.append(len(checks))
+            return False
+
+        pool.before_controls = failing_check
+        monkeypatch.setattr(manager, "save_control_state", save_control_state)
+        monkeypatch.setattr(manager, "_process_auto_resume", auto_resume)
+        with caplog.at_level("INFO", logger=service_context._LOG.name):  # pylint: disable=protected-access
+            async with pool:
+                async with asyncio.timeout(10):
+                    while not resumes:
+                        await asyncio.sleep(0.05)
+        manager.sessions.pop("waiting", None)
+    assert saves and saves[0] == 1
+    assert resumes and min(resumes) == 3
+    failures = [record for record in caplog.records if "世代移行の確認が失敗しました" in record.getMessage()]
+    assert len(failures) == 1
+    assert "server_generations" in failures[0].getMessage() and "次の巡回" in failures[0].getMessage()
+    assert any("連続失敗2回" in record.getMessage() for record in caplog.records)
