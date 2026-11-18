@@ -159,6 +159,16 @@ def test_required_results_use_needs(workflow_data: dict[str, object], job_name: 
     assert step["run"] == "python3 scripts/ci_result.py"
 
 
+@pytest.mark.parametrize("name", ["ci.yaml", "audit.yaml", "release-statusline.yaml"])
+def test_every_job_fails_on_unintended_slowdown(name: str) -> None:
+    """全jobが明示の時間上限を持ち、意図しない遅延を既定の360分まで待たずに非成功とする。"""
+    text = (REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+    jobs = workflow_jobs(workflow_mapping(yaml.load(text, Loader=yaml.BaseLoader)))
+    for job_name, job in jobs.items():
+        minutes = str(workflow_mapping(job).get("timeout-minutes", ""))
+        assert minutes.isdecimal() and 0 < int(minutes) < 360, job_name
+
+
 def test_required_check_display_names(workflow_data: dict[str, object]) -> None:
     """rulesetが参照する9表示名と、共通checkの非所有名を維持する。"""
     jobs = workflow_jobs(workflow_data)

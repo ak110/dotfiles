@@ -17,6 +17,7 @@ concurrency:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions: {}
     outputs:
       eligible: ${{ steps.validate.outputs.eligible }}
@@ -54,6 +55,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.eligible == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     outputs:
       changed: ${{ steps.inspect.outputs.changed }}
       version: ${{ steps.inspect.outputs.version }}
@@ -83,6 +85,7 @@ jobs:
           - os: windows-latest
             asset: claude-statusline-x86_64-pc-windows-msvc.exe
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 3
     permissions:
       contents: read
     steps:
@@ -111,6 +114,7 @@ jobs:
     needs: [gate, prepare, build]
     if: needs.gate.outputs.eligible == 'true' && needs.prepare.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions:
       contents: write
       actions: read
