@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import time
 
 import pytest
 
@@ -71,9 +72,38 @@ def test_sweep_stale_shared_state_continues_after_root_removal_failure(
 
 
 @pytest.mark.asyncio
+async def test_activation_sweeps_once_per_interval_across_writers(tmp_path: pathlib.Path, monkeypatch) -> None:
+    """起動ごとの全件掃引を避け、間隔内の後続の起動は掃引しない。間隔を過ぎた起動は再び掃引する。"""
+    old = time.time() - shared_sweep.STALE_SHARED_STATE_SECONDS - 60
+
+    def writer(root: str) -> status_file.StatusFileWriter:
+        return status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity(root, "root.json", None), state_root=tmp_path)
+
+    first_stale = tmp_path / "agents-server" / "stale-a" / "root.json"
+    _aged_file(first_stale, old)
+    first = writer("current-a")
+    await first.activate_async()
+    assert not first_stale.exists()
+
+    second_stale = tmp_path / "agents-server" / "stale-b" / "root.json"
+    _aged_file(second_stale, old)
+    second = writer("current-b")
+    await second.activate_async()
+    assert second_stale.is_file()
+
+    monkeypatch.setattr(status_file, "SHARED_SWEEP_INTERVAL_SECONDS", 0)
+    third = writer("current-c")
+    third.activate()
+    assert not second_stale.exists()
+    third.deactivate()
+    for item in (first, second):
+        await item.deactivate_async()
+
+
+@pytest.mark.asyncio
 async def test_status_writer_activate_continues_when_sweep_fails(tmp_path: pathlib.Path, monkeypatch) -> None:
     """managerの起動処理は掃引APIのOSErrorを記録して書込を開始する。"""
-    monkeypatch.setattr(shared_sweep, "sweep_stale_shared_state", lambda **_kwargs: (_ for _ in ()).throw(OSError("x")))
+    monkeypatch.setattr(status_file, "sweep_stale_shared_state", lambda **_kwargs: (_ for _ in ()).throw(OSError("x")))
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("current", "root.json", None),

@@ -39,13 +39,26 @@ from agent_toolkit._agents_server.state import (
     terminal_result_payload,
 )
 from agent_toolkit._agents_server.wait_targets import release_wait_target
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import interval_gate, session_registry
+from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
 
 HEARTBEAT_INTERVAL_SECONDS = 30
 HEARTBEAT_EXPIRY_SECONDS = status_reader.HEARTBEAT_EXPIRY_SECONDS
+SHARED_SWEEP_INTERVAL_SECONDS = 24 * 60 * 60
+"""起動時の共有状態の期限掃引の間隔。
+
+掃引は全rootと登録簿の全件を読み、2026-11-19の実測（root 194、登録簿1,605件）で1回0.4〜0.9 CPU秒かかった。
+保持期限（7日）に対し1日遅れても回収の結果は変わらないため、ホストのいずれかの起動が1日1回だけ行う。
+"""
+
+
+def _sweep_shared_state(keep_root_session_id: str, state_root: pathlib.Path | None) -> None:
+    root = _state_paths.state_dir() if state_root is None else state_root
+    if interval_gate.claim(root / "sweeps" / "agents-server-activation", interval_seconds=SHARED_SWEEP_INTERVAL_SECONDS):
+        sweep_stale_shared_state(keep_root_session_id=keep_root_session_id, state_root=state_root)
 
 
 def live_writer_holds_session(session_id: str, state_root: pathlib.Path | None = None) -> bool:
@@ -155,10 +168,7 @@ class StatusFileWriter:
     def activate(self) -> None:
         """書込を有効化し、前回プロセスの残存状態を初期化する。"""
         try:
-            sweep_stale_shared_state(
-                keep_root_session_id=self.root_session_id,
-                state_root=self._state_root,
-            )
+            _sweep_shared_state(self.root_session_id, self._state_root)
         except OSError as exc:
             _LOG.warning("共有状態の期限掃引を開始できませんでした: error=%s", exc)
         self._active = True
@@ -209,9 +219,7 @@ class StatusFileWriter:
     async def activate_async(self) -> None:
         """初期化後の初回保存が完了してから書込を開始する。"""
         try:
-            await run_file_operation(
-                sweep_stale_shared_state, keep_root_session_id=self.root_session_id, state_root=self._state_root
-            )
+            await run_file_operation(_sweep_shared_state, self.root_session_id, self._state_root)
         except OSError as exc:
             _LOG.warning("共有状態の期限掃引を開始できませんでした: error=%s", exc)
         self._active = True
