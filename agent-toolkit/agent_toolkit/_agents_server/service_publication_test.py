@@ -10,6 +10,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -32,8 +33,11 @@ def _exited_process() -> str:
     """起動単位を記録した後で終了したプロセスの識別を返す。"""
     with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as process:
         identity = service_transport.process_identity(process.pid)
-    # Windowsは終了したプロセスもhandleが残る間は開けるため、起動した側のhandleを手放してから確かめる。
+    # Windowsは終了したプロセスもhandleが残る間は開けるため、起動した側のhandleを手放し、他のhandle保持者が手放すまで待つ。
     del process
+    deadline = time.monotonic() + 10
+    while service_transport.process_alive(identity) and time.monotonic() < deadline:
+        time.sleep(0.05)
     assert not service_transport.process_alive(identity)
     return identity
 
