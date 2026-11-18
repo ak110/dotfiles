@@ -92,6 +92,28 @@ async def test_reader_failure_stops_app_server_before_reporting() -> None:
         assert isinstance(client.reader_failure, subject.AppServerError)
 
 
+@pytest.mark.asyncio
+async def test_close_racing_reader_failure_returns_promptly() -> None:
+    """別の呼出元のcloseと読取の失敗が重なっても、closeは停止の待ち時間上限まで止まらず、失敗は1回報告される。"""
+    process = _ChunkProcess(b"{not json\n")
+    reported: list[BaseException] = []
+
+    async def on_failure(error: BaseException) -> None:
+        reported.append(error)
+
+    client = subject.JsonRpcProcess(_ignore_message, _ignore_message, on_failure)
+    client.process = process  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+    reader = client._reader_task = asyncio.create_task(client._read_stdout())
+
+    async with asyncio.timeout(5):
+        residual = await client.close()
+        await reader
+
+    assert residual == []
+    assert client.closed
+    assert len(reported) == 1
+
+
 @pytest.mark.parametrize("cancelled", [False, True])
 @pytest.mark.asyncio
 async def test_client_start_aborts_when_initialize_never_answers(monkeypatch: pytest.MonkeyPatch, cancelled: bool) -> None:

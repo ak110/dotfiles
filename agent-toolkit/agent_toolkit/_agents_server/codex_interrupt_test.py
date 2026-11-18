@@ -18,7 +18,8 @@ import pytest
 
 from agent_toolkit._agents_server import codex, codex_clients, state
 from agent_toolkit._agents_server import codex_auto_reset_backend_test as harness
-from agent_toolkit._agents_server.session_errors import ActionableTimeoutError
+from agent_toolkit._agents_server.session_errors import KILL_NOT_DELIVERED_NEXT_ACTION, ActionableTimeoutError
+from agent_toolkit._common.next_action import ActionableError
 
 # 模擬環境の組み立てと接続の診断を、試験から内部境界のまま使う。
 # pylint: disable=protected-access
@@ -163,6 +164,36 @@ async def test_kill_while_app_server_stops_waits_for_failure(tmp_path: Path, mon
         response = await kill
     assert response["status"] == "failed"
     assert "turn/interrupt" not in [method for method, _ in clients[0].requests]
+
+
+@pytest.mark.parametrize("service", [False, True])
+@pytest.mark.asyncio
+async def test_kill_awaiting_interrupt_response_survives_reader_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, service: bool
+) -> None:
+    """中断要求の応答待ちの間に出力を読めなくなったkillは、次の操作の無い接続エラーで返らない。
+
+    接続が失敗を先に記録していれば失敗の公開を待って返し、記録より先に要求が失敗した場合は次の操作を添えて返す。
+    """
+    environment = (
+        harness._service_environment(tmp_path, monkeypatch, harness._no_save)
+        if service
+        else harness._environment(tmp_path, monkeypatch)
+    )
+    async with environment as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        clients[0].silent.add("turn/interrupt")
+        kill = asyncio.create_task(owner.kill(session.session_id, timeout=5))
+        async with asyncio.timeout(5):
+            while "turn/interrupt" not in [method for method, _ in clients[0].requests]:
+                await asyncio.sleep(0.01)
+        clients[0].stream.feed_data(b"{not json\n")
+        outcome = (await asyncio.gather(kill, return_exceptions=True))[0]
+    if isinstance(outcome, BaseException):
+        assert isinstance(outcome, ActionableError)
+        assert outcome.next_action == KILL_NOT_DELIVERED_NEXT_ACTION
+    else:
+        assert outcome["status"] == "failed"
 
 
 @pytest.mark.parametrize(

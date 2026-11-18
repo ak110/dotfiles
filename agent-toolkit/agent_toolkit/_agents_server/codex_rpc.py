@@ -403,10 +403,10 @@ class JsonRpcProcess:
         """
         task = self._close_task
         if task is None or task.done() and (task.cancelled() or task.exception() is not None or task.result()):
-            task = self._close_task = asyncio.create_task(self._close(asyncio.current_task()))
+            task = self._close_task = asyncio.create_task(self._close())
         return await finish_task(task)
 
-    async def _close(self, caller: asyncio.Task[Any] | None) -> list[str]:
+    async def _close(self) -> list[str]:
         if self._closed and self.process is None and self._job is None and not self._residual and not self._unresolved:
             return []
         process = self.process
@@ -422,9 +422,14 @@ class JsonRpcProcess:
             )
         if not self._closed:
             self._closed = True
-            # 読取の失敗から閉じる読取task自身は、停止の完了を待つ側であり取り消さない。
-            tasks = tuple(task for task in (self._reader_task, self._stderr_task) if task is not None and task is not caller)
-            self._reader_task = None
+            # 失敗を検出した読取taskは、この停止の完了を待つ側になりうる。取り消しや完了待ちの対象に含めると
+            # 互いを待つ循環になるため、読取の失敗後は対象から除く。そのtaskは自身で失敗の報告まで進んで終わる。
+            reader = self._reader_task
+            if self._reader_failure is not None:
+                reader = None
+            else:
+                self._reader_task = None
+            tasks = tuple(task for task in (reader, self._stderr_task) if task is not None)
             self._stderr_task = None
             for task in tasks:
                 if not task.done():
