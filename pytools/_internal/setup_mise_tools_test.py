@@ -520,6 +520,44 @@ class TestTypeScriptLspConnection:
         assert setup_mise_tools.ensure_tools_installed(Path("mise")) is True
         assert link.lstat().st_ino == connected
 
+    @pytest.mark.skipif(os.name == "nt", reason="Windowsの存在判定は差し替えた`os.stat`を経由しない")
+    @pytest.mark.parametrize("state", ["unconnected", "connected"])
+    def test_connects_when_os_refuses_to_traverse_aube_link(
+        self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, state: str
+    ) -> None:
+        """aubeが作る`node_modules/typescript`のリンクをOSが通過させなくても、接続を完了する。
+
+        2026-11-19、sthenoのSSH配下の`update-dotfiles`で、RedirectionGuardが非管理者の作ったジャンクションの通過を
+        WinError 448で拒否し、接続済みでも「tsserver.jsが見つからない」と報告した。
+        """
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
+        link, source = self._layout(tmp_path, mise_stub)
+        package = source.parent / ".mise" / "typescript@6.0.3" / "node_modules" / "typescript"
+        package.parent.mkdir(parents=True)
+        source.rename(package)
+        source.symlink_to(Path(".mise", "typescript@6.0.3", "node_modules", "typescript"), target_is_directory=True)
+        if state == "connected":
+            link.symlink_to(source, target_is_directory=True)
+        before = link.lstat() if state == "connected" else None
+        stat = os.stat
+
+        def refuse_traversal(
+            path: int | str | os.PathLike[str], *, dir_fd: int | None = None, follow_symlinks: bool = True
+        ) -> os.stat_result:
+            if follow_symlinks and not isinstance(path, int):
+                candidate = Path(path)
+                if candidate == source or source in candidate.parents:
+                    raise OSError(None, "信頼されていないマウントポイントが含まれているため、パスをスキャンできません。")
+            return stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+
+        with monkeypatch.context() as refused:
+            refused.setattr(os, "stat", refuse_traversal)
+            assert setup_mise_tools.ensure_tools_installed(Path("mise")) is True
+        assert link.readlink() == source
+        assert os.path.samefile(link, package)
+        if before is not None:
+            assert link.lstat() == before
+
     @pytest.mark.parametrize("mode", ["minimal", "failed-install"])
     def test_run_does_not_connect_when_install_is_not_eligible(
         self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, mode: str
