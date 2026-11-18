@@ -293,6 +293,11 @@ class ManagerBase:
         codex_thread_id = self._launcher_codex_thread_id
         return codex_thread_id if codex_thread_id and shared_layout.valid_session_id(codex_thread_id) else None
 
+    @property
+    def launcher_is_codex(self) -> bool:
+        """委譲元がCodexの会話かを返す。Codexには会話内modが無く、ホストの回復操作も異なる。"""
+        return bool(self._launcher_codex_thread_id)
+
     def launcher_record_context(self) -> dict[str, Any]:
         """直接の委譲元と、一意に解決した記録ファイルをtask本文へ渡す。"""
         launcher = self.launcher_session_id()

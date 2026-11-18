@@ -68,6 +68,7 @@
    自身の接続先は、`list`が返す`queried_server_instance`と`server_generations`の`queried: true`の世代で識別する。
    処置の後は、`show`で対象のstatusが終了状態へ変わり、`list`の`server_generations`から処置した世代が消えるまで観測する。
    agents_serverのMCPを再接続する必要があれば、接続が健全な間に`apply_runtime_changes`の`targets`へ`agents_server`を指定して予約し、受付と反映結果を分けて確かめる。
+   会話内modが応答しないホスト（Codex、ホストUIの無い実行）では予約が失敗するため、エラーの次の操作が示すホストごとの再接続手段をユーザーへ依頼する。
    接続を失った後は同じMCPのツールを呼べないため、ホストの再接続手段（Claude Codeでは`/mcp`）をユーザーへ依頼する
 
 9. Codexにおける二層待機の識別子保持、外側セルと内側の`exec_command`のyield処理中における結果回収、巻き取り・代替起動・新規起動の扱いについては、`codex-runtime-waiting.md`「agents_serverの二層待機」に従う

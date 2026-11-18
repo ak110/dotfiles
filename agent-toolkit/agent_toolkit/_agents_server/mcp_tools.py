@@ -87,14 +87,43 @@ def _manager() -> AgentsServerManager:
     return _SELECTED_MANAGER.get() or _MANAGER
 
 
+# 会話内modが応答しない場合（ホストUIの無い実行、mod未導入、Codex）の、要求とホストごとの回復操作。
+# Codexには会話内modが無く、MCPサーバーとpluginは会話の起動時に読み込まれる。
+_UI_UNAVAILABLE_NEXT_ACTIONS: dict[str, dict[str, str]] = {
+    "apply_runtime_changes": {
+        "claude": (
+            "反映は予約されていない。ユーザーへ、agents_server・pyfltrは`/mcp`で対象のMCPサーバーを再接続し、"
+            "pluginsは`/reload-plugins`を実行するよう依頼する。ホストUIの無い実行（`claude -p`など）では次の起動から反映される"
+        ),
+        "codex": (
+            "Codexには会話内modが無く、反映を予約できない。"
+            "ユーザーへ、この会話を終了して`codex resume`で再開し、MCPサーバーとpluginを読み込み直すよう依頼する"
+        ),
+    },
+    "compact_conversation": {
+        "claude": "圧縮は予約されていない。ユーザーへ`/compact`の実行を依頼する",
+        "codex": "Codexには会話内modが無く、圧縮を予約できない。ユーザーへ`/compact`の実行を依頼する",
+    },
+    "send_to_user": {
+        "claude": "本文は表示されていない。同じ本文を最終応答に書く",
+        "codex": "Codexには会話内modが無く、本文を表示できない。同じ本文を最終応答に書く",
+    },
+}
+
+
 async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
-    identifier = _manager().launcher_session_id()
+    manager = _manager()
+    identifier = manager.launcher_session_id()
     if identifier is None:
         raise ValueError("呼出元会話を解決できない。Claude CodeでMCPへ再接続する。")
-    return await function_hook_requests.request(identifier, operation, inputs)
+    try:
+        return await function_hook_requests.request(identifier, operation, inputs)
+    except TimeoutError as error:
+        host = "codex" if manager.launcher_is_codex else "claude"
+        raise ActionableError(str(error), next_action=_UI_UNAVAILABLE_NEXT_ACTIONS[operation][host]) from error
 
 
 @contextlib.asynccontextmanager
