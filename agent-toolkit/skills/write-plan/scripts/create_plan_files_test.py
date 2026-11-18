@@ -353,6 +353,37 @@ def test_cli_accepts_bom_source_and_preserves_bytes(
     assert not errors
 
 
+def test_prior_plan_repository_accepts_equivalent_path_notation(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """先行計画の対象リポジトリは、区切り文字や末尾の区切りが違っても同じ場所なら一致とする。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
+    source, _ = _source(repo, tmp_path)
+    prior = tmp_path / "prior.md"
+    prior.write_text(
+        source.read_text(encoding="utf-8")
+        .replace(str(repo.resolve()), f"{repo.resolve().as_posix()}/")
+        .replace("- 関連WI: なし", "- 関連WI:\n  - 20261020-000000-002.md: 先行"),
+        encoding="utf-8",
+    )
+    source.write_text(
+        source.read_text(encoding="utf-8").replace("- 関連WI: なし", "- 関連WI:\n  - 20261020-000000-001.md: 対応"),
+        encoding="utf-8",
+    )
+    args = [
+        str(source),
+        "--work-dir",
+        str(repo),
+        "--prior-plan",
+        str(prior),
+        "--expected-wi",
+        "20261020-000000-001.md",
+        "--expected-wi",
+        "20261020-000000-002.md",
+    ]
+    assert check_plan_file.main(args) == 0, capsys.readouterr().err
+
+
 def test_named_plan_name_adds_utc_timestamp_to_bare_name() -> None:
     """名称だけの入力へ作成処理がUTCの日付と時刻を付ける。"""
     now = datetime.datetime(2026, 9, 18, 12, 34, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))

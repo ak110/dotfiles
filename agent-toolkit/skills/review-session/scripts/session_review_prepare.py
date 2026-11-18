@@ -61,6 +61,10 @@ STATS_FILENAME = "stats.md"
 COMPARISON_FILENAME = "comparison-materials.md"
 
 
+_DIGEST_MAX_BYTES = 30_000
+"""発話要約の上限を指定しない場合に使う値。会話圧縮後の最初の読取で、依頼と直近の報告を全て読める量にする。"""
+
+
 _CANDIDATES_MAX_BYTES = 70_000
 
 
@@ -94,6 +98,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--after", metavar="PATH", help="前回のscope JSON。処理済み位置より後だけをbatchの分析対象にする。")
     parser.add_argument("--conversation-window", action="store_true", help="会話を少量表示する。候補・統計は更新しない。")
+    parser.add_argument(
+        "--conversation-digest",
+        action="store_true",
+        help="メイン担当の発話だけを話者と本文で示す。会話圧縮後の復元に使う。候補・統計は更新しない。",
+    )
     parser.add_argument("--conversation-record", action="append", default=None, help="対象の正規記録ID。複数指定可。")
     parser.add_argument(
         "--conversation-since",
@@ -119,7 +128,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--conversation-max-bytes",
         type=session_conversation.positive_integer,
         default=16000,
-        help="少量表示文書全体のUTF-8上限（省略時16000）。",
+        help="少量表示・発話要約の文書全体のUTF-8上限（省略時は少量表示16000、発話要約30000）。",
     )
     return parser
 
@@ -149,7 +158,9 @@ def _missing(item: str, detail: str | None = None) -> int:
     print(f"不足: {item}", file=sys.stderr)
     if detail:
         print(detail, file=sys.stderr)
-    print(_next_action.next_action_line(_MISSING_NEXT_ACTIONS[item]), file=sys.stderr)
+    # 原因が固有の次の操作を持つ場合は、項目の一般的な取得方法を重ねない。
+    if detail is None or _next_action.NEXT_ACTION_PREFIX not in detail:
+        print(_next_action.next_action_line(_MISSING_NEXT_ACTIONS[item]), file=sys.stderr)
     return 2
 
 
@@ -280,8 +291,11 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         or args.conversation_recent is not None
         or args.conversation_after is not None
         or args.conversation_max_bytes != 16000
+        and not args.conversation_digest
     ):
         return _missing("bundle", "会話の選択条件は--conversation-windowと併用する")
+    if args.conversation_digest and args.conversation_window:
+        return _missing("bundle", "--conversation-digestと--conversation-windowは併用できない。どちらか一方を指定する")
     if args.conversation_since and args.conversation_until and args.conversation_since > args.conversation_until:
         return _missing("bundle", "開始日時が終了日時より後。--conversation-sinceと--conversation-untilを確認する")
     if args.conversation_after is not None and args.work_dir is None:
@@ -335,7 +349,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     source_path = bundle_dir / "conversation-source.json"
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     observed_at = current.astimezone(datetime.UTC).isoformat()
-    lightweight = args.conversation_only or args.conversation_window
+    lightweight = args.conversation_only or args.conversation_window or args.conversation_digest
     conversation_output: list[dict[str, Any]] = []
     if args.conversation_after is not None:
         try:
@@ -413,13 +427,22 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     )
     conversation_text = (
         None
-        if args.conversation_window
+        if args.conversation_window or args.conversation_digest
         else _conversation_document(conversation, detail_command, str(main_record) if main_record else None)
     )
     conversation_limit = args.conversation_max_bytes if args.conversation_window else _CONVERSATION_MAX_BYTES
+    if args.conversation_digest:
+        conversation_limit = args.conversation_max_bytes if args.conversation_max_bytes != 16000 else _DIGEST_MAX_BYTES
     conversation_window: dict[str, Any] | None = None
     try:
-        if conversation_text is None:
+        if args.conversation_digest:
+            conversation_text, conversation_window = session_conversation.digest_document(
+                conversation,
+                main_record=str(main_record) if main_record else None,
+                detail_command=detail_command,
+                max_bytes=conversation_limit,
+            )
+        elif conversation_text is None:
             continue_arguments = ["--transcript", *session_arguments] if transcript_path else list(session_arguments)
             continue_arguments.extend(["--work-dir", str(work_dir)])
             conversation_text, conversation_window = session_conversation.window_document(
@@ -437,7 +460,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         return _missing("bundle", str(error))
     conversation_path.write_text(conversation_text, encoding="utf-8", newline="\n")
     conversation_bytes = len(conversation_text.encode("utf-8"))
-    if args.conversation_only or args.conversation_window:
+    if args.conversation_only or args.conversation_window or args.conversation_digest:
         print(
             json.dumps(
                 {

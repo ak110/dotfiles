@@ -35,7 +35,6 @@ from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
-lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import document_reads, repository_protection, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
@@ -69,6 +68,8 @@ CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 _COMPACTION_RESERVE = 1_500
 # 作業契約の通知の囲みと固定文の文字数の見込み。本文を載せるかの判定に使う。
 _CONTRACT_NOTICE_OVERHEAD = 600
+# 要約の作成が失敗した時に、子の標準エラーから通知へ載せる文字数の上限。
+_DIGEST_FAILURE_CAUSE_CHARS = 400
 # `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
@@ -290,8 +291,11 @@ def acquisition_failure(
 
 
 def _compact_recovery_context() -> str:
-    """次の判断前に、現在の工程を定める文書から必要な知識を回復させる。"""
-    return _llm_notice("会話が圧縮された。次の判断より前に、復元先: `agent-toolkit/share/compaction-recovery.md`を全文読め。")
+    """要約を作らないホストへ、圧縮後に読む範囲を伝える。"""
+    return _llm_notice(
+        "会話が圧縮された。圧縮後に読むのは作業契約と会話の要約だけである。"
+        "ほかの資料は、次に行う操作・判断の条件に該当した時に読め。"
+    )
 
 
 def _normative_context(body: str, *, kind: str) -> str:
@@ -375,57 +379,50 @@ def _existing_session_temp(session_id: object) -> str | None:
     return str(path) if path is not None else None
 
 
-def _compaction_notice(
-    session_id: str, transcript_path: object, session_temp: pathlib.Path | None, *, delegated: bool
-) -> str | None:
-    """既存の証拠抽出CLIで全人間入力を保存し、直近の会話の取得先も通知する。"""
+def _discard_stale_digest(output: pathlib.Path | None) -> list[str]:
+    """要約の作成に失敗した時に前回の要約を消し、消せない場合は使用を禁じる行を返す。
+
+    保存先は圧縮のたびに同じファイルなので、残すと前回の圧縮までの要約を今回の復元材料と取り違える。
+    """
+    if output is None:
+        return []
+    try:
+        output.unlink(missing_ok=True)
+    except OSError:
+        return [f"前回の要約ファイル`{output}`を削除できないため、そのファイルは使用するな。"]
+    return []
+
+
+def _compaction_notice(session_id: str, transcript_path: object, session_temp: pathlib.Path | None, *, delegated: bool) -> str:
+    """発話だけの要約を作り、圧縮後に読む対象を作業契約とその1ファイルに限って通知する。"""
+    scope = (
+        "ほかの資料（工程のスキル、役割文書、規範）は、次に行う操作・判断の条件に該当した時に読め。"
+        "委譲先の返却、背景待機の完了、定期の再確認、ユーザーの回答への対応でも同じである。"
+    )
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
         arguments = ["run-script", "session-review-evidence", "--", "--claude-session-id", session_id, "--user-events"]
-        return f"原文は起動部分へ`{shlex.join(arguments)}`を続けて取得せよ。"
-    command = [
-        str(SHARE_DIR.parent / "scripts" / "atk"),
-        "run-script",
-        "session-review-evidence",
-        "--",
-        "--transcript",
-        resolved,
-        "--user-events",
-    ]
-    conversation = shlex.join(
-        [
-            str(SHARE_DIR.parent / "scripts" / "atk"),
-            "run-script",
-            "session-review-prepare",
-            "--",
-            "--transcript",
-            resolved,
-            "--conversation-only",
-            "--conversation-window",
-            "--conversation-recent",
-            "30",
-        ]
-    )
-    # 復元で先に読むのは発話の原文と作業契約・計画・引き継ぎ記録である。会話は進行中の操作を補う直近の少量表示を案内し、
-    # 全期間の通常表示（数万文字）は不足する場合の手段にとどめる。
-    lines = [
-        f"圧縮前の原文と作業記録で要求を復元した後、直近の操作は`{conversation}`でconversation.mdを取得して確かめよ。"
-        "原文・結果と継続取得はskills/review-session/references/session-records.md「会話の少量取得」に従え。"
-    ]
-    if delegated:
-        return "\n".join(lines)
-    output = session_temp / "compaction-user-events.jsonl" if session_temp is not None else None
+        return f"会話が圧縮された。ユーザー発話の原文は起動部分へ`{shlex.join(arguments)}`を続けて取得せよ。{scope}"
+    # 保存先を固定し、圧縮のたびに同じファイルを置き換える。
+    output = session_temp / "compaction-digest" / "conversation.md" if session_temp is not None else None
+    options = ["--transcript", resolved, "--conversation-only", "--conversation-digest"]
+
+    def manual(*extra: str) -> str:
+        command = shlex.join(["run-script", "session-review-prepare", "--", *options, *extra])
+        return f"起動部分へ`{command}`を続けて実行し、出力のconversation_pathが示すファイルを読め。{scope}"
+
     try:
         if output is None:
             raise ValueError("セッションのmanaged-tempを取得できない")
+        output.parent.mkdir(exist_ok=True)
         # 同じ依存環境のPythonで公開スクリプトを呼び、起動ごとの環境解決を重ねない。
         result = process_tree.run_with_timeout(
             [
                 sys.executable,
-                str(SHARE_DIR.parent / "skills/review-session/scripts/session_review_evidence.py"),
-                "--transcript",
-                resolved,
-                "--user-events",
+                str(SHARE_DIR.parent / "skills/review-session/scripts/session_review_prepare.py"),
+                *options,
+                "--work-dir",
+                str(output.parent),
             ],
             capture_output=True,
             text=True,
@@ -435,48 +432,54 @@ def _compaction_notice(
             check=True,
             env=plugin_environment.direct_environment(SHARE_DIR.parent, os.environ),
         )
-        users = [
-            event
-            for line in split_lines(result.stdout)
-            if isinstance(event := json.loads(line), dict) and event.get("kind") == "user"
-        ]
-        data = "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in users)
-        output.write_text(data, encoding="utf-8")
-        key = document_reads.selected_target_key(read_triggers.ReadTarget(output))
+        counts = json.loads(result.stdout)["conversation_window"]
+        users, assistants = int(counts["user_count"]), int(counts["assistant_count"])
+        requests = int(counts.get("request_count", 0))
+        breakdown = f"ユーザー発話{users}件、エージェント発話{assistants}件" + (
+            f"、委譲元の依頼{requests}件" if requests else ""
+        )
+        if not delegated:
+            key = document_reads.selected_target_key(read_triggers.ReadTarget(output))
 
-        def select_original(state: dict) -> dict:
-            records = state.setdefault(OPERATION_SKILL_READY_KEY, {})
-            actors = records.setdefault(key, [])
-            if MAIN_AGENT_ID not in actors:
-                actors.append(MAIN_AGENT_ID)
-            return state
+            def select_original(state: dict) -> dict:
+                records = state.setdefault(OPERATION_SKILL_READY_KEY, {})
+                actors = records.setdefault(key, [])
+                if MAIN_AGENT_ID not in actors:
+                    actors.append(MAIN_AGENT_ID)
+                return state
 
-        update_state(session_id, select_original)
-        lines.append(f"ユーザー発話の原文{len(users)}件をReadのfile_pathに`{output}`を指定して読め。")
+            update_state(session_id, select_original)
+        return (
+            f"会話が圧縮された。圧縮後に読むのは、作業契約と、Readのfile_pathに`{output}`を指定して読む会話の要約"
+            f"（{breakdown}）だけである。{scope}"
+        )
     except process_tree.ReclaimError as error:
         # hookは同じ所有対象を次の起動まで保持できないため、その場で回収し直し、残れば対象を示す。
         remaining = error.retry()
+        lines = _discard_stale_digest(output)
         if remaining:
             lines.append(
-                f"ユーザー発話の抽出の子プロセスを回収できない: {remaining}。"
+                f"会話の要約の子プロセスを回収できない: {remaining}。"
                 "各PIDの起動コマンドと自身の所有対象との一致を確認し、一致したプロセスだけを終了させよ。"
             )
         lines.append(
-            f"ユーザー発話の抽出に失敗した（{type(error).__name__}: context={error.context}、残存={remaining}）。"
-            f"手動で`{shlex.join(command)}`を実行せよ。"
+            f"会話が圧縮された。会話の要約の作成に失敗した（{type(error).__name__}: "
+            f"context={error.context}、残存={remaining}）。{manual()}"
         )
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        if output is not None:
-            try:
-                output.unlink(missing_ok=True)
-            except OSError:
-                lines.append(
-                    f"前回の抽出ファイル`{output}`を削除できないため、そのファイルは使用するな。次のコマンドで原文を再取得せよ。"
-                )
-        lines.append(
-            f"ユーザー発話の抽出に失敗した（{type(error).__name__}: {error}）。手動で`{shlex.join(command)}`を実行せよ。"
-        )
-    return "\n".join(lines)
+        return "\n".join(lines)
+    except subprocess.CalledProcessError as error:
+        # 終了コードだけでは原因が分からないため、子が標準エラーへ出した原因を通知へ渡す。
+        cause = " ".join(str(error.stderr or "").split())[:_DIGEST_FAILURE_CAUSE_CHARS]
+        # 予算の超過は同じ上限の再実行では解消しないため、子が示した収まる上限を付けたコマンドを示す。
+        needed = re.search(r"--conversation-max-bytes (\d+)", cause)
+        extra = ("--conversation-max-bytes", needed.group(1)) if needed else ()
+        lines = _discard_stale_digest(output)
+        lines.append(f"会話が圧縮された。会話の要約の作成に失敗した（終了コード{error.returncode}: {cause}）。{manual(*extra)}")
+        return "\n".join(lines)
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        lines = _discard_stale_digest(output)
+        lines.append(f"会話が圧縮された。会話の要約の作成に失敗した（{type(error).__name__}: {error}）。{manual()}")
+        return "\n".join(lines)
 
 
 def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
@@ -595,16 +598,17 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 content = f"{content}\n\n{temp_context}" if content else temp_context
                 if contract_context:
                     content += f"\n\n{contract_context}"
-            if source == "compact" and host == "claude":
-                started = time.monotonic()
-                compact_text = _compaction_notice(session_id, payload.get("transcript_path"), session_temp, delegated=delegated)
-                timing.record(payload, "rules_context", started, "ok", stage="compaction-recovery")
-                if compact_text:
-                    compact = _llm_notice(compact_text)
-                    content = f"{content}\n\n{compact}" if content else compact
             if source == "compact":
-                # ツールを使わない返却・回答の判断にも、工程文書からの復元を先に案内する。
+                # ツールを使わない返却・回答の判断にも、圧縮後に読む範囲を1通で伝える。
                 recovery = _compact_recovery_context()
+                if host == "claude":
+                    started = time.monotonic()
+                    compact_text = _compaction_notice(
+                        session_id, payload.get("transcript_path"), session_temp, delegated=delegated
+                    )
+                    timing.record(payload, "rules_context", started, "ok", stage="compaction-recovery")
+                    if compact_text:
+                        recovery = _llm_notice(compact_text)
                 content = f"{content}\n\n{recovery}" if content else recovery
     elif event_name == "SubagentStart":
         content = compose_subagent_start(host=host)

@@ -1,7 +1,6 @@
 """Claude Code agent-toolkit: hook payloadからの呼出主体（agentId）解決ヘルパー。
 
-`posttooluse.py`・`agents_server_session_advisor.py`・`uwi_completion.py`が
-メイン会話とサブエージェントの呼び出しを区別するために共有する。
+hookの各処理がメイン会話とサブエージェントの呼び出しを区別するために共有する。
 
 判別には`agent_id`だけを用いる。`transcript_path`はサブエージェント内で発火した
 `PreToolUse`・`PostToolUse`でもセッション本体の記録を指すため、呼出主体を判別できない

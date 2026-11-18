@@ -11,6 +11,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
+from agent_toolkit._common import session_state, uwi_watch
 from agent_toolkit._testing.wi_add_support import _cmd_add_args, _patch_cmd_add_operations, _run_public_add
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
@@ -166,6 +167,7 @@ def test_cmd_add_records_submitter_session_only_for_uwi(
     回答済みUWIの通知は保存した値で宛先を決めるため、ownerを持たないCodex最上位の投入分はその会話の値、委譲先の投入分は委譲元の値、
     会話へ対応しないプロセス専用の値と未解決の場合はキーを持たない状態にする。
     本文のfrontmatterによる宛先指定の拒否は予約キーの入力テストで確かめる。
+    回答の検出は宛先の会話の記録にあるUWIだけを確かめるため、保存したファイル名を同じ会話のセッション状態へ記録する。
     """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
@@ -177,9 +179,12 @@ def test_cmd_add_records_submitter_session_only_for_uwi(
 
     _run_public_add(_cmd_add_args(tmp_path, message, entry_type=entry_type), notes, _FIXED_DT, tmp_path)
 
-    parsed = frontmatter.parse_frontmatter(next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8"))
+    saved = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    parsed = frontmatter.parse_frontmatter(saved.read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0].get("submitter_session") == expected
+    recorded = {session_id: uwi_watch.awaiting(session_state.read_state(session_id)) for session_id in environment.values()}
+    assert recorded == {session_id: [saved.name] if session_id == expected else [] for session_id in environment.values()}
 
 
 def test_cmd_add_rejects_missing_source_in_agent_environment(

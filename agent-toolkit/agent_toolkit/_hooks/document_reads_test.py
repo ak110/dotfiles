@@ -206,5 +206,5 @@ def test_chezmoi_source_and_distribution_link_require_full_body(tmp_path, monkey
     assert rules_context.main(json.dumps(payload), host="codex") == 0
     output = capsys.readouterr()
     assert not output.err
-    assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in output.out
+    assert "圧縮後に読むのは作業契約と会話の要約だけである" in output.out
     assert str(path) not in output.out and "cat --" not in output.out

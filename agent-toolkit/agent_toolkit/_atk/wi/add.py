@@ -40,6 +40,7 @@ from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
+from agent_toolkit._common import uwi_watch as _uwi_watch
 from agent_toolkit._plan import owner_records as _owner_records
 
 
@@ -268,7 +269,7 @@ def add_entries(
     残った予約見出し・回答欄マーカーは`WebInputError`で拒否する（CLIとWeb UIの共通処理）。
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_wi_sync.repo_lock`取得前に全件の型・非空・解決可否を検証する。
-    `submitter_session`はUWI種別のfrontmatterへだけ保存する。
+    `submitter_session`はUWI種別のfrontmatterへだけ保存し、回答の通知先としてその会話のセッション状態へファイル名を記録する。
     """
     parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
         messages=messages,
@@ -310,6 +311,11 @@ def add_entries(
                 )
                 for filename, content in written
             )
+    if submitter_session is not None and entry_type != WI_TYPE_AWI and not _uwi_watch.add(submitter_session, generated):
+        _outcome.report_warning(
+            f"回答の通知先を記録できなかった: {'、'.join(generated)}",
+            next_action="回答の有無は`atk wi show <ファイル名>`で確かめる",
+        )
     return generated
 
 
@@ -359,7 +365,8 @@ def cmd_add(
     `--body-file`を指定した場合はそのファイルの内容を本文として扱う。
     引用符・改行を含む長文を、シェルの引用規則による解釈を介さずに渡す。複数回指定すれば複数件を投入できる。
     `--depends-on`が指す依存先が取り込み先に実在しない場合は、投入を拒否せず警告をstderrへ出力する。
-    UWIでは投入したセッションの識別子を`submitter_session`へ保存する（`_resolve_submitter_session`）。
+    UWIでは投入したセッションの識別子を`submitter_session`へ保存し、その会話へ回答を通知する対象として記録する
+    （`_resolve_submitter_session`、`_common/uwi_watch.py`）。
     """
     body_files = getattr(args, "body_file", None)
     if body_files:

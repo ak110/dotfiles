@@ -31,7 +31,7 @@ def test_compact_recovery_first_output_survives_notice_cycle(tmp_path, monkeypat
     )
     assert result.returncode == 0 and not result.stderr
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert "agent-toolkit/share/compaction-recovery.md" in context
+    assert "圧縮後に読むのは作業契約と会話の要約だけである" in context
     assert str(document) not in context
     assert state.get("notice_fingerprints")
 
@@ -191,7 +191,7 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
         compact = _run_hook_in_process("rules_context", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
         assert compact.returncode == 0 and not compact.stderr
         assert str(skill) not in compact.stdout and "`local`" not in compact.stdout
-        assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in compact.stdout
+        assert "圧縮後に読むのは作業契約と会話の要約だけである" in compact.stdout
         failed = _run_hook_in_process(
             "posttooluse",
             {

@@ -25,7 +25,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
    バックグラウンドタスクの所有記録へ記録 (Bash / MCP / Agent / Task)
    PostToolUseFailure: Bash・PowerShellのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了
 8. PermissionDenied: 承認と実入力の一致を確認するため実際の拒否を記録して終了（再試行は実行しない）
-9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
+9. この会話が投入したUWIへ新たに付いた回答の通知（全ツール共通）
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`または`atk run-script plan-create`のBash標準出力）
 11. `AskUserQuestion`の自由記述の回答へ、UserPromptSubmitと同じ現物確認・内容別の注記を返す (AskUserQuestion)
@@ -524,12 +524,12 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     session_id, "background_task", {"id": failed_task_id, "command": tool_input["command"]}
                 )
         return notices
-    # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
+    # この会話が投入したUWIに回答が付いた場合に通知する。
     # ツール種別に依らず回答を確認し、ユーザーの回答から通知までの遅延を抑える。
     # この通知が指示する反映と回答を待っていた作業の再開はメインが所有するため、
     # in-processのサブエージェントと`agents_server`の委譲先セッションでは通知を組み立てない。
-    if cwd and is_main_agent_context(payload):
-        uwi_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
+    if is_main_agent_context(payload):
+        uwi_notice = _uwi_completion.build_notice(session_id)
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
 
