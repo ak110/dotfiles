@@ -47,7 +47,7 @@ lazy from agent_toolkit._atk import outcome as _outcome  # noqa: E402
 lazy from agent_toolkit._atk import output_file as _output_file  # noqa: E402
 lazy from agent_toolkit._atk import plans as _plans  # noqa: E402
 lazy from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
-lazy from agent_toolkit._atk import review_table as _review_table  # noqa: E402
+lazy from agent_toolkit._atk import review_table_cli as _review_table_cli  # noqa: E402
 lazy from agent_toolkit._atk import run_script as _run_script  # noqa: E402
 lazy from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
 lazy from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
@@ -149,7 +149,7 @@ def _build_parser(command: str | None = None) -> argparse.ArgumentParser:
         if command is None or name == command:
             register(subparser)
     for name, register in (
-        ("review-table", lambda: _review_table.build_parser(top)),
+        ("review-table", lambda: _review_table_cli.build_parser(top)),
         ("review-audit", lambda: _review_audit.build_parser(top)),
     ):
         if command is None or name == command:
@@ -322,7 +322,7 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     ),
     "config": lambda invocation: _config_cmd.dispatch(invocation.args, invocation.home, refresh=_usage_refresh.ensure_fresh),
     "plans": lambda invocation: _plans.dispatch_command(invocation.args, home=invocation.home),
-    "review-table": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_table.dispatch),
+    "review-table": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_table_cli.dispatch),
     "review-audit": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_audit.dispatch),
     "wi": lambda invocation: _wi_cli.dispatch(
         invocation.args,

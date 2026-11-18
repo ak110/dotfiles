@@ -75,4 +75,4 @@ detailファイルが存在しない場合は、旧単一ファイル形式と�
 実施内容を記述する粒度、採否の値、ユーザー合意との整合性の確認、参照元の検索と計上の基準は`plan-file-standards.md`で規定する。
 ユーザー発話の解釈手順は、`../../user-confirmation-and-report/references/user-utterance.md`「ユーザー発話の解釈」以降の各節に従う。
 旧書式を扱う際は、`plan-file-standards.md`が指定する計上先を、`## 実装資料`内のファイル群別の変更説明と`## 完了条件`へと読み替える。
-レビュー指摘管理表の列の定義（列契約）は、`agent-toolkit/agent_toolkit/_atk/review_table.py`およびそのテストコードで規定する。
+レビュー指摘管理表の列の定義（列契約）は、`agent-toolkit/agent_toolkit/_atk/review_table_format.py`およびそのテストコードで規定する。

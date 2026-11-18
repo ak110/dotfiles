@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 import shlex
+import stat
 import subprocess
 import sys
 from typing import Any
@@ -114,6 +115,34 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
     return compose_prompt(session, conversation, record.paths)
 
 
+def _record_instruction(path: pathlib.Path) -> str:
+    """記録を読めるか・不在か・それ以外で読めないかに分けて、後任が引き継ぎ記録をどう扱うかを示す。
+
+    前任は書く値が無ければ記録を作らないため、不在は資料からの復元へ進ませる。
+    それ以外で読めない場合は、前任が書いた値を失った可能性を後任が区別できるようにする。
+    通常ファイル以外を開くと名前付きパイプなどで止まるため、種類を確かめてから開く。
+    """
+    try:
+        if not stat.S_ISREG(path.stat().st_mode):
+            reason = "記録先が通常ファイルではない"
+        else:
+            with path.open("rb"):
+                pass
+            return (
+                "この引き継ぎ記録を最初に読み、確定事項と残工程を復元する。"
+                "読めない場合は、前任が書いた値を失った可能性があるものとして以下の資料と成果物の現物から復元し、"
+                "復元できない値を委譲元へ返す。"
+            )
+    except FileNotFoundError:
+        return "この引き継ぎ記録は存在しないため、以下の資料から復元する。"
+    except OSError as error:
+        reason = str(error)
+    return (
+        f"この引き継ぎ記録を読めない（{reason}）。前任が書いた値を失った可能性があるため、"
+        "以下の資料と成果物の現物から確定事項と残工程を復元し、復元できない値を委譲元へ返す。"
+    )
+
+
 def compose_prompt(
     session: SessionState | SessionResumeState,
     conversation: pathlib.Path,
@@ -134,14 +163,14 @@ def compose_prompt(
         "上の起動本文は前任へ配送した原文の記録先行を継続へ更新したものである。以下の引き継ぎ節を現在の開始条件として扱い、既存の記録を読む。",
     ]
     if path is not None:
-        lines += ["この引き継ぎ記録を最初に読み、確定事項と残工程を復元する。"]
+        lines += [_record_instruction(pathlib.Path(path))]
     lines += [
         f"前任session: {session.session_id}",
         f"前任engine: {session.engine}",
         f"終了状態: {session.status}",
         f"終了理由: {json.dumps(predecessor_error(session), ensure_ascii=False)}",
         f"会話の流れ: {conversation.resolve()}",
-        "会話の流れ・追送・各turnの最終応答を読み、引き継ぎ記録がある場合はその記述とも比べ、現在の確定事項と残工程を復元する。",
+        "会話の流れ・追送・各turnの最終応答を読み、引き継ぎ記録を読めた場合はその記述とも比べ、現在の確定事項と残工程を復元する。",
         "完了済みの操作と作成済みの成果物を現物で確かめ、最新の指示で中止された範囲と既に完了・続行済みの範囲は再実行せず、"
         "残る認可内の工程だけを続ける。",
         "",

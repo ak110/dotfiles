@@ -96,6 +96,7 @@ def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_
         else set()
     )
     assert ("node" in tools) == (mode == "full")
+    assert ("pnpm" in tools) == (mode == "full")
     development = {
         "actionlint",
         "github:editorconfig-checker/editorconfig-checker",

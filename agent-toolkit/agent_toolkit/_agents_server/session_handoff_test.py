@@ -290,6 +290,52 @@ def test_prompt_delivers_full_history_and_record_paths(
         assert f"--{'codex-thread' if engine == 'codex' else 'claude-session'}-id predecessor --detail" in prompt
 
 
+@pytest.mark.parametrize(
+    ("observed", "expected"),
+    [
+        ("file", "この引き継ぎ記録を最初に読み"),
+        ("missing", "この引き継ぎ記録は存在しないため、以下の資料から復元する"),
+        ("directory", "前任が書いた値を失った可能性があるため"),
+        ("unreadable", "前任が書いた値を失った可能性があるため"),
+    ],
+    ids=["file", "missing", "directory", "unreadable"],
+)
+def test_prompt_instruction_follows_observed_handoff_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, observed: str, expected: str
+) -> None:
+    """読めた記録だけを最初に読ませ、不在は資料からの復元、それ以外で読めない記録は値の欠落の可能性として区別する。"""
+    handoff = tmp_path / "handoff.md"
+    if observed in {"file", "unreadable"}:
+        handoff.write_text("稼働中のプロセス: なし\n", encoding="utf-8")
+    elif observed == "directory":
+        handoff.mkdir()
+    if observed == "unreadable":
+        # 通常ファイルと確かめられても本文を開けない場合（読取権限が無い場合など）を、OSとroot実行に依らず再現する。
+        original_open = pathlib.Path.open
+
+        def deny(self: pathlib.Path, *args: Any, **kwargs: Any) -> Any:
+            if self == handoff:
+                raise PermissionError(13, "Permission denied", str(self))
+            return original_open(self, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "open", deny)
+    predecessor = state.SessionState(
+        "predecessor",
+        str(tmp_path),
+        engine="codex",
+        prompt=f"元の起動本文\n引き継ぎ記録先: {handoff}（新規）",
+        model_type="execute",
+        status="failed",
+    )
+    prompt = session_handoff.compose_prompt(predecessor, tmp_path / "conversation.md", ())
+    assert f"引き継ぎ記録先: {handoff}（継続）" in prompt
+    assert expected in prompt
+    assert ("この引き継ぎ記録を最初に読み" in prompt) is (observed == "file")
+    # 記録を読めない場合の指示と、記録の記述との比較の指示が同時に配送されないよう、比較は読めた場合に限る。
+    assert "引き継ぎ記録を読めた場合はその記述とも比べ" in prompt
+    assert "引き継ぎ記録がある場合" not in prompt
+
+
 @pytest.mark.asyncio
 async def test_turn_history_survives_collection_release_and_registry_restart(tmp_path: pathlib.Path) -> None:
     """回収・解放後も登録簿の同じ7日保持内で追送と応答と終了理由を引き継げる。"""

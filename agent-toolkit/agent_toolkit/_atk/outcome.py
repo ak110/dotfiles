@@ -73,6 +73,7 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk config apply-preset",
         "atk review-table add",
         "atk review-table respond",
+        "atk review-table recheck",
         "atk review-table validate",
     }
 )

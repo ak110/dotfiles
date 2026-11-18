@@ -15,6 +15,9 @@ from agent_toolkit._testing.review_table_support import _TRACK, _isolated_home
 
 __all__ = ["_isolated_home"]
 
+# round 2への登録でCLIが求める指摘本文の必須ラベル。本文の保持を確かめる試験は、検証対象の本文をこの後ろへ置く。
+_LABELS = "類似見直し完了件数: 3\n区分: 新しい変更\n"
+
 
 def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -24,8 +27,8 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     table.add(path, "1", _TRACK, "元の位置", "保持する指摘")
     assert capsys.readouterr().out.startswith("成功: 指摘行を1件追加した:")
     items = [
-        {"location": "日本語の位置\n行2\t列", "issue": '複数行\n"引用"と`記号`\t$(保持)', "level": "仕様"},
-        {"location": "別の位置", "issue": "結合文字e\u0301を保持\n", "level": "実装"},
+        {"location": "日本語の位置\n行2\t列", "issue": _LABELS + '複数行\n"引用"と`記号`\t$(保持)', "level": "仕様"},
+        {"location": "別の位置", "issue": _LABELS + "結合文字e\u0301を保持\n", "level": "実装"},
     ]
     source = tmp_path / "items.json"
     source.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
@@ -71,26 +74,40 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
 @pytest.mark.parametrize(
     "suffix",
     [
-        {"location": "後半", "issue": "不正", "level": "重大"},
-        {"location": "後半", "issue": "不正"},
+        {"location": "後半", "issue": _LABELS + "不正", "level": "重大"},
+        {"location": "後半", "issue": _LABELS + "不正"},
         {"location": "後半", "issue": 1, "level": "詳細"},
-        {"location": "後半", "issue": "不正", "level": "詳細", "round": "3"},
-        {"location": "  ", "issue": "不正", "level": "詳細"},
-        {"location": "正常", "issue": "最初の行", "level": "詳細"},
-        {"location": "既存", "issue": "保存済み", "level": "詳細"},
+        {"location": "後半", "issue": _LABELS + "不正", "level": "詳細", "round": "3"},
+        {"location": "  ", "issue": _LABELS + "不正", "level": "詳細"},
+        {"location": "正常", "issue": _LABELS + "最初の行", "level": "詳細"},
+        {"location": "既存", "issue": _LABELS + "保存済み", "level": "詳細"},
+        {"location": "後半", "issue": "類似見直し完了件数を書いていない", "level": "詳細"},
+        {"location": "後半", "issue": "類似見直し完了件数: 全部\n区分: 新しい変更", "level": "詳細"},
+        {"location": "後半", "issue": "類似見直し完了件数: 3\n区分: 不明", "level": "詳細"},
     ],
-    ids=["level", "missing-key", "value-type", "extra-key", "empty-location", "batch-duplicate", "existing-duplicate"],
+    ids=[
+        "level",
+        "missing-key",
+        "value-type",
+        "extra-key",
+        "empty-location",
+        "batch-duplicate",
+        "existing-duplicate",
+        "missing-similar-review",
+        "non-numeric-similar-review",
+        "invalid-classification",
+    ],
 )
 def test_public_add_items_rejects_invalid_later_item_without_partial_write(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], suffix: dict[str, str | int]
 ) -> None:
-    """後半の不正や重複がある配列では、先頭の正常な指摘も保存しない。"""
+    """後半の不正や重複、必須ラベルの欠落がある配列では、先頭の正常な指摘も保存しない。"""
     path = tmp_path / "plan.exec-review.tsv"
-    table.add(path, "2", _TRACK, "既存", "保存済み")
+    table.add(path, "2", _TRACK, "既存", _LABELS + "保存済み")
     before = path.read_bytes()
     source = tmp_path / "items.json"
     source.write_text(
-        json.dumps([{"location": "正常", "issue": "最初の行", "level": "詳細"}, suffix], ensure_ascii=False),
+        json.dumps([{"location": "正常", "issue": _LABELS + "最初の行", "level": "詳細"}, suffix], ensure_ascii=False),
         encoding="utf-8",
     )
     capsys.readouterr()
@@ -142,7 +159,9 @@ def test_public_add_items_detects_changed_saved_rows(
     path = tmp_path / "plan.exec-review.tsv"
     table.add(path, "1", _TRACK, "既存", "保持する指摘")
     source = tmp_path / "items.json"
-    source.write_text('[{"location":"位置","issue":"内容","level":"仕様"}]', encoding="utf-8")
+    source.write_text(
+        json.dumps([{"location": "位置", "issue": _LABELS + "内容", "level": "仕様"}], ensure_ascii=False), encoding="utf-8"
+    )
     original_write = table._write_atomic  # pylint: disable=protected-access
 
     def changed_write(target: pathlib.Path, rows: list[list[str]]) -> None:

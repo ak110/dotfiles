@@ -203,6 +203,14 @@ def test_help_sections_and_builtin_help_are_japanese() -> None:
             assert "実行するサブコマンド" in help_text, command
 
 
+def _sample_value(action: argparse.Action) -> str:
+    """引数が受理する値の例を返す。整数を返す独自の型変換（`review-table`の`--row-id`など）にも整数を渡す。"""
+    if action.choices:
+        return str(next(iter(action.choices)))
+    returns_int = getattr(action.type, "__annotations__", {}).get("return") in (int, "int")
+    return "1" if action.type in (int, float) or returns_int else "value"
+
+
 def _required_arguments(parser: argparse.ArgumentParser) -> tuple[list[str], argparse.ArgumentParser]:
     arguments: list[str] = []
     for action in parser._actions:  # pylint: disable=protected-access
@@ -213,7 +221,7 @@ def _required_arguments(parser: argparse.ArgumentParser) -> tuple[list[str], arg
                 arguments.extend((name, *child_arguments))
                 return arguments, target
             continue
-        value = str(next(iter(action.choices))) if action.choices else "1" if action.type in (int, float) else "value"
+        value = _sample_value(action)
         if action.option_strings:
             if action.required:
                 option = next(option for option in action.option_strings if option.startswith("--"))
@@ -225,7 +233,7 @@ def _required_arguments(parser: argparse.ArgumentParser) -> tuple[list[str], arg
         if not group.required:
             continue
         action = group._group_actions[0]  # pylint: disable=protected-access
-        value = str(next(iter(action.choices))) if action.choices else "1" if action.type in (int, float) else "value"
+        value = _sample_value(action)
         option = next(option for option in action.option_strings if option.startswith("--"))
         arguments.extend((option, value))
     return arguments, parser
@@ -279,9 +287,7 @@ def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.Captu
             continue
         for action in target._actions:  # pylint: disable=protected-access
             if not action.option_strings and action.nargs == "?":
-                arguments.append(
-                    str(next(iter(action.choices))) if action.choices else "1" if action.type in (int, float) else "value"
-                )
+                arguments.append(_sample_value(action))
         parsed = parser.parse_args([*arguments, "--", flags[0]])
         assert not capsys.readouterr().err
         # 可変個の位置引数とREMAINDERが消費する文字列は従来の意味を保つ。

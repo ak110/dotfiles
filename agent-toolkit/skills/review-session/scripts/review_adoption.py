@@ -18,7 +18,7 @@ from typing import Any
 from cost_metrics import _history, saved_review_tables
 from session_evidence_stats import _parse_cli_timestamp
 
-from agent_toolkit._atk import review_table
+from agent_toolkit._atk import review_table_format
 from agent_toolkit._common import private_notes
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.runtime_identity import distinct_identities
@@ -152,12 +152,12 @@ def _period_events(
         summary["excluded_judgment_count"] += len(table.judgment_rows)
         summary["excluded_judgments"].extend({"table": str(table.path), "row": number} for number, _ in table.judgment_rows)
         for number, row in table.rows:
-            state = review_table.response_state(row)
+            state = review_table_format.response_state(row)
             level = row[_LEVEL] or "未記録"
             for counts in (summary, summary["by_level"][level], summary["by_model"][model]):
                 counts[state] += 1
             if state == "rejected":
-                reason = review_table.rejection_reason_class(row[_NO_RESPONSE])
+                reason = review_table_format.rejection_reason_class(row[_NO_RESPONSE])
                 summary["by_reason"][reason] += 1
                 rejections.append(
                     {
