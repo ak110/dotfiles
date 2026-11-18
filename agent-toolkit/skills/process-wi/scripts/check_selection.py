@@ -106,6 +106,7 @@ from check_selection_norms import (
 )
 from check_selection_paths import clear_caches, reflected_paths
 from selection_merge import (
+    TemporaryLaneCollisionError,
     extend_write_targets,
     merge_rerecord_pairs,
     merge_selection,
@@ -594,6 +595,10 @@ def main(argv: list[str] | None = None) -> int:
                 merged = merge_selection(selection, addition, mapping, updates)
                 rerecord = merge_rerecord_pairs(selection, addition, merged), _NEXT_OVERLAP_MISSING_MERGE
                 selection = merged
+            except TemporaryLaneCollisionError as error:
+                raise InputError(
+                    str(error), next_action="仮名を既存レーン名と重ならない名前へ付け替えて同じコマンドを再実行する"
+                ) from error
             except (OSError, ValueError) as error:
                 raise InputError(
                     str(error), next_action="追加入力・レーン対応JSON・費用更新JSONを直して同じ統合操作を再実行する"

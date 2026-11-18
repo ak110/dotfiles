@@ -24,6 +24,13 @@ _NORM_SPEC_KEY = "プロジェクト規範の指定"
 _EXTEND_FIELDS = frozenset({_selection.WI_KEY, _selection.WRITE_FILES_KEY, _selection.DERIVED_NEW_PATHS_KEY, _NORM_SPEC_KEY})
 
 
+class TemporaryLaneCollisionError(ValueError):
+    """追加側の仮名が既存レーンと同じ名前で、その名前以外の最終レーンへ写る。
+
+    合流前の配置では、その仮名の追加分と同じ名前の既存分が同じレーンに並び、その組を判定する重なりの記録を書けない。
+    """
+
+
 def _covers(entry: str, path: str) -> bool:
     """`check_selection.py`の同名の判定と同じく、`entry`が`path`と同じか、末尾`/`の範囲として配下に含むかを返す。"""
     return entry == path or (entry.endswith("/") and path.startswith(entry))
@@ -381,6 +388,12 @@ def merge_selection(
     ):
         raise ValueError("レーン対応は追加側の全対象レーンだけをキー、最終レーンを空でない文字列の値とする")
     mapping = typing.cast(dict[str, str], lane_map)
+    existing_lanes = {str(item[_selection.LANE_KEY]) for item in first}
+    collided = sorted(lane for lane, final in mapping.items() if lane in existing_lanes and final != lane)
+    if collided:
+        raise TemporaryLaneCollisionError(
+            f"既存レーンと同じ名前の仮名を別の最終レーンへ写す対応は、合流前の配置で既存分との組を記録できない: {collided}"
+        )
     if cost_updates is not None:
         errors = selection_contract.cost_update_errors(cost_updates, set(mapping.values()))
         if errors:
