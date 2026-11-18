@@ -315,6 +315,48 @@ async def test_client_stopped_during_update_resumes_after_publisher_keeps_accept
 
 
 @pytest.mark.asyncio
+async def test_prepare_move_failure_after_client_stopped_adopts_session_back(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """準備中に止めたclientで、移譲先へ届かない予約の要求が例外を出したら、取り込み直して制御の受付を残さない。
+
+    公開元が既に終了して接続先が無い状態を、実在しないsocketのendpointと実物のservice_rpc.requestで作る。
+    """
+    coordinator, session, backend = _coordinator(tmp_path, monkeypatch)
+    coordinator.projections = types.SimpleNamespace(freeze=AsyncMock(), thaw=AsyncMock(), inventory=dict)
+    coordinator.registrations = types.SimpleNamespace(freeze=AsyncMock(), thaw=Mock())
+    descriptor = _stoppable_client(coordinator, session, backend)
+    client = backend._clients[session.session_id]
+    monkeypatch.setattr(coordinator.registry, "restore", Mock(side_effect=OSError("registry.restore")))
+    dead_process = "2147483647:dead"
+    await coordinator.prepare("token", {"generation": "G4", "epoch": 4, "process": dead_process})
+    assert client.transferred
+    dead_source = {
+        "generation": "G4",
+        "epoch": 4,
+        "process": dead_process,
+        "endpoint": r"\\.\pipe\no-such-pipe" if os.name == "nt" else "/nonexistent/no-such-socket",
+    }
+    monkeypatch.setattr(coordinator.registry, "current", lambda: dead_source)
+    requests: list[tuple[str, str]] = []
+    real_request = service_rpc.request
+
+    async def recording_request(target: dict, operation: str, arguments: dict, **kwargs: Any) -> Any:
+        requests.append((target["generation"], operation))
+        return await real_request(target, operation, arguments, **kwargs)
+
+    monkeypatch.setattr(service_rpc, "request", recording_request)
+    async with asyncio.timeout(5):
+        with pytest.raises(FileNotFoundError):
+            await coordinator.move(session.session_id)
+    assert requests == [("G4", "prepare_move")]
+    backend.adopt_session.assert_awaited_once_with(session, descriptor, {})
+    assert session.session_id not in coordinator.gate._paused
+    assert session.session_id not in coordinator._uncertain
+
+
+@pytest.mark.asyncio
 async def test_failed_move_on_owner_reports_undelivered_input_and_next_action(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
