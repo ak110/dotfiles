@@ -118,8 +118,8 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                 if response is not None and response.get("ack") and response.get("resume_only"):
                     parts.append(
                         message_format.auto_message(
-                            "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元のgoalを確認し、"
-                            "最初の未完了工程から続行せよ。未達goalを達成扱いに変えず、成功済みの操作を繰り返すな。",
+                            "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元の目的を確認し、"
+                            "最初の未完了工程から続行せよ。未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
                             source="process-loop",
                             kind="resume",
                         )

@@ -105,7 +105,7 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
         この上限へ達した応答は`status`と`elapsed_seconds`を返す。
         保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
-        完了通知で同じセッションへ再開できる待機は、goalの有無や対象の種類・件数によらず、
+        完了通知で同じセッションへ再開できる待機は、対象の種類・件数によらず、
         `atk agents wait`をホストのバックグラウンドタスクとして起動する。
         通知による再開が無い環境では、委譲元は公開された待機手段で終了を確定する。
         起動と回収はdelegationの`references/waiting-and-monitoring.md`「待機区間の構成」に従う。

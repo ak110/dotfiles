@@ -15,7 +15,6 @@
 hookの追加や変更をする際は、出力契約と検証処理を同じ変更単位で更新する。
 
 Claude Codeの`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器がモデルの応答をJSONとして解析できなかった場合に発生する。
-`/goal`コマンドはセッション中のみ有効なプロンプト型Stop hookを登録するため、`/goal`を設定したセッションでは、コマンド型hookの出力形式にかかわらずこの表示が現れることがある。
 該当節は「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日」である。
 
 PreToolUse、PostToolUse、UserPromptSubmitでエージェントに行動を促す際は、`hookSpecificOutput.additionalContext`を第一の通知手段として用いる。

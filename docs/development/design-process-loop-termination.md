@@ -5,14 +5,16 @@
 ## Codexのprocess-loopセッションの終了
 
 起動目的は初回・再開、manifestの有無によらず、統括セッション自身が担当するprocess-wi all-reposの工程の完遂を示す。
-目標の評価は目的文の字義で達成を判定するため、正当な先送りを結果へ記録した終了を完遂に含め、統括の終了後に常駐が行う検収を含まないことを短く併記する。
+目的文は、正当な先送りを結果へ記録した終了を完遂に含め、統括の終了後に常駐が行う検収を含まないことを短く併記する。
+この併記は、目的文の字義で達成を判定した`/goal`の評価（2026年11月に統括から撤去）に備えて加えた。
 スキル全体の完遂だけを示した目的文では、評価が常駐の検収や先送りした項目まで統括の未達と解釈し、正当な先送りで終える回の終了を繰り返し拒否した（2026年11月6日の観測）。
 集合JSONと可変入力は`AGENT_TOOLKIT_SESSION_START_INPUT`からSessionStartへ渡し、機械生成の出所を付けて配送する。
 成功・正当な未完了終了・回復可能な残工程の判断はall-repos「結果と終了」が所有し、目的文へ恒久的な終了細則を再掲しない。
 ホストごとの目的入力の違いと終了能力の判定は保持する。
 目的文にmanifestや終了手順を連結する案は、反復評価の対象と更新箇所を増やすため採らない。
 
-ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:report-completion`が元の作業の完了報告を送り、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。
+ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:report-completion`が元の作業の完了報告を送り、続いて`atk agents-exit-session`がセッションを終了する。
+終了工程の実行記録が無い終了は、Stop hookの`autonomous_exit.py`が遮断して続行させる（[design-hooks-termination-evidence.md](design-hooks-termination-evidence.md)「自動起動セッションの続行の判定」）。
 振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動になったセッションを非同期に分析する（`design-session-review-completion.md`「完了報告と振り返りの関係」）。
 その結果は作業完了報告とは独立して届ける。
 起動時の終了能力probeと、停止要求の直前に終了対象を新規識別する扱いは`design-workflow-termination.md`「セッションの終了」にある。

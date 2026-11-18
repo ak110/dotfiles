@@ -68,7 +68,7 @@ def read(environ: Mapping[str, str]) -> dict[str, Any] | None:
 
 
 def acknowledge(environ: Mapping[str, str], *, resume_only: bool | None = None) -> None:
-    """所有とmanifestの確定後にだけ、元goalの続行を許可する。"""
+    """所有とmanifestの確定後にだけ、元の目的の続行を許可する。"""
     request = _request(environ)
     response = read(environ)
     if request is None or response is None:

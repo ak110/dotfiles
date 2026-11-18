@@ -88,6 +88,7 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 最終応答は`last_assistant_message`、要約作成後の新しい発話はCodexの`event_msg`の`user_message`で読む。
 終了工程の非遮断支援は関連操作と文書へ置く。
 出力は`decision`と`reason`だけ、許可時は空のJSONとする。
+2026年11月からは、下記「自動起動セッションの続行の判定」の`autonomous_exit`と`run_skill_report_gate`もCodexのStopで実行する。
 他のStop判定はClaude Codeの記録形式と通知手段を前提とするため、Codexへ広げない。
 検出の保証範囲は判定器の出力までとし、無効化されたhook、Codexの未信頼設定、ホストの強制終了と連続block上限による終了は保証の外に置く。
 ホスト本体のStopの発火と継続は公開仕様で確認し、実機の発火試験は行っていない。
@@ -99,3 +100,72 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 毎回のStopで別モデルが意味を評価する案は、恒常の費用と誤判定を加える。
 工程ごとに完了フラグや別のStop登録を加える案は、自己申告と起動の重複を生む。
 2026年9月28日に可視発話の規範だけを選びStop hookを加えなかった判断（`incidents-reporting.md`「誤った完了報告と虚偽報告」）は当時の記録として保持し、本機構はその後のユーザーの要求による見直しとする。
+
+## 自動起動セッションの続行の判定
+
+2026年11月、process-loopの統括と`atk run-skill`が起動するセッションの起動からホストの`/goal`を外し、完了までの続行をagent-toolkitのStop hookへ移した。
+ユーザーは、`/goal`の働きは「Stopの時点で判定して未達なら続行する」ことだけであり、ホストごとに挙動が違うためhook側へ吸収するよう求めた。
+未達の判定には、観測できる証拠による機械判定を選んだ（2026年11月15日の確認回答）。
+変更前は、Claude Codeだけがホストの`/goal`で続行していた。
+Codexには続行させる仕組みが無く、Antigravityは統括を終える終了工程を実行できなかった。
+`/goal`の評価は中身を調整できないLLM判定で、次の問題を起こしていた。
+
+- 目的文の字義解釈による正当な終了の拒否（2026年10月30〜31日、11月5日、11月6日。[design-cli-run-skill.md](design-cli-run-skill.md)、[design-process-loop-termination.md](design-process-loop-termination.md)）
+- バックグラウンドタスクの通知待ちを未完了と読む継続の反復（2026年9月30日に5回。[design-hooks-stop-notices.md](design-hooks-stop-notices.md)「未配送通知」）
+- 権限拒否で進めない状態での評価と無進捗ターンの往復（2026年9月17日。`busy_loop_guard.py`の導入理由）
+
+統括の`/goal`は`7d0179d1d`（2026年8月5日）で入り、ユーザーが利用を要件として指定した記録は見つからなかった。
+
+3つのホストとも、目的文（`atk-auto`要素の本文）を通常の最初の入力として渡す。
+目的文の本体はセッション記録から統括を判別する処理（`session_records.py`）が使うため保つ。
+続行は次の2つの判定が担う。
+
+- process-loopの統括の最上位: `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`が、終了工程`atk agents-exit-session`の実行記録が無い終了を遮断する。
+- `atk run-skill`の最上位: `agent-toolkit/agent_toolkit/_hooks/run_skill_report_gate.py`が、その実行の報告用UWIの保存を確認するまで終了を遮断する。
+  保存の基準は起動元の検収（`agent-toolkit/agent_toolkit/_atk/wi/add_reports.py`の`has_synced_run_report`）と同じにし、hookを通過した終了が起動元の検収で失敗しないようにする。
+  前提不足で未完了のまま終える実行も報告を保存するので、同じ判定で終了できる。
+
+対象は環境印（process-loopの印と`AGENT_TOOLKIT_RUN_SKILL_ID`）で識別した最上位に限り、委譲先と人が使う対話セッションには働かない。
+機械判定が見るのは終了工程の実行と報告の保存であり、作業内容の未達は見ない。
+作業内容の未達は、常駐が統括の終了後に行う検収（`process_loop.py`の`run_coordinator`）とrun-skillの起動元の検収が検出する。
+`/goal`の評価が早すぎる終了を防いだ件数の記録は無い。
+
+ホストごとの扱いは次のとおりである。
+3つのホストとも、Stopの遮断は同じターンの続行として働く。
+
+- Claude Code: 両判定をStopの判定一覧で実行する。
+  非対話の`claude -p`はバックグラウンドタスクの完了通知で同じ会話が再開する（`audit-records-hooks-lifecycle.md`の2026年10月10日の実機観測）。
+  非同期処理または未回収の結果が残る間は`is_pending_async_work`で終了を許し、再開後のStopで改めて判定する。
+- Codex: `stop.py`の`CODEX_CHECK_MODULE_NAMES`へ両判定を加える。
+  Codexの最上位には背景の完了通知で会話が再開する待機が無く、結果は同じターンの中で回収する規範である（`waiting-and-monitoring-intervals.md`）。
+  このため、非同期処理の待ちで終了を許す分岐をCodexでは使わない。
+  公式のHooks仕様（2026年11月15日取得）は、Stopの`decision: "block"`が`reason`を新しい入力として続行させると定める。
+  codex-cli 0.169.0の`codex exec --json`でも、遮断の後に同じターンの中で2つ目の回答が出力されてから終了した。
+- Antigravity: 変換層（`agent-toolkit/agent_toolkit/_hooks/antigravity.py`）がStopで全判定を呼ぶので、判定は追加しない。
+  変換層は遮断を`decision: "continue"`へ変換する（agy 1.5.6の`agy -p`で続行を観測）。
+  `atk agents-exit-session`は、Linuxの対話agy（`-p`でなく端末を持つ起動）を終了対象として識別し、終了要求（SIGTERM）を送る。
+  未終了のネイティブ子は変換層が`background_tasks`として渡すので、非同期処理の待ちで終了を許す既存の分岐を使う。
+
+Stopの共通ハンドラー（`stop.py`）は連続7回で遮断を打ち切る。
+Claude Codeが8回連続の遮断を無視してターンを終えるためである。
+`/goal`が無いと、打ち切り後の対話型の統括は入力待ちのまま残る。
+そこで、打ち切りに達したprocess-loopの統括の最上位は、`busy_loop_guard.py`の停止工程と同じ終了要求でセッションを終え、常駐側の検収へ戻す。
+終了要求はClaude Codeではターン後の`/exit`、CodexとAntigravityでは単一PIDへのSIGTERMである。
+run-skillでは打ち切り後にCLIが終了し、起動元が既存の「報告用UWI未保存」の失敗として報告する。
+`busy_loop_guard.py`は保つ。
+遮断と無進捗ターンの往復は、`/goal`が無くても同じ形で起こるためである。
+
+人が手動で`/goal`を設定したセッションは想定しない（2026年11月15日のユーザーの確認回答「撤去する」）。
+直近30日のClaude Codeのセッション記録では、`/goal`の入力109回のうち107回が統括の自動起動、残る2回が検証用で、人が作業のために使った記録は無かった。
+撤去後に手動で`/goal`を設定すると、終了時の応答が`…`だけのため目標評価が完了を読み取れず、終了を拒否することがある（`/goal`の解除で止まる）。
+ユーザーはこの結果を承知している。
+変更の反映前に`/goal`付きで始まった統括とrun-skillの会話は、利用上限の解除後などに目標を保ったまま再開する。
+このため、担当工程完了の終了応答を完了の1文にする扱いと、最終ターン終了前に定期再確認taskを回収する手順は、統括とrun-skillのセッションを条件にして残す（[design-hooks-periodic-recheck.md](design-hooks-periodic-recheck.md)）。
+ホストが挿入した本文や環境変数を見分ける処理は残す。
+対象は`agent_toolkit/_common/runtime_inserted.py`の`Goal check-in:`と、`mcp_environment.py`の`CLAUDE_CODE_GOAL_CHECKIN_MINUTES`である。
+どちらも過去のセッション記録の分類に使い、`/goal`の利用を前提にした振る舞いを持たない。
+撤去の記録は[removed-mechanisms-workflows.md](removed-mechanisms-workflows.md)にある。
+
+却下した案は2つある。
+hookから軽量モデルを呼んで目的の達成を評価する案は、Stopごとの費用と待ち時間、評価文の調整が残り、字義解釈による誤拒否を自前で再現するため採らない（ユーザーが確認回答で機械判定を選択）。
+Claudeだけ`/goal`を残してCodexにだけ判定を足す案は、ホスト間の差と二重の仕組みが残るため採らない。

@@ -111,10 +111,10 @@ def resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
 
 
 def build_resume_prompt() -> str:
-    """元のgoalと保存済み成果を保ち、同じ実行の残工程だけを続行させる。"""
+    """元の目的と保存済み成果を保ち、同じ実行の残工程だけを続行させる。"""
     return _automated_prompt.wrap(
-        "保存済みの要求・認可・元のgoalと成果を確認し、最初の未完了工程から続行せよ。"
-        "未達goalを達成扱いに変えず、成功済みの操作を繰り返すな。",
+        "保存済みの要求・認可・元の目的と成果を確認し、最初の未完了工程から続行せよ。"
+        "未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind="resume",
     )

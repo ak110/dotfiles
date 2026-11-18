@@ -102,7 +102,7 @@ def test_stop_accepts_send_to_user_message_after_human_input(
 ) -> None:
     """send_to_userの`message`はユーザーの画面へ届く本文であり、応答として数える。
 
-    送達後の最終応答は、`…`でも、`/goal`の設定下で返す完了の1文でも通知しない。
+    送達後の最終応答は、`…`でも、process-loopの統括と`atk run-skill`が起動したセッションで返す完了の1文でも通知しない。
     """
     call = {
         "type": "tool_use",

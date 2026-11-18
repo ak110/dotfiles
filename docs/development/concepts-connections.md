@@ -73,14 +73,14 @@
 | --- | --- |
 | Claudeメイン、Remote Control接続 | Function hooksが解除後の再開を予約する |
 | Claudeメイン、Remote Control非接続 | ホストの自動継続を保ち、Function hooksも再開を予約する。解除後に既にturnが始まっていれば重複投入しない |
-| Claudeのprocess-loopの子 | Remote Controlを無効にした対話起動で既存のホストの自動継続とgoalの再開を保ち、次の反復の可用性判定も解除を待つ |
+| Claudeのprocess-loopの子 | Remote Controlを無効にした対話起動で既存のホストの自動継続を保ち、次の反復の可用性判定も解除を待つ |
 | Claudeのrun-skill | スキル実行中の上限でも解除後に同じ会話をresumeする |
 | Claudeのcommit | 既存の解除待ちと同じ会話のresumeを保つ |
 | agents_serverのClaude委譲先 | 既存の解除待ちと再開を保ち、Function hooksによる再開予約からは除外する。待機中の委譲先を保持する停止判断と、前項のAPI移行設定を適用する |
 | Agentツールのサブエージェント | メインのセッションの一部であり、メインの再開で委譲元が続ける |
 | Codexのrun-skill | 解除後に`codex exec resume`で同じ会話を再開する |
 | Codexのprocess-loopの子 | 上限で止まった所有する子を終了し、次の反復の候補判定を経てレーンとWIから続ける |
-| 端末で`codex`を直接起動した対話画面 | 自動再開しない。外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないため（2026年10月24日の実機観測、[design-agents-runtime-handoff-resume.md](design-agents-runtime-handoff-resume.md)）。解除後に`/goal resume`か発話で続ける |
+| 端末で`codex`を直接起動した対話画面 | 自動再開しない。外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないため（2026年10月24日の実機観測、[design-agents-runtime-handoff-resume.md](design-agents-runtime-handoff-resume.md)）。解除後に発話で続ける |
 | Codex TUIの子thread | 親threadの再開で親が続ける |
 | agents_serverのCodex委譲先 | run-skillとprocess-loopの再開の対象外。既存の接続先移行と、終了した前任からの引き継ぎ起動で扱う |
 | Codexのcommit | `--ephemeral`の単発操作であり、失敗を終了コードと次の操作として呼出元のエージェントへ返す |
