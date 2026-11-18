@@ -120,6 +120,10 @@ class _MemoryAppServer(codex.JsonRpcProcess):
         self.stream.feed_data((json.dumps({"id": message["id"], "result": result}) + "\n").encode())
         if method == "turn/start":
             self.emit("turn/started", {"threadId": "reset-thread", "turn": {"id": f"turn-{self.turn_count}"}})
+        elif method == "turn/interrupt":
+            # 実Codexと同じく、応答の後に中断したturnの終了を通知する。
+            turn = {"id": params["turnId"], "status": "interrupted", "error": None, "items": []}
+            self.emit("turn/completed", {"threadId": params["threadId"], "turn": turn})
 
     def emit(self, method: str, params: dict[str, Any]) -> None:
         self.stream.feed_data((json.dumps({"method": method, "params": params}) + "\n").encode())
