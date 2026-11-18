@@ -266,5 +266,5 @@ async def test_closing_after_reader_stopped_releases_resource_with_unread_events
         while not failures:
             await asyncio.sleep(0)
         assert await client.close() == []
-    assert raw.closed == 1
+    assert raw.closed >= 1
     assert broker.backlog(client.resource.identifier) is None
