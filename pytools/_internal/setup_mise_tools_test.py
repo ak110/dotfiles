@@ -416,6 +416,14 @@ def test_install_failure_is_skipped_warning_with_separate_next_action(
         assert progress not in record.getMessage()
 
 
+def _link_directory(link: Path, target: Path) -> None:
+    """既存の接続を、Windowsでは特権の要らないジャンクションで、他ではシンボリックリンクで用意する。"""
+    if os.name == "nt":
+        subprocess.run(["cmd", "/d", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True, timeout=10)
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
 class TestTypeScriptLspConnection:
     """通常更新が独立prefixを接続し、独自成果を保持する。"""
 
@@ -439,19 +447,20 @@ class TestTypeScriptLspConnection:
         )
         return server / "node_modules" / "typescript", source
 
+    @pytest.mark.windows
     def test_run_connects_and_repeats_without_changing_link(
         self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
         link, source = self._layout(tmp_path, mise_stub)
         _setup_mise.run()
-        assert link.is_symlink()
-        assert link.readlink() == source
+        assert os.path.samefile(link, source)
         before = link.lstat()
         _setup_mise.run()
         assert link.lstat() == before
         assert (link / "lib" / "tsserver.js").is_file()
 
+    @pytest.mark.windows
     @pytest.mark.parametrize("kind", ["directory", "custom-link", "old-link"])
     def test_run_preserves_custom_entries_and_updates_old_managed_link(
         self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, kind: str
@@ -465,17 +474,17 @@ class TestTypeScriptLspConnection:
         else:
             target = old if kind == "old-link" else tmp_path / "custom"
             target.mkdir(parents=True)
-            link.symlink_to(target, target_is_directory=True)
+            _link_directory(link, target)
             marker = target / "custom.txt"
         marker.write_text("keep", encoding="utf-8")
         _setup_mise.run()
         assert marker.read_text(encoding="utf-8") == "keep"
         if kind == "old-link":
-            assert link.readlink() == source
+            assert os.path.samefile(link, source)
         elif kind == "directory":
             assert not link.is_symlink()
         else:
-            assert link.readlink() == tmp_path / "custom"
+            assert os.path.samefile(link, tmp_path / "custom")
 
     @pytest.mark.windows
     @pytest.mark.skipif(os.name != "nt", reason="特権の要らないジャンクションでの接続をWindows実機で確かめる")
@@ -489,9 +498,7 @@ class TestTypeScriptLspConnection:
         old = source.parent.parent.parent / "6.0.2" / "node_modules" / "typescript"
         old.mkdir(parents=True)
         if old_kind == "junction":
-            subprocess.run(
-                ["cmd", "/d", "/c", "mklink", "/J", str(link), str(old)], check=True, capture_output=True, timeout=10
-            )
+            _link_directory(link, old)
         else:
             try:
                 link.symlink_to(old, target_is_directory=True)

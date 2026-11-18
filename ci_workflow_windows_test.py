@@ -99,6 +99,10 @@ _WINDOWS_CROSS_PLATFORM_TESTS = {
         "test_basics_reference_uses_observed_manifest_and_path",
         "test_chezmoi_source_and_distribution_link_require_full_body",
     },
+    "pytools/_internal/setup_mise_tools_test.py": {
+        "test_run_connects_and_repeats_without_changing_link",
+        "test_run_preserves_custom_entries_and_updates_old_managed_link",
+    },
     "pytools/_internal/update_claude_settings_test.py": {
         "test_placeholder_replaced_in_string",
         "test_placeholder_replaced_recursively_in_nested_structures",
