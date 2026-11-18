@@ -157,6 +157,13 @@ class TestStepFailureStopsExecution:
         assert not ready.exists()
         assert "chezmoi status" in capsys.readouterr().err
 
+    @pytest.mark.cpu_limit(
+        1.5,
+        reason=(
+            "実Gitのbare上流・clone・pull --rebaseと回復処理で多数のgitを起動し、差分破棄の失敗後もpullへ進むことを確かめる"
+            "（単独実行の所有CPUは約0.15秒）。"
+        ),
+    )
     def test_mise_lock_discard_failure_continues_update(
         self,
         monkeypatch: pytest.MonkeyPatch,

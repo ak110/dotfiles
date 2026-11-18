@@ -228,6 +228,10 @@ def test_mixed_skill_body_does_not_replace_main_skill_invocation(tmp_path, monke
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize("sed", ["sed", "/bin/sed", "/usr/bin/sed"])
 @pytest.mark.usefixtures("memory")
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="実bashで複合読取を3回実行し、各回の出力を公開入口で観測する（単独実行の所有CPUは最大0.21秒）。",
+)
 def test_public_compound_reads_before_diagnostics_record_received_ranges(tmp_path, monkeypatch, host, sed, host_environ):
     """独立診断を含む実出力から、受信した資料の必要範囲だけを取得済みとする。
 

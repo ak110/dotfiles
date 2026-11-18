@@ -36,6 +36,10 @@ def _short(repo: pathlib.Path, oid: str) -> str:
     return git_repository.git_output(repo, "rev-parse", "--short", oid)
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="commit作成・amend・rev-parseを実Gitで繰り返し起動して短縮OIDと履歴変更後の対応を確かめる（単独実行の所有CPUは約0.06秒）。",
+)
 def test_many_to_many_roundtrip_and_rewrite(repo: pathlib.Path) -> None:
     """複数AWIのcommitと複数commitのAWIを短縮OIDで保ち、amend後は新OIDだけを取得する。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
