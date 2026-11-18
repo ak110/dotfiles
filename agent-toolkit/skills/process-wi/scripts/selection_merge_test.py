@@ -917,3 +917,31 @@ def test_public_merge_preserves_derived_new_paths(
         for item in data["選定"]
     ]
     assert _dispatch(str(output), "--work-dir", str(repo)) == 0
+
+
+def test_merge_rejudges_new_pair_under_existing_record(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """既存レーンへ合流した追加WIと相手レーンのWIの組は、既存の記録で通さず追加側の記録で判定させる。
+
+    既存のlane-01（a）とlane-02（b）の記録はa-bの組だけを判定しており、lane-01へ合流するcとbの組を判定していない。
+    """
+    repo, existing, added = inputs
+    addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+    addition["選定"] = [_item("c.md", "lane-03")]
+    addition["レーンの所要時間"] = [_cost("lane-03")]
+    addition["レーン間の重なり"] = []
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-01"}), encoding="utf-8")
+    before = existing.read_bytes()
+    capsys.readouterr()
+    assert _merge_into_existing(repo, existing, added, mapping) == 1
+    assert "lane-01とlane-02: 重複パスの記録不足: README.md" in capsys.readouterr().err
+    assert existing.read_bytes() == before
+    addition["レーン間の重なり"] = [_overlap("lane-02", "lane-03")]
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    assert _merge_into_existing(repo, existing, added, mapping) == 0
+    assert yaml.safe_load(existing.read_text(encoding="utf-8"))["レーン間の重なり"] == [
+        {**_overlap("lane-01", "lane-02"), "レーン1の定義": ["lane-01の節", "lane-03の節"]}
+    ]

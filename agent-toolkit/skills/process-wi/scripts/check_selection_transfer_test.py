@@ -233,6 +233,27 @@ def test_transfer_into_integrated_lane_keeps_existing_items_integrated(
     assert path.read_bytes() == before
 
 
+def test_transfer_into_integrated_lane_carries_record_beside_unrecorded_integrated_pair(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """移管先の統合済み項目との組は全体検査が記録を求めないため、判定済みの組の記録の付け替えを妨げない。
+
+    統合済みのlane-03のdはaと`README.md`を共有するが、a-dの記録は無い。a-cの記録はcの移管先へ付け替わる。
+    """
+    repo, notes = env
+
+    def edit(data: dict[str, typing.Any]) -> None:
+        _share_readme(notes, data, {"a.md", "c.md", "d.md"})
+        next(row for row in data["レーンの所要時間"] if row["レーン"] == "lane-03")["統合状態"] = "統合済み"
+        data["レーン間の重なり"] = [_overlap("lane-01", "lane-02", ["aの節"], ["cの節"])]
+
+    path = _selection(tmp_path, repo, notes, edit=edit)
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert _transfer(path, repo, tmp_path, "c.md", "lane-03", {"lane-02": _COST, "lane-03": _COST}) == 0
+    after = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert after["レーン間の重なり"] == [_overlap("lane-01", "lane-03", ["aの節"], ["cの節"])]
+
+
 def test_transfer_drops_emptied_source_lane(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
     """移管元が空になるときはそのレーン行を除き、移管先の費用更新だけを求める。"""
     repo, notes = env
