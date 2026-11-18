@@ -288,6 +288,47 @@ def test_launcher_signal_reaches_bounded_reclaim(
             process_tree.reclaim_processes(targets, timeout=0.5)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの停止シグナルを終了診断の書込中に届ける")
+def test_launcher_keeps_exit_diagnostics_when_stopped_while_writing(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """終了診断の書込中に届いた停止シグナルで診断を失わず、受けたシグナルと子の終了状態を残す。"""
+    script = tmp_path / "launcher_probe.py"
+    diagnostics = tmp_path / "instance.jsonl"
+    script.write_text(
+        "import importlib.util, json, os, pathlib, signal, sys\n"
+        "if len(sys.argv) > 1:\n"
+        "    pathlib.Path(os.environ[sys.argv[1]]).write_text(json.dumps({'diagnostics_path': sys.argv[2]}))\n"
+        "    sys.exit(3)\n"
+        f"spec = importlib.util.spec_from_file_location('probe_launch', {str(_PROJECT_ROOT / 'scripts/launch.py')!r})\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(module)\n"
+        "from agent_toolkit._agents_server import logging_config\n"
+        "append = logging_config.append_instance_event\n"
+        "def stopped_while_writing(*args, **kwargs):\n"
+        "    os.kill(os.getpid(), signal.SIGTERM)\n"
+        "    return append(*args, **kwargs)\n"
+        "logging_config.append_instance_event = stopped_while_writing\n"
+        "child = [sys.executable, __file__, logging_config.LAUNCH_RECORD_ENV, "
+        f"{str(diagnostics)!r}]\n"
+        "sys.exit(module._run_agents_server(child, dict(os.environ)))\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        env=host_environ(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 3, result.stderr
+    [exited] = [json.loads(line) for line in diagnostics.read_text(encoding="utf-8").splitlines()]
+    assert (exited["event"], exited["returncode"]) == ("process_exited", 3)
+    assert [received["signal"] for received in exited["launcher_signals"]] == ["SIGTERM"]
+
+
 @pytest.mark.parametrize("parent_alive", [True, False])
 def test_windows_launcher_observes_parent_handle(
     launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, parent_alive: bool

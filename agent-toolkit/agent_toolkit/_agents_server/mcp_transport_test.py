@@ -15,7 +15,6 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 from collections.abc import AsyncGenerator, Callable, Generator
 from types import SimpleNamespace
 from typing import Any
@@ -312,15 +311,6 @@ def _launcher_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dic
     return environment
 
 
-def _wait_until_stopped(process: psutil.Process) -> None:
-    """プロセスが消えるかzombie・終了状態になるまで、上限付きで待つ。"""
-    deadline = time.monotonic() + _LAUNCH_TIMEOUT
-    with contextlib.suppress(psutil.NoSuchProcess):
-        while process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-            assert time.monotonic() < deadline, f"プロセス{process.pid}が停止していない"
-            time.sleep(0.05)
-
-
 class _LaunchedServer:
     """起動ランチャーまたは変更前の起動形でagents_serverを起動し、JSON-RPCを1行ずつ送受信する。"""
 
@@ -419,7 +409,7 @@ class _LaunchedServer:
                     command = process.cmdline()
                     if not command:
                         # 終了処理中のプロセスは、メモリ解放後からzombie化までの間もcmdlineが空になる。終了の完了を待つ。
-                        _wait_until_stopped(process)
+                        assert not process_tree.wait_until_released([process], timeout=_LAUNCH_TIMEOUT)
                         continue
                     assert command == arguments
                     result = process_tree.stop_tree(process)
@@ -504,13 +494,6 @@ class _LaunchedServer:
             logging_config.InstanceReference(path.stem, 1), state_root=self.state_dir
         )
         return reference["status"]
-
-    def await_event(self, name: str) -> None:
-        """診断ファイルに指定のイベントが現れるまで、上限付きで待つ。"""
-        deadline = time.monotonic() + _LAUNCH_TIMEOUT
-        while not any(event["event"] == name for event in self.events()):
-            assert time.monotonic() < deadline, f"診断に{name}が現れない"
-            time.sleep(0.05)
 
     def server_pid(self) -> int:
         return next(event["pid"] for event in self.events() if event["event"] == "started")
@@ -626,8 +609,6 @@ def test_launcher_records_server_kill(tmp_path: pathlib.Path, launcher_environme
         assert server.process.stdin is not None
         server.process.stdin.close()
         server.wait()
-        # process_exitedは転送側の終了後に残るsupervisorが書くため、現れるまで待つ。
-        server.await_event("process_exited")
 
         names = [event["event"] for event in server.events()]
         assert "exited" not in names
@@ -657,7 +638,7 @@ def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher
         server.process.stdin.close()
         server.wait()
         # 孤児の回収時機はPID 1に依存する。終了済みzombieは記録を書けず、PIDが残っていても停止済みである。
-        _wait_until_stopped(server_process)
+        assert not process_tree.wait_until_released([server_process], timeout=_LAUNCH_TIMEOUT)
 
         names = {event["event"] for event in server.events()}
         assert not names & logging_config.TERMINATION_EVENTS

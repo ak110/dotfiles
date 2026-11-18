@@ -281,7 +281,11 @@ def _run_agents_server(
         environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
         received = []
         tail = bytearray()
-        with _server_lifetime(arguments, environment, received, tail, inherit_stderr=independent) as process:
+        # 停止シグナルの記録handlerは終了診断を書き終えるまで保つ。
+        # 先に戻すと、書き終える前に届いたシグナルで記録せずに終了する。
+        with _server_lifetime(
+            arguments, environment, received, tail, inherit_stderr=independent, signal_scope=lifetime
+        ) as process:
             returncode = _wait_owned_server(process, received, lambda: True) if independent else _wait_server(process, received)
         if independent:
             # 子が世代stderrへ直接flushしてからpeerを閉じる。tee threadの配送待ちを診断へ残さない。
@@ -375,8 +379,12 @@ def _server_lifetime(
     stdin: BinaryIO | None = None,
     cwd: Path | None = None,
     inherit_stderr: bool = False,
+    signal_scope: contextlib.ExitStack | None = None,
 ) -> Generator[subprocess.Popen[bytes]]:
-    """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。"""
+    """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。
+
+    `signal_scope`を渡すと、signal handlerの復元をこの関数の終了ではなく`signal_scope`の終了まで延ばす。
+    """
     # Popen.__exit__の無期限waitを避け、bootstrap自身の有限なprocess group回収を使う。
     # 時間上限なし: 起動元（hook、MCP、CLI）へ終了状態を渡す中継であり、上限は起動元が持つ。
     with contextlib.ExitStack() as cleanup:
@@ -406,10 +414,11 @@ def _server_lifetime(
                     process.pid,
                 )
             if os.name != "nt":
+                restore = cleanup if signal_scope is None else signal_scope
                 for name in _FORWARDED_SIGNALS:
                     signum = getattr(signal, name)
                     previous = signal.signal(signum, _forwarding_handler(process, received))
-                    cleanup.callback(signal.signal, signum, previous)
+                    restore.callback(signal.signal, signum, previous)
             if process.stderr is not None:
                 reader = threading.Thread(target=_tee_stderr, args=(process.stderr, tail), daemon=True)
                 cleanup.callback(_join_reader, reader)
