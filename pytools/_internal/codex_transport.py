@@ -7,11 +7,11 @@ import contextlib
 import json
 import secrets
 from collections import deque
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Mapping
 from typing import Any
 
 import psutil
-from agent_toolkit._common import process_identity, process_tree
+from agent_toolkit._common import async_operations, process_identity, process_tree
 from pydantic import BaseModel, ConfigDict
 from wsproto import ConnectionType, WSConnection
 from wsproto.events import AcceptConnection, CloseConnection, Ping, RejectConnection, Request, TextMessage
@@ -145,17 +145,31 @@ async def native_proxy(binary: str, environment: Mapping[str, str], *, timeout: 
             raise ConnectionError(f"Codexのcontrol proxyへ接続できない: {diagnostic or process.returncode}") from error
         yield channel
     finally:
-        try:
-            if process.stdin is not None:
-                process.stdin.close()
-            if process.returncode is None:
-                try:
-                    await asyncio.wait_for(process.wait(), process_tree.RECLAIM_TIMEOUT_SECONDS)
-                except TimeoutError:
-                    result = await asyncio.to_thread(process_tree.stop_tree, identity)
-                    process_tree.log_residual(result.descriptions(), context="Codex control proxy")
-                    await asyncio.wait_for(process.wait(), process_tree.RECLAIM_TIMEOUT_SECONDS)
-        finally:
-            if stderr is not None:
-                stderr.cancel()
-                await asyncio.gather(stderr, return_exceptions=True)
+        # 中継の所有者が取り消されても回収を終える。途中で止めると、proxyとpipeのtransportがイベントループの終了後に残る。
+        await async_operations.finish_task(asyncio.create_task(_reclaim_proxy(process, identity, stderr)))
+
+
+async def _reclaim_proxy(
+    process: asyncio.subprocess.Process, identity: psutil.Process | None, stderr: asyncio.Task[bytes] | None
+) -> None:
+    try:
+        if process.stdin is not None:
+            process.stdin.close()
+        if process.returncode is None:
+            try:
+                await asyncio.wait_for(process.wait(), process_tree.RECLAIM_TIMEOUT_SECONDS)
+            except TimeoutError:
+                result = await asyncio.to_thread(process_tree.stop_tree, identity)
+                process_tree.log_residual(result.descriptions(), context="Codex control proxy")
+                await asyncio.wait_for(process.wait(), process_tree.RECLAIM_TIMEOUT_SECONDS)
+        # wait()は子の終了で戻り、pipeのtransportはEOFを処理してから閉じる。
+        # 閉じる前にイベントループが終わると、破棄時にWindowsのProactorがValueErrorを出す。
+        readers: list[Awaitable[bytes]] = [process.stdout.read()] if process.stdout is not None else []
+        if stderr is not None:
+            readers.append(stderr)
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(asyncio.gather(*readers, return_exceptions=True), process_tree.RECLAIM_TIMEOUT_SECONDS)
+    finally:
+        if stderr is not None:
+            stderr.cancel()
+            await asyncio.gather(stderr, return_exceptions=True)
