@@ -17,7 +17,18 @@ from typing import Any, cast
 
 import pytest
 
-from agent_toolkit._agents_server import codex, codex_clients, codex_reset, manager, state
+from agent_toolkit._agents_server import (
+    codex,
+    codex_auto_reset,
+    codex_clients,
+    codex_reset,
+    manager,
+    service_io,
+    service_projection,
+    shared_roots,
+    state,
+)
+from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._testing.agents_server_support import install_backend
 
 # reader・所有taskの境界を駆動し、公開start/reply/waitへ結果を渡す。
@@ -453,3 +464,87 @@ async def test_refresh_failure_recovers_same_session_without_second_consumption(
         )
         await _until(backend, lambda: session.result_available)
         assert (await owner.wait())["agent_message"] == "再取得後の成果"
+
+
+_LOCAL_ORIGIN = {"generation": "G1", "process": "local"}
+_PERMISSION = {
+    "id": "permitted-period",
+    "engine": "codex",
+    "account": "example@example.invalid",
+    "scope": "codex",
+    "count": 1,
+    "from": "2000-01-01T00:00:00+00:00",
+    "until": "2100-01-01T00:00:00+00:00",
+}
+
+
+class _Hub:
+    """保存の写し先だけを代用し、登録公開と状態の写しは実装を通す。"""
+
+    def __init__(self, state_root: Path) -> None:
+        self.state_root = state_root
+        self._codec = SimpleNamespace(encode=lambda value: value)
+
+    async def request(self, _identity: Any, _operation: str, _payload: dict[str, Any]) -> dict[str, Any]:
+        return {"published": [], "delivered": []}
+
+
+def _flood(client: _MemoryAppServer) -> None:
+    # 元I/O側の未確認イベント上限（256件）を超える通知を、照会の応答より先に読ませる。
+    for index in range(300):
+        client.emit("thread/tokenUsage/updated", {"index": index})
+
+
+@pytest.mark.parametrize("permitted", [True, False])
+@pytest.mark.asyncio
+async def test_account_read_proceeds_while_save_waits_registration_under_event_flood(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, permitted: bool
+) -> None:
+    """保存が登録公開の完了を待つ間も通知が上限を超えて届く負荷で、照会と許可の判定が進む。
+
+    2.262.3では保存の例外で受信処理が止まり、未確認イベントが上限に達して、照会が送出通知の空き待ちのまま時間切れになった。
+    """
+    first = state.SessionState("first", str(tmp_path), engine="codex")
+    second = state.SessionState("second", str(tmp_path), engine="codex")
+    writer = service_projection.ServiceStatusWriter(
+        {"first": first, "second": second},
+        shared_roots.StatusFileIdentity("root", "root.json", None),
+        cast(service_projection.ProjectionHub, _Hub(tmp_path)),
+    )
+    writer._active = True
+    raced = asyncio.Event()
+
+    async def publish_second(**_kwargs: Any) -> None:
+        # 後続sessionの公開を待つ間に届いた通知が、公開済みの先行sessionで新しい登録公開を始める。
+        if not raced.is_set():
+            raced.set()
+            first._registration_task = asyncio.create_task(asyncio.sleep(0))
+
+    monkeypatch.setattr(second, "publish_registration_async", publish_second)
+    raws: list[_MemoryAppServer] = []
+    failures: list[BaseException] = []
+
+    async def ignore(_message: dict) -> None:
+        pass
+
+    async def failed(error: BaseException) -> None:
+        failures.append(error)
+
+    def factory(*handlers: Any) -> _MemoryAppServer:
+        raws.append(_MemoryAppServer(*handlers))
+        return raws[-1]
+
+    runtime = service_io.Runtime("G1", _LOCAL_ORIGIN, ResourceBroker("G1"), writer.flush_async)
+    client = service_io.CodexResource.create(runtime, factory, ignore, ignore, failed)
+    await client.start()
+    try:
+        _flood(raws[0])
+        result = await codex_auto_reset.check_auto_reset(
+            client.request, state_dir=tmp_path / "state", permissions=[_PERMISSION] if permitted else [], rpc_timeout=5
+        )
+    finally:
+        await client.close()
+    consumed = [method for method, _ in raws[0].requests].count("account/rateLimitResetCredit/consume")
+    assert raced.is_set()
+    assert not failures
+    assert (result.reset_confirmed, consumed) == ((True, 1) if permitted else (False, 0))
