@@ -10,7 +10,12 @@ import shutil
 from collections.abc import Callable
 
 from agent_toolkit._agents_server import compaction_metrics, logging_config, wait_run
-from agent_toolkit._agents_server.shared_layout import RESERVED_DIRECTORY_NAMES, valid_session_id
+from agent_toolkit._agents_server.shared_layout import (
+    RESERVED_DIRECTORY_NAMES,
+    aliases_directory,
+    status_directory,
+    valid_session_id,
+)
 from agent_toolkit._common import session_registry
 from agent_toolkit._common import state_paths as _state_paths
 
@@ -93,6 +98,7 @@ def sweep_stale_shared_state(
                 path,
                 exc,
             )
+    _sweep_dangling_aliases(root)
     _sweep_stale_files(
         session_registry.registry_directory(root),
         cutoff,
@@ -103,6 +109,25 @@ def sweep_stale_shared_state(
     logging_config.sweep_instance_diagnostics(
         state_root=root, cutoff=cutoff, referenced=referenced, max_total_bytes=instance_max_bytes
     )
+
+
+def _sweep_dangling_aliases(state_root: pathlib.Path) -> None:
+    """参照先のrootを失った会話のルート索引を回収する。読めない索引は残す。
+
+    rootの回収と同じ掃引で行い、ツール呼び出しごとの索引の書込では全索引を読まない。
+    """
+    try:
+        paths = tuple(aliases_directory(state_root).glob("*.json"))
+    except OSError:
+        return
+    for path in paths:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except OSError, UnicodeError, json.JSONDecodeError:
+            continue
+        target = payload.get("root_session_id") if isinstance(payload, dict) else None
+        if isinstance(target, str) and valid_session_id(target) and not status_directory(target, state_root).is_dir():
+            path.unlink(missing_ok=True)
 
 
 def _uncollected_run(path: pathlib.Path) -> bool:

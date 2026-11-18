@@ -10,6 +10,7 @@ import pytest
 from agent_toolkit._agents_server import (
     shared_layout,
     shared_roots,
+    shared_sweep,
 )
 
 
@@ -159,8 +160,8 @@ def test_conversation_root_resolution_confirms_direct_root_after_alias_failure(
     )
 
 
-def test_write_root_alias_removes_aliases_with_missing_targets(tmp_path: pathlib.Path) -> None:
-    """索引更新時に参照先ディレクトリを失った既存索引を回収する。"""
+def test_dangling_aliases_are_collected_by_the_expiry_sweep_not_by_each_write(tmp_path: pathlib.Path) -> None:
+    """ツール呼び出しごとの索引の書込は自分の索引だけを書き、参照先を失った索引は期限の掃引で回収する。"""
     shared_layout.status_directory("root-session", tmp_path).mkdir(parents=True)
     aliases = shared_layout.aliases_directory(tmp_path)
     aliases.mkdir()
@@ -173,7 +174,10 @@ def test_write_root_alias_removes_aliases_with_missing_targets(tmp_path: pathlib
         "version": 1,
         "root_session_id": "root-session",
     }
+    assert stale.exists()
+    shared_sweep.sweep_stale_shared_state(keep_root_session_id=None, state_root=tmp_path)
     assert not stale.exists()
+    assert (aliases / "current-session.json").exists()
 
 
 @pytest.mark.parametrize(
