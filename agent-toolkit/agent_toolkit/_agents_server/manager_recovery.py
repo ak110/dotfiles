@@ -9,7 +9,7 @@ import os
 
 from agent_toolkit._agents_server import manager_resume, notify, service_turns, shared_roots, status_file, wait_targets
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._common import recorded_process, session_registry
+from agent_toolkit._common import recorded_process, registry_index, session_registry
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -32,7 +32,7 @@ class ManagerRecovery(manager_resume.ManagerResume):
         identifiers = (
             ()
             if launcher is None
-            else await run_file_operation(session_registry.child_session_ids, launcher, state_root=self._state_root())
+            else await run_file_operation(registry_index.child_session_ids, launcher, state_root=self._state_root())
         )
         self._recovery_targets.update(identifiers)
         if self._status_writer is not None:

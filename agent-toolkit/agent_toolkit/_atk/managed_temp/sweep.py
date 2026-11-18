@@ -23,7 +23,7 @@ import psutil
 from agent_toolkit._atk.managed_temp import creation, paths, permissions, resources
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
-from agent_toolkit._common import file_lock, plugin_root_leases, process_identity, session_registry
+from agent_toolkit._common import file_lock, plugin_root_leases, process_identity, registry_index
 
 _RECORD_NAME = ".sweep/last-sweep"
 _PRESSURE_RECORD_NAME = ".sweep/last-pressure"
@@ -568,7 +568,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             return SweepResult([], ())
         protected = {
             area
-            for identifier in session_registry.pending_session_ids()
+            for identifier in registry_index.pending_session_ids()
             if (area := creation.find_session_temp(identifier)) is not None
         }
         deleted_early: list[pathlib.Path] = []
@@ -580,7 +580,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         plugin_root_leases.sweep_plugin_root_records()
     protected_sessions = {
         area
-        for identifier in session_registry.pending_session_ids()
+        for identifier in registry_index.pending_session_ids()
         if (area := creation.find_session_temp(identifier)) is not None
     }
     deleted: list[pathlib.Path] = []

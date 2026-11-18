@@ -33,7 +33,7 @@ from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import creation
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import registry_index, session_registry, state_paths
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -118,7 +118,7 @@ async def test_parent_mcp_restart_recovers_same_child_and_uncollected_result(
         parent_notes = creation.resolve_session_temp("parent") / "work-contract.md"
         child_notes.write_text("子の保存成果と未完了操作", encoding="utf-8")
         parent_notes.write_text("親の現行要求", encoding="utf-8")
-        assert session_registry.child_session_ids("parent", state_root=tmp_path) == (identifier,)
+        assert registry_index.child_session_ids("parent", state_root=tmp_path) == (identifier,)
         if previous_outcome in {"completed", "stopped"}:
             _complete(before, message="再起動前の成果")
             await old_writer.flush_async()
@@ -253,8 +253,8 @@ async def test_mixed_child_and_grandchild_resume_without_followup(
         assert not backend.start_calls
         assert backend.resume_calls == [child["session_id"]]
         assert resumed_grandchildren == [grandchild["session_id"]]
-        assert session_registry.child_session_ids("parent", state_root=tmp_path) == (child["session_id"],)
-        assert session_registry.child_session_ids(child["session_id"], state_root=tmp_path) == (grandchild["session_id"],)
+        assert registry_index.child_session_ids("parent", state_root=tmp_path) == (child["session_id"],)
+        assert registry_index.child_session_ids(child["session_id"], state_root=tmp_path) == (grandchild["session_id"],)
 
 
 @pytest.mark.asyncio
@@ -642,7 +642,7 @@ async def test_child_with_removed_cwd_is_reported_once_and_not_recovered_by_late
     assert len(delivered) == 1, waits
     assert str(worktree) in json.dumps(delivered, ensure_ascii=False)
     assert [code for code, _notices in waits[1:]] == [10, 10], waits
-    assert identifier not in session_registry.pending_session_ids(tmp_path)
+    assert identifier not in registry_index.pending_session_ids(tmp_path)
 
 
 _COLD_RECOVERY_SOURCE = """\

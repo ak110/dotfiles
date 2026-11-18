@@ -16,7 +16,7 @@ from agent_toolkit._agents_server.shared_layout import (
     status_directory,
     valid_session_id,
 )
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import registry_index, session_registry
 from agent_toolkit._common import state_paths as _state_paths
 
 STALE_SHARED_STATE_SECONDS = 7 * 24 * 60 * 60
@@ -60,7 +60,7 @@ def sweep_stale_shared_state(
             latest = max((path.stat().st_mtime for path in files), default=directory.stat().st_mtime)
             if latest < cutoff:
                 if pending is None:
-                    pending = session_registry.pending_session_ids(root)
+                    pending = registry_index.pending_session_ids(root)
                 if any(
                     session_registry.resolve(identifier, state_root=root).owner_root_session_id == directory.name
                     for identifier in pending
@@ -87,7 +87,7 @@ def sweep_stale_shared_state(
             with session_registry.registry_lock(path.stem, state_root=root):
                 if path.is_file() and path.stat().st_mtime < cutoff:
                     if pending is None:
-                        pending = session_registry.pending_session_ids(root)
+                        pending = registry_index.pending_session_ids(root)
                     if path.stem not in pending:
                         path.unlink()
         except OSError as exc:
@@ -105,7 +105,7 @@ def sweep_stale_shared_state(
         keep=lambda path: path.suffix == ".json" and valid_session_id(path.stem),
     )
     _sweep_stale_compaction(compaction_metrics.record_directory(root), cutoff)
-    referenced = session_registry.recorded_server_instances(root) | _result_server_instances(base)
+    referenced = registry_index.recorded_server_instances(root) | _result_server_instances(base)
     logging_config.sweep_instance_diagnostics(
         state_root=root, cutoff=cutoff, referenced=referenced, max_total_bytes=instance_max_bytes
     )
