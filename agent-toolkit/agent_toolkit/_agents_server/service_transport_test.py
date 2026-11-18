@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import ast
+import asyncio
 import contextlib
 import json
 import os
@@ -154,26 +155,13 @@ def _freezable(coordinator: Any) -> None:
 
 
 async def _tick(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """終了した世代から受け取った移譲の記録と、終了した世代が求めた準備の静止を、周期処理で回収する。"""
+    """終了した世代から受け取った移譲の記録を、周期処理で回収する。"""
     coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
-    _freezable(coordinator)
     coordinator._received["received"] = ("transfer", {"process": _REUSED})
     coordinator._incoming["incoming"] = {"source": {"process": _REUSED}}
-    coordinator._intents["token"] = {"process": _REUSED}
     await coordinator.tick()
     assert not coordinator._received
     assert not coordinator._incoming
-    assert not coordinator._intents
-
-
-async def _prepare(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """準備を求めた世代が準備の途中で終了していれば、準備の終わりに静止を解く。"""
-    coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
-    _freezable(coordinator)
-    coordinator.managers.conversations.clear()
-    await coordinator.prepare("token", {"process": _REUSED})
-    assert not coordinator._intents
-    coordinator.registrations.thaw.assert_called_once_with("token")
 
 
 async def _foreign_sessions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -261,13 +249,15 @@ async def _ensure_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     request.assert_not_called()
 
 
-async def _release_abandoned_update(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """保存を静止させた公開元の世代が終了していれば、確定の通知を待たずに静止を解除する。"""
+async def _supervise(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """保存を静止させた公開元の世代が終了していれば、確定の通知を待たずに静止を解く。"""
     coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
-    coordinator.projections = cast(Any, SimpleNamespace(thaw=AsyncMock()))
-    coordinator._intents["token"] = {"generation": "G4", "epoch": 4, "process": _REUSED}
-    await coordinator._release_abandoned_update("token", coordinator._intents["token"])
-    assert not coordinator._intents
+    _freezable(coordinator)
+    coordinator.managers.conversations.clear()
+    await coordinator.prepare("token", {"generation": "G4", "epoch": 4, "process": _REUSED})
+    async with asyncio.timeout(5), coordinator.gate.admit(new_turn=True):
+        pass
+    coordinator.registrations.thaw.assert_called_once_with("token")
 
 
 async def _restore(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -299,10 +289,9 @@ async def _publish_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch], Awaitable[None]]] = {
     "service_coordinator.ServiceCoordinator.publish": _publish,
     "service_coordinator.ServiceCoordinator.tick": _tick,
-    "service_coordinator.ServiceCoordinator.prepare": _prepare,
     "service_coordinator.ServiceCoordinator._foreign_sessions": _foreign_sessions,
     "service_coordinator.ServiceCoordinator._owns": _owns,
-    "service_coordinator.ServiceCoordinator._release_abandoned_update": _release_abandoned_update,
+    "service_coordinator.ServiceCoordinator._supervise": _supervise,
     "service_context.ServiceManagers.generations": _generations,
     "service_io.CodexResource.close": _close,
     "service_forward.ensure_service": _ensure_service,

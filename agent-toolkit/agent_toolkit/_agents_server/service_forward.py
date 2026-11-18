@@ -68,15 +68,26 @@ def code_identity(root: pathlib.Path) -> tuple[str, str]:
 def _launch_service(
     command: list[str], attempts: list[dict[str, Any]], *, stderr: Any, cwd: pathlib.Path, env: dict[str, str]
 ) -> subprocess.Popen[Any]:
-    """起動元からの分離を強い指定から順に試し、起動元に拒否された指定だけを次の指定へ替えて管理サービスを起動する。"""
-    for flags in attempts[:-1]:
+    """起動元からの分離を強い指定から順に試し、起動元に拒否された指定だけを次の指定へ替えて管理サービスを起動する。
+
+    離脱を許さないJobは、離脱を指定した起動をアクセス拒否で拒む。実行ファイルへの権限不足も同じ拒否になるため、
+    指定を替えた起動が成功した場合だけ、Jobによる拒否として診断へ残す。
+    """
+    refused = False
+    for index, flags in enumerate(attempts):
         try:
-            return subprocess.Popen(  # pylint: disable=consider-using-with
+            process = subprocess.Popen(  # pylint: disable=consider-using-with
                 command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=cwd, env=env, **flags
             )
-        except PermissionError:
+        except OSError as error:
+            if isinstance(error, PermissionError) and index + 1 < len(attempts):
+                refused = True
+                continue
+            error.add_note(f"管理サービス起動: executable={command[0]} cwd={cwd} flags={flags}")
+            raise
+        if refused:
             warning = with_next_action(
-                "起動元のWindows Jobは離脱を許可していません。起動元のJobの制限を継承して管理サービスを起動します。"
+                "起動元のWindows Jobは離脱を許可していません。起動元のJobの制限を継承して管理サービスを起動しました。"
                 "そのJob終了後のサービス生存は保証しません。",
                 next_action=(
                     "Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
@@ -86,13 +97,8 @@ def _launch_service(
             print(warning, file=sys.stderr)
             stderr.write((warning + "\n").encode("utf-8"))
             stderr.flush()
-    try:
-        return subprocess.Popen(  # pylint: disable=consider-using-with
-            command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=cwd, env=env, **attempts[-1]
-        )
-    except OSError as error:
-        error.add_note(f"管理サービス起動: executable={command[0]} cwd={cwd} flags={attempts[-1]}")
-        raise
+        return process
+    raise ValueError("管理サービスの起動指定がありません")
 
 
 def ensure_service(
@@ -238,7 +244,7 @@ def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Pat
     """公開を保留して起動した候補の世代が生存していれば受付先として公開し、公開後の受付先を返す。
 
     候補の起動と接続確認に使った子プロセスの終了後に呼び出す。候補が終了していれば公開せず、受付先を変更しない。
-    公開した受付先が直後に終了していれば、生存する世代へ受付を戻してから失敗を送出する。
+    公開の要求の途中か直後に候補が終了していれば、生存する世代へ受付を戻してから失敗を送出する。
     """
     directory = service_transport.namespace(caller)
     generation, version = code_identity(root)
@@ -254,7 +260,12 @@ def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Pat
                 f"候補の世代が起動確認の終了後に生存していないため公開しません: "
                 f"generation={generation} process={record['process']}"
             )
-        accepted = service_rpc.request_sync(record, "publish", {}, timeout=timeout)
+        try:
+            accepted = service_rpc.request_sync(record, "publish", {}, timeout=timeout)
+        except Exception:
+            # 候補が受付先を公開した後、応答を返す前に終了すると、受付先は終了した世代を指す。生存する世代へ戻す。
+            registry.restore()
+            raise
         if not service_transport.process_alive(accepted["process"]):
             restored = registry.restore()
             raise RuntimeError(

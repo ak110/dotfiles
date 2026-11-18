@@ -67,6 +67,20 @@ _PUBLISHER_PROBE_SECONDS = 1.0
 _OWNER_PROBE_SECONDS = 10.0
 
 
+@dataclasses.dataclass
+class _Update:
+    """公開元の世代が求めた1回の準備。静止を解くのは、この準備の監視task（`_supervise`）だけとする。
+
+    公開元は受付の公開後に確定（`commit_update`）を通知する。確定より先に公開元が終了すれば、監視taskが放棄として扱う。
+    どちらの場合も、準備が静止を掛け終えてから解く。先に解くと、後から掛かる静止を解く主体が残らない。
+    """
+
+    publisher: dict
+    frozen: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
+    committed: asyncio.Future[dict] = dataclasses.field(default_factory=lambda: asyncio.get_running_loop().create_future())
+    released: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
+
+
 class ServiceCoordinator:
     """一度だけの移譲と未配送要求の振り分けを、同じsession単位で直列化する。"""
 
@@ -90,7 +104,7 @@ class ServiceCoordinator:
         self._ended_clients: dict[str, Any] = {}
         self._moving: dict[str, asyncio.Task[dict]] = {}
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
-        self._intents: dict[str, dict] = {}
+        self._updates: dict[str, _Update] = {}
         self._runtime: service_io.Runtime | None = None
         self._publish_lock = asyncio.Lock()
         self._incoming: dict[str, dict] = {}
@@ -98,7 +112,7 @@ class ServiceCoordinator:
         self._uncertain: dict[str, str] = {}
         self._contexts: set[str] = set()
         self._pending_adoptions: dict[str, dict] = {}
-        self._watchers: set[asyncio.Task[None]] = set()
+        self._supervisors: set[asyncio.Task[None]] = set()
         self.managers.before_controls = self.tick
         self.managers.foreign_sessions = self._foreign_sessions
 
@@ -238,7 +252,7 @@ class ServiceCoordinator:
         if client is not None:
             self._ended_clients[session.session_id] = client
         current = self._current()
-        if current["generation"] == self.generation and not self._intents:
+        if current["generation"] == self.generation and not self._updates:
             return
         found = self._conversation(session.session_id)
         if found is None:
@@ -255,84 +269,83 @@ class ServiceCoordinator:
         return session.turn_completed or self._ended.get(session.session_id) == (session.turn_seq, session.turn_id)
 
     def _schedule_move(self, identifier: str) -> None:
+        """終了境界の後始末を予約する。終わった予約は予約し直し、その時点の受付先で移すか取り込み直すかを決めさせる。"""
         task = self._moving.get(identifier)
-        if task is None or task.done() and (task.cancelled() or task.exception() is not None):
-            task = asyncio.create_task(self._move(identifier))
-            self._moving[identifier] = task
+        if task is not None and not task.done():
+            return
+        if task is not None and not task.cancelled():
+            task.exception()
+        self._moving[identifier] = asyncio.create_task(self._move(identifier))
 
     async def prepare(self, token: str, target: dict) -> dict:
-        """新しいmodel実行だけを静止し、進行中turnや背景taskの終了は待たない。"""
-        self._intents[token] = target
-        watcher = asyncio.create_task(self._release_abandoned_update(token, target))
-        self._watchers.add(watcher)
-        watcher.add_done_callback(self._watched)
-        await self.gate.freeze(token)
-        await self._retry_adoptions()
-        await self.projections.freeze(token)
-        await self.registrations.freeze(token)
-        for conversation in tuple(self.managers.conversations.values()):
-            with self.managers._bound(conversation):
-                for session in tuple(conversation.manager.sessions.values()):
-                    if session.turn_completed:
-                        backend: Any = conversation.manager._backends.get(session.engine)
-                        client = self._client(backend, session.session_id)
-                        self.boundary(session, client)
-        if not service_transport.process_alive(target["process"]):
-            # 準備の途中で新世代が終了すると、その間の巡回が静止を解いた後に残りの静止が掛かる。
-            await self._thaw(token)
+        """新しいmodel実行だけを静止し、進行中turnや背景taskの終了は待たない。静止は準備の監視taskが解く。"""
+        update = _Update(target)
+        self._updates[token] = update
+        supervisor = asyncio.create_task(self._supervise(token, update))
+        self._supervisors.add(supervisor)
+        supervisor.add_done_callback(self._supervised)
+        try:
+            await self.gate.freeze(token)
+            await self._retry_adoptions()
+            await self.projections.freeze(token)
+            await self.registrations.freeze(token)
+            for conversation in tuple(self.managers.conversations.values()):
+                with self.managers._bound(conversation):
+                    for session in tuple(conversation.manager.sessions.values()):
+                        if session.turn_completed:
+                            backend: Any = conversation.manager._backends.get(session.engine)
+                            client = self._client(backend, session.session_id)
+                            self.boundary(session, client)
+        finally:
+            update.frozen.set()
         return self.projections.inventory()
 
-    async def _release_abandoned_update(self, token: str, target: dict) -> None:
-        """公開の途中で終了した世代は確定を通知しないため、静止を解除して保存と新しいturnを再開する。
-
-        静止中は監視の周期処理も保存の待機で止まり得るため、周期処理に頼らず公開元の生存を確かめる。
-        """
-        while token in self._intents:
-            if not service_transport.process_alive(target["process"]):
-                await run_file_operation(self.registry.restore)
-                await self.commit_update(token, self._current())
-                return
-            await asyncio.sleep(_PUBLISHER_PROBE_SECONDS)
-
-    def _watched(self, watcher: asyncio.Task[None]) -> None:
-        self._watchers.discard(watcher)
-        if not watcher.cancelled() and (error := watcher.exception()) is not None:
-            _LOG.error("公開元が終了した更新の静止を解除できませんでした", exc_info=error)
-
     async def commit_update(self, token: str, current: dict) -> None:
-        """遅れた準備で受付を戻さず、保存先を開いてから終了済み会話を移す。"""
-        await self.gate.observe_current(current)
-        await self._thaw(token)
-        for identifier in tuple(self._ended):
-            if self._conversation(identifier) is not None and current["generation"] != self.generation:
-                self._schedule_move(identifier)
-            elif current["generation"] == self.generation:
-                found = self._conversation(identifier)
-                if found is None:
-                    continue
-                conversation = found[1]
-                with self.managers._bound(conversation):
-                    session = conversation.manager.sessions[identifier]
-                    backend: Any = conversation.manager._backends.get(session.engine)
-                    client = self._client(backend, identifier)
-                    if client is not None and client.transferred:
-                        auxiliary = await backend.export_service_state(identifier)
-                        descriptor = await client.detach()
-                        await self._restore_source(backend, session, descriptor, auxiliary)
+        """公開元が通知した確定を準備の監視taskへ渡し、静止の解除を待つ。
 
-    async def _thaw(self, token: str) -> None:
-        await self.projections.thaw(token)
-        self.registrations.thaw(token)
-        self._intents.pop(token, None)
-        await self.gate.thaw(token)
+        解除済みの準備へ遅れて届いた確定は捨てる。解除済みなら公開元の終了を受けて受付を戻した後であり、
+        確定の受付先を観測すると終了した世代へ受付を向け直す。
+        """
+        update = self._updates.get(token)
+        if update is None:
+            return
+        if not update.committed.done():
+            update.committed.set_result(current)
+        await update.released.wait()
+
+    async def _supervise(self, token: str, update: _Update) -> None:
+        """公開元の確定と終了のうち先に起きた方を受けて、準備が掛けた静止を1回だけ解く。
+
+        静止中は共有監視の周期処理も保存の待機で止まり得るため、周期処理に頼らず公開元の生存を確かめる。
+        生存する公開元が確定を通知しない間は、準備中の引継ぎを失わないよう時間では解かない。
+        """
+        try:
+            while not update.committed.done() and service_transport.process_alive(update.publisher["process"]):
+                await asyncio.wait((update.committed,), timeout=_PUBLISHER_PROBE_SECONDS)
+            await update.frozen.wait()
+            if update.committed.done():
+                current = update.committed.result()
+            else:
+                # 公開元は確定を通知せずに終了した。公開済みなら受付先は終了した世代を指すため、生存する世代へ戻す。
+                await run_file_operation(self.registry.restore)
+                current = self._current()
+            await self.gate.observe_current(current)
+        finally:
+            await self.projections.thaw(token)
+            self.registrations.thaw(token)
+            self._updates.pop(token, None)
+            await self.gate.thaw(token)
+            update.released.set()
+        for identifier in tuple(self._ended):
+            self._schedule_move(identifier)
+
+    def _supervised(self, supervisor: asyncio.Task[None]) -> None:
+        self._supervisors.discard(supervisor)
+        if not supervisor.cancelled() and (error := supervisor.exception()) is not None:
+            _LOG.error("準備の静止の解除で失敗しました", exc_info=error)
 
     async def tick(self) -> bool:
         """受付が先に進んだ場合だけ、未終了の移譲を再確認する。"""
-        for token, target in tuple(self._intents.items()):
-            # 準備させた新世代が受付の公開前に終了すると確定は届かず、静止したままでは保存と新しいturnが止まり続ける。
-            # 終了した世代はもう書かないため、静止を解いても引継ぎを失わない。生存中は時間で解かない。
-            if not service_transport.process_alive(target["process"]):
-                await self._thaw(token)
         await self._retry_adoptions()
         retained = {identifier for item in self.managers.conversations.values() for identifier in item.manager.sessions} | set(
             self._pending_adoptions
@@ -358,7 +371,7 @@ class ServiceCoordinator:
         current = self._current()
         await self.gate.observe_current(current)
         if current["generation"] == self.generation:
-            return not self._intents
+            return not self._updates
         for conversation in tuple(self.managers.conversations.values()):
             for session in tuple(conversation.manager.sessions.values()):
                 if self._ended_turn(session) and session.session_id not in self._uncertain:
@@ -654,6 +667,7 @@ class ServiceCoordinator:
         return await asyncio.shield(self._moving[identifier])
 
     async def _move(self, identifier: str) -> dict:
+        """終了境界で止めた会話を受付先の世代へ移す。受付先が自世代なら、準備中でない限り止めたclientを取り込み直す。"""
         async with self._locks.setdefault(identifier, asyncio.Lock()):
             if identifier in self._uncertain:
                 raise ActionableError(
@@ -666,14 +680,23 @@ class ServiceCoordinator:
             parent, conversation = found
             manager = conversation.manager
             session = manager.sessions[identifier]
-            if not self._ended_turn(session):
-                return {"moved": False}
+            backend: Any = manager._backends.get(session.engine)
             current = self._current()
             if current["generation"] == self.generation:
+                if self._updates:
+                    return {"moved": False}
+                # 公開元の終了などで受付先が自世代へ戻った。止めたままではこの会話のdecodeが再開しない。
+                with self.managers._bound(conversation):
+                    client = self._client(backend, identifier)
+                    if client is not None and client.transferred:
+                        auxiliary = await backend.export_service_state(identifier)
+                        descriptor = await client.detach()
+                        await self._restore_source(backend, session, descriptor, auxiliary)
+                return {"moved": False}
+            if not self._ended_turn(session):
                 return {"moved": False}
             await self.gate.pause_session(identifier)
             with self.managers._bound(conversation):
-                backend: Any = manager._backends.get(session.engine)
                 client = self._client(backend, identifier)
                 descriptor = None
                 auxiliary = {}
