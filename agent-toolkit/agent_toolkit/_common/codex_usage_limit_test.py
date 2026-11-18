@@ -1,7 +1,10 @@
 """Codexの上限停止をロールアウトの構造と後続turnで判定する。"""
 
+import datetime
 import json
+import os
 import pathlib
+from typing import Any
 
 import pytest
 
@@ -105,3 +108,70 @@ def test_rollout_skips_line_cut_inside_multibyte_character(tmp_path: pathlib.Pat
     path = tmp_path / "rollout.jsonl"
     path.write_bytes(cut[: cut.index("限".encode()) + 1] + b"\n" + "\n".join(json.dumps(event) for event in events).encode())
     assert codex_usage_limit.from_rollout(path) == codex_usage_limit.UsageLimitState(1200, "five_hour")
+
+
+def _write_rollout(path: pathlib.Path, events: list[dict[str, Any]], *, mtime: float | None = None) -> pathlib.Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
+    if mtime is not None:
+        os.utime(path, (mtime, mtime))
+    return path
+
+
+@pytest.mark.parametrize("stale_count", [1, 8])
+def test_session_rollout_opens_only_records_written_since_start(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, stale_count: int
+) -> None:
+    """起動後に再開した記録を返し、起動前から書き込みの無い記録は保存済みの件数によらず開かない。"""
+    started_at = datetime.datetime(2026, 11, 19, 12, tzinfo=datetime.UTC).timestamp()
+    cwd = tmp_path / "work"
+    sessions = tmp_path / "sessions"
+    meta = {
+        "type": "session_meta",
+        "payload": {"cwd": str(cwd), "originator": "codex-tui", "timestamp": "2026-11-01T00:00:00+00:00"},
+    }
+    for index in range(stale_count):
+        _write_rollout(sessions / f"2026/11/01/rollout-stale-{index}.jsonl", [meta], mtime=started_at - 3600)
+    resumed = _write_rollout(
+        sessions / "2026/11/01/rollout-resumed.jsonl",
+        [meta, {"type": "event_msg", "timestamp": "2026-11-19T12:00:05+00:00", "payload": {"type": "task_started"}}],
+        mtime=started_at + 5,
+    )
+    opened: list[pathlib.Path] = []
+    path_open = pathlib.Path.open
+
+    def tracking_open(self: pathlib.Path, *args: Any, **kwargs: Any) -> Any:
+        if self.is_relative_to(sessions):
+            opened.append(self)
+        return path_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "open", tracking_open)
+    assert codex_usage_limit.find_session_rollout(cwd, started_at, codex_home=tmp_path) == resumed
+    assert opened == [resumed]
+
+
+@pytest.mark.parametrize(
+    ("thread_id", "day"),
+    [
+        ("01a1b5e1-3e00-7000-8000-000000000000", "2026/11/07"),
+        ("01a1b5e1-3e00-7000-8000-000000000000", "2026/09/30"),
+        ("55555555-5555-4555-8555-555555555555", "2026/09/30"),
+    ],
+)
+def test_usage_limit_is_read_from_thread_record(tmp_path: pathlib.Path, thread_id: str, day: str) -> None:
+    """thread IDの記録を、作成日の日付ディレクトリの内外とUUIDv7でない識別子のいずれでも読む。"""
+    _write_rollout(tmp_path / "sessions/2026/11/07/rollout-2026-11-07T12-00-00-other.jsonl", [])
+    _write_rollout(
+        tmp_path / f"sessions/{day}/rollout-2026-11-07T12-00-00-{thread_id}.jsonl",
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "rate_limits": {"primary": {"used_percent": 100, "window_minutes": 300, "resets_at": 1200}},
+                },
+            },
+            {"type": "event_msg", "payload": {"type": "task_complete", "error": {"codex_error_info": "usage_limit_exceeded"}}},
+        ],
+    )
+    assert codex_usage_limit.from_thread(thread_id, codex_home=tmp_path) == codex_usage_limit.UsageLimitState(1200, "five_hour")

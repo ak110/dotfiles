@@ -13,10 +13,12 @@ session識別子は実行系をまたいで一意であるため、探索は識�
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import os
 import pathlib
 import re
 import uuid
+from collections.abc import Iterable
 
 from agent_toolkit._common import host_homes
 from agent_toolkit._common import session_layout as shared_layout
@@ -137,6 +139,7 @@ class RecordLocator:
 
     子孫の多い記録の推定費用は数十件の委譲先を解決する。1件ごとにClaude Codeの全projectとCodexの全ロールアウトを
     列挙すると、解決だけで数秒かかる。一覧は最初の解決時に読み、同じ探索の間だけ使う。
+    UUIDv7のCodexのthread IDは`find_codex_records`と同じく作成日の日付ディレクトリだけを探し、Codexの一覧は読まない。
     一覧に無い識別子は、先にAntigravityとOpenCodeの記録を探し、無ければ`find_session_record`へ委ねる
     （一覧の後に作られた記録とサブエージェント）。識別子は実行系をまたいで一意であるため、探す順を変えても結果は同じである。
     Antigravityの委譲先を数十件持つ家族で、1件ごとにClaude CodeとCodexの保存先を走査し直さないためである。
@@ -163,10 +166,8 @@ class RecordLocator:
             self._claude = self._claude_records()
         if paths := self._claude.get(session_id):
             return SessionRecord("claude", tuple(paths))
-        if self._codex is None:
-            self._codex = self._codex_records()
-        if paths := self._codex.get(session_id):
-            return SessionRecord("codex", tuple(paths))
+        if paths := self._codex_paths(session_id):
+            return SessionRecord("codex", paths)
         if (other := _find_agy_or_opencode_record(session_id, self._state_root)) is not None:
             return other
         return find_session_record(
@@ -187,8 +188,16 @@ class RecordLocator:
                     found.setdefault(entry.name[: -len(RECORD_SUFFIX)], []).append(project / entry.name)
         return found
 
-    def _codex_records(self) -> dict[str, list[pathlib.Path]]:
+    def _codex_paths(self, session_id: str) -> tuple[pathlib.Path, ...]:
         sessions = (self._codex_home if self._codex_home is not None else host_homes.codex_home()) / "sessions"
+        if (directories := codex_thread_directories(sessions, session_id)) is not None:
+            return _codex_matches(session_id, directories, _codex_rollout_name(session_id))
+        if self._codex is None:
+            self._codex = self._codex_records(sessions)
+        return tuple(self._codex.get(session_id, ()))
+
+    @staticmethod
+    def _codex_records(sessions: pathlib.Path) -> dict[str, list[pathlib.Path]]:
         found: dict[str, list[pathlib.Path]] = {}
         if not sessions.is_dir():
             return found
@@ -224,6 +233,8 @@ def agy_session_records(gemini_home: pathlib.Path) -> tuple[pathlib.Path, ...]:
 def find_codex_records(session_id: str, *, codex_home: pathlib.Path | None = None) -> tuple[pathlib.Path, ...]:
     """Codexのthread IDに一致するロールアウト記録をファイル名順で返す。
 
+    UUIDv7のthread IDは、作成日の前後1日の日付ディレクトリで見つかればその記録だけを返し、全期間を列挙しない。
+
     Args:
         session_id: Codexのthread ID。英数字・`_`・`-`以外を含む場合は探索しない。
         codex_home: Codexの記録の保存先。省略時は空でない`CODEX_HOME`、`~/.codex`の順で決める。
@@ -233,8 +244,39 @@ def find_codex_records(session_id: str, *, codex_home: pathlib.Path | None = Non
     sessions = (codex_home if codex_home is not None else host_homes.codex_home()) / "sessions"
     if not sessions.is_dir():
         return ()
-    pattern = f"*/*/*/{CODEX_ROLLOUT_PREFIX}*-{session_id}{RECORD_SUFFIX}"
-    return tuple(path for path in sorted(sessions.glob(pattern)) if path.is_file() and codex_session_id(path) == session_id)
+    name = _codex_rollout_name(session_id)
+    nearby = _codex_matches(session_id, codex_thread_directories(sessions, session_id) or (), name)
+    # 作成日の日付ディレクトリに無い記録とUUIDv7でないthread IDは、全期間の日付ディレクトリから探す。
+    return nearby or _codex_matches(session_id, (sessions,), f"*/*/*/{name}")
+
+
+def _codex_rollout_name(session_id: str) -> str:
+    return f"{CODEX_ROLLOUT_PREFIX}*-{session_id}{RECORD_SUFFIX}"
+
+
+def codex_thread_directories(sessions: pathlib.Path, session_id: str) -> tuple[pathlib.Path, ...] | None:
+    """UUIDv7のthread IDから、作成時刻のUTC日付と前後1日の日付ディレクトリを返す。UUIDv7でなければ`None`を返す。
+
+    Codexは記録をthread作成時のローカル日付のディレクトリ（`sessions/YYYY/MM/DD`）へ置き、resumeでも同じファイルへ追記する。
+    ローカル日付はUTC日付の前後1日に収まるため、3日分で全てのタイムゾーンを含む。
+    """
+    try:
+        value = uuid.UUID(session_id)
+        if value.version != 7:
+            return None
+        created = datetime.datetime.fromtimestamp((value.int >> 80) / 1000, datetime.UTC).date()
+        days = [created + datetime.timedelta(days=offset) for offset in (-1, 0, 1)]
+    except ValueError, OverflowError, OSError:
+        return None
+    return tuple(sessions / f"{day.year:04d}" / f"{day.month:02d}" / f"{day.day:02d}" for day in days)
+
+
+def _codex_matches(session_id: str, directories: Iterable[pathlib.Path], pattern: str) -> tuple[pathlib.Path, ...]:
+    return tuple(
+        path
+        for path in sorted(path for directory in directories for path in directory.glob(pattern))
+        if path.is_file() and codex_session_id(path) == session_id
+    )
 
 
 def codex_session_id(path: pathlib.Path) -> str:
