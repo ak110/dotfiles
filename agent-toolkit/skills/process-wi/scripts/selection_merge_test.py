@@ -945,3 +945,19 @@ def test_merge_rejudges_new_pair_under_existing_record(
     assert yaml.safe_load(existing.read_text(encoding="utf-8"))["レーン間の重なり"] == [
         {**_overlap("lane-01", "lane-02"), "レーン1の定義": ["lane-01の節", "lane-03の節"]}
     ]
+
+
+def test_merge_with_same_name_temporary_lane_judges_existing_members(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """仮名が同じ名前の既存レーンへ写る合流では、その名前の追加側の記録が既存分と追加分の組を判定する。"""
+    repo, existing, added = inputs
+    addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+    addition["選定"] = [_item("c.md", "lane-01"), _item("d.md", "lane-02")]
+    addition["レーンの所要時間"] = [_cost("lane-01"), _cost("lane-02")]
+    addition["レーン間の重なり"] = [_overlap("lane-01", "lane-02")]
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-01": "lane-01", "lane-02": "lane-02"}), encoding="utf-8")
+    assert _merge_into_existing(repo, existing, added, mapping) == 0
+    assert yaml.safe_load(existing.read_text(encoding="utf-8"))["レーン間の重なり"] == [_overlap("lane-01", "lane-02")]
