@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 
 from agent_toolkit._agents_server import manager_resume, notify, service_turns, shared_roots, status_file, wait_targets
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -84,10 +85,11 @@ class ManagerRecovery(manager_resume.ManagerResume):
             await asyncio.wait_for(asyncio.shield(attempt), timeout=delivery_timeout)
 
     async def _cancel_owner_loss_recovery(self, identifier: str) -> bool:
-        """所有者の喪失で中断したsessionへのkillを明示の中断として記録し、自動復旧の対象から外す。
+        """所有者の喪失で中断したsessionを明示の中断として記録し、自動復旧の対象から外す。
 
         所有者の喪失による中断は親の再開時に同じ会話を復旧する。killを受けた後もその理由のままだと、
         中断を求めた会話を復旧してしまう（2026-11-17、所有世代の終了後にkillしたsessionが復旧された）。
+        作業ディレクトリが削除されて再開できない会話も同じく対象から外す。
         """
         resolution = await run_file_operation(session_registry.resolve, identifier, state_root=self._state_root())
         info = resolution.resume_info
@@ -210,13 +212,26 @@ class ManagerRecovery(manager_resume.ManagerResume):
         if resolution.inferred_terminal:
             await self.take_over_orphaned_session(identifier)
             resolution = await run_file_operation(session_registry.resolve, identifier, state_root=self._state_root())
+        owner_lost = resolution.interruption in (
+            session_registry.OWNER_PROCESSES_EXITED,
+            session_registry.OWNER_SERVER_STOPPED,
+        )
+        # 復元した中断結果を保持してから再開を始めるまでの間は待機しない。待機中に動いたwaitが中断結果を最終結果として回収する。
+        # そのため作業ディレクトリの確認は復元より前に行う。
+        if owner_lost and not await run_file_operation(os.path.isdir, info.cwd):
+            if identifier not in self._recovery_targets:
+                return
+            # 所有者喪失の中断のまま残すと、親の再開・世代の移譲・起動失敗後の再要求で作り直す各Managerが
+            # 必ず失敗する再開と失敗通知を繰り返す（2026-11-18、削除済みworktreeの子の通知がwaitへ数百件届いた）。
+            await self._cancel_owner_loss_recovery(identifier)
+            raise ActionableError(
+                f"作業ディレクトリが無いため同じ会話を自動で再開せず、以後も再試行しない: cwd={info.cwd}",
+                next_action="作業ディレクトリを同じパスへ復元してから同じsession_idへsend_messageする",
+            )
         previous = await self._restore_registry_session(identifier, resolution=resolution, include_handoff=True)
         if previous is None:
             previous = self.stopped_sessions.get(identifier) or self.expired_sessions.get(identifier)
-        if previous is not None and resolution.interruption in (
-            session_registry.OWNER_PROCESSES_EXITED,
-            session_registry.OWNER_SERVER_STOPPED,
-        ):
+        if previous is not None and owner_lost:
             if identifier not in self._recovery_targets:
                 # 照会の間にkillが復旧を取り消した。中断を求めた会話を再開しない。
                 return
