@@ -11,7 +11,7 @@ import re
 from typing import TYPE_CHECKING
 
 from agent_toolkit._common import skill_modes
-from agent_toolkit._common.plugin_roots import resolve_plugin_root
+from agent_toolkit._common.plugin_roots import raise_for_incomplete_installation, resolve_plugin_root
 from agent_toolkit._common.read_triggers_model import _scope_cached
 lazy from agent_toolkit._common import read_triggers_model
 
@@ -220,6 +220,8 @@ def resolve_read_source(
         raise ValueError(f"{path}: read-sourceはプラグイン修飾した実ファイルを指定する")
     target = _direct_document(value, path, plugin_root, host, project=project)
     if target is None or not target.is_file():
+        if target is not None:
+            raise_for_incomplete_installation((target,))
         raise ValueError(f"{path}: read-sourceの実体が無い: {value}")
     return resolve_read_source(target, plugin_root, host, (*seen, path), project=project)
 

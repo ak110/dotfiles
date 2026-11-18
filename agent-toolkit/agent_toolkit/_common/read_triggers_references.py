@@ -9,7 +9,7 @@ import pathlib
 from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from agent_toolkit._common.plugin_roots import plugin_resolution_scope
+from agent_toolkit._common.plugin_roots import plugin_resolution_scope, raise_for_incomplete_installation
 from agent_toolkit._common.read_triggers_model import _REFERENCE, _REFERENCE_METHOD_HEADING
 from agent_toolkit._common.read_triggers_targets import _headings
 
@@ -55,6 +55,7 @@ def reference_method_targets(
         if target.path != owner:
             raise ValueError(f"{source}: 名指し参照の読込方法は共通の定義元を指定する: {target}")
         if not target.path.is_file():
+            raise_for_incomplete_installation((target.path,))
             raise ValueError(f"{source}: 名指し参照の読込方法の定義元が存在しない: {target}")
         target.body()
         result.append(target)

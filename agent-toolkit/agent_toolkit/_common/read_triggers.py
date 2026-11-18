@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import re
 
-from agent_toolkit._common.plugin_roots import plugin_resolution_scope, resolve_plugin_root
+from agent_toolkit._common.plugin_roots import plugin_resolution_scope, raise_for_incomplete_installation, resolve_plugin_root
 from agent_toolkit._common.read_triggers_material import (
     material_targets,
     reference_context,
@@ -299,6 +299,7 @@ def _row_targets(
         targets = tuple(target for target in targets if "<" not in str(target.path))
     if not targets and not selector:
         raise ValueError(f"{source}:{line}: 実ファイルの資料を宣言する")
-    if any(not target.path.is_file() for target in targets):
+    if missing := [target.path for target in targets if not target.path.is_file()]:
+        raise_for_incomplete_installation(missing)
         raise ValueError(f"{source}:{line}: 資料が存在しない: {tuple(target.path for target in targets)}")
     return targets

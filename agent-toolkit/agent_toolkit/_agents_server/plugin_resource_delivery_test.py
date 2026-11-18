@@ -380,3 +380,130 @@ async def test_public_start_does_not_succeed_without_unique_enabled_basics(
             await _start("explore", resources, resources.root / "project-a", _CANDIDATES[host])
         assert "agent-basics" in str(raised.value)
         assert not backend.start_calls and not current.sessions
+
+
+def _stale_claude_installation(
+    resources: ResourceInventory,
+    monkeypatch: pytest.MonkeyPatch,
+    missing: str,
+    stale_project: pathlib.Path,
+    *,
+    shared_folder: bool = False,
+) -> tuple[pathlib.Path, pathlib.Path]:
+    """必須資料を欠いた旧版のproject導入と、資料の揃ったuser導入を併存させ、両rootを返す。
+
+    `shared_folder`では、両scopeが同じ配布元フォルダー（`readFromFolder`）を読む導入を再現する。
+    """
+    task = resources.toolkit / "share/resource-probe.subagent.md"
+    body = task.read_text(encoding="utf-8")
+    task.write_text(
+        body.replace(
+            "受領した品質資料を参照する。\n",
+            "受領した品質資料を参照する。\n\n## 名指し参照の読込方法\n\n"
+            "名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。\n\n",
+        ),
+        encoding="utf-8",
+    )
+    user = resources.basics("claude", resources.root / "project-a")
+    stale = resources.root / "installed/claude/stale/1.18.0/agent-basics"
+    for root in (user, stale):
+        references = root / "skills/writing-standards/references"
+        references.mkdir(parents=True, exist_ok=True)
+        (root / "skills/writing-standards/SKILL.md").write_text("# 品質基準\n", encoding="utf-8")
+        (references / "writing.md").write_text(f"# 必読資料\n{root.parent.name}の必読本文\n", encoding="utf-8")
+        (references / "read-method.md").write_text("# 読込方法\n", encoding="utf-8")
+        (root / ".claude-plugin").mkdir(exist_ok=True)
+        (root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "agent-basics"}), encoding="utf-8")
+    # 旧版の必読資料は転送文書とし、転送先の欠落も同じ診断になることを確かめる。
+    (stale / "skills/writing-standards/references/writing.md").write_text(
+        "<!-- read-source: agent-basics:writing-standards/references/writing-body.md -->\n", encoding="utf-8"
+    )
+    (stale / "skills/writing-standards/references/writing-body.md").write_text("# 必読資料\n", encoding="utf-8")
+    (stale / missing).unlink()
+
+    def inventory(host: str, _project: pathlib.Path) -> list[dict[str, Any]]:
+        assert host == "claude"
+        return [
+            {"id": "agent-toolkit@mine", "installPath": str(resources.toolkit), "scope": "user", "enabled": True},
+            {
+                "id": "agent-basics@mine",
+                "installPath": str(stale),
+                "scope": "project",
+                "projectPath": str(stale_project),
+                "enabled": True,
+            },
+            {"id": "agent-basics@mine", "installPath": str(user), "scope": "user", "enabled": True},
+        ]
+
+    def shared(host: str, project: pathlib.Path) -> list[dict[str, Any]]:
+        return [
+            {**item, "readFromFolder": str(stale)} if item["id"] == "agent-basics@mine" else item
+            for item in inventory(host, project)
+        ]
+
+    monkeypatch.setattr(plugin_roots, "_plugin_inventory", shared if shared_folder else inventory)
+    return stale, user
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "skills/writing-standards/references/writing.md",
+        "skills/writing-standards/references/writing-body.md",
+        "skills/writing-standards/references/read-method.md",
+    ],
+    ids=["startup-row", "read-source", "reference-method"],
+)
+@pytest.mark.parametrize("shared_folder", [False, True], ids=["separate-roots", "shared-folder"])
+@pytest.mark.asyncio
+async def test_role_start_names_incomplete_selected_installation(
+    resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, missing: str, shared_folder: bool
+) -> None:
+    """選択したproject導入に必須資料が無ければ、user導入へ切り替えず、修復する導入と不足資料を示して起動しない。
+
+    user導入が同じフォルダーを読む場合も、選別が採らないuser導入の修復は案内しない。
+    修復後の同じ入力では、選択したproject導入の資料で起動する。
+    """
+    project = resources.root / "project-a"
+    stale, user = _stale_claude_installation(resources, monkeypatch, missing, project, shared_folder=shared_folder)
+    async with manager.AgentsServerManager(None) as current:
+        backend = ResourceBackend(current.sessions, "claude")
+        install_backend(current, "claude", backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        with pytest.raises(ActionableError) as raised:
+            await _start("task", resources, project, _CANDIDATES["claude"])
+        diagnostic = str(raised.value)
+        for expected in (
+            "agent-basics@mine",
+            "scope=project",
+            f"project={project}",
+            f"導入先={stale}",
+            f"不足資料={pathlib.Path(missing)}",
+            "claude plugin list --json",
+            "claude plugin update agent-basics@mine --scope project",
+        ):
+            assert expected in diagnostic
+        assert str(user) not in diagnostic and "--scope user" not in diagnostic and "scope=project " in diagnostic
+        assert not backend.start_calls and not current.sessions
+
+        (stale / missing).write_text("# 修復した資料\n", encoding="utf-8")
+        response = await _start("task", resources, project, _CANDIDATES["claude"])
+    assert response["status"] == "running"
+    assert f"agent-basics plugin root: {stale}\n" in backend.delivered[-1]
+
+
+@pytest.mark.asyncio
+async def test_role_start_ignores_stale_installation_of_other_project(
+    resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """別projectに残る古い導入記録は、対象projectの導入選択と起動前検査に影響しない。"""
+    _stale, user = _stale_claude_installation(
+        resources, monkeypatch, "skills/writing-standards/references/writing.md", resources.root / "project-a"
+    )
+    async with manager.AgentsServerManager(None) as current:
+        backend = ResourceBackend(current.sessions, "claude")
+        install_backend(current, "claude", backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        response = await _start("task", resources, resources.root / "project-b", _CANDIDATES["claude"])
+    assert response["status"] == "running"
+    assert f"agent-basics plugin root: {user}\n" in backend.delivered[-1]

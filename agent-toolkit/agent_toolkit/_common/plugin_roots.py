@@ -2,6 +2,7 @@
 
 import contextlib
 import contextvars
+import dataclasses
 import functools
 import hashlib
 import json
@@ -13,7 +14,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from typing import Any
 
 from agent_toolkit._common import host_homes, process_tree, runtime_environment
@@ -24,10 +25,73 @@ class PluginRootError(ValueError):
     """導入情報と正式配置からプラグインrootを一意に確定できない。"""
 
 
+@dataclasses.dataclass(frozen=True)
+class SelectedInstallation:
+    """Claude Codeの導入一覧から選んだ導入先。資料が欠けた場合に修復する導入を示す。"""
+
+    plugin_id: str
+    scope: str
+    project: pathlib.Path
+    root: pathlib.Path
+
+    def missing_error(self, missing: Iterable[pathlib.Path]) -> PluginRootError:
+        """不足資料と、選んだscopeのまま導入を確認・修復する公開CLIを示す。"""
+        relative = ", ".join(str(path.relative_to(self.root)) for path in missing)
+        return PluginRootError(
+            f"Claude Codeの{self.plugin_id}で選択した導入先に必須資料が無い: scope={self.scope} "
+            f"project={self.project} 導入先={self.root} 不足資料={relative}。"
+            "別のscopeの導入へは切り替えない。"
+            f"`{self.project}`をcwdにして`claude plugin list --json`で{self.plugin_id}の導入scopeと導入先を確認し、"
+            f"同じcwdで`claude plugin update {self.plugin_id} --scope {self.scope}`で更新するか、"
+            f"不要な導入なら`claude plugin uninstall {self.plugin_id} --scope {self.scope}`で外す。修復後にstartを再実行する"
+        )
+
+
 _inventories: contextvars.ContextVar[dict[tuple[str, pathlib.Path], object] | None] = contextvars.ContextVar(
     "plugin_root_inventories", default=None
 )
 _reusable: contextvars.ContextVar[dict | None] = contextvars.ContextVar("plugin_root_reusable", default=None)
+_selected: contextvars.ContextVar[dict[pathlib.Path, SelectedInstallation] | None] = contextvars.ContextVar(
+    "plugin_root_selected", default=None
+)
+
+
+def raise_for_incomplete_installation(missing: Iterable[pathlib.Path]) -> None:
+    """要求内で選んだ導入先の配下に欠けた資料があれば、修復する導入を示して失敗させる。
+
+    導入先の外の欠落は文書の誤りとして、呼出し元の診断へ任せる。
+    """
+    paths = tuple(missing)
+    for root, installation in (_selected.get() or {}).items():
+        inside = [path for path in paths if path.is_relative_to(root)]
+        if inside:
+            raise installation.missing_error(inside)
+
+
+def _remember_claude_selection(data: list, plugin_id: str, project: pathlib.Path, root: pathlib.Path) -> None:
+    """選別結果のrootを指し、projectへ適用される導入一覧の項目のうち、選別が採るscopeを記録する。"""
+    selected = _selected.get()
+    if selected is None:
+        return
+    scopes = [
+        item["scope"]
+        for item in data
+        if item.get("id") == plugin_id
+        and isinstance(item.get("scope"), str)
+        and (
+            item["scope"] == "user"
+            or (isinstance(item.get("projectPath"), str) and pathlib.Path(item["projectPath"]).resolve() == project)
+        )
+        # select_claude_plugin と同じく、配布元フォルダーの読込を示す`readFromFolder`をinstallPathより優先する。
+        and isinstance(path := item.get("readFromFolder") or item.get("installPath"), str)
+        and pathlib.Path(path).resolve() == root
+    ]
+    # 同じrootを複数scopeが指す場合（同じ版のcacheや`readFromFolder`）は、select_claude_pluginと同じく
+    # local、project、userの順に優先し、選別が採らなかったscopeの修復を案内しない。
+    if precedence := [scope for scope in ("local", "project", "user") if scope in scopes]:
+        selected[root] = SelectedInstallation(plugin_id, precedence[0], project, root)
+
+
 _INVENTORY_STATE_KEY = "plugin_inventory"
 
 
@@ -117,6 +181,7 @@ def plugin_resolution_scope(*, session_id: str = "") -> Generator[None]:
         yield
         return
     token = _inventories.set({})
+    selected_token = _selected.set({})
     saved = read_state(session_id).get(_INVENTORY_STATE_KEY, {}) if session_id else {}
     reusable = saved.copy() if isinstance(saved, dict) and saved.get("session_id") == session_id else {}
     persistent_token = _reusable.set(reusable if session_id else None)
@@ -127,6 +192,7 @@ def plugin_resolution_scope(*, session_id: str = "") -> Generator[None]:
             reusable["session_id"] = session_id
             update_state(session_id, lambda state: {**state, _INVENTORY_STATE_KEY: reusable})
         _reusable.reset(persistent_token)
+        _selected.reset(selected_token)
         _inventories.reset(token)
 
 
@@ -465,10 +531,13 @@ def resolve_plugin_root(
             raise PluginRootError(
                 "Claude Codeのagent-toolkitの有効なmarketplaceが一意でない。claude plugin list --jsonを確認する"
             )
+        plugin_id = name + "@" + next(iter(marketplaces))
         try:
-            return _claude_selector()(data, name + "@" + next(iter(marketplaces)), project)
+            selected = _claude_selector()(data, plugin_id, project)
         except ValueError as error:
             raise PluginRootError(str(error)) from error
+        _remember_claude_selection(data, plugin_id, project, selected)
+        return selected
     if len(roots) != 1:
         raise PluginRootError(f"{host}の{name}導入先が一意でない: {len(roots)}件。{host} plugin list --jsonを確認する")
     root = next(iter(roots)).resolve()
