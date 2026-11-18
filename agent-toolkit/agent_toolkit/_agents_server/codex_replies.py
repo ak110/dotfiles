@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import typing
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -25,6 +26,8 @@ from agent_toolkit._common.next_action import ActionableError
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
+
+_LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 
 class CodexRepliesMixin:
@@ -152,14 +155,29 @@ class CodexRepliesMixin:
         client = self._owned_client(session)
         if client is None:
             raise AppServerError("Codex App Server client is unavailable for interrupt")
+        turn_id = session.turn_id
+        stage = "送出確認待ち"
+
+        def sent() -> None:
+            nonlocal stage
+            stage = "応答待ち"
+
         try:
-            await client.request(
-                "turn/interrupt",
-                {"threadId": session.session_id, "turnId": session.turn_id},
-            )
+            await client.request("turn/interrupt", {"threadId": session.session_id, "turnId": turn_id}, on_sent=sent)
         except JsonRpcResponseError:
             if session.terminal:
                 return
+            raise
+        except asyncio.CancelledError:
+            # killの配送期限による取消。止まった段階と接続の状態が無いと、配送未確定の原因を切り分けられない。
+            _LOG.warning(
+                "Codexのturn/interruptを完了前に取り消しました: session_id=%s turn_id=%s stage=%s connection=%s。"
+                "stageが応答待ちならApp Serverの無応答、送出確認待ちでbacklogが上限なら受信処理の停滞で止まっている",
+                session.session_id,
+                turn_id,
+                stage,
+                client.diagnostic(),
+            )
             raise
 
     async def _start_reply_locked(
