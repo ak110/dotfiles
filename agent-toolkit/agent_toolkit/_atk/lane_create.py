@@ -20,8 +20,10 @@ from agent_toolkit._git import command as git_command
 def _branch_scope(repo: pathlib.Path, base_branch: str) -> str | None:
     """系統を登録したrepositoryでは、統合先ごとに固定作成先を分ける識別を返す。未登録はNoneで従来の配置を保つ。"""
     try:
-        location = config_repositories.locate(repo)
-        registered = location is not None and location.repo_id in config_settings.repository_branch_settings()
+        # 系統を登録したrepositoryが無ければ、Gitでrepositoryを解決せずに従来の配置へ倒す。
+        settings = config_settings.repository_branch_settings()
+        location = config_repositories.locate(repo) if settings else None
+        registered = location is not None and location.repo_id in settings
     except OSError, UnicodeError, ValueError:
         registered = False
     return config_repositories.branch_slug(base_branch) if registered else None
