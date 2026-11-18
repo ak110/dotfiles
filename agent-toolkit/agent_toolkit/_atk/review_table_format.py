@@ -65,7 +65,7 @@ _LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-responses.md`「レビュ
 # レビュー担当の指摘本文の必須ラベル。類似見直しを終えた件数を書く欄が無いと、見直しをしない選択が残るため必須にする。
 # 2回目以降のラウンドでは、指摘が前回の修正不足・修正の副作用・前回の見落とし・新しい変更・要求追加のどれかを区分で書かせる。
 ISSUE_LABELS = (SIMILAR_REVIEW_LABEL,)
-_COUNT_RE = re.compile(r"^[0-9]+")
+_COUNT_RE = re.compile(r"[0-9]+")
 CLASSIFICATION_LABEL = "区分:"
 CLASSIFICATION_VALUES = ("前回から残存", "修正に起因", "前回の見落とし", "新しい変更", "要求追加")
 _ISSUE_LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-recording-issues.md`「レビュー指摘管理表への登録」"
@@ -73,9 +73,13 @@ _ISSUE_LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-recording-issues.md
 # この行は指摘本文の必須ラベルと再確認の対象外とする。
 _OWN_RECORD_PREFIX = "担当の記録:"
 # 再レビューでレビュー担当が前回の指摘行の応答を確かめた判定。応答のある列の末尾へ1行で追記する。
-# 対応不十分・未対応の詳細は現在のroundの指摘として登録し直すため、判定の行には根拠の文章を書かせない。
+# 対応不十分・未対応の詳細は現在のroundの指摘として登録し直すため、判定の行には根拠の文章を書かせず、
+# 登録し直した行の識別子だけを書かせる。識別子が無いと、登録し忘れても未回答・未再確認がともに0になるためである。
 RECHECK_LABEL = "再確認:"
 RECHECK_VERDICTS = ("完了", "対応不十分", "未対応")
+RECHECK_DONE = RECHECK_VERDICTS[0]
+REREGISTERED_CLASSIFICATION = "前回から残存"
+_RECHECK_LINE_RE = re.compile(rf"{RECHECK_LABEL} ラウンド([1-9][0-9]*) ({'|'.join(RECHECK_VERDICTS)})(?: 行([1-9][0-9]*))?")
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -249,7 +253,7 @@ def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) ->
 
 
 def _require_labels(body: str, labels: tuple[str, ...], option: str, definition: str = _LABEL_DEFINITION) -> None:
-    """本文が各必須ラベルを行頭に持ち、ラベルの後に空でない記述を持ち、類似見直し完了件数が整数で始まることを確かめる。"""
+    """本文が各必須ラベルを行頭に持ち、ラベルの後に空でない記述を持ち、類似見直し完了件数が整数だけであることを確かめる。"""
     lines = [line.strip() for line in body.splitlines()]
     missing = [label for label in labels if not any(line.startswith(label) and line[len(label) :].strip() for line in lines)]
     if missing:
@@ -261,10 +265,10 @@ def _require_labels(body: str, labels: tuple[str, ...], option: str, definition:
         )
     if SIMILAR_REVIEW_LABEL in labels:
         counts = _label_values(body, SIMILAR_REVIEW_LABEL)
-        if len(counts) != 1 or _COUNT_RE.match(counts[0]) is None:
+        if len(counts) != 1 or _COUNT_RE.fullmatch(counts[0]) is None:
             raise _ActionableError(
-                f"{option}の{SIMILAR_REVIEW_LABEL}が整数で始まる1件ではない",
-                next_action=f"{SIMILAR_REVIEW_LABEL} の行を1つ置き、類似見直しで確かめた箇所の件数を整数で書く",
+                f"{option}の{SIMILAR_REVIEW_LABEL}が整数1件ではない",
+                next_action=f"{SIMILAR_REVIEW_LABEL} の行を1つ置き、類似見直しで確かめた箇所の件数を整数だけで書く",
             )
 
 
@@ -280,11 +284,45 @@ def _require_issue_labels(location: str, issue: str, round_value: str, option: s
     if _ROUND_RE.match(normalized_round) is None or int(normalized_round) < 2:
         return
     values = _label_values(issue, CLASSIFICATION_LABEL)
-    if len(values) != 1 or not values[0].startswith(CLASSIFICATION_VALUES):
+    if len(values) != 1 or values[0] not in CLASSIFICATION_VALUES:
         raise _ActionableError(
             f"{option}の本文に2回目以降のラウンドで必須の区分が1件ない",
             next_action=(
-                f"{CLASSIFICATION_LABEL} の行を1つ置き、値を{', '.join(CLASSIFICATION_VALUES)}のいずれかで書き始める。"
+                f"{CLASSIFICATION_LABEL} の行を1つ置き、値を{', '.join(CLASSIFICATION_VALUES)}のいずれか1つだけにする。"
                 f"各区分の意味は{_ISSUE_LABEL_DEFINITION}が定める"
+            ),
+        )
+
+
+def classification(issue: str) -> str | None:
+    """指摘本文の区分を1件だけ持つ場合にその値を返す。"""
+    values = _label_values(issue, CLASSIFICATION_LABEL)
+    return values[0] if len(values) == 1 else None
+
+
+def recheck_entries(body: str) -> list[tuple[int, str, int | None]]:
+    """recheckが記録した判定行を、記録したround・判定・登録し直した行へ分解する。形式外の行は判定として扱わない。"""
+    entries: list[tuple[int, str, int | None]] = []
+    for line in body.splitlines():
+        matched = _RECHECK_LINE_RE.fullmatch(line.strip())
+        if matched is not None:
+            row = matched.group(3)
+            entries.append((int(matched.group(1)), matched.group(2), int(row) if row else None))
+    return entries
+
+
+def without_recheck_lines(body: str) -> str:
+    """判定を記録し直すため、本文から再確認ラベルで始まる行を除く。"""
+    return "\n".join(line for line in body.rstrip().splitlines() if not line.strip().startswith(RECHECK_LABEL))
+
+
+def reject_recheck_label(body: str, option: str) -> None:
+    """再確認ラベルはレビュー担当の判定だけに使うため、応答本文での使用を拒否する。"""
+    if any(line.strip().startswith(RECHECK_LABEL) for line in body.splitlines()):
+        raise _ActionableError(
+            f"{option}の本文に{RECHECK_LABEL}で始まる行がある",
+            next_action=(
+                f"{RECHECK_LABEL}はレビュー担当が`atk review-table recheck`で記録する判定に使うため、"
+                "その行を除くか行頭の語を変えて同じコマンドを再実行する"
             ),
         )

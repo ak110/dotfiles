@@ -30,8 +30,10 @@ from agent_toolkit._atk.review_table_format import (
     COLUMNS,
     DECISION_MAKER_VALUES,
     NO_RESPONSE_REASON_LABELS,
+    RECHECK_DONE,
     RECHECK_LABEL,
     RECHECK_VERDICTS,
+    REREGISTERED_CLASSIFICATION,
     RESPONSE_LABELS,
     TRACK_VALUES,
     _cell,
@@ -43,6 +45,10 @@ from agent_toolkit._atk.review_table_format import (
     _require_labels,
     _row_position,
     _validate_rows,
+    classification,
+    recheck_entries,
+    reject_recheck_label,
+    without_recheck_lines,
 )
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
@@ -315,6 +321,7 @@ def respond(
             next_action="--response-fileか--no-response-reason-fileのどちらか一方を指定する",
         )
     needed = "yes" if replacement else "no"
+    reject_recheck_label(replacement or reason, "--response-file" if replacement else "--no-response-reason-file")
     if replacement:
         _require_labels(replacement, RESPONSE_LABELS, "--response-file")
     else:
@@ -391,8 +398,12 @@ def respond(
     return 0
 
 
-def recheck(path: str | Path, row_id: int, round_value: str, verdict: str) -> int:
-    """再レビューでレビュー担当が前回の指摘行の応答を確かめた判定を、応答のある列の末尾へ1行で追記する。"""
+def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, reregistered_row_id: int | None = None) -> int:
+    """再レビューでレビュー担当が前回の指摘行の応答を確かめた判定を、応答のある列の末尾へ1行で記録する。
+
+    対応不十分・未対応は、今回のroundへ`区分: 前回から残存`で登録し直した行の識別子を必須とし、判定の行へ書く。
+    同じ行の判定は記録し直すと置き換わる。作業中の表はGit管理外に置かれるため、誤った判定の訂正手段を兼ねる。
+    """
     target = _path(str(path))
     normalized_round = _normalized(round_value)
     if _ROUND_RE.match(normalized_round) is None or int(normalized_round) < 2:
@@ -403,7 +414,21 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str) -> in
         raise _ActionableError(
             f"再確認の判定が正規値ではない: {verdict}", next_action=f"--verdictを{', '.join(RECHECK_VERDICTS)}から指定する"
         )
-    block = f"{RECHECK_LABEL} ラウンド{normalized_round} {verdict}"
+    if verdict == RECHECK_DONE and reregistered_row_id is not None:
+        raise _ActionableError(
+            f"判定{RECHECK_DONE}には登録し直した行を指定しない", next_action="--reregistered-row-idを外して再実行する"
+        )
+    if verdict != RECHECK_DONE and reregistered_row_id is None:
+        raise _ActionableError(
+            f"判定{verdict}には今回登録し直した行の指定が必要である",
+            next_action=(
+                f"今回のroundへ`{REREGISTERED_CLASSIFICATION}`の区分で指摘を`atk review-table add`で登録し、"
+                "その行のrow-idを--reregistered-row-idへ指定して再実行する"
+            ),
+        )
+    block = f"{RECHECK_LABEL} ラウンド{normalized_round} {verdict}" + (
+        f" 行{reregistered_row_id}" if reregistered_row_id is not None else ""
+    )
     column_holder: list[int] = []
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
@@ -425,27 +450,50 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str) -> in
                 f"{_row_position(row_id)}は未応答である",
                 next_action="レビューイーの応答の記録を待ってから再確認する。未応答の指摘は未解決として扱う",
             )
-        if _label_values(row[column], RECHECK_LABEL):
-            raise _ActionableError(
-                f"{_row_position(row_id)}の再確認は記録済みである",
-                next_action="`atk review-table show <PATH> --row-id <ROW_ID> --field response`で記録済みの判定を確認する",
-            )
+        if reregistered_row_id is not None:
+            reason = _reregistration_problem(rows, reregistered_row_id, int(normalized_round), row[1])
+            if reason is not None:
+                raise _ActionableError(
+                    f"--reregistered-row-id {reregistered_row_id}は{reason}",
+                    next_action=(
+                        f"今回のround {normalized_round}・同じtrackへ`{REREGISTERED_CLASSIFICATION}`の区分で登録した"
+                        "レビュー担当の指摘行を`atk review-table show <PATH>`で確かめて指定する"
+                    ),
+                )
         column_holder.append(column)
         updated = [*rows]
         updated[index] = [*row]
-        updated[index][column] = f"{row[column].rstrip()}\n{block}"
+        updated[index][column] = f"{without_recheck_lines(row[column])}\n{block}"
         return updated
 
     _locked_update(target, updater)
     saved = _read(target)[row_id - 1]
     if not column_holder or not saved[column_holder[0]].endswith(block):
         raise _ActionableError(f"再確認の保存を確認できない: {target}", next_action=_SAVED_UNRESOLVED_NEXT_ACTION)
-    _outcome.report_success(f"再確認を記録した: {target}（{_row_position(row_id)}、{verdict}）")
+    _outcome.report_success(f"再確認を記録した: {target}（{_row_position(row_id)}、{block}）")
     return 0
 
 
+def _reregistration_problem(rows: list[list[str]], row_id: int, round_value: int, track: str) -> str | None:
+    """登録し直した指摘として指定された行が、判定と同じround・trackの前回から残存の指摘でなければ理由を返す。"""
+    if not 1 <= row_id <= len(rows):
+        return "表に無い行である"
+    row = rows[row_id - 1]
+    if _normalized(row[0]) != str(round_value) or row[1] != track:
+        return "判定と同じround・trackの行ではない"
+    if row[2].strip().startswith(_OWN_RECORD_PREFIX):
+        return "担当の記録である"
+    if classification(row[3]) != REREGISTERED_CLASSIFICATION:
+        return f"区分が{REREGISTERED_CLASSIFICATION}ではない"
+    return None
+
+
 def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple[int, list[int], dict[str, int]] | None:
-    """現在より前で指摘のある最新ラウンドについて、再確認の無い行と判定別の件数を返す。"""
+    """現在より前で指摘のある最新ラウンドについて、有効な判定の無い行と判定別の件数を返す。
+
+    有効な判定は、そのラウンドより後で現在のround以前に記録したものに限る。
+    対応不十分・未対応は、判定と同じroundへ前回から残存として登録し直した行を指すものに限る。
+    """
     candidates = [
         (row_id, row)
         for row_id, row in enumerate(rows, start=1)
@@ -459,13 +507,20 @@ def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple
     for row_id, row in candidates:
         if int(_normalized(row[0])) != latest:
             continue
-        verdicts = [value for cell in (row[5], row[6]) for value in _label_values(cell, RECHECK_LABEL)]
-        if not verdicts:
+        entries = [
+            entry
+            for cell in (row[5], row[6])
+            for entry in recheck_entries(cell)
+            if latest < entry[0] <= round_value
+            and (
+                entry[1] == RECHECK_DONE
+                or (entry[2] is not None and _reregistration_problem(rows, entry[2], entry[0], track) is None)
+            )
+        ]
+        if not entries:
             pending.append(row_id)
             continue
-        verdict = verdicts[-1].split()[-1] if verdicts[-1].split() else ""
-        if verdict in counts:
-            counts[verdict] += 1
+        counts[entries[-1][1]] += 1
     return latest, pending, counts
 
 

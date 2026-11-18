@@ -228,6 +228,11 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=RECHECK_VERDICTS,
         help="レビューイーの応答を確かめた判定。完了、対応不十分または未対応を指定する。",
     )
+    recheck_parser.add_argument(
+        "--reregistered-row-id",
+        type=_row_id,
+        help="対応不十分・未対応で必須。今回のroundへ区分「前回から残存」で登録し直した指摘行のrow-idを指定する。",
+    )
     show_parser = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk review-table show"])
     show_parser.add_argument("path", help=path_help)
     show_parser.add_argument(
@@ -295,7 +300,7 @@ def dispatch(args: argparse.Namespace) -> int:
         return add(args.path, args.round, args.track, location, issue, args.level)
     if command == "recheck":
         _require_writable_exec_review(args.path)
-        return recheck(args.path, args.row_id, args.round, args.verdict)
+        return recheck(args.path, args.row_id, args.round, args.verdict, args.reregistered_row_id)
     if command == "respond":
         _require_writable_exec_review(args.path)
         round_value = args.round or ""

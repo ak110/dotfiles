@@ -513,8 +513,10 @@ HELP: dict[str, dict[str, str]] = {
         "指定roundと同じtrackの過去roundにも指摘がある場合、previous_findingsの各要素へroundとrow_idsを返す。"
         "history_commandは全ラウンドの指摘と応答を読む公開操作、repetition_guidanceは反復原因の判定先を示す。"
         "過去の件数と同じ完成条件であることだけでは同じ指摘と判定せず、違反規定と発生条件を比較する。"
-        "同じtrackの過去roundに指摘がある場合、直前の指摘roundをrecheck_round、その中で`atk review-table recheck`の判定が無い"
+        "同じtrackの過去roundに指摘がある場合、直前の指摘roundをrecheck_round、その中で有効な`atk review-table recheck`の判定が無い"
         "レビュー担当の指摘行をrecheck_pending_row_ids・recheck_pending_count、判定別の件数をrecheck_countsで返す。"
+        "有効な判定は、recheck_roundより後で指定round以前に記録したものに限り、対応不十分・未対応は"
+        "判定と同じroundへ区分「前回から残存」で登録し直した行を指すものに限る。"
         "エージェント環境の長い出力は全量を保存し、保存先と行数を返す。表は変更しない。\n"
         "前提: --trackと--roundで行を限定できる。summaryは1以上の--roundが必須で、track省略時はexec-review。"
         "--row-id Nで保存順の既存識別子により1行を選び、--field responseか--field no-response-reasonでデコード済み本文だけを全文取得できる。"
@@ -529,13 +531,15 @@ HELP: dict[str, dict[str, str]] = {
         "目的: 再レビューで、前のラウンドの指摘1件ごとに、レビューイーの修正または対応不要理由を確かめた判定（完了・対応不十分・未対応）を表へ残す。"
         "\n利用場面: 再レビューを始めたレビュー担当が、直前の指摘ラウンドの各行を確かめたとき。"
         "\n対象と出力: 指定した表をロックし、指定行の応答のある列（対応内容か対応不要理由）の末尾へ"
-        "`再確認: ラウンド<round> <判定>`の1行を追記して保存し、読み戻して確かめる。"
-        "現在のroundより前の行、担当の記録ではない行、応答済みの行、再確認が未記録の行だけを受け付け、それ以外は表を変更せず非0で終了する。"
+        "`再確認: ラウンド<round> <判定>`（対応不十分・未対応は末尾に` 行<登録し直した行のrow-id>`）の1行を記録して保存し、読み戻して確かめる。"
+        "現在のroundより前の行、担当の記録ではない行、応答済みの行だけを受け付け、それ以外は表を変更せず非0で終了する。"
         "\n前提: `--row-id`は`show`が出力した識別子、`--round`は現在の再レビューのラウンド番号（2以上）とする。"
-        "判定の根拠は書かない。対応不十分・未対応とした指摘は、現在のroundの指摘として`区分: 前回から残存`で`atk review-table add`により登録し直し、そこへ詳細を書く。"
+        "判定の根拠は書かない。対応不十分・未対応とする指摘は、先に現在のroundの指摘として`区分: 前回から残存`で`atk review-table add`により登録し直して詳細を書き、"
+        "その行のrow-idを`--reregistered-row-id`へ指定する。"
         "未記録の行は`show --format=summary`のrecheck_pending_row_idsで確かめる。"
-        "\n復元・後始末: 誤った判定の取り消しは、表を保管するリポジトリのGit履歴から行う。",
-        "epilog": "実行例:\n\n  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=3 --round=2 --verdict=完了",
+        "\n復元・後始末: 誤った判定は、同じ行へ正しい判定で再実行すると置き換わる。他の応答・証拠は変わらない。",
+        "epilog": "実行例:\n\n  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=3 --round=2 --verdict=完了\n"
+        "  atk review-table recheck /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=4 --round=2 --verdict=対応不十分 --reregistered-row-id=7",
     },
     "atk review-table validate": {
         "summary": "レビュー指摘管理表を検証する",
