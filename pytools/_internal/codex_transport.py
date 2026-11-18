@@ -108,7 +108,9 @@ async def accept_tui(
         yield channel
     finally:
         writer.close()
-        await writer.wait_closed()
+        # 終了したTUIの接続リセットは切断の完了であり、中継の結果ではない。
+        with contextlib.suppress(ConnectionError):
+            await writer.wait_closed()
 
 
 @contextlib.asynccontextmanager

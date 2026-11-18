@@ -31,6 +31,12 @@ class RecoveryPhase(enum.Enum):
     FAILED = enum.auto()
 
 
+async def _send_to_tui(front: RpcChannel, message: dict[str, Any]) -> None:
+    # 終了したTUIへの送信は接続リセットで失敗する。中継の終了は受信側が切断として判断する。
+    with contextlib.suppress(ConnectionError):
+        await front.send(message)
+
+
 class RecoveryBridge:
     """標準入出力を変更せず、起動したTUIだけのIPC接続を所有する。"""
 
@@ -187,13 +193,15 @@ class RecoveryBridge:
                         message = dict(message, params=dict(params, requestId=public_id))
                         self._server_requests.pop(public_id)
                         break
-        await front.send(message)
+        await _send_to_tui(front, message)
 
     async def _invalidate_server_requests(self, front: RpcChannel) -> None:
         # 同じ公開通知で古い承認表示を終了させる。承認したという応答は生成しない。
         for identifier, (_native, thread) in tuple(self._server_requests.items()):
             if thread is not None:
-                await front.send({"method": "serverRequest/resolved", "params": {"threadId": thread, "requestId": identifier}})
+                await _send_to_tui(
+                    front, {"method": "serverRequest/resolved", "params": {"threadId": thread, "requestId": identifier}}
+                )
         self._server_requests.clear()
 
     async def _request(self, front: RpcChannel, back: RpcChannel, method: str, params: dict[str, Any]) -> Any:
@@ -368,7 +376,8 @@ class RecoveryBridge:
                             if self.state.thread_id is not None
                             else "codex doctorで接続を確認し、codex resumeで元の会話を選んで直前の依頼・実行履歴を確認する"
                         )
-                        await front.send(
+                        await _send_to_tui(
+                            front,
                             {
                                 "id": identifier,
                                 "error": {
@@ -376,7 +385,7 @@ class RecoveryBridge:
                                     "message": f"daemon再起動で{method}の応答を失い、操作の成否が不明。"
                                     f"{next_action}。結果を確認するまで同じ操作を再実行しない",
                                 },
-                            }
+                            },
                         )
                     pending.clear()
                     self.phase = RecoveryPhase.RECONNECTING
