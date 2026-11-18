@@ -329,12 +329,12 @@ async def test_registry_derived_stopped_sessions_move_with_their_context(
     received.save_control_state.assert_awaited_once()
 
 
-@pytest.mark.parametrize("exited", [True, False])
+@pytest.mark.parametrize("exit_at", ["after_prepare", "during_prepare", None])
 @pytest.mark.asyncio
 async def test_prepare_left_by_exited_generation_is_released_on_next_tick(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    exited: bool,
+    exit_at: str | None,
 ) -> None:
     """準備させた新世代が受付を公開せず終了したら、旧世代は次の巡回で静止を解き、状態保存と新しいturnの受付を続ける。
 
@@ -348,8 +348,20 @@ async def test_prepare_left_by_exited_generation_is_released_on_next_tick(
     )
     for registry in (coordinator.registry, coordinator.projections.registry, coordinator.registrations.registry):
         monkeypatch.setattr(registry, "current", lambda: target)
-    monkeypatch.setattr(service_transport, "process_alive", lambda process: not exited or process == target["process"])
+    exited = [False]
+    monkeypatch.setattr(service_transport, "process_alive", lambda process: not exited[0] or process == target["process"])
+    freeze_projections = coordinator.projections.freeze
+
+    async def exit_while_preparing(token: str) -> None:
+        # 準備の途中で新世代が終了し、その間の巡回が静止を解いた後に残りの静止が掛かる。
+        exited[0] = True
+        await coordinator.tick()
+        await freeze_projections(token)
+
+    if exit_at == "during_prepare":
+        monkeypatch.setattr(coordinator.projections, "freeze", exit_while_preparing)
     await coordinator.prepare("token", {"generation": "G2", "epoch": 2, "process": "2:new"})
+    exited[0] = exit_at is not None
     allow_resume = await coordinator.tick()
     save = {
         "identity": dataclasses.asdict(shared_roots.StatusFileIdentity("root", "root.json", None)),
@@ -357,7 +369,7 @@ async def test_prepare_left_by_exited_generation_is_released_on_next_tick(
         "operation": "seed",
         "arguments": {"groups": {}, "published": []},
     }
-    if not exited:
+    if exit_at is None:
         assert not allow_resume
         with pytest.raises(TimeoutError):
             async with asyncio.timeout(0.2):

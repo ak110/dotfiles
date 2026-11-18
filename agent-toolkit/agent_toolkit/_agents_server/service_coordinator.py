@@ -258,15 +258,15 @@ class ServiceCoordinator:
                         backend: Any = conversation.manager._backends.get(session.engine)
                         client = self._client(backend, session.session_id)
                         self.boundary(session, client)
+        if not service_transport.process_alive(target["process"]):
+            # 準備の途中で新世代が終了すると、その間の巡回が静止を解いた後に残りの静止が掛かる。
+            await self._thaw(token)
         return self.projections.inventory()
 
     async def commit_update(self, token: str, current: dict) -> None:
         """遅れた準備で受付を戻さず、保存先を開いてから終了済み会話を移す。"""
         await self.gate.observe_current(current)
-        await self.projections.thaw(token)
-        self.registrations.thaw(token)
-        self._intents.pop(token, None)
-        await self.gate.thaw(token)
+        await self._thaw(token)
         for identifier in tuple(self._ended):
             if self._conversation(identifier) is not None and current["generation"] != self.generation:
                 self._schedule_move(identifier)
@@ -284,8 +284,19 @@ class ServiceCoordinator:
                         descriptor = await client.detach()
                         await self._restore_source(backend, session, descriptor, auxiliary)
 
+    async def _thaw(self, token: str) -> None:
+        await self.projections.thaw(token)
+        self.registrations.thaw(token)
+        self._intents.pop(token, None)
+        await self.gate.thaw(token)
+
     async def tick(self) -> bool:
         """受付が先に進んだ場合だけ、未終了の移譲を再確認する。"""
+        for token, target in tuple(self._intents.items()):
+            # 準備させた新世代が受付の公開前に終了すると確定は届かず、静止したままでは保存と新しいturnが止まり続ける。
+            # 終了した世代はもう書かないため、静止を解いても引継ぎを失わない。生存中は時間で解かない。
+            if not service_transport.process_alive(target["process"]):
+                await self._thaw(token)
         await self._retry_adoptions()
         retained = {identifier for item in self.managers.conversations.values() for identifier in item.manager.sessions} | set(
             self._pending_adoptions
