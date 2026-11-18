@@ -1,6 +1,6 @@
 r"""成果作業で`agent-toolkit:report-completion`の起動を忘れた終了をStopフックで検出する。
 
-成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、
+成果作業（成功した`agent-toolkit:process-wi`と入口の作業`add-awi-by-user`の開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行）を行った作業で、最後の会話圧縮以降の読込証拠が無く、
 有効なプロジェクト規範による省略も無い場合は、起動と残工程への続行を一度通知する。
 起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、

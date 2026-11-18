@@ -37,7 +37,9 @@ def _run(payload: dict[str, Any], event: str, capsys: pytest.CaptureFixture[str]
 
 
 @pytest.mark.parametrize("plugin", ["agent-toolkit", "agent-basics"])
-@pytest.mark.parametrize("relative", ["SKILL.md", "references/search.md", "references/antigravity-full-instructions.md"])
+@pytest.mark.parametrize(
+    "relative", ["SKILL.md", "references/search.md", "playbooks/search.md", "references/antigravity-full-instructions.md"]
+)
 @pytest.mark.parametrize("partial", [False, True])
 def test_read_keeps_document_owner_for_shared_observation(tmp_path, monkeypatch, plugin, relative, partial):
     """全文を返した`SKILL.md`の読取だけを、資料の所有者付きでSkill観測へ渡す。部分取得と参照資料は渡さない。"""
@@ -63,7 +65,7 @@ def test_read_keeps_document_owner_for_shared_observation(tmp_path, monkeypatch,
         "tool_response": header if partial else path.read_text(encoding="utf-8"),
     }
     assert not antigravity._record_read(payload)  # noqa: SLF001  # pylint: disable=protected-access
-    if not partial and relative != "references/search.md":
+    if not partial and relative not in {"references/search.md", "playbooks/search.md"}:
         assert observed[0]["tool_input"] == {"skill": f"{plugin}:search"}
     else:
         assert not observed

@@ -3,7 +3,7 @@
 各イベントはこの所有モジュールへ観測を渡す。成功したSkill起動は本文版付きの共通取得記録にも接続する。
 成果作業は成功した対象スキルの開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功したSkill呼び出しと、
-Codexの実際の入力と結果が示す`SKILL.md`の読取から取得する。完了の自己申告と報告本文は受理しない。
+Codexの実際の入力と結果が示す`SKILL.md`・入口の作業の手順書の読取から取得する。完了の自己申告と報告本文は受理しない。
 意味上の中止・開始はメインが原入力と対象を結び付け、ここでは識別子から実体を読み、由来と対象を確かめる。
 """
 
@@ -28,6 +28,7 @@ lazy from agent_toolkit._hooks.termination_evidence_operations import (
     _hook_tool_input,
     _invocations,
     _read_skills,
+    _start_label,
     published_git_operations,
     unscoped_self_edits,
 )
@@ -147,11 +148,11 @@ def _register_document_reads(payload: dict[str, Any]) -> None:
     for invocation, current in shell_cwd.bash_invocation_cwds(tool_input["command"], payload.get("cwd", "")):
         if not current.resolved:
             continue
-        for read in _read_skills(join_words(invocation.segment.tokens)):
+        for work, read in _read_skills(join_words(invocation.segment.tokens)):
             path = str((pathlib.Path(current.path) / read.path).resolve())
             if _document_reads.document_plugin(path) == "agent-toolkit":
-                documents.append(_document_reads.DocumentRead(read.skill, read.relative_path, "agent-toolkit", path))
-    for document in documents:
+                documents.append((work, _document_reads.DocumentRead(read.skill, read.relative_path, "agent-toolkit", path)))
+    for work, document in documents:
         metadata = next((item for item in candidates if item["path"] == document.path and not item["heading"]), None)
         if metadata is None:
             metadata = next(
@@ -160,12 +161,12 @@ def _register_document_reads(payload: dict[str, Any]) -> None:
         if metadata is None:
             continue
         records: list[dict[str, Any]] = [{"kind": "completion"}]
-        if document.skill != COMPLETION_REPORT:
+        if work != COMPLETION_REPORT:
             repository = _git_root(payload.get("cwd", ""))
             records = [
                 {
                     "kind": "deliverable",
-                    "labels": [f"agent-toolkit:{document.skill}の開始"],
+                    "labels": [_start_label(work)],
                     "repository": str(repository) if repository else None,
                 }
             ]

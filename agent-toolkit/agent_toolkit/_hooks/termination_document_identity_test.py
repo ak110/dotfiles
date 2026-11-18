@@ -10,8 +10,15 @@ from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_delivered_payload
 
+_START_DOCUMENTS = {
+    "report-completion": ("skills/report-completion/SKILL.md", None),
+    "process-wi": ("skills/process-wi/SKILL.md", "agent-toolkit:process-wiの開始"),
+    "add-awi-by-user": ("skills/atk-mode/playbooks/add-awi-by-user.md", "agent-toolkit:atk-mode add-awi-by-userの開始"),
+}
+"""開始資料の所在と、成果作業として記録する表示名。入口の作業は手順書の読取で始まる。"""
 
-@pytest.mark.parametrize("skill", ["report-completion", "process-wi", "add-awi-by-user"])
+
+@pytest.mark.parametrize("skill", list(_START_DOCUMENTS))
 @pytest.mark.parametrize("plugin", ["agent-toolkit", "foreign-plugin"])
 @pytest.mark.parametrize("result", ["body", "different", "failure", "truncated", "persisted"])
 @pytest.mark.parametrize("extra_eof_lf", [False, True])
@@ -21,7 +28,7 @@ def test_public_hook_keeps_document_owner(tmp_path, monkeypatch, skill, plugin, 
     manifest = root / ".claude-plugin/plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(json.dumps({"name": plugin}), encoding="utf-8")
-    document = root / "skills" / skill / "SKILL.md"
+    document = root / _START_DOCUMENTS[skill][0]
     document.parent.mkdir(parents=True)
     body = f"---\nname: {skill}\n---\n# 起動資料\n固有本文\n"
     document.write_text(body + ("\n" if extra_eof_lf else ""), encoding="utf-8")
@@ -67,7 +74,7 @@ def test_public_hook_keeps_document_owner(tmp_path, monkeypatch, skill, plugin, 
         work = works[0][1]
         assert bool(work.get("completion_report")) is (skill == "report-completion")
         if skill != "report-completion":
-            assert work["deliverables"] == [f"agent-toolkit:{skill}の開始"]
+            assert work["deliverables"] == [_START_DOCUMENTS[skill][1]]
 
 
 @pytest.mark.parametrize("same_body", [False, True])
@@ -99,7 +106,7 @@ def test_public_hook_uses_observed_instruction_path(tmp_path, monkeypatch, same_
         assert works[0][1]["completion_report"] is True
 
 
-@pytest.mark.parametrize("skill", ["report-completion", "process-wi", "add-awi-by-user"])
+@pytest.mark.parametrize("skill", list(_START_DOCUMENTS))
 @pytest.mark.parametrize("delivery", ["full", "omitted", "split", "recovery"])
 def test_codex_skill_start_follows_produced_outer_delivery(tmp_path, monkeypatch, host_environ, skill, delivery):
     """実cat・sedから外側配送と公開Preを経由し、3種類の開始証拠まで確認する。"""
@@ -107,7 +114,7 @@ def test_codex_skill_start_follows_produced_outer_delivery(tmp_path, monkeypatch
     manifest = root / ".claude-plugin/plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    path = root / "skills" / skill / "SKILL.md"
+    path = root / _START_DOCUMENTS[skill][0]
     path.parent.mkdir(parents=True)
     body = f"---\nname: {skill}\n---\n# 開始資料\n必要な固有本文\n"
     path.write_text(body, encoding="utf-8")

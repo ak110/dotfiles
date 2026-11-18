@@ -46,4 +46,4 @@ def test_question_is_not_denied_because_of_process_loop(
         specific = json.loads(result.stdout).get("hookSpecificOutput", {})
         # 確認の前に読む資料の未取得による拒否は、起動環境によらない別の判定である。
         reason = specific.get("permissionDecisionReason", "")
-        assert specific.get("permissionDecision") != "deny" or "approval-scope.md" in reason
+        assert specific.get("permissionDecision") != "deny" or "atk-mode/playbooks/confirmation.md" in reason

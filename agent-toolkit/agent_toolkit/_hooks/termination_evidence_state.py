@@ -20,10 +20,20 @@ COMPLETION_REPORT = "report-completion"
 """起動証拠を確かめるスキルの短縮名。"""
 
 
-TARGET_SKILLS = ("process-wi", "add-awi-by-user")
+TARGET_SKILLS = ("process-wi",)
 
 
 """開始した時点で成果作業となるスキルの短縮名。適用条件は`report-completion/SKILL.md`「工程」の工程9に従う。"""
+
+
+TARGET_ENTRY_WORKS = ("add-awi-by-user",)
+
+
+"""入口`atk-mode`の作業のうち、開始した時点で成果作業となる名前。
+
+入口の起動の引数の先頭語か、手順書`playbooks/<名前>.md`の読取（スキルを読取で始めるホスト）で開始を観測する。
+開始の記録は終了時の報告の要求に使い、認可には使わない。
+"""
 
 
 _TERMINATION_EVIDENCE_REFERENCE = "`agent-toolkit:report-completion`の`references/termination-evidence.md`"

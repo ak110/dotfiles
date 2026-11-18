@@ -90,6 +90,18 @@ NORMATIVE_KIND_MAIN = "rules-main"
 NORMATIVE_KIND_SUBAGENT = "rules-subagent"
 
 
+def _run_skill_start(skill: object) -> str:
+    """`atk run-skill`の起動入力の`skill`から、作業の始め方の案内を返す。
+
+    `skill`は起動単位の保存上の名前でもある（`atk wi submit`の起動単位など）。
+    agent-toolkitに同名のスキルが無い場合は、起動を求めず目的文が示す始め方へ従わせる。
+    """
+    name = skill.removeprefix("agent-toolkit:") if isinstance(skill, str) and skill.startswith("agent-toolkit:") else None
+    if name is not None and not plugin_resources.skill_document_path(name, "SKILL.md").is_file():
+        return f"`{skill}`は保存上の名前で同名のスキルは無い。目的文が示す始め方で作業し、"
+    return "指定スキルを起動し、"
+
+
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
     """SessionStartへ追加する本文を構成する。
 
@@ -140,7 +152,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                 )
             else:
                 guidance = (
-                    "作業を始める前に、agent-toolkit:user-confirmation-and-reportのreferences/answer-transitions.mdを全文読み、"
+                    "作業を始める前に、`agent-toolkit:atk-mode/references/answer-transitions.md`を全文読み、"
                     "「`atk run-skill`の過去の実行のUWI」に従って過去の実行のUWIを照会せよ。"
                 )
                 if data.get("batch_manifest"):
@@ -148,7 +160,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                     guidance += (
                         "\nbatchの起動から保存までは、agent-toolkit:review-sessionのreferences/batch.mdを全文読んで従え。"
                     )
-                guidance += "\n指定スキルを起動し、次の終了契約を読め: agent-toolkit:report-completion"
+                guidance += f"\n{_run_skill_start(data.get('skill'))}次の終了契約を読め: agent-toolkit:report-completion"
             if not resume_only:
                 parts.append(
                     message_format.auto_message(

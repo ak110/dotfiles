@@ -85,7 +85,7 @@ class TestBuildNotice:
         assert unanswered not in notice
         assert foreign not in notice
         # hookはprocess-wiの実行中かを判定しないため、実行中かどうかの条件分岐は規範の節へ置き、通知は節を参照する。
-        assert "`references/answer-transitions.md`「回答後の状態遷移」" in notice
+        assert "`agent-toolkit:atk-mode/references/answer-transitions.md`「回答後の状態遷移」" in notice
         assert _awaiting() == [unanswered]
         assert _uwi_completion.build_notice(_SESSION) is None
 

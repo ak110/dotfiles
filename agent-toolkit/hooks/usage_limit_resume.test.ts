@@ -55,7 +55,7 @@ test("猶予後終了は最大使用窓の解除後へ単一予約を更新し�
   expect(reads.length).toBe(1);
   const document: string = JSON.parse(reads[0]![1]!);
   expect(document).toMatch(/^(?:\/|[A-Za-z]:[\\/]|\\\\)/);
-  expect(document.endsWith("/skills/user-confirmation-and-report/references/usage-limit.md")).toBe(true);
+  expect(document.endsWith("/skills/atk-mode/references/usage-limit.md")).toBe(true);
   expect(statuses[0]).toMatch("1970-01-01T00:00:02.001Z");
   expect(statuses.at(-1)).toBe(undefined);
   await clock.advance(10_000);

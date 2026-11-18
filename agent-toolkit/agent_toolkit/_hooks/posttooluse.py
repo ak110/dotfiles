@@ -93,7 +93,7 @@ _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 # --- ユーザーが書いた文への注記 ---
 
 VERIFICATION_NOTICE_BODY = (
-    "応答の前に、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance-correction.md`"
+    "応答の前に、`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
     "「割り込み・訂正・中止」に従い、現物との比較の要否を判定せよ。"
 )
 """ユーザーが書いた文の内容を現物で確かめる手順の所在を示す注記の本文。
@@ -122,7 +122,7 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
         return None
     body = (
         "発話に例示の語がある。応答・具体化の前に、"
-        "`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`"
+        "`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
         "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断せよ。"
         "例示が上位の対象の一部なら、上位の対象を言葉で定め、例示以外の候補を探してから範囲を確定せよ。"
     )

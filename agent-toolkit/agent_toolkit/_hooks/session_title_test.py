@@ -20,10 +20,10 @@ def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_consultation_history_survives_other_skill(codex, capsys):
     """明示起動を両ホストで記録し、後の表示種別変更でも履歴を保持する。"""
     session = "consultation-history"
-    payload = {"session_id": session, "prompt": "/agent-toolkit:add-awi-by-user"}
+    payload = {"session_id": session, "prompt": "/agent-toolkit:atk-mode add-awi-by-user"}
     if codex:
         payload["turn_id"] = "turn"
-        payload["prompt"] = "$agent-toolkit:add-awi-by-user"
+        payload["prompt"] = "$agent-toolkit:atk-mode add-awi-by-user"
     user_prompt_submit.main(json.dumps(payload))
     capsys.readouterr()
     assert session_state.read_state(session)["add_awi_skill_invoked"] is True
@@ -42,7 +42,6 @@ def test_consultation_history_survives_other_skill(codex, capsys):
         ("process-wi", "single-lane 追記", "single-lane"),
         ("process-wi", "all-repos", "all-repos"),
         ("process-wi", "single-lanex", "process-wi"),
-        ("add-awi-by-user", "", "add-awi"),
     ],
 )
 @pytest.mark.parametrize("manual", [False, True])
@@ -98,9 +97,7 @@ def test_plan_writes_update_automatic_title(
     if loop:
         monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
         monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", session)
-    posttooluse.main(
-        json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:add-awi-by-user"}})
-    )
+    user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "/atk-mode add-awi-by-user"}))
     capsys.readouterr()
     plans = pathlib.Path.home() / ".claude/plans"
     plans.mkdir(parents=True, exist_ok=True)
@@ -270,6 +267,23 @@ def test_agent_invoked_entry_grants_no_state(skill, arguments, capsys):
     state = session_state.read_state(session)
     assert not state.get("add_awi_skill_invoked")
     assert not state.get("process_wi_skill_invoked")
+    assert "session_title_kind" not in state
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("prefix", ["", "agent-toolkit:"])
+def test_retired_skill_name_starts_nothing(prefix, codex, capsys):
+    """スキルを廃止した作業は、移行前の名前の入力とSkill起動では始まらない。"""
+    name = prefix + "add-awi-by-user"
+    session = f"retired-{codex}-{len(name)}"
+    payload = {"session_id": session, "prompt": ("$" if codex else "/") + name}
+    if codex:
+        payload["turn_id"] = "turn"
+    user_prompt_submit.main(json.dumps(payload))
+    posttooluse.main(json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": name}}))
+    capsys.readouterr()
+    state = session_state.read_state(session)
+    assert not state.get("add_awi_skill_invoked")
     assert "session_title_kind" not in state
 
 

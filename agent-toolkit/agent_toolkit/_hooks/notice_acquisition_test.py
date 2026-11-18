@@ -33,7 +33,7 @@ def test_content_notice_references_only_the_required_documents(prompt: str) -> N
     bodies = posttooluse.content_notices(prompt, "notice-acquisition")
     assert len(bodies) == 1
     body = bodies[0]
-    assert "`references/user-utterance.md`" in body
+    assert "`agent-toolkit:atk-mode/playbooks/user-utterance.md`" in body
     routing = "`references/routing.md`"
     if "調査" in prompt:
         assert routing in body

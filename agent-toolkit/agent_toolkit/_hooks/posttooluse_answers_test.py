@@ -179,7 +179,7 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert "事実の主張か是正を求める対象を含む場合がある" not in context
     assert "この注記は`AskUserQuestion`" not in context
-    assert "references/user-utterance-correction.md" in context
+    assert "playbooks/user-utterance.md" in context
     assert "「割り込み・訂正・中止」" in context
     assert "認識合わせ" not in context
     has_example = not text.startswith("`") and "例えば" in text

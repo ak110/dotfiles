@@ -7,7 +7,9 @@ import re
 from agent_toolkit._common import process_loop_session, skill_modes
 from agent_toolkit._common.session_state import read_state, update_state
 
-_KINDS = {"process-wi": "process-wi", "add-awi-by-user": "add-awi"}
+_KINDS = {"process-wi": "process-wi"}
+# スキルを持たない作業の種別。ユーザーの入力が入口`atk-mode`へ名指しした場合だけ使う。
+_ENTRY_KINDS = {"add-awi-by-user": "add-awi"}
 
 # 複数リポジトリを統括する会話の名前。統括は複数の個別計画を順に扱うため、最後の計画名を
 # 連結すると会話全体の処理範囲を誤認させる。計画名を連結しない固定名とする。
@@ -15,15 +17,19 @@ _ALL_REPOS_TITLE = "process-wi all-repos"
 
 
 def observe_add_awi(session_id: str, skill: str) -> None:
-    """表示名と独立して相談の開始を会話寿命の間保持する。"""
-    if skill == "agent-toolkit:add-awi-by-user":
+    """表示名と独立して相談の開始を会話寿命の間保持する。
+
+    呼び出し元は、ユーザーの入力が入口`atk-mode`へ作業を名指しした場合に限る。
+    エージェントによる入口の起動と手順書の読取からは呼ばない（エージェントが自分の判断でAWI投入の状態を立てられなくする）。
+    """
+    if skill.removeprefix("agent-toolkit:") == "add-awi-by-user":
         update_state(session_id, lambda state: {**state, "add_awi_skill_invoked": True})
 
 
-def observe_skill(session_id: str, skill: str, arguments: str | None = None) -> None:
-    """成功したスキル起動または手動起動の種別を記録する。"""
-    observe_add_awi(session_id, skill)
-    kind = _KINDS.get(skill.removeprefix("agent-toolkit:"))
+def observe_skill(session_id: str, skill: str, arguments: str | None = None, *, named_by_entry: bool = False) -> None:
+    """成功したスキル起動または手動起動の種別を記録する。`named_by_entry`は、ユーザーの入力が入口へ名指しした作業で真にする。"""
+    kinds = _KINDS | _ENTRY_KINDS if named_by_entry else _KINDS
+    kind = kinds.get(skill.removeprefix("agent-toolkit:"))
     if kind == "process-wi":
         mode, _ = skill_modes.split_mode(skill, arguments)
         kind = mode or kind

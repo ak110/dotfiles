@@ -88,6 +88,11 @@ PowerShellの`Get-Content`を扱わない。report-completionの起動証拠は�
 """
 
 
+_DOCUMENT_DIRECTORIES = ("references", "playbooks", "roles")
+
+"""スキルの資料を置くディレクトリ。入口`atk-mode`は手順書を`playbooks/`、役割文書を`roles/`に持つ。"""
+
+
 def selected_target_key(target: read_triggers.ReadTarget, *, declarations: Sequence[dict] = ()) -> str:
     """復元と通常操作で同じ資料選択の識別子を使う。"""
     selected: dict[str, object] = {"path": str(target.path), "heading": target.heading}
@@ -103,7 +108,7 @@ class DocumentRead:
     skill: str
     """`agent-toolkit:`の修飾を除いたスキルの短縮名。"""
     relative_path: str
-    """スキルのディレクトリからの相対パス（`SKILL.md`か`references/<名前>.md`）。"""
+    """スキルのディレクトリからの相対パス（`SKILL.md`か、`references/`・`playbooks/`・`roles/`直下の`<名前>.md`）。"""
     plugin: str = "agent-toolkit"
     """同名スキルを持つプラグインを区別する。"""
     path: str = dataclasses.field(default="", compare=False)
@@ -111,7 +116,7 @@ class DocumentRead:
 
 
 def skill_document(argument: str) -> tuple[str, str] | None:
-    """パスの引数がスキルの`SKILL.md`か`references/`直下の資料を指す場合に、短縮名と相対パスを返す。"""
+    """パスの引数がスキルの`SKILL.md`か、`references/`・`playbooks/`・`roles/`直下の資料を指す場合に、短縮名と相対パスを返す。"""
     parts = pathlib.PurePosixPath(argument.replace("\\", "/")).parts
     if (
         len(parts) >= 4
@@ -122,8 +127,8 @@ def skill_document(argument: str) -> tuple[str, str] | None:
         return parts[-3], "SKILL.md"
     if len(parts) >= 3 and parts[-1] == "SKILL.md" and parts[-3] == "skills":
         return parts[-2], "SKILL.md"
-    if len(parts) >= 4 and parts[-2] == "references" and parts[-4] == "skills" and parts[-1].endswith(".md"):
-        return parts[-3], f"references/{parts[-1]}"
+    if len(parts) >= 4 and parts[-2] in _DOCUMENT_DIRECTORIES and parts[-4] == "skills" and parts[-1].endswith(".md"):
+        return parts[-3], f"{parts[-2]}/{parts[-1]}"
     return None
 
 

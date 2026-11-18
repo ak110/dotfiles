@@ -148,15 +148,14 @@ def _run_subcommand(
 
 
 class TestUserConfirmationSkillPrompt:
-    """セッション開始後と会話圧縮後に、`agent-toolkit:user-confirmation-and-report`の起動を促す注記。
+    """セッション開始後と会話圧縮後の実ユーザー発話に、確認の手順書の取得を促す注記（撤去済み）を付けない。
 
     SessionStart、UserPromptSubmit、PostToolUse(Skill)のhookを`hook.py`のサブコマンドから順に起動し、
-    同スキルの内容が文脈に無い状態で届いた実ユーザー発話にだけ注記が付くことを確かめる。
-    注記が欠けると、同スキルが定める公開範囲の確認などの工程を想起する手掛かりが無いまま作業が始まる。
-    注記が過剰だと、起動済みの発話や機械注入のターンにも毎回同じ指示が載る。
+    入口の起動の前後、機械注入のターン、圧縮の後のどれでも注記が載らないことを確かめる。
     """
 
-    _SKILL = "agent-toolkit:user-confirmation-and-report"
+    _SKILL = "agent-toolkit:atk-mode"
+    _DOCUMENT = "atk-mode/playbooks/confirmation.md"
 
     @staticmethod
     def _session_start(
@@ -186,7 +185,7 @@ class TestUserConfirmationSkillPrompt:
 
     @classmethod
     def _has_notice(cls, context: str) -> bool:
-        return cls._SKILL in context
+        return cls._DOCUMENT in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
     def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -271,7 +270,7 @@ class TestUserConfirmationSkillPrompt:
         )
         assert generated.returncode == 0, generated.stderr
         assert generated.stdout.startswith('<atk-auto source="usage-limit-resume" kind="notice">\n')
-        document = _SCRIPTS_DIR.parent / "skills/user-confirmation-and-report/references/usage-limit.md"
+        document = _SCRIPTS_DIR.parent / "skills/atk-mode/references/usage-limit.md"
         assert document.is_file()
         assert json.dumps(str(document), ensure_ascii=False) in generated.stdout
         self._session_start("startup", tmp_path)
@@ -373,7 +372,7 @@ class TestMachineInjectedTurn:
         result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"] if result.stdout else ""
-        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" not in context
+        assert "atk-mode/playbooks/confirmation.md" not in context
         assert "cat --" not in context and "Get-Content" not in context
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
 
@@ -594,7 +593,7 @@ class TestExampleScopeNotice:
         "例えばアプリ呼び出しの分がチャット画面の消費CRのバッジに表示されないとか？\n"
         "（報告者の勘違いの可能性もあるのでそれも含めて調査して。）"
     )
-    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "user-confirmation-and-report" / "references" / "user-utterance.md"
+    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "atk-mode" / "playbooks" / "user-utterance.md"
     _ROUTING_PATH = _SCRIPTS_DIR.parent / "skills" / "delegation" / "references" / "routing.md"
 
     @classmethod
@@ -603,7 +602,7 @@ class TestExampleScopeNotice:
         if not result.stdout:
             return []
         context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
-        return [body for body in _notice_bodies(context) if "references/user-utterance.md" in body] if context else []
+        return [body for body in _notice_bodies(context) if "playbooks/user-utterance.md" in body] if context else []
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_example_with_investigation_request_receives_notice(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
@@ -707,7 +706,7 @@ class TestExampleScopeNotice:
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 2
-        assert "references/user-utterance.md" in bodies[0]
+        assert "playbooks/user-utterance.md" in bodies[0]
         assert "ユーザー入力の受付時刻" in bodies[1]
 
 

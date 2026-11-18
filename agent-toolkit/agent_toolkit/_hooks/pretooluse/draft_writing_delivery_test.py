@@ -38,9 +38,8 @@ def _matched(source: pathlib.Path, tool_name: str, tool_input: dict) -> set[str]
 @pytest.mark.parametrize(
     ("source", "content", "expected"),
     [
-        ("skills/wi-standards/SKILL.md", _AWI, {"awi-body.md", "drafting-workflow-writing.md"}),
-        ("share/read-trigger-bootstrap.md", _AWI, {"SKILL.md"}),
-        ("skills/wi-standards/SKILL.md", _UWI, {"uwi-format.md"}),
+        ("share/read-trigger-bootstrap.md", _AWI, {"awi-body.md", "wi-drafting.md", "SKILL.md"}),
+        ("share/read-trigger-bootstrap.md", _UWI, {"uwi-format.md"}),
         ("skills/write-plan/SKILL.md", _PLAN, {"plan-file-standards.md", "plan-file-standards-template.md"}),
     ],
 )
@@ -57,8 +56,9 @@ def test_draft_in_temporary_area_reaches_drafting_standards(source: str, content
 def test_uwi_draft_does_not_confirm_standard_draft_finalization() -> None:
     """報告用UWIと区別できないUWI原稿の書込では、報告用UWIを除く原稿確定の行を確定させない。"""
     draft = managed_temp.temp_root_path() / "session-test" / "uwi.md"
-    matched = _matched(_PLUGIN / "skills/wi-standards/SKILL.md", "Write", {"file_path": str(draft), "content": _UWI})
-    assert "drafting-workflow-writing.md" not in matched
+    matched = _matched(_PLUGIN / "share/read-trigger-bootstrap.md", "Write", {"file_path": str(draft), "content": _UWI})
+    assert "uwi-format.md" in matched
+    assert not {"awi-body.md", "wi-drafting.md"} & matched
 
 
 @pytest.mark.parametrize(("name", "expected"), [("config_settings.py", True), ("config.py", False)])
@@ -100,8 +100,8 @@ def _read_step(path: pathlib.Path) -> str:
 @pytest.mark.parametrize(
     ("content", "documents"),
     [
-        (_AWI, ("skills/wi-standards/references/awi-body.md", "skills/wi-standards/references/drafting-workflow-writing.md")),
-        (_UWI, ("skills/wi-standards/references/uwi-format.md",)),
+        (_AWI, ("skills/atk-mode/references/awi-body.md", "skills/atk-mode/playbooks/wi-drafting.md")),
+        (_UWI, ("skills/atk-mode/references/uwi-format.md",)),
         (_PLAN, ("skills/write-plan/references/plan-file-standards.md",)),
     ],
 )

@@ -76,6 +76,37 @@ def test_basics_reference_uses_observed_manifest_and_path(tmp_path):
     assert len(reads) == 1 and reads[0].plugin == "agent-basics" and reads[0].path == str(path)
 
 
+@pytest.mark.parametrize(
+    ("relative", "expected"),
+    [
+        ("SKILL.md", "SKILL.md"),
+        ("references/rule.md", "references/rule.md"),
+        ("playbooks/work.md", "playbooks/work.md"),
+        ("roles/add-wi.subagent.md", "roles/add-wi.subagent.md"),
+        ("scripts/tool.md", None),
+        ("playbooks/nested/work.md", None),
+        ("playbooks/work.txt", None),
+    ],
+)
+def test_skill_documents_include_playbooks_and_roles(tmp_path, relative, expected):
+    """手順書と役割文書を`references/`と同じ資料として識別し、`SKILL.md`だけをスキル名の根拠にする。"""
+    root = tmp_path / "agent-toolkit"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "agent-toolkit"}), encoding="utf-8")
+    path = root / "skills/atk-mode" / relative
+    path.parent.mkdir(parents=True)
+    path.write_text("# 資料の見出し\n本文\n", encoding="utf-8")
+    assert document_reads.skill_document(str(path)) == (("atk-mode", expected) if expected else None)
+    assert (document_reads.skill_name(path) is not None) is (relative == "SKILL.md")
+    reads = document_reads.bash_document_reads(f"cat -- {shlex.quote(str(path))}")
+    assert [(read.skill, read.relative_path, read.plugin) for read in reads] == (
+        [("atk-mode", expected, "agent-toolkit")] if expected else []
+    )
+    if expected and expected != "SKILL.md":
+        assert document_reads.body_returned("atk-mode", expected, "# 資料の見出し\n本文\n", path=str(path))
+        assert not document_reads.body_returned("atk-mode", expected, "# 別の資料\n", path=str(path))
+
+
 def test_hook_declarations_and_body_identity_use_the_effective_project(tmp_path, monkeypatch):
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     # 実行者のユーザースキルが持つ読込表を宣言へ含めない。

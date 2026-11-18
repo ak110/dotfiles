@@ -712,7 +712,7 @@ def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
             assert not any(other.path == target.path and other.heading for other in targets)
     for suffix in (
         "skills/process-wi/references/selection-procedure.md",
-        "skills/wi-standards/SKILL.md",
+        "skills/atk-mode/playbooks/wi-drafting.md",
         "skills/write-plan/SKILL.md",
         "share/single-lane-execution.md",
         "share/exec-review.parent.md",

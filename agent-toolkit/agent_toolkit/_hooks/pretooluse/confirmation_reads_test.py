@@ -20,11 +20,9 @@ from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
-_SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
-_APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
-_CHOICE = _SKILL_REFERENCES / "choice-construction.md"
-_DECISIONS = _SKILL_REFERENCES / "user-confirmation-and-report-decisions.md"
-_QUESTIONS = _SKILL_REFERENCES / "user-confirmation-and-report-questions.md"
+_ATK_MODE = pathlib.Path(__file__).resolve().parents[3] / "skills" / "atk-mode"
+_CONFIRMATION = _ATK_MODE / "playbooks" / "confirmation.md"
+_CHOICE = _ATK_MODE / "references" / "choice-construction.md"
 _WARNING = "未取得資料"
 _DENIAL = "この質問は未表示"
 _CONFIRMATION_TOOLS = ("AskUserQuestion", "request_user_input", "request_user_input_async")
@@ -40,14 +38,15 @@ def _local_plugin_root(tmp_path, monkeypatch):
     path = tmp_path / "work-contract.md"
     path.write_text("目的: 確認操作固有の通知の検証\n", encoding="utf-8")
     monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
-    # 確認skillの実宣言と本文は使い、無関係な品質skill全件の列挙を各受領へ持ち込まない。
+    # 確認の実宣言と手順書は使い、無関係な品質skill全件の列挙を各受領へ持ち込まない。
     monkeypatch.setattr(
         read_delivery,
         "_declaration_sources",
         lambda _cwd: [
-            _SKILL_REFERENCES.parents[2] / "share" / "read-trigger-bootstrap.md",
-            _SKILL_REFERENCES.parent / "SKILL.md",
-            *_SKILL_REFERENCES.glob("*.md"),
+            _ATK_MODE.parents[1] / "share" / "read-trigger-bootstrap.md",
+            _ATK_MODE / "SKILL.md",
+            *(_ATK_MODE / "playbooks").glob("*.md"),
+            *(_ATK_MODE / "references").glob("*.md"),
         ],
     )
 
@@ -100,7 +99,7 @@ def _successful_skill() -> list[dict]:
                     "type": "tool_use",
                     "id": "skill",
                     "name": "Skill",
-                    "input": {"skill": "agent-toolkit:user-confirmation-and-report"},
+                    "input": {"skill": "agent-toolkit:atk-mode"},
                 }
             ]
         },
@@ -110,7 +109,7 @@ def _successful_skill() -> list[dict]:
 
 def _successful_bash(command: str) -> list[dict]:
     arguments = shlex.split(command)
-    base = _SKILL_REFERENCES
+    base = _ATK_MODE
     if arguments[:1] == ["cd"]:
         base = pathlib.Path(arguments[1])
         arguments = arguments[arguments.index("&&") + 1 :]
@@ -131,12 +130,8 @@ _COMPACT = {"type": "system", "subtype": "compact_boundary"}
 
 def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> dict:
     transcript = tmp_path / "transcript.jsonl"
-    # 比較対象の2資料とは独立に、共有の読込方法を含む親スキル本文を圧縮後にも取得する。
-    omitted = extra.pop("omit_reference", None)
+    # 比較対象の2資料とは独立に、入口のスキルを圧縮後にも起動する。
     entries = [*entries, *_successful_skill()]
-    for path in (_DECISIONS, _QUESTIONS):
-        if path != omitted:
-            entries.extend(_successful_read(path))
     transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     payload = {
         "tool_name": "AskUserQuestion",
@@ -168,20 +163,26 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
 @pytest.mark.parametrize(
     ("entries", "unread"),
     [
-        pytest.param([], [_APPROVAL, _CHOICE], id="both-unread"),
-        pytest.param(_successful_read(_CHOICE), [_APPROVAL], id="approval-unread"),
-        pytest.param(_successful_read(_APPROVAL), [_CHOICE], id="choice-unread"),
+        pytest.param([], [_CONFIRMATION, _CHOICE], id="both-unread"),
+        pytest.param(_successful_read(_CHOICE), [_CONFIRMATION], id="confirmation-unread"),
+        pytest.param(_successful_read(_CONFIRMATION), [_CHOICE], id="choice-unread"),
         pytest.param(
-            [*_successful_read(_APPROVAL), *_successful_read(_CHOICE), _COMPACT],
-            [_APPROVAL, _CHOICE],
+            [*_successful_read(_CONFIRMATION), *_successful_read(_CHOICE), _COMPACT],
+            [_CONFIRMATION, _CHOICE],
             id="read-before-compaction",
         ),
-        pytest.param([_read(_APPROVAL), _result("read-approval-scope.md", error=True)], [_APPROVAL, _CHOICE], id="failed-read"),
-        pytest.param([_read(_APPROVAL)], [_APPROVAL, _CHOICE], id="read-without-result"),
         pytest.param(
-            [_bash(f"cat {_APPROVAL} {_CHOICE}"), _result("bash-read", error=True)], [_APPROVAL, _CHOICE], id="failed-bash"
+            [_read(_CONFIRMATION), _result(f"read-{_CONFIRMATION.name}", error=True)],
+            [_CONFIRMATION, _CHOICE],
+            id="failed-read",
         ),
-        pytest.param([_bash(f"cat {_APPROVAL} {_CHOICE}")], [_APPROVAL, _CHOICE], id="bash-without-result"),
+        pytest.param([_read(_CONFIRMATION)], [_CONFIRMATION, _CHOICE], id="read-without-result"),
+        pytest.param(
+            [_bash(f"cat {_CONFIRMATION} {_CHOICE}"), _result("bash-read", error=True)],
+            [_CONFIRMATION, _CHOICE],
+            id="failed-bash",
+        ),
+        pytest.param([_bash(f"cat {_CONFIRMATION} {_CHOICE}")], [_CONFIRMATION, _CHOICE], id="bash-without-result"),
     ],
 )
 @pytest.mark.cpu_limit(
@@ -203,9 +204,9 @@ def test_unread_reference_is_denied_until_read(tmp_path: pathlib.Path, entries: 
         assert result.returncode == 0 and not result.stderr
         reason = _denial(result)
         assert _DENIAL in reason
-        for path in (_APPROVAL, _CHOICE):
+        for path in (_CONFIRMATION, _CHOICE):
             _assert_reference_state(path, path not in unread)
-            assert (f"agent-toolkit:user-confirmation-and-report/references/{path.name}" in reason) == (path in unread)
+            assert (f"agent-toolkit:atk-mode/{path.relative_to(_ATK_MODE).as_posix()}" in reason) == (path in unread)
 
 
 @pytest.mark.parametrize("tool", _CONFIRMATION_TOOLS)
@@ -221,40 +222,24 @@ def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path
     unread = {**_payload(tmp_path, []), "tool_name": tool}
     for _attempt in range(2):
         assert _DENIAL in _denial(_run(unread))
-    read = {**_payload(tmp_path, [*_successful_read(_APPROVAL), *_successful_read(_CHOICE)]), "tool_name": tool}
+    read = {**_payload(tmp_path, [*_successful_read(_CONFIRMATION), *_successful_read(_CHOICE)]), "tool_name": tool}
     result = _run(read)
     assert result.returncode == 0 and not _denial(result)
     assert _WARNING not in _additional_context(result)
 
 
-@pytest.mark.parametrize("missing", [_DECISIONS, _QUESTIONS])
-@pytest.mark.cpu_limit(
-    7.0,
-    reason="実規範の宣言集合と公開Pre/Postによる取得状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大3.716秒。",
-)
-def test_split_confirmation_body_is_required_then_not_requested_again(tmp_path, missing):
-    """従来の2資料だけでは、分割された判定・手順の本文の取得を代替しない。"""
-    entries = [*_successful_read(_APPROVAL), *_successful_read(_CHOICE)]
-    result = _run(_payload(tmp_path, entries, omit_reference=missing))
-    assert f"agent-toolkit:user-confirmation-and-report/references/{missing.name}" in _denial(result)
-    assert str(_APPROVAL) not in _denial(result)
-    assert str(_CHOICE) not in _denial(result)
-    result = _run(_payload(tmp_path, [*entries, *_successful_read(missing)]))
-    assert not _denial(result)
-    assert str(missing) not in _additional_context(result)
-
-
 @pytest.mark.parametrize(
     "entries",
     [
-        pytest.param([_COMPACT, *_successful_read(_APPROVAL), *_successful_read(_CHOICE)], id="read-after-compaction"),
-        pytest.param(_successful_bash(f"cat {_APPROVAL} {_CHOICE}"), id="bash"),
-        pytest.param(_successful_bash(f"cat -- {_APPROVAL} {_CHOICE}"), id="bash-terminator"),
+        pytest.param([_COMPACT, *_successful_read(_CONFIRMATION), *_successful_read(_CHOICE)], id="read-after-compaction"),
+        pytest.param(_successful_bash(f"cat {_CONFIRMATION} {_CHOICE}"), id="bash"),
+        pytest.param(_successful_bash(f"cat -- {_CONFIRMATION} {_CHOICE}"), id="bash-terminator"),
         pytest.param(
-            _successful_bash(f"cd {_SKILL_REFERENCES} && cat approval-scope.md choice-construction.md"), id="bash-relative"
+            _successful_bash(f"cd {_ATK_MODE} && cat playbooks/confirmation.md references/choice-construction.md"),
+            id="bash-relative",
         ),
         pytest.param(
-            [*_successful_bash(f"sed -n '1,400p' -- {_APPROVAL}"), *_successful_read(_CHOICE)],
+            [*_successful_bash(f"sed -n '1,400p' -- {_CONFIRMATION}"), *_successful_read(_CHOICE)],
             id="line-range",
         ),
     ],
@@ -271,12 +256,12 @@ def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]
     result = _run(_payload(tmp_path, entries, **({"turn_id": "turn"} if codex else {})))
     assert result.returncode == 0 and not _denial(result)
     assert _WARNING not in _additional_context(result)
-    for path in (_APPROVAL, _CHOICE):
+    for path in (_CONFIRMATION, _CHOICE):
         _assert_reference_state(path, True)
 
 
 @pytest.mark.parametrize(
-    "operation", ["printf '%s'", "ls", "test -e", "python3 -c \"print('approval-scope.md choice-construction.md')\""]
+    "operation", ["printf '%s'", "ls", "test -e", "python3 -c \"print('confirmation.md choice-construction.md')\""]
 )
 @pytest.mark.cpu_limit(
     2.25,
@@ -287,12 +272,12 @@ def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]
 )
 def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.Path, operation: str) -> None:
     """成功しても対象本文を読まない操作では、未取得資料の拒否を保持する。"""
-    entries = _successful_bash(f"{operation} '{_APPROVAL}' '{_CHOICE}'")
+    entries = _successful_bash(f"{operation} '{_CONFIRMATION}' '{_CHOICE}'")
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0
     reason = _denial(result)
-    assert _DENIAL in reason and "approval-scope.md" in reason and "choice-construction.md" in reason
-    for path in (_APPROVAL, _CHOICE):
+    assert _DENIAL in reason and "confirmation.md" in reason and "choice-construction.md" in reason
+    for path in (_CONFIRMATION, _CHOICE):
         _assert_reference_state(path, False)
 
 
@@ -305,14 +290,14 @@ def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.
 )
 def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.Path, tool: str) -> None:
     """別の場所の同名資料への成功した読取を、hookが案内する資料の取得へ変換しない。"""
-    other = tmp_path / "other/skills/user-confirmation-and-report/references/approval-scope.md"
+    other = tmp_path / "other/skills/atk-mode/playbooks/confirmation.md"
     other.parent.mkdir(parents=True)
     other.write_text("別資料", encoding="utf-8")
     entries = _successful_read(other) if tool == "Read" else _successful_bash(f"cat {other}")
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0 and not result.stderr
-    assert "agent-toolkit:user-confirmation-and-report/references/approval-scope.md" in _denial(result)
-    _assert_reference_state(_APPROVAL, False)
+    assert "agent-toolkit:atk-mode/playbooks/confirmation.md" in _denial(result)
+    _assert_reference_state(_CONFIRMATION, False)
 
 
 @pytest.mark.cpu_limit(
@@ -324,15 +309,15 @@ def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.
 )
 def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path: pathlib.Path) -> None:
     """圧縮をまたぐ未完了の読取結果を除き、圧縮後の成功だけで不足を解消する。"""
-    entries = [_read(_APPROVAL), _COMPACT, _result("read-approval-scope.md"), *_successful_read(_CHOICE)]
+    entries = [_read(_CONFIRMATION), _COMPACT, _result(f"read-{_CONFIRMATION.name}"), *_successful_read(_CHOICE)]
     first = _denial(_run(_payload(tmp_path, entries)))
     assert _DENIAL in first
-    assert "agent-toolkit:user-confirmation-and-report/references/approval-scope.md" in first
-    assert "agent-toolkit:user-confirmation-and-report/references/choice-construction.md" not in first
-    _assert_reference_state(_APPROVAL, False)
+    assert "agent-toolkit:atk-mode/playbooks/confirmation.md" in first
+    assert "agent-toolkit:atk-mode/references/choice-construction.md" not in first
+    _assert_reference_state(_CONFIRMATION, False)
     _assert_reference_state(_CHOICE, True)
-    assert not _denial(_run(_payload(tmp_path, [*entries, *_successful_read(_APPROVAL)])))
-    _assert_reference_state(_APPROVAL, True)
+    assert not _denial(_run(_payload(tmp_path, [*entries, *_successful_read(_CONFIRMATION)])))
+    _assert_reference_state(_CONFIRMATION, True)
     _assert_reference_state(_CHOICE, True)
 
 
@@ -384,7 +369,7 @@ def test_exit_plan_mode_and_mojibake_warning_are_unchanged(tmp_path: pathlib.Pat
     plan_result = _run(plan)
     plan_context = _additional_context(plan_result)
     assert not _denial(plan_result) and _WARNING not in plan_context
-    assert all(str(path) not in plan_context for path in (_APPROVAL, _CHOICE))
+    assert all(str(path) not in plan_context for path in (_CONFIRMATION, _CHOICE))
     mojibake = _payload(tmp_path, [])
     mojibake["tool_input"] = {"questions": [{"question": "日本語の�本文", "header": "見出し", "options": [{"label": "A"}]}]}
     result = _run(mojibake)

@@ -98,7 +98,12 @@ def test_claude_failed_or_unrelated_skill_is_not_evidence(tmp_path: pathlib.Path
     ("tool_name", "tool_input", "codex", "label"),
     [
         ("Skill", {"skill": "agent-toolkit:process-wi"}, False, "agent-toolkit:process-wiの開始"),
-        ("Skill", {"skill": "add-awi-by-user"}, False, "agent-toolkit:add-awi-by-userの開始"),
+        (
+            "Skill",
+            {"skill": "agent-toolkit:atk-mode", "args": "add-awi-by-user https://example.com/a"},
+            False,
+            "agent-toolkit:atk-mode add-awi-by-userの開始",
+        ),
         ("Bash", {"command": "atk wi add --type awi --file /tmp/body.md"}, False, "WIの保存"),
         ("Bash", {"command": "atk run-script plan-create -- --title 計画"}, False, "計画の保存"),
         ("Bash", {"command": "git push origin develop"}, True, "push"),

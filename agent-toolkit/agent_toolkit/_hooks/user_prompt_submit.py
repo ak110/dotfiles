@@ -14,7 +14,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 セッション名はUserPromptSubmitのコマンドhookが通常状態から設定する。
 
 例示の語（「例えば」「たとえば」「例として」）を含む実ユーザー発話では、経過時間と状態によらず、
-`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」の所在を示し、
+`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」の所在を示し、
 原文の対象と例示の関係を判断させる。調査を求める語（「確認」「調査」「見直」など）も含む発話では、
 `agent-toolkit:delegation`の`references/routing.md`の所在も加える。判定はコードブロック、インラインコードおよび
 引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（範囲語は「など」「とか」のような
@@ -278,12 +278,16 @@ def main(payload_text: str) -> int:
             arguments = prompt[len(command_prefix) + match.end() :]
             # 入口`atk-mode <作業>`は作業の名前へ読み替える。委譲先の最初の入力は委譲元のエージェントが書くため、
             # 読み替えない（エージェントが自分の判断でAWI投入と自律モードの状態を立てられなくする）。
+            typed_name = full_name
             if not is_delegated(os.environ):
                 full_name, arguments = skill_modes.resolve_work(full_name, arguments)
             name = full_name.removeprefix("agent-toolkit:")
-            session_title.observe_add_awi(session_id, full_name)
+            # AWI投入はスキルを持たない作業であり、入口の名指しだけで始まる。
+            named_by_entry = full_name != typed_name
+            if named_by_entry:
+                session_title.observe_add_awi(session_id, full_name)
             if not is_codex:
-                session_title.observe_skill(session_id, full_name, arguments)
+                session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
 
             # 対応スキル別にフラグを設定する。
             if (is_codex or is_antigravity_payload(payload)) and (

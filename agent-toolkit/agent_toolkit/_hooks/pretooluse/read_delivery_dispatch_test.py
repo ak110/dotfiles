@@ -229,10 +229,8 @@ def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, caps
         payload["turn_id"] = "turn"
     for _attempt in range(2):
         reason = _denial(dispatch.main(json.dumps(payload)), capsys.readouterr())
-        assert "approval-scope.md" in reason
-        assert "choice-construction.md" in reason
-        assert "user-confirmation-and-report-decisions.md" in reason
-        assert "user-confirmation-and-report-questions.md" in reason
+        assert "`agent-toolkit:atk-mode/playbooks/confirmation.md`" in reason
+        assert "`agent-toolkit:atk-mode/references/choice-construction.md`" in reason
         assert "確認の要否を判断" in reason
 
 
