@@ -75,6 +75,7 @@ _WINDOWS_CROSS_PLATFORM_TESTS = {
     "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_acquisition_commands_test.py": {
         "test_hook_chain_records_acquisition_without_blocking_write",
         "test_executed_static_read_records_acquisition_without_blocking_write",
+        "test_named_skill_reference_and_invocation_keep_separate_evidence",
     },
     "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_acquisition_test.py": {
         "test_unchecked_condition_keeps_notice_suppressed_until_actual_resolution",

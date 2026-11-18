@@ -213,6 +213,8 @@ def test_piped_role_read_keeps_acquisition_boundary_without_foreign_warning(tmp_
     )
 
 
+@pytest.mark.windows
+@pytest.mark.cpu_limit(3.0 if os.name == "nt" else 0.5, reason=WINDOWS_HOOK_CPU_REASON)
 @pytest.mark.parametrize("tool", ["Read", "Bash"])
 @pytest.mark.parametrize("order", ["reference-first", "invocation-first", "simultaneous"])
 def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, monkeypatch, state, tool, order):
