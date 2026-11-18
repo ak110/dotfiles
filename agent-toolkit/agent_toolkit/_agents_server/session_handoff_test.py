@@ -295,17 +295,30 @@ def test_prompt_delivers_full_history_and_record_paths(
     [
         ("file", "この引き継ぎ記録を最初に読み"),
         ("missing", "この引き継ぎ記録は存在しないため、以下の資料から復元する"),
-        ("directory", "前任が書いた値を読めない可能性があるため"),
+        ("directory", "前任が書いた値を失った可能性があるため"),
+        ("unreadable", "前任が書いた値を失った可能性があるため"),
     ],
-    ids=["file", "missing", "directory"],
+    ids=["file", "missing", "directory", "unreadable"],
 )
-def test_prompt_instruction_follows_observed_handoff_record(tmp_path: pathlib.Path, observed: str, expected: str) -> None:
-    """記録がある場合だけ最初に読ませ、不在は資料からの復元、読めない記録先は値の欠落の可能性として区別する。"""
+def test_prompt_instruction_follows_observed_handoff_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, observed: str, expected: str
+) -> None:
+    """読めた記録だけを最初に読ませ、不在は資料からの復元、それ以外で読めない記録は値の欠落の可能性として区別する。"""
     handoff = tmp_path / "handoff.md"
-    if observed == "file":
+    if observed in {"file", "unreadable"}:
         handoff.write_text("稼働中のプロセス: なし\n", encoding="utf-8")
     elif observed == "directory":
         handoff.mkdir()
+    if observed == "unreadable":
+        # 通常ファイルと確かめられても本文を開けない場合（読取権限が無い場合など）を、OSとroot実行に依らず再現する。
+        original_open = pathlib.Path.open
+
+        def deny(self: pathlib.Path, *args: Any, **kwargs: Any) -> Any:
+            if self == handoff:
+                raise PermissionError(13, "Permission denied", str(self))
+            return original_open(self, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "open", deny)
     predecessor = state.SessionState(
         "predecessor",
         str(tmp_path),

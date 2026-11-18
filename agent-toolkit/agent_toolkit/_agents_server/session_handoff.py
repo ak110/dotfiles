@@ -116,23 +116,25 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
 
 
 def _record_instruction(path: pathlib.Path) -> str:
-    """記録先の観測結果に合わせて、後任が引き継ぎ記録をどう扱うかを示す。
+    """記録を読めるか・不在か・それ以外で読めないかに分けて、後任が引き継ぎ記録をどう扱うかを示す。
 
     前任は書く値が無ければ記録を作らないため、不在は資料からの復元へ進ませる。
-    不在以外で読めない場合は、前任が書いた値を失った可能性を後任が区別できるようにする。
+    それ以外で読めない場合は、前任が書いた値を失った可能性を後任が区別できるようにする。
+    通常ファイル以外を開くと名前付きパイプなどで止まるため、種類を確かめてから開く。
     """
     try:
-        mode = path.stat().st_mode
+        if not stat.S_ISREG(path.stat().st_mode):
+            reason = "記録先が通常ファイルではない"
+        else:
+            with path.open("rb"):
+                pass
+            return "この引き継ぎ記録を最初に読み、確定事項と残工程を復元する。"
     except FileNotFoundError:
         return "この引き継ぎ記録は存在しないため、以下の資料から復元する。"
     except OSError as error:
-        observed = f"この引き継ぎ記録の記録先を確かめられない（{error}）。"
-    else:
-        if stat.S_ISREG(mode):
-            return "この引き継ぎ記録を最初に読み、確定事項と残工程を復元する。"
-        observed = "この引き継ぎ記録の記録先は通常ファイルではない。"
+        reason = str(error)
     return (
-        observed + "前任が書いた値を読めない可能性があるため、"
+        f"この引き継ぎ記録を読めない（{reason}）。前任が書いた値を失った可能性があるため、"
         "以下の資料と成果物の現物から確定事項と残工程を復元し、復元できない値を委譲元へ返す。"
     )
 
