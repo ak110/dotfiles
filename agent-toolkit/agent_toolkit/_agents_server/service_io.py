@@ -91,14 +91,6 @@ def save_with(save: Callable[[], Awaitable[None]]) -> Generator[None]:
         yield
 
 
-def _origin_alive(origin: dict[str, Any]) -> bool:
-    """資源を所有する世代のプロセスが、記録した起動単位のまま生存しているかを返す。"""
-    try:
-        return service_transport.process_identity(int(str(origin["process"]).split(":", 1)[0])) == origin["process"]
-    except FileNotFoundError, ProcessLookupError, KeyError, ValueError:
-        return False
-
-
 class Resource:
     """元世代のendpointを固定し、各操作で制御所有者の一致を確認する。"""
 
@@ -370,7 +362,7 @@ class CodexResource:
         try:
             residual = await self.resource.operation("call", operation="shutdown", arguments={})
         except ConnectionRefusedError, FileNotFoundError:
-            if _origin_alive(self.resource.origin):
+            if service_transport.process_alive(self.resource.origin.get("process")):
                 raise
             # 資源を所有した世代が先に終了した（2026-11-17、移譲途中の資源の停止で現行世代の終了が失敗した）。
             # App Serverは元世代の子でstdinの終了とともに終わる。残っていれば停止を確認できないため所有を保つ。

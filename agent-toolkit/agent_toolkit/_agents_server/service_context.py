@@ -16,7 +16,15 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from mcp.types import CallToolRequestParams
 
-from agent_toolkit._agents_server import effort_control, service_io, service_turns, shared_roots, state, status_file
+from agent_toolkit._agents_server import (
+    effort_control,
+    service_io,
+    service_transport,
+    service_turns,
+    shared_roots,
+    state,
+    status_file,
+)
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._agents_server.mcp_tools import _manager_lifespan
@@ -66,6 +74,8 @@ class ServiceManagers:
         """照会した世代と、同じ管理領域で退出していない全世代を区別して返す。
 
         更新中の正常な世代の併存と、旧世代が退出できずに残る状態を、照会の応答から区別できるようにする。
+        強制終了・異常終了した世代は退出を記録できないため、記録したプロセスが生存していない世代も除く。
+        処置した世代が一覧から消えることを、終了の観測に使えるようにするためである。
         """
         if self._projections is None:
             return []
@@ -81,7 +91,7 @@ class ServiceManagers:
                 "queried": name == queried,
             }
             for name, entry in sorted(entries.items(), key=lambda item: item[1].get("epoch", 0))
-            if not entry.get("retired")
+            if not entry.get("retired") and ("process" not in entry or service_transport.process_alive(entry["process"]))
         ]
 
     async def __aenter__(self) -> ServiceManagers:

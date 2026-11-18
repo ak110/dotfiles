@@ -119,6 +119,14 @@ def process_identity(pid: int) -> str:
     return f"{pid}:{record.rsplit(')', 1)[1].split()[19]}"
 
 
+def process_alive(identity: object) -> bool:
+    """発見記録の起動単位（`pid:開始時刻`）のプロセスがまだ生存しているかを返す。"""
+    try:
+        return process_identity(int(str(identity).split(":", 1)[0])) == identity
+    except FileNotFoundError, ProcessLookupError, ValueError:
+        return False
+
+
 def authenticate(peer: connection.Connection, *, server: bool, expected_process: str | None = None) -> int:
     """環境・操作本文の送受信前に、OSが与える相手のアカウントが自身と一致するか確かめる。"""
     if os.name == "nt":

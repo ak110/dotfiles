@@ -111,7 +111,11 @@ class ServiceCoordinator:
                         and (current["generation"] != self.generation or current["process"] == self.target["process"])
                     ):
                         return current
-                    if current is not None and self._target_alive(current) and current["generation"] != self.generation:
+                    if (
+                        current is not None
+                        and service_transport.process_alive(current["process"])
+                        and current["generation"] != self.generation
+                    ):
                         previous = current
                         inventory = await service_rpc.request(
                             current,
@@ -207,14 +211,6 @@ class ServiceCoordinator:
             and not self._pending_adoptions
         )
 
-    @staticmethod
-    def _target_alive(target: dict) -> bool:
-        try:
-            pid = int(target["process"].split(":", 1)[0])
-            return service_transport.process_identity(pid) == target["process"]
-        except FileNotFoundError, ProcessLookupError:
-            return False
-
     def _conversation(self, identifier: str) -> tuple[str, Conversation] | None:
         return next(
             ((key, item) for key, item in self.managers.conversations.items() if identifier in item.manager.sessions), None
@@ -303,11 +299,11 @@ class ServiceCoordinator:
                     task.exception()
                 self._moving.pop(identifier, None)
         for identifier, (_transfer, source) in tuple(self._received.items()):
-            if identifier not in retained and not self._target_alive(source):
+            if identifier not in retained and not service_transport.process_alive(source["process"]):
                 self._received.pop(identifier, None)
         self._contexts = {key for key in self._contexts if key.split(":", 1)[1] in self.managers.conversations}
         for identifier, packet in tuple(self._incoming.items()):
-            if not self._target_alive(packet["source"]):
+            if not service_transport.process_alive(packet["source"]["process"]):
                 self._incoming.pop(identifier, None)
         current = self._current()
         await self.gate.observe_current(current)
@@ -414,7 +410,7 @@ class ServiceCoordinator:
                 target = service_rpc.discovery(self.directory, generation)
             except OSError, ValueError:
                 continue
-            if not self._target_alive(target):
+            if not service_transport.process_alive(target["process"]):
                 continue
             try:
                 sessions.extend(
@@ -563,7 +559,7 @@ class ServiceCoordinator:
                 )
             )
         except (OSError, EOFError, TimeoutError) as error:
-            if not self._target_alive(owner):
+            if not service_transport.process_alive(owner["process"]):
                 # 所有世代が終了している。登録簿の所有者喪失の判定（中断の公開・委譲先CLIの停止）を使う。
                 return False
             raise ActionableError(

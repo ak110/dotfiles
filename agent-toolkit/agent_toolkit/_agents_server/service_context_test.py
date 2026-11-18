@@ -5,7 +5,10 @@
 
 import asyncio
 import json
+import os
 import pathlib
+import subprocess
+import sys
 import time
 from types import SimpleNamespace
 from typing import cast
@@ -13,7 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_toolkit._agents_server import service_context, service_io, service_turns
+from agent_toolkit._agents_server import service_context, service_io, service_transport, service_turns
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import effort_requests, runtime_environment, session_registry, session_release
@@ -133,20 +136,31 @@ async def test_accepted_effort_is_drained_through_control_save(monkeypatch, tmp_
 
 @pytest.mark.asyncio
 async def test_generations_distinguish_current_queried_and_retired(tmp_path):
-    """照会した世代・受付中の世代・退出済みの世代を区別して返す。"""
+    """照会した世代・受付中の世代を区別し、退出済みの世代と強制終了した世代を除いて返す。
+
+    強制終了した世代は退出を記録できない。一覧から消えることを処置後の終了観測に使うため、プロセスの生死で判定する。
+    """
     from agent_toolkit._agents_server.service_projection import ProjectionHub  # pylint: disable=import-outside-toplevel
 
     directory = tmp_path / "services/agents-server"
     hub = ProjectionHub("old", directory)
     registry = hub.registry
-    for name, version in (("gone", "0.9.0"), ("old", "1.0.0"), ("new", "1.0.1")):
+    alive = service_transport.process_identity(os.getpid())
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as killed:
+        try:
+            processes = {"gone": alive, "killed": service_transport.process_identity(killed.pid), "old": alive, "new": alive}
+        finally:
+            killed.kill()
+    # Windowsは子プロセスのhandleを保持する間は終了済みのプロセスも開けるため、handleを閉じる。
+    del killed
+    for name, version in (("gone", "0.9.0"), ("killed", "0.9.5"), ("old", "1.0.0"), ("new", "1.0.1")):
         registry.reserve(name, tmp_path, version)
-        registry.publish(name, endpoint=name, process=name, server_instance=f"instance-{name}")
-    registry.retire("gone", "gone")
+        registry.publish(name, endpoint=name, process=processes[name], server_instance=f"instance-{name}")
+    registry.retire("gone", processes["gone"])
     managers = service_context.ServiceManagers(state_root=tmp_path, projections=hub)
     assert await managers.generations() == [
-        {"generation": "old", "epoch": 2, "server_instance": "instance-old", "current": False, "queried": True},
-        {"generation": "new", "epoch": 3, "server_instance": "instance-new", "current": True, "queried": False},
+        {"generation": "old", "epoch": 3, "server_instance": "instance-old", "current": False, "queried": True},
+        {"generation": "new", "epoch": 4, "server_instance": "instance-new", "current": True, "queried": False},
     ]
 
 
