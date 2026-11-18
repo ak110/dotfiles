@@ -135,6 +135,45 @@ async def test_surviving_generation_releases_update_abandoned_by_exited_publishe
     projections.thaw.assert_awaited_once_with("token")
 
 
+@pytest.mark.parametrize(
+    "failing_stage", ["projections.thaw", "registrations.thaw", "gate.thaw", "gate.observe_current", "registry.restore"]
+)
+@pytest.mark.asyncio
+async def test_release_runs_every_stage_and_wakes_commit_even_if_one_stage_fails(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failing_stage: str
+) -> None:
+    """静止の解除のどの段が失敗しても、残りの段は実行され、確定を待つ`commit_update`は速やかに戻る。"""
+    directory, old, new = _superseded(tmp_path, publish_new=False)
+    coordinator = _coordinator(directory, old)
+    projections: Any = coordinator.projections
+    registrations: Any = coordinator.registrations
+    owners: dict[str, Any] = {
+        "projections": projections,
+        "registrations": registrations,
+        "gate": coordinator.gate,
+        "registry": coordinator.registry,
+    }
+    owner_name, attribute = failing_stage.split(".")
+    failure = OSError(failing_stage)
+    stage: Any = (AsyncMock if owner_name in ("gate", "projections") else Mock)(side_effect=failure)
+    monkeypatch.setattr(owners[owner_name], attribute, stage)
+    await coordinator.prepare("token", new)
+    update = coordinator._updates["token"]
+    async with asyncio.timeout(1.5):
+        if failing_stage == "registry.restore":
+            await update.released.wait()
+        else:
+            await coordinator.commit_update("token", old)
+    if failing_stage != "projections.thaw":
+        projections.thaw.assert_awaited_once_with("token")
+    if failing_stage != "registrations.thaw":
+        registrations.thaw.assert_called_once_with("token")
+    assert "token" not in coordinator._updates
+    if failing_stage != "gate.thaw":
+        async with asyncio.timeout(1.5), coordinator.gate.admit(new_turn=True):
+            pass
+
+
 @pytest.mark.asyncio
 async def test_surviving_generation_returns_acceptance_left_by_publisher_exited_before_commit(tmp_path: pathlib.Path) -> None:
     """公開元が受付を公開した後、確定の通知前に終了したら、旧世代は受付を自身へ戻して新しいturnを受け付ける。"""

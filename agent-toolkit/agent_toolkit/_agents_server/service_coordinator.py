@@ -331,11 +331,18 @@ class ServiceCoordinator:
                 current = self._current()
             await self.gate.observe_current(current)
         finally:
-            await self.projections.thaw(token)
-            self.registrations.thaw(token)
-            self._updates.pop(token, None)
-            await self.gate.thaw(token)
-            update.released.set()
+            # どの段が失敗しても後続の解除を続け、待機側を解くreleasedは必ず最後に立てる。例外は連鎖して_supervisedが記録する。
+            try:
+                await self.projections.thaw(token)
+            finally:
+                try:
+                    self.registrations.thaw(token)
+                finally:
+                    self._updates.pop(token, None)
+                    try:
+                        await self.gate.thaw(token)
+                    finally:
+                        update.released.set()
         for identifier in tuple(self._ended):
             self._schedule_move(identifier)
 
