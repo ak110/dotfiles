@@ -239,7 +239,7 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
         if resume:
             assert 'kind="resume"' in prompt and not prompt.startswith("/goal ")
         else:
-            assert prompt == ("/goal " if engine == "claude" else "") + expected
+            assert prompt == expected
         manifest = _manifest(prompt, child_env)
         capsys.readouterr()
         with monkeypatch.context() as scoped:

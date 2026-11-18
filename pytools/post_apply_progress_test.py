@@ -94,30 +94,33 @@ def test_exception_prints_one_line_and_keeps_traceback_in_log(tmp_path, capsys):
 
 @pytest.mark.parametrize("fail_second", [False, True])
 def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tmp_path, capsys, fail_second):
-    """非同期のroot別診断を親workerで捕捉し、工程とrootの列挙順に1回だけ表示する。"""
+    """非同期のroot別診断を親workerで捕捉し、工程とrootの列挙順に1回だけ表示する。
+
+    並列に進む依存確認を列挙順と逆に完了させ、表示と永続ログが列挙順を保つことを確かめる。
+    """
     warmup = post_apply.warmup_agents_server
     commands = [["python", str(tmp_path / name)] for name in ("first", "second")]
     monkeypatch.setattr(warmup.plugin_warmup, "prepare_targets", lambda *_args, **_kwargs: commands)
 
-    async def dependency(command):
-        return warmup.plugin_warmup.CommandOutcome(command, subprocess.CompletedProcess(command, 0, "", ""), 0)
-
     async def check_targets():
         second_done = asyncio.Event()
 
-        async def startup(command):
-            name = Path(command[-1]).name
-            if name == "first":
+        async def dependency(command):
+            if Path(command[-2]).name == "first":
                 await asyncio.wait_for(second_done.wait(), 5)
             else:
                 second_done.set()
+            return warmup.plugin_warmup.CommandOutcome(command, subprocess.CompletedProcess(command, 0, "", ""), 0)
+
+        async def startup(command):
+            name = Path(command[-1]).name
             return warmup._StartupOutcome(not (name == "second" and fail_second), f"{name}-root-detail")
 
+        monkeypatch.setattr(warmup.plugin_warmup, "check_command", dependency)
         monkeypatch.setattr(warmup, "_check_startup", startup)
         return await original_check_targets(commands)
 
     original_check_targets = warmup._check_targets
-    monkeypatch.setattr(warmup.plugin_warmup, "check_command", dependency)
 
     async def checks(_commands):
         return await check_targets()

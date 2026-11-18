@@ -177,7 +177,10 @@ import time
 
 # 接続後に応答しないリモートを模す。gitの孫に当たる子も起動し、子孫まで止まることを観測できるようにする。
 child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
-pathlib.Path(sys.argv[1]).write_text(f"{child.pid}", encoding="utf-8")
+# 試験側が書きかけを読まないよう、書き終えてから置き換えて公開する。
+partial = pathlib.Path(sys.argv[1] + ".partial")
+partial.write_text(f"{child.pid}", encoding="utf-8")
+partial.replace(sys.argv[1])
 time.sleep(30)
 sys.exit(255)
 """
@@ -206,21 +209,30 @@ def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
     script.write_text(_UNRESPONSIVE_REMOTE_SCRIPT, encoding="utf-8")
     pid_file = tmp_path / "grandchild.pid"
     remote_command = f'"{pathlib.Path(sys.executable).as_posix()}" "{script.as_posix()}" "{pid_file.as_posix()}"'
-    monkeypatch.setattr(subject, "TRANSFER_TIMEOUT_SECONDS", 3.0)
 
-    started = time.monotonic()
-    with pytest.raises(subprocess.TimeoutExpired) as raised:
-        subject.run(
-            ["fetch", "origin"],
-            repository,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "GIT_SSH_COMMAND": remote_command},
-        )
+    # 子孫の回収を観測するには、上限の到達前にリモートの代役が孫を起動している必要がある。
+    # 負荷の高いWindowsのrunnerでは代役の起動が3秒の上限に間に合わないことがあるため、
+    # 孫の起動を確かめられなかった場合だけ、長い上限で取り直す。
+    for timeout in (3.0, 10.0):
+        monkeypatch.setattr(subject, "TRANSFER_TIMEOUT_SECONDS", timeout)
+        started = time.monotonic()
+        with pytest.raises(subprocess.TimeoutExpired) as raised:
+            subject.run(
+                ["fetch", "origin"],
+                repository,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "GIT_SSH_COMMAND": remote_command},
+            )
+        elapsed = time.monotonic() - started
+        if pid_file.exists():
+            break
+    else:
+        pytest.fail("リモートの代役が10秒の上限までに孫のプロセスを起動しなかった")
 
-    assert time.monotonic() - started < 20
+    assert elapsed < timeout + 17
     assert raised.value.cmd == ["git", "fetch", "origin"]
-    assert raised.value.timeout == pytest.approx(3.0)
+    assert raised.value.timeout == pytest.approx(timeout)
     assert subject.timeout_cwd(raised.value) == str(repository)
     grandchild = int(pid_file.read_text(encoding="utf-8"))
     deadline = time.monotonic() + 10

@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from agent_toolkit._atk import review_table as table
+from agent_toolkit._atk import review_table_cli
 from agent_toolkit._common import next_action
 from agent_toolkit._testing import review_bodies
 from agent_toolkit._testing.review_table_support import _TRACK, _isolated_home, _parser
@@ -22,7 +23,7 @@ def test_cell_files_preserve_issue_and_supply_responses(
 ) -> None:
     path = tmp_path / "review.tsv"
     location = "module.py:10 `handler`\n"
-    issue = '"引用"と`backtick`を含む\n複数行の$本文\n'
+    issue = '類似見直し完了件数: 3\n"引用"と`backtick`を含む\n複数行の$本文\n'
     response = f"  {review_bodies.response_body('修正で"引用"と`backtick`を保持する')}\n"
     reason = f"  {review_bodies.reason_body('$仕様の対象外')}\n"
     location_file = tmp_path / "location.txt"
@@ -49,7 +50,7 @@ def test_cell_files_preserve_issue_and_supply_responses(
             str(issue_file),
         ]
     )
-    assert table.dispatch(add_args) == 0
+    assert review_table_cli.dispatch(add_args) == 0
     assert table.show(path) == 0
     stored = [[json.loads(cell) for cell in line.split("\t")[1:]] for line in capsys.readouterr().out.splitlines()[-1:]][0]
     assert stored[:4] == ["1", _TRACK, location, issue]
@@ -66,7 +67,7 @@ def test_cell_files_preserve_issue_and_supply_responses(
             str(response_file),
         ]
     )
-    assert table.dispatch(respond_args) == 0
+    assert review_table_cli.dispatch(respond_args) == 0
 
     table.add(path, "2", _TRACK, "README.md", "対象外")
     no_response_args = _parser().parse_args(
@@ -79,7 +80,7 @@ def test_cell_files_preserve_issue_and_supply_responses(
             str(reason_file),
         ]
     )
-    assert table.dispatch(no_response_args) == 0
+    assert review_table_cli.dispatch(no_response_args) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows[0] == ["1", _TRACK, location, issue, "詳細", response.strip(), ""]
     assert rows[1] == ["2", _TRACK, "README.md", "対象外", "詳細", "", reason.strip()]
@@ -124,7 +125,7 @@ def test_unreadable_cell_file_does_not_update_table(tmp_path: pathlib.Path) -> N
     )
 
     with pytest.raises(ValueError, match="--issue-fileの読み込みに失敗した"):
-        table.dispatch(args)
+        review_table_cli.dispatch(args)
     assert path.read_text(encoding="utf-8") == before
 
 

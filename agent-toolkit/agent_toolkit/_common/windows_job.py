@@ -15,6 +15,8 @@ from typing import Any
 CREATE_SUSPENDED = 0x00000004
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
+# 起動元のJobがJOB_OBJECT_LIMIT_BREAKAWAY_OKを許す場合だけ有効で、許さないJobではCreateProcessが失敗する。
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 # 端末から切り離して背景で動かす子の生成フラグ。DETACHED_PROCESSはコンソール自体を持たせないため、
 # その子が起動するコンソールアプリ（venvのpython.exeが中継する本体を含む）へWindowsが新しい可視コンソールを割り当てる。
 # CREATE_NO_WINDOWは非表示の新しいコンソールを持たせ、子孫も同じ非表示コンソールを継承する。

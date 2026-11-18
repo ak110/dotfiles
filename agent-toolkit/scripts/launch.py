@@ -115,7 +115,10 @@ def main() -> int:
         return 1
     if target == root / "agent_toolkit/hook.py" and not options.hook_worker:
         return _run_hook(root, target, options.arguments, persist_claude_env=options.persist_claude_env)
-    if target == root / _AGENTS_SERVER_TARGET and not options.arguments:
+    # 共有の管理サービスを持たない旧版のroot（update-dotfilesの起動確認が新しいlauncherで確かめる、
+    # ホストがまだ参照している旧版のplugin cacheなど）は、旧版のlauncherが`--agents-service`を受け付けないため、
+    # 管理サービスへ転送せずにMCPサーバーを直接起動する。
+    if target == root / _AGENTS_SERVER_TARGET and not options.arguments and (root / _AGENTS_SERVICE_TARGET).is_file():
         # 転送側はstdlibだけで動き、接続の寿命では依存環境の使用ロックを保持しない。
         from agent_toolkit._agents_server.service_forward import forward
 

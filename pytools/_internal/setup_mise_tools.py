@@ -3,6 +3,7 @@
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import typing
 from pathlib import Path
@@ -13,6 +14,7 @@ from pytools._internal import (
     common,
     log_format,
     setup_cli_common,
+    setup_mise_binary,
     setup_mise_common,
     winutils,
 )
@@ -570,10 +572,15 @@ def ensure_windows_user_path_has_shims() -> bool:
     # 現プロセスの PATH にも反映しておく (post_apply の後続ステップが shims 内の
     # コマンドを参照できるようにするため)。冪等性のため重複追加は避ける。
     # 並列に動く他工程のPATH追加を失わないよう、読み取りから書き戻しまでを直列化する。
+    # shimはPATHからmise本体を探して起動するため、本体の配置（WinGetのLinksなど）が
+    # 現プロセスのPATHに無ければ併せて加える。無いとshim経由の実行がすべて失敗する。
+    mise_bin = setup_mise_binary.find_mise_binary()
     with setup_cli_common.PROCESS_PATH_LOCK:
-        current_process_path = os.environ.get("PATH", "")
-        if str(shims_dir) not in current_process_path.split(os.pathsep):
-            separator = os.pathsep if current_process_path else ""
-            os.environ["PATH"] = current_process_path + separator + str(shims_dir)
+        entries = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+        additions = [str(shims_dir)] if str(shims_dir) not in entries else []
+        if mise_bin is not None and shutil.which("mise") is None:
+            additions.append(str(mise_bin.parent))
+        if additions:
+            os.environ["PATH"] = os.pathsep.join([*entries, *additions])
 
     return appended

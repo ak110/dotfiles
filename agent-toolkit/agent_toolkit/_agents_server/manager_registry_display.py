@@ -7,9 +7,14 @@ from typing import Any
 
 from agent_toolkit._agents_server import manager_registry_restore, owner_lost, result_projection, state
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._agents_server.manager_registry_restore import _RegistryResumeState
 from agent_toolkit._agents_server.responses import listed_public_session
-from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionResumeState, SessionState, has_uncollected_result
+from agent_toolkit._agents_server.state import (
+    TERMINAL_STATUSES,
+    RegistryResumeState,
+    SessionResumeState,
+    SessionState,
+    has_uncollected_result,
+)
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import ActionableError
 
@@ -248,7 +253,7 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
             response.update(state.fast_mode_fields(session.engine, session.fast_mode))
             if self._status_writer is not None:
                 response["root_session_id"] = self._status_writer.root_session_id
-        if registry_resolved or isinstance(session, _RegistryResumeState):
+        if registry_resolved or isinstance(session, RegistryResumeState):
             # 自プロセスが起動していないsessionの通知は、委譲元のサーバーが替わると旧ルートに残るため併せて回収する。
             response = self._response_with_notices(response, await self._take_registry_notices(session_id))
         return response

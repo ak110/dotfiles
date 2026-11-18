@@ -9,10 +9,9 @@ from typing import Any
 
 from agent_toolkit._agents_server import logging_config, manager_registry_display, result_projection, shared_layout
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._agents_server.manager_registry_restore import _RegistryResumeState
 from agent_toolkit._agents_server.responses import RUNNING_STOP_NEXT_ACTION, SESSION_ID_NEXT_ACTION
 from agent_toolkit._agents_server.session_errors import ActionableRuntimeError
-from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionResumeState, SessionState
+from agent_toolkit._agents_server.state import TERMINAL_STATUSES, RegistryResumeState, SessionResumeState, SessionState
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import ActionableError, next_action_line
 
@@ -44,7 +43,7 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
             stopped_state = await self._restore_registry_session(session_id)
         already_stopped = session_id in self.stopped_sessions
         session = self.sessions.get(session_id)
-        if session is None and isinstance(stopped_state, _RegistryResumeState):
+        if session is None and isinstance(stopped_state, RegistryResumeState):
             live = await run_file_operation(_foreign_live_processes, session_id)
             if live:
                 # 所有側が生存する記録を解放済みへ置き換えると、所有側の再開と終了の公開が別の記録を上書きする。

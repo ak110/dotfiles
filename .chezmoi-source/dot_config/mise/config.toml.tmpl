@@ -42,6 +42,9 @@ glow = "latest"
 jq = "latest"
 {{ if eq $mode "full" }}
 node = "lts"
+# Node.js 25以降はCorepackを同梱しないため、pnpmはmiseでstandaloneの実行ファイルを導入する。
+# gv・lcがnpm:pnpmを使う理由だったaqua-registryのWindowsアセット名の不一致は、pnpm 12.19.0で解消を確認した。
+pnpm = "latest"
 {{ end }}
 ripgrep = "latest"
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import review_table
+from agent_toolkit._atk import review_table, review_table_format
 
 
 @pytest.mark.parametrize("maker", ("メイン", "レーン担当", "統括", "ユーザー", "レビュー担当"))
@@ -29,7 +29,7 @@ def test_respond_records_decision_and_transfer(tmp_path: Path, maker: str) -> No
     assert result.value.code == 0
     rows = review_table.read_rows(path)
     assert rows == [legacy, [*pending[:6], body]]
-    assert review_table.response_state(rows[1]) == "transferred"
+    assert review_table_format.response_state(rows[1]) == "transferred"
 
 
 @pytest.mark.parametrize(

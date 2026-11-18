@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 # 一方の追加が失われるため、このロックで直列化する。
 PROCESS_PATH_LOCK = threading.Lock()
 # 複数のCLI工程が同じnpmのグローバル領域を同時に変更しないよう、旧npm版の削除を直列化する。
-_NPM_GLOBAL_LOCK = threading.Lock()
+NPM_GLOBAL_LOCK = threading.Lock()
+
+_MAX_NPM_LAUNCHER_BYTES = 64 * 1024
+"""npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。"""
 
 
 def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
@@ -124,7 +127,7 @@ def migrate_npm_launchers(
 
     `excluded_launchers`には呼出側自身が配置した起動管理を渡し、移行の候補と保持警告から除く。
     """
-    changed = False
+    changed = _remove_orphan_npm_launchers(cli_name, package_name, extra_search_directories)
     for launcher in _iter_noncanonical_launchers(
         cli_name,
         canonical_launcher,
@@ -150,7 +153,7 @@ def migrate_npm_launchers(
         if not _launcher_belongs_to_package(launcher, package_dir, package_name):
             _warn_unconfirmed_launcher(cli_name, launcher, f"{package_dir}配下の実体ではない: {_launcher_kind(launcher)}")
             continue
-        with _NPM_GLOBAL_LOCK:
+        with NPM_GLOBAL_LOCK:
             result = common.run_subprocess(
                 [str(npm), "uninstall", "--global", package_name],
                 timeout=common.COMMAND_TIMEOUT,
@@ -268,6 +271,42 @@ def _iter_noncanonical_launchers(
             if resolved == canonical_real or resolved in excluded or _is_relative_to(resolved, prefix_real):
                 continue
             yield launcher
+
+
+def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_directories: Iterable[Path]) -> bool:
+    """npmのパッケージ本体が無いのに残った起動スクリプト（`.cmd`・`.ps1`・拡張子なし）を削除する。
+
+    PowerShellはPATH上の`.ps1`を`.cmd`より先に使うため、本体の無い起動スクリプトが残ると
+    正規の導入先より前で起動に失敗する。npmが生成する起動スクリプトは自身のディレクトリ
+    （`$basedir`・`%dp0%`・`%~dp0`）からの相対で`node_modules/<パッケージ>`を参照するため、
+    その参照を含み本体が不在のものだけを対象とする。別の導入先を絶対パスで指すものは対象外とする。
+    """
+    references = tuple(f"{base}/node_modules/{package_name}/" for base in ("$basedir", "%dp0%", "%~dp0"))
+    changed = False
+    path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
+    for directory in {common.safe_resolve(path) for path in (*path_directories, *extra_search_directories)}:
+        if (directory / "node_modules").joinpath(*package_name.split("/")).exists():
+            continue
+        for name in (cli_name, f"{cli_name}.cmd", f"{cli_name}.ps1"):
+            launcher = directory / name
+            try:
+                # 実行ファイル本体（数百MB）を読まないよう、起動スクリプトの大きさのファイルだけを読む。
+                if not launcher.is_file() or launcher.stat().st_size > _MAX_NPM_LAUNCHER_BYTES:
+                    continue
+                normalized = launcher.read_text(encoding="utf-8", errors="replace").replace("\\", "/")
+                if not any(reference in normalized for reference in references):
+                    continue
+                launcher.unlink()
+            except OSError as error:
+                logger.warning(
+                    log_format.format_status(
+                        cli_name, f"本体の無いnpm起動スクリプトを削除できない: {launcher}: {error}。手で削除する"
+                    )
+                )
+                continue
+            logger.info(log_format.format_status(cli_name, f"本体の無いnpm起動スクリプトを削除しました: {launcher}"))
+            changed = True
+    return changed
 
 
 def _adjacent_npm(directory: Path) -> Path | None:

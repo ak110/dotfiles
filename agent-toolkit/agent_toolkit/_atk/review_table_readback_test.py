@@ -101,7 +101,7 @@ def test_add_saved_mismatch_guides_row_check_instead_of_respond(
     location_file = tmp_path / "location.txt"
     location_file.write_text("module.py:10", encoding="utf-8")
     issue_file = tmp_path / "issue.md"
-    issue_file.write_text("修正が必要", encoding="utf-8")
+    issue_file.write_text(review_bodies.issue_body("修正が必要"), encoding="utf-8")
     # 保存行の解決に使う列を変えずに不一致の分岐を通すため、一致判定だけを不一致にする。
     monkeypatch.setattr(table._body_match, "verdict", lambda _expected, _saved: "不一致")  # pylint: disable=protected-access
 

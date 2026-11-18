@@ -22,7 +22,7 @@ from session_evidence_stats import _add_tokens, _codex_normalized_tokens, _parse
 from session_quality_metrics import collect_quality_events, first_pass_metrics
 
 from agent_toolkit._agents_server import record_paths
-from agent_toolkit._atk import review_table, session_record_format
+from agent_toolkit._atk import review_table, review_table_format, session_record_format
 from agent_toolkit._atk.wi import layout as wi_layout
 from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import model_pricing, private_notes, session_cost
@@ -68,7 +68,7 @@ def _new_week(day: str) -> dict[str, Any]:
         "review": {
             "table_count": 0,
             "rounds": dict.fromkeys(("0", "1", "2", "3", "4", "5", "6+"), 0),
-            "levels": dict.fromkeys((*review_table.LEVEL_VALUES, "未記録"), 0),
+            "levels": dict.fromkeys((*review_table_format.LEVEL_VALUES, "未記録"), 0),
             "finding_count": 0,
             "without_modification_count": 0,
             "excluded_judgment_count": 0,
@@ -219,7 +219,9 @@ def _queue_metrics(
                 if names and all(name in by_name for name in names):
                     findings = [row for name in names for _, row in by_name[name].rows]
                     unit["finding_count"] = len(findings)
-                    unit["accepted_finding_count"] = sum(review_table.response_state(row) == "adopted" for row in findings)
+                    unit["accepted_finding_count"] = sum(
+                        review_table_format.response_state(row) == "adopted" for row in findings
+                    )
     for table in saved.tables:
         rows = table.rows
         rounds = max((int(row[0]) for _, row in rows), default=0)
@@ -232,7 +234,7 @@ def _queue_metrics(
         for _, row in rows:
             level = row[4] or "未記録"
             review["levels"][level] = review["levels"].get(level, 0) + 1
-            review["without_modification_count"] += review_table.response_state(row) == "rejected"
+            review["without_modification_count"] += review_table_format.response_state(row) == "rejected"
     saved_names = {path.name for path in saved.all_paths}
     unsaved = sum(path.name not in saved_names for path in (Path.home() / ".claude" / "plans").glob("*.exec-review.tsv"))
     return {

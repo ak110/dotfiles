@@ -85,7 +85,7 @@ winget install twpayne.chezmoi && chezmoi init ak110 --source=%USERPROFILE%\dotf
 | --- | --- | --- |
 | Git・uv・chezmoi・mise、fzf・gh・glab・glow・jq・ripgrep、tmuxプラグイン、pytools | 導入 | 導入 |
 | Claude Code・Codex・Antigravity・OpenCode・Gemini CLI・Herdr、プラグイン・MCP・statusline | 導入 | 導入を省く |
-| dotnet・node・rust・gcloud・aws-cdk、開発用linter・formatter | 導入 | 導入を省く |
+| dotnet・node・pnpm・rust・gcloud・aws-cdk、開発用linter・formatter | 導入 | 導入を省く |
 
 モードはagent-toolkitの設定ファイルの`dotfiles_mode`へ保存され、次回以降の更新にも適用される。
 設定だけを変更する場合は、`atk config set dotfiles_mode minimal`を実行する。
@@ -104,6 +104,10 @@ minimalでは共有ランタイム領域とAIエージェントの実体も対�
 Claude CodeとCodexの設定・会話履歴は保持する。
 使用中のエージェントや旧Python環境を検出した場合は保持し、終了後の`update-dotfiles --prune`の再実行を案内する。
 fullの通常更新では共有Python依存環境を保持し、どちらのモードでも使用中の旧環境は削除しない。
+
+miseが導入するコマンドと同じ名前のコマンドをdotfiles外で導入している場合、`update-dotfiles`はmiseが同じ名前のコマンドを解決できる場合に、導入元の手順で削除する。
+対象はWinGetのportable導入、npmのグローバル導入、pnpmのstandalone導入（`PNPM_HOME`とその環境変数・PATHの登録）である。
+管理者権限が要る導入（Program Filesなど）は削除せず、Windowsでmise管理版より先にPATHにある場合に削除を案内する。
 
 ## 使い方
 

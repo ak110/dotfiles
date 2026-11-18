@@ -31,6 +31,7 @@ from pytools._internal import (
     install_libarchive,
     install_opencode_toolkit,
     prune_claude_plugin_cache,
+    prune_foreign_tools,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
     restore_codex_logs,
@@ -411,6 +412,11 @@ def _dotfiles_plugin_post_apply_fails(monkeypatch: pytest.MonkeyPatch, tmp_path:
     _dotfiles_plugin_fails(monkeypatch, tmp_path, operation="post_apply.py")
 
 
+def _foreign_tools_mise_listing_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(prune_foreign_tools.setup_mise_binary, "find_mise_binary", lambda: tmp_path / "mise")
+    monkeypatch.setattr(prune_foreign_tools.common, "run_subprocess", lambda *_args, **_kwargs: None)
+
+
 def _usage_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(config_settings, "config_file_path", lambda: tmp_path / "usage-config.json")
     monkeypatch.setattr(config_settings, "save_config", _raise(PermissionError("denied")))
@@ -428,6 +434,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "利用枠自動配分の初期設定": [(_usage_config_write_fails, 1)],
     "npm/pnpm サプライチェーン対策": [(_npm_config_write_fails, 1)],
     "mise セットアップ": [(_mise_install_fails, 0)],
+    "mise 管理ツールと重複する導入物の削除": [(_foreign_tools_mise_listing_fails, 0)],
     "pnpm サプライチェーン対策": [(_pnpm_config_write_fails, 1)],
     "Codex CLI の導入と更新": [(_codex_cli_installer_fails, 0)],
     "Codex の Claude MCP 登録削除": [(_codex_claude_mcp_removal_fails, 1)],

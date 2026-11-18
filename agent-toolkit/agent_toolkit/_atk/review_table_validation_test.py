@@ -156,14 +156,18 @@ def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: 
 @pytest.mark.parametrize(
     ("option", "body", "missing"),
     [
-        ("--response-file", "修正した", "違反を確認した規定:、同じ規定の検索:、採用する修正範囲:、採用しない修正方針:"),
-        ("--response-file", _RESPONSE_WITHOUT_SEARCH, "同じ規定の検索:"),
+        (
+            "--response-file",
+            "修正した",
+            "違反を確認した規定:、類似見直し完了件数:、採用する修正範囲:、採用しない修正方針:",
+        ),
+        ("--response-file", _RESPONSE_WITHOUT_SEARCH, "類似見直し完了件数:"),
         (
             "--response-file",
             review_bodies.response_body("修正した").replace("採用しない修正方針: なし", "採用しない修正方針:"),
             "採用しない修正方針:",
         ),
-        ("--response-file", "前置き 違反を確認した規定: 規定\n" + _RESPONSE_WITHOUT_SEARCH, "同じ規定の検索:"),
+        ("--response-file", "前置き 違反を確認した規定: 規定\n" + _RESPONSE_WITHOUT_SEARCH, "類似見直し完了件数:"),
         ("--no-response-reason-file", "既存契約を維持する", "根拠の所在:、判断主体:"),
         ("--no-response-reason-file", "根拠の所在:   \n補足", "根拠の所在:、判断主体:"),
     ],

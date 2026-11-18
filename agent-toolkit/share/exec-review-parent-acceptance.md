@@ -30,7 +30,8 @@
 2. 返却の`レビューHEAD`を`git rev-parse <返却の値>`で解決し、レビューを依頼した対象worktreeの最新HEADと完全に一致する。
    一致しなければ、同じ担当に現在のHEADで再判定させる。
    確認後、round番号、指摘管理表のパス、`レビュー開始時点`、`前回確認版の開始時点`、`前回確認版HEAD`を一連のレビュー結果として保持する
-3. 返却の`未解決の指摘数`が、`atk review-table show <表の絶対パス> --format=summary --round <round>`の`unanswered_count`と一致する
+3. 返却の`未解決の指摘数`が、`atk review-table show <表の絶対パス> --format=summary --round <round>`の`unanswered_count`と一致する。
+   同じsummaryが`recheck_pending_count`を返す場合は0であり、0でなければ前回指摘の再確認を同じ担当へ指示する
 4. 証拠要求がある場合は、読込表の手順で対象WI集合の本文を取得し、`exec-review-recording-integration.md`「統合時の完成条件判定」手順3で、条件番号の過不足と重複、原文要求との対応を検証する。
    条件や要求単位が足りなければレビュー担当に補完させ、揃ってから先へ進む
 5. `読者別探索`のファイルごとのJSON申告を、Git管理下とGit管理外の2つの対象集合と突き合わせる。

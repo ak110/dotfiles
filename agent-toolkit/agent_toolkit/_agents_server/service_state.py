@@ -20,6 +20,7 @@ class _StateCodec(DataclassCodec):
         super().__init__(
             {
                 "resume": state.SessionResumeState,
+                "registry_resume": state.RegistryResumeState,
                 "live_task": state.LiveTask,
                 "background": turn_state.BackgroundWait,
                 "overload": turn_state.OverloadWait,

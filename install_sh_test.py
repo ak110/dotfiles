@@ -177,15 +177,25 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
 
 
 def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
-    """リポジトリを複製。.venv や巨大ディレクトリは除外して高速化。"""
+    """Gitが作業ツリーの内容とみなすファイル（追跡ファイルと無視対象外の未追跡ファイル）だけを複製する。
 
-    # .git は chezmoi init が内部で使うわけではないので不要。
-    # .venv / node_modules などテスト無関係な巨大ディレクトリは除外する。
-    def _ignore(_dir: str, names: list[str]) -> list[str]:
-        del _dir  # noqa
-        return [n for n in names if n in {".venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".git"}]
-
-    shutil.copytree(src, dst, ignore=_ignore, symlinks=True)
+    無視対象（仮想環境、検査のキャッシュ、`.claude/worktrees`配下の作業ツリーなど）まで複製すると、
+    開発中の作業ツリーでは数GBのコピーで所要とCPU上限を超え、CIの新しいcheckoutとも条件が変わる。
+    `.git`はinstall.shとchezmoiが使わないため複製しない。
+    """
+    listed = subprocess.run(
+        ["git", "-C", str(src), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    for name in sorted(set(os.fsdecode(listed).split("\0")) - {""}):
+        source = src / name
+        # 作業ツリーで削除済みの追跡ファイルは複製しない。
+        if not source.is_symlink() and not source.exists():
+            continue
+        target = dst / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target, follow_symlinks=False)
 
 
 def _usable_uv_binary(home: pathlib.Path, isolated_path: str) -> pathlib.Path:

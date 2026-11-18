@@ -8,6 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import review_table as table
+from agent_toolkit._atk import review_table_cli
 from agent_toolkit._testing import review_bodies
 
 _TRACK = "exec-review"
@@ -129,7 +130,7 @@ def _isolated_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> p
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="atk")
     subcommands = parser.add_subparsers(dest="command")
-    table.build_parser(subcommands)
+    review_table_cli.build_parser(subcommands)
     return parser
 
 
@@ -158,6 +159,4 @@ def _assert_guides_series_head_name(text: str) -> None:
     assert "原因commit" not in text
 
 
-_RESPONSE_WITHOUT_SEARCH = review_bodies.response_body("修正した").replace(
-    "同じ規定の検索: 変更対象の全体を確認し、指摘箇所以外の該当は無い\n", ""
-)
+_RESPONSE_WITHOUT_SEARCH = review_bodies.response_body("修正した").replace("類似見直し完了件数: 3\n", "")

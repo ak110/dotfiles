@@ -23,7 +23,8 @@ class TestDefaultSteps:
     # 共有資源と実行ファイルの前提から定めた先行工程。宣言の欠落は同時実行による競合を招く。
     _EXPECTED_PREDECESSORS: dict[str, set[str]] = {
         "mise セットアップ": {"npm/pnpm サプライチェーン対策", "bin PATH 登録 (Windows)"},
-        "pnpm サプライチェーン対策": {"mise セットアップ"},
+        "mise 管理ツールと重複する導入物の削除": {"mise セットアップ", "bin PATH 登録 (Windows)"},
+        "pnpm サプライチェーン対策": {"mise セットアップ", "mise 管理ツールと重複する導入物の削除"},
         "Codex CLI の導入と更新": {"mise セットアップ", "Codex 診断ログの通常ストレージ復元 (Linux)"},
         "Codex 診断ログの通常ストレージ復元 (Linux)": {"Codex リンクの同期"},
         "Codex の Claude MCP 登録削除": {"Codex CLI の導入と更新"},

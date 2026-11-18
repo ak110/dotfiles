@@ -22,7 +22,7 @@ import watchdog.events
 import watchdog.observers
 import watchdog.observers.api
 
-from agent_toolkit._atk import review_table as _review_table
+from agent_toolkit._atk import review_table_format as _review_table_format
 from agent_toolkit._atk.serve.plans.local_scan import PlansEventHandler, scan_files, search_files
 from agent_toolkit._atk.serve.plans.remote import (
     RemoteSearchCoordinator,
@@ -315,11 +315,11 @@ def review_table_html(text: str) -> str:
     指摘レベルを空として対応要否の列を除く。
     """
     try:
-        rows = _review_table.display_rows(text)
+        rows = _review_table_format.display_rows(text)
     except ValueError:
         return f"<pre>{html_lib.escape(text)}</pre>\n"
 
-    head = "".join(f"<th>{html_lib.escape(header)}</th>" for header in _review_table.COLUMN_LABELS)
+    head = "".join(f"<th>{html_lib.escape(header)}</th>" for header in _review_table_format.COLUMN_LABELS)
     body = "".join("<tr>" + "".join(f"<td>{html_lib.escape(cell)}</td>" for cell in row) + "</tr>" for row in rows)
     return f'<table class="review-table">\n<thead><tr>{head}</tr></thead>\n<tbody>{body}</tbody>\n</table>\n'
 

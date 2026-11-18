@@ -91,17 +91,27 @@ async def _check_targets(
     *,
     skip_startup: bool = False,
 ) -> list[tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None] | BaseException]:
-    """独立rootの確認を並列に進め、1rootの失敗でも全対象を回収する。"""
+    """独立rootの依存確認を並列に進め、MCP起動確認は1件ずつ行い、1rootの失敗でも全対象を回収する。
 
-    async def check(command: Sequence[str]) -> tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None]:
-        dependency = await plugin_warmup.check_command([*command, "--check-dependencies"])
-        if not dependency.ok:
-            return dependency, None
-        if skip_startup:
-            return dependency, _StartupOutcome(True, "コード・起動条件が同じためMCP起動確認を省略")
-        return dependency, await _check_startup(command)
-
-    return await asyncio.gather(*(check(command) for command in commands), return_exceptions=True)
+    同じ世代の転送側は1つの管理サービスを共有し、最初の転送側がそのサービスを起動する。
+    WindowsではMCP SDKが起動したサーバーをKILL_ON_JOB_CLOSEのJobへ入れ、接続を閉じるとJobの全プロセスを止める。
+    管理サービスも起動した転送側のJobに属するため、起動確認を並列に進めると、先に終わった確認が
+    他の確認の接続中の管理サービスを止める。
+    """
+    dependencies = await asyncio.gather(
+        *(plugin_warmup.check_command([*command, "--check-dependencies"]) for command in commands), return_exceptions=True
+    )
+    outcomes: list[tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None] | BaseException] = []
+    for command, dependency in zip(commands, dependencies, strict=True):
+        if isinstance(dependency, BaseException):
+            outcomes.append(dependency)
+        elif not dependency.ok:
+            outcomes.append((dependency, None))
+        elif skip_startup:
+            outcomes.append((dependency, _StartupOutcome(True, "コード・起動条件が同じためMCP起動確認を省略")))
+        else:
+            outcomes.append((dependency, await _check_startup(command)))
+    return outcomes
 
 
 async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
