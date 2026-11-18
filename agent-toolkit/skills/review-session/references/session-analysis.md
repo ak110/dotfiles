@@ -21,7 +21,6 @@
 | 工程3および工程4で、問題の原因と対策を導き、既存AWIで対処済みかを確認する前 | `analysis-cost.md`、`analysis-actions.md` | | | |
 | コスト削減案の採否および所要時間300秒超過時の対応を確定する前 | `duration-analysis.md` | | | |
 | 工程3または工程4において、事実関係の調査をサブエージェントへ委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
-| 工程4で問題ごとに`agent-basics:bugfix`を起動した時点（`analysis-actions.md`「原因と対策」において、ユーザー介入を拡張原因分析の対象として扱うため） | `agent-basics:bugfix/references/root-cause-analysis.md` | | | |
 | 通常モードの工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` | |
 | batchの工程5でAWIを起草・独立検収する前 | `agent-toolkit:wi-standards`、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
 | batchでAWIを保存する前 | `batch.md` | 判断 | `wi-standard-commit` | |
@@ -101,15 +100,14 @@
 WI投入担当による分析を、メインエージェント自身が行うべき原因分析の代替にしない。
 
 1. 当該事項が、既存の上位規範（`agent-toolkit/share/rules/common/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的、技術的な常識から自ずと導き出せるものであるかを検討する。
-   詳細は`agent-basics:bugfix/references/root-cause-severity-quality.md`「原因分析の品質確認」を参照する。
-   ルールや条文を追加する前に、既存ルールの削除、緩和、または一般化によって目的を達成できるかを検証する。
-2. 初動対応、拡張原因分析の要否判定、根本原因、類似事例の調査結果、具体的な対策、横展開の処置、および再発防止策を実際の証拠と突き合わせ、原因と対策を1つの明確な案として確定する。
+   検討は`agent-basics:bugfix/references/premises.md`「規範に従った結果の失敗」に従う。
+2. `agent-basics:bugfix`の「書き出す場面」に当たるかを判定し、5つの問い（期待、原因、処置、広がり、確認）への答えと、条件が成立した時の再発と再発防止の検討を実際の証拠と突き合わせ、原因と対策を1つの明確な案として確定する。
    過去AWIと今回の比較は`analysis-actions.md`「原因と対策」に従い、終了済み項目の実装・配布と適用機会を確認する。
    未完了AWIによる被覆、起票、実装配布、今回条件での解消を区別し、残る原因条件、処置担当、適用機会と観測結果を工程5へ渡す。
    適用機会が無い処置は効果未確認とする。
 3. 工程2と工程3で実施したコスト比較の検討結果を活用し、欠陥の有無に関する判定と、具体的な実施方法についての判断をそれぞれ確定させる。
    対応を見送ると判断した問題についても原因と比較検討の内容を明確に記録し、見送りの根拠を要求の不成立、判明した原因、コスト比較の結果と整合させる。
-   その見送り理由が、`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」で禁止されている不当な根拠に該当しないことを、`analysis.md`の基準に照らして確認する。
+   再発防止を採用しない場合は、その理由が`agent-basics:bugfix/references/prevention.md`で採用しない理由から除く根拠に当たらないことを確かめる。
    再利用価値のある成功手順、誤記の訂正、重複整理と参照の補修も既存の原記録と比較して選ぶ。
    知見の保存・適用は読込表の共通基準を使い、恒久変更が必要なものを工程5へ渡す。
 
@@ -154,7 +152,7 @@ Codexの`functions.exec`による定義本文の読取では、`atk run-script s
 - `wi-user-response`の抽出対象は、対象セッションが起草したUWI、ならびに`atk wi start-processing`、`adopt`、`reject`、`unhold`によって処理されたWIとする（`atk wi show`で内容を閲覧しただけのWIは対象外とする）。
   UWIの`## 回答`欄に用意された選択肢と一致しない自由記入や、AWIの`## ユーザーコメント`欄への記入を問題候補として抽出する。
 - ユーザー介入、ユーザー確認、WI記入欄の修正については、必須の評価対象として扱う。
-  分析の深度や再発防止策を策定すべきかどうかの判断は、bugfixスキルの重大度判定基準へ委ねる。
+  分析の深さと再発防止の検討の要否は、`agent-basics:bugfix`の「書き出す場面」と確認観点を読む条件に従う。
   ユーザー介入とWI記入欄の修正に対しては、private-notesに保存されている全WIの中から、`## ユーザー指摘の逐語引用`、`## 回答`、`## ユーザーコメント`にその発話の大部分を含むものを検索し、過去の類似事例として紐付ける。
 - 実行に失敗したコマンドやツールは失敗署名ごとに集約し、直近30日間に複数の最上位セッションで繰り返し確認されたものを抽出する。
   単一のセッションでしか発生していない失敗は、件数表および`single-session-failure`へ計上する。

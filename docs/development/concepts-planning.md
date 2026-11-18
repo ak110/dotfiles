@@ -47,8 +47,8 @@
 - 規範、ガイド、設計文書などの説明文はこの3語を日本語で用い、エージェント名、設定キー、ファイル名など英語が必要な識別子だけ`plan`・`exec`系を用いる。
   3語の定義と綴りの使い分けの現行の規定は`agent-basics:writing-standards`にある
 - レビュー反復の原因判定は、`agent-basics:bugfix`の次の資料を参照する。
-  - `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`「反復した指摘の原因判定」
-  - `agent-basics:bugfix/references/root-cause-severity-quality.md`「前提の再検討」
+  - `agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」
+  - `agent-basics:bugfix/references/premises.md`「期待の出所」
 
   個別修正の反復から工程・規範の構造の見直しへ接続する導入目的を保つ
 - 過去計画30件のレビュー実績の実際の集計では、起草側の完成条件に対応の無い検出側専用の判定基準5件と、

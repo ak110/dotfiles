@@ -278,7 +278,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans": {
         "summary": "計画ファイルを取得・保存・一覧表示する",
-        "description": "計画ファイルを取得・保存・一覧表示する。\n\n目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧も提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認をするとき。保存の契機は、計画バンドルでは`agent-toolkit:write-plan`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-basics:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 同期相手が無ければローカルだけで完了する。\n復元・後始末: `commit`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "description": "計画ファイルを取得・保存・一覧表示する。\n\n目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧も提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認をするとき。保存の契機は、計画バンドルでは`agent-toolkit:write-plan`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:process-wi`の`ci-fix-series.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 同期相手が無ければローカルだけで完了する。\n復元・後始末: `commit`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-0900_example.md",
     },
     "atk plans checkout": {
@@ -288,7 +288,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans commit": {
         "summary": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする",
-        "description": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする。\n\n目的: 指定した計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`からprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたはCI対応レビュー指摘管理表の保存の契機に達したとき。契機は、計画バンドルでは`agent-toolkit:write-plan`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-basics:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: 計画バンドルは年月階層へ、CI対応レビュー指摘管理表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、`~/.claude/plans`直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは`~/.claude/plans`直下のメイン計画ファイル名、`private-notes/plans/`からの相対のメイン計画パス、または`"
+        "description": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする。\n\n目的: 指定した計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`からprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたはCI対応レビュー指摘管理表の保存の契機に達したとき。契機は、計画バンドルでは`agent-toolkit:write-plan`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:process-wi`の`ci-fix-series.md`が定める。\n対象と出力: 計画バンドルは年月階層へ、CI対応レビュー指摘管理表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、`~/.claude/plans`直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは`~/.claude/plans`直下のメイン計画ファイル名、`private-notes/plans/`からの相対のメイン計画パス、または`"
         + CI_REVIEW_TABLE_NAME_FORMAT
         + "`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commitまたはpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
         "epilog": "実行例:\n\n  atk plans commit /absolute/home/.claude/plans/01-0900_example.md",

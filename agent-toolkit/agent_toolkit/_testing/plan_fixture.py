@@ -30,7 +30,6 @@ COMPLETION_BODY: str = "基準値は診断2件、目標は1件とし、CLIを再
 
 BUG_UNIT_H3: str = "対象の不整合"
 BUG_FILLER: str = "発生条件と実際値を記載する。"
-CAUSE_FILLER: str = "原因分析を記録する。"
 TABLE_FILLER: str = "検討結果を記載する。"
 
 
@@ -44,103 +43,87 @@ def item_row(name: str, filler: str = TABLE_FILLER) -> str:
     return f"| {name} | {filler} |"
 
 
-def bug_row(name: str) -> str:
-    """バグ調査表の1行を組み立てる。"""
-    return item_row(name, BUG_FILLER)
-
-
 def rows_table(rows: tuple[str, ...], filler: str = TABLE_FILLER) -> str:
     """行名を固定した`項目`・`内容`の2列表を組み立てる。"""
     return "\n".join([_header_row(_plan_format.PLAN_BUG_TABLE_HEADER), *(item_row(row, filler) for row in rows)])
 
 
-def bug_cause_table(filler: str = CAUSE_FILLER) -> str:
-    """バグ単位の原因分析表を組み立てる。"""
-    header = _plan_format.PLAN_BUG_CAUSE_TABLE_HEADER
+def cause_record_line(label: str, text: str = BUG_FILLER) -> str:
+    """原因分析の記録の1行を組み立てる。"""
+    return f"- {label}: {text}"
+
+
+def cause_record(text: str = BUG_FILLER) -> str:
+    """バグ単位1件分の原因分析の記録（必須の行頭語の行）を組み立てる。"""
+    return "\n".join(cause_record_line(label, text) for label in _plan_format.CAUSE_RECORD_REQUIRED_LABELS)
+
+
+LEGACY_CAUSE_TABLE_ROWS: tuple[str, ...] = ("作り込み要因", "見逃し要因")
+LEGACY_INVESTIGATION_TABLE_ROWS: tuple[str, ...] = (
+    "現象",
+    "期待する契約",
+    "害の型と反復",
+    "対策",
+    "回帰防止策",
+    "類似見直し観点（作り込み）",
+    "類似見直し観点（見逃し）",
+    "類似見直しの採否",
+    "類似見直し結果",
+    "再発防止策（作り込み）",
+    "再発防止策（見逃し）",
+    "再発防止策の採否",
+    "処置が生む問題の検討",
+)
+LEGACY_STANDALONE_TABLE_ROWS: tuple[str, ...] = (
+    "観測事象",
+    "期待する契約",
+    "直接的原因",
+    "混入要因",
+    "動機的要因",
+    "見逃し原因",
+    "根本原因",
+    "原因分析の根拠",
+    "類似見直しの観点",
+    "類似見直し結果",
+    "是正処置",
+    "横展開処置",
+    "再発防止処置",
+    "設計意図の記録",
+)
+"""廃止した表の行名。保存済みの計画とWIを模した読み取り互換の入力にだけ使う。"""
+
+
+def legacy_cause_tables(filler: str = BUG_FILLER) -> str:
+    """廃止直前の形式（原因分析表と調査表の2表）のバグ単位の本文を組み立てる。"""
+    header = _plan_format.PLAN_LEGACY_BUG_TABLE_HEADERS[0]
     contents = " | ".join(filler for _column in header[1:])
-    return "\n".join([_header_row(header), *(f"| {row} | {contents} |" for row in _plan_format.PLAN_BUG_CAUSE_TABLE_ROWS)])
+    cause_table = "\n".join([_header_row(header), *(f"| {row} | {contents} |" for row in LEGACY_CAUSE_TABLE_ROWS)])
+    return f"{cause_table}\n\n{rows_table(LEGACY_INVESTIGATION_TABLE_ROWS, filler)}"
 
 
 BUG_VARIANT_CURRENT: str = "current"
-"""現行の調査表。原因分析表と固定行の調査表を置く。"""
-BUG_VARIANT_LEGACY_ROWS: str = "legacy_rows"
-"""統廃合前の調査表。原因分析表を伴い、行構成だけが旧い。"""
+"""現行の記録。必須の行頭語の行を置く。"""
+BUG_VARIANT_LEGACY_TABLES: str = "legacy_tables"
+"""廃止直前の原因分析表と調査表の2表。読み取り互換専用。"""
 BUG_VARIANT_LEGACY_STANDALONE: str = "legacy_standalone"
-"""原因分析表を持たない旧調査表。"""
-BUG_VARIANT_BEFORE_HARM_ROWS: str = "before_harm_rows"
-"""害の型を追加する前の11行の調査表。読み取り互換専用。"""
-BUG_VARIANT_PREVIOUS_ROWS: str = "previous_rows"
-"""6区分化より前の8行の調査表。原因分析表を伴い、行構成だけが旧い。"""
-
-
-def bug_investigation_table(filler: str = BUG_FILLER) -> str:
-    """バグ単位の固定行の調査表を組み立てる。"""
-    return "\n".join(
-        [
-            _header_row(_plan_format.PLAN_BUG_TABLE_HEADER),
-            *(
-                item_row(row, f"作り込み要因: {filler}を採用。見逃し要因: {filler}を採用。")
-                if row in ("類似見直し観点", "再発防止策")
-                else item_row(row, filler)
-                for row in _plan_format.PLAN_BUG_TABLE_ROWS
-            ),
-        ]
-    )
-
-
-def previous_bug_investigation_table(filler: str = BUG_FILLER) -> str:
-    """6区分化より前の8行の調査表を組み立てる。"""
-    return "\n".join(
-        [
-            _header_row(_plan_format.PLAN_BUG_TABLE_HEADER),
-            *(
-                item_row(row, f"作り込み要因: {filler}を採用。見逃し要因: {filler}を採用。")
-                if row in ("類似見直し観点", "再発防止策")
-                else item_row(row, filler)
-                for row in _plan_format.PLAN_PREVIOUS_BUG_TABLE_ROWS
-            ),
-        ]
-    )
-
-
-def legacy_bug_investigation_table(filler: str = BUG_FILLER) -> str:
-    """統廃合前の行構成を持つ調査表を組み立てる。"""
-    return "\n".join(
-        [
-            _header_row(_plan_format.PLAN_BUG_TABLE_HEADER),
-            *(
-                item_row(row, f"作り込み要因: {filler}を採用。見逃し要因: {filler}を採用。")
-                if row in ("類似見直し観点", "再発防止策")
-                else item_row(row, filler)
-                for row in _plan_format.PLAN_LEGACY_BUG_TABLE_ROWS
-            ),
-        ]
-    )
+"""原因分析表を持たない、より前の世代の調査表。読み取り互換専用。"""
+BUG_VARIANT_LEGACY_SHORT: str = "legacy_short"
+"""表も行頭語の行も持たない旧来の短い記録。読み取り互換専用。"""
 
 
 def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRENT) -> str:
-    """計画ファイル（バグ）の正常系本文を返す。
-
-    ``variant``は``BUG_VARIANT_CURRENT``、``BUG_VARIANT_PREVIOUS_ROWS``、``BUG_VARIANT_LEGACY_ROWS``、
-    ``BUG_VARIANT_LEGACY_STANDALONE``のいずれかを受理する。
-    """
-    if variant == BUG_VARIANT_BEFORE_HARM_ROWS:
-        table = bug_investigation_table().replace(f"{bug_row('害の型と反復')}\n", "")
-        table = table.replace(f"\n{bug_row('処置が生む問題の検討')}", "")
-        body = f"{bug_cause_table()}\n\n{table}"
-    elif variant == BUG_VARIANT_LEGACY_STANDALONE:
-        body = rows_table(_plan_format.PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS, BUG_FILLER)
-    elif variant == BUG_VARIANT_LEGACY_ROWS:
-        body = f"{bug_cause_table()}\n\n{legacy_bug_investigation_table()}"
-    elif variant == BUG_VARIANT_PREVIOUS_ROWS:
-        body = f"{bug_cause_table()}\n\n{previous_bug_investigation_table()}"
-    else:
-        body = f"{bug_cause_table()}\n\n{bug_investigation_table()}"
+    """計画ファイル（バグ）の正常系本文を返す。``variant``は``BUG_VARIANT_*``のいずれかを受理する。"""
+    body = {
+        BUG_VARIANT_CURRENT: cause_record(),
+        BUG_VARIANT_LEGACY_TABLES: legacy_cause_tables(),
+        BUG_VARIANT_LEGACY_STANDALONE: rows_table(LEGACY_STANDALONE_TABLE_ROWS, BUG_FILLER),
+        BUG_VARIANT_LEGACY_SHORT: "誤った設定値を訂正し、期待した値で再検証した。",
+    }[variant]
     return f"# {title}\n\n### {BUG_UNIT_H3}\n\n{body}\n"
 
 
 def inline_bug_section(*, variant: str = BUG_VARIANT_CURRENT) -> str:
-    """計画本文へ直接置く旧形式の`## バグ調査結果`節を返す。"""
+    """計画本文へ直接置く旧配置の`## バグ調査結果`節を返す。"""
     body = bug_file(variant=variant).split(f"### {BUG_UNIT_H3}\n\n", 1)[1]
     return f"## {_plan_format.PLAN_H2_BUG}\n\n### {BUG_UNIT_H3}\n\n{body}\n"
 

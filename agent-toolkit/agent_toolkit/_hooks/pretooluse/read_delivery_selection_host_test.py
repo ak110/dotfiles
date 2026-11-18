@@ -83,7 +83,7 @@ def test_received_result_uses_host_installation(scenario, tmp_path, monkeypatch,
 def test_improvement_guidance_uses_host_installation(tmp_path, monkeypatch, host):
     """別の生成元でも改善判定資料に実効ホストを渡す。"""
     root = tmp_path / host
-    document = root / "skills/bugfix/references/root-cause-prevention.md"
+    document = root / "skills/bugfix/references/prevention.md"
     document.parent.mkdir(parents=True)
     document.write_text("# 判定基準\n", encoding="utf-8")
 

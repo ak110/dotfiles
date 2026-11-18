@@ -634,7 +634,7 @@ async def send_to_user(
         raise ValueError("本文を日本語で書き直すまで画面へ表示していない。")
     try:
         guidance = ""
-        if runtime_inserted.reported_improvement_lines(message):
+        if runtime_inserted.reported_improvement_lines(message) or runtime_inserted.report_cues(message):
             root = pathlib.Path(__file__).resolve().parents[2]
             checked = await run_file_operation(
                 subprocess.run,
@@ -646,11 +646,14 @@ async def send_to_user(
                 check=False,
             )
             if checked.returncode != 0:
-                raise ValueError("改善点報告の案内を取得するhookが失敗した")
+                raise ValueError("報告の案内を取得するhookが失敗した")
             guidance = json.loads(checked.stdout)["hookSpecificOutput"]["additionalContext"]
     except Exception:  # noqa: BLE001 -- 補助案内の失敗で本文の送達を止めない
-        _LOG.exception("改善点報告の取得案内を作成できない")
-        guidance = "改善点の判定資料を確認できなかった。share/rules/rules-main.mdの作業中の改善点の報告を確認せよ。"
+        _LOG.exception("報告の取得案内を作成できない")
+        guidance = (
+            "報告の判定資料を確認できなかった。改善点はshare/rules/rules-main.mdの作業中の改善点の報告を、"
+            "逸脱の報告はagent-basics:bugfixを確認せよ。"
+        )
     # 再開後の画面で、同じ本文を持つ別の呼出しの表示を取り違えないよう、呼出しの識別子を添える。
     tool_use_id = _TOOL_USE_ID.get()
     result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})

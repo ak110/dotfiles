@@ -13,9 +13,7 @@ from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
-from agent_toolkit._plan.structure import constants as _plan_constants
-from agent_toolkit._plan.structure import markdown as _plan_markdown
-from agent_toolkit._plan.structure import sections as _plan_sections
+from agent_toolkit._plan import structure as _plan_structure
 
 
 def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
@@ -138,6 +136,8 @@ def require_agent_awi_sections(
 
 _DIRECT_CAUSE_LABEL = "直接的原因"
 
+"""廃止した原因分析表で原因を記録した行の名前。保存済みの旧形式の本文を判定するために残す。"""
+
 _UNDETERMINED_CAUSE_RE = re.compile(r"(?:未確定|不明|未特定|調査中|未確認)(?:$|[\s。、，,．.:：;；（(「『【\[/／・*_`~])")
 
 """原因が確定していないことを宣言する値の形。
@@ -164,119 +164,72 @@ def _strip_table_cell(cell: str) -> str:
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 
 UNDETERMINED_CAUSE_NEXT_ACTION = (
-    "直接的原因を現物の観測で確定してから本文を書き直して再実行する。"
+    "原因を現物の観測で確定してから本文を書き直して再実行する。"
     "確定できない場合は保存しない（既存項目の編集では保存済みの本文がそのまま残る）"
 )
 
 
-def undetermined_cause_rows(body: str) -> list[str]:
-    """表の`直接的原因`行のうち、値が原因の未確定を宣言する行を返す。
+def undetermined_cause_lines(body: str) -> list[str]:
+    """原因の未確定を宣言する`原因:`の行と、保存済みの旧形式の表の`直接的原因`の行を返す。
 
-    コードフェンスとインデントコードブロックの内側にある表は引用・例示として扱い、判定しない。
+    コードフェンスの内側は引用・例示として扱い、判定しない。
     """
     normalized = _frontmatter.normalize_newlines(body)
     lines = normalized.split("\n")
-    rows: list[str] = []
+    found = [
+        f"原因: {record.text}"
+        for record in _plan_structure.cause_record_lines(normalized)
+        if record.label == "原因" and _UNDETERMINED_CAUSE_RE.match(record.text)
+    ]
     for token in _MARKDOWN.parse(normalized):
         if token.type != "table_open" or token.map is None:
             continue
         for line in lines[token.map[0] : token.map[1]]:
             cells = [_strip_table_cell(cell) for cell in line.strip().strip("|").split("|")]
             if len(cells) >= 2 and cells[0] == _DIRECT_CAUSE_LABEL and _UNDETERMINED_CAUSE_RE.match(cells[1]):
-                rows.append(line.strip())
-    return rows
+                found.append(line.strip())
+    return found
 
 
 def require_confirmed_cause(body: str, *, entry_type: str) -> None:
-    """エージェント環境から保存するUWIが、直接的原因を未確定のまま宣言していないことを検証する。
+    """エージェント環境から保存するUWIが、原因を未確定のまま宣言していないことを検証する。
 
     通常AWIは独立別件の原因仮説と次の問いを保存できる必要があるため、起草と意味検収で本文の妥当性を確認する。
     UWIはユーザーへの判断依頼を未確定な原因分析で代用しない既存条件を保つ。人間の入力は拒否しない。
     """
     if entry_type != WI_TYPE_UWI or not is_agent_environment():
         return
-    if rows := undetermined_cause_rows(body):
+    if found := undetermined_cause_lines(body):
         raise WebInputError(
-            "直接的原因が未確定のまま保存しようとした: " + " / ".join(rows),
+            "原因が未確定のまま保存しようとした: " + " / ".join(found),
             next_action=UNDETERMINED_CAUSE_NEXT_ACTION,
         )
 
 
-AWI_CAUSE_TABLE_ROWS: tuple[str, ...] = (
-    "害の型と反復",
-    "対策",
-    "回帰防止策",
-    "類似見直し観点（作り込み）",
-    "類似見直し観点（見逃し）",
-    "再発防止策（作り込み）",
-    "再発防止策（見逃し）",
-    "類似見直しの採否",
-    "再発防止策の採否",
-    "処置が生む問題の検討",
-)
-
-"""AWIの`## 原因分析`の2列表の行。定義元は`wi-standards/references/analysis-records.md`「原因分析の記録先」。"""
-
-
-def _awi_cause_table_errors(section: str) -> list[str]:
-    """AWIの原因分析の2列表が10行をこの順で持ち、全行に内容があることを確かめる。
-
-    `対策`行か旧5行表の`直接的原因`行を持つ2列表を処置表として識別する。
-    4区分の候補行と採否行のいずれかが欠けた記録や空の行と、バグ単位の原因分析表に対応する処置表が無い記録を拒否し、
-    候補・採否の意味の判定は意味検収が担う。
-    """
-    errors: list[str] = []
-    tables = _plan_markdown.extract_tables(list(_plan_markdown.iter_markdown_body_lines(section)))
-    cause_tables = sum(table.header == _plan_constants.PLAN_BUG_CAUSE_TABLE_HEADER for table in tables)
-    found = 0
-    for table in tables:
-        labels = table.row_labels()
-        if table.header != _plan_constants.PLAN_BUG_TABLE_HEADER or not {"対策", _DIRECT_CAUSE_LABEL} & set(labels):
-            continue
-        found += 1
-        if labels != AWI_CAUSE_TABLE_ROWS:
-            errors.append(f"原因分析の表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の10行をこの順に置く: {table.row_location(0)}")
-            continue
-        for index, row in enumerate(table.rows):
-            if len(row) < 2 or not _strip_table_cell(row[1]):
-                errors.append(f"{AWI_CAUSE_TABLE_ROWS[index]}の行が空である: {table.row_location(index)}")
-    if not tables and not body_is_effectively_empty(section):
-        return errors
-    if found and cause_tables != found:
-        errors.append(f"原因分析表{cause_tables}件と処置表{found}件をバグ単位ごとに対応させる")
-    if found < max(cause_tables, 1):
-        errors.append(
-            f"原因分析の処置表（{'、'.join(AWI_CAUSE_TABLE_ROWS)}の10行）が{found}件で、"
-            f"バグ単位の原因分析表{cause_tables}件に足りない"
-        )
-    return errors
-
-
 def require_cause_analysis_format(body: str, *, original: str | None = None, entry_type: str = WI_TYPE_AWI) -> None:
-    """エージェントが保存する原因分析のL4と系統別候補、AWIの表の行構成を確かめる。
+    """エージェントが保存するAWIの`## 原因分析`が、バグ単位ごとに記録の行をそろえていることを確かめる。
 
-    10行表の規定はAWIの`## 原因分析`の記録先定義であり、UWIには適用しない。
-
-    既存項目の編集で`## 原因分析`節が変わらない場合（追記など）は、保存済みの旧書式を理由に編集を拒否しない。
+    記録の形は`agent-basics:bugfix`の`SKILL.md`「記録」が定め、検査は`cause_record_errors`が行う。
+    UWIは`## 原因分析`の記録先ではないため対象外とする。
+    既存項目の編集で`## 原因分析`節が変わらない場合（追記など）は、保存済みの旧形式の表を理由に編集を拒否しない。
     """
-    if not is_agent_environment():
+    if entry_type == WI_TYPE_UWI or not is_agent_environment():
         return
     section = _headings.last_h2_section_lines(body, _CAUSE_ANALYSIS_HEADING)
     if section is None:
         return
-    if original is not None and _headings.last_h2_section_lines(original, _CAUSE_ANALYSIS_HEADING) == section:
-        return
     content = "\n".join(section)
-    errors = _plan_sections.check_cause_analysis_format(content)
-    if entry_type != WI_TYPE_UWI:
-        errors += _awi_cause_table_errors(content)
-    if errors:
+    if original is not None:
+        saved = _headings.last_h2_section_lines(original, _CAUSE_ANALYSIS_HEADING)
+        if saved is not None and "\n".join(saved).strip() == content.strip():
+            return
+    if errors := _plan_structure.cause_record_errors(content):
+        labels = "・".join(f"`{label}:`" for label in _plan_structure.CAUSE_RECORD_REQUIRED_LABELS)
         raise WebInputError(
             "原因分析の書式が不正です: " + "。".join(errors),
             next_action=(
-                "L4へ説明または理由付きの該当なしを書く。"
-                f"2列表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の10行とし、作り込み・見逃しの各行へ候補を1件以上、"
-                "採否の行へ候補ごとの採否と理由、回帰テストを回帰防止策の行へ書く"
+                f"`## 原因分析`のバグ単位（H3が無ければ節全体、あればH3ごと）に{labels}で始まる行を置き、"
+                "各行の本文を同じ行に書く。書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」に従う"
             ),
         )
 

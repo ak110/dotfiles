@@ -66,6 +66,10 @@ agent-toolkitの判断に今も使う内容は、agent-toolkit側の同名スキ
 参照先の実在とagent-toolkitの名前空間・コマンドへの依存は`agent_basics_standalone_invariant_test.py`で確かめられる。
 新しく持ち込んだ未定義の用語は、この確認で捉える。
 
+`agent-basics/skills/bugfix/`の`SKILL.md`か確認観点を変える時は、各確認観点の末尾の「この観点が防ぐ失敗例」を変更後の本文へ当てる。
+`SKILL.md`と、その条件が指す確認観点だけを渡した独立した文脈へ失敗例の場面を示し、同じ誤りへ進まないことを確かめる。
+文章を足す変更では、`agent-basics:bugfix/references/prevention.md`「案を比べる順」に従い、同じ変更で消すか統合する文章を示す。
+
 agent-toolkitのリソースを編集する前は`agent-basics:writing-standards`も適用し、同スキルの読込表から配送、状態、起動、記録に関する運用条件を確認する。
 すでに取得済みの品質に関する記述は再利用する。
 

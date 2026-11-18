@@ -6,8 +6,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/spread.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/prevention.md` |
 | 本文の参照基準を適用する前 | `approval-scope.md` |
 | 本文の参照基準を適用する前 | `pending-decisions.md` |
 | 本文の参照基準を適用する前 | `../../wi-standards/references/uwi-format.md` |
@@ -77,7 +77,7 @@ Codexの命令や公開機能は`agent-toolkit/share/rules/rules-common.codex.md
 - 規範からの逸脱（`approval-scope.md`）
 - エージェントが起草した完成条件の技術的な理由による変更
 - 限定探索の終了や再発防止策を見送る判断。
-  `agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」で重大度に応じて確定する。
+  `agent-basics:bugfix/references/spread.md`「害が大きい時」と、`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」で害の大きさに応じて確定する。
   `review-session`の対象では振り返り結果の報告が兼ねる
 
 事後承認は、実施の是非がユーザー固有の基準（選好・認可・成果物の見え方など）で決まる場合だけ求め、回答で分かれる観測結果や操作を書けなければ報告に回す。

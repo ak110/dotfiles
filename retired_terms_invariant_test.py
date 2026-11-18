@@ -421,7 +421,7 @@ _RETIRED_TERMS = (
             ("外部可視結果", "外部可視の結果"),
             ("履歴契約", "「history-rewrite.mdの規定」"),
             ("履歴書換え契約", "「history-rewrite.mdの規定」"),
-            ("原因分析契約", "「agent-basics:bugfixのreferences/root-cause-analysis.mdの条件」"),
+            ("原因分析契約", "「agent-basics:bugfixの入口の条件」"),
             ("延期`adopt`契約", "「lane-integration.subagent.mdの延期adoptの条件」"),
             ("本文契約", "「agent-toolkit:wi-standards「通常AWIの本文」の要件」"),
             ("process-wi契約", "「agent-toolkit:process-wiの規定の読み替え」"),
@@ -437,7 +437,7 @@ _RETIRED_TERMS = (
             ("親記録", "メイン記録"),
             ("子記録", "サブエージェント記録"),
             ("旧証拠", "「前回の完成条件証拠」"),
-            ("原因欄", "「`直接的原因`行」"),
+            ("原因欄", "「`原因:`の行」"),
             ("実施記録", "検証記録"),
             ("引継ぎ記録", "引き継ぎ記録"),
             ("固定報告", "「`agent-toolkit:report-completion`の完了報告」"),
@@ -581,6 +581,22 @@ _RETIRED_TERMS = (
             ),
             # 日付の付いた過去の障害記録
             _AllowedLocation("docs/development/incidents*.md"),
+            # 登録した語の不在を確かめる本テスト
+            _AllowedLocation("retired_terms_invariant_test.py"),
+        ),
+    ),
+    # 原因分析の区分（2026年11月にbugfixの作り替えで廃止）。対象と要否は書き出す場面と確認観点の条件が定める。
+    # 定義は`agent-basics/skills/bugfix/SKILL.md`を正とする。
+    _RetiredTerm(
+        term="拡張原因分析",
+        replacement="`agent-basics:bugfix`の入口の「書き出す場面」と確認観点の条件",
+        allowed=(
+            # 廃止前の条文・観測の保存記録と、日付の付いた過去の障害記録・監査記録
+            _AllowedLocation("docs/development/norm-restructure*/*"),
+            _AllowedLocation("docs/development/incidents*.md"),
+            _AllowedLocation("docs/development/audit-*.json"),
+            # 廃止を記す方針記録
+            _AllowedLocation("docs/development/concepts*.md"),
             # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),

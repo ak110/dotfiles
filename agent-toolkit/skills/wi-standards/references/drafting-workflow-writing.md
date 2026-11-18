@@ -7,7 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
 
 ## エージェント向け文書の構成
 
@@ -20,8 +19,7 @@
 
 ## 本文の起草
 
-1. 原因分析の処置は`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」で区別し、`analysis-records.md`「原因分析の記録先」の対策・回帰防止策・類似見直し観点・再発防止策の各行と採否の行へ対応付ける。
-   変更の詳細は反映内容節へ置き、各行の要旨から対応項目を参照する。
+1. 原因分析の`処置:`の行と反映内容節の分担は、`analysis-records.md`「原因分析の記録先」に従う。
 
 2. 受け取った制約事項は、適用されるべき工程を原文から特定する。
    WI作成工程にのみ適用される書き込み範囲や操作の許可・禁止は作成主体自身の行動に適用し、後続の計画・実装・公開工程を拘束する要件とするのは、原文がその工程への適用を明示しているものに限る。

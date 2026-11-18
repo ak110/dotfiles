@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/spread.md` |
 | 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` |
@@ -60,10 +60,9 @@
   行数は計画で扱わず、上限の判定はプロジェクトの機械チェックに任せる（`agent-basics:writing-standards/references/implementation-time-checks.md`「lintと機械チェック」）
 - 本計画で行うリファクタリングは`## 実施内容`の表に行として計上する。
   テストの更新、直接影響範囲の同期、生成物の再生成など実装に付随する作業は`## 要件・外部仕様`に書き、`## 実施内容`の行の対象からは除く
-- 同じ根本原因を持つ類似箇所の見直しは、作業種別を問わず`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の母集団に従う。
-  `agent-basics:bugfix/references/root-cause-prevention-verification.md`「類似見直しと再発防止の完了」の判定基準も適用する。
+- 同じ原因を持つ類似箇所の見直しは、作業種別を問わず`agent-basics:bugfix/references/spread.md`「同じ仕組みの他の箇所」に従う。
   通常変更の計画では結果を`### リファクタリング`に記録し、専用の見出しは追加対象から除く
-- 本計画の変更範囲外で是正の必要も生じない既存の不備を見つけた場合は、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis-initial.md`「問題を見つけたときの対処」に従う
+- 本計画の変更範囲外で是正の必要も生じない既存の不備を見つけた場合は、`agent-basics:bugfix`を起動して対処する
 
 ## 変更履歴
 
@@ -77,10 +76,3 @@
 - ユーザーの発話から導いた要求範囲を書く場合は、`../../user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」の記録書式に従う。
   原文の逐語と出所、該当する具体例、追加事項、承認出所を明記した除外事項を記録する。
   `## 実施内容`の要求単位ごとの分解と`部分採用`の規定も適用する
-
-## 本文参照の取得条件
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` |
-| 再発防止の選定と完了：類似見直しと再発防止の完了の基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention-verification.md` |

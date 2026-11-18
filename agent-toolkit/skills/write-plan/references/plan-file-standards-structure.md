@@ -7,9 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-severity.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-actions.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-prevention.md` |
 | 参照基準の適用前 | `../../../share/exec-review-responses.md` |
 
 ## 計画ファイルの構成
@@ -43,9 +40,7 @@ WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認
 完成条件と手段の必要性を現在の目的・方針で判定することは再導出に当たらず、`plan-file-standards-scope.md`「実施内容」に従って常に行う。
 乖離の事実・結論を`## 変更履歴`へ記録する。
 人間由来の要求範囲変更は`../../wi-standards/references/wi-standards-origin.md`「由来と承認」、原因分析の乖離は`plan-file-standards-verification.md`「バグ調査」で扱う。
-次の基準への不適合も、原因分析の乖離に含む。
-母集団は`agent-basics:bugfix/references/root-cause-remediation.md`、QとC・Dは`agent-basics:bugfix/references/root-cause-severity.md`を適用する。
-適用レイヤーは`agent-basics:bugfix/references/root-cause-actions.md`、完了判定は`agent-basics:bugfix/references/root-cause-prevention.md`に従う。
+`agent-basics:bugfix`の基準への不適合も、原因分析の乖離に含む。
 
 キューにない素材の原文とユーザーの回答全文は計画外入力の原本として保持し、調査、起草、初回レビュー、再レビューの各工程へ原文の参照を渡す。
 計画本文へは全文を転記しない。

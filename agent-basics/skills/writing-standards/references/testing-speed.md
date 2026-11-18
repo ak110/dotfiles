@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` |
-
 ## 速度
 
 - テストケース間の独立性を維持しつつセットアップ処理を適切に共有し、生成するデータ量や外部プロセスの起動回数を必要最小限に抑える。
@@ -19,7 +15,7 @@
   この判断は`testing-priorities.md`「検証単位の優先順位」と組み合わせ、実境界で保証すべき契約を維持する。
 - 結果確認担当は合否にかかわらず個別・全体の実測を基準と比較し、超過の理由と改善の判断を既存の検証記録へ残す。
   理由のない反復は現在の作業範囲と認可内で改善し、必要な仕事に由来する超過も最小化の余地を評価する。
-  比較・分析は`../../check-execution/references/diagnostics-results.md`「読む出力」、原因調査は`../../bugfix/references/root-cause-scenarios-testing.md`「所要の原因調査」に従う。
+  比較・分析は`../../check-execution/references/diagnostics-results.md`「読む出力」に従い、原因調査は`agent-basics:bugfix`を起動して行う。
   改善判断の基準とハング検出のタイムアウトを区別する。
   プロジェクトが明示したCPU時間などの資源上限による合否は、その測定範囲と特例条件に従う。
   実時間の改善目安を、一律に試験を失敗させる上限へ変換しない。

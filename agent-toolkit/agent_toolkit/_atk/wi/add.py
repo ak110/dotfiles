@@ -22,7 +22,6 @@ from agent_toolkit._atk.wi.add_validation import (
     _EMPTY_AWI_ERROR,
     _EMPTY_AWI_NEXT_ACTION,
     _RESERVED_FRONTMATTER_KEYS,
-    AWI_CAUSE_TABLE_ROWS,
     _parse_leading_frontmatter,
     _require_agent_source,
     _target_repo_error,
@@ -512,7 +511,6 @@ def cmd_add(
 
 
 __all__ = [
-    "AWI_CAUSE_TABLE_ROWS",
     "_parse_leading_frontmatter",
     "body_is_effectively_empty",
     "has_synced_run_report",

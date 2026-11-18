@@ -66,7 +66,7 @@ Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。
 案出しと判定を上位段位に残せばこの目的は保たれる。
 類似見直しでも走査を軽量段位へ委ね、非該当と返った対象を上位段位で全件再検証しない。
 現に動いている成果物には致命的な問題が少ないとみなし、母集団は縮めずに上位段位の読取を該当・判定保留の対象へ集める。
-これは`agent-basics:bugfix`の`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」が許すQを満たす手段どうしの費用比較に当たる。
+これは`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」が許すQを満たす手段どうしの費用比較に当たる。
 この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。
 Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。
 `CODEX_HOME`側のグローバル指示は残る。

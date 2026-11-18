@@ -29,7 +29,7 @@ status・diffの表示やhook成功の確認とは別に、保存対象とステ
 フックを迂回した場合は、その手段と理由をコミット完了後の報告に明記する。
 
 **3.** 「hookの打ち切りと退避の復元」に従ってcommitを実行し、成功後は`commit-verification.md`「検証」の最終内容への適用を確認し、WI実装は対応を記録する。
-push後のCI失敗は`agent-basics:bugfix`を起動し、同スキルの`references/ci-failure-handling.md`で原因を分析する。
+push後のCI失敗は`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/ci-failures.md`で原因を分析する。
 
 ### hookの打ち切りと退避の復元
 

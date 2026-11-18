@@ -13,8 +13,6 @@ from agent_toolkit._plan.structure import materials as plan_materials
 from agent_toolkit._plan.structure import sections as plan_sections
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_structure_support import (
-    _BUG_FILE_CONTENT,
-    _BUG_INVESTIGATION_TABLE,
     _HUMAN_DETAIL_CONTENT,
     _HUMAN_MAIN_CONTENT,
     _LEGACY_CONTENT,
@@ -158,24 +156,14 @@ def test_human_readable_units_reject_duplicate_descriptive_name() -> None:
     assert any("表内で一意の説明的な名前" in error for error in errors), errors
 
 
-def test_bug_cause_table_rows_pass_colloquial_check() -> None:
-    """許容語彙表から対象項目が失われた場合に失敗し、固定行名の改称を判断する契機とする。"""
+def test_cause_record_labels_pass_colloquial_check() -> None:
+    """許容語彙表から対象項目が失われた場合に失敗し、行頭語の改称を判断する契機とする。"""
     deny_patterns = _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)
     allow_patterns = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
 
-    for row_name in _plan_format.PLAN_BUG_CAUSE_TABLE_ROWS:
-        diagnostics = _colloquial_check.scan_text(row_name, deny_patterns, allow_patterns)
-        assert not diagnostics, (row_name, diagnostics)
-
-
-def test_bug_file_structure_rejects_duplicate_investigation_table() -> None:
-    """同じバグ単位の調査表が重複した場合を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace(
-        _BUG_INVESTIGATION_TABLE,
-        f"{_BUG_INVESTIGATION_TABLE}\n\n{_BUG_INVESTIGATION_TABLE}",
-        1,
-    )
-    assert plan_sections.check_bug_file_structure(content)
+    for label in (*_plan_format.CAUSE_RECORD_REQUIRED_LABELS, *_plan_format.CAUSE_RECORD_OPTIONAL_LABELS):
+        diagnostics = _colloquial_check.scan_text(label, deny_patterns, allow_patterns)
+        assert not diagnostics, (label, diagnostics)
 
 
 @pytest.mark.parametrize("review_id", ["arbitrary", "R0-conformance", "R1-conformance-a"])

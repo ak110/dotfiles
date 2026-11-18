@@ -31,7 +31,7 @@ GitHub CLIの[該当source](https://github.com/cli/cli/blob/v2.102.0/pkg/cmd/run
 再検証では`gh version`を取得し、64KiBを超える行を含む失敗jobへ両コマンドを適用して、終了コード・行数・bytes・末尾の行を比較する。
 該当する失敗jobが無い場合は条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
 
-## agent-basics/skills/bugfix/references/ci-failure-handling.md：分類判断のための詳細検討：2026年10月7日
+## agent-basics/skills/bugfix/references/ci-failures.md：分類：2026年10月7日
 
 2026年10月7日、GitLabのリポジトリ（Runnerはgitlab-runner 18.2.1のDocker executor）のAWI処理回で、許容された終了コード4で終わるはずのjobがjobとして終了コード1を報告した事象を再現した。
 手段は次のとおりである。

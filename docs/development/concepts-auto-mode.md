@@ -13,7 +13,7 @@
 - 偽陽性として承認した操作を実施したメインは、同種の承認の反復を減らす処置を検討する。
   環境固有は配布sourceの有無によらず`~/.claude/settings.json`へ直接追記し、汎用はdotfiles作業中も管理原本を直接編集せずdotfiles向けAWIへ渡す。
   明らかな一時条件と再発しない根拠がある場合だけ対処なしとする。
-  処置の要否と省略の可否は2026年10月10日のユーザー指示により`agent-basics:bugfix`の`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」で判定する。
+  処置の要否と省略の可否は2026年10月10日のユーザー指示により`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」で判定する。
   承認済みの操作種別・拒否区分・副作用区分を広げる場合だけ追加確認し、再発防止の処置より承認済み操作の実施を先行させる
   （2026年10月9日、ユーザー指示）。
   読み手は偽陽性承認後の判断をするエージェント、適用範囲は`hard_deny`の外である。

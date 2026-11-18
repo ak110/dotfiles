@@ -59,8 +59,8 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | --- | --- |
 | 外部資料に基づく案の提案・採否、資料起点の既存充足を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md`、`agent-basics:writing-standards/references/design-heuristics-external-evidence.md` |
 | 実ユーザー発話やWI記入欄の指摘を受領・分類する前（操作対象外: ユーザー発話・回答の受領） | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis-stages.md`、`agent-toolkit:wi-standards/references/analysis-records.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` |
-| 考慮漏れの指摘を受けて原因を分析する前、参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 観測された問題を起点とする要求で方針を確認する前、考慮漏れの指摘を受けて原因を分析する前、参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
 | 既存の規範・手順で充足しているかを判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
 | WIの方式・原稿・操作・実施状況・過去判断への質問を受けた時（平叙文の状況照会を含む） | `../user-confirmation-and-report/references/user-utterance-questions.md` |
 | 考慮漏れ処置後の方針再確認で論点ごとの確認要否を判定する前 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
@@ -84,14 +84,13 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | 手順3の起草・保存、指摘・追加発話への対応、投入の中止・再開、完成判定の前 | `references/drafting-and-feedback.md` | | | |
 | 完成条件や採否を決める値を測定する前 | `references/measurement.md` | | | |
 | 参考資料に対応する実物の調査を始める前、起草の方針を決める前（手順2の2。提示・確認の有無と、方針を伝えるかによらない）、質問ラウンドを終える前と原稿を確定する前 | `references/omission-check.md` | | | |
-| 観測された問題の証拠収集・件数集計を始める前 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`../user-confirmation-and-report/references/user-utterance.md` | | | |
-| 観測された問題が所要・費用の増大で、原因の分析を始める前 | `agent-basics:bugfix/references/root-cause-scenarios-testing.md` | | | |
+| 観測された問題の証拠収集・件数集計を始める前 | `agent-basics:bugfix/references/causes.md`、`../user-confirmation-and-report/references/user-utterance.md` | | | |
 
 ## 手順
 
 不具合・ユーザーの指摘・エラー・hookの誤動作を起点とする要求は、調査前に`agent-basics:bugfix`を起動する。
 原稿や既存の要求分類より先に原文から利用主体・開始状態・到達結果を確定する。
-bugfixの取得済み本文は再利用し、今回の各事象への初動と終了判断は個別に適用する。
+bugfixの取得済み本文は再利用し、5つの問いは今回の各事象へ個別に適用する。
 WIの起草・投入前検収は、wi-standardsの意味と必要事項に関する品質水準を用いる。
 
 1. `agent-toolkit:wi-standards`を起動する。
@@ -117,7 +116,7 @@ WIの起草・投入前検収は、wi-standardsの意味と必要事項に関す
       - 論文、ベンチマーク結果、他プロジェクトの実績など外部資料を根拠とする改善案を提案・確定する前に、`agent-basics:review-standards`を起動し、外部資料に基づく改善案の評価基準を適用する。
       - 対象リポジトリの外部へ成果を反映させる要求については、反映先ごとの終了状態（コミットまでかプッシュまでか）を`../wi-standards/references/awi-body-completion.md`「完成条件」に基づいて判定する。
         質問ラウンドで確認するのは、反映先の規範や取得済みの認可では決まらず、ユーザー自身の判断が必要な事項に限定する。
-      - 観測された問題（失敗、不具合、未対応など）を起点とする要求では、証拠収集・集計の前に、前掲の「母集団と件数を数える層」「原文の保持と取り込み」に従って問題の主文から母集団を定め、確認UWI、追加修正、ユーザーコメント、是正回答などの現れを先に列挙して、各現れを調べるか調べない理由を記録する。
+      - 観測された問題（失敗、不具合、未対応など）を起点とする要求では、証拠収集・集計の前に、前掲の「場面ごとの確かめ方」「原文の保持と取り込み」に従って問題の主文から母集団を定め、確認UWI、追加修正、ユーザーコメント、是正回答などの現れを先に列挙して、各現れを調べるか調べない理由を記録する。
         要求の目的や対象範囲は本手順で確認し、対処方針は手順3の作成主体が初期調査、原因分析、類似箇所の見直しで具体的な対策を確定した後に選ぶ。
         ユーザーへ確認するのは、原因の特定後もユーザー自身の選択が必要な事項に限る。
    2. 考慮漏れ点検（案が過去に重視された結果と継続費用を損なわない）: 起草の方針を決める前に`references/omission-check.md`の全類型を点検し、(c)と(d)を推奨しない案を含む提示する全ての案へ適用する。

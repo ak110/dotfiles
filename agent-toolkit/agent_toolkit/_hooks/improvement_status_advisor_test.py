@@ -1,13 +1,14 @@
-"""`improvement_status_advisor`が、原因の未調査を理由にした`不要`の報告行だけへ非遮断の通知を返すことを確かめる。"""
+"""`improvement_status_advisor`が、報告の形に応じた非遮断の案内を送達の前後で返し分けることを確かめる。"""
 
 import json
 import os
 import pathlib
+import re
 import types
 
 import pytest
 
-from agent_toolkit._common import mcp_environment, read_triggers, session_state
+from agent_toolkit._common import mcp_environment, read_triggers, runtime_inserted, session_state
 from agent_toolkit._common.plugin_roots import resolve_plugin_root
 from agent_toolkit._hooks import document_reads, improvement_status_advisor, plugin_resources, rules_context, stop
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
@@ -18,7 +19,7 @@ def _guidance_documents() -> list[pathlib.Path]:
     root = plugin_resources.plugin_root()
     basics = resolve_plugin_root("agent-basics", root)
     return [
-        basics / "skills/bugfix/references/root-cause-prevention.md",
+        basics / "skills/bugfix/references/prevention.md",
         root / "skills/delegation/references/waiting-and-monitoring.md",
         root / "skills/process-wi/references/immediate-fix.md",
     ]
@@ -128,7 +129,7 @@ def test_missing_guidance_is_notified_before_report(
     assert body
     paths = _guidance_documents if kind != "add-awi" else _guidance_documents[:2]
     _assert_guidance_commands(body, paths)
-    assert "root-cause-prevention.md" in body
+    assert "prevention.md" in body
     assert "waiting-and-monitoring.md" in body
     assert ("immediate-fix.md" in body) == (kind != "add-awi")
     assert "見直せ" in body
@@ -143,7 +144,7 @@ def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> 
     rules_context.reset_main_operation_skill_ready("improvement-status")
     body = improvement_status_advisor.read_guidance_notice(payload)
     assert improvement_status_advisor.evaluate(_payload(text)) == ("", "")
-    assert "root-cause-prevention.md" in body
+    assert "prevention.md" in body
 
 
 # test-copy-contract: 不正な報告区分の入力には書式修正だけを案内し、追加資料の取得へ誤誘導しない契約。
@@ -201,3 +202,118 @@ def test_deferral_comparison_fields_are_checked_before_delivery_and_at_stop(miss
         assert missing in before and 'kind="warn"' in before
         assert "permissionDecision" not in before
         assert missing in after
+
+
+_BUGFIX = "skills/bugfix/SKILL.md"
+_SPREAD = "skills/bugfix/references/spread.md"
+_CAUSES = "skills/bugfix/references/causes.md"
+_ABSENCE = (
+    "統合の後の点検で古い版を使う誤りがあった。\n"
+    "原因: 統合で受け取った版を後の判断や点検へ引き継ぐ仕組みが無い。\n"
+    "処置: 引き継ぐ手順を足す。"
+)
+_NO_CHANGE = "設定の値は勝手に変えていない。現行の値と作業記録の一部を確かめた。"
+# 送達後の期待は`hooks/send_to_user.test.tsx`と同じ固定の報告で確かめる。
+# 各行は（報告, このセッションの記録, 送達前に案内する資料, 送達後に案内する記録の行頭語）。
+# 記録の`read`は全文取得、`skill`は`Skill`起動の記録だけを持つ。
+_REPORTS = {
+    "a-自分で見つけた逸脱をbugfixの適用なしで報告": (
+        "作業中に自分の手順漏れを見つけたため、漏れた手順をその場で実施した。",
+        {},
+        (_BUGFIX,),
+        ("処置",),
+    ),
+    "b-修正済みだが残る影響を確かめていない": ("引数の誤りを直し、再実行で成功した。", {}, (_BUGFIX,), ("処置",)),
+    "c-bugfix起動済みでも処置の行が無い": (
+        "- 期待: 対象の全件を処理する。\n"
+        "- 原因: 範囲の指定の誤りで末尾の1件が漏れていた。\n"
+        "- 確認: 再実行で全件の処理を確かめた。",
+        {_BUGFIX: "skill"},
+        (),
+        ("処置",),
+    ),
+    "d-不在の主張でspread未取得": (_ABSENCE, {_BUGFIX: "read"}, (_SPREAD,), ()),
+    "e-変えていないの回答でcauses未取得": (_NO_CHANGE, {_BUGFIX: "read"}, (_CAUSES,), ()),
+    "f-ユーザーの指摘で再発防止の行が無い": (
+        "ユーザーの指摘で手順漏れが分かった。\n処置: 漏れた手順を実施し、残る影響が無いことを確かめた。",
+        {_BUGFIX: "skill"},
+        (),
+        ("再発防止",),
+    ),
+    "対照-同じ資料を取得済み": (_ABSENCE + "\n" + _NO_CHANGE, {_BUGFIX: "read", _SPREAD: "read", _CAUSES: "read"}, (), ()),
+    "対照-単なる引用": ("> 作業中に自分の手順漏れを見つけた。\n```text\n誤りを直した。\n```", {}, (), ()),
+    "対照-正常な進捗": ("実装を終え、変更範囲の試験が通った。", {}, (), ()),
+    "対照-逸脱が無いことを述べる進捗": ("変更範囲の試験を実行し、失敗0件で誤りは無いことを確かめた。", {}, (), ()),
+}
+
+
+def _basics() -> pathlib.Path:
+    return resolve_plugin_root("agent-basics", plugin_resources.plugin_root())
+
+
+def _set_records(kinds: dict[str, str]) -> None:
+    records: dict[str, list[str]] = {}
+    for relative, kind in kinds.items():
+        path = _basics() / relative
+        if kind == "skill":
+            records[document_reads.skill_invocation_key(path, document_reads.content_fingerprint(path))] = ["main"]
+        else:
+            for item in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):
+                records[document_reads.receipt_key(item)] = ["main"]
+    session_state.update_state(
+        "improvement-status",
+        lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: records, "session_title_kind": "add-awi"},
+    )
+
+
+def _guided(body: str, relative: str) -> bool:
+    return f"{document_reads.reference_name(_basics() / relative)}: " in body
+
+
+@pytest.mark.parametrize("case", list(_REPORTS))
+def test_report_shapes_get_guidance_before_and_record_lines_after_delivery(case: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """送達前は報告の形に対応する未取得の資料だけ、送達後は欠けた記録の行だけを案内する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    text, records, documents, heads = _REPORTS[case]
+    _set_records(records)
+    before = improvement_status_advisor.read_guidance_notice(json.loads(_payload(text)))
+    for relative in (_BUGFIX, _SPREAD, _CAUSES):
+        assert _guided(before, relative) is (relative in documents), relative
+    if _CAUSES in documents:
+        assert "変更履歴" in before and "要求の原文" in before
+    decision, after = improvement_status_advisor.evaluate(_payload(text))
+    assert decision == ("notify" if heads else "")
+    assert "取得を確認できない" not in after
+    for head in ("処置", "再発防止"):
+        assert (f"`{head}:`の行が無い" in after) is (head in heads), head
+
+
+def test_bugfix_record_does_not_count_as_applied_after_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """bugfixの起動・取得の記録があっても、送達後の記録の行の検査は省かない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    text = _REPORTS["a-自分で見つけた逸脱をbugfixの適用なしで報告"][0]
+    for kind in ("read", "skill"):
+        _set_records({_BUGFIX: kind})
+        assert not improvement_status_advisor.read_guidance_notice(json.loads(_payload(text)))
+        assert "`処置:`の行が無い" in improvement_status_advisor.evaluate(_payload(text))[1]
+
+
+# test-copy-contract: 送達後の検査を担う2つの言語の判定語と記録の行頭語が同じ文字列であること（両ファイル冒頭の注記の契約）。
+def test_report_cues_match_send_to_user() -> None:
+    """送達後に使う判定語と記録の行頭語を、TypeScript側の定義と突き合わせる。"""
+    sender = (plugin_resources.plugin_root() / "hooks/send_to_user.tsx").read_text(encoding="utf-8")
+    negation = re.search(r'^const CUE_NEGATION = "([^"]+)";$', sender, re.MULTILINE)
+    assert negation is not None and negation[1] == runtime_inserted.CUE_NEGATION
+    block = re.search(r"^const REPORT_CUES = \{\n(.*?)^\} as const;$", sender, re.MULTILINE | re.DOTALL)
+    assert block is not None
+    cues = dict(re.findall(r'^  (\w+): "([^"]+)",$', block[1], re.MULTILINE))
+    assert cues == {cue: runtime_inserted.REPORT_CUES[cue] for cue in cues}
+    checks = re.findall(r'cues: \[([^\]]+)\],\n\s*head: "([^"]+)"', sender)
+    assert {(frozenset(re.findall(r'"(\w+)"', listed)), head) for listed, head in checks} == {
+        (required, head) for required, head, _body, _fix in improvement_status_advisor.RECORD_LINE_CHECKS
+    }
+    assert set().union(*(required for required, *_ in improvement_status_advisor.RECORD_LINE_CHECKS)) <= set(cues)
+    entry = (_basics() / _BUGFIX).read_text(encoding="utf-8")
+    assert all(
+        f"- {head}:" in entry or f"`{head}:`" in entry for _required, head, *_ in improvement_status_advisor.RECORD_LINE_CHECKS
+    )

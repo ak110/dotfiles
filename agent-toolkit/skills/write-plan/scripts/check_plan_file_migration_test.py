@@ -343,19 +343,19 @@ def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[path
 @pytest.mark.parametrize(
     "variant",
     [
-        _plan_fixture.BUG_VARIANT_BEFORE_HARM_ROWS,
-        _plan_fixture.BUG_VARIANT_PREVIOUS_ROWS,
-        _plan_fixture.BUG_VARIANT_LEGACY_ROWS,
+        _plan_fixture.BUG_VARIANT_LEGACY_TABLES,
+        _plan_fixture.BUG_VARIANT_LEGACY_STANDALONE,
+        _plan_fixture.BUG_VARIANT_LEGACY_SHORT,
     ],
 )
 def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathlib.Path, str], variant: str) -> None:
-    """6区分化前と統廃合前の行構成を持つ調査表を読み取りで受理し、移行warningを返す。"""
+    """廃止した表と表以前の短い記録を持つ保存済みの付属ファイルを読み取りで受理し、移行warningを返す。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     legacy_bug_file = _plan_fixture.bug_file(variant=variant)
     errors, warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=legacy_bug_file)
     assert not errors, errors
-    assert any("現行より前の行構成" in warning for warning in warnings), warnings
+    assert any("廃止した表か表以前の形式で書いたバグ単位がある" in warning for warning in warnings), warnings
 
 
 def _run_rejecting_migration_warnings(work_dir: pathlib.Path, path: pathlib.Path) -> subprocess.CompletedProcess[str]:

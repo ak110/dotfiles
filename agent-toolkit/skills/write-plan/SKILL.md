@@ -76,12 +76,8 @@ description: >
    WIで確定している事項は`references/plan-file-standards-structure.md`「計画ファイルの構成」に従って参照し、重複した調査は行わない。
    採否を左右する技術的不確実性は、読込表の設計基準で試作の要否を判断し、計画確定前に解消する。
    問い・条件・観測・判断・未証明範囲は既存の根拠記録へ残し、計画とレビューから参照する。
-   - 作業種別が`バグ対応`で、入力にWIがない場合やWIの原因分析を修正・追加する計画では、手順2の確認前に`agent-basics:bugfix`を起動する。
-     直接的な原因を突き止め、「対策の選定」で根本原因への対策と対症療法を比較検討する。
-     WIの原因分析をそのまま使う場合も、対症療法を採用する前に同様に選定する。
-     類似箇所の見直し対象が`agent-basics:bugfix/references/root-cause-remediation.md`の基準を満たすか確認する。
-     品質とコスト・納期（QとC・D）の区別は`agent-basics:bugfix/references/root-cause-severity.md`に従う。
-     対応の適用レイヤーは`agent-basics:bugfix/references/root-cause-actions.md`、完了判定は`agent-basics:bugfix/references/root-cause-prevention.md`の該当基準で確認する。
+   - 作業種別が`バグ対応`で、入力にWIがない場合やWIの原因分析を修正・追加する計画では、手順2の確認前に`agent-basics:bugfix`を起動し、5つの問いへの答えを書き出す。
+     WIの原因分析をそのまま使う場合も、対症療法を採用する前に同スキルの問い3で処置を比べる。
      不足がある場合は原因分析を追加する。
    - 参照側や別の発生源（`references/plan-file-standards-requirements.md`「要件・外部仕様」）をたどり、変更対象や影響が波及する範囲を`## 要件・外部仕様`に記述する。
    - 出力内容、診断件数、条件分岐の結果などを完了条件に設定する場合は、生成元と利用先、分岐が有効になる条件、修正前の状態と修正後の期待値を正しく対応付ける。
@@ -93,10 +89,7 @@ description: >
    確認方法は「確認と起動経路」に従う。
 3. `references/plan-file-standards-template.md`「初回起草の雛形」に案件の具体的な内容を記入し、`atk run-script plan-create --`を実行して計画ファイルを作成する。
    バグ対応で入力WIがない場合や、WIの原因分析を修正・追加する場合は、先に計画ファイル（バグ）を完成させる。
-   `agent-basics:bugfix`の段階別資料を該当する判断で適用する。
-   初動は`agent-basics:bugfix/references/root-cause-analysis.md`に従う。
-   根本原因と重大度は`agent-basics:bugfix/references/root-cause-severity.md`、対策と影響範囲は`agent-basics:bugfix/references/root-cause-actions.md`を適用する。
-   類似見直しは`agent-basics:bugfix/references/root-cause-remediation.md`、再発防止と完了は`agent-basics:bugfix/references/root-cause-prevention.md`に従う。
+   `agent-basics:bugfix`の5つの問いを適用する。
    WIの`## 原因分析`をそのまま使う場合は計画ファイル（バグ）を新設せず、WIファイル名で参照する。
 4. メインエージェントによる起動では、`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独で実行する。
    レーン担当の場合は、`agent-toolkit:process-wi`の`references/lane-planning.md`で定められた選定結果とレーン識別子を指定して単独実行する。

@@ -4,13 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` |
-
 ## 安定性: flakyテスト防止
 
-非決定的な（実行ごとに結果が変わる）テスト失敗の原因調査や修正方針の選定は、`../../bugfix/references/root-cause-scenarios-testing.md`「テストの原因調査」に従う。
+非決定的な（実行ごとに結果が変わる）テスト失敗の原因調査や修正方針の選定は、`agent-basics:bugfix`に従う。
 新規試験と修正では、待つ主体、次の操作が必要とする状態、その状態の観測点、未到達時の上限を対応付ける。
 HTTP応答ヘッダーの到着、本文消費、画面反映は異なる観測点であり、次の操作の前提を満たすものを選ぶ。
 状態到達は条件で待ち、未到達は上限で失敗させる。

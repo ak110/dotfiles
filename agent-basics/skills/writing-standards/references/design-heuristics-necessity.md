@@ -31,7 +31,7 @@
 
 詳しい観点は、対象に応じて次の資料を使う。
 
-- 同じ規範条文の修正の反復: `../../bugfix/references/root-cause-severity-quality.md`「前提の再検討」
+- 同じ規範条文の修正の反復: `../../bugfix/references/recurrence.md`「対策の種類を変える」
 - 安全対策や例外処理の新設: `design-heuristics-mechanisms.md`「自作機構の兆候と自問」
 - ファイル構成の蓄積: `design-heuristics-quality.md`「設計品質の劣化確認」
 

@@ -20,7 +20,6 @@
 | 複数レーンへ処理を切り替える前、または既存不良の即時対応を判断する前 | `../SKILL.md` | | |
 | ユーザー確認の要否と手段を選ぶ前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 書き込みを委譲先へ分担させる前 | `agent-toolkit:delegation/references/mandatory-rules.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` |
-| 不良の類似見直しと再発防止を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | | |
 | 不良を発見し対処を判断する前 | `agent-basics:bugfix/SKILL.md` | | |
 | WIの共通契約を適用する前 | `../../wi-standards/SKILL.md` | | |
 | 対象WIの選定と処理開始を判断する前 | `selection-procedure.md` | | |

@@ -50,7 +50,7 @@
 4. 委譲先エージェントに必須となる入力の欠落は、`agents_server`の`start`コマンドが起動時に検証するため、受け取った入力のまま作業に着手する。
    委譲先が入力の欠落を観測した場合は、`rules-subagent.md`「委譲時の厳守事項」に従う。
    投入先リポジトリは、ユーザーの指定または委譲入力で指定された値に固定する。
-   調査の過程で投入先リポジトリの外部にも原因機構を共有する対象が見つかった場合は、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に従って処置の要否を判定する。
+   調査の過程で投入先リポジトリの外部にも原因機構を共有する対象が見つかった場合は、`agent-basics:bugfix/references/spread.md`「同じ仕組みの他の箇所」に従って扱う。
    委譲先は、該当対象の所在、所有リポジトリ、根拠、処置の要否を委譲元へ即座に通知し、AWIの`## 反映内容と反映先`に「投入先リポジトリの外部であること」および「委譲元へ通知済みであり投入先の確定は委譲元が行うこと」を記録する。
    投入先リポジトリ内の原稿や、回答を待たずに確定できる成果物は、`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」に従って完成させる。
    付随型は委譲元へ返却し、専念型は検収と保存まで完了させる。
@@ -62,5 +62,5 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 根本原因と重大度：QとC・Dの区別の基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
+| 広がりの探し方：同じ仕組みの他の箇所の基準を適用する前 | `agent-basics:bugfix/references/spread.md` |
 | AWIとUWIの共通規範：由来と承認の基準を適用する前 | `wi-standards-origin.md` |

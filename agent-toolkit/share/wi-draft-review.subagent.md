@@ -30,7 +30,7 @@ wi-standardsの読込表から最初に取得する資料は、本文段階の`$
 `draft-semantic-review.md`は各原稿に個別に適用する。
 
 - 通常AWI: `awi-body-content.md`と`drafting-completion-validation.md`、`agent-basics:writing-standards/references/design-heuristics-screening.md`（採用案の必要性の判定）
-- 不具合を起点とする通常AWI: 上記に加えて`awi-body-evidence.md`と、bugfixの起動および`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`
+- 不具合を起点とする通常AWI: 上記に加えて`awi-body-evidence.md`と、bugfixの起動
 - UWI: `uwi-format.md`
 
 方針段階で観測された問題への対処や対策を評価する場合も、bugfixを起動する。

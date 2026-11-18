@@ -73,11 +73,12 @@ from agent_toolkit._plan.structure.sections_actions import (
     legacy_wi_origins,
 )
 from agent_toolkit._plan.structure.sections_bugs import (
+    cause_record_errors,
+    cause_record_lines,
     check_bug_file_structure,
-    check_cause_analysis_format,
     extract_bug_file_reference,
-    has_legacy_bug_investigation_table,
     has_legacy_bug_table,
+    has_legacy_cause_record,
 )
 from agent_toolkit._plan.structure.sections_history import (
     _check_history_section,
@@ -524,15 +525,16 @@ def check_plan_detail_structure(content: str, work_type: str | None) -> list[str
 
 
 __all__ = [
+    "cause_record_errors",
+    "cause_record_lines",
     "check_bug_file_structure",
-    "check_cause_analysis_format",
     "extract_bug_file_reference",
     "has_adopted_human_user_instruction",
     "has_human_action_table",
     "has_legacy_acceptance_table",
     "has_legacy_action_table",
-    "has_legacy_bug_investigation_table",
     "has_legacy_bug_table",
+    "has_legacy_cause_record",
     "has_legacy_history_user_event",
     "has_legacy_refactoring_table",
     "has_progress_log_rows",

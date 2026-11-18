@@ -6,11 +6,11 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 改善点の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | | |
+| 改善点の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/prevention.md` | | |
 | 待機中に改善の投入や独立作業を前倒しする前 | `../skills/delegation/references/waiting-and-monitoring-independent-work.md` | | |
 | process-wiで改善の対処時機を決める前 | `../skills/process-wi/references/immediate-fix.md` | | |
 | 規範読込と委譲結果の改善報告を受領する前 | `../skills/delegation/references/receiving-followup.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
-| 当座の訂正と再発防止を判断する前 | `agent-basics:bugfix/SKILL.md` | | |
+| 逸脱を報告する前と、当座の訂正と再発防止を判断する前 | `agent-basics:bugfix/SKILL.md` | | |
 
 ## 進捗報告
 
@@ -33,10 +33,10 @@
   区分は`判断待ち`・`認可待ち`・`入力待ち`・`書込競合`。
 - `即時対応`: 今回是正する。
 - `不要 <区分> <理由>`: 独立した再発防止策の登録なし。
-  区分は`非欠陥`（契約からの逸脱なし）、`処置済み`（今回根本原因へ処置、commitかWI名）、`被覆`（根本原因と全処置を含む未完了WI名）、`見送り`。
+  区分は`非欠陥`（契約からの逸脱なし）、`処置済み`（今回原因へ処置、commitかWI名）、`被覆`（原因と全処置を含む未完了WI名）、`見送り`。
   `見送り`の理由には、作り込み側の候補・見逃し側の候補・防げる損失と継続費用の比較結論の3項目を必ず書く。
-  既存規範の適用漏れ、後段の確認や再実行での解消、別論点の判断、因果未確定は見送りの理由にせず、未適用規範は適用を妨げた要因へ処置する（定義元は`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」）。
-  費用だけの問題も区分に該当しなければ再発防止策を検討する。
+  既存規範の適用漏れ、後段の確認や再実行での解消、別論点の判断、因果未確定は見送りの理由にせず、未適用規範は適用を妨げた要因へ処置する（定義元は`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）。
+  費用だけの問題も区分に該当しなければ再発防止を検討する。
 
 `../skills/user-confirmation-and-report/references/communication-methods-progress.md`「起動案内と進捗通知」に従う。
 `見送り`の報告行には`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`をセミコロンで区切って書く。
@@ -47,6 +47,20 @@
 目標の無い作業では目標との差を省く。
 点検対象と結果は同じ行に書き、他は日本語で結果・判断を伝える。
 
+## 逸脱の報告
+
+逸脱（エラー、失敗、指摘、自分で見つけた作業ミスを含む）をユーザーへ報告する前に、その事象へ`agent-basics:bugfix`の5つの問いを適用する。
+同じ文脈で同スキルの本文を読んだことは、今回の事象へ適用したことの代わりにならない。
+本文は再利用してよく、問いへの答えは事象ごとに出す。
+報告には、`agent-basics:bugfix/SKILL.md`「記録」の行頭の語を使って次の行を含める。
+
+- `処置:`の行: 今回の是正と、残る影響。
+  残る影響が無い場合は、確かめた方法を添えて無いと書く。
+- `再発防止:`の行: 再発防止を検討する条件（同じ害が繰り返した、ユーザーの指摘で発覚した、害が大きい）に当たる場合に、採用する策か、採用しない区分名と理由を書く。
+
+仕組みや規範が無いことを原因に挙げる前に、`agent-basics:bugfix/references/spread.md`「同じ害への既存の対策」の検索を実行する。
+変更の有無や由来を否定で答える前に、`agent-basics:bugfix/references/causes.md`「意図と経緯の調べ方」の順で、変更履歴と要求の原文を確かめる。
+
 ## 作業中の改善点の報告
 
 改善点は`rules/common/01-agent.md`「事実と推論」で選び、発見時に処置・AWI化を決める。
@@ -54,11 +68,11 @@
 
 process-wiの対応時機は読込表の`immediate-fix.md`で判定する。
 登録と修正を区別し、転記も同書式を使う。
-`不要`の定義は`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」を参照する。
+`不要`の定義は`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」を参照する。
 all-repos統括を含む全メインは、待機中に判定できる改善を発見時に既存項目と比較してAWIを保存する。
 登録時機と`予定`の定義は読込表の「待機中の先行実施」で判定し、前提・再開条件・時点を作業記録へ残す。
 `AWI化ステータス: 不要`の理由に、原因を調べていないことを使わない。
-未調査は処置不要の根拠にならず、直接的原因と影響を確かめる最小調査をその場で行い、処置と担当を決めて報告を更新する。
+未調査は処置不要の根拠にならず、原因と影響を確かめる最小調査をその場で行い、処置と担当を決めて報告を更新する。
 最小調査をその場で行い、当座の訂正・再発防止は`agent-basics:bugfix`、Q影響・続行/規範不良は`rules/common/01-agent.md`「完遂と先送り」で判断する。
 本題外はagents_serverへ渡し、担当外は根拠と未確認事項を引き継ぐ。
 証拠は非同期振り返りで再利用し、既調査の再調査・同期振り返りは終了条件から除く。

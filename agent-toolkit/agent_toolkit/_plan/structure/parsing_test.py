@@ -109,16 +109,12 @@ def test_human_readable_main_rejects_internal_identifiers(mutation: str, expecte
     assert any(expected in error for error in errors), errors
 
 
-def test_bug_file_structure_rejects_empty_content_cell() -> None:
-    """付属ファイルの固定表で`内容`が空欄の場合を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace(
-        _plan_fixture.bug_row("対策"),
-        "| 対策 |  |",
-    )
+def test_bug_file_structure_rejects_record_line_without_text() -> None:
+    """付属ファイルの記録で、行頭語の後ろに本文が無い行を、その行に書く内容を示して拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(_plan_fixture.cause_record_line("処置"), "- **処置**: ")
     errors = plan_sections.check_bug_file_structure(content)
-    matched = [error for error in errors if "空の`内容`" in error]
-    assert matched, errors
-    assert all("空のセルへ内容を記載し" in error for error in matched)
+    content_of_action = _plan_format.CAUSE_RECORD_REQUIRED_LABELS["処置"]
+    assert errors == [f"`### {_plan_fixture.BUG_UNIT_H3}`: `処置:`の行に本文が無い（同じ行に書く内容: {content_of_action}）"]
 
 
 def test_bug_file_structure_accepts_legacy_standalone_table() -> None:

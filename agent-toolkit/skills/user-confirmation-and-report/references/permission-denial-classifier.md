@@ -114,5 +114,4 @@ permissionsの明示的なdeny/askも上書きしない。
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 根本原因と重大度：QとC・Dの区別の基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
 | 権限拒否への対応の基準を適用する前 | `permission-denial.md` |

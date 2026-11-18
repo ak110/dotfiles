@@ -86,7 +86,7 @@ def _check_bug_file_reference(
 
     新しい参照値は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
     既存の可搬表記と絶対パスは読み取り互換として従来と同じ処理で解決する。
-    統廃合前と6区分化前の行構成を持つ調査表は読み取りで受理し、新規作成・改訂では移行warningをエラーへ変える。
+    廃止した表で書いたバグ単位は読み取りで受理し、新規作成・改訂では移行warningをエラーへ変える。
     """
     if work_type != "バグ対応":
         return [], []
@@ -124,12 +124,13 @@ def _check_bug_file_reference(
 
     bug_text = reference_path.read_text(encoding="utf-8")
     warnings: list[_ClassifiedWarning] = []
-    if structure.has_legacy_bug_investigation_table(bug_text):
+    if structure.has_legacy_cause_record(bug_text):
+        labels = "・".join(f"`{label}:`" for label in structure.CAUSE_RECORD_REQUIRED_LABELS)
         warnings.append(
             (
                 "migration",
-                "バグ調査ファイルの調査表が現行より前の行構成である。新規作成・改訂では"
-                f"{list(structure.PLAN_BUG_TABLE_ROWS)}の行へ移行する",
+                "バグ調査ファイルに廃止した表か表以前の形式で書いたバグ単位がある。新規作成・改訂では"
+                f"バグ単位ごとに{labels}で始まる行で書く",
             )
         )
     return structure.check_bug_file_structure(bug_text), warnings

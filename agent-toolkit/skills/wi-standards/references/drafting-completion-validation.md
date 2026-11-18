@@ -7,9 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
-| 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` |
-| 類似見直しの限定探索と是正範囲を判定する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
-| 原因分析の記録が推定だけに依拠していないことを判定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
 
 ## 投入前の読み直し
 
@@ -20,18 +17,6 @@
 不要なエージェント起草条件は除き、有効な条件について以下の網羅性・観測可能性を確認する。
 ユーザーの明示要求や必要な品質を変える場合は既存の確認手順へ渡す。
 
-不具合を起点とする通常AWIでは、原因分析の表の掲載と確定を`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」の確認完了基準で判定する。
-対策行と再発防止策行を`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」で比較する。
-対策だけを再発防止策へ書いた原稿は対策行へ移し、反映内容節の詳細と対応付ける。
-`害の型と反復`行に過去事例を調べた範囲と結果があること、再発防止策行がその型へ作用すること、持ち込み試験が原因の異なる例を含むことを確かめ、不足する原稿は差し戻す。
-再発防止策行には、根本原因と害の型への作用、持ち込み試験、または不採用理由を残す。
-本文の対象範囲（旧形式の`## 適用範囲`を含む）と証拠にある探索範囲の各限定（期間、場所、対象の種類、リポジトリ）を確認し、根本原因の成立条件から導けるか判定する。
-限定の根拠が成立条件か`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」の履歴の期間規定から導けない原稿は投入しない。
-履歴の期間規定によらない探索が起点の現存対象を含まない場合は、成立条件と限定が合わない兆候として扱う。
-重大と判定した原稿では、同書「類似見直し」の「起点の問題を伏せた走査」の記録も証拠で確認する。
-
-類似見直しの限定探索であっても、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」が定める是正範囲全体を確実に確認する。
-後述するユーザー明示集合の保護対象には、同節に示される既知の欠陥や、追加・強化された規定の既存対象も含める。
 ユーザーが確定した判断を複数の通常AWIへ展開する場合は、判断ごとに各本文の反映箇所または非該当理由を対応付け、判断の一部が抜け落ちている集合は投入しない。
 
 本文を単独で読み直し、以下の条件をすべて満たしているもののみを投入する。
@@ -47,19 +32,15 @@
 - 採用案が`drafting-completion-decisions.md`「実現方式の成立」の各項目を満たし、確認した結論と再取得先が本文の適切な箇所および成立性の証拠に記録されていること
   - 観測事象を契機とする要求では、`drafting-completion-decisions.md`「採否と実現方式の確定」に従い、対策が直接的原因と主要な害に確実に作用することも確認する
   - 採否や適用範囲を左右する技術的主張は、`agent-basics:writing-standards/references/investigation-sources.md`「根拠と主張の一致」に従い、入力の生成・変換手順と、実際の観測から保証できる範囲とを突き合わせて判定する
-- 対象は、観測された不具合を起点としbugfixを起動して起草し、直接的原因を確定した通常AWIとする。
-  `## 原因分析`を`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」に沿った構成で記述し、分析の確定を同資料の確認完了基準で判定する。
-  以下の条件は、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に照らして確認する。
-  `agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」も適用する。
-  `agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」を併用する。
-  `agent-basics:bugfix/references/root-cause-prevention-requirements.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md`も適用する。
-  Qualityへの影響と重大度の判定に明確な根拠があること。
-  調査母集団が根本原因から論理的に導かれ、探索の深さ、0件時の再検討、調査の終了が重大度ごとの基準を満たしていること。
-  限定探索する場合は、範囲、限界、許容する残存リスクを明示し、ユーザーが指定した対象集合を確実に網羅していること。
-  「再発防止策」と表記した処置には、作用対象となる根本原因の単位を併記し、その単位に直接作用する内容であること（テストであれば再発防止テストであり、今回の事象を検出するだけの回帰テストは回帰防止策行にあること）。
-  原因分析表が直接的な原因として根拠とする値ごとに、該当セルか参照先の証拠に生成元との比較が示されていること。
-  それらの値が`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」における推定の条件に該当しないこと。
-  推測のみに基づく原因は確定とみなさず、調査を継続するか、あるいは「続行できない理由」として報告すること
+- 観測された不具合を起点としbugfixを起動して起草し、原因を確定した通常AWIでは、`## 原因分析`のバグ単位ごとに次を満たしていること。
+  記録の形は`agent-basics:bugfix`の`SKILL.md`「記録」に、記録先とバグ単位の分け方は`analysis-records.md`に従う
+  - `原因:`が、確かめた観測の所在を持つこと。
+    推測だけに基づく原因は確定とみなさず、調査を続けるか「続行できない理由」として報告する
+  - `処置:`が足す案である場合に、より前の案（無くす・単純にする・直す）を採用しない理由があること
+  - `広がり:`が検索と結果を持ち、ユーザーが指定した対象集合を網羅していること
+  - 同じ害への対策が既にあった場合に、`再発:`が前回と違う種類の対策を示すこと
+  - 再発防止を全て見送る記録が、原因となった入力や条文を除く・改める案を比べていること（`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）。
+    重い案だけを挙げて見送った記録は、この条件を満たさない
 - 指示語の参照先が同一本文内に存在し、変更対象、根拠、対応内容、完成条件を本文単体から一意に特定できること
 - タイトルおよび本文で既存の要素（スキル、工程、担当、hook通知など）を指す名詞句について、定義元の実在性と、読者が本文からその定義に到達できることを確認したこと。
   会話やコミットメッセージなど参照した記録における呼称も確認対象とする。

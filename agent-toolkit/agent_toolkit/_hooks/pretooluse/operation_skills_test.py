@@ -446,7 +446,7 @@ def test_perl_document_write_option_and_program_boundaries(options: str, writes:
 
 
 _BUGFIX_SKILL = "agent-basics:bugfix"
-_ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n| 要因系統 | L1 現象 |\n"
+_ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n- 期待: 対象の全件を処理する。\n- 原因: 範囲の指定の誤り。\n"
 
 
 @pytest.mark.parametrize(

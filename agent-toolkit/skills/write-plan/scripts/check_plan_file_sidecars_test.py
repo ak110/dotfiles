@@ -115,28 +115,28 @@ def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（バグ）の固定行の調査表欠落を拒否する。"""
+    """計画ファイル（バグ）の記録から必須の行が欠けた場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
-    invalid_bug_file = _plan_fixture.bug_file().replace(f"{_plan_fixture.bug_row(_plan_format.PLAN_BUG_TABLE_ROWS[0])}\n", "")
+    invalid_bug_file = _plan_fixture.bug_file().replace(f"{_plan_fixture.cause_record_line('原因')}\n", "")
     errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
-    assert any(f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行" in error for error in errors), errors
+    assert any("`原因:`の行が無い" in error for error in errors), errors
 
 
 @pytest.mark.parametrize(
     "variant",
     [
-        _plan_fixture.BUG_VARIANT_BEFORE_HARM_ROWS,
-        _plan_fixture.BUG_VARIANT_PREVIOUS_ROWS,
-        _plan_fixture.BUG_VARIANT_LEGACY_ROWS,
+        _plan_fixture.BUG_VARIANT_LEGACY_TABLES,
+        _plan_fixture.BUG_VARIANT_LEGACY_STANDALONE,
+        _plan_fixture.BUG_VARIANT_LEGACY_SHORT,
     ],
 )
 @pytest.mark.cpu_limit(
     2.0,
-    reason=("実Gitの旧計画とsidecarを3構成で検査し、新規作成時の旧bug行拒否を確認する（Linux CI CPU合計最大0.840秒）。"),
+    reason=("実Gitの旧計画とsidecarを3構成で検査し、新規作成時の旧形式の拒否を確認する（Linux CI CPU合計最大0.840秒）。"),
 )
 def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], variant: str) -> None:
-    """新規作成では現行より前の行構成を持つ調査表をエラーにする。"""
+    """新規作成では、廃止した表か表以前の形式で書いたバグ単位をエラーにする。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     legacy_bug_file = _plan_fixture.bug_file(variant=variant)
@@ -147,20 +147,17 @@ def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], 
         bug_file_content=legacy_bug_file,
         reject_migration_warnings=True,
     )
-    assert any("現行より前の行構成" in error for error in errors), errors
+    assert any("廃止した表か表以前の形式で書いたバグ単位がある" in error for error in errors), errors
 
 
-@pytest.mark.parametrize("row", ["害の型と反復", "再発防止策の採否"])
-def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str], row: str) -> None:
-    """計画ファイル（バグ）の`内容`空欄を拒否する。"""
+@pytest.mark.parametrize("label", ["期待", "広がり"])
+def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str], label: str) -> None:
+    """計画ファイル（バグ）の記録で本文の無い行を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
-    invalid_bug_file = _plan_fixture.bug_file().replace(
-        _plan_fixture.bug_row(row),
-        f"| {row} |  |",
-    )
+    invalid_bug_file = _plan_fixture.bug_file().replace(_plan_fixture.cause_record_line(label), f"- {label}:")
     errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
-    assert any("空の`内容`" in error for error in errors), errors
+    assert any(f"`{label}:`の行に本文が無い" in error for error in errors), errors
 
 
 def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path, str]) -> None:

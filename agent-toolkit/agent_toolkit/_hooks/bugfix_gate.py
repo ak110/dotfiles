@@ -181,7 +181,7 @@ def verification_notice(payload: dict, tool_name: str, tool_input: dict, session
         tag="warn",
         removable_cause=True,
         subject=current["failure"],
-        fix="`agent-basics:bugfix`を起動せよ。反復する失敗は同スキルの「同一症状の修正反復」に従え。",
+        fix="`agent-basics:bugfix`を起動せよ。反復する失敗は同スキルの「書き出す場面」と`references/recurrence.md`に従え。",
     )
 
 

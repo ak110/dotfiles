@@ -13,43 +13,39 @@ from agent_toolkit._atk.wi import add as add_module
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._testing import plan_fixture
 from agent_toolkit._testing.wi_add_support import (
-    _PREVIOUS_AWI_CAUSE_ITEMS_TABLE,
-    _awi_cause_items_table,
     _cmd_add_args,
     _patch_cmd_add_operations,
     _run_public_add,
-    _with_direct_cause,
+    _with_cause,
 )
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
 from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_notes, _write_awi_file
 
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        "missing_harm",
-        "missing_action_harm",
-        "empty_action_harm",
-        "short_record",
-        "empty_harm",
-        "empty_l4",
-        "bare_l4",
-        "missing_creation_review",
-        "missing_detection_prevention",
-        "empty_detection_review",
-        "missing_regression",
-        "missing_decision",
-        "empty_decision",
-        "empty_countermeasure",
-        "previous_format",
-        "missing_table",
-        "missing_cause_table",
-        "second_unit_missing_table",
-        "two_units",
-        "valid",
-    ],
+_RECORD = plan_fixture.cause_record()
+_RECORD_WITHOUT_SPREAD = _RECORD.replace(f"{plan_fixture.cause_record_line('広がり')}\n", "")
+_PREVIOUS_TABLE = plan_fixture.rows_table(
+    ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策"), plan_fixture.BUG_FILLER
 )
+"""6区分化より前にAWIの`## 原因分析`へ置いた5行の表。"""
+
+_SECTIONS: dict[str, tuple[str, str | None]] = {
+    "valid": (_RECORD, None),
+    "two_units": (f"### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD}", None),
+    "missing_line": (_RECORD_WITHOUT_SPREAD, "`広がり:`の行が無い（書く内容: 同じ仕組みの他の箇所"),
+    "empty_line": (_RECORD.replace(plan_fixture.cause_record_line("確認"), "- 確認:"), "`確認:`の行に本文が無い"),
+    "second_unit_missing": (
+        f"### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD_WITHOUT_SPREAD}",
+        "`### 事象B`: `広がり:`の行が無い",
+    ),
+    "legacy_tables": (plan_fixture.legacy_cause_tables(), "原因分析を廃止した表で書いている"),
+    "previous_table": (_PREVIOUS_TABLE, "原因分析を廃止した表で書いている"),
+    "short_record": ("誤った設定値を訂正し、期待した値で再検証した。", "`期待:`の行が無い"),
+}
+"""`## 原因分析`の本文と、エージェントの投入を拒否する場合に診断へ含まれる文言。"""
+
+
+@pytest.mark.parametrize("case", list(_SECTIONS))
 @pytest.mark.parametrize("agent", [False, True])
 @pytest.mark.parametrize("operation", ["add", "edit"])
 def test_public_add_cause_analysis_format(
@@ -61,10 +57,9 @@ def test_public_add_cause_analysis_format(
     *,
     agent: bool,
 ) -> None:
-    """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。
+    """エージェントが新しく書く`## 原因分析`は、バグ単位ごとに行頭語の行と本文を求め、人間の入力は拒否しない。
 
-    AWIの2列表は害の型・処置の6区分・採否2行・処置が生む問題の検討の10行とし、候補行・採否行・回帰防止策の欠落と空欄、
-    6区分化前の5行表と、バグ単位のL4表に対応する処置表が無い記録（2単位の片方だけ欠ける場合を含む）を拒否する。
+    欠けた行頭語と本文の無い行は語と書く内容を診断に示し、廃止した表と表以前の短い記録は拒否する。
     """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
@@ -72,48 +67,8 @@ def test_public_add_cause_analysis_format(
         monkeypatch.delenv(variable, raising=False)
     if agent:
         monkeypatch.setenv("CLAUDECODE", "1")
-    cause = plan_fixture.bug_cause_table()
-    table = _awi_cause_items_table()
-    removed = {
-        "missing_action_harm": "処置が生む問題の検討",
-        "missing_harm": "害の型と反復",
-        "missing_creation_review": "類似見直し観点（作り込み）",
-        "missing_detection_prevention": "再発防止策（見逃し）",
-        "missing_regression": "回帰防止策",
-        "missing_decision": "再発防止策の採否",
-    }
-    emptied = {
-        "empty_action_harm": "処置が生む問題の検討",
-        "empty_harm": "害の型と反復",
-        "empty_detection_review": "類似見直し観点（見逃し）",
-        "empty_decision": "類似見直しの採否",
-        "empty_countermeasure": "対策",
-    }
-    if case in ("empty_l4", "bare_l4"):
-        value = "" if case == "empty_l4" else "該当なし。"
-        cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", f"{value} |")
-    elif case in removed:
-        table = "\n".join(line for line in table.splitlines() if not line.startswith(f"| {removed[case]} |"))
-    elif case in emptied:
-        table = table.replace(f"| {emptied[case]} | {plan_fixture.BUG_FILLER} |", f"| {emptied[case]} |  |")
-    elif case == "previous_format":
-        table = _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
-    elif case == "missing_table":
-        table = ""
-    elif case == "missing_cause_table":
-        cause = ""
-    elif case == "second_unit_missing_table":
-        table = f"{table}\n\n{plan_fixture.bug_cause_table()}"
-    elif case == "two_units":
-        table = f"{table}\n\n{plan_fixture.bug_cause_table()}\n\n{_awi_cause_items_table()}"
-    else:
-        cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
-    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
-    if case == "short_record":
-        body = (
-            "# 表題\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n"
-            "誤った設定値を訂正した。期待した値で再検証し、影響は当該設定だけと確認したため初動で終了した。\n"
-        )
+    section, diagnostic = _SECTIONS[case]
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{section}\n"
     args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
 
     def run() -> None:
@@ -127,45 +82,60 @@ def test_public_add_cause_analysis_format(
         if finished.value.code:
             raise SystemExit(finished.value.code)
 
-    if agent and case not in ("valid", "two_units", "short_record"):
+    if agent and diagnostic is not None:
         with pytest.raises(SystemExit) as rejected:
             run()
         assert rejected.value.code != 0
-        assert "原因分析の書式" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "原因分析の書式" in err
+        assert diagnostic in err
     else:
         run()
         assert "成功:" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("legacy_format", ["five_rows", "eight_rows", "nine_rows"])
-def test_public_append_keeps_saved_legacy_cause_table(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], legacy_format: str
+@pytest.mark.parametrize("legacy", ["legacy_tables", "previous_table"])
+@pytest.mark.parametrize("edit", ["append", "replace_other_section", "replace_cause_section"])
+def test_public_edit_keeps_saved_legacy_cause_table(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    legacy: str,
+    edit: str,
 ) -> None:
-    """保存済みの旧形式の表を持つAWIへの追記は、原因分析節を変えないため拒否しない。
+    """保存済みの旧形式の表を持つAWIは、`## 原因分析`節を変えない編集で受け付け、節を変える編集では新しい形を求める。
 
     書式の改訂前に保存された未終了の項目へ、訂正や記録を追記できる必要がある。
+    追記は`--dry-run`と併用できないため保存まで行い、置換は`--dry-run`で判定だけを確かめる。
     """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    legacy = (
-        _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
-        if legacy_format == "five_rows"
-        else "\n".join(line for line in _awi_cause_items_table().splitlines() if not line.startswith("| 害の型と反復 |"))
-    )
-    if legacy_format == "nine_rows":
-        legacy = "\n".join(
-            line for line in _awi_cause_items_table().splitlines() if not line.startswith("| 処置が生む問題の検討 |")
-        )
-    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{plan_fixture.bug_cause_table()}\n\n{legacy}"
-    _write_awi_file(notes, "legacy.md", body=body, source="test")
-    appended = tmp_path / "append.md"
-    appended.write_text("## 原因分析の訂正\n\n対策を分けて示す。\n", encoding="utf-8")
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{_SECTIONS[legacy][0]}\n"
+    path = _write_awi_file(notes, "legacy.md", body=body, source="test")
+    edited = tmp_path / "edited.md"
+    if edit == "append":
+        edited.write_text("## 原因分析の訂正\n\n対策を分けて示す。\n", encoding="utf-8")
+        argv = ["wi", "edit", "legacy.md", "--append", "--body-file", str(edited)]
+    elif edit == "replace_other_section":
+        edited.write_text(body.replace("## 反映内容と反映先\n対象", "## 反映内容と反映先\n対象を直した"), encoding="utf-8")
+        argv = ["wi", "edit", "legacy.md", "--body-file", str(edited), "--dry-run"]
+    else:
+        edited.write_text(body.replace(plan_fixture.BUG_FILLER, "表の記入を直した。", 1), encoding="utf-8")
+        argv = ["wi", "edit", "legacy.md", "--body-file", str(edited), "--dry-run"]
+
     with pytest.raises(SystemExit) as finished:
-        atk.main(["wi", "edit", "legacy.md", "--append", "--body-file", str(appended)], home=tmp_path)
-    assert finished.value.code == 0
-    assert "原因分析の書式" not in capsys.readouterr().err
+        atk.main(argv, home=tmp_path)
+
+    err = capsys.readouterr().err
+    if edit == "replace_cause_section":
+        assert finished.value.code != 0
+        assert "原因分析を廃止した表で書いている" in err
+    else:
+        assert finished.value.code == 0, err
+        assert "原因分析の書式" not in err
+    assert ("対策を分けて示す。" in path.read_text(encoding="utf-8")) is (edit == "append")
 
 
 @pytest.mark.parametrize(
@@ -178,12 +148,12 @@ def test_public_append_keeps_saved_legacy_cause_table(
         ("未確認 原因候補は2件", False),
         ("**調査中**: 再現条件を確認している", False),
         ("`不明`: ログが残っていない", False),
-        ("\u3000未確定", False),
-        ("\u3000**未確定**（再現待ち）", False),
-        ("** \u3000調査中**", False),
+        ("　未確定", False),
+        ("　**未確定**（再現待ち）", False),
+        ("** 　調査中**", False),
     ],
 )
-def test_add_accepts_undetermined_direct_cause_in_awi(
+def test_add_accepts_undetermined_cause_in_awi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -196,55 +166,62 @@ def test_add_accepts_undetermined_direct_cause_in_awi(
     monkeypatch.setenv("CLAUDECODE", "1")
 
     _run_public_add(
-        _cmd_add_args(tmp_path, _with_direct_cause(_AGENT_AWI_BODY, value), source="test", dry_run=dry_run),
+        _cmd_add_args(tmp_path, _with_cause(_AGENT_AWI_BODY, value), source="test", dry_run=dry_run),
         notes,
         _FIXED_DT,
         tmp_path,
     )
 
-    assert "直接的原因が未確定のまま保存しようとした" not in capsys.readouterr().err
+    assert "原因が未確定のまま保存しようとした" not in capsys.readouterr().err
     if dry_run:
         assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     else:
         assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
-def test_add_rejects_undetermined_direct_cause_in_uwi(
+@pytest.mark.parametrize(
+    "material",
+    [
+        "| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | 調査中 |\n",
+        "- **原因**: 未確定（再現待ち）\n",
+    ],
+    ids=["saved-table-row", "record-line"],
+)
+def test_add_rejects_undetermined_cause_in_uwi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    material: str,
 ) -> None:
-    """UWIも、種別による除外なしに`直接的原因`行の未確定宣言を拒否する。"""
+    """UWIは、旧形式の表の`直接的原因`行と`原因:`の行のどちらで原因の未確定を宣言しても拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
-    table = "| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | 調査中 |\n"
 
     with pytest.raises(SystemExit) as exc_info:
         add_module.cmd_add(
-            _cmd_add_args(tmp_path, f"どちらを選ぶか？\n\n## 判断材料\n\n{table}", source="test", entry_type=WI_TYPE_UWI),
+            _cmd_add_args(tmp_path, f"どちらを選ぶか？\n\n## 判断材料\n\n{material}", source="test", entry_type=WI_TYPE_UWI),
             notes,
             _FIXED_DT,
             tmp_path,
         )
 
     assert exc_info.value.code == 1
-    assert "直接的原因が未確定のまま保存しようとした" in capsys.readouterr().err
+    assert "原因が未確定のまま保存しようとした" in capsys.readouterr().err
     assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize(
     "message",
     [
-        _with_direct_cause(_AGENT_AWI_BODY, "旧値の残存。`git log -S`で、それまで不明だった設定値の由来を特定した"),
-        _with_direct_cause(_AGENT_AWI_BODY, "不明だった設定を特定した"),
-        _with_direct_cause(_AGENT_AWI_BODY, "\u3000不明だった設定を特定した"),
-        _with_direct_cause(_AGENT_AWI_BODY, "調査中の設定変更が旧値を残していたと特定した"),
+        _with_cause(_AGENT_AWI_BODY, "旧値の残存。`git log -S`で、それまで不明だった設定値の由来を特定した"),
+        _with_cause(_AGENT_AWI_BODY, "不明だった設定を特定した"),
+        _with_cause(_AGENT_AWI_BODY, "　不明だった設定を特定した"),
+        _with_cause(_AGENT_AWI_BODY, "調査中の設定変更が旧値を残していたと特定した"),
         _AGENT_AWI_BODY.replace(
             "## 反映内容と反映先\n対象と反映先",
             "## 反映内容と反映先\n対象と反映先\n\n## 原因分析\n\n確定した原因の説明。例示:\n\n"
-            "```markdown\n| 直接的原因 | 未確定 |\n```\n\n"
-            f"{plan_fixture.bug_cause_table()}\n\n{_awi_cause_items_table()}",
+            f"```markdown\n- 原因: 未確定\n```\n\n{_RECORD}",
             1,
         ),
     ],
@@ -268,12 +245,12 @@ def test_add_accepts_undetermined_cause_from_human(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """エージェント環境の外からの投入は、`直接的原因`行が未確定でも保存する。"""
+    """エージェント環境の外からの投入は、`原因:`の行が未確定でも保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
     _run_public_add(
-        _cmd_add_args(tmp_path, _with_direct_cause(_AGENT_AWI_BODY, "未確定"), source="test"),
+        _cmd_add_args(tmp_path, _with_cause(_AGENT_AWI_BODY, "未確定"), source="test"),
         notes,
         _FIXED_DT,
         tmp_path,

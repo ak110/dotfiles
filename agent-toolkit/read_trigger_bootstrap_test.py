@@ -25,7 +25,7 @@ def test_bugfix_start_does_not_request_other_analysis_workflows(tmp_path, monkey
         },
     )
     assert result.returncode == 0 and not result.stderr
-    assert "bugfix/references/root-cause-analysis.md" not in result.stdout
+    assert "bugfix/references/" not in result.stdout
     for path in (
         "wi-standards/references/analysis-records.md",
         "delegation/references/investigation-delegation.md",

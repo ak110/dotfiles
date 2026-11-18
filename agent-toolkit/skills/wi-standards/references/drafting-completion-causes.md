@@ -4,18 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 類似見直しの限定探索と是正範囲を判定する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
-
 ## 原因と定義の所有者
 
 観測された事象を契機とする要求では、起草前に`agent-basics:bugfix`を起動する。
 手動登録では投入元が独立別件の原因と変更内容も確定する。
 他の工程からの独立別件は、観測事実、支持根拠のある原因仮説、残る問いを区別して引き渡せる。
 通常の実装を求めるAWIでは、直接的原因と根本原因を現物に基づいて確定し、対策を1つの案に絞り込む。
-類似の見直しを行う母集団と再発防止の要否は、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に従う。
-`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」も適用し、分析の深さの区分にかかわらず、その範囲を保持する。
 原因分析の対象はAWIとし、UWIは確認事項として扱う。
 事象を観測した場所、欠陥を作り出した実装、変更すべき定義、および変更後の検収場所を明確に区別して特定する。
 `target_repo`には変更対象の定義を保持しているリポジトリを指定する。

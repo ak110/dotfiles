@@ -30,7 +30,7 @@ writes_worktree: true
 | --- | --- |
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` |
 | 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing-selection.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/spread.md` |
 | 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:/share/ui-ux-operations.md` |
 
 ## 読込表
@@ -82,7 +82,7 @@ writes_worktree: true
    再判定では、手順1で限定した範囲内で同じ機構の該当箇所を確認する。
    同一の原因に起因する該当箇所は、同じラウンドの1件の指摘として集約し、問題の機構、対象範囲、該当箇所、確認条件を引き継ぎ記録へ記録する。
    対象は外観、要素名、DOM構造の表面的な類似性だけで限定しない。
-   判断には`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」および`exec-review-criteria.md`「基本方針」を適用する。
+   判断には`agent-basics:bugfix/references/spread.md`「同じ仕組みの他の箇所」および`exec-review-criteria.md`「基本方針」を適用する。
 3. `agent-toolkit:delegation`の`references/handoff-record.md`で規定されている記録項目に加え、対象HEADの7文字以上の一意な短縮OID、`round`、完遂を試みたシナリオ、観測された状態、画面キャプチャーの絶対パス、指摘事項を引き継ぎ記録先へ保存する。
    画面ごとの原要求・確認した品質と、観測結果・未検証範囲の対応を同じ記録に残す。
    機能停止による続行不能を除き、判定結果は次のように選択する。

@@ -53,7 +53,7 @@ CI失敗の取得、分類、原因分析は`agent-toolkit:commit/references/ci-
 - 未保存の計画ファイルの場合は、`~/.claude/plans`のパスをそのまま渡し、対応する計画が存在しない場合は`なし`とする
 
 **4.** 修正者は原因の修正、全項目の検証、差分検収、ステージング、commitを完了する。
-修正前の計画は「選択の流れ」に従い、公開工程外で自ら直す場合は`agent-toolkit:commit/references/ci-failure-handling.md`「選択の流れ」手順6の計画を使う。
+修正前の計画は「選択の流れ」に従い、公開工程外で自ら直す場合は`agent-toolkit:commit/references/ci-failure-handling.md`「選択の流れ」手順4の計画を使う。
 
 **5.** 手元の実行環境では失敗した条件の成否を観測できず、認可済みの作業ブランチで対象ジョブと直接影響範囲を実行できる場合は、修正コミットを早期にpushして先行CIで検証する。
 

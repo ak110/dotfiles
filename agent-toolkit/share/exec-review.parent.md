@@ -72,7 +72,7 @@
 | 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
 | 基準の参照時 | `../skills/wi-standards/references/wi-standards-origin.md` | | |
 | 基準の参照時 | `../skills/report-completion/references/report-formats-completion.md` | | |
-| 基準の参照時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | | |
+| 基準の参照時 | `agent-basics:bugfix/SKILL.md` | | |
 | 基準の参照時 | `../skills/commit/references/history-rewrite-wi-records.md` | | |
 
 ## 読込表

@@ -235,7 +235,7 @@ def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Pat
                     "type": "function_call",
                     "name": "exec_command",
                     "call_id": "c1",
-                    "arguments": json.dumps({"cmd": "cat agent-basics/skills/bugfix/references/root-cause-severity.md"}),
+                    "arguments": json.dumps({"cmd": "cat agent-basics/skills/bugfix/references/spread.md"}),
                 },
             },
             {
@@ -283,7 +283,7 @@ def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Pat
             "tool_output_bytes": 110,
             "norm_doc_display_bytes": 74,
             "norm_doc_display_top": [
-                {"path": "agent-basics/skills/bugfix/references/root-cause-severity.md", "count": 1, "bytes": 64},
+                {"path": "agent-basics/skills/bugfix/references/spread.md", "count": 1, "bytes": 64},
                 {"path": "agent-toolkit/share/exec.subagent.md", "count": 1, "bytes": 10},
             ],
         }

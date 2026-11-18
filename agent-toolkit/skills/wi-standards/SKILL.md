@@ -85,7 +85,7 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 | WIの起草・投入前検収の品質水準を適用する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:review-standards/SKILL.md` | | | |
 | 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-self-review` | |
 | 規範・基準・手順による既存の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | | |
-| 詳細分析のAWI・計画の固定表を記録する前 | `references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` | |
+| AWI・計画ファイル（バグ）の原因分析を記録する前 | `references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` | |
 | 通常AWIの本文の構成と、起票目的別の登録条件を判定する前（操作対象外: ツールと結び付かない判断） | `references/wi-standards-body.md` | | | |
 | WIの由来（`source`）と承認、人間由来の要求の不採用を判断する前 | `references/wi-standards-origin.md` | | | |
 | WIの保存先、状態、重要フラグを扱う前 | `references/wi-standards-states.md` | 判断 | `wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-states.md` | |
@@ -99,7 +99,7 @@ AWIの粒度は要求の同一性に基づいて判断する。
 元の不具合を解消するために必要な追随修正は元AWIへ含め、類似見直しで発見した独立した別件は根本原因を共有していても別AWIへ引き渡す。
 元の事象への寄与が判明した対象は元の修正範囲へ戻す。
 是正対象を所有するリポジトリが異なる場合は、`../../share/add-wi-parent-inputs.md`「起動前の前提」に従って投入先との組み合わせへ展開する。
-1件のAWI内でのバグの扱い単位は、`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」に従う。
+1件のAWI内でのバグの扱い単位は、`agent-toolkit:wi-standards/references/analysis-records.md`「バグ単位の分け方」に従う。
 これら以外の独立した要求は、別の目的を持ち、単独で採否・実装・完成判定が成立する場合に別AWIとする。
 同じファイル、節、文を編集することは統合の理由とせず、独立性を判定したうえでの書込競合として扱う。
 独立した要求はそれぞれの目的を維持し、先行成果が必須でない組み合わせであれば、どちらの順序で実施してもその時点の成果物に適用して完了できる本文構成にする。

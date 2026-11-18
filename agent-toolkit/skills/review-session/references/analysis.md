@@ -20,16 +20,12 @@
 | 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/references/permission-denial-classifier.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `../SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/references/drafting-completion-duplicates.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:review-standards/references/judgment-details-decisions.md` |
 | 本文で基準を使う資料の選択・取得時 | `duration-analysis.md` |
 | 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` |
-| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
 | 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` |
 
 ## 条件別資料

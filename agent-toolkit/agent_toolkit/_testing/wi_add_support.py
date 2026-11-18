@@ -97,36 +97,12 @@ def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
-def _awi_cause_items_table() -> str:
-    """AWIの`## 原因分析`の2列表（10行）を、計画の調査表と同じ記入値で組み立てる。"""
-    rows = [plan_fixture.item_row(row, plan_fixture.BUG_FILLER) for row in add_module.AWI_CAUSE_TABLE_ROWS]
-    return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *rows])
-
-
-_PREVIOUS_AWI_CAUSE_ITEMS_TABLE = "\n".join(
-    [
-        "| 項目 | 内容 |",
-        "| --- | --- |",
-        *(
-            plan_fixture.item_row(
-                row,
-                f"作り込み要因: {plan_fixture.BUG_FILLER}を採用。見逃し要因: {plan_fixture.BUG_FILLER}を採用。"
-                if row in ("類似見直し観点", "再発防止策")
-                else plan_fixture.BUG_FILLER,
-            )
-            for row in ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策")
-        ),
-    ]
-)
-
-
-def _with_direct_cause(body: str, value: str) -> str:
-    """通常AWIの本文へ、原因分析表の作り込み要因のL1へ原因の記述を置いた原因分析（10行表）を加える。"""
-    cause = plan_fixture.bug_cause_table().replace(
-        f"| 作り込み要因 | {plan_fixture.CAUSE_FILLER} |", f"| 作り込み要因 | {value} |", 1
+def _with_cause(body: str, value: str) -> str:
+    """通常AWIの本文へ、`原因:`の行の本文を`value`にした原因分析の記録を加える。"""
+    record = plan_fixture.cause_record().replace(
+        plan_fixture.cause_record_line("原因"), plan_fixture.cause_record_line("原因", value), 1
     )
-    section = f"## 原因分析\n\n{cause}\n\n{_awi_cause_items_table()}\n\n"
-    return f"{body}\n\n{section}"
+    return f"{body}\n\n## 原因分析\n\n{record}\n\n"
 
 
 def _choice_argv(tmp_path: pathlib.Path, choices: list[str]) -> list[str]:

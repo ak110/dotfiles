@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
-| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/causes.md` |
 
 ## 作業完了報告のフォーマット
 
@@ -58,7 +58,7 @@
   ユーザー要求の対象範囲を定める決定事項については、`../../user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」に定められた範囲記録の書式に従う。
   `agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」は「ドキュメントと既存コードの不一致」への言及を定めている。
   この不一致のうちドキュメントを修正せず残したものを、従った側とともに本節へ1件ずつ記載する（ドキュメント側を修正したものは`### 成果`に記載する）。
-  未検証の仮説や未確定の原因を理由に対策を見送った判断には、検証AWIのファイル名か、その仮説が対策の採否を左右しない理由を併記する（`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の仮説の扱い）
+  未検証の仮説や未確定の原因を理由に対策を見送った判断には、検証AWIのファイル名か、その仮説が対策の採否を左右しない理由を併記する（`agent-basics:bugfix/references/causes.md`「観測と推測の区別」の仮説の扱い）
 
 ```text
 ### 自ら確定した判断

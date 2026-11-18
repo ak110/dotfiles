@@ -27,7 +27,7 @@
 メインは`agent-basics:bugfix`の起動や走査記録からの原因・対策の読み取りをせず、原因分析からAWI保存まで投入担当に任せる。
 調査・原因分析・原稿検収をレビュー受領側の文脈から分け、総費用を抑えるためである。
 
-- 要求ファイルには、`気付いた改善点:`行の全文と走査記録の絶対パスを要求の趣旨と`確定済みの観測`に、原因・類似見直し・対策の検討項目を`投入前に確定すべき事項`に書く。
+- 要求ファイルには、`気付いた改善点:`行の全文と走査記録の絶対パスを要求の趣旨と`確定済みの観測`に、原因・広がり・処置の検討項目を`投入前に確定すべき事項`に書く。
   投入先は該当行が示す対象ファイルを所有するリポジトリとし、`source`属性は受領元エージェントのスキルに基づき`../skills/wi-standards/references/wi-standards-origin.md`「由来と承認」で決める
 - 起動した担当の`session_id`と対象の不具合を、該当レビューの引き継ぎ記録へ引き渡し済みとして対応付ける。
   再レビューや引き継ぎ再レビューで同じ不具合が再び報告されたら、この記録で引き渡し済みと判定し、担当を重ねて起動しない
@@ -41,12 +41,11 @@
 - 担当から続行できない理由が返ったら、ユーザーの判断が要る事項を`agent-toolkit:user-confirmation-and-report`に従って確認する（自律モードではUWIへ退避する）。
   投入先リポジトリ外のファイルが対象として返った場合は、`add-wi-parent-acceptance.md`「続行できない理由の扱い」に従って投入先と要求の組を確定し直す
 
-次回へ渡す対象は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件内で選び、事象・根本原因・対応案を投入担当がAWIへ保存する。
+次回へ渡す対象は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件内で選び、事象・原因・対応案を投入担当がAWIへ保存する。
 process-wi中は読込表の`immediate-fix.md`「即時対応」で現在の影響と先送り条件から正式対応の時機を判定する。
-残工程や次のセッションを停止・遮断する不具合は、観測根拠から「進行を妨げる欠陥」と判定し、詳細な原因分析に先行して直接修正する。
+残工程や次のセッションを停止・遮断する不具合は、観測根拠から「進行を妨げる欠陥」と判定し、広がりの探索と再発防止の検討に先行して直接修正する。
 修正は`agent-basics:bugfix`と`01-agent.md`「完遂と先送り」、process-wi中の最小修正は前述の「即時対応」に従う。
-正式対応では`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」で、品質影響・レビュー対象との根本原因の同一性・処置完了を判定する。
-同スキルの`references/root-cause-remediation.md`「類似見直し」、`agent-basics:bugfix/references/root-cause-prevention-verification.md`「類似見直しと再発防止の完了」も適用する。
+正式対応では、品質への影響、レビュー対象と原因が同じか、処置の完了を同スキルの5つの問いで判定する。
 認可は`agent-toolkit:user-confirmation-and-report`に従う。
 レーン担当が自レーンの検証を妨げるとして報告した既存不良は、実行レビューの返却と区別し、`process-wi`の処理中は同スキルの「即時対応」として扱う。
 
@@ -60,7 +59,4 @@ process-wi中は読込表の`immediate-fix.md`「即時対応」で現在の影�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 再発防止の選定と完了：類似見直しと再発防止の完了の基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention-verification.md` |
-| 類似見直しの範囲と探索の基準を適用する前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
-| 根本原因と重大度：QとC・Dの区別の基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
 | AWIとUWIの共通規範の基準を適用する前 | `../skills/wi-standards/SKILL.md` |

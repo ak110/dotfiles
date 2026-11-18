@@ -11,10 +11,6 @@ Playwright Testの設定をPythonのAPI名へ読み替えて適用しない。
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` |
-
 ## ロケーター戦略
 
 - ロケーターの選択は、エンドユーザーが画面上で認識するロール（role）と表示名（accessible name）を最優先の候補とし、これらで一意に特定できない要素には`testId`属性を使用する。
@@ -39,7 +35,7 @@ Playwright Testの設定をPythonのAPI名へ読み替えて適用しない。
 
 ## flaky対策
 
-テストが不安定（flaky）になった際の原因調査や修正方針を決定する前には、`agent-basics:bugfix`を起動し、`../../bugfix/references/root-cause-scenarios-testing.md`「テストの原因調査」を適用する。
+テストが不安定（flaky）になった際の原因調査や修正方針を決定する前には、`agent-basics:bugfix`を起動する。
 本節で述べるトレース採取や再試行設定は、その原因調査に必要なデータを収集するための手段である。
 
 - テストの自動再試行（`retries`）はCI環境でのみ有効化し（ローカル環境では0とする）、その目的は後述するトレースデータの採取に限定する。

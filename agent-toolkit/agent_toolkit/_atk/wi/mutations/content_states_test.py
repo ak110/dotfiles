@@ -230,7 +230,7 @@ class TestEditBodyFile:
             atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert "直接的原因が未確定のまま保存しようとした" not in capsys.readouterr().err
+        assert "原因が未確定のまま保存しようとした" not in capsys.readouterr().err
         assert path.read_text(encoding="utf-8") != original
         assert "| 直接的原因 | 調査中 |" in path.read_text(encoding="utf-8")
 

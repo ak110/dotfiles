@@ -1,18 +1,23 @@
-"""改善点の報告前に判定資料の取得を案内し、未調査を理由にした`不要`へ再確認を促す。
+"""報告の送達の前後に、判定資料の取得と報告の書式・記録の行を案内し、未調査を理由にした`不要`へ再確認を促す。
 
 `share/rules/rules-main.md`「作業中の改善点の報告」は、処置とAWI化を決める前に担当・処置を決める最小調査を求める。
 原因を調べていないことを見送りの理由にした報告は、その調査を省いたまま処置不要と判断している。
-判定は理由の冒頭が決まった語句と一致するかだけで行い、理由の意味は推定しない。誤検出があり得るため遮断せず通知する。
-報告行の抽出は`runtime_inserted.reported_improvement_lines`を使い、コード例と引用を報告から除く。
-同じ判定を`send_to_user`の送信前にも行う（`hooks/send_to_user.tsx`の`UNINVESTIGATED_REASON`）。判定語を変える場合は両方を合わせる。
+逸脱の報告は、今回の事象へ`agent-basics:bugfix`を適用し、同スキルの「記録」の行頭語（`処置:`と条件付きの`再発防止:`）で
+今回の是正と再発防止の採否を示す。bugfixの起動・取得の記録は今回の事象への適用を示さないため、記録の行の欠落は
+起動の有無によらず案内する。
+判定は報告行の語句の一致だけで行い、意味は推定しない。誤検出があり得るため遮断せず通知する。
+報告行の抽出と判定語は`runtime_inserted`（`report_lines`・`REPORT_CUES`）を使い、コード例と引用を報告から除く。
+同じ判定を`send_to_user`の送達後にも行う（`hooks/send_to_user.tsx`の`UNINVESTIGATED_REASON`・`REPORT_CUES`）。
+判定語を変える場合は両方を合わせる。一致は`improvement_status_advisor_test.py`が確かめる。
 判定資料の取得案内は送達前（`main`が受ける`send_to_user`の送信前照会）だけで出す。送達後のStopで案内しても、
-報告は既に届いていて見直しが反映されないため、Stopでは取得案内を出さず、報告行の書式と理由の判定だけを通知する。
+報告は既に届いていて見直しが反映されないため、Stopでは取得案内を出さず、報告行の書式・理由と記録の行の欠落だけを通知する。
 
-委譲先での実行可否: 委譲先は改善点を委譲元へ返却し、委譲元が処置とAWI化を判断するため判定しない。
+委譲先での実行可否: 委譲先は改善点と逸脱を委譲元へ返却し、委譲元が処置とAWI化を判断するため判定しない。
 """
 
 import json
 import os
+import pathlib
 import re
 
 from agent_toolkit._common import mcp_environment, read_triggers, runtime_inserted
@@ -43,6 +48,45 @@ UNINVESTIGATED_REASON = re.compile(
     r"(?!(?:だ|です)?(?:が|けれど|けど)|ながら|ものの|でも)"
 )
 
+# 報告の手掛かり（`runtime_inserted.REPORT_CUES`）ごとに、送達前に取得を確かめる`agent-basics`の資料と、取得後に行う確認。
+_CUE_DOCUMENTS = (
+    (
+        "deviation",
+        "skills/bugfix/SKILL.md",
+        "逸脱を示す報告。今回の事象へ5つの問いを適用する。以前に読んだ本文の再利用は今回の適用に当たらない",
+    ),
+    (
+        "absence",
+        "skills/bugfix/references/spread.md",
+        "仕組みや規範が無いことを述べる報告。「同じ害への既存の対策」に従い、既存の契約・規範・検査を害を表す語で検索して主張と比べる",
+    ),
+    (
+        "no_change",
+        "skills/bugfix/references/causes.md",
+        "変えていないことを述べる報告。「意図と経緯の調べ方」に従い、現行の値に加えて変更履歴と要求の原文を確かめて回答と比べる",
+    ),
+)
+_IMPROVEMENT_PURPOSE = "改善点の報告。処置とAWI化ステータスを見直す"
+
+# 送達後に、報告の手掛かりの組に対して求める記録の行頭語（`agent-basics:bugfix`の「記録」）。
+# `hooks/send_to_user.tsx`の`RECORD_LINE_CHECKS`と同じ組にする。
+RECORD_LINE_CHECKS = (
+    (
+        frozenset({"deviation"}),
+        "処置",
+        "逸脱を示す語を含む報告に`処置:`の行が無い。",
+        "以後の報告では、今回の是正と残る影響を`処置:`の行に書け。bugfixの起動の記録は、今回の事象へ5つの問いを"
+        "適用したことを示さない。逸脱の報告に当たるか、行の内容が足りるかは担当が判断せよ。",
+    ),
+    (
+        frozenset({"deviation", "prevention"}),
+        "再発防止",
+        "再発防止を検討する条件（ユーザーの指摘、同じ害の繰り返し、大きな害）を示す語を含む逸脱の報告に`再発防止:`の行が無い。",
+        "以後の報告では、再発防止の採否を`再発防止:`の行に書け。採らない場合は区分名と理由を書く。"
+        "条件に当たるか、採否と内容は担当が判断せよ。",
+    ),
+)
+
 
 def uninvestigated_unneeded_reasons(text: str) -> list[str]:
     """報告行のうち、`不要`の理由が原因の未調査を根拠にしている行を返す。"""
@@ -58,24 +102,12 @@ def uninvestigated_unneeded_reasons(text: str) -> list[str]:
     return found
 
 
-def read_guidance_notice(payload: object, *, include_reads: bool = True) -> str:
-    """最上位メインの改善点報告で、書式の誤りと、未取得の判定資料を既存の取得記録から案内する。
-
-    `include_reads`が偽の場合は、判定資料の取得案内を返さず書式の誤りだけを返す（送達後のStopの利用）。
-    """
-    if not isinstance(payload, dict) or not is_main_agent_context(payload):
-        return ""
-    text = payload.get("last_assistant_message")
-    session_id = payload.get("session_id")
-    if not isinstance(text, str) or not runtime_inserted.reported_improvement_lines(text):
-        return ""
-    if not isinstance(session_id, str) or not session_id:
-        return ""
+def _format_notice(lines: list[str]) -> str:
+    """改善点の報告行の区分名と見送りの比較項目の書式の誤りを、最初の1件だけ返す。"""
     categories = {"不要": _UNNEEDED_CATEGORIES, "予定": ("判断待ち", "認可待ち", "入力待ち", "書込競合")}
-    for line in runtime_inserted.reported_improvement_lines(text):
+    for line in lines:
         for matched in _CATEGORY_STATUS.finditer(line):
             if not line[matched.end() :].startswith(categories[matched.group(1)]):
-                set_warning_session_id(session_id)
                 return _notice(
                     "改善点報告の区分名が、常時規範のテンプレートの書式と一致しない。",
                     removable_cause=True,
@@ -88,7 +120,6 @@ def read_guidance_notice(payload: object, *, include_reads: bool = True) -> str:
                 values = {name: value.strip(" \t。）」)") for name, value in _DEFERRAL_FIELD.findall(report)}
                 missing_fields = [name for name in _DEFERRAL_FIELDS if not values.get(name)]
                 if missing_fields:
-                    set_warning_session_id(session_id)
                     return _notice(
                         "見送り報告の比較項目が空または欠落している: " + "、".join(missing_fields) + "。",
                         removable_cause=True,
@@ -96,46 +127,94 @@ def read_guidance_notice(payload: object, *, include_reads: bool = True) -> str:
                         fix="同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、"
                         "セミコロンで区切って記録せよ。候補と結論の妥当性は担当が判断せよ。",
                     )
-    if not include_reads:
-        return ""
+    return ""
+
+
+def _record_line_notices(text: str, cues: frozenset[str]) -> list[str]:
+    """手掛かりの組に当たる報告で、求める記録の行が本文行の行頭に無いものを返す。"""
+    heads = {line.split(":", 1)[0] for line in runtime_inserted.report_lines(text.replace("：", ":")) if ":" in line}
+    return [
+        _notice(body, removable_cause=True, subject=text, fix=fix)
+        for required, head, body, fix in RECORD_LINE_CHECKS
+        if required <= cues and head not in heads
+    ]
+
+
+def _acquired(records: dict, path: pathlib.Path) -> bool:
+    """現在の版の全文取得か`Skill`起動の記録があるかを返す。"""
+    if document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") == "current":
+        return True
+    owners = records.get(document_reads.skill_invocation_key(path, document_reads.content_fingerprint(path)), [])
+    return isinstance(owners, list) and "main" in owners
+
+
+def _read_notice(payload: dict, session_id: str, cues: frozenset[str], *, improvements: bool) -> str:
+    """報告の手掛かりと改善点の報告に対応する資料のうち、取得記録が無いものを案内する。"""
     state = read_state(session_id)
     root = plugin_resources.plugin_root()
     cwd = payload.get("cwd")
-    basics = resolve_plugin_root(
-        "agent-basics", root, "codex" if is_codex_payload(payload) else "claude", project=cwd if isinstance(cwd, str) else None
-    )
-    paths = [
-        basics / "skills/bugfix/references/root-cause-prevention.md",
-        root / "skills/delegation/references/waiting-and-monitoring.md",
-    ]
-    startup = os.environ.get(mcp_environment.SESSION_START_INPUT_ENV, "{}")
-    try:
-        source = json.loads(startup)
-    except ValueError:
-        source = {}
-    process_wi = state.get("session_title_kind") in {"process-wi", "single-lane"} or (
-        isinstance(source, dict)
-        and (source.get("source") == "process-loop" or source.get("skill") == "agent-toolkit:process-wi")
-    )
-    if process_wi:
-        paths.append(root / "skills/process-wi/references/immediate-fix.md")
+    cwd = cwd if isinstance(cwd, str) else ""
+    basics = resolve_plugin_root("agent-basics", root, "codex" if is_codex_payload(payload) else "claude", project=cwd or None)
+    wanted = [(basics / relative, purpose) for cue, relative, purpose in _CUE_DOCUMENTS if cue in cues]
+    if improvements:
+        wanted += [
+            (basics / "skills/bugfix/references/prevention.md", _IMPROVEMENT_PURPOSE),
+            (root / "skills/delegation/references/waiting-and-monitoring.md", _IMPROVEMENT_PURPOSE),
+        ]
+        startup = os.environ.get(mcp_environment.SESSION_START_INPUT_ENV, "{}")
+        try:
+            source = json.loads(startup)
+        except ValueError:
+            source = {}
+        process_wi = state.get("session_title_kind") in {"process-wi", "single-lane"} or (
+            isinstance(source, dict)
+            and (source.get("source") == "process-loop" or source.get("skill") == "agent-toolkit:process-wi")
+        )
+        if process_wi:
+            wanted.append((root / "skills/process-wi/references/immediate-fix.md", _IMPROVEMENT_PURPOSE))
     records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
     records = records if isinstance(records, dict) else {}
-    missing = [
-        path for path in paths if document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") != "current"
-    ]
+    # 導入済みの配布物に無い資料は案内しても取得できないため、実在する資料だけを照会する。
+    missing = [(path, purpose) for path, purpose in wanted if path.is_file() and not _acquired(records, path)]
     if not missing:
         return ""
-    set_warning_session_id(session_id)
-    commands = "\n".join(
-        f"- {document_reads.reference_name(path, cwd=cwd if isinstance(cwd, str) else '')}" for path in missing
-    )
+    lines = "\n".join(f"- {document_reads.reference_name(path, cwd=cwd)}: {purpose}。" for path, purpose in missing)
     return _notice(
-        "改善点の判定資料の全文取得を確認できない。\n" + commands,
+        "報告の判定に使う資料の取得を確認できない。\n" + lines,
         removable_cause=True,
-        subject="\n".join(map(str, missing)),
-        fix="資料を取得し、処置とAWI化ステータスを見直せ。必要なら報告を訂正せよ。",
+        subject="\n".join(str(path) for path, _ in missing),
+        fix="各行の資料を取得し、その行の確認をしてから報告を見直せ。必要なら報告を訂正せよ。"
+        "語の一致で選んだ案内のため、報告に当たらない行は対応不要である。",
     )
+
+
+def read_guidance_notice(payload: object, *, delivered: bool = False) -> str:
+    """最上位メインの報告へ、改善点の書式の誤りと、報告の形に応じた案内を返す。
+
+    送達前（`delivered`が偽）は、未取得の判定資料を既存の取得記録から案内する。
+    送達後のStop（`delivered`が真）は取得案内を返さず、逸脱の報告に欠けた記録の行を案内する。
+    """
+    if not isinstance(payload, dict) or not is_main_agent_context(payload):
+        return ""
+    text = payload.get("last_assistant_message")
+    session_id = payload.get("session_id")
+    if not isinstance(text, str) or not isinstance(session_id, str) or not session_id:
+        return ""
+    improvements = runtime_inserted.reported_improvement_lines(text)
+    cues = runtime_inserted.report_cues(text)
+    if not improvements and not cues:
+        return ""
+    set_warning_session_id(session_id)
+    format_notice = _format_notice(improvements)
+    if delivered:
+        notices = [format_notice, *_record_line_notices(text, cues)]
+    else:
+        # 書式の修正だけで済む改善点の報告へは、判定資料の追加取得を案内しない。
+        notices = [
+            format_notice,
+            _read_notice(payload, session_id, cues, improvements=bool(improvements) and not format_notice),
+        ]
+    return "\n\n".join(filter(None, notices))
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -150,7 +229,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if not isinstance(text, str):
         return "", ""
     lines = uninvestigated_unneeded_reasons(text)
-    guidance = read_guidance_notice(payload, include_reads=False)
+    guidance = read_guidance_notice(payload, delivered=True)
     if not lines:
         return ("notify", guidance) if guidance else ("", "")
     session_id = payload.get("session_id")
@@ -166,7 +245,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
 
 def main(payload_text: str) -> int:
-    """Function hooksからの送達前照会へ、既存hookと同じ取得案内を返す。"""
+    """`send_to_user`の送達前照会へ、報告の形に応じた取得案内を返す。"""
     payload = json.loads(payload_text)
     notice = read_guidance_notice(payload)
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}}, ensure_ascii=False))

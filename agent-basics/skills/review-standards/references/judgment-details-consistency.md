@@ -6,7 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-prevention-requirements.md` |
 | 外部資料に基づく案の提案・採否、資料起点の既存充足を評価する前 | `../../writing-standards/references/design-heuristics-external-evidence.md` |
 
 ## 既存記述との重複と方針との整合
@@ -16,5 +15,4 @@
 変更を確定する前に、明文化された既存の方針と整合しているかを照らし合わせる。
 外部資料との比較では、`../../writing-standards/references/design-heuristics-external-evidence.md`に従い、意味上の被覆と実効性の根拠を独立に検収する。
 条文の対応表だけから十分性を認めず、未確認の範囲が採否でどう扱われているかも確認する。
-既存規範への違反を是正する場合は、本節の重複回避ルールを適用しない。
-`../../bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」にある未適用規範の是正原則に従って対処する。
+既存規範への違反を是正する場合は、本節の重複回避ルールを適用せず、`agent-basics:bugfix`に従って対処する。

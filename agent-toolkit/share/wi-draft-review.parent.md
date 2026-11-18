@@ -18,7 +18,7 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | add-awi-by-userの投入前レビュー結果を検収する前 | `../skills/add-awi-by-user/references/omission-check.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
-| 指摘が繰り返される原因を分析する前 | `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | | |
+| 指摘が繰り返される原因を分析する前 | `agent-basics:bugfix/references/recurrence.md` | | |
 | 投入前レビューの起動要否を判定する前 | `../skills/wi-standards/references/drafting-workflow-review-route.md` | | |
 | 要件との不一致を指摘された時に、値の出所と`source`を確かめる前 | `../skills/wi-standards/references/origin-and-approval-origin.md` | | |
 | 修正した方式全体の整合性を確かめる前 | `../skills/wi-standards/references/drafting-completion-decisions.md` | | |
@@ -123,7 +123,7 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
    確認の対象は、開始、終了、途中の失敗から再開に至る一連の流れとし、基準には`../skills/wi-standards/references/drafting-completion-decisions.md`「実現方式の成立」を用いる。
    修正のたびに新たな状態管理や照会手段を追加するような指摘が続く場合は、方式の維持、縮小、または代替案への切り替えを比較検討する。
    比較の基準には`agent-basics:writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」を用いる。
-   指摘が繰り返される原因は、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`「反復した指摘の原因判定」に従って分析する。
+   指摘が繰り返される原因は、`agent-basics:bugfix/references/recurrence.md`に従って分析する。
    成立性に関する未解決事項は、指摘が繰り返された場合でも確実に解消した上で合格とする。
    修正後は、変更した要求識別子、現行の原稿、差分、直接の影響範囲を同じレビュー担当へ渡して再判定を依頼する。
    変更のない共通資料や合格済みの要求結果はそのまま保持し、変更のない抽出内容は読者別探索の再点検省略条件に従って再利用する。

@@ -59,12 +59,8 @@ UWIに対象項目のファイル名、対象の詳細説明、必要な回答�
 - ユーザーのみが保持する判断情報を必要としないこと。
   基準は`../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」の3に従う。
   資料の不足については、同節の2において技術判断の対象外と整理されたものに限る。
-- 重大度に応じた類似見直しおよび再発防止に不可欠な結果と品質を維持すること。
-  基準は次の資料に従う。
-
-  - `agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」
-  - `agent-basics:bugfix/references/root-cause-prevention-verification.md`「類似見直しと再発防止の完了」
-
+- 害の大きさに応じた広がりの探索と再発防止に不可欠な結果と品質を維持すること。
+  基準は`agent-basics:bugfix/references/spread.md`「害が大きい時」と`agent-basics:bugfix/references/prevention.md`「案を比べる順」に従う。
   確認手段は同じ必要水準を満たす別の手段へ変更できる。
 
 この判定は完成条件の意味に対する実質的な評価である。

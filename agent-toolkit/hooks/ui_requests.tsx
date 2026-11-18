@@ -1,6 +1,6 @@
 import type { EngineInterface, On } from "claude-code";
 import { exitStatePath } from "./session_exit.ts";
-import { awiStatusWarnings } from "./send_to_user.tsx";
+import { reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 
 type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; targets?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
@@ -76,7 +76,7 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           const placed = await $.ui.place({ id: request.id });
           ok = placed.isPlaced;
           reason = placed.isPlaced ? "" : placed.reason;
-          if (ok) reason = ["ユーザーの画面へ表示した。送達済み本文は再掲するな。", ...awiStatusWarnings(request.input.message)].join("\n");
+          if (ok) reason = ["ユーザーの画面へ表示した。送達済み本文は再掲するな。", ...reportWarnings(request.input.message)].join("\n");
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
           else if (typeof request.input.tool_use_id === "string") {
             const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};
