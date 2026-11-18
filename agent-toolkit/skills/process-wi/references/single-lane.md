@@ -26,9 +26,8 @@
 | 既存不良の正式対応を登録する前 | `agent-toolkit:atk-mode/roles/add-wi.parent.md` | | |
 | 回答済みUWIの処理またはWIを終了する前 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | | |
 | 取得時の版が変わった記録を再利用する前 | `../../../share/exec-review-recording-grounds.md` | | |
-| WI実装commitの対応を記録する前 | `../../commit/references/commit-wi-records.md` | | |
-| 常時稼働サーバー反映の要否・再利用・開始条件を判断する前 | `../../report-completion/references/server-reflection.md` | | |
-| 自身が作業完了報告と送達を所有し、終了処理へ進む前 | `../../report-completion/SKILL.md` | | |
+| WI実装commitの対応を記録する前 | `agent-toolkit:atk-mode/references/commit-wi-records.md` | | |
+| 常時稼働サーバー反映の要否・再利用・開始条件を判断する前と、自身が作業完了報告と送達を所有し、終了処理へ進む前 | `agent-toolkit:atk-mode/playbooks/report-completion.md` | | |
 | 公開後に追加修正を統合し再公開する前 | `finish-session-recovery.md` | | |
 
 ## 読込表
@@ -36,8 +35,8 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 既存不良の受領、計画または直接実装に着手する前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/single-lane-execution.md` | |
-| 計画の要否を判定する前 | `agent-toolkit:write-plan`のSKILL.md。計画対象がある場合は、計画の起草前（実行順3）に同書の初版起草の行が指定する範囲も読む | 判断 | `skill:write-plan` | |
-| 対象worktreeごとに公開する前（実行順8） | `agent-toolkit:commit`を起動し、同スキルの`references/publish.md` | | | |
+| 計画の要否を判定する前 | `agent-toolkit:atk-mode/playbooks/write-plan.md`。計画対象がある場合は、計画の起草前（実行順3）に`agent-toolkit:atk-mode/references/plan-format.md`も読む | | | |
+| コミットの作成・履歴統合に着手する前と、対象worktreeごとに公開する前（実行順8） | `agent-toolkit:atk-mode/playbooks/commit.md`と`agent-toolkit:atk-mode/playbooks/publish.md` | | | |
 | Claude Codeでpush後のCI監視の待機へ入る前（実行順8） | `agent-toolkit:delegation`の`references/waiting-and-monitoring.md` | | | |
 
 ## agent-toolkit:process-wiの規定の読み替え
@@ -53,14 +52,15 @@ all-reposから受領した候補を処理する場合は、`all-repos-orchestra
 - `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`（所在参照）
 - `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`（所在参照）
 
-`agent-toolkit:write-plan`を起動した場合は、ユーザー確認の要否と手段を`agent-toolkit:atk-mode/playbooks/confirmation.md`で選択し、計画の起草後は本書の実行順に戻って主作業ツリーで実装を進める。
+`agent-toolkit:atk-mode/playbooks/write-plan.md`でメインが計画を作った場合は、ユーザー確認の要否と手段を`agent-toolkit:atk-mode/playbooks/confirmation.md`で選択する。
+計画の起草後は本書の実行順に戻って主作業ツリーで実装を進める。
 計画のstemは`dd-HHmm_process-wi-single-lane`とし、実行レビューのレビューイーはメインエージェントとする。
-Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処理に対して定めているUWI記録と暫定判断のルールを本スキルにも適用する。
+Codex環境では、`agent-toolkit:atk-mode/playbooks/write-plan.md`が専用処理に対して定めているUWI記録と暫定判断のルールを本スキルにも適用する。
 バージョン番号は、対象リポジトリの版数管理規範における単一worktree向けの一般原則に従い、実装段階でメインエージェントが更新する。
 
 ## 処理の振り分け
 
-計画ファイルの作成要否を`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」に従って項目ごとに判定し、計画が要る項目を「計画対象」、要らない項目を「直接実装対象」として分類する。
+計画ファイルの作成要否を`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」に従って項目ごとに判定し、計画が要る項目を「計画対象」、要らない項目を「直接実装対象」として分類する。
 初期選定されたすべてのWIを記録した保存済み対応表をもとに、対象worktreeの全計画対象を1つの計画ファイルへまとめ、計画段階でのレビューは省略して実装後の実行レビューのみで検証する。
 専用のworktreeは新設せず、対応表に記載されたworktreeで実装する。
 
@@ -132,14 +132,14 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
    計画メタ情報の対象リポジトリ、および計画構造の自動チェックに渡す`--work-dir`にはそのworktreeを指定し、対応表にあるすべての計画対象を`--expected-wi <WIファイル名>`で繰り返し指定して、実装前に過不足のない一致を確認する。
    全件が直接実装対象である場合は計画ファイルを新設せず、対応表とレビュー対象集合の和によって網羅性を検収する。
 4. 対応表のworktreeにおいて、計画対象は計画の`## 反映内容と反映先`と`## 完成条件`に従い、直接実装対象はWIの要求事項と完成条件に従って実装する。
-   8節形式の計画では、`agent-toolkit:write-plan`の`references/legacy-plan-file-standards.md`「8節形式」の対応表で節を読み替える。
+   8節形式の計画では、`agent-toolkit:atk-mode/references/plan-legacy-formats.md`「8節形式」の対応表で節を読み替える。
    完成条件の具体化、検証単位の選定、検証結果の保存、独立文脈レビューへの受渡しは`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」に従う。
    Git管理外のファイルを変更する場合は、最初の変更前に変更前のバックアップ複製を作成し、複製の対応関係は計画ファイルの`## 進捗ログ`、または直接実装の引き継ぎ記録に残す。
    コミット履歴の整理によって取得時の版が変わった記録の再利用については、`../../../share/exec-review-recording-grounds.md`「根拠の書き方」に従う。
    互いの成果に依存しないworktree間では作業を並行して進めてよい。
-   コミットの作成は`agent-toolkit:commit`に従う。
+   コミットの作成は`agent-toolkit:atk-mode/playbooks/commit.md`に従う。
    WI実装コミットごとに、計画（直接実装の場合は引き継ぎ記録）と同一stemの対応記録ファイルへ記録する。
-   記録の手段は同スキルの`../../commit/references/commit-wi-records.md`「WI実装commitの対応」に従う。
+   記録の手段は同スキルの`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う。
    レビュー指摘修正、CI修正、コミット履歴の変更後も同様の手順に従い、実行順8の処理へ進む前に最新の対応関係を取得してadoptコマンドへ渡す。
 5. 保存済み対応表から、対象worktreeに属する全計画対象と全直接実装対象の和を導出し、1件の実行レビューを起動する。
    すべての対応表の所在と区分は、同一の引き継ぎ記録から辿れるように保持する。
@@ -150,11 +150,11 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 7. 各計画について`atk run-script plan-progress --`を実行して完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックが成功することを確認した上で計画バンドルを保存する。
 8. 各WIを`adopt`または`reject`する。
    `adopt`時は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に定めるコミット対応付けを用いる。
-   worktreeごとに`agent-toolkit:commit`の`references/publish.md`に従って公開する。
+   worktreeごとに`agent-toolkit:atk-mode/playbooks/publish.md`に従って公開する。
    採否は公開前に確定し、CI待機後へ延期しない。
    複数のリポジトリを対象とする場合は成果物間の依存順序を守り、互いに独立したリポジトリのpushを先にすべて完了させてからCI監視を並行して開始し、すべての実行識別子の終了を待って結果を個別に回収する。
    待機中の操作は`../../delegation/references/waiting-and-monitoring-independent-work.md`「待機中の先行実施」で判断し、CI成功を前提とする公開後操作はその対象の成功後に行う。
-   開発マシン上で動作する常時稼働サーバーへの反映は、`../../report-completion/references/server-reflection.md`の条件を満たす場合に、CI待機と並行して開始する。
+   開発マシン上で動作する常時稼働サーバーへの反映は、`agent-toolkit:atk-mode/playbooks/report-completion.md`の条件を満たす場合に、CI待機と並行して開始する。
    反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、および稼働確認の結果を完了報告へ渡す。
    CI待機に伴う一律の会話圧縮の手動予約は行わず、`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」にある時間・使用量条件付きの自動予約とホスト標準の圧縮に任せる。
    中断や会話圧縮の後は、注入された要約を起点に計画、WI、資源登録、CI監視出力、担当別引き継ぎ記録から状態を復元し、要約文に書かれた作業順などで選定集合を勝手に置き換えない。
@@ -166,7 +166,7 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
    一時的に作成したレビュー指摘管理表を正式な保存または回収契約に従って処理する。
    明示的に委譲されたリポジトリ担当は、役割契約に従って成果・検証・公開・反映結果と残工程を委譲元へ返す。
    この担当除外のための`omit-completion`記録や、報告用UWI・送達・祖先ホストの終了は担当しない。
-   自身が報告を所有するメインは、成果・検証・公開結果を`agent-toolkit:report-completion`の作業完了報告へ一度集約して送達する。
+   自身が報告を所有するメインは、成果・検証・公開結果を`agent-toolkit:atk-mode/playbooks/report-completion.md`の作業完了報告へ一度集約して送達する。
    報告を所有するメインは公開結果の受領だけで終了せず、同スキルが定める終了処理まで行う。
    同期の振り返りは終了工程の対象外とする。
 
@@ -180,6 +180,5 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| コミットの作成・履歴統合に着手する前 | `../../commit/SKILL.md` |
 | メインによるWI選定とレーン分け：処理対象WIの追加の基準を適用する前 | `selection-procedure-addition.md` |
 | メインによるWI選定とレーン分け：処理対象の決定の基準を適用する前 | `selection-procedure-candidates.md` |

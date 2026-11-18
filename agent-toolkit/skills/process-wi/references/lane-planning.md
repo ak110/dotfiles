@@ -1,7 +1,7 @@
 # レーン計画の起草と再開
 
 初回選定を受け取ったレーン担当は、まず選定結果の各項目に記載された再開位置を確認する。
-そして、`再開位置`が指定されていないAWI群に対して、`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」を読んでからAWIごとに適用する。
+そして、`再開位置`が指定されていないAWI群に対して、`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」を読んでからAWIごとに適用する。
 選定時の分類や`source`の値では判定せず、各AWIの本文を`atk wi show`で読んで事項ごとに判定する。
 計画が要るAWIだけを1つの計画にまとめて起草し（計画を分割する条件は`lane-planning-drafting.md`「計画の起草」の手順4を参照）、計画が要らないAWIは`lane-planning-no-plan.md`「作成要否と計画なしの準備」で処理する。
 すでに`再開位置`を持つAWIは、`lane-planning-resume.md`「再開」で要求変更の有無を確認する。

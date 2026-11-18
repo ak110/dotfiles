@@ -30,7 +30,7 @@
 ユーザーからの明示的な指示によって追加された依存先が既存レーンに存在する場合は、`run-lanes-addition.md`「処理中に確定した必須是正レーン」に基づいて受け入れ可能かどうかを確認し、同一レーンで受け入れられない項目については待機する。
 
 **8.** 稼働中が1レーンになっても未着手AWIは同じレーンで続ける。
-移管は計画分割と書込所有権の移譲を要し、`agent-toolkit:write-plan/references/plan-file-standards.md`の計画凍結に反するためである。
+移管は計画分割と書込所有権の移譲を要し、`agent-toolkit:atk-mode/references/plan-format.md`の計画凍結に反するためである。
 単独稼働の短縮は選定時の段階設計で図る。
 
 **9.** レーン担当を起動する際は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に定められた入力を渡す。
