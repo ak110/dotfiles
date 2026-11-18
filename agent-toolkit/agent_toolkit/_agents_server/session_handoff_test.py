@@ -331,6 +331,9 @@ def test_prompt_instruction_follows_observed_handoff_record(
     assert f"引き継ぎ記録先: {handoff}（継続）" in prompt
     assert expected in prompt
     assert ("この引き継ぎ記録を最初に読み" in prompt) is (observed == "file")
+    # 記録を読めない場合の指示と、記録の記述との比較の指示が同時に配送されないよう、比較は読めた場合に限る。
+    assert "引き継ぎ記録を読めた場合はその記述とも比べ" in prompt
+    assert "引き継ぎ記録がある場合" not in prompt
 
 
 @pytest.mark.asyncio
