@@ -35,6 +35,15 @@ type Entrypoint = Callable[..., NoReturn]
                 "--fallback-model=opus[1m]",
             ],
         ),
+        (
+            agent_launcher.main_poteto_mode,
+            [
+                "--permission-mode=auto",
+                "--model=opus[1m]",
+                '--settings={"enabledPlugins":{"agent-basics@ak110-dotfiles":false,'
+                '"agent-toolkit@ak110-dotfiles":false,"pstack@pstack-claude":true}}',
+            ],
+        ),
     ],
 )
 def test_model_entrypoint_forwards_arguments_unchanged(

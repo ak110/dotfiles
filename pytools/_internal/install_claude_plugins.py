@@ -21,6 +21,7 @@ from pytools._internal import (
     claude_marketplace,
     claude_plugin_references,
     common,
+    external_pstack,
     external_web_guidance,
     log_format,
     post_apply_cache,
@@ -78,6 +79,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
     external_changed = external_web_guidance.run("claude")
+    external_changed = external_pstack.run() or external_changed
     try:
         changed, recommendations, disable_failed_count, artifact_failed_count, deferred = _install_plugins()
     except RuntimeError as error:

@@ -53,6 +53,7 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete git-justify
 complete -o nospace -o default -o bashdefault -F _python_argcomplete markdown-viewer
 complete -o nospace -o default -o bashdefault -F _python_argcomplete mvdir
 complete -o nospace -o default -o bashdefault -F _python_argcomplete opus
+complete -o nospace -o default -o bashdefault -F _python_argcomplete poteto-mode
 complete -o nospace -o default -o bashdefault -F _python_argcomplete psgrep
 complete -o nospace -o default -o bashdefault -F _python_argcomplete py-imageconverter
 complete -o nospace -o default -o bashdefault -F _python_argcomplete py-pdf-to-image
