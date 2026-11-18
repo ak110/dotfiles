@@ -429,7 +429,7 @@ def respond(
             recorded = "\n".join(line for line in row[column].splitlines() if not line.strip().startswith(RECHECK_LABEL))
             if recorded.strip() != (replacement or reason):
                 raise _ActionableError(
-                    f"{_row_position(matches[0] + 1)}はレビュー担当の判定の行があり、応答を変更できない",
+                    f"{_row_position(matches[0] + 1)}はレビュー担当の有効な判定があり、応答を変更できない",
                     next_action=(
                         "判定が対応不十分・未対応なら、判定の行の末尾の`行<row-id>`が指す行へ応答する。"
                         "判定の後に修正を変えた場合も表の応答は変えない。変えた修正は、次の再レビューが"
@@ -487,7 +487,7 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
     このコマンドが登録し、判定の行へその行の識別子を書く。登録先の行をレビュー担当に選ばせると、
     別の指摘の行を指しても収束と判定できたためである。
     判定の行は消さずに追記し、集計は最も新しいroundの最後の有効な行を使う。
-    記録できるroundは、現在のround（同じtrackの指摘の行と判定の行の最大のround）以上に限る。
+    記録できるroundは、現在のround（同じtrackの指摘の行と有効な判定の最大のround）以上に限る。
     同じroundで記録し直すと、登録済みの未応答の行を書き換える（対応不十分・未対応）か、
     レビュー担当の撤回として対応不要理由を書く（完了）。作業中の表はGit管理外に置かれるため、誤った判定の訂正手段を兼ねる。
     """
