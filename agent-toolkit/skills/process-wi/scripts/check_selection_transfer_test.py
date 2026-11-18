@@ -166,6 +166,31 @@ def test_transfer_moves_added_wi_and_updates_costs(env: tuple[pathlib.Path, path
     assert rows["lane-03"]["実装秒数"] == 300 and rows["lane-03"]["統合状態"] == "未統合"
 
 
+def test_transfer_into_integrated_lane_keeps_existing_items_integrated(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """統合済みレーンへ移すと移管先の行は未統合へ戻り、既存項目は統合済みのまま残って移管できない。"""
+    repo, notes = env
+
+    def edit(data: dict[str, typing.Any]) -> None:
+        next(row for row in data["レーンの所要時間"] if row["レーン"] == "lane-03")["統合状態"] = "統合済み"
+
+    path = _selection(tmp_path, repo, notes, edit=edit)
+    updates = {"lane-02": _COST, "lane-03": _COST}
+    assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates) == 0
+    after = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert {item["WI"]: item.get("統合状態", "未統合") for item in after["選定"]} == {
+        "a.md": "未統合",
+        "b.md": "未統合",
+        "c.md": "未統合",
+        "d.md": "統合済み",
+    }
+    assert next(row for row in after["レーンの所要時間"] if row["レーン"] == "lane-03")["統合状態"] == "未統合"
+    before = path.read_bytes()
+    assert _transfer(path, repo, tmp_path, "d.md", "lane-02", updates) == 2
+    assert path.read_bytes() == before
+
+
 def test_transfer_drops_emptied_source_lane(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
     """移管元が空になるときはそのレーン行を除き、移管先の費用更新だけを求める。"""
     repo, notes = env

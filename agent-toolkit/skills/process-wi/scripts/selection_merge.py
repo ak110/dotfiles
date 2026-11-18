@@ -30,6 +30,16 @@ def _rows(data: dict[str, object], *, costs: bool = False) -> _Rows:
     return typing.cast(_Rows, _selection.lane_costs(data) if costs else _selection.decisions(data))
 
 
+def _pin_integrated_items(items: _Rows, integrated: set[str]) -> None:
+    """統合済みレーンの項目へ統合状態を写す。
+
+    レーン行を未統合へ戻した後も、その時点までに統合した項目を区別できるようにする。
+    """
+    for item in items:
+        if item.get(_selection.LANE_KEY, item.get("lane")) in integrated:
+            item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
+
+
 def _same_lane(lane: str) -> str:
     return lane
 
@@ -102,10 +112,7 @@ def reopen_wis(existing: dict[str, object], names: list[str], *, new_plan: bool 
     targets = {lane_of(by_wi[name]) for name in names}
     if "なし" in targets:
         raise ValueError("レーンが`なし`のWIは元レーンで再開できない")
-    integrated = _selection.integrated_lanes(existing)
-    for item in items:
-        if lane_of(item) in integrated:
-            item.setdefault(_selection.INTEGRATION_STATE_KEY, _selection.INTEGRATED)
+    _pin_integrated_items(items, _selection.integrated_lanes(existing))
     for name in names:
         by_wi[name][_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         if new_plan:
@@ -156,6 +163,7 @@ def transfer_wi(existing: dict[str, object], name: str, destination: str, cost_u
     errors = selection_contract.cost_update_errors(cost_updates, needed)
     if errors:
         raise ValueError("\n".join(errors))
+    _pin_integrated_items(items, _selection.integrated_lanes(result))
     item[_selection.LANE_KEY] = destination
     item.pop(_selection.INTEGRATION_STATE_KEY, None)
     for lane, update in typing.cast(dict[str, dict[str, object]], cost_updates).items():
@@ -292,11 +300,7 @@ def merge_selection(
     def destination(lane: str) -> str:
         return mapping.get(lane, lane)
 
-    # 合流先のレーン行は未統合へ戻るため、統合済みレーンの既存項目へ状態を写して旧項目を区別できるようにする。
-    integrated = _selection.integrated_lanes(existing)
-    for item in first:
-        if item[_selection.LANE_KEY] in integrated:
-            item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
+    _pin_integrated_items(first, _selection.integrated_lanes(existing))
     for item in second:
         item[_selection.LANE_KEY] = destination(str(item[_selection.LANE_KEY]))
         item.pop(_selection.INTEGRATION_STATE_KEY, None)
