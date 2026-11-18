@@ -272,9 +272,27 @@ def test_respond_rejects_changes_after_recheck_verdict(tmp_path: pathlib.Path) -
     with pytest.raises(ValueError):
         table.respond(path, "", "", "", "", "", review_bodies.reason_body("README.md:10の既存契約"), row_id=1)
     assert path.read_bytes() == saved
+    inode = path.stat().st_ino
     assert table.respond(path, "", "", "", "", review_bodies.response_body("直した"), "", row_id=1) == 0
     assert path.read_bytes() == saved
+    assert path.stat().st_ino == inode
     assert table.summary(path, 2).get("recheck_counts") == {"完了": 1, "対応不十分": 0, "未対応": 0}
+
+
+def test_lines_outside_verdict_format_neither_freeze_response_nor_advance_round(tmp_path: pathlib.Path) -> None:
+    """有効な判定でない`再確認:`の行は応答の変更を止めず、現在のroundも進めず、応答を記録し直しても残る。
+
+    形式外の行に加え、登録した行を指さない対応不十分（行2はround 1の指摘で、登録した行ではない）も対象とする。
+    """
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    rows = table.read_rows(path)
+    kept = "再確認: 旧形式の検証メモ\n再確認: ラウンド5 対応不十分\n再確認: ラウンド9 未対応 行2"
+    rows[0][5] = f"{rows[0][5]}\n{kept}"
+    _write_rows(path, rows)
+    assert table.respond(path, "", "", "", "", review_bodies.response_body("書き直した"), "", row_id=1) == 0
+    assert table.read_rows(path)[0][5].endswith(f"書き直した\n採用しない修正方針: なし\n{kept}")
+    assert _cli_add(tmp_path, path, "2", "module.py:30", review_bodies.issue_body("指摘C", "新しい変更")) == 0
 
 
 def _write_rows(path: pathlib.Path, rows: list[list[str]]) -> None:

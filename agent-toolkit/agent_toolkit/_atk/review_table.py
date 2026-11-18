@@ -193,6 +193,9 @@ def _locked_update(
         rows = _read(path) if path.exists() else []
         _validate_rows(rows)
         updated = updater(rows)
+        if path.exists() and updated == rows:
+            # 内容の変わらない更新（判定済みの行への同じ本文の再記録）では、表のファイルを置き換えない。
+            return updated
         _validate_rows(updated)
         _write_atomic(path, updated)
         if verify is not None:
@@ -219,13 +222,30 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
     return _add_rows(_path(str(path)), [row])
 
 
+def _valid_verdicts(rows: list[list[str]], row_id: int) -> list[tuple[int, str, int | None]]:
+    """行に記録された有効な判定を保存順に返す。
+
+    有効な判定は、行のroundより後のroundの判定で、完了か、判定と同じroundへその指摘から登録した行を指す
+    対応不十分・未対応に限る。現在のroundの境界、判定済みの応答の固定、summaryの集計は、この同じ定義を使う。
+    """
+    row = rows[row_id - 1]
+    row_round = int(_normalized(row[0]))
+    return [
+        entry
+        for cell in (row[5], row[6])
+        for entry in recheck_entries(cell)
+        if entry[0] > row_round
+        and (entry[1] == RECHECK_DONE or (entry[2] is not None and _is_carried_row(rows, entry[2], row_id, entry[0], row[1])))
+    ]
+
+
 def _current_round(rows: list[list[str]], track: str) -> int:
-    """同じtrackの指摘の行と判定の行に使われた最大のround（現在のround）を返す。行が無ければ0を返す。"""
+    """同じtrackの指摘の行と有効な判定に使われた最大のround（現在のround）を返す。行が無ければ0を返す。"""
     rounds = [0]
-    for row in rows:
+    for row_id, row in enumerate(rows, start=1):
         if row[1] == track:
             rounds.append(int(_normalized(row[0])))
-            rounds.extend(entry[0] for cell in (row[5], row[6]) for entry in recheck_entries(cell))
+            rounds.extend(entry[0] for entry in _valid_verdicts(rows, row_id))
     return max(rounds)
 
 
@@ -241,7 +261,7 @@ def _require_current_round(rows: list[list[str]], track: str, round_number: int)
             f"同じtrackの現在のroundは{current}で、ラウンド{round_number}へは記録できない",
             next_action=(
                 f"--roundへ現在のレビューのラウンド番号（{current}以上）を指定する。"
-                "現在のroundは指摘の行と判定の行の最大のroundで、前のroundの記録は変えない"
+                "現在のroundは指摘の行と有効な判定の最大のroundで、前のroundの記録は変えない"
             ),
         )
 
@@ -340,8 +360,8 @@ def respond(
     該当行を特定する。該当行が1件でない場合は複合キー解決不能として拒否する。
     対応要否は対応内容と対応不要理由のどちらを渡したかで決まる。双方を渡した場合と
     どちらも渡さなかった場合は`ValueError`で拒否する。
-    `再確認:`の行（レビュー担当の判定）がある行は、記録済みと同じ本文の場合だけ表を変えずに受け付け、
-    それ以外は拒否する。
+    有効な判定（`_valid_verdicts`）がある行は、記録済みと同じ本文の場合だけ表を変えずに受け付け、それ以外は拒否する。
+    有効な判定でない`再確認:`の行は、新しい本文の末尾へ引き継ぐ。
     """
     target = _path(str(path))
     replacement = response.strip()
@@ -403,25 +423,27 @@ def respond(
             )
         row = rows[matches[0]]
         column = 5 if replacement else 6
-        if recheck_lines(row[5]) or recheck_lines(row[6]):
+        if _valid_verdicts(rows, matches[0] + 1):
             # レビュー担当が判定した応答は変えない。変えると、古い判定のまま完了として数えられるため。
             # 同じ本文の再記録は、結果の分からない実行の再試行として表を変えずに受け付ける。
             recorded = "\n".join(line for line in row[column].splitlines() if not line.strip().startswith(RECHECK_LABEL))
             if recorded.strip() != (replacement or reason):
                 raise _ActionableError(
-                    f"{_row_position(matches[0] + 1)}はレビュー担当の判定（{RECHECK_LABEL}の行）があり、応答を変更できない",
+                    f"{_row_position(matches[0] + 1)}はレビュー担当の判定の行があり、応答を変更できない",
                     next_action=(
                         "判定が対応不十分・未対応なら、判定の行の末尾の`行<row-id>`が指す行へ応答する。"
-                        "判定の後に対応を変えた場合は、指摘箇所を`担当の記録:`で始めた行を現在のroundへ"
-                        "`atk review-table add`で追加して記録し、変更を次の再レビューの対象に含める"
+                        "判定の後に修正を変えた場合も表の応答は変えない。変えた修正は、次の再レビューが"
+                        "前回のレビューHEADからの修正差分として確かめる"
                     ),
                 )
             unchanged.append(True)
             expected.append(row[column])
             return rows
-        expected.append(replacement or reason)
+        # 有効な判定でない`再確認:`の行は、応答を記録し直しても消さずに引き継ぐ。
+        body = "\n".join([replacement or reason, *recheck_lines(row[5]), *recheck_lines(row[6])])
+        expected.append(body)
         updated = [*rows]
-        updated[matches[0]] = [*row[:_KEY_COLUMN_COUNT], row[4], replacement, reason]
+        updated[matches[0]] = [*row[:_KEY_COLUMN_COUNT], row[4], body if replacement else "", "" if replacement else body]
         return updated
 
     expected: list[str] = []
@@ -580,8 +602,7 @@ def _is_carried_row(rows: list[list[str]], row_id: int, origin_row_id: int, roun
 def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple[int, list[int], dict[str, int]] | None:
     """現在より前で指摘のある最新ラウンドについて、有効な判定の無い行と判定別の件数を返す。
 
-    有効な判定は、そのラウンドより後で現在のround以前に記録したものに限る。
-    完了は登録した行を指さず、対応不十分・未対応は判定と同じroundへその指摘から登録した行を指すものに限る。
+    有効な判定（`_valid_verdicts`）のうち、照会したround以前に記録したものを数える。
     複数ある場合は最も新しいroundの、保存順で最後の判定を使う。
     """
     candidates = [
@@ -597,17 +618,7 @@ def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple
     for row_id, row in candidates:
         if int(_normalized(row[0])) != latest:
             continue
-        valid = [
-            entry
-            for cell in (row[5], row[6])
-            for entry in recheck_entries(cell)
-            if latest < entry[0] <= round_value
-            and (
-                entry[2] is None
-                if entry[1] == RECHECK_DONE
-                else entry[2] is not None and _is_carried_row(rows, entry[2], row_id, entry[0], track)
-            )
-        ]
+        valid = [entry for entry in _valid_verdicts(rows, row_id) if entry[0] <= round_value]
         if not valid:
             pending.append(row_id)
             continue

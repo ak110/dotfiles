@@ -81,7 +81,10 @@ RECHECK_VERDICTS = ("完了", "対応不十分", "未対応")
 RECHECK_DONE = RECHECK_VERDICTS[0]
 REREGISTERED_CLASSIFICATION = "前回から残存"
 ORIGIN_LABEL = "元の指摘:"
-_RECHECK_LINE_RE = re.compile(rf"{RECHECK_LABEL} ラウンド([1-9][0-9]*) ({'|'.join(RECHECK_VERDICTS)})(?: 行([1-9][0-9]*))?")
+# 判定の行は`recheck`が書く形式に限る。完了は登録した行を持たず、対応不十分・未対応は登録した行を必ず持つ。
+_RECHECK_LINE_RE = re.compile(
+    rf"{RECHECK_LABEL} ラウンド([1-9][0-9]*) (?:({RECHECK_DONE})|({'|'.join(RECHECK_VERDICTS[1:])}) 行([1-9][0-9]*))"
+)
 _ORIGIN_LINE_RE = re.compile(rf"{ORIGIN_LABEL} 行([1-9][0-9]*)")
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
@@ -329,8 +332,10 @@ def recheck_entries(body: str) -> list[tuple[int, str, int | None]]:
     for line in body.splitlines():
         matched = _RECHECK_LINE_RE.fullmatch(line.strip())
         if matched is not None:
-            row = matched.group(3)
-            entries.append((int(matched.group(1)), matched.group(2), int(row) if row else None))
+            if matched.group(2):
+                entries.append((int(matched.group(1)), matched.group(2), None))
+            else:
+                entries.append((int(matched.group(1)), matched.group(3), int(matched.group(4))))
     return entries
 
 
@@ -362,7 +367,10 @@ def withdrawn_reason(origin_row_id: int, round_value: int) -> str:
 
 
 def recheck_lines(body: str) -> list[str]:
-    """セルの`再確認:`で始まる行を保存順に返す。応答を記録し直すときに、レビュー担当の判定を消さず引き継ぐために使う。"""
+    """セルの`再確認:`で始まる行を保存順に返す。
+
+    応答を記録し直すときに、有効な判定でない行を消さず引き継ぎ、判定済みの行では応答の本文だけを比べるために使う。
+    """
     return [line.strip() for line in body.splitlines() if line.strip().startswith(RECHECK_LABEL)]
 
 
