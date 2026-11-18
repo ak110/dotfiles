@@ -219,21 +219,6 @@ def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
             active = _active_users(paths)
             if active:
                 raise RuntimeError("使用中の環境と実体を保持しました: " + ", ".join(active))
-            # Node本体を削除する前に、npmの外部global prefixも対象にする。
-            npm = shutil.which("npm")
-            if npm is not None:
-                _command(
-                    [
-                        str(npm),
-                        "uninstall",
-                        "--global",
-                        "opencode-ai",
-                        "@anthropic-ai/claude-code",
-                        "@openai/codex",
-                        "@google/gemini-cli",
-                        "aws-cdk",
-                    ]
-                )
         mise = setup_mise.find_mise_binary()
         if mise is None:
             if minimal:
@@ -247,6 +232,26 @@ def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
         installed = json.loads(result.stdout)
         if not isinstance(installed, dict):
             raise ValueError("mise ls --installed --jsonの出力がobjectではありません")
+        # Node本体を削除する前に、npmの外部global prefixも対象にする。
+        # minimalの設定はNodeの版を持たずnpmのshimが失敗するため、導入済みの版を指定して実行する。
+        if minimal:
+            for entry in installed.get("node", []):
+                _command(
+                    [
+                        str(mise),
+                        "exec",
+                        f"node@{entry['version']}",
+                        "--",
+                        "npm",
+                        "uninstall",
+                        "--global",
+                        "opencode-ai",
+                        "@anthropic-ai/claude-code",
+                        "@openai/codex",
+                        "@google/gemini-cli",
+                        "aws-cdk",
+                    ]
+                )
         for tool in sorted(excluded):
             short = tool.split(":", 1)[-1].split("/")[-1]
             if tool in installed or short in installed:

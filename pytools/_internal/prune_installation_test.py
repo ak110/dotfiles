@@ -205,8 +205,8 @@ def test_shared_runtime_root_guard_applies_before_child_cleanup(tmp_path, monkey
 
 
 @pytest.mark.parametrize(("mode", "npm_fails"), [("minimal", False), ("minimal", True), ("full", False)])
-def test_mise_only_npm_prune_keeps_order_and_mode_boundary(tmp_path, monkeypatch, mode, npm_fails):
-    """npmの唯一の提供元を使い、Node削除前の順序・失敗停止・full除外を保つ。"""
+def test_npm_prune_uses_installed_node_without_configured_version(tmp_path, monkeypatch, mode, npm_fails):
+    """minimalの設定はNodeの版を持たないため、導入済みの版のnpmでNode削除前に整理し、失敗時は削除へ進まない。"""
     normal_lookup = prune_installation.shutil.which
     real_resolve = common.resolve_executable
     _, calls = _prepare(tmp_path, monkeypatch, mode)
@@ -221,28 +221,38 @@ def test_mise_only_npm_prune_keeps_order_and_mode_boundary(tmp_path, monkeypatch
     monkeypatch.setattr(common, "resolve_executable", lambda name: Path("/fixture/uv") if name == "uv" else real_resolve(name))
     monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
     original_run = common.run_subprocess
+    uninstall = ["/fixture/mise", "exec", "node@24", "--", "npm", "uninstall", "--global"]
+    node_removal = ["/fixture/mise", "uninstall", "--all", "node"]
 
     def execute(command, **kwargs):
-        if command[0] == str(npm) and npm_fails:
+        if command[0] == str(npm) and mode == "minimal":
+            # aws.tqzh.tkのminimalで観測したshimの応答。設定がNodeの版を持たないため、どの引数でも失敗する。
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 1, "", "mise ERROR No version is set for shim: npm")
+        if command[: len(uninstall)] == uninstall and npm_fails:
             calls.append(command)
             return subprocess.CompletedProcess(command, 3, "", "npm uninstall failed")
+        if command[1:] == ["reshim", "--force"] and node_removal in calls:
+            # miseはNodeを削除した後のreshimでnpmのshimを除く。
+            npm.unlink()
         return original_run(command, **kwargs)
 
     monkeypatch.setattr(common, "run_subprocess", execute)
     result = prune_installation.run()
+    uninstalls = [index for index, command in enumerate(calls) if command[: len(uninstall)] == uninstall]
     if mode == "full":
         assert [str(npm), "cache", "verify"] in calls
         assert result.failure is None
+        assert not uninstalls
+    elif npm_fails:
+        assert result.failure is not None
+        assert "npm uninstall failed" in result.failure
+        assert len(uninstalls) == 1
+        assert node_removal not in calls
     else:
-        assert calls[0][:3] == [str(npm), "uninstall", "--global"]
-        if npm_fails:
-            assert len(calls) == 1
-            assert result.failure is not None
-            assert "npm uninstall failed" in result.failure
-        else:
-            assert result.failure is None
-            assert calls[1][:3] == ["/fixture/mise", "ls", "--installed"]
-            assert ["/fixture/mise", "uninstall", "--all", "node"] in calls
+        assert result.failure is None
+        assert len(uninstalls) == 1
+        assert uninstalls[0] < calls.index(node_removal)
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
