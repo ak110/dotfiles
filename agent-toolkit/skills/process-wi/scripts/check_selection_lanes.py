@@ -89,6 +89,24 @@ _NEXT_OVERLAP_SAME_STAGE = "定義が交わる2つのレーンを同じレーン
 _NEXT_OVERLAP_MISSING = "共通パスごとに双方の定義と判定を`レーン間の重なり`へ1件記録する"
 
 
+_NEXT_OVERLAP_MISSING_MERGE = (
+    "表示のレーン名は合流後の名前とする。括弧内の未判定の組ごとに、追加YAMLの`レーン間の重なり`へ、"
+    "追加WIの側を追加YAMLのレーン名（仮名）、既存WIの側を既存のレーン名とし、括弧内の名前で共通パスと双方の定義と判定を記録する。"
+    "既存の記録は合流前の既存WIどうしの組だけを判定済みとして扱う"
+)
+
+
+_NEXT_OVERLAP_MISSING_TRANSFER = (
+    "移管で組が変わる共通パスは移管前の記録を除いている。括弧内の組を全て判定し、移管後のレーン名で共通パスと双方の定義と判定を1件に記録する。"
+    "その記録を`--extend-write-targets`のYAMLの`レーン間の重なり`へ置き、同じ移管操作と組で再実行する"
+)
+
+
+def missing_overlap_reason(left: str, right: str, path: str) -> str:
+    """重複パスの記録不足の理由。合流・移管の案内が同じ違反を鍵で特定できるよう、表記をここに集める。"""
+    return f"{left}と{right}: 重複パスの記録不足: {path}"
+
+
 _NEXT_PRIOR_UNFOUNDED = "`先行レーン`から、別段階の書込予定の重複とその連鎖に基づかないレーンを除く"
 
 
@@ -406,7 +424,7 @@ def _check_lane_overlaps(
             continue
         errors.append(Violation(f"{label}: 同じ段階で定義が交わる", next_action=_NEXT_OVERLAP_SAME_STAGE))
     for left, right, path in sorted(expected - seen):
-        errors.append(Violation(f"{left}と{right}: 重複パスの記録不足: {path}", next_action=_NEXT_OVERLAP_MISSING))
+        errors.append(Violation(missing_overlap_reason(left, right, path), next_action=_NEXT_OVERLAP_MISSING))
     for lane, (_, prior) in stages.items():
         if lane in integrated:
             continue

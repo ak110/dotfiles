@@ -74,6 +74,8 @@ from check_selection_lanes import (
     _NEXT_LANE_MODEL,
     _NEXT_OVERLAP_DUPLICATE,
     _NEXT_OVERLAP_MISSING,
+    _NEXT_OVERLAP_MISSING_MERGE,
+    _NEXT_OVERLAP_MISSING_TRANSFER,
     _NEXT_OVERLAP_SAME_DEFINITION,
     _NEXT_OVERLAP_SAME_STAGE,
     _NEXT_OVERLAP_SURPLUS,
@@ -90,6 +92,7 @@ from check_selection_lanes import (
     _check_lane_stages,
     _check_resume_plan_lanes,
     _completion_estimate,
+    missing_overlap_reason,
     process_estimate_warnings,
 )
 from check_selection_loading import _NEXT_SOURCE_MISMATCH, _check_allocation_sources, load_selection
@@ -102,7 +105,14 @@ from check_selection_norms import (
     load_target_seconds,
 )
 from check_selection_paths import clear_caches, reflected_paths
-from selection_merge import extend_write_targets, merge_selection, reopen_wis, transfer_wi
+from selection_merge import (
+    extend_write_targets,
+    merge_rerecord_pairs,
+    merge_selection,
+    reopen_wis,
+    transfer_rerecord_pairs,
+    transfer_wi,
+)
 
 from agent_toolkit._agents_server import admission as _admission
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
@@ -123,6 +133,22 @@ _NEXT_SINGLE_STAGE = (
 
 
 _NEXT_RERUN = "直した後に同じコマンドで確かめる"
+
+
+def _guide_rerecord(errors: list[Violation], pairs: dict[tuple[str, str, str], list[str]], action: str) -> list[Violation]:
+    """記録不足の違反へ、記録し直す組と合流・移管に合う記録の書き先を添える。
+
+    汎用の案内どおり最終レーン名で追加YAMLへ記録すると、既存の組の判定と解釈されて同じ拒否が返るため置き換える。
+    """
+    reasons = {missing_overlap_reason(*key): values for key, values in pairs.items()}
+    guided: list[Violation] = []
+    for error in errors:
+        if error.next_action == _NEXT_OVERLAP_MISSING:
+            listed = reasons.get(error.reason)
+            reason = f"{error.reason}（未判定の組: {'、'.join(listed)}）" if listed else error.reason
+            error = Violation(reason, next_action=action)
+        guided.append(error)
+    return guided
 
 
 def check(
@@ -505,6 +531,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.lane_cost_updates is not None and args.merge is None and args.transfer_wi is None:
         parser.error("--lane-cost-updatesは--merge・--lane-map・--outputまたは--transfer-wiとともに指定する")
     body_wis = set(args.body_wi) if args.body_wi is not None else None
+    # 合流・移管で記録不足になった鍵へ、記録し直す組と記録の書き先を添える案内。
+    rerecord: tuple[dict[tuple[str, str, str], list[str]], str] | None = None
     try:
         work_dir = _resolve_work_dir(args.work_dir)
         selection = load_selection(args.selection_file, candidate_file=args.candidate_file if args.merge is None else None)
@@ -539,6 +567,8 @@ def main(argv: list[str] | None = None) -> int:
                         "`レーン間の重なり`へ共通パス・双方の定義・判定を置く"
                     ),
                 ) from error
+        if args.transfer_wi is not None:
+            rerecord = transfer_rerecord_pairs(selection), _NEXT_OVERLAP_MISSING_TRANSFER
         if args.mark_integrated is not None:
             rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
             unknown = set(args.mark_integrated) - {str(row[_selection.LANE_KEY]) for row in rows}
@@ -561,7 +591,9 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if estimate_errors:
                         raise ValueError("\n".join(error.reason for error in estimate_errors))
-                selection = merge_selection(selection, addition, mapping, updates)
+                merged = merge_selection(selection, addition, mapping, updates)
+                rerecord = merge_rerecord_pairs(selection, addition, merged), _NEXT_OVERLAP_MISSING_MERGE
+                selection = merged
             except (OSError, ValueError) as error:
                 raise InputError(
                     str(error), next_action="追加入力・レーン対応JSON・費用更新JSONを直して同じ統合操作を再実行する"
@@ -581,6 +613,8 @@ def main(argv: list[str] | None = None) -> int:
     except InputError as error:
         _next_action.report(error.reason, next_action=error.next_action)
         return 2
+    if rerecord is not None:
+        errors = _guide_rerecord(errors, *rerecord)
     for error in errors:
         print(error.reason, file=sys.stderr)
     if errors:

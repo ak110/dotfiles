@@ -136,6 +136,45 @@ def _carry_overlaps(sources: collections.abc.Sequence[tuple[_Rows, _Rows]], item
     )
 
 
+def _rerecord_pairs(items: _Rows, judged: set[_Pair], labels: dict[str, str]) -> dict[_RecordKey, list[str]]:
+    """更新後の鍵ごとに、`judged`に無い未統合のWIの組を、記録に書くレーン名（`labels`）を添えた表記で返す。"""
+    settled = {
+        str(item[_selection.WI_KEY]) for item in items if item.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
+    }
+    pairs: dict[_RecordKey, list[str]] = collections.defaultdict(list)
+    for pair, key in _pair_keys(items).items():
+        if pair not in judged and not pair[0] & settled:
+            pairs[key].append("と".join(f"{wi}（{labels[wi]}）" for wi in sorted(pair[0])))
+    return {key: sorted(values) for key, values in pairs.items()}
+
+
+def merge_rerecord_pairs(
+    existing: dict[str, object], added: dict[str, object], merged: dict[str, object]
+) -> dict[_RecordKey, list[str]]:
+    """合流後の鍵ごとに、合流前のどの記録も判定していない組を、追加YAMLの記録に書くレーン名を添えて返す。
+
+    合流前の配置は`merge_selection`と同じく、追加分を仮名、既存分を既存レーンの名前に置く。
+    """
+    placed = [*_rows(added), *_rows(existing)]
+    judged: set[_Pair] = set()
+    for records, items in (
+        (existing.get(_selection.LANE_OVERLAPS_KEY, []), _rows(existing)),
+        (added.get(_selection.LANE_OVERLAPS_KEY, []), placed),
+    ):
+        recorded = {_record_key(record) for record in typing.cast(_Rows, records)}
+        judged.update(pair for pair, key in _pair_keys(items).items() if key in recorded)
+    return _rerecord_pairs(_rows(merged), judged, _lanes(placed))
+
+
+def transfer_rerecord_pairs(transferred: dict[str, object]) -> dict[_RecordKey, list[str]]:
+    """移管後の鍵ごとに、記録し直す全ての組を移管後のレーン名を添えて返す。
+
+    記録不足の鍵は移管前の記録ごと除いているため、その鍵の全ての組を1件の記録で判定し直す。
+    """
+    items = _rows(transferred)
+    return _rerecord_pairs(items, set(), _lanes(items))
+
+
 def _costs(data: dict[str, object]) -> _Rows:
     rows = _rows(data, costs=True)
     lanes = {str(item[_selection.LANE_KEY]) for item in _rows(data)} - {"なし"}
