@@ -36,9 +36,8 @@ _STOP_TIMEOUT = 5.0
 def _child_env(root_session_id: str | None) -> dict[str, str]:
     """委譲先の印とManagerが所有するrootを配送する。"""
     env = dict(runtime_environment.environment())
-    if runtime_environment.current() is not None:
-        inherited_venv.strip_inherited_venv(env)
-        mcp_environment.strip_conversation_context(env)
+    inherited_venv.strip_inherited_venv(env)
+    mcp_environment.strip_conversation_context(env)
     env[_delegated_session.DELEGATED_SESSION_ENV] = "1"
     if root_session_id is not None:
         env[_delegated_session.OWNER_SESSION_ENV] = root_session_id

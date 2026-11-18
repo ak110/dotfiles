@@ -28,7 +28,7 @@ from agent_toolkit._agents_server.file_operations import finish_task, run_file_o
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, append_bounded, utc_now
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import inherited_venv, plugin_environment, process_tree, runtime_environment, windows_job
+from agent_toolkit._common import plugin_environment, process_tree, runtime_environment, windows_job
 
 if typing.TYPE_CHECKING:
     import psutil
@@ -117,7 +117,6 @@ class JsonRpcProcess:
         self._initialization_stage = "starting_process"
         try:
             environment = plugin_environment.cli_environment(plugin_roots.SERVER_PLUGIN_ROOT, child_environment.inherited())
-            inherited_venv.strip_inherited_venv(environment)
             environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
             # 委譲先のhookが軽量起動を判別する。turnを実行しない照会用の接続は起動区分を持たない。
             environment.pop(_delegated_session.LAUNCH_KIND_ENV, None)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping, MutableMapping
 
 from agent_toolkit._agents_server import logging_config
@@ -25,12 +24,15 @@ def prepare(environment: MutableMapping[str, str]) -> None:
 
 
 def inherited(environment: Mapping[str, str] | None = None) -> dict[str, str]:
-    """inherit接続とCodexへ、隔離前と同じ接続値を渡す。"""
-    if runtime_environment.current() is not None:
-        result = dict(runtime_environment.environment() if environment is None else environment)
-        inherited_venv.strip_inherited_venv(result)
-        mcp_environment.strip_conversation_context(result)
-        result.pop(delegated_session.HANDOFF_PATH_ENV, None)
-        result.pop(logging_config.LAUNCH_RECORD_ENV, None)
-        return result
-    return {**_INHERITED, **(os.environ if environment is None else environment)}
+    """inherit接続とCodexへ、隔離前と同じ接続値を渡す。
+
+    呼出元contextの有無によらず、起動層が設定した共有依存環境と会話contextを子へ渡さない。
+    """
+    source = runtime_environment.environment() if environment is None else environment
+    # 起動時に外した接続値は、呼出元contextが無い場合だけ補う。呼出元の環境は自身の接続値を持つ。
+    result = dict(source) if runtime_environment.current() is not None else {**_INHERITED, **source}
+    inherited_venv.strip_inherited_venv(result)
+    mcp_environment.strip_conversation_context(result)
+    result.pop(delegated_session.HANDOFF_PATH_ENV, None)
+    result.pop(logging_config.LAUNCH_RECORD_ENV, None)
+    return result
