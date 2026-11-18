@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import select
 import socket
 import sys
 import time
@@ -187,6 +188,16 @@ def _proxy() -> None:
             record = _read(_thread_file(params["threadId"]))
             result = {"data": list(reversed(record["turns"]))[:1], "nextCursor": None}
         elif method == "mcpServerStatus/list":
+            if _MODE == "tui-reset" and params.get("cursor") is None:
+                # 起動直後の子孫復元の最中に、通常TUIが通知を読み残して接続をリセットし終了する。
+                status = {"method": "mcpServer/startupStatus/updated", "params": {"name": "agents_server", "status": "ready"}}
+                wire.send(status)
+                deadline = time.monotonic() + 5
+                while not (_ROOT / "tui-reset").exists():
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("通常TUIが接続をリセットしなかった")
+                    time.sleep(0.01)
+                wire.send(status)
             result = (
                 {"data": [], "nextCursor": "agents"}
                 if params.get("cursor") is None
@@ -350,6 +361,14 @@ def _actor(arguments: list[str]) -> int:
                 },
             )
             thread = result["thread"]["id"]
+            if _MODE == "tui-reset":
+                # 届いた通知を読まずに閉じ、OSが接続をリセットする。通常TUIは切断の後に端末を戻してから終了する。
+                select.select([connection], [], [], 5)
+                stream.close()
+                connection.close()
+                (_ROOT / "tui-reset").touch()
+                time.sleep(0.5)
+                return 0
             turn = call(
                 "turn/start",
                 {

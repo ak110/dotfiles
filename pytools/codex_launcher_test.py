@@ -300,6 +300,23 @@ async def test_windows_daemon_record_without_process_identity_keeps_recovery(pee
 @pytest.mark.cpu_limit(
     3.0,
     reason=(
+        "子孫の復元中に通常TUIが接続をリセットして終了しても、自動復旧の失敗として報告しない。"
+        + " 実CLIのプロセス境界で終了状態と標準エラーを確認する。"
+    ),
+)
+@pytest.mark.asyncio
+async def test_tui_connection_reset_on_exit_keeps_exit_status(peer: _Peer) -> None:
+    """子孫の復元中に通常TUIが接続をリセットして終了しても、自動復旧の失敗として報告しない。"""
+    code, stdout, stderr = await peer.run(
+        ["--cd", str(peer.work), "--config", 'model_reasoning_effort="medium"', "owned work"], mode="tui-reset"
+    )
+    assert code == 0, (stdout, stderr)
+    assert "自動復旧に失敗" not in stderr
+
+
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
         "--cdを省いた起動でも、管理daemonのcwdではなく起動したディ"
         + "レクトリで会話を始める。 実CLIのプロセス境界で引数/入力/終了状態"
         + "と同じ仕事の再開を確認する。Windows同群CPU最大1.313秒。"
