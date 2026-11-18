@@ -12,6 +12,9 @@ from check_selection_lanes import _resume_plan_id, overlapping_pairs
 from agent_toolkit._plan import selection as _selection
 
 _Rows = list[dict[str, object]]
+# 重なりの記録の鍵（昇順のレーン名の組と共通パス）と、その鍵で重なるWIの組と共通パス。
+_RecordKey = tuple[str, str, str]
+_Pair = tuple[frozenset[str], str]
 _SECONDS = {"implementation_seconds": "実装秒数", "integration_seconds": "統合秒数"}
 _NORM_SPEC_KEY = "プロジェクト規範の指定"
 # 追加入力の`選定`の各項目が持てる欄。追加操作は「自身の追記で成立し得る全体検査の違反を、同じ追加入力で解消できる」
@@ -37,7 +40,8 @@ def _pin_integrated_items(items: _Rows, integrated: set[str]) -> None:
     """
     for item in items:
         if item.get(_selection.LANE_KEY, item.get("lane")) in integrated:
-            item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
+            # 明示的に未統合の項目は、統合済みのレーン行でも未統合の作業として残す。
+            item.setdefault(_selection.INTEGRATION_STATE_KEY, _selection.INTEGRATED)
 
 
 def _same_lane(lane: str) -> str:
@@ -46,11 +50,10 @@ def _same_lane(lane: str) -> str:
 
 def _retarget_overlaps(
     records: collections.abc.Iterable[tuple[dict[str, object], collections.abc.Callable[[str], str]]],
-    keep: collections.abc.Callable[[tuple[str, str, str]], bool] = lambda _key: True,
 ) -> _Rows:
     """重なりの記録を組ごとの写像でレーン名を付け替えて合わせる。
 
-    同じレーン同士になった記録と`keep`が偽を返す組は除き、同じレーンの組と共通パスの記録は双方の定義を合わせて1件にする。
+    同じレーン同士になった記録は除き、同じレーンの組と共通パスの記録は双方の定義を合わせて1件にする。
     """
     overlaps: dict[tuple[str, str, str], dict[str, object]] = {}
     for record, rename in records:
@@ -62,8 +65,6 @@ def _retarget_overlaps(
             left, right = right, left
             definitions = definitions[::-1]
         key = (left, right, str(record["共通パス"]))
-        if not keep(key):
-            continue
         if key not in overlaps:
             overlaps[key] = {
                 "レーン1": left,
@@ -79,6 +80,48 @@ def _retarget_overlaps(
         for field, values in zip(("レーン1の定義", "レーン2の定義"), definitions, strict=True):
             target[field] = list(dict.fromkeys([*typing.cast(list[str], target[field]), *typing.cast(list[str], values)]))
     return list(overlaps.values())
+
+
+def _record_key(record: dict[str, object]) -> _RecordKey:
+    left, right = sorted((str(record["レーン1"]), str(record["レーン2"])))
+    return left, right, str(record["共通パス"])
+
+
+def _pair_keys(items: _Rows) -> dict[_Pair, _RecordKey]:
+    """別レーンで書込対象を共有するWIの組と共通パスごとに、それを判定する重なりの記録の鍵を返す。"""
+    return {
+        (frozenset((str(left[_selection.WI_KEY]), str(right[_selection.WI_KEY]))), path): (*lanes, path)
+        for left, right, lanes, paths in overlapping_pairs(items)
+        for path in paths
+    }
+
+
+def _carry_overlaps(
+    records: _Rows, before: dict[_Pair, _RecordKey], after: dict[_Pair, _RecordKey], moved: collections.abc.Callable[[str], str]
+) -> _Rows:
+    """移管の前後でWIの組をそのまま写せる重なりの記録だけを、移管後のレーン名で残す。
+
+    移管後の鍵の組が、記録を持つ移管前の鍵の組の全体からちょうど成る場合だけ記録を写す。
+    組が加わる鍵（移管元に残るWIと移したWIの組など）は判定していない組を含み、
+    組が分かれる・消える鍵の記録はどのWIの定義かを区別できないため、いずれも除いて全体検査の記録不足として再判定させる。
+    """
+    sources: dict[_RecordKey, set[_Pair]] = collections.defaultdict(set)
+    targets: dict[_RecordKey, set[_Pair]] = collections.defaultdict(set)
+    for pair, key in before.items():
+        sources[key].add(pair)
+    for pair, key in after.items():
+        targets[key].add(pair)
+    recorded = {_record_key(record) for record in records}
+    renamed: dict[_RecordKey, bool] = {}
+    for target, pairs in targets.items():
+        if not all(before.get(pair) in recorded for pair in pairs):
+            continue
+        origins = {before[pair] for pair in pairs}
+        if set().union(*(sources[origin] for origin in origins)) == pairs:
+            renamed.update((origin, set(origin[:2]) != set(target[:2])) for origin in origins)
+    return _retarget_overlaps(
+        (record, moved if renamed[key] else _same_lane) for record in records if (key := _record_key(record)) in renamed
+    )
 
 
 def _costs(data: dict[str, object]) -> _Rows:
@@ -133,7 +176,7 @@ def transfer_wi(existing: dict[str, object], name: str, destination: str, cost_u
     所要時間の更新は、移した後に残る移管元と移管先の最終値を受け取る。
     移管元が空になる場合は、そのレーン行を除く。
     移管元は移したWIの`移管元レーン`へ残し、累計のレーン上限に数える。
-    レーン間の重なりの記録は移管先へ付け替え、同じレーン同士・移管後に重ならない組の記録を除く。
+    レーン間の重なりの記録は、WIの組がそのまま写るものだけを移管先へ付け替え、他は除いて再判定させる。
     """
     result = copy.deepcopy(existing)
     items = _rows(result)
@@ -166,6 +209,7 @@ def transfer_wi(existing: dict[str, object], name: str, destination: str, cost_u
     if errors:
         raise ValueError("\n".join(errors))
     _pin_integrated_items(items, _selection.integrated_lanes(result))
+    before = _pair_keys(items)
     item[_selection.LANE_KEY] = destination
     item.pop(_selection.INTEGRATION_STATE_KEY, None)
     history = typing.cast(list[str], item.get(_selection.TRANSFERRED_FROM_KEY, []))
@@ -181,14 +225,8 @@ def transfer_wi(existing: dict[str, object], name: str, destination: str, cost_u
     def moved(lane: str) -> str:
         return destination if lane == source else lane
 
-    # 移管元に残るWIがあると、移管元の記録のどの重なりを移したWIが作ったかを記録から区別できない。
-    # 移管元と移管先の両方へ記録を残し、移管後の書込対象で重ならない組を除く。
-    renames = [moved, _same_lane] if remains else [moved]
-    shared = {(*lanes, path) for *_, lanes, paths in overlapping_pairs(items) for path in paths}
     records = typing.cast(_Rows, result.get(_selection.LANE_OVERLAPS_KEY, []))
-    result[_selection.LANE_OVERLAPS_KEY] = _retarget_overlaps(
-        [(record, rename) for record in records for rename in renames], keep=shared.__contains__
-    )
+    result[_selection.LANE_OVERLAPS_KEY] = _carry_overlaps(records, before, _pair_keys(items), moved)
     result.pop("decisions", None)
     result.pop("lane_costs", None)
     result[_selection.DECISIONS_KEY] = items
