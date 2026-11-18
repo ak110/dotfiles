@@ -231,6 +231,8 @@ class ClaudeServerManager(ClaudeStream):
         if existing_session is not None:
             # バックグラウンドタスクは止めた旧CLIプロセスに属し、プロセスの終了で止まる。旧プロセスは受信列へ
             # 終了を通知せず、新しいプロセスの`stopped`の通知は初期化メッセージより前に届くため、ここで追跡を終える。
+            # 観測根拠は`docs/development/audit-records-agents-server.md`の
+            # 「agent-toolkit/agent_toolkit/_agents_server/claude.py：CLIプロセスの終了とバックグラウンドタスクの通知：2026年11月19日」にある。  # noqa: E501
             existing_session.live_tasks.clear()
             begin_reply(existing_session, preserve_waits=True)
         selected = connection_kind
