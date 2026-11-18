@@ -43,6 +43,10 @@ _CAUSE_RECORD_LINE = re.compile(
 
 _EMPTY_TEXT_CHARS = " \t\u3000*_`~"
 
+# 前の版の初動の短い記録（`現象:`・`期待:`・`直接原因と根拠:`・`影響:`・`処置:`・`再検証:`など）と重なる行頭語。
+# これ以外の行頭語（`原因`・`広がり`・`確認`など）を持つ単位だけを、現行の形で書いた記録として検査する。
+_PREVIOUS_SHORT_RECORD_LABELS = frozenset({"期待", "処置"})
+
 
 class CauseRecordLine(NamedTuple):
     """原因分析の記録の1行。`text`は行頭語と区切りの後ろの本文で、前後の空白と強調記号を除いた値である。"""
@@ -101,13 +105,14 @@ def _cause_record_units(content: str) -> list[_CauseRecordUnit]:
 
 
 def _is_legacy_unit(unit: _CauseRecordUnit, *, accept_short_record: bool) -> bool:
-    """廃止した表を持つ単位か、表も行頭語の行も持たない旧来の短い記録である単位を旧形式と判定する。"""
+    """廃止した表を持つ単位か、表も現行だけの行頭語の行も持たない旧来の短い記録である単位を旧形式と判定する。"""
     tables = extract_tables(unit.lines)
     if any(table.header in PLAN_LEGACY_BUG_TABLE_HEADERS for table in tables):
         return True
     if not accept_short_record or tables:
         return False
-    return not _match_record_lines(unit.lines) and any(
+    labels = {line.label for line in _match_record_lines(unit.lines)}
+    return labels <= _PREVIOUS_SHORT_RECORD_LABELS and any(
         line.strip() and not line.lstrip().startswith("#") for _lineno, line in unit.lines
     )
 
@@ -138,8 +143,8 @@ def cause_record_errors(content: str, *, accept_legacy: bool = False) -> list[st
     H3がある場合の診断には、単位の所在を前置する。
 
     `accept_legacy`が偽（新規作成と、原因分析を変える編集）では、廃止した表で書いた単位を拒否する。
-    真（保存済みの計画の読み取り）では、廃止した表を持つ単位と、表も行頭語の行も持たない旧来の短い記録を、
-    表の構成や記入内容を問わず受理する。
+    真（保存済みの計画の読み取り）では、廃止した表を持つ単位と、表も現行だけの行頭語の行も持たない旧来の短い記録を、
+    表の構成や記入内容を問わず受理する。前の版の初動の短い記録は`期待:`と`処置:`の行を持つため、この2語だけでは現行の形と扱わない。
     記入内容の妥当性は検収が判断し、ここでは行の有無と本文の有無だけを確かめる。
     """
     errors: list[str] = []

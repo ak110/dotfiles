@@ -109,6 +109,8 @@ BUG_VARIANT_LEGACY_STANDALONE: str = "legacy_standalone"
 """原因分析表を持たない、より前の世代の調査表。読み取り互換専用。"""
 BUG_VARIANT_LEGACY_SHORT: str = "legacy_short"
 """表も行頭語の行も持たない旧来の短い記録。読み取り互換専用。"""
+BUG_VARIANT_LEGACY_SHORT_LABELED: str = "legacy_short_labeled"
+"""前の版の初動の短い記録。`期待:`と`処置:`の行が現行の行頭語と重なる。読み取り互換専用。"""
 
 
 def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRENT) -> str:
@@ -118,6 +120,10 @@ def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRE
         BUG_VARIANT_LEGACY_TABLES: legacy_cause_tables(),
         BUG_VARIANT_LEGACY_STANDALONE: rows_table(LEGACY_STANDALONE_TABLE_ROWS, BUG_FILLER),
         BUG_VARIANT_LEGACY_SHORT: "誤った設定値を訂正し、期待した値で再検証した。",
+        BUG_VARIANT_LEGACY_SHORT_LABELED: (
+            "- 現象: 既定の設定で起動が止まる。\n- 期待: 既定の設定で起動する。\n- 直接原因と根拠: 設定値の定義が古い。\n"
+            "- 影響: 起動できない。\n- 処置: 設定値を訂正した。\n- 再検証: 既定の設定で起動を確かめた。"
+        ),
     }[variant]
     return f"# {title}\n\n### {BUG_UNIT_H3}\n\n{body}\n"
 

@@ -91,6 +91,7 @@ def test_cause_record_checks_each_h3_unit() -> None:
         _plan_fixture.BUG_VARIANT_LEGACY_TABLES,
         _plan_fixture.BUG_VARIANT_LEGACY_STANDALONE,
         _plan_fixture.BUG_VARIANT_LEGACY_SHORT,
+        _plan_fixture.BUG_VARIANT_LEGACY_SHORT_LABELED,
     ],
 )
 def test_saved_legacy_record_is_accepted_only_for_reading(variant: str) -> None:
@@ -99,8 +100,17 @@ def test_saved_legacy_record_is_accepted_only_for_reading(variant: str) -> None:
     assert not plan_sections.check_bug_file_structure(content)
     assert plan_sections.has_legacy_cause_record(content)
     errors = plan_sections.cause_record_errors(content)
-    assert any("`期待:`の行が無い" in error for error in errors), errors
-    assert any("廃止した表" in error for error in errors) is (variant != _plan_fixture.BUG_VARIANT_LEGACY_SHORT)
+    assert any("`原因:`の行が無い" in error for error in errors), errors
+    assert any("廃止した表" in error for error in errors) is (
+        variant in {_plan_fixture.BUG_VARIANT_LEGACY_TABLES, _plan_fixture.BUG_VARIANT_LEGACY_STANDALONE}
+    )
+
+
+def test_incomplete_current_record_is_rejected_for_reading() -> None:
+    """現行だけが持つ行頭語を含む記録は旧形式として扱わず、読み取りでも欠けた行を診断する。"""
+    content = _plan_fixture.bug_file().replace("広がり", "近傍")
+    assert not plan_sections.has_legacy_cause_record(content)
+    assert any("`広がり:`の行が無い" in error for error in plan_sections.check_bug_file_structure(content))
 
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"

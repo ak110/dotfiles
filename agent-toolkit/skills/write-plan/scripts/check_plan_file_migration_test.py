@@ -346,6 +346,7 @@ def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[path
         _plan_fixture.BUG_VARIANT_LEGACY_TABLES,
         _plan_fixture.BUG_VARIANT_LEGACY_STANDALONE,
         _plan_fixture.BUG_VARIANT_LEGACY_SHORT,
+        _plan_fixture.BUG_VARIANT_LEGACY_SHORT_LABELED,
     ],
 )
 def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathlib.Path, str], variant: str) -> None:
