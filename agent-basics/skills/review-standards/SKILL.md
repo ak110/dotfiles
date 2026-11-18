@@ -71,7 +71,7 @@ QCD、3段判定、事実と推論、硬い制約と努力目標の定義は、`
 | 起動時 | `agent-basics:writing-standards/references/quality-principles.md` | 起動時 | `skill:review-standards` | |
 | いずれの役割でも、判定を始める前 | 対象成果物に対応する作成規範 | 判断 | `skill:review-standards` | `artifact-standards` |
 
-どちらの役割でも、判定は`agent-basics:writing-standards`の`references/quality-principles.md`にある3段判定（許容性、必要性、実装品質の順）に沿って行う。
+どちらの役割でも、判定は`agent-basics:writing-standards`の`references/quality-design-judgment.md`にある3段判定（許容性、必要性、実装品質の順）に沿って行う。
 目的上の必要性を仕様適合より先に判定し、契約・テスト・計画に書いたこと自体を必要性の独立した根拠にしない。
 案の必要性、既存機構の活用、過剰設計の回避、局所修正と共通原因修正の選択、責務の割り振りの比較は、`../writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」に従う。
 レビュー担当とレビューイーの間で元の要求の解釈が分かれ、成果物や操作に違いが出る場合は、原文、これまでの発話、実際の回答、現物の成果物を突き合わせて差異を解消する。

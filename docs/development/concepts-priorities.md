@@ -60,5 +60,5 @@
   読み手は文書と現物の不一致に出会う全ての実行主体と、優先順位の条文を改訂する主体とする。
   現行の規定は次の資料にある。
 
-  - `agent-basics:writing-standards`の`agent-basics:writing-standards/references/quality-principles-source-consistency.md`「文書と既存コードの不一致」
+  - `agent-basics:writing-standards`の`agent-basics:writing-standards/references/quality-source-consistency.md`「文書と既存コードの不一致」
   - `agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」

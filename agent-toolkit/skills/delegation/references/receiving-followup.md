@@ -83,4 +83,4 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 品質判断の原則：事実と推論の基準を適用する前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |
+| 原則3（事実と推論）の基準を適用する前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |

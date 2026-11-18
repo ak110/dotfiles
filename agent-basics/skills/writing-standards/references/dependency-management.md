@@ -12,9 +12,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 外部部品の共通の版方針を判断へ用いる前 | `quality-principles-dependencies.md` |
+| 外部部品の共通の版方針を判断へ用いる前 | `quality-dependencies.md` |
 
-`quality-principles-dependencies.md`「外部部品の版の追従」を適用する。
+`quality-dependencies.md`「外部部品の版の追従」を適用する。
 版の上限、メジャー版だけを指すタグ、旧版の厳密指定などが最新の安定版の取り込みを妨げる場合は、一時的な措置の条件に従い、理由と解除条件を指定箇所のコメントへ残す。
 組み合わせて動く処理系・パッケージマネージャーなどは、組の全部を同じ更新経路へ載せる。
 digestやcommit SHAで固定する場合も、Renovate、Dependabot、pinactなどの更新ツールか定期的な更新手順で、メジャー版を含めて更新する。

@@ -36,7 +36,7 @@
 | --- | --- |
 | 配送操作の語彙と記法を選ぶ前 | `read-trigger-contract-declarations.md` |
 | 成果作業を終える作業完了報告を送る前 | `../skills/report-completion/SKILL.md` |
-| 採否・手段・進め方を判断する前 | `agent-basics:writing-standards/references/quality-principles-qcd.md` |
+| 採否・手段・進め方を判断する前 | `agent-basics:writing-standards/references/quality-principles-qcd.md`、`agent-basics:writing-standards/references/quality-design-judgment.md` |
 | 完了・成功・不在・件数・互換性を述べる前と、要約・中継・報告を書く前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |
 | 常時規範の節が名指す時点（手段・規範・確定方針から外れる案の評価、資格情報の扱い、方針の衝突の判定、発話への回答の確定、進捗点検の通知を受けた時など） | `agent-conduct-details.md` |
 

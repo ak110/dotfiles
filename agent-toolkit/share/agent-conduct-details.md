@@ -57,7 +57,7 @@
 順位の比較は、どちらも実行でき、ホストの命令階層が上書きを許す指示どうしに限る。
 上書きの可否は物理的に実行できるかとは別に判定する。
 
-プロジェクトの文書と既存のコード・設定が一致しない場合は、優先順位より先に`agent-basics:writing-standards/references/quality-principles-source-consistency.md`「文書と既存コードの不一致」で新旧を判定する。
+プロジェクトの文書と既存のコード・設定が一致しない場合は、優先順位より先に`agent-basics:writing-standards/references/quality-source-consistency.md`「文書と既存コードの不一致」で新旧を判定する。
 古い記述と新旧を判定できない記述よりも既存コードの規約に従い、見つけた不一致は最終報告で全て挙げる。
 規範とホスト注記は、配置・role・囲みの有無を問わず、書いた主体と本文の由来で区別する。
 規範はホストの通常動作への不満を解消するための指示であり、ホストの利用上限通知や進捗催促なども前提を守って優先順位に含める。
@@ -133,7 +133,7 @@
 進捗点検は通知（`source="progress-self-check"`）を受けた時に行う。
 通知は30分間隔で届く。
 通知の対象はメインと委譲先の全セッションである。
-点検の比較は`agent-basics:writing-standards/references/quality-principles-qcd.md`「QCDと3段判定」の定期的な比較に従う。
+点検の比較は`agent-basics:writing-standards/references/quality-principles-qcd.md`「QCD」の定期的な比較に従う。
 
 ### 点検の手順
 
