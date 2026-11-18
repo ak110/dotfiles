@@ -350,14 +350,16 @@ def test_minimal_selection_generation_merge_and_integration(
     assert _dispatch(str(output), "--mark-integrated", "lane-01", "--output", str(output), "--work-dir", str(repo)) == 0
     _wi(notes, "added.md")
     facts, addition = _inputs(tmp_path, ["added.md"])
-    if staged or phase_correction:
-        added = yaml.safe_load(addition.read_text(encoding="utf-8"))
-        if phase_correction:
-            added["見込みの補正"] = {**data["見込みの補正"], "共有待ち秒数": 25}
-            added["レーンの所要時間"][0].update({"実装秒数": 200, "統合秒数": 30})
-        if staged:
-            added["単一段階案の完了見込み秒数"] = 515 if phase_correction else 330
-        addition.write_text(yaml.safe_dump(added, allow_unicode=True), encoding="utf-8")
+    added = yaml.safe_load(addition.read_text(encoding="utf-8"))
+    if phase_correction:
+        added["見込みの補正"] = {**data["見込みの補正"], "共有待ち秒数": 25}
+        added["レーンの所要時間"][0].update({"実装秒数": 200, "統合秒数": 30})
+    if staged:
+        added["単一段階案の完了見込み秒数"] = 515 if phase_correction else 330
+    else:
+        # lane-01へ合流するadded.mdとlane-02のsecond.mdの組は、既存の記録が判定していないため追加側へ記録する。
+        added["レーン間の重なり"] = [{**data["レーン間の重なり"][0], "レーン1の定義": ["追加の入力"]}]
+    addition.write_text(yaml.safe_dump(added, allow_unicode=True), encoding="utf-8")
     assert _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "added.md")) == 0
     merged_report = capsys.readouterr().out
     if phase_correction:
