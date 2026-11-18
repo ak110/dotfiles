@@ -1,6 +1,7 @@
 """`atk wi submission end`の正常終了で、投入作業中の発話・投入前レビューの指摘と指摘対応記録に対応付いているかを検査する。
 
 URLを含む発話を受けた投入では、資料の主張別の対応表`material_claims`の欄も検査する。
+URLの判定には、作業中の発話に加えて`begin`の直前の発話（`/add-awi-by-user <URL>`のように投入作業を起動した発話）も含める。
 検査するのは対応の有無と必須欄の欠落だけである。考慮漏れか新しい情報かという分類の意味と処置の十分性は、
 add-awi-by-userのメインと投入前レビューが検収する。実発話は`session-review-evidence --user-events`と同じ抽出処理で
 得るため、機械注入・子会話の除外規則を別に持たない。
@@ -9,6 +10,7 @@ add-awi-by-userのメインと投入前レビューが検収する。実発話�
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import json
 import os
 import pathlib
@@ -125,18 +127,32 @@ def _transcript(session_id: str) -> pathlib.Path:
     raise ValueError(f"会話ID {session_id} のセッション記録が見つからない")
 
 
-def user_events(session_id: str, started_at: str) -> list[dict[str, Any]]:
-    """作業開始より後の実ユーザー発話のうち、指摘対応記録へ対応付ける対象を返す。
+@dataclasses.dataclass(frozen=True)
+class Utterances:
+    """検査する実ユーザー発話。"""
 
-    提示した選択肢をそのまま選んだ確認回答は通常の回答として除き、自由記述を含む回答は対象にする。
-    """
+    invocation: dict[str, Any] | None
+    """`begin`の直前の発話。投入作業を起動した発話であり、URLの判定にだけ使い、指摘対応記録の項目は求めない。"""
+    after_begin: list[dict[str, Any]]
+    """作業開始より後の発話のうち、指摘対応記録へ対応付ける対象。"""
+
+
+def _extracted_events(transcript: pathlib.Path, since: str | None) -> list[dict[str, Any]]:
+    """`session-review-evidence --user-events`の実発話を、記録の順に返す。"""
     script = _run_script.registered_script_path("session-review-evidence")
     try:
         # 同じ配布物の登録済みスクリプトを引数配列で起動し、時間上限では子孫まで停止する。
         # `atk`は起動時に起動層が加えた`PYTHONPATH`などのモジュール検索パスを環境から外すため、
         # 子が`agent_toolkit`を読めるよう配布rootを明示して渡す。
         completed = process_tree.run_with_timeout(
-            [sys.executable, str(script), "--transcript", str(_transcript(session_id)), "--user-events", "--since", started_at],
+            [
+                sys.executable,
+                str(script),
+                "--transcript",
+                str(transcript),
+                "--user-events",
+                *(["--since", since] if since is not None else []),
+            ],
             env=plugin_environment.direct_environment(_run_script.PLUGIN_ROOT, os.environ),
             capture_output=True,
             text=True,
@@ -149,15 +165,28 @@ def user_events(session_id: str, started_at: str) -> list[dict[str, Any]]:
         raise ValueError(f"実ユーザー発話の抽出が{_EVIDENCE_TIMEOUT_SECONDS}秒で終わらない") from error
     if completed.returncode != 0:
         raise ValueError(f"実ユーザー発話を抽出できない（終了コード{completed.returncode}）: {completed.stderr.strip()[-500:]}")
-    events = []
-    for line in split_lines(completed.stdout):
-        event = json.loads(line)
-        if event.get("kind") != "user":
-            continue
-        if "user_response" in event and not event.get("answer_intervention"):
-            continue
-        events.append(event)
-    return events
+    events = [json.loads(line) for line in split_lines(completed.stdout)]
+    # 提示した選択肢をそのまま選んだ確認回答は通常の回答として除き、自由記述を含む回答は対象にする。
+    return [
+        event
+        for event in events
+        if event.get("kind") == "user" and ("user_response" not in event or event.get("answer_intervention"))
+    ]
+
+
+def _position(event: dict[str, Any]) -> str:
+    return f"{event.get('record')}:{event.get('line')}"
+
+
+def user_events(session_id: str, started_at: str) -> Utterances:
+    """`begin`の直前の起動発話と、作業開始より後の実ユーザー発話を返す。"""
+    transcript = _transcript(session_id)
+    after_begin = _extracted_events(transcript, started_at)
+    positions = {_position(event) for event in after_begin}
+    before_begin = list(
+        itertools.takewhile(lambda event: _position(event) not in positions, _extracted_events(transcript, None))
+    )
+    return Utterances(before_begin[-1] if before_begin else None, after_begin)
 
 
 def _missing_fields(entry: dict[str, Any], names: Sequence[str]) -> list[str]:
@@ -183,11 +212,12 @@ def _entry_problems(label: str, entry: dict[str, Any]) -> list[str]:
     return problems
 
 
-def _material_claim_problems(findings: Findings, events: Sequence[dict[str, Any]]) -> list[str]:
+def _material_claim_problems(findings: Findings, utterances: Utterances) -> list[str]:
     """URLを含む発話を受けた投入で、資料の主張ごとの判定と観測の欄がそろっているかを返す。
 
     資料を1文ずつ覆ったか、観測が判定を裏付けるかは投入前レビューが資料と対応表を読み比べて確かめる。
     """
+    events = [*([utterances.invocation] if utterances.invocation else []), *utterances.after_begin]
     if not any(_URL.search(str(event.get("text", ""))) for event in events):
         return []
     if not findings.material_claims:
@@ -209,7 +239,7 @@ def _material_claim_problems(findings: Findings, events: Sequence[dict[str, Any]
     return problems
 
 
-def check(findings: Findings, events: Sequence[dict[str, Any]], reviews: Sequence[str]) -> list[str]:
+def check(findings: Findings, utterances: Utterances, reviews: Sequence[str]) -> list[str]:
     """発話・レビュー指摘と指摘対応記録の対応、および必須欄の欠落を1件1行で返す。"""
     problems: list[str] = []
     by_position = {entry.get("position"): entry for entry in findings.entries if entry.get("source") == "user"}
@@ -218,8 +248,8 @@ def check(findings: Findings, events: Sequence[dict[str, Any]], reviews: Sequenc
         for entry in findings.entries
         if entry.get("source") == "review" and isinstance(entry.get("text"), str)
     }
-    for event in events:
-        position = f"{event.get('record')}:{event.get('line')}"
+    for event in utterances.after_begin:
+        position = _position(event)
         excerpt = _normalized(str(event.get("text", "")))[:60]
         entry = by_position.get(position)
         if entry is None:
@@ -233,7 +263,7 @@ def check(findings: Findings, events: Sequence[dict[str, Any]], reviews: Sequenc
             problems.append(f"{label}の項目が無い")
             continue
         problems += _entry_problems(label, entry)
-    return problems + _material_claim_problems(findings, events)
+    return problems + _material_claim_problems(findings, utterances)
 
 
 def summary_lines(findings: Findings) -> list[str]:

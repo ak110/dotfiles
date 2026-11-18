@@ -160,7 +160,7 @@ def _user_events_position(path: pathlib.Path) -> str:
     """抽出処理が返す記録位置を得る。位置の書式は`session-review-evidence --user-events`が所有する。"""
     started = session_activity.submission_started_at(_SESSION)
     assert started is not None
-    events = submission_findings.user_events(_SESSION, started)
+    events = submission_findings.user_events(_SESSION, started).after_begin
     assert len(events) == 1, (path, events)
     return f"{events[0]['record']}:{events[0]['line']}"
 
@@ -433,6 +433,29 @@ def test_complete_material_claims_and_url_free_submissions_finish(
         [_CLAIM, {**_CLAIM, "judgement": "未確認", "observation": "記録を取得できなかった"}] if "https://" in text else None
     )
     assert _end(_material_findings(tmp_path, path, claims)) == 0
+    assert not _recorded()
+
+
+def test_material_claims_are_required_when_only_invocation_has_urls(
+    claude_home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """URLが`begin`の直前の起動発話にだけある投入でも、資料の主張別の対応表を求める。
+
+    2026年11月17日の投入と同じく、URL 7件を持つ`/add-awi-by-user`の起動発話が`begin`より前にあり、
+    作業中の発話はURLを持たない並びで確かめる。起動発話は対応表の判定だけに使い、指摘対応記録の項目は求めない。
+    """
+    urls = "\n\n".join(f"https://x.com/user{index}/status/{index}" for index in range(7))
+    invocation = _user(
+        "<command-message>agent-toolkit:add-awi-by-user</command-message>\n"
+        "<command-name>/agent-toolkit:add-awi-by-user</command-name>\n"
+        f"<command-args>以下のURLを参考に既存の未処理のWIを改善できないか確認して。\n\n{urls}</command-args>",
+        seconds=-20,
+    )
+    path = _write_session(claude_home, [invocation, _user("記事の方ももっと一文一文を細かく検討して。")])
+    _begin()
+    assert _end(_material_findings(tmp_path, path, None)) == 1
+    assert "`material_claims`が無い" in capsys.readouterr().err
+    assert _end(_material_findings(tmp_path, path, [_CLAIM])) == 0
     assert not _recorded()
 
 
