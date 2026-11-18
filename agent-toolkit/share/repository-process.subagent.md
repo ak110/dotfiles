@@ -19,6 +19,9 @@ optional_inputs:
 - previous
 - common_dir
 - registered_worktree
+- target
+- target_branch
+- default_branch
 - 追加指示
 writes_worktree: true
 ---
@@ -58,6 +61,9 @@ writes_worktree: true
 - `target_repo`、`worktree`、`common_dir`、`registered_worktree`: 対象の識別と、常駐が準備した処理用worktreeの絶対パス。
   作業は各対象の`worktree`で行い、絶対パスと対象別識別子を使う。
   cwdは割当対象の準備済みworktreeの1つとする
+- `target`、`target_branch`、`default_branch`: 結果を対応付ける対象の識別子と、系統を登録したリポジトリで処理する系統と、系統を省略したWIの宛先にする系統。
+  `target`が無い対象は`target_repo`を識別子とする。
+  `target_branch`がある対象は`../skills/process-wi/SKILL.md`「系統を登録したリポジトリ」に従う
 - `candidate_file`、`readiness`、`lane_limit`: 開始時候補の原本、着手可否の診断、対象別のレーン上限。
   候補を再取得せず、`../skills/process-wi/references/all-repos-orchestration-inputs.md`「取得済み候補の受領」に従って使う
 - `ownership_record`、`ownership_token`、`lane_session_id`: 常駐が取得済みの所有とレーン操作の識別子。
@@ -96,7 +102,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 
 ```text
 状態: <completed|incomplete|pending>
-対象: <target_repo>
+対象: <target>
 残工程: <残る工程と再開先。無ければ「なし」>
 writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列>
 結果: <公開結果、CI、処理したAWIと採否の要約>

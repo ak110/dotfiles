@@ -32,7 +32,7 @@
 
 **8.** 常駐起動では、会話を終了する前に集合JSONの`result_file`へ次のJSONをUTF-8で保存する。
 
-`repositories`のキーは今回の集合JSONが渡した対象の`target_repo`に限る。
+`repositories`のキーは今回の集合JSONが渡した対象の`target`に限る（系統を登録しないリポジトリでは`target_repo`と同じ値）。
 明示resumeでも今回の集合だけを書く。
 値の`status`は`completed`、`incomplete`、`blocked`、`pending`のいずれかとする。
 `completed`は今回進められる作業と処理済み部分の公開・CI検収の完了を意味する。

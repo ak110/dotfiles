@@ -73,6 +73,40 @@ Linux上のエージェントは、その環境で可能なクロスビルドな
 gv・lcはLinuxでも開発用のコンパイル確認ができるため、`platforms windows`はLinuxでの作業自体を禁止する設定ではない。
 Linuxで行うテストも検証へ含めたい場合は`--platforms linux,windows`を使う。
 
+## ブランチの系統
+
+リリース済みの版を直す保守ブランチと次期版の開発ブランチのように、継続して作業が入るブランチが2つ以上あるリポジトリでは、それらのブランチを「系統」として登録する。
+登録すると、WIが宛先の系統を持ち、process-loopが系統ごとに処理する。
+系統を登録しないリポジトリの動作は変わらない。
+
+```bash
+atk config repos set ~/project-a --branches release-1.x,main --default-branch main --merge-from main=release-1.x
+atk config repos list
+```
+
+- `--branches`: 系統にするoriginのブランチ名。
+  originに無い名前は登録できず、登録にはローカルのパス（`--path`）が必要
+- `--default-branch`: 系統を指定しないWIの宛先（既定の系統）。
+  新しい要求の多くが入るブランチ（通常は次期版の開発ブランチ）を選ぶ
+- `--merge-from`: `<取り込む側>=<取り込み元>`の組。
+  取り込む側はリリースの前に取り込み元をマージする。
+  保守ブランチの修正を次期版へ持ち込むため、通常は`<開発ブランチ>=<保守ブランチ>`とする
+
+`--branches ""`で系統の登録を外せる（既定の系統と取り込み元も外れる）。
+登録から外した系統を宛先に持つWIは、`atk wi list`で`blocked_reason=branch-unregistered`の着手不能になる。
+
+WIの宛先は`atk wi add --target-branch <系統>`か本文frontmatterの`target_branch`で指定し、省略すると既定の系統になる。
+登録済みのWIの系統は、`atk wi edit`で本文frontmatterの`target_branch`を書き換えて変更できる。
+両方の系統に必要な修正は取り込み元の系統（保守ブランチ）へ1件だけ登録し、取り込む側のリリース前のマージで反映する。
+`atk wi list`・`atk wi show --all`・`atk wi grep`は`--target-branch <系統>`で対象を限定できる。
+`--target-branch=auto`は、現在の作業ツリーが追跡するブランチの系統に限定する。
+
+process-loopは、リポジトリと系統の組を1つの処理対象とする。
+各系統は、`atk`が登録パス配下の`.claude/worktrees/process-loop-<系統>`に自動で用意する作業ツリーで処理し、登録パスの作業ツリーのブランチは切り替えない。
+CI失敗の監視は系統ごとにブランチを照会し、失敗した系統を宛先にAWIを登録する。
+GitHub CopilotのレビューとDependabotアラートの確認は、既定の系統の処理だけが行う。
+`/agent-toolkit:process-wi`を手動で起動する場合は、処理したい系統を追跡する作業ツリーで起動する。
+
 ## process-loopと再開予約
 
 `atk wi process-loop`は登録した対象を継続処理する。

@@ -22,6 +22,7 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 条件を満たしたworktreeは、現在のブランチの追跡先を優先し、解決できない場合だけ`origin/HEAD`へ後退して得た上流ブランチへfetchとrebaseで追随させる。
 解決した上流ブランチはfetch・rebaseの内部だけで使用し、対象リポジトリごとに異なる公開先をセッションのプロンプトへ推測注入しない。
 公開操作と公開先の判断は、その運用を所有する主体へ委ねる。
+系統を登録したリポジトリでは、系統ごとに`.claude/worktrees/<NAME>-<系統>`と専用ブランチ`worktree-<NAME>-<系統>`を使い、上流はその系統の`origin/<系統>`とする（[登録全体の統括と対象別所有の設計記録](design-process-loop-ownership.md)「リポジトリと系統の組」）。
 
 並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。
 ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。

@@ -4,12 +4,14 @@
 監査担当は、対象リポジトリの成果物を読み取り専用で扱う。
 
 **1.** WI選定前に、対象リポジトリがGitHub上にあれば`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。
+系統を登録したリポジトリでは`default_branch`の系統の処理だけが本書の監査を実施し、他の系統の処理は監査を省く。
 終了コード0で`counts.reviews`、`counts.threads`、`counts.dependabot`がいずれも0である場合は、監査担当を起動せず、これら3つの件数を監査省略の根拠として完了報告へ引き継ぐ。
 それ以外の場合（1件以上存在する、終了コードが非0、あるいはJSONや件数を正常に解釈できない場合）は、本書「自動コードレビュー監査担当の起動と受領」に従って監査担当を起動し、選定処理と並行して実行する。
 `dependabot.status`が`disabled`または`unauthorized`の場合は、その状態を完了報告へ引き継ぐ。
 監査で判明した処置と公開工程開始との関係は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/finish-session.md`冒頭に定められており、新たに到着したレビューは次回実行時の監査で取り扱う。
 
 **2.** `atk wi process-loop`は、キューが空であっても未判定のDependabotアラートが存在する場合は、AWIを起票せずに`process-wi`を起動する。
+系統を登録したリポジトリでは、このアラートの計数と起動は`default_branch`の系統の対象だけが行う。
 この場合に候補が0件となる選定結果は正常な状態として保存し、レーンを起動せずに監査の対応内容を確定させ、`finish-session-publishing.md`「公開対象が無い場合の短絡」を経由して終了する。
 修正が必要な項目を同一セッション内で修正する場合は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/immediate-fix.md`「即時対応の手順」に従う。
 

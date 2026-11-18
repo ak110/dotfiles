@@ -25,8 +25,16 @@ CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI�
 未終了と実行未登録は、失敗を示す明確な証拠を得てから既存不具合かを判断する。
 選定開始時の点検に加えて、公開時には従来どおりベースラインを作成し、push後のCI結果を検収する。
 
-**8.** 通常起動では、`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>`を実行する。
+**8.** 通常起動では、次のコマンドで初回の一覧を取得する。
+
+```text
+atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>
+```
+
 同じ初回取得の全状態・全種別の識別子集合を保存し、新着確認と再開へ同じパスを引き継ぐ。
+`--target-branch=auto`は、系統を登録したリポジトリでは作業ツリーが追跡する系統のWIだけを返す（`../SKILL.md`「系統を登録したリポジトリ」）。
+追跡するブランチが登録外の場合、コマンドは失敗して登録済みの系統と起動方法を示す。
+その場合は処理を始めず、示された系統と起動方法をユーザーへ報告して終了する。
 
 `all-repos`のリポジトリ担当は[all-repos-orchestration-inputs.md](all-repos-orchestration-inputs.md)「取得済み候補の受領」に従い、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う。
 明示した一覧の項目が作業ツリー指定の初回取得結果に含まれない場合は、`atk wi show <WIファイル名> --target-repo=all`を実行して保存済みの`target_repo`を取得し、originとの不一致がリポジトリの移転やパス改名によるものか、別リポジトリであるかを判定する。
@@ -54,7 +62,12 @@ CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI�
 依存の全辺の設定や日付帰属・公開先マージ条件に関して、ユーザーのみが決定できる未確定事項が残る場合は、保留やUWIの扱いを次の基準で決める。
 基準は`../../wi-standards/references/states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
 
-**12.** 通常起動では`atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull`で回答済みUWIの本文を取得する。
+**12.** 通常起動では、次のコマンドで回答済みUWIの本文を取得する。
+
+```text
+atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --skip-pull
+```
+
 frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く。
 
  `all-repos`の担当は、同じ条件に該当する受け取り済みの候補を使用する。

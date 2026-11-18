@@ -35,6 +35,18 @@ all-reposでは統括の巡回開始時刻を各リポジトリの担当へ引�
 含まれるOSでは従来どおりローカルで検証する。
 OSの指定がない登録はLinuxとWindowsの両方を対象とし、必要な検証を省く理由にしない。
 
+## 系統を登録したリポジトリ
+
+`atk config repos list`で`branches`を持つリポジトリは、継続して作業が入るoriginのブランチ（系統）ごとに処理する。
+処理中の系統は、常駐から受け取った対象では集合JSONの`target_branch`、手動起動では起動した作業ツリーが追跡するブランチである。
+規範の「ベースブランチ」は処理中の系統のブランチを指し、候補の取得、レーンの作成と統合、push、CIの確認、公開状態の検収はそのブランチを対象にする。
+系統ごとの作業ツリーではローカルブランチ名がリモートのブランチ名と異なる。
+そのためpushは`git push --dry-run --porcelain origin HEAD:refs/heads/<系統>`で到達先を確定し、同じrefspecで実行する。
+公開状態の4項目のうちブランチ名の項目は、`# branch.upstream`が`origin/<系統>`であることで確かめる。
+処理中に投入するUWIとAWIは、`atk wi add --target-branch <系統>`で処理中の系統を宛先にする。
+両方の系統に必要な修正のAWIは、`agent-toolkit:wi-standards`の`references/wi-standards-operations.md`「投入と取得」に従って取り込み元の系統を宛先にする。
+GitHub CopilotのレビューとDependabotアラートの監査はリポジトリ単位の作業のため、`default_branch`の系統（系統を省略したWIの宛先）の処理だけが行う。
+
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。

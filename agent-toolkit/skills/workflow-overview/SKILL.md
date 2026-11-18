@@ -47,6 +47,15 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 未登録は編集不可であり、`allow`への登録は編集の認可を確認してから行う。
 `awi`は直接編集せずAWIを投入し、`deny`は必要な変更を報告する。
 常駐の実行、単回実行、再開予約、制御操作の違いは`references/orchestrator-runtime.md`を参照する。
+
+保守ブランチと次期開発ブランチのように継続して作業が入るブランチが複数あるリポジトリは、そのブランチを系統として登録する。
+登録は`atk config repos set <リポジトリ> --branches <名前,名前> --default-branch <名前> --merge-from <取り込む側>=<取り込み元>`で行う。
+系統を登録したリポジトリでは、WIが宛先の系統を`target_branch`に持ち、process-loopはリポジトリと系統の組を1つの処理対象として系統ごとの作業ツリーで処理する。
+系統を省略したWIは`--default-branch`に登録した系統へ入る。
+両方の系統に必要な修正は取り込み元の系統へ入れ、取り込む側はリリースの前に取り込み元をマージする。
+WIでの指定は`agent-toolkit:wi-standards`の`references/wi-standards-operations.md`「投入と取得」に従う。
+処理は`../process-wi/SKILL.md`「系統を登録したリポジトリ」に従う。
+リリース前の確認は`agent-toolkit:commit`の`references/publish.md`「プロジェクト固有の公開後の操作とリリース」に従う。
 統括が報告まで担当し、会話の再開では元の統括・委譲の責務を保つ。
 
 ## 要求から公開までの担当

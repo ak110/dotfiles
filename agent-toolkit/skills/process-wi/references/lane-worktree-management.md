@@ -9,7 +9,7 @@
 
 ## レーンworktreeの扱い
 
-1. `atk lane create`で、主作業ツリー配下の`.claude/worktrees/process-wi-<レーン識別子>`に作成し、worktree・branch・所有セッションを紐付けて登録する。
+1. `atk lane create`で、主作業ツリー配下の`.claude/worktrees/process-wi-<レーン識別子>`（系統を登録したリポジトリでは`process-wi-<統合先ブランチ>-<レーン識別子>`）に作成し、worktree・branch・所有セッションを紐付けて登録する。
    メインエージェントによる所有資源の手作業での再登録は禁止する。
 2. 統合・最終化の検収と消費工程が終わったレーンは、巡回全体の終了を待たず、メインが`atk lane delete`で回収する。
    同一threadへの追加は、保存したcommit・計画・引き継ぎを使い、`atk lane create`で環境を再作成してから再開する。

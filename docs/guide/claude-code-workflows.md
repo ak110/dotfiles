@@ -44,6 +44,7 @@ atk wi process-loop
 編集を依頼した未登録リポジトリは、エージェントが登録内容を確認してから設定を進める。
 cloneの無い対象も`atk config repos add github.com/example/project --edit awi`のように登録できる。
 検証OSを限定する場合は`atk config repos set ~/project-a --platforms windows`のように指定する（未指定はLinuxとWindows）。
+保守ブランチと次期開発ブランチのように作業が入るブランチが複数あるリポジトリは、ブランチを系統として登録すると系統ごとに処理される（[ブランチの系統](claude-code-wi.md#ブランチの系統)）。
 ほかの配列設定は`atk config add serve_plans_remote_hosts remote-host`と`atk config remove serve_plans_remote_hosts remote-host`で要素単位に操作できる。
 dotfilesリポジトリでは自動で専用worktreeを使い、ほかのリポジトリでworktreeを分ける場合は`--worktree[=NAME]`を指定する。
 統括担当をCodexにする場合は、起動前に`atk config set orchestrate_model codex:sol/medium,claude:opus[1m]/medium`を実行する。

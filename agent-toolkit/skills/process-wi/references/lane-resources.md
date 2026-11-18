@@ -17,6 +17,9 @@ CLIが自動回収しない登録外の一時worktree、回復処理で保持さ
 レーンごとの専用branch、専用worktree、および所有権の登録は以下のコマンドで実行する。
 専用worktreeは、対象リポジトリのメイン作業ツリー配下の`.claude/worktrees/process-wi-<レーン識別子>`に作成される。
 `process-wi`は対象リポジトリごとに1つだけ起動される前提であり、配置先パスはリポジトリとレーン識別子のみによって一意に定まるため、別セッションや`process-loop`のworktreeから呼び出した場合でも同一のパスとなる。
+系統を登録したリポジトリでは、この前提を系統ごとに適用する。
+常駐は系統ごとに作業ツリーと所有を分ける。
+`atk lane create`の固定作成先は`.claude/worktrees/process-wi-<統合先ブランチ>-<レーン識別子>`となり（ディレクトリ名に使えない文字を含むブランチ名は置き換えた名前になる）、同名のレーンでも系統ごとに別のパスになる。
 
 ```text
 atk lane create --repo <対象リポジトリの絶対パス> --base-branch <統合先branch> --lane <レーン識別子> --selection-file <選定YAMLの絶対パス>
