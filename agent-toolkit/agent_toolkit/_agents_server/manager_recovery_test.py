@@ -35,7 +35,12 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import creation
 from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing import late_descendant
-from agent_toolkit._testing.agents_server_support import FakeBackend, _complete, install_backend
+from agent_toolkit._testing.agents_server_support import (
+    FakeBackend,
+    _complete,
+    _use_real_plugin_preflight,
+    install_backend,
+)
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -587,6 +592,57 @@ async def test_recovery_failure_before_session_creation_reaches_public_wait(
             if record.getMessage().startswith("delegation_recovery_failed")
         ]
         assert errors and all(f"atk agents show {identifier}" in error and "send_message" in error for error in errors)
+
+
+@pytest.mark.parametrize("activation", ["completes", "fails_after_recovery"])
+@pytest.mark.asyncio
+async def test_child_with_removed_cwd_is_reported_once_and_not_recovered_by_later_managers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    activation: str,
+) -> None:
+    """作業ディレクトリが削除された子の自動復旧は、Managerを作り直すたびに繰り返さず、通知も1件にとどめる。
+
+    2026-11-18、削除済みworktreeをcwdに持つ旧sessionの復旧失敗通知が`atk agents wait`へ数百件届き、
+    waitが毎回即時に戻った。Managerは親の再開・世代の移譲・起動失敗後の再要求のたびに作り直される。
+    """
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    worktree = tmp_path / "removed-worktree"
+    worktree.mkdir()
+    async with _mcp_owner(monkeypatch, tmp_path, "original-root", "parent", "codex"):
+        started = await mcp_tools.start(
+            str(worktree), mode="explore", prompt="削除されるworktreeの作業", model_type="chores_fast"
+        )
+    identifier = started["session_id"]
+    worktree.rmdir()
+    _use_real_plugin_preflight(monkeypatch)
+    if activation == "fails_after_recovery":
+
+        def refuse_alias(*_args: Any) -> None:
+            raise RuntimeError("制御した起動の失敗")
+
+        monkeypatch.setattr(shared_roots, "write_root_alias", refuse_alias)
+    waits: list[tuple[int, list[dict[str, Any]]]] = []
+    for _ in range(3):
+        with contextlib.suppress(RuntimeError):
+            async with _mcp_owner(monkeypatch, tmp_path, "recovering-root", "parent", "codex", ready_for_requests=True):
+                pass
+        capsys.readouterr()
+        async with asyncio.timeout(5):
+            code = await asyncio.to_thread(
+                agents_wait.wait_for_result,
+                environment={"AGENT_TOOLKIT_OWNER_SESSION": "recovering-root", "CODEX_THREAD_ID": "parent"},
+                state_root=tmp_path,
+                root_session_id="recovering-root",
+            )
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        waits.append((code, [notice for row in rows for notice in row.get("notices", ())]))
+    delivered = [notice for _code, notices in waits for notice in notices]
+    assert len(delivered) == 1, waits
+    assert str(worktree) in json.dumps(delivered, ensure_ascii=False)
+    assert [code for code, _notices in waits[1:]] == [10, 10], waits
+    assert identifier not in session_registry.pending_session_ids(tmp_path)
 
 
 _COLD_RECOVERY_SOURCE = """\
