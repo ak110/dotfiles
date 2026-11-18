@@ -230,3 +230,41 @@ async def test_close_after_owner_generation_exited(monkeypatch, app_server_alive
     assert bool(residual) is app_server_alive
     if app_server_alive:
         assert "pid=4242" in residual[0] and "G1" in residual[0]
+
+
+@pytest.mark.asyncio
+async def test_closing_after_reader_stopped_releases_resource_with_unread_events() -> None:
+    """受信処理が止まった後に閉じた資源は、未確認のイベントを残してbrokerに留まらない。
+
+    留まると、資源の解放を退出の条件とする元世代の管理サービスが退出できない。
+    """
+    broker = ResourceBroker("G1")
+    runtime = service_io.Runtime("G1", {"generation": "G1", "process": "1:owner"}, broker)
+    raw: _RawCodex | None = None
+    failures: list[BaseException] = []
+
+    def factory(*args: Any) -> _RawCodex:
+        nonlocal raw
+        raw = _RawCodex(*args)
+        return raw
+
+    async def stop_reading(_message: dict) -> None:
+        raise RuntimeError("受信処理の停止")
+
+    async def unexpected(_value: Any) -> None:
+        pytest.fail("未発生のイベントを受信した")
+
+    async def failure(error: BaseException) -> None:
+        failures.append(error)
+
+    client = service_io.CodexResource.create(runtime, factory, stop_reading, unexpected, failure)
+    await client.start()
+    assert raw is not None
+    async with asyncio.timeout(5):
+        for number in range(3):
+            await raw.notification({"number": number})
+        while not failures:
+            await asyncio.sleep(0)
+        assert await client.close() == []
+    assert raw.closed == 1
+    assert broker.backlog(client.resource.identifier) is None
