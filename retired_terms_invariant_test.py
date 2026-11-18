@@ -310,7 +310,7 @@ _RETIRED_TERMS = (
             ),
         )
         for term, replacement, extra_allowed in (
-            ("確認スキル", "`agent-toolkit:user-confirmation-and-report`", ()),
+            ("確認スキル", "`agent-toolkit:atk-mode/playbooks/confirmation.md`", ()),
             ("委譲スキル", "`agent-toolkit:delegation`", ()),
             ("工程スキル", "`agent-toolkit:delegation`以外のスキルなど、指す範囲を説明する句", ()),
             ("自律終了スキル", "`atk agents-exit-session`の起動記録", ()),
@@ -327,7 +327,7 @@ _RETIRED_TERMS = (
             ),
             ("実行レビュー証拠", "実行レビューの入力`完成条件証拠`", ()),
             # 定義元に無い局所名を、担当が定義元の検索語として使い調査を中断した（2026年10月6日に是正）。
-            # 定義元は`agent-toolkit/skills/wi-standards/references/awi-body.md`「通常AWIの本文」の説明とする。
+            # 定義元は`agent-toolkit/skills/atk-mode/references/awi-body.md`「通常AWIの本文」の説明とする。
             (
                 "要求対応表",
                 "引用した原文の要求単位ごとの反映先を、内容の説明か引用位置への参照で対応付けることを述べる説明",
@@ -385,7 +385,7 @@ _RETIRED_TERMS = (
             ("独立レビュー", "独立文脈レビュー"),
             ("通常完了の返却形式", "入力名`通常完了の報告様式`"),
             ("英語検知通知", "「`response_language_check`の通知」"),
-            ("投入前チェック", "「`agent-toolkit:wi-standards`の`references/drafting-completion.md`「投入前の読み直し」」"),
+            ("投入前チェック", "「`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入前の読み直し」」"),
             ("レビュー調整", "「`share/review-loop-coordination.md`の手順」"),
             ("調整手順", "「`share/review-loop-coordination.md`の手順」"),
             ("読者ごとの探索担当", "読者別探索担当"),
@@ -393,7 +393,7 @@ _RETIRED_TERMS = (
             ("Challenger", "前提を疑う観点"),
             ("処理回", "process-wiの1回の実行"),
             ("分岐検証", "「`references/testing.md`「分岐条件の効果の裏付け」による検証」"),
-            ("成立確認", "「外部の既存挙動の再現観測（wi-standards「通常AWIの本文」）」"),
+            ("成立確認", "「外部の既存挙動の再現観測（`awi-body.md`「通常AWIの本文」）」"),
             ("非再現時の判断", "外部の既存挙動の再現観測が再現しない場合の扱い"),
             ("計画実装", "「実行」工程または`exec.subagent.md`の手順"),
             ("計画レビュー", "実行レビュー（計画のレビュー工程は廃止）"),
@@ -423,7 +423,7 @@ _RETIRED_TERMS = (
             ("履歴書換え契約", "「history-rewrite.mdの規定」"),
             ("原因分析契約", "「agent-basics:bugfixの入口の条件」"),
             ("延期`adopt`契約", "「lane-integration.subagent.mdの延期adoptの条件」"),
-            ("本文契約", "「agent-toolkit:wi-standards「通常AWIの本文」の要件」"),
+            ("本文契約", "「`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」の要件」"),
             ("process-wi契約", "「agent-toolkit:process-wiの規定の読み替え」"),
             ("分割規範", "「share/rules/rules-common.codex.md「Codex固有の入出力」の分割取得の規定」"),
             ("公開契約基準", "説明へ"),
@@ -545,7 +545,7 @@ _RETIRED_TERMS = (
             ("鮮度情報", "選定結果の欄`鮮度`または`atk wi list`の`staleness`"),
             ("境界標識", "`atk-auto`"),
             ("AWI処理スキル", "`agent-toolkit:process-wi`"),
-            ("認識合わせスキル", "`agent-toolkit:user-confirmation-and-report`「認識合わせ」"),
+            ("認識合わせスキル", "`agent-toolkit:atk-mode/references/delivery.md`「認識合わせ」"),
             ("即時報告", "即時通知（`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」）"),
             ("編集スキル", "スキル名"),
             ("担当スキル", "個別のスキル名"),

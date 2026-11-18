@@ -33,6 +33,8 @@ QUALITY_SOURCE = Path("agent-basics/skills/writing-standards/references/writing.
 QUALITY_START = "<!-- portable-quality:start -->"
 QUALITY_END = "<!-- portable-quality:end -->"
 QUALITY_FILENAME = "references/quality-standards.md"
+# 原本を持つ`writing-standards`と、原本を名指しして読ませる入口`atk-mode`は複製を持たない。
+QUALITY_SKIPPED_SKILLS = frozenset({"writing-standards", "atk-mode"})
 QUALITY_NOTICE = "<!-- writing-standards/references/writing.mdから自動生成。原本を編集して再生成する。 -->\n\n"
 OPTIONAL_TARGETS = frozenset((MCP_CODEX_TARGET, AGENT_MCP_TARGET, HOOKS_TARGET))
 CODEX_ROOT_EXCLUDED = frozenset((Path("plugin.json"), Path("mcp.json")))
@@ -312,7 +314,7 @@ def _quality_outputs(root: Path) -> dict[Path, str]:
     outputs: dict[Path, str] = {}
     for distribution in ("agent-toolkit", "agent-basics"):
         for skill in sorted((root / distribution / "skills").glob("*/SKILL.md")):
-            if skill.parent.name != "writing-standards":
+            if skill.parent.name not in QUALITY_SKIPPED_SKILLS:
                 outputs[skill.parent.relative_to(root) / QUALITY_FILENAME] = content
     return outputs
 

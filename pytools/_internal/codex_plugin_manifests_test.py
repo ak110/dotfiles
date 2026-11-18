@@ -89,6 +89,22 @@ def test_skill_quality_resources_follow_one_source_and_work_in_single_skill_copy
         )
 
 
+def test_entry_skill_reads_quality_source_without_copy(quality_root: Path) -> None:
+    """原本を名指しする入口`atk-mode`には複製を生成せず、残った複製は同期で除く。"""
+    entry = quality_root / "agent-toolkit/skills/atk-mode"
+    (entry / "references").mkdir(parents=True)
+    (entry / "SKILL.md").write_text("# atk-mode\n", encoding="utf-8")
+    stale = entry / "references/quality-standards.md"
+    stale.write_text("古い複製\n", encoding="utf-8")
+
+    assert subject.sync(quality_root) is True
+
+    assert not stale.exists()
+    assert not (quality_root / "agent-toolkit-codex/skills/atk-mode/references/quality-standards.md").exists()
+    assert (quality_root / "agent-toolkit" / "skills" / "alpha" / "references/quality-standards.md").is_file()
+    assert subject.check(quality_root) is True
+
+
 @pytest.mark.parametrize("distribution", ["agent-toolkit", "agent-toolkit-codex", "agent-basics"])
 @pytest.mark.parametrize("kind", ["欠落", "内容差", "余剰"])
 def test_skill_quality_check_reports_every_difference_and_sync_repairs_it(

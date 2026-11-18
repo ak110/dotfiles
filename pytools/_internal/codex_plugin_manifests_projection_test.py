@@ -45,8 +45,6 @@ def test_codex_plugin_validator_reports_only_known_schema_deviations() -> None:
     Codex 0.154.0同梱の`plugin-creator/references/plugin-json-spec.md`は、`hooks`を正規fieldとして
     定義しながら、検証の節では未対応fieldとして拒否すると述べており、同一資料内で矛盾する。
     `hooks`と`./.mcp.codex.json`を持つ現行manifestは`installed: true`かつ`enabled: true`である。
-    Claude向けfrontmatterの`disable-model-invocation: true`は、Codex向けの
-    `agents/openai.yaml`で同じ明示起動限定を表しても検証器が指摘する。
     資料上の保証がないまま動作中の構成を変えないため、この前提が変わるまで期待値を空にしない。
     """
     result = subprocess.run(  # noqa: S603
@@ -59,7 +57,6 @@ def test_codex_plugin_validator_reports_only_known_schema_deviations() -> None:
     expected = {
         "plugin.json field `hooks` is not accepted by plugin validation",
         "plugin.json field `mcpServers` must resolve to `.mcp.json`",
-        "skill `add-awi-by-user` frontmatter field `disable-model-invocation` must be false",
     }
     details = f"終了コード: {result.returncode}\n標準出力:\n{result.stdout}\n標準エラー:\n{result.stderr}"
     if result.returncode == 0:
