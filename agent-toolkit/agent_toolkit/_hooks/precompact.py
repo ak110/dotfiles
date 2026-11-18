@@ -2,7 +2,7 @@
 
 import json
 
-from agent_toolkit._common.session_record_paths import find_session_record
+from agent_toolkit._common.session_record_paths import find_claude_records
 
 
 def main(payload_text: str) -> int:
@@ -13,8 +13,9 @@ def main(payload_text: str) -> int:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return 0
-    record = find_session_record(session_id)
-    if record is None or record.engine != "claude" or len(record.paths) != 1 or not record.paths[0].is_file():
+    # 原本の案内はClaude Codeの記録が1件に定まる会話に限るため、他の実行系の記録は探さない。
+    records = find_claude_records(session_id)
+    if len(records) != 1 or not records[0].is_file():
         return 0
     # PreCompactのstdoutはモデルへの要約指示であり、要約API呼出し自体を省く契約ではない。
     print(

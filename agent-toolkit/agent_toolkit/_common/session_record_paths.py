@@ -85,25 +85,34 @@ def find_session_record(
     """
     if _SESSION_ID_PATTERN.fullmatch(session_id) is None:
         return None
-    claude_projects = (claude_home if claude_home is not None else host_homes.claude_config_dir()) / "projects"
-    if claude_projects.is_dir():
-        claude_paths = tuple(
-            path
-            for project in sorted(claude_projects.iterdir())
-            if project.is_dir() and (path := project / f"{session_id}{RECORD_SUFFIX}").is_file()
-        )
-        if claude_paths:
-            return SessionRecord("claude", claude_paths)
-        if re.fullmatch(r"agent-[0-9a-fA-F]+", session_id):
-            child_paths = tuple(
-                path for path in sorted(claude_projects.glob(f"*/*/subagents/{session_id}{RECORD_SUFFIX}")) if path.is_file()
-            )
-            if child_paths:
-                return SessionRecord("claude", child_paths)
+    claude_paths = find_claude_records(session_id, claude_home=claude_home)
+    if claude_paths:
+        return SessionRecord("claude", claude_paths)
     codex_paths = find_codex_records(session_id, codex_home=codex_home)
     if codex_paths:
         return SessionRecord("codex", codex_paths)
     return _find_agy_or_opencode_record(session_id, state_root)
+
+
+def find_claude_records(session_id: str, *, claude_home: pathlib.Path | None = None) -> tuple[pathlib.Path, ...]:
+    """Claude Codeの親会話の記録を全projectから、無ければサブエージェントの記録をproject名の順で返す。
+
+    `find_session_record`のうちClaude Codeの部分だけを行う。Claude Codeの記録だけを使う呼び出しは、
+    一致しない場合に続くCodexの全ロールアウトの列挙を省ける。
+    """
+    if _SESSION_ID_PATTERN.fullmatch(session_id) is None:
+        return ()
+    claude_projects = (claude_home if claude_home is not None else host_homes.claude_config_dir()) / "projects"
+    if not claude_projects.is_dir():
+        return ()
+    claude_paths = tuple(
+        path
+        for project in sorted(claude_projects.iterdir())
+        if project.is_dir() and (path := project / f"{session_id}{RECORD_SUFFIX}").is_file()
+    )
+    if claude_paths or not re.fullmatch(r"agent-[0-9a-fA-F]+", session_id):
+        return claude_paths
+    return tuple(path for path in sorted(claude_projects.glob(f"*/*/subagents/{session_id}{RECORD_SUFFIX}")) if path.is_file())
 
 
 def _find_agy_or_opencode_record(session_id: str, state_root: pathlib.Path | None) -> SessionRecord | None:
