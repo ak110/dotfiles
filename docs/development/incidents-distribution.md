@@ -114,7 +114,12 @@
   対策: ユーザーの認可を得て、管理者token・JUNCTION属性・リンク先・本体の実在を再確認し、対象リンク1個をrmdir（/Sなし）とmklink /Jで同じ実体へ再生成した。
   保護設定、レジストリ、Python本体、他リンク、PATHは維持した。
   同じSSHのuv python find 3.15と、稼働中serveの記録一覧APIが警告なしで成功した。
-  非管理者のuv更新がリンクを再生成すると再発しうるため、その場合も対象とリンク先を再確認し、保護を維持した管理者によるリンクの修復を選ぶ
+  非管理者のuv更新がリンクを再生成すると再発しうるため、その場合も対象とリンク先を再確認し、保護を維持した管理者によるリンクの修復を選ぶ。
+  再発（2026年11月19日）: 範囲不足。
+  SSH配下の`update-dotfiles`が、TypeScript言語サーバーへの接続が済んだ状態でも「tsserver.jsが見つからない」と報告した。
+  mise（aube）がユーザー権限で作った`node_modules/typescript`のJUNCTIONを、TypeScript 6の確認が通過しようとして拒否された。
+  前回の対策は対象リンク1個の再生成に限り、ユーザー権限で導入物が作るJUNCTIONを通過する処理は残っていた。
+  是正: JUNCTIONを通過せず格納先を読み、参照先の実体でtsserver.jsを確かめる
 
 - 2026年11月18日: sthenoの`~/.claude/settings.json`に自動圧縮の上書きが残り、会話が約45万トークンに達するたびに圧縮されていた。
   残っていた値は`env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`の45と`env.CLAUDE_CODE_AUTO_COMPACT_WINDOW`の1000000である。

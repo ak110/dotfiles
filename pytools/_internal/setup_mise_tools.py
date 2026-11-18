@@ -238,6 +238,11 @@ def ensure_tools_installed(mise_bin: Path) -> bool:
     return True
 
 
+def _stored_target(link: Path) -> Path:
+    """リンクが格納する参照先を、参照先を辿らずに返す。Windowsのジャンクションが返す拡張パスの接頭辞は外す。"""
+    return Path(os.fspath(link.readlink()).removeprefix("\\\\?\\"))
+
+
 def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
     """独立prefixのLSPへtsserverを接続し、完了時はTrueを返す。独自成果は保持する。"""
     servers = [path for path, (tool, _) in installs.items() if tool == "npm:typescript-language-server"]
@@ -248,13 +253,16 @@ def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
         if len(typescripts) != 1:
             raise OSError("現行のTypeScript 6導入先を一意に取得できない")
         source = typescripts[0] / "node_modules" / "typescript"
-        if not (source / "lib" / "tsserver.js").is_file():
+        # aubeの導入物では`source`自体がリンクになる。SSH配下のWindowsはRedirectionGuardにより、
+        # 非管理者が作ったジャンクションの通過をWinError 448で拒否するため、格納先を読んで実体で確かめる。
+        package = source.parent / _stored_target(source) if source.is_symlink() or source.is_junction() else source
+        if not (package / "lib" / "tsserver.js").is_file():
             raise OSError(f"tsserver.jsが見つからない: {source}")
         for server in servers:
             link = server / "node_modules" / "typescript"
             linked = link.is_symlink() or link.is_junction()
             if linked:
-                previous = Path(os.fspath(link.readlink()).removeprefix("\\\\?\\"))
+                previous = _stored_target(link)
                 if previous == source:
                     continue
                 # この処理が作る絶対リンクと同じmise管理prefixだけを更新する。
