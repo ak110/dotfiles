@@ -256,6 +256,19 @@ def test_invalid_payload_is_ignored(tmp_path: pathlib.Path, payload_text: str) -
     assert state.exists()
 
 
+def test_expiry_sweep_runs_once_per_interval(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """期限切れ状態の回収は1日1回に限り、間隔内のSessionEndでは回収しない。"""
+    payload = {"hook_event_name": "SessionEnd", "session_id": "ending", "reason": "other"}
+    assert _run_hook_in_process("session_end_cleanup", payload).returncode == 0
+    stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
+    assert _run_hook_in_process("session_end_cleanup", payload).returncode == 0
+    assert stale.exists()
+    later = time.time() + 25 * 60 * 60
+    monkeypatch.setattr(time, "time", lambda: later)
+    assert _run_hook_in_process("session_end_cleanup", payload).returncode == 0
+    assert not stale.exists()
+
+
 def test_delete_failure_is_silent_and_fails_open(tmp_path: pathlib.Path) -> None:
     # 状態パスをディレクトリにしてunlinkを失敗させる。
     state_path = session_state.state_path("sid")

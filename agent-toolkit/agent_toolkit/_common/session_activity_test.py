@@ -141,6 +141,28 @@ def test_living_roots_require_valid_process_evidence(tmp_path: pathlib.Path, inv
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize("variant", ["live", "dead", "reused", "missing-process", "broken"])
+def test_sweep_removes_only_records_of_exited_processes(tmp_path: pathlib.Path, variant: str) -> None:
+    """記録したプロセスの終了が確定した記録だけを回収し、生存中と判定できない記録は残す。"""
+    session_activity.record_activity(
+        {"session_id": "root", "hook_event_name": "SessionStart"},
+        process=_host("codex"),
+        state_root=tmp_path,
+    )
+    path = session_activity.activity_directory(tmp_path) / "root.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if variant == "dead":
+        record["process"] = {"pid": 2147483647, "create_time": 1}
+    elif variant == "reused":
+        record["process"]["start_id"] = "other-generation"
+    elif variant == "missing-process":
+        record.pop("process")
+    path.write_text("{" if variant == "broken" else json.dumps(record), encoding="utf-8")
+    exited = variant in {"dead", "reused"}
+    assert session_activity.sweep_exited_records(state_root=tmp_path) == int(exited)
+    assert path.exists() is not exited
+
+
 def test_dead_and_reused_pid_records_expire(tmp_path: pathlib.Path) -> None:
     """保存記録のactiveだけでは活動とせず、PID再利用と実プロセスの終了を除く。"""
     host = _host("codex")

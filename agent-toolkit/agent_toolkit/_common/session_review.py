@@ -439,19 +439,21 @@ def pending() -> list[dict[str, Any]]:
 
 def auto_start_due(*, now: float) -> bool:
     """相談会話が閉じ、直前のbatch開始から6時間以上経過したか返す。"""
-    if any(
-        session_state.read_state(session_id).get("add_awi_skill_invoked") is True
-        for session_id in session_activity.living_root_session_ids()
-    ):
-        return False
+    interval = 6 * 60 * 60
     for path in (directory() / "runs").glob("*.json"):
+        # 記録は開始時以降に書かれるため、間隔より前に更新された記録の開始も間隔より前である。新しい記録だけを読む。
+        if now - path.stat().st_mtime >= interval:
+            continue
         value = read(path)
         started_at = value.get("started_at")
         # 開始日時を保存していない世代は、既存記録の更新日時で保守的に間隔を保つ。
         started = datetime.datetime.fromisoformat(started_at).timestamp() if started_at else path.stat().st_mtime
-        if now - started < 6 * 60 * 60:
+        if now - started < interval:
             return False
-    return True
+    return not any(
+        session_state.read_state(session_id).get("add_awi_skill_invoked") is True
+        for session_id in session_activity.living_root_session_ids()
+    )
 
 
 def launch_result(*, manifest: pathlib.Path | None = None) -> None:
