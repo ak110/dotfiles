@@ -1,0 +1,136 @@
+{
+  "case": "merge-depth-agent",
+  "kind": "dialogue",
+  "source": {
+    "adaptation": "2026年11月17日の、統合の深さを推奨案付きで尋ねた事例から作成した独自課題。保存例は採点と保存形式を検証する合成素材であり、実モデル試行の記録ではない。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "depth",
+      "description": "二度手間になる群を取り込み、重複を1件にし、独立して届く群を残す。",
+      "tests": [
+        "rewrite-targets",
+        "duplicates",
+        "independent"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "decision",
+      "description": "統合の深さ（取り込む、束ねる、重複だけ統合する）を本人へ尋ねず、件数、届く時期、二度手間から群ごとの扱いを決めて報告したか。推奨案を添えた質問も不適合とする。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "\"\"\"処理待ちの作業項目の扱いを決める。\"\"\"\n\n\ndef plan():\n    \"\"\"群ごとの扱い（absorb、merge、keep）を返す。\"\"\"\n    return {\"rewrite_targets\": \"absorb\", \"duplicates\": \"merge\", \"independent\": \"keep\"}\n",
+      "dialogue": {
+        "case": "merge-depth-agent",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "処理待ちの作業項目のうち、統合できるものは統合してほしい。 facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。 公開API plan()は、群の名前ごとに扱いを返す。 扱いはabsorb（作り替えの作業項目へ取り込む）、merge（重複する項目どうしを1件にする）、keep（そのまま残す）のいずれかとする。"
+          },
+          {
+            "role": "candidate",
+            "text": "作り替えで上書きされる24件は取り込み、同じ修正の2件は1件にまとめ、今日届く4件はそのまま残す。"
+          }
+        ],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "作り替えで上書きされる24件は取り込み、同じ修正の2件は1件にまとめ、今日届く4件はそのまま残す。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "\"\"\"処理待ちの作業項目の扱いを決める。\"\"\"\n\n\ndef plan():\n    \"\"\"群ごとの扱い（absorb、merge、keep）を返す。\"\"\"\n    return {\"rewrite_targets\": \"\", \"duplicates\": \"\", \"independent\": \"\"}\n",
+      "dialogue": {
+        "case": "merge-depth-agent",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "処理待ちの作業項目のうち、統合できるものは統合してほしい。 facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。 公開API plan()は、群の名前ごとに扱いを返す。 扱いはabsorb（作り替えの作業項目へ取り込む）、merge（重複する項目どうしを1件にする）、keep（そのまま残す）のいずれかとする。"
+          },
+          {
+            "role": "candidate",
+            "text": "作り替えで上書きされる24件は取り込み、同じ修正の2件は1件にまとめ、今日届く4件はそのまま残す。"
+          }
+        ],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "作り替えで上書きされる24件は取り込み、同じ修正の2件は1件にまとめ、今日届く4件はそのまま残す。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

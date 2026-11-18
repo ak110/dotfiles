@@ -21,10 +21,18 @@
 | `goal-discovery` | `no-dialogue` | 目標から注文集計CLIを完成させ、既存APIを保つ | 独自素材 |
 | `strategy-update` | `no-dialogue` | 単位の異なる明細と担当間の矛盾を整合させ、既存結果を保つ | 独自素材 |
 | `purpose-boundary` | `questions-only` | 目的の確認後に、確定した改善領域を要求へ反映する | 独自素材 |
+| `protection-removal-agent`、`protection-removal-user` | `questions-only` | 追加審査の撤去を、自ら決める場面と本人へ確認する場面 | 独自素材 |
+| `forbidden-guidance-agent`、`forbidden-guidance-user` | `questions-only` | HTTP 403の案内の修正を、自ら決める場面と、表示箇所・今後の対象への適用・費用の上限を本人へ確認する場面 | 独自素材 |
+| `overrun-retry-agent`、`overrun-retry-user` | `questions-only` | 超過の確かめ方を、過去の回答の範囲から自ら決める場面と、回答が再実行の禁止を明示していて本人へ確認する場面 | 独自素材 |
+| `assumption-transcription` | `questions-only` | エージェントが補った前提を、ユーザーの要求として書き写さない | 独自素材 |
+| `suppression-scope-agent`、`suppression-scope-user` | `questions-only` | 抑止の範囲を、原文どおりに自ら決める場面と、原文に無い延長を本人へ確認する場面 | 独自素材 |
+| `merge-depth-agent` | `questions-only` | 統合の深さを本人へ尋ねず、公開事実から群ごとの扱いを決める | 独自素材 |
 
 上表の`attachment-paths`、`weekday-queries`、`batch-conditions`、`display-spaces`の原型は、[SWE-Journey v1 Appendix C](https://arxiv.org/html/2610.11559v1)で報告された失敗パターンを、扱いやすい小規模な課題として具体化したものである。
 `private/trial.json`には、出典情報、非公開の要件、開示条件、対話の評価基準、終了条件、および参考となる成功例・失敗例が記録されている。
 なお、表示課題に含まれる第三者テスターの存在や回答制約は原型論文には含まれておらず、本試行の要件に合わせて独自に追加した条件である。
+名前が`-agent`と`-user`で終わる課題は確認判断の対であり、確認の基準を変える時は両方を同じ条件で試行して、不要な質問と必要な確認の省略の両方向を比べる。
+対の課題は依頼文と`task.py`が同じで、`facts.json`だけが違う。
 `kind`が`dialogue`の課題では、以下のユーザー役との仲介手順と対話JSONを使う。
 `kind`が`single`の課題では、評価対象だけを起動して提出までの終了を観測し、`multi-turn-trials-grading.md`「単独作業の採点」の実施情報を保存する。
 単独課題`verification-status`は、未実行と実行済みの期待失敗の分類を扱う保存形式の検証用合成素材であり、実モデルの比較実績とは別の素材である。
