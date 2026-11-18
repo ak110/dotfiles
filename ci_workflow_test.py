@@ -169,6 +169,18 @@ def test_every_job_fails_on_unintended_slowdown(name: str) -> None:
         assert minutes.isdecimal() and 0 < int(minutes) < 360, job_name
 
 
+def test_diagnostic_logs_are_saved_when_job_times_out() -> None:
+    """時間上限で止まりcancelledで終わったjobでも、診断ログを保存する。"""
+    saving = []
+    for action in sorted((REPO_ROOT / ".github" / "actions").glob("*/action.yml")):
+        runs = workflow_mapping(workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))["runs"])
+        for step in workflow_steps(runs):
+            if str(step.get("uses", "")).endswith("/upload-diagnostic-logs"):
+                saving.append(action.parent.name)
+                assert step.get("if") == "${{ failure() || cancelled() }}", action
+    assert saving
+
+
 def test_required_check_display_names(workflow_data: dict[str, object]) -> None:
     """rulesetが参照する9表示名と、共通checkの非所有名を維持する。"""
     jobs = workflow_jobs(workflow_data)

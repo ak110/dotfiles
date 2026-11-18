@@ -15,5 +15,6 @@ runs:
         # hosted runnerはjob終了時に破棄されるため、約1分を要する検証rootの削除を省く。
         uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR" --keep-verification-root
     - name: 失敗時の診断ログを保存
-      if: failure()
+      # 時間上限で止まったjobはcancelledで終わるため、その場合も原因調査用のログを残す。
+      if: ${{ failure() || cancelled() }}
       uses: ./dotfiles/.github/actions/upload-diagnostic-logs
