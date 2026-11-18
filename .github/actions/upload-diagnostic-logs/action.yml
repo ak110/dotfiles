@@ -3,6 +3,7 @@ description: agent-toolkitの状態領域にある診断ログをartifactへ保�
 # 管理サービスの標準エラーとupdate-dotfilesの永続ログはrunnerの破棄とともに消え、
 # job出力が示す診断ファイルを後から読めないため、失敗したjobの原因調査用に保存する。
 # 対象はCIのhomeの状態領域と、更新検証（check_update_dotfiles_upgrade.py）が一時領域に作る検証homeの状態領域である。
+# pytestなどログを作る前の工程で失敗した場合は対象が無いため、警告を出さずに終える。
 runs:
   using: composite
   steps:
@@ -17,7 +18,7 @@ runs:
           ${{ runner.temp }}/update-dotfiles-upgrade-*/**/agent-toolkit/*.log*
           ${{ runner.temp }}/update-dotfiles-upgrade-*/**/agent-toolkit/services/agents-server/*
         include-hidden-files: true
-        if-no-files-found: warn
+        if-no-files-found: ignore
         retention-days: 7
     - name: 診断ログの保存 (Windows)
       if: runner.os == 'Windows'
@@ -30,5 +31,5 @@ runs:
           ~/AppData/Local/Temp/update-dotfiles-upgrade-*/**/agent-toolkit/*.log*
           ~/AppData/Local/Temp/update-dotfiles-upgrade-*/**/agent-toolkit/services/agents-server/*
         include-hidden-files: true
-        if-no-files-found: warn
+        if-no-files-found: ignore
         retention-days: 7
