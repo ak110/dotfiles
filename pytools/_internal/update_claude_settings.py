@@ -45,8 +45,6 @@ _REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND = (
 # Windows向けPreToolUseは、複合構文を外側のシェルへ渡さず、`-File`でPowerShellスクリプトを起動する。
 # `-Command`の引用符は起動経路によって除去の有無が異なり、argvへ引用符が残る経路では実行されない。
 _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] = (
-    # 2026-06: agent-toolkitプラグイン側へ移動したため旧エントリを除去
-    removal_registry.Registered("claude_hook_permissionrequest.py", datetime.date(2026, 6, 2)),
     # 2026-07: 共通エントリポイント (claude_hook.py <subcommand>) へ集約したため旧エントリを除去
     removal_registry.Registered(
         "uv run --no-project --script ~/dotfiles/scripts/claude_hook_pretooluse.py", datetime.date(2026, 7, 27)
@@ -116,7 +114,8 @@ _REMOVED_ENV_KEYS: tuple[removal_registry.Registered[str], ...] = (
     removal_registry.Registered("CLAUDE_CODE_AUTO_COMPACT_WINDOW", datetime.date(2026, 11, 18)),
     removal_registry.Registered("CLAUDE_CODE_ENABLE_FUNCTION_HOOKS", datetime.date(2026, 11, 15)),
     removal_registry.Registered("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", datetime.date(2026, 8, 7)),
-    removal_registry.Registered("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", datetime.date(2026, 5, 30)),
+    # 2026-05-30に登録した後、2026-07-02に配布へ戻して表から外し、2026-08-24に再び配布から外して登録した
+    removal_registry.Registered("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", datetime.date(2026, 8, 24)),
 )
 
 # 配布元から廃止した設定キーのドット区切りパス。

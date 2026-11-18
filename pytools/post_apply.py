@@ -184,7 +184,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("skills/refine-prompt"), datetime.date(2026, 9, 29)),
         cleanup_paths.RemovedPath(Path("skills/export-session"), datetime.date(2026, 9, 29)),
         # 振り返りはagent-toolkit側のreview-sessionへ統合したため旧配布先を削除する。
-        cleanup_paths.RemovedPath(Path("skills/session-review"), datetime.date(2026, 5, 23)),
         cleanup_paths.RemovedPath(Path("skills/session-review-dotfiles"), datetime.date(2026, 8, 7)),
         # 現在のスキル名は add-awi。旧名 feedback-add の配布先ディレクトリを削除する。
         cleanup_paths.RemovedPath(Path("skills/feedback-add"), datetime.date(2026, 6, 16)),
@@ -228,7 +227,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("skills/refine-prompt"), datetime.date(2026, 9, 29)),
         cleanup_paths.RemovedPath(Path("skills/export-session"), datetime.date(2026, 9, 29)),
         # 振り返りはagent-toolkit側のreview-sessionへ統合したため旧配布先リンクを除去する。
-        cleanup_paths.RemovedPath(Path("skills/session-review"), datetime.date(2026, 5, 23)),
         cleanup_paths.RemovedPath(Path("skills/session-review-dotfiles"), datetime.date(2026, 8, 7)),
         # 現在のスキル名は add-awi。旧名 feedback-add の配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("skills/feedback-add"), datetime.date(2026, 6, 16)),

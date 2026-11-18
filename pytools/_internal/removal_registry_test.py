@@ -53,14 +53,14 @@ def test_due_report_is_empty_when_all_entries_are_before_notice() -> None:
 
 @pytest.mark.parametrize(
     ("today", "expected_code"),
-    [(datetime.date(2026, 11, 7), 0), (datetime.date(2099, 1, 1), 1)],
+    [(datetime.date(2026, 11, 19), 0), (datetime.date(2099, 1, 1), 1)],
 )
 def test_report_cli_fails_only_when_entries_are_due(
     today: datetime.date, expected_code: int, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """報告CLIは基準日に期限切れ・期限間近の項目があれば対処を示して1、無ければ0を返す。
 
-    2026-11-07は処理時点で期限の近い項目を外した後の基準日、2099-01-01は全項目が期限切れになる基準日である。
+    2026-11-19は処理時点で期限の近い項目を外した後の基準日、2099-01-01は全項目が期限切れになる基準日である。
     """
     assert removal_registry_report.main(["--today", today.isoformat()]) == expected_code
     captured = capsys.readouterr()
