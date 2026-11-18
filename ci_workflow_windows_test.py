@@ -42,6 +42,20 @@ def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: d
     assert stop_step.get("shell") == "pwsh"
 
 
+def test_windows_upgrade_check_places_verification_root_on_runner_disk(workflow_data: dict[str, object]) -> None:
+    """Windowsの更新検証は、検証rootを作る前に一時領域をrunnerの作業ディスク（runner.temp）へ向ける。
+
+    OSディスクでは小さなファイルの書込みが数倍遅く、uvのキャッシュと別ドライブになってhardlinkできない。
+    診断ログの保存はrunner.temp配下の検証homeを探すため、置き場所がずれると失敗時のログも失われる。
+    """
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
+    _, check_step = _windows_step(steps, "約3日前からの update-dotfiles 更新検証")
+    lines = [line.strip() for line in str(check_step["run"]).splitlines()]
+    check = next(index for index, line in enumerate(lines) if "scripts/check_update_dotfiles_upgrade.py" in line)
+    for variable in ("TEMP", "TMP"):
+        assert f"$env:{variable} = $env:RUNNER_TEMP" in lines[:check], variable
+
+
 def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]) -> None:
     """Windowsジョブが公開された起動スクリプトのテストを実行し、`.cmd`の分岐をWindowsで確かめる。"""
     _, step = _windows_step(

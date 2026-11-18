@@ -181,6 +181,24 @@ def test_diagnostic_logs_are_saved_when_job_times_out() -> None:
     assert saving
 
 
+def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
+    """診断ログの各保存stepは1つの保存元だけを対象にし、更新検証homeはrunner.temp配下を探す。
+
+    upload-artifactは1回の保存でWindowsのhome（C:）とrunner.temp（D:）をまたぐと共通の親を求められず失敗し、
+    失敗したjobのログを1件も残さない。更新検証は検証rootをrunner.tempへ置くため、保存先もそこへそろえる。
+    """
+    action = REPO_ROOT / ".github" / "actions" / "upload-diagnostic-logs" / "action.yml"
+    runs = workflow_mapping(workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))["runs"])
+    upgrade_patterns = []
+    for step in workflow_steps(runs):
+        patterns = [line.strip() for line in str(workflow_mapping(step["with"])["path"]).splitlines() if line.strip()]
+        roots = {pattern.split("/", 1)[0] for pattern in patterns}
+        assert len(roots) == 1, patterns
+        upgrade_patterns += [pattern for pattern in patterns if "update-dotfiles-upgrade-" in pattern]
+    assert upgrade_patterns
+    assert all(pattern.startswith("${{ runner.temp }}/") for pattern in upgrade_patterns), upgrade_patterns
+
+
 def test_required_check_display_names(workflow_data: dict[str, object]) -> None:
     """rulesetが参照する9表示名と、共通checkの非所有名を維持する。"""
     jobs = workflow_jobs(workflow_data)
