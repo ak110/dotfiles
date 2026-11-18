@@ -12,6 +12,7 @@
 組み込みの委譲を起動または継続する場合は、`agent-toolkit:delegation`の`references/sending.md`にある生成CLIを使用し、同じ役割の入力宣言へと接続する。
 
 1. 計画ファイルの`## 反映内容と反映先`と`## 完成条件`に沿って実装を進める（成果物の品質基準は`agent-basics:writing-standards`の該当資料を確認し、配送・状態・工程記録を扱う場合は`agent-basics:writing-standards`の運用表も適用する）。
+   - 8節形式の計画では、`legacy-plan-file-standards.md`「8節形式」の対応表で節を読み替える。
    - 実装に着手する前に、完成条件で規定された公開呼び出し手段、入力値と初期状態、期待される結果、および検出すべき失敗様態を具体化する。
      `agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」に基づいてテスト手法を選定する。
      レビュー指摘への修正時も同様に適用し、不具合は該当する入力を用いて再現させた上で修正する。

@@ -13,14 +13,12 @@ from agent_toolkit._plan.structure.constants import (
     PLAN_H2_ACTION,
     PLAN_H2_BUG,
     PLAN_H2_COMPLETION,
-    PLAN_H2_HISTORY,
     PLAN_H2_IMPLEMENTATION,
     PLAN_H2_LEGACY_HISTORY,
     PLAN_H2_LEGACY_PROGRESS,
     PLAN_H2_MATERIALS,
     PLAN_H2_OVERVIEW,
     PLAN_H2_PERMANENCE,
-    PLAN_H2_PROGRESS,
     PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
     PLAN_IMPLEMENTATION_UNIT_ID_PATTERN,
     PLAN_IMPLEMENTATION_UNITS_H3,
@@ -199,21 +197,6 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     if conflicts:
         return None, conflicts
     return PlanMetadata(parent, tuple(entries), values, tuple(related_wi), tuple(base_candidates)), []
-
-
-def extract_implementer_region(content: str) -> list[tuple[int, str]]:
-    """`## 変更履歴`直後から`## 進捗ログ`直前までの本文行を返す。"""
-    body = list(iter_markdown_body_lines(content))
-    headings = extract_headings(content)
-    history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
-    if history_index is None:
-        return []
-    _history_start, history_end = heading_subtree_range(headings, history_index)
-    if history_end is None:
-        return []
-    progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
-    region_end = headings[progress_index].lineno if progress_index is not None else None
-    return [(lineno, line) for lineno, line in body if lineno >= history_end and (region_end is None or lineno < region_end)]
 
 
 def is_agent_facing_md(rel_path: str) -> bool:

@@ -608,6 +608,15 @@ def check_plan_request_structure(
         if not any(line.strip() for _lineno, line in lines_within(body, headings[0].lineno, summary_end)):
             errors.append("H1直下に要約（全体像、目的、対象範囲）を書く")
     errors.extend(_check_request_plan_layout(headings))
+    # 要求を書く節はMarkdown構文の見出しで切り出すため、`extract_headings`が見ない字下げ付きのH2も節になる。
+    # 見出しの配置の検査を抜けないよう、そのH2を拒否する。
+    body_linenos = {lineno for lineno, _line in body}
+    h2_linenos = {heading.lineno for heading in headings if heading.level == 2}
+    errors.extend(
+        f"H2の`##`は行頭に置く: {token.map[0] + 1}行目`## {name.strip()}`"
+        for token, name in markdown_headings.top_level_atx_headings(content, 2)
+        if token.map is not None and token.map[0] + 1 in body_linenos and token.map[0] + 1 not in h2_linenos
+    )
 
     errors.extend(
         _check_human_action(

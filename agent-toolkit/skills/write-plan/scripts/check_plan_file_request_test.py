@@ -68,6 +68,10 @@ def _swap_order(content: str) -> str:
         ),
         (_swap_order, "要求を書く節: H2の順序が規定と異なります: 反映内容と反映先、完成条件、調査結果と判断根拠、"),
         (lambda c: c.replace(_QUOTATION, _QUOTATION + "## 補足\n\n補足する。\n\n", 1), "実際=['補足']"),
+        (
+            lambda c: c.replace(_QUOTATION, _QUOTATION + "   ## 補足\n\n補足する。\n\n", 1),
+            "H2の`##`は行頭に置く",
+        ),
         (lambda c: c.replace("## 実施内容\n\n", "## 実施内容\n\n### 補足\n\n", 1), "`## 実施内容`の配下に見出しは置かない"),
         (lambda c: c.replace("## 検証\n\n", "## 検証\n\n### 補足\n\n", 1), "`## 検証`の配下に見出しは置かない"),
         (lambda c: c.replace("## 進捗ログ\n\n", "## 進捗ログ\n\n### 補足\n\n", 1), "`## 進捗ログ`の配下に見出しは置かない"),
@@ -77,10 +81,20 @@ def _swap_order(content: str) -> str:
             "計画メタ情報はH1直下へ置く: 実際=`## 概要`直下",
         ),
     ],
-    ids=["empty", "order", "unknown-h2", "action-child", "verification-child", "progress-child", "summary", "overview"],
+    ids=[
+        "empty",
+        "order",
+        "unknown-h2",
+        "indented-h2",
+        "action-child",
+        "verification-child",
+        "progress-child",
+        "summary",
+        "overview",
+    ],
 )
 def test_rejects_invalid_layout(repo: tuple[pathlib.Path, str], edit, expected: str) -> None:
-    """置いた節の空、順序違い、未知のH2、固定H2配下の見出し、要約の欠落、計画メタ情報の配置違いを拒否する。"""
+    """置いた節の空、順序違い、未知のH2、行頭に空白を置いたH2、固定H2配下の見出し、要約の欠落、計画メタ情報の配置違いを拒否する。"""
     work_dir, _base = repo
     content = edit(_plan_fixture.request_plan(repo=work_dir.resolve()))
     errors, _warnings = _check(work_dir, content)
