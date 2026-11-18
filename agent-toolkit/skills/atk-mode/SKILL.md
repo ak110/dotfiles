@@ -56,22 +56,31 @@ agent-toolkitの作業の入口である。
 
 起動の形は`/atk-mode <作業> [入力]`とする。
 作業の指定が無い起動は、対話での一般の作業として扱う。
-移行前の作業は、今のスキルを同じ引数で起動する。
+移行前の作業（`process-wi`、`review-session`、`export-session`）は、今のスキルを同じ引数で起動する。
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
-| `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `../add-awi-by-user/SKILL.md` |
+| `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md` |
 | `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | スキル`agent-toolkit:process-wi` |
 | `review-session [batch]` | 会話の振り返りを求められた時 | スキル`agent-toolkit:review-session` |
 | `export-session` | 会話の記録の出力を求められた時 | スキル`agent-toolkit:export-session` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `roles/<役割名>.subagent.md`（無ければ`${CLAUDE_PLUGIN_ROOT}/share/`の同名）と`${CLAUDE_PLUGIN_ROOT}/share/rules/rules-subagent.md` |
 
-一般の作業では、次の操作・判断の前に対応するスキルを起動する。
+一般の作業では、次の操作・判断の前に対応する資料を全文読む（スキルは起動する）。
+手順書と形式の定義は`playbooks/`と`references/`にあり、名指しは`agent-toolkit:atk-mode/playbooks/confirmation.md`のように、スキル名からのパスで書く。
 
-| 操作・判断 | スキル |
+| 操作・判断 | 読む資料 |
 | --- | --- |
-| ユーザーへの確認と報告、発話の解釈、権限拒否 | `agent-toolkit:user-confirmation-and-report` |
-| WIの起草、保存、状態の操作 | `agent-toolkit:wi-standards` |
+| ユーザーへ確認するかの判定、承認が覆う範囲の判定、確認文の作成 | `playbooks/confirmation.md` |
+| 発話の解釈、指摘・訂正・割り込みへの応答 | `playbooks/user-utterance.md` |
+| 権限拒否、手順どおりに進められない時 | `playbooks/permission-denial.md` |
+| 確認・報告の手段の選択 | `references/delivery.md` |
+| WIの起草 | `playbooks/wi-drafting.md` |
+| WIの保存と取得 | `playbooks/wi-saving.md` |
+| WIの状態、依存、保留、終了 | `references/states-and-dependencies.md` |
+| WIの由来と承認、逐語引用 | `references/origin-and-approval.md` |
+| 回答済みUWIの反映 | `references/answer-transitions.md` |
+| 利用上限の予告・猶予の通知 | `references/usage-limit.md` |
 | 計画の作成 | `agent-toolkit:write-plan` |
 | 委譲の要否、起動、待機、検収 | `agent-toolkit:delegation` |
 | commitとpush | `agent-toolkit:commit` |

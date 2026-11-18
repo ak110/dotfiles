@@ -1,0 +1,44 @@
+# 採用済みAWIの効果の記録の形式
+
+本書は、採用済みAWIの実装が実際の利用で目的を達したかを、採用の状態と別に記録する形式を定める。
+効果の判定は、観測したことだけを事実として言う原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）の適用であり、適用機会が無いことや確かめられないことは確認待ちとして扱う。
+
+## 採用済みAWIの効果記録
+
+`effect_check`は、採用済みAWIの実装後の確認を表すfrontmatterである。
+実装commit付きの新しい採用では`pending`が保存され、実際の利用での適用機会と結果を確かめるまで保つ。
+
+| 値 | 意味 |
+| --- | --- |
+| `pending` | 確認待ち |
+| `confirmed` | 効果を確認済み |
+| `insufficient` | 効果が足りないと判定し、是正AWIを保存済み |
+| `not_required` | 後日の確認が要らないと判断し、理由を保存済み |
+
+- 判定の単位は作業項目の目的であり、目的を達したかの判定を作業項目の全体へ保存する。
+- 変更ファイルごとの判定も保存できる。
+  全ての変更ファイルが確認済みなら全体を`confirmed`、1ファイル以上の効果不足なら全体を`insufficient`とし、一部だけ確認した時は判定済みのファイルを保ったまま全体を`pending`とする。
+- 適用機会が無い場合と、日時や対応commitを解決できない場合は、理由付きの確認待ちとし、確認不要や効果不足と区別する。
+- キーが無い既存の項目は未確認として扱い、日時と変更内容から確認の対象にする。
+- 差分の無い要求充足、回答だけのUWI、却下した項目は、自動の確認待ちの対象から外す。
+- 確認待ちは日数によらず残し、依存の解決や`atk wi process-loop`の未着手の対象とは別に扱う。
+
+保存には次の操作を使う。
+
+```text
+atk wi effect-check <ファイル名> --worktree <対象worktreeの絶対パス> --verdict confirmed --checked-on <YYYY-MM-DD> --review-record <振り返りの記録位置> --reason <判定の根拠>
+```
+
+- `insufficient`では`--corrective-awi <保存済み是正AWIファイル名>`を加える。
+- 変更ファイルごとに保存する時は`--file <変更ファイルのリポジトリ相対パス>`を加える。
+- 全体の確認待ちと確認不要は`--file`を省き、`--verdict pending`か`--verdict not_required`と`--reason <空でない1行の理由>`を指定する。
+  `--worktree`、`--checked-on`、`--review-record`も同じく指定する。
+- 同じ判定と理由を保存する対象は、`atk wi effect-check <ファイル名> [<ファイル名> ...]`でまとめて指定でき、commitとpushは1回にまとまる。
+  途中の保存やcommitに失敗した時は、同じ引数で再実行する。
+
+CLIは状態、要求本文、ユーザーコメント、既存の処理結果の行を保ち、最後の`## 処理結果`節へ`- 効果確認: {...}`のJSONの行を追記する。
+記録は`atk wi show`、一覧のJSONの`effect_check`と`effect_check_reason`、WI詳細のfrontmatterの表示で確かめられる。
+確認待ちの一覧は`atk wi list --state=adopted --effect-check=pending`で取得でき、ほかの判定値も同じ引数で指定できる。
+新しい採用の日時はタイムゾーン付きで保存される。
+過去のタイムゾーンの無い値は、採用の操作が保存したローカル時刻として解釈し、適用したタイムゾーンを確認の材料へ残す。
+日時を解釈できない項目は、理由付きで未確認に残す。

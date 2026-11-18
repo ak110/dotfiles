@@ -33,3 +33,4 @@ arid-baseline.json linguist-generated
 
 # 同梱した第三者の文面は自作の規範・ソースと区別する。
 /agent-basics/THIRD-PARTY-NOTICES.md linguist-vendored
+/agent-toolkit/THIRD-PARTY-NOTICES.md linguist-vendored

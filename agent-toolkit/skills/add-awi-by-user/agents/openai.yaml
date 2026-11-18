@@ -1,6 +1,0 @@
-interface:
-  display_name: "add-awi-by-user"
-  short_description: "要求を具体化し、必要なユーザー確認と意味の検収を経てAWIを登録する"
-
-policy:
-  allow_implicit_invocation: false
