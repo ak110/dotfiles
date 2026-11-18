@@ -204,3 +204,85 @@ def test_ensure_service_waits_past_slow_first_ping_until_ready_deadline(
     environment = {service_forward.DEFER_PUBLISH_ENV: "1"}
     assert service_forward.ensure_service(runtime_environment.CallerContext(environment, tmp_path), tmp_path) == record
     assert len(pings) == 2
+
+
+# 受付を始めてから自分のready記録を置くまでの区間を、試験側の合図まで開けておく管理サービスの代役。
+_SERVICE_STAND_IN = """
+import json, os, pathlib, sys, time
+sys.path.insert(0, {code!r})
+from agent_toolkit._agents_server import service_transport
+from agent_toolkit._common.atomic_file import atomic_write
+
+directory, generation = pathlib.Path(sys.argv[-2]), sys.argv[-1]
+signals = pathlib.Path({signals!r})
+address = service_transport.endpoint(directory, generation)
+with service_transport.listen(address) as listener:
+    (signals / "listening").touch()
+    deadline = time.monotonic() + 30
+    while not (signals / "go").exists():
+        if time.monotonic() > deadline:
+            raise SystemExit("ready記録を置く合図が届かない")
+        time.sleep(0.01)
+    record = {{
+        "generation": generation,
+        "endpoint": address,
+        "process": service_transport.process_identity(os.getpid()),
+    }}
+    atomic_write(directory / f"{{generation}}.json", json.dumps(record))
+    while True:
+        try:
+            peer = listener.accept()
+        except TimeoutError:
+            continue
+        with peer:
+            operation = service_transport.receive(peer)["operation"]
+            result = {{"generation": generation}} if operation == "ping" else record
+            service_transport.send(peer, {{"result": result}})
+        if operation == "publish":
+            break
+"""
+
+
+@pytest.mark.windows
+def test_restart_does_not_mistake_exited_generation_record_for_new_service(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同じ世代の前回の記録が残る間に受付を始めた新しいサービスへ、前回の起動単位を期待して接続しない。
+
+    2026-11-18、更新後処理の起動確認が、新しいサービスの受付へ終了した前回のサービスの起動単位を期待して接続し、
+    「接続相手の起動世代が一致しません」で失敗して起動中のサービスを止めた（CI run 44400715958、2026-11-17のstheno）。
+    """
+    directory = tmp_path / "services" / "agents-server"
+    root = tmp_path / "root"
+    signals = tmp_path / "signals"
+    signals.mkdir()
+    (root / "scripts").mkdir(parents=True)
+    code = pathlib.Path(service_forward.__file__).resolve().parents[2]
+    (root / "scripts" / "launch.py").write_text(
+        _SERVICE_STAND_IN.format(code=str(code), signals=str(signals)), encoding="utf-8"
+    )
+    monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("G1", "1.0.0"))
+    monkeypatch.setattr(service_forward.plugin_environment, "prepared_python", lambda *_args: None)
+    GenerationRegistry(directory).reserve("G1", root, "1.0.0")
+    exited = "999999999:1"
+    endpoint = service_transport.endpoint(directory, "G1")
+    (directory / "G1.json").write_text(
+        json.dumps({"generation": "G1", "endpoint": endpoint, "process": exited}), encoding="utf-8"
+    )
+    polls = 0
+
+    def paced(seconds: float) -> None:
+        # 新しいサービスの受付中に転送側が3回確かめ直してから、サービスへready記録を置かせる。
+        nonlocal polls
+        if (signals / "listening").exists():
+            polls += 1
+            if polls >= 3:
+                (signals / "go").touch()
+        time.sleep(seconds)
+
+    monkeypatch.setattr(service_forward, "time", SimpleNamespace(monotonic=time.monotonic, sleep=paced))
+    caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
+    published = service_forward.ensure_service(caller, root, python=pathlib.Path(sys.executable))
+    assert published["process"] != exited
+    assert published == json.loads((directory / "G1.json").read_text(encoding="utf-8"))
