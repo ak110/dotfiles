@@ -115,6 +115,14 @@ def main(argv: list[str]) -> int:
     payload: object = None
     with contextlib.suppress(Exception):
         payload = json.loads(payload_text)
+    if isinstance(payload, dict):
+        raw_session_id = payload.get("session_id")
+        # 会話IDは状態ファイルの名前になる。ファイル名にできない値は、会話IDの無い入力として扱い、
+        # 状態の継承・記録の対象にしない。判定する各サブコマンドは、会話IDが無くても動作する。
+        if isinstance(raw_session_id, str) and raw_session_id and _session_launchers.valid_launcher(raw_session_id) is None:
+            print(f"hook入力の会話IDが不正なため、会話IDの無い入力として扱う: {raw_session_id[:80]!r}", file=sys.stderr)
+            payload["session_id"] = ""
+            payload_text = json.dumps(payload, ensure_ascii=False)
     if isinstance(payload, dict) and isinstance(payload.get("session_id"), str):
         _notice.set_warning_session_id(payload["session_id"])
         if isinstance(payload, dict):

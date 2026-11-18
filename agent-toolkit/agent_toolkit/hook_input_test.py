@@ -144,6 +144,33 @@ class TestStandardInputAndPayloadDump:
         assert (state_directory / ".state.lock").exists()
         assert not (temp_directory / "claude-agent-toolkit-current.json").exists()
 
+    @pytest.mark.parametrize("session_id", ["bad id/..", "../escape", "a/b", "line\nbreak", "日本語"])
+    def test_invalid_session_id_is_treated_as_absent_without_state_creation(
+        self, tmp_path: pathlib.Path, session_id: str
+    ) -> None:
+        """状態ファイル名へ使えない会話IDは、状態の継承・活動記録より前に会話IDの無い入力へ置き換え、各サブコマンドは呼ぶ。"""
+        entrypoint = self._copy_entrypoint(tmp_path)
+        self._write_echo_module(tmp_path)
+        state_root = state_paths.state_dir()
+        before = set(state_root.rglob("*")) if state_root.exists() else set()
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(json.dumps({"sessionId": "previous"}) + "\n", encoding="utf-8")
+        payload = json.dumps({"session_id": session_id, "transcript_path": str(transcript), "hook_event_name": "SessionStart"})
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "pretooluse"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        after = set(state_root.rglob("*")) if state_root.exists() else set()
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["session_id"] == ""
+        assert "会話ID" in result.stderr
+        assert after == before
+
     def test_module_import_error_uses_utf8_stderr(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
         (tmp_path / "_hooks" / "pretooluse.py").write_text(
