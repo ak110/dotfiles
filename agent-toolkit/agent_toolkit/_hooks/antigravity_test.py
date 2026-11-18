@@ -403,3 +403,27 @@ def test_native_async_offsets_keep_original_bytes(tmp_path: pathlib.Path) -> Non
     )
     path.write_text(first + "\n" + second + "\n", encoding="utf-8")
     assert background_tasks.async_launch_offsets(str(path))["agy-1-0"] == len((first + "\n").encode())
+
+
+def test_session_start_claims_process_loop_before_state_update_failures(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """統括の確保は、SessionStartの状態更新や古い状態の除去が失敗しても先に成立し、入れ子の会話へ奪われない。"""
+    from agent_toolkit._common import process_loop_session  # pylint: disable=import-outside-toplevel
+
+    environ = {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "launch-agy"}
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("SessionStartの処理の失敗")
+
+    monkeypatch.setattr(antigravity.session_state, "sweep_stale_states", fail)
+    for conversation in ("agy-coordinator", "agy-nested"):
+        with pytest.raises(RuntimeError):
+            antigravity.main(json.dumps(_payload(tmp_path, conversationId=conversation)), event="SessionStart")
+
+    assert process_loop_session.is_identified_process_loop_session("agy-coordinator", environ)
+    assert not process_loop_session.is_identified_process_loop_session("agy-nested", environ)

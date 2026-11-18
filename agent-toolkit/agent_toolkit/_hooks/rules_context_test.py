@@ -344,3 +344,31 @@ def test_session_start_guides_main_to_entry_with_one_line(
     entry = (rules_context.SHARE_DIR.parent / "skills" / "atk-mode" / "SKILL.md").read_text(encoding="utf-8")
     headings = [line for line in entry.split("\n---\n", 1)[1].splitlines() if line.startswith("#")]
     assert headings and not any(f"\n{heading}\n" in output for heading in headings)
+
+
+@pytest.mark.parametrize("source", ("startup", None))
+@pytest.mark.parametrize("host", ("claude", "codex"))
+def test_process_loop_claim_survives_session_start_failure(
+    host: str, source: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """統括の確保は、source検証や以後のSessionStart処理が例外で失敗しても成立し、後から始まる入れ子の会話は統括にならない。"""
+    from agent_toolkit._common import process_loop_session  # pylint: disable=import-outside-toplevel
+
+    environ = {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "launch-x"}
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("SessionStartの処理の失敗")
+
+    monkeypatch.setattr(rules_context, "compose_session_start", fail)
+    for session in ("coordinator", "nested"):
+        with pytest.raises((RuntimeError, ValueError)):
+            rules_context.main(
+                json.dumps({"hook_event_name": "SessionStart", "source": source, "session_id": session}), host=host
+            )
+
+    assert process_loop_session.is_identified_process_loop_session("coordinator", environ)
+    assert not process_loop_session.is_identified_process_loop_session("nested", environ)

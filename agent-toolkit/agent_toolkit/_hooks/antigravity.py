@@ -12,12 +12,20 @@ import dataclasses
 import importlib
 import io
 import json
+import os
 import pathlib
 import re
 import shlex
 from typing import Any
 
-from agent_toolkit._common import agy_records, message_format, next_action, session_activity, session_state
+from agent_toolkit._common import (
+    agy_records,
+    message_format,
+    next_action,
+    process_loop_session,
+    session_activity,
+    session_state,
+)
 from agent_toolkit._hooks import notice
 
 EVENTS = frozenset({"SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop"})
@@ -319,6 +327,8 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
     session_id = normalized["session_id"]
     if not isinstance(session_id, str) or re.fullmatch(r"[A-Za-z0-9_-]+", session_id) is None:
         raise ValueError("conversationIdは英数字・ハイフン・アンダースコアで指定する")
+    if event == "SessionStart":
+        process_loop_session.claim_process_loop_session(session_id, os.environ)
     session_state.update_state(
         session_id,
         lambda state: {

@@ -540,11 +540,11 @@ def main(payload_text: str, *, host: str = "claude") -> int:
     session_id = payload.get("session_id")
     delegated = is_delegated(os.environ)
     if event_name == "SessionStart":
+        if isinstance(session_id, str):
+            claim_process_loop_session(session_id, os.environ)
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
-        if not delegated and isinstance(session_id, str):
-            claim_process_loop_session(session_id, os.environ)
         if source == "resume" and not delegated:
             from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 

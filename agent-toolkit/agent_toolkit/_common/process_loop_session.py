@@ -4,6 +4,7 @@ import re
 from collections.abc import Mapping
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import read_state, update_state
 
 _SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
@@ -58,8 +59,11 @@ def claim_process_loop_session(session_id: str, environ: Mapping[str, str]) -> N
     """会話IDを渡さずに起動した統括で、最初のSessionStartの会話IDを統括の会話IDとして確保する。
 
     統括のSessionStartは入れ子のCLIの起動より先に発火するため、後から始まった会話のSessionStartは確保済みの値を変えない。
+    委譲先の会話は確保しない。確保が先に済むよう、各ホストのSessionStart処理の失敗しうる処理より前で呼ぶ。
     """
     if environ.get(_SESSION_ENV) != "1" or environ.get(_SESSION_ID_ENV) is not None or not _TOKEN.match(session_id):
+        return
+    if is_delegated(environ):
         return
     if (key := _claim_key(environ)) is not None:
         update_state(key, lambda state: None if state.get(_CLAIMED_KEY) else {**state, _CLAIMED_KEY: session_id})
