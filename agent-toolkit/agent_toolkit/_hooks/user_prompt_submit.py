@@ -3,6 +3,7 @@
 ホスト別コマンド形式（Claude Codeは`/agent-toolkit:<name>`・`/<name>`、
 Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル起動を検出し、
 対応するセッション状態フラグを立てる。
+入口の起動（`/atk-mode <作業> [入力]`）は、作業の名前を持つスキルの手動起動として扱う。
 既存のPostToolUse(Skill)経由の記録では捕捉できない手動起動を補完する。
 
 検出対象スキルと対応フラグ:
@@ -54,6 +55,7 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
 )
 lazy from agent_toolkit._common import (
     automated_prompt,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    skill_modes,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 lazy from agent_toolkit._common.delegated_session import (
     is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -272,11 +274,16 @@ def main(payload_text: str) -> int:
     if first_line.startswith(command_prefix):
         match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
         if match is not None:
-            name = match.group(1)
-            full_name = f"agent-toolkit:{name}"
+            full_name = f"agent-toolkit:{match.group(1)}"
+            arguments = prompt[len(command_prefix) + match.end() :]
+            # 入口`atk-mode <作業>`は作業の名前へ読み替える。委譲先の最初の入力は委譲元のエージェントが書くため、
+            # 読み替えない（エージェントが自分の判断でAWI投入と自律モードの状態を立てられなくする）。
+            if not is_delegated(os.environ):
+                full_name, arguments = skill_modes.resolve_work(full_name, arguments)
+            name = full_name.removeprefix("agent-toolkit:")
             session_title.observe_add_awi(session_id, full_name)
             if not is_codex:
-                session_title.observe_skill(session_id, full_name, prompt[len(command_prefix) + match.end() :])
+                session_title.observe_skill(session_id, full_name, arguments)
 
             # 対応スキル別にフラグを設定する。
             if (is_codex or is_antigravity_payload(payload)) and (

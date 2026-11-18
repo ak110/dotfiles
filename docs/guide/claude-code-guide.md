@@ -62,6 +62,9 @@ Modは実行中のOSアカウントの権限で動くため、信頼できるも
 最初に使う登録・処理の操作は[READMEの最初の操作](../../agent-toolkit/README.md#最初の操作)、運用ごとの例は[推奨ワークフロー](claude-code-workflows.md#推奨ワークフロー)を参照。
 Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 
+- `agent-toolkit:atk-mode <作業> [入力]`: 作業の入口。
+  `add-awi-by-user`、`process-wi`、`review-session`、`export-session`を作業の名前として渡せる。
+  作業ごとのスキルは順に入口の配下へ移すため、移行が済むまでは今の名前での起動も使える
 - `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。
   引数で着眼点を追加できる
 - `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。

@@ -45,6 +45,15 @@ _llm_notice = _notice_formatter(_HOOK_ID)
 
 RESPONSE_LANGUAGE_NOTICE = "言語の基準は、同時配送された`01-agent.md`「使用言語」を参照せよ。"
 QUALITY_CHECKPOINT_NOTICE = "圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。"
+ENTRY_START_NOTICE = "作業を始める前に、スキル`agent-toolkit:atk-mode`を起動せよ。"
+ENTRY_COMPACT_NOTICE = (
+    "圧縮後に読む資料の限定とは別に、作業を再開する前にスキル`agent-toolkit:atk-mode`を起動し直せ。"
+    "進めていた作業の手順書は、入口の表から選び、次に行う操作・判断の条件に該当した時に読み直せ。"
+)
+"""入口のスキルの起動を求める案内。起動と読み直しを求める1行だけを持ち、規範の本文を載せない。
+
+文脈を引き継がずに始まる会話のメインへ届ける。委譲先へは起動の本文が規範を届けるため、案内しない。
+"""
 BACKGROUND_TASKS_DISABLED_NOTICE = (
     "この`Claude Code`では`Bash`の背景実行が無効で、`run_in_background`は使えない。"
     "待機は`agent-toolkit:delegation`の`references/waiting-and-monitoring-intervals.md`「待機区間の構成」に従え。"
@@ -167,6 +176,8 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
         rule_notices.append(RESPONSE_LANGUAGE_NOTICE)
     if source == "compact":
         rule_notices.append(QUALITY_CHECKPOINT_NOTICE)
+    if not delegated and source in _CONTEXT_LOSING_SOURCES:
+        rule_notices.append(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE)
     if rule_notices:
         parts.append(_llm_notice("\n".join(rule_notices)))
     if host == "claude" and wait_schedule.background_tasks_disabled():

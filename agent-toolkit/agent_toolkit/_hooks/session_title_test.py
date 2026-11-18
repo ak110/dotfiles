@@ -224,3 +224,71 @@ def test_process_loop_child_keeps_plan_title(
     _write_plan(session, tmp_path, "31-1002_pyfltr.md")
     capsys.readouterr()
     assert _hook_title(session, "", capsys) == "single-lane pyfltr"
+
+
+@pytest.mark.parametrize(
+    "prompt,codex",
+    [
+        ("/atk-mode add-awi-by-user https://example.com/a", False),
+        ("/agent-toolkit:atk-mode add-awi-by-user", False),
+        ("$atk-mode add-awi-by-user 入力", True),
+    ],
+)
+def test_user_typed_entry_starts_submission(prompt, codex, capsys):
+    """ユーザーが入口へAWI投入を名指しした入力は、移行前の名前の起動と同じ投入状態を立てる。"""
+    session = f"entry-submission-{codex}-{len(prompt)}"
+    payload = {"session_id": session, "prompt": prompt}
+    if codex:
+        payload["turn_id"] = "turn"
+    user_prompt_submit.main(json.dumps(payload))
+    capsys.readouterr()
+    state = session_state.read_state(session)
+    assert state["add_awi_skill_invoked"] is True
+    assert codex or state["session_title_kind"] == "add-awi"
+
+
+def test_user_typed_entry_starts_autonomous_work(capsys):
+    """入口へ`process-wi`を名指しした入力は、モードを先頭語から読んで自律モードの状態を立てる。"""
+    session = "entry-process-wi"
+    user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "/atk-mode process-wi single-lane 追記"}))
+    capsys.readouterr()
+    state = session_state.read_state(session)
+    assert state["process_wi_skill_invoked"] is True
+    assert state["session_title_kind"] == "single-lane"
+    assert "add_awi_skill_invoked" not in state
+
+
+@pytest.mark.parametrize("arguments", ["add-awi-by-user https://example.com/a", "process-wi all-repos"])
+@pytest.mark.parametrize("skill", ["agent-toolkit:atk-mode", "atk-mode"])
+def test_agent_invoked_entry_grants_no_state(skill, arguments, capsys):
+    """エージェントが入口を起動しても、引数の作業名から投入状態と自律モードの状態は立たない。"""
+    session = f"entry-agent-{skill}-{arguments.split()[0]}"
+    posttooluse.main(
+        json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": skill, "args": arguments}})
+    )
+    capsys.readouterr()
+    state = session_state.read_state(session)
+    assert not state.get("add_awi_skill_invoked")
+    assert not state.get("process_wi_skill_invoked")
+    assert "session_title_kind" not in state
+
+
+def test_delegated_first_input_grants_no_state(monkeypatch, capsys):
+    """委譲先の最初の入力は委譲元のエージェントが書くため、入口の形でも状態を立てない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    session = "entry-delegated"
+    user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "/atk-mode add-awi-by-user"}))
+    capsys.readouterr()
+    state = session_state.read_state(session)
+    assert not state.get("add_awi_skill_invoked")
+    assert not state.get("process_wi_skill_invoked")
+
+
+def test_entry_without_named_work_starts_nothing(capsys):
+    """作業の指定が無い入口の起動は一般の作業であり、作業別の状態を立てない。"""
+    session = "entry-general"
+    user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "/atk-mode この不具合を直して"}))
+    capsys.readouterr()
+    state = session_state.read_state(session)
+    assert not state.get("add_awi_skill_invoked")
+    assert not state.get("process_wi_skill_invoked")

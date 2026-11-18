@@ -25,6 +25,10 @@ def _source(root: Path) -> None:
         "---\nname: manual-task\ndescription: 手動起動\ndisable-model-invocation: true\n---\n明示起動の本文\n",
         encoding="utf-8",
     )
+    entry = root / "agent-toolkit" / "skills" / "atk-mode"
+    (entry / "roles").mkdir(parents=True)
+    (entry / "SKILL.md").write_text("---\nname: atk-mode\ndescription: 入口\n---\n入口の本文\n", encoding="utf-8")
+    (entry / "roles" / "worker.subagent.md").write_text("役割の原文\n", encoding="utf-8")
     rules = root / "agent-toolkit" / "share" / "rules" / "common"
     rules.mkdir(parents=True)
     (rules / "01-agent.md").write_text("# 共通常時規範\n\n原文を保持する。\n", encoding="utf-8")
@@ -88,6 +92,11 @@ def test_post_apply_sync_preserves_settings_and_updates_owned_skills(
     rules = (destination / "agent-toolkit.md").read_text(encoding="utf-8")
     assert "# 共通常時規範\n\n原文を保持する。" in rules
     assert (root / "agent-toolkit").as_posix() in rules and (root / "agent-basics").as_posix() in rules
+    # hookを持たないホストへは、入口の起動を1行で案内し、入口の本文は規範ファイルへ載せない。
+    assert "作業の前と会話の圧縮の後に、`agent-toolkit-atk-mode`のスキルを読む。\n" in rules and "入口の本文" not in rules
+    # 役割文書は入口のスキルの配下にあるため、スキルだけを配置するホストへも届く。
+    entry = destination / "skills" / "agent-toolkit-atk-mode"
+    assert (entry / "roles" / "worker.subagent.md").read_text(encoding="utf-8") == "役割の原文\n"
     assert not install_opencode_toolkit.run().changed
 
     source = root / "agent-toolkit" / "skills" / "manual-task" / "SKILL.md"

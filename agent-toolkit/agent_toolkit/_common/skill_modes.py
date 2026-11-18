@@ -1,8 +1,30 @@
-"""スキルの先頭語からモードを選び、自由記述の残りを保持する。"""
+"""スキルの先頭語からモードを選び、自由記述の残りを保持する。
+
+入口スキル`atk-mode`の起動（`atk-mode <作業> [入力]`）は、作業の名前を持つスキルの起動へ読み替える。
+作業の名前は移行前のスキルの名前と同じであり、保存済みの値（WIの`source`と`scope`、セッション状態）を変えない。
+"""
 
 import re
 
 _MODES = {"process-wi": {"single-lane", "all-repos"}, "review-session": {"batch"}}
+
+ENTRY_SKILL = "atk-mode"
+ENTRY_WORKS = ("add-awi-by-user", "process-wi", "review-session", "export-session")
+"""入口が受け付ける、ユーザーが名指しする作業の名前。"""
+
+
+def resolve_work(skill: str, arguments: str | None) -> tuple[str, str | None]:
+    """入口の起動を`agent-toolkit:<作業>`と残りの引数へ読み替える。入口以外と作業名の無い起動はそのまま返す。
+
+    認可を伴う状態（AWI投入、自律モード）を立てる呼び出し元は、ユーザーの入力と起動入力に限って使う。
+    エージェントによる入口の起動の引数へ適用すると、エージェントが自分の判断で認可を得られる。
+    """
+    if skill.removeprefix("agent-toolkit:") != ENTRY_SKILL:
+        return skill, arguments
+    match = re.match(r"\s*(\S+)(?:\s+|$)", arguments or "")
+    if match is None or match[1] not in ENTRY_WORKS:
+        return skill, arguments
+    return f"agent-toolkit:{match[1]}", (arguments or "")[match.end() :]
 
 
 def split_mode(skill: str, arguments: str | None) -> tuple[str | None, str | None]:

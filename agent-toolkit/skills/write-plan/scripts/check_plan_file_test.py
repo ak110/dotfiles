@@ -255,7 +255,7 @@ def test_rejects_missing_skill_invocations(
 def test_missing_skill_reference_suggests_close_existing_name(repo: tuple[pathlib.Path, str]) -> None:
     """綴りの近い実在スキルがあれば候補として示す。"""
     work_dir, base = repo
-    invocation = f"Skillツールで`{_TOOLKIT_PREFIX}:plan-mod`を起動する。"
+    invocation = f"Skillツールで`{_TOOLKIT_PREFIX}:write-pla`を起動する。"
     errors, _warnings = _check(work_dir, _plan(work_dir, base).replace("対象の構造を更新する。", invocation))
     assert any(f"候補: {_TOOLKIT_PREFIX}:write-plan" in error for error in errors), errors
 
