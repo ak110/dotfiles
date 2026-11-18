@@ -12,8 +12,12 @@ from ctypes import wintypes as w
 from multiprocessing import connection
 from typing import Any
 
+import psutil
+
 # Windows専用属性はLinuxの型情報に無いため、OS境界内で動的に解決する。
 _windows: Any = ctypes
+# FILETIME（1601年からの100ナノ秒単位）でのUNIX時刻の起点。
+_FILETIME_UNIX_EPOCH = 116444736000000000
 
 
 def _api() -> tuple[Any, Any]:
@@ -84,6 +88,20 @@ def process_identity(pid: int) -> str:
     """保持したprocess handleの作成時刻でPID再利用を区別する。"""
     with _process(pid) as handle:
         return _identity(handle, pid)
+
+
+def listed_process_alive(identity: str) -> bool:
+    """開けないプロセスが記録した起動単位のプロセスかを、開く権限の要らないシステムのプロセス一覧の作成時刻で判定する。
+
+    psutilは開けないプロセスの作成時刻をプロセス一覧から秒の浮動小数で返すため、丸め誤差を許す。
+    PIDの再利用は元のプロセスの終了後に限られ、作成時刻の差は元のプロセスの生存時間を超える。
+    """
+    pid, created = (int(part) for part in identity.split(":", 1))
+    try:
+        listed = psutil.Process(pid).create_time()
+    except psutil.NoSuchProcess:
+        return False
+    return abs(listed - (created - _FILETIME_UNIX_EPOCH) / 10_000_000) < 0.001
 
 
 def _sid(handle: int) -> str:

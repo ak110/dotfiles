@@ -122,20 +122,18 @@ def process_identity(pid: int) -> str:
 def process_alive(identity: object) -> bool:
     """発見記録の起動単位（`pid:開始時刻`）のプロセスがまだ生存しているかを返す。"""
     try:
-        return process_identity(int(str(identity).split(":", 1)[0])) == identity
+        pid = int(str(identity).split(":", 1)[0])
+        try:
+            return process_identity(pid) == identity
+        except PermissionError:
+            # 自身のアカウントの/procは常に読めるため、Linuxでの拒否は別アカウントのプロセスを示す。
+            # Windowsでは同じアカウントでも、非昇格のプロセスは別ログオンの昇格プロセス（SSH経由で起動した世代など）を開けない。
+            if os.name != "nt":
+                return False
+            from agent_toolkit._agents_server import windows_service_transport
+
+            return windows_service_transport.listed_process_alive(str(identity))
     except FileNotFoundError, ProcessLookupError, ValueError:
-        return False
-
-
-def process_listed(identity: object) -> bool:
-    """一覧の対象とする世代のプロセスが生存しているかを返す。照会できないプロセスは生存として扱わない。
-
-    世代のサービスは自身のアカウントで動くため、照会の拒否（WindowsのOpenProcessのアクセス拒否など）は、
-    終了した世代のPIDを別アカウントのプロセスが再利用したことを示す。一覧に残すと処置後の終了観測が終わらない。
-    """
-    try:
-        return process_alive(identity)
-    except OSError:
         return False
 
 

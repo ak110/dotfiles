@@ -80,12 +80,8 @@ def ensure_service(
                 return current
             if ready.exists():
                 record = json.loads(ready.read_text(encoding="utf-8"))
-                pid = int(record["process"].split(":", 1)[0])
-                try:
-                    if service_transport.process_identity(pid) == record["process"]:
-                        return service_rpc.request_sync(record, "publish", {})
-                except FileNotFoundError, ProcessLookupError:
-                    pass
+                if service_transport.process_alive(record["process"]):
+                    return service_rpc.request_sync(record, "publish", {})
             python = plugin_environment.prepared_python(root, caller.environment) or python or pathlib.Path(sys.executable)
             env = {
                 key: value

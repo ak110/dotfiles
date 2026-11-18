@@ -410,7 +410,7 @@ class ServiceCoordinator:
                 target = service_rpc.discovery(self.directory, generation)
             except OSError, ValueError:
                 continue
-            if not service_transport.process_listed(target["process"]):
+            if not service_transport.process_alive(target["process"]):
                 continue
             try:
                 sessions.extend(
