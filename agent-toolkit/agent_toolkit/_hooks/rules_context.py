@@ -35,6 +35,7 @@ from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
+lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import document_reads, repository_protection, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
@@ -542,6 +543,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
+        if not delegated and isinstance(session_id, str):
+            claim_process_loop_session(session_id, os.environ)
         if source == "resume" and not delegated:
             from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 

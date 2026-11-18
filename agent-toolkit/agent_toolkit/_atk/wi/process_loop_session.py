@@ -35,6 +35,7 @@ from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import process_loop_session as _coordinator_identity
 from agent_toolkit._common import session_record_paths as _record_paths
 from agent_toolkit._common import session_registry as _registry
 
@@ -208,6 +209,8 @@ def _build_session_argv(
 ) -> tuple[list[str], pathlib.Path | None]:
     """選択したオーケストレーターの対話セッション用argvを構築する。"""
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
+    # 会話IDを渡せない新規起動とpicker再開では、統括の最初のSessionStartが会話IDを確保する。
+    env[_coordinator_identity.CLAIM_ENV] = uuid.uuid4().hex
     if orchestrator == "claude":
         info = _registry.resolve(args.resume).resume_info if resume_pending and args.resume else None
         if claude_connection is not None:

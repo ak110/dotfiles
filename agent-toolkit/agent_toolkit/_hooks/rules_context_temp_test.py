@@ -14,6 +14,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp, run_skill_batch
 from agent_toolkit._common import session_activity, session_review
+from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
 from agent_toolkit._hooks import posttooluse, pretooluse, rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
@@ -235,3 +236,38 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     assert rules_context.main(payload, host=host) == 0
     assert "実行受付前に終了" not in capsys.readouterr().out
     assert session_review.pending()
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "agy"])
+def test_first_main_session_start_claims_process_loop_coordinator(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    host: str,
+) -> None:
+    """会話IDを渡さずに起動した統括は最初のSessionStartで確定し、後から起動した入れ子の会話や委譲先は確定を変えない。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM", "launch-1")
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
+
+    def start(session_id: str) -> None:
+        rules_context.main(
+            json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": session_id}), host=host
+        )
+        _output(capsys)
+
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    start("delegated")
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION")
+    start("coordinator")
+    start("nested")
+
+    environ = {
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "launch-1",
+    }
+    assert is_identified_process_loop_session("coordinator", environ)
+    assert not is_identified_process_loop_session("nested", environ)
+    assert not is_identified_process_loop_session("delegated", environ)

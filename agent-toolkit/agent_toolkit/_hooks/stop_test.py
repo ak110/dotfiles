@@ -482,7 +482,7 @@ def _run_busy_loop_turns(
 
     _set_state_directory(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
-    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "busy-loop")
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(_background_tasks, "is_pending_async_work", lambda *args, **kwargs: False)
     calls = {"terminate": 0}
@@ -654,55 +654,157 @@ def test_codex_run_skill_session_is_blocked_until_report_is_saved(
     assert not approved
 
 
-@pytest.mark.parametrize(
-    ("termination_status", "issued"),
-    [("exit_requested", True), ("terminating", True), ("unsupported", False)],
+_LIMIT_ENV_NAMES = (
+    "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
+    "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
+    "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM",
+    "AGENT_TOOLKIT_DELEGATED_SESSION",
+    "AGENT_TOOLKIT_OWNER_SESSION",
+    "AGENT_TOOLKIT_RUN_SKILL_ID",
 )
-def test_block_limit_terminates_process_loop_session(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, termination_status: str, issued: bool
-) -> None:
-    """統括の遮断が上限に達したら、無進捗の停止と同じ終了要求で入力待ちに残さず終える。"""
+_LOOP = {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1"}
+_LIMIT_SESSION_ID = "loop-at-limit"
+
+
+def _stop_at_block_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    env: dict[str, str],
+    *,
+    extra: dict[str, object] | None = None,
+    count: int = 7,
+    termination_status: str = "terminating",
+) -> tuple[dict[str, object], list[str | None]]:
+    """連続blockが`count`回の状態でClaude・Codexの両方で遮断するStopを評価し、応答と終了要求の宛先を返す。"""
     from agent_toolkit._atk import agents_exit_session  # pylint: disable=import-outside-toplevel
 
     _set_state_directory(monkeypatch, tmp_path)
-    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
-    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    for name in _LIMIT_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"autonomous_exit": ("block", "自律終了")})
-    requests: list[str] = []
+    _replace_checks(monkeypatch, {"response_language_advisor": ("block", "言語"), "autonomous_exit": ("block", "自律終了")})
+    requests: list[str | None] = []
 
-    def terminate(*, session_id: str) -> tuple[str, object]:
+    def terminate(*, session_id: str | None = None) -> tuple[str, object]:
         requests.append(session_id)
         return termination_status, types.SimpleNamespace(host="codex", pid=4321)
 
     monkeypatch.setattr(agents_exit_session, "request_termination", terminate)
-    session_id = "loop-at-limit"
-    _state_path(tmp_path, session_id).write_text(json.dumps({"stop_consecutive_block_count": 7}), encoding="utf-8")
+    _state_path(tmp_path, _LIMIT_SESSION_ID).write_text(json.dumps({"stop_consecutive_block_count": count}), encoding="utf-8")
+    payload = {"session_id": _LIMIT_SESSION_ID, "stop_hook_active": True, **(extra or {})}
+    return stop.evaluate(json.dumps(payload)), requests
 
-    result = stop.evaluate(json.dumps({"session_id": session_id, "stop_hook_active": True}))
 
-    assert requests == [session_id]
+@pytest.mark.parametrize(
+    ("env", "extra"),
+    [
+        ({}, {}),
+        ({}, {"turn_id": "t1"}),
+        ({"AGENT_TOOLKIT_RUN_SKILL_ID": "run-1"}, {}),
+        ({"AGENT_TOOLKIT_RUN_SKILL_ID": "run-1"}, {"turn_id": "t1"}),
+        ({**_LOOP, "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}, {}),
+        ({**_LOOP, "AGENT_TOOLKIT_OWNER_SESSION": "owner"}, {"turn_id": "t1"}),
+        ({**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": "other"}, {}),
+        ({**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": _LIMIT_SESSION_ID}, {"agent_id": "sub-1"}),
+        ({**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": _LIMIT_SESSION_ID}, {"agent_id": "sub-1", "turn_id": "t1"}),
+        # 会話IDを確定できない環境印だけの会話。統括が入れ子で起動した`codex exec`がこれに当たる。
+        (_LOOP, {}),
+        (_LOOP, {"turn_id": "t1"}),
+        ({**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "unclaimed"}, {"turn_id": "t1"}),
+    ],
+)
+def test_block_limit_never_terminates_non_coordinator(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, env: dict[str, str], extra: dict[str, object]
+) -> None:
+    """統括と会話IDで確定できないセッションは、遮断が上限に達しても終了を要求されず、終了を許可される。"""
+    result, requests = _stop_at_block_limit(monkeypatch, tmp_path, env, extra=extra)
+
+    assert not requests
     assert "decision" not in result
-    assert "遮断が7回続いた" in str(result["systemMessage"])
-    assert ("セッションの終了要求は送っていない" in str(result["systemMessage"])) is not issued
-    assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 0
+
+
+def test_block_limit_does_not_terminate_session_other_than_claimed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """最初のSessionStartが確保した統括と別の会話（統括が入れ子で起動したCLI）は、上限でも終了を要求されない。"""
+    from agent_toolkit._common import process_loop_session  # pylint: disable=import-outside-toplevel
+
+    env = {**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "launch-1"}
+    _set_state_directory(monkeypatch, tmp_path)
+    process_loop_session.claim_process_loop_session("outer-coordinator", env)
+    process_loop_session.claim_process_loop_session(_LIMIT_SESSION_ID, env)
+
+    result, requests = _stop_at_block_limit(monkeypatch, tmp_path, env, extra={"turn_id": "t1"})
+
+    assert not requests
+    assert "decision" not in result
+
+
+@pytest.mark.parametrize("extra", [{}, {"turn_id": "t1"}])
+@pytest.mark.parametrize(
+    ("termination_status", "issued"),
+    [("exit_requested", True), ("terminating", True), ("unsupported", False)],
+)
+def test_block_limit_terminates_identified_coordinator_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    extra: dict[str, object],
+    termination_status: str,
+    issued: bool,
+) -> None:
+    """会話IDで確定した統括の遮断が上限に達したら、1回だけ終了を要求して入力待ちに残さず終える。"""
+    env = {**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": _LIMIT_SESSION_ID}
+    result, requests = _stop_at_block_limit(monkeypatch, tmp_path, env, extra=extra, termination_status=termination_status)
+
+    assert requests == [_LIMIT_SESSION_ID]
+    assert "decision" not in result
+    if not extra:
+        assert "遮断が7回続いた" in str(result["systemMessage"])
+        assert ("セッションの終了要求は送っていない" in str(result["systemMessage"])) is not issued
+    assert _read_state(tmp_path, _LIMIT_SESSION_ID)["stop_consecutive_block_count"] == 0
+
+
+def test_block_limit_terminates_coordinator_identified_by_session_start_claim(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """会話IDを渡せない新規起動のCodex・agyの統括も、最初のSessionStartが確保した会話IDで確定して終了を要求する。"""
+    from agent_toolkit._common import process_loop_session  # pylint: disable=import-outside-toplevel
+
+    env = {**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "launch-1"}
+    _set_state_directory(monkeypatch, tmp_path)
+    process_loop_session.claim_process_loop_session(_LIMIT_SESSION_ID, env)
+    process_loop_session.claim_process_loop_session("nested-codex-exec", env)
+
+    _, requests = _stop_at_block_limit(monkeypatch, tmp_path, env, extra={"turn_id": "t1"})
+
+    assert requests == [_LIMIT_SESSION_ID]
+
+
+@pytest.mark.parametrize(
+    ("background_tasks", "terminated"),
+    [
+        ([{"type": "local_bash", "id": "b1", "description": "長い検証"}], False),
+        ([{"type": "teammate", "id": "m1"}], True),
+    ],
+)
+def test_block_limit_does_not_terminate_while_background_tasks_remain(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, background_tasks: list[dict], terminated: bool
+) -> None:
+    """未終了のバックグラウンドタスクが残る統括は、上限でも終了を要求せず許可だけを返し、完了通知の再開を待つ。"""
+    env = {**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": _LIMIT_SESSION_ID}
+    result, requests = _stop_at_block_limit(monkeypatch, tmp_path, env, extra={"background_tasks": background_tasks})
+
+    assert requests == ([_LIMIT_SESSION_ID] if terminated else [])
+    assert "decision" not in result
+    assert _read_state(tmp_path, _LIMIT_SESSION_ID)["stop_consecutive_block_count"] == 0
 
 
 def test_block_limit_below_does_not_terminate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """上限未満の遮断では統括へ終了を要求しない。"""
-    from agent_toolkit._atk import agents_exit_session  # pylint: disable=import-outside-toplevel
+    env = {**_LOOP, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": _LIMIT_SESSION_ID}
+    result, requests = _stop_at_block_limit(monkeypatch, tmp_path, env, count=6)
 
-    _set_state_directory(monkeypatch, tmp_path)
-    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
-    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"autonomous_exit": ("block", "自律終了")})
-    monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: pytest.fail("終了を要求した"))
-    session_id = "loop-below-limit"
-    _state_path(tmp_path, session_id).write_text(json.dumps({"stop_consecutive_block_count": 6}), encoding="utf-8")
-
-    result = stop.evaluate(json.dumps({"session_id": session_id, "stop_hook_active": True}))
-
+    assert not requests
     assert result["decision"] == "block"

@@ -39,7 +39,7 @@ def _calls(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> Iterator[
     """状態ファイルの位置を隔離し、停止工程の呼び出し回数を記録する。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv(_ENV_REQUIRED, "1")
-    monkeypatch.delenv(_ENV_SESSION_ID, raising=False)
+    monkeypatch.setenv(_ENV_SESSION_ID, _SESSION_ID)
     monkeypatch.delenv(_ENV_DELEGATED_SESSION, raising=False)
     monkeypatch.setattr(_background_tasks, "is_pending_async_work", lambda *args, **kwargs: False)
     recorded = {"terminate": 0}
@@ -241,6 +241,17 @@ def test_non_process_loop_session_is_skipped(
 def test_nested_session_id_is_skipped(tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch) -> None:
     """別会話IDへ伝播した環境印では親の空転処理を動かさない。"""
     monkeypatch.setenv(_ENV_SESSION_ID, "parent")
+    for index in range(4):
+        _turn(tmp_path, index, [_text_entry()])
+    assert calls == {"terminate": 0}
+    assert "stop_no_tool_turn_count" not in read_state(_SESSION_ID)
+
+
+def test_session_without_identified_id_is_skipped(
+    tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """環境印だけで統括の会話IDを確定できない会話（入れ子の非対話CLIを含む）は、終了要求の対象にしない。"""
+    monkeypatch.delenv(_ENV_SESSION_ID, raising=False)
     for index in range(4):
         _turn(tmp_path, index, [_text_entry()])
     assert calls == {"terminate": 0}

@@ -152,6 +152,17 @@ Claude Codeが8回連続の遮断を無視してターンを終えるためで�
 そこで、打ち切りに達したprocess-loopの統括の最上位は、`busy_loop_guard.py`の停止工程と同じ終了要求でセッションを終え、常駐側の検収へ戻す。
 終了要求はClaude Codeではターン後の`/exit`、CodexとAntigravityでは単一PIDへのSIGTERMである。
 run-skillでは打ち切り後にCLIが終了し、起動元が既存の「報告用UWI未保存」の失敗として報告する。
+
+終了要求を送るのは、統括の会話IDを確定でき、hook入力の会話IDと一致する場合に限る（`agent_toolkit/_common/process_loop_session.py`の`is_identified_process_loop_session`）。
+終了工程は祖先をたどって最初の対話CLIを止め、非対話の`codex exec`や`agy -p`は停止対象から外して、さらに上の祖先を調べる。
+このため、環境印だけで判定すると、統括が入れ子で起動した非対話CLIのhookから外側の統括へSIGTERMが届きうる（2026年11月19日の独立検証で、環境印があり会話IDが無い起動では任意の会話IDのCodex入力が遮断されることを確認）。
+ClaudeとID指定の再開は、起動側が`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`で会話IDを渡す。
+会話IDを起動前に決められない新規起動のCodex・agyとpicker再開は、起動ごとに`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM`へ新しい値を渡し、最初の委譲先でないSessionStartの会話IDをセッション状態へ確保する。
+統括のSessionStartは入れ子のCLIの起動より先に発火するため、後から始まった会話のSessionStartは確保済みの値を変えない。
+続行の遮断も同じ識別で対象を限定し、確保済みの統括と別の会話には働かせない。
+会話IDも確保も無い旧起動（変更前の常駐が起動した会話）は、遮断だけを従来どおり環境印で判定し、終了要求は送らない。
+未終了のバックグラウンドタスクが残る場合は、上限に達しても終了要求を送らず許可だけを返す。
+`autonomous_exit`が残る作業を止めないよう終了要求を取り下げるのと同じ理由であり、完了通知で再開した後のStopが改めて判定する。
 `busy_loop_guard.py`は保つ。
 遮断と無進捗ターンの往復は、`/goal`が無くても同じ形で起こるためである。
 

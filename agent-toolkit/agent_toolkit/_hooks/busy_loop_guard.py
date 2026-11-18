@@ -8,7 +8,9 @@
 無進捗の停止（`halt`）と、`stop.py`が連続blockの上限で遮断を打ち切る場合の終了はどちらも`terminate`を呼び、
 対話型の統括は入力待ちのまま残らずに常駐側の検収へ戻る。
 
-適用対象はprocess-loopが起動した会話IDを持つ最上位セッションに限り、委譲先セッションと対話セッションは対象外とする。
+適用対象は、統括の会話IDを確定でき（`is_identified_process_loop_session`）、hook入力の会話IDと一致する最上位セッションに限る。
+委譲先セッション、対話セッション、統括が入れ子で起動したCLIは対象外とする。
+終了要求は祖先の対話CLIへ届くため、環境印だけで判定すると、入れ子の非対話CLI（`codex exec`など）のhookから外側の統括を止めうる。
 
 無進捗ターンは、前回のStop判定から今回のStop判定までにセッション記録へ加わったエントリの中に、
 自セッションのツール呼び出しが1件も無いターンとする。連続回数が`_THRESHOLD`へ達した時点で停止工程へ進む。
@@ -35,7 +37,7 @@ from collections.abc import Mapping
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session
-lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
+lazy from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
@@ -73,8 +75,8 @@ def _store(session_id: str, count: int, observed: int) -> None:
 
 
 def is_target_session(session_id: str, payload: dict) -> bool:
-    """常駐ループの最上位セッションである場合に真を返す。"""
-    return is_process_loop_session(session_id, os.environ) and is_main_agent_context(payload)
+    """会話IDで確定した常駐ループの統括の最上位セッションである場合に真を返す。"""
+    return is_identified_process_loop_session(session_id, os.environ) and is_main_agent_context(payload)
 
 
 def halt(session_id: str, count: int) -> tuple[str, str]:

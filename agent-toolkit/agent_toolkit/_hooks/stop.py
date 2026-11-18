@@ -14,6 +14,9 @@
 その手前の7回で打ち切りの事実を記録して終了を許可する。
 process-loopの統括の最上位では、打ち切った対話CLIが入力待ちで残らないよう、
 無進捗の停止と同じ終了要求（`busy_loop_guard.terminate`）でセッションを終え、常駐側の検収へ戻す。
+終了要求は会話IDで統括と確定できる場合（`busy_loop_guard.is_target_session`）に限る。
+未終了のバックグラウンドタスクが残る場合は、`autonomous_exit`が残る作業を止めないよう終了要求を取り下げるのと同じ理由で終了要求を送らず、
+許可だけを返す。タスクの完了通知で再開した後のStopが改めて判定する。
 
 委譲先での実行可否: 各判定モジュールが個別に適用可否を判断するため、エントリーポイント自体は除外せず実行できる。
 未配送通知を次ターンへ返す実機観測と再検証は、`docs/development/audit-records.md`の
@@ -38,7 +41,7 @@ lazy from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
 lazy from agent_toolkit._hooks import busy_loop_guard as _busy_loop_guard
-lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
+lazy from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, is_pending_async_work
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
@@ -206,7 +209,13 @@ def evaluate(payload_text: str) -> dict[str, object]:
 
     block_count = _consecutive_block_count(session_id, payload) if block_reasons and session_id else 0
     limit_reached = block_count >= _CONSECUTIVE_BLOCK_LIMIT
-    if limit_reached and halt_request is None and _busy_loop_guard.is_target_session(session_id, payload):
+    remaining_tasks = active_non_teammate_tasks(payload.get("background_tasks")) if limit_reached else []
+    if (
+        limit_reached
+        and halt_request is None
+        and not remaining_tasks
+        and _busy_loop_guard.is_target_session(session_id, payload)
+    ):
         halt_request = functools.partial(
             _busy_loop_guard.terminate,
             session_id,
@@ -237,6 +246,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
                     "limit": _CONSECUTIVE_BLOCK_LIMIT,
                     "blocking_checks": blocking_checks,
                     "autonomous_exit_invoked": autonomous_exit_invoked,
+                    "background_tasks": len(remaining_tasks),
                 }
                 append_stop_log(
                     session_id,
