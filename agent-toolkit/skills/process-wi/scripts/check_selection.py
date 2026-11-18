@@ -478,12 +478,13 @@ def main(argv: list[str] | None = None) -> int:
                 args.lane_map,
                 args.candidate_file,
                 args.mark_integrated,
-                args.lane_cost_updates,
                 args.body_wi,
             )
         )
+        # 移管の--lane-cost-updatesは移管操作の入力であり、書込対象の追加と併用できる。
+        or (args.lane_cost_updates is not None and args.transfer_wi is None)
     ):
-        parser.error("--extend-write-targetsは--outputと組で指定し、他の更新操作・--body-wiと併用しない")
+        parser.error("--extend-write-targetsは--outputと組で指定し、--transfer-wi以外の更新操作・--body-wiと併用しない")
     if args.candidate_file is not None and (args.mark_integrated is not None or args.output is None):
         parser.error("--candidate-fileは--outputと組で指定し、--mark-integratedと併用しない")
     if args.mark_integrated is not None and (args.merge is not None or args.lane_map is not None or args.output is None):

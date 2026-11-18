@@ -50,13 +50,53 @@ def _selection(
     return path
 
 
-def _transfer(path: pathlib.Path, repo: pathlib.Path, tmp_path: pathlib.Path, wi: str, lane: str, updates: object) -> int:
+def _transfer(
+    path: pathlib.Path, repo: pathlib.Path, tmp_path: pathlib.Path, wi: str, lane: str, updates: object, *extra: str
+) -> int:
     cost_file = tmp_path / "updates.json"
     cost_file.write_text(json.dumps(updates), encoding="utf-8")
     return _dispatch(
         str(path), "--transfer-wi", wi, "--to-lane", lane, "--lane-cost-updates", str(cost_file), "--output", str(path),
-        "--work-dir", str(repo),
+        "--work-dir", str(repo), *extra,
     )  # fmt: skip
+
+
+def _overlap(left: str, right: str, left_definitions: list[str], right_definitions: list[str]) -> dict[str, object]:
+    return {
+        "レーン1": left,
+        "レーン2": right,
+        "共通パス": "README.md",
+        "レーン1の定義": left_definitions,
+        "レーン2の定義": right_definitions,
+        "判定": "交わらない",
+    }
+
+
+def _share_readme(notes: pathlib.Path, data: dict[str, typing.Any], names: set[str]) -> None:
+    """指定WIの書込対象と本文へ、共通パス`README.md`を加える。"""
+    for index, item in enumerate(data["選定"]):
+        if item["WI"] in names:
+            item["書込対象"].append("README.md")
+            _awi(notes, item["WI"], f"`target-{index}.md`と`README.md`を変える。")
+
+
+def test_transfer_records_new_overlap_with_extend_write_targets(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """移管で移管元に残るWIと新たに重なる組は、同じ呼び出しの--extend-write-targetsで記録して保存できる。"""
+    repo, notes = env
+    path = _selection(tmp_path, repo, notes, edit=lambda data: _share_readme(notes, data, {"b.md", "c.md"}))
+    before = path.read_bytes()
+    updates = {"lane-02": _COST, "lane-03": _COST}
+    assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates) == 1
+    assert path.read_bytes() == before
+    addition = tmp_path / "overlaps.yaml"
+    record = _overlap("lane-02", "lane-03", ["bの節"], ["cの節"])
+    addition.write_text(yaml.safe_dump({"レーン間の重なり": [record]}, allow_unicode=True), encoding="utf-8")
+    assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates, "--extend-write-targets", str(addition)) == 0
+    after = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert next(item["レーン"] for item in after["選定"] if item["WI"] == "c.md") == "lane-03"
+    assert after["レーン間の重なり"] == [record]
 
 
 def test_transfer_moves_added_wi_and_updates_costs(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
