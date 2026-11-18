@@ -99,10 +99,6 @@ importするため、循環importを避けて本モジュールに置く。
 規則で分類を誤ると、現物との比較を最も要する発話で注記が返らず、欠落にも気付けないためである。
 """
 
-_REALIGN_NOTICE_BODY = (
-    "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "`agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」に従って目標と問題の理解を確かめよ。"
-)
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として", "その手の")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
 
@@ -133,14 +129,8 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
 
 def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]:
     """通常発話と質問への自由記述に共通の、内容に応じた注記を返す。"""
-    notices: list[str] = []
-    subject = subject or prompt
-    if "！！" in prompt:
-        body = _REALIGN_NOTICE_BODY
-        notices.append(_notice_formatter(source)(body, tag="notice", subject=subject))
-    if (example := _example_scope_notice(prompt, source, subject=subject)) is not None:
-        notices.append(example)
-    return notices
+    example = _example_scope_notice(prompt, source, subject=subject or prompt)
+    return [] if example is None else [example]
 
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"

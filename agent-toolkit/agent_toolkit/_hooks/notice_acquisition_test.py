@@ -28,15 +28,12 @@ def test_unreadable_transcript_separates_recovery_from_hook_retry(
     assert "確認せよ" in action and "報告せよ" in action
 
 
-@pytest.mark.parametrize("prompt", ["例えば表示を直して", "例えば設定を調査して", "理解が違う！！"])
+@pytest.mark.parametrize("prompt", ["例えば表示を直して", "例えば設定を調査して"])
 def test_content_notice_references_only_the_required_documents(prompt: str) -> None:
     bodies = posttooluse.content_notices(prompt, "notice-acquisition")
     assert len(bodies) == 1
     body = bodies[0]
-    if "！！" in prompt:
-        assert "`agent-toolkit:user-confirmation-and-report`を起動し" in body
-    else:
-        assert "`references/user-utterance.md`" in body
+    assert "`references/user-utterance.md`" in body
     routing = "`references/routing.md`"
     if "調査" in prompt:
         assert routing in body
@@ -52,7 +49,7 @@ def test_first_prompt_does_not_warn_before_preparation(capsys: pytest.CaptureFix
     assert "未取得" not in captured.out and 'kind="warn"' not in captured.out and not captured.err
 
 
-@pytest.mark.parametrize("prompt", ["通常の依頼", "`例えば調査`は引用"])
+@pytest.mark.parametrize("prompt", ["通常の依頼", "`例えば調査`は引用", "理解が違う！！"])
 def test_acquisition_does_not_add_notice_triggers(prompt: str) -> None:
     assert not posttooluse.content_notices(prompt, "notice-acquisition-negative")
 

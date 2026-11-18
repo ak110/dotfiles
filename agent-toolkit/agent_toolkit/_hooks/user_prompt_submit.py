@@ -12,7 +12,6 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 
 セッション名はUserPromptSubmitのコマンドhookが通常状態から設定する。
 
-全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す。
 例示の語（「例えば」「たとえば」「例として」）を含む実ユーザー発話では、経過時間と状態によらず、
 `agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」の所在を示し、
 原文の対象と例示の関係を判断させる。調査を求める語（「確認」「調査」「見直」など）も含む発話では、
