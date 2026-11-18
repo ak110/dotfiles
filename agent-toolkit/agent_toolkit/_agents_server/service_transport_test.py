@@ -117,6 +117,33 @@ def test_windows_process_list_entries_are_read_by_pid() -> None:
     assert windows_service_transport._find_create_time(snapshot, 5) is None
 
 
+@pytest.mark.parametrize("reports_needed", [True, False], ids=["needed", "no-needed"])
+@pytest.mark.parametrize("status", [0xC0000004, 0xC0000023], ids=["info-length-mismatch", "buffer-too-small"])
+def test_windows_process_list_grows_buffer_until_listing_fits(
+    monkeypatch: pytest.MonkeyPatch, status: int, reports_needed: bool
+) -> None:
+    """一覧が最初に確保したバッファに収まらない場合、不足の通知の種類と必要量の返却の有無によらず、広げて取り直して読む。"""
+    required = 3 << 20
+    sizes: list[int] = []
+
+    def query(_information_class: int, snapshot: Any, size: int, needed: Any) -> int:
+        sizes.append(size)
+        assert len(sizes) <= 8, f"バッファが広がらない: {sizes}"
+        if size < required:
+            needed._obj.value = required if reports_needed else 0
+            return status - (1 << 32)
+        entry = windows_service_transport._SystemProcessInformation.from_buffer(snapshot)
+        entry.UniqueProcessId, entry.CreateTime = 4242, 222
+        return 0
+
+    monkeypatch.setattr(
+        windows_service_transport,
+        "_windows",
+        SimpleNamespace(WinDLL=lambda _name: SimpleNamespace(NtQuerySystemInformation=query)),
+    )
+    assert windows_service_transport._listed_create_time(4242) == 222
+
+
 def test_stdlib_only_forwarding_side_does_not_import_psutil() -> None:
     """標準ライブラリだけで動く転送側が使う生存判定のモジュールは、psutilを読み込まない。
 

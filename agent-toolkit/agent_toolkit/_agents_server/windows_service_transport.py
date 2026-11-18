@@ -111,6 +111,7 @@ class _SystemProcessInformation(ctypes.Structure):
 
 _SYSTEM_PROCESS_INFORMATION = 5
 _STATUS_INFO_LENGTH_MISMATCH = 0xC0000004
+_STATUS_BUFFER_TOO_SMALL = 0xC0000023
 
 
 def _find_create_time(snapshot: Any, pid: int) -> int | None:
@@ -135,9 +136,10 @@ def _listed_create_time(pid: int) -> int | None:
         snapshot = ctypes.create_string_buffer(size)
         needed = w.ULONG(0)
         status = query(_SYSTEM_PROCESS_INFORMATION, snapshot, size, ctypes.byref(needed))
-        if status & 0xFFFFFFFF == _STATUS_INFO_LENGTH_MISMATCH:
+        if status & 0xFFFFFFFF in (_STATUS_INFO_LENGTH_MISMATCH, _STATUS_BUFFER_TOO_SMALL):
             # 一覧は照会ごとに変わるため、返された必要量に余裕を持たせて取り直す。
-            size = needed.value + (1 << 16)
+            # 必要量が返らない（0）場合も取り直しが終わるよう、少なくとも倍へ広げる。
+            size = max(needed.value + (1 << 16), size * 2)
             continue
         if status < 0:
             raise OSError(f"プロセス一覧の取得に失敗しました: NTSTATUS=0x{status & 0xFFFFFFFF:08X}")
