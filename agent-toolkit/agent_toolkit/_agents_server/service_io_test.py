@@ -33,6 +33,7 @@ class _RawCodex:
         self.process = types.SimpleNamespace(pid=os.getpid())
         self.parent_environment: dict[str, str] = {}
         self.closed = 0
+        self.residual: list[str] = []
         self.calls: list[str] = []
         self.notification = notification
         self.server_request = server_request
@@ -54,7 +55,7 @@ class _RawCodex:
 
     async def close(self) -> list[str]:
         self.closed += 1
-        return []
+        return list(self.residual)
 
 
 @pytest.mark.asyncio
@@ -144,8 +145,10 @@ async def test_origin_resource_survives_three_owners_without_old_decoder(tmp_pat
         await asyncio.wait_for(serving, 10)
 
 
+@pytest.mark.parametrize("residual", [[], ["pid=7: codex app-server"]])
 @pytest.mark.asyncio
-async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.Path) -> None:
+async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.Path, residual: list[str]) -> None:
+    """受信処理の停止は、元I/OのApp Serverを止めてから接続障害として報告し、停止を確認できない対象を伝える。"""
     caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
     directory = service_transport.namespace(caller)
     broker = ResourceBroker("G1")
@@ -153,7 +156,7 @@ async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.
     serving = asyncio.create_task(service.run(directory, "G1", stop=stop, resources=broker))
     raw: _RawCodex | None = None
     client: service_io.CodexResource | None = None
-    failures: asyncio.Queue[BaseException] = asyncio.Queue()
+    failures: asyncio.Queue[tuple[BaseException, int]] = asyncio.Queue()
 
     async def save() -> None:
         raise RuntimeError("保存の失敗")
@@ -165,11 +168,13 @@ async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.
         pytest.fail("未発生のイベントを受信した")
 
     async def failure(error: BaseException) -> None:
-        failures.put_nowait(error)
+        assert raw is not None
+        failures.put_nowait((error, raw.closed))
 
     def factory(*args: Any) -> _RawCodex:
         nonlocal raw
         raw = _RawCodex(*args)
+        raw.residual = residual
         return raw
 
     try:
@@ -186,9 +191,11 @@ async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.
             await client.start()
             assert raw is not None
             await raw.notification({"value": "1"})
-            error = await failures.get()
+            error, closed = await failures.get()
+            assert closed == 1
             assert isinstance(error, AppServerError)
             assert "保存の失敗" in str(error)
+            assert all(item in str(error) for item in residual)
             assert client.reader_failure is error
     finally:
         if client is not None:

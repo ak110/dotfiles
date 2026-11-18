@@ -57,6 +57,9 @@ class _MemoryAppServer(codex.JsonRpcProcess):
         self.primary_usage: Any = 10
         self.other_buckets: dict[str, Any] = {}
         self.silent: set[str] = set()
+        self.thread_id = "reset-thread"
+        self.close_release: asyncio.Event | None = None
+        self.stopped = False
 
     async def start(self) -> None:
         self.process = cast(Process, SimpleNamespace(stdin=object(), stdout=self.stream, pid=None))
@@ -71,7 +74,7 @@ class _MemoryAppServer(codex.JsonRpcProcess):
         if method in self.silent:
             return
         if method in {"thread/start", "thread/resume"}:
-            result: dict[str, Any] = {"thread": {"id": "reset-thread"}, "modelProvider": "openai"}
+            result: dict[str, Any] = {"thread": {"id": self.thread_id}, "modelProvider": "openai"}
         elif method == "config/read":
             result = {"config": {"model_provider": "openai"}}
         elif method == "turn/start":
@@ -119,7 +122,7 @@ class _MemoryAppServer(codex.JsonRpcProcess):
             result = {}
         self.stream.feed_data((json.dumps({"id": message["id"], "result": result}) + "\n").encode())
         if method == "turn/start":
-            self.emit("turn/started", {"threadId": "reset-thread", "turn": {"id": f"turn-{self.turn_count}"}})
+            self.emit("turn/started", {"threadId": self.thread_id, "turn": {"id": f"turn-{self.turn_count}"}})
         elif method == "turn/interrupt":
             # 実Codexと同じく、応答の後に中断したturnの終了を通知する。
             turn = {"id": params["turnId"], "status": "interrupted", "error": None, "items": []}
@@ -130,10 +133,14 @@ class _MemoryAppServer(codex.JsonRpcProcess):
 
     async def close(self) -> list[str]:
         self._closed = True
-        if self._reader_task is not None:
+        if self.close_release is not None:
+            await self.close_release.wait()
+        # 読取の失敗から停止する読取task自身は待たない。
+        if self._reader_task is not None and self._reader_task is not asyncio.current_task():
             self._reader_task.cancel()
             await asyncio.gather(self._reader_task, return_exceptions=True)
         self.process = None
+        self.stopped = True
         return []
 
 

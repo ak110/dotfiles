@@ -8,13 +8,16 @@ App Serverの模擬と、broker・受信処理・保存の組み立ては`codex_
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
+from agent_toolkit._agents_server import codex, codex_clients, state
 from agent_toolkit._agents_server import codex_auto_reset_backend_test as harness
-from agent_toolkit._agents_server import state
 from agent_toolkit._agents_server.session_errors import ActionableTimeoutError
 
 # 模擬環境の組み立てと接続の診断を、試験から内部境界のまま使う。
@@ -31,6 +34,135 @@ def _stream_final_answer(client: harness._MemoryAppServer, session: state.Sessio
     for index in range(300):
         params = {"threadId": session.session_id, "turnId": session.turn_id, "itemId": "final", "delta": f"{index} "}
         client.emit("item/agentMessage/delta", params)
+
+
+@contextlib.contextmanager
+def _stopped_when_published(clients: list[harness._MemoryAppServer]) -> Generator[dict[str, bool]]:
+    """終了時の結果を公開した時点で、そのsessionのApp Serverが止まっていたかをsessionごとに記録する。"""
+    stopped: dict[str, bool] = {}
+
+    def record(session: state.SessionState) -> None:
+        [client] = [client for client in clients if client.thread_id == session.session_id]
+        stopped[session.session_id] = client.stopped
+
+    state.add_terminal_listener(record)
+    try:
+        yield stopped
+    finally:
+        state.remove_terminal_listener(record)
+
+
+async def _start_other(backend: codex.AppServerManager, monkeypatch: pytest.MonkeyPatch, cwd: Path) -> state.SessionState:
+    """別のApp Serverを所有する2つ目の委譲先を起動する。"""
+    create = codex_clients.JsonRpcProcess
+
+    def factory(*args: Any, **kwargs: Any) -> harness._MemoryAppServer:
+        client = cast(harness._MemoryAppServer, create(*args, **kwargs))
+        client.thread_id = "other-thread"
+        return client
+
+    monkeypatch.setattr(codex_clients, "JsonRpcProcess", factory)
+    return await backend.start("別の作業", str(cwd))
+
+
+async def _until_idle(backend: codex.AppServerManager, *sessions: state.SessionState) -> None:
+    """turnの開始通知を解釈して保存し終え、受信処理が次のイベントを待つ状態まで待つ。"""
+    clients = [backend._clients[session.session_id] for session in sessions]
+    async with asyncio.timeout(5):
+        while any(session.status != "running" for session in sessions) or any(
+            client.diagnostic()["backlog"] != "0/256" for client in clients
+        ):
+            await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+async def test_consumer_stop_stops_own_app_server_before_failure_is_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """受信処理が止まった委譲先は、自身のApp Serverを止めてから失敗として公開し、別の委譲先のApp Serverとturnは続く。"""
+    failing = asyncio.Event()
+
+    async def save() -> None:
+        if failing.is_set():
+            raise RuntimeError(_SAVE_FAILURE)
+
+    async with harness._service_environment(tmp_path, monkeypatch, save) as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        other = await _start_other(backend, monkeypatch, tmp_path)
+        await _until_idle(backend, session, other)
+        with _stopped_when_published(clients) as stopped:
+            failing.set()
+            _stream_final_answer(clients[0], session)
+            await harness._until(backend, lambda: session.terminal)
+            failing.clear()
+        assert session.status == "failed"
+        assert isinstance(session.error, dict) and _SAVE_FAILURE in session.error["message"]
+        assert stopped == {session.session_id: True}
+        response = await owner.kill(session.session_id, timeout=5)
+        assert (response["status"], response["kill_requested"]) == ("failed", False)
+
+        answer = {"type": "agentMessage", "id": "answer", "text": "別の作業の成果"}
+        turn = {"id": other.turn_id, "status": "completed", "error": None, "items": [answer]}
+        clients[1].emit("turn/completed", {"threadId": other.session_id, "turn": turn})
+        await harness._until(backend, lambda: other.result_available)
+        assert (other.status, other.agent_message) == ("completed", "別の作業の成果")
+        assert not clients[1].stopped
+
+
+@pytest.mark.parametrize("service", [False, True])
+@pytest.mark.asyncio
+async def test_reader_failure_stops_app_server_before_failure_is_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, service: bool
+) -> None:
+    """App Serverの出力を読めなくなった委譲先は、App Serverを止めてから失敗として公開する。"""
+    environment = (
+        harness._service_environment(tmp_path, monkeypatch, harness._no_save)
+        if service
+        else harness._environment(tmp_path, monkeypatch)
+    )
+    async with environment as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        with _stopped_when_published(clients) as stopped:
+            clients[0].stream.feed_data(b"{not json\n")
+            await harness._until(backend, lambda: session.terminal)
+        assert session.status == "failed"
+        assert stopped == {session.session_id: True}
+        response = await owner.kill(session.session_id, timeout=5)
+    assert (response["status"], response["kill_requested"]) == ("failed", False)
+
+
+@pytest.mark.asyncio
+async def test_kill_while_app_server_stops_waits_for_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """受信処理の停止からApp Serverを止めている間に届いたkillは、中断要求を送らずに失敗の公開を待って返す。"""
+    failing = asyncio.Event()
+
+    async def save() -> None:
+        if failing.is_set():
+            raise RuntimeError(_SAVE_FAILURE)
+
+    async with harness._service_environment(tmp_path, monkeypatch, save) as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        await _until_idle(backend, session)
+        release = clients[0].close_release = asyncio.Event()
+        try:
+            failing.set()
+            _stream_final_answer(clients[0], session)
+            async with asyncio.timeout(5):
+                while not clients[0].closed:
+                    await asyncio.sleep(0.01)
+            kill = asyncio.create_task(owner.kill(session.session_id, timeout=5))
+            async with asyncio.timeout(5):
+                while not session.interrupt_requested and not kill.done():
+                    await asyncio.sleep(0.01)
+            # killの受付後もApp Serverの停止が終わるまでは、失敗を公開せず、killも返さない。
+            await asyncio.sleep(0.1)
+            assert not kill.done()
+            assert not session.terminal
+        finally:
+            release.set()
+        response = await kill
+    assert response["status"] == "failed"
+    assert "turn/interrupt" not in [method for method, _ in clients[0].requests]
 
 
 @pytest.mark.parametrize(
