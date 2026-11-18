@@ -218,12 +218,8 @@ def test_real_split_quality_sources_preserve_generated_body(tmp_path, monkeypatc
     after_prefix, after_block = after.split(start)
     after_body, after_suffix = after_block.split(end)
     assert (after_prefix, after_suffix) == (before_prefix, before_suffix)
-    # チェックイン済みの写しは1文1行整形前のため、改行と参照移設を分けて比較する。
-    expected = before_body.replace(
-        "agent-basics:writing-standards/references/quality-principles.md`「報告の選別と判断記録」",
-        "agent-basics:writing-standards/references/quality-principles-facts.md`「報告の選別と判断記録」",
-    )
-    expected = re.sub(r"<!-- 生成元: [^\n]+ -->", "", expected)
+    # チェックイン済みの写しは1文1行整形前のため、改行を除いて比較する。
+    expected = re.sub(r"<!-- 生成元: [^\n]+ -->", "", before_body)
     actual = re.sub(r"<!-- 生成元: [^\n]+ -->", "", after_body)
     assert re.sub(r"\n[ \t]*", "", actual) == re.sub(r"\n[ \t]*", "", expected)
     assert f"<!-- 生成元: {source_relative}「{title}」。手動編集しない。 -->" in after

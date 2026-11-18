@@ -1,9 +1,5 @@
 # 品質判断の定義：文書と既存コードの不一致
 
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
 ## 文書と既存コードの不一致
 
 プロジェクトの文書（`AGENTS.md`、`CLAUDE.md`、README、設計文書など）が定める規約や構成と、既存のコードや設定で一貫して採用されている規約が一致しない場合がある。
