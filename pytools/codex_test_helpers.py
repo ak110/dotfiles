@@ -11,6 +11,7 @@ import os
 import pathlib
 import select
 import socket
+import subprocess
 import sys
 import time
 import uuid
@@ -474,6 +475,12 @@ def main() -> int:
     arguments = sys.argv[1:]
     if arguments[:2] == ["app-server", "proxy"]:
         _proxy()
+        if os.environ.get("CODEX_PEER_LINGER_PIPES") == "1":
+            # 標準出力・標準エラーを継承した孫が終了後も保持し、proxyの終了の観測をpipeのEOFより先にする。
+            # 孫の終了を待たずにproxyを終えるため、withで待機しない。
+            subprocess.Popen(  # pylint: disable=consider-using-with
+                [sys.executable, "-c", "import time; time.sleep(0.5)"], stdout=sys.stdout, stderr=sys.stderr
+            )
         return 0
     if arguments[:2] == ["app-server", "daemon"]:
         _control(arguments[2])

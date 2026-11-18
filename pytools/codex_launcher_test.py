@@ -145,13 +145,24 @@ class _Peer:
     environment: dict[str, str]
 
     async def run(
-        self, arguments: list[str], *, mode: str, actors: int = 1, windows: bool = False, pid_format: str = "linux"
+        self,
+        arguments: list[str],
+        *,
+        mode: str,
+        actors: int = 1,
+        windows: bool = False,
+        pid_format: str = "linux",
+        linger_pipes: bool = False,
     ) -> tuple[int, str, str]:
         environment = dict(self.environment, CODEX_PEER_MODE=mode, CODEX_PEER_ACTORS=str(actors))
         environment["CODEX_PEER_PID_FORMAT"] = pid_format
         environment["CODEX_PEER_WINDOWS"] = "1" if windows else "0"
+        environment["CODEX_PEER_LINGER_PIPES"] = "1" if linger_pipes else "0"
         process = await asyncio.create_subprocess_exec(
             sys.executable,
+            # 未解放のtransportをGC時の警告として標準エラーへ出し、全ケースで検出する。
+            "-W",
+            "always::ResourceWarning",
             str(self.runner),
             *arguments,
             cwd=str(self.work),
@@ -165,11 +176,15 @@ class _Peer:
             identity.create_time()
             stdout, stderr = await asyncio.wait_for(process.communicate(), 20)
             assert process.returncode is not None
-            return process.returncode, stdout.decode("utf-8"), stderr.decode("utf-8")
+            output, diagnostic = stdout.decode("utf-8"), stderr.decode("utf-8")
+            for leak in ("unclosed transport", "Exception ignored"):
+                assert leak not in diagnostic, diagnostic
+            return process.returncode, output, diagnostic
         finally:
             if process.returncode is None:
                 await asyncio.to_thread(process_tree.stop_tree, identity)
-                await asyncio.wait_for(process.wait(), process_tree.RECLAIM_TIMEOUT_SECONDS)
+                # wait()は終了の時点で戻る。pipeを読み終えて閉じ、試験のイベントループへtransportを残さない。
+                await asyncio.wait_for(process.communicate(), process_tree.RECLAIM_TIMEOUT_SECONDS)
 
     def records(self) -> list[dict[str, Any]]:
         return [json.loads(path.read_text(encoding="utf-8")) for path in (self.root / "threads").glob("*.json")]
@@ -294,6 +309,26 @@ async def test_windows_daemon_record_without_process_identity_keeps_recovery(pee
     )
     assert code == 0, (stdout, stderr)
     assert "ValueError" not in stderr
+    assert peer.records()[0]["starts"] == 2
+
+
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "proxyの終了後もpipeが開いている間に終了しても、pipeのtransportを閉じてから終える。"
+        + " 実CLIのプロセス境界で世代交代を含む終了経路を確認する。"
+    ),
+)
+@pytest.mark.asyncio
+async def test_launcher_closes_proxy_pipes_after_proxy_exit(peer: _Peer) -> None:
+    """proxyの終了後もpipeが開いている間に終了しても、pipeのtransportを閉じてから終える。"""
+    code, stdout, stderr = await peer.run(
+        ["--cd", str(peer.work), "--config", 'model_reasoning_effort="medium"', "owned work"],
+        mode="active",
+        pid_format="windows",
+        linger_pipes=True,
+    )
+    assert code == 0, (stdout, stderr)
     assert peer.records()[0]["starts"] == 2
 
 
