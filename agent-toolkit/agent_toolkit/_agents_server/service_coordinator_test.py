@@ -276,27 +276,39 @@ async def test_client_stopped_at_boundary_resumes_when_acceptance_returns_before
     backend.adopt_session.assert_awaited_once_with(session, descriptor, {})
 
 
+@pytest.mark.parametrize("failing_stage", [None, "projections.thaw", "registrations.thaw", "gate.thaw", "registry.restore"])
 @pytest.mark.asyncio
 async def test_client_stopped_during_update_resumes_after_publisher_keeps_acceptance(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    failing_stage: str | None,
 ) -> None:
-    """準備中に終了境界で止めたclientは、公開元が受付を公開せずに確定を通知したら取り込み直す。
+    """準備中に終了境界で止めたclientは、公開元が受付を公開せずに確定か終了をしたら、静止の解除の段が失敗しても取り込み直す。
 
-    準備中に届いた移譲の要求は受付先が変わっていないため何もせずに終わる。その後の確定でも取り込み直しを予約し直す。
+    準備中に届いた移譲の要求は受付先が変わっていないため何もせずに終わる。その後の準備の終了でも取り込み直しを予約し直す。
     """
     coordinator, session, backend = _coordinator(tmp_path, monkeypatch)
     coordinator.projections = types.SimpleNamespace(freeze=AsyncMock(), thaw=AsyncMock(), inventory=dict)
     coordinator.registrations = types.SimpleNamespace(freeze=AsyncMock(), thaw=Mock())
     descriptor = _stoppable_client(coordinator, session, backend)
     client = backend._clients[session.session_id]
-    publisher = {"generation": "G4", "epoch": 4, "process": service_transport.process_identity(os.getpid())}
+    if failing_stage == "projections.thaw":
+        coordinator.projections.thaw.side_effect = OSError(failing_stage)
+    elif failing_stage == "registrations.thaw":
+        coordinator.registrations.thaw.side_effect = OSError(failing_stage)
+    elif failing_stage == "gate.thaw":
+        monkeypatch.setattr(coordinator.gate, "thaw", AsyncMock(side_effect=OSError(failing_stage)))
+    process = "2147483647:dead" if failing_stage == "registry.restore" else service_transport.process_identity(os.getpid())
+    if failing_stage == "registry.restore":
+        monkeypatch.setattr(coordinator.registry, "restore", Mock(side_effect=OSError(failing_stage)))
+    publisher = {"generation": "G4", "epoch": 4, "process": process}
     await coordinator.prepare("token", publisher)
     assert client.transferred
     assert await coordinator.move(session.session_id) == {"moved": False}
     backend.adopt_session.assert_not_awaited()
     async with asyncio.timeout(5):
-        await coordinator.commit_update("token", coordinator.target)
+        if failing_stage != "registry.restore":
+            await coordinator.commit_update("token", coordinator.target)
         while not backend.adopt_session.await_count:
             await asyncio.sleep(0.01)
     backend.adopt_session.assert_awaited_once_with(session, descriptor, {})

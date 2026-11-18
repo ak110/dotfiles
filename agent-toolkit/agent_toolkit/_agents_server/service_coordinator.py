@@ -343,8 +343,9 @@ class ServiceCoordinator:
                         await self.gate.thaw(token)
                     finally:
                         update.released.set()
-        for identifier in tuple(self._ended):
-            self._schedule_move(identifier)
+                        # 準備中に終了境界を迎えたclientの取り込み直しの契機はここだけのため、段の失敗でも必ず実行する。
+                        for identifier in tuple(self._ended):
+                            self._schedule_move(identifier)
 
     def _supervised(self, supervisor: asyncio.Task[None]) -> None:
         self._supervisors.discard(supervisor)
