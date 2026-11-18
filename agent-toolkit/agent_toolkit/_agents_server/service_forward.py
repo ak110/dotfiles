@@ -122,10 +122,12 @@ def ensure_service(
             current = registry.current()
             if current is not None and current["epoch"] > target["epoch"]:
                 return current
+            exited = None
             if ready.exists():
                 record = json.loads(ready.read_text(encoding="utf-8"))
                 if service_transport.process_alive(record["process"]):
                     return service_rpc.request_sync(record, "publish", {}) if publish else record
+                exited = record["process"]
             python = plugin_environment.prepared_python(root, caller.environment) or python or pathlib.Path(sys.executable)
             env = {
                 key: value
@@ -189,8 +191,10 @@ def ensure_service(
                         )
                     deadline = time.monotonic() + 30.0
                     while True:
-                        if ready.exists():
-                            record = json.loads(ready.read_text(encoding="utf-8"))
+                        record = json.loads(ready.read_text(encoding="utf-8")) if ready.exists() else None
+                        # サービスは受付を始めてから自身の記録を置く。その間に前回の記録で接続すると、
+                        # 新しいサービスへ前回の起動単位を期待して認証が失敗する。
+                        if record is not None and record["process"] != exited:
                             try:
                                 # Windowsのvenv launcherのPIDと実行本体のPIDは別になる。
                                 # readyは自己申告だけで受理せず、OSのpeer identityで確かめる。
