@@ -37,7 +37,8 @@ def _sources(directory: pathlib.Path, count: int) -> list[pathlib.Path]:
     for index in range(count):
         source = directory / f"doc{index}.md"
         source.write_text(_table(f"target{index}.md"), encoding="utf-8")
-        sources.append(source)
+        # 呼出元と同じく実体のパスで渡す（Windowsの短い名前の一時ディレクトリなど）。
+        sources.append(source.resolve())
     return sources
 
 
@@ -79,7 +80,7 @@ def test_excluded_rows_report_the_same_issue_when_reused(tmp_path: pathlib.Path,
     issues = []
     for _ in range(2):
         with read_triggers.resolution_scope():
-            rows = read_triggers_cache.parse_deferred([skill], tmp_path, host="claude", project=str(tmp_path))
+            rows = read_triggers_cache.parse_deferred([skill.resolve()], tmp_path, host="claude", project=str(tmp_path))
             issues.append(read_triggers.declaration_issues())
         assert rows == [(skill.resolve(), [])]
     assert len(parsed) == 1
