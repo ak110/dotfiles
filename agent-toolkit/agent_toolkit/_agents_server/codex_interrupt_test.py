@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, cast
@@ -180,20 +181,31 @@ async def test_kill_awaiting_interrupt_response_survives_reader_failure(
         if service
         else harness._environment(tmp_path, monkeypatch)
     )
+    kill_timeout = 20.0
     async with environment as (owner, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         clients[0].silent.add("turn/interrupt")
-        kill = asyncio.create_task(owner.kill(session.session_id, timeout=5))
+        kill = asyncio.create_task(owner.kill(session.session_id, timeout=kill_timeout))
         async with asyncio.timeout(5):
             while "turn/interrupt" not in [method for method, _ in clients[0].requests]:
                 await asyncio.sleep(0.01)
+        started = time.monotonic()
         clients[0].stream.feed_data(b"{not json\n")
         outcome = (await asyncio.gather(kill, return_exceptions=True))[0]
-    if isinstance(outcome, BaseException):
-        assert isinstance(outcome, ActionableError)
-        assert outcome.next_action == KILL_NOT_DELIVERED_NEXT_ACTION
-    else:
-        assert outcome["status"] == "failed"
+        elapsed = time.monotonic() - started
+        # 配送期限まで止まった場合は期限切れの`ActionableTimeoutError`になる。接続の失敗を受けたら期限よりずっと早く返る。
+        assert elapsed < kill_timeout / 2
+        assert not isinstance(outcome, TimeoutError)
+        if isinstance(outcome, BaseException):
+            assert service
+            assert isinstance(outcome, ActionableError)
+            assert outcome.next_action == KILL_NOT_DELIVERED_NEXT_ACTION
+        else:
+            assert outcome["status"] == "failed"
+        await harness._until(backend, lambda: session.terminal)
+        assert session.status == "failed"
+        again = await owner.kill(session.session_id, timeout=5)
+    assert (again["status"], again["kill_requested"]) == ("failed", False)
 
 
 @pytest.mark.parametrize(
