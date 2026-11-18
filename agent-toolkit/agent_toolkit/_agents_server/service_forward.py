@@ -255,7 +255,9 @@ def _stalled_response(identifier: str | int, method: str, target: dict, error: s
         "同じ要求を再送しない。上記processの接続先世代が停止・無応答かをOSのプロセス一覧"
         "（Linuxは`ps -o pid,stat,etime -p <pid>`）で確かめ、応答が再開すれば`atk agents show <session_id>`で"
         "対象sessionの状態を確認する。応答しないままなら当該プロセスを処置する。"
-        "このプロセスは自身のMCP接続先であり、処置するとこのMCP接続も終了する"
+        "このプロセスは自身のMCP接続の中継先である。"
+        "旧世代（`list`の`server_generations`で`current: false`）なら、処置後は現行世代へ自動で接続し直す。"
+        "現行世代なら処置するとこのMCP接続も終了し、ホストでの再接続（Claude Codeでは`/mcp`）が必要になる"
     )
     return {
         "jsonrpc": "2.0",
@@ -492,8 +494,16 @@ def forward(
                 if bridge.failure is not None:
                     raise bridge.failure
                 return 0
-            if bridge.pending:
-                for identifier, method in tuple(bridge.pending.items()):
+            # 監視threadが同じidを配送未確定として返すのと競合しないよう、取り出しと消去をロック下で行う。
+            with bridge.condition:
+                unresolved = tuple(bridge.pending.items())
+                bridge.pending.clear()
+                bridge.sent_at.clear()
+                bridge.abandoned.clear()
+            # 未確定の要求は再送せずエラーで返し、接続自体は現行世代へ切り替えて続ける。
+            # ここで終了するとMCP接続が失われ、委譲元が以後の照会・回収をできなくなる（2026-11-17）。
+            if unresolved:
+                for identifier, method in unresolved:
                     bridge.output(
                         {
                             "jsonrpc": "2.0",
@@ -506,11 +516,6 @@ def forward(
                             },
                         }
                     )
-                # 未確定の要求は再送せずエラーで返し、接続自体は現行世代へ切り替えて続ける。
-                # ここで終了するとMCP接続が失われ、委譲元が以後の照会・回収をできなくなる（2026-11-17）。
-                bridge.pending.clear()
-                bridge.sent_at.clear()
-                bridge.abandoned.clear()
             current = registry.current()
             if current is None or (previous_reconnect == current["process"] and previous_progress == bridge.progress):
                 raise RuntimeError("管理サービスの接続が応答の無いまま繰り返し終了しました")

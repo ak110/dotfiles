@@ -8,7 +8,7 @@ import os
 import pathlib
 import types
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -195,3 +195,31 @@ async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.
             await client.detach()
         stop.set()
         await asyncio.wait_for(serving, 10)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("app_server_alive", [False, True])
+async def test_close_after_owner_generation_exited(monkeypatch, app_server_alive):
+    """資源を所有した世代が先に終了しても終了処理を失敗させず、App Serverが残る場合だけ所有を保つ。
+
+    2026-11-17、移譲途中の資源の停止で現行世代の終了処理が失敗した。
+    """
+
+    class _Gone:
+        origin = {"generation": "G1", "process": "999999:gone"}
+
+        async def operation(self, *_args, **_kwargs):
+            raise ConnectionRefusedError("所有世代は終了済み")
+
+    async def unexpected(*_args):
+        raise AssertionError("呼ばれない")
+
+    client = service_io.CodexResource(cast(Any, _Gone()), unexpected, unexpected, unexpected)
+    client.process = types.SimpleNamespace(pid=4242)
+    monkeypatch.setattr(service_io.psutil, "pid_exists", lambda pid: app_server_alive and pid == 4242)
+
+    residual = await client.close()
+
+    assert bool(residual) is app_server_alive
+    if app_server_alive:
+        assert "pid=4242" in residual[0] and "G1" in residual[0]

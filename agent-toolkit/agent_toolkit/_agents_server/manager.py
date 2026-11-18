@@ -280,12 +280,12 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
     ) -> dict[str, Any]:
         """実行中turnへ中断を要求し、指定時間まで終了を待つ。"""
         await self._drain_diagnostics()
-        await self._settle_recovery_before_kill(
-            session_id,
-            timeout
-            if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0
-            else DEFAULT_SEND_MESSAGE_TIMEOUT,
-        )
+        # 不正な入力のkillは、自動復旧の取消などの副作用を起こす前に拒否する。
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
+            raise ActionableError(
+                "timeout must be non-negative", next_action="`timeout`を省略して270秒で待つか、0以上の秒数を指定する"
+            )
+        await self._settle_recovery_before_kill(session_id, timeout if timeout > 0 else DEFAULT_SEND_MESSAGE_TIMEOUT)
         observed_session = self.sessions.get(session_id)
         observed_turn = (
             None
@@ -298,10 +298,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             await session.drain_registration()
         if self._status_writer is not None:
             await self._status_writer.drain()
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
-            raise ActionableError(
-                "timeout must be non-negative", next_action="`timeout`を省略して270秒で待つか、0以上の秒数を指定する"
-            )
         stopped_state = await self._resolve_stopped_session(session_id)
         recovered_state: SessionResumeState | None = None
         if stopped_state is None and session_id not in self.sessions and session_id not in self._pending_resumes:
