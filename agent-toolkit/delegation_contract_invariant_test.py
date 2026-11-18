@@ -16,6 +16,7 @@ from agent_toolkit._testing.delegation_contract_support import (
     _generated_input_errors,
     _marker_values,
     _read_table_subagents,
+    _role_files,
 )
 from agent_toolkit._testing.normative_contract import read_contract
 
@@ -29,7 +30,7 @@ def test_all_launch_contract_inputs_are_generated() -> None:
 def test_wi_draft_review_stage_and_continuation_contract() -> None:
     """方針と本文が共通入力を再利用し、本文確認が資料の絶対パスを要求する。"""
     root = pathlib.Path(__file__).resolve().parent
-    declaration = task_documents.read_declaration(root / "share/wi-draft-review.subagent.md")
+    declaration = task_documents.read_declaration(root / "skills/atk-mode/roles/wi-draft-review.subagent.md")
     assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
     assert set(declaration.required) == {"要求と出所", "成立性の証拠", "引き継ぎ記録先"}
     assert set(declaration.optional) == {"確認段階", "方針", "原稿"}
@@ -37,19 +38,11 @@ def test_wi_draft_review_stage_and_continuation_contract() -> None:
     assert continuation.instruction == "本文確認"
     assert set(continuation.required) == {"原稿", "要求と出所", "成立性の証拠"}
     assert set(continuation.paths) == set(continuation.required)
-    for name in (
-        "share/wi-draft-review.parent.md",
-        "skills/add-awi-by-user/SKILL.md",
-        "skills/wi-standards/references/drafting-workflow.md",
-    ):
+    # 継続の指示は起動契約だけが定め、投入前レビューを選ぶ手順書は起動契約を名指しする。
+    assert "本文確認" in (root / "skills/atk-mode/roles/wi-draft-review.parent.md").read_text(encoding="utf-8")
+    for name in ("skills/atk-mode/playbooks/add-awi-by-user.md", "skills/atk-mode/playbooks/wi-drafting.md"):
         content = (root / name).read_text(encoding="utf-8")
-        if name.endswith("drafting-workflow.md"):
-            content = read_contract(
-                root / "skills/wi-standards/references/drafting-workflow.md",
-                root,
-                ("drafting-workflow-review-route.md", "直接起草と独立した検収の選択"),
-            )
-        assert "本文確認" in content
+        assert "`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`" in content, name
 
 
 def test_distributed_roles_have_model_types() -> None:
@@ -123,19 +116,18 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     軽量種別の`<役割名>.subagent.md`の委譲先はファイルを書けない1工程の担当であり、引き継ぎ記録を持たないため集合から除く。
     """
     share = pathlib.Path(__file__).resolve().parent / "share"
+    parents = _role_files(share, ".parent.md")
+    recipients = _role_files(share, ".subagent.md")
     # 役割別の規範は`share/rules/`へ置くため、共有文書と同じ集合で引き継ぎ記録の参照を比べる。
     markdown = {
-        path.name: path.read_text(encoding="utf-8") for path in sorted([*share.glob("*.md"), *(share / "rules").glob("*.md")])
+        path.name: path.read_text(encoding="utf-8")
+        for path in sorted({*share.glob("*.md"), *(share / "rules").glob("*.md"), *parents, *recipients})
     }
-    lightweight = {
-        path.name for path in share.glob("*.subagent.md") if _declaration(path).launch_kind in ("explore", "write", "shell")
-    }
+    lightweight = {path.name for path in recipients if _declaration(path).launch_kind in ("explore", "write", "shell")}
     parent_names = {
-        path.name
-        for path in share.glob("*.parent.md")
-        if not set(_marker_values(path, _LAUNCH_TARGET_PREFIX, recipient=False)[0]) <= lightweight
+        path.name for path in parents if not set(_marker_values(path, _LAUNCH_TARGET_PREFIX, recipient=False)[0]) <= lightweight
     }
-    recipient_names = {path.name for path in share.glob("*.subagent.md")} - lightweight
+    recipient_names = {path.name for path in recipients} - lightweight
     contract_names = {name for name, content in markdown.items() if "## 多段工程の引き継ぎ記録" in content}
     # 現行要求の記録仕様は、役割別の起動契約と共通の引き継ぎ記録先を使う。
     contract_names.add("work-contract.md")
@@ -145,7 +137,6 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     # 入力・起動・統合の各判断で読む規範資料も、同じ役割の引き継ぎ契約を所有する。
     for owner, materials in (
         ("rules/rules-subagent.md", (("../subagent-operations.md", "多段工程の記録・引き継ぎ"),)),
-        ("add-wi.parent.md", (("add-wi-parent-inputs.md", "入力"), ("add-wi-parent-launch.md", "起動方法"))),
         ("exec.parent.md", (("exec-parent-launch.md", "入力"), ("exec-parent-integration.md", "統合"))),
         ("exec-review.parent.md", (("exec-review-parent-launch.md", "入力"),)),
         ("lane-integration.subagent.md", (("lane-integration-subagent-inputs.md", "入力"),)),
@@ -164,19 +155,17 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
     全ての`<役割名>.subagent.md`の宣言が読めること（不正な`mode:`を含まないこと）も同時に確かめる。
     """
     share = pathlib.Path(__file__).resolve().parent / "share"
+    recipients = {path.name: path for path in _role_files(share, ".subagent.md")}
     errors: list[str] = []
-    launched = {
-        target
-        for parent in share.glob("*.parent.md")
-        for target in _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)[0]
-    }
-    for parent in sorted(share.glob("*.parent.md")):
+    parents = _role_files(share, ".parent.md")
+    launched = {target for parent in parents for target in _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)[0]}
+    for parent in parents:
         targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
         accepted: set[str] = set()
         for target in targets:
-            accepted |= _declaration(share / target).accepted
-            for read_target in _read_table_subagents(share / target, launched):
-                accepted |= _declaration(share / read_target).accepted
+            accepted |= _declaration(recipients[target]).accepted
+            for read_target in _read_table_subagents(recipients[target], launched):
+                accepted |= _declaration(recipients[read_target]).accepted
         for match in _INPUT_BULLET_PATTERN.finditer(parent.read_text(encoding="utf-8")):
             if match.group("name") not in accepted:
                 errors.append(f"{parent.name}: {match.group('name')}")
@@ -190,8 +179,7 @@ def test_every_task_document_declares_worktree_write() -> None:
     `atk lane integrate`の稼働判定は、宣言を読めない役割の担当を書込主体として数え、統合を止める。
     起動対象を持たない役割文書も判定の対象になるため、起動関係からではなく全文書を列挙して確かめる。
     """
-    share = pathlib.Path(__file__).resolve().parent / "share"
-    documents = sorted(share.glob("*.subagent.md"))
+    documents = _role_files(pathlib.Path(__file__).resolve().parent / "share", ".subagent.md")
     errors = [
         declaration for document in documents if isinstance(declaration := task_documents.read_declaration(document), str)
     ]

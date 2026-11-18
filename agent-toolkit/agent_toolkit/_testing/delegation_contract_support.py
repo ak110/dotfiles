@@ -254,9 +254,11 @@ def _read_table_subagents(recipient: pathlib.Path, launched: set[str] | None = N
     `start`で起動されないため起動対象に挙げない。その指示を送る委譲元は、起動した委譲先の委譲元である。
     """
     content = recipient.read_text(encoding="utf-8")
+    # 隔離したテスト入力は置き場所の外にあり、従来どおり親の親をplugin rootとみなす。
+    plugin_root = task_documents.role_document_plugin_root(recipient) or recipient.parent.parent
     declared = [
         path.name
-        for row in read_triggers.parse_tables(recipient, recipient.parent.parent)
+        for row in read_triggers.parse_tables(recipient, plugin_root)
         for path in row.documents
         if path.name.endswith(".subagent.md")
     ]

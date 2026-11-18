@@ -447,7 +447,8 @@ async def test_consumption_survives_registry_publication_and_new_owner(
 
 def _role_session(name: str, **fields: Any) -> state.SessionState:
     """配布する役割文書で起動したtaskを作る。宣言と検査の食い違いを実物の文書で検出する。"""
-    document = launch_prompts.SHARE_DIR / name
+    document = task_documents.find_role_document(launch_prompts.SHARE_DIR.parent, name)
+    assert document is not None, name
     return state.SessionState("role", str(document.parent), prompt=task_documents.task_prompt_header(document), **fields)
 
 

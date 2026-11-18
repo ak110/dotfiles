@@ -91,7 +91,7 @@ def _context(prompt: str, directory: pathlib.Path) -> dict[str, Any]:
 
 
 async def _start_task(directory: pathlib.Path, request: str) -> dict[str, Any]:
-    role = pathlib.Path(__file__).parents[2] / "share" / "add-wi.subagent.md"
+    role = launch_requests.resolve_task_document_path("add-wi")
     return await mcp_tools.start(
         cwd=str(directory),
         subagent_md_path=str(role),

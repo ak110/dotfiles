@@ -64,6 +64,11 @@ def role_document_plugin_root(path: pathlib.Path) -> pathlib.Path | None:
     return None
 
 
+def document_plugin_root(path: pathlib.Path) -> pathlib.Path:
+    """役割文書が属するplugin rootを返す。置き場所の外の文書（隔離した試験の入力など）は2階層上とみなす。"""
+    return role_document_plugin_root(path) or path.parents[1]
+
+
 def find_role_document(plugin_root: pathlib.Path, name: str) -> pathlib.Path | None:
     """ファイル名（`<役割名>.subagent.md`・`<役割名>.parent.md`）に対応する実在の文書を返す。"""
     for directory in role_document_directories(plugin_root):

@@ -80,7 +80,7 @@ def continuation_prompt(
         # 同文の自由な指示も新しい操作になり得る。意味上の必要性は送信側へ残す。
         if documents and text.lstrip().startswith(("#", "---")):
             with contextlib.suppress(OSError, UnicodeError):
-                root = str(documents[0].parent.parent)
+                root = str(task_documents.document_plugin_root(documents[0]))
                 body = documents[0].read_text(encoding="utf-8").replace(_PLUGIN_ROOT_VARIABLE, root)
                 candidate = text.replace(_PLUGIN_ROOT_VARIABLE, root)
                 if candidate.strip() == body.strip() and body in launch_prompt:

@@ -179,13 +179,14 @@ async def test_start_input_rejection_points_to_owning_contract(
     contract_relative = {
         "exec": pathlib.Path("share/exec.parent.md"),
         "repository-process": pathlib.Path("skills/process-wi/references/all-repos.md"),
-        "add-wi": pathlib.Path("share/add-wi.parent.md"),
+        "add-wi": pathlib.Path("skills/atk-mode/roles/add-wi.parent.md"),
     }[role]
     if placement == "sectionless" and role == "repository-process":
         pytest.skip("parent-read-sourceが節を明示する役割は入力節の選択を使わない")
+    role_relative = task_documents.require_role_document(source, role).relative_to(source)
     if placement != "current":
         root = tmp_path / "other-plugin"
-        for relative in (pathlib.Path(".claude-plugin/plugin.json"), pathlib.Path(f"share/{role}.subagent.md")):
+        for relative in (pathlib.Path(".claude-plugin/plugin.json"), role_relative):
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / relative, target)
@@ -201,7 +202,7 @@ async def test_start_input_rejection_points_to_owning_contract(
                     .replace("\n## 入力\n", "\n## 引数\n")
                 )
                 target.write_text(text, encoding="utf-8")
-    document = root / "share" / f"{role}.subagent.md"
+    document = root / role_relative
     params = _observed_input_params(document.name, tmp_path)
     missing_name = {"exec": "担当種別", "repository-process": "引き継ぎ記録先", "add-wi": "投入する要求"}[role]
     if defect == "missing":

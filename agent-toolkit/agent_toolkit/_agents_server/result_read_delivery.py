@@ -28,7 +28,7 @@ def with_read_guidance(
     if recipient is None:
         return result
     host = "codex" if environment.get("CODEX_THREAD_ID") else "claude"
-    root = document.parent.parent
+    root = task_documents.document_plugin_root(document)
     records = read_state(recipient).get(document_acquisition.OPERATION_SKILL_READY_KEY, {})
     try:
         if not isinstance(records, dict):

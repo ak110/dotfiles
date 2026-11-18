@@ -230,13 +230,13 @@ def test_real_split_quality_sources_preserve_generated_body(tmp_path, monkeypatc
 def test_return_targets_cover_all_roles_and_declared_callers() -> None:
     """役割群全体と各役割が宣言する呼出側を生成対象表へ対応付ける。"""
     plugin = subject.REPO_ROOT / "agent-toolkit"
-    sources = {path.name.removesuffix(".subagent.md"): path for path in (plugin / "share").glob("*.subagent.md")}
+    sources = {path.name.removesuffix(".subagent.md"): path for path in task_documents.role_documents(plugin)}
     targets = {role: relative for role, relative, _title, _level in subject.RETURN_TARGETS}
     assert len(targets) == len(subject.RETURN_TARGETS)
     assert targets.keys() == sources.keys()
-    for role, source in sources.items():
-        parent = source.with_name(f"{role}.parent.md")
-        if parent.is_file():
+    for role in sources:
+        parent = task_documents.find_role_document(plugin, f"{role}.parent.md")
+        if parent is not None:
             assert targets[role] == parent.relative_to(plugin).as_posix()
         else:
             declared = read_triggers.parent_contract_targets(role, plugin)
@@ -313,7 +313,8 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     """実在する全正本と配置先を隔離し、実行レビューの内部処理と相対参照も確認する。"""
     files = set()
     for role, relative, _title, _level in subject.RETURN_TARGETS:
-        files.add(f"agent-toolkit/share/{role}.subagent.md")
+        source = task_documents.require_role_document(subject.REPO_ROOT / "agent-toolkit", role)
+        files.add(source.relative_to(subject.REPO_ROOT).as_posix())
         files.add("agent-toolkit/" + relative)
     files |= {
         "agent-toolkit/share/rules/rules-subagent.md",

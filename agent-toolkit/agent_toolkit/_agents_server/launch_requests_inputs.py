@@ -84,7 +84,7 @@ def check_declared_inputs(
 def _input_contract_guidance(task_document: pathlib.Path) -> str:
     """拒否した役割と同じ版の、入力説明を所有する契約と節を案内する。"""
     try:
-        targets = read_triggers.parent_contract_targets(task_document.name, task_document.parent.parent)
+        targets = read_triggers.parent_contract_targets(task_document.name, task_documents.document_plugin_root(task_document))
         inputs = tuple(
             read_triggers.ReadTarget(target.path, target.heading or _input_section(target.path)) for target in targets
         )

@@ -102,8 +102,8 @@ def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
     """
     task_document = pathlib.Path(subagent_md_path)
     if task_document.is_absolute():
-        # 置き場所の外の絶対パスは従来どおり2階層上をrootとみなし、後段の所在の検査へ渡す。
-        owner = task_documents.role_document_plugin_root(task_document) or task_document.parent.parent
+        # 置き場所の外の絶対パスは後段の所在の検査へ渡す。
+        owner = task_documents.document_plugin_root(task_document)
         return plugin_root.resolve_stable_plugin_root(owner) / task_document.relative_to(owner)
     is_role_name = not any(part in subagent_md_path for part in ("/", "\\", _TASK_DOCUMENT_SUFFIX))
     if is_role_name and subagent_md_path:
@@ -512,7 +512,7 @@ def task_document_request(
         ) from error
     # 委譲先は配送された本文だけを読むため、プラグインルートの変数を配送側で解決する。
     # 未展開のまま渡すと、委譲先は変数の値を推測して参照先を探す。
-    document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
+    document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_documents.document_plugin_root(task_document)))
     declaration = plugin_root.SERVER_RUNTIME_CODE.check_role(
         "役割宣言の検査", task_document, lambda: _task_document_declaration(task_document, document_text)
     )
@@ -547,7 +547,11 @@ def task_document_request(
             "起動時資料の検査",
             task_document,
             lambda: read_triggers.startup_context(
-                task_document, task_document.parent.parent, dict(extra_params), host=host, project=project
+                task_document,
+                task_documents.document_plugin_root(task_document),
+                dict(extra_params),
+                host=host,
+                project=project,
             ),
         )
         if launch_kind == "delegate" and include_startup
@@ -582,7 +586,7 @@ def task_document_request(
     prompt_lines.append(document_text)
     if launch_kind == "delegate":
         notice_path = handoff_path if _HANDOFF_INPUT_NAME not in extra_params else None
-        prompt_lines.append(handoff_notice(notice_path, task_document.parent.parent))
+        prompt_lines.append(handoff_notice(notice_path, task_documents.document_plugin_root(task_document)))
         assert whole_contract is not None
         prompt_lines.append(whole_contract)
     return model_type, "\n".join(prompt_lines), launch_kind, handoff_path
