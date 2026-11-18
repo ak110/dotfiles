@@ -36,6 +36,9 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 | 作業ディレクトリからルートまでの各ディレクトリの`CLAUDE.local.md`と、同階層に`AGENTS.md`が無い場合の`CLAUDE.md` | `~/.codex/AGENTS.md`からの読込指示 |
 
 ユーザー単位の`*.local.md`と`~/.claude/CLAUDE.md`の2種類は実行ホストごとにユーザーが置くファイルであり、リポジトリから生成する`~/.codex/AGENTS.md`へ埋め込めない。
+dotfilesがホストを限って配る`*.local.md`もある。
+例は`.chezmoi-source/dot_claude/rules/ssh-peer-hosts.local.md.tmpl`で、`.chezmoidata.toml`の役割`ssh_peers`のホストだけに本文が出て、他のホストではファイルが作られない。
+ホストごとに中身が違うため、これも同様に埋め込めない。
 読込指示は実行時のファイルの有無によらず共通であるため、プロジェクト直下の`.claude/rules/`と同じ手段を選ぶ。
 2026年10月6日に、`agents_server`で起動したCodexの委譲先が、`~/.claude/rules/`直下の`*.local.md`が使えないと定めたコマンドを実行して失敗した。
 当時の読込指示はプロジェクト直下の3種だけを挙げ、ユーザー単位の規範を含めていなかった。
