@@ -25,6 +25,8 @@ AWIの反映先は`## 反映内容と反映先`から、UWIは質問・判断材
 書込予定の追加は新設先・重なりの記録と規範指定も更新でき、追加パスと同じか配下の非書込要素を除く。
 追加する列の省略は空列とし、記録だけの追記も受理する。既存の順序を保ち同じ値を重ねない。
 規範指定は記載時だけ全文を置換し、省略なら保存値を保つ。追加操作は他の更新操作と`--body-wi`を併用できない。
+追加済みで未着手のWIの別レーンへの移管は`--transfer-wi`・`--to-lane`・`--lane-cost-updates`・`--output`で受ける。
+初回割当・統合済み・凍結した再開計画のWIは移管できず、`--extend-write-targets`を併せて重なりの記録も更新できる。
 mergeの任意入力`--lane-cost-updates`は最終割当先の補正前後の実装・統合秒数と根拠を受け取る。
 段階2以上では単一段階案の比較値を必須とし、追加時は全体配分について再確定した比較値を用いる。
 `--body-wi`は項目ごとの本文検査のみを限定し、レーン関係は全体を検査する。
@@ -97,7 +99,7 @@ from check_selection_norms import (
     load_target_seconds,
 )
 from check_selection_paths import clear_caches, reflected_paths
-from selection_merge import extend_write_targets, merge_selection, reopen_wis
+from selection_merge import extend_write_targets, merge_selection, reopen_wis, transfer_wi
 
 from agent_toolkit._agents_server import admission as _admission
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
@@ -366,6 +368,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--reopen-wi", action="append", metavar="WI", help="既存WIを元レーンで再開する。--outputと組で反復指定可"
     )
+    parser.add_argument(
+        "--transfer-wi",
+        metavar="WI",
+        help="追加済みで未着手のWIを別の既存レーンへ移す。--to-lane・--lane-cost-updates・--outputと組で指定",
+    )
+    parser.add_argument("--to-lane", metavar="LANE", help="--transfer-wiの移管先の既存レーン")
     parser.add_argument("--new-plan", action="store_true", help="要求変更による再開。--reopen-wiの対象だけ再開位置をなしへ戻す")
     parser.add_argument(
         "--candidate-file",
@@ -393,6 +401,8 @@ def main(argv: list[str] | None = None) -> int:
         args.extend_write_targets,
         args.lane_cost_updates,
         args.body_wi,
+        args.transfer_wi,
+        args.to_lane,
     )
     if args.publication_lane is not None and not args.require_integrated:
         parser.error("--publication-laneは--require-integratedと組で指定する")
@@ -445,6 +455,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.reopen_wi is not None and (args.output is None or any(value is not None for value in other_updates)):
         parser.error("--reopen-wiは--outputと組で指定し、他の更新操作・--body-wiと併用しない")
+    if (args.transfer_wi is not None or args.to_lane is not None) and (
+        args.transfer_wi is None
+        or args.to_lane is None
+        or args.lane_cost_updates is None
+        or args.output is None
+        or args.reopen_wi is not None
+        or any(value is not None for value in (args.merge, args.lane_map, args.candidate_file))
+        or args.mark_integrated is not None
+        or args.body_wi is not None
+    ):
+        parser.error(
+            "--transfer-wi・--to-lane・--lane-cost-updates・--outputは組で指定し、"
+            "--extend-write-targets以外の更新操作・--body-wiと併用しない"
+        )
     if args.extend_write_targets is not None and (
         args.output is None
         or any(
@@ -468,13 +492,14 @@ def main(argv: list[str] | None = None) -> int:
         args.mark_integrated is None
         and args.reopen_wi is None
         and args.extend_write_targets is None
+        and args.transfer_wi is None
         and not (args.candidate_file is not None and args.merge is None and args.lane_map is None)
         and any(value is not None for value in (args.merge, args.lane_map, args.output))
         and not all(value is not None for value in (args.merge, args.lane_map, args.output))
     ):
         parser.error("--merge・--lane-map・--outputは組で指定する")
-    if args.lane_cost_updates is not None and args.merge is None:
-        parser.error("--lane-cost-updatesは--merge・--lane-map・--outputとともに指定する")
+    if args.lane_cost_updates is not None and args.merge is None and args.transfer_wi is None:
+        parser.error("--lane-cost-updatesは--merge・--lane-map・--outputまたは--transfer-wiとともに指定する")
     body_wis = set(args.body_wi) if args.body_wi is not None else None
     try:
         work_dir = _resolve_work_dir(args.work_dir)
@@ -485,6 +510,16 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError as error:
                 raise InputError(
                     str(error), next_action="保存済み選定の元WI名と所属を確認して同じ再開操作を実行する"
+                ) from error
+        if args.transfer_wi is not None:
+            assert args.to_lane is not None and args.lane_cost_updates is not None
+            try:
+                updates = json.loads(args.lane_cost_updates.read_text(encoding="utf-8"))
+                selection = transfer_wi(selection, args.transfer_wi, args.to_lane, updates)
+            except (OSError, UnicodeError, ValueError) as error:
+                raise InputError(
+                    str(error),
+                    next_action="移管対象・移管先・費用更新JSONを直して同じ移管操作を再実行する。移管できない種別のWIは元レーンで扱う",
                 ) from error
         if args.extend_write_targets is not None:
             try:

@@ -6,6 +6,7 @@ import copy
 import typing
 
 import selection_contract
+from check_selection_lanes import _resume_plan_id
 
 from agent_toolkit._plan import selection as _selection
 
@@ -73,6 +74,62 @@ def reopen_wis(existing: dict[str, object], names: list[str], *, new_plan: bool 
     for row in costs:
         if lane_of(row) in targets:
             row[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
+    return result
+
+
+def transfer_wi(existing: dict[str, object], name: str, destination: str, cost_updates: object) -> dict[str, object]:
+    """追加済みで未着手のWIを、既存の別レーンへ移す。
+
+    初回割当・統合済み・凍結した再開計画を持つWIは移さない。
+    所要時間の更新は、移した後に残る移管元と移管先の最終値を受け取る。
+    移管元が空になる場合は、そのレーン行を除く。
+    """
+    result = copy.deepcopy(existing)
+    items = _rows(result)
+    by_wi = {str(item[_selection.WI_KEY]): item for item in items}
+    item = by_wi.get(name)
+    if item is None:
+        raise ValueError(f"移管対象WIが保存済み選定に無い: {name}")
+    source = str(item[_selection.LANE_KEY])
+    if name not in typing.cast(list[str], result.get(_selection.ADDED_WIS_KEY, [])):
+        raise ValueError(f"{name}: 追加済みでないWIは移管できない（初回割当は保持する）")
+    if source == "なし":
+        raise ValueError(f"{name}: レーンが`なし`のWIは移管できない")
+    if not destination.strip() or destination == "なし":
+        raise ValueError("移管先は空でない既存レーン名とする")
+    if destination == source:
+        raise ValueError(f"{name}: 移管先が現在のレーン{source}と同じ")
+    if item.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED or source in _selection.integrated_lanes(result):
+        raise ValueError(f"{name}: 統合済みのWIは移管できない")
+    if _resume_plan_id(item.get("再開位置")) is not None:
+        raise ValueError(f"{name}: 凍結した再開計画を持つWIは移管できない。元レーンで再開する")
+    costs = _costs(result)
+    rows = {str(row[_selection.LANE_KEY]): row for row in costs}
+    if destination not in rows:
+        raise ValueError(f"移管先レーンが所要時間に無い: {destination}")
+    remains = any(other is not item and other[_selection.LANE_KEY] == source for other in items)
+    needed = {source, destination} if remains else {destination}
+    if not isinstance(cost_updates, dict) or set(cost_updates) != needed:
+        raise ValueError(f"費用更新は移管後の最終値を{sorted(needed)}の全てへ指定する")
+    errors = selection_contract.cost_update_errors(cost_updates, needed)
+    if errors:
+        raise ValueError("\n".join(errors))
+    item[_selection.LANE_KEY] = destination
+    item.pop(_selection.INTEGRATION_STATE_KEY, None)
+    for lane, update in typing.cast(dict[str, dict[str, object]], cost_updates).items():
+        rows[lane].update(update)
+    rows[destination][_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
+    if not remains:
+        if any(source in typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])) for row in costs):
+            raise ValueError(f"{source}: 移管で空になるレーンを先行レーンとして参照するレーンがある")
+        costs = [row for row in costs if row[_selection.LANE_KEY] != source]
+    result.pop("decisions", None)
+    result.pop("lane_costs", None)
+    result[_selection.DECISIONS_KEY] = items
+    result[_selection.LANE_COSTS_KEY] = costs
+    errors, models = selection_contract.structure_errors(result)
+    if errors or models:
+        raise ValueError("\n".join([*models, *errors]))
     return result
 
 
