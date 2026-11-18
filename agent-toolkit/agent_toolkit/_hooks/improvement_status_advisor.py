@@ -1,16 +1,18 @@
-"""報告の送達の前後に、判定資料の取得と報告の書式・記録の行を案内し、未調査を理由にした`不要`へ再確認を促す。
+"""報告の送達の前後に、判定資料の取得と改善点の報告の書式を案内し、未調査を理由にした`不要`へ再確認を促す。
 
 `share/rules/rules-main.md`「作業中の改善点の報告」は、処置とAWI化を決める前に担当・処置を決める最小調査を求める。
 原因を調べていないことを見送りの理由にした報告は、その調査を省いたまま処置不要と判断している。
 逸脱の報告は、今回の事象へ`agent-basics:bugfix`を適用し、同スキルの「記録」の行頭語（`処置:`と条件付きの`再発防止:`）で
-今回の是正と再発防止の採否を示す。bugfixの起動・取得の記録は今回の事象への適用を示さないため、記録の行の欠落は
-起動の有無によらず案内する。
+今回の是正と再発防止の採否を示す。
 判定は報告行の語句の一致だけで行い、意味は推定しない。誤検出があり得るため遮断せず通知する。
 報告行の抽出と判定語は`runtime_inserted`（`report_lines`・`REPORT_CUES`）を使い、コード例と引用を報告から除く。
-同じ判定を`send_to_user`の送達後にも行う（`hooks/send_to_user.tsx`の`UNINVESTIGATED_REASON`・`REPORT_CUES`）。
-判定語を変える場合は両方を合わせる。一致は`improvement_status_advisor_test.py`が確かめる。
+未調査の理由の判定は`send_to_user`の送達後にも行う（`hooks/send_to_user.tsx`の`UNINVESTIGATED_REASON`）。
+判定語を変える場合は両方を合わせる。
 判定資料の取得案内は送達前（`main`が受ける`send_to_user`の送信前照会）だけで出す。送達後のStopで案内しても、
-報告は既に届いていて見直しが反映されないため、Stopでは取得案内を出さず、報告行の書式・理由と記録の行の欠落だけを通知する。
+報告は既に届いていて見直しが反映されないため、Stopでは取得案内を出さず、改善点の報告行の書式・理由だけを通知する。
+逸脱の報告に欠けた記録の行は、`send_to_user`の送達後のツール結果（`hooks/send_to_user.tsx`の`RECORD_LINE_CHECKS`）だけが案内する。
+Stopの通知はターンの継続を強制し、記録の行は以後の報告でしか補えないため、Stopでは案内しない。
+Stopの通知は、同じターンで一度継続した後（`stop_hook_active`が真）には繰り返さない。
 
 委譲先での実行可否: 委譲先は改善点と逸脱を委譲元へ返却し、委譲元が処置とAWI化を判断するため判定しない。
 """
@@ -68,25 +70,6 @@ _CUE_DOCUMENTS = (
 )
 _IMPROVEMENT_PURPOSE = "改善点の報告。処置とAWI化ステータスを見直す"
 
-# 送達後に、報告の手掛かりの組に対して求める記録の行頭語（`agent-basics:bugfix`の「記録」）。
-# `hooks/send_to_user.tsx`の`RECORD_LINE_CHECKS`と同じ組にする。
-RECORD_LINE_CHECKS = (
-    (
-        frozenset({"deviation"}),
-        "処置",
-        "逸脱を示す語を含む報告に`処置:`の行が無い。",
-        "以後の報告では、今回の是正と残る影響を`処置:`の行に書け。bugfixの起動の記録は、今回の事象へ5つの問いを"
-        "適用したことを示さない。逸脱の報告に当たるか、行の内容が足りるかは担当が判断せよ。",
-    ),
-    (
-        frozenset({"deviation", "prevention"}),
-        "再発防止",
-        "再発防止を検討する条件（ユーザーの指摘、同じ害の繰り返し、大きな害）を示す語を含む逸脱の報告に`再発防止:`の行が無い。",
-        "以後の報告では、再発防止の採否を`再発防止:`の行に書け。採らない場合は区分名と理由を書く。"
-        "条件に当たるか、採否と内容は担当が判断せよ。",
-    ),
-)
-
 
 def uninvestigated_unneeded_reasons(text: str) -> list[str]:
     """報告行のうち、`不要`の理由が原因の未調査を根拠にしている行を返す。"""
@@ -128,16 +111,6 @@ def _format_notice(lines: list[str]) -> str:
                         "セミコロンで区切って記録せよ。候補と結論の妥当性は担当が判断せよ。",
                     )
     return ""
-
-
-def _record_line_notices(text: str, cues: frozenset[str]) -> list[str]:
-    """手掛かりの組に当たる報告で、求める記録の行が本文行の行頭に無いものを返す。"""
-    heads = {line.split(":", 1)[0] for line in runtime_inserted.report_lines(text.replace("：", ":")) if ":" in line}
-    return [
-        _notice(body, removable_cause=True, subject=text, fix=fix)
-        for required, head, body, fix in RECORD_LINE_CHECKS
-        if required <= cues and head not in heads
-    ]
 
 
 def _acquired(records: dict, path: pathlib.Path) -> bool:
@@ -192,7 +165,7 @@ def read_guidance_notice(payload: object, *, delivered: bool = False) -> str:
     """最上位メインの報告へ、改善点の書式の誤りと、報告の形に応じた案内を返す。
 
     送達前（`delivered`が偽）は、未取得の判定資料を既存の取得記録から案内する。
-    送達後のStop（`delivered`が真）は取得案内を返さず、逸脱の報告に欠けた記録の行を案内する。
+    送達後のStop（`delivered`が真）は取得案内を返さず、同じターンで直せる改善点の書式の誤りだけを返す。
     """
     if not isinstance(payload, dict) or not is_main_agent_context(payload):
         return ""
@@ -201,20 +174,16 @@ def read_guidance_notice(payload: object, *, delivered: bool = False) -> str:
     if not isinstance(text, str) or not isinstance(session_id, str) or not session_id:
         return ""
     improvements = runtime_inserted.reported_improvement_lines(text)
-    cues = runtime_inserted.report_cues(text)
+    cues = frozenset() if delivered else runtime_inserted.report_cues(text)
     if not improvements and not cues:
         return ""
     set_warning_session_id(session_id)
     format_notice = _format_notice(improvements)
     if delivered:
-        notices = [format_notice, *_record_line_notices(text, cues)]
-    else:
-        # 書式の修正だけで済む改善点の報告へは、判定資料の追加取得を案内しない。
-        notices = [
-            format_notice,
-            _read_notice(payload, session_id, cues, improvements=bool(improvements) and not format_notice),
-        ]
-    return "\n\n".join(filter(None, notices))
+        return format_notice
+    # 書式の修正だけで済む改善点の報告へは、判定資料の追加取得を案内しない。
+    read_notice = _read_notice(payload, session_id, cues, improvements=bool(improvements) and not format_notice)
+    return "\n\n".join(filter(None, (format_notice, read_notice)))
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -223,7 +192,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         payload = json.loads(payload_text)
     except ValueError, TypeError:
         return "", ""
-    if not isinstance(payload, dict) or not is_main_agent_context(payload):
+    if not isinstance(payload, dict) or payload.get("stop_hook_active") is True or not is_main_agent_context(payload):
         return "", ""
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
