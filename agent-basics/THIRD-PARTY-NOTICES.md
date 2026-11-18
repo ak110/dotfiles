@@ -209,6 +209,38 @@ agent-basicsへ取り込んだ第三者素材の原典、改変内容と許諾�
    limitations under the License.
 ```
 
+## pstack
+
+- 原典: [cursor/plugins](https://github.com/cursor/plugins/tree/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack)の`pstack/`（確認commit `bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7`）。
+- 取り込んだ資料: `skills/figure-it-out/SKILL.md`。
+- 取り込み先: `skills/writing-standards/references/quality-principles-verification.md`。
+- 改変: 証拠の区分と判定不能の扱いの1文を日本語へ翻訳し、原則の要旨へ組み込んだ。
+- 許諾: [MIT License](https://github.com/cursor/plugins/blob/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack/LICENSE)。
+
+```text
+MIT License
+
+Copyright (c) 2026 Lauren Tan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## ux-designer-skill
 
 - 原典: [szilu/ux-designer-skill](https://github.com/szilu/ux-designer-skill/tree/c869d32fd8df7bd7fcd1db68e93bd3e89eed5161)（確認commit `c869d32fd8df7bd7fcd1db68e93bd3e89eed5161`）。
