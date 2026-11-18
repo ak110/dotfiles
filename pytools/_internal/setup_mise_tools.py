@@ -5,6 +5,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import sys
 import typing
 from pathlib import Path
 
@@ -251,8 +252,9 @@ def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
             raise OSError(f"tsserver.jsが見つからない: {source}")
         for server in servers:
             link = server / "node_modules" / "typescript"
-            if link.is_symlink():
-                previous = link.readlink()
+            linked = link.is_symlink() or link.is_junction()
+            if linked:
+                previous = Path(os.fspath(link.readlink()).removeprefix("\\\\?\\"))
                 if previous == source:
                     continue
                 # この処理が作る絶対リンクと同じmise管理prefixだけを更新する。
@@ -272,7 +274,17 @@ def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
                 raise OSError(f"既存の実体を保持した: {link}")
             temporary = link.with_name(f".typescript-{secrets.token_hex(8)}")
             try:
-                temporary.symlink_to(source, target_is_directory=True)
+                if sys.platform == "win32":
+                    # シンボリックリンクは開発者モードか管理者権限が要る（WinError 1314）。ジャンクションは要らない。
+                    # pylint: disable=import-outside-toplevel,import-error
+                    import _winapi  # noqa: PLC0415 -- Windows専用
+
+                    _winapi.CreateJunction(str(source), str(temporary))
+                    if linked:
+                        # Windowsの置換は既存のディレクトリ項目へ上書きできない。
+                        link.unlink()
+                else:
+                    temporary.symlink_to(source, target_is_directory=True)
                 temporary.replace(link)
             finally:
                 temporary.unlink(missing_ok=True)

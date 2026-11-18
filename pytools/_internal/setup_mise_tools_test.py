@@ -3,12 +3,14 @@
 
 # pylint: disable=protected-access
 
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from pytools._internal import setup_mise as _setup_mise
+from pytools._internal import setup_mise_tools
 from pytools._internal.setup_mise_test_helpers import (
     _EXPECTED_ENV_OVERRIDES,
     _EXPECTED_INSTALL_ENV_OVERRIDES,
@@ -474,6 +476,42 @@ class TestTypeScriptLspConnection:
             assert not link.is_symlink()
         else:
             assert link.readlink() == tmp_path / "custom"
+
+    @pytest.mark.windows
+    @pytest.mark.skipif(os.name != "nt", reason="特権の要らないジャンクションでの接続をWindows実機で確かめる")
+    @pytest.mark.parametrize("old_kind", ["junction", "symlink"])
+    def test_windows_moves_old_link_to_junction_without_symlink_privilege(
+        self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, old_kind: str
+    ) -> None:
+        """シンボリックリンクの作成特権が無くても、旧版への接続をジャンクションで現行版へ移す。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
+        link, source = self._layout(tmp_path, mise_stub)
+        old = source.parent.parent.parent / "6.0.2" / "node_modules" / "typescript"
+        old.mkdir(parents=True)
+        if old_kind == "junction":
+            subprocess.run(
+                ["cmd", "/d", "/c", "mklink", "/J", str(link), str(old)], check=True, capture_output=True, timeout=10
+            )
+        else:
+            try:
+                link.symlink_to(old, target_is_directory=True)
+            except OSError as error:
+                if getattr(error, "winerror", None) != 1314:
+                    raise
+                pytest.skip("旧版を指すシンボリックリンクを用意する特権が無い")
+
+        def deny_symlink(*_args: object, **_kwargs: object) -> None:
+            # 管理者として実行しても、開発者モードでも管理者でもないユーザーと同じ拒否を起こす。
+            raise OSError(None, "クライアントは要求された特権を保有していません。", None, 1314)
+
+        monkeypatch.setattr(os, "symlink", deny_symlink)
+        assert setup_mise_tools.ensure_tools_installed(Path("mise")) is True
+        assert link.is_junction()
+        assert os.path.samefile(link, source)
+        assert old.is_dir()
+        connected = link.lstat().st_ino
+        assert setup_mise_tools.ensure_tools_installed(Path("mise")) is True
+        assert link.lstat().st_ino == connected
 
     @pytest.mark.parametrize("mode", ["minimal", "failed-install"])
     def test_run_does_not_connect_when_install_is_not_eligible(
