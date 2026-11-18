@@ -164,7 +164,7 @@ def test_required_check_display_names(workflow_data: dict[str, object]) -> None:
     jobs = workflow_jobs(workflow_data)
     for key, display in {
         "test-linux": "test-linux",
-        "test-windows": "test-windows",
+        "test-windows-result": "test-windows",
         "python-lint-result": "python-lint (3.15)",
         "pytest-root": "pytest (3.15)",
         "pytest-toolkit-result": "pytest-toolkit (3.15)",

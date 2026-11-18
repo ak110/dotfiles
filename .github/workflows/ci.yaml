@@ -85,9 +85,9 @@ jobs:
           path: dotfiles
       - uses: ./dotfiles/.github/actions/ci-update-dotfiles-upgrade-windows
         if: needs.common-ci-owner.outputs.owns == 'true'
-  test-windows:
+  test-windows-tests:
     needs: common-ci-owner
-    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (non-owner)' || 'test-windows' }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (tests) (non-owner)' || 'test-windows (tests)' }}
     runs-on: windows-latest
     steps:
       - name: 共通CI非所有経路
@@ -103,6 +103,25 @@ jobs:
           fetch-depth: 0
           path: dotfiles
       - uses: ./dotfiles/.github/actions/ci-test-windows
+        if: needs.common-ci-owner.outputs.owns == 'true'
+  test-windows-install:
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (install) (non-owner)' || 'test-windows (install)' }}
+    runs-on: windows-latest
+    steps:
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: Write-Output "$env:OWNER_REASON"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        with:
+          fetch-depth: 0
+          path: dotfiles
+      - uses: ./dotfiles/.github/actions/ci-install-windows
         if: needs.common-ci-owner.outputs.owns == 'true'
   browser-e2e:
     needs: common-ci-owner
@@ -416,6 +435,23 @@ jobs:
       - pytest-toolkit
     if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest-toolkit (3.15) (non-owner)' || 'pytest-toolkit (3.15)' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 必須checkの全実行結果確認
+        env:
+          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+          NEEDS: ${{ toJSON(needs) }}
+        shell: bash
+        run: python3 scripts/ci_result.py
+  test-windows-result:
+    needs:
+      - common-ci-owner
+      - test-windows-tests
+      - test-windows-install
+    if: ${{ !cancelled() }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (non-owner)' || 'test-windows' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

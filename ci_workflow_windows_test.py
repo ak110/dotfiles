@@ -16,6 +16,7 @@ from _test_helpers import (
     workflow_jobs,
     workflow_mapping,
     workflow_step_source,
+    workflow_steps,
 )
 from _test_helpers import (
     _workflow_fixture as _workflow_data_fixture,  # noqa: F401  # pytestがfixtureとして収集する。
@@ -44,9 +45,10 @@ def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: d
 def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]) -> None:
     """Windowsジョブが公開された起動スクリプトのテストを実行し、`.cmd`の分岐をWindowsで確かめる。"""
     _, step = _windows_step(
-        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "公開入口ランチャーの動作確認"
+        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"])),
+        "公開入口ランチャーの動作確認",
     )
-    targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [step]}}})
+    targets = direct_pytest_targets({"jobs": {"test-windows-tests": {"steps": [step]}}})
     assert "bin/atk_launcher_test.py" in targets
     assert "bin/update_dotfiles_launcher_test.py" in targets
 
@@ -61,7 +63,7 @@ def test_windows_job_runs_link_and_prepare_lock_boundaries(workflow_data: dict[s
     Windows境界テストは`windows` markerで対象を選ぶため、ステップがmarkerを選択し、対象ファイルがmarkerを持つことを確かめる。
     """
     _, step = _windows_step(
-        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "Windows境界テスト"
+        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"])), "Windows境界テスト"
     )
     tokens = shlex.split(str(step["run"]))
     assert tokens[tokens.index("-m") + 1] == "windows"
@@ -107,7 +109,7 @@ _WINDOWS_CROSS_PLATFORM_TESTS = {
 def test_windows_job_runs_cross_platform_tests(workflow_data: dict[str, object], target: str, functions: set[str]) -> None:
     """Windowsで失敗していた試験を、Windows境界テストの`-m windows`が収集・実行する指定を保つ。"""
     _, step = _windows_step(
-        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "Windows境界テスト"
+        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"])), "Windows境界テスト"
     )
     tokens = shlex.split(str(step["run"]))
     assert tokens[tokens.index("-m") + 1] == "windows"
@@ -121,7 +123,7 @@ def test_windows_job_runs_cross_platform_tests(workflow_data: dict[str, object],
 
 def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[str, object]) -> None:
     """固定版CLIを導入した所有Windows jobが、探索の開始から通常コマンドへ到達することを検査する。"""
-    job = workflow_mapping(workflow_jobs(workflow_data)["test-windows"])
+    job = workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"])
     assert job["runs-on"] == "windows-latest"
     steps = expanded_workflow_steps(job)
     install_index, install = _windows_step(steps, "Codex CLI 0.163.0の導入")
@@ -132,7 +134,7 @@ def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[s
     assert "npm.cmd install --global --no-audit --no-fund @openai/codex@0.163.0" in script
     assert "codex-cli 0.163.0" in script
     assert "$env:GITHUB_PATH" in script
-    targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [integration]}}})
+    targets = direct_pytest_targets({"jobs": {"test-windows-tests": {"steps": [integration]}}})
     prefix = "agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::"
     assert targets == [
         prefix + "test_explore_start_reaches_normal_commands",
@@ -156,7 +158,7 @@ def test_windows_codex_integration_preserves_final_code(
     pytest_exit_code: int,
 ) -> None:
     """実PowerShellがpytest相当の成否を最終ログとstep終了コードの両方へ保持する。"""
-    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"]))
     script = workflow_step_source(_windows_step(steps, "Windows Codex command integration")[1])
     probe = tmp_path / "integration.ps1"
     probe.write_text(
@@ -184,7 +186,7 @@ def test_windows_codex_installer_requires_pinned_executable(
     workflow_data: dict[str, object], tmp_path: Path, failure: str
 ) -> None:
     """導入stepの実PowerShellがnpm失敗・CLI不在・版不一致を非0にし、成功時だけPATHを配送する。"""
-    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"]))
     script = workflow_step_source(_windows_step(steps, "Codex CLI 0.163.0の導入")[1])
     executable = tmp_path / "codex.ps1"
     version = "codex-cli 0.162.0" if failure == "wrong-version" else "codex-cli 0.163.0"
@@ -229,14 +231,32 @@ def test_windows_codex_installer_requires_pinned_executable(
         assert "再実行してください" in result.stdout + result.stderr
 
 
-def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[str, object]) -> None:
-    """更新検証とWindows固有検査は依存関係のない別jobが所有する。"""
+def test_windows_checks_run_as_independent_jobs(workflow_data: dict[str, object]) -> None:
+    """Windowsの更新検証・境界テスト・初回導入は、互いに依存しない別jobがそれぞれ1回だけ所有する。"""
     jobs = workflow_jobs(workflow_data)
-    upgrade = workflow_mapping(jobs["update-dotfiles-upgrade-windows"])
-    windows = workflow_mapping(jobs["test-windows"])
-    assert upgrade.get("needs") == windows.get("needs") == "common-ci-owner"
-    assert all(step.get("name") != "約3日前からの update-dotfiles 更新検証" for step in expanded_workflow_steps(windows))
-    assert any(step.get("name") == "公開入口ランチャーの動作確認" for step in expanded_workflow_steps(windows))
+    owners = {
+        name: {str(step.get("name")) for step in expanded_workflow_steps(workflow_mapping(job))}
+        for name, job in jobs.items()
+        if workflow_mapping(job)["runs-on"] == "windows-latest"
+    }
+    for step, owner in (
+        ("約3日前からの update-dotfiles 更新検証", "update-dotfiles-upgrade-windows"),
+        ("Windows境界テスト", "test-windows-tests"),
+        ("公開入口ランチャーの動作確認", "test-windows-tests"),
+        ("install.ps1から初回導入とバックアップを検証", "test-windows-install"),
+    ):
+        assert [name for name, names in owners.items() if step in names] == [owner], step
+        assert workflow_mapping(jobs[owner])["needs"] == "common-ci-owner"
+
+
+def test_windows_required_check_waits_for_tests_and_install(workflow_data: dict[str, object]) -> None:
+    """必須checkの`test-windows`は境界テストと初回導入の両jobを待ち、両方の成功だけを成功にする。"""
+    result = workflow_mapping(workflow_jobs(workflow_data)["test-windows-result"])
+    assert result["needs"] == ["common-ci-owner", "test-windows-tests", "test-windows-install"]
+    assert result["if"] == "${{ !cancelled() }}"
+    step = workflow_steps(result)[-1]
+    assert workflow_mapping(step["env"])["NEEDS"] == "${{ toJSON(needs) }}"
+    assert step["run"] == "python3 scripts/ci_result.py"
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
@@ -300,7 +320,7 @@ def test_windows_mozilla_step_disables_only_mozilla_tasks(
 
 def test_windows_install_checks_public_script_and_preserved_configuration(workflow_data: dict[str, object]) -> None:
     """候補版の公開導入を実行し、モード・復元用コピー・実適用結果を同じCIで確認する。"""
-    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-install"]))
     installation = next(step for step in steps if step.get("name") == "install.ps1から初回導入とバックアップを検証")
     script = str(installation["run"])
     assert '& "$env:DOTFILES_DIR\\install.ps1" -Mode full' in script
