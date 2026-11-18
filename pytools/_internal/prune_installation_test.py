@@ -48,7 +48,7 @@ def _prepare(tmp_path, monkeypatch, mode):
     monkeypatch.setattr(prune_installation, "_remove", lambda _path: False)
     monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: Path("/fixture/mise"))
     monkeypatch.setattr(common, "resolve_executable", lambda name: Path("/fixture") / name)
-    monkeypatch.setattr(prune_installation.shutil, "which", lambda name: str(Path("/fixture") / name))
+    monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: str(Path("/fixture") / name))
     calls = []
 
     def run(command, **_kwargs):
@@ -253,6 +253,57 @@ def test_npm_prune_uses_installed_node_without_configured_version(tmp_path, monk
         assert result.failure is None
         assert len(uninstalls) == 1
         assert uninstalls[0] < calls.index(node_removal)
+
+
+@pytest.mark.parametrize("npm_fails", [False, True])
+def test_minimal_prunes_npm_outside_mise_without_shims(tmp_path, monkeypatch, npm_fails):
+    """fullで導入した先がmise以外のnpm（nvm、OSのNodeなど）でも、minimalでNode削除前に外し、失敗時は削除へ進まない。"""
+    normal_lookup = prune_installation.shutil.which
+    _, calls = _prepare(tmp_path, monkeypatch, "minimal")
+    shims = tmp_path / "mise-data" / "shims"
+    system = tmp_path / "system-node" / "bin"
+    for directory in (shims, system):
+        directory.mkdir(parents=True)
+        npm = directory / ("npm.cmd" if os.name == "nt" else "npm")
+        npm.write_text("npm", encoding="utf-8")
+        npm.chmod(npm.stat().st_mode | stat.S_IXUSR)
+    # miseのshimがOSのNodeより前にある（aws.tqzh.tkのPATHと同じ順序）。
+    monkeypatch.setenv("PATH", os.pathsep.join([str(shims), str(system)]))
+    monkeypatch.setenv("MISE_DATA_DIR", str(shims.parent))
+    monkeypatch.setattr(prune_installation.shutil, "which", normal_lookup)
+    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
+    original_run = common.run_subprocess
+    environments = {}
+
+    def execute(command, **kwargs):
+        if Path(command[0]).parent == system:
+            calls.append(command)
+            environments[len(calls) - 1] = kwargs.get("env_overrides") or {}
+            return subprocess.CompletedProcess(command, 3 if npm_fails else 0, "", "npm uninstall failed" if npm_fails else "")
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(common, "run_subprocess", execute)
+    result = prune_installation.run()
+    system_uninstalls = [
+        index
+        for index, command in enumerate(calls)
+        if Path(command[0]).parent == system and command[1:3] == ["uninstall", "--global"]
+    ]
+    assert len(system_uninstalls) == 1
+    command = calls[system_uninstalls[0]]
+    assert {"opencode-ai", "@anthropic-ai/claude-code", "@openai/codex", "@google/gemini-cli", "aws-cdk"} <= set(command)
+    # OSのnpmは`#!/usr/bin/env node`で起動するため、PATHにshimが残るとnodeのshimが失敗する。
+    child_path = environments[system_uninstalls[0]]["PATH"].split(os.pathsep)
+    assert str(system) in child_path
+    assert str(shims) not in child_path
+    node_removal = ["/fixture/mise", "uninstall", "--all", "node"]
+    if npm_fails:
+        assert result.failure is not None
+        assert "npm uninstall failed" in result.failure
+        assert node_removal not in calls
+    else:
+        assert result.failure is None
+        assert system_uninstalls[0] < calls.index(node_removal)
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:

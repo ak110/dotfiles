@@ -48,6 +48,9 @@ FULL_TOOLS = frozenset(
     }
 )
 
+# fullでnpmのglobalへ導入しうるパッケージ。minimalではmise管理か否かを問わず外す。
+_NPM_PACKAGES = ("opencode-ai", "@anthropic-ai/claude-code", "@openai/codex", "@google/gemini-cli", "aws-cdk")
+
 
 def excluded_tools(root: Path, *, minimal: bool) -> frozenset[str]:
     """現行の作業ツリー定義を照合し、モードの導入対象外のツールを返す。"""
@@ -108,19 +111,17 @@ class _InUseError(Exception):
     """他のプロセスが使用中のため、削除を保留した。"""
 
 
-def _command(command: list[str]) -> None:
+def _command(command: list[str], *, path: str | None = None) -> None:
     """コマンドを実行し、失敗を例外へ変換する。
 
+    `path`を指定すると子プロセスの`PATH`をその値にする。
     排他ロックを取るuvの操作（`uv cache clean`など）がロック待ちで失敗した場合は、
     他のuvプロセスがキャッシュを使用中と判定して`_InUseError`を送出する。
     """
-    result = common.run_subprocess(
-        command,
-        timeout=600,
-        cwd=Path.home(),
-        tag="prune",
-        env_overrides={"MISE_AUTO_INSTALL": "0", "UV_LOCK_TIMEOUT": _UV_LOCK_TIMEOUT_SECONDS},
-    )
+    overrides = {"MISE_AUTO_INSTALL": "0", "UV_LOCK_TIMEOUT": _UV_LOCK_TIMEOUT_SECONDS}
+    if path is not None:
+        overrides["PATH"] = path
+    result = common.run_subprocess(command, timeout=600, cwd=Path.home(), tag="prune", env_overrides=overrides)
     if (
         Path(command[0]).stem == "uv"
         and result is not None
@@ -233,25 +234,20 @@ def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
         if not isinstance(installed, dict):
             raise ValueError("mise ls --installed --jsonの出力がobjectではありません")
         # Node本体を削除する前に、npmの外部global prefixも対象にする。
-        # minimalの設定はNodeの版を持たずnpmのshimが失敗するため、導入済みの版を指定して実行する。
+        # minimalの設定はNodeの版を持たずnpmとnodeのshimが失敗するため、mise管理のNodeは導入済みの版を指定し、
+        # mise以外のnpm（nvm、OSのパッケージなど）はshimを除いたPATHで実行する。
         if minimal:
             for entry in installed.get("node", []):
-                _command(
-                    [
-                        str(mise),
-                        "exec",
-                        f"node@{entry['version']}",
-                        "--",
-                        "npm",
-                        "uninstall",
-                        "--global",
-                        "opencode-ai",
-                        "@anthropic-ai/claude-code",
-                        "@openai/codex",
-                        "@google/gemini-cli",
-                        "aws-cdk",
-                    ]
-                )
+                _command([str(mise), "exec", f"node@{entry['version']}", "--", "npm", "uninstall", "--global", *_NPM_PACKAGES])
+            shims = common.mise_shim_directories()
+            search_path = os.pathsep.join(
+                directory
+                for directory in os.environ.get("PATH", "").split(os.pathsep)
+                if directory and common.safe_resolve(Path(directory)) not in shims
+            )
+            npm = shutil.which("npm", path=search_path)
+            if npm is not None:
+                _command([npm, "uninstall", "--global", *_NPM_PACKAGES], path=search_path)
         for tool in sorted(excluded):
             short = tool.split(":", 1)[-1].split("/")[-1]
             if tool in installed or short in installed:
