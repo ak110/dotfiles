@@ -7,7 +7,7 @@ runs:
     - name: Windows境界テスト
       shell: pwsh
       working-directory: ${{ env.DOTFILES_DIR }}
-      run: uv run --frozen --python 3.15 pytest -v -m windows --maxfail=0 --junitxml="$env:RUNNER_TEMP/pytest-windows-junit.xml"
+      run: uv run --frozen --python 3.15 pytest -v -m windows --maxfail=0 --cpu-limit-record-only --junitxml="$env:RUNNER_TEMP/pytest-windows-junit.xml"
     - name: Windows境界テストのJUnit XMLを保存
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -26,7 +26,7 @@ runs:
     - name: 公開入口ランチャーの動作確認
       shell: pwsh
       working-directory: ${{ env.DOTFILES_DIR }}
-      run: uv run --frozen --python 3.15 pytest -v -p no:cacheprovider bin/atk_launcher_test.py bin/update_dotfiles_launcher_test.py
+      run: uv run --frozen --python 3.15 pytest -v -p no:cacheprovider --cpu-limit-record-only bin/atk_launcher_test.py bin/update_dotfiles_launcher_test.py
     - name: 失敗時の診断ログを保存
       # 時間上限で止まったjobはcancelledで終わるため、その場合も原因調査用のログを残す。
       if: ${{ failure() || cancelled() }}

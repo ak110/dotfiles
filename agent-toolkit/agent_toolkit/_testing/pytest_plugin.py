@@ -70,6 +70,7 @@ _CPU_GROSS_LIMIT = pytest.StashKey[float]()
 _CPU_BUDGET = pytest.StashKey[cpu_accounting.CpuBudget]()
 _CPU_PROCESS_STARTED = pytest.StashKey[float]()
 _CPU_RETRY_CI = pytest.StashKey[bool]()
+_CPU_RECORD_ONLY = pytest.StashKey[bool]()
 _CPU_ONLY_FAILURE = pytest.StashKey[bool]()
 
 
@@ -256,7 +257,9 @@ def pytest_runtest_makereport(
                 "不要な処理を削減し、必要な実境界には理由付きcpu_limitを指定してください"
             )
             report.sections.append(("CPU上限", diagnostic))
-            if report.passed:
+            if item.stash.get(_CPU_RECORD_ONLY, False):
+                item.warn(pytest.PytestWarning(diagnostic))
+            elif report.passed:
                 item.stash[_CPU_ONLY_FAILURE] = True
                 report.outcome = "failed"
                 report.longrepr = diagnostic
@@ -559,13 +562,18 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """CIで1つの試験集合を複数runnerへ分ける`--test-shard`を登録する。"""
+    """CPU上限の設定と、CIで1つの試験集合を複数runnerへ分ける`--test-shard`、CPU上限を記録だけにする指定を登録する。"""
     parser.addini("cpu_limit", "試験が所有するCPUの上限（秒）", default="0.5")
     parser.addoption(
         "--test-shard",
         metavar="INDEX/COUNT",
         default=None,
         help="収集した試験を記録所要でCOUNT個へ均衡配分し、INDEX番目（1始まり）だけを実行する",
+    )
+    parser.addoption(
+        "--cpu-limit-record-only",
+        action="store_true",
+        help="CPU上限の超過を警告とJUnitへ記録するだけにし、試験の失敗と再試行にしない",
     )
 
 
@@ -619,7 +627,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         raise pytest.UsageError("cpu_limit設定には正の有限秒数を指定してください") from error
     if not math.isfinite(default_limit) or default_limit <= 0:
         raise pytest.UsageError("cpu_limit設定には正の有限秒数を指定してください")
+    record_only = bool(config.getoption("cpu_limit_record_only"))
     for item in items:
+        item.stash[_CPU_RECORD_ONLY] = record_only
         marker = item.get_closest_marker("cpu_limit")
         seconds: Any = default_limit
         reason = "通常上限"

@@ -82,6 +82,38 @@ def test_cpu_retry_keeps_functional_failures_and_attempt_evidence(
             assert "cpu_first_attempt_cpu_budget_seconds" not in properties
 
 
+def test_cpu_record_only_reports_overrun_without_failure(tmp_path: pathlib.Path, monkeypatch) -> None:
+    """記録のみの指定では、CPU超過を警告とJUnitへ残して合否と再試行から外し、機能失敗は保つ。"""
+    monkeypatch.setenv("CI", "1")
+    (tmp_path / "conftest.py").write_text(
+        "import pytest\n"
+        "from agent_toolkit._testing import pytest_plugin as p\n"
+        "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+        "def pytest_runtest_makereport(item, call):\n"
+        "    if call.when == 'teardown':\n"
+        "        item.stash[p._CPU_TIMES] = {'call': 0.501}\n"
+        "        item.stash[p._CPU_EXCLUSIONS] = {}\n"
+        "        item.stash[p._CPU_BUDGET] = p.cpu_accounting.CpuBudget()\n"
+        "    report = yield\n"
+        "    return report\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "probe_test.py").write_text(
+        "def test_overrun(): pass\ndef test_functional(): assert False, 'functional failure'\n",
+        encoding="utf-8",
+    )
+    result = _run_child_pytest(tmp_path, "--cpu-limit-record-only", "-rA", "--junitxml=result.xml", "probe_test.py")
+    assert result.returncode == pytest.ExitCode.TESTS_FAILED, result.stdout + result.stderr
+    assert "functional failure" in result.stdout
+    assert "CPU上限: probe_test.py::test_overrun" in result.stdout
+    xml = (tmp_path / "result.xml").read_text(encoding="utf-8")
+    cases = {case.get("name"): case for case in ET.fromstring(xml).iter("testcase")}
+    assert [child.tag for child in cases["test_overrun"] if child.tag in ("error", "failure")] == []
+    properties = {prop.attrib["name"]: prop.attrib["value"] for prop in cases["test_overrun"].findall("properties/property")}
+    assert float(properties["cpu_budget_seconds"]) == pytest.approx(0.501)
+    assert "cpu_first_attempt_cpu_budget_seconds" not in properties
+
+
 @pytest.mark.parametrize("elapsed", [0.499, 0.5, 0.501])
 @pytest.mark.parametrize("phase", ["setup", "call", "teardown"])
 def test_cpu_clock_boundary(monkeypatch: pytest.MonkeyPatch, elapsed: float, phase: str) -> None:
