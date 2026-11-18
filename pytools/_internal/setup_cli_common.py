@@ -30,6 +30,9 @@ PROCESS_PATH_LOCK = threading.Lock()
 # 複数のCLI工程が同じnpmのグローバル領域を同時に変更しないよう、旧npm版の削除を直列化する。
 NPM_GLOBAL_LOCK = threading.Lock()
 
+_MAX_NPM_LAUNCHER_BYTES = 64 * 1024
+"""npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。"""
+
 
 def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
     """`SSL_CERT_FILE`か`SSL_CERT_DIR`で指定したCAを優先し、指定がないWindowsではOSの信頼済みCAを使う。"""
@@ -274,10 +277,11 @@ def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_
     """npmのパッケージ本体が無いのに残った起動スクリプト（`.cmd`・`.ps1`・拡張子なし）を削除する。
 
     PowerShellはPATH上の`.ps1`を`.cmd`より先に使うため、本体の無い起動スクリプトが残ると
-    正規の導入先より前で起動に失敗する。npmの起動スクリプトは同じディレクトリの
-    `node_modules/<パッケージ>`を参照するため、その参照を含み本体が不在のものだけを対象とする。
+    正規の導入先より前で起動に失敗する。npmが生成する起動スクリプトは自身のディレクトリ
+    （`$basedir`・`%dp0%`・`%~dp0`）からの相対で`node_modules/<パッケージ>`を参照するため、
+    その参照を含み本体が不在のものだけを対象とする。別の導入先を絶対パスで指すものは対象外とする。
     """
-    reference = f"node_modules/{package_name}/"
+    references = tuple(f"{base}/node_modules/{package_name}/" for base in ("$basedir", "%dp0%", "%~dp0"))
     changed = False
     path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     for directory in {common.safe_resolve(path) for path in (*path_directories, *extra_search_directories)}:
@@ -286,9 +290,11 @@ def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_
         for name in (cli_name, f"{cli_name}.cmd", f"{cli_name}.ps1"):
             launcher = directory / name
             try:
-                content = launcher.read_text(encoding="utf-8", errors="replace") if launcher.is_file() else ""
-                normalized = content.replace("\\", "/")
-                if reference not in normalized or _references_existing_package(normalized, package_name):
+                # 実行ファイル本体（数百MB）を読まないよう、起動スクリプトの大きさのファイルだけを読む。
+                if not launcher.is_file() or launcher.stat().st_size > _MAX_NPM_LAUNCHER_BYTES:
+                    continue
+                normalized = launcher.read_text(encoding="utf-8", errors="replace").replace("\\", "/")
+                if not any(reference in normalized for reference in references):
                     continue
                 launcher.unlink()
             except OSError as error:
@@ -301,22 +307,6 @@ def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_
             logger.info(log_format.format_status(cli_name, f"本体の無いnpm起動スクリプトを削除しました: {launcher}"))
             changed = True
     return changed
-
-
-def _references_existing_package(content: str, package_name: str) -> bool:
-    """起動スクリプトが絶対パスで参照するパッケージ本体が実在するかを返す。
-
-    npmが生成する起動スクリプトは自身のディレクトリからの相対参照だが、手で置いた起動スクリプトは
-    別の導入先を絶対パスで指すことがある。本体が実在する参照は孤立とみなさず削除しない。
-    """
-    pattern = re.compile(r'([^"\'\s]*)node_modules/' + re.escape(package_name) + "/")
-    for match in pattern.finditer(content):
-        prefix = match.group(1)
-        if not (prefix.startswith("/") or re.match(r"[A-Za-z]:/", prefix)):
-            continue
-        if Path(prefix, "node_modules", *package_name.split("/")).is_dir():
-            return True
-    return False
 
 
 def _adjacent_npm(directory: Path) -> Path | None:
