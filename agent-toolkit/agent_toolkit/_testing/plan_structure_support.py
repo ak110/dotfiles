@@ -45,11 +45,6 @@ def _plan_with_uncovered_requirement(adopted_scope: str) -> str:
     return content.replace(_UNCOVERED_REQUIREMENT_ROW, replaced, 1)
 
 
-_PLAN_FILE_STANDARDS = (
-    pathlib.Path(__file__).resolve().parents[2] / "skills" / "write-plan" / "references" / "plan-file-standards.md"
-)
-
-
 def _canonical_main_content() -> str:
     """新しい固定H2と、エージェント提案が無い場合の提案詳細節を持つメイン本文を返す。"""
     return _plan_fixture.to_canonical_main(_VALID_MAIN_CONTENT)

@@ -1,6 +1,7 @@
 """両ホストの宣言配送、取得範囲、主体と圧縮の境界を確かめる。"""
 
 import json
+import pathlib
 
 import pytest
 
@@ -148,50 +149,79 @@ def test_whole_contract_body_and_compaction_use_the_resolved_input(tmp_path, mon
     assert "追加後の完成条件" not in _notice_body(later)
 
 
+_TOOLKIT = pathlib.Path(read_delivery.__file__).resolve().parents[3]
+_BOOTSTRAP = _TOOLKIT / "share/read-trigger-bootstrap.md"
+_REPORT_PLAYBOOK = _TOOLKIT / "skills/atk-mode/playbooks/report-completion.md"
+# 完了報告の手順書を、Claude CodeはReadで、Codex・Antigravityはシェルの全文読取で取得する。
+_PLAYBOOK_READS = [
+    ("Read", {"file_path": str(_REPORT_PLAYBOOK)}),
+    ("Bash", {"command": f"cat -- {_REPORT_PLAYBOOK}"}),
+]
+
+
+def _work_contract_row() -> ReadTrigger:
+    """作業契約を配送するbootstrapの実際の宣言を返す。"""
+    return next(row for row in parse_tables(_BOOTSTRAP, _TOOLKIT) if row.selector == "input:作業契約")
+
+
+@pytest.mark.parametrize(("tool", "inputs"), _PLAYBOOK_READS)
+def test_work_contract_is_declared_on_reading_the_report_playbook_only(tool, inputs):
+    """作業契約は完了報告の手順書の読取で配送し、宣言元のbootstrapや他の手順書の読取では配送しない。"""
+    row = _work_contract_row()
+    assert read_delivery.row_matches(row, tool, inputs, "")
+    for other in (_BOOTSTRAP, _REPORT_PLAYBOOK.with_name("commit.md")):
+        assert not read_delivery.row_matches(row, "Read", {"file_path": str(other)}, "")
+
+
 def test_main_resolves_work_contract_without_a_startup_input(tmp_path, monkeypatch):
     contract = tmp_path / "work-contract.md"
     contract.write_text("# 現行作業契約\n完成条件\n", encoding="utf-8")
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
-    assert read_delivery.dynamic_targets(row, {}, "Skill", {}, {}, "main", "session") == [ReadTarget(contract)]
+    tool, inputs = _PLAYBOOK_READS[0]
+    assert read_delivery.dynamic_targets(_work_contract_row(), {}, tool, inputs, {}, "main", "session") == [
+        ReadTarget(contract)
+    ]
 
 
 def test_main_missing_work_contract_explains_its_expected_path(tmp_path, monkeypatch):
     contract = tmp_path / "work-contract.md"
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
+    tool, inputs = _PLAYBOOK_READS[0]
     with pytest.raises(ValueError, match="work-contract.md.*作成と所有"):
-        read_delivery.dynamic_targets(row, {}, "Skill", {}, {}, "main", "session")
+        read_delivery.dynamic_targets(_work_contract_row(), {}, tool, inputs, {}, "main", "session")
 
 
 @pytest.mark.usefixtures("memory")
-def test_public_hook_delivers_main_work_contract_and_reuses_it_after_read(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("tool", "inputs"), _PLAYBOOK_READS)
+def test_public_hook_delivers_main_work_contract_and_reuses_it_after_read(tmp_path, monkeypatch, tool, inputs):
     contract = tmp_path / "work-contract.md"
     contract.write_text("# 現行作業契約\n完成条件\n", encoding="utf-8")
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
+    row = _work_contract_row()
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
-    assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "report-completion"}, "test"))
+    assert not _guidance(read_delivery.deliver({}, tool, inputs, "test"))
     first = _notice_body(read_delivery.deliver({}, "Inspect", {}, "test"))
     assert str(contract) in first
     observe_received({"tool_response": contract.read_text()}, "Read", {"file_path": str(contract)}, "test")
-    assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "report-completion"}, "test"))
+    assert not _guidance(read_delivery.deliver({}, tool, inputs, "test"))
+    assert not _guidance(read_delivery.deliver({}, "Inspect", {}, "test"))
 
 
 @pytest.mark.usefixtures("memory")
 def test_public_hook_explains_missing_main_work_contract(tmp_path, monkeypatch):
     contract = tmp_path / "work-contract.md"
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
+    row = _work_contract_row()
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
-    assert str(contract) in _notice_body(read_delivery.deliver({}, "Skill", {"skill": "report-completion"}, "test"))
+    tool, inputs = _PLAYBOOK_READS[0]
+    assert str(contract) in _notice_body(read_delivery.deliver({}, tool, inputs, "test"))
 
 
 @pytest.mark.usefixtures("memory")
 def test_public_hook_keeps_delegated_work_contract_input_preferred(tmp_path, monkeypatch, memory):
     delegated = tmp_path / "delegated-contract.md"
     delegated.write_text("# 委譲契約\n", encoding="utf-8")
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
+    row = _work_contract_row()
     memory[rules_context.OPERATION_SKILL_READY_KEY] = {
         "startup-input-target:" + json.dumps({"path": str(delegated), "heading": "", "selectors": ["input:作業契約"]}): [
             "child"
@@ -200,7 +230,8 @@ def test_public_hook_keeps_delegated_work_contract_input_preferred(tmp_path, mon
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: (_ for _ in ()).throw(AssertionError()))
     payload = {"agent_id": "child"}
-    assert not _guidance(read_delivery.deliver(payload, "Skill", {"skill": "report-completion"}, "test"))
+    tool, inputs = _PLAYBOOK_READS[0]
+    assert not _guidance(read_delivery.deliver(payload, tool, inputs, "test"))
     notice = _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
     assert str(delegated) in notice
 

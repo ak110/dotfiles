@@ -85,7 +85,7 @@ class TestPlanModeSkillCallSites:
         """計画modeの判定を、別契約の資料候補通知から分離する。"""
         monkeypatch.setattr(pretooluse, "read_delivery", lambda *_args, **_kwargs: Decision())
 
-    @pytest.mark.parametrize("skill_name", ["agent-toolkit:write-plan", "write-plan"])
+    @pytest.mark.parametrize("skill_name", ["agent-toolkit:atk-mode", "atk-mode"])
     def test_allowed_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):
         env = self._state_env(tmp_path)
         result = _run(
@@ -105,7 +105,7 @@ class TestPlanModeSkillCallSites:
         result = _run(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:write-plan"},
+                "tool_input": {"skill": "agent-toolkit:atk-mode", "args": "write-plan"},
                 "session_id": "inside-plan",
                 "permission_mode": "plan",
             },

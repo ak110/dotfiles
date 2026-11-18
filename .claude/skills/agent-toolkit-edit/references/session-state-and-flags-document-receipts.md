@@ -115,11 +115,12 @@
   解決済みの呼び出しや入力は更新のたびに除外し、バージョンや形式が合致しない値は破棄してStop判定ログに診断情報を残す。
   生存期間と継承の扱いはセッション状態ファイルと同一とし、別の会話から継承した値は`session_id`の一致を確認してから使用する。
   - 成果作業と起動証拠: 成功した対象スキルの起動、リポジトリに対する自身の編集作業、計画ファイルの保存、WIの保存、commitやpushなどを`deliverables`へ記録する。
-    成功したreport-completionスキルの起動（Claude Code）や、外側で必要本文の配送を確認した`SKILL.md`の読み取り（Codex）は、`completion_report`へ記録する。
+    完了報告の手順書`skills/atk-mode/playbooks/report-completion.md`の起動証拠は、`completion_report`へ記録する。
+    Claude Codeは`atk-mode`の引数`report-completion`での起動か全文を返した`Read`、Codex・Antigravityは本文を返した読取を記録する。
     Codexの成功した読取は`pending_reads`に所有plugin・実体・版・元の呼出しを保留し、共通の取得記録で本文受信を確認して開始証拠へ変える。
     compactで保留を除く。
     起動証拠を取得済みの作業に対して、新しい人間の入力があった後にさらに成果作業が発生した場合は、別の新しい作業として管理を開始する
-  - 待機の許可: 成果作業が待機している非同期処理の実行中に、Stop hookが待機を許可する条件は`agent-toolkit:report-completion/references/claude-hooks-stop.md`「終了工程の証拠」に定める。
+  - 待機の許可: 成果作業が待機している非同期処理の実行中に、Stop hookが待機を許可する条件は`docs/development/design-hooks-termination-evidence.md`「終了工程の証拠」に定める。
     本キーは作業の開始位置（UserPromptSubmitが記録したtranscriptのサイズ）を保持し、Stopがその判定時に参照する
   - 成果作業の対象: 観測されたリポジトリのルートパスを`repositories`に保持する。
     直接実行されたGit操作については`-C`などの引数を含めて対象リポジトリを取得し、シェルのディレクトリ移動や環境変数の前置代入によって対象を取得できない操作については`null`を保持する。
@@ -137,7 +138,7 @@
     有効な省略情報を持つ作業に限り、起動不足の判定を免除する。
     この免除は次回の判断時に解除され、新しい人間の入力後に発生した成果作業は新規作業として扱われるため、省略設定は引き継がれない。
     エージェント向け文書の変更や消失が確認された場合は、免除を無効化する。
-    具体的な手順は`agent-toolkit:report-completion`の`references/termination-evidence.md`に従う
+    具体的な手順は`agent-toolkit:atk-mode/references/termination-evidence.md`に従う
   - 元の入力と再突入: `last_human_input`には直近の人間の入力を保持し、自動通知による再開後であっても元の依頼への帰属関係を維持する。
     同じターンIDを持つ通知は別の入力として保存し、人間の入力の本文と由来を上書きしない。
     ターン途中に届いた入力（Claude Codeのセッション記録の`attachment.type=queued_command`）は、`transcript_path`に保持した記録ファイルを`queued_offset`の読取位置から読んで取り込む。

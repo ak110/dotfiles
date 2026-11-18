@@ -106,13 +106,13 @@ CIで検証したcommit: <CI対象commitの7文字以上の一意な短縮OID。
 CIの結果: <CI成功|CI定義なし|CI実行対象外。後二者は共通判定の不在・非生成の証拠と全体検証のローカル成功を確認した場合だけ返す>
 ベースbranchの状態: <公開状態の4項目が成立した場合は「公開済み」。それ以外は項目名>
 版数: <更新後の版数または「bump不要」>
-実行した公開工程: <実行した工程と対象。`全体検証`が「ローカル成功」なら実行した全体検証のコマンド、終了コードおよび警告の有無、「CI判定」ならpush前に実行したCIが実行しないチェックと全体走査のチェックのコマンド、終了コードおよび警告の有無と、その集合を求めた根拠（プロジェクト規範の定めまたは`agent-toolkit:commit`の`references/publish.md`が定める4つの比較の結果）を必ず挙げる。`CIの結果`が`CI定義なし`なら、`references/push-and-ci.md`「公開先に対応するCI定義の判定」で使ったforge・repository・commitと不在の取得・コマンド・終了状態・結果も挙げる。同じtreeで実行済みのため省いたチェックは、省いた理由と実行済みの結果の所在を挙げる。無い場合は「なし」>
+実行した公開工程: <実行した工程と対象。`全体検証`が「ローカル成功」なら実行した全体検証のコマンド、終了コードおよび警告の有無、「CI判定」ならpush前に実行したCIが実行しないチェックと全体走査のチェックのコマンド、終了コードおよび警告の有無と、その集合を求めた根拠（プロジェクト規範の定めまたは`agent-toolkit:atk-mode/playbooks/publish.md`が定める4つの比較の結果）を必ず挙げる。`CIの結果`が`CI定義なし`なら、`references/push-and-ci.md`「公開先に対応するCI定義の判定」で使ったforge・repository・commitと不在の取得・コマンド・終了状態・結果も挙げる。同じtreeで実行済みのため省いたチェックは、省いた理由と実行済みの結果の所在を挙げる。無い場合は「なし」>
 延期後にadoptしたAWI: <実際にadoptしたAWIファイル名のJSON文字列配列。反映後の新プロセスでしか観測できない条件が残る項目と、観測が完成条件を満たさなかった項目を含めない。無い場合は[]>
 ```
 
 続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 `CI実行対象外`では`実行した公開工程`に終了8の出力、project・commit・ref・errorsの保存先とローカル全体検証の成功を記す。
-CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）や公開後操作の前提不足に起因する場合は、`agent-toolkit:commit`の`references/push-and-ci.md`「公開工程の続行不能の受渡し」に従う。
+CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）や公開後操作の前提不足に起因する場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能の受渡し」に従う。
 対象、失敗した操作とその対象、診断結果、確認済みの工程、成功済みの公開後操作、残りの工程、再開位置を記載する。
 1行に収まらない証拠資料は引き継ぎ記録へ保存し、その絶対パスを同じ行内に明記する。
 <!-- return-contract:session-termination:end -->
@@ -141,13 +141,13 @@ push前の工程（バージョン更新、生成物同期、push前チェック
   - `CI成功`: 対象リポジトリのCI照会手段によって、`CIで検証したcommit`について成功の結論が得られること。
   - `CI実行対象外`: 全体検証がローカル成功であり、終了8の出力にあるproject・commit・ref・errorsから、同一公開先とベースbranchのHEADでの非生成を検収できること。
     実行した公開工程に証拠の保存先が記されていること。
-  - `CI定義なし`: `全体検証`が`ローカル成功`であり、`agent-toolkit:commit`の`references/push-and-ci.md`「公開先に対応するCI定義の判定」に基づいて、同一公開先および`ベースbranchのHEAD`におけるCI定義の不在を検収できること。
+  - `CI定義なし`: `全体検証`が`ローカル成功`であり、`agent-toolkit:atk-mode/references/ci.md`「公開先に対応するCI定義の判定」に基づいて、同一公開先および`ベースbranchのHEAD`におけるCI定義の不在を検収できること。
     このとき`実行した公開工程`には、対象forge・repository・commitと、不在を確認した取得内容、コマンド、終了状態、実行結果が記載されていること。
 - `CIで検証したcommit`と`ベースbranchのHEAD`が異なり、後者自身のCI成功を前項で検収していない場合は、その間に存在するcommitの集合が、`実行した公開工程`に挙げられた生成commit（操作直前に解決したOID）と過不足なく一致することを確認する。
   この集合は`git -C <対象リポジトリ> rev-list <CIで検証したcommit>..<ベースbranchのHEAD>`で取得する。
   `ベースbranchのHEAD`がマージcommitである場合は`--not <ベースbranchのHEAD>^1`を追加してベース側の履歴を除外する（マージcommit自体は含める）。
   この確認は、HEAD自体のCI成功判定を代替するものではない。
-- `ベースbranchの状態`が`公開済み`であることを、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を現在のGit状態から再取得して判定する。
+- `ベースbranchの状態`が`公開済み`であることを、`agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」を現在のGit状態から再取得して判定する。
   差し戻しても`公開済み`にならない場合は、`../skills/process-wi/references/finish-session-recovery.md`「公開状態の検収と再起動」に従いUWI登録へ回す。
 - `版数`が`bump不要`でない場合は、対象リポジトリの版数規約が定める定義ファイルの記載バージョンと一致すること。
 - `実行した公開工程`に、公開担当自身の実行対象として定められたプロジェクト固有の公開後操作が過不足なく列挙されていること。
@@ -163,5 +163,5 @@ push前の工程（バージョン更新、生成物同期、push前チェック
 途中で主作業ツリーや対象refの変更、外部からの更新を観測した場合は、同節の指示に従って現在の状態を再取得する。
 
 未終了集合の処置後、`finish-session-observation.md`「報告前に確かめる保存状態」を実行し、延期差集合だけでなく今回の全処置を現キューへ対応付ける。
-確認した保存状態を報告の入力としてから、同書の「完了報告と終了」に従って`agent-toolkit:report-completion`によって報告し、`atk agents-exit-session`を実行する。
+確認した保存状態を報告の入力としてから、同書の「完了報告と終了」に従って`agent-toolkit:atk-mode/playbooks/report-completion.md`によって報告し、`atk agents-exit-session`を実行する。
 なお、all-reposのリポジトリ担当エージェントは同節に従い、`atk agents-exit-session`を呼び出さず、常駐プログラムへの最終返却で終了する。

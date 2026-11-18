@@ -71,4 +71,4 @@ processing、UWI、終了項目と人間由来の項目はユーザーコメン�
 - 作業項目や計画に書かれていること、前の担当が採用済みとしたことは、手段をユーザーの要件へ変えない（2026年11月11日、ユーザーの是正「AWIの完成条件がよくないせいで無駄な作業をするって問題、過去に何度も再発してる。ちゃんと対策して」）。
   エージェントが加えた手段や検証は、受け手が目的・現在の方針・利用条件に照らして必要性を判定してから受入や検証へ写し、前提が変わった単位だけを判定し直す。
   ユーザーが明示した条件と必要な品質を守る条件は外さない。
-  現在は`agent-toolkit:process-wi`の`references/lane-planning-drafting.md`手順1と`agent-toolkit:write-plan`の`references/plan-file-standards-scope.md`「実施内容」が定める
+  現在は`agent-toolkit:process-wi`の`references/lane-planning-drafting.md`手順1と`agent-toolkit:atk-mode/references/plan-format.md`「実施内容」が定める

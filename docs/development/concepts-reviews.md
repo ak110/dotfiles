@@ -35,8 +35,8 @@
   現行の返却と受領は`agent-toolkit:/share/exec-subagent-history.md`「レビュー修正の履歴統合」と`exec-review.subagent.md`「出力」、`exec-review.parent.md`「レビュー修正」が定める。
   対応する実装単位へ統合できない修正は、新規commitへフォールバックせず最も新しい実装commitへ統合し、履歴を書き換えられない場合だけ続行できない理由を返す。
   レビュー修正専用commitは残さない（2026年10月7日のユーザー指示により、2026年8月30日に専用commitを残さないことを努力目標とした扱いを置き換えた）。
-  統合先と続行できない理由を返す条件の詳細は`agent-toolkit:commit/references/history-rewrite-selection.md`「修正方法の選択」が定める。
-  未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は、`agent-toolkit/skills/commit/references/history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
+  統合先と続行できない理由を返す条件の詳細は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「修正方法の選択」が定める。
+  未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は、`agent-toolkit/skills/atk-mode/playbooks/history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
   remote広告refの直積証跡・replace ref・graft・shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
   `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小し、同じ実装担当が再判定からamendまでを完結する。
   初回実装担当のrouteと実効`engine`、`model`および`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。

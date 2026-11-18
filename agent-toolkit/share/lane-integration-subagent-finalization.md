@@ -19,7 +19,7 @@
 
 `計画ファイル名一覧`が`[]`の場合は、`plan-check`と計画の保存処理を省略し、後述する稼働記録、統合結果、およびAWI終了前の状態を引き継ぎ記録に残して、`保存した計画ファイル`として`[]`を返す。
 予測補正記録は対象AWIの本文へ保存する。
-テンプレートの本文は、`../skills/write-plan/references/plan-file-standards-progress.md`「進捗ログ」が参照する`予測補正記録`の書式に基づく。
+テンプレートの本文は、`../skills/atk-mode/references/plan-format.md`「進捗ログ」が参照する`予測補正記録`の書式に基づく。
 `完了時刻=`に`{{completed_at}}`、`総経過秒=`に`{{lane_seconds}}`を指定した1件の記述とする。
 保存は、`atk wi edit <AWIのファイル名> --append --body-file {{expand-file:<テンプレートの絶対パス>}} --target-repo=<統合先worktree>`で実行する。
 この操作はマニフェストにおいて該当AWIの終了argvよりも前に配置する（終了済みの項目は`atk wi edit`の対象外となるため）。
@@ -36,7 +36,7 @@
 - `atk run-script plan-progress --`を用いて`## 進捗ログ`に、統合区分、統合先ブランチ、`統合後のHEAD`、実行レビューの収束状況、およびAWI終了前の状態を追記する。
 - 同じ追記処理において、レーンの稼働時間と予測補正記録を記録する。
   秒数、完了時刻、統合後のHEADは確定値のプレースホルダーを用いて渡し、手動で仮の値を入力しない。
-  稼働秒数は`レーン開始時刻`からGit統合成功後・最終化開始前までの総経過秒数とし（担当者の交代があっても起点は変更しない）、書式は`../skills/write-plan/references/plan-file-standards-progress.md`「進捗ログ」に従う。
+  稼働秒数は`レーン開始時刻`からGit統合成功後・最終化開始前までの総経過秒数とし（担当者の交代があっても起点は変更しない）、書式は`../skills/atk-mode/references/plan-format.md`「進捗ログ」に従う。
   補正前の2値、工程別または旧形式の係数、共有待ち見込みは、同節が参照する選定の記録書式に従い、保持している選定結果から取得する。
   追加WIの場合は累積予測を用い、過去の記録から取得できない値は不明と記載する。
   同一レーン内の複数の計画には同一の値を記録する。
@@ -63,7 +63,8 @@
   adoptにおけるコミットの紐付けは、`../skills/atk-mode/references/states-and-dependencies.md`「状態と依存」の遷移表に従って行い、開始時や統合時のHEADを一律に機械的複製しないようにする。
   複数のコミットが存在する場合は`--commit <OID>`を繰り返し指定する。
   コミットの説明などの補足メモは`--note-file`で記録する。
-- 対応コミットは、`agent-toolkit:commit`の`references/commit-wi-records.md`「WI実装commitの対応」に定める取得手順に従い、計画または引き継ぎ記録と同一のstemを持つ対応記録ファイルから取得し、`--worktree`に統合後のworktreeを渡す。
+- 対応コミットは、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に定める取得手順に従い、計画または引き継ぎ記録と同一のstemを持つ対応記録ファイルから取得する。
+  `--worktree`には統合後のworktreeを渡す。
 - コミットを記録する採否操作では、統合先worktreeの絶対パスを`--target-repo`に渡す（同節の共通前提）。
 - プロジェクト固有の公開後操作の完了まで延期する項目は状態を変更せず、該当するAWIとOIDの組をすべて返す。
 - `終了しない`項目、観測のみの再開で未処理となった項目、および観測結果が完成条件を満たさなかった項目は状態を変更しない。
@@ -76,4 +77,4 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 編集時の注意点:の基準を適用する前 | `../skills/commit/SKILL.md` |
+| 編集時の注意点:の基準を適用する前 | `../skills/atk-mode/playbooks/commit.md` |

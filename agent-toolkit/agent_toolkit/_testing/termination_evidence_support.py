@@ -20,7 +20,7 @@ from agent_toolkit._testing.pretooluse_support import codex_delivered_payload, c
 CONTINUATION = '<atk-auto source="stop" kind="continuation">判断を記録する</atk-auto>'
 
 
-COMPLETION_SKILL_TEXT = "---\nname: report-completion\nuser-invocable: false\n---\n\n# 作業完了報告とセッションの完了処理\n"
+COMPLETION_PLAYBOOK_TEXT = "# 作業完了報告とセッションの完了処理\n\nこの手順書を全文読むことが終了工程の開始である。\n"
 
 
 class _WindowsAccessDenied(PermissionError):
@@ -47,13 +47,13 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     root = tmp_path / "norms/agent-toolkit"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    completion_skill = root / "skills/report-completion/SKILL.md"
-    completion_skill.parent.mkdir(parents=True)
-    completion_skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
+    playbook = root / "skills/atk-mode/playbooks/report-completion.md"
+    playbook.parent.mkdir(parents=True)
+    playbook.write_text(COMPLETION_PLAYBOOK_TEXT, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", str(root))
     # 導入済みの品質プラグインの宣言も、終了証拠の判定には不要。
     # 実際の本文読取・配送receiptは保ち、宣言表の入力だけをこのfixtureへ限定する。
-    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [completion_skill])
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [playbook])
 
 
 def _tool(
@@ -98,18 +98,48 @@ def supply_commit(directory: pathlib.Path, call_id: str = "commit", *, codex: bo
     _tool(directory, call_id, "Bash", {"command": "git commit -m 変更"}, response, codex=codex)
 
 
+def completion_playbook(directory: pathlib.Path) -> pathlib.Path:
+    """配布物と同じ配置の完了報告の手順書を、試験ごとのplugin rootへ置いて返す。"""
+    playbook = directory / "plugin" / "skills" / "atk-mode" / "playbooks" / "report-completion.md"
+    playbook.parent.mkdir(parents=True, exist_ok=True)
+    playbook.write_text(COMPLETION_PLAYBOOK_TEXT, encoding="utf-8")
+    manifest = directory / "plugin/.claude-plugin/plugin.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    return playbook
+
+
+def claude_read_response(path: pathlib.Path, *, offset: int = 1, limit: int | None = None) -> dict[str, Any]:
+    """Claude CodeのReadのPostToolUseの`tool_response`を、指定した行範囲で返す。
+
+    形はClaude Code 2.1.303の本体の結果（`type`・`file`）から写した。
+    """
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    selected = lines[offset - 1 : None if limit is None else offset - 1 + limit]
+    file = {
+        "filePath": str(path),
+        "content": "".join(selected),
+        "numLines": len(selected),
+        "startLine": offset,
+        "totalLines": len(lines),
+    }
+    return {"type": "text", "file": file}
+
+
 def supply_completion(directory: pathlib.Path, call_id: str = "completion", *, codex: bool = False) -> None:
-    """report-completionの起動証拠を、Claude CodeはSkillの成功、CodexはSKILL.mdの読取で供給する。"""
+    """完了報告の起動証拠を、Claude Codeは入口の起動の成功、Codexは手順書の読取で供給する。"""
     if codex:
-        skill = directory / "plugin" / "skills" / "report-completion" / "SKILL.md"
-        skill.parent.mkdir(parents=True, exist_ok=True)
-        skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
-        manifest = directory / "plugin/.claude-plugin/plugin.json"
-        manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-        _tool(directory, call_id, "Bash", {"command": f"cat {skill}"}, COMPLETION_SKILL_TEXT, codex=True)
+        playbook = completion_playbook(directory)
+        _tool(directory, call_id, "Bash", {"command": f"cat {playbook}"}, COMPLETION_PLAYBOOK_TEXT, codex=True)
     else:
-        _tool(directory, call_id, "Skill", {"skill": "agent-toolkit:report-completion"}, "起動", codex=False)
+        _tool(
+            directory,
+            call_id,
+            "Skill",
+            {"skill": "agent-toolkit:atk-mode", "args": "report-completion"},
+            "起動",
+            codex=False,
+        )
 
 
 def human_input(directory: pathlib.Path, turn_id: str, prompt: str) -> None:

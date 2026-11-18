@@ -9,7 +9,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本文の参照基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-retrospective.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/references/report-formats-retrospective.md` |
 
 ## 読込表
 
@@ -124,7 +124,7 @@ batchでは、対象ごとの工程4で要求が確定した時点でメイン�
 後の対象で同じ根本原因を見つけた場合は、保存前の原稿へ統合し、更新した内容を検収する。
 保存は全対象の工程4と`batch.md`のセッション横断整理を終えてから行う。
 その直前に、確定した全要求を上記の予告として通知する。
-予告のフォーマットは、`../../report-completion/references/report-formats-retrospective.md`「振り返り結果報告のフォーマット」に従う。
+予告のフォーマットは、`agent-toolkit:atk-mode/references/report-formats-retrospective.md`「振り返り結果報告のフォーマット」に従う。
 メッセージの送達は、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に規定された手段（Claude Code環境では`mcp__plugin_agent-toolkit_agents_server__send_to_user`）を用いて行う。
 要求の`source`には`session-review`を指定する。
 batchが登録するAWIは、ユーザーによる内容確認を待たず、エージェント由来の要求として採否を検討する。

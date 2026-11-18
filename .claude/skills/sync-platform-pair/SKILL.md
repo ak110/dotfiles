@@ -24,7 +24,6 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/powershell.md` | 操作 | `path:*.ps1`、`path:*.ps1.tmpl` |
-| PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前（agent-toolkit配下の場合） | `../../../agent-toolkit/share/powershell-operations.md` | | |
 | Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/bash.md` | 操作 | `path:*.sh`、`path:*.sh.tmpl` |
 | Linux側とWindows側で分岐するコードを変更する前 | `../../../agent-basics/skills/writing-standards/references/testing.md` | | |
 

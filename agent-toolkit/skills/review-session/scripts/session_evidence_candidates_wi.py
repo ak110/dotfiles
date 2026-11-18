@@ -25,7 +25,7 @@ _ADHOC_SHELL_TOOLS = frozenset({"bash", "exec", "exec_command", "shell", "local_
 
 
 _REPORT_UWI_QUESTION = re.compile(r"の作業結果と振り返りについて、この対応で問題ありませんか？$")
-"""`agent-toolkit:report-completion`が投入する報告用UWIの冒頭の問い。報告用UWIは確認ではないため候補から除く。"""
+"""`agent-toolkit:atk-mode/playbooks/report-completion.md`の手順が投入する報告用UWIの冒頭の問い。報告用UWIは確認ではないため候補から除く。"""
 
 
 _WI_PROCESSING_OPERATIONS = frozenset({"start-processing", "adopt", "reject", "unhold"})

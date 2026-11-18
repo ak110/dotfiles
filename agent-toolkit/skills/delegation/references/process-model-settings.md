@@ -13,7 +13,7 @@
 ## 工程別モデル設定
 
 各工程の`model_type`は、対応する`<工程>_model`の設定に定義された候補列を直接参照する。
-下表における「メイン」は、`agent-toolkit:process-wi`のメインエージェント、または`agent-toolkit:write-plan`を起動したエージェントを指す。
+下表における「メイン」は、`agent-toolkit:process-wi`のメインエージェント、または`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って計画を作ったエージェントを指す。
 
 | 対応工程・役割 | model_type | 起動直前に解決する主体 | 起動手段 |
 | --- | --- | --- | --- |

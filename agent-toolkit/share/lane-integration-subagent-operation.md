@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | manifestの`verification`へ渡すローカル検証の上限を決める前 | `agent-basics:check-execution/references/verification-scope.md` |
-| 省略された変更の保持とWI継承を検収する時（操作対象外: 自身の成果物・評価方法の検討） | `../skills/commit/references/history-rewrite-wi-records.md` |
+| 省略された変更の保持とWI継承を検収する時（操作対象外: 自身の成果物・評価方法の検討） | `../skills/atk-mode/references/commit-wi-records.md` |
 | 「マージありの統合」でmergeが競合で停止したとき、またはmerge後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
 | `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
 | 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
@@ -72,10 +72,10 @@ CLIは選定YAMLにあるレーンの全WIがmanifestに載っているかを確
   重複コマンドは1回だけ登録し、省略計画と代表コマンドの対応を引き継ぎ記録へ残す。
   同一の成功済み検証はfast-forward前の再実行対象から除く。
   コマンド自身のタイムアウト（pyfltrのcommand-timeoutなど）を使い、必要な外側の上限はmanifestの`verification_timeout`へ指定する。
-  CLIは共有実行枠（`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の定義を参照）を取得した後に上限を適用し、時間切れ・明示中断では所有する子孫の回収を確認する。
+  CLIは共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の定義を参照）を取得した後に上限を適用し、時間切れ・明示中断では所有する子孫の回収を確認する。
   親コマンドの終了だけで回収済みと判定せず、残存の診断があれば同じ実行記録から処置する。
   秒数は記録された同一検証の所要を基に通常完了を十分上回る有限値とする。
-  訂正表の保持・引継ぎは`../skills/write-plan/references/plan-file-standards-verification.md`「検証」、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。
+  訂正表の保持・引継ぎは`../skills/atk-mode/references/plan-format.md`「検証」、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。
   merge後は新HEADの変更箇所と関連する利用側を検証する。
   依存版指定・lock更新を含め、ローカルの範囲は`agent-basics:check-execution/references/verification-scope.md`の上限に従う。
   CIが全体を担う場合は全体の試験・静的検査をCIへ委ね、列挙した利用側と関連モジュールまでをmanifestへ渡す。
@@ -176,5 +176,5 @@ Git統合後は同じ入力で未完了の計画保存・WI終了・選定更新
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` |
-| 編集時の注意点:の基準を適用する前 | `../skills/commit/SKILL.md` |
+| 編集時の注意点:の基準を適用する前 | `../skills/atk-mode/playbooks/commit.md` |
 | レーン統合タスク：計画最終化の基準を適用する前 | `lane-integration-subagent-finalization.md` |

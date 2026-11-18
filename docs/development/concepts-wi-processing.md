@@ -98,7 +98,7 @@
 この分担は上位工程に含まれる機械作業の実行費用を抑えるための設計判断に由来する。
 
 実行時に従う規範は`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」に置く。
-計画での実施方式の比較は`../../agent-toolkit/skills/write-plan/references/plan-file-standards-scope.md`「実施内容」が定める。
+計画での実施方式の比較は`../../agent-toolkit/skills/atk-mode/references/plan-format.md`「実施内容」が定める。
 一括置換の手順は`agent-basics:writing-standards/references/notation-rules.md`「表記の一括置換」が定める。
 
 - 簡単な反復作業は、一括置換と変更箇所の軽量レビューを使えるかを先に比べる（2026年10月1日のユーザー指示）。

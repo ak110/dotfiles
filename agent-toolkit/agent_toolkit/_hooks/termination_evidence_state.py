@@ -7,8 +7,8 @@ import pathlib
 lazy from typing import Any
 
 lazy from agent_toolkit._atk.wi import uwi_scan
-lazy from agent_toolkit._common import automated_prompt, runtime_inserted, session_state
-lazy from agent_toolkit._hooks import agent_id, agents_server_observations
+lazy from agent_toolkit._common import automated_prompt, runtime_inserted, session_state, skill_modes
+lazy from agent_toolkit._hooks import agent_id, agents_server_observations, plugin_resources
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 
 STATE_KEY = "termination_evidence"
@@ -17,13 +17,19 @@ STATE_KEY = "termination_evidence"
 COMPLETION_REPORT = "report-completion"
 
 
-"""起動証拠を確かめるスキルの短縮名。"""
+"""起動証拠を確かめる完了報告の作業の名前。入口`atk-mode`の作業の名前と手順書の名前を兼ね、状態の保存値でもある。"""
+
+
+COMPLETION_PLAYBOOK = f"playbooks/{COMPLETION_REPORT}.md"
+
+
+"""完了報告の手順書の、入口`atk-mode`のディレクトリからの相対パス。"""
 
 
 TARGET_SKILLS = ("process-wi",)
 
 
-"""開始した時点で成果作業となるスキルの短縮名。適用条件は`report-completion/SKILL.md`「工程」の工程9に従う。"""
+"""開始した時点で成果作業となるスキルの短縮名。適用条件は完了報告の手順書「適用の判定」に従う。"""
 
 
 TARGET_ENTRY_WORKS = ("add-awi-by-user",)
@@ -36,13 +42,22 @@ TARGET_ENTRY_WORKS = ("add-awi-by-user",)
 """
 
 
-_TERMINATION_EVIDENCE_REFERENCE = "`agent-toolkit:report-completion`の`references/termination-evidence.md`"
+def completion_playbook_path() -> pathlib.Path:
+    """完了報告の手順書の、稼働版のplugin rootから解決した絶対パスを返す。"""
+    return plugin_resources.skill_document_path(skill_modes.ENTRY_SKILL, COMPLETION_PLAYBOOK)
 
 
-_UNRESOLVED_REPOSITORY_FIX = (
-    "この作業では省略を記録できない。`agent-toolkit:report-completion`を起動して終了工程を進めよ。"
-    f"規範がその起動を禁じる場合は、{_TERMINATION_EVIDENCE_REFERENCE}「終了方法の分岐」に従い、その旨をユーザーへ報告せよ。"
-)
+def termination_evidence_reference() -> str:
+    """終了工程の判断の記録を定める資料を、通知から読める絶対パスで返す。"""
+    return f"`{plugin_resources.skill_document_path(skill_modes.ENTRY_SKILL, 'references/termination-evidence.md')}`"
+
+
+def unresolved_repository_fix() -> str:
+    """所属不明の作業に、省略の再申請と異なる終了操作を案内する。"""
+    return (
+        f"この作業では省略を記録できない。完了報告の手順書`{completion_playbook_path()}`を全文読んで終了工程を進めよ。"
+        f"規範がその読取を禁じる場合は、{termination_evidence_reference()}「終了方法の分岐」に従い、その旨をユーザーへ報告せよ。"
+    )
 
 
 class _UnresolvedRepositoryError(ValueError):
@@ -57,7 +72,9 @@ class _InactiveWaitError(ValueError):
     """所有する委譲先への有効な待機が終わっていることを表す。"""
 
 
-_HOST_STOP_FIX = f"技術的不成立の判定と確認手段は{_TERMINATION_EVIDENCE_REFERENCE}「技術的不成立の判定」に従え。"
+def host_stop_fix() -> str:
+    """技術的不成立の判定と確認手段の所在を返す。"""
+    return f"技術的不成立の判定と確認手段は{termination_evidence_reference()}「技術的不成立の判定」に従え。"
 
 
 _GIT_PUSH_VALUE_OPTIONS = frozenset(

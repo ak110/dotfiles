@@ -260,7 +260,7 @@ def test_common_ci_release_boundary(
     ("changed_path", "event", "branch", "mode", "expected"),
     [
         ("docs/development/note.md", "push", "feature", "normal", (False, False)),
-        ("agent-toolkit/skills/workflow-overview/SKILL.md", "push", "feature", "normal", (False, False)),
+        ("agent-toolkit/skills/atk-mode/references/workflow-overview.md", "push", "feature", "normal", (False, False)),
         ("rust/claude-statusline/src/main.rs", "push", "feature", "normal", (True, False)),
         ("rust/claude-statusline/fixtures/input.json", "push", "feature", "normal", (True, False)),
         ("agent-toolkit/agent_toolkit/_atk/serve/static/wi.js", "push", "feature", "normal", (False, True)),

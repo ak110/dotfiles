@@ -21,7 +21,7 @@
   単一の呼び出し元からのみ使われる契約はその工程の規範へ統合し、複数の呼び出し元で共有する起動契約は`<役割名>.parent.md`として分離できる。
   起動設定は`<役割名>.subagent.md`のfrontmatterで管理し、委譲元が起動準備のために定義本文を取得しなくても済む構造を保つ。
 - 独立して読み込まれる文書間で内容が重複する場合の採否は、`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」に従う。
-- 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と、`agent-toolkit:write-plan`でメインが委譲元となる側の双方を同一の変更単位で更新する（両系統は共通化されていない）。
+- 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と、`agent-toolkit:atk-mode/playbooks/write-plan.md`でメインが委譲元となる側の双方を同一の変更単位で更新する（両系統は共通化されていない）。
 
 ## スキル間の連携
 
@@ -33,7 +33,7 @@ process-wiのモード固有資料は、共通契約を参照して読み替え�
 - engineを追加する際は、委譲先と対話ホストのそれぞれへの導入要否を判断し、採用した配布範囲と導入を見送った理由を構成・設計記録に残す。
 - 複数ファイルにまたがる機構や委譲構造を新設・変更する場合は、`docs/development/design.md`の索引から該当する主題の本文を選び、目的、構造を採用した理由、知識境界、却下した代替案を追記または更新する（努力目標）。
   新たな主題は主題別ファイルを作成して索引テーブルに行を追加し、索引ファイル自体には詳細な見出しや機構の解説を書かない。
-- `agent-toolkit/skills/workflow-overview/SKILL.md`はエージェントの作業工程に関する契約を定義している。
+- `agent-toolkit/skills/atk-mode/references/workflow-overview.md`はエージェントの作業工程に関する契約を定義している。
   ユーザーの運用形態、WIの登録方法、または回答操作が変わる場合は、`docs/guide/claude-code-workflows.md`「推奨ワークフロー」も同一の変更単位で揃える。
 - `docs/guide/claude-code-models.md`「設定確認」は、ユーザーが実行する確認コマンド、期待される結果、または復旧手順が変わる場合に更新する。
 - `install-claude.sh`の`FILES`、`install-claude.ps1`の`$files`、および`agent-toolkit/share/rules/common/`配下のMarkdownファイル一覧は完全一致を保つ。

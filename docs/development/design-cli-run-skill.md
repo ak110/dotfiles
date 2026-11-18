@@ -42,7 +42,7 @@ Codexは常に`--json`の`thread.started`からthread IDを取得し、ロール
 候補判定時のCodex上限は次の候補を先に試し、全候補失敗かつ上限失敗がある場合だけ最も早い解除予定まで待って先頭から判定し直す。
 上限判定は共通層、同じ会話の再開はrun-skill、候補判定はorchestratorが所有する。
 
-報告用UWIの本文作成と内容の十分性の判断は、セッション内の`agent-toolkit:report-completion`が所有する。
+報告用UWIの本文作成と内容の十分性の判断は、セッション内の`agent-toolkit:atk-mode/playbooks/report-completion.md`が所有する。
 CLIは子の正常終了に加え、同じ実行IDと`source=run-skill`・`scope=<スキル名>`・`run_skill_report=true`を持つUWI本文のcommitを確かめる。
 upstreamがある場合は実remoteへのpush到達も確かめ、全て成立した場合だけ終了コード0を返す。
 保存未達は終了コード1とし、標準エラーへ診断、ログの所在と次の操作を書く。

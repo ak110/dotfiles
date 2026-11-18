@@ -20,7 +20,7 @@ process-wiの1回の実行の全体を1件へ集約する案は、計画とレ�
 仕様と設計を導く原則は`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」が所有する。
 人向けの外部仕様に加え、内部成果物や機械向けの契約にも適用する。
 実装担当はその対応から公開された呼び出し手段の試験を選び、実結果を自己検収して、返却の検証結果へ記す。
-記録の形式は[verification-evidence.md「完成条件証拠の検証記録」](agent-toolkit:/share/verification-evidence-records.md)が定める。
+記録の形式は`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」が定める。
 委譲元が所有する観測や回答保存、条件変更の判断は担当と再開先へ接続する。
 実装後は実行レビュー担当が最終差分を要求を書く節（計画が無い場合はAWIの本文）と比べ、目的、認可、公開契約と過剰実装を評価する。
 検証後の診断と警告の判定は、`agent-basics:check-execution/references/diagnostics.md`へまとめる。

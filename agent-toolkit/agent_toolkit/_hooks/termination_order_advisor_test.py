@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/termination_order_advisor.py のテスト。
 
-成果作業でreport-completionの起動証拠を欠く終了の支援通知と、委譲先・記録読取不能・作業が待つ非同期対象・
+成果作業で完了報告の手順書の読込証拠を欠く終了の支援通知と、委譲先・記録読取不能・作業が待つ非同期対象・
 自編集の公開範囲の各条件を検証する。
 """
 
@@ -117,10 +117,10 @@ def test_notifies_target_skill_without_completion_report_once(
     decision, body = _evaluate_delivered(_payload("sess-missing", str(trace)))
     assert decision == "notify"
     assert label in body
-    assert "`agent-toolkit:report-completion`を起動せよ" in body
-    assert "終了方法の分岐" in body
+    assert "完了報告の手順書`" in body and "playbooks/report-completion.md`を全文読み" in body
+    assert "「受理する証拠」" in body and "終了方法の分岐" in body
     assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")
-    _start_skill("sess-missing", trace, "agent-toolkit:report-completion", "toolu_report")
+    _start_skill("sess-missing", trace, "agent-toolkit:atk-mode", "toolu_report", arguments="report-completion")
     assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")
 
 
@@ -129,7 +129,7 @@ def test_completion_before_target_restart_is_reused_until_compact(tmp_path: path
     """新しい依頼でも文脈内の読込を再利用し、圧縮で本文が失われた場合だけ再案内する。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_1")
-    _start_skill("sess-second", trace, "agent-toolkit:report-completion", "toolu_2")
+    _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_2", arguments="report-completion")
     if compact:
         rules_context.reset_main_operation_skill_ready("sess-second")
     with contextlib.redirect_stdout(io.StringIO()):
@@ -153,7 +153,7 @@ def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, mo
         skipped.setattr(termination_evidence, "evidence_available", lambda *_args, **_kwargs: False)
         assert evaluate() == ("approve", "")
     assert evaluate() == ("approve", "")
-    _start_skill(session_id, trace, "agent-toolkit:report-completion", "report-start")
+    _start_skill(session_id, trace, "agent-toolkit:atk-mode", "report-start", arguments="report-completion")
     assert evaluate() == ("approve", "")
     _human_input(session_id, trace, "next", "次の作業を進める")
     _commit(session_id, trace, "next-commit")
@@ -171,7 +171,7 @@ def test_approves_delegated_session(tmp_path: pathlib.Path, monkeypatch: pytest.
 
 
 def test_approves_native_subagent_even_when_parent_work_is_pending(tmp_path: pathlib.Path) -> None:
-    """親の成果作業の記録を共有する委譲先へreport-completionを要求しない。"""
+    """親の成果作業の記録を共有する委譲先へ完了報告の手順書を要求しない。"""
     trace = _write_transcript(tmp_path, [])
     _commit("sess-native", trace)
     assert termination_order_advisor.evaluate(_payload("sess-native", str(trace), agent_id="agent-review")) == ("approve", "")
@@ -472,7 +472,11 @@ def test_self_edit_excludes_unowned_failed_and_completed_edits(tmp_path: pathlib
         _record_self_edit(payload, target, failed=case == "failed")
     if case == "completion":
         _start_skill(
-            "self-edit", pathlib.Path(payload["transcript_path"]), "agent-toolkit:report-completion", "completion-call"
+            "self-edit",
+            pathlib.Path(payload["transcript_path"]),
+            "agent-toolkit:atk-mode",
+            "completion-call",
+            arguments="report-completion",
         )
     elif case == "delegated":
         payload["agent_id"] = "child"
@@ -886,12 +890,12 @@ def test_public_stop_leaves_started_completion_to_document(tmp_path, monkeypatch
             "turn_id": "request",
             "tool_name": "Bash",
             "tool_use_id": "report-read",
-            "tool_input": {"command": "cat /plugin/skills/report-completion/SKILL.md"},
-            "tool_response": {"stdout": "---\nname: report-completion\n---\n"},
+            "tool_input": {"command": "cat /plugin/skills/atk-mode/playbooks/report-completion.md"},
+            "tool_response": {"stdout": "# 作業完了報告とセッションの完了処理\n"},
         }
         termination_evidence.observe_tool(json.dumps(invocation), after=True)
     else:
-        _start_skill(session_id, trace, "agent-toolkit:report-completion", "report-start")
+        _start_skill(session_id, trace, "agent-toolkit:atk-mode", "report-start", arguments="report-completion")
     payload = json.loads(_payload(session_id, str(trace)))
     if codex:
         payload["turn_id"] = "request"
@@ -912,7 +916,7 @@ def test_started_completion_review_keeps_existing_exclusions(tmp_path, case):
     session_id = "review-excluded"
     _human_input(session_id, trace, "request", "成果作業を行う")
     _commit(session_id, trace)
-    _start_skill(session_id, trace, "agent-toolkit:report-completion", "report-start")
+    _start_skill(session_id, trace, "agent-toolkit:atk-mode", "report-start", arguments="report-completion")
     payload = json.loads(_payload(session_id, str(trace)))
     if case == "delegated":
         payload["agent_id"] = "child"

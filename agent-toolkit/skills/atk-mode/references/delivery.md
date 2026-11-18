@@ -10,7 +10,7 @@
 - Claude Codeは`mcp__plugin_agent-toolkit_agents_server__send_to_user`で届ける（`agent-toolkit:/share/rules/rules-main.claude-code.md`「ツールの入出力」）。
 - Codexは途中経過を`commentary`、通常の最終応答を必要なツール処理の後の`final`で届ける（`agent-toolkit:/share/rules/rules-common.codex.md`「Codexホスト契約の適用」）。
   ホスト本体を停止する場合は、必要な報告を停止の前の`commentary`で届ける。
-- 成果作業では、`agent-toolkit:report-completion`で確定した作業完了報告の本文をそのまま使う。
+- 成果作業では、`agent-toolkit:atk-mode/playbooks/report-completion.md`で確定した作業完了報告の本文をそのまま使う。
 - 報告の送達を終えてからホストを停止し、自律モードの伝達は報告用UWIの保存の検収で完了とする。
 
 本書「個別UWI」の条件と、権限拒否の偽陽性への`agent-toolkit:atk-mode/playbooks/permission-denial.md`「共通判断」の手順は、次の表より優先する。
@@ -21,7 +21,7 @@
 | 事前承認以外で回答を待つ確認 | 事前承認と同じ | 回答期限によらずその場では質問せず、事前承認型UWIへ記録して「未確定判断の保留と暫定判断」に従う |
 | 事後承認 | その場で構造化質問する | 回答を待たずに事後承認型UWIへ記録し、作業を続ける |
 | 認識合わせ | 本書「認識合わせ」の手順と事前承認の手段でその場で質問し、回答を待つ | その場で質問し、有効な回答期限を過ぎたら「未確定判断の保留と暫定判断」へ進み、期限が無ければ回答を待つ。構造化質問を発行できないCodex Default modeでは、自分の理解と質問をUWIへ記録し、回答を要する元項目だけを保留する |
-| ユーザーへの報告 | 発話本文として届け、作業完了時は`agent-toolkit:report-completion`の書式を使う | 同スキルの報告用UWIに記録する（セッションにつき1件） |
+| ユーザーへの報告 | 発話本文として届け、作業完了時は`agent-toolkit:atk-mode/playbooks/report-completion.md`の書式を使う | 同スキルの報告用UWIに記録する（セッションにつき1件） |
 
 表の「未確定判断の保留と暫定判断」は`agent-toolkit:atk-mode/playbooks/confirmation.md`「未確定判断の保留と暫定判断」を指し、回答が無いまま終わった確認と、事前承認を要する元項目の回答待ちも同節に従う。
 自律モードの「有効な回答期限」は、`atk wi process-loop`のように起動時に与えられた有限の期限を指し、有限の期限を設定したprocess-loopのClaude統括もその場で質問できる。

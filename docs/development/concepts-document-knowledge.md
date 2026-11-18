@@ -49,7 +49,7 @@
   2026年10月7日のユーザー依頼と、確認への回答「既知の知識は方針と語だけ」「委譲プロンプトと計画にも適用」による。
   現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」が定義元であり、
   `agent-documents-basics.md`、`agent-documents-additions.md`、`agent-toolkit:delegation`の`references/base-contract.md`、
-  `agent-toolkit:write-plan`の`references/plan-file-standards.md`、`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`が参照する
+  `agent-toolkit:atk-mode/references/plan-format.md`、`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`が参照する
 - エージェント向け文書は、読み手のエージェントが広い知識を持つ前提で書き、常識的に判断できることを細かく手順化しない。
   細かすぎる手順は「書かれた手順以外はやってはならない」という先入観を生んで品質を下げ、文章量に比例して費用も増やすためである。
   手順として書くのは目的、守る価値、硬い制約、プロジェクト固有の事実、実際に誤った箇所に限る。

@@ -136,7 +136,7 @@
 ### 終了時報告
 
 自分で確定した事項のうち、合理的な別の判断もありうるものを、ラウンドの終了時にまとめて報告する。
-書式は`agent-toolkit:report-completion/references/report-formats-completion.md`「作業完了報告のフォーマット」の`### 自ら確定した判断`に従う。
+書式は`agent-toolkit:atk-mode/references/report-formats.md`「作業完了報告のフォーマット」の`### 自ら確定した判断`に従う。
 この報告は承認を求めるものでなく、報告の後は起動元の工程へそのまま進む。
 
 ## 質問の形式

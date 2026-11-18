@@ -81,13 +81,16 @@ agent-toolkitの作業の入口である。
 | WIの由来と承認、逐語引用 | `references/origin-and-approval.md` |
 | 回答済みUWIの反映 | `references/answer-transitions.md` |
 | 利用上限の予告・猶予の通知 | `references/usage-limit.md` |
-| 計画の作成 | `agent-toolkit:write-plan` |
+| 対象リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
 | 委譲の要否、起動、待機、検収 | `agent-toolkit:delegation` |
-| commitとpush | `agent-toolkit:commit` |
+| commit、push、公開、CI、amend・fixup・rebase、未commitの差分の破棄 | `playbooks/commit.md`の索引 |
+| 検証の起動と記録 | `playbooks/verification.md` |
 | 外部への書込（PR、Issue、コメント）の前 | `agent-toolkit:review-external-writes` |
-| 一時ファイルの置き場所 | `agent-toolkit:managed-temp` |
-| 作業の完了の報告 | `agent-toolkit:report-completion` |
-| 文章、設計、実装、テストの品質 | `agent-basics:writing-standards` |
+| 一時ファイルの置き場所と回収 | `playbooks/managed-temp.md` |
+| 成果物を確定した作業の完了の報告 | `playbooks/report-completion.md` |
+| 完了報告の省略、中止・置換・待機の記録 | `references/termination-evidence.md` |
+| WI処理の全体像、統括の起動形、定義済みの名前 | `references/workflow-overview.md`、`references/orchestrator-runtime.md`、`references/defined-names.md` |
+| 文章、設計、実装、テストの品質 | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
 | レビュー、実行での確認、検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
 
 ## 委譲

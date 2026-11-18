@@ -7,8 +7,8 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | | |
-| 手動観測を保存する前 | `verification-evidence-observation.md` | | |
-| `検証結果`を書く前 | `verification-evidence-records.md` | | |
+| 手動観測を保存する前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
+| `検証結果`を書く前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration.subagent.md` |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` | | |
 
@@ -38,7 +38,7 @@
 
 ### 検証結果の記録
 
-**6.** 後続が判定できるよう、`verification-evidence-observation.md`、`verification-evidence-records.md`に従って`検証結果`と手動観測全量を記録する。
+**6.** 後続が判定できるよう、`agent-toolkit:atk-mode/playbooks/verification.md`、`agent-toolkit:atk-mode/playbooks/verification.md`に従って`検証結果`と手動観測全量を記録する。
 
 ### 返却前の確認
 

@@ -182,6 +182,12 @@ def test_conditional_session_record_display_keeps_reference_guidance(tmp_path, m
     assert "permissionDecision" not in captured.out
 
 
+def _reads_commit_message_rules(command: str, cwd: str) -> bool:
+    """Bashの読取から帰属資料の読取を識別する配送側の判定へ、共通の読取パスの解析結果を渡す。"""
+    paths = (path for group in bash_read_paths(command, cwd, include_partial=True) for path in group)
+    return dispatch._reads_commit_message_rules(paths)  # pylint: disable=protected-access
+
+
 @pytest.mark.parametrize("separator", [[], ["--"]])
 def test_same_range_reads_reach_consumers(tmp_path: pathlib.Path, separator: list[str]) -> None:
     """同じ行範囲の読取入力を大量読取とcommit資料の消費側が認識する。"""
@@ -189,12 +195,12 @@ def test_same_range_reads_reach_consumers(tmp_path: pathlib.Path, separator: lis
     targets = [
         root / "skills/atk-mode/playbooks/confirmation.md",
         root / "skills/atk-mode/references/choice-construction.md",
-        root / "skills/commit/references/message.md",
+        root / "skills/atk-mode/references/commit-message.md",
     ]
     command = "; ".join(shlex.join(["sed", "-n", "1,400p", *separator, str(path)]) for path in targets)
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(path,) for path in targets]
     # この識別処理自体が指定された消費側であり、実在するcommit資料を渡して判定する。
-    assert dispatch._reads_commit_message_rules(command, str(tmp_path))  # pylint: disable=protected-access
+    assert _reads_commit_message_rules(command, str(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -286,15 +292,13 @@ def test_non_read_options_are_not_inferred_as_full_reads(tmp_path: pathlib.Path,
 @pytest.mark.parametrize("command", ["cat -n --", "cat --number --", "less -x 4 --", "more -d --", "sed -n '1,2p'"])
 def test_commit_rule_delivery_uses_shared_option_parsing(tmp_path: pathlib.Path, command: str) -> None:
     """通常のオプションや範囲指定を伴う読取でも、実在する帰属資料を読む呼び出しを配送の判定が検出する。"""
-    directory = tmp_path / "plugin/skills/commit/references"
+    directory = tmp_path / "plugin/skills/atk-mode/references"
     directory.mkdir(parents=True)
-    target = directory / "message.md"
+    target = directory / "commit-message.md"
     target.write_text("commitの記述規則", encoding="utf-8")
-    invocation = f"cd {directory} && {command} message.md"
-    assert dispatch._reads_commit_message_rules(invocation, str(tmp_path))  # pylint: disable=protected-access
-    assert not dispatch._reads_commit_message_rules(  # pylint: disable=protected-access
-        f"{command} other.md", str(directory)
-    )
+    invocation = f"cd {directory} && {command} commit-message.md"
+    assert _reads_commit_message_rules(invocation, str(tmp_path))
+    assert not _reads_commit_message_rules(f"{command} other.md", str(directory))
 
 
 @pytest.mark.parametrize("operation", ["stat", "open"])

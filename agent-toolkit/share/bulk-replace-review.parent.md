@@ -49,7 +49,7 @@
 
 ## 起動
 
-1. 全置換をレビューへ渡すため、置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をmanaged-temp（`agent-toolkit:managed-temp`）内のファイルへ保存する。
+1. 全置換をレビューへ渡すため、置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をmanaged-temp（`agent-toolkit:atk-mode/playbooks/managed-temp.md`）内のファイルへ保存する。
    `agents_server`の`start`を以下の引数で呼び出して1件起動する。
 
 | 引数 | 値 |

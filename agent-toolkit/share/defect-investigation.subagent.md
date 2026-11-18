@@ -34,7 +34,7 @@ writes_worktree: false
 
 1. 原因と処置を確定するため、`agent-basics:bugfix`を起動し、5つの問いへ順に答える。
    確認観点の資料は、同スキルの`SKILL.md`が示す条件が成立した時に読む。
-2. 対象リポジトリとキューは読み取り専用とし、一時ファイルはmanaged-temp（`agent-toolkit:managed-temp`）へ置く。
+2. 対象リポジトリとキューは読み取り専用とし、一時ファイルはmanaged-temp（`agent-toolkit:atk-mode/playbooks/managed-temp.md`）へ置く。
    問い4（広がり）の検索と個別判定は`similar-review.parent.md`の専用担当から受け取り、原因の判断と採否は自身が所有する。
 3. 委譲元が修正へ適用できるよう、変更対象ファイル、変更内容、修正後の観測項目を確定する。
    探索の経緯、各対象の判定、対照実験、独立走査などの詳細は自身のmanaged-tempの`分析記録`へ保存し、返却欄に結論と根拠の記載箇所を示す。

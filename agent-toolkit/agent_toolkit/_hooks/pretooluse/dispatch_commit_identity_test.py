@@ -102,7 +102,7 @@ def test_commit_rules_read_delivers_observed_trailer_and_allows_same_turn_commit
     reader: str,
 ) -> None:
     """実ファイルの読取で得た帰属行は同turnの通常commitへ使え、turn変化では現在値と比べる。"""
-    rules = tmp_path / "different root" / "skills/commit/references/message.md"
+    rules = tmp_path / "different root" / "skills/atk-mode/references/commit-message.md"
     rules.parent.mkdir(parents=True)
     rules.write_text("帰属規範\n", encoding="utf-8")
     payload = {
@@ -131,14 +131,14 @@ def test_commit_rules_read_delivers_observed_trailer_and_allows_same_turn_commit
         assert "GPT-6.1 Sol / High" in _denial_reason(capsys.readouterr())
 
 
-@pytest.mark.parametrize("case", ["literal", "search", "other", "missing", "unknown", "claude", "read-tool"])
-def test_commit_rules_read_notice_is_limited_to_observed_codex_reads(
+@pytest.mark.parametrize("case", ["literal", "search", "other", "missing", "unknown", "retired", "claude-unknown"])
+def test_commit_rules_read_notice_is_limited_to_observed_reads(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     case: str,
 ) -> None:
-    """引用・検索・別資料・未観測・別ホストを帰属配送の読取にしない。"""
-    rules = tmp_path / "skills/commit/references/message.md"
+    """引用・検索・別資料・未観測・廃止した資料の所在を帰属配送の読取にしない。"""
+    rules = tmp_path / "skills/atk-mode/references/commit-message.md"
     rules.parent.mkdir(parents=True)
     rules.write_text("帰属規範\n", encoding="utf-8")
     other = rules.with_name("other.md")
@@ -147,8 +147,12 @@ def test_commit_rules_read_notice_is_limited_to_observed_codex_reads(
         "literal": f"printf '%s' '{rules}'",
         "search": f"rg -F -- '帰属' '{rules}'",
         "other": f"cat '{other}'",
-        "missing": f"cat '{tmp_path}/missing/skills/commit/references/message.md'",
+        "missing": f"cat '{tmp_path}/missing/skills/atk-mode/references/commit-message.md'",
     }
+    retired = tmp_path / "skills/commit/references/message.md"
+    retired.parent.mkdir(parents=True)
+    retired.write_text("帰属規範\n", encoding="utf-8")
+    commands["retired"] = f"cat '{retired}'"
     payload = {
         "tool_name": "Bash",
         "turn_id": "codex-turn",
@@ -160,13 +164,51 @@ def test_commit_rules_read_notice_is_limited_to_observed_codex_reads(
     if case == "unknown":
         payload.pop("model")
         payload.pop("reasoning_effort")
-    if case == "claude":
-        payload.pop("turn_id")
-    if case == "read-tool":
+    if case == "claude-unknown":
+        for key in ("turn_id", "model", "reasoning_effort"):
+            payload.pop(key)
         payload["tool_name"] = "Read"
         payload["tool_input"] = {"file_path": str(rules)}
     assert pretooluse.main(json.dumps(payload)) == 0
     assert "読取時点" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("tool", ["Read", "Bash"])
+@pytest.mark.parametrize("disabled", [False, True])
+def test_claude_commit_rules_read_delivers_observed_trailer(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tool: str,
+    *,
+    disabled: bool,
+) -> None:
+    """Claude Codeでも帰属資料の読取（`Read`と静的な読取コマンド）の時点に、検査が期待する帰属行を示す。
+
+    帰属行を空文字で無効にした設定では、検査も帰属行を求めないため示さない。
+    """
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    rules = tmp_path / "plugin" / "skills/atk-mode/references/commit-message.md"
+    rules.parent.mkdir(parents=True)
+    rules.write_text("帰属規範\n", encoding="utf-8")
+    if disabled:
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude/settings.json").write_text('{"attribution":{"commit":""}}', encoding="utf-8")
+    transcript = _write_claude_transcript(tmp_path / "project-records" / "session-1.jsonl", ["claude-opus-5-5"])
+    payload = {
+        "tool_name": tool,
+        "tool_input": {"file_path": str(rules)} if tool == "Read" else {"command": f"cat -- '{rules}'"},
+        "cwd": str(tmp_path),
+        "transcript_path": str(transcript),
+        "effort": {"level": "low"},
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    output = capsys.readouterr().out
+    trailer = "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>"
+    assert (trailer in output) is not disabled
+    if not disabled:
+        assert "「`Co-Authored-By:`」" in json.loads(output)["hookSpecificOutput"]["additionalContext"]
 
 
 @pytest.mark.parametrize("host", ["claude-unknown", "claude-disabled", "codex-unknown", "codex-observed"])

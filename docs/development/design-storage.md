@@ -5,7 +5,7 @@
 
 ## managed-temp
 
-一時ファイルの配置、個別領域の作成および回収に実行時に適用する規範は、[`agent-toolkit:managed-temp`](../../agent-toolkit/skills/managed-temp/SKILL.md)が定める。
+一時ファイルの配置、個別領域の作成および回収に実行時に適用する規範は、[`agent-toolkit:atk-mode/playbooks/managed-temp.md`](../../agent-toolkit/skills/atk-mode/playbooks/managed-temp.md)が定める。
 
 エージェントの一時領域は、一時root（POSIXはXDGのユーザーキャッシュ配下の`agent-toolkit/managed-temp`、Windowsは`LOCALAPPDATA`配下）の直下の実体だけで管理する。
 エージェントは通知されたセッションのmanaged-tempの中へ`mktemp -d`で作業ディレクトリを作成し、参照を終えたら作成者が`rm -r --`で回収する。

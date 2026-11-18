@@ -13,7 +13,7 @@
 
 ## 運用条件
 
-規定の追記と記述量の管理は`agent-basics:writing-standards/references/agent-documents-additions.md`、計画ファイルの成果物契約は`agent-toolkit:write-plan`が定める。
+規定の追記と記述量の管理は`agent-basics:writing-standards/references/agent-documents-additions.md`、計画ファイルの成果物契約は`agent-toolkit:atk-mode/playbooks/write-plan.md`が定める。
 
 ## 置き場所と配送
 

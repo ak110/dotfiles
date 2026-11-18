@@ -1,0 +1,43 @@
+# 計画の保存と参照
+
+計画バンドルの名前、置き場所、付属ファイルの参照の書き方、保存の時機を定める。
+名前と置き場所は`atk run-script plan-create`、`atk run-script plan-check`、`atk plans commit`が受理条件を検査し、外れた値は診断が直し方を示す。
+
+## 計画ファイルの保存と参照
+
+stemは次の形にする（`dd`は作成日、`HHmm`は作成時刻）。
+
+| `起動経路` | stem |
+| --- | --- |
+| `agent-toolkit:process-wi`のレーン | `dd-HHmm_process-wi_レーンNN` |
+| メインによる起動 | `dd-HHmm_<日本語の簡潔な名詞>` |
+
+1. 計画は、`atk run-script plan-create --`で`~/.claude/plans`直下に1つのファイル`<stem>.md`として作る。
+   レーンは`--lane lane-NN`（2桁のレーン番号）を渡し、日時（実行環境のローカルタイムゾーン）、接頭辞、番号は作成処理が組み立てる。
+   メインは`--name <名称>`を渡し、日時の接頭辞が無い名称にはUTCの日時が付き、`dd-HHmm_`で始まる完全なstemはそのまま使われる。
+   同じstemがあれば、作成処理が末尾へ`-<小文字16進数4桁>`を付けて作り直す。
+   保存先の正準形`dd-<名称>-<小文字16進数4桁>.md`は保存の時に作られるため、作成の時は上の表の形を使う。
+2. 計画の本文から実行レビュー指摘管理表などの付属ファイルを指す時は、固定の接頭辞`~/.claude/plans/`にファイル名を続けて書く。
+   新規作成では、stemの部分に`__PLAN_STEM__`を書き、作成処理が確定したstemへ置き換える。
+   接頭辞の後には1つのファイル名だけを書き、パス区切り文字、`..`、シェルの式、Windowsの区切り文字を含めずに書く。
+   参照は接頭辞を展開せず、計画ファイルと同じディレクトリにファイル名を結合して解決する。
+3. 計画バンドルの構成は`agent-toolkit:atk-mode/references/plan-format.md`の呼称の表にある。
+   同じstemの既知の一時ファイル（`.lock`、`.bak`、`.tmp`）は作業環境が回収し、それ以外の同じstemのファイルは保存も削除もされずに残る。
+   計画に属さない作業ファイルは、別の名前にしてmanaged-tempへ置く。
+4. 自分が所有する計画だけを更新する。
+   バンドルごとの計画の所有記録（所有セッション、最終更新時刻）は`atk plans list`で確かめ、private-notesの中の計画は`atk plans`で更新する。
+   計画の節を差し替える時は、行頭から完全に一致する見出し行など一意に特定できる境界を選び、各境界の一致が1件であることを確かめてから置き換える。
+5. 実行レビュー指摘管理表は、計画ファイルと同じディレクトリに`<計画stem>.exec-review.tsv`として置く。
+   計画を持たない実行レビューの表は`~/.claude/plans`直下に置き、次の名前にする（短縮OIDは`git rev-parse --short=7 <revision>`の出力をそのまま使う7文字以上の一意な値）。
+   - WIだけを基準とする直接実装: `wi-<処理開始時点の短縮OID>.exec-review.tsv`。
+     削除は`agent-toolkit:/share/exec-review-parent-correction.md`「レビュー指摘管理表の保存」に従う。
+   - 公開工程のCI失敗の修正: `ci-<修正系列の開始時のHEADの短縮OID>.exec-review.tsv`。
+     修正系列の終了時に`atk plans commit ci-<同じ短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
+     保存の時機は`agent-toolkit:process-wi/references/ci-fix-series.md`の`入力計画`の段落に従う。
+6. 計画は、実行レビューが収束するまで`~/.claude/plans`直下で更新し、収束したら`atk plans commit <~/.claude/plans直下のメイン計画ファイル名>`で`private-notes/plans/yyyy/MM/`へ移して保存する。
+   計画ファイルと付属ファイルは同じcommitで保存される。
+   - `agent-toolkit:process-wi`のレーンが実行レビューの収束の前に終わる場合も、`agent-toolkit:/share/lane-integration-subagent-finalization.md`「計画最終化」に従い、統合の記録を追記した後に1回保存する。
+   - 実行レビューを行わない計画（観測だけの再開で取得した計画、「マージなし」の計画）も保存し、観測の完了と`計画検査完了`の通知は保存の契機から外す。
+   - 保存済みの計画は完了した作業の記録として扱い、後のセッションで実装する時は新しい計画ファイルを作る（中断したレーンの再開は`agent-toolkit:process-wi/references/run-lanes.md`に従う）。
+   - 保存済みの計画をcheckoutして履歴の書き換えに追従させた主体は、その工程の最後に、更新した全ての計画バンドルを`atk plans commit`で保存し直す。
+     未完了のWIと延期（adopt）を含む計画も対象にし、終了コード0と、未適用・未完了の警告が無いことを確かめる。

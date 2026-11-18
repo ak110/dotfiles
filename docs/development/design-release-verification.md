@@ -24,7 +24,7 @@ CIが無い、または公開先でCIが実行されない場合の全体検証�
 この値は同条件の新旧対照ではなく、統合のたびに繰り返していた作業の変更前の所要として保持する。
 限定した検証への変更後の所要は統合が終わってから観測し、短縮を仮定した値は置かない。
 CI定義の判定は、承認済み公開先のforge・repositoryと対象commitに対応する定義を使う。
-共通の判断は`agent-toolkit:commit`の`references/push-and-ci.md`「公開先に対応するCI定義の判定」が持ち、publishと公開担当の生成側・メインの受理側が参照する。
+共通の判断は`agent-toolkit:atk-mode/references/ci.md`「公開先に対応するCI定義の判定」が持ち、publishと公開担当の生成側・メインの受理側が参照する。
 GitHubではworkflow直下のYAML blobを候補とし、READMEや入れ子のYAMLは数えない。
 GitLabでは有効project設定が選ぶ独自CI設定と継承するAuto DevOpsも判定する。
 別forgeの定義を合計する案は、混在forkで実行されない定義をCIありの根拠にするため採らない。

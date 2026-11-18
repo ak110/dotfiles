@@ -35,6 +35,7 @@ lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work_from_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path
 
 _HOOK_ID = "run_skill_report_gate"
 
@@ -97,7 +98,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     reason = _block_notice(
         _REASON_BODY,
         fix=(
-            "残る工程を進め、`agent-toolkit:report-completion`の手順で報告用UWIを保存してコミット・プッシュせよ。"
+            f"残る工程を進め、完了報告の手順書`{completion_playbook_path()}`を全文読み、"
+            "その手順で報告用UWIを保存してコミット・プッシュせよ。"
             "前提不足などで完了できない場合も、未完了の内容を報告用UWIへ保存してから終えよ。"
         ),
     )

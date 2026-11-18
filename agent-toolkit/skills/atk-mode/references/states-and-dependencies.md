@@ -63,7 +63,7 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 | `adopted`か`rejected`→`hold` | `atk wi hold --state=<adoptedかrejected>` | 誤って採否を確定した項目から過去の処理結果を除き、確認や修正の間保留する時 |
 
 同じ遷移、メモ、commit、対象リポジトリで終了できる複数の項目は、個別に確かめたファイル名を並べて1回の`atk wi adopt <ファイル名>...`か`atk wi reject <ファイル名>...`で終了し、メモやcommitが異なる項目は個別に呼び出す。
-実装commitの対応記録の保存、取得、補完は`agent-toolkit:commit/references/commit-wi-records.md`「WI実装commitの対応」に従う。
+実装commitの対応記録の保存、取得、補完は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う。
 終了後に履歴を書き換える時は`plan-rewrite`で対応commitと件名を付け替え、採否の結果と処理日時は保つ。
 
 ## 保留と本文修正

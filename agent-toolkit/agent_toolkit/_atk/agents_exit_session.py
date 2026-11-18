@@ -437,7 +437,8 @@ def main() -> int:
     assert target is not None
     next_action = (
         "ターンを終えると/exitでセッションを終了する。これ以上ツールを呼ばず、"
-        "agent-toolkit:report-completionの手順7に従い、送達済み本文を再掲せずターンを終えよ。"
+        "完了報告の手順書`agent-toolkit:atk-mode/playbooks/report-completion.md`の工程7に従い、"
+        "送達済み本文を再掲せずターンを終えよ。"
     )
     _outcome.report_success(
         next_action,

@@ -19,7 +19,7 @@ PRの存在確認だけでは起動しない。
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failures.md`、`agent-toolkit:commit/references/ci-failure-handling.md` |
+| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failures.md`、`agent-toolkit:atk-mode/references/ci.md` |
 | 必須CIの結果を成功時も含めて検収する前 | `../develop-dotfiles/references/verification-values-speed.md` |
 | マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
 

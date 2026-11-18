@@ -54,7 +54,16 @@ _RETIRED_READING_TABLE_PATTERN = re.compile(r"(?:-delivery-\d+|reading-reference
 
 
 # 内容を入口`atk-mode`の手順書へ移して廃止したスキル。過去の記録と保存値は当時の名前と配置を保持する。
-_ATK_MODE_RETIRED_SKILLS = ("add-awi-by-user", "wi-standards", "user-confirmation-and-report")
+_ATK_MODE_RETIRED_SKILLS = (
+    "add-awi-by-user",
+    "wi-standards",
+    "user-confirmation-and-report",
+    "write-plan",
+    "commit",
+    "report-completion",
+    "workflow-overview",
+    "managed-temp",
+)
 
 
 # 対象版を固定した監査記録。当時の配置を記録として保持する。
@@ -150,6 +159,21 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
         f"{_PLUGIN_PREFIX}:add-awi-by-user",
         pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_user_events_test.py"),
     ): 4,
+    (
+        f"{_PLUGIN_PREFIX}:write-plan",
+        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_review_evidence_user_events_test.py"),
+    ): 2,
+    # 保存済みの計画が計画メタ情報の`起動経路`に持つ値。値は自由記述で、計画の検査は起動先の実在を求めない。
+    (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_testing/plan_fixture.py")): 5,
+    (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_plan/structure/constants_test.py")): 1,
+    # 廃止したスキル名の起動と発話が、計画の工程の開始・帰属行の配送・完了報告の起動証拠にならないことを確かめる試験の入力
+    (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/posttooluse_skills_test.py")): 1,
+    (f"{_PLUGIN_PREFIX}:commit", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/posttooluse_skills_test.py")): 1,
+    (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/user_prompt_submit_test.py")): 2,
+    (
+        f"{_PLUGIN_PREFIX}:report-completion",
+        pathlib.Path("agent-toolkit/agent_toolkit/_hooks/termination_evidence_completion_test.py"),
+    ): 1,
     # 分割前のStop判定モジュールを当時の所在で記す障害事例
     (f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py", _INCIDENTS_WORKFLOWS): 1,
     # 廃止したスキルの経緯を記す方針・設計の記録
@@ -161,15 +185,6 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}/skills/user-confirmation-and-report/SKILL.md", _NORM_RESTRUCTURE_README): 1,
     # 切り出しスクリプトのテストが一時リポジトリへ作成するスキルのパス
     (f"{_PLUGIN_PREFIX}/skills/demo/SKILL.md", _NORM_RESTRUCTURE_CLAUSES_TEST): 1,
-    # 対象版を固定した監査記録が、後に削除した計画ファイルの基準を当時の所在で記す
-    **{
-        (f"{_PLUGIN_PREFIX}/skills/write-plan/references/plan-file-standards-{name}.md", pathlib.Path(audit)): 1
-        for name in ("design", "requirements")
-        for audit in (
-            "docs/development/audit-opus55-hosts-2026-11-15.json",
-            "docs/development/audit-sol-2026-11-14.json",
-        )
-    },
 }
 
 

@@ -222,9 +222,9 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
 
 
 def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
-    """計画スキルはレーンの非待機通知を無条件の報告・待機で上書きしない。"""
+    """計画の手順書`playbooks/write-plan.md`はレーンの非待機通知を無条件の報告・待機で上書きしない。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    plan = (plugin_root / "skills" / "write-plan" / "SKILL.md").read_text(encoding="utf-8")
+    plan = (plugin_root / "skills" / "atk-mode" / "playbooks" / "write-plan.md").read_text(encoding="utf-8")
     plan_steps = _h2_section(plan, "進め方")
     lane_row = next(line for line in plan_steps.splitlines() if line.startswith("| `agent-toolkit:process-wi`"))
     lane_steps = _lane_planning_contract(plugin_root)
@@ -239,13 +239,9 @@ def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
 
 
 def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
-    """history-rewrite.mdの規定が参照するphase名は、レーン担当の契約がphase表で定義する。"""
+    """`playbooks/history-rewrite.md`の規定が参照するphase名は、レーン担当の契約がphase表で定義する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    rewrite = read_contract(
-        plugin_root / "skills/commit/references/history-rewrite.md",
-        plugin_root,
-        ("history-rewrite-recovery.md", "失敗時の扱い"),
-    )
+    rewrite = (plugin_root / "skills/atk-mode/playbooks/history-rewrite.md").read_text(encoding="utf-8")
     executor = read_contract(
         plugin_root / "share/exec.subagent.md", plugin_root, ("exec-subagent-history.md", "レビュー修正の履歴統合")
     )
@@ -315,7 +311,7 @@ def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
         root,
         ("finish-session-recovery.md", "公開工程の続行不能の回復と再開"),
     )
-    publish = (root / "skills/commit/references/publish.md").read_text(encoding="utf-8")
+    publish = (root / "skills/atk-mode/playbooks/publish.md").read_text(encoding="utf-8")
     receipt = _h2_section(parent, "受領と検収")
     assert "公開後操作の前提不足" in receipt
     assert "「公開工程の続行不能の回復と再開」へ処理を引き渡す" in receipt
@@ -335,8 +331,7 @@ def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
 def test_publication_recovery_references_resolve_to_shared_sections() -> None:
     """続行不能の送信側と受信側が、実在する同じ回復節へ接続する。"""
     root = pathlib.Path(__file__).resolve().parent
-    publish = "skills/commit/references/publish.md"
-    push = "skills/commit/references/push-and-ci.md"
+    publish = "skills/atk-mode/playbooks/publish.md"
     finish = "skills/process-wi/references/finish-session-recovery.md"
     read_contract(
         root / "skills/process-wi/references/finish-session.md",
@@ -344,11 +339,11 @@ def test_publication_recovery_references_resolve_to_shared_sections() -> None:
         ("finish-session-recovery.md", "公開工程の続行不能の回復と再開"),
     )
     routes = [
-        (publish, push, "公開工程の続行不能の受渡し"),
-        (push, publish, "公開工程の続行不能からの再開"),
+        (publish, publish, "公開工程の続行不能の受渡し"),
+        (publish, publish, "公開工程の続行不能からの再開"),
         (finish, publish, "公開工程の続行不能からの再開"),
         ("share/session-termination.parent.md", finish, "公開工程の続行不能の回復と再開"),
-        ("share/session-termination.subagent.md", push, "公開工程の続行不能の受渡し"),
+        ("share/session-termination.subagent.md", publish, "公開工程の続行不能の受渡し"),
     ]
     for source, target, heading in routes:
         source_text = (root / source).read_text(encoding="utf-8")

@@ -22,7 +22,7 @@ write-planの内部作成処理が`~/.claude/plans`で計画ファイルを準�
 永続する計画、バグ調査ファイルとレビュー指摘管理表は、固定接頭辞を含む可搬表記で保存する。
 実行時のファイル操作、session stateと診断は解決済み絶対パスを使う。
 保存の契機に達した時点で、所有主体が計画stemのバンドルを`atk plans commit`へ渡す。
-契機は起動形態ごとに`agent-toolkit/skills/write-plan/references/plan-file-storage.md`の`## 計画ファイルの保存と参照`が定め、本節は保存の契機を再掲しない。
+契機は起動形態ごとに`agent-toolkit/skills/atk-mode/references/plan-storage.md`の`## 計画ファイルの保存と参照`が定め、本節は保存の契機を再掲しない。
 同コマンドはprivate-notesへ移動して対象限定commit・pushを完了し、成功後に作業側を回収する。
 外側の運用がpushを禁止した場合は`--skip-push`で対象限定commitまでを完了し、作業側を回収する。
 失敗時は作業側を保持し、保存先が同内容なら再実行でcommit・pushを再開し、異内容なら上書きせず停止する。

@@ -207,7 +207,7 @@ def test_startup_input_is_delivered_only_to_main(source, host, actor, monkeypatc
         # 過去の実行のUWIの照会は開始前の契約であり、終了契約の案内に含めない。
         before, contract = context.split("終了契約", 1)
         assert "作業を始める前" in before and "references/answer-transitions.md" in before
-        assert "agent-toolkit:report-completion" in contract and "answer-transitions" not in contract
+        assert "playbooks/report-completion.md" in contract and "answer-transitions" not in contract
     else:
         assert 'kind="startup-input"' not in context
 
@@ -231,7 +231,7 @@ def test_large_startup_input_keeps_all_data_within_hook_cap(tmp_path, monkeypatc
     path = tmp_path / "startup-input.json"
     assert str(path) in context
     assert json.loads(path.read_text(encoding="utf-8")) == data
-    assert "references/answer-transitions.md" in context and "agent-toolkit:report-completion" in context
+    assert "references/answer-transitions.md" in context and "playbooks/report-completion.md" in context
 
 
 @pytest.mark.parametrize(("skill", "launches"), [("agent-toolkit:review-session", True), (submit.SKILL, False)])
@@ -243,7 +243,7 @@ def test_startup_input_asks_to_launch_only_existing_skill(skill, launches, monke
     context = _output(capsys)
     assert ("指定スキルを起動し" in context) is launches
     assert ("目的文が示す始め方" in context) is not launches
-    assert "agent-toolkit:report-completion" in context.split("終了契約", 1)[1]
+    assert "playbooks/report-completion.md" in context.split("終了契約", 1)[1]
 
 
 def test_batch_startup_input_separates_procedure_from_termination(monkeypatch, capsys):
@@ -253,4 +253,4 @@ def test_batch_startup_input_separates_procedure_from_termination(monkeypatch, c
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}), host="claude") == 0
     before, contract = _output(capsys).split("終了契約", 1)
     assert "references/answer-transitions.md" in before and "references/batch.md" in before
-    assert "agent-toolkit:report-completion" in contract and "batch.md" not in contract
+    assert "playbooks/report-completion.md" in contract and "batch.md" not in contract

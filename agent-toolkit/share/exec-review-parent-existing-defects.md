@@ -37,7 +37,7 @@
 - 保存済みAWIの正式名を受領したら、process-wi中は読込表の`immediate-fix.md`「開始後に追加されたWIの確認」の受領時の判定へ進む。
   共通の先送り条件に当たる場合を除き、今回の選定・担当・追加計画へ接続し、是正結果の受領まで既存の引き継ぎ記録で追跡する。
   同じセッション、process-wiでは同じ巡回での是正を原則とし、AWIの保存後も是正結果の検収まで継続する。
-  正式名は`../skills/report-completion/references/report-formats-completion.md`「作業完了報告のフォーマット」の`### 投入したWI`でも報告する
+  正式名は`../skills/atk-mode/references/report-formats.md`「作業完了報告のフォーマット」の`### 投入したWI`でも報告する
 - 担当から続行できない理由が返ったら、ユーザーの判断が要る事項を`agent-toolkit:atk-mode/playbooks/confirmation.md`に従って確認する（自律モードではUWIへ退避する）。
   投入先リポジトリ外のファイルが対象として返った場合は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`「続行できない理由の扱い」に従って投入先と要求の組を確定し直す
 

@@ -89,7 +89,7 @@ async def test_stable_plugin_root_shared_across_processes(
     version = manifest["version"]
     source = tmp_path / "distribution" / version
     shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules", "*_test.py"))
-    version_file = pathlib.Path("skills/managed-temp/SKILL.md")
+    version_file = pathlib.Path("skills/atk-mode/SKILL.md")
     original = (source / version_file).read_bytes()
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
     state_base = tmp_path / "runtime-state"

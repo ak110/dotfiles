@@ -51,11 +51,9 @@ def test_help_does_not_select_save_requirements(tmp_path):
 def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, report):
     """実読込表と保存本文を公開hookへ接続し、報告と通常保存の資料を区別する。"""
     root = pathlib.Path(__file__).resolve().parents[3]
-    sources = [root / "share" / "read-trigger-bootstrap.md", root / "skills" / "report-completion" / "SKILL.md"]
     rows = [
         row
-        for source in sources
-        for row in read_triggers.parse_tables(source, root)
+        for row in read_triggers.parse_tables(root / "share" / "read-trigger-bootstrap.md", root)
         if WI_SAVE_OPERATIONS & set(row.operations)
     ]
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
@@ -72,7 +70,7 @@ def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, rep
         },
     )
     assert result.returncode == 0 and not result.stderr
-    for name in ("report-formats-uwi.md", "uwi-format.md"):
+    for name in ("references/report-formats.md", "uwi-format.md"):
         assert (name in result.stdout) is report
     for name in ("wi-drafting.md", "draft-semantic-review.md", "states-and-dependencies.md", "origin-and-approval.md"):
         assert (name in result.stdout) is not report

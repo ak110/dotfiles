@@ -40,7 +40,7 @@ def _matched(source: pathlib.Path, tool_name: str, tool_input: dict) -> set[str]
     [
         ("share/read-trigger-bootstrap.md", _AWI, {"awi-body.md", "wi-drafting.md", "SKILL.md"}),
         ("share/read-trigger-bootstrap.md", _UWI, {"uwi-format.md"}),
-        ("skills/write-plan/SKILL.md", _PLAN, {"plan-file-standards.md", "plan-file-standards-template.md"}),
+        ("share/read-trigger-bootstrap.md", _PLAN, {"plan-format.md", "awi-body.md"}),
     ],
 )
 def test_draft_in_temporary_area_reaches_drafting_standards(source: str, content: str, expected: set[str]) -> None:
@@ -102,7 +102,7 @@ def _read_step(path: pathlib.Path) -> str:
     [
         (_AWI, ("skills/atk-mode/references/awi-body.md", "skills/atk-mode/playbooks/wi-drafting.md")),
         (_UWI, ("skills/atk-mode/references/uwi-format.md",)),
-        (_PLAN, ("skills/write-plan/references/plan-file-standards.md",)),
+        (_PLAN, ("skills/atk-mode/references/plan-format.md",)),
     ],
 )
 @pytest.mark.cpu_limit(

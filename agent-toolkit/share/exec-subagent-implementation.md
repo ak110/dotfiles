@@ -13,8 +13,8 @@
 | CI修正担当として原因を調べる前と、不具合の再現と修正後の確認を行う前 | `agent-basics:bugfix/SKILL.md` |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
-| 手動観測を保存する前 | `verification-evidence-observation.md` |
-| `検証結果`を書く前 | `verification-evidence-records.md` |
+| 手動観測を保存する前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
+| `検証結果`を書く前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
 | 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) |
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`（語の基準） |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` |
@@ -25,7 +25,7 @@
 **4.** 「担当種別ごとの修正」の基準を適用し、以下の順で実装・検証・自己検収・commitを終える。
 レビュー修正後は手順5、他は6へ進む。
 
-検証前に、受入条件と通常検証を`agent-toolkit:/share/verification-operations.md`に従って比較し、初回の実行単位・条件・出力を確定する。
+検証前に、受入条件と通常検証を`agent-toolkit:atk-mode/playbooks/verification.md`に従って比較し、初回の実行単位・条件・出力を確定する。
 対象定義と公開入力から選んだ起動形を、計画か訂正済み検証表と`検証結果`へ記す。
 試験では入力の由来、生産側・変換・最終消費を確認し、差し替えた境界と観測結果を`検証結果`へ記す。
 観測手段・環境とテストの有効性は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」と冒頭の基準を適用し、実行後は要求された結果を観測できた範囲を`検証結果`へ対応付ける。
@@ -38,7 +38,7 @@
    計画なしではAWIの要求・完成条件と引き継ぎ記録の採否・範囲を守る。
    WIの説明・例示を成果物へ転記する際は、`../skills/atk-mode/references/awi-body.md`「チェックの対象範囲」に従い、要件・認可・逐語指定を保持して、転記先の品質基準と妥当なlint診断へ対応する。
    エージェントが選んだ設計・検証手段は結果・品質・認可・制約を保って変更できる。
-   計画凍結は`plan-file-standards.md`に従う。
+   計画凍結は`agent-toolkit:atk-mode/references/plan-format.md`「計画ファイルの構成」に従う。
    実装中の同一計画内での変更受入と、統合後に要求が変わったWIの再開を区別する。
    後者は`../skills/process-wi/references/lane-planning-resume.md`に従い、現在worktreeの新計画へ切り替える。
 
@@ -65,13 +65,14 @@
    同一worktree内の書込担当間の所有権は「作業ツリーの保護」に従う。
    WIの要求を超える変更は`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」でメインへ返し、判断を受けてから実施する。
 
-6. Git管理外のファイルについては、各ファイルの最初の変更直前に現行の本文をmanaged-temp（`agent-toolkit:managed-temp`）へバックアップし、原本と複製の絶対パスの対応を引き継ぎ記録に残す（実行レビュー担当者が変更前後の差異を確認できるようにするため）。
+6. Git管理外のファイルについては、各ファイルの最初の変更直前に現行の本文をmanaged-temp（`agent-toolkit:atk-mode/playbooks/managed-temp.md`）へバックアップする。
+   原本と複製の絶対パスの対応は、実行レビュー担当者が変更前後の差異を確認できるよう、引き継ぎ記録に残す。
 
 7. 変更する前に作成規範を確認し、担当ファイルおよび直接影響範囲のみを変更する。
    生成元ファイルを変更した場合は、生成・配布手段も追随して更新する。
 
 8. 実装中に要件や外部仕様レベルの技術判断が生じた場合は、その時点の結論を計画があればレビュー指摘管理表へ、なければ引き継ぎ記録へ記録して実装を継続する。
-   計画なしで、`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」の4つの事項のどれかが決まらないと判明した場合は、計画の起草へ戻る。
+   計画なしで、`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」の4つの事項のどれかが決まらないと判明した場合は、計画の起草へ戻る。
    管理表へ行を足すときの書き出しは`review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
    ユーザーの選好や認可範囲の変更を要する事項に限り、`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」で報告し、回答が必要な単位で待機する。
    通知済みの事後承認対象について、レビュー修正によって実施内容に変更が生じた場合は、変更後の内容を再度同様の即時通知でメインへ送信する。
@@ -106,7 +107,7 @@
        動的に値を組み立てる生成コードの場合は、変更前の実行結果から旧値を列挙するか、生成元を利用するすべてのテストを実行する。
     2. `agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」に従い、探索で検出した試験と、生成値・共有ヘルパー・一覧全体を検査する利用側試験を実行対象へ引き継ぐ。
        実装ファイルに直接対応する試験に対象を限定せず、除外した候補は理由を記録する。
-    3. 計画または引き継ぎ記録で確定した検証対象と実装の現物を突き合わせ、`agent-toolkit:/share/verification-operations.md`の類型に基づいて漏れていた対象を追加する。
+    3. 計画または引き継ぎ記録で確定した検証対象と実装の現物を突き合わせ、`agent-toolkit:atk-mode/playbooks/verification.md`の類型に基づいて漏れていた対象を追加する。
     4. 検索語、検出結果、採否、テスト実行の採否、検証対象ごとの結果、および除外理由を、自身のセッションのmanaged-temp内のファイルへ保存し、`検証結果`から参照できるようにする。
     5. 検証の実行後、手順2および手順3で選定した消費側のテストごとに、保存された結果の合否を紐付ける。
        結果に含まれていないテストは追加して再実行し、紐付け情報を手順4の保存ファイルへ追記する。
@@ -116,13 +117,14 @@
     終了コード0は一致、1は不一致、それ以外は検索失敗を表す。
     検索の失敗を検索結果の不在の根拠にしない。
 
-15. 変更範囲の検証は、`exec.subagent.md`「操作の直前に判定する前提」で取得したコマンドを`verification-operations.md`「実行のしかた」に従って実行し、`verification-evidence-records.md`「完成条件証拠の検証記録」へ記録する。
+15. 変更範囲の検証は、`exec.subagent.md`「操作の直前に判定する前提」で取得したコマンドを`agent-toolkit:atk-mode/playbooks/verification.md`「実行のしかた」に従って実行する。
+    結果は同書「完成条件証拠の検証記録」へ記録する。
     同一worktree内で実装を書込担当へ分けた場合は、レーン担当がそのworktreeの全書込担当の書込終了後に実行する（`exec.subagent.md`「操作区分」の広範囲検証の段落）。
     別branch・worktreeへ分けた内部群では、各群が割当要求と直接影響範囲の焦点検証、通常hookを含むcommitと本文保存を終えた順に、レーン担当が`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従って独立文脈レビューを開始する。
-    他群の編集完了を初回レビューの開始条件にせず、各群の検証を`check-execution-operations-launch.md`「統合実行ツール経由の起動」の共有実行枠へ早期に投入する。
+    他群の編集完了を初回レビューの開始条件にせず、各群の検証を`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の共有実行枠へ早期に投入する。
     レーン担当は群ごとの検証対象の和集合と元の要求の対応を保持し、統合後は同じ本文・環境・契約の成功結果を再利用して、群間の契約、共有生成物、組合せ差分と未検証条件だけを追加検証する。
 
-16. 結果に影響を与える実装、テスト、入力値、および消費側の期待値を整合させ、`../skills/commit/references/commit-verification.md`「検証」に定めるタイミングで最終的な変更範囲の検証と有限回の手動観測を実施する。
+16. 結果に影響を与える実装、テスト、入力値、および消費側の期待値を整合させ、`../skills/atk-mode/playbooks/commit.md`「commitとフックの検証」に定めるタイミングで最終的な変更範囲の検証と有限回の手動観測を実施する。
     保存済みの成功結果と失敗限定の結果の統合は、`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
 
 17. 実装の完了前に、手順3で具体化した受入シナリオを受入シナリオ検証（`workflow-phases.md`）によって自己検収し、公開されている呼び出し手段と入力値を用いて期待結果と実際の結果が一致することを確認する。
@@ -139,11 +141,11 @@
 19. 公開された呼び出し手段を置き換えや廃止とした場合の完遂基準は、`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」に従う。
     単なる存在確認、モック、部分的なプローブ、または旧手段を併用した成功結果を検証結果の根拠としない。
 
-20. コミットの直前に`agent-toolkit:commit`に従う。
+20. コミットの直前に`agent-toolkit:atk-mode/playbooks/commit.md`に従う。
     該当コミットの実装単位に属する継続的な方針の保存と既存箇所の見直しの項目（計画またはAWIの`## 反映内容と反映先`。8節形式では`### 恒久化`と`### リファクタリング`の行）を差分と比較し、不足があれば同一コミットに含める。
     最後の実装コミットを作成する前には、それらのすべての項目がいずれかのコミットに対応していることを確認する。
     各コミットの前後のHEADを`atk run-script plan-progress --`へ渡し、進捗ログと同一のstemを持つ対応記録ファイルへ記録する（コミット失敗時は記録しない。最初の記録では専用worktreeの絶対パスとブランチ名を`--result`へ渡す）。
-    実装、レビュー修正、CI修正の各コミットにおいて、`agent-toolkit:commit`の`references/commit-wi-records.md`「WI実装commitの対応」に定める記録を残す。
+    実装、レビュー修正、CI修正の各コミットにおいて、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に定める記録を残す。
 
 ### 担当種別ごとの修正
 

@@ -86,8 +86,8 @@ continuations:
 | --- | --- |
 | 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/process-model-settings.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards-verification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/commit-wi-records.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/atk-mode/references/plan-format.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/atk-mode/references/commit-wi-records.md` |
 
 ## 読込表
 
@@ -98,9 +98,9 @@ continuations:
 | 担当種別によらず、期待からの逸脱を認識して診断・訂正・対処を始める前 | `agent-basics:bugfix/SKILL.md` | | |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | | |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | | |
-| 受入シナリオや完成条件を手動で観測する前（実装の途中の観測を含む） | `verification-evidence-observation.md` | | |
+| 受入シナリオや完成条件を手動で観測する前（実装の途中の観測を含む） | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 取得した変更範囲の検証コマンドを使う前 | `agent-basics:check-execution/references/verification-scope-selection.md` | | |
-| `検証結果`を書く前 | `verification-evidence-records.md` | | |
+| `検証結果`を書く前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | | |
 | `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration.subagent.md` |
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`（語の基準） | | |
@@ -113,10 +113,10 @@ continuations:
 - 既存ファイル全体の完全上書きや文字列置換をする直前: 対象ファイルの最新の現行本文を取得する（自身が作成したファイルも含む）。
 - ファイルを編集する直前: プロジェクト規範が定める、編集対象パスに対応した必須スキルを起動する。
 - 変更範囲の検証を実行する直前: 計画ありでは訂正済みの検証表の検証行（無ければ計画の`## 検証`にある`変更範囲の検証`行）から、計画なしでは引き継ぎ記録からコマンドを取得する。
-  訂正済み検証表の保持と引き継ぎは、`../skills/write-plan/references/plan-file-standards-verification.md`「検証」に従う。
+  訂正済み検証表の保持と引き継ぎは、`../skills/atk-mode/references/plan-format.md`「検証」に従う。
   取得したコマンドを使う前に、`agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」で、実際の差分の契約から求める利用側の試験が含まれるかと、保存済みの結果を再利用できるかを判定する。
   足りない利用側を加え、足さなかった残りを記録する。
-- 受入シナリオや完成条件を手動で観測する直前: `verification-evidence-observation.md`「手動観測の保存」に従う。
+- 受入シナリオや完成条件を手動で観測する直前: `agent-toolkit:atk-mode/playbooks/verification.md`「手動観測の保存」に従う。
 
 ## 操作区分
 
@@ -146,7 +146,7 @@ WIの`担当モデル.実装担当`指定がなければ`chores`で起動する�
 レーンが所有関係表を確定し、確定済みレーンcommitから各資源を作り、各worktreeのwriterは1名とする。
 各担当は自worktreeのcommit・Gitフックとフック生成物の同一commitへの包含を所有する。
 粒度・同時数に固定上限を設けず、`../skills/delegation/references/routing-units.md`「委譲単位の確定」で決め、契約上関連する出力元・期待テストを同じグループへ置く。
-レーンは担当の終了・clean状態・commit・差分・版付き検証結果を確認して順次統合し、前後HEADを`../skills/commit/references/commit-wi-records.md`「WI実装commitの対応」に従って記録する。
+レーンは担当の終了・clean状態・commit・差分・版付き検証結果を確認して順次統合し、前後HEADを`../skills/atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従って記録する。
 統合後は重複生成物を原本から同期し、対象語の残存・直接影響範囲・変更範囲の検証を終えて一時worktree・branchを回収する。
 OID変化だけで検証記録を捨てず、結果が変わり得る項目と統合後に初めて成立する項目だけを再観測する。
 内部グループは別レーン・別要求とせず、計画・検収・commit対応・統合・メインへの返却はレーンが所有する。
@@ -155,7 +155,7 @@ OID変化だけで検証記録を捨てず、結果が変わり得る項目と�
 レーンは全書込終了後に、`agent-basics:check-execution/references/verification-scope.md`の上限に従う変更範囲の検証を1回実行する。
 CIが全体を担う場合は、関連モジュールまでを対象とし、パッケージ全体のpytest・リポジトリ全体の型検査はCIに委ねる。
 後のレビュー修正・統合では、結果に影響する差分が生じた範囲だけを再実行する。
-同じOSアカウントの検証は、`check-execution-operations-launch.md`「統合実行ツール経由の起動」で定義する共有実行枠の数までしか同時に動かないため、書込途中で重ねると他レーンを待たせ、最終状態も検証できない。
+同じOSアカウントの検証は、`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」で定義する共有実行枠の数までしか同時に動かないため、書込途中で重ねると他レーンを待たせ、最終状態も検証できない。
 
 大量のファイル編集では、スクリプトで完結する処理はモデルを起動せずに実行する。
 定型走査・確定コマンド・判断が一意な表記変更は`chores_fast`、中規模の確定済み書込と確定した比較観点による一次確認は`chores`へ渡す（工程の区分は`../skills/delegation/references/process-model-settings.md`「工程別モデル設定」）。

@@ -43,7 +43,7 @@ process-wiの巡回の所要時間目標と終了条件も扱う。
 | Claude Code・Codex本体のバイナリを検索する前 | `references/host-binaries.md` | | |
 | コミットメッセージ方針や`.gitmessage`を編集する前 | `references/commit-message.md` | | |
 | コミットメッセージのtypeを判定する時 | [commit-types.md](../../../docs/development/commit-types.md)（判定例） | | |
-| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution`の`references/verification-scope.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
+| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution`の`references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/atk-mode/playbooks/verification.md` |
 
 ## 振り返りの参照文書
 

@@ -127,7 +127,7 @@ class TestGithubCiConfiguration:
         result = _wait_for_ci_without_runs("owner/repository")
         assert result == wait_ci.EXIT_NO_CI_CONFIG
         # CI定義が無い場合は、CI検収を不要として進めてよいことを次の操作で示す。
-        assert "次の操作: CI検収は不要として次の工程へ進む" in capsys.readouterr().err
+        assert "次の操作: CI定義なしとして、ローカル全体検証の成功と組にして次の工程へ進む" in capsys.readouterr().err
 
 
 class TestGitlabCiExclusion:

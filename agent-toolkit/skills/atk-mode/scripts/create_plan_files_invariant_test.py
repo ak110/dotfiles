@@ -1,0 +1,150 @@
+"""計画作成処理とエージェント向け文書の横断契約を検証する。"""
+
+import argparse
+import json
+import pathlib
+import re
+import shlex
+
+import create_plan_files
+import pytest
+from create_plan_files_test import (  # pylint: disable=import-error,unused-import
+    _make_repo,
+    _source,
+)
+
+from agent_toolkit import atk
+from agent_toolkit._atk import run_script
+from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.normative_contract import read_contract
+
+
+def test_lane_planning_document_command_creates_plan_from_another_worktree(
+    repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """起草手順4の実物の書式へ案件値を指定すると、異なるcwdから対象repoの計画を作成できる。"""
+    source = _source(repo, tmp_path)
+    guide = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
+    text = read_contract(guide, guide.parents[3], ("lane-planning-drafting.md", "計画の起草"))
+    matched = re.search(r"`(atk run-script plan-create -- [^`]+)`", text)
+    assert matched is not None
+    command = matched[1]
+    for placeholder, value in {
+        "<計画本文の絶対パス>": str(source),
+        "<レーン識別子>": "lane-01",
+        "<計画メタ情報の対象リポジトリ>": str(repo),
+    }.items():
+        assert placeholder in command
+        command = command.replace(placeholder, shlex.quote(value))
+    other = tmp_path / "other"
+    other.mkdir()
+    git_repository.init_repository(other)
+    monkeypatch.chdir(other)
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(shlex.split(command)[1:])
+    output = capsys.readouterr()
+    assert not output.err
+    created = pathlib.Path(output.out.strip())
+    assert created.is_file() and f"`{repo.resolve()}`" in created.read_text(encoding="utf-8")
+
+
+@pytest.fixture(name="repo")
+def repo_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """構造の判定に使うGitリポジトリを準備する。"""
+    return _make_repo(tmp_path, monkeypatch)
+
+
+def _lane_plan_creation_step() -> str:
+    """レーン担当が読む計画作成手順の本文を返す。"""
+    task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
+    content = read_contract(task_path, task_path.parents[3], ("lane-planning-drafting.md", "計画の起草"))
+    steps = re.split(r"\n(?=\*\*\d+\.\*\* )", content)
+    matches = [step for step in steps if re.match(r"\*\*\d+\.\*\* ", step) and "plan-create" in step]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """計画作成手順が指示する引数名を現行CLIが受理する。"""
+    step = _lane_plan_creation_step()
+    source = _source(repo, tmp_path)
+    placeholders = {"--main-source": str(source), "--lane": "lane-02"}
+    argv: list[str] = []
+    for option, value in placeholders.items():
+        assert f"{option} <" in step, f"計画作成手順が{option}を指示していない"
+        argv.extend([option, value])
+    argv.extend(["--home", str(tmp_path / "home"), "--work-dir", str(repo)])
+
+    result = create_plan_files.main(argv)
+
+    captured = capsys.readouterr()
+    assert result == 0, captured.err
+    created = [pathlib.Path(line) for line in captured.out.splitlines() if line]
+    assert len(created) == 1
+    assert all(path.exists() for path in created)
+
+
+def test_document_template_supports_create_progress_and_commit_lookup(
+    repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """実在文書の雛形を記入し、公開操作だけで作成、進捗と対応の保存、取得まで進む。"""
+    text = (pathlib.Path(__file__).resolve().parents[1] / "references" / "plan-format.md").read_text(encoding="utf-8")
+    template = text.split("## 初回起草の雛形\n", 1)[1].split("```md\n", 1)[1].split("\n```", 1)[0]
+    content = re.sub(r"<[^>]+>", "案件の記入内容", template).replace("/absolute/repository/path", str(repo))
+    notes = tmp_path / "private-notes"
+    (notes / "processing").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    wi = "20260831-000000-001.md"
+    (notes / "processing" / wi).write_text(
+        "---\nsource: test\n---\n# 変更\n\n## 適用範囲\n\n対象の公開契約。\n", encoding="utf-8"
+    )
+    source = tmp_path / "template.md"
+    source.write_text(content + "\n", encoding="utf-8")
+    args = argparse.Namespace(
+        script_name="plan-create",
+        script_args=[
+            "--main-source",
+            str(source),
+            "--name",
+            "template",
+            "--work-dir",
+            str(repo),
+            "--home",
+            str(tmp_path / "home"),
+        ],
+    )
+    assert run_script.dispatch(args) == 0
+    capsys.readouterr()
+    (plan,) = (tmp_path / "home" / ".claude" / "plans").glob("*.md")
+    git_repository.run_git(
+        repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "base"
+    )
+    previous = git_repository.run_git(repo, "rev-parse", "HEAD").stdout.strip()
+    git_repository.run_git(
+        repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "change"
+    )
+    args.script_name = "plan-progress"
+    args.script_args = [
+        str(plan),
+        "--completed-step",
+        "実装",
+        "--result",
+        "成功",
+        "--commit",
+        "HEAD",
+        "--previous-head",
+        previous,
+        "--worktree",
+        str(repo),
+        "--awi",
+        wi,
+    ]
+    assert run_script.dispatch(args) == 0
+    assert "実装 | 成功" in plan.read_text(encoding="utf-8")
+    capsys.readouterr()
+    args.script_name = "plan-commits"
+    args.script_args = [str(plan), "--worktree", str(repo), "--awi", wi]
+    assert run_script.dispatch(args) == 0
+    assert json.loads(capsys.readouterr().out)["awi"] == wi

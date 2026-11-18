@@ -14,7 +14,7 @@ WIの記入欄の是正は、投入したUWIと`atk wi`の`start-processing`・`
 候補IDを使わず報告の行数や見送りの件数を数える案は、どの必須の候補が欠けたかを示せないため採らない。
 Stopで「当てはめ誤り」などの語を禁じる案は、言い換えで通過し正当な根拠にも誤検出する言い回しの判定に当たるため採らない。
 人が読む`candidates.md`をStopが解析する案は、書式を変えるたびに判定が成立しなくなるため採らない。
-2026年10月11日のユーザー指示でStopによる報告本文の判定を撤去し、候補の扱いは報告を書くメインが`agent-toolkit:report-completion`の`references/report-formats.md`に従って確かめる（[design-hooks.md](design-hooks.md)「終了工程の証拠」）。
+2026年10月11日のユーザー指示でStopによる報告本文の判定を撤去し、候補の扱いは報告を書くメインが`agent-toolkit:atk-mode/references/report-formats.md`に従って確かめる（[design-hooks.md](design-hooks.md)「終了工程の証拠」）。
 
 2026年10月15日のユーザー指示により、候補の評価責任と再発防止策の新設を分ける。
 `session_review_prepare_candidates.py`の`MANDATORY_KINDS`とJSONの`mandatory_candidates`は既存の候補種別・ID対応を保ち、表示は評価必須を示す。

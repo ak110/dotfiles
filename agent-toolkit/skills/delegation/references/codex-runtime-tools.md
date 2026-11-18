@@ -27,7 +27,7 @@ agent-toolkitの文書に登場するClaude Code向けのツール名は、Codex
 | `Read`・`Write`・`Edit` | Codexのネイティブ編集機能を使用する |
 | `Bash`・`Grep`・`Glob` | シェル経由のネイティブ機能を使用する |
 | `WebFetch`・`WebSearch` | CodexのWeb機能を使用する |
-| `EnterPlanMode`・`ExitPlanMode` | `agent-toolkit:write-plan`の`references/codex-runtime.md`に従う |
+| `EnterPlanMode`・`ExitPlanMode` | `agent-toolkit:atk-mode/playbooks/write-plan.md`に従う |
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 公開機能が存在しない場合は、手動運用またはユーザーへの依頼へ切り替える |
 
 Codexネイティブ委譲は`spawn_agent`で起動する。

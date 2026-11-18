@@ -13,7 +13,7 @@
 | 入力、操作区分、phaseの対象、返却値を確かめる時（操作対象外: 自身の返却形式の確認） | `exec.subagent.md` |
 | `CI修正担当`として原因を調べる前 | `agent-basics:bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-inputs.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/history-rewrite-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/atk-mode/playbooks/history-rewrite.md` |
 
 ## 担当種別ごとの修正
 
@@ -37,7 +37,7 @@
   原因調査の着手前に`agent-basics:bugfix`を起動し、5つの問いをCI記録の原因分析結果に適用する。
   原因を特定できない場合は是正コミットとして返さず、実施した比較検証、残された可能性、および作成した診断用コードの変更内容を、推定である旨を明記して報告する。
   診断コードを追加する場合は、CI記録が紐付けている競合仮説、観測事項、採取対象をあらかじめ確認し、識別に寄与しない網羅的な列挙や走査を避け、採取対象を絞り込んで出力量を抑える。
-  修正手順は`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」におけるCI失敗の分類に従う。
+  修正手順は`agent-toolkit:atk-mode/playbooks/publish.md`「pushと監視」におけるCI失敗の分類に従う。
   原因コミットへ修正を取り込んだ場合は、書き換え前後のOIDの対応関係と`git range-diff`の実行結果を返す。
   原因となった失敗と同じ仕組みを持つ箇所のうちCI記録で認可されていない対象については、`agent-basics:bugfix`の問い4（広がり）で見つけた担当の外の対象として、修正対象と修正の方向性を委譲元へ報告する。
   CIログの有無、再現性、外部の一時的な障害、再実行の認可状況や回数によってこの報告を省略することはない。
@@ -45,7 +45,7 @@
 
 ## レビュー修正の履歴統合
 
-修正の適用方法（fixupの作成、元コミットへの対応付け、autosquashの実行単位）は、`../skills/commit/references/history-rewrite-selection.md`「修正方法の選択」に従い、autosquashはレビューラウンドごとに実行する。
+修正の適用方法（fixupの作成、元コミットへの対応付け、autosquashの実行単位）は、`../skills/atk-mode/playbooks/history-rewrite.md`「修正方法の選択」に従い、autosquashはレビューラウンドごとに実行する。
 fixupの対象が直前の1コミットのみである場合は、autosquashの代わりに`git commit --amend`を使用してもよい。
 
 - 履歴を書き換える前に、対象worktreeがクリーンであること、書き換え対象が未pushであること、および操作直前に確認した書き換え対象のOID群が自身のレーンのコミットのみであることを確認し、別のコマンド呼び出しで同書「履歴確認の起動形」の`git log`を実行する。

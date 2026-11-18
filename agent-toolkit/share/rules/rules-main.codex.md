@@ -15,7 +15,7 @@ Codexの全エージェントに適用する差分は`rules-common.codex.md`が�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../skills/report-completion/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../skills/atk-mode/playbooks/report-completion.md` |
 
 ## ユーザー確認と終了
 
@@ -32,7 +32,7 @@ Plan modeで同期型の`request_user_input`を利用できる場合は、回答
 自律モードでは回答期限のない実行環境として、同スキルの「手段の選択」の表に従う。
 権限設定やauto mode classifierによる拒否への確認には、同スキルが定める例外規定を適用する。
 
-成果作業を終える通常の`final`は`agent-toolkit:report-completion`で確定した作業完了報告の本文として届ける。
+成果作業を終える通常の`final`は`agent-toolkit:atk-mode/playbooks/report-completion.md`で確定した作業完了報告の本文として届ける。
 `final`を送る前に原要求全体と実行可能な残工程を突き合わせる。
 作業中の質問・状況照会への回答と途中報告は`commentary`で届け、認可済みで実行可能な元の作業へ同じターンで戻る。
 登録・レビュー・公開などの局所結果、一部の調査結果、可能性の説明、計画は報告本文の入力であり、それだけで依頼全体を完了扱いにしない。

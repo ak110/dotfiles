@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 基準の参照時 | `exec-subagent-implementation.md` | | |
-| 検証結果を記録する前 | `verification-evidence-records.md` | | |
+| 検証結果を記録する前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 基準の参照時 | `reader-fit-review.parent.md` | | |
 | 初回起動前 | `../skills/delegation/references/process-model-settings.md` | | |
 | 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` | | |
@@ -117,7 +117,7 @@ rebaseでコミットOIDだけが変わった場合は再レビュー不要で�
 
 **5.** 入力と所属を点検してから、確定した単位でレビューを起動する。
 
-証拠の引渡しは`verification-evidence-records.md`「完成条件証拠の検証記録」に従う。
+証拠の引渡しは`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」に従う。
 通知変更のレビューには、同記録が対応付ける最終配送本文の保存先と入力・版・ホスト・生成元を引き渡す。
 レビュー担当が合成済みの全文を開けることを確認し、ソースのリテラルや合格総数だけで代用しない。
 起動した後もレーンは同じ作業ツリーで別の修正を続けてよい。

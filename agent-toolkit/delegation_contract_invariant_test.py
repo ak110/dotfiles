@@ -90,7 +90,7 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     operations = (root / "share" / "exec-review-operations.md").read_text(encoding="utf-8")
     launchers = [
         root / "share" / "exec.parent.md",
-        root / "skills" / "write-plan" / "SKILL.md",
+        root / "skills" / "atk-mode" / "playbooks" / "write-plan.md",
         root / "skills" / "process-wi" / "references" / "single-lane.md",
         root / "skills" / "process-wi" / "references" / "termination-ci-failure.md",
     ]

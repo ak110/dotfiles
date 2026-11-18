@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## report-completion：最終報告送達後のターン終了：2026年10月9日
+## agent-toolkit/skills/atk-mode/playbooks/report-completion.md：最終報告送達後のターン終了：2026年10月9日
 
 出所はリポジトリ外に保存した対照の記録である。
 本記録の作成時にモデルは再実行していない。

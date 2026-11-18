@@ -1,4 +1,4 @@
-"""`push-and-ci.md`が示すwait_ciの起動例を、wait_ciの引数解析へ通す不変条件テスト。
+"""`references/ci.md`が示すwait_ciの起動例を、wait_ciの引数解析へ通す不変条件テスト。
 
 手順書の起動例とスクリプトの引数定義は別々に編集されるため、一方だけを変えると手順どおりの起動が失敗する。
 """
@@ -17,7 +17,7 @@ import pytest
 
 from agent_toolkit import wait_ci
 
-_DOCUMENT = pathlib.Path(__file__).resolve().parents[1] / "skills/commit/references/push-and-ci.md"
+_DOCUMENT = pathlib.Path(__file__).resolve().parents[1] / "skills/atk-mode/references/ci.md"
 
 
 class _ParsedExample(Exception):
@@ -25,7 +25,7 @@ class _ParsedExample(Exception):
 
 
 def _documented_wait_ci_examples() -> list[str]:
-    """`push-and-ci.md`が示す`atk run-script wait-ci --`の起動例を、行の継続を結合して返す。"""
+    """`references/ci.md`が示す`atk run-script wait-ci --`の起動例を、行の継続を結合して返す。"""
     text = re.sub(r"\\\n\s*", " ", _DOCUMENT.read_text(encoding="utf-8"))
     examples = re.findall(r"atk run-script wait-ci -- [^`\n]+", text)
     # `--help`の案内は受理形式の確認手段であり、待機・baseline作成の起動例ではない。

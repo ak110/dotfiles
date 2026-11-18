@@ -12,7 +12,7 @@
 | 所要時間の基準を適用する前 | `agent-toolkit:review-session/references/duration-analysis.md` | | |
 | 対象の分析を始める前 | `session-analysis.md` | | |
 | AWIを起草・独立検収する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`、`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/wi-draft-review.parent.md` |
-| 結果報告の作成・保存に入る前に、メインが起動する | `../../report-completion/SKILL.md` | 判断 | `skill:report-completion` |
+| 結果報告の作成・保存に入る前に、メインが読む | `agent-toolkit:atk-mode/playbooks/report-completion.md` | | |
 
 ## 起動
 
@@ -70,7 +70,7 @@ batch自身のセッションも振り返り対象に含める。
    目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
 4. 終了前の保存漏れを防ぐため、AWIの保存を検収し、対象一覧、登録AWI・見送り・費用確認を対象IDと対応付けて報告本文を確定する。
    部分分析の対象は、その限界と欠測の記録ID・物理行・件数も同じ報告本文に明示する。
-5. batchのメインが`agent-toolkit:report-completion`を起動し、その工程で振り返り結果報告書式を使って結果を事後承認型UWIへ1件保存する。
+5. batchのメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`を読み、その工程で振り返り結果報告書式を使って結果を事後承認型UWIへ1件保存する。
    Claude Codeでは`Skill`で起動し、Codexでは同スキルの`SKILL.md`を絶対パスで取得する。
    sourceは `run-skill`、scopeは `agent-toolkit:review-session batch`、本文frontmatterは `run_skill_report: true` とし、manifestの `target_repo` を `--target-repo` へ明示する。
    同一実行の報告があれば同じUWIを更新して1件に保つ。

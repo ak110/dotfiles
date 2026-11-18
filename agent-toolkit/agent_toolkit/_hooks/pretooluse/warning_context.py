@@ -38,7 +38,7 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
     if len(encoded) <= limit:
         return context
     receipts = notice.delivery_receipts(context)
-    read_manual = "agent-toolkit:managed-temp"
+    read_manual = "agent-toolkit:atk-mode/playbooks/managed-temp.md"
     # 案内の提示と資料本文の取得は別の記録。参照の提示では本文を取得済みにしない。
     with notice.notice_cycle(session_id, "codex-pretooluse-context", agent_id):
         format_notice = notice.formatter("pretooluse")

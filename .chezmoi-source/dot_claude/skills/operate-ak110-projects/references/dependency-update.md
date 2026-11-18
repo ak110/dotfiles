@@ -20,7 +20,7 @@
 依存更新の行を置く。
 更新する場合も据え置く場合も、対象プロジェクト、判定対象、判定結果、
 予定する更新範囲または据え置く範囲と理由、認可元である本スキル名・本節名を記す。
-由来・採否は`agent-toolkit:write-plan`の`agent-toolkit:write-plan/references/plan-file-standards-scope.md`「実施内容」の書式を使う。
+由来・採否は`agent-toolkit:atk-mode/references/plan-format.md`「実施内容」の書式を使う。
 更新は計画作成後、計画対象の編集前に実行する。
 計画前の診断専用実行、隔離worktree、差分の退避、同じ依存更新の再実行は追加せず、この1回の実行で完了とする。
 

@@ -47,7 +47,7 @@ class TestCurrentPlanFilePathTracking:
             {
                 "session_id": sid,
                 "tool_name": "Bash",
-                "tool_input": {"command": "uv run --project /plugin /plugin/skills/write-plan/scripts/create_plan_files.py"},
+                "tool_input": {"command": "uv run --project /plugin /plugin/skills/atk-mode/scripts/create_plan_files.py"},
                 "tool_response": {"stdout": f"{plan_path}\n"},
             },
             state_dir=tmp_path,
@@ -65,7 +65,7 @@ class TestCurrentPlanFilePathTracking:
         command = (
             "echo done"
             if scenario == "other-command"
-            else "uv run --project /plugin /plugin/skills/write-plan/scripts/create_plan_files.py"
+            else "uv run --project /plugin /plugin/skills/atk-mode/scripts/create_plan_files.py"
         )
         _run(
             {

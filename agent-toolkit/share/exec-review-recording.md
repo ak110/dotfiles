@@ -6,7 +6,7 @@
 完成条件証拠とは、実行レビュー担当が返却メッセージに記述する、各条件の判定結果をまとめた行の集まりである。
 判定とその根拠は、実行レビュー担当自身だけが記述する。
 レビューイーに追加の確認や証拠の補完を求めた場合でも、補完された情報をもとに判定し記入するのは実行レビュー担当である。
-実装担当やメインエージェントが提示する`検証結果`（`verification-evidence-records.md`「完成条件証拠の検証記録」）は判定材料に過ぎず、最終的な判定は実行レビュー担当自身が下す。
+実装担当やメインエージェントが提示する`検証結果`（`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」）は判定材料に過ぎず、最終的な判定は実行レビュー担当自身が下す。
 
 内部群のレビューでは、固定した保存HEAD、割当要求、直接影響集合と成功証拠を基準に、その群が被覆した元WIの条件と未達・割当外の条件を区別して記録する。
 群の局所的な成功を元WI全体の`達成`へ読み替えず、割当外の条件は`exec-review-recording-contract.md`「記録する行と要求単位」に従って除外理由の一致を判定する。
@@ -20,7 +20,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` |
+| 未コミット検証の結果を適用判定する前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
 | 返却形式を確認する時（操作対象外: 自身の返却形式の確認） | `exec-review.parent.md` |
 | 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 | 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` |

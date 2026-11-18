@@ -713,22 +713,22 @@ def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
     for suffix in (
         "skills/process-wi/references/selection-procedure.md",
         "skills/atk-mode/playbooks/wi-drafting.md",
-        "skills/write-plan/SKILL.md",
+        "skills/atk-mode/playbooks/write-plan.md",
         "share/single-lane-execution.md",
         "share/exec-review.parent.md",
-        "share/verification-evidence.md",
-        "skills/commit/references/publish.md",
-        "skills/report-completion/SKILL.md",
+        "skills/atk-mode/playbooks/verification.md",
+        "skills/atk-mode/playbooks/publish.md",
+        "skills/atk-mode/playbooks/report-completion.md",
     ):
         assert any(str(target.path).endswith(suffix) for target in targets), suffix
     for suffix, condition in (
         ("selection-procedure.md", "対象WIの選定"),
-        ("write-plan/SKILL.md", "計画の要否"),
+        ("playbooks/write-plan.md", "計画の要否"),
         ("exec-review.parent.md", "実装に着手する前"),
-        ("verification-evidence.md", "検証結果の記録前"),
+        ("playbooks/verification.md", "検証結果の記録前"),
         ("review-loop-coordination.md", "レビュー指摘への対応"),
-        ("commit/references/publish.md", "公開する前"),
-        ("report-completion/SKILL.md", "終了処理へ進む前"),
+        ("playbooks/publish.md", "公開する前"),
+        ("playbooks/report-completion.md", "終了処理へ進む前"),
     ):
         assert any(
             any(str(target.path).endswith(suffix) for target in row.targets)

@@ -9,7 +9,7 @@
 これにより、分析内容の記述をWI側の1か所に集める。
 複数のリポジトリで共通する分析は、`agent-toolkit:atk-mode/references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従って代表AWIへ集約できる。
 固有AWIにある正式名・target_repo・指定箇所から記録と確認結果を取得し、リポジトリ固有の事実と処置の適用は個別に確かめる。
-計画ファイルの本体に`## 原因分析`を置く条件は`agent-toolkit:write-plan/references/plan-file-standards-verification.md`「原因分析」に従う。
+計画ファイルの本体に`## 原因分析`を置く条件は`agent-toolkit:atk-mode/references/plan-format.md`「原因分析」に従う。
 別ファイル（`<計画名>.bugs.md`）は、保存済みの計画の読み取りでだけ受け付ける。
 
 AWIの`## 原因分析`節と計画ファイルの`## 原因分析`節のバグ単位は、どちらも5行の記録で書く。
