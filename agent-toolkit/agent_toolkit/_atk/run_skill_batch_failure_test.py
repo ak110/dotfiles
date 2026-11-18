@@ -270,3 +270,43 @@ def test_failure_details_keep_previous_scope_and_redact_error(tmp_path):
     details = json.loads("\n".join(line[4:] for line in body.splitlines()[2:]))
     assert details["targets"][0]["previous_scope"] == scope
     assert "不足: 範囲" in details["error"] and "hunter2" not in body
+
+
+def _log_details(tmp_path, text):
+    log = tmp_path / "model.log"
+    log.write_text(text, encoding="utf-8")
+    manifest = {"targets": [], "error": "run-skill-exit-7", "exit_code": 7, "log_path": str(log)}
+    body = run_skill_batch_evidence.failure_details(manifest, run_skill_batch.PLUGIN_ROOT)
+    return body, json.loads("\n".join(line[4:] for line in body.splitlines()[2:]))["log"]
+
+
+_HUGE = "y" * 200_000
+_LONG_EVENT = '[stdout] {"type":"result","is_error":true,"detail":"' + "y" * 3000 + '"}\n'
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"引数: {_HUGE}\n[stderr] 終了\n",
+        f"[stderr] 開始\n[stderr] {_HUGE}\n",
+        "[stderr] 開始\n" + _LONG_EVENT * 30,
+        f"引数: {_HUGE}\n" + _LONG_EVENT * 30 + f"[stderr] {_HUGE}\n",
+    ],
+    ids=["header", "tail", "events", "all"],
+)
+def test_log_diagnostics_stay_within_previous_tail_budget(tmp_path, text):
+    """巨大な行や大量の診断イベントがあっても、ログの抜粋は変更前の末尾の上限（8192バイト）を超えない。"""
+    _body, details = _log_details(tmp_path, text)
+    excerpt = [*details["header"], *details["error_events"], details["tail"]]
+    assert sum(len(line.encode()) for line in excerpt) <= 8192
+    assert any(_HUGE[:100] in line for line in excerpt)
+
+
+def test_log_diagnostics_redact_before_truncating_lines(tmp_path):
+    """行を切り詰める位置が資格情報の途中にあっても、資格情報の先頭を残さない。"""
+    token = "ghp_" + "A" * 40
+    prefix = '{"type":"result","is_error":true,"detail":"'
+    filler = "x" * (1990 - len(prefix) - len(" https://"))
+    payload = f"{prefix}{filler} https://{token}@github.com/owner/repo" + '"}'
+    body, _details = _log_details(tmp_path, f"[stdout] {payload}\n[stderr] 終了 https://{filler}{token}@github.com\n")
+    assert "ghp_" not in body
