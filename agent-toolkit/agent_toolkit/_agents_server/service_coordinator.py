@@ -331,7 +331,8 @@ class ServiceCoordinator:
                 current = self._current()
             await self.gate.observe_current(current)
         finally:
-            # どの段が失敗しても後続の解除を続け、待機側を解くreleasedは必ず最後に立てる。例外は連鎖して_supervisedが記録する。
+            # どの段が失敗しても後続の解除を続け、待機側を解くreleasedは全段の解除の後に立てる。
+            # 例外は連鎖して_supervisedが記録する。
             try:
                 await self.projections.thaw(token)
             finally:
