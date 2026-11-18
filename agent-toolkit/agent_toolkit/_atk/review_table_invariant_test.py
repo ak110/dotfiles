@@ -7,12 +7,13 @@ import re
 import pytest
 
 from agent_toolkit._atk import review_table as table
+from agent_toolkit._atk import review_table_cli
 from agent_toolkit._testing.normative_contract import read_contract
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="atk")
-    table.build_parser(parser.add_subparsers(dest="command"))
+    review_table_cli.build_parser(parser.add_subparsers(dest="command"))
     return parser
 
 

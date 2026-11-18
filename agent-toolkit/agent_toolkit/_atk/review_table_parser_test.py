@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import review_table as table
+from agent_toolkit._atk import review_table_cli
 from agent_toolkit._common import next_action
 from agent_toolkit._testing.normative_contract import read_contract
 from agent_toolkit._testing.review_table_support import (
@@ -97,7 +98,7 @@ def test_dispatch_rejects_removed_review_write_paths(tmp_path: pathlib.Path, nam
     args = argparse.Namespace(review_table_subcommand="init", path=str(tmp_path / name))
 
     with pytest.raises(ValueError, match="旧形式のレビュー指摘管理表は読み取り専用"):
-        table.dispatch(args)
+        review_table_cli.dispatch(args)
 
 
 @pytest.mark.parametrize("track", ("plan-review", "implementation-review", "plan-conformance", "independent"))
@@ -110,7 +111,7 @@ def test_dispatch_rejects_writing_table_with_legacy_track(tmp_path: pathlib.Path
     args = argparse.Namespace(review_table_subcommand="respond", path=str(path))
 
     with pytest.raises(ValueError, match="旧review typeは読み取り専用"):
-        table.dispatch(args)
+        review_table_cli.dispatch(args)
 
     assert path.read_bytes() == original
 

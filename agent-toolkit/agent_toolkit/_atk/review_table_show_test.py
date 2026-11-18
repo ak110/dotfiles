@@ -10,6 +10,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import review_table as table
+from agent_toolkit._atk import review_table_format
 from agent_toolkit._common import next_action
 from agent_toolkit._testing import review_bodies
 from agent_toolkit._testing.review_table_support import _COMPAT_TRACK, _TRACK, _isolated_home
@@ -271,7 +272,7 @@ def test_show_rejects_malformed_rows_before_output(
     assert path.read_text(encoding="utf-8") == raw
 
 
-@pytest.mark.parametrize("level", table.LEVEL_VALUES)
+@pytest.mark.parametrize("level", review_table_format.LEVEL_VALUES)
 def test_add_accepts_all_level_values_and_respond_preserves_level(tmp_path: pathlib.Path, level: str) -> None:
     """追加は全指摘レベルを受理し、応答更新はlevelを保持する。"""
     path = tmp_path / f"{level}.tsv"
@@ -389,7 +390,10 @@ def test_public_summary_guides_history_without_deciding_issue_identity(
 def test_public_summary_omits_history_when_comparison_has_no_input(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """初回・現在の指摘なし・同trackの過去指摘なしでは件数だけを返す。"""
+    """初回・現在の指摘なし・同trackの過去指摘なしでは過去指摘との比較の項目を返さない。
+
+    現在の指摘が無くても前回指摘の再確認は必要なため、同trackの過去指摘がある場合は再確認の項目だけを返す。
+    """
     path = tmp_path / "review.exec-review.tsv"
     table.add(path, "1", "independent" if case == "other-track" else _TRACK, "以前", "指摘")
     if case == "other-track":
@@ -400,5 +404,7 @@ def test_public_summary_omits_history_when_comparison_has_no_input(
         atk.main(["review-table", "show", str(path), f"--round={current_round}", "--format=summary"], home=tmp_path)
     assert result.value.code == 0
     summary = json.loads(capsys.readouterr().out)
-    assert set(summary) == {"round", "track", "total_count", "unanswered_count", "answered_count"}
+    counts = {"round", "track", "total_count", "unanswered_count", "answered_count"}
+    recheck = {"recheck_round", "recheck_pending_row_ids", "recheck_pending_count", "recheck_counts"}
+    assert set(summary) == (counts | recheck if case == "no-current" else counts)
     assert summary["total_count"] == summary["unanswered_count"] == (0 if case == "no-current" else 1)

@@ -1,4 +1,6 @@
-"""レビュー指摘管理表の7列TSVを排他更新する補助CLI。
+"""レビュー指摘管理表の7列TSVを排他更新する。
+
+列とラベルの書式は`review_table_format`、`atk review-table`の引数の解析は`review_table_cli`が扱う。
 
 排他ロックはロックファイルのディレクトリ（`agent_toolkit._common.state_paths.lock_dir`）へ置く。
 表の配置先には`~/.claude/plans`が含まれる。兄弟のロックファイルを生成すると、計画バンドルの回収後も
@@ -9,73 +11,51 @@
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import hashlib
 import json
-import re
 import shlex
-import unicodedata
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.review_table_format import (
+    _KEY_COLUMN_COUNT,
+    _OWN_RECORD_PREFIX,
+    _ROUND_RE,
+    _TRACK_READ_VALUES,
+    _TRANSFER_TARGET_RE,
+    COLUMNS,
+    DECISION_MAKER_VALUES,
+    NO_RESPONSE_REASON_LABELS,
+    RECHECK_LABEL,
+    RECHECK_VERDICTS,
+    RESPONSE_LABELS,
+    TRACK_VALUES,
+    _cell,
+    _key,
+    _label_values,
+    _normalize_track,
+    _normalized,
+    _parse_text,
+    _require_labels,
+    _row_position,
+    _validate_rows,
+)
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._plan import bundle_kinds as _bundle_kinds
-from agent_toolkit._plan import locations as _plan_locations
 
-# 列の定義と旧形式の判別は本モジュールだけが持ち、`atk serve`の計画ファイル画面も`display_rows`で同じ解析を使う。
-COLUMNS = (
-    "round",
-    "track",
-    "location",
-    "issue",
-    "level",
-    "response",
-    "no-response-reason",
-)
-COLUMN_LABELS = (
-    "ラウンド",
-    "系統",
-    "箇所",
-    "指摘内容",
-    "指摘レベル",
-    "対応内容",
-    "対応不要理由",
-)
-"""`COLUMNS`の各列を画面へ表示する日本語の列名。"""
-_COLUMN_COUNT = len(COLUMNS)
-# 保存済みの旧形式の列数。8列は`level`と`response-needed`の双方を持ち、7列は`response-needed`だけを持つ。
-_LEGACY_WIDE_COLUMN_COUNT = 8
-_KEY_COLUMN_COUNT = 4
-TRACK_VALUES = ("plan-review", "exec-review", "plan-conformance", "independent")
-_TRACK_ALIASES = {"implementation-review": "exec-review"}
-_TRACK_READ_VALUES = (*TRACK_VALUES, *_TRACK_ALIASES)
-_TRACK_INPUT_VALUES = ("exec-review",)
-LEVEL_VALUES = ("要件", "仕様", "詳細", "実装")
-_RECOVERY_GUIDANCE = (
-    f"期待列数は{_COLUMN_COUNT}、trackの位置はroundの直後、"
-    f"levelの位置はissueの直後、levelの正規値集合は{', '.join(LEVEL_VALUES)}、"
-    f"trackの正規値集合は{', '.join(TRACK_VALUES)}。"
-    "implementation-reviewはexec-reviewとして読み取る。"
-    f"保存済み{_LEGACY_WIDE_COLUMN_COUNT}列形式はresponse-neededを読み込みの対象から外す。"
-    f"保存済み{_COLUMN_COUNT}列形式のうち5列目がyes/noの値域を持つ行は旧形式とみなし、"
-    "levelを空としてresponse-neededを読み込みの対象から外す"
-)
 _INPUT_GUIDANCE = (
     "計画ファイルと同じstemの`.exec-review.tsv`、またはCI対応レビュー指摘管理表の"
     f"`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を"
     "通常ファイルの絶対パスで指定する。"
     "標準入力、パイプおよびプロセス置換は受理しない"
 )
-_FIX_FORMAT_NEXT_ACTION = f"表を次の形式へ直して再実行する。{_RECOVERY_GUIDANCE}"
-_FIX_ROW_NEXT_ACTION = "`atk review-table show <PATH>`で該当行を確認し、表を直して再実行する"
 # `add`の不一致はlocation列かissue列で生じ、`respond`は応答列だけを更新するため、案内を操作ごとに分ける。
 _SAVED_ADD_MISMATCH_NEXT_ACTION = (
     "保存は済んでいる。`atk review-table show <PATH>`で追加した行のlocation列とissue列を確認し、"
@@ -89,17 +69,6 @@ _SAVED_UNRESOLVED_NEXT_ACTION = (
     "`atk review-table show <PATH>`で保存結果を確認する。解消しない場合はagent-toolkitの不具合としてユーザーへ報告する"
 )
 _ActionableError = _next_action.ActionableError
-# 応答本文の必須ラベル。各ラベルに書く内容は`agent-toolkit:/share/exec-review-responses.md`が定める。
-# 記録時点で同じ規定の検索と不採用の根拠の確認を求めるため、列を増やさず本文の行頭ラベルで表す。
-RESPONSE_LABELS = ("違反を確認した規定:", "同じ規定の検索:", "採用する修正範囲:", "採用しない修正方針:")
-NO_RESPONSE_REASON_LABELS = ("根拠の所在:", "判断主体:")
-DECISION_MAKER_VALUES = ("メイン", "レーン担当", "統括", "ユーザー", "レビュー担当")
-_TRANSFER_TARGET_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
-_LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘管理表への応答」"
-_YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
-_NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
-_WHITESPACE_RE = re.compile(r"\s+")
-_ROUND_RE = re.compile(r"^[1-9][0-9]*$")
 
 
 class _PreviousFindings(TypedDict):
@@ -120,98 +89,15 @@ class _Summary(TypedDict):
     previous_findings: NotRequired[list[_PreviousFindings]]
     history_command: NotRequired[str]
     repetition_guidance: NotRequired[str]
+    recheck_round: NotRequired[int]
+    recheck_pending_row_ids: NotRequired[list[int]]
+    recheck_pending_count: NotRequired[int]
+    recheck_counts: NotRequired[dict[str, int]]
 
 
 def _path(raw_path: str) -> Path:
     """表ファイルパスを絶対パスへ解決する。"""
     return Path(raw_path).expanduser().resolve()
-
-
-def _cell(value: str) -> str:
-    """セル文字列をJSON文字列へ符号化する。"""
-    return json.dumps(value, ensure_ascii=False)
-
-
-def _row_position(row_id: int) -> str:
-    """showとrespondが使う行識別子を診断へ表示する。"""
-    return f"row-id {row_id}"
-
-
-def _physical_position(line: int, column: int | None = None) -> str:
-    """TSVの構文不正の物理位置を表示する。"""
-    position = f"物理行番号 {line}"
-    return position if column is None else f"{position}、列番号 {column}"
-
-
-def _decode_cell(value: str, *, line: int, column: int) -> str:
-    """JSON文字列セルをデコードし、形式不正をエラーにする。"""
-    try:
-        decoded = json.loads(value)
-    except (json.JSONDecodeError, TypeError) as error:
-        raise ValueError(f"{_physical_position(line, column)}がJSON文字列ではない") from error
-    if not isinstance(decoded, str):
-        raise ValueError(f"{_physical_position(line, column)}が文字列ではない")
-    return decoded
-
-
-def _normalize_track(value: str) -> str:
-    """レビューtrackの読み取り互換値を正規値へ変換する。"""
-    return _TRACK_ALIASES.get(value, value)
-
-
-def _drop_legacy_response_needed(row: list[str]) -> list[str]:
-    """保存済みの旧形式から`response-needed`列を除き、現行の7列へそろえる。
-
-    列数が8の行は`level`と`response-needed`の双方を持つ旧形式である。
-    列数が7の行は現行形式と、`level`を持たない旧形式のいずれかであり、5列目の値域で判別する。
-    5列目が`level`の正規値であれば現行形式、yes/noの値域であれば旧形式とする。
-    5列目が空の行は、残る2列が空であれば両解釈が同じ値へ帰着するため現行形式として扱い、
-    いずれかが埋まっていればlevelを空とする現行形式と確定する。
-    """
-    if len(row) == _LEGACY_WIDE_COLUMN_COUNT:
-        return [*row[:5], *row[6:]]
-    fifth = _normalized(row[4]).casefold()
-    if fifth in _YES_VALUES or fifth in _NO_VALUES:
-        return [*row[:4], "", *row[5:]]
-    return row
-
-
-def _decode_text(text: str) -> list[tuple[str, list[str]]]:
-    """Raw TSVを検証し、元の行と、旧形式の列を現行の7列へそろえたデコード済み行を対応づけて返す。
-
-    trackの読み取り互換値は変換しない。
-    """
-    rows: list[tuple[str, list[str]]] = []
-    for line_number, raw_line in enumerate(text.splitlines(keepends=True), start=1):
-        line = raw_line.rstrip("\r\n")
-        if not line:
-            continue
-        cells = line.split("\t")
-        if len(cells) not in (_COLUMN_COUNT, _LEGACY_WIDE_COLUMN_COUNT):
-            raise _ActionableError(
-                f"{_physical_position(line_number)}の列数が{_COLUMN_COUNT}ではない: {len(cells)}",
-                next_action=_FIX_FORMAT_NEXT_ACTION,
-            )
-        row = [_decode_cell(cell, line=line_number, column=index) for index, cell in enumerate(cells, start=1)]
-        rows.append((raw_line, _drop_legacy_response_needed(row)))
-    return rows
-
-
-def _parse_text(text: str) -> list[tuple[str, list[str]]]:
-    """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
-    rows = _decode_text(text)
-    for _raw_line, row in rows:
-        row[1] = _normalize_track(row[1])
-    return rows
-
-
-def display_rows(text: str) -> list[list[str]]:
-    """表示のために、レビュー指摘管理表の本文を`COLUMNS`の順の7列の行へ解析して返す。
-
-    保存済みの旧形式は現行の7列へそろえ、trackは記録された値のまま返す。
-    形式が不正な表は`ValueError`を送出し、表示側が表として描画しない扱いを選ぶ。
-    """
-    return [row for _raw_line, row in _decode_text(text)]
 
 
 def _read_table_text(path: Path) -> str:
@@ -240,85 +126,6 @@ def _read(path: Path) -> list[list[str]]:
 def read_rows(path: str | Path) -> list[list[str]]:
     """レビュー指摘管理表の各行をデコード済みのセル列として返す。読み込めない場合は理由と次の操作を持つ例外を送出する。"""
     return _read(Path(path))
-
-
-def _label_values(body: str, label: str) -> list[str]:
-    return [line.strip()[len(label) :].strip() for line in body.splitlines() if line.strip().startswith(label)]
-
-
-def response_state(row: list[str]) -> str:
-    """記録された応答を採用・移管・不採用・未応答へ分類する。旧記録の自由文は推定しない。"""
-    if row[5].strip():
-        return "adopted"
-    if not row[6].strip():
-        return "unanswered"
-    targets = _label_values(row[6], "移管先:")
-    if len(targets) == 1 and _TRANSFER_TARGET_RE.fullmatch(targets[0]):
-        return "transferred"
-    return "rejected"
-
-
-def rejection_reason_class(body: str) -> str:
-    """対応不要理由の判断主体ラベルだけから理由区分を求める。"""
-    makers = _label_values(body, "判断主体:")
-    if len(makers) != 1 or makers[0] not in DECISION_MAKER_VALUES:
-        return "判断主体不明"
-    return "レビュー担当の前提の誤り・撤回" if makers[0] == "レビュー担当" else "判断による見送り"
-
-
-def _normalized(value: str) -> str:
-    """複合キー用にUnicode、前後空白および連続空白を正規化する。"""
-    return _WHITESPACE_RE.sub(" ", unicodedata.normalize("NFC", value).strip())
-
-
-def _key(row: list[str]) -> tuple[str, str, str, str]:
-    return (
-        _normalized(row[0]),
-        _normalized(row[1]),
-        _normalized(row[2]),
-        _normalized(row[3]),
-    )
-
-
-def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) -> None:
-    """7列、先頭4列の複合キー一意性、指摘レベルおよび応答分岐を検証する。
-
-    対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。
-    双方が空である行を未応答とし、双方が埋まっている行を矛盾として拒否する。
-    """
-    keys: set[tuple[str, str, str, str]] = set()
-    for index, row in enumerate(rows, start=1):
-        if len(row) != _COLUMN_COUNT:
-            raise _ActionableError(
-                f"{_row_position(index)}の列数が{_COLUMN_COUNT}ではない", next_action=_FIX_FORMAT_NEXT_ACTION
-            )
-        if any(not _normalized(value) for value in row[:_KEY_COLUMN_COUNT]):
-            raise _ActionableError(f"{_row_position(index)}の先頭4列は空にできない", next_action=_FIX_ROW_NEXT_ACTION)
-        if _ROUND_RE.match(_normalized(row[0])) is None:
-            raise _ActionableError(f"{_row_position(index)}のラウンドが1以上の整数ではない", next_action=_FIX_ROW_NEXT_ACTION)
-        if row[1] not in TRACK_VALUES:
-            raise _ActionableError(f"{_row_position(index)}のtrackが正規値ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
-        if row[4] and row[4] not in LEVEL_VALUES:
-            raise _ActionableError(f"{_row_position(index)}のlevelが正規値ではない", next_action=_FIX_FORMAT_NEXT_ACTION)
-        key = _key(row)
-        if key in keys:
-            raise _ActionableError(f"{_row_position(index)}の先頭4列が重複している", next_action=_FIX_ROW_NEXT_ACTION)
-        keys.add(key)
-        response = row[5].strip()
-        reason = row[6].strip()
-        if response and reason:
-            raise _ActionableError(
-                f"{_row_position(index)}は対応内容と対応不要理由を同時に持てない",
-                next_action=f"`atk review-table respond <PATH> --row-id {index}`で対応内容か対応不要理由の一方だけを記録し直す",
-            )
-        if require_responses and not response and not reason:
-            raise _ActionableError(
-                f"{_row_position(index)}が未応答である",
-                next_action=(
-                    f"`atk review-table respond <PATH> --row-id {index}`へ--response-fileか"
-                    "--no-response-reason-fileを指定して応答する"
-                ),
-            )
 
 
 def validate(path: str | Path, *, require_responses: bool = True) -> int:
@@ -447,21 +254,6 @@ def _add_rows(target: Path, additions: list[list[str]]) -> int:
     rows = _locked_update(target, updater, verify=verify)
     _outcome.report_success(f"指摘行を{len(additions)}件追加した: {target}（{len(rows)}件）")
     return 0
-
-
-def _row_id(raw: str) -> int:
-    """1始まりの行識別子を検証する。"""
-    try:
-        value = int(raw)
-    except ValueError as error:
-        raise argparse.ArgumentTypeError(
-            _next_action.with_next_action(f"row-idが整数ではない: {raw}", "row-idは1以上の整数で指定する")
-        ) from error
-    if value < 1:
-        raise argparse.ArgumentTypeError(
-            _next_action.with_next_action(f"row-idが1未満である: {raw}", "row-idは1以上の整数で指定する")
-        )
-    return value
 
 
 def _row_index(row_id: int, row_count: int) -> int:
@@ -599,6 +391,84 @@ def respond(
     return 0
 
 
+def recheck(path: str | Path, row_id: int, round_value: str, verdict: str) -> int:
+    """再レビューでレビュー担当が前回の指摘行の応答を確かめた判定を、応答のある列の末尾へ1行で追記する。"""
+    target = _path(str(path))
+    normalized_round = _normalized(round_value)
+    if _ROUND_RE.match(normalized_round) is None or int(normalized_round) < 2:
+        raise _ActionableError(
+            "再確認のroundは2以上の整数が必要である", next_action="--roundへ現在の再レビューのラウンド番号を指定する"
+        )
+    if verdict not in RECHECK_VERDICTS:
+        raise _ActionableError(
+            f"再確認の判定が正規値ではない: {verdict}", next_action=f"--verdictを{', '.join(RECHECK_VERDICTS)}から指定する"
+        )
+    block = f"{RECHECK_LABEL} ラウンド{normalized_round} {verdict}"
+    column_holder: list[int] = []
+
+    def updater(rows: list[list[str]]) -> list[list[str]]:
+        index = _row_index(row_id, len(rows))
+        row = rows[index]
+        if int(_normalized(row[0])) >= int(normalized_round):
+            raise _ActionableError(
+                f"{_row_position(row_id)}は前のラウンドの指摘ではない",
+                next_action="再確認は現在のラウンドより前の指摘行へ記録する",
+            )
+        if row[2].strip().startswith(_OWN_RECORD_PREFIX):
+            raise _ActionableError(
+                f"{_row_position(row_id)}は担当の記録でありレビュー担当の指摘ではない",
+                next_action="再確認はレビュー担当の指摘行だけへ記録する",
+            )
+        column = 5 if row[5].strip() else 6 if row[6].strip() else None
+        if column is None:
+            raise _ActionableError(
+                f"{_row_position(row_id)}は未応答である",
+                next_action="レビューイーの応答の記録を待ってから再確認する。未応答の指摘は未解決として扱う",
+            )
+        if _label_values(row[column], RECHECK_LABEL):
+            raise _ActionableError(
+                f"{_row_position(row_id)}の再確認は記録済みである",
+                next_action="`atk review-table show <PATH> --row-id <ROW_ID> --field response`で記録済みの判定を確認する",
+            )
+        column_holder.append(column)
+        updated = [*rows]
+        updated[index] = [*row]
+        updated[index][column] = f"{row[column].rstrip()}\n{block}"
+        return updated
+
+    _locked_update(target, updater)
+    saved = _read(target)[row_id - 1]
+    if not column_holder or not saved[column_holder[0]].endswith(block):
+        raise _ActionableError(f"再確認の保存を確認できない: {target}", next_action=_SAVED_UNRESOLVED_NEXT_ACTION)
+    _outcome.report_success(f"再確認を記録した: {target}（{_row_position(row_id)}、{verdict}）")
+    return 0
+
+
+def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple[int, list[int], dict[str, int]] | None:
+    """現在より前で指摘のある最新ラウンドについて、再確認の無い行と判定別の件数を返す。"""
+    candidates = [
+        (row_id, row)
+        for row_id, row in enumerate(rows, start=1)
+        if row[1] == track and int(_normalized(row[0])) < round_value and not row[2].strip().startswith(_OWN_RECORD_PREFIX)
+    ]
+    if not candidates:
+        return None
+    latest = max(int(_normalized(row[0])) for _, row in candidates)
+    pending: list[int] = []
+    counts: dict[str, int] = dict.fromkeys(RECHECK_VERDICTS, 0)
+    for row_id, row in candidates:
+        if int(_normalized(row[0])) != latest:
+            continue
+        verdicts = [value for cell in (row[5], row[6]) for value in _label_values(cell, RECHECK_LABEL)]
+        if not verdicts:
+            pending.append(row_id)
+            continue
+        verdict = verdicts[-1].split()[-1] if verdicts[-1].split() else ""
+        if verdict in counts:
+            counts[verdict] += 1
+    return latest, pending, counts
+
+
 def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -> _Summary:
     """指定ラウンドに登録した指摘を用いて未応答件数を導き、過去の応答を混ぜない。"""
     if round_value < 1:
@@ -614,6 +484,10 @@ def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -
         "unanswered_count": unanswered,
         "answered_count": len(selected) - unanswered,
     }
+    recheck_state = _recheck_state(rows, round_value, _normalize_track(track))
+    if recheck_state is not None:
+        result["recheck_round"], result["recheck_pending_row_ids"], result["recheck_counts"] = recheck_state
+        result["recheck_pending_count"] = len(recheck_state[1])
     previous: dict[int, list[int]] = {}
     if selected:
         for row_id, row in enumerate(rows, start=1):
@@ -695,279 +569,3 @@ def show(
     for saved_row_id, _, row in selected:
         print(json.dumps({"row-id": saved_row_id, **dict(zip(COLUMNS, row, strict=True))}, ensure_ascii=False))
     return 0
-
-
-def _add_cell_options(parser: argparse.ArgumentParser, option: str, description: str) -> None:
-    """セル本文をファイルから読むオプションを登録する。
-
-    `atk wi add --body-file`と同じ利用形とし、引用符・改行・バッククォートを含む本文を
-    シェルの引用規則を経由せずに渡せるようにする。
-    """
-    parser.add_argument(
-        f"--{option}-file",
-        metavar="PATH",
-        help=f"{description}を記載したファイルのパス。引用符・改行・バッククォートを含む本文をシェルのエスケープを介さず渡す場合に使う。",
-    )
-
-
-def _read_cell_file(option: str, raw_path: str) -> str:
-    """セル本文を記載したファイルをUTF-8で読む。"""
-    path = Path(raw_path).expanduser()
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise _ActionableError(
-            f"{option}の読み込みに失敗した: {raw_path}（{error}）",
-            next_action=f"{option}へ読み取れるファイルのパスを指定して再実行する",
-        ) from error
-    except UnicodeDecodeError as error:
-        raise _ActionableError(
-            f"{option}をUTF-8として解釈できない: {raw_path}",
-            next_action=f"{option}へUTF-8で保存したファイルを指定して再実行する",
-        ) from error
-
-
-def _require_labels(body: str, labels: tuple[str, ...], option: str) -> None:
-    """応答本文が各必須ラベルを行頭に持ち、ラベルの後に空でない記述を持つことを確かめる。"""
-    lines = [line.strip() for line in body.splitlines()]
-    missing = [label for label in labels if not any(line.startswith(label) and line[len(label) :].strip() for line in lines)]
-    if missing:
-        raise _ActionableError(
-            f"{option}の本文に必須ラベルが無いか、ラベルの後の記述が空である: {'、'.join(missing)}",
-            next_action=(
-                f"欠けたラベルを行頭に置いて同じ行へ内容を書き、同じコマンドを再実行する。"
-                f"各ラベルに書く内容は{_LABEL_DEFINITION}が定める"
-            ),
-        )
-
-
-def _cell_value(args: argparse.Namespace, dest: str) -> str:
-    """`--<名前>-file`からセル本文を返す。"""
-    raw_path = getattr(args, f"{dest}_file", None)
-    if raw_path is not None:
-        return _read_cell_file(f"--{dest.replace('_', '-')}-file", raw_path)
-    return ""
-
-
-def _required_value(args: argparse.Namespace, option: str) -> str:
-    value = _cell_value(args, option)
-    if not isinstance(value, str) or not value:
-        raise _ActionableError(
-            f"--{option}-fileが指定されていない", next_action=f"--{option}-fileへ本文を記載したファイルのパスを指定する"
-        )
-    return value
-
-
-def _read_add_items(raw_path: str, round_value: str, track: str) -> list[list[str]]:
-    """UTF-8 JSON配列の指摘本文とレベルを、共通round・trackの行へ変換する。"""
-    guidance = "--items-fileへlocation・issue・levelの文字列3キーを持つ非空JSON配列をUTF-8で保存して指定する"
-    try:
-        items = json.loads(_read_cell_file("--items-file", raw_path))
-    except json.JSONDecodeError as error:
-        raise _ActionableError(f"--items-fileのJSONが不正である: {error}", next_action=guidance) from error
-    if not isinstance(items, list) or not items:
-        raise _ActionableError("--items-fileは非空のJSON配列が必要である", next_action=guidance)
-    rows = []
-    for index, item in enumerate(items, start=1):
-        if (
-            not isinstance(item, dict)
-            or set(item) != {"location", "issue", "level"}
-            or any(not isinstance(value, str) for value in item.values())
-        ):
-            raise _ActionableError(f"--items-fileの項目{index}のキーか値の型が不正である", next_action=guidance)
-        if item["level"] not in LEVEL_VALUES:
-            raise _ActionableError(
-                f"--items-fileの項目{index}のlevelが正規値ではない",
-                next_action=f"levelを{', '.join(LEVEL_VALUES)}のいずれかにして再実行する",
-            )
-        rows.append([round_value, _normalize_track(track), item["location"], item["issue"], item["level"], "", ""])
-    return rows
-
-
-def build_parser(parent: argparse._SubParsersAction) -> None:
-    """`review-table`配下のサブコマンドを登録する。"""
-    review = _atk_help.add_command(parent, "review-table", **_atk_help.HELP["atk review-table"])
-    sub = _atk_help.add_subcommands(
-        review,
-        dest="review_table_subcommand",
-        required=False,
-        show_help_when_missing=True,
-    )
-    init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
-    path_help = (
-        "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.exec-review.tsv`、"
-        f"またはCI対応レビュー指摘管理表の`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を指定する。"
-    )
-    init_parser.add_argument("path", help=path_help)
-    add_command_parser = _atk_help.add_command(
-        sub,
-        "add",
-        allow_abbrev=False,
-        **_atk_help.HELP["atk review-table add"],
-    )
-    add_command_parser.add_argument("path", help=path_help)
-    add_command_parser.add_argument(
-        "--round",
-        required=True,
-        help="指摘を登録するレビューのラウンド番号。1以上の整数で指定する。",
-    )
-    add_command_parser.add_argument(
-        "--track",
-        required=True,
-        choices=_TRACK_INPUT_VALUES,
-        help="指摘を登録するレビューの区分。レビュー工程に対応する正規値から指定する。",
-    )
-    add_input = add_command_parser.add_mutually_exclusive_group(required=True)
-    add_input.add_argument(
-        "--level",
-        choices=LEVEL_VALUES,
-        help="指摘レベル。要件、仕様、詳細または実装を指定する。",
-    )
-    add_input.add_argument(
-        "--items-file",
-        metavar="PATH",
-        help="複数指摘のUTF-8 JSON配列。各要素は文字列location・issue・levelの3必須キー。"
-        "round・trackは全件共通。単数形の--level・--location-file・--issue-fileとは併用できない。",
-    )
-    for name, description in (
-        ("location", "追加する指摘箇所"),
-        ("issue", "追加する指摘内容"),
-    ):
-        _add_cell_options(add_command_parser, name, description)
-    respond_parser = _atk_help.add_command(
-        sub,
-        "respond",
-        allow_abbrev=False,
-        **_atk_help.HELP["atk review-table respond"],
-    )
-    respond_parser.add_argument("path", help=path_help)
-    respond_parser.add_argument(
-        "--row-id",
-        type=_row_id,
-        help="showが出力した1始まりの行識別子。round・track・location・issueとは併用できない。",
-    )
-    respond_parser.add_argument(
-        "--round",
-        help="更新する行を特定するラウンド番号。省略すると他の列だけで行を特定する。",
-    )
-    respond_parser.add_argument(
-        "--track",
-        choices=_TRACK_INPUT_VALUES,
-        help="更新する行を特定するレビューの区分。省略すると他の列だけで行を特定する。",
-    )
-    for name, description in (
-        ("location", "更新する行を特定する指摘箇所"),
-        ("issue", "更新する行を特定する指摘内容"),
-    ):
-        _add_cell_options(respond_parser, name, description)
-    _add_cell_options(respond_parser, "response", "対応要とした指摘へ記録する対応内容")
-    _add_cell_options(respond_parser, "no-response-reason", "対応不要とした指摘へ記録する理由")
-    show_parser = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk review-table show"])
-    show_parser.add_argument("path", help=path_help)
-    show_parser.add_argument(
-        "--row-id", type=_row_id, help="保存順の1始まりの行識別子で表示行を選ぶ。respondと同じ識別子を使う。"
-    )
-    show_parser.add_argument(
-        "--field",
-        choices=("response", "no-response-reason"),
-        help="--row-idの行の指定列をデコード済み全文で表示する。tsv出力形式で使う。",
-    )
-    show_parser.add_argument(
-        "--track",
-        choices=_TRACK_READ_VALUES,
-        help="表示対象を指定したレビュー区分の行だけに限定する。省略すると全行を表示する。",
-    )
-    show_parser.add_argument(
-        "--round",
-        type=int,
-        help="表示対象を指定したラウンドの行だけに限定する。省略すると全ラウンドを表示する。",
-    )
-    show_parser.add_argument(
-        "--format",
-        choices=("tsv", "jsonl", "summary"),
-        default="tsv",
-        help="出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Lines。"
-        "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す。"
-        "summaryのtrack省略時はexec-review。現在と過去の同じtrackに指摘がある場合は、"
-        "previous_findings（過去roundとrow_ids）、history_command（全roundを読む操作）、"
-        "repetition_guidance（反復原因の判定先）も返す。",
-    )
-    validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
-    validate_parser.add_argument(
-        "--allow-unanswered",
-        action="store_true",
-        help=f"未応答行を許容し、{_COLUMN_COUNT}列と複合キーなどの構造だけを検証する。",
-    )
-    validate_parser.add_argument("path", help=path_help)
-
-
-def dispatch(args: argparse.Namespace) -> int:
-    """argparse結果をレビュー指摘管理表の操作へ振り分ける。"""
-    command = args.review_table_subcommand
-    if command == "init":
-        _require_writable_exec_review(args.path)
-        return init(args.path)
-    if command == "show":
-        return show(args.path, args.track, args.format, args.round, row_id=args.row_id, field=args.field)
-    if command == "validate":
-        return validate(args.path, require_responses=not args.allow_unanswered)
-    if command == "add":
-        _require_writable_exec_review(args.path)
-        items_file = getattr(args, "items_file", None)
-        if items_file is not None:
-            if any((args.level is not None, args.location_file is not None, args.issue_file is not None)):
-                raise _ActionableError(
-                    "--items-fileは単数形のlevel・location・issue指定と同時に使えない",
-                    next_action="--items-fileか、--level・--location-file・--issue-fileのどちらか一方を指定する",
-                )
-            return _add_rows(_path(args.path), _read_add_items(items_file, args.round, args.track))
-        location = _required_value(args, "location")
-        issue = _required_value(args, "issue")
-        return add(args.path, args.round, args.track, location, issue, args.level)
-    if command == "respond":
-        _require_writable_exec_review(args.path)
-        round_value = args.round or ""
-        track = args.track or ""
-        location = _cell_value(args, "location")
-        issue = _cell_value(args, "issue")
-        if args.row_id is not None and any((round_value, track, location, issue)):
-            raise _ActionableError(
-                "row-idはround・track・location・issueと同時に指定できない",
-                next_action="--row-idか、--round・--track・--location-file・--issue-fileのどちらか一方で行を指定する",
-            )
-        if args.row_id is None and not any((round_value, track, location, issue)):
-            raise _ActionableError(
-                "応答する行が指定されていない",
-                next_action="--row-id・--round・--track・--location-file・--issue-fileのいずれかで行を指定する",
-            )
-        return respond(
-            args.path,
-            round_value,
-            track,
-            location,
-            issue,
-            _cell_value(args, "response"),
-            _cell_value(args, "no_response_reason"),
-            args.row_id,
-        )
-    raise ValueError(f"未知のreview-tableサブコマンド: {command}")
-
-
-def _require_writable_exec_review(raw_path: str) -> None:
-    """保存済み計画の領域の表と、保存済みの旧計画レビュー表を更新対象から除外する。"""
-    target = _path(raw_path)
-    _plan_locations.reject_saved_plans_root_write(target)
-    name = target.name
-    if _bundle_kinds.PLAN_REVIEW.matches(name) or (name.startswith("dlg-") and _bundle_kinds.EXEC_REVIEW.matches(name)):
-        raise _ActionableError(
-            "保存済みの旧形式のレビュー指摘管理表は読み取り専用です", next_action="更新には.exec-review.tsvを指定する"
-        )
-    if not target.exists():
-        return
-    for line_number, (raw_line, _row) in enumerate(_parse_text(_read_table_text(target)), start=1):
-        raw_track = _decode_cell(raw_line.rstrip("\r\n").split("\t")[1], line=line_number, column=2)
-        if raw_track != "exec-review":
-            raise _ActionableError(
-                f"{_row_position(line_number)}の旧review typeは読み取り専用です: {raw_track}",
-                next_action="更新にはexec-reviewの行だけを持つ.exec-review.tsvを指定する",
-            )
