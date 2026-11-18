@@ -217,6 +217,37 @@ agent-basicsへ取り込んだ第三者素材の原典、改変内容と許諾�
 - 改変: 証拠の区分と判定不能の扱いの1文を日本語へ翻訳し、原則の要旨へ組み込んだ。
 - 許諾: [MIT License](https://github.com/cursor/plugins/blob/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack/LICENSE)。
 
+- 原典: [cursor/plugins](https://github.com/cursor/plugins/tree/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack)の`pstack/`（確認commit `bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7`）。
+- 取り込んだ資料と取り込み先:
+  - `skills/technical-writing/SKILL.md`「Pick the mode first」「One document, one mode.」。
+    取り込み先は`skills/writing-standards/references/writing-genres.md`。
+  - `skills/principle-build-the-lever/SKILL.md`「Do the first unit by hand…」。
+    取り込み先は`skills/writing-standards/references/file-editing.md`。
+  - `skills/principle-type-system-discipline/SKILL.md`「Brand semantic primitives.」。
+    取り込み先は`skills/writing-standards/references/implementation-time.md`。
+  - `skills/typescript-best-practices/SKILL.md`「Simplest total type」。
+    取り込み先は`skills/writing-standards/references/implementation-time.md`。
+  - `skills/no-comments/SKILL.md`「Offer the cheapest in-scope…」。
+    取り込み先は`skills/writing-standards/references/implementation-time.md`と`skills/writing-standards/references/review-only-criteria.md`。
+  - `agents/comment-sicko.md`「Surprises in our own code…」。
+    取り込み先は`skills/writing-standards/references/implementation-time.md`と`skills/writing-standards/references/review-only-criteria.md`。
+  - `skills/principle-boundary-discipline/SKILL.md`「Do not re-export transport…」。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-foundational-thinking/SKILL.md`「DRY the structure, not every line」。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-model-the-domain/SKILL.md`「Execution order is not ownership」。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-minimize-reader-load/SKILL.md`「Track two axes…」。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-exhaust-the-design-space/SKILL.md`。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-make-operations-idempotent/SKILL.md`「crashed at every possible point」。
+    取り込み先は`skills/writing-standards/references/testing.md`。
+  - `skills/tdd/SKILL.md`。
+    取り込み先は`skills/writing-standards/references/testing.md`。
+- 改変: 各語句を日本語へ翻訳し、取り込み先の節の判断基準へ組み込んだ。
+- 許諾: [MIT License](https://github.com/cursor/plugins/blob/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack/LICENSE)。
+
 ```text
 MIT License
 
