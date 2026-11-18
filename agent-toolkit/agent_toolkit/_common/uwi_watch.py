@@ -35,14 +35,3 @@ def add(session_id: str, filenames: Iterable[str]) -> bool:
         return state
 
     return update_state(session_id, _add)
-
-
-def discard(session_id: str, filenames: Iterable[str]) -> bool:
-    """回答の通知または終了を確かめたUWIを会話の記録から外す。書き込んだ場合だけ真を返す。"""
-    removed = set(filenames)
-
-    def _discard(state: dict) -> dict:
-        state[STATE_KEY] = [name for name in awaiting(state) if name not in removed]
-        return state
-
-    return update_state(session_id, _discard)

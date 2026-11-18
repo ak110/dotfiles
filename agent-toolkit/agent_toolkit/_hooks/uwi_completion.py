@@ -48,6 +48,16 @@ _ADOPT_RETRY_SECONDS = 60.0
 """引き継ぎを終えられなかった後、次に走査するまで空ける秒数。"""
 
 
+def _baseline(state: dict) -> dict | None:
+    """走査方式の版が残した、通知済みの基準値（対象リポジトリID → 回答済みのファイル名一覧）を返す。無ければNoneを返す。"""
+    for key in _SCAN_ANSWERED_KEYS:
+        by_agent = state.get(key)
+        by_repo = by_agent.get(MAIN_AGENT_ID) if isinstance(by_agent, dict) else None
+        if isinstance(by_repo, dict):
+            return by_repo
+    return None
+
+
 def _adopt_scan_state(session_id: str, state: dict) -> list[str]:
     """走査方式の基準値を持つ会話が投入した未通知のUWIを、1回だけ走査して記録へ引き継ぐ。
 
@@ -62,13 +72,7 @@ def _adopt_scan_state(session_id: str, state: dict) -> list[str]:
     retry_at = state.get(_ADOPT_RETRY_KEY)
     if isinstance(retry_at, (int, float)) and not isinstance(retry_at, bool) and now < retry_at:
         return recorded
-    baseline: dict = {}
-    for key in _SCAN_ANSWERED_KEYS:
-        by_agent = state.get(key)
-        by_repo = by_agent.get(MAIN_AGENT_ID) if isinstance(by_agent, dict) else None
-        if isinstance(by_repo, dict):
-            baseline = by_repo
-            break
+    baseline = _baseline(state) or {}
     own: set[str] = set()
     root = _uwi_scan.private_notes_root()
     complete = root is not None
@@ -96,6 +100,27 @@ def _adopt_scan_state(session_id: str, state: dict) -> list[str]:
         return current
 
     return adopted if update_state(session_id, _adopt) else []
+
+
+def _discard(session_id: str, finished: list[str], answered: dict[str, list[str]]) -> bool:
+    """確認を終えたUWIを記録から外す。書き込んだ場合だけ真を返す。
+
+    引き継ぎを保留している会話では、通知したUWIを同じ書き込みで基準値へ加える。
+    基準値に無い回答済みUWIを引き継ぐ`_adopt_scan_state`が、走査の回復後に同じ回答を再び通知しないためである。
+    """
+    removed = set(finished)
+
+    def _update(current: dict) -> dict:
+        current[_uwi_watch.STATE_KEY] = [name for name in _uwi_watch.awaiting(current) if name not in removed]
+        baseline = _baseline(current)
+        if baseline is not None:
+            for target_repo, filenames in answered.items():
+                notified = baseline.get(target_repo)
+                if isinstance(notified, list):
+                    baseline[target_repo] = sorted({*notified, *filenames})
+        return current
+
+    return update_state(session_id, _update)
 
 
 def _settled(root: pathlib.Path, filename: str) -> tuple[bool, str | None]:
@@ -144,7 +169,7 @@ def build_notice(session_id: str) -> str | None:
         if target_repo is not None:
             answered.setdefault(target_repo, []).append(filename)
     # 記録から外せないまま通知すると、同じ回答を次回以降も繰り返し通知する。
-    if not finished or not _uwi_watch.discard(session_id, finished) or not answered:
+    if not finished or not _discard(session_id, finished, answered) or not answered:
         return None
 
     found = "".join(

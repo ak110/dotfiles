@@ -127,10 +127,10 @@ class TestBuildNotice:
         """記録から外せないまま通知すると同じ回答を次回以降も繰り返し通知するため、通知しない。"""
         assert uwi_watch.add(_SESSION, [_put(root, 1, answer="回答\n")])
 
-        def _discard(*_args: object, **_kwargs: object) -> bool:
+        def _update_state(*_args: object, **_kwargs: object) -> bool:
             return False
 
-        monkeypatch.setattr(uwi_watch, "discard", _discard)
+        monkeypatch.setattr(_uwi_completion, "update_state", _update_state)
         assert _uwi_completion.build_notice(_SESSION) is None
 
 
@@ -189,6 +189,26 @@ class TestAdoptScanState:
         assert notice is not None and unnotified in notice
         state = session_state.read_state(_SESSION)
         assert "uwi_answered_by_repo" not in state and "uwi_adopt_retry_at" not in state
+
+    def test_does_not_renotify_answer_notified_while_adoption_is_pending(
+        self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """引き継ぎを保留している間に通知した回答は、走査の回復後の引き継ぎで再び通知しない。"""
+        recorded = _put(root, 1, answer="回答\n")
+        broken = root / "2026" / "11" / _name(9)
+        broken.write_text("frontmatterの無い本文\n", encoding="utf-8")
+        assert session_state.update_state(_SESSION, lambda _state: {"uwi_answered_by_repo": {"main": {_REPO: []}}})
+        assert uwi_watch.add(_SESSION, [recorded])
+        monkeypatch.setattr(_uwi_completion, "_ADOPT_RETRY_SECONDS", 0.0)
+
+        notice = _uwi_completion.build_notice(_SESSION)
+        assert notice is not None and recorded in notice
+        broken.unlink()
+
+        assert _uwi_completion.build_notice(_SESSION) is None
+        state = session_state.read_state(_SESSION)
+        assert "uwi_answered_by_repo" not in state
+        assert not uwi_watch.awaiting(state)
 
     def test_waits_before_scanning_again_after_incomplete_scan(
         self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch
