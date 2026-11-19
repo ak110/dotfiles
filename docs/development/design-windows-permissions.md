@@ -107,3 +107,31 @@ sthenoで82KBのスクリプトが欠けずに届くことと、1回の実行が
 遮断されたタスクは結果を残さずに`LastTaskResult=0x80070005`で終わった。
 コマンド行の長さは原因ではなく、同じスクリプトが`-File`の形では通り、検出も無かった（同日、sthenoで観測）。
 `-EncodedCommand`へ戻す変更は、同様に遮断されうるため行わない。
+
+スクリプトは予定タスクのジョブの外で実行する。
+タスクスケジューラーは、ユーザーのセッションで動く予定タスクのプロセスを共通の1つのジョブへ入れる（同日、sthenoで観測。PowerToysなど別のタスクのプロセスも同じジョブに属していた）。
+そのジョブの制限（`JobObjectExtendedLimitInformation`のフラグ）は0だった。
+`JOB_OBJECT_LIMIT_BREAKAWAY_OK`、`JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`、`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`のどれも持たない。
+そのため子の切り離し（`CREATE_BREAKAWAY_FROM_JOB`）を指定した起動がアクセス拒否で失敗する。
+Codexは`app-server daemon`を止める前に、切り離した起動を試す（openai/codexの`codex-rs/app-server-daemon/src/backend/windows.rs`の`ensure_detached_launch`）。
+この起動がアクセス拒否で失敗すると、`this Windows launcher prevents background processes from outliving it`のエラーを返す。
+`update-dotfiles`の「Codex pluginのインストール」は、この理由でdaemonを再起動できずに失敗した。
+ユーザーが端末から起動したPowerShellと`explorer.exe`はどのジョブにも属していなかった。
+
+`runner.ps1`は予定タスクから`-LeaveTaskJob`付きで起動されると、WMIの`Win32_Process.Create`に`CREATE_BREAKAWAY_FROM_JOB`を指定して自身を起動し直し、その終了を待つ。
+起動し直したプロセスはどのジョブにも属さず、ユーザーのセッションで対話のログオンの非昇格のtoken（Medium Mandatory Level）で動き、切り離した起動も成功した（同日、sthenoで観測）。
+タスクのプロセスがスクリプトの終了まで残るため、タスクの状態による待機の判定はそのまま使える。
+上限到達と期限切れの後始末は、これまでどおりコマンド行に作業ディレクトリを含むプロセスとその子孫を終了させ、起動し直したプロセスの子孫も回収した（同日、sthenoで観測）。
+起動し直せなかった場合は、理由を出力へ書き、終了コードを残さずに終わる。
+
+次の案は採らない。
+
+- 予定タスクの設定を変える案: 互換性の水準（`Compatibility`のV1、Vista、Win7、Win8）を変えても同じジョブに入った（同日、sthenoで観測）。
+- `explorer.exe`に起動させる案（`ShellWindows`のCOMから`ShellExecute`を呼ぶ）: 起動したプロセスのIDが得られず、待機と停止の判定を作り直す必要がある。
+  遠隔操作の手口と同じ形のため、Defenderの検出も招きやすい（推論）。
+- 親プロセスを指定して`explorer.exe`の子として起動する案（`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`）: 実行ごとにC#のコンパイルが要り、親の偽装は検出の対象になりやすい（推論）。
+- sshのセッションから`explorer.exe`のtokenで`CreateProcessWithTokenW`を呼ぶ案: 予定タスクを使わない作りへの書き換えになり、他のプロセスのtokenの複製も検出の対象になりやすい（推論）。
+- Codexのdaemonの再起動だけを避ける案: 切り離して起動する他の処理が同じ理由で失敗する。
+
+WMIからのプロセスの生成は、Defenderの攻撃面の縮小のルール「Block process creations originating from PSExec and WMI commands」を有効にした環境では遮断される。
+sthenoではこのルールは未設定で、検証の前後でDefenderの検出（イベント1116・1117、`Get-MpThreatDetection`）は増えなかった（同日、sthenoで観測）。

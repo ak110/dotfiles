@@ -188,7 +188,7 @@ try {
     [IO.File]::WriteAllBytes($runner, [Convert]::FromBase64String($RunnerBase64))
     # conhost.exe --headlessで、ユーザーの画面にコンソールの窓を出さない。
     $action = New-ScheduledTaskAction -Execute 'conhost.exe' -WorkingDirectory $env:USERPROFILE `
-        -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runner`""
+        -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runner`" -LeaveTaskJob"
     # sshのセッションでは$env:USERDOMAINと$env:USERNAMEの組をSIDへ解決できないため、tokenの名前を使う。
     $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds ($TimeoutSeconds + 60)) `

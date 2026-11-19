@@ -1,7 +1,8 @@
 """ssh_unelevatedの試験。
 
 予定タスクを使う接続先の処理はWindowsでしか動かないため、ここでは結果の解釈と、pwshで動かせる部分
-（sshの起動部から`remote.ps1`へ引数が届くこと、`runner.ps1`が出力と終了コードを残すこと）を確かめる。
+（sshの起動部から`remote.ps1`へ引数が届くこと、`runner.ps1`が出力と終了コードを残すこと、
+予定タスクのジョブの外でスクリプトを起動できない場合に理由を残すこと）を確かめる。
 """
 
 import codecs
@@ -142,3 +143,25 @@ def test_runner_records_output_and_exit_code(
     output, exit_code = _run_runner(tmp_path, script)
     assert expected_output in output
     assert exit_code == expected_exit
+
+
+@_requires_pwsh
+def test_runner_reports_failure_to_leave_task_job(tmp_path: pathlib.Path) -> None:
+    """ジョブの外で起動し直せない場合は、スクリプトを実行せずに理由を出力へ残し、終了コードを残さない。
+
+    remote.ps1は終了コードが無いことを結果なし（終了コード125）として返し、出力の理由をユーザーへ見せる。
+    Linuxのpwshにはプロセスを生成するWMIが無いため、起動し直しが失敗する。
+    """
+    runner = tmp_path / "runner.ps1"
+    runner.write_bytes(pathlib.Path(_cli.__file__).with_name("runner.ps1").read_bytes())
+    (tmp_path / "script.ps1").write_bytes(codecs.BOM_UTF8 + b"Write-Output 'script-ran'")
+
+    completed = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(runner), "-LeaveTaskJob"], check=False, timeout=60
+    )
+
+    assert completed.returncode == 1
+    output = (tmp_path / "output.txt").read_text(encoding="utf-8-sig")
+    assert "予定タスクのジョブの外でスクリプトを起動できなかった" in output
+    assert "script-ran" not in output
+    assert not (tmp_path / "exit.txt").exists()

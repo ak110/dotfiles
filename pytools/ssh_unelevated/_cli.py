@@ -53,7 +53,7 @@ _FAILURES: dict[str, tuple[int, str]] = {
     "no_result": (
         _EXIT_FAILURE,
         "予定タスクが終了コードを残さずに終わった（LastTaskResult=0x{task_result:08X}）。"
-        "スクリプトがPowerShellのプロセスごと終了させていないかを確かめる。",
+        "出力にssh-unelevatedの診断があればその原因を、無ければスクリプトがPowerShellのプロセスごと終了させていないかを確かめる。",
     ),
     "error": (_EXIT_FAILURE, "{host}での準備か後始末に失敗した: {message}"),
 }
