@@ -8,6 +8,8 @@
   直接原因: 公開工程の検収は、ベースbranchのローカルOIDとリモート追跡refのOIDがpushした完全OIDと一致することだけを対象とし、作業ツリーのclean状態とrebase・merge・cherry-pickの中断状態はどの工程でも観測していなかった。
   対策: 公開担当の返却へベースbranchの公開状態の観測結果を追加し、メインが固定報告の前にも同じ項目を観測する。
   前者は返却時点、後者は以降の工程を経た後の状態を対象とし、未確定の経緯を含めて検出する。
+  このOIDの一致確認は公開担当の返却時に1回だけ行われ、その後の工程を経た状態は対象に入らない。
+  未公開のcommitがこの確認を通過して残った具体的な経緯は特定できておらず未確定である。
   解消できない場合はUWIへ引き継ぐ
 
 - 2026年9月6日: `agent-toolkit:atk-mode`の作業`process-wi`の3回目の公開担当が全体の自動チェックの途中でユーザー指示により中断し、版数更新だけが未コミットで残った状態をメインが手動でcommitして終えた。
@@ -26,5 +28,9 @@
 
 - 2026年10月19日: `atk wi process-loop all-repos`の実行で、各リポジトリ担当が振り返りを「委譲されたセッションなので起動判断を委譲元へ返す」として省き、dotfiles以外の担当は報告用UWIも「委譲先の完了報告は適用外」として省いた。
   ユーザーが報告用UWIの回答で是正した。
+  all-repos担当の委譲元はエージェントではない常駐プログラムであり、返却された判断と依頼を誰も処理しなかった。
   直接原因: agents_serverの通常委譲の配送文がメインと最上位セッションへ限定した条文を適用対象から外し、review-sessionとreport-completionも委譲先を除外していた。
-  対策: `agents-server-delegate.md`で、最初の入力が`source="process-loop"`の`atk-auto`要素である担当を対象リポジトリのprocess-wiのメインとして扱う
+  対策: `agents-server-delegate.md`で、最初の入力が`source="process-loop"`の`atk-auto`要素である担当を対象リポジトリのprocess-wiのメインとして扱う。
+  背景原因: 規範が工程の担い手を起動位置で定め、委譲先が残す工程は委譲元のエージェントが受け取ることを前提にしていた。
+  all-reposの導入はprocess-wiのメインの役割を担当へ移したが、担当へ届く配送文と役割限定の条文の適用結果を点検しなかった。
+  `agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「担当の役割」に完了報告・振り返り・WI投入・UWI確認・メイン向け規範の読込を定め、review-session、report-completion、finish-sessionとガイドを同じ契約へそろえ、標識値の一致を試験で検出する
