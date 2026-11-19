@@ -115,17 +115,21 @@ def test_mode_lock_ignores_focus_and_keeps_other_modes_separate(tmp_path):
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("arguments", [None, "single-lane 追記  保持\n", "all-repos 追加指示", "unknown single-lane"])
-def test_process_modes_reach_public_runner_with_original_arguments(engine_env, monkeypatch, capsys, engine, arguments):
+@pytest.mark.parametrize("named_by_entry", [False, True])
+def test_process_modes_reach_public_runner_with_original_arguments(
+    engine_env, monkeypatch, capsys, engine, arguments, named_by_entry
+):
+    """作業の修飾名と、入口`atk-mode`への作業の名指し（`--args 'process-wi ...'`）は同じ起動入力と目的文になる。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     argv = ["--target-repo", str(engine_env.repo)]
-    if arguments is not None:
-        argv.extend(["--args", arguments])
-    argv.append(skill_modes.PROCESS_WI)
+    if named_by_entry:
+        argv.extend(["--args", "process-wi" if arguments is None else f"process-wi {arguments}", "agent-toolkit:atk-mode"])
+    else:
+        argv.extend([*(["--args", arguments] if arguments is not None else []), skill_modes.PROCESS_WI])
     code, _out, error = _run(argv, capsys)
     assert code == 0, error
     record = _records(engine_env, "session")[0]
     data = json.loads(record["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"])
-    assert data["arguments"] == arguments
     mode = (
         "single-lane"
         if arguments and arguments.startswith("single-lane ")
@@ -133,7 +137,10 @@ def test_process_modes_reach_public_runner_with_original_arguments(engine_env, m
         if arguments and arguments.startswith("all-repos ")
         else None
     )
+    assert data["free_text"] == (arguments.removeprefix(f"{mode} ") if arguments and mode else arguments)
     assert data["mode"] == mode
+    assert data["skill"] == skill_modes.PROCESS_WI
+    assert data["arguments"] == arguments
     expected_skill = skill_modes.PROCESS_WI + (" " + mode if mode else "")
     expected_work = "process-wi" + (" " + mode if mode else "")
     expected = (

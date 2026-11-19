@@ -162,6 +162,10 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.skill is None:
         _outcome.report_failure("スキル名が必要", next_action="スキル名または--resume <RUN_ID>を指定する")
         return 2
+    skill, arguments = skill_modes.resolve_work(args.skill, args.args)
+    if skill != args.skill:
+        # 入口`atk-mode`への作業の名指しは、作業の修飾名での起動と同じ起動単位・起動入力・目的文にする。
+        args.skill, args.args = skill, arguments or None
     if getattr(args, "timeout", None) is None:
         args.timeout = DEFAULT_TIMEOUT_SECONDS
     if skill_modes.invocation_scope(args.skill, args.args) == session_review.BATCH_SCOPE:
@@ -258,17 +262,16 @@ def build_goal(skill: str, skill_args: str | None, *, launch: str | None = None)
     子の終了後に起動元が行う検収と確定を担当範囲から外すことを短く示す。
 
     始め方は全てのホストで目的文が示す（SessionStartは起動を差し込まない）。
-    入口`atk-mode`の作業の名前（`skill_modes.ENTRY_WORKS`。修飾名と接頭辞の無い名前）と入口の起動は、入口を作業と引数で起動させ、
-    それ以外はそのスキルの起動を書く。
+    入口`atk-mode`の作業の名前（`skill_modes.ENTRY_WORKS`。修飾名と接頭辞の無い名前）は、入口を作業と引数で起動させ、
+    それ以外はそのスキルの起動を書く。入口の起動は`dispatch`が作業の名前へ読み替えてから渡す。
     `launch`は、`skill`が保存上の作業名で同名のスキルを持たない起動（`atk wi submit`）が、作業の始め方を1文で渡す。
     起動単位の名前（ロック、ログ、報告用UWIの`scope`）は`skill`のまま保ち、スキルの実在に依存させない。
     """
     scope = skill_modes.invocation_scope(skill, skill_args)
     if launch is not None:
         return f"このセッションが担当する作業`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{launch}"
-    work, work_args = skill_modes.resolve_work(skill, skill_args)
-    if (name := skill_modes.entry_work(work)) is not None:
-        start = skill_modes.entry_launch(skill_modes.invocation_scope(name, work_args), free_text=True)
+    if (name := skill_modes.entry_work(skill)) is not None:
+        start = skill_modes.entry_launch(skill_modes.invocation_scope(name, skill_args), free_text=True)
     else:
         start = f"スキル`{skill}`を起動して始める（起動入力の`free_text`が空でなければ引数として渡す）。"
     return f"このセッションが担当するスキル`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{start}"
