@@ -47,7 +47,7 @@ def plugin_directory(plugin_name: str) -> str:
     return f"{plugin_name}-agy"
 
 
-def _split_skills(result: dict[Path, tuple[bytes, int]], target: Path, logical_name: str = "agent-toolkit") -> None:
+def _split_skills(result: dict[Path, tuple[bytes, int]], target: Path) -> None:
     """名前空間ごとのrootで、長文スキルの初期取得文書と全文資料を共通生成する。"""
     # SKILL.md本体にも同じ読込上限がある。frontmatterを維持した初期取得文書から本文全文を
     # 明示的に読むことで、既存スキルの契約を途中で切り捨てずに届ける。
@@ -61,7 +61,6 @@ def _split_skills(result: dict[Path, tuple[bytes, int]], target: Path, logical_n
         full_path = relative.parent / "references/antigravity-full-instructions.md"
         instruction = (
             f"---\n{metadata}\n---\n\n"
-            f"<!-- read-source: {logical_name}:/{full_path.as_posix()} -->\n\n"
             f"このスキルを起動したら、`{target / full_path}`を全文読み、その指示に従う。\n"
             f"本文の相対パスはスキルディレクトリ`{target / relative.parent}`を基準に解決する。\n"
         )
@@ -87,7 +86,7 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
             result[relative] = (data, stat.S_IMODE(path.stat().st_mode))
     for name in ("README.md", "LICENSE"):
         result[Path(name)] = ((source / name).read_bytes(), 0o644)
-    _split_skills(result, target, manifest["name"])
+    _split_skills(result, target)
     result[Path("plugin.json")] = (_json({key: manifest[key] for key in ("name", "version", "description")}), 0o644)
     result[Path(".claude-plugin/plugin.json")] = ((source / ".claude-plugin/plugin.json").read_bytes(), 0o644)
     if plugin_name == "agent-basics":

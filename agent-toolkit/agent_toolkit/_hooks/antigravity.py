@@ -27,6 +27,7 @@ from agent_toolkit._common import (
     session_state,
 )
 from agent_toolkit._hooks import notice
+lazy from agent_toolkit._hooks import full_reads
 
 EVENTS = frozenset({"SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop"})
 PENDING_CONTEXTS = "antigravity_pending_contexts"
@@ -300,24 +301,21 @@ def _native_children(payload: dict[str, Any], normalized: dict[str, Any]) -> Non
 
 
 def _record_read(payload: dict[str, Any]) -> list[str]:
-    """read_fileが返した本文を確かめ、成功したスキルの読取を共通観測へ渡す。"""
-    documents = importlib.import_module("agent_toolkit._hooks.document_reads")
-    args = payload["tool_input"]
-    path = args.get("file_path")
-    document = documents.skill_document(path) if isinstance(path, str) else None
-    text = documents.response_text(payload.get("tool_response"))
-    plugin = documents.document_plugin(path) if document is not None else ""
-    if document is None or not documents.body_returned(*document, text, plugin=plugin, path=path):
+    """スキルの入口の全文を返した`read_file`を、そのスキルの起動として共通の観測へ渡す。"""
+    path = payload["tool_input"].get("file_path")
+    text = full_reads.response_text(payload.get("tool_response"))
+    entry = full_reads.skill_entry(pathlib.Path(path)) if isinstance(path, str) else None
+    if entry is None or not text:
         return []
     # 行番号や結果の説明を除いた本文が、読取ファイルの全文を含むか確かめる。
     try:
         expected = pathlib.Path(path).read_text(encoding="utf-8").strip()
     except OSError:
         return []
-    returned = re.sub(r"(?m)^\s*\d+\s*[:│→]\s?", "", text or "")
-    skill, relative_path = document
-    if relative_path != "SKILL.md" or not expected or expected not in returned:
+    returned = re.sub(r"(?m)^\s*\d+\s*[:│→]\s?", "", text)
+    if not expected or expected not in returned:
         return []
+    plugin, skill = entry
     observed = {**payload, "tool_name": "Skill", "tool_input": {"skill": f"{plugin}:{skill}"}}
     return _invoke("posttooluse", observed).contexts()
 

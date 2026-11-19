@@ -6,8 +6,9 @@ import pathlib
 import re
 
 from agent_toolkit._agents_server import launch_prompts
-from agent_toolkit._common import read_triggers, task_documents
+from agent_toolkit._common import task_documents
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
+from agent_toolkit._testing.normative_contract import REFERENCE, read_table_rows, resolve_reference
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 
@@ -257,9 +258,9 @@ def _read_table_subagents(recipient: pathlib.Path, launched: set[str] | None = N
     plugin_root = task_documents.role_document_plugin_root(recipient) or recipient.parent.parent
     declared = [
         path.name
-        for row in read_triggers.parse_tables(recipient, plugin_root)
-        for path in row.documents
-        if path.name.endswith(".subagent.md")
+        for _condition, cell in read_table_rows(content)
+        for reference in REFERENCE.findall(cell)
+        if (path := resolve_reference(reference.partition("#")[0], recipient, plugin_root)).name.endswith(".subagent.md")
     ]
     if "\n## 読込表\n" not in content:
         return [name for name in declared if name != recipient.name and name not in (launched or set())]
@@ -304,20 +305,8 @@ def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
         *sorted((share.parent / "skills").rglob("*.md")),
         *sorted(path for path in share.glob("*.md") if not path.name.endswith(".parent.md")),
     ]
-    contracts = []
-    for role in _role_files(share, ".subagent.md"):
-        if "<!-- parent-read-source:" not in role.read_text(encoding="utf-8"):
-            continue
-        for target in read_triggers.parent_contract_targets(role.name, share.parent):
-            if target.path.name.endswith(".parent.md"):
-                continue
-            if not target.heading:
-                raise ValueError(f"{role}: 統合した起動契約は節を明示する")
-            body = "\n".join(line[1:] if re.match(r"^#{2,6} ", line) else line for line in target.body().splitlines())
-            contracts.append(_EmbeddedContract(target.path, target.heading, body))
+    contracts: list[_EmbeddedContract] = []
     for path in paths:
-        if read_triggers.resolve_read_source(path, share.parent) != path.resolve():
-            continue
         text = path.read_text(encoding="utf-8")
         lines = text.splitlines()
         headings = top_level_atx_headings(text, 2)
@@ -352,7 +341,11 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
     for recipient in recipients.values():
         content = recipient.read_text(encoding="utf-8")
         table = _h2_section(content, "読込表") if "\n## 読込表\n" in content else ""
-        declared = {path.name for row in read_triggers.parse_tables(recipient, share.parent) for path in row.documents}
+        declared = {
+            resolve_reference(reference.partition("#")[0], recipient, share.parent).name
+            for _condition, cell in read_table_rows(content)
+            for reference in REFERENCE.findall(cell)
+        }
         for line in content.splitlines():
             if "起動" not in line or line.startswith("|"):
                 continue
@@ -526,52 +519,6 @@ def _launch_role_errors(share: pathlib.Path) -> list[str]:
         if _RETIRED_LAUNCH_DELEGATION in content:
             errors.append(f"起動の形を共通節へ委ねている: {parent.name}")
     return errors
-
-
-# 時点を限らない定型の読込条件。起動契約がこの条件で委譲先の手順書を挙げると、委譲元は起動前にそれを読む。
-# 読込表に行の無い本文の名指しにも、解析器が同じ条件の宣言を補う。
-_GENERIC_READ_CONDITION = read_triggers.NAMED_REFERENCE_CONDITION
-
-
-def _launch_read_errors(share: pathlib.Path) -> list[str]:
-    """起動契約の読込案内が、起動する委譲先の手順書を定型の条件で読ませる行を返す。
-
-    委譲元は委譲先の手順書を読まずに起動する（`agent-toolkit:atk-mode`の`playbooks/delegation.md`）。
-    返却後の検収・編集・調査で読む行は条件へその時点を書き、手順の所有者を示すだけの本文は「所在参照」と明記する。
-    時点を書いた行が無い本文の名指しは、定型の条件の宣言が補われるため報告する。
-    """
-    errors: list[str] = []
-    contracts: list[_Contract] = [*_role_files(share, ".parent.md"), *_embedded_contracts(share)]
-    for contract in contracts:
-        targets, valid_structure = _marker_values(contract, _LAUNCH_TARGET_PREFIX, recipient=False)
-        if not valid_structure:
-            continue
-        source = contract if isinstance(contract, pathlib.Path) else contract.source
-        lines = list(read_triggers.document_lines(source.read_text(encoding="utf-8")))
-
-        def named(target: str, text: str) -> bool:
-            return re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?=[`#)])", text) is not None
-
-        timed: set[str] = set()
-        for _number, line, visible in lines:
-            cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else []
-            if visible and len(cells) >= 2 and cells[0] != _GENERIC_READ_CONDITION:
-                timed.update(target for target in targets if named(target, cells[1]))
-        for number, line, visible in lines:
-            if not visible:
-                continue
-            cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else []
-            if cells:
-                generic = len(cells) >= 2 and cells[0] == _GENERIC_READ_CONDITION
-                text = cells[1] if generic else ""
-            else:
-                text = "" if "所在参照" in line or line.startswith("<!--") else line
-            errors.extend(
-                f"起動する委譲先の手順書を定型の条件で読ませる: {source.name}:{number} -> {target}"
-                for target in targets
-                if named(target, text) and (cells or target not in timed)
-            )
-    return list(dict.fromkeys(errors))
 
 
 def _selection_procedure(plugin_root: pathlib.Path) -> str:

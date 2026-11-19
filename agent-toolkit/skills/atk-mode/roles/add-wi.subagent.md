@@ -32,12 +32,12 @@ continuations:
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`、`agent-toolkit:atk-mode/playbooks/wi-saving.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/atk-mode/playbooks/wi-drafting.md`、`read:agent-toolkit:*/skills/atk-mode/playbooks/wi-saving.md` |
-| 通常AWIの本文を起草・判定する前 | `agent-toolkit:atk-mode/references/awi-body.md` | | |
-| 受領した要求にUWIが含まれる場合（操作対象外: 役割の開始入力） | `agent-toolkit:atk-mode/references/uwi-format.md` | | |
-| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合（操作対象外: 役割の開始入力） | `agent-basics:bugfix`の確認観点の表のうち、条件が成立した行の資料 | | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`、`agent-toolkit:atk-mode/playbooks/wi-saving.md` |
+| 通常AWIの本文を起草・判定する前 | `agent-toolkit:atk-mode/references/awi-body.md` |
+| 受領した要求にUWIが含まれる場合 | `agent-toolkit:atk-mode/references/uwi-format.md` |
+| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-basics:bugfix`の確認観点の表のうち、条件が成立した行の資料 |
 
 ## 入力
 

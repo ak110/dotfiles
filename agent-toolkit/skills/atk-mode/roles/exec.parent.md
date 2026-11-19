@@ -4,7 +4,7 @@
 起動対象: exec.subagent.md
 ```
 
-役割`exec`を起動し、返却を受ける側の文書である（担当の手順は`agent-toolkit:atk-mode/roles/exec.subagent.md`にあり、所在参照）。
+役割`exec`を起動し、返却を受ける側の文書である（担当の手順は`agent-toolkit:atk-mode/roles/exec.subagent.md`にある）。
 起動するのは、作業`process-wi`の複数レーンのメイン（`レーン担当`）、修正担当を起こすレーン担当とsingle-laneのメイン（`レビュー修正担当`、`CI修正担当`）、CI失敗を直させる公開担当とリポジトリ担当（`CI修正担当`）である。
 レーン担当は計画、実装、実行レビューの起動と収束、統合までを同じthreadで行い、メインは返却の受領、ユーザー判断の中継、レーン間の競合と依存の調停、統合の許可を担う（`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`）。
 返却を受けた後の手順は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`にある。
@@ -79,11 +79,11 @@
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 担当の返却（計画準備、修正担当の実装完了、質問への回答の下書き、続行できない理由、統合準備完了、統合完了）を受領する前 | `agent-toolkit:atk-mode/playbooks/lane-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/lane-receipt.md` |
-| 統合の返却が、mergeの競合で要る判断か、統合先との組合せだけで起きた変更範囲の検証の失敗への是正commitを示す時 | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-lanes.md` |
-| 統合の返却で検証結果の警告の判定を受領する時 | `agent-toolkit:atk-mode/references/lane-integration-format.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/lane-integration-format.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 担当の返却（計画準備、修正担当の実装完了、質問への回答の下書き、続行できない理由、統合準備完了、統合完了）を受領する前 | `agent-toolkit:atk-mode/playbooks/lane-receipt.md` |
+| 統合の返却が、mergeの競合で要る判断か、統合先との組合せだけで起きた変更範囲の検証の失敗への是正commitを示す時 | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` |
+| 統合の返却で検証結果の警告の判定を受領する時 | `agent-toolkit:atk-mode/references/lane-integration-format.md` |
 
 <!-- return-contract:exec:start -->
 <!-- 生成元: skills/atk-mode/roles/exec.subagent.md「出力」。手動編集しない。 -->

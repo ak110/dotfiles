@@ -12,6 +12,8 @@ import pathlib
 import re
 from collections.abc import Mapping
 
+from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, opening_tag
+
 DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 """Claude Codeの委譲先へ`1`を設定する環境変数の名前。"""
 
@@ -37,7 +39,7 @@ LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
 """スキルを使わない前提で起動する軽量起動の区分。
 
 原本は`_agents_server/launch_prompts.py`の`LIGHTWEIGHT_LAUNCH_KINDS`である。層の順序で`_common`から
-importできないため写しを置き、一致は`operation_skills_invariant_test.py`が確かめる。
+importできないため写しを置き、一致は`_agents_server/launch_prompts_test.py`が確かめる。
 """
 
 
@@ -108,3 +110,26 @@ def handoff_environment(prompt: str) -> dict[str, str]:
     """起動本文が記録先を持つ場合だけ、子へ渡す変数を返す。"""
     path = prompt_handoff_path(prompt)
     return {HANDOFF_PATH_ENV: path} if path else {}
+
+
+WHOLE_CONTRACT_KIND = "work-contract-reference"
+"""サーバーが起動本文へ加える、全体作業契約の所在を示す要素の種別。"""
+
+WHOLE_CONTRACT_LINE_PREFIX = "全体作業契約: "
+
+
+def prompt_whole_contract_path(prompt: str) -> pathlib.Path | None:
+    """起動本文から、サーバーが加えた全体作業契約の絶対パスを取り出す。
+
+    依頼本文が同じ語を含んでも取り違えないよう、サーバーが付けた要素の内側だけを読む。
+    旧形式の未解決の通知と要素の不在は`None`とする。
+    """
+    opening = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "agents-server", "kind": WHOLE_CONTRACT_KIND})
+    start = prompt.rfind(opening)
+    if start < 0:
+        return None
+    first_line = prompt[start + len(opening) :].lstrip("\n").split("\n", 1)[0]
+    if not first_line.startswith(WHOLE_CONTRACT_LINE_PREFIX):
+        return None
+    path = pathlib.Path(first_line.removeprefix(WHOLE_CONTRACT_LINE_PREFIX).strip())
+    return path if path.is_absolute() else None

@@ -36,6 +36,15 @@ from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+def _declare_startup_document(document: pathlib.Path, reference: str) -> None:
+    """役割文書を、必須入力`対象`と起動時に全文を入れる資料1件をfrontmatterで宣言する形へ書き換える。"""
+    document.write_text(
+        "---\nmode: delegate\nmodel_type: execute\nrequired_inputs:\n- 対象\nwrites_worktree: true\n"
+        f"startup_documents:\n- {reference}\n---\n# 担当\n\n## 入力\n\n対象を受け取る。\n\n## 出力\n\n結果を返す。\n",
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.parametrize(
     "host,case",
     [("agy", "missing"), ("opencode", "missing"), ("agy", "physical"), ("opencode", "physical"), ("agy", "sibling")],
@@ -52,11 +61,7 @@ async def test_public_start_native_recovery_uses_an_available_generator(tmp_path
         original_root.rename(native)
         document = native / "share" / document.name
         (native / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    with document.open("a", encoding="utf-8") as stream:
-        stream.write(
-            "\n| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
-            "| 起動時 | `agent-basics:writing-standards/SKILL.md` | 起動時 | |\n"
-        )
+    _declare_startup_document(document, "agent-basics:writing-standards/references/writing.md")
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
     home = tmp_path / "home"
     home.mkdir()
@@ -108,12 +113,7 @@ async def test_public_start_native_recovery_uses_an_available_generator(tmp_path
 async def test_public_task_start_delivers_the_actual_child_host_and_project_materials(tmp_path, monkeypatch):
     """同じサーバーからhost/projectを切り替えても、子が受け取る品質本文を混ぜない。"""
     document = _write_declared_task_document(tmp_path, "対象: 必須")
-    with document.open("a", encoding="utf-8") as stream:
-        stream.write(
-            "\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
-            "| --- | --- | --- | --- |\n"
-            "| 起動時 | `agent-basics:writing-standards/references/writing.md` | 起動時 | |\n"
-        )
+    _declare_startup_document(document, "agent-basics:writing-standards/references/writing.md")
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
     toolkit = document.parent.parent
     project_a, project_b = tmp_path / "project-a", tmp_path / "project-b"
@@ -134,6 +134,9 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
         path = root / "skills/writing-standards/references/writing.md"
         path.parent.mkdir(parents=True)
         path.write_text(f"# {label}の基準\n{label}だけの品質本文\n", encoding="utf-8")
+        # 通常の委譲の起動が全文を入れる共通の資料も、各導入に置く。
+        for common in ("quality-principles.md", "quality-principles-facts.md"):
+            (path.parent / common).write_text(f"# {common}\n", encoding="utf-8")
         manifest = root / ".claude-plugin/plugin.json"
         manifest.parent.mkdir()
         manifest.write_text('{"name":"agent-basics"}', encoding="utf-8")

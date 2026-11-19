@@ -43,20 +43,19 @@ description: >
 ## 索引
 
 条件が成立したら、判断の前に資料の全文を読む。
-「契機」「配送操作」「資料選択子」の列は、読込を補助する自動化が解析する列であり、読み手は前の2列で判定する。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 起動時 | `agent-basics:writing-standards/references/quality-principles.md` | 起動時 | `skill:review-standards` | |
-| いずれの役割でも、判定を始める前 | 対象成果物に対応する作成規範 | 判断 | `skill:review-standards` | `artifact-standards` |
-| レビュー担当としてコード・文書・計画・作業項目をレビューする前（初回・再レビュー、資源の総量の確認、要求ごとの判定根拠の記録と再利用を含む）、提案・自分の判断・他の担当の出力の妥当性を評価する前 | `references/reviewer.md` | | | |
-| 実装後の変更差分を実行レビューで判定する前（要求単位と完成条件の達成、提出された証拠、コード・OS分岐・試験の層の確認、直接影響範囲の利用側の合否を含む） | `references/reviewer-execution.md` | | | |
-| 画面のユーザビリティを判定する前 | `references/reviewer-usability.md` | | | |
-| ロゴ、ワードマーク、ブランドマークとそのアイコン展開をレビューする前 | `agent-basics:writing-standards/references/logo-quality.md` | | | |
-| 是正要求等（レビュー指摘、改善提案、ユーザーの割り込みや是正要求、作業中の想定外の発見）を受けて採否と修正を確定する前、外部の資料から構成した改善案の採否を判定する前、役割を問わず計画・設計の採用案や是正要求等の妥当性を評価する前 | `references/reviewee.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/review-standards/references/reviewee.md` | |
-| 設計に異論がある変更か重要な変更の出荷前に、通常のレビューへ追加して複数のモデルに壊させる時 | `agent-basics:adversarial-review/SKILL.md` | | | |
-| 規範の追記を含む案の必要性を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` | | | |
-| 初回レビューで作成規範を点検する時 | `agent-basics:writing-standards/references/review-only-criteria.md` | | | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 起動時 | `agent-basics:writing-standards/references/quality-principles.md` |
+| いずれの役割でも、判定を始める前 | 対象成果物に対応する作成規範 |
+| レビュー担当としてコード・文書・計画・作業項目をレビューする前（初回・再レビュー、資源の総量の確認、要求ごとの判定根拠の記録と再利用を含む）、提案・自分の判断・他の担当の出力の妥当性を評価する前 | `references/reviewer.md` |
+| 実装後の変更差分を実行レビューで判定する前（要求単位と完成条件の達成、提出された証拠、コード・OS分岐・試験の層の確認、直接影響範囲の利用側の合否を含む） | `references/reviewer-execution.md` |
+| 画面のユーザビリティを判定する前 | `references/reviewer-usability.md` |
+| ロゴ、ワードマーク、ブランドマークとそのアイコン展開をレビューする前 | `agent-basics:writing-standards/references/logo-quality.md` |
+| 是正要求等（レビュー指摘、改善提案、ユーザーの割り込みや是正要求、作業中の想定外の発見）を受けて採否と修正を確定する前、外部の資料から構成した改善案の採否を判定する前、役割を問わず計画・設計の採用案や是正要求等の妥当性を評価する前 | `references/reviewee.md` |
+| 設計に異論がある変更か重要な変更の出荷前に、通常のレビューへ追加して複数のモデルに壊させる時 | `agent-basics:adversarial-review/SKILL.md` |
+| 規範の追記を含む案の必要性を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` |
+| 初回レビューで作成規範を点検する時 | `agent-basics:writing-standards/references/review-only-criteria.md` |
 
 ## 手順
 

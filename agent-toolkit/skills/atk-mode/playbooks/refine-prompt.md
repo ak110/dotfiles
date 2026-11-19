@@ -66,7 +66,7 @@
 
 <!-- input-contract:refine-prompt:end -->
 
-評価担当の手順は`agent-toolkit:atk-mode/roles/refine-prompt.subagent.md`が定める（所在参照）。
+評価担当の手順は`agent-toolkit:atk-mode/roles/refine-prompt.subagent.md`が定める。
 返却の形式は本書「評価担当の返却契約」に従う。
 
 ### 起動

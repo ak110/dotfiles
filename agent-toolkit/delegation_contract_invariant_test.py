@@ -5,8 +5,8 @@ import re
 import subprocess
 
 import pytest
-from agent_toolkit._agents_server import launch_prompts
-from agent_toolkit._common import read_triggers, task_documents
+from agent_toolkit._agents_server import launch_prompts, launch_requests_inputs
+from agent_toolkit._common import task_documents
 from agent_toolkit._testing.delegation_contract_support import (
     _INPUT_BULLET_PATTERN,
     _LAUNCH_TARGET_PREFIX,
@@ -19,7 +19,7 @@ from agent_toolkit._testing.delegation_contract_support import (
     _read_table_subagents,
     _role_files,
 )
-from agent_toolkit._testing.normative_contract import read_contract
+from agent_toolkit._testing.normative_contract import document_references, read_contract, section_text
 
 
 def test_all_launch_contract_inputs_are_generated() -> None:
@@ -253,16 +253,12 @@ def test_deferral_record_reaches_termination_classes_without_integration_documen
     }
     routes = {}
     for name in ("roles/exec-review.subagent.md", "references/review-record.md", "references/review-record-verdicts.md"):
-        source = atk / name
-        rows = read_triggers.parse_tables(source, root, strict=True)
-        routes[name] = {
-            path for row in [*rows, *read_triggers.named_reference_rows(source, root, rows)] for path in row.documents
-        }
+        routes[name] = document_references(atk / name, root)
         assert not routes[name] & integration, name
     assert definition in routes["roles/exec-review.subagent.md"]
-    assert read_triggers.ReadTarget(definition, "採否の確定と終了区分").body()
+    assert section_text(definition, "採否の確定と終了区分").strip()
     # 実際に統合する担当は、統合の受領の手順を起動・受領契約として読む。
-    declared = read_triggers.parent_contract_targets("lane-integration", root)
-    assert [(target.path.resolve(), target.heading) for target in declared] == [
-        ((atk / "playbooks/lane-receipt.md").resolve(), "統合の指示と受領")
-    ]
+    guidance = launch_requests_inputs._input_contract_guidance(  # noqa: SLF001  # pylint: disable=protected-access
+        atk / "roles/lane-integration.subagent.md"
+    )
+    assert f"`{(atk / 'playbooks/lane-receipt.md').resolve()}`「統合の指示と受領」" in guidance

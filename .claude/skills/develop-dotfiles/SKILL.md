@@ -39,6 +39,6 @@ description: >
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution`の`references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/atk-mode/playbooks/verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution`の`references/verification-scope.md` |

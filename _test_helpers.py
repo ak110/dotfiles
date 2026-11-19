@@ -415,6 +415,19 @@ def render_chezmoi_modify_template(template: pathlib.Path, content: str, environ
 _PLUGIN_PREFIX = "agent-" + "toolkit"
 
 
+def resolve_plugin_reference(value: str, root: pathlib.Path) -> pathlib.Path | None:
+    """`agent-toolkit:<スキル>/<パス>`・`agent-toolkit:/<パス>`・`agent-basics:<スキル>/<パス>`の論理名を、checkout内のパスへ解決する。
+
+    スキル名だけの論理名はそのスキルの`SKILL.md`を指す。節の指定（`#`以降）は外す。論理名でない値は`None`を返す。
+    """
+    plugin, separator, rest = value.split("#", 1)[0].partition(":")
+    if not separator or plugin not in (_PLUGIN_PREFIX, "agent-basics") or not rest or " " in rest:
+        return None
+    if rest.startswith("/"):
+        return root / plugin / rest.lstrip("/")
+    return root / plugin / "skills" / rest if "/" in rest else root / plugin / "skills" / rest / "SKILL.md"
+
+
 _SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
 
 

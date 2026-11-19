@@ -4,7 +4,6 @@ import contextlib
 import contextvars
 import dataclasses
 import functools
-import hashlib
 import json
 import os
 import pathlib
@@ -13,13 +12,10 @@ import runpy
 import shlex
 import shutil
 import subprocess
-import sys
-import tomllib
 from collections.abc import Generator, Iterable
 from typing import Any
 
-from agent_toolkit._common import host_homes, process_tree, runtime_environment
-from agent_toolkit._common.session_state import read_state, update_state
+from agent_toolkit._common import process_tree, runtime_environment
 
 
 class PluginRootError(ValueError):
@@ -51,7 +47,6 @@ class SelectedInstallation:
 _inventories: contextvars.ContextVar[dict[tuple[str, pathlib.Path], object] | None] = contextvars.ContextVar(
     "plugin_root_inventories", default=None
 )
-_reusable: contextvars.ContextVar[dict | None] = contextvars.ContextVar("plugin_root_reusable", default=None)
 _selected: contextvars.ContextVar[dict[pathlib.Path, SelectedInstallation] | None] = contextvars.ContextVar(
     "plugin_root_selected", default=None
 )
@@ -93,174 +88,17 @@ def _remember_claude_selection(data: list, plugin_id: str, project: pathlib.Path
         selected[root] = SelectedInstallation(plugin_id, precedence[0], project, root)
 
 
-_INVENTORY_STATE_KEY = "plugin_inventory"
-
-
-def _managed_settings_directories() -> list[pathlib.Path]:
-    if sys.platform == "darwin":
-        return [pathlib.Path("/Library/Application Support/ClaudeCode")]
-    if sys.platform == "win32":
-        return [pathlib.Path(runtime_environment.environment().get("PROGRAMFILES", "C:/Program Files")) / "ClaudeCode"]
-    directories = [pathlib.Path("/etc/claude-code")]
-    if runtime_environment.environment().get("WSL_INTEROP") or runtime_environment.environment().get("WSL_DISTRO_NAME"):
-        directories.append(pathlib.Path("/mnt/c/Program Files/ClaudeCode"))
-    return directories
-
-
-_HASHED_INPUTS = {
-    "settings.json",
-    "settings.local.json",
-    "installed_plugins.json",
-    "known_marketplaces.json",
-    "managed-settings.json",
-    "config.toml",
-    "marketplace.json",
-    "plugin.json",
-}
-
-
-def _claude_inventory_inputs(project: pathlib.Path) -> set[pathlib.Path] | None:
-    config = host_homes.claude_config_dir()
-    paths = {*config.glob("*.json")}
-    paths.update(config / "plugins" / name for name in ("installed_plugins.json", "known_marketplaces.json"))
-    # registry/MDMの変更はsession内では検出しない。管理者変更は次のsessionで新規取得する。
-    for directory in _managed_settings_directories():
-        paths.add(directory / "managed-settings.json")
-        paths.update((directory / "managed-settings.d").glob("*.json"))
-    for directory in (project, *project.parents):
-        paths.update(directory / ".claude" / name for name in ("settings.json", "settings.local.json"))
-        git = directory / ".git"
-        paths.add(git)
-        if git.is_file():
-            pointer = git.read_text(encoding="utf-8").strip()
-            if not pointer.startswith("gitdir: "):
-                return None
-            gitdir = (directory / pointer[8:]).resolve()
-            common = gitdir / "commondir"
-            paths.add(common)
-            if common.is_file():
-                main = (gitdir / common.read_text(encoding="utf-8").strip()).resolve().parent
-                paths.add(main / ".claude/settings.local.json")
-    return paths
-
-
-def _codex_inventory_inputs(project: pathlib.Path) -> set[pathlib.Path] | None:
-    """`codex plugin list`の結果を決めるファイルを、設定・marketplace・導入cacheから集める。
-
-    導入済みかは導入cacheの版ディレクトリから、localのmarketplaceの導入版は作業ツリーのplugin manifestから決まる。
-    git等のmarketplaceの本文はCodexの更新操作だけが書き換え、その操作は設定かmarketplace一覧の変更を伴う。
-    同梱カタログ（数百件）のmanifestまで調べると照会の省略で得る時間を打ち消すため、manifestはlocalだけ調べる。
-    管理者用の設定（`/etc/codex`配下など）の変更はsession内では検出しない。管理者変更は次のsessionで新規取得する。
-    """
-    home = pathlib.Path(runtime_environment.environment().get("CODEX_HOME", runtime_environment.home() / ".codex"))
-    config = home / "config.toml"
-    paths = {config, *(directory / ".codex" / "config.toml" for directory in (project, *project.parents))}
-    try:
-        marketplaces = tomllib.loads(config.read_text(encoding="utf-8")).get("marketplaces", {})
-    except FileNotFoundError:
-        marketplaces = {}
-    if not isinstance(marketplaces, dict):
-        return None
-    roots = [(home / ".tmp" / "plugins", False)]
-    for name, entry in marketplaces.items():
-        if not isinstance(entry, dict):
-            return None
-        if entry.get("source_type") != "local":
-            roots.append((home / ".tmp" / "marketplaces" / name, False))
-            continue
-        source = entry.get("source")
-        if not isinstance(source, str):
-            return None
-        roots.append((pathlib.Path(source), True))
-    # 版ディレクトリの追加・削除を名前の集合で比べる。親のmtimeは同じ時刻刻みの中では変わらないことがある。
-    paths.update((home / "plugins" / "cache").glob("*/*/*"))
-    for root, local in roots:
-        for manifest in (root / ".agents/plugins/marketplace.json", root / ".claude-plugin/marketplace.json"):
-            paths.add(manifest)
-            if not local or not manifest.is_file():
-                continue
-            listing = json.loads(manifest.read_text(encoding="utf-8"))
-            plugins = listing.get("plugins") if isinstance(listing, dict) else None
-            for plugin in plugins if isinstance(plugins, list) else []:
-                source = plugin.get("source") if isinstance(plugin, dict) else None
-                if isinstance(source, dict) and isinstance(source.get("path"), str):
-                    base = root / source["path"]
-                    paths.update((base / ".codex-plugin/plugin.json", base / ".claude-plugin/plugin.json"))
-    return paths
-
-
-def _inventory_signature(host: str, project: pathlib.Path) -> str | None:
-    """設定合成を複製せず、公開一覧をファイル設定源の変更時に再取得する。"""
-    if host not in {"claude", "codex"}:
-        return None
-    executable = shutil.which(host, path=runtime_environment.environment().get("PATH", os.defpath))
-    if executable is None:
-        return None
-    environment = sorted(runtime_environment.environment().items())
-    try:
-        if host == "claude":
-            inputs = _claude_inventory_inputs(project)
-            location = str(host_homes.claude_config_dir())
-        else:
-            inputs = _codex_inventory_inputs(project)
-            location = ""
-            # Codexのhookの環境は要求ごとの値を含みうる。一覧の結果へ作用する変数だけを比べる。
-            environment = [
-                item
-                for item in environment
-                if item[0].startswith("CODEX_") or item[0] in {"HOME", "USERPROFILE", "PATH", "PATHEXT", "XDG_CONFIG_HOME"}
-            ]
-        if inputs is None:
-            return None
-        metadata: list[tuple] = []
-        for path in sorted({pathlib.Path(__file__), pathlib.Path(executable), *inputs}):
-            try:
-                stat = path.stat()
-                # 同長の短時間書換えではmtime/ctimeも同値になるFSがある。選別入力は内容でも比較する。
-                content = (
-                    hashlib.sha256(path.read_bytes()).hexdigest()
-                    if path.is_file() and (path.name in _HASHED_INPUTS or path.parent.name == "managed-settings.d")
-                    else None
-                )
-                metadata.append(
-                    (
-                        str(path),
-                        str(path.resolve()),
-                        stat.st_dev,
-                        stat.st_ino,
-                        stat.st_size,
-                        stat.st_mtime_ns,
-                        stat.st_ctime_ns,
-                        content,
-                    )
-                )
-            except FileNotFoundError:
-                metadata.append((str(path), None))
-        # 環境は選別へ作用しうる。保存するのはhashだけで、設定本文や資格情報は複製しない。
-        value = [host, sys.platform, str(project), location, environment, metadata]
-        return hashlib.sha256(json.dumps(value).encode("utf-8")).hexdigest()
-    except OSError, UnicodeError, ValueError:
-        return None
-
-
 @contextlib.contextmanager
-def plugin_resolution_scope(*, session_id: str = "") -> Generator[None]:
-    """要求内の一覧を共有し、hookでは入力不変の公開一覧を既存状態から再利用する。"""
+def plugin_resolution_scope() -> Generator[None]:
+    """1回の要求の中で、hostの導入一覧と選んだ導入先を共有する。"""
     if _inventories.get() is not None:
         yield
         return
     token = _inventories.set({})
     selected_token = _selected.set({})
-    saved = read_state(session_id).get(_INVENTORY_STATE_KEY, {}) if session_id else {}
-    reusable = saved.copy() if isinstance(saved, dict) and saved.get("session_id") == session_id else {}
-    persistent_token = _reusable.set(reusable if session_id else None)
     try:
         yield
     finally:
-        if session_id and reusable != saved:
-            reusable["session_id"] = session_id
-            update_state(session_id, lambda state: {**state, _INVENTORY_STATE_KEY: reusable})
-        _reusable.reset(persistent_token)
         _selected.reset(selected_token)
         _inventories.reset(token)
 
@@ -275,18 +113,6 @@ def _plugin_inventory(host: str, project: pathlib.Path) -> object:
         if cache is not None:
             cache[key] = data
         return data
-    reusable = _reusable.get()
-    signature = _inventory_signature(host, project) if reusable is not None else None
-    if (
-        reusable is not None
-        and signature is not None
-        and reusable.get("signature") == signature
-        and isinstance(reusable.get("data"), list | dict)
-    ):
-        data = reusable["data"]
-        if cache is not None:
-            cache[key] = data
-        return data
     data = (
         {"installed": codex_installed_plugins(host, project)}
         if host == "codex"
@@ -294,14 +120,6 @@ def _plugin_inventory(host: str, project: pathlib.Path) -> object:
     )
     if cache is not None:
         cache[key] = data
-    if (
-        reusable is not None
-        and signature is not None
-        and signature == _inventory_signature(host, project)
-        and isinstance(data, list | dict)
-    ):
-        reusable.clear()
-        reusable.update(signature=signature, data=data)
     return data
 
 
@@ -329,39 +147,6 @@ def codex_installed_plugins(executable: str, project: pathlib.Path | None = None
             raise PluginRootError(f"Codexの導入情報の形式が不正。{shlex.join(['codex', *command[1:]])}を確認する")
         installed.extend(items)
     return installed
-
-
-def codex_plugin_source_root(root: pathlib.Path, name: str) -> pathlib.Path | None:
-    """導入済みcacheの実体と公開marketplace一覧を対応付け、配布元の実在rootを返す。"""
-    home = pathlib.Path(runtime_environment.environment().get("CODEX_HOME", runtime_environment.home() / ".codex"))
-    cache = (home / "plugins/cache").resolve()
-    if not root.is_relative_to(cache):
-        return None
-    parts = root.relative_to(cache).parts
-    if len(parts) != 3 or parts[1] != name:
-        return None
-    marketplace, _name, version = parts
-    listing = _host_json("codex", ["codex", "plugin", "marketplace", "list", "--json"], None)
-    markets = listing.get("marketplaces", []) if isinstance(listing, dict) else []
-    sources = [item.get("root") for item in markets if isinstance(item, dict) and item.get("name") == marketplace]
-    if len(sources) != 1 or not isinstance(sources[0], str):
-        return None
-    source = pathlib.Path(sources[0])
-    if not source.is_absolute() or not source.is_dir():
-        return None
-    data = _host_json("codex", ["codex", "plugin", "list", "--json", "--marketplace", marketplace], None)
-    installed = data.get("installed", []) if isinstance(data, dict) else []
-    matched = [
-        item
-        for item in installed
-        if isinstance(item, dict)
-        and item.get("name") == name
-        and item.get("marketplaceName") == marketplace
-        and item.get("version") == version
-        and item.get("installed") is True
-        and item.get("enabled") is True
-    ]
-    return source.resolve() if len(matched) == 1 else None
 
 
 def _host_json(host: str, command: list[str], project: pathlib.Path | None) -> object:

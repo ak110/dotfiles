@@ -26,9 +26,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _stage_model_env,
     _write_session_state,
 )
-from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
-
-pytestmark = pytest.mark.usefixtures("unchanged_documents_resolution")
+from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 
 @pytest.fixture(autouse=True)

@@ -341,7 +341,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             params,
             whole_contract_path=whole_contract_path,
             launcher_session_id=launcher,
-            include_startup=False,
         )
         context = await run_file_operation(_manager().launcher_record_context)
         task_prompt = launch_requests.with_launcher_record(task_prompt, context)
@@ -657,7 +656,7 @@ async def send_to_user(
         raise ValueError("本文を日本語で書き直すまで画面へ表示していない。")
     try:
         guidance = ""
-        if runtime_inserted.reported_improvement_lines(message) or runtime_inserted.report_cues(message):
+        if runtime_inserted.reported_improvement_lines(message):
             root = pathlib.Path(__file__).resolve().parents[2]
             checked = await run_file_operation(
                 subprocess.run,

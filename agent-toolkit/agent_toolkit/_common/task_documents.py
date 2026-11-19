@@ -238,11 +238,48 @@ def parse_required_inputs_when(raw: object, declared: Collection[str]) -> tuple[
     return tuple(entries)
 
 
+STARTUP_DOCUMENT_REFERENCE = re.compile(r"(?:agent-toolkit|agent-basics):[a-z0-9-]+/(?:[a-z0-9-]+/)*[a-z0-9.-]+\.md")
+"""`startup_documents`が受理する資料の参照。`<plugin名>:<スキル名>/<スキルのディレクトリからの相対パス>`の形とする。"""
+
+
+@dataclasses.dataclass(frozen=True)
+class StartupDocument:
+    """役割の起動の本文へ全文を入れる資料。`when`の全ての入力が値と完全に一致した時だけ入れる。"""
+
+    reference: str
+    when: InputCondition = ()
+
+    def applies(self, inputs: Mapping[str, str]) -> bool:
+        """起動の入力がこの資料の条件を満たすかを返す。"""
+        return when_matches(self.when, inputs)
+
+
+def parse_startup_documents(values: object, accepted: frozenset[str]) -> tuple[StartupDocument, ...]:
+    """frontmatterの`startup_documents`を検証して読む。形式の誤りは起動前に拒否する。"""
+    if not isinstance(values, list):
+        raise ValueError("startup_documentsは資料の参照の配列で指定する")
+    documents: list[StartupDocument] = []
+    for value in values:
+        entry = {"document": value} if isinstance(value, str) else value
+        if not isinstance(entry, dict) or set(entry) - {"document", "when"}:
+            raise ValueError(f"startup_documentsの要素は参照の文字列か{{document, when}}で指定する: {value!r}")
+        reference = entry.get("document")
+        if not isinstance(reference, str) or not STARTUP_DOCUMENT_REFERENCE.fullmatch(reference):
+            raise ValueError(f"startup_documentsの参照は`<plugin名>:<スキル名>/<相対パス>.md`で指定する: {reference!r}")
+        try:
+            when = parse_when(entry["when"], accepted) if "when" in entry else ()
+        except ValueError as error:
+            raise ValueError(f"startup_documentsの{error}") from error
+        documents.append(StartupDocument(reference, when))
+    return tuple(documents)
+
+
 @dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
     """役割文書が宣言する入力名・mode・モデル段位・用途・書込の値。
 
     `writes_worktree`は起動時のcwdが属する作業ツリーへ書き込む役割かを表す。
+    `startup_documents`は役割の起動の本文へ全文を入れる、役割に固有の資料である（modeによらず入れる）。
     """
 
     required: tuple[str, ...]
@@ -255,6 +292,7 @@ class TaskDocumentDeclaration:
     # `:`で終わる値は前方一致、それ以外は行全体の一致（直後の全角括弧の補足を許す）で受理する。
     result_heads: tuple[str, ...] = ()
     required_when: tuple[ConditionalInputs, ...] = ()
+    startup_documents: tuple[StartupDocument, ...] = ()
 
     @property
     def accepted(self) -> frozenset[str]:
@@ -428,9 +466,11 @@ def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) ->
             raise ValueError("result_headsは値を含む固定行の配列で指定する")
         required = tuple(values["required_inputs"])
         optional = tuple(values.get("optional_inputs", []))
+        startup = parse_startup_documents(values.get("startup_documents", []), frozenset((*required, *optional)))
         return TaskDocumentDeclaration(
             required=required,
             optional=optional,
+            startup_documents=startup,
             launch_kind=mode,
             writes_worktree=writes,
             model_type=values["model_type"],

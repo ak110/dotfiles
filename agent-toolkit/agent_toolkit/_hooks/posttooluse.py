@@ -17,8 +17,9 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
 5. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)、
-   読込案内の対象資料の取得の`operation_skill_delivered_agents`への記録
-   （内容ハッシュによる現行形式。判定は`pretooluse/read_delivery.py`の`observe`が行う）
+   操作の直前に起動を求めるスキルの起動の記録（以後その主体へ起動の案内を出さない。`pretooluse/operation_skills.py`）。
+   スキルの入口（`SKILL.md`）の現在の全文を返した読取も、そのスキルの起動として記録する（Read / Bash。`full_reads.py`）。
+   Codex・Antigravityはスキルを入口の読取で始めるためである。`agent-basics:bugfix`の起動は検証の失敗後の案内も止める
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの命名が計画名の解決に使用）
 7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
@@ -33,6 +34,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
     `updatedToolOutput` (Bash / PowerShell。`persisted_output`が判定する)
 13. メインが成功した前景Bashでcommit・pushを行った後に、report-completionの起動条件を通知する
 14. 一定間隔ごとの進捗のセルフチェック通知（全ツール共通。`progress_self_check`が判定する）
+15. Codexが省略した出力へ、省略を回収する操作の通知 (Bash。`codex_truncation`が判定する)
 """
 
 import json
@@ -42,7 +44,7 @@ import re
 lazy import asyncio
 lazy import shlex
 
-from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE, observe_verification
+from agent_toolkit._hooks.bugfix_gate import BUGFIX_SKILL, QUOTED_MATERIAL_RE, mark_started, observe_verification
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
@@ -55,8 +57,7 @@ lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_e
 lazy from agent_toolkit._common.task_stop_state import consume_completion, target_ids
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
-lazy from agent_toolkit._hooks import codex_read_observation as _codex_read_observation
-lazy from agent_toolkit._hooks import command_timing, effort_notice, session_title, termination_evidence
+lazy from agent_toolkit._hooks import codex_truncation, command_timing, full_reads, session_title, termination_evidence
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
@@ -64,7 +65,7 @@ lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
 lazy from agent_toolkit._hooks.host import is_codex_payload
-lazy from agent_toolkit._hooks.pretooluse import read_delivery as _read_delivery
+lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 # このスクリプトの hook 識別子。
@@ -473,19 +474,6 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         _record_background_task_id(session_id, notice_task_id)
 
     notices: list[str] = []
-    try:
-        _read_delivery.observe(payload, tool_name, tool_input, session_id)
-    except (OSError, UnicodeError, ValueError) as error:
-        notices.append(
-            _llm_notice(
-                f"資料の読取結果を取得済みとして記録できない: {error}。読取自体の成否はツール結果で確認せよ。",
-                tag=_WARN_TAG,
-                fix="診断に示された資料と読込表を確認せよ。本文が欠けていれば必要な範囲を取得し、"
-                "記録の障害が続く場合は診断を委譲元またはユーザーへ報告せよ。",
-                removable_cause=True,
-                escalate_on_repeat=False,
-            )
-        )
     if event_name == "PostToolUseFailure":
         failed_task_id = (
             _background_task_id_from_response(payload.get("tool_response"))
@@ -527,6 +515,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
     elif tool_name == "Skill":
         # Skill: 表示名のための作業の起動検出
         skill = tool_input.get("skill")
+        operation_skills.observe_skill(session_id, resolve_hook_agent_id(payload), skill)
         if not payload.get("agent_id") and isinstance(skill, str):
             arguments = tool_input.get("args")
             session_title.observe_skill(session_id, skill, arguments if isinstance(arguments, str) else None)
@@ -586,6 +575,19 @@ def _mount_periodic_recheck(session_id: str) -> list[str]:
     return [warning] if isinstance(warning, str) and warning else []
 
 
+def _observe_skill_reads(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str) -> None:
+    """スキルの入口の現在の全文を返した読取を、そのスキルの起動として記録する。"""
+    subject = resolve_hook_agent_id(payload)
+    response = payload.get("tool_response")
+    for path in full_reads.full_reads(tool_name, tool_input, response, cwd, full_reads.is_skill_entry_name):
+        if (entry := full_reads.skill_entry(path)) is None:
+            continue
+        skill = f"{entry[0]}:{entry[1]}"
+        operation_skills.observe_skill(session_id, subject, skill)
+        if skill == BUGFIX_SKILL:
+            mark_started(session_id, subject)
+
+
 def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0。
 
@@ -605,29 +607,15 @@ def main(payload_text: str) -> int:
             else _structured_background_task_id(payload.get("tool_response"))
         )
         notices.extend(command_timing.observe(payload, background_task_id=background_task_id))
-        observation = _codex_read_observation.collect(payload)
-        if observation is not None:
-            notices.append(observation.context)
-            payload = {**payload, "tool_response": observation.body or ""}
-        elif (
+        if (
             is_codex_payload(payload)
             and tool_name == "Bash"
-            and isinstance(payload.get("tool_response"), str)
-            and isinstance(tool_input.get("command"), str)
-            and _codex_read_observation.read_plan(tool_input.get("command", ""))
+            and (truncated := codex_truncation.truncation_notice(payload.get("tool_response"))) is not None
         ):
-            # nativeの失敗・不明な終了状態を、旧来の識別行だけで読了にしない。
-            payload = {**payload, "tool_response": ""}
-        if (
-            observation is None
-            and is_codex_payload(payload)
-            and tool_name == "Bash"
-            and _codex_read_observation.response_is_truncated(payload.get("tool_response"))
-        ):
-            notices.append(_llm_notice(_codex_read_observation.TRUNCATED_OUTPUT_NOTICE))
+            notices.append(_llm_notice(truncated))
         notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
-        if (effort_advice := effort_notice.observe(payload)) is not None:
-            notices.append(effort_advice)
+        if event_name == "PostToolUse" and tool_name != "Skill":
+            _observe_skill_reads(payload, session_id, tool_name, tool_input, cwd)
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:

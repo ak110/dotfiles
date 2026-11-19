@@ -31,7 +31,7 @@
 
 <!-- input-contract:external-write-review:end -->
 
-レビュー担当の観点は`agent-toolkit:atk-mode/roles/external-write-review.subagent.md`が定める（所在参照。起動の前に読まない）。
+レビュー担当の観点は`agent-toolkit:atk-mode/roles/external-write-review.subagent.md`が定める（起動の前に読まない）。
 
 ### 起動
 

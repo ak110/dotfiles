@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools, result_contract, state
-from agent_toolkit._common import read_triggers, task_documents
+from agent_toolkit._agents_server import launch_requests, launch_requests_inputs, mcp_tools, result_contract, state
+from agent_toolkit._common import task_documents
 from agent_toolkit._testing.launch_requests_support import TaskManager
 
 _ROLE = "located"
@@ -124,12 +124,16 @@ def test_unknown_role_lists_roles_from_both_locations(directory: str, plugin: pa
 
 
 def test_parent_contract_resolves_across_locations(directory: str, plugin: pathlib.Path) -> None:
-    """起動・受領契約は、役割文書と同じ置き場所でも別の置き場所でも解決する。"""
+    """入力の拒否が案内する起動・受領契約は、役割文書と同じ置き場所でも別の置き場所でも解決する。"""
     document = _place(plugin, directory)
     for contract_directory in task_documents.ROLE_DOCUMENT_DIRECTORIES:
-        contract = _place(plugin, contract_directory, f"{_ROLE}.parent.md", "# 起動契約\n")
-        for role in (_ROLE, str(document)):
-            assert [target.path for target in read_triggers.parent_contract_targets(role, plugin)] == [contract]
+        contract = _place(
+            plugin,
+            contract_directory,
+            f"{_ROLE}.parent.md",
+            f"# 起動契約\n\n```text\n起動対象: {_ROLE}.subagent.md\n```\n\n## 入力\n\n対象と目的を渡す。\n",
+        )
+        assert f"`{contract}`「入力」" in launch_requests_inputs._input_contract_guidance(document)
         contract.unlink()
 
 

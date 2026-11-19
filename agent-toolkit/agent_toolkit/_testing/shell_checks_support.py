@@ -12,7 +12,7 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.pretooluse_support import (
     _plan_file_state_env,
     _run,
-    run_without_read_delivery,
+    run_without_skill_notices,
 )
 
 
@@ -26,7 +26,7 @@ def _existing_work_contract(tmp_path, monkeypatch):
 
 def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
     """対象外の資料取得を代用し、シェル・MCP固有の公開判定を試す。"""
-    return run_without_read_delivery(payload, env_overrides=env_overrides)
+    return run_without_skill_notices(payload, env_overrides=env_overrides)
 
 
 def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:

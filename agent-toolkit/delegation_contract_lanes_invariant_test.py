@@ -6,7 +6,7 @@ import re
 import pytest
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
-from agent_toolkit._common import read_triggers, task_documents
+from agent_toolkit._common import task_documents
 from agent_toolkit._plan import selection
 from agent_toolkit._testing.delegation_contract_support import (
     _LAUNCH_TARGET_PREFIX,
@@ -16,7 +16,7 @@ from agent_toolkit._testing.delegation_contract_support import (
     _selection_format,
     _selection_procedure,
 )
-from agent_toolkit._testing.normative_contract import read_contract
+from agent_toolkit._testing.normative_contract import line_references, read_contract, section_text
 
 
 def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> None:
@@ -348,12 +348,16 @@ def test_publication_recovery_references_resolve_to_shared_sections() -> None:
         ("skills/atk-mode/roles/session-termination.parent.md", finish, "公開工程の続行不能の回復と再開"),
         ("skills/atk-mode/roles/session-termination.subagent.md", publish, "公開工程の続行不能の受渡し"),
     ]
-    with read_triggers.resolution_scope():
-        for source, target, heading in routes:
-            resolved = [
-                found
-                for _number, line, visible in read_triggers.document_lines((root / source).read_text(encoding="utf-8"))
-                if visible and f"「{heading}」" in line
-                for found in read_triggers.material_targets(line, root / source, root, references_only=True)
-            ]
-            assert any(found.path == root / target and found.body() for found in resolved), source
+    for source, target, heading in routes:
+        # 「本書「<節>」」は名指しした文書自身の節を指す。
+        resolved = [
+            found
+            for line in (root / source).read_text(encoding="utf-8").splitlines()
+            if f"「{heading}」" in line
+            for found in (
+                *line_references(line, root / source, root),
+                *([root / source] if f"本書「{heading}」" in line else []),
+            )
+        ]
+        assert root / target in resolved, source
+        assert section_text(root / target, heading).strip(), target

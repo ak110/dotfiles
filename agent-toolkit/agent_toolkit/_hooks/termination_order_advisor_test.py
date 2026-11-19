@@ -16,10 +16,10 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._common import automated_prompt
 from agent_toolkit._hooks import (
     autonomous_exit,
-    rules_context,
     stop,
     termination_evidence,
     termination_evidence_operations,
+    termination_evidence_state,
     termination_order_advisor,
     user_prompt_submit,
 )
@@ -131,11 +131,24 @@ def test_completion_before_target_restart_is_reused_until_compact(tmp_path: path
     _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_1", arguments="process-wi")
     _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_2", arguments="report-completion")
     if compact:
-        rules_context.reset_main_operation_skill_ready("sess-second")
+        termination_evidence_state.forget_completion_context("sess-second")
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(json.dumps({"session_id": "sess-second", "turn_id": "again", "prompt": "もう一度処理する"}))
     _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_3", arguments="process-wi")
     assert termination_order_advisor.evaluate(_payload("sess-second", str(trace)))[0] == ("notify" if compact else "approve")
+
+
+def test_completion_of_revised_playbook_is_not_reused(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """手順書が改訂された後は、改訂前の版の起動を文脈の読込として再利用しない。"""
+    trace = _write_transcript(tmp_path, [])
+    _start_skill("sess-revised", trace, "agent-toolkit:atk-mode", "toolu_1", arguments="process-wi")
+    _start_skill("sess-revised", trace, "agent-toolkit:atk-mode", "toolu_2", arguments="report-completion")
+    assert termination_order_advisor.evaluate(_payload("sess-revised", str(trace)))[0] == "approve"
+    monkeypatch.setattr(termination_evidence_state, "playbook_digest", lambda: "revised")
+    with contextlib.redirect_stdout(io.StringIO()):
+        user_prompt_submit.main(json.dumps({"session_id": "sess-revised", "turn_id": "again", "prompt": "もう一度処理する"}))
+    _start_skill("sess-revised", trace, "agent-toolkit:atk-mode", "toolu_3", arguments="process-wi")
+    assert termination_order_advisor.evaluate(_payload("sess-revised", str(trace)))[0] == "notify"
 
 
 def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, monkeypatch):
@@ -158,7 +171,7 @@ def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, mo
     _human_input(session_id, trace, "next", "次の作業を進める")
     _commit(session_id, trace, "next-commit")
     assert evaluate() == ("approve", "")
-    rules_context.reset_main_operation_skill_ready(session_id)
+    termination_evidence_state.forget_completion_context(session_id)
     assert evaluate()[0] == "notify"
 
 

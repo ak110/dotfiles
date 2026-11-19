@@ -7,7 +7,7 @@
 文章成果物を含むレビューで、レビュー担当（実行レビュー担当など）が、直接確認か読者別探索担当の起動を選び、全対象と想定読者の結果をそろえる手順である。
 方針: 読者に合うかは、作成者と同じ文脈では判定できないため、独立した担当が読む（原則6、`agent-basics:writing-standards/references/quality-principles-verification.md`）。
 受領は担当の申告ではなく、対象ごとの完了状態と証拠で行う。
-担当の確認観点は`agent-toolkit:atk-mode/roles/reader-fit-review.subagent.md`にある（所在参照）。
+担当の確認観点は`agent-toolkit:atk-mode/roles/reader-fit-review.subagent.md`にある。
 
 ## 起動
 

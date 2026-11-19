@@ -111,6 +111,12 @@ class ResourceInventory:
         )
 
 
+def _write_common_documents(references: pathlib.Path) -> None:
+    """通常の委譲の起動が全文を入れるagent-basicsの共通の資料を、導入の`references`へ置く。"""
+    for name in ("quality-principles.md", "quality-principles-facts.md"):
+        (references / name).write_text(f"# {name}\n", encoding="utf-8")
+
+
 @pytest.fixture(name="resources")
 def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> ResourceInventory:
     """保持toolkitと導入basicsを分離し、解決処理の外部一覧だけを差し替える。"""
@@ -118,21 +124,21 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
     toolkit = tmp_path / "held/toolkit-2.248.0"
     for directory in ("skills/atk-mode/playbooks", "share", "scripts", ".claude-plugin"):
         (toolkit / directory).mkdir(parents=True, exist_ok=True)
+    (toolkit / "skills/atk-mode/references").mkdir(parents=True)
     for relative in (
         ".claude-plugin/plugin.json",
         ".mcp.json",
         "skills/atk-mode/playbooks/subagent.md",
+        "skills/atk-mode/references/work-contract.md",
         "scripts/atk",
         "scripts/atk.cmd",
     ):
         shutil.copyfile(source / relative, toolkit / relative)
     task = toolkit / "share/resource-probe.subagent.md"
     task.write_text(
-        "---\nmode: delegate\nmodel_type: chores\nrequired_inputs: []\noptional_inputs: []\nwrites_worktree: true\n---\n"
-        "# 資料配送確認担当\n\n受領した品質資料を参照する。\n\n"
-        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
-        "| --- | --- | --- | --- |\n"
-        "| 起動時 | `agent-basics:writing-standards/references/writing.md` | 起動時 | |\n",
+        "---\nmode: delegate\nmodel_type: chores\nrequired_inputs: []\noptional_inputs: []\nwrites_worktree: true\n"
+        "startup_documents:\n- agent-basics:writing-standards/references/writing.md\n---\n"
+        "# 資料配送確認担当\n\n受領した品質資料を参照する。\n",
         encoding="utf-8",
     )
     inventory = ResourceInventory(tmp_path, toolkit)
@@ -148,6 +154,7 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
                 required = material.parent / "references/writing.md"
                 required.parent.mkdir()
                 required.write_text(f"# 必読資料\n{host}/{project.name}/{generation}の必読本文\n", encoding="utf-8")
+                _write_common_documents(required.parent)
                 manifest = root / ("plugin.json" if host == "agy" else ".claude-plugin/plugin.json")
                 manifest.parent.mkdir(parents=True, exist_ok=True)
                 manifest.write_text(json.dumps({"name": "agent-basics"}), encoding="utf-8")
@@ -392,16 +399,6 @@ def _stale_claude_installation(
 
     `shared_folder`では、両scopeが同じ配布元フォルダー（`readFromFolder`）を読む導入を再現する。
     """
-    task = resources.toolkit / "share/resource-probe.subagent.md"
-    body = task.read_text(encoding="utf-8")
-    task.write_text(
-        body.replace(
-            "受領した品質資料を参照する。\n",
-            "受領した品質資料を参照する。\n\n## 名指し参照の読込方法\n\n"
-            "名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。\n\n",
-        ),
-        encoding="utf-8",
-    )
     user = resources.basics("claude", resources.root / "project-a")
     stale = resources.root / "installed/claude/stale/1.18.0/agent-basics"
     for root in (user, stale):
@@ -409,14 +406,9 @@ def _stale_claude_installation(
         references.mkdir(parents=True, exist_ok=True)
         (root / "skills/writing-standards/SKILL.md").write_text("# 品質基準\n", encoding="utf-8")
         (references / "writing.md").write_text(f"# 必読資料\n{root.parent.name}の必読本文\n", encoding="utf-8")
-        (references / "read-method.md").write_text("# 読込方法\n", encoding="utf-8")
+        _write_common_documents(references)
         (root / ".claude-plugin").mkdir(exist_ok=True)
         (root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "agent-basics"}), encoding="utf-8")
-    # 旧版の必読資料は転送文書とし、転送先の欠落も同じ診断になることを確かめる。
-    (stale / "skills/writing-standards/references/writing.md").write_text(
-        "<!-- read-source: agent-basics:writing-standards/references/writing-body.md -->\n", encoding="utf-8"
-    )
-    (stale / "skills/writing-standards/references/writing-body.md").write_text("# 必読資料\n", encoding="utf-8")
     (stale / missing).unlink()
 
     def inventory(host: str, _project: pathlib.Path) -> list[dict[str, Any]]:
@@ -447,10 +439,9 @@ def _stale_claude_installation(
     "missing",
     [
         "skills/writing-standards/references/writing.md",
-        "skills/writing-standards/references/writing-body.md",
-        "skills/writing-standards/references/read-method.md",
+        "skills/writing-standards/references/quality-principles.md",
     ],
-    ids=["startup-row", "read-source", "reference-method"],
+    ids=["role-document", "common-document"],
 )
 @pytest.mark.parametrize("shared_folder", [False, True], ids=["separate-roots", "shared-folder"])
 @pytest.mark.asyncio

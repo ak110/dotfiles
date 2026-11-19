@@ -66,11 +66,11 @@ Stop hookが起動不足を示した時、作業を完了して終えるなら�
 
 完了報告の起動証拠として、Stop hookは次のものだけを受理する。
 
-- Claude Code: `Skill`ツールでスキル`atk-mode`を引数の先頭語`report-completion`で起動して成功したもの、または`skills/atk-mode/playbooks/report-completion.md`を`Read`ツールで読み、本文の全体を返したもの。
-- CodexとAntigravity: 実行位置が`skills/atk-mode/playbooks/report-completion.md`を読む読取コマンドで、結果が本文を返したもの。
-- パスの文字列だけの言及、起動の予告、失敗した読取や空の読取、検索の一致行、他の作業や委譲先の起動は受理しない。
-- 起動証拠を得た作業の後に新しい人間の入力があり、続けて成果作業が届いた場合は、新しい作業として扱い、前の起動証拠を流用しない。
-- 起動証拠として有効なのは、最後の会話圧縮の後に得たものに限る。
+- Claude Code: `Skill`ツールでスキル`atk-mode`を引数の先頭語`report-completion`で起動して成功したもの、または`skills/atk-mode/playbooks/report-completion.md`を`Read`ツールで読んで現在の版の全文を受け取ったもの。
+- CodexとAntigravity: 出力をリダイレクトしない本文表示か、1行目から始まる`sed -n`の行範囲の表示で`skills/atk-mode/playbooks/report-completion.md`を読み、結果が現在の版の全文を含むもの。
+- パスの文字列だけの言及、起動の予告、失敗した読取や空の読取、途中で終わる範囲の読取、ホストが省略した結果、旧版の読取、検索の一致行、他の作業や委譲先の起動は受理しない。
+- 起動証拠として有効なのは、最後の会話圧縮の後にメインが得たもので、手順書の版が現在の版と同じものに限る。
+  この条件を満たす起動証拠は、新しい人間の入力の後の作業にも使う。
 
 判断の記録が受理する証拠は次のとおりである。
 

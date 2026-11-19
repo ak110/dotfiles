@@ -16,7 +16,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
 )
-from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
+from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 _PLUGIN_ROOT = _SHARE_DIR.parent
 _EXEC_DOCUMENT = _ROLES_DIR / "exec.subagent.md"

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import sync_generated_files as subject
-from agent_toolkit._common import read_triggers, task_documents
+from agent_toolkit._common import task_documents
 from agent_toolkit._testing.delegation_contract_support import _generated_input_errors
 
 
@@ -237,14 +237,11 @@ def test_return_targets_cover_all_roles_and_declared_callers() -> None:
     targets = {role: relative for role, relative, _title, _level in subject.RETURN_TARGETS}
     assert len(targets) == len(subject.RETURN_TARGETS)
     assert targets.keys() == sources.keys()
+    declared: dict[str, list[str]] = {}
+    for contract, role in task_documents.launch_contract_documents(plugin):
+        declared.setdefault(role, []).append(contract.relative_to(plugin).as_posix())
     for role in sources:
-        parent = task_documents.find_role_document(plugin, f"{role}.parent.md")
-        if parent is not None:
-            assert targets[role] == parent.relative_to(plugin).as_posix()
-        else:
-            declared = read_triggers.parent_contract_targets(role, plugin)
-            assert len(declared) == 1
-            assert targets[role] == declared[0].path.relative_to(plugin).as_posix()
+        assert declared.get(role) == [targets[role]], role
 
 
 @pytest.mark.parametrize("role,relative,title,level", subject.RETURN_TARGETS)

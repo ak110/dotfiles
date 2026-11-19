@@ -22,9 +22,7 @@ def test_contract_requires_selected_whole_document_route(tmp_path, defect):
     if defect == "section":
         material += "#本文"
     source.write_text(
-        "# 入口\n\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
-        "| --- | --- | --- | --- |\n"
-        f"| {condition} | `{material}` | 判断 | `read:agent-toolkit:*/share/selected.md` |\n",
+        f"# 入口\n\n| 時点または条件 | 全文読む資料 |\n| --- | --- |\n| {condition} | `{material}` |\n",
         encoding="utf-8",
     )
     if defect:

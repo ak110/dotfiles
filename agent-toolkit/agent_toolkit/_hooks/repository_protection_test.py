@@ -9,8 +9,7 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import private_notes
 from agent_toolkit._hooks import rules_context
-from agent_toolkit._hooks.pretooluse import dispatch
-from agent_toolkit._hooks.pretooluse.decision import Decision
+from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, denial_reason
 
@@ -18,7 +17,7 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, deni
 @pytest.fixture(autouse=True)
 def _skip_unrelated_document_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
     """保護の通過後に働く資料取得案内を分離し、Git境界と公開deny出力だけを検証する。"""
-    monkeypatch.setattr(dispatch, "read_delivery", lambda *_args, **_kwargs: Decision())
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 def _payload(repository: pathlib.Path, kind: str, *, target: pathlib.Path | None = None) -> dict:
