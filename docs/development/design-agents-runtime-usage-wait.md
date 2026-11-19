@@ -101,4 +101,4 @@ Claude Code 2.1.302の対話起動は、環境変数の未承認APIキーで「D
 サブスクリプション認証の検出は、`CLAUDE_CODE_OAUTH_TOKEN`、Linux・Windowsの設定ディレクトリにある`.credentials.json`のOAuth情報、macOSの`claude auth status`を使う。
 macOSのKeychainエントリと`CLAUDE_CONFIG_DIR`の対応はCLI自身に解決させ、資格情報の値をログへ出力しない。
 保存先は[認証の公式仕様](https://code.claude.com/docs/en/authentication#credential-management)、`authMethod`の判定値は[CLIの公式仕様](https://code.claude.com/docs/en/cli-reference#cli-commands)に従う。
-接続先の保持とenvファイルを読む時機は[design-agents-server.md](design-agents-server-connections.md#起動候補と観測identity)にある。
+接続先の保持とenvファイルを読む時機は[design-agents-server-connections.md](design-agents-server-connections.md#起動候補と観測identity)にある。

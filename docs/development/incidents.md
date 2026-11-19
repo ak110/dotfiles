@@ -2,7 +2,7 @@
 
 本文書はWI運用（2026年6月〜）で観測された障害や欠陥のうち、
 再発防止の判断材料になる事例を区分別に集約する。
-事例を加える場合は、次の表の定義で所属する区分を決め、事例の書式と並び順に従ってその区分へ置く。
+事例を加える場合は、次の区分の定義で所属する区分を決め、事例の書式と並び順に従ってその区分へ置く。
 各事例は発生時期・事象・直接原因・確定した対策を記す。
 各事例の対策は確定当時の内容であり、反映先も当時の位置を指す。
 後続の改善で対策の内容または反映先が変わった場合は、現行のルール・スキル側を正とする。
@@ -10,25 +10,91 @@
 
 ## 区分
 
-| 区分 | 定義 | 所在ファイル |
-| --- | --- | --- |
-| [データ破壊と喪失](incidents-data-security.md#データ破壊と喪失) | 成果物、作業ツリー、キューのデータが失われたか破損した事例 | `incidents-data-security.md` |
-| [無許可の公開操作と委譲範囲の逸脱](incidents-data-security.md#無許可の公開操作と委譲範囲の逸脱) | 認可の無い外部操作と委譲範囲を超えた操作 | `incidents-data-security.md` |
-| [セキュリティ設定の弱体化](incidents-data-security.md#セキュリティ設定の弱体化) | sandbox、権限、秘匿値の保護を弱めた事例 | `incidents-data-security.md` |
-| [誤った完了報告と虚偽報告](incidents-reporting.md#誤った完了報告と虚偽報告) | 未達や未観測を完了として報告した事例 | `incidents-reporting.md` |
-| [WI投入とAWI起草の欠陥](incidents-wi-drafting.md#wi投入とawi起草の欠陥) | WIの投入、本文の起草、由来の判定の誤り | `incidents-wi-drafting.md` |
-| [実行レビューと証拠検査の欠陥](incidents-review-evidence.md#実行レビューと証拠検査の欠陥) | 実行レビュー、完成条件証拠、証拠チェックの誤り | `incidents-review-evidence.md` |
-| [テスト、CIと検索出力の欠陥](incidents-tests-ci-search.md#テストciと検索出力の欠陥) | テストの隔離、CI、検索の出力量の誤り | `incidents-tests-ci-search.md` |
-| [誤判定と検証不足](incidents-judgment.md#誤判定と検証不足) | 根拠の確認を欠いた判定（前記の3区分に当たらないもの） | `incidents-judgment.md` |
-| [規範の消失と陳腐化](incidents-norms.md#規範の消失と陳腐化) | 規範の削除・縮小・移設で条文や参照が失われた事例 | `incidents-norms.md` |
-| [レビューの発散と目的の変質](incidents-review-scope.md#レビューの発散と目的の変質) | レビューの往復が発散したか、目的が変わった事例 | `incidents-review-scope.md` |
-| [停滞と空転](incidents-stagnation.md#停滞と空転) | 待機、応答停止、反復で工程が進まなかった事例 | `incidents-stagnation.md` |
-| [公開とリリース工程の未完了](incidents-publishing.md#公開とリリース工程の未完了) | 公開工程とリリースの取りこぼし | `incidents-publishing.md` |
-| [並行実行の競合](incidents-concurrency.md#並行実行の競合) | 複数の主体やレーンの書込と割当の競合 | `incidents-concurrency.md` |
-| [要求と判断の脱落](incidents-requirements.md#要求と判断の脱落) | ユーザーが示した要件、指定、介入が工程から脱落した事例 | `incidents-requirements.md` |
-| [フックとセッション状態の不全](incidents-hooks.md#フックとセッション状態の不全) | hookとセッション状態ファイルの不全 | `incidents-hooks.md` |
-| [agents_serverと委譲基盤の不全](incidents-agents-server.md#agents_serverと委譲基盤の不全) | agents_serverとMCPプロセス、委譲先の起動と待機の不全 | `incidents-agents-server.md` |
-| [配布と更新に伴う不整合](incidents-distribution.md#配布と更新に伴う不整合) | 配布物の改名・廃止の残存、設定変更の未反映、更新処理の失敗 | `incidents-distribution.md` |
+### データ破壊と喪失
+
+成果物、作業ツリー、キューのデータが失われたか破損した事例。
+[事例](incidents-data-security.md#データ破壊と喪失)。
+
+### 無許可の公開操作と委譲範囲の逸脱
+
+認可の無い外部操作と委譲範囲を超えた操作。
+[事例](incidents-data-security.md#無許可の公開操作と委譲範囲の逸脱)。
+
+### セキュリティ設定の弱体化
+
+sandbox、権限、秘匿値の保護を弱めた事例。
+[事例](incidents-data-security.md#セキュリティ設定の弱体化)。
+
+### 誤った完了報告と虚偽報告
+
+未達や未観測を完了として報告した事例。
+[事例](incidents-reporting.md#誤った完了報告と虚偽報告)。
+
+### WI投入とAWI起草の欠陥
+
+WIの投入、本文の起草、由来の判定の誤り。
+[2026年9月13日〜2026年10月5日](incidents-wi-drafting-20260913-20261005.md)、[2026年10月6日〜2026年10月16日](incidents-wi-drafting-20261006-20261016.md)。
+
+### 実行レビューと証拠検査の欠陥
+
+実行レビュー、完成条件証拠、証拠チェックの誤り。
+[2026年10月1日〜8日](incidents-review-evidence-20261001-20261004.md)。
+
+### テスト、CIと検索出力の欠陥
+
+テストの隔離、CI、検索の出力量の誤り。
+[事例](incidents-tests-ci-search.md#テストciと検索出力の欠陥)。
+
+### 誤判定と検証不足
+
+根拠の確認を欠いた判定（前記の3区分に当たらないもの）。
+[事例](incidents-judgment.md#誤判定と検証不足)。
+
+### 規範の消失と陳腐化
+
+規範の削除・縮小・移設で条文や参照が失われた事例。
+[事例](incidents-norms.md#規範の消失と陳腐化)。
+
+### レビューの発散と目的の変質
+
+レビューの往復が発散したか、目的が変わった事例。
+[2026年7月〜10月3日](incidents-review-scope-202607-202608.md)。
+
+### 停滞と空転
+
+待機、応答停止、反復で工程が進まなかった事例。
+[2026年7月〜2026年9月6日](incidents-stagnation-202607-20260906.md)、[2026年9月7日〜11月15日](incidents-stagnation-20260907-20261105.md)。
+
+### 公開とリリース工程の未完了
+
+公開工程とリリースの取りこぼし。
+[事例](incidents-publishing.md#公開とリリース工程の未完了)。
+
+### 並行実行の競合
+
+複数の主体やレーンの書込と割当の競合。
+[事例](incidents-concurrency.md#並行実行の競合)。
+
+### 要求と判断の脱落
+
+ユーザーが示した要件、指定、介入が工程から脱落した事例。
+[事例](incidents-judgment.md#要求と判断の脱落)。
+
+### フックとセッション状態の不全
+
+hookとセッション状態ファイルの不全。
+[2026年6月〜2026年9月14日](incidents-hooks-202606-20260914.md)、[2026年9月22日〜2026年11月6日](incidents-hooks-20260922-20261106.md)。
+
+### agents_serverと委譲基盤の不全
+
+agents_serverとMCPプロセス、委譲先の起動と待機の不全。
+[2026年8月28日〜2026年9月22日](incidents-agents-server-20260828-20260922.md)、[2026年9月30日〜2026年10月31日](incidents-agents-server-20260930-20261031.md)、[2026年11月](incidents-agents-server-202611.md)。
+stdio接続の終了と会話の終了を分ける理由と旧方式の限界は[共有管理サービスの設計](design-agents-server-service.md)にある。
+
+### 配布と更新に伴う不整合
+
+配布物の改名・廃止の残存、設定変更の未反映、更新処理の失敗。
+[事例](incidents-distribution.md#配布と更新に伴う不整合)。
 
 ## 事例の書式と並び順
 

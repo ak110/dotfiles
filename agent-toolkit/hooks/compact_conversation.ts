@@ -16,7 +16,7 @@ type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean
 const DECISION_LIMIT = 20;
 
 // 待機時圧縮の判定理由を会話別の状態ファイルへ残す。debugログはprocess-loopの`--debug=hooks`の分類に
-// modの診断が含まれず、見送り理由を後から判別できなかったため（docs/development/design-hooks.md）。
+// modの診断が含まれず、見送り理由を後から判別できなかったため（docs/development/design-hooks-compaction-resume.md）。
 // 記録の失敗は圧縮の判定と通常の結果回収を変えない。
 async function diagnose($: EngineInterface, state: CompactState, task: string, reason: string, context?: { tokens?: number; window: number }): Promise<void> {
   $.ui.log(`wait_compaction task=${task} reason=${reason}`, { to: "debug" });

@@ -14,7 +14,7 @@
 {{- /* 完了した作業詳細を折りたたみ、回答を読みやすくする。 */ -}}
 {{- $config = setValueAtPath "tui.collapse_turn_details" true $config -}}
 {{- /* 頻繁な自動圧縮による待ち時間と進行の阻害を避けるため、コンテキスト長と自動圧縮の境界を固定する。
-       目的と変更時に観測する条件はdocs/development/concepts-runtime.md「Codexの文脈長設定」に記録している。 */ -}}
+       目的と変更時に観測する条件はdocs/development/concepts-codex-context.md「Codexの文脈長設定」に記録している。 */ -}}
 {{- $config = setValueAtPath "model_context_window" 1000000 $config -}}
 {{- $config = setValueAtPath "model_auto_compact_token_limit" 900000 $config -}}
 {{- /* 権限判定と実行範囲はCodexの自動レビュー経路へ委ねる。 */ -}}

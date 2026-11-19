@@ -1,6 +1,6 @@
 # 障害・欠陥の記録: agents_serverと委譲基盤の不全（2026年11月）
 
-[agents_serverと委譲基盤の不全](incidents-agents-server.md#agents_serverと委譲基盤の不全)の事例を発生時期別に収録する。
+[agents_serverと委譲基盤の不全](incidents.md#agents_serverと委譲基盤の不全)の事例を発生時期別に収録する。
 
 - 2026年11月17日: 巡回中、Codexの担当がturnを終えた後も`running`のまま公開され、`kill`は配送未確定、`send_message`は時間切れとなった。
   統括は約1時間待機を繰り返した。

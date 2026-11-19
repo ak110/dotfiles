@@ -1,6 +1,6 @@
 # 人間入力と候補抽出の設計記録
 
-[設計記録の索引](design.md)と[振り返り・知見集約の設計記録](design-session-review.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 人間の入力の選択は、userロールだけで判断しない。
 `atk run-script session-review-evidence`はCodexとClaude Codeの原文と生成標識へ既存のruntime_insertedの判定を適用し、その結果をイベントへ保持してから通常表示の本文を短縮する。

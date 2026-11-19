@@ -40,7 +40,7 @@ process-loopは`--debug=hooks`で起動し、modの診断はそのdebugログに
 headlessの`compact`コマンドはホスト側の圧縮として原本置換hookを適用する。
 追加pluginで再入を回避する案は配布構成と導入負担を増やすため採らない。
 SDKの委譲先はターン間の同APIが未対応なので、所有backendが公開`/compact`入力を配送する。
-Codexの独立圧縮turnと合わせ、所有と結果保留の構造は[design-agents-server.md](design-agents-server-hold-state.md#結果の保留と自動再開)が扱う。
+Codexの独立圧縮turnと合わせ、所有と結果保留の構造は[design-agents-server-hold-state.md](design-agents-server-hold-state.md#結果の保留と自動再開)が扱う。
 原本を使う復元は要約を生成するホストでも共通とし、目的・最新訂正・認可・未完了を発話順・主体・参照位置から確認する。
 組織ガードで`session.compact`が省略される場合も登録は残し、設定PreCompactから原本復元を優先する短い要約を依頼する。
 PreCompactは要約APIそのものを省略する契約ではない。

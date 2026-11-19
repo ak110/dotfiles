@@ -1,6 +1,6 @@
 # 振り返り準備と会話の流れの設計記録
 
-[設計記録の索引](design.md)と[振り返り・知見集約の設計記録](design-session-review.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 `agent-toolkit:review-session`は`atk run-script session-review-prepare`の実行と、メインによる同じセッション内の分析で構成する。
 同コマンドの実体は`agent-toolkit/skills/review-session/scripts/session_review_prepare.py`である。

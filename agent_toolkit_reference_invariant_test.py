@@ -65,7 +65,7 @@ _INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-judgment-202608
 _INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-stagnation-202607-20260906.md")
 
 
-_INCIDENTS_REVIEW_SCOPE = pathlib.Path("docs/development/incidents-review-scope-20260901-20261003.md")
+_INCIDENTS_REVIEW_SCOPE = pathlib.Path("docs/development/incidents-review-scope-202607-202608.md")
 
 
 _CONCEPTS_CONFIRMATION_DECISIONS = pathlib.Path("docs/development/concepts-confirmation-decisions.md")

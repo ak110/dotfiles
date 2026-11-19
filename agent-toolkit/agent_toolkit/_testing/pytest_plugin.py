@@ -1,7 +1,7 @@
 """起動時に登録する共通fixture。自動の差し替えは元のディレクトリ境界だけへ適用する。
 
 package collectorが収集順で再生成されても、fixtureの登録を失わないようにする。
-上流pytestの修正採用後の撤去条件はdocs/development/design-packages.mdに記す。
+上流pytestの修正採用後の撤去条件はdocs/development/design-packages-test-isolation.mdに記す。
 """
 
 import asyncio

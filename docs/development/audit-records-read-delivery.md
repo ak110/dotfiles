@@ -26,7 +26,7 @@ nativeの`original token count`が設定予算を超えた場合は、その値�
 2026年10月30日から31日まで、PostToolUseが省略された読取を元turnのsandbox読取権限の範囲で再取得し、本文を追加コンテキストへ配送していた（`codex_read_delivery.py`）。
 この補完読取と、それに合わせてPreの容量案内を省く判定は、2026年10月31日に本文配送とともに撤去した。
 当時は`codex_read_observation.py`が省略の無い成功読取だけを読了としていた。
-現行の取得成功契約と構造は[design-hooks.md](design-hooks-read-declarations.md#宣言型読込表による操作前配送)にある。
+現行の取得成功契約と構造は[design-hooks-read-declarations.md](design-hooks-read-declarations.md#宣言型読込表による操作前配送)にある。
 再検証では`codex_read_observation_test.py`と`pretooluse/large_reads_test.py`で、省略の有無ごとの読了判定、本文を返さないこと、および受信予算を確定できない容量警告が出ないことを比較する。
 本節は確定契約と実装の参照先を記録するものであり、文書更新担当によるテストの再実行結果ではない。
 

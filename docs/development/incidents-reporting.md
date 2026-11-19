@@ -64,7 +64,7 @@
   直接原因: 回答を発話本文へ置く箇条が、確認を組む時点で読む`AskUserQuestion`の箇条から離れており、確認を続けて発行する流れで想起されなかった。
   `AskUserQuestion`の箇条は判断材料の置き場所だけを示し、直前の回答に含まれた問いへの答えの置き場所を示さなかった。
   対策: `agent-toolkit/share/rules-main.claude-code.md`の`AskUserQuestion`の箇条へ、直前の回答に含まれた問いへの答えを質問または`preview`へ含めることを加え、発話本文の箇条を短く統合した。
-  規範の想起を目的とするチェックをhookに置かない方針（[design-hooks.md](design-hooks-responsibility.md#フックの責務境界)「フックの責務境界」）に従い、hookは加えない
+  規範の想起を目的とするチェックをhookに置かない方針（[design-hooks-responsibility.md](design-hooks-responsibility.md#フックの責務境界)「フックの責務境界」）に従い、hookは加えない
 
 - 2026年10月2日: 変更範囲の検証で診断本文に追加行への注意があったが、実装担当はpyfltrの終了コード0と要約の対応要0だけから追加文への指摘なしと報告した。
   直接原因: コマンド単位の要約を行単位の診断の不在へ読み替え、診断の位置とGit差分を対応付けていなかった。

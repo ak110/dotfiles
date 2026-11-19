@@ -4,7 +4,7 @@
 
 `atk run-script cost-metrics -- --since <開始> [--until <終了>]`はJSON Linesで次の行を返す。
 日付と時差のない日時は実行ホストのローカル時刻として解釈する。
-母集団と集計方式の設計は[design-session-review.md](design-session-review.md)の「手動の週次費用指標」にある。
+母集団と集計方式の設計は[design-cost-metrics.md](design-cost-metrics.md)の「手動の週次費用指標」にある。
 
 `cost-metrics-week`は月曜0時から始まる週ごとに次の値を返す。
 

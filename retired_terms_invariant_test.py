@@ -56,7 +56,6 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "証拠行": (
         # 既存の達成根拠へ付加された標識を読み、観測本文と分けて比較する箇所。
         _AllowedLocation("agent-toolkit/share/exec-review.subagent.md", "`証拠行`"),
-        _AllowedLocation("docs/development/design-review-evidence.md", "「証拠行」"),
     ),
     "計画レビュー": (
         # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
@@ -717,17 +716,16 @@ def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -
     ("relative", "body", "rejected"),
     [
         (
-            "docs/development/concepts-principles.md",
+            "docs/development/concepts-planning.md",
             "  「終端工程」は内容に応じて「公開工程」「公開後の操作」「終了工程」を指す。\n",
             False,
         ),
-        ("docs/development/concepts-principles.md", "終端工程を開始する。\n", True),
-        ("docs/development/design-review-evidence.md", "過去の標識「証拠行」を読む。\n", False),
-        ("docs/development/design-review-evidence.md", "証拠行を新たに記す。\n", True),
-        ("docs/development/design-review-evidence.md", "振り返り担当を起動する。\n", True),
-        ("docs/development/design-session-review.md", "撤去した振り返り担当の経緯。\n", False),
-        ("docs/development/design-session-review.md", "起草担当を追加する。\n", True),
-        ("docs/development/design-cli.md", "標識「証拠行」を読む。\n", True),
+        ("docs/development/concepts-planning.md", "終端工程を開始する。\n", True),
+        ("docs/development/design-review-acceptance.md", "過去の標識「証拠行」を読む。\n", True),
+        ("docs/development/design-review-acceptance.md", "証拠行を新たに記す。\n", True),
+        ("docs/development/design-review-acceptance.md", "振り返り担当を起動する。\n", True),
+        ("docs/development/design-session-review-analysis.md", "撤去した振り返り担当の経緯。\n", False),
+        ("docs/development/design-session-review-analysis.md", "起草担当を追加する。\n", True),
         ("docs/development/design.md", "標識「証拠行」を読む。\n", True),
         ("docs/development/design.md", "振り返り担当の経緯。\n", True),
         (

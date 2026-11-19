@@ -63,7 +63,7 @@ UWIへの回答後も`continuation.md`が定める継続の規定を適用し、
 CLIはMCPのツール呼び出しを経由しないため、委譲先であることだけでは上限を縮めない。
 Claude Codeで背景機能が無効なら、CLIだけ前景上限の内側へ縮める。
 CLIは委譲元の区分を入力に持たず、導出にはmainのbucketを用いる。
-導出値とその根拠は[design-agents-server.md](design-agents-server.md)「待機上限」にある。
+導出値とその根拠は[design-agents-server-wait-timeout.md](design-agents-server-wait-timeout.md)「待機上限」にある。
 待機中は同じルートの書込主体ごとに待機所有権を状態ディレクトリへ保持する。
 Stopフックは該当書込主体の待機所有権が有効な間、CLIのBashのバックグラウンドタスクが稼働中であると判定し、待機中のセッションを未観測警告の対象から除外する。
 異常終了後に所有権が残らないよう、CLIは終了時に自身の所有権だけを解放する。

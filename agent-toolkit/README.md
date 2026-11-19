@@ -119,7 +119,7 @@ atk serve
 - `atk`: キュー、設定、委譲先、Web画面などを操作するCLI
 
 警告や遮断が表示された場合は、本文が示す次の操作に従う。
-ホストごとのフックの対応範囲は[フックの設計資料](https://github.com/ak110/dotfiles/blob/master/docs/development/design-hooks.md)を参照。
+ホストごとのフックの対応範囲は[フックの設計資料](https://github.com/ak110/dotfiles/blob/master/docs/development/design-hooks-host-support.md)を参照。
 
 ## 更新と削除
 

@@ -17,7 +17,7 @@ git ls-files -- '*_invariant_test.py'
 uv run --frozen pyfltr fast --commands=pytest
 uv run --frozen pyfltr fast --commands=pytest --pytest-args='--collect-only -q' --output-format=jsonl
 uv run --frozen pyfltr show-run <run_id> --commands pytest --output --output-format=json
-uv run --frozen prek run pyfltr --files docs/development/design-packages.md
+uv run --frozen prek run pyfltr --files docs/development/design.md
 ```
 
 3行目の出力の1行目（`"kind":"header"`）が示す`run_id`を4行目へ渡す。

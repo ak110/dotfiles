@@ -84,7 +84,7 @@
   構造は`atk run-script review-contract`が、参照と認可は受信したレビュー担当が評価する。
   再発防止として、WI起草の完成条件の固定と実行レビューの詳細確認より前に必要性を比べ、直接影響範囲の既存機構にも適用する。
   必要性の比較の手順は`agent-toolkit:/share/exec-review-criteria.md`「初回レビュー」にある。
-  比較の基準は`../../agent-basics/skills/writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」、方式は[design-planning.md](design-planning-review-contract.md#review_contractとレビュー指摘管理表)にある
+  比較の基準は`../../agent-basics/skills/writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」、方式は[design-planning-review-contract.md](design-planning-review-contract.md#review_contractとレビュー指摘管理表)にある
 
 - 2026年10月3日: Stop hookへの対処をWI投入担当へ委譲したメインが、機能の目的と比べずに不具合と文面の直し方を述べ、ユーザーに2回是正された。
   直接原因: `agent-basics:bugfix`の起動条件が対処への着手に結び付き、委譲中に判断を述べる場面を含まなかった。
@@ -100,7 +100,7 @@
   レーン担当の契約は観測できなかった理由と不足する状態の報告だけを求めて生成主体・起動元・起動契機の観測を要求せず、メインの終了区分の判定もその証拠を要求しないまま「ユーザー所有のプロセスの停止」を例に挙げていた。
   対策: `exec.subagent.md`の観測のみの再開と検証結果で、前提を妨げる状態の生成主体・起動元・起動契機を親子関係、起動時刻、実行記録、実装から調べ、未確定範囲とともにメインへ返す。
   `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」で、メインはその観測を入力に前提を整えられる主体を判定し、エージェント自身や常駐機構が生成した状態と生成主体が未確定の状態をユーザーだけが整えられる状態として扱わない。
-  例も生成主体を根拠とする表現へ改め、設計記録`design-process-loop.md`へ責務境界と実際の生成主体を記した
+  例も生成主体を根拠とする表現へ改め、設計記録`design-post-release-observation.md`へ責務境界と実際の生成主体を記した
 
 - 2026年10月5日: aichat2のAWI投入のセッションで、メインは`agent-basics:bugfix`の`references/response.md`だけを読んで原因を述べた。
   メインは、事象の時点で現行だった`judgment.md`「認可を要する操作」の範囲外の不足の区分を根拠にした（今の所在は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」）。

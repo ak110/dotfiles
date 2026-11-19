@@ -38,7 +38,7 @@ hookによる拒否は過去に運用したが、誤判定時の副作用とコ�
 
 規範資料は、成立する読込条件から選んだファイルの全文を読み、前提・例外を含む基準へ到達して適用する。
 節名は基準の所在を示す手掛かりとし、無関係な本文を読む構成は条件別のファイル分割で整える。
-実行時の案内と取得判定は`agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py`、構造の理由は[design-hooks.md](design-hooks-read-declarations.md#宣言型読込表による操作前配送)にある。
+実行時の案内と取得判定は`agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py`、構造の理由は[design-hooks-read-declarations.md](design-hooks-read-declarations.md#宣言型読込表による操作前配送)にある。
 
 現在の役割に適用する行だけを選び、判断契機の自然文条件は明示的な資料選択以外を確認候補として扱う（2026年10月31日の確定契約）。
 確認候補は主体が条件を確かめて判断前に必要な基準へ到達するための補助であり、必読案内済みや遮断の根拠に含めない。

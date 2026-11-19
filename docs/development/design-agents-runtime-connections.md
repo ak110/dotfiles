@@ -61,4 +61,4 @@ provider IDは`codex_credits_provider`・`codex_payg_provider`が持ち、`subsc
 未観測の孫や背景出力が残る場合はその待機を優先し、結果の帰属を維持する。
 切替のための新しい上限台帳や監視は設けず、既存の監視と再開情報を使う。
 APIへ移った会話の再開は新規起動の回復判定から独立させる。
-接続先判定とcold resumeの詳細は[design-agents-server.md](design-agents-server-connections.md#起動候補と観測identity)にある。
+接続先判定とcold resumeの詳細は[design-agents-server-connections.md](design-agents-server-connections.md#起動候補と観測identity)にある。

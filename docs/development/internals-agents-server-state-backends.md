@@ -108,7 +108,7 @@ Codexの接続先プロバイダーの優先順位は`codex_orchestrator_connect
 現在のアカウントの利用可否は永続ファイルには記録せず、新規起動の都度App Serverへ問い合わせて確認する。
 ユーザー向けのログには候補の診断情報のみを記録する。
 ユーザー向けの設定方法、料金、認証、トラブル復旧手順は`docs/guide/codex-guide.md`に記載されている。
-cold resume（完全停止からの再開）の内部設計については`docs/development/design-agents-server.md`を参照のこと。
+cold resume（完全停止からの再開）の内部設計については`docs/development/design-agents-server-connections.md`を参照のこと。
 停止状態からの再開前には、`config/read`を実行して有効なプロバイダーを特定する。
 Codexバックエンドは、接続切り替え時および過去ログからの再開時に、`thread/read.path`または既存ログの解決から得られるrollout情報を検証して互換性を確認する。
 検証対象となる項目は、`session_meta.id`、provider、`response_item`内のcompaction・`encrypted_content`、ならびに`compacted`内の`replacement_history`・`compaction_response_id`である。

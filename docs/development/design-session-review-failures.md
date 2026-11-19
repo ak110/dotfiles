@@ -1,6 +1,6 @@
 # 正常な否定結果と失敗署名の設計記録
 
-[設計記録の索引](design.md)と[振り返り・知見集約の設計記録](design-session-review.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 読取述語の終了1は診断が空なら正常な否定結果として扱う。
 述語の定義は`_common/bash_invocations.py`の`is_read_predicate`をPreToolUseと共用し、リダイレクトを持つ単独の実行位置は`extract_bash_invocations`から得る。
