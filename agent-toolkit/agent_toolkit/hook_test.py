@@ -141,6 +141,27 @@ def test_failure_merges_with_partial_output_as_one_json(monkeypatch, subcommand,
     assert ("既存の通知" in context) is partial
 
 
+@pytest.mark.parametrize("event_name", ["PostToolUse", "PostToolUseFailure", "PermissionDenied"])
+def test_failure_keeps_event_output_contract(monkeypatch, event_name: str) -> None:
+    """処理の例外は入力のイベント名で出力契約に合う形へ返し、通知を受理しないイベントでは出力しない。"""
+    module = importlib.import_module("agent_toolkit._hooks.posttooluse")
+
+    def fail(_payload, **_kwargs):
+        raise RuntimeError("故障注入")
+
+    monkeypatch.setattr(module, "main", fail)
+    result = _run_hook_in_process("posttooluse", {"session_id": "failure-event", "hook_event_name": event_name})
+    assert result.returncode == 0
+    assert not result.stderr
+    output = json.loads(result.stdout) if result.stdout.strip() else {}
+    assert validate_hook_output(event_name, output) == []
+    if event_name == "PermissionDenied":
+        assert "故障注入" not in result.stdout
+    else:
+        assert output["hookSpecificOutput"]["hookEventName"] == event_name
+        assert "故障注入" in output["hookSpecificOutput"]["additionalContext"]
+
+
 @pytest.mark.parametrize(
     ("subcommand", "event_name"),
     [

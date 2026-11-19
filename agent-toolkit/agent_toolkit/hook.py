@@ -294,7 +294,7 @@ def _invoke_module(
             response = parsed
     if error is not None:
         with _common_message_format.record_generated() as failure_notices:
-            response = _failure_response(argv[0], error, response or {})
+            response = _failure_response(argv[0], error, response or {}, payload=payload)
         generated.extend(failure_notices)
         raw = json.dumps(response, ensure_ascii=False) if response else ""
     if input_warning and _warning_event(argv[0], payload) is not None:
