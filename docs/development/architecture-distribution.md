@@ -39,6 +39,12 @@ dotfilesが生成する`agent-toolkit-codex/`のhook定義は、個人binの`atk
 使用中で複製したversionは、CLIが元のパスを途中まで消しても、元のパスに無いファイルを退避した内容から補う。
 現行versionの導入と有効状態の管理はCodex公式CLIへ委ね、旧版保存台帳は設けない。
 
+Codexは`.codex-plugin/plugin.json`が指すMCP設定の`${PLUGIN_ROOT}`を展開せず、相対の`cwd`だけをplugin rootから解決する。
+`cwd`の無いserverは会話のcwdで起動する（Codex 0.170の`codex-mcp/src/plugin_config.rs`で確認）。
+pyfltrは対象を省いた呼び出しで会話のcwdのプロジェクトを調べるため、`cwd`をplugin rootへ固定しない。
+dotfilesが生成する`agent-toolkit-codex/`のMCP定義は、`${PLUGIN_ROOT}`を`codex plugin add`の導入先である`$CODEX_HOME/plugins/cache/<marketplace名>/agent-toolkit/<版>`の絶対パスへ展開する。
+展開する前はCodexのpyfltr MCPが会話のcwdからの相対パス`${PLUGIN_ROOT}/scripts/launch.py`を開けず、起動のたびに失敗していた（2026-11-18にLinux、2026-11-19にWindowsのCodex 0.170で観測）。
+
 agent-toolkitには、公開互換インストーラーである`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
 chezmoiの`post_apply`を使うdotfiles導入がある。
 既存の外部参照を維持するため、インストーラーと

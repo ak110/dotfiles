@@ -13,7 +13,7 @@ from typing import Any, NamedTuple
 from agent_toolkit._atk import config as toolkit_config
 from agent_toolkit._common import mcp_environment, next_action
 
-from pytools._internal import common
+from pytools._internal import codex_runtime, common
 
 PLUGIN_SOURCE = Path("agent-toolkit/.claude-plugin/plugin.json")
 BASICS_PLUGIN_SOURCE = Path("agent-basics/.claude-plugin/plugin.json")
@@ -88,6 +88,24 @@ def _local_codex_hook_manifest(content: str) -> str:
                 # local用はWindowsのCodexが使うシェルを確かめられないため、末尾の変換を付けない。
                 subcommand = command.removesuffix(HOOK_FAILURE_SUFFIX).rsplit(" ", maxsplit=1)[-1]
                 hook["command"] = f"atk-hook {subcommand}"
+    return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+
+
+def _local_codex_mcp_manifest(content: str, install_root: Path) -> str:
+    """`${PLUGIN_ROOT}`をCodexの導入先の絶対パスへ展開したlocal plugin用のMCP設定を返す。
+
+    Codexは`.codex-plugin/plugin.json`が指すMCP設定の変数を展開せず、相対の`cwd`だけをplugin rootから解決する。
+    pyfltrは会話のcwdを既定の検査対象にするため、`cwd`を固定せずに起動スクリプトを絶対パスで指す。
+    """
+    value = json.loads(content)
+    for server in value["mcpServers"].values():
+        for key in ("command", "cwd"):
+            if key in server:
+                server[key] = server[key].replace("${PLUGIN_ROOT}", str(install_root))
+        if "args" in server:
+            server["args"] = [item.replace("${PLUGIN_ROOT}", str(install_root)) for item in server["args"]]
+        if "env" in server:
+            server["env"] = {key: item.replace("${PLUGIN_ROOT}", str(install_root)) for key, item in server["env"].items()}
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
 
@@ -460,6 +478,16 @@ def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tu
     """`agent-toolkit-codex/`へ通常ファイルとして投影する内容とmodeを返す。"""
     source_root = root / "agent-toolkit"
     outputs: dict[Path, tuple[bytes, int]] = {}
+    codex_plugin = json.loads(generated[PLUGIN_TARGET])
+    # `codex plugin add`がsnapshotを置く版付きのplugin root。
+    install_root = (
+        codex_runtime.codex_home()
+        / "plugins"
+        / "cache"
+        / json.loads(generated[MARKETPLACE_TARGET])["name"]
+        / codex_plugin["name"]
+        / codex_plugin["version"]
+    )
     generated_by_relative = {
         path.relative_to("agent-toolkit"): content
         for path, content in generated.items()
@@ -487,6 +515,8 @@ def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tu
         generated_content = generated_by_relative.get(relative)
         if relative == HOOKS_TARGET.relative_to("agent-toolkit") and generated_content is not None:
             generated_content = _local_codex_hook_manifest(generated_content)
+        if relative == MCP_CODEX_TARGET.relative_to("agent-toolkit") and generated_content is not None:
+            generated_content = _local_codex_mcp_manifest(generated_content, install_root)
         content = generated_content.encode() if generated_content is not None else source.read_bytes()
         outputs[relative] = (content, stat.S_IMODE(source.stat().st_mode))
     outputs[Path("GENERATED.md")] = (CODEX_ROOT_NOTICE.encode(), 0o644)
