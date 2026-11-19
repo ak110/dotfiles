@@ -6,7 +6,6 @@ import asyncio
 import base64
 import json
 import pathlib
-import sys
 import types
 import typing
 
@@ -20,7 +19,7 @@ from agent_toolkit._atk.serve.plans import rendering as plans_rendering
 from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
 from agent_toolkit._plan import viewer_files as plan_viewer_files
-from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing import serve_remote_support
 from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload
 
 
@@ -170,14 +169,7 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     後始末の待機がキャンセルを吸収したまま再接続すると、新しいSSHの出力を待ち続けてatk serveの停止が完了しない。
     """
     started: list[tuple[typing.Any, ...]] = []
-    real_exec = asyncio.create_subprocess_exec
-
-    async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        # 標準出力を閉じて接続断を起こし、標準入力の終端を通知してから解放まで保持する子プロセスで代替する。
-        started.append(cmd)
-        script = "import os,sys; os.close(1); sys.stdin.read(); " + late_descendant.held_source(tmp_path / "cleanup.release")
-        return await real_exec(sys.executable, "-c", script, **kwargs)
-
+    fake_exec = serve_remote_support.disconnecting_resident_ssh(tmp_path / "cleanup.release", started)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
     context = _context(tmp_path, remote_hosts=["remote-host"])
     plans.start_remote_watchers(context)
@@ -244,17 +236,16 @@ async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeyp
         await plans_remote.default_ssh_runner("remote-host", "read", ["cGF0aA=="])
 
     assert "atk_serve_plans_remote_helper.py" in plans.REMOTE_BOOTSTRAP
-    assert sent == [
-        (
-            [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                "remote-host",
-                *_atk_serve_remote.remote_command_argv(plans.REMOTE_BOOTSTRAP, "read", ["cGF0aA=="]),
-            ],
-            plans_roots.SSH_TIMEOUT_SEC,
-        )
-    ]
+    # Pythonの版の照会も同じ失敗を返すため`3.15`を指定し、索引へ出ない起動の失敗の後に索引を使える形で起動し直す。
+    assert sent[-1] == (
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "remote-host",
+            *_atk_serve_remote.remote_command_argv(plans.REMOTE_BOOTSTRAP, "read", ["cGF0aA=="], python="3.15", offline=False),
+        ],
+        plans_roots.SSH_TIMEOUT_SEC,
+    )
     assert "終了コード3" in str(error.value)
     assert "helper not found" in str(error.value)

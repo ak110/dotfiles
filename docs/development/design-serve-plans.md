@@ -18,14 +18,46 @@
 知識境界として、計画バンドルの種別と接尾辞、種別ごとの一覧の扱いは`agent-toolkit/agent_toolkit/_plan/bundle_kinds.py`が持つ。
 計画rootの定義、表示と一覧の対象判定、走査、全文検索は`_plan/viewer_files.py`が、作成日時インデックスは`_plan/creation_times.py`が持ち、ローカル側（`_atk/serve/plans/`）とSSH先のヘルパーが同じモジュールを使用する。
 SSH先のヘルパー（`agent-toolkit/scripts/atk_serve_plans_remote_helper.py`）は同じcheckoutの`agent-toolkit`を`sys.path`へ加え、これらの共有モジュールをimportする。
-両ヘルパーは共通の`remote_command_argv`から`uv run --no-project --python 3.15 --with watchdog --with platformdirs`で起動する。
-常駐接続ではSSH先のホームを基準に`.cache/agent-toolkit/remote-helper-uv`をuvキャッシュに指定する。
-再接続で依存を再利用しながら、接続中も通常のuvキャッシュを整理できる。
 importできるのは標準ライブラリ、`platformdirs`、`watchdog`と、それらだけに依存する`agent_toolkit`のモジュールに限る。
 Markdownの描画（`markdown_it`・`pygments`）など、リモートの実行環境に無い依存を持つ処理は`_atk/serve/plans/`に置き、共有モジュールからimportしない。
 この依存の条件は`agent-toolkit/scripts/atk_serve_plans_remote_helper_test.py`がリモートの実行環境と同じ依存集合でヘルパーを起動して確かめる。
 同じ判定をヘルパーへ複写して同期テストで一致を確かめる案は採らない。
 同期テストは比べる組の外の定義の不一致を検出できず、接尾辞の集合が箇所ごとに一致しなくなったためである。
+
+両ヘルパーは共通の`remote_command_argv`から`uv run`で起動し、`watchdog`と`platformdirs`を`--with`で伴う。
+uvへは`--cache-dir .cache/agent-toolkit/remote-helper-uv`、`--offline`、`--no-project`、`--no-python-downloads`、`--python <Pythonの版>`を渡し、Pythonは`-B`で起動する。
+`uv run`は子の終了まで、使ったuvキャッシュの共有ロックを持つ。
+SSH先が普段使うuvキャッシュでヘルパーが動くと、SSH先の`uv cache prune`がロック待ちで保留され続けた（2026年11月19日、sthenoの`update-dotfiles`で観測）。
+このためSSH先のホームを基準とする専用キャッシュ`.cache/agent-toolkit/remote-helper-uv`で起動する。
+WindowsのSSHのセッションは昇格したtokenで動くため、SSH先が普段使うuvキャッシュ、checkoutの`.pyc`、管理Pythonへは書かない。
+専用キャッシュはSSH先のヘルパーだけが使うため、昇格したtokenで書いても他の処理に影響しない。
+
+uvは`--with`の依存を起動のたびに解決し、索引の応答のキャッシュの期限（PyPIは600秒）を過ぎると索引へ問い合わせる。
+索引へ到達できない場合は、依存が専用キャッシュにあっても起動に失敗した（同日、euryaleで観測）。
+このため`--offline`で専用キャッシュだけから起動し、失敗した場合に限って、Pythonの版を選び直して索引を使える形で1回だけ起動し直す。
+初めての接続先で専用キャッシュが空の場合も、この起動し直しで依存を取得する。
+次の案は採らない。
+
+- 起動ごとの一時キャッシュ（`--no-cache`）を使う案: 何も残らないが、起動のたびに2依存を索引から取得し、索引へ到達できないと全ての起動が失敗する。
+  sthenoでの起動は約0.9秒で、キャッシュを使う形の約0.3〜0.4秒より遅かった。
+- 非昇格の`update-dotfiles`が準備するagent-toolkitの共有依存環境（`scripts/launch.py`）で起動する案: 非昇格のsthenoでの起動は約0.5秒で何も書かない。
+  ただし共有依存環境はClaude CodeかCodexのプラグインがあるホストでだけ準備され、awsには無かった。
+  無ければ準備する指定は、Windowsでは昇格したtokenで依存環境とuvキャッシュへ書く。
+  共有依存環境のPythonは後述のマイナー版のjunctionを経由して起動するため、昇格したtokenでは起動できない（推論。sthenoの共有依存環境の`pyvenv.cfg`の`home`がjunctionのパスだった）。
+
+`--python`には接続先ごとに`atk serve`のプロセスが覚えたPythonの版を渡す。
+覚えていない接続先では、起動の前に単発のSSHで`uv python list --only-installed --output-format json 3.15`を実行し、CPython 3.15の正式版の最新のパッチ版（例: `3.15.2`）を選ぶ。
+uvは`3.15`の指定を管理Pythonのマイナー版のjunction（`cpython-3.15-windows-x86_64-none`）経由で解決し、junctionは非昇格のuvが作る。
+昇格したtokenではRedirectionGuardがこのjunctionをたどらせず、`3.15`・`==3.15.*`・`>=3.15`・`cpython@3.15`の指定はいずれも`os error 448`で失敗した。
+パッチ版の指定だけが実体のディレクトリのPythonで起動した（2026年11月19日、sthenoで観測）。
+`uv python list`は同じ失敗を警告に留めて実体のディレクトリの版を返す。
+一覧を得られない場合は`3.15`を渡し、uv自身の探索と診断に任せる。
+覚えた版での起動が失敗した場合は、版が消えた場合に備えて版を選び直す。
+`--no-python-downloads`は消えた版をuvに昇格したtokenで導入し直させず、起動を失敗させて選び直しへ進ませる。
+単発の操作は覚えた版で起動し、要求ごとのSSHの往復を増やさない。
+常駐の接続は起動の成否が後から分かるため、接続のたびに同じ依存のPythonを単発のSSHで起動して確かめてから起動する。
+SSHが接続先へ接続できない失敗（終了コード255）では選び直さない。
+常駐の接続が途絶えている間、画面の要求は単発のSSHで同じ接続先へ向かうため、接続の待ちを要求ごとに重ねないためである。
 
 付属ファイルを常に一覧へ載せる案は採用しない。
 メイン計画が存在する通常のバンドルで同じ計画を複数の項目として表示し、エンドユーザーが一覧から選ぶ対象を重複させるためである。
