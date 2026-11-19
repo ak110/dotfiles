@@ -56,7 +56,7 @@ writes_worktree: false
 ## 出力
 
 次の形式のみを返す。
-状態行、続行不能の区分と理由は`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+状態行、続行不能の区分と理由は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 
 ```text
 状態: completed

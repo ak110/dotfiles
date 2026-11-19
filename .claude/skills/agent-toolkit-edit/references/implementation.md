@@ -78,7 +78,7 @@
 計画ファイルの見出し、固定のH3、表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`の構造定数で定める。
 
 1. 改める時は構造定数を変え、同じ名前を使う文書を同じ変更でそろえる。
-   対象は`agent-toolkit/skills/atk-mode/references/plan-format.md`と、`agent-toolkit/share/`の`<役割名>.subagent.md`である。
+   対象は`agent-toolkit/skills/atk-mode/references/plan-format.md`と、`agent-toolkit/skills/atk-mode/roles/`の`<役割名>.subagent.md`である。
    `docs/development/`の該当する設計資料と`concepts.md`も対象に含む。
    ユーザーの操作か画面の観測結果が変わる時だけ、対応するガイドも直す。
 2. 改める前の名前は読み取りの互換用の構造定数として残し、新規作成と改訂の検証だけでエラーにする。

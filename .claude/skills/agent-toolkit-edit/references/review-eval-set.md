@@ -70,7 +70,7 @@
 | 検証の範囲と証拠（最終差分と直接利用側を覆う検証、探索した利用側の実行と個別の結果） | `small-verification-table-scope`、`small-known-consumer-tests`、`small-verification-evidence-control` |
 | 変えた前提を読む側の洗い出しと、読んだ結果の場合分け（不在と読めない場合など） | `small-handoff-record-readers`、`small-handoff-record-readers-control` |
 | 入力・既存の状態・操作の順・書込操作の組合せ、公開ヘルプの入力例、横断試験 | `small-recheck-ledger`、`small-recheck-ledger-control` |
-| 方針・常時規範との整合 | `missed-hook-body-delivery-posttooluse`、`missed-hook-body-delivery-read-table` |
+| 方針・規範の配送との整合 | `missed-hook-body-delivery-posttooluse`、`missed-hook-body-delivery-read-table` |
 | 指摘の前提の確かめ方（撤回した誤指摘） | `false-redirect-backslash` |
 | 投入前レビューの根拠の十分性 | `draft-cache-effect-missing`、`draft-cache-effect-sufficient`、`draft-export-effect-missing`、`draft-export-effect-sufficient` |
 | 大量の文章や複数の契約の組み合わせを探索する判断（走査の範囲、読者確認の分担など） | `correct-verification-table-scope`、`missed-known-consumer-tests` |

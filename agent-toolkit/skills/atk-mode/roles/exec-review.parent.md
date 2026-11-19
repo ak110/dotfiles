@@ -38,14 +38,14 @@
 | 起動の入力を決める前と、返却を受領し、受領確認、既存不良の受領、修正の指示、収束の判定を行う前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/exec-review-loop.md` |
 | 返却の`達成`行の根拠を受領確認する前 | `agent-toolkit:atk-mode/references/review-record.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/review-record.md` |
 | 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/states-and-dependencies.md` |
-| 差分外の不良を受領して対処時機を決める前 | `agent-toolkit:delegation/references/receiving-followup.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
+| 差分外の不良を受領して対処時機を決める前 | `agent-toolkit:atk-mode/playbooks/delegation-receiving.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/delegation-receiving.md` |
 | process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-immediate-fix.md` |
 
 - 単一計画の初回でない起動は、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「起動」の手順3が示す資料を読む。
 - レビューの後にHEADが変わった時は`agent-toolkit:atk-mode/references/exec-review-head-update.md`を読む。
 - `review_contract`の生成は`agent-toolkit:atk-mode/references/review-contract.md`、判定行の形式は`agent-toolkit:atk-mode/references/review-record.md`にある。
 - 指摘管理表のパス・保存・操作は`agent-toolkit:atk-mode/references/review-record-table.md`にある。
-- 画面差分がある時は`agent-toolkit:atk-mode/roles/usability-review.parent.md`、文章成果物の読者別探索は`agent-toolkit:/share/reader-fit-review.parent.md`に従う。
+- 画面差分がある時は`agent-toolkit:atk-mode/roles/usability-review.parent.md`、文章成果物の読者別探索は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`に従う。
 - 指摘を自分で直す時は`agent-toolkit:atk-mode/playbooks/review-fix.md`を使う。
 - 収束の後の統合は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`と`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`にある。
 
@@ -73,7 +73,7 @@
 - 各パスの直接確認は`{"direct":[{"読者像":"...","判定":"...","根拠":"...","証拠":"/結果.md"}]}`とする。
   別読者を起動したら`sessions`も併記する。
   省略した`direct`・`sessions`は空配列として扱う。
-  適用条件と証拠の保存は`agent-toolkit:/share/reader-fit-review.parent.md`「起動」に従う。
+  適用条件と証拠の保存は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`「起動」に従う。
   `external`は直接確認の対象外とする
 - Git管理下の申告対象は、削除を除く変更対象の`.md`と`.md.tmpl`のうち、今回のレビュー判定対象commitが変えた範囲とし、改名されたファイルは新しいパスで書く。
   `review_contract`で判定対象外としたcommitだけによる変更は除き、どの計画にも属さないcommitによる変更は残す。
@@ -88,7 +88,7 @@
 - `終了区分: 延期adopt`または`終了区分: 終了しない`（`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」の区分のうち、統合時に`adopt`しない値）、および実際の結論を書いた`後続工程:`、`検収時機:`
 - 公開工程で判定する条件は`判定工程: 公開工程`、並行して実施中の画面レビューで判定する条件は`判定工程: ユーザビリティレビュー`かつ`進行状態: 並行中`
 
-返却の状態行、続行不能の区分と理由、標識行と一行返却は`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+返却の状態行、続行不能の区分と理由、標識行と一行返却は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 完成条件証拠の提出を求められた場合は、末尾に`agent-toolkit:atk-mode/references/review-record.md`「条件別判定行の形式」の判定行を全条件の数だけ書き、求められていなければ判定行を置かない。
 一般的な要約などの地の文は加えず、役割固有の規定行だけを返す。
 

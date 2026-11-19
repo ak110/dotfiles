@@ -4,7 +4,7 @@
 
 ## 回答後の状態遷移
 
-投入済みで未回答のUWIを持つ間は、定期確認の時機（`agent-toolkit:delegation`）ごとに`atk wi`で回答の有無を確かめる。
+投入済みで未回答のUWIを持つ間は、定期確認の時機（`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`）ごとに`atk wi`で回答の有無を確かめる。
 
 処理するUWIは場面で決まる。
 

@@ -74,7 +74,7 @@
 <指摘ごとの該当行、観点の番号、問題点、修正案。0件なら3観点それぞれの「指摘なし」>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:external-write-review:end -->
 
 返す報告に含める項目: 投稿した文面の所在と投稿先、レビューの未解決の指摘数と採否、投稿しなかった場合はその理由。

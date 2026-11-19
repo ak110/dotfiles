@@ -68,3 +68,48 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+- 原典: [michael-denyer/pstack-claude](https://github.com/michael-denyer/pstack-claude/tree/f1209c06a3fdebd7856dda467f8871dfb2ddc1ed/plugins/pstack)の`plugins/pstack/`（確認commit `f1209c06a3fdebd7856dda467f8871dfb2ddc1ed`、版0.9.139）。
+  pstackをClaude Codeへ移植した版である。
+- 取り込んだ資料と取り込み先:
+  - `skills/arena/SKILL.md`、`skills/swarm/SKILL.md`、`skills/architect/SKILL.md`。
+    取り込み先は`skills/atk-mode/playbooks/delegation.md`である（候補には課題だけを渡す、起動の前に比べ方を決める、構造の違う案を2つ以上作ってから統合する）。
+  - `skills/poteto-mode/playbooks/orchestrate.md`、`skills/principle-guard-the-context-window/SKILL.md`。
+    取り込み先は`skills/atk-mode/playbooks/delegation.md`である。
+    1単位を検収まで通してから並行に広げる、委譲の仕組みの費用を数える。
+  - `skills/poteto-mode/playbooks/session-pickup.md`。
+    取り込み先は`skills/atk-mode/references/work-contract.md`「圧縮と再開の後の復元」と`skills/atk-mode/playbooks/delegation-recovery.md`である。
+    再開の起点を自分で持ち、前の記録を読んでやり直さない。
+    残る作業に関わる主張だけを確かめ直し、前の自己申告の成功を証拠にしない。
+    引き継いだものとやり直したものを分けて報告する。
+  - `skills/ketchup/SKILL.md`。
+    取り込み先は`skills/atk-mode/playbooks/main-reporting.md`「進捗報告」（ユーザーは自分の最後の発話までを覚えている前提で書く）。
+  - `skills/poteto-mode/references/codex-tools.md`。
+    取り込み先は`skills/atk-mode/playbooks/host-codex.md`（ツールの対応表の形式だけ）。
+- 改変: 日本語へ翻訳し、既存の委譲と復元の手順へ要約・再構成して組み込んだ。
+- 許諾: [MIT License](https://github.com/michael-denyer/pstack-claude/blob/f1209c06a3fdebd7856dda467f8871dfb2ddc1ed/LICENSE)。
+
+```text
+MIT License
+
+Copyright (c) 2026 Lauren Tan
+Copyright (c) 2026 Michael Denyer
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

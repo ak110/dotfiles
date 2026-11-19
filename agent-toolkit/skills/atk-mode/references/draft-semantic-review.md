@@ -39,7 +39,7 @@ WIの原稿を保存する前に、その意味を確かめる観点である。
    - 同じ要求か項目について、ユーザー自身がユーザーが読む部分の分かりにくさを指摘・是正している（逐語引用の本文、UWIの`## 回答`、AWIの`## ユーザーコメント`など）。
    - 確かめる側が、基準に照らして合否を自力で判定できない名詞句を挙げた。
 
-   起動は`agent-toolkit:/share/reader-fit-review.parent.md`に従う。
+   起動は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`に従う。
    対象種別は「WIのユーザー向けの部分」とする。
    読者像は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」が前提とする知識を持つユーザーとする。
    同じ読者像で同時に確かめられる抽出は、要求との対応を保って、`成果物`配列と1対1の`比較資料`配列へまとめる。

@@ -69,7 +69,7 @@ description: >
    `targets`へ`plugins`、`agents_server`、`pyfltr`から要るものを指定し、ターン終了後の反映結果を確かめてから新しい動作を使う。
    agents_serverの再接続は実行中の委譲先のturnを中断し、既存の復旧で同じ会話を再開する。
    権限設定と、この操作の反映対象に無いスクリプトは、この操作だけで反映済みと扱わない。
-   委譲先が現行のplugin rootから解決して実行する資源の不具合を直した場合は、`agent-toolkit:delegation/references/base-contract.md`の`是正済み資源:`の行で作業ツリー側の絶対パスを渡す。
+   委譲先が現行のplugin rootから解決して実行する資源の不具合を直した場合は、`agent-toolkit:atk-mode/references/delegation-prompt.md`の`是正済み資源:`の行で作業ツリー側の絶対パスを渡す。
 6. 変更後の規範に従うと作業を完遂できないと分かったら、その変更の設計の見直しを優先する。
    見直しの間も確定済みの採用版を保ち、修正版を確定してから作業契約の指定と配下への案内を直す。
 

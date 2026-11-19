@@ -57,7 +57,7 @@ writes_worktree: false
 前回指摘: <識別子ごとの解消・未解消と根拠|なし>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 資料不足の場合は、影響する項目、欠けた資料と補完に必要な値を記す。
 
 ## 観点の配置と収集

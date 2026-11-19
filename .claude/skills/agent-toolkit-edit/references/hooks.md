@@ -9,7 +9,7 @@ agent-toolkitの配布物と個人用のhook、`atk`の出力を新設・変更�
 - `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。
 - `agent-toolkit/agent_toolkit/_hooks/rules_context.py`は、`SessionStart`で委譲先を判別してメイン向けの条文を除き、`SubagentStart`でサブエージェント向けの条文を足す。
   委譲先の判別には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を使う。
-- `Stop`と`SubagentStop`の判別は`agent-toolkit:delegation/references/claude-code-runtime-communication.md`「委譲先での発火」に従う。
+- `Stop`と`SubagentStop`の判別は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「委譲先での発火」に従う。
 
 ## フック実装の配置先（個人フックと配布物）
 

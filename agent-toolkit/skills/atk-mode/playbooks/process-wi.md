@@ -71,7 +71,7 @@
   計画が要るAWIは実装前に起草する計画へ含め、処理中に加えたAWIは確定済みの計画と分けて追加計画に置き、計画の要らないAWIはWIの要求と完成条件を実装とレビューの基準にする。
 - 計画の事前レビューは置かず、実装の後に各計画を最終の実装HEADで、要件と外部仕様の水準の実行レビューで確かめる。
 - 専用worktreeへの書込はレーン担当が持ち（メインが`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「同一主題の追加指示」で引き取った場合を除く）、主作業ツリーへの書込は統合の時に限る。
-  担当の範囲の一部を委譲する場合は`agent-toolkit:delegation/references/mandatory-rules.md`「作業ツリーの保護」に従い、計画、検収、commitの対応の記録、統合、メインへの返却はレーン担当が責任を持つ。
+  担当の範囲の一部を委譲する場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従い、計画、検収、commitの対応の記録、統合、メインへの返却はレーン担当が責任を持つ。
 - ユーザー由来の要求の全部か一部を不採用にする場合は、先にユーザーの確認かUWIの回答を得てから採否を確定する。
 - 選定で確定した処理対象WIを最後まで処理し、ready一覧は途中で取り直さない。
   追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の対象に限り、元の選定結果へ追記してレーンへ渡す。

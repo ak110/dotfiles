@@ -10,7 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 担当を起動・待機・受領する前 | `agent-toolkit:delegation/SKILL.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/delegation/SKILL.md` |
+| 担当を起動・待機・受領する前 | `agent-toolkit:atk-mode/playbooks/delegation.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/delegation.md` |
 
 ## 入力
 
@@ -51,7 +51,7 @@
 ## 類似見直し担当の返却契約
 
 次の形式のみを返す。
-状態行、続行不能の区分と理由は`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+状態行、続行不能の区分と理由は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 
 ```text
 状態: completed

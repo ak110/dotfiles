@@ -43,7 +43,7 @@
    1. 担当（レーン担当、メインの直接作業、別のサブエージェント）と資源（既存レーンへの合流、専用worktreeを要しない作業）の組を、品質・費用・時間の順に比べる。
       列挙外の手段も同じ比較に含め、認可・書込所有権と同じ再開計画の不可分性を守る。
    2. 選んだ組へ、選定YAMLへの記録、レーン数の上限、統合とWI終了の手順を当てはめ、成立しない組は上限の内側で組み替えるか別の組へ切り替える。
-      メインがレーンを引き取る場合は本書「同一主題の追加指示」手順1、別の担当への書込所有の移し替えは`agent-toolkit:delegation/references/mandatory-rules.md`「作業ツリーの保護」に従う。
+      メインがレーンを引き取る場合は本書「同一主題の追加指示」手順1、別の担当への書込所有の移し替えは`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従う。
 
    比べた組と結論は選定YAMLの`根拠`欄へ記録し、担当の選定理由には品質・費用・時間の比較結果を、上限への当てはめの結果はそれと分けて書く。
    上限が制約するのはレーンという資源の数であり、起動の固定費用、統合先HEADの直列更新、共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）の混雑を抑えるためのものである。
@@ -162,13 +162,13 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --transfer-wi <追�
    移す対象は移管元がまだ着手していないWIだけであり、実行中の工程は続けさせる。
    移管先は手順4と5に従い、移管先の担当へ追加するWI名、専用worktreeとbranch、引き継ぎ記録を渡す。
    移管で空になった移管元の専用資源は、他のWIが残らないことを確かめて通常の回収手順で扱う。
-   書込所有の受け渡しは`agent-toolkit:delegation/references/mandatory-rules.md`「作業ツリーの保護」に従う。
+   書込所有の受け渡しは`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従う。
 
 ## 同一主題の追加指示
 
-1. 既存のレーン担当が詳しい文脈を持つ主題は、メインが本文を読み直したり追加の調査や回答の作成をしたりする前に、`agent-toolkit:delegation`の`SKILL.md`「継続と新規起動」に従ってそのレーン担当へ技術的な調査と判断を委ねる。
+1. 既存のレーン担当が詳しい文脈を持つ主題は、メインが本文を読み直したり追加の調査や回答の作成をしたりする前に、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従ってそのレーン担当へ技術的な調査と判断を委ねる。
    メインは認可の管理、全体の調整、検収を担い、メイン自身が調べて文脈を持つ主題は渡し直さずに修正まで行ってよい。
-   書込先は次のとおりとし、書込主体の交代は`agent-toolkit:delegation/references/mandatory-rules.md`「作業ツリーの保護」に従う。
+   書込先は次のとおりとし、書込主体の交代は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従う。
    - レーンに割り当てていない主題: 本書「処理対象WIの追加」手順5で担当と資源を比べ、ファイルを変える場合は選定の所属レーンの専用worktreeで直す。
      主作業ツリーへの統合とWI終了には、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」と`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「統合とAWI終了」の条件をそのまま適用する。
      最小限の直接修正は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応の手順」に従う。
@@ -182,7 +182,7 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --transfer-wi <追�
 3. 追加の指示で既存の要件が変わる場合は、変更前の要件で作業ツリーの外へ作った成果物（キューの項目、IssueやMRの本文など）を確かめ、終了・改訂・取り消しなどの方針を決めて追送の指示に含める。
    技術的な判断や既存の認可の内側で済む処置は自分で確定して報告する。
    作業ツリーの状態に関係なく編集できる外部の成果物はメインが中継に合わせて直し、作業ツリーの中の差分はレーン担当が計画と実装で追随させる（メインが専用worktreeを引き取った場合はメインが追随させる）。
-4. 追送の指示には`agent-toolkit:delegation/references/base-contract.md`の入力の適格性の規則を適用し、採用した要件の差分と外部の成果物の処置だけを渡す。
+4. 追送の指示には`agent-toolkit:atk-mode/references/delegation-prompt.md`「入力の適格性と追送」の規則を適用し、採用した要件の差分と外部の成果物の処置だけを渡す。
    commitの分け方、検証の手順、pushの判断など、レーン担当の規範で決める手段は含めない。
    レーン担当は`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`の該当する工程へ戻る。
 

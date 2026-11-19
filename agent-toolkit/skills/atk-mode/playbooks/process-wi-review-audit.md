@@ -49,7 +49,7 @@
    - `pending取得結果`: `atk review-audit pending`の出力の`保存先:`が示す、生成元のJSONファイルの絶対パス。
      エージェント環境では量によらずファイルへ保存されるため、件数とDependabotの取得状態を併記して保存先のパスをそのまま渡し、モデルがJSONを保存し直す手間を省く。
      コマンドが0以外で終わった場合と、JSONや件数を解釈できない場合は`なし`を渡す。
-   - `引き継ぎ記録先`: 省略と継続の扱いは`agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
+   - `引き継ぎ記録先`: 省略と継続の扱いは`agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」に従う。
 
 ### 受領
 
@@ -85,7 +85,7 @@ Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。
 <!-- return-contract:copilot-review-audit:end -->
 

@@ -67,11 +67,11 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 
 1. 常時稼働サーバーを持つプロジェクトでは、本書「常時稼働サーバーへの反映」を行う。
 2. 自分が作った作業用領域を、`agent-toolkit:atk-mode/playbooks/managed-temp.md`の寿命の区分に従って回収する。
-   過去のエージェントが残した資源と誤変更は、`agent-toolkit/share/rules/common/02-agent-operations.md`「プロセス終了の安全規定」で調べ、不要な範囲を回収・是正する。
+   過去のエージェントが残した資源と誤変更は、`agent-toolkit/skills/atk-mode/references/operations.md`「プロセス終了の安全規定」で調べ、不要な範囲を回収・是正する。
    process-wiの登録済みレーンの資源は、追加作業や公開後の工程に備えてこの時点では保持する。
    全工程と外部プロセスの終了後に、通常終了では`atk agents-exit-session`が、process-loopでは子プロセスの終了後処理が、`atk lane delete`と同じ条件で回収する。
    未回収の対象は保持の理由を調べ、解消できたものを同じ回収操作で判定し直し、残るものは保護する成果、現在の担当、残るユーザー判断、再開の条件を報告する。
-3. このセッションでユーザーが確定した判断のうち未保存のもの（`agent-toolkit/share/rules/common/01-agent.md`「協調と自律」の保存対象）を保存するか、AWIを投入する。
+3. このセッションでユーザーが確定した判断のうち未保存のもの（`agent-toolkit/skills/atk-mode/SKILL.md`「硬い制約」の保存対象）を保存するか、AWIを投入する。
    保存では`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」の、程度の限定と確度を保つ規定を適用する。
 4. 協調モードでcommitを作り、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`でその範囲の公開を終える。
    `agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の作業`process-wi single-lane`は、それぞれの工程の中で公開する。
@@ -82,7 +82,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    今回のAWI投入、再利用した既存項目、不要の判断と比べて、各対象を`済`とWIファイル名、または`不要`と理由へ確定し、同じ作業記録へ追記する。
    確定できない対象は、不足する判断・認可・入力か具体的な競合と、再開の条件を作業記録に残し、報告の未達へ書く。
    会話圧縮や担当交代の後も同じ作業記録から復元し、`済`の対象へAWIを重ねて投入しない。
-   改善点の調査と是正は`agent-toolkit:/share/main-improvements.md`「作業中の改善点の報告」が定める。
+   改善点の調査と是正は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「作業中の改善点の報告」が定める。
 6. 自律モードでは、ユーザーが結果を確かめて是正を指示できるよう、事後承認型の報告用UWIをセッションにつき1件保存する。
    本文と保存は`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」に従う。
    `atk run-skill`による実行では、`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保つ。
@@ -94,7 +94,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    保存の成功と警告を検収した時点でユーザーへの伝達を完了とし、失敗した場合は同じUWIの保存を回復する。
 7. 確定した本文を、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の手段で1回送達して終了する。
    - Claude Codeは`mcp__plugin_agent-toolkit_agents_server__send_to_user`の成功を確かめ、起動元が求める報告後の終了操作を同じ応答で行う。
-     送達後のターンの終え方は`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」に従う。
+     送達後のターンの終え方は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
    - Codexは、必要なツール処理と未達の確認を先に終え、手順5の本文そのものを`final`にする。
    - `atk agents-exit-session`などでホスト本体を停止する場合は、報告用UWIの保存の検収と必要な可視の報告（Codexでは`commentary`）を先に終え、停止操作を最後のツール呼び出しにする。
 

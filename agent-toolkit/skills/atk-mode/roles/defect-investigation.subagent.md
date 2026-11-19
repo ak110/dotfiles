@@ -10,7 +10,7 @@ writes_worktree: false
 
 # 既存不良の調査担当タスク
 
-<!-- parent-read-source: agent-toolkit:delegation/references/investigation-delegation.md#既存不良の調査担当の起動と受領 -->
+<!-- parent-read-source: agent-toolkit:atk-mode/playbooks/investigation-delegation.md#既存不良の調査担当の起動と受領 -->
 
 受け取った既存不良について`agent-basics:bugfix`の5つの問い（期待、原因、処置、広がり、確認）に答え、処置を確定して返す。
 コードの修正、対象リポジトリとキューへの書込、AWIの投入、委譲元の元の作業の続行は、委譲元が担う。
@@ -19,7 +19,7 @@ writes_worktree: false
 
 - `対象の不良`: 発生事象、期待される契約、実際の結果、症状を観測した箇所を含む発生条件、ログと参考資料の絶対パス、対象コミット、再現手順。
 - `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと、新規作成か継続かの区分。
-  記録の内容は`agent-toolkit:/share/rules/rules-subagent.md`「多段工程の引き継ぎ記録」に従う。
+  記録の内容は`agent-toolkit:atk-mode/playbooks/subagent.md`「多段工程の引き継ぎ記録」に従う。
 
 ## 調査
 
@@ -53,4 +53,4 @@ writes_worktree: false
 各欄に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」と、条件が成立した確認観点の資料に従う。
 `再発`と`再発防止`の欄は、条件が成立しない場合は行ごと省く。
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。

@@ -7,8 +7,8 @@
 
 表の「発話本文」はユーザーへのメッセージであり、ホストごとに次の手段で届ける。
 
-- Claude Codeは`mcp__plugin_agent-toolkit_agents_server__send_to_user`で届ける（`agent-toolkit:/share/rules/rules-main.claude-code.md`「ツールの入出力」）。
-- Codexは途中経過を`commentary`、通常の最終応答を必要なツール処理の後の`final`で届ける（`agent-toolkit:/share/rules/rules-common.codex.md`「Codexホスト契約の適用」）。
+- Claude Codeは`mcp__plugin_agent-toolkit_agents_server__send_to_user`で届ける（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ツールの入出力」）。
+- Codexは途中経過を`commentary`、通常の最終応答を必要なツール処理の後の`final`で届ける（`agent-toolkit:atk-mode/playbooks/host-codex.md`「Codexホスト契約の適用」）。
   ホスト本体を停止する場合は、必要な報告を停止の前の`commentary`で届ける。
 - 成果作業では、`agent-toolkit:atk-mode/playbooks/report-completion.md`で確定した作業完了報告の本文をそのまま使う。
 - 報告の送達を終えてからホストを停止し、自律モードの伝達は報告用UWIの保存の検収で完了とする。
@@ -23,7 +23,7 @@
 
 | 工程 | 協調モード | 自律モード |
 | --- | --- | --- |
-| 事前承認 | 構造化質問を使う。Claude Codeは`AskUserQuestion`と`agent-toolkit:/share/rules/rules-main.claude-code.md`の制約、Codexは`agent-toolkit:/share/rules/rules-main.codex.md`の手順に従い、合う手段が無ければ`agent-toolkit:atk-mode/references/choice-construction.md`「質問の形式」の固定形式を使う | 有効な回答期限があり、ホスト契約に合う構造化質問を発行できるメインだけがその場で質問し、期限を過ぎたら「未確定判断の保留と暫定判断」へ進む。それ以外は最初から事前承認型UWIへ記録し、回答を要する元項目だけを保留する |
+| 事前承認 | 構造化質問を使う。Claude Codeは`AskUserQuestion`と`agent-toolkit:atk-mode/playbooks/host-claude-code.md`の制約、Codexは`agent-toolkit:atk-mode/playbooks/host-codex.md`の手順に従い、合う手段が無ければ`agent-toolkit:atk-mode/references/choice-construction.md`「質問の形式」の固定形式を使う | 有効な回答期限があり、ホスト契約に合う構造化質問を発行できるメインだけがその場で質問し、期限を過ぎたら「未確定判断の保留と暫定判断」へ進む。それ以外は最初から事前承認型UWIへ記録し、回答を要する元項目だけを保留する |
 | 事前承認以外で回答を待つ確認 | 事前承認と同じ | 回答期限によらずその場では質問せず、事前承認型UWIへ記録して「未確定判断の保留と暫定判断」に従う |
 | 事後承認 | その場で構造化質問する | 回答を待たずに事後承認型UWIへ記録し、作業を続ける |
 | 認識合わせ | 本書「認識合わせ」の手順と事前承認の手段でその場で質問し、回答を待つ | その場で質問し、有効な回答期限を過ぎたら「未確定判断の保留と暫定判断」へ進み、期限が無ければ回答を待つ。構造化質問を発行できないCodex Default modeでは、自分の理解と質問をUWIへ記録し、回答を要する元項目だけを保留する |
@@ -34,7 +34,7 @@
 無期限の設定、期限の機能（`askUserQuestionTimeout`など）が無い環境、期限が無効になる条件が成り立つ環境、Codex Default modeは「期限なし」とする。
 端末のフォーカスによる待機の延長中も「有効な回答期限」の区分を保ち、ユーザーが運用で対処する。
 認識合わせを期限によらずその場で問うのは、割り込みや是正の直後に理解を確かめるためである。
-ユーザーとの窓口を持たない委譲先は、確認事項を委譲元へ通知する（`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」）。
+ユーザーとの窓口を持たない委譲先は、確認事項を委譲元へ通知する（`agent-toolkit:atk-mode/playbooks/subagent.md`「確認事項の即時通知」）。
 
 ### 個別UWI
 
@@ -130,6 +130,6 @@ detected ...
 
 会話の開始、`clear`、会話の圧縮の時には、入口`agent-toolkit:atk-mode`の起動を求める案内が届くので、案内に従って起動する。
 進捗のセルフチェック通知（`source="progress-self-check"`）は、呼出主体ごとに30分間隔で届く点検の契機である。
-受けた主体は`agent-toolkit:/share/agent-conduct-details.md`「進捗点検」に従って点検する。
-比較に使う情報は`agent-toolkit:delegation/references/waiting-and-monitoring-progress.md`「成果物側の観測」に従う。
+受けた主体は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「進捗点検」に従って点検する。
+比較に使う情報は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「成果物側の観測」に従う。
 委譲元は点検ごとの一律の受領の返答や再照会を求めず、ユーザーへの送達は本書「手段の選択」に従う。

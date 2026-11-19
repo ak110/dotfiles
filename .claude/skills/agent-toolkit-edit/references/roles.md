@@ -1,7 +1,7 @@
 # 役割文書の宣言
 
-`agent-toolkit/share/`の`<役割名>.parent.md`と`<役割名>.subagent.md`、Claude Codeのサブエージェント定義を作る・改める時の、`agents_server`に固有の宣言と接続である。
-一般の基準は`agent-basics:writing-standards/references/sub-agents.md`にあり、本書は`agents_server`の引数、自動で補う項目、frontmatter、`share/`と`## 出力`への接続だけを持つ。
+`agent-toolkit/skills/atk-mode/roles/`の`<役割名>.parent.md`と`<役割名>.subagent.md`、Claude Codeのサブエージェント定義を作る・改める時の、`agents_server`に固有の宣言と接続である。
+一般の基準は`agent-basics:writing-standards/references/sub-agents.md`にあり、本書は`agents_server`の引数、自動で補う項目、frontmatter、`roles/`と`## 出力`への接続だけを持つ。
 frontmatterのキーと値（`model_type`を含む）、入力名、返却形式は公開契約である。
 変える時は、宣言、本文、呼出側の起動・受領の契約を同じ変更でそろえる。
 
@@ -9,17 +9,17 @@ frontmatterのキーと値（`model_type`を含む）、入力名、返却形式
 
 - `<役割名>.parent.md`の起動の節には、`agents_server`の`start`の引数（`cwd`、`subagent_md_path`、`extra_params`、`mode`、`model_type`）へ渡す役割固有の値を書き、`subagent_md_path`には役割名を指定する。
   全ての役割に共通の起動の処理と省略時の値（`mode`を指定しない運用、`model_type`を省くとサーバーが工程別の設定を適用する仕様）は、共通の定義元が持つ。
-  定義元は`agent-toolkit:delegation/references/delegation-role-launch.md`「`<役割名>.parent.md`を持つ委譲の起動」である。
+  定義元は`agent-toolkit:atk-mode/playbooks/delegation.md`「`<役割名>.parent.md`を持つ委譲の起動」である。
 - 委譲先の恒常の手順がClaude Codeの`agents/`に定義済みの時は、`<役割名>.parent.md`だけを置き、`起動対象:`の行にその定義のスコープ付きの識別子を書く。
   入力名は、Claude Code用のfrontmatterとは別に、定義本文の`## 入力`のtextコードブロックで`必須入力名: 対象, 観点`のようにASCIIカンマ区切りで宣言する。
-  `share/*.subagent.md`では、本書「agents_serverのfrontmatter」の`required_inputs`を使う。
+  `roles/*.subagent.md`では、本書「agents_serverのfrontmatter」の`required_inputs`を使う。
 - サーバー、hook、modが起動時に自動で確かめ、補い、実行する項目は、委譲元の起動前の作業に入れない。
   該当するのは、必須の入力の確認、`引き継ぎ記録先`の準備、`<役割名>.subagent.md`の所在の特定、委譲元のセッション記録の識別子と所在の特定、定期の再確認の付与などである。
 
 ## 返却形式の設計
 
-- 役割固有の返却形式の定義元は、`share/<役割名>.subagent.md`の`## 出力`である。
-- 完了、続行不能、通知、追加の報告の共通の返却契約と、省略できる行の扱いは、`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」が持つ。
+- 役割固有の返却形式の定義元は、`roles/<役割名>.subagent.md`の`## 出力`である。
+- 完了、続行不能、通知、追加の報告の共通の返却契約と、省略できる行の扱いは、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」が持つ。
   同節は軽量の起動にも自動で届く。
 
 ## agents_serverのfrontmatter
@@ -59,7 +59,7 @@ continuations:
 
 - 必須の入力と任意の入力の名前は宣言の全体で重ねず、空白文字、バッククォート、読点、全角のカンマ、先頭と末尾のコロンを含めない。
 - サーバーは、必須の入力の不足か未宣言の入力があれば、起動の前に拒否する。
-- モデルの上書きと候補列の直接の指定にも、`agent-toolkit:delegation/references/process-model-settings.md`「工程別モデル設定」の自律の選択の制限と、ユーザーの明示の指定の境界を当てる。
+- モデルの上書きと候補列の直接の指定にも、`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」の自律の選択の制限と、ユーザーの明示の指定の境界を当てる。
 - 入力の項目を足す・削る・改名する時は、宣言、本文、呼出元の契約を同じ変更でそろえる。
   新しい定型のチェックは、役割文書の宣言と本文、呼出元の入力・検収の契約を足すだけで起動できる。
 - 共通の読み取りの処理は`agent_toolkit/_common/task_documents.py`に集め、サーバー、hook、プロンプトの生成、レーンの書込の判定が同じ宣言の定義を共有する。
@@ -71,7 +71,7 @@ continuations:
 - 書込先をmanaged-temp、引き継ぎ記録、private-notesだけに限れる役割は`false`にでき、限れない役割は`true`にする。
   新しい役割は書込先を明確にし、`writes_worktree`を明示する。
 - `atk lane integrate`は、`false`の担当を書込主体の対象から除く。
-- 軽量の起動で届く規範とスキルは`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲の表で確かめ、要る判定基準と手順は役割文書の中で完結させる。
+- 軽量の起動で届く規範とスキルは`agent-toolkit:atk-mode/references/agent-documents.md`の配送範囲の表で確かめ、要る判定基準と手順は役割文書の中で完結させる。
 - `explore`のmodeでは、全てのバックエンドで通常の読み取りのコマンドと読み取り用のMCPを使える。
   対象の成果物、委譲の入力、ユーザーデータの変更の禁止は共通のプロンプトから指示し、実行環境が管理するキャッシュ、内部状態、保存出力とは区別する。
 - 同じ版の比較など、役割固有の検収に要る保存資料は入力の契約の中に保つ。
@@ -87,7 +87,7 @@ continuations:
   本文のデータは役割ごとの契約で渡す。
 - `condition`で条件付きの必須値を定めた時は、送る側が対象の工程と履歴から要否を判定する。
 - サーバーと生成CLIは、この宣言から、必須の入力の欠落、宣言外の入力、パスの欄への説明文の混入などを検査する。
-  プロンプトの生成と配送は`agent-toolkit:delegation/references/sending-prompt.md`「委譲プロンプトの構成」に従う。
+  プロンプトの生成と配送は`agent-toolkit:atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」に従う。
 
 ## 起動対象と入力の案内
 

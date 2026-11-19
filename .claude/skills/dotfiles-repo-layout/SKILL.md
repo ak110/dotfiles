@@ -19,9 +19,9 @@ description: >
 
 - dotfilesユーザー: chezmoiのソース、`bin`、`pytools`などを自分の環境へ導入して使う。
 - agent-toolkitユーザー: マーケットプレイスから`agent-toolkit`を導入して使う（dotfilesユーザーを含む）。
-  agent-toolkitの配布ルールの導入を前提にする案内は、このロール向けに限る。
+  agent-toolkitのスキルとhookの導入を前提にする案内は、このロール向けに限る。
 - agent-basicsユーザー: `agent-basics`の品質スキルを使う（上の2ロールを含む）。
-- 全プロジェクト編集者: 配布された設定（`agent-toolkit`本体、`~/.claude/rules/agent-toolkit/`のルール）を読んで様々なプロジェクトを編集するコーディングエージェント。
+- 全プロジェクト編集者: 配布された設定（`agent-toolkit`本体と`~/.claude/rules/`の規範）を読んで様々なプロジェクトを編集するコーディングエージェント。
 - dotfiles編集者: 本リポジトリと`agent-toolkit`本体を変えるコーディングエージェント。
   全プロジェクト編集者の設定に加えて、リポジトリ直下の`.claude/`と`AGENTS.md`を読む。
   Claude Codeは`CLAUDE.md`と`CLAUDE.local.md`が無いプロジェクトでは`AGENTS.md`を直接読む。
@@ -54,16 +54,14 @@ Claude CodeとCodexの設定ディレクトリは複数あり、取り違える�
   Codexにも同じスキルを見せる時は`.agents/skills`から`.claude/skills`へのシンボリックリンクを作る。
 - `.chezmoi-source/dot_codex/`: `~/.codex/`への配布元。
   - `AGENTS.md`はCodex用のアダプターで、`scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`から起動）が生成するため、生成元を変える。
-    生成元は`agent-toolkit/share/rules/rules-common.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`、`agent-toolkit/share/rules/common/`配下の常時規範である。
+    生成元は個人用の規範`.chezmoi-source/dot_claude/rules/myprojects-common.md`だけで、agent-toolkitの規範は埋め込まない。
     Claude Codeが入れ子で読まないよう、`.claude/settings.json`の`claudeMdExcludes`で除外している。
   - `setup_codex_links.py`は`~/.codex/`から`.chezmoi-source/dot_claude/`配下の共有スキルと`docs`の原本へのリンクを作る。
     LinuxとmacOSはシンボリックリンク、Windowsはディレクトリジャンクションにする（chezmoiの`symlink_`はWindowsで特権不足により失敗するため）。
-  - `agent-toolkit/share/rules/common/`配下は配布先で`atk-auto`タグ付きの本文へ変換する。
-    そのためリンクではなく`sync_agent_toolkit_rules.py`で`~/.claude/rules/agent-toolkit/`と`~/.codex/agent-toolkit/rules/`へ同期する。
   - `~/.codex/skills`には全体で使うスキルだけを置く。
 - `.chezmoi-source/dot_gemini/`: Antigravity CLI向けに`~/.gemini/`へ配るファイル群（`GEMINI.md`、`antigravity-cli/skills/`など）。
   共有プラグインは`agent-toolkit/`から`agent-toolkit-agy/`へ、`agent-basics/`から`agent-basics-agy/`へ独立して生成し、`post_apply`が`~/.gemini/config/plugins.json`の登録へ加える。
-  toolkitの生成ルートはスキル、agents、常時規範、6つのイベントフック、共有MCP、実行リソースを含む。
+  toolkitの生成ルートはスキル、agents、6つのイベントフック、共有MCP、実行リソースを含む。
   basicsの生成ルートは品質スキルだけで単独で使え、元の名前空間と品質基準の本文を保つ。
 - `.chezmoi-source/dot_config/`: XDGに従う各種ツール設定（`git`、`uv`、`pyfltr`など）の配布元。
   「`~/.config/<tool>`の設定を変えて」は`.chezmoi-source/dot_config/<tool>/`の編集を指す。

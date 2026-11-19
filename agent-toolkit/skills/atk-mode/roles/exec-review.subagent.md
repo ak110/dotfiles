@@ -52,7 +52,7 @@ continuations:
 | 判定の観点と並行する探索・再発防止セルフチェックの起動と受領に関する判断・作業の前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` | 判断 | `delegation-result`、`delegation`、`read:agent-toolkit:*/skills/atk-mode/playbooks/exec-review.md` | |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:atk-mode/playbooks/verification.md` | | | |
 | 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `agent-toolkit:atk-mode/roles/recurrence-self-check.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/recurrence-self-check.parent.md` | |
-| 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `agent-toolkit:/share/reader-fit-review.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
+| 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `agent-toolkit:atk-mode/roles/reader-fit-review.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/roles/reader-fit-review.parent.md` | |
 
 ## 入力
 
@@ -159,7 +159,7 @@ Git管理外のデータはGitから戻せず、レビュー工程で失うと�
 - 各パスの直接確認は`{"direct":[{"読者像":"...","判定":"...","根拠":"...","証拠":"/結果.md"}]}`とする。
   別読者を起動したら`sessions`も併記する。
   省略した`direct`・`sessions`は空配列として扱う。
-  適用条件と証拠の保存は`agent-toolkit:/share/reader-fit-review.parent.md`「起動」に従う。
+  適用条件と証拠の保存は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`「起動」に従う。
   `external`は直接確認の対象外とする
 - Git管理下の申告対象は、削除を除く変更対象の`.md`と`.md.tmpl`のうち、今回のレビュー判定対象commitが変えた範囲とし、改名されたファイルは新しいパスで書く。
   `review_contract`で判定対象外としたcommitだけによる変更は除き、どの計画にも属さないcommitによる変更は残す。
@@ -174,7 +174,7 @@ Git管理外のデータはGitから戻せず、レビュー工程で失うと�
 - `終了区分: 延期adopt`または`終了区分: 終了しない`（`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」の区分のうち、統合時に`adopt`しない値）、および実際の結論を書いた`後続工程:`、`検収時機:`
 - 公開工程で判定する条件は`判定工程: 公開工程`、並行して実施中の画面レビューで判定する条件は`判定工程: ユーザビリティレビュー`かつ`進行状態: 並行中`
 
-返却の状態行、続行不能の区分と理由、標識行と一行返却は`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+返却の状態行、続行不能の区分と理由、標識行と一行返却は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 完成条件証拠の提出を求められた場合は、末尾に`agent-toolkit:atk-mode/references/review-record.md`「条件別判定行の形式」の判定行を全条件の数だけ書き、求められていなければ判定行を置かない。
 一般的な要約などの地の文は加えず、役割固有の規定行だけを返す。
 

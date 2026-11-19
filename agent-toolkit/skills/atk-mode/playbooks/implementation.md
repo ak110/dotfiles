@@ -37,14 +37,14 @@
    要求の内側で要る計画外のファイル（エージェント向け文書、新規作成や移動の先、直接影響範囲の追随先など）は、他のレーンとの重なりにかかわらず自分の判断で編集する。
    その追加のための事前の通知、認可の待機、選定記録の更新、追加一覧の受渡し、進捗ログへの記載は省く。
    妥当性は実行レビューがcommitの差分と要求を比べて判定し、統合では最新の統合先への追随、競合の解消、再検証で両方の要求を保つ。
-   WIの要求を超える変更は、`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」でメインへ返し、判断を受けてから行う。
+   WIの要求を超える変更は、`agent-toolkit:atk-mode/playbooks/subagent.md`「確認事項の即時通知」でメインへ返し、判断を受けてから行う。
 7. Git管理外のファイルは、各ファイルの最初の変更の直前に本文をmanaged-temp（`agent-toolkit:atk-mode/playbooks/managed-temp.md`）へ複製し、原本と複製の絶対パスの対を引き継ぎ記録へ残す（実行レビュー担当が変更の前後を比べるため）。
 8. 変更の前に作成規範を確かめ、担当のファイルと直接影響範囲だけを変える。
    生成元を変えたら、生成と配布の手段も合わせて直す。
 9. 要件か外部仕様の水準の技術判断が実装中に生じたら、その時点の結論をレビュー指摘管理表（計画なしでは引き継ぎ記録）へ書いて実装を続ける。
    表へ行を足す時は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」に従う。
    計画なしで、`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」の4つの事項のどれかが決まらないと分かったら、計画の起草へ戻る。
-   ユーザーの選好か認可の範囲を変える事項だけを`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」で報告し、回答が要る単位だけ待つ。
+   ユーザーの選好か認可の範囲を変える事項だけを`agent-toolkit:atk-mode/playbooks/subagent.md`「確認事項の即時通知」で報告し、回答が要る単位だけ待つ。
    通知済みの事後承認の対象がレビューの修正で変わったら、変わった内容を同じ通知で送り直す。
    完成条件の除外と変更は本書「完成条件の必要性と変更」で扱う。
 10. ユーザーがAWIの`## ユーザーコメント`かUWIの`## 回答`で処理側へ直接書いた質問（AWI本文へ転記された質問を除く）は、回答の本文と根拠を下書きのファイルへ保存する。
@@ -101,7 +101,7 @@
 - 人間由来の条件: 外さずに、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従ってユーザー確認へ回す。
 
 これ以外で完成条件を変えるか外す判断が要る場合は、旧条件、新条件か除外の範囲、技術的な制約、保つ要求と根拠を整理する。
-それにユーザー判断の有無と所在を添えて`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」でメインへ送り、返った判断で再開する。
+それにユーザー判断の有無と所在を添えて`agent-toolkit:atk-mode/playbooks/subagent.md`「確認事項の即時通知」でメインへ送り、返った判断で再開する。
 メインの技術判断を受けたら、その条件を扱う指摘管理表の行へ`atk review-table respond`の`--no-response-reason-file`で記録する。
 その行が無いか、レビュー担当の有効な判定があって`respond`が拒否する場合は、`atk review-table add`で足した行へ記録する。
 `根拠の所在:`には`メインの技術判断`、対象AWI、判断の内容を書き、他のラベルは`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」に従う。
@@ -112,12 +112,12 @@
 作業の構成と内部の担当へ渡す確定した書込単位は計画の起草で決め（`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」）、計画の起草、設計の判断、原因分析は渡さない。
 実装の単位を分けるのは、達成する成果、commit、対象のファイル群、変更範囲の検証が互いに独立している場合に限る。
 
-- 同じworktreeで分ける: `agent-toolkit:delegation/references/mandatory-rules.md`「作業ツリーの保護」に従い、書込先が重ならない担当を並列に置くか、1人ずつ直列に置く。
+- 同じworktreeで分ける: `agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従い、書込先が重ならない担当を並列に置くか、1人ずつ直列に置く。
   commitと作業ツリー全体に及ぶ操作は、全ての担当が終わった後にレーン担当がまとめて行う。
 - 内部の群（別branch・別worktree）へ分ける: 担当別のcommitか書換えの検証が要る場合と、書込先を事前に確定できない場合に、一時的な群を作る。
   レーンが所有の対応表を確定し、確定済みのレーンのcommitから各資源を作り、各worktreeの書込担当は1人とする。
   各担当は自分のworktreeでcommitし、Gitフックを通して、フックの生成物を同じcommitへ含める。
-  粒度と同時数に固定の上限は置かず、`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」で決め、契約で関係する出力元と期待する試験は同じ群に置く。
+  粒度と同時数に固定の上限は置かず、`agent-toolkit:atk-mode/playbooks/delegation.md`「委譲単位の確定」で決め、契約で関係する出力元と期待する試験は同じ群に置く。
   レーンは担当の終了、clean、commit、差分、版付きの検証結果を確かめて順に統合し、前後のHEADを`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」で記録する。
   統合の後は重複する生成物を原本から同期し、対象語の残存、直接影響範囲、変更範囲の検証を終えて、一時のworktreeとbranchを回収する。
   OIDが変わっただけで検証の記録を捨てず、結果が変わりうる項目と統合後に初めて成り立つ項目だけを観測し直す。
@@ -125,7 +125,7 @@
   内部の群は別のレーンや別の要求にせず、計画、検収、commitの対応、統合、メインへの返却はレーンが持つ。
 - 担当のモデル: WIに`担当モデル.実装担当`があればその値を下位の書込担当の`model_type`へ渡す。
   指定が無ければ`execute`を避け、確定済みの書込と、確定した比較の観点による一次確認は`chores`で起動する。
-  定型の走査、事実の収集、確定したコマンドの実行、判断が一意な表記の変更は`chores_fast`で起動する（工程の区分は`agent-toolkit:delegation/references/process-model-settings.md`「工程別モデル設定」）。
+  定型の走査、事実の収集、確定したコマンドの実行、判断が一意な表記の変更は`chores_fast`で起動する（工程の区分は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
   スクリプトで済む処理はモデルを起動せずに実行する。
   起動、必読の資料、検収、修正を含む総費用で比べて分け、小さな反復を1件ずつ委譲する構成は避ける。
 - 検証: 書込担当は、変更したファイルと特定した利用側の試験とlintだけを実行する。

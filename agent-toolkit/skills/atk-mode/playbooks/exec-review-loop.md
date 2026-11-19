@@ -14,7 +14,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 2. 実装を認可した資料から、レビュー基準を`計画`、`WI`、`CI記録`（計画の無いCI失敗の対応）から選ぶ（組み合わせてよい）。
    1回の実行レビューは`cwd`から解決する1つのリポジトリだけを対象とし、リポジトリが異なる基準はレビューを分ける。
    対象WIの`担当モデル.実行レビュー担当`の値は`model_type`と入力`担当モデル`へ渡し、WIごとに違えばレビューを分ける。
-   指定値と実行値の比較と記録は`agent-toolkit:delegation/references/process-model-settings.md`「工程別モデル設定」に従う。
+   指定値と実行値の比較と記録は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う。
 3. 単一計画の初回でない起動は、起動方法ごとの次の資料を読んでから入力を決める。
    - 内部の群は`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`を読む。
    - 複数の計画は`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`を読む。
@@ -28,7 +28,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    | `計画` | 計画ファイルの絶対パス |
    | `WI記録` | 計画の`## 実施内容`に無い対象WIのファイル名、要求、完成条件、由来、採否（計画が無ければ全ての対象） |
    | `開始時のHEAD` | 専用branchなら起動の直前に`git merge-base <専用branch> <ベースbranch>`で解決した分岐元（計画の有無によらない）。それ以外で`計画`を含まずに`WI`を渡す時（`CI記録`との併用を含む）は作業開始時のHEAD |
-   | `引き継ぎ記録先` | `agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」で決める |
+   | `引き継ぎ記録先` | `agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」で決める |
    | `review_contract` | 複数の計画、計画外の条項、新形式AWIのどれかがあれば`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」で作り、初回から渡す |
    | `レーン識別子` | 特定のレーンの作業なら渡し、セッション識別名を`<レーン識別子>-exec-review`とする |
    | `受理済みの完成条件証拠` | 同じ計画の進捗ログにある受理済みの返却ファイルのうち後続の担当が読めるものの絶対パス。無ければ`なし` |
@@ -40,14 +40,14 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 6. `agents_server`の`start`を、`cwd`に対象worktreeの絶対パス、`subagent_md_path`に`exec-review`、`extra_params`に手順4の入力、`model_type`に手順2の値（無ければ省く）を渡して呼ぶ。
    通知を変えた差分では、検証記録の最終の配送本文の保存先と入力・版・ホスト・生成元を渡し、レビュー担当が全文を開けることを確かめる（ソースのリテラルや合格の総数で代用しない）。
 7. 画面表示の変更があれば、`agent-toolkit:atk-mode/roles/usability-review.parent.md`でユーザビリティレビュー担当も並行して起動する。
-   文章成果物の読者別探索は`agent-toolkit:/share/reader-fit-review.parent.md`の直接確認の条件、起動単位、入力に従う。
+   文章成果物の読者別探索は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`の直接確認の条件、起動単位、入力に従う。
 8. 起動の後もレーンは同じ作業ツリーで別の修正を続けてよい（検証の場所はレビュー担当が決める）。
    渡すWIと、計画の`## 実施内容`に「人間由来のWI」「エージェント由来のWI」として挙がった関連WIを合わせて対象WI集合と呼び、これが空でないか`ユーザー指示`由来の行がある時は返却に条件別判定行が出る。
 
 ## 完成条件証拠の受領確認
 
 `atk agents wait`で受け取った`agent_message_path`の返却本文を読む。
-正式原本の所在が返れば、`agent-toolkit:delegation/references/receiving-format.md`「受領手段と報告様式の選択」で対応付けた原本を返却本文とする。
+正式原本の所在が返れば、`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「受領手段と報告様式の選択」で対応付けた原本を返却本文とする。
 
 1. 返却が`agent-toolkit:atk-mode/roles/exec-review.parent.md`「実行レビューの返却契約」の行（出るべき条件別判定行を含む）を欠くか自然文だけなら受理せず、同じ担当に不足の行を足して出し直させる。
 2. `git rev-parse <返却の値>`で解決した`レビューHEAD`が、対象worktreeの最新のHEADと完全に一致することを確かめ、違えば同じ担当に現在のHEADで判定し直させる。
@@ -88,7 +88,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    追加の探索や再現はせず、疑いだけで指摘を消すことも対応済みにすることもしない。
    そのthreadへ`send_message`の`instruction: レビュー指摘の対応をせよ`を送り、roundは表から解決させる。
    `extra_params`には全ての計画の`レビュー指摘管理表`と、あれば`レビュー参考意見`を`agent-toolkit:atk-mode/roles/exec.parent.md`「入力」の形で渡す。
-3. 同じthreadを続けられなければ、`agent-toolkit:delegation`の`SKILL.md`「継続と新規起動」に従って`レビュー修正担当`を起動し、`再開位置`に`~/.claude/plans`の計画の絶対パスを、管理表と参考意見を手順2の形で渡す。
+3. 同じthreadを続けられなければ、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従って`レビュー修正担当`を起動し、`再開位置`に`~/.claude/plans`の計画の絶対パスを、管理表と参考意見を手順2の形で渡す。
 4. 修正の返却（`対応完了`、`対応完了（再レビュー不要）`）に`検証結果`と`画面差分`の行が無ければ出し直させる。
    返却の種類は修正commitの有無で判定せず、本書「応答済みの判定」で未応答0件を確かめ、全ての指摘を根拠付きで不採用とした`対応完了`も再レビューへ進める。
 5. `対応完了`では、同じレビューのthreadへ`send_message`の`instruction: 再レビューせよ`と`round: <ラウンド番号>`を送る。
@@ -158,7 +158,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 | ユーザーの選好、要件、認可範囲の変更 | ユーザーに確認して回答を同じレビューイーへ返す | 不要 |
 | 外部状態か権限の不足 | 回復の手段を確かめ、ユーザーの操作が要れば確認する。既存不良が原因なら既存不良の行も適用する | 必要 |
 | 同じ論点の2回目以降の差し替え | `agent-basics:review-standards/references/reviewee.md`「同じ指摘の反復」に従う（反復の回数だけを確認の理由にしない） | 必要 |
-| 対象リポジトリや配布物のhook・CLI・規範などの既存不良による続行不能 | 担当の回復と欠陥の処置を分け、`agent-toolkit:/share/rules/common/01-agent.md`「完遂と先送り」の条件の内側で判定する。process-wi中は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で時機を決める | 必要 |
+| 対象リポジトリや配布物のhook・CLI・規範などの既存不良による続行不能 | 担当の回復と欠陥の処置を分け、`agent-toolkit:atk-mode/references/conduct.md`「完遂と先送り」の条件の内側で判定する。process-wi中は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で時機を決める | 必要 |
 | 同じthreadを続けられない | 後続の担当へ同じ計画ファイル（`~/.claude/plans`配下）、指摘管理表、確定した判断を引き継ぐ。既存不良が原因なら前の行も判定する | 必要 |
 
 「再開位置の記録」が「必要」の事由では、計画ファイルを`~/.claude/plans`へ保存し、`atk run-script plan-progress --`で`## 進捗ログ`へ完了した工程、続行できない理由、再開位置を記録し、キューの項目は今の状態のまま保つ。

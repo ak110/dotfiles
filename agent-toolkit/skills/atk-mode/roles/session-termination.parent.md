@@ -42,7 +42,7 @@
   反映後の新しいプロセスでしか観測できない条件を含む場合は、残る完成条件と観測の手段も書く。
 - `公開対象のadopt済みAWI`: 今回の公開に含むcommitで終了したAWIファイル名の集合。
   ある場合に渡し、WIの状態変更の入力からは除く。
-- `引き継ぎ記録先`: 省略時と継続時の扱いは`agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
+- `引き継ぎ記録先`: 省略時と継続時の扱いは`agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」に従う。
 
 任意の3入力の省略値は`なし`とし、該当の行を省く。
 確定したら本書「直接実行」へ進む。
@@ -97,7 +97,7 @@ CIの結果: <CI成功|CI定義なし|CI実行対象外。後二者は共通判�
 延期後にadoptしたAWI: <実際にadoptしたAWIファイル名のJSON文字列配列。反映後の新プロセスでしか観測できない条件が残る項目と、観測が完成条件を満たさなかった項目を含めない。無い場合は[]>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 `CI実行対象外`では`実行した公開工程`に終了8の出力、project・commit・ref・errorsの保存先とローカル全体検証の成功を記す。
 CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）や公開後操作の前提不足に起因する場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能の受渡し」に従う。
 対象、失敗した操作とその対象、診断結果、確認済みの工程、成功済みの公開後操作、残りの工程、再開位置を記載する。
