@@ -441,9 +441,13 @@ class CliTurnManager:
             if session is None:
                 if not initialized.done():
                     initialized.set_exception(exc)
-            elif not finalized:
-                _record_failure(session, exc, stderr_text)
-                await self._notify_waiters()
+            else:
+                if not finalized:
+                    _record_failure(session, exc, stderr_text)
+                    await self._notify_waiters()
+                # initの後の記録処理で失敗した場合も、開始の待機者へ失敗を確定したsessionを渡す。
+                if not initialized.done():
+                    initialized.set_result(session)
         finally:
             if session is not None:
                 try:
