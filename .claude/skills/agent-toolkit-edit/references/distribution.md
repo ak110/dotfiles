@@ -34,7 +34,7 @@
 3. 版数の更新の完了条件は、プラグインごとに、公開済みの基準（push済みの最新のplugin manifest）に対して要求した種別以上の更新を含み、定義元の2ファイルと派生マニフェストの`version`が一致していることとする。
    既存の未pushの更新で条件を満たし、`scripts/agent_toolkit_bump.py`がファイルを変えずに終了コード0で終わった場合も完了とする。
 4. 新しいCLI、コマンド、ラッパースクリプトを公開する計画では、本書「新規CLI公開時の疎通確認」の導入手順を書く。
-5. `agent-toolkit:process-wi`では、公開担当へ渡す`bump種別`をプラグインごとの区分にする（例: agent-toolkitはminor、agent-basicsはpatch）。
+5. `agent-toolkit:atk-mode`の作業`process-wi`では、公開担当へ渡す`bump種別`をプラグインごとの区分にする（例: agent-toolkitはminor、agent-basicsはpatch）。
    公開担当は全レーンのマージの後に、変更のあるプラグインごとに本書「バージョン更新」を1回ずつ行う。
 
 ## 新規CLI公開時の疎通確認
@@ -65,7 +65,7 @@ hookが新たに操作を止めた時と、修正の後も同じ事象が出る�
 変更のあるプラグインごとに、pushの前に次の順で進める。
 
 1. 本書「判定基準」で種別を決める。
-   `agent-toolkit:process-wi`の公開担当は、委譲元が確定した種別を使う。
+   `agent-toolkit:atk-mode`の作業`process-wi`の公開担当は、委譲元が確定した種別を使う。
 2. 検証の前に`scripts/agent_toolkit_bump.py --plugin <プラグイン名> {patch|minor|major}`を実行する。
    `--plugin`を省くとagent-toolkitが対象になる。
 3. 定義元の2ファイルの`version`と`description`をそろえる（`description`は手で同期する）。
