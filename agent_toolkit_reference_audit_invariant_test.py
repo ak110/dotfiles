@@ -169,11 +169,8 @@ def test_unreferenced_audit_heading_detector_joins_wrapped_comments(tmp_path: pa
     (tmp_path / source).write_text(
         "# 監査記録は`docs/development/audit-records.md`の\n# 「a.py：節：2026年1月1日」にある。\n", encoding="utf-8"
     )
-    ledger = pathlib.Path("docs/development/norm-restructure/ledger.md")
-    (tmp_path / ledger).parent.mkdir(parents=True)
-    (tmp_path / ledger).write_text("b.md：節：2026年1月2日\n", encoding="utf-8")
 
-    sources = [_AUDIT_RECORDS, source, ledger]
+    sources = [_AUDIT_RECORDS, source]
     if split_records:
         content = audit.read_text(encoding="utf-8")
         first, second = content.split("## b.md", 1)

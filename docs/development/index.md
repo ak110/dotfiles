@@ -23,4 +23,3 @@
 ## 検証と判定の記録
 
 - [docs/development/audit-records.md](audit-records.md): 規範の条文とそれを実装するコードが根拠とする、実際に検証した日付・版数・再検証手段
-- [docs/development/norm-restructure/README.md](norm-restructure/README.md): 規範の全体の再構築で全条文を判定した台帳と、守る障害・方針の逆引き表（作成時点の固定の記録）

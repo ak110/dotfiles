@@ -205,16 +205,6 @@ textlint-exclude = [
 colloquial-check-exclude = [
     # textlint-excludeと同じ外部由来の規範。
     ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
-    # 規範の再構築の判定台帳。基準commitの条文の逐語抜粋を記録として保持するため対象から外す。
-    "docs/development/norm-restructure/*.tsv",
-]
-typos-exclude = [
-    # 規範の再構築の判定台帳。条文の先頭40字の抜粋と検索語が語の途中で終わるため対象から外す。
-    "docs/development/norm-restructure/*.tsv",
-    # 正式台帳の原文・由来・逆引きを固定引用として保持する。案内文書は通常の検査対象とする。
-    "docs/development/norm-restructure-20261022/ledger.tsv",
-    "docs/development/norm-restructure-20261022/mapping.json",
-    "docs/development/norm-restructure-20261022/reverse-index.tsv",
 ]
 # textlintのキャッシュはルール実装の更新を識別しないため、毎回現在のルールで検査する。
 textlint-args = []
