@@ -1,7 +1,7 @@
 """起動時と圧縮後の文脈へ、入口の起動の案内とその場で決まる値を追加するhandler。
 
 規範の本文は載せない。メインへは入口のスキルの起動を、委譲先へは起動の本文の原本の所在を案内する。
-委譲先かどうかは`_common.delegated_session`が判定する。
+委譲先かどうかは`_hooks.agent_id`が、`agents_server`の環境変数と組み込みの委譲機能の子が入力に持つ`agent_id`で判定する。
 
 出力する自動挿入本文は`atk-auto`で囲む。process-loopが渡したユーザー自身の入力は
 `forwarded-user-input`で囲む。読み手のエージェントが区分ごとに生成主体と種別を
@@ -35,11 +35,10 @@ from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, session_state, wait_schedule
-lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session, is_process_loop_session
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import document_reads, repository_protection, session_title, timing, work_contract
-lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
+lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.message_format import xml_message
 lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path
 
@@ -490,7 +489,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         return "\n".join(lines)
 
 
-def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
+def _subagent_temp_notice(session_temp: pathlib.Path | str, agent_id: object) -> str:
     """担当ごとの置き場所と、親の領域でのファイルの受渡しを通知する。"""
     if not isinstance(agent_id, str) or not agent_id:
         return session_temp_notice(session_temp)
@@ -526,7 +525,10 @@ def main(payload_text: str, *, host: str = "claude") -> int:
     payload = _parse_payload(payload_text)
     event_name = payload.get("hook_event_name")
     session_id = payload.get("session_id")
-    delegated = is_delegated(os.environ)
+    # 組み込みの委譲機能の子のSessionStartは、親と同じsession_idと自分のagent_idを持つ。
+    # 親の会話の記録と要約を変えないよう、メインの状態を扱う処理は主体がメインの時に限る。
+    subject = resolve_hook_agent_id(payload)
+    delegated = not is_main_agent_context(payload)
     if event_name == "SessionStart":
         if isinstance(session_id, str):
             claim_process_loop_session(session_id, os.environ)
@@ -552,7 +554,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 session_temp = managed_temp.resolve_session_temp(session_id)
         if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
             # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
-            forget_subject_notices(session_id, MAIN_AGENT_ID)
+            forget_subject_notices(session_id, subject)
         started = time.monotonic()
         content = compose_session_start(source, delegated=delegated, host=host)
         timing.record(payload, "rules_context", started, "ok", stage="normative-content")
@@ -590,12 +592,12 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                         else None
                     ),
                 )
-            if source in _OPERATION_SKILL_RESET_SOURCES:
+            if source in _OPERATION_SKILL_RESET_SOURCES and subject == MAIN_AGENT_ID:
                 reset_main_operation_skill_ready(session_id)
-            if source == "compact":
+            if source == "compact" and subject == MAIN_AGENT_ID:
                 work_contract.reset_notice(session_id)
             if session_temp is not None:
-                temp_text = session_temp_notice(session_temp)
+                temp_text = _subagent_temp_notice(session_temp, payload.get("agent_id"))
                 contract_context = None
                 if source == "compact" and not delegated and work_contract.exists(session_id):
                     # 圧縮後の通知と資料の再取得案内にも上限内の余白を残す。契約の本文と案内が収まらなければ、
@@ -616,7 +618,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             if source == "compact":
                 # ツールを使わない返却・回答の判断にも、圧縮後に読む範囲を1通で伝える。
                 recovery = _compact_recovery_context()
-                if host == "claude":
+                if host == "claude" and subject == MAIN_AGENT_ID:
                     started = time.monotonic()
                     compact_text = _compaction_notice(
                         session_id, payload.get("transcript_path"), session_temp, delegated=delegated

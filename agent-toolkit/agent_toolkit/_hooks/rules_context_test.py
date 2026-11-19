@@ -152,22 +152,32 @@ def test_session_start_carries_no_rule_bodies_or_rule_file_pointers(
 _DELEGATED_ENVIRONMENTS = [None, ("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGENT_TOOLKIT_OWNER_SESSION", "owner")]
 
 
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("agent_id", [None, "builtin-child"])
 @pytest.mark.parametrize("environment", _DELEGATED_ENVIRONMENTS)
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
 def test_session_start_delegated_requests_reread_only_after_compaction(
-    environment: tuple[str, str] | None, source: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    environment: tuple[str, str] | None,
+    source: str,
+    agent_id: str | None,
+    host: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """委譲先へは圧縮の後だけ、起動の本文の原本と役割文書の読み直しを1行で求める。メインへは渡さない。
 
-    委譲先の起動時は`agents_server`の起動の本文が入口を届けるため、案内を重ねない。
+    委譲先は`agents_server`の環境変数か、組み込みの委譲機能の子が入力に持つ`agent_id`で判定する。
+    委譲先の起動時は起動の本文かSubagentStartが入口を届けるため、案内を重ねない。
     """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if environment is not None:
         monkeypatch.setenv(*environment)
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": source}))
+    payload = {"hook_event_name": "SessionStart", "source": source} | ({"agent_id": agent_id} if agent_id else {})
+    handler = rules_context.main if host == "claude" else rules_context_codex.main
+    handler(json.dumps(payload))
     output = _output(capsys)
-    delegated = environment is not None
+    delegated = environment is not None or agent_id is not None
     assert output.count(rules_context.DELEGATED_COMPACT_NOTICE) == (1 if delegated and source == "compact" else 0)
     if delegated:
         assert rules_context.ENTRY_START_NOTICE not in output
@@ -175,6 +185,47 @@ def test_session_start_delegated_requests_reread_only_after_compaction(
     assert "\n" not in rules_context.DELEGATED_COMPACT_NOTICE
     assert str(rules_context.SUBAGENT_PLAYBOOK_PATH) in rules_context.DELEGATED_COMPACT_NOTICE
     assert rules_context.SUBAGENT_PLAYBOOK_PATH.is_file()
+
+
+def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """組み込みの子の圧縮は、親と同じsession_idでもメインの記録と会話の要約に触れず、子の記録と一時領域だけを扱う。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("子の圧縮でメインの会話の要約を作った")
+
+    monkeypatch.setattr(rules_context.process_tree, "run_with_timeout", unexpected)
+    session_id = "builtin-child-compact"
+    main_notice, child_notice = "pretooluse|main|notice", "pretooluse|child-1|notice"
+    update_state(
+        session_id,
+        lambda _state: {
+            rules_context.OPERATION_SKILL_READY_KEY: {"skill:example": [rules_context.MAIN_AGENT_ID]},
+            "notice_fingerprints": {main_notice: ["main"], child_notice: ["child"]},
+        },
+    )
+    transcript = tmp_path / "main-transcript.jsonl"
+    transcript.write_text("{}\n", encoding="utf-8")
+    payload = {
+        "hook_event_name": "SessionStart",
+        "source": "compact",
+        "session_id": session_id,
+        "agent_id": "child-1",
+        "transcript_path": str(transcript),
+    }
+    assert rules_context.main(json.dumps(payload)) == 0
+    output = _output(capsys)
+    state = read_state(session_id)
+    assert state[rules_context.OPERATION_SKILL_READY_KEY]["skill:example"] == [rules_context.MAIN_AGENT_ID]
+    assert state["notice_fingerprints"] == {main_notice: ["main"]}
+    assert f"このサブエージェント専用の一時領域: {tmp_path / 'agent-child-1'}" in output
+    assert "compaction-digest" not in output
+    assert not (tmp_path / "compaction-digest").exists()
+    assert rules_context.DELEGATED_COMPACT_NOTICE in output
 
 
 # test-copy-contract: 主体種別・委譲環境・ホストを変えても、サブエージェントへは入口の所在の1行だけを配送する契約。
