@@ -352,7 +352,7 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
     """確定を受け取らずに終わった旧世代が退役を記録していれば公開を完了し、記録が無ければ公開の失敗を返す。
 
     旧世代は受付先の前進を観測しても退役するため、確定の接続より先に終了することがある。修正前の版の旧世代も確定を待たずに退役する。
-    会話を持つ旧世代は退役しないため、確定の前に強制終了されると退役の記録が残らず、その会話は新世代へ移っていない。
+    会話を持ったまま終了した旧世代は退役を記録しないため、記録が無ければその会話は新世代へ移っていない。
     """
     directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
     registry = GenerationRegistry(directory)
@@ -396,6 +396,166 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
         current = registry.current()
         assert current is not None and current["generation"] == "new"
     finally:
+        for process in processes:
+            process.kill()
+            process.wait()
+
+
+_PREVIOUS_GENERATION = """
+import asyncio
+import contextlib
+import os
+import pathlib
+import signal
+import sys
+
+from mcp.types import CallToolRequestParams
+
+from agent_toolkit._agents_server import mcp_tools, service, service_io, service_transport, state, turn_state
+from agent_toolkit._common import runtime_environment
+
+directory, parent, session_id, turn, failure = sys.argv[1:]
+directory, failure = pathlib.Path(directory), pathlib.Path(failure)
+listen = service_transport.listen
+
+
+@contextlib.contextmanager
+def failing_listen(address):
+    with listen(address) as listener:
+        accept = listener.accept
+
+        def accept_or_fail():
+            if failure.exists():
+                raise OSError("試験で注入した受付の失敗")
+            return accept()
+
+        listener.accept = accept_or_fail
+        yield listener
+
+
+service_transport.listen = failing_listen
+
+
+async def main():
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    signal.signal(signal.SIGTERM, lambda *_args: loop.call_soon_threadsafe(stop.set))
+    serving = asyncio.create_task(service.run(directory, "old", stop=stop))
+    while (managers := mcp_tools._SERVICE_MANAGERS) is None or managers.before_controls is None:
+        if serving.done():
+            await serving
+        await asyncio.sleep(0.01)
+    coordinator = managers.before_controls.__self__
+    caller = runtime_environment.CallerContext(dict(os.environ, CODEX_THREAD_ID=parent), pathlib.Path.cwd())
+    with service_io.bind(coordinator._runtime), runtime_environment.bind(caller):
+        async with managers.scope(CallToolRequestParams(name="list", arguments={}), identifier_override=parent) as manager:
+            manager.sessions[session_id] = state.SessionState(
+                session_id,
+                str(pathlib.Path.cwd()),
+                engine="codex",
+                turn_end=turn_state.TurnEnd[turn],
+                publish_registry=True,
+            )
+            await manager.save_control_state()
+    await serving
+
+
+asyncio.run(main())
+"""
+
+
+async def _start_generation(directory: pathlib.Path, generation: str, stop: asyncio.Event) -> tuple[asyncio.Task, dict]:
+    serving = asyncio.create_task(service.run(directory, generation, stop=stop))
+    async with asyncio.timeout(10):
+        while not (directory / f"{generation}.json").exists():
+            if serving.done():
+                await serving
+            await asyncio.sleep(0.01)
+    return serving, json.loads((directory / f"{generation}.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGTERMとSIGKILLで旧世代を終了させる")
+@pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")
+@pytest.mark.parametrize("ending", ["moved_then_retired", "sigterm", "exception", "sigkill"])
+@pytest.mark.asyncio
+async def test_publication_succeeds_only_if_previous_generation_handed_over_its_conversation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, ending: str
+) -> None:
+    """確定を受け取らずに終了した旧世代について、会話を新世代へ移してから退役していれば公開は成功し、
+    会話を持ったまま終了していれば、終了の仕方（SIGTERM・例外・SIGKILL）によらず公開は失敗を返す。
+
+    2026-11-20の独立検証で、会話を持つ旧世代がSIGTERMか例外で終了すると、終了時の後始末が退役を記録して公開が成功を返した。
+    """
+    state_root = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_root))
+    monkeypatch.setenv("LOCALAPPDATA", str(state_root))
+    directory = service_transport.namespace(runtime_environment.CallerContext(dict(os.environ), tmp_path))
+    registry = GenerationRegistry(directory)
+    registry.reserve("old", tmp_path / "old", "1.0.0")
+    script = tmp_path / "previous" / "previous_generation.py"
+    script.parent.mkdir()
+    script.write_text(_PREVIOUS_GENERATION, encoding="utf-8")
+    failure = tmp_path / "inject-failure"
+    parent, session_id = "parent-conversation", "child-session"
+    turn = "COMPLETED" if ending == "moved_then_retired" else "IN_PROGRESS"
+    # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、終了を見届けた後で手放す。
+    processes = [
+        subprocess.Popen(  # pylint: disable=consider-using-with
+            [sys.executable, str(script), str(directory), parent, session_id, turn, str(failure)], cwd=tmp_path
+        )
+    ]
+    stop = asyncio.Event()
+    serving = None
+    try:
+        async with asyncio.timeout(10):
+            while not (directory / "old.json").exists():
+                assert processes[0].poll() is None
+                await asyncio.sleep(0.01)
+        old = json.loads((directory / "old.json").read_text(encoding="utf-8"))
+        registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
+        async with asyncio.timeout(30):
+            while not await service_rpc.request(old, "owns", {"parent": parent, "session_id": session_id}):
+                await asyncio.sleep(0.05)
+        registry.reserve("new", tmp_path / "new", "1.0.1")
+        serving, new = await _start_generation(directory, "new", stop)
+        deliver = service_rpc.request
+
+        async def end_previous() -> None:
+            process = processes[0]
+            if ending == "moved_then_retired":
+                await asyncio.to_thread(process.wait, 30)
+            else:
+                assert await deliver(old, "owns", {"parent": parent, "session_id": session_id})
+                assert not await deliver(new, "owns", {"parent": parent, "session_id": session_id})
+                if ending == "sigterm":
+                    process.terminate()
+                elif ending == "exception":
+                    failure.touch()
+                else:
+                    process.kill()
+                await asyncio.to_thread(process.wait, 30)
+            processes.pop()
+
+        async def request(target: dict[str, Any], operation: str, arguments: dict, **kwargs: Any) -> Any:
+            if operation == "commit_update":
+                await end_previous()
+            return await deliver(target, operation, arguments, **kwargs)
+
+        monkeypatch.setattr(service_rpc, "request", request)
+        async with asyncio.timeout(60):
+            if ending == "moved_then_retired":
+                accepted = await deliver(new, "publish", {})
+                assert accepted["generation"] == "new"
+                assert await deliver(new, "owns", {"parent": parent, "session_id": session_id})
+            else:
+                with pytest.raises(RuntimeError, match="正常な退役の記録"):
+                    await deliver(new, "publish", {})
+        current = registry.current()
+        assert current is not None and current["generation"] == "new"
+    finally:
+        stop.set()
+        if serving is not None:
+            await asyncio.gather(serving, return_exceptions=True)
         for process in processes:
             process.kill()
             process.wait()

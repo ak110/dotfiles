@@ -179,7 +179,8 @@ class ServiceCoordinator:
 
         旧世代は受付先の前進を観測しても静止を解いて退役するため、確定の接続より先に終了することがある。
         この修正より前の版の旧世代も、確定の到着を待たずに退役する。
-        退役の記録が無いまま終了した旧世代は、会話を持ったまま強制終了されたことがあり得るため、公開の失敗として返す。
+        旧世代は引き継ぐ会話・資源を残さずに終了した場合だけ退役を記録する（`service.run`）。
+        記録が無いまま終了した旧世代は、それらを持ったまま停止・例外・強制終了で終わったことがあり得るため、公開の失敗として返す。
         """
         current = self._current()
         try:
@@ -268,21 +269,27 @@ class ServiceCoordinator:
         """受付先が自世代より新しい世代へ進んだかを、世代索引から判定する。"""
         return self._current()["epoch"] > self.target["epoch"]
 
-    def can_retire(self) -> bool:
-        """接続数や経過時間で強制終了せず、元資源と担当状態がなくなったことだけで退出する。
+    def holds_handover(self) -> bool:
+        """受付先の世代へ引き継ぐ会話、raw資源、受入中の移譲が残るかを返す。
 
-        準備した更新（`_updates`）も担当状態に含め、受付先の切替の直後に届く確定の接続を閉じないようにする。
+        退出の判定と、終了時に退役を記録するかの判定（`service.run`）が共有する。
+        残したまま終了した世代は、その会話と実行資源を失わせている。
+        """
+        return bool(
+            self.managers.conversations
+            or self._runtime is None
+            or self._runtime.broker._resources
+            or self._incoming
+            or self._pending_adoptions
+        )
+
+    def can_retire(self) -> bool:
+        """接続数や経過時間で強制終了せず、受付先が進み、引き継ぐものがなくなったことだけで退出する。
+
+        準備した更新（`_updates`）も退出を止め、受付先の切替の直後に届く確定の接続を閉じないようにする。
         監視taskは確定が届かなくても受付先の前進で更新を外すため、退出は確定の到着に依存しない。
         """
-        return (
-            self._superseded()
-            and not self._updates
-            and not self.managers.conversations
-            and self._runtime is not None
-            and not self._runtime.broker._resources
-            and not self._incoming
-            and not self._pending_adoptions
-        )
+        return self._superseded() and not self._updates and not self.holds_handover()
 
     def _conversation(self, identifier: str) -> tuple[str, Conversation] | None:
         return next(
