@@ -336,21 +336,6 @@ DEFAULT_STEPS: list[_StepSpec] = [
 ]
 
 
-def _prune_and_warmup() -> post_apply_outcome.PostApplyOutcome:
-    """取得キャッシュを整理した後に、キャッシュ内のMCP環境を準備する。"""
-    result = prune_installation.run()
-    if dotfiles_mode.is_minimal():
-        return result
-    warmup = warmup_pyfltr_mcp.run()
-    failures = [outcome.failure for outcome in (result, warmup) if outcome.failure is not None]
-    return post_apply_outcome.PostApplyOutcome(
-        changed=result.changed or warmup.changed,
-        deferred=result.deferred or warmup.deferred,
-        failure=" / ".join(failures) or None,
-        next_action=result.next_action or warmup.next_action,
-    )
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -367,12 +352,19 @@ def main(
     parser.add_argument("--prune", action="store_true", help="互換入力。不要ツールとキャッシュは通常更新でも整理する")
     parser.add_argument("--prune-only", action="store_true", help="更新後に不要な導入済みツールとキャッシュだけを削除する")
     parser.add_argument("--prune-only-if-minimal", action="store_true", help="互換入力。モードによらず更新後の整理を実行する")
+    parser.add_argument("--internal-uv-cache-maintenance", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args([] if runner is not None and argv is None else argv)
     if args.prune_only and (args.prune or args.mode is not None):
         parser.error("--prune-onlyは--pruneおよび--modeと同時に指定できません")
     if args.prune_only and args.prune_only_if_minimal:
         parser.error("--prune-onlyと--prune-only-if-minimalは同時に指定できません")
     dotfiles_mode.select(args.mode)
+    if args.internal_uv_cache_maintenance:
+        # 整理が起動した独立プロセス。uvの整理で消えたキャッシュ内のMCP環境を、整理の後に事前構築する。
+        with _configure_logging():
+            prune_installation.clean_uv_cache()
+            warmup_pyfltr_mcp.run()
+        return
     if args.prune:
         os.environ["DOTFILES_PRUNE"] = "1"
     if runner is None:
@@ -409,7 +401,7 @@ def main(
         lock.parent.mkdir(parents=True, exist_ok=True)
         try:
             with filelock.FileLock(str(lock), timeout=600, preserve_lock_file=True), _configure_logging():
-                result = _prune_and_warmup()
+                result = prune_installation.run()
                 if result.failure is not None:
                     logger.error("%s。次の操作: %s", result.failure, result.next_action)
                     sys.exit(1)
@@ -749,7 +741,7 @@ def run(
     selected_steps = list(DEFAULT_STEPS if steps is None else steps)
     if steps is None and os.environ.get("DOTFILES_PRUNE_OUTSIDE_UV") != "1":
         selected_steps.append(
-            _StepSpec("不要ツールとキャッシュの削除", _prune_and_warmup, after_all_preceding=True, host_resources=True)
+            _StepSpec("不要ツールとキャッシュの削除", prune_installation.run, after_all_preceding=True, host_resources=True)
         )
     effective_steps = [_normalize_step(step) for step in selected_steps]
     predecessors = _resolve_predecessors(effective_steps)

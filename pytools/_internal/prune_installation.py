@@ -4,20 +4,22 @@
 fullへの更新と依存準備は旧環境を回収しない。
 """
 
-import functools
 import json
 import logging
 import math
 import os
 import shutil
+import subprocess
+import sys
+import threading
 import time
 import tomllib
-from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import platformdirs
 import psutil
-from agent_toolkit._common import dotfiles_mode, plugin_environment
+from agent_toolkit._common import dotfiles_mode, plugin_environment, windows_job
 
 from pytools._internal import codex_processes, common, post_apply_outcome, setup_mise
 
@@ -103,7 +105,7 @@ def removal_paths() -> tuple[Path, ...]:
 
 
 # uvの排他ロックを待つ上限（秒）。uvの既定は300秒で、他のuvプロセスが共有ロックを保持し続ける間は
-# 既定の上限まで待ってから失敗する。使用中なら短時間で保留へ切り替え、dotfilesユーザーへ次の操作を早く示す。
+# 既定の上限まで待ってから失敗する。整理の独立プロセスを短時間で終え、使用中なら次回の更新へ回す。
 _UV_LOCK_TIMEOUT_SECONDS = "30"
 
 # uv 0.13.6のロック待ちタイムアウトの診断（`error: Timeout (30s) when waiting for lock on <cache> at <cache>/.lock, ...`）。
@@ -299,11 +301,71 @@ def _clean_uv_cache(uv: Path) -> None:
             raise OSError(f"uv全消去の成功日時を保存できません: {state}")
 
 
+def start_uv_cache_maintenance() -> int:
+    """uvの取得キャッシュ整理を、更新の終了を待たせない独立プロセスで開始し、そのPIDを返す。
+
+    uvの整理は他のuvプロセスの使用中はロック待ちの上限まで待ち、全消去はキャッシュの量に比例する時間かかる。
+    更新とprocess-loopをその間止めないよう、端末・出力・所有groupから切り離して起動し、結果は永続ログへ残す。
+    """
+    command = [sys.executable, "-m", "pytools.post_apply", "--internal-uv-cache-maintenance"]
+    attempts: list[dict[str, Any]] = [{"start_new_session": True}]
+    if os.name == "nt":
+        # 離脱を許さないJobの中では離脱を指定した起動が拒否されるため、所属を継承して起動し直す。
+        flags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS
+        attempts = [{"creationflags": flags | windows_job.CREATE_BREAKAWAY_FROM_JOB}, {"creationflags": flags}]
+    for index, options in enumerate(attempts):
+        try:
+            # 時間上限なし: 待たずに切り離す起動であり、uvの操作は`_command`の上限で終わる。
+            process = subprocess.Popen(  # pylint: disable=consider-using-with
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=Path.home(),
+                **options,
+            )
+        except PermissionError:
+            if index + 1 == len(attempts):
+                raise
+            continue
+        # 起動元が存続する間に終えた子をzombieとして残さない。起動元が先に終えればOSが引き取る。
+        threading.Thread(target=process.wait, daemon=True).start()
+        return process.pid
+    raise AssertionError("起動の試行が空です")
+
+
+def clean_uv_cache() -> post_apply_outcome.PostApplyOutcome:
+    """uvの取得キャッシュを公式操作で整理し、対象なし・保留・失敗・完了を区別して記録する。"""
+    uv = common.resolve_executable("uv")
+    if uv is None:
+        logger.info("prune: uvは未導入のため対象なし")
+        return post_apply_outcome.PostApplyOutcome()
+    try:
+        _clean_uv_cache(uv)
+    except _InUseError as error:
+        logger.info("prune: uvの整理を使用中のため保留。次回のupdate-dotfilesで再試行します")
+        logger.debug("prune: uvの保留診断: %s", error)
+        return post_apply_outcome.PostApplyOutcome(deferred=True)
+    except (OSError, ValueError, RuntimeError) as error:
+        next_action = "診断を確認し、update-dotfilesを再実行してください。"
+        logger.error("prune: uvのキャッシュ整理に失敗: %s。次の操作: %s", error, next_action)
+        return post_apply_outcome.PostApplyOutcome(failure=f"uv: {error}", next_action=next_action)
+    logger.info("prune: uvのキャッシュ整理を完了")
+    return post_apply_outcome.PostApplyOutcome(changed=True)
+
+
 def clean_caches() -> post_apply_outcome.PostApplyOutcome:
-    """公式操作で取得キャッシュを整理し、1対象の競合や失敗でも残りを続ける。"""
+    """公式操作で取得キャッシュを整理し、1対象の失敗でも残りを続ける。uvは独立プロセスへ渡す。"""
     failures: list[str] = []
-    deferred = False
     changed = False
+    if common.resolve_executable("uv") is None:
+        logger.info("prune: uvは未導入のため対象なし")
+    else:
+        try:
+            pid = start_uv_cache_maintenance()
+            logger.info("prune: uvのキャッシュ整理を独立プロセス（pid %d）で開始した。結果は永続ログへ記録する", pid)
+        except OSError as error:
+            failures.append(f"uv: 整理の独立プロセスを起動できません: {error}")
     commands: list[tuple[str, list[str]]] = []
     mise = setup_mise.find_mise_binary()
     if mise is not None:
@@ -314,26 +376,15 @@ def clean_caches() -> post_apply_outcome.PostApplyOutcome:
             commands.append((name, [str(executable), *arguments]))
         else:
             logger.info("prune: %sは未導入のため対象なし", name)
-    uv = common.resolve_executable("uv")
-    targets: list[tuple[str, Callable[[], None]]] = [(name, functools.partial(_command, command)) for name, command in commands]
-    if uv is not None:
-        targets.insert(0, ("uv", functools.partial(_clean_uv_cache, uv)))
-    else:
-        logger.info("prune: uvは未導入のため対象なし")
-    for name, operation in targets:
+    for name, command in commands:
         try:
-            operation()
+            _command(command)
             changed = True
             logger.info("prune: %sのキャッシュ整理を完了", name)
-        except _InUseError as error:
-            deferred = True
-            logger.info("prune: %sの整理を使用中のため保留。次回のupdate-dotfilesで再試行します", name)
-            logger.debug("prune: %sの保留診断: %s", name, error)
         except (OSError, ValueError, RuntimeError) as error:
             failures.append(f"{name}: {error}")
     return post_apply_outcome.PostApplyOutcome(
         changed=changed,
-        deferred=deferred,
         failure=" / ".join(failures) or None,
         next_action="診断を確認し、update-dotfilesを再実行してください。" if failures else None,
     )
