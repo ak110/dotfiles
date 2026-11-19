@@ -1,0 +1,15 @@
+# セッション状態ファイルとフラグ：Function hooksの終了要求：待機時圧縮の判定記録
+
+Function hooks用ファイルの配置とSessionEnd・clear・期限切れの回収は`docs/development/internals-session-state-function-hooks.md`にある。
+
+## 待機時圧縮の判定記録
+
+`compaction-{session_id}.txt`は`docs/development/internals-session-state-function-hooks.md`で定めるFunction hooks用ディレクトリに配置する。
+`hooks/compact_conversation.ts`はこのファイルを背景待機の登録と自動圧縮の判定理由を残すために使用する。
+process-loopは`--debug=hooks`で起動し、modの`$.ui.log`はそのdebugログに現れないため、見送り理由を後から確かめる読み先として置く。
+
+- 書き込み元: `hooks/compact_conversation.ts`が判定ごとに、直近20件の判定（待機ID、理由、使用トークン数と上限、予約中・turn実行中の状態）をJSONで上書きする。
+  書込みに失敗しても判定はそのまま続ける
+- 消費元: 圧縮の判定には使わず、調査する担当が読む
+- 初期化と生存期間: 最初の判定時にファイルを作成する。
+  寿命は`docs/development/internals-session-state-function-hooks.md`で定めるFunction hooks用ファイルと同じく、通常のSessionEndで保持し、`clear`と期限切れ回収で削除する

@@ -8,7 +8,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 誤検出、発火ごとのトークンと実行時間、保守費用が便益に見合わないチェックは置かず、明らかなエージェントの行動誤りを入力から機械的に判定でき費用が小さいチェックは、元へ戻せる誤りを防ぐものでも置く。
 不可逆な操作の防止、データ破損の防止、常駐運用の終了保証は、1回の発火でも結果が残るため置く理由になる。
 規範の配送と権限の自動許可も、発火・重複・受信量・再取得と保守の費用を比較する。
-現行の規定は`.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
+現行の規定は`agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
 
 操作の後に対象の公開仕様が定める手段で元の状態へ戻せないことを不可逆と呼ぶ。
 操作の種類の名前や過去の分類表の語に頼らず、その手段の有無を公開仕様で確かめて判定する。
@@ -68,7 +68,7 @@ UserPromptSubmitの180秒ごとの固定手順の再配送は撤去した。
 ### 事前に防ぐ型と遮断後に対処する型
 
 blockとwarnは、実行主体が操作の前に条件を満たす事前に防ぐ型と、hookが判定を担い通知が解消手段を示す遮断後に対処する型に分け、費用の小さい型を選ぶ。
-規定の本文は`.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md`にある。
+規定の本文は`agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`にある。
 事前に防ぐ型の費用は、対象の操作のたびに規範が求める事前工程の呼び出しの合計である。
 遮断後に対処する型の費用は、実際の遮断回数に、遮断された呼び出しと通知に従った取得の分を掛けた量である。
 CodexのBash全文取得は、閾値が出力上限から導かれていなかった間、SKILL.mdなどを読む前に`wc -l`・`wc -c`で行数と容量を測る事前工程を操作のたびに生んでいた。

@@ -2,7 +2,8 @@
 
 ## 付帯作業の単位
 
-実行時に適用する一般則は`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」、plugin規範の例外は`.claude/skills/agent-toolkit-edit/SKILL.md`「付帯作業の扱い」にある。
+実行時に適用する一般則は`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」にある。
+plugin規範の例外は`.claude/skills/agent-toolkit-edit/references/agent-documents.md`「付帯作業の扱い」にある。
 
 変更から生じた付帯作業は、関連開発と同じ計画、WIおよびcommitで完了する。
 実装中に判明した整理も同じ工程で扱い、開発完了後の振り返りが独立に発見した作業は別の作業とする。

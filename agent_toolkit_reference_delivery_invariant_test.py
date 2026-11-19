@@ -33,12 +33,11 @@ def test_session_state_design_reference_reaches_local_development_rule() -> None
     source = root / "agent-toolkit/agent_toolkit/_common/session_state.py"
     docstring = ast.get_docstring(ast.parse(source.read_text(encoding="utf-8")))
     assert docstring is not None
-    reference = re.search(r"`([^`]+session-state-and-flags\.md)`", docstring)
+    reference = re.search(r"`([^`]+internals-session-state-common\.md)`", docstring)
     assert reference is not None
     target = root / reference[1]
-    assert target == root / ".claude/skills/agent-toolkit-edit/references/session-state-and-flags.md"
-    text = read_contract(target, root / "agent-toolkit", ("session-state-and-flags-common.md", "状態ファイルの設計"))
-    assert "## 状態ファイルの設計" in text
+    assert target == root / "docs/development/internals-session-state-common.md"
+    assert "## 状態ファイルの設計" in target.read_text(encoding="utf-8")
 
 
 def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:

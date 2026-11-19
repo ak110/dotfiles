@@ -85,7 +85,7 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 2026年9月、Claude Codeで`agents_server`の`wait`が発行から120秒で背景タスクへ移り、完了すると結果本文がそのタスクの通知として届くことを確認した。
 背景移行の閾値の再検証は`wait`を発行し、背景移行の通知を受領した後に完了通知の到達を確認する。
 
-## docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日
+## docs/development/design-agents-runtime-connections.md：MCP接続失敗の再接続：2026年10月20日
 
 2026年10月20日、LinuxのPython 3.15でMCP再接続の契約を検証した。
 対象は`agent-toolkit/agent_toolkit/_agents_server/claude_connections_test.py`の`test_mcp_reconnect_is_once_per_new_and_resumed_process`である。

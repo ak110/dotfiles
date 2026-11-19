@@ -100,4 +100,4 @@
 - 所有する委譲先のcwd記録が欠けた場合は、成功したshowの対象ID・絶対cwdと永続登録の起動元会話・起動時主体を照合して回復する。
   showのrootや変更可能なタスク所有者だけで所有を判断しない。
   全観測操作でMCPの失敗応答を更新前に除外し、終了session自身のerrorは正常なツール応答と区別する（2026年10月31日の確定契約）。
-  実行契約は`agent-toolkit/agent_toolkit/_hooks/agents_server_observations.py`、状態定義は前掲の`session-state-and-flags.md`にある
+  実行契約は`agent-toolkit/agent_toolkit/_hooks/agents_server_observations.py`、状態定義は`docs/development/internals.md`「セッション状態」にある

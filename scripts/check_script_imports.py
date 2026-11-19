@@ -72,7 +72,7 @@ _SHEBANG = "#!/usr/bin/env -S uv run --script"
 _DEPENDENCY_IMPORT_NAMES = {"markdown-it-py": "markdown_it", "pyyaml": "yaml"}
 _LAYER_ORDER = ("_common", "_git", "_plan", "_atk", "_agents_server", "_hooks")
 # 直下へ置ける名前。公開スクリプトの集合は
-# `.claude/skills/agent-toolkit-edit/references/distribution-and-hooks.md`「agent_toolkitパッケージの配置と層」が定める。
+# `.claude/skills/agent-toolkit-edit/references/implementation.md`「agent_toolkitパッケージの配置と層」が定める。
 _AGENT_TOOLKIT_ROOT_MODULES = frozenset(
     {"hook.py", "atk.py", "agents_server_mcp.py", "wait_ci.py", "__init__.py", "conftest.py"}
 )
