@@ -56,6 +56,17 @@ def test_windows_upgrade_check_places_verification_root_on_runner_disk(workflow_
         assert f"$env:{variable} = $env:RUNNER_TEMP" in lines[:check], variable
 
 
+def test_windows_tests_place_basetemp_on_runner_disk(workflow_data: dict[str, object]) -> None:
+    """Windows境界テストは、試験の一時領域をuvのキャッシュと同じrunnerの作業ディスク（runner.temp）へ置く。
+
+    既定の一時領域はOSディスクにあり、実の依存環境を新規に作る試験がuvのキャッシュからhardlinkできずに全量を複製する。
+    その書込みが同時に動く他の試験のプロセス起動まで遅らせ、上限切れを起こす。
+    """
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"]))
+    _, step = _windows_step(steps, "Windows境界テスト")
+    assert "--basetemp=$env:RUNNER_TEMP/pytest-windows" in shlex.split(str(step["run"]))
+
+
 def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]) -> None:
     """Windowsジョブが公開された起動スクリプトのテストを実行し、`.cmd`の分岐をWindowsで確かめる。"""
     _, step = _windows_step(

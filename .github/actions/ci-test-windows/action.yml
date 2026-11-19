@@ -7,7 +7,10 @@ runs:
     - name: Windows境界テスト
       shell: pwsh
       working-directory: ${{ env.DOTFILES_DIR }}
-      run: uv run --frozen --python 3.15 pytest -v -m windows --maxfail=0 --cpu-limit-record-only --junitxml="$env:RUNNER_TEMP/pytest-windows-junit.xml"
+      # 実の依存環境を新規に作る試験は、依存の全ファイルをuvのキャッシュから環境へ展開する。
+      # 既定の一時領域（LOCALAPPDATA配下）はOSディスク（C:）にあり、作業ディスク（D:）のuvのキャッシュからhardlinkできずに全量を複製する。
+      # その書込み（計測で約5GB）が同時に動く他の試験のプロセス起動まで遅らせて上限切れを起こしたため、一時領域をuvのキャッシュと同じ作業ディスクへ置く。
+      run: uv run --frozen --python 3.15 pytest -v -m windows --maxfail=0 --cpu-limit-record-only --basetemp="$env:RUNNER_TEMP/pytest-windows" --junitxml="$env:RUNNER_TEMP/pytest-windows-junit.xml"
     - name: Windows境界テストのJUnit XMLを保存
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
