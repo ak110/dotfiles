@@ -11,11 +11,20 @@ from pathlib import Path
 import httpx
 import pytest
 
-from pytools._internal import codex_runtime, post_apply_outcome, prune_codex_packages, remove_codex_claude_mcp, setup_codex_cli
+from pytools._internal import (
+    codex_runtime,
+    post_apply_outcome,
+    prune_codex_packages,
+    remove_codex_claude_mcp,
+    setup_cli_common,
+    setup_codex_cli,
+)
 from pytools._internal._test_helpers import FakeEnvironmentRegistry
+from pytools._internal.setup_cli_common_test import _patch_windows_processes, _windows_process
 from pytools.prune_codex_packages_test import _release
 
 _Call = tuple[list[str], dict[str, object]]
+_IS_WINDOWS_CLI_RUNNING = setup_cli_common.is_windows_cli_running
 _INSTALLED_LISTING = '[{"version": "0.1.0", "installed": true, "active": true}]'
 _UNINSTALLED_LISTING = '[{"version": "0.1.0", "installed": false, "active": false}]'
 
@@ -210,6 +219,66 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
         transport=httpx.MockTransport(lambda request: (_ for _ in ()).throw(AssertionError("取得してはならない")))
     ) as client:
         assert not setup_codex_cli.run(client).changed
+
+
+_DAEMON_EXE = r"C:\Users\Me\.codex\packages\app-server-daemon\releases\0.170.0-x86_64-pc-windows-msvc\bin\codex.exe"
+_DESKTOP_APP = r"C:\Program Files\WindowsApps\OpenAI.Codex_26.1106.6628.0_x64__2p2nqsd0c76g0\app"
+_NPM_PACKAGE = r"C:\Users\Me\AppData\Roaming\npm\node_modules\@openai\codex"
+
+
+@pytest.mark.parametrize(
+    ("processes", "deferred"),
+    [
+        # 2026-11-19のsthenoで、Codexの会話が無いときに稼働していた管理daemonと更新ループ。
+        pytest.param(
+            [
+                _windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"),
+                _windows_process(_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"),
+            ],
+            False,
+            id="daemon-and-update-loop",
+        ),
+        pytest.param(
+            [_windows_process(r"C:\Users\Me\.codex\packages\standalone\releases\0.170.0-x86_64-pc-windows-msvc\bin\codex.exe")],
+            False,
+            id="standalone-session",
+        ),
+        pytest.param(
+            [
+                _windows_process(rf"{_DESKTOP_APP}\Codex.exe"),
+                _windows_process(rf"{_DESKTOP_APP}\resources\codex.exe", "app-server"),
+            ],
+            False,
+            id="desktop-app",
+        ),
+        pytest.param(
+            [
+                _windows_process(r"C:\Program Files\nodejs\node.exe", rf"{_NPM_PACKAGE}\bin\codex.js"),
+                _windows_process(rf"{_NPM_PACKAGE}\vendor\x86_64-pc-windows-msvc\codex\codex.exe"),
+            ],
+            True,
+            id="npm-session",
+        ),
+    ],
+)
+def test_windows_defers_only_while_npm_codex_runs(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, processes: list[object], deferred: bool
+) -> None:
+    """Windowsでは、移行が削除するnpm版のCodexを実行中の場合だけ導入と移行を延期する。"""
+    _isolate(monkeypatch, tmp_path, "win32")
+    monkeypatch.setattr(setup_cli_common, "is_windows_cli_running", _IS_WINDOWS_CLI_RUNNING)
+    _patch_windows_processes(monkeypatch, processes)
+    requests: list[httpx.Request] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(404)
+
+    with caplog.at_level(logging.INFO), httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
+        setup_codex_cli.run(client)
+
+    assert bool(requests) is not deferred
+    assert ("実行中のため導入と移行を次回へ延期" in caplog.text) is deferred
 
 
 @pytest.mark.parametrize("status_code", [429, 500, 599])

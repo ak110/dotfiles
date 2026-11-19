@@ -171,11 +171,14 @@ def migrate_npm_launchers(
 
 
 def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable[Path] = ()) -> bool:
-    """Windowsで対象CLIのプロセスが実行中かを安全側で判定する。"""
+    """Windowsで、導入・更新・移行が置き換えるか削除するCLIの実体を実行中のプロセスがあるかを安全側で判定する。
+
+    置き換える実体は`launchers`（更新が同じパスで置き換える実行ファイル）、削除する実体はnpm版の`package_name`である。
+    公式パッケージの別の版やデスクトップアプリの同梱版など、ほかの場所から起動した同名の実行体は衝突しないため数えない。
+    """
     if sys.platform != "win32":
         return False
-    tokens = {cli_name.lower(), package_name.lower()}
-    tokens.update(str(path).lower() for path in launchers)
+    launcher_paths = {str(path).lower().replace("\\", "/") for path in launchers}
     # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
     # 同じ後処理の中の先行する列挙が残した値を使わないよう、現在のPIDから新しく構築したProcessで判定する。
     for listed in psutil.process_iter():
@@ -200,8 +203,7 @@ def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable
             except psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess:
                 continue
             continue
-        haystacks = [name, exe, *cmdline]
-        if _process_matches(cli_name, tokens, haystacks):
+        if _process_matches(cli_name, package_name.lower(), launcher_paths, name, exe, cmdline):
             return True
     return False
 
@@ -398,19 +400,20 @@ def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name
     return False
 
 
-def _process_matches(cli_name: str, tokens: set[str], haystacks: list[str]) -> bool:
-    haystacks = [value.replace("\\", "/") for value in haystacks]
-    tokens = {token.replace("\\", "/") for token in tokens}
-    executable_names = {cli_name, f"{cli_name}.exe"}
-    if Path(haystacks[0]).name in executable_names or Path(haystacks[1]).name in executable_names:
+def _process_matches(
+    cli_name: str, package_name: str, launcher_paths: set[str], name: str, exe: str, cmdline: list[str]
+) -> bool:
+    name, exe = name.replace("\\", "/"), exe.replace("\\", "/")
+    package_marker = f"/node_modules/{package_name}/"
+    if exe in launcher_paths or package_marker in exe:
         return True
-    if Path(haystacks[0]).name not in {"node", "node.exe", "mise", "mise.exe", cli_name, f"{cli_name}.exe"}:
+    # 実行ファイルの所在を取得できない同名の実行体は、置き換える導入先から起動した可能性を除けない。
+    if not exe and Path(name).name in {cli_name, f"{cli_name}.exe"}:
+        return True
+    if Path(name).name not in {"node", "node.exe", "mise", "mise.exe"}:
         return False
-    command = haystacks[2:]
-    if not command:
-        return False
-    command = command[1:]
-    if Path(haystacks[0]).name in {"mise", "mise.exe"}:
+    command = [value.replace("\\", "/") for value in cmdline[1:]]
+    if Path(name).name in {"mise", "mise.exe"}:
         # miseの--より前は導入するtool指定であり、起動するコマンドではない。
         if not command or command[0] not in {"exec", "x"} or "--" not in command:
             return False
@@ -434,9 +437,7 @@ def _process_matches(cli_name: str, tokens: set[str], haystacks: list[str]) -> b
         )
     launcher_names = {cli_name, *(f"{cli_name}{suffix}" for suffix in (".exe", ".cmd", ".ps1", ".js"))}
     return any(
-        Path(value).name in launcher_names
-        or value in tokens - {cli_name}
-        or any(f"/node_modules/{token}/" in value for token in tokens if token.startswith("@"))
+        Path(value).name in launcher_names or value in launcher_paths or value == package_name or package_marker in value
         for value in command[index : index + 1]
         if not value.startswith("-")
     )

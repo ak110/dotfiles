@@ -1,11 +1,13 @@
 """pytools._internal.setup_cli_commonのテスト。"""
 
 import logging
+import ntpath
 import os
 import subprocess
 import sys
 import types
 import typing
+from collections.abc import Sequence
 from pathlib import Path
 
 import httpx
@@ -42,7 +44,7 @@ def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog,
     print(output)
 
 
-def _patch_windows_processes(monkeypatch: pytest.MonkeyPatch, processes: list[object]) -> None:
+def _patch_windows_processes(monkeypatch: pytest.MonkeyPatch, processes: Sequence[object]) -> None:
     """Windowsの列挙と、列挙したPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。"""
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
     monkeypatch.setattr(
@@ -599,7 +601,7 @@ def test_migrate_windows_mise_shim_rejects_wrong_target(monkeypatch, tmp_path: P
 @pytest.mark.parametrize(
     ("name", "exe", "cmdline", "expected"),
     [
-        ("codex.exe", "C:/node/codex.exe", [], True),
+        ("codex.exe", "C:/node/codex.exe", [], False),
         ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "codex"], False),
         ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "--", "codex"], True),
         ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "--", "server", "codex"], False),
@@ -633,6 +635,54 @@ def test_windows_process_classification(
     _patch_windows_processes(monkeypatch, [Process()])
 
     assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex", [tmp_path / "bin" / "codex.cmd"]) is expected
+
+
+def _windows_process(exe: str, *arguments: str) -> types.SimpleNamespace:
+    """Windowsのpsutilが返す形の実行名・実行ファイル・command lineを持つプロセスを作る。"""
+    return types.SimpleNamespace(name=lambda: ntpath.basename(exe), exe=lambda: exe, cmdline=lambda: [exe, *arguments])
+
+
+@pytest.mark.parametrize(
+    ("cli_name", "package_name", "exe", "expected"),
+    [
+        # 更新が同じパスで置き換える導入先。Windowsのパスは大文字小文字と区切りの表記が揺れる。
+        ("claude", "@anthropic-ai/claude-code", r"c:\users\me\.local\bin\CLAUDE.EXE", True),
+        # 移行が削除するnpm版のパッケージに含まれる実行体。
+        (
+            "codex",
+            "@openai/codex",
+            r"C:\Users\Me\AppData\Roaming\npm\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64"
+            r"\vendor\x86_64-pc-windows-msvc\codex\codex.exe",
+            True,
+        ),
+        (
+            "claude",
+            "@anthropic-ai/claude-code",
+            r"C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+            False,
+        ),
+        (
+            "claude",
+            "@anthropic-ai/claude-code",
+            r"C:\Users\Me\AppData\Roaming\Claude\claude-code\2.1.325\806e0a45e6f5\claude.exe",
+            False,
+        ),
+        (
+            "codex",
+            "@openai/codex",
+            r"C:\Users\Me\.codex\packages\standalone\releases\0.170.0-x86_64-pc-windows-msvc\bin\codex.exe",
+            False,
+        ),
+    ],
+)
+def test_windows_native_cli_counts_only_where_update_replaces_or_removes(
+    monkeypatch, cli_name: str, package_name: str, exe: str, expected: bool
+) -> None:
+    """同名の実行体は、更新が置き換える導入先か移行が削除するnpm版から起動した場合だけ実行中と数える。"""
+    _patch_windows_processes(monkeypatch, [_windows_process(exe)])
+
+    launchers = [Path(r"C:\Users\Me\.local\bin\claude.exe")] if cli_name == "claude" else []
+    assert setup_cli_common.is_windows_cli_running(cli_name, package_name, launchers) is expected
 
 
 @pytest.mark.parametrize("error", [psutil.NoSuchProcess(1), psutil.ZombieProcess(2)])

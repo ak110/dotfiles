@@ -5,8 +5,10 @@ import subprocess
 from pathlib import Path
 
 import httpx
+import pytest
 
 from pytools._internal import post_apply_outcome, setup_claude_cli
+from pytools._internal.setup_cli_common_test import _patch_windows_processes, _windows_process
 
 
 def test_run_updates_existing_native_and_migrates_after_verification(monkeypatch, tmp_path: Path) -> None:
@@ -157,6 +159,47 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
     )
 
     assert not setup_claude_cli.run().changed
+
+
+@pytest.mark.parametrize(
+    ("running", "deferred"),
+    [("claude-code", True), ("npm", True), ("desktop-app", False)],
+)
+def test_windows_defers_only_while_files_to_replace_are_in_use(
+    monkeypatch, tmp_path: Path, running: str, deferred: bool
+) -> None:
+    """Windowsでは、更新が置き換える導入先か移行が削除するnpm版のClaude Codeを実行中の場合だけ延期する。"""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    launcher = tmp_path / ".local" / "bin" / "claude.exe"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(b"native")
+    processes = {
+        "claude-code": [_windows_process(str(launcher))],
+        "npm": [
+            _windows_process(
+                r"C:\Program Files\nodejs\node.exe",
+                r"C:\Users\Me\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js",
+            )
+        ],
+        # Claudeデスクトップアプリ本体と、アプリが会話用に取得したClaude Code。
+        "desktop-app": [
+            _windows_process(r"C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\claude.exe"),
+            _windows_process(r"C:\Users\Me\AppData\Roaming\Claude\claude-code\2.1.325\806e0a45e6f5\claude.exe"),
+        ],
+    }[running]
+    _patch_windows_processes(monkeypatch, processes)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "update failed")
+
+    monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
+
+    setup_claude_cli.run()
+
+    assert calls == ([] if deferred else [[str(launcher), "update"]])
 
 
 def test_run_handles_http_failure(monkeypatch, tmp_path: Path) -> None:
