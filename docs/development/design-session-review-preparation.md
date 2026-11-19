@@ -4,6 +4,9 @@
 
 `agent-toolkit:review-session`は`atk run-script session-review-prepare`の実行と、メインによる同じセッション内の分析で構成する。
 同コマンドの実体は`agent-toolkit/skills/review-session/scripts/session_review_prepare.py`である。
+2026年11月1日に手順スキルの名前を動詞始まりへ改名した際（`session-review`から`review-session`など8件）、旧名の中継スキルは配置しなかった。
+公開CLIの`session-review-evidence`・`session-review-prepare`・`session-review-state`、役割名`external-write-review`、状態ディレクトリとWIの`source`値は、スキル名と別の契約として旧名を保つ。
+改名に合わせて保存済みデータを移行する案は、要求範囲を超えるため採らなかった。
 準備は証拠bundle、会話の流れ、`candidates.md`、セッション統計を作業ディレクトリへ書き、キューを変更しない。
 メインは`candidates.md`より先に会話の流れ全体から観点を限定せず問題を列挙し、候補抜粋だけへ対象を縮めない。
 `candidates.md`は全体像から得た問題との対応付けと、流れでは得られない事象（反復した失敗署名、hook通知の件数、委譲先の内部）の追加に使う。
