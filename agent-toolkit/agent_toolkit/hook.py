@@ -113,6 +113,7 @@ def main(argv: list[str]) -> int:
     except UnicodeDecodeError:
         return 0
     payload: object = None
+    input_warning = ""
     with contextlib.suppress(Exception):
         payload = json.loads(payload_text)
     if isinstance(payload, dict):
@@ -120,7 +121,7 @@ def main(argv: list[str]) -> int:
         # 会話IDは状態ファイルの名前になり、文字列でない値も文字列化して使われる。ファイル名にできない値は型によらず
         # 会話IDの無い入力として扱い、状態の継承・記録の対象にしない。判定する各サブコマンドは、会話IDが無くても動作する。
         if raw_session_id not in (None, "") and _session_launchers.valid_launcher(raw_session_id) is None:
-            print(f"hook入力の会話IDが不正なため、会話IDの無い入力として扱う: {repr(raw_session_id)[:80]}", file=sys.stderr)
+            input_warning = f"hook入力の会話IDが不正なため、会話IDの無い入力として扱う: {repr(raw_session_id)[:80]}"
             payload["session_id"] = ""
             payload_text = json.dumps(payload, ensure_ascii=False)
     if isinstance(payload, dict) and isinstance(payload.get("session_id"), str):
@@ -152,7 +153,7 @@ def main(argv: list[str]) -> int:
             resolution = plugin_resolution_scope(session_id=session_id)
     try:
         with cycle, resolution:
-            result = _invoke_module(module, payload_text, payload, argv)
+            result = _invoke_module(module, payload_text, payload, argv, input_warning)
         timing.record(payload, argv[0], started, "returned-zero" if result == 0 else "nonzero")
         return result
     except Exception as exc:  # noqa: BLE001 -- フック障害でも操作を継続する
@@ -161,13 +162,22 @@ def main(argv: list[str]) -> int:
         return 0
 
 
+_WARNING_EVENTS = {"pretooluse": "PreToolUse", "posttooluse": "PostToolUse", "user_prompt_submit": "UserPromptSubmit"}
+
+
+def _append_warning(result: dict, subcommand: str, warning: str) -> None:
+    """通知を受理するイベントの応答へ、既存の追加文脈を保って警告を連結する。"""
+    if subcommand not in _WARNING_EVENTS:
+        return
+    specific = result.setdefault("hookSpecificOutput", {})
+    specific["hookEventName"] = _WARNING_EVENTS[subcommand]
+    specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
+
+
 def _failure_response(subcommand: str, error: Exception, response: dict | None = None, *, payload: object = None) -> dict:
     """通知を受理するイベントだけへ、既存応答と単一JSONで障害を返す。"""
-    events = {"pretooluse": "PreToolUse", "posttooluse": "PostToolUse", "user_prompt_submit": "UserPromptSubmit"}
     result = response if response is not None else {}
-    if subcommand in events:
-        specific = result.setdefault("hookSpecificOutput", {})
-        specific["hookEventName"] = events[subcommand]
+    if subcommand in _WARNING_EVENTS:
         warning = _notice_formatter("hook")(
             f"agent-toolkitの自動処理{subcommand}で想定外のエラーが起きた: {type(error).__name__}: {error}。"
             "この診断は元の操作の成否を示さない。",
@@ -175,7 +185,7 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
             removable_cause=False,
             fix="元の操作の結果を確認せよ。自動処理の失敗が再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
         )
-        specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
+        _append_warning(result, subcommand, warning)
     if response is None and result:
         _bound_pretooluse_context(result, payload, subcommand)
         _notice.emit_response(result)
@@ -240,8 +250,13 @@ def _add_user_copy(
     return True
 
 
-def _invoke_module(module: types.ModuleType, payload_text: str, payload: object, argv: list[str]) -> int:
-    """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。"""
+def _invoke_module(
+    module: types.ModuleType, payload_text: str, payload: object, argv: list[str], input_warning: str = ""
+) -> int:
+    """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。
+
+    `input_warning`は入力の境界で補正した内容の警告で、通知を受理するイベントの応答へ連結する。
+    """
     started = time.monotonic()
     output = io.StringIO()
     error = None
@@ -269,6 +284,18 @@ def _invoke_module(module: types.ModuleType, payload_text: str, payload: object,
             response = _failure_response(argv[0], error, response or {})
         generated.extend(failure_notices)
         raw = json.dumps(response, ensure_ascii=False) if response else ""
+    if input_warning and argv[0] in _WARNING_EVENTS:
+        with _common_message_format.record_generated() as input_notices:
+            warning = _notice_formatter("hook")(
+                input_warning,
+                tag="warn",
+                removable_cause=False,
+                fix="この入力のhookは会話IDが無いものとして処理した。再発する場合は、ホストが渡す会話IDの不具合として委譲元またはユーザーへ報告せよ。",
+            )
+        generated.extend(input_notices)
+        response = response if response is not None else {}
+        _append_warning(response, argv[0], warning)
+        raw = json.dumps(response, ensure_ascii=False)
     if response is not None and _bound_pretooluse_context(response, payload, argv[0]):
         raw = (json.dumps(response, ensure_ascii=False) + ("\n" if raw.endswith("\n") else "")) if response else ""
     copied = False

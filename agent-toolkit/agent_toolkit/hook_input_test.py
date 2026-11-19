@@ -196,7 +196,27 @@ class TestStandardInputAndPayloadDump:
 
         assert absent.result.returncode == invalid.result.returncode == 0
         assert invalid.created == absent.created
-        assert "会話ID" in invalid.result.stderr
+        assert not invalid.result.stderr
+
+    def test_invalid_session_id_is_reported_in_notice_accepting_event(self, tmp_path: pathlib.Path) -> None:
+        """補正した会話IDの診断は、stderrへ出さず通知を受理するイベントの追加文脈で届ける。"""
+        entrypoint = self._copy_entrypoint(tmp_path)
+        self._write_echo_module(tmp_path)
+        payload = json.dumps({"session_id": "bad id/..", "hook_event_name": "PreToolUse"})
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "pretooluse"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        output = json.loads(result.stdout)
+        assert result.returncode == 0
+        assert not result.stderr
+        assert output["session_id"] == ""
+        assert "会話IDが不正" in output["hookSpecificOutput"]["additionalContext"]
 
     def test_module_import_error_uses_utf8_stderr(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
