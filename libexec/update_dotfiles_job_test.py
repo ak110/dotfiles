@@ -1,6 +1,8 @@
 """独立更新jobを隔離した公開ランチャーと小さな更新projectから検証する。"""
 
 import contextlib
+import ctypes
+import ctypes.wintypes
 import json
 import os
 import pathlib
@@ -8,6 +10,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable, Generator
@@ -530,6 +533,43 @@ def test_native_worker_output_contract(
             if child is not None:
                 with contextlib.suppress(psutil.NoSuchProcess):
                     child.wait(timeout=15)
+
+
+@pytest.mark.windows
+@pytest.mark.skipif(sys.platform != "win32", reason="置換で公開中の名前を開けない共有違反はWindowsの挙動")
+def test_job_retrieval_waits_for_result_publication(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """workerが結果を置換で公開している間に取得しても、失敗せず公開後の終了値を返す。"""
+    monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(tmp_path))
+    job = update_dotfiles_job.state_root() / str(uuid.uuid4())
+    job.mkdir(parents=True)
+    for name in ("stdout.log", "stderr.log"):
+        (job / name).write_bytes(b"")
+    (job / "result.json").write_text(json.dumps({"exit_code": 7, "finished_at": "2026-11-19T00:00:00+00:00"}), "utf-8")
+    # `ctypes.WinDLL`と`ctypes.get_last_error`はWindows専用属性のため、getattr経由で取得して型解析を回避する。
+    kernel = getattr(ctypes, "WinDLL")("kernel32", use_last_error=True)  # noqa: B009
+    kernel.CreateFileW.restype = ctypes.wintypes.HANDLE
+    kernel.CreateFileW.argtypes = [
+        ctypes.wintypes.LPCWSTR,
+        ctypes.wintypes.DWORD,
+        ctypes.wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.wintypes.DWORD,
+        ctypes.wintypes.DWORD,
+        ctypes.wintypes.HANDLE,
+    ]
+    kernel.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+    # 置換中のworkerと同じく、公開した名前をDELETE権限で開いたまま保つ（共有は全て許可、OPEN_EXISTING）。
+    handle = kernel.CreateFileW(str(job / "result.json"), 0x00010000, 0x7, None, 3, 0, None)
+    assert handle not in (None, ctypes.c_void_p(-1).value), getattr(ctypes, "get_last_error")()  # noqa: B009
+    released = threading.Timer(0.5, kernel.CloseHandle, (handle,))
+    released.start()
+    try:
+        assert update_dotfiles_job.main(["job", job.name]) == 7
+    finally:
+        released.join()
+    assert f"job {job.name}: 終了 exit=7" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("cancel", [False, True], ids=["controller-killed", "ctrl-c"])
