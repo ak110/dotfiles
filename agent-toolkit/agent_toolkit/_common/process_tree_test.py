@@ -60,7 +60,7 @@ def test_retained_root_cohort_can_finish_normally(host_environ, monkeypatch, lis
             else contextlib.nullcontext()
         ):
             assert process_tree.stop_owned_process(parent, context="既知の起点", known=known, pins=pins) is None
-        assert not process_tree.wait_until_released(known, timeout=1)
+        assert not process_tree.wait_until_released(known, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
 
 
 @pytest.mark.parametrize("ownership", ["unknown", "known", "finished"])
@@ -111,7 +111,9 @@ def test_owned_stop_after_parent_exit_preserves_known_or_unconfirmed_ownership(o
             parent.stdin.flush()
             assert parent.wait(timeout=10) == 0
             if ownership == "finished":
-                assert not process_tree.stop_tree(None, known=known, pins=pins, timeout=1).residual
+                assert not process_tree.stop_tree(
+                    None, known=known, pins=pins, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS
+                ).residual
             result = process_tree.stop_owned_process(
                 parent, context="起点終了試験", known=() if ownership == "unknown" else known, pins=pins
             )
@@ -121,7 +123,7 @@ def test_owned_stop_after_parent_exit_preserves_known_or_unconfirmed_ownership(o
                 assert child.is_running()
             else:
                 assert result is None
-                assert not process_tree.wait_until_released(known, timeout=1)
+                assert not process_tree.wait_until_released(known, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
 
 
 @pytest.mark.parametrize("has_descendant", [False, True], ids=["exited-leaf", "unretained-parent"])
@@ -347,7 +349,9 @@ def test_stop_tree_reclaims_children_of_exited_parent_with_retained_handle(tmp_p
                 assert retained
                 parent.kill()
                 parent.wait(timeout=5)
-                result = process_tree.stop_tree(parent, timeout=1)
+                # 負荷の高いWindows CIでは、強制終了した子の消滅までに1秒を超えることがある（約2.2秒を観測）。
+                # 実プロセスの解放は製品と同じ上限まで待つ。
+                result = process_tree.stop_tree(parent, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
                 assert not result.residual and not result.unresolved
                 assert not _still_holding_resources(descendants)
         finally:
@@ -389,7 +393,7 @@ def test_stop_tree_reclaims_child_despite_cached_pid_generation(tmp_path, monkey
             monkeypatch.setattr(stale, "_ppid", 99999999)
             monkeypatch.setitem(vars(psutil)["_pmap"], child.pid, stale)
         try:
-            result = process_tree.stop_tree(root, timeout=1.0)
+            result = process_tree.stop_tree(root, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
             assert {child.pid for child in descendants} <= {target.pid for target in result.targets}
             assert not result.residual and not result.unresolved
             assert not _still_holding_resources(descendants)
@@ -439,11 +443,13 @@ def test_process_scope_exception_reclaims_known_cohort(tmp_path, monkeypatch, pa
         if residual:
             assert isinstance(raised.value, process_tree.ReclaimError)
             assert not raised.value.retry()
-        assert not process_tree.wait_until_released(known, timeout=1)
+        assert not process_tree.wait_until_released(known, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
     finally:
         monkeypatch.setattr(process_tree, "stop_owned_process", stop)
         try:
-            assert not process_tree.stop_tree(None, known=known, pins=pins, timeout=1).residual
+            assert not process_tree.stop_tree(
+                None, known=known, pins=pins, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS
+            ).residual
         finally:
             pins.close()
 
