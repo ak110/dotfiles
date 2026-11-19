@@ -89,7 +89,11 @@ def invocation_scope(skill: str, arguments: str | None) -> str:
 
 
 def accepted_scopes(skill: str, arguments: str | None) -> tuple[str, ...]:
-    """保存済みUWIを取り込む起動単位を返す。新規保存はinvocation_scopeを使う。"""
+    """保存済みUWIを取り込む起動単位を返す。新規保存はinvocation_scopeを使う。
+
+    更新前の`atk run-skill`は、指定された作業名を修飾せずにscopeへ保存した（`review-session`、`review-session batch`など）。
+    作業名が入口の作業なら、無修飾の形も含める。
+    """
     scope = invocation_scope(skill, arguments)
     legacy = {
         "agent-toolkit:review-session": ("agent-toolkit:session-review",),
@@ -98,4 +102,11 @@ def accepted_scopes(skill: str, arguments: str | None) -> tuple[str, ...]:
             "agent-toolkit:session-review-batch",
         ),
     }
-    return (scope, *legacy.get(scope, ()))
+    candidates = (scope, *legacy.get(scope, ()))
+    unqualified = (
+        name.removeprefix("agent-toolkit:") + separator + rest
+        for candidate in candidates
+        for name, separator, rest in [candidate.partition(" ")]
+        if entry_work(name) is not None and name.startswith("agent-toolkit:")
+    )
+    return (*candidates, *unqualified)
