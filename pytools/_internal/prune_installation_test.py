@@ -4,8 +4,11 @@
 
 import json
 import os
+import shutil
 import stat
 import subprocess
+import sys
+import time
 import types
 import typing
 from pathlib import Path
@@ -15,6 +18,10 @@ import pytest
 from agent_toolkit._common import dotfiles_mode
 
 from pytools._internal import _test_helpers, common, prune_installation, setup_mise
+
+_REAL_RESOLVE_EXECUTABLE = common.resolve_executable
+_REAL_RUN_SUBPROCESS = common.run_subprocess
+_HOLDER_SCRIPT = "import sys; print('ready', flush=True); sys.stdin.read()"
 
 
 def _prepare(tmp_path, monkeypatch, mode, installed=None):
@@ -411,3 +418,44 @@ def test_uv_cleanup_failure_preserves_success_time_and_continues_other_tools(tmp
     failing = False
     assert prune_installation.run().failure is None
     assert calls.count(["/fixture/uv", "cache", "clean"]) == 2
+
+
+def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_environ):
+    """他のuvが使用中でも整理を待たずに戻り、使用の終了後にuvの全消去と成功記録を完了する。"""
+    native_path = os.pathsep.join(part for part in host_environ()["PATH"].split(os.pathsep) if Path(part).name != "shims")
+    uv = shutil.which("uv", path=native_path)
+    if uv is None:
+        pytest.skip("uvが無い環境では実際のキャッシュロックを再現できない")
+    which = shutil.which
+    _prepare(tmp_path, monkeypatch, "minimal")
+    # 隔離PATHはmise shimを別名で置くため、整理側が解決するuvをshimを経由しない本体にそろえる。
+    monkeypatch.setenv("PATH", os.pathsep.join((str(Path(uv).parent), os.environ["PATH"])))
+    monkeypatch.setattr(common, "resolve_executable", _REAL_RESOLVE_EXECUTABLE)
+    monkeypatch.setattr(common, "run_subprocess", _REAL_RUN_SUBPROCESS)
+    monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: None)
+    monkeypatch.setattr(shutil, "which", lambda name, path=None: None if name in {"npm", "pnpm"} else which(name, path=path))
+    cache = tmp_path / "uv-cache"
+    marker = cache / "archive-v0" / "previous-entry"
+    marker.mkdir(parents=True)
+    monkeypatch.setenv("UV_CACHE_DIR", str(cache))
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+    # 実行中の`uv run`はキャッシュの共有ロックを終了まで保持する。
+    # 時間上限なし: 標準入力の終了で止まる保持役であり、終了時のcloseで止まる。
+    with subprocess.Popen(
+        [uv, "run", "--no-project", "--python", sys.executable, "python", "-c", _HOLDER_SCRIPT],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as holder:
+        assert holder.stdout is not None and holder.stdout.readline().strip() == "ready"
+        started = time.monotonic()
+        result = prune_installation.clean_caches()
+        elapsed = time.monotonic() - started
+    assert elapsed < 10, f"使用中のuvキャッシュの整理を{elapsed:.1f}秒待った"
+    assert result.failure is None
+    state = Path(os.environ["XDG_STATE_HOME"]) / "agent-toolkit" / "uv-cache-clean.json"
+    deadline = time.monotonic() + 90
+    while not state.exists() and time.monotonic() < deadline:
+        time.sleep(0.2)
+    assert os.path.normcase(str(cache.resolve())) in json.loads(state.read_text(encoding="utf-8"))
+    assert not marker.exists()
