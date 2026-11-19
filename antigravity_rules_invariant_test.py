@@ -10,10 +10,7 @@ _TOOLKIT = _ROOT / "agent-toolkit"
 
 
 def test_operation_rules_reach_quality_and_verification_materials() -> None:
-    """計画の有無によらず、操作前の入口から品質と検証運用の全文へ到達する。"""
-    rules = (_TOOLKIT / "share/rules/common/02-agent-operations.md").read_text()
-    assert "`agent-toolkit:/share/read-trigger-bootstrap.md`の条件表" in rules
-    assert "該当する判断や操作の前に行う" in rules
+    """計画の有無によらず、検証の操作の前に共有の読込表から品質と検証運用の全文へ到達する。"""
     rows = read_triggers.parse_tables(_TOOLKIT / "share/read-trigger-bootstrap.md", _TOOLKIT, strict=True)
     targets = {path for row in rows if "verification" in row.operations for path in row.documents}
     assert _ROOT / "agent-basics/skills/check-execution/SKILL.md" in targets
