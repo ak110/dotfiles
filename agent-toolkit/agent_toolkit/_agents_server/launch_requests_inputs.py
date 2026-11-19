@@ -39,9 +39,11 @@ def with_launcher_record(body: str, context: Mapping[str, Any]) -> str:
 
 
 def with_startup_documents(body: str, documents: str) -> str:
-    """役割の作業指示と入力を先頭に保ち、配送資料を参照資料の冒頭へ挿入する。"""
+    """役割の作業指示と入力を先頭に保ち、配送資料を参照資料の冒頭へ挿入する。役割文書の無い依頼文では末尾へ加える。"""
     if not documents:
         return body
+    if task_documents.TASK_PROMPT_REFERENCES not in body:
+        return body + "\n\n" + documents
     return _with_task_reference(body, documents)
 
 

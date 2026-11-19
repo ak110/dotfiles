@@ -15,6 +15,7 @@ import json
 import pathlib
 import re
 import typing
+from collections.abc import Mapping
 
 import markdown_it
 import yaml
@@ -184,11 +185,50 @@ class ContinuationDeclaration:
         return frozenset((*self.required, *self.optional))
 
 
+STARTUP_DOCUMENT_REFERENCE = re.compile(r"(?:agent-toolkit|agent-basics):[a-z0-9-]+/(?:[a-z0-9-]+/)*[a-z0-9.-]+\.md")
+"""`startup_documents`が受理する資料の参照。`<plugin名>:<スキル名>/<スキルのディレクトリからの相対パス>`の形とする。"""
+
+
+@dataclasses.dataclass(frozen=True)
+class StartupDocument:
+    """役割の起動の本文へ全文を入れる資料。`when`の全ての入力が値と完全に一致した時だけ入れる。"""
+
+    reference: str
+    when: tuple[tuple[str, str], ...] = ()
+
+    def applies(self, inputs: Mapping[str, str]) -> bool:
+        """起動の入力がこの資料の条件を満たすかを返す。"""
+        return all(inputs.get(name) == value for name, value in self.when)
+
+
+def parse_startup_documents(values: object, accepted: frozenset[str]) -> tuple[StartupDocument, ...]:
+    """frontmatterの`startup_documents`を検証して読む。形式の誤りは起動前に拒否する。"""
+    if not isinstance(values, list):
+        raise ValueError("startup_documentsは資料の参照の配列で指定する")
+    documents: list[StartupDocument] = []
+    for value in values:
+        entry = {"document": value} if isinstance(value, str) else value
+        if not isinstance(entry, dict) or set(entry) - {"document", "when"}:
+            raise ValueError(f"startup_documentsの要素は参照の文字列か{{document, when}}で指定する: {value!r}")
+        reference, when = entry.get("document"), entry.get("when", {})
+        if not isinstance(reference, str) or not STARTUP_DOCUMENT_REFERENCE.fullmatch(reference):
+            raise ValueError(f"startup_documentsの参照は`<plugin名>:<スキル名>/<相対パス>.md`で指定する: {reference!r}")
+        if (
+            not isinstance(when, dict)
+            or any(not isinstance(name, str) or not isinstance(expected, str) for name, expected in when.items())
+            or not set(when) <= accepted
+        ):
+            raise ValueError(f"startup_documentsのwhenは宣言済みの入力名と文字列の値の組で指定する: {when!r}")
+        documents.append(StartupDocument(reference, tuple(when.items())))
+    return tuple(documents)
+
+
 @dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
     """役割文書が宣言する入力名・mode・モデル段位・用途・書込の値。
 
     `writes_worktree`は起動時のcwdが属する作業ツリーへ書き込む役割かを表す。
+    `startup_documents`は役割の起動の本文へ全文を入れる、役割に固有の資料である（modeによらず入れる）。
     """
 
     required: tuple[str, ...]
@@ -200,6 +240,7 @@ class TaskDocumentDeclaration:
     # 共通の状態行（`状態:`）以外に、返却形式が先頭の固定行として定める値。
     # `:`で終わる値は前方一致、それ以外は行全体の一致（直後の全角括弧の補足を許す）で受理する。
     result_heads: tuple[str, ...] = ()
+    startup_documents: tuple[StartupDocument, ...] = ()
 
     @property
     def accepted(self) -> frozenset[str]:
@@ -363,9 +404,13 @@ def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) ->
             for head in heads
         ):
             raise ValueError("result_headsは値を含む固定行の配列で指定する")
+        required = tuple(values["required_inputs"])
+        optional = tuple(values.get("optional_inputs", []))
+        startup = parse_startup_documents(values.get("startup_documents", []), frozenset((*required, *optional)))
         return TaskDocumentDeclaration(
-            required=tuple(values["required_inputs"]),
-            optional=tuple(values.get("optional_inputs", [])),
+            required=required,
+            optional=optional,
+            startup_documents=startup,
             launch_kind=mode,
             writes_worktree=writes,
             model_type=values["model_type"],

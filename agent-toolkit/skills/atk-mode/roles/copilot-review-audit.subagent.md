@@ -6,6 +6,8 @@ required_inputs:
 - 引き継ぎ記録先
 optional_inputs: []
 writes_worktree: false
+startup_documents:
+- agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md
 ---
 
 # 自動コードレビュー監査担当タスク
@@ -16,12 +18,6 @@ writes_worktree: false
 対象リポジトリの追跡対象ファイルとcommit履歴は変えない。
 要修正と判定した項目の是正とAWIへの記録は委譲元が行う。
 手順は`agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md`（起動時に届く）と`agent-toolkit:atk-mode/playbooks/process-wi-dependabot-audit.md`にある。
-
-## 読込表
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 着手時 | `agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md` | 起動時 | `role:copilot-review-audit` | |
 
 ## 入力
 

@@ -70,6 +70,10 @@ continuations:
   paths: []
   references: []
   condition: ''
+startup_documents:
+- document: agent-toolkit:atk-mode/playbooks/process-wi-execution.md
+  when:
+    担当種別: レーン担当
 ---
 
 # レーン実行タスク

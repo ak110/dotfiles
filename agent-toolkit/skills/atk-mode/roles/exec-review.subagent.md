@@ -35,6 +35,8 @@ continuations:
   references:
   - review_contract
   condition: 計画外の認可が更新された場合はreview_contract、前回レビュー後の履歴書換えではrewrite_mapを渡す
+startup_documents:
+- agent-toolkit:atk-mode/playbooks/exec-review.md
 ---
 
 # 実行レビュータスク
@@ -48,7 +50,6 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 着手時 | `agent-toolkit:atk-mode/playbooks/exec-review.md` | 起動時 | `role:exec-review` | |
 | 判定の観点と並行する探索・再発防止セルフチェックの起動と受領に関する判断・作業の前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` | 判断 | `delegation-result`、`delegation`、`read:agent-toolkit:*/skills/atk-mode/playbooks/exec-review.md` | |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:atk-mode/playbooks/verification.md` | | | |
 | 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `agent-toolkit:atk-mode/roles/recurrence-self-check.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/recurrence-self-check.parent.md` | |

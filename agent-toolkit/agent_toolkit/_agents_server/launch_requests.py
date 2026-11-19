@@ -468,9 +468,6 @@ def task_document_request(
     *,
     whole_contract_path: str | None = None,
     launcher_session_id: str | None = None,
-    host: str = "claude",
-    project: pathlib.Path | str | None = None,
-    include_startup: bool = True,
 ) -> tuple[str, str, LaunchKind, pathlib.Path | None]:
     """役割と名前付き入力からmodel種別、プロンプト、mode、サーバーが用意した引き継ぎ記録先を返す。
 
@@ -479,6 +476,7 @@ def task_document_request(
     宣言しない通常起動にも共通入力として専用の記録先を加える。
     委譲元が値を渡した場合と軽量起動の4要素目は`None`とする。
     `whole_contract_path`と`launcher_session_id`は通常起動の全体作業契約の解決（`whole_contract_reference`）へ渡す。
+    起動の本文へ入れる資料（`startup_documents`）は、起動の候補ごとのhostとcwdで解決するため、`start`が加える。
     """
     task_document = resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
@@ -541,22 +539,6 @@ def task_document_request(
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         check_declared_inputs(task_document, declaration, extra_params)
-    # 起動時の資料は、受領した役割の判断が始まる前に同じ会話へ届ける。
-    initial_documents = (
-        plugin_root.SERVER_RUNTIME_CODE.check_role(
-            "起動時資料の検査",
-            task_document,
-            lambda: read_triggers.startup_context(
-                task_document,
-                task_documents.document_plugin_root(task_document),
-                dict(extra_params),
-                host=host,
-                project=project,
-            ),
-        )
-        if launch_kind == "delegate" and include_startup
-        else ""
-    )
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
@@ -580,10 +562,8 @@ def task_document_request(
         "入力:",
         *named_input_lines(inputs),
         task_documents.TASK_PROMPT_REFERENCES.strip("\n"),
+        document_text,
     ]
-    if initial_documents:
-        prompt_lines.append(initial_documents)
-    prompt_lines.append(document_text)
     if launch_kind == "delegate":
         notice_path = handoff_path if _HANDOFF_INPUT_NAME not in extra_params else None
         prompt_lines.append(handoff_notice(notice_path, task_documents.document_plugin_root(task_document)))

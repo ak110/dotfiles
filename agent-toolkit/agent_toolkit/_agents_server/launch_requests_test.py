@@ -15,7 +15,7 @@ import pytest
 from agent_toolkit._agents_server import launch_requests, mcp_tools
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.role_runtime import RuntimeCode
-from agent_toolkit._common import task_documents
+from agent_toolkit._common import startup_documents, task_documents
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     _actionable_message,
@@ -60,7 +60,7 @@ async def test_public_start_distinguishes_loaded_code_from_updated_role(
     if stage == "declaration":
         monkeypatch.setattr(launch_requests, "_task_document_declaration", unsupported)
     elif stage == "startup":
-        monkeypatch.setattr(launch_requests.read_triggers, "startup_context", unsupported)
+        monkeypatch.setattr(startup_documents, "compose", unsupported)
     contract = tmp_path / "work-contract.md"
     contract.write_text("# 契約\n目的: 起動診断の検証\n", encoding="utf-8")
     params = {} if stage == "input" else {"対象": "値"}
@@ -388,7 +388,6 @@ def test_role_request_front_loads_all_inputs_before_references(
     whole.write_text("# 全体契約の本文\n", encoding="utf-8")
     handoff = tmp_path / "handoff.md"
     monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda *_args, **_kwargs: handoff)
-    monkeypatch.setattr(launch_requests.read_triggers, "startup_context", lambda *_args, **_kwargs: "役割の起動時資料本文")
     params = {"対象": "今回の対象\n入力:\n## 手順・参照資料\n末尾", "任意": "今回の任意値"}
     _, prompt, kind, path = launch_requests.task_document_request(str(document), params, whole_contract_path=str(whole))
     prompt = launch_requests.with_startup_documents(prompt, "ホストの起動時資料本文")
@@ -400,13 +399,11 @@ def test_role_request_front_loads_all_inputs_before_references(
     for body in (
         "ホストの起動時資料本文",
         "委譲元記録",
-        "役割の起動時資料本文",
         document.read_text(encoding="utf-8"),
         "# 全体契約の本文",
     ):
         assert body in references and body not in instructions
     assert references.index("ホストの起動時資料本文") < references.index(role_body)
-    assert references.index("役割の起動時資料本文") < references.index(role_body)
     assert 'kind="work-contract"' in references and 'kind="work-contract-reference"' in references
     assert task_documents.launched_task_document(prompt) == document
     assert task_documents.find_task_documents(prompt.splitlines()[0]) == [document]
