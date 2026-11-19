@@ -89,11 +89,40 @@ sshの既定シェルのcmd.exeの1行の上限（8191文字）に掛からな�
 作業ディレクトリは昇格したセッションが作るが、`%TEMP%`から継承するACLでユーザーが読み書きでき、実行の終わりに消す。
 sthenoで82KBのスクリプトが欠けずに届くことと、1回の実行が約7〜10秒で終わることを確かめた。
 
+起動部は標準入力を`[Console]::In`で読まず、そのハンドルを直接読むFileStreamで読む。
+Windows PowerShell 5.1（.NET Framework）のコンソールのstreamは、読む前に`PeekNamedPipe`でパイプの残りを調べる。
+空のまま開いているパイプでは、パイプのハンドルを待つ（.NET Frameworkの`WaitForAvailableConsoleInput`）。
+この待ちは後から本文やEOFがパイプへ届いても戻らない。
+手元が接続から3秒後に本文を送る条件で、sthenoの`ReadToEnd`は5回中5回、`ReadLine`も5回中5回止まった。
+手元が本文をすぐ送り、3秒後に標準入力を閉じる条件でも、`ReadToEnd`は10回中10回止まった。
+FileStreamは同じ2つの条件の計20回のすべてで、本文とEOFが届いた時点で読み終えた（2026年11月19日、sthenoで観測）。
+通常の実行でも、sshdが本文かEOFを書き込む前に読み始めると、同じ待ちに入る（推論）。
+`ssh-unelevated`を8件同時に実行し続けた条件では、修正前の起動部は200回のうち8回が手元の上限まで止まり、接続先のpowershellはsshの切断後も残った。
+同じ時間帯に修正前と交互に実行した修正後の起動部は、200回中0回だった。
+同時実行の無い150回と4件同時の150回では、修正前も修正後も止まらなかった。
+修正後は1回の実行の中央値も0.5〜1.9秒短くなった（同日、sthenoで観測）。
+本文の長さを先に送る方式や、改行までを読む方式は採らない。
+読み始めた時点でパイプが空なら同じ待ちに入るためである。
+ハンドルは.NET Frameworkの非公開のフィールド（`_handle`）から取る。
+公開のAPIでは標準入力のハンドルを得られず、P/Invokeの`Add-Type`は実行ごとにC#のコンパイルが要るためである。
+起動部は本文を60秒以内に読み終えなければ、診断を標準エラーへ書いて終了する。
+手元は結果を受け取れないため、終了コード125を返す。
+起動部を変えるときは、Defenderの検出が増えないことを確かめる。
+計測のために`Get-Process -Id $PID`と時刻の取得を足した試作の起動部は、`Trojan:PowerShell/Powdow.RRA!MTB`として遮断された。
+その実行では、sshが`exec request failed on channel 0`で終わった。
+修正後の起動部は526回の実行で検出されなかった（同日、sthenoで観測）。
+
 後始末は次の実行でも収束するようにした。
 タスクと作業ディレクトリの名前へ片付けてよい時刻（上限の120秒後）を入れ、各実行は期限を過ぎたものだけを片付けるため、同時に動く実行には触れない。
 上限に達した場合は、タスクを止めたうえで、コマンド行に作業ディレクトリを含むプロセスとその子孫を終了させる。
 タスクの停止だけではconhost.exeだけが終わり、スクリプトを実行するPowerShellとその子のプロセスが残って作業ディレクトリを消せなかったためである（同日、sthenoで観測）。
 手元でsshを中断しても接続先の処理は続き、スクリプトの終了後に接続先が自身で後始末した（同日、sthenoで観測）。
+
+名前を指定したタスクの照会、開始、停止、削除は、タスクスケジューラーのCOM（`Schedule.Service`）で名前から直接引いて行う。
+`Get-ScheduledTask`は名前を指定してもフォルダーのタスクを列挙し、列挙中に別のタスクが消えると`0x80070002`で失敗する。
+同時に動く別の実行がその実行のタスクを消した時に、待っている実行がこの失敗で終了コード125を返し、実行中のスクリプトを止めて片付けていた（同日、sthenoで観測）。
+別の実行がタスクの登録と削除を繰り返す間に名前の照会を繰り返した測定では、`Get-ScheduledTask`が456回中2回失敗し、COMの`GetTask`は352回中1回も失敗しなかった。
+期限切れの残骸を探す列挙も同じ理由で失敗しうるが、取りこぼした残骸は次回以降の実行が片付けるため、列挙の失敗は無視する。
 
 予定タスクの起動は`-File runner.ps1`の形にし、`-EncodedCommand`は使わない。
 試作では`conhost.exe --headless powershell.exe ... -EncodedCommand <base64>`で起動した予定タスクが、スクリプトの内容によってMicrosoft Defenderに遮断された。
@@ -101,3 +130,31 @@ sthenoで82KBのスクリプトが欠けずに届くことと、1回の実行が
 遮断されたタスクは結果を残さずに`LastTaskResult=0x80070005`で終わった。
 コマンド行の長さは原因ではなく、同じスクリプトが`-File`の形では通り、検出も無かった（同日、sthenoで観測）。
 `-EncodedCommand`へ戻す変更は、同様に遮断されうるため行わない。
+
+スクリプトは予定タスクのジョブの外で実行する。
+タスクスケジューラーは、ユーザーのセッションで動く予定タスクのプロセスを共通の1つのジョブへ入れる（同日、sthenoで観測。PowerToysなど別のタスクのプロセスも同じジョブに属していた）。
+そのジョブの制限（`JobObjectExtendedLimitInformation`のフラグ）は0だった。
+`JOB_OBJECT_LIMIT_BREAKAWAY_OK`、`JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`、`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`のどれも持たない。
+そのため子の切り離し（`CREATE_BREAKAWAY_FROM_JOB`）を指定した起動がアクセス拒否で失敗する。
+Codexは`app-server daemon`を止める前に、切り離した起動を試す（openai/codexの`codex-rs/app-server-daemon/src/backend/windows.rs`の`ensure_detached_launch`）。
+この起動がアクセス拒否で失敗すると、`this Windows launcher prevents background processes from outliving it`のエラーを返す。
+`update-dotfiles`の「Codex pluginのインストール」は、この理由でdaemonを再起動できずに失敗した。
+ユーザーが端末から起動したPowerShellと`explorer.exe`はどのジョブにも属していなかった。
+
+`runner.ps1`は予定タスクから`-LeaveTaskJob`付きで起動されると、WMIの`Win32_Process.Create`に`CREATE_BREAKAWAY_FROM_JOB`を指定して自身を起動し直し、その終了を待つ。
+起動し直したプロセスはどのジョブにも属さず、ユーザーのセッションで対話のログオンの非昇格のtoken（Medium Mandatory Level）で動き、切り離した起動も成功した（同日、sthenoで観測）。
+タスクのプロセスがスクリプトの終了まで残るため、タスクの状態による待機の判定はそのまま使える。
+上限到達と期限切れの後始末は、これまでどおりコマンド行に作業ディレクトリを含むプロセスとその子孫を終了させ、起動し直したプロセスの子孫も回収した（同日、sthenoで観測）。
+起動し直せなかった場合は、理由を出力へ書き、終了コードを残さずに終わる。
+
+次の案は採らない。
+
+- 予定タスクの設定を変える案: 互換性の水準（`Compatibility`のV1、Vista、Win7、Win8）を変えても同じジョブに入った（同日、sthenoで観測）。
+- `explorer.exe`に起動させる案（`ShellWindows`のCOMから`ShellExecute`を呼ぶ）: 起動したプロセスのIDが得られず、待機と停止の判定を作り直す必要がある。
+  遠隔操作の手口と同じ形のため、Defenderの検出も招きやすい（推論）。
+- 親プロセスを指定して`explorer.exe`の子として起動する案（`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`）: 実行ごとにC#のコンパイルが要り、親の偽装は検出の対象になりやすい（推論）。
+- sshのセッションから`explorer.exe`のtokenで`CreateProcessWithTokenW`を呼ぶ案: 予定タスクを使わない作りへの書き換えになり、他のプロセスのtokenの複製も検出の対象になりやすい（推論）。
+- Codexのdaemonの再起動だけを避ける案: 切り離して起動する他の処理が同じ理由で失敗する。
+
+WMIからのプロセスの生成は、Defenderの攻撃面の縮小のルール「Block process creations originating from PSExec and WMI commands」を有効にした環境では遮断される。
+sthenoではこのルールは未設定で、検証の前後でDefenderの検出（イベント1116・1117、`Get-MpThreatDetection`）は増えなかった（同日、sthenoで観測）。

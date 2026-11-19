@@ -19,6 +19,11 @@ $namePattern = '^ssh-unelevated-(\d+)-[0-9a-f]+$'
 $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $name = 'ssh-unelevated-{0}-{1}' -f ($now + $TimeoutSeconds + 120), $RunId
 $workDir = [IO.Path]::Combine([IO.Path]::GetTempPath(), $name)
+# 名前を指定したタスクの照会と操作は、タスクスケジューラーのCOMで名前から直接引いて行う。
+# Get-ScheduledTaskは名前を指定してもフォルダーのタスクを列挙し、列挙中に別のタスクが消えると0x80070002で失敗する。
+# 同時に動く別の実行がその実行のタスクを消した時に、待っている実行の照会が失敗していた（2026年11月19日、sthenoで観測）。
+$taskFolder = $null
+$taskStateRunning = 4
 
 function Write-Result([hashtable] $Result) {
     $bytes = [Text.Encoding]::UTF8.GetBytes("`nSSH_UNELEVATED_RESULT:$RunId " + (ConvertTo-Json $Result -Compress) + "`n")
@@ -69,11 +74,19 @@ function Get-RunProcessId([string] $Dir) {
     return $found.Keys
 }
 
+function Get-RunTask([string] $Name) {
+    try {
+        return $taskFolder.GetTask($Name)
+    } catch [IO.FileNotFoundException] {
+        return $null
+    }
+}
+
 function Clear-RunProcess([string] $Name) {
     # タスクの停止だけでは子孫のプロセスが残りうるため、残ったプロセスも終了させる。
-    $task = Get-ScheduledTask -TaskName $Name -TaskPath '\' -ErrorAction SilentlyContinue
-    if ($task -and $task.State -eq 'Running') {
-        Stop-ScheduledTask -TaskName $Name -TaskPath '\'
+    $task = Get-RunTask $Name
+    if ($task -and $task.State -eq $taskStateRunning) {
+        $task.Stop(0)
     }
     $ids = @(Get-RunProcessId ([IO.Path]::Combine([IO.Path]::GetTempPath(), $Name)))
     if ($ids.Count -gt 0) {
@@ -85,12 +98,12 @@ function Clear-RunProcess([string] $Name) {
 function Clear-Run([string] $Name, [bool] $ScanProcesses) {
     # プロセスの一覧の取得は数秒かかるため、タスクが動いている場合と、中断された実行の残骸を片付ける場合に限る。
     # 正常に終えたタスクは、runner.ps1がexit.txtを書いて終了するまで待ってある。
-    $task = Get-ScheduledTask -TaskName $Name -TaskPath '\' -ErrorAction SilentlyContinue
-    if ($ScanProcesses -or ($task -and $task.State -eq 'Running')) {
+    $task = Get-RunTask $Name
+    if ($ScanProcesses -or ($task -and $task.State -eq $taskStateRunning)) {
         Clear-RunProcess $Name
     }
     if ($task) {
-        Unregister-ScheduledTask -TaskName $Name -TaskPath '\' -Confirm:$false
+        $taskFolder.DeleteTask($Name, 0)
     }
     $dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), $Name)
     if (Test-Path -LiteralPath $dir) {
@@ -99,6 +112,7 @@ function Clear-Run([string] $Name, [bool] $ScanProcesses) {
 }
 
 function Clear-StaleRun {
+    # タスクの列挙は同時に別のタスクが消えると失敗しうるが、取りこぼした残骸は次回以降の実行が片付ける。
     $names = @(
         Get-ScheduledTask -TaskPath '\' -TaskName 'ssh-unelevated-*' -ErrorAction SilentlyContinue | ForEach-Object { $_.TaskName }
         Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'ssh-unelevated-*' | ForEach-Object { $_.Name }
@@ -124,30 +138,31 @@ function Wait-Run {
     $exitFile = Join-Path $workDir 'exit.txt'
     $startedAt = Get-Date
     $deadline = $startedAt.AddSeconds($TimeoutSeconds)
-    Start-ScheduledTask -TaskName $name -TaskPath '\'
+    (Get-RunTask $name).Run($null) | Out-Null
     $started = $false
     while ($true) {
         if (Test-Path -LiteralPath $exitFile) {
             # 作業ディレクトリを消せるよう、タスクのプロセスが終わるのを待つ。
             $until = (Get-Date).AddSeconds(10)
-            while ((Get-ScheduledTask -TaskName $name -TaskPath '\').State -eq 'Running' -and (Get-Date) -lt $until) {
+            while ((Get-RunTask $name).State -eq $taskStateRunning -and (Get-Date) -lt $until) {
                 Start-Sleep -Milliseconds 200
             }
             return @{ status = 'completed'; exit_code = [long] (Get-Content -LiteralPath $exitFile -Raw).Trim() }
         }
-        $state = (Get-ScheduledTask -TaskName $name -TaskPath '\').State
-        $info = Get-ScheduledTaskInfo -TaskName $name -TaskPath '\'
-        if ($state -eq 'Running') {
+        $task = Get-RunTask $name
+        # COMは結果の値を符号付きで返すため、HRESULTの表記（0x8007...）に合わせて符号なしへ戻す。
+        $taskResult = ([long] $task.LastTaskResult) -band 4294967295
+        if ($task.State -eq $taskStateRunning) {
             $started = $true
-        } elseif ($started -or $info.LastRunTime -ge $startedAt.AddSeconds(-5)) {
+        } elseif ($started -or $task.LastRunTime -ge $startedAt.AddSeconds(-5)) {
             # タスクの終了とexit.txtの出現の前後を吸収してから判定する。
             Start-Sleep -Seconds 1
             if (-not (Test-Path -LiteralPath $exitFile)) {
-                return @{ status = 'no_result'; task_result = [long] $info.LastTaskResult }
+                return @{ status = 'no_result'; task_result = $taskResult }
             }
             continue
         } elseif ((Get-Date) -gt $startedAt.AddSeconds(30)) {
-            return @{ status = 'not_started'; task_result = [long] $info.LastTaskResult }
+            return @{ status = 'not_started'; task_result = $taskResult }
         }
         if ((Get-Date) -gt $deadline) {
             Clear-RunProcess $name
@@ -158,6 +173,9 @@ function Wait-Run {
 }
 
 try {
+    $service = New-Object -ComObject Schedule.Service
+    $service.Connect()
+    $taskFolder = $service.GetFolder('\')
     Clear-StaleRun
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not (Test-InteractiveLogon $identity.User.Value)) {
@@ -170,7 +188,7 @@ try {
     [IO.File]::WriteAllBytes($runner, [Convert]::FromBase64String($RunnerBase64))
     # conhost.exe --headlessで、ユーザーの画面にコンソールの窓を出さない。
     $action = New-ScheduledTaskAction -Execute 'conhost.exe' -WorkingDirectory $env:USERPROFILE `
-        -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runner`""
+        -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runner`" -LeaveTaskJob"
     # sshのセッションでは$env:USERDOMAINと$env:USERNAMEの組をSIDへ解決できないため、tokenの名前を使う。
     $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds ($TimeoutSeconds + 60)) `
@@ -183,7 +201,10 @@ try {
     Write-Result @{ status = 'error'; message = "$_" }
 } finally {
     try {
-        Clear-Run $name $false
+        # タスクスケジューラーへ接続できなかった場合は、タスクも作業ディレクトリもまだ作っていない。
+        if ($taskFolder) {
+            Clear-Run $name $false
+        }
     } catch {
         [Console]::Error.WriteLine("ssh-unelevated: 接続先の後始末に失敗した（次回の実行が片付ける）: $_")
     }
