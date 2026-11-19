@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import typing
 import uuid
 import zipfile
@@ -108,19 +109,29 @@ class _RemoteHost:
     昇格したSSHのセッションのWindowsでは、マイナー版（`3.15`）の指定はjunctionをたどれずに失敗し、
     導入済みのパッチ版の指定だけが起動する（2026-11-19、sthenoで観測）。
     索引へ出ない起動（`--offline`）は、依存が専用キャッシュにある場合だけ成功する。
+    uvが起動するPythonの代わりに、起動形の`python -B`以降を試験のPythonで接続先のホームから実行する。
+    ホームのセッション画面のヘルパーは一覧を返し、記録の`read`では記録が消えた場合と同じく`FileNotFoundError`で終わる。
     """
 
-    def __init__(self, *installed: str, listing: tuple[int, bytes, bytes] | None = None, cached: bool = False) -> None:
+    def __init__(
+        self, home: pathlib.Path, *installed: str, listing: tuple[int, bytes, bytes] | None = None, cached: bool = False
+    ) -> None:
+        self.home = home
         self.installed = set(installed)
         self.listing = listing
         self.cached = cached
         self.reachable = True
         self.index_reachable = True
-        self.helper_fails = False
         self.attempts = 0
         self.listings = 0
         self.index_fetches = 0
         self.helpers: list[str] = []
+        helper = home / "dotfiles" / "agent-toolkit" / "scripts" / "atk_serve_sessions_remote_helper.py"
+        helper.parent.mkdir(parents=True)
+        helper.write_text(
+            "import sys\nif sys.argv[1] == 'read':\n    raise FileNotFoundError(sys.argv[2])\nsys.stdout.write('[]')\n",
+            encoding="utf-8",
+        )
 
     def answer(self, command: list[str]) -> tuple[int, bytes, bytes]:
         self.attempts += 1
@@ -140,16 +151,21 @@ class _RemoteHost:
             self.cached = True
         elif not self.cached:
             return 1, b"", b"error: watchdog was not found in the cache"
-        if command[command.index("-c") + 1] == "pass":
-            return 0, b"", b""
-        self.helpers.append(python)
-        if self.helper_fails:
-            return 3, b"", b"helper not found"
-        return 0, b"[]", b""
+        option, code, *args = command[command.index("-B") + 1 :]
+        if code != "pass":
+            self.helpers.append(python)
+        ran = process_tree.run_with_timeout(
+            [sys.executable, "-B", option, code.strip('"'), *args],
+            cwd=self.home,
+            env={**os.environ, "HOME": str(self.home), "USERPROFILE": str(self.home)},
+            capture_output=True,
+            timeout=30,
+        )
+        return ran.returncode, ran.stdout, ran.stderr
 
 
 @pytest.fixture(name="add_remote_host")
-def _add_remote_host(monkeypatch: pytest.MonkeyPatch) -> typing.Callable[..., tuple[str, _RemoteHost]]:
+def _add_remote_host(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> typing.Callable[..., tuple[str, _RemoteHost]]:
     """単発と常駐のSSHを模した接続先へ向け、接続先を名前とともに加える関数を返す。
 
     `atk serve`のプロセスは接続先ごとにPythonの版を覚えるため、試験ごとに新しい名前の接続先を使う。
@@ -171,7 +187,7 @@ def _add_remote_host(monkeypatch: pytest.MonkeyPatch) -> typing.Callable[..., tu
 
     def add(*installed: str, listing: tuple[int, bytes, bytes] | None = None, cached: bool = False) -> tuple[str, _RemoteHost]:
         name = f"remote-{uuid.uuid4().hex}"
-        hosts[name] = _RemoteHost(*installed, listing=listing, cached=cached)
+        hosts[name] = _RemoteHost(tmp_path / name, *installed, listing=listing, cached=cached)
         return name, hosts[name]
 
     return add
@@ -259,34 +275,97 @@ async def test_launch_after_warm_up_needs_no_package_index(add_remote_host: _Add
 
 @pytest.mark.asyncio
 @_LAUNCHES
-async def test_launch_reresolves_when_remembered_python_is_gone(add_remote_host: _AddRemoteHost, launch: _Launch) -> None:
-    """覚えた版が接続先から消えていれば、同じ要求の中で版を選び直して起動し、以後は新しい版を使う。"""
+@pytest.mark.parametrize(
+    ("index_reachable", "cached", "index_fetches"),
+    [(False, True, 0), (True, False, 1)],
+    ids=["index-unreachable", "cache-emptied"],
+)
+async def test_launch_reresolves_when_remembered_python_is_gone(
+    add_remote_host: _AddRemoteHost, launch: _Launch, index_reachable: bool, cached: bool, index_fetches: int
+) -> None:
+    """覚えた版が接続先から消えていれば、同じ要求の中で版を選び直して起動し、以後は新しい版を使う。
+
+    依存が専用キャッシュに残っていれば、選び直した版も索引へ出ずに起動する。
+    接続先のPythonの更新と索引の不通が重なると、選び直した版を索引を使う形で起動して一覧を取得できなかった
+    （2026-11-19の検証で観測）。専用キャッシュが空なら、選び直した版で索引から依存を取得する。
+    """
     name, host = add_remote_host("3.15.2")
     await launch(name)
     host.installed = {"3.15.3"}
+    host.index_reachable = index_reachable
+    host.cached = cached
+    fetched = host.index_fetches
 
     await launch(name)
     await launch(name)
 
     assert host.helpers == ["3.15.2", "3.15.3", "3.15.3"]
     assert host.listings == 2
+    assert host.index_fetches - fetched == index_fetches
 
 
 @pytest.mark.asyncio
-async def test_one_shot_failure_is_reported_after_at_most_one_reresolution(add_remote_host: _AddRemoteHost) -> None:
-    """覚えた版での失敗は版を1回だけ選び直して起動し直し、それでも失敗すれば失敗元の標準エラー出力とともに示す。"""
+async def test_launch_failure_after_reresolution_reports_the_last_failure(add_remote_host: _AddRemoteHost) -> None:
+    """選び直した版でも起動できなければ、版の照会を1回、起動を選び直した版での2回までに留め、最後の起動の失敗を示す。"""
     name, host = add_remote_host("3.15.2")
     await _run_one_shot(name)
-    host.helper_fails = True
+    host.installed = set()
+    attempts, listings = host.attempts, host.listings
 
-    with pytest.raises(serve_remote.RemoteHelperError, match="helper not found"):
-        await _run_one_shot(name)
-    host.installed = {"3.15.3"}
-    with pytest.raises(serve_remote.RemoteHelperError, match="helper not found"):
+    with pytest.raises(serve_remote.RemoteHelperError, match=r"No interpreter found for Python 3\.15$"):
         await _run_one_shot(name)
 
-    assert host.helpers == ["3.15.2", "3.15.2", "3.15.2", "3.15.3"]
-    assert host.listings == 3
+    assert host.listings - listings == 1
+    assert host.attempts - attempts <= 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cached", [True, False], ids=["remembered-and-warm", "first-contact"])
+async def test_helper_operation_error_is_reported_without_relaunch(add_remote_host: _AddRemoteHost, cached: bool) -> None:
+    """起動した後のヘルパーの操作のエラーは、版を選び直したり起動し直したりせず、ヘルパーの標準エラー出力のまま示す。
+
+    一覧の表示の後に消えた記録の`read`で、ヘルパーの`FileNotFoundError`を起動の失敗として扱って索引を使う形で起動し直し、
+    索引へ届かない接続先では`Failed to fetch`だけが返って本当の原因が消えた（2026-11-19の検証で観測）。
+    """
+    name, host = add_remote_host("3.15.2", cached=cached)
+    if cached:
+        await _run_one_shot(name)
+        host.index_reachable = False
+    attempts, listings = host.attempts, host.listings
+
+    with pytest.raises(serve_remote.RemoteHelperError) as error:
+        await serve_remote.run_remote_helper(
+            sessions.REMOTE_BOOTSTRAP, name, "read", ["gone.jsonl"], ssh_options=(), timeout=30
+        )
+
+    assert str(error.value).endswith("FileNotFoundError: gone.jsonl")
+    assert host.helpers[-1:] == ["3.15.2"]
+    # 温まった接続先は覚えた版での起動だけ、初めての接続先は照会と、索引へ出ない起動の失敗と、索引を使う起動。
+    assert (host.attempts - attempts, host.listings - listings) == ((1, 0) if cached else (3, 1))
+
+
+@pytest.mark.asyncio
+async def test_one_shot_to_unresponsive_host_ends_within_its_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """応答しない接続先への単発の要求は、版の照会と起動を合わせて要求の上限で`subprocess.TimeoutExpired`になる。
+
+    版を覚えていない接続先で、版の照会が別の上限を持ち、`read`の上限30秒に対して90秒待った（2026-11-19の検証で観測）。
+    """
+    real_exec = asyncio.create_subprocess_exec
+
+    async def unresponsive(*cmd: str, **kwargs: typing.Any) -> asyncio.subprocess.Process:
+        del cmd
+        return await real_exec(sys.executable, "-c", "import time; time.sleep(120)", **kwargs)
+
+    monkeypatch.setattr(serve_remote.asyncio, "create_subprocess_exec", unresponsive)
+    request = serve_remote.run_remote_helper(
+        sessions.REMOTE_BOOTSTRAP, f"unresponsive-{uuid.uuid4().hex}", "read", ["x"], ssh_options=(), timeout=1
+    )
+    started = time.monotonic()
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        await asyncio.wait_for(request, timeout=10)
+
+    assert time.monotonic() - started < 3
 
 
 @pytest.mark.asyncio
