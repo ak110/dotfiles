@@ -12,6 +12,7 @@ exec uv run --no-cache --no-config --no-project --python 3.15 python "$script" "
 import contextlib
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -212,7 +213,17 @@ def _restore_from_claude_cache(root: Path) -> Path | None:
     if not _usable_root(source, version=root.name):
         return None
     root.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=f".{root.name}-restore-", dir=root.parent))
+    # 単独配布のshimは旧版のcacheも復旧するため、パッケージをimportせずにprivate_directory.MODEと同じ権限で作る。
+    mode = 0o777 if os.name == "nt" else 0o700
+    for _ in range(tempfile.TMP_MAX):
+        temporary = root.parent / f".{root.name}-restore-{secrets.token_hex(16)}"
+        try:
+            temporary.mkdir(mode=mode)
+        except FileExistsError:
+            continue
+        break
+    else:
+        raise FileExistsError(f"復旧用の一時ディレクトリを作成できません: {root.parent}")
     staged = temporary / root.name
     try:
         shutil.copytree(source, staged, symlinks=True, ignore=_COPY_IGNORE)
