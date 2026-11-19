@@ -13,8 +13,12 @@
 
 上限による失敗の後に新turnが無い場合だけ、その所有する子へ終了を要求し、正常終了として次の反復へ進む。
 新turnがあれば子を保持する。
+親の`process_loop_session.py`は子の終了後に`lane.cleanup_session`で回収を試み、未統合・dirty・稼働中・確認不能などのレーンは所有登録と成果を保持する。
+所有登録は選定原本から写したレーンのWI集合と統合状態、rebase後の対応表と検証記録も持つため、managed-tempにある選定原本が失効した後の再開と回収も同じ所有登録から判定する。
 再開する工程は計画の進捗ログから決め、[中断レーンの再開](../../agent-toolkit/skills/atk-mode/playbooks/process-wi-lanes.md)に従って新しいレーン担当へ計画と既存worktree・branch・現在HEADを渡す。
 資源を再利用するときは旧所有主体の終了を確認し、`atk lane create`の`--reuse-record <record_path>`へ所有登録のパスを渡して新しい所有sessionへ移す。
 この再開は保存した状態からの復元であり、親は中断した会話履歴を新しい会話へ複製しない。
+対応する計画や所有を一意に確定できない場合は、既存の再開手順が続行できない理由を返す。
 `codex resume`で同じ対話会話を起動する案は、`usage_limited`のgoalの再開確認で無人の子が停止するため採らない。
 共有daemonへの`codex queue`を使う案も、effortを指定する`-c`付きの起動がdaemonの対象外であるため採らない。
+最上位TUIの自動再開とは適用範囲を分ける。
