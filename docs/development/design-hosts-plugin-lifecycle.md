@@ -75,7 +75,7 @@ cache version台帳、POSIXの原本接続、Windowsの原本接続とファイ�
 - 明示的に無効なpluginは削除しない。
 
 会話の開始から再開までの間隔を観測して7日に決めた。
-2026年11月19日にeuryale（Linux、10,491件）とstheno（Windows、621件）のCodex会話記録（`sessions/`と`archived_sessions/`のrollout）を調べた。
+2026年11月19日にeuryale（Linux、10,491件）とstheno（Windows、621件）のCodexのセッション記録（`sessions/`と`archived_sessions/`のrollout）を調べた。
 ファイル名の開始時刻から最終書込（mtime）までは、最長でeuryaleが3.2日、sthenoが2.2日だった。
 最長の1件は75.9時間の間隔を置いて同じrolloutへ追記しており、再開した会話も同じファイルへ書く。
 7日はその2倍以上の余裕を持ち、Claude Codeの旧版cache整理と同じ値である。

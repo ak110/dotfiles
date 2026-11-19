@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 # 後継版の導入から旧版を回収の候補にするまでの日数。
-# 2026年11月19日の観測では、Codexの会話記録（rollout）1万1千件の開始から最終書込までが最長3.2日だった。
+# 2026年11月19日の観測では、Codexのセッション記録（rollout）1万1千件の開始から最終書込までが最長3.2日だった。
 GRACE_DAYS = 7
 
 
