@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 
 from agent_toolkit._atk import config_repositories as _config_repositories
 from agent_toolkit._atk import managed_temp
@@ -252,7 +253,25 @@ def _existing_worktree_failure(
             return failure
     if not _worktree_is_clean(worktree_path):
         return "worktreeに未コミット変更がある", _worktree_dirty_next_action(worktree_path)
+    _ensure_upstream_tracking(worktree_path, branch, upstream_branch)
     return None
+
+
+def _ensure_upstream_tracking(worktree_path: pathlib.Path, branch: str, upstream_branch: str) -> None:
+    """専用ブランチに追跡先が無い場合に限り、上流を追跡先に設定する。
+
+    WorktreeCreate hookの`--detach`で作られたworktreeや手作業の`switch -C`は追跡先を持たず、
+    主作業ツリーのブランチの公開状態（`# branch.upstream`）を判定できない。設定済みの追跡先は変えない。
+    設定に失敗しても準備は続け、警告だけを出す。
+    """
+    configured = _run_worktree_git(["config", "--get", f"branch.{branch}.remote"], worktree_path)
+    if configured.returncode == 0 and configured.stdout.strip():
+        return
+    result = _run_worktree_git(["branch", f"--set-upstream-to={upstream_branch}", branch], worktree_path)
+    if result.returncode != 0:
+        print(
+            f"専用ブランチ{branch}の追跡先を{upstream_branch}に設定できませんでした: {result.stderr.strip()}", file=sys.stderr
+        )
 
 
 def _operation_next_action(worktree_path: pathlib.Path, label: str, command: str) -> str:
@@ -514,7 +533,10 @@ def _sync_worktree_with_upstream(
                     if switched.returncode:
                         raise ValueError(f"hook作成先のbranchを系統へ接続できない: {switched.stderr.strip()}")
                 elif current is None or current.ref != f"refs/heads/{branch}":
-                    switched = _run_worktree_git(["-c", "submodule.recurse=false", "switch", "-c", branch], worktree_path)
+                    # hookは`--detach`でブランチを作らないため、系統なしでも上流を追跡先にして専用ブランチを作る。
+                    switched = _run_worktree_git(
+                        ["-c", "submodule.recurse=false", "switch", "--track", "-c", branch, upstream_branch], worktree_path
+                    )
                     if switched.returncode:
                         raise ValueError(f"hook作成先のbranchを接続できない: {switched.stderr.strip()}")
                 created = subprocess.CompletedProcess(command, 0, stdout="", stderr="")

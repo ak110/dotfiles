@@ -377,3 +377,22 @@ def test_worktree_off_dedicated_branch_without_unique_work_is_returned(tmp_path:
     if "feature-x" in kept:
         assert git_repository.git_output(worktree, "rev-parse", "refs/heads/feature-x") == kept["feature-x"]
     assert git_repository.git_output(worktree, "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_existing_dedicated_branch_without_upstream_gets_tracking_but_configured_is_kept(
+    tmp_path: pathlib.Path, configured: bool
+) -> None:
+    """追跡先の無い専用ブランチには準備の時点で上流を設定し、別の値で設定済みなら変えない。"""
+    local, _peer = _upstream_repository(tmp_path)
+    git_repository.run_git(local, "branch", "other", "origin/main")
+    worktree = _pl_worktree._sync_worktree_with_upstream(local, "process-loop")  # pylint: disable=protected-access
+    assert worktree is not None
+    branch = git_repository.git_output(worktree, "branch", "--show-current")
+    git_repository.run_git(worktree, "branch", "--unset-upstream")
+    if configured:
+        git_repository.run_git(worktree, "branch", "--set-upstream-to=other")
+
+    assert _pl_worktree._sync_worktree_with_upstream(local, "process-loop") == worktree  # pylint: disable=protected-access
+    expected = "other" if configured else "origin/main"
+    assert git_repository.git_output(worktree, "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}") == expected
