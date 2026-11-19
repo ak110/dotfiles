@@ -137,13 +137,13 @@ def _two_plugin_roots(tmp_path, monkeypatch):
         (root / ".claude-plugin/plugin.json").write_text(
             json.dumps({"name": "agent-toolkit", "version": "2.224.0"}), encoding="utf-8"
         )
-        skill = root / "skills/delegation/SKILL.md"
+        skill = root / "skills/atk-mode/SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_text(
             "# 選択したskill\n"
             "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n"
             "| --- | --- | --- | --- |\n"
-            "| 初動 | `initial.md` | 起動時 | `skill:delegation` |\n"
+            "| 初動 | `initial.md` | 起動時 | `skill:atk-mode` |\n"
             "| 次の操作 | `later.md` | 操作 | `tool:Do` |\n",
             encoding="utf-8",
         )

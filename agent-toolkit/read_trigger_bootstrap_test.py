@@ -28,7 +28,7 @@ def test_bugfix_start_does_not_request_other_analysis_workflows(tmp_path, monkey
     assert "bugfix/references/" not in result.stdout
     for path in (
         "atk-mode/references/analysis-records.md",
-        "delegation/references/investigation-delegation.md",
+        "atk-mode/playbooks/investigation-delegation.md",
         "atk-mode/playbooks/review-session-analysis.md",
         "atk-mode/playbooks/user-utterance.md",
     ):

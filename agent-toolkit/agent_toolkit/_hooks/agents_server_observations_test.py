@@ -15,9 +15,16 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import manager, mcp_tools, shared_layout, shared_roots, status_file
 from agent_toolkit._agents_server import state as server_state
 from agent_toolkit._common import atomic_file, session_registry, session_state, state_paths
-from agent_toolkit._hooks import agents_server_observations, agents_server_session_advisor, posttooluse, pretooluse
+from agent_toolkit._hooks import (
+    agents_server_observations,
+    agents_server_session_advisor,
+    plugin_resources,
+    posttooluse,
+    pretooluse,
+)
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._testing import agents_server_support
+from agent_toolkit._testing.termination_evidence_support import claude_read_response
 
 pytestmark = pytest.mark.usefixtures("_forbid_backend_process", "without_read_delivery")
 
@@ -97,9 +104,15 @@ def _hook(hook: Callable[[str], int], payload: dict[str, Any]) -> int:
 
 
 def _acquire_delegation(payload: dict[str, Any]) -> None:
-    """委譲操作の前に求められる`agent-toolkit:delegation`の取得を、Skill起動のPostToolUseとして観測させる。"""
-    skill = {"session_id": payload["session_id"], "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:delegation"}}
-    assert _hook(posttooluse.main, {"hook_event_name": "PostToolUse", **skill}) == 0
+    """委譲操作の前に求められる委譲の手順書の取得を、ReadのPostToolUseとして観測させる。"""
+    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md")
+    read = {
+        "session_id": payload["session_id"],
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(playbook)},
+        "tool_response": claude_read_response(playbook),
+    }
+    assert _hook(posttooluse.main, {"hook_event_name": "PostToolUse", **read}) == 0
 
 
 @pytest.mark.asyncio

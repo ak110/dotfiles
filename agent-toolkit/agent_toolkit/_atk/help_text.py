@@ -87,8 +87,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk setup-project": {
         "summary": "プロジェクトの指示ファイルを移行し共有スキルをリンクする",
-        "description": "プロジェクトの指示ファイルを移行し共有スキルをリンクする。\n\n目的: Claude CodeとCodexが同じプロジェクト規範とスキルを読めるようにする。\n利用場面: プロジェクトの指示ファイルをAGENTS.mdへ統一するとき。\n対象と出力: 現在ディレクトリの指示を移行し、共有スキルのリンクを作成する。with-rulesではpluginの規範も複製し、cleanでは配置済みリンクと規範を削除する。\n前提: 予期しない指示ファイルとリンク先は変更せず失敗する。\n復元・後始末: cleanで共有リンクと複製済み規範を削除できる。移行した指示ファイルはGit履歴から復元できる。",
-        "epilog": "実行例:\n\n  atk setup-project\n  atk setup-project --with-rules\n  atk setup-project --clean",
+        "description": "プロジェクトの指示ファイルを移行し共有スキルをリンクする。\n\n目的: Claude CodeとCodexが同じプロジェクト規範とスキルを読めるようにする。\n利用場面: プロジェクトの指示ファイルをAGENTS.mdへ統一するとき。\n対象と出力: 現在ディレクトリの指示を移行し、共有スキルのリンクを作成する。cleanでは配置済みリンクと、以前に複製した規範（`.claude/rules/agent-toolkit/`・`.claude/rules/agent-basics/`）を削除する。\n前提: 予期しない指示ファイルとリンク先は変更せず失敗する。\n復元・後始末: cleanで共有リンクと複製済み規範を削除できる。移行した指示ファイルはGit履歴から復元できる。",
+        "epilog": "実行例:\n\n  atk setup-project\n  atk setup-project --clean",
     },
     "atk run-script": {
         "summary": "登録済みplugin内Pythonスクリプトを実行する",
@@ -188,7 +188,7 @@ HELP: dict[str, dict[str, str]] = {
             "機会なしや日時・commit不明は全体のpendingと理由を保存できる。同じ引数での再実行は判定行を重複させない。\n"
             "復元・後始末: 変更前の内容はprivate-notesのGit履歴に残る。途中保存やcommit・pushの失敗を解消して同じ引数で再実行する。"
         ),
-        "epilog": "実行例:\n\n  atk wi effect-check 20260901-072734-001.md --worktree /home/user/repo --file agent-toolkit/share/rules/common/01-agent.md --verdict confirmed --checked-on 2026-10-31 --review-record session:42",
+        "epilog": "実行例:\n\n  atk wi effect-check 20260901-072734-001.md --worktree /home/user/repo --file agent-toolkit/skills/atk-mode/SKILL.md --verdict confirmed --checked-on 2026-10-31 --review-record session:42",
     },
     "atk wi set-dependencies": {
         "summary": "AWIの明示依存だけを更新する",

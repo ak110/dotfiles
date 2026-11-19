@@ -27,9 +27,6 @@ lazy from agent_toolkit._common.session_state import (
 lazy from agent_toolkit._common.task_stop_state import has_recent_completion, target_ids
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
-lazy from agent_toolkit._hooks import (
-    plugin_resources as _plugin_resources,
-)
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
@@ -103,7 +100,8 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
         fix=(
             f"同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行せよ。"
             "外部資料の取得なら、`agent-basics:fetch-sources`の資料種別ごとの手順を依頼へ含めよ。"
-            "例外は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」で確認せよ。"
+            "例外は、`agents_server`の`MCP`ツールを呼べない場合、`agents_server`の各`mode`に同等の手段が無い専用の定義を使う場合、"
+            "ユーザーが明示した場合、会話を引き継ぐ`fork`の場合に限る。"
             "例外に該当する場合は、同じ会話の同じ主体からツール名と入力全体を変えずに再発行してよい。"
         ),
     )
@@ -172,11 +170,9 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
         f"TaskStopの対象{', '.join(sorted(targets))}には、バックグラウンドタスクの所有記録も停滞検知完了記録も無い。",
         fix=(
             "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定せよ。"
-            "その他の対象は"
-            f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
-            "「停滞の検知と巻き取り」節に従い、"
+            "その他の対象は、`active_tool_uses`と`api_error`が無く活動が止まっていることを確かめて停滞を確定し、"
             "対象別の停滞検知完了記録を作成してからTaskStopを実行せよ。"
-            "ユーザーの介入時は`agent-toolkit:delegation`「継続と新規起動」を確認せよ。"
+            "ユーザーの介入では停止せず、採否を確定した差分を稼働中の担当へ追送せよ。"
             "記録は`atk run-script record-stall-detection -- "
             "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
             "終了コード0を返した対象だけを5分以内に停止せよ。"
@@ -241,7 +237,7 @@ def _check_agents_server_continuation_target(session_id: str, tool_input: dict, 
                     f"`agents_server`の`show`へ`session_id={remote_session_id}`を指定して照会せよ。"
                     "永続登録の起動元と呼出主体が一致し、応答の識別子と絶対`cwd`を確認できた場合は記録を回復するため、"
                     "元の操作を再発行せよ。所有を確認できない場合は遮断を維持する。"
-                    "自身が起動していない対象の扱いは`agent-toolkit:delegation`「継続と新規起動」に従え。"
+                    "自身が起動していない対象は、所有を確認できるまで操作しない。"
                 ),
             )
         )

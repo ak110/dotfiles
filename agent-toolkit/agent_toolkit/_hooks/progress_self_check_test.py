@@ -7,7 +7,6 @@
 import json
 import os
 import pathlib
-import re
 import subprocess
 import uuid
 from collections.abc import Mapping
@@ -66,13 +65,11 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
 
     notice = progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL)
     assert notice is not None and notice.startswith(_OPENING)
-    target = progress_self_check.plugin_resources.plugin_root() / "share/agent-conduct-details.md"
-    assert "agent-conduct-details.md" in notice
+    # 点検の操作は通知だけで分かり、規範のファイルへの案内を含まない。
+    assert "工程・開始時点・経過時間を目標と前回の成果に比べよ" in notice
+    assert "git -C <worktree> status --porcelain=v1" in notice
+    assert ".md" not in notice
     assert "cat --" not in notice and "Get-Content" not in notice
-    # 通知が名指しする節は、そのファイルに見出しとして実在する。
-    section = re.search(r"「(?P<name>[^」]+)」", notice)
-    assert section is not None
-    assert f"\n## {section['name']}\n" in pathlib.Path(target).read_text(encoding="utf-8")
     # 生成しただけでは期日を消費せず、最終出力へ採用された時点で確定する。
     assert _entries(sid)["main"]["last_notified_at"] == 1000.0
     notice_module.record_delivery(notice)

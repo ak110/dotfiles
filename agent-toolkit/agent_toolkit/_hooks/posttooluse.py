@@ -123,8 +123,8 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     )
     if any(word in text for word in _INVESTIGATION_WORDS):
         body += (
-            "調査へ着手する前の委譲判断は`agent-toolkit:delegation`の`references/routing.md`"
-            "「コンテキスト消費が大きい調査の切り出し」に従え。"
+            "調査へ着手する前に、読み取り専用の`explore`へ分担する案と自分で分割取得しながら続ける案を、"
+            "起動・初回読込・検収・統合を含む総費用で比べよ。"
         )
     return _notice_formatter(source)(body, tag="notice", subject=subject)
 

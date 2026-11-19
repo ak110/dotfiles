@@ -1,30 +1,33 @@
 import { automatedMessage } from "./automated_message.ts";
 
 // `AWI化ステータス`の値ごとに、理由の先頭に置く区分名と、区分名で始まらない場合の警告を対応付ける。
-// 書式と区分の定義元は`share/rules/rules-main.md`「進捗報告」のテンプレート直下にある。
+// 書式と区分の定義元は`skills/atk-mode/playbooks/main-reporting.md`「進捗報告」にある。警告は区分を本文に挙げ、定義元を読まずに直せるようにする。
 // `済`の時機と根拠、`即時対応`の意味判定は担当が行い、この書式検査では判定しない。
 // 判定は区分名と冒頭の語句との文字列照合だけとし、理由の意味は推定しない。送達は止めない。
+function statusCheck<const Value extends string, const Category extends string>(
+  value: Value,
+  categories: readonly Category[],
+  form: string,
+  detail = "",
+) {
+  const listed = categories.map((name) => `\`${name}\``).join("・");
+  const warning = automatedMessage(
+    "send-to-user",
+    "warn",
+    `本文は表示済みである。\`AWI化ステータス: ${value}\`の直後に区分名が無い行がある。` +
+      `以後の該当行は\`AWI化ステータス: ${value} <区分> ${form}\`とし、区分は${listed}から選べ。${detail}`,
+  );
+  return { value, categories, warning };
+}
+
 const STATUS_CHECKS = [
-  {
-    value: "不要",
-    categories: ["非欠陥", "処置済み", "被覆", "見送り"],
-    warning: automatedMessage(
-      "send-to-user",
-      "warn",
-      "本文は表示済みである。`AWI化ステータス: 不要`の直後に区分名が無い行がある。" +
-        "`share/rules/rules-main.md`「進捗報告」のテンプレート直下の書式に従い、以後の該当行に区分名と理由を書け。書式の修正だけなら判定資料の追加取得は不要である。",
-    ),
-  },
-  {
-    value: "予定",
-    categories: ["判断待ち", "認可待ち", "入力待ち", "書込競合"],
-    warning: automatedMessage(
-      "send-to-user",
-      "warn",
-      "本文は表示済みである。`AWI化ステータス: 予定`の直後に区分名が無い行がある。" +
-        "`share/rules/rules-main.md`「進捗報告」のテンプレート直下の書式に従い、以後の該当行に区分名と再開条件を書け。書式の修正だけなら判定資料の追加取得は不要である。",
-    ),
-  },
+  statusCheck(
+    "不要",
+    ["非欠陥", "処置済み", "被覆", "見送り"],
+    "<理由>",
+    "`見送り`の理由には`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`をセミコロンで区切って書け。",
+  ),
+  statusCheck("予定", ["判断待ち", "認可待ち", "入力待ち", "書込競合"], "<再開条件>"),
 ] as const;
 // `不要`の理由（区分名の後）の冒頭が、原因を調べていないことを見送りの根拠にしている形。「未調査を理由に見送らない」のように助詞が続く説明は除く。
 // 「原因は未確定だが、既存AWIへ引き継ぎ済み」のように逆接が続く形は、後段の処置・担当を理由にしているため除く。
@@ -34,7 +37,7 @@ const UNINVESTIGATED_WARNING = automatedMessage(
   "send-to-user",
   "warn",
   "`AWI化ステータス: 不要`の理由が、原因を調べていないことを見送りの根拠にしている箇所がある。本文は表示済みである。" +
-    "`share/rules/rules-main.md`「作業中の改善点の報告」に従い、該当する理由を調査・処置の結果に基づいて更新せよ。",
+    "担当と処置を決めるのに足りる最小の調査をしてから、該当する理由を調査・処置の結果に基づいて更新せよ。",
 );
 const STATUS_MARKER = /AWI化ステータス:\s*(不要|予定)[ \t]*/g;
 const DEFERRAL_FIELDS = ["作り込み側の候補", "見逃し側の候補", "比較結論"] as const;

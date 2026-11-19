@@ -31,7 +31,7 @@ def _effect_repository(
     worktree = git_repository.init_repository(
         tmp_path / "repo",
         origin="https://github.com/example/repo.git",
-        files={"agent-toolkit/share/rules/common/a.md": "規範A", "agent-toolkit/skills/b/SKILL.md": "規範B", "app.py": "pass"},
+        files={"agent-toolkit/skills/a/playbooks/a.md": "規範A", "agent-toolkit/skills/b/SKILL.md": "規範B", "app.py": "pass"},
         commit_message="試験用の規範変更",
     )
     oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
@@ -88,13 +88,13 @@ def test_public_effect_check_partial_then_complete_preserves_original(
     """公開保存操作の部分確認・全確認とshow・一覧JSON、remoteへの反映を確認する。"""
     notes, worktree, path = effect_repository
     original = path.read_text(encoding="utf-8")
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed") == 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "confirmed") == 0
     result = capsys.readouterr().out.splitlines()
     assert result[0].startswith("成功: ")
     assert result[1:] == [str(path)]
     partial = path.read_text(encoding="utf-8")
     assert "effect_check: pending" in partial
-    assert list(effect_check.checked_files(partial)) == ["agent-toolkit/share/rules/common/a.md"]
+    assert list(effect_check.checked_files(partial)) == ["agent-toolkit/skills/a/playbooks/a.md"]
     assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/b/SKILL.md", "confirmed") == 0
     assert "effect_check: pending" in path.read_text(encoding="utf-8")
     assert _invoke(notes, worktree, path.name, "app.py", "confirmed") == 0
@@ -125,14 +125,14 @@ def test_public_effect_insufficient_requires_saved_corrective_awi(
     """不足判定は是正先保存を要し、成功時にinsufficientを記録する。"""
     notes, worktree, path = effect_repository
     original = path.read_bytes()
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "insufficient") != 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "insufficient") != 0
     assert path.read_bytes() == original
     assert (
         _invoke(
             notes,
             worktree,
             path.name,
-            "agent-toolkit/share/rules/common/a.md",
+            "agent-toolkit/skills/a/playbooks/a.md",
             "insufficient",
             "--corrective-awi",
             "missing.md",
@@ -145,7 +145,7 @@ def test_public_effect_insufficient_requires_saved_corrective_awi(
             notes,
             worktree,
             path.name,
-            "agent-toolkit/share/rules/common/a.md",
+            "agent-toolkit/skills/a/playbooks/a.md",
             "insufficient",
             "--corrective-awi",
             "corrective.md",
@@ -158,7 +158,7 @@ def test_public_effect_insufficient_requires_saved_corrective_awi(
 
 
 @pytest.mark.parametrize(
-    "file", ["../rules/a.md", "/etc/passwd", "agent-toolkit/share/rules/common/missing.md", "agent-toolkit//rules/a.md"]
+    "file", ["../rules/a.md", "/etc/passwd", "agent-toolkit/skills/a/playbooks/missing.md", "agent-toolkit//rules/a.md"]
 )
 def test_public_effect_rejects_invalid_file_without_writing(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], file: str
@@ -186,7 +186,7 @@ def test_public_effect_rejects_invalid_values(
     """不正な日付・判定・記録位置を保存前に拒否する。"""
     notes, worktree, path = effect_repository
     original = path.read_bytes()
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed", *extra) != 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "confirmed", *extra) != 0
     assert path.read_bytes() == original
 
 
@@ -194,14 +194,14 @@ def test_public_effect_rejects_invalid_values(
 def test_public_effect_rejects_duplicate_file(effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path]) -> None:
     """部分確認済みのファイルを上書きしない。"""
     notes, worktree, path = effect_repository
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed") == 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "confirmed") == 0
     original = path.read_bytes()
     assert (
         _invoke(
             notes,
             worktree,
             path.name,
-            "agent-toolkit/share/rules/common/a.md",
+            "agent-toolkit/skills/a/playbooks/a.md",
             "insufficient",
             "--corrective-awi",
             "corrective.md",
@@ -222,7 +222,7 @@ def test_public_effect_rejects_unadopted_and_ordinary_edit(
 ) -> None:
     """未採用の効果記録と通常editによる採用済み本文の変更を拒否する。"""
     notes, worktree, path = effect_repository
-    assert _invoke(notes, worktree, "corrective.md", "agent-toolkit/share/rules/common/a.md", "confirmed") != 0
+    assert _invoke(notes, worktree, "corrective.md", "agent-toolkit/skills/a/playbooks/a.md", "confirmed") != 0
     body = tmp_path / "body.md"
     body.write_text("上書き", encoding="utf-8")
     original = path.read_bytes()
@@ -472,7 +472,7 @@ def test_public_effect_whole_item_verdicts_without_file(
     ファイルごとの判定を先に持つ項目でも、その行を保ったまま全体の判定を保存する。
     """
     notes, worktree, path = effect_repository
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed") == 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "confirmed") == 0
     assert _invoke(notes, worktree, path.name, None, "insufficient") != 0  # 是正先の指定が無い効果不足は保存しない
     assert (
         _invoke(
@@ -491,7 +491,7 @@ def test_public_effect_whole_item_verdicts_without_file(
     saved = path.read_text(encoding="utf-8")
     parsed = frontmatter.parse_frontmatter(saved)
     assert parsed is not None and parsed[0]["effect_check"] == "insufficient"
-    assert list(effect_check.checked_files(saved)) == ["agent-toolkit/share/rules/common/a.md"]
+    assert list(effect_check.checked_files(saved)) == ["agent-toolkit/skills/a/playbooks/a.md"]
     overall = json.loads(effect_check.result_values(saved, "効果確認全体")[-1])
     assert overall == {
         "checked_on": "2026-10-31",

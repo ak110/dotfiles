@@ -127,7 +127,7 @@ def test_public_hook_guides_drafting_standards_for_temporary_drafts(content: str
 def test_public_hook_guides_trial_rule_for_default_model_settings_edit(monkeypatch: pytest.MonkeyPatch) -> None:
     """工程別モデルの初期値を編集する操作で、公開hookが実作業での試行を定める候補資料の取得を案内する。"""
     path = _PLUGIN / "agent_toolkit/_atk/config_settings.py"
-    expected = _PLUGIN / "skills/delegation/references/process-model-settings-candidates.md"
+    expected = _PLUGIN / "skills/atk-mode/references/model-settings.md"
     source = _REPOSITORY / ".claude/skills/agent-toolkit-edit/SKILL.md"
     rows = [row for row in read_triggers.parse_tables(source, _PLUGIN, strict=True) if expected in row.documents]
     assert rows

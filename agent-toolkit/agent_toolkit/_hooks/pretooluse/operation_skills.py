@@ -717,7 +717,10 @@ def _bash_body_writing(command: str, cwd: str = "") -> bool:
 
 
 def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:
-    """既存の委譲ツール集合から、起動・追送・観測・巻取りの操作を判定する。"""
+    """既存の委譲ツール集合から、起動・追送・観測・巻取りの操作を判定する。
+
+    委譲の手順書（`atk-mode`の`playbooks/delegation.md`）を配送する契機に使う。
+    """
     return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES | {"spawn_agent"}
 
 
@@ -790,7 +793,6 @@ def _is_verification_operation(tool_name: str, tool_input: dict) -> bool:
 
 
 OPERATION_SKILLS: tuple[OperationSkill, ...] = (
-    OperationSkill("agent-toolkit:delegation", "delegation", "委譲操作", _is_delegation_operation),
     OperationSkill("agent-basics:search", "search", "検索", _is_search_operation),
     OperationSkill("agent-basics:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
     OperationSkill("agent-basics:writing-standards", "writing-standards", "本文の作成・更新", _is_body_writing),

@@ -172,7 +172,7 @@ def test_reading_tables_are_not_split_into_other_files() -> None:
 @pytest.mark.parametrize(
     ("line", "expected"),
     [
-        ("詳細は`agent-toolkit:delegation`に従う。", "agent-toolkitの名前空間"),
+        ("詳細は`agent-toolkit:atk-mode`に従う。", "agent-toolkitの名前空間"),
         ("`${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.subagent.md`を読む。", "agent-toolkitの共有文書"),
         ("`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/exec.subagent.md`を読む。", "agent-toolkitの共有文書"),
         ("`atk wi show`で取得する。", "atkコマンド"),

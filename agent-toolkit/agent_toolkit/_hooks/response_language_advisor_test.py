@@ -33,7 +33,7 @@ def test_codex_completion_rewrites_explanation_and_preserves_material(entrypoint
     assert blocked["decision"] == "block"
     reason = blocked["reason"]
     assert isinstance(reason, str)
-    for expected in ("基準の기준의所有位置", "「使用言語」", "再出力してから停止"):
+    for expected in ("基準の기준의所有位置", "日本語で書き直してから停止", "そのまま再出力して停止"):
         assert expected in reason
     assert "`…`だけ" not in reason
     original_report = payload["last_assistant_message"]
@@ -74,7 +74,7 @@ def test_recovery_preserves_delegated_return_contract(actor, monkeypatch):
         return
     assert decision == "block"
     assert "`…`だけを出力して停止" not in reason
-    assert "再出力してから停止" in reason
+    assert "そのまま再出力して停止" in reason
 
 
 @pytest.mark.parametrize("delegated", ["0", "1"])
@@ -99,7 +99,7 @@ def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, 
     decision, reason = blocked["decision"], blocked["reason"]
     assert decision == "block"
     assert isinstance(reason, str)
-    assert "再出力してから停止" in reason
+    assert "そのまま再出力して停止" in reason
     assert reason.count("判定できない") == 1
     assert "`Now`" not in reason and "`Next`" not in reason
     payload["stop_hook_active"] = True

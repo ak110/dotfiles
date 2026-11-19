@@ -156,7 +156,10 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
                     tag="warn",
                     removable_cause=False,
                     subject=f"{actor}:{identifier}:review",
-                    fix=("`agent-toolkit/share/agent-conduct-details.md`「同種の長時間の完了が続いた場合」に従え。"),
+                    fix=(
+                        "現行の目的、直接影響範囲、直近の結果から、範囲の限定・結果の再利用・重複実行の省略・短い確認手段を比べよ。"
+                        "必要な全体検証、修正後の再検証、CI待機の品質は保って続けよ。"
+                    ),
                 )
             )
     return notices

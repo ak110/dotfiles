@@ -21,15 +21,15 @@ def _status_categories(text: str, status: str) -> set[str]:
 
 
 def _sender_categories(text: str) -> dict[str, set[str]]:
-    definitions = re.findall(r'value: "([^"]+)",\s*categories: (\[[^\]]+\])', text)
+    definitions = re.findall(r'statusCheck\(\s*"([^"]+)",\s*(\[[^\]]+\])', text)
     return {status: set(ast.literal_eval(values)) for status, values in definitions}
 
 
-def _assert_categories_match(sender: str, rules: str, prevention: str, waiting: str) -> None:
+def _assert_categories_match(sender: str, rules: str, prevention: str) -> None:
     checks = _sender_categories(sender)
     assert set(checks) == {"不要", "予定"}
     assert checks["不要"] == _status_categories(rules, "不要") == _bullet_categories(prevention)
-    assert checks["予定"] == _status_categories(rules, "予定") == _bullet_categories(waiting)
+    assert checks["予定"] == _status_categories(rules, "予定")
     advisor = (_ROOT / "agent_toolkit/_hooks/improvement_status_advisor.py").read_text(encoding="utf-8")
     categories = next(
         node.value
@@ -40,14 +40,17 @@ def _assert_categories_match(sender: str, rules: str, prevention: str, waiting: 
     assert checks["不要"] == set(ast.literal_eval(categories))
 
 
+def _section(path: pathlib.Path, heading: str) -> str:
+    """見出しの節の本文を、次の同じ深さの見出しの前まで返す。"""
+    text = path.read_text(encoding="utf-8")
+    assert f"\n## {heading}\n" in text, (path, heading)
+    return text.split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
+
+
 @pytest.fixture(name="definitions", scope="module")
-def _definitions() -> tuple[str, str, str, str]:
+def _definitions() -> tuple[str, str, str]:
     sender = (_ROOT / "hooks/send_to_user.tsx").read_text(encoding="utf-8")
-    rules = read_contract(
-        _ROOT / "share/rules/rules-main.md",
-        _ROOT,
-        ("../main-improvements.md", "改善点の処置・AWI化・報告"),
-    )
+    rules = _section(_ROOT / "skills/atk-mode/playbooks/main-reporting.md", "進捗報告")
     prevention = read_contract(
         _ROOT.parent / "agent-basics/skills/bugfix/SKILL.md",
         _ROOT,
@@ -55,25 +58,18 @@ def _definitions() -> tuple[str, str, str, str]:
     )
     # 他節の箇条書きを区分の定義へ混ぜない。
     prevention = prevention.split("理由を次の区分名で始める。", 1)[1].split("\n## ", 1)[0]
-    waiting = read_contract(
-        _ROOT / "skills/delegation/references/waiting-and-monitoring.md",
-        _ROOT,
-        ("waiting-and-monitoring-independent-work.md", "待機中の先行実施"),
-    )
-    waiting = waiting.split("## 待機中の先行実施", 1)[1]
-    return sender, rules, prevention, waiting
+    return sender, rules, prevention
 
 
-def test_improvement_category_definitions_agree(definitions: tuple[str, str, str, str]) -> None:
-    """5つの定義元から独立に抽出し、片側だけの区分改名を検出する。"""
+def test_improvement_category_definitions_agree(definitions: tuple[str, str, str]) -> None:
+    """3つの定義元と2つの検査から独立に抽出し、片側だけの区分改名を検出する。"""
     _assert_categories_match(*definitions)
 
 
-@pytest.mark.parametrize("index", range(4))
-def test_category_rename_is_detected(definitions: tuple[str, str, str, str], index: int) -> None:
+@pytest.mark.parametrize(("index", "old"), [(0, "非欠陥"), (0, "認可待ち"), (1, "非欠陥"), (1, "認可待ち"), (2, "非欠陥")])
+def test_category_rename_is_detected(definitions: tuple[str, str, str], index: int, old: str) -> None:
     """検査自体が同じ名前の写しに固定されていないことを持ち込みで確かめる。"""
     modified = list(definitions)
-    old = "認可待ち" if index == 3 else "非欠陥"
     assert old in modified[index]
     modified[index] = modified[index].replace(old, "検査用の改名")
     with pytest.raises(AssertionError):

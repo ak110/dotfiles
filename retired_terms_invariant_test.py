@@ -279,8 +279,8 @@ _RETIRED_TERMS = (
         )
         for term, replacement, extra_allowed in (
             ("確認スキル", "`agent-toolkit:atk-mode/playbooks/confirmation.md`", ()),
-            ("委譲スキル", "`agent-toolkit:delegation`", ()),
-            ("工程スキル", "`agent-toolkit:delegation`以外のスキルなど、指す範囲を説明する句", ()),
+            ("委譲スキル", "委譲の手順書（`agent-toolkit:atk-mode/playbooks/delegation.md`）", ()),
+            ("工程スキル", "委譲の手順書以外の手順書など、指す範囲を説明する句", ()),
             ("自律終了スキル", "`atk agents-exit-session`の起動記録", ()),
             ("終了スキル", "`atk agents-exit-session`、または終了工程", ()),
             (

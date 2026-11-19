@@ -1,4 +1,5 @@
-"""探索の起動の本文が含む読取案内（`launch_prompts.EXPLORE_CAPABILITIES`）の行範囲読取がWindowsで成立することを確かめる。
+"""読取案内（探索の起動の本文の`launch_prompts.EXPLORE_CAPABILITIES`と`atk-mode`の`playbooks/host-codex.md`）の
+行範囲読取がWindowsで成立することを確かめる。
 
 案内は、シェルを指定しないコマンドがPowerShellで動く環境で、
 実在を確かめたbashの`sed -n`か、bashが無い場合の`Get-Content`を示す。

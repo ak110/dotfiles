@@ -131,4 +131,4 @@ def test_public_start_explains_disabled_background_tasks(monkeypatch, capsys):
     monkeypatch.setattr(rules_context.wait_schedule, "background_tasks_disabled", lambda: True)
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"})) == 0
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert "run_in_background" in context and "待機区間の構成" in context
+    assert "run_in_background" in context and "`timeout=600000`" in context

@@ -281,7 +281,7 @@ def test_resolves_plugin_resources_outside_plugin_worktree(repo: tuple[pathlib.P
     work_dir, base = repo
     content = _plan(work_dir, base).replace(
         "対象の構造を更新する。",
-        "`agent-toolkit:atk-mode`を起動し、`agent-toolkit:delegation`の実行手段の選択に従う。",
+        "`agent-toolkit:atk-mode`を起動し、`agent-toolkit:atk-mode/playbooks/delegation.md`の実行手段の選択に従う。",
     )
     errors, _warnings = _check(work_dir, content)
     assert not errors, errors

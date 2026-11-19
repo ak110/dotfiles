@@ -293,7 +293,7 @@ def test_public_hook_artifact_standards_uses_code_operation_only(tmp_path, monke
 @pytest.mark.usefixtures("memory")
 def test_integrated_parent_contract_arrives_before_launch(monkeypatch, role, codex):
     root = read_delivery.plugin_resources.plugin_root()
-    row = ReadTrigger(root / "skills/delegation/SKILL.md", 1, "操作", ("tool:Launch",), (), selector="role-contract")
+    row = ReadTrigger(root / "skills/atk-mode/SKILL.md", 1, "操作", ("tool:Launch",), (), selector="role-contract")
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     payload = {"turn_id": "turn"} if codex else {}
     decision = read_delivery.deliver(payload, "Launch", {"subagent_md_path": role}, "test")
