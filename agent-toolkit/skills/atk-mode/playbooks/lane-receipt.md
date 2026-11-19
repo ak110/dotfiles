@@ -111,7 +111,7 @@ WIへ直接書かれた質問（AWIの`## ユーザーコメント`、UWIの`## 
    - `計画ファイル名一覧`: 引き継ぎ記録に累積した全ての計画（計画が無ければ`[]`）。
    - `AWI終了区分`: AWIごとに確定した採否と終了区分（`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」）。
      `混在`の項目は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「上流投入」手順3に従う。
-   - `レーン開始時刻`: 最初のレーン担当の起動直後に記録した値（`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーン資源の作成・再利用・回収」手順6）。
+   - `レーン開始時刻`: 最初のレーン担当の起動直後に記録した値。
    - `書込担当一覧`: 初回から更新してきた最新の値。
    - `完成条件証拠`: `マージあり`だけに、手順3で確かめたファイルのパスを渡す（返却本文を組み直さない）。
    - `プロジェクト固有の公開後の操作の順序`: 指定のあるAWIだけに渡す。

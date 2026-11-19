@@ -14,6 +14,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 2. 実装を認可した資料から、レビュー基準を`計画`、`WI`、`CI記録`（計画の無いCI失敗の対応）から選ぶ（組み合わせてよい）。
    1回の実行レビューは`cwd`から解決する1つのリポジトリだけを対象とし、リポジトリが異なる基準はレビューを分ける。
    対象WIの`担当モデル.実行レビュー担当`の値は`model_type`と入力`担当モデル`へ渡し、WIごとに違えばレビューを分ける。
+   指定値と実行値の比較と記録は`agent-toolkit:delegation/references/process-model-settings.md`「工程別モデル設定」に従う。
 3. 単一計画の初回でない起動は、起動方法ごとの次の資料を読んでから入力を決める。
    - 内部の群は`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`を読む。
    - 複数の計画は`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`を読む。
