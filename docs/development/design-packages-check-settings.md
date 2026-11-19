@@ -12,12 +12,9 @@ SDK移行後は通常解決で脆弱版の固定を避けられるため、直�
 
 `agent-toolkit/`は`pyproject.toml`と`uv.lock`を持たず、uvのプロジェクトでもpyfltrのサブプロジェクトでもない。
 pytest、mypy、pyright、ty、pylintなどのPython系のチェックはリポジトリ直下の設定と仮想環境で`agent-toolkit/`を含めて実行し、設定の値を2か所へ置いて揃える運用は不要である。
-依存の宣言と直下の宣言の対応は[パッケージ構成と起動層の設計記録](design-packages-layout.md)の「agent-toolkitの依存の宣言と開発環境」に従う。
 
 pyfltrがサブプロジェクトとして検出するのは、`Cargo.toml`を持つ`rust/claude-statusline/`だけである。
-分割したチェックはそのサブプロジェクトの設定とcwdで動く。
 リポジトリ直下からの相対パスでスクリプトや設定を参照するチェックと、markdownlint・textlint・lychee・直下で定義した全カスタムコマンドなどリポジトリ全体を1回で調べるチェックは、`<名前>-subproject-aware = false`で分割を無効にする。
-shellcheck、shfmt、colloquial-check、typosはpyfltrが元から分割しない。
 分割しないチェックのキーと設定ファイル（`.lycheeignore`、`.markdownlint-cli2.*`、`.textlintrc*`、`.textlintignore`）はサブプロジェクト側に置かない。
 置いても読まれず、直下と値が一致しなくても気付けない。
 

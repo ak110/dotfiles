@@ -295,7 +295,7 @@ async def test_entries_from_an_old_remote_helper_are_not_excluded(tmp_path: path
 
 def test_remote_helper_is_started_with_watchdog_and_platformdirs() -> None:
     """リモート補助は変更監視に使うwatchdogと、登録簿の状態ディレクトリの解決に使うplatformdirsを伴って起動する。"""
-    argv = _atk_serve_remote.remote_command_argv(sessions.REMOTE_BOOTSTRAP, "serve", [])
+    argv = _atk_serve_remote.remote_command_argv(sessions.REMOTE_BOOTSTRAP, "serve", [], python="3.15.2", offline=True)
 
     with_values = [argv[index + 1] for index, value in enumerate(argv) if value == "--with"]
     assert with_values == ['"watchdog>=6.0.0,!=7.0.0"', '"platformdirs>=4.0"']

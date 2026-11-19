@@ -2,8 +2,6 @@
 
 [設計記録の索引](design.md)から参照する、継続要求の配送の記録である。
 
-## `send_message`
-
 停止後・保持期限後・所有主体消失後の再開では、要求ごとの`ResumePrompt.delivery`へ配送結果を確定し、`PendingResume`が応答まで保持する。
 backendの開始成功は`reply_started`とし、開始不能と開始不確定はbackendが`record_delivery`でそれぞれ`reply_failed`と`reply_ambiguous`を記録する。
 共通応答はこの要求の配送結果を読み、新turnの`SessionState`の終了状態から配送成否を推定しない。
@@ -12,14 +10,11 @@ backendの開始成功は`reply_started`とし、開始不能と開始不確定�
 追送履歴、観測待ち登録と子session追跡は同じ公開の`delivery`を消費し、既存の`steered`も含めた値の集合を保つ。
 
 `send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終了済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。
-`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。
 timeoutは継続要求の配送結果が確定するまでの待機上限であり、`turn_control_lock`の取得を含む操作全体を覆う一方、委譲先の応答生成の完了は待たない。
 `0`以下を受理しないのは、この操作の戻り値が配送結果の確定だけで構成され、待たない場合に返せる情報が無いためである。
 上限到達時は配送の成否が確定せず、`atk agents wait`で状態を確認する。
-`codex_fast_mode`の実効値はCodexの新しいturnを開始するたびに読み、`thread/start`・`thread/resume`・`turn/start`へ`serviceTier`を明示する。
 `true`は`priority`、`false`は`default`とし、Codex側の`config.toml`のfast設定を`false`でも継承しない。
 値を省略すると設定と動作が一致しないためである。
-送信完了時に最新turnの値を`fast_mode`へ保持し、状態ファイル・登録簿・再開状態と詳細表示へ同じ値を渡す。
 実行中のturnは変更せず、次のturnから設定変更を反映する。
 
 steer拒否時は`willRetry: true`の`error`通知だけでは待機を終えず、結果の確定・turn変更・client failure・timeoutを待つ。

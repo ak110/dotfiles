@@ -87,7 +87,6 @@ _INCIDENTS_REVIEW_SCOPE = pathlib.Path("docs/development/incidents-review-scope-
 
 
 _CONCEPTS_CONFIRMATION_DECISIONS = pathlib.Path("docs/development/concepts-confirmation-decisions.md")
-_CONCEPTS_CONFIRMATION_FORMAT = pathlib.Path("docs/development/concepts-confirmation-format.md")
 
 
 _DESIGN_HOSTS_AUTHORIZATION = pathlib.Path("docs/development/design-hosts-authorization.md")
@@ -128,10 +127,8 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     ): 1,
     (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS_VALIDATION): 1,
     (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS_WORKFLOWS): 1,
-    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_VALIDATION): 1,
-    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_WORKFLOWS): 4,
+    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_WORKFLOWS): 1,
     (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS_REVIEW_SCOPE): 1,
-    (f"{_PLUGIN_PREFIX}:shell-exec", _INCIDENTS_WORKFLOWS): 1,
     (f"{_PLUGIN_PREFIX}/scripts/hook.py", _INCIDENTS_RUNTIME): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _INCIDENTS_RUNTIME): 5,
     (f"{_PLUGIN_PREFIX}:exit-session", pathlib.Path("docs/development/audit-records-session-records.md")): 1,
@@ -171,11 +168,8 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
         f"{_PLUGIN_PREFIX}:report-completion",
         pathlib.Path("agent-toolkit/agent_toolkit/_hooks/termination_evidence_completion_test.py"),
     ): 1,
-    # 分割前のStop判定モジュールを当時の所在で記す障害事例
-    (f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py", _INCIDENTS_WORKFLOWS): 1,
     # 廃止したスキルの経緯を記す方針・設計の記録
     (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_CONFIRMATION_DECISIONS): 1,
-    (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_CONFIRMATION_FORMAT): 1,
     (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS_AUTHORIZATION): 2,
 }
 
@@ -333,15 +327,10 @@ def _known_legacy_references() -> dict[pathlib.Path, list[str]]:
             f"{_PLUGIN_PREFIX}/scripts/hook.py",
             *[f"{_PLUGIN_PREFIX}:exit-session"] * 5,
         ],
-        _INCIDENTS_VALIDATION: [
-            f"{_PLUGIN_PREFIX}:agent-standards",
-            f"{_PLUGIN_PREFIX}:process-feedbacks",
-        ],
+        _INCIDENTS_VALIDATION: [f"{_PLUGIN_PREFIX}:agent-standards"],
         _INCIDENTS_WORKFLOWS: [
             f"{_PLUGIN_PREFIX}:feedback-standards",
-            *[f"{_PLUGIN_PREFIX}:process-feedbacks"] * 4,
-            f"{_PLUGIN_PREFIX}:shell-exec",
-            f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py",
+            f"{_PLUGIN_PREFIX}:process-feedbacks",
         ],
         _INCIDENTS_REVIEW_SCOPE: [f"{_PLUGIN_PREFIX}:reviewee-standards"],
     }

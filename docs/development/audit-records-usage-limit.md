@@ -32,36 +32,6 @@ atk run-script session-review-evidence -- --claude-session-id '<対象session ID
 元のtranscriptの絶対パスが分かる場合は、`--claude-session-id`の指定を`--transcript '<transcriptの絶対パス>'`へ置き換えられる。
 引数の定義と記録が見つからない場合の診断は`atk run-script session-review-evidence -- --help`で確認する。
 
-## docs/development/design-hooks-compaction-resume.md：利用上限後のメインの再開予約：2026年10月14日
-
-- 観測日: 2026年10月14日（起草時の観測報告。公式資料は2026年10月16日に再確認）
-- 観測した版数: Claude Code 2.1.299
-- 再検証手段: [mods API](https://code.claude.com/docs/en/plugins/mods/api)と[reference](https://code.claude.com/docs/en/plugins/mods/reference)でusageのrateLimits、clock.afterとprompt.submitを確認し、機能別modのテストで偽の使用率・時計・turnを与える。
-  StopFailureのrate_limit、猶予後のturn完了、予定時刻不明、既再開、委譲先除外と表示回収を分ける。
-  実上限時のpercentUsed、猶予後の打切り時のStopFailure発火は起草時も未観測であり、予約の永続化は検証範囲に含めない
-
-## docs/development/design-agents-runtime-handoff-resume.md：Codexの利用上限記録と再開：2026年10月14日
-
-- 観測日: 2026年10月14日（起草時の観測報告に基づく記録）
-- 観測した版数: Codex CLI 0.162.1、公式ソースのタグrust-v0.162.1
-- 再検証手段: ロールアウト記録のtask_complete.error.codex_error_infoがusage_limit_exceededであるturnと、直前token_count.rate_limitsのused_percent・resets_atを対応付ける。
-  [turn.rs](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/session/turn.rs)の失敗時の終了とStop hookを呼ぶ条件、[goalのextension](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/ext/goal/src/extension.rs)の上限停止を確認する。
-  TUIのthread_goal_actions.rsでは再開確認を調べる。
-  偽のrollout・codex・時計でrun-skillとprocess-loopの再開を検証し、最上位TUIは解除後の実機観測へ分ける。
-  実上限到達からの再開と、即時拒否turnのtoken_countの有無は今回再現していない
-
-## docs/development/design-agents-runtime-handoff-resume.md：最上位のCodex TUIの解除後の再開：2026年10月24日
-
-- 観測日: 2026年10月24日
-- 観測した版数: Codex CLI 0.164.0（共有app-server daemon 0.164.0）、agent-toolkit 2.225.1
-- 観測の結果: 引数なしの`codex`を専用ソケットのtmuxで起動し、1回のturnの後に`codex queue --thread <thread-id> --message <指示>`を実行すると、終了0で指示がturnを始め、TUIの画面に発話と応答が表示された。
-  TUIのagents_serverのMCPプロセスの親はdaemonで、環境に`CODEX_THREAD_ID`は無かった。
-  `/quit`でTUIを終了した5秒後と65秒後に同じMCPプロセスが残り、終了後に積んだ指示はTUIの無いままturnを開始・完了した
-- 再検証手段: 隔離した作業ディレクトリで`tmux -L <専用名> new-session -d -c <作業ディレクトリ> codex`を起動し、`tmux capture-pane`で画面を取得する。
-  turnの後に`ps -o ppid`と`/proc/<pid>/environ`の変数名でMCPプロセスの親と`CODEX_THREAD_ID`の有無を確かめ、TUIの前後で`codex queue`を実行してrolloutの`task_started`・`task_complete`を比べる。
-  購読者の判別手段は`codex app-server generate-json-schema --out <ディレクトリ>`のClientRequestで確認する。
-  実上限からの解除時刻での再開は観測していない
-
 ## agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos.md：登録集合：2026年11月12日
 
 - 観測日: 2026年11月12日

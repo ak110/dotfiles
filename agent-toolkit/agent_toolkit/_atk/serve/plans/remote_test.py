@@ -6,7 +6,6 @@ import asyncio
 import base64
 import json
 import pathlib
-import sys
 import types
 import typing
 
@@ -17,10 +16,9 @@ from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
 from agent_toolkit._atk.serve.plans import remote as plans_remote
 from agent_toolkit._atk.serve.plans import rendering as plans_rendering
-from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
 from agent_toolkit._plan import viewer_files as plan_viewer_files
-from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing import serve_remote_support
 from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload
 
 
@@ -170,14 +168,7 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     後始末の待機がキャンセルを吸収したまま再接続すると、新しいSSHの出力を待ち続けてatk serveの停止が完了しない。
     """
     started: list[tuple[typing.Any, ...]] = []
-    real_exec = asyncio.create_subprocess_exec
-
-    async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        # 標準出力を閉じて接続断を起こし、標準入力の終端を通知してから解放まで保持する子プロセスで代替する。
-        started.append(cmd)
-        script = "import os,sys; os.close(1); sys.stdin.read(); " + late_descendant.held_source(tmp_path / "cleanup.release")
-        return await real_exec(sys.executable, "-c", script, **kwargs)
-
+    fake_exec = serve_remote_support.disconnecting_resident_ssh(tmp_path / "cleanup.release", started)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
     context = _context(tmp_path, remote_hosts=["remote-host"])
     plans.start_remote_watchers(context)
@@ -227,10 +218,11 @@ async def test_rpc_timeout_error_names_operation_and_limit(tmp_path: pathlib.Pat
 
 @pytest.mark.asyncio
 async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを従来の起動形で起動し、失敗を標準エラー付きで示す。
+    """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを要求全体で30秒の上限の内で起動し、失敗を標準エラー付きで示す。
 
-    計画ファイル画面のbootstrap・op・argsを共通の起動へ渡すことを確かめる。
-    共通argvのPython版と依存は、serve/remote_test.pyが独立した期待値で検証する。
+    計画ファイル画面のbootstrap・op・argsと要求全体の上限を共通の起動へ渡すことを確かめる。
+    共通の起動は版の照会と全ての試行で要求の期限を共有し、最初の起動の試行が上限のほぼ全てを受け取る。
+    共通の起動のPythonの版、依存、起動し直しと期限は、serve/remote_test.pyが独立した期待値で検証する。
     """
     sent: list[tuple[list[str], float]] = []
 
@@ -244,17 +236,10 @@ async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeyp
         await plans_remote.default_ssh_runner("remote-host", "read", ["cGF0aA=="])
 
     assert "atk_serve_plans_remote_helper.py" in plans.REMOTE_BOOTSTRAP
-    assert sent == [
-        (
-            [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                "remote-host",
-                *_atk_serve_remote.remote_command_argv(plans.REMOTE_BOOTSTRAP, "read", ["cGF0aA=="]),
-            ],
-            plans_roots.SSH_TIMEOUT_SEC,
-        )
-    ]
+    command, _ = sent[-1]
+    assert command[:4] == ["ssh", "-o", "BatchMode=yes", "remote-host"]
+    assert plans.REMOTE_BOOTSTRAP in command[-3]
+    assert command[-2:] == ["read", "cGF0aA=="]
+    assert max(timeout for _, timeout in sent) == pytest.approx(30.0, abs=0.5)
     assert "終了コード3" in str(error.value)
     assert "helper not found" in str(error.value)

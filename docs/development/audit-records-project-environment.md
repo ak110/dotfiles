@@ -2,46 +2,6 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## docs/development/internals-agents-server-state-backends.md：バックエンド固有の接続とAPI状態：2026年10月18日
-
-会話contextの継承に関する2026年10月16日の調査記録と、2026年10月18日の実stdio MCPでの変更前後の観測を分けて示す。
-元の調査の一次記録と今回の観測JSON・標準エラー・実行スクリプトは、リポジトリ外に保持する。
-
-2026年10月16日の調査記録は、Claude Code 2.1.301のstdio MCP起動処理が自身の環境と`CLAUDE_CODE_SESSION_ID`を渡すことを本体で確認している。
-同記録によると、Claude Agent SDK 0.2.165は`os.environ`から`CLAUDECODE`だけを除き、`options.env`を上書きで合成する。
-クラウド実行環境の委譲先でremote変数の継承と識別子の重複が観測され、最小環境の対照実験でもremote sessionを表す変数群を加えた2回の起動が同じ識別子になった。
-この調査では`CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2`との単独の切り分けを実施していない。
-2026年10月18日の観測は実MCPへ環境を明示して起動しており、ホスト自身によるstdio環境の注入は直接再観測していない。
-
-今回の実MCP観測はClaude Code 2.1.302、Claude Agent SDK 0.2.165で行った。
-`agents_server_mcp.py`をstdioで起動し、初期化とツール一覧取得の後、Claude engineの`start`を2件並行して呼び出した。
-変更前後で専用の状態名前空間を分離し、次の変数を同じ条件で与えた。
-
-- `CLAUDE_CODE_SESSION_ID`: 起動ごとの任意のUUID
-- `CLAUDE_CODE_REMOTE`: `true`
-- `CLAUDE_CODE_REMOTE_SESSION_ID`: `cse_`で始まる検証用の値
-- `CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2`: `true`
-
-変更前は2件の起動応答が同じ識別子を返し、`atk agents wait --root-session-id <応答のroot_session_id>`は終了1件を回収して終了コード0だった。
-変更後は2件の識別子が互いと親の識別子から分かれ、回収前の`show`は両方で`result_available=true`を返した。
-同じCLIで終了2件を回収し、終了コード0を得た。
-両観測ともstdio接続を閉じてMCPの終了を確認した。
-
-再検証では専用の状態ディレクトリを使い、上記の変数を与えた実MCPへ2件の並行`start`を送る。
-起動応答の識別子を互いと親について比較し、終了時の`show`とCLIによる回収件数・終了コードを記録する。
-変更前の版でも同じ条件で実行し、識別子の重複と回収1件を対照にする。
-環境除去の単体検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`を使う。
-全backendの登録前の重複拒否は`_agents_server/manager_test.py`の`test_start_rejects_duplicate_session_id`で再検証する。
-
-## docs/development/internals-session-state-document-receipts.md：自己編集の取得継承：2026年11月2日
-
-- 観測日: 2026年11月2日。
-- 観測時の版: Claude Code 2.1.316の実行ファイル内にあるEdit・Writeの出力スキーマとPostToolUse呼出しを確認した。
-  `originalFile`は編集前本文かnullであり、`staged`・`userModified`も出力に含まれる。
-  MultiEditの実ホスト応答型とCRLF正規化時の継承は未確認。
-- 再検証手段: `develop-dotfiles`「ホスト本体のバイナリの検索」に従い、対象版の`originalFile`出力型・data生成と`hook_event_name:"PostToolUse"`の`tool_response`への引渡しを確認する。
-  同居する`read_delivery_acquisition_test.py`の自己編集成功・未取得編集の試験で、編集前本文・入力・現本文の一致と成功・主体の境界を検証する。
-
 ## .claude/skills/merge-pr/SKILL.md：マージ前の確認事項：2026年10月5日
 
 2026年10月5日、GitHub CLI 2.101.0でPR #138のcheck登録順を確認した。

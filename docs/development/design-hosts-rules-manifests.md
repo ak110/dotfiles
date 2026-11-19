@@ -21,8 +21,6 @@ agents_serverの通常委譲は`_agents_server/launch_prompts.py`から同じ共
 各起動区分の委譲先へ届く規範は`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表が示す。
 Claude Code固有の委譲先規範はCodexへ配送しない。
 この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
-`scripts/sync_codex_agents.py`はCodex基礎指示と共有ルールから生成物を作成し、`scripts/sync_generated_files.py`が正式な一括生成の窓口となる。
-`scripts/sync_codex_agents_test.py`は共有原本と生成物の同期、共有契約の保持およびCodex固有上書きの配置を確かめる。
 生成物は手編集せず、原本と正式生成器を更新して同期する。
 
 共有ルールをCodex固有条件で分岐する案は、Claude Codeへ不要な差分を配布して共通契約を曖昧にするため採用しない。
@@ -35,15 +33,13 @@ Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホス�
 版数は`agent_toolkit_bump.py --plugin <plugin名> minor`などの正式な手順で更新する。
 `.claude-plugin/marketplace.json`の各plugin記述は、同名pluginの基準の版数と一致させる。
 対象にできるpluginは`marketplace.json`の`plugins[]`から導き、pluginを追加しても版数更新の手段を別に用意しない。
-`agent-toolkit/plugin.json`と`agent-toolkit/.codex-plugin/plugin.json`は`sync_generated_files.py`で生成する。
-`agent-toolkit-codex/`はGitで追跡せず、post-applyがCodex plugin導入の直前に`pytools/_internal/codex_plugin_manifests.py`で生成する。
 同ディレクトリは`agent-toolkit/`を原本とする自己完結型の通常ディレクトリであり、Agent Plugins用の直下`plugin.json`と`mcp.json`を除外する。
 `.agents/plugins/marketplace.json`のCodex local sourceだけを`./agent-toolkit-codex`へ向け、Claude CodeとAgent Pluginsのsourceは`agent-toolkit/`のまま維持する。
-手動生成には`scripts/sync_codex_plugin_manifests.py`を実行する。
 生成後は同scriptの`--check`でClaude Code向け原本、marketplace記述、Codex向け派生manifest、`agent-toolkit-codex/`全体の一致を確認する。
 プラグインマニフェストの検証は、Claude Code向けとCodex向けで到達できる保証の水準が異なるため手順を分ける。
 Claude Code向けは`claude plugin validate --strict`を`pyfltr`のカスタムlinter`claude-plugin-validate`から実行し、未知フィールドとメタデータ欠落を失敗として扱う。
-Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を`pytools/_internal/codex_plugin_manifests_test.py`から実行し、指摘の集合が既知の2件と完全に一致することを確かめる。
+Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を試験から実行し、指摘の集合が既知の2件と完全に一致することを確かめる。
+この試験は`pytools/_internal/codex_plugin_manifests_projection_test.py`の`test_codex_plugin_validator_reports_only_known_schema_deviations`である。
 Codexの検証器を無条件の合格条件にしないのは、同梱資料が`hooks`をマニフェストの正規フィールドとして定義しながら、検証の節では未対応フィールドとして拒否すると述べ、同一資料内で矛盾しているためである。
 資料はローカル導入での受理を保証も否定もせず、現行manifestのままの導入状態は`installed: true`かつ`enabled: true`である。
 そこで既知の逸脱の集合を固定し、集合が変化した時点で失敗させて再判断の契機とする。

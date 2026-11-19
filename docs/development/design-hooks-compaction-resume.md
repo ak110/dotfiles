@@ -8,24 +8,18 @@
 既存agents_server MCPが予約を受け、設定PreToolUseとMCPの双方でメイン限定を確認する。
 会話内modの確認応答を受けて受付を返し、同じmodがターン間で圧縮を実行する。
 Codexにはこのmodを配らない。
-`compact_conversation.ts`は受付と完了を分け、turn間の単発タイマーから圧縮を実行する。
-surfaceを持つ会話では公開APIの`session.compact()`、headlessでは公開`command.run`の`compact`を使う。
 turn実行中の予約はturn完了へ持ち越す。
-成功・skip・失敗を分け、skipと失敗は予約を解除し、追加LLM turnを発生させないtoastで通知する。
 現在会話の背景Bashタスクを検出し、使用量が400,000トークンと文脈上限の40%の大きい方以上なら同じ予約へ自動接続する。
 予約の判定はturn実行中も行い、実行前に完了通知が到着しても、受け付けた予約をturn間まで保持する。
 上限の小さいモデルでも400,000トークン未満では自動圧縮しない。
-`atk agents wait`の所有と待機対象は、`wait-compaction-context`が既存の状態と待機登録から確認する。
 起動区分による除外は行わず、CI監視などほかの背景Bashも対象とする。
 見送り条件と予約は`ui.log`のdebug出力と、会話別の`agent-toolkit-function-hooks/compaction-<会話ID>.txt`へ記録し、使用量不明・閾値未満・所有未確認・予約済み・待機終了・委譲先などを区別する。
 背景実行を要求したBashの戻り値に待機IDが無いか不正な場合も、待機を検出できなかった理由として残し、hookが動かなかった場合と区別する。
 前景のBashは待機ではないため記録しない。
 process-loopは`--debug=hooks`で起動し、modの診断はそのdebugログに現れないため、状態ファイルを読み先とする。
-状態ファイルは直近20件の判定と入力（使用トークン数と上限、予約中・turn実行中）を持ち、寿命は同じディレクトリの他のファイルに従う。
 同じ待機の自動予約は消費済み状態で1回に限り、未完了の予約は重ねない。
 新しい背景待機では、直前の圧縮の成功・見送り・失敗によらず使用量と所有条件を再評価する。
 使用量の低下を観測しなくても次の待機へ進めるよう、待機単位の消費と未完了予約だけで重複を抑止する。
-完了通知で待機を除き、turnと単発タイマーで判定する。
 予約の監視は既存mod内で行い、別の常駐プロセスや追加のモデル呼出しによる判定は設けない。
 圧縮の実装と結果はホスト、予約と自動発動条件はmodが持つ。
 状態保存と通知後の復元はdelegationのwaiting-and-monitoring.mdが所有する。
@@ -60,18 +54,12 @@ modからの`/restart`制限を回避する経路は作らない。
 
 ## 利用上限後のメインの再開予約
 
-観測と再検証手段は`docs/development/audit-records-usage-limit.md`の「docs/development/design-hooks-compaction-resume.md：利用上限後のメインの再開予約：2026年10月14日」にある。
-
 メインの利用上限では、StopFailureのコマンドhookが再開要求を保存し、Function hooksの`turn.complete`が既存の再開予約へ接続する。
 Remote Control接続ではホストの自動継続が自動で始まらないため、起動形態に対応した再開の契機を確保する。
-コマンドhookは`rate_limit`時にClaude configの`agent-toolkit-function-hooks/rate-limit-{session_id}.txt`へ`requested`を書く。
 `turn.complete`の時点で`five_hour`か`seven_day`の使用率が100%以上の場合も、要求の保存が無くても同じ予約へ進む。
 `usage_limit_resume.ts`は要求を`consumed`へ変え、解除予定後に同じ会話へ継続指示を送る予約をsessionごとに1件保持する。
-予定時刻が無いか過ぎている場合は300秒後に再確認する。
 解除予定後に別turnが始まっていれば重複投入せず、予約の表示は投入・取消時に除く。
 `isDelegated`が真のsessionと`agentId`を持つturnは対象から外す。
-1行目が`atk-auto`の開始タグであるpromptは、既存のUserPromptSubmitの機械注入判定へ接続する。
-promptは再開情報を読んで最初の未完了工程から続け、完了・続行済み・ユーザー中止では終了することを伝える。
 コマンドhookが要求の保存、modが再開予約、usage-limit手順が再開後の工程を所有する。
 agents_serverは委譲先の解除待ちを所有する。
 解除待ちの委譲先、背景waitと定期再確認のtaskは保持する。
@@ -80,11 +68,14 @@ agents_serverは委譲先の解除待ちを所有する。
 Remote Controlを無効にする案はユーザーの遠隔操作を失わせるため採らない。
 組織設定で省略される`classic.*`への依存を外し、コマンドhookの要求を`turn.complete`へ渡す。
 予約のタイマーはsession内にあり、module再読込で失われる。
-ホスト挙動の典拠と未観測範囲は[audit-records.md](audit-records.md)の利用上限後の再開の項にある。
+ホスト挙動の典拠は[mods API](https://code.claude.com/docs/en/plugins/mods/api)と[reference](https://code.claude.com/docs/en/plugins/mods/reference)で、2026年10月14日にClaude Code 2.1.299で確かめた。
+再検証ではStopFailureの`rate_limit`からメインだけが再開要求を作ることを`agent-toolkit/agent_toolkit/_hooks/stopfailure_notifier_test.py`で確かめる。
+要求の消費と予約は`agent-toolkit/hooks/usage_limit_resume.test.ts`で偽の使用率・時計・turnを与え、猶予後のturn完了、予定時刻不明、既再開、委譲先除外と表示回収を分けて確かめる。
+実上限時の`percentUsed`と、猶予後の打切り時のStopFailure発火は観測しておらず、予約の永続化は検証の範囲に含めない。
+Remote Control接続での猶予通知と解除後のturnの対応付けは[audit-records-usage-limit.md](audit-records-usage-limit.md)「agent-toolkit/skills/atk-mode/references/usage-limit.md：利用上限後の再開：2026年10月14日」にある。
 
-## 効率化の仕組みの棚卸し（2026年11月）
+## ユーザーの要求と見直しの基準
 
-横断的な記録の条件と限界は[設計索引](design.md)の「効率化の仕組みの棚卸し」を参照。
 メインの会話圧縮の予約、待機中の自動圧縮、全委譲先への適用はユーザーの要求で、作業契約の復元配送と状態の統合は別の具体化を含む。
 判定は測定で決めるとし、自動圧縮と全委譲先への適用は保ち、保留・予約を減らす場合は復元の成功と同条件の所要を比べる。
 圧縮の予約が働かない場合は、ホストの標準の圧縮と、作業記録・原本からの復元を使う。
@@ -92,4 +83,3 @@ Remote Controlを無効にする案はユーザーの遠隔操作を失わせる
 旧再開方式には解除から約8分の遅れなどの報告があり、解除を待つ正当な時間とは区別する。
 予約が働かない場合は、正規の解除を待って同じ会話を明示的に継続する。
 予約を整理する場合は、同じ解除条件での所要と再開の成功で比べる。
-どちらも起動・保留・再開の所有と予約状態を整理する作業項目へ引き継いだ。
