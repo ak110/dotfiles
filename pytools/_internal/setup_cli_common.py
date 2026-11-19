@@ -198,7 +198,9 @@ def migrate_npm_launchers(
             )
             continue
         if isinstance(package, str):
-            logger.warning(log_format.format_status(cli_name, _unconfirmed_launcher_message(launcher, package)))
+            logger.warning(
+                log_format.format_status(cli_name, _unconfirmed_launcher_message(launcher, package, canonical_launcher))
+            )
             continue
         packages[package.directory] = package
         if isinstance(package, _UnreadableNpmPackage) or location in package.unconfirmed:
@@ -208,15 +210,15 @@ def migrate_npm_launchers(
             launched.add(package.directory)
         else:
             reason = f"{package.directory}のbinの実体ではない: {_launcher_kind(launcher)}"
-            logger.warning(log_format.format_status(cli_name, _unconfirmed_launcher_message(launcher, reason)))
-    for directory, launchers in without_npm.items():
-        # 列挙の対象でない`.ps1`も、PowerShellが先に使うため示す。
-        held = dict.fromkeys([*_existing_launchers(directory, cli_name), *launchers])
+            logger.warning(
+                log_format.format_status(cli_name, _unconfirmed_launcher_message(launcher, reason, canonical_launcher))
+            )
+    for launchers in without_npm.values():
         logger.warning(
             log_format.format_status(
                 cli_name,
-                f"同じディレクトリにnpmがないため保持: {'、'.join(map(str, held))}。"
-                f"不要と確認できた場合だけ手動で削除し、正規の起動先`{canonical_launcher}`で起動する",
+                f"同じディレクトリにnpmがないため保持: {'、'.join(map(str, launchers))}。"
+                f"{_held_launcher_guidance(canonical_launcher)}",
             )
         )
     for package in packages.values():
@@ -498,12 +500,16 @@ def _relative_reference(launcher: Path, entry: Path) -> str | None:
         return None
 
 
-def _unconfirmed_launcher_message(launcher: Path, reason: str) -> str:
-    """帰属を確認できず保持した対象と、確認が成立しなかった理由を述べる警告文を返す。"""
+def _unconfirmed_launcher_message(launcher: Path, reason: str, canonical_launcher: Path) -> str:
+    """帰属を確認できず保持した対象と、確認が成立しなかった理由と、保持した起動先への対処を述べる警告文を返す。"""
+    return f"npm packageへの帰属を確認できないため保持: {launcher}（{reason}）。{_held_launcher_guidance(canonical_launcher)}"
+
+
+def _held_launcher_guidance(canonical_launcher: Path) -> str:
+    """自動では削除せず保持した起動先が、PATHで正規の起動先より先に見つかる場合の影響と対処を述べる文を返す。"""
     return (
-        f"npm packageへの帰属を確認できないため保持: {launcher}（{reason}）。"
-        "保持したため対応不要。"
-        "手動削除する場合はこのランチャーの参照先とpackage.jsonのbinを確認する"
+        "PATHで先に解決される間は、正規の起動先ではなく保持した起動先（旧npm版など）が起動する。"
+        f"不要と確認できた場合だけ別の場所へ退避し、正規の起動先`{canonical_launcher}`で起動する"
     )
 
 
@@ -533,7 +539,8 @@ def _iter_noncanonical_launchers(
     mise管理版の移行は`setup_codex_cli.py`の`_remove_mise_versions`と`_reshim_mise`が担う。
     """
     seen: set[str] = set()
-    names = (cli_name, f"{cli_name}.cmd", f"{cli_name}.exe") if sys.platform == "win32" else (cli_name,)
+    # PowerShellは`.ps1`を`.cmd`より先に使うため、`.ps1`だけが残った配置も見つける。
+    names = (cli_name, f"{cli_name}.cmd", f"{cli_name}.ps1", f"{cli_name}.exe") if sys.platform == "win32" else (cli_name,)
     excluded = {common.safe_resolve(path) for path in excluded_launchers}
     prefix_real = common.safe_resolve(canonical_prefix)
     shim_directories = common.mise_shim_directories()
