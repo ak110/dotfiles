@@ -466,6 +466,36 @@ async def main():
 asyncio.run(main())
 """
 
+# 取り込んだ会話の最初の保存の途中で保持期限に達し、その保存だけが失敗する世代。
+_ADOPTING_GENERATION = """
+import asyncio
+import pathlib
+import sys
+
+from agent_toolkit._agents_server import service
+from agent_toolkit._agents_server.manager import AgentsServerManager
+
+directory, generation, session_id = sys.argv[1:]
+save = AgentsServerManager.save_control_state
+failed = []
+
+
+async def save_across_retention_deadline(self):
+    session = self.sessions.get(session_id)
+    if session is None or failed:
+        return await save(self)
+    failed.append(session_id)
+    session.retention_deadline = asyncio.get_running_loop().time()
+    self._schedule_session_expiry(session)
+    while session_id in self.sessions:
+        await asyncio.sleep(0.01)
+    raise OSError("試験で注入した保存の失敗")
+
+
+AgentsServerManager.save_control_state = save_across_retention_deadline
+asyncio.run(service.run(pathlib.Path(directory), generation))
+"""
+
 _PARENT, _SESSION = "parent-conversation", "child-session"
 _OWNED = {"parent": _PARENT, "session_id": _SESSION}
 
@@ -629,6 +659,56 @@ async def test_publication_succeeds_after_lost_commit_while_previous_generation_
         owner = session_registry.resolve(_SESSION, state_root=directory.parent.parent)
         assert owner.server_instance == new["server_instance"]
         assert registry.retired("old", old["process"])
+    finally:
+        stop.set()
+        if serving is not None:
+            await asyncio.gather(serving, return_exceptions=True)
+        for process in processes:
+            process.kill()
+            process.wait()
+
+
+@pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")
+@pytest.mark.asyncio
+async def test_generation_whose_adopted_conversation_expired_while_saving_retires_after_next_publication(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """取り込んだ会話の保存が保持期限をまたいで1回失敗しても、その世代は次の世代の公開後に会話の再開情報を移して退役する。
+
+    2026-11-20の独立検証で、3世代の更新のうち第2世代が、会話の本体を期限で解放した後も取り込み待ちを持ち続け、
+    会話も実行資源も持たないまま退出しなかった。
+    """
+    directory = _isolated_directory(tmp_path, monkeypatch)
+    registry = GenerationRegistry(directory)
+    processes: list[subprocess.Popen] = []
+    stop = asyncio.Event()
+    serving = None
+    try:
+        old = await _launch_previous_generation(tmp_path, directory, "COMPLETED", processes)
+        registry.reserve("second", tmp_path / "second", "1.0.1")
+        script = tmp_path / "adopting" / "adopting_generation.py"
+        script.parent.mkdir()
+        script.write_text(_ADOPTING_GENERATION, encoding="utf-8")
+        processes.append(
+            subprocess.Popen(  # pylint: disable=consider-using-with
+                [sys.executable, str(script), str(directory), "second", _SESSION], cwd=tmp_path
+            )
+        )
+        second = await _wait_for_discovery(directory, "second", processes[1])
+        async with asyncio.timeout(30):
+            assert (await service_rpc.request(second, "publish", {}))["generation"] == "second"
+        assert await asyncio.to_thread(processes[0].wait, 30) == 0
+        processes.pop(0)
+        assert registry.retired("old", old["process"])
+        registry.reserve("third", tmp_path / "third", "1.0.2")
+        serving, third = await _start_generation(directory, "third", stop)
+        async with asyncio.timeout(30):
+            assert (await service_rpc.request(third, "publish", {}))["generation"] == "third"
+        assert await asyncio.to_thread(processes[0].wait, 30) == 0
+        processes.pop(0)
+        assert registry.retired("second", second["process"])
+        listed = await service_rpc.request(third, "parent_sessions", {"parent": _PARENT, "include_terminated": True})
+        assert [item["session_id"] for item in listed] == [_SESSION]
     finally:
         stop.set()
         if serving is not None:

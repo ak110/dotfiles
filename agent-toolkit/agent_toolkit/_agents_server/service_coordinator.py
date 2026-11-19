@@ -272,7 +272,7 @@ class ServiceCoordinator:
         return self._current()["epoch"] > self.target["epoch"]
 
     def holds_handover(self) -> bool:
-        """受付先の世代へ引き継ぐ会話、raw資源、受入中の移譲が残るかを返す。
+        """受付先の世代へ引き継ぐ会話、raw資源、受入中の移譲、取り込み待ちが残るかを返す。
 
         退出の判定と、終了時に退役を記録するかの判定（`service.run`）が共有する。
         残したまま終了した世代は、その会話と実行資源を失わせている。
@@ -463,28 +463,42 @@ class ServiceCoordinator:
         return False
 
     async def _retry_adoptions(self) -> None:
-        for identifier, packet in tuple(self._pending_adoptions.items()):
-            if self._locks.setdefault(identifier, asyncio.Lock()).locked():
-                continue
-            found = self._conversation(identifier)
-            if found is None:
-                continue
-            with self.managers._bound(found[1]):
-                await self._finish_adoption(found[1].manager, packet)
+        for identifier in tuple(self._pending_adoptions):
+            if not self._locks.setdefault(identifier, asyncio.Lock()).locked():
+                await self._finish_adoption(identifier)
 
-    async def _finish_adoption(self, manager: Any, packet: dict) -> None:
-        session = service_state.restore(packet["session"])
-        identifier = session.session_id
-        session = manager.sessions[identifier]
-        backend = manager._backend(session.engine)
-        client = self._client(backend, identifier)
-        if packet["resource"] is not None and (client is None or client.transferred):
-            await backend.adopt_session(session, packet["resource"], packet["auxiliary"])
-            if packet["writer_session_id"] is not None:
-                backend._writer_session_ids[identifier] = packet["writer_session_id"]
-        await manager.save_control_state()
-        manager._service_paused.discard(identifier)
-        self._pending_adoptions.pop(identifier, None)
+    async def _finish_adoption(self, identifier: str) -> None:
+        """移譲で受け取ったsessionのraw資源を取り込み、状態を保存してから制御を受け付ける。
+
+        保存の失敗などで残った取り込み待ちは、本体が保持期限や会話の回収で解放された後も残る。
+        取り込み済みのraw資源は本体の解放が回収し、再開情報は会話の文脈に残るため、失うものは無く待ちを終える。
+        未取り込みのraw資源は本体の解放では回収されないため、待ちを残して引き継ぐものに数え続ける。
+        """
+        packet = self._pending_adoptions.get(identifier)
+        if packet is None:
+            return
+        found = self._conversation(identifier)
+        if found is None:
+            if packet["resource"] is None:
+                conversation = self.managers.conversations.get(packet["parent"])
+                if conversation is not None:
+                    conversation.manager._service_paused.discard(identifier)
+                self._pending_adoptions.pop(identifier, None)
+            return
+        manager = found[1].manager
+        with self.managers._bound(found[1]):
+            session = manager.sessions[identifier]
+            backend: Any = manager._backend(session.engine)
+            client = self._client(backend, identifier)
+            if packet["resource"] is not None and (client is None or client.transferred):
+                await backend.adopt_session(session, packet["resource"], packet["auxiliary"])
+                if packet["writer_session_id"] is not None:
+                    backend._writer_session_ids[identifier] = packet["writer_session_id"]
+            # 本体が解放された後の待ちでも、取り込み済みを判別できるようにする。
+            packet["resource"] = None
+            await manager.save_control_state()
+            manager._service_paused.discard(identifier)
+            self._pending_adoptions.pop(identifier, None)
 
     async def accept_context(self, packet: dict) -> None:
         current = self._current()
@@ -577,9 +591,7 @@ class ServiceCoordinator:
         if conversation is None or identifier not in conversation.manager.sessions:
             return {"move_required": True}
         session = conversation.manager.sessions[identifier]
-        if identifier in self._pending_adoptions:
-            with self.managers._bound(conversation):
-                await self._finish_adoption(conversation.manager, self._pending_adoptions[identifier])
+        await self._finish_adoption(identifier)
         next_turn = params.name == "send_message" and (session.terminal or self._ended_turn(session))
         try:
             async with self.gate.admit(new_turn=next_turn, session_id=identifier):
@@ -671,8 +683,8 @@ class ServiceCoordinator:
                 self._locks.setdefault(identifier, asyncio.Lock()) if isinstance(identifier, str) else contextlib.nullcontext()
             )
             async with lock:
-                if isinstance(identifier, str) and identifier in self._pending_adoptions:
-                    await self._finish_adoption(manager, self._pending_adoptions[identifier])
+                if isinstance(identifier, str):
+                    await self._finish_adoption(identifier)
                 next_turn = (
                     params.name == "start"
                     or params.name == "send_message"
@@ -948,5 +960,5 @@ class ServiceCoordinator:
                     self._pending_adoptions[identifier] = packet
                     self._incoming.pop(identifier, None)
                     manager._schedule_session_expiry(session)
-                    await self._finish_adoption(manager, packet)
+                    await self._finish_adoption(identifier)
                     return {"owned": True}
