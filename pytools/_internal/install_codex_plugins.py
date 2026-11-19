@@ -22,6 +22,7 @@ from pytools._internal import (
     common,
     external_web_guidance,
     log_format,
+    plugin_cache_versions,
     post_apply_outcome,
     setup_codex_links,
 )
@@ -32,7 +33,10 @@ _TIMEOUT = 60.0
 # nativeのoperation lock最大375秒、停止猶予最大300秒、強制終了確認10秒、起動30秒と応答の余裕。
 # https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/app-server-daemon
 _DAEMON_RESTART_TIMEOUT = 750.0
-_VERSION_PATTERN = re.compile(r"[A-Za-z0-9._+-]+\Z")
+# `atk-hook`の復旧が中断して残す`.<version>-restore-*`などの`.`で始まる名前は版として扱わない。
+_VERSION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
+# 削除を始めた旧versionの名前の接尾辞。
+_REMOVING_SUFFIX = "~removing"
 # 旧cacheを退避先から戻せなかった場合の案内。退避先は次回の実行が戻す。
 _SAVED_CACHE_RETRY = (
     "次回のupdate-dotfilesが退避先から戻します。解消しない場合は退避先を変更せず、"
@@ -383,7 +387,7 @@ def _codex_home() -> Path:
 
 
 def _valid_version_name(value: str) -> bool:
-    return value not in {"", ".", ".."} and _VERSION_PATTERN.fullmatch(value) is not None
+    return _VERSION_PATTERN.fullmatch(value) is not None
 
 
 def _path_exists(path: Path) -> bool:
@@ -454,6 +458,89 @@ def _saved_cache_root(marketplace_name: str, plugin_name: str) -> Path:
     場所を固定し、中断した実行が残した退避は次回の実行が戻す。
     """
     return _codex_home() / ".dotfiles-plugin-cache-saved" / marketplace_name / plugin_name
+
+
+def _prune_retired_versions(cache_root: Path, keep: set[str]) -> bool:
+    """後継versionの導入から猶予期間を過ぎ、稼働中のCodexが使わない旧versionを削除し、削除の有無を返す。
+
+    稼働中のCodexは起動時に現行だったversionを使い続けるため、最も早く起動したCodexより後に後継が導入されたversionも残す。
+    削除は旧versionを`~removing`の名前へ移してから行う。Windowsでは使用中のファイルを含む版の移動が失敗するため、
+    その版は残し、移した後に削除が途中で止まっても欠けた版を元のパスに残さない。
+    """
+    for leftover in cache_root.glob(f"*{_REMOVING_SUFFIX}"):
+        _remove_detached(leftover)
+    if not cache_root.is_dir():
+        return False
+    versions = [
+        path for path in cache_root.iterdir() if _valid_version_name(path.name) and not _is_link(path) and path.is_dir()
+    ]
+    keep_paths = {(cache_root / name).resolve() for name in keep}
+    manifest = ".codex-plugin/plugin.json"
+    deadline = time.time() - plugin_cache_versions.GRACE_DAYS * 86400
+    expired = plugin_cache_versions.expired(versions, keep_paths, deadline, manifest)
+    if not expired:
+        return False
+    unused = plugin_cache_versions.expired(versions, keep_paths, min(deadline, _earliest_codex_start()), manifest)
+    for version_dir in expired:
+        if version_dir not in unused:
+            logger.info(
+                log_format.format_status(
+                    log_format.home_short(version_dir),
+                    "稼働中のCodexが起動時に使った可能性があるため旧versionを保持。"
+                    "そのCodexの終了後に実行するupdate-dotfilesで削除するため、対応不要です（処理は継続した）。",
+                ),
+                extra=log_format.LOG_ONLY,
+            )
+    removed = False
+    for version_dir in unused:
+        detached = version_dir.with_name(version_dir.name + _REMOVING_SUFFIX)
+        try:
+            version_dir.rename(detached)
+        except OSError as error:
+            logger.info(
+                log_format.format_status(
+                    log_format.home_short(version_dir),
+                    f"名前を変更できないため旧versionを保持: {error}。"
+                    "使用中の場合は使用の終了後に実行するupdate-dotfilesで削除するため、対応不要です（処理は継続した）。",
+                ),
+                extra=log_format.LOG_ONLY,
+            )
+            continue
+        removed = True
+        if _remove_detached(detached):
+            logger.info(log_format.format_status(log_format.home_short(version_dir), "旧versionを削除"))
+    return removed
+
+
+def _earliest_codex_start() -> float:
+    """plugin実体を使い得る稼働中のCodexのうち、最も早い起動時刻を返す。
+
+    起動時刻を取得できないCodexがあれば、全versionを使い得るものとして負の無限大を返す。
+    """
+    earliest = float("inf")
+    for process in codex_processes.codex_processes():
+        if process.role == "update-loop":
+            continue
+        if process.started_at is None:
+            return float("-inf")
+        earliest = min(earliest, process.started_at)
+    return earliest
+
+
+def _remove_detached(path: Path) -> bool:
+    """元のパスから切り離した旧versionを削除し、成否を返す。失敗しても次回の実行が削除するため、警告して続行する。"""
+    try:
+        _remove_tree(path)
+    except OSError as error:
+        logger.warning(
+            log_format.format_status(
+                log_format.home_short(path),
+                f"旧versionの削除に失敗: {error}。利用中の版には影響しません。"
+                "次回のupdate-dotfilesが再び削除します（処理は継続した）。",
+            )
+        )
+        return False
+    return True
 
 
 def _snapshot_plugin_caches(cache_root: Path, saved_root: Path, target_version: str) -> None:
@@ -577,6 +664,8 @@ def _sync_local_plugin(
     if current is not None and current.get("enabled") is False:
         # plugin addは有効化を伴うため、明示的に無効なpluginは版更新も保留する。
         return False, False
+    # 導入中の版と目標の版は、後継の導入時刻によらず残す。
+    pruned = _prune_retired_versions(cache_root, {version} if current is None else {version, current["version"]})
     plugin_id = f"{plugin_name}@{marketplace_name}"
     needs_plugin_add = current is None or current.get("version") != version
     toolkit_plugin = plugin_name == "agent-toolkit"
@@ -615,7 +704,7 @@ def _sync_local_plugin(
     elif toolkit_plugin and _hook_trust_notice_required(_hooks_list(), plugin_id):
         notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
     removed_legacy_links = _remove_legacy_links(root) if toolkit_plugin else False
-    return needs_plugin_add or wrapper_changed or removed_legacy_links, False
+    return needs_plugin_add or wrapper_changed or removed_legacy_links or pruned, False
 
 
 def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:

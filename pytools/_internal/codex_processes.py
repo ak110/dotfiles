@@ -40,6 +40,8 @@ class CodexProcess:
     role: CodexRole
     executable: str | None = None
     identified: bool = True
+    # 起動時刻（epoch秒）。取得できない場合は`None`。
+    started_at: float | None = None
 
 
 def codex_processes() -> tuple[CodexProcess, ...]:
@@ -59,7 +61,7 @@ def codex_processes() -> tuple[CodexProcess, ...]:
     windows = os.name == "nt"
     owner = psutil.Process().username() if windows else os.getuid()
     owner_attribute = "username" if windows else "uids"
-    candidates: list[tuple[int, typing.Any, str, CodexRole, str | None, bool]] = []
+    candidates: list[tuple[int, typing.Any, str, CodexRole, str | None, bool, float | None]] = []
     attributes = ["name", "exe", "cmdline", owner_attribute]
     # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
     # 列挙は現在のPIDの取得だけに使い、分類と実行パスは新しく構築したProcessから読む。
@@ -86,13 +88,14 @@ def codex_processes() -> tuple[CodexProcess, ...]:
             continue
         # Windowsのpsutilは状態と親PIDを1件ごとに全プロセスの一覧から引くため、Codexの候補に限って取得する。
         try:
-            info.update(process.as_dict(["status", "ppid"], ad_value=_ACCESS_DENIED))
+            info.update(process.as_dict(["status", "ppid", "create_time"], ad_value=_ACCESS_DENIED))
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         if info.get("status") in _TERMINATED_STATUSES:
             continue
+        started = created if isinstance(created := info.get("create_time"), float) else None
         if unidentified:
-            candidates.append((process.pid, info.get("ppid"), f"pid {process.pid}", "session", None, False))
+            candidates.append((process.pid, info.get("ppid"), f"pid {process.pid}", "session", None, False, started))
         else:
             # node系起動ではentry pointの後ろからCodexの引数が始まる。
             arguments = cmdline_values[2:] if _is_codex_argument_value(entry_point) else cmdline_values[1:]
@@ -100,11 +103,13 @@ def codex_processes() -> tuple[CodexProcess, ...]:
             label = _process_label(name, exe, cmdline_values, process.pid)
             if role == "managed-daemon" and label.endswith(" app-server"):
                 label = f"{label} {_MANAGED_DAEMON_FLAG}"
-            candidates.append((process.pid, info.get("ppid"), label, role, exe or None, True))
-    daemon_pids = {pid for pid, _, _, role, _, _ in candidates if role == "managed-daemon"}
+            candidates.append((process.pid, info.get("ppid"), label, role, exe or None, True, started))
+    daemon_pids = {pid for pid, _, _, role, _, _, _ in candidates if role == "managed-daemon"}
     return tuple(
-        CodexProcess(pid, label, "managed-daemon" if role == "session" and ppid in daemon_pids else role, exe, identified)
-        for pid, ppid, label, role, exe, identified in candidates
+        CodexProcess(
+            pid, label, "managed-daemon" if role == "session" and ppid in daemon_pids else role, exe, identified, started
+        )
+        for pid, ppid, label, role, exe, identified, started in candidates
     )
 
 
