@@ -651,6 +651,32 @@ def test_only_expired_completed_jobs_are_collected(
     assert old.exists() is not finished
 
 
+def test_unreadable_jobs_are_skipped_during_collection(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """結果を読めないjobは回収を見送り、ほかの期限切れのjobを回収して更新へ進む。
+
+    旧版が昇格したプロセスで作成したjobは、Windowsで非昇格のプロセスが読めない。読取の失敗はOSErrorとして同じ扱いになる。
+    """
+    monkeypatch.setattr(update_dotfiles_job, "state_root", lambda: tmp_path)
+    unreadable, expired = (tmp_path / str(uuid.uuid4()) for _ in range(2))
+    (unreadable / "result.json").mkdir(parents=True)
+    expired.mkdir()
+    (expired / "result.json").write_text(
+        json.dumps({"exit_code": 0, "finished_at": "2000-01-01T00:00:00+00:00"}), encoding="utf-8"
+    )
+
+    started: list[object] = []
+
+    def unavailable(*args: object, **_kwargs: object) -> None:
+        started.append(args)
+        raise OSError("test: worker unavailable")
+
+    monkeypatch.setattr(update_dotfiles_job.subprocess, "Popen", unavailable)
+    assert update_dotfiles_job.main([]) == 1
+    assert started, "回収で止まらず更新workerの起動まで進む"
+    assert unreadable.exists()
+    assert not expired.exists()
+
+
 @pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])
 def test_state_root_stays_in_isolated_platform_directory(
     tmp_path: pathlib.Path,

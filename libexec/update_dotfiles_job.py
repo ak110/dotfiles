@@ -90,7 +90,8 @@ def _cleanup() -> None:
             owned = _job_path(path.name)
             result = json.loads((owned / "result.json").read_text(encoding="utf-8"))
             finished = datetime.datetime.fromisoformat(result["finished_at"]).timestamp()
-        except ValueError, KeyError, TypeError, FileNotFoundError:
+        # 旧版が昇格したプロセスで作成したjobは、非昇格のプロセスが読めないため回収を見送る。
+        except ValueError, KeyError, TypeError, OSError:
             continue
         if time.time() - finished > _RETENTION:
             shutil.rmtree(owned)
@@ -375,7 +376,10 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("自己jobの取得にはCODEX_THREAD_IDが必要です。job IDを指定してください")
                 matches = []
                 for path in state_root().glob("*/input.json"):
-                    metadata = json.loads(path.read_text(encoding="utf-8"))
+                    try:
+                        metadata = json.loads(path.read_text(encoding="utf-8"))
+                    except PermissionError:
+                        continue
                     if metadata.get("thread_id") == thread:
                         matches.append((metadata["started_at"], _job_path(path.parent.name)))
                 if not matches:

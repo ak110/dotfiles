@@ -49,6 +49,7 @@ from pytools._internal import (
     prune_installation,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
+    restore_agent_toolkit_acl,
     restore_codex_logs,
     setup_agy_cli,
     setup_atk_serve,
@@ -401,6 +402,7 @@ _CODEX_SNAPSHOT = "Codex plugin snapshot の生成"
 _LEGACY_CODEX_MCP = "旧Codex User scope MCP登録の移行"
 _ATK_SERVE = "atk serve 自動起動セットアップ (Linux)"
 _AGENTS_WARMUP = "agents_serverのuv環境ウォームアップ"
+_ATK_ACL = "agent-toolkit 状態ディレクトリのACL修復 (Windows)"
 _FOREIGN_TOOLS = "mise 管理ツールと重複する導入物の削除"
 
 # 先行工程は、同じ資源（設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、
@@ -412,6 +414,7 @@ DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec(_BIN_PATH, setup_bin_path.run, platforms=_WINDOWS),
     _StepSpec("MSYS 環境変数 (Windows)", setup_msys_env.run, platforms=_WINDOWS),
     _StepSpec("user.env 環境変数 (Windows)", setup_user_env.run, platforms=_WINDOWS),
+    _StepSpec(_ATK_ACL, restore_agent_toolkit_acl.run, platforms=_WINDOWS),
     _StepSpec("VSCode 設定", update_vscode_settings.run),
     _StepSpec("SSH config", update_ssh_config.run),
     _StepSpec(_CLEANUP, _cleanup_removed_paths),
@@ -452,7 +455,7 @@ DEFAULT_STEPS: list[_StepSpec] = [
         after=(_CODEX_CLAUDE_MCP, _CODEX_SNAPSHOT, _CODEX_LINKS, _CLEANUP),
         full_only=True,
     ),
-    _StepSpec(_AGENTS_WARMUP, warmup_agents_server.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN), full_only=True),
+    _StepSpec(_AGENTS_WARMUP, warmup_agents_server.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN, _ATK_ACL), full_only=True),
     # 両pluginの導入後の参照先にあるMCP定義を読む。uvのキャッシュだけへ作用する。
     _StepSpec("pyfltr MCPのuv環境ウォームアップ", warmup_pyfltr_mcp.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN), full_only=True),
     _StepSpec(_LEGACY_CODEX_MCP, remove_legacy_codex_mcp_from_claude.run, after=(_CLAUDE_CLI, _CODEX_PLUGIN), full_only=True),
