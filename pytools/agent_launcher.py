@@ -240,11 +240,15 @@ def main_opus(
 
 # poteto-modeではagent-basics・agent-toolkitを無効にし、pstackを有効にする。
 # `--settings`は起動単位の設定として、ユーザー設定の`enabledPlugins`より優先して読まれる。
+# claude.aiのアカウントから同期された写し（`@synced`）は、同名の`@ak110-dotfiles`を無効にすると
+# 代わりに読み込まれるため、併せて無効にする。
 _POTETO_MODE_SETTINGS = json.dumps(
     {
         "enabledPlugins": {
             "agent-basics@ak110-dotfiles": False,
             "agent-toolkit@ak110-dotfiles": False,
+            "agent-basics@synced": False,
+            "agent-toolkit@synced": False,
             "pstack@pstack-claude": True,
         }
     },
