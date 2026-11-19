@@ -80,8 +80,8 @@ def _run_install_sh(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 @pytest.mark.skipif(shutil.which("chezmoi") is None, reason="chezmoi未インストール")
 @pytest.mark.timeout(300)
 @pytest.mark.usefixtures("share_package_caches")
-def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
-    """install.sh が chezmoi でルールを ~/.claude/rules/ に配置する。"""
+def test_install_sh_deploys_distribution(tmp_path: pathlib.Path):
+    """install.sh が chezmoi で配布物を配置し、個人用の規範を ~/.claude/rules/ に置く。"""
     fake_home = tmp_path / "home"
     fake_home.mkdir()
 
@@ -154,14 +154,13 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
         f"\n標準出力末尾: {completed.stdout[-2500:]}\n標準エラー末尾: {completed.stderr[-2500:]}"
     )
 
-    # 5. ルールファイルがデプロイされていること。
-    # rules側の配布対象は生成した一覧で決まり、POSIX版とWindows版の一覧が完全に一致することを確かめる。
-    # その他の規約はagent-toolkitプラグインのスキルが担う。
-    # 代表として01-agent.mdの存在のみを検証する（ファイル一覧の一致は install_script_ssot_invariant_test.py が担う）。
-    rules_dir = fake_home / ".claude" / "rules" / "agent-toolkit"
-    assert (rules_dir / "01-agent.md").exists(), (
-        f"01-agent.md が chezmoi でデプロイされていない（install.shの出力: {stdout_log} / {stderr_log}）"
+    # 5. 個人用の規範がchezmoiで配置され、agent-toolkitの常時規範は配置されないこと。
+    # agent-toolkitの規範は入口のスキル`atk-mode`と手順書が持つ。
+    rules_dir = fake_home / ".claude" / "rules"
+    assert (rules_dir / "myprojects-common.md").exists(), (
+        f"myprojects-common.md が chezmoi でデプロイされていない（install.shの出力: {stdout_log} / {stderr_log}）"
     )
+    assert not (rules_dir / "agent-toolkit").exists(), "廃止した常時規範の配布先が作られた"
 
     # tmuxプラグイン3件（tpm・catppuccin/tmux・tmux-cpu）が正しくcloneされていることを検証する。
     plugins_dir = fake_home / ".tmux" / "plugins"

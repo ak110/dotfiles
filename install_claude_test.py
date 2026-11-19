@@ -10,7 +10,7 @@ import subprocess
 import pytest
 
 from _test_helpers import INSTALL_PS1, INSTALL_SH, installer_runners, make_command_stubs, read_log_lines, run_installer
-from _test_helpers import rules_url_fixture as _rules_url_fixture  # noqa: F401  # pytestがfixtureとして収集する。
+from _test_helpers import raw_base_url_fixture as _raw_base_url_fixture  # noqa: F401  # pytestがfixtureとして収集する。
 
 
 @pytest.mark.parametrize("kind", installer_runners())
@@ -44,12 +44,12 @@ def test_basics_only_preserves_rules_and_home_operations(kind: str, tmp_path: pa
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_bootstrap_installs_basics_before_toolkit(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_bootstrap_installs_basics_before_toolkit(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """公開bootstrapはClaude・Codexの両ホストで品質プラグインを先に導入する。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)
-    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log)
     lines = read_log_lines(stub_log)
     assert lines.index("codex plugin marketplace upgrade ak110-dotfiles --json") < lines.index(
         "codex plugin add agent-basics@ak110-dotfiles --json"
@@ -126,13 +126,13 @@ foreach ($functionName in $functionNames) {{
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """Claude CodeとCodexが実際に参照する両方のスクリプトを事前取得する。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log)
 
     warmups = [
         line

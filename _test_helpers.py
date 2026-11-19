@@ -23,7 +23,6 @@ import pytest
 import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
-RULES_SRC = REPO_ROOT / "agent-toolkit" / "share" / "rules" / "common"
 INSTALL_SH = REPO_ROOT / "install-claude.sh"
 INSTALL_PS1 = REPO_ROOT / "install-claude.ps1"
 
@@ -119,7 +118,7 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         del args, kwargs
 
 
-def serve_rules() -> typing.Iterator[str]:
+def serve_repository() -> typing.Iterator[str]:
     handler = functools.partial(_QuietHandler, directory=str(REPO_ROOT))
 
     class _Server(socketserver.TCPServer):
@@ -130,7 +129,7 @@ def serve_rules() -> typing.Iterator[str]:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            yield f"http://127.0.0.1:{port}/agent-toolkit/share/rules/common"
+            yield f"http://127.0.0.1:{port}"
         finally:
             server.shutdown()
             thread.join()
@@ -193,7 +192,7 @@ def make_command_stubs(
 def run_installer(
     kind: str,
     home: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
     *,
     stub_bin: pathlib.Path | None,
     stub_log: pathlib.Path,
@@ -289,7 +288,7 @@ def run_installer(
         "HOME": str(home),
         "TMPDIR": str(home.parent),
         "PATH": os.pathsep.join(path_parts),
-        "DOTFILES_RULES_URL": rules_url,
+        "DOTFILES_RAW_BASE_URL": raw_base_url,
         "CLI_STUB_LOG": str(stub_log),
         "STUB_FAIL_PATTERN": fail_pattern,
         "CODEX_BASICS_FAULT": "",
@@ -464,10 +463,10 @@ _OWNS = "needs.common-ci-owner.outputs.owns == 'true'"
 _JUNIT_UPLOAD = "${{ !cancelled() && " + _OWNS + " && steps.pytest.outputs.junit != '' }}"
 
 
-@pytest.fixture(name="rules_url", scope="module")
-def rules_url_fixture() -> typing.Iterator[str]:
-    """テスト用のルール配布先URLを返す。"""
-    yield from serve_rules()
+@pytest.fixture(name="raw_base_url", scope="module")
+def raw_base_url_fixture() -> typing.Iterator[str]:
+    """リポジトリのファイルを配るテスト用の取得元URLを返す。"""
+    yield from serve_repository()
 
 
 def _statusline_job(workflow: dict[str, object]) -> dict[str, object]:
