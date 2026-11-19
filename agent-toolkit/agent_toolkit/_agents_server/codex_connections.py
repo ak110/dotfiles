@@ -23,7 +23,7 @@ from agent_toolkit._agents_server.codex_instructions import (
 )
 from agent_toolkit._agents_server.codex_protocol import DEFAULT_WAIT_TIMEOUT, AppServerError, JsonRpcResponseError
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._agents_server.launch_prompts import LIGHTWEIGHT_LAUNCH_KINDS, SUBAGENT_BASE_INSTRUCTIONS
+from agent_toolkit._agents_server.launch_prompts import LIGHTWEIGHT_LAUNCH_KINDS, base_instructions
 from agent_toolkit._agents_server.state import SessionState, begin_reply
 from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk.usage_limit_policy import should_wait
@@ -213,7 +213,7 @@ class CodexConnectionsMixin:
 
     async def _request_thread_resume(self: CodexManager, client: Any, params: dict[str, Any]) -> dict[str, Any]:
         """unsubscribe後の閉鎖と再開が競合した場合だけ、閉鎖通知を待って再送する。"""
-        params = {**params, "baseInstructions": SUBAGENT_BASE_INSTRUCTIONS}
+        params = {**params, "baseInstructions": await run_file_operation(base_instructions)}
         thread_id = params["threadId"]
         closed = asyncio.Event()
         self._resume_close_events[thread_id] = closed

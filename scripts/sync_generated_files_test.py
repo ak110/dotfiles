@@ -166,7 +166,7 @@ def test_quality_source_updates_normal_and_lightweight_delivery(tmp_path: Path) 
         source.write_text("# 品質\n\n" + body, encoding="utf-8")
     source = tmp_path / subject.QUALITY_SOURCE.format(key="facts")
     normal = tmp_path / "agent-toolkit/share/rules/common/01-agent.md"
-    lightweight = tmp_path / "agent-toolkit/share/agents-server-base.md"
+    lightweight = tmp_path / "agent-toolkit/skills/atk-mode/playbooks/subagent.md"
     for path in (normal, lightweight):
         path.parent.mkdir(parents=True, exist_ok=True)
         keys = [key for relative, key, _, _ in subject.QUALITY_TARGETS if tmp_path / relative == path]
@@ -267,10 +267,10 @@ def test_return_contract_sync_tracks_output_only(tmp_path, monkeypatch, role, re
     target = plugin / relative
     source.parent.mkdir(parents=True)
     target.parent.mkdir(parents=True, exist_ok=True)
-    (source.parent / "rules-subagent.md").write_text("# 共通契約\n", encoding="utf-8")
+    (source.parent / "common-contract.md").write_text("# 共通契約\n", encoding="utf-8")
     output = (
         "```text\n固有欄: 旧値\n## 逐語の見出し\n```\n\n"
-        "### 解釈\n\n`rules-subagent.md`と[共通契約](rules-subagent.md#共通契約)を参照する。\n"
+        "### 解釈\n\n`common-contract.md`と[共通契約](common-contract.md#共通契約)を参照する。\n"
     )
     source.write_text(
         "# 役割\n\n## 内部手順\n\n非公開の手順。\n\n## 出力\n\n" + output + "\n## 内部の後処理\n\n内部記録。\n",
@@ -288,7 +288,7 @@ def test_return_contract_sync_tracks_output_only(tmp_path, monkeypatch, role, re
     assert "内部記録" not in first.decode()
     assert "## 逐語の見出し" in first.decode()
     assert "#" * (level + 1) + " 解釈" in first.decode()
-    reference = subject.relocate_path("rules-subagent.md#共通契約", source, target)
+    reference = subject.relocate_path("common-contract.md#共通契約", source, target)
     assert f"[共通契約]({reference})" in first.decode()
     subject.sync_return_contracts(tmp_path)
     assert target.read_bytes() == first
@@ -332,7 +332,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
         files.add(source.relative_to(subject.REPO_ROOT).as_posix())
         files.add("agent-toolkit/" + relative)
     files |= {
-        "agent-toolkit/share/rules/rules-subagent.md",
+        "agent-toolkit/skills/atk-mode/playbooks/subagent.md",
         "agent-toolkit/skills/atk-mode/references/review-record.md",
     }
     for relative in files:
@@ -398,4 +398,4 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     subject.sync_return_contracts(tmp_path)
     assert target.read_bytes() == after_wording_change
     refined = (tmp_path / "agent-toolkit/skills/atk-mode/playbooks/refine-prompt.md").read_text(encoding="utf-8")
-    assert "`agent-toolkit:/share/rules/rules-subagent.md`" in refined
+    assert re.search(r"`agent-toolkit:[^`]*subagent\.md`", refined)

@@ -178,8 +178,7 @@ async def test_claude_options_use_owned_base_instructions(tmp_path: pathlib.Path
 
     options = claude._build_options(str(tmp_path), "model", "high", root_session_id="owner-session")
     assert options.system_prompt == (
-        f"{launch_prompts.SUBAGENT_BASE_INSTRUCTIONS}\n{launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n"
-        f"{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.launch_prompt('delegate')}\n{launch_prompts.auto_resume_notice()}\n"
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
     assert options.setting_sources == ["user", "project"]
@@ -329,7 +328,7 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(
     assert options.skills == []
     assert options.env == _lightweight_environment("explore")
     assert options.system_prompt == (
-        f"{launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.launch_prompt('explore')}\n{launch_prompts.auto_resume_notice()}\n"
         f"{launch_prompts.python_runtime_instructions()}\n"
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
@@ -347,7 +346,7 @@ def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: 
     assert options.setting_sources == ["user"]
     assert options.skills == []
     assert options.system_prompt == (
-        f"{launch_prompts.WRITE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.launch_prompt('write')}\n{launch_prompts.auto_resume_notice()}\n"
         f"{launch_prompts.python_runtime_instructions()}\n"
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
@@ -366,7 +365,7 @@ def test_claude_shell_options_share_lightweight_launch_with_command_tools(
     assert options.skills == []
     assert options.env == _lightweight_environment("shell")
     assert options.system_prompt == (
-        f"{launch_prompts.SHELL_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.launch_prompt('shell')}\n{launch_prompts.auto_resume_notice()}\n"
         f"{launch_prompts.python_runtime_instructions()}\n"
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )

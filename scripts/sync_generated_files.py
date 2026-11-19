@@ -23,7 +23,7 @@ QUALITY_SOURCE = "agent-basics/skills/writing-standards/references/quality-princ
 QUALITY_TARGETS = (
     ("agent-toolkit/share/rules/common/01-agent.md", "roles", "役割分担", 2),
     ("agent-toolkit/share/rules/common/01-agent.md", "constraints", "規定の区分と標示", 3),
-    ("agent-toolkit/share/agents-server-base.md", "result", "結果の返却", 2),
+    ("agent-toolkit/skills/atk-mode/playbooks/subagent.md", "result", "結果の返却", 2),
 )
 GENERATORS = (
     "scripts/sync_codex_plugin_manifests.py",
