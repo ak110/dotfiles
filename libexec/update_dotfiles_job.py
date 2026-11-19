@@ -75,6 +75,22 @@ def _write_json(path: pathlib.Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _read_published_json(path: pathlib.Path) -> dict[str, Any]:
+    """`_write_json`が公開したJSONを読む。
+
+    Windowsでは置換で公開した直後の名前を、置換したプロセスが閉じるまで開けない（PermissionError）。
+    この共有違反は置換の完了で解けるため、短い上限の間だけ読み直す。
+    """
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except PermissionError:
+            if sys.platform != "win32" or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
 def _now() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
 
@@ -342,7 +358,7 @@ def _retrieve(job: pathlib.Path, *, wait: bool, worker: subprocess.Popen[Any] | 
                 stream.write(decoders[name].decode(data, final=finished))
                 stream.flush()
             if finished:
-                result = json.loads(result_path.read_text(encoding="utf-8"))
+                result = _read_published_json(result_path)
                 print(f"job {job.name}: 終了 exit={result['exit_code']}", flush=True)
                 return result["exit_code"]
             if not wait:
