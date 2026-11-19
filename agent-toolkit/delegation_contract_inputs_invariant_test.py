@@ -1,8 +1,10 @@
 """委譲契約の主題別不変条件を検証する。"""
 
 import pathlib
+import re
 
 import pytest
+from agent_toolkit._common import startup_documents, task_documents
 from agent_toolkit._testing.delegation_contract_support import (
     _REQUIRED_INPUT_PREFIX,
     _contract_errors,
@@ -422,3 +424,83 @@ def test_delegated_launch_parent_must_be_in_read_table(tmp_path: pathlib.Path) -
         original + "\n## 読込表\n\n| 起動前 | `${CLAUDE_PLUGIN_ROOT}/share/task.parent.md` |\n" + instruction, encoding="utf-8"
     )
     assert error not in _contract_errors(tmp_path)
+
+
+_STARTUP_INPUT_PHRASE = re.compile(r"(?:起動時|初回の起動時|初回)に(?:渡|受け取[るりっ])|起動時の値|起動の入力で渡")
+"""役割が起動の入力として受け取る値を述べる言い回し。"""
+_ROLE_REFERENCE = re.compile(r"roles/([a-z0-9-]+)\.subagent\.md")
+_BACKTICKED = re.compile(r"`([^`]+)`")
+_SERVER_INPUTS = frozenset({"引き継ぎ記録先"})
+"""役割文書の入力宣言によらず、`agents_server`が通常の委譲へ加える入力。"""
+
+
+def _input_like(name: str) -> bool:
+    """バッククォートの中身が入力名か（パス、参照、コマンド、ASCIIだけの識別子を除く）を返す。"""
+    return not re.search(r"[/:.<>=\s]", name) and any(ord(character) > 0x7F for character in name)
+
+
+def startup_input_errors(role: str, documents: dict[str, str], declarations: dict[str, frozenset[str]]) -> list[str]:
+    """役割と起動直後に読む資料が「起動時に受け取る」と述べる値が、入力宣言にあるかを確かめる。
+
+    行が別の役割文書を名指す場合は、その役割の宣言で確かめる。名前をバッククォートで書かない行も報告する。
+    """
+    errors = []
+    for name, text in documents.items():
+        for number, line in enumerate(text.splitlines(), 1):
+            if not _STARTUP_INPUT_PHRASE.search(line):
+                continue
+            inputs = [value for value in _BACKTICKED.findall(line) if _input_like(value)]
+            if not inputs:
+                errors.append(f"{role}: {name}:{number}: 起動時に受け取る値を入力名（バッククォート）で書いていない")
+                continue
+            owners = _ROLE_REFERENCE.findall(line) or [role]
+            accepted = frozenset().union(*(declarations.get(owner, frozenset()) for owner in owners)) | _SERVER_INPUTS
+            errors.extend(
+                f"{role}: {name}:{number}: `{value}`は{'・'.join(owners)}の入力宣言に無い（入力名でない値は別の文に書く）"
+                for value in inputs
+                if value not in accepted
+            )
+    return errors
+
+
+def test_startup_inputs_named_by_documents_are_declared() -> None:
+    """役割文書と起動直後に読む資料（`startup_documents`の走査）が起動時に受け取ると述べる値は、入力宣言にある。
+
+    手順書が初回の起動で渡すと定めた値を入力宣言が持たないと、担当は起動直後に止まり、委譲元の追送を待つ。
+    """
+    root = pathlib.Path(__file__).resolve().parent
+    reading = list(startup_documents.role_startup_reading(root))
+    declarations: dict[str, frozenset[str]] = {}
+    for document, _references in reading:
+        declaration = task_documents.read_declaration(document)
+        assert isinstance(declaration, task_documents.TaskDocumentDeclaration), declaration
+        declarations[document.name.removesuffix(task_documents.TASK_DOCUMENT_SUFFIX)] = declaration.accepted
+    errors = []
+    for document, references in reading:
+        role = document.name.removesuffix(task_documents.TASK_DOCUMENT_SUFFIX)
+        texts = {document.name: document.read_text(encoding="utf-8")}
+        for reference in references:
+            path = startup_documents.resolve(reference, root)
+            texts[path.name] = path.read_text(encoding="utf-8")
+        errors.extend(startup_input_errors(role, texts, declarations))
+    assert not errors, "\n".join(errors)
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("メインが準備済みの資源記録と統合先のworktreeを初回の起動時に渡す。", "入力名（バッククォート）で書いていない"),
+        ("メインが`統合先worktree`を初回の起動時に渡す。", "`統合先worktree`はexecの入力宣言に無い"),
+        ("メインが`担当種別`を初回の起動時に渡す。", None),
+        ("`レーン開始時刻`は`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`の起動時に受け取った値を使う。", None),
+        ("`選定結果`は条件が成立した時に読む。", None),
+    ],
+)
+def test_startup_input_check_reports_undeclared_and_unnamed_values(line: str, expected: str | None) -> None:
+    """起動時に受け取ると述べる行のうち、名前の無い行と宣言に無い名前だけを報告する（2026-11-15の停止の再現を含む）。"""
+    declarations = {"exec": frozenset({"担当種別"}), "lane-integration": frozenset({"レーン開始時刻"})}
+    errors = startup_input_errors("exec", {"probe.md": line}, declarations)
+    if expected is None:
+        assert not errors
+    else:
+        assert len(errors) == 1 and expected in errors[0]

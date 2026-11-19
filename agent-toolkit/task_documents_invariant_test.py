@@ -12,7 +12,7 @@ from agent_toolkit._common import task_documents
 from agent_toolkit._testing.task_document_contract import validate_frontmatter
 
 _PLUGIN_ROOT = Path(__file__).resolve().parent
-_SHARE_DIR = _PLUGIN_ROOT / "share"
+_ROLES_DIR = _PLUGIN_ROOT / "skills" / "atk-mode" / "roles"
 
 
 @pytest.mark.parametrize("path", task_documents.role_documents(_PLUGIN_ROOT), ids=lambda path: path.name)
@@ -61,15 +61,16 @@ def test_shared_classification_table_matches_runtime() -> None:
     )
 
 
-def test_share_task_documents_have_no_bare_return_line_examples() -> None:
-    """`share/*.md`の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを確かめる。
+def test_role_documents_have_no_bare_return_line_examples() -> None:
+    """役割文書（`roles/*.md`）の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを確かめる。
 
     条件付き出力の書式例をフェンスの外へ置くと、常時出力する行と誤読される。
-    母集団は`share/`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。
+    母集団は`roles/`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。
+    文書の方針を示す`方針:`の行は返却形式ではないため除く。
     """
     bare_label_line = re.compile(r"^[^\s#\-*>|`][^\n:`]*: \S.*$")
     offending: list[str] = []
-    for path in sorted(_SHARE_DIR.glob("*.md")):
+    for path in sorted(_ROLES_DIR.glob("*.md")):
         in_fence = False
         in_frontmatter = False
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -88,7 +89,7 @@ def test_share_task_documents_have_no_bare_return_line_examples() -> None:
             # HTMLコメントは機械宣言であり、返却形式の裸のラベル行には含めない。
             if line.lstrip().startswith("<!--") and line.rstrip().endswith("-->"):
                 continue
-            if bare_label_line.match(line):
+            if bare_label_line.match(line) and not line.startswith("方針: "):
                 offending.append(f"{path.name}:{lineno}: {line}")
     assert not offending
 

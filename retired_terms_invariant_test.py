@@ -410,7 +410,7 @@ _RETIRED_TERMS = (
             ("引継ぎ記録", "引き継ぎ記録"),
             ("固定報告", "「`agent-toolkit:atk-mode/playbooks/report-completion.md`の完了報告」"),
             ("固定完了報告", "「`agent-toolkit:atk-mode/playbooks/report-completion.md`の完了報告」"),
-            ("品質想起通知", "`QUALITY_CHECKPOINT_NOTICE`"),
+            ("品質想起通知", "なし（常時規範の廃止とともに撤去）"),
             ("完了値", "返却値"),
             ("固定された返却値", "返却値"),
             ("背景移行通知", "「バックグラウンドタスクへの移行通知」"),
