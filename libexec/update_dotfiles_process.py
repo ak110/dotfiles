@@ -49,8 +49,11 @@ def kill_process_tree(
     known: Iterable[psutil.Process] = (),
     pins: process_tree.ProcessIdentityPins | None = None,
 ) -> None:
-    """直接の子を終了する前に子孫を列挙し、起動したプロセスツリーを回収する。回収できなければ`_GitReclaimError`を送出する。"""
-    failure = process_tree.stop_owned_process(process, context="Git更新", known=known, pins=pins)
+    """直接の子を終了する前に子孫を列挙し、起動したプロセスツリーを回収する。回収できなければ`_GitReclaimError`を送出する。
+
+    出力の終端を待つ途中（時間切れ・中断）だけで呼ぶため、出力を引き継いだ子孫も辿って回収する。
+    """
+    failure = process_tree.stop_owned_process(process, context="Git更新", known=known, pins=pins, output_open=True)
     if failure is not None:
         raise GitReclaimError(
             f"Git操作の子プロセスの回収または所有を確認できないため更新を中止しました: {failure}",

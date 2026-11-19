@@ -207,8 +207,9 @@ def test_git_timeout_reclaims_owned_tree_and_limits_output_recovery(
     monkeypatch.setattr(tree, "collect_descendants", lambda *_args, **_kwargs: descendants)
     reclaimed: list[int] = []
 
-    def reclaim(child, *, known, pins, **_kwargs):
-        assert child is process and known == descendants and pins is not None
+    def reclaim(child, *, known, pins, output_open, **_kwargs):
+        # 時間切れの時点で出力を引き継いだ子孫も回収させる。
+        assert child is process and known == descendants and pins is not None and output_open
         reclaimed.append(child.pid)
         child.kill()
 
