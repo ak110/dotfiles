@@ -84,7 +84,7 @@ Python 3.15.0で`from xml import dom`に`xml.dom`を列挙すると通常のmodu
 
 importを関数の中へ移す案は、トップレベルでimportする記述規約から外れ、関数ごとに抑制コメントを要するため採らない。
 全プロセスの遅延を切り替える`-X lazy_imports=all`、独自のloaderと読み込み結果の永続キャッシュは、モジュールごとの指定だけで目的の読み込み数の削減を得られるため設けない。
-`agent-toolkit/agent_toolkit/hook_test.py`は公開`hook.py`を子プロセスで実行し、遅延を無効化した対照より読み込むモジュールが少なく、応答が同じであることを確かめる。
+`agent-toolkit/agent_toolkit/hook_inventory_test.py`の`TestLazyDependencyLoading`は公開`hook.py`を子プロセスで実行し、遅延を無効化した対照より読み込むモジュールが少なく、応答が同じであることを確かめる。
 PEP 810は無効化の指定として`-X lazy_imports=none`を記すが、Python 3.15.0はこの値を拒否するため、対照は`sys.set_lazy_imports_filter`へ常に偽を返す関数を渡して作成する。
 
 ## agent-toolkitの依存の宣言と開発環境

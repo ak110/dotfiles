@@ -75,15 +75,9 @@ v2.1.296: Changed the default limit on MCP tool descriptions sent up front and o
 
 agents_serverは全説明とinstructionsを初期送信の4,096文字以内に保つ。
 検索後の16,384文字も同時に満たすため、検索の有無で説明を変えない。
-説明長とinstructions長は`agent-toolkit/agent_toolkit/_agents_server/tool_descriptions_test.py`の次の2件が確かめる。
-
-- `test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`
-- `test_lightweight_selection_reaches_instructions_and_mode_schema`
-
-説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは次の2件が確かめる。
-
-- `launch_prompts_test.py::test_explore_capabilities_are_shared_with_public_schema`
-- `mcp_tools_test.py::test_public_start_schema_delivers_explore_capabilities`
+説明長とinstructions長は`_agents_server/tool_descriptions_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が確かめる。
+説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは、`tool_descriptions.py`が`start`の説明へこの定数を連結する構成と、同じ説明長の試験で保つ。
+軽量modeの選択基準と`EXPLORE_CAPABILITIES`の配送を確かめていた3件の試験は、定数の写しだけの試験として2026年11月12日の`7d138ed8d`で除いた。
 
 再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。
 値が変わった場合は同書の「ホスト固有の条件」、`tool_descriptions.py`の`START_DESCRIPTION`直前のコメントと前記のテストを改める。

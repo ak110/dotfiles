@@ -38,7 +38,8 @@ Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホス�
 生成後は同scriptの`--check`でClaude Code向け原本、marketplace記述、Codex向け派生manifest、`agent-toolkit-codex/`全体の一致を確認する。
 プラグインマニフェストの検証は、Claude Code向けとCodex向けで到達できる保証の水準が異なるため手順を分ける。
 Claude Code向けは`claude plugin validate --strict`を`pyfltr`のカスタムlinter`claude-plugin-validate`から実行し、未知フィールドとメタデータ欠落を失敗として扱う。
-Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を`pytools/_internal/codex_plugin_manifests_test.py`から実行し、指摘の集合が既知の2件と完全に一致することを確かめる。
+Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を試験から実行し、指摘の集合が既知の2件と完全に一致することを確かめる。
+この試験は`pytools/_internal/codex_plugin_manifests_projection_test.py`の`test_codex_plugin_validator_reports_only_known_schema_deviations`である。
 Codexの検証器を無条件の合格条件にしないのは、同梱資料が`hooks`をマニフェストの正規フィールドとして定義しながら、検証の節では未対応フィールドとして拒否すると述べ、同一資料内で矛盾しているためである。
 資料はローカル導入での受理を保証も否定もせず、現行manifestのままの導入状態は`installed: true`かつ`enabled: true`である。
 そこで既知の逸脱の集合を固定し、集合が変化した時点で失敗させて再判断の契機とする。

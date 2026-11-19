@@ -56,7 +56,7 @@ process-wiとprocess-loopは、回答済みの承認用UWIを`source`によら�
 思考と生JSON全体は表示せず、表示した進捗と両streamの生診断を同じログへ残す。
 `atk agents logs`の`logs_export.py`が使う`session_record_format.SessionEvent`とClaudeの変換を再利用し、Codex exec固有のitemイベントだけを同じ型へ変換する。
 保存済みロールアウトを読むlogsと実行中のstdoutを読むrun-skillは入力形式と所有する資源が異なるため、ログファイルの追跡機構は共通化しない。
-子の終了前の表示と端末条件は、[run_skill_test.py](../../agent-toolkit/agent_toolkit/_atk/run_skill_test.py)の`test_tty_progress_arrives_before_child_exits`が、両候補・別スキル・正常終了・異常終了・timeoutを入力に検証する。
+子の終了前の表示と端末条件は、[run_skill_streams_test.py](../../agent-toolkit/agent_toolkit/_atk/run_skill_streams_test.py)の`test_tty_progress_arrives_before_child_exits`が、両候補・別スキル・正常終了・異常終了・timeoutを入力に検証する。
 
 却下した案は3つある。
 cronからAWIを定期投入し`atk wi process-loop`に処理させる案は、ユーザーが単発実行コマンドを選んだため採らない。

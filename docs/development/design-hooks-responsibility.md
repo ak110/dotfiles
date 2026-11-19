@@ -23,7 +23,7 @@
 `agent-toolkit/agent_toolkit/hook.py`が受け付けるサブコマンドは、`agent-toolkit/hooks/hooks.json`と`hooks.codex.json`が登録するものだけとする。
 旧定義を読み込んだセッションが残らないことを確かめて、これらを除いた。
 `hook.py`は未知のサブコマンドを終了コード0で通過させるため、旧定義が届いてもツール呼び出しは拒否されない。
-登録との一致は`agent-toolkit/agent_toolkit/hook_test.py`が両方のhook定義から求めた和集合と比べて確かめる。
+登録した全サブコマンドが処理モジュールへ届くことは、`agent-toolkit/agent_toolkit/hook_input_test.py`が両方のhook定義から求めた和集合の各サブコマンドで確かめる。
 
 `hooks.json`と生成する`hooks.codex.json`の全commandは末尾に`|| exit 1`を持つ。
 uvやPythonの起動失敗、起動スクリプトの不在は終了コード2で終わることがあり、ホストはPreToolUse・UserPromptSubmit・Stopの終了コード2を遮断として扱うため、起動の失敗だけで全操作が止まっていた。

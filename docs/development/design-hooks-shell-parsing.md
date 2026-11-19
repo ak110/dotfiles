@@ -16,7 +16,8 @@ PreToolUseの判定・書込先とPostToolUseの前景Git案内は同じ結果�
 静的な読取計画は候補探索と案内の保留に使い、取得の確定は実配送本文の共通照会へ渡す。
 2026年11月3日、引用属性を失ったトークンを消費側が再解釈する構造と、取得判定の独自の字句解析が別々の解析修正を反復させていた観測を受けて改めた。
 引用・エスケープの対照入力と演算子の対照入力は、`_hooks/shell_syntax_contrast_test.py`が解析APIの判定を確かめる。
-最終結果は各消費側の公開入力の試験が確かめる（`pretooluse/shell_checks_test.py`の警告、`pretooluse/read_delivery_test.py`の取得記録、`_agents_server/codex_test.py`の待機回収）。
+最終結果は各消費側の公開入力の試験が確かめる。
+警告は`pretooluse/shell_checks_test.py`、取得記録は`pretooluse/read_delivery_acquisition_commands_test.py`、待機回収は`_agents_server/codex_notifications_test.py`が扱う。
 第三者のparserへ置き換える案は、heredoc・埋込記録・部分入力の既存契約を再実装する費用に見合わないため採らない。
 文書書込の判定には、引用を除き展開部分を未知印で保持した`static_tokens`と`static_outputs`を別に渡す。
 既存のtokens・arguments_known・outputsは変更しない。

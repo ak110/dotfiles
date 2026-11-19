@@ -41,7 +41,7 @@ Stopで報告の不足を判定する変更（2026年10月4日「fix: 残る報�
 CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。
 確認した範囲は判定器の契約テストまでである。
-対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。
+対象は`termination_evidence_test.py`と、受理した報告本文の送達比較の判定である（送達比較は試験ごと2026年10月4日の`fbdcadb56`で撤去した）。
 加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。
 ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。
