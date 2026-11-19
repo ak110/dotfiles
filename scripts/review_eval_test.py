@@ -617,6 +617,19 @@ def test_prepare_builds_small_case_from_material(tmp_path, capsys, case_id) -> N
     assert not worktree.exists()
 
 
+def test_prepare_accepts_output_path_with_backslashes(tmp_path, capsys) -> None:
+    """Windows形式の出力先（`C:\\Users\\...`）でも、計画の対象リポジトリの行を作業ツリーのパスどおりに付け替える。"""
+    # POSIXではバックスラッシュを含む1つの名前、Windowsでは区切りになり、どちらも`\U`を含むパスになる。
+    out = tmp_path / "eval\\Users\\aki"
+    assert review_eval.main(["prepare", "--out", str(out), "--case", "small-known-consumer-tests"]) == 0
+    (prepared,) = _results(capsys)
+    worktree = prepared["start"]["cwd"]
+    assert "\\U" in worktree
+    plan_text = pathlib.Path(prepared["start"]["extra_params"]["計画"]).read_text(encoding="utf-8")
+    assert f"- 対象リポジトリ: `{worktree}`" in plan_text
+    subprocess.run(prepared["cleanup"], check=True, capture_output=True)
+
+
 _SMALL_FINDINGS = {
     "small-verification-table-scope": {
         "verification-table-scope": (

@@ -466,7 +466,7 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
     plan = case_dir / inputs.plan_name
     plan_text = inputs.plan_text
     if inputs.retarget_repair is not None:
-        plan_text, replaced = _TARGET_REPOSITORY_LINE.subn(rf"\g<1>`{worktree}`", plan_text)
+        plan_text, replaced = _TARGET_REPOSITORY_LINE.subn(lambda match: f"{match[1]}`{worktree}`", plan_text)
         if replaced != 1:
             raise ActionableError(
                 f"評価用の計画に計画メタ情報の対象リポジトリの行が1件無い: {case.id}（{replaced}件）",
