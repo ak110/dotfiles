@@ -14,6 +14,7 @@ import dataclasses
 import functools
 import os
 import pathlib
+import sys
 from collections.abc import Generator
 from ctypes import wintypes
 from typing import Any
@@ -46,6 +47,8 @@ _FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 _FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 _FILE_ATTRIBUTE_TAG_INFO = 9
 _INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+_UAC_POLICY_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+_BUILTIN_ADMINISTRATOR_RID = "-500"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -160,6 +163,31 @@ def user_sid() -> str:
         return str(text.value)
     finally:
         kernel.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+
+
+def is_elevated_above_user_processes() -> bool:
+    """同じユーザーの通常のプロセスが非昇格で動くWindowsで、昇格したtokenで実行中かを返す。Windows以外では偽を返す。
+
+    UACの管理者承認モードでは、同じユーザーの通常のプロセスは非昇格のtokenで動き、昇格したプロセスを開けない。
+    UACが無効な環境と、承認モードを適用しない組み込みAdministrator（GitHub ActionsのWindows runner）では、
+    通常のプロセスも昇格したtokenで動く。
+    SSHのログオンのtokenの種類から通常のプロセスの昇格を判別できるかは確かめていないため、UACのポリシーから判定する。
+    """
+    if sys.platform != "win32" or not is_elevated():
+        return False
+    import winreg  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error
+
+    def policy(key: Any, name: str, default: int) -> int:
+        try:
+            return int(winreg.QueryValueEx(key, name)[0])
+        except FileNotFoundError:
+            return default
+
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _UAC_POLICY_KEY) as key:
+        if not policy(key, "EnableLUA", 1):
+            return False
+        builtin_administrator = user_sid().endswith(_BUILTIN_ADMINISTRATOR_RID)
+        return not builtin_administrator or bool(policy(key, "FilterAdministratorToken", 0))
 
 
 def _descriptor_sddl(descriptor: Any, path: pathlib.Path | str) -> str:

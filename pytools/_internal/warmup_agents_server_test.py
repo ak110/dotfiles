@@ -168,6 +168,38 @@ class TestPrerequisites:
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
 
 
+class TestElevated:
+    """Windowsで昇格したプロセスから実行した場合。"""
+
+    def test_elevated_run_defers_service_publication_to_next_unelevated_run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """依存の準備は行い、管理サービスの起動と公開は行わず、次の非昇格の実行で起動確認する。
+
+        2026-11-19、SSHで昇格して実行した`update-dotfiles`が管理サービスを起動して受付先として公開し、
+        非昇格の旧世代と会話の転送側が新しい受付先を使えなくなった。
+        """
+        calls = _setup(monkeypatch, tmp_path)
+        started: list[list[str]] = []
+
+        async def startup(command):
+            started.append(list(command))
+            return _STARTUP_OUTCOME(True, "起動確認済み")
+
+        monkeypatch.setattr(_warmup, "_check_startup", startup)
+        monkeypatch.setattr(_warmup.windows_security, "is_elevated_above_user_processes", lambda: True)
+
+        outcome = _warmup.run()
+
+        assert outcome.failure is None and outcome.deferred
+        assert [notice.command for notice in outcome.notices] == ["update-dotfiles"]
+        assert _warmed(calls) and not started
+
+        monkeypatch.setattr(_warmup.windows_security, "is_elevated_above_user_processes", lambda: False)
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        assert len(started) == 1
+
+
 class TestTargets:
     """ウォームアップ対象の列挙。"""
 

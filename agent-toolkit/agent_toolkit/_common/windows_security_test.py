@@ -26,6 +26,7 @@ def test_restore_inheritance_leaves_posix_directories_unchanged(tmp_path: pathli
     directory.mkdir(mode=0o700)
     assert windows_security.restore_inheritance(tmp_path) == windows_security.InheritanceRepair()
     assert not windows_security.is_elevated()
+    assert not windows_security.is_elevated_above_user_processes()
     assert stat.S_IMODE(directory.stat().st_mode) == 0o700
 
 
