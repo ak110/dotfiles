@@ -56,7 +56,7 @@ def test_ssh_peer_hosts_rule_only_for_peer_hosts(hostname: str) -> None:
     """stheno・euryaleだけに本文を出し、それぞれ相手のホストへの接続先を示す。他では出力が空になりファイルが作られない。"""
     text = _execute(SOURCE / "dot_claude" / "rules" / "ssh-peer-hosts.local.md.tmpl", hostname)
     short = hostname.lower()
-    assert ("昇格したトークン" in text) is (short == "euryale")
+    assert ("ssh-unelevated stheno" in text) is (short == "euryale")
     if short == "stheno":
         assert "ssh euryale" in text
         assert "ssh stheno" not in text
