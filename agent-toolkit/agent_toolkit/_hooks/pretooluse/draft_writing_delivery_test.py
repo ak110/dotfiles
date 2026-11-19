@@ -67,7 +67,7 @@ def test_default_model_settings_edit_reaches_trial_rule(name: str, expected: boo
     path = _PLUGIN / "agent_toolkit/_atk" / name
     edit = {"file_path": str(path), "old_string": "a", "new_string": "b"}
     matched = _matched(_REPOSITORY / ".claude/skills/agent-toolkit-edit/SKILL.md", "Edit", edit)
-    assert ("process-model-settings-candidates.md" in matched) is expected
+    assert ("model-settings.md" in matched) is expected
 
 
 @pytest.fixture(autouse=True)
