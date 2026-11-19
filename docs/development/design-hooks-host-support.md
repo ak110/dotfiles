@@ -20,7 +20,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告をブロックし、内部返却の言語は判定しない |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 言語保護、常駐ループの終了保証、所有計画・未観測委譲先・可視本文・report-completion起動不足の非遮断通知、未配送通知のホスト配送を集約する。送達・残工程・質問の意味は文書へ委ねる。実在する待機を除き、同じ原因・対象・対処の反復を共通noticeで抑止する | 対応 | 部分対応。`response_language_advisor`で説明言語を、`submission_report_advisor`で投入作業の報告用要約の有無を判定し、`decision`と`reason`だけを返す。非遮断の終了支援は関連操作と文書で扱う |
-| plugin `UserPromptSubmit/user_prompt_submit` | 実入力・手動スキル起動を記録し、開始・clear・圧縮後の最初の実入力へ一度だけ起動を案内する。固定手順の時間再注入と時刻追跡は持たない。全角記号と例示・調査語の関連案内は既存共通noticeで反復を抑止する。機械注入は実入力向けの案内を消費しない | 対応 | 対応。文脈ごとの一度の案内と入力観測を同じ条件で行い、sessionTitleは付けない |
+| plugin `UserPromptSubmit/user_prompt_submit` | 実入力・手動スキル起動を記録し、全角記号や例示・調査語の案内の反復を抑える | 対応 | 対応。sessionTitleは付けない |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。`approvalPolicy: "never"`では危険と判定するコマンドを承認なしに拒否し、PermissionRequest hookを呼ばない。Codex委譲先の標準手順は承認を要しないコマンドで組む |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した応答にもタスク識別子が含まれる場合は、バックグラウンドタスクの所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |

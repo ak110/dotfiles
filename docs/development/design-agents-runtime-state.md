@@ -76,10 +76,8 @@ PostToolUseフックの環境に`CODEX_THREAD_ID`が無い場合は、フック�
 Codex backendが子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継承した`AGENT_TOOLKIT_DELEGATED_SESSION`を除く扱いと、その理由は`design-hosts-rules-delivery.md`「ルールの配置と配送」にある。
 一方、Codexホストから直接起動したMCPサーバープロセスは、所有session識別子とCodex thread識別子のいずれも持たないため状態ファイルを書かない。
 所有session識別子だけが存在し、書込主体を識別できない場合も状態ファイルを書かない。
-共通の`root.json`へ代替すると、活性化処理が同じ状態ディレクトリにある別の書込主体の記録を削除するためである。
+共通の`root.json`では、同じディレクトリに書く主体を区別できない。
 書込側はsession状態の更新を1秒で集約し、自身の生存中のsession全体を原子的に全置換する。
-ルートの書込主体はMCPの開始時にディレクトリ配下を空にして前回プロセスの残存を除き、終了時にディレクトリを削除する。
-入れ子の書込主体は自身のファイルだけを書き、終了時に削除する。
 書込主体は状態ファイルのトップレベルへ生存の印`heartbeat_at`を置き、稼働中は一定間隔で更新する。
 読取側は`heartbeat_at`が失効した状態ファイルを表示から外す。
 書込主体は自身のflushのたびに、`heartbeat_at`が失効した他の状態ファイルを削除する。

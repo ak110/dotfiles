@@ -213,7 +213,8 @@
 
 ## [実行環境と表示](concepts-environment.md#実行環境と表示)
 
-- codex呼び出しの`sandbox: danger-full-access`指定を弱めない。
+- 旧blocking MCP連携のcodex呼び出しでは`sandbox: danger-full-access`指定を弱めない。
+  `agents_server`連携には適用しない。
 - process-loopは1つの統括会話で全対象を処理し、端末の前景の対話CLIで起動する。
   会話の分割、非対話CLIへの置き換え、予約のない再開を、新しいユーザー判断なしに導入しない（2026年11月17日にユーザーが是正）。
 - dotfilesが管理するコマンドはdotfiles管理下のバイナリへ統一し、dotfiles外の同名の導入物は導入元の正規の手順で削除する（2026年11月18日のユーザー指示）。

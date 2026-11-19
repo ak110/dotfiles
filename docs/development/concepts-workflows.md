@@ -57,8 +57,7 @@ statuslineのReleaseを要する場合のmaster CIの結論は、Release runの�
 未公開のcommitを残した終了が常駐ループの開始前更新を停止させたためであり、解消できない場合はUWIへ引き継ぐ。
 `agent-toolkit:atk-mode`の作業`process-wi`では、選定工程の開始時に未処置のCopilotレビューを取得し、対象がある場合に監査をレーン工程と並行して進め、公開工程の開始より前に処置を確定する。
 対象が0件なら監査担当を起動しない。
-公開工程では公開担当による公開とCI確認を1回だけ実施する。
-公開担当の起動後に生じた是正commitはローカルの`develop`へ保持し、次のセッションの公開工程で公開する。
+公開後に新しい是正commitを統合したら、同じセッションで公開状態を確かめ、再公開とCI確認まで行う。
 2026年9月の旧方式では、report-completionから進行中のセッション自身の振り返りを同期起動し、その終了時までに完了させていた（2026年9月14日のユーザー指示）。
 現在は作業の終了と公開で同期振り返りを行わず、SessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が非活動のセッションを非同期に分析する。
 参照先は`design-session-review-completion.md`「完了報告と振り返りの関係」である。

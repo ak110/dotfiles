@@ -46,14 +46,17 @@ UV_PROJECT_ENVIRONMENT="$SUB_ENV" uv sync --project "$SUB_PROJECT" --python 3.15
 
 ## agent-toolkit/skills/atk-mode/playbooks/publish.md：検証とCI：2026年10月19日
 
-前節の観測は`.python-version`を持たないプロジェクトの条件であり、`.python-version`を持つプロジェクトでは`uv run`の自動同期が既存の仮想環境を再作成する。
 2026年10月19日にuv 0.13.1で、依存を持たず`requires-python`が`>=3.14`の一時プロジェクトへ`.python-version`（`3.15`）と`uv.lock`を置き、3.14の仮想環境から始めて次を観測した。
 
-- 版指定なし: `uv run --frozen`の後に3.15で再作成された
-- `UV_PYTHON=3.14`: `uv run --frozen`と`--python`なしの`uv sync --frozen`の後も3.14のままだった
-- `UV_PYTHON=3.14`のまま`uv sync --frozen --python "$(cat .python-version)"`: 3.15で再作成された
-- 対照として`.python-version`を除くと、版指定なしの`uv run --frozen`の後も3.14のままだった
-- `uv pip install six`で加えたパッケージは`uv run --frozen`の後も残り、`uv sync --frozen`で除かれた
+| 対象プロジェクトの`.python-version` | `UV_PYTHON` | 操作 | 既存3.14環境の結果 |
+| --- | --- | --- | --- |
+| なし（親だけ3.15） | 未指定 | `uv run`、`uv sync` | 3.14を維持 |
+| なし（親だけ3.15） | 未指定 | `uv sync --python 3.15` | 3.15に再作成 |
+| 3.15 | 未指定 | `uv run --frozen` | 3.15に再作成 |
+| 3.15 | 3.14 | `uv run --frozen`、`uv sync --frozen` | 3.14を維持 |
+| 3.15 | 3.14 | `uv sync --frozen --python 3.15` | 3.15に再作成 |
+
+`uv pip install six`で加えたパッケージは`uv run --frozen`の後も残り、`uv sync --frozen`で除かれた。
 
 再検証は次を順に実行する。
 最初の`cd`で作業ツリーの外に空の一時ディレクトリを作成して移動し、以降のファイル作成と`uv`の呼び出しはそのディレクトリだけを対象にする。
