@@ -211,7 +211,7 @@ forkしない時も、委譲先が読む`agent-toolkit:atk-mode/playbooks/subage
    - 代替起動、中断、巻き取りは、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「後続操作の共通先行条件」を満たした時だけ行う。
 5. 終了結果だけを待つ例を次に示す。
    `/absolute/path/to/atk`は確かめたCLIの絶対パス、`ROOT_SESSION_ID`は起動応答で保持した値、`CELL_ID`と`SESSION_ID`は各応答の識別子（`SESSION_ID`は整数）へ置き換える。
-   `functions.exec`で1回起動し、`Script running with cell ID ...`が返った場合だけ同じ外側のセルを`functions.wait`で回収する。
+   `functions.exec`で`atk agents wait`を1回起動し、`Script running with cell ID ...`が返った場合だけ同じ外側のセルを`functions.wait`で回収する。
 
    ```javascript
    // @exec: {"yield_time_ms": 180000}
