@@ -65,6 +65,38 @@ def test_restore_inheritance_reopens_legacy_directories(profile: pathlib.Path) -
     assert windows_security.restore_inheritance(profile) == windows_security.InheritanceRepair()
 
 
+def test_restore_inheritance_reopens_owned_items_closed_to_the_user_without_administrators(profile: pathlib.Path) -> None:
+    """所有者がユーザーでSYSTEMとAdministratorsだけを許す項目を、非昇格のプロセスが継承するACLへ戻す。
+
+    2026-11-19、sthenoで世代索引など4,985件がこの形（保護付きの`(A;;FA;;;SY)(A;;FA;;;BA)`と、
+    その形のディレクトリから継承した子）になり、非昇格の管理サービスが世代索引を読めずに起動できなかった。
+    OWNER RIGHTSのACEが無ければ所有者は暗黙のREAD_CONTROLとWRITE_DACを持つため、非昇格でもDACLを戻せる。
+    """
+    from agent_toolkit._testing import windows_tokens  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    user = windows_security.user_sid()
+    services = profile / "services"
+    windows_tokens.create_directory(services, f"O:{user}{_LEGACY_DACL}")
+    generations = services / "generations.json"
+    windows_tokens.create_file(generations, f"O:{user}D:P(A;;FA;;;SY)(A;;FA;;;BA)")
+    closed = profile / "closed"
+    windows_tokens.create_directory(closed, f"O:{user}D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+    inherited = closed / "state.json"
+    windows_tokens.create_file(inherited, f"O:{user}")
+    files = (generations, inherited)
+    assert not any(windows_tokens.readable_without_administrators(path) for path in files)
+
+    with windows_tokens.without_administrators():
+        result = windows_security.restore_inheritance(profile)
+
+    assert not result.blocked
+    assert result.restored
+    for path in files:
+        assert windows_tokens.readable_without_administrators(path), windows_security.dacl_sddl(path)
+    with windows_tokens.without_administrators():
+        assert windows_security.restore_inheritance(profile) == windows_security.InheritanceRepair()
+
+
 def test_restore_inheritance_ignores_owner_rights_inherited_from_outside_root(profile: pathlib.Path) -> None:
     """root外の親から継承したOWNER RIGHTSのACEは対象にせず、明示したディレクトリだけを1回で戻す。
 
