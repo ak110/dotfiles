@@ -11,6 +11,8 @@ import typing
 import pytest
 
 from agent_toolkit._atk import outcome, run_skill, run_skill_state
+from agent_toolkit._common import session_review
+from agent_toolkit._testing import git_repository, session_evidence_support
 from agent_toolkit._testing.run_skill_support import _engine_env, _Env, _records, _run
 
 __all__ = ["_engine_env"]
@@ -18,8 +20,10 @@ __all__ = ["_engine_env"]
 _OLD = time.time() - run_skill.LOG_RETENTION_SECONDS - 3600
 
 
-def _write_record(env: _Env, run_id: str, connection: dict[str, typing.Any] | None) -> pathlib.Path:
-    """30日より前のログを参照する中断済みの記録を、保存された形のJSONで置く。"""
+def _write_record(
+    env: _Env, run_id: str, connection: dict[str, typing.Any] | None, *, status: str = "interrupted"
+) -> pathlib.Path:
+    """30日より前のログを参照する実行記録を、保存された形のJSONで置く。"""
     root = env.state / "agent-toolkit" / "run-skill"
     (root / "runs").mkdir(parents=True, exist_ok=True)
     log_path = root / f"20261109-000000-agent-toolkit_review-session-{run_id[:8]}.log"
@@ -47,7 +51,7 @@ def _write_record(env: _Env, run_id: str, connection: dict[str, typing.Any] | No
         "remaining": 60.0,
         "deadline": None,
         "executor": None,
-        "status": "interrupted",
+        "status": status,
     }
     (root / "runs" / f"{run_id}.json").write_text(json.dumps(payload), encoding="utf-8")
     return log_path
@@ -90,3 +94,56 @@ def test_unreadable_record_does_not_block_new_run(engine_env: _Env, capsys: pyte
     assert len(_records(engine_env, "session")) == 1
     assert str(broken) in err and "次の操作:" in err
     assert broken.exists() and log_path.exists()
+
+
+@pytest.mark.cpu_limit(1.0, reason="実prepare・偽ホストの子プロセス・実Gitの報告同期を通してbatchの完了を検収する。")
+def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_path, monkeypatch, capsys) -> None:
+    """旧形式の完了記録が残っていても、Codexの待ち対象を準備し、同期済み報告と処理済み範囲を残す。"""
+    _write_record(
+        engine_env,
+        "2" * 32,
+        {"kind": "subscription", "api_env_file": None, "isolation_env_file": "/old/credits.env"},
+        status="completed",
+    )
+    session_id = "11111111-1111-4111-8111-111111111111"
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = codex_home / "sessions/2026/11/20" / f"rollout-2026-11-20T00-54-42-{session_id}.jsonl"
+    session_evidence_support.write_jsonl(
+        transcript,
+        [
+            {"type": "session_meta", "payload": {"id": session_id}},
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "試験を確認して"}},
+        ],
+    )
+    assert session_review.record(
+        {
+            "hook_event_name": "SessionStart",
+            "session_id": session_id,
+            "cwd": str(engine_env.repo),
+            "transcript_path": str(transcript),
+        },
+        host="codex",
+        target_repo="example.com/team/repo",
+    )
+    notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
+    remote = git_repository.init_bare_repository(tmp_path / "reports.git")
+    git_repository.commit_all(notes, "initial")
+    git_repository.run_git(notes, "remote", "add", "origin", str(remote))
+    git_repository.run_git(notes, "push", "-u", "origin", "HEAD")
+    monkeypatch.setenv("FAKE_REPORT_REMOTE", "1")
+
+    code, _out, err = _run(["agent-toolkit:review-session", "--args", "batch"], capsys)
+
+    assert code == 0, err
+    (child,) = _records(engine_env, "session")
+    run_id = child["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    manifest = session_review.read(session_review.directory() / "runs" / f"{run_id}.json")
+    assert [(item["host"], item["session_id"]) for item in manifest["prepared"]] == [("codex", session_id)]
+    assert manifest["analysis_succeeded"] and manifest["status"] == "completed"
+    assert not session_review.pending()
+    branch = git_repository.git_output(notes, "branch", "--show-current")
+    (report_path,) = git_repository.git_output(remote, "ls-tree", "-r", "--name-only", branch).splitlines()
+    report = git_repository.git_output(remote, "show", f"{branch}:{report_path}")
+    assert f"run_skill_run_id: {run_id}" in report and "run_skill_report: true" in report
+    assert session_id in report
