@@ -43,8 +43,9 @@ from session_evidence_user_events import _query_user_events
 
 from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import agents_server_tools as _agents_server_tool_names
+from agent_toolkit._common import record_metadata_index as _record_metadata_index
 from agent_toolkit._common import shell_tokens as _shell_tokens_module
-from agent_toolkit._common.session_family import _RecordMetadata, _scan_record_metadata
+from agent_toolkit._common.session_family import _scan_record_metadata
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
 
 CATALOG_PARENT_FIELDS = (
@@ -307,11 +308,12 @@ def _catalog_scan(
         )
     loaded: dict[str, _CollectedRecord] = {}
     path_items: dict[Path, _CollectedRecord] = {}
-    metadata: dict[str, _RecordMetadata] = {}
+    metadata: dict[str, _record_metadata_index.RecordSummary] = {}
     unresolved_loads = 0
     unresolved = []
+    summaries = _record_metadata_index.summaries(resolved_root, runtime, paths)
     for path in paths:
-        meta = _scan_record_metadata(path)
+        meta = summaries[path]
         if meta.failure is not None:
             unresolved_loads += 1
             identity = f"claude:{path.parent.parent.name}/{path.stem}" if path.parent.name == "subagents" else str(path)

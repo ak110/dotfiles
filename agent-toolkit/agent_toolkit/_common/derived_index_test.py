@@ -87,7 +87,7 @@ def _statically_imported(module: str) -> set[str]:
     return found
 
 
-@pytest.mark.parametrize("module", ["agent_toolkit._common.registry_index"])
+@pytest.mark.parametrize("module", ["agent_toolkit._common.registry_index", "agent_toolkit._common.record_metadata_index"])
 def test_code_version_covers_every_module_the_derivation_imports(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, module: str
 ) -> None:
