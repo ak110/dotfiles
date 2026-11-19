@@ -1,5 +1,6 @@
 """pytools._internal.setup_cli_commonのnpm版の移行（`migrate_npm_launchers`）のテスト。"""
 
+import codecs
 import logging
 import os
 import shutil
@@ -339,6 +340,26 @@ def test_migrate_keeps_launcher_without_adjacent_npm(monkeypatch, tmp_path: Path
     )
 
 
+def test_windows_warns_once_with_ps1_about_launchers_without_adjacent_npm(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """npmだけが無くなった配置では、PowerShellが先に使う`.ps1`も含めた起動先を、毎回1つの警告と正規の起動先で示す。"""
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=True)
+    npm.npm.unlink()
+    launchers = {launcher: launcher.read_bytes() for launcher in npm.launchers}
+
+    for _ in range(2):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+            assert not _migrate(tmp_path, windows=True)
+        assert {launcher: launcher.read_bytes() for launcher in launchers} == launchers
+        assert len(caplog.messages) == 1, caplog.messages
+        assert all(str(_shown(launcher)) in caplog.messages[0] for launcher in npm.launchers), caplog.messages[0]
+        assert f"`{_canonical(tmp_path, windows=True)}`" in caplog.messages[0]
+    assert not npm.uninstalls
+    assert npm.package.is_dir()
+
+
 @pytest.mark.parametrize("platform", ["linux", "win32"])
 def test_migrate_excludes_callers_own_wrappers_from_retention_warning(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, platform: str
@@ -523,13 +544,27 @@ def test_windows_warns_about_unedited_shims_left_without_package(
     _assert_left_without_package_warning(caplog.messages[0], list(launchers), _canonical(tmp_path, windows=True))
 
 
+def _ps1_comment(text: str) -> str:
+    return text.replace("\n", "\n# work profile\n", 1)
+
+
+def _utf16(text: str, byteorder: str) -> bytes:
+    """エディターが保存するBOM付きUTF-16（`byteorder`は`le`か`be`）の本文を返す。"""
+    bom = codecs.BOM_UTF16_LE if byteorder == "le" else codecs.BOM_UTF16_BE
+    return bom + text.encode(f"utf-16-{byteorder}")
+
+
 @pytest.mark.parametrize(
     ("suffix", "edit"),
     [
         # 参照先をパッケージ内のユーザーのファイルに変えた`.cmd`。本体があれば保持し、本体を片付けた後も残す。
-        pytest.param(".cmd", lambda text: text.replace("bin\\codex.js", "bin\\work.js"), id="cmd-user-entry"),
+        pytest.param(".cmd", lambda text: text.replace("bin\\codex.js", "bin\\work.js").encode(), id="cmd-user-entry"),
         # PowerShellが`.cmd`より先に使う`.ps1`に、ユーザーが注記を足したもの。
-        pytest.param(".ps1", lambda text: text.replace("\n", "\n# work profile\n", 1), id="ps1-comment"),
+        pytest.param(".ps1", lambda text: _ps1_comment(text).encode(), id="ps1-comment"),
+        # エディターがBOM付きUTF-16で保存し直した`.ps1`。本文が生成形式のままでも、npmの生成物とはみなさない。
+        pytest.param(".ps1", lambda text: _utf16(text, "le"), id="ps1-utf16le"),
+        pytest.param(".ps1", lambda text: _utf16(_ps1_comment(text), "le"), id="ps1-comment-utf16le"),
+        pytest.param(".ps1", lambda text: _utf16(_ps1_comment(text), "be"), id="ps1-comment-utf16be"),
     ],
 )
 def test_windows_keeps_edited_shims_left_without_package(
@@ -538,7 +573,7 @@ def test_windows_keeps_edited_shims_left_without_package(
     """本体の無い配置では、編集した起動スクリプトも未編集の起動スクリプトも削除せず、毎回1つの警告に全て示す。"""
     npm = _install_global_npm(monkeypatch, tmp_path, windows=True)
     edited = npm.bin_dir / f"codex{suffix}"
-    edited.write_text(edit(edited.read_text(encoding="utf-8")), encoding="utf-8", newline="")
+    edited.write_bytes(edit(edited.read_bytes().decode()))
     (npm.package / "bin" / "work.js").write_text("#!/usr/bin/env node\n", encoding="utf-8")
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
         assert not _migrate(tmp_path, windows=True)
@@ -582,6 +617,27 @@ def test_migrate_keeps_users_link_to_launcher_of_other_npm(
     _assert_left_without_package_warning(caplog.messages[0], [link], _canonical(tmp_path, windows=True))
 
 
+@pytest.mark.parametrize("suffix", ["", ".cmd", ".ps1"])
+def test_windows_keeps_link_placed_where_npm_writes_launcher(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, suffix: str
+) -> None:
+    """Windowsのnpmは起動先にリンクを作らないため、package.jsonのbinを指すリンクでもユーザーのものとして残す。"""
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=True)
+    link = npm.bin_dir / f"codex{suffix}"
+    link.unlink()
+    link.symlink_to(npm.package / "bin" / "codex.js")
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not _migrate(tmp_path, windows=True)
+
+    assert not npm.uninstalls
+    assert link.readlink() == npm.package / "bin" / "codex.js"
+    assert npm.package.is_dir()
+    assert len(caplog.messages) == 1, caplog.messages
+    assert f"{_shown(link)}（" in caplog.messages[0]
+    assert npm.removal() in caplog.messages[0]
+
+
 @pytest.mark.parametrize("target", ["inside-package", "outside-package"])
 def test_posix_keeps_npm_link_repointed_to_other_script(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, target: str
@@ -607,6 +663,44 @@ def test_posix_keeps_npm_link_repointed_to_other_script(
     assert f"{_shown(link)}（" in caplog.messages[0]
     assert npm.removal() in caplog.messages[0]
     assert (f"{script.resolve()}もパッケージと一緒に削除される" in caplog.messages[0]) is (target == "inside-package")
+
+
+def test_posix_keeps_npm_link_routed_through_users_selection_link(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """POSIXの`bin/codex`を、版の切替用のユーザーのリンクを経由してbinへ着くよう変えたものは、npmの生成物とみなさない。"""
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=False)
+    selection = tmp_path / "versions" / "current"
+    selection.parent.mkdir()
+    selection.symlink_to(npm.package / "bin" / "codex.js")
+    link = npm.bin_dir / "codex"
+    link.unlink()
+    link.symlink_to(selection)
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not _migrate(tmp_path, windows=False)
+
+    assert not npm.uninstalls
+    assert link.readlink() == selection
+    assert selection.resolve() == (npm.package / "bin" / "codex.js").resolve()
+    assert len(caplog.messages) == 1, caplog.messages
+    assert f"{_shown(link)}（" in caplog.messages[0]
+    assert npm.removal() in caplog.messages[0]
+
+
+def test_posix_migrates_npm_link_through_linked_prefix(monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """npmのprefixがディレクトリのリンクの先にあっても、npmが作った`bin/codex`は生成物として旧npm版ごと削除する。"""
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=False)
+    (tmp_path / "npm-link").symlink_to(npm.prefix)
+    npm.npm = tmp_path / "npm-link" / "bin" / "npm"
+    monkeypatch.setenv("PATH", str(npm.npm.parent))
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert _migrate(tmp_path, windows=False)
+
+    assert len(npm.uninstalls) == 1
+    assert not (npm.bin_dir / "codex").is_symlink()
+    assert not caplog.messages
 
 
 @pytest.mark.parametrize("windows", [True, False], ids=["windows", "posix"])

@@ -1,5 +1,6 @@
 """公式インストーラーを利用するCLI導入処理の共通機能。"""
 
+import codecs
 import contextlib
 import dataclasses
 import enum
@@ -11,6 +12,7 @@ import os
 import posixpath
 import shutil
 import ssl
+import stat
 import subprocess
 import sys
 import tempfile
@@ -147,11 +149,12 @@ def migrate_npm_launchers(
     `excluded_launchers`には呼出側自身が配置した起動管理を渡し、移行の候補と保持警告から除く。
     npmの`uninstall`はパッケージと一緒に同名の起動スクリプトを中身を確かめずに削除するため、そのうち1つでも
     npmの生成物と確かめられないパッケージは、そのファイルと削除の手順を示し、自動では削除しない。
-    生成物とみなすのは、POSIXではpackage.jsonのbinの実体を指すシンボリックリンク、Windowsではファイル全体が
-    既知のnpmの生成形式と一致し、binの実体を参照する起動スクリプトだけである。
+    生成物とみなすのは、POSIXではpackage.jsonのbinの実体を直接指すシンボリックリンク、Windowsではリンクでなく、
+    ファイル全体が既知のnpmの生成形式と一致し、binの実体を参照する起動スクリプトだけである。
     package.jsonを読めないパッケージは、削除するファイルを確定できないため削除しない。
     npmの導入先を照会できないパッケージと、Windowsでパッケージから起動したプロセスがあるパッケージは、その回は削除しない。
     パッケージ本体の無い配置に残った起動スクリプトは、ユーザーのラッパーと区別できないため削除せず、配置先ごとに1つの警告で示す。
+    同じディレクトリにnpmが無い起動先も削除せず、`.ps1`を含めて配置先ごとに1つの警告で示す。
     """
     left = _find_npm_launchers_left_without_package(cli_name, package_name, extra_search_directories)
     for directory, launchers in left.items():
@@ -167,6 +170,7 @@ def migrate_npm_launchers(
     shown = {launcher for launchers in left.values() for launcher in launchers}
     changed = False
     packages: dict[Path, _NpmPackage | _UnreadableNpmPackage] = {}
+    without_npm: dict[Path, list[Path]] = {}
     # 削除は、起動先がパッケージから導入したものと確かめられたパッケージに限る。
     launched: set[Path] = set()
     for launcher in _iter_noncanonical_launchers(
@@ -180,12 +184,7 @@ def migrate_npm_launchers(
             continue
         npm = _adjacent_npm(launcher.parent)
         if npm is None:
-            logger.warning(
-                log_format.format_status(
-                    cli_name,
-                    f"同じディレクトリにnpmがないため保持: {launcher}。このランチャーが不要と確認できた場合だけ手動削除する",
-                )
-            )
+            without_npm.setdefault(launcher.parent, []).append(launcher)
             continue
         try:
             package = _find_npm_package(npm, package_name)
@@ -210,6 +209,16 @@ def migrate_npm_launchers(
         else:
             reason = f"{package.directory}のbinの実体ではない: {_launcher_kind(launcher)}"
             logger.warning(log_format.format_status(cli_name, _unconfirmed_launcher_message(launcher, reason)))
+    for directory, launchers in without_npm.items():
+        # 列挙の対象でない`.ps1`も、PowerShellが先に使うため示す。
+        held = dict.fromkeys([*_existing_launchers(directory, cli_name), *launchers])
+        logger.warning(
+            log_format.format_status(
+                cli_name,
+                f"同じディレクトリにnpmがないため保持: {'、'.join(map(str, held))}。"
+                f"不要と確認できた場合だけ手動で削除し、正規の起動先`{canonical_launcher}`で起動する",
+            )
+        )
     for package in packages.values():
         if isinstance(package, _UnreadableNpmPackage):
             logger.warning(
@@ -413,17 +422,11 @@ def _find_npm_package(npm: Path, package_name: str) -> _NpmPackage | _Unreadable
     if isinstance(bins, str):
         return _UnreadableNpmPackage(directory, manifest, bins)
     # bin-linksと同じく、Windowsはnode_modulesの親（prefix）、POSIXはprefixの`bin`へ置く。
-    if sys.platform == "win32":
-        bin_dir, suffixes = root.parent, ("", ".cmd", ".ps1")
-    else:
-        bin_dir, suffixes = root.parent.parent / "bin", ("",)
+    bin_dir = root.parent if sys.platform == "win32" else root.parent.parent / "bin"
     generated: set[Path] = set()
     unconfirmed: dict[Path, str] = {}
     for name, target in bins.items():
-        for suffix in suffixes:
-            path = bin_dir / f"{name}{suffix}"
-            if not (path.exists() or path.is_symlink()):
-                continue
+        for path in _existing_launchers(bin_dir, name):
             if reason := _npm_bin_unconfirmed(path, directory, target):
                 unconfirmed[path] = reason
             else:
@@ -431,29 +434,60 @@ def _find_npm_package(npm: Path, package_name: str) -> _NpmPackage | _Unreadable
     return _NpmPackage(npm, directory, bins, frozenset(generated), unconfirmed)
 
 
+def _existing_launchers(directory: Path, name: str) -> list[Path]:
+    """配置先にある`name`の起動先を返す。Windowsは拡張子なし・`.cmd`・`.ps1`、POSIXは拡張子なしを見る。"""
+    suffixes = ("", ".cmd", ".ps1") if sys.platform == "win32" else ("",)
+    return [path for suffix in suffixes if (path := directory / f"{name}{suffix}").exists() or path.is_symlink()]
+
+
 def _npm_bin_unconfirmed(path: Path, package_dir: Path, target: str | None) -> str | None:
     """`path`を、npmがパッケージのbin（実体はパッケージから見た`target`）として生成したと確かめられない場合に、その理由を返す。
 
-    POSIXのnpmはbinの実体へのシンボリックリンクを作り、Windowsのnpmは起動スクリプトを作る。
-    シンボリックリンクは`target`の実体を指すものだけを生成物とする。
+    POSIXのnpmはbinの実体を直接指すシンボリックリンクを作る。
+    リンク自身の参照先（途中のディレクトリは実体へ解決する）がbinの実体であるものだけを生成物とし、
+    版の切替用のリンクなど、別のリンクを経由してbinの実体へ着くものは生成物とみなさない。
+    Windowsのnpmはリンクを作らず起動スクリプトを書くため、リンクとjunctionなどの再解析点は生成物とみなさない。
     起動スクリプトは、ファイル全体がnpmの既知の生成形式と一致し、その形が`target`を参照するものだけを生成物とする。
     """
-    if path.is_symlink():
-        resolved = common.safe_resolve(path)
-        if target is not None and resolved == common.safe_resolve(package_dir.joinpath(*target.split("/"))):
-            return None
-        if _is_relative_to(resolved, common.safe_resolve(package_dir)):
-            return f"package.jsonのbinの実体ではないsymlink。参照先の{resolved}もパッケージと一緒に削除される"
-        return f"package.jsonのbinの実体ではない{_launcher_kind(path)}"
+    entry = package_dir.joinpath(*target.split("/")) if target is not None else None
     if sys.platform != "win32":
-        return _launcher_kind(path)
+        if not path.is_symlink():
+            return _launcher_kind(path)
+        try:
+            direct = _link_target(path)
+        except OSError as error:
+            return f"読み取りに失敗: {error}"
+        if entry is not None and direct == common.safe_resolve(entry.parent) / entry.name:
+            return None
+        reason = f"package.jsonのbinの実体を直接指さないsymlink（参照先: {direct}）"
+        resolved = common.safe_resolve(path)
+        if _is_relative_to(resolved, common.safe_resolve(package_dir)):
+            return f"{reason}。最終的な参照先の{resolved}もパッケージと一緒に削除される"
+        return reason
+    if _is_link(path):
+        return f"Windowsのnpmが作らないリンク: {_launcher_kind(path)}"
     try:
         targets = _npm_shim_targets(path)
     except OSError as error:
         return f"読み取りに失敗: {error}"
-    if target is None or _relative_reference(path, package_dir.joinpath(*target.split("/"))) not in targets:
+    if entry is None or _relative_reference(path, entry) not in targets:
         return f"npmの既知の生成形式と一致しない{_launcher_kind(path)}"
     return None
+
+
+def _link_target(link: Path) -> Path:
+    """シンボリックリンク自身の参照先を、途中のディレクトリだけを実体へ解決して返す。参照先がリンクでもたどらない。"""
+    target = link.parent / link.readlink()
+    return common.safe_resolve(target.parent) / target.name
+
+
+def _is_link(path: Path) -> bool:
+    """シンボリックリンクか、junctionなどの再解析点かを返す。"""
+    try:
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return path.is_symlink() or bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 def _relative_reference(launcher: Path, entry: Path) -> str | None:
@@ -530,13 +564,14 @@ def _iter_noncanonical_launchers(
 def _find_npm_launchers_left_without_package(
     cli_name: str, package_name: str, extra_search_directories: Iterable[Path]
 ) -> dict[Path, list[Path]]:
-    """パッケージ本体の無い配置に残ったnpmの起動スクリプト（拡張子なし・`.cmd`・`.ps1`）を、配置先ごとに返す。
+    """パッケージ本体の無い配置に残ったnpmの起動スクリプト（Windowsでは拡張子なし・`.cmd`・`.ps1`）を、配置先ごとに返す。
 
     PowerShellはPATH上の`.ps1`を`.cmd`より先に使うため、本体の無い起動スクリプトが残ると正規の起動先より前で起動に失敗する。
     npmの`uninstall`は起動スクリプトも削除するため、残るのは本体が手で削除された場合などに限られる。
     npmの起動スクリプトは自身のディレクトリ（`$basedir`・`$basedir_win`・`%dp0%`・`%~dp0`）からの相対で
     `node_modules/<パッケージ>`を参照するため、その参照を含み、同じディレクトリに`node_modules/<パッケージ>`が無いものを集める。
     シンボリックリンクは、リンク先の本文をリンクの置き場所から実行するものとして同じく判定する。
+    エディターがBOM付きUTF-16で保存し直したもの（PowerShellは`.ps1`として実行する）も読む。
     """
     bases = ("$basedir", "$basedir_win", "%dp0%", "%~dp0")
     references = tuple(f"{base}/node_modules/{package_name}/" for base in bases)
@@ -545,10 +580,9 @@ def _find_npm_launchers_left_without_package(
     for directory in dict.fromkeys(common.safe_resolve(path) for path in (*path_directories, *extra_search_directories)):
         if (directory / "node_modules").joinpath(*package_name.split("/")).exists():
             continue
-        for suffix in ("", ".cmd", ".ps1"):
-            launcher = directory / f"{cli_name}{suffix}"
+        for launcher in _existing_launchers(directory, cli_name):
             try:
-                content = _read_npm_launcher(launcher)
+                content = _read_npm_launcher(launcher, utf16=True)
             except OSError:
                 continue
             if content is not None and any(reference in content.replace("\\", "/") for reference in references):
@@ -556,16 +590,18 @@ def _find_npm_launchers_left_without_package(
     return left
 
 
-def _read_npm_launcher(launcher: Path) -> str | None:
+def _read_npm_launcher(launcher: Path, *, utf16: bool = False) -> str | None:
     """起動スクリプトとして読めるファイルの本文を返し、それ以外では`None`を返す。
 
-    起動スクリプトより大きいファイル（数百MBの実行ファイル本体など）とUTF-8として復号できないファイルは、
-    実行ファイルなどの起動スクリプトではないものとみなす。読み取りの`OSError`は送出する。
+    起動スクリプトより大きいファイル（数百MBの実行ファイル本体など）と復号できないファイルは、
+    実行ファイルなどの起動スクリプトではないものとみなす。npmはUTF-8で書くためUTF-8として復号し、
+    `utf16`ではBOM付きUTF-16も復号する。読み取りの`OSError`は送出する。
     """
     if not launcher.is_file() or launcher.stat().st_size > _MAX_NPM_LAUNCHER_BYTES:
         return None
+    data = launcher.read_bytes()
     try:
-        return launcher.read_bytes().decode("utf-8")
+        return data.decode("utf-16" if utf16 and data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)) else "utf-8")
     except UnicodeDecodeError:
         return None
 
