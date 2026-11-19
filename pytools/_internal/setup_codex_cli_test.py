@@ -366,7 +366,8 @@ def test_windows_migration_deferral_shows_evidence_and_how_to_finish(
 ) -> None:
     """旧版の移行を延期したら、判定に使ったPIDとパスと、旧版の実行を確かめたのか否定できないだけなのかを示す。
 
-    旧版がPATHで先に見つかっても更新済みの版を使えるよう、その起動先のフルパスと、旧版を削除するコマンドも示す。
+    旧版がPATHで先に見つかっても更新済みの版を使えるよう、その起動先のフルパスと、
+    推奨するPowerShell 7でそのまま実行できる、旧版を削除するコマンドも示す。
     """
     _, run = _prepare_windows_run(monkeypatch, tmp_path, scenario)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", run)
@@ -375,8 +376,9 @@ def test_windows_migration_deferral_shows_evidence_and_how_to_finish(
         setup_codex_cli.run(client)
 
     removal = {
-        "旧npm版": f'`"{tmp_path / "npm" / "npm.cmd"}" uninstall --global @openai/codex`',
-        "mise版": '`"/usr/bin/mise" uninstall --all --yes npm:@openai/codex`',
+        "旧npm版": (tmp_path / "npm" / "npm.cmd", "uninstall --global @openai/codex"),
+        # `_isolate`がPATH上に置くmiseは、実行中のOSの絶対パスの表記で示される。
+        "mise版": (Path("/usr/bin/mise").absolute(), "uninstall --all --yes npm:@openai/codex"),
     }
     deferrals = {
         target: [message for message in caplog.messages if f"{target}の移行を次回へ延期" in message] for target in removal
@@ -384,10 +386,12 @@ def test_windows_migration_deferral_shows_evidence_and_how_to_finish(
     assert {target for target, messages in deferrals.items() if messages} == set(deferred)
     for target, shown in deferred.items():
         [message] = deferrals[target]
-        assert f"PID 0（{shown.format(tmp=tmp_path)}）" in message
+        # 一時ディレクトリ配下のパスは、実行中のOSの区切りで表示される。
+        assert f"PID 0（{Path(shown.format(tmp=tmp_path))}）" in message
         assert (f"{target}を実行中" in message) is confirmed
         assert ("起動引数を読めず" in message and f"{target}の実行を否定できない" in message) is not confirmed
-        assert removal[target] in message
+        executable, arguments = removal[target]
+        assert f"PowerShellで`& '{executable}' {arguments}`を実行して{target}を削除する" in message
         assert f"`{tmp_path / 'dotfiles' / 'bin' / 'codex.cmd'}`で更新済みの版を起動する" in message
 
 

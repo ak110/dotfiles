@@ -344,7 +344,8 @@ def _remove_mise_versions(canonical: Path) -> tuple[list[str], bool]:
                 "codex",
                 f"mise版の移行を次回へ延期: {', '.join(map(str, paths))}。"
                 f"{setup_cli_common.describe_processes(running, 'mise版')}。"
-                f'表示したプロセスがmise版なら終了してから、`"{mise}" uninstall --all --yes {target}`でmise版を削除する。'
+                "表示したプロセスがmise版なら終了してから、"
+                f"{setup_cli_common.format_user_command(mise, f'uninstall --all --yes {target}')}を実行してmise版を削除する。"
                 f"削除するまでは`{canonical}`で更新済みの版を起動する",
             )
         )

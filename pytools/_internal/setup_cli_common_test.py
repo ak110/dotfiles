@@ -496,6 +496,105 @@ def test_windows_migrate_keeps_npm_package_while_it_may_be_running(
     assert (f"旧npm版の移行を次回へ延期: {package}" in caplog.text) is not removed
 
 
+# npm 11.20.0がWindowsのグローバル導入でprefix直下に生成する起動スクリプト（行末の空白を除く）。
+_NPM_SH_LAUNCHER = r"""#!/bin/sh
+basedir=$(dirname "$(echo "$0" | sed -e 's,\\,/,g')")
+
+case `uname` in
+    *CYGWIN*|*MINGW*|*MSYS*)
+        if command -v cygpath > /dev/null 2>&1; then
+            basedir=`cygpath -w "$basedir"`
+        fi
+    ;;
+esac
+
+if [ -x "$basedir/node" ]; then
+  exec "$basedir/node"  "$basedir/node_modules/@openai/codex/bin/codex.js" "$@"
+else
+  exec node  "$basedir/node_modules/@openai/codex/bin/codex.js" "$@"
+fi
+"""
+_NPM_CMD_LAUNCHER = r"""@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+
+IF EXIST "%dp0%\node.exe" (
+  SET "_prog=%dp0%\node.exe"
+) ELSE (
+  SET "_prog=node"
+  SET PATHEXT=%PATHEXT:;.JS;=;%
+)
+
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_modules\@openai\codex\bin\codex.js" %*
+"""
+
+
+@pytest.mark.parametrize(
+    ("scenario", "uninstalls", "warnings"),
+    [
+        # 無関係なnodeの起動引数を読めず、旧npm版の実行を否定できない。
+        ("deferred", 0, ["旧npm版の移行を次回へ延期"]),
+        ("removed", 1, []),
+        ("removal-failed", 1, ["旧npm版の削除に失敗"]),
+        # 拡張子なしの起動スクリプトが別のパッケージを指す場合は、従来どおり帰属を確認できず保持する。
+        ("foreign-sh-launcher", 1, ["npm packageへの帰属を確認できないため保持"]),
+    ],
+)
+def test_windows_migrate_handles_launchers_npm_created_for_one_package_once(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, scenario: str, uninstalls: int, warnings: list[str]
+) -> None:
+    """Windowsのnpmが1つのbinに作る`.cmd`とsh用の拡張子なしの起動スクリプトは、同じパッケージとして1回だけ移行する。
+
+    延期中に「保持したため対応不要」と「削除する」の矛盾する警告を並べない。
+    削除コマンドは、推奨するPowerShell 7でそのまま実行できる形で示す。
+    """
+    prefix = tmp_path / "npm"
+    package = prefix / "node_modules" / "@openai" / "codex"
+    (package / "bin").mkdir(parents=True)
+    (package / "bin" / "codex.js").write_text("", encoding="utf-8")
+    (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
+    sh_package = "@other/cli" if scenario == "foreign-sh-launcher" else "@openai/codex"
+    (prefix / "codex").write_text(_NPM_SH_LAUNCHER.replace("@openai/codex", sh_package), encoding="utf-8")
+    (prefix / "codex.cmd").write_text(_NPM_CMD_LAUNCHER, encoding="utf-8")
+    npm = prefix / "npm.cmd"
+    npm.write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", str(prefix))
+    unrelated_node = windows_process(_NODE, r"C:\Services\worker.js", denied=["cmdline"])
+    patch_windows_processes(monkeypatch, [unrelated_node] if scenario == "deferred" else [])
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        output = {"prefix": prefix, "root": prefix / "node_modules"}.get(command[1], "")
+        failed = scenario == "removal-failed" and command[1] == "uninstall"
+        return subprocess.CompletedProcess(command, 1 if failed else 0, f"{output}\n", "npm ERR! EBUSY")
+
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        try:
+            setup_cli_common.migrate_npm_launchers(
+                "codex", "@openai/codex", tmp_path / "dotfiles/bin/codex.cmd", tmp_path / "standalone"
+            )
+        except RuntimeError as error:
+            assert scenario == "removal-failed", error
+
+    assert [command for command in calls if command[1] == "uninstall"] == [
+        [str(npm), "uninstall", "--global", "@openai/codex"]
+    ] * uninstalls
+    assert [[warning for warning in warnings if warning in message] for message in caplog.messages] == [
+        [warning] for warning in warnings
+    ]
+    removal = f"PowerShellで`& '{npm}' uninstall --global @openai/codex`を実行"
+    assert all(removal in message for message in caplog.messages if "旧npm版" in message)
+
+
 def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
     old_bin = tmp_path / "old"

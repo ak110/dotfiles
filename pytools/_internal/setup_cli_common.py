@@ -34,6 +34,8 @@ NPM_GLOBAL_LOCK = threading.Lock()
 
 _MAX_NPM_LAUNCHER_BYTES = 64 * 1024
 """npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。"""
+_NPM_LAUNCHER_BASES = ("$basedir", "%dp0%", "%~dp0")
+"""npmが生成する起動スクリプト（sh用の拡張子なし・`.ps1`・`.cmd`）が、自身のディレクトリを表す表記。"""
 
 
 def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
@@ -116,6 +118,19 @@ def prepend_path(path: Path) -> None:
         os.environ["PATH"] = os.pathsep.join([value, *remaining])
 
 
+def format_user_command(executable: Path, arguments: str) -> str:
+    """ユーザーへ実行を案内するコマンドを、表示する文に埋め込む形で返す。
+
+    Windowsでは推奨するPowerShell 7でそのまま実行できるよう、PowerShellのコマンドと明記し、
+    引用した実行パスの前に呼び出し演算子`&`を付ける。
+    """
+    if sys.platform == "win32":
+        # 二重引用符の中ではパスの`$`と`` ` ``を展開するため、単一引用符で囲み、引用符そのものは重ねる。
+        quoted = "'" + str(executable).replace("'", "''") + "'"
+        return f"PowerShellで`& {quoted} {arguments}`"
+    return f'`"{executable}" {arguments}`'
+
+
 def migrate_npm_launchers(
     cli_name: str,
     package_name: str,
@@ -132,6 +147,8 @@ def migrate_npm_launchers(
     npmの導入先を照会できないパッケージと、Windowsでパッケージから起動したプロセスがあるパッケージは、その回は削除しない。
     """
     changed = _remove_orphan_npm_launchers(cli_name, package_name, extra_search_directories)
+    # Windowsのnpmは1つのbinに`.cmd`とsh用の拡張子なしの起動スクリプトを作るため、パッケージごとに1回だけ移行する。
+    migrated: set[Path] = set()
     for launcher in _iter_noncanonical_launchers(
         cli_name,
         canonical_prefix,
@@ -149,13 +166,16 @@ def migrate_npm_launchers(
             logger.warning(log_format.format_status(cli_name, owner))
             continue
         npm, package_dir = owner
+        if package_dir in migrated:
+            continue
+        migrated.add(package_dir)
+        removal = format_user_command(npm, f"uninstall --global {package_name}")
         if running := find_windows_cli_processes(cli_name, packages=(package_dir,)):
             logger.warning(
                 log_format.format_status(
                     cli_name,
                     f"旧npm版の移行を次回へ延期: {package_dir}。{describe_processes(running, '旧npm版')}。"
-                    "表示したプロセスが旧npm版なら終了してから、"
-                    f'`"{npm}" uninstall --global {package_name}`で旧npm版を削除する。'
+                    f"表示したプロセスが旧npm版なら終了してから、{removal}を実行して旧npm版を削除する。"
                     f"削除するまでは`{canonical_launcher}`で更新済みの版を起動する",
                 )
             )
@@ -169,9 +189,7 @@ def migrate_npm_launchers(
         if result is not None and result.returncode == 0:
             changed = True
         else:
-            message = (
-                f'旧npm版の削除に失敗: {common.format_cli_error(result)}。`"{npm}" uninstall --global {package_name}`を実行する'
-            )
+            message = f"旧npm版の削除に失敗: {common.format_cli_error(result)}。{removal}を実行する"
             logger.warning(log_format.format_status(cli_name, message))
             raise RuntimeError(message)
     return changed
@@ -329,7 +347,7 @@ def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_
     （`$basedir`・`%dp0%`・`%~dp0`）からの相対で`node_modules/<パッケージ>`を参照するため、
     その参照を含み本体が不在のものだけを対象とする。別の導入先を絶対パスで指すものは対象外とする。
     """
-    references = tuple(f"{base}/node_modules/{package_name}/" for base in ("$basedir", "%dp0%", "%~dp0"))
+    references = tuple(f"{base}/node_modules/{package_name}/" for base in _NPM_LAUNCHER_BASES)
     changed = False
     path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     for directory in {common.safe_resolve(path) for path in (*path_directories, *extra_search_directories)}:
@@ -338,11 +356,8 @@ def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_
         for name in (cli_name, f"{cli_name}.cmd", f"{cli_name}.ps1"):
             launcher = directory / name
             try:
-                # 実行ファイル本体（数百MB）を読まないよう、起動スクリプトの大きさのファイルだけを読む。
-                if not launcher.is_file() or launcher.stat().st_size > _MAX_NPM_LAUNCHER_BYTES:
-                    continue
-                normalized = launcher.read_text(encoding="utf-8", errors="replace").replace("\\", "/")
-                if not any(reference in normalized for reference in references):
+                content = _read_npm_launcher(launcher)
+                if content is None or not any(reference in content.replace("\\", "/") for reference in references):
                     continue
                 launcher.unlink()
             except OSError as error:
@@ -355,6 +370,16 @@ def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_
             logger.info(log_format.format_status(cli_name, f"本体の無いnpm起動スクリプトを削除しました: {launcher}"))
             changed = True
     return changed
+
+
+def _read_npm_launcher(launcher: Path) -> str | None:
+    """npmの起動スクリプトの大きさのファイルだけを読み、それ以外では`None`を返す。
+
+    実行ファイル本体（数百MB）を読まないためである。読み取りの`OSError`は送出する。
+    """
+    if not launcher.is_file() or launcher.stat().st_size > _MAX_NPM_LAUNCHER_BYTES:
+        return None
+    return launcher.read_text(encoding="utf-8", errors="replace")
 
 
 def _adjacent_npm(directory: Path) -> Path | None:
@@ -418,17 +443,19 @@ def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name
     package_real = common.safe_resolve(package_dir)
     if resolved != launcher.absolute() and _is_relative_to(resolved, package_real):
         return True
-    if launcher.suffix.lower() == ".cmd":
+    # WindowsのnpmはPATH上へ`.cmd`と、Git Bashなどのsh用に拡張子なしの起動スクリプトを置く。
+    if launcher.suffix.lower() in {".cmd", ""}:
         try:
-            content = launcher.read_text(encoding="utf-8", errors="replace")
+            content = _read_npm_launcher(launcher)
         except OSError:
             return False
         entrypoint = _package_bin_entrypoint(package_dir, launcher.stem)
-        if entrypoint is None:
+        if content is None or entrypoint is None:
             return False
         entrypoint_real = common.safe_resolve(entrypoint)
         return any(
-            common.safe_resolve(candidate) == entrypoint_real for candidate in _cmd_referenced_paths(content, launcher.parent)
+            common.safe_resolve(candidate) == entrypoint_real
+            for candidate in _launcher_referenced_paths(content, launcher.parent)
         )
     if launcher.suffix.lower() == ".exe":
         # mise shimはmiseの解決情報が対象packageを指す場合だけ対象とする。
@@ -539,12 +566,12 @@ def _script_entry(program: str, cmdline: list[str]) -> str | None:
     return command[index] if index < len(command) and not command[index].startswith("-") else None
 
 
-def _cmd_referenced_paths(content: str, launcher_dir: Path) -> Iterable[Path]:
+def _launcher_referenced_paths(content: str, launcher_dir: Path) -> Iterable[Path]:
     for raw in re.findall(r'(?:"([^"]+)"|([^\s"]+))', content):
-        token = raw[0] or raw[1]
-        normalized = token.replace("%~dp0", str(launcher_dir) + os.sep).replace("%dp0%", str(launcher_dir) + os.sep)
-        normalized = normalized.replace("\\", os.sep)
-        candidate = Path(normalized)
+        normalized = raw[0] or raw[1]
+        for base in _NPM_LAUNCHER_BASES:
+            normalized = normalized.replace(base, str(launcher_dir) + os.sep)
+        candidate = Path(normalized.replace("\\", os.sep))
         if not candidate.is_absolute():
             candidate = launcher_dir / candidate
         yield candidate
