@@ -2,7 +2,7 @@
 name: edit-dotfiles-norms
 user-invocable: false
 description: >
-  dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）、
+  dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/skills/`、
   `agent-basics/skills/`、`.claude/skills/`などのエージェント向け文書を変更・削除・縮小するとき、
   変更した規範を同じセッションへ適用するとき、規範を変更したセッションで会話圧縮後に作業を続けるとき、
   変更または新設したスキルを起動するとき、`agent-toolkit:atk-mode`の作業`process-wi`のメインがAWIごとに
@@ -48,7 +48,7 @@ description: >
 
 ## 変更した規範の自セッション適用
 
-対象となる規範は、`AGENTS.md`、`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）、`agent-basics/skills/`配下、および`.claude/skills/`配下の各ファイルである。
+対象となる規範は、`AGENTS.md`、`agent-toolkit/skills/`、`agent-basics/skills/`配下、および`.claude/skills/`配下の各ファイルである。
 稼働中の仕組みはセッション開始時や配布時の版で動き、作業ツリーで改訂した条文とは版が違う。
 どの版をいつから適用するかを取り違えないことが要点である。
 

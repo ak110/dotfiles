@@ -117,7 +117,7 @@ minimum-items = 21
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
 # 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
 name = "規範変更の対象ファイル"
-paths = ["AGENTS.md", "agent-toolkit/skills/", "agent-toolkit/share/", "agent-basics/skills/", ".claude/skills/"]
+paths = ["AGENTS.md", "agent-toolkit/skills/", "agent-basics/skills/", ".claude/skills/"]
 suffixes = [".md"]
 require-paths = true
 
@@ -380,7 +380,6 @@ targets = [
     "agent-toolkit/skills/*.py",
     "agent-toolkit/skills/*/*.py",
     "agent-toolkit/skills/*/references/*.py",
-    "agent-toolkit/share/*.py",
     "agent-toolkit/hooks/*.py",
     "agent-toolkit/agent_toolkit/*.py",
     "agent-toolkit/agent_toolkit/*/*.py",

@@ -58,7 +58,7 @@ ROLE_DOCUMENT_DIRECTORIES: tuple[str, ...] = ("skills/atk-mode/roles", "share")
 
 先頭は入口スキル`atk-mode`の配下（移行先）、`share`は移行前の置き場所である。
 スキルの配下だけを配置するホストへも役割文書を届けるために移行しており、移行の途中は両方を解決する。
-同じ名前の文書を両方へ置かない（`share/task_documents_invariant_test.py`が確かめる）。
+同じ名前の文書を両方へ置かない（`task_documents_invariant_test.py`が確かめる）。
 """
 
 
