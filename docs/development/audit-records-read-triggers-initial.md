@@ -73,8 +73,10 @@ Claude Code 2.1.311では、`agent-basics:bugfix`のSkill起動をhookが取得�
 宣言を含む249 sourceのSHA256は、分類の取得時の作業ツリーの本文と一致した。
 この参照分類は4語の候補に限り、候補外を含む宣言経路は`read_triggers_invariant_test.py`のstrict検査で確かめる。
 指定節は注目箇所であり、取得済みの判定単位はファイル全文とする。
+原本の節指定列は宣言の内容を表し、取得済み状態や実機での成功を示さない。
 2回目と中間取得時の原本は保存先のGit履歴に無く、その件数とSHA256は参考値で、その版は再取得できない。
 全文取得方式の原本は次の取得時SHA256で特定し、行末はLFである。
+この分類を再取得する場合は、比較基準`c31bea2b6`と、保存したroutesのsource SHAが一致する公開履歴の版を選び、前掲の4語の独立検索と宣言・参照の対応付けを行う。
 
 | 原本ファイル | 全文取得方式の取得時SHA256 |
 | --- | --- |
@@ -95,7 +97,13 @@ Readの指定は前半がoffset 14・limit 63、後半がoffset 90・limit 40で
 自然会話では、Write後の案内、Read、再WriteとEditを観測したが、180秒上限で終わり最終応答はなかった。
 制御会話では同じPython資料の1〜50行、52行以降、51行の順にReadし、途中に未取得範囲がある間は全文取得済みにならず、51行の取得後に全文取得済みとなった。
 後続の自然会話は終了0で最終応答を得たが、basics側の原因分析資料は前半のRead出力が省略され、後半だけが記録されて全文取得済みにはならなかった。
-このときは`--plugin-dir`で指定したagent-toolkitと、インストール済みの別の場所のagent-basicsを読み込み、登録元とRead先の本文の同一性は確かめていない。
+このときは`--plugin-dir`で指定したagent-toolkit 2.228.0と、インストール済みの別の場所のagent-basics 1.4.0を読み込み、登録元とRead先の本文の同一性は確かめていない。
+登録元とRead先の一致は、1つのworktreeの2 pluginを明示し、許可ツールをReadとSkill、上限を120秒とした別の制御観測で確かめた。
+この制御観測の版はClaude Code 2.1.311、agent-toolkit 2.228.0、agent-basics 1.4.0で、終了0・result successだった。
+`agent-basics:bugfix`のSkillと`agent-basics/skills/bugfix/SKILL.md`のReadを比べ、Readは121行中121行で省略が無かった。
+Read本文のSHA256は`301587105fd4b30d287e954ef3d263007c7787d7cf78d44c383c3cffcc10d494`で、Skill本文とRead本文は同じworktreeの資料と一致した。
+この制御観測の3 sourceは再検証で選ぶ版と一致した。
+自然会話と、同名pluginが複数登録された環境での優先順位は、この制御結果の対象外である。
 観測した宣言は原因分析の操作と判断の2宣言とPython資料の1宣言に限り、他の宣言の個別の取得順と、公開イベントのないモデル内部の判断や利用は観測していない。
 
 現行方式の再観測では、起動前に対象worktreeのcommit OIDと未commit差分、agent-toolkitとagent-basicsのmanifestのversion、後掲の3 sourceのSHA256を記録する。
@@ -109,10 +117,15 @@ timeout 180 claude -p --no-session-persistence --plugin-dir <worktree>/agent-too
 streamのplugin登録のpathとversion、SkillのBase directory、Readのpath・本文・hashが対象worktreeと一致することを確かめる。
 初回Write、PreToolUseの案内、SkillとRead、再WriteとEditをイベントの順序で確かめ、PostToolUseのRead結果の範囲・省略の有無と、同じ主体・資料hashの取得済み状態を記録する。
 未取得範囲、最終応答、終了状態も記録し、公開イベントからモデル内部の利用を推論しない。
+出力先は取得前に存在しない作業用パスを使う。
+Read本文は取得範囲を同じファイルの対応箇所と比べ、事前に記録していない資料は版の一致を確かめられないものとして扱う。
+自然会話とは別に、再検証で選ぶ版（後掲の3 sourceのSHA256が一致する公開版）の`read_delivery.py`と`read_delivery_test.py`で、正常・省略・失敗・誤metadata・分割取得の全文被覆を比べる。
+登録元とRead先の一致は、前掲の制御観測と同じく1つのworktreeの2 pluginを明示し、ReadとSkillだけを許可した会話で確かめる。
 
 各観測の版と再検証で選ぶ版は、3 sourceのSHA256で次のとおり識別する。
 代表観測と後続自然観測の版は公開履歴からの再現を確認できず、歴史的な参考として扱う。
 後続自然観測の後に例外案内と不在資料向け案内を変えたため、その版は再検証で選ぶ版と同一ではない。
+正常資料の案内と全文被覆は変えておらず、不在の分岐は公開hook入力を使う別の試験で確かめた。
 
 | 実装source | 代表観測 | 後続自然観測 | 再検証で選ぶ版 |
 | --- | --- | --- | --- |
