@@ -281,7 +281,8 @@ def build_goal(skill: str, skill_args: str | None, *, launch: str | None = None)
     if launch is not None:
         return f"このセッションが担当する作業`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{launch}"
     if (name := skill_modes.entry_work(skill)) is not None:
-        start = skill_modes.entry_launch(skill_modes.invocation_scope(name, skill_args), free_text=True)
+        work = skill_modes.invocation_scope(name, skill_args).removeprefix("agent-toolkit:")
+        start = skill_modes.entry_launch(work, free_text=True)
     else:
         start = f"スキル`{skill}`を起動して始める（起動入力の`free_text`が空でなければ引数として渡す）。"
     return f"このセッションが担当するスキル`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{start}"
