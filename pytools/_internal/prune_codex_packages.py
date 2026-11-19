@@ -141,6 +141,18 @@ def _selected_releases(root: pathlib.Path) -> dict[pathlib.Path, list[str]]:
         if not _complete_release(target, package=root.name):
             raise ValueError(f"{name}の選択先が不完全。update-dotfilesで公式導入を修復する")
         retained.setdefault(target, []).append(name)
+    # 公式の整理（app-server-daemonのrelease_pruning.rsとinstall.shのprune_standalone_releases）は、
+    # 実行中のプロセスの有無に関係なく、selection-historyの2行目の直前の版を残す。
+    # 記録の後に選択が変わった場合は記録時の選択（1行目）が直前の版にあたるため、1行目も残す。
+    try:
+        recorded = (root / "selection-history").read_text(encoding="utf-8").splitlines()[:2]
+    except FileNotFoundError:
+        recorded = []
+    for value in filter(None, recorded):
+        if pathlib.PurePath(value).name != value or "\\" in value or value in {".", ".."}:
+            raise ValueError("selection-historyの記録が不正")
+        if (releases / value).is_dir():
+            retained.setdefault(releases / value, []).append("selection-history")
     marker = root / "auto-update-version"
     try:
         value = marker.read_text(encoding="utf-8").strip()
