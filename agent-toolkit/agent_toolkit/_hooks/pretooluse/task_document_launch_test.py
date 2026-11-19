@@ -11,27 +11,33 @@ import subprocess
 import pytest
 
 from agent_toolkit._testing.pretooluse_support import (
+    _ROLES_DIR,
     _SHARE_DIR,
     _additional_context,
     _plan_file_state_env,
 )
 from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
 
-_EXEC_DOCUMENT = _SHARE_DIR / "exec.subagent.md"
+_PLUGIN_ROOT = _SHARE_DIR.parent
+_EXEC_DOCUMENT = _ROLES_DIR / "exec.subagent.md"
+_READER_FIT_DOCUMENT = _SHARE_DIR / "reader-fit-review.subagent.md"
 
 
-@pytest.fixture(name="task_share", params=["checkout", "__w"])
-def _task_share(request: pytest.FixtureRequest, tmp_path: pathlib.Path) -> pathlib.Path:
+@pytest.fixture(name="task_documents", params=["checkout", "__w"])
+def _task_documents(request: pytest.FixtureRequest, tmp_path: pathlib.Path) -> dict[str, pathlib.Path]:
+    """役割文書の名前から、配布物と同じ相対位置に置いた文書のパスを返す。"""
+    sources = {path.name: path for path in (_EXEC_DOCUMENT, _READER_FIT_DOCUMENT)}
     if request.param == "checkout":
-        return _SHARE_DIR
+        return sources
     root = tmp_path / request.param
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    share = root / "share"
-    share.mkdir()
-    for name in ("exec.subagent.md", "reader-fit-review.subagent.md"):
-        shutil.copyfile(_SHARE_DIR / name, share / name)
-    return share
+    copies: dict[str, pathlib.Path] = {}
+    for name, source in sources.items():
+        copies[name] = root / source.relative_to(_PLUGIN_ROOT)
+        copies[name].parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, copies[name])
+    return copies
 
 
 @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
@@ -139,8 +145,7 @@ def test_free_text_start_without_task_document_passes(tmp_path: pathlib.Path) ->
 @pytest.mark.parametrize("operation", ["本文を読んで返す。", "入力欄を引用して返す。", "別文書と比較して返す。"])
 def test_task_document_reading_passes(tool_name: str, mode: str | None, operation: str, tmp_path: pathlib.Path) -> None:
     """役割の実行と同じ実在文書を読解・引用・比較の対象にしても、委譲を通す。"""
-    other = _SHARE_DIR / "reader-fit-review.subagent.md"
-    result = _invoke_after_generic_reissue(tool_name, f"{_EXEC_DOCUMENT}と{other}の{operation}", tmp_path, mode)
+    result = _invoke_after_generic_reissue(tool_name, f"{_EXEC_DOCUMENT}と{_READER_FIT_DOCUMENT}の{operation}", tmp_path, mode)
     assert result.returncode == 0
     specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
     assert specific.get("permissionDecision") != "deny"
@@ -172,11 +177,11 @@ def test_quoted_execution_command_passes(tool_name: str, mode: str | None, quote
 @pytest.mark.parametrize(("tool_name", "mode"), [("mcp__agents_server__start", "write"), ("Task", None)])
 @pytest.mark.parametrize("path_markup", ["{}", "**{}**", "`{}`"])
 def test_execution_uses_its_document_after_other_reference(
-    tool_name: str, mode: str | None, tmp_path: pathlib.Path, task_share: pathlib.Path, path_markup: str
+    tool_name: str, mode: str | None, tmp_path: pathlib.Path, task_documents: dict[str, pathlib.Path], path_markup: str
 ) -> None:
     """先に読解対象が出ていても、引用の外の実行命令の対象について是正を案内する。"""
-    task = task_share / "reader-fit-review.subagent.md"
-    reference = task_share / "exec.subagent.md"
+    task = task_documents["reader-fit-review.subagent.md"]
+    reference = task_documents["exec.subagent.md"]
     prompt = (
         f"読解対象: {reference}\n{path_markup.format(task)}の手順を実行せよ。\n成果物: {tmp_path / 'artifact_' / 'guide.md'}\n"
     )
@@ -211,9 +216,11 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
     assert "レーン識別子" in _additional_context(blocked)
 
 
-def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path, task_share: pathlib.Path) -> None:
+def test_reader_fit_review_inputs_pass_task_document_hook(
+    tmp_path: pathlib.Path, task_documents: dict[str, pathlib.Path]
+) -> None:
     """差分を持つ初回と再レビュー入力を通し、宣言外補足の拒否を維持する。"""
-    task = task_share / "reader-fit-review.subagent.md"
+    task = task_documents["reader-fit-review.subagent.md"]
     (tmp_path / "artifact_").mkdir()
     current = tmp_path / "artifact_" / "guide.md"
     before = tmp_path / "before.md"
@@ -246,7 +253,7 @@ def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path
 
 def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathlib.Path) -> None:
     """引き継ぎで前回確認版を渡しても宣言外入力として遮断しない。"""
-    task = _SHARE_DIR / "exec-review.subagent.md"
+    task = _ROLES_DIR / "exec-review.subagent.md"
     for name in ("plan.md", "handoff.md", "previous.md"):
         (tmp_path / name).write_text("# レビュー資料\n", encoding="utf-8")
     (tmp_path / "plan.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
@@ -311,8 +318,7 @@ def test_rephrased_execution_command_is_warned(tool_name: str, mode: str | None,
 
     定型行との完全一致だけで判定すると、パスの後の空白、言い回し、同じ行の続きを持つ命令が遮断の判定を経ずに委譲先へ届く。
     """
-    other = _SHARE_DIR / "reader-fit-review.subagent.md"
-    result = _invoke(tool_name, command.format(document=_EXEC_DOCUMENT, other=other), tmp_path, mode)
+    result = _invoke(tool_name, command.format(document=_EXEC_DOCUMENT, other=_READER_FIT_DOCUMENT), tmp_path, mode)
 
     assert result.returncode == 0
     assert str(_EXEC_DOCUMENT) in _additional_context(result)
@@ -370,8 +376,8 @@ def test_versioned_distribution_document_is_checked_in_place(tmp_path: pathlib.P
     root = tmp_path / "plugins" / "agent-toolkit" / "9.9.9"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit","version":"9.9.9"}', encoding="utf-8")
-    (root / "share").mkdir()
-    document = root / "share" / "exec.subagent.md"
+    document = root / _EXEC_DOCUMENT.relative_to(_PLUGIN_ROOT)
+    document.parent.mkdir(parents=True)
     shutil.copyfile(_EXEC_DOCUMENT, document)
     result = _invoke("Agent", f"{document}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path / "work")
     reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]

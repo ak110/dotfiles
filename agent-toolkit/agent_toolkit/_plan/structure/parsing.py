@@ -234,6 +234,8 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)agent-toolkit/share/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
+    # 役割文書と担当の手順書は`share/`から入口スキルの`roles/`・`playbooks/`へ移したため、移行先でも判定する。
+    re.compile(r"(^|/)agent-toolkit/skills/[^/]+/(roles|playbooks)/.+\.md$"),
     re.compile(r"(^|/)agent-basics/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-basics/skills/[^/]+/references/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/agents/.+\.md$"),
@@ -263,7 +265,8 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     レーン統合の`変更したエージェント向け文書`の対象集合を定める。
     対象集合は`agent-basics:writing-standards`の成果物種別表が定めるエージェント向け文書
     （`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）と
-    `agent-toolkit/share/`の`<役割名>.subagent.md`とし、chezmoiの配布元にあるルールとスキルも含む。
+    `agent-toolkit/share/`配下の文書と、スキルの`roles/`・`playbooks/`にある役割文書・手順書とし、
+    chezmoiの配布元にあるルールとスキルも含む。
     種類ごとに`agent-toolkit/`直下とプロジェクトの`.claude/`直下の両方の層を判定する。
     `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
     basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。

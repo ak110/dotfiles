@@ -130,7 +130,7 @@ WI本文、作業を伴うUWIの回答、参照された手順書と限定調査
 `レーン`が`なし`の項目も行を残して`[]`とする。
 
 `書込対象`は初期配分と段階の見積もりに使い、開始後の編集認可はWIの要求を境界とする。
-要求内の追加編集は`agent-toolkit:/share/exec-subagent-implementation.md`「実装」に従い、選定YAMLへの反映を省いて進める。
+要求内の追加編集は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」に従い、選定YAMLへの反映を省いて進める。
 初期配分の見積もりを直す場合は、次の操作で追加・全体チェック・保存を1回で行う。
 
 ```text

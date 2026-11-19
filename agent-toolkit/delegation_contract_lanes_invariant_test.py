@@ -25,18 +25,18 @@ def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> 
     selection_text = _selection_documents(plugin_root)
     lane = _lane_planning_contract(plugin_root)
     review = read_contract(
-        plugin_root / "share/exec-review.subagent.md", plugin_root, ("exec-review-subagent-inputs.md", "入力")
+        plugin_root / "skills/atk-mode/roles/exec-review.subagent.md",
+        plugin_root,
+        ("../playbooks/exec-review.md", "判定の観点"),
     )
-    criteria = read_contract(
-        plugin_root / "share/exec-review-criteria.md", plugin_root, ("exec-review-criteria-execution.md", "計画と表の優先")
-    )
+    criteria = (plugin_root / "skills/atk-mode/playbooks/exec-review.md").read_text(encoding="utf-8")
 
     assert all("鮮度" in content for content in (selection_text, lane))
     assert all("staleness" in content for content in (selection_text, review))
     assert all("notice" in content for content in (selection_text, lane, criteria))
     assert all("不一致" in content and "充足済み" in content and "巻き戻し" in content for content in (selection_text, lane))
     assert "食い違い" in criteria and "すでに充足されている" in criteria and "巻き戻し" in criteria
-    assert "exec-review-criteria.md" in review
+    assert "playbooks/exec-review.md" in review
 
 
 def test_selection_explanation_contract_covers_questions_without_state_changes() -> None:
@@ -235,7 +235,7 @@ def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
     plugin_root = pathlib.Path(__file__).resolve().parent
     rewrite = (plugin_root / "skills/atk-mode/playbooks/history-rewrite.md").read_text(encoding="utf-8")
     executor = read_contract(
-        plugin_root / "share/exec.subagent.md", plugin_root, ("exec-subagent-history.md", "レビュー修正の履歴統合")
+        plugin_root / "skills/atk-mode/roles/exec.subagent.md", plugin_root, ("../playbooks/review-fix.md", "Git履歴へ統合")
     )
     failure = _h2_section(rewrite, "失敗時の扱い")
     referenced = re.findall(r"`([a-z_]+)`", failure.split("の各phase名", maxsplit=1)[0])
@@ -249,28 +249,30 @@ def test_review_fix_completion_values_match_receiver() -> None:
     """実行レビューの委譲元が分岐に使う返却値を、レビュー修正の担当が返却値として定める。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
     review_parent = read_contract(
-        plugin_root / "share/exec-review.parent.md", plugin_root, ("exec-review-parent-correction.md", "レビュー修正")
+        plugin_root / "skills/atk-mode/roles/exec-review.parent.md",
+        plugin_root,
+        ("../playbooks/exec-review-loop.md", "修正の指示"),
     )
     executor = read_contract(
-        plugin_root / "share/exec.subagent.md", plugin_root, ("exec-subagent-history.md", "レビュー修正の履歴統合")
+        plugin_root / "skills/atk-mode/roles/exec.subagent.md", plugin_root, ("../playbooks/review-fix.md", "Git履歴へ統合")
     )
     expected = set(re.findall(r"`(対応完了[^`]*)`", review_parent))
-    returned = set(re.findall(r"`(対応完了[^`]*)`", _h2_section(executor, "レビュー修正の履歴統合")))
+    returned = set(re.findall(r"`(対応完了[^`]*)`", _h2_section(executor, "完了報告")))
 
     assert expected
     assert expected <= returned
 
 
 def test_lane_contract_section_references_exist() -> None:
-    """レーン担当の契約の節を指す参照は、実在するH2見出しを指す。"""
+    """レーン担当の契約の節を指す参照は、実在するH2・H3見出しを指す。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
     materials = (
-        ("exec-subagent-inputs.md", "入力"),
-        ("exec-subagent-implementation.md", "実装"),
-        ("exec-subagent-history.md", "レビュー修正の履歴統合"),
+        ("../playbooks/implementation.md", "実装を始める前"),
+        ("../playbooks/review-fix.md", "Git履歴へ統合"),
     )
-    read_contract(plugin_root / "share/exec.subagent.md", plugin_root, *materials)
-    documents = [plugin_root / "share" / name for name in ("exec.subagent.md", *(name for name, _ in materials))]
+    roles = plugin_root / "skills/atk-mode/roles"
+    read_contract(roles / "exec.subagent.md", plugin_root, *materials)
+    documents = [(roles / name).resolve() for name in ("exec.subagent.md", *(name for name, _ in materials))]
     references: dict[str, set[str]] = {path.name: set() for path in documents}
     for path in plugin_root.rglob("*.md"):
         text = path.read_text(encoding="utf-8")
@@ -278,16 +280,15 @@ def test_lane_contract_section_references_exist() -> None:
             references[target.name].update(re.findall(rf"{re.escape(target.name)}`?「([^」]+)」", text))
     assert any(references.values())
     for target in documents:
-        headings = set(re.findall(r"^## (.+)$", target.read_text(encoding="utf-8"), flags=re.MULTILINE))
+        headings = set(re.findall(r"^#{2,3} (.+)$", target.read_text(encoding="utf-8"), flags=re.MULTILINE))
         assert references[target.name] <= headings, target
 
 
 def test_lane_launch_inputs_reach_lane_owner() -> None:
     """レーン担当の起動で渡す名前付き入力は、全てレーン担当の契約が扱う。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    read_contract(plugin_root / "share/exec.parent.md", plugin_root, ("exec-parent-launch.md", "入力"))
-    parent = (plugin_root / "share/exec-parent-launch.md").read_text(encoding="utf-8")
-    executor = read_contract(plugin_root / "share/exec.subagent.md", plugin_root, ("exec-subagent-inputs.md", "入力"))
+    parent = (plugin_root / "skills/atk-mode/roles/exec.parent.md").read_text(encoding="utf-8")
+    executor = (plugin_root / "skills/atk-mode/roles/exec.subagent.md").read_text(encoding="utf-8")
     inputs = re.findall(r"^- `([^`]+)`: ", _h2_section(parent, "入力"), flags=re.MULTILINE)
 
     assert "上流投入結果" in inputs

@@ -141,7 +141,7 @@ Plan modeの状態はターン開始の時点のホストの状態で判定し�
    - 各完成条件の結果を自分で確かめ、`検証結果`を`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」の形で`## 進捗ログ`へ記録し、自分が担う残りの工程の担当と再開先も書く。
    - 最後の実装commitの前に、差分を`agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」で評価し、劣化を直して観点ごとの結論を`検証結果`へ書く。
    - `agent-toolkit:atk-mode/references/plan-format.md`「計画した検証の実行」で`## 検証`のコマンドを実行し、`agent-toolkit:atk-mode/playbooks/commit.md`でcommitを作る。
-2. `agent-toolkit:/share/exec-review.parent.md`に従って実行レビューを起動し、結果を受領する。
+2. `agent-toolkit:atk-mode/roles/exec-review.parent.md`に従って実行レビューを起動し、結果を受領する。
    指摘は自ら直し、修正commitの履歴の統合は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「修正方法の選択」に従う。
 3. 完了へ進む前に、実行レビューの未解決の指摘が0件であること（画面差分がある場合はユーザビリティレビューが`合格`か`未確定`であること）を確かめる。
    レビュー返却の`気付いた改善点:`にある差分外の既存不良も、同じ手順書に沿って処置へ渡す。

@@ -75,6 +75,43 @@ def _write_json(path: pathlib.Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _read_published_json(path: pathlib.Path) -> dict[str, Any]:
+    """`_write_json`が公開したJSONを読む。
+
+    Windowsでは置換で公開した直後の名前を、置換したプロセスが閉じるまで開けない（PermissionError）。
+    この共有違反は置換の完了で解けるため、短い上限の間だけ読み直す。権限の拒否は読み直さずに伝える。
+    """
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except PermissionError:
+            if not _sharing_violation(path) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+def _sharing_violation(path: pathlib.Path) -> bool:
+    """`open`が読めなかった名前を同じ共有指定で開き直し、共有違反による失敗かを返す。
+
+    Windowsの`open`はerrnoだけを報告し、共有違反と権限の拒否を区別しないため、OSのエラーコードを取り直す。
+    開き直せた場合は、直前の失敗が既に解けた共有違反である。
+    """
+    if sys.platform != "win32":
+        return False
+    import _winapi  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # Windows専用
+
+    try:
+        # `open`の読取と同じGENERIC_READとFILE_SHARE_READ|FILE_SHARE_WRITEで、既存の名前を開く。
+        handle = _winapi.CreateFile(
+            str(path), _winapi.GENERIC_READ, 0x1 | 0x2, _winapi.NULL, _winapi.OPEN_EXISTING, 0, _winapi.NULL
+        )
+    except OSError as error:
+        return getattr(error, "winerror", None) == 32  # ERROR_SHARING_VIOLATION
+    _winapi.CloseHandle(handle)
+    return True
+
+
 def _now() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
 
@@ -342,7 +379,7 @@ def _retrieve(job: pathlib.Path, *, wait: bool, worker: subprocess.Popen[Any] | 
                 stream.write(decoders[name].decode(data, final=finished))
                 stream.flush()
             if finished:
-                result = json.loads(result_path.read_text(encoding="utf-8"))
+                result = _read_published_json(result_path)
                 print(f"job {job.name}: 終了 exit={result['exit_code']}", flush=True)
                 return result["exit_code"]
             if not wait:

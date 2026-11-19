@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-immediate-fix.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-escalation.md` | | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md` | | |
 
 ## 受領後の扱い
 
@@ -33,16 +33,16 @@
 
 5. 完了報告において退避識別子やバックアップ用の複製パスが開示された場合は、その内容も点検し、`agent-toolkit:atk-mode/playbooks/commit.md`に従って適切に処置する。
 
-6. レビューの指摘事項と、委譲先から追加の対策や残作業について判断を求められた内容の採否は、`agent-toolkit:/share/exec-review-responses.md`を読み込んで確定する。
+6. レビューの指摘事項と、委譲先から追加の対策や残作業について判断を求められた内容の採否は、`agent-toolkit:atk-mode/playbooks/review-fix.md`を読み込んで確定する。
    元の要求、公開契約、および利用場面からその処理が属する契約上の位置付けを確認し、`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」の必要性判定を適用した上で対策を選定する。
-   完成条件の変更や除外へ進むかどうかの判断は、`../../../share/review-loop-coordination-escalation.md`「エスカレーションの事由別の扱い」に従う。
+   完成条件の変更や除外へ進むかどうかの判断は、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「エスカレーションの事由別の扱い」に従う。
    委譲先が判断要請へ付けた区分（「要件」「要求の変更」など）は、そのまま確認の理由にせず、`agent-toolkit:atk-mode/playbooks/confirmation.md`「要件と技術判断を分ける」で採否と確認の要否を判定する。
    裏付けを取得できなかった旨が記録されている行の扱いについては同スキルが定める。
 
    サブエージェントの出力（レビュー指摘や調査結果）は、指定されたレビュー指摘管理表に記録してから修正作業に着手する。
    指摘を追加するエージェントは`track`を指定して記録し、`指摘内容`に実際値、期待値、違反している規範や契約の出典、対象への適用根拠を明記する。
    レビュー対象者は、該当行を一意に特定するキーを用いて応答欄を更新する。
-   応答欄の記入時は、事前に`../../../share/exec-review-responses-records.md`「レビュー指摘管理表への応答」を読み、指定された行頭ラベルと構成に従って記述する（ラベル不足時は`atk review-table respond`の実行が失敗する）。
+   応答欄の記入時は、事前に`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」を読み、行頭ラベルと構成に従って書く（ラベル不足時は`atk review-table respond`の実行が失敗する）。
    指摘を採用しない（no）行には、同書の`判断主体:`を記録する。
    移管する場合は保存済みWIを`移管先:`へ記録する。
 

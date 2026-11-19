@@ -24,7 +24,8 @@ from session_evidence_stats import _parse_cli_timestamp
 
 # 実行レビュー担当の記録だけを選ぶ標識。agents_serverは役割文書の所在を`出所:`の行で最初の入力へ配送する。
 # 委譲元の記録にも同じ管理表の名前が現れるため、名前の一致だけでは帰属させない。
-_ROLE_MARKER = re.compile(r"出所: \S*share/exec-review\.subagent\.md")
+# 集計期間には役割文書を`share/`から配送していた移行前の記録も含むため、旧所在も標識として残す。
+_ROLE_MARKER = re.compile(r"出所: \S*(?:share|skills/atk-mode/roles)/exec-review\.subagent\.md")
 # Codexの記録で、モデルの出力として現れる`response_item`の種類。これより前の入力だけを依頼文の候補にする。
 _CODEX_OUTPUT_TYPES = frozenset({"reasoning", "function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
 _MODEL_UNKNOWN = "モデル不明"

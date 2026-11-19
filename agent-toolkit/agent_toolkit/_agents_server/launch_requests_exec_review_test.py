@@ -115,7 +115,7 @@ async def test_exec_review_condition_table_preflight(
     else:
         with pytest.raises(ActionableError, match="review_contract") as rejected:
             await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
-        assert "exec-review-recording.md" in str(rejected.value)
+        assert "skills/atk-mode/references/review-contract.md「記録する行と要求単位」" in str(rejected.value)
         if defect == "multiple":
             message = str(rejected.value)
             assert "補足条件 0/1件" in message

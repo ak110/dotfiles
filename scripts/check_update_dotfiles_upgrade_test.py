@@ -421,42 +421,57 @@ def _resolve_consumer_paths(
         return setup_herdr_cli._launcher_path(), codex_runtime.visible_bin_dir()  # pylint: disable=protected-access
 
 
-def test_initial_apply_failure_preserves_child_output_and_stops_update(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("retry_status", [0, 23])
+def test_initial_apply_retried_once_and_update_verified_only_after_old_version_applied(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], retry_status: int
 ) -> None:
-    """初期適用の失敗を出力と終了コード付きで返し、公開更新を開始しない。"""
+    """旧版の初期適用は同じ旧版で1回だけ再試行し、旧版を適用できた場合だけ現行版への更新を検証する。
+
+    再試行でも失敗した場合は、旧版の状態が無いまま更新すれば成功する状況でも検証失敗とし、更新を開始しない。
+    """
     uv = tmp_path / "uv"
     uv.write_bytes(b"test-uv")
     monkeypatch.setenv("UV", str(uv))
     calls: list[list[str]] = []
+    initial_statuses = iter((23, retry_status))
 
     def runner(arguments, **_kwargs):
         calls.append(arguments)
         if arguments[0] == "chezmoi":
-            return subprocess.CompletedProcess(arguments, 23, stdout="child-out\n", stderr="child-error\n")
+            attempt = sum(call[0] == "chezmoi" for call in calls)
+            status = next(initial_statuses)
+            stdout = f"失敗したステップ: 旧版の工程{attempt}\n" if status else ""
+            return subprocess.CompletedProcess(arguments, status, stdout=stdout, stderr=f"child-error-{attempt}\n")
         if "--format=%cI" in arguments:
             return subprocess.CompletedProcess(arguments, 0, stdout="1970-01-09T02:26:40+00:00\n", stderr="")
-        values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
-        output = next((value for option, value in values.items() if option in arguments), "")
-        return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
+        return _git_answers(arguments)
 
-    with pytest.raises(upgrade.UpgradeCheckError, match="終了コード23") as caught:
+    def check() -> None:
         upgrade.run_upgrade_check(
             tmp_path, "windows", runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
         )
-    message = str(caught.value)
-    assert "旧版の初期適用" in message
-    assert "現行版への更新は未実行" in message
-    assert "old-oid" in message and "1970-01-09T02:26:40+00:00" in message
-    assert "current-oid" in message and "1970-01-09T13:46:40+00:00" in message
-    assert "同じ旧版が選ばれる" in message
-    assert "修正commit" in message and "72時間" in message
+
+    if retry_status == 0:
+        check()
+    else:
+        with pytest.raises(upgrade.UpgradeCheckError, match="終了コード23") as caught:
+            check()
+        message = str(caught.value)
+        assert "旧版の初期適用が1回の再試行でも失敗し、現行版への更新は未実行である" in message
+        assert "old-oid" in message and "1970-01-09T02:26:40+00:00" in message
+        assert "current-oid" in message and "1970-01-09T13:46:40+00:00" in message
+        assert "同じ旧版が選ばれる" in message
+        assert "修正commit" in message and "72時間" in message
     stdout, stderr = capsys.readouterr()
-    assert "child-out\n" in stdout
-    assert "child-error\n" in stderr
-    assert "終了状態=23" in stderr
-    assert not any(arguments[0] in {"bash", "cmd.exe"} for arguments in calls)
-    assert sum("update-ref" in arguments for arguments in calls) == 1
+    initial_applies = [arguments for arguments in calls if arguments[0] == "chezmoi"]
+    assert len(initial_applies) == 2
+    assert initial_applies[0] == initial_applies[1]
+    assert "失敗したステップ: 旧版の工程1\n" in stdout
+    assert "child-error-1\n" in stderr
+    assert "旧版old-oidの初期適用に失敗したため、同じ旧版で1回だけ再試行する" in stderr
+    assert ("失敗したステップ: 旧版の工程2\n" in stdout) == (retry_status != 0)
+    assert sum(arguments[0] == "cmd.exe" for arguments in calls) == (retry_status == 0)
+    assert ("旧版更新経路を確認した: old-oid -> current-oid" in stdout) == (retry_status == 0)
 
 
 @pytest.mark.parametrize("phase", ["clone", "update"])

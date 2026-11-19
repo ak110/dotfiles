@@ -214,8 +214,8 @@ def test_skill_review_table_commands_reject_incomplete_or_unsupported_forms(argv
 @pytest.mark.parametrize(
     ("relative_path", "marker", "subcommand"),
     (
-        ("share/exec-review-criteria.md", "`atk review-table add", "add"),
-        ("share/exec-review-responses.md", "応答の記録は、`atk review-table respond", "respond"),
+        ("skills/atk-mode/playbooks/exec-review.md", "`atk review-table add", "add"),
+        ("skills/atk-mode/playbooks/review-fix.md", "応答の記録は、`atk review-table respond", "respond"),
     ),
 )
 def test_skill_review_table_options_match_accepted_cli_vectors(
@@ -224,13 +224,14 @@ def test_skill_review_table_options_match_accepted_cli_vectors(
     subcommand: str,
 ) -> None:
     """スキル本文のオプション集合を受理ケースの仕様集合へ固定する。"""
-    skill_path = pathlib.Path(__file__).parents[2] / relative_path
+    plugin_root = pathlib.Path(__file__).parents[2]
+    skill_path = plugin_root / relative_path
     text = skill_path.read_text(encoding="utf-8")
     if subcommand == "respond":
         text = read_contract(
-            skill_path, skill_path.parent.parent, ("exec-review-responses-records.md", "レビュー指摘管理表への応答")
+            skill_path, plugin_root, ("../references/review-record-response.md", "本文がこの資料の基準を使う場面")
         )
-        text = text.split("\n## レビュー指摘管理表への応答\n", 1)[1].split("\n## ", 1)[0]
+        text = text.split("\n# レビュー指摘管理表への応答\n", 1)[1].split("\n## ", 1)[0]
     assert marker in text
     # インラインコードの引数を読み取り、同じ節のshow例とフェンスの区切り記号を分ける。
     spans = [

@@ -7,7 +7,7 @@
   再レビューではレビュー担当が前回の指摘ごとに完了・対応不十分・未対応を表へ記録し、2回目以降の指摘には帰属の区分を付ける。
   両者は類似見直しで確かめた件数を書き、書く量は件数・決まった値に限って短く保つ。
   2026年11月18日、引き継ぎ記録の修正の再レビューがラウンド3〜8まで続いた事象に対するユーザー指示による。
-  現行の仕組みと規定は`atk review-table`と`agent-toolkit:/share/exec-review-recording-issues.md`「レビュー指摘管理表への登録」が定める
+  現行の仕組みと規定は`atk review-table`と`agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表への登録」が定める
 - コード変更のレビューで、挙動の不具合の指摘は、再現するコマンドとその出力を添えたものだけを残す。
   要求・認可・公開契約との不一致のように文書と差分の対照で確定する指摘と、文書のレビューは、根拠の所在で示す。
   設計に異論がある変更と重要な変更の出荷前には、系統の異なる複数のモデルに壊させて実行で再現した指摘だけを残す敵対的レビュー（`agent-basics:adversarial-review`）を、通常のレビューへ追加して使える。
@@ -22,7 +22,7 @@
   完成条件証拠は全行を新HEADで再判定する。
   round 3以上の未解決指摘では方式の維持・縮小・置換を比較し、置換直後だけ開始時点からの全差分をレビューする。
   既存のラウンド番号は修正方法の見直しに使い、回数による自動収束は行わない。
-  再レビュー省略の条件と証拠再判定の優先は`agent-toolkit:/share/exec-review-responses-completion.md`「完了報告」が所有する（2026年10月18日、ユーザーが選択した改善案B）
+  再レビュー省略の条件と証拠再判定の優先は`agent-toolkit:atk-mode/playbooks/review-fix.md`「完了報告」が所有する（2026年10月18日、ユーザーが選択した改善案B）
 - 人間向けMarkdownだけの低リスク段階では、実行レビュー担当が読者適合性も直接確認できる。
   可読性の是正要求と判断が難しい対象は、該当読者を別担当へ渡す。
   修正後も低リスクなら意味の変更を含む修正後の再レビューを省略できる。
@@ -39,7 +39,8 @@
   全指摘を不採用とした場合も根拠と応答を表へ記録し、履歴と作業ツリーを保ったまま通常の`対応完了`を返す。
   メインは未応答0件を確かめて同じレビュー担当へ再レビューを指示する。
   担当内で補える証拠修復・探索・再判定は同じ担当が返却前確認まで終え、担当で補えない判断・認可・入力・権限・外部状態の不足だけを続行できない理由として返す。
-  現行の返却と受領は`agent-toolkit:/share/exec-subagent-history.md`「レビュー修正の履歴統合」と`exec-review.subagent.md`「出力」、`exec-review.parent.md`「レビュー修正」が定める。
+  現行の返却と受領は`agent-toolkit:atk-mode/playbooks/review-fix.md`「レビュー修正の履歴統合」と`exec-review.subagent.md`「出力」が定める。
+  起動側の扱いは`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「レビュー修正」が定める。
   対応する実装単位へ統合できない修正は、新規commitへフォールバックせず最も新しい実装commitへ統合し、履歴を書き換えられない場合だけ続行できない理由を返す。
   レビュー修正専用commitは残さない（2026年10月7日のユーザー指示により、2026年8月30日に専用commitを残さないことを努力目標とした扱いを置き換えた）。
   統合先と続行できない理由を返す条件の詳細は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「修正方法の選択」が定める。
@@ -79,7 +80,7 @@
   レビュー基準は`計画`・`CI記録`・`WI`の集合値とし、1件の実行レビュー担当が複数の基準を同時に受理する。
   事後承認型UWIの是正実装が実行レビューの対象になり得るため、基準の呼称はAWIに限定しない
   （2026年9月15日、ユーザー指示。`agent-toolkit:atk-mode`の作業`process-wi`がWI基準のレビューを実施していないという指摘に由来する）。
-  現行の規定は`agent-toolkit/share/exec-review.parent.md`と`agent-toolkit/share/exec-review.subagent.md`にある
+  現行の規定は`agent-toolkit/skills/atk-mode/roles/exec-review.parent.md`と`agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md`にある
 - commitとPR説明の帰属行（セッションURLを含む）はClaude Codeの既定のまま残し、投稿前レビューと振り返りはこれらを内部識別子の混入として扱わない。
   managed settingsの`attribution.sessionUrl`と`attribution.pr`も設定しない。
   2026年10月5日、セッションURLをcommitとPR説明から外す案に対して、ユーザーが設定を増やさず既定のままとすると回答したことに由来する。

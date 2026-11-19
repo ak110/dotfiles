@@ -313,7 +313,7 @@ def _review_basis_error(reason: str) -> ActionableError:
             "`計画`は`計画`に計画ファイルの絶対パス、`CI記録`は`CI記録`・`修正系列の開始時のHEAD`・`原因commitOID`、"
             "`計画`を含まない`WI`は`WI記録`・`開始時のHEAD`を渡す"
             "（例: `レビュー基準: 計画`と`計画: /abs/plan.md`）。"
-            "入力の定義は`share/exec-review.subagent.md`「入力」にある"
+            "入力の定義は`skills/atk-mode/roles/exec-review.subagent.md`「入力」にある"
         ),
     )
 
@@ -388,7 +388,7 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
             required[name] = counts
     if not required:
         return
-    reference = "share/exec-review-recording.md「記録する行と要求単位」"
+    reference = "skills/atk-mode/references/review-contract.md「記録する行と要求単位」"
 
     value = params.get("review_contract", "")
     if not value or "\n" in value or not pathlib.Path(value).is_absolute():

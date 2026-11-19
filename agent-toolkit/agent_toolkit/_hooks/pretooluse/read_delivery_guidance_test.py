@@ -426,7 +426,7 @@ def test_public_updated_receipt_notifies_only_the_current_related_operation(tmp_
 
 def test_document_review_keeps_test_material_acquisition_conditional():
     root = read_delivery.plugin_resources.plugin_root()
-    owner = root / "share/exec-review.subagent.md"
+    owner = root / "skills/atk-mode/roles/exec-review.subagent.md"
     rows = parse_tables(owner, root, strict=True)
     writing = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
     testing = writing.parent / "references/testing.md"

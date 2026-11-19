@@ -130,7 +130,7 @@ def test_every_role_has_explicit_parent_read_source():
 _CROSS_PLUGIN_DOCUMENTS = (
     "skills/atk-mode/playbooks/user-utterance.md",
     "skills/atk-mode/references/analysis-records.md",
-    "share/exec-review-criteria.md",
+    "skills/atk-mode/roles/exec-review.subagent.md",
     "skills/atk-mode/references/delivery.md",
     "skills/atk-mode/references/draft-semantic-review.md",
 )
@@ -158,9 +158,9 @@ def test_process_wi_entry_routes_immediate_fix_for_all_modes():
         ("計画の要否", "区分を書く前", "skills/atk-mode/playbooks/write-plan.md"),
         ("計画の起草", "計画対象があれば", "skills/atk-mode/playbooks/process-wi-execution.md"),
         ("確認", "確認の要否", "skills/atk-mode/playbooks/confirmation.md"),
-        ("実行レビュー", "実行レビューの起動", "share/exec-review.parent.md"),
+        ("実行レビュー", "実行レビューの起動", "skills/atk-mode/roles/exec-review.parent.md"),
         ("要件検収", "`検証結果`", "skills/atk-mode/playbooks/verification.md"),
-        ("レビュー収束", "収束", "share/review-loop-coordination.md"),
+        ("レビュー収束", "収束", "skills/atk-mode/playbooks/exec-review-loop.md"),
         ("公開", "公開する", "skills/atk-mode/playbooks/publish.md"),
         ("終了", "作業完了報告", "skills/atk-mode/playbooks/report-completion.md"),
     ],

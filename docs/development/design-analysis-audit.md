@@ -101,7 +101,7 @@ GitHub APIの`default_branch`が指すブランチの完全SHAを、判定済み
 pendingはそのSHAでのマニフェストの実在を判定し、監査担当は同一マニフェストの解決済み版を各ecosystemの規則で修正版と比較する。
 版の比較を要する判定は監査担当が担い、新しいAPI版比較器は設けない。
 判定と却下・投稿直前レビューの手順と認可は`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`が定める。
-返却は`agent-toolkit/share/copilot-review-audit.subagent.md`が定める。
+返却は`agent-toolkit/skills/atk-mode/roles/copilot-review-audit.subagent.md`が定める。
 起動と受領は`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`が定める。
 process-loopのアラート確認は`agent-toolkit/agent_toolkit/_atk/wi/process_loop_alerts.py`が持つ。
 

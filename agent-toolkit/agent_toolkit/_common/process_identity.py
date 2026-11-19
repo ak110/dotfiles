@@ -20,7 +20,8 @@ def start_id(process: psutil.Process) -> str | None:
         boot = (_PROC_ROOT / "sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
         try:
             stat = (_PROC_ROOT / str(process.pid) / "stat").read_bytes()
-        except FileNotFoundError as error:
+        except (FileNotFoundError, ProcessLookupError) as error:
+            # 開いた後、読む前に回収されたプロセスのstatはESRCHで読めない。
             raise psutil.NoSuchProcess(process.pid) from error
         # commには空白と括弧を含められるため、最後の閉じ括弧の後をfield 3として数える。
         ticks = int(stat.rsplit(b")", 1)[1].split()[19])

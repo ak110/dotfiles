@@ -62,7 +62,8 @@ from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 _INPUT_GUIDANCE = (
-    "計画ファイルと同じstemの`.exec-review.tsv`、またはCI対応レビュー指摘管理表の"
+    "計画ファイルと同じstemの`.exec-review.tsv`、計画の無いWIの直接実装の"
+    f"`{_atk_help.WI_REVIEW_TABLE_NAME_FORMAT}`、またはCI対応レビュー指摘管理表の"
     f"`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を"
     "通常ファイルの絶対パスで指定する。"
     "標準入力、パイプおよびプロセス置換は受理しない"
@@ -661,8 +662,8 @@ def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -
         )
         result["repetition_guidance"] = (
             "過去の指摘・応答と今回の指摘を読み、"
-            "agent-toolkit/share/review-loop-coordination.md「反復原因の判定」と"
-            "agent-toolkit/share/exec-review-responses.md「同じ指摘の反復」に従い、"
+            "agent-toolkit/skills/atk-mode/playbooks/exec-review-loop.md「反復原因の判定」と"
+            "agent-basics/skills/review-standards/references/reviewee.md「同じ指摘の反復」に従い、"
             "違反規定と発生条件を比較して反復原因を判定する"
         )
     return result

@@ -15,6 +15,7 @@ agent-toolkitへ取り込んだ第三者素材の原典、改変内容と許諾�
   - `skills/show-me-your-work/SKILL.md`、`skills/figure-it-out/SKILL.md`、`skills/principle-prove-it-works/SKILL.md`。
   - `skills/blast-radius/SKILL.md`、`skills/ketchup/SKILL.md`。
   - `skills/poteto-mode/playbooks/eval.md`、`skills/poteto-mode/playbooks/authoring-a-skill.md`の評価に関する文。
+  - `skills/poteto-mode/playbooks/bug-fix.md`、`feature.md`、`refactoring.md`、`perf-issue.md`、`hillclimb.md`、`prototype.md`、`visual-parity.md`。
 - 取り込み先:
   - `skills/atk-mode/SKILL.md`（入口が作業の種類から手順書を1つ選ぶ構成）。
   - `skills/atk-mode/playbooks/confirmation.md`（認可された範囲の可逆な技術判断は先に進めてから示す）。
@@ -32,6 +33,14 @@ agent-toolkitへ取り込んだ第三者素材の原典、改変内容と許諾�
     成果物から採点する。
     盲検の採点担当が1回で採点する。
     構造のある対象だけケースを作る。
+  - `skills/atk-mode/playbooks/implementation.md`の「実装」手順1と「作業の種類ごとの要点」。
+    先に終えないと他が進まない工程を先に終える。
+    不具合の修正は、残る原因の候補を最も多く減らす実験から順に確かめる。
+    整理は、構造を動かす前に今の挙動を固定する。
+    速くする作業は、やめる段から安くする段までの順に比べる。
+    繰り返して改善する作業は、1回に1つだけ変えて1回測る。
+    試作は、決める問いがある時だけ作る。
+  - `skills/atk-mode/playbooks/visual-parity.md`（移行の前に比較の基準を作り、移行の間は比較の基準と仕組みを変えない）。
 - 改変: 該当の文を日本語へ翻訳し、既存の規範の手順へ要約・再構成して組み込んだ。
   目的の変更と公開の操作に事前の承認を求める条件を加えた。
 - 許諾: [MIT License](https://github.com/cursor/plugins/blob/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack/LICENSE)。

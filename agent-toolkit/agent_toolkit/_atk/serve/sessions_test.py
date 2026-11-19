@@ -6,7 +6,6 @@ import asyncio
 import base64
 import json
 import pathlib
-import sys
 import types
 import typing
 
@@ -14,7 +13,7 @@ import pytest
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import sessions
-from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing import serve_remote_support
 from agent_toolkit._testing.serve_sessions_support import (
     _claude_record,
     _connected_client,
@@ -446,14 +445,7 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     後始末の待機がキャンセルを吸収したまま再接続すると、新しいSSHの出力を待ち続けてatk serveの停止が完了しない。
     """
     started: list[tuple[typing.Any, ...]] = []
-    real_exec = asyncio.create_subprocess_exec
-
-    async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        # 標準出力を閉じて接続断を起こし、標準入力の終端を通知してから解放まで保持する子プロセスで代替する。
-        started.append(cmd)
-        script = "import os,sys; os.close(1); sys.stdin.read(); " + late_descendant.held_source(tmp_path / "cleanup.release")
-        return await real_exec(sys.executable, "-c", script, **kwargs)
-
+    fake_exec = serve_remote_support.disconnecting_resident_ssh(tmp_path / "cleanup.release", started)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
     context = _context(tmp_path, remote_hosts=["remote-host"])
     sessions.start_remote_clients(context)

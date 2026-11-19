@@ -365,6 +365,7 @@ class CliTurnManager:
         result_contract_recovery_consumed: bool = False,
     ) -> None:
         process: asyncio.subprocess.Process | None = None
+        continued = session
         stderr_text = ""
         finalized = False
         input_recorded = False
@@ -438,12 +439,17 @@ class CliTurnManager:
         except asyncio.CancelledError:
             raise
         except BaseException as exc:  # pylint: disable=broad-exception-caught
-            if session is None:
+            if not initialized.done() and (session is None or session is continued):
+                # 新しい会話のinitより前と、既存sessionの次のturnを開始する前（CLIの起動失敗など）の失敗は、
+                # turnが始まっていないため開始の失敗として返す。既存sessionは前のturnの結果を保つ。
+                initialized.set_exception(exc)
+            elif session is not None:
+                if not finalized:
+                    _record_failure(session, exc, stderr_text)
+                    await self._notify_waiters()
+                # 新しい会話のinitの後の記録処理で失敗した場合も、開始の待機者へ失敗を確定したsessionを渡す。
                 if not initialized.done():
-                    initialized.set_exception(exc)
-            elif not finalized:
-                _record_failure(session, exc, stderr_text)
-                await self._notify_waiters()
+                    initialized.set_result(session)
         finally:
             if session is not None:
                 try:

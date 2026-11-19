@@ -779,6 +779,7 @@ _POSSIBLE_DEFINITION_READS = [
     "cat /p/**",
     "cat $HOME/share/*",
     "cat agent-toolkit/share/*",
+    "cat agent-toolkit/skills/atk-mode/roles/*",
     "f=$(ls share/*); cat $f",
     'while read f; do cat "$f"; done < list',
     "cat $f; f=a.md",

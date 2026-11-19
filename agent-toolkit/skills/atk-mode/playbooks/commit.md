@@ -35,7 +35,7 @@ commitの単位の判断は本節を定義元とし、計画と他の手順書�
    各commitの中間の状態でも、その時点の公開契約とテストを満たすように整える（努力目標。git bisectとrevertで各commitを単独で扱えるようにするため）。
 2. commitする主体を確かめる。
    commitの権限はメインが持つ。
-   サブエージェントは、明示的な許可か`agent-toolkit:/share/exec.subagent.md`の手順がある時だけcommitする。
+   サブエージェントは、明示的な許可か`agent-toolkit:atk-mode/roles/exec.subagent.md`の手順がある時だけcommitする。
    `git push`は、委譲先へ明示的に指示した場合を除いて委譲元が行う。
 3. 本書「commitの実行前確認」を行う。
 4. メッセージを`agent-toolkit:atk-mode/references/commit-message.md`に従って書き、本書「hookの打ち切りと退避の復元」の形でcommitする。

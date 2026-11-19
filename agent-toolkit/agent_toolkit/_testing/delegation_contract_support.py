@@ -497,9 +497,9 @@ def _h2_section(content: str, heading: str) -> str:
 
 
 def _lane_planning_contract(plugin_root: pathlib.Path) -> str:
-    """exec.subagent.mdの読込表で計画の起草の時点に読む行と、その参照先の担当の実行契約をひとつの契約として返す。"""
+    """exec.subagent.mdの表で計画の起草の時点に読む行と、その参照先の担当の実行契約をひとつの契約として返す。"""
     executor = task_documents.require_role_document(plugin_root, "exec").read_text(encoding="utf-8")
-    entry = next(line for line in _h2_section(executor, "読込表").splitlines() if "process-wi-execution.md" in line)
+    entry = next(line for line in executor.splitlines() if line.startswith("|") and "process-wi-execution.md" in line)
     return entry + "\n" + (plugin_root / "skills/atk-mode/playbooks/process-wi-execution.md").read_text(encoding="utf-8")
 
 

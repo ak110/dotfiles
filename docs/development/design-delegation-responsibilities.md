@@ -8,8 +8,8 @@
 通常のレビューより具体的な項目の羅列が、他の観点の確認を疎かにするというユーザーの判断に基づき、通常走査と担当を分ける。
 用途は`review`とし、各ラウンドで通常走査と並行する。
 
-起動と受領は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`、項目の当てはめは`recurrence-self-check.subagent.md`が持つ。
-観点は`agent-toolkit/share/recurrence-self-check-items.md`と、H1宣言を持つプロジェクトの追跡Markdownから収集する。
+起動と受領は`agent-toolkit:atk-mode/roles/exec-review.subagent.md`、項目の当てはめは`recurrence-self-check.subagent.md`が持つ。
+観点は`agent-toolkit/skills/atk-mode/references/recurrence-self-check-items.md`と、H1宣言を持つプロジェクトの追跡Markdownから収集する。
 配置ディレクトリを前提とする収集は、各プロジェクトの配置変更のたびに同期が必要になるため採用しない。
 原本を持つリポジトリでは対象版の原本を使い、配布版との重複を除く。
 dotfiles固有の項目が生じた時点の配置先は`.claude/skills/develop-dotfiles/references/recurrence-self-check-items.md`とする。

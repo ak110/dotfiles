@@ -643,19 +643,23 @@ def stop_owned_process(
     context: str,
     known: Iterable[psutil.Process] = (),
     pins: ProcessIdentityPins | None = None,
+    output_open: bool = False,
 ) -> ReclaimError | None:
     """既知の所有対象を回収し、未確認なら再試行用の`ReclaimError`を返す（送出しない）。
 
     生成側が保持した起点とsnapshotは空の子孫集合も含めて検収する。
     一度も観測されず、既知の親から既に離れた子孫の回収は保証しない。
+    `output_open`は、起点の出力の終端を観測する前に待機を打ち切ったこと（時間切れ・中断）を示す。
+    出力を引き継いだ子孫が残り得るため、既知の所有が全て終了していても起点から子孫を辿って回収する。
     """
     known = list(known)
     returncode = process.poll()
     # 生成側が保持した全世代の終了を確認できれば、既知の所有は回収済みである。
     # 通常の短いコマンドごとに、終了済みの親から全OSを再走査する必要はない。
-    if returncode is not None and known:
+    # 起点の終了はwait済みのPopenで確定している。Windowsのpsutilは終了直後のプロセスを実行中と報告し得るため、起点には問わない。
+    if returncode is not None and known and not output_open:
         try:
-            if all(not target.is_running() for target in known):
+            if all(target.pid == process.pid or not target.is_running() for target in known):
                 _reap_owned_child(process)
                 return None
         except psutil.Error, OSError:
@@ -787,7 +791,7 @@ def run_with_timeout(
         try:
             stdout, stderr = process.communicate(input, timeout=timeout)
         except subprocess.TimeoutExpired as error:
-            failure = stop_owned_process(process, context="run_with_timeout", known=known, pins=pins)
+            failure = stop_owned_process(process, context="run_with_timeout", known=known, pins=pins, output_open=True)
             if failure is not None:
                 # 残存がパイプを保持していても待たずに戻り、通常の時間上限と区別して回収不能を伝える。
                 raise failure from error

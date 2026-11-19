@@ -19,7 +19,7 @@ WI投入担当（役割`add-wi`）へ渡す入力の作り方と、入力`投入
    広がりの探索の終了は`agent-basics:bugfix/references/spread.md`「害が大きい時」に、保つ是正範囲は`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」に従う。
    委譲元が確定した観測は保存原本の所在を添えて`確定済みの観測`として渡し、原因を観測で確かめていない要求は観測した事象、期待する契約、確定すべき問いを渡す。
    担当の調査で投入先の外に原因を共有する対象が見つかったら、`agent-toolkit:atk-mode/roles/add-wi.parent.md`「続行できない理由の扱い」の投入先の外の対象として扱う。
-   実行レビューの差分外の既存不良を専念型へ渡す時（`agent-toolkit:/share/exec-review-parent-existing-defects.md`「返却に含まれる既存不良の受領」）は、投入先を確定する観測も省き、不良の対象ファイルを管理するリポジトリを投入先とする。
+   実行レビューの差分外の既存不良を専念型へ渡す時（`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「返却に含まれる既存不良の受領」）は、投入先を確定する観測も省き、不良の対象ファイルを管理するリポジトリを投入先とする。
 4. ユーザーが明示した対象集合は、既知の欠陥の修正や、足した・強めた規定の既存対象でもそのまま保つ。
    集合を名指しの例だけに限定する案は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「原文からの具体化を要する軸」に沿って確認する。
 5. 原因調査に必須で、ユーザーだけが提供できる資料や実例がある時は、担当の返却を待たずに資料の提供を依頼し、その要求を保留する（`agent-toolkit:atk-mode/playbooks/confirmation.md`「未確定判断の保留と暫定判断」）。

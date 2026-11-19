@@ -94,7 +94,7 @@ AWIは、末尾に一度残した原文と各項目を`agent-toolkit:atk-mode/re
 1. 指摘の対象が自動処理を待つ未完了のWIなら、事実を確かめる前に保留にする（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」）。
    保留は同意や本文の変更ではなく、比べている間に古い要求で処理が進むのを防ぐ処置である。
 2. 作業契約は`agent-toolkit:atk-mode/references/work-contract.md`「更新する時点」に従って更新し、計画の凍結後の変更と採否はレビュー指摘管理表へ記録する。
-   `review_contract`の保持と再生成は`agent-toolkit:/share/exec-review-contract-generation.md`「`review_contract`の生成」に従う。
+   `review_contract`の保持と再生成は`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」に従う。
 3. 方針の候補を含むかは、本書「方針の候補の取り込み」で判定する。
 4. 自分の提案の誤りが分かった時は、取り下げるだけで終えず、観測した事象を起点に代替案を示す。
 

@@ -2,7 +2,6 @@
 
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
-import contextlib
 import json
 import logging
 import os
@@ -19,7 +18,7 @@ import filelock
 import platformdirs
 import psutil
 import pytest
-from agent_toolkit._common import dotfiles_mode, windows_job
+from agent_toolkit._common import dotfiles_mode, process_tree, windows_job
 
 from pytools import post_apply
 from pytools._internal import (
@@ -451,7 +450,7 @@ def test_uv_cleanup_failure_preserves_success_time(tmp_path, monkeypatch, locked
 
 
 @pytest.mark.windows
-def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_environ):
+def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_environ, request):
     """他のuvが使用中でも整理を待たずに戻り、使用の終了後にuvの全消去と成功記録を完了する。"""
     native_path = os.pathsep.join(part for part in host_environ()["PATH"].split(os.pathsep) if Path(part).name != "shims")
     uv = shutil.which("uv", path=native_path)
@@ -459,11 +458,16 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
         pytest.skip("uvが無い環境では実際のキャッシュロックを再現できない")
     which = shutil.which
     _prepare(tmp_path, monkeypatch, "full")
-    started_pids: list[int] = []
+    # 独立プロセスは回収の前に自然に終了し得る。Windowsは終了後のPIDの世代を後から確かめられないため、
+    # 起動直後から回収まで同じ世代のhandleを保持し、終了の前後どちらでも同じ所有として回収する。
+    pins = process_tree.ProcessIdentityPins()
+    request.addfinalizer(pins.close)
+    maintenance: list[psutil.Process] = []
 
     def start() -> int:
-        started_pids.append(_REAL_START_UV_CACHE_MAINTENANCE())
-        return started_pids[-1]
+        pid = _REAL_START_UV_CACHE_MAINTENANCE()
+        maintenance.extend(process_tree.collect_descendants(pid, pins=pins, include_root=True))
+        return pid
 
     monkeypatch.setattr(prune_installation, "start_cache_maintenance", start)
     # 隔離PATHはmise shimを別名で置くため、整理側が解決するuvをshimを経由しない本体にそろえる。
@@ -500,13 +504,12 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
     assert json.loads(record.read_text(encoding="utf-8"))["result"] == "completed"
     assert os.path.normcase(str(cache.resolve())) in json.loads(_state("uv-cache-clean.json").read_text(encoding="utf-8"))
     assert not marker.exists()
-    # 記録の後に続く事前構築の終了を待ち、独立プロセスを試験の外へ残さない。
-    processes = []
-    for pid in started_pids:
-        with contextlib.suppress(psutil.NoSuchProcess):
-            processes.append(psutil.Process(pid))
-    _exited, running = psutil.wait_procs(processes, timeout=20)
-    assert not running, "独立プロセスが記録の後20秒以内に終了しなかった"
+    # 独立プロセスは記録の後もuv以外の整理とMCPの事前構築を続ける。どちらもこの試験の対象外で、
+    # 所要は実行環境の負荷と導入済みのツールで変わる（Windows CIで記録の後20秒を超えた）。
+    # 自然な終了を待たずに回収し、独立プロセスを試験の外へ残さない。
+    assert maintenance, "起動直後の独立プロセスの世代を保持できなかった"
+    stopped = process_tree.stop_tree(None, known=maintenance, pins=pins)
+    assert not stopped.residual and not stopped.unresolved, stopped.descriptions()
 
 
 def _uv_clean_failure(monkeypatch: pytest.MonkeyPatch, calls: list[list[str]]) -> dict[str, str | None]:

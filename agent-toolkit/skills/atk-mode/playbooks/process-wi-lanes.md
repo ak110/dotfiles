@@ -22,15 +22,15 @@
    ユーザーの明示の指示で加わった依存先が既存のレーンにある場合は、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理中に確定した必須是正レーン」で受け入れられるかを確かめ、同じレーンで受け入れられない項目は待つ。
 5. 稼働中が1レーンになっても、未着手のAWIは同じレーンで続ける（移管には計画の分割と書込所有の移譲が要り、`agent-toolkit:atk-mode/references/plan-format.md`の計画凍結に反するため）。
    単独稼働の短縮は選定時の段階設計で図る。
-6. レーン担当を起動する時は、`agent-toolkit:/share/exec.parent.md`が定める入力を渡し、担当の境界も確かめられる既存の`選定結果の出力先ファイル`を渡す。
+6. レーン担当を起動する時は、`agent-toolkit:atk-mode/roles/exec.parent.md`が定める入力を渡し、担当の境界も確かめられる既存の`選定結果の出力先ファイル`を渡す。
    - 境界や先行条件を更新した場合は、関係する担当へ既存の追送の経路で更新した選定結果の所在と差分を渡す（既存の追送で足り、専用の同期状態や常時のポーリングは不要である）。
    - 初回の起動時の各AWIの再開位置は選定結果から読ませ、担当全体の`再開位置`は中断した同じ担当を再開する場合だけ渡す。
    - 各WIの`担当モデル.実装担当`は`agent-toolkit:delegation/references/process-model-settings.md`「工程別モデル設定」に従って`model_type`へ指定し、比べた結果を引き継ぎ記録へ残す。
-     異なる指定が混ざる場合はWI名と設定値を明示し、全ての指定を保ったまま確認してから起動する。
+     異なる指定が混ざる場合はWI名と設定値を明示し、どの指定も独断で捨てずに起動する。
    - 初回の`書込担当一覧`は合意済みのセッションIDと担当範囲から確定し、担当の交代・再開・追送の時に更新する。
      一覧と対象worktreeの対応は引き継ぎ記録へ保ち、統合するレーン担当が同じ認可の集合を使えるようにする。
 7. 準備した専用worktreeと処理対象WIを各1名のレーン担当へ渡し、レーン数によらず`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`を適用させる。
-   工程の境界も同じ契約で続け、メインは`agent-toolkit:/share/exec-parent-integration.md`「統合の許可」に従って統合許可を送る。
+   工程の境界も同じ契約で続け、メインは`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従って統合許可を送る。
 
 ## 各段階の全初期通常レーン起動後の会話圧縮
 
@@ -40,14 +40,15 @@
    - 選定YAMLから各レーンの段階、統合状態、後段の先行統合条件を読み、担当の`session_id`と稼働状態は起動結果と`atk agents list --include-terminated`を対応付ける。
    - 資源の登録から専用worktreeとbranchの所有主体、回収の対象、最初のレーン開始時刻を得る。
    - 担当の起動入力が示す引き継ぎ記録と保存出力から、各レーンの計画の集合と保存状態、次に受け取る工程の境界を確かめる。
-3. 通知を受けたら、確かめた段階と担当の`session_id`で`agent-toolkit:/share/exec.parent.md`の該当する受領の工程へ戻る。
+3. 通知を受けたら、確かめた段階と担当の`session_id`で`agent-toolkit:atk-mode/roles/exec.parent.md`の該当する受領の工程へ戻る。
 
 ## 実装とレビュー
 
-実行レビューを起動するのはレーン担当自身であり、メインは`agent-toolkit:/share/exec-parent-planning.md`と`agent-toolkit:/share/exec-parent-integration.md`の受領と検収を担う。
+実行レビューを起動するのはレーン担当自身であり、メインは`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の受領と検収を担う。
 
-1. 計画準備の返却の扱いと、待機が要る場合の`実装開始`か`実装なし`の返却は`agent-toolkit:/share/exec-parent-planning.md`「計画準備の受領」に従う。
-   `実装完了`の受領、実行レビューとユーザビリティレビュー、指摘の修正と収束の判定は同書「実装完了の受領」に従う。
+1. 計画準備の返却の扱いと、待機が要る場合の`実装開始`か`実装なし`の返却は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「計画準備の受領」に従う。
+   実行レビューとユーザビリティレビューの起動、指摘の修正、収束の判定は、レーン担当が`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`で行う。
+   メインは`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の受領を担う。
 2. 実行レビューの前に、取得版、入力・環境の条件、要求別の観測箇所を`agent-toolkit:atk-mode/playbooks/verification.md`の検証記録へ対応付けさせる（保存済みの結果の適用の可否と追加の観測の範囲は実行レビュー担当が判断する）。
 3. 選定結果の担当モデル、起動側が解決したモデルの候補、終了後の実行ログから観測した実行のidentityを別々の値として比べ、不一致は値と出所を分け、観測できなければ未観測として後続へ渡す。
 4. レーン担当から確認事項や事後承認の対象を受けたら、その時点で根拠と既存の認可を確かめる。
@@ -97,15 +98,16 @@
 
 ## 統合とAWI終了
 
-1. 統合前の確認は`agent-toolkit:/share/exec-review-recording-integration.md`「統合時の完成条件判定」に従う。
-   レーン担当へ任せる統合の指示と、メイン自身がCLIを実行する場合の検収は`agent-toolkit:/share/exec.parent.md`と`agent-toolkit:/share/exec-parent-integration.md`に従う。
-   内部の群の焦点の検証と独立文脈レビューは`agent-toolkit:/share/exec-subagent-implementation.md`「実装」と`agent-toolkit:/share/exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
+1. 統合前の確認は`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」に従う。
+   レーン担当へ任せる統合の指示と、メイン自身がCLIを実行する場合の検収は`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/playbooks/lane-receipt.md`に従う。
+   内部の群の焦点の検証は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」に従う。
+   内部の群の独立文脈レビューは`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`に従う。
    レーン担当は群の保存が終わった順にレビューを始め、全群の完了を待つ一斉の初回レビューは避ける。
    共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）へ群ごとに早く投入し、群別の対象の和集合と元WIの全条件の対応を保つ。
    受理済みの同じ本文・環境・契約の結果は再利用し、全群の取り込み後に群間の契約、共有の生成物、組合せの差分と未達条件を検収してから統合入力を確定する。
 2. Git統合、全計画の保存、WIの採否の確定、選定の統合状態の更新は、同じ所有登録から`atk lane integrate`が一括で行う。
    引数とmanifestの作り方は`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」に従い、メイン自身が呼ぶ場合も独立文脈のレビューと完成条件の判定を通った同じ入力を使う。
-   同じ統合先へのレーンの間で直列になるのは統合先HEADの一致の確認とfast-forwardの短い更新だけであり、メインは先行レーンの`統合完了`を待たずに次のレーンへ統合を許可できる（`agent-toolkit:/share/exec-parent-integration.md`「統合の許可」）。
+   同じ統合先へのレーンの間で直列になるのは統合先HEADの一致の確認とfast-forwardの短い更新だけであり、メインは先行レーンの`統合完了`を待たずに次のレーンへ統合を許可できる（`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」）。
 3. 終了コード0、`phase: finalized`、統合結果のOID、計画ファイルの保存、終了対象のAWIの採否の確定を確かめる。
    `git-integrated`は最終化の途中の状態であり、統合完了とはみなさない。
    `終了しない`項目と延期の対象は採否を確定しない。
@@ -154,8 +156,8 @@
 2. 両側の要求を保って競合を解消し、解消したパスだけをステージングして通常のmerge commitを作り、既存の実装のOIDはそのまま保つ。
    - 解消で生じた変更と影響するAWIを、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
    - 競合箇所、解消の方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表へ1行加え、同じ行に`atk review-table respond`で解消内容を書く。
-     行の書き方は`agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
-   - 影響する利用側を検証し、解消差分を実行レビューにかけ、既存の実行レビュー担当から現在のHEADの判定を受理する（`agent-toolkit:/share/exec-review-parent-correction.md`）。
+     行の書き方は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」に従う。
+   - 影響する利用側を検証し、解消差分を実行レビューにかけ、既存の実行レビュー担当から現在のHEADの判定を受理する（`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`）。
 3. クリーンな現在のHEADを`--reviewed-head`へ渡し、受理済みのレビューとcommitの対応を反映したmanifestで、`atk lane integrate`へ`--restart-review`を付けて再開する。
    統合先がさらに進んだ場合も同じ節に従って追加でmergeし、その影響だけを検収する。
 
@@ -164,7 +166,7 @@
 1. 同じレーン担当のthreadへ競合の解消を指示する（別の修正担当を起こさずに同じ担当で解く）。
    同じthreadを続けられない場合は、`agent-toolkit:delegation`の`SKILL.md`「継続と新規起動」に従い、新しいレーン担当へ`再開位置`として`~/.claude/plans`配下の計画ファイルの絶対パスを渡す。
 2. レーン担当は本節の手順1〜3を同じthreadで終える。
-3. 新しいHEADの受理済みレビューとmanifestを保ち、`agent-toolkit:/share/exec-parent-integration.md`の統合前の検収に従って再開させる（既存の実装OIDの書換えや旧新の対応表は求めない）。
+3. 新しいHEADの受理済みレビューとmanifestを保ち、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の統合前の検収に従って再開させる（既存の実装OIDの書換えや旧新の対応表は求めない）。
 
 ## 統合後の変更範囲の検証の失敗
 

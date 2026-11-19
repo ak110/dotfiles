@@ -41,6 +41,9 @@ _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[3] / ".claude-p
 _SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 
 
+_ROLES_DIR = pathlib.Path(__file__).resolve().parents[2] / "skills" / "atk-mode" / "roles"
+
+
 _SECRETS_COPY_GUIDANCE = "Bashの`cp`で原本を複製"
 
 

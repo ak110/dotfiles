@@ -27,14 +27,7 @@ stemは次の形にする（`dd`は作成日、`HHmm`は作成時刻）。
 4. 自分が所有する計画だけを更新する。
    バンドルごとの計画の所有記録（所有セッション、最終更新時刻）は`atk plans list`で確かめ、private-notesの中の計画は`atk plans`で更新する。
    計画の節を差し替える時は、行頭から完全に一致する見出し行など一意に特定できる境界を選び、各境界の一致が1件であることを確かめてから置き換える。
-5. 実行レビュー指摘管理表は、計画ファイルと同じディレクトリに`<計画stem>.exec-review.tsv`として置く。
-   計画を持たない実行レビューの表は`~/.claude/plans`直下に置き、次の名前にする（短縮OIDは`git rev-parse --short=7 <revision>`の出力をそのまま使う7文字以上の一意な値）。
-   - WIだけを基準とする直接実装: `wi-<処理開始時点の短縮OID>.exec-review.tsv`。
-     削除は`agent-toolkit:/share/exec-review-parent-correction.md`「レビュー指摘管理表の保存」に従う。
-   - 公開工程のCI失敗の修正: `ci-<修正系列の開始時のHEADの短縮OID>.exec-review.tsv`。
-     修正系列の終了時に`atk plans commit ci-<同じ短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
-     保存の時機は`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`の`入力計画`の段落に従う。
-6. 計画は、実行レビューが収束するまで`~/.claude/plans`直下で更新し、収束したら`atk plans commit <~/.claude/plans直下のメイン計画ファイル名>`で`private-notes/plans/yyyy/MM/`へ移して保存する。
+5. 計画は、実行レビューが収束するまで`~/.claude/plans`直下で更新し、収束したら`atk plans commit <~/.claude/plans直下のメイン計画ファイル名>`で`private-notes/plans/yyyy/MM/`へ移して保存する。
    計画ファイルと付属ファイルは同じcommitで保存される。
    - `agent-toolkit:atk-mode`の作業`process-wi`のレーンが実行レビューの収束の前に終わる場合も、`agent-toolkit:atk-mode/references/lane-integration-format.md`「計画最終化」に従い、統合の記録を追記した後に1回保存する。
    - 実行レビューを行わない計画（観測だけの再開で取得した計画、「マージなし」の計画）も保存し、観測の完了と`計画検査完了`の通知は保存の契機から外す。

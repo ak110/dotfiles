@@ -4,6 +4,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import types
 import typing
@@ -79,6 +80,21 @@ def test_reused_pid_or_reboot_is_not_same_process(tmp_path, monkeypatch, changed
     monkeypatch.setattr(process_identity, "_PROC_ROOT", tmp_path)
     assert not saved.exists()
     assert not saved.matches(psutil.Process(process.pid))
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linuxのprocfs境界")
+def test_process_reaped_while_reading_stat_is_missing(monkeypatch):
+    """statを開いた後に回収されたプロセスは、識別の取得で消滅として扱う。"""
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as child:
+
+        class ReapedBeforeRead(pathlib.PosixPath):
+            def read_bytes(self) -> bytes:
+                with open(self, "rb") as stream:
+                    child.wait()
+                    return stream.read()
+
+        monkeypatch.setattr(process_identity, "_PROC_ROOT", ReapedBeforeRead("/proc"))
+        assert process_identity.ProcessIdentity.of(child.pid) is None
 
 
 def test_current_process_and_missing_pid():

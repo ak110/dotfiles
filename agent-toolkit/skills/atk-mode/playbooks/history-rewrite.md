@@ -106,7 +106,7 @@ push前で1人の担当が専有する作業ツリーでは、本書「プッシ
 
 ## 失敗時の扱い
 
-`pre_fixup`、`fixup`、`autosquash`、`amend`の各phase名と、続行できない理由を返す形式は、`agent-toolkit:/share/exec-subagent-history.md`「レビュー修正の履歴統合」の実装担当の契約に従う。
+`pre_fixup`、`fixup`、`autosquash`、`amend`の各phase名と、続行できない理由を返す形式は、`agent-toolkit:atk-mode/playbooks/review-fix.md`「レビュー修正の履歴統合」の実装担当の契約に従う。
 この契約を受け取っていない担当は、観測した事実をそのまま委譲元へ報告する。
 
 1. 操作前後の履歴、index、作業ツリーを比べ、変更済みの範囲、差分がどの成果に属するか、公開済みかを確かめる。

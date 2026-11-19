@@ -102,11 +102,14 @@ def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]
     見出しのファイル部分が指すファイル自身に現れるかで判定し、agent-basicsの配布物を指す見出しはファイルと節の実在でも参照ありとする。
     """
     headings = _audit_headings(_audit_record_content(root))
-    corpus = "\n".join(
+    texts = [
         _reference_text(root, source)
         for source in sources
         if not source.name.endswith("_test.py") and not source.as_posix().startswith(_AUDIT_INDEX_EXCLUDED_PREFIX)
-    )
+    ]
+    corpus = "\n".join(texts)
+    # 「：」を含む見出しは「：」を含むファイルにしか現れないため、その走査をこれらのファイル（全体の約1割）に限る。
+    colon_corpus = "\n".join(text for text in texts if "：" in text)
     tracked = set(sources) - {_AUDIT_RECORDS}
     unreferenced: list[str] = []
     for heading in headings:
@@ -115,7 +118,7 @@ def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]
             if not _section_exists(root, tracked, heading):
                 unreferenced.append(heading)
             continue
-        if heading in corpus:
+        if heading in (colon_corpus if "：" in heading else corpus):
             continue
         if own_file in tracked and heading in _reference_text(root, own_file):
             continue
@@ -136,7 +139,9 @@ def _unresolved_audit_body_references(content: str) -> list[str]:
     ]
 
 
-@pytest.mark.cpu_limit(2.0, reason="全追跡ソースと全監査見出しの参照を走査する横断契約。Linux CIのCPU0.84秒を基準に余裕を確保")
+@pytest.mark.cpu_limit(
+    2.0, reason="全追跡ソースと全監査見出しの参照を走査する横断契約。Linux CIのCPU最大0.55秒を基準に余裕を確保"
+)
 def test_audit_record_headings_are_referenced() -> None:
     """監査記録の各H2見出しを、索引元の条文またはコードが同じ文字列で指す。"""
     root = pathlib.Path(__file__).resolve().parent

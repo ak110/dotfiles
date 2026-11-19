@@ -24,7 +24,7 @@
 ```
 
 <!-- input-contract:copilot-review-audit:start -->
-<!-- 生成元: share/copilot-review-audit.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+<!-- 生成元: skills/atk-mode/roles/copilot-review-audit.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 起動準備はこの契約の入力一覧で完結する。
 
@@ -33,7 +33,7 @@
 <!-- input-contract:copilot-review-audit:end -->
 
 選定メインが監査を委譲する時に、本節で監査担当を起動して結果を受け取る。
-監査担当の役割文書は`agent-toolkit:/share/copilot-review-audit.subagent.md`にあり（所在参照）、返却の項目は本書「監査担当の返却契約」に従う。
+監査担当の役割文書は`agent-toolkit:atk-mode/roles/copilot-review-audit.subagent.md`にあり（所在参照）、返却の項目は本書「監査担当の返却契約」に従う。
 
 ### 起動
 
@@ -65,10 +65,10 @@
    機能の無効化や権限不足でアラートを取得できなかった状態は完了報告へ引き継ぐ。
 
 <!-- return-contract:copilot-review-audit:start -->
-<!-- 生成元: share/copilot-review-audit.subagent.md「出力」。手動編集しない。 -->
+<!-- 生成元: skills/atk-mode/roles/copilot-review-audit.subagent.md「出力」。手動編集しない。 -->
 ### 監査担当の返却契約
 
-**6.** 取得状態と処置結果を確認し、監査が完了した場合は次の形式のみを返す。
+取得状態と処置結果を確かめ、監査が完了した場合は次の形式のみを返す。
 
 ```text
 状態: completed
@@ -84,7 +84,7 @@ Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 
-続行不能と追加報告行は、共通契約`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。
 <!-- return-contract:copilot-review-audit:end -->
 

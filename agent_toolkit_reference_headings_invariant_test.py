@@ -261,7 +261,7 @@ def test_heading_reference_keeps_same_skill_context(tmp_path: pathlib.Path) -> N
     bugfix = root / "bugfix/SKILL.md"
     bugfix.parent.mkdir(parents=True)
     bugfix.write_text("# 不具合\n## 所要の原因調査\n基準\n", encoding="utf-8")
-    source = pathlib.Path("agent-toolkit/share/exec-review-responses.md")
+    source = pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/review-fix.md")
     (tmp_path / source).parent.mkdir(parents=True)
     (tmp_path / source).parent.parent.joinpath("SKILL.md").write_text("# レビュー\n", encoding="utf-8")
     (tmp_path / source).write_text(

@@ -56,7 +56,7 @@ hookの通知を待たずに選び、同じ版の取得済み本文は再利用�
 | 委譲先がプロンプトで`引き継ぎ記録先`を受け取り、最初の記録を書き込む前（操作対象外: 役割の開始入力） | `references/handoff-record.md` | | | |
 | 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:atk-mode`の作業`process-wi`の場合） | `../atk-mode/playbooks/process-wi.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi.md` | |
 | 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`がメインによる起動の場合） | `agent-toolkit:atk-mode/playbooks/write-plan.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/write-plan.md` | |
-| 指摘の採否と修正方針を確定する時 | `agent-basics:review-standards`を起動し、同スキルの`references/reviewee.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` | |
+| 指摘の採否と修正方針を確定する時 | `agent-basics:review-standards`を起動し、同スキルの`references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/atk-mode/playbooks/review-fix.md` | |
 | Claude Codeで長時間待機前の会話圧縮、またはバックグラウンドタスクの起動形を判断する時 | `references/waiting-claude-code.md` | | | |
 | 停滞の検知と巻き取りを判断する時 | `references/waiting-stalls.md` | | | |
 | agents_serverのexplore・shellを起動する前 | `references/delegation-lightweight.md` | | | |
@@ -72,7 +72,7 @@ hookの通知を待たずに選び、同じ版の取得済み本文は再利用�
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂（コンテキスト境界） | `references/sub-agents-context.md` | | | |
 | Codexで元の担当者が稼働している間に、巻き取り・新規起動・役割の引継ぎを判断する前 | `references/codex-runtime-continuation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` | |
 | 待機区間の構成を決める前 | `references/waiting-and-monitoring-intervals.md` | | | |
-| レビュー指摘への応答、修正、修正後の完了を判断する前 | `agent-toolkit:/share/exec-review-responses.md` | | | |
+| レビュー指摘への応答、修正、修正後の完了を判断する前 | `agent-toolkit:atk-mode/playbooks/review-fix.md` | | | |
 
 ## 送信
 

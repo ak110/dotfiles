@@ -1,10 +1,12 @@
 """委譲契約の主題別不変条件を検証する。"""
 
 import pathlib
+import re
+import subprocess
 
 import pytest
 from agent_toolkit._agents_server import launch_prompts
-from agent_toolkit._common import task_documents
+from agent_toolkit._common import read_triggers, task_documents
 from agent_toolkit._testing.delegation_contract_support import (
     _INPUT_BULLET_PATTERN,
     _LAUNCH_TARGET_PREFIX,
@@ -79,22 +81,19 @@ def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.P
 def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> None:
     """検証結果の記録と、条件別判定行を返す実行レビュー担当の単一所有を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
-    review = (root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+    review = (root / "skills/atk-mode/roles/exec-review.subagent.md").read_text(encoding="utf-8")
     parent = read_contract(
-        root / "share/exec-review.parent.md", root, ("exec-review-parent-acceptance.md", "完成条件証拠の受領確認")
+        root / "skills/atk-mode/roles/exec-review.parent.md", root, ("../playbooks/exec-review-loop.md", "受領確認")
     )
-    recording = read_contract(
-        root / "share/exec-review-recording.md", root, ("exec-review-recording-evidence.md", "完成条件証拠の作成")
-    )
-    operations = (root / "share" / "exec-review-operations.md").read_text(encoding="utf-8")
+    recording = (root / "skills/atk-mode/references/review-record.md").read_text(encoding="utf-8")
     launchers = [
-        root / "share" / "exec.parent.md",
+        root / "skills" / "atk-mode" / "roles" / "exec.parent.md",
         root / "skills" / "atk-mode" / "playbooks" / "write-plan.md",
         root / "skills" / "atk-mode" / "playbooks" / "process-wi-single-lane.md",
         root / "skills" / "atk-mode" / "playbooks" / "process-wi-ci-fix.md",
     ]
 
-    declaration = task_documents.read_declaration_unchecked(root / "share/exec-review.subagent.md", review)
+    declaration = task_documents.read_declaration_unchecked(root / "skills/atk-mode/roles/exec-review.subagent.md", review)
     assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
     assert declaration.required == ("レビュー基準", "引き継ぎ記録先")
     for path in launchers:
@@ -103,8 +102,8 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     assert "レビューHEAD: " in review
     # 委譲元は返却の条件別判定行を受領確認し、JSON中のHEADの付替えを行わない。
     assert "## 完成条件証拠の受領確認" in parent and "agent_message_path" in parent
-    assert "判定結果と根拠を記述するのは実行レビュー担当のみ" in operations
-    assert "判定とその根拠は、実行レビュー担当自身だけが記述する" in recording
+    assert "判定結果と根拠を記述するのは実行レビュー担当のみ" in review
+    assert "判定と根拠は実行レビュー担当だけが記入し" in recording
     for content in (review, recording):
         assert "完成条件<N>: 達成|未達|根拠不足" in content
 
@@ -136,13 +135,16 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     contract_names.add("rules-common.codex.md")
     expected_names = parent_names | recipient_names | contract_names
     # 入力・起動・統合の各判断で読む規範資料も、同じ役割の引き継ぎ契約を所有する。
+    roles = entry / "roles"
     for owner, materials in (
-        ("rules/rules-subagent.md", (("../subagent-operations.md", "多段工程の記録・引き継ぎ"),)),
-        ("exec.parent.md", (("exec-parent-launch.md", "入力"), ("exec-parent-integration.md", "統合"))),
-        ("exec-review.parent.md", (("exec-review-parent-launch.md", "入力"),)),
+        (share / "rules/rules-subagent.md", (("../subagent-operations.md", "多段工程の記録・引き継ぎ"),)),
+        (roles / "exec.parent.md", (("../playbooks/lane-receipt.md", "統合"),)),
+        (roles / "exec-review.parent.md", (("../playbooks/exec-review-loop.md", "入力"),)),
     ):
-        markdown[pathlib.Path(owner).name] = read_contract(share / owner, share.parent, *materials)
-        expected_names.update(pathlib.Path(name).name for name, _condition in materials)
+        markdown[owner.name] = read_contract(owner, share.parent, *materials)
+        for name, _condition in materials:
+            markdown[pathlib.Path(name).name] = (owner.parent / name).read_text(encoding="utf-8")
+            expected_names.add(pathlib.Path(name).name)
     # レーン統合の役割文書は、統合の入力を定める形式の定義と合わせて引き継ぎ契約を持つ。
     markdown["lane-integration.subagent.md"] = "\n".join(
         (entry / name).read_text(encoding="utf-8")
@@ -214,3 +216,54 @@ def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Pat
     )
     (tmp_path / "free.subagent.md").write_text("# 委譲先\n\n## 出力\n\n指摘を返す。\n", encoding="utf-8")
     assert _fixed_reply_errors(tmp_path) == ["unlimited.subagent.md"]
+
+
+def test_recurrence_viewpoint_heading_marks_only_viewpoint_files() -> None:
+    """観点専用のH1を持つ文書は、全ての項目に対象条件・確認内容・根拠規範を持つ観点ファイルに限る。
+
+    実行レビューは`^# 再発防止セルフチェック観点`に一致する行を持つMarkdownを観点として集める。
+    保守の資料がこのH1を持つと収集に選ばれ、セルフチェック担当が判定に使わない資料を読む（WI 20261115-145405-001）。
+    """
+    root = pathlib.Path(__file__).resolve().parent.parent
+    tracked = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"], capture_output=True, check=True
+    ).stdout.decode("utf-8")
+    collected = [
+        path
+        for path in (root / name for name in tracked.split("\0") if name)
+        if path.is_file() and re.search(r"^# 再発防止セルフチェック観点", path.read_text(encoding="utf-8"), flags=re.MULTILINE)
+    ]
+    assert root / "agent-toolkit/skills/atk-mode/references/recurrence-self-check-items.md" in collected
+    for path in collected:
+        items = re.split(r"^## ", path.read_text(encoding="utf-8"), flags=re.MULTILINE)[1:]
+        assert items, f"{path}: 観点の項目が無い"
+        for item in items:
+            name = item.splitlines()[0]
+            for label in ("- 対象条件:", "- 確認内容:", "- 根拠規範:"):
+                assert label in item, f"{path}「{name}」: {label}が無い（観点ファイル以外がH1を使っていないか確かめる）"
+
+
+def test_deferral_record_reaches_termination_classes_without_integration_documents() -> None:
+    """延期の記録を確定する実行レビュー担当は、統合操作の文書を読まずに終了区分の定義へ届く（WI 20261115-145405-001）。"""
+    root = pathlib.Path(__file__).resolve().parent
+    atk = root / "skills/atk-mode"
+    definition = (atk / "playbooks/process-wi-lanes.md").resolve()
+    integration = {
+        (atk / name).resolve()
+        for name in ("playbooks/lane-receipt.md", "roles/exec.parent.md", "references/lane-integration-format.md")
+    }
+    routes = {}
+    for name in ("roles/exec-review.subagent.md", "references/review-record.md", "references/review-record-verdicts.md"):
+        source = atk / name
+        rows = read_triggers.parse_tables(source, root, strict=True)
+        routes[name] = {
+            path for row in [*rows, *read_triggers.named_reference_rows(source, root, rows)] for path in row.documents
+        }
+        assert not routes[name] & integration, name
+    assert definition in routes["roles/exec-review.subagent.md"]
+    assert read_triggers.ReadTarget(definition, "採否の確定と終了区分").body()
+    # 実際に統合する担当は、統合の受領の手順を起動・受領契約として読む。
+    declared = read_triggers.parent_contract_targets("lane-integration", root)
+    assert [(target.path.resolve(), target.heading) for target in declared] == [
+        ((atk / "playbooks/lane-receipt.md").resolve(), "統合の指示と受領")
+    ]

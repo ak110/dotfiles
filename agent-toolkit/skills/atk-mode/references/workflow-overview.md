@@ -99,6 +99,6 @@ agent-toolkitが使う作業用の文書は、次の定義に従う。
 | --- | --- |
 | AWI・UWI（ユーザーと実行担当が要求と確認事項を共有する） | `agent-toolkit:atk-mode/references/awi-body.md`、`agent-toolkit:atk-mode/references/uwi-format.md` |
 | 計画ファイル | `agent-toolkit:atk-mode/references/plan-format.md` |
-| 実行レビュー指摘管理表（実装担当とレビュー担当が是正の状況を共有する） | `agent-basics:review-standards`、`agent-toolkit:/share/review-table-operations.md` |
+| 実行レビュー指摘管理表（実装担当とレビュー担当が是正の状況を共有する） | `agent-basics:review-standards`、`agent-toolkit:atk-mode/references/review-record-table.md` |
 | コミットメッセージ | `agent-toolkit:atk-mode/references/commit-message.md` |
 | PR・MRの説明、Release本文 | `agent-basics:writing-standards/references/writing-genres.md`「判断と行動を求める記述」。投稿の前は`agent-toolkit:atk-mode/playbooks/review-external-writes.md` |

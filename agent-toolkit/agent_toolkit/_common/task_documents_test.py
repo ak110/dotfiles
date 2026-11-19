@@ -91,7 +91,7 @@ def test_task_prompt_inputs_preserves_old_and_front_loaded_inputs(legacy: bool) 
     [
         "次の文書を読んで比べよ: /plugin/share/exec.subagent.md",
         "/plugin/share/exec.subagent.md の手順を実行せよ。",
-        "次の文書の手順を実行せよ（出所: share/exec.subagent.md）。",
+        "次の文書の手順を実行せよ（出所: skills/atk-mode/roles/exec.subagent.md）。",
         "次の文書の手順を実行せよ（出所: /plugin/share/README.md）。",
     ],
 )

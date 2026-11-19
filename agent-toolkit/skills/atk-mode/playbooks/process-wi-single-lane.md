@@ -15,7 +15,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 複数レーン向けの規定は本処理の間も適用するが、レーン担当・公開担当・専用worktreeを前提とする契約は直接適用せず、同等の工程をメイン自身が担う。
 直接適用しない文書は、レーン担当と公開担当向けの資料（本書が明示的に参照する共通資料は適用する）と、次の役割の文書である。
 
-- レーン担当の起動と実行: `agent-toolkit:/share/exec.parent.md`、`agent-toolkit:/share/exec.subagent.md`。
+- レーン担当の起動と実行: `agent-toolkit:atk-mode/roles/exec.parent.md`、`agent-toolkit:atk-mode/roles/exec.subagent.md`。
 - 公開担当の起動と実行: `agent-toolkit:atk-mode/roles/session-termination.parent.md`、`agent-toolkit:atk-mode/roles/session-termination.subagent.md`。
 
 - メインが`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って計画を作る場合は、ユーザー確認の要否と手段を`agent-toolkit:atk-mode/playbooks/confirmation.md`で選ぶ。
@@ -92,7 +92,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    - 8節形式の計画では、`agent-toolkit:atk-mode/references/plan-legacy-formats.md`「8節形式」の対応表で節を読み替える。
    - 完成条件の具体化、検証単位の選定、検証結果の保存、独立文脈レビューへの受け渡しは`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」に従う。
    - Git管理外のファイルを変える場合は、最初の変更の前に変更前の複製を作り、対応を計画の`## 進捗ログ`か直接実装の引き継ぎ記録に残す。
-   - commit履歴の整理で取得時の版が変わった記録の再利用は、`agent-toolkit:/share/exec-review-recording-grounds.md`「根拠の書き方」に従う。
+   - commit履歴の整理で取得時の版が変わった記録の再利用は、`agent-toolkit:atk-mode/references/review-record.md`「根拠の書き方」に従う。
    - 互いの成果に依存しないworktreeの間では作業を並行して進めてよい。
    - commitは`agent-toolkit:atk-mode/playbooks/commit.md`で作り、WI実装commitごとに、計画（直接実装では引き継ぎ記録）と同じstemの対応記録ファイルへ記録する。
      記録の手段は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う。

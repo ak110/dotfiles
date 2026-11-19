@@ -11,8 +11,9 @@ from collections.abc import Callable
 import psutil
 import pytest
 
-from agent_toolkit._agents_server import antigravity, cli_turn, opencode
+from agent_toolkit._agents_server import antigravity, cli_turn, opencode, session_errors
 from agent_toolkit._agents_server.cli_turn import CliTurnManager
+from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import late_descendant
 
@@ -167,3 +168,61 @@ async def test_close_reclaims_descendant_started_after_first_listing(
         late_descendant.arm(tmp_path, monkeypatch.setattr)
         await asyncio.wait_for(manager.close(), 60)
     late_descendant.assert_released(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_start_returns_failed_session_when_bookkeeping_after_init_fails(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """initの後の記録処理が失敗しても、開始は初期化の上限まで待たずに原因を持つ失敗のsessionを返す。"""
+    emitter = tmp_path / "emit.py"
+    emitter.write_text(
+        f"print({json.dumps({'event': 'init', 'conversation_id': 'after-init'})!r}, flush=True)\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        antigravity.AntigravityManager, "build_command", staticmethod(lambda *_args: [sys.executable, str(emitter)])
+    )
+    monkeypatch.setattr(antigravity.AntigravityManager, "system_prompt", staticmethod(lambda _kind: "開始試験"))
+
+    async def failing_attach(_session: SessionState, _pid: int | None) -> None:
+        raise OSError("実行プロセスを記録できない")
+
+    monkeypatch.setattr(SessionState, "attach_executor_async", failing_attach)
+    async with antigravity.AntigravityManager() as manager, asyncio.timeout(10):
+        session = await manager.start("開始試験", str(tmp_path), "test-model", "low")
+    assert session.session_id == "after-init"
+    assert session.status == "failed"
+    assert session.error is not None and "実行プロセスを記録できない" in session.error["message"]
+
+
+@pytest.mark.asyncio
+async def test_send_message_fails_when_next_turn_cannot_launch(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存sessionの次のturnのCLIを起動できなければ、送信を失敗として返し、前のturnの結果とturn番号を保つ。
+
+    作業ディレクトリの削除後の追送で、届いていない指示を開始済みと報告しないことを確かめる。
+    """
+    events = [
+        {"event": "init", "conversation_id": "next-turn"},
+        {"event": "result", "result": {"status": "SUCCESS", "response": "初回の結果"}},
+    ]
+    emitter = tmp_path / "emit.py"
+    emitter.write_text(
+        "".join(f"print({json.dumps(event, ensure_ascii=False)!r}, flush=True)\n" for event in events), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        antigravity.AntigravityManager, "build_command", staticmethod(lambda *_args: [sys.executable, str(emitter)])
+    )
+    monkeypatch.setattr(antigravity.AntigravityManager, "system_prompt", staticmethod(lambda _kind: "継続試験"))
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    condition = asyncio.Condition()
+    async with antigravity.AntigravityManager(condition=condition) as manager, asyncio.timeout(20):
+        session = await manager.start("初回", str(workdir), "test-model", "low")
+        async with condition:
+            await condition.wait_for(lambda: session.terminal)
+        assert (session.status, session.agent_message) == ("completed", "初回の結果"), session.error
+        workdir.rmdir()
+        with pytest.raises(session_errors.DelegateBackendError, match="failed to start"):
+            await manager.send_message(session, "次の指示")
+    assert session.turn_seq == 1
+    assert (session.status, session.agent_message, session.error) == ("completed", "初回の結果", None)

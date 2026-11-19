@@ -56,7 +56,7 @@
   ユーザーの明示の追加、明示された目標から具体化した必要作業、即時対応で今回追加と判定した正式改善AWIも含む。
 - **レーン**: 処理対象を割り当てる作業の単位で、1つの専用branchと専用worktreeを持つ。
 - **レーン担当**: 各レーンの計画、実装、レビュー指摘の修正、履歴の統合、主作業ツリーへの統合を同じスレッドで担う担当。
-  担当の種別にはレーン担当、レビュー修正担当、CI修正担当がある（区分は`agent-toolkit:/share/exec.subagent.md`の操作区分）。
+  担当の種別にはレーン担当、レビュー修正担当、CI修正担当がある（区分は`agent-toolkit:atk-mode/roles/exec.subagent.md`の操作区分）。
 - **主作業ツリー**: マージ先のbranchをcheckoutしている作業ツリー。
   常駐起動では、process-loopが対象リポジトリ（系統を登録したリポジトリでは系統）ごとに準備して統括へ渡した作業ツリーを指し、統括自身の起動cwdとは区別する。
   この作業ツリーはマージ先のbranchの代わりに、それを追跡する専用branch（`worktree-`で始まる名前）をcheckoutしている。
@@ -96,7 +96,7 @@ all-reposの統括からリポジトリ担当として候補を受け取った�
    後続のレーンは、先行レーンの統合と書込の主体の解放を確かめてから、現行のHEADを起点に作る。
    Claude Codeでは、各段階の最初の起動を全て終えてから、同書「各段階の全初期通常レーン起動後の会話圧縮」へ進む。
 4. 各レーンは計画、実装、実行レビューの調整、指摘への対応を進め、メインはユーザーの判断の通知を中継してレーン間の書込競合と依存を調停する。
-5. `統合準備完了`を返したレーンには、`agent-toolkit:/share/exec-parent-integration.md`「統合の許可」に従い、依存の条件を満たせば先行レーンの`統合完了`を待たずに`統合許可`を出す。
+5. `統合準備完了`を返したレーンには、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従い、依存の条件を満たせば先行レーンの`統合完了`を待たずに`統合許可`を出す。
    各レーンは`atk lane integrate`で統合から計画の最終化、AWIの終了、選定結果への統合済みの記録までを終え、メインは返された`統合完了`を同書「統合の指示と受領」の受領条件で検収する。
 6. 処理中に加えた処理対象WIも、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理中に確定した必須是正レーン」で既存のレーンへ割り当て、同じレーン担当のスレッドで収束させて統合する。
 7. 全てのレーンが終わり、起動した監査の処置も確定したら、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に従って公開とセッションの終了を完遂する。
@@ -122,7 +122,7 @@ GitHub CopilotのレビューとDependabotアラートの監査はリポジト�
 
 1. メインは選定の時にAWIとUWIの原文を読み、選定の後は構造化した出力、計画のH1直下の要約と`## 実施内容`、工程境界の出力、レビュー指摘管理表の状態、統合結果を主に読む。
    他の節や実装差分は、エスカレーション、ユーザーへの対応、レビューの収束、メイン自身の調査・修正に要る時に読み、レーン担当とレビュー担当の判断を同じ本文から組み立て直すことは避ける（努力目標。判断の重複を防ぐ）。
-   `変更したエージェント向け文書`の取得し直しは`agent-toolkit:/share/exec.parent.md`と`agent-toolkit:/share/exec-parent-integration.md`に従う。
+   `変更したエージェント向け文書`の取得し直しは`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/playbooks/lane-receipt.md`に従う。
 2. 処理対象WIに含めた理由、除外した理由、選定の構成を尋ねられた時は、`agent-toolkit:atk-mode/playbooks/process-wi-selection-explanation.md`に従い、保存済みの選定結果と判断の内容から根拠と適用の限界を説明する。
 
 ## 一時停止

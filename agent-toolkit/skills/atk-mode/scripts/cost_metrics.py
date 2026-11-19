@@ -31,7 +31,8 @@ from session_quality_metrics import collect_quality_events, first_pass_metrics
 
 _TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 _JUDGMENT_LABEL = re.compile(r"(?:実装時|実装中)の(?:技術)?(?:判断|解釈)\s*[:：]")
-# `share/review-table-operations.md`「レビュー指摘管理表の共通操作」が定める、担当が自分で足す行の指摘箇所の書き出し。
+# 担当が自分で足す行の指摘箇所の書き出し。
+# 定義は`skills/atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」にある。
 # 通常の指摘の本文がこの語を引用しても外さないよう、指摘箇所の列だけで判定する。
 _SELF_RECORD_LABEL = re.compile(r"担当の記録\s*[:：]")
 _JUDGMENT_RECORD = re.compile(r"(?:実装時|実装中)の(?:技術)?(?:判断|解釈)の(?:記録|引き継ぎ)")

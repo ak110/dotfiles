@@ -130,8 +130,19 @@ async def test_stop_reclaims_late_descendant_with_short_lived_parent(
             snapshot = list(psutil.process_iter(["ppid"]))
             parent = next(process for process in snapshot if process.pid == spawner.pid)
             parent_created = parent.create_time()
+            parent_order = process_identity.start_order(parent)
+
+            # Windowsは親の終了後もPPIDを書き換えない。親より前に起動し、再利用前の同じPIDを親に持つプロセスは子に数えない。
+            def started_child(process: psutil.Process) -> bool:
+                if process.info["ppid"] != parent.pid:
+                    return False
+                try:
+                    return process_identity.start_order(process) >= parent_order
+                except psutil.Error:
+                    return False
+
             # Windowsのvenvランチャーがholderの中間に入る場合も、snapshot上の直接の子を確認する。
-            snapshot_children = [process.pid for process in snapshot if process.info["ppid"] == parent.pid]
+            snapshot_children = [process.pid for process in snapshot if started_child(process)]
             assert bool(snapshot_children) is snapshot_has_child
             if not snapshot_has_child:
                 await asyncio.to_thread(late_descendant.trigger, work)

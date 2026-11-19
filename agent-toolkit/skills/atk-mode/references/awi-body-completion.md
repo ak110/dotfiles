@@ -32,7 +32,7 @@
 処理担当も、人手の観測と書かれた条件について、現在の環境での到達性から自分で観測できるかを検討する。
 
 要件自体が求める観測と、エージェントが具体化した観測の条件を区別する。
-後者を技術的に満たしにくい場合は、`agent-toolkit:/share/review-loop-coordination-escalation.md`「技術判断で外せる完成条件」に従い、目的と必要な品質を保つ条件へ見直す。
+後者を技術的に満たしにくい場合は、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「技術判断で外せる完成条件」に従い、目的と必要な品質を保つ条件へ見直す。
 明示要件の未達、ユーザーの判断が要る変更、状態の決定に要る情報がユーザーの手元にだけある場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」へ渡す。
 要件自体が求める観測は独断で除外せず、検証が成立しない根拠を記録して、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`が定める延期のadoptと再開の記録へ引き継ぐ。
 既知の不具合と明示要件の未達は区別する。
@@ -85,7 +85,7 @@
 - 手動の観測を選ぶ場合は、入力値、操作手順、合否基準を書く。
   手動の観測は、実装担当が専用worktree内の成果物へ直接実行できる入力と操作で定め、統合の前に終える。
   公開、配布、稼働中の`atk wi process-loop`への反映の後にしか得られない観測は、公開前に再現できる代替の観測へ置き換える。
-  完成条件そのものが公開後にしか観測できない場合の判定は、実行レビュー担当が`agent-toolkit:/share/exec-review-recording.md`に従って行う
+  完成条件そのものが公開後にしか観測できない場合の判定は、実行レビュー担当が`agent-toolkit:atk-mode/references/review-record-verdicts.md`に従って行う
 - `atk wi process-loop`など本番の常駐プロセスから起動される対象は、`agent-toolkit:atk-mode/references/workflow-phases.md`「常駐サービスの公開前の観測」に従う
 - 操作、障害注入、擬似故障、自動終了の失敗などを含む観測は、`agent-toolkit:atk-mode/references/workflow-phases.md`「検証資源の分離」に従って実行環境と利用の調整方法を定める
 

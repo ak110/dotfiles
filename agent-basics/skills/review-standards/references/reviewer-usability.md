@@ -9,6 +9,7 @@
 1. 提出された成功手順に頼らず、原要求と変更前の通常利用から開始状態と代表作業を選ぶ。
 2. `agent-basics:writing-standards/references/ui-ux.md`「完了前の実描画確認」の手順1〜2で、変更後の画面を描画・操作する。
    配置・情報量・文体と、保つべき既存の品質の退行を同じ描画で判定し、画面の文言には文章の品質の基準も適用する。
+   Web画面では`agent-basics:writing-standards/references/ui-ux-web-rules.md`の規則も判定に使う。
 3. 判定の基準は`agent-basics:writing-standards/references/ui-ux.md`の「判断の順序」「操作と情報」「状態と内容」とし、次も確かめる。
    - 必要な選択肢が見え、前の画面の情報を覚えていなくても操作できるか。
    - 初めて使う人と反復して操作する人の双方が、効率よく進めるか。
@@ -20,6 +21,7 @@
    提出された試験の開始状態・操作・結果が観測の対象と一致するかは確かめて不足を明示し、試験が足りない受入シナリオは実行レビューの種類5とする。
    機能上の停止に当たった時は、開始状態・操作・停止箇所・未検証の部分・証拠を機能の担当へ渡し、到達していない操作の流れは未検証として扱う。
 5. 各指摘には、観測した画面の状態とキャプチャー画像、エンドユーザーが誤解するか操作を中断する具体的な場面、`agent-basics:writing-standards/references/ui-ux.md`の該当する基準を示す。
+   指摘の該当箇所は、外観、要素名、DOM構造の表面的な類似だけで限定せず、同じ発生機構を持つ変更画面、表示幅、操作後の状態の全体から探す。
 
 参考資料: [Impeccableのユーザビリティ確認](https://github.com/pbakaus/impeccable/blob/5e745ace7e151feb2a93d360d0281fe39448b857/skill/reference/critique.md)を日本語へ翻訳・再構成した。
 Apache License 2.0の著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。

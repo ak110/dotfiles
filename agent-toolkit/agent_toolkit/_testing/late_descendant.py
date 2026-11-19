@@ -26,6 +26,7 @@ from typing import Any
 import psutil
 
 from agent_toolkit._common import process_identity, process_tree
+from agent_toolkit._testing import helpers
 
 _SCRIPT = r"""
 import os, pathlib, runpy, subprocess, sys, time
@@ -172,7 +173,7 @@ def trigger(directory: pathlib.Path) -> None:
     """
     (directory / "trigger").touch()
     deadline = time.monotonic() + READY_TIMEOUT_SECONDS
-    while not (directory / "holder.pid").exists() and time.monotonic() < deadline:
+    while helpers.read_published(directory / "holder.pid") is None and time.monotonic() < deadline:
         time.sleep(0.01)
 
 
@@ -217,7 +218,7 @@ def _holds(pid: int, created: float, start_id: str) -> bool:
 
 def _wait_file(path: pathlib.Path, message: str, diagnostics: pathlib.Path) -> None:
     deadline = time.monotonic() + READY_TIMEOUT_SECONDS
-    while not path.exists():
+    while helpers.read_published(path) is None:
         if time.monotonic() >= deadline:
             detail = "（診断ファイルなし）"
             if diagnostics.exists():
