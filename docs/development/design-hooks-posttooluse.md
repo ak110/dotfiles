@@ -5,17 +5,14 @@
 ## コマンド全体の時間観測
 
 既存PreToolUseで元実行の開始を記録し、PostToolUse/FailureとClaudeの背景完了通知から同じ実行を完了させる。
-`command_timing`はsession・呼出主体・tool_use_idと、起動応答から得た背景task-idだけを対応付ける。
 Claudeの全体実行時間`duration_ms`を優先し、不足時は権限待ちや通知配送の遅延を含み得る観測経過時間として表示する。
 Codexの各pollの`wall_time_seconds`は全体区間を測らないため使わず、write_stdinによる元実行の最終Postを同じ開始記録へ接続する。
 開始記録がなければ未計測とし、背景起動を完了に置き換えない。
-識別子の完了状態で二重計上を防ぎ、見直し用履歴は主体・計測種別ごとの直近3件だけとする。
 測定値の通知は1秒以上の完了だけに出し、未計測は常に示す。
 10秒以上の完了が3件続いた区間の初回に、各所要と合計を示して実行範囲や結果再利用の検討を促す。
 10秒未満の完了、未計測、計測種別の変更で新区間とし、遮断や自動中断は加えない。
 2つの閾値はユーザーの回答（2026年11月16日）による。
 ユーザーは1秒以上かかる処理を重いものとして扱う基準を示した。
-導入後11日間のセッション記録の測定値では、1秒未満が約41%、10秒以上が約9%だった。
 独立した収集サーバー、コマンド本文の追加履歴、全コマンドへのtimeラッパーは、既存イベントと状態で目的を満たせるため採らない。
 
 ## 退避したシェル出力の抜粋の置き換え
@@ -25,9 +22,7 @@ Claude CodeのBashとPowerShellは、出力が上限（`bashOutputMaxChars`、�
 `02-agent-operations.md`の`Read`の箇条は残りを読むよう定めていたが、条件の主語が`Read`であり、Bashで読んだ結果へ当てはめる想起だけに任せていた。
 
 そこで`posttooluse.py`が、`tool_response`に空でない文字列の`persistedOutputPath`を持つBashとPowerShellの結果へ`hookSpecificOutput.updatedToolOutput`を返す（判定と本文は`persisted_output.py`）。
-返す値は`tool_response`の写しの`stdout`だけを、退避したことと保存先の絶対パス、元の出力のバイト数および次の操作を示す本文へ置き換え、`stderr`・`persistedOutputPath`・`persistedOutputSize`などの項目を保つ。
 次の操作の行では、保存先を`Read`で範囲を指定せず`allow_large: true`を付けて読み、`PARTIAL view`の部分取得かエラーが返った場合だけ残りを`offset`と`limit`で読むよう案内する。
-全体を使わない場合は対象を限定して取り直す選択肢も示す。
 ホストは置き換えた値を`Preview`として示すため、受け取る本文から元の出力の先頭が消え、抜粋を全体として扱う余地が無くなる。
 保存先のファイルは元の全量を保持する。
 
@@ -41,7 +36,6 @@ Claude Code 2.1.296の`Read`は`allow_large: true`を受け付け、通常の上
 PowerShellもBashと同じ出力スキーマと上限を持つため`hooks.json`の`matcher`へ加えた。
 `updatedToolOutput`を選んだのは、本体の出力スキーマがこの項目を「Replaces the tool output before it is sent to the model」と説明し、`updatedMCPToolOutput`より全ツールへ働く項目として案内しているためである。
 既存のPostToolUseの起動に相乗りし、新しいイベントの登録、セッション状態および起動を加えない。
-同じ呼び出しで他の分岐が`additionalContext`を返す場合は、1つのJSONへ両方を入れる。
 transcriptの`toolUseResult.stdout`も置き換えた本文になるため、`session_review_evidence.py`は`persistedOutputPath`が実在するファイルを指せばその内容を検索と警告の抽出の実体とする。
 CodexのPostToolUseは`persistedOutputPath`を持たず（出力は切り詰めて返る）、置き換えは発動しない。
 
@@ -61,9 +55,8 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は切り詰め�
 | Bashの退避を失敗として返す | 同じ版の設定スキーマにその設定が無い。置き換えでツール結果そのものが未読を示す形にする |
 | 上限を最大の128,000にする | 1回のツール出力が約41,000トークンとなり、Codexへ配布する上限（20,000トークン）を超える。退避した全量は`Read`の`allow_large: true`で読めるため、上限を上げて退避を避ける利点も小さい |
 
-## 効率化の仕組みの棚卸し（2026年11月）
+## ユーザーの要求と見直しの基準
 
-横断的な記録の条件と限界は[設計索引](design.md)の「効率化の仕組みの棚卸し」を参照。
 退避したシェル出力の抜粋の置き換えと`bashOutputMaxChars`の配布は、ユーザーが出力上限の引上げを許容し、切り詰めを放置しないことを求めたことに由来し、抜粋の置換と62000バイトは具体化である。
 導入の契機となった未読8件はホストの出力退避の観測であり、この補助の不具合とは数えない。
 判定は維持とし、ホストが返す保存先から標準の読取で全量と終了状態を回収する前提を保ち、別の取得プロトコルを加えない。

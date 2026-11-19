@@ -7,7 +7,6 @@
 2026年10月28日の改訂では、同期振り返りを通常終了から外し、必要な作業完了報告をreport-completionの共通の報告本文へ統合する。
 起動・通読やWI登録の成功は送達の証拠にしない。
 効果は新規の行動試験で確認し、新たなStopや固定句・見出し・自己申告の機械判定は追加しない。
-以下の旧判定の記録は、その当時の経緯として保持する。
 
 2026年10月3日のCodexで、振り返りの準備と通読の後に応答を終え、分析と最終報告の再開にユーザーの指示を要した。
 同じ日に、構造確認に合格した振り返り結果を最終回答へ載せず、AWI登録の説明だけで終えた事象もあった。
@@ -15,39 +14,22 @@
 ユーザーは対策を文書の追記だけに頼る再発防止を否定し、Stopフックでの対策を提案した。
 既存の`termination_order_advisor`は起動順だけを再入時に判定して初回Stopを許可し、`user_response_advisor`は可視本文の有無だけを調べるため、どちらの不足も検出できなかった。
 本機構が判定するのは、実際の準備結果と可視発話から機械的に確定する不足である。
-現行の判定基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
-旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。
 
-判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`へ集約する。
-PreToolUse・PostToolUse・UserPromptSubmitは既存のエントリーポイントから呼び出しと人間の入力を供給し、Stopの集約は既存の例外隔離と連続block上限を保つ。
-
-Bashの成果作業は共通の呼出しごとの実行位置とGitの位置指定からリポジトリへ帰属させ、編集は書込先ごとの所属を記録する。
 private-notesとGitリポジトリ外の書込は成果作業の編集へ含めない。
-編集ツールによる計画保存はhookのcwdへ帰属させる。
 省略の拒否は複数の所属と所属不明を区別し、不明の場合は成果作業の種類と、report-completionへ進む操作、起動を禁じる規範がある場合の報告先を示す。
 
 2026年10月11日のユーザー指示で、Stopが可視発話の報告見出しと報告本文（区切り、区分、候補ID、予定を示す語）を判定する方式を撤去した。
 送達後の報告が区切りの差でも遮断され、全文の再出力を往復させたためである。
-報告の内容と書式は`agent-toolkit:atk-mode/references/report-formats.md`と既存の完成形の例へ集約し、報告を書くメインが確かめる。
 同じ判断のユーザー指示で、Stopは完了報告（当時のスキル`report-completion`、現在の`agent-toolkit:atk-mode/playbooks/report-completion.md`）の呼び忘れの検出へ限定した。
-`termination_order_advisor`は成果作業を含む作業を対象とする。
-成果作業は、成功した`agent-toolkit:atk-mode`の作業`process-wi`・`agent-toolkit:atk-mode`の作業`add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・pushである。
 最後の会話圧縮以降の読込証拠も有効な省略判断も無ければ、Claude Codeでは非遮断通知で起動と残工程への続行を案内する。
 CodexはStopの非遮断通知を受け取れないため、関連操作の案内とreport-completionの文書に従う。
 適用するプロジェクト規範が起動を不要と定める場合は、メインが意味と優先順位を判断して`termination-evidence --decision-file`へ`omit-completion`を記録する。
-記録処理は識別子から現在の人間入力と作業対象を確かめ、指定した絶対パスから規範全文を読んで保存する。
-省略した`input_id`は現在の直近の人間入力へ対応付ける。
 有効な判断は対応する作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。
 規範の変更、新しい人間入力後の作業、開始・再開後の次判断では適用を確かめ直し、古い省略を流用しない。
-省略の記録手順は、完了報告の手順書を読む前に読める`agent-toolkit/skills/atk-mode/references/termination-evidence.md`が持つ。
-2026年11月のスキル`atk-mode`への統合で、スキル`report-completion`を廃止し、完了報告を手順書`agent-toolkit/skills/atk-mode/playbooks/report-completion.md`へ移した。
-状態に保存する作業の名前（`report-completion`）は変えない。
 Claude Codeの起動証拠は、スキル`atk-mode`を引数の先頭語`report-completion`で起動して成功した`Skill`呼び出しと、`Read`が手順書の現在の本文全体を1回の応答で返した読取である。
 `Read`は`offset`・`limit`の値ではなく、応答の`file.content`が現在の版の全文を含むかで判定し、範囲を限った読取とトークン上限で本文を省略した読取を受理しない。
 分割した読取の集約は受理せず、手順書は1回の`Read`で全文を返す長さに保つ。
-CodexとAntigravityの起動証拠は、Bashへ正規化された読取コマンドの入力が同じ手順書を指し、結果が本文を返した読取である。
 Codexの`tool_response`は終了コードを含まないため、共通取得記録の本文の受信を、Antigravityは結果に手順書の先頭のH1の行が現れることを本文の取得とみなし、パスの文字列やPostToolUseの発火だけを起動証拠にしない。
-読了は工程の開始証拠として扱う。
 `atk-mode`の起動は`atk-mode`の`SKILL.md`の本文を返し手順書の本文を返さないため、手順書の取得記録とは別の起動の記録（手順書のパスと版の組）として、Stopの読込証拠に加える。
 起動後の工程の完遂と報告の送達はメインが実際の結果から確かめる。
 2026年10月15日の終了フック案では、起動済み作業への意味点検を一度blockし、最終報告の固定句で抑止していた。
@@ -55,47 +37,29 @@ Codexの`tool_response`は終了コードを含まないため、共通取得記
 判断を求めるためのStop通知、`stop_review_notice`の書込と固定句による完了の推定を撤去し、元要求・実際の送達・未達・新指摘の処置をメインが確かめる目的を保つ。
 撤去した方式を別名の判定器、事前の本文の判定、別のフックへの移設で温存する案は、同じ再出力の往復を残すため採らない。
 起動済みフラグや完了の自己申告を加える案は、セッション途中の欠落で誤警告を反復させ、根拠の無い申告が判定を代替するため採らない。
-process-wiの`atk agents-exit-session`の起動順は同じ限定に従って本判定から外す。
-実行の時機はreport-completionの手順7が定め、常駐ループでの実行忘れは`autonomous_exit.py`が判定する。
-作業の同一性は入力、呼び出し、開始と判断記録で区切る。
-起動証拠を得た作業の後に新しい人間の入力があり、続けて成果作業が届いた場合は新しい作業として区別する。
-本文の読込状態は主体別の共通取得記録から照会し、圧縮を挟まない次の作業でも再利用する。
 clear・compactで同じ主体の取得記録を消し、圧縮前の作業別起動証拠だけでは読込済みと扱わない。
 省略判断は対象の作業と人間入力に限定したままにする。
-協調モードのClaude Codeメインの一般の変更は、成功した編集ツールと静的に確定したBash書込先を同じ作業の証拠へ接続する。
 起動不足を案内する通知には、公開範囲の指定・回答・適用済み認可が無い未コミットの自編集を添え、公開範囲の確認へ戻れるようにする。
-意味判断はメインへ保ち、現在の原入力を返す`termination-evidence --context`と同じ所有者のJSON記録で確定した公開範囲を渡す。
 commitしない範囲も確定済みとし、未コミットだけを理由にcommitを求めない。
 現在のGit差分全体へ作用する独自台帳や、Stop側の公開認可の推定は、編集の帰属と判断の所有者を分散させるため採らない。
 起動証拠を欠く作業ごとにその作業が待つ非同期対象を確かめ、対象が生存する間は初回・再入回とも正常な待機のターン終了を許可し、回収後は再判定する。
 待機対象とするのは、作業が起動したagents_serverのsessionと、作業の開始以後にtranscriptへ起動が記録された非同期対象とする。
 非同期対象には背景Agent・MCPのバックグラウンドタスク・未配送の完了通知と、作業内で起動した背景Bashを含める。
-終了する背景Bashは完了通知でターンが再開し、その時点で起動不足を再判定する。
 実行位置から既知のサーバー・watch起動と判別できる背景Bashは待機免除から除き、report-completionの起動不足を判定する。
 引用・照会・ヘルプと有限のtimeoutを伴う実行は常駐起動に数えず、有限の長時間コマンドと待機CLIの免除を保つ。
 任意の自作コマンドの常駐性は静的に確定しないため、この検出の保証範囲から外す。
 待機コマンド（`atk agents wait`・`wait_ci.py`）以外の背景Bashを常駐コマンドとみなして待機対象から外す案は、全体検証などの有限の長時間コマンドを背景で待つ正常な終了まで遮断し、待機を記録する手段も無いため採らない。
 この遮断は2026年10月12日、報告本文の判定を撤去した変更の統合時に観測した。
 背景Bashを一律に待機対象から外す案も同じ理由で採らない。
-作業の開始位置にはUserPromptSubmitが記録したtranscriptの大きさを使い、起動の位置より前に開始した作業のうち最も新しいものへそのタスクを対応付ける。
 セッション全体の継続判定（`background_tasks.is_pending_async_work`）を先に適用すると、作業の開始前から動く常駐Bashなど無関係なタスクが1件あるだけで全作業の起動不足が消えるため、作業との対応をStop側で判定する。
 同関数の意味を変える案は、同関数でセッションの継続を判定する他のhook（自律終了、空転ガード、計画保存の通知）の結果を変えるため採らない。
 現在の作業を中止・置換・技術的不成立と記録した場合も、他の作業に残る起動不足の判定を続ける。
-委譲先のwait判断は作業との対応・所有に加え、有効なCLI待機のロックと対象登録を既存の共通処理から読む。
 観測を試みてpending_observationが偽になっても、待機の生存とは区別する。
-中止・置換・待機・技術的不成立の意味はメインが判断し、`atk run-script termination-evidence`の記録処理は識別子から原入力・UWI・失敗応答の実体を読み、由来、対象の実在、主体だけを確かめる。
-転記した全文は同じ実体から機械的に生成でき、由来の証拠を加えないため、`quote`は省略できる。
-明示した`quote`は実体の全文との一致を確かめる。
 自然言語の意味を語句一覧で判定すると誤判定が生じ、完了の自己申告を受理すると根拠の無いフラグが判定を代替するため、意味判断はメインが担う。
 証拠を読めない場合とtranscriptを読めず待機対象を確かめられない場合は判定不能としてログへ残し、遮断しない。
 状態の欠落を未完了の証拠とする方式は、旧版や期限回収の後に遮断を反復させる。
 
-Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`response_language_advisor`と`submission_report_advisor`を実行する。
 後者はadd-awi-by-userの作業完了報告に`atk wi submission end`の報告用要約が無い場合に遮断で再報告を求める判定で、起点の報告脱落がCodexで起きたため登録する。
-最終応答は`last_assistant_message`、要約作成後の新しい発話はCodexの`event_msg`の`user_message`で読む。
-終了工程の非遮断支援は関連操作と文書へ置く。
-出力は`decision`と`reason`だけ、許可時は空のJSONとする。
-2026年11月からは、下記「自動起動セッションの続行の判定」の`autonomous_exit`と`run_skill_report_gate`もCodexのStopで実行する。
 他のStop判定はClaude Codeの記録形式と通知手段を前提とするため、Codexへ広げない。
 検出の保証範囲は判定器の出力までとし、無効化されたhook、Codexの未信頼設定、ホストの強制終了と連続block上限による終了は保証の外に置く。
 ホスト本体のStopの発火と継続は公開仕様で確認し、実機の発火試験は行っていない。
@@ -113,8 +77,6 @@ Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`
 2026年11月、process-loopの統括と`atk run-skill`が起動するセッションの起動からホストの`/goal`を外し、完了までの続行をagent-toolkitのStop hookへ移した。
 ユーザーは、`/goal`の働きは「Stopの時点で判定して未達なら続行する」ことだけであり、ホストごとに挙動が違うためhook側へ吸収するよう求めた。
 未達の判定には、観測できる証拠による機械判定を選んだ（2026年11月15日の確認回答）。
-変更前は、Claude Codeだけがホストの`/goal`で続行していた。
-Codexには続行させる仕組みが無く、Antigravityは統括を終える終了工程を実行できなかった。
 `/goal`の評価は中身を調整できないLLM判定で、次の問題を起こしていた。
 
 - 目的文の字義解釈による正当な終了の拒否（2026年10月30〜31日、11月5日、11月6日。[design-cli-run-skill.md](design-cli-run-skill.md)、[design-process-loop-termination.md](design-process-loop-termination.md)）
@@ -123,8 +85,6 @@ Codexには続行させる仕組みが無く、Antigravityは統括を終える�
 
 統括の`/goal`は`7d0179d1d`（2026年8月5日）で入り、ユーザーが利用を要件として指定した記録は見つからなかった。
 
-3つのホストとも、目的文（`atk-auto`要素の本文）を通常の最初の入力として渡す。
-目的文の本体はセッション記録から統括を判別する処理（`session_records.py`）が使うため保つ。
 続行は次の2つの判定が担う。
 
 - process-loopの統括の最上位: `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`が、終了工程`atk agents-exit-session`の実行記録が無い終了を遮断する。
@@ -137,33 +97,22 @@ Codexには続行させる仕組みが無く、Antigravityは統括を終える�
 作業内容の未達は、常駐が統括の終了後に行う検収（`process_loop.py`の`run_coordinator`）とrun-skillの起動元の検収が検出する。
 `/goal`の評価が早すぎる終了を防いだ件数の記録は無い。
 
-ホストごとの扱いは次のとおりである。
-3つのホストとも、Stopの遮断は同じターンの続行として働く。
-
-- Claude Code: 両判定をStopの判定一覧で実行する。
   非対話の`claude -p`はバックグラウンドタスクの完了通知で同じ会話が再開する（`audit-records-hooks-lifecycle.md`の2026年10月10日の実機観測）。
   非同期処理または未回収の結果が残る間は`is_pending_async_work`で終了を許し、再開後のStopで改めて判定する。
-- Codex: `stop.py`の`CODEX_CHECK_MODULE_NAMES`へ両判定を加える。
   Codexの最上位には背景の完了通知で会話が再開する待機が無く、結果は同じターンの中で回収する規範である（`waiting-and-monitoring-intervals.md`）。
   このため、非同期処理の待ちで終了を許す分岐をCodexでは使わない。
   公式のHooks仕様（2026年11月15日取得）は、Stopの`decision: "block"`が`reason`を新しい入力として続行させると定める。
   codex-cli 0.169.0の`codex exec --json`でも、遮断の後に同じターンの中で2つ目の回答が出力されてから終了した。
-- Antigravity: 変換層（`agent-toolkit/agent_toolkit/_hooks/antigravity.py`）がStopで全判定を呼ぶので、判定は追加しない。
   変換層は遮断を`decision: "continue"`へ変換する（agy 1.5.6の`agy -p`で続行を観測）。
-  `atk agents-exit-session`は、Linuxの対話agy（`-p`でなく端末を持つ起動）を終了対象として識別し、終了要求（SIGTERM）を送る。
-  未終了のネイティブ子は変換層が`background_tasks`として渡すので、非同期処理の待ちで終了を許す既存の分岐を使う。
 
 Stopの共通ハンドラー（`stop.py`）は連続7回で遮断を打ち切る。
 Claude Codeが8回連続の遮断を無視してターンを終えるためである。
 `/goal`が無いと、打ち切り後の対話型の統括は入力待ちのまま残る。
 そこで、打ち切りに達したprocess-loopの統括の最上位は、`busy_loop_guard.py`の停止工程と同じ終了要求でセッションを終え、常駐側の検収へ戻す。
-終了要求はClaude Codeではターン後の`/exit`、CodexとAntigravityでは単一PIDへのSIGTERMである。
-run-skillでは打ち切り後にCLIが終了し、起動元が既存の「報告用UWI未保存」の失敗として報告する。
 
 終了要求を送るのは、統括の会話IDを確定でき、hook入力の会話IDと一致する場合に限る（`agent_toolkit/_common/process_loop_session.py`の`is_identified_process_loop_session`）。
 終了工程は祖先をたどって最初の対話CLIを止め、非対話の`codex exec`や`agy -p`は停止対象から外して、さらに上の祖先を調べる。
 このため、環境印だけで判定すると、統括が入れ子で起動した非対話CLIのhookから外側の統括へSIGTERMが届きうる（2026年11月19日の独立検証で、環境印があり会話IDが無い起動では任意の会話IDのCodex入力が遮断されることを確認）。
-ClaudeとID指定の再開は、起動側が`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`で会話IDを渡す。
 会話IDを起動前に決められない新規起動のCodex・agyとpicker再開は、起動ごとに`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM`へ新しい値を渡し、最初の委譲先でないSessionStartの会話IDをセッション状態へ確保する。
 統括のSessionStartは入れ子のCLIの起動より先に発火するため、後から始まった会話のSessionStartは確保済みの値を変えない。
 続行の遮断も同じ識別で対象を限定し、確保済みの統括と別の会話には働かせない。
@@ -180,8 +129,6 @@ ClaudeとID指定の再開は、起動側が`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_
 変更の反映前に`/goal`付きで始まった統括とrun-skillの会話は、利用上限の解除後などに目標を保ったまま再開する。
 このため、担当工程完了の終了応答を完了の1文にする扱いと、最終ターン終了前に定期再確認taskを回収する手順は、統括とrun-skillのセッションを条件にして残す（[design-hooks-periodic-recheck.md](design-hooks-periodic-recheck.md)）。
 ホストが挿入した本文や環境変数を見分ける処理は残す。
-対象は`agent_toolkit/_common/runtime_inserted.py`の`Goal check-in:`と、`mcp_environment.py`の`CLAUDE_CODE_GOAL_CHECKIN_MINUTES`である。
-どちらも過去のセッション記録の分類に使い、`/goal`の利用を前提にした振る舞いを持たない。
 撤去の記録は[removed-mechanisms-workflows.md](removed-mechanisms-workflows.md)にある。
 
 却下した案は2つある。

@@ -12,7 +12,6 @@
 
 記述言語の判定は`check_text()`として入力取得から分離し、ユーザーへの送達前チェック、質問・計画の直接入力と、直接送達される最上位メインのStop本文で共有する。
 委譲先・子エージェントの内部返却は言語判定から除外する。
-Stopの`response_language_advisor`は共通の`is_main_agent_context`で主体を判別する。
 Claude Codeでは既存の`is_pending_async_work`へ同じStop入力とセッション状態を渡し、非同期処理の結果待ちが残る本文を除外する。
 待機対象が残らず作業を終えるClaude Codeの本文と、Codexの完了本文は`check_text()`へ渡す。
 誤検出時は成果・判断・未達を含む本文全体をそのまま再出力する手段を示し、再出力後は`stop_hook_active`で通過させる。
@@ -37,7 +36,6 @@ Claude Codeだけで有効化する。
 2026年10月26日のユーザー指示により、途中説明の言語を理由に通常操作を拒否するFunction hooksの`tool.call`登録を撤去した。
 通常操作では直前本文の取得、言語判定、診断通知を行わない。
 質問・計画本文とsend_to_userのmessageはcheck_textで表示前に判定する。
-`response_language.ts`はsend_to_userが使うPythonのCLI起動・結果解釈・診断抑止を所有する。
 直接送達される最上位メインのStopはlast_assistant_messageを判定し、再帰防止により1回だけ終了を止める。
 SubagentStopでは空返却の保護を保ち、内部返却の言語判定を省く。
 send_to_userでは判定基盤の障害を言語違反と分け、成功結果を返して本文を表示し、結果の後に読む文脈へ`response-language`の`warn`を加える。

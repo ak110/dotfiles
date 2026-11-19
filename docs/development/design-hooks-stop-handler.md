@@ -5,31 +5,21 @@
 ## 共通ハンドラーと連続block上限
 
 Stopの登録は共通ハンドラー1件とする。
-共通ハンドラーから、`agent-toolkit/agent_toolkit/_hooks/background_tasks.py`の`is_pending_async_work`による入力待ちを判定する。
-次に、`busy_loop_guard.py`が常駐ループのセッションの無進捗の反復を判定し、閾値へ達した場合は停止の意図を返す。
-process-loopへの中断要求とセッションの終了要求は、共通ハンドラーが全判定を終えた後に同モジュールの`halt`で実行する。
 終了要求が成立した（ターン後の`/exit`か単一PIDへの終了要求）Stopでは、共通ハンドラーは他の判定の遮断・通知・配送への復帰を返さず、停止の事実だけを伝える。
 判定の途中で終了要求を送ると、後続の`autonomous_exit.py`などが終了要求済みのセッションへ継続を求め、同じ応答が停止と継続を同時に指示するためである。
-終了要求が成立しなかった場合は、他の判定の結果を通常どおり集約する。
 判定の入力は、前回のStop判定から今回のStop判定までにセッション記録へ加わった自セッションのツール呼び出しの有無とし、経過時間とStopの発火間隔はこの入力から外す。
 実行環境の応答速度と正当な待機の長さが時間の値を変えるため、時間窓での判定は正当な待機を停止し得る。
 停止の事実は`systemMessage`でユーザーへ伝え、中断要求は`atk wi process-loop abort`と同じ状態ファイルを使う。
-続いて、`autonomous_exit.py`による常駐ループの`atk agents-exit-session`実行忘れを判定する。
 同モジュールは入力待ちの判定より先に、終了要求が`requested`でStop入力に有効な非`teammate`のバックグラウンドタスクが残る場合の取り下げを判定する。
 Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
-続いて、`plan_save_advisor.py`で`~/.claude/plans`に残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
-続いて、`user_response_advisor.py`が人間入力の後の可視本文の不足を、`termination_order_advisor.py`が成果作業のreport-completionの起動不足を非遮断通知で案内する。
 質問の意味と確認手段は`agent-toolkit:atk-mode/playbooks/confirmation.md`と`agent-toolkit:atk-mode/references/delivery.md`へ委ねる。
 `user_response_advisor.py`は最新の人間の発話の後に可視の本文が無い終了を通知する。
-開始時の文字列入力と途中配送のqueued_commandを扱い、thinking・ツール結果・空白・待機記号を本文へ数えない。
 `send_to_user`の呼び出しの`message`はユーザーの画面へ届く本文として数える。
-task-notificationを最新入力とする待機の回と委譲先は除く。
 回答が質問に答えているかは判断せず、同じターンで本文を出力すれば解除できる。
 最後の可視本文より後の人間の入力が全て単純な了承で、`…`だけで終える場合は、ツール呼び出しの有無によらず規範が許す終わり方として通知しない。
 了承の後の内部作業（UserPromptSubmitが案内する作業契約の更新など）から伝える内容が生じたかはhookから観測できず、ツール呼び出しの有無を報告義務の代理にすると、先行hookの指示に従った正常な終了を違反として扱うためである。
 送達の義務は規範とエージェントの意味判断に委ねる。
 最新の人間入力の後に起動したバックグラウンドタスク（Bash、Agent、SendMessage背景再開、MCP）が終了していない間は、`…`だけの終了を完了通知で再開する途中の待機として通知しない。
-未終了の判定は、`background_tasks_entries.describe_pending_background_entries`の起動集合から完了集合と、`termination_order_advisor`が判別する常駐Bashの集合を引いた残りで行う。
 終了通知を待てない常駐コマンドだけでは免除しない。
 免除はそのStopだけで、待機を回答済みとして記録しない。
 人間入力より前の起動、同期Agent、全対象の停止成功後、空本文、新しい人間入力の後は従来どおり通知する。
@@ -41,13 +31,9 @@ task-notificationを最新入力とする待機の回と委譲先は除く。
 要素種別と既知の機械文言の除外だけでは、compact・peer・自動継続・SDKなど未知の機械入力も応答責務を生じさせるためである。
 `isMeta`と機械生成境界の除外、task-notificationによる応答責務の解除は保持する。
 人間の一般入力・スキル起動・queued入力の本文欠落と、機械入力の後の定時発火を`stop.main`経由のテストで対照する。
-他のStop判定と待機規範は変更しない。
-最後に、`queued_notification_advisor.py`が最上位transcriptの現在の未配送通知を確かめ、他のblockが無ければホストの配送へ戻し、blockが残る場合だけ結果受領を案内する。
 共通ハンドラーは判定の順序、例外の隔離、応答の集約、終了に関わる副作用の実行時点と連続blockの上限管理を担う。
-既存の非同期待機の判定結果も、同じ会話のmodへ渡す。
 判定条件と通知本文は各判定モジュールが持ち、回収するcron taskの選別はmodが担う。
 これら以外を扱わず、ユーザーの意図、作業完了、振り返り要否、Git変更件数、managed-temp回収要否を判定しない。
-個人設定の入力待ちベルも同じ入力待ち判定を使う。
 
 `stop_hook_active`が真の再入で各判定が無条件approveへ遷移する案は、遮断の機会を1回で消費し、別の判定が最初の遮断機会を使った後は同じセッションで二度と発火しないため採らない。
 共通ハンドラーはセッション状態へ連続block回数を保持し、`stop_hook_active`が偽の入力では連続block回数を1へ戻す。

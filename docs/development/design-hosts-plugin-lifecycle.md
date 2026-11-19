@@ -6,14 +6,12 @@
 
 dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLIを準備した後に`agent-toolkit-codex/`を生成し、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
 `agent-toolkit-codex/`の生成に失敗した場合は、post-applyのstep失敗として永続logへ記録し、全体を非0で終了する。
-`install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入か、有効なpluginの版数不一致の場合に`codex plugin add <plugin-id>`を実行する。
 明示的に無効なpluginは導入状態とcacheを保持し、版更新も保留する。
 明示的な再有効化後に通常の更新を再開する（[Codexガイド](../guide/codex-guide.md#プラグイン更新の反映)）。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
 実際のaddまたはupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
 利用セッションがあっても`codex app-server daemon restart`を自動実行し、同じ会話と子孫の継続は[Codexの起動管理とdaemon復旧](design-hosts-codex-runtime.md#codexの起動管理とdaemon復旧)へ委ねる。
 Linuxの`update-dotfiles`は適用差分があり利用セッションが無い場合だけ管理daemonをapply前に一時停止し、apply後にもセッション不在を確認して起動状態を戻す。
-自動再起動の成功と失敗は終了コードとともにupdate-dotfilesログへ記録する。
 再起動失敗はplugin導入を巻き戻さず、`PostApplyOutcome`から更新全体の非0終了と次の操作へ伝播する。
 daemon再起動の終了コード0と、会話・子孫の復旧成功は別の観測として扱う。
 restartの外側上限は、nativeの停止猶予を途中で打ち切らないようにする。
@@ -21,7 +19,6 @@ Codex 0.166.0の操作lock待機375秒、停止猶予最大300秒、強制終了
 根拠は[対象版のdaemon実装](https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/app-server-daemon)であり、通常のplugin照会は従来の上限を使う。
 無変更、marketplace登録だけの変更、daemon停止中および不要pluginの除去は自動再起動の対象に含めない。
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
-公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、導入先の実体をCodexが読み込むと定める。
 現行versionの導入はCodex CLIへ委ねる。
 更新処理は`plugin add`の前に、通常のversionディレクトリを`CODEX_HOME`直下の固定の退避先（`.dotfiles-plugin-cache-saved/<marketplace>/<plugin>/`）へ移動する。
 導入後の状態確認とdaemon処理を含む最後のCodex CLI呼出後に、目標version以外を同じ絶対パスへ戻す。
@@ -79,9 +76,6 @@ cache version台帳、POSIXの原本接続、Windowsの原本接続とファイ�
 ファイル名の開始時刻から最終書込（mtime）までは、最長でeuryaleが3.2日、sthenoが2.2日だった。
 最長の1件は75.9時間の間隔を置いて同じrolloutへ追記しており、再開した会話も同じファイルへ書く。
 7日はその2倍以上の余裕を持ち、Claude Codeの旧版cache整理と同じ値である。
-同日の版の分布では、sthenoのagent-toolkit 37版のうち25版（1.54GB、57,562ファイル）を削除して12版（0.25GB、23,663ファイル）を残し、agent-basicsは29版のうち20版を削除する。
-euryaleのagent-toolkit 8版（0.18GB）は全て期間内で、削除する版は無い。
-14日で区切るとsthenoのagent-toolkitは19版（0.39GB、32,648ファイル）が残る。
 猶予期間を過ぎた旧versionの会話を再開すると、hookは`atk-hook`の復旧で動くが、会話の履歴が指す旧versionのskillなどの絶対パスは失われる。
 
 シンボリックリンク方式は代替案として却下する。
@@ -110,8 +104,6 @@ agent-toolkitの更新では旧versionを自動復旧し、Codexの稼働状態�
 Claude Code 2.1.303の`claude plugin uninstall`とmarketplaceの削除は、plugin cacheの実体を孤立の標識（`.orphaned_at`）付きで残す。
 他のscopeが残らないpluginでは永続データ領域（`plugins/data/<id>/`）を削除する（いずれも隔離した設定ディレクトリでの観測）。
 `install_claude_plugins.py`のdeprecated pluginの除去は、実体を削除せず、データ領域も`--keep-data`で残すため、稼働中のセッションが使う実体を削除する処理に当たらず、延期を設けない。
-`claude_marketplace.py`の登録修復は、marketplaceの削除で収録pluginを除去してデータ領域を削除し、同じ実行で再導入する。
-収録するagent-toolkitの`plugin_environment.py`の`runtime_data`はユーザーデータ領域（Linuxでは`XDG_DATA_HOME`配下の`agent-toolkit`）を先に選び、そこへ書き込めない場合だけデータ領域（`CLAUDE_PLUGIN_DATA`）を使う。
 `plugin.json`は設定項目を持たない。
 このため通常の環境では稼働中のセッションのhook・MCPはデータ領域を参照せず、削除しても動作は変わらないので、この修復は参照の終了を待つ延期の対象にしない。
 daemon自動再起動と旧versionの保持は独立している。
@@ -119,7 +111,6 @@ daemon自動再起動と旧versionの保持は独立している。
 複製する方式でも、CLIが`plugin add`で旧versionを削除してから復元の複製を終えるまで元のパスから実体へ到達できない。
 その区間は旧versionの総量に比例して伸びる。
 移動する方式ではこの区間が`plugin add`と導入後の確認の時間に縮み、旧versionの数に依存しない。
-sthenoの34版（約7.6万ファイル、約1.6GiB）を実際のCodex CLIで更新した計測では、更新関数の所要が中央値165秒から14秒に、元のパスから到達できない区間が91秒から14秒に縮んだ（各5回、2026年11月18日）。
 最新版へhookを付け替える案は、旧版のskill・MCP・遅延importを守れないため採らない。
 プロセス終了まで更新を延期する案は、後から再開できる保存済みセッションを判定できず、Codexを常用する環境で更新が完了しないため採らない。
 稼働中のCodexの起動時刻だけで旧versionの回収を判定する案も、同じ理由で採らない。
