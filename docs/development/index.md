@@ -10,6 +10,8 @@
 - [docs/development/operations.md](operations.md): 運用機能のホスト固有事項と詳細仕様
 - [docs/development/commit-types.md](commit-types.md): コミットメッセージのtypeの判定例
 - [docs/development/internals.md](internals.md): 実装者向けの内部仕様（agents_serverの共有状態、セッション状態とフラグ、委譲先の調査手順、環境変数）の索引
+- [docs/development/delegation-maintenance.md](delegation-maintenance.md): 委譲の仕組みを保守する人だけが使う事実（OpenCodeのターン起動、旧モデル設定の移行）
+- [docs/development/read-triggers-contract.md](read-triggers-contract.md): 読込表の宣言の書き方と、資料の案内・受信の追跡を実装するhookの入力契約
 
 ## 記録の索引
 

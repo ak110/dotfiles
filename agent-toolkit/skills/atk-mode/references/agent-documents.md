@@ -87,4 +87,4 @@ agent-toolkitのスキルと手順書を書く時の差分である。
   委譲先に共通の決まりの原本は`playbooks/subagent.md`の1つであり、`agents_server`の全modeとCodexとOpenCodeの起動へ同じ原本から届ける。
 - Claude Codeに固有の委譲先向けの記述は、Claude Codeの委譲先だけへ届ける。
 
-監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/sub-agents-context.md：コンテキスト境界：2026年9月27日」にある。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/atk-mode/references/agent-documents.md：コンテキスト境界：2026年9月27日」にある。

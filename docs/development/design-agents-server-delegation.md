@@ -19,7 +19,7 @@ Claudeのidleとストリーム終了で確定する対象は、背景完了待�
 
 ## 委譲手段の選択
 
-Claude Codeからの委譲手段は`agent-toolkit/share/rules/common/01-agent.md`「委譲の要否判定」と`agent-toolkit/skills/delegation/references/runtime-routing.md`「実行手段」が定める。
+Claude Codeからの委譲手段は`agent-toolkit/skills/atk-mode/playbooks/delegation.md`「要否判定」「実行手段」が定める。
 通常は`agents_server`を使う。
 専用agent定義、ユーザーまたは上位主体の明示指示、fork、およびMCPツールを呼び出せない場合にAgentツールへ切り替える。
 Agentツールは工程別モデル設定のeffortを渡せず、engineとモデルも異なり得るため、切り替えた工程、本来の設定値と理由を報告に残す。

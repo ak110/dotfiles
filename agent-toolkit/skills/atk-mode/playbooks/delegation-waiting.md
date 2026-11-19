@@ -226,6 +226,6 @@ Codexで実行中の担当の中断を避ける条件と、利用上限の待ち
 
 観測の条件と再検証は`docs/development/audit-records-delegation-waiting.md`の次の節にある。
 
-- 「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日」
-- 「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：進捗照会と結果回収：2026年10月10日」
-- 「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年11月2日」
+- 「agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：待機区間の構成：2026年9月3日」
+- 「agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：完了通知を待ってターンを終える場合：2026年10月10日」
+- 「agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：待機区間の構成：2026年11月2日」

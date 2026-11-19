@@ -6,10 +6,10 @@
 
 探索とコマンド分離を選ぶ量の目安は、tool_descriptions.pyのLIGHTWEIGHT_MODE_SELECTIONが1つの定義として持ち、server instructionsとstartのmodeの引数説明が同じ文を使う。
 ツール検索の前に届くserver instructionsへ基準を置き、自ら読むか委譲するかの判断に先行させる。
-常時規範を増やす案は読込費用が増えるため、遅延して取得するstartの説明だけへ基準を置く案はこの判断時点に届かないため採らない。
-委譲元の起動から受領までの義務はdelegation/SKILL.md「explore・shellの起動」へまとめ、共有資料は節名で参照する。
+全ての作業で読む入口へ基準を置く案は読込費用が増えるため、遅延して取得するstartの説明だけへ基準を置く案はこの判断時点に届かないため採らない。
+委譲元の起動から受領までの義務は`agent-toolkit:atk-mode/playbooks/delegation.md`「軽量の起動」へまとめ、共有資料は節名で参照する。
 起動のたびに共有資料の全文を読む案は、探索や出力分離が節約する量と同程度以上の文脈を先に消費するため採らない。
-作業全体の分割を判定する時点は、1件の探索・コマンドの起動とは分けてrouting.mdへ到達させる。
+作業全体の分割を判定する時点は、1件の探索・コマンドの起動とは分けて同書「委譲単位の確定」へ到達させる。
 
 `explore`は対象リポジトリの成果物、委譲入力およびユーザーデータを読み取り専用で調査し、結論と根拠を返す。
 読取ツールが管理するキャッシュ・状態・保存出力は対象成果物と区別し、担当自身の成果ファイルは作成しない。
@@ -25,7 +25,7 @@
 文書群の単一応答上限と全体読取量は別に評価する。
 各群は割当範囲を完了して返し、探索の意味上の完了は委譲元が検収する。
 読了台帳・常設監視と本文の意味からの自動追送は追加しない。
-1件の探索を選ぶ条件はserver instructionsの採算の目安、作業全体の分割は`agent-toolkit/skills/delegation/references/routing.md`、起動から受領は同スキルのSKILL.mdを知識境界とする。
+1件の探索を選ぶ条件はserver instructionsの採算の目安、作業全体の分割は`agent-toolkit/skills/atk-mode/playbooks/delegation.md`「委譲単位の確定」、起動から受領は同書「軽量の起動」を知識境界とする。
 確定コマンドの実行はshell、自由な判断を伴う書込はdelegateへ渡し、対象と操作を委譲元が定める。
 
 `start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。
@@ -63,7 +63,7 @@ Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]
 
 ## 継続不能
 
-継続不能の詳細な判定条件は`continuation.md`「継続と新規起動」が定める。
+継続不能の詳細な判定条件は`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」が定める。
 `atk agents wait`は保持期限を過ぎて結果を回収済みのsessionへ`status`が`expired`の応答を返すが、同じsessionの会話再開用の最小状態は保持され、
 `send_message`は保持された会話再開用の最小状態から暗黙再開するため、保持期限の超過だけを継続不能の根拠にしない。
 呼び出し側が`atk agents wait`の`expired`の応答を継続不能と扱う運用は、再開できるthreadを破棄して規範・計画・対象コードの再読込を発生させるため採用しない。

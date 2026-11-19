@@ -13,7 +13,7 @@
 対象0件の継続上限は、初期化の失敗が確定し得る最大の経過を上回る値とする。
 知識境界として、上限値と導出関係は`agent-toolkit/agent_toolkit/_agents_server/state.py`の定数定義が持ち、上限どうしの関係は定数を置換せずに判定するテストで固定する。
 待機側の分岐は`agent-toolkit/agent_toolkit/_agents_server/agents_wait.py`が持つ。
-委譲元が対象0件の継続上限による終了をどう扱うかは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`と`atk agents wait`の公開説明が持つ。
+委譲元が対象0件の継続上限による終了をどう扱うかは`agent-toolkit/skills/atk-mode/references/delegation-wait-anomalies.md`「終了コードと呼び出しの失敗」と`atk agents wait`の公開説明が持つ。
 対象が空であることを即時の終了条件にする案は、待機開始後に登録される委譲先を取りこぼすため採用しない。
 待機側が`agents_server`の起動処理の進行状況を直接照会する案は、待機CLIと`agents_server`のMCPサーバープロセスの間へ新しい照会の仕組みを要し、既存の状態投影と待機対象登録簿に第3の観測面が加わるため採用しない。
 起動失敗後の空待ちの防止と短い初期化上限はユーザーの要求で、最終の50秒・150秒は実測に基づくエージェントの補正である。

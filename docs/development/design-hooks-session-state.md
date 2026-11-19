@@ -43,7 +43,7 @@ clearと期限回収でもlockを削除せず、sessionごとのlockファイル
 
 応答言語判定は、send_to_userの`message`と、ユーザーへ直接送達される最上位メインのStopの`last_assistant_message`を対象とする。
 AskUserQuestionの`questions[].question`・`header`と`options[].label`・`description`、ExitPlanModeの`plan`も既存の判定対象に保つ。
-`options[].label`末尾の`(Recommended)`は、`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」が付与を求める固定表記のため、記述言語の判定前に除く。
+`options[].label`末尾の`(Recommended)`は、`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ユーザー確認（AskUserQuestion）」が付与を求める固定表記のため、記述言語の判定前に除く。
 文字化けの判定は元の入力全体へ適用する。
 StopとSubagentStopで最終応答が欠けた場合の判定は保持する。
 終了を拒否する通知は、終了証拠、終了順序と委譲先観測の理由ごとに、実行できる続行またはユーザー確認への操作を返す。

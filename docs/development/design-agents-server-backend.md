@@ -13,7 +13,7 @@ plugin更新で作業ディレクトリが消えると、子App Serverは生存�
 子プロセスを再生成する案は、新しい子も同じ親の作業ディレクトリを継承するため採用しない。
 
 委譲先はagent-toolkit skillとplugin内部資源をそのrootから読み、`<役割名>.subagent.md`や別hostのcache版数から別rootを組み立てない。
-直接起動したCodexメインはこの受け渡しの対象外であり、そのplugin root解決は`rules-common.codex.md`「Codexのplugin root解決」が所有する。
+直接起動したCodexメインはこの受け渡しの対象外であり、そのplugin root解決は`agent-toolkit/skills/atk-mode/playbooks/host-codex.md`「Codexのplugin root解決」が所有する。
 
 知識境界として、`<役割名>.subagent.md`内の`${CLAUDE_PLUGIN_ROOT}`を文書自身のrootへ展開する処理は`_agents_server/launch_requests.py::task_document_request`が所有する。
 委譲先が実行時にskillや内部資源を探す起点は、Codex backendのdeveloper instructionが所有する。

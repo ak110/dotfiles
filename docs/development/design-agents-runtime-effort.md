@@ -1,7 +1,7 @@
 # 同じ委譲会話のeffort変更の設計記録
 
 通常委譲の文脈を保ちながら推論量を調整するため、`atk agents effort up|down [session_id]`を使う。
-実行時の判断基準は`agent-toolkit/skills/delegation/references/model-and-effort.md`が所有する。
+実行時の判断基準は`agent-toolkit/skills/atk-mode/references/model-settings.md`「同じ会話のeffortの上げ下げ」が所有する。
 engine/modelの変更は[引き継ぎ起動](design-agents-runtime-handoff-resume.md)で別の会話へ移す。
 
 ## 対象と権限

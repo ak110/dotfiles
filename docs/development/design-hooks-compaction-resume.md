@@ -22,7 +22,7 @@ process-loopは`--debug=hooks`で起動し、modの診断はそのdebugログに
 使用量の低下を観測しなくても次の待機へ進めるよう、待機単位の消費と未完了予約だけで重複を抑止する。
 予約の監視は既存mod内で行い、別の常駐プロセスや追加のモデル呼出しによる判定は設けない。
 圧縮の実装と結果はホスト、予約と自動発動条件はmodが持つ。
-状態保存と通知後の復元はdelegationのwaiting-and-monitoring.mdが所有する。
+状態保存と通知後の復元は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`が所有する。
 2026年10月9日のcommand.run方式の観測は監査記録へ保持し、現在の公開APIとturn間の契約は同月23日の記録へ分ける。
 終了要求へ混ぜる案は、再予約できる圧縮とセッションを終える操作の寿命が異なるため採らない。
 対話UIと非対話の結果、ホスト版と再検証手段はaudit-records.mdの会話圧縮予約の項に保持する。
