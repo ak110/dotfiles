@@ -33,11 +33,11 @@ def _hold_posix_prepare_lock(path: str, entered: Any, release: Any) -> None:
 
 def _root(directory: Path) -> Path:
     directory.mkdir()
-    (directory / "pyproject.toml").write_text(
-        '[project]\nname="bootstrap-probe"\nversion="1.0.0"\nrequires-python=">=3.15"\ndependencies=[]\n',
-        encoding="utf-8",
-    )
-    (directory / "uv.lock").write_text("lock", encoding="utf-8")
+    script = directory / subject.DEPENDENCY_SCRIPT
+    script.parent.mkdir()
+    # 依存の宣言は実uvで同期する試験だけが`_relock_offline`で加える。
+    script.write_text('"""依存を持たない起動部分。"""\n', encoding="utf-8")
+    subject.dependency_lock(directory).write_text("lock", encoding="utf-8")
     manifest = directory / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir()
     manifest.write_text('{"version":"1.0.0"}', encoding="utf-8")
@@ -67,19 +67,17 @@ def _prepared(root: Path, environment: dict[str, str]) -> None:
 
 
 def test_dependency_environments_share_roots_and_ignore_non_dependency_metadata(tmp_path: Path) -> None:
-    """root・配布版・説明・lint設定は共有を妨げず、lockfileの更新は分離する。"""
+    """root・配布版・起動部分の本文は共有を妨げず、lockfileの更新は分離する。"""
     root = _root(tmp_path / "first")
     other = _root(tmp_path / "second")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
     first = subject.project_environment(root, environment)
     assert first == subject.project_environment(root, environment)
     assert first == subject.project_environment(other, environment)
-    (other / "pyproject.toml").write_text(
-        '[project]\nname="bootstrap-probe"\nversion="2.0.0"\ndescription="別の説明"\nrequires-python=">=3.15"\ndependencies=[]\n\n[tool.ruff]\nline-length=88\n',
-        encoding="utf-8",
-    )
+    script = other / subject.DEPENDENCY_SCRIPT
+    script.write_text(script.read_text(encoding="utf-8") + "print('別の版の起動部分')\n", encoding="utf-8")
     assert first == subject.project_environment(other, environment)
-    (root / "uv.lock").write_text("changed lock", encoding="utf-8")
+    subject.dependency_lock(root).write_text("changed lock", encoding="utf-8")
     locked = subject.project_environment(root, environment)
     assert locked != first
     (root / ".claude-plugin/plugin.json").write_text('{"version":"2.0.0"}', encoding="utf-8")
@@ -183,12 +181,13 @@ def test_key_added_to_launch_layer_returns_to_caller_value_without_restore_chang
 
 
 def _copy_plugin_code(root: Path) -> None:
-    """依存環境を共有する配布rootとして、試験対象のコードとlockだけを複製する。"""
+    """依存環境を共有する配布rootとして、試験対象のコードと依存の宣言・固定内容だけを複製する。"""
     source = Path(subject.__file__).resolve().parents[2]
     root.mkdir()
     shutil.copytree(source / "agent_toolkit", root / "agent_toolkit", ignore=shutil.ignore_patterns("__pycache__", "*_test.py"))
-    for name in ("pyproject.toml", "uv.lock"):
-        shutil.copyfile(source / name, root / name)
+    (root / subject.DEPENDENCY_SCRIPT).parent.mkdir()
+    for path in (source / subject.DEPENDENCY_SCRIPT, subject.dependency_lock(source)):
+        shutil.copyfile(path, root / path.relative_to(source))
 
 
 def _prepared_without_project(root: Path, environment: dict[str, str]) -> None:
@@ -490,20 +489,27 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
 
 
 def _relock_offline(uv: str, root: Path, environment: dict[str, str]) -> None:
-    """配布rootの`uv.lock`を消してオフラインで作り直し、依存の固定内容が変わった未準備の状態にする。"""
-    (root / "uv.lock").unlink()
-    locked = subprocess.run(
-        [uv, "lock", "--offline", "--project", str(root)],
-        # fixtureの新規生成だけ許可し、bootstrapには呼出元の凍結条件を保つ。
-        env={**environment, "UV_FROZEN": "0"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=15,
-    )
-    assert locked.returncode == 0, locked.stderr
+    """配布rootへ依存の無い宣言を加えて固定内容をオフラインで作り直し、固定内容が変わった未準備の状態にする。"""
+    subject.dependency_lock(root).unlink()
+    script = str(root / subject.DEPENDENCY_SCRIPT)
+    for arguments in (
+        ["init", "--offline", "--script", script, "--python", sys.executable],
+        ["lock", "--offline", "--script", script],
+    ):
+        completed = subprocess.run(
+            [uv, *arguments],
+            # uvは`--script`の設定を作業ディレクトリから探すため、bootstrapの同期と同じく配布rootで固定する。
+            cwd=root,
+            # fixtureの新規生成だけ許可し、bootstrapには呼出元の凍結条件を保つ。
+            env={**environment, "UV_FROZEN": "0"},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=15,
+        )
+        assert completed.returncode == 0, completed.stderr
 
 
 def test_cli_launcher_prepares_missing_environment_and_hooks_fail_fast(
@@ -576,7 +582,7 @@ def test_runtime_data_is_shared_by_hosts_and_falls_back_to_host_data(tmp_path: P
 def test_session_start_hook_separates_real_uv_and_restores_child_environment(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]], caller_setting: str
 ) -> None:
-    """実uvのhook起動で専用環境と子への元設定の復元を両立し、分離を外した起動との差を観測する。"""
+    """実uvのhook起動で、呼出元の仮想環境の指定によらない専用環境と、子への元設定の復元を両立する。"""
     root = _root(tmp_path / "hook-plugin")
     environment = host_environ()
     uv = shutil.which("uv", path=environment["PATH"])
@@ -613,17 +619,7 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
     if expected is not None:
         environment["UV_PROJECT_ENVIRONMENT"] = expected
     environment["CLAUDE_ENV_FILE"] = str(tmp_path / "session-start-env.sh")
-    (root / "uv.lock").unlink()
-    locked = subprocess.run(
-        [uv, "lock", "--offline", "--project", str(root)],
-        env={**environment, "UV_FROZEN": "0"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=15,
-        check=False,
-    )
-    assert locked.returncode == 0, locked.stderr
+    _relock_offline(uv, root, environment)
     _prepared(root, environment)
     shutil.copyfile(Path(inherited_venv.__file__), root / "inherited_venv.py")
     probe = root / "hook_probe.py"
@@ -658,25 +654,7 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
     assert json.loads(observed["input"]) == {"hook_event_name": "SessionStart"}
     assert {str(path.relative_to(caller)): path.read_bytes() for path in protected_paths} == protected
     assert "UV_PROJECT_ENVIRONMENT" not in Path(environment["CLAUDE_ENV_FILE"]).read_text(encoding="utf-8")
-    control = None
-    if caller_setting == "value":
-        # 同じ実uvへ呼出元の指定をそのまま渡すと、ツールが呼出元の環境へ同期される。
-        result = subprocess.run(
-            [uv, "run", "--project", str(root), "--locked", "--no-default-groups", str(probe)],
-            cwd=tmp_path,
-            env=environment,
-            input="{}",
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=30,
-            check=False,
-        )
-        assert result.returncode == 0, result.stderr
-        control = json.loads(result.stdout)
-        assert Path(control["prefix"]) == caller
-        assert not Path(control["prefix"]).is_relative_to(tmp_path / "runtime-data")
-    print(json.dumps({"caller_setting": caller_setting, "hook": observed, "control": control}, ensure_ascii=False))
+    print(json.dumps({"caller_setting": caller_setting, "hook": observed}, ensure_ascii=False))
 
 
 def test_prepare_lock_reports_timeout_for_windows_lock_contention(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -803,10 +781,7 @@ def test_prepare_lock_propagates_noncontention_error_without_waiting(
 
 def test_project_environment_uses_selected_python_for_warmup_key(tmp_path: Path) -> None:
     """warmupの親Pythonではなくlauncherに渡すPythonで共有環境を識別する。"""
-    root = tmp_path / "plugin"
-    root.mkdir()
-    (root / "pyproject.toml").write_text("[project]\nname='plugin'\nversion='0'\n", encoding="utf-8")
-    (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    root = _root(tmp_path / "plugin")
     selected_python = tmp_path / "python"
     selected_python.write_text("", encoding="utf-8")
 

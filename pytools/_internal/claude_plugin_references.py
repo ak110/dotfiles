@@ -139,6 +139,17 @@ def holding_reasons(
         return reasons
 
 
+def direct_references(processes: tuple[ReferencingProcess, ...], directory: pathlib.Path) -> list[str]:
+    """作業ディレクトリ・実行ファイル・command line・`CLAUDE_PLUGIN_ROOT`で`directory`の配下を指すプロセスを返す。
+
+    pluginの実体ではない作業ツリー内の生成物を回収する判定に使い、plugin cacheのロックとセッション稼働による保持は含めない。
+    """
+    targets = _path_strings(directory)
+    return [
+        process.label for process in processes if any(_refers(value, target) for value in process.values for target in targets)
+    ]
+
+
 def mark_current(directory: pathlib.Path) -> None:
     """再び現行になった版の退役時観測を失効させ、次の退役で保持者を取り直す。"""
     with cache_lock(directory.parent):

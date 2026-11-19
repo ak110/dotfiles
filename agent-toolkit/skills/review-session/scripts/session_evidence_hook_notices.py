@@ -7,6 +7,8 @@ import json
 import re
 from typing import Any, NamedTuple
 
+from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common import next_action, persisted_output_reference
 from session_evidence_extract import (
     _BODY_KEYS,
     _CANDIDATE_VARIABLE,
@@ -18,9 +20,6 @@ from session_evidence_extract import (
     _json_object,
     _Record,
 )
-
-from agent_toolkit._common import message_format as _message_format
-from agent_toolkit._common import next_action, persisted_output_reference
 
 _HOOK_XML_END_MARKER = re.compile(rf"</(?:{_message_format.AUTO_ELEMENT_NAME_PATTERN})>")
 

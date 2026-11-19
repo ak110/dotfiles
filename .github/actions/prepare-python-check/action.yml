@@ -42,7 +42,7 @@ runs:
         path: /cache/mise
         # 同梱版と依存入力が変わったときだけ作り直す。uv・pnpmの大きな同梱キャッシュは保存しない。
         # 保存を静的検査の1ジョブに限り、試験分割数による同じ内容の重複保存を避ける。
-        key: pyfltr-mise-${{ runner.os }}-${{ steps.image.outputs.pyfltr-version }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'agent-toolkit/pyproject.toml', 'agent-toolkit/uv.lock', 'mise.toml', 'mise.lock') }}
+        key: pyfltr-mise-${{ runner.os }}-${{ steps.image.outputs.pyfltr-version }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'agent-toolkit/scripts/launch.py.lock', 'mise.toml', 'mise.lock') }}
     - name: Install dependencies
       run: uv sync --all-groups --all-extras
       shell: bash

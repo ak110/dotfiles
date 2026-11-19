@@ -46,7 +46,7 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 `0`は上限なしとし、負数または整数でない値は終了コード2で拒否する。
 
 agent-toolkitの共有依存環境は、dotfiles自身のGit更新の直後に主checkoutの`agent-toolkit/scripts/launch.py --prepare`で準備する。
-依存の固定内容（`agent-toolkit/uv.lock`）が変わる更新では、準備までの間に起動した主checkoutの`atk`が依存環境の未準備で
+依存の固定内容（`agent-toolkit/scripts/launch.py.lock`）が変わる更新では、準備までの間に起動した主checkoutの`atk`が依存環境の未準備で
 終了するため、コードを切り替える段の直後に準備して、その間隔を`chezmoi apply`の所要より短くする。
 
 実行の開始時と終了時に、同期結果を`pytools/_internal/sync_report.py`が定める構造化ファイルへ記録する。

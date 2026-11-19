@@ -8,7 +8,6 @@ import typing
 
 import pytest
 import yaml
-
 from agent_toolkit import atk
 from agent_toolkit._plan import locations
 from agent_toolkit._testing import git_repository, plan_fixture, wi_entry_files

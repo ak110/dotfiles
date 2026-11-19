@@ -7,9 +7,8 @@ import copy
 import typing
 
 import selection_contract
-from check_selection_lanes import _resume_plan_id, overlapping_pairs
-
 from agent_toolkit._plan import selection as _selection
+from check_selection_lanes import _resume_plan_id, overlapping_pairs
 
 _Rows = list[dict[str, object]]
 # 重なりの記録の鍵（昇順のレーン名の組と共通パス）と、その鍵で重なるWIの組と共通パス。

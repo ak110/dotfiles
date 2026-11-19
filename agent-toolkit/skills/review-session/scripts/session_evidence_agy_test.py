@@ -7,10 +7,9 @@ from pathlib import Path
 
 import pytest
 import session_review_evidence as evidence
-from cost_metrics import _scan_sessions
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing.session_evidence_support import events_by_kind, read_jsonl, write_jsonl
+from cost_metrics import _scan_sessions
 
 
 def test_native_user_answers_tools_and_stats(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

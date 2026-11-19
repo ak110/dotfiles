@@ -11,7 +11,6 @@ import pathlib
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit._testing import session_evidence_support as support
 
 

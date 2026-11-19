@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent_toolkit._common import response_language_check as _response_language_check
 from session_evidence_extract import _HOOK_FAILURE_PREFIX
 from session_evidence_hook_notices import _hook_notice_keys, _hook_notice_kind_text
-
-from agent_toolkit._common import response_language_check as _response_language_check
 
 _HOOK_NOTICE_VARIANT_LIMIT = 5
 

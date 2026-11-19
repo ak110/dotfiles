@@ -5,7 +5,6 @@ import shlex
 from typing import Any
 
 import pytest
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import cli_examples
 

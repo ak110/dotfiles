@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 import session_review_prepare as prepare
-
 from agent_toolkit._atk.wi import layout
 from agent_toolkit._common import skill_modes
 from agent_toolkit._testing import session_evidence_support as support

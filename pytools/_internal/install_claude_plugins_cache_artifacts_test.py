@@ -186,3 +186,50 @@ def test_removal_failure_is_reported_as_failure(
     assert "開発用生成物 1 件の削除に失敗" in outcome.failure
     assert (cache_dir / ".venv").exists()
     assert not (cache_dir / ".mypy_cache").exists()
+
+
+def _stale_source_environment(dotfiles_root: pathlib.Path) -> pathlib.Path:
+    """旧版の`make sync`が配布元の作業ツリーに残した仮想環境を再現する。"""
+    environment = dotfiles_root / "agent-toolkit" / ".venv"
+    (environment / "bin").mkdir(parents=True)
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+    (environment / "bin" / "python").write_bytes(b"x" * 16)
+    return environment
+
+
+def test_removes_stale_source_environment_before_install(
+    tmp_path: pathlib.Path, install_into: typing.Callable[..., None]
+) -> None:
+    """配布元に旧版が残した仮想環境は導入の前に除き、導入時の複製へ含めない。"""
+    source_environment = _stale_source_environment(tmp_path)
+    present_at_install: list[bool] = []
+
+    def copy(install_path: pathlib.Path) -> None:
+        present_at_install.append(source_environment.exists())
+        _write_plugin_copy(install_path)
+
+    install_into(_cache_dir(tmp_path), copy)
+
+    outcome = _install_claude_plugins.run()
+
+    assert outcome.failure is None
+    assert present_at_install == [False]
+    assert (tmp_path / "agent-toolkit").is_dir()
+
+
+def test_keeps_referenced_stale_source_environment(
+    tmp_path: pathlib.Path, install_into: typing.Callable[..., None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """配布元の仮想環境を参照するプロセスがある間は削除を延期し、導入は続ける。"""
+    source_environment = _stale_source_environment(tmp_path)
+    holder = _claude_plugin_references.ReferencingProcess(
+        4242, "python (pid 4242)", False, (str(source_environment / "bin" / "python"),), True
+    )
+    monkeypatch.setattr(_claude_plugin_references, "scan", lambda: (holder,))
+    install_into(_cache_dir(tmp_path))
+
+    outcome = _install_claude_plugins.run()
+
+    assert outcome.failure is None
+    assert (source_environment / "pyvenv.cfg").is_file()
+    assert (_cache_dir(tmp_path) / "agent_toolkit" / "hook.py").is_file()

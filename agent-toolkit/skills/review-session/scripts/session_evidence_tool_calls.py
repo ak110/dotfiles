@@ -8,6 +8,7 @@ import pathlib
 import re
 from typing import Any
 
+from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from session_evidence_extract import (
     _CollectedRecord,
     _json_object,
@@ -25,8 +26,6 @@ from session_evidence_tool_calls_records import (
     _recorded_result,
 )
 from session_evidence_tool_calls_resources import resource_usage_events
-
-from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 
 
 def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:

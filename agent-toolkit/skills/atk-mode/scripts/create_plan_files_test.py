@@ -12,7 +12,6 @@ import typing
 import check_plan_file
 import create_plan_files
 import pytest
-
 from agent_toolkit import atk
 from agent_toolkit._atk import plans as _atk_plans
 from agent_toolkit._plan import locations as _locations

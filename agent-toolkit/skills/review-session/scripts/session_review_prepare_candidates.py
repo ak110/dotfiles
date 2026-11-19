@@ -8,11 +8,10 @@ import re
 import unicodedata
 from typing import Any
 
-from session_review_prepare_text import _SUMMARY_TOP_COUNT, _clip_utf8, _one_line
-
 from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
+from session_review_prepare_text import _SUMMARY_TOP_COUNT, _clip_utf8, _one_line
 
 MANDATORY_KINDS = frozenset(
     {

@@ -13,7 +13,6 @@ from collections.abc import Callable
 import psutil
 import pytest
 import yaml
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import git_repository

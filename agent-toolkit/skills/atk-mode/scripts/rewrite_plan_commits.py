@@ -19,7 +19,6 @@ import pathlib
 import subprocess
 
 import append_progress_log
-
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi.mutations import result_commits
 from agent_toolkit._common import next_action as _next_action

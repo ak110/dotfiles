@@ -2,6 +2,7 @@
 
 依存導入前にscripts/launch.pyが使うため、標準ライブラリだけに依存する。
 環境の指定はuv子プロセスに限り、Bashや対象リポジトリのuvへ永続化しない。
+実行依存は`DEPENDENCY_SCRIPT`のインラインメタデータ（PEP 723）が宣言し、隣の`.lock`が固定する。
 """
 
 import errno
@@ -13,7 +14,6 @@ import platform
 import shlex
 import sys
 import time
-import tomllib
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -24,6 +24,8 @@ from agent_toolkit._common.shell_tokens import atk_launcher_name
 
 RUNTIME_DATA_ENV = "AGENT_TOOLKIT_RUNTIME_DATA"
 RUNTIME_ENVIRONMENT_ENV = inherited_venv.PLUGIN_RUNTIME_ENVIRONMENT_KEY
+# 実行依存を宣言するスクリプトの配布root相対パス。uvの`--script`で同期し、固定内容は同名に`.lock`を付けたファイルに置く。
+DEPENDENCY_SCRIPT = Path("scripts/launch.py")
 _READY_FILE = ".agent-toolkit-dependencies-ready"
 _PREPARE_LOCK_TIMEOUT = 300.0
 _PREPARE_LOCK_INTERVAL = 0.1
@@ -96,12 +98,21 @@ def base_python(python_executable: Path | None = None) -> Path:
         executable = candidate
 
 
+def dependency_lock(root: Path) -> Path:
+    """配布rootの実行依存の固定内容（uvがスクリプトの隣に置くlockfile）を返す。"""
+    script = root / DEPENDENCY_SCRIPT
+    return script.with_name(script.name + ".lock")
+
+
 def project_environment(root: Path, environment: Mapping[str, str], *, python_executable: Path | None = None) -> Path:
-    """依存解決とPython実行条件が一致する実行だけが共有する環境を返す。"""
+    """依存解決とPython実行条件が一致する実行だけが共有する環境を返す。
+
+    lockfileは依存宣言（manifest）と解決オプションも記録し、同期は宣言との一致を`--locked`で確かめるため、
+    lockfileの内容だけで依存構成を識別する。
+    """
     root = root.resolve()
     payload = {
-        "dependency_project": _dependency_project(root / "pyproject.toml"),
-        "lock": hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
+        "lock": hashlib.sha256(dependency_lock(root).read_bytes()).hexdigest(),
         # 作業ディレクトリの仮想環境と共有環境自身は、同じPython本体の別パスとして現れる。
         # 呼び出し元の文脈によらず同じ共有環境を得るため、Python本体だけで識別する。
         "python": str(base_python(python_executable)),
@@ -110,22 +121,6 @@ def project_environment(root: Path, environment: Mapping[str, str], *, python_ex
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     digest = hashlib.sha256(encoded)
     return runtime_data(environment) / "environments" / digest.hexdigest()
-
-
-def _dependency_project(path: Path) -> dict[str, object]:
-    """依存導入に影響するpyprojectだけを、JSON化できる形で取り出す。"""
-    parsed = tomllib.loads(path.read_text(encoding="utf-8"))
-    project = parsed.get("project", {})
-    build_system = parsed.get("build-system", {})
-    tool = parsed.get("tool", {})
-    return {
-        "project": {
-            key: project[key] for key in ("requires-python", "dependencies", "optional-dependencies") if key in project
-        },
-        "dependency-groups": parsed.get("dependency-groups", {}),
-        "build-system": {key: build_system[key] for key in ("requires", "build-backend") if key in build_system},
-        "uv": tool.get("uv", {}) if isinstance(tool, dict) else {},
-    }
 
 
 def launch_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:

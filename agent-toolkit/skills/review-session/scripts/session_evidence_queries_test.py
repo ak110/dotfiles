@@ -5,7 +5,6 @@ import pathlib
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import read_jsonl, write_subagent

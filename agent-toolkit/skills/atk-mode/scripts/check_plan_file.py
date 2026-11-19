@@ -12,6 +12,8 @@ import re
 import sys
 
 import yaml
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan import structure
 from check_plan_file_common import _ClassifiedWarning
 from check_plan_file_formats import (
     _check_eight_section_format,
@@ -24,9 +26,6 @@ from check_plan_file_formats import (
 )
 from check_plan_file_references import TARGET_REPO_NEXT_ACTION
 from check_plan_file_selection import _check_lane_selection, _check_wi_selection, _labeled, _validate_expected_wi
-
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._plan import structure
 
 FORMAT_REQUEST = "request"
 """現行の形式。要求を書く節を通常AWIの本文と同じ見出しで持つ。新規作成はこの形式だけを受け付ける。"""

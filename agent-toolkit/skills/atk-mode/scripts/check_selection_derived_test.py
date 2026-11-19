@@ -6,7 +6,6 @@ import typing
 
 import pytest
 import yaml
-
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.selection_check_support import _awi, _derived, _dispatch, _run, _write_selection
 from agent_toolkit._testing.selection_check_support import fixture_env as fixture_env

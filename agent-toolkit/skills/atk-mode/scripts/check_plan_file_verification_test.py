@@ -5,7 +5,6 @@ import pathlib
 
 import check_plan_file
 import pytest
-
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._plan.structure import verification

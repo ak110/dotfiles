@@ -6,6 +6,7 @@ import collections
 import re
 from typing import Any
 
+from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from session_evidence_candidates_commands import _powershell_inner_args
 from session_evidence_candidates_evidence import _candidate_evidence_events, _write_candidate_evidence_files
 from session_evidence_candidates_failures import (
@@ -42,8 +43,6 @@ from session_evidence_candidates_users import _initial_request_locator, _initial
 from session_evidence_candidates_wi import _adhoc_processing_events, _wi_candidate_events
 from session_evidence_extract import _CANDIDATE_VARIABLE, _CANDIDATE_VARIABLE_PLACEHOLDER
 from session_evidence_hook_notices import _normalize_candidate_kind_text, _normalize_hook_candidate_text
-
-from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 
 _BUNDLE_BODY_LENGTH = 200
 

@@ -6,7 +6,6 @@ import pathlib
 import re
 
 import yaml
-
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import structure
 

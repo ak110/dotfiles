@@ -8,7 +8,6 @@ import pathlib
 import sys
 
 import pytest
-
 from agent_toolkit._common.session_state import read_state, state_path
 from agent_toolkit._testing import fork_runner as _fork_runner
 

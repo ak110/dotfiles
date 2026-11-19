@@ -8,7 +8,6 @@ import pathlib
 import pytest
 import session_evidence_extract as evidence_extract
 import session_review_evidence as evidence
-
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import read_jsonl, timestamped_entry
 from agent_toolkit._testing.session_review_evidence_support import _bundle_candidates_and_evidence, _user_events

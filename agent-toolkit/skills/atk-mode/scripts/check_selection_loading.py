@@ -9,14 +9,13 @@ import typing
 
 import selection_contract
 import yaml
-from check_selection_common import _FIX_CONTENT, _FIX_PATHS, _FIX_PRIVATE_NOTES, InputError, Violation
-from check_selection_lanes import _resume_plan_id
-
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import selection as _selection
+from check_selection_common import _FIX_CONTENT, _FIX_PATHS, _FIX_PRIVATE_NOTES, InputError, Violation
+from check_selection_lanes import _resume_plan_id
 
 _FIX_YAML = (
     "選定結果のYAML構文を直す。文字列の値を単一引用符で囲み、値の中の`'`は`''`と重ねて書き直してから、同じコマンドを再実行する"

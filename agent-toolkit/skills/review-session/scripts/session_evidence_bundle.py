@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import session_evidence_execution
+from agent_toolkit._common import session_review
 from session_evidence_candidates import (
     _BUNDLE_BODY_LENGTH,
     _adhoc_processing_events,
@@ -44,8 +45,6 @@ from session_evidence_warn import (
     _warning_collection_events,
 )
 from session_quality_metrics import quality_metrics
-
-from agent_toolkit._common import session_review
 
 _BUNDLE_SCAN_FILENAMES = (
     "timeline.jsonl",

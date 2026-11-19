@@ -9,11 +9,10 @@ from typing import Any
 
 import pytest
 import session_review_prepare as prepare
-from session_review_prepare_stats import _stats_document
-
 from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.session_review_prepare_support import _FIXED_NOW, _bundle_rows, _work_dir
 from agent_toolkit._testing.session_review_prepare_support import _isolate_failure_ledger as _isolate_failure_ledger
+from session_review_prepare_stats import _stats_document
 
 
 def test_prepare_all_participant_costs(

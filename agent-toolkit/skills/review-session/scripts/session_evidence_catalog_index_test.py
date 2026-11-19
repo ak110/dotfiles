@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit._testing.session_evidence_support import (
     codex_item,
     codex_tool_result_entry,

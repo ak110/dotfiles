@@ -8,7 +8,6 @@ import sys
 import typing
 
 import pytest
-
 from agent_toolkit._plan import viewer_files
 
 _HELPER_PATH = pathlib.Path(__file__).resolve().with_name("atk_serve_plans_remote_helper.py")

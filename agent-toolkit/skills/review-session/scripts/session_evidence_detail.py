@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._common.persisted_output_reference import PERSISTED_OUTPUT_PREFIX
 from session_evidence_extract import (
     _BODY_KEYS,
     _LINE_NUMBER_PREFIX,
@@ -25,9 +27,6 @@ from session_evidence_extract import (
     _unresolved_events,
     _UnresolvedRecord,
 )
-
-from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._common.persisted_output_reference import PERSISTED_OUTPUT_PREFIX
 
 _MAX_DETAIL_LENGTH = 8000
 

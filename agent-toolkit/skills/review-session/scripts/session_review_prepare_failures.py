@@ -8,11 +8,10 @@ import json
 from typing import Any
 
 import session_evidence_candidates
-from session_review_prepare_candidates import _FAILURE_KINDS, _FAILURE_LEDGER_DAYS
-
 from agent_toolkit._common import atomic_file, file_lock
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.json_lines import split_lines
+from session_review_prepare_candidates import _FAILURE_KINDS, _FAILURE_LEDGER_DAYS
 
 
 def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: datetime.datetime) -> tuple[dict[str, int], int]:

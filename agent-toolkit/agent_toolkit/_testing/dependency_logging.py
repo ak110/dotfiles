@@ -1,6 +1,6 @@
 """テストのログの取り込みから、大量に発生するMarkdown解析のDEBUGログを外す。
 
-`pyproject.toml`と`agent-toolkit/pyproject.toml`の`[tool.pytest.ini_options]`の`log_level = "DEBUG"`は、
+リポジトリ直下の`pyproject.toml`の`[tool.pytest.ini_options]`の`log_level = "DEBUG"`は、
 失敗したテストの報告へ本リポジトリのコードのDEBUGログを残すために置いている。
 pytestはこの値でルートロガーの閾値を下げるため、閾値を持たない依存ライブラリのロガーのDEBUGレコードも書式化して保持する。
 markdown-it-pyはブロック規則に入るたびにDEBUGレコードを出力し、1200行の計画を確認する1件のテストで約40万件に達して、

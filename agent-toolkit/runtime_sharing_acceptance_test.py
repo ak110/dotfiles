@@ -9,10 +9,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
-from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 
 ROOT = Path(__file__).resolve().parent
 
@@ -92,10 +91,9 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     value = json.loads(manifest.read_text())
     value["version"] = "999.1.0"
     manifest.write_text(json.dumps(value))
-    pyproject = second / "pyproject.toml"
-    pyproject.write_text(
-        pyproject.read_text().replace('description = "Coding agent workflow toolkit"', 'description = "別の配布版"')
-    )
+    # 依存の宣言を持つ起動部分の本文の違いも、共有を妨げない。
+    launcher = second / plugin_environment.DEPENDENCY_SCRIPT
+    launcher.write_text(launcher.read_text(encoding="utf-8") + "# 別の配布版\n", encoding="utf-8")
     environment = host_environ()
     # ホストの実uvを一時HOMEからも使う。mise shimの信頼登録は隔離した状態領域へ引き継がれない。
     host_home = environment["USERPROFILE" if os.name == "nt" else "HOME"]
@@ -185,9 +183,11 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     console = selected / ("Scripts/pygmentize.exe" if os.name == "nt" else "bin/pygmentize")
     assert console.is_file()
     _run([str(console), "-V"], environment, tmp_path)
-    # 別の依存宣言は既存環境のready状態と混同しない。
-    declared = pyproject.read_text()
-    pyproject.write_text(declared + '\n[project.optional-dependencies]\nseparate = ["filelock>=4"]\n')
+    # 依存の固定内容が進んだrootは既存環境のready状態と混同しない。
+    # 依存宣言を変えてlockfileを解決し直すと、オフラインでは取得物の保存先に索引の情報が無い環境（CIなど）で失敗する。
+    # そのため解決結果を変えずにlockfileの内容だけを進めて、`uv sync --locked`が成功する未準備のrootを作る。
+    lock = plugin_environment.dependency_lock(second)
+    lock.write_text(lock.read_text(encoding="utf-8") + "\n# 依存の固定内容が進んだ版\n", encoding="utf-8")
     assert selected != plugin_environment.project_environment(second, environment)
     assert plugin_environment.prepared_python(second, environment) is None
     missing = subprocess.run(
@@ -204,13 +204,6 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     assert str(plugin_environment.base_python()) in missing.stderr.splitlines()[0]
     # dotfilesの更新直後と同じく依存の固定内容だけが進んだ未準備のrootでも、CLIの起動部分は準備してから実CLIを返す。
     # hookなどの起動対象は直前の`missing`のとおり待たずに終了する。
-    # 依存宣言を変えてuv.lockを解決し直すと、オフラインでは取得物の保存先に索引の情報が無い環境（CIなど）で失敗する。
-    # そのため依存宣言を戻し、解決結果を変えずにuv.lockの内容だけを進めて、`uv sync --locked`が成功する未準備のrootを作る。
-    pyproject.write_text(declared)
-    lock = second / "uv.lock"
-    lock.write_text(lock.read_text(encoding="utf-8") + "\n# 依存の固定内容が進んだ版\n", encoding="utf-8")
-    assert selected != plugin_environment.project_environment(second, environment)
-    assert plugin_environment.prepared_python(second, environment) is None
     cli = [str(second / "scripts/atk.cmd")] if os.name == "nt" else [str(second / "scripts/atk")]
     prepared_cli = _run([*cli, "--help"], environment, tmp_path)
     assert "config" in prepared_cli.stdout

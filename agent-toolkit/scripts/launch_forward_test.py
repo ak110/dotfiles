@@ -7,7 +7,6 @@ import sys
 import typing
 
 import pytest
-
 from agent_toolkit._agents_server import service_forward
 
 _LAUNCH_PATH = pathlib.Path(__file__).resolve().with_name("launch.py")

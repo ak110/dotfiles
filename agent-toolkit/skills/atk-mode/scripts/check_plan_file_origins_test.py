@@ -6,7 +6,6 @@ import typing
 
 import check_plan_file
 import pytest
-
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import plan_fixture as _plan_fixture

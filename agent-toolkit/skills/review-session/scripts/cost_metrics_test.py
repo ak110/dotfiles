@@ -12,13 +12,12 @@ from typing import Any
 
 import pytest
 import session_review_evidence
-from cost_metrics import _scan_sessions, first_pass_metrics
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import session_family
 from agent_toolkit._common.session_family import _load_records_checked, _RecordLoad
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.session_evidence_support import agy_step, write_agy_log, write_jsonl
+from cost_metrics import _scan_sessions, first_pass_metrics
 
 _CHILD = "11111111-1111-4111-8111-111111111111"
 

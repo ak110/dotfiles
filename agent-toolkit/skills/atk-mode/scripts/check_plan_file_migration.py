@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from check_plan_file_common import _ClassifiedWarning
-
 from agent_toolkit._plan import locations, structure
+from check_plan_file_common import _ClassifiedWarning
 
 
 def _legacy_action_warnings(text: str) -> list[_ClassifiedWarning]:

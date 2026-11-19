@@ -12,7 +12,6 @@ import subprocess
 import tokenize
 
 import pytest
-
 from agent_toolkit._testing.git_repository import commit_all, init_repository
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent

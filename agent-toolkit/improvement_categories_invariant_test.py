@@ -5,7 +5,6 @@ import pathlib
 import re
 
 import pytest
-
 from agent_toolkit._testing.normative_contract import read_contract
 
 _ROOT = pathlib.Path(__file__).parent

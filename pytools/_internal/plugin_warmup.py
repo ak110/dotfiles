@@ -188,7 +188,9 @@ def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> list[list
     commands: list[list[str]] = []
     for target in paths:
         bootstrap = _bootstrap(target, python)
-        key = plugin_environment.project_environment(Path(bootstrap[-1]), os.environ, python_executable=python)
+        key = _environment_key(Path(bootstrap[-1]), python, target=target, tag=tag)
+        if key is None:
+            continue
         if key not in prepared:
             prepared[key] = run_command([*bootstrap, "--prepare", str(target)], target=log_format.home_short(target), tag=tag)
         if prepared[key]:
@@ -342,14 +344,34 @@ def warmup(
 ) -> bool:
     """同じ依存環境は一度だけ準備し、各対象の実起動確認は必ず実行する。"""
     bootstrap = _bootstrap(path, python)
-    root = Path(bootstrap[-1])
-    key = plugin_environment.project_environment(root, os.environ, python_executable=python)
+    key = _environment_key(Path(bootstrap[-1]), python, target=path, tag=tag)
+    if key is None:
+        return False
     if prepared is None or key not in prepared:
         if not run_command([*bootstrap, "--prepare", str(path)], target=log_format.home_short(path), tag=tag):
             return False
         if prepared is not None:
             prepared.add(key)
     return run_command([*bootstrap, str(path), *arguments], target=log_format.home_short(path), tag=tag)
+
+
+def _environment_key(root: Path, python: Path, *, target: Path, tag: str) -> Path | None:
+    """配布rootの共有依存環境を返す。依存の固定内容を持たない旧形式の配布rootはNone。
+
+    旧形式（配布rootにuvのプロジェクトを置いた版）は、その版自身の起動部分だけが準備できる。
+    更新に失敗して有効版が旧形式のまま残った場合に、更新後の起動部分で準備せず再更新を案内する。
+    """
+    try:
+        return plugin_environment.project_environment(root, os.environ, python_executable=python)
+    except FileNotFoundError:
+        logger.warning(
+            log_format.format_status(
+                tag,
+                f"依存の固定内容（{plugin_environment.dependency_lock(root)}）が無い旧形式の配布rootのため準備を省略: "
+                f"{log_format.home_short(target)}。`update-dotfiles`を再実行してプラグインを更新する",
+            )
+        )
+        return None
 
 
 def _resolve_python(uv: Path, tag: str) -> Path | None:

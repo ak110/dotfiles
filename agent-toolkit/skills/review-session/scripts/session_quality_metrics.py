@@ -7,10 +7,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+from agent_toolkit._common.json_lines import split_lines
 from session_evidence_extract import _CollectedRecord, _parse_timestamp, _record_timestamp
 from session_evidence_tool_calls_records import _record_tool_calls, _recorded_input, _recorded_result
-
-from agent_toolkit._common.json_lines import split_lines
 
 
 def _result_text(value: Any, depth: int = 0) -> str:

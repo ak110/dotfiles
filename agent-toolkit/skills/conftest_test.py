@@ -4,7 +4,6 @@ import pathlib
 from collections.abc import Callable
 
 import pytest
-
 from agent_toolkit._testing import isolation, loop_isolation_support
 
 
@@ -19,6 +18,6 @@ def test_async_operations_end_before_next_test_environment(
 ) -> None:
     """実設定で非同期処理の波及を防ぎ、sessionへ戻した対照では同じ波及を検出する。"""
     result = loop_isolation_support.assert_loop_scope_isolation(
-        tmp_path, configuration=pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml", scope=scope
+        tmp_path, configuration=pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml", scope=scope
     )
     record_property("loop_scope_observation", result.stdout + result.stderr)

@@ -21,7 +21,6 @@ from typing import Any
 
 import psutil
 import pytest
-
 from agent_toolkit._common import plugin_environment, process_tree, windows_job
 from agent_toolkit._testing import late_descendant
 
@@ -67,14 +66,20 @@ def test_launcher_help_does_not_import_server_logging(host_environ: Callable[[],
     assert "agent_toolkit._agents_server.logging_config" not in result.stderr
 
 
+def _plugin_root(root: pathlib.Path) -> pathlib.Path:
+    """依存の宣言と固定内容だけを持つ配布rootを作る。"""
+    script = root / plugin_environment.DEPENDENCY_SCRIPT
+    script.parent.mkdir(parents=True)
+    script.write_text('# /// script\n# requires-python = ">=3.15"\n# dependencies = []\n# ///\n', encoding="utf-8")
+    plugin_environment.dependency_lock(root).write_text("lock", encoding="utf-8")
+    return root
+
+
 def test_launcher_uses_same_environment_in_directory_with_virtualenv(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
     """公開のuv起動形は、コピー式の仮想環境があるcwdでも同じ共有環境を使う。"""
-    root = tmp_path / "plugin"
-    root.mkdir()
-    (root / "pyproject.toml").write_text('[project]\nname="probe"\ndependencies=[]\n', encoding="utf-8")
-    (root / "uv.lock").write_text("lock", encoding="utf-8")
+    root = _plugin_root(tmp_path / "plugin")
     (root / "probe.py").write_text("import sys; print(sys.prefix)\n", encoding="utf-8")
     environment = host_environ()
     environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
@@ -355,32 +360,6 @@ def test_windows_launcher_observes_parent_handle(
     assert closed == [123]
 
 
-@pytest.mark.usefixtures("share_package_caches")
-def test_project_launch_preserves_cwd_and_uses_plugin_environment(tmp_path: pathlib.Path) -> None:
-    """`--project`は呼出元のcwdを変えず、plugin rootの仮想環境を選ぶ。"""
-    result = subprocess.run(
-        [
-            "uv",
-            "run",
-            "--project",
-            str(_PROJECT_ROOT),
-            "--locked",
-            "--no-default-groups",
-            "python",
-            "-c",
-            "import json, os, sys; print(json.dumps({'cwd': os.getcwd(), 'prefix': sys.prefix}))",
-        ],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    observed = json.loads(result.stdout)
-    assert pathlib.Path(observed["cwd"]) == tmp_path
-    assert pathlib.Path(observed["prefix"]).resolve().is_relative_to((_PROJECT_ROOT / ".venv").resolve())
-
-
 def test_public_launcher_preserves_argument_error_exit_status(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
@@ -461,12 +440,9 @@ def test_prepare_failure_reports_recovery_once_without_publication(
     failure: str,
 ) -> None:
     """公開prepareの通常失敗と例外は診断・終了値を保ち、復旧操作を1回だけ示す。"""
-    root = tmp_path / "plugin"
-    root.mkdir()
+    root = _plugin_root(tmp_path / "plugin")
     target = root / "target.py"
     target.write_text("", encoding="utf-8")
-    (root / "pyproject.toml").write_text('[project]\nname="probe"\ndependencies=[]\n', encoding="utf-8")
-    (root / "uv.lock").write_text("lock", encoding="utf-8")
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(tmp_path / "runtime"))
     monkeypatch.setattr(sys, "argv", ["launch.py", "--project", str(root), option, str(target)])
     monkeypatch.setattr(launcher.shutil, "which", lambda *_args, **_kwargs: "uv")
@@ -502,13 +478,8 @@ def test_prepare_failure_reports_recovery_once_without_publication(
 def test_prepare_syncs_dependencies_only_and_publishes_after_success(
     launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """prepareは依存だけを一時環境へ同期し、成功後だけ通常起動へ公開する。"""
-    root = tmp_path / "plugin"
-    root.mkdir()
-    (root / "pyproject.toml").write_text(
-        '[project]\nname="probe"\nrequires-python=">=3.15"\ndependencies=[]\n', encoding="utf-8"
-    )
-    (root / "uv.lock").write_text("lock", encoding="utf-8")
+    """prepareは配布rootの宣言の依存だけを共有環境へ同期し、成功後だけ通常起動へ公開する。"""
+    root = _plugin_root(tmp_path / "plugin")
     environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path / "runtime")}
     observed: list[list[str]] = []
 
@@ -518,9 +489,13 @@ def test_prepare_syncs_dependencies_only_and_publishes_after_success(
             return 0
 
     @contextlib.contextmanager
-    def lifetime(arguments: list[str], *, environment: dict[str, str], **_kwargs: Any) -> Generator[PreparedProcess]:
+    def lifetime(
+        arguments: list[str], *, environment: dict[str, str], cwd: pathlib.Path, **_kwargs: Any
+    ) -> Generator[PreparedProcess]:
         observed.append(arguments)
-        executable = plugin_environment.python_path(pathlib.Path(environment["UV_PROJECT_ENVIRONMENT"]))
+        # uvは`--script`の設定ファイルを作業ディレクトリから探すため、呼出元のcwdでなく配布rootで同期する。
+        assert cwd == root
+        executable = plugin_environment.python_path(pathlib.Path(environment["VIRTUAL_ENV"]))
         executable.parent.mkdir(parents=True)
         executable.write_text("", encoding="utf-8")
         yield PreparedProcess()
@@ -531,13 +506,12 @@ def test_prepare_syncs_dependencies_only_and_publishes_after_success(
         [
             "uv",
             "sync",
-            "--project",
-            str(root),
+            "--script",
+            str(root / "scripts" / "launch.py"),
+            "--active",
             "--python",
             str(plugin_environment.base_python()),
             "--locked",
-            "--no-default-groups",
-            "--no-install-project",
         ]
     ]
     assert plugin_environment.prepared_python(root, environment) is not None
@@ -548,10 +522,7 @@ def test_prepare_timeout_reclaims_its_descendants(
     launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, request: pytest.FixtureRequest
 ) -> None:
     """prepareの上限超過で、準備環境を公開せず所有する子孫も終了させる。"""
-    root = tmp_path / "plugin"
-    root.mkdir()
-    (root / "pyproject.toml").write_text('[project]\nname="probe"\ndependencies=[]\n', encoding="utf-8")
-    (root / "uv.lock").write_text("lock", encoding="utf-8")
+    root = _plugin_root(tmp_path / "plugin")
     environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path / "runtime")}
     ready = tmp_path / "ready"
     probe = tmp_path / "sync_probe.py"

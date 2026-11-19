@@ -35,14 +35,20 @@ logger = logging.getLogger(__name__)
 _PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = (".claude-plugin/plugin.json",)
 
 # Python実行pluginは起動スクリプトが共有環境の`launch.py`で依存を解決する。
+# 依存の宣言は`launch.py`のインラインメタデータ、固定内容は隣の`launch.py.lock`が持つ。
 _PYTHON_RUNTIME_PLUGIN_NAMES: frozenset[str] = frozenset({"agent-toolkit", "agent-toolkit-agy", "agent-toolkit-codex"})
-_PYTHON_RUNTIME_PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock")
+_PYTHON_RUNTIME_PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("scripts/launch.py", "scripts/launch.py.lock")
 
 # directory型marketplaceからの導入で、主作業ツリーのgitignore対象ごと版ディレクトリへ複製される開発用の生成物。
 # `.venv`は主作業ツリーの開発環境の実バイトの複製（版ごとに約0.9G）で、pluginの実行は`scripts/launch.py`が
 # 共有の依存環境を使うため参照しない。`agent-toolkit/scripts/atk-hook`の`_COPY_IGNORE`から、
 # 実行時にも生成される`__pycache__`を除いた集合。
 _PLUGIN_CACHE_DEVELOPMENT_ARTIFACTS: tuple[str, ...] = (".venv", ".mypy_cache", ".hypothesis", ".pytest_cache", ".ruff_cache")
+
+# 配布rootにuvのプロジェクトを置いた旧版の`make sync`とpyfltrの検査が、配布元の作業ツリーへ作った仮想環境（約1GB）。
+# 現行版はどの経路でも作らず参照もしないが、directory型marketplaceからの導入は配布元をgitignore対象ごと
+# 版ディレクトリへ複製するため、残っている間は導入のたびに複製と`_remove_development_artifacts`の削除が続く。
+_STALE_SOURCE_ENVIRONMENT = Path("agent-toolkit/.venv")
 
 # インストール済みかつ`enabledPlugins`で`false`にされておらず有効なものを `run()` 中に `claude plugin disable` で無効化する。
 _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
@@ -165,6 +171,8 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
 
     # 同版の編集はplugin updateが反映しないため、内容差がある場合にinstallで同期する。
     is_directory_type = claude_marketplace.is_directory_type_registered()
+    if is_directory_type and _remove_stale_source_environment(dotfiles_root):
+        any_change = True
 
     # 旧 GitHub 型が残存する環境では、インストール済みプラグインにバージョン不一致があるときだけ
     # marketplace メタデータを refresh する (CLI 起動コスト節約)。
@@ -878,6 +886,40 @@ def _remove_development_artifacts(name: str) -> tuple[bool, int, bool]:
         removed = True
         logger.info(log_format.format_status(name, f"plugin cache の開発用生成物を削除しました: {short}"))
     return removed, failed, held
+
+
+def _remove_stale_source_environment(dotfiles_root: Path) -> bool:
+    """配布元の作業ツリーに旧版が残した仮想環境を、参照するプロセスが無ければ導入の前に削除する。
+
+    削除できない場合も導入は続け、複製後の`_remove_development_artifacts`が導入先から回収する。
+    """
+    target = dotfiles_root / _STALE_SOURCE_ENVIRONMENT
+    if target.is_symlink() or not (target / "pyvenv.cfg").is_file():
+        return False
+    short = log_format.home_short(target)
+    references = claude_plugin_references.direct_references(claude_plugin_references.scan(), target)
+    if references:
+        logger.warning(
+            log_format.format_status(
+                "plugins",
+                f"旧版が作った配布元の仮想環境 {short} を参照中のため削除を延期しました（{'、'.join(references)}）。"
+                "参照の終了後に`update-dotfiles`を再実行してください。",
+            ),
+        )
+        return False
+    try:
+        shutil.rmtree(target)
+    except OSError as error:
+        logger.warning(
+            log_format.format_status(
+                "plugins",
+                f"旧版が作った配布元の仮想環境 {short} を削除できません: {error}。"
+                "権限と使用中のプロセスを確認して`update-dotfiles`を再実行する",
+            ),
+        )
+        return False
+    logger.info(log_format.format_status("plugins", f"旧版が作った配布元の仮想環境を削除しました: {short}"))
+    return True
 
 
 def _verify_target_plugins(target_versions: dict[str, str], failed_operations: Sequence[str] = ()) -> None:

@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit._testing.session_evidence_support import (
     assistant_text,
     claude_call,

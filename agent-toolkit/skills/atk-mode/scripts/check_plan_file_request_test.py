@@ -6,7 +6,6 @@ import pathlib
 import append_progress_log
 import check_plan_file
 import pytest
-
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._plan.structure import verification as _verification
 from agent_toolkit._testing import plan_fixture as _plan_fixture

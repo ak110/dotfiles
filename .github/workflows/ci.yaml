@@ -423,7 +423,8 @@ jobs:
             echo "junit=$junit"
             echo "artifact=pytest-toolkit-junit-$shard"
           } >> "$GITHUB_OUTPUT"
-          pyfltr ci --work-dir agent-toolkit --commands=pytest --pytest-args="-v --maxfail=0 --junitxml=$junit --test-shard=$TEST_SHARD" agent-toolkit
+          # 直下の設定と仮想環境で実行する。直下の不変条件試験はpytest直下のjobが担うため、常時対象の追加を外す。
+          pyfltr ci --no-always-targets --commands=pytest --pytest-args="-v --maxfail=0 --junitxml=$junit --test-shard=$TEST_SHARD" agent-toolkit
       - name: pytest toolkitのJUnit XMLを保存
         # 失敗した試験の所要も取得するため、pytestが失敗しても保存する。保存先が決まる前の失敗では実行しない。
         if: ${{ !cancelled() && needs.common-ci-owner.outputs.owns == 'true' && steps.pytest.outputs.junit != '' }}

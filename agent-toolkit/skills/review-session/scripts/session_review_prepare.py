@@ -29,6 +29,11 @@ from typing import Any
 import session_conversation
 import session_evidence_execution
 import session_review_evidence
+from agent_toolkit._atk import managed_temp, run_script
+from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import session_record_paths, session_registry, session_review
+from agent_toolkit._git import command as _git_command
 from session_review_prepare_candidates import (
     _SIMILAR_RECORD_KINDS,
     _candidate_bodies,
@@ -42,12 +47,6 @@ from session_review_prepare_failures import _select_repeated_failures
 from session_review_prepare_stats import _stats_document
 from session_review_prepare_text import _clip_utf8, _comparison_document, _parse_jsonl, _read_jsonl
 from session_review_prepare_timings import _hook_timing_stats
-
-from agent_toolkit._atk import managed_temp, run_script
-from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import session_record_paths, session_registry, session_review
-from agent_toolkit._git import command as _git_command
 
 CONVERSATION_FILENAME = "conversation.md"
 

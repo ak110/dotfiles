@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 import session_review_prepare as prepare
-
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import session_evidence_support as support
 

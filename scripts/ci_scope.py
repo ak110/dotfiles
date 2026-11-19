@@ -48,7 +48,11 @@ def main() -> None:
                 "rust-toolchain.toml",
             }
             for path in paths:
-                if path in shared or path.startswith((".github/", ".cargo/")) or path.endswith(("pyproject.toml", "uv.lock")):
+                if (
+                    path in shared
+                    or path.startswith((".github/", ".cargo/"))
+                    or path.endswith(("pyproject.toml", "uv.lock", ".py.lock"))
+                ):
                     rust = browser = True
                     categories.add("共有・実行設定")
                 elif path.startswith("rust/"):

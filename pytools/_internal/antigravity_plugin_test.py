@@ -44,7 +44,8 @@ def _source(tmp_path: Path) -> Path:
         "scripts/atk-hook": "# hook入口。\n",
         "scripts/atk-hook.cmd": "@exit /b 0\r\n",
         "scripts/launch.py": "# MCP入口。\n",
-        "pyproject.toml": "[project]\nname = 'fixture'\nversion = '1.2.3'\n",
+        "scripts/launch.py.lock": "version = 1\n",
+        "pyproject.toml": "[project]\nname = 'stale'\n",
         "uv.lock": "version = 1\n",
         "README.md": "# toolkit\n\n[ライセンス](LICENSE)\n",
         "LICENSE": "MIT toolkit\n",
@@ -111,7 +112,9 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert (target / "skills/long/SKILL.md").stat().st_size < 24_000
     assert (target / "skills/long/references/antigravity-full-instructions.md").read_text() == "全文を読む。\n" * 2000
     assert (target / "share/rules/rules-main.md").is_file()
-    assert (target / "uv.lock").is_file()
+    assert (target / "scripts/launch.py.lock").is_file()
+    assert not (target / "pyproject.toml").exists()
+    assert not (target / "uv.lock").exists()
     assert not (target / "agent_toolkit/hook_test.py").exists()
     rules = sorted((target / "rules").glob("*.md"), key=lambda path: path.name != "AGENTS.md")
     assert len(rules) == 2

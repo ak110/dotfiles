@@ -3,7 +3,6 @@
 import pathlib
 
 import pytest
-
 from agent_toolkit._testing.delegation_contract_support import (
     _GENERIC_READ_CONDITION,
     _RETIRED_LAUNCH_DELEGATION,

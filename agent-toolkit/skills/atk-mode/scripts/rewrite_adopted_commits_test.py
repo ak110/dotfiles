@@ -6,7 +6,6 @@ import pathlib
 import typing
 
 import pytest
-
 from agent_toolkit import atk
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import sync

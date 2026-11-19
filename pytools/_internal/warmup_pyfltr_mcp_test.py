@@ -143,8 +143,8 @@ def test_shared_launcher_command_starts_with_python(env: _Env, monkeypatch: pyte
     source = _REAL_CLAUDE_DEFINITION if host == "claude" else _REAL_CODEX_DEFINITION
     definition.write_bytes(source.read_bytes())
     # 共有環境の識別には配布版の依存定義とlockが必要になる。
-    for name in ("pyproject.toml", "uv.lock"):
-        (definition.parent / name).write_bytes((_PLUGIN_ROOT / name).read_bytes())
+    (definition.parent / "scripts").mkdir()
+    (definition.parent / "scripts/launch.py.lock").write_bytes((_PLUGIN_ROOT / "scripts/launch.py.lock").read_bytes())
     entry = definition.parent / "agent_toolkit/_common/pyfltr_entry.py"
     entry.parent.mkdir(parents=True)
     entry.touch()

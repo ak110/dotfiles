@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import pathlib
 import subprocess
+import sys
 from collections.abc import Callable
 
 import pytest
@@ -14,7 +15,6 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.atk_support import (
     _ATK_PATH,
-    _PROJECT_ROOT,
     _REMOVED_RUN_SCRIPTS,
     _isolate_agent_and_managed_temp_environment,
     _isolated_cli_environ,
@@ -30,7 +30,6 @@ __all__ = ["_isolate_agent_and_managed_temp_environment"]
 def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """実CLIはローカルパス指定時に旧パス形とURL形のUWIをともに数える。"""
     notes = _setup_notes(tmp_path)
@@ -39,22 +38,12 @@ def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     _write_uwi_file(notes, "legacy.md", target_repo=str(local_repo), question="旧形式")
     _write_uwi_file(notes, "current.md", target_repo="github.com/example/repo", question="現行形式")
     _write_uwi_file(notes, "other.md", target_repo="github.com/example/other", question="対象外")
-    monkeypatch.setenv("UV_FROZEN", "1")
-    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "parent-venv"))
     env = _isolated_cli_environ(host_environ, tmp_path)
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
-    # 子projectのlock指定と環境を使い、親のuv設定による警告をCLI出力へ混ぜない。
-    env.pop("UV_FROZEN", None)
-    env.pop("VIRTUAL_ENV", None)
 
     result = subprocess.run(  # noqa: S603
         [
-            "uv",
-            "run",
-            "--project",
-            str(_PROJECT_ROOT),
-            "--locked",
-            "--no-default-groups",
+            sys.executable,
             str(_ATK_PATH),
             "wi",
             "list",

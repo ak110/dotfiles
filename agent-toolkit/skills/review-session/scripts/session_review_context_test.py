@@ -8,7 +8,6 @@ import pathlib
 import pytest
 import session_evidence_user_events as user_events
 import session_review_prepare as prepare
-
 from agent_toolkit._testing import session_evidence_support as support
 
 

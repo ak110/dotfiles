@@ -6,7 +6,6 @@ import pathlib
 
 import append_progress_log
 import pytest
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._testing import git_repository

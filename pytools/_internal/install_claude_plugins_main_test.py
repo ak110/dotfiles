@@ -73,8 +73,9 @@ def _disable_file_reads(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
     for name, version in (("agent-toolkit", "0.2.0"), ("sample-plugin", "1.0.0")):
         cache = plugins_root / "cache" / "ak110-dotfiles" / name / version
         cache.mkdir(parents=True)
-        (cache / "pyproject.toml").write_text("[project]\nname = 'sample'\n", encoding="utf-8")
-        (cache / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+        (cache / "scripts").mkdir()
+        (cache / "scripts" / "launch.py").write_text("# /// script\n# ///\n", encoding="utf-8")
+        (cache / "scripts" / "launch.py.lock").write_text("version = 1\n", encoding="utf-8")
         (cache / ".claude-plugin").mkdir()
         (cache / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": name, "version": version}), encoding="utf-8")
         installed_entries[f"{name}@ak110-dotfiles"] = [{"scope": "user", "version": version, "installPath": str(cache)}]

@@ -7,7 +7,6 @@ import pathlib
 import pytest
 import session_evidence_candidates as evidence_candidates
 import session_review_evidence as evidence
-
 from agent_toolkit._common import skill_modes
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import hook_attachment, read_jsonl

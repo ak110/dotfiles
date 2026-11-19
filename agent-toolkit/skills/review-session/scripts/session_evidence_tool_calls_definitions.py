@@ -9,10 +9,9 @@ from typing import Any
 
 import session_evidence_execution
 import session_evidence_static
+from agent_toolkit._common import shell_segments, shell_tokens
 from session_evidence_extract import _CollectedRecord, _role_document
 from session_evidence_tool_calls_records import _record_tool_calls, _recorded_input, _ToolCall
-
-from agent_toolkit._common import shell_segments, shell_tokens
 
 
 def _definition_read_targets(tool: str, inputs: dict[str, Any], text: str) -> list[str]:

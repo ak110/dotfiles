@@ -7,7 +7,6 @@ import pathlib
 import shlex
 
 import pytest
-
 from agent_toolkit._atk import outcome
 from agent_toolkit._testing.session_review_evidence_support import _bundle_failed_commands_of_runtime
 

@@ -6,7 +6,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from agent_toolkit._git import command as git_command
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent

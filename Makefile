@@ -19,7 +19,7 @@ help:
 # 依存パッケージをアップグレードし導入とRustを検証
 update:
 	env --unset=UV_FROZEN uv sync --upgrade --all-groups --all-extras
-	env --unset=UV_FROZEN uv lock --upgrade --project agent-toolkit
+	env --unset=UV_FROZEN uv lock --upgrade --script agent-toolkit/scripts/launch.py
 	$(MAKE) ci-deps-check
 	mise exec -- prek autoupdate
 	$(MAKE) update-mise-locks
@@ -50,10 +50,8 @@ setup:
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり。mise install chezmoiで導入してください。"
 
 # ChromiumとLinuxのシステム依存を初期環境へ導入
-# ルートとagent-toolkitは別々のuv.lockを持ちplaywrightの版が異なり得るため、両方の環境の版に対応するChromiumを導入する
 setup-browser:
 	uv run playwright install --with-deps chromium
-	UV_PROJECT_ENVIRONMENT="$(CURDIR)/agent-toolkit/.venv" uv run --project agent-toolkit playwright install chromium
 
 # Ubuntu/Debian へ pwsh + PSScriptAnalyzer を一括インストールする。
 # prek の PSScriptAnalyzer / chezmoi template check (.ps1.tmpl) を
@@ -69,13 +67,13 @@ setup-pwsh:
 	sudo apt-get install --yes powershell
 	pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck"
 
-# リポジトリ直下とagent-toolkitの仮想環境を、ロックファイルが選ぶパッケージ集合とCIの基準Python版へそろえる。
+# リポジトリ直下の仮想環境を、ロックファイルが選ぶパッケージ集合とCIの基準Python版へそろえる。
+# agent-toolkitの開発・検証もこの1つの仮想環境を使い、配布rootの`agent-toolkit/`には仮想環境を作らない。
 # `uv sync`は余分なパッケージを除き、`--python`は版の異なる既存の仮想環境を削除して指定の版で構築する。
 # `uv run`の自動同期は余分なパッケージを残すため、この同期に代えない。
-# `.python-version`を持たないagent-toolkitと、`UV_PYTHON`などで別の版を指定した環境では、既存の仮想環境のPython版も保つ（uv 0.13.1で確認）。
+# `UV_PYTHON`などで別の版を指定した環境でも、既存の仮想環境のPython版を保つ（uv 0.13.1で確認）。
 sync:
 	uv sync --all-groups --all-extras --python "$$(cat .python-version)"
-	UV_PROJECT_ENVIRONMENT="$(CURDIR)/agent-toolkit/.venv" uv sync --project agent-toolkit --all-groups --all-extras --python "$$(cat .python-version)"
 
 # CIのcontainer jobと同じimageの中で、CIと同じ依存導入と各Python版の`uv sync`を実行する。
 # 作業ツリーは読み取り専用でマウントし、container内へ仮想環境とビルド生成物を除いて複製してから同期する。
@@ -109,7 +107,6 @@ test: sync
 # 実ブラウザーテストを日常実行
 test-browser:
 	uv run playwright install chromium
-	UV_PROJECT_ENVIRONMENT="$(CURDIR)/agent-toolkit/.venv" uv run --project agent-toolkit playwright install chromium
 	# CIと同じ開発モードで、監視スレッドの異常などを公開前にも検出する。
 	# addoptsの解除後も、共有ブラウザーと失敗証拠の寿命を管理するpluginは登録する。
 	PYTHONDEVMODE=1 $(PYTEST_RUN) -p agent_toolkit._testing.pytest_plugin -m browser agent-toolkit/agent_toolkit/_atk/serve

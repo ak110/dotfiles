@@ -13,7 +13,6 @@ import pathlib
 import pytest
 import session_review_evidence as evidence  # pylint: disable=import-error
 import session_review_prepare as prepare  # pylint: disable=import-error
-
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing.session_evidence_support import read_jsonl
 

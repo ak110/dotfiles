@@ -11,7 +11,6 @@ from typing import Any
 import get_plan_commits
 import pytest
 import rewrite_plan_commits
-
 from agent_toolkit import atk
 from agent_toolkit._atk import managed_temp, run_script
 from agent_toolkit._common import next_action

@@ -8,15 +8,14 @@ import shlex
 
 import create_plan_files
 import pytest
-from create_plan_files_test import (  # pylint: disable=import-error,unused-import
-    _make_repo,
-    _source,
-)
-
 from agent_toolkit import atk
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import read_triggers
 from agent_toolkit._testing import git_repository
+from create_plan_files_test import (  # pylint: disable=import-error,unused-import
+    _make_repo,
+    _source,
+)
 
 
 def test_lane_planning_document_command_creates_plan_from_another_worktree(

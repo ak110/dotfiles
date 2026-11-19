@@ -44,11 +44,10 @@ def _write_script(path: pathlib.Path) -> pathlib.Path:
     path.write_text("", encoding="utf-8")
     if path.name == "agents_server_mcp.py":
         root = path.parents[1]
-        (root / "pyproject.toml").write_text('[project]\nname = "agent-toolkit"\n', encoding="utf-8")
-        (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-        launcher = path.parents[1] / "scripts" / "launch.py"
+        launcher = root / "scripts" / "launch.py"
         launcher.parent.mkdir(parents=True, exist_ok=True)
-        launcher.write_text("", encoding="utf-8")
+        launcher.write_text("# /// script\n# ///\n", encoding="utf-8")
+        (root / "scripts" / "launch.py.lock").write_text("version = 1\n", encoding="utf-8")
     return path
 
 
