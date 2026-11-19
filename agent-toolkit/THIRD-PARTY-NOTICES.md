@@ -14,6 +14,7 @@ agent-toolkitへ取り込んだ第三者素材の原典、改変内容と許諾�
   - `skills/poteto-mode/playbooks/multi-phase-plan.md`、`opening-a-pr.md`、`babysit.md`、`shipping.md`。
   - `skills/show-me-your-work/SKILL.md`、`skills/figure-it-out/SKILL.md`、`skills/principle-prove-it-works/SKILL.md`。
   - `skills/blast-radius/SKILL.md`、`skills/ketchup/SKILL.md`。
+  - `skills/poteto-mode/playbooks/eval.md`、`skills/poteto-mode/playbooks/authoring-a-skill.md`の評価に関する文。
 - 取り込み先:
   - `skills/atk-mode/SKILL.md`（入口が作業の種類から手順書を1つ選ぶ構成）。
   - `skills/atk-mode/playbooks/confirmation.md`（認可された範囲の可逆な技術判断は先に進めてから示す）。
@@ -26,6 +27,11 @@ agent-toolkitへ取り込んだ第三者素材の原典、改変内容と許諾�
   - `skills/atk-mode/playbooks/verification.md`（簡単に成功しすぎた時は観測の方法を先に確かめる、安全の根拠になる1つの事実を確かめる、検証結果の3値）。
   - `skills/atk-mode/playbooks/publish.md`（PRの本文は短い説明にする）。
   - `skills/atk-mode/references/ci.md`（既知の修正を1回のpushへまとめる、自動マージの予約はマージの完了ではない）。
+  - `skills/atk-mode/playbooks/refine-prompt.md`、`skills/atk-mode/playbooks/refine-prompt-trials.md`。
+    評価の入力に評価と分かる語や他の候補の存在を含めない。
+    成果物から採点する。
+    盲検の採点担当が1回で採点する。
+    構造のある対象だけケースを作る。
 - 改変: 該当の文を日本語へ翻訳し、既存の規範の手順へ要約・再構成して組み込んだ。
   目的の変更と公開の操作に事前の承認を求める条件を加えた。
 - 許諾: [MIT License](https://github.com/cursor/plugins/blob/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack/LICENSE)。
