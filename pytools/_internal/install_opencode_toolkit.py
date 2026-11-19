@@ -1,4 +1,4 @@
-"""OpenCodeのグローバル検出先へtoolkitと品質スキル、常時規範を同期する。
+"""OpenCodeのグローバル検出先へtoolkitと品質スキル、入口の起動を求める案内を同期する。
 
 OpenCodeの公開仕様（https://opencode.ai/docs/skills/ と /rules/）を使う。
 ユーザーの既存規範・設定キーと独自スキルを保持する。
@@ -13,7 +13,7 @@ from pathlib import Path
 import pytilpack.jsonc
 import yaml
 
-from pytools._internal import common, log_format, post_apply_outcome, setup_opencode_cli, sync_agent_toolkit_rules
+from pytools._internal import common, log_format, post_apply_outcome, setup_opencode_cli
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,10 @@ def _rules_body(root: Path) -> str:
         _BEGIN,
         "# OpenCodeでのagent-toolkit",
         "",
+        # OpenCodeはhookを登録しないため、入口の起動を求める案内を設定の`instructions`で届ける。
+        # 規範の本文は入口のスキルと手順書だけが持ち、ここへは載せない。
+        "作業の前と会話の圧縮の後に、`agent-toolkit-atk-mode`のスキルを読む。",
+        "",
         f"agent-toolkit plugin root: `{toolkit.as_posix()}`。agent-basics plugin root: `{basics.as_posix()}`。",
         "スキル本文の`${CLAUDE_PLUGIN_ROOT}`は、そのスキルを提供するpluginの上記rootへ読み替える。",
         "`${CLAUDE_SKILL_DIR}`は、そのplugin rootの`skills/<元のスキル名>`へ読み替える。",
@@ -67,18 +71,11 @@ def _rules_body(root: Path) -> str:
         "`agent-basics:<名前>`は`agent-basics-<名前>`に対応し、`skill`ツールのnameへ渡す。",
         "参照資料と実行資源は対応するplugin rootから解決する。",
         "モデルの自動選択を無効にしたスキルは、ユーザーが明示した時にだけ同じ名前で読み込む。",
-        "この導入はスキルと規範を提供する。MCPサーバーとClaude Code用hookの登録は含まない。",
+        "この導入はスキルを提供する。MCPサーバーとClaude Code用hookの登録は含まない。",
         "OpenCodeからagents_serverを呼ばない。ホストに無い操作が必要なら、"
         "必要な操作と未完了の成果をユーザーまたは委譲元へ返す。",
-        "",
+        _END,
     ]
-    if (toolkit / "skills" / "atk-mode" / "SKILL.md").is_file():
-        # OpenCodeはhookを登録しないため、入口の起動を求める案内をこの規範ファイルで届ける。
-        lines[-1:-1] = ["作業の前と会話の圧縮の後に、`agent-toolkit-atk-mode`のスキルを読む。"]
-    lines.extend(
-        sync_agent_toolkit_rules.wrapped_body(rule) for rule in sorted((toolkit / "share" / "rules" / "common").glob("*.md"))
-    )
-    lines.append(_END)
     return "\n".join(lines) + "\n"
 
 
@@ -119,8 +116,8 @@ def sync(root: Path, destination: Path) -> bool:
                 data = _skill_body(source, plugin).encode("utf-8") if relative == Path("SKILL.md") else source.read_bytes()
                 expected[target / relative] = data
             expected[marker] = plugin.encode("utf-8")
-    if not (root / "agent-toolkit" / "share" / "rules" / "common" / "01-agent.md").is_file():
-        raise ValueError("agent-toolkitの配布元規範が見つからない")
+    if not (root / "agent-toolkit" / "skills" / "atk-mode" / "SKILL.md").is_file():
+        raise ValueError("agent-toolkitの入口のスキル`atk-mode`が配布元に見つからない")
     rules = destination / "agent-toolkit.md"
     if rules.is_file() and not rules.read_text(encoding="utf-8").startswith(_BEGIN + "\n"):
         raise ValueError(f"ユーザー所有の規範と配置先が重なる: {rules}")
@@ -163,7 +160,7 @@ def sync(root: Path, destination: Path) -> bool:
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """OpenCode CLIの導入後にグローバルスキルと規範を同期する。"""
+    """OpenCode CLIの導入後にグローバルスキルと入口の案内を同期する。"""
     if setup_opencode_cli.find_launcher() is None:
         logger.info(log_format.format_status("OpenCode toolkit", "CLIが無いためスキップ。`update-dotfiles`で導入を再試行する"))
         return post_apply_outcome.PostApplyOutcome()

@@ -3,7 +3,10 @@
 # requires-python = ">=3.15"
 # dependencies = ["psutil", "pytilpack[quart]>=1.47.0"]
 # ///
-"""Codex向けAGENTS.mdをベース記述とagent-toolkit rulesから生成する。"""
+"""Codex向けAGENTS.mdを個人用の規範から生成する。
+
+agent-toolkitの規範は入口のスキル`atk-mode`と手順書が持つため、ここへは埋め込まない。
+"""
 
 from __future__ import annotations
 
@@ -12,39 +15,29 @@ import sys
 import tomllib
 from pathlib import Path
 
-from codex_shared_rules import CODEX_EXCLUDED_RULE_NAMES, is_codex_shared_rule
-
-__all__ = ["CODEX_EXCLUDED_RULE_NAMES", "is_codex_shared_rule"]
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from pytools._internal import common  # pylint: disable=wrong-import-position  # noqa: E402
 
-BASE_SOURCE = Path("agent-toolkit/share/rules/rules-common.codex.md")
 PERSONAL_SOURCE = Path(".chezmoi-source/dot_claude/rules/myprojects-common.md")
-RULES_SOURCE = Path("agent-toolkit/share/rules/common")
 TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
 CODEX_CONFIG = Path("share/codex_config.toml")
 GENERATED_MARKER = (
     "<!-- dotfilesリポジトリの.chezmoi-source/dot_codex/AGENTS.mdから~/.codex/AGENTS.mdへ配布する自動生成ファイル。"
     "dotfilesリポジトリのscripts/sync_generated_files.pyで再生成し、手動編集しない。"
-    "本文は全リポジトリ共通のCodex向け規範である。 -->"
+    "本文は全リポジトリへ適用する個人用の規範である。 -->"
 )
 # 常時読み込まれる規範の配布物へ付ける境界。
 NORMATIVE_ELEMENT = "atk-auto"
-NORMATIVE_SOURCE = "agent-toolkit"
+NORMATIVE_SOURCE = "dotfiles"
 NORMATIVE_KIND = "rules"
 
 
 def render(root: Path = REPO_ROOT) -> str:
     """生成内容を決定的に組み立てる。"""
-    sections = [GENERATED_MARKER, "", (root / BASE_SOURCE).read_text(encoding="utf-8").rstrip("\n")]
-    sections.extend(_embedded_section(root, PERSONAL_SOURCE))
-    for rule in sorted(path for path in (root / RULES_SOURCE).glob("*.md") if is_codex_shared_rule(path)):
-        sections.extend(_embedded_section(root, rule.relative_to(root)))
-    return "\n".join(sections) + "\n"
+    return "\n".join([GENERATED_MARKER, *_embedded_section(root, PERSONAL_SOURCE)]) + "\n"
 
 
 def _has_normative_boundary(body: str) -> bool:

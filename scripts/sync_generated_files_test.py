@@ -153,46 +153,35 @@ def test_input_sync_checks_all_boundaries_before_writing(tmp_path: Path) -> None
     assert first.read_bytes() == before
 
 
-def test_quality_source_updates_normal_and_lightweight_delivery(tmp_path: Path) -> None:
-    """原則の正本改訂が全同梱先へ届き、品質外の認可本文と軽量配送範囲を保つ。"""
-    for key, body in {
-        "roles": "## 役割分担\n\n役割本文。\n",
-        "qcd": "## QCDと3段判定\n\n品質本文。\n\n### 設計の判定順\n\n順序本文。\n",
-        "constraints": "## 規定の区分と標示\n\n制約本文。\n",
-        "facts": ("## 事実と推論\n\n帰属本文。\n\n### 結果の返却\n\n返却の条件。\n\n## 報告の選別と判断記録\n\n配送対象外。\n"),
-    }.items():
-        source = tmp_path / subject.QUALITY_SOURCE.format(key=key)
+def test_quality_source_updates_every_delivery_target(tmp_path: Path) -> None:
+    """原則の正本改訂が全同梱先へ届き、指定節の外の本文と同梱先の固有本文を保つ。"""
+    for _, key, title, _ in subject.QUALITY_TARGETS:
+        source = tmp_path / subject.QUALITY_SOURCE.format(key="facts" if key == "result" else key)
         source.parent.mkdir(parents=True, exist_ok=True)
-        source.write_text("# 品質\n\n" + body, encoding="utf-8")
-    source = tmp_path / subject.QUALITY_SOURCE.format(key="facts")
-    normal = tmp_path / "agent-toolkit/share/rules/common/01-agent.md"
-    lightweight = tmp_path / "agent-toolkit/share/agents-server-base.md"
-    for path in (normal, lightweight):
+        previous = source.read_text(encoding="utf-8") if source.exists() else "# 品質\n\n## 前置き\n\n前置き本文。\n"
+        source.write_text(f"{previous}\n## {title}\n\n{title}の本文。\n\n## 配送対象外\n\n対象外。\n", encoding="utf-8")
+    targets: dict[Path, list[str]] = {}
+    for relative, key, _, _ in subject.QUALITY_TARGETS:
+        targets.setdefault(tmp_path / relative, []).append(key)
+    for path, keys in targets.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        keys = [key for relative, key, _, _ in subject.QUALITY_TARGETS if tmp_path / relative == path]
         blocks = "\n".join(
             f"<!-- quality-principles:{key}:start -->\n旧本文。\n<!-- quality-principles:{key}:end -->" for key in keys
         )
         path.write_text(f"# 固有規範\n\n認可本文。\n{blocks}\n末尾の規約。\n", encoding="utf-8")
+
     subject.sync_quality_principles(tmp_path)
-    normal_text = normal.read_text(encoding="utf-8")
-    lightweight_text = lightweight.read_text(encoding="utf-8")
-    assert "役割本文。" in normal_text
-    assert "制約本文。" in normal_text
-    # 常時規範はQCDと事実の原則を要点と読む時点だけで持ち、全文は条件付きで正本から読む。
-    assert "品質本文。" not in normal_text
-    assert "返却の条件。" not in normal_text
-    assert "返却の条件。" in lightweight_text
-    assert "帰属本文。" not in lightweight_text
-    assert "品質本文。" not in lightweight_text
-    for text in (normal_text, lightweight_text):
-        assert "認可本文。" in text
-        assert text.endswith("末尾の規約。\n")
-        assert "配送対象外。" not in text
-        assert "旧本文。" not in text
-    source.write_text(source.read_text(encoding="utf-8").replace("返却の条件。", "改訂した返却の条件。"), encoding="utf-8")
+
+    for relative, _, title, _ in subject.QUALITY_TARGETS:
+        text = (tmp_path / relative).read_text(encoding="utf-8")
+        assert f"{title}の本文。" in text
+        assert "認可本文。" in text and text.endswith("末尾の規約。\n")
+        assert "前置き本文。" not in text and "対象外。" not in text and "旧本文。" not in text
+    relative, key, title, _ = subject.QUALITY_TARGETS[0]
+    source = tmp_path / subject.QUALITY_SOURCE.format(key="facts" if key == "result" else key)
+    source.write_text(source.read_text(encoding="utf-8").replace(f"{title}の本文。", "改訂した本文。"), encoding="utf-8")
     subject.sync_quality_principles(tmp_path)
-    assert "改訂した返却の条件。" in lightweight.read_text(encoding="utf-8")
+    assert "改訂した本文。" in (tmp_path / relative).read_text(encoding="utf-8")
 
 
 def test_quality_sync_failure_stops_downstream_generation(monkeypatch, capsys) -> None:

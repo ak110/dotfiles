@@ -1,29 +1,12 @@
-"""実配布の常時規範予算と、移設した運用資料への操作前の到達を検査する。"""
+"""移設した運用資料への操作前の到達を検査する。"""
 
 from pathlib import Path
 
 from agent_toolkit._common import read_triggers
 from agent_toolkit._testing.normative_contract import read_contract
 
-from pytools._internal import antigravity_plugin
-
 _ROOT = Path(__file__).resolve().parent
 _TOOLKIT = _ROOT / "agent-toolkit"
-
-
-def test_current_rules_fit_budget_without_losing_text() -> None:
-    """現物の規範が既存の予算内に収まり、分割後にも全文が同じ順序で残る。"""
-    assert antigravity_plugin.RULE_BUDGET_TOKENS == 20_000
-    outputs = {path: data for path, (data, _) in antigravity_plugin.outputs(_ROOT).items() if path.parts[0] == "rules"}
-    ordered = sorted(outputs.items(), key=lambda item: (item[0].name != "AGENTS.md", item[0].name))
-    estimated = sum((len(data) + 1) // 2 for _, data in ordered)
-    assert estimated <= antigravity_plugin.RULE_BUDGET_TOKENS
-    assert all(len(data) <= antigravity_plugin.RULE_FILE_BYTES for _, data in ordered)
-    actual = "".join(data.decode().removeprefix("---\ntrigger: always_on\n---\n\n") for _, data in ordered)
-    expected = "".join(
-        path.read_text().rstrip("\n") + "\n" for path in sorted((_TOOLKIT / "share" / "rules" / "common").glob("*.md"))
-    )
-    assert actual == expected
 
 
 def test_operation_rules_reach_quality_and_verification_materials() -> None:

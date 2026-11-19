@@ -1,4 +1,4 @@
-"""導入処理と配布元ルールの横断契約を検証する。"""
+"""導入処理の横断契約を検証する。"""
 
 import pathlib
 import stat
@@ -8,24 +8,23 @@ import pytest
 
 from _test_helpers import (
     REPO_ROOT,
-    RULES_SRC,
     installer_runners,
     make_command_stubs,
     read_log_lines,
     run_installer,
-    serve_rules,
+    serve_repository,
 )
 
 
-@pytest.fixture(name="rules_url", scope="module")
-def local_rules_url() -> typing.Iterator[str]:
-    """テスト用のルール配布先URLを返す。"""
-    yield from serve_rules()
+@pytest.fixture(name="raw_base_url", scope="module")
+def local_raw_base_url() -> typing.Iterator[str]:
+    """リポジトリのファイルを配るテスト用の取得元URLを返す。"""
+    yield from serve_repository()
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """配布元ルールと起動スクリプトを導入し、両agentを順序どおり設定する。"""
+def test_configures_both_agents_without_deploying_rules(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
+    """常時規範を配置せずに起動スクリプトを導入し、両agentを順序どおり設定する。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)
@@ -36,15 +35,14 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
     rules_dir.mkdir(parents=True)
     (rules_dir / "obsolete.md").write_text("# 旧ファイル\n", encoding="utf-8")
 
-    result = run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    result = run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log)
 
-    assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == (RULES_SRC / "01-agent.md").read_text(encoding="utf-8")
     if kind == "sh":
         hook_wrapper = home / ".local" / "bin" / "atk-hook"
         assert hook_wrapper.read_bytes() == (REPO_ROOT / "agent-toolkit" / "scripts" / "atk-hook").read_bytes()
         assert hook_wrapper.stat().st_mode & stat.S_IXUSR
     assert not legacy_dir.exists()
-    assert not (rules_dir / "obsolete.md").exists()
+    assert not rules_dir.exists()
     joined = "\n".join(read_log_lines(stub_log))
     expected = [
         "claude plugin marketplace add ak110/dotfiles --scope=user",

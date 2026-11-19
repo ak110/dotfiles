@@ -10,7 +10,7 @@ import tempfile
 import pytest
 
 from _test_helpers import installer_runners, make_command_stubs, read_log_lines, run_installer
-from _test_helpers import rules_url_fixture as _rules_url_fixture  # noqa: F401  # pytestがfixtureとして収集する。
+from _test_helpers import raw_base_url_fixture as _raw_base_url_fixture  # noqa: F401  # pytestがfixtureとして収集する。
 from pytools._internal import common
 
 
@@ -33,7 +33,7 @@ def test_restart_notice_requires_codex_plugin_state_change(
     daemon_running: bool,
     expect_notice: bool,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     """導入前後のversionまたはenabledが変化した場合だけ再起動を案内する。"""
     home = tmp_path / "home"
@@ -43,7 +43,7 @@ def test_restart_notice_requires_codex_plugin_state_change(
     result = run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         codex_plugin_before=before_state,
@@ -60,7 +60,7 @@ def test_restart_notice_requires_codex_plugin_state_change(
 @pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize("other_volume", [False, True], ids=["same-volume", "other-volume"])
 def test_plugin_update_preserves_all_previous_cache_versions(
-    kind: str, other_volume: bool, tmp_path: pathlib.Path, rules_url: str, request: pytest.FixtureRequest
+    kind: str, other_volume: bool, tmp_path: pathlib.Path, raw_base_url: str, request: pytest.FixtureRequest
 ) -> None:
     """更新時は全ての通常versionディレクトリを保持し、互換リンクは復元しない。
 
@@ -89,7 +89,7 @@ def test_plugin_update_preserves_all_previous_cache_versions(
     run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         codex_plugin_before=("1.2.2", True),
@@ -107,7 +107,7 @@ def test_plugin_update_preserves_all_previous_cache_versions(
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
 @pytest.mark.parametrize("kind", installer_runners())
-def test_running_codex_updates_and_preserves_previous_cache(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_running_codex_updates_and_preserves_previous_cache(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """Codexセッションの稼働中も更新し、CLIが削除した旧cacheを同じ絶対パスへ戻す。"""
     home = tmp_path / "home"
     home.mkdir()
@@ -123,7 +123,7 @@ def test_running_codex_updates_and_preserves_previous_cache(kind: str, tmp_path:
         result = run_installer(
             kind,
             home,
-            rules_url,
+            raw_base_url,
             stub_bin=stub_bin,
             stub_log=stub_log,
             codex_plugin_before=("1.2.2", True),
@@ -137,7 +137,7 @@ def test_running_codex_updates_and_preserves_previous_cache(kind: str, tmp_path:
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """更新前状態を取得できない場合はpluginを変更しない。"""
     home = tmp_path / "home"
     home.mkdir()
@@ -146,7 +146,7 @@ def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathl
     result = run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         fail_pattern="codex plugin list --json",
@@ -162,7 +162,7 @@ def _assert_invalid_plugin_state_stops_before_plugin_add(
     kind: str,
     plugin_state: object,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     """plugin状態の不正応答で失敗し、更新を開始しない共通契約を確認する。"""
     home = tmp_path / "home"
@@ -172,7 +172,7 @@ def _assert_invalid_plugin_state_stops_before_plugin_add(
     result = run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         codex_plugin_before=("1.2.2", True),
@@ -189,10 +189,10 @@ def _assert_invalid_plugin_state_stops_before_plugin_add(
 def test_powershell_invalid_plugin_state_stops_before_plugin_add(
     plugin_state: object,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     """PowerShellではinstalledが配列でない応答を取得失敗として扱う。"""
-    _assert_invalid_plugin_state_stops_before_plugin_add("ps1", plugin_state, tmp_path, rules_url)
+    _assert_invalid_plugin_state_stops_before_plugin_add("ps1", plugin_state, tmp_path, raw_base_url)
 
 
 @pytest.mark.parametrize("kind", installer_runners())
@@ -208,14 +208,14 @@ def test_invalid_target_plugin_entry_stops_before_plugin_add(
     kind: str,
     plugin_state: object,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     """対象plugin要素の必須項目が不正なら更新を中止する。"""
-    _assert_invalid_plugin_state_stops_before_plugin_add(kind, plugin_state, tmp_path, rules_url)
+    _assert_invalid_plugin_state_stops_before_plugin_add(kind, plugin_state, tmp_path, raw_base_url)
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """対象外pluginのversionとenabledは対象pluginの状態判定へ影響させない。"""
     home = tmp_path / "home"
     home.mkdir()
@@ -225,7 +225,7 @@ def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.
     run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         codex_plugin_before_json=json.dumps(plugin_state),
@@ -235,7 +235,7 @@ def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_same_version_does_not_create_compat_ledger(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_same_version_does_not_create_compat_ledger(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """同version再実行でも廃止した互換台帳を新設しない。"""
     home = tmp_path / "home"
     home.mkdir()
@@ -245,7 +245,7 @@ def test_same_version_does_not_create_compat_ledger(kind: str, tmp_path: pathlib
     run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         codex_plugin_before=("1.2.3", True),
@@ -258,7 +258,7 @@ def test_same_version_does_not_create_compat_ledger(kind: str, tmp_path: pathlib
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """plugin addが旧cacheを削除して失敗した場合は、更新前の全versionを復旧する。"""
     home = tmp_path / "home"
     home.mkdir()
@@ -272,7 +272,7 @@ def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib
     result = run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         fail_pattern="codex plugin add",
@@ -288,7 +288,7 @@ def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """更新と復元を失敗させ、全退避bytesと失敗理由・保存先・次の操作を保持し、次回の実行で戻す。"""
     home = tmp_path / "home"
     home.mkdir()
@@ -310,7 +310,7 @@ def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: path
     result = run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         fail_pattern="codex plugin add agent-toolkit",
@@ -336,7 +336,7 @@ def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: path
     run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         codex_plugin_before=("1.2.3", True),
@@ -349,7 +349,7 @@ def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: path
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     """復元の途中で中断した実行が残した印と複製は、次回以降の実行が片付けて版として扱わない。
 
     版を元のパスへ戻した直後の中断では退避の無い`~replace`の印だけが残り、
@@ -370,7 +370,7 @@ def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_pa
         run_installer(
             kind,
             home,
-            rules_url,
+            raw_base_url,
             stub_bin=stub_bin,
             stub_log=stub_log,
             codex_plugin_before=("1.2.2", True),
@@ -389,7 +389,7 @@ def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_pa
 @pytest.mark.parametrize("add_succeeds", [True, False], ids=["add-succeeds", "add-fails"])
 @pytest.mark.parametrize("kind", installer_runners())
 def test_partially_removed_copy_is_completed_from_backup(
-    kind: str, add_succeeds: bool, tmp_path: pathlib.Path, rules_url: str
+    kind: str, add_succeeds: bool, tmp_path: pathlib.Path, raw_base_url: str
 ) -> None:
     """移動できない版をCLIが途中まで消しても、同じ実行で退避した内容から補い、次回の実行で退避先を片付ける。"""
     home = tmp_path / "home"
@@ -405,7 +405,7 @@ def test_partially_removed_copy_is_completed_from_backup(
         result = run_installer(
             kind,
             home,
-            rules_url,
+            raw_base_url,
             stub_bin=stub_bin,
             stub_log=stub_log,
             fail_pattern="__never_match__" if add_succeeds else "codex plugin add agent-toolkit",
@@ -426,7 +426,7 @@ def test_partially_removed_copy_is_completed_from_backup(
     run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         codex_plugin_before=("1.2.3", True),
@@ -452,7 +452,7 @@ def test_notice_contract_by_failure_stage(
     block_atk_wrapper: bool,
     expect_notice: bool,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     """Codex plugin更新後だけ、後続失敗時も最終案内を保持する。"""
     home = tmp_path / "home"
@@ -466,7 +466,7 @@ def test_notice_contract_by_failure_stage(
     result = run_installer(
         kind,
         home,
-        rules_url,
+        raw_base_url,
         stub_bin=stub_bin,
         stub_log=stub_log,
         fail_pattern=fail_pattern,

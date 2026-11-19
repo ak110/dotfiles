@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version Latest
-if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\01-agent.md")) {
-  Write-Output "::error::agent-toolkit/01-agent.mdがありません。chezmoi適用とpost-applyのログを確認し、修正後にRe-run failed jobsで再実行してください。"
+if (-not (Test-Path "$env:USERPROFILE\.claude\rules\myprojects-common.md")) {
+  Write-Output "::error::.claude/rules/myprojects-common.mdがありません。chezmoi適用ログと配布元を確認し、修正後にRe-run failed jobsで再実行してください。"
   exit 1
 }
 if (-not (Test-Path "$env:USERPROFILE\.ssh\authorized_keys")) {
