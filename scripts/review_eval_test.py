@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import re
 import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -357,10 +360,12 @@ def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, c
     assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
     (prepared,) = _results(capsys)
     assert prepared["start"]["subagent_md_path"] == "wi-draft-review"
+    case_dir = pathlib.Path(prepared["start"]["cwd"]).parent
+    assert case_dir.parent == out
     assert prepared["start"]["extra_params"] == {
-        "計画": str(out / "missed" / "01-0000_case.md"),
+        "計画": str(case_dir / "01-0000_case.md"),
         "起点": old,
-        "記録": f"{out / 'missed'}/handoff.md",
+        "記録": f"{case_dir}/handoff.md",
     }
     subprocess.run(prepared["cleanup"], check=True)
 
@@ -426,7 +431,7 @@ def test_prepare_rejects_incomplete_generation_or_saved_input(tmp_path, monkeypa
         assert "--repo <名前>" not in captured.err
     else:
         assert "revision" in captured.err
-    assert not (out / "missed/worktree").exists()
+    assert not list(out.glob("*/worktree"))
 
 
 def test_store_then_prepare_uses_saved_plan_and_contract(tmp_path, monkeypatch, capsys) -> None:
@@ -571,3 +576,267 @@ def test_score_draft_review_rejects_invalid_contract(tmp_path, monkeypatch, caps
     assert review_eval.main(["score", "--result", f"missed={result}"]) == 1
     assert "不正" in capsys.readouterr().err
     assert not result.with_suffix(".score.json").exists()
+
+
+_SMALL_CASES = (
+    "small-verification-table-scope",
+    "small-known-consumer-tests",
+    "small-verification-evidence-control",
+    "small-handoff-record-readers",
+    "small-handoff-record-readers-control",
+    "small-recheck-ledger",
+    "small-recheck-ledger-control",
+)
+
+
+def _unittest(worktree: pathlib.Path, *targets: str) -> int:
+    # 準備したworktreeを回収できるよう、未追跡のバイトコードを書かせない。
+    command = [sys.executable, "-B", "-m", "unittest", *(targets or ("discover", "-s", "tests", "-p", "*_test.py"))]
+    return subprocess.run(command, cwd=worktree, capture_output=True, check=False).returncode
+
+
+@pytest.mark.parametrize("case_id", _SMALL_CASES)
+def test_prepare_builds_small_case_from_material(tmp_path, capsys, case_id) -> None:
+    """合成素材から変更前後の2つのcommitと評価用の入力を作り、欠陥の事例だけが計画に無い試験で失敗する版を渡す。"""
+    assert review_eval.main(["prepare", "--out", str(tmp_path), "--case", case_id]) == 0
+    (prepared,) = _results(capsys)
+    worktree = pathlib.Path(prepared["start"]["cwd"])
+    extra_params = prepared["start"]["extra_params"]
+    assert _git(worktree, "rev-parse", "HEAD^") == extra_params["開始時のHEAD"]
+    assert _git(worktree, "diff", "--name-only", "HEAD^", "HEAD")
+    plan_text = pathlib.Path(extra_params["計画"]).read_text(encoding="utf-8")
+    assert f"- 対象リポジトリ: `{worktree}`" in plan_text
+    originals = json.loads(pathlib.Path(extra_params["評価用WI原本"]).read_text(encoding="utf-8"))
+    assert len(originals) == 1
+    assert "| 補足条件 |" in pathlib.Path(extra_params["review_contract"]).read_text(encoding="utf-8")
+    assert prepared["temporary_evidence"] == {"referenced": 0, "missing": []}
+    if case_id == "small-recheck-ledger":
+        assert _unittest(worktree, "tests.store_test", "tests.cli_test") == 0
+        assert _unittest(worktree, "tests.help_test") != 0
+    else:
+        assert _unittest(worktree) == 0
+    subprocess.run(prepared["cleanup"], check=True, capture_output=True)
+    assert not worktree.exists()
+
+
+def test_prepare_accepts_output_path_with_backslashes(tmp_path, capsys) -> None:
+    """Windows形式の出力先（`C:\\Users\\...`）でも、計画の対象リポジトリの行を作業ツリーのパスどおりに付け替える。"""
+    # POSIXではバックスラッシュを含む1つの名前、Windowsでは区切りになり、どちらも`\U`を含むパスになる。
+    out = tmp_path / "eval\\Users\\aki"
+    assert review_eval.main(["prepare", "--out", str(out), "--case", "small-known-consumer-tests"]) == 0
+    (prepared,) = _results(capsys)
+    worktree = prepared["start"]["cwd"]
+    assert "\\U" in worktree
+    plan_text = pathlib.Path(prepared["start"]["extra_params"]["計画"]).read_text(encoding="utf-8")
+    assert f"- 対象リポジトリ: `{worktree}`" in plan_text
+    subprocess.run(prepared["cleanup"], check=True, capture_output=True)
+
+
+def _reviewer_view(prepared: dict, out: pathlib.Path) -> dict:
+    """担当が受け取る起動入力、作業ツリーと計画の置き場所にある名前、commit件名を、出力先を伏せて返す。"""
+    start = prepared["start"]
+    worktree = pathlib.Path(start["cwd"])
+
+    def shown(value: str) -> str:
+        return value.replace(str(out), "<out>")
+
+    return {
+        "cwd": shown(start["cwd"]),
+        "subagent_md_path": start["subagent_md_path"],
+        "extra_params": {key: shown(value) for key, value in start["extra_params"].items()},
+        "files": sorted(path.name for path in worktree.parent.iterdir()),
+        "subjects": _git(worktree, "log", "--format=%s").splitlines(),
+    }
+
+
+@pytest.mark.parametrize("material", ["guide-split", "handoff-record", "recheck-ledger"])
+def test_prepare_hides_case_identity_from_reviewer(tmp_path, capsys, material) -> None:
+    """同じ素材の欠陥の事例と正常対照で、担当へ渡る入力は事例ごとの置き場所と開始時のHEADを除いて同じになり、
+    事例ID、事例の種類、素材の差分と計画のファイル名を含まない。"""
+    cases = [case for case in review_eval.load_cases() if case.material is not None and case.material.name == material]
+    assert {case.kind for case in cases} > {"正常対照"}
+    comparable = []
+    for case in cases:
+        assert case.material is not None
+        assert review_eval.main(["prepare", "--out", str(tmp_path), "--case", case.id]) == 0
+        (prepared,) = _results(capsys)
+        view = _reviewer_view(prepared, tmp_path)
+        text = json.dumps(view, ensure_ascii=False)
+        cues = {case.id, case.kind, case.material.change, case.material.plan, "defect", "control"}
+        assert not [cue for cue in cues if cue in text], text
+        case_name = pathlib.Path(prepared["start"]["cwd"]).parent.name
+        comparable.append(text.replace(case_name, "<case>").replace(view["extra_params"]["開始時のHEAD"], "<base>"))
+        subprocess.run(prepared["cleanup"], check=True, capture_output=True)
+    assert len(set(comparable)) == 1, comparable
+
+
+_SMALL_FINDINGS = {
+    "small-verification-table-scope": {
+        "verification-table-scope": (
+            "計画「検証」",
+            "検証表がtests.catalog_testだけで、最終差分のdocs/usage.mdと直接利用側のtests/usage_links_test.pyを覆わない。",
+        )
+    },
+    "small-known-consumer-tests": {
+        "known-consumer-not-executed": (
+            "計画「進捗ログ」",
+            "探索で一致したtests/cli_list_test.pyが実行対象に無く、個別の結果も無い。",
+        )
+    },
+    "small-handoff-record-readers": {
+        "prompt-reader": (
+            "relay/prompt.py:9",
+            "前任が記録を作らない交代でも、委譲プロンプトが存在しない記録を最初に読ませる。",
+        ),
+        "accept-reader": ("relay/accept.py:11", "記録が無い交代の検収がFileNotFoundErrorで失敗する。"),
+        "doc-reader": ("docs/handoff.md:13", "後任と委譲元の段が、記録を作らない前任の規定と食い違い、無条件に読ませる。"),
+        "unreadable-vs-absent": (
+            "relay/record.py:17",
+            "記録がディレクトリか権限で読めない場合を不在と区別する手段が無く、記録にしか無い値を失う。",
+        ),
+    },
+    "small-recheck-ledger": {
+        "misreference": (
+            "ledger/store.py:recheck",
+            "--residualが別の指摘の残りを登録した行も指せ、元の指摘を引き継がずに収束する。",
+        ),
+        "verdict-only-round": (
+            "ledger/store.py:current_round",
+            "現在のroundを指摘の行だけから求めるため、判定だけのroundの後に前のroundへ記録でき、確認済みのroundの集計が変わる。",
+        ),
+        "response-after-verdict": ("ledger/store.py:respond", "判定の後にrespondで書き換えた応答が完了として数えられる。"),
+        "help-example": (
+            "ledger/cli.py:_ADD_MANY_EPILOG",
+            "add-many --helpのJSON例は区分を欠き、表示どおりに渡すと拒否される。",
+        ),
+        "help-cross-test": ("tests/help_test.py", "横断試験help_testがrecheckの--row-idの型変換で失敗する。"),
+        "bulk-respond-drops": ("ledger/store.py:respond_many", "respond-manyが行を作り直し、判定（checks）と区分が消える。"),
+    },
+}
+_SMALL_CONTROLS = {
+    "small-verification-table-scope": "small-verification-evidence-control",
+    "small-known-consumer-tests": "small-verification-evidence-control",
+    "small-handoff-record-readers": "small-handoff-record-readers-control",
+    "small-recheck-ledger": "small-recheck-ledger-control",
+}
+
+
+def _small_table(path: pathlib.Path, findings: list[tuple[str, str]], capsys: pytest.CaptureFixture[str]) -> pathlib.Path:
+    review_table.init(path)
+    for location, issue in findings:
+        review_table.add(path, "1", "exec-review", location, issue)
+    capsys.readouterr()
+    return path
+
+
+@pytest.mark.parametrize("case_id", sorted(_SMALL_FINDINGS))
+def test_score_small_case_and_control_with_synthesized_tables(tmp_path, capsys, case_id) -> None:
+    """期待ごとの指摘行は、欠陥の事例でその期待だけを検出し、正常対照では同じ指摘を誤指摘として数え、無関係な行は未分類に残す。"""
+    findings = _SMALL_FINDINGS[case_id]
+    control = _SMALL_CONTROLS[case_id]
+    for expectation, finding in findings.items():
+        table = _small_table(tmp_path / f"{expectation}.exec-review.tsv", [finding], capsys)
+        assert review_eval.main(["score", "--result", f"{case_id}={table}"]) == 0
+        result, _total = _results(capsys)
+        assert result["detected"] == [expectation]
+    unrelated = ("README.md", "見出しの表記が他の資料とそろっていない。")
+    table = _small_table(tmp_path / "all.exec-review.tsv", [*findings.values(), unrelated], capsys)
+    assert review_eval.main(["score", "--result", f"{case_id}={table}", "--result", f"{control}={table}"]) == 0
+    defect, scored_control, _total = _results(capsys)
+    assert (defect["detected"], defect["missed"], defect["false_findings"]) == (list(findings), [], [])
+    assert set(findings) <= set(scored_control["false_findings"])
+    assert defect["unclassified"] == scored_control["unclassified"] == [{"row": len(findings) + 1, "location": "README.md"}]
+    clean = _small_table(tmp_path / "clean.exec-review.tsv", [unrelated], capsys)
+    assert review_eval.main(["score", "--result", f"{control}={clean}"]) == 0
+    result, _total = _results(capsys)
+    assert (result["false_findings"], result["unclassified"]) == ([], [{"row": 1, "location": "README.md"}])
+
+
+def test_bundled_small_cases_keep_origin_and_control() -> None:
+    """合成素材ごとに欠陥の事例と正常対照がそろい、全履歴版を元にした事例はその元事例を評価セットに残す。"""
+    cases = review_eval.load_cases()
+    by_material: dict[str, set[str]] = {}
+    for case in cases:
+        if case.material is not None:
+            by_material.setdefault(case.material.name, set()).add(case.kind)
+    assert by_material
+    assert all("正常対照" in kinds and kinds - {"正常対照"} for kinds in by_material.values())
+    ids = {case.id for case in cases}
+    assert {"correct-verification-table-scope", "missed-known-consumer-tests"} <= ids
+    assert {origin for case in cases for origin in case.origin.get("cases", [])} <= ids
+
+
+def _material(root: pathlib.Path) -> pathlib.Path:
+    """1ファイルを変える最小の合成素材を作る。"""
+    source = root / "source"
+    source.mkdir(parents=True)
+    _git(source, "init", "-q")
+    (source / "value.txt").write_text("1\n", encoding="utf-8")
+    _git(source, "add", "value.txt")
+    _git(source, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "base")
+    material = root / "materials" / "tiny"
+    material.mkdir(parents=True)
+    empty = _git(source, "hash-object", "-t", "tree", os.devnull)
+    prefixes = ["--src-prefix=a/", "--dst-prefix=b/", "--no-color", "--no-ext-diff"]
+    (material / "base.diff").write_text(_git(source, "diff", *prefixes, empty, "HEAD") + "\n", encoding="utf-8")
+    (source / "value.txt").write_text("2\n", encoding="utf-8")
+    (material / "change.diff").write_text(_git(source, "diff", *prefixes) + "\n", encoding="utf-8")
+    (material / "plan.md").write_text(
+        "# 計画\n## 概要\n### 計画メタ情報\n- 対象リポジトリ: `/path/to/worktree`\n"
+        "- 関連WI:\n  - 20000101-000000-001.md: 要求\n",
+        encoding="utf-8",
+    )
+    (material / "20000101-000000-001.md").write_text(
+        "---\ntype: awi\nsource: fix\n---\n# 要求\n\n## 完成条件\n- 条件\n", encoding="utf-8"
+    )
+    return material.parent
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"revision": "0" * 40}, "revisionを持たない"),
+        ({"origin": {"cases": ["gone"]}}, "元事例が評価セットに無い: gone"),
+        ({"origin": {}}, "元事例との対応（origin）が必要"),
+        ({"material": {"name": "tiny", "change": "missing.diff", "plan": "plan.md"}}, "missing.diffが無い"),
+    ],
+)
+def test_material_case_definition_is_validated(tmp_path, monkeypatch, capsys, change, message) -> None:
+    """合成素材の事例は保存版の項目と元事例の欠落と素材の欠落を拒否し、正しい定義はstoreを使わずに準備できる。"""
+    monkeypatch.setattr(review_eval, "MATERIALS_PATH", _material(tmp_path))
+    case = {
+        "id": "small",
+        "kind": "見逃し",
+        "role": "exec-review",
+        "material": {"name": "tiny", "change": "change.diff", "plan": "plan.md"},
+        "origin": {"source": "合成"},
+        "description": "最小の合成素材",
+        "expect": {"detect": [{"id": "x", "description": "x", "patterns": ["x"]}], "absent": []},
+    }
+    cases = tmp_path / "cases.json"
+    monkeypatch.setattr(review_eval, "CASES_PATH", cases)
+    cases.write_text(json.dumps({"cases": [case]}, ensure_ascii=False), encoding="utf-8")
+    assert review_eval.main(["store", "--case", "small", "--plan", str(tmp_path / "plan.md")]) == 1
+    assert "合成素材の事例" in capsys.readouterr().err
+    assert review_eval.main(["prepare", "--out", str(tmp_path / "out"), "--case", "small"]) == 0
+    (prepared,) = _results(capsys)
+    assert (pathlib.Path(prepared["start"]["cwd"]) / "value.txt").read_text(encoding="utf-8") == "2\n"
+    subprocess.run(prepared["cleanup"], check=True, capture_output=True)
+    cases.write_text(json.dumps({"cases": [{**case, **change}]}, ensure_ascii=False), encoding="utf-8")
+    assert review_eval.main(["prepare", "--out", str(tmp_path / "again"), "--case", "small"]) == 1
+    err = capsys.readouterr().err
+    assert "評価セットを読み込めない" in err
+    assert message in err
+
+
+def test_every_case_has_selection_rule() -> None:
+    """評価セットの全事例が、比べる事例を選ぶ表のいずれかの行に載る。載らない事例は改訂の評価で選ばれない。"""
+    document = (
+        pathlib.Path(review_eval.__file__).resolve().parent.parent
+        / ".claude/skills/agent-toolkit-edit/references/review-eval-set.md"
+    )
+    text = document.read_text(encoding="utf-8")
+    section = text.split("## 比べる事例の選び方", 1)[1].split("\n## ", 1)[0]
+    rows = [line for line in section.splitlines() if line.startswith("| ") and "`" in line]
+    listed = {name for row in rows for name in re.findall(r"`([a-z0-9-]+)`", row)}
+    assert {case.id for case in review_eval.load_cases()} <= listed

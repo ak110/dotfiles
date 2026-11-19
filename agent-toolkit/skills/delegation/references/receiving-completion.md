@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md` |
 
 ## 終了と報告内容の確認
 
@@ -33,7 +33,7 @@
 3. 不合格は要求や成果物の単位で特定し、対象、理由、証拠、修正範囲を同じ担当へ渡す。
    他の合格済み成果と成功した検証結果は保持する。
      修正が共有契約を変える場合は、その契約を消費する単位だけを追随・再検証の対象へ加える。
-   保存済み結果の適用可否は`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
+   保存済み結果の適用可否は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
      不合格の原因が分割、依存関係、入力契約にある場合は、その判断を所有する委譲元へ戻し、個別の担当への修正不能な条件の反復差戻しは対象外とする。
 
 4. 完了報告に記載された観測値は、対象操作の公開仕様が定めている終了状態（リソースの作成であれば存在、削除であれば消失）を直接観測して確かめる。

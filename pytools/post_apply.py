@@ -356,7 +356,7 @@ def main(
     if args.internal_uv_cache_maintenance:
         # 整理が起動した独立プロセス。モードは起動元が環境変数で渡す。
         with _configure_logging():
-            prune_installation.maintain_uv_cache()
+            prune_installation.maintain_caches()
         return
     if args.prune_only and (args.prune or args.mode is not None):
         parser.error("--prune-onlyは--pruneおよび--modeと同時に指定できません")

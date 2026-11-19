@@ -4,7 +4,7 @@
 
 2026年8月のユーザー指示（Zenn記事「概念設計が、その後のコードの命運を左右する」の考え方の取り込み）に
 由来する領域である。
-現行の規定は`agent-basics:review-standards`の`agent-basics:review-standards/references/judgment-details-decisions.md`「解決案の比較」節にある。
+現行の規定は`agent-basics:review-standards/SKILL.md`「解決案の比較」節にある。
 
 - 対象領域の現実を無理なく表現する概念の切り分けを先に確定し、その制約の内側で最小実装を選ぶ。
   現実には別種である事象を既存概念の特殊ケースとして表現する案と、

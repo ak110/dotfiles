@@ -8,12 +8,11 @@ import shlex
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from session_evidence_extract import _ENV_ASSIGNMENT, _SHELL_NAMES, _basename, _json_object, _shell_tokens
-
 from agent_toolkit._common.bash_invocations import extract_bash_invocations, is_read_predicate
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanner
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
+from session_evidence_extract import _ENV_ASSIGNMENT, _SHELL_NAMES, _basename, _json_object, _shell_tokens
 
 _SHELL_OPERATOR_CHARS = frozenset(";&|<>()\n")
 

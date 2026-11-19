@@ -249,7 +249,7 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
 
 
 def test_update_checks_container_dependencies_after_lock_updates() -> None:
-    """依存更新は両lockの更新後にcontainerの依存導入を確かめ、全体試験を呼ばない。"""
+    """依存更新は直下とagent-toolkitの実行依存の両lockの更新後にcontainerの依存導入を確かめ、全体試験を呼ばない。"""
     text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     match = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
     assert match is not None
@@ -257,7 +257,12 @@ def test_update_checks_container_dependencies_after_lock_updates() -> None:
     check = commands.index("\t$(MAKE) ci-deps-check")
     assert next(index for index, command in enumerate(commands) if "uv sync --upgrade" in command) < check
     assert (
-        next(index for index, command in enumerate(commands) if "uv lock --upgrade --project agent-toolkit" in command) < check
+        next(
+            index
+            for index, command in enumerate(commands)
+            if "uv lock --upgrade --script agent-toolkit/scripts/launch.py" in command
+        )
+        < check
     )
     assert "\t$(MAKE) test" not in commands
 

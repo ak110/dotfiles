@@ -9,7 +9,6 @@ import pytest
 import session_evidence_candidates as evidence_candidates
 import session_evidence_extract as evidence_extract
 import session_review_evidence as evidence
-
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._common import skill_modes

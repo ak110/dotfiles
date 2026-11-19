@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.session_evidence_support import write_jsonl

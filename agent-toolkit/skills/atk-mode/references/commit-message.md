@@ -10,7 +10,7 @@
 プロジェクトが固定の文言の体系（カテゴリ名や決まった件名の型など）を定めていれば、それに従う。
 方針は`CLAUDE.md`、`AGENTS.md`、`.claude/rules/`、コミットテンプレート、lintの設定など、明文の資料から確かめる。
 明文に無い事項は、同種の複数のcommitで一貫して観測でき、明文の方針と矛盾しない形式だけを慣例として採り、単発のcommitは根拠にしない。
-明文の方針と履歴が矛盾する場合は、`agent-basics:review-standards/references/judgment-details-feasibility.md`「矛盾の原因調査」に従う。
+明文の方針と履歴が矛盾する場合は、`agent-basics:bugfix`を起動して原因を調べる。
 
 - 形式: `<type>[(<scope>)]: <description>`とし、破壊的変更には`!`を付ける。
   本文かtrailerを書く場合は、件名の後に空行を1行入れる。

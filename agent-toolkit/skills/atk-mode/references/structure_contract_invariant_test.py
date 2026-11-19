@@ -5,7 +5,6 @@ import pathlib
 import re
 
 import pytest
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._plan.structure import sections as _sections
 from agent_toolkit._testing import git_repository

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from agent_toolkit._common.runtime_identity import latest_identity as _latest_identity
 from session_evidence_detail import (
     _entry_timestamp,
     _matched_lines,
@@ -24,8 +25,6 @@ from session_evidence_stats import (
     _codex_call_hint,
     _compaction_event,
 )
-
-from agent_toolkit._common.runtime_identity import latest_identity as _latest_identity
 
 
 def _json_type(value: Any) -> str:

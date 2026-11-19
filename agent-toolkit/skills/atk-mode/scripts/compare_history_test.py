@@ -5,7 +5,6 @@ import json
 import pathlib
 
 import pytest
-
 from agent_toolkit._testing.history_compare_support import _commit, _compare, _git
 from agent_toolkit._testing.history_compare_support import _repo as _repo
 

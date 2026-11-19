@@ -565,7 +565,7 @@ class TestEnsurePluginCacheComplete:
         """欠落を検出したらキャッシュを削除して再インストールし、欠落を解消する。"""
         cache_dir = self._cache_dir(tmp_path)
         self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
-        self._write_cache(cache_dir, missing=("pyproject.toml",))
+        self._write_cache(cache_dir, missing=("scripts/launch.py.lock",))
         calls: list[str] = []
 
         def fake_install(name: str) -> bool:
@@ -596,7 +596,7 @@ class TestEnsurePluginCacheComplete:
         monkeypatch.setattr(_claude_plugin_references, "scan", _REAL_SCAN)
         cache_dir = self._cache_dir(tmp_path)
         self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
-        self._write_cache(cache_dir, missing=("pyproject.toml",))
+        self._write_cache(cache_dir, missing=("scripts/launch.py.lock",))
         (cache_dir / "agent_toolkit").mkdir()
         (cache_dir / "agent_toolkit" / "hook.py").write_text("in use", encoding="utf-8")
         calls: list[str] = []
@@ -617,7 +617,7 @@ class TestEnsurePluginCacheComplete:
                 assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "deferred"
             assert not calls
             assert (cache_dir / "agent_toolkit" / "hook.py").read_text(encoding="utf-8") == "in use"
-            assert "pyproject.toml" in caplog.text
+            assert "scripts/launch.py.lock" in caplog.text
             assert str(cache_dir.relative_to(tmp_path)) in caplog.text
             assert "`update-dotfiles`を再実行してください" in caplog.text
 
@@ -631,17 +631,17 @@ class TestEnsurePluginCacheComplete:
         """再インストール後も欠落する場合は、欠落ファイル名を含む失敗で終える。"""
         cache_dir = self._cache_dir(tmp_path)
         self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
-        self._write_cache(cache_dir, missing=("uv.lock",))
+        self._write_cache(cache_dir, missing=("scripts/launch.py",))
         calls: list[str] = []
 
         def fake_install(name: str) -> bool:
             calls.append(name)
-            self._write_cache(cache_dir, missing=("uv.lock",))
+            self._write_cache(cache_dir, missing=("scripts/launch.py",))
             return True
 
         monkeypatch.setattr(_install_claude_plugins, "_install_plugin", fake_install)
 
-        with pytest.raises(RuntimeError, match="uv.lock"):
+        with pytest.raises(RuntimeError, match="scripts/launch.py"):
             _install_claude_plugins._ensure_plugin_cache_complete(self._NAME)
         assert calls == [self._NAME]
 
@@ -649,7 +649,7 @@ class TestEnsurePluginCacheComplete:
         """修復の再インストール自体が失敗した場合も、成功として扱わない。"""
         cache_dir = self._cache_dir(tmp_path)
         self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
-        self._write_cache(cache_dir, missing=("pyproject.toml",))
+        self._write_cache(cache_dir, missing=("scripts/launch.py.lock",))
         monkeypatch.setattr(_install_claude_plugins, "_install_plugin", lambda _name: False)
 
         with pytest.raises(RuntimeError, match="修復インストールに失敗"):
@@ -681,7 +681,7 @@ class TestEnsurePluginCacheComplete:
         caplog.set_level("INFO")
         outside = tmp_path / "elsewhere" / "1.0.0"
         self._prepare(monkeypatch, tmp_path, install_path=outside)
-        self._write_cache(outside, missing=("pyproject.toml",))
+        self._write_cache(outside, missing=("scripts/launch.py.lock",))
         monkeypatch.setattr(
             _install_claude_plugins,
             "_install_plugin",

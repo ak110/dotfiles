@@ -28,7 +28,7 @@
    計画が無ければ引き継ぎ記録で確定したコマンドを使い、同じ実行と判定の基準を当てる。
 6. 結果を本書「完成条件証拠の検証記録」の形で残す。
 7. 修正の後は、影響する検証だけを新しいHEADで再実行する（限定した再検証）。
-   先に取得した成功と限定した再実行の成功を合わせる時の適用可否は`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」で判定し、完全なテスト名、取得した版、合否を要求へ対応付ける。
+   先に取得した成功と限定した再実行の成功を合わせる時の適用可否は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」で判定し、完全なテスト名、取得した版、合否を要求へ対応付ける。
    成功の根拠は、取得できた出力と記録された終了状態に限る。
 
 公開前の全体検証は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」に従う。
@@ -40,11 +40,11 @@
 
 ### 直接影響範囲の類型
 
-類型の定義は`agent-basics:check-execution/references/verification-scope-selection.md`「直接影響範囲の類型」にある。
+類型の定義は`agent-basics:check-execution/references/verification-scope.md`「直接影響範囲の類型」にある。
 
 ### 範囲の決め方
 
-決め方の定義は`agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」にある。
+決め方の定義は`agent-basics:check-execution/references/verification-scope.md`「範囲の決め方」にある。
 危険になりうる箇所の一覧を広げる前に、その変更が安全である根拠になる1〜2個の事実（例: この呼び出しは既に使われていない値だけを消す）を見つけ、実物を動かして確かめる。
 その事実が成り立てば多くの懸念が一度に消え、成り立たなければ、その事実に依存する利用側を範囲へ加える。
 
@@ -86,7 +86,7 @@
 
 ### 警告の判定
 
-警告の意味、影響、帰属、残す理由と合否は、`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」「合否の判定」で判定して検証結果へ記録する。
+警告の意味、影響、帰属、残す理由と合否は、`agent-basics:check-execution/references/diagnostics.md`「読む出力」「合否の判定」で判定して検証結果へ記録する。
 
 ## 文章チェックの一括実行
 

@@ -19,6 +19,8 @@
 計画rootの定義、表示と一覧の対象判定、走査、全文検索は`_plan/viewer_files.py`が、作成日時インデックスは`_plan/creation_times.py`が持ち、ローカル側（`_atk/serve/plans/`）とSSH先のヘルパーが同じモジュールを使用する。
 SSH先のヘルパー（`agent-toolkit/scripts/atk_serve_plans_remote_helper.py`）は同じcheckoutの`agent-toolkit`を`sys.path`へ加え、これらの共有モジュールをimportする。
 両ヘルパーは共通の`remote_command_argv`から`uv run --no-project --python 3.15 --with watchdog --with platformdirs`で起動する。
+常駐接続ではSSH先のホームを基準に`.cache/agent-toolkit/remote-helper-uv`をuvキャッシュに指定する。
+再接続で依存を再利用しながら、接続中も通常のuvキャッシュを整理できる。
 importできるのは標準ライブラリ、`platformdirs`、`watchdog`と、それらだけに依存する`agent_toolkit`のモジュールに限る。
 Markdownの描画（`markdown_it`・`pygments`）など、リモートの実行環境に無い依存を持つ処理は`_atk/serve/plans/`に置き、共有モジュールからimportしない。
 この依存の条件は`agent-toolkit/scripts/atk_serve_plans_remote_helper_test.py`がリモートの実行環境と同じ依存集合でヘルパーを起動して確かめる。

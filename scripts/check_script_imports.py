@@ -37,8 +37,9 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
   hook以外の起動スクリプトが`_hooks`へ依存すると、hookの実装の層にhook以外から使う部品が残るため
   同じ走査で、`_git/`と`_testing/`の外から`subprocess`へ`["git", ...]`を渡して起動する箇所も失敗にする。
   Gitの起動は`_git/command.py`の共通関数へ集め、時間上限・終了コードの扱い・文字コードの指定を1か所で保つため。
-  さらに同じ走査で、`agent-toolkit/pyproject.toml`の`[project] dependencies`に無く開発用の依存グループにだけある
-  パッケージのimportを失敗にする（`_testing`配下を除く）。開発環境には開発用の依存が導入済みのためテストは成功するが、
+  さらに同じ走査で、リポジトリ直下の`pyproject.toml`が宣言し、agent-toolkitの実行依存の固定内容
+  （`agent-toolkit/scripts/launch.py.lock`）に無いパッケージのimportを失敗にする（`_testing`配下を除く）。
+  開発環境は直下の1つの仮想環境にpytoolsと開発用の依存も導入するためテストは成功するが、
   配布先の環境には無く、そのモジュールを読み込んだ時点で失敗するため。`_testing`配下は本番のコードから
   importできないことを対象種別3が保証するため、テスト専用の依存を使ってよい
 
@@ -69,7 +70,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _PYPROJECT_PATH = _REPO_ROOT / "pyproject.toml"
 
 _SHEBANG = "#!/usr/bin/env -S uv run --script"
-_DEPENDENCY_IMPORT_NAMES = {"markdown-it-py": "markdown_it", "pyyaml": "yaml"}
+_DEPENDENCY_IMPORT_NAMES = {"libarchive-c": "libarchive", "markdown-it-py": "markdown_it", "pillow": "PIL", "pyyaml": "yaml"}
 _LAYER_ORDER = ("_common", "_git", "_plan", "_atk", "_agents_server", "_hooks")
 # 直下へ置ける名前。公開スクリプトの集合は
 # `.claude/skills/agent-toolkit-edit/references/implementation.md`「agent_toolkitパッケージの配置と層」が定める。
@@ -614,35 +615,39 @@ def _git_subprocess_problems(source: _AgentToolkitSource) -> list[str]:
     return problems
 
 
-def _agent_toolkit_dev_only_imports() -> frozenset[str]:
-    """`agent-toolkit/pyproject.toml`の開発用の依存グループにだけあるパッケージのimport名を返す。"""
-    pyproject = _REPO_ROOT / "agent-toolkit/pyproject.toml"
-    if not pyproject.is_file():
-        return frozenset()
-    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    runtime = {_dependency_import_name(dep) for dep in data.get("project", {}).get("dependencies", []) if isinstance(dep, str)}
-    development = {
+def _agent_toolkit_unavailable_imports() -> frozenset[str]:
+    """直下の`pyproject.toml`が宣言し、agent-toolkitの実行依存の固定内容に無いパッケージのimport名を返す。"""
+    data = tomllib.loads(_PYPROJECT_PATH.read_text(encoding="utf-8"))
+    declared = {
         _dependency_import_name(dep)
-        for group in data.get("dependency-groups", {}).values()
-        for dep in group
+        for dep in [
+            *data.get("project", {}).get("dependencies", []),
+            *(dep for group in data.get("dependency-groups", {}).values() for dep in group),
+        ]
         if isinstance(dep, str)
     }
-    return frozenset(development - runtime)
+    lock_path = _REPO_ROOT / "agent-toolkit/scripts/launch.py.lock"
+    if not lock_path.is_file():
+        return frozenset()
+    lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+    runtime = {_dependency_import_name(package["name"]) for package in lock.get("package", [])}
+    return frozenset(declared - runtime)
 
 
-def _dev_dependency_import_problems(source: _AgentToolkitSource, dev_only: frozenset[str]) -> list[str]:
-    """`_testing`配下以外の非テストのPythonが開発用の依存だけにあるパッケージをimportしている箇所を返す。"""
+def _dev_dependency_import_problems(source: _AgentToolkitSource, unavailable: frozenset[str]) -> list[str]:
+    """`_testing`配下以外の非テストのPythonが配布先の環境に無いパッケージをimportしている箇所を返す。"""
     if source.path.is_relative_to(_REPO_ROOT / "agent-toolkit/agent_toolkit/_testing"):
         return []
     problems: list[str] = []
     for reference in _extract_imports(source.tree):
         top_level = reference.name.partition(".")[0]
-        if top_level in dev_only and reference.fallback is None:
+        if top_level in unavailable and reference.fallback is None:
             problems.append(
                 f"{_display_path(source.path)}:{reference.lineno}: "
-                f"開発用の依存グループにだけある`{top_level}`をimportしている（配布先の環境には導入されない）。"
+                f"agent-toolkitの実行依存に無い`{top_level}`をimportしている（配布先の環境には導入されない）。"
                 "次の操作: テストだけが使うコードなら`agent-toolkit/agent_toolkit/_testing/`へ移す。"
-                "本番のコードが使う場合は`agent-toolkit/pyproject.toml`の`[project] dependencies`へ加える"
+                "本番のコードが使う場合は`agent-toolkit/scripts/launch.py`のインラインメタデータの`dependencies`と"
+                "直下の`pyproject.toml`の`[project] dependencies`へ同じ表記で加え、両方のlockfileを更新する"
             )
     return problems
 
@@ -650,13 +655,13 @@ def _dev_dependency_import_problems(source: _AgentToolkitSource, dev_only: froze
 def _check_agent_toolkit_sources() -> list[str]:
     """`agent_toolkit/`と`skills/*/scripts/`の非テストのPythonを1回ずつ走査し、書き方の規則に反する箇所を返す。"""
     sources, problems = _agent_toolkit_sources()
-    dev_only = _agent_toolkit_dev_only_imports()
+    unavailable = _agent_toolkit_unavailable_imports()
     for source in sources:
         problems.extend(_file_level_f821_noqa_problems(source))
         problems.extend(_namespace_write_problems(source))
         problems.extend(_entry_layer_problems(source))
         problems.extend(_git_subprocess_problems(source))
-        problems.extend(_dev_dependency_import_problems(source, dev_only))
+        problems.extend(_dev_dependency_import_problems(source, unavailable))
     return problems
 
 

@@ -1,0 +1,177 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1 @@
++__pycache__/
+diff --git a/README.md b/README.md
+new file mode 100644
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,8 @@
++# relay
++
++作業の担当を交代する時に、前任から後任と委譲元へ値を渡す引き継ぎ記録を扱う。
++
++- 前任は`relay.record.write`で記録を書く。
++- 起動側は`relay.prompt.compose`で後任への委譲プロンプトを作る。
++- 委譲元は`relay.accept.accept`で委譲先の終了後に記録を検収する。
++- 試験は`python3 -m unittest discover -s tests -p '*_test.py'`で全件を実行する。
+diff --git a/docs/handoff.md b/docs/handoff.md
+new file mode 100644
+--- /dev/null
++++ b/docs/handoff.md
+@@ -0,0 +1,16 @@
++# 引き継ぎ記録
++
++担当の交代と委譲の検収で、前任から後任と委譲元へ値を渡す記録である。
++
++## 前任
++
++前任は、終了する前に必ず引き継ぎ記録を書く。
++書く値は、後任が再開に使う値と、役割が記録へ書くと定めた項目である。
++
++## 後任
++
++後任は、委譲プロンプトが示す引き継ぎ記録を最初に読み、記録の値と依頼を比べて再開する。
++
++## 委譲元
++
++委譲元は、委譲先の終了後に引き継ぎ記録を読み、役割が定めた項目がそろっているかを確かめる。
+diff --git a/relay/__init__.py b/relay/__init__.py
+new file mode 100644
+--- /dev/null
++++ b/relay/__init__.py
+@@ -0,0 +1 @@
++"""担当の交代で値を引き継ぐパッケージ。"""
+diff --git a/relay/accept.py b/relay/accept.py
+new file mode 100644
+--- /dev/null
++++ b/relay/accept.py
+@@ -0,0 +1,13 @@
++"""委譲元が、委譲先の終了後に引き継ぎ記録を検収する。"""
++
++from __future__ import annotations
++
++import pathlib
++
++from relay import record
++
++
++def accept(path: pathlib.Path, required: tuple[str, ...] = ()) -> dict[str, object]:
++    """記録の値と、役割が記録へ書くと定めた項目のうち欠けたものを返す。"""
++    values = record.read(path)
++    return {"values": values, "missing": [key for key in required if key not in values]}
+diff --git a/relay/prompt.py b/relay/prompt.py
+new file mode 100644
+--- /dev/null
++++ b/relay/prompt.py
+@@ -0,0 +1,16 @@
++"""担当の交代で、後任へ渡す委譲プロンプトを組み立てる。"""
++
++from __future__ import annotations
++
++import pathlib
++
++
++def compose(task: str, record: pathlib.Path) -> str:
++    """依頼と引き継ぎ記録の所在から、後任の委譲プロンプトを返す。"""
++    return "\n".join(
++        [
++            f"最初に引き継ぎ記録`{record}`を読む。",
++            f"依頼: {task}",
++            "記録の値と依頼を比べ、残りの工程から再開する。",
++        ]
++    )
+diff --git a/relay/record.py b/relay/record.py
+new file mode 100644
+--- /dev/null
++++ b/relay/record.py
+@@ -0,0 +1,16 @@
++"""引き継ぎ記録。前任が後任と委譲元へ渡す値を1つのJSONファイルへ書く。"""
++
++from __future__ import annotations
++
++import json
++import pathlib
++
++
++def write(path: pathlib.Path, values: dict[str, str]) -> None:
++    """引き継ぎ記録を書く。値が無い場合も空の記録を作る。"""
++    path.write_text(json.dumps(values, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
++
++
++def read(path: pathlib.Path) -> dict[str, str]:
++    """引き継ぎ記録の値を読む。"""
++    return json.loads(path.read_text(encoding="utf-8"))
+diff --git a/tests/accept_test.py b/tests/accept_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/accept_test.py
+@@ -0,0 +1,18 @@
++import pathlib
++import tempfile
++import unittest
++
++from relay import accept, record
++
++
++class AcceptTest(unittest.TestCase):
++    def test_missing_required_items_are_reported(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            path = pathlib.Path(directory) / "handoff.json"
++            record.write(path, {"成果物": "/work/out.md"})
++            result = accept.accept(path, required=("成果物", "計画"))
++        self.assertEqual(result["missing"], ["計画"])
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/prompt_test.py b/tests/prompt_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/prompt_test.py
+@@ -0,0 +1,15 @@
++import pathlib
++import unittest
++
++from relay import prompt
++
++
++class PromptTest(unittest.TestCase):
++    def test_prompt_points_to_record_and_task(self) -> None:
++        text = prompt.compose("資料を直す", pathlib.Path("/work/handoff.json"))
++        self.assertIn("`/work/handoff.json`", text)
++        self.assertIn("依頼: 資料を直す", text)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/record_test.py b/tests/record_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/record_test.py
+@@ -0,0 +1,23 @@
++import pathlib
++import tempfile
++import unittest
++
++from relay import record
++
++
++class RecordTest(unittest.TestCase):
++    def test_written_values_are_read_back(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            path = pathlib.Path(directory) / "handoff.json"
++            record.write(path, {"成果物": "/work/out.md"})
++            self.assertEqual(record.read(path), {"成果物": "/work/out.md"})
++
++    def test_empty_values_create_empty_record(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            path = pathlib.Path(directory) / "handoff.json"
++            record.write(path, {})
++            self.assertEqual(record.read(path), {})
++
++
++if __name__ == "__main__":
++    unittest.main()

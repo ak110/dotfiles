@@ -4,7 +4,6 @@ import pathlib
 import re
 
 import pytest
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._common import read_triggers

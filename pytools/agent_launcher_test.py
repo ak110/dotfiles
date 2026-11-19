@@ -41,7 +41,8 @@ type Entrypoint = Callable[..., NoReturn]
                 "--permission-mode=auto",
                 "--model=opus[1m]",
                 '--settings={"enabledPlugins":{"agent-basics@ak110-dotfiles":false,'
-                '"agent-toolkit@ak110-dotfiles":false,"pstack@pstack-claude":true}}',
+                '"agent-toolkit@ak110-dotfiles":false,"agent-basics@synced":false,'
+                '"agent-toolkit@synced":false,"pstack@pstack-claude":true}}',
             ],
         ),
     ],

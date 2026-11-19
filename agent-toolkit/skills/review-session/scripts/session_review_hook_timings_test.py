@@ -5,7 +5,6 @@ import pathlib
 
 import pytest
 import session_review_prepare as prepare  # pylint: disable=import-error
-
 from agent_toolkit._atk import managed_temp
 
 

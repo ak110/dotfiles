@@ -7,7 +7,6 @@ import subprocess
 import sys
 
 import pytest
-
 from agent_toolkit._testing.isolation import restore_host_environment
 
 SCRIPT = pathlib.Path(__file__).with_name("multi_turn_trials.py")

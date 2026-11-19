@@ -34,18 +34,17 @@
 役割ごとに別スキルへ分ける案は、両役割が同じ場面で一方だけを起動するため、起動手順と常時ロードされる`description`を二重に持つだけとなり採用しない。
 
 レビュー担当は`review-standards/references/reviewee.md`を読まず、レビューイーは`review-standards/references/reviewer.md`を読まない。
-計画・設計の採用案や指摘・発見の妥当性を評価する場合だけ、両者は役割中立の共通判断手順である
-`review-standards/references/judgment-details.md`を参照する。
+計画・設計の採用案や指摘・発見の妥当性を評価する場合の役割中立の共通判断手順（「解決案の比較」「検収手段の到達可能性」）は、両者が必ず読む同スキル本体（`SKILL.md`）へ置く。
 
 指摘受領側の各文書は`agent-basics:review-standards`の`references/reviewee.md`の読込指示と場面固有の返却規定だけを持つ。
 メインは指摘の採否を常に確定するため、同スキルを起動する。
-単純案の比較は、一般判断向けの局所運用案を`share/rules/common/01-agent.md`と`judgment-details.md`で扱い、
+単純案の比較は、一般判断向けの局所運用案を`share/rules/common/01-agent.md`と同スキル本体で扱い、
 指摘修正向けの局所修正案を`agent-basics:review-standards`の`references/reviewee.md`で扱う。
 
-共通手順は`agent-basics:review-standards`の`references/judgment-details.md`と同スキル本体へ集約する。
 レビューイーが読む範囲は役割中立の共通契約と`references/reviewee.md`に限り、レビュー担当側の`references/reviewer.md`へは依存しない。
 重複を残して文言だけを統一する案は、各文書の改訂で再び文言差が生じるため採用しない。
-`judgment-details.md`をレビューイー側へ移す案は、レビュー担当から役割中立の判断手順へ到達できなくなるため採用しない。
+役割中立の判断手順を`references/reviewee.md`へ移す案は、レビュー担当から役割中立の判断手順へ到達できなくなるため採用しない。
+2026年11月のWI 20261116-000421-006で、旧`judgment-details*.md`の4件は、原則と`writing-standards`の設計判断で言える内容を削り、残る役割中立の2節を本体へ移した。
 指摘修正向けの判定文を一般判断向けの原則だけで代替する案は、修正文脈固有の適用条件を保持できないため採用しない。
 
 ### respondの必須ラベル
@@ -133,7 +132,7 @@ round 3以上で未解決指摘を受けたレビューイーは、局所修正�
 到達不能と確定した要求は成果物の未達として扱わず、計画・規範の再設計へ返す。
 到達不能の結論には、探索した実行手段と、各手段が成立しないことを示す観測の列挙を要する。
 探索を課さずに到達不能を認める案は、成立する検収手段に誰も気付かないまま工程が止まるため採用しない。
-判定手順は`review-standards/references/judgment-details.md`「検収手段の到達可能性」へ置く。
+判定手順は`review-standards/SKILL.md`「検収手段の到達可能性」へ置く。
 レビュー担当とレビューイーの双方が同じ役割中立の手順を参照する。
 同節は「論理整合性と既存の仕組みの再評価」を統合して置き換えたものであり、同じ場面へ適用する節を並置しない。
 

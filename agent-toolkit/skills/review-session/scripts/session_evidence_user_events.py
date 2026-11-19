@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from agent_toolkit._common import message_format
 from session_evidence_extract import (
     _TEXT_LIMIT,
     _claude_entry_events,
@@ -31,8 +32,6 @@ from session_evidence_tool_calls import (
     _conversation_tool_calls,
 )
 from session_evidence_tool_calls_records import _conversation_body
-
-from agent_toolkit._common import message_format
 
 
 def _saved_user_events_at(path: Path, position: str) -> list[dict[str, Any]]:

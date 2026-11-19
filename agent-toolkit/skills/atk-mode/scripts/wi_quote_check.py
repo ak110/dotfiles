@@ -35,7 +35,6 @@ import sys
 from typing import Literal
 
 import pydantic
-
 from agent_toolkit._common import atomic_file, requirement_units
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.json_lines import split_lines

@@ -1,0 +1,208 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1 @@
++__pycache__/
+diff --git a/README.md b/README.md
+new file mode 100644
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,7 @@
++# guidekit
++
++文章の基準の資料を名前と見出しで引くCLIである。
++
++- 資料は`guides/`に置き、`guidekit/catalog.py`の`GUIDES`へ名前を登録する。
++- 実行は`python3 -m guidekit.cli list`のように行う。
++- 試験は`python3 -m unittest discover -s tests -p '*_test.py'`で全件を実行する。
+diff --git a/docs/usage.md b/docs/usage.md
+new file mode 100644
+--- /dev/null
++++ b/docs/usage.md
+@@ -0,0 +1,5 @@
++# 使い方
++
++調査結果を報告する時は、`guides/writing.md`「調査報告」の基準で書く。
++社外へ依頼を送る時は、`guides/writing.md`「業務文書」の基準で書く。
++どの資料に見出しがあるか分からない時は、`python3 -m guidekit.cli find <見出し>`で引く。
+diff --git a/guidekit/__init__.py b/guidekit/__init__.py
+new file mode 100644
+--- /dev/null
++++ b/guidekit/__init__.py
+@@ -0,0 +1 @@
++"""文章の基準の資料を引くパッケージ。"""
+diff --git a/guidekit/catalog.py b/guidekit/catalog.py
+new file mode 100644
+--- /dev/null
++++ b/guidekit/catalog.py
+@@ -0,0 +1,29 @@
++"""文章の基準の資料を名前と見出しで引く。"""
++
++from __future__ import annotations
++
++import pathlib
++
++ROOT = pathlib.Path(__file__).resolve().parent.parent / "guides"
++GUIDES = ("writing",)
++
++
++def path(name: str) -> pathlib.Path:
++    """資料の名前からファイルのパスを返す。"""
++    if name not in GUIDES:
++        raise KeyError(f"資料{name}は登録されていない")
++    return ROOT / f"{name}.md"
++
++
++def sections(name: str) -> list[str]:
++    """資料のH2見出しを記載順に返す。"""
++    lines = path(name).read_text(encoding="utf-8").splitlines()
++    return [line.removeprefix("## ").strip() for line in lines if line.startswith("## ")]
++
++
++def find(heading: str) -> str:
++    """見出しを持つ資料の名前を返す。"""
++    for name in GUIDES:
++        if heading in sections(name):
++            return name
++    raise KeyError(f"見出し{heading}を持つ資料は無い")
+diff --git a/guidekit/cli.py b/guidekit/cli.py
+new file mode 100644
+--- /dev/null
++++ b/guidekit/cli.py
+@@ -0,0 +1,39 @@
++"""資料の一覧と見出しの検索を行うCLI。"""
++
++from __future__ import annotations
++
++import argparse
++import sys
++
++from guidekit import catalog
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(prog="guidekit", description="文章の基準の資料を引く。")
++    sub = parser.add_subparsers(dest="command", required=True)
++    sub.add_parser("list", help="登録した資料と見出しを一覧する")
++    show = sub.add_parser("show", help="資料の本文を出す")
++    show.add_argument("name")
++    find = sub.add_parser("find", help="見出しを持つ資料の名前を出す")
++    find.add_argument("heading")
++    return parser
++
++
++def main(argv: list[str] | None = None) -> int:
++    args = build_parser().parse_args(argv)
++    try:
++        if args.command == "list":
++            for name in catalog.GUIDES:
++                print(f"{name}: {', '.join(catalog.sections(name))}")
++        elif args.command == "show":
++            print(catalog.path(args.name).read_text(encoding="utf-8"), end="")
++        else:
++            print(catalog.find(args.heading))
++    except KeyError as error:
++        print(f"失敗: {error.args[0]}", file=sys.stderr)
++        return 1
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/guides/writing.md b/guides/writing.md
+new file mode 100644
+--- /dev/null
++++ b/guides/writing.md
+@@ -0,0 +1,16 @@
++# 文章の基準
++
++## 共通
++
++- 1文に1つの内容を書く。
++- 結論を先に書く。
++
++## 業務文書
++
++- 宛先と期限を冒頭に書く。
++- 依頼する操作を箇条書きにする。
++
++## 調査報告
++
++- 観測した事実と推論を分けて書く。
++- 事実には出典を添える。
+diff --git a/tests/catalog_test.py b/tests/catalog_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/catalog_test.py
+@@ -0,0 +1,19 @@
++import unittest
++
++from guidekit import catalog
++
++
++class CatalogTest(unittest.TestCase):
++    def test_sections_follow_document_order(self) -> None:
++        self.assertEqual(catalog.sections("writing"), ["共通", "業務文書", "調査報告"])
++
++    def test_find_returns_guide_with_heading(self) -> None:
++        self.assertEqual(catalog.find("調査報告"), "writing")
++
++    def test_unknown_guide_is_rejected(self) -> None:
++        with self.assertRaises(KeyError):
++            catalog.path("missing")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/cli_list_test.py b/tests/cli_list_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/cli_list_test.py
+@@ -0,0 +1,20 @@
++import contextlib
++import io
++import unittest
++
++from guidekit import catalog, cli
++
++
++class CliListTest(unittest.TestCase):
++    def test_list_shows_every_registered_guide_and_heading(self) -> None:
++        output = io.StringIO()
++        with contextlib.redirect_stdout(output):
++            self.assertEqual(cli.main(["list"]), 0)
++        lines = output.getvalue().splitlines()
++        self.assertEqual(len(lines), len(catalog.GUIDES))
++        for name, line in zip(catalog.GUIDES, lines):
++            self.assertEqual(line, f"{name}: {', '.join(catalog.sections(name))}")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/usage_links_test.py b/tests/usage_links_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/usage_links_test.py
+@@ -0,0 +1,21 @@
++import pathlib
++import re
++import unittest
++
++ROOT = pathlib.Path(__file__).resolve().parent.parent
++_REFERENCE = re.compile(r"`(guides/[^`]+\.md)`「([^」]+)」")
++
++
++class UsageLinksTest(unittest.TestCase):
++    def test_every_reference_points_to_existing_heading(self) -> None:
++        text = (ROOT / "docs/usage.md").read_text(encoding="utf-8")
++        references = _REFERENCE.findall(text)
++        self.assertTrue(references)
++        for path, heading in references:
++            with self.subTest(path=path, heading=heading):
++                lines = (ROOT / path).read_text(encoding="utf-8").splitlines()
++                self.assertIn(f"## {heading}", lines)
++
++
++if __name__ == "__main__":
++    unittest.main()

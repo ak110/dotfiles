@@ -8,7 +8,6 @@ import pathlib
 import pytest
 import session_evidence_candidates as evidence_candidates
 import session_evidence_extract as evidence_extract
-
 from agent_toolkit._atk import outcome
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_review_evidence_support import (

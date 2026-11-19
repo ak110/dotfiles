@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
+from agent_toolkit._common.session_family import _codex_text_blocks
 from session_evidence_extract_claude import _failure_diagnostic, _set_entry_timestamp
 from session_evidence_extract_commands import _basename
 from session_evidence_extract_common import _clip, _event
@@ -14,9 +16,6 @@ from session_evidence_extract_questions import (
     _codex_question_output_event,
     _CodexPendingQuestions,
 )
-
-from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
-from agent_toolkit._common.session_family import _codex_text_blocks
 
 
 def _codex_agent_message(payload: dict[str, Any]) -> str:

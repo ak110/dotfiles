@@ -121,11 +121,10 @@ def test_check_entries_override_parent_project_environment(tmp_path: pathlib.Pat
         tmp_path, target, environment_overrides={"UV_PROJECT_ENVIRONMENT": str(tmp_path / "parent-venv")}
     )
     assert result.returncode == 0, result.stderr
-    expected_root = f"UV_PROJECT_ENVIRONMENT={tmp_path / '.venv'}"
-    expected_toolkit = f"UV_PROJECT_ENVIRONMENT={tmp_path / 'agent-toolkit' / '.venv'}"
+    expected = f"UV_PROJECT_ENVIRONMENT={tmp_path / '.venv'}"
     assert calls
     for call in calls:
-        assert expected_toolkit in call if "--project agent-toolkit" in call else expected_root in call
+        assert expected in call
 
 
 @pytest.mark.parametrize("staged", ((), ("staged.txt",)))
@@ -217,29 +216,28 @@ def _external_venv_with_sentinel(path: pathlib.Path) -> tuple[pathlib.Path, path
 def test_make_sync_preserves_external_project_environment(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """実Makefileのsyncは親指定の外部venvを同期先にしない。"""
+    """実Makefileのsyncは親指定の外部venvを同期先にせず、配布rootの`agent-toolkit/`に仮想環境を作らない。"""
     project = tmp_path / "project"
     project.mkdir()
     shutil.copy2(_REPOSITORY_ROOT / "Makefile", project / "Makefile")
     shutil.copy2(_REPOSITORY_ROOT / ".python-version", project / ".python-version")
     (project / "mise.toml").write_text("", encoding="utf-8")
-    # 同期先の保護は依存パッケージ集合によらない。実uvの同期・削除は無依存の2projectで通す。
-    for directory, name in ((project, "sync-root"), (project / "agent-toolkit", "sync-toolkit")):
-        directory.mkdir(exist_ok=True)
-        (directory / "pyproject.toml").write_text(
-            f'[project]\nname = "{name}"\nversion = "0.0.0"\nrequires-python = ">=3.15"\n', encoding="utf-8"
-        )
-        lock_environment = host_environ()
-        lock_environment.pop("UV_FROZEN", None)
-        locked = subprocess.run(
-            ["uv", "lock", "--offline", "--project", str(directory)],
-            env=lock_environment,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
-        assert locked.returncode == 0, locked.stderr
+    # 同期先の保護は依存パッケージ集合によらない。実uvの同期・削除は無依存のprojectで通す。
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "sync-root"\nversion = "0.0.0"\nrequires-python = ">=3.15"\n', encoding="utf-8"
+    )
+    (project / "agent-toolkit" / "scripts").mkdir(parents=True)
+    lock_environment = host_environ()
+    lock_environment.pop("UV_FROZEN", None)
+    locked = subprocess.run(
+        ["uv", "lock", "--offline", "--project", str(project)],
+        env=lock_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert locked.returncode == 0, locked.stderr
     parent_environment = tmp_path / "external-venv"
     parent_python, marker = _external_venv_with_sentinel(parent_environment)
     environment = {
@@ -269,7 +267,7 @@ def test_make_sync_preserves_external_project_environment(
     )
     assert synced.returncode == 0, synced.stderr
     assert (project / ".venv" / "pyvenv.cfg").exists()
-    assert (project / "agent-toolkit" / ".venv" / "pyvenv.cfg").exists()
+    assert not (project / "agent-toolkit" / ".venv").exists()
     assert marker.read_text(encoding="utf-8") == "外部用途の仮想環境\n"
     imported = subprocess.run(
         [str(parent_python), "-c", "import external_venv_sentinel; print(external_venv_sentinel.VALUE)"],

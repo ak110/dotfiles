@@ -5,7 +5,6 @@ import json
 import pathlib
 
 import pytest
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 

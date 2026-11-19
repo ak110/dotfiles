@@ -12,7 +12,6 @@ from collections.abc import Generator
 from typing import Any, NamedTuple
 
 import session_evidence_static
-
 from agent_toolkit._common import heredocs, shell_segments, shell_tokens
 
 _JS_TOKEN = re.compile(

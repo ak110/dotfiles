@@ -13,5 +13,5 @@
 
 ## round 3以降の方式見直し
 
-修正案の比較や再レビューの適用範囲については、`agent-basics:review-standards/references/reviewee-verification.md`「方式見直しと再レビュー」に従う。
+修正案の比較や再レビューの適用範囲については、`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」に従う。
 各指摘の既存の応答ラベルに理由と結論を記録し、要件や認可の変更が必要な場合は`agent-toolkit:/share/review-loop-coordination.md`のエスカレーション手順へ報告する。

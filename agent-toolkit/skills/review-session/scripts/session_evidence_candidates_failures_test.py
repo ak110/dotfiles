@@ -9,7 +9,6 @@ import shlex
 import pytest
 import session_evidence_candidates as evidence_candidates
 import session_review_evidence as evidence
-
 from agent_toolkit._testing.failure_records import bash_failure_entries, failure_entries
 from agent_toolkit._testing.helpers import _write_transcript
 

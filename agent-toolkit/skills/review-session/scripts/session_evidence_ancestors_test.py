@@ -10,7 +10,6 @@ import typing
 import pytest
 import session_evidence_ancestors as ancestors
 import session_review_evidence as evidence
-
 from agent_toolkit._atk.serve import session_watch
 from agent_toolkit._common import session_launchers, state_paths
 from agent_toolkit._testing.session_evidence_support import read_jsonl, write_jsonl

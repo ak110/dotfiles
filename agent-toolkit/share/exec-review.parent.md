@@ -18,7 +18,7 @@
 任意入力の`受理済みの完成条件証拠`には、同じ計画の進捗ログに保存した受理済みの実行レビュー返却ファイルのうち、後続の担当が読めるものの絶対パスを渡す（無ければ`なし`）。
 参照できる条件と判定基準は、`exec-review-recording-evidence.md`「受理済み判定への参照」に従う。
 最終検証と回数を限った手動観測の時機は`../skills/atk-mode/playbooks/commit.md`「commitとフックの検証」に従う。
-保存済みの成功記録と失敗対象だけの再実行結果の合成は`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
+保存済みの成功記録と失敗対象だけの再実行結果の合成は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
 委譲元が管理する残工程があれば、後続の担当と再開先を対応付け、検証済み・未実施・条件変更の各判断を整理してレビュー担当へ渡す。
 根拠の十分さと、要件や外部仕様の達成は、実行レビュー担当が判定する。
 完成条件証拠（返却の条件別判定行）を書くのもレビュー担当である。
@@ -61,7 +61,7 @@
 | 検証結果を記録する前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 手動観測を保存する前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 最終の検証と有限の手動観測の時機を判断する前 | `../skills/atk-mode/playbooks/verification.md` | | |
-| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | | |
+| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope.md` | | |
 | 基準の参照時 | `exec-review-recording-evidence.md` | | |
 | 基準の参照時 | `agent-toolkit:atk-mode/references/workflow-phases.md` | | |
 | 基準の参照時 | `usability-review.parent.md` | | |

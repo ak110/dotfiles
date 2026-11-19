@@ -35,7 +35,7 @@
 
 **7.** 統合入力を検収して指示し、返却と最終化の実態・意味を確認する。
 
-検証結果の診断情報、警告、ならびに個別・全体の所要時間は、`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」の共通基準に沿って受領する。
+検証結果の診断情報、警告、ならびに個別・全体の所要時間は、`agent-basics:check-execution/references/diagnostics.md`「読む出力」の共通基準に沿って受領する。
 統合前HEADとの比較および統合固有の是正処理は、`agent-toolkit:atk-mode/references/lane-integration-format.md`「検証結果の警告の判定」に従う。
 
 すべての計画における実装の有無を確認し、採用すべき実装が1件でもあるレーンを`マージあり`、実装がないレーンを`マージなし`として確定する（計画ごとの`マージなし`の状態は計画に対応付けて保持する）。
@@ -150,6 +150,6 @@ Git統合後の処理で失敗した場合は、所有登録が保持する最�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` |
+| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics.md` |
 | レーン担当の起動と受領：実装完了の受領の基準を適用する前 | `exec-parent-implementation.md` |
 | レーン担当の起動と受領の基準を適用する前 | `exec.parent.md` |

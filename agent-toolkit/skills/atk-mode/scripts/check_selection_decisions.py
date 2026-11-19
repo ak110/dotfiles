@@ -5,10 +5,9 @@ from __future__ import annotations
 import itertools
 import pathlib
 
+from agent_toolkit._plan import selection as _selection
 from check_selection_common import Violation
 from check_selection_paths import _covers, _is_range, _new_file_path, _normalize_candidate
-
-from agent_toolkit._plan import selection as _selection
 
 _NEXT_WRITE_PATH = (
     "`書込対象`・`公開工程の書込対象`の不正な要素を、実在ファイル、末尾/付き実在ディレクトリ、"

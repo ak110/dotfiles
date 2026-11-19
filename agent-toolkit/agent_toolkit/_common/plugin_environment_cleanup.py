@@ -1,7 +1,6 @@
 """更新後に必要な共有環境と使用中の環境を残し、旧世代を回収する。"""
 
 import json
-import logging
 import os
 import shutil
 from collections.abc import Mapping, Sequence
@@ -10,8 +9,6 @@ from pathlib import Path
 import psutil
 
 from agent_toolkit._common import environment_usage, file_lock, plugin_environment
-
-logger = logging.getLogger(__name__)
 
 
 def _process_references() -> tuple[list[str], bool]:
@@ -67,7 +64,9 @@ def cleanup(required: Sequence[Path], environment: Mapping[str, str]) -> list[di
                 continue
             prefix = os.path.normcase(str(target.absolute()))
             if uncertain or any(prefix in value for value in references):
-                row["reason"] = "使用中またはプロセスの使用状態を確認できない"
+                row.update(
+                    status="deferred" if uncertain else "retained", reason="使用中またはプロセスの使用状態を確認できない"
+                )
                 continue
             # prepareと同じinodeの即時排他を取り、構築中の環境も保護する。
             with target.with_name(target.name + ".prepare-lock").open("a+b") as preparation:
@@ -79,7 +78,5 @@ def cleanup(required: Sequence[Path], environment: Mapping[str, str]) -> list[di
                 finally:
                     file_lock.release_lock(preparation)
         except (OSError, ValueError, psutil.Error) as error:
-            row.update(reason=f"回収を保留: {error}")
-    for row in results:
-        logger.info("共有依存環境: %s", json.dumps(row, ensure_ascii=False))
+            row.update(status="deferred", reason=f"回収を保留: {error}")
     return results

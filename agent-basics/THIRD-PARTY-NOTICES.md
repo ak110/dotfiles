@@ -9,7 +9,7 @@ agent-basicsへ取り込んだ第三者素材の原典、改変内容と許諾�
 - 原典: [pbakaus/impeccable](https://github.com/pbakaus/impeccable/tree/5e745ace7e151feb2a93d360d0281fe39448b857)（確認commit `5e745ace7e151feb2a93d360d0281fe39448b857`）。
 - 取り込んだ資料: `skill/reference/critique.md`、`skill/reference/craft-floor.md`、`skill/reference/operate.md`。
 - 取り込み先:
-  - `skills/review-standards/references/reviewer.md`。
+  - `skills/review-standards/references/reviewer-usability.md`。
   - `skills/writing-standards/references/ui-ux.md`。
   - `skills/writing-standards/references/ui-ux-web-rules.md`。
 - 改変: 日本語へ翻訳し、判断基準として要約・再構成して条件や説明を加えた。
@@ -252,6 +252,48 @@ agent-basicsへ取り込んだ第三者素材の原典、改変内容と許諾�
 MIT License
 
 Copyright (c) 2026 Lauren Tan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+- 原典: [michael-denyer/pstack-claude](https://github.com/michael-denyer/pstack-claude/tree/f1209c06a3fdebd7856dda467f8871dfb2ddc1ed/plugins/pstack)の`plugins/pstack/`（確認commit `f1209c06a3fdebd7856dda467f8871dfb2ddc1ed`、版0.9.139）。
+  pstackをClaude Codeへ移植した版である。
+- 取り込んだ資料と取り込み先:
+  - `skills/interrogate/SKILL.md`。
+    取り込み先は`skills/adversarial-review/SKILL.md`と`skills/review-standards/references/reviewer.md`「指摘内容」。
+  - `skills/how/SKILL.md`、`skills/why/SKILL.md`、`skills/teach/SKILL.md`、`skills/poteto-mode/playbooks/investigation.md`。
+    取り込み先は`skills/explain/SKILL.md`。
+  - `skills/create-verification-skill/SKILL.md`（`references/feature-map-example/README.md`を含む）、`skills/maintain-verification-skill/SKILL.md`。
+    取り込み先は`skills/verify-skill/SKILL.md`。
+  - `skills/create-formal-verification-skill/SKILL.md`、`skills/maintain-formal-verification-skill/SKILL.md`。
+    取り込み先は`skills/formal-verification/SKILL.md`。
+  - `skills/principle-explain-the-number/SKILL.md`、`skills/benchmark-checklist/SKILL.md`。
+    取り込み先は`skills/check-execution/references/performance.md`。
+- 改変: 日本語へ翻訳し、手順と判断基準として要約・再構成した。
+  多担当の構成やホストごとの対応表などは取り込んでいない。
+- 許諾: [MIT License](https://github.com/michael-denyer/pstack-claude/blob/f1209c06a3fdebd7856dda467f8871dfb2ddc1ed/LICENSE)。
+
+```text
+MIT License
+
+Copyright (c) 2026 Lauren Tan
+Copyright (c) 2026 Michael Denyer
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

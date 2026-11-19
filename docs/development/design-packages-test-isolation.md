@@ -14,7 +14,7 @@ pytestのbasetempは実行単位で分離し、controllerとworkerの終了後�
 xdist 3.8の失敗上限では、controllerの停止理由を`_testing/xdist_stop.py`がworkerの`session.shouldstop`へ渡す。
 通常完了のキュー排出と早期停止を区別し、lookahead待機中の停止でも未開始の試験を実行しない。
 上流[pytest-xdist #1395](https://github.com/pytest-dev/pytest-xdist/pull/1395)と同じ境界へ限定し、強制終了や実行中の試験の中断は行わない。
-共通pytest pluginから登録するため、両プロジェクトの直接pytestとpyfltrで同じ適応が働き、worker回収後の既存の実行枠解放へ接続する。
+共通pytest pluginから登録するため、直接pytestとpyfltrで同じ適応が働き、worker回収後の既存の実行枠解放へ接続する。
 修正を含む安定版へ更新し、`xdist_stop_test.py`の早期停止・正常完了と実行枠の回収を確認した時点で局所適応を撤去する。
 pytestが最外側で実行枠を取得した場合は、controllerが開始からworker・子孫の回収まで`execution_slot.hold`を保持する。
 入れ子の実行とworkerは祖先の所有を継承する。

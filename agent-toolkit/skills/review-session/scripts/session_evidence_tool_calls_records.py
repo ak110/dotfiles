@@ -7,12 +7,11 @@ import re
 from typing import Any, NamedTuple
 
 import session_evidence_execution
+from agent_toolkit._common import agy_records
+from agent_toolkit._common.persisted_output_reference import PERSISTED_OUTPUT_PREFIX
 from session_evidence_detail import _tool_result_body
 from session_evidence_extract import _Record, _text_blocks
 from session_evidence_stats import _claude_call_hint, _codex_call_hint
-
-from agent_toolkit._common import agy_records
-from agent_toolkit._common.persisted_output_reference import PERSISTED_OUTPUT_PREFIX
 
 _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 

@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any, NamedTuple
 
-from session_evidence_extract_common import _clip, _event, _OfferedOption
-
 from agent_toolkit._common.session_family import _json_object
+from session_evidence_extract_common import _clip, _event, _OfferedOption
 
 _CodexPendingQuestions = dict[str, tuple[int, dict[str, tuple[str, list[_OfferedOption]]]]]
 """Codexのcall_idごとの質問行と質問文・選択肢。非同期質問のキーはquestionItemIdのJSON配列とする。"""

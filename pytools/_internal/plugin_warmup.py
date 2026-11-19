@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import sys
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -178,17 +179,29 @@ def resolve_targets(targets: Callable[[], list[Path]], *, tag: str) -> tuple[lis
     return resolved, python
 
 
-def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> list[list[str]]:
-    """依存keyごとに一度準備し、成功したrootの起動コマンドを列挙順に返す。"""
+@dataclass(frozen=True)
+class PreparedTargets:
+    """準備できたrootの起動コマンドと、共有環境を特定できなかった登録済みの旧形式の対象。"""
+
+    commands: list[list[str]]
+    legacy: tuple[Path, ...] = ()
+
+
+def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> PreparedTargets:
+    """依存keyごとに一度準備し、成功したrootの起動コマンドを列挙順に、旧形式の対象とともに返す。"""
     resolved = resolve_targets(targets, tag=tag)
     if resolved is None:
-        return []
+        return PreparedTargets([])
     paths, python = resolved
     prepared: dict[Path, bool] = {}
     commands: list[list[str]] = []
+    legacy: list[Path] = []
     for target in paths:
         bootstrap = _bootstrap(target, python)
-        key = plugin_environment.project_environment(Path(bootstrap[-1]), os.environ, python_executable=python)
+        key = _environment_key(Path(bootstrap[-1]), python, target=target, tag=tag)
+        if key is None:
+            legacy.append(target)
+            continue
         if key not in prepared:
             prepared[key] = run_command([*bootstrap, "--prepare", str(target)], target=log_format.home_short(target), tag=tag)
         if prepared[key]:
@@ -199,11 +212,15 @@ def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> list[list
                     tag, f"共有依存環境を準備できず対象の確認を省略: {target}。`update-dotfiles`を再実行する"
                 )
             )
-    return commands
+    return PreparedTargets(commands, tuple(legacy))
 
 
-def cleanup_prepared(commands: Sequence[Sequence[str]]) -> None:
-    """実際に準備した全有効rootの依存環境を保持し、full更新後の旧資源を回収する。"""
+def cleanup_prepared(prepared: PreparedTargets) -> None:
+    """実際に準備した全有効rootの依存環境を保持し、full更新後の旧資源を回収する。
+
+    旧形式の対象が登録されている間は、その版のhookとMCPが使う共有環境を特定できないため、共有環境を回収しない。
+    """
+    commands = prepared.commands
     try:
         required = [
             plugin_environment.project_environment(
@@ -216,7 +233,24 @@ def cleanup_prepared(commands: Sequence[Sequence[str]]) -> None:
             if target.is_dir():
                 with plugin_environment.prepare_lock(target):
                     plugin_environment.record_source(Path(command[command.index("--project") + 1]), target)
-        plugin_environment_cleanup.cleanup(required, os.environ)
+        if prepared.legacy:
+            logger.info(
+                "旧形式の版が登録されているため共有環境の回収を延期: %s。登録が新しい版へ移った後のupdate-dotfilesで回収します",
+                ", ".join(log_format.home_short(target) for target in prepared.legacy),
+            )
+        else:
+            rows = plugin_environment_cleanup.cleanup(required, os.environ)
+            for row in rows:
+                logger.info("共有依存環境: %s", json.dumps(row, ensure_ascii=False), extra=log_format.LOG_ONLY)
+            counts = Counter(row["status"] for row in rows)
+            action = "。保留が続く場合は update-dotfiles logs で理由を確認してください" if counts["deferred"] else ""
+            logger.info(
+                "共有依存環境: 保持%d件、削除%d件、保留%d件%s",
+                counts["retained"],
+                counts["deleted"],
+                counts["deferred"],
+                action,
+            )
     except (OSError, ValueError, IndexError, psutil.Error) as error:
         logger.warning(
             "共有環境の回収を完了できませんでした: %s: %s。共有環境のアクセス権と配布元のJSONを確認してください。"
@@ -235,14 +269,17 @@ def cleanup_prepared(commands: Sequence[Sequence[str]]) -> None:
         )
     result = sweep.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC), force=True)
     for target, error in result.failed:
+        logger.warning("一時資源の回収を保留: %s: %s", target, error, extra=log_format.LOG_ONLY)
+    if result.failed:
         logger.warning(
-            "一時資源の回収を保留: %s: %s。対象を使用中の操作が終わるまで待ち、削除権限を確認してください。"
-            "原因の解消後にupdate-dotfilesを再実行すると回収を再試行します",
-            target,
-            error,
+            "一時資源%d件の回収を保留した。update-dotfiles logs で対象と理由を確認し、"
+            "使用中の場合は利用終了後に、権限不足の場合は削除権限を確認してから update-dotfiles を再実行してください",
+            len(result.failed),
         )
     for target in result.deleted:
-        logger.info("一時資源を回収: %s", target)
+        logger.info("一時資源を回収: %s", target, extra=log_format.LOG_ONLY)
+    if result.deleted:
+        logger.info("一時資源を%d件回収した", len(result.deleted))
 
 
 def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:
@@ -342,14 +379,34 @@ def warmup(
 ) -> bool:
     """同じ依存環境は一度だけ準備し、各対象の実起動確認は必ず実行する。"""
     bootstrap = _bootstrap(path, python)
-    root = Path(bootstrap[-1])
-    key = plugin_environment.project_environment(root, os.environ, python_executable=python)
+    key = _environment_key(Path(bootstrap[-1]), python, target=path, tag=tag)
+    if key is None:
+        return False
     if prepared is None or key not in prepared:
         if not run_command([*bootstrap, "--prepare", str(path)], target=log_format.home_short(path), tag=tag):
             return False
         if prepared is not None:
             prepared.add(key)
     return run_command([*bootstrap, str(path), *arguments], target=log_format.home_short(path), tag=tag)
+
+
+def _environment_key(root: Path, python: Path, *, target: Path, tag: str) -> Path | None:
+    """配布rootの共有依存環境を返す。依存の固定内容を持たない旧形式の配布rootはNone。
+
+    旧形式（配布rootにuvのプロジェクトを置いた版）は、その版自身の起動部分だけが準備できる。
+    更新に失敗して有効版が旧形式のまま残った場合に、更新後の起動部分で準備せず再更新を案内する。
+    """
+    try:
+        return plugin_environment.project_environment(root, os.environ, python_executable=python)
+    except FileNotFoundError:
+        logger.warning(
+            log_format.format_status(
+                tag,
+                f"依存の固定内容（{plugin_environment.dependency_lock(root)}）が無い旧形式の配布rootのため準備を省略: "
+                f"{log_format.home_short(target)}。`update-dotfiles`を再実行してプラグインを更新する",
+            )
+        )
+        return None
 
 
 def _resolve_python(uv: Path, tag: str) -> Path | None:

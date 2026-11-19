@@ -48,6 +48,15 @@ import typing
 
 import selection_contract
 import yaml
+from agent_toolkit._agents_server import admission as _admission
+from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import remote as _git_remote
+from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._plan import selection as _selection
+from agent_toolkit._plan import selection_estimate as _estimate
 from check_selection_common import (
     _FIX_CONTENT,
     _FIX_PATHS,
@@ -114,16 +123,6 @@ from selection_merge import (
     transfer_rerecord_pairs,
     transfer_wi,
 )
-
-from agent_toolkit._agents_server import admission as _admission
-from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._git import command as _git_command
-from agent_toolkit._git import remote as _git_remote
-from agent_toolkit._plan import locations as _plan_file
-from agent_toolkit._plan import selection as _selection
-from agent_toolkit._plan import selection_estimate as _estimate
 
 _NEXT_MISSING_BODY = "`atk wi list`の出力で対象のWIファイル名を確かめ、選定の`WI`をprivate-notesにあるファイル名へ直す"
 

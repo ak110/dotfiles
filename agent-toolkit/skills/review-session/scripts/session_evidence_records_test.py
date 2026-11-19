@@ -13,7 +13,6 @@ import session_evidence_records as evidence_records
 import session_evidence_stats as evidence_stats
 import session_evidence_warn as evidence_warn
 import session_review_evidence as evidence
-
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import (
     agy_delegation_transcript,

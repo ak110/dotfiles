@@ -8,12 +8,11 @@ import tomllib
 import typing
 
 import selection_contract
-from check_selection_common import _FIX_PATHS, _LANE_NONE, InputError, Violation, _string_list
-from check_selection_paths import _normalize_candidate
-
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan.structure import is_agent_doc_target_file as _is_agent_doc_target_file
+from check_selection_common import _FIX_PATHS, _LANE_NONE, InputError, Violation, _string_list
+from check_selection_paths import _normalize_candidate
 
 _NEXT_NORM_SPEC = (
     "`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が定める条件に従い、"

@@ -9,11 +9,10 @@ import re
 import unicodedata
 
 import markdown_it
-from check_selection_common import InputError
-
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._git import command as _git_command
+from check_selection_common import InputError
 
 _TARGET_SECTION = "反映内容と反映先"
 

@@ -66,6 +66,20 @@
       ]
     },
     {
+      "fingerprint": "sha256:452688186b145f93f9fd76d39f4bcc22b156300ba5f7e27ed5aa493cf0c1ea36",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/agent_toolkit/_atk/agents_exit_session.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/codex_launcher.py",
+          "count": 1
+        }
+      ]
+    },
+    {
       "fingerprint": "sha256:6d8c474365bb45260db7a8c49d00d3b47aaee67f2413024689916969c1af5c3b",
       "lines": 12,
       "occurrences": [
@@ -164,6 +178,20 @@
         {
           "path": "dot_bashrc_test.py",
           "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b2c63fc4951cca4d0e92cc4b7bf77fe27e7d25f1c143321949e64e199ed18683",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/agent_toolkit/_common/process_tree_test.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/common_test.py",
+          "count": 1
         }
       ]
     },

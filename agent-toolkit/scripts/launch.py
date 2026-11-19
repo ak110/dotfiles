@@ -1,4 +1,32 @@
+# /// script
+# requires-python = ">=3.15,<4.0"
+# dependencies = [
+#     "argcomplete>=3.6.3",
+#     "claude-agent-sdk>=0.2.144,<0.3",
+#     "filelock>=3.30",
+#     "markdown-it-py[linkify]>=4.0.0",
+#     "mcp>=2.0.0,<3",
+#     "mdit-py-plugins>=0.6",
+#     "platformdirs>=4.0",
+#     "psutil>=6",
+#     "pydantic>=2",
+#     "pyfltr>=3.30.1",
+#     "pygments",
+#     "pytilpack[quart]>=1.47.0",
+#     "pyyaml",
+#     # 再帰inotify監視がKeyErrorで停止する版を除外する（PYTHONDEVMODE=1のbrowser-e2eで再現）。
+#     "watchdog>=6.0.0,!=7.0.0",
+# ]
+#
+# [tool.uv]
+# # サプライチェーン攻撃対策: 公開直後の新バージョンは1日待ってから取り込む
+# exclude-newer = "1 day"
+# exclude-newer-package = { pyfltr = false, pytilpack = false }
+# ///
 """標準ライブラリだけで起動し、配布root外の依存環境から指定スクリプトを実行する。
+
+冒頭のインラインメタデータ（PEP 723）がagent-toolkitの実行依存の宣言であり、隣の`launch.py.lock`がその固定内容である。
+`--prepare`はこの宣言を共有依存環境へ同期する。配布rootにはuvのプロジェクトを置かず、仮想環境を作らない。
 
 agents_serverのMCPサーバーだけは子プロセスとして起動して終了を待ち、終了状態と標準エラー末尾を
 サーバーが報告した起動単位の終了診断へ追記する。サーバー自身が記録できない終了も観測するためである。
@@ -222,24 +250,25 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
             remaining = _PREPARE_TIMEOUT - (time.monotonic() - started)
             if remaining <= 0:
                 raise TimeoutError(f"共有依存環境のprepareが{_PREPARE_TIMEOUT:.0f}秒以内に完了しませんでした: {target}")
-            prepare_environment = dict(environment)
-            prepare_environment["UV_PROJECT_ENVIRONMENT"] = str(target)
+            # `--active`で同期先を`VIRTUAL_ENV`の共有環境にし、スクリプト用の環境をuvのキャッシュへ作らない。
+            prepare_environment = {**environment, "VIRTUAL_ENV": str(target)}
             # prepareもbootstrapが所有する子として扱い、時間切れではuvの子孫まで回収する。
+            # uvは`--script`の設定ファイルを作業ディレクトリから探すため、配布rootで起動して呼出元の設定を読まない。
             with _server_lifetime(
                 [
                     uv,
                     "sync",
-                    "--project",
-                    str(root),
+                    "--script",
+                    str(root / plugin_environment.DEPENDENCY_SCRIPT),
+                    "--active",
                     "--python",
                     str(plugin_environment.base_python()),
                     "--locked",
-                    "--no-default-groups",
-                    "--no-install-project",
                 ],
                 environment=prepare_environment,
                 received=[],
                 tail=bytearray(),
+                cwd=root,
             ) as process:
                 returncode = process.wait(timeout=remaining)
             if returncode != 0:

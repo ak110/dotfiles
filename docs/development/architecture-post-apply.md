@@ -37,7 +37,7 @@
 
 ## Python依存環境の共有
 
-`plugin_environment.py`は選択したPythonの実行ファイルパス、OS・アーキテクチャ、依存導入に作用するpyproject設定と`uv.lock`を正規化して共有環境を識別する。
+`plugin_environment.py`は選択したPythonの実行ファイルパス、OS・アーキテクチャ、依存の固定内容（`scripts/launch.py.lock`）を正規化して共有環境を識別する。
 配布root、プラグイン版、文書・コード・lint設定の差は環境を分ける条件に含めない。
 依存だけを同期し、起動ごとのrootを`PYTHONPATH`の先頭へ置いて、その配布版のコードと資源を参照する。
 pyfltr MCPも`_common/pyfltr_entry.py`からlockfileで準備したconsole entry pointへ接続する。
@@ -54,5 +54,7 @@ rootは`launch.py`の配置または`--project`から解決され、cwdの変更
 通常のCLI・hook・MCPは準備済み環境のPythonを直接起動するため、起動のたびに依存を照会しない。
 未準備時の診断は`update-dotfiles`または公開インストーラーでの再準備を案内する。
 更新後は新規起動が新しい依存キーへ切り替わり、稼働中の旧版が使う既存環境を保持する。
-共有化の更新には旧環境の自動回収を加えない。
+fullの更新は、準備した有効版が使う環境、稼働中のプロセスが参照する環境、構築中の環境を残して旧環境を回収する。
+依存の固定内容が`uv.lock`だった旧形式の版は、現行の起動部分では使う共有環境を特定できない。
+そのため、Claude CodeかCodexの登録が旧形式の版を指す間は共有環境を回収せず、登録が新しい版へ移った後の更新で回収する。
 minimalの通常更新と明示的な`--prune`は、使用中保護の判定後にAI用環境を削除する。

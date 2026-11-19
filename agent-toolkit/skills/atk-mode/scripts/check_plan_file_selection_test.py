@@ -6,7 +6,6 @@ import pathlib
 import check_plan_file
 import pytest
 import yaml
-
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_file_check_support import _OBSERVATION_RESUME, _RESUMED_AWI, _RESUMED_DECISION, _run_plan_cli
 from agent_toolkit._testing.plan_file_check_support import fixture_repo as fixture_repo

@@ -7,7 +7,6 @@ import re
 from pathlib import Path
 
 import pytest
-
 from agent_toolkit._agents_server import launch_requests, result_contract, state
 from agent_toolkit._common import task_documents
 from agent_toolkit._hooks import rules_context

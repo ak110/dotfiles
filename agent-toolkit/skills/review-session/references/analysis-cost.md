@@ -82,11 +82,11 @@
 正常に完了した作業でも、読込、準備、検収、後始末の作業量と成果を比べ、規範が求める工程を簡略化できないかを検討する。
 条文を改訂せず現状維持とするなら、再現条件と許容する理由を「対策を見送った問題」に書く。
 改訂を採るなら、対象条文を改訂するAWIへ渡す。
-`agent-basics:review-standards/references/judgment-details-decisions.md`「規定の適用可否」が求める規範改訂の提案は、このAWI投入で行う。
+`agent-basics:review-standards/references/reviewee.md`「修正要否の立証」が求める規範改訂の提案は、このAWI投入で行う。
 
 ## 本文参照の取得条件
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 判断の妥当性を評価する詳細：問題と手段の比例性の基準を適用する前 | `agent-basics:review-standards/references/judgment-details-decisions.md` |
+| 判断の妥当性を評価する詳細：問題と手段の比例性の基準を適用する前 | `agent-basics:review-standards/references/reviewee.md` |
 | 振り返りの判断基準：原因と対策の基準を適用する前 | `analysis-actions.md` |

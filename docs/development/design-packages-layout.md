@@ -38,7 +38,8 @@ Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repositor
 同スクリプトは層の順序に反するimportと、`*_test.py`・`conftest.py`・`_testing`配下以外のモジュールからの`_testing`のimportも検出して失敗する。
 同スクリプトは`agent-toolkit/agent_toolkit/`直下に公開スクリプト、`__init__.py`、`conftest.py`およびテスト以外のモジュールがある場合も失敗する。
 層の順序の判定はサブパッケージに加えて、直下の公開スクリプトと`skills/*/scripts/`配下の非テストのスクリプトも走査し、`hook.py`以外の起動スクリプトからの`_hooks`のimportを失敗にする。
-同じ走査で、`_testing`配下を除く非テストのモジュールが`agent-toolkit/pyproject.toml`の開発用の依存グループにだけあるパッケージ（`jsonschema`など）をimportした場合も失敗にする。
+同じ走査で、`_testing`配下を除く非テストのモジュールが開発用の依存グループのパッケージ（`jsonschema`など）とpytools専用のパッケージをimportした場合も失敗にする。
+対象は、リポジトリ直下の`pyproject.toml`が宣言し、`agent-toolkit/scripts/launch.py.lock`に無いパッケージである。
 開発環境には開発用の依存が導入済みのためテストは成功するが、配布先の環境には無く、そのモジュールを読み込んだ時点で失敗するためである。
 `_testing`配下をこの走査から除くのは、テスト専用の依存を使う場所が`_testing`であり、本番のコードから`_testing`へのimportを前述の走査が失敗にするため、開発用の依存が本番のコードへ届かないからである。
 
@@ -93,6 +94,34 @@ importを関数の中へ移す案は、トップレベルでimportする記述�
 全プロセスの遅延を切り替える`-X lazy_imports=all`、独自のloaderと読み込み結果の永続キャッシュは、モジュールごとの指定だけで目的の読み込み数の削減を得られるため設けない。
 `agent-toolkit/agent_toolkit/hook_test.py`は公開`hook.py`を子プロセスで実行し、遅延を無効化した対照より読み込むモジュールが少なく、応答が同じであることを確かめる。
 PEP 810は無効化の指定として`-X lazy_imports=none`を記すが、Python 3.15.0はこの値を拒否するため、対照は`sys.set_lazy_imports_filter`へ常に偽を返す関数を渡して作成する。
+
+## agent-toolkitの依存の宣言と開発環境
+
+`agent-toolkit/`は`pyproject.toml`と`uv.lock`を持たず、uvのプロジェクトではない。
+実行依存は`agent-toolkit/scripts/launch.py`冒頭のPEP 723インラインメタデータが宣言し、隣の`launch.py.lock`が固定する。
+配布先の共有依存環境は、`launch.py --prepare`がこの宣言から作る。
+開発環境はリポジトリ直下の`.venv`1つとし、直下の`pyproject.toml`が`agent_toolkit`のパッケージと開発用の依存も持つ。
+`agent_toolkit`は共有環境へ導入せず、起動時に配布rootを`PYTHONPATH`で読み込む点は従来と同じである。
+
+配布rootにuvのプロジェクトがあると、`make sync`とpyfltrのサブプロジェクト検査が`agent-toolkit/.venv`（約1GB）を作る。
+Claude Codeのdirectory型marketplaceは、これを版ディレクトリへ複製し、update-dotfilesのたびにコピーと削除が往復していた。
+依存の宣言を起動部分（入口）のPEP 723へ移すと、配布rootに仮想環境を作る起点が無くなる。
+
+直下と`launch.py`の宣言は二重管理になるため、`agent_toolkit_dependencies_invariant_test.py`が整合を保証する。
+試験は次の5点を確かめる。
+
+- `agent-toolkit/`に`pyproject.toml`と`uv.lock`が無いこと
+- スクリプトの依存が直下の`[project] dependencies`に同じ表記で含まれること
+- `requires-python`と`[tool.uv]`が一致すること
+- 両lockfileの版が一致すること
+- `launch.py.lock`が宣言と一致すること
+
+開発用とpytools専用の依存をagent_toolkitの本番コードがimportする誤りは、統合した環境ではテストで検出できないため`scripts/check_script_imports.py`が検出する。
+
+直下から検査するため、mypyは`agent-toolkit/`を`mypy_path`に加えて`agent_toolkit`を解決する。
+共有キャッシュ（`MYPY_CACHE_DIR`）に残る旧構成の保存済み情報は誤ったattr-definedを再生するため、キャッシュの互換性に含まれる設定値を旧構成と変えて使わせない（直下の`pyproject.toml`の注記）。
+
+pyfltrにサブプロジェクトのuv環境の置き場所を設定する項目を足す案は、未公開の外部ツールの改修に頼り、配布rootにプロジェクトが残るため採らない。
 
 ## 起動層と子プロセスの環境
 

@@ -12,8 +12,8 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | レビュー担当として判定する前 | `agent-basics:review-standards/references/reviewer.md` |
-| 初回レビューを判定する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
-| 再レビューを判定する前 | `agent-basics:review-standards/references/reviewer-followup.md` |
+| 初回レビューを判定する前 | `agent-basics:review-standards/references/reviewer.md` |
+| 再レビューを判定する前 | `agent-basics:review-standards/references/reviewer.md` |
 | 要求単位・完成条件と観測の達成を判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` |
 | 実行レビューを判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` |
 | 画面のユーザビリティを判定する前 | `agent-basics:review-standards/references/reviewer-usability.md` |
@@ -65,11 +65,11 @@
 
 ## 初回レビュー
 
-品質の定義については、`agent-basics:review-standards/references/reviewer-initial.md`「初回レビュー」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewer.md`「初回レビュー」に従う。
 
 ## 再レビューの場合
 
-品質の定義については、`agent-basics:review-standards/references/reviewer-followup.md`「再レビューの場合」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewer.md`「再レビューの場合」に従う。
 
 ## ユーザビリティレビューの判定
 

@@ -3,7 +3,6 @@
 import pathlib
 
 import pytest
-
 from agent_toolkit._agents_server import launch_prompts
 from agent_toolkit._common import task_documents
 from agent_toolkit._testing.delegation_contract_support import (

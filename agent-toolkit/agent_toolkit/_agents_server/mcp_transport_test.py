@@ -10,7 +10,6 @@ import json
 import os
 import pathlib
 import queue
-import shutil
 import signal
 import subprocess
 import sys
@@ -47,7 +46,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @contextlib.asynccontextmanager
 async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]) -> AsyncGenerator[ClientSession]:
-    """pluginと同じlocked起動を、専用の状態領域へ分離する。"""
+    """リポジトリの仮想環境のPythonでagents_serverを起動し、専用の状態領域へ分離する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[2]
     env = {
         key: value
@@ -60,18 +59,9 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
         directory for directory in os.get_exec_path(host_environment) if pathlib.Path(directory).name != "shims"
     )
     env["PATH"] = search_path
-    command = shutil.which("uv", path=search_path)
-    assert command is not None
     params = StdioServerParameters(
-        command=command,
-        args=[
-            "run",
-            "--project",
-            str(plugin_root),
-            "--locked",
-            "--no-default-groups",
-            str(plugin_root / "agent_toolkit" / "agents_server_mcp.py"),
-        ],
+        command=sys.executable,
+        args=[str(plugin_root / "agent_toolkit" / "agents_server_mcp.py")],
         env=env,
     )
     service: psutil.Process | None = None
@@ -323,7 +313,7 @@ class _LaunchedServer:
         arguments: tuple[str, ...] = (),
     ) -> None:
         # 準備済み依存環境は呼出側の一時runtimeを使い、依存取得のcacheは実行ホストと共有する。
-        # `UV_FROZEN`は起動形の`--locked`と重なるとuvが無視する旨の警告を標準エラーへ出力するため、CIのjob環境から引き継がない。
+        # `UV_FROZEN`は起動ランチャーが実行するlock固定の依存同期と重なるため、CIのjob環境から引き継がない。
         env = {
             key: value
             for key, value in host_environment.items()
@@ -339,11 +329,9 @@ class _LaunchedServer:
             directory for directory in os.get_exec_path(host_environment) if pathlib.Path(directory).name != "shims"
         )
         env["PATH"] = search_path
-        uv = shutil.which("uv", path=search_path)
-        assert uv is not None
         target = str(_PLUGIN_ROOT / "agent_toolkit" / "agents_server_mcp.py")
         command = (
-            [uv, "run", "--project", str(_PLUGIN_ROOT), "--locked", "--no-default-groups", target, *arguments]
+            [sys.executable, target, *arguments]
             if direct
             else [sys.executable, str(_PLUGIN_ROOT / "scripts" / "launch.py"), "agent_toolkit/agents_server_mcp.py", *arguments]
         )

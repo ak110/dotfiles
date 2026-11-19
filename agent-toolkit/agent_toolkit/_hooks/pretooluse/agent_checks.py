@@ -102,6 +102,7 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
         f"組み込みの汎用定義`{agent_type}`による`{tool_name}`の起動を拒否した。`agents_server`に対応する`mode`がある。",
         fix=(
             f"同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行せよ。"
+            "外部資料の取得なら、`agent-basics:fetch-sources`の資料種別ごとの手順を依頼へ含めよ。"
             "例外は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」で確認せよ。"
             "例外に該当する場合は、同じ会話の同じ主体からツール名と入力全体を変えずに再発行してよい。"
         ),

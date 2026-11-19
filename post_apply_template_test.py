@@ -339,8 +339,7 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
     text = _read(LINUX_TEMPLATE)
     install = text.index(
         "if uv tool install --exclude-newer-package pyfltr=false "
-        '--editable "{{ .chezmoi.workingTree }}" '
-        '--with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}" && test_expected_shims; then'
+        '--editable "{{ .chezmoi.workingTree }}" && test_expected_shims; then'
     )
     hash_write = text.index('printf \'%s\' "$current_hash" >"$hash_file"')
     failure = text.index("インストールに失敗しました", hash_write)

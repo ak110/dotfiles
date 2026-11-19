@@ -13,10 +13,9 @@ import time
 from collections.abc import Generator
 
 import psutil
-from pyfltr.command import execution_slot
-
 from agent_toolkit._common import next_action, process_tree
 from agent_toolkit._git import command as git_command
+from pyfltr.command import execution_slot
 
 
 @contextlib.contextmanager

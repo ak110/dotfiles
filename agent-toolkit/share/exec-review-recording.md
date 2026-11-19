@@ -22,7 +22,7 @@
 | --- | --- |
 | 未コミット検証の結果を適用判定する前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
 | 返却形式を確認する時（操作対象外: 自身の返却形式の確認） | `exec-review.parent.md` |
-| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope.md` |
 | 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` |
 
 ## 条件別資料

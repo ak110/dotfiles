@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from session_evidence_extract_common import _ENV_ASSIGNMENT, _PATH_SEPARATORS, _SCRIPT_RUNNERS, _SELF_SCRIPT_STEM, _SHELL_NAMES
-
 from agent_toolkit._common import shell_quoting as _shell_quoting
 from agent_toolkit._common import shell_segments as _shell_segments
 from agent_toolkit._common import shell_tokens as _shell_tokens_module
 from agent_toolkit._common.session_family import _json_object, _Record
+from session_evidence_extract_common import _ENV_ASSIGNMENT, _PATH_SEPARATORS, _SCRIPT_RUNNERS, _SELF_SCRIPT_STEM, _SHELL_NAMES
 
 
 def _scannable_records(records: list[_Record]) -> list[_Record]:

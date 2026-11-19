@@ -116,7 +116,7 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 
 ### 検証結果の警告の判定
 
-検証結果の診断と警告、個別と全体の所要は、`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」の共通の基準で判定し、統合時の比較の基準版には統合前のHEADを使う。
+検証結果の診断と警告、個別と全体の所要は、`agent-basics:check-execution/references/diagnostics.md`「読む出力」の共通の基準で判定し、統合時の比較の基準版には統合前のHEADを使う。
 
 - 比べるためにコマンドを再実行する場合は、統合先worktreeで該当のコマンドだけを読み取り専用で実行し、統合先で追跡するファイルやbranchを変えない。
 - 新しい警告は、統合やAWIの採否の確定を止める理由かどうかを意味で判定する。

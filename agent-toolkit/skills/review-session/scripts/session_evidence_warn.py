@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
+from agent_toolkit._common import message_format as _message_format
 from session_evidence_detail import (
     _persisted_result,
     _tool_hint,
@@ -22,9 +24,6 @@ from session_evidence_extract import (
     _UnresolvedRecord,
 )
 from session_evidence_hook_notices import _hook_notice_bodies, _hook_notice_keys, _hook_occurrence, _hook_records
-
-from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
-from agent_toolkit._common import message_format as _message_format
 
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"

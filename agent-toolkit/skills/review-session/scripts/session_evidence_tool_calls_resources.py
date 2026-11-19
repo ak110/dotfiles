@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any
 
+from agent_toolkit._common import requirement_units
 from session_evidence_extract import _HOOK_NOTICE_MARKER, _codex_text_blocks, _CollectedRecord, _launch_mode, _text_blocks
 from session_evidence_stats import _stats_summary_data
 from session_evidence_tool_calls_definitions import _expected_body_read
@@ -16,8 +17,6 @@ from session_evidence_tool_calls_records import (
     _recorded_input,
     _recorded_result,
 )
-
-from agent_toolkit._common import requirement_units
 
 _SHELL_ABSOLUTE_PATH = re.compile(
     r"""(?P<quote>['"])(?P<quoted>(?:/|[A-Za-z]:[\\/]|\\\\)[^'"]*)(?P=quote)|"""

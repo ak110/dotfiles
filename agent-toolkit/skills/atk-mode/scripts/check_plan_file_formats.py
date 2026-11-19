@@ -6,6 +6,7 @@ import pathlib
 import re
 from collections.abc import Callable
 
+from agent_toolkit._plan import bundle_kinds, locations, structure
 from check_plan_file_common import _ClassifiedWarning
 from check_plan_file_migration import (
     _legacy_acceptance_warnings,
@@ -17,8 +18,6 @@ from check_plan_file_migration import (
     _legacy_verification_name_warnings,
 )
 from check_plan_file_references import _check_references, _check_target_repo
-
-from agent_toolkit._plan import bundle_kinds, locations, structure
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 

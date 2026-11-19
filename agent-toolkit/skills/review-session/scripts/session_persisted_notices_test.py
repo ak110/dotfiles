@@ -2,7 +2,6 @@
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit._common import message_format, persisted_output_reference
 from agent_toolkit._hooks.pretooluse import warning_context
 from agent_toolkit._testing import session_evidence_support as support

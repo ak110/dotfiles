@@ -34,7 +34,7 @@ from pytools._internal import (
 
 _REAL_RESOLVE_EXECUTABLE = common.resolve_executable
 _REAL_RUN_SUBPROCESS = common.run_subprocess
-_REAL_START_UV_CACHE_MAINTENANCE = prune_installation.start_uv_cache_maintenance
+_REAL_START_UV_CACHE_MAINTENANCE = prune_installation.start_cache_maintenance
 _UV_CACHE_MAINTENANCE = ["uv-cache-maintenance"]
 _HOLDER_SCRIPT = "import sys; print('ready', flush=True); sys.stdin.read()"
 
@@ -78,11 +78,11 @@ def _prepare(tmp_path, monkeypatch, mode, installed=None):
     monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: str(Path("/fixture") / name))
     calls = []
 
-    def start_uv_cache_maintenance() -> int:
+    def start_cache_maintenance() -> int:
         calls.append(_UV_CACHE_MAINTENANCE)
         return 4242
 
-    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", start_uv_cache_maintenance)
+    monkeypatch.setattr(prune_installation, "start_cache_maintenance", start_cache_maintenance)
     monkeypatch.setattr(warmup_pyfltr_mcp, "run", post_apply_outcome.PostApplyOutcome)
 
     def run(command, **_kwargs):
@@ -186,6 +186,8 @@ def test_full_keeps_project_development_tools_and_old_environments(tmp_path, mon
     assert result.failure is None
     assert all("uninstall" not in command for command in calls)
     assert _UV_CACHE_MAINTENANCE in calls
+    assert not [command for command in calls if command[1:2] in (["cache"], ["store"])]
+    _maintain(monkeypatch, tmp_path)
     assert ["/fixture/mise", "cache", "prune"] in calls
     assert ["/fixture/npm", "cache", "verify"] in calls
     assert ["/fixture/pnpm", "store", "prune"] in calls
@@ -282,6 +284,7 @@ def test_npm_prune_uses_installed_node_without_configured_version(tmp_path, monk
     result = prune_installation.run()
     uninstalls = [index for index, command in enumerate(calls) if command[: len(uninstall)] == uninstall]
     if mode == "full":
+        _maintain(monkeypatch, tmp_path)
         assert [str(npm), "cache", "verify"] in calls
         assert result.failure is None
         assert not uninstalls
@@ -411,7 +414,7 @@ def test_full_cache_cleanup_tracks_success_per_root_and_30_day_boundary(tmp_path
     _, calls = _prepare(tmp_path, monkeypatch, "full")
     now = 10000000.0
     monkeypatch.setattr(prune_installation.time, "time", lambda: now)
-    completed = (prune_installation.UvMaintenanceResult.COMPLETED, "")
+    completed = (prune_installation.MaintenanceResult.COMPLETED, "")
     assert prune_installation.clean_uv_cache() == completed
     assert calls.count(["/fixture/uv", "cache", "clean"]) == 1
     assert prune_installation.clean_uv_cache() == completed
@@ -439,7 +442,7 @@ def test_uv_cleanup_failure_preserves_success_time(tmp_path, monkeypatch, locked
         return normal(command, **kwargs)
 
     monkeypatch.setattr(common, "run_subprocess", execute)
-    results = prune_installation.UvMaintenanceResult
+    results = prune_installation.MaintenanceResult
     result, _detail = prune_installation.clean_uv_cache()
     assert result is (results.DEFERRED if locked else results.FAILED)
     failing = False
@@ -462,7 +465,7 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
         started_pids.append(_REAL_START_UV_CACHE_MAINTENANCE())
         return started_pids[-1]
 
-    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", start)
+    monkeypatch.setattr(prune_installation, "start_cache_maintenance", start)
     # 隔離PATHはmise shimを別名で置くため、整理側が解決するuvをshimを経由しない本体にそろえる。
     monkeypatch.setenv("PATH", os.pathsep.join((str(Path(uv).parent), os.environ["PATH"])))
     monkeypatch.setattr(common, "resolve_executable", _REAL_RESOLVE_EXECUTABLE)
@@ -553,6 +556,29 @@ def test_failed_maintenance_fails_following_updates_until_resolved(tmp_path, mon
     assert prune_installation.run().failure is None
 
 
+def test_npm_failure_is_reported_next_update_even_when_uv_defers(tmp_path, monkeypatch, caplog):
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    _uv_clean_failure(monkeypatch, calls)["stderr"] = "when waiting for lock on cache"
+    run = common.run_subprocess
+
+    def fail_verify(command, **kwargs):
+        if command[1:] == ["cache", "verify"]:
+            return subprocess.CompletedProcess(command, 1, "", "fixture verify failed")
+        return run(command, **kwargs)
+
+    monkeypatch.setattr(common, "run_subprocess", fail_verify)
+    assert prune_installation.run().failure is None
+    _maintain(monkeypatch, tmp_path)
+    failed = prune_installation.run()
+    assert failed.failure and "fixture verify failed" in failed.failure
+    assert ["/fixture/pnpm", "store", "prune"] in calls
+    monkeypatch.setattr(common, "run_subprocess", run)
+    _maintain(monkeypatch, tmp_path)
+    with caplog.at_level(logging.INFO):
+        assert prune_installation.run().failure is None
+    assert "mise・npm・pnpmのキャッシュ整理は完了" in caplog.text
+
+
 def test_corrupt_clean_record_is_reported_with_its_path(tmp_path, monkeypatch):
     """全消去の成功記録が壊れると整理は毎回失敗するため、次の更新は記録のパスを示して失敗を返す。"""
     _prepare(tmp_path, monkeypatch, "full")
@@ -591,6 +617,24 @@ def test_unexpected_maintenance_exception_is_logged_and_reported(tmp_path, monke
     assert result.failure is not None and "fixture-unexpected" in result.failure
 
 
+def test_slow_verify_does_not_block_next_update_or_start_duplicate_cleanup(tmp_path, monkeypatch):
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    run = common.run_subprocess
+
+    def check_while_verifying(command, **kwargs):
+        if command[1:] == ["cache", "verify"]:
+            update_lock = filelock.FileLock(str(_state("locks/update-dotfiles.lock")), timeout=0, preserve_lock_file=True)
+            assert prune_installation.run(lock=update_lock).failure is None
+            prune_installation.maintain_caches()
+        return run(command, **kwargs)
+
+    monkeypatch.setattr(common, "run_subprocess", check_while_verifying)
+    _maintain(monkeypatch, tmp_path)
+    assert calls.count(["/fixture/npm", "cache", "verify"]) == 1
+    assert calls.count(["/fixture/mise", "cache", "prune"]) == 1
+    assert json.loads(_state("tools-cache-maintenance.json").read_text(encoding="utf-8"))["result"] == "completed"
+
+
 def test_maintenance_defers_while_update_is_running(tmp_path, monkeypatch):
     """更新が更新ロックを保持する間、独立プロセスはロックを待たずに整理を保留し、uvの排他操作を重ねない。"""
     _, calls = _prepare(tmp_path, monkeypatch, "full")
@@ -619,10 +663,10 @@ def test_prune_after_update_starts_maintenance_after_releasing_update_lock(tmp_p
             acquirable.append(False)
         return 4242
 
-    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", start)
+    monkeypatch.setattr(prune_installation, "start_cache_maintenance", start)
     post_apply.main(["--prune-only-if-minimal"], runner=lambda: pytest.fail("通常の更新工程へ到達した"))
     assert acquirable == [True]
-    assert ["/fixture/mise", "cache", "prune"] in calls
+    assert ["/fixture/mise", "cache", "prune"] not in calls
 
 
 @pytest.mark.parametrize("cause", ["installation", "start"])
@@ -643,7 +687,7 @@ def test_mcp_environment_is_prepared_without_maintenance_process(tmp_path, monke
         def refuse() -> int:
             raise PermissionError("fixture")
 
-        monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", refuse)
+        monkeypatch.setattr(prune_installation, "start_cache_maintenance", refuse)
     result = prune_installation.run()
     assert result.failure is not None
     assert warmups == ["warmup"]
@@ -651,10 +695,8 @@ def test_mcp_environment_is_prepared_without_maintenance_process(tmp_path, monke
         # 導入実体の整理に失敗した場合は、従来どおり取得キャッシュを整理しない。
         assert not calls
     else:
-        assert result.failure.startswith("uv: ")
-        assert ["/fixture/mise", "cache", "prune"] in calls
-        assert ["/fixture/npm", "cache", "verify"] in calls
-        assert ["/fixture/pnpm", "store", "prune"] in calls
+        assert "独立プロセスを起動できません" in result.failure
+        assert not [command for command in calls if command[1:2] in (["cache"], ["store"])]
 
 
 def test_missing_uv_still_prepares_mcp_environment_in_maintenance_process(tmp_path, monkeypatch):
@@ -686,11 +728,11 @@ def test_breakaway_refusal_is_reported(tmp_path, monkeypatch, caplog):
             raise PermissionError(5, "アクセスが拒否されました")
         return types.SimpleNamespace(pid=4242, wait=lambda: 0)
 
-    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", _REAL_START_UV_CACHE_MAINTENANCE)
+    monkeypatch.setattr(prune_installation, "start_cache_maintenance", _REAL_START_UV_CACHE_MAINTENANCE)
     monkeypatch.setattr(prune_installation, "os", types.SimpleNamespace(name="nt"))
     monkeypatch.setattr(prune_installation, "subprocess", types.SimpleNamespace(Popen=popen, DEVNULL=subprocess.DEVNULL))
     with caplog.at_level(logging.WARNING):
-        assert prune_installation.start_uv_cache_maintenance() == 4242
+        assert prune_installation.start_cache_maintenance() == 4242
     assert len(started) == 2 and not started[1] & windows_job.CREATE_BREAKAWAY_FROM_JOB
     assert any("離脱を許可しない" in record.getMessage() for record in caplog.records)
 
@@ -714,7 +756,7 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
     monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
     monkeypatch.setenv("PATH", os.pathsep.join((str(Path(uv).parent), os.environ["PATH"])))
     record = _state("uv-cache-maintenance.json")
-    starter = "from pytools._internal import prune_installation as p; print(p.start_uv_cache_maintenance(), flush=True)"
+    starter = "from pytools._internal import prune_installation as p; print(p.start_cache_maintenance(), flush=True)"
     # 実行中の`uv run`はキャッシュの共有ロックを終了まで保持し、独立プロセスの全消去をJobの終了後まで待たせる。
     # 時間上限なし: 標準入力の終了で止まる保持役であり、終了時のcloseで止まる。
     with subprocess.Popen(

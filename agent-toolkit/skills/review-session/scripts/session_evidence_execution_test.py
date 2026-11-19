@@ -6,7 +6,6 @@ import pathlib
 import pytest
 import session_evidence_execution as execution
 import session_review_evidence as evidence
-
 from agent_toolkit._testing.helpers import _write_transcript
 
 _SAVED = "/cache/atk-output-example/output.txt"

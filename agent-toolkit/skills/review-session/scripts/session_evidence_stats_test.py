@@ -7,7 +7,6 @@ import pathlib
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_stats_support import _codex_token_count_entry
 from agent_toolkit._testing.session_evidence_support import events_by_kind, read_jsonl, timestamped_entry

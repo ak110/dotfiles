@@ -51,10 +51,7 @@ def test_project_textlint_runs_current_rules(tmp_path: pathlib.Path) -> None:
     assert "--cache" not in config["textlint-args"]
 
 
-@pytest.mark.parametrize("config_path", ["pyproject.toml", "agent-toolkit/pyproject.toml"])
-def test_project_pytest_reports_skip_reasons(
-    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], config_path: str
-) -> None:
+def test_project_pytest_reports_skip_reasons(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """通常のpytest設定を通した未実行のテストは、要約に理由を残す。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     sample = _write(
@@ -69,7 +66,7 @@ def test_project_pytest_reports_skip_reasons(
             "pytest",
             "-q",
             "-c",
-            str(repository / config_path),
+            str(repository / "pyproject.toml"),
             "--noconftest",
             "-n",
             "0",

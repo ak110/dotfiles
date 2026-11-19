@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import session_evidence_support as support
 

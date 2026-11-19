@@ -14,7 +14,6 @@ import pytest
 import session_evidence_candidates as evidence_candidates
 import session_evidence_execution as execution
 import session_review_prepare as prepare
-
 from agent_toolkit._testing import session_evidence_support as support
 from agent_toolkit._testing.failure_records import bash_failure_entries, failure_entries
 from agent_toolkit._testing.session_review_prepare_support import _FIXED_NOW, _work_dir

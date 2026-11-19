@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -317,8 +318,13 @@ def _clean_uv_cache(uv: Path) -> None:
             raise OSError(f"uv全消去の成功日時を保存できません: {state}")
 
 
-class UvMaintenanceResult(enum.StrEnum):
-    """uvの整理の独立プロセスが記録する結果の種別。"""
+class _CacheGroup(enum.StrEnum):
+    UV = "uv"
+    TOOLS = "mise・npm・pnpm"
+
+
+class MaintenanceResult(enum.StrEnum):
+    """キャッシュ整理の独立プロセスが記録する結果の種別。"""
 
     NONE = "none"
     DEFERRED = "deferred"
@@ -327,10 +333,10 @@ class UvMaintenanceResult(enum.StrEnum):
 
 
 @dataclasses.dataclass(frozen=True)
-class _UvMaintenanceRecord:
-    """uvの整理の独立プロセスの最新の結果。次の更新が読んで表示する。"""
+class _MaintenanceRecord:
+    """キャッシュ整理の独立プロセスの最新の結果。次の更新が読んで表示する。"""
 
-    result: UvMaintenanceResult
+    result: MaintenanceResult
     finished_at: str
     detail: str
     # 未解消の失敗の後に保留した、最後の試行の時刻と診断。失敗の表示に添える。
@@ -338,112 +344,135 @@ class _UvMaintenanceRecord:
     deferred_detail: str = ""
 
 
-def _record_path() -> Path:
-    return _state_directory() / "uv-cache-maintenance.json"
+def _record_path(group: _CacheGroup) -> Path:
+    return _state_directory() / f"{group.name.lower()}-cache-maintenance.json"
 
 
-def _read_uv_maintenance_record() -> _UvMaintenanceRecord | None:
+def _read_maintenance_record(group: _CacheGroup) -> _MaintenanceRecord | None:
     """独立プロセスの最新の結果を返す。記録が無ければ`None`、読めない記録は`OSError`か`ValueError`を送出する。"""
     try:
-        data = json.loads(_record_path().read_text(encoding="utf-8"))
+        data = json.loads(_record_path(group).read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
-    fields = {field.name for field in dataclasses.fields(_UvMaintenanceRecord)}
+    fields = {field.name for field in dataclasses.fields(_MaintenanceRecord)}
     if (
         not isinstance(data, dict)
         or not {"result", "finished_at", "detail"} <= set(data) <= fields
         or not all(isinstance(value, str) for value in data.values())
     ):
         raise ValueError("result・finished_at・detailなどの項目が文字列ではありません")
-    return _UvMaintenanceRecord(**{**data, "result": UvMaintenanceResult(data["result"])})
+    return _MaintenanceRecord(**{**data, "result": MaintenanceResult(data["result"])})
 
 
-def _write_uv_maintenance_record(result: UvMaintenanceResult, detail: str) -> None:
+def _write_maintenance_record(group: _CacheGroup, result: MaintenanceResult, detail: str) -> None:
     """結果を記録する。保留は整理を試していないため、未解消の失敗を残して保留した試行を添える。"""
     now = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-    record = _UvMaintenanceRecord(result, now, detail)
-    if result is UvMaintenanceResult.DEFERRED:
+    record = _MaintenanceRecord(result, now, detail)
+    if result is MaintenanceResult.DEFERRED:
         try:
-            previous = _read_uv_maintenance_record()
+            previous = _read_maintenance_record(group)
         except OSError, ValueError:
             previous = None
-        if previous is not None and previous.result is UvMaintenanceResult.FAILED:
+        if previous is not None and previous.result is MaintenanceResult.FAILED:
             record = dataclasses.replace(previous, deferred_at=now, deferred_detail=detail)
-    if not common.atomic_write_json(_record_path(), dataclasses.asdict(record), tag="prune"):
-        logger.error("prune: uvの整理の結果を記録できません: %s。次の更新は前回の記録を表示する", _record_path())
+    if not common.atomic_write_json(_record_path(group), dataclasses.asdict(record), tag="prune"):
+        logger.error("prune: %sの整理の結果を記録できません: %s。次の更新は前回の記録を表示する", group, _record_path(group))
 
 
-def clean_uv_cache() -> tuple[UvMaintenanceResult, str]:
-    """更新ロックを待たずに取得してuvの取得キャッシュを公式操作で整理し、結果の種別と診断を返す。
-
-    uvの整理は全消去の間、他のuvの操作をキャッシュのロックで待たせるため、実行中の更新や別の整理と重ねず保留する。
-    """
+def clean_uv_cache() -> tuple[MaintenanceResult, str]:
+    """uvのキャッシュ整理の結果と診断を返す。"""
     uv = common.resolve_executable("uv")
     if uv is None:
         logger.info("prune: uvは未導入のため対象なし")
-        return UvMaintenanceResult.NONE, ""
-    lock = filelock.FileLock(str(update_lock_path()), timeout=0, preserve_lock_file=True)
-    try:
-        update_lock_path().parent.mkdir(parents=True, exist_ok=True)
-        lock.acquire()
-    except filelock.Timeout:
-        detail = "他の更新または整理が実行中"
-        logger.info("prune: uvの整理を保留: %s。次回のupdate-dotfilesで再試行します", detail)
-        return UvMaintenanceResult.DEFERRED, detail
+        return MaintenanceResult.NONE, ""
     try:
         _clean_uv_cache(uv)
     except _InUseError as error:
         logger.info("prune: uvの整理を使用中のため保留: %s。次回のupdate-dotfilesで再試行します", error)
-        return UvMaintenanceResult.DEFERRED, str(error)
+        return MaintenanceResult.DEFERRED, str(error)
     except (OSError, ValueError, RuntimeError) as error:
         logger.error("prune: uvのキャッシュ整理に失敗: %s", error)
-        return UvMaintenanceResult.FAILED, str(error)
-    finally:
-        lock.release()
+        return MaintenanceResult.FAILED, str(error)
     logger.info("prune: uvのキャッシュ整理を完了")
-    return UvMaintenanceResult.COMPLETED, ""
+    return MaintenanceResult.COMPLETED, ""
 
 
-def maintain_uv_cache() -> None:
-    """uvの整理の独立プロセスの本体。整理の結果を記録してから、キャッシュ内のMCP環境を事前構築する。
-
-    出力を持たない独立プロセスのため、想定外の例外も永続ログと記録へ残し、次の更新が失敗として表示する。
-    """
+def _run_maintenance(group: _CacheGroup, clean: Callable[[], tuple[MaintenanceResult, str]]) -> None:
     try:
-        _write_uv_maintenance_record(*clean_uv_cache())
-        warmup_pyfltr_mcp.run()
-    except Exception as error:  # noqa: BLE001 -- 出力を持たない独立プロセスの想定外の失敗を、次の更新へ届ける。
-        logger.exception("prune: uvの整理の独立プロセスが想定外の例外で終了した")
-        _write_uv_maintenance_record(UvMaintenanceResult.FAILED, f"想定外の例外: {error!r}")
+        result, detail = clean()
+    except Exception as error:  # noqa: BLE001 -- 無端末の子プロセスの診断を次の更新へ届ける。
+        logger.exception("prune: %sの整理で想定外の例外が発生した", group)
+        result, detail = MaintenanceResult.FAILED, f"想定外の例外: {error!r}"
+    _write_maintenance_record(group, result, detail)
 
 
-def _report_previous_uv_maintenance() -> post_apply_outcome.PostApplyOutcome:
+def maintain_caches() -> None:
+    """整理の重複起動を避け、uvとそれ以外の結果を別々に次の更新へ引き継ぐ。"""
+    update_path = update_lock_path()
+    worker = filelock.FileLock(str(update_path.with_name("cache-maintenance.lock")), timeout=0, preserve_lock_file=True)
+    with contextlib.ExitStack() as stack:
+        try:
+            update_path.parent.mkdir(parents=True, exist_ok=True)
+            stack.enter_context(worker)
+        except filelock.Timeout:
+            logger.info("prune: 前回のキャッシュ整理が実行中のため、その結果を待たずに終了する")
+            return
+        except OSError as error:
+            logger.exception("prune: キャッシュ整理の排他に失敗した")
+            for group in _CacheGroup:
+                _write_maintenance_record(group, MaintenanceResult.FAILED, str(error))
+            return
+        try:
+            with filelock.FileLock(str(update_path), timeout=0, preserve_lock_file=True):
+                _run_maintenance(_CacheGroup.UV, clean_uv_cache)
+        except filelock.Timeout:
+            for group in _CacheGroup:
+                _write_maintenance_record(group, MaintenanceResult.DEFERRED, "他の更新が実行中")
+        except OSError as error:
+            logger.exception("prune: 更新ロックを取得・解放できない")
+            for group in _CacheGroup:
+                _write_maintenance_record(group, MaintenanceResult.FAILED, str(error))
+        else:
+            # npmの全件検査が長引いても、次に起動した更新のロック取得を待たせない。
+            _run_maintenance(_CacheGroup.TOOLS, clean_caches)
+        try:
+            warmup_pyfltr_mcp.run()
+        except Exception as error:  # noqa: BLE001 -- 事前構築の失敗も従来どおり次の更新へ届ける。
+            logger.exception("prune: MCPの事前構築で想定外の例外が発生した")
+            _write_maintenance_record(_CacheGroup.UV, MaintenanceResult.FAILED, f"MCPの事前構築: {error!r}")
+
+
+def _report_previous_maintenance(group: _CacheGroup) -> post_apply_outcome.PostApplyOutcome:
     """前回の独立プロセスの結果を表示する。保留は案内し、失敗は解消するまで更新の失敗として返す。"""
     log = update_log.LOG_PATH
     retry = "整理は更新のたびに独立プロセスで再試行し、結果を次の更新で表示します。"
     try:
-        record = _read_uv_maintenance_record()
+        record = _read_maintenance_record(group)
     except (OSError, ValueError) as error:
         return post_apply_outcome.PostApplyOutcome(
-            failure=f"uv: 整理の独立プロセスの結果を読めません: {_record_path()}: {error}",
+            failure=f"{group}: 整理の独立プロセスの結果を読めません: {_record_path(group)}: {error}",
             next_action=f"永続ログ（{log}）を確認してください。{retry}",
         )
     if record is None:
         return post_apply_outcome.PostApplyOutcome()
-    if record.result is UvMaintenanceResult.DEFERRED:
-        logger.info("prune: 前回のuvの整理は保留した（%s）: %s。%s永続ログ: %s", record.finished_at, record.detail, retry, log)
-    elif record.result is UvMaintenanceResult.FAILED:
-        failure = f"uv: 前回の整理の独立プロセスが失敗した（{record.finished_at}）: {record.detail}"
+    if record.result is MaintenanceResult.DEFERRED:
+        logger.info(
+            "prune: 前回の%sの整理は保留した（%s）: %s。%s永続ログ: %s", group, record.finished_at, record.detail, retry, log
+        )
+    elif record.result is MaintenanceResult.COMPLETED:
+        logger.info("prune: 前回の%sのキャッシュ整理は完了（%s）", group, record.finished_at)
+    elif record.result is MaintenanceResult.FAILED:
+        failure = f"{group}: 前回の整理の独立プロセスが失敗した（{record.finished_at}）: {record.detail}"
         next_action = f"永続ログ（{log}）の診断を確認して原因を解消し、update-dotfilesを再実行してください。{retry}"
         if record.deferred_at:
             failure += f"。その後の整理は保留した（{record.deferred_at}）: {record.deferred_detail}"
-            next_action += "保留が続く場合は、保留の診断が示すuvの使用を終えてから再実行してください。"
+            next_action += "保留が続く場合は、保留の診断が示すツールの使用を終えてから再実行してください。"
         return post_apply_outcome.PostApplyOutcome(failure=failure, next_action=next_action)
     return post_apply_outcome.PostApplyOutcome()
 
 
-def start_uv_cache_maintenance() -> int:
-    """uvの取得キャッシュ整理を、更新の終了を待たせない独立プロセスで開始し、そのPIDを返す。
+def start_cache_maintenance() -> int:
+    """取得キャッシュの整理を、更新の終了を待たせない独立プロセスで開始し、そのPIDを返す。
 
     uvの整理は他のuvプロセスの使用中はロック待ちの上限まで待ち、全消去はキャッシュの量に比例する時間かかる。
     更新とprocess-loopをその間止めないよう、端末・出力・所有groupから切り離して起動し、結果は永続ログと記録へ残す。
@@ -473,7 +502,7 @@ def start_uv_cache_maintenance() -> int:
             continue
         if refused:
             logger.warning(
-                "prune: 起動元のWindows Jobが離脱を許可しないため、離脱せずにuvの整理の独立プロセスを開始した。"
+                "prune: 起動元のWindows Jobが離脱を許可しないため、離脱せずにキャッシュ整理の独立プロセスを開始した。"
                 "起動元のJobが終了すると整理も止まり、次の更新で再試行する"
             )
         # 起動元が存続する間に終えた子をzombieとして残さない。起動元が先に終えればOSが引き取る。
@@ -482,18 +511,17 @@ def start_uv_cache_maintenance() -> int:
     raise AssertionError("起動の試行が空です")
 
 
-def _start_uv_maintenance(*, clean: bool) -> post_apply_outcome.PostApplyOutcome:
-    """uvの整理を独立プロセスで開始する。開始しない・できない場合は、キャッシュ内のMCP環境をこのプロセスで事前構築する。"""
+def _start_maintenance(*, clean: bool) -> post_apply_outcome.PostApplyOutcome:
+    """キャッシュ整理を独立プロセスで開始する。開始しない・できない場合は、キャッシュ内のMCP環境をこのプロセスで事前構築する。"""
     failure = None
     if clean:
         try:
-            pid = start_uv_cache_maintenance()
+            start_cache_maintenance()
         except OSError as error:
-            failure = f"uv: 整理の独立プロセスを起動できません: {error}"
+            failure = f"キャッシュ整理の独立プロセスを起動できません: {error}"
         else:
             logger.info(
-                "prune: uvのキャッシュ整理を独立プロセス（pid %d）で開始した。結果は次の更新で表示し、永続ログ（%s）へ記録する",
-                pid,
+                "prune: キャッシュ整理を独立プロセスで開始した。結果は次の更新で表示し、永続ログ（%s）へ記録する",
                 update_log.LOG_PATH,
             )
             return post_apply_outcome.PostApplyOutcome()
@@ -503,10 +531,9 @@ def _start_uv_maintenance(*, clean: bool) -> post_apply_outcome.PostApplyOutcome
     )
 
 
-def clean_caches() -> post_apply_outcome.PostApplyOutcome:
+def clean_caches() -> tuple[MaintenanceResult, str]:
     """uv以外の取得キャッシュを公式操作で整理し、1対象の失敗でも残りを続ける。"""
     failures: list[str] = []
-    changed = False
     commands: list[tuple[str, list[str]]] = []
     mise = setup_mise.find_mise_binary()
     if mise is not None:
@@ -520,15 +547,14 @@ def clean_caches() -> post_apply_outcome.PostApplyOutcome:
     for name, command in commands:
         try:
             _command(command)
-            changed = True
             logger.info("prune: %sのキャッシュ整理を完了", name)
         except (OSError, ValueError, RuntimeError) as error:
             failures.append(f"{name}: {error}")
-    return post_apply_outcome.PostApplyOutcome(
-        changed=changed,
-        failure=" / ".join(failures) or None,
-        next_action="診断を確認し、update-dotfilesを再実行してください。" if failures else None,
-    )
+    if failures:
+        detail = " / ".join(failures)
+        logger.error("prune: キャッシュ整理に失敗: %s", detail)
+        return MaintenanceResult.FAILED, detail
+    return (MaintenanceResult.COMPLETED if commands else MaintenanceResult.NONE), ""
 
 
 def _merge(*outcomes: post_apply_outcome.PostApplyOutcome) -> post_apply_outcome.PostApplyOutcome:
@@ -543,13 +569,12 @@ def _merge(*outcomes: post_apply_outcome.PostApplyOutcome) -> post_apply_outcome
 
 
 def run(lock: contextlib.AbstractContextManager[object] | None = None) -> post_apply_outcome.PostApplyOutcome:
-    """前回のuvの整理の結果を表示し、導入実体の保護判定と取得キャッシュの公式整理を分けて実行する。
+    """前回のキャッシュ整理の結果を表示し、導入実体の保護判定と取得キャッシュの公式整理を分けて実行する。
 
     `lock`には呼び出し元が保持する更新ロックを渡す。uvの整理の独立プロセスは更新ロックを待たずに取得し、
     取れなければ保留するため、`lock`を解放してから開始する。導入実体の整理に失敗した場合は取得キャッシュを整理しない。
     """
     with lock or contextlib.nullcontext():
-        previous = _report_previous_uv_maintenance()
+        previous = [_report_previous_maintenance(group) for group in _CacheGroup]
         installation = _remove_installation()
-        caches = clean_caches() if installation.failure is None else post_apply_outcome.PostApplyOutcome()
-    return _merge(previous, installation, caches, _start_uv_maintenance(clean=installation.failure is None))
+    return _merge(*previous, installation, _start_maintenance(clean=installation.failure is None))

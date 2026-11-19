@@ -5,7 +5,6 @@ import pathlib
 import re
 
 import pytest
-
 from agent_toolkit._testing import isolation
 
 

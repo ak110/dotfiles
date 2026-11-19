@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit import atk
 from agent_toolkit._agents_server import shared_layout
 from agent_toolkit._testing.session_evidence_support import claude_call, claude_result, events_by_kind, read_jsonl, write_jsonl

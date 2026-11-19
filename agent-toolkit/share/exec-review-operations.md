@@ -10,12 +10,12 @@
 | --- | --- | --- | --- |
 | 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `reader-fit-review.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/reader-fit-review.parent.md` |
 | 再発防止セルフチェック担当を起動する前 | `recurrence-self-check.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/recurrence-self-check.parent.md` |
-| 実行する検証を選ぶ前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | | |
+| 実行する検証を選ぶ前 | `agent-basics:check-execution/references/verification-scope.md` | | |
 
 ## 操作区分
 
 確認専用の検証は、保存済みの検証証拠を先に読み、対象リポジトリの定義と計画の検証節からコマンドを選ぶ。
-保存済みの成功のうち、レビュー対象HEADと本文・対象・依存・実行条件が一致する範囲は、`verification-scope-reruns.md`「実行条件と再実行」に従って再利用する。
+保存済みの成功のうち、レビュー対象HEADと本文・対象・依存・実行条件が一致する範囲は、`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従って再利用する。
 自分で実行するのは、その成功が被覆しないチェック・試験・条件と、判定に追加の観測が要るものに限る。
 公開された確認専用の引数または変更を伴わない手段が無い場合は実行せず、必要な操作と不足する証拠を委譲元へ返す。
 

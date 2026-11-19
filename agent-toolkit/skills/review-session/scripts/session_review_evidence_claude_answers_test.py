@@ -6,7 +6,6 @@ import pathlib
 
 import pytest
 import session_evidence_extract as evidence_extract
-
 from agent_toolkit._testing.helpers import _write_transcript
 
 

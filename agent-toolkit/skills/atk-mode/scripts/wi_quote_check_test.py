@@ -8,7 +8,6 @@ import pathlib
 import re
 
 import pytest
-
 from agent_toolkit._atk import run_script
 
 _UTTERANCE = "検索画面の表示を直して。 最近の記録も調べて。手順を簡潔にして。"

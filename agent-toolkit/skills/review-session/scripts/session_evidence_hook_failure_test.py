@@ -9,7 +9,6 @@ import pathlib
 
 import pytest
 import session_review_evidence as evidence
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import _write_transcript

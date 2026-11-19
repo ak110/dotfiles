@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 import session_evidence_candidates as evidence_candidates
-
 from agent_toolkit._agents_server import tool_descriptions
 
 

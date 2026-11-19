@@ -1,0 +1,231 @@
+diff --git a/docs/handoff.md b/docs/handoff.md
+--- a/docs/handoff.md
++++ b/docs/handoff.md
+@@ -1,16 +1,26 @@
+ # 引き継ぎ記録
+
+ 担当の交代と委譲の検収で、前任から後任と委譲元へ値を渡す記録である。
++記録を読む側は、読んだ結果を次の3つに分けて扱う（`relay.record.observe`）。
++
++- 読めた。
++- 不在を確かめた。前任に書く値が無かった交代である。
++- それ以外で読めない（権限が無い、通常ファイルでない、本文を解釈できないなど）。記録にしか無い値が失われうる。
+
+ ## 前任
+
+-前任は、終了する前に必ず引き継ぎ記録を書く。
+-書く値は、後任が再開に使う値と、役割が記録へ書くと定めた項目である。
++前任は、他の原本（依頼、計画、commit、成果物）から復元できない値がある時だけ引き継ぎ記録を書く。
++書く値は、その値と、役割が記録へ書くと定めた項目である。
++書く値が無ければ記録を作らない。
+
+ ## 後任
+
+-後任は、委譲プロンプトが示す引き継ぎ記録を最初に読み、記録の値と依頼を比べて再開する。
++後任は、委譲プロンプトの指示に従って再開する。
++委譲プロンプトは、記録を読めた場合は記録と依頼を比べさせ、不在の場合は依頼と既存の原本から再開させる。
++読めない場合は、既存の原本から復元できる値で再開させ、復元できない値を未確認として委譲元へ返させる。
+
+ ## 委譲元
+
+-委譲元は、委譲先の終了後に引き継ぎ記録を読み、役割が定めた項目がそろっているかを確かめる。
++委譲元は、委譲先の終了後に`relay.accept.accept`で記録を検収し、`complete`が偽なら不足として扱う。
++不在は、役割が記録へ書くと定めた項目が無い場合だけ正常な終了として扱う。
++読めない記録は不在と同じ扱いにせず、記録にしか無い値を委譲先へ問い合わせるか、未確認として扱う。
+diff --git a/relay/accept.py b/relay/accept.py
+--- a/relay/accept.py
++++ b/relay/accept.py
+@@ -8,6 +8,16 @@ from relay import record
+
+
+ def accept(path: pathlib.Path, required: tuple[str, ...] = ()) -> dict[str, object]:
+-    """記録の値と、役割が記録へ書くと定めた項目のうち欠けたものを返す。"""
+-    values = record.read(path)
+-    return {"values": values, "missing": [key for key in required if key not in values]}
++    """記録を読んだ結果と、役割が記録へ書くと定めた項目のうち欠けたものを返す。
++
++    不在は書く値が無かった交代として扱い、読めない記録は値を失わないよう`complete`を偽にする。
++    """
++    observed = record.observe(path)
++    missing = [key for key in required if key not in observed.values]
++    return {
++        "state": observed.state,
++        "values": observed.values,
++        "missing": missing,
++        "reason": observed.reason,
++        "complete": observed.state != "unreadable" and not missing,
++    }
+diff --git a/relay/prompt.py b/relay/prompt.py
+--- a/relay/prompt.py
++++ b/relay/prompt.py
+@@ -4,13 +4,22 @@ from __future__ import annotations
+
+ import pathlib
+
++from relay import record
+
+-def compose(task: str, record: pathlib.Path) -> str:
+-    """依頼と引き継ぎ記録の所在から、後任の委譲プロンプトを返す。"""
+-    return "\n".join(
+-        [
+-            f"最初に引き継ぎ記録`{record}`を読む。",
+-            f"依頼: {task}",
+-            "記録の値と依頼を比べ、残りの工程から再開する。",
++
++def compose(task: str, path: pathlib.Path) -> str:
++    """依頼と引き継ぎ記録を読んだ結果から、後任の委譲プロンプトを返す。"""
++    observed = record.observe(path)
++    if observed.state == "read":
++        lines = [f"最初に引き継ぎ記録`{path}`を読む。", "記録の値と依頼を比べ、残りの工程から再開する。"]
++    elif observed.state == "absent":
++        lines = [
++            f"前任は引き継ぎ記録を作らなかった（`{path}`は存在しない）。",
++            "依頼と既存の原本（計画、commit、成果物）から残りの工程を確かめて再開する。",
+         ]
+-    )
++    else:
++        lines = [
++            f"引き継ぎ記録`{path}`を読めない（{observed.reason}）。",
++            "既存の原本から復元できる値で再開し、復元できない値は未確認として委譲元へ返す。",
++        ]
++    return "\n".join([lines[0], f"依頼: {task}", *lines[1:]])
+diff --git a/relay/record.py b/relay/record.py
+--- a/relay/record.py
++++ b/relay/record.py
+@@ -2,15 +2,39 @@
+
+ from __future__ import annotations
+
++import dataclasses
+ import json
+ import pathlib
+
+
+ def write(path: pathlib.Path, values: dict[str, str]) -> None:
+-    """引き継ぎ記録を書く。値が無い場合も空の記録を作る。"""
++    """引き継ぎ記録を書く。他の原本から復元できない値が無ければ、記録を作らない。"""
++    if not values:
++        return
+     path.write_text(json.dumps(values, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
+-def read(path: pathlib.Path) -> dict[str, str]:
+-    """引き継ぎ記録の値を読む。"""
+-    return json.loads(path.read_text(encoding="utf-8"))
++@dataclasses.dataclass(frozen=True)
++class Observation:
++    """記録を読んだ結果。`state`は`read`（読めた）、`absent`（不在を確かめた）、`unreadable`（それ以外で読めない）。"""
++
++    state: str
++    values: dict[str, str]
++    reason: str = ""
++
++
++def observe(path: pathlib.Path) -> Observation:
++    """記録を読み、読めた・不在・それ以外で読めないの3つに分けて返す。"""
++    try:
++        data = path.read_bytes()
++    except FileNotFoundError:
++        return Observation("absent", {})
++    except OSError as error:
++        return Observation("unreadable", {}, f"{type(error).__name__}: {error}")
++    try:
++        values = json.loads(data.decode("utf-8"))
++    except ValueError as error:
++        return Observation("unreadable", {}, f"本文を解釈できない: {error}")
++    if not isinstance(values, dict):
++        return Observation("unreadable", {}, "本文が値の対応表でない")
++    return Observation("read", values)
+diff --git a/tests/accept_test.py b/tests/accept_test.py
+--- a/tests/accept_test.py
++++ b/tests/accept_test.py
+@@ -12,6 +12,21 @@ class AcceptTest(unittest.TestCase):
+             record.write(path, {"成果物": "/work/out.md"})
+             result = accept.accept(path, required=("成果物", "計画"))
+         self.assertEqual(result["missing"], ["計画"])
++        self.assertFalse(result["complete"])
++
++    def test_absent_record_is_complete_only_without_required_items(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            path = pathlib.Path(directory) / "handoff.json"
++            self.assertTrue(accept.accept(path)["complete"])
++            result = accept.accept(path, required=("計画",))
++        self.assertEqual((result["state"], result["missing"], result["complete"]), ("absent", ["計画"], False))
++
++    def test_unreadable_record_is_incomplete(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            path = pathlib.Path(directory) / "handoff.json"
++            path.mkdir()
++            result = accept.accept(path)
++        self.assertEqual((result["state"], result["complete"]), ("unreadable", False))
+
+
+ if __name__ == "__main__":
+diff --git a/tests/prompt_test.py b/tests/prompt_test.py
+--- a/tests/prompt_test.py
++++ b/tests/prompt_test.py
+@@ -1,14 +1,26 @@
+ import pathlib
++import tempfile
+ import unittest
+
+-from relay import prompt
++from relay import prompt, record
+
+
+ class PromptTest(unittest.TestCase):
+-    def test_prompt_points_to_record_and_task(self) -> None:
+-        text = prompt.compose("資料を直す", pathlib.Path("/work/handoff.json"))
+-        self.assertIn("`/work/handoff.json`", text)
+-        self.assertIn("依頼: 資料を直す", text)
++    def test_prompt_follows_how_the_record_was_read(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            written = pathlib.Path(directory) / "written.json"
++            record.write(written, {"成果物": "/work/out.md"})
++            absent = pathlib.Path(directory) / "absent.json"
++            unreadable = pathlib.Path(directory) / "unreadable.json"
++            unreadable.mkdir()
++            texts = {path.name: prompt.compose("資料を直す", path) for path in (written, absent, unreadable)}
++        self.assertTrue(texts["written.json"].startswith(f"最初に引き継ぎ記録`{written}`を読む。"))
++        self.assertIn("作らなかった", texts["absent.json"])
++        self.assertNotIn("最初に引き継ぎ記録", texts["absent.json"])
++        self.assertIn("読めない", texts["unreadable.json"])
++        self.assertIn("未確認", texts["unreadable.json"])
++        for text in texts.values():
++            self.assertIn("依頼: 資料を直す", text)
+
+
+ if __name__ == "__main__":
+diff --git a/tests/record_test.py b/tests/record_test.py
+--- a/tests/record_test.py
++++ b/tests/record_test.py
+@@ -10,13 +10,26 @@ class RecordTest(unittest.TestCase):
+         with tempfile.TemporaryDirectory() as directory:
+             path = pathlib.Path(directory) / "handoff.json"
+             record.write(path, {"成果物": "/work/out.md"})
+-            self.assertEqual(record.read(path), {"成果物": "/work/out.md"})
++            self.assertEqual(record.observe(path), record.Observation("read", {"成果物": "/work/out.md"}))
+
+-    def test_empty_values_create_empty_record(self) -> None:
++    def test_empty_values_create_no_record(self) -> None:
+         with tempfile.TemporaryDirectory() as directory:
+             path = pathlib.Path(directory) / "handoff.json"
+             record.write(path, {})
+-            self.assertEqual(record.read(path), {})
++            self.assertFalse(path.exists())
++            self.assertEqual(record.observe(path).state, "absent")
++
++    def test_unreadable_record_is_not_absent(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            not_file = pathlib.Path(directory) / "handoff.json"
++            not_file.mkdir()
++            broken = pathlib.Path(directory) / "broken.json"
++            broken.write_text("{", encoding="utf-8")
++            for path in (not_file, broken):
++                with self.subTest(path=path.name):
++                    observed = record.observe(path)
++                    self.assertEqual(observed.state, "unreadable")
++                    self.assertTrue(observed.reason)
+
+
+ if __name__ == "__main__":

@@ -7,7 +7,6 @@ import typing
 
 import pytest
 import yaml
-
 from agent_toolkit._atk import run_script
 
 

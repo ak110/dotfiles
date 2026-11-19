@@ -31,11 +31,10 @@ def _target(tmp_path: pathlib.Path) -> pathlib.Path:
     entry.parent.mkdir(parents=True)
     entry.write_text("", encoding="utf-8")
     root = entry.parents[1]
-    (root / "pyproject.toml").write_text("[project]\nname='plugin'\nversion='0'\n", encoding="utf-8")
-    (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-    launcher = entry.parents[1] / "scripts" / "launch.py"
+    launcher = root / "scripts" / "launch.py"
     launcher.parent.mkdir()
-    launcher.write_text("", encoding="utf-8")
+    launcher.write_text("# /// script\n# ///\n", encoding="utf-8")
+    (root / "scripts" / "launch.py.lock").write_text("version = 1\n", encoding="utf-8")
     return entry
 
 
@@ -188,7 +187,7 @@ def test_prepare_targets_groups_dependencies_and_preserves_roots(tmp_path, monke
         return True
 
     monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
-    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
+    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test").commands
     assert [command[-1] for command in commands] == list(map(str, paths))
     assert len(calls) == (count if different_keys else min(count, 1))
     assert all(command[-2] == "--prepare" for command in calls)
@@ -210,7 +209,7 @@ def test_failed_prepare_does_not_retry_same_key_or_skip_other_environment(tmp_pa
         return command[-1] == str(paths[-1])
 
     monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
-    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
+    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test").commands
     assert len(calls) == 2
     assert [command[-1] for command in commands] == [str(paths[-1])]
 
@@ -306,3 +305,25 @@ def test_codex_candidate_diagnostic_preserves_recovery_context(
     else:
         assert target is None
         assert not any(record.levelno >= logging.WARNING for record in caplog.records)
+
+
+def test_prepare_targets_skips_legacy_root_without_lock_and_prepares_others(tmp_path, monkeypatch, caplog):
+    """依存の固定内容が無い旧形式の配布rootは警告して準備の対象から除き、他のrootは準備する。"""
+    legacy = _target(tmp_path / "legacy")
+    current = _target(tmp_path / "current")
+    (legacy.parents[1] / "scripts" / "launch.py.lock").unlink()
+    paths = [legacy, current]
+    monkeypatch.setattr(_plugin_warmup, "resolve_targets", lambda *_args, **_kwargs: (paths, pathlib.Path(sys.executable)))
+    calls = []
+
+    def prepare(command, **_kwargs):
+        calls.append(command)
+        return True
+
+    monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
+    with caplog.at_level(logging.WARNING):
+        prepared = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
+    assert [command[-1] for command in prepared.commands] == [str(current)]
+    assert prepared.legacy == (legacy,)
+    assert [command[-1] for command in calls] == [str(current)]
+    assert "旧形式の配布root" in caplog.text

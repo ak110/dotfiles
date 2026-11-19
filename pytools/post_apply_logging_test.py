@@ -9,9 +9,11 @@ import logging
 from pathlib import Path
 
 import pytest
+from agent_toolkit._atk.managed_temp import resources
+from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 
 from pytools import post_apply
-from pytools._internal import post_apply_outcome
+from pytools._internal import plugin_warmup, post_apply_outcome
 from pytools._internal.post_apply_test_helpers import _isolate_sync_report as _isolate_sync_report
 from pytools._internal.post_apply_test_helpers import _isolate_update_log as _isolate_update_log
 
@@ -41,6 +43,35 @@ def test_persistent_log_redacts_plugin_output_only(capsys: pytest.CaptureFixture
     assert "stage=plugin exit=7 stderr:\n" in saved
     assert "RuntimeError" in saved
     assert "[REDACTED]" in saved
+
+
+def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(tmp_path))
+    monkeypatch.setattr(plugin_environment_cleanup, "_process_references", lambda: ([], False))
+    current, old, broken = (tmp_path / "environments" / name for name in ("current-key", "old-key", "broken-key"))
+    for target in (current, old, broken):
+        target.mkdir(parents=True)
+    (broken / ".agent-toolkit-sources.json").write_text("{", encoding="utf-8")
+    monkeypatch.setattr(plugin_environment, "project_environment", lambda *args, **kwargs: current)
+    monkeypatch.setattr(plugin_environment, "record_source", lambda *args: None)
+    monkeypatch.setattr(plugin_warmup.session_review, "sweep", lambda **kwargs: None)
+
+    def sweep(**_kwargs):
+        resources.log_retained([{"path": "resource-key", "reason": "使用中", "retryable": True}])
+        return plugin_warmup.sweep.SweepResult([tmp_path / "deleted-key"], ((tmp_path / "locked-key", "使用中"),))
+
+    monkeypatch.setattr(plugin_warmup.sweep, "sweep_managed_temp", sweep)
+
+    with post_apply._configure_logging():
+        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([["python", "--project", "root"]]))
+    captured = capsys.readouterr()
+    screen = captured.out + captured.err
+    assert "保持1件、削除1件、保留1件" in screen
+    assert "update-dotfiles logs" in screen
+    saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
+    assert "再生成物1件" in screen and "一時資源1件" in screen
+    for name in (current.name, old.name, broken.name, "resource-key", "deleted-key", "locked-key"):
+        assert name not in screen and name in saved
 
 
 def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:

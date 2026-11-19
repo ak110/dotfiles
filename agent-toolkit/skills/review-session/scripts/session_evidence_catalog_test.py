@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 import session_evidence_catalog as catalog
 import session_review_evidence as evidence
-
 from agent_toolkit._common import session_family, skill_modes
 from agent_toolkit._common.session_family import _load_records_checked, _RecordLoad
 from agent_toolkit._testing.session_evidence_support import (

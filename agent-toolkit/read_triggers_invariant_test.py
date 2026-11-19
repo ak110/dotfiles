@@ -5,7 +5,6 @@ import re
 import shutil
 
 import pytest
-
 from agent_toolkit._common import plugin_roots, read_triggers, task_documents
 from agent_toolkit._common.read_triggers_operations import missing_operation_rows
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli

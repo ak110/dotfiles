@@ -7,7 +7,6 @@ import pathlib
 import subprocess
 
 import pytest
-
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._testing.history_compare_support import _commit, _compare, _git, _rewrite_records
 from agent_toolkit._testing.history_compare_support import _repo as _repo

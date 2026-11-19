@@ -1,0 +1,387 @@
+diff --git a/ledger/cli.py b/ledger/cli.py
+--- a/ledger/cli.py
++++ b/ledger/cli.py
+@@ -11,10 +11,19 @@ from ledger import store
+
+ _ADD_MANY_EPILOG = """\
+ --items-fileには、指摘を次の形のJSON配列で書く。
+-  [{"round": 1, "issue": "集計が空の表で失敗する"}]
++2以上のroundの指摘には区分（修正に起因・新しい変更・前回の見落とし）を書く。
++前回から残存の行は、recheckの対応不十分・未対応の判定で--restから登録する。
++  [{"round": 2, "issue": "集計が前回の判定を数えない", "category": "修正に起因"}]
+ """
+
+
++def _row_id(value: str) -> int:
++    number = int(value)
++    if number < 1:
++        raise argparse.ArgumentTypeError("1以上の整数で指定する")
++    return number
++
++
+ def build_parser() -> argparse.ArgumentParser:
+     parser = argparse.ArgumentParser(prog="ledger", description="レビュー指摘の管理表を操作する。")
+     parser.add_argument("--table", type=pathlib.Path, default=pathlib.Path("review.json"), help="管理表のパス")
+@@ -22,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
+     add = sub.add_parser("add", help="指摘を1行追加する")
+     add.add_argument("--round", type=int, required=True, help="レビューのround")
+     add.add_argument("--issue", required=True, help="指摘の本文")
++    add.add_argument("--category", choices=store.CATEGORIES[1:], help="2以上のroundの指摘の区分")
+     add_many = sub.add_parser(
+         "add-many",
+         help="指摘をまとめて追加する",
+@@ -34,6 +44,13 @@ def build_parser() -> argparse.ArgumentParser:
+     respond.add_argument("--text", required=True, help="応答の本文")
+     respond_many = sub.add_parser("respond-many", help="応答をまとめて書く")
+     respond_many.add_argument("--items-file", type=pathlib.Path, required=True, help="応答のJSON配列のファイル")
++    recheck = sub.add_parser(
++        "recheck", help="前回の指摘へ判定を追記する。1つの行へ1つのroundで1回だけ記録し、誤りは次のroundで改める"
++    )
++    recheck.add_argument("--round", type=int, required=True, help="現在の再レビューのround")
++    recheck.add_argument("--row-id", type=_row_id, required=True, help="判定する前回の指摘の行")
++    recheck.add_argument("--verdict", choices=store.VERDICTS, required=True, help="判定")
++    recheck.add_argument("--rest", help="対応不十分・未対応で、今回のroundへ前回から残存として登録する指摘の残りの本文")
+     summary = sub.add_parser("summary", help="roundの集計を出す")
+     summary.add_argument("--round", type=int, required=True, help="集計するround")
+     return parser
+@@ -47,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
+     args = build_parser().parse_args(argv)
+     try:
+         if args.command == "add":
+-            print(store.add(args.table, args.round, args.issue))
++            print(store.add(args.table, args.round, args.issue, args.category))
+         elif args.command == "add-many":
+             for row_id in store.add_many(args.table, _items(args.items_file)):
+                 print(row_id)
+@@ -55,6 +72,10 @@ def main(argv: list[str] | None = None) -> int:
+             store.respond(args.table, args.row_id, args.text)
+         elif args.command == "respond-many":
+             store.respond_many(args.table, _items(args.items_file))
++        elif args.command == "recheck":
++            residual = store.recheck(args.table, args.round, args.row_id, args.verdict, args.rest)
++            if residual is not None:
++                print(residual)
+         else:
+             print(json.dumps(store.summary(args.table, args.round), ensure_ascii=False))
+     except (KeyError, ValueError) as error:
+diff --git a/ledger/store.py b/ledger/store.py
+--- a/ledger/store.py
++++ b/ledger/store.py
+@@ -5,6 +5,13 @@ from __future__ import annotations
+ import json
+ import pathlib
+
++CATEGORIES = ("前回から残存", "修正に起因", "新しい変更", "前回の見落とし")
++"""2以上のroundの指摘に書く区分。「前回から残存」の行はrecheckだけが登録する。"""
++VERDICTS = ("完了", "対応不十分", "未対応")
++"""再レビューで前回の指摘へ付ける判定。"""
++_UNRESOLVED = ("対応不十分", "未対応")
++_RESIDUAL = "前回から残存"
++
+
+ def load(path: pathlib.Path) -> list[dict]:
+     """管理表の行を読む。ファイルが無ければ空の表として扱う。"""
+@@ -17,8 +24,13 @@ def _save(path: pathlib.Path, rows: list[dict]) -> None:
+     path.write_text(json.dumps(rows, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
+-def _row(row_id: int, round_: int, issue: str, response: str) -> dict:
+-    return {"id": row_id, "round": round_, "issue": issue, "response": response}
++def _row(row_id: int, round_: int, issue: str, category: str | None = None, origin: int | None = None) -> dict:
++    row = {"id": row_id, "round": round_, "issue": issue, "response": "", "checks": []}
++    if category is not None:
++        row["category"] = category
++    if origin is not None:
++        row["origin"] = origin
++    return row
+
+
+ def _find(rows: list[dict], row_id: int) -> dict:
+@@ -27,36 +39,67 @@ def _find(rows: list[dict], row_id: int) -> dict:
+     return rows[row_id - 1]
+
+
+-def _validate(round_: int, issue: str) -> None:
++def current_round(rows: list[dict]) -> int:
++    """指摘の行と判定に記録済みの最大のround。記録はこのround以降だけへ追加し、確認済みのroundの集計を変えない。"""
++    rounds = [row["round"] for row in rows] + [check["round"] for row in rows for check in row.get("checks", [])]
++    return max(rounds, default=0)
++
++
++def _require_current(rows: list[dict], round_: int) -> None:
++    latest = current_round(rows)
++    if round_ < latest:
++        raise ValueError(f"記録済みの最大のround（{latest}）より前へは記録できない。round {latest}以上で記録する")
++
++
++def _validate(rows: list[dict], round_: int, issue: str, category: str | None) -> None:
+     if round_ < 1:
+         raise ValueError("roundは1以上の整数")
+     if not issue.strip():
+         raise ValueError("指摘の本文が空")
++    if round_ >= 2 and category not in CATEGORIES:
++        raise ValueError(f"2以上のroundの指摘には区分（{'・'.join(CATEGORIES)}）が必要")
++    if category == _RESIDUAL:
++        raise ValueError("「前回から残存」の行は、recheckの対応不十分・未対応の判定で残りの本文を渡して登録する")
++    _require_current(rows, round_)
+
+
+-def add(path: pathlib.Path, round_: int, issue: str) -> int:
+-    """指摘を1行追加し、行の識別子を返す。"""
+-    return add_many(path, [{"round": round_, "issue": issue}])[0]
++def add(path: pathlib.Path, round_: int, issue: str, category: str | None = None) -> int:
++    """指摘を1行追加し、行の識別子を返す。2以上のroundの指摘には区分を書く。"""
++    return add_many(path, [{"round": round_, "issue": issue, "category": category}])[0]
+
+
+ def add_many(path: pathlib.Path, items: list[dict]) -> list[int]:
+-    """指摘をまとめて追加し、行の識別子を返す。itemsは{"round": round, "issue": 本文}の配列で、1件でも不正なら表を変えない。"""
++    """指摘をまとめて追加し、行の識別子を返す。
++
++    itemsは{"round": round, "issue": 本文, "category": 区分}の配列で、1件でも不正なら表を変えない。
++    """
+     rows = load(path)
+     added = []
+     for item in items:
+-        _validate(item["round"], item["issue"])
+-        rows.append(_row(len(rows) + 1, item["round"], item["issue"], ""))
++        category = item.get("category")
++        _validate(rows, item["round"], item["issue"], category)
++        rows.append(_row(len(rows) + 1, item["round"], item["issue"], category if item["round"] >= 2 else None))
+         added.append(len(rows))
+     _save(path, rows)
+     return added
+
+
+-def respond(path: pathlib.Path, row_id: int, text: str) -> None:
+-    """指摘の行へレビューイーの応答を書く。書き直しは前の応答を置き換える。"""
++def _respond(rows: list[dict], row_id: int, text: str) -> None:
++    """応答を書く。判定のある行は、判定が確かめた応答と同じ本文の再記録だけを受け付ける。"""
+     if not text.strip():
+-        raise ValueError("応答の本文が空")
++        raise ValueError(f"行{row_id}の応答の本文が空")
++    row = _find(rows, row_id)
++    if row.get("checks") and row["response"] != text:
++        raise ValueError(
++            f"行{row_id}にはレビュー担当の判定がある。判定の後に対応を変えた場合は、次の再レビューで確かめる修正差分に含める"
++        )
++    row["response"] = text
++
++
++def respond(path: pathlib.Path, row_id: int, text: str) -> None:
++    """指摘の行へレビューイーの応答を書く。判定の無い行の書き直しは前の応答を置き換える。"""
+     rows = load(path)
+-    _find(rows, row_id)["response"] = text
++    _respond(rows, row_id, text)
+     _save(path, rows)
+
+
+@@ -64,14 +107,70 @@ def respond_many(path: pathlib.Path, items: list[dict]) -> None:
+     """複数の行へ応答を書く。itemsは{"id": 行の識別子, "response": 応答の本文}の配列。"""
+     rows = load(path)
+     for item in items:
+-        row = _find(rows, item["id"])
+-        if not item["response"].strip():
+-            raise ValueError(f"行{item['id']}の応答の本文が空")
+-        rows[row["id"] - 1] = _row(row["id"], row["round"], row["issue"], item["response"])
++        _respond(rows, item["id"], item["response"])
+     _save(path, rows)
+
+
++def recheck(path: pathlib.Path, round_: int, row_id: int, verdict: str, rest: str | None = None) -> int | None:
++    """前回の指摘へ判定を追記する。
++
++    対応不十分・未対応は、指摘の残りの本文`rest`を今回のroundの「前回から残存」の行として登録し、その行の識別子を返す。
++    登録した行は判定した指摘を`origin`で指すため、別の指摘の残りを指すことは無い。
++    判定は1つのroundに1回だけ追記し、以前の判定は消さない。誤った判定は次のroundの判定で改める。
++    """
++    rows = load(path)
++    if round_ < 2:
++        raise ValueError("roundは2以上の整数")
++    _require_current(rows, round_)
++    target = _find(rows, row_id)
++    if target["round"] >= round_:
++        raise ValueError(f"行{row_id}はround {round_}より前の指摘でない")
++    if not target["response"]:
++        raise ValueError(f"行{row_id}には応答が無い")
++    if verdict not in VERDICTS:
++        raise ValueError(f"判定は{'・'.join(VERDICTS)}のいずれか")
++    if any(check["round"] == round_ for check in target.get("checks", [])):
++        raise ValueError(f"行{row_id}にはround {round_}の判定が既にある。改める場合は次のroundで判定する")
++    residual = None
++    if verdict in _UNRESOLVED:
++        if rest is None or not rest.strip():
++            raise ValueError("対応不十分・未対応には、指摘の残りの本文（rest）が必要")
++        rows.append(_row(len(rows) + 1, round_, rest, _RESIDUAL, origin=row_id))
++        residual = len(rows)
++    elif rest is not None:
++        raise ValueError("完了にはrestを指定しない")
++    target.setdefault("checks", []).append({"round": round_, "verdict": verdict, "residual": residual})
++    _save(path, rows)
++    return residual
++
++
++def _latest_check(row: dict, round_: int) -> dict | None:
++    checks = [check for check in row.get("checks", []) if check["round"] <= round_]
++    return max(checks, key=lambda check: check["round"]) if checks else None
++
++
+ def summary(path: pathlib.Path, round_: int) -> dict:
+-    """指定したroundの指摘の件数と、応答の無い件数を返す。"""
+-    current = [row for row in load(path) if row["round"] == round_]
+-    return {"findings": len(current), "unanswered": sum(1 for row in current if not row["response"])}
++    """指定したroundの集計を返す。
++
++    `unanswered`はこのroundの指摘のうち応答の無い件数である。
++    `recheck_pending`はこのroundより前の指摘のうち、このround以前の判定が1つも無い件数である。
++    `verdicts`はこのroundより前の指摘ごとの、このround以前で最も新しい判定の件数である。
++    `converged`は、このroundに指摘が無く、`recheck_pending`が0であることを表す。
++    """
++    rows = load(path)
++    current = [row for row in rows if row["round"] == round_]
++    verdicts = dict.fromkeys(VERDICTS, 0)
++    pending = 0
++    for row in (row for row in rows if row["round"] < round_):
++        check = _latest_check(row, round_)
++        if check is None:
++            pending += 1
++        else:
++            verdicts[check["verdict"]] += 1
++    return {
++        "findings": len(current),
++        "unanswered": sum(1 for row in current if not row["response"]),
++        "recheck_pending": pending,
++        "verdicts": verdicts,
++        "converged": not current and pending == 0,
++    }
+diff --git a/tests/cli_test.py b/tests/cli_test.py
+--- a/tests/cli_test.py
++++ b/tests/cli_test.py
+@@ -17,7 +17,34 @@ class CliTest(unittest.TestCase):
+                 self.assertEqual(cli.main(["--table", table, "add", "--round", "1", "--issue", "集計が失敗する"]), 0)
+                 self.assertEqual(cli.main(["--table", table, "respond", "--row-id", "1", "--text", "直した"]), 0)
+                 self.assertEqual(cli.main(["--table", table, "summary", "--round", "1"]), 0)
+-        self.assertEqual(json.loads(output.getvalue().splitlines()[-1]), {"findings": 1, "unanswered": 0})
++        self.assertEqual(json.loads(output.getvalue().splitlines()[-1])["unanswered"], 0)
++
++    def test_recheck_records_verdict_and_residual(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            table = str(pathlib.Path(directory) / "review.json")
++            output = io.StringIO()
++            with contextlib.redirect_stdout(output):
++                cli.main(["--table", table, "add", "--round", "1", "--issue", "集計が失敗する"])
++                cli.main(["--table", table, "respond", "--row-id", "1", "--text", "直した"])
++                arguments = ["--round", "2", "--row-id", "1", "--verdict", "対応不十分", "--rest", "空の表で失敗する"]
++                self.assertEqual(cli.main(["--table", table, "recheck", *arguments]), 0)
++                self.assertEqual(cli.main(["--table", table, "summary", "--round", "2"]), 0)
++        lines = output.getvalue().splitlines()
++        self.assertEqual(lines[-2], "2")
++        result = json.loads(lines[-1])
++        self.assertEqual((result["unanswered"], result["recheck_pending"]), (1, 0))
++
++    def test_add_many_help_example_runs_as_displayed(self) -> None:
++        help_output = io.StringIO()
++        with contextlib.redirect_stdout(help_output), self.assertRaises(SystemExit):
++            cli.main(["add-many", "--help"])
++        example = next(line.strip() for line in help_output.getvalue().splitlines() if line.strip().startswith("[{"))
++        with tempfile.TemporaryDirectory() as directory:
++            items = pathlib.Path(directory) / "items.json"
++            items.write_text(example, encoding="utf-8")
++            table = str(pathlib.Path(directory) / "review.json")
++            with contextlib.redirect_stdout(io.StringIO()):
++                self.assertEqual(cli.main(["--table", table, "add-many", "--items-file", str(items)]), 0)
+
+
+ if __name__ == "__main__":
+diff --git a/tests/help_test.py b/tests/help_test.py
+--- a/tests/help_test.py
++++ b/tests/help_test.py
+@@ -15,9 +15,11 @@ def _subparsers() -> dict[str, argparse.ArgumentParser]:
+
+
+ def _sample(action: argparse.Action) -> str:
++    """引数が受理する値の例を返す。整数を返す独自の型変換（recheckの`--row-id`など）にも整数を渡す。"""
+     if action.choices:
+         return str(next(iter(action.choices)))
+-    return "1" if action.type in (int, float) else "value"
++    returns_int = getattr(action.type, "__annotations__", {}).get("return") in (int, "int")
++    return "1" if action.type in (int, float) or returns_int else "value"
+
+
+ class HelpTest(unittest.TestCase):
+diff --git a/tests/store_test.py b/tests/store_test.py
+--- a/tests/store_test.py
++++ b/tests/store_test.py
+@@ -17,7 +17,8 @@ class StoreTest(unittest.TestCase):
+         store.add(self.table, 1, "集計が空の表で失敗する")
+         store.add(self.table, 1, "ヘルプの例が古い")
+         store.respond(self.table, 1, "空の表を0件として扱った")
+-        self.assertEqual(store.summary(self.table, 1), {"findings": 2, "unanswered": 1})
++        result = store.summary(self.table, 1)
++        self.assertEqual((result["findings"], result["unanswered"]), (2, 1))
+
+     def test_respond_many_writes_each_response(self) -> None:
+         store.add(self.table, 1, "集計が空の表で失敗する")
+@@ -29,6 +30,62 @@ class StoreTest(unittest.TestCase):
+         with self.assertRaises(ValueError):
+             store.add(self.table, 1, " ")
+
++    def _answered(self, *issues: str) -> None:
++        for issue in issues:
++            row_id = store.add(self.table, 1, issue)
++            store.respond(self.table, row_id, f"{issue}を直した")
++
++    def test_later_round_finding_requires_category(self) -> None:
++        with self.assertRaises(ValueError):
++            store.add(self.table, 2, "集計が前回の判定を数えない")
++        with self.assertRaises(ValueError):
++            store.add(self.table, 2, "集計が前回の判定を数えない", "前回から残存")
++        self.assertEqual(store.add(self.table, 2, "集計が前回の判定を数えない", "新しい変更"), 1)
++
++    def test_complete_verdict_settles_previous_finding(self) -> None:
++        self._answered("集計が空の表で失敗する")
++        self.assertEqual(store.summary(self.table, 2)["recheck_pending"], 1)
++        self.assertIsNone(store.recheck(self.table, 2, 1, "完了"))
++        result = store.summary(self.table, 2)
++        self.assertEqual((result["unanswered"], result["recheck_pending"], result["verdicts"]["完了"]), (0, 0, 1))
++
++    def test_unresolved_verdict_registers_residual_of_the_same_finding(self) -> None:
++        self._answered("集計が空の表で失敗する", "ヘルプの例が古い")
++        first = store.recheck(self.table, 2, 1, "未対応", "空の表でまだ失敗する")
++        second = store.recheck(self.table, 2, 2, "対応不十分", "例の区分が足りない")
++        rows = store.load(self.table)
++        self.assertEqual((rows[first - 1]["origin"], rows[second - 1]["origin"]), (1, 2))
++        self.assertEqual({rows[first - 1]["category"], rows[second - 1]["category"]}, {"前回から残存"})
++        store.respond(self.table, second, "区分を足した")
++        store.recheck(self.table, 3, second, "完了")
++        self.assertEqual(store.summary(self.table, 3)["recheck_pending"], 1)
++
++    def test_records_before_latest_round_are_rejected_after_verdict_only_round(self) -> None:
++        self._answered("集計が空の表で失敗する")
++        store.recheck(self.table, 2, 1, "完了")
++        store.recheck(self.table, 3, 1, "完了")
++        confirmed = store.summary(self.table, 3)
++        for record in (
++            lambda: store.recheck(self.table, 2, 1, "未対応", "まだ失敗する"),
++            lambda: store.add(self.table, 2, "前の版でも失敗する", "前回の見落とし"),
++        ):
++            with self.assertRaises(ValueError):
++                record()
++        self.assertEqual(store.summary(self.table, 3), confirmed)
++
++    def test_response_after_verdict_keeps_what_was_checked(self) -> None:
++        self._answered("集計が空の表で失敗する")
++        store.recheck(self.table, 2, 1, "完了")
++        with self.assertRaises(ValueError):
++            store.respond(self.table, 1, "修正を取り消し、現状で十分と判断した")
++        with self.assertRaises(ValueError):
++            store.respond_many(self.table, [{"id": 1, "response": "修正を取り消した"}])
++        store.respond(self.table, 1, "集計が空の表で失敗するを直した")
++        store.respond_many(self.table, [{"id": 1, "response": "集計が空の表で失敗するを直した"}])
++        (row,) = store.load(self.table)
++        self.assertEqual(row["checks"], [{"round": 2, "verdict": "完了", "residual": None}])
++        self.assertEqual(store.summary(self.table, 2)["verdicts"]["完了"], 1)
++
+
+ if __name__ == "__main__":
+     unittest.main()

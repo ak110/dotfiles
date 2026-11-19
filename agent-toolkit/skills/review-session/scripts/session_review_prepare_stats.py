@@ -6,9 +6,8 @@ import collections
 import json
 from typing import Any
 
-from session_review_prepare_text import _SUMMARY_TOP_COUNT, _clip_utf8, _one_line
-
 from agent_toolkit._common import next_action as _next_action
+from session_review_prepare_text import _SUMMARY_TOP_COUNT, _clip_utf8, _one_line
 
 _SLOW_CALL_LIMIT = 10
 

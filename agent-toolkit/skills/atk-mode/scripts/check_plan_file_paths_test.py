@@ -5,7 +5,6 @@ import pathlib
 
 import check_plan_file
 import pytest
-
 from agent_toolkit._testing.plan_file_check_support import _TWO_FILE_MIGRATION, _plan, human_new_format_plan
 from agent_toolkit._testing.plan_file_check_support import fixture_repo as fixture_repo
 

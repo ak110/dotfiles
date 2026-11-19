@@ -13,7 +13,6 @@ from typing import Any
 
 import pytest
 import yaml
-
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
 from agent_toolkit._testing import git_repository

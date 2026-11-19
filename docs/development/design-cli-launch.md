@@ -47,7 +47,10 @@ dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、P
 rootは`launch.py`の配置または`--project`から解決され、cwdの変更だけでは切り替わらない。
 
 CLI・hook・MCPはこのスクリプトから起動し、登録済みスキルスクリプトはCLIと同じ環境内で実行する。
-依存に作用するpyproject設定、`uv.lock`、選択したPythonの実行ファイルパス、OS・アーキテクチャの組み合わせから環境の保存先を分ける。
+`launch.py`のインラインメタデータ（PEP 723）が宣言する依存と`launch.py.lock`の内容、選択したPythonの実行ファイルパス、OS・アーキテクチャの組み合わせから環境の保存先を分ける。
+準備は`VIRTUAL_ENV=<共有環境>`を渡し、配布rootをcwdにして`uv sync --script <root>/scripts/launch.py --active --python <base> --locked`で行う。
+配布rootにはuvのプロジェクトを置かない。
+理由と開発環境の構成は[パッケージ構成と起動層の設計記録](design-packages-layout.md)の「agent-toolkitの依存の宣言と開発環境」に従う。
 データ領域は`AGENT_TOOLKIT_RUNTIME_DATA`の明示指定を優先し、次にOSのユーザーデータ領域を使う。
 ホストが渡す`CLAUDE_PLUGIN_DATA`と`PLUGIN_DATA`はユーザーデータ領域へ書き込めない場合だけ使う。
 ホストごとのplugin dataを優先すると、導入後のウォームアップ・端末の`atk`・Claude Code・Codexが同じ版の環境を別々に構築し、初回のhookがウォームアップ済みの環境を使えないためである。

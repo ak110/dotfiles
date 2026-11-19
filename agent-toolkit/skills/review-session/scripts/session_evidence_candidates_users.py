@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from session_evidence_extract import _generated_user_event
-
 from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY as _PROCESS_LOOP_GOAL_BODY
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_GOAL_BODY
 from agent_toolkit._common import skill_modes
+from session_evidence_extract import _generated_user_event
 
 # 過去の単一対象と現在の登録全体の起動を、後続の人間の介入を探すための初期要求として扱う。
 _PROCESS_WI_GOAL_BODIES = (

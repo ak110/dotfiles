@@ -6,7 +6,6 @@ import re
 import typing
 
 import pytest
-
 from agent_toolkit._testing.selection_check_support import (
     _DOTFILES_PYPROJECT,
     _READ_REQUEST,

@@ -26,11 +26,14 @@
   `launch.py`は標準ライブラリだけでプラグインのrootとデータ領域を解決し、準備済みの共有環境のPythonで対象を起動する。
 - 依存の準備は`uv run --no-cache --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`で行う。
   `--prepare`の後ろのtargetは、配布rootの中に起動対象が在ることを確かめるためだけの必須の引数である。
-  依存に作用するpyprojectの設定、`uv.lock`、選んだPythonの実行ファイルのパス、OSとアーキテクチャの組み合わせが未準備の時に実行し、同じ組み合わせなら別の配布rootやworktreeでも準備済みの環境を共有する。
+  依存の宣言と固定内容（`launch.py`のインラインメタデータと`launch.py.lock`）、選んだPythonの実行ファイルのパス、OSとアーキテクチャの組み合わせが未準備の時に実行し、同じ組み合わせなら別の配布rootやworktreeでも準備済みの環境を共有する。
   別のworktreeを指す時の`<plugin root>`は、そのworktreeの`agent-toolkit`の絶対パスにする（rootは`launch.py`の配置か`--project`の指定から解決し、cwdを変えただけでは切り替わらない）。
 - 登録済みの`skills/*/scripts/`のスクリプトは、`atk run-script`で同じ環境から実行する。
   SSH接続先で動く`atk_serve_*_remote_helper.py`だけは独立したPEP 723スクリプトとして起動するため、PEP 723の宣言を保つ。
-- `agent-toolkit/pyproject.toml`の`dependencies`を変えたら、同じプロジェクトの`uv.lock`も更新する。
+- `agent-toolkit/`の実行依存は`scripts/launch.py`冒頭のPEP 723インラインメタデータへ書き、`agent-toolkit/`直下には`pyproject.toml`と`uv.lock`を作らない。
+  変えたら`uv lock --script agent-toolkit/scripts/launch.py`で`launch.py.lock`を更新し、リポジトリ直下の`pyproject.toml`の`[project] dependencies`へ同じ表記で含める。
+  整合は`agent_toolkit_dependencies_invariant_test.py`が確かめる。
+  開発用の依存は直下の`[dependency-groups] dev`だけが持ち、agent_toolkitの本番コードからimportしない（`scripts/check_script_imports.py`が検出する）。
 
 ## 常駐CLIと自動起動の判定入力
 

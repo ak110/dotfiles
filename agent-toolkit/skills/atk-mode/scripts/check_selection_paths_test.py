@@ -8,7 +8,6 @@ import typing
 import check_selection
 import pytest
 import yaml
-
 from agent_toolkit._testing.selection_check_support import (
     _awi,
     _dispatch,

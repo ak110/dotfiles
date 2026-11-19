@@ -9,7 +9,6 @@ import pytest
 import session_evidence_candidates as evidence_candidates
 import session_evidence_extract as evidence_extract
 import session_review_evidence as evidence
-
 from agent_toolkit._agents_server import backends
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import read_jsonl

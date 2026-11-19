@@ -40,7 +40,7 @@
 ツールの呼び出し回数、資料の読み込み量、所要時間、適用の頻度を考慮し、必読範囲の縮小や集約、準備処理を呼び出される側へ移管する案、または探索自体を不要にする案などを比較検討する。
 条文を改訂する際は、本来保護すべき価値、導入目的、および期待される成果に対応付けて内容を整理する。
 現行の条文をそのまま維持する場合は、同様の停止が発生する条件とそれを許容する理由を記録する。
-判断の到達可能性については、`agent-basics:review-standards/references/judgment-details-feasibility.md`「検収手段の到達可能性」に従って確認する。
+判断の到達可能性については、`agent-basics:review-standards/SKILL.md`「検収手段の到達可能性」に従って確認する。
 一般的な設計案の比較評価は、`agent-basics:writing-standards/references/design-heuristics.md`に従って行う。
 
 ## 通読で使う比較
@@ -124,5 +124,5 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 判断の妥当性を評価する詳細：検収手段の到達可能性の基準を適用する前 | `agent-basics:review-standards/references/judgment-details-feasibility.md` |
+| 判断の妥当性を評価する詳細：検収手段の到達可能性の基準を適用する前 | `agent-basics:review-standards/SKILL.md` |
 | 振り返りの判断基準の基準を適用する前 | `analysis.md` |

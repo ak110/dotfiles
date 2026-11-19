@@ -7,7 +7,6 @@ import pathlib
 import pytest
 import session_evidence_candidates as candidates
 import session_review_prepare as prepare
-
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing.helpers import _write_transcript
 

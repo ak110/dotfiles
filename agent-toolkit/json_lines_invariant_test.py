@@ -5,7 +5,6 @@ import pathlib
 import textwrap
 
 import pytest
-
 from agent_toolkit._git import command
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent

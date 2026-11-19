@@ -186,7 +186,7 @@ def test_warmup_rechecks_code_and_dependencies(tmp_path: Path, monkeypatch) -> N
     script = tmp_path / "server.py"
     script.write_text("# MCP", encoding="utf-8")
     commands = [["python", str(script)]]
-    monkeypatch.setattr(plugin_warmup, "prepare_targets", lambda *args, **kwargs: commands)
+    monkeypatch.setattr(plugin_warmup, "prepare_targets", lambda *args, **kwargs: plugin_warmup.PreparedTargets(commands))
     startup: list[list[str]] = []
     dependency_ok = True
 

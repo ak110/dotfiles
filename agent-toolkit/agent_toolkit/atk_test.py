@@ -163,7 +163,7 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
         env["PATH"] = os.pathsep.join((str(fake_bin), env.get("PATH", "")))
         # Gitの作業ツリー外で起動し、`--target-repo`を省略した場合も対象を限定しない状態にする。
         with subprocess.Popen(  # noqa: S603
-            ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
+            [sys.executable, str(_ATK_PATH), *argv],
             stdout=write_fd,
             stderr=subprocess.PIPE,
             env=env,

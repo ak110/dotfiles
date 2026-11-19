@@ -9,7 +9,6 @@ import pytest
 import session_evidence_catalog as catalog
 import session_review_evidence as evidence
 import session_review_prepare as prepare
-
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import read_jsonl
 
