@@ -10,7 +10,7 @@ def test_sync_targets_cover_agent_toolkit_skills_and_share() -> None:
     config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     targets = config["tool"]["pyfltr"]["custom-commands"]["sync-generated-files"]["targets"]
     representatives = (
-        pathlib.Path("agent-toolkit/share/agents-server-base.md"),
+        pathlib.Path("agent-toolkit/share/read-trigger-bootstrap.md"),
         pathlib.Path(".chezmoi-source/dot_claude/rules/myprojects-common.md"),
         pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/process-wi.md"),
         pathlib.Path("agent-toolkit/skills/atk-mode/references/plan-format.md"),

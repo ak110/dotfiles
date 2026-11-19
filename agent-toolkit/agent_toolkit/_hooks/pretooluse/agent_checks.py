@@ -53,7 +53,8 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 # --- Agent・Task: 組み込みの汎用定義の起動 ---
 
 # Claude Codeの組み込みの汎用定義。agents_serverのmodeで同等の作業を行えるため、
-# `runtime-routing.md`「実行手段」は専用定義の例外に含めない。`subagent_type`を省いた起動は`general-purpose`で動く。
+# `agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」は専用定義の例外に含めない。
+# `subagent_type`を省いた起動は`general-purpose`で動く。
 # `fork`と、これ以外の名前（プロジェクト固有の専用定義など）は対象外とする。
 _GENERIC_AGENT_TYPES: frozenset[str] = frozenset({"general-purpose", "Explore", "Plan", "web-fetch", "claude"})
 # 複数の並行依頼を再発行できる余裕を持たせつつ、入力本文を保存せず状態の増加を抑える。

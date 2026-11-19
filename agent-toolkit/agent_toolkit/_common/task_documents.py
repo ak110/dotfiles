@@ -205,7 +205,7 @@ class TaskDocumentDeclaration:
     def accepted(self) -> frozenset[str]:
         """委譲プロンプトで受理する全入力名（必須・任意入力名）。
 
-        待機と再開の方針は採用したbackendの能力に従ってサーバーが`share/agents-server-*.md`で伝えるため、委譲元が渡す共通入力は持たない。
+        待機と再開の方針は採用したbackendの能力に従ってサーバーが起動の本文（`launch_prompts.py`）で伝えるため、委譲元が渡す共通入力は持たない。
         """
         return frozenset(self.required) | frozenset(self.optional)
 

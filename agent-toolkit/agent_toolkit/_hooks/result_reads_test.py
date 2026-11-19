@@ -163,7 +163,7 @@ def test_public_hook_receipt_guides_before_next_delegation(tmp_path, monkeypatch
     }
     guided = _run_hook_in_process("pretooluse", operation)
     assert guided.returncode == 0
-    expected = "reviewee.md" if status == "completed" else "receiving.md"
+    expected = "reviewee.md" if status == "completed" else "delegation-receiving.md"
     assert expected in guided.stdout
     if status != "completed":
         assert "reviewee.md" not in guided.stdout
