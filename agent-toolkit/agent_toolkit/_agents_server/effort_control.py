@@ -32,7 +32,9 @@ async def process_requests(
         session = sessions.get(session_id) if isinstance(session_id, str) else None
         if session is not None and path.stem in session.effort_request_results:
             try:
-                await run_file_operation(effort_requests.respond, path, session.effort_request_results[path.stem])
+                await run_file_operation(
+                    effort_requests.respond, path, session.effort_request_results[path.stem], state_root=state_root
+                )
             except OSError:
                 _LOG.exception("effort応答を保存できない。保存先の権限を確認する: path=%s", path)
             continue
@@ -92,7 +94,7 @@ async def process_requests(
         if session is not None:
             session.effort_request_results[path.stem] = response
         try:
-            await run_file_operation(effort_requests.respond, path, response)
+            await run_file_operation(effort_requests.respond, path, response, state_root=state_root)
         except OSError:
             _LOG.exception("effort応答を保存できない。次の監視で保存だけ再試行する: path=%s", path)
 

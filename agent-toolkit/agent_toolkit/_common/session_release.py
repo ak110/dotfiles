@@ -12,7 +12,14 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
-from agent_toolkit._common import atomic_file, path_ownership, registry_requests, session_layout, session_registry
+from agent_toolkit._common import (
+    async_operations,
+    atomic_file,
+    path_ownership,
+    registry_requests,
+    session_layout,
+    session_registry,
+)
 
 
 class OwnedSession(Protocol):
@@ -118,8 +125,16 @@ def request_release(
             time.sleep(min(0.05, remaining))
     finally:
         # JSON登録簿と拡張子を分け、異常終了時も既存のsessionファイルの7日掃引へ渡す。
-        request.unlink(missing_ok=True)
-        response_path.unlink(missing_ok=True)
+        registry_requests.withdraw(request, response_path, session_id, state_root=state_root)
+
+
+async def _respond(
+    request: pathlib.Path, response_path: pathlib.Path, response: dict[str, Any], state_root: pathlib.Path | None
+) -> None:
+    # 登録簿ロックを待つ間も監視loopを止めない。
+    await async_operations.run_sync_operation(
+        registry_requests.respond, request, response_path, response["session_id"], response, state_root=state_root
+    )
 
 
 async def process_requests(
@@ -160,16 +175,16 @@ async def process_requests(
             session = sessions.get(session_id)
             if session is None:
                 # 要求の配送中に保持期限か別のstopが解放を完了した場合も、所有側の応答を返す。
-                if resolution.state is session_registry.Resolution.RELEASED and request.exists():
-                    _save(response_path, response)
+                if resolution.state is session_registry.Resolution.RELEASED:
+                    await _respond(request, response_path, response, state_root)
                 else:
                     _digest, current_processes = _record(session_id, state_root)
                     original_owner = session_registry.ProcessIdentity.from_payload(
                         payload["owner"], stable=payload.get("owner_identity")
                     )
-                    if current_processes and not current_processes[0].compatible_with(original_owner) and request.exists():
+                    if current_processes and not current_processes[0].compatible_with(original_owner):
                         response["error"] = "要求後に所有または終了状態が変わった"
-                        _save(response_path, response)
+                        await _respond(request, response_path, response, state_root)
                 continue
             digest, _processes = _record(session_id, state_root)
             if (
@@ -189,8 +204,7 @@ async def process_requests(
                         await stop(session_id, retain_result=True)
                 except Exception as error:  # pylint: disable=broad-exception-caught
                     response["error"] = str(error) or type(error).__name__
-            if request.exists():
-                _save(response_path, response)
+            await _respond(request, response_path, response, state_root)
         except OSError, ValueError, KeyError, TypeError:
             # 消費済みの要求との競合や壊れた要求は、CLI側の有限期限と既存掃引で回収する。
             continue

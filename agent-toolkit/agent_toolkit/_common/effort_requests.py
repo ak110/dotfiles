@@ -130,9 +130,7 @@ def request(
             time.sleep(0.05)
         raise TimeoutError("effort変更の応答を確認できない。atk agents showで現在値を確認し、自動で再送しない")
     finally:
-        with session_registry.registry_lock(target, state_root=state_root):
-            request_path.unlink(missing_ok=True)
-            response_path.unlink(missing_ok=True)
+        registry_requests.withdraw(request_path, response_path, target, state_root=state_root)
 
 
 def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Path, dict[str, Any]]]:
@@ -191,7 +189,8 @@ def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Pat
     return result
 
 
-def respond(path: pathlib.Path, response: dict[str, Any]) -> None:
+def respond(path: pathlib.Path, response: dict[str, Any], *, state_root: pathlib.Path | None) -> None:
     """要求がまだ保持されている場合だけ、同名の応答を原子的に書く。"""
-    if path.exists():
-        atomic_file.atomic_write(path.with_suffix(".effort-response"), json.dumps(response, ensure_ascii=False) + "\n")
+    registry_requests.respond(
+        path, path.with_suffix(".effort-response"), response["session_id"], response, state_root=state_root
+    )
