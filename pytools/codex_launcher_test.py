@@ -262,6 +262,9 @@ async def test_public_launcher_preserves_work_and_stop_contract(peer: _Peer, mod
         1 if mode in {"completed", "cancel", "error", "corrupt", "mcp-error", "elicitation-cancel"} else 2
     )
     assert record["effort"] == effort
+    # 会話の開始・resume・復旧で子孫を確かめるたびに、MCPを新しく起動しない。
+    launches = peer.root / "discovery-launches"
+    assert not launches.exists(), launches.read_text(encoding="utf-8")
     if mode == "elicitation-cancel":
         assert not tuple((peer.root / "results").glob("*.json"))
         return
