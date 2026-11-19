@@ -46,7 +46,9 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     """
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
-    if setup_cli_common.is_windows_cli_running("codex", _files_to_replace_or_remove):
+    # 公式インストーラーは、導入する版の配置が不完全な場合にその版を削除して入れ直すため、
+    # スタンドアローン版の全体を置き換える配置とする。旧版の削除先は移行の中で照会して判定する。
+    if setup_cli_common.is_windows_cli_running("codex", native=(codex_runtime.standalone_root(),)):
         logger.info(
             log_format.format_status(
                 "codex",
@@ -126,25 +128,6 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
             next_action="問題を解消した後に`update-dotfiles`を再実行する。",
         )
     return post_apply_outcome.PostApplyOutcome(changed=True)
-
-
-def _files_to_replace_or_remove() -> setup_cli_common.CliFiles:
-    """導入が置き換えるスタンドアローン版と、移行が削除するmise版・npm版の配置を返す。
-
-    公式インストーラーは、導入する版の配置が不完全な場合にその版を削除して入れ直すため、
-    スタンドアローン版の全体を置き換える配置とする。
-    """
-    root = codex_runtime.standalone_root()
-    npm_packages = setup_cli_common.npm_packages_to_remove(
-        "codex",
-        _PACKAGE,
-        root,
-        extra_search_directories=_nvm_bin_directories(),
-        excluded_launchers=codex_runtime.wrapper_launchers(),
-    )
-    mise_paths = _mise_install_paths()
-    removed = None if npm_packages is None or mise_paths is None else (*mise_paths, *npm_packages)
-    return setup_cli_common.CliFiles(replaced=(root,), removed=removed)
 
 
 def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[str] | None:
@@ -320,48 +303,40 @@ def _find_mise() -> Path | None:
     return Path(mise_name).absolute() if mise_name is not None else None
 
 
-def _installed_mise_versions(mise: Path) -> tuple[list[dict[str, object]], str]:
-    """mise管理版のうち導入済みの版の一覧要素と、一覧を取得・解析できなかった場合の失敗の説明を返す。"""
-    listing = common.run_subprocess([str(mise), "ls", "--json", f"npm:{_PACKAGE}"], timeout=common.COMMAND_TIMEOUT, tag="mise")
-    if listing is None or listing.returncode != 0:
-        return [], f"mise版の一覧取得に失敗: {common.format_cli_error(listing)}"
-    try:
-        listed = json.loads(listing.stdout or "")
-    except json.JSONDecodeError as error:
-        return [], f"mise版の一覧解析に失敗: {error}"
-    if not isinstance(listed, list):
-        return [], "mise版の一覧が配列ではない"
-    # `mise ls`はmise.toml定義済みで未導入の版も列挙するため、導入済みの要素だけを返す。
-    return [entry for entry in listed if isinstance(entry, dict) and entry.get("installed")], ""
+def _remove_mise_versions() -> tuple[list[str], bool]:
+    """mise管理版が実在する場合だけ全版を除去し、失敗の説明と除去有無を返す。
 
-
-def _mise_install_paths() -> list[Path] | None:
-    """`_remove_mise_versions`が削除するmise版の導入先を返す。
-
-    一覧を取得できない場合は、削除先を確定できないことを`None`で表す。
-    後の`_remove_mise_versions`の取得が成功すると削除するため、削除先が無いこととは区別する。
+    一覧を取得できない場合と、Windowsで除去する版から起動したプロセスがある場合は、その回は除去しない。
     """
     mise = _find_mise()
     if mise is None:
-        return []
-    installed, failure = _installed_mise_versions(mise)
-    if failure:
-        return None
-    return [Path(path) for entry in installed if isinstance(path := entry.get("install_path"), str)]
-
-
-def _remove_mise_versions() -> tuple[list[str], bool]:
-    """mise管理版が実在する場合だけ全版を除去し、失敗の説明と除去有無を返す。"""
-    mise = _find_mise()
-    if mise is None:
-        return [], False
-    installed, failure = _installed_mise_versions(mise)
-    if failure:
-        return [failure], False
-    # 未導入時に`uninstall`を呼ぶと警告が出るため、導入済みの版がある場合だけ除去する。
-    if not installed:
         return [], False
     target = f"npm:{_PACKAGE}"
+    listing = common.run_subprocess([str(mise), "ls", "--json", target], timeout=common.COMMAND_TIMEOUT, tag="mise")
+    skipped = f'mise版の一覧を取得できないため移行を見送り（`"{mise}" ls --json {target}`'
+    if listing is None or listing.returncode != 0:
+        return [f"{skipped}: {common.format_cli_error(listing)}）"], False
+    try:
+        listed = json.loads(listing.stdout or "")
+    except json.JSONDecodeError as error:
+        return [f"{skipped}: 解析に失敗: {error}）"], False
+    if not isinstance(listed, list):
+        return [f"{skipped}: 配列ではない）"], False
+    # `mise ls`はmise.toml定義済みで未導入の版も列挙する。
+    # 未導入時に`uninstall`を呼ぶと警告が出るため、導入済みの要素だけを数える。
+    installed = [entry for entry in listed if isinstance(entry, dict) and entry.get("installed")]
+    if not installed:
+        return [], False
+    paths = [Path(path) for entry in installed if isinstance(path := entry.get("install_path"), str)]
+    if setup_cli_common.is_windows_cli_running("codex", packages=paths):
+        logger.warning(
+            log_format.format_status(
+                "codex",
+                f"mise版を実行中の可能性があるため移行を次回へ延期: {', '.join(map(str, paths))}。"
+                "mise版のCodexを終了して`update-dotfiles`を再実行する",
+            )
+        )
+        return [], False
     removal = common.run_subprocess([str(mise), "uninstall", "--all", "--yes", target], timeout=_COMMAND_TIMEOUT, tag="mise")
     if removal is None or removal.returncode != 0:
         return [f"mise版の削除に失敗: {common.format_cli_error(removal)}"], False

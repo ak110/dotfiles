@@ -19,7 +19,7 @@ def test_run_updates_existing_native_and_migrates_after_verification(monkeypatch
     calls: list[list[str]] = []
     events: list[str] = []
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
 
     def fake_prepend(path: Path) -> None:
         events.append(f"path:{path}")
@@ -62,7 +62,7 @@ def test_run_does_not_search_for_claude_outside_path(monkeypatch, tmp_path: Path
     path_entry.mkdir()
     monkeypatch.setenv("PATH", str(path_entry))
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -83,7 +83,7 @@ def test_run_installs_with_powershell_file(monkeypatch, tmp_path: Path) -> None:
     calls: list[list[str]] = []
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "win32")
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "find_powershell", lambda: "pwsh")
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "prepend_path", lambda path: None)
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
 
@@ -110,7 +110,7 @@ def test_windows_install_prepends_canonical_path_before_noncanonical(monkeypatch
     monkeypatch.setenv("PATH", str(noncanonical))
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "win32")
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "find_powershell", lambda: "pwsh")
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -133,7 +133,7 @@ def test_run_does_not_migrate_when_verification_fails(monkeypatch, tmp_path: Pat
     launcher.parent.mkdir(parents=True)
     launcher.write_text("", encoding="utf-8")
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         setup_claude_cli.setup_cli_common,
         "migrate_npm_launchers",
@@ -151,7 +151,7 @@ def test_run_does_not_migrate_when_verification_fails(monkeypatch, tmp_path: Pat
 
 def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: True)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         setup_claude_cli.common,
         "run_subprocess",
@@ -162,13 +162,13 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
 
 
 @pytest.mark.parametrize(
-    ("running", "deferred"),
-    [("claude-code", True), ("npm", True), ("npx", False), ("desktop-app", False)],
+    ("running", "updated", "uninstalled"),
+    [("claude-code", False, False), ("npm", True, False), ("npx", True, True), ("desktop-app", True, True)],
 )
 def test_windows_defers_only_while_files_to_replace_are_in_use(
-    monkeypatch, tmp_path: Path, running: str, deferred: bool
+    monkeypatch, tmp_path: Path, running: str, updated: bool, uninstalled: bool
 ) -> None:
-    """Windowsでは、更新が置き換える導入先か移行が削除するnpm版のClaude Codeを実行中の場合だけ延期する。"""
+    """Windowsでは、導入先のClaude Codeを実行中の場合は更新を、移行が削除するnpm版を実行中の場合は移行だけを延期する。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     launcher = tmp_path / ".local" / "bin" / "claude.exe"
     launcher.parent.mkdir(parents=True)
@@ -207,20 +207,20 @@ def test_windows_defers_only_while_files_to_replace_are_in_use(
             return subprocess.CompletedProcess(command, 0, f"{npm_prefix}\n", "")
         if command[1:3] == ["root", "--global"]:
             return subprocess.CompletedProcess(command, 0, f"{npm_prefix / 'node_modules'}\n", "")
-        return subprocess.CompletedProcess(command, 1, "", "update failed")
+        return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
 
     setup_claude_cli.run()
 
-    assert [command for command in calls if command[1] == "update"] == ([] if deferred else [[str(launcher), "update"]])
-    assert not any("uninstall" in command for command in calls)
+    assert [command for command in calls if command[1] == "update"] == ([[str(launcher), "update"]] if updated else [])
+    assert any("uninstall" in command for command in calls) is uninstalled
 
 
 def test_run_handles_http_failure(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
     with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500, request=request))) as client:
         assert setup_claude_cli.run(client) == post_apply_outcome.PostApplyOutcome()
 
@@ -228,7 +228,7 @@ def test_run_handles_http_failure(monkeypatch, tmp_path: Path) -> None:
 def test_run_handles_installer_failure(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         setup_claude_cli.common,
         "run_subprocess",
@@ -247,7 +247,7 @@ def test_run_handles_native_update_failure_and_keeps_legacy_path(monkeypatch, tm
     legacy.parent.mkdir(parents=True)
     legacy.write_text("legacy", encoding="utf-8")
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
-    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         setup_claude_cli.common,
         "run_subprocess",

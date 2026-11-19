@@ -18,7 +18,7 @@ from pytools._internal._test_helpers import patch_windows_processes, windows_pro
 
 @pytest.mark.parametrize("stderr", ["npm ERR! permission denied", ""])
 def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog, stderr):
-    """npmの導入先の照会に失敗した場合は削除先を確定できないと返し、移行は保持して診断を保持の理由へ含める。
+    """npmの導入先の照会に失敗した場合は移行を見送り、失敗した照会のコマンドとnpmのパスと診断を示す。
 
     空出力の失敗には終了コードを示す。
     """
@@ -34,17 +34,15 @@ def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog,
         return subprocess.CompletedProcess(command, 1, "", stderr)
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fail)
-    assert setup_cli_common.npm_packages_to_remove("codex", "@openai/codex", tmp_path / "canonical") is None
     assert not setup_cli_common.migrate_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/bin/codex", tmp_path / "canonical"
     )
     assert launcher.is_file()
     output = "\n".join(caplog.messages)
-    assert "npmの導入先を取得できない" in output
-    assert "終了コード1" in output
+    assert "旧npm版の移行を見送り" in output
+    assert f'`"{old / "npm"}" root --global`: 終了コード1' in output
     assert (stderr or "exit 1") in output
-    assert "手動削除する場合はこのランチャーの参照先とpackage.jsonのbinを確認する" in output
-    print(output)
+    assert "npmを修復してから`update-dotfiles`を再実行する" in output
 
 
 @pytest.mark.parametrize(
@@ -447,10 +445,20 @@ def test_migrate_windows_owned_launchers(monkeypatch, tmp_path: Path, launcher_k
     )
 
 
-@pytest.mark.parametrize("owned", [True, False])
-def test_npm_packages_to_remove_lists_what_migration_removes(monkeypatch, tmp_path: Path, owned: bool) -> None:
-    """移行が削除するnpm版のパッケージを削除せずに返し、帰属を確認できないランチャーのパッケージは返さない。"""
-    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
+@pytest.mark.parametrize(
+    ("running", "removed"),
+    [
+        pytest.param("npm-node", False, id="npm-node"),
+        # 起動したスクリプトを読めないnodeは、削除するnpm版を実行している可能性を除けない。
+        pytest.param("node-cmdline-denied", False, id="node-cmdline-denied"),
+        pytest.param("npx-node", True, id="npx-node"),
+        pytest.param("update-loop", True, id="update-loop"),
+    ],
+)
+def test_windows_migrate_keeps_npm_package_while_it_may_be_running(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, running: str, removed: bool
+) -> None:
+    """Windowsでは、削除するnpm版から起動したプロセスか、その可能性を否定できないプロセスがある間は削除しない。"""
     old_bin = tmp_path / "old"
     old_bin.mkdir()
     npm = old_bin / "npm.cmd"
@@ -461,8 +469,15 @@ def test_npm_packages_to_remove_lists_what_migration_removes(monkeypatch, tmp_pa
     entrypoint.parent.mkdir(parents=True)
     entrypoint.write_text("", encoding="utf-8")
     (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
-    (old_bin / "codex.cmd").write_text(f'@node "{entrypoint}"\n' if owned else "@echo @openai/codex\n", encoding="utf-8")
+    (old_bin / "codex.cmd").write_text(f'@node "{entrypoint}"\n', encoding="utf-8")
     monkeypatch.setenv("PATH", str(old_bin))
+    process = {
+        "npm-node": windows_process(_NODE, str(entrypoint)),
+        "node-cmdline-denied": windows_process(_NODE, r"C:\Services\worker.js", denied=["cmdline"]),
+        "npx-node": windows_process(_NODE, rf"{_NPX_CODEX}\bin\codex.js"),
+        "update-loop": windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"),
+    }[running]
+    patch_windows_processes(monkeypatch, [process])
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -474,12 +489,11 @@ def test_npm_packages_to_remove_lists_what_migration_removes(monkeypatch, tmp_pa
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
     canonical = tmp_path / "canonical"
 
-    assert setup_cli_common.npm_packages_to_remove("codex", "@openai/codex", canonical) == ((package,) if owned else ())
-    assert not any("uninstall" in command for command in calls)
-    assert setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical / "codex.cmd", canonical) is owned
+    assert setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical / "codex.cmd", canonical) is removed
     assert [command for command in calls if "uninstall" in command] == (
-        [[str(npm), "uninstall", "--global", "@openai/codex"]] if owned else []
+        [[str(npm), "uninstall", "--global", "@openai/codex"]] if removed else []
     )
+    assert (f"旧npm版を実行中の可能性があるため移行を次回へ延期: {package}" in caplog.text) is not removed
 
 
 def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_path: Path) -> None:
@@ -602,7 +616,7 @@ _NPX_CODEX = r"C:\Users\Me\AppData\Local\npm-cache\_npx\9f2c\node_modules\@opena
 _NATIVE_IN_PACKAGE = r"node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\codex\codex.exe"
 _NODE = r"C:\Program Files\nodejs\node.exe"
 _MISE = r"C:\Users\Me\AppData\Local\Microsoft\WinGet\Links\mise.exe"
-_CODEX_FILES = setup_cli_common.CliFiles(replaced=(Path(_STANDALONE),), removed=(Path(_NPM_CODEX),))
+_CODEX_FILES: dict[str, tuple[Path, ...]] = {"native": (Path(_STANDALONE),), "packages": (Path(_NPM_CODEX),)}
 
 
 @pytest.mark.parametrize(
@@ -679,7 +693,7 @@ def test_windows_counts_processes_started_from_files_to_replace_or_remove(
     """導入が置き換えるか移行が削除する配置から起動したプロセスと、その可能性を否定できないプロセスだけを数える。"""
     patch_windows_processes(monkeypatch, [process])
 
-    assert setup_cli_common.is_windows_cli_running("codex", lambda: _CODEX_FILES) is expected
+    assert setup_cli_common.is_windows_cli_running("codex", **_CODEX_FILES) is expected
 
 
 @pytest.mark.parametrize(
@@ -691,38 +705,10 @@ def test_windows_counts_processes_started_from_files_to_replace_or_remove(
     ],
 )
 def test_windows_node_is_not_counted_without_npm_or_mise_version_to_remove(monkeypatch, process: types.SimpleNamespace) -> None:
-    """削除するnpm版・mise版が無い場合、node・miseのプロセスは書き換える配置と衝突しない。"""
+    """導入が置き換える配置だけを調べる場合、起動したスクリプトを読めないものも含め、node・miseのプロセスは数えない。"""
     patch_windows_processes(monkeypatch, [process])
 
-    files = setup_cli_common.CliFiles(replaced=(Path(_STANDALONE),))
-    assert not setup_cli_common.is_windows_cli_running("codex", lambda: files)
-
-
-@pytest.mark.parametrize(
-    ("process", "expected"),
-    [
-        pytest.param(windows_process(_NODE, denied=["cmdline"]), True, id="node-cmdline-denied"),
-        pytest.param(windows_process(_MISE, denied=["exe", "cmdline"]), True, id="mise-unreadable"),
-        pytest.param(windows_process(_NODE, rf"{_NPM_CODEX}\bin\codex.js"), True, id="npm-node"),
-        pytest.param(windows_process(_MISE, "exec", "--", "codex"), True, id="mise-launcher-name"),
-        pytest.param(windows_process(rf"{_STANDALONE_RELEASE}\bin\codex.exe"), True, id="standalone-session"),
-        pytest.param(windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"), False, id="update-loop"),
-        pytest.param(
-            windows_process(_DAEMON_EXE, "app-server", "--managed-daemon", denied=["cmdline"]),
-            False,
-            id="daemon-cmdline-denied",
-        ),
-        pytest.param(windows_process(_NODE, "C:/work/codex-project/server.js"), False, id="project-server"),
-    ],
-)
-def test_windows_counts_node_and_mise_when_files_to_remove_are_unknown(
-    monkeypatch, process: types.SimpleNamespace, expected: bool
-) -> None:
-    """削除先の照会に失敗した場合は削除先が無いとは扱わず、削除するnpm版・mise版の実行を否定できないnode・miseを数える。"""
-    patch_windows_processes(monkeypatch, [process])
-
-    files = setup_cli_common.CliFiles(replaced=(Path(_STANDALONE),), removed=None)
-    assert setup_cli_common.is_windows_cli_running("codex", lambda: files) is expected
+    assert not setup_cli_common.is_windows_cli_running("codex", native=(Path(_STANDALONE),))
 
 
 @pytest.mark.parametrize(
@@ -738,18 +724,16 @@ def test_windows_claude_counts_only_replaced_launcher(monkeypatch, exe: str, exp
     """Claude Codeは、更新が置き換える導入先から起動した場合だけ数え、デスクトップアプリと同梱版は数えない。"""
     patch_windows_processes(monkeypatch, [windows_process(exe)])
 
-    files = setup_cli_common.CliFiles(replaced=(Path(r"C:\Users\Me\.local\bin\claude.exe"),))
-    assert setup_cli_common.is_windows_cli_running("claude", lambda: files) is expected
+    native = (Path(r"C:\Users\Me\.local\bin\claude.exe"),)
+    assert setup_cli_common.is_windows_cli_running("claude", native=native) is expected
 
 
-def test_windows_skips_listing_files_on_other_platforms(monkeypatch) -> None:
-    """Windows以外では、書き換える配置を調べずに実行中でないと判定する。"""
+def test_windows_check_is_skipped_on_other_platforms(monkeypatch) -> None:
+    """Windows以外では実行中のファイルを置き換えても衝突しないため、書き換える配置から起動したプロセスも数えない。"""
+    patch_windows_processes(monkeypatch, [windows_process(rf"{_STANDALONE_RELEASE}\bin\codex.exe")])
     monkeypatch.setattr(setup_cli_common.sys, "platform", "linux")
 
-    def forbidden() -> setup_cli_common.CliFiles:
-        raise AssertionError("Windows以外で配置を調べてはならない")
-
-    assert not setup_cli_common.is_windows_cli_running("codex", forbidden)
+    assert not setup_cli_common.is_windows_cli_running("codex", **_CODEX_FILES)
 
 
 @pytest.mark.parametrize("error", [psutil.NoSuchProcess(1), psutil.ZombieProcess(2)])
@@ -760,7 +744,7 @@ def test_windows_process_races_are_ignored(monkeypatch, error: Exception) -> Non
 
     patch_windows_processes(monkeypatch, [VanishedProcess()])
 
-    assert not setup_cli_common.is_windows_cli_running("codex", lambda: _CODEX_FILES)
+    assert not setup_cli_common.is_windows_cli_running("codex", **_CODEX_FILES)
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
@@ -789,7 +773,7 @@ def test_windows_cli_running_reads_current_generation(monkeypatch: pytest.Monkey
         try:
             _inject_previous_generation(monkeypatch, child.pid, name="codex.exe", exe=rf"{_STANDALONE_RELEASE}\bin\codex.exe")
             monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-            running = setup_cli_common.is_windows_cli_running("codex", lambda: _CODEX_FILES)
+            running = setup_cli_common.is_windows_cli_running("codex", **_CODEX_FILES)
         finally:
             child.kill()
     assert not running
