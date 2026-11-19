@@ -27,7 +27,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    | `レビュー基準` | 手順2の基準名だけ。資料は基準ごとの入力へ渡す |
    | `計画` | 計画ファイルの絶対パス |
    | `WI記録` | 計画の`## 実施内容`に無い対象WIのファイル名、要求、完成条件、由来、採否（計画が無ければ全ての対象） |
-   | `開始時のHEAD` | 専用branchなら起動の直前に`git merge-base <専用branch> <ベースbranch>`で解決した分岐元（計画の有無によらない）。それ以外で`WI`だけを渡す時は作業開始時のHEAD |
+   | `開始時のHEAD` | 専用branchなら起動の直前に`git merge-base <専用branch> <ベースbranch>`で解決した分岐元（計画の有無によらない）。それ以外で`計画`を含まずに`WI`を渡す時（`CI記録`との併用を含む）は作業開始時のHEAD |
    | `引き継ぎ記録先` | `agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」で決める |
    | `review_contract` | 複数の計画、計画外の条項、新形式AWIのどれかがあれば`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」で作り、初回から渡す |
    | `レーン識別子` | 特定のレーンの作業なら渡し、セッション識別名を`<レーン識別子>-exec-review`とする |

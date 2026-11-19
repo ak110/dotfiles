@@ -27,6 +27,7 @@ ROOT_EPILOG += "\n\n保存したファイルは、ハーネスの読取（Read�
 ROOT_EPILOG += "\n全文を保存したatk wi showは、ユーザー専用の記入欄（ユーザーコメント・回答）がある項目と保存先での開始行を全件示し、記入欄が無い項目は件数を示す。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
+WI_REVIEW_TABLE_NAME_FORMAT = "wi-<処理開始時点の短縮OID>.exec-review.tsv"
 """CI対応レビュー指摘管理表の名前の書式。保存済みの表は`ci/`を前置する。
 
 ヘルプと、表の名前が書式に合わないときのエラー文と次の操作は、表の名前の書式をこの定義から組み立てて案内する。
@@ -473,7 +474,9 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table init": {
         "summary": "空のレビュー指摘管理表を作成する",
-        "description": "空のレビュー指摘管理表を作成する。\n\n目的: 行を持たない空の実行レビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: 実行レビューを開始する前に、計画ファイルと同じstemの表、または原因commitに対応する計画がない処理のCI対応レビュー指摘管理表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`、または`~/.claude/plans`直下の`"
+        "description": "空のレビュー指摘管理表を作成する。\n\n目的: 行を持たない空の実行レビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: 実行レビューを開始する前に、計画ファイルと同じstemの表、計画の無いWIの直接実装の表、または原因commitに対応する計画がない処理のCI対応レビュー指摘管理表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`、または`~/.claude/plans`直下の`"
+        + WI_REVIEW_TABLE_NAME_FORMAT
+        + "`か`"
         + CI_REVIEW_TABLE_NAME_FORMAT
         + "`で指定する。\n復元・後始末: 誤って作成した表は、そのファイルを削除して取り除く。",
         "epilog": "実行例:\n\n  atk review-table init /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
