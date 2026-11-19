@@ -70,7 +70,7 @@ Claude Codeの最上位メインでは、次のhookがエージェントへ返�
 件数は要求を再確認するための観測値で、初回観測より前は不明と示し、更新漏れの判定や遮断には使わない。
 実ユーザー入力の受付時刻（同ファイルの`_clock_notice`）は、時刻を推測で記録しないよう入力ごとに壁時計の日時を届ける。
 バックグラウンドタスク完了の自動通知で始まったターンの定型案内（同ファイル）は、完了通知のたびに同じ文面が出る。
-SessionStart・SubagentStartの通知（規範本文、セッションID、managed-temp、会話圧縮後の復元案内）は情報の配送であり、写しを付けない。
+SessionStart・SubagentStartの通知（メインへの入口のスキル`agent-toolkit:atk-mode`の起動の案内、委譲先への入口文書の所在、セッションID、managed-temp、会話圧縮後の復元案内）は情報の配送であり、写しを付けない。
 Stop・SubagentStopはホストが画面へ表示するため変えない。
 hook入力が`agent_id`を持つサブエージェント内の呼出しと、`agents_server`の委譲先はユーザーの画面を持たないため付けない。
 Codex・Antigravity向けの出力は変えない。
