@@ -40,6 +40,20 @@ class TestUpdateClaudeSettings:
         result = _run(tmp_path, managed, {"enabledPlugins": {"hookify@claude-plugins-official": True}})
         assert result["enabledPlugins"]["hookify@claude-plugins-official"] is False
 
+    def test_managed_disables_account_synced_dotfiles_plugins(self, tmp_path: Path):
+        """claude.aiのアカウントから同期された写しを無効にし、他のプラグインの既存値は保つ。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        others = {
+            "engineering@synced": True,
+            "pstack@pstack-claude": False,
+            "frontend-design@claude-plugins-official": False,
+        }
+        existing = {"enabledPlugins": {"agent-basics@synced": True, "agent-toolkit@synced": True, **others}}
+        result = _run(tmp_path, managed, existing)
+        assert result["enabledPlugins"]["agent-basics@synced"] is False
+        assert result["enabledPlugins"]["agent-toolkit@synced"] is False
+        assert {key: result["enabledPlugins"][key] for key in others} == others
+
     def test_managed_dialog_expiry_overwrites_existing(self, tmp_path: Path):
         """配布原本の dialogExpiry は既存設定の値を上書きする。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))

@@ -33,7 +33,9 @@
     "pyright-lsp@claude-plugins-official": false,
     "security-guidance@claude-plugins-official": false,
     "superpowers@claude-plugins-official": false,
-    "agent-basics@ak110-dotfiles": true
+    "agent-basics@ak110-dotfiles": true,
+    "agent-basics@synced": false,
+    "agent-toolkit@synced": false
   },
   "env": {
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
