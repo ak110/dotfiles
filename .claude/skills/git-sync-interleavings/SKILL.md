@@ -1,0 +1,107 @@
+---
+name: git-sync-interleavings
+user-invocable: false
+description: >
+  private-notesのGit同期（`agent-toolkit/agent_toolkit/_atk/git_sync.py`、`agent-toolkit/agent_toolkit/_atk/wi/sync.py`）の
+  ロック、pull、push、commit、分岐とrebaseの扱いを変える時と、それらへ触れた変更を検査せずに統合した後に、
+  並行する複数の実行主体の全ての順序で更新が失われないかを確かめる時に起動する。
+---
+
+# private-notesのGit同期の網羅検査
+
+`agent-toolkit/agent_toolkit/_atk/git_sync_interleaving_test.py`は、実際の`wi/sync.py`・`git_sync.py`と実Gitで、並行する実行主体の操作の順序を全て列挙して性質を確かめる有界の網羅検査である。
+各主体を1つのスレッドで動かし、共有する資源への1手順の直前で止めて1つずつ進め、選び方の全ての組み合わせを再実行する。
+検証の作り方と追従の一般の手順は`agent-basics:formal-verification`にある。
+
+## 実行
+
+```bash
+cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --frozen pytest -v -s -o addopts='' -p no:cacheprovider agent-toolkit/agent_toolkit/_atk/git_sync_interleaving_test.py
+```
+
+- 値を`first`にすると、シナリオごとに最初の違反で止まる（編集中の確認に使う）。
+  変数が無ければ全て`skip`になり、通常の試験（`make test`、CI）はこの検査を省いて進む。
+- 所要は4シナリオの合計で約13分（2026年11月19日、Linux、1つのプロセス）で、実Gitの境界を使う試験の改善判断値（2秒）を大きく超えるため通常の試験から外した。
+  シナリオを2つのプロセスへ分けて同時に起動すると、実時間は約8分になる。
+  共有の実行枠を長く占有しないよう`pytest_plugin`を読み込まず、試験の隔離は`agent-toolkit/conftest.py`が与える。
+- 出力はシナリオごとに、順序の数、所要、違反した性質、終了状態の分布、性質ごとの最初の反例（主体ごとの手順の列）である。
+  終了状態の分布で、性質2の検査がrebaseの途中で止まる順序を実際に通ったことを確かめる。
+
+## 対応と前提
+
+- 1手順は、`agent_toolkit._git.command._launch`を通る1回のGitの起動、`git_sync._RepoLock.acquire`の最初の取得、1つの項目の書き換えである。
+- 止める手順は、remoteへの操作（`fetch`、`push`）、複数の主体が使うcloneのロックの取得、そのcloneへのロックの外の操作である。
+  共有しないcloneへの操作、ロックの保持者のそのcloneへの操作、配置の照会（`rev-parse --git-common-dir`・`--git-path`）は止めずに続けて実行する。
+  ロックの外の操作は性質「共有cloneの操作はロックの内側」の違反として記録する。
+- 順序を入れ替えても結果が同じ組（別の資源への操作、remoteの読取同士）はsleep setで1通りだけ実行し、参照を変えなかった`push`は読取として扱う。
+- 主体の更新は`wi/mutations/transitions.py`の状態遷移と同じ`Storage.mutation(push_pending=True)`と`Mutation.commit`で行う。
+  主体Cは`atk`を使わない別ホストで、取得・commit・pushを1手順で行う。
+- 対象の関数は次のとおりである。
+  - `git_sync.py`の`repo_lock`、`pull`、`push_pending_commits`、`commit_and_push`、`_recover_matching_tree_divergence`、`_recover_redundant_divergence`、`ensure_not_rebasing`。
+  - `wi/sync.py`の`Storage.mutation`、`pull`、`push_pending_commits`、`_redundant_terminal_divergence`。
+- 前提: Gitの1回の起動は、他の主体の起動が割り込まずに終わる1手順で、pushは参照を1回で更新する。
+  参照のロックの競合による失敗、通信の失敗と時間切れ、ロックの待機上限、操作の途中のプロセスの停止は範囲の外とする。
+  後続の同期は他の主体が動かない状態で1回だけ行う。
+
+## 性質と害
+
+| 性質 | 破れた時の害 |
+| --- | --- |
+| 受理した更新を失わない（commitした更新は、後続の同期の後もremoteか自分のcloneのmainにある） | WIの状態遷移や結果が黙って消える |
+| 成功した更新はremoteにある | 成功を報告した更新が他のホストに届かない |
+| 成功は受理を伴う、受理前の失敗は変更を残さない | 失敗した操作の書きかけが作業ツリーに残り、後の操作のcommitへ混ざる |
+| 競合が無い操作は成功する（失敗は、他の主体が操作の間にremoteを変えた場合に限る） | 常に失敗する変更が、更新を失わない性質だけでは検出されない |
+| 性質1（後続の同期の後）: 別々の項目の更新は、受理したものが次の同期で全てremoteに届く | 未pushのcommitが残り続ける |
+| 性質1（操作の終了時）: 2つの更新と別ホストのcommitが、両方の操作の終了時に全てremoteにある（WIの記述どおり） | 更新が他のホストへ届くのが次の操作まで遅れるか、操作をやり直す必要がある |
+| 性質2: rebaseの途中で止まったcloneでは、pullとpushが`RebaseInProgressError`で拒否し、HEADと本文を変えない。止まったことを操作が失敗として返す | 競合の解消前の上書きで、ローカルかremoteのcommitの内容が消える |
+
+## シナリオと結果
+
+2026年11月19日の結果（同期したcommitで実行）。
+主体A・B・Dは`atk`の更新、Cは別ホストのcommitで、`x`・`y`・`z`はcloneの名前である。
+
+| シナリオ（試験のID） | 主体と項目 | 順序 | 所要 | 結果 |
+| --- | --- | ---: | ---: | --- |
+| `separate-clones` | A@x項目1、B@y項目2、C@z項目3 | 403 | 296秒 | 性質1（操作の終了時）だけ98通りで違反（既知の反例）。他の性質は全て成立 |
+| `shared-clone` | A@x項目1、B@x項目2、C@z項目3 | 17 | 19秒 | 全て成立 |
+| `conflict` | A@x項目1、B@y項目1、C@z項目3 | 395 | 278秒 | 全て成立。180通りがrebaseの途中で止まり、性質2を確かめた |
+| `conflict-shared-clone` | A@x項目1、B@y項目1、D@x項目4 | 199 | 197秒 | 全て成立。78通りがrebaseの途中で止まり、うち4通りでDが`RebaseInProgressError`で拒否された |
+
+上限は、各主体が1回だけ更新する3つの主体である。
+既存の`git_sync_property_test.py`は1つのプロセスの操作列だけを扱い、並行する主体の順序はこの検査が初めて扱う。
+
+## 既知の反例
+
+性質1（操作の終了時）はWIの記述どおりの性質で、`test_separate_clones_publish_every_update_by_operation_end`が`xfail(strict=True)`で記録している。
+どちらの反例も、操作は`CalledProcessError`で失敗を返し、受理した更新は失わない。
+性質1（後続の同期の後）は成立する。
+
+1. 受理前の失敗（30通り）: 状態遷移の`Storage.mutation(push_pending=True)`で、Bに未pushのcommitが無いのに失敗する。
+   Bの`push_pending_commits`の`git push`がAのpushで拒否され、`git fetch`と`merge --ff-only @{u}`の後、再送の`git push`の直前にCがpushする。
+   再送が拒否されて例外が`_push_pending_commits_impl`の外へ出て、Bは項目を書き換える前に終わる。
+   送るcommitが無い操作が、別ホストのpushとの競合だけで失敗する（修正するかは未決定。例えば未pushが0件なら送信を省く）。
+2. 受理後の未push（68通り）: Bのcommitの`git push`がAのpushで拒否され、`git fetch`と`rebase @{u}`の後、再送の直前にCがpushする。
+   再送も拒否され、Bのcommitは`y`のmainに残り、次の同期で送られる。
+   `wi/sync.py`の`commit_and_push`のdocstring（再試行は1回、再試行後の失敗は例外のまま送出）どおりの挙動である。
+
+## 欠陥と検証の誤りの区別
+
+反例の各行は、主体と、その主体が実行したGitのコマンドである。
+各行を実際のコードの分岐で起こりうるかを確かめ、起こらない行があれば検査の枠組み（`_git_op`の分類、`_atk_update`の流れ、前提）の誤りとして直す。
+全て起こりうれば欠陥として`agent-basics:bugfix`を起動する。
+性質の判定は`_judge`と`_follow_up`にあり、性質を変えるのは意図した契約の変更の根拠（docstring、試験、commitの説明）がある場合だけにする。
+
+## 追従
+
+- 最後に同期したcommit: `3e4f3c097`。
+  対象の`git_sync.py`、`wi/sync.py`、`_git/command.py`を最後に変えたcommitは`f97a36b33`である。
+  対象のファイルの差分をこのcommitから読み、検証が新しいコードを記述すると確かめた後にだけ進める。
+- Gitの起動、ロックの区間、remoteへの操作の追加と順序の変更は、`_launch`と`_RepoLock`を差し替える枠組みが自動で拾う。
+  WIの状態遷移の流れ（`push_pending`の有無、commitの単位）を変えた時は`_atk_update`を合わせる。
+- 検査が働くことは、`git_sync.py`の一時的な複製へ次の変異を適用し、`AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=first`で確かめた。
+  複製は`PYTHONPATH`で開発環境の`agent_toolkit`より先に読ませ、worktreeの`git_sync.py`はそのまま保つ。
+  - `_recover_redundant_divergence`の冗長性の確認を削る: `shared-clone`の2通り目で、成功を返したBの更新が失われた。
+  - `_push_pending_commits_impl`の`fetch`を祖先関係の判定の後へ移す: `shared-clone`の2通り目で性質1（操作の終了時）が破れた。
+  - `_pull_impl`と`_push_pending_commits_impl`の`ensure_not_rebasing`を削る: `conflict-shared-clone`の35通り目で性質2が破れた。
+  - 変異を戻した複製は、worktreeと同じ内容であることを`diff`で確かめ、`shared-clone`で元の結果（17通り、違反なし）へ戻った。
+- 変更後も、守る性質の向きにコードを一時的に壊して失敗することを確かめてから戻す。
