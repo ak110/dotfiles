@@ -326,11 +326,8 @@ def test_interrupted_rollback_keeps_saved_version_for_next_run(
     assert not _saved_root().exists()
 
 
-@pytest.mark.parametrize("add_succeeds", [True, False])
-def test_copied_version_partially_removed_by_cli_is_completed(
-    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, add_succeeds: bool
-) -> None:
-    """複製で退避した使用中の版をCLIが途中まで消しても、同じ実行のうちに元のパスで完全な内容へ戻す。
+def _update_with_partially_removed_copy(plugin_env: Path, monkeypatch: pytest.MonkeyPatch, *, add_succeeds: bool) -> Path:
+    """使用中の1.2.1を複製で退避して1.2.2から1.2.3へ更新し、CLIが1.2.1を途中まで消す。
 
     Windowsでは使用中のファイルを含むディレクトリを移動も削除もできず、削除は使用中でないファイルだけを消して止まる。
     """
@@ -370,6 +367,8 @@ def test_copied_version_partially_removed_by_cli_is_completed(
             if path.name != "1.2.3":
                 with contextlib.suppress(OSError):
                     shutil.rmtree(path)
+        # 使用中のファイルは退避した後も使用者が書き換え得るため、元のパスの内容を退避した内容で上書きしない。
+        (locked / "in-use.pyd").write_text("still loaded", encoding="utf-8")
         if add_succeeds:
             current.update(version="1.2.3")
         return add_succeeds
@@ -383,12 +382,48 @@ def test_copied_version_partially_removed_by_cli_is_completed(
     )
     monkeypatch.setattr(install_codex_plugins, "_command", command)
     install_codex_plugins.run()
+    return locked
 
+
+def _assert_completed(locked: Path) -> None:
     assert (locked / "marker").read_text(encoding="utf-8") == "1.2.1"
     assert (locked / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "skill"
-    assert (locked / "in-use.pyd").read_text(encoding="utf-8") == "loaded"
+    assert (locked / "in-use.pyd").read_text(encoding="utf-8") == "still loaded"
     assert (_cache() / "1.2.2/marker").read_text(encoding="utf-8") == "1.2.2"
     assert not _saved_root().exists()
+
+
+@pytest.mark.parametrize("add_succeeds", [True, False])
+def test_copied_version_partially_removed_by_cli_is_completed(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, add_succeeds: bool
+) -> None:
+    """複製で退避した使用中の版をCLIが途中まで消しても、同じ実行のうちに元のパスで完全な内容へ戻す。"""
+    _assert_completed(_update_with_partially_removed_copy(plugin_env, monkeypatch, add_succeeds=add_succeeds))
+
+
+def test_interrupted_completion_is_finished_by_next_run(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """複製で退避した版の補完が途中で失敗しても、次回の実行が退避した内容から残りを補う。"""
+    original_copy2 = shutil.copy2
+
+    def copy2(source: Any, destination: Any, *, follow_symlinks: bool = True) -> Any:
+        if Path(source).name == "SKILL.md":
+            raise OSError("injected copy failure")
+        return original_copy2(source, destination, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(install_codex_plugins.shutil, "copy2", copy2)
+    with caplog.at_level("WARNING"):
+        locked = _update_with_partially_removed_copy(plugin_env, monkeypatch, add_succeeds=True)
+    assert "旧cache復旧に失敗" in caplog.text
+    assert not (locked / "skills/coding/SKILL.md").exists()
+
+    monkeypatch.setattr(install_codex_plugins.shutil, "copy2", original_copy2)
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([]))
+    install_codex_plugins.run()
+
+    _assert_completed(locked)
 
 
 def test_disabled_plugin_still_recovers_saved_versions(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -386,9 +386,12 @@ def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_pa
 @pytest.mark.skipif(
     not hasattr(os, "geteuid") or os.geteuid() == 0, reason="権限で削除と移動を妨げられる一般のOSアカウントで試す"
 )
+@pytest.mark.parametrize("add_succeeds", [True, False], ids=["add-succeeds", "add-fails"])
 @pytest.mark.parametrize("kind", installer_runners())
-def test_partial_rollback_is_replaced_from_backup_by_next_run(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """巻き戻しが元のパスを途中まで消して失敗しても、次回の実行が退避した完全な版で置き換える。"""
+def test_partially_removed_copy_is_completed_from_backup(
+    kind: str, add_succeeds: bool, tmp_path: pathlib.Path, rules_url: str
+) -> None:
+    """移動できない版をCLIが途中まで消しても、同じ実行で退避した内容から補い、次回の実行で退避先を片付ける。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = home / ".codex"
@@ -405,17 +408,17 @@ def test_partial_rollback_is_replaced_from_backup_by_next_run(kind: str, tmp_pat
             rules_url,
             stub_bin=stub_bin,
             stub_log=stub_log,
-            fail_pattern="codex plugin add agent-toolkit",
+            fail_pattern="__never_match__" if add_succeeds else "codex plugin add agent-toolkit",
             codex_plugin_before=("1.2.2", True),
             codex_home=codex_home,
             delete_cache_before_failure=True,
             check=False,
         )
-        assert result.returncode != 0
-        assert "復旧に失敗" in result.stderr
-        assert not (locked / "scripts/hook.py").exists()
+        if not add_succeeds:
+            assert result.returncode != 0
+        assert (locked / "scripts/hook.py").read_text(encoding="utf-8") == "older hook\n"
     finally:
-        # 使用の終了に当たる。複製が権限を引き継ぐ実装もあるため、退避した側も戻す。
+        # 使用の終了に当たる。複製が権限を引き継ぐ実装では退避した側の削除も失敗するため、退避した側も戻す。
         for path in (locked, codex_home / ".dotfiles-plugin-cache-saved/ak110-dotfiles/agent-toolkit/1.2.1"):
             if path.is_dir():
                 path.chmod(0o755)
