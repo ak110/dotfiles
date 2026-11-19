@@ -26,6 +26,3 @@
 - DBへの問い合わせは、DBを使わない単純な入力検証の後に置く（努力目標。検証エラーだけで終わる場合に、`Session`の開始と問い合わせの費用を省けるため）。
 - 同じトランザクションの保留中の変更を反映した結果を期待する処理では、その前提を保ち、問い合わせの前に`Session.flush()`を明示して送る時点を決める。
   クエリで`no_autoflush`を使って避けると、追加・更新した最新のデータを前提とする呼び出し元が古い状態を読む。
-
-観測の記録は`docs/development/audit-records-languages.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/sqlalchemy.md：問い合わせと属性代入の順序：2026年9月14日」である。

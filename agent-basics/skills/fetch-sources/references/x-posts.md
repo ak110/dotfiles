@@ -65,4 +65,3 @@ URLの欠落・不正や取得コマンドの失敗は「未取得」と記録�
 Windows環境のcurlでSSL証明書の失効確認エラーが発生した過去の環境では、`--ssl-no-revoke`オプションを付与することで通信が成功した。
 同様のエラーが実際に発生した環境に限り、失効確認を無効化するセキュリティ上の影響を理解した上でこのオプションを選択する。
 その場合でも、証明書自体の検証処理は維持する。
-詳細は`docs/development/audit-records-fetch-sources.md`の「agent-basics/skills/fetch-sources/references/x-posts.md：投稿の同定と本文の取得：2026年10月10日」を参照する。

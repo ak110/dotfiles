@@ -15,6 +15,8 @@ from _test_helpers import _AUDIT_RECORDS, _SOURCE_SUFFIXES, _tracked_source_path
 # 常時規範（`agent-toolkit/share/rules/common/`配下と`agent-toolkit/share/rules/rules-*.md`）は全主体が毎回読む。
 # そのため条文へ索引の文を置かず、見出しそのものを索引とする。
 # ファイル部分が常時規範を指す見出しは、そのファイルに節名と同じ見出しがあることで参照ありとする。
+# agent-basicsの配布物はagent-basicsユーザーにも配り、配布物の外の記録を指すとリンク切れになる。
+# そのため条文へ索引の文を置かず、ファイルに節名と同じ見出しがあることでも参照ありとする。
 # 規範原本を`share/rules/`へ集める前の見出しは旧パスのまま当時の記録として残すため、現在の所在へ読み替えて照合する。
 _RULE_DOCUMENT_RELOCATIONS = (
     ("agent-toolkit/rules/", "agent-toolkit/share/rules/common/"),
@@ -68,8 +70,13 @@ def _is_rule_document(path: pathlib.Path) -> bool:
     )
 
 
-def _rule_section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str) -> bool:
-    """常時規範を指す監査見出しについて、ファイルが実在しそのファイルに節名と同じ見出しがあるかを返す。"""
+def _is_standalone_document(path: pathlib.Path) -> bool:
+    """agent-basicsの配布物（`agent-basics/`配下のMarkdown）のパスかを返す。"""
+    return path.suffix == ".md" and path.as_posix().startswith("agent-basics/")
+
+
+def _section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str) -> bool:
+    """監査見出しについて、ファイルが実在しそのファイルに節名と同じ見出しがあるかを返す。"""
     parts = heading.split("：")
     if len(parts) < 3:
         return False
@@ -78,7 +85,7 @@ def _rule_section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading
     if rule_file not in tracked:
         return False
     content = (root / rule_file).read_text(encoding="utf-8")
-    return re.search(rf"^#{{2,6}} {re.escape(section)}$", content, re.MULTILINE) is not None
+    return re.search(rf"^#{{1,6}} {re.escape(section)}$", content, re.MULTILINE) is not None
 
 
 def _audit_record_content(root: pathlib.Path) -> str:
@@ -91,8 +98,8 @@ def _audit_record_content(root: pathlib.Path) -> str:
 def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
     """監査記録のH2見出しのうち参照元を持たないものを返す。
 
-    常時規範を指す見出しはファイルと節の実在で判定し、他の見出しは索引元の追跡ファイルか
-    見出しのファイル部分が指すファイル自身に現れるかで判定する。
+    常時規範を指す見出しはファイルと節の実在で判定する。他の見出しは索引元の追跡ファイルか
+    見出しのファイル部分が指すファイル自身に現れるかで判定し、agent-basicsの配布物を指す見出しはファイルと節の実在でも参照ありとする。
     """
     headings = _audit_headings(_audit_record_content(root))
     corpus = "\n".join(
@@ -105,12 +112,14 @@ def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]
     for heading in headings:
         own_file = pathlib.Path(heading.split("：", 1)[0])
         if _is_rule_document(own_file):
-            if not _rule_section_exists(root, tracked, heading):
+            if not _section_exists(root, tracked, heading):
                 unreferenced.append(heading)
             continue
         if heading in corpus:
             continue
         if own_file in tracked and heading in _reference_text(root, own_file):
+            continue
+        if _is_standalone_document(own_file) and _section_exists(root, tracked, heading):
             continue
         unreferenced.append(heading)
     return unreferenced
@@ -133,7 +142,7 @@ def test_audit_record_headings_are_referenced() -> None:
     root = pathlib.Path(__file__).resolve().parent
     unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root, _SOURCE_SUFFIXES | {".ts", ".tsx"}))
     assert not unreferenced, (
-        "参照元を持たない監査記録の見出し（常時規範を指す見出しは条文へ索引の文を置かず、見出しのファイルと節名を条文の現在の所在へ直す。"
+        "参照元を持たない監査記録の見出し（常時規範とagent-basicsの配布物を指す見出しは条文へ索引の文を置かず、見出しのファイルと節名を条文の現在の所在へ直す。"
         "それ以外は索引元へ索引の1文を置くか、索引先の無い記録を削除する）:\n" + "\n".join(unreferenced)
     )
 
@@ -247,3 +256,26 @@ def test_audit_body_reference_to_missing_heading_is_reported(tmp_path: pathlib.P
         audit.write_text(content, encoding="utf-8")
 
     assert _unresolved_audit_body_references(_audit_record_content(tmp_path)) == ["b.md：待機区間の構成：2026年9月"]
+
+
+def test_standalone_audit_heading_is_indexed_by_existing_section(tmp_path: pathlib.Path) -> None:
+    """agent-basicsの配布物を指す見出しは、索引の文が無くてもファイルに同名の節（H1を含む）があれば参照ありとする。"""
+    existing = "agent-basics/skills/a/references/x.md：節A：2026年1月1日"
+    whole = "agent-basics/skills/a/references/x.md：文書X：2026年1月2日"
+    renamed = "agent-basics/skills/a/references/x.md：消えた節：2026年1月3日"
+    other = "agent-toolkit/skills/b/references/y.md：節B：2026年1月4日"
+    audit = tmp_path / _AUDIT_RECORDS
+    audit.parent.mkdir(parents=True)
+    audit.write_text(
+        "# 監査記録\n\n" + "".join(f"## {heading}\n\n記録。\n\n" for heading in (existing, whole, renamed, other)),
+        encoding="utf-8",
+    )
+    files = {
+        pathlib.Path("agent-basics/skills/a/references/x.md"): "# 文書X\n\n## 節A\n\n本文。\n",
+        pathlib.Path("agent-toolkit/skills/b/references/y.md"): "# 文書Y\n\n## 節B\n\n本文。\n",
+    }
+    for path, content in files.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(content, encoding="utf-8")
+
+    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, *files]) == [renamed, other]

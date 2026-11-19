@@ -28,8 +28,6 @@ _TOOLKIT_DEPENDENCIES = {
     "agent-toolkitのMCPツール": re.compile(r"agents_server|mcp__plugin_agent-toolkit"),
 }
 
-# 規範の根拠となった検証記録は配布物の外に置く例外として、規範の失効を判定する場面でだけ参照する。
-_AUDIT_RECORDS = re.compile(r"docs/development/audit-records(?:-[a-z0-9-]+)?\.md")
 # 対象プロジェクトのファイルとして一般的に指す名前（agent-basicsの資料ではない）。
 _PROJECT_FILES = frozenset({"AGENTS.md", "CLAUDE.md", "CLAUDE.local.md"})
 _PATH_SPAN = re.compile(r"`([^`\n]+?\.md)(?:#[^`\n]*)?`|\]\(([^)\s]+?\.md)(?:#[^)\s]*)?\)")
@@ -57,7 +55,7 @@ def _unresolved_references(path: pathlib.Path, skills: pathlib.Path) -> list[str
             value = match[1] or match[2]
             if any(char in value for char in "<*{$ ") or value.startswith(("http://", "https://")):
                 continue
-            if _AUDIT_RECORDS.fullmatch(value) or value in _PROJECT_FILES:
+            if value in _PROJECT_FILES:
                 continue
             # 公式ドキュメントのURL配下のページ名を列挙する行は、外部の資料を指す。
             if "/" not in value and "https://" in line:
@@ -99,9 +97,16 @@ def test_agent_basics_does_not_depend_on_agent_toolkit() -> None:
     ),
 )
 def test_agent_basics_references_resolve_inside_distribution() -> None:
-    """配布物の本文が指す資料は、監査記録を除いてagent-basicsの中に実在する。"""
+    """配布物の本文が指す資料は、agent-basicsの中に実在する。
+
+    根拠の監査記録（`docs/development/audit-records*.md`）も配布物の外にあり、agent-basicsユーザーには辿れない。
+    記録は見出しのファイルパスと節名で条文から引くため、条文から記録を指さない。
+    """
     unresolved = [line for path in _DISTRIBUTED_DOCUMENTS for line in _unresolved_references(path, _SKILLS)]
-    assert not unresolved, "\n".join(unresolved)
+    assert not unresolved, (
+        "配布物の外を指す参照（監査記録は条文から指さず、記録の見出しのファイルパスと節名を索引にする）:\n"
+        + "\n".join(unresolved)
+    )
 
 
 @pytest.mark.parametrize(
@@ -181,7 +186,7 @@ def test_toolkit_dependency_is_detected(tmp_path: pathlib.Path, line: str, expec
 
 
 def test_reference_outside_distribution_is_detected(tmp_path: pathlib.Path) -> None:
-    """agent-basicsの中に無い役割文書への参照を、参照先の不在として検出する。"""
+    """agent-basicsの中に無い役割文書と監査記録への参照を、参照先の不在として検出する。"""
     skills = tmp_path / "skills"
     (skills / "sample/references").mkdir(parents=True)
     (skills / "sample/references/rule.md").write_text("# 基準\n", encoding="utf-8")
@@ -192,4 +197,8 @@ def test_reference_outside_distribution_is_detected(tmp_path: pathlib.Path) -> N
         "`share/exec.subagent.md`を読む。\n",
         encoding="utf-8",
     )
-    assert _unresolved_references(path, skills) == [f"{path}:3: share/exec.subagent.md"]
+    assert _unresolved_references(path, skills) == [
+        f"{path}:3: docs/development/audit-records.md",
+        f"{path}:3: docs/development/audit-records-search.md",
+        f"{path}:3: share/exec.subagent.md",
+    ]

@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-basics/skills/check-execution/references/diagnostics.md：読む出力：2026年10月3日
+## agent-basics/skills/check-execution/references/diagnostics-results.md：読む出力：2026年10月3日
 
 2026年10月3日、pyfltr 3.19.9でJSONLの要約と診断の粒度を確認した。
 `uv run --frozen pyfltr run --commands=textlint --no-fix agent-toolkit/skills/atk-mode/roles/add-wi.parent.md`は終了コード0だった。

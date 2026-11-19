@@ -48,9 +48,6 @@
   ユーザーごとのグローバル設定（uvでは`~/.config/uv/uv.toml`など）への除外の記述は避ける。
   uvはグローバル設定の除外を各プロジェクトの`uv.lock`（`[options.exclude-newer-package]`）へ記録し、無関係なプロジェクトのロックファイルを変え、同じ設定を持たない環境で`uv lock --check`を失敗させる。
 
-観測の記録は`docs/development/audit-records-dependencies.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/dependency-management.md：公開待機設定：2026年9月16日」である。
-
 ## 脆弱性の確認
 
 依存パッケージの脆弱性を、ソフトウェア構成分析（SCA）のツールで定期的に監査する。
@@ -78,9 +75,6 @@
   コンパイラーやCのヘッダーの追加は対象のビルドに要る範囲に限り、対象環境で導入されない依存はマーカーやextrasの指定から判断の対象外にする。
 - 採用した版、Pythonの版、CIのイメージとアーキテクチャ、配布形式、検証日、再検証の手順を記録に残す。
 
-観測の記録は`docs/development/audit-records-dependencies.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/dependency-management.md：Python対応版の追加：2026年10月10日」である。
-
 ## pnpm
 
 - pnpm 12以降は、初回に`npm install -g pnpm@<版>`かstandaloneで導入し、`packageManager`を`pnpm@<版>`で固定する。
@@ -94,8 +88,3 @@
   Node.js 25以降はCorepackを同梱しないため、要る環境では別に導入する。
 - pnpmの特定の版では`NPM_CONFIG_*`環境変数の読取が不安定で、`pnpm config get`が環境変数の値を無視する事象を観測しているため、反映は`npm config get`で確かめる。
 - `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*`環境変数による指定より優先される。
-
-観測の記録は`docs/development/audit-records-dependencies.md`の次の節にある。
-
-- 「agent-basics/skills/writing-standards/references/dependency-management.md：pnpm：2026年9月16日」
-- 「agent-basics/skills/writing-standards/references/dependency-management.md：pnpm：2026年11月6日」
