@@ -108,6 +108,54 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
         assert (target_dir / name).is_file()
 
 
+@pytest.mark.parametrize("codex_user_file", [False, True])
+def test_cleanup_removes_retired_always_on_rules_but_keeps_personal_rules(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    codex_user_file: bool,
+) -> None:
+    """廃止した常時規範の配布先を実際の登録内容で削除し、個人用の規範と他の配布物を残す。"""
+    home_dir = tmp_path / "home"
+    claude_dir = home_dir / ".claude"
+    codex_dir = home_dir / ".codex"
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
+    monkeypatch.setattr(
+        removed_paths,
+        "_REMOVED_PATHS",
+        {
+            claude_dir: removed_paths._REMOVED_PATHS[_IMPORT_HOME / ".claude"],  # noqa: SLF001
+            codex_dir: removed_paths._REMOVED_PATHS[_IMPORT_HOME / ".codex"],  # noqa: SLF001
+        },
+    )
+    monkeypatch.setattr(removed_paths, "_REMOVED_PATHS_IF_CONTENT", {})
+    retired = [
+        claude_dir / "rules/agent-toolkit/01-agent.md",
+        claude_dir / "rules/agent-toolkit/02-agent-operations.md",
+        codex_dir / "agent-toolkit/rules/01-agent.md",
+    ]
+    kept = [
+        claude_dir / "rules/myprojects-common.md",
+        claude_dir / "rules/myprojects.md",
+        codex_dir / "AGENTS.md",
+    ]
+    if codex_user_file:
+        kept.append(codex_dir / "agent-toolkit/notes.md")
+    for path in (*retired, *kept):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x\n", encoding="utf-8")
+
+    assert removed_paths.cleanup().changed is True
+
+    assert not (claude_dir / "rules/agent-toolkit").exists()
+    assert not (codex_dir / "agent-toolkit/rules").exists()
+    # Codexの親は他の配布物が無いため空なら削除し、利用者のファイルが残る場合は保持する。
+    assert (codex_dir / "agent-toolkit").exists() is codex_user_file
+    for path in kept:
+        assert path.read_text(encoding="utf-8") == "x\n"
+
+
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
     """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
     paths = _registered_paths(Path(".ipython"))

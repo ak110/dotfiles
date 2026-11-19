@@ -51,7 +51,6 @@ from pytools._internal import (
     setup_statusline_binary,
     setup_tmpfiles_clean,
     setup_tmux_plugins,
-    sync_agent_toolkit_rules,
     update_claude_settings,
     update_npmrc,
     update_vscode_settings,
@@ -252,16 +251,6 @@ def _codex_claude_mcp_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     monkeypatch.setattr(remove_codex_claude_mcp.common, "run_subprocess", lambda *_args, **_kwargs: next(results))
 
 
-def _rules_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    rules = tmp_path / "dotfiles" / "agent-toolkit" / "share" / "rules" / "common"
-    rules.mkdir(parents=True)
-    (rules / "01.md").write_text("rule\n", encoding="utf-8")
-    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
-    monkeypatch.setattr(claude_common, "CLAUDE_HOME", tmp_path / ".claude")
-    monkeypatch.setattr(sync_agent_toolkit_rules, "CODEX_HOME", tmp_path / ".codex")
-    monkeypatch.setattr(common, "atomic_write_text", lambda *_args, **_kwargs: False)
-
-
 def _opencode_toolkit_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(setup_opencode_cli, "find_launcher", lambda: tmp_path / "opencode")
@@ -453,7 +442,6 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "OpenCode CLI の導入": [(_opencode_cli_installer_fails, 0)],
     "OpenCode toolkit の同期": [(_opencode_toolkit_cli_missing, 0), (_opencode_toolkit_write_fails, 1)],
     "Herdr CLI の導入と更新": [(_herdr_cli_installer_fails, 0)],
-    "agent-toolkit ルールの同期": [(_rules_write_fails, 1)],
     "Codex リンクの同期": [(_codex_link_blocked, 1)],
     "Codex 診断ログの通常ストレージ復元 (Linux)": [(_codex_logs_copy_fails, 1)],
     "tmux プラグインの導入 (Linux)": [(_tmux_clone_fails, 0)],
