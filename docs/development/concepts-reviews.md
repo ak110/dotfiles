@@ -68,3 +68,10 @@
 - commitとPR説明の帰属行（セッションURLを含む）はClaude Codeの既定のまま残し、投稿前レビューと振り返りはこれらを内部識別子の混入として扱わない。
   managed settingsの`attribution.sessionUrl`と`attribution.pr`も設定しない。
   2026年10月5日、セッションURLをcommitとPR説明から外す案に対して、ユーザーが設定を増やさず既定のままとすると回答したことに由来する
+- 担当内で補える証拠修復・探索・再判定は同じ担当が返却前確認まで終え、担当で補えない判断・認可・入力・権限・外部状態の不足だけを続行できない理由として返す。
+  対応する実装単位へ統合できない修正は、新規commitへフォールバックせず最も新しい実装commitへ統合し、履歴を書き換えられない場合だけ続行できない理由を返す。
+  統合先と続行できない理由を返す条件の詳細は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「修正方法の選択」が定める。
+  `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小し、同じ実装担当が再判定からamendまでを完結する。
+  初回実装担当のrouteと実効`engine`・`model`・`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。
+  実効engine・modelが一致する場合は元の実装担当threadを継続し、effortだけが異なる場合は`atk agents effort up|down <子のsession_id>`で同じ会話のまま調整する。
+  それ以外は旧担当の終了確認後に今回routeで新しい実装担当を起動し、元の実装入力と原本の絶対パスを開始前に1回だけ渡す
