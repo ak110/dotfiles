@@ -1,6 +1,8 @@
 """公式インストーラーを利用するCLI導入処理の共通機能。"""
 
 import contextlib
+import dataclasses
+import enum
 import json
 import locale
 import logging
@@ -125,6 +127,7 @@ def migrate_npm_launchers(
 ) -> bool:
     """PATHと追加の配置先にある帰属確認済み非正規npmパッケージを削除する。
 
+    `canonical_launcher`はユーザーが使う正規の起動先で、移行の候補から除き、移行を延期した場合に起動先として案内する。
     `excluded_launchers`には呼出側自身が配置した起動管理を渡し、移行の候補と保持警告から除く。
     npmの導入先を照会できないパッケージと、Windowsでパッケージから起動したプロセスがあるパッケージは、その回は削除しない。
     """
@@ -146,12 +149,14 @@ def migrate_npm_launchers(
             logger.warning(log_format.format_status(cli_name, owner))
             continue
         npm, package_dir = owner
-        if is_windows_cli_running(cli_name, packages=(package_dir,)):
+        if running := find_windows_cli_processes(cli_name, packages=(package_dir,)):
             logger.warning(
                 log_format.format_status(
                     cli_name,
-                    f"旧npm版を実行中の可能性があるため移行を次回へ延期: {package_dir}。"
-                    "旧npm版を終了して`update-dotfiles`を再実行する",
+                    f"旧npm版の移行を次回へ延期: {package_dir}。{describe_processes(running, '旧npm版')}。"
+                    "表示したプロセスが旧npm版なら終了してから、"
+                    f'`"{npm}" uninstall --global {package_name}`で旧npm版を削除する。'
+                    f"削除するまでは`{canonical_launcher}`で更新済みの版を起動する",
                 )
             )
             continue
@@ -172,8 +177,37 @@ def migrate_npm_launchers(
     return changed
 
 
-def is_windows_cli_running(cli_name: str, *, native: Iterable[Path] = (), packages: Iterable[Path] = ()) -> bool:
-    """Windowsで、書き換える配置から起動したプロセスがあるかを安全側で判定する。
+class Evidence(enum.Enum):
+    """プロセスを書き換える配置からの起動と判定した根拠。
+
+    値は判定をユーザーへ示す文の書式で、PID（`pid`）、読めたパス（`path`）、書き換える版の名前（`target`）を埋める。
+    """
+
+    STARTED = "PID {pid}（{path}）で{target}を実行中"
+    EXE_UNREADABLE = "PID {pid}（{path}）は実行ファイルの所在を読めず、{target}の実行を否定できない"
+    CMDLINE_UNREADABLE = "PID {pid}（{path}）は起動引数を読めず、{target}の実行を否定できない"
+    NAMED_ONLY = "PID {pid}（{path}）は名前で起動していて所在を判定できず、{target}の実行を否定できない"
+
+
+@dataclasses.dataclass(frozen=True)
+class CliProcess:
+    """書き換える配置から起動したプロセスか、その可能性を否定できないプロセス。"""
+
+    pid: int
+    evidence: Evidence
+    path: str
+    """判定に使った、読めた実行ファイルかスクリプトのパス。どちらも読めない場合は実行名。"""
+
+
+def describe_processes(processes: Iterable[CliProcess], target: str) -> str:
+    """延期の理由として、プロセスごとに判定の根拠、PID、読めたパスを述べる文を返す。"""
+    return "。".join(process.evidence.value.format(pid=process.pid, path=process.path, target=target) for process in processes)
+
+
+def find_windows_cli_processes(
+    cli_name: str, *, native: Iterable[Path] = (), packages: Iterable[Path] = ()
+) -> list[CliProcess]:
+    """Windowsで、書き換える配置から起動したプロセスを安全側で列挙する。
 
     `native`は導入・更新が置き換える実行ファイルの配置、`packages`は移行が削除するnpm版・mise版のパッケージである。
     実行ファイルの所在と、パッケージについてはnode・miseが起動したスクリプトの所在でも判定する。
@@ -181,9 +215,10 @@ def is_windows_cli_running(cli_name: str, *, native: Iterable[Path] = (), packag
     権限が無く所在を読めず、書き換える配置からの起動を否定できないプロセスは数える。
     """
     if sys.platform != "win32":
-        return False
+        return []
     native_paths = _windows_paths(native)
     package_paths = _windows_paths(packages)
+    found: list[CliProcess] = []
     # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
     # 同じ後処理の中の先行する列挙が残した値を使わないよう、現在のPIDから新しく構築したProcessで判定する。
     for listed in psutil.process_iter():
@@ -195,9 +230,9 @@ def is_windows_cli_running(cli_name: str, *, native: Iterable[Path] = (), packag
             cmdline = _readable(process.cmdline)
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
-        if _process_conflicts(cli_name, native_paths, package_paths, name, exe, cmdline):
-            return True
-    return False
+        if conflict := _process_conflicts(cli_name, native_paths, package_paths, name, exe, cmdline):
+            found.append(CliProcess(listed.pid, *conflict))
+    return found
 
 
 class _NpmQueryError(Exception):
@@ -446,33 +481,36 @@ def _process_conflicts(
     name: str | None,
     exe: str | None,
     cmdline: list[str] | None,
-) -> bool:
+) -> tuple[Evidence, str] | None:
     """読めた属性から、書き換える配置から起動したプロセスか、その可能性を否定できないプロセスかを判定する。
 
+    数える場合は根拠と判定に使ったパスを返す。
     `name`・`exe`・`cmdline`の`None`は、権限が無く読めなかったことを表す。
     """
     # 実行ファイルを読めない場合も、command lineの先頭の実行パスが書き換える配置にあれば数える。
     executable = exe or (cmdline[0] if cmdline else "")
     if executable and _located_in(executable, (*native, *packages)):
-        return True
-    program = PureWindowsPath(exe or name or (cmdline[0] if cmdline else "")).name.lower()
+        return Evidence.STARTED, executable
+    program_path = exe or name or (cmdline[0] if cmdline else "")
+    program = PureWindowsPath(program_path).name.lower()
     if program in {cli_name, f"{cli_name}.exe"}:
         # 実行ファイルの所在を読めない同名の実行体は、書き換える配置から起動した可能性を除けない。
-        return not exe
+        return None if exe else (Evidence.EXE_UNREADABLE, executable or program_path)
     # node・miseが起動するスクリプトはパッケージにだけあり、置き換える実行ファイルの配置には無い。
     if not packages or program not in {"node", "node.exe", "mise", "mise.exe"}:
-        return False
+        return None
     if cmdline is None:
         # 起動したスクリプトを読めないnode・miseは、削除するnpm版・mise版を実行している可能性を除けない。
-        return True
+        return Evidence.CMDLINE_UNREADABLE, program_path
     entry = _script_entry(program, cmdline)
     if entry is None:
-        return False
+        return None
     if PureWindowsPath(entry).anchor:
-        return _located_in(entry, packages) or _located_in(str(common.safe_resolve(Path(entry))), packages)
+        located = _located_in(entry, packages) or _located_in(str(common.safe_resolve(Path(entry))), packages)
+        return (Evidence.STARTED, entry) if located else None
     # 名前や相対パスで指定したCLIは、所在で判定できず、削除するnpm版・mise版から起動した可能性を除けない。
     launcher_names = {cli_name, *(f"{cli_name}{suffix}" for suffix in (".exe", ".cmd", ".ps1", ".js"))}
-    return PureWindowsPath(entry).name.lower() in launcher_names
+    return (Evidence.NAMED_ONLY, entry) if PureWindowsPath(entry).name.lower() in launcher_names else None
 
 
 def _script_entry(program: str, cmdline: list[str]) -> str | None:

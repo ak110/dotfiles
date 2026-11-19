@@ -493,7 +493,7 @@ def test_windows_migrate_keeps_npm_package_while_it_may_be_running(
     assert [command for command in calls if "uninstall" in command] == (
         [[str(npm), "uninstall", "--global", "@openai/codex"]] if removed else []
     )
-    assert (f"旧npm版を実行中の可能性があるため移行を次回へ延期: {package}" in caplog.text) is not removed
+    assert (f"旧npm版の移行を次回へ延期: {package}" in caplog.text) is not removed
 
 
 def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_path: Path) -> None:
@@ -693,7 +693,7 @@ def test_windows_counts_processes_started_from_files_to_replace_or_remove(
     """導入が置き換えるか移行が削除する配置から起動したプロセスと、その可能性を否定できないプロセスだけを数える。"""
     patch_windows_processes(monkeypatch, [process])
 
-    assert setup_cli_common.is_windows_cli_running("codex", **_CODEX_FILES) is expected
+    assert bool(setup_cli_common.find_windows_cli_processes("codex", **_CODEX_FILES)) is expected
 
 
 @pytest.mark.parametrize(
@@ -708,7 +708,7 @@ def test_windows_node_is_not_counted_without_npm_or_mise_version_to_remove(monke
     """導入が置き換える配置だけを調べる場合、起動したスクリプトを読めないものも含め、node・miseのプロセスは数えない。"""
     patch_windows_processes(monkeypatch, [process])
 
-    assert not setup_cli_common.is_windows_cli_running("codex", native=(Path(_STANDALONE),))
+    assert not setup_cli_common.find_windows_cli_processes("codex", native=(Path(_STANDALONE),))
 
 
 @pytest.mark.parametrize(
@@ -725,7 +725,7 @@ def test_windows_claude_counts_only_replaced_launcher(monkeypatch, exe: str, exp
     patch_windows_processes(monkeypatch, [windows_process(exe)])
 
     native = (Path(r"C:\Users\Me\.local\bin\claude.exe"),)
-    assert setup_cli_common.is_windows_cli_running("claude", native=native) is expected
+    assert bool(setup_cli_common.find_windows_cli_processes("claude", native=native)) is expected
 
 
 def test_windows_check_is_skipped_on_other_platforms(monkeypatch) -> None:
@@ -733,7 +733,7 @@ def test_windows_check_is_skipped_on_other_platforms(monkeypatch) -> None:
     patch_windows_processes(monkeypatch, [windows_process(rf"{_STANDALONE_RELEASE}\bin\codex.exe")])
     monkeypatch.setattr(setup_cli_common.sys, "platform", "linux")
 
-    assert not setup_cli_common.is_windows_cli_running("codex", **_CODEX_FILES)
+    assert not setup_cli_common.find_windows_cli_processes("codex", **_CODEX_FILES)
 
 
 @pytest.mark.parametrize("error", [psutil.NoSuchProcess(1), psutil.ZombieProcess(2)])
@@ -744,7 +744,7 @@ def test_windows_process_races_are_ignored(monkeypatch, error: Exception) -> Non
 
     patch_windows_processes(monkeypatch, [VanishedProcess()])
 
-    assert not setup_cli_common.is_windows_cli_running("codex", **_CODEX_FILES)
+    assert not setup_cli_common.find_windows_cli_processes("codex", **_CODEX_FILES)
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
@@ -773,7 +773,7 @@ def test_windows_cli_running_reads_current_generation(monkeypatch: pytest.Monkey
         try:
             _inject_previous_generation(monkeypatch, child.pid, name="codex.exe", exe=rf"{_STANDALONE_RELEASE}\bin\codex.exe")
             monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-            running = setup_cli_common.is_windows_cli_running("codex", **_CODEX_FILES)
+            running = setup_cli_common.find_windows_cli_processes("codex", **_CODEX_FILES)
         finally:
             child.kill()
     assert not running

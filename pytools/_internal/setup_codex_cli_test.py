@@ -24,7 +24,7 @@ from pytools._internal._test_helpers import FakeEnvironmentRegistry, patch_windo
 from pytools.prune_codex_packages_test import _release
 
 _Call = tuple[list[str], dict[str, object]]
-_IS_WINDOWS_CLI_RUNNING = setup_cli_common.is_windows_cli_running
+_FIND_WINDOWS_CLI_PROCESSES = setup_cli_common.find_windows_cli_processes
 _INSTALLED_LISTING = '[{"version": "0.1.0", "installed": true, "active": true}]'
 _UNINSTALLED_LISTING = '[{"version": "0.1.0", "installed": false, "active": false}]'
 
@@ -105,7 +105,7 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     monkeypatch.delenv("CODEX_INSTALL_DIR", raising=False)
     monkeypatch.delenv("NVM_DIR", raising=False)
     monkeypatch.delenv("MISE_DATA_DIR", raising=False)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "find_windows_cli_processes", lambda *args, **kwargs: [])
     root = tmp_path / "dotfiles"
     (root / "bin").mkdir(parents=True)
     for name in ("codex", "codex.cmd"):
@@ -208,7 +208,8 @@ def test_nvm_bin_directories_use_existing_version_directories(monkeypatch, tmp_p
 
 def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_path: Path) -> None:
     _isolate(monkeypatch, tmp_path, "win32")
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "is_windows_cli_running", lambda *args, **kwargs: True)
+    running = [setup_cli_common.CliProcess(1, setup_cli_common.Evidence.STARTED, "codex.exe")]
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "find_windows_cli_processes", lambda *args, **kwargs: running)
     monkeypatch.setattr(
         setup_codex_cli.common,
         "run_subprocess",
@@ -263,7 +264,7 @@ def _prepare_windows_run(
     呼んだコマンドの記録と、導入とnpm・miseの照会に成功する`run_subprocess`の代用関数を返す。
     """
     _isolate(monkeypatch, tmp_path, "win32")
-    monkeypatch.setattr(setup_cli_common, "is_windows_cli_running", _IS_WINDOWS_CLI_RUNNING)
+    monkeypatch.setattr(setup_cli_common, "find_windows_cli_processes", _FIND_WINDOWS_CLI_PROCESSES)
     monkeypatch.setattr(prune_codex_packages, "run", post_apply_outcome.PostApplyOutcome)
     monkeypatch.setattr(setup_codex_cli, "install_recovery_launcher", lambda *args, **kwargs: None)
     npm_package, answer_npm = _install_npm_codex(monkeypatch, tmp_path)
@@ -340,10 +341,66 @@ def test_windows_defers_install_and_migration_separately(
         setup_codex_cli.run(client)
 
     assert bool(requests) is installed
-    assert ("実行中のため導入と移行を次回へ延期" in caplog.text) is not installed
+    assert ("導入と移行を次回へ延期" in caplog.text) is not installed
     assert _uninstalled(calls) == uninstalled
-    assert ("旧npm版を実行中の可能性があるため移行を次回へ延期" in caplog.text) is (installed and "npm" not in uninstalled)
-    assert ("mise版を実行中の可能性があるため移行を次回へ延期" in caplog.text) is (installed and "mise" not in uninstalled)
+    assert ("旧npm版の移行を次回へ延期" in caplog.text) is (installed and "npm" not in uninstalled)
+    assert ("mise版の移行を次回へ延期" in caplog.text) is (installed and "mise" not in uninstalled)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "deferred", "confirmed"),
+    [
+        # 検証4の再現。無関係なnodeが常駐し、権限が無く起動引数を読めない。
+        ("node-cmdline-denied", {"旧npm版": _NODE, "mise版": _NODE}, False),
+        ("npm-session", {"旧npm版": "{tmp}/npm/node_modules/@openai/codex/bin/codex.js"}, True),
+        ("mise-session", {"mise版": rf"{_MISE_CODEX}\node_modules\@openai\codex\bin\codex.js"}, True),
+    ],
+)
+def test_windows_migration_deferral_shows_evidence_and_how_to_finish(
+    monkeypatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    scenario: str,
+    deferred: dict[str, str],
+    confirmed: bool,
+) -> None:
+    """旧版の移行を延期したら、判定に使ったPIDとパスと、旧版の実行を確かめたのか否定できないだけなのかを示す。
+
+    旧版がPATHで先に見つかっても更新済みの版を使えるよう、その起動先のフルパスと、旧版を削除するコマンドも示す。
+    """
+    _, run = _prepare_windows_run(monkeypatch, tmp_path, scenario)
+    monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", run)
+
+    with caplog.at_level(logging.INFO), _make_client() as client:
+        setup_codex_cli.run(client)
+
+    removal = {
+        "旧npm版": f'`"{tmp_path / "npm" / "npm.cmd"}" uninstall --global @openai/codex`',
+        "mise版": '`"/usr/bin/mise" uninstall --all --yes npm:@openai/codex`',
+    }
+    deferrals = {
+        target: [message for message in caplog.messages if f"{target}の移行を次回へ延期" in message] for target in removal
+    }
+    assert {target for target, messages in deferrals.items() if messages} == set(deferred)
+    for target, shown in deferred.items():
+        [message] = deferrals[target]
+        assert f"PID 0（{shown.format(tmp=tmp_path)}）" in message
+        assert (f"{target}を実行中" in message) is confirmed
+        assert ("起動引数を読めず" in message and f"{target}の実行を否定できない" in message) is not confirmed
+        assert removal[target] in message
+        assert f"`{tmp_path / 'dotfiles' / 'bin' / 'codex.cmd'}`で更新済みの版を起動する" in message
+
+
+def test_windows_install_deferral_shows_running_process(monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """導入を延期したら、延期の原因になったCodexのPIDと実行ファイルのパスを示す。"""
+    _, run = _prepare_windows_run(monkeypatch, tmp_path, "standalone-session")
+    monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", run)
+
+    with caplog.at_level(logging.INFO), _make_client() as client:
+        setup_codex_cli.run(client)
+
+    session = codex_runtime.standalone_root() / "releases" / "0.170.0-x86_64-pc-windows-msvc" / "bin" / "codex.exe"
+    assert f"導入と移行を次回へ延期: PID 0（{session}）でCodexを実行中" in caplog.text
 
 
 @pytest.mark.parametrize("failing_query", ["mise", "npm"])
@@ -376,7 +433,7 @@ def test_windows_installs_and_skips_migration_when_files_to_remove_cannot_be_lis
         outcomes = [setup_codex_cli.run(client) for _ in range(2)]
 
     assert len(requests) == 2
-    assert "実行中のため導入と移行を次回へ延期" not in caplog.text
+    assert "導入と移行を次回へ延期" not in caplog.text
     assert failing_query not in _uninstalled(calls)
     failed = next(command for command, _ in calls if command[1:] == query)
     reported = caplog.text if failing_query == "npm" else outcomes[-1].failure or ""

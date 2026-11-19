@@ -300,7 +300,7 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
         (
             "codex",
             "@openai/codex",
-            launcher,
+            tmp_path / "dotfiles" / "bin" / "codex",
             tmp_path / ".codex" / "packages" / "standalone",
             {
                 "extra_search_directories": (),
@@ -499,7 +499,7 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
         (
             "codex",
             "@openai/codex",
-            launcher,
+            tmp_path / "dotfiles" / "bin" / "codex",
             codex_home / "packages" / "standalone",
             {
                 "extra_search_directories": (),

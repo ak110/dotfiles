@@ -48,11 +48,12 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
         return post_apply_outcome.PostApplyOutcome()
     # 公式インストーラーは、導入する版の配置が不完全な場合にその版を削除して入れ直すため、
     # スタンドアローン版の全体を置き換える配置とする。旧版の削除先は移行の中で照会して判定する。
-    if setup_cli_common.is_windows_cli_running("codex", native=(codex_runtime.standalone_root(),)):
+    if running := setup_cli_common.find_windows_cli_processes("codex", native=(codex_runtime.standalone_root(),)):
         logger.info(
             log_format.format_status(
                 "codex",
-                "実行中のため導入と移行を次回へ延期。Codexを終了して`update-dotfiles`を再実行する",
+                f"導入と移行を次回へ延期: {setup_cli_common.describe_processes(running, 'Codex')}。"
+                "Codexを終了して`update-dotfiles`を再実行する",
             ),
         )
         return post_apply_outcome.PostApplyOutcome()
@@ -81,13 +82,16 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
         )
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(codex_runtime.visible_bin_dir())
-    failures, removed = _remove_mise_versions()
+    windows = sys.platform == "win32"
+    # ユーザーが`codex`で起動する起動管理。dotfilesが見つからない場合は確認済みの公式実行体を案内する。
+    canonical = _wrapper_launcher(windows=windows) or launcher
+    failures, removed = _remove_mise_versions(canonical)
     migrated = False
     try:
         migrated = setup_cli_common.migrate_npm_launchers(
             "codex",
             _PACKAGE,
-            launcher,
+            canonical,
             codex_runtime.standalone_root(),
             extra_search_directories=_nvm_bin_directories(),
             # dotfilesが配置した起動管理はnpmの導入物ではなく、帰属判定の対象から除く。
@@ -118,7 +122,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     if pruning.failure:
         failures.append(pruning.failure)
     try:
-        install_recovery_launcher(launcher, windows=sys.platform == "win32")
+        install_recovery_launcher(launcher, windows=windows)
     except (OSError, RuntimeError) as error:
         failures.append(str(error))
     if failures:
@@ -222,10 +226,9 @@ def _get_installer(client: httpx.Client, url: str) -> httpx.Response:
 
 def install_recovery_launcher(native: Path, *, windows: bool) -> None:
     """確認済みの公式実行体を保持し、通常の可視コマンドを起動管理へ接続する。"""
-    root = common.find_dotfiles_root()
-    if root is None:
+    source = _wrapper_launcher(windows=windows)
+    if source is None:
         raise RuntimeError("Codexの起動管理を配置するdotfilesが見つからない。update-dotfilesを再実行する")
-    source = root / "bin" / ("codex.cmd" if windows else "codex")
     if not source.is_file():
         raise RuntimeError(f"Codexの起動管理が見つからない: {source}。dotfilesを更新して再実行する")
     visible = codex_runtime.visible_bin_dir()
@@ -272,6 +275,12 @@ def install_recovery_launcher(native: Path, *, windows: bool) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _wrapper_launcher(*, windows: bool) -> Path | None:
+    """ユーザーが`codex`で起動する、dotfilesの起動管理を返す。"""
+    root = common.find_dotfiles_root()
+    return root / "bin" / ("codex.cmd" if windows else "codex") if root is not None else None
+
+
 def _prefer_wrapper_path(value: str, wrapper: Path, native: Path) -> str:
     """他ディレクトリの相対順序を保ち、専用のnative binだけをwrapperより後へ置く。"""
     entries = value.split(";")
@@ -303,10 +312,11 @@ def _find_mise() -> Path | None:
     return Path(mise_name).absolute() if mise_name is not None else None
 
 
-def _remove_mise_versions() -> tuple[list[str], bool]:
+def _remove_mise_versions(canonical: Path) -> tuple[list[str], bool]:
     """mise管理版が実在する場合だけ全版を除去し、失敗の説明と除去有無を返す。
 
     一覧を取得できない場合と、Windowsで除去する版から起動したプロセスがある場合は、その回は除去しない。
+    `canonical`は除去を延期した場合に案内する更新済みの起動先である。
     """
     mise = _find_mise()
     if mise is None:
@@ -328,12 +338,14 @@ def _remove_mise_versions() -> tuple[list[str], bool]:
     if not installed:
         return [], False
     paths = [Path(path) for entry in installed if isinstance(path := entry.get("install_path"), str)]
-    if setup_cli_common.is_windows_cli_running("codex", packages=paths):
+    if running := setup_cli_common.find_windows_cli_processes("codex", packages=paths):
         logger.warning(
             log_format.format_status(
                 "codex",
-                f"mise版を実行中の可能性があるため移行を次回へ延期: {', '.join(map(str, paths))}。"
-                "mise版のCodexを終了して`update-dotfiles`を再実行する",
+                f"mise版の移行を次回へ延期: {', '.join(map(str, paths))}。"
+                f"{setup_cli_common.describe_processes(running, 'mise版')}。"
+                f'表示したプロセスがmise版なら終了してから、`"{mise}" uninstall --all --yes {target}`でmise版を削除する。'
+                f"削除するまでは`{canonical}`で更新済みの版を起動する",
             )
         )
         return [], False
