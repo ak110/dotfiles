@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import sys
 import time
 from typing import Any
 
@@ -66,3 +67,33 @@ def respond(request: pathlib.Path, response_path: pathlib.Path, response: dict[s
     atomic_file.atomic_write(response_path, json.dumps(response, ensure_ascii=False) + "\n")
     if not request.exists():
         response_path.unlink(missing_ok=True)
+
+
+# Windowsでは、他プロセスが開いている間や削除・置換の途中で、名前の操作や読取が一時的に共有拒否（WinError 5・32）になる。
+_TRANSIENT_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16)
+
+
+def read_response(response_path: pathlib.Path) -> str | None:
+    """公開済みの応答を読む。無い間と一時的な共有拒否の間は`None`を返し、呼出側が要求の期限内で次の巡回に読み直す。"""
+    try:
+        return response_path.read_text(encoding="utf-8")
+    except FileNotFoundError, PermissionError:
+        return None
+
+
+def remove_requester_files(*paths: pathlib.Path) -> None:
+    """要求側の後始末として、渡した順にファイルを消す。
+
+    既に消えていれば成功として扱い、一時的な共有拒否は短い上限の中で再試行する。
+    それでも消せなければ操作の結果を上書きせず、診断を標準エラーへ出す。残ったファイルは既存の期限切れの掃引が消す。
+    """
+    for path in paths:
+        for attempt in range(len(_TRANSIENT_RETRY_DELAYS) + 1):
+            try:
+                path.unlink(missing_ok=True)
+                break
+            except OSError as error:
+                if attempt < len(_TRANSIENT_RETRY_DELAYS):
+                    time.sleep(_TRANSIENT_RETRY_DELAYS[attempt])
+                    continue
+                print(f"要求側の後始末で{path}を消せなかった（期限切れの掃引が消す）: {error}", file=sys.stderr, flush=True)

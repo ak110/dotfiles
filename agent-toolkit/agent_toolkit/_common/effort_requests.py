@@ -122,8 +122,8 @@ def request(
     try:
         atomic_file.atomic_write(request_path, json.dumps(packet, ensure_ascii=False) + "\n")
         while time.monotonic() < deadline:
-            if response_path.is_file():
-                response = json.loads(response_path.read_text(encoding="utf-8"))
+            if (text := registry_requests.read_response(response_path)) is not None:
+                response = json.loads(text)
                 if not isinstance(response, dict) or response.get("session_id") != target:
                     raise ValueError("effort応答の対象を確認できない")
                 return response
@@ -132,8 +132,7 @@ def request(
     finally:
         # 所有側は応答を書いた後に要求の有無で自分の応答を消すかを決めるため、要求を先に消す。
         with session_registry.registry_lock(target, state_root=state_root):
-            request_path.unlink(missing_ok=True)
-            response_path.unlink(missing_ok=True)
+            registry_requests.remove_requester_files(request_path, response_path)
 
 
 def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Path, dict[str, Any]]]:

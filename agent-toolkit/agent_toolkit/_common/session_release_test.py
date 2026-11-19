@@ -160,6 +160,68 @@ async def test_response_racing_requester_cleanup_is_not_left_behind(
         await task
 
 
+@pytest.mark.parametrize("fault", ["read", "cleanup-request", "cleanup-response"])
+@pytest.mark.parametrize("failing", [False, True])
+@pytest.mark.asyncio
+async def test_transient_sharing_denial_does_not_override_release_result(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fault: str, failing: bool
+) -> None:
+    """Windowsの一時的な共有拒否が応答の最初の読取や要求側の後始末で一度起きても、所有側の結果（成功と具体的な失敗理由）を返す。"""
+    owner = session_registry.owner_process()
+    assert owner is not None
+    session_registry.publish(
+        "child",
+        state=session_registry.PublicationState.RESULT_COMPLETED,
+        cwd=str(tmp_path),
+        processes=(owner,),
+        state_root=tmp_path,
+    )
+    denied: list[str] = []
+    original_read, original_unlink = pathlib.Path.read_text, pathlib.Path.unlink
+
+    def read_text(self: pathlib.Path, *args: Any, **kwargs: Any) -> str:
+        if fault == "read" and self.name.endswith(".release-response") and not denied:
+            denied.append(self.name)
+            raise PermissionError(13, "modeled WinError 32: sharing violation")
+        return original_read(self, *args, **kwargs)
+
+    def unlink(self: pathlib.Path, *args: Any, **kwargs: Any) -> None:
+        suffix = ".release-request" if fault == "cleanup-request" else ".release-response"
+        if fault.startswith("cleanup") and self.name.endswith(suffix) and not denied:
+            denied.append(self.name)
+            raise PermissionError(13, "modeled WinError 5: access denied")
+        original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            session_release.request_release, "child", tmp_path, deadline=time.monotonic() + 5, state_root=tmp_path
+        )
+    )
+    try:
+        async with asyncio.timeout(2):
+            while not list(session_registry.registry_directory(tmp_path).glob("*.release-request")):
+                await asyncio.sleep(0.001)
+
+        async def stop(session_id: str, **_kwargs: Any) -> dict[str, Any]:
+            if failing:
+                raise OSError("解放に失敗")
+            session_registry.release(session_id, reason="stopped", state_root=tmp_path)
+            return {}
+
+        await session_release.process_requests({"child": _Session(True, str(tmp_path))}, stop, state_root=tmp_path)
+        reason = await task
+        if failing:
+            assert reason is not None and "解放に失敗" in reason
+        else:
+            assert reason is None
+        assert denied
+        assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+    finally:
+        await asyncio.gather(task, return_exceptions=True)
+
+
 @pytest.mark.asyncio
 async def test_response_during_registry_write_does_not_delay_release_of_other_sessions(tmp_path: pathlib.Path) -> None:
     """別プロセスが1件のsessionの登録簿を書き込み中でも、所有側はその応答を返し、同じ監視が扱う別sessionを期限内に解放する。"""

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import threading
@@ -116,6 +117,43 @@ async def test_cli_request_applies_one_step_and_persists_history(actor):
             assert (public["engine"], public["model"], public["effort"]) == ("codex", "test-model", "medium")
     finally:
         # to_threadの取消だけでは同期CLIは止まらないため、有限期限の終了まで回収する。
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.parametrize("fault", ["read", "cleanup-request", "cleanup-response"])
+@pytest.mark.asyncio
+async def test_cli_request_survives_transient_sharing_denial(monkeypatch, fault):
+    """Windowsの一時的な共有拒否が、応答の最初の読取や要求側の後始末で一度起きても、effortの適用結果を成功として返す。"""
+    session = _session()
+    denied: list[str] = []
+    original_read, original_unlink = pathlib.Path.read_text, pathlib.Path.unlink
+
+    def read_text(self, *args, **kwargs):
+        if fault == "read" and self.name.endswith(".effort-response") and not denied:
+            denied.append(self.name)
+            raise PermissionError(13, "modeled WinError 32: sharing violation")
+        return original_read(self, *args, **kwargs)
+
+    def unlink(self, *args, **kwargs):
+        suffix = ".effort-request" if fault == "cleanup-request" else ".effort-response"
+        if fault.startswith("cleanup") and self.name.endswith(suffix) and not denied:
+            denied.append(self.name)
+            raise PermissionError(13, "modeled WinError 5: access denied")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    task = asyncio.create_task(asyncio.to_thread(effort_requests.request, "up", "child", {"CODEX_THREAD_ID": "parent"}))
+    try:
+        async with asyncio.timeout(5):
+            while not await asyncio.to_thread(effort_requests.pending):
+                await asyncio.sleep(0)
+            await effort_control.process_requests({"child": session}, _catalog, _apply)
+            result = await asyncio.shield(task)
+        assert result["effort"] == "medium" and result["changed"] is True
+        assert denied
+        assert not list(session_registry.registry_directory().glob("*.effort-*"))
+    finally:
         await asyncio.gather(task, return_exceptions=True)
 
 

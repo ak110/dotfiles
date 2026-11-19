@@ -91,8 +91,8 @@ def request_release(
                 return "解放待機中に担当が再開したため保持した"
             if current.state is session_registry.Resolution.UNREADABLE:
                 return "解放待機中の担当登録を読めないため保持した"
-            if response_path.exists():
-                response = json.loads(response_path.read_text(encoding="utf-8"))
+            if (text := registry_requests.read_response(response_path)) is not None:
+                response = json.loads(text)
                 if not isinstance(response, dict):
                     return "解放応答の形式を検収できない"
                 if response.get("session_id") != session_id or response.get("record_digest") != digest:
@@ -119,8 +119,7 @@ def request_release(
     finally:
         # JSON登録簿と拡張子を分け、異常終了時も既存のsessionファイルの7日掃引へ渡す。
         # 所有側は応答を書いた後に要求の有無で自分の応答を消すかを決めるため、要求を先に消す。
-        request.unlink(missing_ok=True)
-        response_path.unlink(missing_ok=True)
+        registry_requests.remove_requester_files(request, response_path)
 
 
 async def process_requests(
