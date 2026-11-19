@@ -2,7 +2,6 @@
 
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
-import contextlib
 import json
 import logging
 import os
@@ -451,7 +450,7 @@ def test_uv_cleanup_failure_preserves_success_time(tmp_path, monkeypatch, locked
 
 
 @pytest.mark.windows
-def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_environ):
+def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_environ, request):
     """他のuvが使用中でも整理を待たずに戻り、使用の終了後にuvの全消去と成功記録を完了する。"""
     native_path = os.pathsep.join(part for part in host_environ()["PATH"].split(os.pathsep) if Path(part).name != "shims")
     uv = shutil.which("uv", path=native_path)
@@ -459,13 +458,15 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
         pytest.skip("uvが無い環境では実際のキャッシュロックを再現できない")
     which = shutil.which
     _prepare(tmp_path, monkeypatch, "full")
+    # 独立プロセスは回収の前に自然に終了し得る。Windowsは終了後のPIDの世代を後から確かめられないため、
+    # 起動直後から回収まで同じ世代のhandleを保持し、終了の前後どちらでも同じ所有として回収する。
+    pins = process_tree.ProcessIdentityPins()
+    request.addfinalizer(pins.close)
     maintenance: list[psutil.Process] = []
 
     def start() -> int:
         pid = _REAL_START_UV_CACHE_MAINTENANCE()
-        # 終了後に再利用されたPIDの別プロセスを回収しないよう、起動直後の識別を保持する。
-        with contextlib.suppress(psutil.NoSuchProcess):
-            maintenance.append(psutil.Process(pid))
+        maintenance.extend(process_tree.collect_descendants(pid, pins=pins, include_root=True))
         return pid
 
     monkeypatch.setattr(prune_installation, "start_cache_maintenance", start)
@@ -506,9 +507,9 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
     # 独立プロセスは記録の後もuv以外の整理とMCPの事前構築を続ける。どちらもこの試験の対象外で、
     # 所要は実行環境の負荷と導入済みのツールで変わる（Windows CIで記録の後20秒を超えた）。
     # 自然な終了を待たずに回収し、独立プロセスを試験の外へ残さない。
-    for process in maintenance:
-        stopped = process_tree.stop_tree(process)
-        assert not stopped.residual and not stopped.unresolved, stopped.descriptions()
+    assert maintenance, "起動直後の独立プロセスの世代を保持できなかった"
+    stopped = process_tree.stop_tree(None, known=maintenance, pins=pins)
+    assert not stopped.residual and not stopped.unresolved, stopped.descriptions()
 
 
 def _uv_clean_failure(monkeypatch: pytest.MonkeyPatch, calls: list[list[str]]) -> dict[str, str | None]:
