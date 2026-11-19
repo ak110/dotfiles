@@ -511,9 +511,10 @@ extend-aliases = { datetime = "datetime" }
 [tool.pyright]
 # agent-toolkitの計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
 extraPaths = ["agent-toolkit/skills/atk-mode/scripts"]
-# refine-promptのテスト選択の固定課題は模擬リポジトリで、同じディレクトリのモジュールを素のimportで読む（tyは行ごとに抑止済み）。
+# 指示文の評価（atk-modeの`playbooks/refine-prompt.md`）のテスト選択の固定課題は模擬リポジトリで、
+# 同じディレクトリのモジュールを素のimportで読む（tyは行ごとに抑止済み）。
 # 直下の開発環境ではagent-toolkit/が探索パスに入り、全体の検査でこのimportを解決できないため、診断を抑止する。
-ignore = ["agent-toolkit/skills/refine-prompt/fixtures/multi-turn/test_selection/public"]
+ignore = ["agent-toolkit/skills/atk-mode/fixtures/multi-turn/test_selection/public"]
 
 [tool.mypy]
 # agent_toolkitはagent-toolkit/を起点に解決する。起点が無いと、部分実行が作ったキャッシュを全体の実行が使った時に
