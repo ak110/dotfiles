@@ -20,6 +20,7 @@ Codexの非対話起動は`/goal`の行を通常の入力として残し目標�
 完遂と具体的な外部前提不足による未完了終了を区別し、回復可能な残工程がある間は続行する。
 2026年10月30〜31日の実ホスト受入では、成功だけを終了条件にすると失敗報告後も停止が遮断された。
 この終了分岐を保持しつつ、恒久的な細則はスキルへ集約し、目的文の反復評価と二重保守を抑える。
+未完了で終えた実行は報告保存の同期確認だけを満たし、振り返りbatchの分析成功の検収（`run_skill_batch.py`）と`finish`の保留は従来どおりである。
 
 子セッションへはprocess-loop用の環境印（`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`と`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`）を渡さない。
 印はStopで`atk agents-exit-session`の実行記録を求めるhookを有効にし、そのコマンドは対話型のCLI本体だけを停止対象とするため、最終応答で終わる非対話セッションが時間上限まで終われなくなる。
@@ -29,14 +30,33 @@ Codexの非対話起動は`/goal`の行を通常の入力として残し目標�
 進捗表示の有無と再開に必要な出力の取得を分け、解除待ちの時間は`--timeout`から除く。
 解除予定が不明な場合は300秒後に再確認し、待機の回数と総時間を打ち切らない。
 継続指示は中断前の記録を確認し、完了済み操作を繰り返さず未完了部分を続けることを伝える。
+候補判定時のCodex上限は次の候補を先に試し、全候補失敗かつ上限失敗がある場合だけ最も早い解除予定まで待って先頭から判定し直す。
+上限判定は共通層、同じ会話の再開はrun-skill、候補判定はorchestratorが所有する。
 
+報告用UWIの本文作成と内容の十分性の判断は、セッション内の`agent-toolkit:atk-mode/playbooks/report-completion.md`が所有する。
 CLIは子の正常終了に加え、同じ実行IDと`source=run-skill`・`scope=<スキル名>`・`run_skill_report=true`を持つUWI本文のcommitを確かめる。
 upstreamがある場合は実remoteへのpush到達も確かめ、全て成立した場合だけ終了コード0を返す。
+保存未達は終了コード1とし、標準エラーへ診断、ログの所在と次の操作を書く。
+124は時間上限の到達だけに用いる。
+回復時はログの実行IDと対応UWIを確認し、同じ会話を再開してreport-completionで保存する。
+保存済みならWI保存先のcommit・pushを完了し、次回の実行を待つ。
+過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う。
+手順は`agent-toolkit/skills/atk-mode/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。
+識別には既存のfrontmatterを使い、新しい状態や起動経路は加えない。
+実行ごとのログは状態ディレクトリの`run-skill/`へ置き、各実行の開始時に最終更新から30日を超えたものを削除する。
+数日に1回の起動で同じ組の直近約10回分を調べられる長さとした。
+多重起動は同じディレクトリの`locks/`のファイルロックで防ぎ、対象リポジトリかスキルが異なる実行は並行して起動できる。
 
 process-wiとprocess-loopは、回答済みの承認用UWIを`source`によらず処理対象へ含め、`run_skill_report: true`の報告用だけを除外する。
 承認された操作を次回の定期起動まで待たせないためであり、処理担当は`scope`のスキルを起動して承認後の操作を実施し、結果を記録する。
 次回定期実行は処理中の項目を取り込まず、終了済みの項目はactiveの取得に入らない。
 報告用を除くことで、実施を要しない報告の回答のためにprocess-loopが起動することを避ける。
+標準エラーが端末の場合は、ログ作成直後に絶対パス、取得直後に子の識別子、受信ごとにassistantの発言とtool呼出名を標準エラーへ表示する。
+標準出力だけをリダイレクトした起動でも表示する。
+思考と生JSON全体は表示せず、表示した進捗と両streamの生診断を同じログへ残す。
+`atk agents logs`の`logs_export.py`が使う`session_record_format.SessionEvent`とClaudeの変換を再利用し、Codex exec固有のitemイベントだけを同じ型へ変換する。
+保存済みロールアウトを読むlogsと実行中のstdoutを読むrun-skillは入力形式と所有する資源が異なるため、ログファイルの追跡機構は共通化しない。
+子の終了前の表示と端末条件は、[run_skill_test.py](../../agent-toolkit/agent_toolkit/_atk/run_skill_test.py)の`test_tty_progress_arrives_before_child_exits`が、両候補・別スキル・正常終了・異常終了・timeoutを入力に検証する。
 
 却下した案は3つある。
 cronからAWIを定期投入し`atk wi process-loop`に処理させる案は、ユーザーが単発実行コマンドを選んだため採らない。

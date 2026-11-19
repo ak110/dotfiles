@@ -22,13 +22,18 @@ dotfilesの`bin/atk`と`bin/atk.cmd`は同一リポジトリ内からの通常�
 
 配布物の`agent-toolkit/scripts/atk`は自身の配置から依存と実装を選び、常駐時の再起動を担う。
 dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、PATH登録、hookとMCPの起動先を保つ。
+同じ場合はcwdのworktreeにある`agent-toolkit/scripts/atk`へ委譲し、Git外と別リポジトリでは配置先の従来版を使う。
+子へ引数、cwd、標準出力、標準エラーと終了コードを渡し、子の失敗で別版へ戻さない。
 各工程へ絶対パスの選択を複製する案は、通常起動の取り違えを残すため採らない。
 プラグイン側で実装を自動で切り替える案は、dotfilesを使わない環境の実装選択まで変えるため採らない。
 
 プラグインのCLIは、Chat・Coworkがインストールを拒否する直下の`bin/`を避けて`scripts/`へ同梱する。
+`scripts/launch.py`は標準ライブラリだけで配布rootと書き込み可能なデータ領域を解決し、準備済みの共有環境のPythonで対象を起動する。
 
 CLI・hook・MCPはこのスクリプトから起動し、登録済みスキルスクリプトはCLIと同じ環境内で実行する。
 `launch.py`のインラインメタデータ（PEP 723）が宣言する依存と`launch.py.lock`の内容、選択したPythonの実行ファイルパス、OS・アーキテクチャの組み合わせから環境の保存先を分ける。
 理由と開発環境の構成は[パッケージ構成と起動層の設計記録](design-packages-layout.md)の「agent-toolkitの依存の宣言と開発環境」に従う。
 ホストごとのplugin dataを優先すると、導入後のウォームアップ・端末の`atk`・Claude Code・Codexが同じ版の環境を別々に構築し、初回のhookがウォームアップ済みの環境を使えないためである。
+データ領域は`AGENT_TOOLKIT_RUNTIME_DATA`の明示指定を優先し、次にOSのユーザーデータ領域を使う。
+ホストが渡す`CLAUDE_PLUGIN_DATA`と`PLUGIN_DATA`はユーザーデータ領域へ書き込めない場合だけ使う。
 root・data・環境の導出は`agent_toolkit/_common/plugin_environment.py`が所有し、各SDKへ同じ判断を複写しない。
