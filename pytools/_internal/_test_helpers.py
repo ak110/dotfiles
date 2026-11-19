@@ -2,13 +2,15 @@
 
 import contextlib
 import json
+import ntpath
 import os
 import pathlib
 import shutil
 import subprocess
 import time
+import types
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import psutil
@@ -17,6 +19,7 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
+from pytools._internal import setup_cli_common as _setup_cli_common
 from pytools._internal.update_claude_settings import update_claude_settings
 
 FakeRunFunc = Callable[..., subprocess.CompletedProcess[str] | None]
@@ -220,6 +223,33 @@ def run_update_claude_settings(tmp_path: Path, managed: dict, existing: dict | N
         removed_list_item_substrings=(),
     )
     return json.loads(target_path.read_text(encoding="utf-8"))
+
+
+def patch_windows_processes(monkeypatch: pytest.MonkeyPatch, processes: Sequence[object]) -> None:
+    """Windowsの列挙と、列挙したPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。"""
+    monkeypatch.setattr(_setup_cli_common.sys, "platform", "win32")
+    monkeypatch.setattr(
+        _setup_cli_common.psutil, "process_iter", lambda: [types.SimpleNamespace(pid=pid) for pid in range(len(processes))]
+    )
+    monkeypatch.setattr(_setup_cli_common.psutil, "Process", lambda pid: processes[pid])
+
+
+def windows_process(exe: str, *arguments: str, denied: Sequence[str] = ()) -> types.SimpleNamespace:
+    """Windowsのpsutilが返す形の実行名・実行ファイル・command lineを持つプロセスを作る。
+
+    `denied`に挙げた属性は、権限の無いプロセスと同じく`psutil.AccessDenied`を送出する。
+    """
+
+    def reader(key: str, value: object) -> Callable[[], object]:
+        def read() -> object:
+            if key in denied:
+                raise psutil.AccessDenied()
+            return value
+
+        return read
+
+    values = {"name": ntpath.basename(exe), "exe": exe, "cmdline": [exe, *arguments]}
+    return types.SimpleNamespace(**{key: reader(key, value) for key, value in values.items()})
 
 
 class FakeEnvironmentRegistry:

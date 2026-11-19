@@ -13,8 +13,8 @@
 単体導入に必要なCLIは[READMEの前提条件](../../agent-toolkit/README.md#前提条件)を参照。
 dotfilesユーザーでは、`chezmoi apply`後の処理がClaude Code（Anthropic公式ネイティブ版）とCodex CLIを導入・更新する。
 Windowsでは、更新で置き換えるか除去するClaude CodeやCodexの実体が実行中の場合は停止せず、更新を次回へ延期する。
-対象はClaude Codeの`~/.local/bin/claude.exe`と、両者のnpm版である。
-デスクトップアプリやCodexのapp-server daemonは実行中でも延期の理由にしない。
+対象はClaude Codeの`~/.local/bin/claude.exe`、公式インストーラーが導入したCodex、除去するnpm版（Codexはmise版も）である。
+デスクトップアプリ、Codexのapp-server daemon、npxで起動した版は実行中でも延期の理由にしない。
 
 ## クイックスタート
 

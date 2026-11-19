@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from pytools._internal import post_apply_outcome, setup_claude_cli
-from pytools._internal.setup_cli_common_test import _patch_windows_processes, _windows_process
+from pytools._internal._test_helpers import patch_windows_processes, windows_process
 
 
 def test_run_updates_existing_native_and_migrates_after_verification(monkeypatch, tmp_path: Path) -> None:
@@ -163,7 +163,7 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
 
 @pytest.mark.parametrize(
     ("running", "deferred"),
-    [("claude-code", True), ("npm", True), ("desktop-app", False)],
+    [("claude-code", True), ("npm", True), ("npx", False), ("desktop-app", False)],
 )
 def test_windows_defers_only_while_files_to_replace_are_in_use(
     monkeypatch, tmp_path: Path, running: str, deferred: bool
@@ -173,33 +173,48 @@ def test_windows_defers_only_while_files_to_replace_are_in_use(
     launcher = tmp_path / ".local" / "bin" / "claude.exe"
     launcher.parent.mkdir(parents=True)
     launcher.write_bytes(b"native")
+    # PATH上のnpmがグローバルに導入したClaude Code。移行はこのパッケージを削除する。
+    npm_prefix = tmp_path / "npm"
+    package = npm_prefix / "node_modules" / "@anthropic-ai" / "claude-code"
+    package.mkdir(parents=True)
+    (package / "cli.js").write_text("", encoding="utf-8")
+    (package / "package.json").write_text('{"bin":{"claude":"cli.js"}}', encoding="utf-8")
+    (npm_prefix / "claude.cmd").write_text(f'@node "{package / "cli.js"}" %*\n', encoding="utf-8")
+    (npm_prefix / "npm.cmd").write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", str(npm_prefix))
+    node = r"C:\Program Files\nodejs\node.exe"
     processes = {
-        "claude-code": [_windows_process(str(launcher))],
-        "npm": [
-            _windows_process(
-                r"C:\Program Files\nodejs\node.exe",
-                r"C:\Users\Me\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js",
+        "claude-code": [windows_process(str(launcher))],
+        "npm": [windows_process(node, str(package / "cli.js"))],
+        "npx": [
+            windows_process(
+                node, r"C:\Users\Me\AppData\Local\npm-cache\_npx\4b1e\node_modules\@anthropic-ai\claude-code\cli.js"
             )
         ],
         # Claudeデスクトップアプリ本体と、アプリが会話用に取得したClaude Code。
         "desktop-app": [
-            _windows_process(r"C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\claude.exe"),
-            _windows_process(r"C:\Users\Me\AppData\Roaming\Claude\claude-code\2.1.325\806e0a45e6f5\claude.exe"),
+            windows_process(r"C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\claude.exe"),
+            windows_process(r"C:\Users\Me\AppData\Roaming\Claude\claude-code\2.1.325\806e0a45e6f5\claude.exe"),
         ],
     }[running]
-    _patch_windows_processes(monkeypatch, processes)
+    patch_windows_processes(monkeypatch, processes)
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
         calls.append(command)
+        if command[1:3] == ["prefix", "--global"]:
+            return subprocess.CompletedProcess(command, 0, f"{npm_prefix}\n", "")
+        if command[1:3] == ["root", "--global"]:
+            return subprocess.CompletedProcess(command, 0, f"{npm_prefix / 'node_modules'}\n", "")
         return subprocess.CompletedProcess(command, 1, "", "update failed")
 
     monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
 
     setup_claude_cli.run()
 
-    assert calls == ([] if deferred else [[str(launcher), "update"]])
+    assert [command for command in calls if command[1] == "update"] == ([] if deferred else [[str(launcher), "update"]])
+    assert not any("uninstall" in command for command in calls)
 
 
 def test_run_handles_http_failure(monkeypatch, tmp_path: Path) -> None:

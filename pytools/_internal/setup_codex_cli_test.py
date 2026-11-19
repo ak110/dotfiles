@@ -1,6 +1,7 @@
 """pytools._internal.setup_codex_cliのテスト。"""
 
 import errno
+import json
 import logging
 import os
 import subprocess
@@ -19,8 +20,7 @@ from pytools._internal import (
     setup_cli_common,
     setup_codex_cli,
 )
-from pytools._internal._test_helpers import FakeEnvironmentRegistry
-from pytools._internal.setup_cli_common_test import _patch_windows_processes, _windows_process
+from pytools._internal._test_helpers import FakeEnvironmentRegistry, patch_windows_processes, windows_process
 from pytools.prune_codex_packages_test import _release
 
 _Call = tuple[list[str], dict[str, object]]
@@ -223,51 +223,94 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
 
 _DAEMON_EXE = r"C:\Users\Me\.codex\packages\app-server-daemon\releases\0.170.0-x86_64-pc-windows-msvc\bin\codex.exe"
 _DESKTOP_APP = r"C:\Program Files\WindowsApps\OpenAI.Codex_26.1106.6628.0_x64__2p2nqsd0c76g0\app"
-_NPM_PACKAGE = r"C:\Users\Me\AppData\Roaming\npm\node_modules\@openai\codex"
+_NODE = r"C:\Program Files\nodejs\node.exe"
+_MISE_NODE = r"C:\Users\Me\AppData\Local\mise\installs\node\24.11.0\node.exe"
+_MISE_CODEX = r"C:\Users\Me\AppData\Local\mise\installs\npm-openai-codex\0.1.0"
+_NPX_CODEX = r"C:\Users\Me\AppData\Local\npm-cache\_npx\9f2c\node_modules\@openai\codex"
+_NATIVE_IN_PACKAGE = r"node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\codex\codex.exe"
+# Windowsのmiseが`mise ls --json`で返す、導入済みの版の要素。
+_MISE_LISTING = json.dumps([{"version": "0.1.0", "install_path": _MISE_CODEX, "installed": True, "active": True}])
+
+
+def _install_npm_codex(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[Path, Callable[[list[str]], subprocess.CompletedProcess[str] | None]]:
+    """PATH上のnpmがグローバルに導入したCodexを配置し、パッケージと、npmの導入先を答える代用関数を返す。"""
+    prefix = tmp_path / "npm"
+    package = prefix / "node_modules" / "@openai" / "codex"
+    entrypoint = package / "bin" / "codex.js"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_text("", encoding="utf-8")
+    (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
+    (prefix / "codex.cmd").write_text(f'@node "{entrypoint}" %*\n', encoding="utf-8")
+    (prefix / "npm.cmd").write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", str(prefix))
+    answers = {"prefix": prefix, "root": prefix / "node_modules"}
+
+    def answer(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[2:3] != ["--global"] or command[1] not in answers:
+            return None
+        return subprocess.CompletedProcess(command, 0, f"{answers[command[1]]}\n", "")
+
+    return package, answer
 
 
 @pytest.mark.parametrize(
-    ("processes", "deferred"),
+    ("scenario", "deferred"),
     [
         # 2026-11-19のsthenoで、Codexの会話が無いときに稼働していた管理daemonと更新ループ。
-        pytest.param(
-            [
-                _windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"),
-                _windows_process(_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"),
-            ],
-            False,
-            id="daemon-and-update-loop",
-        ),
-        pytest.param(
-            [_windows_process(r"C:\Users\Me\.codex\packages\standalone\releases\0.170.0-x86_64-pc-windows-msvc\bin\codex.exe")],
-            False,
-            id="standalone-session",
-        ),
-        pytest.param(
-            [
-                _windows_process(rf"{_DESKTOP_APP}\Codex.exe"),
-                _windows_process(rf"{_DESKTOP_APP}\resources\codex.exe", "app-server"),
-            ],
-            False,
-            id="desktop-app",
-        ),
-        pytest.param(
-            [
-                _windows_process(r"C:\Program Files\nodejs\node.exe", rf"{_NPM_PACKAGE}\bin\codex.js"),
-                _windows_process(rf"{_NPM_PACKAGE}\vendor\x86_64-pc-windows-msvc\codex\codex.exe"),
-            ],
-            True,
-            id="npm-session",
-        ),
+        ("daemon-and-update-loop", False),
+        ("daemon-cmdline-denied", False),
+        ("desktop-app", False),
+        ("npx-session", False),
+        ("standalone-session", True),
+        ("npm-session", True),
+        ("mise-session", True),
+        ("mise-session-exe-denied", True),
     ],
 )
-def test_windows_defers_only_while_npm_codex_runs(
-    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, processes: list[object], deferred: bool
+def test_windows_defers_only_while_files_to_replace_or_remove_run(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, scenario: str, deferred: bool
 ) -> None:
-    """Windowsでは、移行が削除するnpm版のCodexを実行中の場合だけ導入と移行を延期する。"""
+    """Windowsでは、導入が置き換えるスタンドアローン版か移行が削除するnpm版・mise版のCodexを実行中の場合だけ延期する。"""
     _isolate(monkeypatch, tmp_path, "win32")
     monkeypatch.setattr(setup_cli_common, "is_windows_cli_running", _IS_WINDOWS_CLI_RUNNING)
-    _patch_windows_processes(monkeypatch, processes)
+    npm_package, answer_npm = _install_npm_codex(monkeypatch, tmp_path)
+    standalone = tmp_path / ".codex" / "packages" / "standalone" / "releases" / "0.170.0-x86_64-pc-windows-msvc"
+    processes = {
+        "daemon-and-update-loop": [
+            windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"),
+            windows_process(_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"),
+        ],
+        "daemon-cmdline-denied": [windows_process(_DAEMON_EXE, "app-server", "--managed-daemon", denied=["cmdline"])],
+        "desktop-app": [
+            windows_process(rf"{_DESKTOP_APP}\Codex.exe"),
+            windows_process(rf"{_DESKTOP_APP}\resources\codex.exe", "app-server"),
+        ],
+        # 移行はnpxのキャッシュを削除しない。
+        "npx-session": [
+            windows_process(_NODE, rf"{_NPX_CODEX}\bin\codex.js"),
+            windows_process(rf"{_NPX_CODEX}\{_NATIVE_IN_PACKAGE}"),
+        ],
+        "standalone-session": [windows_process(str(standalone / "bin" / "codex.exe"))],
+        "npm-session": [
+            windows_process(_NODE, str(npm_package / "bin" / "codex.js")),
+            windows_process(str(npm_package / _NATIVE_IN_PACKAGE.replace("\\", "/"))),
+        ],
+        "mise-session": [
+            windows_process(_MISE_NODE, rf"{_MISE_CODEX}\node_modules\@openai\codex\bin\codex.js"),
+            windows_process(rf"{_MISE_CODEX}\node_modules\@openai\codex\{_NATIVE_IN_PACKAGE}"),
+        ],
+        "mise-session-exe-denied": [
+            windows_process(_MISE_NODE, rf"{_MISE_CODEX}\node_modules\@openai\codex\bin\codex.js", denied=["exe"])
+        ],
+    }[scenario]
+    patch_windows_processes(monkeypatch, processes)
+    calls: list[_Call] = []
+    fake_run = _make_fake_run(calls, mise_list=_MISE_LISTING)
+    monkeypatch.setattr(
+        setup_codex_cli.common, "run_subprocess", lambda command, **kwargs: answer_npm(command) or fake_run(command, **kwargs)
+    )
     requests: list[httpx.Request] = []
 
     def handle_request(request: httpx.Request) -> httpx.Response:
@@ -279,6 +322,7 @@ def test_windows_defers_only_while_npm_codex_runs(
 
     assert bool(requests) is not deferred
     assert ("実行中のため導入と移行を次回へ延期" in caplog.text) is deferred
+    assert not any("uninstall" in command for command, _ in calls)
 
 
 @pytest.mark.parametrize("status_code", [429, 500, 599])

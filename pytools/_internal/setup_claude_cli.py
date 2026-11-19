@@ -27,7 +27,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
     launcher = Path.home() / ".local" / "bin" / ("claude.exe" if sys.platform == "win32" else "claude")
-    if setup_cli_common.is_windows_cli_running("claude", _PACKAGE, [launcher]):
+    if setup_cli_common.is_windows_cli_running("claude", lambda: _files_to_replace_or_remove(launcher)):
         logger.info(
             log_format.format_status(
                 "claude",
@@ -66,6 +66,14 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
             next_action="問題を解消した後に`update-dotfiles`を再実行する。",
         )
     return post_apply_outcome.PostApplyOutcome(changed=True)
+
+
+def _files_to_replace_or_remove(launcher: Path) -> setup_cli_common.CliFiles:
+    """更新が同じパスで置き換える導入先の実行ファイルと、移行が削除するnpm版の配置を返す。"""
+    return setup_cli_common.CliFiles(
+        replaced=(launcher,),
+        removed=setup_cli_common.npm_packages_to_remove("claude", _PACKAGE, launcher.parent.parent),
+    )
 
 
 def _install_native(client: httpx.Client | None) -> subprocess.CompletedProcess[str] | None:

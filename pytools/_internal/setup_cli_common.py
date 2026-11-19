@@ -1,6 +1,7 @@
 """公式インストーラーを利用するCLI導入処理の共通機能。"""
 
 import contextlib
+import dataclasses
 import json
 import locale
 import logging
@@ -12,8 +13,8 @@ import subprocess
 import sys
 import tempfile
 import threading
-from collections.abc import Iterable
-from pathlib import Path
+from collections.abc import Callable, Iterable
+from pathlib import Path, PureWindowsPath
 
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
@@ -130,29 +131,15 @@ def migrate_npm_launchers(
     changed = _remove_orphan_npm_launchers(cli_name, package_name, extra_search_directories)
     for launcher in _iter_noncanonical_launchers(
         cli_name,
-        canonical_launcher,
         canonical_prefix,
         extra_search_directories=extra_search_directories,
-        excluded_launchers=excluded_launchers,
+        excluded_launchers=(canonical_launcher, *excluded_launchers),
     ):
-        npm = _adjacent_npm(launcher.parent)
-        if npm is None:
-            logger.warning(
-                log_format.format_status(
-                    cli_name,
-                    f"同じディレクトリにnpmがないため保持: {launcher}。このランチャーが不要と確認できた場合だけ手動削除する",
-                ),
-            )
+        owner = _owning_npm_package(package_name, launcher)
+        if isinstance(owner, str):
+            logger.warning(log_format.format_status(cli_name, owner))
             continue
-        unresolved: list[str] = []
-        package_dir = _npm_package_dir(npm, package_name, unresolved)
-        if package_dir is None:
-            assert unresolved
-            _warn_unconfirmed_launcher(cli_name, launcher, unresolved[0])
-            continue
-        if not _launcher_belongs_to_package(launcher, package_dir, package_name):
-            _warn_unconfirmed_launcher(cli_name, launcher, f"{package_dir}配下の実体ではない: {_launcher_kind(launcher)}")
-            continue
+        npm, _ = owner
         with NPM_GLOBAL_LOCK:
             result = common.run_subprocess(
                 [str(npm), "uninstall", "--global", package_name],
@@ -170,53 +157,94 @@ def migrate_npm_launchers(
     return changed
 
 
-def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable[Path] = ()) -> bool:
-    """Windowsで、導入・更新・移行が置き換えるか削除するCLIの実体を実行中のプロセスがあるかを安全側で判定する。
+def npm_packages_to_remove(
+    cli_name: str,
+    package_name: str,
+    canonical_prefix: Path,
+    *,
+    extra_search_directories: Iterable[Path] = (),
+    excluded_launchers: Iterable[Path] = (),
+) -> tuple[Path, ...]:
+    """`migrate_npm_launchers`が`npm uninstall --global`で削除するパッケージのディレクトリを、削除せずに返す。
 
-    置き換える実体は`launchers`（更新が同じパスで置き換える実行ファイル）、削除する実体はnpm版の`package_name`である。
-    公式パッケージの別の版やデスクトップアプリの同梱版など、ほかの場所から起動した同名の実行体は衝突しないため数えない。
+    引数は`migrate_npm_launchers`と同じ意味を持つ。正規の導入先は`canonical_prefix`の配下として除く。
+    """
+    owners = (
+        _owning_npm_package(package_name, launcher)
+        for launcher in _iter_noncanonical_launchers(
+            cli_name,
+            canonical_prefix,
+            extra_search_directories=extra_search_directories,
+            excluded_launchers=excluded_launchers,
+        )
+    )
+    return tuple(owner[1] for owner in owners if not isinstance(owner, str))
+
+
+@dataclasses.dataclass(frozen=True)
+class CliFiles:
+    """導入・更新・移行が書き換えるCLIの配置。
+
+    `replaced`は導入・更新が置き換えるファイルかディレクトリ、`removed`は移行が削除するnpm版・mise版のパッケージである。
+    Windowsでは、ここから起動したプロセスの実行中に置き換えや削除をすると、実行中のファイルと衝突する。
+    """
+
+    replaced: tuple[Path, ...]
+    removed: tuple[Path, ...] = ()
+
+
+def is_windows_cli_running(cli_name: str, files: Callable[[], CliFiles]) -> bool:
+    """Windowsで、導入・更新・移行が書き換える配置から起動したプロセスがあるかを安全側で判定する。
+
+    `files`はWindowsでだけ呼び、書き換える配置を返す。
+    実行ファイルの所在と、node・miseが起動したスクリプトの所在で判定する。
+    ほかの場所から起動した同名の実行体（管理daemon、デスクトップアプリの同梱版、npxのキャッシュなど）は数えない。
+    権限が無く所在を読めず、書き換える配置からの起動を否定できないプロセスは数える。
     """
     if sys.platform != "win32":
         return False
-    launcher_paths = {str(path).lower().replace("\\", "/") for path in launchers}
+    targets = files()
+    replaced, removed = _windows_paths(targets.replaced), _windows_paths(targets.removed)
     # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
     # 同じ後処理の中の先行する列挙が残した値を使わないよう、現在のPIDから新しく構築したProcessで判定する。
     for listed in psutil.process_iter():
         try:
             process = psutil.Process(listed.pid)
-        except psutil.NoSuchProcess:
-            continue
-        try:
-            name = (process.name() or "").lower()
-            exe = (process.exe() or "").lower()
-            cmdline = [part.lower() for part in (process.cmdline() or [])]
+            # 1つの属性を読めなくても、読めたほかの属性で判定するため、属性ごとに読む。
+            name = _readable(process.name)
+            exe = _readable(process.exe)
+            cmdline = _readable(process.cmdline)
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
-        except psutil.AccessDenied:
-            try:
-                inaccessible_name = Path((process.name() or "").lower()).name
-                if inaccessible_name in {
-                    cli_name.lower(),
-                    f"{cli_name.lower()}.exe",
-                }:
-                    return True
-            except psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess:
-                continue
-            continue
-        if _process_matches(cli_name, package_name.lower(), launcher_paths, name, exe, cmdline):
+        if _process_conflicts(cli_name, replaced, removed, name, exe, cmdline):
             return True
     return False
 
 
-def _warn_unconfirmed_launcher(cli_name: str, launcher: Path, reason: str) -> None:
-    """帰属を確認できず保持した対象と、確認が成立しなかった理由を警告する。"""
-    logger.warning(
-        log_format.format_status(
-            cli_name,
-            f"npm packageへの帰属を確認できないため保持: {launcher}（{reason}）。"
-            "保持したため対応不要。"
-            "手動削除する場合はこのランチャーの参照先とpackage.jsonのbinを確認する",
-        ),
+def _owning_npm_package(package_name: str, launcher: Path) -> tuple[Path, Path] | str:
+    """ランチャーを導入したnpmと、そのnpmが削除するパッケージのディレクトリを返す。
+
+    帰属を確認できず保持する場合は、保持の理由を述べる警告文を返す。
+    """
+    npm = _adjacent_npm(launcher.parent)
+    if npm is None:
+        return f"同じディレクトリにnpmがないため保持: {launcher}。このランチャーが不要と確認できた場合だけ手動削除する"
+    unresolved: list[str] = []
+    package_dir = _npm_package_dir(npm, package_name, unresolved)
+    if package_dir is None:
+        assert unresolved
+        return _unconfirmed_launcher_message(launcher, unresolved[0])
+    if not _launcher_belongs_to_package(launcher, package_dir, package_name):
+        return _unconfirmed_launcher_message(launcher, f"{package_dir}配下の実体ではない: {_launcher_kind(launcher)}")
+    return npm, package_dir
+
+
+def _unconfirmed_launcher_message(launcher: Path, reason: str) -> str:
+    """帰属を確認できず保持した対象と、確認が成立しなかった理由を述べる警告文を返す。"""
+    return (
+        f"npm packageへの帰属を確認できないため保持: {launcher}（{reason}）。"
+        "保持したため対応不要。"
+        "手動削除する場合はこのランチャーの参照先とpackage.jsonのbinを確認する"
     )
 
 
@@ -233,7 +261,6 @@ def _launcher_kind(launcher: Path) -> str:
 
 def _iter_noncanonical_launchers(
     cli_name: str,
-    canonical_launcher: Path,
     canonical_prefix: Path,
     *,
     extra_search_directories: Iterable[Path] = (),
@@ -241,13 +268,13 @@ def _iter_noncanonical_launchers(
 ) -> Iterable[Path]:
     """PATHと追加の配置先にある、npmが導入しうる非正規ランチャーを列挙する。
 
+    `canonical_prefix`の配下と`excluded_launchers`は除く。
     miseのshimディレクトリにある実行ファイルは除外する。shimはnpmのグローバル導入物では
     ないため帰属判定が成立せず、対象へ含めると保持の警告だけが毎回出力される。
     mise管理版の移行は`setup_codex_cli.py`の`_remove_mise_versions`と`_reshim_mise`が担う。
     """
     seen: set[str] = set()
     names = (cli_name, f"{cli_name}.cmd", f"{cli_name}.exe") if sys.platform == "win32" else (cli_name,)
-    canonical_real = common.safe_resolve(canonical_launcher)
     excluded = {common.safe_resolve(path) for path in excluded_launchers}
     prefix_real = common.safe_resolve(canonical_prefix)
     shim_directories = common.mise_shim_directories()
@@ -270,7 +297,7 @@ def _iter_noncanonical_launchers(
                 continue
             seen.add(key)
             resolved = common.safe_resolve(launcher)
-            if resolved == canonical_real or resolved in excluded or _is_relative_to(resolved, prefix_real):
+            if resolved in excluded or _is_relative_to(resolved, prefix_real):
                 continue
             yield launcher
 
@@ -400,27 +427,70 @@ def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name
     return False
 
 
-def _process_matches(
-    cli_name: str, package_name: str, launcher_paths: set[str], name: str, exe: str, cmdline: list[str]
+def _readable[T](read: Callable[[], T]) -> T | None:
+    """プロセスの属性を読み、権限が無く読めない場合は`None`を返す。終了したプロセスの例外はそのまま送出する。"""
+    try:
+        return read()
+    except psutil.AccessDenied:
+        return None
+
+
+def _windows_paths(paths: Iterable[Path]) -> tuple[PureWindowsPath, ...]:
+    """配置を、指定どおりのパスと実体のパスの両方で比較できる形にする。
+
+    psutilの`exe()`はjunctionとsymlinkを解決した実体のパスを返すため、配置も実体のパスで比較する。
+    """
+    return tuple(PureWindowsPath(str(candidate)) for path in paths for candidate in (path, common.safe_resolve(path)))
+
+
+def _located_in(value: str, locations: tuple[PureWindowsPath, ...]) -> bool:
+    """Windowsのパスが配置のいずれかと一致するかその配下にあるかを、大文字小文字と区切りの表記に依らず判定する。"""
+    path = PureWindowsPath(value)
+    return any(path.is_relative_to(location) for location in locations)
+
+
+def _process_conflicts(
+    cli_name: str,
+    replaced: tuple[PureWindowsPath, ...],
+    removed: tuple[PureWindowsPath, ...],
+    name: str | None,
+    exe: str | None,
+    cmdline: list[str] | None,
 ) -> bool:
-    name, exe = name.replace("\\", "/"), exe.replace("\\", "/")
-    package_marker = f"/node_modules/{package_name}/"
-    if exe in launcher_paths or package_marker in exe:
+    """読めた属性から、書き換える配置から起動したプロセスか、その可能性を否定できないプロセスかを判定する。
+
+    `name`・`exe`・`cmdline`の`None`は、権限が無く読めなかったことを表す。
+    """
+    if exe and _located_in(exe, (*replaced, *removed)):
         return True
-    # 実行ファイルの所在を取得できない同名の実行体は、置き換える導入先から起動した可能性を除けない。
-    if not exe and Path(name).name in {cli_name, f"{cli_name}.exe"}:
-        return True
-    if Path(name).name not in {"node", "node.exe", "mise", "mise.exe"}:
+    program = PureWindowsPath(exe or name or (cmdline[0] if cmdline else "")).name.lower()
+    if program in {cli_name, f"{cli_name}.exe"}:
+        # 実行ファイルの所在を読めない同名の実行体は、書き換える配置から起動した可能性を除けない。
+        return not exe
+    if program not in {"node", "node.exe", "mise", "mise.exe"} or not removed:
         return False
-    command = [value.replace("\\", "/") for value in cmdline[1:]]
-    if Path(name).name in {"mise", "mise.exe"}:
+    if cmdline is None:
+        # 起動したスクリプトを読めないnode・miseは、削除するnpm版・mise版を実行している可能性を除けない。
+        return True
+    entry = _script_entry(program, cmdline)
+    if entry is None:
+        return False
+    if PureWindowsPath(entry).anchor:
+        return _located_in(entry, removed) or _located_in(str(common.safe_resolve(Path(entry))), removed)
+    # 名前や相対パスで指定したCLIは所在を確定できず、削除するnpm版・mise版から起動した可能性を除けない。
+    launcher_names = {cli_name, *(f"{cli_name}{suffix}" for suffix in (".exe", ".cmd", ".ps1", ".js"))}
+    return PureWindowsPath(entry).name.lower() in launcher_names
+
+
+def _script_entry(program: str, cmdline: list[str]) -> str | None:
+    """nodeが実行するスクリプトか`mise exec`が起動するコマンドを返し、コードを直接評価する起動では`None`を返す。"""
+    command = cmdline[1:]
+    if program in {"mise", "mise.exe"}:
         # miseの--より前は導入するtool指定であり、起動するコマンドではない。
         if not command or command[0] not in {"exec", "x"} or "--" not in command:
-            return False
+            return None
         command = command[command.index("--") + 1 :]
-        if not command:
-            return False
-        if Path(command[0]).name in {"node", "node.exe"}:
+        if command and PureWindowsPath(command[0]).name.lower() in {"node", "node.exe"}:
             command = command[1:]
     index = 0
     while index < len(command) and command[index].startswith("-"):
@@ -429,18 +499,13 @@ def _process_matches(
             index += 1
             break
         if option in {"-e", "--eval", "-p", "--print"} or option.startswith(("--eval=", "--print=")):
-            return False
+            return None
         index += (
             2
             if option in {"-r", "--require", "--import", "--loader", "--experimental-loader", "-C", "--conditions", "--title"}
             else 1
         )
-    launcher_names = {cli_name, *(f"{cli_name}{suffix}" for suffix in (".exe", ".cmd", ".ps1", ".js"))}
-    return any(
-        Path(value).name in launcher_names or value in launcher_paths or value == package_name or package_marker in value
-        for value in command[index : index + 1]
-        if not value.startswith("-")
-    )
+    return command[index] if index < len(command) and not command[index].startswith("-") else None
 
 
 def _cmd_referenced_paths(content: str, launcher_dir: Path) -> Iterable[Path]:

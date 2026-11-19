@@ -1,13 +1,11 @@
 """pytools._internal.setup_cli_commonのテスト。"""
 
 import logging
-import ntpath
 import os
 import subprocess
 import sys
 import types
 import typing
-from collections.abc import Sequence
 from pathlib import Path
 
 import httpx
@@ -15,6 +13,7 @@ import psutil
 import pytest
 
 from pytools._internal import setup_cli_common
+from pytools._internal._test_helpers import patch_windows_processes, windows_process
 
 
 @pytest.mark.parametrize("stderr", ["npm ERR! permission denied", ""])
@@ -42,15 +41,6 @@ def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog,
     assert (stderr or "exit 1") in output
     assert "手動削除する場合はこのランチャーの参照先とpackage.jsonのbinを確認する" in output
     print(output)
-
-
-def _patch_windows_processes(monkeypatch: pytest.MonkeyPatch, processes: Sequence[object]) -> None:
-    """Windowsの列挙と、列挙したPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。"""
-    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-    monkeypatch.setattr(
-        setup_cli_common.psutil, "process_iter", lambda: [types.SimpleNamespace(pid=pid) for pid in range(len(processes))]
-    )
-    monkeypatch.setattr(setup_cli_common.psutil, "Process", lambda pid: processes[pid])
 
 
 @pytest.mark.parametrize(
@@ -283,39 +273,6 @@ def test_migrate_npm_launchers_keeps_unknown_launcher(monkeypatch, tmp_path: Pat
     assert not any("uninstall" in call for call in calls)
 
 
-def test_windows_node_command_line_is_detected(monkeypatch) -> None:
-    class NodeProcess:
-        def name(self) -> str:
-            return "node.exe"
-
-        def exe(self) -> str:
-            return "C:/node/node.exe"
-
-        def cmdline(self) -> list[str]:
-            return ["node.exe", "C:/node_modules/@openai/codex/bin/codex.js"]
-
-    _patch_windows_processes(monkeypatch, [NodeProcess()])
-
-    assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex")
-
-
-@pytest.mark.parametrize("process_name", ["node.exe", "mise.exe", "codex.exe"])
-def test_windows_access_denied_for_possible_cli_process_defers(monkeypatch, process_name: str) -> None:
-    class InaccessibleProcess:
-        def name(self) -> str:
-            return process_name
-
-        def exe(self) -> str:
-            raise psutil.AccessDenied()
-
-        def cmdline(self) -> list[str]:
-            raise AssertionError("exeでAccessDeniedとなるため到達しない")
-
-    _patch_windows_processes(monkeypatch, [InaccessibleProcess()])
-
-    assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex") is (process_name == "codex.exe")
-
-
 def test_migrate_excludes_canonical_prefix_and_launcher(monkeypatch, tmp_path: Path) -> None:
     prefix = tmp_path / "node"
     launcher = prefix / "bin" / "codex"
@@ -486,6 +443,41 @@ def test_migrate_windows_owned_launchers(monkeypatch, tmp_path: Path, launcher_k
     )
 
 
+@pytest.mark.parametrize("owned", [True, False])
+def test_npm_packages_to_remove_lists_what_migration_removes(monkeypatch, tmp_path: Path, owned: bool) -> None:
+    """移行が削除するnpm版のパッケージを削除せずに返し、帰属を確認できないランチャーのパッケージは返さない。"""
+    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
+    old_bin = tmp_path / "old"
+    old_bin.mkdir()
+    npm = old_bin / "npm.cmd"
+    npm.write_text("", encoding="utf-8")
+    root = tmp_path / "prefix" / "node_modules"
+    package = root / "@openai" / "codex"
+    entrypoint = package / "bin" / "codex.js"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_text("", encoding="utf-8")
+    (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
+    (old_bin / "codex.cmd").write_text(f'@node "{entrypoint}"\n' if owned else "@echo @openai/codex\n", encoding="utf-8")
+    monkeypatch.setenv("PATH", str(old_bin))
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        output = {"prefix": tmp_path / "prefix", "root": root}.get(command[1], "")
+        return subprocess.CompletedProcess(command, 0, f"{output}\n", "")
+
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
+    canonical = tmp_path / "canonical"
+
+    assert setup_cli_common.npm_packages_to_remove("codex", "@openai/codex", canonical) == ((package,) if owned else ())
+    assert not any("uninstall" in command for command in calls)
+    assert setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical / "codex.cmd", canonical) is owned
+    assert [command for command in calls if "uninstall" in command] == (
+        [[str(npm), "uninstall", "--global", "@openai/codex"]] if owned else []
+    )
+
+
 def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
     old_bin = tmp_path / "old"
@@ -598,91 +590,124 @@ def test_migrate_windows_mise_shim_rejects_wrong_target(monkeypatch, tmp_path: P
     )
 
 
+_STANDALONE = r"C:\Users\Me\.codex\packages\standalone"
+_STANDALONE_RELEASE = rf"{_STANDALONE}\releases\0.170.0-x86_64-pc-windows-msvc"
+_DAEMON_EXE = r"C:\Users\Me\.codex\packages\app-server-daemon\releases\0.170.0-x86_64-pc-windows-msvc\bin\codex.exe"
+_NPM_CODEX = r"C:\Users\Me\AppData\Roaming\npm\node_modules\@openai\codex"
+_NPX_CODEX = r"C:\Users\Me\AppData\Local\npm-cache\_npx\9f2c\node_modules\@openai\codex"
+_NATIVE_IN_PACKAGE = r"node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\codex\codex.exe"
+_NODE = r"C:\Program Files\nodejs\node.exe"
+_MISE = r"C:\Users\Me\AppData\Local\Microsoft\WinGet\Links\mise.exe"
+_CODEX_FILES = setup_cli_common.CliFiles(replaced=(Path(_STANDALONE),), removed=(Path(_NPM_CODEX),))
+
+
 @pytest.mark.parametrize(
-    ("name", "exe", "cmdline", "expected"),
+    ("process", "expected"),
     [
-        ("codex.exe", "C:/node/codex.exe", [], False),
-        ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "codex"], False),
-        ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "--", "codex"], True),
-        ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "--", "server", "codex"], False),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "--no-warnings", "C:/node_modules/@openai/codex/bin/codex.js"], True),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "--require", "C:/bin/codex.js", "server.js"], False),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "--title", "codex", "server.js"], False),
-        ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "x", "--", "node", "--no-warnings", "C:/bin/codex.js"], True),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "--eval", "codex", "C:/bin/codex.js"], False),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "--", "C:/bin/codex.js", "prompt"], True),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "C:/bin/codex.cmd"], True),
-        ("node.exe", "C:/node/node.exe", ["node.exe", r"C:\node_modules\@openai\codex\vendor\codex.exe"], True),
-        ("python.exe", "C:/python/python.exe", ["python.exe", "codex"], False),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "C:/work/codex-project/server.js"], False),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "server.js", "--prompt=codex"], False),
-        ("node.exe", "C:/node/node.exe", ["node.exe", "server.js", "C:/bin/codex.cmd"], False),
+        # 導入が置き換えるスタンドアローン版から起動した会話と、会話が起動した同梱の実行体。
+        pytest.param(windows_process(rf"{_STANDALONE_RELEASE}\bin\codex.exe"), True, id="standalone-session"),
+        pytest.param(windows_process(rf"{_STANDALONE_RELEASE}\codex-path\rg.exe"), True, id="standalone-helper"),
+        # 2026-11-19のsthenoで動いていた管理daemonと更新ループ。
+        pytest.param(windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"), False, id="update-loop"),
+        pytest.param(
+            windows_process(_DAEMON_EXE, "app-server", "--managed-daemon", denied=["cmdline"]),
+            False,
+            id="daemon-cmdline-denied",
+        ),
+        pytest.param(
+            windows_process(
+                r"C:\Program Files\WindowsApps\OpenAI.Codex_26.1106.6628.0_x64__2p2nqsd0c76g0\app\resources\codex.exe"
+            ),
+            False,
+            id="desktop-app",
+        ),
+        pytest.param(windows_process("C:/node/codex.exe"), False, id="other-codex"),
+        pytest.param(windows_process(r"C:\tools\codex.exe", denied=["exe"]), True, id="codex-exe-denied"),
+        # 移行が削除するnpm版と、移行が削除しないnpxのキャッシュ。
+        pytest.param(windows_process(rf"{_NPM_CODEX}\{_NATIVE_IN_PACKAGE}"), True, id="npm-native"),
+        pytest.param(windows_process(_NODE, rf"{_NPM_CODEX}\bin\codex.js"), True, id="npm-node"),
+        pytest.param(windows_process(_NODE, rf"{_NPM_CODEX}\bin\codex.js", denied=["exe"]), True, id="npm-node-exe-denied"),
+        pytest.param(
+            windows_process(_MISE, "exec", "--", "node", rf"{_NPM_CODEX}\bin\codex.js", denied=["exe"]),
+            True,
+            id="npm-mise-exe-denied",
+        ),
+        pytest.param(windows_process(_NODE, denied=["cmdline"]), True, id="node-cmdline-denied"),
+        pytest.param(windows_process(_MISE, denied=["exe", "cmdline"]), True, id="mise-unreadable"),
+        pytest.param(windows_process(rf"{_NPX_CODEX}\{_NATIVE_IN_PACKAGE}"), False, id="npx-native"),
+        pytest.param(windows_process(_NODE, rf"{_NPX_CODEX}\bin\codex.js"), False, id="npx-node"),
+        # node・miseの引数のうち、起動するスクリプトの位置だけを見る。
+        pytest.param(windows_process(_MISE, "exec", "codex"), False, id="mise-without-separator"),
+        pytest.param(windows_process(_MISE, "exec", "--", "codex"), True, id="mise-launcher-name"),
+        pytest.param(windows_process(_MISE, "exec", "--", "server", "codex"), False, id="mise-other-command"),
+        pytest.param(windows_process(_NODE, "--no-warnings", f"{_NPM_CODEX}/bin/codex.js"), True, id="node-option"),
+        pytest.param(windows_process(_NODE, "--require", rf"{_NPM_CODEX}\bin\codex.js", "server.js"), False, id="require"),
+        pytest.param(windows_process(_NODE, "--title", "codex", "server.js"), False, id="title"),
+        pytest.param(
+            windows_process(_MISE, "x", "--", "node", "--no-warnings", rf"{_NPM_CODEX}\bin\codex.js"),
+            True,
+            id="mise-node-option",
+        ),
+        pytest.param(windows_process(_NODE, "--eval", "codex", rf"{_NPM_CODEX}\bin\codex.js"), False, id="eval"),
+        pytest.param(windows_process(_NODE, "--", rf"{_NPM_CODEX}\bin\codex.js", "prompt"), True, id="separator"),
+        pytest.param(windows_process(_NODE, "C:/bin/codex.cmd"), False, id="launcher-outside-package"),
+        pytest.param(windows_process(_NODE, "bin/codex.js"), True, id="relative-launcher"),
+        pytest.param(windows_process(r"C:\python\python.exe", "codex"), False, id="python"),
+        pytest.param(windows_process(_NODE, "C:/work/codex-project/server.js"), False, id="project-server"),
+        pytest.param(windows_process(_NODE, "server.js", "--prompt=codex"), False, id="prompt-option"),
+        pytest.param(windows_process(_NODE, "server.js", rf"{_NPM_CODEX}\bin\codex.js"), False, id="later-argument"),
     ],
 )
-def test_windows_process_classification(
-    monkeypatch, name: str, exe: str, cmdline: list[str], expected: bool, tmp_path: Path
+def test_windows_counts_processes_started_from_files_to_replace_or_remove(
+    monkeypatch, process: types.SimpleNamespace, expected: bool
 ) -> None:
-    class Process:
-        def name(self) -> str:
-            return name
+    """導入が置き換えるか移行が削除する配置から起動したプロセスと、その可能性を否定できないプロセスだけを数える。"""
+    patch_windows_processes(monkeypatch, [process])
 
-        def exe(self) -> str:
-            return exe
-
-        def cmdline(self) -> list[str]:
-            return cmdline
-
-    _patch_windows_processes(monkeypatch, [Process()])
-
-    assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex", [tmp_path / "bin" / "codex.cmd"]) is expected
-
-
-def _windows_process(exe: str, *arguments: str) -> types.SimpleNamespace:
-    """Windowsのpsutilが返す形の実行名・実行ファイル・command lineを持つプロセスを作る。"""
-    return types.SimpleNamespace(name=lambda: ntpath.basename(exe), exe=lambda: exe, cmdline=lambda: [exe, *arguments])
+    assert setup_cli_common.is_windows_cli_running("codex", lambda: _CODEX_FILES) is expected
 
 
 @pytest.mark.parametrize(
-    ("cli_name", "package_name", "exe", "expected"),
+    "process",
+    [
+        windows_process(_NODE, denied=["cmdline"]),
+        windows_process(_MISE, "exec", "--", "codex"),
+        windows_process(_NODE, rf"{_NPX_CODEX}\bin\codex.js"),
+    ],
+)
+def test_windows_node_is_not_counted_without_npm_or_mise_version_to_remove(monkeypatch, process: types.SimpleNamespace) -> None:
+    """削除するnpm版・mise版が無い場合、node・miseのプロセスは書き換える配置と衝突しない。"""
+    patch_windows_processes(monkeypatch, [process])
+
+    files = setup_cli_common.CliFiles(replaced=(Path(_STANDALONE),))
+    assert not setup_cli_common.is_windows_cli_running("codex", lambda: files)
+
+
+@pytest.mark.parametrize(
+    ("exe", "expected"),
     [
         # 更新が同じパスで置き換える導入先。Windowsのパスは大文字小文字と区切りの表記が揺れる。
-        ("claude", "@anthropic-ai/claude-code", r"c:\users\me\.local\bin\CLAUDE.EXE", True),
-        # 移行が削除するnpm版のパッケージに含まれる実行体。
-        (
-            "codex",
-            "@openai/codex",
-            r"C:\Users\Me\AppData\Roaming\npm\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64"
-            r"\vendor\x86_64-pc-windows-msvc\codex\codex.exe",
-            True,
-        ),
-        (
-            "claude",
-            "@anthropic-ai/claude-code",
-            r"C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\claude.exe",
-            False,
-        ),
-        (
-            "claude",
-            "@anthropic-ai/claude-code",
-            r"C:\Users\Me\AppData\Roaming\Claude\claude-code\2.1.325\806e0a45e6f5\claude.exe",
-            False,
-        ),
-        (
-            "codex",
-            "@openai/codex",
-            r"C:\Users\Me\.codex\packages\standalone\releases\0.170.0-x86_64-pc-windows-msvc\bin\codex.exe",
-            False,
-        ),
+        (r"c:\users\me\.local\bin\CLAUDE.EXE", True),
+        (r"C:\Program Files\WindowsApps\Claude_5.11492.5.0_x64__pzs8sxrjxfjjc\app\claude.exe", False),
+        (r"C:\Users\Me\AppData\Roaming\Claude\claude-code\2.1.325\806e0a45e6f5\claude.exe", False),
     ],
 )
-def test_windows_native_cli_counts_only_where_update_replaces_or_removes(
-    monkeypatch, cli_name: str, package_name: str, exe: str, expected: bool
-) -> None:
-    """同名の実行体は、更新が置き換える導入先か移行が削除するnpm版から起動した場合だけ実行中と数える。"""
-    _patch_windows_processes(monkeypatch, [_windows_process(exe)])
+def test_windows_claude_counts_only_replaced_launcher(monkeypatch, exe: str, expected: bool) -> None:
+    """Claude Codeは、更新が置き換える導入先から起動した場合だけ数え、デスクトップアプリと同梱版は数えない。"""
+    patch_windows_processes(monkeypatch, [windows_process(exe)])
 
-    launchers = [Path(r"C:\Users\Me\.local\bin\claude.exe")] if cli_name == "claude" else []
-    assert setup_cli_common.is_windows_cli_running(cli_name, package_name, launchers) is expected
+    files = setup_cli_common.CliFiles(replaced=(Path(r"C:\Users\Me\.local\bin\claude.exe"),))
+    assert setup_cli_common.is_windows_cli_running("claude", lambda: files) is expected
+
+
+def test_windows_skips_listing_files_on_other_platforms(monkeypatch) -> None:
+    """Windows以外では、書き換える配置を調べずに実行中でないと判定する。"""
+    monkeypatch.setattr(setup_cli_common.sys, "platform", "linux")
+
+    def forbidden() -> setup_cli_common.CliFiles:
+        raise AssertionError("Windows以外で配置を調べてはならない")
+
+    assert not setup_cli_common.is_windows_cli_running("codex", forbidden)
 
 
 @pytest.mark.parametrize("error", [psutil.NoSuchProcess(1), psutil.ZombieProcess(2)])
@@ -691,9 +716,9 @@ def test_windows_process_races_are_ignored(monkeypatch, error: Exception) -> Non
         def name(self) -> str:
             raise error
 
-    _patch_windows_processes(monkeypatch, [VanishedProcess()])
+    patch_windows_processes(monkeypatch, [VanishedProcess()])
 
-    assert not setup_cli_common.is_windows_cli_running("codex", "@openai/codex")
+    assert not setup_cli_common.is_windows_cli_running("codex", lambda: _CODEX_FILES)
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
@@ -720,9 +745,9 @@ def test_windows_cli_running_reads_current_generation(monkeypatch: pytest.Monkey
     """列挙キャッシュに以前の世代のCLIの実行名と実行ファイルが残っていても、現在の属性で実行中かを判定する。"""
     with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as child:
         try:
-            _inject_previous_generation(monkeypatch, child.pid, name="codex.exe", exe="C:/tools/codex.exe")
+            _inject_previous_generation(monkeypatch, child.pid, name="codex.exe", exe=rf"{_STANDALONE_RELEASE}\bin\codex.exe")
             monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-            running = setup_cli_common.is_windows_cli_running("codex", "@openai/codex")
+            running = setup_cli_common.is_windows_cli_running("codex", lambda: _CODEX_FILES)
         finally:
             child.kill()
     assert not running

@@ -12,6 +12,9 @@ WindowsでCodexのセッション（`codex_processes.py`の`session`）が実行
 競合版を検出した実行では、シェルの起動ファイルへPATH設定が追記される場合がある。
 起動ファイルはchezmoiの配布対象であるため、追記された内容は次回の`chezmoi apply`で配布内容へ戻る。
 
+Windowsでは、導入が置き換えるスタンドアローン版（`packages/standalone/`）と、除去するmise版・npm版の配置から起動したプロセスがある間は、導入と除去を延期する。
+判定は`setup_cli_common.is_windows_cli_running`がプロセスの実行ファイルと、node・miseが起動したスクリプトの所在で行い、所在を読めず衝突を否定できないプロセスでも延期する。
+
 ## Codex診断ログの通常ストレージ復元
 
 Linuxのpost-apply処理は、旧機構が`/dev/shm/codex-<UID>-<ファイル名>`へ配置した診断ログDBを`~/.codex/`へ復元する。
