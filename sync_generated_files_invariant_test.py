@@ -11,7 +11,7 @@ def test_sync_targets_cover_agent_toolkit_skills_and_share() -> None:
     targets = config["tool"]["pyfltr"]["custom-commands"]["sync-generated-files"]["targets"]
     representatives = (
         pathlib.Path("agent-toolkit/share/rules/rules-subagent.md"),
-        pathlib.Path("agent-toolkit/skills/process-wi/SKILL.md"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/process-wi.md"),
         pathlib.Path("agent-toolkit/skills/atk-mode/references/plan-format.md"),
         pathlib.Path("agent-toolkit/delegation_contract_invariant_test.py"),
         pathlib.Path("agent-toolkit/skills/skill_interfaces_invariant_test.py"),

@@ -241,6 +241,23 @@ def update_state(session_id: str, mutator: Callable[[dict], dict | None]) -> boo
         return False
 
 
+PROCESS_WI_STATE_KEY = "process_wi_skill_invoked"
+"""作業`process-wi`の実行中（自律モード）を表す状態の鍵。
+
+ユーザーの入力（入口`atk-mode`への作業の名指し）と、`atk run-skill`・`atk wi process-loop`の起動入力からだけ立てる。
+エージェントによる入口の起動からは立てない（エージェントが自分の判断で自律モードへ入れなくする）。
+`atk agents-exit-session`の起動で偽へ戻す。
+"""
+
+
+def set_process_wi_invoked(state: dict) -> dict | None:
+    """自律モードの状態を立てる`update_state`の変更関数。既に立っていれば書き込まない。"""
+    if state.get(PROCESS_WI_STATE_KEY, False):
+        return None
+    state[PROCESS_WI_STATE_KEY] = True
+    return state
+
+
 def increment_warn_notice_count(session_id: str, key: str) -> int:
     """警告原因の発生件数を排他ロック下で増やし、増加後の値を返す。"""
     count = 1

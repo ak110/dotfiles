@@ -105,7 +105,7 @@ process-loopは、リポジトリと系統の組を1つの処理対象とする�
 各系統は、`atk`が登録パス配下の`.claude/worktrees/process-loop-<系統>`に自動で用意する作業ツリーで処理し、登録パスの作業ツリーのブランチは切り替えない。
 CI失敗の監視は系統ごとにブランチを照会し、失敗した系統を宛先にAWIを登録する。
 GitHub CopilotのレビューとDependabotアラートの確認は、既定の系統の処理だけが行う。
-`/agent-toolkit:process-wi`を手動で起動する場合は、処理したい系統を追跡する作業ツリーで起動する。
+`/agent-toolkit:atk-mode process-wi`を手動で起動する場合は、処理したい系統を追跡する作業ツリーで起動する。
 
 ## process-loopと再開予約
 

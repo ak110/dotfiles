@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-immediate-fix.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-escalation.md` | | |
 
 ## 受領後の扱い
@@ -24,7 +24,7 @@
    旧`想定外事象:`行は履歴として受理し、未達・判断に必要な影響を結果へ残す。
 
 4. 不良・是正要求・改善点を受け取った主体は、起動modeやホスト、階層によらず、`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件内で対処時機を判定する。
-   process-wi中は`agent-toolkit:process-wi`の`references/immediate-fix.md`「即時対応」で現在の影響と正式対応の時機を具体化する。
+   process-wi中は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で現在の影響と正式対応の時機を具体化する。
    権限外なら判定材料を委譲元へ渡し、権限内の作業は続ける。
    即時対応では最小の直接修正と正式対応AWIを分け、選定済み要求の正式対応を先送りしない。
    根拠から実在する欠陥と確定した範囲外の既存不良も、共通の先送り条件に当たる場合を除き同じセッション、process-wiでは同じ巡回で是正する。
@@ -54,7 +54,7 @@
      既存の引き継ぎ記録にある原文・送信先と、成功した操作の結果か記録位置を今回の行と比べる。
      処置済み・AWI登録済みと送達成功を区別する。
      送達記録は成功確認後に現在の作業記録へ残す。
-     記録先が未指定の場合は`agent-toolkit:/share/work-contract.md`「作成と所有」に従う。
+     記録先が未指定の場合は`agent-toolkit:atk-mode/references/work-contract.md`「作成と所有」に従う。
      送信失敗・成否不明・記録欠落がある行は、送達の確認対象として保持する。
      成否不明は非冪等操作の照会・回復に従い、未送達の範囲と確認不能の範囲を最終返却に残す。
      違う観測や引き継ぎ先への初回送達は保ち、状況変更は対象と新しい観測を明示して差分を送る。
@@ -63,7 +63,7 @@
      新しい観測や状況変更だけを追加判定し、完了返却の同行には通知時の対処結果を適用する。
      取得済みの証拠を再利用し、判断に不足する部分だけ補う。
      報告時にはprocess-wi中の対処時機、それ以外のAWI化の要否を必ず判定する。
-     process-wi中は`agent-toolkit:process-wi`の`references/immediate-fix.md`「即時対応」で、不要作業を繰り返す具体的な工程や操作と削減量、修正・検証・統合負担を比較し、最小修正・今回追加・次回を確定する。
+     process-wi中は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で、不要作業を繰り返す具体的な工程や操作と削減量、修正・検証・統合負担を比較し、最小修正・今回追加・次回を確定する。
      報告元の「即時対応不要」だけで追認せず、保存済みAWIの正式名の受領は同資料「開始後に追加されたWIの確認」の判定へ接続する。
      処置の権限と時機は前項に従い、残る分析は証拠とともに引き継ぐ。
      - 規範読込の改善報告: 読込直後に、使わなかった範囲、過大な取得単位、同じ本文の不要な再取得を認めた時点で報告する。

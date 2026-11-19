@@ -4,7 +4,7 @@
 
 ## AWI処理の工程と選定
 
-`agent-toolkit:process-wi single-lane`は[SKILL.md「実行順」1](../../agent-toolkit/skills/process-wi/references/single-lane.md#実行順)の対応表を処理開始前に引き継ぎ記録へ保存する。
+`agent-toolkit:atk-mode`の作業`process-wi single-lane`は[process-wi-single-lane.md「実行順」1](../../agent-toolkit/skills/atk-mode/playbooks/process-wi-single-lane.md#実行順)の対応表を処理開始前に引き継ぎ記録へ保存する。
 対応表は全選定WIのtarget_repo・worktree・開始HEAD・開始前の状態・計画／直接実装の区分・完了済みと残工程を持つ。
 開始引数は同表の開始前inbox全件、計画チェックは同じworktreeの全計画対象、実行レビューは計画対象と直接実装対象の和から導く。
 計画チェックの`--expected-wi`は既存の選定YAML方式と同じ集合比較へ接続し、部分計画の欠落と余剰を検出する。
@@ -45,14 +45,14 @@ Claude Codeのメインは各段階の全初期通常レーンの初回起動後
 受付と圧縮完了を区別し、予約後は背景待機とターン終了へ進む。
 圧縮後の領域通知から保存記録へ到達し、同じ担当・監視対象・保存出力と工程を復元する。
 Codex、通常0件、追加レーン起動と実行レビュー待機は対象外とする。
-共通予約と復元はwaiting-and-monitoring.md、時点ごとの保存対象はrun-lanes.mdとfinish-session.mdが持つ。
+共通予約と復元はwaiting-and-monitoring.md、時点ごとの保存対象はprocess-wi.mdとprocess-wi-publishing.mdが持つ。
 指示本文へ保存情報を再掲する案と独立した監視・台帳を増やす案は、値の複製と取り違えを残すため採らない。
 レーン工程ではメインがレーン担当と実行レビュー担当を`agents_server`で直接起動し、工程遷移と同一threadの継続を自ら制御する。
 レーン担当は計画の起草から変更の作成、変更範囲の検証までを担う。
 実行工程へ進む各レーンは担当工程に必要な基準文書だけを受け取り、実行レビューの収束、最新ベースへのrebase、競合解消後の実行レビュー（1回）、メインの許可を受けて`atk lane integrate`が1レーンずつ行うffマージ、AWI行ごとの終了までを完了する。
 上流要求と対象リポジトリ側の要求が混在する項目は`adopt`の対象から除く。
 採用する実施範囲を持たないレーンも、レーン担当が計画の保存とAWI行ごとの終了までを完了する。
-統合状態は`atk lane integrate`が記録し、メインはレーン担当が返す`統合完了`の固定形式（`agent-toolkit:/share/lane-integration.subagent.md`「出力」）を公開契約の終了状態と比較して検収し、所有資源を終了まで保持する。
+統合状態は`atk lane integrate`が記録し、メインはレーン担当が返す`統合完了`の固定形式（`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`「出力」）を公開契約の終了状態と比較して検収し、所有資源を終了まで保持する。
 
 メインが確定するのは分類・レーン割当・モデル・配置根拠・費用比較と規範指定の意味判断である。
 `pick-wi-check`の`--candidate-file`は取得済み候補から鮮度・候補集合・初回割当・不可分成分と確定した辺のパス・段階・依存値を生成する。
@@ -60,8 +60,8 @@ Codex、通常0件、追加レーン起動と実行レビュー待機は対象�
 未確定の意味判断を生成側が推測する案は要求の被覆を変え、別の生成・チェックコマンドは所有者を分けるため採らない。
 完成済みYAMLの消費契約とplan-checkへの集合一致、判断待ち境界・同じthread・単一writer・実行レビュー・直列統合・保存と終了は維持する。
 
-選定工程の手順は`agent-toolkit/skills/process-wi/references/selection-procedure.md`へ集約し、本体には目的と不変条件だけを残す。
-項目名、型、省略と欄の意味は同じディレクトリの`selection-format.md`が所有する。
+選定工程の手順は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`へ集約し、本体には目的と不変条件だけを残す。
+項目名、型、省略と欄の意味は同じディレクトリの`agent-toolkit:atk-mode/references/process-wi-selection-format.md`が所有する。
 手順と書式を分けるのは、レーンと選定理由に答えるメインが候補取得や配分の手順を読まずに消費契約へ到達できるようにするためである。
 選定理由への質問は、2026年10月25日から選定したメインが保存済みの選定結果と判断から答え、説明担当（`pick-wi-explain`）は撤去した（ユーザー指示）。
 説明担当は同じ選定資料を読み直して判断を再構成しており、メインとの重複が大きかったためである。

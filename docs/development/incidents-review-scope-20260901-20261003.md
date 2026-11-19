@@ -8,7 +8,7 @@
   後継方針（2026年9月3日）: `review_contract`の生成主体はメインとする。
   中間の調整担当の廃止に伴う主体の移動であり、生成時機、粒度および起動時の受渡し形式は変えない
 
-- 2026年9月5日: `agent-toolkit:process-wi`終了時のレビュー見逃し対策を計画レビューした際、
+- 2026年9月5日: `agent-toolkit:atk-mode`の作業`process-wi`終了時のレビュー見逃し対策を計画レビューした際、
   review-session後の1回確認というユーザー提案を、Copilotレビュー要求、生成完了待機および再取得反復へ拡大した。
   直接原因: 指摘された見逃し問題の採否とレビュー担当が示した完全待機手段の採否を分離せず、
   `対応要否=yes`を修正方針の採用として扱った。
@@ -20,7 +20,7 @@
 
 - 2026年9月5日: push直後には未着だったGitHub Copilotレビューを終了前に再取得せず、過去PRのreview本文と未解決threadも残した。
   直接原因: 自動レビュー監査をreview-sessionと並列実行し、監査対象を未解決threadだけに限定した。
-  対策: `agent-toolkit:process-wi`ではreview-session後に能動的に待機せず1回監査し、
+  対策: `agent-toolkit:atk-mode`の作業`process-wi`ではreview-session後に能動的に待機せず1回監査し、
   全PRのreview本文、inline commentおよびthreadをpagination終端まで取得する恒久手順を専用referenceへ置く。
   後継方針（2026年9月7日）: 全PRのreview本文とthreadをpagination終端まで取得する範囲は変えない。
   監査は次のセッションの選定工程で振り返りと並行して1回実行する。

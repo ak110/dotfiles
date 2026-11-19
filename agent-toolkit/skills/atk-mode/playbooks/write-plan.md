@@ -15,7 +15,7 @@
 | --- | --- |
 | 対象リポジトリを変更する作業を始める（エージェント向け文書の編集を含む） | 本書「計画ファイルの作成要否」で要否を決める |
 | 計画を作る | 本書「進め方」を上から実行する |
-| 計画を作らない | WIの本文（WIが無ければ依頼）を基準にし、メインは本書「メインによる起動の実装と終了」、レーン担当は`agent-toolkit:process-wi`の手順へ進む |
+| 計画を作らない | WIの本文（WIが無ければ依頼）を基準にし、メインは本書「メインによる起動の実装と終了」、レーン担当は`agent-toolkit:atk-mode`の作業`process-wi`の手順へ進む |
 | Codexで計画工程へ着手する | 本書「計画ファイルの起草開始条件」「Plan modeの扱い」を当てる |
 | 計画の各欄を書く、進捗を記録する、中断から再開する | `agent-toolkit:atk-mode/references/plan-format.md`の該当の節を読む |
 | 保持、不変性、完全復元を契約か確認の選択肢へ書く、過去の契約へ戻すか撤去する変更を計画する | `agent-toolkit:atk-mode/references/plan-format.md`「保持・不変性・完全復元の契約」「復元・巻き戻し型の変更」を読む |
@@ -51,8 +51,8 @@ WIが確定した内容は、調べ直さずにそのまま使う。
 
 確認の要否、手段、UWIへの退避は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従い、入力のWIで確定済みの事項はそのまま使う。
 協調モードのメインは、`agent-toolkit:atk-mode/references/choice-construction.md`「質問ラウンド」でユーザーと認識を合わせてから起草する。
-`agent-toolkit:process-wi`のレーン担当は、確認事項が生じたら`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」で委譲元へ通知し、回答を得てから再開する（UWIの登録は委譲元が担う）。
-レーンの起草と待機の区切りは`agent-toolkit:process-wi/references/lane-planning.md`が定める。
+`agent-toolkit:atk-mode`の作業`process-wi`のレーン担当は、確認事項が生じたら`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」で委譲元へ通知し、回答を得てから再開する（UWIの登録は委譲元が担う）。
+レーンの起草と待機の区切りは`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`が定める。
 
 ## 進め方
 
@@ -74,19 +74,19 @@ WIが確定した内容は、調べ直さずにそのまま使う。
    実装中に生じた同様の判断も同じに扱う。
 4. `agent-toolkit:atk-mode/references/plan-format.md`「初回起草の雛形」へ案件の値を記入し、原稿をmanaged-tempへ保存する。
    `atk run-script plan-create -- --main-source <原稿の絶対パス> --name <名称> --work-dir <対象リポジトリ>`で計画ファイルを作る。
-   レーン担当は`--name`の代わりに`--lane <レーン識別子>`を渡す（`agent-toolkit:process-wi/references/lane-planning.md`）。
+   レーン担当は`--name`の代わりに`--lane <レーン識別子>`を渡す（`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`）。
    `## 原因分析`の置き方は`agent-toolkit:atk-mode/references/plan-format.md`「原因分析」に従う。
 5. 構造を検査する（本書「計画構造の自動チェック」）。
    `plan-create`は作成時に`plan-check`と同じ検査（移行の警告と起草時の進捗ログの行の拒否を含む）を行う。
    メインは`plan-create`の終了コード0と作成したパスの出力で検査済みとし、作成の後に計画を直した時だけ`plan-check`を単独で実行し直す。
-   レーン担当は、`agent-toolkit:process-wi/references/lane-planning.md`が定める選定結果とレーン識別子を付けて`plan-check`を単独で実行する。
+   レーン担当は、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`が定める選定結果とレーン識別子を付けて`plan-check`を単独で実行する。
    どちらも終了コード0と警告が無いことを確かめる。
 6. `起動経路`に応じて、次のどちらか1つを行う。
 
 | `起動経路` | 手順5の後に行うこと |
 | --- | --- |
 | メインによる起動 | 本書「メインによる起動の実装と終了」 |
-| `agent-toolkit:process-wi`のレーン担当としての起動 | `agent-toolkit:process-wi/references/lane-planning.md`の待機条件と、条件に応じた報告・通知・実装の手順 |
+| `agent-toolkit:atk-mode`の作業`process-wi`のレーン担当としての起動 | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md`の待機条件と、条件に応じた報告・通知・実装の手順 |
 
 実装に着手した後の計画の扱い（計画凍結）と要件判断の記録は、`agent-toolkit:atk-mode/references/plan-format.md`「計画ファイルの構成」に従う。
 中断からの再開は`agent-toolkit:atk-mode/references/plan-format.md`「進捗ログ」に従う。

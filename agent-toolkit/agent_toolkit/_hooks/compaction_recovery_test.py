@@ -112,7 +112,7 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
         notified = run_hook("user_prompt_submit", {"session_id": session, "prompt": prompt})
         assert notified.returncode == 0 and "要求の統合" in notified.stdout
         context = json.loads(notified.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "`agent-toolkit/share/work-contract.md`の条件別資料" in context
+        assert work_contract.RETURN_CRITERION in context
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text(
         "\n".join(

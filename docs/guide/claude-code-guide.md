@@ -64,8 +64,8 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 
 - `agent-toolkit:atk-mode <作業> [入力]`: 作業の入口。
   `add-awi-by-user`、`process-wi`、`review-session`、`export-session`を作業の名前として渡せる。
-  AWIの登録は`/agent-toolkit:atk-mode add-awi-by-user <要求>`で起動する。
-  `process-wi`、`review-session`、`export-session`は順に入口の配下へ移すため、移行が済むまでは今の名前での起動も使える
+  AWIの登録は`/agent-toolkit:atk-mode add-awi-by-user <要求>`、AWIの処理は`/agent-toolkit:atk-mode process-wi [single-lane|all-repos]`で起動する。
+  `review-session`、`export-session`は順に入口の配下へ移すため、移行が済むまでは今の名前での起動も使える
 - `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。
   引数で着眼点を追加できる
 - `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。

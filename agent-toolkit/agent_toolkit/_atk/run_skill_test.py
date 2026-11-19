@@ -46,7 +46,8 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
     assert argv[-1] == (
         '<atk-auto source="run-skill" kind="goal">\n'
         "このセッションが担当するスキル`example-plugin:check-logs`の工程を完遂する"
-        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
+        "（起動元が終了後に行う検収と確定は含まない）。"
+        "スキル`example-plugin:check-logs`を起動して始める（起動入力の`free_text`が空でなければ引数として渡す）。\n</atk-auto>"
     )
     data = json.loads(sessions[0]["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"])
     assert data["arguments"] == data["free_text"] == "対象: web"

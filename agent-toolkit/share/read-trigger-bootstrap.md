@@ -98,7 +98,7 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | スキル（`SKILL.md`・`references/`）を新設・編集する時 | `agent-toolkit:/share/agent-skills-operations.md` | | |
-| process-wiのレーンworktreeを作成・保持・回収する時 | `agent-toolkit:process-wi/references/lane-worktree-management.md` | | |
+| process-wiのレーンworktreeを作成・保持・回収する時 | `agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md` | | |
 | エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` | | |
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:delegation/references/sub-agents-context.md` | | |
 | `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `agent-basics:writing-standards/references/claude-hooks.md` | | |
@@ -106,10 +106,10 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-toolkit:refine-prompt/references/evaluation-triggers.md` | | |
 | 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` |
 | CI失敗を扱う前 | `agent-toolkit:atk-mode/references/ci.md` | | |
-| 修正commitが必要なCI失敗の修正担当・CI記録・修正系列を扱う前 | `agent-toolkit:process-wi/references/ci-fix-series.md` | | |
+| 修正commitが必要なCI失敗の修正担当・CI記録・修正系列を扱う前 | `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` | | |
 | ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前（操作対象外: 過去の確認の分析） | `agent-toolkit:review-session/references/analysis-operations-root-cause.md`、`agent-toolkit:atk-mode/playbooks/user-utterance.md` | | |
 | 検証対象の選定と計画、保存した結果の実行・取得、実行レビューで直接影響範囲を求める前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
-| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:/share/acceptance-scenarios.md` | | |
+| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:atk-mode/references/workflow-phases.md` | | |
 | 専用レビュータスク契約を受領し、判定と返却する前（操作対象外: 役割の開始入力） | `agent-toolkit:/share/exec-review-criteria.md` | | |
 | 読者別探索を起動・検収する前 | `agent-toolkit:/share/exec-review-criteria.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/exec-review-criteria.md` |
 | 計画・WIの要件と証拠を判定する前 | `agent-toolkit:/share/exec-review-criteria.md` | | |

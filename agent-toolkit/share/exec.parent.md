@@ -4,7 +4,7 @@
 起動対象: exec.subagent.md
 ```
 
-メインエージェントが`agent-toolkit:process-wi`のレーンを実行する際は、本書に従ってレーン担当を起動し、計画の有無に応じた準備結果、実装完了報告、およびエスカレーションを受け取る。
+メインエージェントが`agent-toolkit:atk-mode`の作業`process-wi`のレーンを実行する際は、本書に従ってレーン担当を起動し、計画の有無に応じた準備結果、実装完了報告、およびエスカレーションを受け取る。
 公開工程において公開担当が`CI修正担当`を起動する場合や、実行レビューの修正担当を新規に起動する場合も本書の手順に従う。
 レーン担当は、計画の起草、実装、変更範囲の検証、commitの作成、レビュー指摘への修正対応、ならびに統合処理を同一thread内で担当する。
 具体的な作業手順は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が規定する（所在参照）。
@@ -67,7 +67,7 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 <!-- return-contract:exec:end -->
 
 <!-- return-contract:lane-integration:start -->
-<!-- 生成元: share/lane-integration.subagent.md「出力」。手動編集しない。 -->
+<!-- 生成元: skills/atk-mode/roles/lane-integration.subagent.md「出力」。手動編集しない。 -->
 ## 統合の返却契約
 
 `変更したエージェント向け文書`には、統合先worktreeで`atk run-script agent-doc-changes -- <統合前HEAD> <統合後のHEAD>`を単独実行し、終了コード0で取得したJSON配列をそのまま使用する。
@@ -88,7 +88,7 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 変更したエージェント向け文書: <["リポジトリ相対パス"]形式のJSON配列。無い場合は[]>
 ```
 
-続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:lane-integration:end -->
 
 ## 条件別資料

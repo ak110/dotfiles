@@ -22,7 +22,7 @@
 - AWIの完成条件の観測はその項目を処理するエージェントが行い、人の観測はエージェントが到達できる環境の不在を確かめた条件に限る（2026年10月6日、ユーザー指示）。
   完成条件が配備後の観測主体を「運用者」と書き、エージェントが到達できる配備先があるのに観測されないまま残った観測に由来する。
   判定規則は`agent-toolkit:atk-mode/references/awi-body.md`の完成条件の規定にある。
-  公開担当の工程（`agent-toolkit/share/session-termination.subagent.md`）とメインの工程（`agent-toolkit/skills/process-wi/references/finish-session.md`）は同じ規定を参照する
+  公開担当の工程（`agent-toolkit:atk-mode/roles/session-termination.subagent.md`）とメインの工程（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`）は同じ規定を参照する
 - すぐ解消しない外部依存待ちの項目は、無視期間（数日のcooldown）や依存指定で空転を防ぐ
 - 作業対象リポジトリとprivate-notesは別のリポジトリとして扱い、コーディングエージェントはprivate-notesを`atk wi`・`atk plans`・`atk serve`が提供するコマンドや画面から変更する。
   `atk`が復旧できないGit履歴の分岐またはrebase失敗では、`atk`が示す回復手順の範囲に限りGitを直接実行できる。
@@ -71,4 +71,4 @@ processing、UWI、終了項目と人間由来の項目はユーザーコメン�
 - 作業項目や計画に書かれていること、前の担当が採用済みとしたことは、手段をユーザーの要件へ変えない（2026年11月11日、ユーザーの是正「AWIの完成条件がよくないせいで無駄な作業をするって問題、過去に何度も再発してる。ちゃんと対策して」）。
   エージェントが加えた手段や検証は、受け手が目的・現在の方針・利用条件に照らして必要性を判定してから受入や検証へ写し、前提が変わった単位だけを判定し直す。
   ユーザーが明示した条件と必要な品質を守る条件は外さない。
-  現在は`agent-toolkit:process-wi`の`references/lane-planning-drafting.md`手順1と`agent-toolkit:atk-mode/references/plan-format.md`「実施内容」が定める
+  現在は`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`手順1と`agent-toolkit:atk-mode/references/plan-format.md`「実施内容」が定める

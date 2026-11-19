@@ -36,7 +36,7 @@
   （2026年10月5日、ユーザー指示）。
   この方針は、同一主題の追加指示の中継で、委譲元がレーン担当の規範で決まるcommitの扱いを指定した事象に由来する。
   現行の規定は`agent-toolkit/skills/delegation/references/base-contract.md`の入力の適格性にある。
-  `agent-toolkit:delegation/references/delegation-sending.md`「送信」、同スキルの`references/sending.md`および`agent-toolkit/skills/process-wi/SKILL.md`「同一主題の追加指示」はそこを参照する
+  `agent-toolkit:delegation/references/delegation-sending.md`「送信」、同スキルの`references/sending.md`および`agent-toolkit/skills/atk-mode/playbooks/process-wi-additions.md`「同一主題の追加指示」はそこを参照する
 - 委譲先が調査中か調査済みの要求へ追加調査が必要になった場合は、委譲元が自ら調べず、調査文脈を持つ当該担当へ追加情報と調査の論点を渡す。
   この方針は以後の委譲へ継続して適用する（2026年10月6日、ユーザー指示。委譲元が同じ現物を読み直すと担当の調査文脈を使えず、調査が重複するため）。
   独立したレビュー系統や異なる観点の評価を新しい担当で起動することは重複に当たらない。
@@ -47,14 +47,14 @@
   2026年10月27日のユーザー指示「process-wiでメインが作業することを極力避けましょうみたいなのは、エージェント判断でコンパクションができなかった時代の話であって、今はそこ気にする必要が無いはず」による。
   メインが会話圧縮を自ら予約でき、圧縮後は記録から復元する手順があるためである。
   委譲先が文脈を持つ主題を当該担当へ返す前項の方針は維持する。
-  現行の規定は`agent-toolkit:delegation/references/routing-decisions.md`「要否判定」と`agent-toolkit/skills/process-wi/SKILL.md`「同一主題の追加指示」にある
+  現行の規定は`agent-toolkit:delegation/references/routing-decisions.md`「要否判定」と`agent-toolkit/skills/atk-mode/playbooks/process-wi-additions.md`「同一主題の追加指示」にある
 - 1つの作業ツリーへの書込を1主体に限る規定は、データの破損と履歴の不整合を防ぐ範囲に限定する。
   同じファイルの同時編集、作業ツリー全体へ影響する操作（commit、indexや履歴の操作、ファイルを書き換える整形、生成物の同期、依存更新）、主作業ツリーへの統合、push、Git共通ディレクトリの構成を変える操作は排他を保つ。
   書込先の重ならないファイルは委譲元も担当の稼働中に編集してよく、別worktreeでは変更ファイルが重なっても並行してよい。
   公開担当の稼働中も、既存の別worktreeでの編集とそのbranchへのcommitは並行してよい。
   2026年10月27日のユーザー指示「あと書き込みを単一主体にしましょうという話も厳密にやり過ぎて並列性が損なわれすぎている気がする。もっと融通利かせられないかな」による。
   現行の規定は`agent-toolkit/skills/delegation/references/mandatory-rules.md`「作業ツリーの保護」にある。
-  公開工程中の並行作業は`agent-toolkit:process-wi/references/finish-session-publishing.md`「公開担当の起動と並行工程」にある
+  公開工程中の並行作業は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」にある
 - 受け取った返却や通知の`想定外事象:`のうち、ツールや実行基盤の異常を示すものが同じ種類で2回現れたら、受け取った時点で原因の調査に着手する。
   review-sessionは作業の最後に動くため、そこへ先送りすると調査が遅れる。
   2026年10月27日のユーザー指摘による。

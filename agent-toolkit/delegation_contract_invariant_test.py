@@ -91,8 +91,8 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     launchers = [
         root / "share" / "exec.parent.md",
         root / "skills" / "atk-mode" / "playbooks" / "write-plan.md",
-        root / "skills" / "process-wi" / "references" / "single-lane.md",
-        root / "skills" / "process-wi" / "references" / "termination-ci-failure.md",
+        root / "skills" / "atk-mode" / "playbooks" / "process-wi-single-lane.md",
+        root / "skills" / "atk-mode" / "playbooks" / "process-wi-ci-fix.md",
     ]
 
     declaration = task_documents.read_declaration_unchecked(root / "share/exec-review.subagent.md", review)
@@ -129,7 +129,9 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     }
     recipient_names = {path.name for path in recipients} - lightweight
     contract_names = {name for name, content in markdown.items() if "## 多段工程の引き継ぎ記録" in content}
-    # 現行要求の記録仕様は、役割別の起動契約と共通の引き継ぎ記録先を使う。
+    # 現行要求の記録仕様（入口`atk-mode`の作業契約）は、役割別の起動契約と共通の引き継ぎ記録先を使う。
+    entry = share.parent / "skills" / "atk-mode"
+    markdown["work-contract.md"] = (entry / "references" / "work-contract.md").read_text(encoding="utf-8")
     contract_names.add("work-contract.md")
     # Codexの文脈切替は既存の引き継ぎ記録へ保存・復元を接続する。
     contract_names.add("rules-common.codex.md")
@@ -139,10 +141,14 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
         ("rules/rules-subagent.md", (("../subagent-operations.md", "多段工程の記録・引き継ぎ"),)),
         ("exec.parent.md", (("exec-parent-launch.md", "入力"), ("exec-parent-integration.md", "統合"))),
         ("exec-review.parent.md", (("exec-review-parent-launch.md", "入力"),)),
-        ("lane-integration.subagent.md", (("lane-integration-subagent-inputs.md", "入力"),)),
     ):
         markdown[pathlib.Path(owner).name] = read_contract(share / owner, share.parent, *materials)
         expected_names.update(pathlib.Path(name).name for name, _condition in materials)
+    # レーン統合の役割文書は、統合の入力を定める形式の定義と合わせて引き継ぎ契約を持つ。
+    markdown["lane-integration.subagent.md"] = "\n".join(
+        (entry / name).read_text(encoding="utf-8")
+        for name in ("roles/lane-integration.subagent.md", "references/lane-integration-format.md")
+    )
     actual_names = {name for name, content in markdown.items() if "引き継ぎ記録先" in content}
 
     assert actual_names == expected_names

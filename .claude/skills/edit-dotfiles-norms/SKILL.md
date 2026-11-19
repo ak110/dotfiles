@@ -5,7 +5,7 @@ description: >
   dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）、
   `agent-basics/skills/`、`.claude/skills/`などのエージェント向け文書を変更・削除・縮小するとき、
   変更した規範を同じセッションへ適用するとき、規範を変更したセッションで会話圧縮後に作業を続けるとき、
-  変更または新設したスキルを起動するとき、`agent-toolkit:process-wi`のメインがAWIごとに
+  変更または新設したスキルを起動するとき、`agent-toolkit:atk-mode`の作業`process-wi`のメインがAWIごとに
   `プロジェクト規範の指定`を記述するとき、新しい仕組み（hook、自動チェック、永続状態、配送経路、規範の条文など）を
   加える計画の起草・実行レビューや仕組みの撤去をするとき、および不具合の原因が過去の対策と同じと判定したときに起動する。
 ---
@@ -20,7 +20,7 @@ description: >
 | 規範を追記・新設・移動する置き場所を選ぶ、置き場所を実行レビューで判定する | `references/norm-layer-map.md`と`agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所の選定」 |
 | 不具合の原因が過去の対策と同じかを分類する、同じ原因と判定して記録する | `references/recurrence-record.md` |
 | 規範を編集する作業を始める（モデルIDとホストの版の点検） | `references/model-host-audit.md` |
-| `agent-toolkit:process-wi`の選定工程でAWIごとの`プロジェクト規範の指定`を書く | `references/project-norm-designation.md` |
+| `agent-toolkit:atk-mode`の作業`process-wi`の選定工程でAWIごとの`プロジェクト規範の指定`を書く | `references/project-norm-designation.md` |
 | 確認するかを決める | `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」 |
 
 ## 読込表

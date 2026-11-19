@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | レビュー修正で新たな操作・機構・副作用を採用する前 | `exec-parent-planning.md` | | |
 | 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | | |
-| レーン担当の統合の返却が、merge競合で必要となった判断か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` |
+| レーン担当の統合の返却が、merge競合で必要となった判断か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-lanes.md` |
 
 ## 実装完了の受領
 
@@ -30,7 +30,7 @@
 同一threadを継続できない場合は、`exec-review-parent-correction.md`「レビュー修正」に従って`担当種別`を`レビュー修正担当`とした新たなレーン担当者を起動する。
 レビュー指摘に対する修正方針として新たな操作、機構、または副作用を採用した場合は、`exec-parent-planning.md`「計画準備の受領」の禁止条件との突き合わせを改めて実施する。
 不適合であれば修正へ進めずに`share/review-loop-coordination.md`に沿った対話を通じて是正する。
-レビューが収束した後は、委譲先から受け取ったすべての事項について確認の要否を判定し、`skills/process-wi/references/run-lanes.md`「実装とレビュー」に定める確認の発行と検収を完了する（確認不要の報告に対してUWIの起草を求めない）。
+レビューが収束した後は、委譲先から受け取ったすべての事項について確認の要否を判定し、`skills/atk-mode/playbooks/process-wi-lanes.md`「実装とレビュー」に定める確認の発行と検収を完了する（確認不要の報告に対してUWIの起草を求めない）。
 質問に対する回答の保存と返却も完了させたうえで統合処理へ進む。
 各ラウンドの返却や走査記録に含まれる既存の不具合については、レーン経由で報告されたものも含めて`exec-review-parent-existing-defects.md`「返却に含まれる既存不良の受領」へ接続して処理する。
 統合を指示する前に、対象ごとの処置内容が引き継ぎ記録に正しく対応付けられていることを確認する。
@@ -54,7 +54,7 @@ WIへ直接記入された質問（AWIの`## ユーザーコメント`、UWIの`
 
 作業を続行できない理由を受け取った場合は、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## エスカレーションの事由別の扱い`に従って事由を分類し、必要な回答のみを同一threadへ返信する。
 完成条件の変更や除外に関する判断要請は、同節の該当項目および同書「技術判断で外せる完成条件」の定めに従って処理する。
-統合結果の返却がmerge競合で必要となった判断を示している場合や、統合先との組み合わせによってのみ発生した検証失敗に対する是正commitを示している場合は、読込表の`integration-failure-receipt.md`に従う。
+統合結果の返却がmerge競合で必要となった判断を示している場合や、統合先との組み合わせによってのみ発生した検証失敗に対する是正commitを示している場合は、読込表の`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`に従う。
 
 ## 本文参照の取得条件
 

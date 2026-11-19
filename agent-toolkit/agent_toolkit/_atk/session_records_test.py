@@ -11,8 +11,10 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._atk import session_record_format, session_records
+from agent_toolkit._atk import run_skill, session_record_format, session_records
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
+from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY
+from agent_toolkit._common import skill_modes
 
 
 def _write_record(path: pathlib.Path, records: list[object], modified_at: int = 10) -> None:
@@ -106,11 +108,11 @@ class TestInvokedProcessWi:
     @pytest.mark.parametrize(
         ("marker", "expected"),
         [
-            ("Launching skill: agent-toolkit:process-wi", True),
-            ("Launching skill: agent-toolkit:process-wi all-repos", True),
+            (f"Launching skill: {skill_modes.PROCESS_WI}", True),
+            (f"Launching skill: {skill_modes.PROCESS_WI} all-repos", True),
             ("Launching skill: agent-toolkit:process-wi-all-repos", True),
-            ("Launching skill: agent-toolkit:process-wi all-repos extra", False),
-            ("説明: Launching skill: agent-toolkit:process-wi all-repos", False),
+            (f"Launching skill: {skill_modes.PROCESS_WI} all-repos extra", False),
+            (f"説明: Launching skill: {skill_modes.PROCESS_WI} all-repos", False),
         ],
     )
     def test_claude_marker_detected(self, tmp_path: pathlib.Path, marker: str, expected: bool) -> None:
@@ -137,7 +139,7 @@ class TestInvokedProcessWi:
                 _codex_message_record(
                     role="user",
                     item_type="input_text",
-                    text="# AGENTS.md instructions\n以下略\n/goal `agent-toolkit:process-wi`を完遂してください。",
+                    text=f"# AGENTS.md instructions\n以下略\n/goal `{skill_modes.PROCESS_WI}`を完遂してください。",
                 )
             ],
         )
@@ -185,6 +187,54 @@ class TestInvokedProcessWi:
         _write_record(path, [_claude_user_text_record("通常の入力")])
 
         assert session_records.invoked_process_wi(path, "claude") is False
+
+    @pytest.mark.parametrize("content", ["string", "text"])
+    @pytest.mark.parametrize("prompt", ["process-loop", "run-skill", "legacy-loop"])
+    def test_claude_goal_is_detected(self, tmp_path: pathlib.Path, content: str, prompt: str) -> None:
+        """入口`atk-mode`へ移した後の目的文と、移す前の常駐の目的文を、Claude Codeの記録でも起動として判別する。"""
+        text = {
+            "process-loop": _pl_session.build_process_loop_prompt(),
+            "run-skill": run_skill.build_goal(skill_modes.PROCESS_WI, "single-lane"),
+            "legacy-loop": "/goal " + PROCESS_LOOP_GOAL_BODY,
+        }[prompt]
+        record = (
+            {"type": "user", "message": {"role": "user", "content": text}}
+            if content == "string"
+            else _claude_user_text_record(text)
+        )
+        path = tmp_path / "records.jsonl"
+        _write_record(path, [record])
+        assert session_records.invoked_process_wi(path, "claude") is True
+
+    @pytest.mark.parametrize(
+        ("tool_input", "expected"),
+        [
+            ({"skill": "agent-toolkit:atk-mode", "args": "process-wi all-repos"}, True),
+            ({"skill": "atk-mode", "args": "process-wi"}, True),
+            ({"skill": skill_modes.PROCESS_WI}, True),
+            ({"skill": "agent-toolkit:atk-mode", "args": "add-awi-by-user process-wi"}, False),
+            ({"skill": "agent-toolkit:atk-mode"}, False),
+        ],
+    )
+    def test_claude_entry_skill_launch_is_detected(self, tmp_path: pathlib.Path, tool_input: dict, expected: bool) -> None:
+        """入口の`Skill`起動は確認文言に引数を含まないため、起動の`tool_use`の引数から作業を読む。"""
+        record = {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "x", "name": "Skill", "input": tool_input}],
+            },
+        }
+        path = tmp_path / "records.jsonl"
+        _write_record(path, [record, _claude_tool_result_record("Launching skill: agent-toolkit:atk-mode")])
+        assert session_records.invoked_process_wi(path, "claude") is expected
+
+    def test_codex_run_skill_goal_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """`atk run-skill`が渡す目的文の作業の起動の文を、Codexの記録でも起動として判別する。"""
+        text = "# AGENTS.md instructions\n" + run_skill.build_goal(skill_modes.PROCESS_WI, None)
+        path = tmp_path / "records.jsonl"
+        _write_record(path, [_codex_message_record(role="user", item_type="input_text", text=text)])
+        assert session_records.invoked_process_wi(path, "codex") is True
 
 
 class TestExitSessionReached:
@@ -272,7 +322,7 @@ class TestTextExcerpts:
         _write_record(
             path,
             [
-                _claude_tool_result_record("Launching skill: agent-toolkit:process-wi"),
+                _claude_tool_result_record(f"Launching skill: {skill_modes.PROCESS_WI}"),
                 _claude_user_text_record("最初の入力です"),
                 _claude_user_text_record("2番目の入力です"),
             ],

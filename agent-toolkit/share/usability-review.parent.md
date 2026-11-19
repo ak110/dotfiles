@@ -4,7 +4,7 @@
 起動対象: usability-review.subagent.md
 ```
 
-画面差分がある場合の並列画面レビュー（定義は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`「用語」に準拠）で、メインエージェントがユーザビリティレビュー担当を起動・検収する手順を定める。
+画面差分がある場合の並列画面レビュー（定義は`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/references/workflow-phases.md`「用語」に準拠）で、メインエージェントがユーザビリティレビュー担当を起動・検収する手順を定める。
 
 ## 名指し参照の読込方法
 

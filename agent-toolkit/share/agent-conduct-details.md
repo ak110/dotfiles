@@ -39,7 +39,7 @@
 ## 完遂と先送り
 
 解決見込みの根拠、UWIと冷却の選択、解除条件・期限・再開の記録は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
-支援hook不良時の再起動は`agent-toolkit/share/work-contract.md`に従う。
+支援hook不良時の再起動は`agent-toolkit/skills/atk-mode/references/work-contract.md`に従う。
 
 - 調査だけの依頼（成果物の変更、操作、許可のいずれも求めない依頼）では報告を成果物とし、実装の変更へ進む前に確認する。
   案を求める問い、行動を求める疑問形（「〜できないか」など）、実施を指示する語（「やって」など）を含む依頼は調査だけの依頼と分け、常時規範「ユーザー発話の解釈」に従う。

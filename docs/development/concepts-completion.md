@@ -12,12 +12,12 @@
 - 発見した問題をその場で対処する。
   「次サイクルで対応」「別issue扱い」等の先送り宣言は
   ユーザーが繰り返し是正した。
-  `agent-toolkit:process-wi`と`agent-toolkit:process-wi single-lane`では、
+  `agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の作業`process-wi single-lane`では、
   公開工程の開始前には、本作業で導入した不良と残工程への作用を先に判定する。
   停止しなくても、担当が欠陥のある判断入力を使い要求・判断・成果物を誤る場合は同じセッションで是正する。
   残工程に作用しない独立改善も、不要作業を繰り返す具体的な工程や操作と削減量を、修正・検証・統合負担と比較する。
   公開前に安全な受入先が成立する正式改善AWIは今回へ追加し、成立しないものは理由と再開条件を残して次回へ渡す。
-  共通基準は`agent-toolkit/skills/process-wi/references/immediate-fix.md`「即時対応」が持つ
+  共通基準は`agent-toolkit/skills/atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」が持つ
   （2026年10月4日・9日の進行への作用の要求と、11月の反復費用改善の採用に基づく。正式分析を次回へ分ける目的は維持する）
   現時点でエンドユーザーや配備済み環境に起きている不良は、工程を止めない場合も今回のprocess-wiの実行で正式対応まで是正する。
   レーンの律速だけを先送りの理由にせず、共通規範「完遂と先送り」の条件に当たる場合だけ次回へ渡す。

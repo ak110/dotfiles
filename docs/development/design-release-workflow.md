@@ -31,7 +31,8 @@ commit以降のリリース、PR/MRまたは公開操作は、実装のレーン
 
 開発機の常時稼働サーバーへの反映は、全レーンの統合を検収し専用資源を保持した状態で、対象リポジトリへ書き込まず公開工程の入力や排他資源と競合しない場合に、公開担当の公開・CI待機と並行して始める。
 開始をCIの終了後まで延ばすと、反映の開始が公開の待機時間だけ遅れる。
-開始時機と反映したHEAD・稼働確認結果の保持は`agent-toolkit:process-wi`の`references/finish-session.md`が担い、単一レーンの同等の時機は`agent-toolkit:process-wi single-lane`の実行順が担う。
+開始時機と反映したHEAD・稼働確認結果の保持は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`が担う。
+単一レーンの同等の時機は`agent-toolkit:atk-mode/playbooks/process-wi-single-lane.md`「実行順」が担う。
 `agent-toolkit:atk-mode/playbooks/report-completion.md`は先行結果と報告時点のHEADを比べ、同じHEADへの成功済み反映を再実行せず、追加commitや先行失敗があれば現行HEADを反映して稼働を確認する。
 反映を完了報告だけへ置く案は開始が公開待機後となり、反映を完了報告から完全に外す案は追加commitと先行失敗を反映できないため採らない。
 

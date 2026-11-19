@@ -89,7 +89,7 @@
   対策: Codex sessionだけを返す共通の検索境界を使い、Backendの契約と共有状態表へ更新主体を明記する。
   自動再開の保留中Claudeを含む混在一覧で、他engineの状態・エラー・保留・結果公開状態が変わらないことを検証する
 
-- 2026年10月16日: `agent-toolkit:process-wi`の処理回で、終了済みのCodex委譲を5件`stop`した後も、レーンの専用worktreeをcwdとする`pyfltr mcp`が同じPIDのまま残った。
+- 2026年10月16日: `agent-toolkit:atk-mode`の作業`process-wi`の処理回で、終了済みのCodex委譲を5件`stop`した後も、レーンの専用worktreeをcwdとする`pyfltr mcp`が同じPIDのまま残った。
   同じ処理回では`atk lane delete`と`atk agents-exit-session`がそのプロセスをレーンの使用中と判定し、回収を保留した。
   直接原因: Codex backendの`release_session`は複数の委譲sessionが共有するApp Serverへ`thread/unsubscribe`を送り、その応答を受けて戻っていた。
   App Serverは購読解除の後も猶予の間threadのstdio MCPを生存させるため、`stop`が解放済みと記録した時点でもMCPがレーンを使い続けた。

@@ -12,6 +12,7 @@ import session_review_evidence as evidence
 
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
+from agent_toolkit._common import skill_modes
 from agent_toolkit._testing.helpers import _write_transcript
 
 
@@ -328,14 +329,14 @@ def test_first_human_request_after_automated_start_is_initial_request() -> None:
         (
             {
                 "text": "<command-name>/goal</command-name>\n"
-                "<command-args>`agent-toolkit:process-wi`を完遂してください。</command-args>",
+                f"<command-args>`{skill_modes.PROCESS_WI}`を完遂してください。</command-args>",
                 "runtime_inserted": True,
             },
             {"runtime-inserted": 2},
         ),
         # Codexは前置きのない本文として記録し、起動の目的文を初期要求として除く。
         (
-            {"text": "/goal `agent-toolkit:process-wi`を完遂してください。", "runtime_inserted": False},
+            {"text": f"/goal `{skill_modes.PROCESS_WI}`を完遂してください。", "runtime_inserted": False},
             {"runtime-inserted": 1, "initial-request": 1},
         ),
     ],

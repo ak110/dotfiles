@@ -7,11 +7,11 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | AWIの形式を判断する前 | `../skills/atk-mode/references/awi-body.md` | | |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
+| 統合の返却で検証結果の警告の判定を受領する時 | `agent-toolkit:atk-mode/references/lane-integration-format.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/lane-integration-format.md` |
 | 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | | |
 | 統合結果のWI状態を一括取得する前 | `../skills/atk-mode/references/states-and-dependencies.md` | | |
-| 全レーンの統合後に公開工程へ進む条件を確かめる時 | `../skills/process-wi/references/finish-session.md` | | |
-| レーン担当の統合の返却が、merge進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` |
+| 全レーンの統合後に公開工程へ進む条件を確かめる時 | `../skills/atk-mode/playbooks/process-wi-publishing.md` | | |
+| レーン担当の統合の返却が、merge進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-lanes.md` |
 
 ## 統合の許可
 
@@ -23,7 +23,8 @@
 
 1. 選定結果における`段階`および`先行レーン`の依存条件を満たしていること（先行レーンは`統合完了`を受領済みであること）。
 2. 統合先への追随と競合解消で各レーンの要求を維持できること。
-3. `UWI保存状況`の対象について、`exec-parent-implementation.md`「レーン担当が確定した質問への回答」の回答UWIと`single-lane-execution.md`手順4の事後承認UWIを保存し、ファイル名を同じレーン担当へ返していること。
+3. `UWI保存状況`の対象のUWIを保存し、ファイル名を同じレーン担当へ返していること。
+   対象は`exec-parent-implementation.md`「レーン担当が確定した質問への回答」の回答UWIと、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」手順4の事後承認UWIである。
    未保存なら、各節の条件と手順でレビュー済みの最新原稿を保存し、ファイル名を返してから許可する。
 複数のレーンから同時に`統合準備完了`が返された場合は、依存関係の順序を守りつつ、報告を受け取った順に許可を出す。
 
@@ -35,12 +36,12 @@
 **7.** 統合入力を検収して指示し、返却と最終化の実態・意味を確認する。
 
 検証結果の診断情報、警告、ならびに個別・全体の所要時間は、`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」の共通基準に沿って受領する。
-統合前HEADとの比較および統合固有の是正処理は、`lane-integration-subagent-operation.md`「検証結果の警告の判定」に従う。
+統合前HEADとの比較および統合固有の是正処理は、`agent-toolkit:atk-mode/references/lane-integration-format.md`「検証結果の警告の判定」に従う。
 
 すべての計画における実装の有無を確認し、採用すべき実装が1件でもあるレーンを`マージあり`、実装がないレーンを`マージなし`として確定する（計画ごとの`マージなし`の状態は計画に対応付けて保持する）。
 レーン担当者に統合処理を委ねる場合は、同一threadに対して`send_message`で指示を送り、`start`は呼び出さず、`引き継ぎ記録先`の指定を省略して起動時の設定を引き継ぐ。
 同一threadを継続できない場合の新規起動は`## 入力`の規定に従う。
-レーン担当者が統合を実行する手順は`lane-integration.subagent.md`が規定し（所在参照）、メインエージェント自身がCLIで実行する場合も後述の検収条件を適用する。
+レーン担当者が統合を実行する手順は`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`が規定し（所在参照）、メインエージェント自身がCLIで実行する場合も後述の検収条件を適用する。
 
 統合入力HEADには、レビューが収束したラウンドの`レビューHEAD`を指定する。
 収束後に再レビューを省略した修正が含まれる場合は、`exec-review-parent-correction.md`「レビュー修正」で保持された修正後のHEADとする。
@@ -69,9 +70,9 @@
 統合先HEADを更新する区間は、`atk lane integrate`が統合先ごとの排他で1レーンずつに限る。
 メインは先に許可したレーンの`統合完了`を待たずに、次のレーンへ指示してよい。
 先行レーンが統合先を進めた後に短い更新へ達したレーンは、終了コード1と`target_advanced`を受けて`--restart-review`で最新の統合先を追加mergeする。
-その差分と検証結果を`lane-integration-subagent-operation.md`「マージありの統合」に従って検収する。
+その差分と検証結果を`agent-toolkit:atk-mode/references/lane-integration-format.md`「マージありの統合」に従って検収する。
 先行レーンの規範改訂は、その`統合完了`を受領した時点で意味確認2に従って読み直し、以後の判断と公開工程へ適用する。
-`git-integrated`は最終化の途中であり、公開する単位に属するレーンの`統合完了`を受領するまで公開工程へ進まない（`../skills/process-wi/references/finish-session.md`冒頭）。
+`git-integrated`は最終化の途中であり、公開する単位に属するレーンの`統合完了`を受領するまで公開工程へ進まない（`../skills/atk-mode/playbooks/process-wi-publishing.md`冒頭）。
 再送・是正レーンも同じ前提を守る。
 
 同一threadへ以下の項目を送信する。
@@ -88,9 +89,9 @@
 - `計画ファイル名一覧`: 引き継ぎ記録に累積されたすべての計画ファイル名を格納した順序付きJSON配列。
   計画がないレーンは`[]`とする
 - `AWI終了区分`: AWIごとに確定した採否および終了区分。
-  `completed`の上流要求を持つ`混在`項目（扱いは`skills/process-wi/references/run-lanes.md`「上流投入」）や、観測のみの再開において完成条件を観測できなかったか満たせなかった項目は`終了しない`とする。
-  後者の確認・保留、または`processing`での再開の判断は`run-lanes.md`「採否の確定と終了区分」に従う。
-  結果は`skills/process-wi/references/finish-session.md`「延期adoptと反映後の観測」に沿って状態へ反映し、満たせなかった項目はメインエージェントがセッション終了工程で`inbox`へ戻す
+  `completed`の上流要求を持つ`混在`項目（扱いは`skills/atk-mode/playbooks/process-wi-additions.md`「上流投入」）や、観測のみの再開において完成条件を観測できなかったか満たせなかった項目は`終了しない`とする。
+  後者の確認・保留、または`processing`での再開の判断は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」に従う。
+  結果は`skills/atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」に沿って状態へ反映し、満たせなかった項目はメインエージェントがセッション終了工程で`inbox`へ戻す
 - `プロジェクト固有の公開後の操作の順序`: 指定が存在するAWIごとの対象と実施時機。
   指定がない場合は送信しない
 - `完成条件証拠`: `マージあり`の場合に渡す順序付きJSON配列。
@@ -127,7 +128,7 @@
    実装commitを持たない項目については、実装差分が存在しないことを充足の根拠から判断する。
 2. `変更したエージェント向け文書`から、既読・残工程で読む文書に加え、現在の役割や継続中の工程の契約を変える文書を選び、統合先worktreeから読み直して後続の判断へ適用する。
    現在の担当へ無関係な文書の全文取得は追加しない。
-   未配布の採用版へ従う必要があれば、`work-contract.md`「記録する内容」と`work-contract-updates.md`「更新する時点」に従い、従う版の所在・適用対象・解除条件を全体作業契約の暫定規則へ記録し、配下へ渡す。
+   未配布の採用版へ従う必要があれば、`agent-toolkit:atk-mode/references/work-contract.md`「記録する内容」「更新する時点」に従い、従う版の所在・適用対象・解除条件を全体作業契約の暫定規則へ記録し、配下へ渡す。
 3. 変更対象の集合に`<役割名>.parent.md`またはその`起動対象:`である`<役割名>.subagent.md`が含まれる場合、両者を同一のplugin rootから原子的に採用する。
    統合済みworktree側の`<役割名>.parent.md`のrootにすべての起動対象が実際に存在し、委譲起動契約の確認に合格する場合に限り、後続の委譲処理において両者をそのrootから解決する。
    一方の欠落や契約不成立がある場合は、起動開始時のplugin rootに存在する両ファイルを引き続き使用し、異なるrootの版を混在させない。

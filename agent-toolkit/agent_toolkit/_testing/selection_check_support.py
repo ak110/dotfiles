@@ -12,7 +12,7 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 
 # 検査本体はスキルのscriptsにあり、パッケージの外のため検索パスへ加えてから取り込む。
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills/process-wi/scripts"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/scripts"))
 import check_selection  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order,import-error
 
 _REPO_FILES = (

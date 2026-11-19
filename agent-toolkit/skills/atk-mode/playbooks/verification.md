@@ -114,7 +114,7 @@ MCPの`run`ツールを使えない場合に限り、本書「pyfltrの起動形
 
 ## 手動観測の保存
 
-受入シナリオか完成条件を手動で観測する直前に、`agent-toolkit:/share/acceptance-scenarios.md`の起動条件で対象を起動し、コマンドは標準の実行機能で対象worktreeから実行する。
+受入シナリオか完成条件を手動で観測する直前に、`agent-toolkit:atk-mode/references/workflow-phases.md`の起動条件で対象を起動し、コマンドは標準の実行機能で対象worktreeから実行する。
 別の担当が出力の全量を確かめる観測では、`mktemp -d '<セッションのmanaged-temp>/<用途>-XXXXXXXX'`で作ったディレクトリへ標準出力と標準エラーを分けて保存する。
 終了コード、cwd、argv、取得時点の`git rev-parse HEAD`による完全なOID、`git status --porcelain=v1`の結果を検証結果へ書き、PATH上の別の実行ファイルを使った観測はその版も書く。
 保存に失敗した観測と、終了コードか取得HEADが無い観測は、保存できる形で実行し直す（レビュー担当は保存された観測だけを判定に使える）。

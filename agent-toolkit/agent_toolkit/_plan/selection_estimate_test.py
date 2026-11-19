@@ -96,7 +96,7 @@ def test_verifications_use_input_capacity(slots: int, total: int, wait: int) -> 
 
 
 def test_selection_lane_target_warning_uses_verification_capacity(monkeypatch: pytest.MonkeyPatch) -> None:
-    scripts = pathlib.Path(__file__).resolve().parents[2] / "skills/process-wi/scripts"
+    scripts = pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/scripts"
     monkeypatch.syspath_prepend(str(scripts))
     lanes = importlib.import_module("check_selection_lanes")
     plan = _plan((0, 0, 0), 3)

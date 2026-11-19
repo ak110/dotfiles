@@ -125,18 +125,28 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "skill",
         nargs="?",
         metavar="SKILL",
-        help="実行するスキル名（`agent-toolkit:process-wi`のような修飾名、またはプロジェクトのスキル名）。",
+        help=(
+            "実行するスキル名（`agent-toolkit:review-session`のような修飾名、またはプロジェクトのスキル名）。"
+            f"入口`atk-mode`の作業は作業の修飾名（`{skill_modes.PROCESS_WI}`など）で指定する。"
+        ),
     )
 
 
 def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
+    if args.skill is not None:
+        skill, arguments = skill_modes.resolve_work(args.skill, args.args)
+        if skill != args.skill:
+            # 入口`atk-mode`への作業の名指しは、作業の修飾名での起動と同じ起動単位・起動入力・目的文・再開時の比較にする。
+            args.skill, args.args = skill, arguments or None
     if identifier := getattr(args, "resume", None):
         try:
             record = _run_state.load(identifier)
-            if any(getattr(args, name, None) is not None for name in ("target_repo", "work_dir", "timeout", "args")):
+            if any(getattr(args, name, None) is not None for name in ("target_repo", "work_dir", "timeout")) or (
+                args.args is not None and args.args != record.input.arguments
+            ):
                 raise ValueError("--resumeでは元の対象・cwd・時間予算・スキル引数を変更できない")
-            if args.skill is not None and args.skill != record.input.skill:
+            if args.skill is not None and args.skill != record.input.skill and not _is_entry_of(args.skill, record.input.skill):
                 raise ValueError("--resumeのスキルが元の実行と一致しない")
         except (OSError, ValueError) as error:
             _outcome.report_failure(
@@ -166,6 +176,11 @@ def dispatch(args: argparse.Namespace) -> int:
 
         return run_skill_batch.dispatch(args, _dispatch_once)
     return _dispatch_once(args)
+
+
+def _is_entry_of(requested: str, saved: str) -> bool:
+    """作業を名指しせず入口`atk-mode`だけで指定した`--resume`が、保存済みの作業の実行を指すか。"""
+    return requested.removeprefix("agent-toolkit:") == skill_modes.ENTRY_SKILL and skill_modes.entry_work(saved) is not None
 
 
 def _dispatch_once(args: argparse.Namespace) -> int:
@@ -248,19 +263,26 @@ def _dispatch_once(args: argparse.Namespace) -> int:
 
 
 def build_goal(skill: str, skill_args: str | None, *, launch: str | None = None) -> str:
-    """起動したセッション自身が担当するスキルとモードの工程の完遂を目的にする。
+    """起動したセッション自身が担当するスキルとモードの工程の完遂と、その始め方を目的にする。
 
     工程・終了条件を目的文へ加えるとスキルと定義が二重化するため、起動データと終了契約の参照先はSessionStartで渡す。
     完了はStop hookが報告用UWIの保存で判定するため、主語をセッション自身に限り、
     子の終了後に起動元が行う検収と確定を担当範囲から外すことを短く示す。
 
+    始め方は全てのホストで目的文が示す（SessionStartは起動を差し込まない）。
+    入口`atk-mode`の作業の名前（`skill_modes.ENTRY_WORKS`。修飾名と接頭辞の無い名前）は、入口を作業と引数で起動させ、
+    それ以外はそのスキルの起動を書く。入口の起動は`dispatch`が作業の名前へ読み替えてから渡す。
     `launch`は、`skill`が保存上の作業名で同名のスキルを持たない起動（`atk wi submit`）が、作業の始め方を1文で渡す。
     起動単位の名前（ロック、ログ、報告用UWIの`scope`）は`skill`のまま保ち、スキルの実在に依存させない。
     """
     scope = skill_modes.invocation_scope(skill, skill_args)
     if launch is not None:
         return f"このセッションが担当する作業`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{launch}"
-    return f"このセッションが担当するスキル`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）"
+    if (name := skill_modes.entry_work(skill)) is not None:
+        start = skill_modes.entry_launch(skill_modes.invocation_scope(name, skill_args), free_text=True)
+    else:
+        start = f"スキル`{skill}`を起動して始める（起動入力の`free_text`が空でなければ引数として渡す）。"
+    return f"このセッションが担当するスキル`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{start}"
 
 
 def _run_locked(

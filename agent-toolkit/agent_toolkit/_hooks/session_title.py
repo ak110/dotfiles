@@ -27,7 +27,14 @@ def observe_add_awi(session_id: str, skill: str) -> None:
 
 
 def observe_skill(session_id: str, skill: str, arguments: str | None = None, *, named_by_entry: bool = False) -> None:
-    """成功したスキル起動または手動起動の種別を記録する。`named_by_entry`は、ユーザーの入力が入口へ名指しした作業で真にする。"""
+    """成功したスキル起動、手動起動、起動入力の種別を記録する。
+
+    `named_by_entry`は、ユーザーの入力が入口へ名指しした作業で真にする。
+
+    `atk-mode`の作業（`atk-mode process-wi [モード]`）は、呼び出し元が
+    ユーザーの入力か起動入力から作業の名前へ読み替えて渡す。
+    エージェントによる入口の起動は読み替えずに渡されるため、種別を記録しない。
+    """
     kinds = _KINDS | _ENTRY_KINDS if named_by_entry else _KINDS
     kind = kinds.get(skill.removeprefix("agent-toolkit:"))
     if kind == "process-wi":

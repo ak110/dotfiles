@@ -10,7 +10,7 @@ writes_worktree: false
 
 # 自動コードレビュー監査担当タスク
 
-<!-- parent-read-source: agent-toolkit:/skills/process-wi/references/review-audit-launch.md#自動コードレビュー監査担当の起動と受領 -->
+<!-- parent-read-source: agent-toolkit:/skills/atk-mode/playbooks/process-wi-review-audit.md#自動コードレビュー監査担当の起動と受領 -->
 
 対象となるGitHubリポジトリにおいて、Copilot由来のレビュー指摘と未判定のDependabotアラートを1回取得して監査し、分類、GitHubへの記録、ならびに判定済みとしての記録までを完結させる。
 対象リポジトリの追跡対象ファイルやコミット履歴は変更しない。
@@ -24,9 +24,9 @@ writes_worktree: false
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 着手時 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | 起動時 | `role:copilot-review-audit` | |
-| 判定結果をGitHubへ記録する前 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | | | |
-| Dependabotアラートを扱う前 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | | | |
+| 着手時 | `agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md` | 起動時 | `role:copilot-review-audit` | |
+| 判定結果をGitHubへ記録する前 | `agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md` | | | |
+| Dependabotアラートを扱う前 | `agent-toolkit:atk-mode/playbooks/process-wi-dependabot-audit.md` | | | |
 
 ## 入力
 

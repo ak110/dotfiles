@@ -8,6 +8,7 @@ import pytest
 import session_evidence_candidates as evidence_candidates
 import session_review_evidence as evidence
 
+from agent_toolkit._common import skill_modes
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import hook_attachment, read_jsonl
 from agent_toolkit._testing.session_review_evidence_support import _bundle_candidates_and_evidence
@@ -107,12 +108,12 @@ def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_interv
     """先頭スキル要求と対応本文を別区分で除外し、後続のユーザー介入を保持する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},
-        {"kind": "user", "record": "main", "line": 2, "text": "$agent-toolkit:process-wi"},
+        {"kind": "user", "record": "main", "line": 2, "text": f"${skill_modes.PROCESS_WI}"},
         {
             "kind": "user",
             "record": "main",
             "line": 3,
-            "text": "<skill>\n<name>agent-toolkit:process-wi</name>\n本文は後段で省略",
+            "text": f"<skill>\n<name>{skill_modes.PROCESS_WI}</name>\n本文は後段で省略",
         },
         {"kind": "user", "record": "main", "line": 4, "text": "途中で方針を変更する"},
     ]
@@ -154,8 +155,8 @@ def test_bundle_selects_initial_skill_after_runtime_injections(
     texts = [
         "# AGENTS.md instructions\n規範",
         '<atk-auto source="runtime" kind="notice">注入</atk-auto>',
-        "$agent-toolkit:process-wi",
-        f"<skill>\n<name>agent-toolkit:process-wi</name>\n本文{closing}",
+        f"${skill_modes.PROCESS_WI}",
+        f"<skill>\n<name>{skill_modes.PROCESS_WI}</name>\n本文{closing}",
         "後続の訂正",
     ]
     records, _ = _bundle_candidates_and_evidence(

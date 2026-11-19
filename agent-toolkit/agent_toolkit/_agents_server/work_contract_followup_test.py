@@ -88,7 +88,7 @@ async def test_public_start_delivers_whole_contract_reference(
     diagnostic = caught.value.message
     assert str(whole) in diagnostic
     assert "委譲先は起動していない" in diagnostic
-    assert "share/work-contract.md" in diagnostic
+    assert "skills/atk-mode/references/work-contract.md" in diagnostic
     assert "作成" in diagnostic and "再発行" in diagnostic
     manager.start.assert_not_awaited()
     allocate.assert_not_called()

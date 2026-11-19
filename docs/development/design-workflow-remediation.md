@@ -20,7 +20,7 @@
 commitメッセージには計画外の既存不良の修正であることと修正理由だけを書く。
 公開commit本文の読み手は内部の認可記録へ到達できないためである。
 公開工程の開始後も、現在発生中の不良は共通の先送り条件に当たらなければ今回の正式対応に含め、追加統合後の再公開へ接続する。
-`agent-toolkit:process-wi single-lane`では同じ委譲で投入した即時対応のAWIを処理対象WIへ加え、メインが自ら実装して同じ実行レビューへ含める。
+`agent-toolkit:atk-mode`の作業`process-wi single-lane`では同じ委譲で投入した即時対応のAWIを処理対象WIへ加え、メインが自ら実装して同じ実行レビューへ含める。
 
 本作業で扱った問題と根本原因を同じくする不良は、独立した既存不良として次回へ送らず、その問題の類似見直しの母集団として扱う（2026年10月10日のユーザー指示による`agent-basics:bugfix`への集約）。
 範囲・時機・完了は同スキルの次の資料に従う。
@@ -36,8 +36,8 @@ AWIを要さず見つけた主体が元の文脈で直す用途には、専用�
 `start`の`explore`は委譲先が`Skill`ツールを持たずスキルを読み込めないため使わない。
 `add-wi`はAWIの投入までを完了条件とするため、投入せずに直す用途と分ける。
 知識境界として、調査の手順は`agent-basics:bugfix`、起動と受領は前掲の起動・受領契約が持つ。
-process-wiでの扱いは`agent-toolkit:process-wi/references/lanes-followup.md`「即時対応」が持つ。
-process-wi single-laneでの扱いは`agent-toolkit/skills/process-wi/references/single-lane.md`が持つ。
+process-wiでの扱いは`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」が持つ。
+process-wi single-laneでの扱いは`agent-toolkit/skills/atk-mode/playbooks/process-wi-single-lane.md`が持つ。
 
 比較した代替案は次のとおりである。
 観測した箇所だけを局所修正して類似見直しと再発防止策を後続のAWIへ回す組は、セッションが終わるたびにAWIが投入されて次のセッションが続くため採用しない。

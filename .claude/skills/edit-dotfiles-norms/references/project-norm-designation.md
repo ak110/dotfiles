@@ -2,8 +2,8 @@
 
 ## メインが書くプロジェクト規範の指定
 
-`agent-toolkit:process-wi`の選定工程において、メインエージェントはAWIごとに`プロジェクト規範の指定`を記述する。
-受け渡しの形式は`agent-toolkit/skills/process-wi/references/selection-format.md`に従う。
+`agent-toolkit:atk-mode`の作業`process-wi`の選定工程において、メインエージェントはAWIごとに`プロジェクト規範の指定`を記述する。
+受け渡しの形式は`agent-toolkit/skills/atk-mode/references/process-wi-selection-format.md`に従う。
 記載内容は、`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`にある`norm-spec`の条件に基づいて組み立てる。
 各条件では`paths`と`suffixes`、または`agent-doc`によって対象を判定し、`require-paths`は該当したファイルのパス、`require-text`は指定された文字列の記載を求める。
 `atk run-script pick-wi-check`を実行すると、同じ設定を用いて指定の漏れを検出できる。

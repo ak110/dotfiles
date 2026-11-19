@@ -5,8 +5,8 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._common import session_state
-from agent_toolkit._hooks import posttooluse, user_prompt_submit
+from agent_toolkit._common import session_state, skill_modes
+from agent_toolkit._hooks import posttooluse, rules_context, user_prompt_submit
 from agent_toolkit._hooks.pretooluse import read_delivery
 
 
@@ -27,9 +27,7 @@ def test_consultation_history_survives_other_skill(codex, capsys):
     user_prompt_submit.main(json.dumps(payload))
     capsys.readouterr()
     assert session_state.read_state(session)["add_awi_skill_invoked"] is True
-    posttooluse.main(
-        json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:process-wi"}})
-    )
+    posttooluse.main(json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": skill_modes.PROCESS_WI}}))
     capsys.readouterr()
     assert session_state.read_state(session)["session_title_kind"] == "process-wi"
     assert session_state.read_state(session)["add_awi_skill_invoked"] is True
@@ -59,21 +57,17 @@ def test_command_hooks_name_session(
     session = "title-test"
     session_state.update_state(session, lambda state: {**state, "current_plan_file_path": "C:\\plans\\18-1921_画像整理.md"})
     if not manual:
-        posttooluse.main(
-            json.dumps(
-                {
-                    "session_id": session,
-                    "hook_event_name": "PostToolUse",
-                    "tool_name": "Skill",
-                    "tool_input": {"skill": f"agent-toolkit:{skill}", "args": arguments},
-                }
-            )
-        )
+        # 子セッションの種別は起動入力から記録する（エージェントによる入口の起動からは記録しない）。
+        launch = {"source": "run-skill", "skill": f"agent-toolkit:{skill}", "arguments": arguments}
+        monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(launch, ensure_ascii=False))
+        payload = {"hook_event_name": "SessionStart", "source": "startup", "session_id": session}
+        assert rules_context.main(json.dumps(payload), host="claude") == 0
         capsys.readouterr()
+        monkeypatch.delenv("AGENT_TOOLKIT_SESSION_START_INPUT")
     # 一時ディレクトリが変わる再開でも種別を保持する。
     (tmp_path / "after-restart").mkdir()
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path / "after-restart"))
-    payload = {"session_id": session, "prompt": f"/agent-toolkit:{skill} {arguments}" if manual else "続ける"}
+    payload = {"session_id": session, "prompt": f"/atk-mode {skill} {arguments}" if manual else "続ける"}
     user_prompt_submit.main(json.dumps(payload))
     title = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["sessionTitle"]
     # 複数リポジトリの統括は個別計画を連結せず、全体の処理範囲を示す固定名にする。
@@ -172,7 +166,7 @@ def test_all_repos_title_stays_across_plan_switches(
             {
                 "session_id": session,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-wi", "args": arguments},
+                "tool_input": {"skill": skill_modes.PROCESS_WI, "args": arguments},
             }
         )
     )
@@ -191,7 +185,7 @@ def test_all_repos_title_stays_across_plan_switches(
                 {
                     "session_id": session,
                     "tool_name": "Skill",
-                    "tool_input": {"skill": "agent-toolkit:process-wi", "args": "single-lane"},
+                    "tool_input": {"skill": skill_modes.PROCESS_WI, "args": "single-lane"},
                 }
             )
         )
@@ -213,7 +207,7 @@ def test_process_loop_child_keeps_plan_title(
             {
                 "session_id": session,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-wi", "args": "single-lane"},
+                "tool_input": {"skill": skill_modes.PROCESS_WI, "args": "single-lane"},
             }
         )
     )

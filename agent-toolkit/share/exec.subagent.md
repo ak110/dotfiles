@@ -74,9 +74,9 @@ continuations:
 
 # レーン実行タスク
 
-`agent-toolkit:process-wi`における1つのレーンを、計画の要否判定から統合まで同一のスレッドで担当する。
+`agent-toolkit:atk-mode`の作業`process-wi`における1つのレーンを、計画の要否判定から統合まで同一のスレッドで担当する。
 担当種別は`レーン担当`、`レビュー修正担当`、または`CI修正担当`のいずれかとする。
-計画および実行工程における責務と完了条件は、`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
+計画および実行工程における責務と完了条件は、`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/references/workflow-phases.md`に従う。
 
 ## 名指し参照の読込方法
 
@@ -93,16 +93,16 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | | |
+| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/playbooks/process-wi-execution.md` | | |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | | |
 | 担当種別によらず、期待からの逸脱を認識して診断・訂正・対処を始める前 | `agent-basics:bugfix/SKILL.md` | | |
-| 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | | |
+| 計画を起草するか既存計画から再開する直前 | [`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`](../skills/atk-mode/playbooks/process-wi-execution.md) | | |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | | |
 | 受入シナリオや完成条件を手動で観測する前（実装の途中の観測を含む） | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 取得した変更範囲の検証コマンドを使う前 | `agent-basics:check-execution/references/verification-scope-selection.md` | | |
 | `検証結果`を書く前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
-| 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | | |
-| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration.subagent.md` |
+| 変更範囲の検証が失敗したとき | [`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`](../skills/atk-mode/playbooks/process-wi-lanes.md) | | |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/lane-integration.subagent.md` |
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`（語の基準） | | |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` | | |
 
@@ -129,11 +129,11 @@ continuations:
 | CI修正担当 | 実施しない | CI記録で認可された失敗のみを修正する | 実行可能 | 実施しない |
 
 上記の操作許可は、委譲プロンプトや追加の指示を受領した後もそのまま維持する。
-レビュー修正における`autosquash`と、`lane-integration-subagent-operation.md`「マージありの統合」における統合先のmergeは別個の操作であり、一方の禁止が他方に波及することはない。
+レビュー修正における`autosquash`と、`agent-toolkit:atk-mode/references/lane-integration-format.md`「マージありの統合」における統合先のmergeは別個の操作であり、一方の禁止が他方に波及することはない。
 担当種別に必須とされる操作が委譲プロンプトや追加指示によって禁止されている場合は、作業に着手せず、禁止事項の文面と必須操作の内容を添えて「続行できない理由」を返す。
 `レビュー修正担当`として起動されたエージェントが統合指示を受け取った場合は、`レーン担当`の役割に戻って統合処理を実施する。
 
-統合指示を受領した後は、`lane-integration-subagent-operation.md`「公開統合操作」の`atk lane integrate`に対して、所有登録、統合入力HEAD、今回の全計画・WI、検収済みの採否情報を渡す。
+統合指示を受領した後は、`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」の`atk lane integrate`に対して、所有登録、統合入力HEAD、今回の全計画・WI、検収済みの採否情報を渡す。
 リソース管理、Git統合、最終化、選定状態の定型操作は同一のCLIに集約されており、担当エージェントは独立文脈レビューの受理、完成条件の判定、診断メッセージの確認、延期判断を担当する。
 受理した返却ファイルと最終の`レビューHEAD`の組み合わせを保持し、失敗した場合は保存されている進捗情報と同一の入力を用いて再開する。
 
@@ -229,4 +229,4 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| レーン統合タスク：公開統合操作の基準を適用する前 | `lane-integration-subagent-operation.md` |
+| レーン統合タスク：公開統合操作の基準を適用する前 | `agent-toolkit:atk-mode/references/lane-integration-format.md` |

@@ -8,6 +8,7 @@ import pathlib
 import pytest
 import session_review_evidence as evidence
 
+from agent_toolkit._common import skill_modes
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import (
     claude_call,
@@ -44,7 +45,7 @@ def test_common_runtime_inserted_classifier(
                     ),
                 },
             },
-            {"type": "user", "message": {"role": "user", "content": "$agent-toolkit:process-wi"}},
+            {"type": "user", "message": {"role": "user", "content": f"${skill_modes.PROCESS_WI}"}},
             {"type": "user", "message": {"role": "user", "content": "後続のユーザー発話"}},
         ],
     )
@@ -54,7 +55,7 @@ def test_common_runtime_inserted_classifier(
     assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
     capsys.readouterr()
     conversation = [json.loads(line) for line in (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [item["text"] for item in conversation] == ["最初の依頼", "$agent-toolkit:process-wi", "後続のユーザー発話"]
+    assert [item["text"] for item in conversation] == ["最初の依頼", f"${skill_modes.PROCESS_WI}", "後続のユーザー発話"]
 
 
 def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(

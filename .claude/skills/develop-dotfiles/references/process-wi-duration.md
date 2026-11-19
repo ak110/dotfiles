@@ -1,6 +1,6 @@
 # dotfilesのprocess-wiの所要時間と終了条件
 
-`agent-toolkit:process-wi`の所要時間目標を、本リポジトリを対象に含む巡回へ当てはめる値と条件である。
+`agent-toolkit:atk-mode`の作業`process-wi`の所要時間目標を、本リポジトリを対象に含む巡回へ当てはめる値と条件である。
 進捗と時間目標の見直しは原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）に従う。
 
 ## 所要時間と終了条件
@@ -9,7 +9,7 @@
 別cwdのall-repos統括にも適用する。
 選定時は過去の完走実測から目標に収まる量を決め、`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`の`minimum-items`を件数の下限とする。
 初期値は21件であり、候補が少なければ全件を選ぶ。
-回答済みUWIを先に選び、AWIは最古の1件と優先区分`urgent`の最古の1件を交互に並べた順の先頭から連続して選ぶ（`agent-toolkit:process-wi/references/selection-procedure-allocation.md`の手順19）。
+回答済みUWIを先に選び、AWIは最古の1件と優先区分`urgent`の最古の1件を交互に並べた順の先頭から連続して選ぶ（`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`の手順19）。
 先頭の長い項目や依存の連結成分も含める。
 長い先頭項目を選ぶ場合も下限まで後続を選び、独立した仕事を並行処理する。
 着手済みと再開項目は保持する。

@@ -1,6 +1,6 @@
 """process-loopの中断セッションを自動特定し、確認のうえ再開するための対話処理。
 
-対象リポジトリで`agent-toolkit:process-wi`を起動した本体セッションをmtime降順に列挙し、
+対象リポジトリで作業process-wi（入口`agent-toolkit:atk-mode`の作業。廃止前は同名のスキル）を起動した本体セッションをmtime降順に列挙し、
 候補ごとの情報を表示して標準入力からy/nを受け付ける。全候補が拒否された場合と候補が
 存在しない場合はいずれも標準エラーへ診断を出力し、`sys.exit(1)`で終了する。
 """
@@ -62,7 +62,7 @@ def select_session(target_repo_id: str, target_repo_path: pathlib.Path) -> str:
     candidates = _collect_candidates(target_repo_id)
     if not candidates:
         _next_action.report(
-            f"error: 対象リポジトリでagent-toolkit:process-wiを起動したセッション記録が見つからない: {target_repo_path}",
+            f"error: 対象リポジトリで作業process-wiを起動したセッション記録が見つからない: {target_repo_path}",
             next_action=_NO_CANDIDATE_NEXT_ACTION,
         )
         sys.exit(1)

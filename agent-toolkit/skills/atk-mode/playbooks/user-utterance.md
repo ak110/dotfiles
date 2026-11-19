@@ -14,7 +14,7 @@
 6. ユーザーの判断か認可が要る部分だけを、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で確認へ回す（本書「対処の認可と機能の不足」）。
    理解のずれが残る時と、同じ行動を繰り返し指摘された時は、`agent-toolkit:atk-mode/references/delivery.md`「認識合わせ」で確かめる。
 7. 取り下げや差し替えが無ければ、同じターンで元の未完了工程へ戻る。
-   作業契約を持つ時は`agent-toolkit:/share/work-contract-updates.md`「追加入力の統合」で原文と契約を比べてから戻る。
+   作業契約を持つ時は`agent-toolkit:atk-mode/references/work-contract.md`「追加入力の統合」で原文と契約を比べてから戻る。
    起動済みの実行（待機、CI監視、サーバーなど）は、新しく起動する前に識別子と終了を確かめ、未終了なら同じ識別子で回収する（`agent-toolkit:delegation/references/waiting-and-monitoring-setup.md`「バックグラウンドタスクの所有記録」）。
 
 ## ユーザー発話の解釈
@@ -93,7 +93,7 @@ AWIは、末尾に一度残した原文と各項目を`agent-toolkit:atk-mode/re
 
 1. 指摘の対象が自動処理を待つ未完了のWIなら、事実を確かめる前に保留にする（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」）。
    保留は同意や本文の変更ではなく、比べている間に古い要求で処理が進むのを防ぐ処置である。
-2. 作業契約は`agent-toolkit:/share/work-contract-updates.md`「更新する時点」に従って更新し、計画の凍結後の変更と採否はレビュー指摘管理表へ記録する。
+2. 作業契約は`agent-toolkit:atk-mode/references/work-contract.md`「更新する時点」に従って更新し、計画の凍結後の変更と採否はレビュー指摘管理表へ記録する。
    `review_contract`の保持と再生成は`agent-toolkit:/share/exec-review-contract-generation.md`「`review_contract`の生成」に従う。
 3. 方針の候補を含むかは、本書「方針の候補の取り込み」で判定する。
 4. 自分の提案の誤りが分かった時は、取り下げるだけで終えず、観測した事象を起点に代替案を示す。
@@ -138,7 +138,7 @@ AWIは、末尾に一度残した原文と各項目を`agent-toolkit:atk-mode/re
 ## 割り込み・訂正・中止
 
 - 進行中の作業を中断するのは、即時の対応を求める明示の指示（「今すぐ」「先に」「割り込んで」など）がある時に限り、質問や提案には作業を続けたまま応答する。
-- process-wiの統括・リポジトリ担当・レーン担当は、是正・改善要求を受けたら、起動のmodeや通知の届き方によらず`agent-toolkit:process-wi/references/immediate-fix.md`「即時対応」を当てる。
+- process-wiの統括・リポジトリ担当・レーン担当は、是正・改善要求を受けたら、起動のmodeや通知の届き方によらず`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」を当てる。
   権限を持たない担当は判定の材料を委譲元へ通知し、process-wiの外で改善点を報告する時はAWI化の要否を判定する。
 - 会話に`/exit`などのローカルコマンドの記録が残っていても元の未完了工程を続け（圧縮や再開の後も同じ）、自然言語の明示の中止と終了操作の扱いを見直す要求だけを原文どおりに扱う。
 - 中止や差し替えの指示は、対象の作業だけを`agent-toolkit:atk-mode/references/termination-evidence.md`「中止・置換・待機・技術的不成立」の判断記録で止め、関係しない作業は続ける。

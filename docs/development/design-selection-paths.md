@@ -11,7 +11,7 @@
 `書き込まない反映先`は参照先と除外先だけを持ち、公開工程所有の退避先には使わない。
 公開工程の所有をレーン競合へ混入させないため、両書込区分を分離する。
 廃止前のpickerはこれらの値をAWI本文の`## 反映内容と反映先`から手で書き写すため、反映先の一部を欠いた値や上位ディレクトリだけを書いた値がレーン工程へ渡った（`docs/development/incidents-workflows.md`の2026年10月1日の記録）。
-`atk run-script pick-wi-check`は`agent-toolkit/skills/process-wi/scripts/check_selection_paths.py`で反映先の文章とインラインコードから、完全なパスと、ディレクトリに続く省略したファイル名を抽出する。
+`atk run-script pick-wi-check`は`agent-toolkit/skills/atk-mode/scripts/check_selection_paths.py`で反映先の文章とインラインコードから、完全なパスと、ディレクトリに続く省略したファイル名を抽出する。
 インラインコードは内容全体を1つの候補とし、文章中のパスはASCIIの候補に続く非ASCIIの文字まで伸ばした実在の最長パスを候補とする。
 パスの文字をASCIIに限って走査すると、`docs/dev/ログ監視.md`を範囲`docs/dev/`、`docs/design/LLMへのファイル入力.md`を途中の`docs/design/LLM`として読み、旧pickerに実際には書かない範囲を`書込対象`へ置かせた（2026年10月6日の観測）。
 文章中で実在しない非ASCIIのパスは後続の日本語の文と終わりを区別できないため、インラインコードで書かれた場合だけを全体で読む。

@@ -23,7 +23,7 @@
 根拠の十分さと、要件や外部仕様の達成は、実行レビュー担当が判定する。
 完成条件証拠（返却の条件別判定行）を書くのもレビュー担当である。
 
-画面表示に変更がある場合は並列画面レビュー（`workflow-phases.md`「用語」参照）を行う。
+画面表示に変更がある場合は並列画面レビュー（`agent-toolkit:atk-mode/references/workflow-phases.md`「用語」参照）を行う。
 ユーザビリティレビュー担当の起動と検収は`usability-review.parent.md`に従う。
 
 文章成果物のレビュー（読者適合性レビュー）は、`reader-fit-review.parent.md`の直接確認条件・起動単位に従う。
@@ -63,7 +63,7 @@
 | 最終の検証と有限の手動観測の時機を判断する前 | `../skills/atk-mode/playbooks/verification.md` | | |
 | 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | | |
 | 基準の参照時 | `exec-review-recording-evidence.md` | | |
-| 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` | | |
+| 基準の参照時 | `agent-toolkit:atk-mode/references/workflow-phases.md` | | |
 | 基準の参照時 | `usability-review.parent.md` | | |
 | 基準の参照時 | `reader-fit-review.parent.md` | | |
 | 基準の参照時 | `../skills/delegation/references/base-contract-handoff.md` | | |

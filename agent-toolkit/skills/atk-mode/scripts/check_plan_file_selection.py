@@ -10,7 +10,8 @@ import yaml
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import structure
 
-# 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合に使う値（`selection-format.md`「選定結果の書式」）。
+# 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合に使う値
+# （`process-wi-selection-format.md`「選定結果の書式」）。
 _RESUME_POSITION_KEY = "再開位置"
 
 

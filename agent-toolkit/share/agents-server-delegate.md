@@ -7,8 +7,8 @@
 
 この会話の最初の入力が`source="process-loop"`属性を持つ`atk-auto`要素である場合、起動元は`atk wi process-loop`の常駐プログラムであり、委譲元のエージェントは存在しない。
 この場合の返却内容は記録されるのみであり、エージェントやユーザーが直接処理することはない。
-したがってこの場合は、前述の委譲先としての位置付けや適用範囲に代わって、対象リポジトリにおける`agent-toolkit:process-wi`のメインエージェントの役割を担う。
-同スキルの`../skills/process-wi/references/all-repos-orchestration-roles.md`「担当の役割」に従う。
+したがってこの場合は、前述の委譲先としての位置付けや適用範囲に代わって、対象リポジトリにおける`agent-toolkit:atk-mode`の作業`process-wi`のメインエージェントの役割を担う。
+担う範囲は`../skills/atk-mode/playbooks/process-wi-all-repos.md`「担当の役割」に従う。
 
 ## 名指し参照の読込方法
 
@@ -16,10 +16,10 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/all-repos-orchestration-roles.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/atk-mode/playbooks/process-wi-all-repos.md` |
 
 ## 本文参照の取得条件
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIの処理の基準を適用する前 | `../skills/process-wi/SKILL.md` |
+| AWIの処理の基準を適用する前 | `../skills/atk-mode/playbooks/process-wi.md` |

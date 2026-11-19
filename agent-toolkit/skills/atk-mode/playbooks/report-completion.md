@@ -40,7 +40,7 @@
 環境の制約で確かめられない範囲は、実施できる検証を終えたうえで、未確認の範囲と理由を報告する。
 個別のUWIとユーザーへの操作依頼は、未確認の範囲とは別の理由（ユーザーにしか決められない判断、ユーザーにしかできない操作）がある時に使う。
 
-現行の作業契約（`agent-toolkit:/share/work-contract.md`）の各要求と残る完成条件を、「証拠」「明示的な取り下げや置換」「ユーザーの対応が要る未完了事項」のいずれかへ対応付ける。
+現行の作業契約（`agent-toolkit:atk-mode/references/work-contract.md`）の各要求と残る完成条件を、「証拠」「明示的な取り下げや置換」「ユーザーの対応が要る未完了事項」のいずれかへ対応付ける。
 未処理の追加入力があれば統合し、残る元の工程を終えてから全体を判定する。
 回収の要求では、`agent-toolkit:atk-mode/playbooks/managed-temp.md`「作業用ディレクトリ」の残存一覧と保持の根拠を使い、途中で選んだ保護の条件も元の要求と現物で評価し直す。
 
@@ -74,7 +74,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 3. このセッションでユーザーが確定した判断のうち未保存のもの（`agent-toolkit/share/rules/common/01-agent.md`「協調と自律」の保存対象）を保存するか、AWIを投入する。
    保存では`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」の、程度の限定と確度を保つ規定を適用する。
 4. 協調モードでcommitを作り、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`でその範囲の公開を終える。
-   `agent-toolkit:process-wi`と`agent-toolkit:process-wi single-lane`は、それぞれの工程の中で公開する。
+   `agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の作業`process-wi single-lane`は、それぞれの工程の中で公開する。
 5. 元の要求が求めた結果を各工程の成果から確かめ、`agent-toolkit:atk-mode/references/report-formats.md`「作業完了報告のフォーマット」の本文を確定する。
    成果、検証、公開・反映・回収の到達点、未達、自ら確定した判断、投入したWIを1つの報告へまとめる。
    局所工程の結果（登録結果、レビュー結果、公開担当の返却など）は、この本文を作る入力として扱う。

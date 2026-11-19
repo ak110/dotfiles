@@ -45,8 +45,12 @@ from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import agents_server_tools as _agents_server_tool_names
 from agent_toolkit._common import record_metadata_index as _record_metadata_index
 from agent_toolkit._common import shell_tokens as _shell_tokens_module
+from agent_toolkit._common import skill_modes as _skill_modes
 from agent_toolkit._common.session_family import _scan_record_metadata
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
+
+# 入口`atk-mode`の作業`process-wi`を手動で起動した発話（`/atk-mode process-wi`、Codexの`$atk-mode process-wi`）。
+_ENTRY_PROCESS_WI = re.compile(r"\s*[/$](?:agent-toolkit:)?atk-mode\s+process-wi(?:\s|$)")
 
 CATALOG_PARENT_FIELDS = (
     "runtime",
@@ -234,7 +238,12 @@ def _workflow_evidence(item: _CollectedRecord) -> tuple[str, dict[str, Any] | st
         if (
             event.get("kind") == "user"
             and isinstance(text, str)
-            and ("agent-toolkit:process-wi" in text or text.strip() == "/process-wi")
+            and (
+                _skill_modes.PROCESS_WI in text
+                or _skill_modes.PROCESS_WI_LAUNCH_MARKER in text
+                or text.strip() == "/process-wi"
+                or _ENTRY_PROCESS_WI.match(text) is not None
+            )
         ):
             return "process-wi", {"record": item.record_id, "line": int(event["line"])}
     return "unknown", "unknown"

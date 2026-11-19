@@ -46,9 +46,12 @@ def _skill_invocation(engine_env, tmp_path, monkeypatch, capsys):
         code, _out, error = _run([*options, skill], capsys)
         assert code == 0, error
         record = _records(engine_env, "session")[0]
+        work = expected_scope.removeprefix("agent-toolkit:")
         assert record["argv"][-1] == (
             f'<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`{expected_scope}`の工程を完遂する'
-            "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
+            "（起動元が終了後に行う検収と確定は含まない）。"
+            f"スキル`agent-toolkit:atk-mode`を作業`{work}`で起動して始める"
+            "（起動入力の`free_text`が空でなければ引数の後ろへ続ける）。\n</atk-auto>"
         )
         return _startup_input(record, monkeypatch, capsys)
 
@@ -60,9 +63,9 @@ def _skill_invocation(engine_env, tmp_path, monkeypatch, capsys):
     [
         ("agent-toolkit:review-session", "focus.md", "batch auto", None),
         ("agent-toolkit:review-session", "batch auto", "focus.md", "batch"),
-        ("agent-toolkit:process-wi", "focus.md", "single-lane 追加", None),
-        ("agent-toolkit:process-wi", "single-lane 追加", "all-repos", "single-lane"),
-        ("agent-toolkit:process-wi", "all-repos", "single-lane 追加", "all-repos"),
+        (skill_modes.PROCESS_WI, "focus.md", "single-lane 追加", None),
+        (skill_modes.PROCESS_WI, "single-lane 追加", "all-repos", "single-lane"),
+        (skill_modes.PROCESS_WI, "all-repos", "single-lane 追加", "all-repos"),
     ],
 )
 def test_general_run_skill_uwi_uses_documented_scope_for_the_same_mode(

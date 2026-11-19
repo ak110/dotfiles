@@ -35,16 +35,16 @@ branchとリリースの設計の理由は[design-release.md](design-release-bra
 
 通常の開発先は`develop`とし、リリース先およびGitHubのdefault branchは`master`とする。
 `master`は直接更新せず、必須CIを通過したPRのマージコミットだけで更新する。
-`agent-toolkit:process-wi`の終了では`origin/develop`と`origin/master`に差分がある限り、`develop`から`master`へのリリースPRを作成してマージまで実施する（2026年9月、ユーザー指示）。
+`agent-toolkit:atk-mode`の作業`process-wi`の終了では`origin/develop`と`origin/master`に差分がある限り、`develop`から`master`へのリリースPRを作成してマージまで実施する（2026年9月、ユーザー指示）。
 同じ最上位セッションで実施するリリースPRのマージは1件までとし、マージ後に生じた差分は`develop`へのpushとCI成功まで進め、次のセッションの1件のPRへまとめる（2026年10月21日、ユーザー指示）。
 実施可否の判定はWIキューの状態を参照しない（2026年9月16日、ユーザー指示）。
 キューの残件はそのセッションの成果と因果関係がない。
 処理回の進行中に項目が投入されると、セッションの成果とは無関係にリリースが止まるためである。
-差分が無い場合や`agent-toolkit:process-wi`以外から起動した場合は、PRの作成とマージ依頼を手動で行う。
+差分が無い場合や`agent-toolkit:atk-mode`の作業`process-wi`以外から起動した場合は、PRの作成とマージ依頼を手動で行う。
 いずれの場合でもauto-merge、マージ失敗後の自動再試行、自動rollbackを導入しない。
 
 PRのheadはGitHub設定で`develop`だけに制限しない。
-通常のリリースでは`develop`から`master`へのPRを使用し、明示的なマージ依頼を受領したエージェントと、前項の条件が成立した`agent-toolkit:process-wi`のメインだけがマージ後の同期と検収を担当する。
+通常のリリースでは`develop`から`master`へのPRを使用し、明示的なマージ依頼を受領したエージェントと、前項の条件が成立した`agent-toolkit:atk-mode`の作業`process-wi`のメインだけがマージ後の同期と検収を担当する。
 PRの存在の検出をマージ依頼として扱わない。
 リリースの成立条件はリモートのbranch、CIおよび必要なReleaseとし、ローカル作業ツリーのclean状態とローカル`develop`の位置を成立条件にしない。
 ここでのCIはマージ前にPR headで成功を確認する必須checkを指す。
@@ -53,9 +53,9 @@ PRの存在の検出をマージ依頼として扱わない。
 statuslineのReleaseを要する場合のmaster CIの結論は、Release runの検収で確かめる。
 ローカル作業ツリーがcleanで安全にfast-forwardできる場合だけローカル`develop`も同期し、それ以外は同期を省略して既存の未コミット差分とローカルbranchへ書き込まない。
 いずれの実行でもローカルの状態をリリースの成否判定に用いず、完了報告でリモートの完了とローカル`develop`を同期したかどうかを区別して示す。
-リリースの成否判定とは別に、`agent-toolkit:process-wi`のセッション終了ではベースbranchの公開状態（現在branch、作業ツリーのclean、リモート追跡refへのahead、中断状態）を観測する（2026年9月、ユーザー指示）。
+リリースの成否判定とは別に、`agent-toolkit:atk-mode`の作業`process-wi`のセッション終了ではベースbranchの公開状態（現在branch、作業ツリーのclean、リモート追跡refへのahead、中断状態）を観測する（2026年9月、ユーザー指示）。
 未公開のcommitを残した終了が常駐ループの開始前更新を停止させたためであり、解消できない場合はUWIへ引き継ぐ。
-`agent-toolkit:process-wi`では、選定工程の開始時に未処置のCopilotレビューを取得し、対象がある場合に監査をレーン工程と並行して進め、公開工程の開始より前に処置を確定する。
+`agent-toolkit:atk-mode`の作業`process-wi`では、選定工程の開始時に未処置のCopilotレビューを取得し、対象がある場合に監査をレーン工程と並行して進め、公開工程の開始より前に処置を確定する。
 対象が0件なら監査担当を起動しない。
 公開工程では公開担当による公開とCI確認を1回だけ実施する。
 公開担当の起動後に生じた是正commitはローカルの`develop`へ保持し、次のセッションの公開工程で公開する。
@@ -88,7 +88,7 @@ branchの公開またはCIが失敗した場合は`master`を保持し、同じc
 判定の入力を`origin/develop`と`origin/master`の短縮OIDの比較だけとし、WIキューの状態を参照しない扱いは、2026年9月16日のユーザー指示による。
 廃止した条件では、WIキュー全体からそのセッションで固定した集合を除き、残った項目がすべて着手できないことを求めていた。
 この条件は「固定したAWIの全件が終了してからリリースする」目的を守るためのものだった。
-`agent-toolkit:process-wi`では公開工程を全レーンの終了後に実施するため、条件を廃止してもこの目的は失われない。
+`agent-toolkit:atk-mode`の作業`process-wi`では公開工程を全レーンの終了後に実施するため、条件を廃止してもこの目的は失われない。
 一方、廃止した条件は共有キューの現在状態を入力としていた。
 この状態はprocess-wiの1回の実行の進行中に`agent-toolkit:review-session`、並行セッションおよびユーザーが投入する項目で増減する。
 増減した項目は、そのセッションの成果と因果を持たない。

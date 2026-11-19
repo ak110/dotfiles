@@ -16,7 +16,7 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit import hook
-from agent_toolkit._common import automated_prompt, session_state
+from agent_toolkit._common import automated_prompt, session_state, skill_modes
 from agent_toolkit._hooks import posttooluse, progress_self_check, user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import _read_state as _read_full_state
@@ -400,14 +400,25 @@ class TestSlashCommandDetection:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
 
-    def test_detects_short_skill_command_process_wi(self, tmp_path: pathlib.Path):
-        sid = "short-process-wi"
+    @pytest.mark.parametrize(
+        ("prompt", "autonomous"),
+        [
+            ("/atk-mode process-wi", True),
+            ("/agent-toolkit:atk-mode process-wi all-repos", True),
+            ("/atk-mode process-wi-extra", False),
+            ("/process-wi", False),
+            (f"/{skill_modes.PROCESS_WI}", False),
+        ],
+    )
+    def test_entry_command_names_process_wi(self, tmp_path: pathlib.Path, prompt: str, autonomous: bool):
+        """自律モードは入口`atk-mode`へ作業`process-wi`を名指しした入力だけで立てる（スキル`process-wi`は廃止した）。"""
+        sid = "entry-process-wi"
         result = _run(
-            {"session_id": sid, "prompt": "/process-wi"},
+            {"session_id": sid, "prompt": prompt},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
+        assert bool(_read_state(tmp_path, sid).get("process_wi_skill_invoked")) is autonomous
 
 
 class TestNonMatchingPrompts:
@@ -469,7 +480,7 @@ class TestNonMatchingPrompts:
         """process-loopが渡す起動時プロンプトは注記の対象から外し、経過時間も記録しない。"""
         sid = "automated-prompt"
         goal = automated_prompt.wrap(
-            "`agent-toolkit:process-wi`を完遂してください。",
+            f"`{skill_modes.PROCESS_WI}`を完遂してください。",
             source=automated_prompt.SOURCE_PROCESS_LOOP,
             kind=automated_prompt.KIND_GOAL,
         )
@@ -484,7 +495,7 @@ class TestNonMatchingPrompts:
     def test_claude_treats_codex_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "claude-dollar-command"
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:process-wi"},
+            {"session_id": sid, "prompt": f"${skill_modes.PROCESS_WI}"},
             state_dir=tmp_path,
         )
 
@@ -498,7 +509,7 @@ class TestNonMatchingPrompts:
         result = _run(
             {
                 "session_id": sid,
-                "prompt": "/agent-toolkit:process-wi",
+                "prompt": f"/{skill_modes.PROCESS_WI}",
                 "model": "gpt-5",
             },
             state_dir=tmp_path,
@@ -548,7 +559,7 @@ class TestNonMatchingPrompts:
         _write_state(sid, {"plan_mode_skill_invoked": True})
 
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:process-wi", "model": "gpt-5"},
+            {"session_id": sid, "prompt": "$atk-mode process-wi", "model": "gpt-5"},
             state_dir=tmp_path,
         )
 
@@ -739,7 +750,7 @@ def test_plan_state_names_session_without_procedure_injection(tmp_path):
 
 
 @pytest.mark.parametrize("codex", [False, True])
-@pytest.mark.parametrize("prompt", ["通常の入力", "/agent-toolkit:process-wi", "/process-wi"])
+@pytest.mark.parametrize("prompt", ["通常の入力", "/agent-toolkit:atk-mode process-wi", "/atk-mode process-wi"])
 def test_python_hook_names_only_claude_session(tmp_path: pathlib.Path, codex: bool, prompt: str) -> None:
     """Claude CodeはPythonのcommand hookが種別と計画名を設定し、Codexはホストの命名を保つ。"""
     sid = "python-title"

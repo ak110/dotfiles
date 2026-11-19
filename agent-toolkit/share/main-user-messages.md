@@ -8,7 +8,7 @@
 
 ## 目的との一致と方針の保持
 
-成果物作成前に`work-contract.md`で契約を作り、通常対話の目標から作業を構成する。
+成果物作成前に`agent-toolkit:atk-mode/references/work-contract.md`で契約を作り、通常対話の目標から作業を構成する。
 追加発話・工程境界・圧縮後も同書で目的・現行要求を復元する。
 採用案の維持が目的化したら、縮小・撤回・代替案も比較する。
 
@@ -42,7 +42,7 @@
 
 説明・報告・確認は`agent-basics:writing-standards/references/writing.md`の品質基準に従い、結論・補足の順に書く。
 未達・失敗・予想との差・判断理由・制約・必要な証拠は残す。
-報告・レビュー前の記録と指摘時の比較は`work-contract.md`「記録する内容」に従う。
+報告・レビュー前の記録と指摘時の比較は`agent-toolkit:atk-mode/references/work-contract.md`「記録する内容」に従う。
 
 案・回答・報告・確認の前に想定反論・考慮漏れを調べ、自力で直す。
 確認では次も点検する。

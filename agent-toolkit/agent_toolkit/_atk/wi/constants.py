@@ -20,7 +20,8 @@ PROCESS_LOOP_GOAL_BODY = (
 統括自身の担当範囲を主語にし、正当な先送りで終える回と、統括の終了後に常駐が行う検収を区別して示す。
 括弧書きは起動にホストの`/goal`を使っていた時期に字義解釈の誤拒否へ備えて加えたもので、
 セッション記録から過去の統括を判別する`session_records.py`が同じ本文を使うため変えずに保つ。
-工程と終了条件はprocess-wiの`references/all-repos.md`「結果と終了」が所有する。
+工程と終了条件は`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」が所有する。
+子セッションの目的文は、この本文の後ろへ入口`atk-mode`の起動の文（`skill_modes.entry_launch`）を続ける。
 最初のプロンプトを組み立てる側と、セッション記録から統括を判別する側が同じ値を使う。
 最初のプロンプトは`atk-auto`要素で囲むため、記録側は本文の包含で判定する。
 """
@@ -28,7 +29,7 @@ PROCESS_LOOP_GOAL_BODY = (
 OBSERVATION_RESUME_HEADING = "反映後の観測の再開記録"
 """反映後の観測だけが残るAWIへprocess-wiが追記する再開記録のH2見出し名。
 
-書式は`agent-toolkit/skills/process-wi/references/finish-session.md`のテンプレートが定め、
+書式は`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「反映後の観測の再開記録」のテンプレートが定め、
 メインは最後の同名節を再開記録として読む。`atk serve`の一覧も同じ読み方で表示を決める。
 """
 

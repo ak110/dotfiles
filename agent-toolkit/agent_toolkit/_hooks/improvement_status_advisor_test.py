@@ -21,7 +21,7 @@ def _guidance_documents() -> list[pathlib.Path]:
     return [
         basics / "skills/bugfix/references/prevention.md",
         root / "skills/delegation/references/waiting-and-monitoring.md",
-        root / "skills/process-wi/references/immediate-fix.md",
+        root / "skills/atk-mode/playbooks/process-wi-immediate-fix.md",
     ]
 
 

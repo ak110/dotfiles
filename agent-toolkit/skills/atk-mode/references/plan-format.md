@@ -51,7 +51,7 @@ H1直下の要約は、全体像、目的、対象範囲の順に短く書き、
 計画メタ情報の項目、順序、書式は本書「初回起草の雛形」のとおりとする。
 
 - `作業種別`は、バグ対応の要求単位が1件でもあれば`バグ対応`とし、その時`## 検証`は全ての要求単位の変更対象を覆う。
-- `対象リポジトリ`は、`plan-check`の`--work-dir`のGitルートと同じ値にする（`agent-toolkit:process-wi`のレーンでは専用worktreeの絶対パス）。
+- `対象リポジトリ`は、`plan-check`の`--work-dir`のGitルートと同じ値にする（`agent-toolkit:atk-mode`の作業`process-wi`のレーンでは専用worktreeの絶対パス）。
 
 ## 実施内容
 
@@ -139,7 +139,7 @@ H1直下の要約は、全体像、目的、対象範囲の順に短く書き、
   commitは一意に特定できる短縮OIDで書く。
 - 実装を始めた後は、次の工程を判断できる情報（commitの完了、変更範囲の検証の結果、実行レビューの完了、全体の完了判定、専用worktreeの絶対パス、専用branch名、回収する資源など）を順に追記する。
 - WI実装commitの対応は、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従って対応記録ファイルへ保存し、進捗ログには行だけを追記する。
-- `agent-toolkit:process-wi`のレーンでは、統合工程の行の`結果・特記事項`へ`レーン稼働時間: <秒数>秒`と、`agent-toolkit:process-wi/references/selection-format-prediction.md`「予測補正記録」の書式の記録を置く。
+- 作業`process-wi`のレーンでは、統合工程の行の`結果・特記事項`へ`レーン稼働時間: <秒数>秒`と、`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「予測補正記録」の書式の記録を置く。
   秒数と完了時刻は、`atk lane integrate`が算出した値を最終化コマンドの引数参照から取る（手で仮の値を入れると次回の選定の予測が狂う）。
 - 完了報告を作るエージェントは、完成条件ごとに達成の根拠か未達の理由を最終行へ記録する。
 

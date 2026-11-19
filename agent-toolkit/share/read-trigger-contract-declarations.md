@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| メインの作業契約が未作成で、作成手順を確認する前 | `work-contract.md` |
+| メインの作業契約が未作成で、作成手順を確認する前 | `agent-toolkit:atk-mode/references/work-contract.md` |
 
 ## 表と取得方法
 
@@ -87,7 +87,7 @@
 
 `input:作業契約`は、通常タスクや委譲の公開入力である`whole_contract_path`、または既存の正式な解決結果へ接続する。
 起動入力が無いメインは自身のmanaged-temp直下のwork-contract.mdを解決元にする。
-未作成の場合は期待パスを示す警告に従い、`work-contract.md`「作成と所有」に基づいて作成し、全文を取得する。
+未作成の場合は期待パスを示す警告に従い、`agent-toolkit:atk-mode/references/work-contract.md`「作成と所有」に基づいて作成し、全文を取得する。
 解決した現行の本文を委譲プロンプトに含め、実在するパス、本文のハッシュ値、入力識別子を共通のstartup-documentとして渡す。
 受領側は会話圧縮後も同じ入力から再配送する。
 `project-skill`は、呼出側が確定させてReadツールや静的な全文読取へ渡した`SKILL.md`の実体を使用する。

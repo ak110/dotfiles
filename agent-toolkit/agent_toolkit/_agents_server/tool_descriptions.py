@@ -206,7 +206,7 @@ WHOLE_CONTRACT_PATH_DESCRIPTION = parameter_description(
     "task・delegateで受理する。役割指定taskでは内部の起動設定を判別せず渡せる。"
     "軽量役割のtaskは指定値を参照せず、契約本文・専用記録を追加しない。"
     "自由本文のexplore・write・shellとhandoff_fromでは指定しない。"
-    "担当へ参照を配送する全体作業契約（`share/work-contract.md`の記録）の絶対パス。"
+    "担当へ参照を配送する全体作業契約（`skills/atk-mode/references/work-contract.md`の記録）の絶対パス。"
     "初回を含む通常起動では、呼出側が保持する現行の全体作業契約の絶対パスを指定する。"
     "省略時は互換のためサーバーが、直接の委譲元が受領済みの参照、委譲元の会話のmanaged-tempの`work-contract.md`の順に解決する。"
     "委譲先がさらに委譲する場合も受領済みの参照を継承する。"

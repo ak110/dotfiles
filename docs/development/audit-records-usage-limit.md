@@ -62,7 +62,7 @@ atk run-script session-review-evidence -- --claude-session-id '<対象session ID
   購読者の判別手段は`codex app-server generate-json-schema --out <ディレクトリ>`のClientRequestで確認する。
   実上限からの解除時刻での再開は観測していない
 
-## agent-toolkit/skills/process-wi/references/all-repos-orchestration-resources.md：登録集合：2026年11月12日
+## agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos.md：登録集合：2026年11月12日
 
 - 観測日: 2026年11月12日
 - 観測した版数: agent-toolkit 2.257.0、実装commit 784f3126c

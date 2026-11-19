@@ -21,7 +21,7 @@ CIの通過と公開の成功は、終了状態を決める主体の出力で確
 | 既存の判断基準どおり | push・CIまでの工程に続けて、プロジェクト規範によるリリース判定と、認可済みのプロジェクト固有の公開後の操作まで行う |
 
 PRの作成、リリースの作成、タグ付けを依頼が明示した場合は、本書「プロジェクト固有の公開後の操作とリリース」の操作として扱う。
-`agent-toolkit:process-wi`（`single-lane`を含む）では、同スキルが定める自律モードの公開範囲を適用する。
+`agent-toolkit:atk-mode`の作業`process-wi`（`single-lane`を含む）では、同作業の手順書が定める自律モードの公開範囲を適用する。
 
 ## 版数と生成物
 
@@ -34,7 +34,7 @@ PRの作成、リリースの作成、タグ付けを依頼が明示した場合
      後方互換の破壊を外部へ宣言する操作であり、認可を要する。
    - 3数値のSemVerでない版は、プロジェクトの対応表かユーザーの明示の指示に従う。
      手がかりが無ければ版数を変えず、判定できない根拠を報告する。
-3. `agent-toolkit:process-wi`の完了担当は、未pushの追加差分と公開済みの版数を比べて更新し、公開済みの成果を重複して数えない。
+3. `agent-toolkit:atk-mode`の作業`process-wi`の完了担当は、未pushの追加差分と公開済みの版数を比べて更新し、公開済みの成果を重複して数えない。
    追加差分の無い再検収では版数の更新とpushを省き、同じ公開先とcommitのCIを検収済みなら待機も省く。
    CIが未判定なら本書「公開工程の続行不能からの再開」へ進む。
 
@@ -54,7 +54,7 @@ PRの作成、リリースの作成、タグ付けを依頼が明示した場合
 4. push前のチェックと全体検証は出力が多いため、標準出力と標準エラーをmanaged-tempへ保存する分離実行（`agents_server`の`start`の`shell`など）で行う。
    公開担当は、保存した出力の実在、内容、終了コード0を検収する。
 5. チェックの失敗と、設定の未適用や処理の未完了を示す警告は、続けられない原因として`agent-basics:bugfix`で扱い、認可の範囲内で直す。
-   `agent-toolkit:process-wi`の完了担当のCI修正は、`agent-toolkit:process-wi/references/termination-ci-failure.md`「検証またはCIの失敗」に従う。
+   `agent-toolkit:atk-mode`の作業`process-wi`の完了担当のCI修正は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「検証またはCIの失敗」に従う。
 
 検証の分担を確かめた記録は、`docs/development/audit-records-commit-environment.md`の次の節にある。
 
@@ -94,7 +94,7 @@ PRの作成、リリースの作成、タグ付けを依頼が明示した場合
 ### pushと監視
 
 1. 引数なしの方式では`git push`を単独で実行し、引数を明示する方式では、成功したdry-runのコマンドラインから`--dry-run --porcelain`を除いた同じ引数でpushする。
-2. 作業refの先行CI（`agent-toolkit:process-wi/references/ci-fix-series.md`「修正系列」）の結果は、検証したSHA、ref、ジョブの範囲だけに適用し、正式公開のrefのcheck集合は別に検収する。
+2. 作業refの先行CI（`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正系列」）の結果は、検証したSHA、ref、ジョブの範囲だけに適用し、正式公開のrefのcheck集合は別に検収する。
 3. push後は、`agent-toolkit:atk-mode/references/ci.md`「CIの待機」でCIを待ち、CI定義なしとCI実行対象外は同書「公開先に対応するCI定義の判定」で受理する。
    失敗は同書「選択の流れ」で扱う。
 4. CIを照会できない時は、完了したpushと公開状態を保ち、本書「公開工程の続行不能からの再開」へ進む。
@@ -116,7 +116,7 @@ push・CIの確認の後に、ベースブランチへの変更が公開され�
 
 1. 監視の終了と公開の成功を区別して後続へ渡す。
    終了状態は、CI成功、CI定義なし、CI実行対象外、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断のどれかである。
-2. `agent-toolkit:process-wi`の完了担当は、検収できた`CI成功`と`CI定義なし`、ローカル全体検証の成功と非生成の証拠を確かめた`CI実行対象外`を、完了報告の`CIの結果`として返す。
+2. `agent-toolkit:atk-mode`の作業`process-wi`の完了担当は、検収できた`CI成功`と`CI定義なし`、ローカル全体検証の成功と非生成の証拠を確かめた`CI実行対象外`を、完了報告の`CIの結果`として返す。
    それ以外は既存の`続行できない理由:`に理由を書き、CIの照会不能か公開後の操作の前提不足に当たる場合は、本書「公開工程の続行不能の受渡し」の記録も含める。
 
 ## プロジェクト固有の公開後の操作とリリース

@@ -51,10 +51,10 @@ OpenCodeも同節を1回だけ注入する。
 Codexの列における`share/rules/common/`配下および`share/rules/rules-common.codex.md`の値は、`~/.codex/AGENTS.md`が配置されている環境に限定される（このファイルはCodex単体のインストーラーによる配置対象外である）。
 Antigravityの委譲先は、対応する起動区分において`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読み込む。
 表中のAntigravityの軽量起動列は、`explore`、`write`、`shell`に適用する。
-`atk wi process-loop`が対話CLIで起動する`agent-toolkit:process-wi all-repos`の統括担当は、対応するホストのメインの列の配送を受ける。
+`atk wi process-loop`が対話CLIで起動する`agent-toolkit:atk-mode`の作業`process-wi all-repos`の統括担当は、対応するホストのメインの列の配送を受ける。
 統括担当が`agents_server`で起動するリポジトリ担当は、`task`と`delegate`の列の配送を受ける。
 リポジトリ担当は着手時に`share/rules/rules-main.md`とホスト別の`rules-main.*.md`を明示的に読む。
-対象リポジトリのメインとしての責務は、`../../process-wi/references/all-repos-orchestration-roles.md`「担当の役割」が定める。
+対象リポジトリのメインとしての責務は、`../../atk-mode/playbooks/process-wi-all-repos.md`「担当の役割」が定める。
 全backendのexploreは通常の読取コマンドと読取MCPを使用し、変更禁止の責務を共通プロンプトで伝達する。
 Codexはプラグイン由来のスキルを非配送とし、pyfltr MCPを配布定義から直接MCP設定へ渡す。
 CodexとClaudeの`explore`、`write`、`shell`への開始・再開指示には、serverが使用する実在のPython 3起動情報も添える（標準ライブラリのみを用いる短い照会用であり、実行権限を追加するものではない。通常の`delegate`とAntigravityは対象外）。
@@ -72,7 +72,7 @@ Antigravityのプラグイン配送は`antigravity_plugin.py`、起動指示はA
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos-orchestration-roles.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../atk-mode/playbooks/process-wi-all-repos.md` |
 
 ## Antigravityの通常起動
 

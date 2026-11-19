@@ -151,7 +151,12 @@ def test_claude_read_truncated_or_other_document_is_not_evidence(tmp_path: pathl
 @pytest.mark.parametrize(
     ("tool_name", "tool_input", "codex", "label"),
     [
-        ("Skill", {"skill": "agent-toolkit:process-wi"}, False, "agent-toolkit:process-wiの開始"),
+        (
+            "Skill",
+            {"skill": "agent-toolkit:atk-mode", "args": "process-wi all-repos"},
+            False,
+            "agent-toolkit:atk-mode process-wiの開始",
+        ),
         (
             "Skill",
             {"skill": "agent-toolkit:atk-mode", "args": "add-awi-by-user https://example.com/a"},
@@ -225,16 +230,23 @@ def test_bundled_commit_values_reach_public_completion_evidence(tmp_path, codex,
 
 
 def test_codex_target_skill_read_is_deliverable(tmp_path: pathlib.Path) -> None:
-    """Codexが対象スキルの`SKILL.md`を実際に読んだ記録を、対象スキルの開始として扱う。"""
-    text = "---\nname: process-wi\n---\n\n# WI処理\n"
-    skill = tmp_path / "plugin/skills/process-wi/SKILL.md"
+    """Codexが入口の作業の手順書を実際に読んだ記録を、その作業の開始として扱う。"""
+    text = "# AWIの処理\n\n本文\n"
+    skill = tmp_path / "plugin/skills/atk-mode/playbooks/process-wi.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(text, encoding="utf-8")
     manifest = tmp_path / "plugin/.claude-plugin/plugin.json"
     manifest.parent.mkdir()
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    _tool(tmp_path, "start", "Bash", {"command": "sed -n '1,200p' plugin/skills/process-wi/SKILL.md"}, text, codex=True)
-    assert "agent-toolkit:process-wiの開始" in _missing_completion(tmp_path)
+    _tool(
+        tmp_path,
+        "start",
+        "Bash",
+        {"command": "sed -n '1,200p' plugin/skills/atk-mode/playbooks/process-wi.md"},
+        text,
+        codex=True,
+    )
+    assert "agent-toolkit:atk-mode process-wiの開始" in _missing_completion(tmp_path)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True)) == ("approve", "")
 
 

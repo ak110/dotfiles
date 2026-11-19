@@ -1,6 +1,6 @@
 r"""成果作業で完了報告の手順書（入口`atk-mode`の`playbooks/report-completion.md`）の読取を忘れた終了をStopフックで検出する。
 
-成果作業（成功した`agent-toolkit:process-wi`と入口の作業`add-awi-by-user`の開始、リポジトリへの自編集、
+成果作業（入口`atk-mode`の作業`process-wi`と`add-awi-by-user`の開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行）を行った作業で、最後の会話圧縮以降の読込証拠が無く、
 有効なプロジェクト規範による省略も無い場合は、手順書の読取と残工程への続行を一度通知する。
 読込証拠は、主体別の共通取得記録にある手順書の取得（Claude Codeの`Read`、Codexの読取）と、

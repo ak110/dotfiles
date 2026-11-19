@@ -52,7 +52,8 @@ _AGENT_REMOVE_NEXT_ACTION = "削除はユーザーへ依頼する。不要にな
 _AGENT_PROCESSING_HOLD_NEXT_ACTION = (
     "別セッションが処理中の要求を改訂する場合は保留せず、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」の処理中の項目の扱いに従い、"
     "書き換えたい内容を新しい項目として投入するか`atk wi edit --append`で追記する。"
-    "自セッションの`agent-toolkit:process-wi`が処理中の項目を回答待ちなどで保留する場合は`--state=processing`を付けて再実行する"
+    "自セッションの作業`process-wi`（`/atk-mode process-wi`）が処理中の項目を回答待ちなどで保留する場合は"
+    "`--state=processing`を付けて再実行する"
 )
 
 _IMPLICIT_TERMINAL_STATE_PRIORITY = (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)
@@ -669,7 +670,7 @@ def cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, n
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
     保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
-    （`agent-toolkit:process-wi`の選定手順「処理対象WIの追加」参照）。
+    （`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」参照）。
     位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:

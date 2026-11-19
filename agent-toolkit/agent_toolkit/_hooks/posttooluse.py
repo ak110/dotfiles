@@ -85,9 +85,6 @@ def _executable_name(token: str) -> str:
 
 # --- スキル呼び出し検出 ---
 
-# process-wiスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
-_PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
-
 # --- ユーザーが書いた文への注記 ---
 
 VERIFICATION_NOTICE_BODY = (
@@ -150,16 +147,6 @@ _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 
 # --- plan fileの書式を判定する定数 ---
-
-
-def _set_process_wi_invoked(state: dict) -> dict | None:
-    """process-wiスキル起動フラグを常時Trueへ上書きする。
-
-    新しいprocess-wiの実行の開始時に、前回の実行が残したフラグの値によらずTrueへ上書きするため、既に真でも書き込む。
-    フラグのリセットは`_reset_process_wi_invoked`（exit-session起動検知）が担い、本関数と対で使う。
-    """
-    state["process_wi_skill_invoked"] = True
-    return state
 
 
 def _reset_process_wi_invoked(state: dict) -> dict | None:
@@ -343,14 +330,6 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
         return state
 
     update_state(session_id, _append)
-
-
-def _record_skill_use(session_id: str, skill_name: object) -> None:
-    """Skill呼び出しに対応するセッション状態を記録する。"""
-    if not isinstance(skill_name, str):
-        return
-    if skill_name in _PROCESS_WI_SKILL_NAMES:
-        update_state(session_id, _set_process_wi_invoked)
 
 
 def _free_text_answers(tool_response: object) -> list[str]:
@@ -546,8 +525,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     if content_notice not in notices:
                         notices.append(content_notice)
     elif tool_name == "Skill":
-        # Skill: process-wi起動検出
-        _record_skill_use(session_id, tool_input.get("skill"))
+        # Skill: 表示名のための作業の起動検出
         skill = tool_input.get("skill")
         if not payload.get("agent_id") and isinstance(skill, str):
             arguments = tool_input.get("args")

@@ -104,7 +104,7 @@ def _evaluate_delivered(payload: str) -> tuple[str, str]:
 @pytest.mark.parametrize(
     ("skill", "arguments", "label"),
     [
-        ("agent-toolkit:process-wi", None, "agent-toolkit:process-wiの開始"),
+        ("agent-toolkit:atk-mode", "process-wi", "agent-toolkit:atk-mode process-wiの開始"),
         ("agent-toolkit:atk-mode", "add-awi-by-user 入力", "agent-toolkit:atk-mode add-awi-by-userの開始"),
     ],
 )
@@ -128,13 +128,13 @@ def test_notifies_target_skill_without_completion_report_once(
 def test_completion_before_target_restart_is_reused_until_compact(tmp_path: pathlib.Path, compact: bool) -> None:
     """新しい依頼でも文脈内の読込を再利用し、圧縮で本文が失われた場合だけ再案内する。"""
     trace = _write_transcript(tmp_path, [])
-    _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_1")
+    _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_1", arguments="process-wi")
     _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_2", arguments="report-completion")
     if compact:
         rules_context.reset_main_operation_skill_ready("sess-second")
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(json.dumps({"session_id": "sess-second", "turn_id": "again", "prompt": "もう一度処理する"}))
-    _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_3")
+    _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_3", arguments="process-wi")
     assert termination_order_advisor.evaluate(_payload("sess-second", str(trace)))[0] == ("notify" if compact else "approve")
 
 

@@ -178,7 +178,7 @@ async def test_start_input_rejection_points_to_owning_contract(
     root = source
     contract_relative = {
         "exec": pathlib.Path("share/exec.parent.md"),
-        "repository-process": pathlib.Path("skills/process-wi/references/all-repos.md"),
+        "repository-process": pathlib.Path("skills/atk-mode/playbooks/process-wi-all-repos.md"),
         "add-wi": pathlib.Path("skills/atk-mode/roles/add-wi.parent.md"),
     }[role]
     if placement == "sectionless" and role == "repository-process":

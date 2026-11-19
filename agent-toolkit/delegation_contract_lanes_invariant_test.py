@@ -7,6 +7,7 @@ import pytest
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
+from agent_toolkit._common import read_triggers
 from agent_toolkit._plan import selection
 from agent_toolkit._testing.delegation_contract_support import (
     _LAUNCH_TARGET_PREFIX,
@@ -46,20 +47,19 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
     未取得の事実の収集だけを読み取り専用の探索へ渡し、状態を変える`atk wi`の操作を含めない。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
-    explanation_path = plugin_root / "skills" / "process-wi" / "references" / "selection-explanation.md"
-    explanation = explanation_path.read_text(encoding="utf-8")
+    playbooks = plugin_root / "skills" / "atk-mode" / "playbooks"
+    explanation = (playbooks / "process-wi-selection-explanation.md").read_text(encoding="utf-8")
     selection_text = _selection_documents(plugin_root)
-    question_route = _h2_section(_selection_procedure(plugin_root), "読込表")
-    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    entry = (playbooks / "process-wi.md").read_text(encoding="utf-8")
+    question_route = next(line for line in entry.splitlines() if line.startswith("| ") and "含めた理由、除外した理由" in line)
 
     assert not (plugin_root / "share" / "pick-wi-explain.subagent.md").exists()
     assert _LAUNCH_TARGET_PREFIX not in explanation
     assert "説明はメインエージェント自身が担当する" in explanation
     assert "`mode: explore`" in explanation
-    assert "selection-explanation.md" in question_route
+    assert "process-wi-selection-explanation.md" in question_route
     assert "## 選定理由の説明" not in selection_text
     assert not re.search(r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explanation)
-    assert "selection-procedure.md" in lanes and "含めた理由、除外した理由" in lanes
 
 
 def test_write_files_contract_reaches_selection_output_and_receipt() -> None:
@@ -106,19 +106,11 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     テンプレートへ区分値を加えたときに採否の確定と終了区分がその値の扱いを持たないと、送った記録の扱いが定まらない。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
-    finish = read_contract(
-        plugin_root / "skills/process-wi/references/finish-session.md",
-        plugin_root,
-        ("finish-session-observation.md", "延期adoptと反映後の観測"),
-    )
+    playbooks = plugin_root / "skills" / "atk-mode" / "playbooks"
+    finish = (playbooks / "process-wi-observation.md").read_text(encoding="utf-8")
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    lanes = read_contract(
-        plugin_root / "skills/process-wi/references/run-lanes.md",
-        plugin_root,
-        ("run-lanes-completion.md", "採否の確定と終了区分"),
-        ("run-lanes-integration.md", "統合とAWI終了"),
-    )
+    lanes = (playbooks / "process-wi-lanes.md").read_text(encoding="utf-8")
 
     templates = [block.split("```", maxsplit=1)[0] for block in finish.split("```markdown\n")[1:]]
     heading = templates[0].splitlines()[0]
@@ -168,20 +160,23 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    explanation = (plugin_root / "skills" / "process-wi" / "references" / "selection-explanation.md").read_text(
-        encoding="utf-8"
-    )
-    lanes = read_contract(
-        plugin_root / "skills/process-wi/references/run-lanes.md", plugin_root, ("run-lanes-launch.md", "レーンと資源")
-    )
+    playbooks = plugin_root / "skills" / "atk-mode" / "playbooks"
+    explanation = (playbooks / "process-wi-selection-explanation.md").read_text(encoding="utf-8")
+    lanes = _h2_section((playbooks / "process-wi-lanes.md").read_text(encoding="utf-8"), "レーンと資源")
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
-    completion = (plugin_root / "skills/process-wi/references/all-repos-completion.md").read_text(encoding="utf-8")
+    completion = (plugin_root / "skills/atk-mode/playbooks/process-wi-all-repos-results.md").read_text(encoding="utf-8")
     assert "すべての先行レーンの統合完了後に" in lanes
-    assert "`all-repos-completion.md`「結果と終了」の手順10で後続の先行条件を再判定する" in lanes
+    assert (
+        "`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」の手順10で後続の先行条件を再判定する"
+        in lanes
+    )
     assert "先行工程を正当な理由で次の巡回へ回す場合" in lanes
     assert "先行成果が必要な後段は統合完了まで待ち" in lanes
-    assert "成果不要の読み取り専用準備は`lane-resources.md`「後段レーンの先行調査」で前倒しする" in lanes
+    assert (
+        "成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする"
+        in lanes
+    )
     assert "書込競合だけで後段にした工程など先行成果を要さない工程は" in completion
     assert "今回の巡回で実装・検証まで進める" in completion
     assert "先行を次の巡回へ回し後段を今回進めると判定した時に" not in lanes
@@ -198,9 +193,7 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    lanes = read_contract(
-        plugin_root / "skills/process-wi/references/run-lanes.md", plugin_root, ("run-lanes-upstream.md", "上流投入")
-    )
+    lanes = (plugin_root / "skills/atk-mode/playbooks/process-wi-additions.md").read_text(encoding="utf-8")
     output = _selection_format(plugin_root)
     rows = [[cell.strip() for cell in line.strip("|").split("|")] for line in output.splitlines() if line.startswith("| `")]
     contract = {row[0].split("`")[1]: row[1] for row in rows[1:] if len(row) == 3}
@@ -209,7 +202,7 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
     assert "保存前には" in output and "3行について省略時の値を解決" in output
     generation = _h2_section(selection_text, "反映先と上流投入")
     receipt = _h2_section(parent, "保存後の意味検収")
-    assert "selection-format.md" in generation
+    assert "process-wi-selection-format.md" in generation
     assert "組み合わせ条件を満たしているかを検収" in receipt and "修正して再チェック" in receipt
     assert "`上流要求だけ`（`レーン`が`なし`）" in _h2_section(lanes, "上流投入")
 
@@ -226,10 +219,10 @@ def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
     plugin_root = pathlib.Path(__file__).resolve().parent
     plan = (plugin_root / "skills" / "atk-mode" / "playbooks" / "write-plan.md").read_text(encoding="utf-8")
     plan_steps = _h2_section(plan, "進め方")
-    lane_row = next(line for line in plan_steps.splitlines() if line.startswith("| `agent-toolkit:process-wi`"))
+    lane_row = next(line for line in plan_steps.splitlines() if line.startswith("| `agent-toolkit:atk-mode`の作業`process-wi`"))
     lane_steps = _lane_planning_contract(plugin_root)
 
-    assert "references/lane-planning.md" in lane_row and "待機条件" in lane_row
+    assert "process-wi-execution.md" in lane_row and "待機条件" in lane_row
     assert "計画作成完了" not in lane_row
     assert "委譲元の応答を待って" not in lane_row
     assert "--selection-file" in lane_steps and "--lane" in lane_steps
@@ -305,23 +298,19 @@ def test_lane_launch_inputs_reach_lane_owner() -> None:
 def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
     """公開後操作の前提不足を受領し、同じcommitの未完了操作へ戻す。"""
     root = pathlib.Path(__file__).resolve().parent
-    parent = (root / "share/session-termination.parent.md").read_text(encoding="utf-8")
-    finish = read_contract(
-        root / "skills/process-wi/references/finish-session.md",
-        root,
-        ("finish-session-recovery.md", "公開工程の続行不能の回復と再開"),
-    )
+    parent = (root / "skills/atk-mode/roles/session-termination.parent.md").read_text(encoding="utf-8")
+    finish = (root / "skills/atk-mode/playbooks/process-wi-publishing.md").read_text(encoding="utf-8")
     publish = (root / "skills/atk-mode/playbooks/publish.md").read_text(encoding="utf-8")
     receipt = _h2_section(parent, "受領と検収")
-    assert "公開後操作の前提不足" in receipt
-    assert "「公開工程の続行不能の回復と再開」へ処理を引き渡す" in receipt
+    assert "公開後の操作の前提不足" in receipt
+    assert "「公開工程の続行不能の回復と再開」へ渡し" in receipt
     assert "push前の工程" in receipt
     assert "CI以外の続行不能は、失敗した工程の既存手順で回復" not in receipt
     restart = _h2_section(finish, "公開状態の検収と再起動")
-    unfinished = next(line for line in restart.splitlines() if "新たなコミットが存在せず、公開後操作のみが未完了の場合" in line)
-    assert "未完了の公開後操作のみを再開する" in unfinished
-    completed = next(line for line in restart.splitlines() if "再起動は行わず、そのまま報告処理へ進む" in line)
-    assert "CIの検収および公開後操作がすべて完了している場合" in completed
+    unfinished = next(line for line in restart.splitlines() if "新しいcommitが無く、公開後の操作だけが未完了の場合" in line)
+    assert "未完了の公開後の操作だけを再開する" in unfinished
+    completed = next(line for line in restart.splitlines() if "再起動せずに報告へ進む" in line)
+    assert "CIの検収と公開後の操作が全て済んだ場合" in completed
     recovery = _h2_section(publish, "公開工程の続行不能からの再開")
     assert "CI結果、および正常終了した公開後操作の内容は確実に保持する" in recovery
     assert "未完了の工程のみを再開" in recovery
@@ -332,21 +321,20 @@ def test_publication_recovery_references_resolve_to_shared_sections() -> None:
     """続行不能の送信側と受信側が、実在する同じ回復節へ接続する。"""
     root = pathlib.Path(__file__).resolve().parent
     publish = "skills/atk-mode/playbooks/publish.md"
-    finish = "skills/process-wi/references/finish-session-recovery.md"
-    read_contract(
-        root / "skills/process-wi/references/finish-session.md",
-        root,
-        ("finish-session-recovery.md", "公開工程の続行不能の回復と再開"),
-    )
+    finish = "skills/atk-mode/playbooks/process-wi-publishing.md"
     routes = [
         (publish, publish, "公開工程の続行不能の受渡し"),
         (publish, publish, "公開工程の続行不能からの再開"),
         (finish, publish, "公開工程の続行不能からの再開"),
-        ("share/session-termination.parent.md", finish, "公開工程の続行不能の回復と再開"),
-        ("share/session-termination.subagent.md", publish, "公開工程の続行不能の受渡し"),
+        ("skills/atk-mode/roles/session-termination.parent.md", finish, "公開工程の続行不能の回復と再開"),
+        ("skills/atk-mode/roles/session-termination.subagent.md", publish, "公開工程の続行不能の受渡し"),
     ]
-    for source, target, heading in routes:
-        source_text = (root / source).read_text(encoding="utf-8")
-        target_text = (root / target).read_text(encoding="utf-8")
-        assert f"「{heading}」" in source_text, source
-        assert f"\n## {heading}\n" in target_text, target
+    with read_triggers.resolution_scope():
+        for source, target, heading in routes:
+            resolved = [
+                found
+                for _number, line, visible in read_triggers.document_lines((root / source).read_text(encoding="utf-8"))
+                if visible and f"「{heading}」" in line
+                for found in read_triggers.material_targets(line, root / source, root, references_only=True)
+            ]
+            assert any(found.path == root / target and found.body() for found in resolved), source

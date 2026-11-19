@@ -141,7 +141,7 @@ def _run_plan_cli(
 _RESUMED_AWI = "20260831-000000-002.md"
 
 
-# メインがAWI本文の再開記録から返す観測のみの再開位置（`selection-format.md`「選定結果の書式」の書式）。
+# メインがAWI本文の再開記録から返す観測のみの再開位置（`process-wi-selection-format.md`「選定結果の書式」の書式）。
 _OBSERVATION_RESUME = "反映後の観測だけが残る（再開記録: AWI本文の最後の`## 反映後の観測の再開記録`、計画: {plan}）"
 
 

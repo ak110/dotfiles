@@ -21,7 +21,7 @@ dirtyな証拠の本文・条件をレーンが検収する判断と、CLIがcle
 レーン数によらず、実装と工程調整を各レーンの同じ担当へ集約し、メインの定型受領を省く。
 2026年10月25日に複数レーンへ広げた（ユーザー指示。メインとレーン担当が同じ計画・レビュー結果を読んで同じ判断を組み立てる重複を避けるため）。
 複数レーンでは、メインがレーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの統合の許可（`統合許可`）と最終結果の検収を所有する。
-共通契約は`agent-toolkit/share/single-lane-execution.md`が持ち、process-wiとprocess-wi single-laneの両方が使う。
+共通契約は`agent-toolkit/skills/atk-mode/playbooks/process-wi-execution.md`が持ち、process-wiとprocess-wi single-laneの両方が使う。
 CLIだけの短縮は担当境界を残し、主作業ツリーへの直接実装は隔離を失うため、専用worktreeと実行レビューを保つ集約を採用する。
 1レーンでも隔離・独立文脈レビュー・検証を保ち、準備は`atk lane create`、統合と最終化は`atk lane integrate`へ集約する。
 既存のlane recordとレビュー済みHEAD、統合先、順序付き全計画・WI・再検証・計画なしの引き継ぎを渡す。
@@ -44,7 +44,7 @@ cwdと`launch_kind`だけでは統合先をcwdとする`delegate`の担当が書
 計画保存とWI終了の後に完了記録を別に実行する二段階案は、終了後のAWIを編集できず、保存済み計画の再保存を伴うため採らない。
 計測から外れるのはGit統合後の保存・終了の所要だけである。
 選定の統合済みは、確定値を受け取る記録を含む全最終化操作の成功後に記録する。
-実行契約は[run-lanes.md](../../agent-toolkit/skills/process-wi/references/run-lanes.md)と`agent-toolkit/share/exec.parent.md`が持つ。
+実行契約は[`agent-toolkit:atk-mode/playbooks/process-wi.md`](../../agent-toolkit/skills/atk-mode/playbooks/process-wi.md)と`agent-toolkit/share/exec.parent.md`が持つ。
 
 準備・連絡・統合・回収の費用は、同じruntime・モデル・入力WI・開始commitと隔離キューで、1レーンのprocess-wiとprocess-wi single-laneを終了まで動かして比較する。
 共通の実装・レビュー・公開を運用部分と分け、親と全委譲先の取得可能なトークン・キャッシュ・呼出数と不足を保持する。

@@ -57,12 +57,12 @@ agent-toolkitの作業の入口である。
 
 起動の形は`/atk-mode <作業> [入力]`とする。
 作業の指定が無い起動は、対話での一般の作業として扱う。
-移行前の作業（`process-wi`、`review-session`、`export-session`）は、今のスキルを同じ引数で起動する。
+移行前の作業（`review-session`、`export-session`）は、今のスキルを同じ引数で起動する。
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
 | `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md` |
-| `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | スキル`agent-toolkit:process-wi` |
+| `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md` |
 | `review-session [batch]` | 会話の振り返りを求められた時 | スキル`agent-toolkit:review-session` |
 | `export-session` | 会話の記録の出力を求められた時 | スキル`agent-toolkit:export-session` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `roles/<役割名>.subagent.md`（無ければ`${CLAUDE_PLUGIN_ROOT}/share/`の同名）と`${CLAUDE_PLUGIN_ROOT}/share/rules/rules-subagent.md` |

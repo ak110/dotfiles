@@ -59,10 +59,10 @@ PRの状態を尋ねられただけの時は、状態を1回取得して報告�
    4. 同じ`origin/master`の完全OIDに対応する結果だけを検収の対象とする。
 7. マージ後に到着したレビューを1回だけ確かめる（GitHub Copilotのレビューはマージの後に遅れて届くことがある）。
    `atk review-audit pending --repo <OWNER>/<REPO>`の終了コードが0で、JSONの`reviews`と`threads`が取れて対象PRがどちらにも無ければ、取得を省く。
-   それ以外（対象PRがある、終了コードが0以外、解析できない）は、対象PRのCopilotのレビュー本文とスレッドを1回取得し、取得、判定、GitHubへの記録、判定済みの記録は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`に従って対象PRだけに行う。
-   新しいレビューの要求と到着の待機はしない（未着分は次回以降の`agent-toolkit:process-wi`の選定工程の監査が取得する）。
+   それ以外（対象PRがある、終了コードが0以外、解析できない）は、対象PRのCopilotのレビュー本文とスレッドを1回取得し、取得、判定、GitHubへの記録、判定済みの記録は`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`に従って対象PRだけに行う。
+   新しいレビューの要求と到着の待機はしない（未着分は次回以降の`agent-toolkit:atk-mode`の作業`process-wi`の選定工程の監査が取得する）。
    直すべき指摘は手順3と同じく分け、同じセッションで直す場合は`develop`への通常の変更とし、マージをやり直さず次回のリリースPRで公開する。
-8. `agent-toolkit:process-wi`の終了処理から起動した場合に限り、マージの後に同じセッションで`develop`へ加えた変更は、変更範囲のローカル検証を全て通してからpushし、CIのrunが起動したことを確かめた時点で公開工程を終える（CIの完了は待たない）。
+8. `agent-toolkit:atk-mode`の作業`process-wi`の終了処理から起動した場合に限り、マージの後に同じセッションで`develop`へ加えた変更は、変更範囲のローカル検証を全て通してからpushし、CIのrunが起動したことを確かめた時点で公開工程を終える（CIの完了は待たない）。
    次回のリリースPRで必須チェックを改めて待ち、`master`は必須CIを通ったマージコミットだけで更新されるため、未検証の変更は`develop`に留まる。
    省いたCIのrunのURLを完了報告に書く。
 9. 完了を判定する。

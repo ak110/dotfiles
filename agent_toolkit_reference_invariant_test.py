@@ -63,6 +63,7 @@ _ATK_MODE_RETIRED_SKILLS = (
     "report-completion",
     "workflow-overview",
     "managed-temp",
+    "process-wi",
 )
 
 
@@ -150,6 +151,10 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:exit-session", pathlib.Path("docs/development/audit-records-session-records.md")): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
+    # 作業`process-wi`の修飾名と、それを含む子セッションの目的文の本体。保存値と起動入力の値であり、同名のスキルは無い。
+    (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 1,
+    (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/constants.py")): 2,
+    (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 6,
     # 報告用UWIの`scope`として保存済みの起動単位の名前。同名のスキルは起動しない。
     (f"{_PLUGIN_PREFIX}:wi-standards", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submit.py")): 1,
     # 移行前の起動コマンドを含むセッション記録を読む試験の入力

@@ -24,7 +24,7 @@ SCRIPT_PATHS = {
     "plan-progress": pathlib.Path("skills/atk-mode/scripts/append_progress_log.py"),
     "plan-commits": pathlib.Path("skills/atk-mode/scripts/get_plan_commits.py"),
     "plan-rewrite": pathlib.Path("skills/atk-mode/scripts/rewrite_plan_commits.py"),
-    "pick-wi-check": pathlib.Path("skills/process-wi/scripts/check_selection.py"),
+    "pick-wi-check": pathlib.Path("skills/atk-mode/scripts/check_selection.py"),
     "termination-evidence": pathlib.Path("agent_toolkit/_hooks/termination_evidence.py"),
     "multi-turn-trials": pathlib.Path("skills/refine-prompt/scripts/multi_turn_trials.py"),
     "record-stall-detection": pathlib.Path("skills/delegation/scripts/record_stall_detection.py"),

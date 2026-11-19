@@ -4,11 +4,10 @@
 Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル起動を検出し、
 対応するセッション状態フラグを立てる。
 入口の起動（`/atk-mode <作業> [入力]`）は、作業の名前を持つスキルの手動起動として扱う。
-既存のPostToolUse(Skill)経由の記録では捕捉できない手動起動を補完する。
 
 検出対象スキルと対応フラグ:
 
-- process-wi → `process_wi_skill_invoked`
+- 入口の作業process-wi（`/atk-mode process-wi`）→ `process_wi_skill_invoked`
 
 計画の工程の開始（`plan_mode_skill_invoked`）は、全ホストでPostToolUseが`atk run-script plan-create`の成功から記録する。
 
@@ -50,7 +49,6 @@ from agent_toolkit._hooks.notice import begin_delivery, emit_response, informati
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _PROCESS_WI_SKILL_NAMES,
     content_notices,
 )
 lazy from agent_toolkit._common import (
@@ -65,26 +63,12 @@ lazy from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylin
     PERIODIC_RECHECK_MARKER,
 )
 lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    set_process_wi_invoked,
     update_state,
 )
 lazy from agent_toolkit._hooks import command_timing, session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-
-
-def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
-    """フルスキル名`agent-toolkit:<name>`から短縮名`<name>`を追加した拡張集合を返す。"""
-    extended = set(names)
-    for name in names:
-        if ":" in name:
-            _, short = name.split(":", 1)
-            if short:
-                extended.add(short)
-    return frozenset(extended)
-
-
-# スラッシュコマンド起動時にも検出できるように、フルネームと短縮名の両方を含む拡張集合を組み立てる。
-_PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 
 # ホスト判定後の手動コマンドから<name>を抽出する。
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
@@ -133,13 +117,6 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
     if automated_prompt.contains(prompt):
         return True
     return _is_harness_message(prompt)
-
-
-def _set_process_wi_invoked(state: dict) -> dict | None:
-    if state.get("process_wi_skill_invoked", False):
-        return None
-    state["process_wi_skill_invoked"] = True
-    return state
 
 
 def _emit_hook_output(*, additional_context: str | None, title: str | None = None) -> None:
@@ -273,7 +250,6 @@ def main(payload_text: str) -> int:
             typed_name = full_name
             if not is_delegated(os.environ):
                 full_name, arguments = skill_modes.resolve_work(full_name, arguments)
-            name = full_name.removeprefix("agent-toolkit:")
             # AWI投入はスキルを持たない作業であり、入口の名指しだけで始まる。
             named_by_entry = full_name != typed_name
             if named_by_entry:
@@ -281,9 +257,9 @@ def main(payload_text: str) -> int:
             if not is_codex:
                 session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
 
-            # 対応スキル別にフラグを設定する。
-            if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
-                update_state(session_id, _set_process_wi_invoked)
+            # 自律モードは入口`atk-mode`への作業`process-wi`の名指しだけで立てる（スキル`process-wi`は廃止した）。
+            if named_by_entry and full_name == skill_modes.PROCESS_WI:
+                update_state(session_id, set_process_wi_invoked)
 
     title = None if is_codex else session_title.proposed_title(session_id, payload.get("session_title"))
     if additional_context is not None or title is not None:

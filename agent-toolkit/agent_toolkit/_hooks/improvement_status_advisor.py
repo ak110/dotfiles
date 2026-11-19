@@ -22,7 +22,7 @@ import os
 import pathlib
 import re
 
-from agent_toolkit._common import mcp_environment, read_triggers, runtime_inserted
+from agent_toolkit._common import mcp_environment, read_triggers, runtime_inserted, skill_modes
 from agent_toolkit._common.plugin_roots import resolve_plugin_root
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import document_reads, plugin_resources, rules_context
@@ -141,10 +141,10 @@ def _read_notice(payload: dict, session_id: str, cues: frozenset[str], *, improv
             source = {}
         process_wi = state.get("session_title_kind") in {"process-wi", "single-lane"} or (
             isinstance(source, dict)
-            and (source.get("source") == "process-loop" or source.get("skill") == "agent-toolkit:process-wi")
+            and (source.get("source") == "process-loop" or source.get("skill") == skill_modes.PROCESS_WI)
         )
         if process_wi:
-            wanted.append((root / "skills/process-wi/references/immediate-fix.md", _IMPROVEMENT_PURPOSE))
+            wanted.append((root / "skills/atk-mode/playbooks/process-wi-immediate-fix.md", _IMPROVEMENT_PURPOSE))
     records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
     records = records if isinstance(records, dict) else {}
     # 導入済みの配布物に無い資料は案内しても取得できないため、実在する資料だけを照会する。

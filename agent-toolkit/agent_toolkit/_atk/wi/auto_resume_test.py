@@ -15,6 +15,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import session_records
 from agent_toolkit._atk.wi import auto_resume
+from agent_toolkit._common import skill_modes
 from agent_toolkit._testing import git_repository
 
 
@@ -37,7 +38,7 @@ def _claude_process_wi_record(cwd: pathlib.Path) -> list[dict[str, object]]:
             "message": {
                 "role": "user",
                 "content": [
-                    {"type": "tool_result", "tool_use_id": "x", "content": "Launching skill: agent-toolkit:process-wi"}
+                    {"type": "tool_result", "tool_use_id": "x", "content": f"Launching skill: {skill_modes.PROCESS_WI}"}
                 ],
             },
         },

@@ -28,16 +28,16 @@ lazy import urllib.parse
 lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import mcp_environment, message_format, plugin_environment, read_triggers
+from agent_toolkit._common import mcp_environment, message_format, plugin_environment, read_triggers, skill_modes
 from agent_toolkit._git.document_acquisition import OPERATION_SKILL_READY_KEY
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
+lazy from agent_toolkit._common import host_homes, process_tree, session_state, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
-lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session
+lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session, is_process_loop_session
 lazy from agent_toolkit._common.session_state import update_state
-lazy from agent_toolkit._hooks import document_reads, repository_protection, timing, work_contract
+lazy from agent_toolkit._hooks import document_reads, repository_protection, session_title, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
 lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path
@@ -91,16 +91,28 @@ NORMATIVE_KIND_MAIN = "rules-main"
 NORMATIVE_KIND_SUBAGENT = "rules-subagent"
 
 
-def _run_skill_start(skill: object) -> str:
-    """`atk run-skill`の起動入力の`skill`から、作業の始め方の案内を返す。
+def _resumed_for_original_goal_only() -> bool:
+    """再開予約のpickerで統括でない会話が選ばれ、元の目的の続行だけを許可された再開かを返す。"""
+    from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-    `skill`は起動単位の保存上の名前でもある（`atk wi submit`の起動単位など）。
-    agent-toolkitに同名のスキルが無い場合は、起動を求めず目的文が示す始め方へ従わせる。
+    response = startup_identity.read(os.environ)
+    return response is not None and bool(response.get("ack")) and bool(response.get("resume_only"))
+
+
+def _launch_input_process_wi(data: dict[str, Any], session_id: str) -> tuple[bool, str | None]:
+    """起動入力がこのセッションへ作業`process-wi`を名指しするかと、その作業の引数を返す。
+
+    process-loopの統括は常に作業`process-wi all-repos`を担う。
+    起動入力は統括が起動した入れ子のCLIへも継承されるため、統括は会話IDで識別する。
+    再開予約で統括でない会話を選んだ再開は、元の目的を続けるだけで統括を担わない。
     """
-    name = skill.removeprefix("agent-toolkit:") if isinstance(skill, str) and skill.startswith("agent-toolkit:") else None
-    if name is not None and not plugin_resources.skill_document_path(name, "SKILL.md").is_file():
-        return f"`{skill}`は保存上の名前で同名のスキルは無い。目的文が示す始め方で作業し、"
-    return "指定スキルを起動し、"
+    if data.get("source") == "process-loop":
+        return is_process_loop_session(session_id, os.environ) and not _resumed_for_original_goal_only(), "all-repos"
+    skill, arguments = data.get("skill"), data.get("arguments")
+    if not isinstance(skill, str):
+        return False, None
+    work, work_arguments = skill_modes.resolve_work(skill, arguments if isinstance(arguments, str) else None)
+    return skill_modes.entry_work(work) == "process-wi", work_arguments
 
 
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
@@ -123,33 +135,29 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
             data = json.loads(raw)
             if not isinstance(data, dict) or data.get("source") not in ("process-loop", "run-skill"):
                 raise ValueError("起動入力はsourceがprocess-loopまたはrun-skillのJSON objectで指定する")
-            identity_request = data.pop("identity", None)
-            resume_only = False
-            if identity_request is not None:
-                from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-                response = startup_identity.read(os.environ)
-                if response is not None and response.get("ack") and response.get("resume_only"):
-                    parts.append(
-                        message_format.auto_message(
-                            "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元の目的を確認し、"
-                            "最初の未完了工程から続行せよ。未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
-                            source="process-loop",
-                            kind="resume",
-                        )
+            data.pop("identity", None)
+            resume_only = _resumed_for_original_goal_only()
+            if resume_only:
+                parts.append(
+                    message_format.auto_message(
+                        "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元の目的を確認し、"
+                        "最初の未完了工程から続行せよ。未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
+                        source="process-loop",
+                        kind="resume",
                     )
-                    resume_only = True
-                    manifest = data.get("manifest")
-                    if not isinstance(manifest, str) or not pathlib.Path(manifest).is_absolute():
-                        raise ValueError("再開時のmanifestは絶対パスで指定する")
-                    startup_instruction = json.loads(pathlib.Path(manifest).read_text(encoding="utf-8")).get("instruction", "")
-                    if not isinstance(startup_instruction, str):
-                        raise ValueError("再開時の追加指示には文字列が必要")
+                )
+                manifest = data.get("manifest")
+                if not isinstance(manifest, str) or not pathlib.Path(manifest).is_absolute():
+                    raise ValueError("再開時のmanifestは絶対パスで指定する")
+                startup_instruction = json.loads(pathlib.Path(manifest).read_text(encoding="utf-8")).get("instruction", "")
+                if not isinstance(startup_instruction, str):
+                    raise ValueError("再開時の追加指示には文字列が必要")
             # 参照先ごとに適用する時機が異なる。過去の実行のUWIの照会は作業開始前の契約であり、
             # 終了契約と同じ案内に束ねると照会が報告工程まで遅れる。
+            # 作業の始め方は目的文が示す。ここでは起動を差し込まず、終了契約の所在だけを示す。
             if data["source"] == "process-loop":
                 guidance = (
-                    "指定スキルを起動し、次の終了契約を読め: agent-toolkit:process-wiのreferences/all-repos.md「結果と終了」"
+                    "次の終了契約を読め: `agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」"
                 )
             else:
                 guidance = (
@@ -161,9 +169,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                     guidance += (
                         "\nbatchの起動から保存までは、agent-toolkit:review-sessionのreferences/batch.mdを全文読んで従え。"
                     )
-                guidance += (
-                    f"\n{_run_skill_start(data.get('skill'))}次の終了契約を読め: 完了報告の手順書`{completion_playbook_path()}`"
-                )
+                guidance += f"\n次の終了契約を読め: 完了報告の手順書`{completion_playbook_path()}`"
             if not resume_only:
                 parts.append(
                     message_format.auto_message(
@@ -583,6 +589,19 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         started = time.monotonic()
         content = compose_session_start(source, delegated=delegated, host=host)
         timing.record(payload, "rules_context", started, "ok", stage="normative-content")
+        if (
+            not delegated
+            and source != "compact"
+            and isinstance(session_id, str)
+            and session_id
+            and (raw := os.environ.get(mcp_environment.SESSION_START_INPUT_ENV))
+            and (launch := _launch_input_process_wi(json.loads(raw), session_id))[0]
+        ):
+            # 自律モードの状態と表示名の種別は起動入力から立てる。エージェントによる入口の起動からは立てない。
+            # 圧縮後の再開では立て直さない（終了工程で戻した状態を復活させないため）。
+            update_state(session_id, session_state.set_process_wi_invoked)
+            if host == "claude":
+                session_title.observe_skill(session_id, skill_modes.PROCESS_WI, launch[1])
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         started = time.monotonic()

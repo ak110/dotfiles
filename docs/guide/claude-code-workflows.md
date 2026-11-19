@@ -70,7 +70,7 @@ atk wi process-loop instruct '次の処理へ適用する指示'
 予約コマンド自体は会話を起動しない。
 詳しい操作と検証OSの意味は[WIの登録と回答](claude-code-wi.md)を参照する。
 
-常駐させずに登録全体を1回だけ処理する場合は、`atk wi process-loop --once`を実行する（会話からは`/agent-toolkit:process-wi all-repos`）。
+常駐させずに登録全体を1回だけ処理する場合は、`atk wi process-loop --once`を実行する（会話からは`/agent-toolkit:atk-mode process-wi all-repos`）。
 対象が0件なら直ちに終了し、未完了の対象が残ると非0で終了するため、表示された記録を確認して`atk wi process-loop resume auto`を予約し、`atk wi process-loop --once`で再開する。
 
 CIの失敗だけを1回確認してAWIとして登録する場合は、`atk wi check-alerts --target-repo <リポジトリの絶対パス>`を実行する（省略時は現在の作業ツリー）。
@@ -78,9 +78,9 @@ AWIの処理は始めず、取得に失敗した場合は理由を示して終�
 
 ### まとめ処理型
 
-常駐実行を起動せず、数件のAWIがたまった時点で対象リポジトリの会話から`/agent-toolkit:process-wi single-lane`を実行する。
+常駐実行を起動せず、数件のAWIがたまった時点で対象リポジトリの会話から`/agent-toolkit:atk-mode process-wi single-lane`を実行する。
 同じセッションの中で調査から実装、レビュー、公開まで進む。
-並列のレーンへ分けて処理する場合は`/agent-toolkit:process-wi`を実行する。
+並列のレーンへ分けて処理する場合は`/agent-toolkit:atk-mode process-wi`を実行する。
 
 ### 定期実行型
 

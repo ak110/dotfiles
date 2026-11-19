@@ -12,7 +12,7 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, code
 
 _START_DOCUMENTS = {
     "report-completion": ("skills/atk-mode/playbooks/report-completion.md", None),
-    "process-wi": ("skills/process-wi/SKILL.md", "agent-toolkit:process-wiの開始"),
+    "process-wi": ("skills/atk-mode/playbooks/process-wi.md", "agent-toolkit:atk-mode process-wiの開始"),
     "add-awi-by-user": ("skills/atk-mode/playbooks/add-awi-by-user.md", "agent-toolkit:atk-mode add-awi-by-userの開始"),
 }
 """開始資料の所在と、成果作業として記録する表示名。入口の作業と完了報告は手順書の読取で始まる。"""
