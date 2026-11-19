@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit._agents_server import antigravity, cli_turn, opencode
 from agent_toolkit._agents_server.cli_turn import CliTurnManager
+from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import late_descendant
 
@@ -167,3 +168,28 @@ async def test_close_reclaims_descendant_started_after_first_listing(
         late_descendant.arm(tmp_path, monkeypatch.setattr)
         await asyncio.wait_for(manager.close(), 60)
     late_descendant.assert_released(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_start_returns_failed_session_when_bookkeeping_after_init_fails(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """initの後の記録処理が失敗しても、開始は初期化の上限まで待たずに原因を持つ失敗のsessionを返す。"""
+    emitter = tmp_path / "emit.py"
+    emitter.write_text(
+        f"print({json.dumps({'event': 'init', 'conversation_id': 'after-init'})!r}, flush=True)\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        antigravity.AntigravityManager, "build_command", staticmethod(lambda *_args: [sys.executable, str(emitter)])
+    )
+    monkeypatch.setattr(antigravity.AntigravityManager, "system_prompt", staticmethod(lambda _kind: "開始試験"))
+
+    async def failing_attach(_session: SessionState, _pid: int | None) -> None:
+        raise OSError("実行プロセスを記録できない")
+
+    monkeypatch.setattr(SessionState, "attach_executor_async", failing_attach)
+    async with antigravity.AntigravityManager() as manager, asyncio.timeout(10):
+        session = await manager.start("開始試験", str(tmp_path), "test-model", "low")
+    assert session.session_id == "after-init"
+    assert session.status == "failed"
+    assert session.error is not None and "実行プロセスを記録できない" in session.error["message"]
