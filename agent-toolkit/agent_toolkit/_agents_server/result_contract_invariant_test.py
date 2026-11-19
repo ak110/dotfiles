@@ -16,7 +16,7 @@ def test_reader_fit_accepts_both_layouts_of_role_template_fields(tmp_path: pathl
     雛形の欄を足すか値の書き方を変えたとき、検査とのずれをこの試験が検出する。
     """
     session, target = _reader_fit_session(tmp_path)
-    role = pathlib.Path(__file__).resolve().parents[2] / "share/reader-fit-review.subagent.md"
+    role = pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/roles/reader-fit-review.subagent.md"
     template = role.read_text(encoding="utf-8").split("- 成果物: <絶対パス>\n", 1)[1]
     fields = [line.split(":", 1)[0].strip() for line in template.splitlines()[:4]]
     values = {"完了状態": "completed", "比較資料": "新規・全文", "判定": "指摘なし", "根拠": "本文と実装を照合済み"}

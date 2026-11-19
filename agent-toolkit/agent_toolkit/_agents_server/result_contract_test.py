@@ -71,7 +71,7 @@ def _reader_fit_session(tmp_path: pathlib.Path) -> tuple[state.SessionState, str
     """実際の役割文書で起動したreader-fitのsessionと、その入力成果物を返す。"""
     target = tmp_path / "対象.md"
     target.write_text("# 対象\n本文\n", encoding="utf-8")
-    role = pathlib.Path(__file__).resolve().parents[2] / "share/reader-fit-review.subagent.md"
+    role = pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/roles/reader-fit-review.subagent.md"
     _, prompt, kind, _ = launch_requests.task_document_request(
         str(role),
         {
