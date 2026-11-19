@@ -70,10 +70,10 @@ Python系は`python-lint`、`pylint`、`pytest-root`、`pytest-toolkit`の責務
 表示名はそれぞれ`python-lint-other (3.15)`、`pylint (3.15)`、`pytest (3.15)`、`pytest-toolkit (3.15, N/3)`である。
 matrixはtoolkitの3分割だけに使い、`fail-fast: false`で全分割の結果を取得する。
 Pylintは既存の直列設定のまま独立実行し、その他のlintから除外する。
-直下はGit管理下のテストを明示してpytestへ渡し、toolkitは同サブプロジェクトを起点にskills配下を含めて実行する。
+直下はGit管理下のテストを明示してpytestへ渡し、toolkitは`agent-toolkit/`を対象に、リポジトリ直下の設定と仮想環境でskills配下を含めて実行する。
 toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pytest_plugin`の`--test-shard`が所要降順・同値node ID昇順で、合計所要が最小の分割へ各試験をちょうど1回割り当てる。
 同値の分割は番号順とする。
-所要は同一commitの`_testing/test_durations.json`を読み、記録外は記録の平均、記録無しは固定重み1で件数を均衡させる。
+所要は同一commitの`_testing/test_durations.json`（キーはリポジトリ直下基準で`agent-toolkit/`接頭辞付き）を読み、記録外は記録の平均、記録無しは固定重み1で件数を均衡させる。
 記録は成功runの全3shardのJUnit XMLを`scripts/update_test_durations.py`へ渡して生成し、1秒以上の試験だけ保存する。
 公開担当が偏りを観測したときに更新する。
 新しい外部plugin、CI中の前run取得、分割数増加は採らない。

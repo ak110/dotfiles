@@ -41,7 +41,7 @@
 - 理由: 実行条件の指定漏れで1件も実行しなかった検証を、成功と取り違えないようにする
 - 当てはまる条件: 環境変数が無いと試験群全体がskipされ、pytestが終了0になる
 - 適用方法: 試験へ専用マーカーを付け、通常設定で除外し、明示実行のタスクから選択し、選択0件の非0終了と明示実行の成功を確認する
-- 参照先: `github.com/ak110/dotfiles`の`pyproject.toml`、`agent-toolkit/pyproject.toml`、`Makefile`
+- 参照先: `github.com/ak110/dotfiles`の`pyproject.toml`、`Makefile`
 - 適用済みの見分け方: 任意指定の欠落を全件skipで扱わず、通常実行では除外し、該当ファイルだけを無指定で起動した場合は収集0件の非0になる
 
 ## LinuxからWindows向けにビルドする

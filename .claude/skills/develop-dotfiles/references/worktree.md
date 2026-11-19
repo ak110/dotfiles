@@ -2,7 +2,7 @@
 
 ## 作業ツリーの準備
 
-1. 専用worktreeや回収予定の検証用複製では、`mise trust`の後にルートで`make sync`を実行し、リポジトリ直下と`agent-toolkit/`の`.venv`を`uv.lock`と`.python-version`へ合わせてから後続へ渡す。
+1. 専用worktreeや回収予定の検証用複製では、`mise trust`の後にルートで`make sync`を実行し、リポジトリ直下の`.venv`を`uv.lock`と`.python-version`へ合わせてから後続へ渡す（`agent-toolkit/`には仮想環境を作らない）。
    - 回収予定の検証用複製は、managed-tempの一時ルート直下に`mktemp -d '<一時ルート>/<用途>-XXXXXXXX'`で作った領域へ`git worktree add --detach`で作る。
      通常のファイルコピーで複製すると、内部の`.claude/worktrees/`や`.venv`まで実容量で複製してしまう。
    - 回収予定の領域ではローカルの依存の同期だけを行い、Git hookとテンプレートは既存の設定を使う。

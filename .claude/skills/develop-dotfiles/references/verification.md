@@ -14,7 +14,7 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
   Pythonモジュールの単体試験は同じディレクトリの`<name>_test.py`とし、文書・設定・スクリプトの実物を読む試験は、そのファイルと同じディレクトリか、対象群を包含する最も近い上位ディレクトリに置く。
   fixtureで入力を組み立てて実装を呼ぶ試験も実装の近くに置き、離れた場所に置く場合は置ける最も近い場所を選んで理由をモジュールのdocstringに書く。
 - 複数の領域にまたがる既存成果物の不変条件を検証する試験（横断テスト）は`*_invariant_test.py`と名付け、通常の動作試験と別のファイルにする。
-  リポジトリ直下と`agent-toolkit/`の`pyproject.toml`はこの名前を`pytest-fast-targets`（`pyfltr fast`の対象）と`pytest-always-targets`（pytestを含む全ての`pyfltr`の実行へ加える対象）に指定している。
+  リポジトリ直下の`pyproject.toml`はこの名前を`pytest-fast-targets`（`pyfltr fast`の対象）と`pytest-always-targets`（pytestを含む全ての`pyfltr`の実行へ加える対象）に指定している。
 - 共通ヘルパーは、`pytools/`配下では`pytools/_internal/_test_helpers.py`、リポジトリ直下では`_test_helpers.py`、`scripts/`配下では`scripts/_scripts_test_helpers.py`に置く。
   リポジトリ直下と`scripts/`はどちらも`sys.path`に入るため、モジュール名を重ねない。
   `agent-toolkit/`の試験は配布物の独立のため`pytools/_internal/`を参照せず、共通処理は`.claude/skills/agent-toolkit-edit/references/implementation.md`「agent_toolkitパッケージの配置と層」の試験専用パッケージに置く。
@@ -39,8 +39,8 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
 対象は`agent-basics:check-execution/references/verification-scope.md`の「直接影響範囲の類型」で選び、ローカルで実行する範囲の上限は同じ資料の「ローカルとCIの分担」に従う。
 本リポジトリで選ぶ対象の値は次のとおりで、変更ファイル名から自動で選ばれない試験も多いため、特定した試験ファイルを引数へ明記する。
 
-- 横断テスト: pytestを含む`pyfltr`の実行には`pytest-always-targets`で横断テストが加わり、リポジトリ直下とサブプロジェクト`agent-toolkit/`の両方を実行する。
-  保存した出力の`# subproject: .`と`# subproject: agent-toolkit`のpytestの終了状態をそれぞれ確かめて、横断検証の結果に充てる。
+- 横断テスト: pytestを含む`pyfltr`の実行には`pytest-always-targets`で横断テストが加わり、`agent-toolkit/`を含むリポジトリ全体を直下の仮想環境で1回に実行する。
+  保存した出力のpytestの終了状態と収集件数を確かめて、横断検証の結果に充てる。
   横断テストだけを実行する形は`uv run --frozen pyfltr fast --commands=pytest`（対象を渡さず、リポジトリルートで1回）である。
   `pytest-always-targets`が加わらない直接pytestで統合前を確かめる場合は、`git ls-files -- '*_invariant_test.py'`の全件を加える。
   前提条件と再検証の手順は`docs/development/audit-records-project-verification.md`に記載されている。
@@ -68,14 +68,15 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
 - パッケージ外の呼び出し元: 既存の配置は`agent-toolkit/skills/*/scripts/`、`agent-toolkit/`直下のスクリプトと試験、`pytools/`、`scripts/`、`libexec/`、リポジトリ直下の結合試験であり、将来の別の配置の利用側も同じ基準で含める。
   生成資料の読取契約では`agent_toolkit_read_trigger_agy_integration_test.py`、共有のGit処理では`libexec/update_dotfiles.py`・`update_dotfiles_stash.py`とその試験も追跡する。
 - 配布パッケージの版の指定を変えたら`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。
-  対象は`agent-toolkit/.mcp.json`（生成される`mcp.json`と`.mcp.codex.json`を含む）、リポジトリ直下と`agent-toolkit/`の`pyproject.toml`の`dependencies`、`.chezmoi-source/`の導入・更新処理が渡す版の指定である。
+  対象は`agent-toolkit/.mcp.json`（生成される`mcp.json`と`.mcp.codex.json`を含む）、依存の宣言、`.chezmoi-source/`の導入・更新処理が渡す版の指定である。
+  依存の宣言は、リポジトリ直下の`pyproject.toml`と`agent-toolkit/scripts/launch.py`のインラインメタデータの`dependencies`を指す。
   この試験は隔離したHOMEで実際のuvを動かし、post-applyの`uv tool install`とpyfltr MCPのウォームアップを確かめる（`warmup_pyfltr_mcp_test.py`は`uvx`をモックにするため版の解決まで届かない）。
 - Function hooksモジュール（`agent-toolkit/hooks/`の`*.ts`・`*.tsx`）: 変更パスを渡した`pyfltr`とコミットフックが`function-hooks-types`を起動し、CIが用意しない生成型で検査する。
   Claude Codeの`plugin-authoring`で生成した`claude-code.d.ts`を環境変数`FUNCTION_HOOKS_TYPES`へ絶対パスで渡し、一時設定と生成型はcommitしない。
   モジュールの試験は、同じPATH上の`claude`で`claude plugin test <worktree>/agent-toolkit`を実行する（引数はプラグインのルートで、`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからずエラーになる）。
 - CIのコンテナージョブで`uv sync`が読む入力を変えたら`make ci-deps-check`を実行する。
   入力は`.python-version`、`ci.yaml`のmatrixのPythonの版と「ネイティブ依存インストール」ステップ、リポジトリ直下の`uv.lock`と`pyproject.toml`の依存の宣言・`[tool.uv]`である。
-  lockだけの更新と、`agent-toolkit/pyproject.toml`の依存の変更に伴う直下のlockの更新も含む。
+  lockだけの更新と、`agent-toolkit/scripts/launch.py`の依存の変更に伴う直下のlockの更新も含む。
   CIと同じイメージ内でmatrixの各版の依存導入と`uv sync`を再現し、手元では作れてもCIで失敗するsdistの問題などをpush前に検知する。
   Dockerが要り、1版あたり約1分かかる。
   再検証の記録は`docs/development/audit-records-project-verification.md`にある。
@@ -85,7 +86,7 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
 ## 検証コマンドの実行
 
 共有の実行枠の対象は、`make test`、`uv run --frozen pyfltr run`、`git commit`の中の`pyfltr fast`、共通のpytestプラグインを読むpytestである。
-両プロジェクトの`addopts`が同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で外すものは枠の対象外となる。
+直下の`pyproject.toml`の`addopts`が同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で外すものは枠の対象外となる。
 枠はホスト全体で2つ（pyfltr 3.30.0以降）で、pytestと統合の検証は開始からworker・子孫の回収まで枠を持ち、入れ子の実行は祖先の所有を継ぎ、収集だけのpytest（`--collect-only`）は枠を取らない。
 シェルからの起動は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の形式と3分類に従う。
 
