@@ -44,9 +44,6 @@ def take_notices(
     stash_directory: pathlib.Path | None = None,
 ) -> list[dict[str, str]]:
     """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
-    # 退避済み通知にも同じ所有者の確認を適用し、誤登録の再開から他主体の本文を消費しない。
-    if recipient_matches(root_session_id, session_id, recipient_session_id, owner_status_file, state_root) is not True:
-        return []
     directory = notices_directory(root_session_id, state_root)
     try:
         paths = tuple(directory.iterdir())
@@ -60,6 +57,12 @@ def take_notices(
                 for path in stash_directory.iterdir()
                 if path.is_file() and path.suffix == ".json" and path.name.startswith(f"{session_id}.")
             }
+    # 待機は対象ごとに毎巡この関数を呼び、所有者の確認はrootの全状態ファイルを読む。回収する候補が無い巡では確認を省く。
+    if not stashed and not any(path.suffix == ".json" for path in paths):
+        return []
+    # 退避済み通知にも同じ所有者の確認を適用し、誤登録の再開から他主体の本文を消費しない。
+    if recipient_matches(root_session_id, session_id, recipient_session_id, owner_status_file, state_root) is not True:
+        return []
     matched: list[tuple[str, str, dict[str, str]]] = []
     for path in (*stashed.values(), *paths):
         if not path.is_file() or path.suffix != ".json":
