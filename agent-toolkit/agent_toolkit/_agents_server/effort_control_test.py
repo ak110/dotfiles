@@ -124,15 +124,22 @@ async def test_cli_request_applies_one_step_and_persists_history(actor):
 @pytest.mark.parametrize("fault", ["read", "cleanup-request", "cleanup-response"])
 @pytest.mark.asyncio
 async def test_cli_request_survives_transient_sharing_denial(monkeypatch, fault):
-    """Windowsの一時的な共有拒否が、応答の最初の読取や要求側の後始末で一度起きても、effortの適用結果を成功として返す。"""
+    """Windowsの一時的な共有拒否が、応答の最初の読取や要求側の後始末で一度起きても、effortの適用結果を成功として返す。
+
+    要求側を応答の最初の読取の直前で止め、所有側が適用と応答の公開を終えてから読ませる。
+    """
     session = _session()
     denied: list[str] = []
+    polling, answered = threading.Event(), threading.Event()
     original_read, original_unlink = pathlib.Path.read_text, pathlib.Path.unlink
 
     def read_text(self, *args, **kwargs):
-        if fault == "read" and self.name.endswith(".effort-response") and not denied:
-            denied.append(self.name)
-            raise PermissionError(13, "modeled WinError 32: sharing violation")
+        if self.name.endswith(".effort-response"):
+            polling.set()
+            assert answered.wait(timeout=10), "所有側が応答を公開しない"
+            if fault == "read" and not denied:
+                denied.append(self.name)
+                raise PermissionError(13, "modeled WinError 32: sharing violation")
         return original_read(self, *args, **kwargs)
 
     def unlink(self, *args, **kwargs):
@@ -146,15 +153,15 @@ async def test_cli_request_survives_transient_sharing_denial(monkeypatch, fault)
     monkeypatch.setattr(pathlib.Path, "unlink", unlink)
     task = asyncio.create_task(asyncio.to_thread(effort_requests.request, "up", "child", {"CODEX_THREAD_ID": "parent"}))
     try:
-        async with asyncio.timeout(5):
-            while not await asyncio.to_thread(effort_requests.pending):
-                await asyncio.sleep(0)
-            await effort_control.process_requests({"child": session}, _catalog, _apply)
-            result = await asyncio.shield(task)
+        assert await asyncio.to_thread(polling.wait, 10), "要求側が応答を読まない"
+        await effort_control.process_requests({"child": session}, _catalog, _apply)
+        answered.set()
+        result = await task
         assert result["effort"] == "medium" and result["changed"] is True
         assert denied
         assert not list(session_registry.registry_directory().glob("*.effort-*"))
     finally:
+        answered.set()
         await asyncio.gather(task, return_exceptions=True)
 
 

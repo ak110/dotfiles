@@ -95,15 +95,17 @@ async def retained_executor(
 def held_registry_lock(session_id: str, *, state_root: pathlib.Path | None = None) -> Generator[None]:
     """別プロセスが登録簿を書いている間のように、ブロックの間だけsessionの登録簿ロックを別threadで保持する。
 
-    ロックを待つ処理が試験を止めたままにしないよう、自動終了の10秒の上限を越える15秒で手放す。
+    ロックを待つ処理が試験を止めたままにしないよう、自動終了の10秒の上限を越える15秒で手放し、その場合は不合格にする。
     """
     acquired = threading.Event()
     finished = threading.Event()
+    expired = threading.Event()
 
     def hold() -> None:
         with session_registry.registry_lock(session_id, state_root=state_root):
             acquired.set()
-            finished.wait(timeout=15)
+            if not finished.wait(timeout=15):
+                expired.set()
 
     holder = threading.Thread(target=hold, daemon=True)
     holder.start()
@@ -113,3 +115,4 @@ def held_registry_lock(session_id: str, *, state_root: pathlib.Path | None = Non
     finally:
         finished.set()
         holder.join(timeout=5)
+    assert not expired.is_set(), "ブロックが15秒以内に終わらず、登録簿ロックの解放を待った"
