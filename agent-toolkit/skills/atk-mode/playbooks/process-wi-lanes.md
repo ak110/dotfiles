@@ -171,7 +171,7 @@
 レーン担当が、mergeの後の変更範囲の検証が失敗した時の手順である（是正の着手前に`agent-basics:bugfix`を起動する）。
 
 1. レビュー済みのHEADでは再現せず、統合先との組み合わせでだけ起きた失敗: 失敗した検証が確かめる契約の送信側・受信側・実装・テストを整理し、専用worktreeに是正commitを作る。
-   是正で変えた定義・文言・構成・実行前提の変更前の値を固定文字列で探し、それを消費する実装・検査・試験を変更範囲の検証の対象へ戻す（`agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」）。
+   是正で変えた定義・文言・構成・実行前提の変更前の値を固定文字列で探し、それを消費する実装・検査・試験を変更範囲の検証の対象へ戻す（`agent-basics:check-execution/references/verification-scope.md`「範囲の決め方」）。
    是正前のHEADで得た成功は是正の検証に使わず、是正後のHEADで変更範囲の検証を再実行して、成功と、処理を妨げる警告が無いことを確かめる。
    commitと検証の証拠（警告の判定の根拠を含む）を「続行できない理由」としてメインへ返し、再指示を受けたら`agent-toolkit:atk-mode/references/lane-integration-format.md`「マージありの統合」へ戻る。
 2. 是正対象の失敗がレーンの変更と同じ原因を持つ場合: 是正の範囲と完了の判定は`agent-basics:bugfix`の問い4（広がり）と問い5（確認）に従い、認可範囲外の対象を含めば次の手順で伝える。

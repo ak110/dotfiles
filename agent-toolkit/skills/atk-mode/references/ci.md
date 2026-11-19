@@ -92,7 +92,7 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
   出力が空の時と、成功の完了を示す表示が無い時は、未判定として状態を直接確かめる。
 - 判定の対象はbaselineに保存したcommit SHAのrunであり、push後に送信元のブランチが進んでも同じSHAで判定する。
 - 成功した時も、対象プロジェクトが定める段階別と全体の所要の基準を読んで実際の所要と比べ、既存のCIの検証記録へ残す。
-  比べ方と超過した時の改善の判断は`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」に従う。
+  比べ方と超過した時の改善の判断は`agent-basics:check-execution/references/diagnostics.md`「読む出力」に従う。
   所要の基準と監視の`--timeout`は別のものであり、所要の超過は改善の判断に使い、公開の停止と検証の省略の理由から外す。
 
 ### wait_ciの終了コード

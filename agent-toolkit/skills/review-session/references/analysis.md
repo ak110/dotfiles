@@ -23,7 +23,7 @@
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/references/analysis-records.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:review-standards/references/judgment-details-decisions.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:review-standards/references/reviewee.md` |
 | 本文で基準を使う資料の選択・取得時 | `duration-analysis.md` |
 | 効果を記録する前 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` |
 | 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation.md`、`agent-basics:writing-standards/references/agent-documents-basics.md` |

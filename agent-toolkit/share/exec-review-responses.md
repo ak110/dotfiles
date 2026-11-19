@@ -12,34 +12,34 @@
 
 ## レビュー指摘の位置付け
 
-品質の定義については、`agent-basics:review-standards/references/reviewee-acceptance.md`「レビュー指摘の位置付け」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewee.md`「レビュー指摘の位置付け」に従う。
 
 ## 指摘発生時の扱い
 
-品質の定義については、`agent-basics:review-standards/references/reviewee-acceptance.md`「指摘発生時の扱い」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewee.md`「指摘発生時の扱い」に従う。
 ユーザーへ同意を表明するのも、判断を左右する事実の現物確認と採否の確定を済ませてから行う。
 報告・引渡し前の主張と根拠は既存の進捗ログ・検証記録・引き継ぎ記録から取得し、今回の指摘との比較結果を管理表の既存応答欄へ記録する。
 事前に未確認だった部分と指摘後の調査結果を区別し、専用台帳を作らない。
 
 ## 改善効果を指定する要求の扱い
 
-品質の定義については、`agent-basics:review-standards/references/reviewee-acceptance.md`「改善効果を指定する要求の扱い」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewee.md`「改善効果を指定する要求の扱い」に従う。
 
 ## 恒久ルールへの反映判定
 
-品質の定義については、`agent-basics:review-standards/references/reviewee-correction.md`「恒久ルールへの反映判定」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewee.md`「恒久ルールへの反映判定」に従う。
 
 ## 修正要否の立証
 
-品質の定義については、`agent-basics:review-standards/references/reviewee-correction.md`「修正要否の立証」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewee.md`「修正要否の立証」に従う。
 
 ## 安全な修正
 
-品質の定義については、`agent-basics:review-standards/references/reviewee-correction.md`「安全な修正」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewee.md`「安全な修正」に従う。
 
 ## 公開可能性の検証
 
-品質の定義については、`agent-basics:review-standards/references/reviewee-verification.md`「公開可能性の検証」に従う。
+品質の定義については、`agent-basics:review-standards/references/reviewee.md`「公開可能性の検証」に従う。
 
 ## 条件別資料
 
@@ -54,5 +54,5 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| レビューイー側心得：レビュー指摘の位置付けの基準を適用する前 | `agent-basics:review-standards/references/reviewee-acceptance.md` |
-| レビューイー側心得：修正要否の立証の基準を適用する前 | `agent-basics:review-standards/references/reviewee-correction.md` |
+| レビューイー側心得：レビュー指摘の位置付けの基準を適用する前 | `agent-basics:review-standards/references/reviewee.md` |
+| レビューイー側心得：修正要否の立証の基準を適用する前 | `agent-basics:review-standards/references/reviewee.md` |

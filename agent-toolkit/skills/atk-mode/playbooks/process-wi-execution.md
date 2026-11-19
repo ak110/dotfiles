@@ -113,7 +113,7 @@
      前提が変わった観点と、エージェントが加えた手段・検証は、必要性を現在の方針で判定してから計画の完成条件や検証へ写す。
      プロジェクト規範が指定する方針・障害の記録を読んだ成果は、守る条件と今回の採否・検証の対応として判断の根拠へ残す（記録の名前や取得済みであることは根拠にしない）。
      `agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」は常に行い、評価の条件は`agent-toolkit:atk-mode/references/awi-body.md`「既存箇所の見直し」に従う。
-     不具合対策では、`agent-basics:review-standards/references/reviewer-initial.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も比べる（基準は`agent-toolkit:/share/exec-review-criteria.md`）。
+     不具合対策では、`agent-basics:review-standards/references/reviewer.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も比べる（基準は`agent-toolkit:/share/exec-review-criteria.md`）。
    - `選定`の各項目の`鮮度`が`notice`であることだけを理由に作業を止めない。
      現行の内容との不一致、既存の実装による充足済み、巻き戻しの危険のどれかを確かめた項目に限って関連の履歴を調べ、確認の条件、調べた履歴、採否への影響を`## 調査結果と判断根拠`へ残す。
    - レーン担当は、レーン数にかかわらず自分のレーン内の分担を`agent-toolkit:delegation/references/routing-decisions.md`と`agent-toolkit:delegation/references/routing-units.md`で検討する。

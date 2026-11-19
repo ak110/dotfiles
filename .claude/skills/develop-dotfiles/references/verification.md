@@ -4,7 +4,7 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
 検証の一般の規則（対象の選び方、成功の再利用、再実行、結果と所要の判定）は`agent-basics:check-execution`と`agent-toolkit:atk-mode/playbooks/verification.md`にある。
 本書はdotfilesに固有の値（起動の形、実行枠の数、CIのジョブ、対象の試験、所要の基準値）を持つ。
 本リポジトリでは全体の試験と静的検査をCIが担うため、ローカルでは変更ファイルと特定した利用側の試験・lint、CIが実行しないチェックを実行する。
-合否は終了コードに加えて個別の試験の結果で判定する（`agent-basics:check-execution/references/diagnostics-results.md`「合否の判定」）。
+合否は終了コードに加えて個別の試験の結果で判定する（`agent-basics:check-execution/references/diagnostics.md`「合否の判定」）。
 
 ## テスト配置
 
@@ -36,7 +36,7 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
 
 ## 変更範囲の検証の値
 
-対象は`agent-basics:check-execution/references/verification-scope-selection.md`「直接影響範囲の類型」で選び、ローカルで実行する範囲の上限は同じディレクトリの`verification-scope.md`に従う。
+対象は`agent-basics:check-execution/references/verification-scope.md`の「直接影響範囲の類型」で選び、ローカルで実行する範囲の上限は同じ資料の「ローカルとCIの分担」に従う。
 本リポジトリで選ぶ対象の値は次のとおりで、変更ファイル名から自動で選ばれない試験も多いため、特定した試験ファイルを引数へ明記する。
 
 - 横断テスト: pytestを含む`pyfltr`の実行には`pytest-always-targets`で横断テストが加わり、リポジトリ直下とサブプロジェクト`agent-toolkit/`の両方を実行する。
@@ -124,7 +124,7 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
    統合先のブランチで、pytestを含む実行の後にファイルを変えた場合と、commitしない差分を作業ツリーに残した場合は、hookがpytestを再び実行するため、含めない差分は先に別のcommitへ分けるか作業ツリーから外す。
 7. 統合の準備は手順4までの成功で足り、全量の成功を得るためだけの再実行は要らない（準備の受理は統合の許可であり、最終の検証の成功と分ける）。
    統合する担当は、許可の後に統合先の最新内容へ追随して最終の統合入力を確定し、専用worktreeで`make sync`を実行してから、最終の内容で1回の実行を成功させる。
-   定義元の`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」は、条件の一致する成功の集合を合わせることを認める。
+   定義元の`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」は、条件の一致する成功の集合を合わせることを認める。
    dotfilesの統合前の最終確認はこれより厳しい追加の条件とし、最終の内容での単一の実行に限る。
    - 形は`uv run --frozen pyfltr run --no-fix --commands=<手順2で選んだ全コマンド> <レーンの変更ファイルと特定した利用側試験の絶対パス>`とし、`--no-always-targets`を付けずに不変条件試験もまとめる。
      対象はこの集合であり、リポジトリ全体のpytestではない。
@@ -205,7 +205,7 @@ Pythonのpytest・lint、完全導入と更新の検証には領域の選択を�
 ## テストとCIの所要基準
 
 段階の選び方と超過時の検討は`agent-basics:writing-standards/references/testing.md`「速度」に従い、本節はdotfilesの値を持つ。
-所要の比べ方は`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」に従う。
+所要の比べ方は`agent-basics:check-execution/references/diagnostics.md`「読む出力」に従う。
 
 | 必要な仕事 | テスト本体の改善判断値 |
 | --- | --- |

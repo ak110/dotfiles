@@ -150,7 +150,7 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
 計画ファイルの体裁の差異は、工程の停止条件にしない。
 体裁に関する指摘の採否は、根拠の確認と何も変更しない案を含めた費用の比較で確定する
 （2026年9月15日、ユーザー指示。体裁を規範の是正対象から一律に外す扱いを撤去した）。
-現行の規範は`agent-basics:review-standards`の`agent-basics:review-standards/references/reviewee-correction.md`「修正要否の立証」にある。
+現行の規範は`agent-basics:review-standards`の`agent-basics:review-standards/references/reviewee.md`「修正要否の立証」にある。
 
 ### 経緯（計画ファイルの体裁の扱い）
 

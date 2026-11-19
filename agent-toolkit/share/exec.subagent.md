@@ -99,7 +99,7 @@ continuations:
 | 計画を起草するか既存計画から再開する直前 | [`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`](../skills/atk-mode/playbooks/process-wi-execution.md) | | |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | | |
 | 受入シナリオや完成条件を手動で観測する前（実装の途中の観測を含む） | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
-| 取得した変更範囲の検証コマンドを使う前 | `agent-basics:check-execution/references/verification-scope-selection.md` | | |
+| 取得した変更範囲の検証コマンドを使う前 | `agent-basics:check-execution/references/verification-scope.md` | | |
 | `検証結果`を書く前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 変更範囲の検証が失敗したとき | [`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`](../skills/atk-mode/playbooks/process-wi-lanes.md) | | |
 | `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/lane-integration.subagent.md` |
@@ -114,7 +114,7 @@ continuations:
 - ファイルを編集する直前: プロジェクト規範が定める、編集対象パスに対応した必須スキルを起動する。
 - 変更範囲の検証を実行する直前: 計画ありでは訂正済みの検証表の検証行（無ければ計画の`## 検証`にある`変更範囲の検証`行）から、計画なしでは引き継ぎ記録からコマンドを取得する。
   訂正済み検証表の保持と引き継ぎは、`../skills/atk-mode/references/plan-format.md`「検証」に従う。
-  取得したコマンドを使う前に、`agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」で、実際の差分の契約から求める利用側の試験が含まれるかと、保存済みの結果を再利用できるかを判定する。
+  取得したコマンドを使う前に、`agent-basics:check-execution/references/verification-scope.md`「範囲の決め方」で、実際の差分の契約から求める利用側の試験が含まれるかと、保存済みの結果を再利用できるかを判定する。
   足りない利用側を加え、足さなかった残りを記録する。
 - 受入シナリオや完成条件を手動で観測する直前: `agent-toolkit:atk-mode/playbooks/verification.md`「手動観測の保存」に従う。
 

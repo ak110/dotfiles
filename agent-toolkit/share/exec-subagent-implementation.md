@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics.md` |
-| 初回実装の案の前提を評価する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
+| 初回実装の案の前提を評価する前 | `agent-basics:review-standards/references/reviewer.md` |
 | レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/playbooks/process-wi-execution.md` |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
 | CI修正担当として原因を調べる前と、不具合の再現と修正後の確認を行う前 | `agent-basics:bugfix/SKILL.md` |
@@ -105,7 +105,7 @@
 14. 変更範囲の検証を実行する前に、計画の有無によらず直接影響範囲を確定する（レビュー修正、CI修正、および会話圧縮後の再開時を含む）。
     1. 外部から観測可能な文言や挙動を変更した場合は、`../skills/atk-mode/references/awi-body.md`「直接影響範囲」に従い、検索語を固定文字列で個別に検索する。
        動的に値を組み立てる生成コードの場合は、変更前の実行結果から旧値を列挙するか、生成元を利用するすべてのテストを実行する。
-    2. `agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」に従い、探索で検出した試験と、生成値・共有ヘルパー・一覧全体を検査する利用側試験を実行対象へ引き継ぐ。
+    2. `agent-basics:check-execution/references/verification-scope.md`「範囲の決め方」に従い、探索で検出した試験と、生成値・共有ヘルパー・一覧全体を検査する利用側試験を実行対象へ引き継ぐ。
        実装ファイルに直接対応する試験に対象を限定せず、除外した候補は理由を記録する。
     3. 計画または引き継ぎ記録で確定した検証対象と実装の現物を突き合わせ、`agent-toolkit:atk-mode/playbooks/verification.md`の類型に基づいて漏れていた対象を追加する。
     4. 検索語、検出結果、採否、テスト実行の採否、検証対象ごとの結果、および除外理由を、自身のセッションのmanaged-temp内のファイルへ保存し、`検証結果`から参照できるようにする。
@@ -125,7 +125,7 @@
     レーン担当は群ごとの検証対象の和集合と元の要求の対応を保持し、統合後は同じ本文・環境・契約の成功結果を再利用して、群間の契約、共有生成物、組合せ差分と未検証条件だけを追加検証する。
 
 16. 結果に影響を与える実装、テスト、入力値、および消費側の期待値を整合させ、`../skills/atk-mode/playbooks/commit.md`「commitとフックの検証」に定めるタイミングで最終的な変更範囲の検証と有限回の手動観測を実施する。
-    保存済みの成功結果と失敗限定の結果の統合は、`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
+    保存済みの成功結果と失敗限定の結果の統合は、`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
 
 17. 実装の完了前に、手順3で具体化した受入シナリオを受入シナリオ検証（`agent-toolkit:atk-mode/references/workflow-phases.md`）によって自己検収し、公開されている呼び出し手段と入力値を用いて期待結果と実際の結果が一致することを確認する。
     提出前には、変更する契約と保持する契約から正常・境界・失敗時の利用結果を差分と突き合わせ、既存試験の成功だけで要求の充足を推定しない。
@@ -155,6 +155,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope.md` |
 | 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics.md` |
 | レーン実行タスクの基準を適用する前 | `exec.subagent.md` |

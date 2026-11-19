@@ -16,7 +16,7 @@
 | 基準の参照時 | `agent-basics:secret-files/SKILL.md` | | |
 | 基準の参照時 | `../skills/delegation/SKILL.md` | | |
 | 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` | | |
-| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` | | |
+| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee.md` | | |
 | 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/states-and-dependencies.md` |
 | `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` | | |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` | | |
@@ -69,7 +69,7 @@
 終了が非0なら原因を解消して判定し直す。
 影響を受けない計画は再レビューを省き、計画名、`R`と`H`の完全なコミットOID、実行したコマンド、対応行の要点、省略理由をレーンの引き継ぎ記録に残す。
 rebaseでコミットOIDだけが変わった場合は再レビュー不要である。
-影響を受ける計画でも、その差分が`agent-basics:review-standards/references/reviewee-verification.md`「方式見直しと再レビュー」の省略条件を満たす場合は、同節に従って再レビューを省く。
+影響を受ける計画でも、その差分が`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」の省略条件を満たす場合は、同節に従って再レビューを省く。
 省略条件には、意味・動作・契約を変えない機械的な修正などがある。
 省いた理由は同じ引き継ぎ記録に残す。
 内部群の取り込み後は、受理済みレビューの本文・環境・契約との一致を確認し、元WI全条件への被覆と群間の契約、共有生成物、組合せ差分、未達条件を最終レビュー単位で検収する。

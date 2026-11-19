@@ -17,7 +17,7 @@
 | 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
 | 基準の参照時 | `exec-parent-launch.md` |
 | 基準の参照時 | `exec-review-responses-completion.md` |
-| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` |
+| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee.md` |
 | 基準の参照時 | `agent-toolkit:atk-mode/references/lane-integration-format.md` |
 | 基準の参照時 | `agent-toolkit:atk-mode/references/plan-storage.md` |
 | `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` |
@@ -56,7 +56,7 @@ process-wiとwrite-planの双方に適用する。
 初回条項も含む契約を`review_contract: <絶対パス>`で渡す。
 前回後の履歴書換えには`../skills/atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」が保存したJSONを`rewrite_map: <絶対パス>`（引き継ぎ再レビューでは`extra_params`）で渡す。
 `画面差分: あり`なら同時に`usability-review.parent.md`に従う再判定（未起動は初回）も依頼する。
-`対応完了（再レビュー不要）`では`agent-basics:review-standards/references/reviewee-verification.md`「方式見直しと再レビュー」の機械的修正、詳細・実装レベルだけの修正、低リスク段階の追加条件への適合を確かめる。
+`対応完了（再レビュー不要）`では`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」の機械的修正、詳細・実装レベルだけの修正、低リスク段階の追加条件への適合を確かめる。
 低リスク段階だけは修正後HEADで`exec-review-responses-completion.md`「完了報告」の判定コマンドを実行する。
 会話が途切れた再開、修正に関わる未達・根拠不足の再判定、修正との因果関係が不明な場合は通常の`対応完了`と同じく再レビューする。
 直前の返却の条件別判定行に、`exec-review-recording-integration.md`「統合時の完成条件判定」で受理できない、修正に関わる`未達`や`根拠不足`の行が残る場合も再レビューする。
