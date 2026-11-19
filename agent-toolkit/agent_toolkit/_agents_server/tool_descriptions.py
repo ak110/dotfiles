@@ -76,7 +76,7 @@ MODE_DESCRIPTION = parameter_description(
     "error.resultContract・error.nextActionを公開する。この構造検査はtaskだけに適用する。\n"
     "delegate: 委譲先向けの共通の手順を配送する通常起動。\n"
     "explore・write・shell: 軽量起動。委譲先へ届くのは依頼本文（shellではコマンドと要約方針）と、"
-    "委譲先であることの通知、modeの役割、返却の決まりだけで、委譲先向けの共通の手順は届かない。"
+    "委譲先であることの通知、委譲先の硬い制約、modeの役割、返却の決まりだけで、委譲先向けの共通の手順は届かない。"
     "ClaudeとCodexの委譲先は作業ディレクトリのプロジェクト規範（`AGENTS.md`など）も読み込まず、"
     "スキルを使える保証も無い（Claude Codeの委譲先ではスキルを起動できない）。\n"
     "explore: 委譲先は対象成果物・委譲入力・ユーザーデータを作成・変更・削除せず、成果ファイルも出力しない。"
@@ -110,7 +110,7 @@ PROMPT_DESCRIPTION = parameter_description(
     "delegate・explore・writeで必須、taskとshellでは指定しない。委譲先へ渡す依頼本文。"
     "delegateでは本文を保ち、記録先の行が無い場合にサーバーが専用の引き継ぎ記録先を加える。"
     "本文に記録先の行がある場合はその絶対パスを使い、同じパスをhandoff_record_pathで返す。"
-    "explore・writeの委譲先へは、この本文のほかに委譲先であることの通知、modeの役割、返却の決まりだけが届く。"
+    "explore・writeの委譲先へは、この本文のほかに委譲先であることの通知、委譲先の硬い制約、modeの役割、返却の決まりだけが届く。"
     "`<役割名>.subagent.md`を持つ定型作業はtaskで起動する。"
 )
 
