@@ -255,15 +255,17 @@ async def acquire(
         while True:
             with _locked(directory):
                 now = time.time()
-                observation = observe(state_root, now=now)
                 waiting = sorted(path for path, payload in _read_tickets(directory, now) if payload.get("admitted_at") is None)
-                first = bool(waiting) and waiting[0] == ticket
-                if first and observation.working + observation.admitted < limit.value:
-                    _atomic_write(
-                        ticket,
-                        {"pid": os.getpid(), "host_session_id": host_session_id, "admitted_at": now},
-                    )
-                    return Admission(ticket, time.monotonic() - started, limit)
+                # 許可されうるのは依頼順の先頭だけなので、全rootの状態ファイルは先頭の待機だけが読む。
+                # 待機の全員が毎秒読むと、待つ起動の数だけ全rootの走査が重なる。
+                if waiting and waiting[0] == ticket:
+                    observation = observe(state_root, now=now)
+                    if observation.working + observation.admitted < limit.value:
+                        _atomic_write(
+                            ticket,
+                            {"pid": os.getpid(), "host_session_id": host_session_id, "admitted_at": now},
+                        )
+                        return Admission(ticket, time.monotonic() - started, limit)
                 # 待機の継続を示す時刻を更新する。外から消された場合も依頼順を保てるよう、元の名前で書き直す。
                 _atomic_write(ticket, {"pid": os.getpid(), "host_session_id": host_session_id, "requested_at": now})
             result = (sleep or asyncio.sleep)(POLL_SECONDS)
