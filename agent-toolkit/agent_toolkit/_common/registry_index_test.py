@@ -76,6 +76,23 @@ def test_unchanged_records_are_not_parsed_again(tmp_path: pathlib.Path, monkeypa
     assert parsed == ["session-0"]
 
 
+def test_records_are_parsed_again_after_the_parsing_code_changes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """派生値を計算するコードが変わると（版を上げない開発中の編集を含む）、変わらないレコードも解析し直す。"""
+    paths = [_publish(tmp_path, f"session-{index}", launcher_session_id="parent") for index in range(3)]
+    _settle(*paths)
+    parsed = _count_parses(monkeypatch)
+    for _ in range(2):
+        assert len(registry_index.child_session_ids("parent", state_root=tmp_path)) == 3
+    assert sorted(parsed) == ["session-0", "session-1", "session-2"]
+    monkeypatch.setattr(registry_index.derived_index, "code_version", lambda _module: "edited")
+    parsed.clear()
+    for _ in range(2):
+        assert len(registry_index.child_session_ids("parent", state_root=tmp_path)) == 3
+    assert sorted(parsed) == ["session-0", "session-1", "session-2"]
+
+
 def test_recently_written_record_is_parsed_until_it_settles(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """更新時刻の刻みの中で内容だけが変わり得る新しいレコードは、保存せずに照会のたびに解析する。"""
     path = _publish(tmp_path, "fresh", launcher_session_id="parent")
