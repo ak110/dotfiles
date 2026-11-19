@@ -32,7 +32,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.environment import is_agent_environment, is_human_terminal
-from agent_toolkit._common import delegated_session, session_registry
+from agent_toolkit._common import delegated_session, private_directory, session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.json_lines import split_lines
@@ -96,7 +96,7 @@ class _BodyFileWriter:
             session_id = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CODEX_THREAD_ID")
             if session_id:
                 directory = _managed_temp.resolve_session_temp(session_id) / _BODY_DIRECTORY_NAME
-                directory.mkdir(mode=0o700, exist_ok=True)
+                directory.mkdir(mode=private_directory.MODE, exist_ok=True)
             else:
                 directory = _managed_temp.create_managed_temp(_BODY_DIRECTORY_NAME)
             self._directory = directory

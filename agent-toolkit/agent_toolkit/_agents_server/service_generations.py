@@ -9,7 +9,7 @@ from collections.abc import Generator
 from typing import Any
 
 from agent_toolkit._agents_server import service_transport
-from agent_toolkit._common import file_lock
+from agent_toolkit._common import file_lock, private_directory
 from agent_toolkit._common.atomic_file import atomic_write
 
 
@@ -21,7 +21,7 @@ class GenerationRegistry:
 
     @contextlib.contextmanager
     def _locked(self, *, write: bool = True) -> Generator[dict[str, Any]]:
-        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.directory.mkdir(parents=True, exist_ok=True, mode=private_directory.MODE)
         with (self.directory / "generations.lock").open("a+", encoding="utf-8") as handle:
             file_lock.acquire_lock(handle)
             try:

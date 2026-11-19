@@ -26,6 +26,7 @@ from typing import Any, BinaryIO, cast
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "agent-toolkit"))
 
+from agent_toolkit._common import private_directory  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._common.windows_job import CREATE_SUSPENDED, WindowsJob  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _TIMEOUT = 7200
@@ -384,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
         _cleanup()
         identifier = str(uuid.uuid4())
         job = _job_path(identifier)
-        job.mkdir(parents=True, mode=0o700)
+        job.mkdir(parents=True, mode=private_directory.MODE)
         _write_json(
             job / "input.json", {"arguments": arguments, "thread_id": os.environ.get("CODEX_THREAD_ID"), "started_at": _now()}
         )

@@ -10,7 +10,7 @@ import pytest
 
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import windows_security
+from agent_toolkit._common import plugin_root_leases, windows_security
 
 pytestmark = pytest.mark.windows
 
@@ -29,8 +29,16 @@ def _managed_temp(base: pathlib.Path) -> pathlib.Path:
     return path
 
 
+def _plugin_root_lock(base: pathlib.Path) -> pathlib.Path:
+    """配布物の保持領域のロックを、状態ディレクトリ直下の`plugin-root-leases`へ作成する。"""
+    with plugin_root_leases.plugin_root_lock(base / "plugin-root"):
+        pass
+    (lock,) = (base / "agent-toolkit" / "plugin-root-leases").glob("*.lock")
+    return lock
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windowsのtokenと継承ACLを実APIで確かめる")
-@pytest.mark.parametrize("write", [_registry_index, _managed_temp])
+@pytest.mark.parametrize("write", [_registry_index, _managed_temp, _plugin_root_lock])
 def test_state_written_by_elevated_process_stays_readable_without_administrators(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, write: Callable[[pathlib.Path], pathlib.Path]
 ) -> None:

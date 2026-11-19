@@ -11,6 +11,8 @@ import pathlib
 import shutil
 import tempfile
 
+from agent_toolkit._common import private_directory
+
 from pytools._internal import codex_processes, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
@@ -255,7 +257,7 @@ def _save_conflict_snapshot(
 ) -> pathlib.Path:
     """共有メモリー側の全現存ファイルを所有者限定の競合snapshotへ保存する。"""
     codex_dir.mkdir(parents=True, exist_ok=True)
-    temporary = pathlib.Path(tempfile.mkdtemp(prefix=".logs_2-restore-conflict-", dir=codex_dir))
+    temporary = private_directory.make_temporary(codex_dir, ".logs_2-restore-conflict-")
     temporary.chmod(0o700)
     try:
         for _, target_path in pairs:

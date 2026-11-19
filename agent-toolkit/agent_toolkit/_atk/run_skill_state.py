@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 import pydantic
 
 from agent_toolkit._atk import outcome
-from agent_toolkit._common import claude_connection, reclaim_records, session_registry, state_paths
+from agent_toolkit._common import claude_connection, private_directory, reclaim_records, session_registry, state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 _RUN_ID_PATTERN = r"^[0-9a-f]{32}$"
@@ -83,7 +83,7 @@ def load(run_id: str) -> RunRecord:
 def save(record: RunRecord) -> None:
     """再開先へ渡す状態を原子的に更新する。"""
     path = _path(record.input.run_id)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=private_directory.MODE)
     atomic_write(path, record.model_dump_json() + "\n", fsync=True)
 
 

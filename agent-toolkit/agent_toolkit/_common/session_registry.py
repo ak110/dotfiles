@@ -24,7 +24,7 @@ import re
 from collections.abc import Generator, Sequence
 from typing import Any, Literal
 
-from agent_toolkit._common import file_lock, reclaim_records, registry_forwarding
+from agent_toolkit._common import file_lock, private_directory, reclaim_records, registry_forwarding
 from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
@@ -271,7 +271,7 @@ def registry_lock(session_id: str, *, state_root: pathlib.Path | None = None) ->
     """公開・比較更新・掃引をsession単位で直列化する。ロック実体は削除せず同じinodeを共有する。"""
     _validate_session_id(session_id)
     directory = registry_directory(state_root) / ".locks"
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
     with (directory / f"{session_id}.lock").open("a+", encoding="utf-8") as handle:
         file_lock.acquire_lock(handle)
         try:

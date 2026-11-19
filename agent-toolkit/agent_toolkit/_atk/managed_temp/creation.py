@@ -11,10 +11,10 @@ import json
 import os
 import pathlib
 import stat
-import tempfile
 
 from agent_toolkit._atk.managed_temp import paths
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._common import private_directory
 
 SESSION_TEMP_PREFIX = "session"
 """会話ごとに再利用するセッションのmanaged-tempの接頭辞。
@@ -28,7 +28,7 @@ def create_managed_temp(prefix: str) -> pathlib.Path:
     paths.require_valid_prefix(prefix)
     root = paths.temp_root()
     try:
-        return pathlib.Path(tempfile.mkdtemp(prefix=f"{prefix}-", dir=root))
+        return private_directory.make_temporary(root, f"{prefix}-")
     except OSError as error:
         raise ManagedTempError(f"一時ディレクトリを作成できない: {root}: {error}") from error
 
@@ -89,7 +89,7 @@ def resolve_session_temp(session_id: str) -> pathlib.Path:
     path = session_temp_path(session_id)
     paths.temp_root()
     try:
-        path.mkdir(mode=0o700, exist_ok=True)
+        path.mkdir(mode=private_directory.MODE, exist_ok=True)
     except OSError as error:
         raise ManagedTempError(f"セッションのmanaged-tempを作成できない: {path}: {error}") from error
     if not _usable_directory(path):
@@ -105,7 +105,7 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
     paths.require_valid_prefix(prefix)
     root = paths.contained_target(session_root)
     try:
-        return pathlib.Path(tempfile.mkdtemp(prefix=f"{prefix}-", dir=root))
+        return private_directory.make_temporary(root, f"{prefix}-")
     except OSError as error:
         raise ManagedTempError(f"セッション内の作業ディレクトリを作成できない: {root}: {error}") from error
 
