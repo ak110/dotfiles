@@ -43,7 +43,10 @@ nativeの`original token count`が設定予算を超えた場合は、その値�
 現行契約は前節の設計資料を参照する。
 この観測は変更後の案内方式の動作検証ではない。
 再検証では同じ版条件とReadのみの許可を使い、一時settingsで各Pre入力とtranscriptを保存し、現在のtool_useと並行相手の可視性を比べる。
-変更後の案内は`read_delivery_test.py`と`read_delivery_dispatch_test.py`で、純粋取得後の成功・失敗・省略と、次の非取得操作・再書込・全文取得後の解除を比較する。
+変更後の案内は`read_delivery_dispatch_test.py`と`read_delivery_operations_test.py`で確かめる。
+後者のうち`test_parallel_acquisition_guidance`は、並行取得中の案内保留と、次の非取得操作での未取得だけの案内を確かめる。
+`test_cd_acquisition_defers_guidance_until_non_read`は、cd後の取得の成功・失敗・省略別の解除を確かめる。
+`test_repeated_write_is_allowed_without_fabricating_acquisition`は、再書込の許可と全文取得後の取得成立を確かめる。
 
 ## agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_guidance.py：取得案内の短縮：2026年11月13日
 

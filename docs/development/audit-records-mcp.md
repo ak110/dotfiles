@@ -77,7 +77,9 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 検索後の16,384文字も同時に満たすため、検索の有無で説明を変えない。
 説明長とinstructions長は`_agents_server/tool_descriptions_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が確かめる。
 説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは、`tool_descriptions.py`が`start`の説明へこの定数を連結する構成と、同じ説明長の試験で保つ。
-軽量modeの選択基準と`EXPLORE_CAPABILITIES`の配送を確かめていた3件の試験は、定数の写しだけの試験として2026年11月12日の`7d138ed8d`で除いた。
+登録済み`start`の説明と`mode`引数への到達、軽量modeの選択基準、起動プロンプトへの能力説明の有無を確かめていた3件の試験は、定数の写しを含む試験の整理として2026年11月12日の`7d138ed8d`で除いた。
+現行の試験が確かめるのは長さだけである。
+配送内容の再検証は、公開schemaの`start`の説明と`mode`引数を取得し、組立箇所（`tool_descriptions.py`と起動プロンプトの組立）と照合して行う。
 
 再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。
 値が変わった場合は同書の「ホスト固有の条件」、`tool_descriptions.py`の`START_DESCRIPTION`直前のコメントと前記のテストを改める。

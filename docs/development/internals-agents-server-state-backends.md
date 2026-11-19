@@ -71,7 +71,10 @@ Claudeの`inherit`接続の場合でも同様に会話コンテキストの除�
 起動応答の識別子を互いと親について比べ、`show`と`atk agents wait`の回収件数・終了コードを記録し、除去前の版の重複と回収1件を対照にする。
 同じ入力と並行起動は`_agents_server/manager_identity_test.py`の`test_parallel_claude_delegates_get_distinct_session_ids`が偽のClaude clientで再現する。
 環境除去の単体の再検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`で行う。
-全backendの登録前の重複拒否は同じ`manager_identity_test.py`の`test_start_rejects_duplicate_session_id`で確かめる。
+Claude経由で共通の登録前の重複判定は同じ`manager_identity_test.py`の`test_start_rejects_duplicate_session_id`が確かめる。
+この試験が起動するのは偽のClaude clientだけである。
+Codexの既存threadの拒否は`codex_test.py`の`test_start_rejects_existing_thread_before_alias_and_client_registration`で確かめる。
+Antigravityの既存会話の拒否は`antigravity_test.py`の`test_duplicate_conversation_keeps_event_log_and_allows_explicit_resume`で確かめる。
 
 API失敗状態は、すべてMCPサーバーの`SessionState`を基準（正）として管理し、同一の書込主体が状態ファイルへ反映（射影）する。
 対象となるのは、Claudeの合成assistantメッセージや`SystemMessage(api_retry)`、Codexの`willRetry: true`による再試行中状態、ならびに過負荷（`serverOverloaded`）に伴う自動継続待ちの`api_error`である。
