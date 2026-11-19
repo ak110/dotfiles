@@ -253,7 +253,7 @@ def test_deferral_record_reaches_termination_classes_without_integration_documen
         for name in ("playbooks/lane-receipt.md", "roles/exec.parent.md", "references/lane-integration-format.md")
     }
     routes = {}
-    for name in ("roles/exec-review.subagent.md", "references/review-record.md"):
+    for name in ("roles/exec-review.subagent.md", "references/review-record.md", "references/review-record-verdicts.md"):
         source = atk / name
         rows = read_triggers.parse_tables(source, root, strict=True)
         routes[name] = {

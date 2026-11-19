@@ -134,7 +134,7 @@ AWI本文を読んだら、本文が明示する担当とモデルの組を選�
   他の値か指定が無ければ準備済みとして扱い、併記された判定をそのまま使う。
 - `レビュー指摘管理表`: 単一の絶対パスか、全計画の管理表の絶対パスを並べた空でないJSON配列である。
   各表で対応するラウンドは、その表の最大のラウンド番号とする（`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「ラウンド番号の保持先」）。
-  複数の計画や内部の群のレビュー単位ごとの受け渡しは`agent-toolkit:atk-mode/references/exec-review-launch-variants.md`にある。
+  複数の計画や内部の群の単位ごとの受け渡しは`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`と`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`にある。
 - `レビュー参考意見`: 統括の疑問と理由の本文か、その記録の絶対パスである。
   省略と行なしは参考意見なしとする。
   修正担当は指摘の原文と分けて扱い、採否は現物と要件から決めて管理表へ記録する。

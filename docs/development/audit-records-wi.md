@@ -24,7 +24,7 @@ Claude Code 2.1.292のセッションで、要求本文を`extra_params`へ埋�
 2026年9月3日にgit version 2.43.0で、upstreamを設定した専用branchをローカルの`develop`へ統合した直後に`branch -d`が未統合として拒否されることを確認した。
 再検証は`git branch -vv`で追跡先を確認して同じ状態の`branch -d`の終了コードを観測する。
 
-## agent-toolkit/skills/atk-mode/references/review-record.md：レビュー指摘管理表の共通操作：2026年10月8日
+## agent-toolkit/skills/atk-mode/references/review-record-table.md：レビュー指摘管理表の共通操作：2026年10月8日
 
 agent-toolkit 2.199.0の基準commitは2026年10月8日「Merge pull request #147 from ak110/develop」、`3b3932b5`で、review-table実装の差分は無い。
 公開CLIで、通常名と`ci-3b3932b.exec-review.tsv`の表をそれぞれ`atk review-table init <パス>`で作成した。

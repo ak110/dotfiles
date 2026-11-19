@@ -42,7 +42,7 @@
 8. 変更の前に作成規範を確かめ、担当のファイルと直接影響範囲だけを変える。
    生成元を変えたら、生成と配布の手段も合わせて直す。
 9. 要件か外部仕様の水準の技術判断が実装中に生じたら、その時点の結論をレビュー指摘管理表（計画なしでは引き継ぎ記録）へ書いて実装を続ける。
-   表へ行を足す時は`agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表の共通操作」に従う。
+   表へ行を足す時は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」に従う。
    計画なしで、`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」の4つの事項のどれかが決まらないと分かったら、計画の起草へ戻る。
    ユーザーの選好か認可の範囲を変える事項だけを`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」で報告し、回答が要る単位だけ待つ。
    通知済みの事後承認の対象がレビューの修正で変わったら、変わった内容を同じ通知で送り直す。
@@ -104,7 +104,7 @@
 それにユーザー判断の有無と所在を添えて`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」でメインへ送り、返った判断で再開する。
 メインの技術判断を受けたら、その条件を扱う指摘管理表の行へ`atk review-table respond`の`--no-response-reason-file`で記録する。
 その行が無いか、レビュー担当の有効な判定があって`respond`が拒否する場合は、`atk review-table add`で足した行へ記録する。
-`根拠の所在:`には`メインの技術判断`、対象AWI、判断の内容を書き、他のラベルは`agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表への応答」に従う。
+`根拠の所在:`には`メインの技術判断`、対象AWI、判断の内容を書き、他のラベルは`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」に従う。
 
 ## レーン内の分担
 

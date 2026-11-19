@@ -85,7 +85,7 @@
 - 手動の観測を選ぶ場合は、入力値、操作手順、合否基準を書く。
   手動の観測は、実装担当が専用worktree内の成果物へ直接実行できる入力と操作で定め、統合の前に終える。
   公開、配布、稼働中の`atk wi process-loop`への反映の後にしか得られない観測は、公開前に再現できる代替の観測へ置き換える。
-  完成条件そのものが公開後にしか観測できない場合の判定は、実行レビュー担当が`agent-toolkit:atk-mode/references/review-record.md`に従って行う
+  完成条件そのものが公開後にしか観測できない場合の判定は、実行レビュー担当が`agent-toolkit:atk-mode/references/review-record-verdicts.md`に従って行う
 - `atk wi process-loop`など本番の常駐プロセスから起動される対象は、`agent-toolkit:atk-mode/references/workflow-phases.md`「常駐サービスの公開前の観測」に従う
 - 操作、障害注入、擬似故障、自動終了の失敗などを含む観測は、`agent-toolkit:atk-mode/references/workflow-phases.md`「検証資源の分離」に従って実行環境と利用の調整方法を定める
 

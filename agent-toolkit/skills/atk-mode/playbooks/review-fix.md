@@ -108,7 +108,7 @@
 レビューイーは指摘管理表に登録された全ての指摘に、採否、根拠、対応、検証の証拠を応答として記録する。
 委譲元は`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`の`unanswered_count`が0件の時だけ再レビューへ進むため、記録の所在は返却の文面でなく表である。
 
-応答は`atk review-table respond`で、`agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表への応答」の操作とラベルに従って記録する。
+応答は`atk review-table respond`で、`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」の操作とラベルに従って記録する。
 
 ## 完了報告
 

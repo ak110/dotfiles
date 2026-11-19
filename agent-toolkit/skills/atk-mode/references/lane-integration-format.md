@@ -18,7 +18,7 @@
   各項目は、計画ファイル名（計画を作っていなければ`なし`）、対応するAWI群、最後に受理した実行レビューの返却ファイルの絶対パス、その`レビューHEAD`、`review_contract`の絶対パス（新形式のエージェント由来のAWIが無ければ`なし`も可）を含む。
   AWIの形式は`agent-toolkit:atk-mode/references/awi-body.md`冒頭で判別し、新形式のエージェント由来のAWIは契約の条件表の各条件に判定行が対応することを確かめ、契約が欠けるか読めない場合や判定行が欠ける場合は委譲元へ差し戻す。
   統合の開始時に全ての返却ファイルを読み、採用予定のAWI群が重複も漏れもなく覆われていることを確かめる。
-  各AWIには統合時の完成条件の判定（`agent-toolkit:atk-mode/references/review-record.md`）を適用し、各`達成`行に所在と観測内容の組があることも確かめる。
+  各AWIには統合時の完成条件の判定（`agent-toolkit:atk-mode/references/review-record-acceptance.md`）を適用し、各`達成`行に所在と観測内容の組があることも確かめる。
   統合入力のHEADと`レビューHEAD`は区別して持つ。
 - `計画ファイル名一覧`: 重複の無いファイル名の順序付きのJSON配列（計画を作らなかったレーンでは`[]`）。
   引き継ぎ記録の計画群、対応するAWI、保存状態と一致することを確かめる。
@@ -29,7 +29,7 @@
 - `プロジェクト固有の公開後の操作の順序`: 指定がある場合だけ、AWIごとの対象と実行の時機を渡す。
 - `引き継ぎ記録先`: レーン担当の起動時に受け取った値をそのまま引き継ぐ。
 
-`計画ファイル名一覧`と`完成条件証拠`は全ての計画の分を一度に受け取る配列であり、レビュー単位ごとの成果物の受け渡しは`agent-toolkit:atk-mode/references/exec-review-launch-variants.md`「起動方法別のレビュー基準」に従う。
+`計画ファイル名一覧`と`完成条件証拠`は全ての計画の分を一度に受け取る配列であり、レビュー単位ごとの成果物の受け渡しは`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`に従う。
 書込先は指定された統合先worktreeとする。
 延期の対象（判定の基準は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」）は統合時に採否を確定せず、`adoptを延期したAWIとcommit`として公開担当へ渡す。
 版数の更新の完成条件も、全てのレーンの統合後に公開担当が版数、派生manifest、公開結果を検収してから`adopt`する。
@@ -38,7 +38,7 @@
 
 単一担当の実行契約で実行レビューを受理したレーン担当が統合入力を確定し、本節の操作へ進む（初期選定が複数レーンなら`統合許可`を受けてから進む）。
 レーン担当は`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の統合前の検収に受領時の受理記録を使い、レビューの収束、対象のHEAD、採否を確かめてから操作する。
-完成条件証拠は、`agent-toolkit:atk-mode/references/review-record.md`の受理記録の再利用の条件に従い、変更の影響を受ける条件と未検収の部分だけを検収する。
+完成条件証拠は、`agent-toolkit:atk-mode/references/review-record-acceptance.md`の受理記録の再利用の条件に従い、変更の影響を受ける条件と未検収の部分だけを検収する。
 全ての計画と今回のWI群、確定した採否と延期を順序付きのmanifestへ保存し、Gitの所有確認、merge、再検証、fast-forward、最終化、選定の統合状態の更新を次の公開操作で行う。
 
 ```text

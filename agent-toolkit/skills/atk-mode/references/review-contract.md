@@ -2,7 +2,8 @@
 
 実行レビューへ渡す`review_contract`の生成、書式、条件表の行の定義である。
 実行レビューの起動元が契約を作る前と、実行レビュー担当が契約と条件表を読んで判定行を作る前、統合を担う担当が条件の番号を突き合わせる前に読む。
-判定行、根拠、指摘管理表の形式は`agent-toolkit:atk-mode/references/review-record.md`にある。
+判定行と根拠の形式は`agent-toolkit:atk-mode/references/review-record.md`と`agent-toolkit:atk-mode/references/review-record-verdicts.md`にある。
+指摘管理表の形式は`agent-toolkit:atk-mode/references/review-record-table.md`と`agent-toolkit:atk-mode/references/review-record-response.md`にある。
 
 ## `review_contract`の生成
 

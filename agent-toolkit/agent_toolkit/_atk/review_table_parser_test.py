@@ -228,8 +228,10 @@ def test_skill_review_table_options_match_accepted_cli_vectors(
     skill_path = plugin_root / relative_path
     text = skill_path.read_text(encoding="utf-8")
     if subcommand == "respond":
-        text = read_contract(skill_path, plugin_root, ("../references/review-record.md", "本文がこの資料の基準を使う場面"))
-        text = text.split("\n## レビュー指摘管理表への応答\n", 1)[1].split("\n## ", 1)[0]
+        text = read_contract(
+            skill_path, plugin_root, ("../references/review-record-response.md", "本文がこの資料の基準を使う場面")
+        )
+        text = text.split("\n# レビュー指摘管理表への応答\n", 1)[1].split("\n## ", 1)[0]
     assert marker in text
     # インラインコードの引数を読み取り、同じ節のshow例とフェンスの区切り記号を分ける。
     spans = [

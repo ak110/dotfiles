@@ -54,7 +54,7 @@
    作業中の通常の問い合わせや状況確認には次の応答で答えて元の工程へ戻り、WIへ直接書かれた質問への回答用のUWIは呼出側の収束後の保存手順で保存する。
 5. 統合の準備と最終化: 実装を伴う対象は実行レビューの受理の後に、実装やマージを伴わない対象は採否の確定の後に、本手順を行う。
    - レーン専用の資源を使う場合は、`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の検収に、完成条件証拠の受領時の受理記録を使う。
-     完成条件の意味の検収は`agent-toolkit:atk-mode/references/review-record.md`に従い、変更の影響を受ける条件と未検収の部分だけに行う。
+     完成条件の意味の検収は`agent-toolkit:atk-mode/references/review-record-acceptance.md`に従い、変更の影響を受ける条件と未検収の部分だけに行う。
    - `agent-toolkit:atk-mode/roles/lane-integration.subagent.md`の契約に従い、検収済みのHEAD、全計画、WI、採否、受理した返却ファイルと`レビューHEAD`の組から統合入力を確定する。
    - 複数レーンの実行では、統合入力を確定した後に`agent-toolkit:atk-mode/roles/exec.subagent.md`「出力」の`UWI保存状況`を含む`統合準備完了`を返す。
      該当する回答と事後承認についてメインのUWIの保存とファイル名を受け取り、`統合許可`を受けてから統合へ進む（依存の条件とUWIの保存をメインが確かめるため。統合先のHEADの更新は`atk lane integrate`が1レーンずつに限る）。

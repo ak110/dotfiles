@@ -14,7 +14,11 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 2. 実装を認可した資料から、レビュー基準を`計画`、`WI`、`CI記録`（計画の無いCI失敗の対応）から選ぶ（組み合わせてよい）。
    1回の実行レビューは`cwd`から解決する1つのリポジトリだけを対象とし、リポジトリが異なる基準はレビューを分ける。
    対象WIの`担当モデル.実行レビュー担当`の値は`model_type`と入力`担当モデル`へ渡し、WIごとに違えばレビューを分ける。
-3. 単一計画の初回でない起動（内部の群、複数の計画、`CI記録`だけの基準、引き継ぎ再レビュー）は、`agent-toolkit:atk-mode/references/exec-review-launch-variants.md`の同名の節を読んでから入力を決める。
+3. 単一計画の初回でない起動は、起動方法ごとの次の資料を読んでから入力を決める。
+   - 内部の群は`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`を読む。
+   - 複数の計画は`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`を読む。
+   - `CI記録`だけの基準は`agent-toolkit:atk-mode/references/exec-review-launch-ci.md`を読む。
+   - 引き継ぎ再レビューは`agent-toolkit:atk-mode/references/exec-review-launch-handover.md`を読む。
 4. 入力を次の表で決める（入力名は`agent-toolkit:atk-mode/roles/exec-review.parent.md`「入力」）。
 
    | 入力 | 値 |
@@ -52,13 +56,13 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 4. `読者別探索`の申告が返却契約の定める全ての申告対象と想定読者を覆い、各ファイルの値が返却契約の条件を満たすことを確かめ、満たさなければ同じ担当に探索と判定をやり直させる。
    Git管理下の対象は、`git diff --name-only --diff-filter=d <レビュー開始時点> <レビューHEAD> -- '*.md' '*.md.tmpl'`から`review_contract`で判定対象外としたcommitだけによる変更を除いて求める。
 5. 未解決の指摘が1件以上なら、本書「レビュー修正」へ進む。
-6. 未解決の指摘が0件なら、対象WI集合の本文を取得し、`agent-toolkit:atk-mode/references/review-record.md`「統合時の完成条件判定」で全ての判定行を検収する。
+6. 未解決の指摘が0件なら、対象WI集合の本文を取得し、`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」で全ての判定行を検収する。
    `達成`行は所在と観測内容の組に加え、指定の記録とcommitの差分（`git show <レビューHEAD>:<パス>`）を実際に読んで確かめる。
    組を欠く`達成`行と、条件文の文末だけを変えた定型句の`達成`行は、件数とHEADが一致していても同じ担当へ差し戻す。
    `失効`の行とレーン担当による条件の除外は、本書「技術判断で外せる完成条件」の境界と、要求の取り下げか不採用の根拠との対応を本文で確かめ（`review_contract`の記述だけをユーザーの判断の代わりにしない）、足りなければ本書「エスカレーションの事由別の扱い」で差し戻す。
 7. 受理した返却本文のパス（正式原本ならそのパス）を、計画名、対象WI集合、`レビューHEAD`、原要求と`review_contract`、指摘管理表の所在とroundに対応付け、`受理済みの完成条件証拠`として進捗ログ（計画なしでは引き継ぎ記録）へ記録する。
 8. 受理の後にHEADが変わったら（レビュー修正、mergeの競合の解消、rebase）、最新のHEADで全ての条件を判定し直した返却を受理してから進む。
-   `agent-toolkit:atk-mode/references/exec-review-launch-variants.md`「HEADの更新と再レビューの要否」で影響が無いと確かめた計画は除く。
+   `agent-toolkit:atk-mode/references/exec-review-head-update.md`「HEADの更新と再レビューの要否」で影響が無いと確かめた計画は除く。
 
 ## 返却に含まれる既存不良の受領
 
@@ -133,10 +137,10 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 ## 収束と統合への引渡し
 
 1. 次の全てを満たした時に収束とする。
-   - 全てのレビューが最終のHEADで完了しているか、最後のレビューの後の差分が`agent-toolkit:atk-mode/references/exec-review-launch-variants.md`「HEADの更新と再レビューの要否」で影響しない修正だけである。
-   - 元のWI全体の条件別判定が`agent-toolkit:atk-mode/references/review-record.md`「統合時の完成条件判定」の受理条件を満たす。
+   - 全てのレビューが最終のHEADで完了しているか、最後のレビューの後の差分が`agent-toolkit:atk-mode/references/exec-review-head-update.md`「HEADの更新と再レビューの要否」で影響しない修正だけである。
+   - 元のWI全体の条件別判定が`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」の受理条件を満たす。
    - 全ての指摘管理表の未解決の指摘が0件である。
-2. 指摘管理表は同書「レビュー指摘管理表の保存」に従って保存するか削除する。
+2. 指摘管理表は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の保存」に従って保存するか削除する。
 3. 統合は実行レビューの受理の後に行い、複数レーンの実行では`統合準備完了`を返して、メインから`統合許可`を受けてから統合へ進む（`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」）。
 
 ## エスカレーションの事由別の扱い
@@ -173,7 +177,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 
 `source`を持つAWIで目的の達成に要らないエージェント起草の条件は、レーン担当が上の境界を確かめて除き、判断を記録して報告する。
 それ以外の変更と除外の判断要請はメインが判定し、統合の時にもメインが記録と境界を確かめる。
-記録の項目と記録先は`agent-toolkit:atk-mode/references/review-record.md`「失効の根拠」の技術判断の2つに従って判断の時点で選ぶ。
+記録の項目と記録先は`agent-toolkit:atk-mode/references/review-record-verdicts.md`「失効の根拠」の技術判断の2つに従って判断の時点で選ぶ。
 対話の中の判断を根拠にする時は、同書「失効の根拠」の会話の証拠（発話の逐語と、同じ発話の反復と区別できる時点と文脈）を、その証拠を使う担当へ渡す。
 メインは出所の抽出の完了を待たずに回答を返す。
 

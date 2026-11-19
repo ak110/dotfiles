@@ -61,7 +61,7 @@
   粒度の選定を誤った場合の不利益は作業速度の低下にとどまり、品質自体は各群の検収によって担保する。
 - 実装・焦点検証・commitが完了した群から、作成側と独立したレビューへ渡す。
   対象のHEAD・要求・直接影響集合・成功証拠を固定し、他群の編集中の本文を保存HEADのレビューへ混ぜない。
-  起動と受理は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`と`agent-toolkit:atk-mode/references/review-record.md`に従い、全群の完了を待たずに進める。
+  起動と受理は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`と`agent-toolkit:atk-mode/references/review-record-acceptance.md`に従い、全群の完了を待たずに進める。
 - 検収、レーンbranchへの統合、および競合の解消はレーン担当者のみが実施する。
   群間の契約・共有生成物・組合せ差分・未達条件を確認し、同条件の受理済みレビューと検証結果を再利用する。
   統合後は、群の間で重複する生成物の差異を原本から同期し、すべての追跡対象ファイルにおける対象文字列、直接影響範囲、変更範囲のテストを確認した上で、一時的なworktreeとbranchを回収する。

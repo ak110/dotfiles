@@ -98,10 +98,10 @@
 
 ## 統合とAWI終了
 
-1. 統合前の確認は`agent-toolkit:atk-mode/references/review-record.md`「統合時の完成条件判定」に従う。
+1. 統合前の確認は`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」に従う。
    レーン担当へ任せる統合の指示と、メイン自身がCLIを実行する場合の検収は`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/playbooks/lane-receipt.md`に従う。
    内部の群の焦点の検証は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」に従う。
-   内部の群の独立文脈レビューは`agent-toolkit:atk-mode/references/exec-review-launch-variants.md`「起動方法別のレビュー基準」に従う。
+   内部の群の独立文脈レビューは`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`に従う。
    レーン担当は群の保存が終わった順にレビューを始め、全群の完了を待つ一斉の初回レビューは避ける。
    共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）へ群ごとに早く投入し、群別の対象の和集合と元WIの全条件の対応を保つ。
    受理済みの同じ本文・環境・契約の結果は再利用し、全群の取り込み後に群間の契約、共有の生成物、組合せの差分と未達条件を検収してから統合入力を確定する。
@@ -156,7 +156,7 @@
 2. 両側の要求を保って競合を解消し、解消したパスだけをステージングして通常のmerge commitを作り、既存の実装のOIDはそのまま保つ。
    - 解消で生じた変更と影響するAWIを、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
    - 競合箇所、解消の方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表へ1行加え、同じ行に`atk review-table respond`で解消内容を書く。
-     行の書き方は`agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表の共通操作」に従う。
+     行の書き方は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」に従う。
    - 影響する利用側を検証し、解消差分を実行レビューにかけ、既存の実行レビュー担当から現在のHEADの判定を受理する（`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`）。
 3. クリーンな現在のHEADを`--reviewed-head`へ渡し、受理済みのレビューとcommitの対応を反映したmanifestで、`atk lane integrate`へ`--restart-review`を付けて再開する。
    統合先がさらに進んだ場合も同じ節に従って追加でmergeし、その影響だけを検収する。

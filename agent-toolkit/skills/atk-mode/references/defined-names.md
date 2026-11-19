@@ -37,7 +37,7 @@ agent-toolkitの用語の索引である。
 | 公開工程判定 | 完成条件の判定 | `agent-toolkit:atk-mode/references/workflow-phases.md`「用語」 |
 | 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:atk-mode/references/awi-body.md`「直接影響範囲」 |
 | 変更範囲の検証 | 検証の範囲 | `agent-toolkit:atk-mode/references/plan-format.md`「検証」 |
-| 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:atk-mode/references/review-record.md`「統合時の完成条件判定」 |
+| 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビューの回 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |
 | 再レビュー | 実行レビューの回 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |
 | 引き継ぎ再レビュー | 実行レビューの回 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |
@@ -74,8 +74,8 @@ agent-toolkitの用語の索引である。
 | プロジェクト方針 | 方針の範囲 | `agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
 | 作成規範 | 品質基準 | `agent-basics:review-standards/SKILL.md`「対象成果物の作成規範」 |
 | 完成条件 | WI・計画の条件 | `agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」 |
-| レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表の共通操作」 |
-| CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表の共通操作」 |
+| レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」 |
+| CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」 |
 | セッション記録 | 会話の記録 | `agent-toolkit:atk-mode/references/session-records.md`冒頭 |
 | メイン記録 | 会話の記録 | `agent-toolkit:atk-mode/references/session-records.md`「Claude Codeの記録」 |
 | サブエージェント記録 | 会話の記録 | `agent-toolkit:atk-mode/references/session-records.md`「Claude Codeの記録」 |

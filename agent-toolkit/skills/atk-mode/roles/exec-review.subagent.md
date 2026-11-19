@@ -203,4 +203,4 @@ Git管理外のデータはGitから戻せず、レビュー工程で失うと�
 | 起動された | `agent-toolkit:atk-mode/playbooks/exec-review.md`「着手時の確認」から順に実行する |
 | `再レビューせよ`を受けた | `agent-toolkit:atk-mode/playbooks/exec-review.md`「再レビュー」から実行する |
 | 操作か検証の手段を選ぶ | 本書「操作区分」 |
-| 指摘、走査記録、完成条件証拠、前回確認版を記録する | `agent-toolkit:atk-mode/playbooks/exec-review.md`「返却前の処理」と`agent-toolkit:atk-mode/references/review-record.md` |
+| 指摘、走査記録、完成条件証拠、前回確認版を記録する | `agent-toolkit:atk-mode/playbooks/exec-review.md`「返却前の処理」、`agent-toolkit:atk-mode/references/review-record.md`、`agent-toolkit:atk-mode/references/review-record-verdicts.md` |

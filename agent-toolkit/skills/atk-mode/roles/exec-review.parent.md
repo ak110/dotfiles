@@ -40,8 +40,10 @@
 | 差分外の不良を受領して対処時機を決める前 | `agent-toolkit:delegation/references/receiving-followup.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
 | process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-immediate-fix.md` |
 
-- 内部の群、複数の計画、`CI記録`、引き継ぎ再レビューで起動する時と、レビューの後にHEADが変わった時は、`agent-toolkit:atk-mode/references/exec-review-launch-variants.md`の該当の節を読む。
-- `review_contract`の生成は`agent-toolkit:atk-mode/references/review-contract.md`、判定行の形式と指摘管理表のパス・保存・操作は`agent-toolkit:atk-mode/references/review-record.md`にある。
+- 単一計画の初回でない起動は、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「起動」の手順3が示す資料を読む。
+- レビューの後にHEADが変わった時は`agent-toolkit:atk-mode/references/exec-review-head-update.md`を読む。
+- `review_contract`の生成は`agent-toolkit:atk-mode/references/review-contract.md`、判定行の形式は`agent-toolkit:atk-mode/references/review-record.md`にある。
+- 指摘管理表のパス・保存・操作は`agent-toolkit:atk-mode/references/review-record-table.md`にある。
 - 画面差分がある時は`agent-toolkit:atk-mode/roles/usability-review.parent.md`、文章成果物の読者別探索は`agent-toolkit:/share/reader-fit-review.parent.md`に従う。
 - 指摘を自分で直す時は`agent-toolkit:atk-mode/playbooks/review-fix.md`を使う。
 - 収束の後の統合は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`と`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`にある。
