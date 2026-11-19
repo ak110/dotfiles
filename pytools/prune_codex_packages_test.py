@@ -297,6 +297,7 @@ def test_stale_selection_history_skips_only_its_package(monkeypatch: pytest.Monk
     standalone_old = _release(tmp_path, "standalone", "0.169.0")
     (standalone.parent.parent / "current").symlink_to(standalone, target_is_directory=True)
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
+    monkeypatch.setattr(prune_codex_packages, "_install_lock", lambda *args, **kwargs: contextlib.nullcontext())
 
     result = prune_codex_packages.prune(home=tmp_path, windows=False)
 
