@@ -653,9 +653,10 @@ def stop_owned_process(
     returncode = process.poll()
     # 生成側が保持した全世代の終了を確認できれば、既知の所有は回収済みである。
     # 通常の短いコマンドごとに、終了済みの親から全OSを再走査する必要はない。
+    # 起点の終了はwait済みのPopenで確定している。Windowsのpsutilは終了直後のプロセスを実行中と報告し得るため、起点には問わない。
     if returncode is not None and known:
         try:
-            if all(not target.is_running() for target in known):
+            if all(target.pid == process.pid or not target.is_running() for target in known):
                 _reap_owned_child(process)
                 return None
         except psutil.Error, OSError:
