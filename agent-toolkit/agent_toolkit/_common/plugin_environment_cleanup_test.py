@@ -120,7 +120,7 @@ def test_cleanup_retains_unknown_usage_and_continues_after_delete_failure(
     monkeypatch.setattr(subject.shutil, "rmtree", deny_one)
     result = subject.cleanup([], environment)
     assert blocked.is_dir() and not removable.exists()
-    assert any(row["status"] == "retained" and "削除拒否" in str(row["reason"]) for row in result)
+    assert any(row["status"] == "deferred" and "削除拒否" in str(row["reason"]) for row in result)
     monkeypatch.setattr(subject.shutil, "rmtree", remove)
     subject.cleanup([], environment)
     assert not blocked.exists()

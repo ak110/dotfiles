@@ -156,6 +156,9 @@ def remote_command_argv(bootstrap: str, op: str, args: list[str]) -> list[str]:
     return [
         "uv",
         "run",
+        # SSHの起動ディレクトリはリモートのホーム。常駐中も通常のuvキャッシュを整理でき、
+        # 再接続には取得済みの2依存を使えるよう、常駐ヘルパー同士で専用キャッシュを共有する。
+        *(["--cache-dir", ".cache/agent-toolkit/remote-helper-uv"] if op == "serve" else []),
         "--no-project",
         "--python",
         "3.15",

@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import sys
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -238,7 +239,18 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
                 ", ".join(log_format.home_short(target) for target in prepared.legacy),
             )
         else:
-            plugin_environment_cleanup.cleanup(required, os.environ)
+            rows = plugin_environment_cleanup.cleanup(required, os.environ)
+            for row in rows:
+                logger.info("共有依存環境: %s", json.dumps(row, ensure_ascii=False), extra=log_format.LOG_ONLY)
+            counts = Counter(row["status"] for row in rows)
+            action = "。保留が続く場合は update-dotfiles logs で理由を確認してください" if counts["deferred"] else ""
+            logger.info(
+                "共有依存環境: 保持%d件、削除%d件、保留%d件%s",
+                counts["retained"],
+                counts["deleted"],
+                counts["deferred"],
+                action,
+            )
     except (OSError, ValueError, IndexError, psutil.Error) as error:
         logger.warning(
             "共有環境の回収を完了できませんでした: %s: %s。共有環境のアクセス権と配布元のJSONを確認してください。"
@@ -257,14 +269,17 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
         )
     result = sweep.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC), force=True)
     for target, error in result.failed:
+        logger.warning("一時資源の回収を保留: %s: %s", target, error, extra=log_format.LOG_ONLY)
+    if result.failed:
         logger.warning(
-            "一時資源の回収を保留: %s: %s。対象を使用中の操作が終わるまで待ち、削除権限を確認してください。"
-            "原因の解消後にupdate-dotfilesを再実行すると回収を再試行します",
-            target,
-            error,
+            "一時資源%d件の回収を保留した。update-dotfiles logs で対象と理由を確認し、"
+            "使用中の場合は利用終了後に、権限不足の場合は削除権限を確認してから update-dotfiles を再実行してください",
+            len(result.failed),
         )
     for target in result.deleted:
-        logger.info("一時資源を回収: %s", target)
+        logger.info("一時資源を回収: %s", target, extra=log_format.LOG_ONLY)
+    if result.deleted:
+        logger.info("一時資源を%d件回収した", len(result.deleted))
 
 
 def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:
