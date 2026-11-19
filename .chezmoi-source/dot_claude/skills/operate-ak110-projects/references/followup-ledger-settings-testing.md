@@ -19,7 +19,7 @@
 - 理由: 同じ準備や検査の重複と資源競合を減らし、CIの待ち時間を抑える
 - 当てはまる条件: 直列実行、重い検査の同居、無関係な領域の検査、所要基準の欠如のいずれかがCIにある
 - 適用方法: 律速と準備・本体・後処理を測り、検査集合を保って分割し、未知の変更は全体へ戻し、失敗を必須checkへ伝え、プロジェクトの実績から所要基準を定める
-- 参照先: `github.com/ak110/dotfiles`の`.github/workflows/ci.yaml`と`.claude/skills/develop-dotfiles/references/verification-values-speed.md`
+- 参照先: `github.com/ak110/dotfiles`の`.github/workflows/ci.yaml`と`.claude/skills/develop-dotfiles/references/verification.md`「テストとCIの所要基準」
 - 適用済みの見分け方: 必須検査の集合と失敗伝播が検証され、変更領域の選択理由と、全体・律速ジョブの所要を基準と比較できる
 
 ## 試験の途中終了でも失敗名を保存する

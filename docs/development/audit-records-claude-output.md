@@ -113,7 +113,7 @@ tmux内の対話のClaude Code（Opus 5.5）では、ツールで送った見出
 
 再検証は次の2つに限る。
 1つ目は本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して`narration_block_indexes`の説明を確かめることである。
-検索の手順は`.claude/skills/develop-dotfiles/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+検索の手順は`.claude/skills/develop-dotfiles/references/host-binaries.md`「ホスト本体のバイナリの検索」に従う。
 2つ目は`display: "updates"`を要求する環境の記録で、`thinking`ブロックを文面の有無で数えることである。
 
 ## agent-toolkit/share/rules-main.claude-code.md：ターンの終え方：2026年10月7日
