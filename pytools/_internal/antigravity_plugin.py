@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import shlex
 import stat
 import subprocess
@@ -12,21 +11,15 @@ from pytools._internal import common, post_apply_outcome
 
 PLUGIN_DIRECTORY = "agent-toolkit-agy"
 PLUGIN_NAMES = ("agent-toolkit", "agent-basics")
+# agyが1ファイルから読み込む上限。超えるスキルは初期取得文書と全文資料へ分ける。
 RULE_FILE_BYTES = 24_000
-RULE_BUDGET_TOKENS = 20_000
-# 超過時に通常の追記を吸収する余裕へ戻す目安。上限以下の生成を拒否する値ではない。
-# 根拠と再確認はdocs/development/audit-records-antigravity.mdの
-# 「pytools/_internal/antigravity_plugin.py：常時規範の容量：2026年11月12日」に記録する。
-RULE_REORGANIZED_TOKENS = 17_000
 # 更新時に必ず表示する案内。旧版からの更新検証（scripts/check_update_dotfiles_upgrade.py）も同じ文言だけを許容する。
 UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
 EVENTS = ("SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop")
-_ALWAYS_ON = "---\ntrigger: always_on\n---\n\n"
 _SOURCE_DIRECTORIES = ("skills", "agents", "share", "agent_toolkit", "scripts")
 # 役割文書の置き場所。agent-toolkitの`task_documents.ROLE_DOCUMENT_DIRECTORIES`と同じ値を保つ（試験が確かめる）。
 ROLE_DOCUMENT_DIRECTORIES = ("skills/atk-mode/roles", "share")
 _EXCLUDED = frozenset({"__pycache__", ".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache"})
-_MARKDOWN_HEADING = re.compile(r"#{1,6}(?:\s|$)")
 
 
 def _json(value: object) -> bytes:
@@ -45,79 +38,6 @@ def _project_paths(value: object, target: Path) -> object:
     if isinstance(value, dict):
         return {key: _project_paths(item, target) for key, item in value.items()}
     return value
-
-
-def _heading_tail(lines: list[tuple[str, bool]]) -> int:
-    """末尾の見出しと空行だけの並びが始まる位置を返す。該当しなければ行数を返す。"""
-    start = len(lines)
-    for index in range(len(lines) - 1, -1, -1):
-        line, heading = lines[index]
-        if heading:
-            start = index
-        elif line.strip():
-            break
-    return start
-
-
-def _rules(source: Path) -> dict[Path, bytes]:
-    """各ファイルを行境界で分割し、同じ本文を常時ロードへ投影する。
-
-    分割の直前が見出しで終わると、見出しと説明する本文が別ファイルに分かれて読み手が対応を失う。
-    末尾の見出し（直後の空行を含む）は次のファイルへ繰り越し、繰り越しても上限に収まらない場合だけ行で分ける。
-    """
-    chunks: list[str] = []
-    current: list[tuple[str, bool]] = []
-    current_bytes = 0
-    in_fence = False
-    body_limit = RULE_FILE_BYTES - len(_ALWAYS_ON.encode("utf-8"))
-    for path in sorted((source / "share" / "rules" / "common").glob("*.md")):
-        text = path.read_text(encoding="utf-8")
-        if not text.endswith("\n"):
-            text += "\n"
-        for line in text.splitlines(keepends=True):
-            size = len(line.encode("utf-8"))
-            if size > body_limit:
-                raise ValueError(
-                    f"Antigravity規範の1行がファイル上限を超えています: {path}。"
-                    "本文と読込順序を保ち、長い行を複数行へ分けてから再実行してください"
-                )
-            stripped = line.lstrip()
-            # コードフェンス内の`#`行（シェルのコメントなど）は見出しとして扱わない。
-            fence = stripped.startswith(("```", "~~~"))
-            heading = not in_fence and not fence and _MARKDOWN_HEADING.match(stripped) is not None
-            if fence:
-                in_fence = not in_fence
-            if current_bytes + size > body_limit:
-                tail = _heading_tail(current)
-                carried = current[tail:]
-                carried_bytes = sum(len(item.encode("utf-8")) for item, _ in carried)
-                if tail == 0 or carried_bytes + size > body_limit:
-                    tail, carried, carried_bytes = len(current), [], 0
-                chunks.append("".join(item for item, _ in current[:tail]))
-                current, current_bytes = carried, carried_bytes
-            current.append((line, heading))
-            current_bytes += size
-    if current:
-        chunks.append("".join(item for item, _ in current))
-    # agyの規範予算はモデル共通。日本語を含む本文へUTF-8の2 bytes/token換算を
-    # 採り、英語中心の4 bytes/token換算より余裕を持って生成時に検査する。
-    estimated_tokens = sum(
-        (len(chunk.encode("utf-8")) + (len(_ALWAYS_ON.encode("utf-8")) if index else 0) + 1) // 2
-        for index, chunk in enumerate(chunks)
-    )
-    if estimated_tokens > RULE_BUDGET_TOKENS:
-        raise ValueError(
-            f"Antigravity常時規範が予算を超えています: 推定{estimated_tokens} tokens。"
-            "常時規範のうち特定の場面だけで使う内容を、その判断・操作の前に読む資料へ移し、"
-            f"推定{RULE_REORGANIZED_TOKENS} tokens以下まで整理してください。"
-            "上限以下では容量の追加測定・記録・削減は不要です"
-        )
-    return {
-        Path("rules") / ("AGENTS.md" if index == 0 else f"AGENTS-{index + 1:02d}.md"): (
-            chunk if index == 0 else _ALWAYS_ON + chunk
-        ).encode("utf-8")
-        for index, chunk in enumerate(chunks)
-    }
 
 
 def plugin_directory(plugin_name: str) -> str:
@@ -201,7 +121,6 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
     # MCPの引数配列ではシェルを通さず、展開後の絶対パスをそのまま渡す。
     servers = _project_paths(servers, target)
     result[Path("mcp_config.json")] = (_json({"mcpServers": servers}), 0o644)
-    result.update({path: (data, 0o644) for path, data in _rules(source).items()})
     return result
 
 
