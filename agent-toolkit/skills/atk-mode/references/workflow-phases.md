@@ -56,7 +56,7 @@ WI起草工程の登録条件は`agent-toolkit:atk-mode/playbooks/wi-drafting.md
 ## エージェント向け文書の試行
 
 試行の品質基準（同じ固定課題での複数ターンの試行、抜粋や未読に基づく不足の判定の扱い、記録する項目）は`agent-basics:check-execution/references/acceptance-scenarios.md`「エージェント向け文書の試行」にあり、本節は採用と記録の運用を定める。
-対話の継続と成果物の達成を確かめる試行の組み方は`agent-toolkit:refine-prompt/references/multi-turn-trials.md`にある。
+対話の継続と成果物の達成を確かめる試行の組み方は`agent-toolkit:atk-mode/playbooks/refine-prompt-trials.md`にある。
 
 1. 試行を加える前に、その結果で文書の採否や修正が変わるかと、受入シナリオの結果を他の観測でまだ確かめていないかを比べ、どちらかに当たる試行だけを行う。
 2. 同じ版の文書と同じ入力で得た結果は再利用し、文書の修正後は結果が変わり得る試行だけをやり直す。
@@ -65,7 +65,7 @@ WI起草工程の登録条件は`agent-toolkit:atk-mode/playbooks/wi-drafting.md
 4. 実装担当は、入力、対象文書の版（commitハッシュと相対パス、または本文を複製した絶対パス）、委譲先の回答、期待結果との比較、合否をmanaged-temp内の記録ファイルにまとめ、その絶対パスを検証結果に書く。
    別ファイルに保存した入力・回答・原稿も同じ記録から絶対パスで辿れるようにし、実行レビュー担当が取得できる状態にする。
 5. 判定試行は文書を読むだけの処理であり、起動主体や操作権限の制限は後で実際にスキルを起動する段階で適用する。
-   例えば`agent-toolkit:review-session/references/current-session.md`は全記録の検収と正式登録を最上位のメインエージェントに限るため、実際に起動する時はその制限と操作の認可に従う。
+   例えば`agent-toolkit:atk-mode/playbooks/review-session.md`は全記録の検収と正式登録を最上位のメインエージェントに限るため、実際に起動する時はその制限と操作の認可に従う。
 
 ## 検証資源の分離
 
