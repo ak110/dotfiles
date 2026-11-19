@@ -460,6 +460,7 @@ def _snapshot_plugin_caches(cache_root: Path, saved_root: Path, target_version: 
     """CLI更新前の通常versionディレクトリを退避する。
 
     目標versionはCLIが置き換えるため元の場所に残して複製し、`plugin add`の失敗時に戻せるようにする。
+    使用中で移動できない版も元の場所に残して複製し、復元で補えるよう`~copied`の印を付ける。
     """
     if not cache_root.is_dir():
         return
@@ -471,6 +472,8 @@ def _snapshot_plugin_caches(cache_root: Path, saved_root: Path, target_version: 
             # Windowsは使用中のファイルを含むディレクトリを移動できないため、移動できない版は複製する。
             with contextlib.suppress(OSError):
                 path.rename(saved_root / path.name)
+            if path.exists():
+                (saved_root / f"{path.name}~copied").touch()
         if path.exists():
             shutil.copytree(path, saved_root / path.name, symlinks=True)
 
@@ -480,6 +483,8 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
 
     `rollback`では元のパスに現れた内容を退避した内容で置き換え、それ以外では既存の内容を残す。
     置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
+    複製で退避した使用中の版（`~copied`の印）は、CLIが元のパスを途中まで消しても使用中のファイルが残って置き換えられないため、
+    元のパスに無いファイルだけを退避した内容から補う。
     `installed_version`の退避はCLIが作成した内容を残すため戻さない。
     """
     if not saved_root.is_dir():
@@ -489,14 +494,19 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
             continue
         destination = cache_root / source.name
         replace_marker = saved_root / f"{source.name}~replace"
+        copied_marker = saved_root / f"{source.name}~copied"
         staging = cache_root / f"{source.name}~restoring"
         if _path_exists(staging):
             _remove_tree(staging)
-        if (rollback or replace_marker.exists()) and _path_exists(destination):
+        copied = copied_marker.exists()
+        if (rollback or replace_marker.exists()) and not copied and _path_exists(destination):
             replace_marker.touch()
             _remove_tree(destination)
         if source.name == installed_version or _path_exists(destination):
+            if copied and source.name != installed_version:
+                _complete_from_saved(source, destination)
             replace_marker.unlink(missing_ok=True)
+            copied_marker.unlink(missing_ok=True)
             shutil.rmtree(source)
             continue
         cache_root.mkdir(parents=True, exist_ok=True)
@@ -508,16 +518,36 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
             shutil.copytree(source, staging, symlinks=True)
             staging.rename(destination)
             replace_marker.unlink(missing_ok=True)
+            copied_marker.unlink(missing_ok=True)
             shutil.rmtree(source)
         else:
             replace_marker.unlink(missing_ok=True)
+            copied_marker.unlink(missing_ok=True)
     # 版を元のパスへ戻した直後に中断すると、対応する退避の無い印だけが残る。
-    for orphan_marker in saved_root.glob("*~replace"):
+    for orphan_marker in (*saved_root.glob("*~replace"), *saved_root.glob("*~copied")):
         orphan_marker.unlink()
     saved_root.rmdir()
     for parent in (saved_root.parent, saved_root.parent.parent):
         with contextlib.suppress(OSError):
             parent.rmdir()
+
+
+def _complete_from_saved(source: Path, destination: Path) -> None:
+    """退避した版にあって元のパスに無いファイルとディレクトリを補う。
+
+    元のパスに残るファイルはCLIが消せなかった使用中のファイルであり、置き換えずに残す。
+    各ファイルは隣で複製を仕上げてから名前の変更で置き、途中で止まっても欠けたファイルを元の名前で残さない。
+    """
+    for directory, _subdirectories, files in source.walk():
+        target = destination / directory.relative_to(source)
+        target.mkdir(exist_ok=True)
+        for name in files:
+            if _path_exists(target / name):
+                continue
+            staging = target / f"{name}~restoring"
+            staging.unlink(missing_ok=True)
+            shutil.copy2(directory / name, staging, follow_symlinks=False)
+            staging.replace(target / name)
 
 
 def _remove_tree(path: Path) -> None:

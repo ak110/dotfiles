@@ -3,6 +3,7 @@
 
 # pylint: disable=protected-access
 
+import contextlib
 import errno
 import shutil
 from pathlib import Path
@@ -284,10 +285,62 @@ def test_cache_on_other_volume_is_copied_back(plugin_env: Path, monkeypatch: pyt
 def test_interrupted_rollback_keeps_saved_version_for_next_run(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """plugin add失敗後の巻き戻しが元のパスを途中まで消して失敗しても、次回の実行が退避した内容で置き換える。"""
-    (_cache() / "1.2.1").mkdir(parents=True)
-    (_cache() / "1.2.1/marker").write_text("1.2.1", encoding="utf-8")
+    """plugin add失敗後の巻き戻しが元のパスを途中まで消して失敗しても、次回の実行が退避した内容で置き換える。
+
+    移動で退避した版の元のパスへ別の内容が作られていた場合、巻き戻しはその内容を退避した内容で置き換える。
+    """
+    previous = _cache() / "1.2.1"
+    previous.mkdir(parents=True)
+    (previous / "marker").write_text("1.2.1", encoding="utf-8")
+    original_rmtree = shutil.rmtree
+
+    def rmtree(path: Any, ignore_errors: bool = False) -> None:
+        if Path(path) == previous:
+            # 削除は開かれていないファイルだけを消して止まる。
+            (previous / "partial").unlink(missing_ok=True)
+            raise PermissionError("in use")
+        original_rmtree(path, ignore_errors=ignore_errors)
+
+    def command(args: list[str]) -> bool:
+        if args[:2] == ["plugin", "add"]:
+            previous.mkdir()
+            (previous / "partial").write_text("written by failed add", encoding="utf-8")
+            return False
+        return True
+
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2")])
+    monkeypatch.setattr(install_codex_plugins.shutil, "rmtree", rmtree)
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+    with caplog.at_level("WARNING"):
+        install_codex_plugins.run()
+    assert "plugin addと旧cacheの復旧に失敗" in caplog.text
+    assert not (previous / "marker").exists()
+
+    monkeypatch.setattr(install_codex_plugins.shutil, "rmtree", original_rmtree)
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([]))
+    install_codex_plugins.run()
+
+    assert (previous / "marker").read_text(encoding="utf-8") == "1.2.1"
+    assert not (previous / "partial").exists()
+    assert not _saved_root().exists()
+
+
+@pytest.mark.parametrize("add_succeeds", [True, False])
+def test_copied_version_partially_removed_by_cli_is_completed(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, add_succeeds: bool
+) -> None:
+    """複製で退避した使用中の版をCLIが途中まで消しても、同じ実行のうちに元のパスで完全な内容へ戻す。
+
+    Windowsでは使用中のファイルを含むディレクトリを移動も削除もできず、削除は使用中でないファイルだけを消して止まる。
+    """
     locked = _cache() / "1.2.1"
+    (locked / "skills/coding").mkdir(parents=True)
+    (locked / "skills/coding/SKILL.md").write_text("skill", encoding="utf-8")
+    (locked / "marker").write_text("1.2.1", encoding="utf-8")
+    (locked / "in-use.pyd").write_text("loaded", encoding="utf-8")
+    (_cache() / "1.2.2").mkdir()
+    (_cache() / "1.2.2/marker").write_text("1.2.2", encoding="utf-8")
     original_rename = Path.rename
     original_rmtree = shutil.rmtree
 
@@ -297,28 +350,44 @@ def test_interrupted_rollback_keeps_saved_version_for_next_run(
         return original_rename(self, target)
 
     def rmtree(path: Any, ignore_errors: bool = False) -> None:
-        if Path(path) == locked:
-            # Windowsでは開かれていないファイルだけが消え、使用中のファイルで削除が止まる。
-            (locked / "marker").unlink(missing_ok=True)
-            raise PermissionError("in use")
-        original_rmtree(path, ignore_errors=ignore_errors)
+        if Path(path) != locked:
+            original_rmtree(path, ignore_errors=ignore_errors)
+            return
+        for item in sorted(locked.rglob("*"), reverse=True):
+            if item.is_dir():
+                item.rmdir()
+            elif item.name != "in-use.pyd":
+                item.unlink()
+        raise PermissionError("in use")
 
-    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2")])
+    current: dict[str, Any] = {"version": "1.2.2", "enabled": True}
+
+    def command(args: list[str]) -> bool:
+        if args[:2] != ["plugin", "add"]:
+            return True
+        # CLIは目標以外の全versionを削除し、削除できないファイルを残して続行する。
+        for path in list(_cache().iterdir()):
+            if path.name != "1.2.3":
+                with contextlib.suppress(OSError):
+                    shutil.rmtree(path)
+        if add_succeeds:
+            current.update(version="1.2.3")
+        return add_succeeds
+
     monkeypatch.setattr(Path, "rename", rename)
     monkeypatch.setattr(install_codex_plugins.shutil, "rmtree", rmtree)
-    monkeypatch.setattr(install_codex_plugins, "_command", lambda args: args[:2] != ["plugin", "add"])
-    with caplog.at_level("WARNING"):
-        install_codex_plugins.run()
-    assert "plugin addと旧cacheの復旧に失敗" in caplog.text
-    assert not (locked / "marker").exists()
-
-    monkeypatch.setattr(Path, "rename", original_rename)
-    monkeypatch.setattr(install_codex_plugins.shutil, "rmtree", original_rmtree)
-    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
-    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([]))
+    monkeypatch.setattr(
+        install_codex_plugins,
+        "_codex_json",
+        lambda args: _local_marketplace(plugin_env) if args[1] == "marketplace" else _installed_state(**current),
+    )
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
     install_codex_plugins.run()
 
     assert (locked / "marker").read_text(encoding="utf-8") == "1.2.1"
+    assert (locked / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "skill"
+    assert (locked / "in-use.pyd").read_text(encoding="utf-8") == "loaded"
+    assert (_cache() / "1.2.2/marker").read_text(encoding="utf-8") == "1.2.2"
     assert not _saved_root().exists()
 
 
