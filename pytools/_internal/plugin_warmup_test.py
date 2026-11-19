@@ -187,7 +187,7 @@ def test_prepare_targets_groups_dependencies_and_preserves_roots(tmp_path, monke
         return True
 
     monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
-    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
+    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test").commands
     assert [command[-1] for command in commands] == list(map(str, paths))
     assert len(calls) == (count if different_keys else min(count, 1))
     assert all(command[-2] == "--prepare" for command in calls)
@@ -209,7 +209,7 @@ def test_failed_prepare_does_not_retry_same_key_or_skip_other_environment(tmp_pa
         return command[-1] == str(paths[-1])
 
     monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
-    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
+    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test").commands
     assert len(calls) == 2
     assert [command[-1] for command in commands] == [str(paths[-1])]
 
@@ -322,7 +322,8 @@ def test_prepare_targets_skips_legacy_root_without_lock_and_prepares_others(tmp_
 
     monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
     with caplog.at_level(logging.WARNING):
-        commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
-    assert [command[-1] for command in commands] == [str(current)]
+        prepared = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
+    assert [command[-1] for command in prepared.commands] == [str(current)]
+    assert prepared.legacy == (legacy,)
     assert [command[-1] for command in calls] == [str(current)]
     assert "旧形式の配布root" in caplog.text

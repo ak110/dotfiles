@@ -100,7 +100,9 @@ def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tm
     """
     warmup = post_apply.warmup_agents_server
     commands = [["python", str(tmp_path / name)] for name in ("first", "second")]
-    monkeypatch.setattr(warmup.plugin_warmup, "prepare_targets", lambda *_args, **_kwargs: commands)
+    monkeypatch.setattr(
+        warmup.plugin_warmup, "prepare_targets", lambda *_args, **_kwargs: warmup.plugin_warmup.PreparedTargets(commands)
+    )
 
     async def check_targets():
         second_done = asyncio.Event()

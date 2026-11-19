@@ -45,7 +45,8 @@ def cache_lock(plugin_directory: pathlib.Path) -> filelock.FileLock:
 class ReferencingProcess:
     """稼働中の自ユーザーのプロセス1件の走査結果。
 
-    `values`はplugin実体を指し得る値（作業ディレクトリ、実行ファイル、command lineの各要素、`CLAUDE_PLUGIN_ROOT`）である。
+    `values`はplugin実体を指し得る値（作業ディレクトリ、実行ファイル、command lineの各要素、`CLAUDE_PLUGIN_ROOT`、
+    `VIRTUAL_ENV`）である。
     `complete`は、これらの値を全て取得できたかを示す。
     """
 
@@ -83,11 +84,10 @@ def _referencing_process(pid: int, info: dict[str, typing.Any]) -> ReferencingPr
     name = name_value if isinstance(name_value, str) else ""
     exe = exe_value if isinstance(exe_value, str) else ""
     cmdline = [value for value in cmdline_value if isinstance(value, str)] if isinstance(cmdline_value, list) else []
-    environ = environ_value if isinstance(environ_value, dict) else None
-    plugin_root = environ.get(_PLUGIN_ROOT_ENV) if environ is not None else None
-    values = tuple(
-        value for value in (cwd_value if isinstance(cwd_value, str) else "", exe, *cmdline, plugin_root or "") if value
-    )
+    environ = environ_value if isinstance(environ_value, dict) else {}
+    # 有効化した仮想環境から名前で起動したPythonは、Linuxでは実行ファイルが本体へ解決され、command lineにも環境が現れない。
+    paths = (environ.get(key, "") for key in (_PLUGIN_ROOT_ENV, "VIRTUAL_ENV"))
+    values = tuple(value for value in (cwd_value if isinstance(cwd_value, str) else "", exe, *cmdline, *paths) if value)
     # 作業ディレクトリと環境変数を読めないプロセス（他者が変更できないよう保護された実行体など）は参照先が欠ける。
     complete = all(value is not _ACCESS_DENIED for value in (cwd_value, exe_value, cmdline_value, environ_value))
     identified = bool(name or exe or cmdline)
@@ -107,7 +107,7 @@ def holding_reasons(
 
     次のいずれかに当たる間は保持する。
 
-    - 自ユーザーのプロセスの作業ディレクトリ・実行ファイル・command line・`CLAUDE_PLUGIN_ROOT`が`directory`の配下を指す
+    - 自ユーザーのプロセスの`ReferencingProcess.values`のいずれかが`directory`の配下を指す
     - `sessions_may_reference`が真で、Claude Codeセッションが稼働中。
       非現行版（`retired=True`）は、初回の回収判定で保存した世代が残る間だけ保持する。
       以後に起動したセッションは現行版を解決し、旧版の明示参照は上の直接参照で保護する
@@ -140,7 +140,7 @@ def holding_reasons(
 
 
 def direct_references(processes: tuple[ReferencingProcess, ...], directory: pathlib.Path) -> list[str]:
-    """作業ディレクトリ・実行ファイル・command line・`CLAUDE_PLUGIN_ROOT`で`directory`の配下を指すプロセスを返す。
+    """`ReferencingProcess.values`のいずれかで`directory`の配下を指すプロセスを返す。
 
     pluginの実体ではない作業ツリー内の生成物を回収する判定に使い、plugin cacheのロックとセッション稼働による保持は含めない。
     """

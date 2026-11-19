@@ -8,10 +8,14 @@ directory型marketplaceからの`claude plugin install`は主作業ツリーのg
 # pylint: disable=protected-access
 
 import json
+import os
 import pathlib
 import shutil
+import subprocess
 import sys
+import sysconfig
 import typing
+import venv
 
 import pytest
 
@@ -233,3 +237,47 @@ def test_keeps_referenced_stale_source_environment(
     assert outcome.failure is None
     assert (source_environment / "pyvenv.cfg").is_file()
     assert (_cache_dir(tmp_path) / "agent_toolkit" / "hook.py").is_file()
+
+
+@pytest.mark.windows
+def test_keeps_stale_source_environment_while_activated_python_runs(
+    tmp_path: pathlib.Path, install_into: typing.Callable[..., None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """有効化した仮想環境から名前で起動したPythonが動く間は削除を延期し、そのPythonは環境の依存を読み続けられる。
+
+    Linuxの仮想環境のPythonは本体へのsymlinkであり、OSが示す実行ファイルは本体、command lineの先頭は`python`になる。
+    2026-11-19、この参照を検出できずに削除し、そのプロセスの次のimportが失敗した。
+    Windowsの仮想環境の`python.exe`は本体を子として起動する別の実行ファイルであり、同じ条件で参照を検出できることも確かめる。
+    """
+    environment = tmp_path / "agent-toolkit" / ".venv"
+    venv.EnvBuilder(with_pip=False, symlinks=os.name != "nt").create(environment)
+    site_packages = sysconfig.get_path("purelib", scheme="venv", vars={"base": str(environment), "platbase": str(environment)})
+    (pathlib.Path(site_packages) / "stale_dependency.py").write_text("VALUE = 'loaded'\n", encoding="utf-8")
+    scripts = environment / ("Scripts" if os.name == "nt" else "bin")
+    activated = {**os.environ, "VIRTUAL_ENV": str(environment), "PATH": os.pathsep.join([str(scripts), os.environ["PATH"]])}
+    code = (
+        "import sys; print(sys.prefix, flush=True); sys.stdin.readline(); "
+        "import stale_dependency; print(stale_dependency.VALUE)"
+    )
+    install_into(_cache_dir(tmp_path))
+    monkeypatch.setattr(_claude_plugin_references, "scan", _REAL_SCAN)
+
+    with _common.process_scope(
+        ["python", "-c", code],
+        executable=scripts / ("python.exe" if os.name == "nt" else "python"),
+        cwd=environment.parent,
+        env=activated,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as process:
+        assert process.stdout is not None
+        assert pathlib.Path(process.stdout.readline().strip()).resolve() == environment.resolve()
+        outcome = _install_claude_plugins.run()
+        stdout, stderr = process.communicate("\n", timeout=30)
+
+    assert outcome.failure is None
+    assert (environment / "pyvenv.cfg").is_file()
+    assert (process.returncode, stdout.strip()) == (0, "loaded"), stderr

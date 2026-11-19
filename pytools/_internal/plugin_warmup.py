@@ -178,18 +178,28 @@ def resolve_targets(targets: Callable[[], list[Path]], *, tag: str) -> tuple[lis
     return resolved, python
 
 
-def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> list[list[str]]:
-    """依存keyごとに一度準備し、成功したrootの起動コマンドを列挙順に返す。"""
+@dataclass(frozen=True)
+class PreparedTargets:
+    """準備できたrootの起動コマンドと、共有環境を特定できなかった登録済みの旧形式の対象。"""
+
+    commands: list[list[str]]
+    legacy: tuple[Path, ...] = ()
+
+
+def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> PreparedTargets:
+    """依存keyごとに一度準備し、成功したrootの起動コマンドを列挙順に、旧形式の対象とともに返す。"""
     resolved = resolve_targets(targets, tag=tag)
     if resolved is None:
-        return []
+        return PreparedTargets([])
     paths, python = resolved
     prepared: dict[Path, bool] = {}
     commands: list[list[str]] = []
+    legacy: list[Path] = []
     for target in paths:
         bootstrap = _bootstrap(target, python)
         key = _environment_key(Path(bootstrap[-1]), python, target=target, tag=tag)
         if key is None:
+            legacy.append(target)
             continue
         if key not in prepared:
             prepared[key] = run_command([*bootstrap, "--prepare", str(target)], target=log_format.home_short(target), tag=tag)
@@ -201,11 +211,15 @@ def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> list[list
                     tag, f"共有依存環境を準備できず対象の確認を省略: {target}。`update-dotfiles`を再実行する"
                 )
             )
-    return commands
+    return PreparedTargets(commands, tuple(legacy))
 
 
-def cleanup_prepared(commands: Sequence[Sequence[str]]) -> None:
-    """実際に準備した全有効rootの依存環境を保持し、full更新後の旧資源を回収する。"""
+def cleanup_prepared(prepared: PreparedTargets) -> None:
+    """実際に準備した全有効rootの依存環境を保持し、full更新後の旧資源を回収する。
+
+    旧形式の対象が登録されている間は、その版のhookとMCPが使う共有環境を特定できないため、共有環境を回収しない。
+    """
+    commands = prepared.commands
     try:
         required = [
             plugin_environment.project_environment(
@@ -218,7 +232,13 @@ def cleanup_prepared(commands: Sequence[Sequence[str]]) -> None:
             if target.is_dir():
                 with plugin_environment.prepare_lock(target):
                     plugin_environment.record_source(Path(command[command.index("--project") + 1]), target)
-        plugin_environment_cleanup.cleanup(required, os.environ)
+        if prepared.legacy:
+            logger.info(
+                "旧形式の版が登録されているため共有環境の回収を延期: %s。登録が新しい版へ移った後のupdate-dotfilesで回収します",
+                ", ".join(log_format.home_short(target) for target in prepared.legacy),
+            )
+        else:
+            plugin_environment_cleanup.cleanup(required, os.environ)
     except (OSError, ValueError, IndexError, psutil.Error) as error:
         logger.warning(
             "共有環境の回収を完了できませんでした: %s: %s。共有環境のアクセス権と配布元のJSONを確認してください。"

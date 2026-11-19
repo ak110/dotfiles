@@ -304,6 +304,38 @@ class TestTargets:
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
         assert not _warmed(calls)
 
+    def test_registered_legacy_version_keeps_shared_environments_until_registration_moves(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """旧形式の版が登録されている間は共有環境を回収せず、登録が新しい版へ移った後の更新で回収する。
+
+        依存の固定内容が`uv.lock`だった旧形式の版の共有環境は、現行の起動部分では特定できない。
+        2026-11-19、Claude Codeの登録が旧版のまま更新すると、その版のhookとMCPが使う共有環境を回収し、次の起動が失敗した。
+        """
+        _setup(monkeypatch, tmp_path)
+        _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
+        claude_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit"
+        legacy = claude_cache / "0.9.0"
+        _write_script(legacy / "agent_toolkit" / "agents_server_mcp.py")
+        (legacy / "scripts" / "launch.py.lock").unlink()
+        (legacy / "pyproject.toml").write_text('[project]\nname = "agent-toolkit"\n', encoding="utf-8")
+        (legacy / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+        legacy_environment = plugin_environment.runtime_data(os.environ) / "environments" / "legacy"
+        (legacy_environment / "bin").mkdir(parents=True)
+
+        def register(root: pathlib.Path) -> None:
+            (tmp_path / "installed_plugins.json").write_text(
+                json.dumps({"version": 2, "plugins": {_PLUGIN_ID: [{"installPath": str(root)}]}}), encoding="utf-8"
+            )
+
+        register(legacy)
+        assert _warmup.run().failure is None
+        assert legacy_environment.is_dir()
+
+        register(claude_cache / "1.0.0")
+        assert _warmup.run().failure is None
+        assert not legacy_environment.exists()
+
 
 class TestCodexResolution:
     """Codexプラグインキャッシュの版解決。"""

@@ -45,7 +45,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """導入済みの版を解決し、起動時のデータ領域へuv環境を構築する。"""
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
-    commands = plugin_warmup.prepare_targets(_targets, tag=_TAG)
+    prepared = plugin_warmup.prepare_targets(_targets, tag=_TAG)
+    commands = prepared.commands
     if not commands:
         return post_apply_outcome.PostApplyOutcome()
     paths: list[Path] = []
@@ -92,7 +93,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if dependencies_ready:
         if not elevated:
             post_apply_cache.save("agents-server-startup", key)
-        plugin_warmup.cleanup_prepared(commands)
+        plugin_warmup.cleanup_prepared(prepared)
     if elevated:
         return post_apply_outcome.PostApplyOutcome(deferred=True, notices=(_ELEVATED_NOTICE,))
     return post_apply_outcome.PostApplyOutcome()
