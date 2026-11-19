@@ -6,12 +6,11 @@ import os
 import shutil
 import stat
 import subprocess
-import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
-from agent_toolkit._common import dotfiles_mode
+from agent_toolkit._common import dotfiles_mode, private_directory
 
 from pytools._internal import common
 
@@ -67,7 +66,7 @@ def _preserve_cache(host: str, operation: Callable[[], bool]) -> bool:
     if host == "codex" and marketplace.is_dir() and not marketplace.is_symlink():
         paths.append(marketplace)
     # CLIがcacheやmarketplaceを置換しても、復旧用実体が巻き込まれない場所へ置く。
-    saved = Path(tempfile.mkdtemp(prefix=".web-guidance-backup-", dir=home)) if paths else None
+    saved = private_directory.make_temporary(home, ".web-guidance-backup-") if paths else None
     try:
         for number, path in enumerate(paths):
             assert saved is not None
@@ -117,8 +116,7 @@ def _run_agy(executable: Path) -> bool:
     destination = Path.home() / ".gemini/config/skills/modern-web-guidance"
     destination.parent.mkdir(parents=True, exist_ok=True)
     # 配置先と同じfilesystem上でrenameし、失敗中も既存版には触れない。
-    with tempfile.TemporaryDirectory(prefix=".web-guidance-", dir=destination.parent) as temporary:
-        staging = Path(temporary)
+    with private_directory.temporary(destination.parent, ".web-guidance-") as staging:
         result = common.run_subprocess(
             [
                 str(executable),

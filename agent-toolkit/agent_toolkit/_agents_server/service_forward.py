@@ -14,12 +14,13 @@ import threading
 import time
 import traceback
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import file_lock, plugin_environment, runtime_environment, windows_job
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.next_action import report, with_next_action
 
@@ -51,18 +52,77 @@ _STALL_SECONDS = 10.0
 _PROBE_SECONDS = 10.0
 
 
-def code_identity(root: pathlib.Path) -> tuple[str, str]:
-    """同じ配布版を合流し、開発checkoutの同版編集も別世代として識別する。"""
-    manifest = root / ".claude-plugin" / "plugin.json"
-    version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
+# 管理領域の直下の`*.json`は世代ごとのready記録と世代の索引に限り、識別の索引は下位のディレクトリへ置く。
+_IDENTITY_INDEX = pathlib.PurePath("code-identity", "index.json")
+_IDENTITY_INDEX_VERSION = 1
+_IDENTITY_INDEX_ENTRIES = 32
+_RECENT_NS = 2_000_000_000
+"""これより新しい更新時刻のモジュールがある間は、世代を索引へ保存しない（ナノ秒）。"""
+
+
+def code_identity(root: pathlib.Path, directory: pathlib.Path) -> tuple[str, str]:
+    """同じ配布版を合流し、開発checkoutの同版編集も別世代として識別する。
+
+    世代は版と、試験を除く全モジュールの相対パス・内容から決める。旧版の転送側も受付先のrootへ同じ計算をするため、
+    この定義は変えない。全モジュール（約600件・約7MB）の読込とハッシュは、各モジュールの識別（inode・更新時刻・大きさ）が
+    前回と同じ間、`directory`の索引に保存した世代で省く。書き換えから間もないモジュールは、更新時刻の刻みの中で
+    識別が変わらずに内容だけ変わり得るため、その間は保存しない。
+    """
+    version = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
+    modules = sorted(_modules(str(root / "agent_toolkit")))
+    fingerprint = hashlib.sha256(json.dumps([str(root), version, modules]).encode("utf-8")).hexdigest()
+    index = directory / _IDENTITY_INDEX
+    saved = _saved_identities(index)
+    if (generation := saved.get(fingerprint)) is not None:
+        return generation, version
+    # 定義の連結順はPathの順序であり、文字列の順序と異なり得る（区切り文字の前後で順序が変わる）。
+    generation = _code_digest(root, version, sorted(pathlib.Path(path) for path, _identity in modules))
+    recent = time.time_ns() - _RECENT_NS
+    if all(identity[1] < recent for _path, identity in modules):
+        saved.pop(fingerprint, None)
+        saved[fingerprint] = generation
+        entries = dict(list(saved.items())[-_IDENTITY_INDEX_ENTRIES:])
+        # 索引は再計算できる値であり、書けない場合も世代は変わらない。
+        with contextlib.suppress(OSError):
+            atomic_write(index, json.dumps({"version": _IDENTITY_INDEX_VERSION, "entries": entries}))
+    return generation, version
+
+
+def _modules(directory: str) -> Iterator[tuple[str, list[int]]]:
+    """`Path(directory).rglob("*.py")`と同じ範囲の試験以外のモジュールを、識別（inode・更新時刻・大きさ）とともに返す。"""
+    with os.scandir(directory) as listed:
+        entries = list(listed)
+    for entry in entries:
+        if entry.is_dir(follow_symlinks=False):
+            yield from _modules(entry.path)
+        elif os.path.normcase(entry.name).endswith(".py") and not entry.name.endswith("_test.py"):
+            stat = entry.stat()
+            yield entry.path, [stat.st_ino, stat.st_mtime_ns, stat.st_size]
+
+
+def _code_digest(root: pathlib.Path, version: str, paths: list[pathlib.Path]) -> str:
     digest = hashlib.sha256(version.encode("utf-8"))
-    paths = sorted(path for path in (root / "agent_toolkit").rglob("*.py") if not path.name.endswith("_test.py"))
     for path in paths:
         name = str(path.relative_to(root)).encode("utf-8")
         content = path.read_bytes()
         digest.update(len(name).to_bytes(8, "big") + name)
         digest.update(len(content).to_bytes(8, "big") + content)
-    return digest.hexdigest(), version
+    return digest.hexdigest()
+
+
+def _saved_identities(path: pathlib.Path) -> dict[str, str]:
+    """保存した世代を識別の指紋ごとに返す。読めない索引と形の合わない索引は、保存されていなかったものとして扱う。"""
+    try:
+        payload = json.loads(path.read_bytes())
+    except OSError, ValueError:
+        return {}
+    if (
+        not isinstance(payload, dict)
+        or payload.get("version") != _IDENTITY_INDEX_VERSION
+        or not isinstance(payload.get("entries"), dict)
+    ):
+        return {}
+    return {key: value for key, value in payload["entries"].items() if isinstance(value, str)}
 
 
 def _launch_service(
@@ -110,7 +170,7 @@ def ensure_service(
     """
     publish = caller.environment.get(DEFER_PUBLISH_ENV) != "1"
     directory = service_transport.namespace(caller)
-    generation, version = code_identity(root)
+    generation, version = code_identity(root, directory)
     registry = GenerationRegistry(directory)
     target = registry.reserve(generation, root, version)
     generation = target["generation"]
@@ -251,7 +311,7 @@ def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Pat
     公開の要求の途中か直後に候補が終了していれば、生存する世代へ受付を戻してから失敗を送出する。
     """
     directory = service_transport.namespace(caller)
-    generation, version = code_identity(root)
+    generation, version = code_identity(root, directory)
     registry = GenerationRegistry(directory)
     generation = registry.reserve(generation, root, version)["generation"]
     try:

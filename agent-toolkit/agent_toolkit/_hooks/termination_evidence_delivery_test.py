@@ -32,10 +32,11 @@ def test_completion_context_overrides_legacy_work_evidence(recorded, context_loa
 
 @pytest.mark.parametrize("succeeded", [False, True])
 def test_public_completion_skill_records_versioned_context_evidence(tmp_path, succeeded):
-    """成功したSkill起動の本文版付き共通記録を、次の人間入力と別作業からも照会できる。"""
+    """成功した入口の完了報告の起動の本文版付き共通記録を、次の人間入力と別作業からも照会できる。"""
     response = "起動" if succeeded else {"exit_code": 1, "error": "起動失敗"}
-    _tool(tmp_path, "completion-context", "Skill", {"skill": "agent-toolkit:report-completion"}, response, codex=False)
-    path = plugin_resources.skill_document_path("report-completion", "SKILL.md")
+    tool_input = {"skill": "agent-toolkit:atk-mode", "args": "report-completion"}
+    _tool(tmp_path, "completion-context", "Skill", tool_input, response, codex=False)
+    path = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
     key = document_reads.skill_invocation_key(path, document_reads.content_fingerprint(path))
     records = session_state.read_state("evidence-test").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert ("main" in records.get(key, [])) is succeeded
@@ -55,23 +56,23 @@ def test_public_completion_skill_records_versioned_context_evidence(tmp_path, su
 @pytest.mark.parametrize(
     ("command", "response", "accepted", "exit_code"),
     [
-        ("cat /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True, 0),
-        ("sed -n '1,$p' -- /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True, 0),
-        ("cat /plugin/skills/{skill}/SKILL.md", "cat: /plugin/skills/{skill}/SKILL.md: No such file", False, 1),
-        ("echo /plugin/skills/{skill}/SKILL.md", "/plugin/skills/{skill}/SKILL.md", False, 0),
-        ("grep -n name /plugin/skills/{skill}/SKILL.md", "2:name: {skill}", False, 0),
+        ("cat /plugin/{playbook}", "# 作業完了報告\n", True, 0),
+        ("sed -n '1,$p' -- /plugin/{playbook}", "# 作業完了報告\n", True, 0),
+        ("cat /plugin/{playbook}", "cat: /plugin/{playbook}: No such file", False, 1),
+        ("echo /plugin/{playbook}", "/plugin/{playbook}", False, 0),
+        ("grep -n 作業 /plugin/{playbook}", "1:# 作業完了報告", False, 0),
     ],
     ids=["cat", "sed", "failed", "path-only", "grep"],
 )
 def test_termination_evidence_and_operation_skills_share_read_judgment(
     tmp_path: pathlib.Path, command: str, response: str, *, accepted: bool, exit_code: int
 ) -> None:
-    """report-completionの起動証拠は、範囲指定を含む資料の読取を本文の識別行で受理し、失敗した読取を拒否する。"""
+    """完了報告の起動証拠は、範囲指定を含む手順書の読取を本文で受理し、失敗した読取を拒否する。"""
     supply_commit(tmp_path, codex=True)
-    skill = "report-completion"
-    path = tmp_path / "plugin/skills" / skill / "SKILL.md"
+    playbook = "skills/atk-mode/playbooks/report-completion.md"
+    path = tmp_path / "plugin" / playbook
     path.parent.mkdir(parents=True)
-    path.write_text("---\nname: report-completion\n---\n", encoding="utf-8")
+    path.write_text("# 作業完了報告\n", encoding="utf-8")
     manifest = tmp_path / "plugin/.claude-plugin/plugin.json"
     manifest.parent.mkdir()
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -79,8 +80,8 @@ def test_termination_evidence_and_operation_skills_share_read_judgment(
         tmp_path,
         "read",
         "Bash",
-        {"command": command.format(skill=skill).replace("/plugin", shlex.quote(str(tmp_path / "plugin")))},
-        response.format(skill=skill),
+        {"command": command.format(playbook=playbook).replace("/plugin", shlex.quote(str(tmp_path / "plugin")))},
+        response.format(playbook=playbook),
         codex=True,
         native_exit_code=exit_code,
     )

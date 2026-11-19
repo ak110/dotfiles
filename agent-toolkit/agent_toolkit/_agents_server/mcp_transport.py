@@ -1,8 +1,7 @@
-"""SDKのツール登録と公開stdio接続を結び、初期化とツールエラーを診断する。"""
+"""SDKのツール登録を共有管理サービスの接続へ渡し、初期化とツールエラーを診断する。"""
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import functools
 import inspect
@@ -15,10 +14,8 @@ from typing import Any
 import anyio
 from anyio.abc import ObjectReceiveStream, ObjectSendStream
 from mcp.server.context import ServerRequestContext
-from mcp.server.lowlevel import Server
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
 from mcp.types import (
     CallToolRequestParams,
@@ -31,7 +28,7 @@ from mcp.types import (
     ToolAnnotations,
 )
 
-from agent_toolkit._agents_server import lifetime, logging_config
+from agent_toolkit._agents_server import logging_config
 from agent_toolkit._agents_server.session_errors import DelegateBackendError, SessionInitializationTimeoutError
 from agent_toolkit._agents_server.tool_descriptions import KIND_MCP_TOOL, schema_text
 from agent_toolkit._common.next_action import ActionableError, with_next_action
@@ -110,22 +107,14 @@ class _SendStream(typing.Protocol):
 
 
 class _InitializationLoggingReceiveStream(ObjectReceiveStream[SessionMessage | Exception]):
-    def __init__(
-        self,
-        stream: _ReceiveStream,
-        tracker: _InitializationLogTracker,
-        request_stop: Callable[[], None] | None = None,
-    ) -> None:
+    def __init__(self, stream: _ReceiveStream, tracker: _InitializationLogTracker) -> None:
         self._stream = stream
         self._tracker = tracker
-        self._request_stop = request_stop
 
     async def receive(self) -> SessionMessage | Exception:
         try:
             message = await self._stream.receive()
         except anyio.EndOfStream:
-            if self._request_stop is not None:
-                self._request_stop()
             # 親が標準入力を閉じた接続終了を、起動単位の終了診断へ残す。
             logging_config.record_instance_event("stdin_closed")
             raise
@@ -202,22 +191,18 @@ def _actionable_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
 
 
 class AgentsServerMCP(MCPServer[None]):
-    """SDKに登録を任せ、診断streamとManagerのlifespanを公開transportへ接続する。"""
+    """SDKに登録を任せ、共有管理サービスが呼び出すツール一覧とツール呼出しの処理を提供する。"""
 
     def __init__(
         self,
         name: str,
         *,
         instructions: str,
-        lifespan: Callable[[MCPServer[None]], AbstractAsyncContextManager[None]],
         request_scope: Callable[[CallToolRequestParams], AbstractAsyncContextManager[None]] | None = None,
     ) -> None:
         super().__init__(name, instructions=instructions)
-        self._agents_lifespan = lifespan
-        self._agents_name = name
         self._agents_instructions = instructions
         self._request_scope = request_scope
-        self.server_lifetime: lifetime.ServerLifetime | None = None
 
     @typing.override
     def add_tool(  # noqa: PLR0913 -- 上位の署名をそのまま受け取る
@@ -266,47 +251,3 @@ class AgentsServerMCP(MCPServer[None]):
             if "次の操作:" not in text:
                 text = with_next_action(text, "ツールの説明で引数の受理形式を確かめて再発行する")
             return CallToolResult(content=[TextContent(type="text", text=text)], is_error=True)
-
-    @typing.override
-    async def run_stdio_async(self) -> None:
-        server = Server(
-            self._agents_name,
-            instructions=self._agents_instructions,
-            lifespan=lambda _server: self._agents_lifespan(self),
-            on_list_tools=self._list_registered_tools,
-            on_call_tool=self._call_registered_tool,
-        )
-        tracker = _InitializationLogTracker()
-        # asyncioがSIGINTのhandlerを設置した後に包むため、実行中のloopの内側で設置する。
-        loop = asyncio.get_running_loop()
-        task = asyncio.current_task()
-        assert task is not None
-        guard = self.server_lifetime
-        owns_guard = guard is None
-        if guard is None:
-            guard = lifetime.ServerLifetime()
-            guard.start()
-
-        def cancel_transport() -> None:
-            loop.call_soon_threadsafe(task.cancel)
-
-        guard.set_stop_callback(cancel_transport)
-        restore_signals = logging_config.install_signal_recording()
-        try:
-            async with stdio_server() as (read_stream, write_stream):
-                try:
-                    await server.run(
-                        _InitializationLoggingReceiveStream(
-                            read_stream, tracker, lambda: guard.request_stop(cancel_transport=False)
-                        ),
-                        _InitializationLoggingSendStream(write_stream, tracker),
-                        server.create_initialization_options(),
-                    )
-                finally:
-                    tracker.transport_closed()
-        finally:
-            guard.request_stop(cancel_transport=False)
-            guard.set_stop_callback(None)
-            restore_signals()
-            if owns_guard:
-                guard.finish()

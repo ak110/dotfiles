@@ -94,7 +94,7 @@ CLIは全件の入力を検証してから同じロックの中で保存する�
    `incomplete`では保存した確認UWIを書き、技術的に保存できない場合は空配列と理由を残す。
    完了した処置は保たれ、同じ実行の再開では未完了の処置だけを更新できる。
 6. 報告を同期する。
-   finishの保存後、同じ`run_id`の作業完了報告を`agent-toolkit:report-completion`で1件だけ同期する。
+   finishの保存後、同じ`run_id`の作業完了報告を`agent-toolkit:atk-mode/playbooks/report-completion.md`で1件だけ同期する。
    未完了を含む場合も、今回の処置結果と、残る確認UWIと解除の条件を同じ報告へ書く。
    報告は`source: run-skill`、`scope`（`atk run-skill`がこのセッションで起動したスキルの名前）、`run_skill_report: true`、自動で取得される`run_skill_run_id`で識別される。
    再開した時は`--show`の`report_files`で既存の報告を取得し、`atk wi edit`で同じ報告を更新する。

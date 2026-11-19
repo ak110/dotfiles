@@ -64,9 +64,7 @@ lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
 lazy from agent_toolkit._hooks.host import is_codex_payload
-lazy from agent_toolkit._hooks.pretooluse import dispatch as _pretooluse_dispatch
 lazy from agent_toolkit._hooks.pretooluse import read_delivery as _read_delivery
-lazy from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 # このスクリプトの hook 識別子。
@@ -230,9 +228,11 @@ def _is_plan_creation_invocation(tokens: tuple[str, ...]) -> bool:
 
 
 def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment], tool_response: object) -> None:
-    """計画ファイルを作成するコマンドの標準出力から計画ファイル（メイン）の絶対パスを記録する。
+    """計画ファイルを作成するコマンドの標準出力から計画ファイル（メイン）の絶対パスを記録し、計画の工程の開始とする。
 
     このスクリプトは確定したパスを標準出力へ1行ずつ書くため、計画ファイル（メイン）と判定した行だけを抽出する。
+    新しい計画のパスで置き換えるため、前の計画名をセッション名へ出し続けない。
+    計画の工程の開始（`plan_mode_skill_invoked`）は、以後の計画ファイルの全体書込で構造の確認を案内する条件になる。
     該当が無い場合は記録せず、PostToolUseの応答を変えない。
     """
     if not any(_is_plan_creation_invocation(segment.tokens) for segment in segments):
@@ -242,7 +242,15 @@ def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment],
             candidate = line.strip()
             if candidate and is_plan_main_file(candidate):
                 _record_plan_file(session_id, candidate)
+                update_state(session_id, _set_plan_mode_invoked)
                 return
+
+
+def _set_plan_mode_invoked(state: dict) -> dict | None:
+    if state.get("plan_mode_skill_invoked", False):
+        return None
+    state["plan_mode_skill_invoked"] = True
+    return state
 
 
 def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, str] | None:
@@ -341,15 +349,6 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
     """Skill呼び出しに対応するセッション状態を記録する。"""
     if not isinstance(skill_name, str):
         return
-    if skill_name in _PLAN_MODE_SKILL_NAMES:
-
-        def _set_invoked(state: dict) -> dict | None:
-            if state.get("plan_mode_skill_invoked", False):
-                return None
-            state["plan_mode_skill_invoked"] = True
-            return state
-
-        update_state(session_id, _set_invoked)
     if skill_name in _PROCESS_WI_SKILL_NAMES:
         update_state(session_id, _set_process_wi_invoked)
 
@@ -463,7 +462,7 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
 
 
 def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
-    """メインが前景で成功させたGit操作の直後に、report-completionの起動条件を通知する。"""
+    """メインが前景で成功させたGit操作の直後に、完了報告の手順書を読む条件を通知する。"""
     response = payload.get("tool_response")
     if (
         not is_main_agent_context(payload)
@@ -476,7 +475,7 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
     command = tool_input.get("command")
     if not isinstance(command, str) or not termination_evidence.published_git_operations(command):
         return None
-    operation = "`agent-toolkit:report-completion`を起動せよ"
+    operation = f"完了報告の手順書`{termination_evidence.completion_playbook_path()}`を全文読め"
     return _llm_notice(
         f"作業完了報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
         tag="notice",
@@ -547,24 +546,12 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     if content_notice not in notices:
                         notices.append(content_notice)
     elif tool_name == "Skill":
-        # Skill: write-planスキル呼び出し検出とprocess-wi起動検出
+        # Skill: process-wi起動検出
         _record_skill_use(session_id, tool_input.get("skill"))
         skill = tool_input.get("skill")
         if not payload.get("agent_id") and isinstance(skill, str):
             arguments = tool_input.get("args")
             session_title.observe_skill(session_id, skill, arguments if isinstance(arguments, str) else None)
-        # 帰属行の要件へ遮断で初めて触れることを避けるため、commitスキルの起動時点に検査が期待する行を示す。
-        # Codexは`message.md`の読取時にPreToolUseが同じ行を配送する。
-        if skill == "agent-toolkit:commit" and not is_codex_payload(payload):
-            trailer = _pretooluse_dispatch.observed_commit_trailer(payload, cwd, is_codex=False)
-            if trailer is not None:
-                notices.append(
-                    _llm_notice(
-                        "起動時点に観測したモデルと推論量の帰属行: " + trailer + "。通常commitのメッセージへこの1行を入れよ。"
-                        "明示指定と無効化の方針は`references/message.md`で確認せよ。",
-                        tag="notice",
-                    )
-                )
     elif tool_name in ("Agent", "Task"):
         # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す
         agent_id = _background_tasks.async_agent_launch_id(payload.get("tool_response"))

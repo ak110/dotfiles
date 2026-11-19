@@ -32,7 +32,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `pretooluse/task_document_launch.py` | 入力契約の保護と起動支援 | 定型起動の必須入力の欠落はblock。自由本文の起動形式と宣言外の説明はwarn。コンテキストへの取込みだけを実害としない |
 | `pretooluse/content_checks.py` | 回復可能な支援、warn | 文字化け、ツール境界タグ、PowerShellの改行、lockfile・manifestを対象とし、再編集・再生成を案内する |
 | `pretooluse/large_reads.py` | 回復可能な支援、warn | 原記録参照の専用照会と大量読取の予算確認を案内する。予算内の標準読取を通し、超過・省略時は分割取得へ接続する |
-| `pretooluse/dispatch.py` 背景出力・帰属行 | 関連操作の支援・配送 | 途中出力の取扱いと、資料読取時点（Claude Codeではcommitスキルの起動完了時点にPostToolUseから）に観測した帰属行を共通noticeで通知する |
+| `pretooluse/dispatch.py` 背景出力・帰属行 | 関連操作の支援・配送 | 途中出力の取扱いと、`commit-message.md`の読取時点（Claude Codeの`Read`を含む）に観測した帰属行を共通noticeで通知する |
 | `pretooluse/read_delivery.py` | 関連操作に必要な資料の初回warn | 通常読取・診断・結果回収・質問・既存復旧を保つ。現在の資料を案内し、取得証拠と案内の実配送を分ける。未取得を理由に再書込を遮断しない |
 | `posttooluse.py` | 観測・配送・出力の変換 | 所有・取得証拠を記録し、計画構造、回答UWI、完了処理の関連案内を共通noticeへ集約する。退避出力の置換は結果取得先を保つ |
 | `user_prompt_submit.py` | 状態観測・関連規範の配送 | 実ユーザー入力と機械生成を区別する。意味の判定は受領側が文書に従って行う |

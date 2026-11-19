@@ -38,17 +38,12 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - 読取の引数・診断破棄、atk出力の接続とwaitの背景化の警告 (warn)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
-- Codexでcommitのmessage.mdを読むとき、観測したモデルと推論量の帰属行を先行配送 (warn)
-  （Claude Codeでは`agent-toolkit:commit`の起動完了時にPostToolUseが同じ行を示す）
+- commitメッセージの規則（`atk-mode`の`references/commit-message.md`）の読取時に、観測した帰属行を先行配送 (warn)
 - 操作を起動の契機とするスキル（`agent-basics:search`・`agent-basics:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
 
 Grep / Glob:
 
 - `agent-basics:search`が未起動のままの検索の、文脈ごとに1回の警告 (warn)
-
-Skill:
-
-- `agent-toolkit:write-plan`起動時の前の計画ファイルのパスの消去 (side-effect)
 
 TaskStop:
 
@@ -82,6 +77,7 @@ import pathlib
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import dataclasses
 lazy import hashlib
+lazy from collections.abc import Iterable
 
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import delegated_session
@@ -112,11 +108,9 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
     _AGENTS_SERVER_SEND_TOOLS,
     _AGENTS_SERVER_TOOL_NAMES,
-    _PLAN_MODE_SKILL_NAMES,
     _check_agents_server_continuation_target,
     _check_generic_agent_launch,
     _check_task_stop,
-    _clear_current_plan_file_path,
     _record_iss_sidechain_probe,
 )
 lazy from agent_toolkit._hooks.pretooluse.content_checks import (
@@ -310,11 +304,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return Decision(block=bugfix_block)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         return Decision(allow=True)
-    # Skill: write-plan起動時は前の計画のパスを消去する。
     if tool_name == "Skill":
-        skill_name = tool_input.get("skill")
-        if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
-            _clear_current_plan_file_path(session_id)
         return Decision()
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         return _decide_agents_server_tool(payload, tool_name, tool_input, session_id)
@@ -335,6 +325,14 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     notices: tuple[str, ...] = ()
     if record_warning := session_record_reference_warning(tool_name, tool_input, cwd):
         notices += (record_warning,)
+    file_path = tool_input.get("file_path")
+    if (
+        tool_name == "Read"
+        and isinstance(file_path, str)
+        and _reads_commit_message_rules((pathlib.Path(cwd, file_path),))
+        and (trailer_notice := _commit_trailer_notice(payload, cwd, is_codex=is_codex))
+    ):
+        notices += (trailer_notice,)
     if tool_name in _SEARCH_TOOL_NAMES:
         return Decision(notices=notices)
     return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd), notices=notices)
@@ -449,27 +447,33 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                     escalate_on_repeat=False,
                 )
             )
-    if is_codex and _reads_commit_message_rules(command, cwd):
-        identity = _hook_observed_identity(payload, is_codex=True)
-        if identity is not None and identity.source == "observed":
-            warnings.append(
-                _llm_notice(
-                    "読取時点に観測したモデルと推論量の帰属行: "
-                    + co_author_trailer(identity)
-                    + "。明示指定と無効化の方針を先に確認せよ。通常commit直前にも現在の観測を確認せよ。",
-                    tag="notice",
-                )
-            )
+    if _reads_commit_message_rules(
+        path for paths in bash_read_paths(command, cwd, include_partial=True) for path in paths
+    ) and (trailer_notice := _commit_trailer_notice(payload, cwd, is_codex=is_codex)):
+        warnings.append(trailer_notice)
     return Decision(context=format_warning_context(warnings) if warnings else None)
 
 
-def _reads_commit_message_rules(command: str, cwd: str) -> bool:
+_COMMIT_MESSAGE_RULES = "/skills/atk-mode/references/commit-message.md"
+"""帰属行の方針を定める資料の、plugin rootより下のパス。"""
+
+
+def _reads_commit_message_rules(paths: Iterable[pathlib.Path]) -> bool:
     """静的に解決できる読取のファイル引数だけで帰属資料を識別する。"""
-    for paths in bash_read_paths(command, cwd, include_partial=True):
-        for path in paths:
-            if path.as_posix().endswith("/skills/commit/references/message.md") and path.is_file():
-                return True
-    return False
+    return any(path.as_posix().endswith(_COMMIT_MESSAGE_RULES) and path.is_file() for path in paths)
+
+
+def _commit_trailer_notice(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
+    """帰属資料の読取に添える、検査が期待する帰属行の通知を返す。観測できない場合と無効化した設定では返さない。"""
+    trailer = observed_commit_trailer(payload, cwd, is_codex=is_codex)
+    if trailer is None:
+        return None
+    return _llm_notice(
+        f"読取時点に観測したモデルと推論量の帰属行: {trailer}。通常のコミットのメッセージへこの1行を入れよ。"
+        "明示指定と無効化の方針は`agent-toolkit:atk-mode/references/commit-message.md`「`Co-Authored-By:`」で確かめ、"
+        "通常のコミットの直前にも現在の観測を確かめよ。",
+        tag="notice",
+    )
 
 
 def observed_commit_trailer(payload: dict, cwd: str, *, is_codex: bool) -> str | None:

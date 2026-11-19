@@ -9,8 +9,8 @@
   - 計画は1ファイル書式とし、計画型AWIと計画変換を廃止する
   - 実装系モデルは`high_tier_model`（現行はexecute工程）へ一本化し、レーンでは変更範囲の検証だけを実行する
   - 全体検証はCIへ委ね、ローカルではCIが実行しない検証だけを実行する。
-    現行の適用規範は`agent-toolkit:commit`の`references/publish.md`「検証とCI」と、変更範囲の検証の対象選定を定める`agent-basics:check-execution`の`references/verification-scope.md`である
-  - `agent-toolkit:write-plan`をメインが起動した場合は、追加worktreeを作成せず現在のworktreeで実装する
+    現行の適用規範は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」と、変更範囲の検証の対象選定を定める`agent-basics:check-execution`の`references/verification-scope.md`である
+  - `agent-toolkit:atk-mode/playbooks/write-plan.md`に従ってメインが計画を作った場合は、追加worktreeを作成せず現在のworktreeで実装する
 - 計画ファイルは複数の要求単位を統合して作成し、要求単位ごとの細分化は例外とする。
   計画ファイルとレビュー指摘管理表を
   要求単位ごとに起草・維持して計画レビューを別個に反復する固定費が、レビューのコストを押し上げるためである

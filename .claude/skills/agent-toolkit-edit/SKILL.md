@@ -27,8 +27,8 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`、`atk wi`の実装、`agent-toolkit/agent_toolkit/_atk/run_skill.py`または`agent-toolkit/agent_toolkit/_atk/orchestrator.py`を編集する前 | `agent-toolkit:workflow-overview`を起動する。ユーザーの判断、操作、観測結果が変わる場合のみ、対応する`docs/guide/`節も読む |
-| 統括の起動引数、turn終了、再開または外部制御の経路を変更する前 | `agent-toolkit:workflow-overview/references/orchestrator-runtime.md`。同資料の実装由来の要約も同じ変更単位で更新する |
+| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`、`atk wi`の実装、`agent-toolkit/agent_toolkit/_atk/run_skill.py`または`agent-toolkit/agent_toolkit/_atk/orchestrator.py`を編集する前 | `agent-toolkit:atk-mode/references/workflow-overview.md`を読む。ユーザーの判断、操作、観測結果が変わる場合のみ、対応する`docs/guide/`節も読む |
+| 統括の起動引数、turn終了、再開または外部制御の経路を変更する前 | `agent-toolkit:atk-mode/references/orchestrator-runtime.md`。同資料の実装由来の要約も同じ変更単位で更新する |
 | `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下、`rust/claude-statusline/src/agents_server.rs`または`rust/claude-statusline/src/agents_server/`配下の実装、および共有状態の読書き・保存先・更新主体・利用関係を変更・調査する前 | `references/agents-server-shared-state.md`。保存先、更新する主体、状態ディレクトリ配下のファイル構成を変更する場合は、同一の変更単位で該当資料も更新する |
 | セッション状態や内部フラグを設計・変更・調査する前 | `references/session-state-and-flags.md`。フラグを追加・変更する際は、該当する主題別資料を更新する |
 | `agents_server`が起動した委譲先が動作しない事象（起動失敗、初期化未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md`。ログの所在、診断項目、委譲先CLIへ渡す引数を変更する場合は、同一の変更単位で同資料も更新する |
@@ -46,7 +46,7 @@ description: >
 | 全レーンの完了後にバージョンを更新する時点、および`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` |
 | `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とインポートを変更する前 | `references/distribution-and-hooks-layers.md` |
 | スキル（`SKILL.md`・`references/`）を新設・編集する前 | `../../../agent-toolkit/share/agent-skills-operations.md` |
-| `.ps1`・`.ps1.tmpl`・`.psm1`・`.psd1`を編集する前 | `../../../agent-toolkit/share/powershell-operations.md` |
+| `.ps1`・`.ps1.tmpl`・`.psm1`・`.psd1`を編集する前 | `agent-basics:writing-standards/references/powershell.md` |
 | 配布プラグインの文書・スキル・役割契約を編集する前、機構や外部インターフェースの変更に伴う文書・生成物の追随先を確定する前 | `references/agent-documents.md` |
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂（`<役割名>.parent.md`・`<役割名>.subagent.md`を含む） | `references/sub-agents.md`、`references/sub-agents-declarations.md` |
 | プラグインの版数・説明文・派生マニフェストを更新する前、または公開時の採番要否を確定する前 | `references/version-bump.md` |

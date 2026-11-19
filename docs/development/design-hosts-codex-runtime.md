@@ -26,6 +26,9 @@ Linuxは可視コマンドの接続先をwrapperへ変更する前に、公式�
 接続断またはdaemon世代の交代を観測すると、公開`initialize`・`thread/resume`・`thread/turns/list`で保存済み状態を確認する。
 元turnが未完了で現在のwriterが無く、明示中止と新しいユーザーturnも無い場合だけ`turn/start`で未完了工程の継続を求める。
 通常の会話開始・resumeとdaemon復旧の双方で、会話に属するagents_serverの`list`を公開MCP RPCから呼び、モデルの最初のツール要求へ依存せず共通の子孫復旧へ接続する。
+agents_serverのMCPが起動に失敗すると、`mcpServerStatus/list`の項目は`list`ツールを持たない。
+Codex本体はMCPの起動失敗を`mcpServer/startupStatus/updated`でTUIへ通知して会話を続けるため、起動管理も子孫の復元だけを見送り、TUIを止めない。
+2026-11-19にsthenoで、状態ファイルのACLの破損によりagents_serverが毎回起動に失敗し、起動管理が会話の開始とresumeのたびにTUIを止めていた。
 保存済みIDの再開では、子MCPが起動時に直接親を確定できるよう、`thread/resume`の送信前にhost索引を公開する。
 応答後に公開すると、子MCPが所有rootを直接親として孫の復旧候補を確定してしまう。
 要求の応答を失っただけで副作用のある操作を再送せず、会話へ保存済みの状態を照合してから続ける。

@@ -10,10 +10,10 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `../../report-completion/references/report-formats.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/references/report-formats.md` |
 | 本文で基準を使う資料の選択・取得時 | `batch.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:review-session/references/session-analysis.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../report-completion/SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/playbooks/report-completion.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../delegation/references/delegation-sending.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/playbooks/user-utterance.md` |

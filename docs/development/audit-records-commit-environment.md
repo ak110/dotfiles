@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日
+## agent-toolkit/skills/atk-mode/playbooks/publish.md：検証とCI：2026年10月11日
 
 uv 0.13.0で、`UV_PROJECT_ENVIRONMENT`で隔離した仮想環境を使い、dotfilesのリポジトリ直下と`agent-toolkit/`のプロジェクトを`UV_FROZEN=1`のもとで同期した。
 リポジトリ直下をPython 3.15で`uv sync --all-groups --all-extras`した環境へ、ロックファイルに無い`toolz`を`uv pip install`で加えた。
@@ -44,7 +44,7 @@ UV_PROJECT_ENVIRONMENT="$SUB_ENV" uv sync --project "$SUB_PROJECT" --python 3.15
 "$SUB_ENV/bin/python" -c 'import sys; print(sys.version_info[:2])'
 ```
 
-## agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月19日
+## agent-toolkit/skills/atk-mode/playbooks/publish.md：検証とCI：2026年10月19日
 
 前節の観測は`.python-version`を持たないプロジェクトの条件であり、`.python-version`を持つプロジェクトでは`uv run`の自動同期が既存の仮想環境を再作成する。
 2026年10月19日にuv 0.13.1で、依存を持たず`requires-python`が`>=3.14`の一時プロジェクトへ`.python-version`（`3.15`）と`uv.lock`を置き、3.14の仮想環境から始めて次を観測した。

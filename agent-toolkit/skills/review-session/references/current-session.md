@@ -112,7 +112,7 @@ OpenCodeを対象とする場合、スクリプトは環境変数`XDG_DATA_HOME`
 標準出力に出力される1行のJSONには、各生成文書のパス（`conversation_path`、`comparison_materials_path`、`candidates_path`、`stats_path`）および参照文書のパス`reference_document`（存在しない場合はnull）が含まれる。
 このほか、`prepared_at`、`utterance_counts`、`candidate_total`、`candidate_counts`、`excluded_counts`、`failure_ledger_skipped`が格納される。
 さらに、`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`と、実際に抽出した記録の範囲を示す`scope_path`も含まれる。
-これらの候補を振り返り結果報告のどの項目に記載するかは、`agent-toolkit:report-completion`の`references/report-formats.md`に従う。
+これらの候補を振り返り結果報告のどの項目に記載するかは、`agent-toolkit:atk-mode/references/report-formats.md`に従う。
 `conversation_utf8_bytes`、`candidates_utf8_bytes`、`stats_utf8_bytes`は生成された各文書のUTF-8バイト数を示す。
 `conversation_limit_bytes`は通常表示では100,000バイト、少量表示では指定した上限（省略時16,000バイト）を示す。
 少量表示に付く`conversation_window`の条件、件数、継続位置は、`../../../share/session-conversation-extraction.md`「会話の少量取得」に従って読む。
@@ -143,7 +143,7 @@ AWIの保存と検収、全候補と未確認範囲の判定を終え、今回�
 成功と残る待ち件数を確認し、結果本文を送達する前に必要なツール処理を終える。
 この操作の確定対象は準備済み範囲の分析に限る。
 本文の送達は実際の送達結果で確かめ、分析に失敗した範囲は未処理として保持する。
-結果本文は`agent-toolkit:report-completion`の`references/report-formats.md`に従う。
+結果本文は`agent-toolkit:atk-mode/references/report-formats.md`に従う。
 AWIを1件以上投入した場合は「AWI投入結果報告のフォーマット」、それ以外は「振り返り結果報告のフォーマット」を使う。
 送達は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
 本スキルは結果報告の送達で終え、通常作業の完了処理と同期振り返りの再起動は対象外とする。

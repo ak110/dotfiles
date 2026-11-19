@@ -12,84 +12,51 @@ from agent_toolkit._testing.helpers import _read_state
 from agent_toolkit._testing.posttooluse_support import _run
 
 
-class TestPlanModeSkillInvocation:
-    """write-plan スキル呼び出し検出 (Skill ツール)。"""
+class TestRetiredSkillInvocation:
+    """廃止したスキル名の起動を、計画の工程の開始と帰属行の配送の契機にしない。
 
-    @pytest.mark.parametrize("skill_name", ["agent-toolkit:write-plan", "write-plan"])
-    def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path, skill_name: str):
-        sid = "skill-flag"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": skill_name},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_mode_skill_invoked") is True
-
-    def test_other_skill_does_not_set_flag(self, tmp_path: pathlib.Path):
-        sid = "skill-other"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-basics:writing-standards"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_mode_skill_invoked") is not True
-
-
-class TestCommitSkillAttributionNotice:
-    """Claude Codeで`agent-toolkit:commit`の起動が完了した時点に、観測した帰属行を示す。"""
-
-    @staticmethod
-    def _payload(tmp_path: pathlib.Path, skill: str, *, with_transcript: bool = True) -> dict[str, object]:
-        payload: dict[str, object] = {
-            "session_id": "commit-skill",
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Skill",
-            "tool_input": {"skill": skill},
-            "cwd": str(tmp_path),
-            "effort": {"level": "low"},
-        }
-        if with_transcript:
-            transcript = tmp_path / "project-records" / "commit-skill.jsonl"
-            transcript.parent.mkdir(parents=True, exist_ok=True)
-            line = {
-                "type": "assistant",
-                "version": "2.1.291",
-                "effort": "medium",
-                "message": {"model": "claude-opus-5-5", "role": "assistant", "content": [{"type": "text", "text": "応答"}]},
-            }
-            transcript.write_text(json.dumps(line) + "\n", encoding="utf-8")
-            payload["transcript_path"] = str(transcript)
-        return payload
-
-    def test_commit_skill_delivers_observed_trailer(self, tmp_path: pathlib.Path) -> None:
-        # test-copy-contract: transcriptの観測モデルとpayloadの推論量から帰属行を生成し、Skill完了時に配送する契約。
-        result = _run(self._payload(tmp_path, "agent-toolkit:commit"), state_dir=tmp_path, home_dir=tmp_path)
-
-        assert result.returncode == 0, result.stderr
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>" in context
+    計画の工程の開始は`atk run-script plan-create`の成功（`posttooluse_plan_create_test.py`）、
+    帰属行は`atk-mode`の`references/commit-message.md`の読取（`dispatch_commit_identity_test.py`）が契機である。
+    """
 
     @pytest.mark.parametrize(
-        ("skill", "with_transcript"),
-        [("agent-toolkit:commit", False), ("agent-toolkit:write-plan", True)],
+        "tool_input",
+        [
+            {"skill": "agent-toolkit:write-plan"},
+            {"skill": "write-plan"},
+            {"skill": "agent-toolkit:atk-mode", "args": "write-plan"},
+            {"skill": "agent-toolkit:commit"},
+        ],
     )
-    def test_trailer_is_not_delivered_without_observation_or_for_other_skills(
-        self, tmp_path: pathlib.Path, skill: str, with_transcript: bool
+    def test_skill_invocation_neither_starts_plan_nor_delivers_trailer(
+        self, tmp_path: pathlib.Path, tool_input: dict[str, str]
     ) -> None:
-        payload = self._payload(tmp_path, skill, with_transcript=with_transcript)
-
-        result = _run(payload, state_dir=tmp_path, home_dir=tmp_path)
-
+        sid = "retired-skill"
+        transcript = tmp_path / "project-records" / f"{sid}.jsonl"
+        transcript.parent.mkdir(parents=True)
+        line = {
+            "type": "assistant",
+            "version": "2.1.291",
+            "effort": "medium",
+            "message": {"model": "claude-opus-5-5", "role": "assistant", "content": [{"type": "text", "text": "応答"}]},
+        }
+        transcript.write_text(json.dumps(line) + "\n", encoding="utf-8")
+        result = _run(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Skill",
+                "tool_input": tool_input,
+                "cwd": str(tmp_path),
+                "effort": {"level": "low"},
+                "transcript_path": str(transcript),
+            },
+            state_dir=tmp_path,
+            home_dir=tmp_path,
+        )
         assert result.returncode == 0, result.stderr
         assert "Co-Authored-By:" not in result.stdout
+        assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is not True
 
 
 class TestUwiCompletionNotice:

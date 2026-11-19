@@ -13,7 +13,7 @@
 ホストごとの目的入力の違いと終了能力の判定は保持する。
 目的文にmanifestや終了手順を連結する案は、反復評価の対象と更新箇所を増やすため採らない。
 
-ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:report-completion`が元の作業の完了報告を送り、続いて`atk agents-exit-session`がセッションを終了する。
+ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:atk-mode/playbooks/report-completion.md`が元の作業の完了報告を送り、続いて`atk agents-exit-session`がセッションを終了する。
 終了工程の実行記録が無い終了は、Stop hookの`autonomous_exit.py`が遮断して続行させる（[design-hooks-termination-evidence.md](design-hooks-termination-evidence.md)「自動起動セッションの続行の判定」）。
 振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動になったセッションを非同期に分析する（`design-session-review-completion.md`「完了報告と振り返りの関係」）。
 その結果は作業完了報告とは独立して届ける。

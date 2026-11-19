@@ -55,12 +55,12 @@ hookの通知を待たずに選び、同じ版の取得済み本文は再利用�
 | 委譲先からの完了報告を受領して検収する前（explore・shellを除く） | `references/mandatory-rules.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
 | 委譲先がプロンプトで`引き継ぎ記録先`を受け取り、最初の記録を書き込む前（操作対象外: 役割の開始入力） | `references/handoff-record.md` | | | |
 | 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:process-wi`の場合） | `../process-wi/references/run-lanes.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
-| 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:write-plan`による直接起動の場合） | `../write-plan/SKILL.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/write-plan/SKILL.md` | |
+| 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`がメインによる起動の場合） | `agent-toolkit:atk-mode/playbooks/write-plan.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/write-plan.md` | |
 | 指摘の採否と修正方針を確定する時 | `agent-basics:review-standards`を起動し、同スキルの`references/reviewee.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` | |
 | Claude Codeで長時間待機前の会話圧縮、またはバックグラウンドタスクの起動形を判断する時 | `references/waiting-claude-code.md` | | | |
 | 停滞の検知と巻き取りを判断する時 | `references/waiting-stalls.md` | | | |
 | agents_serverのexplore・shellを起動する前 | `references/delegation-lightweight.md` | | | |
-| 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:managed-temp/SKILL.md` | | | |
+| 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:atk-mode/playbooks/managed-temp.md` | | | |
 | 委譲先から`助言依頼:`で始まる通知を受け取り、助言を返す前 | `references/advice-request-receiving.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/advice-request-receiving.md` | |
 | 起動本文に助言依頼ができる旨の通知を受け取った委譲先が、助言を求める前 | `references/advice-request.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/advice-request.md` | |
 | 役割文書を持つ委譲を起動する前 | 呼び出し元の起動・受領契約。共有契約は`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`、単一の呼び出し元に統合された契約はその呼び出し元が示す節と条件付きで挙げる資料 | 操作 | `delegation` | `role-contract` |

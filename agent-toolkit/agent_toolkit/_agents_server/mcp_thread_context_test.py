@@ -18,7 +18,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import agents_wait, launch_requests, mcp_tools, shared_roots, state, wait_targets
 from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import registry_index, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, _complete, install_backend
 
 # SDKが登録する公開要求の境界とMCPの起動寿命を、モデルを呼ばずに接続する。
@@ -103,7 +103,7 @@ async def test_native_thread_metadata_separates_parallel_parents(
             assert not response.is_error
             assert response.structured_content is not None
             identifier = response.structured_content["session_id"]
-            assert session_registry.child_session_ids(parent, state_root=tmp_path) == (identifier,)
+            assert registry_index.child_session_ids(parent, state_root=tmp_path) == (identifier,)
             listed = await _call(parent, "list", {})
             assert listed.structured_content is not None
             assert listed.structured_content["root_session_id"] == parent

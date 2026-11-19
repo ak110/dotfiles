@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from agent_toolkit._atk import config_settings
+from agent_toolkit._common import windows_security
 
 from pytools import post_apply
 from pytools._internal import (
@@ -34,6 +35,7 @@ from pytools._internal import (
     prune_foreign_tools,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
+    restore_agent_toolkit_acl,
     restore_codex_logs,
     setup_agy_cli,
     setup_cli_common,
@@ -422,12 +424,18 @@ def _usage_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     monkeypatch.setattr(config_settings, "save_config", _raise(PermissionError("denied")))
 
 
+def _atk_acl_restore_blocked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    blocked = windows_security.InheritanceRepair(blocked=((tmp_path / "services", "アクセスが拒否されました。"),))
+    monkeypatch.setattr(restore_agent_toolkit_acl.windows_security, "restore_inheritance", lambda _root: blocked)
+
+
 # 工程名ごとに、失敗を模す手段と期待する終了コードの組を並べる。
 # 1つの工程が取得と書き換えの両方を行う場合は、両方の組を並べる。
 _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "bin PATH 登録 (Windows)": [(_bin_path_write_fails, 1)],
     "MSYS 環境変数 (Windows)": [(_msys_env_write_fails, 1)],
     "user.env 環境変数 (Windows)": [(_user_env_write_fails, 1)],
+    "agent-toolkit 状態ディレクトリのACL修復 (Windows)": [(_atk_acl_restore_blocked, 1)],
     "VSCode 設定": [(_vscode_write_fails, 1)],
     "SSH config": [(_ssh_config_write_fails, 1)],
     "旧配布物の削除": [(_cleanup_removal_fails, 1)],

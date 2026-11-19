@@ -1,4 +1,4 @@
-"""agents_serverのMCPツールの定義と、MCPサーバーのlifespanおよび起動。"""
+"""agents_serverのMCPツールの定義と、MCPサーバーのlifespanおよび依存の確認。"""
 
 from __future__ import annotations
 
@@ -279,7 +279,6 @@ mcp = AgentsServerMCP(
         "観測を試みていない作業を残したままターンを終えると、その作業を観測する主体が残らない。",
         kind=KIND_MCP_INSTRUCTIONS,
     ),
-    lifespan=_mcp_lifespan,
     request_scope=_request_scope,
 )
 
@@ -796,76 +795,18 @@ def _configure_logging() -> pathlib.Path:
     return logging_config.configure_logging()
 
 
-def serve(*, check_dependencies: bool = False) -> int:
-    """診断や初期化が停止しても起動単位の有限回収を維持する。"""
-    if check_dependencies:
-        return _serve(check_dependencies=True)
-    guard = lifetime.ServerLifetime()
-    guard.start()
-    mcp.server_lifetime = guard
-    try:
-        try:
-            _serve()
-        except BaseException as error:
-            # signal終了の状態は保持し、EOF等の取消しでは終了処理と無関係な実装例外を隠さない。
-            if guard.exitcode == 0:
-                if isinstance(error, BaseExceptionGroup):
-                    _, remaining = error.split(asyncio.CancelledError)
-                    if remaining is not None:
-                        raise
-                elif not isinstance(error, asyncio.CancelledError):
-                    raise
-            if not guard.stopping:
-                raise
-        return guard.exitcode
-    finally:
-        guard.request_stop()
-        guard.finish()
-        mcp.server_lifetime = None
-
-
-def _serve(*, check_dependencies: bool = False) -> int:
-    """委譲先の環境を整え、依存の確認またはMCP stdio transportの起動を行う。
-
-    stdio起動では起動単位を開始し、正常・例外の終了を起動単位の終了診断へ記録する。
-    """
-    environment = dict(os.environ)
+def check_dependencies() -> int:
+    """委譲先の環境を整え、Claude Agent SDKの依存を読み込んでoptionsを構築できることを確かめる。"""
     _prepare_child_environment()
     log_path = _configure_logging()
-    mode = "check-dependencies" if check_dependencies else "stdio"
-    instance = None if check_dependencies else logging_config.start_server_instance(environment=environment)
-    if instance is not None:
-        session_registry.set_owner_server_instance(instance.instance_id)
-    _LOG.info(
-        "agents_serverを起動します: mode=%s log=%s server_instance=%s",
-        mode,
-        log_path,
-        instance.instance_id if instance is not None else "none",
-    )
+    _LOG.info("agents_serverを起動します: mode=check-dependencies log=%s", log_path)
     try:
-        if check_dependencies:
-            claude_backend.check_dependencies()
-        else:
-            mcp.run(transport="stdio")
-    except BaseException as exc:
-        _LOG.exception("agents_serverが異常終了しました: mode=%s", mode)
-        logging_config.record_instance_event(
-            "exited",
-            outcome="exception",
-            exception_type=type(exc).__name__,
-            message=logging_config.redact_secrets(str(exc))[: logging_config.MESSAGE_LIMIT],
-        )
-        _end_server_instance()
-        logging_config.close_logging()
+        claude_backend.check_dependencies()
+    except BaseException:
+        _LOG.exception("agents_serverが異常終了しました: mode=check-dependencies")
         raise
-    _LOG.info("agents_serverが正常終了しました: mode=%s", mode)
-    logging_config.record_instance_event("exited", outcome="normal", exception_type=None, message=None)
-    _end_server_instance()
-    logging_config.close_logging()
+    else:
+        _LOG.info("agents_serverが正常終了しました: mode=check-dependencies")
+    finally:
+        logging_config.close_logging()
     return 0
-
-
-def _end_server_instance() -> None:
-    """起動単位を終え、同じプロセスで続く処理（テストなど）が終えた起動単位を記録へ書かないようにする。"""
-    logging_config.end_server_instance()
-    session_registry.set_owner_server_instance(None)

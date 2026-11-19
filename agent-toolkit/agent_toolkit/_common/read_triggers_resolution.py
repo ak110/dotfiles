@@ -5,12 +5,16 @@
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
+import os
 import pathlib
 import re
+import time
 from typing import TYPE_CHECKING
 
-from agent_toolkit._common import skill_modes
+from agent_toolkit._common import atomic_file, skill_modes, state_paths
 from agent_toolkit._common.plugin_roots import raise_for_incomplete_installation, resolve_plugin_root
 from agent_toolkit._common.read_triggers_model import _scope_cached
 lazy from agent_toolkit._common import read_triggers_model, task_documents
@@ -301,16 +305,72 @@ def document_sources(plugin_root: pathlib.Path, cwd: str = "", user_skills: path
     return list(dict.fromkeys(path for root in roots if root.is_dir() for path in canonical_markdown_files(root)))
 
 
+_LISTING_FORMAT = 1
+# 時刻の刻みが粗いファイルシステム（ext3は1秒、Windowsは最大15.6ミリ秒）では、列挙と同じ刻みの中の追加が更新時刻を変えない。
+_TRUSTED_AGE_NS = 2_000_000_000
+
+
 def canonical_markdown_files(root: pathlib.Path) -> list[pathlib.Path]:
     """`root`配下のMarkdownを、ファイル名順に実体の絶対パスで返す。
 
-    hookは要求ごとに数百の文書を列挙するため、各パスの`resolve()`（構成要素ごとの`lstat`）が所要の大半を占めた。
-    `rglob`はシンボリックリンクのディレクトリへ降りないため、解決済みの起点から得たパスは、
-    ファイル自体がシンボリックリンクである場合を除いて実体のパスである。
-    そのため起点を1回だけ解決し、シンボリックリンクのファイルだけを個別に解決する。
+    `rglob("*.md")`と同じく、シンボリックリンクのディレクトリへは降りない。解決済みの起点から得たパスは、
+    ファイル自体がシンボリックリンクである場合を除いて実体のパスなので、リンクのファイルだけを個別に解決する。
+
+    hookはツール実行のたびに数百の文書を列挙する。直下の項目が変わるとそのディレクトリの更新時刻が進むため、
+    配下の全ディレクトリの識別と更新時刻が前回の列挙と同じなら、保存した一覧を使う（ディレクトリ数のstatで済む）。
     """
     base = root.resolve()
-    return [path.resolve() if path.is_symlink() else path for path in sorted(base.rglob("*.md"))]
+    scope = hashlib.sha256(os.fsencode(base)).hexdigest()[:16]
+    store = state_paths.state_dir() / "read-trigger-cache" / f"listing-{scope}.json"
+    matches = _saved_listing(store, base)
+    if matches is None:
+        started = time.time_ns()
+        directories, matches, complete = _walk_markdown(base)
+        # 刻みより十分古い更新時刻のディレクトリだけから成る一覧を保存する。
+        if complete and all(directory[2] < started - _TRUSTED_AGE_NS for directory in directories):
+            payload = {"format": _LISTING_FORMAT, "root": str(base), "directories": directories, "matches": matches}
+            with contextlib.suppress(OSError):
+                atomic_file.atomic_write(store, json.dumps(payload, ensure_ascii=False))
+    return [pathlib.Path(path).resolve() if link else pathlib.Path(path) for path, link in matches]
+
+
+def _walk_markdown(base: pathlib.Path) -> tuple[list[list], list[list], bool]:
+    """配下の実ディレクトリの識別・更新時刻と、`*.md`に一致する項目を名前順で返す。読めない階層があれば完全でないと返す。"""
+    directories: list[list] = []
+    found: list[tuple[pathlib.Path, bool]] = []
+    complete = True
+    pending = [os.fspath(base)]
+    while pending:
+        directory = pending.pop()
+        try:
+            # 列挙より前の状態を記録し、列挙の途中の変更は次回のhookで記録と現在の状態の違いとして検出する。
+            status = os.stat(directory)
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if os.path.normcase(entry.name).endswith(".md"):
+                        found.append((pathlib.Path(entry.path), entry.is_symlink()))
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(entry.path)
+        except OSError:
+            complete = False
+            continue
+        directories.append([directory, status.st_ino, status.st_mtime_ns, status.st_ctime_ns])
+    return directories, [[str(path), link] for path, link in sorted(found)], complete
+
+
+def _saved_listing(store: pathlib.Path, base: pathlib.Path) -> list[list] | None:
+    """保存した一覧を、配下の全ディレクトリが保存時から変わっていない場合だけ返す。"""
+    try:
+        saved = json.loads(store.read_text(encoding="utf-8"))
+        if saved["format"] != _LISTING_FORMAT or saved["root"] != str(base):
+            return None
+        for directory, ino, mtime_ns, ctime_ns in saved["directories"]:
+            status = os.stat(directory)
+            if (status.st_ino, status.st_mtime_ns, status.st_ctime_ns) != (ino, mtime_ns, ctime_ns):
+                return None
+        return saved["matches"]
+    except OSError, ValueError, TypeError, KeyError:
+        return None
 
 
 def project_skill_dirs(cwd: pathlib.Path) -> list[pathlib.Path]:

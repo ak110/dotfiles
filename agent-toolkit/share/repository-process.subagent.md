@@ -34,7 +34,7 @@ writes_worktree: true
 登録全体の判断、確認事項のユーザーへの中継、process-wiの実行全体の完了報告と報告用UWIは統括担当が所有する。
 本タスクの担当はreport-completionの起動、報告用UWI、ユーザーへの最終送達、祖先ホストの終了を担当しない。
 担当除外は本書で判断でき、除外確認のためのスキル本体・termination-evidenceの取得や`omit-completion`記録は不要である。
-必要な常時稼働サーバーへの反映は`../skills/report-completion/references/server-reflection.md`を使い、結果を委譲元へ返す。
+必要な常時稼働サーバーへの反映は`../skills/atk-mode/playbooks/report-completion.md`を使い、結果を委譲元へ返す。
 起動後は最初に`../skills/process-wi/references/all-repos-orchestration-roles.md`「担当の役割」と対象worktreeの規範を読み、対象ごとの上限に合うモードで`agent-toolkit:process-wi`を起動する。
 
 ## 名指し参照の読込方法

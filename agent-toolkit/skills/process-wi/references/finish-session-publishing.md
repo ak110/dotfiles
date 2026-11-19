@@ -9,7 +9,7 @@
 | 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` | | |
 | 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `agent-toolkit:atk-mode/playbooks/wi-submission.md` | 判断 | `read:agent-toolkit:*/skills/atk-mode/playbooks/wi-submission.md` |
 | 公開版反映後の役割起動で稼働実装と資源の版相違が示された時 | `../../delegation/references/wait-anomalies-failures.md` | | |
-| WI実装commitの対応を継承する時 | `../../commit/references/history-rewrite-wi-records.md` | | |
+| WI実装commitの対応を継承する時 | `agent-toolkit:atk-mode/references/commit-wi-records.md` | | |
 
 ## 公開対象が無い場合の短絡
 
@@ -51,7 +51,7 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --require-integrated
 
 外部操作として扱う対象は、選定結果の`選定`において`レーン`が`なし`、`上流投入`が`なし`以外、あるいは`プロジェクト固有の公開後の操作の順序`が`既定`以外となっている項目である。
 また、このセッション中に回答を受け取ったUWI、選定工程で記録されたプロジェクト固有の公開後操作、レーン工程から引き継いだ延期`adopt`の対象もこれに含まれる。
-これらが一切存在しない場合は、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を主作業ツリーから読み取り専用で取得する。
+これらが一切存在しない場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」を主作業ツリーから読み取り専用で取得する。
 レーンの統合に伴う未公開コミットの有無は、この4項目を通じて検出する。
 4項目すべての成立が確認できた場合は、`finish-session-recovery.md`「公開状態の検収と再起動」において検収済みとして扱う。
 
@@ -83,7 +83,7 @@ CIだけで観測できる条件はローカルの成功で代替せず、公開
 
 **6.** 統合後に保存済み計画をcheckoutして履歴書換えへ追随させるメインまたは配下担当は、全計画バンドルを更新・再保存する。
 通常のレーン統合はOIDを保持するmergeなので、この履歴書換え追随の対象外とする。
-手順は`../../commit/references/history-rewrite-wi-records.md`「WI実装commitの対応の継承」に従う。
+手順は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」に従う。
 成功と警告を検収してから公開担当を起動する。
 
 このとき同一の`plan-rewrite`処理によって、統合時に採否を確定したAWIの対応コミットや件名も、新たなコミットに合わせて更新される。
@@ -94,7 +94,7 @@ CIだけで観測できる条件はローカルの成功で代替せず、公開
 CI監視で失敗jobを観測したら、全pipeline終了を待たず、入力SHA・job・診断・残る監視の識別子をCI修正担当へ渡す。
 単一writerを保って診断・是正を開始し、継続中jobの監視と最終SHAの全体CI成功の確認を保持する。
 終了一括通知しかない監視では、既存の公開状態照会を並行して使って途中失敗を取得する。
-直接実行と委譲の選択、入力、検収は`session-termination.parent.md`に、検証とCIの判定は`agent-toolkit:commit/references/publish.md`「検証とCI」に従う。
+直接実行と委譲の選択、入力、検収は`session-termination.parent.md`に、検証とCIの判定は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」に従う。
 コミットを外部APIへ渡す処理には同資料「pushと公開状態」の完全OID解決契約を適用する。
 主作業ツリーへ書き込む主体は、公開担当と起動したCI修正担当のうち常に1者とする。
 公開を委譲したメインは、その間は主作業ツリーとベースブランチを読み取り専用とする。
@@ -120,7 +120,7 @@ worktreeの作成・回収のようにGit共通ディレクトリの構成を変
 - 独立した追加工程: 長時間を要する公開・デプロイ・CI待機や追加の公開工程については、入力コミット、成果物、配備先、排他制御が必要なリソース、先行工程の成功が前提となるかどうかを、起動前にあらかじめ進捗記録へ記載する。
   独立して進められる追加工程（別の成果物や配備先に対する緊急デプロイなど）は別のエージェントへ委ねて並行稼働させ、先行工程の成功を入力とする工程は、先行側の成功を確かめてから着手する。
   公開担当への指示においては、待機対象とする工程と並行して開始する工程を明確に区別する。
-- 常時稼働サーバーへの反映: 直接実行・委譲の双方で、`../../report-completion/references/server-reflection.md`の共通条件を使う。
+- 常時稼働サーバーへの反映: 直接実行・委譲の双方で、`agent-toolkit:atk-mode/playbooks/report-completion.md`の共通条件を使う。
   反映・稼働確認手段が備わるプロジェクトでは、全レーンの統合を検収してリソースを保持したまま、反映入力が利用可能になった時点で反映・再起動を開始する。
   反映入力がpush済みSHAならpush確認後、公開前でも利用できるローカル成果なら必要なローカル検収後に開始してよい。
   CI未判定でもこの開始条件を満たせば進め、同じSHAのCI監視を並行して継続し、巡回の最終完了前に結果を検収する。

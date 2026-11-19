@@ -199,13 +199,22 @@ def _proxy() -> None:
                         raise TimeoutError("通常TUIが接続をリセットしなかった")
                     time.sleep(0.01)
                 wire.send(status)
-            result = (
-                {"data": [], "nextCursor": "agents"}
-                if params.get("cursor") is None
-                else {
-                    "data": [{"name": "agents_server", "tools": {"list": {"name": "list", "inputSchema": {"type": "object"}}}}],
-                    "nextCursor": None,
+            agents: dict[str, Any] = {
+                "name": "agents_server",
+                "tools": {"list": {"name": "list", "inputSchema": {"type": "object"}}},
+            }
+            if _MODE == "mcp-unavailable":
+                # 起動に失敗したMCPも一覧に残り、ツールを持たない（Codex 0.170のListMcpServerStatusResponse）。
+                agents = {
+                    "name": "agents_server",
+                    "tools": {},
+                    "resources": [],
+                    "resourceTemplates": [],
+                    "authStatus": "unsupported",
+                    "runtimeStatus": "failed",
                 }
+            result = (
+                {"data": [], "nextCursor": "agents"} if params.get("cursor") is None else {"data": [agents], "nextCursor": None}
             )
         elif method == "mcpServer/tool/call":
             record = _read(_thread_file(params["threadId"]))

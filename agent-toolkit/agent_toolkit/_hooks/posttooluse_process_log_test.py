@@ -132,7 +132,7 @@ class TestRemovedRecordsAreAbsent:
 
             assert result.returncode == 0
             if payload.get("tool_input", {}).get("command") == "git commit --amend --no-edit":
-                assert "agent-toolkit:report-completion" in result.stdout
+                assert "playbooks/report-completion.md" in result.stdout
             else:
                 assert result.stdout == ""
         state = _read_state(tmp_path, sid)

@@ -300,6 +300,9 @@ def _mock_process_snapshot(monkeypatch, entries):
     monkeypatch.setattr(psutil, "pids", pids)
     monkeypatch.setattr(psutil, "_ppid_map", ppid_map)
     monkeypatch.setattr(psutil, "Process", process)
+    # Linuxの子孫走査が読む/procの子一覧と親PIDも、同じ模擬一覧から返す。
+    monkeypatch.setattr(process_tree, "_proc_children", lambda pid: [pid_ for pid_, ppid in ppid_map().items() if ppid == pid])
+    monkeypatch.setattr(process_tree, "_proc_ppid", ppid_map().get)
 
 
 def _fake_process(pid, ppid):

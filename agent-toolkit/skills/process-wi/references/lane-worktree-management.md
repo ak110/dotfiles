@@ -1,7 +1,7 @@
 # レーンworktreeの作成・保持・回収
 
 本書は、`agent-toolkit:process-wi`のレーンworktreeを`atk lane`で扱う手順を定める。
-一時ファイルの置き場所の一般則は`agent-toolkit:managed-temp`が定める。
+一時ファイルの置き場所の一般則は`agent-toolkit:atk-mode/playbooks/managed-temp.md`が定める。
 
 ## 名指し参照の読込方法
 

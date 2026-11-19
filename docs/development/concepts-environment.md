@@ -20,7 +20,7 @@
   （2026年11月17日、ユーザー指示）。
   同15日の変更はこの3つを伴っていた。
   ユーザーが求めていたのは、統括が柔軟に采配して単位時間あたりのWI処理数を上げることである。
-  現行の起動形は`agent-toolkit:workflow-overview`の`references/orchestrator-runtime.md`「起動形の比較」が定める
+  現行の起動形は`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「起動形の比較」が定める
 - 同一の変更がpushとPR/MRで重複してCIを起動することを避ける1回限りのCIスキップは許可の対象とする。
   リポジトリまたは組織のチェック設定を変える操作（必須チェックの解除、branch protectionの変更、ワークフローの無効化）は、この許可に含めない
   （2026年9月17日、ユーザー指示。一時的にCI無効でpushする手順を持つプロジェクトがあるため）

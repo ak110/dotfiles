@@ -525,7 +525,7 @@ def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatc
     registered.mkdir()
     (registered / "gitdir").write_text(f"{worktree / '.git'}\n", encoding="utf-8")
     (worktree / ".git").write_text(f"gitdir: {registered}\n", encoding="utf-8")
-    monkeypatch.setattr(sweep.session_registry, "pending_session_ids", lambda: ["keep"])
+    monkeypatch.setattr(sweep.registry_index, "pending_session_ids", lambda: ["keep"])
     monkeypatch.setattr(sweep.creation, "find_session_temp", lambda _identifier: session)
     # 容量1000のうち使用1600B相当ではなく、空きが10%（100）を割るよう基準の空きを設定する。
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 1700, paths.temp_root()))
@@ -559,7 +559,7 @@ def test_space_pressure_without_reclaimable_target_reports_low_space(monkeypatch
     """回収できる対象が無いまま空きが下限を割る場合は、下限割れの状態と一時rootの使用量を返す。"""
     _first_sweep_done()
     in_use = _area("session-keep", days=3, files={"payload.txt": "x" * 300})
-    monkeypatch.setattr(sweep.session_registry, "pending_session_ids", lambda: ["keep"])
+    monkeypatch.setattr(sweep.registry_index, "pending_session_ids", lambda: ["keep"])
     monkeypatch.setattr(sweep.creation, "find_session_temp", lambda _identifier: in_use)
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 900, 50))  # pylint: disable=protected-access
 

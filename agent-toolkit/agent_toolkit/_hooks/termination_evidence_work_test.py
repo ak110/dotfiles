@@ -26,7 +26,7 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 WORK_COMPLETE = "## 作業完了報告\n\n完了した。\n\n### 成果\n\n- 変更した\n\n### 投入したWI\n\n- なし\n"
 
 
-COMPLETION_SKILL_TEXT = "---\nname: report-completion\nuser-invocable: false\n---\n\n# 作業完了報告とセッションの完了処理\n"
+COMPLETION_PLAYBOOK_TEXT = "# 作業完了報告とセッションの完了処理\n\nこの手順書を全文読むことが終了工程の開始である。\n"
 
 
 def test_new_input_keeps_work_identity_and_reuses_context_completion(tmp_path: pathlib.Path) -> None:
@@ -71,17 +71,17 @@ def test_batch_report_save_reuses_invocation_in_same_context(tmp_path, invoked, 
     termination_evidence.observe_user(
         json.dumps({"session_id": "evidence-test", "turn_id": "batch", "prompt": "batchの報告を保存する"})
     )
-    skill = tmp_path / "plugin/skills/report-completion/SKILL.md"
-    skill.parent.mkdir(parents=True)
-    skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
+    playbook = tmp_path / "plugin/skills/atk-mode/playbooks/report-completion.md"
+    playbook.parent.mkdir(parents=True)
+    playbook.write_text(COMPLETION_PLAYBOOK_TEXT, encoding="utf-8")
     observe(
         "reference",
         "Bash",
-        {"command": f"cat -- {skill}"},
-        {"stdout": COMPLETION_SKILL_TEXT, "exit_code": 0},
+        {"command": f"cat -- {playbook}"},
+        {"stdout": COMPLETION_PLAYBOOK_TEXT, "exit_code": 0},
     )
     if invoked:
-        observe("completion", "Skill", {"skill": "agent-toolkit:report-completion"}, "起動")
+        observe("completion", "Skill", {"skill": "agent-toolkit:atk-mode", "args": "report-completion"}, "起動")
     if new_input:
         termination_evidence.observe_user(
             json.dumps({"session_id": "evidence-test", "turn_id": "next", "prompt": "別の報告を保存する"})

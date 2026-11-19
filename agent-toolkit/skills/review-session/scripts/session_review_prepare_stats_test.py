@@ -205,8 +205,8 @@ def test_prepare_writes_breakdown_of_rate_limiting_threads(
 
 _FIXTURE_READ_NOTICE = (
     '<atk-auto source="pretooluse" kind="warn">次の資料を、この操作の結果を使う前に指定されたReadで全文取得せよ。'
-    "必須手順であり省略するな。\n未取得資料: `/plugin/skills/commit/references/message.md`。\n"
-    "次の操作: Readで`/plugin/skills/commit/references/message.md`を全文読め。</atk-auto>"
+    "必須手順であり省略するな。\n未取得資料: `/plugin/skills/atk-mode/references/commit-message.md`。\n"
+    "次の操作: Readで`/plugin/skills/atk-mode/references/commit-message.md`を全文読め。</atk-auto>"
 )
 
 
@@ -282,7 +282,11 @@ def _fixture_entries(*, problem: bool) -> list[dict[str, Any]]:
             attachment("10:05:01", "c0", "PreToolUse:Bash", _FIXTURE_READ_NOTICE),
             result("10:05:30", "c0", "pre-commit中断: 案内された資料が未取得", error=True),
             call(
-                "10:06:00", "r0", "Read", {"file_path": "/plugin/skills/commit/references/message.md"}, "案内された資料を読む。"
+                "10:06:00",
+                "r0",
+                "Read",
+                {"file_path": "/plugin/skills/atk-mode/references/commit-message.md"},
+                "案内された資料を読む。",
             ),
             result("10:06:10", "r0", "# コミットメッセージ\n..."),
             call("10:07:00", "c1", "Bash", commit),

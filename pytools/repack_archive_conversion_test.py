@@ -331,11 +331,11 @@ class TestPreparationFailureRestoresOriginal:
         target = _make_input(tmp_path, kind)
         original = _snapshot(target)
 
-        def fail_mkdtemp(*args: object, **kwargs: object) -> str:
+        def fail_make_temporary(*args: object, **kwargs: object) -> pathlib.Path:
             del args, kwargs
             raise OSError(36, "File name too long")
 
-        monkeypatch.setattr(repack_archive.tempfile, "mkdtemp", fail_mkdtemp)
+        monkeypatch.setattr(repack_archive.private_directory, "make_temporary", fail_make_temporary)
         exit_code = _run_main(monkeypatch, ["--no-trash", str(target)])
 
         assert exit_code == 1

@@ -23,7 +23,7 @@ import psutil
 from agent_toolkit._atk.managed_temp import creation, paths, permissions, resources
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
-from agent_toolkit._common import file_lock, plugin_root_leases, process_identity, session_registry
+from agent_toolkit._common import file_lock, plugin_root_leases, private_directory, process_identity, registry_index
 
 _RECORD_NAME = ".sweep/last-sweep"
 _PRESSURE_RECORD_NAME = ".sweep/last-pressure"
@@ -105,7 +105,7 @@ def _save_sweep_time(state_root: pathlib.Path, now_ns: int, *, record_name: str 
     record = state_root / record_name
     temporary = record.with_name(f".last-sweep-{secrets.token_hex(8)}.tmp")
     try:
-        record.parent.mkdir(mode=0o700, exist_ok=True)
+        record.parent.mkdir(mode=private_directory.MODE, exist_ok=True)
         temporary.write_text(f"{now_ns}\n", encoding="ascii")
         os.replace(temporary, record)
     except OSError:
@@ -448,7 +448,7 @@ def _reclaim_for_space(
         return None
     lock = state_root / ".sweep/pressure.lock"
     try:
-        lock.parent.mkdir(mode=0o700, exist_ok=True)
+        lock.parent.mkdir(mode=private_directory.MODE, exist_ok=True)
     except OSError:
         return None
     # 待たずに戻ることで、別プロセスの長い走査を起動の待ち時間へ転嫁しない。
@@ -568,7 +568,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             return SweepResult([], ())
         protected = {
             area
-            for identifier in session_registry.pending_session_ids()
+            for identifier in registry_index.pending_session_ids()
             if (area := creation.find_session_temp(identifier)) is not None
         }
         deleted_early: list[pathlib.Path] = []
@@ -580,7 +580,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         plugin_root_leases.sweep_plugin_root_records()
     protected_sessions = {
         area
-        for identifier in session_registry.pending_session_ids()
+        for identifier in registry_index.pending_session_ids()
         if (area := creation.find_session_temp(identifier)) is not None
     }
     deleted: list[pathlib.Path] = []

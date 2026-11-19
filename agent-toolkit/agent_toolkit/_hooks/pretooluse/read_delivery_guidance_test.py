@@ -472,14 +472,14 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
     payload = {"cwd": str(root), "turn_id": "turn"}
     phases = (
         ("選定", root / "skills/process-wi/references/selection-procedure.md", ""),
-        ("計画", root / "skills/write-plan/SKILL.md", ""),
+        ("計画", root / "skills/atk-mode/playbooks/write-plan.md", ""),
         ("共通工程", root / "share/single-lane-execution.md", ""),
         ("確認", root / "skills/atk-mode/playbooks/confirmation.md", ""),
         ("実装と実行レビュー", root / "share/exec-review.parent.md", ""),
-        ("要件検収", root / "share/verification-evidence.md", ""),
+        ("要件検収", root / "skills/atk-mode/playbooks/verification.md", ""),
         ("レビュー収束", root / "share/review-loop-coordination-rounds.md", ""),
-        ("公開前検証", root / "skills/commit/references/publish.md", ""),
-        ("終了", root / "skills/report-completion/SKILL.md", ""),
+        ("公開前検証", root / "skills/atk-mode/playbooks/publish.md", ""),
+        ("終了", root / "skills/atk-mode/playbooks/report-completion.md", ""),
     )
     for phase, path, heading in phases:
         target = ReadTarget(path, heading)
@@ -504,7 +504,7 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
             "要件検収": ("完成条件証拠の検証記録",),
             "レビュー収束": ("ラウンドの遷移", "応答済みの判定"),
             "公開前検証": ("公開工程", "CI"),
-            "終了": ("終了処理",),
+            "終了": ("完了処理", "終了工程"),
         }[phase]:
             assert expected in target.body(body), phase
         if phase == "要件検収":

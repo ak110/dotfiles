@@ -33,7 +33,7 @@ import time
 lazy from agent_toolkit._agents_server import shared_roots, shared_sweep
 lazy from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
 lazy from agent_toolkit._atk.managed_temp import creation, resources, sweep
-lazy from agent_toolkit._common import interval_gate, session_activity, session_registry, state_paths
+lazy from agent_toolkit._common import interval_gate, registry_index, session_activity, state_paths
 lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     STALE_STATE_MAX_AGE_SECONDS,
     clear_session_state,
@@ -86,7 +86,7 @@ def main(payload_text: str) -> int:
     with contextlib.suppress(OSError, ValueError):
         area = creation.find_session_temp(session_id) if session_id is not None else None
         # 登録簿の全件を解決する保留中の判定は、回収の候補になる領域がある場合だけ行う。
-        if area is not None and not sweep.has_live_owner(area) and session_id not in session_registry.pending_session_ids():
+        if area is not None and not sweep.has_live_owner(area) and session_id not in registry_index.pending_session_ids():
             cleaned = resources.cleanup_regenerable(area, references=functools.cache(resources.process_references))
             resources.log_retained(cleaned["retained"])
     if not discarded or session_id is None:

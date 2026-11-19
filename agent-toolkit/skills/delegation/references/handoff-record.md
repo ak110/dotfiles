@@ -10,9 +10,9 @@
 - `agents_server`で起動した`session_id`の一覧と、それぞれの状態観測を試みたかどうか
 - 後続工程で使うGit管理外の成果物（原稿、検証の保存出力、調査記録など）の用途と絶対パス
 - 計画ファイルを作成せずにWI実装commitを作成した場合の、対応記録ファイル（引き継ぎ記録と同じstemの`<stem>.wi-commits.jsonl`）の所在。
-  出力・取得・履歴変更後の手順は`../../commit/references/commit-wi-records.md`「WI実装commitの対応」に従う
+  出力・取得・履歴変更後の手順は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う
 - 計画が無い作業で、途中報告のAWI化ステータスを`予定`とした改善点の対象、区分と再開条件。
-  確定の手順は`agent-toolkit:report-completion/SKILL.md`「工程」の手順5に従う
+  確定の手順は`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」の手順5に従う
 
 書く値が無い間は、ファイルを作成しない。
 値が変わった時に該当する項目を書き換える。
@@ -28,8 +28,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| `予定`の改善点を確定する前 | `agent-toolkit:report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/commit-wi-records.md` |
+| `予定`の改善点を確定する前 | `agent-toolkit:atk-mode/playbooks/report-completion.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/references/commit-wi-records.md` |
 
 ## 本文参照の取得条件
 

@@ -3,7 +3,7 @@
 起草を終えたWIの原稿を検証し、キューへ保存し、保存結果を検収する手順書である。
 保存済みのWIと回答済みUWIの取得も扱う。
 起草は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`で終えてから本書へ進み、上から実行する。
-報告用UWIは`agent-toolkit:report-completion/references/report-formats-uwi.md`「報告用UWIの確認と保存」に従う。
+報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」に従う。
 
 方針は次のとおりである。
 保存前に確かめるのは、意味、必要事項、成立性、後続が引き継げることに限り、意味を変えない表現だけの推敲と、そのための再検収は省く。
@@ -13,7 +13,7 @@
 
 ## 保存前の確認
 
-1. 原稿と根拠資料を`agent-toolkit:managed-temp`の一時領域へ保存する。
+1. 原稿と根拠資料を`agent-toolkit:atk-mode/playbooks/managed-temp.md`の一時領域へ保存する。
    既存項目の更新では、`atk wi show <ファイル名>`で現行本文と保留の状態を確かめる。
 2. 回答済みUWIとの整合を確かめる。
    対象リポジトリの回答済みUWIを`atk wi list --target-repo=<対象リポジトリの絶対パス> --type=uwi --answered=yes --skip-pull --summary-only`で取得する。

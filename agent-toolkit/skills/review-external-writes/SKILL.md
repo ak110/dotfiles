@@ -8,7 +8,7 @@ description: >
 # 外部サービスへの投稿前レビュー
 
 第三者に届く文面は、投稿する前に、起草者とは独立した読み取り専用の担当者に検証させる。
-原文や資料から起草・推敲した文面の意味保持には`agent-toolkit:/share/writing-operations.md`「ユーザー入力素材の取扱い」を適用する。
+原文や資料から起草・推敲した文面の意味保持には`agent-basics:writing-standards/references/writing-genres.md`「ユーザー入力素材の取扱い」を適用する。
 対象かどうかの判定、レビューの依頼、指摘の採否、および実際の投稿は、投稿を担当するエージェントが行う。
 投稿操作に必要な認可は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」に従って判定する。
 
@@ -27,7 +27,7 @@ description: >
 ## 対象
 
 第三者が読む外部サービスに向けて、エージェントが起草または加筆した人間向けの文面を対象とする。
-ユーザーから逐語で渡された文面、git push、およびコミットメッセージ（`agent-toolkit:commit`）は対象外とする。
+ユーザーから逐語で渡された文面、git push、およびコミットメッセージ（`agent-toolkit:atk-mode/references/commit-message.md`）は対象外とする。
 private-notesのWI本文も対象外であり、これらは`agent-toolkit:atk-mode/playbooks/wi-drafting.md`と`agent-toolkit:atk-mode/roles/add-wi.parent.md`に従う。
 
 ## 投稿前レビュー担当の起動と受領
@@ -52,6 +52,7 @@ private-notesのWI本文も対象外であり、これらは`agent-toolkit:atk-m
 ### 起動
 
 1. 同じ文面を検証するため、確定した文面を読み取り可能なUTF-8通常ファイルへ保存する。
+   投稿する文面にタイトル（PR・MR・イシュー・Releaseの表題）がある場合は、タイトルも同じファイルへ含める。
 2. `agents_server`の`start`を次の引数で1件起動する。
    委譲先として投稿するエージェントも同様とする。
 

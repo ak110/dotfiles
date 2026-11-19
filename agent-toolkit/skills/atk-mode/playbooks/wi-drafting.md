@@ -5,7 +5,7 @@
 要約や依頼文からの推論で埋めず、最も元に近い資料（発話の原文、資料の本文、対象のコード、実行結果）へ戻って書く（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
 
 本書は、通常AWIと報告用を除くUWIを起草する者（`/atk-mode add-awi-by-user`や独立したWI投入のセッションのメイン、WI投入担当、他の作業中にUWIを書く者）が上から実行する。
-報告用UWIは`agent-toolkit:report-completion/references/report-formats-uwi.md`「報告用UWIの確認と保存」に従い、報告用かは`--question-type=post-approval`ではなく同スキルの定義で決める。
+報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」に従い、報告用かは`--question-type=post-approval`ではなく同スキルの定義で決める。
 
 ## 手順
 

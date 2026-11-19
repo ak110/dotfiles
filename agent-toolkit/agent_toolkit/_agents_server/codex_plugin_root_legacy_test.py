@@ -57,10 +57,11 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
     shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
     (source / "agent_toolkit/_agents_server/plugin_root.py").write_text(_LEGACY_PLUGIN_ROOT_SOURCE, encoding="utf-8")
     # 旧stdio入口と旧root生成だけを合成し、現在の公開bootstrapは保証しない。
+    # fixtureは現行の登録済みツールをSDK標準のstdio起動で公開し、旧rootから起動した実プロセスとして残る。
     (source / "agent_toolkit/agents_server_mcp.py").write_text(
         '"""旧stdio入口の試験fixture。現行公開bootstrapは対象外。"""\n'
         "from agent_toolkit._agents_server import mcp_tools\n"
-        "raise SystemExit(mcp_tools.serve())\n",
+        'mcp_tools.mcp.run(transport="stdio")\n',
         encoding="utf-8",
     )
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)

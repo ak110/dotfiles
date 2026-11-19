@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 共有実行枠のコマンドをシェルから起動する前 | `agent-toolkit:/share/check-execution-operations-launch.md` |
+| 共有実行枠のコマンドをシェルから起動する前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
 
 ## 検証コマンドの実行
 
@@ -31,10 +31,10 @@
      `-p no:xdist`では既存の`-n 4 --dist=worksteal`が未認識となり収集前に終了4となる。
    - 共有実行枠の対象は`make test`、`uv run --frozen pyfltr run`、`git commit`内の`pyfltr fast`、共通pytestプラグインを読むpytestである。
      両プロジェクトの`addopts`は同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で解除するものは枠の対象外となる。
-     シェルからの起動は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の形式と3分類に従う。
+     シェルからの起動は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の形式と3分類に従う。
    - pytestと統合検証は、開始からworker・子孫の回収まで共有実行枠を保持する。
      収集だけのpytest（`--collect-only`）は枠を取らない。
-     枠の数は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の定義に従う。
+     枠の数は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の定義に従う。
      dotfilesのロックファイルの版では、既定で2枠になる。
      入れ子の実行は祖先の所有を継承する。
 4. 確定した対象へ全チェックを適用し、共有実行枠の占有を減らすため、静的チェックを先に通してからpytestを含む実行を1回行う。

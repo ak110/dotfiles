@@ -7,7 +7,7 @@ import pytest
 
 from agent_toolkit._testing import git_repository as git
 
-_PUBLISH = pathlib.Path(__file__).resolve().parents[3] / "skills/commit/references/publish.md"
+_PUBLISH = pathlib.Path(__file__).resolve().parents[3] / "skills/atk-mode/playbooks/publish.md"
 
 
 @pytest.mark.cpu_limit(

@@ -31,11 +31,13 @@
   指定した手段でなければ性質を満たせない根拠を併記する（2026年9月、ユーザー指示。
   目的に合致しない厳しすぎる制約を手順へ書かないことと、既存の同種の制約も是正することの2点を受領した）
 - `agent-basics:writing-standards`の`references/implementation-time.md`が持つ言語横断の標準ツールの表は現行のまま維持する。
-  同`references/ui-ux-web-rules.md`が定めるCDN経由のCSSフレームワークの採用と取得方式も維持する
-  （2026年9月16日、ユーザー回答。全文見直しが同じ2件を繰り返し検出する事態を避けるために記録する）
+  同`references/ui-ux-web-rules.md`が定めるCDNフレームワークの採否判断も維持する。
+  採用は、ユーザー指定、既存デザインシステムとの統一、実装・保守費用の明確な改善がある場合に選べる条件付きの選択である。
+  （2026年9月16日、ユーザー回答。全文見直しが同じ2件を繰り返し検出する事態を避けるために記録する。
+  当時の記録は常用の方式を維持する内容だったが、cf7aeb122で標準のHTML/CSS/JavaScriptを軸とする条件付きの選択へ改めた）
 - コーディング基準を編集する主体は、一般的な構文・API操作・汎用的な目安を、守る価値と判断方針、知識を想起する代表語へ整理する。
   作者固有の選好、対象版の差、特定の環境で生じる失敗、公開契約・データ保全・セキュリティの条件と例外は具体的に保持する。
-  標準ツール表と単体HTMLのCDN方式の維持判断はこの整理でも継続するが、一般的な技術の細則まで一律に保護する根拠にはしない。
+  標準ツール表と単体HTMLのCDN採否判断の維持はこの整理でも継続するが、一般的な技術の細則まで一律に保護する根拠にはしない。
   2026年10月7日のユーザー依頼と「既知の知識は方針と語だけ」の回答による。
   適用先はwriting-standardsのコーディング用参照資料であり、技術別の読込表と必要な参照節は維持する
 - エージェント向けの文章は、学習データから導ける一般知識を守る価値・判断の観点・想起の手掛かりになる代表語で書き、具体的に書くのは学習データから導けない事実と硬い制約に限る。
@@ -47,7 +49,7 @@
   2026年10月7日のユーザー依頼と、確認への回答「既知の知識は方針と語だけ」「委譲プロンプトと計画にも適用」による。
   現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」が定義元であり、
   `agent-documents-basics.md`、`agent-documents-additions.md`、`agent-toolkit:delegation`の`references/base-contract.md`、
-  `agent-toolkit:write-plan`の`references/plan-file-standards.md`、`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`が参照する
+  `agent-toolkit:atk-mode/references/plan-format.md`、`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`が参照する
 - エージェント向け文書は、読み手のエージェントが広い知識を持つ前提で書き、常識的に判断できることを細かく手順化しない。
   細かすぎる手順は「書かれた手順以外はやってはならない」という先入観を生んで品質を下げ、文章量に比例して費用も増やすためである。
   手順として書くのは目的、守る価値、硬い制約、プロジェクト固有の事実、実際に誤った箇所に限る。

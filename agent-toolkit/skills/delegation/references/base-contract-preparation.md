@@ -60,7 +60,7 @@
 - シェルのメタ文字はANSI-Cクォートや変数でエスケープし、入れ子のシェル実行や複数行にわたるコードはスクリプトファイルを作成して実行する。
 - ツールの呼び出し形式は最下層のヘルプやスキーマで確認し、既存のパスは基準定義や実体検索に基づいて解決する。
 - `git rev-parse --short`には1回の実行で1つのコミット指定のみを渡す。
-  Gitの識別子指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。
+  Gitの識別子指定は`agent-toolkit:atk-mode/references/git-identifier.md`に従う。
 
 ## 本文参照の取得条件
 

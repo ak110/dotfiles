@@ -118,7 +118,7 @@ from agent_toolkit._plan.structure.verification import commands_from_cell
 
 _NO_FIXED_H2_ERROR = (
     "固定H2が1件も無い。対象が計画ファイルか確かめる。"
-    "計画ファイルなら`agent-toolkit:write-plan`の`references/plan-file-standards.md`「初回起草の雛形」の固定H2を置く"
+    "計画ファイルなら`agent-toolkit:atk-mode/references/plan-format.md`「初回起草の雛形」の固定H2を置く"
 )
 
 

@@ -231,7 +231,7 @@ async def _ensure_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     """同じ世代の発見記録のプロセスが終了していれば、その記録へ接続せず新しいプロセスを起動する。"""
     directory = tmp_path / "services/agents-server"
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
-    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("G1", "1.0.0"))
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("G1", "1.0.0"))
     GenerationRegistry(directory).reserve("G1", tmp_path, "1.0.0")
     (directory / "G1.json").write_text(json.dumps({"generation": "G1", "process": _REUSED}), encoding="utf-8")
     request = AsyncMock()
@@ -275,7 +275,7 @@ async def _publish_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
     """候補の世代が終了していれば、その世代へ公開を要求しない。"""
     directory = tmp_path / "services/agents-server"
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
-    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("G1", "1.0.0"))
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("G1", "1.0.0"))
     GenerationRegistry(directory).reserve("G1", tmp_path, "1.0.0")
     (directory / "G1.json").write_text(json.dumps({"generation": "G1", "process": _REUSED}), encoding="utf-8")
     request = AsyncMock()

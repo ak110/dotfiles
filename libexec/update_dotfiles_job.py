@@ -26,6 +26,7 @@ from typing import Any, BinaryIO, cast
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "agent-toolkit"))
 
+from agent_toolkit._common import private_directory  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._common.windows_job import CREATE_SUSPENDED, WindowsJob  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _TIMEOUT = 7200
@@ -89,7 +90,8 @@ def _cleanup() -> None:
             owned = _job_path(path.name)
             result = json.loads((owned / "result.json").read_text(encoding="utf-8"))
             finished = datetime.datetime.fromisoformat(result["finished_at"]).timestamp()
-        except ValueError, KeyError, TypeError, FileNotFoundError:
+        # 旧版が昇格したプロセスで作成したjobは、非昇格のプロセスが読めないため回収を見送る。
+        except ValueError, KeyError, TypeError, OSError:
             continue
         if time.time() - finished > _RETENTION:
             shutil.rmtree(owned)
@@ -374,7 +376,10 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("自己jobの取得にはCODEX_THREAD_IDが必要です。job IDを指定してください")
                 matches = []
                 for path in state_root().glob("*/input.json"):
-                    metadata = json.loads(path.read_text(encoding="utf-8"))
+                    try:
+                        metadata = json.loads(path.read_text(encoding="utf-8"))
+                    except PermissionError:
+                        continue
                     if metadata.get("thread_id") == thread:
                         matches.append((metadata["started_at"], _job_path(path.parent.name)))
                 if not matches:
@@ -384,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         _cleanup()
         identifier = str(uuid.uuid4())
         job = _job_path(identifier)
-        job.mkdir(parents=True, mode=0o700)
+        job.mkdir(parents=True, mode=private_directory.MODE)
         _write_json(
             job / "input.json", {"arguments": arguments, "thread_id": os.environ.get("CODEX_THREAD_ID"), "started_at": _now()}
         )

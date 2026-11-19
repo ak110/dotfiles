@@ -120,7 +120,7 @@ AWI登録の認可は名指しの起動で成立しているため、本文の�
     - 登録0件なら、手順5の対応表と採否の根拠を自分で検収する。
     - `atk wi submission end --findings-file <指摘対応記録の絶対パス>`を実行し、投入前レビューの返却は登録件数によらず全て`--review-result`で添える。
       検査が不足を示したら記録を補って再実行する。
-    - 成功したら、`agent-toolkit:report-completion`を起動して終了処理まで行う。
+    - 成功したら、`agent-toolkit:atk-mode/playbooks/report-completion.md`を読んで終了処理まで行う。
       `end`が表示した報告用要約（確認の往復回数、指摘ごとの分類、再発防止策の採否と登録先）は、省略せず作業完了報告へ書く（Claude Codeでは、最終応答に要約の行が無いとStop hookが再報告を求める）。
       同期の振り返りは起動しない。
 

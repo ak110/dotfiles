@@ -74,23 +74,23 @@ CIや再現テストで自己確認できる事項を、ユーザーの実機確
   全対象の横断整理後、保存の直前に全要求を予告する。
   全要求が揃う時点で予告の内容を保ち、起草待ちの直列区間を減らすためである。
   通常の振り返りは起動前に予告する。
-  現行の規定は`agent-toolkit/skills/review-session/references/session-analysis.md`「工程5」と`agent-toolkit/skills/report-completion/SKILL.md`にある
+  現行の規定は`agent-toolkit/skills/review-session/references/session-analysis.md`「工程5」と`agent-toolkit/skills/atk-mode/playbooks/report-completion.md`にある
 - 完了報告と振り返りの予告はユーザーへ直接届ける（2026年10月4日、ユーザー指示）。
   報告ごとの起草・確認・再出力はこの指示で除いた。
   2026年10月8日の整理ではClaude Codeの途中と末尾の本文をsend_to_userへ一本化し、ツールの無い環境は終了本文で届ける。
-  報告の不足をStopが可視本文の不足段階と報告本文の判定（`agent-toolkit:report-completion`「工程」）から示す形は、不足を検出するためにエージェントが選んだ実装の手段である。
+  報告の不足をStopが可視本文の不足段階と報告本文の判定（`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」）から示す形は、不足を検出するためにエージェントが選んだ実装の手段である。
   対応commitは2026年10月4日「fix: 完了報告を直接発話してStopで不足を示す」、`fbdcadb56`である。
   報告用UWIの保存契約と報告の時点・中身は保持する
-- 完了報告の本文をフックで判定せず、守る内容は規範（`agent-toolkit:report-completion`の`references/report-formats.md`と既存の完成形の例）へ書く。
-  Stopフックは`agent-toolkit:report-completion`の呼び忘れの検出に使う（2026年10月11日、ユーザー指示。送達後の報告が区切りの差でも遮断され、全文の再出力を往復させたことに由来する）。
+- 完了報告の本文をフックで判定せず、守る内容は規範（`agent-toolkit:atk-mode/references/report-formats.md`と既存の完成形の例）へ書く。
+  Stopフックは`agent-toolkit:atk-mode/playbooks/report-completion.md`の呼び忘れの検出に使う（2026年10月11日、ユーザー指示。送達後の報告が区切りの差でも遮断され、全文の再出力を往復させたことに由来する）。
   区切りや見出しを判定するための規範も増やさない。
   直接送達、報告に必要な内容と完了工程の目的は保持し、当時のStopは成果作業の後の起動の有無だけを判定した。
   2026年10月15日のユーザーの終了フック案に基づき、起動済みの成果作業にも同じ作業・人間入力につき一度、終了時点で送達と新たな指摘の残処置を判断する通知を追加した。
   通知の事実だけを重複抑止へ使い、本文の書式判定と完了の自己申告は導入しない。
   意味上の充足はメインが元要求と実際の結果から判断し、充足時は本文を再出力せず終了する。
-  現行の規定は`agent-toolkit:report-completion`の`SKILL.md`「工程」と`agent-toolkit:report-completion/references/claude-hooks-stop.md`「終了工程の証拠」にある
+  現行の規定は`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」と`agent-toolkit:atk-mode/references/termination-evidence.md`「受理する証拠」にある
 - 振り返りの予告は`## 振り返り結果の予告`で始め、最後の報告だけに完了の固定文を添える（2026年10月8日、ユーザー指示）。
-  固定文の文面は`agent-toolkit:report-completion/references/report-formats-retrospective.md`「振り返り結果報告のフォーマット」が定める。
+  固定文の文面は`agent-toolkit:atk-mode/references/report-formats-retrospective.md`「振り返り結果報告のフォーマット」が定める。
   投入がある場合はAWI投入結果、無い場合は振り返り結果を最後の報告とする。
   作業完了報告やgrillingの終了時報告へこの印を加えない
 - UWIの回答欄とAWIのユーザーコメント節はユーザーだけが書き込む。

@@ -114,7 +114,7 @@ class TestPublicWorktreePreparation:
         assert any(command[:3] == ["git", "check-ref-format", "--branch"] for command in git_calls)
         assert not any(len(command) > 1 and command[1] == "worktree" for command in git_calls)
 
-    @pytest.mark.parametrize("failure_kind", ["empty", "common-dir", "show-toplevel", "branch"])
+    @pytest.mark.parametrize("failure_kind", ["empty", "common-dir", "show-toplevel"])
     def test_existing_non_worktree_directory_is_rejected_before_fetch_or_rebase(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -143,9 +143,6 @@ class TestPublicWorktreePreparation:
             if cmd == ["git", "rev-parse", "--show-toplevel"]:
                 top = local_path if failure_kind == "show-toplevel" else worktree_path
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=str(top), stderr="")
-            if cmd == ["git", "symbolic-ref", "HEAD"]:
-                branch = "refs/heads/main" if failure_kind == "branch" else "refs/heads/worktree-custom"
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=branch, stderr="")
             return None
 
         session_calls, git_calls = _run_public_process_loop(

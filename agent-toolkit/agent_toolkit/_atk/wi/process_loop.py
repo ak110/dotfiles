@@ -26,6 +26,7 @@ from agent_toolkit._atk.wi import submit as _submit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import mcp_environment, process_tree
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import registry_index as _registry_index
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as _git_command
@@ -151,11 +152,11 @@ def _writers_stopped(
     if _ownership.executor_running(owner) or _ownership.residual_running(owner):
         _ownership.hold(owner, writers=writers)
         return False
-    descendants = _ownership.descendant_sessions({owner.session_id} if owner.session_id else set())
+    descendants = _registry_index.descendant_session_ids({owner.session_id} if owner.session_id else set())
     # 他対象が申告した担当とその子孫は、その対象が停止・回収を所有する。
     # 未申告の子孫は所属を確定できないため、各対象の停止条件へ残す。
-    descendants.difference_update(_ownership.descendant_sessions(other_writers or set()))
-    descendants.update(_ownership.descendant_sessions(set(writers or [])))
+    descendants.difference_update(_registry_index.descendant_session_ids(other_writers or set()))
+    descendants.update(_registry_index.descendant_session_ids(set(writers or [])))
     states = {identifier: _registry.resolve(identifier).state for identifier in descendants}
     stopped = all(state not in {_registry.Resolution.RUNNING, _registry.Resolution.UNREADABLE} for state in states.values())
     if not stopped:

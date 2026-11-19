@@ -12,6 +12,7 @@ import sys
 lazy import platformdirs
 
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._common import private_directory
 from agent_toolkit._common import state_paths as _state_paths
 
 MAX_AGE_DAYS = 7
@@ -62,9 +63,9 @@ def state_root_path() -> pathlib.Path:
 
 
 def _ensure_private_directory(path: pathlib.Path, label: str) -> pathlib.Path:
-    """同一ユーザー所有で0700のディレクトリとして準備する。リンクと他者所有は拒否する。"""
+    """POSIXでは同一ユーザー所有で0700、Windowsでは継承するACLのディレクトリとして準備する。リンクと他者所有は拒否する。"""
     try:
-        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
         metadata = path.lstat()
         if not stat.S_ISDIR(metadata.st_mode):
             raise ManagedTempError(

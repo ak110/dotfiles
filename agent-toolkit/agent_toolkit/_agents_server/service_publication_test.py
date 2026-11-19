@@ -286,7 +286,7 @@ def test_exited_candidate_is_not_published(tmp_path: pathlib.Path, monkeypatch: 
     directory, _old, new = _superseded(tmp_path, publish_new=False)
     (directory / "new.json").write_text(json.dumps(new), encoding="utf-8")
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
-    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("new", "1.0.1"))
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("new", "1.0.1"))
     request = Mock()
     monkeypatch.setattr(service_rpc, "request_sync", request)
     caller = runtime_environment.CallerContext({}, tmp_path)
@@ -305,7 +305,7 @@ def test_publication_fails_and_restores_live_generation_when_published_one_exits
     live = dict(new, process=service_transport.process_identity(os.getpid()))
     (directory / "new.json").write_text(json.dumps(live), encoding="utf-8")
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
-    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("new", "1.0.1"))
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("new", "1.0.1"))
 
     def publish_then_exit(record: dict[str, Any], operation: str, _arguments: dict, **_kwargs: Any) -> dict[str, Any]:
         assert (record, operation) == (live, "publish")
@@ -329,7 +329,7 @@ def test_publication_interrupted_by_candidate_exit_restores_live_generation(
     live = dict(new, process=service_transport.process_identity(os.getpid()))
     (directory / "new.json").write_text(json.dumps(live), encoding="utf-8")
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
-    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("new", "1.0.1"))
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("new", "1.0.1"))
 
     def publish_then_exit(_record: dict[str, Any], _operation: str, _arguments: dict, **_kwargs: Any) -> dict[str, Any]:
         GenerationRegistry(directory).publish(

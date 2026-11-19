@@ -9,7 +9,6 @@ import logging
 import os
 import shutil
 import subprocess
-import tempfile
 import threading
 from pathlib import Path
 from typing import Any
@@ -23,7 +22,7 @@ from agent_toolkit._agents_server import plugin_root
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import host_homes, process_tree
+from agent_toolkit._common import host_homes, private_directory, process_tree
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 
@@ -411,7 +410,7 @@ class ClaudePluginReloader:
 
     def _stage(self, source: Path | None) -> Path:
         assert self._area is not None and source is not None
-        generation = Path(tempfile.mkdtemp(prefix="generation-", dir=self._area))
+        generation = private_directory.make_temporary(self._area, "generation-")
         try:
             shutil.copytree(
                 source,

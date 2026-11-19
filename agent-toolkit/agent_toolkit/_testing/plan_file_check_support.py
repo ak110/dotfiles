@@ -16,7 +16,7 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 
 # 検査本体はスキルのscriptsにあり、パッケージの外のため検索パスへ加えてから取り込む。
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills/write-plan/scripts"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/scripts"))
 import check_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order,import-error
 
 _TWO_FILE_MIGRATION = "旧二ファイル書式である。新規作成・改訂では現行の1ファイル書式へ移行する"

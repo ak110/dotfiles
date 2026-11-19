@@ -22,13 +22,11 @@ __all__ = [
     "CommitMetadata",
     "EntryRecord",
     "canonical_repo",
-    "count_awi",
     "entry_path",
     "entry_state_of",
     "entry_type_from_metadata",
     "entry_type_of",
     "iter_entries",
-    "iter_inbox_entries",
     "iter_entry_paths",
     "read_named_entries",
     "select_entries",
@@ -95,28 +93,6 @@ def canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
     return _git_remote.canonical_repo(value, cache)
 
 
-def iter_inbox_entries(
-    inbox_dir: pathlib.Path, target_repo: str | None = None, *, texts: EntryTexts | None = None
-) -> Iterator[tuple[pathlib.Path, str, str]]:
-    """inbox配下の`.md`ファイルを名前順に走査し、`(path, target_repo, text)`を返す。
-
-    `target_repo`指定時は、frontmatterの`target_repo`が`TargetRepoMatcher`の判定で一致するエントリのみ返す。
-    ディレクトリ不在時は何も返さない。
-    """
-    if not inbox_dir.exists():
-        return
-    matcher = _wi_filters.TargetRepoMatcher(target_repo)
-    texts = texts if texts is not None else EntryTexts()
-    for path in sorted(inbox_dir.iterdir()):
-        if path.suffix != ".md":
-            continue
-        text = texts.read(path)
-        entry_repo = parse_target_repo(text)
-        if not matcher.matches(entry_repo):
-            continue
-        yield path, entry_repo, text
-
-
 def entry_type_of(path: pathlib.Path, text: str) -> str | None:
     """エントリの種別を検証して返す。"""
     parsed = parse_frontmatter(text)
@@ -168,19 +144,6 @@ def iter_entries(
         if "all" not in entry_types and actual_type not in entry_types:
             continue
         yield path, target_repo, text, state, actual_type
-
-
-def count_awi(awi_dir: pathlib.Path, target_repo: str | None = None) -> int:
-    """指定ディレクトリ配下の`*.md`ファイル件数を返す。
-
-    `target_repo`指定時はfrontmatterの`target_repo`が一致するエントリのみ数える。
-    未指定時は全リポジトリ分を数える。
-    """
-    if not awi_dir.exists():
-        return 0
-    if target_repo is None:
-        return sum(1 for p in awi_dir.iterdir() if p.suffix == ".md")
-    return sum(1 for _ in iter_inbox_entries(awi_dir, target_repo))
 
 
 type EntryRecord = tuple[pathlib.Path, str, str, str, str | None]

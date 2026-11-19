@@ -361,7 +361,7 @@ process-wiでは、処理を終えたリポジトリでも律速でなく資源�
 完了・成功・不在・件数・互換性を述べる前と、要約・中継・報告を書く前は、`agent-basics:writing-standards/references/quality-principles-facts.md`「事実と推論」を全文読む。
 
 経験の保存・利用は認可・公開契約を保ち`agent-basics:writing-standards/references/investigation.md`に従う。
-調査・検証・成功判定・配布・反映は`agent-toolkit:/share/investigation-operations.md`に従う。
+調査・検証・成功判定・配布・反映は`agent-basics:writing-standards/references/investigation.md`に従う。
 
 ## 協調と自律
 
@@ -464,7 +464,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
   hookの扱いは`01-agent.md`「方針が衝突する場合の優先順位」に従う。
 - コマンドはハーネスの標準の実行・背景実行・待機機能で実行する。
 - 作業用の一時ディレクトリは、通知されたセッションのmanaged-tempの中に`mktemp -d '<親>/<用途>-XXXXXXXX'`で作り、参照を終えた作成者が`rm -r -- <作成した絶対パス>`で回収する。
-  置き場所の例外と回収の時点は`agent-toolkit:managed-temp`に従う。
+  置き場所の例外と回収の時点は`agent-toolkit:atk-mode/playbooks/managed-temp.md`に従う。
 
 ### パスと検索
 
@@ -478,7 +478,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
   圧縮後は残工程で選ぶ。
 - 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。
   直接影響範囲の定義は`agent-toolkit:atk-mode/references/awi-body.md`「直接影響範囲」にある。
-- Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。
+- Git識別子と別worktreeの指定は`agent-toolkit:atk-mode/references/git-identifier.md`に従う。
   前工程から受け取ったパスや識別子は、移動や終了を伴う操作を挟んだ後で同一性を確かめ直す。
 
 ### 出力の保持と観測

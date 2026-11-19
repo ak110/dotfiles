@@ -13,7 +13,7 @@ from pathlib import Path
 
 import psutil
 
-from agent_toolkit._common import file_lock, process_identity, state_paths
+from agent_toolkit._common import file_lock, private_directory, process_identity, state_paths
 
 SHARED_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root-shared"
 _process_snapshot: contextvars.ContextVar[dict[str, dict[int, psutil.Process]] | None] = contextvars.ContextVar(
@@ -90,7 +90,7 @@ def _key(path: Path) -> str:
 
 def _directory() -> Path:
     directory = state_paths.state_dir() / "plugin-root-leases"
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
     return directory
 
 

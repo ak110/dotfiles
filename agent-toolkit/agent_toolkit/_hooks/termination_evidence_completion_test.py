@@ -8,10 +8,11 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._hooks import termination_evidence, termination_order_advisor
+from agent_toolkit._hooks import plugin_resources, termination_evidence, termination_order_advisor
 from agent_toolkit._testing.termination_evidence_support import (
     _missing_completion,
     _tool,
+    claude_read_response,
     stop_payload,
     supply_commit,
     supply_completion,
@@ -61,14 +62,17 @@ def test_report_body_differences_do_not_block_evidenced_work(tmp_path: pathlib.P
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, visible, codex=codex)) == ("approve", "")
 
 
+_PLAYBOOK = "plugin/skills/atk-mode/playbooks/report-completion.md"
+
+
 @pytest.mark.parametrize(
     ("command", "response"),
     [
-        ("echo plugin/skills/report-completion/SKILL.md", "plugin/skills/report-completion/SKILL.md"),
-        ("cat plugin/skills/report-completion/SKILL.md", "cat: plugin/skills/report-completion/SKILL.md: No such file"),
-        ("grep -n name plugin/skills/report-completion/SKILL.md", "2:name: report-completion"),
+        (f"echo {_PLAYBOOK}", _PLAYBOOK),
+        (f"cat {_PLAYBOOK}", f"cat: {_PLAYBOOK}: No such file"),
+        (f"grep -n 作業完了報告 {_PLAYBOOK}", "1:# 作業完了報告とセッションの完了処理"),
         ("cat plugin/skills/review-session/SKILL.md", "---\nname: review-session\n---\n"),
-        ("cat plugin/skills/report-completion/SKILL.md", ""),
+        (f"cat {_PLAYBOOK}", ""),
     ],
 )
 def test_codex_path_string_or_failed_read_is_not_evidence(tmp_path: pathlib.Path, command: str, response: str) -> None:
@@ -79,19 +83,69 @@ def test_codex_path_string_or_failed_read_is_not_evidence(tmp_path: pathlib.Path
 
 
 def test_claude_failed_or_unrelated_skill_is_not_evidence(tmp_path: pathlib.Path) -> None:
-    """失敗したreport-completionの起動と、他のスキルの起動を起動証拠にしない。"""
+    """失敗した入口の完了報告の起動、入口の他の作業、他のスキルの起動を起動証拠にしない。"""
     supply_commit(tmp_path)
     payload: dict[str, Any] = {
         "session_id": "evidence-test",
         "hook_event_name": "PostToolUseFailure",
         "tool_name": "Skill",
         "tool_use_id": "failed-skill",
-        "tool_input": {"skill": "agent-toolkit:report-completion"},
+        "tool_input": {"skill": "agent-toolkit:atk-mode", "args": "report-completion"},
         "tool_response": {"error": "失敗"},
     }
     termination_evidence.observe_tool(json.dumps(payload), after=True)
     _tool(tmp_path, "other", "Skill", {"skill": "agent-toolkit:review-session"}, "起動", codex=False)
+    _tool(
+        tmp_path,
+        "entry",
+        "Skill",
+        {"skill": "agent-toolkit:atk-mode", "args": "report-completionの前に調べる"},
+        "起動",
+        codex=False,
+    )
+    _tool(tmp_path, "retired", "Skill", {"skill": "agent-toolkit:report-completion"}, "起動", codex=False)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))[0] == "notify"
+
+
+@pytest.mark.parametrize(
+    ("read_range", "accepted"),
+    [
+        ({}, True),
+        ({"offset": 1, "limit": 2000}, True),
+        ({"offset": 1, "limit": 1}, False),
+        ({"offset": 2}, False),
+    ],
+    ids=["whole", "limit-covers-all", "first-line-only", "from-second-line"],
+)
+def test_claude_read_of_whole_playbook_is_evidence(
+    tmp_path: pathlib.Path, read_range: dict[str, int], *, accepted: bool
+) -> None:
+    """Claude CodeのReadは、応答が手順書の本文全体を返した場合だけ起動証拠にする。
+
+    `offset`・`limit`の値ではなく応答の本文で判定するため、範囲が全行を覆う指定は受理し、一部だけを返した読取は受理しない。
+    """
+    supply_commit(tmp_path)
+    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
+    response = claude_read_response(playbook, **read_range)
+    _tool(tmp_path, "read", "Read", {"file_path": str(playbook), **read_range}, response, codex=False)
+    assert _missing_completion(tmp_path) == ([] if accepted else ["commit"])
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
+    assert decision == ("approve" if accepted else "notify")
+    if not accepted:
+        assert str(playbook) in reason and "受理する証拠" in reason
+
+
+def test_claude_read_truncated_or_other_document_is_not_evidence(tmp_path: pathlib.Path) -> None:
+    """ホストのトークン上限で本文を省略した手順書の読取と、`atk-mode`の他の手順書の読取を起動証拠にしない。"""
+    supply_commit(tmp_path)
+    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
+    truncated = claude_read_response(playbook, limit=1)
+    truncated["file"]["truncatedByTokenCap"] = True
+    _tool(tmp_path, "truncated", "Read", {"file_path": str(playbook)}, truncated, codex=False)
+    other = playbook.with_name("commit.md")
+    other.write_text("# commitの手順\n", encoding="utf-8")
+    _tool(tmp_path, "other", "Read", {"file_path": str(other)}, claude_read_response(other), codex=False)
+    assert _missing_completion(tmp_path) == ["commit"]
 
 
 @pytest.mark.parametrize(

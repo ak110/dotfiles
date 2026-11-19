@@ -4,6 +4,7 @@ hookはツール実行のたびに全エージェント向け文書の読込表�
 資料列の解決を後回しにする解析（`defer_material`）は本文・宣言元のパス・解析コードだけで結果が決まるため、
 それらの指紋を鍵に保存し、次のhookでは本文の内容が一致する文書だけを再利用する。
 本文・パス・解析コードのいずれかが変われば鍵が変わり、その文書を解析し直す。
+本文の指紋も、文書のstat情報（識別・大きさ・更新時刻・変更時刻）が保存時と同じ間は読み直さずに使う。
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import pathlib
 import time
 
@@ -21,9 +23,12 @@ _LOG = logging.getLogger(__name__)
 
 # 解析結果を決めるコード。いずれかが変われば保存結果を全て使わない。
 _PARSER_MODULES = ("read_triggers.py", "read_triggers_model.py", "read_triggers_resolution.py", "read_triggers_targets.py")
-_FORMAT = 1
+_FORMAT = 2
 # 使われなくなった版・プロジェクトの保存結果を残し続けないための保持期間。
 _RETENTION_SECONDS = 7 * 24 * 3600
+# 時刻の刻みが粗いファイルシステム（ext3は1秒、Windowsは最大15.6ミリ秒）では、同じ刻みの中の書き換えが更新時刻を変えない。
+# 更新時刻が刻みより十分古い文書のstat情報だけを保存し、それより新しい文書は毎回読んで指紋を求める。
+_TRUSTED_AGE_NS = 2_000_000_000
 
 
 def _parser_fingerprint() -> str:
@@ -78,16 +83,33 @@ def parse_deferred(
     fingerprint = _parser_fingerprint()
     store = _store_path(fingerprint, plugin_root, host, project)
     saved = _load(store)
+    saved_entries: dict[str, dict] = saved.get("entries", {})
+    saved_files: dict[str, list] = saved.get("files", {})
     current: dict[str, dict] = {}
+    files: dict[str, list] = {}
     results: list[tuple[pathlib.Path, list[ReadTrigger]]] = []
     changed = False
+    started = time.time_ns()
     for resolved in sources:
-        data = resolved.read_bytes()
+        status = os.stat(resolved)
+        signature = [status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns]
+        recorded = saved_files.get(str(resolved))
+        data = None
+        if recorded is not None and recorded[:4] == signature:
+            digest = recorded[4]
+        else:
+            data = resolved.read_bytes()
+            digest = hashlib.sha256(data).hexdigest()
+        if status.st_mtime_ns < started - _TRUSTED_AGE_NS:
+            files[str(resolved)] = [*signature, digest]
         # 宣言元がplugin外のスキル置き場かどうかで不備行の扱いが変わるため、鍵へ含める。
         side = read_triggers_resolution.user_side_source(resolved)
-        key = "\0".join((str(resolved), hashlib.sha256(data).hexdigest(), str(side)))
-        entry: dict[str, list] | None = saved.get(key)
+        key = "\0".join((str(resolved), digest, str(side)))
+        entry: dict[str, list] | None = saved_entries.get(key)
         if entry is None:
+            if data is None:
+                data = resolved.read_bytes()
+                key = "\0".join((str(resolved), hashlib.sha256(data).hexdigest(), str(side)))
             before = set(declaration_issues())
             # 鍵に使った本文をそのまま解析し、同じ文書を読み直さない。改行は`read_text`と同じく正規化する。
             text = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
@@ -103,10 +125,10 @@ def parse_deferred(
                 record_declaration_issue(issue)
         current[key] = entry
         results.append((resolved, rows))
-    if changed or current.keys() != saved.keys():
+    if changed or current.keys() != saved_entries.keys() or files != saved_files:
         try:
             store.parent.mkdir(parents=True, exist_ok=True)
-            atomic_file.atomic_write(store, json.dumps(current, ensure_ascii=False))
+            atomic_file.atomic_write(store, json.dumps({"entries": current, "files": files}, ensure_ascii=False))
             _prune(store.parent, keep=store)
         except OSError:
             _LOG.warning(

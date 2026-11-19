@@ -21,14 +21,14 @@ reuse・reedit・amendのno-edit・fixup・squashと、ファイルや実行位�
 以前は`commit`より前の語の未知語で一律に検査を外し、`git -C $R commit`の帰属行の欠落と作業項目のファイル名を遮断できなかった。
 通常のBash呼び出しごとにcommit用の記録を走査する案は、対象外の入力にも同じ取得費用を課すため採らない。
 
-Codexでは`commit/references/message.md`を実際にシェルで読む操作へ、既存の観測identityと`co_author_trailer`で求めた帰属行を先に届ける。
+全ホストで`atk-mode/references/commit-message.md`を実際に読む操作（Bashの読取と、Claude Codeの`Read`）へ、既存の観測identityと`co_author_trailer`で求めた帰属行を先に届ける。
 `dispatch.py`が確定したファイル引数の末尾と実在を確認するため、plugin rootや配布先の違いを許容し、引用・検索・別資料には配送しない。
 読取は許可し、モデルと推論量を観測できない場合は設定や起動候補から補わない。
 先行配送は読取時点の観測であり、通常commit直前の帰属確認はそのturnの現在値を使う。
 turn変化、不正と重複を現在の行で回復させ、明示指定・無効化・Claude Codeと対象外入力の取得順を保つ。
 最初のcommitを拒否して行を教える案は、同turnの既知の情報を読取時に渡せるのに手戻りを残すため採らない。
-Claude Codeでは`agent-toolkit:commit`の`Skill`の起動が完了した時点に、PostToolUseが同じ生成元の帰属行を追加コンテキストで示す。
-スキルを起動して`message.md`を読まずにcommitする場合にも届く時点である。
+2026年11月までは、Claude Codeでスキル`commit`の`Skill`の起動が完了した時点にもPostToolUseが帰属行を示していた。
+スキルを`atk-mode`の手順書へ移したため、この経路を外し、`commit-message.md`の読取へ一本化した。
 観測できない場合と帰属行を無効にした設定では示さない。
 常時読み込む規範へ要件を置く案は全セッションの読込量を増やし、`updatedInput`で行を加える案は`-F`やheredocの本文を書き換える範囲が広いため採らない。
 

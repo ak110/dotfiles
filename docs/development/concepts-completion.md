@@ -25,9 +25,9 @@
   潜在不良と作業効率の改善には前段の比較を維持する
 - 「完了」は既知の問題も含め対応済みの状態を指す。
   ユーザー操作が必須の事項だけが残った状態まで到達してから完了と報告する。
-  現行の規定は`agent-toolkit:report-completion`にある
+  現行の規定は`agent-toolkit:atk-mode/playbooks/report-completion.md`にある
 - 部分対応（代表箇所だけの対処・一部件数だけの反映）を完了と扱わない。
-  現行の規定は`agent-toolkit:report-completion`にある
+  現行の規定は`agent-toolkit:atk-mode/playbooks/report-completion.md`にある
 - 待ち時間（CI・委譲先の応答待ち）には競合しない工程を並行して前倒しする。
   時間経過の体感がないLLMは待ち時間コストの意識が乏しい、というユーザーの分析が根拠にある
 - 手順・規範は指針（「役割分担」「判断指針」「行動と手順の目的」）を達成する手段であり、

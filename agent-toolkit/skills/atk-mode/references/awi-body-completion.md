@@ -48,7 +48,7 @@
 全体所要は、本体に並行する他作業の待ちと、障害による停止・調査・修正を含む作業の開始から完了までとし、同じセッションの既存のコマンド・CIなどの実行記録で測る。
 同じセッション内の前後比較で改善を示せない案は採らず、処理担当は変更を取り込まずに測定結果を記録して項目を終える。
 速度や資源使用量の性能改善を主目的とする作業では、変更前のボトルネック、同じ負荷・比べられる条件での変更前後の数値、挙動の維持、トレードオフを確かめる。
-基準は`agent-toolkit:/share/investigation-operations.md`と`agent-basics:check-execution/references/diagnostics.md`に従う。
+基準は`agent-basics:writing-standards/references/investigation.md`と`agent-basics:check-execution/references/diagnostics.md`に従う。
 長期の運用観測と、ユーザーへの効果判定の回答は、完成条件の対象から外す。
 機能の正確性、安全性、公開契約の検証はそれぞれの要件として置き、計測についてユーザーが明示した要求も保つ。
 比べた結論と再取得先、入力件数・並行条件・負荷の状況などの測定条件、双方の主な生の実測値と比率を計画かWIへ記録する。

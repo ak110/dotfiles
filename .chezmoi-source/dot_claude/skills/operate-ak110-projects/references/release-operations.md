@@ -7,7 +7,7 @@
 
 「前提」の属性表の7プロジェクトで、協調モードの変更依頼に公開範囲の指定がなければ、ユーザーの恒常的な認可に基づき公開まで進める。
 公開範囲の明示指定がある場合は、その指定を優先する。
-公開は`agent-toolkit:commit`の既存手順でpushとCI成功まで検収する。
+公開は`agent-toolkit:atk-mode/playbooks/commit.md`と`agent-toolkit:atk-mode/playbooks/publish.md`の既存手順でpushとCI成功まで検収する。
 `dotfiles`は`release-dotfiles`の条件に従ってリリースPRの作成・マージ・検収まで、`smpr`はpushとCI成功まで進める。
 属性表のリリース対象5プロジェクトは、次の基準で必要な場合だけリリースする。
 
@@ -29,7 +29,8 @@ CI成功、既存手順の安全確認、配備後のhealthcheckと結果報告�
 ## 実施時機と前提
 
 一連の作業の公開（pushとCI成功）が終わった時点でリリース要否を判定する。
-`agent-toolkit:process-wi`では、公開工程の公開担当が返却し、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」の成立を確認した後、`agent-toolkit:report-completion`の起動前に判定する。
+`agent-toolkit:process-wi`では、公開工程の公開担当の返却と、`agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」の成立を確かめてから判定する。
+判定は`agent-toolkit:atk-mode/playbooks/report-completion.md`を読む前に行う。
 process-wi以外の作業でも、作業の変更をpushしてCI成功を確認した時点で同じく判定する。
 
 ローカルのベースbranchがリポジトリのdefault branchであり、未pushのcommitと未コミットの変更が無いことを実施の前提とする。

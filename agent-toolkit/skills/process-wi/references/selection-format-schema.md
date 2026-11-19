@@ -6,7 +6,7 @@
 
 ## 選定結果の書式
 
-共有実行枠は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の定義を参照する。
+共有実行枠は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の定義を参照する。
 `検証同時数`は対象リポジトリの検証が使うpyfltrの版と`PYFLTR_EXECUTION_SLOTS`から決め、`根拠.検証`へ記録する。
 保存済みの旧記録でこの値が無い場合は、従来の容量で読み取る。
 

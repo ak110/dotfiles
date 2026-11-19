@@ -232,7 +232,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
     source.write_text("# 配送元\n", encoding="utf-8")
     rows = [
         read_triggers.ReadTrigger(reference, 1, "判断", ("read:*/reference.md",), (skill,)),
-        read_triggers.ReadTrigger(source, 1, "操作", ("skill:write-plan",), (skill,)),
+        read_triggers.ReadTrigger(source, 1, "操作", ("skill:review-session",), (skill,)),
     ]
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
@@ -253,7 +253,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
         return result.stdout
 
     def select_invocation():
-        invoke("PreToolUse", "Skill", {"skill": "agent-toolkit:write-plan"})
+        invoke("PreToolUse", "Skill", {"skill": "agent-toolkit:review-session"})
 
     def acquire_skill():
         invoke("PostToolUse", "Skill", {"skill": "agent-toolkit:process-wi"}, "起動済み")

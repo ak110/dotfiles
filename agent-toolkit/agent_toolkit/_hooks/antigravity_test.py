@@ -368,8 +368,8 @@ def test_question_answer_keeps_multiline_feedback(tmp_path: pathlib.Path) -> Non
     assert normalized["tool_response"]["answers"] == {"方針は？": "一行目\n二行目！！"}
 
 
-def test_native_manual_plan_skill_is_observed(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """ツール名`Skill`を提供しないagyでも、ユーザーが起動した計画スキルを記録する。"""
+def test_native_manual_process_wi_is_observed(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """ツール名`Skill`を提供しないagyでも、ユーザーが起動した作業を記録する。"""
     raw = _payload(tmp_path)
     pathlib.Path(raw["transcriptPath"]).write_text(
         json.dumps(
@@ -377,13 +377,13 @@ def test_native_manual_plan_skill_is_observed(tmp_path: pathlib.Path, capsys: py
                 "type": "USER_INPUT",
                 "source": "USER_EXPLICIT",
                 "step_index": 0,
-                "content": "<USER_REQUEST>\n/agent-toolkit:write-plan 計画して\n</USER_REQUEST>",
+                "content": "<USER_REQUEST>\n/agent-toolkit:process-wi\n</USER_REQUEST>",
             }
         ),
         encoding="utf-8",
     )
     _run(raw, "PreInvocation", capsys)
-    assert session_state.read_state(raw["conversationId"])["plan_mode_skill_invoked"] is True
+    assert session_state.read_state(raw["conversationId"])["process_wi_skill_invoked"] is True
 
 
 def test_native_async_offsets_keep_original_bytes(tmp_path: pathlib.Path) -> None:

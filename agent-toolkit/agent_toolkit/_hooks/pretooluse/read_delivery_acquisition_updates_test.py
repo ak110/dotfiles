@@ -197,7 +197,7 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
     skill.write_text("---\nname: process-wi\n---\n# 基準\n本文\n", encoding="utf-8")
     reference.write_text("# 参照元\n本文\n", encoding="utf-8")
     named = read_triggers.ReadTrigger(reference, 1, "操作", ("read:*/reference.md", "tool:Write"), (skill,))
-    invocation = read_triggers.ReadTrigger(root / "source.md", 1, "操作", ("skill:write-plan", "tool:Write"), (skill,))
+    invocation = read_triggers.ReadTrigger(root / "source.md", 1, "操作", ("skill:example-plan", "tool:Write"), (skill,))
     rows = [named] if purpose == "reference" else [invocation] if purpose == "invocation" else [named, invocation]
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)

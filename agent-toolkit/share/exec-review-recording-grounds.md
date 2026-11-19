@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` |
+| 未コミット検証の結果を適用判定する前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
 | 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 
 ## 根拠の書き方
@@ -30,7 +30,7 @@
 </例>
 
 - 保存された結果の成功集合と、修正後の限定的な再実行によるカバー範囲は、`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に基づいて判定する
-- 未コミット検証の本文は、`verification-evidence-observation.md`「検証時本文の保存」で実行前に確保した保存物と取得HEADから復元し、レビュー対象の本文と比較する。
+- 未コミット検証の本文は、`agent-toolkit:atk-mode/playbooks/verification.md`「検証時本文の保存」で実行前に確保した保存物と取得HEADから復元し、レビュー対象の本文と比較する。
   取得HEAD同士のdiffだけで未コミット部分を比較したことにしない。
   cleanなcommitではOIDから本文を比較し、同じ本文の重複保存は求めない。
   保存物が欠ける場合は、特定できない本文と影響する検証範囲を示して実装担当へ追加観測を返し、有効な成功結果を保持する

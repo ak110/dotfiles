@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk import config_settings, help_text, usage_allocation
-from agent_toolkit._common import session_registry, usage_observation
+from agent_toolkit._common import registry_index, session_registry, usage_observation
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.usage_settings import deadline, read_metadata, read_settings, settings_path, temporary_settings
@@ -225,7 +225,7 @@ def dispatch(
         for key, default in config_settings.MODEL_DEFAULTS.items()
     }
     running = []
-    for session_id in session_registry.pending_session_ids():
+    for session_id in registry_index.pending_session_ids():
         info = session_registry.resolve(session_id).resume_info
         if info is not None and info.status == "running":
             running.append(

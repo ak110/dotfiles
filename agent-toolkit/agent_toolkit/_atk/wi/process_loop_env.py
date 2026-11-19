@@ -11,6 +11,7 @@ import typing
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import private_directory
 from agent_toolkit._common import wait_schedule as _wait_schedule
 
 # ランチャーが作成する再起動要求の受け渡しファイルのパスを保持する環境変数。
@@ -88,7 +89,7 @@ def create_hook_debug_log(env: dict[str, str]) -> pathlib.Path:
     """Claude Codeのhook診断ログを所有者限定で事前作成する。"""
     config_dir = _host_homes.claude_config_dir(env)
     debug_dir = config_dir / "debug"
-    debug_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    debug_dir.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
     descriptor, name = tempfile.mkstemp(prefix="process-loop-", suffix=".log", dir=debug_dir)
     with os.fdopen(descriptor, "wb") as debug_log:
         if os.name != "nt":

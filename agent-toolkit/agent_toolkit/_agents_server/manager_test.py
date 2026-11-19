@@ -106,7 +106,7 @@ def test_server_stop_joins_worker_threads(monkeypatch: pytest.MonkeyPatch, tmp_p
 
     monkeypatch.setattr(claude_backend, "check_dependencies", observe_workers)
     monkeypatch.setattr(mcp_tools, "_prepare_child_environment", lambda: None)
-    assert mcp_tools.serve(check_dependencies=True) == 0
+    assert mcp_tools.check_dependencies() == 0
     assert "agents_serverが正常終了しました" in (tmp_path / "agents-server.log").read_text(encoding="utf-8")
     assert workers and all(not worker.is_alive() for worker in workers)
     assert not any(

@@ -36,6 +36,7 @@ from agent_toolkit._agents_server.session_errors import DelegateBackendError
 from agent_toolkit._common import (
     inherited_venv,
     plugin_root_leases,
+    private_directory,
     process_identity,
     registry_forwarding,
     runtime_environment,
@@ -316,7 +317,7 @@ async def run(
 ) -> None:
     """起動readyの公開後も接続の有無によらず管理を続ける。"""
     address = service_transport.endpoint(directory, generation)
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.mkdir(parents=True, exist_ok=True, mode=private_directory.MODE)
     # 共有起動の診断をsupervisorへ結び付ける。会話や認証の環境は診断へ渡さない。
     environment = {name: os.environ[name] for name in (logging_config.LAUNCH_RECORD_ENV,) if name in os.environ}
     instance = logging_config.start_server_instance(environment=environment, state_root=directory.parent.parent)

@@ -86,31 +86,6 @@ def test_confirmation_operation_remains_an_observable_judgment_condition(tmp_pat
     assert read_delivery.condition_confirmed(row, "AskUserQuestion", {"questions": []}, str(tmp_path))
 
 
-def test_real_main_launch_declaration_stays_conditional_after_review_contract_read(tmp_path, monkeypatch, _setup):
-    """実際のwrite-plan宣言から、レビュー契約の読取と進捗作成へ通す。"""
-    del _setup
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
-    root = pathlib.Path(read_delivery.__file__).resolve().parents[3]
-    monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: root)
-    rows = read_delivery.read_triggers.parse_tables(root / "skills/write-plan/SKILL.md", root)
-    row = next(item for item in rows if any(path.name == "main-launch.md" for path in item.documents))
-    assert row.kind == "判断" and "メインによる起動" in row.condition
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
-    result = _run_hook_in_process(
-        "pretooluse",
-        {
-            "session_id": "test",
-            "cwd": str(tmp_path),
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Read",
-            "tool_input": {"file_path": str(root / "share/exec-review.parent.md"), "offset": 1, "limit": 20},
-        },
-    )
-    assert result.returncode == 0
-    progress = _run_hook_in_process("pretooluse", _progress(tmp_path))
-    assert progress.returncode == 0 and "main-launch.md" not in progress.stdout
-
-
 def test_selected_source_candidates_are_deferred_and_deduplicated(tmp_path, monkeypatch, _setup):
     """選択済み資料に未確定条件があっても、読取と関連編集へ候補を通知しない。"""
     selected, unrelated, _row, state = _setup

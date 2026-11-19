@@ -9,18 +9,18 @@ lazy from typing import Any
 
 lazy from agent_toolkit._agents_server import tool_names
 lazy from agent_toolkit._atk.wi import uwi_scan
-lazy from agent_toolkit._common import session_state, shell_cwd, skill_modes
+lazy from agent_toolkit._common import read_triggers, session_state, shell_cwd, skill_modes
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command, join_words
 lazy from agent_toolkit._git import command as git_command
-lazy from agent_toolkit._hooks import agent_id, plugin_resources
+lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
-lazy from agent_toolkit._hooks.pretooluse.read_delivery import host_truncated, resolve_skill_document
+lazy from agent_toolkit._hooks.pretooluse.read_delivery import host_truncated
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens, git_commit_options
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.termination_evidence_state import (
@@ -29,6 +29,7 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
     STATE_KEY,
     TARGET_ENTRY_WORKS,
     TARGET_SKILLS,
+    completion_playbook_path,
 )
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
@@ -98,11 +99,11 @@ def _saved_operations(command: str) -> list[str]:
 def _started_work(skill: object, arguments: object) -> str | None:
     """Skillの起動が始める対象の名前を返す。入口の起動は引数の先頭語から作業の名前を読む。"""
     name = _skill_name(skill)
-    if name in {COMPLETION_REPORT, *TARGET_SKILLS}:
+    if name in TARGET_SKILLS:
         return name
     if name == skill_modes.ENTRY_SKILL:
         work = (arguments.split() or [""])[0] if isinstance(arguments, str) else ""
-        return work if work in TARGET_ENTRY_WORKS else None
+        return work if work in {COMPLETION_REPORT, *TARGET_ENTRY_WORKS} else None
     return None
 
 
@@ -117,10 +118,34 @@ def _read_work(read: _document_reads.DocumentRead) -> str | None:
     if read.plugin != "agent-toolkit":
         return None
     if read.relative_path == "SKILL.md":
-        return read.skill if read.skill in {COMPLETION_REPORT, *TARGET_SKILLS} else None
+        return read.skill if read.skill in TARGET_SKILLS else None
     if read.skill == skill_modes.ENTRY_SKILL:
-        return next((work for work in TARGET_ENTRY_WORKS if read.relative_path == f"playbooks/{work}.md"), None)
+        works = (COMPLETION_REPORT, *TARGET_ENTRY_WORKS)
+        return next((work for work in works if read.relative_path == f"playbooks/{work}.md"), None)
     return None
+
+
+def _completion_read(payload: dict[str, Any], tool_input: dict[str, Any]) -> bool:
+    """Claude CodeのメインのReadが、完了報告の手順書の現在の本文全体を1回の応答で返したかを返す。
+
+    `offset`・`limit`の値は信じず、応答の`file.content`に現在の版の全文が含まれるかで判定する。
+    範囲を限った読取、ホストのトークン上限で本文を省略した読取、旧版の読取は本文全体を含まないため受理しない。
+    分割した読取の集約は受理しない。手順書は1回のReadで全文を返す長さに保つ。
+    """
+    if not agent_id.is_main_agent_context(payload):
+        return False
+    value = tool_input.get("file_path")
+    if not isinstance(value, str) or not value:
+        return False
+    document = _document_reads.skill_document(value)
+    if document is None or _document_reads.document_plugin(value) != "agent-toolkit":
+        return False
+    if _read_work(_document_reads.DocumentRead(*document, plugin="agent-toolkit", path=value)) != COMPLETION_REPORT:
+        return False
+    path = pathlib.Path(value)
+    candidates = [item for item in _document_reads.receipt_candidates([read_triggers.ReadTarget(path)]) if not item["heading"]]
+    texts = _document_reads.returned_texts(payload.get("tool_response"))
+    return bool(candidates) and bool(_document_reads.received_candidates(candidates, texts))
 
 
 def _read_skills(command: str) -> list[tuple[str, _document_reads.DocumentRead]]:
@@ -145,21 +170,27 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     if not after or failed:
         return []
     codex = is_codex_payload(payload)
+    if tool_name == "Read" and not codex and not is_antigravity_payload(payload):
+        return [{"kind": "completion"}] if _completion_read(payload, tool_input) else []
     if tool_name == "Skill" and not codex:
         skill = _started_work(tool_input.get("skill"), tool_input.get("args"))
         if skill == COMPLETION_REPORT:
             completion: dict[str, Any] = {"kind": "completion"}
             response = payload.get("tool_response")
-            if response and not (
-                isinstance(response, dict) and any(response.get(key) for key in ("isError", "is_error", "interrupted", "error"))
-            ):
-                path = resolve_skill_document(
-                    f"agent-toolkit:{skill}", [plugin_resources.skill_document_path(skill, "SKILL.md")]
+            path = completion_playbook_path()
+            if (
+                response
+                and not (
+                    isinstance(response, dict)
+                    and any(response.get(key) for key in ("isError", "is_error", "interrupted", "error"))
                 )
-                if path is not None:
-                    completion["skill_invocation"] = _document_reads.skill_invocation_key(
-                        path, _document_reads.content_fingerprint(path)
-                    )
+                and path.is_file()
+            ):
+                # 入口の起動は入口の本文を返し、手順書の本文は返さない。手順書の取得記録とは別の起動の記録として、
+                # 会話圧縮までの完了報告の読込証拠に使う。
+                completion["skill_invocation"] = _document_reads.skill_invocation_key(
+                    path, _document_reads.content_fingerprint(path)
+                )
             return [completion]
         if skill is not None:
             record: dict[str, Any] = {"kind": "deliverable", "labels": [_start_label(skill)]}

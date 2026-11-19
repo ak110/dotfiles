@@ -101,4 +101,4 @@ atk run-script multi-turn-trials -- grade --case verification-status --candidate
 比較結果をまとめた記録からすべての保存ファイルへ絶対パスでアクセスできるように構成し、実行レビュー担当者が判定根拠を直接確認できる状態を維持する。
 記録された保存例は、採点用CLIやテスト環境の入力データとして活用する。
 少数の固定事例から得られた差異は、あくまでその検証事例における観測結果として報告する。
-素材や検証結果の保存および不要になったファイルの回収は、`agent-toolkit:managed-temp`に従って実施する。
+素材や検証結果の保存および不要になったファイルの回収は、`agent-toolkit:atk-mode/playbooks/managed-temp.md`に従って実施する。

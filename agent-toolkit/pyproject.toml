@@ -65,7 +65,6 @@ ty = true
 ty-args = [
     "check", "--python-version", "3.15", "--extra-search-path", ".",
     "--output-format", "concise", "--error-on-warning",
-    "--extra-search-path", "skills/write-plan/scripts",
     "--extra-search-path", "skills/process-wi/scripts",
     "--extra-search-path", "skills/review-session/scripts",
     "--extra-search-path", "skills/atk-mode/scripts",
@@ -130,7 +129,7 @@ extend-aliases = { datetime = "datetime" }
 
 [tool.pyright]
 # 計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
-extraPaths = ["skills/write-plan/scripts", "skills/process-wi/scripts", "skills/review-session/scripts"]
+extraPaths = ["skills/atk-mode/scripts", "skills/process-wi/scripts", "skills/review-session/scripts"]
 
 [tool.mypy]
 allow_redefinition = true
@@ -145,6 +144,8 @@ warn_unused_configs = true
 show_error_codes = true
 
 [tool.typos.default.extend-words]
+# SDDLの組み込みSID略号（BUILTIN\Administrators）
+ba = "ba"
 # filelockパッケージの実際のAPIパラメータ名（後方互換のため残置されたtypo）
 intervall = "intervall"
 

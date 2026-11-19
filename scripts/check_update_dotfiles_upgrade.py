@@ -304,6 +304,9 @@ def _isolated_env(
             "XDG_STATE_HOME": str(home / ".local" / "state"),
             "UV_TOOL_BIN_DIR": str(uv_target.parent),
             "UV_TOOL_DIR": str(home / ".local" / "share" / "uv" / "tools"),
+            # 親が設定していると、更新処理のuvキャッシュ整理とPython導入が親のキャッシュ・導入先へ作用する。
+            "UV_CACHE_DIR": str(home / ".cache" / "uv"),
+            "UV_PYTHON_INSTALL_DIR": str(home / ".local" / "share" / "uv" / "python"),
             "CODEX_HOME": str(codex_home),
             "CODEX_INSTALL_DIR": str(codex_bin),
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",

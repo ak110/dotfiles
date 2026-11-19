@@ -13,7 +13,7 @@ import re
 from agent_toolkit._common import read_triggers
 
 _ROOT = pathlib.Path(__file__).resolve().parent
-_LIST_PATH = pathlib.PurePosixPath("agent-toolkit/skills/workflow-overview/references/defined-names.md")
+_LIST_PATH = pathlib.PurePosixPath("agent-toolkit/skills/atk-mode/references/defined-names.md")
 _LIST_HEADING = "## 一覧"
 _HEADER = ("名前", "指示対象", "定義元")
 _SOURCE_PATH_PATTERN = re.compile(r"`([^`]+)`")

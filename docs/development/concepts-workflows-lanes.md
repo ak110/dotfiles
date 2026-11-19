@@ -109,8 +109,8 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
 ## 計画ファイルの体裁の扱い
 
 計画ファイルは要求単位の欠落、実装と実行レビューの基準、中断後の再開を扱う内部資料であり、人間の承認対象にしない。
-協調モードではユーザーがエージェントへ直接依頼し、`agent-toolkit:write-plan`の要否をエージェントが判断する。
-計画ファイルの作成要否の判断の実行手順は`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」が定める。
+協調モードではユーザーがエージェントへ直接依頼し、`agent-toolkit:atk-mode/playbooks/write-plan.md`の要否をエージェントが判断する。
+計画ファイルの作成要否の判断の実行手順は`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」が定める。
 
 - AWIを入力とする作業では、本文と現物から、何をどう変えるか、外部から観測できる仕様、完成を判定する条件、バグ対応なら確定した原因分析の4事項が決まれば計画ファイルを作らない。
   決まらない事項がある時だけ、足りない部分だけを書く計画を作る。
@@ -136,13 +136,13 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
 
   - `agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」
   - `agent-toolkit:atk-mode/references/analysis-records.md`「原因分析の記録先」
-  - `agent-toolkit:write-plan`の計画ファイル基準「原因分析」
+  - `agent-toolkit:atk-mode/references/plan-format.md`「原因分析」
 
 - WIを入力とする計画は、WIが確定した目的、要件、原因分析、適用範囲、実現方式と成立の根拠を再調査・再記述せずWIファイル名で参照する。
   計画には、WIの本文から決まらない部分と検証コマンドなど計画自身の出口だけを書く。
   計画側で導出し直すのは、入力にWIが無い計画、WIが該当する節を持たない場合、WIの記述と現物の食い違いを観測した場合に限る。
   協調モードの計画でも先にAWIを作成する手順の1本化は採らない（2026年9月30日、ユーザー回答。AWIの投入と計画の起草が同じ調査と記述を二重に行っていたことに由来する）。
-  現在は`agent-toolkit:write-plan`の計画ファイル基準「計画ファイルの構成」「実施内容」と`agent-toolkit/skills/process-wi/references/lane-planning.md`が定める。
+  現在は`agent-toolkit:atk-mode/references/plan-format.md`「計画ファイルの構成」「実施内容」と`agent-toolkit/skills/process-wi/references/lane-planning.md`が定める。
   要件の成立性は`agent-toolkit:atk-mode/references/awi-body-completion.md`「要件の成立性」が定める
 - 実行時進捗ログは中断再開用の粗い工程記録、レビュー指摘管理表は個別指摘の詳細として維持する。
   用途の異なる記録を件数で結合しない
@@ -157,4 +157,4 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
 - 作業中の計画バンドルは`~/.claude/plans/`で保持し、実行レビューの収束後に`atk plans commit`で年月階層へ保存する。
   実装前に終了するレーンは、その終了時点で保存する。
   旧二ファイル形式と計画レビューは過去の運用方針であり、読み取り互換だけを維持する（2026年8月の方針を2026年9月13日に改訂）。
-  現行の書式と保存条件は`agent-toolkit:write-plan`の計画ファイル基準が定める
+  現行の書式と保存条件は`agent-toolkit:atk-mode/references/plan-format.md`が定める

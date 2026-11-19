@@ -134,3 +134,30 @@ def test_project_hook_rejects_preexisting_worktree(
     assert result is None
     assert not list((state_paths.state_dir() / "process-loop-worktrees").glob("*.json"))
     assert "既存の作業ツリー" in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(1.0, reason="実Gitの状態を使う結合境界。")
+def test_project_hook_detached_worktree_gets_dedicated_branch_tracking_upstream(tmp_path: pathlib.Path) -> None:
+    """hookが`--detach`で作ったworktreeの専用ブランチは、系統なしでも上流を追跡先に持つ。"""
+    local = _make_remote_repository(tmp_path, "hook-tracking")
+    destination = tmp_path / "project-worktree"
+    script = tmp_path / "create-hook.py"
+    script.write_text(
+        "import subprocess,sys\n"
+        "subprocess.run(['git','worktree','add','--detach',sys.argv[1]],check=True,stdout=sys.stderr)\n"
+        "print(sys.argv[1])\n",
+        encoding="utf-8",
+    )
+    argv = [sys.executable, str(script), str(destination)]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    settings = local / ".claude/settings.local.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps({"hooks": {"WorktreeCreate": [{"hooks": [{"type": "command", "command": command}]}]}}), encoding="utf-8"
+    )
+    prepared = _pl_worktree.prepare_session_target(local, "example/repo", "input", worktree_name="fixed", resume_pending=False)
+    assert prepared is not None and prepared[0] == destination
+    branch = git_repository.git_output(destination, "branch", "--show-current")
+    assert branch
+    assert git_repository.git_output(destination, "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}") == "origin/main"

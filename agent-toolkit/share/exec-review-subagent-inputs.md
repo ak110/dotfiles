@@ -15,9 +15,9 @@
 | 初回レビューに入る前 | `exec-review-criteria.md` | | | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
-| `計画`を受領し、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-verification.md`、`../skills/atk-mode/references/awi-body.md` | | | |
-| `計画`が8節形式などの旧形式で、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/legacy-plan-file-standards.md` | | | |
-| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合（操作対象外: 役割の開始入力） | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
+| `計画`を受領し、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/atk-mode/references/plan-format.md`、`../skills/atk-mode/references/plan-format.md`、`../skills/atk-mode/references/plan-format.md`、`../skills/atk-mode/references/plan-format.md`、`../skills/atk-mode/references/awi-body.md` | | | |
+| `計画`が8節形式などの旧形式で、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/atk-mode/references/plan-legacy-formats.md` | | | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合（操作対象外: 役割の開始入力） | `agent-toolkit:atk-mode/references/plan-format.md` | | | |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | | | |
 | 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
 | 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
@@ -34,7 +34,7 @@
 
 - `レビュー基準`: `計画`、`CI記録`、`WI`の基準名1つ以上を読点区切りで受け取り、各基準に応じた追加入力もすべて別入力で受け取る
 - `計画`: 計画ファイルの絶対パス、または同じレビュー単位に含まれる全計画の絶対パスのJSON配列。
-  各節の意味は読込表の`plan-file-standards.md`に基づいて解釈する。
+  各節の意味は`agent-toolkit:atk-mode/references/plan-format.md`に基づいて解釈する。
   レビュー指摘管理表と検証結果は、同じファイル名幹（stem）を持つ成果物から特定する。
   JSON配列では、全計画の要求と各計画の検証結果を集めて1つの管理表と1つの返却で判定し、管理表は作成順で最初の計画のstemから特定する。
   起動側が1回の起動へまとめた計画を、受信側が別々の表や返却へ分けないためである。
@@ -59,7 +59,7 @@
 - `レビュー種別`と`round`: 省略時の値はそれぞれ`初回レビュー`および`1`となる。
   引き継ぎ再レビューでは両方の指定を必須とする
 - `rewrite_map`: 前回のレビュー後に履歴の書き換えやcommit分割によってOIDが変更された際、再レビューで受け取る旧OIDから新OIDへの対応表の絶対パス。
-  形式は`../skills/commit/references/history-rewrite-wi-records.md`「WI実装commitの対応の継承」、取り扱いは`exec-review-subagent-followup.md`「再レビュー」に従う
+  形式は`../skills/atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」、取り扱いは`exec-review-subagent-followup.md`「再レビュー」に従う
 - `前回確認版`: 引き継ぎ再レビューで受け取る記録の絶対パス。
   前回の開始時点とレビュー対象HEADの組み合わせ（差分の比較に使用）、およびGit管理外の文章成果物ごとの識別子と前回本文の複製パスを保持する。
   同一thread内では`exec-review.subagent.md`「出力」で保存した記録をそのまま引き継ぐ。

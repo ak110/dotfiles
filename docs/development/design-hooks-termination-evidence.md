@@ -28,8 +28,8 @@ private-notesとGitリポジトリ外の書込は成果作業の編集へ含め�
 
 2026年10月11日のユーザー指示で、Stopが可視発話の報告見出しと報告本文（区切り、区分、候補ID、予定を示す語）を判定する方式を撤去した。
 送達後の報告が区切りの差でも遮断され、全文の再出力を往復させたためである。
-報告の内容と書式は`agent-toolkit:report-completion`の`references/report-formats.md`と既存の完成形の例へ集約し、報告を書くメインが確かめる。
-同じ判断のユーザー指示で、Stopは`agent-toolkit:report-completion`の呼び忘れの検出へ限定した。
+報告の内容と書式は`agent-toolkit:atk-mode/references/report-formats.md`と既存の完成形の例へ集約し、報告を書くメインが確かめる。
+同じ判断のユーザー指示で、Stopは完了報告（当時のスキル`report-completion`、現在の`agent-toolkit:atk-mode/playbooks/report-completion.md`）の呼び忘れの検出へ限定した。
 `termination_order_advisor`は成果作業を含む作業を対象とする。
 成果作業は、成功した`agent-toolkit:process-wi`・`agent-toolkit:atk-mode`の作業`add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・pushである。
 最後の会話圧縮以降の読込証拠も有効な省略判断も無ければ、Claude Codeでは非遮断通知で起動と残工程への続行を案内する。
@@ -39,10 +39,16 @@ CodexはStopの非遮断通知を受け取れないため、関連操作の案�
 省略した`input_id`は現在の直近の人間入力へ対応付ける。
 有効な判断は対応する作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。
 規範の変更、新しい人間入力後の作業、開始・再開後の次判断では適用を確かめ直し、古い省略を流用しない。
-省略の記録手順は、report-completionを起動する前に読める`agent-toolkit/skills/report-completion/references/termination-evidence.md`が持つ。
-起動証拠はClaude Codeでは成功したSkill呼び出し、CodexではBashへ正規化された読取コマンドの入力が同スキルの`SKILL.md`を指し、結果が本文を返した読取である。
-Codexの`tool_response`は終了コードを含まないため、結果にfrontmatterの`name`が現れることを本文の取得とみなし、パスの文字列やPostToolUseの発火だけを起動証拠にしない。
+省略の記録手順は、完了報告の手順書を読む前に読める`agent-toolkit/skills/atk-mode/references/termination-evidence.md`が持つ。
+2026年11月のスキル`atk-mode`への統合で、スキル`report-completion`を廃止し、完了報告を手順書`agent-toolkit/skills/atk-mode/playbooks/report-completion.md`へ移した。
+状態に保存する作業の名前（`report-completion`）は変えない。
+Claude Codeの起動証拠は、スキル`atk-mode`を引数の先頭語`report-completion`で起動して成功した`Skill`呼び出しと、`Read`が手順書の現在の本文全体を1回の応答で返した読取である。
+`Read`は`offset`・`limit`の値ではなく、応答の`file.content`が現在の版の全文を含むかで判定し、範囲を限った読取とトークン上限で本文を省略した読取を受理しない。
+分割した読取の集約は受理せず、手順書は1回の`Read`で全文を返す長さに保つ。
+CodexとAntigravityの起動証拠は、Bashへ正規化された読取コマンドの入力が同じ手順書を指し、結果が本文を返した読取である。
+Codexの`tool_response`は終了コードを含まないため、共通取得記録の本文の受信を、Antigravityは結果に手順書の先頭のH1の行が現れることを本文の取得とみなし、パスの文字列やPostToolUseの発火だけを起動証拠にしない。
 読了は工程の開始証拠として扱う。
+`atk-mode`の起動は`atk-mode`の`SKILL.md`の本文を返し手順書の本文を返さないため、手順書の取得記録とは別の起動の記録（手順書のパスと版の組）として、Stopの読込証拠に加える。
 起動後の工程の完遂と報告の送達はメインが実際の結果から確かめる。
 2026年10月15日の終了フック案では、起動済み作業への意味点検を一度blockし、最終報告の固定句で抑止していた。
 2026年10月23日の方針整理で、送達と残工程の判断を`report-completion`の終了前の工程へ統合した。

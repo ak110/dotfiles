@@ -27,6 +27,7 @@ from agent_toolkit._common import (
     diagnostic_process,
     plugin_environment,
     plugin_root_leases,
+    private_directory,
     private_notes,
     process_tree,
     recorded_process,
@@ -142,7 +143,7 @@ def validate_ticket(value: object) -> Ticket:
 
 def _root() -> pathlib.Path:
     root = state_paths.state_dir() / "wi-submit"
-    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    root.mkdir(parents=True, exist_ok=True, mode=private_directory.MODE)
     return root
 
 

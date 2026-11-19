@@ -45,7 +45,7 @@ def test_unavailable_saved_notice_names_read_operation_and_missing_input(tmp_pat
         session_id="" if failure == "session" else "notice-failure",
         reserved_bytes=1900 if failure == "length" else 0,
     )
-    assert "`agent-toolkit:managed-temp`" in result
+    assert "`agent-toolkit:atk-mode/playbooks/managed-temp.md`" in result
     assert "SKILL.md" not in result
     assert "cat --" not in result and "Get-Content -LiteralPath" not in result
     assert "委譲元（無ければユーザー）" in result

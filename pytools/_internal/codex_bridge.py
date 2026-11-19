@@ -262,9 +262,14 @@ class RecoveryBridge:
                 if not isinstance(server, dict):
                     continue
                 name, tools = server.get("name"), server.get("tools")
-                if isinstance(name, str) and (name == "agents_server" or name.endswith("__agents_server")):
-                    if not isinstance(tools, dict) or "list" not in tools:
-                        raise RuntimeError("agents_serverの復旧用ツールを確認できない。MCPの認証・起動状態を確認する")
+                # 起動に失敗したMCPはツールの無い項目として残る。Codex本体はその失敗をTUIへ通知して続行するため、
+                # 子孫の復元だけを見送り、TUIを止めない。
+                if (
+                    isinstance(name, str)
+                    and (name == "agents_server" or name.endswith("__agents_server"))
+                    and isinstance(tools, dict)
+                    and "list" in tools
+                ):
                     result = await self._request(
                         front,
                         back,

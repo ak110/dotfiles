@@ -53,10 +53,6 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
 # --- 計画単位の状態管理 ---
 
-# `Skill`の`skill`引数として許容するwrite-planスキル名。
-# posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
-_PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:write-plan", "write-plan"})
-
 # --- Agent・Task: 組み込みの汎用定義の起動 ---
 
 # Claude Codeの組み込みの汎用定義。agents_serverのmodeで同等の作業を行えるため、
@@ -185,23 +181,6 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
             "終了コード0を返した対象だけを5分以内に停止せよ。"
         ),
     )
-
-
-def _clear_current_plan_file_path(session_id: str) -> None:
-    """write-plan起動時に前の計画ファイルのパスを消去する。
-
-    Function hooksが同じキーから名前を選択するため、
-    新しい計画を始めた後に前の計画名を出力し続けないようにする。
-    """
-    if not session_id:
-        return
-
-    def _clear(current: dict) -> dict | None:
-        if current.pop("current_plan_file_path", None) is None:
-            return None
-        return current
-
-    update_state(session_id, _clear)
 
 
 # --- Codex App Server: isSidechainプローブ ---

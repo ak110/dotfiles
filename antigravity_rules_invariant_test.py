@@ -34,22 +34,16 @@ def test_operation_rules_reach_quality_and_verification_materials() -> None:
     rows = read_triggers.parse_tables(_TOOLKIT / "share/read-trigger-bootstrap.md", _TOOLKIT, strict=True)
     targets = {path for row in rows if "verification" in row.operations for path in row.documents}
     assert _ROOT / "agent-basics/skills/check-execution/SKILL.md" in targets
-    assert _TOOLKIT / "share/check-execution-operations.md" in targets
-    assert _TOOLKIT / "share/verification-operations.md" in targets
+    assert _TOOLKIT / "skills/atk-mode/playbooks/verification.md" in targets
 
 
-def test_shared_verification_references_resolve_after_migration() -> None:
-    """share資料は廃止したスキル本体への相対的な案内を残さず、実在する定義元を指す。"""
-    source = _TOOLKIT / "share/verification-operations.md"
+def test_verification_playbook_reaches_planned_verification_definition() -> None:
+    """検証の手順書は、計画した検証の実行を実在する計画の形式の定義で指し、その全文を本文の名指しから取得できる。"""
+    source = _TOOLKIT / "skills/atk-mode/playbooks/verification.md"
     text = source.read_text()
-    assert "本スキルの`SKILL.md`" not in text
-    assert "`../skills/write-plan/references/plan-file-standards-verification.md`「計画した検証の実行」" in text
-    assert "`check-execution-operations-output.md`「保存した実行出力の取得」" in text
-    plan = read_contract(
-        source, _TOOLKIT, ("../skills/write-plan/references/plan-file-standards-verification.md", "計画の検証表")
-    )
-    output = read_contract(source, _TOOLKIT, ("check-execution-operations-output.md", "保存した実行出力の取得"))
+    assert "`agent-toolkit:atk-mode/references/plan-format.md`「計画した検証の実行」" in text
+    assert "本書「保存した実行出力の取得」" in text and "## 保存した実行出力の取得" in text
+    plan = read_contract(source, _TOOLKIT, ("../references/plan-format.md", "本文がこの資料の基準を使う場面"))
     assert "## 計画した検証の実行" in plan
-    assert "## 保存した実行出力の取得" in output
     rows = read_triggers.parse_tables(source, _TOOLKIT, strict=True)
     read_triggers.validate_reference_routes(source, _TOOLKIT, rows)

@@ -15,11 +15,11 @@ import pathlib
 import re
 import shutil
 import sys
-import tempfile
 import typing
 import zipfile
 
 import pydantic
+from agent_toolkit._common import private_directory
 
 # 設定モデルの定義は即時に保ち、展開・画像処理などの依存は使うまで遅延する。
 lazy import natsort
@@ -396,7 +396,7 @@ def _process_target(
             work_dir = parent / f"{stem}.__dry_run__"
             logger.info("[dry-run] mkworkdir: %s", work_dir)
         else:
-            work_dir = pathlib.Path(tempfile.mkdtemp(prefix=_WORKDIR_PREFIX, dir=parent))
+            work_dir = private_directory.make_temporary(parent, _WORKDIR_PREFIX)
 
         # 3. 選択的展開 / コピー / PDF ラスタライズ
         if is_pdf:

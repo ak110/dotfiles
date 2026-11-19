@@ -25,7 +25,14 @@ from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, initialize_turn, utc_now
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import inherited_venv, mcp_environment, process_tree, runtime_environment, stream_lines
+from agent_toolkit._common import (
+    inherited_venv,
+    mcp_environment,
+    private_directory,
+    process_tree,
+    runtime_environment,
+    stream_lines,
+)
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.cli-turn")
@@ -451,7 +458,7 @@ class CliTurnManager:
         if not shared_layout.valid_session_id(session_id):
             raise ValueError(f"invalid {self.ENGINE} session_id: {session_id}")
         try:
-            self._log_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self._log_directory.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
             path = self._log_directory / f"{session_id}.jsonl"
             with contextlib.ExitStack() as descriptors:
                 descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)

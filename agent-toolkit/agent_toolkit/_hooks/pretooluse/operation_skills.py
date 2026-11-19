@@ -182,9 +182,11 @@ def _is_draft_writing(operation: str, tool_name: str, tool_input: dict) -> bool:
 
 
 def _is_temp_directory_create(tool_name: str, tool_input: dict) -> bool:
-    """`agent-toolkit:managed-temp`の起動の契機とする、個別の一時ディレクトリを作成する`mktemp -d`の実行かを返す。
+    """個別の一時ディレクトリを作成する`mktemp -d`の実行かを返す。
 
-    作成先の選択は同スキルが定めるため、作成先の指定によらず対象とする。
+    一時領域の手順書（`atk-mode`の`playbooks/managed-temp.md`）を配送する契機に使う。
+
+    作成先の選択は同手順書が定めるため、作成先の指定によらず対象とする。
     複合文と置換の内側も共通のBash解析から実行位置を得て判定し、他のコマンドの引数は起動に含めない。
     一時ファイルだけを作成する`mktemp`は対象外とする。
     """
@@ -791,7 +793,6 @@ OPERATION_SKILLS: tuple[OperationSkill, ...] = (
     OperationSkill("agent-toolkit:delegation", "delegation", "委譲操作", _is_delegation_operation),
     OperationSkill("agent-basics:search", "search", "検索", _is_search_operation),
     OperationSkill("agent-basics:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
-    OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別の一時ディレクトリの作成", _is_temp_directory_create),
     OperationSkill("agent-basics:writing-standards", "writing-standards", "本文の作成・更新", _is_body_writing),
     OperationSkill(
         "agent-basics:check-execution",

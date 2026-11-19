@@ -7,7 +7,8 @@ cron、systemd timer、Windowsのタスクスケジューラーなど端末を�
 モデル候補の解決、可用性判定と利用上限の待機は`atk wi process-loop`と同じ`orchestrator`の関数を呼ぶ。
 子セッションには`atk wi process-loop`用の環境印を渡さない。その印は対話型のCLI本体を停止させる終了工程を
 Stopの条件にするhookを有効にし、自ら最終応答で終わる非対話セッションを時間上限まで終われなくするためである。
-報告用UWIはセッション内の`agent-toolkit:report-completion`が作成し、本コマンドは後処理で報告を作成しない。
+報告用UWIはセッション内で入口`atk-mode`の完了報告の手順書（`playbooks/report-completion.md`）に従って作成し、
+本コマンドは後処理で報告を作成しない。
 """
 
 from __future__ import annotations

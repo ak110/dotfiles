@@ -13,7 +13,7 @@
 
 ## スキル間操作
 
-- ユーザーへの完了報告の内容や形式は`agent-toolkit:report-completion`に従う。
+- ユーザーへの完了報告の内容や形式は`agent-toolkit:atk-mode/playbooks/report-completion.md`に従う。
   個別スキル内では同スキルの起動を指示するにとどめる。
   個別スキル側で報告内容を完結させてしまうと、工程がそこで終了し、共通スキルの起動が行われなくなるためである。
 

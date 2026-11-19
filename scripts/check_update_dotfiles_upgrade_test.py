@@ -805,6 +805,8 @@ def test_upgrade_check_cuts_routes_to_real_home(
     (uv_dir / f"uvx{uv_suffix}").write_bytes(b"uvx")
     monkeypatch.setenv("UV", str(uv_dir / f"uv{uv_suffix}"))
     monkeypatch.setenv("NPM_CONFIG_PREFIX", str(real_home / ".nvm" / "versions" / "node" / "v1"))
+    monkeypatch.setenv("UV_CACHE_DIR", str(real_home / ".cache" / "uv"))
+    monkeypatch.setenv("UV_PYTHON_INSTALL_DIR", str(real_home / ".local" / "share" / "uv" / "python"))
     child_envs: list[dict[str, str]] = []
 
     def runner(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -829,6 +831,8 @@ def test_upgrade_check_cuts_routes_to_real_home(
         entries = [pathlib.Path(entry) for entry in env["PATH"].split(os.pathsep) if entry]
         assert system_bin in entries
         assert "NVM_DIR" not in env
+        assert pathlib.Path(env["UV_CACHE_DIR"]).is_relative_to(verification_home)
+        assert pathlib.Path(env["UV_PYTHON_INSTALL_DIR"]).is_relative_to(verification_home)
         if platform_name == "linux":
             assert not any(entry.is_relative_to(real_home) for entry in entries), entries
             assert env["NPM_CONFIG_PREFIX"] == str(verification_home / ".local")

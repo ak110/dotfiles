@@ -7,7 +7,7 @@ GitHub ActionsまたはGitLab CIの実行一覧からbaselineに存在しないI
 未報告の失敗を検出し未終了が残る場合は6を返す。同じbaselineまたは--failure-recordで再開すると、
 既報の失敗では返らず残りを待つ。全体終了では全失敗を出力し、成功0・失敗1を返す。
 GitLab CI Lintで対象commit・refのパイプライン非生成を確定した場合は8（CI実行対象外）を返す。
-`agent-toolkit:commit`の`references/push-and-ci.md`から参照される。
+`agent-toolkit:atk-mode/references/ci.md`から参照される。
 """
 
 from __future__ import annotations

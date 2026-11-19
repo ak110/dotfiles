@@ -31,13 +31,13 @@ writes_worktree: true
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` |
 | 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/references/spread.md` |
-| 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:/share/ui-ux-operations.md` |
+| 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 着手時 | `exec-review-criteria.md`、`ui-ux-operations.md` | 起動時 | `role:usability-review` | |
+| 着手時 | `exec-review-criteria.md`、`agent-toolkit:atk-mode/playbooks/verification.md` | 起動時 | `role:usability-review` | |
 | `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | | | |
 | `変更画面`がフォーム、一覧、検索、通知、自動で切り替わる表示、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux.md` | | | |
 
@@ -61,12 +61,12 @@ writes_worktree: true
    起動の前に対象worktreeの`git status --porcelain=v1`を取得し、空でなければレビュー対象HEADの本文を配信して描画する。
    その作業ツリーの作成、依存とGit管理外のファイルの参照、配信するコードの解決先の確認、記録と回収は`exec-review-operations.md`「未commitの変更がある作業ツリーでの検証」に従い、配信したHEADを記録する。
    参照だけでは起動できない場合（作業ツリー側のビルドが要るなど）は描画せず、必要な操作と理由を`続行できない理由`に記載して返却する。
-   許可される操作およびキャプチャーの保存先は、`agent-toolkit:/share/ui-ux-operations.md`「完了前の実描画確認」に従い、取得した記録はmanaged-temp配下へ保存する。
+   許可される操作およびキャプチャーの保存先は、`agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」に従い、取得した記録はmanaged-temp配下へ保存する。
    `主要シナリオ`に`検証環境`で許可されていない操作が含まれる場合や、同節において実データから切り離された環境でのみ実施すると定められた操作を要する時は、その操作の実行を見合わせ、該当する手順を`続行できない理由`に記載して返却する。
 
 ## 判定と記録
 
-1. `agent-toolkit:/share/ui-ux-operations.md`「完了前の実描画確認」に沿って、主要シナリオおよび操作後に現れる各表示状態へ到達する。
+1. `agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」に沿って、主要シナリオおよび操作後に現れる各表示状態へ到達する。
    round 2以降の観測と判定は、既指摘、修正差分とその退行の範囲に限る。
    round 1では提出された成功手順だけに依存せず、通常の開始状態と代表作業を独立に選ぶ。
    原要求と変更前の通常利用を基準に、必要な前提を作る設定準備と、通常の操作が失敗する状態を避ける切替を区別して既存の引き継ぎ記録へ残す。

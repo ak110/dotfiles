@@ -24,3 +24,12 @@
   修正の検証で、SSHのセッションから起動した管理サービスがセッションの終了とともに終了することも観測した（2026年11月19日）。
   転送側は即時Jobの制限だけから離脱の要否を決めており、venvの`python.exe`が作るJobの外側にあるセッションのJobへ管理サービスが残っていた。
   転送側が離脱を常に指定し、拒否された場合だけ所属を継承して起動するよう改めた。
+- 2026年11月19日: 統括がSSHから`update-dotfiles`を実行した後、Windowsで非昇格の旧世代の管理サービス5つが`generations.json`の読取で`PermissionError`となって停止し、ログが132MBまで増えた世代もあった。
+  新世代の公開は、停止した旧世代のpipeへ接続できず`FileNotFoundError`で失敗した。
+  直接原因: 状態ディレクトリは`mkdir(mode=0o700)`と`tempfile.mkdtemp`で作成され、WindowsのPythonはOWNER RIGHTSだけに依存する保護付きDACLを付けていた。
+  SSHのログオンは昇格したtokenで動き、書き直した`generations.json`の所有者が`BUILTIN\Administrators`になって、非昇格のtokenでは読めなくなった。
+  背景原因: POSIXの0o700がWindowsでも同じ意味になると見なし、昇格したプロセスと非昇格のプロセスが同じユーザーの状態を共有する構成を試験していなかった。
+  昇格した`update-dotfiles`が、非昇格の会話と共有する管理サービスを起動して受付先として公開した。
+  対策: 所有者だけが使うディレクトリの作成を`private_directory`へ集め、Windowsでは継承するACLで作成する。
+  更新後処理で旧版の保護付きDACLを継承へ戻し、昇格した実行では管理サービスの起動と公開を次の非昇格の実行へ延期する。
+  経緯と判断は[design-windows-permissions.md](design-windows-permissions.md)にある。

@@ -13,11 +13,11 @@
 
 実装担当またはメインは、変更範囲の検証コマンドと受入シナリオの結果を`検証結果`として返し、進捗ログ（計画なしは引き継ぎ記録）へ記録する。
 メイン自身の実装も完了前に同様に記録する。
-形式は`verification-evidence-records.md`「完成条件証拠の検証記録」、手動観測と全量保存は「手動観測の保存」に従う。
+形式は`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」、手動観測と全量保存は「手動観測の保存」に従う。
 レビュー担当が記録を読むため、プロンプトへ再掲しない。
 任意入力の`受理済みの完成条件証拠`には、同じ計画の進捗ログに保存した受理済みの実行レビュー返却ファイルのうち、後続の担当が読めるものの絶対パスを渡す（無ければ`なし`）。
 参照できる条件と判定基準は、`exec-review-recording-evidence.md`「受理済み判定への参照」に従う。
-最終検証と回数を限った手動観測の時機は`../skills/commit/references/commit-verification.md`「検証」に従う。
+最終検証と回数を限った手動観測の時機は`../skills/atk-mode/playbooks/commit.md`「commitとフックの検証」に従う。
 保存済みの成功記録と失敗対象だけの再実行結果の合成は`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
 委譲元が管理する残工程があれば、後続の担当と再開先を対応付け、検証済み・未実施・条件変更の各判断を整理してレビュー担当へ渡す。
 根拠の十分さと、要件や外部仕様の達成は、実行レビュー担当が判定する。
@@ -58,9 +58,9 @@
 | --- | --- | --- | --- |
 | 形式判別前 | `../skills/atk-mode/references/awi-body.md` | | |
 | 基準の参照時 | `agent-basics:review-standards/SKILL.md` | | |
-| 検証結果を記録する前 | `verification-evidence-records.md` | | |
-| 手動観測を保存する前 | `verification-evidence-observation.md` | | |
-| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` | | |
+| 検証結果を記録する前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
+| 手動観測を保存する前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
+| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/atk-mode/playbooks/verification.md` | | |
 | 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | | |
 | 基準の参照時 | `exec-review-recording-evidence.md` | | |
 | 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` | | |
@@ -71,9 +71,9 @@
 | 基準の参照時 | `../skills/atk-mode/references/origin-and-approval.md` | | |
 | 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
 | 基準の参照時 | `../skills/atk-mode/references/origin-and-approval.md` | | |
-| 基準の参照時 | `../skills/report-completion/references/report-formats-completion.md` | | |
+| 基準の参照時 | `../skills/atk-mode/references/report-formats.md` | | |
 | 基準の参照時 | `agent-basics:bugfix/SKILL.md` | | |
-| 基準の参照時 | `../skills/commit/references/history-rewrite-wi-records.md` | | |
+| 基準の参照時 | `../skills/atk-mode/references/commit-wi-records.md` | | |
 
 ## 読込表
 
@@ -167,4 +167,4 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| コミットの作成・履歴統合に着手する前 | `../skills/commit/SKILL.md` |
+| コミットの作成・履歴統合に着手する前 | `../skills/atk-mode/playbooks/commit.md` |

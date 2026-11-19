@@ -31,7 +31,7 @@
 
 明示的に委譲されたリポジトリ担当は、報告用UWI・ユーザーへの送達・祖先ホストの終了は担当から除外する。
 この担当除外は本書で確認し、report-completion本体・termination-evidenceの取得と`omit-completion`の記録は、この担当除外確認の対象から除く。
-反映が割り当てられた場合は`../../report-completion/references/server-reflection.md`の共通条件を使い、結果を委譲元へ返す。
+反映が割り当てられた場合は`agent-toolkit:atk-mode/playbooks/report-completion.md`の共通条件を使い、結果を委譲元へ返す。
 
 **2.** 統括は自身が観測した不良・是正要求・改善点と配下担当からの報告へ、`immediate-fix.md`「即時対応」の対処時機判定を適用する。
 

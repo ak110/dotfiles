@@ -55,7 +55,7 @@
   対策: `add-awi-by-user`手順2で観測した問題を起点とする要求の対処の選択を問わず、原因と対策の確定をWI投入担当へ渡し、担当の`needs_escalation`を受けてから対処の確認を発行する。
   `add-wi.subagent.md`の返却へ確定した原因と対策の案を含める。
   `agent-toolkit:atk-mode/references/choice-construction.md`「根拠の確定」の条文を別の形で対処を問う確認へ広げ、`judgment.md`の人間が確定した判断の変更から到達させた。
-  `agent-toolkit:write-plan`はバグ対応の計画で`agent-basics:bugfix`の起動を確認より前の手順1へ移した
+  `agent-toolkit:atk-mode/playbooks/write-plan.md`はバグ対応の計画で`agent-basics:bugfix`の起動を確認より前の手順1へ移した
 
 - 2026年10月2日: WI投入担当が起草したAWIのタイトルが`agent-toolkit:atk-mode/playbooks/confirmation.md`を定義の無い短い呼称で書き、本文も`user_prompt_submit.py`の注記を定義の無い名詞句へ縮めた。
   既存の対象を正式名で書く規定は5日間に3回加えられていたが、その後に起きた。

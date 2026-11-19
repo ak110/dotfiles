@@ -4,7 +4,7 @@
 
 レビュー指摘の採否は`agent-basics:review-standards`の`references/reviewee.md`が定める。
 工程別のモデル割当は`agent-toolkit:delegation/references/process-model-settings.md`が定める。
-計画の成果物契約は`agent-toolkit:write-plan`の計画ファイル基準が定める。
+計画の成果物契約は`agent-toolkit:atk-mode/references/plan-format.md`が定める。
 
 - `atk`のキュー操作と計画保存のコマンドが自身の出力で成功を報告した場合は、その出力を根拠に完了と判定し、同じ状態を別のコマンドで取得し直さない。
   コマンドの出力に成功の報告があり、警告がないことを完了判定の基準とする。
@@ -54,7 +54,7 @@
 - 過去計画30件のレビュー実績の実際の集計では、起草側の完成条件に対応の無い検出側専用の判定基準5件と、
   ラウンド数上位3事例での新設機構への段階的な指摘（最終的な機構の撤去・縮小で収束）を観測した。
   これに基づき、計画の成果物契約は
-  `agent-toolkit/skills/write-plan/references/plan-file-standards.md`へ一元化する。
+  `agent-toolkit/skills/atk-mode/references/plan-format.md`へ一元化する。
   レビュー用タスク文書へ検証項目を追加しない（2026年8月、ユーザー指示）
 - push後はCIが成功することまで確認して初めて作業完了とする。
   CI成功の待機を省略できる例外条件を定める規範は現行に無い

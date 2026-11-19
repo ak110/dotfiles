@@ -11,7 +11,7 @@
 | 統合後の是正で変更範囲の検証の対象を選び直す前 | `agent-basics:check-execution/references/verification-scope-selection.md` | | |
 | レビュー指摘管理表へ担当が行を足す前 | `../../../share/review-table-operations.md` | | |
 | 統合指示を再受領して統合を再開する時 | `../../../share/lane-integration-subagent-operation.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
-| 競合解消のcommitとWIの対応を記録する時 | `../../commit/references/commit-wi-records.md` | | |
+| 競合解消のcommitとWIの対応を記録する時 | `agent-toolkit:atk-mode/references/commit-wi-records.md` | | |
 | 競合解消後のレビューと再開を判断する時 | `../../../share/exec-review-parent-correction.md` | | |
 | 統合後の検証失敗の是正に着手する前 | `agent-basics:bugfix/SKILL.md` | | |
 
@@ -23,7 +23,7 @@
 
 2. 両側の要求を維持して競合を解消し、解消したパスだけをステージングして通常のmerge commitを作成する。
    既存の実装OIDはそのまま保持する。
-   競合解消で生じた変更と影響するAWIを、`../../commit/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
+   競合解消で生じた変更と影響するAWIを、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
    競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表に1行追加し、同じ行に対して`atk review-table respond`で解消内容を記録する。
    追加する行の書き出しは`../../../share/review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
    影響する利用側を検証し、解消差分を独立実行レビューする。

@@ -37,7 +37,8 @@
 `notices`および`hosts`配下の共有ファイルは、保持期限が経過した後に各書込主体が削除できる。
 
 MCP起動時とSessionEndの掃引は、最終更新から7日を超える通常のルート、登録簿、計測記録を対象にする。
-`session_registry.pending_session_ids`が解決する未完了・所有者停止による中断・再開予約と、未回収結果・未配送のCLI待機runは保持する。
+どちらの掃引もホストで1日1回に限り、`_common/interval_gate.py`が`sweeps/agents-server-activation`（MCP起動時）と`sweeps/session-end`（SessionEnd）へ記録した前回から1日が過ぎていない起動・終了では掃引を省く。
+`registry_index.pending_session_ids`が解決する未完了・所有者停止による中断・再開予約と、未回収結果・未配送のCLI待機runは保持する。
 これらの会話と親の登録簿・会話別managed-tempも保護し、依頼と復旧記録を期限だけで失わせない。
 終了・回収後は通常の掃引へ戻す。
 現在のルートは保持し、compactionのJSONLとロックは対で回収する。

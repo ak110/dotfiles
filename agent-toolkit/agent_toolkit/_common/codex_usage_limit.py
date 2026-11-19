@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import itertools
 import json
 import math
 import pathlib
 from collections.abc import Iterable, Iterator
 from typing import Any
 
-from agent_toolkit._common import host_homes
+from agent_toolkit._common import host_homes, session_record_paths
 from agent_toolkit._common.claude_usage_limit import RECHECK_SECONDS
+
+_MTIME_SLACK_SECONDS = 60.0
+"""起動時刻より前の更新時刻でも開いて判定する幅。
+
+記録内の時刻と更新時刻のずれ（更新時刻の粒度、ネットワークファイルシステムの時計）を吸収する。
+"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -50,7 +57,8 @@ def thread_id_from_stream_lines(lines: Iterable[str]) -> str | None:
 
 
 def _records(path: pathlib.Path) -> Iterator[dict[str, Any]]:
-    with path.open(encoding="utf-8") as stream:
+    # マルチバイト文字の途中で終わる行も、JSONとして解析できない行と同じく解析の対象から除く。
+    with path.open(encoding="utf-8", errors="replace") as stream:
         for line in stream:
             try:
                 record = json.loads(line)
@@ -128,11 +136,18 @@ def from_thread(thread_id: str | None, *, codex_home: pathlib.Path | None = None
     """execが報告したthread IDと一致する保存記録を判定する。"""
     if not thread_id:
         return None
-    root = host_homes.codex_home() if codex_home is None else codex_home
-    for path in (root / "sessions").glob("*/*/*/rollout-*.jsonl"):
-        if path.name.endswith(f"-{thread_id}.jsonl"):
-            return from_rollout(path)
-    return None
+    sessions = (host_homes.codex_home() if codex_home is None else codex_home) / "sessions"
+    # 作成日の日付ディレクトリを先に探し、そこに無い記録とUUIDv7でないthread IDは全期間から探す。
+    candidates = itertools.chain(
+        (
+            path
+            for directory in session_record_paths.codex_thread_directories(sessions, thread_id) or ()
+            for path in directory.glob("rollout-*.jsonl")
+        ),
+        sessions.glob("*/*/*/rollout-*.jsonl"),
+    )
+    found = next((path for path in candidates if path.name.endswith(f"-{thread_id}.jsonl")), None)
+    return from_rollout(found) if found is not None else None
 
 
 def find_session_rollout(
@@ -143,6 +158,9 @@ def find_session_rollout(
     candidates: list[pathlib.Path] = []
     for path in (root / "sessions").glob("*/*/*/rollout-*.jsonl"):
         try:
+            # 起動より前から書き込みの無い記録は、起動後に始まった会話でも再開した会話でもないため開かない。
+            if path.stat().st_mtime < started_at - _MTIME_SLACK_SECONDS:
+                continue
             records = _records(path)
             meta = next(records, {})
             payload = meta.get("payload")

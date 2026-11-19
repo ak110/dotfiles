@@ -19,7 +19,7 @@ from agent_toolkit._atk.wi.entries import EntryRecord
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import process_identity
 from agent_toolkit._common import process_tree as _process_tree
-from agent_toolkit._common import session_launchers as _launchers
+from agent_toolkit._common import registry_index as _registry_index
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
@@ -164,24 +164,13 @@ def _live(record: _Record) -> bool:
     sessions = {
         value for value in [record.data.get("session_id"), *record.data.get("writer_sessions", [])] if isinstance(value, str)
     }
-    for writer in descendant_sessions(sessions):
+    for writer in _registry_index.descendant_session_ids(sessions):
         if _registry.resolve(writer).state in {
             _registry.Resolution.RUNNING,
             _registry.Resolution.UNREADABLE,
         }:
             return True
     return False
-
-
-def descendant_sessions(roots: set[str]) -> set[str]:
-    """統括と申告済みwriterに属する配下sessionを、既存の起動元記録から取得する。"""
-    paths = tuple(_registry.registry_directory().glob("*.json"))
-    descendants = set(roots)
-    while True:
-        children = {path.stem for path in paths if _launchers.read_launcher(path) in descendants}
-        if children <= descendants:
-            return descendants
-        descendants.update(children)
 
 
 def _executor_live(record: dict[str, Any]) -> bool:

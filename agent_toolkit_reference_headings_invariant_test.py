@@ -314,20 +314,20 @@ def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -
 
 def test_heading_reference_resolves_skill_qualified_path(tmp_path: pathlib.Path) -> None:
     """スキル名で修飾した参照資料のパスを、そのスキルの配下で解決する。"""
-    target = tmp_path / _PLUGIN_PREFIX / "skills" / "commit" / "references" / "push-and-ci.md"
+    target = tmp_path / _PLUGIN_PREFIX / "skills" / "atk-mode" / "playbooks" / "publish.md"
     target.parent.mkdir(parents=True)
     target.write_text("## 公開状態の4項目\n", encoding="utf-8")
     source = pathlib.Path(".claude", "skills", "sample", "SKILL.md")
     (tmp_path / source).parent.mkdir(parents=True)
     (tmp_path / source).write_text(
-        f"`{_PLUGIN_PREFIX}:commit`の`references/push-and-ci.md`「公開状態の4項目」と「存在しない節」\n"
-        f"`{_PLUGIN_PREFIX}:commit`の`references/push-and-ci.md`「存在しない節」\n",
+        f"`{_PLUGIN_PREFIX}:atk-mode`の`playbooks/publish.md`「公開状態の4項目」と「存在しない節」\n"
+        f"`{_PLUGIN_PREFIX}:atk-mode`の`playbooks/publish.md`「存在しない節」\n",
         encoding="utf-8",
     )
     markdown_paths = [target.relative_to(tmp_path), source]
 
     assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [
-        ("references/push-and-ci.md「存在しない節」", source)
+        ("playbooks/publish.md「存在しない節」", source)
     ]
 
 

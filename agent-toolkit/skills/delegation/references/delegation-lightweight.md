@@ -11,7 +11,7 @@
 | 作業全体の分割を判定する前 | `routing.md` | | |
 | 委譲先のモデルを選ぶ前 | `process-model-settings.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 | 完了通知の処理、ならびに待機や停滞の判定を行う時 | `waiting-and-monitoring.md` | | |
-| 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:managed-temp/SKILL.md` | | |
+| 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:atk-mode/playbooks/managed-temp.md` | | |
 
 ## explore・shellの起動
 
@@ -52,7 +52,7 @@
    受領前の段階で得られた情報のみで完了とみなさず、不足がある場合は同一担当へ差し戻す（receiving.md「返却形式の適合確認」「終了と報告内容の確認」、sending.md「権限と成果物の取り決め」）。
 
    結果本文の再保存は行わず、後続処理が参照する`agent_message_path`や待機実行の保存成果物は、参照が完了するまで保持する。
-   保存期間と回収の手順は`agent-toolkit:managed-temp`に従う。
+   保存期間と回収の手順は`agent-toolkit:atk-mode/playbooks/managed-temp.md`に従う。
 
 ### 軽量起動のホスト別待機
 

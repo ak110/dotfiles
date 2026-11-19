@@ -380,31 +380,25 @@ class TestMachineInjectedTurn:
 class TestSlashCommandDetection:
     """ホストごとの手動起動でセッション状態フラグが実際の起動と一致することを検証する。"""
 
-    def test_claude_full_plan_mode_command_does_not_record_invocation(self, tmp_path: pathlib.Path):
-        sid = "full-write-plan"
-        result = _run(
-            {"session_id": sid, "prompt": "/agent-toolkit:write-plan"},
-            state_dir=tmp_path,
-        )
+    @pytest.mark.parametrize(
+        ("prompt", "codex"),
+        [
+            ("/agent-toolkit:write-plan", False),
+            ("/write-plan", False),
+            ("/atk-mode write-plan", False),
+            ("$agent-toolkit:write-plan", True),
+            ("$write-plan", True),
+            ("$atk-mode write-plan", True),
+        ],
+    )
+    def test_plan_command_does_not_record_plan_start(self, tmp_path: pathlib.Path, prompt: str, *, codex: bool) -> None:
+        """計画の工程の開始は全ホストで`plan-create`の成功から記録し、発話のコマンドからは記録しない。"""
+        sid = "manual-write-plan"
+        payload = {"session_id": sid, "prompt": prompt, **({"model": "gpt-5"} if codex else {})}
+        result = _run(payload, state_dir=tmp_path)
+
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
-
-    def test_claude_short_plan_mode_command_does_not_record_invocation(self, tmp_path: pathlib.Path):
-        sid = "short-write-plan"
-        result = _run(
-            {"session_id": sid, "prompt": "/write-plan"},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
-
-    @pytest.mark.parametrize("prompt", ["$agent-toolkit:write-plan", "$write-plan"])
-    def test_codex_plan_mode_command_records_invocation(self, tmp_path: pathlib.Path, prompt: str) -> None:
-        sid = "codex-write-plan"
-        result = _run({"session_id": sid, "prompt": prompt, "model": "gpt-5"}, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is True
 
     def test_detects_short_skill_command_process_wi(self, tmp_path: pathlib.Path):
         sid = "short-process-wi"

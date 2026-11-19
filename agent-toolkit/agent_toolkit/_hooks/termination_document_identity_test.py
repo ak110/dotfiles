@@ -11,11 +11,11 @@ from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_delivered_payload
 
 _START_DOCUMENTS = {
-    "report-completion": ("skills/report-completion/SKILL.md", None),
+    "report-completion": ("skills/atk-mode/playbooks/report-completion.md", None),
     "process-wi": ("skills/process-wi/SKILL.md", "agent-toolkit:process-wiの開始"),
     "add-awi-by-user": ("skills/atk-mode/playbooks/add-awi-by-user.md", "agent-toolkit:atk-mode add-awi-by-userの開始"),
 }
-"""開始資料の所在と、成果作業として記録する表示名。入口の作業は手順書の読取で始まる。"""
+"""開始資料の所在と、成果作業として記録する表示名。入口の作業と完了報告は手順書の読取で始まる。"""
 
 
 @pytest.mark.parametrize("skill", list(_START_DOCUMENTS))
@@ -84,7 +84,7 @@ def test_public_hook_uses_observed_instruction_path(tmp_path, monkeypatch, same_
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     (root / "plugin.json").write_text("{}", encoding="utf-8")
-    document = root / "skills/report-completion/references/antigravity-full-instructions.md"
+    document = root / "skills/atk-mode/playbooks/report-completion.md"
     document.parent.mkdir(parents=True)
     document.write_text("# 観測した生成資料\n固有本文\n", encoding="utf-8")
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [])

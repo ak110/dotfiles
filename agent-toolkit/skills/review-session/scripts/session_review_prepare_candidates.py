@@ -33,7 +33,7 @@ MANDATORY_KINDS = frozenset(
 前例の有無によらず評価を要し、除外区分は`agent-basics:bugfix`の
 `agent-toolkit:atk-mode/playbooks/user-utterance.md`「ユーザー介入と確認の判定」で確かめる。探索の深さと再発防止策の要否は`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」に従う。
 参照資料を読み込まなくても必須だと分かるよう候補一覧と1行JSONへ示し、
-振り返り結果報告は各候補の扱いを候補IDで示す（書式は`agent-toolkit:report-completion`の`references/report-formats.md`）。
+振り返り結果報告は各候補の扱いを候補IDで示す（書式は`agent-toolkit:atk-mode/references/report-formats.md`）。
 `definition-body-read`は、準備が起動準備の疑いあり（`launch_check`の`status`が`suspected`）と判定した読取を
 1件以上含む候補だけを必須とする。判定の条件は`is_mandatory`が持つ。
 """

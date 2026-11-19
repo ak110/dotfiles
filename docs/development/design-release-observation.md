@@ -18,7 +18,7 @@ all-reposの公開・CI・確認・再開は対象リポジトリの担当が所
 ホームの常駐プログラムは担当別の返却と再開記録を保持し、対象へのGit操作は担当に任せる。
 1担当の回答待ちは他担当の成功を取り消す条件にせず、各担当の公開状態と未判定を別々に保持する。
 
-公開担当の完了後に`agent-toolkit:report-completion`を起動する。
+公開担当の完了後に`agent-toolkit:atk-mode/playbooks/report-completion.md`を読む。
 同スキルは元作業の完了報告を送り、続けて`atk agents-exit-session`を単独で実行する。
 振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動のセッションを非同期にまとめて分析する（`design-session-review-completion.md`「完了報告と振り返りの関係」）。
 その結果は作業完了報告とは独立して届ける。
@@ -31,7 +31,7 @@ all-reposの公開・CI・確認・再開は対象リポジトリの担当が所
 起動回数で重複公開を防ぐ案は追加成果を未pushのまま残すため採用しない。
 
 公開担当はpushの完了後にベースbranchの公開状態を観測し、`ベースbranchの状態`として返す。
-メインは`agent-toolkit:report-completion`の完了報告の前に同じ項目を1回観測する。
+メインは`agent-toolkit:atk-mode/playbooks/report-completion.md`の完了報告の前に同じ項目を1回観測する。
 公開担当が返却した時点のOID一致だけを判定に用いると、作業ツリーの未コミット差分と中断状態が観測されず、以降の工程を経た後の状態も対象に入らないためである。
 公開担当後の是正commit以外の理由で解消できない場合はUWI（ユーザーの判断を要する確認事項）へ引き継ぎ、観測を経ないまま完了報告へ到達させない。
 

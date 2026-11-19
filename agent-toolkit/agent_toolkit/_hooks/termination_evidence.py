@@ -1,9 +1,10 @@
-"""成果作業と`agent-toolkit:report-completion`の起動証拠を作業単位で保持する。
+"""成果作業と完了報告（入口`atk-mode`の作業`report-completion`）の起動証拠を作業単位で保持する。
 
-各イベントはこの所有モジュールへ観測を渡す。成功したSkill起動は本文版付きの共通取得記録にも接続する。
+各イベントはこの所有モジュールへ観測を渡す。完了報告の成功した入口の起動は本文版付きの共通取得記録にも接続する。
 成果作業は成功した対象スキルの開始、リポジトリへの自編集、
-計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功したSkill呼び出しと、
-Codexの実際の入力と結果が示す`SKILL.md`・入口の作業の手順書の読取から取得する。完了の自己申告と報告本文は受理しない。
+計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功した入口の起動と、
+Claude Codeの`Read`・Codex・Antigravityの実際の入力と結果が示す`SKILL.md`・入口の作業の手順書の読取から取得する。
+受理する証拠は`skills/atk-mode/references/termination-evidence.md`「受理する証拠」が定める。完了の自己申告と報告本文は受理しない。
 意味上の中止・開始はメインが原入力と対象を結び付け、ここでは識別子から実体を読み、由来と対象を確かめる。
 """
 
@@ -33,8 +34,6 @@ lazy from agent_toolkit._hooks.termination_evidence_operations import (
     unscoped_self_edits,
 )
 lazy from agent_toolkit._hooks.termination_evidence_state import (
-    _HOST_STOP_FIX,
-    _UNRESOLVED_REPOSITORY_FIX,
     COMPLETION_REPORT,
     STATE_KEY,
     _compact,
@@ -50,22 +49,28 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
     _store_input,
     _sync_queued_inputs,
     _UnresolvedRepositoryError,
+    completion_playbook_path,
     decision_hint,
     evidence_available,
+    host_stop_fix,
     pending_work,
     session_works,
+    termination_evidence_reference,
+    unresolved_repository_fix,
     waits_on_delegated_session,
 )
 
 __all__ = [
     "_hook_tool_input",
     "_omission_policy",
+    "completion_playbook_path",
     "decision_hint",
     "evidence_available",
     "missing_completion",
     "pending_work",
     "published_git_operations",
     "session_works",
+    "termination_evidence_reference",
     "unscoped_self_edits",
     "uwi_scan",
     "waits_on_delegated_session",
@@ -366,18 +371,16 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeError, ValueError) as error:
         recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行せよ"
         if isinstance(error, _UnresolvedRepositoryError):
-            recovery = _UNRESOLVED_REPOSITORY_FIX
+            recovery = unresolved_repository_fix()
         elif isinstance(error, _FailureEvidenceError):
             recovery = (
                 "失敗応答を返したツール呼び出しの`call_id`で記録せよ。受理する証拠は"
-                "`agent-toolkit:report-completion`の`references/termination-evidence.md`「受理する証拠」に従え。"
-                + _HOST_STOP_FIX
+                f"{termination_evidence_reference()}「受理する証拠」に従え。" + host_stop_fix()
             )
         elif isinstance(error, _InactiveWaitError):
             recovery = (
                 "`atk agents wait`で待機を開始するか回収後の残工程へ戻れ。"
-                "`agent-toolkit:report-completion`の`references/termination-evidence.md`「受理する証拠」に従え。"
-                + _HOST_STOP_FIX
+                f"{termination_evidence_reference()}「受理する証拠」に従え。" + host_stop_fix()
             )
         next_action.report(
             str(error),

@@ -40,6 +40,7 @@ lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import document_reads, repository_protection, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
+lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
@@ -160,7 +161,9 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                     guidance += (
                         "\nbatchの起動から保存までは、agent-toolkit:review-sessionのreferences/batch.mdを全文読んで従え。"
                     )
-                guidance += f"\n{_run_skill_start(data.get('skill'))}次の終了契約を読め: agent-toolkit:report-completion"
+                guidance += (
+                    f"\n{_run_skill_start(data.get('skill'))}次の終了契約を読め: 完了報告の手順書`{completion_playbook_path()}`"
+                )
             if not resume_only:
                 parts.append(
                     message_format.auto_message(

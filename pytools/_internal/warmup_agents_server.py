@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_toolkit._agents_server import service_forward
-from agent_toolkit._common import dotfiles_mode, process_tree, runtime_environment
+from agent_toolkit._common import dotfiles_mode, process_tree, runtime_environment, windows_security
 
 from pytools._internal import claude_common, common, log_format, plugin_warmup, post_apply_cache, post_apply_outcome
 
@@ -28,6 +28,16 @@ _TAG = "agent-toolkit warmup"
 _SCRIPT_RELATIVE = Path("agent_toolkit") / "agents_server_mcp.py"
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 _STARTUP_TIMEOUT = 30.0
+_UNCHANGED = "コード・起動条件が同じためMCP起動確認を省略"
+_ELEVATED = (
+    "管理者権限（昇格）で実行中のため、非昇格の会話と共有する管理サービスの起動と公開を省略"
+    "（非昇格の会話の転送側は昇格したプロセスの管理サービスとの接続を認証できない）"
+)
+_ELEVATED_NOTICE = post_apply_outcome.PostApplyNotice(
+    message="管理者権限（昇格）で実行したため、agents_serverの管理サービスを起動・公開していません。"
+    "非昇格の端末で`update-dotfiles`を再実行してください（新しい会話の開始時にも起動します）。",
+    command="update-dotfiles",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -45,11 +55,15 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     # 更新実行IDはログの対応付け専用であり、毎回変わってもMCPの起動条件を変えない。
     startup_environment = sorted((name, value) for name, value in os.environ.items() if name != "UPDATE_DOTFILES_RUN_ID")
     key = post_apply_cache.fingerprint(paths, values=[repr(commands), repr(startup_environment)])
-    checks = (
-        _check_targets(commands, skip_startup=True)
-        if post_apply_cache.matches("agents-server-startup", key)
-        else _check_targets(commands)
-    )
+    # 昇格したプロセスが起動した管理サービスが受付先になると、同じユーザーの非昇格の会話は接続を認証できない。
+    # 起動確認を省略した回は起動条件を記録せず、次の非昇格の実行で起動確認と公開を行う。
+    elevated = windows_security.is_elevated_above_user_processes()
+    if elevated:
+        checks = _check_targets(commands, skip_startup=_ELEVATED)
+    elif post_apply_cache.matches("agents-server-startup", key):
+        checks = _check_targets(commands, skip_startup=_UNCHANGED)
+    else:
+        checks = _check_targets(commands)
     outcomes = asyncio.run(checks)
     failures: list[str] = []
     dependencies_ready = True
@@ -76,8 +90,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             next_action="`update-dotfiles logs`の起動段階・標準エラーを確認し、`update-dotfiles`を再実行する",
         )
     if dependencies_ready:
-        post_apply_cache.save("agents-server-startup", key)
+        if not elevated:
+            post_apply_cache.save("agents-server-startup", key)
         plugin_warmup.cleanup_prepared(commands)
+    if elevated:
+        return post_apply_outcome.PostApplyOutcome(deferred=True, notices=(_ELEVATED_NOTICE,))
     return post_apply_outcome.PostApplyOutcome()
 
 
@@ -90,12 +107,13 @@ class _StartupOutcome:
 async def _check_targets(
     commands: Sequence[Sequence[str]],
     *,
-    skip_startup: bool = False,
+    skip_startup: str | None = None,
 ) -> list[tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None] | BaseException]:
     """独立rootの依存確認を並列に進め、MCP起動確認は1件ずつ行い、1rootの失敗でも全対象を回収する。
 
     起動確認は管理サービスの世代を1件ずつ公開する。同じ世代の転送側は1つの管理サービスを共有するため、
     並列に進めると、ある確認の候補の世代を別の確認が先に公開する。
+    `skip_startup`を指定すると起動確認を行わず、その理由を確認結果として返す。
     """
     dependencies = await asyncio.gather(
         *(plugin_warmup.check_command([*command, "--check-dependencies"]) for command in commands), return_exceptions=True
@@ -106,8 +124,8 @@ async def _check_targets(
             outcomes.append(dependency)
         elif not dependency.ok:
             outcomes.append((dependency, None))
-        elif skip_startup:
-            outcomes.append((dependency, _StartupOutcome(True, "コード・起動条件が同じためMCP起動確認を省略")))
+        elif skip_startup is not None:
+            outcomes.append((dependency, _StartupOutcome(True, skip_startup)))
         else:
             try:
                 outcomes.append((dependency, await _check_startup(command)))

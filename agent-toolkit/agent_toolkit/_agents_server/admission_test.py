@@ -172,6 +172,46 @@ def test_parent_waiting_for_child_does_not_deadlock_at_full_limit(tmp_path: path
     assert asyncio.run(scenario()) == ["p1-child", "p2-child"]
 
 
+@pytest.mark.parametrize("waiters", [2, 6])
+def test_one_poll_round_reads_all_roots_once_regardless_of_waiters(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, waiters: int
+) -> None:
+    """上限で待つ起動の数を増やしても、1巡で全rootの状態ファイルを読むのは依頼順の先頭の1回だけである。"""
+    limit = admission.Limit(1, "test")
+    _write_status(tmp_path, "root", "w", None, {"busy": "running"})
+    scans = 0
+    load_root = admission.status_reader.load_root
+
+    def counting_load_root(*args, **kwargs):
+        nonlocal scans
+        scans += 1
+        return load_root(*args, **kwargs)
+
+    monkeypatch.setattr(admission.status_reader, "load_root", counting_load_root)
+
+    async def scenario() -> None:
+        polled = 0
+        hold = asyncio.Event()
+
+        async def poll_once(_seconds: float) -> None:
+            nonlocal polled
+            polled += 1
+            await hold.wait()
+
+        tasks = [
+            asyncio.create_task(admission.acquire(None, limit=limit, state_root=tmp_path, sleep=poll_once))
+            for _ in range(waiters)
+        ]
+        await _until(lambda: polled == waiters)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(scenario())
+    assert scans == 1
+    assert not any(admission.admission_directory(tmp_path).glob("*.json"))
+
+
 def test_disabled_limit_never_waits(tmp_path: pathlib.Path) -> None:
     """無効化した設定では作業中の数によらず即座に許可し、待ちを応答へ加えない。"""
     _write_status(tmp_path, "root", "w", None, {f"s{index}": "running" for index in range(50)})

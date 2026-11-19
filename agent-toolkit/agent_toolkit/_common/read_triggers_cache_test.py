@@ -1,6 +1,9 @@
 """読込表の解析結果を、本文が変わらない間だけhookの起動をまたいで再利用する契約を確認する。"""
 
+import os
 import pathlib
+import time
+import types
 
 import pytest
 
@@ -86,3 +89,53 @@ def test_excluded_rows_report_the_same_issue_when_reused(tmp_path: pathlib.Path,
     assert len(parsed) == 1
     assert issues[0] == issues[1]
     assert issues[0]
+
+
+def _settle(sources: list[pathlib.Path], seconds_ago: int) -> None:
+    """文書の最後の書込から、時刻の刻み（ext3は1秒）より十分に時間が過ぎた状態にする。"""
+    settled = (time.time_ns() // 1_000_000_000 - seconds_ago) * 1_000_000_000
+    for source in sources:
+        os.utime(source, ns=(settled, settled))
+
+
+def test_unchanged_documents_are_not_read_again_regardless_of_count(
+    tmp_path: pathlib.Path, parsed: list[pathlib.Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2回目以降のhookでは、文書数を2倍にしても変わらない文書の本文を読まない。"""
+    del parsed
+    read: list[pathlib.Path] = []
+    original = pathlib.Path.read_bytes
+
+    def counting_read_bytes(self: pathlib.Path) -> bytes:
+        read.append(self)
+        return original(self)
+
+    monkeypatch.setattr(pathlib.Path, "read_bytes", counting_read_bytes)
+    for count in (20, 40):
+        sources = _sources(tmp_path / f"docs{count}", count)
+        _settle(sources, 60)
+        first = _parse(sources, tmp_path)
+        read.clear()
+        assert _parse(sources, tmp_path) == first
+        assert not [path for path in read if path in sources]
+
+
+def test_document_rewritten_within_the_same_timestamp_tick_is_parsed_with_new_content(
+    tmp_path: pathlib.Path, parsed: list[pathlib.Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """更新時刻の刻みが粗いファイルシステムで、直前のhookと同じ刻みの中に同じ大きさで書き換えた文書を新しい本文で判定する。"""
+    del parsed
+    tick = time.time_ns() // 1_000_000_000 * 1_000_000_000
+
+    def coarse_stat(path):
+        status = os.stat(path)
+        return types.SimpleNamespace(st_ino=status.st_ino, st_size=status.st_size, st_mtime_ns=tick, st_ctime_ns=tick)
+
+    monkeypatch.setattr(read_triggers_cache, "os", types.SimpleNamespace(stat=coarse_stat))
+    sources = _sources(tmp_path / "docs", 2)
+    _parse(sources, tmp_path)
+    before = sources[0].stat().st_size
+    sources[0].write_text(_table("target9.md"), encoding="utf-8")
+    assert sources[0].stat().st_size == before
+    result = dict(_parse(sources, tmp_path))
+    assert [row.material for row in result[sources[0]]] == ["`target9.md`"]

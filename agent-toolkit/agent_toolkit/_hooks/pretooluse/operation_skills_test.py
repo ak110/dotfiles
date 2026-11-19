@@ -163,10 +163,9 @@ def test_write_paths_respect_option_roles(command: str, expected: list[str], tmp
             },
             ["bugfix", "writing-standards"],
         ),
-        (_bash("mktemp -d /cache/session/x-XXXXXXXX", "codex"), ["managed-temp"]),
         (_bash("echo rule > AGENTS.md", "codex"), ["writing-standards"]),
     ],
-    ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "managed-temp", "agent-doc"],
+    ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "agent-doc"],
 )
 def test_codex_inputs_match_required_skill_operations(payload: dict, skills: list[str]) -> None:
     """既存の操作に対する検出条件を静的解析で確かめる。"""
@@ -476,9 +475,6 @@ def test_writing_without_root_cause_heading_does_not_warn(content: str) -> None:
     assert not operation_skills.operation_matches(
         "root-cause-writing", "Write", {"file_path": "/example/awi.md", "content": content}
     )
-
-
-_MANAGED_TEMP_SKILL = "agent-toolkit:managed-temp"
 
 
 @pytest.mark.parametrize(

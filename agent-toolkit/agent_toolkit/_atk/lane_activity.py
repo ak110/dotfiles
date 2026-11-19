@@ -6,12 +6,13 @@ import dataclasses
 import os
 import pathlib
 import time
+from collections.abc import Callable
 
 lazy import psutil
 
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
-from agent_toolkit._common import session_launchers, session_release, state_paths
+from agent_toolkit._common import registry_index, session_launchers, session_layout, session_release, state_paths
 from agent_toolkit._common.wait_schedule import get_wait_timeout
 from agent_toolkit._git import command as git_command
 from agent_toolkit._git import worktrees as git_worktrees
@@ -79,9 +80,13 @@ def running_sessions(worktree: pathlib.Path) -> list[RunningSession]:
     if not directory.exists():
         return []
     entries = git_worktrees.list_worktrees(worktree, timeout=_lane_records.TIMEOUT)
-    target = git_worktrees.owning_worktree(worktree, entries)
+    resolved = git_worktrees.resolve_worktrees(entries)
+    target = git_worktrees.owning_resolved_worktree(worktree, resolved)
     running: list[RunningSession] = []
-    for path in sorted(directory.glob("*.json")):
+    # 実行中と解決し得るのは、保留中の記録と再開予約を持つ記録だけである。
+    for path in _registered_candidates(
+        directory, state_root, resolved, target, include_unreadable=True, relevant=lambda entry: entry.pending or entry.claimed
+    ):
         try:
             resolution = session_registry.resolve(path.stem, state_root=state_root)
         except ValueError as exc:
@@ -91,7 +96,7 @@ def running_sessions(worktree: pathlib.Path) -> list[RunningSession]:
         info = resolution.resume_info
         if resolution.state is not session_registry.Resolution.RUNNING or info is None or not info.cwd:
             continue
-        owner = git_worktrees.owning_worktree(pathlib.Path(info.cwd), entries)
+        owner = git_worktrees.owning_resolved_worktree(pathlib.Path(info.cwd), resolved)
         if owner is None or owner != target:
             continue
         running.append(
@@ -105,6 +110,36 @@ def running_sessions(worktree: pathlib.Path) -> list[RunningSession]:
             )
         )
     return running
+
+
+def _registered_candidates(
+    directory: pathlib.Path,
+    state_root: pathlib.Path,
+    resolved: dict[pathlib.Path, git_worktrees.Worktree],
+    target: git_worktrees.Worktree | None,
+    *,
+    include_unreadable: bool,
+    relevant: Callable[[registry_index.Entry], bool],
+) -> list[pathlib.Path]:
+    """登録簿のうち、`relevant`を満たし、記録された`cwd`が`target`に属するレコードのパスを名前順に返す。
+
+    登録簿の索引の派生値で候補を限定し、呼出側は残ったレコードだけを`resolve`で解決し直す。
+    同じ`cwd`の所属は1回だけ判定する。`include_unreadable`が真なら、解決できないレコードも残す。
+    識別子の形式に合わない名前は、`resolve`の拒否を呼出側へ伝えるため常に残す。
+    """
+    owners: dict[str, git_worktrees.Worktree | None] = {}
+    candidates: list[pathlib.Path] = []
+    for name, entry in sorted(registry_index.entries(state_root).items()):
+        if not session_layout.valid_session_id(name) or include_unreadable and not entry.readable:
+            candidates.append(directory / f"{name}.json")
+            continue
+        if not entry.cwd or not relevant(entry):
+            continue
+        if entry.cwd not in owners:
+            owners[entry.cwd] = git_worktrees.owning_resolved_worktree(pathlib.Path(entry.cwd), resolved)
+        if owners[entry.cwd] is not None and owners[entry.cwd] == target:
+            candidates.append(directory / f"{name}.json")
+    return candidates
 
 
 def session_activity(worktree: pathlib.Path) -> str | None:
@@ -171,15 +206,25 @@ def process_activity(worktree: pathlib.Path) -> str | None:
 
 def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> str | None:
     """所有側へ終了資源の解放を要求してから、担当と外部プロセスの使用を再判定する。"""
-    directory = session_registry.registry_directory()
+    state_root = state_paths.state_dir()
+    directory = session_launchers.registry_directory(state_root)
     deadline: float | None = None
     released: list[str] = []
     entries = git_worktrees.list_worktrees(worktree, timeout=_lane_records.TIMEOUT)
-    target = git_worktrees.owning_worktree(worktree, entries)
-    for path in directory.glob("*.json"):
-        resolution = session_registry.resolve(path.stem)
+    resolved = git_worktrees.resolve_worktrees(entries)
+    target = git_worktrees.owning_resolved_worktree(worktree, resolved)
+    # 解放済みの記録は、再開予約が生存しない限り実行中にも終了にも解決しない。
+    for path in _registered_candidates(
+        directory,
+        state_root,
+        resolved,
+        target,
+        include_unreadable=False,
+        relevant=lambda entry: entry.claimed or not entry.released,
+    ):
+        resolution = session_registry.resolve(path.stem, state_root=state_root)
         info = resolution.resume_info
-        if info is None or not info.cwd or git_worktrees.owning_worktree(pathlib.Path(info.cwd), entries) != target:
+        if info is None or not info.cwd or git_worktrees.owning_resolved_worktree(pathlib.Path(info.cwd), resolved) != target:
             continue
         instruction = f"agents_serverのstopへsession_id={path.stem}を渡し、同じlane deleteを再実行する"
         if resolution.state is session_registry.Resolution.RUNNING:

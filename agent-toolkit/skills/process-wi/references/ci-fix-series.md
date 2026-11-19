@@ -1,7 +1,7 @@
 # CI失敗の修正系列と修正担当
 
 本書は、修正commitが必要と確定したCI失敗を、誰がどの記録で修正し、どの条件でレビューして再pushするかを定める。
-CI失敗の取得、分類、原因分析は`agent-toolkit:commit/references/ci-failure-handling.md`が定め、push先・run監視・証拠の保存と後始末は`agent-toolkit:commit/references/push-and-ci.md`が定める。
+CI失敗の取得、分類、原因分析は`agent-toolkit:atk-mode/references/ci.md`が定め、push先・run監視・証拠の保存と後始末は`agent-toolkit:atk-mode/playbooks/publish.md`が定める。
 
 ## 名指し参照の読込方法
 
@@ -42,7 +42,7 @@ CI失敗の取得、分類、原因分析は`agent-toolkit:commit/references/ci-
 
 最初のCI失敗（公開工程においては全体検証の失敗を含む）から、CIが成功するか工程が終了するまでの一連の過程を「修正系列」と呼ぶ。
 修正回数、CI記録、レビュー指摘管理表、および`修正系列の開始時のHEAD`はこの単位で引き継ぎ、原因コミットが変わった場合でも回数のカウントを継続する。
-修正回数は是正した失敗に対応する修正の件数として数え、原因コミットへ取り込んだ修正（`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の「原因commitへ取り込む区分」）も1回として計算する。
+修正回数は是正した失敗に対応する修正の件数として数え、原因コミットへ取り込んだ修正（`agent-toolkit:atk-mode/playbooks/publish.md`「pushと監視」の「原因commitへ取り込む区分」）も1回として計算する。
 コミットを取り込んだ場合、`exec-review`へ渡す`原因commitOID`には履歴書き換え後に解決可能な値を指定し、書き換え前後のOIDの対応関係と`git range-diff`の結果をCI記録へ記録する。
 
 **3.** 修正の基準を揃えるため、`入力計画`には、原因コミットに対応する計画ファイルのパスを指定する。
@@ -53,11 +53,11 @@ CI失敗の取得、分類、原因分析は`agent-toolkit:commit/references/ci-
 - 未保存の計画ファイルの場合は、`~/.claude/plans`のパスをそのまま渡し、対応する計画が存在しない場合は`なし`とする
 
 **4.** 修正者は原因の修正、全項目の検証、差分検収、ステージング、commitを完了する。
-修正前の計画は「選択の流れ」に従い、公開工程外で自ら直す場合は`agent-toolkit:commit/references/ci-failure-handling.md`「選択の流れ」手順4の計画を使う。
+修正前の計画は「選択の流れ」に従い、公開工程外で自ら直す場合は`agent-toolkit:atk-mode/references/ci.md`「選択の流れ」手順4の計画を使う。
 
 **5.** 手元の実行環境では失敗した条件の成否を観測できず、認可済みの作業ブランチで対象ジョブと直接影響範囲を実行できる場合は、修正コミットを早期にpushして先行CIで検証する。
 
- 対象リポジトリ・ブランチへのpush認可と書込担当の終了を確認してから、`push-and-ci.md`「push前」「pushと監視」の通常操作を用いる。
+ 対象リポジトリ・ブランチへのpush認可と書込担当の終了を確認してから、`agent-toolkit:atk-mode/playbooks/publish.md`「push前」「pushと監視」の通常操作を用いる。
  作業refでの先行CIは再レビューの合格を待たずに開始でき、必要なレビューと他の検証を並行して進める。
  修正合格と正式公開は、先行CIの結果と必要なレビューの合格を検収してから確定する。
  認可が不足する場合は追加認可を求める。

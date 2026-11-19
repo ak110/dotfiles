@@ -28,8 +28,8 @@ def test_goal_separates_child_completion_from_launcher_verification(mode, skill_
         assert hook.main(["rules_context"]) == 0
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     root = pathlib.Path(__file__).resolve().parents[2] / "skills"
-    assert "agent-toolkit:report-completion" in context
-    report = (root / "report-completion/SKILL.md").read_text(encoding="utf-8")
+    assert "playbooks/report-completion.md" in context
+    report = (root / "atk-mode/playbooks/report-completion.md").read_text(encoding="utf-8")
     assert "報告の同期検収は、子セッションの終了後" in report
     assert "子自身の完了条件へ含めない" in report
     assert ("references/batch.md" in context) is (mode == "batch")

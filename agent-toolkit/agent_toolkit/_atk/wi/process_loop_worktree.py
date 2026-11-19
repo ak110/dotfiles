@@ -28,6 +28,24 @@ _DEFAULT_WORKTREE_NAME = "process-loop"
 # process-loopが作成するworktreeの配置先（対象リポジトリのroot相対）。
 _WORKTREE_PARENT_REL = _worktree_exclude.WORKTREE_PARENT
 
+# 追随のrebaseを始める直前に、worktree固有のGitディレクトリへ開始状態を書く記録。
+# workerごと止められて中断したrebaseが自分の開始したものかを、次の反復が記録と状態ディレクトリの一致で確かめて元へ戻す。
+_SYNC_REBASE_RECORD = "atk-process-loop-rebase.json"
+# merge backendのrebaseが状態ディレクトリへ書く開始状態のうち、記録と比べるファイル。
+_REBASE_STATE_FILES = ("head-name", "orig-head", "onto")
+
+# 途中のまま残る操作を示すGit管理パス、表示名、続行・中止に使うgitの引数。
+# `git am`も`rebase-apply`を使うため、`applying`の有無で区別する。
+_IN_PROGRESS_OPERATIONS = (
+    ("rebase-merge", "rebase", "-c submodule.recurse=false rebase"),
+    ("rebase-apply/applying", "am", "am"),
+    ("rebase-apply", "rebase", "-c submodule.recurse=false rebase"),
+    ("MERGE_HEAD", "merge", "merge"),
+    ("CHERRY_PICK_HEAD", "cherry-pick", "cherry-pick"),
+    ("REVERT_HEAD", "revert", "revert"),
+    ("BISECT_LOG", "bisect", "bisect"),
+)
+
 
 def _git_output(args: list[str], cwd: pathlib.Path) -> str:
     """gitコマンドの標準出力を返す。失敗時は空文字を返す。"""
@@ -64,6 +82,14 @@ def _run_worktree_git(args: list[str], cwd: pathlib.Path) -> subprocess.Complete
         result = _git_command.run(args, cwd, capture_output=True, text=True, check=False)
     except OSError as error:
         result = subprocess.CompletedProcess(_git_command.command_line(args), returncode=127, stdout="", stderr=str(error))
+    except subprocess.TimeoutExpired as error:
+        # 打ち切ったrebaseを呼び出し元が中止できるよう、例外で抜けずに失敗として返す。
+        result = subprocess.CompletedProcess(
+            _git_command.command_line(args),
+            returncode=124,
+            stdout="",
+            stderr=f"{error.timeout:g}秒の時間上限に達したため打ち切った",
+        )
     finally:
         _console_title.set_console_title("atk wi process-loop")
     return result
@@ -80,6 +106,32 @@ def _resolve_git_path(output: str, cwd: pathlib.Path) -> pathlib.Path | None:
         return path.resolve()
     except OSError, RuntimeError:
         return None
+
+
+def _failure_text(args: list[str], cwd: pathlib.Path, result: subprocess.CompletedProcess[str]) -> str:
+    """成り立たなかったgitの照会を、実行したコマンド・終了コード・標準エラーで説明する。"""
+    command = f"git -C {cwd} {' '.join(args)}"
+    if result.returncode == 0:
+        return f"`{command}`の出力が空だった"
+    detail = " ".join((result.stderr or "").split()) or "標準エラーなし"
+    return f"`{command}`が終了コード{result.returncode}で失敗した: {detail}"
+
+
+def _query_git_path(args: list[str], cwd: pathlib.Path) -> pathlib.Path | str:
+    """gitが出力したパスをcwd基準で絶対化して返す。照会が成り立たない場合は失敗の説明を返す。"""
+    result = _run_worktree_git(args, cwd)
+    path = _resolve_git_path(result.stdout.strip() if result.returncode == 0 else "", cwd)
+    return _failure_text(args, cwd, result) if path is None else path
+
+
+def _git_paths(worktree_path: pathlib.Path, names: list[str]) -> list[pathlib.Path] | None:
+    """worktreeから見たGit管理パスを絶対パスで返す。照会に失敗した場合は`None`を返す。"""
+    args = ["rev-parse", "--path-format=absolute"]
+    for name in names:
+        args += ["--git-path", name]
+    result = _run_worktree_git(args, worktree_path)
+    lines = result.stdout.splitlines() if result.returncode == 0 else []
+    return [pathlib.Path(line) for line in lines] if len(lines) == len(names) else None
 
 
 def _worktree_status_next_action(path: pathlib.Path) -> str:
@@ -133,52 +185,201 @@ def _ensure_worktree_excluded(local_path: pathlib.Path) -> bool:
     return True
 
 
-def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib.Path, branch: str) -> bool:
-    """既存worktreeが対象リポジトリの専用worktreeであることを検証する。"""
+def _validate_existing_worktree(
+    local_path: pathlib.Path, worktree_path: pathlib.Path, branch: str, upstream_branch: str
+) -> bool:
+    """既存worktreeが対象リポジトリの専用worktreeとして使えることを検証する。
+
+    失うcommitと変更が無い中断状態（中断した追随のrebase、専用ブランチから外れたHEAD）は元へ戻してから検証する。
+    使えない場合は、成り立たなかった条件と状態ごとの次の操作を報告する。
+    """
+    failure = _existing_worktree_failure(local_path, worktree_path, branch, upstream_branch)
+    if failure is None:
+        return True
+    message, next_action = failure
+    _warn_worktree_preparation_failure(message, worktree_path, next_action=next_action)
+    return False
+
+
+def _existing_worktree_failure(
+    local_path: pathlib.Path, worktree_path: pathlib.Path, branch: str, upstream_branch: str
+) -> tuple[str, str] | None:
+    """既存worktreeを使えない理由と次の操作を返す。使える場合は`None`を返す。"""
+    status_next_action = _worktree_status_next_action(worktree_path)
     if not worktree_path.is_dir():
-        _warn_worktree_preparation_failure(
-            "worktreeの配置先がディレクトリではない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
-        )
-        return False
+        return "worktreeの配置先がディレクトリではない", status_next_action
     try:
         resolved_worktree_path = worktree_path.resolve()
     except OSError, RuntimeError:
-        _warn_worktree_preparation_failure(
-            "既存worktreeの実体パスを解決できない", worktree_path, next_action=_worktree_status_next_action(worktree_path)
-        )
-        return False
+        return "既存worktreeの実体パスを解決できない", status_next_action
 
-    worktree_common = _git_output(["rev-parse", "--git-common-dir"], cwd=worktree_path)
-    local_common = _git_output(["rev-parse", "--git-common-dir"], cwd=local_path)
-    worktree_top = _git_output(["rev-parse", "--show-toplevel"], cwd=worktree_path)
-    current_branch = _git_refs.resolve_branch(worktree_path, git_fn=_capture_ref)
-    if not all((worktree_common, local_common, worktree_top)) or current_branch is None:
-        _warn_worktree_preparation_failure(
-            "既存worktreeのGit照会が失敗した", worktree_path, next_action=_worktree_status_next_action(worktree_path)
+    worktree_common = _query_git_path(["rev-parse", "--git-common-dir"], worktree_path)
+    local_common = _query_git_path(["rev-parse", "--git-common-dir"], local_path)
+    worktree_top = _query_git_path(["rev-parse", "--show-toplevel"], worktree_path)
+    for answer in (worktree_common, local_common, worktree_top):
+        if isinstance(answer, str):
+            return (
+                f"既存worktreeのGit照会が失敗した（{answer}）",
+                f"`git -C {worktree_path} status`で状態を確認する。リポジトリやworktreeを移動した場合は、"
+                f"`git -C {local_path} worktree repair {worktree_path}`で管理情報の参照先を直す。"
+                "解消後はprocess-loopが次の反復で再試行する",
+            )
+    registration_next_action = (
+        f"`git -C {local_path} worktree list`で登録を確認し、専用worktreeとして登録されていない配置先は退避するか削除する。"
+        "解消後はprocess-loopが次の反復で再試行する"
+    )
+    if worktree_common != local_common:
+        return (
+            f"既存worktreeのGit共通ディレクトリ{worktree_common}が対象リポジトリの{local_common}と異なる",
+            registration_next_action,
         )
-        return False
+    if worktree_top != resolved_worktree_path:
+        return f"配置先がworktreeの最上位ではない（最上位: {worktree_top}）", registration_next_action
 
-    resolved_worktree_common = _resolve_git_path(worktree_common, worktree_path)
-    resolved_local_common = _resolve_git_path(local_common, local_path)
-    resolved_worktree_top = _resolve_git_path(worktree_top, worktree_path)
-    if (
-        resolved_worktree_common is None
-        or resolved_local_common is None
-        or resolved_worktree_top is None
-        or resolved_worktree_common != resolved_local_common
-        or resolved_worktree_top != resolved_worktree_path
-        or current_branch.ref != f"refs/heads/{branch}"
-    ):
-        _warn_worktree_preparation_failure(
-            "既存worktreeのGit検証条件が成立しなかった", worktree_path, next_action=_worktree_status_next_action(worktree_path)
-        )
-        return False
+    _recover_interrupted_sync_rebase(worktree_path)
+    markers = [marker for marker, _label, _command in _IN_PROGRESS_OPERATIONS]
+    paths = _git_paths(worktree_path, markers)
+    if paths is None:
+        return "既存worktreeで途中の操作の有無を確認できない", status_next_action
+    for path, (_marker, label, command) in zip(paths, _IN_PROGRESS_OPERATIONS, strict=True):
+        if path.exists():
+            return f"既存worktreeで{label}が途中のまま残っている", _operation_next_action(worktree_path, label, command)
+
+    current = _git_refs.resolve_branch(worktree_path, git_fn=_capture_ref)
+    if current is None or current.ref != f"refs/heads/{branch}":
+        failure = _return_to_dedicated_branch(worktree_path, branch, upstream_branch, current)
+        if failure is not None:
+            return failure
     if not _worktree_is_clean(worktree_path):
-        _warn_worktree_preparation_failure(
-            "worktreeに未コミット変更がある", worktree_path, next_action=_worktree_dirty_next_action(worktree_path)
+        return "worktreeに未コミット変更がある", _worktree_dirty_next_action(worktree_path)
+    _ensure_upstream_tracking(worktree_path, branch, upstream_branch)
+    return None
+
+
+def _ensure_upstream_tracking(worktree_path: pathlib.Path, branch: str, upstream_branch: str) -> None:
+    """専用ブランチに追跡先が無い場合に限り、上流を追跡先に設定する。
+
+    WorktreeCreate hookの`--detach`で作られたworktreeや手作業の`switch -C`は追跡先を持たず、
+    主作業ツリーのブランチの公開状態（`# branch.upstream`）を判定できない。設定済みの追跡先は変えない。
+    設定に失敗しても準備は続け、警告だけを出す。
+    """
+    configured = _run_worktree_git(["config", "--get", f"branch.{branch}.remote"], worktree_path)
+    if configured.returncode == 0 and configured.stdout.strip():
+        return
+    args = ["branch", f"--set-upstream-to={upstream_branch}", branch]
+    result = _run_worktree_git(args, worktree_path)
+    if result.returncode != 0:
+        failure = _failure_text(args, worktree_path, result)
+        _next_action.report(
+            f"専用ブランチ{branch}の追跡先を{upstream_branch}に設定できませんでした: {failure}",
+            next_action=f"`git -C {worktree_path} branch --set-upstream-to={upstream_branch} {branch}`で追跡先を設定する",
         )
-        return False
-    return True
+
+
+def _operation_next_action(worktree_path: pathlib.Path, label: str, command: str) -> str:
+    """途中のまま残る操作を続けるか取りやめる次の操作を返す。"""
+    retry = "解消後はprocess-loopが次の反復で再試行する"
+    if label == "bisect":
+        return f"`git -C {worktree_path} bisect reset`で二分探索を終える。{retry}"
+    return (
+        f"`git -C {worktree_path} status`で競合と進行状況を確認し、続けるなら競合を解消して"
+        f"`git -C {worktree_path} {command} --continue`を、"
+        f"取りやめるなら`git -C {worktree_path} {command} --abort`を実行する。{retry}"
+    )
+
+
+def _return_to_dedicated_branch(
+    worktree_path: pathlib.Path, branch: str, upstream_branch: str, current: _git_refs.BranchRef | None
+) -> tuple[str, str] | None:
+    """専用ブランチから外れたHEADを、失うcommitと変更が無い場合に限り専用ブランチへ戻す。
+
+    別ブランチのHEADはそのブランチに残り、切り離されたHEADはローカルブランチか上流に含まれていれば、
+    専用ブランチへ切り替えても失うcommitは無い。上流以外のリモート追跡refは、リモートでブランチを消した後の
+    fetchで消えうるため、含まれていても切り替えない。未commitの変更があれば切り替えない。
+    専用ブランチが無い場合は上流から作り直す。戻せない場合は理由と次の操作を返す。
+    """
+    branch_exists = (
+        _run_worktree_git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], worktree_path).returncode == 0
+    )
+    switch_args = ["switch", branch] if branch_exists else ["switch", "--track", "-c", branch, upstream_branch]
+    switch_command = f"git -C {worktree_path} {' '.join(switch_args)}"
+    retry = "解消後はprocess-loopが次の反復で再試行する"
+    if current is None:
+        head = _run_worktree_git(["rev-parse", "--verify", "HEAD"], worktree_path).stdout.strip()
+        where = f"切り離されたcommit {head[:12]}"
+        local_branch = _run_worktree_git(["for-each-ref", "--count=1", "--contains", "HEAD", "refs/heads"], worktree_path)
+        in_upstream = _run_worktree_git(["merge-base", "--is-ancestor", "HEAD", upstream_branch], worktree_path)
+        if not (local_branch.returncode == 0 and local_branch.stdout.strip()) and in_upstream.returncode != 0:
+            return (
+                f"既存worktreeのHEADが専用ブランチ`{branch}`ではなく{where}にあり、"
+                "そのcommitがローカルブランチにも上流にも含まれない",
+                f"`git -C {worktree_path} branch <退避先の名前> HEAD`でcommitを保存してから、"
+                f"`{switch_command}`で専用ブランチへ戻す。{retry}",
+            )
+    else:
+        where = f"`{current.ref}`"
+    if not _worktree_is_clean(worktree_path):
+        return (
+            f"既存worktreeのHEADが専用ブランチ`{branch}`ではなく{where}にあり、未commitの変更がある",
+            f"`git -C {worktree_path} status`で変更を確認してcommitするか退避し、"
+            f"`{switch_command}`で専用ブランチへ戻す。{retry}",
+        )
+    switched = _run_worktree_git(["-c", "submodule.recurse=false", *switch_args], worktree_path)
+    if switched.returncode != 0:
+        failure = _failure_text(switch_args, worktree_path, switched)
+        return (
+            f"既存worktreeのHEADを専用ブランチ`{branch}`へ戻せなかった（{failure}）",
+            f"`git -C {worktree_path} status`と`git -C {worktree_path} worktree list`で状態を確認し、"
+            f"`{switch_command}`で専用ブランチへ戻す。{retry}",
+        )
+    print(f"既存worktreeのHEADが{where}にあったため、専用ブランチ{branch}へ戻しました: {worktree_path}")
+    return None
+
+
+def _write_sync_rebase_record(worktree_path: pathlib.Path, branch: str, upstream_branch: str) -> pathlib.Path | None:
+    """追随のrebaseを始める前に開始状態を記録し、記録のパスを返す。記録できない場合は`None`を返す。"""
+    paths = _git_paths(worktree_path, [_SYNC_REBASE_RECORD])
+    heads = _run_worktree_git(["rev-parse", "HEAD", f"{upstream_branch}^{{commit}}"], worktree_path).stdout.split()
+    if paths is None or len(heads) != 2:
+        return None
+    record = dict(zip(_REBASE_STATE_FILES, (f"refs/heads/{branch}", *heads), strict=True))
+    try:
+        atomic_file.atomic_write(paths[0], json.dumps(record) + "\n")
+    except OSError:
+        return None
+    return paths[0]
+
+
+def _recover_interrupted_sync_rebase(worktree_path: pathlib.Path) -> None:
+    """追随のrebaseが中断されたまま残っていれば、失うcommitと変更が無い場合に限り中止して開始前へ戻す。
+
+    常駐の停止はworkerとrebaseをまとめて止めるため、中止の処理が実行されないままrebaseが残る。
+    開始時の記録と状態ディレクトリが一致しないrebase（別の主体が開始したもの）、作業ツリーに変更や競合が残るもの、
+    競合を解消して続行した（元のcommitと変更内容が異なる）commitを含むものには触れず、後続の検証が報告する。
+    """
+    paths = _git_paths(worktree_path, [_SYNC_REBASE_RECORD, "rebase-merge"])
+    if paths is None or not paths[0].exists():
+        return
+    record_path, state_dir = paths
+    if not state_dir.is_dir():
+        # rebaseは完了したか、開始前に止まった。
+        record_path.unlink(missing_ok=True)
+        return
+    try:
+        recorded = json.loads(record_path.read_text(encoding="utf-8"))
+        state = {name: (state_dir / name).read_text(encoding="utf-8").strip() for name in _REBASE_STATE_FILES}
+    except OSError, ValueError:
+        return
+    branch_tip = _run_worktree_git(["rev-parse", "--verify", "--quiet", state["head-name"]], worktree_path).stdout.strip()
+    if recorded != state or branch_tip != state["orig-head"] or not _worktree_is_clean(worktree_path):
+        return
+    replayed = _run_worktree_git(["cherry", state["orig-head"], "HEAD", state["onto"]], worktree_path)
+    if replayed.returncode != 0 or any(line.startswith("+") for line in replayed.stdout.splitlines()):
+        return
+    if _run_worktree_git(["-c", "submodule.recurse=false", "rebase", "--abort"], worktree_path).returncode != 0:
+        return
+    record_path.unlink(missing_ok=True)
+    print(f"中断されていた追随のrebaseを中止し、開始前の状態へ戻しました: {worktree_path}")
 
 
 def branch_worktree_name(worktree_name: str, branch: str) -> str:
@@ -334,7 +535,10 @@ def _sync_worktree_with_upstream(
                     if switched.returncode:
                         raise ValueError(f"hook作成先のbranchを系統へ接続できない: {switched.stderr.strip()}")
                 elif current is None or current.ref != f"refs/heads/{branch}":
-                    switched = _run_worktree_git(["-c", "submodule.recurse=false", "switch", "-c", branch], worktree_path)
+                    # hookは`--detach`でブランチを作らないため、系統なしでも上流を追跡先にして専用ブランチを作る。
+                    switched = _run_worktree_git(
+                        ["-c", "submodule.recurse=false", "switch", "--track", "-c", branch, upstream_branch], worktree_path
+                    )
                     if switched.returncode:
                         raise ValueError(f"hook作成先のbranchを接続できない: {switched.stderr.strip()}")
                 created = subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -355,7 +559,7 @@ def _sync_worktree_with_upstream(
             )
             return None
         created_worktree = True
-    elif not _validate_existing_worktree(local_path, worktree_path, branch):
+    elif not _validate_existing_worktree(local_path, worktree_path, branch, upstream_branch):
         return None
     if created_worktree:
         if not worktree_path.is_dir():
@@ -376,8 +580,19 @@ def _sync_worktree_with_upstream(
                 next_action=_fetch_failure_next_action(worktree_path, upstream_remote),
             )
             return None
-    rebase = _run_worktree_git(["-c", "submodule.recurse=false", "rebase", upstream_branch], worktree_path)
+    record = _write_sync_rebase_record(worktree_path, branch, upstream_branch)
+    if record is None:
+        _warn_worktree_preparation_failure(
+            "追随のrebaseの開始状態を記録できなかった", worktree_path, next_action=_worktree_status_next_action(worktree_path)
+        )
+        return None
+    # apply backendはHEADを切り離してから状態ディレクトリを作るため、その間に中断されると開始状態を記録と比べられない。
+    # merge backendは状態ディレクトリを先に作るので、中断後も次の反復が開始状態を記録と比べて元へ戻せる。
+    rebase = _run_worktree_git(
+        ["-c", "submodule.recurse=false", "-c", "rebase.backend=merge", "rebase", upstream_branch], worktree_path
+    )
     if rebase.returncode == 0:
+        record.unlink(missing_ok=True)
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
         if _worktree_is_clean(worktree_path):
             return worktree_path
@@ -386,6 +601,15 @@ def _sync_worktree_with_upstream(
         )
         return None
     _run_worktree_git(["-c", "submodule.recurse=false", "rebase", "--abort"], worktree_path)
+    remaining = _git_paths(worktree_path, ["rebase-merge"])
+    if remaining is None or remaining[0].exists():
+        _next_action.report(
+            f"worktreeの{upstream_branch}への追随に失敗し、rebaseも中止できなかったため実装セッションを起動しません"
+            f"（{rebase.stderr.strip()}）。",
+            next_action=_operation_next_action(worktree_path, "rebase", "-c submodule.recurse=false rebase"),
+        )
+        return None
+    record.unlink(missing_ok=True)
     _next_action.report(
         f"worktreeの{upstream_branch}への追随に失敗したため実装セッションを起動しません（{rebase.stderr.strip()}）。"
         "rebaseは中止した。解消後はprocess-loopが次の反復で再試行する。",

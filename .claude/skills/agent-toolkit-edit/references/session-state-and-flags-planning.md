@@ -30,9 +30,9 @@ run-skillが保持する元の実行入力・会話・時間予算は、[共有�
 
 ## plan系
 
-- `plan_mode_skill_invoked`: write-planスキルの起動を記録し、計画ファイルの構造に対する自動チェックを適用するかどうかの判定に使用する
+- `plan_mode_skill_invoked`: `atk run-script plan-create`の成功を記録し、計画ファイルの構造に対する自動チェックを適用するかどうかの判定に使用する
 - `current_plan_file_path`: PostToolUseが、計画ファイルの編集時や公開された計画作成コマンドの出力からファイルパスを記録する。
-  PreToolUse(Skill)がwrite-plan起動時にこの値を消去する。
+  `atk run-script plan-create`の成功時は、その出力が示す新しい計画のパスで置き換える。
   UserPromptSubmitのコマンドhookがセッション名を選択する際にこのパスを参照する
 - `last_hook_session_title`: UserPromptSubmitのコマンドhookが設定したセッション名。
   現在のセッション名が空であるか、この値と一致している場合に限り、新しい種別や計画名への更新を許可する。

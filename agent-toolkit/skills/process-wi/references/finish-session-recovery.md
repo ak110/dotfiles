@@ -10,13 +10,13 @@
 
  確認済みのpush、全体検証、バージョン更新、生成物同期、公開後操作、およびWIの採否確定の各到達点を保持し、残されたCI判定や公開後操作を公開工程の未完了事項として扱う。
 成功済みの公開後操作もそのまま保持する。
- 回復、確認、個別UWIの保存と回答を要する未終了項目の保留は、`agent-toolkit:commit`の`references/publish.md`「公開工程の続行不能からの再開」に従って行う。
+ 回復、確認、個別UWIの保存と回答を要する未終了項目の保留は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能からの再開」に従って行う。
  全体検証の失敗が含まれる場合は`termination-ci-failure.md`へ引き渡し、CI未判定の解消のみをもって全体成功とみなさない。
 
 **22.** 公開担当の引き継ぎ記録で再開位置と証拠を管理する。
 関連計画があれば`atk plans checkout`後に`atk run-script plan-progress --`で進捗を記録し、`atk plans commit`で保存する。
 
- 計画が存在しない場合は、`agent-toolkit:commit`の`references/publish.md`「公開工程の続行不能からの再開」に従い、再開記録と必要な証拠を公開工程を扱う未終了AWIの本文へ保存し、個別のUWIと対応付ける。
+ 計画が存在しない場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能からの再開」に従い、再開記録と必要な証拠を公開工程を扱う未終了AWIの本文へ保存し、個別のUWIと対応付ける。
 該当するAWIが存在しない場合は、同資料の手順に沿って新規登録する。
 引き継ぎ記録は同一セッション内での情報受け渡しに用いる。
  未終了の元項目に対しては、公開先、コミット、確認済み工程、成功済みの公開後操作、CI結果、失敗した操作と対象、不足している前提条件、baseline・保存出力・UWIの配置場所、および再開位置を`atk wi edit --append`で追記する。
@@ -32,7 +32,7 @@
 
 ## 公開状態の検収と再起動
 
-**24.** report-completionによる報告の前に、公開状態の4項目（`agent-toolkit:commit`の`references/push-and-ci.md`）が確実に検収されているかを確認する。
+**24.** report-completionによる報告の前に、公開状態の4項目（`agent-toolkit:atk-mode/playbooks/publish.md`）が確実に検収されているかを確認する。
 短絡処理時の検収、または`session-termination.parent.md`「受領と検収」で得られた4項目は、主作業ツリーや対象参照を変更する操作、あるいは外部からの更新が間に発生していなければそのまま利用し、それ以外の場合は現在のGit状態から改めて取得し直す。
 公開担当が返却した`ベースbranchの状態`のみをもって検収済みとみなさない。
 

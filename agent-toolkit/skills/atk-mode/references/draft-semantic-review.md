@@ -2,7 +2,7 @@
 
 WIの原稿を保存する前に、その意味を確かめる観点である。
 通常AWIと、報告用を除くUWIに当てる。
-報告用UWIは`agent-toolkit:report-completion/references/report-formats-uwi.md`「報告用UWIの確認と保存」と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。
+報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。
 
 本書を使うのは、付随型の委譲元、専念型の投入前レビュー担当、直接起草するメインである。
 レビューの一般の基準（原要求から期待する結果を先に定める、WIの品質水準を意味の正確さと引き継ぎ可能性とする、など）は`agent-basics:review-standards`「判断の初動」「文章成果物の実害」に従う。
@@ -85,7 +85,7 @@ WIの原稿を保存する前に、その意味を確かめる観点である。
    - 確定した原要求の対象・時点・結果と、原稿の対象ごとの結論と証拠の母集団を比べる。
      今回の対象ごとの検討の完了は、将来の確認方針ではなく対象ごとの結論で判定する。
    - 原稿が課す操作上の制約が、原文で指定された工程に対応するかを確かめる。
-   - 原文と反映内容を`agent-toolkit:/share/writing-operations.md`「ユーザー入力素材の取扱い」に従って読み比べ、要求の脱落・追加・意味の変化を確かめる。
+   - 原文と反映内容を`agent-basics:writing-standards/references/writing-genres.md`「ユーザー入力素材の取扱い」に従って読み比べ、要求の脱落・追加・意味の変化を確かめる。
      認可や解釈のために出所を取得し直す場合は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「出所と観測の取得」に従い、取得済みの出所ファイルと記録位置を先に使う。
      通常の転記は取得済みの原文で確かめる。
    - 任意の節や引用位置の記録が無いこと、`wi-quote-check`を実行していないことだけを理由に差し戻さない。

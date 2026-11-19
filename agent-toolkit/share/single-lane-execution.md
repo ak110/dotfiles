@@ -21,9 +21,8 @@
 | 実行レビュー担当を起動する前 | `exec-review-parent-launch.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/exec-review-parent-launch.md` |
 | 実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review-parent-acceptance.md`、`exec-review-parent-existing-defects.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-parent-acceptance.md`、`read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` |
 | レビュー指摘の修正と管理表の保存に着手する前 | `exec-review-parent-correction.md` | | |
-| 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` | | |
+| 未コミット検証の実行前と検証結果の記録前、受入確認と通常検証を比較する前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/usability-review.parent.md` |
-| 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` | | |
 | レビュー指摘への対応を開始する前 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` | | |
 | レーン専用資源を使い統合前の検収を行う前（操作対象外: 自身の成果物・評価方法の検討） | `exec.parent.md`、`exec-parent-integration.md` | | |
 | レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` | | |
@@ -47,17 +46,17 @@ process-wiにおける専用資源の作成、統合、回収には既存のlane
 
 実行レビューの起動と返却後の検収、および既存不良の受領は`exec-review.parent.md`に従う。
 
-1. AWIごとに`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」で計画の要否を判定し、計画が要るAWIは計画の起草、自己監査、および計画構造の自動チェックを、要らないAWIは計画なしの準備を完了する。
+1. AWIごとに`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」で計画の要否を判定し、計画が要るAWIは計画の起草、自己監査、および計画構造の自動チェックを、要らないAWIは計画なしの準備を完了する。
    どちらの場合も、採否の判定と既存認可への適合は自身で検収する。
    ユーザー固有の判断が必要な事項が残る場合は、委譲されたレーン担当者がメインエージェントへ直ちに通知し、直接実装を担当するメインエージェントは呼出側の確認手段を用いてユーザーへ確認する。
    実装を伴う項目は手順2〜4へ進み、実装やマージを伴わない項目は採否を確定した上で手順5へ進む。
 2. 計画またはWIの要求に基づき、実装前に受入シナリオの公開された呼び出し手段、入力と初期状態、有効な期待結果、検出する失敗を具体化する。
-   受入と通常検証の比較・実行単位・起動形は`verification-operations.md`に従って選び、実装、自己検収、commitを完了する。
+   受入と通常検証の比較・実行単位・起動形は`agent-toolkit:atk-mode/playbooks/verification.md`に従って選び、実装、自己検収、commitを完了する。
    レビュー修正にも適用し、不具合は同じ入力で再現してから修正する。
-   `検証結果`は`verification-evidence.md`に従って既存の引き継ぎ記録と進捗ログへ記録し、残る工程の担当と再開先も示す。
+   `検証結果`は`agent-toolkit:atk-mode/playbooks/verification.md`に従って既存の引き継ぎ記録と進捗ログへ記録し、残る工程の担当と再開先も示す。
    計画準備、実装開始、実装完了の各状態を保存し、同一の担当者が処理を継続する。
 3. 読込表に定める起動契約に従い、実装を担当していない実行レビュー担当者を起動する。
-   起動前に`verification-evidence.md`に従い、取得版、入力条件および要求別の観測箇所を同じ検証記録へ対応付ける。
+   起動前に`agent-toolkit:atk-mode/playbooks/verification.md`に従い、取得版、入力条件および要求別の観測箇所を同じ検証記録へ対応付ける。
    レビュー担当はその記録を独立に読み、保存済み成功の適用可否と、不足または影響差分に限った追加観測を判断する。
    レビュー指摘管理表の作成や完成条件証拠の受領確認は同書の規定に従う。
    画面差分が存在する場合は、読込表のユーザビリティレビュー契約に従ってレビュー担当者を起動する。
@@ -100,7 +99,7 @@ process-wiにおける専用資源の作成、統合、回収には既存のlane
 共有hookなど複数レーンの進行を妨げる不良は、解除に必要な最小範囲の修正を呼出側の即時対応契約へ渡し、同じレーンに属する無関係な全作業の終了と束ねて待たせない。
 独立文脈レビュー、所有権、必須検証と統合の直列化を維持する。
 
-後続へ渡す未コミット検証は、`verification-evidence-observation.md`「検証時本文の保存」に従い、実行前に本文を保存する。
+後続へ渡す未コミット検証は、`agent-toolkit:atk-mode/playbooks/verification.md`「検証時本文の保存」に従い、実行前に本文を保存する。
 返却前に保存物から実行時本文を再取得でき、返却対象への適用理由が記録されていることを確かめる。
 欠落や実行中の変更も同節に従って扱う。
 
@@ -114,9 +113,3 @@ process-wiにおける専用資源の作成、統合、回収には既存のlane
 複数レーンで開始した実行は、途中で稼働中のレーンが1つになった場合であっても、必ず`統合許可`を得てから統合を実行する。
 資源の寿命は`../skills/process-wi/references/lane-worktree-management.md`に従い、統合と消費工程の終了後に回収する。
 未統合の差分、dirtyな状態、稼働中の状態、所有主体が不明な成果物を確実に保持する。
-
-## 本文参照の取得条件
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 検証結果と手動観測の保存：手動観測の保存の基準を適用する前 | `verification-evidence-observation.md` |

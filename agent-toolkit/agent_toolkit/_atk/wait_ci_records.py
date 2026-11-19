@@ -95,7 +95,7 @@ _NEXT_ACTION_NO_RUNS = (
 )
 
 
-_NEXT_ACTION_NO_CI_CONFIG = "CI検収は不要として次の工程へ進む"
+_NEXT_ACTION_NO_CI_CONFIG = "CI定義なしとして、ローカル全体検証の成功と組にして次の工程へ進む"
 
 
 _NEXT_ACTION_CI_EXCLUDED = "ローカル全体検証の成功を確認し、CI実行対象外の証拠と合わせて公開判定へ進む"

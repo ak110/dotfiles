@@ -5,6 +5,7 @@
 directory型marketplaceでは、原本と導入先の配布内容が一致していれば同版の`plugin install`を省く。
 開発用の仮想環境や`__pycache__`などを比較から除き、原本の編集や導入先の欠落は次回の再同期対象にする。
 agents_serverのウォームアップでは依存検査を毎回行い、コードと起動条件が前回成功時と同じ場合だけMCPの起動確認を省く。
+UACの管理者承認モードのWindowsで昇格したプロセスから実行した回は、管理サービスの起動確認と公開を省いて成功記録も残さず、次の非昇格の実行で行う（[design-windows-permissions.md](design-windows-permissions.md)）。
 成功記録はOSのユーザーキャッシュ領域の`dotfiles/post-apply/`に処理ごとの固定ファイルとして保存する。
 読めない記録は再処理で回復し、古い記録は次の成功時に置き換える。
 各工程の所要時間は通常のpost-apply出力と`update-dotfiles logs`で確認できる。

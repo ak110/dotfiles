@@ -8,8 +8,9 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 
 検出対象スキルと対応フラグ:
 
-- Codexのwrite-plan → `plan_mode_skill_invoked`
 - process-wi → `process_wi_skill_invoked`
+
+計画の工程の開始（`plan_mode_skill_invoked`）は、全ホストでPostToolUseが`atk run-script plan-create`の成功から記録する。
 
 セッション名はUserPromptSubmitのコマンドhookが通常状態から設定する。
 
@@ -49,7 +50,6 @@ from agent_toolkit._hooks.notice import begin_delivery, emit_response, informati
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _PLAN_MODE_SKILL_NAMES,
     _PROCESS_WI_SKILL_NAMES,
     content_notices,
 )
@@ -69,7 +69,7 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
 )
 lazy from agent_toolkit._hooks import command_timing, session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
-lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
@@ -84,7 +84,6 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
 
 
 # スラッシュコマンド起動時にも検出できるように、フルネームと短縮名の両方を含む拡張集合を組み立てる。
-_PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
 _PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 
 # ホスト判定後の手動コマンドから<name>を抽出する。
@@ -134,13 +133,6 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
     if automated_prompt.contains(prompt):
         return True
     return _is_harness_message(prompt)
-
-
-def _set_plan_mode_invoked(state: dict) -> dict | None:
-    if state.get("plan_mode_skill_invoked", False):
-        return None
-    state["plan_mode_skill_invoked"] = True
-    return state
 
 
 def _set_process_wi_invoked(state: dict) -> dict | None:
@@ -290,10 +282,6 @@ def main(payload_text: str) -> int:
                 session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
 
             # 対応スキル別にフラグを設定する。
-            if (is_codex or is_antigravity_payload(payload)) and (
-                name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES
-            ):
-                update_state(session_id, _set_plan_mode_invoked)
             if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
                 update_state(session_id, _set_process_wi_invoked)
 

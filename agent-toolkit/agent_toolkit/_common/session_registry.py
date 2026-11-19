@@ -24,7 +24,7 @@ import re
 from collections.abc import Generator, Sequence
 from typing import Any, Literal
 
-from agent_toolkit._common import file_lock, reclaim_records, registry_forwarding, session_layout
+from agent_toolkit._common import file_lock, private_directory, reclaim_records, registry_forwarding
 from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
@@ -79,7 +79,7 @@ def set_owner_server_instance(instance_id: str | None) -> None:
 
 
 def owner_server_instance() -> str | None:
-    """登録簿を書くagents_serverの起動単位を返す。stdio起動していないプロセスでは`None`を返す。"""
+    """登録簿を書くagents_serverの起動単位を返す。起動単位を設定していないプロセスでは`None`を返す。"""
     selected = registry_forwarding.identity()
     return _OWNER_SERVER_INSTANCE if selected is None else selected.server_instance
 
@@ -271,7 +271,7 @@ def registry_lock(session_id: str, *, state_root: pathlib.Path | None = None) ->
     """公開・比較更新・掃引をsession単位で直列化する。ロック実体は削除せず同じinodeを共有する。"""
     _validate_session_id(session_id)
     directory = registry_directory(state_root) / ".locks"
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
     with (directory / f"{session_id}.lock").open("a+", encoding="utf-8") as handle:
         file_lock.acquire_lock(handle)
         try:
@@ -459,54 +459,6 @@ def _preserve_launch_info(current: LaunchInfo, previous: LaunchInfo) -> LaunchIn
 _recorded_launcher = _session_launchers.read_launcher
 
 
-def child_session_ids(launcher_session_id: str, *, state_root: pathlib.Path | None = None) -> tuple[str, ...]:
-    """保存済みの直接の親子関係から、同じ親が起動した子の識別子を返す。"""
-    _validate_session_id(launcher_session_id)
-    return tuple(
-        sorted(
-            path.stem
-            for path in registry_directory(state_root).glob("*.json")
-            if _SESSION_ID_PATTERN.fullmatch(path.stem) and _recorded_launcher(path) == launcher_session_id
-        )
-    )
-
-
-def pending_session_ids(state_root: pathlib.Path | None = None) -> set[str]:
-    """復旧を要する会話と未回収結果、およびそれらの依頼を保持する親の識別子を返す。"""
-    records = {
-        path.stem: path for path in registry_directory(state_root).glob("*.json") if _SESSION_ID_PATTERN.fullmatch(path.stem)
-    }
-    pending: set[str] = set()
-    for identifier in records:
-        resolution = resolve(identifier, state_root=state_root)
-        if resolution.state is Resolution.RUNNING or resolution.interruption in (OWNER_PROCESSES_EXITED, OWNER_SERVER_STOPPED):
-            pending.add(identifier)
-    for root in session_layout.list_root_session_ids(state_root, strict=True):
-        pending.update(
-            path.stem
-            for path in session_layout.results_directory(root, state_root).glob("*.json")
-            if _SESSION_ID_PATTERN.fullmatch(path.stem)
-        )
-        for path in (session_layout.status_directory(root, state_root) / "wait-results").glob("*/*.json"):
-            run = _read_payload(path)
-            targets = run.get("targets")
-            if run.get("status") in {"running", "published"} and isinstance(targets, list):
-                pending.update(
-                    identifier
-                    for identifier in targets
-                    if isinstance(identifier, str) and _SESSION_ID_PATTERN.fullmatch(identifier)
-                )
-    ancestors = list(pending)
-    while ancestors:
-        identifier = ancestors.pop()
-        path = records.get(identifier)
-        parent = _recorded_launcher(path) if path is not None else None
-        if parent is not None and parent not in pending:
-            pending.add(parent)
-            ancestors.append(parent)
-    return pending
-
-
 def claim_resume(session_id: str, turn_seq: int, *, state_root: pathlib.Path | None = None) -> bool:
     """同じ終了turnの再開を1プロセスだけに予約し、ロックは起動前に解放する。
 
@@ -601,6 +553,11 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
         return SessionResolution(Resolution.MISSING)
     except OSError, UnicodeError, json.JSONDecodeError:
         return SessionResolution(Resolution.UNREADABLE)
+    return resolve_payload(session_id, payload)
+
+
+def resolve_payload(session_id: str, payload: Any) -> SessionResolution:
+    """読み込み済みのレコードを`resolve`と同じ規則で解決する。"""
     if (
         not isinstance(payload, dict)
         or payload.get("session_id") != session_id
@@ -855,19 +812,11 @@ def _proxy_owner_matches(payload: dict[str, Any], *, allow_claim: bool = False) 
     return not processes or identity.owner is not None and processes[0].compatible_with(identity.owner)
 
 
-def recorded_server_instances(state_root: pathlib.Path | None = None) -> set[str]:
-    """登録簿の全記録が参照する起動単位を返す。読めない記録は除く。"""
-    instances: set[str] = set()
-    try:
-        paths = tuple(registry_directory(state_root).glob("*.json"))
-    except OSError:
-        return instances
-    for path in paths:
-        payload = _read_payload(path)
-        instance = _recorded_server_instance(payload)
-        if instance is not None:
-            instances.add(instance)
-        instances.update(turn.server_instance for turn in _recorded_interrupted_turns(payload) if turn.server_instance)
+def payload_server_instances(payload: dict[str, Any]) -> set[str]:
+    """レコードが参照する所有サーバーの起動単位を、中断turnの履歴を含めて返す。"""
+    instances = {turn.server_instance for turn in _recorded_interrupted_turns(payload) if turn.server_instance}
+    if (instance := _recorded_server_instance(payload)) is not None:
+        instances.add(instance)
     return instances
 
 

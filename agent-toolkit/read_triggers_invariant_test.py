@@ -257,9 +257,9 @@ def test_writing_consumers_reach_split_material_without_obsolete_sections(consum
     ]
 
 
-def test_delegation_input_material_wrapper_reaches_quality_owner():
-    """WI起草等が使うtoolkit側の素材節も、移設した品質基準の本文へ到達する。"""
-    source = _PLUGIN_ROOT / "share/writing-operations.md"
+def test_toolkit_input_material_route_reaches_quality_owner():
+    """WI起草等が使うtoolkit側の入力素材の宣言が、品質基準の本文へ到達する。"""
+    source = _PLUGIN_ROOT / "share/read-trigger-bootstrap.md"
     target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/writing-genres.md"
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)

@@ -335,7 +335,7 @@ def _startup_input(record, monkeypatch, capsys, *, source="startup"):
     assert match is not None
     data = json.loads(html.unescape(match[1]))
     assert data == json.loads(raw)
-    assert "references/answer-transitions.md" in context and "agent-toolkit:report-completion" in context
+    assert "references/answer-transitions.md" in context and "playbooks/report-completion.md" in context
     if data["batch_manifest"]:
         assert "references/batch.md" in context
     return data
