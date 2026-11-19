@@ -15,7 +15,7 @@
             "description": "hookで資料本文を配送しない方針（docs/development/concepts-host-rules.md「Claude CodeとCodexの規範配置」）への違反を指摘する",
             "patterns": [
               "(本文|読取).{0,40}(配送|追加コンテキスト)|代替配送",
-              "方針|concepts-runtime"
+              "方針|concepts-host-rules"
             ]
           }
         ],
@@ -48,7 +48,7 @@
             "description": "hookで資料本文を配送しない方針への違反を指摘する",
             "patterns": [
               "(本文|資料).{0,40}配送|代替配送",
-              "方針|concepts-runtime"
+              "方針|concepts-host-rules"
             ]
           }
         ],
