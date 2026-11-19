@@ -20,7 +20,7 @@ from pytools._internal import (
     setup_cli_common,
     setup_codex_cli,
 )
-from pytools._internal._test_helpers import FakeEnvironmentRegistry, patch_windows_processes, windows_process
+from pytools._internal._test_helpers import FakeEnvironmentRegistry, npm_windows_shims, patch_windows_processes, windows_process
 from pytools.prune_codex_packages_test import _release
 
 _Call = tuple[list[str], dict[str, object]]
@@ -243,7 +243,8 @@ def _install_npm_codex(
     entrypoint.parent.mkdir(parents=True)
     entrypoint.write_text("", encoding="utf-8")
     (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
-    (prefix / "codex.cmd").write_text(f'@node "{entrypoint}" %*\n', encoding="utf-8")
+    for suffix, content in npm_windows_shims("node_modules/@openai/codex/bin/codex.js").items():
+        (prefix / f"codex{suffix}").write_text(content, encoding="utf-8", newline="")
     (prefix / "npm.cmd").write_text("", encoding="utf-8")
     monkeypatch.setenv("PATH", str(prefix))
     answers = {"prefix": prefix, "root": prefix / "node_modules"}

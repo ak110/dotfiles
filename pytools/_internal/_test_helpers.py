@@ -252,6 +252,42 @@ def windows_process(exe: str, *arguments: str, denied: Sequence[str] = ()) -> ty
     return types.SimpleNamespace(**{key: reader(key, value) for key, value in values.items()})
 
 
+def npm_windows_shims(target: str) -> dict[str, str]:
+    """Windowsのグローバル導入でnpm 11.20.0（cmd-shim 8）がprefix直下に生成する起動スクリプトを、拡張子ごとに返す。
+
+    `target`はprefixから見た、`#!/usr/bin/env node`で始まるbinの実体の相対パス（`/`区切り）。
+    本文は実物のnpmが生成したものとバイト単位で同じである。
+    """
+    cmd_target = target.replace("/", "\\")
+    cmd = (
+        "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\n"
+        'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n'
+        "  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\n"
+        f'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\{cmd_target}" %*\r\n'
+    )
+    sh = (
+        "#!/bin/sh\n"
+        'basedir=$(dirname "$(echo "$0" | sed -e \'s,\\\\,/,g\')")\n\n'
+        "case `uname` in\n    *CYGWIN*|*MINGW*|*MSYS*)\n        if command -v cygpath > /dev/null 2>&1; then\n"
+        '            basedir=`cygpath -w "$basedir"`\n        fi\n    ;;\nesac\n\n'
+        f'if [ -x "$basedir/node" ]; then\n  exec "$basedir/node"  "$basedir/{target}" "$@"\n'
+        f'else \n  exec node  "$basedir/{target}" "$@"\nfi\n'
+    )
+    ps1_branches = (
+        "  # Support pipeline input\n  if ($MyInvocation.ExpectingInput) {\n"
+        f'    $input | & {prog}  "$basedir/{target}" $args\n'
+        f'  }} else {{\n    & {prog}  "$basedir/{target}" $args\n  }}\n  $ret=$LASTEXITCODE\n'
+        for prog in ('"$basedir/node$exe"', '"node$exe"')
+    )
+    ps1 = (
+        "#!/usr/bin/env pwsh\n$basedir=Split-Path $MyInvocation.MyCommand.Definition -Parent\n\n"
+        '$exe=""\nif ($PSVersionTable.PSVersion -lt "6.0" -or $IsWindows) {\n'
+        "  # Fix case when both the Windows and Linux builds of Node\n  # are installed in the same directory\n"
+        '  $exe=".exe"\n}\n$ret=0\nif (Test-Path "$basedir/node$exe") {\n' + "} else {\n".join(ps1_branches) + "}\nexit $ret\n"
+    )
+    return {"": sh, ".cmd": cmd, ".ps1": ps1}
+
+
 class FakeEnvironmentRegistry:
     """`winutils`のレジストリ読み書きを置き換える、ユーザー側とシステム側の環境変数の記憶域。
 

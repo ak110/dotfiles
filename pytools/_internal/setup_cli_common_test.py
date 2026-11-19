@@ -2,6 +2,7 @@
 
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import types
@@ -13,7 +14,83 @@ import psutil
 import pytest
 
 from pytools._internal import setup_cli_common
-from pytools._internal._test_helpers import patch_windows_processes, windows_process
+from pytools._internal._test_helpers import npm_windows_shims, patch_windows_processes, windows_process
+
+
+class _GlobalNpm:
+    """npmのグローバル導入先と、そこへnpmが導入した`@openai/codex`。
+
+    `run`は`run_subprocess`の代わりにnpmの照会と`uninstall`へ答える。`uninstall`は実物のnpmと同じく、
+    パッケージと、binの名前の起動スクリプト（Windowsはprefix直下の`codex`・`codex.cmd`・`codex.ps1`、
+    POSIXは`bin/codex`）を、中身を確かめずに削除する。
+    """
+
+    def __init__(self, prefix: Path, *, windows: bool, uninstall_returncode: int = 0) -> None:
+        self.windows = windows
+        self.prefix = prefix
+        self.root = prefix / "node_modules" if windows else prefix / "lib" / "node_modules"
+        self.bin_dir = prefix if windows else prefix / "bin"
+        self.package = self.root / "@openai" / "codex"
+        self.npm = self.bin_dir / ("npm.cmd" if windows else "npm")
+        self.launchers = [self.bin_dir / f"codex{suffix}" for suffix in (("", ".cmd", ".ps1") if windows else ("",))]
+        self.uninstall_returncode = uninstall_returncode
+        self.uninstalls: list[list[str]] = []
+        entrypoint = self.package / "bin" / "codex.js"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+        (self.package / "package.json").write_text('{"name":"@openai/codex","bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
+        self.bin_dir.mkdir(exist_ok=True)
+        self.npm.write_text("", encoding="utf-8")
+        if windows:
+            for suffix, content in npm_windows_shims("node_modules/@openai/codex/bin/codex.js").items():
+                (self.bin_dir / f"codex{suffix}").write_text(content, encoding="utf-8", newline="")
+        else:
+            (self.bin_dir / "codex").symlink_to(Path("../lib/node_modules/@openai/codex/bin/codex.js"))
+
+    def run(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        if command[1:] == ["prefix", "--global"]:
+            return subprocess.CompletedProcess(command, 0, f"{self.prefix}\n", "")
+        if command[1:] == ["root", "--global"]:
+            return subprocess.CompletedProcess(command, 0, f"{self.root}\n", "")
+        assert command == [str(self.npm), "uninstall", "--global", "@openai/codex"], command
+        self.uninstalls.append(command)
+        if self.uninstall_returncode:
+            return subprocess.CompletedProcess(command, self.uninstall_returncode, "", "npm ERR! EBUSY")
+        shutil.rmtree(self.package)
+        for launcher in self.launchers:
+            launcher.unlink(missing_ok=True)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    def removal(self) -> str:
+        """警告が示す、旧npm版の削除コマンド。"""
+        if self.windows:
+            return f"PowerShellで`& '{self.npm}' uninstall --global @openai/codex`を実行"
+        return f'`"{self.npm}" uninstall --global @openai/codex`を実行'
+
+
+def _install_global_npm(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    windows: bool,
+    processes: list[object] | None = None,
+    uninstall_returncode: int = 0,
+) -> _GlobalNpm:
+    """npmでグローバルに導入した旧版のCodexを、PATHで見つかる状態にする。Windowsでは`processes`が動いている。"""
+    if windows:
+        patch_windows_processes(monkeypatch, processes or [])
+    else:
+        monkeypatch.setattr(setup_cli_common.sys, "platform", "linux")
+    npm = _GlobalNpm(tmp_path / "npm", windows=windows, uninstall_returncode=uninstall_returncode)
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", npm.run)
+    monkeypatch.setenv("PATH", str(npm.bin_dir))
+    return npm
+
+
+def _migrate(tmp_path: Path, *, windows: bool) -> bool:
+    canonical = tmp_path / "dotfiles" / "bin" / ("codex.cmd" if windows else "codex")
+    return setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, tmp_path / "standalone")
 
 
 @pytest.mark.parametrize("stderr", ["npm ERR! permission denied", ""])
@@ -170,42 +247,22 @@ def test_prepend_path_moves_existing_entry_to_front(monkeypatch, tmp_path: Path)
 
 
 @pytest.mark.parametrize("uninstall_returncode", [0, 1])
-def test_migrate_npm_launchers_removes_only_owned_symlink(monkeypatch, tmp_path: Path, uninstall_returncode: int) -> None:
-    canonical_prefix = tmp_path / "canonical"
-    canonical = canonical_prefix / "bin" / "codex"
+def test_posix_migrate_removes_npm_version_linked_by_npm(monkeypatch, tmp_path: Path, uninstall_returncode: int) -> None:
+    """POSIXのnpmが`bin/codex`に作るシンボリックリンクから旧npm版を削除し、削除に失敗した場合は旧版を残して失敗を返す。"""
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=False, uninstall_returncode=uninstall_returncode)
+    canonical = tmp_path / "standalone" / "bin" / "codex"
     canonical.parent.mkdir(parents=True)
     canonical.write_text("", encoding="utf-8")
-    old_bin = tmp_path / "old" / "bin"
-    package = tmp_path / "old" / "lib" / "node_modules" / "@openai" / "codex"
-    package.mkdir(parents=True)
-    entry = package / "bin" / "codex.js"
-    entry.parent.mkdir()
-    entry.write_text("", encoding="utf-8")
-    launcher = old_bin / "codex"
-    old_bin.mkdir(parents=True)
-    launcher.symlink_to(entry)
-    npm = old_bin / "npm"
-    npm.write_text("", encoding="utf-8")
-    monkeypatch.setenv("PATH", os.pathsep.join([str(canonical.parent), str(old_bin)]))
-    calls: list[list[str]] = []
-
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        del kwargs
-        calls.append(command)
-        if command[1:3] == ["prefix", "--global"]:
-            return subprocess.CompletedProcess(command, 0, f"{tmp_path / 'old'}\n", "")
-        if command[1:3] == ["root", "--global"]:
-            return subprocess.CompletedProcess(command, 0, f"{tmp_path / 'old/lib/node_modules'}\n", "")
-        return subprocess.CompletedProcess(command, uninstall_returncode, "", "failed")
-
-    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(canonical.parent), str(npm.bin_dir)]))
 
     if uninstall_returncode:
         with pytest.raises(RuntimeError):
-            setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, canonical_prefix)
+            _migrate(tmp_path, windows=False)
     else:
-        assert setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, canonical_prefix)
-    assert calls[-1] == [str(npm), "uninstall", "--global", "@openai/codex"]
+        assert _migrate(tmp_path, windows=False)
+    assert len(npm.uninstalls) == 1
+    assert npm.package.is_dir() is bool(uninstall_returncode)
+    assert (npm.bin_dir / "codex").is_symlink() is bool(uninstall_returncode)
 
 
 def test_migrate_npm_launchers_searches_extra_directories_once(monkeypatch, tmp_path: Path) -> None:
@@ -220,6 +277,7 @@ def test_migrate_npm_launchers_searches_extra_directories_once(monkeypatch, tmp_
     entrypoint = package / "bin" / "codex.js"
     entrypoint.parent.mkdir(parents=True)
     entrypoint.write_text("", encoding="utf-8")
+    (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
     nvm_bin.mkdir(exist_ok=True)
     (nvm_bin / "codex").symlink_to(entrypoint)
     npm = nvm_bin / "npm"
@@ -339,6 +397,7 @@ def test_migrate_reports_why_package_ownership_is_unconfirmed(
     package_dir = root.resolve() / "@openai" / "codex"
     if scenario == "not-symlink":
         package_dir.mkdir(parents=True)
+        (package_dir / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
     monkeypatch.setenv("PATH", str(old_bin))
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -402,8 +461,8 @@ def test_migrate_excludes_callers_own_wrappers_from_retention_warning(
     assert any(str(legacy) in message for message in caplog.messages)
 
 
-@pytest.mark.parametrize("launcher_kind", ["cmd", "mise"])
-def test_migrate_windows_owned_launchers(monkeypatch, tmp_path: Path, launcher_kind: str) -> None:
+def test_migrate_windows_mise_shim_resolving_to_npm_package(monkeypatch, tmp_path: Path) -> None:
+    """npmの起動スクリプトの外にある`codex.exe`は、miseの解決先がnpm版のパッケージ配下の場合に移行の根拠とする。"""
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
     old_bin = tmp_path / "old"
     old_bin.mkdir()
@@ -412,17 +471,9 @@ def test_migrate_windows_owned_launchers(monkeypatch, tmp_path: Path, launcher_k
     root = tmp_path / "prefix" / "node_modules"
     package = root / "@openai" / "codex"
     package.mkdir(parents=True)
-    if launcher_kind == "cmd":
-        launcher = old_bin / "codex.cmd"
-        entrypoint = package / "bin" / "codex.js"
-        entrypoint.parent.mkdir()
-        entrypoint.write_text("", encoding="utf-8")
-        (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
-        launcher.write_text(f'@node "{entrypoint}"\n', encoding="utf-8")
-    else:
-        launcher = old_bin / "codex.exe"
-        launcher.write_bytes(b"shim")
-        monkeypatch.setattr(setup_cli_common.shutil, "which", lambda name: "C:/mise.exe" if name == "mise" else None)
+    (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
+    (old_bin / "codex.exe").write_bytes(b"shim")
+    monkeypatch.setattr(setup_cli_common.shutil, "which", lambda name: "C:/mise.exe" if name == "mise" else None)
     monkeypatch.setenv("PATH", str(old_bin))
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -459,140 +510,116 @@ def test_windows_migrate_keeps_npm_package_while_it_may_be_running(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, running: str, removed: bool
 ) -> None:
     """Windowsでは、削除するnpm版から起動したプロセスか、その可能性を否定できないプロセスがある間は削除しない。"""
-    old_bin = tmp_path / "old"
-    old_bin.mkdir()
-    npm = old_bin / "npm.cmd"
-    npm.write_text("", encoding="utf-8")
-    root = tmp_path / "prefix" / "node_modules"
-    package = root / "@openai" / "codex"
-    entrypoint = package / "bin" / "codex.js"
-    entrypoint.parent.mkdir(parents=True)
-    entrypoint.write_text("", encoding="utf-8")
-    (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
-    (old_bin / "codex.cmd").write_text(f'@node "{entrypoint}"\n', encoding="utf-8")
-    monkeypatch.setenv("PATH", str(old_bin))
+    entrypoint = tmp_path / "npm" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
     process = {
         "npm-node": windows_process(_NODE, str(entrypoint)),
         "node-cmdline-denied": windows_process(_NODE, r"C:\Services\worker.js", denied=["cmdline"]),
         "npx-node": windows_process(_NODE, rf"{_NPX_CODEX}\bin\codex.js"),
         "update-loop": windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"),
     }[running]
-    patch_windows_processes(monkeypatch, [process])
-    calls: list[list[str]] = []
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=True, processes=[process])
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        del kwargs
-        calls.append(command)
-        output = {"prefix": tmp_path / "prefix", "root": root}.get(command[1], "")
-        return subprocess.CompletedProcess(command, 0, f"{output}\n", "")
-
-    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
-    canonical = tmp_path / "canonical"
-
-    assert setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical / "codex.cmd", canonical) is removed
-    assert [command for command in calls if "uninstall" in command] == (
-        [[str(npm), "uninstall", "--global", "@openai/codex"]] if removed else []
-    )
-    assert (f"旧npm版の移行を次回へ延期: {package}" in caplog.text) is not removed
-
-
-# npm 11.20.0がWindowsのグローバル導入でprefix直下に生成する起動スクリプト（行末の空白を除く）。
-_NPM_SH_LAUNCHER = r"""#!/bin/sh
-basedir=$(dirname "$(echo "$0" | sed -e 's,\\,/,g')")
-
-case `uname` in
-    *CYGWIN*|*MINGW*|*MSYS*)
-        if command -v cygpath > /dev/null 2>&1; then
-            basedir=`cygpath -w "$basedir"`
-        fi
-    ;;
-esac
-
-if [ -x "$basedir/node" ]; then
-  exec "$basedir/node"  "$basedir/node_modules/@openai/codex/bin/codex.js" "$@"
-else
-  exec node  "$basedir/node_modules/@openai/codex/bin/codex.js" "$@"
-fi
-"""
-_NPM_CMD_LAUNCHER = r"""@ECHO off
-GOTO start
-:find_dp0
-SET dp0=%~dp0
-EXIT /b
-:start
-SETLOCAL
-CALL :find_dp0
-
-IF EXIST "%dp0%\node.exe" (
-  SET "_prog=%dp0%\node.exe"
-) ELSE (
-  SET "_prog=node"
-  SET PATHEXT=%PATHEXT:;.JS;=;%
-)
-
-endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_modules\@openai\codex\bin\codex.js" %*
-"""
+    assert _migrate(tmp_path, windows=True) is removed
+    assert len(npm.uninstalls) == int(removed)
+    assert npm.package.is_dir() is not removed
+    assert (f"旧npm版の移行を次回へ延期: {npm.package.resolve()}" in caplog.text) is not removed
 
 
 @pytest.mark.parametrize(
-    ("scenario", "uninstalls", "warnings"),
+    ("scenario", "uninstall_returncode", "warnings"),
     [
         # 無関係なnodeの起動引数を読めず、旧npm版の実行を否定できない。
         ("deferred", 0, ["旧npm版の移行を次回へ延期"]),
-        ("removed", 1, []),
+        ("removed", 0, []),
         ("removal-failed", 1, ["旧npm版の削除に失敗"]),
-        # 拡張子なしの起動スクリプトが別のパッケージを指す場合は、従来どおり帰属を確認できず保持する。
-        ("foreign-sh-launcher", 1, ["npm packageへの帰属を確認できないため保持"]),
     ],
 )
-def test_windows_migrate_handles_launchers_npm_created_for_one_package_once(
-    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, scenario: str, uninstalls: int, warnings: list[str]
+def test_windows_migrates_three_npm_shims_as_one_package(
+    monkeypatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    scenario: str,
+    uninstall_returncode: int,
+    warnings: list[str],
 ) -> None:
-    """Windowsのnpmが1つのbinに作る`.cmd`とsh用の拡張子なしの起動スクリプトは、同じパッケージとして1回だけ移行する。
+    """Windowsのnpmが1つのbinに作る3本の起動スクリプトは、同じパッケージとして1回だけ判定して表示する。
 
     延期中に「保持したため対応不要」と「削除する」の矛盾する警告を並べない。
     削除コマンドは、推奨するPowerShell 7でそのまま実行できる形で示す。
     """
-    prefix = tmp_path / "npm"
-    package = prefix / "node_modules" / "@openai" / "codex"
-    (package / "bin").mkdir(parents=True)
-    (package / "bin" / "codex.js").write_text("", encoding="utf-8")
-    (package / "package.json").write_text('{"bin":{"codex":"bin/codex.js"}}', encoding="utf-8")
-    sh_package = "@other/cli" if scenario == "foreign-sh-launcher" else "@openai/codex"
-    (prefix / "codex").write_text(_NPM_SH_LAUNCHER.replace("@openai/codex", sh_package), encoding="utf-8")
-    (prefix / "codex.cmd").write_text(_NPM_CMD_LAUNCHER, encoding="utf-8")
-    npm = prefix / "npm.cmd"
-    npm.write_text("", encoding="utf-8")
-    monkeypatch.setenv("PATH", str(prefix))
     unrelated_node = windows_process(_NODE, r"C:\Services\worker.js", denied=["cmdline"])
-    patch_windows_processes(monkeypatch, [unrelated_node] if scenario == "deferred" else [])
-    calls: list[list[str]] = []
-
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        del kwargs
-        calls.append(command)
-        output = {"prefix": prefix, "root": prefix / "node_modules"}.get(command[1], "")
-        failed = scenario == "removal-failed" and command[1] == "uninstall"
-        return subprocess.CompletedProcess(command, 1 if failed else 0, f"{output}\n", "npm ERR! EBUSY")
-
-    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
+    npm = _install_global_npm(
+        monkeypatch,
+        tmp_path,
+        windows=True,
+        processes=[unrelated_node] if scenario == "deferred" else [],
+        uninstall_returncode=uninstall_returncode,
+    )
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
         try:
-            setup_cli_common.migrate_npm_launchers(
-                "codex", "@openai/codex", tmp_path / "dotfiles/bin/codex.cmd", tmp_path / "standalone"
-            )
+            _migrate(tmp_path, windows=True)
         except RuntimeError as error:
             assert scenario == "removal-failed", error
 
-    assert [command for command in calls if command[1] == "uninstall"] == [
-        [str(npm), "uninstall", "--global", "@openai/codex"]
-    ] * uninstalls
+    removed = scenario == "removed"
+    assert len(npm.uninstalls) == int(scenario != "deferred")
+    assert [launcher.exists() for launcher in npm.launchers] == [not removed] * 3
+    assert npm.package.is_dir() is not removed
     assert [[warning for warning in warnings if warning in message] for message in caplog.messages] == [
         [warning] for warning in warnings
     ]
-    removal = f"PowerShellで`& '{npm}' uninstall --global @openai/codex`を実行"
-    assert all(removal in message for message in caplog.messages if "旧npm版" in message)
+    assert all(npm.removal() in message for message in caplog.messages)
+
+
+_NPM_SHIMS = npm_windows_shims("node_modules/@openai/codex/bin/codex.js")
+_USER_FILES: dict[str, tuple[bool, str, str | bytes]] = {
+    # ユーザーが正規のCodexを`--profile work`で起動するよう置いたラッパー。
+    "windows-wrapper-cmd": (True, "codex.cmd", '@echo off\r\n"%USERPROFILE%\\.local\\bin\\codex.exe" --profile work %*\r\n'),
+    # npmが生成した起動スクリプトの起動行に、ユーザーが起動オプションを足したもの。
+    "windows-edited-cmd": (True, "codex.cmd", _NPM_SHIMS[".cmd"].replace('codex.js" %*', 'codex.js" --profile work %*')),
+    "windows-edited-sh-one-line": (
+        True,
+        "codex",
+        _NPM_SHIMS[""].replace(
+            'exec node  "$basedir/node_modules/@openai/codex/bin/codex.js" "$@"',
+            'exec node  "$basedir/node_modules/@openai/codex/bin/codex.js" --profile work "$@"',
+        ),
+    ),
+    "windows-user-ps1": (True, "codex.ps1", "& codex.exe --profile work @args\n"),
+    # 別のパッケージを起動するnpmの起動スクリプト。
+    "windows-foreign-sh": (True, "codex", npm_windows_shims("node_modules/@other/cli/bin/cli.js")[""]),
+    "windows-small-binary": (True, "codex", b"MZ\x90\x00" + bytes(60)),
+    # npmのシンボリックリンクを、同じ実体を起動オプション付きで起動するスクリプトへ置き換えたもの。
+    "posix-script": (False, "codex", '#!/bin/sh\nexec node "<package>/bin/codex.js" --profile work "$@"\n'),
+    "posix-small-binary": (False, "codex", b"\x7fELF\x02\x01\x01\x00" + bytes(56)),
+}
+
+
+@pytest.mark.parametrize("scenario", list(_USER_FILES))
+def test_migrate_keeps_user_files_that_npm_uninstall_would_remove(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, scenario: str
+) -> None:
+    """npmの`uninstall`がパッケージと一緒に消す同名のファイルにユーザーのファイルがあれば、旧npm版を自動では削除しない。
+
+    そのファイルと、旧npm版を削除する手順を、パッケージごとに1つの警告で示す。
+    """
+    windows, name, content = _USER_FILES[scenario]
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=windows)
+    user_file = npm.bin_dir / name
+    user_file.unlink()
+    data = content if isinstance(content, bytes) else content.replace("<package>", str(npm.package)).encode()
+    user_file.write_bytes(data)
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        changed = _migrate(tmp_path, windows=windows)
+
+    assert (user_file.read_bytes() if user_file.exists() else None) == data
+    assert not npm.uninstalls
+    assert not changed
+    assert len(caplog.messages) == 1, caplog.messages
+    assert f"{user_file.resolve()}（" in caplog.messages[0]
+    assert npm.removal() in caplog.messages[0]
 
 
 def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_path: Path) -> None:
@@ -630,12 +657,12 @@ def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_pat
 def test_migrate_windows_cmd_uses_package_json_bin(
     monkeypatch, tmp_path: Path, bin_json: str, referenced_name: str, expected: bool
 ) -> None:
+    """npmの起動スクリプトは、package.jsonのbinの名前と実体に合う参照だけを生成物とする。"""
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-    old_bin = tmp_path / "old"
-    old_bin.mkdir()
-    (old_bin / "npm.cmd").write_text("", encoding="utf-8")
-    launcher = old_bin / "codex.cmd"
-    root = tmp_path / "prefix" / "node_modules"
+    prefix = tmp_path / "prefix"
+    (prefix / "npm.cmd").parent.mkdir()
+    (prefix / "npm.cmd").write_text("", encoding="utf-8")
+    root = prefix / "node_modules"
     package = root / "@openai" / "codex"
     package.mkdir(parents=True)
     entrypoint = package / "bin" / "codex.js"
@@ -644,30 +671,24 @@ def test_migrate_windows_cmd_uses_package_json_bin(
     (package / "README.md").write_text("documentation", encoding="utf-8")
     outside = package.parent / "outside.js"
     outside.write_text("", encoding="utf-8")
-    (package / "package.json").write_text(f'{{"bin":{bin_json}}}', encoding="utf-8")
-    launcher.write_text(f'@node "{package / referenced_name}"\n', encoding="utf-8")
-    monkeypatch.setenv("PATH", str(old_bin))
+    (package / "package.json").write_text(f'{{"name":"@openai/codex","bin":{bin_json}}}', encoding="utf-8")
+    shim = npm_windows_shims(f"node_modules/@openai/codex/{referenced_name}")[".cmd"]
+    (prefix / "codex.cmd").write_text(shim, encoding="utf-8", newline="")
+    monkeypatch.setenv("PATH", str(prefix))
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
-        if command[1] == "prefix":
-            output = tmp_path / "prefix"
-        elif command[1] == "root":
-            output = root
-        else:
-            return subprocess.CompletedProcess(command, 0, "", "")
+        output = {"prefix": prefix, "root": root}.get(command[1], "")
         return subprocess.CompletedProcess(command, 0, f"{output}\n", "")
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
-    if expected:
-        assert setup_cli_common.migrate_npm_launchers(
+    assert (
+        setup_cli_common.migrate_npm_launchers(
             "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
         )
-    else:
-        assert not setup_cli_common.migrate_npm_launchers(
-            "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
-        )
+        is expected
+    )
 
 
 @pytest.mark.parametrize("mise_target", ["other_package", "outside"])
@@ -879,25 +900,36 @@ def test_windows_cli_running_reads_current_generation(monkeypatch: pytest.Monkey
 
 
 def test_migrate_removes_npm_launchers_left_without_package(monkeypatch, tmp_path):
-    """本体の無いnpm起動スクリプトだけを削除し、本体のあるものと無関係のものは残す。"""
+    """本体の無いnpm起動スクリプトだけを削除し、本体のあるものと、ユーザーが置いたものは残す。"""
+    shims = npm_windows_shims("node_modules/@openai/codex/bin/codex.js")
     orphan = tmp_path / "orphan"
     orphan.mkdir()
-    for name in ("codex.ps1", "codex.cmd", "codex"):
-        (orphan / name).write_text('"$basedir/node_modules\\@openai\\codex\\bin\\codex.js"\n', encoding="utf-8")
+    for suffix, content in shims.items():
+        (orphan / f"codex{suffix}").write_text(content, encoding="utf-8", newline="")
     installed = tmp_path / "installed"
     (installed / "node_modules" / "@openai" / "codex").mkdir(parents=True)
-    (installed / "codex.ps1").write_text('"$basedir/node_modules/@openai/codex/bin/codex.js"\n', encoding="utf-8")
-    unrelated = tmp_path / "unrelated"
-    unrelated.mkdir()
-    (unrelated / "codex.ps1").write_text("& codex.exe @args\n", encoding="utf-8")
-    monkeypatch.setenv("PATH", os.pathsep.join(str(path) for path in (orphan, installed, unrelated)))
+    (installed / "codex.ps1").write_text(shims[".ps1"], encoding="utf-8", newline="")
+    user_files = {
+        "unrelated": ("codex.ps1", b"& codex.exe @args\n"),
+        # 本体の無いnpm版を起動行にユーザーが起動オプションを足して使っていたもの。
+        "edited": ("codex.cmd", shims[".cmd"].replace('codex.js" %*', 'codex.js" --profile work %*').encode()),
+        # npmの起動スクリプトの参照を含むが、テキストとして読めない実行ファイル。
+        "binary": ("codex", shims[""].encode() + b"\0"),
+    }
+    for directory, (name, data) in user_files.items():
+        (tmp_path / directory).mkdir()
+        (tmp_path / directory / name).write_bytes(data)
+    monkeypatch.setenv("PATH", os.pathsep.join(str(tmp_path / name) for name in ("orphan", "installed", *user_files)))
     canonical = tmp_path / "canonical"
 
     assert setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical / "codex.cmd", canonical)
 
     assert not any(orphan.iterdir())
     assert (installed / "codex.ps1").is_file()
-    assert (unrelated / "codex.ps1").is_file()
+    remaining = {directory: tmp_path / directory / name for directory, (name, _) in user_files.items()}
+    assert {directory: path.read_bytes() if path.exists() else None for directory, path in remaining.items()} == {
+        directory: data for directory, (_, data) in user_files.items()
+    }
 
 
 def test_migrate_keeps_large_file_named_like_launcher(monkeypatch, tmp_path):

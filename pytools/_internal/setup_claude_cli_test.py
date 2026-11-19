@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from pytools._internal import post_apply_outcome, setup_claude_cli, setup_cli_common
-from pytools._internal._test_helpers import patch_windows_processes, windows_process
+from pytools._internal._test_helpers import npm_windows_shims, patch_windows_processes, windows_process
 
 
 def test_run_updates_existing_native_and_migrates_after_verification(monkeypatch, tmp_path: Path) -> None:
@@ -183,7 +183,8 @@ def test_windows_defers_only_while_files_to_replace_are_in_use(
     package.mkdir(parents=True)
     (package / "cli.js").write_text("", encoding="utf-8")
     (package / "package.json").write_text('{"bin":{"claude":"cli.js"}}', encoding="utf-8")
-    (npm_prefix / "claude.cmd").write_text(f'@node "{package / "cli.js"}" %*\n', encoding="utf-8")
+    for suffix, content in npm_windows_shims("node_modules/@anthropic-ai/claude-code/cli.js").items():
+        (npm_prefix / f"claude{suffix}").write_text(content, encoding="utf-8", newline="")
     (npm_prefix / "npm.cmd").write_text("", encoding="utf-8")
     monkeypatch.setenv("PATH", str(npm_prefix))
     node = r"C:\Program Files\nodejs\node.exe"

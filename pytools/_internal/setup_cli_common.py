@@ -7,6 +7,7 @@ import json
 import locale
 import logging
 import os
+import posixpath
 import re
 import shutil
 import ssl
@@ -34,8 +35,15 @@ NPM_GLOBAL_LOCK = threading.Lock()
 
 _MAX_NPM_LAUNCHER_BYTES = 64 * 1024
 """npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。"""
-_NPM_LAUNCHER_BASES = ("$basedir", "%dp0%", "%~dp0")
-"""npmが生成する起動スクリプト（sh用の拡張子なし・`.ps1`・`.cmd`）が、自身のディレクトリを表す表記。"""
+_NPM_SHIM_REFERENCES = {
+    ".cmd": re.compile(r'"%(?:~dp0|dp0%)\\([^"]+)"(\s+%\*)?'),
+    ".ps1": re.compile(r'"\$basedir/([^"]+)"(\s+\$args)?'),
+    "": re.compile(r'"\$basedir/([^"]+)"(\s+"\$@")?'),
+}
+"""Windowsのnpm（cmd-shim）が生成する起動スクリプトの拡張子ごとの、自身のディレクトリからの参照と、直後で引数をそのまま渡す記述。
+
+npmが既存の起動スクリプトから参照先を読む規則（read-cmd-shim）と同じ表記である。
+"""
 
 
 def installer_ssl_verify(*, windows: bool) -> ssl.SSLContext | bool:
@@ -140,41 +148,78 @@ def migrate_npm_launchers(
     extra_search_directories: Iterable[Path] = (),
     excluded_launchers: Iterable[Path] = (),
 ) -> bool:
-    """PATHと追加の配置先にある帰属確認済み非正規npmパッケージを削除する。
+    """PATHと追加の配置先から見つかる非正規のnpm版を、npmの`uninstall`で削除する。
 
-    `canonical_launcher`はユーザーが使う正規の起動先で、移行の候補から除き、移行を延期した場合に起動先として案内する。
+    `canonical_launcher`はユーザーが使う正規の起動先で、移行の候補から除き、移行を見送った場合に起動先として案内する。
     `excluded_launchers`には呼出側自身が配置した起動管理を渡し、移行の候補と保持警告から除く。
+    npmの`uninstall`はパッケージと一緒に同名の起動スクリプトを中身を確かめずに削除するため、そのうち1つでも
+    npmの生成物と確かめられないパッケージは、そのファイルと削除の手順を示し、自動では削除しない。
     npmの導入先を照会できないパッケージと、Windowsでパッケージから起動したプロセスがあるパッケージは、その回は削除しない。
     """
     changed = _remove_orphan_npm_launchers(cli_name, package_name, extra_search_directories)
-    # Windowsのnpmは1つのbinに`.cmd`とsh用の拡張子なしの起動スクリプトを作るため、パッケージごとに1回だけ移行する。
-    migrated: set[Path] = set()
+    packages: dict[Path, _NpmPackage] = {}
+    # 削除は、起動先がパッケージから導入したものと確かめられたパッケージに限る。
+    launched: set[Path] = set()
     for launcher in _iter_noncanonical_launchers(
         cli_name,
         canonical_prefix,
         extra_search_directories=extra_search_directories,
         excluded_launchers=(canonical_launcher, *excluded_launchers),
     ):
-        try:
-            owner = _owning_npm_package(package_name, launcher)
-        except _NpmQueryError as error:
-            owner = (
-                f"npmの導入先を照会できないため旧npm版の移行を見送り: {launcher}（{error}）。"
-                "npmを修復してから`update-dotfiles`を再実行する"
-            )
-        if isinstance(owner, str):
-            logger.warning(log_format.format_status(cli_name, owner))
-            continue
-        npm, package_dir = owner
-        if package_dir in migrated:
-            continue
-        migrated.add(package_dir)
-        removal = format_user_command(npm, f"uninstall --global {package_name}")
-        if running := find_windows_cli_processes(cli_name, packages=(package_dir,)):
+        npm = _adjacent_npm(launcher.parent)
+        if npm is None:
             logger.warning(
                 log_format.format_status(
                     cli_name,
-                    f"旧npm版の移行を次回へ延期: {package_dir}。{describe_processes(running, '旧npm版')}。"
+                    f"同じディレクトリにnpmがないため保持: {launcher}。このランチャーが不要と確認できた場合だけ手動削除する",
+                )
+            )
+            continue
+        try:
+            package = _find_npm_package(npm, package_name)
+        except _NpmQueryError as error:
+            logger.warning(
+                log_format.format_status(
+                    cli_name,
+                    f"npmの導入先を照会できないため旧npm版の移行を見送り: {launcher}（{error}）。"
+                    "npmを修復してから`update-dotfiles`を再実行する",
+                )
+            )
+            continue
+        if isinstance(package, str):
+            logger.warning(log_format.format_status(cli_name, _unconfirmed_launcher_message(launcher, package)))
+            continue
+        packages[package.directory] = package
+        location = common.safe_resolve(launcher.parent) / launcher.name
+        if location in package.unconfirmed:
+            # 削除の見送りとして、パッケージごとに1つの警告で示す。
+            continue
+        if location in package.generated or _launcher_belongs_to_package(launcher, package, package_name):
+            launched.add(package.directory)
+        else:
+            reason = f"{package.directory}配下の実体ではない: {_launcher_kind(launcher)}"
+            logger.warning(log_format.format_status(cli_name, _unconfirmed_launcher_message(launcher, reason)))
+    for package in packages.values():
+        removal = format_user_command(package.npm, f"uninstall --global {package_name}")
+        if package.unconfirmed:
+            files = "、".join(f"{path}（{reason}）" for path, reason in package.unconfirmed.items())
+            logger.warning(
+                log_format.format_status(
+                    cli_name,
+                    f"旧npm版の自動削除を見送り: {package.directory}。"
+                    f"npmの`uninstall`がパッケージと一緒に削除する次のファイルを、npmの生成物と確かめられない: {files}。"
+                    f"必要なファイルを別の場所へ移してから、{removal}を実行して旧npm版を削除する。"
+                    f"削除するまでは`{canonical_launcher}`で更新済みの版を起動する",
+                )
+            )
+            continue
+        if package.directory not in launched:
+            continue
+        if running := find_windows_cli_processes(cli_name, packages=(package.directory,)):
+            logger.warning(
+                log_format.format_status(
+                    cli_name,
+                    f"旧npm版の移行を次回へ延期: {package.directory}。{describe_processes(running, '旧npm版')}。"
                     f"表示したプロセスが旧npm版なら終了してから、{removal}を実行して旧npm版を削除する。"
                     f"削除するまでは`{canonical_launcher}`で更新済みの版を起動する",
                 )
@@ -182,7 +227,7 @@ def migrate_npm_launchers(
             continue
         with NPM_GLOBAL_LOCK:
             result = common.run_subprocess(
-                [str(npm), "uninstall", "--global", package_name],
+                [str(package.npm), "uninstall", "--global", package_name],
                 timeout=common.COMMAND_TIMEOUT,
                 tag=cli_name,
             )
@@ -257,23 +302,91 @@ class _NpmQueryError(Exception):
     """npmのグローバル導入先の照会に失敗した。削除するパッケージが無いこととは区別し、移行を見送る。"""
 
 
-def _owning_npm_package(package_name: str, launcher: Path) -> tuple[Path, Path] | str:
-    """ランチャーを導入したnpmと、そのnpmが削除するパッケージのディレクトリを返す。
+@dataclasses.dataclass(frozen=True)
+class _NpmPackage:
+    """npmがグローバルに導入したパッケージと、その`uninstall`がパッケージと一緒に削除する既存のファイル。
 
-    帰属を確認できず保持する場合は、保持の理由を述べる警告文を返す。
-    npmの導入先の照会に失敗した場合は`_NpmQueryError`を送出する。
+    npmの`uninstall`は、package.jsonのbinの名前ごとに、Windowsではprefix直下の`<bin>`・`<bin>.cmd`・`<bin>.ps1`を、
+    POSIXでは`bin/<bin>`を、中身を確かめずに削除する（bin-linksのgetPaths）。
     """
-    npm = _adjacent_npm(launcher.parent)
-    if npm is None:
-        return f"同じディレクトリにnpmがないため保持: {launcher}。このランチャーが不要と確認できた場合だけ手動削除する"
-    unresolved: list[str] = []
-    package_dir = _npm_package_dir(npm, package_name, unresolved)
-    if package_dir is None:
-        assert unresolved
-        return _unconfirmed_launcher_message(launcher, unresolved[0])
-    if not _launcher_belongs_to_package(launcher, package_dir, package_name):
-        return _unconfirmed_launcher_message(launcher, f"{package_dir}配下の実体ではない: {_launcher_kind(launcher)}")
-    return npm, package_dir
+
+    npm: Path
+    directory: Path
+    entrypoints: dict[str, Path | None]
+    """binの名前と実体。実体がパッケージ配下のファイルでない名前は`None`。"""
+    generated: frozenset[Path]
+    """`uninstall`が一緒に削除する、npmの生成物と確かめたファイル。"""
+    unconfirmed: dict[Path, str]
+    """`uninstall`が一緒に削除するが、npmの生成物と確かめられないファイルと、その理由。"""
+
+
+def _find_npm_package(npm: Path, package_name: str) -> _NpmPackage | str:
+    """npmがグローバルに導入したパッケージと、その`uninstall`が一緒に削除するファイルの帰属を調べる。
+
+    パッケージを特定できない場合はその理由を返す。npmの導入先の照会に失敗した場合は`_NpmQueryError`を送出する。
+    """
+    root = _npm_global_root(npm)
+    if isinstance(root, str):
+        return root
+    directory = root.joinpath(*package_name.split("/"))
+    if not directory.is_dir():
+        return f"packageのディレクトリが不在: {directory}"
+    entrypoints = _package_bin_entrypoints(directory)
+    if entrypoints is None:
+        return f"package.jsonのbinを読めない: {directory / 'package.json'}"
+    # bin-linksと同じく、Windowsはnode_modulesの親（prefix）、POSIXはprefixの`bin`へ置く。
+    if sys.platform == "win32":
+        bin_dir, suffixes = root.parent, ("", ".cmd", ".ps1")
+    else:
+        bin_dir, suffixes = root.parent.parent / "bin", ("",)
+    generated: set[Path] = set()
+    unconfirmed: dict[Path, str] = {}
+    for name, entrypoint in entrypoints.items():
+        for suffix in suffixes:
+            path = bin_dir / f"{name}{suffix}"
+            if not (path.exists() or path.is_symlink()):
+                continue
+            if reason := _npm_bin_unconfirmed(path, suffix, directory, entrypoint):
+                unconfirmed[path] = reason
+            else:
+                generated.add(path)
+    return _NpmPackage(npm, directory, entrypoints, frozenset(generated), unconfirmed)
+
+
+def _npm_bin_unconfirmed(path: Path, suffix: str, package_dir: Path, entrypoint: Path | None) -> str | None:
+    """`path`を、npmがパッケージのbin（実体は`entrypoint`）として生成したと確かめられない場合に、その理由を返す。
+
+    POSIXのnpmはパッケージ配下へのシンボリックリンクを作り、Windowsのnpmは拡張子`suffix`の起動スクリプトを作る。
+    起動スクリプトは、実体を参照する箇所の全てがnpmの生成する形であるものだけを生成物とする。
+    """
+    if path.is_symlink():
+        target = common.safe_resolve(path)
+        return None if _is_relative_to(target, common.safe_resolve(package_dir)) else _launcher_kind(path)
+    if sys.platform != "win32":
+        return _launcher_kind(path)
+    try:
+        content = _read_npm_launcher(path)
+    except OSError as error:
+        return f"読み取りに失敗: {error}"
+    if content is None:
+        return f"起動スクリプトとして読めない{_launcher_kind(path)}"
+    if entrypoint is None or not _is_npm_shim_for(
+        content,
+        suffix,
+        lambda target: common.safe_resolve(path.parent.joinpath(*re.split(r"[\\/]", target))) == entrypoint,
+    ):
+        return f"npmが生成する形でbinの実体を参照しない{_launcher_kind(path)}"
+    return None
+
+
+def _is_npm_shim_for(content: str, suffix: str, refers: Callable[[str], bool]) -> bool:
+    """本文が、`refers`を満たす参照先を、npm（cmd-shim）が生成する形でだけ参照する起動スクリプトかを返す。
+
+    npmは参照先を自身のディレクトリから引用して書き、その直後で引数をそのまま渡す。
+    ユーザーが起動オプションを足した箇所が1つでもあれば、npmの生成物とみなさない。
+    """
+    passes = [match[2] is not None for match in _NPM_SHIM_REFERENCES[suffix].finditer(content) if refers(match[1])]
+    return bool(passes) and all(passes)
 
 
 def _unconfirmed_launcher_message(launcher: Path, reason: str) -> str:
@@ -343,21 +456,23 @@ def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_
     """npmのパッケージ本体が無いのに残った起動スクリプト（`.cmd`・`.ps1`・拡張子なし）を削除する。
 
     PowerShellはPATH上の`.ps1`を`.cmd`より先に使うため、本体の無い起動スクリプトが残ると
-    正規の導入先より前で起動に失敗する。npmが生成する起動スクリプトは自身のディレクトリ
-    （`$basedir`・`%dp0%`・`%~dp0`）からの相対で`node_modules/<パッケージ>`を参照するため、
-    その参照を含み本体が不在のものだけを対象とする。別の導入先を絶対パスで指すものは対象外とする。
+    正規の導入先より前で起動に失敗する。npmが生成する起動スクリプトは自身のディレクトリからの相対で
+    `node_modules/<パッケージ>`を参照するため、その参照をnpmが生成する形でだけ含み、本体が不在のものだけを対象とする。
+    別の導入先を絶対パスで指すものと、ユーザーが起動オプションを足したものは対象外とする。
     """
-    references = tuple(f"{base}/node_modules/{package_name}/" for base in _NPM_LAUNCHER_BASES)
+    reference = f"node_modules/{package_name}/"
     changed = False
     path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     for directory in {common.safe_resolve(path) for path in (*path_directories, *extra_search_directories)}:
         if (directory / "node_modules").joinpath(*package_name.split("/")).exists():
             continue
-        for name in (cli_name, f"{cli_name}.cmd", f"{cli_name}.ps1"):
-            launcher = directory / name
+        for suffix in _NPM_SHIM_REFERENCES:
+            launcher = directory / f"{cli_name}{suffix}"
             try:
                 content = _read_npm_launcher(launcher)
-                if content is None or not any(reference in content.replace("\\", "/") for reference in references):
+                if content is None or not _is_npm_shim_for(
+                    content, suffix, lambda target: target.replace("\\", "/").startswith(reference)
+                ):
                     continue
                 launcher.unlink()
             except OSError as error:
@@ -373,13 +488,21 @@ def _remove_orphan_npm_launchers(cli_name: str, package_name: str, extra_search_
 
 
 def _read_npm_launcher(launcher: Path) -> str | None:
-    """npmの起動スクリプトの大きさのファイルだけを読み、それ以外では`None`を返す。
+    """テキストの起動スクリプトとして読めるファイルの本文を返し、それ以外では`None`を返す。
 
-    実行ファイル本体（数百MB）を読まないためである。読み取りの`OSError`は送出する。
+    起動スクリプトより大きいファイル（数百MBの実行ファイル本体など）は読まない。
+    NULを含むファイルとUTF-8として復号できないファイルは、実行ファイルなどのテキストではないものとみなす。
+    読み取りの`OSError`は送出する。
     """
     if not launcher.is_file() or launcher.stat().st_size > _MAX_NPM_LAUNCHER_BYTES:
         return None
-    return launcher.read_text(encoding="utf-8", errors="replace")
+    data = launcher.read_bytes()
+    if b"\0" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def _adjacent_npm(directory: Path) -> Path | None:
@@ -387,11 +510,9 @@ def _adjacent_npm(directory: Path) -> Path | None:
     return next((candidate for name in names if (candidate := directory / name).is_file()), None)
 
 
-def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None = None) -> Path | None:
-    """npmのグローバルパッケージのディレクトリを返す。
+def _npm_global_root(npm: Path) -> Path | str:
+    """npmのグローバルのnode_modulesを返し、prefixの配下でない場合はその理由を返す。
 
-    解決できない場合は`None`を返す。`unresolved`を渡した場合は、解決できなかった情報を
-    そのリストへ1件追加する（呼び出し元がユーザーへ保持の理由を示すために使う）。
     npmの導入先の照会に失敗した場合は`_NpmQueryError`を送出する。
     """
     prefix_result = common.run_subprocess([str(npm), "prefix", "--global"], timeout=common.COMMAND_TIMEOUT, tag=npm.name)
@@ -414,19 +535,8 @@ def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None 
     prefix = common.safe_resolve(Path(prefix_result.stdout.strip()))
     root = common.safe_resolve(Path(root_result.stdout.strip()))
     if not _is_relative_to(root, prefix):
-        _record_unresolved(unresolved, f"npmのroot（{root}）がprefix（{prefix}）の配下ではない")
-        return None
-    package_dir = root.joinpath(*package_name.split("/"))
-    if not package_dir.is_dir():
-        _record_unresolved(unresolved, f"packageのディレクトリが不在: {package_dir}")
-        return None
-    return package_dir
-
-
-def _record_unresolved(unresolved: list[str] | None, reason: str) -> None:
-    """解決できなかった対象を、収集先が渡されている場合だけ記録する。"""
-    if unresolved is not None:
-        unresolved.append(reason)
+        return f"npmのroot（{root}）がprefix（{prefix}）の配下ではない"
+    return root
 
 
 def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
@@ -438,42 +548,26 @@ def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
     return (result.stdout or "").strip() or "出力なし"
 
 
-def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name: str) -> bool:
-    resolved = common.safe_resolve(launcher)
-    package_real = common.safe_resolve(package_dir)
-    if resolved != launcher.absolute() and _is_relative_to(resolved, package_real):
-        return True
-    # WindowsのnpmはPATH上へ`.cmd`と、Git Bashなどのsh用に拡張子なしの起動スクリプトを置く。
-    if launcher.suffix.lower() in {".cmd", ""}:
-        try:
-            content = _read_npm_launcher(launcher)
-        except OSError:
-            return False
-        entrypoint = _package_bin_entrypoint(package_dir, launcher.stem)
-        if content is None or entrypoint is None:
-            return False
-        entrypoint_real = common.safe_resolve(entrypoint)
-        return any(
-            common.safe_resolve(candidate) == entrypoint_real
-            for candidate in _launcher_referenced_paths(content, launcher.parent)
-        )
-    if launcher.suffix.lower() == ".exe":
-        # mise shimはmiseの解決情報が対象packageを指す場合だけ対象とする。
-        mise_name = shutil.which("mise")
-        if mise_name is None:
-            return False
-        mise = Path(mise_name).absolute()
-        result = common.run_subprocess([str(mise), "which", launcher.stem], timeout=common.COMMAND_TIMEOUT, tag="mise")
-        output = (result.stdout or "").strip() if result is not None else ""
-        normalized_output = output.lower().replace("\\", "/")
-        package_slug = package_name.lower().removeprefix("@").replace("/", "-")
-        return bool(
-            result is not None
-            and result.returncode == 0
-            and (package_name.lower() in normalized_output or package_slug in normalized_output)
-            and _is_relative_to(common.safe_resolve(Path(output)), package_real)
-        )
-    return False
+def _launcher_belongs_to_package(launcher: Path, package: _NpmPackage, package_name: str) -> bool:
+    """`uninstall`が一緒に削除するファイルの外にある起動先が、パッケージから導入したものかを返す。"""
+    if launcher.suffix.lower() != ".exe" or launcher.is_symlink():
+        entrypoint = package.entrypoints.get(launcher.stem)
+        return _npm_bin_unconfirmed(launcher, launcher.suffix.lower(), package.directory, entrypoint) is None
+    # mise shimはmiseの解決情報が対象packageを指す場合だけ対象とする。
+    mise_name = shutil.which("mise")
+    if mise_name is None:
+        return False
+    mise = Path(mise_name).absolute()
+    result = common.run_subprocess([str(mise), "which", launcher.stem], timeout=common.COMMAND_TIMEOUT, tag="mise")
+    output = (result.stdout or "").strip() if result is not None else ""
+    normalized_output = output.lower().replace("\\", "/")
+    package_slug = package_name.lower().removeprefix("@").replace("/", "-")
+    return bool(
+        result is not None
+        and result.returncode == 0
+        and (package_name.lower() in normalized_output or package_slug in normalized_output)
+        and _is_relative_to(common.safe_resolve(Path(output)), common.safe_resolve(package.directory))
+    )
 
 
 def _readable[T](read: Callable[[], T]) -> T | None:
@@ -566,37 +660,34 @@ def _script_entry(program: str, cmdline: list[str]) -> str | None:
     return command[index] if index < len(command) and not command[index].startswith("-") else None
 
 
-def _launcher_referenced_paths(content: str, launcher_dir: Path) -> Iterable[Path]:
-    for raw in re.findall(r'(?:"([^"]+)"|([^\s"]+))', content):
-        normalized = raw[0] or raw[1]
-        for base in _NPM_LAUNCHER_BASES:
-            normalized = normalized.replace(base, str(launcher_dir) + os.sep)
-        candidate = Path(normalized.replace("\\", os.sep))
-        if not candidate.is_absolute():
-            candidate = launcher_dir / candidate
-        yield candidate
+def _package_bin_entrypoints(package_dir: Path) -> dict[str, Path | None] | None:
+    """package.jsonのbinの名前と実体を返し、package.jsonを読めない場合は`None`を返す。
 
-
-def _package_bin_entrypoint(package_dir: Path, cli_name: str) -> Path | None:
+    名前はnpmと同じく、パスとして正規化した最後の要素にそろえる。npmの`uninstall`はこの名前の起動スクリプトを削除する。
+    実体がパッケージ配下のファイルでない名前の値は`None`にする。
+    """
     try:
-        metadata = json.loads((package_dir / "package.json").read_text(encoding="utf-8"))
-    except OSError, json.JSONDecodeError:
+        metadata = json.loads((package_dir / "package.json").read_text(encoding="utf-8-sig"))
+    except OSError, ValueError:
         return None
     if not isinstance(metadata, dict):
         return None
-    bin_value = metadata.get("bin")
-    relative: object
-    if isinstance(bin_value, str):
-        relative = bin_value
-    elif isinstance(bin_value, dict):
-        relative = bin_value.get(cli_name)
-    else:
-        return None
-    if not isinstance(relative, str) or not relative:
-        return None
-    entrypoint = common.safe_resolve(package_dir / relative)
+    bins = metadata.get("bin")
+    if isinstance(bins, str):
+        bins = {metadata["name"]: bins} if isinstance(metadata.get("name"), str) else {}
+    elif isinstance(bins, list):
+        bins = {item: item for item in bins if isinstance(item, str)}
+    elif not isinstance(bins, dict):
+        bins = {}
     package_real = common.safe_resolve(package_dir)
-    return entrypoint if entrypoint.is_file() and _is_relative_to(entrypoint, package_real) else None
+    entrypoints: dict[str, Path | None] = {}
+    for key, relative in bins.items():
+        name = posixpath.basename(posixpath.normpath("/" + key.replace("\\", "/")))
+        if not name or not isinstance(relative, str) or not relative:
+            continue
+        entrypoint = common.safe_resolve(package_dir / relative)
+        entrypoints[name] = entrypoint if entrypoint.is_file() and _is_relative_to(entrypoint, package_real) else None
+    return entrypoints
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:
