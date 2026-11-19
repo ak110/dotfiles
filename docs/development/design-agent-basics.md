@@ -8,9 +8,9 @@ agent-basicsはコード・設計・テスト・レビュー・文章の品質�
 品質基準の正式な起動スキルは`agent-basics:writing-standards`と`agent-basics:review-standards`である。
 原因分析と検証の品質は同プラグインの`bugfix`と`check-execution`が持つ。
 品質判断ではbasicsのスキルを直接起動する。
-toolkitの工程文書と常時規範が、運用を開始する時点で必要な運用資料を読み込む。
+toolkitの入口`agent-toolkit:atk-mode`と手順書が、運用を開始する時点で必要な運用資料を読み込む。
 
-配送範囲はtoolkitのdelegation、セッション記録はreview-session、内部フラグとhookの実装仕様は開発専用のagent-toolkit-editが所有する。
+配送範囲はtoolkitの`atk-mode/references/agent-documents.md`、セッション記録はreview-session、内部フラグとhookの実装仕様は開発専用のagent-toolkit-editが所有する。
 混在する文書では、品質を判断する条件と、委譲・表の保存・工程遷移を分ける。
 basics単独のエンドユーザーには、プロジェクトが採用する認可と作業手順を適用する。
 toolkit併用時には、toolkitが自身の運用契約を適用してから、各品質スキルの条件付き資料へ進む。
@@ -22,12 +22,11 @@ basicsのCodex配布はskillsだけなので、toolkitのhookコマンド変換�
 Agent Plugins 1.0.0向けroot manifestは共通メタデータだけを投影し、Claude固有の依存配列を含めない。
 
 basicsは常時フックとMCPを同梱せず、ホームへtoolkit運用規範を配送しない。
-toolkitの常時規範、役割別規範とセッション操作は、toolkitを選んだエンドユーザーへの配布として保持する。
-Codex向けAGENTSの生成はtoolkitの常時規範から行い、品質本文の新しい提供元を参照する。
+toolkitの入口と手順書、役割文書とセッション操作は、toolkitを選んだエンドユーザーへの配布として保持する。
 
 言語横断の標準ツール、単体HTMLのCDN採否判断、依存管理、技術別読込表と必要資料の読了条件を保つ。
 移設のための提供元名・パス・運用呼出しの書換えと、既存品質本文の移動を分けて検収する。
-後続プロジェクトはagent-basicsへの明示依存と品質skill名を追従させ、個人のtoolkit運用設定をプロジェクト常時規範へ混入させない。
+後続プロジェクトはagent-basicsへの明示依存と品質skill名を追従させ、個人のtoolkit運用設定をプロジェクト規範へ混入させない。
 
 ## 選択理由
 

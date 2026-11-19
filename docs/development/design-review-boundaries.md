@@ -22,7 +22,8 @@
 レビュー担当は`review-standards/references/reviewee.md`を読まず、レビューイーは`review-standards/references/reviewer.md`を読まない。
 計画・設計の採用案や指摘・発見の妥当性を評価する場合の役割中立の共通判断手順（「解決案の比較」「検収手段の到達可能性」）は、両者が必ず読む同スキル本体（`SKILL.md`）へ置く。
 メインは指摘の採否を常に確定するため、同スキルを起動する。
-単純案の比較は、一般判断向けの局所運用案を`share/rules/common/01-agent.md`と同スキル本体で扱い、指摘修正向けの局所修正案を`agent-basics:review-standards`の`references/reviewee.md`で扱う。
+単純案の比較のうち、一般判断向けの局所運用案は`agent-toolkit:atk-mode/references/conduct.md`「QCDと3段判定」と同スキル本体で扱う。
+指摘修正向けの局所修正案は`agent-basics:review-standards`の`references/reviewee.md`で扱う。
 
 レビューイーが読む範囲は役割中立の共通契約と`references/reviewee.md`に限り、レビュー担当側の`references/reviewer.md`へは依存しない。
 重複を残して文言だけを統一する案は、各文書の改訂で再び文言差が生じるため採用しない。

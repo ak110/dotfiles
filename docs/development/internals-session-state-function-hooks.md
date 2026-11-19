@@ -28,7 +28,7 @@ process-loopによって起動された会話の最上位Stopでは、終了要�
 Stop hookは同じターンの`turn.complete`より先に動くため、取り下げた終了要求で`/exit`が実行されることはない。
 
 process-loopの統括と`atk run-skill`が起動したセッションでは、定期再確認の通常回収と同じ範囲のtaskを、メインエージェントが最終ターンを閉じる前にも削除する。
-手順は`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」、経緯は`docs/development/design-hooks-periodic-recheck.md`にある。
+手順は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ターンの終え方」、経緯は`docs/development/design-hooks-periodic-recheck.md`にある。
 
 Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終了要求は、Stopの全判定が完了した後に共通ハンドラー（`stop.py`）から発行される。
 終了要求が`requested`か特定PIDへの終了要求として成立した場合、そのStop hookの応答は停止の通知だけになる。

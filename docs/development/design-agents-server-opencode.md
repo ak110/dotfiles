@@ -18,7 +18,7 @@ OpenCodeには実行時間上限の指定が無いため共通実行処理で360
 
 共通規範・委譲先規範・ユーザー規範を開始と再開の本文へ連結する。
 スキルをホストへ自動登録する機構は追加せず、plugin rootから明示的に読めるようにする。
-配送範囲は`delivery-scope.md`と`start`の説明へ同じ内容を載せる。
+配送範囲は`agent-toolkit:atk-mode/references/agent-documents.md`「配送範囲表」と`start`の説明へ同じ内容を載せる。
 CLI自身によるプロジェクト規範の読込は未確認として扱う。
 
 ネイティブイベントはそのまま保持し、CLIが出力しないturn入力・cwd・要求モデルは`agent_toolkit_input`行で補う。

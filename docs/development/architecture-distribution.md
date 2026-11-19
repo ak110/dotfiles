@@ -1,8 +1,9 @@
 # アーキテクチャ: ホスト別配布とOpenCode
 
 `agent-toolkit/`はAgent Plugins、Claude Code、Codexが共有するプラグインルートである。
-`skills/`の原本を共有し、ホストごとのmanifest、hook、MCP設定と常時規範の配置を生成する。
-OpenCodeの対話ホストには、同じ原本からスキルと常時規範を導入する。
+`skills/`の原本を共有し、ホストごとのmanifest、hook、MCP設定を生成する。
+全エージェントへ常に読み込ませる規範ファイルは配らず、規範は入口のスキル`agent-toolkit:atk-mode`と手順書が持つ。
+OpenCodeの対話ホストには、同じ原本からスキルと入口の起動を求める案内を導入する。
 
 | 対象 | 役割と生成方法 |
 | --- | --- |
@@ -10,7 +11,7 @@ OpenCodeの対話ホストには、同じ原本からスキルと常時規範を
 | `plugin.json`・`.mcp.codex.json`・`mcp.json` | Agent Plugins v1向け生成物。大元の設定から共有許可済みserverだけを固定schemaへ写像する |
 | `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。大元の設定から許可済みの要素だけを写像する |
 | `agents/`・`hooks/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
-| OpenCodeの`skills/`と`agent-toolkit.md` | post-applyが共有スキルと常時規範をグローバル検出先へ同期する |
+| OpenCodeの`skills/`と`agent-toolkit.md` | post-applyが共有スキルと入口の案内をグローバル検出先へ同期する |
 
 新規engineの追加時にホスト導入の要否と理由を判断・記録する手順は、`.claude/skills/agent-toolkit-edit/SKILL.md`が定める。
 
@@ -36,15 +37,15 @@ dotfilesが生成する`agent-toolkit-codex/`のMCP定義は、`${PLUGIN_ROOT}`�
 
 | 導入方法 | マーケットプレイス | 設定対象 |
 | --- | --- | --- |
-| 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、共有`agents_server` MCP、`atk` |
-| dotfiles `post_apply` | ローカル生成物 | 単体導入の対象に加え、Codex向け`AGENTS.md`と共有リンク、OpenCode向けスキルと常時規範 |
+| 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | 双方のプラグイン、共有`agents_server` MCP、`atk`、旧版が配置した規範の削除 |
+| dotfiles `post_apply` | ローカル生成物 | 単体導入の対象に加え、Codex向け`AGENTS.md`（個人用の規範の埋め込み）と共有リンク、OpenCode向けスキルと入口の案内 |
 
 ## OpenCodeの対話ホストへの導入
 
 `pytools/_internal/install_opencode_toolkit.py`は、OpenCode CLI導入後のfullモードの後処理として動く。
 `skills/agent-toolkit-<名前>/`と`skills/agent-basics-<名前>/`へスキル本体と付属資源をコピーする。
 独自スキルは保持し、専用の所有markerがある配布先だけで更新・廃止した資源を同期する。
-常時規範は`agent-toolkit.md`へ`atk-auto`境界とともに集約し、元の規範本文、plugin rootとスキル名の対応を保持する。
+`agent-toolkit.md`には`atk-auto`境界の内側に、作業の前と会話の圧縮の後に`agent-toolkit-atk-mode`のスキルを読む案内と、plugin rootとスキル名の対応だけを置き、規範の本文は載せない。
 グローバル`AGENTS.md`とClaude互換規範の読込順位、既存のprovider・permission・mcpなどの値を保持する。
 この導入はMCP登録、TS hook移植と単体インストーラーの対象追加を含まない。
 ホストが定める検出と読込の契約は[skills](https://opencode.ai/docs/skills/)と[rules](https://opencode.ai/docs/rules/)にある。

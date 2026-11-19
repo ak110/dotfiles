@@ -15,7 +15,7 @@
 記録されたコードを実行する全面的な意味解釈は採用しない。
 取得の有無、取得の目的、結果の成否は独立した軸として原記録で判定し、編集、自身が受領した定義、返却後の検収は根拠を示して分類する。
 静的な入力と対象の対応は、実行結果の成功や本文の読了を確定するものではない。
-`agent-toolkit:delegation`の`SKILL.md`「送信」が禁止する起動準備の本文読込は、次の資料の判定に従う。
+`agent-toolkit:atk-mode/playbooks/delegation.md`「送信」が禁止する起動準備の本文読込は、次の資料の判定に従う。
 
 - `agent-toolkit:atk-mode/references/review-session-triage.md`「定義本文の読込の判定」
 

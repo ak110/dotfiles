@@ -99,7 +99,7 @@ commitしない範囲も確定済みとし、未コミットだけを理由にco
 
   非対話の`claude -p`はバックグラウンドタスクの完了通知で同じ会話が再開する（`audit-records-hooks-lifecycle.md`の2026年10月10日の実機観測）。
   非同期処理または未回収の結果が残る間は`is_pending_async_work`で終了を許し、再開後のStopで改めて判定する。
-  Codexの最上位には背景の完了通知で会話が再開する待機が無く、結果は同じターンの中で回収する規範である（`waiting-and-monitoring-intervals.md`）。
+  Codexの最上位には背景の完了通知で会話が再開する待機が無く、結果は同じターンの中で回収する規範である（`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機区間の構成」）。
   このため、非同期処理の待ちで終了を許す分岐をCodexでは使わない。
   公式のHooks仕様（2026年11月15日取得）は、Stopの`decision: "block"`が`reason`を新しい入力として続行させると定める。
   codex-cli 0.169.0の`codex exec --json`でも、遮断の後に同じターンの中で2つ目の回答が出力されてから終了した。

@@ -39,4 +39,4 @@ commit以降のリリース、PR/MRまたは公開操作は、実装のレーン
 Claude Codeのメインは、独立した投入・読取調査・追加公開工程とサーバー反映を公開担当の起動直後に開始し、既存の担当別記録と保存出力へ入力commit・所有資源・担当とタスク・保存出力・公開結果後の工程を保存してから、共通の引数なし圧縮予約へ進む。
 公開対象なしの短絡では公開担当の起動もこの境界の予約も省く。
 まとめ処理のpush後CI待機は、同じ監視入力とbaselineを保存して同じ手順を使う。
-予約・背景待機・通知後の復元の所有者はdelegationのwaiting-and-monitoring.mdであり、公開の意味判断はメインが担い、Function hooks moduleへ移さない。
+予約・背景待機・通知後の復元の所有者は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`であり、公開の意味判断はメインが担い、Function hooks moduleへ移さない。

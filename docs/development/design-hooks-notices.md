@@ -12,7 +12,7 @@ Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_i
 `startup`・`resume`・`clear`・`compact`・`fork`の各入力で現行の値を通知し、managed-tempの作成の成否と独立に結合する。
 入力に無い値は推測で補わず、既存の取得手段として`CLAUDE_CODE_SESSION_ID`と`session-review-evidence --claude-session-id`を案内する。
 委譲先とCodexは対象外とし、委譲先自身の会話と委譲元から受け取る証拠の識別子を混同させない。
-取得元の規範は`agent-toolkit/share/rules/rules-main.claude-code.md`「自身の会話の記録」に集約し、記録を使う消費文書は同節を参照する。
+取得元の規範は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「自身の会話の記録」に集約し、記録を使う消費文書は同節を参照する。
 入力の記録パスが実在しない場合は、同じsession IDのメイン記録を既存の解決処理で1件へ定める。
 開始時と別のディレクトリでの再開により入力が実在しないパスを示した観測へ対応する。
 入力項目とmatcherの典拠は公式の[Hooks reference](https://code.claude.com/docs/en/hooks)「Common input fields」「SessionStart」で、2026年10月13日にClaude Code 2.1.296の環境で確かめた。
