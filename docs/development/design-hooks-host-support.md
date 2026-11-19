@@ -15,7 +15,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | --- | --- | --- | --- |
 | plugin `PreToolUse/pretooluse` | 所有を確認できない終了・追送、heredoc置換、pattern kill、公開commitの形式・帰属、定型委譲の必須入力を保護し、他は警告で支援する。資料不足は初回だけ案内し、再書込を許可する | 対応 | 部分対応。共通の保護と資料選択を使う。Codexの大量読取は予算確認を警告して標準読取を継続する。PowerShell改行・AskUserQuestionなどホスト固有入力の判定は除く |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録し、計画構造の自動チェックの案内、投入したUWIへの回答の通知、退避したBash・PowerShell結果の抜粋の置き換えを行う | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録、Bashで実行した振り返りの準備結果の記録に対応する。Codexはシェル出力を退避せず切り詰めて返すため、退避した結果の置き換えは対象外 |
-| plugin `SessionStart/rules_context` | セッションの開始・再開・`/clear`・圧縮の後に、メインエージェントへ入口のスキル`agent-toolkit:atk-mode`の起動を求める1行と、その場で決まる値（セッション識別子・managed-tempなど）を文脈へ追加する。規範の本文は載せない。`agents_server`が起動した委譲先ではメインの案内を追加しない | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の値を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
+| plugin `SessionStart/rules_context` | 文脈を引き継がずに始まる会話（`source`が`startup`・`clear`・`compact`）のメインエージェントへ、入口のスキル`agent-toolkit:atk-mode`の起動を求める1行を追加する。文脈を引き継ぐ`resume`・`fork`では案内しない。あわせて、その場で決まる値（セッション識別子・managed-tempなど）を文脈へ追加する。規範の本文は載せない。`agents_server`が起動した委譲先ではメインの案内を追加しない | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の値を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、委譲先の入口文書`playbooks/subagent.md`の所在とCLIの所在を文脈へ追加する。規範の本文は載せない | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告をブロックし、内部返却の言語は判定しない |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
