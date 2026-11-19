@@ -3,24 +3,14 @@
 [設計記録の索引](design.md)から参照する、背景完了と自動再開の記録である。
 
 Claude backendは、委譲先がClaude Codeのバックグラウンドタスクを残してturnを終えた場合、その完了通知による同じsessionの再開を一度だけ待ち、再開したturnの結果を共有の終了時の結果ファイルへ公開する。
-待機中は最初の結果を内部へ保留し、`status`と`turn_completed`を終了へ進めない。
 バックグラウンドタスクの完了通知が届かない場合は、Claude Codeが背景実行のBashへ許す上限（環境変数を設定しない場合は7,200,000ミリ秒）に余裕を加えた期限で保留した最初の結果を確定する。
 上限に達したバックグラウンドタスクはClaude Codeが止めて完了通知を送るため、上限より短い期限は稼働中のバックグラウンドタスクを待つ保留を打ち切る（2026年10月6日に1800秒の期限で待機表明が完了結果として返った）。
 保留の打ち切り期限は待機対象自身の終了上限から導き、根拠の無い値を置かない。
-期限到来、ストリーム終端、保留中の`kill`、期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送で確定した場合も、共通処理（`resume_waits.finalize_pending_result`）が確定の時点で残るバックグラウンドタスクと孫sessionの識別子を記録する。
-記録先は`error`の`unfinishedBackgroundTasks`と`unobservedSessions`であり、待機対象が残ったまま確定したことを`heldResultFinalized`で示し、`atk agents wait`の`終了行:`へ`unfinished_waits`を加える。
-`unfinished_waits`は待機対象を残した確定を示す`heldResultFinalized`を持つ結果へ付ける。
-保留した結果は待機表明であり、委譲元が終了行と結果本文だけから再開したturnの結果と区別できるようにするためである。
 委譲元が受け取るのは最後のturnの最終応答だけなので、委譲先のturnを続けさせる処理（Stopの継続通知、子終了と返却形式の回復の自動再開入力）は、最後の応答へ完了報告の全文を書き直すよう委譲先へ伝える（`delegated_session.FINAL_RESPONSE_NOTICE`）。
 turnを続けさせる処理を新しく加える担当は、同じ指示を加えるかを判断する（2026年11月12日に、完了報告の後の短い追記だけが返り、完了報告が失われた）。
 Claude Code CLIはturnを終えた後に受けた中断要求へ`ResultMessage`を返さないため、保留中の`kill`は中断要求を配送したうえで保留した結果をそのまま確定して返す。
 保留中は活動時刻が進まず停滞と区別できないため、`show`は`result_held`と追跡中のバックグラウンドタスク（`live_background_tasks`）を公開する。
 結果を公開してよいのは、そのsessionで次のturnが発生しないと確定した後に限る。
-この確定はClaude Code CLIが`session_state_changed`で報告するturn状態に基づく。
-CLIは保留した結果の送出と背景エージェントの待機を終えて次のturnが無いと確定した時点で`idle`を報告する。
-Claude backendは`CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS`で報告を受け取り、`ResultMessage`の受信時点の最新の報告が`idle`でなければ結果を保留して、`idle`の受信で確定する。
-CLIはコマンドループの先頭で最初のturnの`running`を発行するため、この報告は初期化メッセージより先に届き得る。
-session作成前に届いた報告も作成時に引き継ぎ、最初のturnを従来の判定へ戻さない。
 追跡集合（バックグラウンドタスクと孫session）だけでは、Stop hookの実行中などturnの最終応答から`ResultMessage`までの間に終わったバックグラウンドタスクの再開turnを判別できない。
 その完了通知が`ResultMessage`より先に届いて追跡集合が空になっても、CLIは`ResultMessage`の後に通知の再開turnを開始するためである（2026年10月4日に待機表明が終了時の結果として公開された）。
 一方、シェルのバックグラウンドタスクが動いている間もCLIは`idle`を報告するため、追跡集合も判定に残す。
@@ -49,25 +39,14 @@ CLIは終了時にバックグラウンドタスクを止め、セッション�
 観測した版と順序、再取得の手順は[audit-records.md](audit-records.md)「agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日」にある。
 両backendは、委譲先が`agents_server`の`start`（全`mode`）で起動した孫sessionと、`send_message`で稼働させた孫sessionを追跡する。
 `reply_failed`は追加せず、`reply_ambiguous`は終了を観測するまで追跡する。
-再開した孫は終了済み集合から外す。
-親の成功・失敗・killのいずれでも同じ集合で結果保留と未観測の記録を決める。
-統合前の旧名で記録された起動も同じく追跡する。
-`_agents_server/claude_messages.py`と`_agents_server/claude_stream.py`はツール利用識別子でClaude SDKの利用ブロックと結果ブロックを対応付ける。
-`_agents_server/codex.py`は`item/completed`の`mcpToolCall`を消費する。
 委譲先が`atk agents wait`で回収した孫sessionは追跡から外し、回収の根拠は、待機の結果本文、保存先の行、ホストが待機を背景実行へ移した場合の出力ファイルの3つとする。
-出力ファイルは結果本文が後から書かれるため、終了判定と未観測の記録の直前に読む。
 ClaudeとCodexは結果保留の開始前にも同じ回収処理を適用する。
 2026年10月4日に、Claudeが回収済みの子だけを理由に保留し、後続の回収で追跡集合が空となって再開も結果配送も進まなかったためである。
 実在する未完了の背景taskと未回収の子は待機対象として保持する。
-終了状態は`_common/session_registry.py`が状態ディレクトリ配下の`agents-server/sessions/<session_id>.json`へ公開する。
-自動再開の開始、解除、再開の判断は`_agents_server/resume_waits.py`の共通述語へ集約し、Claudeの背景taskと孫sessionのどちらも追跡対象として扱う。
 Managerの常駐監視taskは追跡集合が空になるまで最初の結果を保留し、全ての終了後に識別子を示す継続指示で同じsessionを1ターンにつき一度だけ再開する。
 孫sessionの終了は、session登録簿の記録と共有の終了時の結果ファイルの双方を確かめて判定する。
 登録簿の記録が不在、解放済み、読取不能のいずれかである場合も、同じ識別子の終了時の結果ファイルが終了を示すときは終了として扱う。
 いずれの媒体からも終了を確定できない識別子は、同じ稼働集合へ保持して次の監視で再解決する。
-中断などで保留結果を確定する場合は、既存の`error.unobservedSessions`へ未回収対象を示す。
-session登録簿は全sessionについて、終了時の結果を返せるかどうか、公開status、engine、作業ディレクトリ、model、effort、model_type、起動区分（`launch_kind`）およびturn通番を原子的に記録する。
-再起動後の解決は、終了、実行中、解放済み、不在、読取不能を区別する。
 終了が確定しない記録は前プロセスがturnを実行している可能性を排除できないため再開せず、`turn_unobserved`として返す。
 この保護のもとで記録を`running`のまま残さないよう、MCPサーバーは停止時に、backendの停止で終わった未終了のturnを`interrupted`へ遷移させて登録簿と結果ファイルへ公開する。
 停止では所有側が自らturnを終了するため、遷移をbackendごとに書かずマネージャーの停止処理へ集約する。
@@ -77,16 +56,8 @@ session登録簿は全sessionについて、終了時の結果を返せるかど
 2つ目は、記録プロセスを持たない旧形式の記録か、記録プロセスのうち委譲先CLIが実在しない記録であることである。
 3つ目は、自身のCodex App Serverへ送った`thread/read`が登録簿の記録した元turn（turn識別子を持たない旧形式の記録では全turn）の終了を示し、後続に進行中のturnが無いことである。
 委譲先CLIが実在する記録を`thread/read`だけで引き継がないのは、別プロセスのApp Serverで実行中のturnを専用App Serverの`thread/read`が終了と返すためである。
-2026年10月25日には、旧サーバーの下で作業中のCodexの委譲先を新しいサーバーが`interrupted`と公開した。
-続く`thread/resume`は書込主体の競合で`failed`を公開した。
 全条件を満たす場合だけ`thread/read`の終了状態で登録簿へ終了を公開し、通常の復元へ進む。
 照会の失敗と条件の不成立ではこの引き継ぎを行わない。
-engineを問わない判定のため、実行中の記録は所有するagents_serverプロセスと、turnを実行する委譲先CLIのプロセスの識別（pidと起動時刻）を持つ。
-委譲先CLIのプロセスは、ClaudeではSDKの転送が起動したCLI、CodexではApp Server、Antigravityではturnごとに起動するCLIであり、起動し直した時点で記録を更新する。
-識別を持つ`running`の記録で記録された全プロセスが存在しない（pidが無いか、同じpidの起動時刻が異なる）場合、`session_registry.resolve`は`interrupted`の終了と中断の理由（`owner_processes_exited`）を返す。
-この判定は登録簿を書き換えず解決の結果として返す。
-MCPの`show`・`send_message`、`atk agents show`・`atk agents wait`、自動再開の子sessionの解決、`atk lane`の担当の終了判定は同じ解決を使う。
-中断を返す応答は、記録の`server_instance`と`interrupted_turns`から中断turnを所有した起動単位の終了診断への参照を添え、所有者の交代・再開・解放の後も同じturnの参照を保つ。
 登録簿へ終了を公開するのは従来どおり所有側と照会時の引き継ぎだけで、引き継ぎはこの終了をengineを問わず理由とともに公開する。
 記録されたプロセスが1つでも存在する記録と、識別を持たない記録は従来どおり実行中とする。
 識別を持たない記録は、識別の導入前に書かれた記録のほか、現行の引き継ぎによる終了の公開でも生じる。

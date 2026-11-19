@@ -15,25 +15,17 @@
 
 新規sessionの識別子は`session_identity.identity_validator`が全backendの登録前に重複を確かめる。
 ルート、稼働中・保持中の別sessionと、共有登録簿で実行中・終了に解決されるsessionとの識別子の重複を拒否する。
-エラーは原因と次の操作を示す。
 この境界で止めることで、識別子をキーとする登録・状態・結果・待機対象とイベントログを保持する。
 同じ識別子を使う再開は`expected_session_id`の一致で区別する。
 
 外部所有の復元状態は`ManagerRegistry`の`_RegistryResumeState`として、自プロセスが更新する状態と区別する。
-`show`・`list`、停止済み・期限切れの解決と、それらを使う停止・結果取得は、共通の`_refresh_resume_state`で現在の共有登録を再解決する。
-後続turnの稼働・再終了・失敗は現在の登録から判断し、過去turnの未回収結果は結果ファイルで保持する。
 別プロセスの再開では照会側のメモリーを更新できないため、復元済みの終了状態を現在状態として再利用する案は採らない。
 
 CLIの`atk agents list`・`wait`が使う会話の識別は、現在会話・所有ルート・状態ファイルの書込主体を別の値として扱う。
 現在会話の識別子は`_common/delegated_session.py`の`current_conversation_session_id`（`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順）が定め、計画の所有記録とUWIの投入元も同じ関数を使う。
-所有ルートの索引（aliases）のキーは、委譲先なら所有session、最上位なら現在会話の識別子とする。
 CodexのMCP要求に`_meta.threadId`があれば、環境へ会話IDを推測注入せず、その会話を親とするManagerとrootの`root.json`を選ぶ。
-同じ接続の要求はContextVarで分離し、会話ごとのManagerを共有サービスで保持する。
 同じ会話の複数接続は合流し、接続の終了だけではManagerを閉じない。
-要求にも環境にも会話IDが無い起動は、接続固有の識別子と起動環境からrootを解決する。
-ownerを持たないCodex最上位の会話では、MCPまたはPostToolUseが保存した索引が確認済みのrootを指す場合に、その`root.json`を読む。
 所有ルートを環境だけから解決する`resolve_root_session_id`へCodexの識別子を加える案は、最上位の読取先を`<thread>.json`へ変え、MCPが書いた`root.json`へ届かなくなるため採らない。
-索引が無い場合の待機は、MCPの`list`応答の`root_session_id`を`--root-session-id`へ渡す回復操作を案内する。
 
 ## 親復帰時の子孫復旧
 
@@ -50,11 +42,8 @@ ownerを持たないCodex最上位の会話では、MCPまたはPostToolUseが�
 
 同時に復帰した親の二重再開は、既存の登録ロック内で取得するPID世代付きの再開予約で防ぐ。
 接続中はロックを解放し、予約したプロセスが失われれば同じ元turnの予約を取り直せる。
-バックエンドはManagerが起動情報を写す前にも状態を公開するため、登録側で初回の入力と配送済み履歴を保持する。
 結果は保存元のrootを参照したまま既存の排他回収を使い、新しいturnの開始前に旧結果を消費する。
-元rootに別の生存する委譲先がいても、同じ子の結果と宛先を確認した通知を回収できる。
 未完了・未回収の登録、CLI待機runと会話別の作業記録は7日掃引から保護し、終了・回収後に通常の保持期間へ戻す。
 
-復旧処理は会話Managerの寿命に含め、Managerを閉じる前に監視を取り消す。
 接続を開始したタスクは既存の`_pending_resumes`で回収するため、終了処理中に別のwriterを追加しない。
 復旧失敗は親への上り通知とMCP待機の診断に残し、独立した他の子の復旧を続ける。

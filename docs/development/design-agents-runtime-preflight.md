@@ -15,15 +15,13 @@
 委譲元が対象0件の継続上限による終了をどう扱うかは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`と`atk agents wait`の公開説明が持つ。
 対象が空であることを即時の終了条件にする案は、待機開始後に登録される委譲先を取りこぼすため採用しない。
 待機側が`agents_server`の起動処理の進行状況を直接照会する案は、待機CLIと`agents_server`のMCPサーバープロセスの間へ新しい照会の仕組みを要し、既存の状態投影と待機対象登録簿に第3の観測面が加わるため採用しない。
+起動失敗後の空待ちの防止と短い初期化上限はユーザーの要求で、最終の50秒・150秒は実測に基づくエージェントの補正である。
 
 ## 委譲先の作業ディレクトリでのプラグイン起動の事前確認
 
 目的は委譲先の作業ディレクトリでagent-toolkitのMCPサーバーとhookを起動できない状態を、委譲先を起動する前に委譲元へ返すことである。
 委譲先のClaude Code・Codexは`agents_server`のプロセス環境を継承し、プラグインの起動コマンド（`uv`・`uvx`）を同じPATHと委譲先の作業ディレクトリから解決する。
 PATHの先頭にmiseのshimがあると、作業ディレクトリの未trustの設定でshimが失敗する。
-Claude Codeはstdioサーバーの接続失敗をホスト共通の記録へ残す。
-新規起動・再開のプロセスごとに公開再接続APIを1回試し、未回復の失敗だけをstart/showの警告へ残す。
-成否は`claude_mcp_recovered`と`claude_mcp_recovery_failed`へ記録する。
 `agents_server`は`start()`（全`mode`が経由する）と終了済みsessionの再開の直前に、委譲先の作業ディレクトリで`uv --version`と`uvx --version`を実行し、失敗時は子を起動せずに`cwd`と標準エラーを含む例外を返す。
 process-wiはメインの選定開始前に対象リポジトリのmise trustを準備する。
 知識境界として、事前確認のコマンド集合は`agent-toolkit/agent_toolkit/_agents_server/launch_requests.py`の`PREFLIGHT_COMMANDS`が持ち、プラグインの起動コマンドを全て含むことを同モジュールのテストで確かめる。
@@ -45,9 +43,3 @@ codexの委譲先では、hookの定義が変わると承認済みの記録が�
 知識境界として、claudeの権限モードは`agent-toolkit/agent_toolkit/_agents_server/claude_options.py`、codexの設定は`agent-toolkit/agent_toolkit/_agents_server/codex.py`が持つ。
 codexで同名のコマンドラインオプションを渡す案と、`-c`による設定上書きで渡す案は、いずれも`codex app-server`が`bypass_hook_trust`を受理しないため採用しない。
 claudeで`crossSessionInbound`設定により受信を拒否する案は、追加設定ファイルとユーザー設定のいずれで渡しても初期化タイムアウトを解消しないため採用しない。
-
-## 効率化の仕組みの棚卸し（2026年11月）
-
-横断的な記録の条件と限界は[設計索引](design.md)の「効率化の仕組みの棚卸し」を参照。
-起動失敗後の空待ちの防止と短い初期化上限はユーザーの要求で、最終の50秒・150秒は実測に基づくエージェントの補正である。
-判定は維持。

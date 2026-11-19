@@ -2,20 +2,10 @@
 
 [設計記録の索引](design.md)から参照する、Antigravity CLI backendの記録である。
 
-## Antigravity CLI backendの用途限定の追加
-
 `agents_server`はengineとしてAntigravity CLI（`agy`）を持つ。
-`_agents_server/antigravity.py`は共通の`cli_turn.py`を通して`start`・`resume`・`send_message`・`release_session`・`interrupt`・`close`を
-他backendと同じ引数の並びで提供する。
-Antigravity CLIの非対話モードは常駐プロトコルを持たず、`-p`で渡した1件の指示を処理して終わるため、
-turnごとにプロセスを起動し、継続は`--conversation <会話識別子>`を付けた新しい実行とする。
-session識別子は`--output-format stream-json`が返す`init`イベントの会話識別子とする。
 
 工程別モデル設定とpresetへは加えない。
-`_atk/config.py`の`_STAGE_MODEL_PATTERN`と`_KNOWN_MODELS`だけを広げ、
-モデル設定は工程別候補列が持つ。
 Antigravity CLIは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
-Antigravity CLIも工程別候補列へ直接指定できる。
 委譲先が失敗で終了した場合は、共通の`cli_turn.py`から継承する`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。
 
 Antigravityのexploreも通常の候補選択と開始・再開処理を使う。
