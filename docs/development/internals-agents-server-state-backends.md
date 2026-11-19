@@ -66,9 +66,12 @@ Claudeの`inherit`接続の場合でも同様に会話コンテキストの除�
 クラウド実行環境の委譲先ではremote変数の継承と識別子の重複を観測したが、`CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2`だけの切り分けは行っていない。
 2026年10月18日のClaude Code 2.1.302の観測は実MCPへ環境を明示して起動したもので、ホスト自身によるstdio環境の注入は直接再観測していない。
 再検証は専用の状態ディレクトリを使い、`CLAUDE_CODE_SESSION_ID`・`CLAUDE_CODE_REMOTE`・`CLAUDE_CODE_REMOTE_SESSION_ID`・`CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2`を与える。
-この環境の実MCPへ2件の並行`start`を送る。
+値は順に任意のUUID、`true`、`cse_`で始まる値、`true`とする。
+この環境の実MCPへClaude engineの`start`を2件並行して送る。
 起動応答の識別子を互いと親について比べ、`show`と`atk agents wait`の回収件数・終了コードを記録し、除去前の版の重複と回収1件を対照にする。
-単体の再検証は`_common/mcp_environment_test.py`、`_atk/orchestrator_test.py`と、`_agents_server/manager_test.py`の`test_start_rejects_duplicate_session_id`で行う。
+同じ入力と並行起動は`_agents_server/manager_identity_test.py`の`test_parallel_claude_delegates_get_distinct_session_ids`が偽のClaude clientで再現する。
+環境除去の単体の再検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`で行う。
+全backendの登録前の重複拒否は同じ`manager_identity_test.py`の`test_start_rejects_duplicate_session_id`で確かめる。
 
 API失敗状態は、すべてMCPサーバーの`SessionState`を基準（正）として管理し、同一の書込主体が状態ファイルへ反映（射影）する。
 対象となるのは、Claudeの合成assistantメッセージや`SystemMessage(api_retry)`、Codexの`willRetry: true`による再試行中状態、ならびに過負荷（`serverOverloaded`）に伴う自動継続待ちの`api_error`である。

@@ -26,7 +26,8 @@ Claudeの途中429では、利用枠が拒否を示した場合だけ判定し�
 Codexの利用上限判定は、rolloutの`task_complete.error.codex_error_info`が`usage_limit_exceeded`であることを使う。
 候補判定は次候補を優先し、全候補失敗かつ利用上限がある場合だけ解除を待って先頭から判定し直す。
 process-loopは自身が起動した子の上限停止を確認し、後続turnが無い場合にその子を終了して次の反復へ進める。
-公開CLIでの同じ会話の再開は`agent-toolkit/agent_toolkit/_atk/run_skill_test.py`、候補判定は同ディレクトリの`orchestrator_test.py`で確認できる。
+公開CLIでの同じ会話の再開は`agent-toolkit/agent_toolkit/_atk/run_skill_usage_limit_test.py`の`test_usage_limit_resumes_work_conversation_outside_timeout`で確認できる。
+候補判定は同ディレクトリの`orchestrator_test.py`の`test_codex_probe_fallback_and_all_candidates_retry`で確認できる。
 所有する子の終了と後続turnの保護は、同ディレクトリの`wi/process_loop_session_lifecycle_test.py`で確認できる。
 
 ホスト側の失敗時の終了とStop hookの条件は[turn.rs](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/session/turn.rs)にある。
