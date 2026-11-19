@@ -1,8 +1,8 @@
-# セッション状態ファイルとフラグ：[振り返り](../../agent-toolkit/skills/review-session/references/batch.md)・モード系
+# セッション状態ファイルとフラグ：[振り返り](../../agent-toolkit/skills/atk-mode/playbooks/review-session-batch.md)・モード系
 
 各状態の共通の設計、生存期間、排他、継承は`docs/development/internals-session-state-common.md`にある。
 
-## [振り返り](../../agent-toolkit/skills/review-session/references/batch.md)・モード系
+## [振り返り](../../agent-toolkit/skills/atk-mode/playbooks/review-session-batch.md)・モード系
 
 ### 振り返りとモードの状態
 
@@ -10,7 +10,7 @@
   省略時false。
   既存manifestとreviewedへ欠測・回復情報を保持し、`observed_through_line`は末尾欠測を含む物理境界（省略時`through_line`）を表す。
   `bundle_scope_path`は永続scopeへ移管する前の生成元（省略時`scope_path`）を表し、同期後の既存回収に使う。
-  確定条件と単発の厳格契約はリンク先batch.md「状態定義」に集約する
+  確定条件と単発の厳格契約は`docs/development/design-session-review-startup.md`「batchの共有状態」に集約する
 - `add_awi_skill_invoked`: add-awi-by-userを起動した会話の履歴。
   `session_title.observe_skill`、両ホストの明示的なスキル入力、メインのスキル本文の全文取得が、既存のhook状態へ真を記録する。
   投入完了や表示タイトルの変更では保持し、`session_review.auto_start_due`が生存する会話の履歴を読んで起動を判定する。

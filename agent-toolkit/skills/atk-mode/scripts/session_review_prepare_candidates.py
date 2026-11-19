@@ -253,7 +253,7 @@ def _candidates_document(
         "表示から省いた候補も全件対応付け、必須候補は全て評価する。"
         "探索の深さと対策の要否はbugfixの重大度判断に従う。"
         "definition-body-readは、準備が起動準備の疑いあり（calls[].launch_check.status=suspected）と判定した読取だけを分類し、判定済み（cleared）の読取は判定理由を確かめるだけでよい。"
-        "definition-read-unresolvedは取得の有無・目的・結果の成否を別々に判定する。内側CommandExecutionを結び付けた候補は、外側セルと内側実行の両方の位置を保存索引で確認する。分類と起動準備の違反への対策必須化はreview-sessionのanalysis.mdに従う。",
+        "definition-read-unresolvedは取得の有無・目的・結果の成否を別々に判定する。内側CommandExecutionを結び付けた候補は、外側セルと内側実行の両方の位置を保存索引で確認する。分類と起動準備の違反への対策必須化は`agent-toolkit:atk-mode/references/review-session-triage.md`「定義本文の読込の判定」に従う。",
         "",
         "## 記録の由来",
         "",

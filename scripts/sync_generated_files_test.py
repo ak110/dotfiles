@@ -337,7 +337,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     assert "review-table validate" not in block
     assert "fork_turns" not in block
     for role, relative, required, internal in (
-        ("external-write-review", "skills/review-external-writes/SKILL.md", "3観点それぞれ", "## 観点"),
+        ("external-write-review", "skills/atk-mode/playbooks/review-external-writes.md", "3観点それぞれ", "## 観点"),
         ("bulk-replace-review", "share/bulk-replace-review.parent.md", "読んだ変更箇所数:", "## 観点"),
         ("usability-review", "share/usability-review.parent.md", "試行: <手段>", "## 操作"),
         (
@@ -382,5 +382,5 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     after_wording_change = target.read_bytes()
     subject.sync_return_contracts(tmp_path)
     assert target.read_bytes() == after_wording_change
-    refined = (tmp_path / "agent-toolkit/skills/refine-prompt/SKILL.md").read_text(encoding="utf-8")
-    assert "`../../share/rules/rules-subagent.md`" in refined
+    refined = (tmp_path / "agent-toolkit/skills/atk-mode/playbooks/refine-prompt.md").read_text(encoding="utf-8")
+    assert "`agent-toolkit:/share/rules/rules-subagent.md`" in refined

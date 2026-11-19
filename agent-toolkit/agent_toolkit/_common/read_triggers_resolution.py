@@ -159,6 +159,9 @@ def _direct_document(
             )
         )
         name, *arguments = skill.split(maxsplit=1)
+        if name in skill_modes.ENTRY_WORKS and not (root / "skills" / name / "SKILL.md").is_file():
+            # 入口の配下へ移した作業の名前は、保存値（`scope`、`atk run-skill`の引数）であり資料を指さない。
+            return None
         mode, _ = skill_modes.split_mode(name, arguments[0] if arguments else None)
         if mode is None and skill.endswith(".md") and (not arguments or "/" in name):
             return ((root / skill.lstrip("/")) if skill.startswith("/") else (root / "skills" / skill)).resolve()

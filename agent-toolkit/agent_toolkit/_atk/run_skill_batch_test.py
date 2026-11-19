@@ -122,7 +122,7 @@ def test_hook_disabled_records_and_announces_pending(tmp_path, monkeypatch) -> N
         {"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path)}, host="codex"
     )
     assert notice is not None
-    assert "1件" in notice and "/agent-toolkit:review-session batch" in notice
+    assert "1件" in notice and "/atk-mode review-session batch" in notice
     assert session_review.pending()[0]["host"] == "codex"
     assert run_skill_batch.hook_request({"hook_event_name": "SessionEnd", "session_id": "main"}, host="codex") is None
 

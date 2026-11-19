@@ -40,12 +40,12 @@ def _self_invocation_entries(command: str) -> list[dict]:
 @pytest.mark.parametrize(
     "command",
     [
-        "python3 agent-toolkit/skills/review-session/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
+        "python3 agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
         "uv run --project /plugin --locked --no-default-groups "
-        "/plugin/skills/review-session/scripts/session_review_evidence.py /tmp/foo.jsonl",
-        "./agent-toolkit/skills/review-session/scripts/session_review_evidence.py --grep 'warn' /tmp/foo.jsonl",
-        "cd /repo && python3 agent-toolkit/skills/review-session/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
-        "bash -lc 'python3 /plugin/skills/review-session/scripts/session_review_evidence.py --warn /tmp/foo.jsonl'",
+        "/plugin/skills/atk-mode/scripts/session_review_evidence.py /tmp/foo.jsonl",
+        "./agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py --grep 'warn' /tmp/foo.jsonl",
+        "cd /repo && python3 agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
+        "bash -lc 'python3 /plugin/skills/atk-mode/scripts/session_review_evidence.py --warn /tmp/foo.jsonl'",
     ],
 )
 def test_query_modes_ignore_own_invocation_and_its_result(
@@ -68,7 +68,7 @@ def test_query_modes_ignore_own_invocation_recorded_as_codex_exec_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Codexのコマンド実行記録（`arguments`が`cmd`キーを持つ形式）の自己呼び出しも報告しない。"""
-    command = "python3 /plugin/skills/review-session/scripts/session_review_evidence.py --warn /tmp/foo.jsonl"
+    command = "python3 /plugin/skills/atk-mode/scripts/session_review_evidence.py --warn /tmp/foo.jsonl"
     transcript = _write_transcript(
         tmp_path,
         [
@@ -104,7 +104,7 @@ def test_query_modes_keep_warnings_outside_own_invocation(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """自己呼び出しの除外はその呼び出し記録だけに留め、無関係なエントリの警告は照会し続ける。"""
-    command = "python3 agent-toolkit/skills/review-session/scripts/session_review_evidence.py --warn /tmp/foo.jsonl"
+    command = "python3 agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py --warn /tmp/foo.jsonl"
     entries = [
         *_self_invocation_entries(command),
         {
@@ -134,14 +134,14 @@ def test_query_modes_keep_warnings_outside_own_invocation(
 @pytest.mark.parametrize(
     "command",
     [
-        "rg -n session_review_evidence agent-toolkit/skills/review-session/scripts",
-        "grep -rn TODO agent-toolkit/skills/review-session/scripts/session_review_evidence.py",
-        "cat agent-toolkit/skills/review-session/scripts/session_review_evidence.py",
-        "sed -n '1,20p' agent-toolkit/skills/review-session/scripts/session_review_evidence.py",
-        "head -n 5 agent-toolkit/skills/review-session/scripts/session_review_evidence_test.py",
-        "tail -n 5 agent-toolkit/skills/review-session/scripts/session_review_evidence.py",
-        "vim agent-toolkit/skills/review-session/scripts/session_review_evidence.py",
-        "bash -lc 'rg -n session_review_evidence agent-toolkit/skills/review-session/scripts'",
+        "rg -n session_review_evidence agent-toolkit/skills/atk-mode/scripts",
+        "grep -rn TODO agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py",
+        "cat agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py",
+        "sed -n '1,20p' agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py",
+        "head -n 5 agent-toolkit/skills/atk-mode/scripts/session_review_evidence_test.py",
+        "tail -n 5 agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py",
+        "vim agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py",
+        "bash -lc 'rg -n session_review_evidence agent-toolkit/skills/atk-mode/scripts'",
     ],
 )
 def test_query_modes_keep_records_that_only_reference_the_script_file(

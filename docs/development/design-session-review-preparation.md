@@ -2,8 +2,8 @@
 
 [設計記録の索引](design.md)から参照する主題別の記録である。
 
-`agent-toolkit:review-session`は`atk run-script session-review-prepare`の実行と、メインによる同じセッション内の分析で構成する。
-同コマンドの実体は`agent-toolkit/skills/review-session/scripts/session_review_prepare.py`である。
+振り返り（`/atk-mode review-session`）は`atk run-script session-review-prepare`の実行と、メインによる同じセッション内の分析で構成する。
+同コマンドの実体は`agent-toolkit/skills/atk-mode/scripts/session_review_prepare.py`である。
 2026年11月1日に手順スキルの名前を動詞始まりへ改名した際（`session-review`から`review-session`など8件）、旧名の中継スキルは配置しなかった。
 公開CLIの`session-review-evidence`・`session-review-prepare`・`session-review-state`、役割名`external-write-review`、状態ディレクトリとWIの`source`値は、スキル名と別の契約として旧名を保つ。
 改名に合わせて保存済みデータを移行する案は、要求範囲を超えるため採らなかった。
@@ -16,7 +16,7 @@ batchでは分析済みのメインが直接起草し、独立した投入前レ
 batchでの重複読込と中継を減らし、起草者と検収者の分離は維持するためである。
 既読証拠が足りる部分は再利用し、追加・変更・未確認・不一致だけを補完する。
 最終判断を所有する振り返り担当の委譲先は起動しない。
-判断基準は`agent-toolkit/skills/review-session/references/analysis.md`が持ち、所要時間の分析は同じ配下の`duration-analysis.md`が持つ。
+判断基準は`agent-toolkit/skills/atk-mode/playbooks/review-session-analysis.md`が持ち、所要時間の分析は`agent-toolkit/skills/atk-mode/references/review-session-cost.md`が持つ。
 
 batchは既存の部分読込を選び、回復不能な記録の欠測位置・件数を結果へ明示した部分分析として完了する。
 単発の既定の厳格読込と明示的な部分取得は変更しない。

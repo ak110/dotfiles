@@ -63,7 +63,7 @@ def test_original_record_search_output_mode(tmp_path, monkeypatch, capsys, codex
     assert "permissionDecision" not in captured.out
     if warned:
         context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
-        assert "session-records-query.md" in context
+        assert "session-records.md`「本文の検索」" in context
 
 
 @pytest.fixture(autouse=True)
@@ -231,8 +231,8 @@ def test_unknown_session_record_cwd_is_not_replaced():
     root.mkdir(parents=True)
     (root / "record.jsonl").write_text("{}\n", encoding="utf-8")
     notice = large_reads.session_record_reference_warning("Bash", {"command": "cat record.jsonl"}, str(root))
-    assert notice is not None and "`agent-toolkit:review-session`" in notice
-    source = pathlib.Path(__file__).resolve().parents[3] / "skills/review-session/references/session-records.md"
+    assert notice is not None and "`agent-toolkit:atk-mode/references/session-records.md`" in notice
+    source = pathlib.Path(__file__).resolve().parents[3] / "skills/atk-mode/references/session-records.md"
     assert source.is_file() and "references/session-records.md" in notice
     assert str(source) not in notice
     assert large_reads.session_record_reference_warning("Bash", {"command": 'cd "$D" && cat record.jsonl'}, str(root)) is None
@@ -388,7 +388,7 @@ def test_large_original_record_is_guided_to_evidence_query(
     captured = capsys.readouterr()
     assert not captured.err
     assert "session-review-evidence" in captured.out
-    assert "`agent-toolkit:review-session`" in captured.out
+    assert "`agent-toolkit:atk-mode/references/session-records.md`" in captured.out
     assert "--transcript" in captured.out
     assert "sed -n '" not in captured.out
 

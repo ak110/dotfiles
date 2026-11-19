@@ -41,7 +41,7 @@ description: >
      章の名前と数はその回の変更に合わせ、変更が1件だけのPRは章を設けずに書く。
    - 手本は#209である（エンドユーザーに影響する変更、エージェントの作業手順の変更、不具合の修正と試験、版数の4章。タイトルは「リポジトリごとの編集制約と推論量の途中変更、一括処理の所要短縮」）。
 
-   作成の直前に`agent-toolkit:review-external-writes`を起動し（タイトルも文面ファイルへ含める）、PRを作る。
+   作成の直前に`agent-toolkit:atk-mode/playbooks/review-external-writes.md`を読み（タイトルも文面ファイルへ含める）、PRを作る。
 5. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチの同期、CIの確認、必要なリリースの検収まで終える。
 6. 今回`master`へ反映した変更の採用記録から、エンドユーザー側の未実施の操作を拾う。
    `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「エンドユーザー側の操作が必要な変更」に従って設定を進め、専用の案内UWIを登録する。

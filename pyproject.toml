@@ -143,7 +143,6 @@ ty-args = [
     "--output-format", "concise", "--error-on-warning",
     "--extra-search-path", "scripts",
     "--extra-search-path", "libexec",
-    "--extra-search-path", "agent-toolkit/skills/review-session/scripts",
     "--extra-search-path", "agent-toolkit/skills/atk-mode/scripts",
 ]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
@@ -269,8 +268,8 @@ targets = [
     "agent-toolkit/hooks/*.py",
     "agent-toolkit/skills/*/*",
     "agent-toolkit/skills/*/*/*",
-    "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/*/*",
-    "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/__init__.py",
+    "agent-toolkit/skills/atk-mode/fixtures/multi-turn/*/*/*",
+    "agent-toolkit/skills/atk-mode/fixtures/multi-turn/*/__init__.py",
     "agent-toolkit/share/*",
     "agent-toolkit/share/rules/*",
     "agent-toolkit/hooks/*.json",
@@ -511,7 +510,7 @@ extend-aliases = { datetime = "datetime" }
 
 [tool.pyright]
 # agent-toolkitの計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
-extraPaths = ["agent-toolkit/skills/atk-mode/scripts", "agent-toolkit/skills/review-session/scripts"]
+extraPaths = ["agent-toolkit/skills/atk-mode/scripts"]
 # refine-promptのテスト選択の固定課題は模擬リポジトリで、同じディレクトリのモジュールを素のimportで読む（tyは行ごとに抑止済み）。
 # 直下の開発環境ではagent-toolkit/が探索パスに入り、全体の検査でこのimportを解決できないため、診断を抑止する。
 ignore = ["agent-toolkit/skills/refine-prompt/fixtures/multi-turn/test_selection/public"]

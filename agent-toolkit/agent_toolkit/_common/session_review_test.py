@@ -180,7 +180,7 @@ def test_launch_owner_interruption_is_reported_once(monkeypatch: pytest.MonkeyPa
     assert "受付前に終了" in notice
     assert "診断.log" in notice
     assert ("Get-Content -LiteralPath" if windows else "cat --") in notice
-    assert "`/agent-toolkit:review-session batch`を実行せよ" in notice
+    assert "`/atk-mode review-session batch`を実行せよ" in notice
     assert session_review.launch_notice() is None
 
 

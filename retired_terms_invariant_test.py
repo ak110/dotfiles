@@ -538,14 +538,14 @@ _RETIRED_TERMS = (
         allowed=(
             # 過去のセッション記録に残る旧形式の返却を読む定数と、その読み取り互換を確かめるテスト
             _AllowedLocation(
-                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates_returns.py",
+                "agent-toolkit/skills/atk-mode/scripts/session_evidence_candidates_returns.py",
                 line_exact='_ESCALATION_RETURN_STATUS = "needs_escalation"',
             ),
             _AllowedLocation(
-                "agent-toolkit/skills/review-session/scripts/session_evidence_bundle_failures_test.py", "needs_escalation"
+                "agent-toolkit/skills/atk-mode/scripts/session_evidence_bundle_failures_test.py", "needs_escalation"
             ),
             _AllowedLocation(
-                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates_returns_test.py", "needs_escalation"
+                "agent-toolkit/skills/atk-mode/scripts/session_evidence_candidates_returns_test.py", "needs_escalation"
             ),
             # 日付の付いた過去の障害記録
             _AllowedLocation("docs/development/incidents*.md"),

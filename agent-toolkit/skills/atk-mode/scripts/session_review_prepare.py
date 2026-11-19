@@ -79,7 +79,11 @@ def _build_parser() -> argparse.ArgumentParser:
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
     session.add_argument("--opencode-session-id", metavar="ID", help="OpenCodeのses_で始まるセッションID。")
     session.add_argument("--agents-session-id", metavar="ID", help="agents_serverが起動した委譲先のsession ID。")
-    parser.add_argument("--opencode-db", metavar="PATH", help="OpenCodeのSQLite記録。--opencode-session-idと併用する。")
+    parser.add_argument(
+        "--opencode-db",
+        metavar="PATH",
+        help="OpenCodeのSQLite記録。--opencode-session-idと併用する。省略時はXDG_DATA_HOMEか~/.local/shareのopencode/opencode.db。",
+    )
     parser.add_argument(
         "--work-dir",
         metavar="PATH",

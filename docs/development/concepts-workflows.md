@@ -59,7 +59,7 @@ statuslineのReleaseを要する場合のmaster CIの結論は、Release runの�
 対象が0件なら監査担当を起動しない。
 公開後に新しい是正commitを統合したら、同じセッションで公開状態を確かめ、再公開とCI確認まで行う。
 2026年9月の旧方式では、report-completionから進行中のセッション自身の振り返りを同期起動し、その終了時までに完了させていた（2026年9月14日のユーザー指示）。
-現在は作業の終了と公開で同期振り返りを行わず、SessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が非活動のセッションを非同期に分析する。
+現在は作業の終了と公開で同期振り返りを行わず、SessionStart/SessionEndを契機に起動する`/atk-mode review-session batch`が非活動のセッションを非同期に分析する。
 参照先は`design-session-review-completion.md`「完了報告と振り返りの関係」である。
 作業完了報告は振り返りとは独立して届ける。
 振り返りが投入したAWIも次回の候補に含める。
@@ -89,7 +89,7 @@ branchの公開またはCIが失敗した場合は`master`を保持し、同じc
 この条件は「固定したAWIの全件が終了してからリリースする」目的を守るためのものだった。
 `agent-toolkit:atk-mode`の作業`process-wi`では公開工程を全レーンの終了後に実施するため、条件を廃止してもこの目的は失われない。
 一方、廃止した条件は共有キューの現在状態を入力としていた。
-この状態はprocess-wiの1回の実行の進行中に`agent-toolkit:review-session`、並行セッションおよびユーザーが投入する項目で増減する。
+この状態はprocess-wiの1回の実行の進行中に振り返り（`/atk-mode review-session`）、並行セッションおよびユーザーが投入する項目で増減する。
 増減した項目は、そのセッションの成果と因果を持たない。
 それでも、セッションの成果の完成度とは無関係にリリースが止まった。
 2026年9月16日のprocess-wiの実行では、選定時点のdotfiles宛の`inbox`が4件だったのに対し、レーンの統合が終わる時点では17件になっていた。

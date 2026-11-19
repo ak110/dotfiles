@@ -70,11 +70,11 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("agent-toolkit/agent_toolkit/_common/json_command.py", "run"): "gh・glabのAPI読取",
     ("agent-toolkit/agent_toolkit/_git/command.py", "run"): "ローカルgit操作",
     (
-        "agent-toolkit/skills/refine-prompt/scripts/multi_turn_trials.py",
+        "agent-toolkit/skills/atk-mode/scripts/multi_turn_trials.py",
         "_grade",
     ): "固定の採点スクリプトで、提出コードが起動する子の残存は許容する",
     (
-        "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/goal_discovery/private/grade.py",
+        "agent-toolkit/skills/atk-mode/fixtures/multi-turn/goal_discovery/private/grade.py",
         "_report",
     ): "隔離Pythonで提出CLIを採点する固定課題で、外側の採点と同じく提出コードの子の残存は許容する",
     ("libexec/update_dotfiles_process.py", "kill_process_tree"): "停止前に列挙して子孫も回収する既存実装",
@@ -167,9 +167,9 @@ def test_native_update_stop_exception_is_limited_to_tree_owner():
 
 def test_goal_grader_exception_is_limited_to_report():
     """隔離採点の許可を、固定課題のreport呼出箇所だけに限定する。"""
-    path = pathlib.Path("agent-toolkit/skills/refine-prompt/fixtures/multi-turn/goal_discovery/private/grade.py")
+    path = pathlib.Path("agent-toolkit/skills/atk-mode/fixtures/multi-turn/goal_discovery/private/grade.py")
     source = "def _report(task):\n    subprocess.run([task], timeout=3)\n"
     assert not _violations(path, source)
     assert _violations(path, source.replace("_report", "main"))
     assert _violations(path.with_name("other.py"), source)
-    assert _violations(pathlib.Path("agent-toolkit/skills/refine-prompt/scripts/multi_turn_trials.py"), source)
+    assert _violations(pathlib.Path("agent-toolkit/skills/atk-mode/scripts/multi_turn_trials.py"), source)

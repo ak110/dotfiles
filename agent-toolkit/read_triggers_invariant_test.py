@@ -130,26 +130,10 @@ def test_every_role_has_explicit_parent_read_source():
 _CROSS_PLUGIN_DOCUMENTS = (
     "skills/atk-mode/playbooks/user-utterance.md",
     "skills/atk-mode/references/analysis-records.md",
-    "skills/review-session/references/analysis-operations-root-cause.md",
+    "share/exec-review-criteria.md",
     "skills/atk-mode/references/delivery.md",
     "skills/atk-mode/references/draft-semantic-review.md",
 )
-
-
-@pytest.mark.parametrize(
-    "skill,documents,shared",
-    [("review-session", {"current-session.md", "batch.md"}, set())],
-)
-def test_mode_entries_keep_exclusive_judgment_routes(skill, documents, shared):
-    """入力に合う資料だけを選ぶ条件付きの取得契約を保持する。"""
-    source = _PLUGIN_ROOT / "skills" / skill / "SKILL.md"
-    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
-    assert {path.name for row in rows for path in row.documents} == documents | shared
-    assert all(row.kind == "判断" and len(row.documents) == 1 for row in rows)
-    text = (source.parent / "references" / "current-session.md").read_text(encoding="utf-8")
-    assert "references/batch.md" not in text
-    assert "session-review-state -- finish" not in text
-    assert "session-review-state -- complete" in text
 
 
 def test_process_wi_entry_routes_immediate_fix_for_all_modes():

@@ -44,7 +44,7 @@
   対策の深さを決める2つの判断（上位規範からの導出の確認と、除去・緩和・一般化を先に評価する選定順）は`root-cause-analysis.md`にだけあり、`bugfix`の手順2はその中身を示さなかった。
   WI投入担当は`add-wi.subagent.md`が対策の方向を調査の前提とし、比べる契機を不利益が分かった場合に限っていたため、受け取った方向の範囲で起草した。
   対策: `add-wi.subagent.md`で、観測事象を契機とする要求の対策の方向を候補の1つとし、自ら原因分析で導いた案と比べて技術的に優れる案を採用するよう改め、`add-wi.parent.md`と`design.md`を追随させた。
-  `agent-toolkit:review-session`で原因分析を独立した工程4とし、メインが振り返りごとに`agent-basics:bugfix`を起動して`root-cause-analysis.md`を全文読み、2つの問いへ答えてから原因と対策を確定するよう改めた。
+  振り返り（当時のスキル`review-session`）で原因分析を独立した工程4とし、メインが振り返りごとに`agent-basics:bugfix`を起動して`root-cause-analysis.md`を全文読み、2つの問いへ答えてから原因と対策を確定するよう改めた。
   `agent-basics:bugfix`の手順2へ、同書が定める2つの判断と、対策を選ぶ前に読むことを加えた
 
 - 2026年10月2日: `agent-toolkit:atk-mode`の作業`add-awi-by-user`のセッションで、ユーザーは例を挙げて「唐突かつ不自然な否定文」への対策を依頼した。

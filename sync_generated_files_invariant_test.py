@@ -15,7 +15,7 @@ def test_sync_targets_cover_agent_toolkit_skills_and_share() -> None:
         pathlib.Path("agent-toolkit/skills/atk-mode/references/plan-format.md"),
         pathlib.Path("agent-toolkit/delegation_contract_invariant_test.py"),
         pathlib.Path("agent-toolkit/skills/skill_interfaces_invariant_test.py"),
-        pathlib.Path("agent-toolkit/skills/review-session/session_review_contract_invariant_test.py"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/references/session_review_contract_invariant_test.py"),
         pathlib.Path("agent-toolkit/skills/atk-mode/references/history_rewrite_invariant_test.py"),
         pathlib.Path("agent-toolkit/share/task_documents_invariant_test.py"),
         pathlib.Path("agent-toolkit/share/rules/common/rules_invariant_test.py"),

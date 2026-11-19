@@ -57,14 +57,13 @@ agent-toolkitの作業の入口である。
 
 起動の形は`/atk-mode <作業> [入力]`とする。
 作業の指定が無い起動は、対話での一般の作業として扱う。
-移行前の作業（`review-session`、`export-session`）は、今のスキルを同じ引数で起動する。
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
 | `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md` |
 | `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md` |
-| `review-session [batch]` | 会話の振り返りを求められた時 | スキル`agent-toolkit:review-session` |
-| `export-session` | 会話の記録の出力を求められた時 | スキル`agent-toolkit:export-session` |
+| `review-session [batch]` | 会話の振り返りを求められた時 | `playbooks/review-session.md`（batchは`playbooks/review-session-batch.md`） |
+| `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `roles/<役割名>.subagent.md`（無ければ`${CLAUDE_PLUGIN_ROOT}/share/`の同名）と`${CLAUDE_PLUGIN_ROOT}/share/rules/rules-subagent.md` |
 
 一般の作業では、次の操作・判断の前に対応する資料を全文読む（スキルは起動する）。
@@ -86,7 +85,8 @@ agent-toolkitの作業の入口である。
 | 委譲の要否、起動、待機、検収 | `agent-toolkit:delegation` |
 | commit、push、公開、CI、amend・fixup・rebase、未commitの差分の破棄 | `playbooks/commit.md`の索引 |
 | 検証の起動と記録 | `playbooks/verification.md` |
-| 外部への書込（PR、Issue、コメント）の前 | `agent-toolkit:review-external-writes` |
+| 外部サービスへの投稿（PR、Issue、返信、Release、チャット・メール）の前 | `playbooks/review-external-writes.md` |
+| 指示文の新設・改訂の評価、監査 | `playbooks/refine-prompt.md` |
 | 一時ファイルの置き場所と回収 | `playbooks/managed-temp.md` |
 | 成果物を確定した作業の完了の報告 | `playbooks/report-completion.md` |
 | 完了報告の省略、中止・置換・待機の記録 | `references/termination-evidence.md` |

@@ -81,12 +81,11 @@
   実行時に従う規範は`agent-basics/skills/writing-standards/references/agent-documents-basics.md`「規範の構成」と各スキルに置く
 - 明示的な手動起動を前提としないスキルは`user-invocable: false`とする。
   この方針の実行手順は`agent-basics:writing-standards`が定める
-- `agent-toolkit:refine-prompt`は、エージェントが必要な場面で自分から起動する内部スキルとする。
+- 指示文の評価（`agent-toolkit:atk-mode/playbooks/refine-prompt.md`）は、エージェントが必要な場面で自分から使う内部の手順とする。
   2026年11月10日のユーザー指示「ユーザーが手動起動するのではなく、モデルが規範見直し時に自動的に呼び出す内部的なスキルにした方がいい」と確認回答による。
   契機は、スキルや役割文書の新設時、指示と挙動の食い違いの調査で改訂が必要と確定した時、モデルまたはホストの更新時の3つで、ユーザーは「規範の改訂すべて」を選ばなかった。
   ユーザーは、重い作業は本当に必要な時だけ行うことと、`agent-basics:writing-standards`との重複の整理も求めた。
   このため、通常の評価はシナリオを与えた評価に限り、文書の点検は検索による判定と評価担当の通読の2段階とし、ホストの更新では変更履歴の確認で点検の要否を先に判定する。
-  2026年10月31日に採用した点検手順はユーザーが`/agent-toolkit:refine-prompt audit`で起動する形だったが、この指示がその起動の形を置き換えた。
+  2026年10月31日に採用した点検手順は、ユーザーが当時のスキル`refine-prompt`をauditの指定で起動する形だったが、この指示がその起動の形を置き換えた。
   点検が提案だけを返し、採否をユーザーが決める扱いは保つ。
-  現行の規定は`agent-toolkit:refine-prompt`と、起動の契機を定める次の2資料にある。
-  `agent-toolkit:refine-prompt/references/evaluation-triggers.md`「新設と改訂の評価」と、`.claude/skills/edit-dotfiles-norms/references/model-host-audit.md`である
+  現行の規定は`agent-toolkit:atk-mode/playbooks/refine-prompt.md`にあり、起動の契機は同書「評価する場合」と`.claude/skills/edit-dotfiles-norms/references/model-host-audit.md`が定める

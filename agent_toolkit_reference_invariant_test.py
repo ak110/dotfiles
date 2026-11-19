@@ -7,6 +7,7 @@ import pathlib
 import re
 
 import pytest
+from agent_toolkit._common import skill_modes
 
 from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths
 
@@ -38,6 +39,10 @@ _ATK_MODE_RETIRED_SKILLS = (
     "workflow-overview",
     "managed-temp",
     "process-wi",
+    "review-session",
+    "refine-prompt",
+    "review-external-writes",
+    "export-session",
 )
 
 
@@ -46,6 +51,19 @@ _FIXED_AUDIT_RECORDS = frozenset(
     pathlib.Path(value)
     for value in ("docs/development/audit-opus55-hosts-2026-11-15.json", "docs/development/audit-sol-2026-11-14.json")
 )
+
+
+def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) -> bool:
+    """コードと設定の中の、入口`atk-mode`の作業名の修飾名（`agent-toolkit:review-session`など）かを返す。
+
+    作業名は`atk run-skill`の位置引数、報告用UWIの`scope`、起動入力の値として保存され、同名のスキルが無くても実在の名前である。
+    文書（Markdown）の修飾名と、コード中の起動の形（`/`か`$`を前置した修飾名）は起動の案内になりうるため、
+    新しい起動の形へ直すか個別に許可する。起動の形が1つでもあるファイルでは、そのファイルの同じ修飾名を全て未解決とする。
+    """
+    if source.suffix == ".md" or reference.removeprefix(f"{_PLUGIN_PREFIX}:") not in skill_modes.ENTRY_WORKS:
+        return False
+    content = (root / source).read_text(encoding="utf-8")
+    return re.search(rf"[/$]{re.escape(reference)}(?![A-Za-z0-9_-])", content) is None
 
 
 def _names_retired_skill(reference: str, skills: tuple[str, ...]) -> bool:
@@ -87,7 +105,7 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS_TEST): 1,
     (
         f"{_PLUGIN_PREFIX}:process-wi-all-repos",
-        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_candidates_users.py"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/scripts/session_evidence_candidates_users.py"),
     ): 1,
     (f"{_PLUGIN_PREFIX}:session-review-batch", pathlib.Path("agent-toolkit/agent_toolkit/_common/session_review.py")): 1,
     (f"{_PLUGIN_PREFIX}:session-review", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 2,
@@ -123,6 +141,12 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 1,
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/constants.py")): 2,
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 6,
+    # 作業`review-session`の保存値（報告用UWIの`scope`、起動入力の`skill`）と、変えない公開コマンド`atk run-skill`の位置引数。
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 4,
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/report-completion.md")): 1,
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/review-session-batch.md")): 2,
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/references/review-session-cost.md")): 1,
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("docs/guide/claude-code-guide.md")): 1,
     # 報告用UWIの`scope`として保存済みの起動単位の名前。同名のスキルは起動しない。
     (f"{_PLUGIN_PREFIX}:wi-standards", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submit.py")): 1,
     # 移行前の起動コマンドを含むセッション記録を読む試験の入力
@@ -130,11 +154,11 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/skills/atk-mode/scripts/wi_quote_check_test.py")): 2,
     (
         f"{_PLUGIN_PREFIX}:add-awi-by-user",
-        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_user_events_test.py"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/scripts/session_evidence_user_events_test.py"),
     ): 4,
     (
         f"{_PLUGIN_PREFIX}:write-plan",
-        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_review_evidence_user_events_test.py"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/scripts/session_review_evidence_user_events_test.py"),
     ): 2,
     # 保存済みの計画が計画メタ情報の`起動経路`に持つ値。値は自由記述で、計画の検査は起動先の実在を求めない。
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_testing/plan_fixture.py")): 5,
@@ -199,6 +223,8 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
         if allowed_counts.get(key, 0) > 0:
             allowed_counts[key] -= 1
             continue
+        if _names_entry_work(root, reference, source):
+            continue
         unresolved.append(key)
     for key, remaining_count in allowed_counts.items():
         unresolved.extend([key] * remaining_count)
@@ -234,6 +260,25 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
 
     root_test.unlink()
     assert _unresolved_references(tmp_path, [source]) == [(f"{_PLUGIN_PREFIX}/skills/contract_test.py", source)]
+
+
+def test_entry_work_names_resolve_only_outside_documents(tmp_path: pathlib.Path) -> None:
+    """入口の作業名はコードの保存値として受理し、文書とコード中の起動の形は同名のスキルが無ければ未解決とする。"""
+    reference = f"{_PLUGIN_PREFIX}:review-session"
+    code = pathlib.Path("scope.py")
+    document = pathlib.Path("guide.md")
+    for relative in (code, document):
+        (tmp_path / relative).write_text(f'SCOPE = "{reference} batch"\n', encoding="utf-8")
+    slash = pathlib.Path("slash_notice.py")
+    (tmp_path / slash).write_text(f'NOTICE = "`/{reference} batch`を実行せよ"\n', encoding="utf-8")
+    dollar = pathlib.Path("dollar_notice.py")
+    (tmp_path / dollar).write_text(f'NOTICE = "`${reference}`を起動せよ"\n', encoding="utf-8")
+
+    assert _unresolved_references(tmp_path, [code, document, slash, dollar]) == [
+        (reference, document),
+        (reference, slash),
+        (reference, dollar),
+    ]
 
 
 def test_duration_node_ids_are_not_current_skill_invocations(tmp_path: pathlib.Path) -> None:

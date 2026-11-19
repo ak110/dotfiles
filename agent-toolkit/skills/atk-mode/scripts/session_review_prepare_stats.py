@@ -132,7 +132,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         "",
         "## 費用確認17観点の照会先",
         "",
-        "観点はreview-session/references/analysis.md「コストの無駄の確認」に従う。"
+        "観点は`agent-toolkit:atk-mode/references/review-session-cost.md`「コストの無駄の確認」に従う。"
         "初回の上位と会話の流れを比較し、目的・契約の判断に足りない範囲だけ次を照会する。",
     ]
     for label, source in (

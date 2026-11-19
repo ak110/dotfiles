@@ -28,7 +28,7 @@ grep・fixed-string・context-at・tool-calls・warn・bundleと統計を対象�
 `--grep`・`--hook-notices`・`--user-events`は`summary`を共有し、既存の単独出力との互換性を保つため複数を含む組を拒否する。
 ファイル保存型の`--bundle`と入力集合が異なるカタログ・保存済み発話の排他条件は保持する。
 
-`atk run-script session-review-evidence`の起動スクリプト`agent-toolkit/skills/review-session/scripts/session_review_evidence.py`はCLIの引数の解釈と照会モードの振り分けだけを持つ。
+`atk run-script session-review-evidence`の起動スクリプト`agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py`はCLIの引数の解釈と照会モードの振り分けだけを持つ。
 記録から時系列イベントへの変換と照会モードが共有する処理は同じディレクトリの`session_evidence_extract.py`、対象記録の解決と付随記録の収集は`session_evidence_records.py`に置く。
 照会モードごとの処理は`session_evidence_<照会モード>.py`（`warn`・`detail`・`stats`・`hook_notices`・`user_events`・`tool_calls`・`context`・`catalog`・`bundle`と、`--bundle`が使う問題候補の`candidates`）に置く。
 テストは各モジュールの隣の`*_test.py`に置き、複数のテストが使う記録の組み立ては`agent-toolkit/agent_toolkit/_testing/session_evidence_support.py`に置く。

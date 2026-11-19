@@ -13,8 +13,8 @@ from agent_toolkit._common import next_action as _next_action
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
     "wait-ci": pathlib.Path("agent_toolkit/wait_ci.py"),
-    "cost-metrics": pathlib.Path("skills/review-session/scripts/cost_metrics.py"),
-    "review-adoption": pathlib.Path("skills/review-session/scripts/review_adoption.py"),
+    "cost-metrics": pathlib.Path("skills/atk-mode/scripts/cost_metrics.py"),
+    "review-adoption": pathlib.Path("skills/atk-mode/scripts/review_adoption.py"),
     "delegation-prompt": pathlib.Path("skills/delegation/scripts/delegation_prompt.py"),
     "history-compare": pathlib.Path("skills/atk-mode/scripts/compare_history.py"),
     "commit-with-timeout": pathlib.Path("skills/atk-mode/scripts/run_commit.py"),
@@ -26,12 +26,12 @@ SCRIPT_PATHS = {
     "plan-rewrite": pathlib.Path("skills/atk-mode/scripts/rewrite_plan_commits.py"),
     "pick-wi-check": pathlib.Path("skills/atk-mode/scripts/check_selection.py"),
     "termination-evidence": pathlib.Path("agent_toolkit/_hooks/termination_evidence.py"),
-    "multi-turn-trials": pathlib.Path("skills/refine-prompt/scripts/multi_turn_trials.py"),
+    "multi-turn-trials": pathlib.Path("skills/atk-mode/scripts/multi_turn_trials.py"),
     "record-stall-detection": pathlib.Path("skills/delegation/scripts/record_stall_detection.py"),
     "wait-compaction-context": pathlib.Path("skills/delegation/scripts/wait_compaction_context.py"),
-    "session-review-evidence": pathlib.Path("skills/review-session/scripts/session_review_evidence.py"),
-    "session-review-prepare": pathlib.Path("skills/review-session/scripts/session_review_prepare.py"),
-    "session-review-state": pathlib.Path("skills/review-session/scripts/session_review_state.py"),
+    "session-review-evidence": pathlib.Path("skills/atk-mode/scripts/session_review_evidence.py"),
+    "session-review-prepare": pathlib.Path("skills/atk-mode/scripts/session_review_prepare.py"),
+    "session-review-state": pathlib.Path("skills/atk-mode/scripts/session_review_state.py"),
     "writing-check-dash": pathlib.Path("agent_toolkit/_atk/check_dash.py"),
     "wi-quote-check": pathlib.Path("skills/atk-mode/scripts/wi_quote_check.py"),
 }

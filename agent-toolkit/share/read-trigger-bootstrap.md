@@ -64,6 +64,15 @@ WIの原稿を書く操作と保存する操作の前に読む手順書と形式
 | 作業完了報告の手順書を読む時と、作業完了報告の到達水準を判定する前 | 起動のwhole_contract_pathまたはその正式な解決結果、メインでは自身のmanaged-temp直下にある現行の作業契約 | 操作 | `read:agent-toolkit:*/skills/atk-mode/playbooks/report-completion.md` | `input:作業契約` |
 | 報告用UWIを書く前 | `../skills/atk-mode/references/report-formats.md`、`../skills/atk-mode/references/uwi-format.md`、`../skills/atk-mode/playbooks/wi-saving.md` | 判断 | `read:agent-toolkit:*/skills/atk-mode/references/report-formats.md`、`read:agent-toolkit:*/skills/atk-mode/references/uwi-format.md`、`read:agent-toolkit:*/skills/atk-mode/playbooks/wi-saving.md`、`wi-report-dry-run`、`wi-report-commit` | |
 
+## 振り返りで読む資料
+
+振り返りの準備（`atk run-script session-review-prepare`）の後に、対象リポジトリ固有の参照文書を届ける宣言である。
+準備の記録が無い会話では対象が空になる。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 工程2で`atk run-script session-review-prepare`の出力に含まれる`reference_document`に値が設定されている場合 | `reference_document`が示す対象リポジトリ固有の振り返り参照文書 | 判断 | `tool:Read`、`tool:Bash` | `review-reference` |
+
 ## 常時規範が名指しする資料
 
 常時配送される規範の選択基準に基づいて参照する資料の取得方法を、共通の宣言としてここにまとめる。
@@ -88,7 +97,7 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | エージェント向け文書の責務と配置を決める前 | `agent-toolkit:/share/agent-documents-operations.md` | | |
-| セッション記録の集計・分析 | `agent-toolkit:review-session/references/session-records.md` | | |
+| セッション記録の集計・分析 | `agent-toolkit:atk-mode/references/session-records.md` | | |
 | process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `agent-toolkit:atk-mode/references/orchestrator-runtime.md` | | |
 | ユーザーの入力素材を整理して取り込む時 | `agent-basics:writing-standards/references/writing-genres.md` | | |
 | 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/delegation-sending.md` | | |
@@ -103,11 +112,11 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:delegation/references/sub-agents-context.md` | | |
 | `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `agent-basics:writing-standards/references/claude-hooks.md` | | |
 | auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:atk-mode/playbooks/permission-denial.md`が扱う） | `agent-toolkit:atk-mode/references/auto-mode-rule-addition.md` | | |
-| エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-toolkit:refine-prompt/references/evaluation-triggers.md` | | |
+| エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-toolkit:atk-mode/playbooks/refine-prompt.md` | | |
 | 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` |
 | CI失敗を扱う前 | `agent-toolkit:atk-mode/references/ci.md` | | |
 | 修正commitが必要なCI失敗の修正担当・CI記録・修正系列を扱う前 | `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` | | |
-| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前（操作対象外: 過去の確認の分析） | `agent-toolkit:review-session/references/analysis-operations-root-cause.md`、`agent-toolkit:atk-mode/playbooks/user-utterance.md` | | |
+| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前（操作対象外: 過去の確認の分析） | `agent-toolkit:atk-mode/playbooks/review-session-analysis.md`、`agent-toolkit:atk-mode/playbooks/user-utterance.md` | | |
 | 検証対象の選定と計画、保存した結果の実行・取得、実行レビューで直接影響範囲を求める前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:atk-mode/references/workflow-phases.md` | | |
 | 専用レビュータスク契約を受領し、判定と返却する前（操作対象外: 役割の開始入力） | `agent-toolkit:/share/exec-review-criteria.md` | | |

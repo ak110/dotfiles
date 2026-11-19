@@ -10,7 +10,7 @@ agents_serverが起動設定と必須入力を解決し、呼び元の文脈へ�
 起動時の規範は`agent-toolkit:delegation`の`SKILL.md`「送信」が定める。
 編集、自身が受領した定義の確認、返却後の出力契約の検収は目的を区別して保持する。
 違反の検出は既存のreview-sessionの記録収集・必須候補と、原記録に基づく分類へ接続する。
-判定基準は`agent-toolkit:review-session`の`agent-toolkit:review-session/references/analysis-definition-reads.md`「定義本文の読込の判定」にある。
+判定基準は`agent-toolkit:atk-mode/references/review-session-triage.md`「定義本文の読込の判定」にある。
 毎読取時に目的を判定して遮断する案は、編集や検収にも判定負担を課すため採らない。
 2026年11月15日に、読取目的を判定できず正当な編集・調査・検収にも発火する手順書の読取警告を撤去した。
 起動契約を先に読む義務は維持する。
@@ -129,7 +129,7 @@ Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキ�
   既決判断をそのまま使い、単一writer、CI修正担当、実行レビュー、公開後操作を保持する。
   独立並行やモデルの使い分けの利益が総費用を上回る場合だけ公開担当へ委譲する（`agent-toolkit/skills/atk-mode/roles/session-termination.parent.md`「直接実行」）。
   公開担当の独立性自体はレビューではないため、常時分離する案は採らない
-- 振り返り: `agent-toolkit:review-session`はメインが全体像の把握と最終判断を担い、費用確認で親子の重複と機械的な転記を最初に判定する。
+- 振り返り: `/atk-mode review-session`はメインが全体像の把握と最終判断を担い、費用確認で親子の重複と機械的な転記を最初に判定する。
   読み取り専用の分担から全文の再調査を組み立て直す受渡しは採らない
 
 独立した評価を目的とする担当（実行レビュー、WI原稿の投入前レビュー、ユーザビリティレビュー、読者別探索、投稿前レビュー、一括置換後レビュー、再発防止セルフチェック、プロンプト評価、自動コードレビュー監査）と、all-reposのリポジトリ担当、独立した複数レーンの並列処理と文脈分離は保つ。
