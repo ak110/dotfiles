@@ -14,6 +14,8 @@ WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換�
 呼び出したコマンドと無関係なツールの自動導入が実行され、その失敗が更新処理全体を止めるためである。
 ツール自体はpost-apply工程で`mise install`を明示的に実行して導入するため、`MISE_AUTO_INSTALL=0`の影響を受けない。
 
+## `update-dotfiles`のgit pull工程と退避の回収
+
 `update-dotfiles`のgit pull工程には待ち時間の上限を設ける。
 環境変数を設定しない場合は600秒とし、環境変数`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`へ秒数を与えて調整する。
 `0`を与えると上限を無効化する。

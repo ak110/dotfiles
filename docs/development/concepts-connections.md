@@ -37,14 +37,12 @@
 - 利用上限後の再開は、起動形態ごとに扱う。
   解除待ちのagents_serverの委譲先と背景wait・定期再確認は保持する。
   Codexの候補判定は次候補を優先し、全候補失敗かつ上限失敗がある場合だけ解除を待つ
-- 端末で`codex`を直接起動した対話画面は自動再開しない。
-  外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないためである（2026年10月24日の実機観測）。
-  解除後に発話で続ける
-- 使用順は先頭から評価し、認証が未設定の種別は除く
-- 使える接続が1〜2種しかない環境でも同じ使用順のまま設定済みの接続だけを使うためである
+- 端末で`codex`を直接起動した対話画面は、利用上限の解除後に自動再開しない。
+  外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないためである（2026年10月24日の実機観測、[design-agents-runtime-handoff-resume.md](design-agents-runtime-handoff-resume.md)）。
+  解除後は発話で続ける
+- 使用順は先頭から評価し、認証が未設定の種別は除く。
+  使える接続が1〜2種しかない環境でも同じ使用順のまま設定済みの接続だけを使うためである
 - Codexの`subscription`はprovider `openai`をChatGPTログインで使う場合だけを指し、APIキーのアカウントでは候補から除いて`codex_payg_provider`か`codex_credits_provider`への`openai`の設定を案内する。
   従量課金が明記した役割だけで使われることを、アカウント種別によらず保つためである
 - APIクレジットはClaude APIとAgent SDKを対象とし、Claude Codeを対象外とするため、`claude` CLIで起動するClaudeの統括担当（process-loop）は`credits`を除く
 - 上限の解除予定時刻は所有MCPサーバーのメモリーだけに置き、解放後の再開は保持した接続を使う
-- 端末で`codex`を直接起動した対話画面は、利用上限の解除後に自動再開しない。
-  外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないため（2026年10月24日の実機観測、[design-agents-runtime-handoff-resume.md](design-agents-runtime-handoff-resume.md)）、解除後は発話で続ける

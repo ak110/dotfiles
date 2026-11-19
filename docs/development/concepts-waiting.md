@@ -44,4 +44,4 @@ Codexの公開回収機能による同一ターン回収と、通知再開を持
   `ScheduleWakeup`は`/loop`専用とし、定期起動を完了または停滞の証拠にせず、シェルの`sleep`や背景タイマーを追加しない
 - 完了通知の受領主体を最上位または直接の親へ固定せず、通知の`status`・`result`と保持した直接の子のagent IDを用いる。
   現在の実行主体へ`SendMessage`が公開され呼び出しが成功する場合だけ同じIDへ逐語中継する。
-  `ListAgents`が不在か、呼び出しを拒否された場合は、保持済みのID、完了通知、成果物観測および自身が起動して識別子を保持したプロセスの生存を確認する
+  `ListAgents`が不在か、呼び出しを拒否された場合の代替確認は[design-delegation-process-notification.md](design-delegation-process-notification.md)にある
