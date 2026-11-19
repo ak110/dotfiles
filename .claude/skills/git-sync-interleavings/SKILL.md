@@ -24,8 +24,8 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 - 所要は4シナリオの合計で約13分（2026年11月19日、Linux、1つのプロセス）で、実Gitの境界を使う試験の改善判断値（2秒）を大きく超えるため通常の試験から外した。
   シナリオを2つのプロセスへ分けて同時に起動すると、実時間は約8分になる。
   共有の実行枠を長く占有しないよう`pytest_plugin`を読み込まず、試験の隔離は`agent-toolkit/conftest.py`が与える。
-- 出力はシナリオごとに、順序の数、所要、違反した性質、終了状態の分布、性質ごとの最初の反例（主体ごとの手順の列）である。
-  終了状態の分布で、性質2の検査がrebaseの途中で止まる順序を実際に通ったことを確かめる。
+- 出力はシナリオごとに、順序の数、所要、内容が衝突した順序の数、違反した性質、終了状態の分布、性質ごとの最初の反例（主体ごとの手順の列）である。
+  競合のシナリオで内容が衝突した順序が1つも無ければ、性質2を確かめていないため試験は失敗する。
 
 ## 対応と前提
 
@@ -54,6 +54,7 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 | 性質1（後続の同期の後）: 別々の項目の更新は、受理したものが次の同期で全てremoteに届く | 未pushのcommitが残り続ける |
 | 性質1（操作の終了時）: 2つの更新と別ホストのcommitが、両方の操作の終了時に全てremoteにある（WIの記述どおり） | 更新が他のホストへ届くのが次の操作まで遅れるか、操作をやり直す必要がある |
 | 性質2: rebaseの途中で止まったcloneでは、pullとpushが`RebaseInProgressError`で拒否し、HEADと本文を変えない。止まったことを操作が失敗として返す | 競合の解消前の上書きで、ローカルかremoteのcommitの内容が消える |
+| 性質2（内容の衝突で止まる）: 2つの主体が同じ項目を互いの更新を見ずに書き換えた順序（両方の更新のcommitの親で項目が変更前の本文）では、後続の同期の後に、片方のcloneが競合を保った（`git ls-files --unmerged`に項目がある）rebaseの途中で止まる | 後から統合する側が競合を自動で解決し、先の更新をremoteの先端で黙って上書きする。先の更新は履歴に残るため、受理した更新を失わない性質では検出されない |
 
 ## シナリオと結果
 
@@ -62,10 +63,10 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 
 | シナリオ（試験のID） | 主体と項目 | 順序 | 所要 | 結果 |
 | --- | --- | ---: | ---: | --- |
-| `separate-clones` | A@x項目1、B@y項目2、C@z項目3 | 403 | 296秒 | 性質1（操作の終了時）だけ98通りで違反（既知の反例）。他の性質は全て成立 |
-| `shared-clone` | A@x項目1、B@x項目2、C@z項目3 | 17 | 19秒 | 全て成立 |
-| `conflict` | A@x項目1、B@y項目1、C@z項目3 | 395 | 278秒 | 全て成立。180通りがrebaseの途中で止まり、性質2を確かめた |
-| `conflict-shared-clone` | A@x項目1、B@y項目1、D@x項目4 | 199 | 197秒 | 全て成立。78通りがrebaseの途中で止まり、うち4通りでDが`RebaseInProgressError`で拒否された |
+| `separate-clones` | A@x項目1、B@y項目2、C@z項目3 | 403 | 337秒 | 性質1（操作の終了時）だけ98通りで違反（既知の反例）。他の性質は全て成立 |
+| `shared-clone` | A@x項目1、B@x項目2、C@z項目3 | 17 | 8秒 | 全て成立 |
+| `conflict` | A@x項目1、B@y項目1、C@z項目3 | 395 | 351秒 | 全て成立。内容が衝突した240通りの全てで競合を保って止まり、うち180通りは操作の終了時にrebaseの途中で、性質2の拒否を確かめた |
+| `conflict-shared-clone` | A@x項目1、B@y項目1、D@x項目4 | 199 | 94秒 | 全て成立。内容が衝突した94通りの全てで競合を保って止まり、うち78通りは操作の終了時にrebaseの途中で、4通りでDが`RebaseInProgressError`で拒否された |
 
 上限は、各主体が1回だけ更新する3つの主体である。
 既存の`git_sync_property_test.py`は1つのプロセスの操作列だけを扱い、並行する主体の順序はこの検査が初めて扱う。
@@ -103,5 +104,8 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
   - `_recover_redundant_divergence`の冗長性の確認を削る: `shared-clone`の2通り目で、成功を返したBの更新が失われた。
   - `_push_pending_commits_impl`の`fetch`を祖先関係の判定の後へ移す: `shared-clone`の2通り目で性質1（操作の終了時）が破れた。
   - `_pull_impl`と`_push_pending_commits_impl`の`ensure_not_rebasing`を削る: `conflict-shared-clone`の35通り目で性質2が破れた。
+  - `_pull_impl`と`_push_pending_commits_impl`の`rebase @{u}`を`rebase -Xtheirs @{u}`にする: `conflict`の10通り目と`conflict-shared-clone`の35通り目で性質2（内容の衝突で止まる）が破れた。
+    この性質を加える前の検査は、この変異でも`conflict`の403通り全てで違反なしと判定した。
+    この変異は複製の代わりに、読み込んだ`git_sync`の2つの関数だけを変異後の定義へ差し替えるpytestのプラグインで適用した。
   - 変異を戻した複製は、worktreeと同じ内容であることを`diff`で確かめ、`shared-clone`で元の結果（17通り、違反なし）へ戻った。
 - 変更後も、守る性質の向きにコードを一時的に壊して失敗することを確かめてから戻す。

@@ -184,7 +184,8 @@ class _Run:
         self.remote_writes: list[bool] = []
         """`trace`の各手順がremoteの参照を変えたか。"""
         self.unlocked: list[str] = []
-        self.committed: set[str] = set()
+        self.commits: dict[str, str] = {}
+        """主体ごとの、更新をcommitした直後のmainのcommit。"""
         self.outcomes: dict[str, object] = {}
 
     def actor_name(self) -> str | None:
@@ -348,7 +349,7 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
             run.remote_changed[name] = changed
             run.remote_writes[-1] = changed
         if result.returncode == 0 and _subcommand(command[1:]) == "commit":
-            run.committed.add(name)
+            run.commits[name] = _ref(pathlib.Path(str(kwargs["cwd"])), "refs/heads/main") or ""
         return result
 
     real_acquire = git_sync._RepoLock.acquire  # pylint: disable=protected-access
@@ -474,6 +475,8 @@ class _Verdict:
     trace: list[str]
     outcomes: dict[str, str]
     end_state: str = ""
+    content_conflict: bool = False
+    """2つ以上の主体が、同じ項目を他の主体の更新を見ずに変更前の本文から書き換えてcommitしたか。"""
     violations: dict[str, list[str]] = dataclasses.field(default_factory=dict)
 
     def violate(self, prop: str, message: str) -> None:
@@ -492,7 +495,7 @@ def _judge(repositories: _Repositories, scenario: _Scenario, run: _Run) -> _Verd
     accepted = {
         update.actor
         for update in scenario.updates
-        if update.actor in run.committed or (not update.via_atk and verdict.outcomes.get(update.actor) == "ok")
+        if update.actor in run.commits or (not update.via_atk and verdict.outcomes.get(update.actor) == "ok")
     }
     remote_blobs = _reachable_blobs(repositories.remote, "main")
     local_blobs = {clone: _reachable_blobs(repositories.path(clone), "refs/heads/main") for clone in repositories.clones}
@@ -563,7 +566,38 @@ def _judge(repositories: _Repositories, scenario: _Scenario, run: _Run) -> _Verd
             verdict.violate("受理した更新を失わない（後続の同期の後）", f"{update.actor}の更新が失われた")
         elif not scenario.conflict and blob not in remote_blobs:
             verdict.violate("性質1（後続の同期の後）", f"受理した{update.actor}の更新がremoteに無い")
+    _judge_content_conflict(repositories, scenario, run, verdict)
     return verdict
+
+
+def _judge_content_conflict(repositories: _Repositories, scenario: _Scenario, run: _Run, verdict: _Verdict) -> None:
+    """同じ項目を互いの更新を見ずに書き換えた2つの更新は、後続の同期の後に、片方のcloneが競合を保ったrebaseの途中で止まる。
+
+    受理した更新の到達だけを見ると、後から統合する側が競合を自動で解決して先の更新を上書きしても、
+    先の更新が履歴に残るため違反にならない。そのため、更新のcommitの親の本文から内容の衝突を判定し、停止そのものを確かめる。
+    """
+    blind = [
+        update
+        for update in scenario.updates
+        if update.actor in run.commits
+        and git_repository.git_output(repositories.path(update.clone), "show", f"{run.commits[update.actor]}^:{update.path}")
+        == _base_content(update.entry).strip()
+    ]
+    for entry in sorted({update.entry for update in blind}):
+        rivals = [update for update in blind if update.entry == entry]
+        if len(rivals) < 2:
+            continue
+        verdict.content_conflict = True
+        if not any(
+            git_sync.is_rebase_in_progress(repositories.path(update.clone))
+            and git_repository.git_output(repositories.path(update.clone), "ls-files", "--unmerged", "--", update.path)
+            for update in rivals
+        ):
+            verdict.violate(
+                "性質2（内容の衝突で止まる）",
+                f"{'と'.join(update.actor for update in rivals)}が項目{entry}を互いの更新を見ずに書き換えたが、"
+                "後続の同期の後に競合を保ったrebaseの途中で止まったcloneが無い",
+            )
 
 
 def _tracked_bytes(clone: pathlib.Path) -> tuple[str, dict[str, bytes]]:
@@ -688,6 +722,7 @@ def _summary(exploration: _Exploration) -> str:
         f"{exploration.scenario.name}: 順序{exploration.schedules}通り"
         f"{'（違反で打ち切り）' if exploration.truncated else ''}、{exploration.seconds:.1f}秒"
         f"（製品コードのGit起動{_LAUNCHES[0]:.0f}回・{_LAUNCHES[1]:.1f}秒）、"
+        f"内容が衝突した順序{sum(verdict.content_conflict for verdict in exploration.verdicts)}通り、"
         f"違反した性質: {sorted(exploration.violated()) or 'なし'}"
     ]
     states: dict[str, int] = {}
@@ -729,10 +764,14 @@ def _explored(tmp_path: pathlib.Path, scenario: _Scenario) -> _Exploration:
 @pytest.mark.usefixtures("scheduled_git")
 @pytest.mark.parametrize("scenario", _SCENARIOS, ids=lambda s: s.key)
 def test_every_interleaving_keeps_sync_contract(tmp_path: pathlib.Path, scenario: _Scenario) -> None:
-    """全ての順序で、受理した更新を失わず、rebaseの途中では拒否し、失敗は競合した場合だけに限る。"""
+    """全ての順序で、受理した更新を失わず、内容が衝突すれば競合を保って止まり、rebaseの途中では拒否し、失敗は競合した場合だけに限る。"""
     exploration = _explored(tmp_path, scenario)
     unexpected = exploration.violated() - _KNOWN_FINDINGS.get(scenario.key, set())
     assert not unexpected, _summary(exploration)
+    if scenario.conflict:
+        assert any(verdict.content_conflict for verdict in exploration.verdicts), (
+            "内容が衝突する順序を1つも実行しなかったため、性質2（内容の衝突で止まる）を確かめていない\n" + _summary(exploration)
+        )
 
 
 @pytest.mark.xfail(
