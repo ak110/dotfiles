@@ -1,24 +1,16 @@
-"""session登録簿の直下に置かれる要求ファイルを列挙し、要求への応答と要求側の撤去を扱う。
+"""session登録簿の直下に置かれる要求ファイルを、ディレクトリが変わった時だけ列挙し直す。
 
 登録簿は会話ごとの`<id>.json`を7日分保持し（2026-11-19の実測で1,605件）、effort要求と解放要求はまれにしか置かれない。
 agents_serverの監視は1秒（自動再開待ちは0.1秒）ごとに要求を探すため、毎回の列挙は登録簿の件数に比例する仕事を常時生んでいた。
 要求の置き場所と名前は、版の異なる書き手（CLI）と読み手（所有MCP）が共有する契約なので変えない。
 要求の作成・改名・削除は直下の項目を変えてディレクトリの更新時刻を進めるため、更新時刻が前回と同じなら前回の一覧を使う。
-
-応答は所有MCPが書き、要求と応答の削除は要求側のCLIが行う。
-所有MCPが要求の存在を確かめてから応答を書くまでの間に要求側が両方を消すと、消した後に応答だけが残る（2026-11-19のCIで観測）。
-応答の作成と要求側の撤去は、対象sessionの登録簿ロックの中で行う。
 """
 
 from __future__ import annotations
 
-import json
 import os
 import pathlib
 import time
-from typing import Any
-
-from agent_toolkit._common import atomic_file, session_registry
 
 EFFORT_REQUEST_SUFFIX = ".effort-request"
 RELEASE_REQUEST_SUFFIX = ".release-request"
@@ -54,24 +46,3 @@ def request_paths(directory: pathlib.Path, suffix: str) -> list[pathlib.Path]:
         else:
             _LISTINGS.pop(key, None)
     return [directory / name for name in names if name.endswith(suffix)]
-
-
-def respond(
-    request: pathlib.Path,
-    response_path: pathlib.Path,
-    session_id: str,
-    response: dict[str, Any],
-    *,
-    state_root: pathlib.Path | None,
-) -> None:
-    """要求が残っている場合だけ応答を原子的に書く。要求側が`withdraw`を終えた後には応答を作らない。"""
-    with session_registry.registry_lock(session_id, state_root=state_root):
-        if request.exists():
-            atomic_file.atomic_write(response_path, json.dumps(response, ensure_ascii=False) + "\n")
-
-
-def withdraw(request: pathlib.Path, response_path: pathlib.Path, session_id: str, *, state_root: pathlib.Path | None) -> None:
-    """要求側が待機を終えた要求と応答を消す。"""
-    with session_registry.registry_lock(session_id, state_root=state_root):
-        request.unlink(missing_ok=True)
-        response_path.unlink(missing_ok=True)

@@ -1,4 +1,4 @@
-"""登録簿の要求の列挙が監視の毎巡で登録簿の件数に比例する仕事を繰り返さないことと、要求側の撤去の後に応答が残らないことを確かめる。"""
+"""登録簿の要求の列挙が、登録簿の件数に比例する仕事を監視の毎巡で繰り返さないことを確かめる。"""
 
 from __future__ import annotations
 
@@ -6,14 +6,12 @@ import asyncio
 import contextlib
 import os
 import pathlib
-import threading
 import time
 import types
-from typing import Any
 
 import pytest
 
-from agent_toolkit._common import atomic_file, effort_requests, registry_requests, session_registry, session_release
+from agent_toolkit._common import effort_requests, registry_requests, session_registry, session_release
 
 
 class _CountingScandir:
@@ -110,35 +108,3 @@ def test_absent_or_empty_registry_has_no_requests(tmp_path: pathlib.Path, state:
     if state == "empty":
         directory.mkdir(parents=True)
     assert registry_requests.request_paths(directory, registry_requests.EFFORT_REQUEST_SUFFIX) == []
-
-
-def test_response_is_not_created_after_requester_withdraws(tmp_path: pathlib.Path, monkeypatch) -> None:
-    """所有側が要求の存在を確かめてから応答を書くまでに要求側が撤去しても、撤去の後に応答が残らない。"""
-    directory = _registry(tmp_path, 0)
-    request = directory / "token.release-request"
-    response = request.with_suffix(".release-response")
-    request.write_text("{}", encoding="utf-8")
-    writing = threading.Event()
-    withdrawn = threading.Event()
-    original_write = atomic_file.atomic_write
-
-    def write_after_withdrawal(path: pathlib.Path, content: str | bytes, **kwargs: Any) -> None:
-        writing.set()
-        withdrawn.wait(timeout=0.5)
-        original_write(path, content, **kwargs)
-
-    monkeypatch.setattr(atomic_file, "atomic_write", write_after_withdrawal)
-    owner = threading.Thread(
-        target=registry_requests.respond,
-        args=(request, response, "child", {"session_id": "child"}),
-        kwargs={"state_root": tmp_path},
-    )
-    owner.start()
-    try:
-        assert writing.wait(timeout=5)
-        registry_requests.withdraw(request, response, "child", state_root=tmp_path)
-        withdrawn.set()
-    finally:
-        owner.join(timeout=5)
-    assert not owner.is_alive()
-    assert not request.exists() and not response.exists()

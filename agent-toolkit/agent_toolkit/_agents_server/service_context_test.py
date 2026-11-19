@@ -34,8 +34,8 @@ async def test_effort_request_is_consumed_by_its_conversation_only(monkeypatch, 
     applied = []
     finished = asyncio.Event()
 
-    def respond(path, value, *, state_root):
-        assert path == request and state_root == tmp_path
+    def respond(path, value):
+        assert path == request
         responses.append(value)
         pending.clear()
         finished.set()
