@@ -349,6 +349,15 @@ def test_named_reference_to_missing_document_fails_ci(tmp_path):
     assert f"{source}:1:" in str(caught.value)
 
 
+def test_named_reference_with_placeholder_is_format_description(tmp_path):
+    """置き換え位置を含む名指しは書式の説明として受理し、同じ行の実在しない資料は報告する。"""
+    source = _skill_with_references(tmp_path, "名指しは`references/<名前>.md`の形で書く。\n")
+    read_triggers.validate_reference_routes(source, tmp_path, [])
+    source.write_text("名指しは`references/<名前>.md`の形で書き、`references/missing.md`に従う。\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="参照先が存在しない: .*missing.md"):
+        read_triggers.validate_reference_routes(source, tmp_path, [])
+
+
 def test_omitted_trigger_columns_derive_judgment_and_self_read(tmp_path):
     """2列の表と両セルが空の行は、契機`判断`と資料自身の読取として解析する。"""
     source = _skill_with_references(

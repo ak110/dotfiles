@@ -140,6 +140,7 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
 
     読む経路は、読込表の明示の行か、`named_reference_rows`が補う宣言で成立する。
     定義の所在を示すだけの行には「所在参照」を明記する。
+    `<名前>`のような置き換え位置を含む名指しは名指しの書式の説明であり、実在を求めない。
     """
     from agent_toolkit._common import read_triggers  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
@@ -147,7 +148,7 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
     if read_triggers.resolve_read_source(source, plugin_root) != source.resolve():
         return
     for number, target in _named_references(source, plugin_root):
-        if not target.path.is_file():
+        if "<" not in str(target.path) and not target.path.is_file():
             raise ValueError(
                 f"{source}:{number}: 参照先が存在しない: {target.path}。"
                 "所属スキルを`agent-toolkit:<スキル>`の`references/...`の形で明記してください。"

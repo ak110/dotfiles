@@ -15,7 +15,7 @@ agent-toolkitの作業の入口である。
 
 ## 判断の原則
 
-原則の本文（括弧内）は`agent-basics:writing-standards/references/`にあり、判断に使う前に全文読む。
+原則の本文（括弧内）は`agent-basics:writing-standards`の`references/`にあり、判断に使う前に全文読む。
 
 1. 顧客と技術者（`quality-principles-roles.md`）: 技術で決まることは調べて決めて報告し、ユーザーにしか決められないこと（目的、要件、選好、認可）だけを推奨を添えて尋ねる。
 2. 品質が先、費用と時間はその内側（`quality-principles-qcd.md`）: 今回の目的に要らない工程は省いて根拠を報告する。
