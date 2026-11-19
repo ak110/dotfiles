@@ -215,6 +215,21 @@ async def _tick(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None
     assert not coordinator._incoming
 
 
+async def _reclaim_unadopted(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """元世代が終了してPIDが再利用されても、closeの応答を受け取った資源だけ回収済みとする。"""
+    for acknowledged in (True, False):
+        coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
+        coordinator.managers.conversations.clear()
+        coordinator._pending_adoptions["expired"] = {
+            "parent": "parent",
+            "resource": {"identifier": "raw", "origin": {"generation": "G0", "process": _REUSED}},
+        }
+        release = None if acknowledged else EOFError()
+        monkeypatch.setattr(service_rpc, "request", AsyncMock(side_effect=[release, ConnectionRefusedError()]))
+        await coordinator.tick()
+        assert coordinator.holds_handover() == (not acknowledged)
+
+
 async def _foreign_sessions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """親会話のsession一覧を失敗させず、終了した世代へ照会しない。"""
     coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
@@ -341,6 +356,7 @@ _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch]
     "service_coordinator.ServiceCoordinator.publish": _publish,
     "service_coordinator.ServiceCoordinator._commit": _commit,
     "service_coordinator.ServiceCoordinator.tick": _tick,
+    "service_coordinator.ServiceCoordinator._reclaim_unadopted": _reclaim_unadopted,
     "service_coordinator.ServiceCoordinator._foreign_sessions": _foreign_sessions,
     "service_coordinator.ServiceCoordinator._owns": _owns,
     "service_coordinator.ServiceCoordinator._supervise": _supervise,

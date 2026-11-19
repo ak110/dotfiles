@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import functools
 import logging
 import pathlib
 import uuid
@@ -183,34 +184,41 @@ class ServiceCoordinator:
         旧世代は引き継ぐ会話・資源を残さずに終了した場合だけ退役を記録する（`service.run`）。
         記録が無いまま終了した旧世代は、それらを持ったまま停止・例外・強制終了で終わったことがあり得るため、公開の失敗として返す。
         """
-        current = self._current()
+        commit = functools.partial(service_rpc.request, previous, "commit_update", {"token": token, "current": self._current()})
         loop = asyncio.get_running_loop()
         deadline = loop.time() + _COMMIT_WAIT_SECONDS
+        try:
+            await commit()
+            return
+        except (OSError, EOFError) as error:
+            first_error = error
+
         while True:
-            try:
-                await service_rpc.request(previous, "commit_update", {"token": token, "current": current})
+            # 旧世代の終了直前の退役も確認するため、生存を確かめてから記録を読む。
+            alive = service_transport.process_alive(previous["process"])
+            if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
+                _LOG.info(
+                    "旧世代が確定前に退役しました: generation=%s error=%s: %s",
+                    previous["generation"],
+                    type(first_error).__name__,
+                    first_error,
+                )
                 return
-            except (OSError, EOFError) as error:
-                # 旧世代は終了の前に退役を記録する。生存を確かめてから記録を読み、終了を観測した時点までの記録を判定に含める。
-                alive = service_transport.process_alive(previous["process"])
-                if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
-                    _LOG.info(
-                        "旧世代が確定を受け取らずに退役したため、確定を済んだものとして扱います: generation=%s error=%s: %s",
-                        previous["generation"],
-                        type(error).__name__,
-                        error,
-                    )
+            if not alive:
+                raise RuntimeError(
+                    "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
+                    "旧世代の会話は新世代へ移っていないことがあります: "
+                    f"generation={previous['generation']} process={previous['process']} "
+                    f"error={type(first_error).__name__}: {first_error}"
+                ) from first_error
+            try:
+                async with asyncio.timeout_at(deadline):
+                    await asyncio.sleep(_COMMIT_RETRY_SECONDS)
+                    await commit(timeout=deadline - loop.time())
                     return
-                if not alive:
-                    raise RuntimeError(
-                        "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
-                        "旧世代の会話は新世代へ移っていないことがあります: "
-                        f"generation={previous['generation']} process={previous['process']} "
-                        f"error={type(error).__name__}: {error}"
-                    ) from error
+            except OSError, EOFError:
                 if loop.time() >= deadline:
-                    raise
-            await asyncio.sleep(_COMMIT_RETRY_SECONDS)
+                    raise first_error from None
 
     def bind_runtime(self, runtime: service_io.Runtime) -> service_io.Runtime:
         """現在のbackendにだけ終了境界を知らせ、資源のoriginは変えない。"""
@@ -464,26 +472,51 @@ class ServiceCoordinator:
 
     async def _retry_adoptions(self) -> None:
         for identifier in tuple(self._pending_adoptions):
-            if not self._locks.setdefault(identifier, asyncio.Lock()).locked():
-                await self._finish_adoption(identifier)
+            lock = self._locks.setdefault(identifier, asyncio.Lock())
+            if not lock.locked():
+                async with lock:
+                    await self._finish_adoption(identifier)
+
+    async def _reclaim_unadopted(self, descriptor: dict) -> bool:
+        """本体を失った資源は元のbrokerで閉じ、未確認イベントも残っていないことを確かめる。"""
+        assert self._runtime is not None
+        resource = service_io.Resource.attach(self._runtime, descriptor)
+        if not descriptor.get("closed"):
+            try:
+                await resource.operation("release")
+            except KeyError, OSError, EOFError, RuntimeError:
+                # 前回の応答だけを失った場合、releaseは解放済みの資源を拒む。
+                # discardは未解放や所有者違いなら失敗し、解放済みか登録が無ければ成功する。
+                _LOG.debug("未取り込み資源の解放結果を確認します: %s", resource.identifier, exc_info=True)
+            else:
+                descriptor["closed"] = True
+        try:
+            await resource.operation("discard")
+        except OSError, EOFError, RuntimeError:
+            # closeの応答後に元プロセスが終了すれば、メモリー上のイベントも残らない。
+            if not descriptor.get("closed") or service_transport.process_alive(resource.origin["process"]):
+                _LOG.warning("未取り込み資源の回収を再試行します: %s", resource.identifier, exc_info=True)
+                return False
+        return True
 
     async def _finish_adoption(self, identifier: str) -> None:
         """移譲で受け取ったsessionのraw資源を取り込み、状態を保存してから制御を受け付ける。
 
         保存の失敗などで残った取り込み待ちは、本体が保持期限や会話の回収で解放された後も残る。
         取り込み済みのraw資源は本体の解放が回収し、再開情報は会話の文脈に残るため、失うものは無く待ちを終える。
-        未取り込みのraw資源は本体の解放では回収されないため、待ちを残して引き継ぐものに数え続ける。
+        未取り込みのraw資源は元のbrokerで回収できるまで待ちを残す。
         """
         packet = self._pending_adoptions.get(identifier)
         if packet is None:
             return
         found = self._conversation(identifier)
         if found is None:
-            if packet["resource"] is None:
-                conversation = self.managers.conversations.get(packet["parent"])
-                if conversation is not None:
-                    conversation.manager._service_paused.discard(identifier)
-                self._pending_adoptions.pop(identifier, None)
+            if packet["resource"] is not None and not await self._reclaim_unadopted(packet["resource"]):
+                return
+            conversation = self.managers.conversations.get(packet["parent"])
+            if conversation is not None:
+                conversation.manager._service_paused.discard(identifier)
+            self._pending_adoptions.pop(identifier, None)
             return
         manager = found[1].manager
         with self.managers._bound(found[1]):
