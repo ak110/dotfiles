@@ -49,3 +49,26 @@ curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claud
 ```
 
 setupの制限時間とネットワーク設定は[クラウド環境の設定](https://code.claude.com/docs/en/cloud-environments)を参照。
+
+## 旧い常時規範の回収
+
+以前のagent-toolkitは、常時読み込む規範をホームへ配置していた。
+現在は入口のスキル`atk-mode`と作業ごとの手順書が規範を持ち、セッション開始時と会話の圧縮の後にフックが`atk-mode`の起動を求める。
+旧い規範のファイルが残ると、廃止したスキルの起動を求める指示が読まれ続けるため、導入の形に応じて回収する。
+
+- dotfilesユーザー: `update-dotfiles`の後処理が`~/.claude/rules/agent-toolkit/`と`~/.codex/agent-toolkit/rules/`を削除する。
+  Codex向け`AGENTS.md`、Antigravityのプラグイン、OpenCodeの`agent-toolkit.md`も同じ実行で規範の本文を含まない内容へ置き換わる。
+- 単体インストーラー: `install-claude.sh`と`install-claude.ps1`を再実行すると、`~/.claude/rules/agent-toolkit/`、`~/.claude/rules/agent-basics/`、`~/.claude/rules-stage/`を削除する。
+  agent-basicsだけを導入する`--basics-only`（`-BasicsOnly`）では削除しない。
+- プラグインだけの導入と`--basics-only`: 自動では回収しない。
+  以前に単体インストーラーで導入した環境では、次のコマンドで削除する。
+
+```bash
+rm -rf ~/.claude/rules/agent-toolkit ~/.claude/rules/agent-basics ~/.claude/rules-stage
+```
+
+```powershell
+Remove-Item -LiteralPath "$HOME\.claude\rules\agent-toolkit", "$HOME\.claude\rules\agent-basics", "$HOME\.claude\rules-stage" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+削除の後は新しいセッションを開始し、エージェントが`atk-mode`を起動することを確かめる。

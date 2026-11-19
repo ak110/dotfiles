@@ -59,11 +59,13 @@ statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CL
 導入に失敗した場合は警告の原因を解消して再実行し、`opencode --version`で確認する。
 OpenCodeは`agents_server`の委譲先として使い、作業全体を統括するorchestratorには使わない。
 
-対話ホストとして使うOpenCodeには、後処理がagent-toolkitとagent-basicsのスキル、agent-toolkitの常時規範を導入する。
+対話ホストとして使うOpenCodeには、後処理がagent-toolkitとagent-basicsのスキルと、入口の起動を求める案内を導入する。
 グローバルの`skills/agent-toolkit-<名前>/`と`skills/agent-basics-<名前>/`から検出し、例えば`agent-toolkit-atk-mode`を`skill`ツールで読める。
 配置先は`XDG_CONFIG_HOME`、未設定ならLinux・Windowsとも`~/.config`配下の`opencode/`である。
 `OPENCODE_CONFIG_DIR`でOpenCodeの設定ディレクトリを明示している場合は、その場所へ導入する。
 既存設定の`instructions`へ専用の`agent-toolkit.md`だけを追加し、既存の接続設定・権限・規範を保持する。
+`agent-toolkit.md`は、作業の前と会話の圧縮の後に`agent-toolkit-atk-mode`のスキルを読むことを求める数行の案内で、規範の本文は含まない。
+OpenCodeはフックを登録しないため、この案内が入口の起動を求める。
 MCPサーバーとClaude Code用hookは登録しない。
 反映は`update-dotfiles`後の新しいOpenCodeセッションで確認する。
 スキルの検出と自動選択の設定は[OpenCodeのskills仕様](https://opencode.ai/docs/skills/)に従う。
