@@ -60,7 +60,7 @@ async def test_advice_request_notice_follows_selected_candidate(tmp_path, first_
         assert (marker in selected.prompts[0]) is (selected_engine != "codex")
         assert response["engine"] == selected_engine
         if selected_engine != "codex":
-            assert "agent-toolkit:delegation/references/advice-request.md" in selected.prompts[0]
+            assert "agent-toolkit:atk-mode/playbooks/advice-request.md" in selected.prompts[0]
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])

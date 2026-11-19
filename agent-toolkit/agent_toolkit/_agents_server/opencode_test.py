@@ -25,11 +25,11 @@ _CREATE_PROCESS = asyncio.create_subprocess_exec
 def test_shared_result_contract_is_delivered_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, launch_kind: opencode.LaunchKind
 ) -> None:
-    """通常・軽量の役割権限を保ち、共通返却契約は各プロンプトに1回だけ含める。"""
+    """他のbackendと同じ起動の本文を渡し、共通返却契約は各プロンプトに1回だけ含める。"""
     monkeypatch.setattr(opencode.host_homes, "claude_config_dir", lambda: tmp_path / "claude")
     prompt = opencode.system_prompt(launch_kind)
-    assert prompt.count(launch_prompts.RESULT_REPORT_INSTRUCTIONS) == 1
-    assert launch_prompts.LAUNCH_SYSTEM_PROMPTS[launch_kind].split(launch_prompts.RESULT_REPORT_INSTRUCTIONS)[0] in prompt
+    assert prompt.count(launch_prompts.result_contract()) == 1
+    assert prompt.startswith(launch_prompts.launch_prompt(launch_kind))
 
 
 _FAKE = """#!{python}
@@ -155,24 +155,21 @@ async def test_missing_cli_and_missing_model_fail_start(tmp_path: pathlib.Path, 
 
 @pytest.mark.asyncio
 async def test_cli_receives_all_plugin_and_user_rules(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """実行する子へ、共通規範・委譲先規範・ユーザーの再帰的な規範集合を届ける。"""
+    """実行する子へ、起動の本文とユーザーの再帰的な規範集合を届け、agent-toolkitの旧い配布物は読まない。"""
     capture = _install_cli(tmp_path, monkeypatch)
     custom = tmp_path / "claude" / "rules" / "nested" / "custom.md"
     custom.parent.mkdir(parents=True)
     custom.write_text("この規範の配送を観測する。", encoding="utf-8")
+    legacy = tmp_path / "claude" / "rules" / "agent-toolkit" / "legacy.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("回収対象の旧い規範。", encoding="utf-8")
     async with opencode.OpenCodeManager() as manager:
         session = await manager.start("規範の配送を確認", str(tmp_path), "local/qwen")
         await _finished(manager, session)
     prompt = json.loads(capture.read_text(encoding="utf-8").splitlines()[0])[-1]
-    root = opencode.plugin_roots.SERVER_PLUGIN_ROOT
-    expected = [
-        *sorted((root / "share" / "rules" / "common").glob("*.md")),
-        root / "share" / "rules" / "rules-subagent.md",
-        custom,
-    ]
-    assert expected
-    for path in expected:
-        assert path.read_text(encoding="utf-8") in prompt
+    assert launch_prompts.launch_prompt("delegate") in prompt
+    assert custom.read_text(encoding="utf-8") in prompt
+    assert legacy.read_text(encoding="utf-8") not in prompt
 
 
 @pytest.mark.asyncio

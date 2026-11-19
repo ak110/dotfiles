@@ -11,10 +11,10 @@ from typing import Any
 
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.launch_prompts import (
-    AUTO_RESUME_NOTICE,
-    LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
+    auto_resume_notice,
     cli_runtime_instructions,
+    launch_prompt,
     python_runtime_instructions,
 )
 from agent_toolkit._agents_server.state import LaunchKind
@@ -59,7 +59,8 @@ def _user_rules_instructions() -> str:
     Claude backendの委譲先はユーザー設定の読込元から同じファイル群を受け取る。Codex backendの委譲先へも
     同じ集合を渡し、engineの選択で委譲先が従う規範が変わらないようにする。
     ファイル先頭の`atk-auto`要素の`path`属性が全体指示ファイルの埋め込みと一致するファイルは、同じ本文が
-    既に届くため除く。ユーザーの編集を次の起動と再開から反映するため、呼び出しのたびに読み直す。
+    既に届くため除く。`rules/agent-toolkit/`は旧い配布物の置き場で、更新時に回収するため読まない。
+    ユーザーの編集を次の起動と再開から反映するため、呼び出しのたびに読み直す。
     対象が無い場合は空文字列を返す。
     """
     rules_dir = _host_homes.claude_config_dir() / "rules"
@@ -68,7 +69,7 @@ def _user_rules_instructions() -> str:
     embedded = _embedded_rule_paths()
     sections: list[str] = []
     for path in sorted(rules_dir.rglob("*.md")):
-        if not path.is_file():
+        if not path.is_file() or path.is_relative_to(rules_dir / "agent-toolkit"):
             continue
         try:
             body = path.read_text(encoding="utf-8").rstrip("\n")
@@ -94,7 +95,7 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
     runtime = f"\n{python_runtime_instructions()}" if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else ""
     return (
-        f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}{runtime}\n{cli_runtime_instructions(plugin_root)}\n\n"
+        f"{launch_prompt(launch_kind)}\n{auto_resume_notice()}{runtime}\n{cli_runtime_instructions(plugin_root)}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
         "担当自身が使うagent-toolkitのskillと実行基盤のplugin内部資源は、この実在する絶対パスを起点に読む。"
         "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"

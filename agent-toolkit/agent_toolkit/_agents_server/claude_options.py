@@ -15,13 +15,10 @@ from typing import Any, Literal, cast
 from agent_toolkit._agents_server import child_environment, claude_settings
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.launch_prompts import (
-    AUTO_RESUME_NOTICE,
-    CLAUDE_DELEGATE_SYSTEM_PROMPT,
-    CLAUDE_EXPLORE_SYSTEM_PROMPT,
-    LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
-    SUBAGENT_BASE_INSTRUCTIONS,
+    auto_resume_notice,
     cli_runtime_instructions,
+    launch_prompt,
     python_runtime_instructions,
 )
 from agent_toolkit._agents_server.state import LaunchKind
@@ -125,7 +122,6 @@ def _build_options(
     }
     env.update(_delegated_session.handoff_environment(handoff_prompt))
     cli_instructions = cli_runtime_instructions(plugin_root)
-    launch_prompt = CLAUDE_EXPLORE_SYSTEM_PROMPT if launch_kind == "explore" else LAUNCH_SYSTEM_PROMPTS[launch_kind]
     # CLIのturn状態の報告（`SystemMessage`のsubtype `session_state_changed`）を受け取る。
     # Claude Agent SDKはこの変数が無い場合だけ報告を自身の判定用に要求し、呼び出し側のストリームから除く。
     # 結果の公開の判定に`idle`を使うため、全起動区分で有効にする（`_run`の`ResultMessage`の分岐を参照）。
@@ -156,9 +152,9 @@ def _build_options(
         "max_buffer_size": _MAX_BUFFER_SIZE,
         "setting_sources": ["user"] if lightweight else ["user", "project"],
         "system_prompt": (
-            f"{launch_prompt}\n{AUTO_RESUME_NOTICE}\n{python_runtime_instructions()}\n{cli_instructions}"
-            if lightweight
-            else f"{SUBAGENT_BASE_INSTRUCTIONS}\n{CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{AUTO_RESUME_NOTICE}\n{cli_instructions}"
+            f"{launch_prompt(launch_kind)}\n{auto_resume_notice()}\n"
+            + (f"{python_runtime_instructions()}\n" if lightweight else "")
+            + cli_instructions
         ),
     }
     if stderr is not None:

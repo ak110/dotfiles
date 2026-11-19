@@ -20,7 +20,7 @@ from pytools._internal.common import atomic_write_text
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 QUALITY_SOURCE = "agent-basics/skills/writing-standards/references/quality-principles-{key}.md"
-QUALITY_TARGETS = (("agent-toolkit/share/agents-server-base.md", "result", "結果の返却", 2),)
+QUALITY_TARGETS = (("agent-toolkit/skills/atk-mode/playbooks/subagent.md", "result", "結果の返却", 2),)
 GENERATORS = (
     "scripts/sync_codex_plugin_manifests.py",
     "scripts/gen_completions.py",

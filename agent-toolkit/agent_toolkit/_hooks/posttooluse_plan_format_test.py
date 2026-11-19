@@ -8,7 +8,6 @@ import subprocess
 import pytest
 
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks.rules_context import QUALITY_CHECKPOINT_NOTICE
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import plan_fixture as _plan_fixture
@@ -208,29 +207,7 @@ class TestPlanPostWrite:
             plan_mode_skill_invoked=plan_mode_skill_invoked,
         )
 
-        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
-
-    def test_apply_patch_without_codex_turn_id_does_not_emit_quality_notice(self, tmp_path: pathlib.Path) -> None:
-        """Codex識別情報が欠落したapply_patchには品質を確認する通知を追加しない。"""
-        home = tmp_path / "home"
-        plans = _prepare_plan_home(home)
-        main = plans / "without-turn.md"
-        detail = plans / "without-turn.detail.md"
-        main.write_text("content\n", encoding="utf-8")
-        detail.write_text("content\n", encoding="utf-8")
-        result = _run(
-            {
-                "session_id": "without-turn",
-                "tool_name": "apply_patch",
-                "tool_input": {"command": _codex_patch(_codex_add_section(main))},
-                "cwd": "/repo",
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-
-        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
+        assert result.stdout.strip() == ""
 
     def test_codex_sidecar_is_silent(self, tmp_path: pathlib.Path) -> None:
         """計画の副次ファイルは、計画ファイル（メイン）と計画ファイル（詳細）の組の判定に含めず、通知を出力しない。"""
@@ -249,7 +226,7 @@ class TestPlanPostWrite:
             home_dir=home,
         )
 
-        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
+        assert result.stdout.strip() == ""
 
     def test_codex_plan_path_with_spaces_records_plan_file(self, tmp_path: pathlib.Path) -> None:
         """空白を含む計画パスでもapply_patchの対象を計画ファイル（メイン）として記録する。"""
@@ -269,57 +246,3 @@ class TestPlanPostWrite:
 
         assert result.returncode == 0
         assert _read_state(state_dir, "codex-spaces")["current_plan_file_path"] == str(main)
-
-    def test_plan_write_never_emits_quality_notice(self, tmp_path: pathlib.Path) -> None:
-        """計画ファイル（メイン）と計画ファイル（詳細）がそろったwhole-writeでも品質通知は出力しない。"""
-        home = tmp_path / "home"
-        plans = _prepare_plan_home(home)
-        main = plans / "no-notice.md"
-        detail = plans / "no-notice.detail.md"
-        main.write_text("content\n", encoding="utf-8")
-        detail.write_text("content\n", encoding="utf-8")
-        result = _run_codex_patch(
-            "codex-no-notice",
-            _codex_patch(_codex_add_section(main)),
-            state_dir=tmp_path / "state",
-            home_dir=home,
-        )
-
-        assert result.returncode == 0
-        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
-
-    @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
-    def test_claude_edit_tools_do_not_emit_codex_quality_notice(
-        self,
-        tmp_path: pathlib.Path,
-        tool_name: str,
-    ) -> None:
-        """Claude Codeの既存の編集操作では品質を確認する通知を追加しない。"""
-        home = tmp_path / "home"
-        plans = _prepare_plan_home(home)
-        main = plans / "claude.md"
-        detail = plans / "claude.detail.md"
-        main.write_text("content\n", encoding="utf-8")
-        detail.write_text("content\n", encoding="utf-8")
-        if tool_name == "Write":
-            tool_input = {"file_path": str(main), "content": "content\n"}
-        elif tool_name == "Edit":
-            tool_input = {"file_path": str(main), "old_string": "content", "new_string": "changed"}
-        else:
-            tool_input = {
-                "file_path": str(main),
-                "edits": [{"old_string": "content", "new_string": "changed"}],
-            }
-        result = _run(
-            {
-                "session_id": f"claude-{tool_name}",
-                "tool_name": tool_name,
-                "tool_input": tool_input,
-                "cwd": "/repo",
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-
-        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout

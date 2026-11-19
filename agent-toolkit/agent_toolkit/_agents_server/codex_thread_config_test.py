@@ -295,7 +295,7 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
         resume_params = next(params for method, params in client.requests if method == "thread/resume")
 
         for params in (start_params, resume_params):
-            assert params["baseInstructions"] == subject.SUBAGENT_BASE_INSTRUCTIONS
+            assert params["baseInstructions"] == subject.base_instructions()
             instructions = params["developerInstructions"]
             assert str(plugin_root) in instructions
             command = next(

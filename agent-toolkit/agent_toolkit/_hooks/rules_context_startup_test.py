@@ -29,7 +29,7 @@ def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixtu
     assert len(_output(capsys)) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 
 
-# test-copy-contract: SubagentStartでは規範を配送しても領域作成APIを呼ばない副作用契約。
+# test-copy-contract: SubagentStartでは入口の所在を配送しても領域作成APIを呼ばない副作用契約。
 def test_subagent_start_does_not_create_session_scoped_managed_temp(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -42,7 +42,7 @@ def test_subagent_start_does_not_create_session_scoped_managed_temp(
 
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "session-1"}))
 
-    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in _output(capsys)
+    assert rules_context.SUBAGENT_ENTRY_NOTICE in _output(capsys)
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
@@ -119,8 +119,7 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     output = _output(capsys)
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
     assert "あ" * process_loop_log.INSTRUCTION_MAX_CHARS in output
-    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
-    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
+    assert rules_context.ENTRY_COMPACT_NOTICE in output
     assert f"このセッションのmanaged-temp: {session_temp}" in output
     assert "起動部分:" in output and str(root / "scripts") in output
     if contract:
@@ -269,7 +268,7 @@ def test_process_loop_startup_points_to_result_contract(monkeypatch, capsys):
 def test_startup_input_sets_autonomous_state(data, autonomous, kind, actor, monkeypatch, capsys, tmp_path):
     """自律モードの状態は起動入力が作業`process-wi`を名指しした最上位のセッションでだけ立てる。
 
-    圧縮後のSessionStartでは立て直さない。エージェントによる入口の起動から立てないことは、
+    圧縮後のSessionStartでは再び設定しない。エージェントによる入口の起動から立てないことは、
     PostToolUseの試験（`posttooluse_process_wi_test.py`）が確かめる。
     """
     session_id = f"autonomous-{actor}-{data['skill'].replace(':', '-')}-{autonomous}"

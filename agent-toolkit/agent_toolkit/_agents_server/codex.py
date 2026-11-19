@@ -35,7 +35,7 @@ from agent_toolkit._agents_server.codex_protocol import (
     _WaitCompactionTurn,
 )
 from agent_toolkit._agents_server.codex_rpc import APP_SERVER_STREAM_LIMIT_BYTES, APP_SERVER_WORKING_DIRECTORY, JsonRpcProcess
-from agent_toolkit._agents_server.launch_prompts import SUBAGENT_BASE_INSTRUCTIONS, python_runtime_instructions
+from agent_toolkit._agents_server.launch_prompts import base_instructions, python_runtime_instructions
 from agent_toolkit._agents_server.state import LaunchKind, SessionState
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import codex_usage_limit, mcp_environment, process_tree, windows_job
@@ -48,10 +48,10 @@ __all__ = [
     "JsonRpcProcess",
     "JsonRpcResponseError",
     "LaunchKind",
-    "SUBAGENT_BASE_INSTRUCTIONS",
     "StartCandidateUnavailable",
     "_atk_config",
     "_developer_instructions",
+    "base_instructions",
     "child_environment",
     "codex_providers",
     "codex_usage_limit",

@@ -37,12 +37,10 @@ from agent_toolkit._agents_server.responses import public_send_message_response,
 from agent_toolkit._agents_server.tool_descriptions import (
     COMMAND_DESCRIPTION,
     CWD_DESCRIPTION,
-    DELEGATION_INPUT_GUIDANCE,
     EXTRA_PARAMS_DESCRIPTION,
     HANDOFF_FROM_DESCRIPTION,
     KIND_MCP_INSTRUCTIONS,
     LABEL_DESCRIPTION,
-    LIGHTWEIGHT_MODE_SELECTION,
     MODE_DESCRIPTION,
     MODEL_TYPE_DESCRIPTION,
     PROMPT_DESCRIPTION,
@@ -259,24 +257,18 @@ async def _manager_scope(params: CallToolRequestParams) -> AsyncGenerator[None]:
 mcp = AgentsServerMCP(
     "agents_server",
     instructions=schema_text(
-        "Codex、Claude、AntigravityまたはOpenCodeへの非同期委譲。承認操作は公開しない。\n"
-        "Claude Code・Codexからの委譲は本サーバーを標準とする。"
-        "組み込みの委譲機能（`Agent`・`spawn_agent`等）を使える例外は、"
-        "`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。\n"
-        "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"
-        "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
-        f"{LIGHTWEIGHT_MODE_SELECTION}\n"
-        "task・delegate: 独立した文脈での評価、モデルの使い分けまたは並列化の利益がある作業を委譲する。"
-        "要否の判定は`agent-toolkit:delegation`の`references/routing.md`「要否判定」に従う。\n"
+        "Codex、Claude、AntigravityまたはOpenCodeの委譲先sessionを非同期に起動・操作する。承認操作は公開しない。\n"
+        "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業（task）、自由本文の委譲（delegate）、"
+        "読み取り専用の調査（explore）、確定済みの書込（write）、コマンド実行（shell）を選ぶ。"
+        "入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
         "終了と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
         "`wait`はsession_idの位置引数を取らず、登録済みsessionの終了を待ち、応答の時点で終了したsessionの結果を返す。"
-        "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ。"
-        "全件の終了まで戻らないループやスクリプトで待機を包まない。"
-        "`list`は最小状態、`show`は個別の診断情報を返す。"
+        "残りのsessionは同じコマンドを再発行して待つ。"
+        "`list`は最小状態、`show`は個別の診断情報を返し、どちらも結果本文は返さない。"
         "継続は`send_message`、実行中turnの中断は`kill`、終了済みsessionの明示的な破棄は`stop`で行う。\n"
         "`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
         "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
-        "観測を試みていない作業を残したままターンを終えると、その作業を観測する主体が残らない。",
+        "観測しないままターンを終えると、その結果を受け取る主体が残らない。",
         kind=KIND_MCP_INSTRUCTIONS,
     ),
     request_scope=_request_scope,
@@ -412,7 +404,7 @@ async def send_message(
         Field(
             description=parameter_description(
                 "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終了済みsessionへは新しい依頼として届く。"
-                + DELEGATION_INPUT_GUIDANCE
+                "instructionと排他的に指定する。"
             )
         ),
     ] = None,
@@ -420,8 +412,7 @@ async def send_message(
         float,
         Field(
             description=parameter_description(
-                "継続要求の配送結果が確定するまでの待機上限秒数。"
-                "固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
+                "継続要求の配送結果が確定するまでの待機上限秒数。省略時は270秒。"
                 "委譲先の応答生成の完了は待たない。0以下は受理しない。"
             )
         ),
@@ -445,14 +436,10 @@ async def send_message(
 ) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終了済みなら同じsessionでreplyを開始する。
 
-    入力は委譲先が他から得られない確定済み要件・事実と実行時の値に限定し、参照可能な記録は絶対パスと対象IDで示す。
-    必須入力とユーザー指定の手段を保つ。手段の指定はユーザー指定か要件達成に必要と確定した根拠を伴う場合に限る。
-    詳細はdelegation/references/base-contract.md「入力の適格性と追送」に従う。
     自由文はprompt、宣言された定型指示はinstructionと必要なextra_paramsで渡す。
     入力形式が不成立の場合は配送せず、next_actionに同じsessionへの再実行形と、確認できた役割宣言の候補を返す。
 
-    引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
-    待つのは継続要求の配送結果が確定するまでとする。委譲先の応答生成の完了は待たない。
+    `timeout`の省略時は270秒を待機上限とする。待つのは継続要求の配送結果が確定するまでとする。委譲先の応答生成の完了は待たない。
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     Claude・Codexの実行中turnにはsteerする。Antigravity・OpenCodeの実行中turnは受理しない。
     後者は`atk agents wait`で終了を観測して同じsessionへ`send_message`を再送する。
@@ -501,9 +488,7 @@ async def kill(
         float,
         Field(
             description=parameter_description(
-                "中断要求後に終了を待つ上限秒数。"
-                "固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
-                "0を指定すると、中断要求を配送した直後の状態を返す。"
+                "中断要求後に終了を待つ上限秒数。省略時は270秒。0を指定すると、中断要求を配送した直後の状態を返す。"
             )
         ),
     ] = DEFAULT_KILL_TIMEOUT,
@@ -514,12 +499,8 @@ async def kill(
 ) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終了を待つ。
 
-    停止は最終手段とする。実行中の委譲先には`send_message`で訂正を配送できるため、
-    そちらで意図を満たせる場合は、停止によって失われる作業と再起動の費用の方が大きい。
-    本ツールを選ぶ前に、`send_message`による訂正では足りないことと、その作業の継続自体が不要であることを確認する。
-    利用上限の解除待ちのsessionは、解除後に同じsessionで自動的に続行する。上限への到達だけを停止の理由にしない。
-    引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
-    `timeout=0`を指定すると、中断要求を配送した直後の状態を返す。
+    利用上限の解除待ちのsessionは、中断しなければ解除後に同じsessionで自動的に続行する。
+    `timeout`の省略時は270秒を待機上限とし、`timeout=0`を指定すると、中断要求を配送した直後の状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
     終了時の結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
     `show`の`result_held`が真のsessionでは、保留中の結果をそのまま終了時の結果として返し、以後の`send_message`を受け付ける。
@@ -574,8 +555,7 @@ async def list_sessions(
     Claudeの`api_retry`が示す次の再試行予定時刻は`retry_at`へ返す。
     Claude Codeの利用上限（Weekly limitと5時間）の解除待ちでは`api_error.type`が`usage_limit`となり、
     種類の`limit_type`と解除予定時刻の`resets_at`も返す。
-    解除待ちのsessionは解除後に同じsessionで作業を続けるため、
-    催促、巻き取りおよび別の候補での起動し直しの理由にしない。
+    解除待ちのsessionは解除後に同じsessionで作業を続ける。
     起動条件は`show`で取得する。
     結果本文は返さないため、終了の観測と結果の受領には`atk agents wait`を使う。
     表示範囲を指定しない場合は未回収結果を持たない終了済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
@@ -628,8 +608,7 @@ async def show_session(
     Claudeの`api_retry`が示す次の再試行予定時刻は`retry_at`へ返す。
     Claude Codeの利用上限（Weekly limitと5時間）の解除待ちでは`api_error.type`が`usage_limit`となり、
     種類の`limit_type`と解除予定時刻の`resets_at`も返す。
-    解除待ちのsessionは解除後に同じsessionで作業を続けるため、
-    催促、巻き取りおよび別の候補での起動し直しの理由にしない。
+    解除待ちのsessionは解除後に同じsessionで作業を続ける。
     `status`が`running`で未完了のツール呼び出しがある場合は、`active_tool_uses`へ各呼び出しの種別、開始時刻および入力の要約を返す。
     前回の照会と同じ呼び出しが同じ開始時刻で続いている場合も、長時間のコマンドの実行中として扱う。
     `status`が`running`で、このsessionが`start`で起動し終了をまだ観測していない子sessionがある場合は、
@@ -695,8 +674,8 @@ async def send_to_user(
     except Exception:  # noqa: BLE001 -- 補助案内の失敗で本文の送達を止めない
         _LOG.exception("報告の取得案内を作成できない")
         guidance = (
-            "報告の判定資料を確認できなかった。改善点はshare/rules/rules-main.mdの作業中の改善点の報告を、"
-            "逸脱の報告はagent-basics:bugfixを確認せよ。"
+            "報告の案内を取得できなかった。報告した改善点は原因と影響を確かめてその場で是正するか、是正しない理由と担当を報告へ書く。"
+            "報告した逸脱は`agent-basics:bugfix`を起動して診断と是正を行う。"
         )
     # 再開後の画面で、同じ本文を持つ別の呼出しの表示を取り違えないよう、呼出しの識別子を添える。
     tool_use_id = _TOOL_USE_ID.get()
