@@ -807,6 +807,8 @@ def test_upgrade_check_cuts_routes_to_real_home(
     monkeypatch.setenv("NPM_CONFIG_PREFIX", str(real_home / ".nvm" / "versions" / "node" / "v1"))
     monkeypatch.setenv("UV_CACHE_DIR", str(real_home / ".cache" / "uv"))
     monkeypatch.setenv("UV_PYTHON_INSTALL_DIR", str(real_home / ".local" / "share" / "uv" / "python"))
+    monkeypatch.setenv("UV_PYTHON_BIN_DIR", str(home_bin))
+    monkeypatch.setenv("XDG_BIN_HOME", str(home_bin))
     child_envs: list[dict[str, str]] = []
 
     def runner(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -833,6 +835,8 @@ def test_upgrade_check_cuts_routes_to_real_home(
         assert "NVM_DIR" not in env
         assert pathlib.Path(env["UV_CACHE_DIR"]).is_relative_to(verification_home)
         assert pathlib.Path(env["UV_PYTHON_INSTALL_DIR"]).is_relative_to(verification_home)
+        assert pathlib.Path(env["UV_PYTHON_BIN_DIR"]) == verification_home / ".local" / "bin"
+        assert pathlib.Path(env["XDG_BIN_HOME"]) == verification_home / ".local" / "bin"
         if platform_name == "linux":
             assert not any(entry.is_relative_to(real_home) for entry in entries), entries
             assert env["NPM_CONFIG_PREFIX"] == str(verification_home / ".local")
