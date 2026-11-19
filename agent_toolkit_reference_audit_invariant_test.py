@@ -17,7 +17,6 @@ from _test_helpers import _AUDIT_RECORDS, _SOURCE_SUFFIXES, _tracked_source_path
 # ファイル部分が入口の規範を指す見出しは、そのファイルに節名と同じ見出しがあることでも参照ありとする。
 # agent-basicsの配布物はagent-basicsユーザーにも配り、配布物の外の記録を指すとリンク切れになる。
 # そのため条文へ索引の文を置かず、ファイルに節名と同じ見出しがあることでも参照ありとする。
-# 規範原本を`share/rules/`へ集める前の見出しは旧パスのまま当時の記録として残すため、現在の所在へ読み替えて照合する。
 _AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
 
 
