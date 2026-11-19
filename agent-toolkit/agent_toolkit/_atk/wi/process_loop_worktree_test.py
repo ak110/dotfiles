@@ -396,3 +396,19 @@ def test_existing_dedicated_branch_without_upstream_gets_tracking_but_configured
     assert _pl_worktree._sync_worktree_with_upstream(local, "process-loop") == worktree  # pylint: disable=protected-access
     expected = "other" if configured else "origin/main"
     assert git_repository.git_output(worktree, "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}") == expected
+
+
+def test_tracking_failure_reports_next_action(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """追跡先を設定できない場合は準備を止めず、設定する操作を次の操作として示す。"""
+    local, _peer = _upstream_repository(tmp_path)
+    worktree = _pl_worktree._sync_worktree_with_upstream(local, "process-loop")  # pylint: disable=protected-access
+    assert worktree is not None
+    branch = git_repository.git_output(worktree, "branch", "--show-current")
+    git_repository.run_git(worktree, "branch", "--unset-upstream")
+    capsys.readouterr()
+
+    _pl_worktree._ensure_upstream_tracking(worktree, branch, "origin/missing")  # pylint: disable=protected-access
+
+    error = capsys.readouterr().err
+    assert f"専用ブランチ{branch}の追跡先をorigin/missingに設定できませんでした" in error
+    assert f"次の操作: `git -C {worktree} branch --set-upstream-to=origin/missing {branch}`" in error

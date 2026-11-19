@@ -5,7 +5,6 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 
 from agent_toolkit._atk import config_repositories as _config_repositories
 from agent_toolkit._atk import managed_temp
@@ -267,10 +266,13 @@ def _ensure_upstream_tracking(worktree_path: pathlib.Path, branch: str, upstream
     configured = _run_worktree_git(["config", "--get", f"branch.{branch}.remote"], worktree_path)
     if configured.returncode == 0 and configured.stdout.strip():
         return
-    result = _run_worktree_git(["branch", f"--set-upstream-to={upstream_branch}", branch], worktree_path)
+    args = ["branch", f"--set-upstream-to={upstream_branch}", branch]
+    result = _run_worktree_git(args, worktree_path)
     if result.returncode != 0:
-        print(
-            f"専用ブランチ{branch}の追跡先を{upstream_branch}に設定できませんでした: {result.stderr.strip()}", file=sys.stderr
+        failure = _failure_text(args, worktree_path, result)
+        _next_action.report(
+            f"専用ブランチ{branch}の追跡先を{upstream_branch}に設定できませんでした: {failure}",
+            next_action=f"`git -C {worktree_path} branch --set-upstream-to={upstream_branch} {branch}`で追跡先を設定する",
         )
 
 
