@@ -795,6 +795,9 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
                 maintenance = psutil.Process(int(output.strip()))
                 # 保持役のロックで整理を待っている間に独立プロセスの世代を保持し、記録の後に同じ所有として回収する。
                 owned = process_tree.collect_descendants(maintenance.pid, pins=pins, include_root=True)
+                # 整理の失敗や記録の時間切れで落ちても独立プロセスを残さないよう、
+                # `pins.close`より先に動く後始末で回収する。
+                request.addfinalizer(lambda: process_tree.stop_tree(None, known=owned, pins=pins))
             # Jobの終了が所属プロセスへ届いたことを、離脱していない所属プロセスの終了で確かめる。
             unbroken.wait(timeout=30)
             assert maintenance.is_running(), "Jobの終了とともに独立プロセスが止まった"

@@ -64,7 +64,8 @@ def test_windows_tests_place_basetemp_on_runner_disk(workflow_data: dict[str, ob
     """
     steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-tests"]))
     _, step = _windows_step(steps, "Windows境界テスト")
-    assert "--basetemp=$env:RUNNER_TEMP/pytest-windows" in shlex.split(str(step["run"]))
+    # PowerShellは二重引用の中だけ変数を展開する。`shlex.split`は引用の種類を区別しないため、原文で確かめる。
+    assert '--basetemp="$env:RUNNER_TEMP/pytest-windows"' in str(step["run"])
 
 
 def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]) -> None:
