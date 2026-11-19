@@ -116,7 +116,7 @@ process-wiのレーンの返却は`agent-toolkit:atk-mode/playbooks/lane-receipt
    完成条件の変更か除外へ進むかは`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「エスカレーションの事由別の扱い」に従う。
    委譲先が付けた区分（「要件」「要求の変更」など）はそのまま確認の理由にせず、`agent-toolkit:atk-mode/playbooks/confirmation.md`「要件と技術判断を分ける」で判定する。
    レビュー指摘と調査の結果は、指定されたレビュー指摘管理表へ記録してから修正に着手する。
-   応答欄は`agent-toolkit:atk-mode/references/review-record-response.md`の行頭ラベルで書き、`atk review-table respond`で更新する。
+   応答欄は`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」の行頭ラベルと構成で書き、`atk review-table respond`で更新する（ラベルが足りないと更新は失敗する）。
 7. 委譲先の動作や運用そのものを分析する時は、稼働中のその委譲先の完了報告も観測に含めてから結論を出す。
 
 ### 改善点の中継と送達の記録
