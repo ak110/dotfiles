@@ -188,6 +188,16 @@ async def _publish(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
     request.assert_not_awaited()
 
 
+async def _commit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """確定の接続を閉じた旧世代が終了していれば、公開を失敗させず確定を済んだものとして扱う。"""
+    coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
+    request = AsyncMock(side_effect=EOFError)
+    monkeypatch.setattr(service_rpc, "request", request)
+    async with asyncio.timeout(5):
+        await coordinator._commit({"generation": "G0", "epoch": 1, "process": _REUSED}, "token")
+    request.assert_awaited_once()
+
+
 def _freezable(coordinator: Any) -> None:
     coordinator.projections = cast(Any, SimpleNamespace(freeze=AsyncMock(), thaw=AsyncMock(), inventory=dict))
     coordinator.registrations = cast(Any, SimpleNamespace(freeze=AsyncMock(), thaw=Mock()))
@@ -327,6 +337,7 @@ async def _publish_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 # 起動単位の生存判定を呼ぶ箇所ごとの、照会を拒否された終了済み世代の場面。
 _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch], Awaitable[None]]] = {
     "service_coordinator.ServiceCoordinator.publish": _publish,
+    "service_coordinator.ServiceCoordinator._commit": _commit,
     "service_coordinator.ServiceCoordinator.tick": _tick,
     "service_coordinator.ServiceCoordinator._foreign_sessions": _foreign_sessions,
     "service_coordinator.ServiceCoordinator._owns": _owns,

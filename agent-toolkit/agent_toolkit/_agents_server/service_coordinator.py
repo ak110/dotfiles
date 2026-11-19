@@ -66,6 +66,10 @@ _PUBLISHER_PROBE_SECONDS = 1.0
 # 所有世代への所有照会の待機上限。生存する世代は即時に応答するため、停止した世代だけを短時間で判別する。
 _OWNER_PROBE_SECONDS = 10.0
 
+# 確定の接続を閉じた旧世代の終了を待つ上限と確認の間隔。会話を持たない旧世代は退出の判定から短時間で終了する。
+_PREVIOUS_EXIT_SECONDS = 10.0
+_PREVIOUS_EXIT_POLL_SECONDS = 0.1
+
 
 @dataclasses.dataclass
 class _Update:
@@ -164,16 +168,31 @@ class ServiceCoordinator:
                 finally:
                     try:
                         if previous is not None:
-                            await service_rpc.request(
-                                previous,
-                                "commit_update",
-                                {
-                                    "token": token,
-                                    "current": self._current(),
-                                },
-                            )
+                            await self._commit(previous, token)
                     finally:
                         file_lock.release_lock(handle)
+
+    async def _commit(self, previous: dict, token: str) -> None:
+        """静止させた旧世代へ確定を通知する。確定を受け取らずに終了した旧世代には、解く静止が残っていない。
+
+        この修正より前の版の旧世代は、確定の到着を待たずに退出し、確定の接続を閉じる。
+        旧世代の終了は接続の切断より遅れて観測されるため、上限の間だけ終了を待ってから失敗と判定する。
+        """
+        current = self._current()
+        try:
+            await service_rpc.request(previous, "commit_update", {"token": token, "current": current})
+        except (OSError, EOFError) as error:
+            deadline = asyncio.get_running_loop().time() + _PREVIOUS_EXIT_SECONDS
+            while service_transport.process_alive(previous["process"]):
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise
+                await asyncio.sleep(_PREVIOUS_EXIT_POLL_SECONDS)
+            _LOG.info(
+                "旧世代が確定を受け取らずに終了したため、確定を済んだものとして扱います: generation=%s error=%s: %s",
+                previous["generation"],
+                type(error).__name__,
+                error,
+            )
 
     def bind_runtime(self, runtime: service_io.Runtime) -> service_io.Runtime:
         """現在のbackendにだけ終了境界を知らせ、資源のoriginは変えない。"""
@@ -231,9 +250,14 @@ class ServiceCoordinator:
         return current or self.target
 
     def can_retire(self) -> bool:
-        """接続数や経過時間で強制終了せず、元資源と担当状態がなくなったことだけで退出する。"""
+        """接続数や経過時間で強制終了せず、元資源と担当状態がなくなったことだけで退出する。
+
+        準備した更新（`_updates`）も担当状態に含める。公開元は受付を公開した後で確定を送るため、
+        受付先の切替を観測した時点では確定の接続がまだ届いていないことがある。
+        """
         return (
             self._current()["epoch"] > self.target["epoch"]
+            and not self._updates
             and not self.managers.conversations
             and self._runtime is not None
             and not self._runtime.broker._resources

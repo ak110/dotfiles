@@ -16,7 +16,15 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from agent_toolkit._agents_server import service_forward, service_io, service_rpc, service_transport, shared_roots
+from agent_toolkit._agents_server import (
+    service,
+    service_coordinator,
+    service_forward,
+    service_io,
+    service_rpc,
+    service_transport,
+    shared_roots,
+)
 from agent_toolkit._agents_server.service_context import ServiceManagers
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
@@ -279,6 +287,98 @@ async def test_relaunched_generation_takes_over_from_survivor_after_acceptance_r
     current = GenerationRegistry(directory).current()
     assert current is not None and (current["generation"], current["process"]) == ("new", relaunched["process"])
     assert handed_over == [("old", "prepare_update"), ("old", "commit_update")]
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_superseded_generation_stays_reachable_until_publisher_commits(tmp_path: pathlib.Path) -> None:
+    """会話を持たない旧世代は、新世代が受付を公開してから確定を送るまでの間に退出せず、確定を受け取ってから退出する。
+
+    Windowsのファイルロックは競合時に1秒待ってから取り直すため、旧世代は公開と確定の送信の間にも退出を判定する。
+    2026-11-20、版の更新直後の起動確認で、旧世代が確定を受け取らずに退出し、新世代の公開が`EOFError`で失敗した。
+    """
+    caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
+    directory = service_transport.namespace(caller)
+    registry = GenerationRegistry(directory)
+    registry.reserve("old", tmp_path / "old", "1.0.0")
+    stop = asyncio.Event()
+    serving = asyncio.create_task(service.run(directory, "old", stop=stop))
+    # 受付先のプロセスが自身と同じなら旧世代は自身を受付先と扱うため、公開元は別の生存するプロセスとする。
+    with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as publisher:
+        try:
+            async with asyncio.timeout(10):
+                while not (directory / "old.json").exists():
+                    if serving.done():
+                        await serving
+                    await asyncio.sleep(0.01)
+            old = json.loads((directory / "old.json").read_text(encoding="utf-8"))
+            registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
+            registry.reserve("new", tmp_path / "new", "1.0.1")
+            new = _target(
+                directory,
+                "new",
+                registry.generations()["new"]["epoch"],
+                service_transport.process_identity(publisher.pid),
+            )
+            await service_rpc.request(old, "prepare_update", {"token": "token", "target": new}, timeout=10)
+            registry.publish("new", endpoint=new["endpoint"], process=new["process"], server_instance=new["server_instance"])
+            await asyncio.sleep(1.5)
+            assert not serving.done(), "旧世代が確定を受け取る前に退出した"
+            await service_rpc.request(old, "commit_update", {"token": "token", "current": registry.current()}, timeout=10)
+            async with asyncio.timeout(10):
+                await serving
+        finally:
+            stop.set()
+            await asyncio.gather(serving, return_exceptions=True)
+            publisher.kill()
+
+
+@pytest.mark.parametrize("previous_exits", [True, False])
+@pytest.mark.asyncio
+async def test_publication_settles_only_when_previous_generation_exits_without_commit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, previous_exits: bool
+) -> None:
+    """確定の接続を閉じた旧世代が終了すれば公開を完了し、生存したままなら静止が残るため公開の失敗を返す。
+
+    修正前の版の旧世代は確定の到着を待たずに退出し、確定の接続を閉じる。旧世代の終了は切断より遅れて観測される。
+    """
+    directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
+    registry = GenerationRegistry(directory)
+    # Windowsは終了したプロセスもhandleが残る間は開けるため、終了させた後で起動した側のhandleを手放す。
+    processes = [subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])]  # pylint: disable=consider-using-with
+    old = _target(directory, "old", 1, service_transport.process_identity(processes[0].pid))
+    registry.reserve("old", tmp_path / "old", "1.0.0")
+    registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
+    registry.reserve("new", tmp_path / "new", "1.0.1")
+    coordinator = _coordinator(directory, _target(directory, "new", 2, service_transport.process_identity(os.getpid())))
+
+    def exit_previous() -> None:
+        process = processes.pop()
+        process.kill()
+        process.wait()
+
+    async def request(_previous: dict[str, Any], operation: str, _arguments: dict) -> dict:
+        if operation == "commit_update":
+            if previous_exits:
+                asyncio.get_running_loop().call_later(0.3, exit_previous)
+            raise EOFError
+        return {}
+
+    monkeypatch.setattr(service_rpc, "request", request)
+    try:
+        if previous_exits:
+            accepted = await coordinator.publish()
+            assert accepted["generation"] == "new"
+        else:
+            monkeypatch.setattr(service_coordinator, "_PREVIOUS_EXIT_SECONDS", 0.5)
+            with pytest.raises(EOFError):
+                await coordinator.publish()
+        current = registry.current()
+        assert current is not None and current["generation"] == "new"
+    finally:
+        for process in processes:
+            process.kill()
+            process.wait()
 
 
 def test_exited_candidate_is_not_published(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
