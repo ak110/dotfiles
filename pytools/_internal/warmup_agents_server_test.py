@@ -595,7 +595,7 @@ def test_published_service_outlives_startup_check(
         outcome = asyncio.run(_CHECK_STARTUP(_launch_command(target)))
         assert outcome.ok, outcome.message
         current = registry.current()
-        assert current is not None and current["generation"] == service_forward.code_identity(target)[0]
+        assert current is not None and current["generation"] == service_forward.code_identity(target, registry.directory)[0]
         assert service_transport.process_alive(current["process"])
         return current
 

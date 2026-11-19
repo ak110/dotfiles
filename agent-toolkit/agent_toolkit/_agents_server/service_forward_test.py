@@ -139,7 +139,7 @@ def test_service_launch_denied_without_breakaway_is_not_reported_as_job_denial(
 def _service_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     directory = tmp_path / "services" / "agents-server"
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
-    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("G1", "1.0.0"))
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("G1", "1.0.0"))
     GenerationRegistry(directory).reserve("G1", tmp_path, "1.0.0")
     return directory
 
@@ -263,7 +263,7 @@ def test_restart_does_not_mistake_exited_generation_record_for_new_service(
         _SERVICE_STAND_IN.format(code=str(code), signals=str(signals)), encoding="utf-8"
     )
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
-    monkeypatch.setattr(service_forward, "code_identity", lambda _root: ("G1", "1.0.0"))
+    monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("G1", "1.0.0"))
     monkeypatch.setattr(service_forward.plugin_environment, "prepared_python", lambda *_args: None)
     GenerationRegistry(directory).reserve("G1", root, "1.0.0")
     exited = "999999999:1"
@@ -310,8 +310,9 @@ def _plugin_root(root: pathlib.Path, version: str, modules: dict[str, str]) -> p
     return root
 
 
-def _identity(root: pathlib.Path) -> str:
-    return service_forward.code_identity(root)[0]
+def _identity(root: pathlib.Path, tmp_path: pathlib.Path) -> str:
+    """同じ試験の全rootが共有する管理領域の索引を使って、`root`の世代を返す。"""
+    return service_forward.code_identity(root, tmp_path / "services")[0]
 
 
 def _distributed_identity(root: pathlib.Path) -> str:
@@ -340,26 +341,27 @@ def test_code_identity_joins_same_code_and_separates_changed_code(tmp_path: path
     """
     claude = _plugin_root(tmp_path / "claude" / "1.0.0" / "agent-toolkit", "1.0.0", _MODULES)
     codex = _plugin_root(tmp_path / "codex" / "1.0.0" / "agent-toolkit", "1.0.0", _MODULES)
-    joined = _identity(claude)
-    assert _identity(codex) == joined
+    joined = _identity(claude, tmp_path)
+    assert _identity(codex, tmp_path) == joined
     (claude / "agent_toolkit" / "_agents_server" / "service_test.py").write_text(
         "def test_other() -> None: ...\n", encoding="utf-8"
     )
     (claude / "agent_toolkit" / "README.md").write_text("説明\n", encoding="utf-8")
     _settle(claude, 1)
-    assert _identity(claude) == joined
+    assert _identity(claude, tmp_path) == joined
     # 同じ大きさの書き換えも、書き換え後の内容を新しく置いたrootと同じ世代として識別する。
     (claude / "agent_toolkit" / "_agents_server" / "service.py").write_text("VALUE = 2\n", encoding="utf-8")
     _settle(claude, 2)
-    edited = _identity(claude)
+    edited = _identity(claude, tmp_path)
     assert edited != joined
     assert edited == _identity(
-        _plugin_root(tmp_path / "fresh" / "agent-toolkit", "1.0.0", {**_MODULES, "_agents_server/service.py": "VALUE = 2\n"})
+        _plugin_root(tmp_path / "fresh" / "agent-toolkit", "1.0.0", {**_MODULES, "_agents_server/service.py": "VALUE = 2\n"}),
+        tmp_path,
     )
     (claude / "agent_toolkit" / "added.py").write_text("", encoding="utf-8")
     _settle(claude, 3)
-    assert _identity(claude) not in {joined, edited}
-    assert _identity(_plugin_root(tmp_path / "next" / "agent-toolkit", "1.0.1", _MODULES)) != joined
+    assert _identity(claude, tmp_path) not in {joined, edited}
+    assert _identity(_plugin_root(tmp_path / "next" / "agent-toolkit", "1.0.1", _MODULES), tmp_path) != joined
 
 
 def test_code_identity_keeps_the_distributed_definition(tmp_path: pathlib.Path) -> None:
@@ -374,4 +376,66 @@ def test_code_identity_keeps_the_distributed_definition(tmp_path: pathlib.Path) 
     )
     real = pathlib.Path(service_forward.__file__).resolve().parents[2]
     for root in (synthetic, real):
-        assert _identity(root) == _distributed_identity(root)
+        assert _identity(root, tmp_path) == _distributed_identity(root)
+
+
+def _count_digests(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
+    """全モジュールを読んでハッシュした回数を、対象のrootごとに記録する。"""
+    digested: list[pathlib.Path] = []
+    digest = service_forward._code_digest
+
+    def counting(root: pathlib.Path, version: str, paths: list[pathlib.Path]) -> str:
+        digested.append(root)
+        return digest(root, version, paths)
+
+    monkeypatch.setattr(service_forward, "_code_digest", counting)
+    return digested
+
+
+def test_code_identity_reads_modules_only_when_one_changed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """変わらないrootの2回目以降の識別は全モジュールを読まず、モジュールの書き換え後は読み直して新しい世代を返す。"""
+    root = _plugin_root(tmp_path / "agent-toolkit", "1.0.0", _MODULES)
+    digested = _count_digests(monkeypatch)
+    first = _identity(root, tmp_path)
+    assert _identity(root, tmp_path) == first
+    assert digested == [root]
+    (root / "agent_toolkit" / "_agents_server" / "service.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _settle(root, 1)
+    edited = _identity(root, tmp_path)
+    assert _identity(root, tmp_path) == edited == _distributed_identity(root)
+    assert edited != first
+    assert digested == [root, root]
+
+
+@pytest.mark.parametrize(
+    "index",
+    ["{", "[]", json.dumps({"version": 0, "entries": {}}), json.dumps({"version": 1, "entries": []}), "replace-values"],
+)
+def test_code_identity_ignores_a_broken_index(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, index: str) -> None:
+    """壊れた索引と形の合わない索引は保存されていなかったものとして扱い、モジュールから計算した世代を返す。"""
+    root = _plugin_root(tmp_path / "agent-toolkit", "1.0.0", _MODULES)
+    _identity(root, tmp_path)
+    path = tmp_path / "services" / "code-identity" / "index.json"
+    if index == "replace-values":
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        index = json.dumps({**saved, "entries": dict.fromkeys(saved["entries"], 1)})
+    path.write_text(index, encoding="utf-8")
+    digested = _count_digests(monkeypatch)
+    assert _identity(root, tmp_path) == _distributed_identity(root)
+    assert digested == [root]
+
+
+def test_code_identity_recomputes_while_a_module_was_just_written(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """更新時刻の刻みの中で内容だけが変わり得る書込直後のモジュールがある間は、世代を保存せずに毎回計算する。"""
+    root = _plugin_root(tmp_path / "agent-toolkit", "1.0.0", _MODULES)
+    (root / "agent_toolkit" / "fresh.py").write_text("", encoding="utf-8")
+    digested = _count_digests(monkeypatch)
+    for _ in range(2):
+        assert _identity(root, tmp_path) == _distributed_identity(root)
+    assert digested == [root, root]
+    _settle(root)
+    for _ in range(2):
+        assert _identity(root, tmp_path) == _distributed_identity(root)
+    assert digested == [root, root, root]
