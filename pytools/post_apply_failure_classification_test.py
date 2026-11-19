@@ -87,13 +87,13 @@ def _mise_install_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
 
 def _codex_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     del tmp_path
-    monkeypatch.setattr(setup_cli_common, "is_windows_cli_running", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(setup_cli_common, "find_windows_cli_processes", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(setup_codex_cli, "_run_installer", lambda _client: _completed(1, stderr="network"))
 
 
 def _claude_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(setup_cli_common, "is_windows_cli_running", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(setup_cli_common, "find_windows_cli_processes", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(setup_cli_common, "run_official_installer", lambda *_args, **_kwargs: (None, "取得に失敗"))
 
 

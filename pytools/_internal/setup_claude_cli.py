@@ -27,11 +27,12 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
     launcher = Path.home() / ".local" / "bin" / ("claude.exe" if sys.platform == "win32" else "claude")
-    if setup_cli_common.is_windows_cli_running("claude", _PACKAGE, [launcher]):
+    if running := setup_cli_common.find_windows_cli_processes("claude", native=(launcher,)):
         logger.info(
             log_format.format_status(
                 "claude",
-                "実行中のため導入と移行を次回へ延期。Claude Codeを終了して`update-dotfiles`を再実行する",
+                f"導入と移行を次回へ延期: {setup_cli_common.describe_processes(running, 'Claude Code')}。"
+                "Claude Codeを終了して`update-dotfiles`を再実行する",
             ),
         )
         return post_apply_outcome.PostApplyOutcome()

@@ -92,7 +92,8 @@ def _prune_package(root: pathlib.Path, result: PruneResult, *, windows: bool, dr
     retained = _selected_releases(root)
     processes = codex_processes.codex_processes()
     identified = [process for process in processes if process.identified]
-    if windows and identified:
+    # 常駐する管理daemonと更新ループで延期するとWindowsでは整理が実行されないため、これらの版は使用中として保持する。
+    if windows and any(process.role == "session" for process in identified):
         raise _DeferredError("Codex実行中。Codexを終了して次回に整理する")
     for process in identified:
         if not process.executable:
@@ -140,6 +141,23 @@ def _selected_releases(root: pathlib.Path) -> dict[pathlib.Path, list[str]]:
         if not _complete_release(target, package=root.name):
             raise ValueError(f"{name}の選択先が不完全。update-dotfilesで公式導入を修復する")
         retained.setdefault(target, []).append(name)
+    # 公式の整理（app-server-daemonのrelease_pruning.rsとinstall.shのprune_standalone_releases）は、
+    # 実行中のプロセスの有無に関係なく、selection-historyの2行目の直前の版を残す。
+    # 1行目が選択中の版ではない古い記録では直前の版を特定できないため、公式と同じくそのパッケージを整理しない。
+    try:
+        recorded = (root / "selection-history").read_text(encoding="utf-8").splitlines()[:2]
+    except FileNotFoundError:
+        recorded = []
+    for value in filter(None, recorded):
+        if pathlib.PurePath(value).name != value or "\\" in value or value in {".", ".."}:
+            raise ValueError("selection-historyの記録が不正")
+        if (releases / value).is_symlink() or (releases / value).is_junction():
+            raise ValueError("selection-historyの記録がリンク")
+    if recorded and recorded[0] != (root / "current").resolve(strict=True).name:
+        for release in releases.iterdir():
+            retained.setdefault(release, []).append("selection-historyが選択中の版の記録ではないため整理しない")
+    elif len(recorded) == 2 and recorded[1] and (releases / recorded[1]).is_dir():
+        retained.setdefault(releases / recorded[1], []).append("selection-history")
     marker = root / "auto-update-version"
     try:
         value = marker.read_text(encoding="utf-8").strip()

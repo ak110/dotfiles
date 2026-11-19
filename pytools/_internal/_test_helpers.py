@@ -2,13 +2,15 @@
 
 import contextlib
 import json
+import ntpath
 import os
 import pathlib
 import shutil
 import subprocess
 import time
+import types
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import psutil
@@ -17,6 +19,7 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
+from pytools._internal import setup_cli_common as _setup_cli_common
 from pytools._internal.update_claude_settings import update_claude_settings
 
 FakeRunFunc = Callable[..., subprocess.CompletedProcess[str] | None]
@@ -220,6 +223,60 @@ def run_update_claude_settings(tmp_path: Path, managed: dict, existing: dict | N
         removed_list_item_substrings=(),
     )
     return json.loads(target_path.read_text(encoding="utf-8"))
+
+
+def patch_windows_processes(monkeypatch: pytest.MonkeyPatch, processes: Sequence[object]) -> None:
+    """Windowsの列挙と、列挙したPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。"""
+    monkeypatch.setattr(_setup_cli_common.sys, "platform", "win32")
+    monkeypatch.setattr(
+        _setup_cli_common.psutil, "process_iter", lambda: [types.SimpleNamespace(pid=pid) for pid in range(len(processes))]
+    )
+    monkeypatch.setattr(_setup_cli_common.psutil, "Process", lambda pid: processes[pid])
+
+
+def windows_process(exe: str, *arguments: str, denied: Sequence[str] = ()) -> types.SimpleNamespace:
+    """Windowsのpsutilが返す形の実行名・実行ファイル・command lineを持つプロセスを作る。
+
+    `denied`に挙げた属性は、権限の無いプロセスと同じく`psutil.AccessDenied`を送出する。
+    """
+
+    def reader(key: str, value: object) -> Callable[[], object]:
+        def read() -> object:
+            if key in denied:
+                raise psutil.AccessDenied()
+            return value
+
+        return read
+
+    values = {"name": ntpath.basename(exe), "exe": exe, "cmdline": [exe, *arguments]}
+    return types.SimpleNamespace(**{key: reader(key, value) for key, value in values.items()})
+
+
+_NPM_CMD_SHIM_FORMS = Path(_setup_cli_common.__file__).with_name("npm_cmd_shim_forms.json")
+
+
+def npm_cmd_shim_kinds() -> list[tuple[str, str]]:
+    """データが持つ、cmd-shimの版とbinの実体の先頭行の種類の全ての組を返す。"""
+    data = json.loads(_NPM_CMD_SHIM_FORMS.read_text(encoding="utf-8"))
+    return [(version, program) for version in data["cmd_shim_versions"] for program in data["programs"]]
+
+
+def npm_windows_shims(target: str, *, version: str = "8.0.0", program: str = "node") -> dict[str, str]:
+    """Windowsのグローバル導入でcmd-shimの`version`がprefix直下に生成する起動スクリプトを、拡張子ごとに返す。
+
+    `target`はprefixから見たbinの実体の相対パス（`/`区切り）、`program`は実体の先頭行の種類である
+    （`node`は`#!/usr/bin/env node`、`direct`はshebangなし）。
+    本文は、`scripts/gen_npm_cmd_shim_forms.py`が各版の配布物に生成させたデータ（`npm_cmd_shim_forms.json`）から作る。
+    既定の版はnpm 11.20.0が同梱する8.0.0である。
+    """
+    data = json.loads(_NPM_CMD_SHIM_FORMS.read_text(encoding="utf-8"))
+    shims = {
+        form["suffix"]: target.replace("/", form["separator"]).join(form["parts"])
+        for form in data["forms"]
+        if version in form["versions"] and program in form["programs"]
+    }
+    assert shims, f"cmd-shim {version}（{program}）の形がデータに無い"
+    return shims
 
 
 class FakeEnvironmentRegistry:

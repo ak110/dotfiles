@@ -78,13 +78,9 @@ def test_cli_retains_selected_and_live_releases(
     assert cli.main(["--dry-run"]) == 0
     assert all(path.is_dir() for path in obsolete)
     assert cli.main([]) == 0
-    if os.name == "nt":
-        assert all(path.is_dir() for path in obsolete)
-    else:
-        assert all(not path.exists() for path in obsolete)
+    assert all(not path.exists() for path in obsolete)
     assert all(path.is_dir() for path in [*live, *selected])
-    output = capsys.readouterr()
-    assert "実行中" in output.err if os.name == "nt" else "使用中 pid 10" in output.out
+    assert "使用中 pid 10" in capsys.readouterr().out
     processes.clear()
     assert cli.main([]) == 0
     assert all(not path.exists() for path in live)
@@ -219,19 +215,122 @@ def test_help_preserves_packages(monkeypatch: pytest.MonkeyPatch, tmp_path: path
     assert old.is_dir()
 
 
-@pytest.mark.parametrize("running", [False, True])
-def test_windows_defers_running_codex(
+@pytest.mark.parametrize(
+    ("role", "deferred"),
+    [(None, False), ("update-loop", False), ("managed-daemon", False), ("session", True)],
+)
+def test_windows_defers_only_for_codex_sessions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
-    running: bool,
+    role: codex_processes.CodexRole | None,
+    deferred: bool,
 ) -> None:
-    """WindowsのOS方針を隔離入力で検証し、実際の共有不可排他はWindows実機へ分ける。"""
+    """Windowsでは会話のCodexだけで整理を延期し、常駐する管理daemonと更新ループの版は使用中として保持する。
+
+    WindowsのOS方針を隔離入力で検証し、実際の共有不可排他はWindows実機へ分ける。
+    """
     current = _release(tmp_path, "standalone", "0.162.1")
+    busy = _release(tmp_path, "standalone", "0.160.0")
     old = _release(tmp_path, "standalone", "0.150.0")
     (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
     monkeypatch.setattr(prune_codex_packages, "_install_lock", lambda *args, **kwargs: contextlib.nullcontext())
-    processes = (codex_processes.CodexProcess(1, "codex", "update-loop", str(current / "codex")),) if running else ()
+    processes = () if role is None else (codex_processes.CodexProcess(1, "codex", role, str(busy / "bin" / "codex")),)
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: processes)
     result = prune_codex_packages.prune(home=tmp_path, windows=True)
-    assert bool(result.deferred) == running
-    assert old.exists() == running
+    assert bool(result.deferred) is deferred
+    assert old.exists() is deferred
+    assert busy.exists() is (role is not None)
+
+
+@pytest.mark.parametrize("package", ["standalone", "app-server-daemon"])
+@pytest.mark.parametrize("running", [False, True])
+@pytest.mark.parametrize("windows", [False, True])
+def test_previous_selection_in_history_is_retained(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, package: str, running: bool, windows: bool
+) -> None:
+    """公式の整理と同じく、selection-historyの直前の版を実行中のプロセスの有無に関係なく残す。
+
+    2行目の直前の版は公式のrelease_pruning.rsとinstall.shが残す版であり、選択中の版の更新の直後に必ず生じる。
+    """
+    current = _release(tmp_path, package, "0.170.0")
+    previous = _release(tmp_path, package, "0.169.0")
+    old = _release(tmp_path, package, "0.168.0")
+    root = current.parent.parent
+    (root / "current").symlink_to(current, target_is_directory=True)
+    # 公式install.shとrelease_pruning.rsの書式（選択した版、直前の版、currentの識別子）。
+    (root / "selection-history").write_text(f"{current.name}\n{previous.name}\n2049 1234 1795023560.0\n", encoding="utf-8")
+    monkeypatch.setattr(prune_codex_packages, "_install_lock", lambda *args, **kwargs: contextlib.nullcontext())
+    executable = str(current / "bin" / "codex")
+    processes = (
+        (
+            codex_processes.CodexProcess(1, "codex", "update-loop", executable),
+            codex_processes.CodexProcess(2, "codex app-server --managed-daemon", "managed-daemon", executable),
+        )
+        if running
+        else ()
+    )
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: processes)
+
+    result = prune_codex_packages.prune(home=tmp_path, windows=windows)
+
+    assert not result.failures
+    assert not result.deferred
+    assert result.removed == [old]
+    assert current.is_dir()
+    assert previous.is_dir()
+    assert "selection-history" in result.retained[previous]
+
+
+def test_stale_selection_history_skips_only_its_package(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """選択中の版の記録ではない古いselection-historyでは、公式の整理と同じくそのパッケージの整理を見送る。
+
+    記録の後にcurrentが切り替わると、記録に無い実際の直前の版を特定できない。
+    """
+    current = _release(tmp_path, "app-server-daemon", "0.172.0")
+    unrecorded_previous = _release(tmp_path, "app-server-daemon", "0.171.0")
+    recorded = _release(tmp_path, "app-server-daemon", "0.170.0")
+    old = _release(tmp_path, "app-server-daemon", "0.169.0")
+    root = current.parent.parent
+    (root / "current").symlink_to(current, target_is_directory=True)
+    (root / "selection-history").write_text(f"{recorded.name}\n{old.name}\n2049 1234 1795023560.0\n", encoding="utf-8")
+    standalone = _release(tmp_path, "standalone", "0.172.0")
+    standalone_old = _release(tmp_path, "standalone", "0.169.0")
+    (standalone.parent.parent / "current").symlink_to(standalone, target_is_directory=True)
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
+    monkeypatch.setattr(prune_codex_packages, "_install_lock", lambda *args, **kwargs: contextlib.nullcontext())
+
+    result = prune_codex_packages.prune(home=tmp_path, windows=False)
+
+    assert not result.failures
+    assert result.removed == [standalone_old]
+    assert all(path.is_dir() for path in (current, unrecorded_previous, recorded, old))
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        "0.170.0-x86_64-unknown-linux-musl\n../outside\n",
+        "../outside\n\n",
+        # releases直下にある、releasesの外へのリンク。
+        "0.170.0-x86_64-unknown-linux-musl\nlinked\n",
+    ],
+)
+def test_invalid_selection_history_fails_without_removal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], history: str
+) -> None:
+    """releasesの外を指すselection-historyは不正として整理せず、CLIへ失敗を返す。"""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    current = _release(tmp_path, "standalone", "0.170.0")
+    old = _release(tmp_path, "standalone", "0.150.0")
+    root = current.parent.parent
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "releases" / "linked").symlink_to(outside, target_is_directory=True)
+    (root / "current").symlink_to(current, target_is_directory=True)
+    (root / "selection-history").write_text(history, encoding="utf-8")
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
+
+    assert cli.main([]) == 1
+    assert old.is_dir()
+    assert outside.is_dir()
+    assert "selection-history" in capsys.readouterr().err
