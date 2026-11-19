@@ -743,7 +743,7 @@ def test_breakaway_refusal_is_reported(tmp_path, monkeypatch, caplog):
 @pytest.mark.windows
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Jobの終了が所属プロセスを止める条件を実APIで確かめる")
 @pytest.mark.timeout(240)
-def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch, host_environ):
+def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch, host_environ, request):
     """離脱を許すKILL_ON_JOB_CLOSEのJobの中から開始したuvの整理は、そのJobの終了後も続いて完了を記録する。
 
     更新jobとprocess-loopは、起動した子孫をこの種類のJobで所有し、終了時にまとめて止める。
@@ -760,6 +760,8 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
     monkeypatch.setenv("PATH", os.pathsep.join((str(Path(uv).parent), os.environ["PATH"])))
     record = _state("uv-cache-maintenance.json")
     starter = "from pytools._internal import prune_installation as p; print(p.start_cache_maintenance(), flush=True)"
+    pins = process_tree.ProcessIdentityPins()
+    request.addfinalizer(pins.close)
     # 実行中の`uv run`はキャッシュの共有ロックを終了まで保持し、独立プロセスの全消去をJobの終了後まで待たせる。
     # 時間上限なし: 標準入力の終了で止まる保持役であり、終了時のcloseで止まる。
     with subprocess.Popen(
@@ -791,6 +793,8 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
                 output, _ = launcher.communicate(timeout=60)
                 assert launcher.returncode == 0, output
                 maintenance = psutil.Process(int(output.strip()))
+                # 保持役のロックで整理を待っている間に独立プロセスの世代を保持し、記録の後に同じ所有として回収する。
+                owned = process_tree.collect_descendants(maintenance.pid, pins=pins, include_root=True)
             # Jobの終了が所属プロセスへ届いたことを、離脱していない所属プロセスの終了で確かめる。
             unbroken.wait(timeout=30)
             assert maintenance.is_running(), "Jobの終了とともに独立プロセスが止まった"
@@ -806,3 +810,8 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
     assert record.exists(), "独立プロセスが60秒以内に結果を記録しなかった"
     assert json.loads(record.read_text(encoding="utf-8"))["result"] == "completed"
     assert not marker.exists()
+    # 独立プロセスは記録の後もuv以外の整理を続け、一時領域のロックを保持する。この試験の対象外で、所要は負荷で変わる
+    # （Windows CIで試験の終了から55秒後もロックを保持し、pytestの一時領域の回収が失敗した）。自然な終了を待たずに回収する。
+    assert owned, "独立プロセスの世代を保持できなかった"
+    stopped = process_tree.stop_tree(None, known=owned, pins=pins)
+    assert not stopped.residual and not stopped.unresolved, stopped.descriptions()
