@@ -303,10 +303,7 @@ async def test_wi_policy_review_continues_to_draft_in_same_session(
             "統合開始",
             {
                 "統合区分": "マージなし",
-                "レーン開始時刻": "2026-10-18T19:30:00+09:00",
                 "実行レビュー済みHEAD": "なし",
-                "統合先worktree": "/repo",
-                "統合先branch": "develop",
                 "計画ファイル名一覧": "[]",
                 "AWI終了区分": "adopt",
             },
@@ -322,7 +319,7 @@ async def test_declared_role_continuations_keep_required_inputs(
     instruction: str,
     params: dict[str, str],
 ) -> None:
-    """各役割の継続指示は必要入力だけを配送し、書込担当一覧は起動応答の実sessionで更新する。"""
+    """各役割の継続指示は必要入力だけを配送し、統合の指示は起動応答の実sessionを加えた書込担当一覧を送る。"""
     table = tmp_path / "review.tsv"
     if params.get("レビュー指摘管理表") in ("@table", "@tables"):
         table.write_text("指摘の記録\n", encoding="utf-8")
@@ -341,9 +338,8 @@ async def test_declared_role_continuations_keep_required_inputs(
         if role == "exec":
             initial_writers = _observed_input_params("exec.subagent.md", tmp_path)["書込担当一覧"]
             assert f"書込担当一覧: {initial_writers}" in backend.prompts[-1]
+            # 委譲元は起動の直後に追送せず、自分の記録の一覧へ起動応答の実sessionを加えて統合の指示で渡す。
             writers = json.dumps([*json.loads(initial_writers), started["session_id"]])
-            await mcp_tools.send_message(started["session_id"], f"書込担当一覧: {writers}")
-            assert f"書込担当一覧: {writers}" in backend.prompts[-1]
             if instruction == "統合開始":
                 params = {**params, "書込担当一覧": writers}
                 count = len(backend.prompts)

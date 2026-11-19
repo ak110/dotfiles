@@ -6,7 +6,7 @@ import re
 import pytest
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
-from agent_toolkit._common import read_triggers
+from agent_toolkit._common import read_triggers, task_documents
 from agent_toolkit._plan import selection
 from agent_toolkit._testing.delegation_contract_support import (
     _LAUNCH_TARGET_PREFIX,
@@ -293,6 +293,25 @@ def test_lane_launch_inputs_reach_lane_owner() -> None:
 
     assert "上流投入結果" in inputs
     assert not [name for name in inputs if name not in executor]
+
+
+def test_integration_start_sends_only_lane_integration_inputs() -> None:
+    """`統合開始`の継続入力は統合の役割の入力宣言と同じで、レーン担当が起動時に受け取る値を送り直さない。
+
+    同じ値を起動と継続の両方で定めると、起動時と統合時で違う統合先や開始時刻を渡す余地ができる。
+    """
+    roles = pathlib.Path(__file__).resolve().parent / "skills/atk-mode/roles"
+    executor = task_documents.read_declaration(roles / "exec.subagent.md")
+    integration = task_documents.read_declaration(roles / "lane-integration.subagent.md")
+    assert isinstance(executor, task_documents.TaskDocumentDeclaration)
+    assert isinstance(integration, task_documents.TaskDocumentDeclaration)
+    start = next(item for item in executor.continuations if item.instruction == "統合開始")
+
+    assert set(start.required) == set(integration.required)
+    assert set(start.optional) == set(integration.optional)
+    lane_owner_inputs = set(executor.required_for({"担当種別": "レーン担当"})) - set(executor.required)
+    assert lane_owner_inputs == {"所有登録", "統合先worktree", "統合先branch", "レーン開始時刻"}
+    assert not lane_owner_inputs & start.accepted
 
 
 def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:

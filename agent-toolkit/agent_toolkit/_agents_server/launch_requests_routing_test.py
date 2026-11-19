@@ -180,6 +180,35 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
 
 
+_LANE_OWNER_INPUTS = ("所有登録", "統合先worktree", "統合先branch", "レーン開始時刻")
+
+
+@pytest.mark.parametrize("missing", _LANE_OWNER_INPUTS)
+def test_lane_owner_launch_without_lane_input_is_rejected(missing: str, tmp_path: pathlib.Path) -> None:
+    """`担当種別: レーン担当`の起動で資源と統合先と開始時刻のどれかが欠けると、起動前に不足の名前を示して拒否する。"""
+    task_document = launch_requests.resolve_task_document_path("exec")
+    extra_params = _observed_input_params("exec.subagent.md", tmp_path)
+    assert extra_params["担当種別"] == "レーン担当" and set(_LANE_OWNER_INPUTS) <= set(extra_params)
+    del extra_params[missing]
+
+    with pytest.raises(ActionableError, match=rf"必須入力が欠けています: {missing};"):
+        launch_requests._validate_required_prompt_inputs(task_document, extra_params)
+
+
+@pytest.mark.parametrize("kind", ["CI修正担当", "レビュー修正担当"])
+def test_fix_owner_launch_does_not_need_lane_inputs(kind: str, tmp_path: pathlib.Path) -> None:
+    """修正担当の起動は、レーン担当だけの入力が無くても起動前の検査で拒否されない。"""
+    task_document = launch_requests.resolve_task_document_path("exec")
+    extra_params = {
+        name: value
+        for name, value in _observed_input_params("exec.subagent.md", tmp_path).items()
+        if name not in _LANE_OWNER_INPUTS
+    }
+    extra_params["担当種別"] = kind
+
+    assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
+
+
 @pytest.mark.parametrize("rereview", [False, True])
 @pytest.mark.asyncio
 async def test_reader_fit_public_start_accepts_declared_review_inputs(

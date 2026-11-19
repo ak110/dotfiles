@@ -6,11 +6,8 @@ result_heads:
 required_inputs:
 - 統合区分
 - 実行レビュー済みHEAD
-- 統合先worktree
-- 統合先branch
 - 計画ファイル名一覧
 - AWI終了区分
-- レーン開始時刻
 - 書込担当一覧
 optional_inputs:
 - 完成条件証拠
@@ -28,8 +25,8 @@ writes_worktree: true
 
 ## 入力
 
-必須の入力は`統合区分`、`実行レビュー済みHEAD`、`統合先worktree`、`統合先branch`、`計画ファイル名一覧`、`AWI終了区分`、`レーン開始時刻`、`書込担当一覧`であり、任意の入力は`完成条件証拠`と`プロジェクト固有の公開後の操作の順序`である。
-`引き継ぎ記録先`はレーン担当の起動時に受け取った値を引き継ぐ。
+必須の入力は`統合区分`、`実行レビュー済みHEAD`、`計画ファイル名一覧`、`AWI終了区分`、`書込担当一覧`であり、任意の入力は`完成条件証拠`と`プロジェクト固有の公開後の操作の順序`である。
+`所有登録`、`統合先worktree`、`統合先branch`、`レーン開始時刻`、`引き継ぎ記録先`は、レーン担当の起動時に受け取った値を使う（`agent-toolkit:atk-mode/roles/exec.subagent.md`「入力」）。
 各入力の意味と確かめ方は`agent-toolkit:atk-mode/references/lane-integration-format.md`「入力」にある。
 
 ## 処理
