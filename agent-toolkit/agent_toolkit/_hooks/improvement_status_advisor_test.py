@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-from agent_toolkit._common import mcp_environment, read_triggers, runtime_inserted, session_state
+from agent_toolkit._common import mcp_environment, read_triggers, runtime_inserted, session_state, skill_modes
 from agent_toolkit._common.plugin_roots import resolve_plugin_root
 from agent_toolkit._hooks import document_reads, improvement_status_advisor, plugin_resources, rules_context, stop
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
@@ -156,6 +156,25 @@ def test_missing_guidance_is_notified_before_report(
     assert "waiting-and-monitoring.md" in body
     assert ("immediate-fix.md" in body) == (kind != "add-awi")
     assert "見直せ" in body
+
+
+@pytest.mark.parametrize(
+    ("skill", "expected"),
+    [("process-wi", True), (skill_modes.PROCESS_WI, True), ("agent-toolkit:review-session", False)],
+)
+def test_process_wi_guidance_follows_work_name_of_startup_input(skill: str, expected: bool, monkeypatch) -> None:
+    """表示名の種別が無い会話でも、起動入力の作業がprocess-wiなら作業名の修飾の有無によらず対処時機の基準を加える。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setenv(mcp_environment.SESSION_START_INPUT_ENV, json.dumps({"source": "run-skill", "skill": skill}))
+    session_state.update_state(
+        "improvement-status",
+        lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: {}, "session_title_kind": None},
+    )
+    body = improvement_status_advisor.read_guidance_notice(
+        json.loads(_payload("気付いた改善点: A（AWI化ステータス: 不要 非欠陥）"))
+    )
+    assert "prevention.md" in body
+    assert ("immediate-fix.md" in body) is expected
 
 
 def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> None:
