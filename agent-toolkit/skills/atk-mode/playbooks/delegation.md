@@ -26,7 +26,7 @@
 | 完了通知を処理する、待機区間を組む、待機と停滞を判定する、待機を開始できないか`atk agents wait`が異常の終了コードで終わった | `agent-toolkit:atk-mode/playbooks/delegation-waiting.md` |
 | 委譲先の完了報告を受領して検収する、`気付いた改善点:`を中継する | `agent-toolkit:atk-mode/playbooks/delegation-receiving.md` |
 | 既存の担当を継続・交代・再起動する、可用性の障害で代替起動する、`agents_server`のMCPサーバーが再起動した、委譲済みの要求について自分で本文を読む・調べる・回答する | `agent-toolkit:atk-mode/playbooks/delegation-recovery.md` |
-| Claude Codeで`Agent`ツールか背景タスクを起動する、定期の再確認を設定する、Code Modeでツールを探す | `agent-toolkit:atk-mode/playbooks/host-claude-code.md` |
+| Claude Codeで`Agent`ツールかバックグラウンドタスクを起動する、定期の再確認を設定する、Code Modeでツールを探す | `agent-toolkit:atk-mode/playbooks/host-claude-code.md` |
 | Codexで委譲、待機、状態確認、中断に着手する | `agent-toolkit:atk-mode/playbooks/host-codex.md` |
 | ホストごとの違い（Claude Code、Codex、Antigravity、OpenCode）を比べる | `agent-toolkit:atk-mode/references/hosts.md` |
 | 委譲先から`助言依頼:`で始まる通知を受けた、委譲先として助言を求める | `agent-toolkit:atk-mode/playbooks/advice-request.md` |
