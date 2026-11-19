@@ -385,17 +385,33 @@ async def test_command_trace_of_remote_shell_is_not_taken_for_helper_start(
     assert host.helpers[-1:] == ["3.15.3" if remembered else "3.15.2"]
 
 
+_UNRESPONSIVE = "import time; time.sleep(120)"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("resolve_timeout", "ssh_runs"), [(10.0, 1), (0.3, 2)], ids=["deadline-in-listing", "deadline-in-launch"]
+    ("resolve_timeout", "remote_code", "ssh_runs"),
+    [
+        pytest.param(10.0, _UNRESPONSIVE, 1, id="deadline-in-listing"),
+        pytest.param(0.3, _UNRESPONSIVE, 2, id="deadline-in-launch"),
+        pytest.param(
+            0.5,
+            f"import signal; signal.signal(signal.SIGTERM, signal.SIG_IGN); {_UNRESPONSIVE}",
+            1,
+            id="deadline-while-ending-listing",
+            marks=pytest.mark.skipif(os.name != "posix", reason="WindowsのTerminateProcessは子が拒めない"),
+        ),
+    ],
 )
 async def test_one_shot_to_unresponsive_host_ends_within_its_timeout(
-    monkeypatch: pytest.MonkeyPatch, resolve_timeout: float, ssh_runs: int
+    monkeypatch: pytest.MonkeyPatch, resolve_timeout: float, remote_code: str, ssh_runs: int
 ) -> None:
     """応答しない接続先への単発の要求は、版の照会と起動を合わせて要求の上限で、その上限を示す`subprocess.TimeoutExpired`になる。
 
     版を覚えていない接続先で、版の照会が別の上限を持ち、`read`の上限30秒に対して90秒待った（2026-11-19の検証で観測）。
     照会が自身の上限で打ち切られた場合は残り時間で起動を試し、要求の期限に達した後はSSHを増やさない。
+    照会の子がSIGTERMで終わらず、子の終了を待つ間に要求の期限を過ぎた場合も、新しいSSHを始めない。
+    期限の後に`3.15`で起動を始めた（同日の検証で観測）。
     """
     monkeypatch.setattr(serve_remote, "_RESOLVE_TIMEOUT_SEC", resolve_timeout)
     real_exec = asyncio.create_subprocess_exec
@@ -403,7 +419,7 @@ async def test_one_shot_to_unresponsive_host_ends_within_its_timeout(
 
     async def unresponsive(*cmd: str, **kwargs: typing.Any) -> asyncio.subprocess.Process:
         runs.append(cmd)
-        return await real_exec(sys.executable, "-c", "import time; time.sleep(120)", **kwargs)
+        return await real_exec(sys.executable, "-c", remote_code, **kwargs)
 
     monkeypatch.setattr(serve_remote.asyncio, "create_subprocess_exec", unresponsive)
     request = serve_remote.run_remote_helper(
@@ -543,12 +559,23 @@ async def test_helper_launch_writes_only_its_own_uv_cache_and_starts_offline_onc
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(os.name != "posix", reason="応答しないPythonの代わりに、PATHの後方へシェルスクリプトを置く")
-async def test_one_shot_launches_when_python_listing_stalls(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """実際のuvで、接続先のPATHの後方に応答しない`python3.15`があっても、版の照会を打ち切って起動し、一覧を返す。
+@pytest.mark.skipif(os.name != "posix", reason="応答の遅いPythonの代わりに、PATHの後方へシェルスクリプトを置く")
+@pytest.mark.parametrize(
+    ("responds_after", "minor_launches"),
+    [(None, True), (2.0, False)],
+    ids=["stalled-listing", "slow-listing-on-elevated-ssh"],
+)
+async def test_one_shot_launches_when_python_listing_stalls(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, responds_after: float | None, minor_launches: bool
+) -> None:
+    """実際のuvで、接続先のPATHの後方に応答の遅い`python3.15`があっても、版の照会を打ち切って起動し、一覧を返す。
 
     `uv python list`はPATHの全てのPythonを調べ、`uv run --python 3.15`は最初に見つけたPythonで起動する。
     照会が要求の期限まで待つと、起動できる接続先で一度も起動を試さずに一覧の取得が失敗した（2026-11-19の検証で観測）。
+    昇格したSSHのsthenoのように`3.15`の指定だけが`os error 448`で起動できない接続先では、
+    要求の期限まで照会し直してパッチ版で起動する。
+    照会を打ち切ったまま`3.15`の起動の失敗を返すと、パッチ版なら起動できる接続先で一覧の取得が失敗した（同日の検証で観測）。
+    専用キャッシュが空の初めての接続先で、索引から依存を取得して起動する。
     照会の上限と要求の上限は、`atk serve`の値（照会10秒、一覧300秒）を縮めて使う。
     """
     home = tmp_path / "home"
@@ -559,22 +586,40 @@ async def test_one_shot_launches_when_python_listing_stalls(tmp_path: pathlib.Pa
     _write_dependency_wheels(wheels)
     environment = _remote_host_environment(home, tmp_path / "uv-cache", tmp_path)
     _route_ssh_to_local_shell(monkeypatch, home, environment)
-    with _package_index(wheels) as index_url:
-        environment["UV_DEFAULT_INDEX"] = index_url
-        assert (await _one_shot_output(f"warm-{uuid.uuid4().hex}")).strip() == "[]"
     stalled = tmp_path / "stalled"
     stalled.mkdir()
     release = tmp_path / "stalled.release"
-    (stalled / "python3.15").write_text(f"#!/bin/sh\nwhile [ ! -e '{release}' ]; do sleep 0.05; done\n", encoding="utf-8")
+    python = pathlib.Path(sys.base_prefix) / "bin" / f"python{sys.version_info.major}.{sys.version_info.minor}"
+    # 打ち切った照会のuvが終わった後もこのスクリプトは残る。
+    # 試験の一時ディレクトリが消えると解放の印を見られないため、そこで終える。
+    (stalled / "python3.15").write_text(
+        f"#!/bin/sh\nwhile [ ! -e '{release}' ]; do\n  [ -e '{stalled}' ] || exit 1\n  sleep 0.05\ndone\n"
+        f"exec '{python}' \"$@\"\n",
+        encoding="utf-8",
+    )
     (stalled / "python3.15").chmod(0o755)
     environment["PATH"] += os.pathsep + str(stalled)
+    if not minor_launches:
+        routed = asyncio.create_subprocess_exec
+
+        async def elevated(*cmd: str, **kwargs: typing.Any) -> asyncio.subprocess.Process:
+            if "--python 3.15 " in " ".join(cmd):
+                cmd = (*cmd[:2], "sh", "-c", "'echo \"error: Failed to query Python interpreter (os error 448)\" >&2; exit 2'")
+            return await routed(*cmd, **kwargs)
+
+        monkeypatch.setattr(serve_remote.asyncio, "create_subprocess_exec", elevated)
     monkeypatch.setattr(serve_remote, "_RESOLVE_TIMEOUT_SEC", 0.5)
+    responds = None if responds_after is None else asyncio.get_running_loop().call_later(responds_after, release.touch)
 
     try:
-        output = await serve_remote.run_remote_helper(
-            sessions.REMOTE_BOOTSTRAP, f"stalled-{uuid.uuid4().hex}", "list", [], ssh_options=(), timeout=10
-        )
+        with _package_index(wheels) as index_url:
+            environment["UV_DEFAULT_INDEX"] = index_url
+            output = await serve_remote.run_remote_helper(
+                sessions.REMOTE_BOOTSTRAP, f"stalled-{uuid.uuid4().hex}", "list", [], ssh_options=(), timeout=20
+            )
     finally:
+        if responds is not None:
+            responds.cancel()
         release.touch()
 
     assert output.strip() == "[]"
