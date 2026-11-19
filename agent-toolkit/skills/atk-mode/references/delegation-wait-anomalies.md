@@ -84,4 +84,4 @@
 
 観測の条件と再検証は`docs/development/audit-records-delegation-waiting.md`の次の節にある。
 
-- 「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」
+- 「agent-toolkit/skills/atk-mode/references/delegation-wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」

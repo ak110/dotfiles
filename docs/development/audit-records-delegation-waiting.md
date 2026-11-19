@@ -24,7 +24,7 @@
 起動結果の`output_file`へ`stat -c '%s %y %F'`と`stat -L -c '%s %y %F'`を同じ間隔で対にして実行し、リンク自体とリンク先の値を比較する。
 補助観測の更新は終了判定へ代用しない。
 
-## agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日
+## agent-toolkit/skills/atk-mode/references/delegation-wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日
 
 2026年9月20日、`atk agents wait`が`agents_server`の状態投影に対象を持たない状態を終了コード10で報告し、実行ホストの組み込み委譲は同じ状態投影へ登録されないことを確認した。
 再検証は`agents_server` sessionと組み込み委譲をそれぞれ起動し、`atk agents list`への登録有無、`atk agents wait`の終了コードおよびホストの委譲一覧が返すstatusを比較する。
@@ -35,7 +35,7 @@
 一方、そのジョブの出力ファイルには絶対パスで到達でき、全出力と`[exited with code 0]`が残っていた。
 再検証は同じ形で背景実行し、終了済みセッションが残した出力ファイルを絶対パスで読めることと、同じ実行識別子を`TaskOutput`が解決できないことを対にして確認する。
 
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日
+## agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：待機区間の構成：2026年9月3日
 
 2026年9月3日から9月4日にかけて、`agents_server`の`start`で起動した委譲先が外部コマンドの完了待ちを表明し、`status: completed`で終了した。
 その後、待機対象のコマンドが終了しても委譲先は再開しなかった。
@@ -45,7 +45,7 @@
 2026年9月4日、Claude Code 2.1.260で次の2点を確認した。
 終了コード7で終わる`run_in_background=true`のBashについて、起動結果が返した出力ファイルは出力の全量と`[exited with code 7]`を保持した。
 
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：進捗照会と結果回収：2026年10月10日
+## agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：完了通知を待ってターンを終える場合：2026年10月10日
 
 Claude Code公式資料「Keep Claude working toward a goal」の「Background work defers evaluation」（<https://code.claude.com/docs/en/goal>、2026年10月10日取得）を読解した。
 背景のエージェントやシェルが稼働している間は評価を保留し、進捗を確認する通知と、完了結果による新しいターンを区別する仕様である。
@@ -73,7 +73,7 @@ Goalの自然発生を待たず、進捗の照会を終了時の結果へ代用�
   `codex --version`、`codex app-server --help`、`codex queue --help`と対象版生成schemaで圧縮入力・使用量通知を確認し、最上位クライアントがターン間背景待機を提供する場合はその所有者と状態遷移を再判定する。
   既存のユーザー会話へ検証用の圧縮を送らない。
 
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年11月2日
+## agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：待機区間の構成：2026年11月2日
 
 - 観測日: 2026年11月2日。
 - 確認版: Python 3.15.0、pytest 9.2.0。
