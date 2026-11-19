@@ -251,38 +251,25 @@ class RecoveryBridge:
 
     async def _restore_delegations(self, front: RpcChannel, back: RpcChannel) -> None:
         self.phase = RecoveryPhase.RESTORING_DELEGATIONS
-        cursor = None
-        while True:
-            statuses = await self._request(
-                front, back, "mcpServerStatus/list", {"threadId": self.state.thread_id, "cursor": cursor}
-            )
-            if not isinstance(statuses, dict) or not isinstance(statuses.get("data"), list):
-                raise RuntimeError("CodexのMCP状態を確認できない。同じ会話をresumeする")
-            for server in statuses["data"]:
-                if not isinstance(server, dict):
-                    continue
-                name, tools = server.get("name"), server.get("tools")
-                # 起動に失敗したMCPはツールの無い項目として残る。Codex本体はその失敗をTUIへ通知して続行するため、
-                # 子孫の復元だけを見送り、TUIを止めない。
-                if (
-                    isinstance(name, str)
-                    and (name == "agents_server" or name.endswith("__agents_server"))
-                    and isinstance(tools, dict)
-                    and "list" in tools
-                ):
-                    result = await self._request(
-                        front,
-                        back,
-                        "mcpServer/tool/call",
-                        {"threadId": self.state.thread_id, "server": name, "tool": "list", "arguments": {}},
-                    )
-                    if not isinstance(result, dict) or result.get("isError"):
-                        raise RuntimeError("agents_serverの子孫復旧に失敗した。MCPの状態を確認して同じ会話をresumeする")
-            cursor = statuses.get("nextCursor")
-            if cursor is None:
-                return
-            if not isinstance(cursor, str):
-                raise RuntimeError("CodexのMCP一覧の継続位置が不正。同じ会話をresumeする")
+        # serverNameを省いた照会は全MCPを新しく起動して破棄する。threadIdと併せて会話の接続を再利用する。
+        statuses = await self._request(
+            front, back, "mcpServerStatus/list", {"threadId": self.state.thread_id, "serverName": "agents_server"}
+        )
+        if not isinstance(statuses, dict) or not isinstance(statuses.get("data"), list):
+            raise RuntimeError("CodexのMCP状態を確認できない。同じ会話をresumeする")
+        for server in statuses["data"]:
+            tools = server.get("tools") if isinstance(server, dict) else None
+            # 起動に失敗したMCPはツールの無い項目として残る。Codex本体はその失敗をTUIへ通知して続行するため、
+            # 子孫の復元だけを見送り、TUIを止めない。
+            if isinstance(tools, dict) and "list" in tools:
+                result = await self._request(
+                    front,
+                    back,
+                    "mcpServer/tool/call",
+                    {"threadId": self.state.thread_id, "server": "agents_server", "tool": "list", "arguments": {}},
+                )
+                if not isinstance(result, dict) or result.get("isError"):
+                    raise RuntimeError("agents_serverの子孫復旧に失敗した。MCPの状態を確認して同じ会話をresumeする")
 
     async def _relay(self, front: RpcChannel) -> None:
         incoming: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
