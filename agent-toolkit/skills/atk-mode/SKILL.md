@@ -1,5 +1,6 @@
 ---
 name: atk-mode
+argument-hint: "[add-awi-by-user|process-wi|review-session|export-session] [入力]"
 description: >
   agent-toolkitを導入した環境で、作業（調査、実装、レビュー、WIの操作）を始める前に起動する入口。
   会話の圧縮の後に作業を再開する前にも起動する。硬い制約、判断の原則、作業ごとの手順書の所在を示す。
