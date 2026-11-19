@@ -1,4 +1,4 @@
-"""Codex向け射影からClaude Code固有の条文を除いて追加するhandler。"""
+"""Codex向け射影から、Claude Code固有の値を除いて入口の起動の案内を追加するhandler。"""
 
 from __future__ import annotations
 
