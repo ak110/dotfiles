@@ -6,7 +6,7 @@
 
 ### 計画メタ情報
 
-- 起動経路: `agent-toolkit:process-wi`
+- 起動経路: `agent-toolkit:atk-mode`の作業process-wi
 - 対象リポジトリ: `/path/to/worktree`
 - 関連WI:
   - 20000101-000000-003.md: 再レビューで前回の各指摘へ判定を付け、収束を判定から決める

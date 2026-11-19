@@ -6,7 +6,7 @@
 
 ### 計画メタ情報
 
-- 起動経路: `agent-toolkit:process-wi`
+- 起動経路: `agent-toolkit:atk-mode`の作業process-wi
 - 対象リポジトリ: `/path/to/worktree`
 - 関連WI:
   - 20000101-000000-002.md: 引き継ぎ記録を、他の原本から復元できない値がある時だけ作る
