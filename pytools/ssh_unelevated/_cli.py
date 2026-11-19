@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from importlib import resources
 
 from pytools._internal.cli import enable_completion
+from pytools._internal.common import process_scope
 
 # 接続先のPowerShellが、標準入力のbase64をUTF-8の本文へ戻して実行する起動部。
 # sshの既定シェルがcmd.exeの場合の1行の上限（8191文字）に掛からないよう、本文は標準入力で渡す。
@@ -112,13 +113,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     limit = args.timeout + _SSH_MARGIN_SECONDS
     stderr = b""
     try:
-        completed = subprocess.run(
-            build_ssh_command(args.host),
-            input=build_payload(script, run_id, args.timeout),
-            capture_output=True,
-            timeout=limit,
-            check=False,
-        )
+        with process_scope(
+            build_ssh_command(args.host), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ) as process:
+            stdout, stderr = process.communicate(build_payload(script, run_id, args.timeout), timeout=limit)
+            returncode = process.returncode
     except FileNotFoundError:
         outcome = Outcome(_EXIT_FAILURE, "", "sshが見つからない。OpenSSHのクライアントを導入してから再実行する。")
     except KeyboardInterrupt:
@@ -135,8 +134,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"sshが{limit}秒以内に終わらなかったため打ち切った。{args.host}に残った予定タスクと一時ファイルは次回の実行が片付ける。",
         )
     else:
-        stderr = completed.stderr
-        outcome = interpret(completed.stdout, completed.returncode, run_id=run_id, host=args.host, timeout=args.timeout)
+        outcome = interpret(stdout, returncode, run_id=run_id, host=args.host, timeout=args.timeout)
     sys.stdout.write(outcome.output)
     sys.stdout.flush()
     sys.stderr.write(_decode(stderr))

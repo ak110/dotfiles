@@ -94,3 +94,10 @@ sthenoで82KBのスクリプトが欠けずに届くことと、1回の実行が
 上限に達した場合は、タスクを止めたうえで、コマンド行に作業ディレクトリを含むプロセスとその子孫を終了させる。
 タスクの停止だけではconhost.exeだけが終わり、スクリプトを実行するPowerShellとその子のプロセスが残って作業ディレクトリを消せなかったためである（同日、sthenoで観測）。
 手元でsshを中断しても接続先の処理は続き、スクリプトの終了後に接続先が自身で後始末した（同日、sthenoで観測）。
+
+予定タスクの起動は`-File runner.ps1`の形にし、`-EncodedCommand`は使わない。
+試作では`conhost.exe --headless powershell.exe ... -EncodedCommand <base64>`で起動した予定タスクが、スクリプトの内容によってMicrosoft Defenderに遮断された。
+検出名は`Trojan:Win32/ConAtt.SE`である（Defender Operationalのイベント1116・1117）。
+遮断されたタスクは結果を残さずに`LastTaskResult=0x80070005`で終わった。
+コマンド行の長さは原因ではなく、同じスクリプトが`-File`の形では通り、検出も無かった（同日、sthenoで観測）。
+`-EncodedCommand`へ戻す変更は、同様に遮断されうるため行わない。
