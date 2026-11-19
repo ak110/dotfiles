@@ -43,6 +43,7 @@ _ATK_MODE_RETIRED_SKILLS = (
     "refine-prompt",
     "review-external-writes",
     "export-session",
+    "delegation",
 )
 
 

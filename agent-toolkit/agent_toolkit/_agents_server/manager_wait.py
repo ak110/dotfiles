@@ -108,7 +108,7 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         完了通知で同じセッションへ再開できる待機は、対象の種類・件数によらず、
         `atk agents wait`をホストのバックグラウンドタスクとして起動する。
         通知による再開が無い環境では、委譲元は公開された待機手段で終了を確定する。
-        起動と回収はdelegationの`references/waiting-and-monitoring.md`「待機区間の構成」に従う。
+        起動と回収は`atk-mode`の`playbooks/delegation-waiting.md`「待機区間の構成」に従う。
         委譲先がバックグラウンドタスクを残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終了まで待つ。
         委譲元はバックグラウンドタスクの完了後に`send_message`で再開を指示しない。
         終了前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。

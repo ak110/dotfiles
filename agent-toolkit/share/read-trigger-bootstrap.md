@@ -4,7 +4,7 @@
 各スキル固有の追加資料は、それぞれのスキル内の読込表で宣言する。
 操作の対象と副作用から必要なスキルを判断し、まだ起動していなければ操作の前に起動する（努力目標。契約の確認不足と独自手順の重複を避ける）。
 資料の範囲は`agent-basics:writing-standards/references/read-method.md`に従って選び、hookの案内の有無によらず判断前に取得する。
-配送操作の語彙と記法は、`read-trigger-contract-declarations.md`「表と取得方法」の定義に従う。
+配送操作の語彙と記法は、dotfilesリポジトリの`docs/development/read-triggers-contract.md`「表と取得方法」が定める（この表を編集する実装者向け）。
 フックの案内は、現在の役割・選択資料に関係する条件を確かめる補助とし、資料取得中の依存候補は次の関連操作まで保留する。
 
 ## 名指し参照の読込方法
@@ -27,7 +27,7 @@
 | 原因分析の判断前と記述前 | `agent-basics:bugfix/SKILL.md` | 判断 | `skill:agent-basics:bugfix`、`root-cause-writing` |
 | レビュー指摘管理表を作成する前と、担当の記録の行を足す前 | `agent-toolkit:atk-mode/references/review-record-table.md` | 判断 | `skill:agent-basics:review-standards` |
 | レビュー指摘管理表の行へ応答を記録する前 | `agent-toolkit:atk-mode/references/review-record-response.md` | 判断 | `skill:agent-basics:review-standards` |
-| エージェント向け文書の編集前 | `agent-basics:writing-standards/SKILL.md`、`agent-toolkit:/share/agent-documents-operations.md` | 操作 | `agent-document-writing` |
+| エージェント向け文書の編集前 | `agent-basics:writing-standards/SKILL.md`、`agent-toolkit:atk-mode/references/agent-documents.md` | 操作 | `agent-document-writing` |
 
 ## WIの起草と保存で読む資料
 
@@ -74,17 +74,17 @@ WIの原稿を書く操作と保存する操作の前に読む手順書と形式
 | --- | --- | --- | --- | --- |
 | 工程2で`atk run-script session-review-prepare`の出力に含まれる`reference_document`に値が設定されている場合 | `reference_document`が示す対象リポジトリ固有の振り返り参照文書 | 判断 | `tool:Read`、`tool:Bash` | `review-reference` |
 
-## 常時規範が名指しする資料
+## 入口と手順書が名指しする資料
 
-常時配送される規範の選択基準に基づいて参照する資料の取得方法を、共通の宣言としてここにまとめる。
+入口`atk-mode`と手順書の判断基準が名指しする資料の取得方法を、共通の宣言としてここにまとめる。
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 配送操作の語彙と記法を選ぶ前 | `read-trigger-contract-declarations.md` |
 | 成果作業を終える作業完了報告を送る前 | `../skills/atk-mode/playbooks/report-completion.md` |
 | 採否・手段・進め方を判断する前 | `agent-basics:writing-standards/references/quality-principles-qcd.md`、`agent-basics:writing-standards/references/design-heuristics.md` |
 | 完了・成功・不在・件数・互換性を述べる前と、要約・中継・報告を書く前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |
-| 常時規範の節が名指す時点（手段・規範・確定方針から外れる案の評価、資格情報の扱い、方針の衝突の判定、発話への回答の確定、進捗点検の通知を受けた時など） | `agent-conduct-details.md` |
+| 方針の衝突の判定、言語の検査の通知への対処、先送り、資格情報の発見の時 | `../skills/atk-mode/references/conduct.md` |
+| 進捗点検の通知（`source="progress-self-check"`）を受けた時 | `../skills/atk-mode/playbooks/main-reporting.md` |
 
 読込経路の取得時分類と廃止前の本文配送の観測記録は、`docs/development/audit-records-read-triggers-initial.md`にある。
 該当節は「agent-toolkit/share/read-trigger-bootstrap.md：操作を契機とする共有資料：2026年10月27日」である。
@@ -97,7 +97,7 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:/share/agent-documents-operations.md` | | |
+| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:atk-mode/references/agent-documents.md` | | |
 | セッション記録の集計・分析 | `agent-toolkit:atk-mode/references/session-records.md` | | |
 | process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `agent-toolkit:atk-mode/references/orchestrator-runtime.md` | | |
 | ユーザーの入力素材を整理して取り込む時 | `agent-basics:writing-standards/references/writing-genres.md` | | |
@@ -107,7 +107,7 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-data-interfaces.md` | | |
 | テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
-| スキル（`SKILL.md`・`references/`）を新設・編集する時 | `agent-toolkit:/share/agent-skills-operations.md` | | |
+| スキル（`SKILL.md`・`references/`）を新設・編集する時 | `agent-basics:writing-standards/references/agent-skills.md`、`agent-toolkit:atk-mode/references/agent-documents.md` | | |
 | process-wiのレーンworktreeを作成・保持・回収する時 | `agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md` | | |
 | エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:atk-mode/references/agent-documents.md` | | |
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:atk-mode/references/agent-documents.md` | | |

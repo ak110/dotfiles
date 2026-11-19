@@ -79,7 +79,7 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
                 READER_FIT_REVIEW_RESULT_NEXT_ACTION if reader_fit else REVIEW_RESULT_NEXT_ACTION,
                 (
                     "agent-basics:review-standards/SKILL.md",
-                    "agent-toolkit:/share/reader-fit-review.parent.md#「受領」"
+                    "agent-toolkit:atk-mode/roles/reader-fit-review.parent.md#「受領」"
                     if reader_fit
                     else "agent-basics:review-standards/references/reviewee.md",
                 ),

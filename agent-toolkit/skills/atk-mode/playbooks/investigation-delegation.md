@@ -88,7 +88,7 @@ AWIとして登録して処理する場合（`process-wi`の即時対応、次�
 各欄に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」と、条件が成立した確認観点の資料に従う。
 `再発`と`再発防止`の欄は、条件が成立しない場合は行ごと省く。
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:defect-investigation:end -->
 
 ## 類似見直しの分担

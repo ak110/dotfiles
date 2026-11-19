@@ -278,7 +278,7 @@ def _select_result_documents(session_id: str, agent: str, documents: list[str], 
     root = plugin_resources.plugin_root()
     for document in documents:
         name, _separator, heading = document.partition("#")
-        path = read_triggers.resolve_document(name, root / "share/read-trigger-contract.md", root, host, project=project)
+        path = read_triggers.resolve_document(name, root / "share/read-trigger-bootstrap.md", root, host, project=project)
         if path is None or not path.is_file():
             raise ValueError(f"結果の判断資料を解決できない: {document}")
         targets.append(read_triggers.ReadTarget(path, heading))

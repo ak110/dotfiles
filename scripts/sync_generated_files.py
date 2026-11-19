@@ -31,7 +31,7 @@ RETURN_TARGETS = (
     ("similar-review", "skills/atk-mode/roles/similar-review.parent.md", "類似見直し担当の返却契約", 2),
     ("exec", "skills/atk-mode/roles/exec.parent.md", "レーン担当の返却契約", 2),
     ("exec-review", "skills/atk-mode/roles/exec-review.parent.md", "実行レビューの返却契約", 2),
-    ("reader-fit-review", "share/reader-fit-review.parent.md", "読者別探索の返却契約", 2),
+    ("reader-fit-review", "skills/atk-mode/roles/reader-fit-review.parent.md", "読者別探索の返却契約", 2),
     ("wi-draft-review", "skills/atk-mode/roles/wi-draft-review.parent.md", "投入前レビューの返却契約", 2),
     ("recurrence-self-check", "skills/atk-mode/roles/recurrence-self-check.parent.md", "セルフチェックの返却契約", 2),
     ("add-wi", "skills/atk-mode/roles/add-wi.parent.md", "WI投入担当の返却契約", 2),
