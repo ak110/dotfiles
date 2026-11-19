@@ -1,32 +1,28 @@
 # dotfiles環境の振り返り観点
 
-`agent-toolkit:review-session`の振り返りでメインが問題の原因と対策を確定するときと、所要時間を分析するときに適用する。
-振り返りの`atk run-script session-review-prepare`が出力するJSONの`reference_document`が本文書の絶対パスを示す。
+`agent-toolkit:review-session`の振り返りで、メインが問題の原因と対策を確定する時と、所要時間を分析する時に適用する。
+振り返りの`atk run-script session-review-prepare`が出力するJSONの`reference_document`が、本文書の絶対パスを示す。
 
 ## セッションの所要時間目標
 
-起動方法と目標超過の有無によらず、毎セッションの内訳から品質を維持した高速化を検討する。
-目標内なら記録の照会結果で提案の要否を判断し、超過時は律速区間へ作用する再発防止策の採否と必要な処置を確定する。
-必要なAWIの登録と最終報告は`agent-toolkit:review-session`の手順に従って完了する。
-所要時間の超過はC・Dの問題であり、この判断は`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」に従う。
-超過の区間に品質を下げた手戻りなどQに影響する問題が含まれる場合も、その問題を同節に従って扱う。
-適切に並列化されていれば全体の処理件数が所要時間へ与える影響は小さいという前提で、並列化の成立条件と律速区間を調べる。
-件数増加自体を超過の原因や許容理由にせず、過去対策との比較は`agent-toolkit:review-session`の`agent-toolkit:review-session/references/analysis-actions.md`「原因と対策」に従う。
-
 次の目標値と計測範囲は、`github.com/ak110/dotfiles`を処理の対象に含む`agent-toolkit:process-wi`のセッションへ適用する。
-本リポジトリで同スキルを起動したセッションと、`atk wi process-loop`が別のディレクトリで起動する統括のセッションのうち本リポジトリを対象に含むものが該当する。
-本リポジトリを対象に含まない作業と、同スキルによらない作業は目標値の適用対象から除く。
+本リポジトリで同スキルを起動したセッションと、`atk wi process-loop`が別のディレクトリで起動する統括のセッションのうち本リポジトリを対象に含むものが該当し、それ以外の作業は目標値の適用から除く。
 
 - 1セッションの所要時間は、セッションの最初の記録からそのセッションが終了する時点までとする。
-  振り返り、公開工程とセッション終了工程、`agent-toolkit:atk-mode/playbooks/report-completion.md`および`atk agents-exit-session`に要する時間も計測範囲へ含める
-- 処理したAWIの件数によらず、セッション振り返りの完了を含めて3時間以内を目標とする
-- 目標は振り返り対象セッションのこの区間へ適用する
-- 目標超過時も必要な品質工程と対象集合を保持し、時間を理由に作業を停止・先送りしない
+  振り返り、公開工程とセッション終了工程、`agent-toolkit:atk-mode/playbooks/report-completion.md`および`atk agents-exit-session`に要する時間も含める。
+- 処理したAWIの件数によらず、セッション振り返りの完了を含めて3時間以内を目標とする。
 
-巡回の終了条件は`AGENTS.md`と`develop-dotfiles`の`references/process-wi-duration.md`に従う。
-毎回、次回候補全体の180分以内の見込みを根拠とともに検収するまで、必要な改善の実装・公開を続ける。
+起動方法と目標超過の有無によらず、毎セッションの内訳から品質を保った高速化を検討する。
 
-経緯は`docs/development/concepts.md`にある。
+- 目標内なら記録の照会結果で提案の要否を判断する。
+- 超過時は、律速区間へ作用する再発防止策の採否と必要な処置を確定する。
+  所要時間の超過はC・Dの問題であり、`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」で扱う。
+  超過の区間に品質を下げた手戻りなどQに影響する問題が含まれる場合も、その問題を同節で扱う。
+- 適切に並列化されていれば全体の処理件数が所要時間へ与える影響は小さいという前提で、並列化の成立条件と律速区間を調べ、件数の増加自体を超過の原因や許容の理由にしない。
+  過去の対策との比較は`agent-toolkit:review-session/references/analysis-actions.md`「原因と対策」に従う。
+
+巡回の終了条件は、dotfilesリポジトリの`AGENTS.md`と`.claude/skills/develop-dotfiles/references/process-wi-duration.md`「所要時間と終了条件」に従う。
+毎回、次回の候補全体の180分以内の見込みを根拠とともに検収するまで、必要な改善の実装と公開を続ける。
 
 ## 再発の集計
 
@@ -38,15 +34,12 @@ batchでは、対象にdotfilesの作業が含まれる場合に、障害事例�
 
 ## pyfltr
 
-pyfltrを使った場合は、検索・置換・自動チェックの結果と復旧案内が判断と修正を支援したかを評価する。
-成功時の表示、警告、エラーも対象とし、個別の操作ミスを一般化せず、
-CLI自体の改善で同じ失敗を防げる観測事象がある場合だけ候補化する。
+pyfltrを使った場合は、検索・置換・自動チェックの結果と復旧案内が判断と修正を支援したかを、成功時の表示、警告、エラーも含めて評価する。
+個別の操作ミスを一般化せず、CLI自体の改善で同じ失敗を防げる観測事象がある場合だけ候補にする。
 
 ## dotfiles配布物
 
-dotfilesまたはその配布物では、原本・配布先、Claude Code・Codex、POSIX・Windows間の同期と、plugin・rules・skills・agents・hooks・settings・生成物の責務を点検する。
-読込時点に合う参照配置と不要な状態・フック・リンクの整理、配布・更新・旧資産回収・版数・生成物の追随を評価する。
+dotfilesまたはその配布物では、原本と配布先、Claude CodeとCodex、POSIXとWindowsの間の同期と、plugin・rules・skills・agents・hooks・settings・生成物の責務を点検する。
+読込時点に合う参照の配置と、不要な状態・フック・リンクの整理、配布・更新・旧資産の回収・版数・生成物の追随を評価する。
 規範の反映先は、プロジェクト固有か全エンドユーザー向けかの適用範囲に合わせる。
-
-対象が別リポジトリの場合は、観測事象がdotfiles配布物に起因すると裏付けられた候補だけをdotfiles向け提案とし、
-対象プロジェクトの改善提案と混同しない。
+対象が別リポジトリの場合は、観測事象がdotfilesの配布物に起因すると裏付けられた候補だけをdotfiles向けの提案とし、対象プロジェクトの改善提案と混同しない。

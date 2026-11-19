@@ -10,8 +10,7 @@ import datetime
 import io
 import sys
 
-from pytools import post_apply
-from pytools._internal import removal_registry
+from pytools._internal import removal_registry, removed_paths
 from pytools._internal import update_claude_settings as ucs
 
 
@@ -19,10 +18,10 @@ def tables() -> dict[str, list[removal_registry.HasRegistered]]:
     """post-applyの撤去表2件と`update_claude_settings`の除去表5件を、表名ごとの項目の列で返す。"""
     # pylint: disable=protected-access
     return {
-        "post_apply._REMOVED_PATHS": [entry for entries in post_apply._REMOVED_PATHS.values() for entry in entries],  # noqa: SLF001
-        "post_apply._REMOVED_PATHS_IF_CONTENT": [
+        "removed_paths._REMOVED_PATHS": [entry for entries in removed_paths._REMOVED_PATHS.values() for entry in entries],  # noqa: SLF001
+        "removed_paths._REMOVED_PATHS_IF_CONTENT": [
             entry
-            for entries in post_apply._REMOVED_PATHS_IF_CONTENT.values()  # noqa: SLF001
+            for entries in removed_paths._REMOVED_PATHS_IF_CONTENT.values()  # noqa: SLF001
             for entry in entries
         ],
         "update_claude_settings._REMOVED_HOOK_COMMAND_SUBSTRINGS": list(ucs._REMOVED_HOOK_COMMAND_SUBSTRINGS),  # noqa: SLF001

@@ -20,7 +20,7 @@
       この3キーは`update-dotfiles`ごとに宣言値へ戻り、他のキーと他用途の設定は保持する
     - 以前chezmoiが配布した`~/.config/agent-toolkit/serve.toml`は配布を止めた後も残り、`atk serve`の起動時の自動移行が
       `serve.toml.migrated`へ改名する。
-      移行前の値を失わないよう、`post_apply.py`の`_REMOVED_PATHS`による一括削除の対象にしない
+      移行前の値を失わないよう、`pytools/_internal/removed_paths.py`の`_REMOVED_PATHS`による一括削除の対象にしない
 - unitは`Environment=PATH`で`%h/.local/bin`、miseのshims、systemdが設定するPATHをこの順に指定する
   - `ExecStart`を絶対パスで書いても、起動されたプログラムが実行ファイル名で解決する外部コマンドには及ばない
   - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する

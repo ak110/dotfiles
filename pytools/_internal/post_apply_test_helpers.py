@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from pytools import post_apply
-from pytools._internal import post_apply_outcome
+from pytools._internal import post_apply_outcome, removed_paths
 
 _IMPORT_HOME = Path.home()
 
@@ -56,7 +56,7 @@ def _isolate_sync_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Pat
 
 def _registered_paths(base: Path) -> list[Path]:
     """撤去表の基点`~/<base>`へ登録された相対パスを返す。"""
-    return [entry.path for entry in post_apply._REMOVED_PATHS[_IMPORT_HOME / base]]  # noqa: SLF001
+    return [entry.path for entry in removed_paths._REMOVED_PATHS[_IMPORT_HOME / base]]  # noqa: SLF001
 
 
 def _redirect_removed_paths_to(
@@ -69,11 +69,11 @@ def _redirect_removed_paths_to(
     monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.setenv("USERPROFILE", str(home_dir))
     monkeypatch.setattr(
-        post_apply,
+        removed_paths,
         "_REMOVED_PATHS",
-        {ipython_dir: post_apply._REMOVED_PATHS[_IMPORT_HOME / ".ipython"]},  # noqa: SLF001
+        {ipython_dir: removed_paths._REMOVED_PATHS[_IMPORT_HOME / ".ipython"]},  # noqa: SLF001
     )
-    monkeypatch.setattr(post_apply, "_REMOVED_PATHS_IF_CONTENT", {})
+    monkeypatch.setattr(removed_paths, "_REMOVED_PATHS_IF_CONTENT", {})
     return ipython_dir
 
 

@@ -3,7 +3,7 @@ name: dotfiles-repo-layout
 user-invocable: false
 description: >
   dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`、`~/.codex/`、`~/.gemini/`、`~/.config/`）の
-  対応関係を判定するとき、ファイルの削除や改名に伴い`pytools/post_apply.py`の`_REMOVED_PATHS`や
+  対応関係を判定するとき、ファイルの削除や改名に伴い`pytools/_internal/removed_paths.py`の`_REMOVED_PATHS`や
   `setup_codex_links.py`の`_LINKS`を更新するとき、および対象ファイルがどのロール向けのものかを判定するときに起動する。
 ---
 
@@ -70,7 +70,7 @@ Claude CodeとCodexの設定ディレクトリは複数あり、取り違える�
 - `.chezmoi-source/AppData/`: Windowsの`%APPDATA%`（`~/AppData/Roaming`）配下への配布元で、`.chezmoiignore`がWindows以外では除外する。
   LinuxとmacOSで`~/.config`、Windowsで`%APPDATA%`を読むツール（herdrなど）は、`dot_config/<tool>/`と`AppData/Roaming/<tool>/`の両方へ同じ本文を置き、Windowsでは`.config/<tool>`を除外する。
 - `.chezmoi-source/`配下のファイルを削除・改名しても、chezmoiは配布先に残った古いファイルを自動では削除しない。
-  削除した旧パスを`pytools/post_apply.py`の`_REMOVED_PATHS`の`~/.claude`の項目（Codex側にリンクがあれば`~/.codex`の項目も）へ登録日とともに足す。
+  削除した旧パスを`pytools/_internal/removed_paths.py`の`_REMOVED_PATHS`の`~/.claude`の項目（Codex側にリンクがあれば`~/.codex`の項目も）へ登録日とともに足す。
   改名では`setup_codex_links.py`の`_LINKS`も新しい名前に直す。
   登録日から6か月を過ぎた項目は一覧から削除する（運用は`pytools/_internal/removal_registry.py`）。
 - `AGENTS.md`（リポジトリ直下）: dotfiles編集者向けの案内で、Claude CodeとCodexの両方が読む。
