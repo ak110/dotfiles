@@ -21,7 +21,6 @@ writes_worktree: true
 判定の手順と基準は`agent-basics:review-standards/references/reviewer-usability.md`「ユーザビリティレビューの判定」にあり、起動時に届く。
 指摘の範囲と内容は`agent-basics:review-standards/references/reviewer.md`「基本方針」「指摘内容」に従う。
 着手時に`agent-basics:review-standards`を起動する。
-Web画面では`agent-basics:writing-standards/references/ui-ux-web-rules.md`も判定に使う。
 
 ## 読込表
 
@@ -62,9 +61,7 @@ Web画面では`agent-basics:writing-standards/references/ui-ux-web-rules.md`も
 2. 主要作業の機能停止で以後のUXを確かめられない場合は、共通返却契約の`続行できない区分: owner_input`と`続行できない理由:`の2行で、必要な機能修正と、同じ通常の開始状態から再判定するための再開条件を返す。
    描画手段が使えない場合の`未確定`とは区別する。
    判定に必要な入力の不足も共通返却契約で返し、不足した範囲を合格に含めない。
-3. 指摘の類型と全ての該当箇所（`agent-basics:review-standards/references/reviewer.md`「指摘内容」）は、依頼された変更画面、表示幅、操作後の状態の全体で探す。
-   再判定では手順1で限定した範囲の中で探す。
-   外観、要素名、DOM構造の表面的な類似だけで対象を限定しない。
+3. 再判定では、指摘の類型と全ての該当箇所を手順1で限定した範囲の中で探す。
 4. 引き継ぎ記録先へ、`agent-toolkit:delegation/references/handoff-record.md`の記録項目に加えて次を保存する。
    - 対象HEADの7文字以上の一意な短縮OID、`round`、完遂を試みたシナリオ、観測した状態、キャプチャの絶対パス
    - 指摘ごとの問題の機構、対象範囲、該当箇所、確認条件
