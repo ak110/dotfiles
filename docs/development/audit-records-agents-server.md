@@ -85,17 +85,6 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 2026年9月、Claude Codeで`agents_server`の`wait`が発行から120秒で背景タスクへ移り、完了すると結果本文がそのタスクの通知として届くことを確認した。
 背景移行の閾値の再検証は`wait`を発行し、背景移行の通知を受領した後に完了通知の到達を確認する。
 
-## docs/development/design-agents-runtime-connections.md：MCP接続失敗の再接続：2026年10月20日
-
-2026年10月20日、LinuxのPython 3.15でMCP再接続の契約を検証した。
-対象は`agent-toolkit/agent_toolkit/_agents_server/claude_connections_test.py`の`test_mcp_reconnect_is_once_per_new_and_resumed_process`である。
-managerの公開start/showとSDKクライアントのテストダブルを組み合わせ、接続失敗のキャッシュによる省略と`CONNECT_TIMEOUT`、再接続の回復成功と失敗の4条件で、新規起動と再開の各プロセスの再接続が1回であることを確認した。
-未回復のサーバー名と初期エラーはstart/showのwarningsと`claude_mcp_recovery_failed`のロガー出力へ残り、回復成功時はwarningsが消える。
-同じ4条件で再接続をno-opへ差し替えた対照は4件とも失敗し、正常な処理では4件とも成功した。
-再検証は同テストと`test_slow_mcp_recovery_keeps_start_budget_and_updates_show`をpytestで実行し、新規・再開の呼出回数、未回復warnings、回復後のshowとログを比較する。
-ログの保存先は`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`と`mcp_tools_test.py`の起動・終了診断の試験で確かめる。
-この観測はテストダブルによる契約検証であり、実Claude CLIと外部MCPサーバーの接続障害を再現したものではない。
-
 ## agent-toolkit/agent_toolkit/_agents_server/codex.py：待機中の独立圧縮turn：2026年11月2日
 
 - 観測日: 2026年11月2日。

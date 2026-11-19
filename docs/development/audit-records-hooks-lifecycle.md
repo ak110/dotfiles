@@ -66,53 +66,21 @@ Claude Code 2.1.274の実行ファイルは、UserPromptSubmitの入力スキー
 
 ## agent-toolkit/hooks/hooks.json：SessionEndの非同期化：2026年9月24日
 
-Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから2回起動した。
-debugログはどちらも`SessionEnd:other`を非同期hookとして登録し、予算を`600000ms`と記録した。
-hookの完了状態は2回とも0で、事前に各セッションIDへ登録した管理対象一時領域は終了後に実在しなかった。
-標準エラーは空で、debugログにも`Hook cancelled`は現れなかった。
-CLI本体は2回とも終了コード143で、経過時間は11.60秒と16.45秒だったため、全プラグイン構成での通常応答の完了は未確認である。
-非同期hookの実行時間もdebugログからは分離できない。
-
-同日、`hooks.json`のSessionEnd登録と同じコマンド・`async: true`だけを一時設定へ写し、`--setting-sources ''`と`--settings`で指定した`claude -p`を実行した。
-CLIは終了コード0で、結果JSONは`terminal_reason: completed`、`result: OK`だった。
-標準エラーは空で、debugログに`Hook cancelled`はなく、`SessionEnd:other`を非同期hookとして登録した記録、`600000ms`の予算および完了状態0があった。
-同一`session_id`で事前登録した管理対象一時領域はCLI終了後に実在しなかった。
+Claude Code 2.1.281を`--plugin-dir`で作業ツリーのプラグインから起動すると、debugログは`SessionEnd:other`を非同期hookとして登録し、予算を`600000ms`と記録した。
+hookの完了状態は0で、標準エラーは空、debugログに`Hook cancelled`は現れなかった。
+`hooks.json`のSessionEnd登録と同じコマンド・`async: true`だけを一時設定へ写し、`--setting-sources ''`と`--settings`で指定した`claude -p`でも同じ結果だった。
+結果JSONは`terminal_reason: completed`、`result: OK`で、CLIは終了コード0だった。
 この検収はSessionEnd単独構成の正常終了を示す。
-全プラグイン構成を用いた同日の追加試行も終了コード143だったため、その正常終了は引き続き未確認である。
+
+全プラグイン構成では、最初の試行で終了コード143（経過11.60秒と16.45秒）になった。
+原因は検証元から継承した`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`である。
+再現試行の`strace`はagent-toolkitのStop hookの子プロセスからCLI本体への`SIGTERM`送信を記録し、debugログにも無進捗判定と常駐ループへの中断要求があった。
+SessionEnd hook自体は完了状態0だった。
+常駐ループ用の環境変数を外し、全プラグイン構成で`claude -p`を起動した。
+`--session-id`と`--debug-file`、`--output-format json`を指定し、標準入力を`/dev/null`へ接続した。
+7秒で終了コード0となり、結果JSONは`terminal_reason: completed`、`result: OK`、`is_error: false`を返した。
+標準エラーは空で、debugログは予算`600000ms`と完了状態0を記録し、`Hook cancelled`は無かった。
+
 再検証では`claude -p`へ同じSessionEnd設定、専用の`--session-id`、`--debug-file`を指定し、CLIの終了コードと結果JSON、標準エラー、debugログの登録・完了状態・予算・`Hook cancelled`の有無を確認する。
+常駐ループ用の環境変数を検証用CLIへ継承させない。
 2026年9月26日以降のSessionEnd hookはセッション単位の領域を削除しないため、同IDで作成した領域の終了後の不在はhookの完了の観測に使わない。
-
-2026年9月24日、Claude Code 2.1.281を作業ツリーのagent-toolkitを`--plugin-dir`で読み込む全プラグイン構成で再検証した。
-`claude -p`に専用の`--session-id`、`--debug-file`、`--output-format json`を指定し、標準入力を`/dev/null`へ接続した。
-外側に時間制限は設けなかった。
-
-先の終了コード143は、検証元から継承した`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`による。
-再現試行の`strace`はagent-toolkitのStop hookの子プロセスからCLI本体への`SIGTERM`送信を記録した。
-debugログにも無進捗判定と常駐ループへの中断要求があり、SessionEnd hook自体は完了状態0だった。
-
-常駐ループ用の環境変数を外し、同じ全プラグイン構成でCLIを起動すると、7秒で終了コード0となった。
-結果JSONは`terminal_reason: completed`、`result: OK`、`is_error: false`を返した。
-標準エラーは空で、debugログは`SessionEnd:other`を非同期hookとして登録し、予算`600000ms`と完了状態0を記録した。
-`Hook cancelled`はdebugログと標準エラーの双方に無かった。
-同じ`session_id`で事前登録した管理対象一時領域は終了後に実在せず、`atk managed-temp list --prefix sessionend-probe`も該当0件を返した。
-再検証では常駐ループ用の環境変数を検証用CLIへ継承させない。
-
-## docs/development/design-hooks-notices.md：通知の整形と反復検出：2026年10月13日
-
-2026年10月13日、Claude Code 2.1.296の環境で公式の[Hooks reference](https://code.claude.com/docs/en/hooks)を取得した。
-「Common input fields」は`session_id`を現在のセッション識別子、`transcript_path`を会話のJSONへのパスとし、transcriptは非同期に書かれるため現在のturnの最新メッセージを含まない場合があると記す。
-「SessionStart」はmatcherを`startup`・`resume`（`--resume`、`--continue`、`/resume`）・`clear`・`compact`・`fork`とし、v2.1.214より前はforkしたセッションが`resume`を報告したと記す。
-`rules_context`はこの入力の`session_id`と`transcript_path`をClaude Codeのメインへの通知に使う。
-`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が、会話ごと・切替ごとの入力と出力の対応と、managed-tempの作成失敗時の通知を確かめる。
-
-再検証は同じ資料の2節を取得して項目名とmatcherの値を比べ、制御したSessionStart入力をhook handlerへ渡して`additionalContext`の値を確かめる。
-項目名か値が変わった場合は`rules_context.py`の通知、`agent-toolkit/share/rules-main.claude-code.md`「自身の会話の記録」と同テストを改める。
-
-## docs/development/design-hooks-session-state.md：通知の整形と反復検出：2026年10月20日
-
-2026年10月20日、Claude Code 2.1.304で、開始時と別のディレクトリで再開すると、SessionStart入力の`transcript_path`が再開時のディレクトリに対応する実在しないパスを示した。
-同じ会話のPreToolUse入力63件は、開始時のworktree側にある実在する記録を示した。
-今回の文書追随では元ホストで再現していない。
-再検証では専用会話を開始時と別のディレクトリで再開し、SessionStartと同じ会話のPreToolUseの`transcript_path`およびファイルの実在を比べる。
-通知は同じsession IDの完全一致で1件へ解決し、0件では新規会話の未作成を許容して入力値を保ち、複数件と探索失敗ではID指定による取得を案内する。
-一次記録はリポジトリ外の作業記録にある。

@@ -6,7 +6,6 @@
 比較基準は2026年10月26日の`c31bea2b6`で、対象は`agent-toolkit/skills/`、`agent-toolkit/share/`、`.claude/skills/`、`agent-basics/skills/`の373 Markdownだった。
 原本の保存先はprivate-notesの`plans/2026/10/27-0550_process-wi_レーン05.read-delivery/`で、次の表のファイル名を使う。
 初回保存版はprivate-notesのcommit `0168b0a8e`にある。
-初回集計は、原因分析資料の宣言を読込表の先頭側へ動かした配送順の版に対応し、後続のdotfilesの版との一致は示さない。
 初回原本には取得時のdotfiles HEADの記録が無いため、各行の`現行sourceのSHA256`で取得対象の版を特定する。
 
 | 本節の呼称 | 原本ファイル | 主な列 |
@@ -15,35 +14,11 @@
 | 表外指示の探索表 | `read-delivery-20261027-search.tsv` | `検索語`、`位置`、`形態分類` |
 | 参照経路表 | `read-delivery-20261027-references.tsv` | `検索語`、`位置`、`参照先`、`結果` |
 
-| 契機 | 宣言 | 行全文一致 | 一対一差分 | 条件変更 | 対象変更 | 契機・配送操作変更 | 行位置変化 | 意味上の移設 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 操作 | 34 | 34 | 0 | 0 | 0 | 0 | 5 | 0 |
-| 起動時 | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 |
-| 判断 | 1732 | 1709 | 23 | 3 | 20 | 19 | 2 | 1 |
-| 合計 | 1781 | 1758 | 23 | 3 | 20 | 19 | 7 | 1 |
-
-宣言数は全宣言表の`種別`別の行数である。
-「行全文一致」「一対一差分」「手動対応」「新規」は、`照合状態`の`行全文一致`、`差分の一対一行`、`差分の行番号対応（手動確認）`、`新規追加（基準行なし）`を数える。
-「条件変更」「対象変更」「契機・配送操作変更」は、順に原本の`条件変更`、`対象変更`、`契機変更`が`変更あり`の行数である。
-「行位置変化」は`配置変更`が`行移動あり`の行数で、新規追加を含めない。
-属性は重複するため横方向に合計しない。
-一対一差分23行はすべて判断の行で、配送操作と対象がともに変わった19行、対象だけが変わった1行、条件だけが変わった3行である。
-契機・配送操作変更列は原本の両セルを比較した値で、この19行の契機の種別はいずれも判断のままである。
-行位置変化7行は前後の挿入・削除を含む。
-意味上の移設1行は、`agent-toolkit/share/read-trigger-bootstrap.md`の読込表で原因分析資料`agent-basics/skills/bugfix/references/root-cause-analysis.md`の宣言順を変えた手動比較の結果である。
-この移動は`read-trigger-bootstrap.md`の16行目から10行目への変更を示す。
-この旧配送順の変更は後述の撤回対象に含まれる。
-
-表外指示の探索表は、4対象根に対する固定文字列検索の1615一致行を保持する。
-検索語は`全文読`、`に従う`、`が定める`、`を参照`で、順に320、813、93、389行だった。
-取得時は語ごとに`git grep -n -F -e '<検索語>' -- agent-toolkit/skills/ agent-toolkit/share/ .claude/skills/ agent-basics/skills/`を実行し、4回とも終了0だった。
-参照経路表の1325行は、宣言経路731、同一資料5、名指し参照の短節22、常時規範18、所在参照9、正式資料への移譲10、コードフェンス内3、プログラム内文言37、実在資料の名指しなし490に分類された。
-経路照合不可は0行だった。
-この分類は取得時の静的な先行経路の照合であり、モデルが判断で本文を利用したことの実機観測ではない。
-
+表外指示の検索語は`全文読`、`に従う`、`が定める`、`を参照`である。
+取得時は語ごとに`git grep -n -F -e '<検索語>' -- agent-toolkit/skills/ agent-toolkit/share/ .claude/skills/ agent-basics/skills/`を実行した。
 再取得では、4対象根のMarkdownを`agent_toolkit._common.read_triggers.parse_tables`で解析し、sourceと行番号で重複を除く。
 宣言の契機・条件・対象・配送操作を同じsourceの比較基準版と対応付け、各属性を別々に数える。
-上記4語を各々の固定文字列検索で取得し、表の行・本文の規定参照・説明・コードフェンス・所在参照を分ける。
+前掲の4語を各々の固定文字列検索で取得し、表の行・本文の規定参照・説明・コードフェンス・所在参照を分ける。
 本文の名指し資料は`validate_reference_routes`で、本文内とsidecarの宣言、常時規範、名指し参照の短節と対応させる。
 `read_triggers_invariant_test.py`で宣言・参照先・見出し・先行経路を確認する。
 
@@ -65,7 +40,7 @@ Claude Code 2.1.311では、`agent-basics:bugfix`のSkill起動をhookが取得�
 全11hookとプロセスの終了コードは0だったが、詳細資料の取得と判断前の利用は確認できなかった。
 この各1回の観測から、別会話での取得や全対象の判断前利用を保証しない。
 
-以下は、2026年11月11日の分割で見出しを失った本節の続き（分類の再取得、節単位方式と全文取得方式の観測、再検証の手順）の要約である。
+以下は、2026年11月11日の分割で見出しを失った本節の続き（分類の再取得、全文取得方式の観測、再検証の手順）の要約である。
 数値の全量と中間版のSHA256はGitの履歴にある。
 
 分類は同じ4対象根と比較基準で取り直した。
@@ -83,15 +58,6 @@ Claude Code 2.1.311では、`agent-basics:bugfix`のSkill起動をhookが取得�
 | `read-delivery-20261027-routes.tsv` | `42fbc98017b58b4a2db9965ba46714e23562803c9fba8d4a6d64b95a8723b7d6` |
 | `read-delivery-20261027-search.tsv` | `40c41efeadf4e63e72b1bb901306feb4724695b0fd2571787a4a1cfcc2992cde` |
 | `read-delivery-20261027-references.tsv` | `96a36680f1a74e5cad6656e7ae059cc0084f25ffa31ab65cc3e3deec7e0bbbc5` |
-
-節ごとに取得済みを判定していた旧方式の制御会話では、`agent-basics/skills/writing-standards/references/python.md`の非連続の3節を2回のReadで取得した。
-Readの指定は前半がoffset 14・limit 63、後半がoffset 90・limit 40で、本文SHA256は`05a0ae8503778ae9db2de4bcedf5c231360604ae0b5512e10a02d927345d3e78`だった。
-前半だけでは指定節の取得済み状態がなく、後半の取得後に同じ主体とhashで取得済みとなった。
-是正前の判定へ生のPostToolUse入力を再生すると、前半は部分範囲の正常な末尾LFの省略を拒否して記録できず、LFを補っても全文座標のままでは選択節の被覆を合成できなかった。
-当時は末尾LFの省略を認め、Readとsedの区間を非連続節を順に連結した文字列上の座標へ変換した。
-全文末尾のLFが1個と2個の検体は、別の制御会話でどちらも全文が一致した。
-後続の全文取得方式では節指定を注目箇所として残し、取得済みの判定を全文被覆に統一した。
-旧方式の実装版は公開履歴から再現できず、その観測は再実行できない。
 
 全文取得方式の代表観測はClaude Code 2.1.311で、`b28807ac95b2e7b2059bb6a670f4daf1ce098f7f`に未commitの変更を加えた版で行った。
 自然会話では、Write後の案内、Read、再WriteとEditを観測したが、180秒上限で終わり最終応答はなかった。
@@ -122,13 +88,13 @@ Read本文は取得範囲を同じファイルの対応箇所と比べ、事前�
 自然会話とは別に、再検証で選ぶ版（後掲の3 sourceのSHA256が一致する公開版）の`read_delivery.py`と`read_delivery_test.py`で、正常・省略・失敗・誤metadata・分割取得の全文被覆を比べる。
 登録元とRead先の一致は、前掲の制御観測と同じく1つのworktreeの2 pluginを明示し、ReadとSkillだけを許可した会話で確かめる。
 
-各観測の版と再検証で選ぶ版は、3 sourceのSHA256で次のとおり識別する。
+再検証で選ぶ版は、次の3 sourceのSHA256で識別する。
 代表観測と後続自然観測の版は公開履歴からの再現を確認できず、歴史的な参考として扱う。
 後続自然観測の後に例外案内と不在資料向け案内を変えたため、その版は再検証で選ぶ版と同一ではない。
 正常資料の案内と全文被覆は変えておらず、不在の分岐は公開hook入力を使う別の試験で確かめた。
 
-| 実装source | 代表観測 | 後続自然観測 | 再検証で選ぶ版 |
-| --- | --- | --- | --- |
-| `agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py` | `0d3d86305b9e30d63782fa5ec120ea1e290e7ee884373ab144e591f38a407f8a` | `5401948b0b85a5e35f71c36506835e46a3985944cf064f35be6dda5fb08b92d6` | `541dfa9f284eed60737344a2c860ceab721b898fd287f77efd4c7578d9a81153` |
-| `agent-toolkit/agent_toolkit/_common/read_triggers.py` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` |
-| `agent-toolkit/agent_toolkit/_hooks/rules_context.py` | `9b00eba032e19e2c8d3575f41fb6e91dcfcadf9fe3bf205666d98408291e6b74` | `d57dfbd19f0e01e7a3d390f0b775ca0e2e22aebd4d7b191389f1e1fbd58c0364` | `50361034a30c66546ad75331ec5b9667923147d634f7f55fee22678f6bedb72c` |
+| 実装source | 再検証で選ぶ版のSHA256 |
+| --- | --- |
+| `agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py` | `541dfa9f284eed60737344a2c860ceab721b898fd287f77efd4c7578d9a81153` |
+| `agent-toolkit/agent_toolkit/_common/read_triggers.py` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` |
+| `agent-toolkit/agent_toolkit/_hooks/rules_context.py` | `50361034a30c66546ad75331ec5b9667923147d634f7f55fee22678f6bedb72c` |
