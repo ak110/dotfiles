@@ -533,22 +533,33 @@ def _run_isolated_upgrade(
         initial_env = dict(env)
         if (pin := old_python_pin(source_repo, old_oid, runner=runner)) is not None:
             initial_env["UV_PYTHON"] = pin
+        initial_apply = ("chezmoi", "init", f"--source={checkout}", "--apply")
         try:
-            _run(("chezmoi", "init", f"--source={checkout}", "--apply"), cwd=checkout, env=initial_env, runner=runner)
-        except UpgradeCheckError as error:
-            old_time = _git_value(source_repo, "show", "-s", "--format=%cI", old_oid, runner=runner)
-            current_time = int(_git_value(source_repo, "show", "-s", "--format=%ct", current_oid, runner=runner))
-            cutoff = datetime.datetime.fromtimestamp(current_time, datetime.UTC) - datetime.timedelta(hours=_AGE_HOURS)
-            raise UpgradeCheckError(
-                "旧版の初期適用に失敗し、現行版への更新は未実行である。"
-                f"旧版commit={old_oid}、旧版commit時刻={old_time}、現行commit={current_oid}、"
-                f"旧版の選定基準時刻（現行commit時刻の{_AGE_HOURS}時間前）={cutoff.isoformat()}。"
-                "旧版自身に後で修正された不具合がある場合、同じ現行commitで再実行しても同じ旧版が選ばれるため解消しない。"
-                "旧版から現行commitまでのgit logで失敗した工程の修正commitを探し、"
-                f"修正commit時刻から{_AGE_HOURS}時間を過ぎたcommit時刻のcommitで検証すると旧版が修正後へ進む。"
-                "修正が見つからず旧版自身の問題でない場合は、子の出力にある問題を解消して再実行する。"
-                f"元の診断: {error}"
-            ) from error
+            _run(initial_apply, cwd=checkout, env=initial_env, runner=runner)
+        except UpgradeCheckError as first_error:
+            # 旧版の後処理には、並行起動の競合で不定期に失敗し、同じ検証homeでの再実行で回復する版がある。
+            # 旧版のcommitは固定で現行版の変更では直らないため、同じ旧版で1回だけ再試行する。
+            # 再試行でも失敗した場合は旧版の状態があることを確かめられないため、更新を検証せずに失敗とする。
+            print(
+                f"旧版{old_oid}の初期適用に失敗したため、同じ旧版で1回だけ再試行する。元の診断: {first_error}",
+                file=sys.stderr,
+            )
+            try:
+                _run(initial_apply, cwd=checkout, env=initial_env, runner=runner)
+            except UpgradeCheckError as error:
+                old_time = _git_value(source_repo, "show", "-s", "--format=%cI", old_oid, runner=runner)
+                current_time = int(_git_value(source_repo, "show", "-s", "--format=%ct", current_oid, runner=runner))
+                cutoff = datetime.datetime.fromtimestamp(current_time, datetime.UTC) - datetime.timedelta(hours=_AGE_HOURS)
+                raise UpgradeCheckError(
+                    "旧版の初期適用が1回の再試行でも失敗し、現行版への更新は未実行である。"
+                    f"旧版commit={old_oid}、旧版commit時刻={old_time}、現行commit={current_oid}、"
+                    f"旧版の選定基準時刻（現行commit時刻の{_AGE_HOURS}時間前）={cutoff.isoformat()}。"
+                    "旧版自身に後で修正された不具合がある場合、同じ現行commitで再実行しても同じ旧版が選ばれるため解消しない。"
+                    "旧版から現行commitまでのgit logで失敗した工程の修正commitを探し、"
+                    f"修正commit時刻から{_AGE_HOURS}時間を過ぎたcommit時刻のcommitで検証すると旧版が修正後へ進む。"
+                    "修正が見つからず旧版自身の問題でない場合は、子の出力にある問題を解消して再実行する。"
+                    f"元の診断: {error}"
+                ) from error
         _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
         # 初期適用した旧版の警告は、現行版の更新の判定から分離する。
         for log in home.rglob("update-dotfiles.log*"):
