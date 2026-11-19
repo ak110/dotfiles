@@ -100,9 +100,27 @@ def _install_global_npm(
     return npm
 
 
+def _canonical(tmp_path: Path, *, windows: bool) -> Path:
+    return tmp_path / "dotfiles" / "bin" / ("codex.cmd" if windows else "codex")
+
+
 def _migrate(tmp_path: Path, *, windows: bool) -> bool:
-    canonical = tmp_path / "dotfiles" / "bin" / ("codex.cmd" if windows else "codex")
+    canonical = _canonical(tmp_path, windows=windows)
     return setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, tmp_path / "standalone")
+
+
+def _shown(path: Path) -> Path:
+    """警告が示すパス。ディレクトリだけを実体のパスにし、シンボリックリンクはたどらない。"""
+    return path.parent.resolve() / path.name
+
+
+def _assert_left_without_package_warning(message: str, launchers: list[Path], canonical: Path) -> None:
+    """本体の無い起動スクリプトの警告が、残したファイルの一覧と、保持か退避かの案内と、正規の起動先を示す。"""
+    assert all(str(_shown(launcher)) in message for launcher in launchers), message
+    assert "意図したラッパーなら保持する" in message
+    assert "起動に失敗するなら別の場所へ退避するか削除し" in message
+    assert f"`{canonical}`" in message
+    assert "package.json" not in message
 
 
 @pytest.mark.parametrize("stderr", ["npm ERR! permission denied", ""])
@@ -305,7 +323,7 @@ def test_migrate_reports_why_package_ownership_is_unconfirmed(
     expected = (
         f"packageのディレクトリが不在: {package_dir}"
         if scenario == "package-missing"
-        else f"{package_dir}配下の実体ではない: 通常ファイル"
+        else f"{package_dir}のbinの実体ではない: 通常ファイル"
     )
     assert expected in messages[0]
 
@@ -464,7 +482,7 @@ def test_known_npm_shim_forms_cover_npm_6_to_12() -> None:
     """既知の生成形式は、npm 6.0.0からnpm 12までが同梱したcmd-shimの形を含む。
 
     npm 6.0.0は2.0.2、npm 6.14は3.0.3、npm 11.20.0は8.0.0、npm 12.2.3は9.0.2を同梱する。
-    下の2つの試験は、データの全ての形で移行と本体の無い起動スクリプトの削除を確かめる。
+    下の2つの試験は、データの全ての形で移行と本体の無い起動スクリプトの警告を確かめる。
     """
     versions = {version for version, _ in npm_cmd_shim_kinds()}
     assert {"2.0.2", "3.0.3", "8.0.0", "9.0.2"} <= versions
@@ -488,19 +506,107 @@ def test_windows_migrates_unedited_shims_of_every_known_npm(
 
 
 @pytest.mark.parametrize("cmd_shim", npm_cmd_shim_kinds(), ids="-".join)
-def test_windows_removes_unedited_shims_left_without_package(
+def test_windows_warns_about_unedited_shims_left_without_package(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, cmd_shim: tuple[str, str]
 ) -> None:
-    """パッケージ本体だけが無くなった配置では、cmd-shimの各版が生成した未編集の起動スクリプトを全て削除する。"""
+    """パッケージ本体だけが無くなった配置では、cmd-shimの各版が生成した起動スクリプトを削除せず、1つの警告で示す。"""
     npm = _install_global_npm(monkeypatch, tmp_path, windows=True, cmd_shim=cmd_shim)
     shutil.rmtree(npm.package)
+    launchers = {launcher: launcher.read_bytes() for launcher in npm.launchers if launcher.exists()}
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert _migrate(tmp_path, windows=True)
+        assert not _migrate(tmp_path, windows=True)
 
-    assert not any(launcher.exists() for launcher in npm.launchers)
+    assert {launcher: launcher.read_bytes() for launcher in launchers} == launchers
     assert not npm.uninstalls
-    assert not caplog.messages
+    assert len(caplog.messages) == 1, caplog.messages
+    _assert_left_without_package_warning(caplog.messages[0], list(launchers), _canonical(tmp_path, windows=True))
+
+
+@pytest.mark.parametrize(
+    ("suffix", "edit"),
+    [
+        # 参照先をパッケージ内のユーザーのファイルに変えた`.cmd`。本体があれば保持し、本体を片付けた後も残す。
+        pytest.param(".cmd", lambda text: text.replace("bin\\codex.js", "bin\\work.js"), id="cmd-user-entry"),
+        # PowerShellが`.cmd`より先に使う`.ps1`に、ユーザーが注記を足したもの。
+        pytest.param(".ps1", lambda text: text.replace("\n", "\n# work profile\n", 1), id="ps1-comment"),
+    ],
+)
+def test_windows_keeps_edited_shims_left_without_package(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, suffix: str, edit
+) -> None:
+    """本体の無い配置では、編集した起動スクリプトも未編集の起動スクリプトも削除せず、毎回1つの警告に全て示す。"""
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=True)
+    edited = npm.bin_dir / f"codex{suffix}"
+    edited.write_text(edit(edited.read_text(encoding="utf-8")), encoding="utf-8", newline="")
+    (npm.package / "bin" / "work.js").write_text("#!/usr/bin/env node\n", encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not _migrate(tmp_path, windows=True)
+    assert not npm.uninstalls
+    assert len(caplog.messages) == 1, caplog.messages
+    assert f"{_shown(edited)}（" in caplog.messages[0]
+    shutil.rmtree(npm.package)
+    launchers = {launcher: launcher.read_bytes() for launcher in npm.launchers}
+
+    for _ in range(2):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+            assert not _migrate(tmp_path, windows=True)
+        assert {launcher: launcher.read_bytes() for launcher in launchers} == launchers
+        assert len(caplog.messages) == 1, caplog.messages
+        _assert_left_without_package_warning(caplog.messages[0], npm.launchers, _canonical(tmp_path, windows=True))
+    assert not npm.uninstalls
+
+
+def test_migrate_keeps_users_link_to_launcher_of_other_npm(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """PATH外のnpmの標準の起動スクリプトを指す、ユーザーのシンボリックリンクは削除せず、リンク先も導入先も残す。"""
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=True)
+    personal = tmp_path / "personal-bin"
+    personal.mkdir()
+    link = personal / "codex.cmd"
+    link.symlink_to(npm.bin_dir / "codex.cmd")
+    monkeypatch.setenv("PATH", str(personal))
+    launchers = {launcher: launcher.read_bytes() for launcher in npm.launchers}
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not _migrate(tmp_path, windows=True)
+
+    assert link.is_symlink()
+    assert link.readlink() == npm.bin_dir / "codex.cmd"
+    assert {launcher: launcher.read_bytes() for launcher in launchers} == launchers
+    assert npm.package.is_dir()
+    assert not npm.uninstalls
+    assert len(caplog.messages) == 1, caplog.messages
+    _assert_left_without_package_warning(caplog.messages[0], [link], _canonical(tmp_path, windows=True))
+
+
+@pytest.mark.parametrize("target", ["inside-package", "outside-package"])
+def test_posix_keeps_npm_link_repointed_to_other_script(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, target: str
+) -> None:
+    """POSIXのnpmの`bin/codex`を、参照先をpackage.jsonのbinとは別のスクリプトに変えたものは、npmの生成物とみなさない。
+
+    旧npm版を自動では削除せず、パッケージと一緒に消えるリンク先のスクリプトも、退避するファイルとして警告に示す。
+    """
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=False)
+    script = npm.package / "bin" / "work.js" if target == "inside-package" else tmp_path / "work.js"
+    script.write_text("#!/usr/bin/env node\n// work profile\n", encoding="utf-8")
+    link = npm.bin_dir / "codex"
+    link.unlink()
+    link.symlink_to(script)
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not _migrate(tmp_path, windows=False)
+
+    assert not npm.uninstalls
+    assert script.read_text(encoding="utf-8") == "#!/usr/bin/env node\n// work profile\n"
+    assert link.resolve() == script.resolve()
+    assert len(caplog.messages) == 1, caplog.messages
+    assert f"{_shown(link)}（" in caplog.messages[0]
+    assert npm.removal() in caplog.messages[0]
+    assert (f"{script.resolve()}もパッケージと一緒に削除される" in caplog.messages[0]) is (target == "inside-package")
 
 
 @pytest.mark.parametrize("windows", [True, False], ids=["windows", "posix"])
@@ -535,6 +641,7 @@ def test_migrate_keeps_shims_of_unknown_npm_and_shows_removal_steps(
     """既知の形に無い将来のnpmの起動スクリプトは、npmの生成物と確かめられないものとして残す。
 
     パッケージがあれば、1つの警告にそのファイルと、旧npm版を削除するコマンドを示す。
+    パッケージが無ければ、1つの警告に`.ps1`を含むそのファイルと、正規の起動先を示す。
     """
     npm = _install_global_npm(monkeypatch, tmp_path, windows=True)
     unknown = {
@@ -550,16 +657,23 @@ def test_migrate_keeps_shims_of_unknown_npm_and_shows_removal_steps(
 
     assert {launcher: launcher.read_bytes() for launcher in unknown} == unknown
     assert not npm.uninstalls
+    assert len(caplog.messages) == 1, caplog.messages
     if package == "installed":
-        assert len(caplog.messages) == 1, caplog.messages
         assert all(
             f"{launcher.resolve()}（npmの既知の生成形式と一致しない通常ファイル）" in caplog.messages[0] for launcher in unknown
         )
         assert npm.removal() in caplog.messages[0]
+    else:
+        _assert_left_without_package_warning(caplog.messages[0], list(unknown), _canonical(tmp_path, windows=True))
 
 
 _NPM_SHIMS = npm_windows_shims("node_modules/@openai/codex/bin/codex.js")
 _USER_FILES: dict[str, tuple[bool, str, str | bytes]] = {
+    # npmの形のまま、参照先をpackage.jsonのbinとは別の、パッケージ内のファイルに変えたもの。
+    **{
+        f"windows-user-entry{suffix or '-sh'}": (True, f"codex{suffix}", content)
+        for suffix, content in npm_windows_shims("node_modules/@openai/codex/bin/work.js").items()
+    },
     # ユーザーが正規のCodexを`--profile work`で起動するよう置いたラッパー。
     "windows-wrapper-cmd": (True, "codex.cmd", '@echo off\r\n"%USERPROFILE%\\.local\\bin\\codex.exe" --profile work %*\r\n'),
     # npmが生成した起動スクリプトの起動行に、ユーザーが起動オプションを足したもの。
@@ -730,58 +844,59 @@ def test_migrate_windows_mise_shim_rejects_wrong_target(monkeypatch, tmp_path: P
     )
 
 
-def test_migrate_removes_npm_launchers_left_without_package(monkeypatch, tmp_path):
-    """本体の無いnpm起動スクリプトだけを削除し、本体のあるものと、ユーザーが置いたものは残す。"""
+def test_migrate_warns_once_per_directory_about_launchers_left_without_package(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """本体の無いnpm起動スクリプトは、配置先ごとに1つの警告で示し、本体のあるものとnpmを参照しないものは示さない。
+
+    どのファイルも削除しない。
+    """
+    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
     shims = npm_windows_shims("node_modules/@openai/codex/bin/codex.js")
-    orphan = tmp_path / "orphan"
-    orphan.mkdir()
-    for suffix, content in shims.items():
-        (orphan / f"codex{suffix}").write_text(content, encoding="utf-8", newline="")
+    files = {
+        "orphan": {f"codex{suffix}": content.encode() for suffix, content in shims.items()},
+        "unrelated": {"codex.ps1": b"& codex.exe @args\n"},
+        # 本体の無いnpm版を、起動行にユーザーが起動オプションを足して使っていたもの。
+        "edited": {"codex.cmd": shims[".cmd"].replace('codex.js" %*', 'codex.js" --profile work %*').encode()},
+        # 本体の無いnpm版に、ユーザーが環境変数の設定を1行足して使っていたもの。
+        "added-line": {
+            "codex.cmd": shims[".cmd"]
+            .replace("@ECHO off\r\n", '@ECHO off\r\nset "CODEX_HOME=%USERPROFILE%\\work-codex"\r\n')
+            .encode()
+        },
+        # npmの形のまま、パッケージの外のファイルを指すよう参照先を書き換えたもの。
+        "outside-package": {"codex.cmd": npm_windows_shims("node_modules/@openai/codex/../../work/codex.js")[".cmd"].encode()},
+    }
+    for directory, contents in files.items():
+        (tmp_path / directory).mkdir()
+        for name, data in contents.items():
+            (tmp_path / directory / name).write_bytes(data)
     installed = tmp_path / "installed"
     (installed / "node_modules" / "@openai" / "codex").mkdir(parents=True)
     (installed / "codex.ps1").write_text(shims[".ps1"], encoding="utf-8", newline="")
-    user_files = {
-        "unrelated": ("codex.ps1", b"& codex.exe @args\n"),
-        # 本体の無いnpm版を起動行にユーザーが起動オプションを足して使っていたもの。
-        "edited": ("codex.cmd", shims[".cmd"].replace('codex.js" %*', 'codex.js" --profile work %*').encode()),
-        # 本体の無いnpm版に、ユーザーが環境変数の設定を1行足して使っていたもの。
-        "added-line": (
-            "codex.cmd",
-            shims[".cmd"].replace("@ECHO off\r\n", '@ECHO off\r\nset "CODEX_HOME=%USERPROFILE%\\work-codex"\r\n').encode(),
-        ),
-        # npmの形のまま、パッケージの外のファイルを指すよう参照先を書き換えたもの。
-        "outside-package": (
-            "codex.cmd",
-            npm_windows_shims("node_modules/@openai/codex/../../work/codex.js")[".cmd"].encode(),
-        ),
-        # npmの起動スクリプトの参照を含むが、テキストとして読めない実行ファイル。
-        "binary": ("codex", shims[""].encode() + b"\0"),
+    monkeypatch.setenv("PATH", os.pathsep.join(str(tmp_path / name) for name in (*files, "installed")))
+    monkeypatch.setattr(
+        setup_cli_common.common,
+        "run_subprocess",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError((args, kwargs))),
+    )
+    canonical = tmp_path / "canonical" / "codex.cmd"
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, canonical.parent)
+
+    assert {
+        directory: {name: (tmp_path / directory / name).read_bytes() for name in contents}
+        for directory, contents in files.items()
+    } == files
+    assert (installed / "codex.ps1").read_text(encoding="utf-8") == shims[".ps1"]
+    warned = {directory: [m for m in caplog.messages if str(tmp_path / directory) in m] for directory in (*files, "installed")}
+    assert {directory: len(messages) for directory, messages in warned.items()} == {
+        **dict.fromkeys(files, 1),
+        "unrelated": 0,
+        "installed": 0,
     }
-    for directory, (name, data) in user_files.items():
-        (tmp_path / directory).mkdir()
-        (tmp_path / directory / name).write_bytes(data)
-    monkeypatch.setenv("PATH", os.pathsep.join(str(tmp_path / name) for name in ("orphan", "installed", *user_files)))
-    canonical = tmp_path / "canonical"
-
-    assert setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical / "codex.cmd", canonical)
-
-    assert not any(orphan.iterdir())
-    assert (installed / "codex.ps1").is_file()
-    remaining = {directory: tmp_path / directory / name for directory, (name, _) in user_files.items()}
-    assert {directory: path.read_bytes() if path.exists() else None for directory, path in remaining.items()} == {
-        directory: data for directory, (_, data) in user_files.items()
-    }
-
-
-def test_migrate_keeps_large_file_named_like_launcher(monkeypatch, tmp_path):
-    """起動スクリプトより大きいファイル（実行ファイル本体など）は、参照の文字列を含んでも読まず削除しない。"""
-    directory = tmp_path / "bin"
-    directory.mkdir()
-    binary = directory / "codex"
-    binary.write_bytes(b'"$basedir/node_modules/@openai/codex/bin/codex.js"\n' + b"\x00" * (64 * 1024))
-    monkeypatch.setenv("PATH", str(directory))
-    canonical = tmp_path / "canonical"
-
-    setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical / "codex.cmd", canonical)
-
-    assert binary.is_file()
+    for directory, contents in files.items():
+        if directory != "unrelated":
+            launchers = [tmp_path / directory / name for name in contents]
+            _assert_left_without_package_warning(warned[directory][0], launchers, canonical)
