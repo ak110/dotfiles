@@ -65,5 +65,6 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete rename2hash
 complete -o nospace -o default -o bashdefault -F _python_argcomplete repack-archive
 complete -o nospace -o default -o bashdefault -F _python_argcomplete sol
 complete -o nospace -o default -o bashdefault -F _python_argcomplete sonnet
+complete -o nospace -o default -o bashdefault -F _python_argcomplete ssh-unelevated
 complete -o nospace -o default -o bashdefault -F _python_argcomplete terra
 complete -o nospace -o default -o bashdefault -F _python_argcomplete touch-file

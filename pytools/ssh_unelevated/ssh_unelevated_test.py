@@ -1,0 +1,144 @@
+"""ssh_unelevatedの試験。
+
+予定タスクを使う接続先の処理はWindowsでしか動かないため、ここでは結果の解釈と、pwshで動かせる部分
+（sshの起動部から`remote.ps1`へ引数が届くこと、`runner.ps1`が出力と終了コードを残すこと）を確かめる。
+"""
+
+import codecs
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+
+import pytest
+
+from pytools.ssh_unelevated import _cli
+
+_RUN_ID = "0123456789abcdef"
+_requires_pwsh = pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未導入")
+
+
+def _remote_stdout(output: bytes, result: dict[str, object], run_id: str = _RUN_ID) -> bytes:
+    return output + f"\nSSH_UNELEVATED_RESULT:{run_id} {json.dumps(result)}\n".encode()
+
+
+@pytest.mark.parametrize(
+    ("result", "exit_code", "diagnostic_parts"),
+    [
+        ({"status": "completed", "exit_code": 0}, 0, None),
+        ({"status": "completed", "exit_code": 7}, 7, None),
+        ({"status": "completed", "exit_code": 3221225786}, 1, ["3221225786"]),
+        ({"status": "timeout"}, 124, ["60秒"]),
+        ({"status": "not_logged_on", "user": "STHENO\\ms"}, 125, ["stheno", "STHENO\\ms", "ログオン"]),
+        ({"status": "not_started", "task_result": 0x41303}, 125, ["開始しなかった", "0x00041303"]),
+        ({"status": "no_result", "task_result": 0x800710E0}, 125, ["残さずに終わった", "0x800710E0"]),
+        ({"status": "error", "message": "Access is denied."}, 125, ["Access is denied."]),
+    ],
+)
+def test_interpret_maps_remote_status(result: dict[str, object], exit_code: int, diagnostic_parts: list[str] | None) -> None:
+    """接続先の状態ごとに終了コードを決め、スクリプトの出力はLFの改行で返す。"""
+    outcome = _cli.interpret(_remote_stdout("日本語\r\n".encode(), result), 0, run_id=_RUN_ID, host="stheno", timeout=60)
+    assert outcome.exit_code == exit_code
+    assert outcome.output == "日本語\n"
+    if diagnostic_parts is None:
+        assert outcome.diagnostic is None
+    else:
+        assert outcome.diagnostic is not None
+        assert all(part in outcome.diagnostic for part in diagnostic_parts), outcome.diagnostic
+
+
+def test_interpret_keeps_result_lines_of_other_runs_in_output() -> None:
+    """スクリプトの中で入れ子に実行した別の実行の結果の行は、出力として残す。"""
+    nested = _remote_stdout(b"inner", {"status": "completed", "exit_code": 5}, run_id="ffffffffffffffff")
+    outcome = _cli.interpret(
+        _remote_stdout(nested, {"status": "completed", "exit_code": 0}), 0, run_id=_RUN_ID, host="stheno", timeout=60
+    )
+    assert outcome.exit_code == 0
+    assert outcome.output == nested.decode()
+
+
+@pytest.mark.parametrize(("returncode", "exit_code", "part"), [(255, 255, "接続できなかった"), (1, 125, "結果が返らなかった")])
+def test_interpret_without_result_line(returncode: int, exit_code: int, part: str) -> None:
+    """結果の行が無い場合は、sshの接続失敗とそれ以外を分け、届いた出力は残す。"""
+    outcome = _cli.interpret(b"partial", returncode, run_id=_RUN_ID, host="stheno", timeout=60)
+    assert outcome.exit_code == exit_code
+    assert outcome.output == "partial"
+    assert outcome.diagnostic is not None
+    assert part in outcome.diagnostic
+
+
+def test_main_rejects_non_positive_timeout(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        _cli.main(["--timeout", "0", "stheno", "script.ps1"])
+    assert excinfo.value.code == 2
+    assert "1以上の秒数" in capsys.readouterr().err
+
+
+def test_main_rejects_non_utf8_script(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    script = tmp_path / "script.ps1"
+    script.write_bytes("日本語".encode("cp932"))
+    with pytest.raises(SystemExit) as excinfo:
+        _cli.main(["stheno", str(script)])
+    assert excinfo.value.code == 2
+    assert "UTF-8" in capsys.readouterr().err
+
+
+@_requires_pwsh
+@pytest.mark.skipif(sys.platform == "win32", reason="偽のsshをPOSIXのシェルスクリプトで作る")
+def test_main_delivers_large_script_to_remote(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """数十KBのスクリプトでも、起動部がremote.ps1を引数付きで実行し、その結果の行を読み取る。
+
+    Linuxのpwshには予定タスクのコマンドが無いため、remote.ps1はその失敗を結果の行で返す。
+    引数が届かない場合や起動部が本文を復元できない場合は、結果の行が無い失敗になる。
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_ssh = bin_dir / "ssh"
+    # 最後の引数（接続先で実行するコマンド行）を、Windowsのsshdの代わりにpwshで実行する。
+    fake_ssh.write_text("#!/bin/sh\nfor command; do :; done\nexec pwsh ${command#powershell }\n", encoding="utf-8")
+    fake_ssh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    script = tmp_path / "large.ps1"
+    script.write_text("\n".join(f"'{i}-日本語-''quote''-`tick-$notvar'" for i in range(3000)), encoding="utf-8")
+    assert script.stat().st_size > 50_000
+
+    with pytest.raises(SystemExit) as excinfo:
+        _cli.main(["--timeout", "30", "stheno", str(script)])
+
+    stderr = capsys.readouterr().err
+    assert excinfo.value.code == 125
+    assert "sthenoでの準備か後始末に失敗した" in stderr
+    assert "Get-ScheduledTask" in stderr
+
+
+def _run_runner(tmp_path: pathlib.Path, script: str) -> tuple[str, str]:
+    """remote.ps1が置く形でrunner.ps1とscript.ps1を置いて実行し、残った出力と終了コードを返す。"""
+    runner = tmp_path / "runner.ps1"
+    runner.write_bytes(pathlib.Path(_cli.__file__).with_name("runner.ps1").read_bytes())
+    (tmp_path / "script.ps1").write_bytes(codecs.BOM_UTF8 + script.encode("utf-8"))
+    subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(runner)], check=True, timeout=60)
+    output = (tmp_path / "output.txt").read_text(encoding="utf-8-sig")
+    return output, (tmp_path / "exit.txt").read_text(encoding="ascii").strip()
+
+
+@_requires_pwsh
+@pytest.mark.parametrize(
+    ("script", "expected_output", "expected_exit"),
+    [
+        ("Write-Output '日本語'\nexit 7", "日本語", "7"),
+        ("Write-Output 'before'\nthrow '意図した失敗'", "意図した失敗", "1"),
+        ("& (Get-Process -Id $PID).Path -NoProfile -Command 'exit 3'", "", "3"),
+        # PowerShellの既定のとおり、エラーで止めず、未定義の変数も参照できる。
+        ("Get-Item -LiteralPath '/nonexistent/path'\nWrite-Output \"after=$undefinedVariable.\"", "after=.", "0"),
+    ],
+)
+def test_runner_records_output_and_exit_code(
+    tmp_path: pathlib.Path, script: str, expected_output: str, expected_exit: str
+) -> None:
+    output, exit_code = _run_runner(tmp_path, script)
+    assert expected_output in output
+    assert exit_code == expected_exit
