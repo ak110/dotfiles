@@ -76,8 +76,10 @@ hookの完了状態は0で、標準エラーは空、debugログに`Hook cancell
 原因は検証元から継承した`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`である。
 再現試行の`strace`はagent-toolkitのStop hookの子プロセスからCLI本体への`SIGTERM`送信を記録し、debugログにも無進捗判定と常駐ループへの中断要求があった。
 SessionEnd hook自体は完了状態0だった。
+非同期hookの実行時間は、debugログからは分離できない。
 常駐ループ用の環境変数を外し、全プラグイン構成で`claude -p`を起動した。
 `--session-id`と`--debug-file`、`--output-format json`を指定し、標準入力を`/dev/null`へ接続した。
+外側に時間制限は設けなかった。
 7秒で終了コード0となり、結果JSONは`terminal_reason: completed`、`result: OK`、`is_error: false`を返した。
 標準エラーは空で、debugログは予算`600000ms`と完了状態0を記録し、`Hook cancelled`は無かった。
 
