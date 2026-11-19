@@ -145,6 +145,8 @@ warn_unused_configs = true
 show_error_codes = true
 
 [tool.typos.default.extend-words]
+# SDDLの組み込みSID略号（BUILTIN\Administrators）
+ba = "ba"
 # filelockパッケージの実際のAPIパラメータ名（後方互換のため残置されたtypo）
 intervall = "intervall"
 
