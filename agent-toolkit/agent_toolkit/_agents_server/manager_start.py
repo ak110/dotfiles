@@ -223,7 +223,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                         startup_document,
                         lambda engine=engine: read_triggers.startup_context(
                             startup_document,
-                            startup_document.parent.parent,
+                            task_documents.document_plugin_root(startup_document),
                             dict(startup_inputs or {}),
                             host=engine,
                             project=cwd,

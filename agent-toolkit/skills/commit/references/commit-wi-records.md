@@ -16,6 +16,7 @@ commitは一意な短縮OIDで扱い、入力には完全OIDも使える。
 `git commit`を単独で実行して正常に完了した場合に限り、作成前のHEAD、新しいHEAD、worktree、および対応するすべてのAWIを`atk run-script plan-progress`へ渡して記録する。
 1つのcommitが複数のAWIの変更を含む場合は、それらのAWIを全件同じ記録へ渡す。
 引き継ぎ記録は`--handoff`と対象AWI全件の`--allowed-awi`を指定する。
+計画が要るAWIと要らないAWIが同じレーンにあり、1つのcommitが両方の変更を含む場合は、同じ作成前HEADと新しいHEADで、計画の関連WIにあるAWIを計画へ、残りのAWIを引き継ぎ記録へ記録し、手順2の取得と`commit_record`もAWIごとに記録した側を使う。
 レビュー修正やCI修正も同様に全件記録する。
 cherry-pickやfast-forwardで複数commitを取り込んだ場合は操作前後のHEADで一括記録できる。
 AWI集合が異なれば集合ごとの区間直前を作成前HEAD、区間末尾を新HEADとして記録する。

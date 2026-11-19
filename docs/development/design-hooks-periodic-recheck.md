@@ -5,7 +5,7 @@
 ## `start`の処理の中での定期再確認の装着
 
 Code Mode対応後は、設定PostToolUseが成功した`start`と主体を観測し、会話別の期限付き要求へ装着を依頼する。
-modは既存のCron操作を実行し、装着結果を生成元の明らかな通知で届ける。
+modは既存のCron操作を実行し、装着できなかった場合だけ生成元の明らかな警告を同じ`start`の結果へ添える。
 以下の作成前回収能力確認、共通prompt、durable保持、同じ失敗の反復抑止は維持する。
 ツールを監視するmodイベントへの登録は使わない。
 
@@ -14,7 +14,7 @@ modは既存のCron操作を実行し、装着結果を生成元の明らかな�
 装着が`allow`を要する`CronList`・`CronDelete`・`CronCreate`は配布原本`share/claude_settings_json_managed.json`の`permissions.allow`へ置く。
 auto modeでは一覧に無いツールの判定が`ask`となり装着を見送ることがある。
 `pytools/claude_hook/distribution_test.py`がmodの`tool.check`から抽出した全ツール名と許可一覧の対応をチェックする。
-modはメインが定期再確認のtaskを持たない場合に一覧取得・作成・削除の許可を確認し、`atk wait-schedule`と同じcron式で`CronCreate`を作成して、task IDを`start`の結果の後に届ける。
+modはメインが定期再確認のtaskを持たない場合に一覧取得・作成・削除の許可を確認し、`atk wait-schedule`と同じcron式で`CronCreate`を作成する。
 装着できない場合は、理由と許可・公開状態の確認、完了通知による待機を案内する。
 装着は成功した`start`ごとに評価し直し、許可や公開状態が回復した後の`start`で自動作成する。
 装着失敗の通知は会話（`$.session.id()`）ごとに最後に届けた本文と比べ、同じ本文なら`start`の結果へ加えない。
@@ -25,6 +25,16 @@ modはメインが定期再確認のtaskを持たない場合に一覧取得・�
 成功した`start`ごとに同じ警告を追加すると、許可が回復するまで会話へ同じ本文が積み上がり、読む費用だけが増えるためである。
 通常回収の通知（`session_exit.ts`）も同じ失敗の反復を抑える。
 モデルが手順を守らなくても装着できるようになり、起動前の`atk wait-schedule`、`ToolSearch`と`CronCreate`の呼び出しが不要になる。
+
+2026年11月18日、作成の成功の通知をやめ、失敗の警告を`start`のターンの中で届ける方式へ改めた。
+modの`$.prompt.submit`は会話がidleになってから実行されるため、成功の通知は起動したターンの終了まで保留され、全待機の回収後に通知だけを処理するターンを1回生んでいた（2026年11月17日のセッション記録で、投入から約20分後の到着を観測した）。
+成功の通知は発火時の共通本文と同じ案内しか持たず、task IDも含まないため、届ける内容が無い。
+成功を知る必要がある場合は`CronList`の標識で確かめられる。
+失敗の警告は、PostToolUseのhookがmodの要求（`periodic_recheck`）の応答を待ち、応答の`reason`を`start`の結果の追加文脈へ添える。
+modの`CronList`・`CronCreate`の呼び出しにも設定hookが実行されるため、装着の完了までは2026年11月18日の観測で約5秒かかる。
+hookの待機上限（20秒）を過ぎた警告は、modが次のターンの入力として届ける。
+modの読込目印が無い会話では待たない。
+次のターンの入力として送る通知は`hooks/automated_message.ts`の`startNextTurn`を通し、届く時点を送達手段の名前で区別する。
 「委譲手段の選択と待機の装着の手掛かり」が`start`の公開説明に置いた手掛かりは、装着できなかった場合と`Agent`ツールの委譲の手順への案内へ改めた。
 定期promptの共通本文は`agent-toolkit/agent_toolkit/_common/periodic_recheck.py`だけが持ち、`atk wait-schedule --format json`がcron式とともに出力する。
 modとモデルが自ら装着する手順は、どちらもこの出力を使う。
@@ -55,10 +65,17 @@ modごとに包装を複製する案は、片方だけの境界欠落を再び�
 通常の回収は`session_exit.ts`の既存の`turn.complete`へ集約する。
 `/goal`の評価はStopの時点で行われ、未達ならターンを継続させるため、`turn.complete`の回収は評価より後にしか動かない。
 評価はStop入力に残る定期再確認のtaskを未完了と判定する。
-このため`/goal`を設定したセッションでは、メインが全待機の回収後、最終ターンを閉じる前に同じ範囲のtaskを削除する（`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」）。
+このため、メインが全待機の回収後、最終ターンを閉じる前に同じ範囲のtaskを削除する（`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」）。
 2026年11月8日〜10日に`/goal`を設定して自動起動した3つのセッションが、担当工程と報告の送達を終えた後も、残ったtaskを理由に目標の評価で継続された事象への対処である（うち2つでは`…`だけの最終応答も理由に挙がった）。
-modの回収をStopの時点へ移す案は、modが登録できるイベントにStopの時点のものが無いため成立しない。
-`turn.complete`へ置く後始末が、Stop入力の`session_crons`・`background_tasks`・`last_assistant_message`に未完了と読める状態を残す場合は、目標の設定下でその状態を評価より前に解消する主体と手順を別に定める。
+modが登録できるイベントにStopの時点のものは無い。
+Stopのhookがmodへ回収を同期要求する仕組み（下記）はあるが、この回収と目標の評価の順序は未観測のため、メインによる削除を維持する。
+2026年11月に統括とrun-skillの起動から`/goal`を外し、手動の`/goal`も想定しない構成にした（[design-hooks-termination-evidence.md](design-hooks-termination-evidence.md)「自動起動セッションの続行の判定」）。
+メインによる削除の条件は、`/goal`の設定から、process-loopの統括と`atk run-skill`が起動したセッションへ替えた。
+変更の反映前に`/goal`付きで始まったこれらの会話は、利用上限の解除後などに目標を保ったまま再開するためである。
+担当工程完了の終了応答を`…`でなく完了の1文にする扱い（目標評価が完了の記述を読むため）も、同じ理由で同じ条件へ替えた。
+この条件は最初の入力の`atk-auto`要素で判別でき、規範に`/goal`への言及は残らない。
+人が使う対話セッションでは、終了時の応答は待機・完了とも`…`だけ、定期再確認taskの回収はmodの自動回収だけになる。
+変更前に始まった会話が残らなくなった後に、この条件を保つかは見直してよい。
 PythonのStopが`transcript_path`・`session_id`・`background_tasks`・現在のセッション状態を既存の`is_pending_async_work`へ渡し、同じ会話のmodへ1回限りの判定を渡す。
 Stopごとに前の判定を無効にし、modは使用前に消費済みへ変える。
 session.startと新しいturn.startでも初期化して、中断したターンの判定の持越しを防ぐ。
@@ -74,6 +91,17 @@ modは全待機対象の終了と結果回収後に`CronList`で役割標識とI
 拒否・失敗時はtaskを保持し、同じ会話へ理由と次の操作を届けて次の有効な終了判定で再評価する。
 同じ失敗の通知がターンを再発生させ続けることは抑える。
 作成と回収を同じmodへ集約することで、通常の回収をモデルの呼び忘れと能力差から独立させる。
+
+2026年11月18日、通常の回収を、ターンの終了後（`turn.complete`）から全待機の終了を判定したStopの中へ前倒しした。
+Claude Codeは、ターンの実行中に発火時刻を迎えたcronの発火を保留し、ターンの終了直後のidleで実行する（`CronCreate`の説明「Jobs only fire while the REPL is idle」）。
+2026年11月17日のセッション記録では、08:30の発火時刻がターンの実行中に当たり、ターンの終了（Stopの要約）の93ミリ秒後に発火が記録されて、確認する対象の無いターンが1回動いた。
+`turn.complete`の回収は`atk wait-schedule`の実行を含めて1秒以上かかり、この発火に間に合わない。
+Stopのhookは、判定が全待機の終了で、Stop入力の`session_crons`に共通promptのtaskがある場合だけ、modへ回収を同期要求（`periodic_recheck_collect`）して応答を最大20秒待つ。
+回収の待ちは2026年11月18日の観測で約4秒で、待機対象の一巡ごとに1回だけ生じる。
+Stopが終わるまでターンはidleにならないため、Stopの中で削除したtaskは発火しない。
+`turn.complete`の回収は、残ったtaskの再評価と、削除できなかった場合の警告の送達を担う。
+発火を`prompt.submit`のhookで取り消す案は採らない。
+取り消すたびに理由が画面へ出るうえ、ターンの終了後に回収するという原因を残すためである。
 削除能力だけを作成前に確認して通常回収をモデルへ残す案は、回収の実行契機が分離したままになるため採らない。
 却下した代替案は3つある。
 PostToolUseのhookがcron式と`CronCreate`の引数を通知する案は、モデルの`ToolSearch`と`CronCreate`の呼び出しが残り、装着にモデルの手順遵守を必要とする点を除けない。

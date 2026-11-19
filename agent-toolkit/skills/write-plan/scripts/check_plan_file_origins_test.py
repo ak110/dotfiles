@@ -15,7 +15,7 @@ from agent_toolkit._testing.plan_file_check_support import fixture_repo as fixtu
 
 def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: bool) -> pathlib.Path:
     """由来の構文確認に使う現行計画とWIファイルを配置する。"""
-    main_content = _plan_fixture.current_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
+    main_content = _plan_fixture.eight_section_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_path = repo / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
     frontmatter = ["---", "status: inbox"]
@@ -73,7 +73,7 @@ def _agent_wi_plan(repo: pathlib.Path, private_notes: pathlib.Path, wi_sections:
 
     `wi_sections`が`None`の場合はWIファイルを置かない。
     """
-    main_content = _plan_fixture.current_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
+    main_content = _plan_fixture.eight_section_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_content = main_content.replace(_plan_fixture.WI_ACTION_ROW, _AGENT_WI_ADOPTED_ROW, 1)
     path = repo / "agent-wi.md"
     path.write_text(main_content, encoding="utf-8")
@@ -166,7 +166,8 @@ def _bug_plan_without_bug_file(repo: pathlib.Path, private_notes: pathlib.Path, 
     """`計画ファイル（バグ）`行を持たないバグ対応計画と、人間由来のWIファイルを配置する。"""
     related = _plan_fixture.WI_FILES if related_wi else ()
     path = repo / "bug-plan.md"
-    path.write_text(_plan_fixture.current_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related), encoding="utf-8")
+    content = _plan_fixture.eight_section_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related)
+    path.write_text(content, encoding="utf-8")
     inbox = private_notes / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     for name, _summary in _plan_fixture.WI_FILES:
@@ -208,7 +209,7 @@ def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], 
     """根拠が記入済みなら由来の構文確認はWI本文を参照しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "absent"
-    main_content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
+    main_content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_path = work_dir / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
     errors, warnings = check_plan_file.check(
@@ -236,7 +237,7 @@ def test_cli_origin_skip_reports_one_next_action(
         queue.mkdir()
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
     path = work_dir / "origin.md"
-    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
     path.write_text(content.replace(_plan_fixture.WI_ACTION_ROW, _AGENT_WI_ADOPTED_ROW, 1), encoding="utf-8")
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == 0
     lines = capsys.readouterr().err.splitlines()
@@ -272,7 +273,7 @@ def test_cli_transfer_skip_reports_recovery(
 
         monkeypatch.setattr(pathlib.Path, "is_file", is_file)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
-    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).replace(
         _plan_fixture.USER_ACTION_ROW,
         "| 公開契約に必要な変更を実装する | ユーザー指示 | 移管 | 20261027-162634-999.mdへ移管する。 |",
         1,
@@ -310,7 +311,7 @@ def test_cli_transfer_accepts_wi_deleted_after_registration(
         git_repository.run_git(notes, "commit", "-q", "--no-verify", "-m", "別環境へ移す")
     deleted = git_repository.git_output(notes, "rev-parse", "--short", "HEAD")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
-    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).replace(
         _plan_fixture.USER_ACTION_ROW, f"| 公開契約に必要な変更を実装する | ユーザー指示 | 移管 | {name}へ移管する。 |", 1
     )
     start = content.index("### 受入シナリオ")

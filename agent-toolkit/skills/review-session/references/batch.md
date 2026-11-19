@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | 所要時間の基準を適用する前 | `agent-toolkit:review-session/references/duration-analysis.md` | | |
 | 対象の分析を始める前 | `session-analysis.md` | | |
-| AWIを起草・独立検収する前 | `agent-toolkit:wi-standards`、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/wi-draft-review.parent.md` |
+| AWIを起草・独立検収する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`、`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/wi-draft-review.parent.md` |
 | 結果報告の作成・保存に入る前に、メインが起動する | `../../report-completion/SKILL.md` | 判断 | `skill:report-completion` |
 
 ## 起動
@@ -60,9 +60,9 @@ batch自身のセッションも振り返り対象に含める。
    モデル不明の表の割合が前の期間より増えた場合は、限界として報告する前に、不明の表を1件選んで表の名前を含むセッション記録を探し、帰属できない理由を確かめる。
    実行レビュー担当の記録が存在するのに帰属できていない場合は、集計の不具合として扱う。
    記録が残っていない表だけが不明である場合に、その理由を集計の限界として報告する。
-3. 原因と対策を確定した要求から、batchのメインが `agent-toolkit:wi-standards` に従ってAWIを直接起草する。
+3. 原因と対策を確定した要求から、batchのメインが `agent-toolkit:atk-mode/playbooks/wi-drafting.md` に従ってAWIを直接起草する。
    WI投入担当への中継を省き、調査済みの証拠と判断を再利用する。
-   同スキルの`references/drafting-workflow-review-route.md`「直接起草と独立した検収の選択」に従い、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md`の投入前レビューを経て保存する。
+   同書「直接起草と独立した検収の選択」に従い、`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`の投入前レビューを経て保存する。
    原因分析を含む原稿の独立検収は省かない。
    全対象の分析と横断整理後に全要求を予告し、合格した原稿を保存する（`session-analysis.md`「工程5」）。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。

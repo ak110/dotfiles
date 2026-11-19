@@ -295,3 +295,80 @@ def test_session_start_context_fits_claude_code_cap(
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
     output = _output(capsys)
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
+
+
+def _notice_lines(output: str, notice: str) -> list[str]:
+    """`notice`を含む自動挿入の区分の本文を行で返す。"""
+    block = next(block for block in output.split("<atk-auto ")[1:] if notice in block)
+    return block.split(">\n", 1)[1].split("\n</atk-auto>", 1)[0].split("\n")
+
+
+@pytest.mark.parametrize("delegated", [False, True])
+@pytest.mark.parametrize("host", ["claude", "codex", "agy"])
+@pytest.mark.parametrize("source", ["startup", "clear", "compact", "resume", "fork"])
+def test_session_start_guides_main_to_entry_with_one_line(
+    host: str, source: str, delegated: bool, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """文脈を失って始まる会話のメインへ、入口の起動を1行で案内する。入口の本文は通知へ載せない。
+
+    委譲先へは起動の本文が規範を届けるため、案内しない。
+    """
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": source}), host=host)
+    output = _output(capsys)
+    expected = (
+        None
+        if delegated
+        else {
+            "startup": rules_context.ENTRY_START_NOTICE,
+            "clear": rules_context.ENTRY_START_NOTICE,
+            "compact": rules_context.ENTRY_COMPACT_NOTICE,
+        }.get(source)
+    )
+    for notice in (rules_context.ENTRY_START_NOTICE, rules_context.ENTRY_COMPACT_NOTICE):
+        assert output.count(notice) == (1 if notice == expected else 0)
+    if expected is None:
+        return
+    assert "\n" not in expected and "agent-toolkit:atk-mode" in expected
+    # 同じ区分に並ぶのは1行の案内だけであり、入口の本文の行は通知のどこにも無い。
+    one_line_notices = {
+        rules_context.RESPONSE_LANGUAGE_NOTICE,
+        rules_context.QUALITY_CHECKPOINT_NOTICE,
+        rules_context.ENTRY_START_NOTICE,
+        rules_context.ENTRY_COMPACT_NOTICE,
+    }
+    assert set(_notice_lines(output, expected)) <= one_line_notices
+    entry = (rules_context.SHARE_DIR.parent / "skills" / "atk-mode" / "SKILL.md").read_text(encoding="utf-8")
+    headings = [line for line in entry.split("\n---\n", 1)[1].splitlines() if line.startswith("#")]
+    assert headings and not any(f"\n{heading}\n" in output for heading in headings)
+
+
+@pytest.mark.parametrize("source", ("startup", None))
+@pytest.mark.parametrize("host", ("claude", "codex"))
+def test_process_loop_claim_survives_session_start_failure(
+    host: str, source: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """統括の確保は、source検証や以後のSessionStart処理が例外で失敗しても成立し、後から始まる入れ子の会話は統括にならない。"""
+    from agent_toolkit._common import process_loop_session  # pylint: disable=import-outside-toplevel
+
+    environ = {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "launch-x"}
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("SessionStartの処理の失敗")
+
+    monkeypatch.setattr(rules_context, "compose_session_start", fail)
+    for session in ("coordinator", "nested"):
+        with pytest.raises((RuntimeError, ValueError)):
+            rules_context.main(
+                json.dumps({"hook_event_name": "SessionStart", "source": source, "session_id": session}), host=host
+            )
+
+    assert process_loop_session.is_identified_process_loop_session("coordinator", environ)
+    assert not process_loop_session.is_identified_process_loop_session("nested", environ)

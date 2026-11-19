@@ -48,7 +48,7 @@ process-wi all-reposのリポジトリ担当は成果と残工程を統括へ返
 ## 中止・置換・待機・技術的不成立
 
 ホストからの猶予通知によって続行が許可されている間は、残りの工程を進める。
-ホストによって再開が禁止された場合は、現在の状況と再開に必要な操作を`agent-toolkit:user-confirmation-and-report`に沿ってユーザーに伝える。
+ホストによって再開が禁止された場合は、現在の状況と再開に必要な操作を`agent-toolkit:atk-mode/playbooks/confirmation.md`に沿ってユーザーに伝える。
 `wait`は実際に継続中の待機処理がある場合に記録し、`blocked`は観測された失敗によって技術的に続行できない場合に記録する。
 
 作業の中止や別作業への置換が指示された場合、確認への回答や起動した委譲先の結果を待つ場合、あるいは技術的に続行できない場合は、`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`を実行してその判断を記録する。
@@ -77,7 +77,7 @@ Claude Code環境では、`atk run-script termination-evidence -- --context`を�
 ## 技術的不成立の判定
 
 利用上限の猶予通知と、ホストによる背景コマンドの停止は、技術的不成立の外にある。
-猶予通知を受けた場合は、`agent-toolkit:user-confirmation-and-report`の`references/usage-limit.md`に従い、同じ工程を続ける。
+猶予通知を受けた場合は、`agent-toolkit:atk-mode/references/usage-limit.md`に従い、同じ工程を続ける。
 ホストが再開を禁じた処理は、再開の可否をユーザーへ確認する。
 確認の手段は、協調モードでは`AskUserQuestion`、自律モードではUWIの投入とし、UWIは`wait`の`uwi_file`で記録する。
 ホストの通知による停止は、終了理由の記録の対象外である。

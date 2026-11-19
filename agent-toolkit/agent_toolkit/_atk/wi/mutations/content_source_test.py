@@ -90,7 +90,7 @@ class TestNoninteractiveEdit:
             assert saved == original
             error = capsys.readouterr().err
             assert "human" in error
-            assert "起動スキル名（プラグイン接頭辞を除く）" in error
+            assert "起動中の作業かスキルの名前を指定する（プラグイン接頭辞を除く。" in error
             assert "agent" in error
 
     def test_awi_body_updates_without_editor_and_preserves_metadata(

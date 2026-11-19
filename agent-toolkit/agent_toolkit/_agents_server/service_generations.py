@@ -8,6 +8,7 @@ import pathlib
 from collections.abc import Generator
 from typing import Any
 
+from agent_toolkit._agents_server import service_transport
 from agent_toolkit._common import file_lock
 from agent_toolkit._common.atomic_file import atomic_write
 
@@ -89,6 +90,46 @@ class GenerationRegistry:
         with self._locked(write=False) as data:
             entry = data["generations"].get(data["current"])
             return dict(entry) if entry is not None else None
+
+    def restore(self) -> dict[str, Any] | None:
+        """受付先のプロセスが終了していれば、生存する最新の公開済み世代へ受付を戻し、戻した後の受付先を返す。
+
+        各世代は受付先のepochが下がらない前提で遅れた通知を捨てる。戻す世代へ終了した受付先のepochを引き継がせ、
+        どの世代からも新しい受付先として観測できるようにする。
+        終了した世代は未公開へ戻して次のepochを与え、同じ配布物の次の起動を、戻した世代より新しい候補として公開できるようにする。
+        それより後に準備された未公開の候補は順序を保って繰り下げ、終了した世代の再起動より新しい順序に保つ。
+        生存する公開済み世代が無ければ変更しない。転送側が受付先のrootから同じ世代を起動し直す。
+
+        2026-11-18、公開直後に終了した新世代を受付先が指し続け、生存していた旧世代の状態保存とユーザーへの送達が失敗した。
+        """
+        current = self.current()
+        if current is None or service_transport.process_alive(current["process"]):
+            return current
+        with self._locked() as data:
+            entries = data["generations"]
+            exited = entries.get(data["current"])
+            if exited is None or service_transport.process_alive(exited["process"]):
+                return dict(exited) if exited is not None else None
+            survivors = [
+                entry
+                for entry in entries.values()
+                if entry is not exited
+                and entry.get("ready")
+                and not entry.get("retired")
+                and service_transport.process_alive(entry["process"])
+            ]
+            if not survivors:
+                return dict(exited)
+            survivor = max(survivors, key=lambda entry: entry["epoch"])
+            released = exited["epoch"]
+            for entry in entries.values():
+                if entry["epoch"] > released:
+                    entry["epoch"] += 1
+            survivor["epoch"], exited["epoch"] = released, released + 1
+            data["next_epoch"] += 1
+            exited["ready"] = False
+            data["current"] = survivor["generation"]
+            return dict(survivor)
 
     def generations(self) -> dict[str, dict[str, Any]]:
         """準備順と資源の所有元を、世代ごとの既存索引から読む。"""

@@ -6,6 +6,7 @@
 そのため通常は削除せず、更新から一定期間が経過した他セッションの状態だけを回収する。
 命名の種別と前回設定名も通常状態と同じ寿命で保持する。
 自セッション自身の状態は、記録が無いまま期間が経過した場合も回収対象から除く。
+期限による回収は1日1回に限る。SessionEndは委譲先のturnごとにも発火し、回収1回が登録簿や記録の全件を読むためである。
 
 例外は終了理由が`clear`の場合とする。この理由は会話が破棄されたことを示し、
 この終了の後に同じ会話へ戻ることはないため、状態を保持する意味が無い。
@@ -26,18 +27,24 @@ import contextlib
 import functools
 import json
 import os
+import time
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._agents_server import shared_roots, shared_sweep
 lazy from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
 lazy from agent_toolkit._atk.managed_temp import creation, resources, sweep
-lazy from agent_toolkit._common import session_registry
+lazy from agent_toolkit._common import interval_gate, session_activity, session_registry, state_paths
 lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    STALE_STATE_MAX_AGE_SECONDS,
     clear_session_state,
     sweep_stale_states,
 )
+lazy from agent_toolkit._hooks.background_tasks_entries import sweep_nested_launch_caches
 
 _DISCARDED_REASON = "clear"
+
+_EXPIRY_SWEEP_INTERVAL_SECONDS = 24 * 60 * 60
+"""期限切れ状態の回収の間隔。保持期限（共有状態7日、hook状態14日）に対し、1日遅れても回収の結果は変わらない。"""
 
 
 def main(payload_text: str) -> int:
@@ -57,24 +64,32 @@ def main(payload_text: str) -> int:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         session_id = None
-    keep_root_session_id = (
-        shared_roots.resolve_conversation_root_session_id({"CLAUDE_CODE_SESSION_ID": session_id})
-        if session_id is not None
-        else None
-    )
-    # SessionEndはモデルへの配送先を持たない。次回の期限掃引で再試行する。
-    with contextlib.suppress(OSError):
-        shared_sweep.sweep_stale_shared_state(keep_root_session_id=keep_root_session_id)
-    with contextlib.suppress(OSError):
-        sweep_function_hook_files(keep_session_id=session_id, clear=payload.get("reason") == _DISCARDED_REASON)
-    sweep_stale_states(keep_session_id=session_id)
+    discarded = payload.get("reason") == _DISCARDED_REASON
+    # SessionEndはモデルへの配送先を持たない。失敗した回収は次回の期限掃引で再試行する。
+    if interval_gate.claim(state_paths.state_dir() / "sweeps" / "session-end", interval_seconds=_EXPIRY_SWEEP_INTERVAL_SECONDS):
+        keep_root_session_id = (
+            shared_roots.resolve_conversation_root_session_id({"CLAUDE_CODE_SESSION_ID": session_id})
+            if session_id is not None
+            else None
+        )
+        with contextlib.suppress(OSError):
+            shared_sweep.sweep_stale_shared_state(keep_root_session_id=keep_root_session_id)
+        with contextlib.suppress(OSError):
+            sweep_function_hook_files(keep_session_id=session_id, clear=discarded)
+        sweep_stale_states(keep_session_id=session_id)
+        with contextlib.suppress(OSError):
+            session_activity.sweep_exited_records()
+        sweep_nested_launch_caches(max_age_seconds=STALE_STATE_MAX_AGE_SECONDS, now=time.time())
+    elif discarded:
+        with contextlib.suppress(OSError):
+            sweep_function_hook_files(keep_session_id=session_id, clear=True)
     with contextlib.suppress(OSError, ValueError):
-        if session_id is not None and session_id not in session_registry.pending_session_ids():
-            area = creation.find_session_temp(session_id)
-            if area is not None and not sweep.has_live_owner(area):
-                cleaned = resources.cleanup_regenerable(area, references=functools.cache(resources.process_references))
-                resources.log_retained(cleaned["retained"])
-    if payload.get("reason") != _DISCARDED_REASON or session_id is None:
+        area = creation.find_session_temp(session_id) if session_id is not None else None
+        # 登録簿の全件を解決する保留中の判定は、回収の候補になる領域がある場合だけ行う。
+        if area is not None and not sweep.has_live_owner(area) and session_id not in session_registry.pending_session_ids():
+            cleaned = resources.cleanup_regenerable(area, references=functools.cache(resources.process_references))
+            resources.log_retained(cleaned["retained"])
+    if not discarded or session_id is None:
         return 0
     clear_session_state(session_id)
     return 0

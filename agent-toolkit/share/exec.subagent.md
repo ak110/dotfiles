@@ -74,7 +74,7 @@ continuations:
 
 # レーン実行タスク
 
-`agent-toolkit:process-wi`における1つのレーンを、計画の起草から統合まで同一のスレッドで担当する。
+`agent-toolkit:process-wi`における1つのレーンを、計画の要否判定から統合まで同一のスレッドで担当する。
 担当種別は`レーン担当`、`レビュー修正担当`、または`CI修正担当`のいずれかとする。
 計画および実行工程における責務と完了条件は、`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
@@ -84,8 +84,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| bugfixの初動で詳細分析を選び、不具合の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
-| 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` |
+| 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/process-model-settings.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards-verification.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/commit-wi-records.md` |
@@ -104,7 +103,7 @@ continuations:
 | `検証結果`を書く前 | `verification-evidence-records.md` | | |
 | 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | | |
 | `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration.subagent.md` |
-| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | | |
+| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`（語の基準） | | |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` | | |
 
 ## 操作の直前に判定する前提
@@ -113,9 +112,8 @@ continuations:
 
 - 既存ファイル全体の完全上書きや文字列置換をする直前: 対象ファイルの最新の現行本文を取得する（自身が作成したファイルも含む）。
 - ファイルを編集する直前: プロジェクト規範が定める、編集対象パスに対応した必須スキルを起動する。
-- 変更範囲の検証を実行する直前: 訂正済みの検証表が存在する場合はその検証行から、存在しない場合は計画の`## 検証`にある`変更範囲の検証`行からコマンドを取得する。
-  訂正済み検証表の保持と引き継ぎは、`../skills/write-plan/references/plan-file-standards-verification.md`「検証と公開工程」に従う。
-  計画を作成していない場合は、引き継ぎ記録に記載された検証コマンドを使用する。
+- 変更範囲の検証を実行する直前: 計画ありでは訂正済みの検証表の検証行（無ければ計画の`## 検証`にある`変更範囲の検証`行）から、計画なしでは引き継ぎ記録からコマンドを取得する。
+  訂正済み検証表の保持と引き継ぎは、`../skills/write-plan/references/plan-file-standards-verification.md`「検証」に従う。
   取得したコマンドを使う前に、`agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」で、実際の差分の契約から求める利用側の試験が含まれるかと、保存済みの結果を再利用できるかを判定する。
   足りない利用側を加え、足さなかった残りを記録する。
 - 受入シナリオや完成条件を手動で観測する直前: `verification-evidence-observation.md`「手動観測の保存」に従う。
@@ -126,7 +124,7 @@ continuations:
 
 | 担当種別 | 計画起草 | 実装・修正 | commit | 統合 |
 | --- | --- | --- | --- | --- |
-| レーン担当 | 再開位置が`なし`の場合に作成要否を判定する | 単一担当の実行契約では採否の検収後、メインの判断を待つ場合は`実装開始`を受領した後に実施する | 実行可能 | 統合入力の確定後（初期選定が複数レーンの場合は`統合許可`受領後）、または統合指示の受領後に実施し、統合が完了するまで同一スレッドで担当する |
+| レーン担当 | 再開位置が`なし`の場合にAWIごとに作成要否を判定する | 単一担当の実行契約では採否の検収後、メインの判断を待つ場合は`実装開始`を受領した後に実施する | 実行可能 | 統合入力の確定後（初期選定が複数レーンの場合は`統合許可`受領後）、または統合指示の受領後に実施し、統合が完了するまで同一スレッドで担当する |
 | レビュー修正担当 | 実施しない | 受領した指摘のみを修正する | fixupコミットのみ実行可能 | 実施しない |
 | CI修正担当 | 実施しない | CI記録で認可された失敗のみを修正する | 実行可能 | 実施しない |
 

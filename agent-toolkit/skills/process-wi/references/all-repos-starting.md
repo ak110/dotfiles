@@ -24,7 +24,7 @@
 集合JSONの`repositories`を対象集合とする。
 各対象の準備済み`worktree`を処理の起点とする。
 `ownership_record`と`ownership_token`は常駐が取得済みの所有であり、配下の担当へそのまま渡す。
-`lane_session_id`はリポジトリ単位で保持し、レーン操作の`--session-id`へ明示する。
+`lane_session_id`は対象単位で保持し、レーン操作の`--session-id`へ明示する。
 
 **2.** 対象worktreeの作業に入る前に、その対象の`AGENTS.md`、`CLAUDE.md`、作業に関わるプロジェクトスキルの実在する`SKILL.md`を絶対パスで読んで適用する。
 

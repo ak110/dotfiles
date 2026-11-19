@@ -7,12 +7,17 @@ import ctypes
 import errno
 import os
 import threading
+import time
 from ctypes import wintypes as w
 from multiprocessing import connection
 from typing import Any
 
+lazy import psutil
+
 # Windows専用属性はLinuxの型情報に無いため、OS境界内で動的に解決する。
 _windows: Any = ctypes
+# FILETIME（1601年からの100ナノ秒単位）でのUNIX時刻の起点。
+_FILETIME_UNIX_EPOCH = 116444736000000000
 
 
 def _api() -> tuple[Any, Any]:
@@ -85,6 +90,21 @@ def process_identity(pid: int) -> str:
         return _identity(handle, pid)
 
 
+def listed_process_alive(identity: str) -> bool:
+    """開けないプロセスが記録した起動単位のプロセスかを、開く権限の要らないシステムのプロセス一覧の作成時刻で判定する。
+
+    psutilは開けないプロセスの作成時刻をプロセス一覧から秒の浮動小数で返すため、丸め誤差を許す。
+    PIDの再利用は元のプロセスの終了後に限られ、作成時刻の差は元のプロセスの生存時間を超える。
+    プロセス一覧でも作成時刻を得られない場合は記録した起動単位と確かめられず、Linuxの拒否と同じく終了した世代として扱う。
+    """
+    pid, created = (int(part) for part in identity.split(":", 1))
+    try:
+        listed = psutil.Process(pid).create_time()
+    except psutil.NoSuchProcess, psutil.AccessDenied:
+        return False
+    return abs(listed - (created - _FILETIME_UNIX_EPOCH) / 10_000_000) < 0.001
+
+
 def _sid(handle: int) -> str:
     kernel, security = _api()
     token = w.HANDLE(None)
@@ -135,6 +155,9 @@ class _Listener:
         self.closed = False
         self.lock = threading.Lock()
         self.accepting = False
+        # 時間切れで返った受付を次のacceptへ引き継ぐ。取り消すと待受instanceが一時的に消え、
+        # 接続側のWaitNamedPipeが即座にFileNotFoundErrorで失敗する。
+        self.pending = None
         self._create()
 
     def _create(self) -> None:
@@ -159,7 +182,11 @@ class _Listener:
         finally:
             kernel.LocalFree(descriptor)
 
-    def accept(self):
+    def accept(self, timeout: float = 0.5):
+        """接続を受理する。`timeout`秒で受理が無ければ受付を保ったまま`TimeoutError`を送出する。
+
+        POSIXのsocket listenerと同じく呼出側へ定期的に戻り、退出条件を再確認させる。
+        """
         import _winapi  # pylint: disable=import-error,import-outside-toplevel  # Windowsでだけ呼び出す標準API。
 
         native: Any = _winapi
@@ -171,12 +198,20 @@ class _Listener:
                 self._create()
             handle = self.handle
             self.accepting = True
-        operation = None
+        operation = self.pending
         try:
-            operation = native.ConnectNamedPipe(handle, overlapped=True)
+            if operation is None:
+                operation = native.ConnectNamedPipe(handle, overlapped=True)
+                self.pending = operation
+            deadline = time.monotonic() + timeout
             while native.WaitForSingleObject(operation.event, 100) == 258:
                 if self.closed:
                     raise OSError("listenerは終了しています")
+                if time.monotonic() >= deadline:
+                    with self.lock:
+                        self.accepting = False
+                    raise TimeoutError("接続待ちの時間切れ")
+            self.pending = None
             _, error = operation.GetOverlappedResult(True)
             if error:
                 raise _windows.WinError(error)
@@ -188,7 +223,10 @@ class _Listener:
                 self.accepting = False
             pipe_connection: Any = connection
             return pipe_connection.PipeConnection(handle)
+        except TimeoutError:
+            raise
         except BaseException:
+            self.pending = None
             if operation is not None:
                 operation.cancel()
                 operation.GetOverlappedResult(True)
@@ -206,6 +244,10 @@ class _Listener:
                 import _winapi  # pylint: disable=import-error,import-outside-toplevel  # Windowsでだけ呼び出す標準API。
 
                 native: Any = _winapi
+                if self.pending is not None:
+                    self.pending.cancel()
+                    self.pending.GetOverlappedResult(True)
+                    self.pending = None
                 native.CloseHandle(self.handle)
                 self.handle = None
 

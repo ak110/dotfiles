@@ -1,5 +1,6 @@
 """宣言解析内の解決再利用と、要求境界での再取得を検証する。"""
 
+import contextlib
 import pathlib
 from typing import Any
 
@@ -65,3 +66,20 @@ def test_canonical_markdown_files_returns_real_paths(tmp_path: pathlib.Path) -> 
     except OSError as error:
         pytest.skip(f"このホストでリンク作成権限が無い: {error}")
     assert read_triggers.canonical_markdown_files(root) == [target.resolve(), plain.resolve()]
+
+
+@pytest.mark.parametrize("scoped", [True, False], ids=["request", "standalone"])
+def test_user_side_source_requires_skill_home_outside_plugins(tmp_path: pathlib.Path, scoped: bool) -> None:
+    """スキル置き場の文書だけをユーザー側とし、祖先にplugin manifestを持つ文書は除く。要求内外で同じ判定にする。"""
+    plugin = tmp_path / "plugin"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin/plugin.json").write_text("{}", encoding="utf-8")
+    cases = {
+        tmp_path / "project/.claude/skills/example/SKILL.md": True,
+        tmp_path / "home/.codex/skills/example/references/guide.md": True,
+        plugin / ".claude/skills/example/SKILL.md": False,
+        tmp_path / "project/docs/skills/guide.md": False,
+        tmp_path / "project/AGENTS.md": False,
+    }
+    with read_triggers.resolution_scope() if scoped else contextlib.nullcontext():
+        assert {path: read_triggers.user_side_source(path) for path in cases} == cases

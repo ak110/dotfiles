@@ -13,6 +13,7 @@ import pytest
 
 import agent_toolkit.agents_server_mcp as entry_script
 from agent_toolkit._agents_server import launch_requests, mcp_tools
+from agent_toolkit._common import task_documents
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_support import (
     _REAL_PLUGIN_PREFLIGHT,
@@ -114,7 +115,7 @@ def test_preflight_passes_where_plugin_commands_succeed(tmp_path: pathlib.Path) 
 
 def test_every_parent_contract_has_one_input_section() -> None:
     """全ての共有親契約が、拒否時に案内できる入力節を1つだけ持つ。"""
-    contracts = sorted(launch_requests._SHARE_DIRECTORY.glob("*.parent.md"))
+    contracts = task_documents.role_documents(launch_requests.plugin_root.SERVER_PLUGIN_ROOT, ".parent.md")
     assert contracts
     for contract in contracts:
         assert launch_requests._input_section(contract) in {"入力", "渡す入力"}, contract

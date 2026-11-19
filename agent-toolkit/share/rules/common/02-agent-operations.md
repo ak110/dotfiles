@@ -18,7 +18,7 @@
 - 独自コマンド（`atk`の操作や補助スクリプト）の使用・追加・保持は、標準手段と比べて得られる目的上の便益と、学習・準備・実行・結果確認・保守の総費用で判断する。
   便益は目的上の効果に限り、内部の専用入力や規範がそのコマンドを必須にしていることは根拠にしない。
   保持するCLIは`show`・`get`・`set`・`list`・`grep`などの既存の語義を守り、名前から副作用が推測できる構成を保つ。
-  人間の利用と採否・認可を`user-confirmation-and-report`で判定する。
+  人間の利用と採否・認可を`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で判定する。
   削除を選んだ操作の呼び出しは、互換ラッパーを設けず標準手段へ移す。
 - CLI・API・MCPの公開操作は、実行・案内の前に、使う人が使う呼び出し手段の入力契約を確定する（親子コマンドのオプション位置、公開リクエストの項目など）。
   根拠は版を特定した公開仕様か、同じセッションで確かめたヘルプ・スキーマとする。
@@ -27,7 +27,7 @@
   手順・規範・スキルが実行できる形で示した受理形式はそのまま使う。
 - 読み取るときの文字コードは入力に合わせ、ホストの自動選択と違うか不明なら明示する。
 - 実行基盤・権限設定・auto mode classifierが操作を拒否した場合や、classifierが判定不能を返した場合は、別の手段を試す前に診断に対応する詳細節を読む。
-  詳細節は`agent-toolkit:user-confirmation-and-report/references/permission-denial.md`「共通判断」から選ぶ。
+  詳細節は`agent-toolkit:atk-mode/playbooks/permission-denial.md`「共通判断」から選ぶ。
 
 ### 標準の読取・実行・一時領域
 
@@ -50,7 +50,7 @@
   依存する呼出しは取得後の応答で発行する。
   圧縮後は残工程で選ぶ。
 - 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。
-  直接影響範囲の定義は`agent-toolkit:write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」にある。
+  直接影響範囲の定義は`agent-toolkit:atk-mode/references/awi-body.md`「直接影響範囲」にある。
 - Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。
   前工程から受け取ったパスや識別子は、移動や終了を伴う操作を挟んだ後で同一性を確かめ直す。
 

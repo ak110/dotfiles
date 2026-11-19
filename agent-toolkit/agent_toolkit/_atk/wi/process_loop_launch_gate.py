@@ -20,7 +20,6 @@ from agent_toolkit._atk.wi import readiness as _readiness
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._git import remote as _remote
 
 RESTART_CHANGES = (
     "新しいWIの到着、既存WIの本文・状態・依存・冷却期限の変更、着手可否の区分の変化、"
@@ -113,8 +112,9 @@ def record_failure_next_action() -> str:
     )
 
 
-def _path(repo_id: str) -> pathlib.Path:
-    digest = hashlib.sha256(_remote.normalize_remote_url(repo_id).encode("utf-8")).hexdigest()
+def _path(key: str) -> pathlib.Path:
+    # keyは処理対象（repositoryと系統の組）の識別子。系統の無い対象はrepository識別子と同じになり、従来の記録を引き継ぐ。
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
     return record_directory() / f"{digest}.json"
 
 

@@ -20,6 +20,8 @@ def check_process_loop_alerts(
     last_alert_check: float | None,
     *,
     count_dependabot: bool,
+    branch: str | None = None,
+    include_repository_alerts: bool = True,
 ) -> tuple[float | None, int, frozenset[int] | None]:
     """確認間隔を満たす場合だけアラートを確認し、確認時刻、CI失敗のAWI投入件数、未判定のDependabotアラート番号を返す。
 
@@ -31,6 +33,8 @@ def check_process_loop_alerts(
     セッション開始前の呼び出し（`count_dependabot`が偽）はこれから起動するセッションが監査を行うため数えない。
     番号の代わりのNoneはアラートを観測しなかったこと（`--no-alerts`、確認間隔内の省略、数えない呼び出し、
     取得の失敗）を示し、起動要否の判定はその反復のアラートを比較に使わない。
+    系統を登録したrepositoryでは系統（`branch`）ごとに呼び、その系統のブランチのCI失敗をその系統宛てのAWIにする。
+    repository単位のアラート（GitLabのPipeline Schedule）は`include_repository_alerts`の対象（default_branchの系統）だけが扱う。
     """
     if args.no_alerts:
         return last_alert_check, 0, None
@@ -38,7 +42,8 @@ def check_process_loop_alerts(
     if last_alert_check is not None and monotonic_now - last_alert_check < args.alert_interval:
         return last_alert_check, 0, None
     # 外部APIの照会は1件あたり数秒から十数秒かかるため、待機中と区別できるよう着手を表示する。
-    print(f"{target_repo_id}のCI失敗とアラートを確認しています。", flush=True)
+    label = target_repo_id if branch is None else f"{target_repo_id}@{branch}"
+    print(f"{label}のCI失敗とアラートを確認しています。", flush=True)
     try:
         submitted = _alerts.check_and_submit_alerts(
             private_notes,
@@ -46,6 +51,8 @@ def check_process_loop_alerts(
             local_path,
             forge=args.alert_forge,
             now=datetime.datetime.now(),
+            branch=branch,
+            include_repository_alerts=include_repository_alerts,
         ).submitted
     except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
         _next_action.report(

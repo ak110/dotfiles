@@ -72,6 +72,9 @@ def _rules_body(root: Path) -> str:
         "必要な操作と未完了の成果をユーザーまたは委譲元へ返す。",
         "",
     ]
+    if (toolkit / "skills" / "atk-mode" / "SKILL.md").is_file():
+        # OpenCodeはhookを登録しないため、入口の起動を求める案内をこの規範ファイルで届ける。
+        lines[-1:-1] = ["作業の前と会話の圧縮の後に、`agent-toolkit-atk-mode`のスキルを読む。"]
     lines.extend(
         sync_agent_toolkit_rules.wrapped_body(rule) for rule in sorted((toolkit / "share" / "rules" / "common").glob("*.md"))
     )

@@ -21,7 +21,7 @@
   回答前は`atk run-script exec-review-evidence-check`が失効行を受理せず、レーンは実装の指摘が0件に収束した後も`needs_escalation`で止まり、ユーザーがUWIへ回答するまで統合が進まなかった。
   直接原因: `check_exec_review_evidence.py`の`_expired_source_error`と5つの文書が、失効の根拠の担体をユーザーコメントと回答済みUWIの2種に限っていた。
   5つの文書は`exec-review.parent.md`、`exec-review.subagent.md`、`exec.parent.md`、`exec.subagent.md`、`review-loop-coordination.md`である。
-  `agent-toolkit:wi-standards/references/wi-standards-origin.md`「由来と承認」が明示由来に挙げる出所付きの対話回答は、この閉じた列挙に含まれていなかった。
+  `agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」が明示由来に挙げる出所付きの対話回答は、この閉じた列挙に含まれていなかった。
   対策: `_expired_source_error`へ、`--user-events`の出力ファイルの絶対パスと`<record>:<line>`、否定した要求単位の「」による逐語で示す会話中の発話を受け付ける判定を加え、発話主体と引用の所在を確かめる。
   担体の定義を`exec-review.subagent.md`「出力」の一覧1箇所へ集約し、他の4文書はその一覧を参照する。
   メインは自身の会話に否定の発話がある場合、出力と記録位置を同じ担当へ返し、無い場合だけユーザー確認とUWIへ進む

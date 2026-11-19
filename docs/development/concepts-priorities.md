@@ -9,7 +9,7 @@
   原要求、現物、既存認可とQCDで確定する逸脱は自ら確定した判断として報告する。
   手段の差自体を確認理由にせず、以下の10月6日のモード別時機と手段方針逸脱の事後承認は、必要と判定した確認にだけ適用する。
   目的・要件・外部可視の結果の変更、ユーザーが選んだ結果の取消と不足する認可は引き続き確認する。
-  現行の判定は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」と`references/approval-scope.md`にある
+  現行の判定は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」「承認源と適用範囲」にある
 - 判断はQCD（Quality、Cost、Delivery）で評価する。
   QualityはCostとDeliveryより常に優先し、CostとDeliveryの間に固定の優先順位は置かず場面ごとの増分で選ぶ（2026年8月に品質最優先として明文化。2026年9月、ユーザー指示によりQCDの語で整理し、Cost対Deliveryを増分の比較とした）。
   作成・運用・保守の総費用を常に評価し、過剰な時間や予算の消費が他の必要な作業や品質改善を妨げる機会損失としてQualityに影響し得る場合を判断する。
@@ -49,7 +49,7 @@
   2026年10月2日のユーザーの確認回答と、その後の実行可能性の前提に関する補正による。
   ホスト固有の接続は`agent-toolkit/share/rules/rules-common.codex.md`「Codexホスト契約の適用」にある。
   現行の規定は`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」「方針が衝突する場合の優先順位」にある。
-  承認範囲の規定は`agent-toolkit:user-confirmation-and-report`の`references/approval-scope.md`にある
+  承認範囲の規定は`agent-toolkit:atk-mode/playbooks/confirmation.md`にある
 - プロジェクトの文書と既存のコード・設定が一致しない場合は、明示規範を慣例より上に置く順位を当てはめる前に、履歴で両者の新旧を判定する。
   文書が古い場合と判定できない場合は既存コードの規約に従い、文書が後から定めた移行中の方針である場合は新しく書く部分を文書に従わせる。
   どちらでも依頼範囲外の既存コードを書き換えず、見つけた不一致は最終報告で全て挙げる。
@@ -60,5 +60,5 @@
   読み手は文書と現物の不一致に出会う全ての実行主体と、優先順位の条文を改訂する主体とする。
   現行の規定は次の資料にある。
 
-  - `agent-basics:writing-standards`の`agent-basics:writing-standards/references/quality-principles-source-consistency.md`「文書と既存コードの不一致」
+  - `agent-basics:writing-standards`の`agent-basics:writing-standards/references/investigation.md`「文書と既存コードの不一致」
   - `agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」

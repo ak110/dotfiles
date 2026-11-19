@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` |
+| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` |
 
 ## 処理対象の決定
 
@@ -19,14 +19,22 @@ GitHubでは公開時の検収対象となるワークフローごとの直近�
 失敗している実行があればジョブ情報とログまで取得し、失敗原因と残りの工程への影響を評価して`process-wi`の「即時対応」へ引き渡す。
 失敗したジョブが今回の差分と無関係でも、既存の不具合として同じく引き渡す。
 
-認証エラー、ネットワーク到達不能、CLIツールの不備、対象解決の失敗などは技術的に回復できるものを回復し、資格情報の準備などユーザーだけが対応できる事項は`agent-toolkit:user-confirmation-and-report`へ引き渡す。
+認証エラー、ネットワーク到達不能、CLIツールの不備、対象解決の失敗などは技術的に回復できるものを回復し、資格情報の準備などユーザーだけが対応できる事項は`agent-toolkit:atk-mode/playbooks/confirmation.md`の手順で確認する。
 回答を待たずに進められる作業は同スキルに従って並行して続ける。
 CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI定義なし」「CI実行対象外」「照会不能」を区別し、失敗ログの取得権限があるかは実際にログを取得して確認する。
 未終了と実行未登録は、失敗を示す明確な証拠を得てから既存不具合かを判断する。
 選定開始時の点検に加えて、公開時には従来どおりベースラインを作成し、push後のCI結果を検収する。
 
-**8.** 通常起動では、`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>`を実行する。
+**8.** 通常起動では、次のコマンドで初回の一覧を取得する。
+
+```text
+atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>
+```
+
 同じ初回取得の全状態・全種別の識別子集合を保存し、新着確認と再開へ同じパスを引き継ぐ。
+`--target-branch=auto`は、系統を登録したリポジトリでは作業ツリーが追跡する系統のWIだけを返す（`../SKILL.md`「系統を登録したリポジトリ」）。
+追跡するブランチが登録外の場合、コマンドは失敗して登録済みの系統と起動方法を示す。
+その場合は処理を始めず、示された系統と起動方法をユーザーへ報告して終了する。
 
 `all-repos`のリポジトリ担当は[all-repos-orchestration-inputs.md](all-repos-orchestration-inputs.md)「取得済み候補の受領」に従い、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う。
 明示した一覧の項目が作業ツリー指定の初回取得結果に含まれない場合は、`atk wi show <WIファイル名> --target-repo=all`を実行して保存済みの`target_repo`を取得し、originとの不一致がリポジトリの移転やパス改名によるものか、別リポジトリであるかを判定する。
@@ -52,19 +60,24 @@ CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI�
 **11.** 日付境界による順序要求において、先行項目の終了または指定された公開先へのマージ完了が境界後の項目の開始条件となっている場合は、その後続項目に対して「候補内依存による同一レーン・同時処理開始」の扱いを適用しない。
 先行条件の成立を確認してから後続項目を候補に含める。
 依存の全辺の設定や日付帰属・公開先マージ条件に関して、ユーザーのみが決定できる未確定事項が残る場合は、保留やUWIの扱いを次の基準で決める。
-基準は`../../wi-standards/references/states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
+基準は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
 
-**12.** 通常起動では`atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull`で回答済みUWIの本文を取得する。
+**12.** 通常起動では、次のコマンドで回答済みUWIの本文を取得する。
+
+```text
+atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --skip-pull
+```
+
 frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く。
 
  `all-repos`の担当は、同じ条件に該当する受け取り済みの候補を使用する。
  `source: run-skill`の承認用UWIも候補に含め、報告用だけを次回の同じ起動単位の`atk run-skill`へ残す。
 作業を伴わない回答のUWIは`selection-procedure-starting.md`「集合確定直後の処理開始」で終了処理し、作業を伴う回答のUWIは`選定`に含める。
 `source: run-skill`の承認用UWIの処理担当は、frontmatterの`scope`が示すスキルとモードを解決し、そのスキルを起動する。
-`../../user-confirmation-and-report/references/answer-transitions.md`「回答後の状態遷移」の手順1〜3と、同スキルが定める承認後の操作・記録に従う。
+`agent-toolkit:atk-mode/references/answer-transitions.md`「回答後の状態遷移」の手順1〜3と、同書が定める承認後の操作・記録に従う。
 対象リポジトリまたはプラグインからスキルを解決できない場合は、処理せず、不足するscopeと必要なスキルの所在を続行できない理由へ記録する。
  UWIの本文が元の項目を参照している場合は、その項目の保存状態と`ready`フラグを確認する。
-元項目が依存している未回答のUWIが残っている場合は、`../../wi-standards/references/states-and-dependencies-approvals.md`「回答済みUWIの取り込み」に従い、元項目を処理対象外のまま維持する。
+元項目が依存している未回答のUWIが残っている場合は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「回答済みUWIの取り込み」に従い、元項目を処理対象外のまま維持する。
 元項目が`inbox`で処理候補（`ready`またはキュー内の依存待ち）にある場合と、旧運用で`hold`に置かれ`ready=true`である場合は、処理対象に1回だけ含める。
 UWIを`選定`に含める場合は、元項目と同じレーンへ割り当てる。
 それ以外の状態の場合は、不足している状態条件を明記して`続行できない理由`に記録する。

@@ -1,0 +1,316 @@
+{
+  "case": "forbidden-guidance-user",
+  "kind": "dialogue",
+  "source": {
+    "adaptation": "2026年11月13日の過剰な確認の事例に対する、確認が要る側の対照として作成した独自課題。保存例は採点と保存形式を検証する合成素材であり、実モデル試行の記録ではない。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "forbidden",
+      "description": "403を許可の不足として分類し、401と正常応答の分類を保つ。",
+      "tests": [
+        "forbidden",
+        "unauthorized",
+        "success-status"
+      ]
+    },
+    {
+      "id": "help",
+      "description": "依頼に無いヘルプの追記をしない。",
+      "tests": [
+        "help"
+      ]
+    },
+    {
+      "id": "place",
+      "description": "案内をbannerへ表示する。",
+      "tests": [
+        "place"
+      ],
+      "answer": "案内はbannerに出して",
+      "question_match": "案内の表示箇所を質問された場合のみ回答する。",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements"
+    },
+    {
+      "id": "scope",
+      "description": "今後追加するAPIにも同じ扱いを適用する。",
+      "tests": [
+        "scope"
+      ],
+      "answer": "今後追加するAPIにも同じ扱いを広げて",
+      "question_match": "今後のAPIへ同じ扱いを広げるかを質問された場合のみ回答する。",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements"
+    },
+    {
+      "id": "daily-lookup-limit",
+      "description": "課金される照会を1日100回までにする。",
+      "tests": [
+        "daily-lookup-limit"
+      ],
+      "answer": "照会は1日100回までにして",
+      "question_match": "課金される照会の上限回数を質問された場合のみ回答する。",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements"
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "decision",
+      "description": "表示箇所、今後のAPIへの適用、課金される照会の上限の3つを本人へ確認し、回答後に反映したか。403の分類そのものやヘルプ追記の要否を尋ねた場合と、3つのいずれかを推測で決めた場合は不適合とする。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "\"\"\"HTTPの応答を分類し、案内の設定を返す。\"\"\"\n\n\ndef classify(status):\n    \"\"\"状態コードを案内の分類名へ対応付ける。\"\"\"\n    if status == 401:\n        return \"auth_failed\"\n    if status == 403:\n        return \"permission_denied\"\n    return \"ok\"\n\n\ndef help_lines():\n    \"\"\"ヘルプに表示する行を返す。\"\"\"\n    return [\"login: 認証情報を更新する\"]\n\n\ndef settings():\n    \"\"\"案内の表示箇所、適用範囲、権限照会の1日あたりの上限回数を返す。\"\"\"\n    return {\"place\": \"banner\", \"scope\": \"all\", \"daily_lookup_limit\": 100}\n",
+      "dialogue": {
+        "case": "forbidden-guidance-user",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "HTTP 403が返ると「認証に失敗しました。ログインし直してください」と表示され、ログインし直しても直らない。 原因に合う案内になるように直したい。 facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。 公開APIはclassify(status)、help_lines()、settings()の3つで、分類名、ヘルプの行の配列、案内の設定を返す。"
+          },
+          {
+            "role": "candidate",
+            "text": "許可の案内はinlineとbannerのどちらへ表示するか。"
+          },
+          {
+            "role": "user",
+            "text": "案内はbannerに出して"
+          },
+          {
+            "role": "candidate",
+            "text": "今後追加する他のAPIにも同じ扱いを広げるか。"
+          },
+          {
+            "role": "user",
+            "text": "今後追加するAPIにも同じ扱いを広げて"
+          },
+          {
+            "role": "candidate",
+            "text": "課金される権限照会は1日あたり何回まで許容するか。"
+          },
+          {
+            "role": "user",
+            "text": "照会は1日100回までにして"
+          },
+          {
+            "role": "candidate",
+            "text": "403を既存の分類permission_deniedへ直し、回答のとおりbannerへの表示、今後のAPIへの適用、照会の上限100回を設定した。"
+          }
+        ],
+        "disclosures": [
+          {
+            "requirement": "place",
+            "question": {
+              "turn": 2,
+              "quote": "許可の案内はinlineとbannerのどちらへ表示するか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "案内はbannerに出して"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "scope",
+            "question": {
+              "turn": 4,
+              "quote": "今後追加する他のAPIにも同じ扱いを広げるか。"
+            },
+            "answer": {
+              "turn": 5,
+              "quote": "今後追加するAPIにも同じ扱いを広げて"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "daily-lookup-limit",
+            "question": {
+              "turn": 6,
+              "quote": "課金される権限照会は1日あたり何回まで許容するか。"
+            },
+            "answer": {
+              "turn": 7,
+              "quote": "照会は1日100回までにして"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3,
+            5,
+            7
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 8,
+                "quote": "403を既存の分類permission_deniedへ直し、回答のとおりbannerへの表示、今後のAPIへの適用、照会の上限100回を設定した。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "\"\"\"HTTPの応答を分類し、案内の設定を返す。\"\"\"\n\n\ndef classify(status):\n    \"\"\"状態コードを案内の分類名へ対応付ける。\"\"\"\n    if status in (401, 403):\n        return \"auth_failed\"\n    return \"ok\"\n\n\ndef help_lines():\n    \"\"\"ヘルプに表示する行を返す。\"\"\"\n    return [\"login: 認証情報を更新する\"]\n\n\ndef settings():\n    \"\"\"案内の表示箇所、適用範囲、権限照会の1日あたりの上限回数を返す。\"\"\"\n    return {\"place\": \"inline\", \"scope\": \"current\", \"daily_lookup_limit\": 0}\n",
+      "dialogue": {
+        "case": "forbidden-guidance-user",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "HTTP 403が返ると「認証に失敗しました。ログインし直してください」と表示され、ログインし直しても直らない。 原因に合う案内になるように直したい。 facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。 公開APIはclassify(status)、help_lines()、settings()の3つで、分類名、ヘルプの行の配列、案内の設定を返す。"
+          },
+          {
+            "role": "candidate",
+            "text": "許可の案内はinlineとbannerのどちらへ表示するか。"
+          },
+          {
+            "role": "user",
+            "text": "案内はbannerに出して"
+          },
+          {
+            "role": "candidate",
+            "text": "今後追加する他のAPIにも同じ扱いを広げるか。"
+          },
+          {
+            "role": "user",
+            "text": "今後追加するAPIにも同じ扱いを広げて"
+          },
+          {
+            "role": "candidate",
+            "text": "課金される権限照会は1日あたり何回まで許容するか。"
+          },
+          {
+            "role": "user",
+            "text": "照会は1日100回までにして"
+          },
+          {
+            "role": "candidate",
+            "text": "403を既存の分類permission_deniedへ直し、回答のとおりbannerへの表示、今後のAPIへの適用、照会の上限100回を設定した。"
+          }
+        ],
+        "disclosures": [
+          {
+            "requirement": "place",
+            "question": {
+              "turn": 2,
+              "quote": "許可の案内はinlineとbannerのどちらへ表示するか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "案内はbannerに出して"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "scope",
+            "question": {
+              "turn": 4,
+              "quote": "今後追加する他のAPIにも同じ扱いを広げるか。"
+            },
+            "answer": {
+              "turn": 5,
+              "quote": "今後追加するAPIにも同じ扱いを広げて"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "daily-lookup-limit",
+            "question": {
+              "turn": 6,
+              "quote": "課金される権限照会は1日あたり何回まで許容するか。"
+            },
+            "answer": {
+              "turn": 7,
+              "quote": "照会は1日100回までにして"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3,
+            5,
+            7
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 8,
+                "quote": "403を既存の分類permission_deniedへ直し、回答のとおりbannerへの表示、今後のAPIへの適用、照会の上限100回を設定した。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

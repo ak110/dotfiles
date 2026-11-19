@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
+| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/atk-mode/references/states-and-dependencies.md` |
 
 ## 延期adoptと反映後の観測
 
@@ -14,11 +14,11 @@
 
 未達条件の延期を選ぶ前に、次の基準を適用する。
 
-- `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」
-- `../../wi-standards/references/wi-standards-origin.md`「由来と承認」
+- `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」
+- `agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」
 
 後日の対策効果が完成条件である場合も、適用条件・観測機会と、待てば解決する見込みの根拠を特定して再開記録へ残す。
-cooldownを使える境界は`../../wi-standards/references/states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
+cooldownを使える境界は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
 残りの見送り・追加認可・見込みの立たない外部変更待ちの判断は、レーン担当が必要と確定した時点で委譲元へ通知する。
 リポジトリ担当は判断事項を保持して統括へ返し、窓口を持つ統括がUWIの保存と元項目の依存設定を確認して待機へ移す。
 実装・検証の成功と後日の効果を区別し、適用機会が無い項目は効果未確認として保持する。
@@ -34,7 +34,7 @@ cooldownを使える境界は`../../wi-standards/references/states-and-dependenc
 **14.** 自己観測の判定では、必要な入力、トリガー、対象ブランチ、実行順序を現物の実装、設定、公開されている起動手段から調査し、同一セッション内でこれらを準備できるかを確かめた上で、既存の指示や権限がその操作を許可しているかを確認する。
 追加の認可が必要な場合に限ってユーザーへ確認する。
 コマンドが起動可能であることのみをもって到達可能と判断しない（PRの作成によって発火するワークフローや、特定の入力をトリガーとするhookなどがあるため）。
-人間を観測主体とする完成条件や、通常は人間が操作する入力・環境であっても、エージェント側で入力を生成して結果を観測できる手段がないか探す（`agent-toolkit:wi-standards`の`references/awi-body.md`に定められた観測主体の規定を参照）。
+人間を観測主体とする完成条件や、通常は人間が操作する入力・環境であっても、エージェント側で入力を生成して結果を観測できる手段がないか探す（`agent-toolkit:atk-mode/references/awi-body.md`に定められた観測主体の規定を参照）。
 自身が起動した対話セッションへの入力送信と画面・ログの取得（tmuxやホストの端末操作など）や、同一セッションからアクセスできる配布後のCLIやauto modeの応答確認も、この手段に含まれる。
 対話CLIは、権限確認を省くオプションや別の権限モードを付けずに起動する。
 auto modeの許可ルールが自己操作を許すのは、その起動に限られるためである。
@@ -58,17 +58,18 @@ auto modeの許可ルールが自己操作を許すのは、その起動に限�
 
 **17.** 明示された要件を満たすためにユーザーの操作や追加の認可が必要となる項目については、計画を復帰させた後にUWIを保存する。
 起草入力には元WIの識別子、現行完成条件と有効な変更要求、残る観測、再開記録の所在を含める。
-保存前に`../../wi-standards/references/draft-semantic-review.md`に従い、検収者が元WIから選んだ必要結果と原稿を独立に比較する。
+保存前に`agent-toolkit:atk-mode/references/draft-semantic-review.md`に従い、検収者が元WIから選んだ必要結果と原稿を独立に比較する。
 起草から回答受領まで同じ観測結果へ対応付け、配備後の結果や要求変更があれば現行原本と証拠から残観測を更新する。
 UWIの保存だけでは観測完了とせず、回答受領時に元の各完成条件の結果を既存証拠と合わせて確認して手順15の採否・再開へ進む。
 不足があっても既に成功した操作は再依頼せず、本人にしかできない残観測だけを手順と回答項目へ対応付ける。
-保存条件は`agent-toolkit:user-confirmation-and-report`「手段の選択」に、書式および投入手順は`agent-toolkit:wi-standards`に従う。
-操作の主体と選択肢は同スキルの`references/uwi-format.md`「ユーザーへ操作を依頼する場合」に沿って振り分け、本文に元AWIのファイル名、不足する前提条件と自己操作が成立しない根拠を記載する。
+保存条件は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
+書式は`agent-toolkit:atk-mode/references/uwi-format.md`に、投入手順は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入」に従う。
+操作の主体と選択肢は`agent-toolkit:atk-mode/references/uwi-format.md`「ユーザーへ操作を依頼する場合」に沿って振り分け、本文に元AWIのファイル名、不足する前提条件と自己操作が成立しない根拠を記載する。
 アクセス手段があり認可のみが不足する工程では、エージェントによる実施の認可を求め、認可が成立した後の操作・観測・証拠の保存はエージェントが担う。
 ユーザーしか到達できない工程でユーザーによる操作を選ぶ場合に、その操作内容と返信してほしい観測結果を記載する。
-ホストやサービスが操作を拒否した場合は、`../../user-confirmation-and-report/references/permission-denial.md`へ進み、拒否の解除が成立したかを同資料の基準で判定する。
+ホストやサービスが操作を拒否した場合は、`agent-toolkit:atk-mode/playbooks/permission-denial.md`へ進み、拒否の解除が成立したかを同資料の基準で判定する。
 観測できない場合に完成条件の扱いを変更するにはユーザーの明示的な判断が必要となる旨も記載する。
-保存の成功を確認した上で、`../../wi-standards/references/wi-standards-states.md`「状態と依存」の承認型UWIと元項目の規定に従って元AWIの`depends_on`へUWIを加えて`inbox`へ戻す。
+保存の成功を確認した上で、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」の承認型UWIと元項目の規定に従って元AWIの`depends_on`へUWIを加えて`inbox`へ戻す。
 進捗ログの再開位置にUWIのファイル名と、回答後に観測する主体・必要な前提・結果の取得方法を追記する。
 UWIの保存に失敗した項目は`processing`のまま残す（待つUWIが無いまま依存を設定すると、再開の契機が失われるためである）。
 
@@ -143,4 +144,4 @@ processing、着手可能なinbox、対処が必要な不正metadata、未最終
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| UWI本文の書式の基準を適用する前 | `../../wi-standards/references/uwi-format.md` |
+| UWI本文の書式の基準を適用する前 | `agent-toolkit:atk-mode/references/uwi-format.md` |

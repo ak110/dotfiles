@@ -18,6 +18,8 @@
 必須入力が欠ける定型起動は、書込所有などの宣言済み契約が成立しないため遮断する。
 宣言を読めない`<役割名>.subagent.md`は入力との一致を確かめられないため遮断しない（`agents_server`の`start`も警告だけで起動を続ける）。
 宣言の解析は`agents_server`の`start`と`agent_toolkit._common.task_documents`を共有する。
+必須入力の欠落と宣言外の入力名は、`start`と同じ関数で本文が指した文書の宣言と比べて検出する。
+版別の配布物を保持rootへ複製する解決は委譲先を起動する側の責務であり、検査だけのhookでは行わない。
 読解・比較の参照と、コードや引用に載せた命令の例は通す。命令を確定できない参照も通し、会話の意味を推定しない。
 """
 
@@ -35,7 +37,7 @@ lazy from markdown_it.token import Token
 
 from agent_toolkit._agents_server import tool_names as _tool_names
 from agent_toolkit._hooks.pretooluse.decision import Decision
-lazy from agent_toolkit._agents_server import launch_requests
+lazy from agent_toolkit._agents_server import launch_requests_inputs
 lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
@@ -147,7 +149,7 @@ def _check_agent_prompt(prompt: str) -> Decision:
     if not violations:
         try:
             params = task_documents.parse_named_inputs(lines[1:])
-            launch_requests.builtin_task_prompt(str(document), params)
+            launch_requests_inputs.check_declared_inputs(document, declaration, params)
         except ValueError as error:
             return Decision(
                 block=_block_notice(

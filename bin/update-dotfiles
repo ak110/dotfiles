@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 読込先のlibexec/update_bootstrap.shは独立した検査対象であり、本ファイルだけを検査する場合は追跡しない。
+# shellcheck disable=SC1091
 set -euo pipefail
 # dotfiles を最新化する。実体は libexec/update_dotfiles.py（PEP 723）。
 # NOTE: 対応するWindows版 → bin/update-dotfiles.cmd
@@ -28,11 +30,20 @@ if [[ "${1:-}" == "job" || -n "${CODEX_THREAD_ID:-}" ]]; then
     esac
 fi
 run_exit=0
+# 本体が中断せず終えた印。続行した失敗だけの終了（終了コード1）でも整理と事前構築へ進める。
+# 印は本体が作成し、整理を実行するpost-applyが回収する。外部コマンドに依存しない。
+prune_ready="${XDG_STATE_HOME:-$HOME/.local/state}/agent-toolkit/update-prune-ready-$$-$RANDOM"
 # 更新中にランチャーが置換されても、解析済みの終了処理を実行する。
 {
-    DOTFILES_PRUNE_OUTSIDE_UV=1 "$UV" run --no-project --script "${SCRIPT_DIR}/libexec/update_dotfiles.py" "$@" || run_exit=$?
-    if [[ "$run_exit" == 0 && "$help_requested" == 0 && "${1:-}" != "logs" ]]; then
-        "$HOME/.local/bin/dotfiles-post-apply" --prune-only-if-minimal "$@" || run_exit=$?
+    DOTFILES_PRUNE_OUTSIDE_UV=1 DOTFILES_PRUNE_READY_FILE="$prune_ready" \
+        "$UV" run --no-project --script "${SCRIPT_DIR}/libexec/update_dotfiles.py" "$@" || run_exit=$?
+    if [[ ("$run_exit" == 0 || -e "$prune_ready") && "$help_requested" == 0 && "${1:-}" != "logs" ]]; then
+        prune_exit=0
+        DOTFILES_PRUNE_READY_FILE="$prune_ready" "$HOME/.local/bin/dotfiles-post-apply" --prune-only-if-minimal "$@" ||
+            prune_exit=$?
+        if [[ "$run_exit" == 0 ]]; then
+            run_exit=$prune_exit
+        fi
     fi
     exit "$run_exit"
 }

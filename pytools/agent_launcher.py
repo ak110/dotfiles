@@ -2,6 +2,7 @@
 """モデルごとに決めた引数を付けてClaude CodeまたはCodexを起動する。"""
 
 import argparse
+import json
 import os
 import pathlib
 import re
@@ -227,6 +228,44 @@ def main_opus(
     _main(
         "claude",
         ("--permission-mode=auto", "--model=opus[1m]"),
+        argv,
+        os_name=os_name,
+        home=home,
+        which=which,
+        resolve=resolve,
+        run=run,
+        isatty=isatty,
+    )
+
+
+# poteto-modeではagent-basics・agent-toolkitを無効にし、pstackを有効にする。
+# `--settings`は起動単位の設定として、ユーザー設定の`enabledPlugins`より優先して読まれる。
+_POTETO_MODE_SETTINGS = json.dumps(
+    {
+        "enabledPlugins": {
+            "agent-basics@ak110-dotfiles": False,
+            "agent-toolkit@ak110-dotfiles": False,
+            "pstack@pstack-claude": True,
+        }
+    },
+    separators=(",", ":"),
+)
+
+
+def main_poteto_mode(
+    argv: list[str] | None = None,
+    *,
+    os_name: str = os.name,
+    home: pathlib.Path | None = None,
+    which: CommandResolver = shutil.which,
+    resolve: ExecutableResolver = _resolve_executable,
+    run: CommandRunner = _run_command,
+    isatty: TerminalChecker = os.isatty,
+) -> NoReturn:
+    """agent-basics・agent-toolkitを無効にしpstackを有効にしてClaude Codeを起動する。"""
+    _main(
+        "claude",
+        ("--permission-mode=auto", "--model=opus[1m]", f"--settings={_POTETO_MODE_SETTINGS}"),
         argv,
         os_name=os_name,
         home=home,

@@ -71,8 +71,11 @@ def _observe(
     termination_evidence.observe_tool(json.dumps({**payload, "tool_response": response}), after=True)
 
 
-def _start_skill(session_id: str, trace: pathlib.Path, skill: str, tool_use_id: str = "toolu_skill") -> None:
-    _observe(session_id, trace, tool_use_id, "Skill", {"skill": skill}, "起動")
+def _start_skill(
+    session_id: str, trace: pathlib.Path, skill: str, tool_use_id: str = "toolu_skill", *, arguments: str | None = None
+) -> None:
+    tool_input = {"skill": skill} if arguments is None else {"skill": skill, "args": arguments}
+    _observe(session_id, trace, tool_use_id, "Skill", tool_input, "起動")
 
 
 def _commit(session_id: str, trace: pathlib.Path, tool_use_id: str = "toolu_commit") -> None:
@@ -83,6 +86,8 @@ def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
     """成果作業の無い回答・調査のセッションでは起動証拠を求めない。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-unrelated", trace, "agent-basics:writing-standards")
+    _start_skill("sess-unrelated", trace, "agent-toolkit:atk-mode", "toolu_entry", arguments="この不具合を直して")
+    _start_skill("sess-unrelated", trace, "agent-toolkit:atk-mode", "toolu_plain")
     assert termination_order_advisor.evaluate(_payload("sess-unrelated", str(trace))) == ("approve", "")
 
 
@@ -96,14 +101,22 @@ def _evaluate_delivered(payload: str) -> tuple[str, str]:
         return decision, body
 
 
-@pytest.mark.parametrize("skill", ["agent-toolkit:process-wi", "agent-toolkit:add-awi-by-user"])
-def test_notifies_target_skill_without_completion_report_once(tmp_path: pathlib.Path, skill: str) -> None:
-    """対象スキルの起動不足は一度通知し、起動済みの作業では終了判断を求めない。"""
+@pytest.mark.parametrize(
+    ("skill", "arguments", "label"),
+    [
+        ("agent-toolkit:process-wi", None, "agent-toolkit:process-wiの開始"),
+        ("agent-toolkit:atk-mode", "add-awi-by-user 入力", "agent-toolkit:atk-mode add-awi-by-userの開始"),
+    ],
+)
+def test_notifies_target_skill_without_completion_report_once(
+    tmp_path: pathlib.Path, skill: str, arguments: str | None, label: str
+) -> None:
+    """対象スキルと入口の作業の起動不足は一度通知し、起動済みの作業では終了判断を求めない。"""
     trace = _write_transcript(tmp_path, [])
-    _start_skill("sess-missing", trace, skill)
+    _start_skill("sess-missing", trace, skill, arguments=arguments)
     decision, body = _evaluate_delivered(_payload("sess-missing", str(trace)))
     assert decision == "notify"
-    assert f"{skill}の開始" in body
+    assert label in body
     assert "`agent-toolkit:report-completion`を起動せよ" in body
     assert "終了方法の分岐" in body
     assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")

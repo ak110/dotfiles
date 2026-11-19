@@ -10,7 +10,7 @@
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
 | CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) |
-| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） |
+| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`（語の基準） |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` |
 
 ## 入力
@@ -34,7 +34,7 @@
 書式とデフォルト値は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md`の`## 選定結果の書式`に従い、省略されている行はデフォルト値として処理する。
 該当項目が存在しない場合、同一AWIが重複している場合、あるいは必須フィールドが所定の形式から外れている場合は、推測で処理を進めずに「続行できない理由」を返す。
 
-計画作成と実装の着手前（計画を作成しない場合はAWI本文を読み込んだ時点）に、AWI本文に明示されている担当とモデルの組み合わせを選定結果の`担当モデル`と比較する。
+AWI本文を読み込んだ時点で、本文に明示されている担当とモデルの組み合わせを選定結果の`担当モデル`と比較する。
 これらが一致しない場合は、下位担当を勝手に起動して補うのではなく、WIファイル名、本文中の指定、および選定結果の値を添えて「続行できない理由」を返す。
 `担当モデル.実装担当`がWIに明示された場合だけ、下位の書込担当（`exec.subagent.md`「操作区分」の内部グループなど）の`model_type`へ渡す。
 比較・記録は`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」に従う。
@@ -44,13 +44,12 @@
 レーン全体を別の`レーン担当`へ渡さず、同一threadで担当し続ける。
 レーン数によらず単一担当の実行契約でレビュー起動・指摘対応・統合検収を行い、初期選定が複数レーンなら`統合許可`受領後にメインworktreeへ統合する。
 
-要求単位の由来は、`agent-toolkit:wi-standards`の`## 由来と承認`に従い、計画起草時に`atk wi show`で得られるAWI本文およびfrontmatterから判定する。
-判定結果は`agent-toolkit:write-plan`の`references/plan-file-standards.md`の書式に従って計画の`由来`欄に記入する。
+要求単位の由来は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従い、`atk wi show`で得られるAWI本文およびfrontmatterから判定する。
+判定結果は、計画ありでは`agent-toolkit:write-plan`の`references/plan-file-standards.md`の書式に従って計画の`由来`欄に、計画なしでは引き継ぎ記録に記入する。
 以後は、確定したときの前提（目的、現在の方針、利用条件）が変わっていない範囲で、確定した出所・採否・終了区分を再利用する。
 前提が変わった単位だけを判定し直し、一致する要求と認可は調べ直さない。
 原文との具体的な不一致を発見した場合は、要求単位の根拠を示して既存のレビュー指摘管理表（計画なしでは引き継ぎ記録）へ訂正を残す。
 ユーザーが決める結果や認可を変える部分だけを既存の確認手順へ渡す。
-計画を省略するレーンでは、同様の判定結果を引き継ぎ記録に残す。
 ユーザーから報告された不具合が既存の実装ですでに充足されていると判断する場合は、`plan-file-standards.md`「実施内容」に定める調査（呼び出し手段、操作手順、結果、報告時点との相違点）を実施し、操作内容、観測結果、相違点、未特定の範囲を引き継ぎ記録に記録する。
 
 完成条件を計画、実装、受入の対象にする前に、AWIの目的達成に必要かを判定する。
@@ -61,7 +60,7 @@
 計画なしの場合は引き継ぎ記録へ、計画確定後は本文を凍結したまま進捗ログ、レビュー指摘管理表、実行レビューの`review_contract`へ記録する。
 除外した条件と根拠は、メインへ報告用UWIの自ら確定した判断として引き渡す。
 レビューと統合が旧条件を追跡できるよう、条件番号と判断記録の所在を`review_contract`に含める。
-人間由来の条件の除外は、`../skills/wi-standards/references/wi-standards-origin.md`「由来と承認」に従ってユーザー確認へ回す。
+人間由来の条件の除外は、`../skills/atk-mode/references/origin-and-approval.md`「由来と承認」に従ってユーザー確認へ回す。
 
 `レビュー修正担当`は、同一スレッドの継続であれば保持している選定結果を引き継ぐ。
 `レビュー指摘管理表`は、単一の絶対パス、または全計画の管理表の絶対パスを保持する空でないJSON配列として受け取る。

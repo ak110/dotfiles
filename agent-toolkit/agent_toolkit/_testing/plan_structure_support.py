@@ -16,10 +16,8 @@ _BUG_CONTENT = _plan_fixture.single_file_plan(bug=True)
 _LEGACY_CONTENT = _plan_fixture.legacy_materials_single_file_plan()
 
 _BUG_SECTION = _plan_fixture.inline_bug_section()
-_BUG_CAUSE_TABLE = _plan_fixture.bug_cause_table()
-_BUG_INVESTIGATION_TABLE = _plan_fixture.bug_investigation_table()
 _BUG_FILE_CONTENT = _plan_fixture.bug_file()
-_LEGACY_ROWS_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
+_LEGACY_TABLES_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_TABLES)
 _LEGACY_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_STANDALONE)
 
 _HUMAN_MAIN_CONTENT = _plan_fixture.human_main(related_wi=_plan_fixture.WI_FILES)
@@ -49,11 +47,6 @@ def _plan_with_uncovered_requirement(adopted_scope: str) -> str:
 
 _PLAN_FILE_STANDARDS = (
     pathlib.Path(__file__).resolve().parents[2] / "skills" / "write-plan" / "references" / "plan-file-standards.md"
-)
-
-
-_ROOT_CAUSE_ANALYSIS = (
-    pathlib.Path(__file__).resolve().parents[2] / "skills" / "bugfix" / "references" / "root-cause-analysis.md"
 )
 
 

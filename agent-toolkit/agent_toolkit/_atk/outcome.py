@@ -161,7 +161,7 @@ def report_failure(message: str, *, next_action: str) -> None:
 def report_warning(message: str, *, next_action: str, to_stderr: bool = True) -> None:
     """警告行と次に行う操作の行を書く。出力先はその警告を発生させた処理の現在の出力先を呼び出し側が指定する。
 
-    警告の出力条件はwriting-standardsのwriting.md「エージェントが読む出力」に従う。
+    警告の出力条件はwriting-standardsのwriting.md「構成・構造」に従う。
     """
     print(
         _next_action.with_next_action(f"{WARNING_PREFIX}{message}", next_action),

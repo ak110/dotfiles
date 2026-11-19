@@ -89,6 +89,24 @@ _NEXT_OVERLAP_SAME_STAGE = "定義が交わる2つのレーンを同じレーン
 _NEXT_OVERLAP_MISSING = "共通パスごとに双方の定義と判定を`レーン間の重なり`へ1件記録する"
 
 
+_NEXT_OVERLAP_MISSING_MERGE = (
+    "表示のレーン名は合流後の名前とする。括弧内の未判定の組ごとに、追加YAMLの`レーン間の重なり`へ、"
+    "追加WIの側を追加YAMLのレーン名（仮名）、既存WIの側を既存のレーン名とし、括弧内の名前で共通パスと双方の定義と判定を記録する。"
+    "既存の記録は合流前の既存WIどうしの組だけを判定済みとして扱う"
+)
+
+
+_NEXT_OVERLAP_MISSING_TRANSFER = (
+    "移管で組が変わる共通パスは移管前の記録を除いている。括弧内の組を全て判定し、移管後のレーン名で共通パスと双方の定義と判定を1件に記録する。"
+    "その記録を`--extend-write-targets`のYAMLの`レーン間の重なり`へ置き、同じ移管操作と組で再実行する"
+)
+
+
+def missing_overlap_reason(left: str, right: str, path: str) -> str:
+    """重複パスの記録不足の理由。合流・移管の案内が同じ違反を鍵で特定できるよう、表記をここに集める。"""
+    return f"{left}と{right}: 重複パスの記録不足: {path}"
+
+
 _NEXT_PRIOR_UNFOUNDED = "`先行レーン`から、別段階の書込予定の重複とその連鎖に基づかないレーンを除く"
 
 
@@ -331,6 +349,29 @@ def _check_lane_stages(items: collections.abc.Sequence[object], costs: collectio
     return errors
 
 
+def overlapping_pairs(
+    items: collections.abc.Sequence[object],
+) -> collections.abc.Iterator[tuple[dict[str, object], dict[str, object], tuple[str, str], set[str]]]:
+    """別レーンに属し書込対象を共有する項目の組を、昇順のレーン名の組と共通パスとともに返す。統合済みの項目も含む。"""
+    assigned = [
+        item
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get(_selection.LANE_KEY), str) and item[_selection.LANE_KEY] != _LANE_NONE
+    ]
+    for left, right in itertools.combinations(assigned, 2):
+        low, high = sorted((str(left[_selection.LANE_KEY]), str(right[_selection.LANE_KEY])))
+        if low == high:
+            continue
+        overlaps = {
+            second if _covers(first, second) else first
+            for first in _string_list(left, _selection.WRITE_FILES_KEY)
+            for second in _string_list(right, _selection.WRITE_FILES_KEY)
+            if _covers(first, second) or _covers(second, first)
+        }
+        if overlaps:
+            yield left, right, (low, high), overlaps
+
+
 def _check_lane_overlaps(
     items: collections.abc.Sequence[object],
     costs: collections.abc.Sequence[object],
@@ -346,26 +387,12 @@ def _check_lane_overlaps(
         and isinstance(row.get(_selection.STAGE_KEY, 1), int)
         and isinstance(row.get(_selection.PRIOR_LANES_KEY, []), list)
     }
-    assigned = [
-        item
-        for item in items
-        if isinstance(item, dict) and isinstance(item.get(_selection.LANE_KEY), str) and item[_selection.LANE_KEY] != _LANE_NONE
-    ]
     expected: set[tuple[str, str, str]] = set()
     shared: set[tuple[str, str, str]] = set()
     dependencies: dict[str, set[str]] = {}
-    for left, right in itertools.combinations(assigned, 2):
-        lanes = sorted((left[_selection.LANE_KEY], right[_selection.LANE_KEY]))
-        if lanes[0] == lanes[1]:
-            continue
-        overlaps = {
-            second if _covers(first, second) else first
-            for first in _string_list(left, _selection.WRITE_FILES_KEY)
-            for second in _string_list(right, _selection.WRITE_FILES_KEY)
-            if _covers(first, second) or _covers(second, first)
-        }
-        shared.update((lanes[0], lanes[1], path) for path in overlaps)
-        if _is_integrated(left, integrated) or _is_integrated(right, integrated) or not overlaps:
+    for left, right, lanes, overlaps in overlapping_pairs(items):
+        shared.update((*lanes, path) for path in overlaps)
+        if _is_integrated(left, integrated) or _is_integrated(right, integrated):
             continue
         left_stage, right_stage = (stages.get(lane, (1, []))[0] for lane in lanes)
         if left_stage == right_stage:
@@ -397,7 +424,7 @@ def _check_lane_overlaps(
             continue
         errors.append(Violation(f"{label}: 同じ段階で定義が交わる", next_action=_NEXT_OVERLAP_SAME_STAGE))
     for left, right, path in sorted(expected - seen):
-        errors.append(Violation(f"{left}と{right}: 重複パスの記録不足: {path}", next_action=_NEXT_OVERLAP_MISSING))
+        errors.append(Violation(missing_overlap_reason(left, right, path), next_action=_NEXT_OVERLAP_MISSING))
     for lane, (_, prior) in stages.items():
         if lane in integrated:
             continue

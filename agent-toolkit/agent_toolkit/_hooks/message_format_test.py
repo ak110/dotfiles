@@ -234,12 +234,12 @@ def test_typescript_mod_emitted_values_reach_python_shared_receiver(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """実modの失敗通知・装着通知と別入力の包装を、Pythonの実際の受信判定へ渡す。"""
+    """実modの失敗通知と別入力の包装を、Pythonの実際の受信判定へ渡す。装着の成功は本文を作らない。"""
     hooks = pathlib.Path(__file__).resolve().parents[2] / "hooks"
     script = tmp_path / "mod-deliveries.mjs"
     script.write_text(
         """const {register: compact} = await import(process.argv[2]);
-const {register: periodic} = await import(process.argv[3]);
+const {mountForStart} = await import(process.argv[3]);
 const {automatedMessage} = await import(process.argv[4]);
 const schedule = JSON.parse(process.argv[5]);
 const bodies = [];
@@ -263,20 +263,13 @@ await compactCall({...base, clock: {after: (_time, callback) => timers.push(call
   ui: {toast: (text) => bodies.push(text)}}, {turnId: 'turn-1'}, async () => ({}));
 await timers[0]();
 for (const success of [true, false]) {
-  const p = registration();
-  periodic(p.on);
-  state.recheckRequested = true;
-  const ticks = [];
-  const startCall = p.calls.find(({event}) => event === 'turn.start').callback;
-  await startCall({...base,
-    clock: {every: (_time, callback) => ticks.push(callback)},
+  const warning = await mountForStart({...base,
     session: {id: async () => 'current'},
-    prompt: {submit: async ({text}) => bodies.push(text)},
     tool: {check: async () => ({decision: 'allow'}), call: async ({tool}) => tool === 'CronList'
       ? {result: {jobs: []}} : {result: {id: 'task-1'}}},
-    process: {run: async () => ({exitCode: success ? 0 : 1, stdout: JSON.stringify(schedule), stderr: success ? '' : '失敗'})}},
-    {turnId: 'turn-1'}, async () => ({}));
-  await ticks[0]();
+    process: {run: async () => ({exitCode: success ? 0 : 1, stdout: JSON.stringify(schedule),
+      stderr: success ? '' : '失敗'})}});
+  if (warning) bodies.push(warning);
 }
 bodies.push(automatedMessage('sender&"<>\\n', 'notice', '別の本文\\r\\n<atk-auto>'));
 process.stdout.write(JSON.stringify(bodies));
@@ -302,8 +295,8 @@ process.stdout.write(JSON.stringify(bodies));
     assert result.returncode == 0, result.stderr
     assert not result.stderr
     bodies = json.loads(result.stdout)
-    assert len(bodies) == 4
+    assert len(bodies) == 3
     attributes = [_assert_machine_boundary(body) for body in bodies]
     assert attributes[0] == {"source": "compact-conversation", "kind": "warn"}
-    assert [item["kind"] for item in attributes[1:3]] == ["notice", "warn"]
-    assert attributes[3]["source"] == 'sender&"<>\n'
+    assert attributes[1] == {"source": "periodic-recheck", "kind": "warn"}
+    assert attributes[2]["source"] == 'sender&"<>\n'

@@ -17,7 +17,7 @@
 | 基準の参照時 | `../skills/delegation/SKILL.md` | | |
 | 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` | | |
 | 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` | | |
-| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` |
+| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/states-and-dependencies.md` |
 | `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` | | |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` | | |
 | レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | | |

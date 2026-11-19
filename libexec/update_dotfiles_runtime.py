@@ -81,6 +81,10 @@ class _ContinuedFailure:
     detail: str | None
 
 
+# ランチャーが渡す印のパス。本体が中断せず終えた場合だけ作成する。
+PRUNE_READY_ENV = "DOTFILES_PRUNE_READY_FILE"
+
+
 def continue_after_failure(title: str, action: str, detail: str | None = None) -> None:
     """後続の段の前提を壊さない段の失敗を記録し、呼び出し側が後続の段を続けられるようにする。"""
     logger.error("stage失敗のまま続行: %s", title)
@@ -148,6 +152,8 @@ def finish(returncode: int) -> int:
         except Exception as error:  # noqa: BLE001 -- 起票の未知の障害でも更新と結果の記録を妨げない境界。
             logger.exception("更新失敗を自動起票できませんでした")
             continue_after_failure("更新失敗の起票", "update-dotfiles logsで診断を確認してください。", str(error))
+    if returncode == 0:
+        _mark_body_completed()
     if continued_failures:
         returncode = _report_continued_failures(returncode)
     logger.info("update-dotfiles終了: exit=%d", returncode)
@@ -167,6 +173,21 @@ def finish(returncode: int) -> int:
             print(f"永続ログ: {LOG_PATH}", file=sys.stderr)
             print("失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
     return returncode
+
+
+def _mark_body_completed() -> None:
+    """続行した失敗だけで終えた場合も、ランチャーがキャッシュ整理と事前構築へ進めるよう印を残す。
+
+    終了コード1は続行した失敗と中断の両方を表すため、ランチャーは終了コードだけでは区別できない。
+    Windowsでは常駐が管理Pythonを使う間その更新を毎回見送り、整理とMCPの事前構築が常に省かれていた。
+    """
+    path = os.environ.get(PRUNE_READY_ENV)
+    if not path:
+        return
+    try:
+        pathlib.Path(path).touch()
+    except OSError:
+        logger.exception("更新後処理の実行可否の印を書けませんでした: %s", path)
 
 
 def _report_continued_failures(returncode: int) -> int:

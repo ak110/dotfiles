@@ -57,6 +57,11 @@ PATHの隔離は、エージェントCLIを含むディレクトリを、CLI以�
 置き換えたPATHはセッションで1回だけ組み立てる。
 実際のCLIやホームを意図して使うテストは、`host_environ`で子プロセスへ渡す環境変数を組み立てるか、`restore_host_environment`で同じプロセスの値を戻す。
 
+pytestの外の単発スクリプト（hook入力を再生する受入probeなど）は、`isolated_development_state(root)`の区間で同じ隔離を適用する。
+2026年11月18日、managed-tempの状態だけを差し替えた受入probeが`rules_context.main`へSessionStartを渡し、合成会話を実運用の振り返り待ちへ登録した。
+保存先を持つモジュールを個別に差し替える方法では差し替えていないモジュールが実運用の状態へ書き込むため、テストと同じ環境変数の隔離を区間の間だけ適用する。
+製品側へ試験用セッションIDの除外条件を加える案は、試験の都合を製品の分岐へ持ち込むため採用しない。
+
 pnpm 12以降の導入・版管理は`agent-basics/skills/writing-standards/references/dependency-management.md`「pnpm」に従う。
 初回導入はnpmまたはstandaloneで行い、版固定と検証にはlockfile先頭のboot文書のintegrityとレジストリ署名、公開待機には`minimumReleaseAge`を使う。
 更新には`pnpm self-update <版>`を使い、pnpm自身が検証しない`packageManager`のCorepack用ハッシュへ依存しない。

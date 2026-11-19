@@ -19,7 +19,7 @@ process-loopへの中断要求とセッションの終了要求は、共通ハ�
 Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
 続いて、`plan_save_advisor.py`で`~/.claude/plans`に残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
 続いて、`user_response_advisor.py`が人間入力の後の可視本文の不足を、`termination_order_advisor.py`が成果作業のreport-completionの起動不足を非遮断通知で案内する。
-質問の意味と確認手段は`user-confirmation-and-report`へ委ねる。
+質問の意味と確認手段は`agent-toolkit:atk-mode/playbooks/confirmation.md`と`agent-toolkit:atk-mode/references/delivery.md`へ委ねる。
 `user_response_advisor.py`は最新の人間の発話の後に可視の本文が無い終了を通知する。
 開始時の文字列入力と途中配送のqueued_commandを扱い、thinking・ツール結果・空白・待機記号を本文へ数えない。
 `send_to_user`の呼び出しの`message`はユーザーの画面へ届く本文として数える。

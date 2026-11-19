@@ -27,7 +27,11 @@ def test_default_migrates_instructions_and_links_skills_without_rules(tmp_path: 
     assert _run(monkeypatch, target) == 0
     assert (target / "AGENTS.md").read_text(encoding="utf-8") == "# プロジェクト規範\n"
     assert not (target / "CLAUDE.md").exists()
-    assert os.readlink(target / ".agents" / "skills") == "../.claude/skills"
+    link = target / ".agents" / "skills"
+    assert link.resolve() == (target / ".claude" / "skills").resolve()
+    if os.name != "nt":
+        # プロジェクトを移しても辿れる相対リンクにする。Windowsは絶対パスのジャンクションになる。
+        assert os.readlink(link) == "../.claude/skills"
     assert not (target / ".claude" / "rules" / "agent-toolkit").exists()
 
 
@@ -70,3 +74,46 @@ def test_clean_rejects_unexpected_skills_link(
     failure_index = next(index for index, line in enumerate(lines) if line.startswith("失敗: "))
     assert lines[failure_index + 1].startswith("次の操作: ")
     assert "atk setup-project" in lines[failure_index + 1]
+
+
+@pytest.mark.windows
+@pytest.mark.skipif(os.name != "nt", reason="特権の要らないジャンクションでの共有をWindows実機で確かめる")
+@pytest.mark.parametrize("existing", ["missing", "old-symlink", "git-symlink"])
+def test_windows_shares_skills_without_symlink_privilege(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: str
+) -> None:
+    """シンボリックリンクの作成特権が無くてもスキルを共有し、以前の版の壊れたリンクを直し、再実行とcleanで同じリンクを扱う。
+
+    Git for Windowsはジャンクションを辿って中身を未追跡に並べるため、共有した中身をGitの対象に出さない。
+    """
+    target = git_repository.init_repository(tmp_path / "project")
+    skill = target / ".claude" / "skills" / "example" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# example\n", encoding="utf-8")
+    link = target / ".agents" / "skills"
+    if existing != "missing":
+        link.parent.mkdir()
+        try:
+            # 以前の版は区切り`/`の相対リンクを作り、Gitは区切りを`\`へ展開して作る。
+            link.symlink_to("../.claude/skills" if existing == "old-symlink" else "..\\.claude\\skills")
+        except OSError as error:
+            if getattr(error, "winerror", None) != 1314:
+                raise
+            pytest.skip("既存のシンボリックリンクを用意する特権が無い")
+
+    def deny_symlink(*_args: object, **_kwargs: object) -> None:
+        # 管理者として実行しても、開発者モードでも管理者でもないユーザーと同じ拒否を起こす。
+        raise OSError(None, "クライアントは要求された特権を保有していません。", None, 1314)
+
+    monkeypatch.setattr(os, "symlink", deny_symlink)
+    assert _run(monkeypatch, target) == 0
+    assert link.is_symlink() if existing == "git-symlink" else link.is_junction()
+    assert (link / "example" / "SKILL.md").read_text(encoding="utf-8") == "# example\n"
+    untracked = git_repository.git_output(target, "status", "--porcelain", "--untracked-files=all").splitlines()
+    assert [line for line in untracked if line.startswith("?? .agents/skills/")] == []
+    connected = link.lstat().st_ino
+    assert _run(monkeypatch, target) == 0
+    assert link.lstat().st_ino == connected
+    assert _run(monkeypatch, target, "--clean") == 0
+    assert not (target / ".agents").exists()
+    assert skill.read_text(encoding="utf-8") == "# example\n"

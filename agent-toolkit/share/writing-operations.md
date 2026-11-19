@@ -1,6 +1,6 @@
 # ドキュメント品質
 
-文章全般の品質基準は`agent-basics:writing-standards/references/writing.md`、入力素材の基準は同referencesの`input-material.md`で定義する。
+文章全般の品質基準は`agent-basics:writing-standards/references/writing.md`、入力素材の基準は`agent-basics:writing-standards/references/writing-genres.md`「ユーザー入力素材の取扱い」で定義する。
 呼び出し元の読込条件に合う資料を選び、本書の運用条件と品質基準の全文を読む。
 両方に同じ主題があれば、両方の全文を確認する。
 範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
@@ -13,7 +13,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザーの入力素材を整理して取り込む前 | `agent-basics:writing-standards/references/input-material.md` |
+| ユーザーの入力素材を整理して取り込む前 | `agent-basics:writing-standards/references/writing-genres.md` |
 
 ## 文章の共通規定
 

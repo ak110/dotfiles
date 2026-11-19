@@ -42,7 +42,7 @@ batchでは報告用UWIの同期検収後に起動元run-skillが範囲を確定
 
 対策は通常AWIへ渡し、batch由来のAWIもユーザーの内容確認を待たずに採否検討と処理の対象にする。
 確認待ちの属性・選定分岐・画面操作を撤去し、既存の`confirmation`は未知のfrontmatterとして保持するだけで動作へ影響させない。
-人間由来の要求の保護と外部操作の認可は、wi-standardsのorigin-and-approval.md「承認」が引き続き所有する。
+人間由来の要求の保護と外部操作の認可は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「承認」が引き続き所有する。
 同じ範囲の二重分析を避け、必要な全記録を覆うという目的は範囲管理と証拠再利用で保つ。
 
 報告書式はreport-completionのreport-formatsへ集約し、作業完了と手動・batchの振り返り報告で適用時機を分ける。

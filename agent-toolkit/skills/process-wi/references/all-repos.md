@@ -34,7 +34,7 @@
 - 必須入力名: `引き継ぎ記録先`
 - 任意入力名: `repositories`、`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`
 - 任意入力名: `ownership_record`、`ownership_token`、`lane_session_id`、`previous`、`common_dir`
-- 任意入力名: `registered_worktree`、`追加指示`
+- 任意入力名: `registered_worktree`、`target`、`target_branch`、`default_branch`、`追加指示`
 
 <!-- input-contract:repository-process:end -->
 
@@ -51,7 +51,7 @@
 
 - 単一対象では`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`、`ownership_record`、`ownership_token`、`lane_session_id`に集合JSONの対象要素の同名の値を渡す
 - まとめ担当では、割り当てる対象要素をそのまま順序付きJSON配列へ保存し、単一対象の各フィールドの代わりにその絶対パスを`repositories`へ渡す
-- `previous`、`common_dir`、`registered_worktree`: 対象要素に値がある場合だけ渡す
+- `previous`、`common_dir`、`registered_worktree`、`target`、`target_branch`、`default_branch`: 対象要素に値がある場合だけ渡す
 - `追加指示`: `instruct`のうち対象に関係する部分がある場合だけ渡す
 - `引き継ぎ記録先`: 指定の省略や継続時の扱いは`../../delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う
 
@@ -77,7 +77,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 
 ```text
 状態: <completed|incomplete|pending>
-対象: <target_repo>
+対象: <target>
 残工程: <残る工程と再開先。無ければ「なし」>
 writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列>
 結果: <公開結果、CI、処理したAWIと採否の要約>

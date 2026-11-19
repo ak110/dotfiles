@@ -80,7 +80,7 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 モデル更新時の点検では、[Claudeの共通ガイド](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)や[OpenAIのガイド](https://developers.openai.com/api/docs/guides/prompt-engineering)から使用モデルの資料へ進む。
 両URLも同日にHTTP 200を確認し、後者は旧platform URLから上記URLへの転送を確認した。
 
-## agent-basics/skills/writing-standards/references/agent-documents-basics-content.md：条件と範囲の記述：2026年11月11日
+## agent-basics/skills/writing-standards/references/agent-documents-basics.md：条件と範囲の記述：2026年11月11日
 
 2026年11月11日、[Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)の公式Markdownを取得した（取得は成功し、本文全体を読んだ）。
 対象版はClaude Fable 5.2とClaude Mythos 5.2であり、実モデルの比較実験は行っていない。

@@ -35,7 +35,7 @@ user-invocable: false
 
 | 利用形態 | 起動主体と公開操作 | 処理の責務 |
 | --- | --- | --- |
-| 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を処理する。計画の作成要否は`agent-toolkit:write-plan`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に従って決める |
+| 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を処理する。計画の作成要否は`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従って決める |
 | 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と統括会話の起動を管理する。統括が`agent-toolkit:process-wi all-repos`で登録全体の対象を処理し、報告まで担当する |
 | まとめ処理型 | ユーザーが`agent-toolkit:process-wi single-lane`を手動起動する | 蓄積されたWIを1回の実行でまとめて処理する |
 | 定期実行型 | ユーザーがcronなどに`atk run-skill`を登録する | WIキューを経由せずにスキル1件を自律モードで実行し、結果は報告用UWIで、判断を要する対応は事前承認型UWIで届ける |
@@ -47,13 +47,22 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 未登録は編集不可であり、`allow`への登録は編集の認可を確認してから行う。
 `awi`は直接編集せずAWIを投入し、`deny`は必要な変更を報告する。
 常駐の実行、単回実行、再開予約、制御操作の違いは`references/orchestrator-runtime.md`を参照する。
+
+保守ブランチと次期開発ブランチのように継続して作業が入るブランチが複数あるリポジトリは、そのブランチを系統として登録する。
+登録は`atk config repos set <リポジトリ> --branches <名前,名前> --default-branch <名前> --merge-from <取り込む側>=<取り込み元>`で行う。
+系統を登録したリポジトリでは、WIが宛先の系統を`target_branch`に持ち、process-loopはリポジトリと系統の組を1つの処理対象として系統ごとの作業ツリーで処理する。
+系統を省略したWIは`--default-branch`に登録した系統へ入る。
+両方の系統に必要な修正は取り込み元の系統へ入れ、取り込む側はリリースの前に取り込み元をマージする。
+WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に従う。
+処理は`../process-wi/SKILL.md`「系統を登録したリポジトリ」に従う。
+リリース前の確認は`agent-toolkit:commit`の`references/publish.md`「プロジェクト固有の公開後の操作とリリース」に従う。
 統括が報告まで担当し、会話の再開では元の統括・委譲の責務を保つ。
 
 ## 要求から公開までの担当
 
 1. 要求の具体化: メインが元の要求・回答・既存認可を確認し、対象を選定して配分する。
    ユーザー固有の判断が必要な箇所は、その回答に依存する処理の前に確認する。
-   定義元は`agent-toolkit:wi-standards`と`agent-toolkit:user-confirmation-and-report`である。
+   定義元は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`と`agent-toolkit:atk-mode/playbooks/confirmation.md`である。
 2. 計画と実装: レーン担当が割当要求から計画・実装・検証を進め、実行レビューの入力を確定する。
    レーン数によらない継続と受渡しの条件は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`に従う。
 3. 独立文脈レビュー: 実装を担当していないレビュー担当が成果を検収する。
@@ -80,14 +89,15 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 通常のキュー処理は初回の対象と配分を維持し、開始時集合との差分で新着を確認する。
 新着の確認と今回追加の判断は`../process-wi/references/immediate-fix.md`「開始後に追加されたWIの確認」に従い、既存の作業記録へ対処時機と根拠を残す。
 
-要求事項の登録は、ユーザーが`atk wi add`や`agent-toolkit:add-awi-by-user`、`atk serve`のWI管理画面から行うほか、処理中のエージェントや`agent-toolkit:review-session`からも投入できる。
-本文の記述形式、由来、状態、依存関係の扱いは`agent-toolkit:wi-standards`に従う。
+要求事項の登録は、ユーザーが`atk wi add`や`agent-toolkit:atk-mode`の作業`add-awi-by-user`、`atk serve`のWI管理画面から行うほか、処理中のエージェントや`agent-toolkit:review-session`からも投入できる。
+本文の記述形式は`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。
+由来は`agent-toolkit:atk-mode/references/origin-and-approval.md`、状態と依存関係は`agent-toolkit:atk-mode/references/states-and-dependencies.md`に従う。
 
 ユーザーの対応を必要とする未完了事項については、実行モードを問わず共通の確認基準に基づいて個別のUWIを登録するか判定し、報告時には保存先のパスを示す。
 自明な情報の取得や再実行、実機確認の案内は通常の報告に添えて伝える。
 手順で定められた完了報告用のUWIは適切に保存し、ユーザーの確認を受ける。
 会話中のやり取りで回答を得られた事項はUWIとして重ねて登録せず、回答を得られないまま終了した確認事項はUWIへ引き継ぐ。
-保存条件、自律モードにおける確認手段、およびUWIへの切り替え手順は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。
+保存条件、自律モードにおける確認手段、およびUWIへの切り替え手順は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
 ユーザーは`atk wi answer`または`atk serve`から回答を入力する。
 回答済みのUWIについては、`run_skill_report: true`を持つ報告用は同じ対象リポジトリ・同じスキルの次回`atk run-skill`実行時に取り込む。
 報告用を除く承認用は、process-wiの次回実行時にもメインセッションが処理へ取り込む。
@@ -100,7 +110,7 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 作業完了後は、報告を所有するメインが`agent-toolkit:report-completion`で作業結果を報告して終了する。
 Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`agent-toolkit:review-session batch`が非同期でまとめて分析する。
 batchが投入したAWIは、ユーザーによる内容確認を待たずに採否検討と処理の対象となる。
-エージェント由来の要求の採否は`../wi-standards/references/wi-standards-origin.md`「由来と承認」に従って判断する。
+エージェント由来の要求の採否は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従って判断する。
 手動の`agent-toolkit:review-session`は現在のセッション全体を対象とし、引数は追加の着眼点として扱う。
 自動起動は`session_review_auto_start`で切り替え、無効時も待ち記録を保持して手動のbatchで処理できる。
 
@@ -130,4 +140,4 @@ process-loop、子セッションのメイン、レーン担当、まとめ処�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |

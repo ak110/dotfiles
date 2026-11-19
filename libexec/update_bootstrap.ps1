@@ -12,6 +12,16 @@ function Write-UpdateError {
     } else { [Console]::Error.WriteLine($Message) }
 }
 . (Join-Path $PSScriptRoot 'update_stage.ps1')
+function Test-PythonPatchPending {
+    # keyはビルド日付を含まず、同じpatch版の新しいビルドを検出できない。更新できない回の見送りの判定にだけ使う。
+    $listed = @{}
+    foreach ($source in '--only-downloads', '--only-installed') {
+        $code = Invoke-UpdateStage '管理Pythonの更新' continue 60 $UvPath @('python', 'list', 'cpython-3.15', $source, '--managed-python', '--output-format', 'json') -Probe
+        if ($code -ne 0) { return $true }
+        $listed[$source] = @($script:lastStageOutput | ConvertFrom-Json | ForEach-Object { $_ } | ForEach-Object { $_.key })
+    }
+    return @($listed['--only-downloads'] | Where-Object { $_ -notin $listed['--only-installed'] }).Count -gt 0
+}
 
 try {
     if (-not (Test-Path -LiteralPath $UvPath)) {
@@ -41,7 +51,9 @@ try {
         $locking = @(Get-PytoolsEnvLockingProcess -Directory $pythonRoot -ExcludeIds $excluded | Where-Object { $_.IsMediaRemote -or $_.ExecutablePath -match '\\cpython-3\.15[^\\]*\\' })
         $unrestorable = @($locking | Where-Object { -not $_.IsMediaRemote })
         $state = Join-Path $env:LOCALAPPDATA 'agent-toolkit\python-upgrade-deferred.txt'
-        if ($unrestorable.Count) {
+        if ($unrestorable.Count -and -not (Test-PythonPatchPending)) {
+            Remove-Item -LiteralPath $state -ErrorAction SilentlyContinue
+        } elseif ($unrestorable.Count) {
             $count = 0
             if (Test-Path $state) { [void][int]::TryParse((Get-Content $state -Raw), [ref]$count) }
             $count++

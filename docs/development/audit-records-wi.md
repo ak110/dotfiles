@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/share/add-wi.parent.md：渡す入力：2026年10月7日
+## agent-toolkit/skills/atk-mode/roles/add-wi.parent.md：渡す入力：2026年10月7日
 
 Claude Code 2.1.292のセッションで、要求本文を`extra_params`へ埋め込んだ`agents_server`の`start`が、ホストのJSON解析で拒否された。
 リポジトリ外のセッション記録の`__unparsedToolInput.raw`には文字列中の未エスケープの改行と閉じていない末尾があり、ツール結果に`InputValidationError`と`could not be parsed as JSON`が残る。

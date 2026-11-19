@@ -719,6 +719,38 @@ def living_root_session_ids(*, state_root: pathlib.Path | None = None) -> frozen
     return frozenset(found)
 
 
+def sweep_exited_records(*, state_root: pathlib.Path | None = None) -> int:
+    """記録したホストプロセスの終了が確定した会話の活動JSONを回収し、削除した件数を返す。
+
+    SessionEndが届かずに終わった会話の記録は活動の判定に使われないまま残り、一覧のたびに全件が読まれる
+    （2026-11-19の実環境で3,276件中3,263件）。同じ会話を別のプロセスで再開すると最初のhookが記録を作り直すため、
+    終了したプロセスの記録は再開にも使われない。プロセスを記録していない記録と読めない記録は判定の根拠として残す。
+    """
+    directory = activity_directory(state_root)
+    removed = 0
+    for path in _paths(directory, []):
+        if not _exited(path):
+            continue
+        # 判定から削除までに同じ会話が再開して記録を作り直していないかを、記録を書く側と同じロックの下で確かめ直す。
+        with (directory / "activity.lock").open("a+", encoding="utf-8") as lock:
+            acquire_lock(lock)
+            try:
+                if _exited(path):
+                    path.unlink(missing_ok=True)
+                    removed += 1
+            finally:
+                release_lock(lock)
+    return removed
+
+
+def _exited(path: pathlib.Path) -> bool:
+    try:
+        identity = _identity(_read(path).get("process"))
+    except OSError, UnicodeError, ValueError:
+        return False
+    return identity is not None and not identity.exists()
+
+
 def submission_activity(
     target_repo_ids: Collection[str],
     *,

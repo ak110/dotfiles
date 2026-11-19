@@ -35,22 +35,50 @@ PLAN_H2_PROGRESS: str = "進捗ログ（実行時）"
 
 PLAN_H2_REQUIREMENTS: str = "要件・外部仕様"
 PLAN_H2_DESIGN: str = "設計・実装方針"
-PLAN_H2_CURRENT_PERMANENCE: str = "恒久化・リファクタリング"
-PLAN_H2_CURRENT_HISTORY: str = "変更履歴"
+PLAN_H2_EIGHT_SECTION_PERMANENCE: str = "恒久化・リファクタリング"
+PLAN_H2_EIGHT_SECTION_HISTORY: str = "変更履歴"
 PLAN_H2_CURRENT_VERIFICATION: str = "検証"
 PLAN_H2_CURRENT_PROGRESS: str = "進捗ログ"
 
-PLAN_SINGLE_FILE_H2_ORDER: tuple[str, ...] = (
+REQUEST_H2_REQUEST: str = "反映内容と反映先"
+REQUEST_H2_CAUSE: str = "原因分析"
+REQUEST_H2_QUOTATION: str = "ユーザー指摘の逐語引用"
+REQUEST_H2_ORDER: tuple[str, ...] = (
+    REQUEST_H2_REQUEST,
+    REQUEST_H2_CAUSE,
+    "調査結果と判断根拠",
+    "完成条件",
+    REQUEST_H2_QUOTATION,
+)
+"""要求を書く節のH2と並び順。通常AWIの本文と、計画ファイルの要求を書く部分が共有する。
+
+定義元は`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」で、節を変える改訂では本定数も同じ変更で更新する。
+"""
+
+REQUEST_H2_REQUIRED: tuple[str, ...] = (REQUEST_H2_REQUEST,)
+"""要求を書く節のうち必須の節。ほかの節は書く内容がある場合に置く。"""
+
+REQUEST_H2_LEGACY: tuple[str, ...] = ("適用範囲", "実現性")
+"""保存済みの旧形式AWIだけが持つ節。読み取りと順序の判定で受け付ける。"""
+
+REQUEST_H2_USER_COMMENT: str = "ユーザーコメント"
+"""WIの末尾に置くユーザー専用の記入欄。空のまま保存できる。"""
+
+PLAN_H2_ORDER_HEAD: tuple[str, ...] = (PLAN_H2_ACTION,)
+PLAN_H2_ORDER_TAIL: tuple[str, ...] = (PLAN_H2_CURRENT_VERIFICATION, PLAN_H2_CURRENT_PROGRESS)
+"""現行の計画ファイルが、要求を書く節の前と後ろに固定順で持つH2。"""
+
+PLAN_EIGHT_SECTION_H2_ORDER: tuple[str, ...] = (
     PLAN_H2_OVERVIEW,
     PLAN_H2_ACTION,
     PLAN_H2_REQUIREMENTS,
-    PLAN_H2_CURRENT_PERMANENCE,
-    PLAN_H2_CURRENT_HISTORY,
+    PLAN_H2_EIGHT_SECTION_PERMANENCE,
+    PLAN_H2_EIGHT_SECTION_HISTORY,
     PLAN_H2_CURRENT_VERIFICATION,
     PLAN_H2_TERMINATION,
     PLAN_H2_CURRENT_PROGRESS,
 )
-"""現行の1ファイル計画が固定順で持つH2。"""
+"""8節形式の1ファイル計画が固定順で持つH2。読み取り互換専用。"""
 
 PLAN_H2_LEGACY_HISTORY: str = "変更履歴"
 PLAN_H2_LEGACY_PROGRESS: str = "進捗ログ"
@@ -184,10 +212,10 @@ PLAN_METADATA_CURRENT_FIELDS: tuple[str, ...] = (
     PLAN_METADATA_RELATED_WI_FIELD,
     "作業種別",
 )
-"""現行の1ファイル計画が持つ計画メタ情報の固定4項目。"""
+"""現行の計画ファイルと8節形式の計画が持つ計画メタ情報の固定4項目。"""
 
 PLAN_METADATA_BUG_FIELD: str = "計画ファイル（バグ）"
-"""バグ対応の1ファイル計画だけが末尾に持つ計画メタ情報。"""
+"""8節形式のバグ対応計画だけが末尾に持つ計画メタ情報。読み取り互換専用。"""
 
 PLAN_METADATA_TWO_FILE_FIELDS: tuple[str, ...] = (*PLAN_METADATA_FIELDS, PLAN_METADATA_DETAIL_FIELD)
 """改訂前の二ファイル計画が持つ計画メタ情報の項目と順序。読み取り互換専用。"""
@@ -273,7 +301,7 @@ PLAN_WI_ORIGIN_PATTERN = re.compile(
 PLAN_WI_SOURCE_KEY: str = "source"
 """WIファイルのfrontmatterで投入元スキルを表すキー。"""
 
-PLAN_WI_USER_COMMENT_HEADING: str = "ユーザーコメント"
+PLAN_WI_USER_COMMENT_HEADING: str = REQUEST_H2_USER_COMMENT
 """WIファイルの末尾に置く、ユーザー専用の記入欄の見出し。"""
 
 PLAN_WI_ANSWER_HEADING: str = "回答"
@@ -376,84 +404,37 @@ PLAN_REQUIREMENT_ID_PATTERN = re.compile(r"^R-(?P<material>P-[0-9A-Za-z][0-9A-Za
 PLAN_QUEUE_ID_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9]{3,}\.md$")
 
 PLAN_BUG_TABLE_HEADER: tuple[str, ...] = ("項目", "内容")
-PLAN_BUG_CAUSE_TABLE_HEADER: tuple[str, ...] = ("要因系統", "L1 現象", "L2 判断", "L3 構造", "L4 システム")
-PLAN_BUG_CAUSE_TABLE_ROWS: tuple[str, ...] = ("作り込み要因", "見逃し要因")
-"""バグ単位の原因分析表の固定5列2行。`agent-basics:bugfix`の原因分析の段階と対応させる。"""
+"""`項目`・`内容`の2列表の列。旧形式のバグ調査表と旧リファクタリング表の判別に使う。"""
 
-PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS: tuple[str, ...] = (
-    "現象",
-    "期待する契約",
-    "対策",
-    "回帰防止策",
-    "類似見直し観点（作り込み）",
-    "類似見直し観点（見逃し）",
-    "類似見直しの採否",
-    "類似見直し結果",
-    "再発防止策（作り込み）",
-    "再発防止策（見逃し）",
-    "再発防止策の採否",
+PLAN_LEGACY_BUG_TABLE_HEADERS: tuple[tuple[str, ...], ...] = (
+    ("要因系統", "L1 現象", "L2 判断", "L3 構造", "L4 システム"),
+    PLAN_BUG_TABLE_HEADER,
 )
-"""バグ調査表の固定行。行名と順序を`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」と対応させる。
+"""廃止した原因分析表と調査表の列。いずれかを持つバグ単位を旧形式として判別する。
 
-直接的原因と原因分析の根拠は原因分析表の該当セルと証拠参照へ統合したため、独立した行を持たない。
-処置の候補は作り込み・見逃しの系統ごとの行に、候補の採否は採否の行に分けて記録する。
+保存済みの計画とWIの読み取りにだけ使い、行の構成と記入内容は検査しない。
 """
 
-PLAN_PREVIOUS_ACTION_BUG_TABLE_ROWS: tuple[str, ...] = (
-    *PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS[:2],
-    "害の型と反復",
-    *PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS[2:],
-)
-"""害の型と反復を含む現行の調査表。直前の11行形式は読み取り互換と移行案内に残す。"""
+CAUSE_RECORD_REQUIRED_LABELS: dict[str, str] = {
+    "期待": "起きるはずだったことと、その期待が正しく必要である根拠。見直した場合はその結果",
+    "原因": "起こしたものと、確かめた観測の所在。推測の部分は推測と書く",
+    "処置": "無くす・単純にする・直す・足すのどれか。より前の案を採用しない理由",
+    "広がり": "同じ仕組みの他の箇所を探した検索と結果。同じ害への既存の対策を探した検索と結果",
+    "確認": "直ったことを確かめた方法と結果",
+}
+"""原因分析の記録がバグ単位ごとに必ず持つ行の行頭語と、その行に書く内容。
 
-PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (*PLAN_PREVIOUS_ACTION_BUG_TABLE_ROWS, "処置が生む問題の検討")
-"""採用した処置自身の失敗経路と元の問題の比較を末尾に記録する調査表。"""
+定義元は`agent-basics:bugfix`の`SKILL.md`「記録」で、書く内容はその文言を写す。
+"""
 
-PLAN_PREVIOUS_BUG_TABLE_ROWS: tuple[str, ...] = (
-    "現象",
-    "期待する契約",
-    "直接的原因",
-    "原因分析の根拠",
-    "対策",
-    "類似見直し観点",
-    "類似見直し結果",
-    "再発防止策",
-)
-"""6区分化より前の8行の調査表。保存済み計画の読み取り互換と移行案内にだけ用いる。"""
+CAUSE_RECORD_OPTIONAL_LABELS: dict[str, str] = {
+    "再発": "前回の対策の所在と種類、防げなかった理由、今回変えた種類",
+    "再発防止": "採用する策、防ぐ害、過去の実例で働くことの確かめ方、足す文章と消す文章",
+}
+"""条件が成立した時だけ加える行の行頭語と、その行に書く内容。
 
-PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
-    "観測事象",
-    "期待する契約",
-    "直接的原因",
-    "根本原因",
-    "原因分析の根拠",
-    "原因分析の品質確認",
-    "類似見直しの観点",
-    "類似見直し結果",
-    "是正処置",
-    "横展開処置",
-    "再発防止処置",
-    "設計意図の記録",
-)
-"""統廃合前のバグ調査表の固定行。原因分析表を伴う既存計画の読み取り互換にだけ用いる。"""
-
-PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS: tuple[str, ...] = (
-    "観測事象",
-    "期待する契約",
-    "直接的原因",
-    "混入要因",
-    "動機的要因",
-    "見逃し原因",
-    "根本原因",
-    "原因分析の根拠",
-    "類似見直しの観点",
-    "類似見直し結果",
-    "是正処置",
-    "横展開処置",
-    "再発防止処置",
-    "設計意図の記録",
-)
-"""原因分析表を持たない旧バグ調査表の固定行。既存計画の読み取り互換にだけ用いる。"""
+書く内容の定義元は`agent-basics:bugfix`の`references/recurrence.md`と`references/prevention.md`である。
+"""
 
 PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先", "根拠")
 """通常変更の恒久化表の固定4列。バグ対応ではバグ調査表を使う。"""

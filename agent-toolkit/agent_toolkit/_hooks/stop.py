@@ -12,25 +12,36 @@
 
 連続blockの上限は7回とする。Claude Codeは8回の連続blockでフックを上書きしてターンを終えるため、
 その手前の7回で打ち切りの事実を記録して終了を許可する。
+process-loopの統括の最上位では、打ち切った対話CLIが入力待ちで残らないよう、
+無進捗の停止と同じ終了要求（`busy_loop_guard.terminate`）でセッションを終え、常駐側の検収へ戻す。
+終了要求は会話IDで統括と確定できる場合（`busy_loop_guard.is_target_session`）に限る。
+未終了のバックグラウンドタスクが残る場合は、`autonomous_exit`が残る作業を止めないよう終了要求を取り下げるのと同じ理由で終了要求を送らず、
+許可だけを返す。タスクの完了通知で再開した後のStopが改めて判定する。
 
 委譲先での実行可否: 各判定モジュールが個別に適用可否を判断するため、エントリーポイント自体は除外せず実行できる。
 未配送通知を次ターンへ返す実機観測と再検証は、`docs/development/audit-records.md`の
 「agent-toolkit/agent_toolkit/_hooks/stop.py：未配送通知を次ターンへ返す：2026年10月10日」にある。
 """
 
+import functools
 import importlib
 import json
 import os
 import sys
+from typing import Any
+lazy import asyncio
 
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._common import delegated_session as _delegated_session
+lazy from agent_toolkit._common import function_hook_requests
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.function_hook_requests import cleanup, enqueue
+lazy from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
-lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
+lazy from agent_toolkit._hooks import busy_loop_guard as _busy_loop_guard
+lazy from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, is_pending_async_work
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
@@ -51,15 +62,24 @@ CHECK_MODULE_NAMES = (
     "improvement_status_advisor",
 )
 
-# Codexでは説明言語と、遮断で再報告を求める投入作業の報告用要約を判定する。
+# Codexでは説明言語、process-loopの統括の終了工程、run-skillの報告保存、遮断で再報告を求める投入作業の報告用要約を判定する。
 # 非遮断通知を配送できないため、それ以外の終了工程の支援は文書で扱う。
-CODEX_CHECK_MODULE_NAMES = ("response_language_advisor", "submission_report_advisor")
+CODEX_CHECK_MODULE_NAMES = (
+    "response_language_advisor",
+    "autonomous_exit",
+    "run_skill_report_gate",
+    "submission_report_advisor",
+)
 
 # 終了要求が成立し、同じStopで継続を求めてはならない`halt`の状態。
 _TERMINATION_ISSUED = frozenset({"exit_requested", "terminating"})
 
 _CONSECUTIVE_BLOCK_LIMIT = 7
 _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"
+
+# modが定期再確認のtaskを回収する（`CronList`・`atk wait-schedule`・`CronDelete`）のを待つ上限。
+# modのツール呼び出しにも設定hookが実行されるため、2026年11月18日の観測では約4秒かかった。
+_RECHECK_COLLECT_WAIT_SECONDS = 20
 
 
 def _set_consecutive_block_count(state: dict, count: int) -> dict:
@@ -108,6 +128,32 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
         return
     except Exception as exc:  # noqa: BLE001 -- 回収判定の故障を他のStop判定から隔離する
         append_stop_log(session_id, "periodic_recheck_error", {"error": f"{type(exc).__name__}: {exc}"})
+        return
+    if not pending and _holds_common_recheck_task(payload.get("session_crons")):
+        _collect_recheck_before_idle(session_id)
+
+
+def _holds_common_recheck_task(crons: object) -> bool:
+    """Stop入力の`session_crons`に、共通promptの定期再確認taskがあるかを返す。"""
+    return isinstance(crons, list) and any(
+        isinstance(cron, dict) and cron.get("prompt") == PERIODIC_RECHECK_PROMPT for cron in crons
+    )
+
+
+def _collect_recheck_before_idle(session_id: str) -> None:
+    """全待機の終了を判定したStopの中で、modに共通promptの定期再確認taskを回収させる。
+
+    Claude Codeはターンの実行中に発火時刻を迎えたcronを保留し、ターンの終了直後のidleで発火させる。
+    ターンの終了後（`turn.complete`）の回収はこの発火に間に合わず、確認する対象の無いターンが1回始まる。
+    Stopが終わるまでターンはidleにならないため、Stopの中で回収を終えればこの発火は起きない。
+    削除できなかった場合は、`turn.complete`の回収が再評価して警告を届ける。
+    """
+    try:
+        asyncio.run(
+            function_hook_requests.request(session_id, "periodic_recheck_collect", {}, timeout=_RECHECK_COLLECT_WAIT_SECONDS)
+        )
+    except (OSError, ValueError) as exc:
+        append_stop_log(session_id, "periodic_recheck_collect_error", {"error": f"{type(exc).__name__}: {exc}"})
 
 
 def evaluate(payload_text: str) -> dict[str, object]:
@@ -124,7 +170,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
     notifications: list[str] = []
     user_messages: list[str] = []
     yield_for_delivery = False
-    halt_request: tuple[object, int] | None = None
+    halt_request: functools.partial[tuple[str, str]] | None = None
     for module_name in CODEX_CHECK_MODULE_NAMES if is_codex_payload(payload) else CHECK_MODULE_NAMES:
         try:
             module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
@@ -146,7 +192,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
         elif decision == "yield":
             yield_for_delivery = True
         elif decision == "halt":
-            halt_request = (module, int(body))
+            halt_request = functools.partial(_call_halt, module, session_id, int(body))
 
     def _finalize(result: dict[str, object]) -> dict[str, object]:
         """ユーザー宛ての本文がある場合に`systemMessage`を添えて返す。"""
@@ -161,10 +207,25 @@ def evaluate(payload_text: str) -> dict[str, object]:
             result["systemMessage"] = "\n\n".join(user_messages)
         return result
 
-    if halt_request is not None and session_id and "response_language_advisor" not in blocking_checks:
-        module, count = halt_request
+    block_count = _consecutive_block_count(session_id, payload) if block_reasons and session_id else 0
+    limit_reached = block_count >= _CONSECUTIVE_BLOCK_LIMIT
+    remaining_tasks = active_non_teammate_tasks(payload.get("background_tasks")) if limit_reached else []
+    if (
+        limit_reached
+        and halt_request is None
+        and not remaining_tasks
+        and _busy_loop_guard.is_target_session(session_id, payload)
+    ):
+        halt_request = functools.partial(
+            _busy_loop_guard.terminate,
+            session_id,
+            f"Stop hookによる終了の遮断が{_CONSECUTIVE_BLOCK_LIMIT}回続いた。",
+            "halt_block_limit",
+            {"limit": _CONSECUTIVE_BLOCK_LIMIT, "blocking_checks": ",".join(blocking_checks)},
+        )
+    if halt_request is not None and session_id and (limit_reached or "response_language_advisor" not in blocking_checks):
         try:
-            status, message = module.halt(session_id, count)  # type: ignore[attr-defined]
+            status, message = halt_request()
         except Exception as exc:  # noqa: BLE001 -- 停止工程の故障で他の判定の結果を失わないため広範に捕捉
             append_stop_log(session_id, "halt_error", {"error": f"{type(exc).__name__}: {exc}"})
         else:
@@ -179,18 +240,13 @@ def evaluate(payload_text: str) -> dict[str, object]:
                 return _finalize({})
     if block_reasons:
         if session_id:
-            state = read_state(session_id)
-            current_count = state.get(_CONSECUTIVE_BLOCK_STATE_KEY, 0)
-            if not isinstance(current_count, int) or isinstance(current_count, bool):
-                current_count = 0
-            if payload.get("stop_hook_active") is not True:
-                current_count = 0
-            if current_count >= _CONSECUTIVE_BLOCK_LIMIT:
-                autonomous_exit_invoked = state.get("autonomous_exit_invoked") is True
+            if limit_reached:
+                autonomous_exit_invoked = read_state(session_id).get("autonomous_exit_invoked") is True
                 detail = {
                     "limit": _CONSECUTIVE_BLOCK_LIMIT,
                     "blocking_checks": blocking_checks,
                     "autonomous_exit_invoked": autonomous_exit_invoked,
+                    "background_tasks": len(remaining_tasks),
                 }
                 append_stop_log(
                     session_id,
@@ -199,7 +255,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
                 )
                 update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
                 return _finalize({})
-            update_state(session_id, lambda item: _set_consecutive_block_count(item, current_count + 1))
+            update_state(session_id, lambda item: _set_consecutive_block_count(item, block_count + 1))
         return _finalize(
             {"decision": "block", "reason": "\n\n".join([*block_reasons, *notifications, *_continuation_notice()])}
         )
@@ -212,6 +268,19 @@ def evaluate(payload_text: str) -> dict[str, object]:
             "additionalContext": "\n\n".join([*notifications, *_continuation_notice()]),
         }
     return _finalize(result)
+
+
+def _call_halt(module: Any, session_id: str, count: int) -> tuple[str, str]:
+    """`halt`を返した判定モジュールの停止工程を呼ぶ。属性の欠落も停止工程の故障として隔離する。"""
+    return module.halt(session_id, count)
+
+
+def _consecutive_block_count(session_id: str, payload: dict) -> int:
+    """今回のStopより前の連続block回数を返す。Stop hookによる続行でない入力では0とする。"""
+    if payload.get("stop_hook_active") is not True:
+        return 0
+    count = read_state(session_id).get(_CONSECUTIVE_BLOCK_STATE_KEY, 0)
+    return count if isinstance(count, int) and not isinstance(count, bool) else 0
 
 
 def _continuation_notice() -> tuple[str, ...]:

@@ -35,6 +35,7 @@ from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
+lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import document_reads, repository_protection, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
@@ -45,6 +46,15 @@ _llm_notice = _notice_formatter(_HOOK_ID)
 
 RESPONSE_LANGUAGE_NOTICE = "言語の基準は、同時配送された`01-agent.md`「使用言語」を参照せよ。"
 QUALITY_CHECKPOINT_NOTICE = "圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。"
+ENTRY_START_NOTICE = "作業を始める前に、スキル`agent-toolkit:atk-mode`を起動せよ。"
+ENTRY_COMPACT_NOTICE = (
+    "圧縮後に読む資料の限定とは別に、作業を再開する前にスキル`agent-toolkit:atk-mode`を起動し直せ。"
+    "進めていた作業の手順書は、入口の表から選び、次に行う操作・判断の条件に該当した時に読み直せ。"
+)
+"""入口のスキルの起動を求める案内。起動と読み直しを求める1行だけを持ち、規範の本文を載せない。
+
+文脈を引き継がずに始まる会話のメインへ届ける。委譲先へは起動の本文が規範を届けるため、案内しない。
+"""
 BACKGROUND_TASKS_DISABLED_NOTICE = (
     "この`Claude Code`では`Bash`の背景実行が無効で、`run_in_background`は使えない。"
     "待機は`agent-toolkit:delegation`の`references/waiting-and-monitoring-intervals.md`「待機区間の構成」に従え。"
@@ -80,6 +90,18 @@ NORMATIVE_KIND_MAIN = "rules-main"
 NORMATIVE_KIND_SUBAGENT = "rules-subagent"
 
 
+def _run_skill_start(skill: object) -> str:
+    """`atk run-skill`の起動入力の`skill`から、作業の始め方の案内を返す。
+
+    `skill`は起動単位の保存上の名前でもある（`atk wi submit`の起動単位など）。
+    agent-toolkitに同名のスキルが無い場合は、起動を求めず目的文が示す始め方へ従わせる。
+    """
+    name = skill.removeprefix("agent-toolkit:") if isinstance(skill, str) and skill.startswith("agent-toolkit:") else None
+    if name is not None and not plugin_resources.skill_document_path(name, "SKILL.md").is_file():
+        return f"`{skill}`は保存上の名前で同名のスキルは無い。目的文が示す始め方で作業し、"
+    return "指定スキルを起動し、"
+
+
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
     """SessionStartへ追加する本文を構成する。
 
@@ -109,8 +131,8 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                 if response is not None and response.get("ack") and response.get("resume_only"):
                     parts.append(
                         message_format.auto_message(
-                            "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元のgoalを確認し、"
-                            "最初の未完了工程から続行せよ。未達goalを達成扱いに変えず、成功済みの操作を繰り返すな。",
+                            "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元の目的を確認し、"
+                            "最初の未完了工程から続行せよ。未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
                             source="process-loop",
                             kind="resume",
                         )
@@ -130,7 +152,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                 )
             else:
                 guidance = (
-                    "作業を始める前に、agent-toolkit:user-confirmation-and-reportのreferences/answer-transitions.mdを全文読み、"
+                    "作業を始める前に、`agent-toolkit:atk-mode/references/answer-transitions.md`を全文読み、"
                     "「`atk run-skill`の過去の実行のUWI」に従って過去の実行のUWIを照会せよ。"
                 )
                 if data.get("batch_manifest"):
@@ -138,7 +160,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                     guidance += (
                         "\nbatchの起動から保存までは、agent-toolkit:review-sessionのreferences/batch.mdを全文読んで従え。"
                     )
-                guidance += "\n指定スキルを起動し、次の終了契約を読め: agent-toolkit:report-completion"
+                guidance += f"\n{_run_skill_start(data.get('skill'))}次の終了契約を読め: agent-toolkit:report-completion"
             if not resume_only:
                 parts.append(
                     message_format.auto_message(
@@ -167,6 +189,8 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
         rule_notices.append(RESPONSE_LANGUAGE_NOTICE)
     if source == "compact":
         rule_notices.append(QUALITY_CHECKPOINT_NOTICE)
+    if not delegated and source in _CONTEXT_LOSING_SOURCES:
+        rule_notices.append(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE)
     if rule_notices:
         parts.append(_llm_notice("\n".join(rule_notices)))
     if host == "claude" and wait_schedule.background_tasks_disabled():
@@ -528,6 +552,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
     session_id = payload.get("session_id")
     delegated = is_delegated(os.environ)
     if event_name == "SessionStart":
+        if isinstance(session_id, str):
+            claim_process_loop_session(session_id, os.environ)
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")

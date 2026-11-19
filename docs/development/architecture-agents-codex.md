@@ -46,6 +46,7 @@ chezmoiの`symlink_`はWindowsで特権不足により失敗するため、`chez
 
 Codexはプロジェクト直下の`.claude/rules/`と`.claude/skills/`を自動では読まない。
 プロジェクト専用スキルは`.agents/skills -> .claude/skills`のシンボリックリンクで共有する。
+Windowsでは`atk setup-project`が特権の要らないディレクトリジャンクションを作り、Git for Windowsがジャンクションの中身を未追跡に並べないよう`.git/info/exclude`へ加える。
 Codexは`~/.codex/AGENTS.md`の読込指示に従い、作業の開始時に次の規範を読む。
 
 - プロジェクト直下の`.claude/rules/`

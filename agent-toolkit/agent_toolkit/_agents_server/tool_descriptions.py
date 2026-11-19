@@ -172,8 +172,8 @@ MODE_DESCRIPTION = parameter_description(
 
 SUBAGENT_MD_PATH_DESCRIPTION = parameter_description(
     "taskで必須、他のmodeでは指定しない。委譲先の手順と返却契約を保持する`<役割名>.subagent.md`の役割名（例: `add-wi`）。"
-    "役割名はサーバー自身のplugin rootの`share/<役割名>.subagent.md`へ解決する。"
-    "別のplugin rootの文書を指定する場合はagent-toolkitの`share/*.subagent.md`の絶対パスを渡す。"
+    "役割名はサーバー自身のplugin rootの`<役割名>.subagent.md`へ解決する。"
+    "別のplugin rootの文書を指定する場合はagent-toolkitの`<役割名>.subagent.md`の絶対パスを渡す。"
 )
 
 
@@ -332,7 +332,7 @@ START_DESCRIPTION = "\n".join(
         "",
         "| mode | 用途 | 標準の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
-        "| `task`（省略時） | `share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path`。"
+        "| `task`（省略時） | `<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path`。"
         "保持中の`whole_contract_path`も渡す。通常起動だけが参照・配送する | "
         "`<役割名>.subagent.md`の`mode:`、対応する工程別設定 |",
         "| `delegate` | `<役割名>.subagent.md`の無い単発作業 | `prompt`・`model_type`・`whole_contract_path` | "
@@ -359,8 +359,9 @@ START_DESCRIPTION = "\n".join(
         '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",
         "Claude Codeのメイン初回`start`でmodが定期再確認を装着する。"
-        "装着失敗時と、通知もtaskも無く`CronCreate`を使えるメインが待機でターンを終える時は、"
-        "`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」に従って装着する。",
+        "装着の成功は通知せず、失敗時だけ警告をこの結果へ添える。"
+        "警告時と、警告もtaskも無く`CronCreate`を使えるメインが待機でターンを終える時は、"
+        "`agent-toolkit:delegation`の`references/claude-code-runtime-waiting.md`「待機中の定期再確認と背景転換」に従う。",
         "",
         "応答は`session_id`・`status`・担当名の`label`と、保持時の`root_session_id`。"
         "起動不能候補を除外して次を試す。切替時だけ除外候補と根拠、採用した`engine`・`model`・`effort`を加える。"

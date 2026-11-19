@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 委譲の総費用と判断の所有を確かめる前（操作対象外: ツールと結び付かない判断） | `routing-decisions.md` |
-| 複数担当の書込先を決める前 | `agent-basics:writing-standards/references/design-runtime-concurrency.md` |
+| 複数担当の書込先を決める前 | `agent-basics:writing-standards/references/design-runtime.md` |
 
 ## 委譲単位の確定
 

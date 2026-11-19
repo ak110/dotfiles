@@ -38,6 +38,10 @@ hookの中でシェルを再実行して読取先を解決しないため、読�
 他の宣言元の取得済み状態は、行の時点条件の成立を示さないため除外に使わない。
 起動見出しは、agents_serverが資料案内などの要素を配送要素より前に置いた起動本文でも、配送要素の1行目から解決する。
 判定はパスと自身の役割だけで決まり目的を判定しないため、編集と返却後の検収は警告の後も続行できる。
+役割文書と起動・受領契約の置き場所は`agent_toolkit/_common/task_documents.py`の`ROLE_DOCUMENT_DIRECTORIES`だけが定める。
+移行先は入口のスキルの配下（`skills/atk-mode/roles/`）、移行前は`share/`であり、移行の途中は両方を解決する。
+スキルの配下だけを配置するホスト（OpenCode）へ`share/`が届かないために移す。
+`start`の役割名の解決、宣言の読取、起動側の契約の解決、返却契約と入力一覧の生成、Antigravityの担当定義は同じ一覧を使い、同じ名前の文書を両方へ置かないことを不変条件試験が確かめる。
 現行の返却形式は役割文書の出力節を定義元とし、`scripts/sync_generated_files.py`で呼出側の既存文書へ必要な契約部分だけを生成配置する。
 起動準備なら分割読取を続けず呼出側契約へ進むよう案内し、編集、返却後の固有手順の検収、作業項目の起草・原因分析・レビューでの読取は続行できる。
 定義の所有者と各呼出側の検収判断を維持し、手動の二重管理や起動ごとの照会を増やさない。
@@ -109,13 +113,13 @@ Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキ�
 組み込み委譲の要求JSONは公開生成CLIのヘルプが形式を所有し、親契約は役割固有の入力名と値を所有する。
 
 委譲の分担は、各工程の調査・判断の所有者を1つにし、次の担当へ確定した成果と原本の所在を渡す形にそろえる。
-基準は`agent-basics:writing-standards`の`references/sub-agents.md`と`agent-basics:writing-standards/references/design-heuristics-decisions.md`「案の採否と実施順の判定」にある。
+基準は`agent-basics:writing-standards`の`references/sub-agents.md`と`agent-basics:writing-standards/references/design-heuristics.md`「案の採否と実施順の判定」にある。
 工程ごとの対応は次のとおりである。
 
 - 選定理由への質問: 選定したメインが保存済みの選定結果と判断から答える。
   説明担当は撤去し、未取得の事実の収集だけを読み取り専用の探索へ渡す（`agent-toolkit/skills/process-wi/references/selection-explanation.md`）
 - WI投入: 委譲元の初動は投入先と要求の範囲の確定に必要な観測に限り、原因・対策・類似見直しの確定はWI投入担当が所有する。
-  付随型の原稿返却、委譲元の意味の検収、保存開始の二段階と、専念型の投入前レビューは保つ（`agent-toolkit/share/add-wi.parent.md`）
+  付随型の原稿返却、委譲元の意味の検収、保存開始の二段階と、専念型の投入前レビューは保つ（`agent-toolkit/skills/atk-mode/roles/add-wi.parent.md`）
 - レーン: レーン数によらず各レーンの同じ担当が計画・実装・実行レビューの調整・指摘対応を続ける。
   メインは選定、レーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの統合の許可と最終結果の検収を所有する（`agent-toolkit/share/single-lane-execution.md`）
 - 探索・原因分析・単純作業: 作業の細分化と起動単位の数を区別し、同じ背景と実行条件を使う確定済みの作業は1件の起動へまとめる。

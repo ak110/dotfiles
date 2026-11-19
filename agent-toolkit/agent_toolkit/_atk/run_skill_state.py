@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import pathlib
 import re
 import threading
@@ -12,6 +13,7 @@ from typing import Annotated, Literal
 
 import pydantic
 
+from agent_toolkit._atk import outcome
 from agent_toolkit._common import claude_connection, reclaim_records, session_registry, state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
@@ -61,7 +63,16 @@ def _path(run_id: str) -> pathlib.Path:
 
 def load(run_id: str) -> RunRecord:
     """公開resumeの識別子と保存された同一実行の入力を検証する。"""
-    record = RunRecord.model_validate_json(_path(run_id).read_text(encoding="utf-8"))
+    text = _path(run_id).read_text(encoding="utf-8")
+    payload = json.loads(text)
+    connection = payload.get("connection") if isinstance(payload, dict) else None
+    if isinstance(connection, dict) and "isolation_env_file" in connection:
+        # 2026-11-15の改名前の記録は単一の`isolation_env_file`を保存した。
+        # strictなJSON検証の型規則を保つため、検証前のJSONで読み替える。
+        legacy = connection.pop("isolation_env_file")
+        connection.setdefault("isolation_env_files", [] if legacy is None else [legacy])
+        text = json.dumps(payload)
+    record = RunRecord.model_validate_json(text)
     if record.input.run_id != run_id or not record.work_dir.is_absolute() or not record.log_path.is_absolute():
         raise ValueError("保存された実行識別子または絶対パスが不正")
     if record.log_path.parent != state_paths.state_dir() / "run-skill" or record.log_path.suffix != ".log":
@@ -85,14 +96,29 @@ def mark_completed(run_id: str) -> None:
 
 
 def sweep_records(*, cutoff: float) -> set[pathlib.Path]:
-    """期限を過ぎた完了記録を回収し、未完了が参照するログを返す。"""
+    """期限を過ぎた完了記録を回収し、未完了が参照するログを返す。
+
+    読めない記録は残して診断し、参照先を特定できないためrun-skillの全ログを保護する。
+    回収の失敗で新しい実行の起動を止めないためである。
+    """
     protected: set[pathlib.Path] = set()
+    unreadable: list[str] = []
     for path in (state_paths.state_dir() / "run-skill/runs").glob("*.json"):
-        record = load(path.stem)
+        try:
+            record = load(path.stem)
+        except (OSError, ValueError) as error:
+            unreadable.append(f"{path}（{' '.join(str(error).split())}）")
+            continue
         if record.status != "completed":
             protected.add(record.log_path)
         elif path.stat().st_mtime < cutoff:
             path.unlink()
+    if unreadable:
+        protected.update((state_paths.state_dir() / "run-skill").glob("*.log"))
+        outcome.report_warning(
+            f"読めないrun-skillの実行記録があるため、ログの期限回収を見送った: {', '.join(unreadable)}",
+            next_action="記録の内容を確認し、再開しない記録なら削除する",
+        )
     return protected
 
 

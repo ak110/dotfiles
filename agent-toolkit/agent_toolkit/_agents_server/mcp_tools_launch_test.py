@@ -32,7 +32,7 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         override = "codex:model/high"
-        task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+        task_document = launch_requests.resolve_task_document_path("exec")
 
         responses = {
             "delegate": await mcp_tools.start(
@@ -81,7 +81,7 @@ async def test_role_override_warning_keeps_requested_candidate(
 ) -> None:
     """役割文書の工程との差だけを警告し、個別に認可された上書きも受理する。"""
     requested = _recording_candidates(monkeypatch)
-    document = launch_requests._SHARE_DIRECTORY / f"{role}.subagent.md"
+    document = launch_requests.resolve_task_document_path(role)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         response = await mcp_tools.start(
@@ -119,9 +119,9 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        exec_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+        exec_document = launch_requests.resolve_task_document_path("exec")
         exec_params = {**_observed_input_params(exec_document.name, tmp_path), "レーン識別子": "lane-01"}
-        explain_document = launch_requests._SHARE_DIRECTORY / "external-write-review.subagent.md"
+        explain_document = launch_requests.resolve_task_document_path("external-write-review")
         explain_params = _observed_input_params(explain_document.name, tmp_path)
 
         labels = {
@@ -275,7 +275,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", candidates)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+        task_document = launch_requests.resolve_task_document_path("exec")
         calls: dict[str, dict[str, Any]] = {
             "task": {
                 "subagent_md_path": str(task_document),

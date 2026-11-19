@@ -53,8 +53,11 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 分離により、`python-lint (3.15)`からChromiumの導入とE2Eの実行時間を外したうえで、最新のPythonでのE2E実行を維持する。
 `browser-e2e`は他の共通jobと同じ非所有markerの構成を採用し、required checkへ加えることでE2Eの失敗がマージを遮断する状態を保つ。
 
-Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し、`test-windows`はWindows固有pytest、公開ランチャー、通常profileへのchezmoi適用とpost-applyの確認を所有する。
-両job間に依存関係を置かず、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
+Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有する。
+Windows固有pytest、Codex統合、公開ランチャーは`test-windows (tests)`、通常profileへの初回導入（chezmoi適用とpost-apply）の確認は`test-windows (install)`が所有する。
+3つのjobの間に依存関係を置かず、各jobが自身のrunnerで準備し、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
+境界テストと初回導入は互いの実行順序や同じユーザープロファイルへの書込みを必要としないため、別jobにして待ち時間を加算しない。
+必須checkの`test-windows`は`test-windows (tests)`と`test-windows (install)`を待ち、両方の成功だけを成功として集約する。
 
 検査の実行順と表示名はworkflowが所有し、実処理は`.github/actions/ci-*`、共通準備は`prepare-install-test`・`prepare-python-check`が所有する。
 所有判定は`scripts/ci_owner.py`、変更領域の分類は`scripts/ci_scope.py`、領域出力の検証は`scripts/ci_check_scope.sh`に集約する。

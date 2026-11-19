@@ -9,6 +9,8 @@
 **3.** 集合JSONの`repositories`は対象別のオブジェクトの配列である。
 
 各要素は`target_repo`、登録元`registered_worktree`、準備済み`worktree`、`common_dir`を持つ。
+対象の識別子`target`も常に持ち、系統を登録したリポジトリでは`<target_repo>@<系統>`、それ以外では`target_repo`と同じ値である。
+系統を登録したリポジトリの対象は、処理する系統`target_branch`と、系統を省略したWIの宛先にする系統`default_branch`も持ち、`../SKILL.md`「系統を登録したリポジトリ」に従って処理する。
 候補・選定用の項目は`candidate_file`、`snapshot_file`、`readiness`、`lane_limit`である。
 所有・再開用の項目は`ownership_record`、`ownership_token`、`lane_session_id`、`previous`である。
 

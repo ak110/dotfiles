@@ -61,7 +61,7 @@ def test_linux_distribution_check(tmp_path: Path, host_environ: Callable[[], dic
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
 @pytest.mark.parametrize("copy_code", [1, 8])
-@pytest.mark.parametrize("action_name", ["ci-test-windows", "ci-update-dotfiles-upgrade-windows"])
+@pytest.mark.parametrize("action_name", ["ci-test-windows", "ci-install-windows", "ci-update-dotfiles-upgrade-windows"])
 def test_windows_placement_copy_boundary(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]], copy_code: int, action_name: str
 ) -> None:

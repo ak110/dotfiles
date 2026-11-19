@@ -44,6 +44,7 @@ NOT_INTEGRATED = "未統合"
 INTEGRATED = "統合済み"
 INITIAL_ALLOCATION_KEY = "初回配分"
 ADDED_WIS_KEY = "追加WI"
+TRANSFERRED_FROM_KEY = "移管元レーン"
 
 
 def correction_coefficients(correction: dict[str, object]) -> tuple[float, float]:

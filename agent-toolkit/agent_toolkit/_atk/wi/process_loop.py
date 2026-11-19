@@ -75,8 +75,8 @@ class RepositoryResult(pydantic.BaseModel):
 
 
 def _report(event: str, ownership: _ownership.Ownership, detail: str) -> None:
-    _log.append(event, target_repo=ownership.repo_id, session_id=ownership.session_id, detail=detail)
-    print(f"{ownership.repo_id}: {detail}", flush=True)
+    _log.append(event, target_repo=ownership.key, session_id=ownership.session_id, detail=detail)
+    print(f"{ownership.key}: {detail}", flush=True)
 
 
 def _finish_repository(ownership: _ownership.Ownership, *, completed: bool) -> None:
@@ -91,7 +91,7 @@ def _finish_repository(ownership: _ownership.Ownership, *, completed: bool) -> N
 
 def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.LaunchInput | None) -> None:
     """進捗なしで終わった担当の起動入力を記録し、同じ入力の間は次の反復の判定がその対象の起動を見送る。"""
-    repo_id = snapshot.repository.repo_id
+    repo_id = snapshot.repository.key
     try:
         current = _listing.configured_repo_snapshot(snapshot.private_notes, (snapshot.repository,))[0]
         _gate.record_no_progress(
@@ -108,6 +108,8 @@ def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.Laun
 
 def _read_results(path: pathlib.Path, owners: dict[str, _ownership.Ownership]) -> dict[str, RepositoryResult]:
     """担当が保存した対象別の返却を検証し、欠落を成功として扱わない。
+
+    `owners`と返却のキーは処理対象の識別子（集合JSONの`target`）で、系統の無い対象では`target_repo`と同じになる。
 
     今回の対象外の記載（明示resumeで再利用した会話に残る前巡回の対象など）は記録して除き、
     今回の対象の検収を続ける。対象外の記載はどの所有の判定にも使われないため、常駐全体を止める理由にしない。
@@ -133,7 +135,7 @@ def _read_results(path: pathlib.Path, owners: dict[str, _ownership.Ownership]) -
         if not isinstance(record, dict) or record.get("status") not in ("completed", "incomplete", "blocked", "pending"):
             raise ValueError(f"統括結果の対象別状態が不正: {repo_id}")
         result = RepositoryResult.model_validate(record)
-        if any(ticket.target_repo != repo_id for ticket in result.independent_submissions):
+        if any(ticket.target_repo != owners[repo_id].repo_id for ticket in result.independent_submissions):
             raise ValueError(f"統括結果のindependent_submissionsの対象が不一致: {repo_id}")
         records[repo_id] = result
     return records
@@ -163,7 +165,7 @@ def _writers_stopped(
             if state is _registry.Resolution.UNREADABLE:
                 path = _registry.registry_directory() / f"{identifier}.json"
                 _next_action.report(
-                    f"{owner.repo_id}: 担当登録を読めないため回収を保留した: {path.resolve()}",
+                    f"{owner.key}: 担当登録を読めないため回収を保留した: {path.resolve()}",
                     next_action=(
                         f"`atk agents show {identifier}`で担当が終了済みかを確かめ、終了済みと確かめた後に"
                         f"{path.resolve()}を退避または削除する（次の反復で回収を再判定する）"
@@ -180,8 +182,8 @@ def _recover_completed(snapshot: _listing.RepositorySnapshot, owner: _ownership.
         return None
     data = json.loads(pathlib.Path(previous_manifest).read_text(encoding="utf-8"))
     result_path = pathlib.Path(data["result_file"])
-    returned = _read_results(result_path, {item["target_repo"]: owner for item in data["repositories"]})
-    record = returned.get(owner.repo_id)
+    returned = _read_results(result_path, {item.get("target", item["target_repo"]): owner for item in data["repositories"]})
+    record = returned.get(owner.key)
     if record is None or record.status is not RepositoryStatus.COMPLETED:
         return None
     if any(_completion.remaining_work(snapshot, owner, set())[0].values()):
@@ -212,7 +214,7 @@ def _run_coordinator(
     owners: dict[str, _ownership.Ownership] = {}
     targets: dict[str, dict[str, Any]] = {}
     results: dict[str, RepositoryResult] = {}
-    by_repo = {snapshot.repository.repo_id: snapshot for snapshot in snapshots}
+    by_repo = {snapshot.repository.key: snapshot for snapshot in snapshots}
     cwd = pathlib.Path.cwd().resolve()
     env = _env.child_env()
     requested = getattr(args, "resume", None)
@@ -220,9 +222,7 @@ def _run_coordinator(
     resume = requested
     if resume is None and getattr(args, "auto_resume", False):
         previous = {
-            value
-            for snapshot in snapshots
-            if (value := _ownership.coordinator_session(snapshot.repository.repo_id)) is not None
+            value for snapshot in snapshots if (value := _ownership.coordinator_session(snapshot.repository.key)) is not None
         }
         resume = next(iter(previous)) if len(previous) == 1 else None
     directory = _ownership.ownership_directory() / "rounds"
@@ -234,20 +234,21 @@ def _run_coordinator(
             repository = snapshot.repository
             if lookup:
                 continue
+            key = repository.key
             try:
-                owner = _ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
+                owner = _ownership.try_acquire(
+                    repository.repo_id, worktree=repository.worktree, mode="coordinator", branch=repository.branch
+                )
             except _ownership.UnreadableOwnershipError as error:
                 _next_action.report(error.reason, next_action=error.next_action)
-                _log.append(
-                    "ownership_unreadable", target_repo=repository.repo_id, detail=error.reason, next_action=error.next_action
-                )
-                results[repository.repo_id] = RepositoryResult(status=RepositoryStatus.PREPARE_FAILED)
+                _log.append("ownership_unreadable", target_repo=key, detail=error.reason, next_action=error.next_action)
+                results[key] = RepositoryResult(status=RepositoryStatus.PREPARE_FAILED)
                 continue
             if owner is None:
-                results[repository.repo_id] = RepositoryResult(status=RepositoryStatus.OWNER_WAIT)
-                print(f"{repository.repo_id}: 別のprocess-loopが処理中です。所有の解放を待ちます。", flush=True)
+                results[key] = RepositoryResult(status=RepositoryStatus.OWNER_WAIT)
+                print(f"{key}: 別のprocess-loopが処理中です。所有の解放を待ちます。", flush=True)
                 continue
-            owners[repository.repo_id] = owner
+            owners[key] = owner
             previous_worktree = (owner.previous or {}).get("prepared_worktree")
             resuming = isinstance(previous_worktree, str)
             prepared = _worktree.prepare_session_target(
@@ -256,11 +257,12 @@ def _run_coordinator(
                 "",
                 worktree_name=args.worktree,
                 resume_pending=resuming,
+                branch=repository.branch,
             )
             if prepared is None:
                 _ownership.release(owner, completed=False)
-                owners.pop(repository.repo_id)
-                results[repository.repo_id] = RepositoryResult(status=RepositoryStatus.PREPARE_FAILED)
+                owners.pop(key)
+                results[key] = RepositoryResult(status=RepositoryStatus.PREPARE_FAILED)
                 continue
             target = _session.repository_input(
                 snapshot,
@@ -270,7 +272,7 @@ def _run_coordinator(
             )
             if resume is not None and (owner.previous or {}).get("session_id") == resume:
                 owner = _ownership.update_session(owner, resume)
-                owners[repository.repo_id] = owner
+                owners[key] = owner
                 recovered = _recover_completed(snapshot, owner) if getattr(args, "resume_request_id", None) is None else None
                 if recovered is not None:
                     saved_result = manifest.with_name(f"{manifest.stem}.{owner.token}.result.json")
@@ -278,18 +280,18 @@ def _run_coordinator(
                         update={"previous_result_path": recovered.payload()["result_path"], "result_path": str(saved_result)}
                     )
                     atomic_write(saved_result, json.dumps(recovered.payload(), ensure_ascii=False) + "\n")
-                    results[repository.repo_id] = recovered
-                    _gate.clear(repository.repo_id)
+                    results[key] = recovered
+                    _gate.clear(key)
                     _finish_repository(owner, completed=True)
-                    owners.pop(repository.repo_id)
+                    owners.pop(key)
                     continue
             if "launch_items" not in target:
-                start = (launch_inputs or {}).get(repository.repo_id) or _gate.repository_input(snapshot, None)
+                start = (launch_inputs or {}).get(key) or _gate.repository_input(snapshot, None)
                 target["launch_items"] = sorted(start.items)
                 target["launch_alerts"] = sorted(start.alerts) if start.alerts is not None else None
             _ownership.update_prepared(owner, prepared[0], manifest)
-            targets[repository.repo_id] = target
-            _gate.clear(repository.repo_id)
+            targets[key] = target
+            _gate.clear(key)
         if not owners and not lookup:
             return results
         if len(targets) == 1 and not lookup:
@@ -363,7 +365,12 @@ def _run_coordinator(
                     if repo not in related:
                         results[repo] = RepositoryResult(status=RepositoryStatus.PENDING, reservation_excluded=True)
                         continue
-                    owner = _ownership.try_acquire(repo, worktree=snapshot.repository.worktree, mode="coordinator")
+                    owner = _ownership.try_acquire(
+                        snapshot.repository.repo_id,
+                        worktree=snapshot.repository.worktree,
+                        mode="coordinator",
+                        branch=snapshot.repository.branch,
+                    )
                     if owner is None:
                         raise ValueError("選択した対象は既に実行中のため再開できない。既存の実行を終了まで待つ")
                     owners[repo] = owner
@@ -375,10 +382,11 @@ def _run_coordinator(
                         prior = (owner.previous or {}).get("prepared_worktree")
                         prepared = _worktree.prepare_session_target(
                             pathlib.Path(prior) if isinstance(prior, str) else by_repo[repo].repository.worktree,
-                            repo,
+                            by_repo[repo].repository.repo_id,
                             "",
                             worktree_name=args.worktree,
                             resume_pending=isinstance(prior, str),
+                            branch=by_repo[repo].repository.branch,
                         )
                         if prepared is None:
                             raise ValueError("選択した会話の作業ツリーを準備できない")

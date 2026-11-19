@@ -353,21 +353,34 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell実行体が必要")
 @pytest.mark.parametrize(
-    "blocked,upgrade_exit,preview,inventory_error,missing,report_failure",
+    "blocked,upgrade_exit,preview,inventory_error,missing,report_failure,up_to_date",
     [
-        (False, 0, False, False, False, False),
-        (False, 17, False, False, False, False),
-        (True, 0, False, False, False, False),
-        (False, 17, True, False, False, False),
-        (False, 0, False, True, False, False),
-        (False, 17, False, False, True, False),
-        (False, 17, False, False, False, True),
+        (False, 0, False, False, False, False, False),
+        (False, 17, False, False, False, False, False),
+        (True, 0, False, False, False, False, False),
+        (False, 17, True, False, False, False, False),
+        (False, 0, False, True, False, False, False),
+        (False, 17, False, False, True, False, False),
+        (False, 17, False, False, False, True, False),
+        (True, 0, False, False, False, False, True),
+        (False, 0, False, False, False, False, True),
     ],
 )
 def test_windows_python_bootstrap_process_ownership(
-    tmp_path: Path, blocked: bool, upgrade_exit: int, preview: bool, inventory_error: bool, missing: bool, report_failure: bool
+    tmp_path: Path,
+    blocked: bool,
+    upgrade_exit: int,
+    preview: bool,
+    inventory_error: bool,
+    missing: bool,
+    report_failure: bool,
+    up_to_date: bool,
 ) -> None:
-    """Windowsは実Job、POSIXは段APIのProcess代用を使い、停止・更新・復帰か見送りを実行する。"""
+    """Windowsは実Job、POSIXは段APIのProcess代用を使い、停止・更新・復帰か見送りを実行する。
+
+    再起動できないプロセスが使用中でも、最新のpatch版が導入済みなら見送りを失敗にしない。
+    keyは同じpatch版の新しいビルドを区別しないため、使用中でなければ導入済みの版によらず更新する。
+    """
     log = tmp_path / "calls"
     fake_uv = tmp_path / ("uv.exe" if os.name == "nt" else "uv")
     tool_python = tmp_path / "tools/pytools/Scripts/python.exe"
@@ -393,6 +406,12 @@ def test_windows_python_bootstrap_process_ownership(
         BOOTSTRAP_BINARY=str(fake_uv),
         UPDATE_DOTFILES_BOOTSTRAP_REPORT=str(tmp_path / "state/agent-toolkit/update-bootstrap-11-22.json"),
         PYTHON_BASE="C:\\appdata\\uv\\python",
+        PYTHON_DOWNLOADS='[{"key":"cpython-3.15.3-windows-x86_64-none"}]',
+        PYTHON_INSTALLED=(
+            '[{"key":"cpython-3.15.3-windows-x86_64-none"},{"key":"cpython-3.15.2-windows-x86_64-none"}]'
+            if up_to_date
+            else '[{"key":"cpython-3.15.2-windows-x86_64-none"},{"key":"cpython-3.15.0-windows-x86_64-none"}]'
+        ),
     )
     if report_failure:
         environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"] = str(tmp_path)
@@ -417,6 +436,10 @@ public class Program {
         }
         if (args[0] == "tool" && args[1] == "dir") Console.WriteLine(Environment.GetEnvironmentVariable("TOOL_BASE"));
         if (args[0] == "python" && args[1] == "dir") Console.WriteLine(Environment.GetEnvironmentVariable("PYTHON_BASE"));
+        if (args[0] == "python" && args[1] == "list") {
+            string list = Array.IndexOf(args, "--only-downloads") >= 0 ? "PYTHON_DOWNLOADS" : "PYTHON_INSTALLED";
+            Console.WriteLine(Environment.GetEnvironmentVariable(list));
+        }
         if (args[0] == "python" && args[1] == "find") {
             Console.WriteLine(Environment.GetEnvironmentVariable("PREVIEW_PATH"));
             return int.Parse(Environment.GetEnvironmentVariable("FIND_EXIT"));
@@ -447,6 +470,10 @@ public class Program {
             'if [[ "$1 $2" == "python install" ]]; then printf "upgrade\\n" >> "$BOOTSTRAP_LOG"; exit "$UPGRADE_EXIT"; fi\n'
             'if [[ "$1 $2" == "tool dir" ]]; then printf "%s\\n" "$TOOL_BASE"; fi\n'
             'if [[ "$1 $2" == "python dir" ]]; then printf "%s\\n" "$PYTHON_BASE"; fi\n'
+            'if [[ "$1 $2" == "python list" ]]; then\n'
+            '  list="$PYTHON_INSTALLED"; [[ " $* " == *" --only-downloads "* ]] && list="$PYTHON_DOWNLOADS"\n'
+            '  printf "%s\\n" "$list"\n'
+            "fi\n"
             'if [[ "$1 $2" == "python find" ]]; then printf "%s\\n" "$PREVIEW_PATH"; exit "$FIND_EXIT"; fi\n'
             "exit 0\n",
             encoding="utf-8",
@@ -525,6 +552,10 @@ public sealed class UpdateStageJob : IDisposable {
             timeout=30,
         )
 
+    deferred = tmp_path / "state/agent-toolkit/python-upgrade-deferred.txt"
+    if up_to_date:
+        deferred.parent.mkdir(parents=True)
+        deferred.write_text("9", encoding="utf-8")
     result = invoke()
     assert result.returncode == (1 if missing else 0), result.stderr + result.stdout
     if report_failure:
@@ -532,18 +563,21 @@ public sealed class UpdateStageJob : IDisposable {
         assert "書込権限を修復してupdate-dotfilesを再実行" in result.stderr
     if not missing and not report_failure:
         payload = Path(environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"])
-        if blocked or upgrade_exit or inventory_error:
+        if (blocked and not up_to_date) or upgrade_exit or inventory_error:
             failures = json.loads(payload.read_text(encoding="utf-8-sig"))
             assert isinstance(failures, list)
             assert any(item["title"] == "管理Pythonの更新" for item in failures)
         else:
             assert not payload.exists(), result.stdout + result.stderr + payload.read_text(encoding="utf-8-sig")
-    if blocked:
+    if blocked and up_to_date:
+        assert not log.exists()
+        assert "見送り" not in result.stderr, result.stderr
+        assert not deferred.exists()
+    elif blocked:
         assert not log.exists()
         assert "連続1回" in result.stderr
         assert "PID=101" in result.stderr
         assert "連続2回" in invoke().stderr
-        deferred = tmp_path / "state/agent-toolkit/python-upgrade-deferred.txt"
         assert deferred.read_text(encoding="utf-8-sig").strip() == "2"
         driver.write_text(
             driver.read_text(encoding="utf-8-sig").replace("arbitrary-python", "pytools.media_remote"), encoding="utf-8-sig"

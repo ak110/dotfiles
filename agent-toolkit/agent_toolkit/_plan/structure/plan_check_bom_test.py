@@ -29,7 +29,7 @@ def test_public_plan_check_origin_notices_are_equal_with_bom(
     (repo / "README.md").write_text("test\n", encoding="utf-8")
     git_repository.commit_all(repo, "base")
     plan = repo / "plan.md"
-    content = plan_fixture.current_plan(repo=repo, related_wi=plan_fixture.WI_FILES)
+    content = plan_fixture.eight_section_plan(repo=repo, related_wi=plan_fixture.WI_FILES)
     name = plan_fixture.WI_FILES[0][0]
     rows = (
         f"| 要求された結果を維持する | 人間由来のWI ({name}) | 採用 | 原文の結果要求を採用する。 |\n"

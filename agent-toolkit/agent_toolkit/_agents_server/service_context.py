@@ -16,7 +16,15 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from mcp.types import CallToolRequestParams
 
-from agent_toolkit._agents_server import effort_control, service_io, service_turns, shared_roots, state, status_file
+from agent_toolkit._agents_server import (
+    effort_control,
+    service_io,
+    service_transport,
+    service_turns,
+    shared_roots,
+    state,
+    status_file,
+)
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._agents_server.mcp_tools import _manager_lifespan
@@ -50,6 +58,41 @@ class ServiceManagers:
         self._monitor_task: asyncio.Task[None] | None = None
         self._projections = projections
         self.before_controls: Callable[[], Awaitable[bool]] | None = None
+        # 同じ親会話のうち別世代がまだ所有するsessionを一覧へ加える照会。管理サービスの調停役が設定する。
+        self.foreign_sessions: Callable[[str, bool], Awaitable[dict[str, list]]] | None = None
+
+    async def other_generation_sessions(self, manager: object, *, include_terminated: bool) -> dict[str, list]:
+        """照会したmanagerの親会話について、別世代が所有するsessionと応答しなかった世代を返す。"""
+        parent = next((key for key, item in self.conversations.items() if item.manager is manager), None)
+        collect = self.foreign_sessions
+        if parent is None or collect is None:
+            return {"sessions": [], "unreachable": []}
+        # Pylintは初期値Noneだけで推論するが、調停役が型付きcallbackを登録している。
+        return await collect(parent, include_terminated)  # pylint: disable=not-callable
+
+    async def generations(self) -> list[dict[str, object]]:
+        """照会した世代と、同じ管理領域で退出していない全世代を区別して返す。
+
+        更新中の正常な世代の併存と、旧世代が退出できずに残る状態を、照会の応答から区別できるようにする。
+        強制終了・異常終了した世代は退出を記録できないため、記録したプロセスが生存していない世代も除く。
+        処置した世代が一覧から消えることを、終了の観測に使えるようにするためである。
+        """
+        if self._projections is None:
+            return []
+        queried = self._projections.generation
+        entries = await run_file_operation(self._projections.registry.generations)
+        current = await run_file_operation(self._projections.registry.current)
+        return [
+            {
+                "generation": name,
+                "epoch": entry.get("epoch"),
+                "server_instance": entry.get("server_instance"),
+                "current": current is not None and current.get("generation") == name,
+                "queried": name == queried,
+            }
+            for name, entry in sorted(entries.items(), key=lambda item: item[1].get("epoch", 0))
+            if not entry.get("retired") and ("process" not in entry or service_transport.process_alive(entry["process"]))
+        ]
 
     async def __aenter__(self) -> ServiceManagers:
         self._monitor_task = asyncio.create_task(self._monitor())
@@ -86,6 +129,9 @@ class ServiceManagers:
     async def _monitor(self) -> None:
         """PID宛ての要求を一度だけ読み、対象会話の環境で操作する。"""
         next_heartbeat = 0.0
+        # 毎巡（1秒）同じ例外の全文を記録するとログが埋まるため、失敗の種類が変わった時と回復した時だけ記録する。
+        migration_failure: tuple[str, str] | None = None
+        repeated_failures = 0
         while True:
             try:
                 owners = {
@@ -127,11 +173,26 @@ class ServiceManagers:
                 # Pylintは初期値Noneだけで推論するが、型付きcallbackを同じloopで登録している。
                 try:
                     allow_resume = before_controls is None or await before_controls()  # pylint: disable=not-callable
-                except Exception:
+                except Exception as error:
                     # 世代移行の1件の失敗で全会話の状態保存まで毎巡止めない（2026-11-17に旧世代の
                     # 状態がrunningのまま固定された）。再開は移行の成否が確定するまで見送る。
-                    _LOG.exception("世代移行の確認が失敗しました。自動再開を見送り、状態保存は続けます")
                     allow_resume = False
+                    failure = (type(error).__qualname__, str(error))
+                    if failure == migration_failure:
+                        repeated_failures += 1
+                    else:
+                        migration_failure, repeated_failures = failure, 1
+                        _LOG.exception(
+                            "世代移行の確認が失敗しました。自動再開を見送り、状態保存は続けます。"
+                            "次の巡回（約1秒後）で自動的に再確認し、同じ失敗が続く間はこの記録を繰り返さず、回復時に失敗の回数を記録します。"
+                            "次の操作: 回復の記録が続かない場合、旧世代の会話を新世代へ移せず自動再開も止まったままになる。"
+                            "agents_serverの`list`が返す`server_generations`で退出していない世代を確かめ、"
+                            "この記録の例外（状態の符号化・移譲先との通信）を直してからサーバーを更新する"
+                        )
+                else:
+                    if migration_failure is not None:
+                        _LOG.info("世代移行の確認が回復しました（連続失敗%d回）。自動再開を再開します", repeated_failures)
+                        migration_failure, repeated_failures = None, 0
                 for conversation in tuple(self.conversations.values()):
                     with self._bound(conversation):
                         if allow_resume:

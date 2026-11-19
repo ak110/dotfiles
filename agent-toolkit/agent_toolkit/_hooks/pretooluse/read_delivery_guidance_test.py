@@ -474,7 +474,7 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         ("選定", root / "skills/process-wi/references/selection-procedure.md", ""),
         ("計画", root / "skills/write-plan/SKILL.md", ""),
         ("共通工程", root / "share/single-lane-execution.md", ""),
-        ("確認", root / "skills/user-confirmation-and-report/SKILL.md", ""),
+        ("確認", root / "skills/atk-mode/playbooks/confirmation.md", ""),
         ("実装と実行レビュー", root / "share/exec-review.parent.md", ""),
         ("要件検収", root / "share/verification-evidence.md", ""),
         ("レビュー収束", root / "share/review-loop-coordination-rounds.md", ""),

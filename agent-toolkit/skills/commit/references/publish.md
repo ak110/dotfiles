@@ -10,13 +10,13 @@ pushの実行およびCIの監視手順については、`references/push-and-ci
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-states.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/states-and-dependencies-approvals.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` |
 
 ## 公開範囲
 
-協調モードにおける公開範囲の選択肢は、`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`「公開範囲の確認」で定義されている。
+協調モードにおける公開範囲の選択肢は、`agent-toolkit:atk-mode/references/publish-scope.md`「公開範囲の確認」で定義されている。
 ユーザーからの依頼でプルリクエスト作成、リリース作成、タグ付けなどが明示的に求められている場合は、それらをプロジェクト固有の公開後操作として扱う。
 
 | 範囲 | 実施する工程 |
@@ -44,7 +44,7 @@ CI未判定なら「公開工程の続行不能からの再開」へ進む。
 - ユーザーが明示的に指定した区分（MAJOR、MINOR、PATCH）を最優先とする。
 - MAJORバージョンの更新は、ユーザーからの明示的な指示がある場合に限る。
   これは後方互換性の破壊を外部に宣言する操作であり、承認対象である。
-  承認の基準は`../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「認可を要する操作」に従う。
+  承認の基準は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」に従う。
 - 3数値のセマンティックバージョニング（SemVer）形式でなければ、プロジェクトの対応表かユーザーの明示指示に従う。
   手がかりがなければ版数を変えず、判定不能の根拠を報告する。
 
@@ -71,7 +71,7 @@ push前のチェックやローカルの全体検証はログ出力が膨大に�
 そのため、`agent-toolkit/share/rules/common/02-agent-operations.md`「ツール・コマンド運用」に定める分離実行（`agents_server`の`start`による`shell`実行など）を用いて行う。
 `shell`実行時には、対象リポジトリを`cwd`に、実行コマンドをそのまま`command`に、managed-temp内の一時出力先を`summary_policy`に渡す。
 公開担当は保存出力の実在・内容・終了コード0を検収する。
-警告メッセージの内容と影響は`agent-basics:bugfix`本体の初動で判断し、設定の未適用や処理の未完了を示す警告は作業を続けられない原因として対処する。
+警告メッセージの内容と影響は`agent-basics:bugfix`の5つの問いで判断し、設定の未適用や処理の未完了を示す警告は作業を続けられない原因として対処する。
 チェックや検証の失敗は、公開担当が`agent-basics:bugfix`で原因を特定し、認可範囲内で直す。
 `agent-toolkit:process-wi`の完了担当者によるCI修正の手順は、同スキルの`references/termination-ci-failure.md`「検証またはCIの失敗」の定めに従う。
 
@@ -97,6 +97,18 @@ push・CI確認後は`references/push-and-ci.md`の「公開状態の4項目」�
 CIの成功を前提条件とする操作は、対象コミットに対するCIが正常に通過したことを確認してから実行する。
 他のエージェントへすでに分担されている作業工程は、その担当エージェントに任せる。
 
+取り込み元の変更を含めてリリースするため、`atk config repos list`の`merge_from`に取り込む側として登録した系統（継続して作業が入るoriginのブランチ）では、リリースの操作に着手する前に取り込み元の系統に未取り込みのcommitが無いことを確かめる。
+リリースの操作は、タグ付け、リリースの作成、リリース用ブランチへのマージ、配布を指す。
+
+```sh
+git -C <対象リポジトリの絶対パス> fetch origin
+git -C <対象リポジトリの絶対パス> log --oneline origin/<取り込む側>..origin/<取り込み元>
+```
+
+出力が1行以上なら未取り込みがある。
+その場合は取り込み元をマージし、競合の解消、検証、取り込む側の系統のCIの成功を確かめてからリリースへ進む。
+競合でどちらの系統の挙動を残すかが要求と現物から決まらない場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってユーザーへ確認する。
+
 公開範囲が「既存の判断基準どおり」に設定された協調モードや、公開工程まで自動で進める自律モードでは、CIが成功したあとにプロジェクト規範に沿ったリリース判定処理を起動する。
 リリースの認可状態やバージョンの種類は、プロジェクト規範と本書の「版数と生成物」に基づいて決定する。
 実施した公開範囲、CI結果、公開後操作の内容、およびリリース判定の結果は、最終的な完了報告に含める。
@@ -113,20 +125,20 @@ CIの成功を前提条件とする操作は、対象コミットに対するCI�
    公開後操作だけが未完了なら確認済みCI結果を返す。
    baselineは既存保存先を案内し、未作成なら理由（CI定義なし等）とともに記す。
    成功済みCIの報告だけを目的にbaselineを新規作成しない。
-   公開を担当するメインエージェントは、`agent-toolkit:user-confirmation-and-report`に従ってユーザー確認の要否と手段を判断し、ユーザー自身の手作業による資格情報の提供や操作、追加の認可が必要な場合にのみ確認を求める。
+   公開を担当するメインエージェントは、`agent-toolkit:atk-mode/playbooks/confirmation.md`に従ってユーザー確認の要否と手段を判断し、ユーザー自身の手作業による資格情報の提供や操作、追加の認可が必要な場合にのみ確認を求める。
    ターンやセッションが終了したあとも作業が残る場合は、同スキルの「手段の選択」に従って個別UWIを作成・保存し、すでに同一内容の確認がある場合はそれを再利用する。
    UWIには、対象の公開先、コミット、完了済みの工程、必要な操作、返却してほしい結果を記載する。
    なお、パスワードやトークンなどの資格情報そのものの書き写しをユーザーに求めない。
 
-2. ユーザーからの回答を必要とする未完了の元タスクのみを、UWIの保存完了後に`../../wi-standards/references/wi-standards-states.md`「状態と依存」の承認型UWIと元項目の規定に従ってそのUWIへの依存で待たせる。
+2. ユーザーからの回答を必要とする未完了の元タスクのみを、UWIの保存完了後に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」の承認型UWIと元項目の規定に従ってそのUWIへの依存で待たせる。
    完了済みの実装タスクの状態はそのまま維持する。
    残りの公開工程に関する再開記録は作業計画の進捗ログに保存し、計画ファイルがない場合は、公開工程を扱う未完了AWIの本文中に記録する。
-   該当するAWIがない場合は、`agent-toolkit:wi-standards`の通常の投入手順で新規作成し、個別UWIと関連付ける。
+   該当するAWIがない場合は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の手順で新規作成し、個別UWIと関連付ける。
    引き継ぎ記録は同一セッション内での受け渡しに用い、次のセッションが参照する再開記録と必要な証拠データは、作成時点で計画ファイルまたはAWI本文に保存しておく。
    再開記録には、公開先、コミット、参照（ref）、完了済みの工程、正常終了した公開後操作、CI結果（未判定の場合はその旨）、失敗した操作とその対象、ベースラインファイル・保存出力・UWIの配置場所、不足している前提条件、および再開すべき作業位置を明記する。
-   ユーザーから回答が得られたあとは、`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`に従う。
+   ユーザーから回答が得られたあとは、`agent-toolkit:atk-mode/references/answer-transitions.md`に従う。
    元の担当sessionがあれば回答を届け、なければ再開記録から未完了工程だけを再開する。
    すでに成功しているバージョン更新、push、公開後操作を重複して実行しない。
-   process-wiにおける元項目の取り込み手順は、`../../wi-standards/references/states-and-dependencies-approvals.md`「回答済みUWIの取り込み」に従う。
+   process-wiにおける元項目の取り込み手順は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「回答済みUWIの取り込み」に従う。
    独立した有効な証拠によってCI定義が存在しないことが確定できた場合は、「CI定義なし」を正常な完了状態とする通常のフローに復帰する。
    一方、ローカル全体検証の失敗は独立した未完了事項として扱い、必要な是正をする。

@@ -122,7 +122,7 @@ def test_process_closes_both_streams_after_close_failure(
     process.poll.return_value = None
     getattr(process, failing_stream).close.side_effect = OSError("ストリーム回収失敗")
     monkeypatch.setattr(subprocess, "Popen", mock.Mock(return_value=process))
-    monkeypatch.setattr(process_tree, "collect_descendants", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(process_tree, "_retained_root", lambda *_args, **_kwargs: [])
     stop = mock.Mock(return_value=None, side_effect=RuntimeError("停止失敗") if stop_failure else None)
     monkeypatch.setattr(process_tree, "stop_owned_process", stop)
 

@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
+| `adopt`・`reject`のメモを書く直前 | `../skills/atk-mode/playbooks/wi-drafting.md`、`../skills/atk-mode/references/states-and-dependencies.md` |
 
 ## 計画最終化
 
@@ -56,11 +56,11 @@
 
 計画または引き継ぎ記録で確定した採否と、受け取った終了区分を適用する。
 
-- メモの先頭の1文は、`../skills/wi-standards/references/states-and-dependencies-completion.md`「終了」の基準（用語は同スキルの冒頭に定める基準）に従って記述する。
-  `adopt`の場合は、同スキルの`../skills/wi-standards/references/awi-body-content.md`「節の構成と分担」に定めるH1直下の変更内容を、実際に実施した結果に合わせて記述する。
+- メモの先頭の1文は、`../skills/atk-mode/references/states-and-dependencies.md`「終了」の基準（用語は`../skills/atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」）に従って記述する。
+  `adopt`の場合は、`../skills/atk-mode/references/awi-body.md`「節の構成と分担」に定めるH1直下の変更内容を、実際に実施した結果に合わせて記述する。
   `移管`行を持つ計画のAWIを`adopt`するときは、ユーザーが実施範囲を確認できるよう、後続へ分けた要求単位と移管先の登録済みWIのファイル名をメモへ書き、実施した範囲と分けた範囲を区別する。
 - 採用および充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終了する。
-  adoptにおけるコミットの紐付けは、`../skills/wi-standards/references/wi-standards-states.md`「状態と依存」の遷移表に従って行い、開始時や統合時のHEADを一律に機械的複製しないようにする。
+  adoptにおけるコミットの紐付けは、`../skills/atk-mode/references/states-and-dependencies.md`「状態と依存」の遷移表に従って行い、開始時や統合時のHEADを一律に機械的複製しないようにする。
   複数のコミットが存在する場合は`--commit <OID>`を繰り返し指定する。
   コミットの説明などの補足メモは`--note-file`で記録する。
 - 対応コミットは、`agent-toolkit:commit`の`references/commit-wi-records.md`「WI実装commitの対応」に定める取得手順に従い、計画または引き継ぎ記録と同一のstemを持つ対応記録ファイルから取得し、`--worktree`に統合後のworktreeを渡す。

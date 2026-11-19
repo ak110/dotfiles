@@ -3,12 +3,14 @@
 
 # pylint: disable=protected-access
 
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from pytools._internal import setup_mise as _setup_mise
+from pytools._internal import setup_mise_tools
 from pytools._internal.setup_mise_test_helpers import (
     _EXPECTED_ENV_OVERRIDES,
     _EXPECTED_INSTALL_ENV_OVERRIDES,
@@ -414,6 +416,14 @@ def test_install_failure_is_skipped_warning_with_separate_next_action(
         assert progress not in record.getMessage()
 
 
+def _link_directory(link: Path, target: Path) -> None:
+    """既存の接続を、Windowsでは特権の要らないジャンクションで、他ではシンボリックリンクで用意する。"""
+    if os.name == "nt":
+        subprocess.run(["cmd", "/d", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True, timeout=10)
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
 class TestTypeScriptLspConnection:
     """通常更新が独立prefixを接続し、独自成果を保持する。"""
 
@@ -437,19 +447,20 @@ class TestTypeScriptLspConnection:
         )
         return server / "node_modules" / "typescript", source
 
+    @pytest.mark.windows
     def test_run_connects_and_repeats_without_changing_link(
         self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
         link, source = self._layout(tmp_path, mise_stub)
         _setup_mise.run()
-        assert link.is_symlink()
-        assert link.readlink() == source
+        assert os.path.samefile(link, source)
         before = link.lstat()
         _setup_mise.run()
         assert link.lstat() == before
         assert (link / "lib" / "tsserver.js").is_file()
 
+    @pytest.mark.windows
     @pytest.mark.parametrize("kind", ["directory", "custom-link", "old-link"])
     def test_run_preserves_custom_entries_and_updates_old_managed_link(
         self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, kind: str
@@ -463,17 +474,89 @@ class TestTypeScriptLspConnection:
         else:
             target = old if kind == "old-link" else tmp_path / "custom"
             target.mkdir(parents=True)
-            link.symlink_to(target, target_is_directory=True)
+            _link_directory(link, target)
             marker = target / "custom.txt"
         marker.write_text("keep", encoding="utf-8")
         _setup_mise.run()
         assert marker.read_text(encoding="utf-8") == "keep"
         if kind == "old-link":
-            assert link.readlink() == source
+            assert os.path.samefile(link, source)
         elif kind == "directory":
             assert not link.is_symlink()
         else:
-            assert link.readlink() == tmp_path / "custom"
+            assert os.path.samefile(link, tmp_path / "custom")
+
+    @pytest.mark.windows
+    @pytest.mark.skipif(os.name != "nt", reason="特権の要らないジャンクションでの接続をWindows実機で確かめる")
+    @pytest.mark.parametrize("old_kind", ["junction", "symlink"])
+    def test_windows_moves_old_link_to_junction_without_symlink_privilege(
+        self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, old_kind: str
+    ) -> None:
+        """シンボリックリンクの作成特権が無くても、旧版への接続をジャンクションで現行版へ移す。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
+        link, source = self._layout(tmp_path, mise_stub)
+        old = source.parent.parent.parent / "6.0.2" / "node_modules" / "typescript"
+        old.mkdir(parents=True)
+        if old_kind == "junction":
+            _link_directory(link, old)
+        else:
+            try:
+                link.symlink_to(old, target_is_directory=True)
+            except OSError as error:
+                if getattr(error, "winerror", None) != 1314:
+                    raise
+                pytest.skip("旧版を指すシンボリックリンクを用意する特権が無い")
+
+        def deny_symlink(*_args: object, **_kwargs: object) -> None:
+            # 管理者として実行しても、開発者モードでも管理者でもないユーザーと同じ拒否を起こす。
+            raise OSError(None, "クライアントは要求された特権を保有していません。", None, 1314)
+
+        monkeypatch.setattr(os, "symlink", deny_symlink)
+        assert setup_mise_tools.ensure_tools_installed(Path("mise")) is True
+        assert link.is_junction()
+        assert os.path.samefile(link, source)
+        assert old.is_dir()
+        connected = link.lstat().st_ino
+        assert setup_mise_tools.ensure_tools_installed(Path("mise")) is True
+        assert link.lstat().st_ino == connected
+
+    @pytest.mark.skipif(os.name == "nt", reason="Windowsの存在判定は差し替えた`os.stat`を経由しない")
+    @pytest.mark.parametrize("state", ["unconnected", "connected"])
+    def test_connects_when_os_refuses_to_traverse_aube_link(
+        self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, state: str
+    ) -> None:
+        """aubeが作る`node_modules/typescript`のリンクをOSが通過させなくても、接続を完了する。
+
+        2026-11-19、sthenoのSSH配下の`update-dotfiles`で、RedirectionGuardが非管理者の作ったジャンクションの通過を
+        WinError 448で拒否し、接続済みでも「tsserver.jsが見つからない」と報告した。
+        """
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
+        link, source = self._layout(tmp_path, mise_stub)
+        package = source.parent / ".mise" / "typescript@6.0.3" / "node_modules" / "typescript"
+        package.parent.mkdir(parents=True)
+        source.rename(package)
+        source.symlink_to(Path(".mise", "typescript@6.0.3", "node_modules", "typescript"), target_is_directory=True)
+        if state == "connected":
+            link.symlink_to(source, target_is_directory=True)
+        before = link.lstat() if state == "connected" else None
+        stat = os.stat
+
+        def refuse_traversal(
+            path: int | str | os.PathLike[str], *, dir_fd: int | None = None, follow_symlinks: bool = True
+        ) -> os.stat_result:
+            if follow_symlinks and not isinstance(path, int):
+                candidate = Path(path)
+                if candidate == source or source in candidate.parents:
+                    raise OSError(None, "信頼されていないマウントポイントが含まれているため、パスをスキャンできません。")
+            return stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+
+        with monkeypatch.context() as refused:
+            refused.setattr(os, "stat", refuse_traversal)
+            assert setup_mise_tools.ensure_tools_installed(Path("mise")) is True
+        assert link.readlink() == source
+        assert os.path.samefile(link, package)
+        if before is not None:
+            assert link.lstat() == before
 
     @pytest.mark.parametrize("mode", ["minimal", "failed-install"])
     def test_run_does_not_connect_when_install_is_not_eligible(

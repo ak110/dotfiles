@@ -23,13 +23,13 @@
 - 新設オプションを指定しない場合の動作によって個別設定が不要になるか
 
 上流吸収の十分条件は前記3点の比較結果とし、設定値の同一性だけでは満たさない。
-比較の結果として上流吸収を選ぶ場合は、`agent-toolkit:wi-standards`で上流リポジトリ宛のAWIを1件投入する。
+比較の結果として上流吸収を選ぶ場合は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の手順で上流リポジトリ宛のAWIを1件投入する。
 未投入の配布提案は取り下げ、適用済みの個別設定は別の削除対象として扱う。
 
 推奨ガイドまたは同期対象マトリクスが対象とするファイル群を更新した場合、
-同一セッション内でエージェントが`agent-toolkit:wi-standards`を起動し、
+同一セッション内でエージェントが`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の手順に従い、
 他プロジェクト向けの追従提案を各リポジトリのAWIとして投入する。
-複数リポジトリでは`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`に従う。
+複数リポジトリでは`agent-toolkit:atk-mode/references/cross-repository-submission.md`に従う。
 
 - 共通本文は同資料の代表AWIへ集約し、各追従提案には対象リポジトリ固有の変更内容と完成状態、代表AWIの正式名・target_repo・指定箇所を記す。
   更新元のリポジトリ名とコミットも関連情報として併記する
@@ -44,7 +44,7 @@
 `.pre-commit-config.yaml`・`.github/workflows/`配下はpyfltr配布の推奨ガイドに揃える。
 推奨ガイドは`~/pyfltr/docs/guide/recommended.md`と`~/pyfltr/docs/guide/recommended-nonpython.md`である。
 
-- lint違反への対応と推奨設定の緩和は、`agent-basics:writing-standards`の`agent-basics:writing-standards/references/implementation-time-checks.md`「lintと機械チェック」の原則に従う。
+- lint違反への対応と推奨設定の緩和は、`agent-basics:writing-standards`の`agent-basics:writing-standards/references/implementation-time.md`「lintと機械チェック」の原則に従う。
   設定の緩和（ruff・pylint・textlint等の設定ファイルへのignore追加、lint設定の弱体化）は根本原因の修正と行単位の無視で足りない場合に限る慎重な手段とする。
   推奨から逸脱する設定を導入する場合は、該当箇所に理由を述べたコメントを直接記述する
 - 推奨ガイド自体の改訂を要する場合の投入順は「追従作業と複数リポジトリ横断投入」節に従う

@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from pytools._internal import prune_installation
+
 ROOT = Path(__file__).resolve().parent
 
 
@@ -54,33 +56,38 @@ def test_install_entry_persists_and_transmits_mode(mode, shell, tmp_path, host_e
     assert (home / "observed-mode").read_text().strip() == mode
 
 
-@pytest.mark.parametrize("mode", ["full", "minimal"])
-@pytest.mark.parametrize("config_exists", [False, True])
-def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_path, host_environ):
+def _render_global_mise_tools(mode, home, host_environ):
+    """グローバルのmise設定テンプレートを隔離ホームで描画し、`[tools]`を返す。"""
     chezmoi = shutil.which("chezmoi")
     if chezmoi is None:
         pytest.skip("chezmoiが未導入")
-    if config_exists:
-        config = tmp_path / ".config/agent-toolkit/config.json"
-        config.parent.mkdir(parents=True)
-        config.write_text('{"review_model": "codex:terra/medium"}', encoding="utf-8")
     environment = {
         **host_environ(),
-        "HOME": str(tmp_path),
-        "XDG_CONFIG_HOME": str(tmp_path / ".config"),
+        "HOME": str(home),
+        "XDG_CONFIG_HOME": str(home / ".config"),
         "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE": mode,
     }
     result = subprocess.run(
         [chezmoi, "execute-template", "--file", str(ROOT / ".chezmoi-source/dot_config/mise/config.toml.tmpl")],
         env=environment,
-        cwd=tmp_path,
+        cwd=home,
         check=False,
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    tools = tomllib.loads(result.stdout)["tools"]
+    return tomllib.loads(result.stdout)["tools"]
+
+
+@pytest.mark.parametrize("mode", ["full", "minimal"])
+@pytest.mark.parametrize("config_exists", [False, True])
+def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_path, host_environ):
+    if config_exists:
+        config = tmp_path / ".config/agent-toolkit/config.json"
+        config.parent.mkdir(parents=True)
+        config.write_text('{"review_model": "codex:terra/medium"}', encoding="utf-8")
+    tools = _render_global_mise_tools(mode, tmp_path, host_environ)
     assert {"chezmoi", "fzf", "gh", "glab", "glow", "jq", "ripgrep"} == set(tools) - (
         {
             "dotnet",
@@ -111,3 +118,12 @@ def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_
     locked = tomllib.loads((ROOT / "mise.lock").read_text())["tools"]
     assert development <= project.keys()
     assert development <= locked.keys()
+
+
+def test_minimal_prune_covers_every_full_only_global_tool(tmp_path, host_environ):
+    """fullだけが導入するツールは、minimalへ切り替えたときの整理対象に含まれ、shimを残さない。"""
+    full = _render_global_mise_tools("full", tmp_path, host_environ)
+    minimal = _render_global_mise_tools("minimal", tmp_path, host_environ)
+    full_only = set(full) - set(minimal)
+    assert full_only
+    assert full_only <= prune_installation.FULL_TOOLS

@@ -13,7 +13,7 @@ AskUserQuestion / ExitPlanMode:
 
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
 - ユーザーが直接読む英語主体の質問本文・計画本文の書き直し要求 (block)
-- 確認の前に読む2資料（`agent-toolkit:user-confirmation-and-report`）を読まないままメインが呼んだ
+- 確認の前に読む資料（`agent-toolkit:atk-mode/playbooks/confirmation.md`）を読まないままメインが呼んだ
   確認ツール（`AskUserQuestion`・`request_user_input`・`request_user_input_async`）の拒否 (block)。
   警告は回答と一緒に届き害を防げないため、質問の表示前に拒否する。宣言や記録を読めない場合は拒否しない
 

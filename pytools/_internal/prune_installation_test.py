@@ -17,7 +17,7 @@ from agent_toolkit._common import dotfiles_mode
 from pytools._internal import _test_helpers, common, prune_installation, setup_mise
 
 
-def _prepare(tmp_path, monkeypatch, mode):
+def _prepare(tmp_path, monkeypatch, mode, installed=None):
     home = tmp_path / "isolated-home"
     home.mkdir()
     # HOMEだけでは、ホストから継承した共有ランタイムの明示配置が残る。
@@ -48,7 +48,7 @@ def _prepare(tmp_path, monkeypatch, mode):
     monkeypatch.setattr(prune_installation, "_remove", lambda _path: False)
     monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: Path("/fixture/mise"))
     monkeypatch.setattr(common, "resolve_executable", lambda name: Path("/fixture") / name)
-    monkeypatch.setattr(prune_installation.shutil, "which", lambda name: str(Path("/fixture") / name))
+    monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: str(Path("/fixture") / name))
     calls = []
 
     def run(command, **_kwargs):
@@ -57,7 +57,11 @@ def _prepare(tmp_path, monkeypatch, mode):
             str(tmp_path / "uv-cache")
             if command[1:] == ["cache", "dir"]
             else (
-                json.dumps({"node": [{"version": "24"}], "rust": [{"version": "1"}], "actionlint": [{"version": "1"}]})
+                json.dumps(
+                    installed
+                    if installed is not None
+                    else {"node": [{"version": "24"}], "rust": [{"version": "1"}], "actionlint": [{"version": "1"}]}
+                )
                 if command[1:4] == ["ls", "--installed", "--json"]
                 else ""
             )
@@ -205,8 +209,8 @@ def test_shared_runtime_root_guard_applies_before_child_cleanup(tmp_path, monkey
 
 
 @pytest.mark.parametrize(("mode", "npm_fails"), [("minimal", False), ("minimal", True), ("full", False)])
-def test_mise_only_npm_prune_keeps_order_and_mode_boundary(tmp_path, monkeypatch, mode, npm_fails):
-    """npmの唯一の提供元を使い、Node削除前の順序・失敗停止・full除外を保つ。"""
+def test_npm_prune_uses_installed_node_without_configured_version(tmp_path, monkeypatch, mode, npm_fails):
+    """minimalの設定はNodeの版を持たないため、導入済みの版のnpmでNode削除前に整理し、失敗時は削除へ進まない。"""
     normal_lookup = prune_installation.shutil.which
     real_resolve = common.resolve_executable
     _, calls = _prepare(tmp_path, monkeypatch, mode)
@@ -221,28 +225,116 @@ def test_mise_only_npm_prune_keeps_order_and_mode_boundary(tmp_path, monkeypatch
     monkeypatch.setattr(common, "resolve_executable", lambda name: Path("/fixture/uv") if name == "uv" else real_resolve(name))
     monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
     original_run = common.run_subprocess
+    uninstall = ["/fixture/mise", "exec", "node@24", "--", "npm", "uninstall", "--global"]
+    node_removal = ["/fixture/mise", "uninstall", "--all", "node"]
 
     def execute(command, **kwargs):
-        if command[0] == str(npm) and npm_fails:
+        if command[0] == str(npm) and mode == "minimal":
+            # aws.tqzh.tkのminimalで観測したshimの応答。設定がNodeの版を持たないため、どの引数でも失敗する。
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 1, "", "mise ERROR No version is set for shim: npm")
+        if command[: len(uninstall)] == uninstall and npm_fails:
             calls.append(command)
             return subprocess.CompletedProcess(command, 3, "", "npm uninstall failed")
+        if command[1:] == ["reshim", "--force"] and node_removal in calls:
+            # miseはNodeを削除した後のreshimでnpmのshimを除く。
+            npm.unlink()
         return original_run(command, **kwargs)
 
     monkeypatch.setattr(common, "run_subprocess", execute)
     result = prune_installation.run()
+    uninstalls = [index for index, command in enumerate(calls) if command[: len(uninstall)] == uninstall]
     if mode == "full":
         assert [str(npm), "cache", "verify"] in calls
         assert result.failure is None
+        assert not uninstalls
+    elif npm_fails:
+        assert result.failure is not None
+        assert "npm uninstall failed" in result.failure
+        assert len(uninstalls) == 1
+        assert node_removal not in calls
     else:
-        assert calls[0][:3] == [str(npm), "uninstall", "--global"]
-        if npm_fails:
-            assert len(calls) == 1
-            assert result.failure is not None
-            assert "npm uninstall failed" in result.failure
-        else:
-            assert result.failure is None
-            assert calls[1][:3] == ["/fixture/mise", "ls", "--installed"]
-            assert ["/fixture/mise", "uninstall", "--all", "node"] in calls
+        assert result.failure is None
+        assert len(uninstalls) == 1
+        assert uninstalls[0] < calls.index(node_removal)
+
+
+def test_minimal_prunes_npm_of_every_installed_node_version(tmp_path, monkeypatch):
+    """miseに複数の版のNodeが残っていれば、どの版のnpmからもNode削除前に外す。"""
+    versions = ["20.19.5", "22.21.1", "24.11.1"]
+    _, calls = _prepare(tmp_path, monkeypatch, "minimal", installed={"node": [{"version": version} for version in versions]})
+    monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: None)
+    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
+    result = prune_installation.run()
+    assert result.failure is None
+    node_removal = calls.index(["/fixture/mise", "uninstall", "--all", "node"])
+    for version in versions:
+        command = ["/fixture/mise", "exec", f"node@{version}", "--", "npm", "uninstall", "--global"]
+        uninstalls = [index for index, called in enumerate(calls) if called[: len(command)] == command]
+        assert len(uninstalls) == 1, version
+        assert uninstalls[0] < node_removal
+
+
+def test_minimal_without_node_skips_npm_prune(tmp_path, monkeypatch):
+    """miseにもPATHにもNodeが無いminimalでは、npmの整理を行わずに成功する。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "minimal", installed={"actionlint": [{"version": "1"}]})
+    monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: None)
+    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
+    result = prune_installation.run()
+    assert result.failure is None
+    assert not [command for command in calls if "npm" in command or Path(command[0]).stem == "npm"]
+    assert ["/fixture/mise", "uninstall", "--all", "actionlint"] in calls
+
+
+@pytest.mark.parametrize("npm_fails", [False, True])
+def test_minimal_prunes_npm_outside_mise_without_shims(tmp_path, monkeypatch, npm_fails):
+    """fullで導入した先がmise以外のnpm（nvm、OSのNodeなど）でも、minimalでNode削除前に外し、失敗時は削除へ進まない。"""
+    normal_lookup = prune_installation.shutil.which
+    _, calls = _prepare(tmp_path, monkeypatch, "minimal")
+    shims = tmp_path / "mise-data" / "shims"
+    system = tmp_path / "system-node" / "bin"
+    for directory in (shims, system):
+        directory.mkdir(parents=True)
+        npm = directory / ("npm.cmd" if os.name == "nt" else "npm")
+        npm.write_text("npm", encoding="utf-8")
+        npm.chmod(npm.stat().st_mode | stat.S_IXUSR)
+    # miseのshimがOSのNodeより前にある（aws.tqzh.tkのPATHと同じ順序）。
+    monkeypatch.setenv("PATH", os.pathsep.join([str(shims), str(system)]))
+    monkeypatch.setenv("MISE_DATA_DIR", str(shims.parent))
+    monkeypatch.setattr(prune_installation.shutil, "which", normal_lookup)
+    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
+    original_run = common.run_subprocess
+    environments = {}
+
+    def execute(command, **kwargs):
+        if Path(command[0]).parent == system:
+            calls.append(command)
+            environments[len(calls) - 1] = kwargs.get("env_overrides") or {}
+            return subprocess.CompletedProcess(command, 3 if npm_fails else 0, "", "npm uninstall failed" if npm_fails else "")
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(common, "run_subprocess", execute)
+    result = prune_installation.run()
+    system_uninstalls = [
+        index
+        for index, command in enumerate(calls)
+        if Path(command[0]).parent == system and command[1:3] == ["uninstall", "--global"]
+    ]
+    assert len(system_uninstalls) == 1
+    command = calls[system_uninstalls[0]]
+    assert {"opencode-ai", "@anthropic-ai/claude-code", "@openai/codex", "@google/gemini-cli", "aws-cdk"} <= set(command)
+    # OSのnpmは`#!/usr/bin/env node`で起動するため、PATHにshimが残るとnodeのshimが失敗する。
+    child_path = environments[system_uninstalls[0]]["PATH"].split(os.pathsep)
+    assert str(system) in child_path
+    assert str(shims) not in child_path
+    node_removal = ["/fixture/mise", "uninstall", "--all", "node"]
+    if npm_fails:
+        assert result.failure is not None
+        assert "npm uninstall failed" in result.failure
+        assert node_removal not in calls
+    else:
+        assert result.failure is None
+        assert system_uninstalls[0] < calls.index(node_removal)
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:

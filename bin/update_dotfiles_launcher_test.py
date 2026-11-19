@@ -75,6 +75,8 @@ if [[ "${{1-}} ${{2-}}" == "python find" ]]; then
 fi
 if [[ "${{1-}}" == "run" ]]; then
     printf 'uv run stderr\n' >&2
+    # 続行した失敗だけで本体を終えた場合の印を、本体と同じく作成する。
+    [[ "${{UV_RUN_MARK:-0}}" != 1 ]] || : > "$DOTFILES_PRUNE_READY_FILE"
     exit "${{UV_RUN_EXIT:-0}}"
 fi
 """,
@@ -122,10 +124,12 @@ def _run_launcher(
     timeout_available: bool = True,
     stall_upgrade: bool = False,
     stall_stage: str = "",
+    body_completed: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     """隔離したHOMEとPATHでLinuxランチャーを実行する。"""
     home = tmp_path / "home"
     home.mkdir()
+    (home / ".local/state/agent-toolkit").mkdir(parents=True)
     if native_uv:
         _write_fake_uv(home / ".local" / "bin" / "uv", "native")
         post_apply = home / ".local/bin/dotfiles-post-apply"
@@ -177,6 +181,8 @@ def _run_launcher(
             "STALL_UPGRADE": "1" if stall_upgrade else "0",
             "STALL_STAGE": stall_stage,
             "POST_APPLY_CALL_LOG": str(tmp_path / "post-apply-calls"),
+            "UV_RUN_MARK": "1" if body_completed else "0",
+            "XDG_STATE_HOME": str(home / ".local/state"),
         }
     )
     environment.pop("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", None)
@@ -252,6 +258,19 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
         *[value.encode() for value in arguments],
         b"",
     ]
+
+
+@pytest.mark.parametrize("body_completed", [True, False])
+@_LINUX_ONLY
+def test_continued_failures_still_reach_cleanup(tmp_path: pathlib.Path, body_completed: bool) -> None:
+    """続行した失敗だけで終えた本体（終了コード1と印）は整理へ進み、中断した本体は進まない。
+
+    Windowsでは常駐が使う管理Pythonの更新を毎回見送り、終了コード1で整理とMCPの事前構築が常に省かれていた。
+    """
+    result, _calls = _run_launcher(tmp_path, native_uv=True, path_uv=True, run_exit=1, body_completed=body_completed)
+
+    assert result.returncode == 1
+    assert (tmp_path / "post-apply-calls").exists() is body_completed
 
 
 @pytest.mark.parametrize("run_exit", [0, 23])
@@ -433,6 +452,69 @@ def test_launcher_replacement_preserves_update_exit(
     assert launcher.read_bytes() == replacement
     assert result.returncode == run_exit, result.stdout + result.stderr
     assert calls.read_text(encoding="utf-8").splitlines() == ["update"]
+
+
+def test_launcher_runs_cleanup_after_continued_failures_only(
+    tmp_path: pathlib.Path, real_uv: str, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """本体が続行した失敗だけで終えた印を残せば、終了コード1を保ったまま整理へ進む（cmd.exeとbashの両方）。"""
+    environment = host_environ()
+    environment.pop("CODEX_THREAD_ID", None)
+    home = tmp_path / "home"
+    native_uv = home / ".local" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
+    native_uv.parent.mkdir(parents=True)
+    shutil.copy2(real_uv, native_uv)
+    (home / "state/agent-toolkit").mkdir(parents=True)
+    launcher = tmp_path / "bin" / ("update-dotfiles.cmd" if os.name == "nt" else "update-dotfiles")
+    launcher.parent.mkdir()
+    current = (_WINDOWS_LAUNCHER if os.name == "nt" else _LAUNCHER).read_bytes()
+    calls = tmp_path / "update-calls"
+    probe = (
+        "import os, pathlib\n"
+        f"with pathlib.Path({str(calls)!r}).open('a', encoding='utf-8') as stream:\n"
+        "    stream.write('prune\\n')\n"
+        "pathlib.Path(os.environ['DOTFILES_PRUNE_READY_FILE']).unlink(missing_ok=True)\n"
+    )
+    libexec = tmp_path / "libexec"
+    libexec.mkdir()
+    (libexec / "prune.py").write_text(probe, encoding="utf-8")
+    if os.name == "nt":
+        endpoint = b'"!USERPROFILE!\\.local\\bin\\dotfiles-post-apply.exe"'
+        assert current.count(endpoint) == 1
+        current = current.replace(endpoint, b'"!PRUNE_PROBE_PYTHON!" "!PRUNE_PROBE_SCRIPT!"')
+    else:
+        endpoint_path = home / ".local/bin/dotfiles-post-apply"
+        endpoint_path.write_text(f'#!/usr/bin/env bash\nexec "{sys.executable}" "{libexec / "prune.py"}"\n', encoding="utf-8")
+        endpoint_path.chmod(0o755)
+    launcher.write_bytes(current)
+    launcher.chmod(0o755)
+    (libexec / "update_dotfiles.py").write_text(
+        "import os, pathlib\n"
+        f"with pathlib.Path({str(calls)!r}).open('a', encoding='utf-8') as stream:\n"
+        "    stream.write('update\\n')\n"
+        "pathlib.Path(os.environ['DOTFILES_PRUNE_READY_FILE']).touch()\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    environment.update(
+        {
+            "HOME": str(home),
+            "USERPROFILE": str(home),
+            "LOCALAPPDATA": str(home / "state"),
+            "XDG_STATE_HOME": str(home / "state"),
+            "UV_PYTHON": sys.executable,
+            "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
+            "PRUNE_PROBE_PYTHON": sys.executable,
+            "PRUNE_PROBE_SCRIPT": str(libexec / "prune.py"),
+        }
+    )
+    command = ["cmd.exe", "/d", "/c", str(launcher)] if os.name == "nt" else [str(launcher)]
+
+    result = subprocess.run(command, env=environment, capture_output=True, encoding="utf-8", timeout=45, check=False)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == ["update", "prune"]
+    assert not list((home / "state/agent-toolkit").glob("update-prune-ready-*"))
 
 
 @_LINUX_ONLY

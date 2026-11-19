@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/claude-hooks-block-warn.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:atk-mode/references/auto-mode-rule-addition.md` |
 
 ## 一次選別
 
@@ -24,9 +24,9 @@
 成功した通常操作、正常な返却、良い手段の再利用も、準備から後始末までの全工程を同じ比較へ送る。
 情報探索や参照の問題は、選別の段階から`analysis-actions.md`「情報探索の問題」に従い、探していた情報と得た証拠を対応付ける。
 除外するのは、恒久対策が要らないと明らかな候補に限り、その根拠を「対策を見送った問題」に書く。
-原因探索の深さと再発防止策の要否・完了基準は重大度で決める（`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」）。
+原因探索の深さと再発防止の要否は`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」で決める。
 資格情報の発見と報告の発話は、`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の手順を終えていれば判定済みとする。
-その除外区分には`../../user-confirmation-and-report/references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」の`credential-report`を使う。
+その除外区分には`agent-toolkit:atk-mode/playbooks/user-utterance.md`「ユーザー介入と確認の判定」の`credential-report`を使う。
 ただし過剰反応自体の是正をユーザーが求めた発話は分析対象とする。
 作業中に既存の規範が適用されなかった問題は、条文があることで除外せず、確証の無い候補も分析へ送る。
 過去の振り返りやキュー処理で不採用と確定した案は、新しい観測や要件の変更がある場合に限って再評価する。
@@ -56,10 +56,10 @@
   ただし1回の対処で解消しない場合、同じ呼び出しで反復した場合、発生頻度で同文書の費用比較の結論が変わる場合は、行動への対策と機構自体の負担を`analysis-cost.md`「規範適用による目的逸脱」で比較する。
   事前に防ぐ型には、規範の改訂、判定条件の見直し、フックの撤去、遮断後に対処する型への移行から1件以上の改善案を対応付け、現状維持ならその発火が規範どおり不正な操作を止めた根拠を書く。
   事前チェック工程を足す案では、操作ごとに増える呼び出し回数を費用として明記する。
-- 権限拒否: `../../user-confirmation-and-report/references/permission-denial-classifier.md`「偽陽性と判断できる拒否への対応」の適用条件を満たしていたか、満たしていればその対応が適用されたかを判定する。
+- 権限拒否: `agent-toolkit:atk-mode/playbooks/permission-denial.md`「偽陽性と判断できる拒否への対応」の適用条件を満たしていたか、満たしていればその対応が適用されたかを判定する。
   委譲先の拒否は委譲元の記録で判定する。
   条件を満たしたのに適用されなかった拒否は、作業進行への影響を問わず`analysis-actions.md`「原因と対策」へ送り、未適用の原因と必要な処置を判定する。
-  パーミッションルールを変える案は、拒否時の文面と分類名を証拠に添え、`../../user-confirmation-and-report/references/auto-mode.md`のワークフローへ送る。
+  パーミッションルールを変える案は、拒否時の文面と分類名を証拠に添え、`agent-toolkit:atk-mode/references/auto-mode-rule-addition.md`のワークフローへ送る。
 - 手順書の作業を一時スクリプトで代替した箇所: 有効期限のある資格情報の更新、設定の再登録、別環境の構築、定期的な運用作業など、将来再実行される手順かを手順書の本文と扱う値から判定する。
   再実行されるなら、スクリプトを手順を所有するリポジトリのスクリプト配置場所へ移して手順書から呼ぶ対策を、そのリポジトリを`target_repo`とする通常AWIへまとめる（同じセッションで是正済みなら除く）。
   この原稿を`analysis-actions.md`「原因と対策」へ引き渡す。
@@ -67,16 +67,16 @@
 - その場のコードによる加工: `adhoc-processing`の候補、通読で見つけた後加工、同じ目的のコマンドの反復について、呼び出しごとの目的（どの出力から何を取ったか）を特定し、反復性を判定する。
   同じセッションで同じ目的の加工が2回以上あれば反復とする。
   スキルや規範の手順が実行のたびに求める工程（逐語引用の文字位置の算出など）のための加工と、`agent-toolkit`のコマンド出力形式の制約で要った加工は、1回の観測でも反復とする。
-  反復する加工は`analysis-actions.md`「原因と対策」へ送り、比較する代替案と評価順は`agent-basics:bugfix/references/root-cause-scenarios-investigation.md`「反復する加工の問題」に従う。
+  反復する加工は`analysis-actions.md`「原因と対策」へ送り、比較する代替案は`agent-basics:bugfix/references/premises.md`「外部の変化と加工の反復」に従う。
   反復しない1回限りの調査は、目的と反復しない根拠を「対策を見送った問題」に書いて除外する。
-- `気付いた改善点:`で始まる行: その場の直接的原因・影響調査と必要な処置を確認し、根拠と判断を再利用する。
+- `気付いた改善点:`で始まる行: その場の原因と影響の調査と必要な処置を確認し、根拠と判断を再利用する。
   未調査、変更、不一致の部分だけを補って残る分析を`analysis-actions.md`「原因と対策」へ送る。
   単純な効率改善もQCDで採否を決め、担当外の処置と引き継ぎ先を保持する。
-  その場でユーザーへ伝えた行も対象に含め、非同期分析まで初動調査を延期したり、既調査事項を最初からやり直したりしない。
+  その場でユーザーへ伝えた行も対象に含め、非同期分析までその場の調査を延期したり、既調査事項を最初からやり直したりしない。
 
 ### ユーザー介入の判定規則
 
-同じ種類の承認を繰り返し求めた記録は、`../../user-confirmation-and-report/references/approval-scope.md`「繰り返す操作の認可」に照らして調べる。
+同じ種類の承認を繰り返し求めた記録は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「繰り返す操作の認可」に照らして調べる。
 既存認可の探索漏れ、単発許可だけの提示、恒久認可の保存漏れ、次回適用漏れを別々に判定し、それぞれの原因の定義元へ処置を対応付ける。
 単発回答の範囲を守ったことだけで、反復する回答負担を正常として除外しない。
 
@@ -85,13 +85,7 @@
 終了操作の語句を含んでも別の要求や方針変更を伴うときは、その趣旨どおり扱う。
 この扱いは「一次選別」と`analysis-actions.md`「原因と対策」の報告にも適用する。
 
-介入、WI記入欄の是正、ユーザー確認の必須性、除外区分の判定は、`../../user-confirmation-and-report/references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」に従う。
+介入、WI記入欄の是正、ユーザー確認の必須性、除外区分の判定は、`agent-toolkit:atk-mode/playbooks/user-utterance.md`「ユーザー介入と確認の判定」に従う。
 元の発話と構造化確認の全項目を判断材料にする。
 介入として抽出された発話がシステムの自動生成テキストだった場合、人間の入力と誤分類した事象も共通分析へ送る。
 自動生成テキストかの判定基準は、`agent-toolkit/agent_toolkit/_common/runtime_inserted.py`と`session-review-evidence --user-events`の抽出条件に従う。
-
-## 本文参照の取得条件
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 場面別の原因分析：情報探索の問題の基準を適用する前 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md` |

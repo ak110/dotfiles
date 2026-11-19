@@ -41,7 +41,9 @@
 **4.** ユーザーへ回答を届けるため、統合指示の前に最新下書きを保存して結果を返す。
 
 WIへ直接記入された質問（AWIの`## ユーザーコメント`、UWIの`## 回答`）の回答下書き絶対パスと根拠を受領する。
-下書きを実行レビュー・読者別探索へ渡し、収束後かつ統合指示前に、`agent-toolkit:user-confirmation-and-report`「手段の選択」と`agent-toolkit:wi-standards`に従い、回答ごとのUWIへレビュー済み最新本文を保存する。
+下書きを実行レビュー・読者別探索へ渡し、収束後かつ統合指示前に、回答ごとのUWIへレビュー済み最新本文を保存する。
+保存の手段は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
+書式は`agent-toolkit:atk-mode/references/uwi-format.md`に、保存の手順は`agent-toolkit:atk-mode/playbooks/wi-saving.md`に従う。
 `実装なし`と`マージなし`のレーンでは、`agent-toolkit/share/rules/common/01-agent.md`「事実と推論」の基準に沿って、下書き内の断定的な主張を根拠ならびに現物と突き合わせて確認したうえで保存し、確認が取れない主張はレーン担当者へ差し戻す。
 保存したUWIのファイル名を同一のレーン担当者へ返し、計画が存在する場合は進捗ログへ、計画がない場合は引き継ぎ記録へ記録させる。
 保存に失敗した場合は原因を解消したうえで、実在するファイル名を通知する。
@@ -59,4 +61,4 @@ WIへ直接記入された質問（AWIの`## ユーザーコメント`、UWIの`
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 実行レビュー反復の調整の基準を適用する前 | `review-loop-coordination.md` |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/atk-mode/playbooks/confirmation.md` |

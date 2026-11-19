@@ -9,7 +9,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 複数担当の書込先を決める前 | `agent-basics:writing-standards/references/design-runtime-concurrency.md` |
+| 複数担当の書込先を決める前 | `agent-basics:writing-standards/references/design-runtime.md` |
 
 ## 作業ツリーの保護
 

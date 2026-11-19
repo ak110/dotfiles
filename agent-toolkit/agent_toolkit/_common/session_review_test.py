@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import os
@@ -23,6 +24,22 @@ def test_auto_start_waits_until_last_consultation_closes(monkeypatch):
     for living in ({"first", "second"}, {"second"}, set()):
         monkeypatch.setattr(session_activity, "living_root_session_ids", lambda living=living, **kwargs: frozenset(living))
         assert session_review.auto_start_due(now=1793400000.0) is (not living)
+
+
+def test_auto_start_reads_only_runs_updated_within_the_interval(monkeypatch):
+    """間隔より前に更新した実行記録は開始も間隔より前のため、開かずに起動の判定を進める。"""
+    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda **kwargs: frozenset())
+    runs = session_review.directory() / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    old = runs / "old.json"
+    old.write_text("{", encoding="utf-8")
+    now = time.time()
+    os.utime(old, (now - 7 * 60 * 60, now - 7 * 60 * 60))
+    assert session_review.auto_start_due(now=now) is True
+    session_review.write(
+        runs / "recent.json", {"started_at": datetime.datetime.fromtimestamp(now - 60, datetime.UTC).isoformat()}
+    )
+    assert session_review.auto_start_due(now=now) is False
 
 
 @pytest.mark.parametrize("changed,unconfirmed", [(False, False), (True, False), (False, True)])

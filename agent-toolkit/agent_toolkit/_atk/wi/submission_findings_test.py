@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import run_script
+from agent_toolkit._atk import help_text, run_script
 from agent_toolkit._atk.wi import submission_findings
 from agent_toolkit._common import plugin_environment, session_activity
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
@@ -160,7 +160,7 @@ def _user_events_position(path: pathlib.Path) -> str:
     """抽出処理が返す記録位置を得る。位置の書式は`session-review-evidence --user-events`が所有する。"""
     started = session_activity.submission_started_at(_SESSION)
     assert started is not None
-    events = submission_findings.user_events(_SESSION, started)
+    events = submission_findings.user_events(_SESSION, started).after_begin
     assert len(events) == 1, (path, events)
     return f"{events[0]['record']}:{events[0]['line']}"
 
@@ -376,3 +376,179 @@ def test_distributed_launcher_checks_findings_without_inherited_pythonpath(
     assert "指摘の分類と処置:" in accepted.stdout
     assert "前提がおかしい" not in accepted.stderr
     assert not _recorded()
+
+
+_CLAIM = {
+    "material": "https://example.com/post",
+    "claim": "規範は検査で強制する",
+    "judgement": "不足",
+    "observation": "pre-commitの設定に該当の検査が無い",
+}
+
+
+def _material_findings(tmp_path: pathlib.Path, path: pathlib.Path, claims: list[dict[str, Any]] | None) -> pathlib.Path:
+    """URLを含む発話へ指摘でない項目を付け、資料の主張別の対応表を加えた指摘対応記録を作る。"""
+    findings = _findings(
+        tmp_path, [{"source": "user", "position": _user_events_position(path), "finding": False, "reason": "依頼"}]
+    )
+    if claims is not None:
+        document = json.loads(findings.read_text(encoding="utf-8"))
+        findings.write_text(json.dumps({**document, "material_claims": claims}, ensure_ascii=False), encoding="utf-8")
+    return findings
+
+
+@pytest.mark.parametrize(
+    ("claims", "expected"),
+    [
+        (None, "`material_claims`が無い"),
+        ([], "`material_claims`が無い"),
+        ([{**_CLAIM, "judgement": ""}], "`judgement`が無い"),
+        ([{**_CLAIM, "observation": " "}], "`observation`が無い"),
+        ([{**_CLAIM, "judgement": "充足", "observation": ""}], "充足と判定した観測`observation`が無い"),
+    ],
+)
+def test_material_claims_are_required_for_url_submissions(
+    claude_home: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    claims: list[dict[str, Any]] | None,
+    expected: str,
+) -> None:
+    """URLを含む発話を受けた投入では、資料の主張別の対応表の欠けと空欄を不足の行で拒否する。"""
+    _begin()
+    path = _write_session(claude_home, [_user("この記事を参考に改善して https://example.com/post")])
+    assert _end(_material_findings(tmp_path, path, claims)) == 1
+    assert expected in capsys.readouterr().err
+    assert _recorded()
+
+
+@pytest.mark.parametrize("text", ["この記事を参考に改善して https://example.com/post", "URLを含まない依頼"])
+def test_complete_material_claims_and_url_free_submissions_finish(
+    claude_home: pathlib.Path, tmp_path: pathlib.Path, text: str
+) -> None:
+    """欄のそろった対応表は受理し、URLを含まない投入では対応表を求めない。"""
+    _begin()
+    path = _write_session(claude_home, [_user(text)])
+    claims = (
+        [_CLAIM, {**_CLAIM, "judgement": "未確認", "observation": "記録を取得できなかった"}] if "https://" in text else None
+    )
+    assert _end(_material_findings(tmp_path, path, claims)) == 0
+    assert not _recorded()
+
+
+def test_material_claims_are_required_when_only_invocation_has_urls(
+    claude_home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """URLが`begin`の直前の起動発話にだけある投入でも、資料の主張別の対応表を求める。
+
+    2026年11月17日の投入と同じく、URL 7件を持つ`/add-awi-by-user`の起動発話が`begin`より前にあり、
+    作業中の発話はURLを持たない並びで確かめる。起動発話は対応表の判定だけに使い、指摘対応記録の項目は求めない。
+    """
+    urls = "\n\n".join(f"https://x.com/user{index}/status/{index}" for index in range(7))
+    invocation = _user(
+        "<command-message>agent-toolkit:add-awi-by-user</command-message>\n"
+        "<command-name>/agent-toolkit:add-awi-by-user</command-name>\n"
+        f"<command-args>以下のURLを参考に既存の未処理のWIを改善できないか確認して。\n\n{urls}</command-args>",
+        seconds=-20,
+    )
+    path = _write_session(claude_home, [invocation, _user("記事の方ももっと一文一文を細かく検討して。")])
+    _begin()
+    assert _end(_material_findings(tmp_path, path, None)) == 1
+    assert "`material_claims`が無い" in capsys.readouterr().err
+    assert _end(_material_findings(tmp_path, path, [_CLAIM])) == 0
+    assert not _recorded()
+
+
+def _command(name: str, arguments: str, *, seconds: int) -> dict[str, Any]:
+    """Claude Codeがスラッシュコマンドの入力を記録する形の発話を返す。"""
+    return _user(
+        f"<command-message>{name}</command-message>\n<command-name>/{name}</command-name>\n"
+        f"<command-args>{arguments}</command-args>",
+        seconds=seconds,
+    )
+
+
+_URL_TEXT = "この記事も参考にして https://example.com/post"
+
+
+@pytest.mark.parametrize(
+    "launch",
+    [
+        _command("atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-40),
+        _command("agent-toolkit:atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-40),
+        _user("$atk-mode add-awi-by-user 検索画面を直したい", seconds=-40),
+        _command("add-awi-by-user", "検索画面を直したい", seconds=-40),
+        _command("agent-toolkit:add-awi-by-user", "検索画面を直したい", seconds=-40),
+    ],
+    ids=["entry", "qualified-entry", "codex-entry", "legacy", "qualified-legacy"],
+)
+def test_material_claims_cover_utterances_between_launch_and_begin(
+    claude_home: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    launch: dict[str, Any],
+) -> None:
+    """起動コマンドと`begin`の間の発話にだけURLがある投入でも、資料の主張別の対応表を求める。
+
+    `begin`より前の発話は指摘対応記録の項目を求めず、`begin`の後の発話の対応付けは変わらない。
+    """
+    entries = [launch, _user(_URL_TEXT, seconds=-30), _user("対象は検索画面だけにして", seconds=-20), _user("手順も短くして")]
+    path = _write_session(claude_home, entries)
+    _begin()
+    assert _end(_material_findings(tmp_path, path, None)) == 1
+    error = capsys.readouterr().err
+    assert "`material_claims`が無い" in error and "の項目が無い" not in error
+    assert _end(_material_findings(tmp_path, path, [_CLAIM])) == 0
+    assert not _recorded()
+
+
+@pytest.mark.parametrize(
+    ("before_begin", "required"),
+    [
+        ([_user(_URL_TEXT, seconds=-40), _user("対象は検索画面だけにして", seconds=-20)], False),
+        (
+            [_command("atk-mode", f"review-session {_URL_TEXT}", seconds=-40), _user("検索画面を直したい", seconds=-20)],
+            False,
+        ),
+        (
+            [
+                _command("atk-mode", f"add-awi-by-user {_URL_TEXT}", seconds=-80),
+                _user("やはり中止して", seconds=-60),
+                _command("atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-40),
+                _user("対象は検索画面だけにして", seconds=-20),
+            ],
+            False,
+        ),
+        (
+            [
+                _command("atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-80),
+                _user("やはり中止して", seconds=-60),
+                _command("atk-mode", "add-awi-by-user 検索画面を直したい", seconds=-40),
+                _user(_URL_TEXT, seconds=-30),
+                _user("対象は検索画面だけにして", seconds=-20),
+            ],
+            True,
+        ),
+    ],
+    ids=["no-launch-command", "other-work-command", "relaunch-without-url", "relaunch-with-url"],
+)
+def test_launch_range_starts_at_latest_launch_command(
+    claude_home: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    before_begin: list[dict[str, Any]],
+    required: bool,
+) -> None:
+    """起動発話は直近の起動コマンドから始まり、起動コマンドが記録に無ければ`begin`の直前の1件だけになる。"""
+    path = _write_session(claude_home, [*before_begin, _user("手順も短くして")])
+    _begin()
+    assert _end(_material_findings(tmp_path, path, None)) == (1 if required else 0)
+    assert ("`material_claims`が無い" in capsys.readouterr().err) is required
+    assert _recorded() is required
+
+
+def test_help_describes_material_claim_fields() -> None:
+    """`--help`の形式の説明が、検査する欄と同じ名前を持つ。"""
+    epilog = help_text.HELP["atk wi submission end"]["epilog"]
+    for name in ("material_claims", *submission_findings.MATERIAL_CLAIM_FIELDS):
+        assert f"`{name}`" in epilog

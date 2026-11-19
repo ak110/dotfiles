@@ -32,6 +32,7 @@ _DECISION_KEYS = frozenset(
         _selection.EXCLUDED_PATHS_KEY,
         _selection.DERIVED_NEW_PATHS_KEY,
         _selection.INTEGRATION_STATE_KEY,
+        _selection.TRANSFERRED_FROM_KEY,
         _UPSTREAM_TARGETS_KEY,
         *_DECISION_STRING_KEYS,
     }
@@ -348,6 +349,7 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
                 _selection.WRITE_FILES_KEY,
                 _selection.PUBLIC_WRITE_FILES_KEY,
                 _selection.EXCLUDED_PATHS_KEY,
+                _selection.TRANSFERRED_FROM_KEY,
             )
             if key in item and not is_string_list(item[key])
         )
@@ -504,10 +506,13 @@ def allocation_errors(selection: dict[str, object]) -> list[_next_action.Actiona
             )
     count = len(candidates)
     bound = (count + 9) // 10
-    current_lanes = set(current.values()) | {
-        row[_selection.LANE_KEY] for row in typing.cast(list[dict[str, typing.Any]], _selection.lane_costs(selection))
-    }
-    for scope, lanes in (("初回配分", set(assignments.values())), ("現在の全体配分", current_lanes)):
+    # 移管で空になったレーンは行が無くなるため、移したWIの`移管元レーン`も累計のレーン名として数える。
+    cumulative_lanes = (
+        set(current.values())
+        | {row[_selection.LANE_KEY] for row in typing.cast(list[dict[str, typing.Any]], _selection.lane_costs(selection))}
+        | {lane for item in items for lane in item.get(_selection.TRANSFERRED_FROM_KEY, [])}
+    )
+    for scope, lanes in (("初回配分", set(assignments.values())), ("累計の全体配分", cumulative_lanes)):
         total = len(lanes - {_LANE_NONE})
         if total > bound:
             errors.append(

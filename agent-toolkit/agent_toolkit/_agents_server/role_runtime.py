@@ -8,6 +8,7 @@ import pathlib
 import re
 from collections.abc import Callable
 
+from agent_toolkit._common import task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.plugin_roots import PluginRootError
 
@@ -43,7 +44,7 @@ class RuntimeCode:
             # 導入資源の不足は候補別の生成・復旧処理が扱うため、元の例外型を保つ。
             if isinstance(error, PluginRootError):
                 raise
-            resource_root = document.parent.parent
+            resource_root = task_documents.document_plugin_root(document)
             version = manifest_version(resource_root)
             context = (
                 f"起動前の{stage}で失敗した。委譲先はまだ起動していない。"

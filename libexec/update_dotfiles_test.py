@@ -141,6 +141,7 @@ def test_agent_toolkit_environment_is_prepared_right_after_git_update(
     依存の固定内容が変わる更新で、準備までの間に起動した主checkoutの`atk`が未準備で終了する区間を縮めるためである。
     """
     monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", _REAL_PREPARE_AGENT_TOOLKIT_ENVIRONMENT)
+    monkeypatch.setenv(update_dotfiles.dotfiles_mode.MODE_ENV, "full")
     monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", tmp_path)
     monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "update.lock")
     plugin = tmp_path / "plugins" / "extra"
@@ -160,6 +161,21 @@ def test_agent_toolkit_environment_is_prepared_right_after_git_update(
     assert stage_index["chezmoi", "init"] < stage_index["chezmoi", "apply"]
     if prepare_code:
         assert "agent-toolkitの共有依存環境の準備" in capsys.readouterr().err
+
+
+def test_minimal_does_not_prepare_agent_toolkit_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """minimalでは、更新後の整理が削除する共有依存環境を準備しない。"""
+    monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", _REAL_PREPARE_AGENT_TOOLKIT_ENVIRONMENT)
+    monkeypatch.setenv(update_dotfiles.dotfiles_mode.MODE_ENV, "minimal")
+    monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "update.lock")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+    assert update_dotfiles.main([]) == 0
+    launcher = str(tmp_path / "agent-toolkit" / "scripts" / "launch.py")
+    assert not [call for call in calls if launcher in call]
+    assert ["chezmoi", "apply"] in [call[:2] for call in calls]
 
 
 class TestFiveStepsInOrder:

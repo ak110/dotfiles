@@ -176,6 +176,8 @@ worktreeパスが無い登録ではdeleteコマンドを省き、Git登録だけ
 保持値を導入する前の登録で選定原本も失われたものは、`atk lane recover --session-id <所有session>`が元のbranchとHEADを登録の`recovery`へ記録してから作業ツリーだけを解放し、branchと登録を残す。
 祖先判定でbranchを削除する通常回収や、成果を引き継ぐreuse-recordでは作成先を成果を失わずに解放できないためである。
 作成先を指定しない場合は同じGitリポジトリの主作業ツリーの`.claude/worktrees/process-wi-<lane>`に固定する。
+系統を登録したリポジトリでは`.claude/worktrees/process-wi-<統合先ブランチ>-<lane>`とし、系統ごとに並行する処理の同名レーンを分ける。
+WorktreeCreate hookへ渡す名前も同じ名前とし、hookが名前から作成先やbranchを決めるリポジトリでも同名レーンを分ける。
 Codexなどパス単位で信頼設定を保存するホストへ渡すcwdを、同じリポジトリ・レーンの反復で増やさないためである。
 主作業ツリーは`git worktree list`の先頭から解決し、process-loopのworktreeから呼んでもその内側へ入れ子にしない。
 配置の決定はcreateだけが持ち、process-wiのメインと対象リポジトリが定めたcreateのコマンドはcreateの返値を使う。
@@ -189,7 +191,7 @@ turnごとの一律回収は使用中の作業を失い、別の恒常監視と�
 
 ## MQ管理リポジトリの分岐回復
 
-private-notesのGit操作と分岐回復に実行時に適用する規範は、[`agent-toolkit:wi-standards`の`repository-scope.md`](../../agent-toolkit/skills/wi-standards/references/repository-scope.md)が定める。
+private-notesのGit操作と分岐回復に実行時に適用する規範は、[`agent-toolkit:atk-mode/references/states-and-dependencies.md`「対象リポジトリとprivate-notesの区別」](../../agent-toolkit/skills/atk-mode/references/states-and-dependencies.md)が定める。
 
 `atk wi`の更新は管理リポジトリの同じGit common directoryに属するプロセス間だけを
 共通ロックで直列化する。

@@ -11,34 +11,34 @@
 2026年11月8日、ユーザーが選んだ「品質を保って総費用を減らす」という目的に対し、コードの構造、既存の自動解析、公開操作からの検証を、自然言語の指示への投資より先に比較する基準へ具体化した。
 各段を必須工程にせず、必要な結果を最小の構成で得る段で完結する。
 意図・認可・外部契約の文章と独立した文脈のレビューを保持し、決定論的であることだけでは新しい検査を導入しない。
-現行の選定基準は`agent-basics/skills/writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」と`design-heuristics-decisions.md`「案の採否と実施順の判定」にある。
+現行の選定基準は`agent-basics/skills/writing-standards/references/design-heuristics.md`「設計案の予備選別」と同書「案の採否と実施順の判定」にある。
 
 2026年11月12日、ユーザーは問題への対策が新たな問題を生まないかを、問題の重大度によらず設計・対策選定とレビューで確かめるよう求めた。
 対策自身の誤判定、状態の欠落、例外や他の処理との相互作用から生じる最悪の結果を、元の問題の最大影響と比較する。
 認可・セキュリティ・データの完全性を守る保護は保持し、主経路の成果を失う案をテストや完成条件との一致だけで正当化しない。
-現行の比較基準は`agent-basics/skills/writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」が持つ。
-記録欄は`agent-toolkit/skills/wi-standards/references/analysis-records.md`が持つ。
+現行の比較基準は`agent-basics/skills/writing-standards/references/design-heuristics.md`「問題と手段の比例性」が持つ。
+記録欄は`agent-toolkit/skills/atk-mode/references/analysis-records.md`が持つ。
 
 - ユーザー本人が設定して使い、原因が分かれば運用で直せる機能では、設定ミスなどへ備える専用処理やフォールバックを増やさずエラーで終了させる。
   開発者向け・システム管理者向け機能もシステムの前提に応じて当てはめる。
   現行の原則は`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」にある。
-  判断観点は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics-mechanisms.md`「自作機構の兆候と自問」にある（2026年10月14日、ユーザー指示）
+  判断観点は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」にある（2026年10月14日、ユーザー指示）
 - 規範改訂では将来課す作業と継続費用を採用前に期待成果へ照らし、寄与に比べ負担が大きい案は目的を保つ案へ選び直す。
-  案の比較は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics-decisions.md`「案の採否と実施順の判定」にある。
-  追記の判断は同スキルの`agent-basics:writing-standards/references/agent-documents-additions-additions.md`「規範追記時の判定」にある（2026年10月15日、ユーザー指示）
+  案の比較は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics.md`「案の採否と実施順の判定」にある。
+  追記の判断は同スキルの`agent-basics:writing-standards/references/agent-documents-additions.md`「規範追記時の判定」にある（2026年10月15日、ユーザー指示）
 - 対策の立案前に「そもそも対策が必要な問題か」から再検討する
 - 何もしない案・既存操作だけの案を新機構案と同じ階層で比較し、
   単純案が目的を満たすなら新機構を採用しない
 - 規範を追加する際は、同じ計画内で既存規範の削減・統合を検討する
 - 数回のツール呼び出し削減程度の知識追記は、常時コンテキスト増加の害が上回るため
   不採用とする。
-  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/agent-documents-additions-additions.md`「規範追記時の判定」にある
+  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/agent-documents-additions.md`「規範追記時の判定」にある
 - フックによるブロックは、エージェントの手違いに再考を促す手段として使い、
   誤動作を完全に封じる手段として扱わない
 - フックが実行時の値を確認できることだけでは、その存続理由にならない。
   元の要求と観測した事象の双方に照らし、無ければ達成できない結果を確認する
 - フックに限らず検査・CLIの判定・手順上の停止条件でも、解消手段を伴わないblockを置かない。
-  条件は`agent-basics:writing-standards`の`references/design-heuristics-mechanisms.md`「進行を止める判定の条件」に従う。
+  条件は`agent-basics:writing-standards`の`references/design-heuristics.md`「進行を止める判定の条件」に従う。
   2026年8月のユーザー判断は、待機中の調整役を`SubagentStop`でblockした結果、無操作のコマンド呼び出しとユーザーの中断が反復した事象に由来する。
   2026年11月12日のユーザー指示は、所要の見込みの欠落・超過を理由に選定検査が巡回の途中追加を拒否した事象を踏まえ、hook以外の検査にも及ぶ方針とした
 - 読み取り専用の委譲では、依存の解決と実行に伴って再生成される実行前提が対象成果物を構成しない場合、その変更を結果の不採用と報告の理由にしない。
@@ -48,7 +48,7 @@
 - 既存の機構で得られる判定を自前で組み立てる案は、過剰設計の兆候として扱う。
   該当するのは、内容の同一性を判定するハッシュ値の算出、GitのOIDの写し取り、実行主体の申告の記録などである。
   採用の前に3つの問い（オーバーエンジニアリングではないか、無いとQCDが悪化するか、保守コストに見合うか）へ答える。
-  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics-mechanisms.md`「自作機構の兆候と自問」にあり、
+  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」にあり、
   `agent-basics:review-standards`と`agent-basics:bugfix`の判定箇所が同節を参照する
   （2026年9月23日、ユーザー指示。AWI投入時の整合記録`scope_alignment`が、消費側を持たないまま
   frontmatterへSHA-256を保存する機構として成立していた事象に由来する）
@@ -84,5 +84,5 @@
   `agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`の「遮断・警告フックの成立条件」にある
 
 人が継続して追記する本文の容量検査も、上限超過時だけ整理後の水準へ下げる2段階で扱う。
-共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「記述量の水準」にあり、具体値は各上限の定義・監査記録が持つ。
+共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions.md`「記述量の水準」にあり、具体値は各上限の定義・監査記録が持つ。
 上限以下の本文の一律削減、AntigravityのSKILL.md入口の自動分離、実行時の抜粋上限へ手動整理を広げない。

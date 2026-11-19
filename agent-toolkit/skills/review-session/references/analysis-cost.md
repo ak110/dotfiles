@@ -77,7 +77,7 @@
 ## 規範適用による目的逸脱
 
 事象、原因、対策は、`analysis-operations-root-cause.md`「規範の未適用と目的逸脱」で判定する。
-前提の評価には`agent-basics:bugfix/references/root-cause-severity-quality.md`「前提の再検討」を適用する。
+前提の評価には`agent-basics:bugfix/references/premises.md`「規範に従った結果の失敗」を適用する。
 対象条文の所在（ファイル名と節）、観測された処理停止、採用する改善案と根拠を記録する。
 正常に完了した作業でも、読込、準備、検収、後始末の作業量と成果を比べ、規範が求める工程を簡略化できないかを検討する。
 条文を改訂せず現状維持とするなら、再現条件と許容する理由を「対策を見送った問題」に書く。

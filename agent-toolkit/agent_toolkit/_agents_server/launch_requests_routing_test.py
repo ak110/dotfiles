@@ -45,7 +45,7 @@ async def test_start_explore_result_matches_delivered_role(
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         if role:
-            document = launch_requests._SHARE_DIRECTORY / "bulk-replace-review.subagent.md"
+            document = launch_requests.resolve_task_document_path("bulk-replace-review")
             response = await mcp_tools.start(
                 str(tmp_path), subagent_md_path=str(document), extra_params=_observed_input_params(document.name, tmp_path)
             )
@@ -72,7 +72,7 @@ async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, 
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        explore_role = launch_requests._SHARE_DIRECTORY / "bulk-replace-review.subagent.md"
+        explore_role = launch_requests.resolve_task_document_path("bulk-replace-review")
 
         response = await mcp_tools.start(
             str(tmp_path),
@@ -109,7 +109,7 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        task_document = launch_requests._SHARE_DIRECTORY / task_name
+        task_document = launch_requests.resolve_task_document_path(task_name.removesuffix(".subagent.md"))
 
         response = await mcp_tools.start(
             str(tmp_path), subagent_md_path=str(task_document), extra_params=_observed_input_params(task_name, tmp_path)
@@ -172,7 +172,7 @@ async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPat
 )
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
     """実運用で観測した最小の委譲プロンプトが必須入力の確認処理を通過する。"""
-    task_document = launch_requests._SHARE_DIRECTORY / task_name
+    task_document = launch_requests.resolve_task_document_path(task_name.removesuffix(".subagent.md"))
     extra_params = _observed_input_params(task_name, tmp_path)
     if task_name == "exec-review.subagent.md":
         _prepare_exec_review_plan(tmp_path)
@@ -186,7 +186,7 @@ async def test_reader_fit_public_start_accepts_declared_review_inputs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, rereview: bool
 ) -> None:
     """親が渡す初回・再レビューの入力をstartで受理し、宣言外入力だけを拒否する。"""
-    task = launch_requests._SHARE_DIRECTORY / "reader-fit-review.subagent.md"
+    task = launch_requests.resolve_task_document_path("reader-fit-review")
     manager = TaskManager(
         start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader-fit-review"})
     )
@@ -212,7 +212,7 @@ async def test_exec_review_public_start_accepts_previous_revision(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """引き継ぎ再レビューの比較元を宣言済み入力として委譲プロンプトへ配送する。"""
-    task = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+    task = launch_requests.resolve_task_document_path("exec-review")
     _prepare_exec_review_plan(tmp_path)
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "exec-review"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -236,7 +236,7 @@ async def test_public_start_uses_high_tier_model(
 
     工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
     """
-    task_document = launch_requests._SHARE_DIRECTORY / task_name
+    task_document = launch_requests.resolve_task_document_path(task_name.removesuffix(".subagent.md"))
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     extra_params = _observed_input_params(task_document.name, tmp_path)
@@ -259,7 +259,7 @@ async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path,
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:sonnet/medium")
     async with _manager_with_fake("claude") as (manager, _backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+        task_document = launch_requests.resolve_task_document_path("exec")
         response = await mcp_tools.start(
             str(tmp_path),
             subagent_md_path=str(task_document),
@@ -283,7 +283,7 @@ async def test_wi_owner_uses_default_base_high_tier_candidates(
     async with _manager_with_fake(engine) as (current, _backend):
         install_backend(current, other, FakeBackend(current.sessions, other))
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-        task = launch_requests._SHARE_DIRECTORY / "add-wi.subagent.md"
+        task = launch_requests.resolve_task_document_path("add-wi")
         params = {**_observed_input_params(task.name, tmp_path), "投入経路": route}
         response = await mcp_tools.start(cwd=str(tmp_path), subagent_md_path=str(task), extra_params=params)
         session = current.sessions[response["session_id"]]
@@ -296,7 +296,7 @@ async def test_wi_owner_uses_default_base_high_tier_candidates(
 @pytest.mark.asyncio
 async def test_start_accepts_independent_wi_draft_review(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """専念型の投入前レビューが宣言入力だけで中位・review用途として起動する。"""
-    task_document = launch_requests._SHARE_DIRECTORY / "wi-draft-review.subagent.md"
+    task_document = launch_requests.resolve_task_document_path("wi-draft-review")
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "review"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     params = {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求と出所", "成立性の証拠", "引き継ぎ記録先")}
@@ -396,7 +396,7 @@ async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_
 @pytest.mark.parametrize("stage", [None, "本文", "方針"])
 def test_wi_draft_review_requires_material_for_selected_stage(tmp_path: pathlib.Path, stage: str | None) -> None:
     """段階省略の本文互換を保ち、方針と本文の条件付き必須資料を検査する。"""
-    document = launch_requests._SHARE_DIRECTORY / "wi-draft-review.subagent.md"
+    document = launch_requests.resolve_task_document_path("wi-draft-review")
     path = tmp_path / "資料.md"
     path.write_text("# 資料\n", encoding="utf-8")
     params = {name: str(path) for name in ("要求と出所", "成立性の証拠", "引き継ぎ記録先")}

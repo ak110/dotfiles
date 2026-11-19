@@ -8,6 +8,7 @@ import re
 import sys
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
@@ -40,6 +41,8 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = resolve_repo_id(args.target_repo)
+    branch_settings = _wi_branches.registry()
+    target_branch = _wi_branches.requested_filter(args, (filter_repo,) if filter_repo else (), branch_settings)
     flags = re.IGNORECASE if args.ignore_case else 0
     # 固定文字列は正規表現へエスケープし、`--ignore-case`と行単位の一致判定を`-F`を指定しない場合と同じ処理で使う。
     patterns = args.regexp if args.regexp is not None else [args.pattern]
@@ -56,7 +59,7 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         raise AssertionError("unreachable") from error  # pragma: no cover - args.subparser.error()はSystemExitを送出する
     lines_only = not (args.count or args.files_with_matches or args.summary_only)
     matched = False
-    for path, _, text, _state, entry_type in _wi_entries.select_entries(
+    for path, entry_repo, text, _state, entry_type in _wi_entries.select_entries(
         private_notes,
         status=args.status,
         target_repo=filter_repo,
@@ -64,6 +67,8 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         answered=args.answered,
         source=args.source,
         important=getattr(args, "important", "all"),
+        target_branch=target_branch,
+        branch_settings=branch_settings,
     ):
         since = getattr(args, "since", None)
         if since is not None:
@@ -92,7 +97,10 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         elif args.summary_only:
             # `atk wi list --summary-only`と同じ要約の生成元を使い、同じ項目で同じ値にする。
             summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
-            record = {"filename": path.name, "summary": summary, "match_count": match_count}
+            record: dict[str, object] = {"filename": path.name, "summary": summary, "match_count": match_count}
+            branch = _wi_branches.effective(text, entry_repo, branch_settings)
+            if branch is not None:
+                record["target_branch"] = branch
             print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
     if not matched:
         _outcome.report_no_match("検索条件に一致する行は無い。検索は正常に完了した")

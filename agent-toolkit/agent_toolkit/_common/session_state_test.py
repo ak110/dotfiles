@@ -380,6 +380,16 @@ class TestSweepStaleStates:
         assert sweep_stale_states() == 1
         assert not state_path("open").exists()
 
+    def test_living_sessions_are_not_listed_without_expired_states(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """期限切れの候補が無い掃引では、生存する会話の全件確認を行わない。"""
+        update_state("fresh", lambda state: {**state, "add_awi_skill_invoked": True})
+
+        def list_living(**_kwargs: object) -> frozenset[str]:
+            pytest.fail("期限切れの候補が無いのに生存する会話を列挙した")
+
+        monkeypatch.setattr(session_state.session_activity, "living_root_session_ids", list_living)
+        assert sweep_stale_states() == 0
+
     @staticmethod
     def _age(path: pathlib.Path, seconds: float) -> None:
         stamp = os.stat(path).st_mtime - seconds

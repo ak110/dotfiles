@@ -336,7 +336,12 @@ def _legacy(record: dict[str, Any]) -> None:
     pathlib.Path(record["selection_file"]).unlink(missing_ok=True)
 
 
-_SHARE = pathlib.Path(lane.__file__).resolve().parents[2] / "share"
+_PLUGIN_ROOT = pathlib.Path(lane.__file__).resolve().parents[2]
+
+
+def _role_document(role: str) -> pathlib.Path:
+    """役割名に対応する配布物の`<役割名>.subagent.md`を、役割文書の置き場所から返す。"""
+    return task_documents.require_role_document(_PLUGIN_ROOT, role)
 
 
 def _caller(monkeypatch: pytest.MonkeyPatch, *, claude: str | None = None, codex: str | None = None) -> None:
@@ -360,7 +365,7 @@ def _running(
 ) -> None:
     """agents_serverが`start`で公開するのと同じ形の担当記録を登録簿へ置く。"""
     if role is not None:
-        prompt = task_documents.task_prompt_header(_SHARE / f"{role}.subagent.md") + "\n本文"
+        prompt = task_documents.task_prompt_header(_role_document(role)) + "\n本文"
     session_registry.publish(
         session_id,
         state=session_registry.PublicationState.RESULT_COMPLETED

@@ -1,6 +1,7 @@
 """両ホストの宣言配送、取得範囲、主体と圧縮の境界を確かめる。"""
 
 import json
+import os
 
 import pytest
 
@@ -8,7 +9,7 @@ from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
-from agent_toolkit._testing.document_delivery import observe_received
+from agent_toolkit._testing.document_delivery import WINDOWS_HOOK_CPU_REASON, hook_text, observe_received
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
 from agent_toolkit._testing.read_delivery_support import (
     _assert_acquired,
@@ -37,6 +38,7 @@ __all__ = [
     ("case", "ready"),
     [("same", True), ("different", False), ("other-actor", False), ("partial", False), ("split-copies", False)],
 )
+@pytest.mark.windows
 @pytest.mark.usefixtures("memory")
 def test_public_hook_reuses_received_content_across_paths(tmp_path, monkeypatch, case, ready):
     """同じ要求本文だけを再利用し、別本文・別主体・不完全な本文を区別する。"""
@@ -78,6 +80,7 @@ def test_unrecorded_copy_history_keeps_the_selected_path_unread(tmp_path, monkey
     assert _guidance(read_delivery.deliver({"transcript_path": str(log)}, "Do", {}, "test")) is not None
 
 
+@pytest.mark.windows
 def test_compaction_resets_acquisition_read_through_a_same_content_copy(tmp_path, monkeypatch, memory):
     """同じ内容の写しの取得も圧縮で失われ、現在の操作が選ぶ資料として案内し直す。"""
     checkout, worktree = _copies(tmp_path, monkeypatch)
@@ -91,12 +94,13 @@ def test_compaction_resets_acquisition_read_through_a_same_content_copy(tmp_path
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
+@pytest.mark.windows
 def test_compaction_reguides_only_current_documents_without_blocking(tmp_path, monkeypatch, memory):
     """圧縮後は現在必要な資料を一度案内し、未取得の再書込も許可する。"""
     earlier = tmp_path / "earlier.md"
     later = tmp_path / "later.md"
-    earlier.write_text("# 圧縮前の資料\n\n圧縮前の基準\n", encoding="utf-8")
-    later.write_text("# 圧縮後の資料\n\n圧縮後の基準\n", encoding="utf-8")
+    earlier.write_text("# 圧縮前の資料\n\n圧縮前の基準\n", encoding="utf-8", newline="\n")
+    later.write_text("# 圧縮後の資料\n\n圧縮後の基準\n", encoding="utf-8", newline="\n")
     rows = [
         ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (earlier,)),
         ReadTrigger(tmp_path / "SKILL.md", 2, "操作", ("tool:Write",), (later,)),
@@ -167,6 +171,8 @@ def test_selection_that_no_longer_matches_the_document_is_not_reguided(tmp_path,
     assert not read_delivery.deliver(payload, "Bash", {"command": "git status"}, "test").notices
 
 
+@pytest.mark.windows
+@pytest.mark.cpu_limit(1.5 if os.name == "nt" else 0.5, reason=WINDOWS_HOOK_CPU_REASON)
 @pytest.mark.parametrize("codex", [False, True])
 def test_public_guidance_distinguishes_new_scope_target_and_compaction(tmp_path, monkeypatch, memory, codex):
     """実配送済みでも新しい必要節・別資料・圧縮後の現在資料を案内し、取得証拠を分離する。"""
@@ -204,7 +210,7 @@ def test_public_guidance_distinguishes_new_scope_target_and_compaction(tmp_path,
     assert compact.returncode == 0 and not compact.stderr
     restored = _run_hook_in_process("pretooluse", operation)
     assert restored.returncode == 0 and not restored.stderr
-    assert str(other) in restored.stdout and str(path) not in restored.stdout
+    assert str(other) in hook_text(restored.stdout) and str(path) not in hook_text(restored.stdout)
     assert "圧縮後に読むのは作業契約と会話の要約だけである" in compact.stdout
     assert not _run_hook_in_process("pretooluse", operation).stdout
     _assert_acquired(payload, other, False)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import re
 
-from agent_toolkit._common.plugin_roots import plugin_resolution_scope, resolve_plugin_root
+from agent_toolkit._common.plugin_roots import plugin_resolution_scope, raise_for_incomplete_installation, resolve_plugin_root
 from agent_toolkit._common.read_triggers_material import (
     material_targets,
     reference_context,
@@ -114,6 +114,19 @@ def parse_tables(
     )
 
 
+@plugin_resolution_scope()
+def parse_deferred_text(
+    source: pathlib.Path, text: str, plugin_root: pathlib.Path, *, host: str, project: pathlib.Path | str | None
+) -> list[ReadTrigger]:
+    """読込済みの本文から、実体のパス`source`の`parse_tables(..., defer_material=True)`と同じ結果を返す。
+
+    本文を既に読んだ呼出元（解析結果の保存）が、同じ文書を読み直さないために使う。
+    """
+    return list(
+        _parse_text(source, text, plugin_root, strict=False, host=host, project=project, defer_material=True, named=False)
+    )
+
+
 @_scope_cached
 def _parse_tables(
     source: pathlib.Path,
@@ -125,7 +138,29 @@ def _parse_tables(
     defer_material: bool,
     named: bool,
 ) -> tuple[ReadTrigger, ...]:
-    text = source.read_text(encoding="utf-8")
+    return _parse_text(
+        source,
+        source.read_text(encoding="utf-8"),
+        plugin_root,
+        strict=strict,
+        host=host,
+        project=project,
+        defer_material=defer_material,
+        named=named,
+    )
+
+
+def _parse_text(  # noqa: PLR0913 -- parse_tablesと同じ解析条件をキーワードで受け取る
+    source: pathlib.Path,
+    text: str,
+    plugin_root: pathlib.Path,
+    *,
+    strict: bool,
+    host: str,
+    project: pathlib.Path | str | None,
+    defer_material: bool,
+    named: bool,
+) -> tuple[ReadTrigger, ...]:
     lenient = not strict and user_side_source(source)
     result: list[ReadTrigger] = []
     headers: list[str] = []
@@ -299,6 +334,7 @@ def _row_targets(
         targets = tuple(target for target in targets if "<" not in str(target.path))
     if not targets and not selector:
         raise ValueError(f"{source}:{line}: 実ファイルの資料を宣言する")
-    if any(not target.path.is_file() for target in targets):
+    if missing := [target.path for target in targets if not target.path.is_file()]:
+        raise_for_incomplete_installation(missing)
         raise ValueError(f"{source}:{line}: 資料が存在しない: {tuple(target.path for target in targets)}")
     return targets

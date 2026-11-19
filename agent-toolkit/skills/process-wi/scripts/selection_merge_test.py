@@ -917,3 +917,49 @@ def test_public_merge_preserves_derived_new_paths(
         for item in data["選定"]
     ]
     assert _dispatch(str(output), "--work-dir", str(repo)) == 0
+
+
+def test_merge_rejudges_new_pair_under_existing_record(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """既存レーンへ合流した追加WIと相手レーンのWIの組は、既存の記録で通さず追加側の記録で判定させる。
+
+    既存のlane-01（a）とlane-02（b）の記録はa-bの組だけを判定しており、lane-01へ合流するcとbの組を判定していない。
+    """
+    repo, existing, added = inputs
+    addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+    addition["選定"] = [_item("c.md", "lane-03")]
+    addition["レーンの所要時間"] = [_cost("lane-03")]
+    addition["レーン間の重なり"] = []
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-01"}), encoding="utf-8")
+    before = existing.read_bytes()
+    capsys.readouterr()
+    assert _merge_into_existing(repo, existing, added, mapping) == 1
+    err = capsys.readouterr().err
+    assert "lane-01とlane-02: 重複パスの記録不足: README.md（未判定の組: b.md（lane-02）とc.md（lane-03））" in err
+    assert "表示のレーン名は合流後の名前" in err and "追加WIの側を追加YAMLのレーン名（仮名）" in err
+    assert existing.read_bytes() == before
+    addition["レーン間の重なり"] = [_overlap("lane-02", "lane-03")]
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    assert _merge_into_existing(repo, existing, added, mapping) == 0
+    assert yaml.safe_load(existing.read_text(encoding="utf-8"))["レーン間の重なり"] == [
+        {**_overlap("lane-01", "lane-02"), "レーン1の定義": ["lane-01の節", "lane-03の節"]}
+    ]
+
+
+def test_merge_with_same_name_temporary_lane_judges_existing_members(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """仮名が同じ名前の既存レーンへ写る合流では、その名前の追加側の記録が既存分と追加分の組を判定する。"""
+    repo, existing, added = inputs
+    addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+    addition["選定"] = [_item("c.md", "lane-01"), _item("d.md", "lane-02")]
+    addition["レーンの所要時間"] = [_cost("lane-01"), _cost("lane-02")]
+    addition["レーン間の重なり"] = [_overlap("lane-01", "lane-02")]
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-01": "lane-01", "lane-02": "lane-02"}), encoding="utf-8")
+    assert _merge_into_existing(repo, existing, added, mapping) == 0
+    assert yaml.safe_load(existing.read_text(encoding="utf-8"))["レーン間の重なり"] == [_overlap("lane-01", "lane-02")]

@@ -5,9 +5,11 @@
 保存・参照は`plan-file-storage.md`、復元型の変更と保持・不変性・完全復元は`plan-restoration-contracts.md`、構造検証は`plan-structure-check.md`が定める。
 
 計画は要求漏れを防ぐ実装・実行レビューの共通基準と、記録・中断後の再開用の内部資料であり、ユーザー承認は不要である。
-要件の追加判断なしに実装へ着手できる要件・外部仕様とし、`agent-basics:writing-standards/references/writing-readers.md`「読み手別の追加注意点」のエージェント向け文書の基準に従う。
-一般設計・コーディングは方針とキーワードで示し、変更対象、確定要件・外部仕様、入力、期待結果、異常系、受入条件、固有の検証コマンドを具体化する。
-実装手順・関数分割・制御フロー・修正後全文などは実行時のコードで確定し、実装不良はテスト、要件・外部仕様の充足と過剰設計は実行レビューで判定する。
+作成するのは`../SKILL.md`「計画ファイルの作成要否」の条件に当たる作業だけである。
+関連WIの本文と合わせて、要件の追加判断なしに実装へ着手できる内容にする。
+本書と条件別資料が定めるのは、計画メタ情報、実施内容、検証、進捗ログ、凍結後の訂正、保存、検査、旧形式の読み方である。
+要求の書き方（何をどう変えるか、外部仕様、原因分析、判断根拠、完成条件、逐語引用）は`agent-toolkit:atk-mode/references/awi-body.md`とその条件別資料が定め、本書は再掲しない。
+実装手順・関数分割・制御フロー・修正後全文などは実行時のコードで確定し、実装不良はテスト、要求の充足と過剰設計は実行レビューで判定する。
 
 `ユーザー`・`エンドユーザー`は`agent-toolkit/share/rules/common/01-agent.md`「役割分担」に従い、ユーザーは計画の要求・指示・合意・確認回答を示す人である。
 「消費主体」は人間、コード、委譲元エージェント、CIなど成果物を利用・検証する主体を指す。
@@ -17,9 +19,8 @@
 | 呼称 | 実体 |
 | --- | --- |
 | 計画ファイル | `<計画名>.md` |
-| 計画ファイル（バグ） | `<計画名>.bugs.md` |
 | 実行レビュー指摘管理表 | `<計画名>.exec-review.tsv` |
-| 計画バンドル | 計画ファイルと、同じステム名の付属ファイルの一式。付属ファイルには計画ファイル（バグ）、実行レビュー指摘管理表などが含まれる |
+| 計画バンドル | 計画ファイルと、同じステム名の付属ファイルの一式。付属ファイルには実行レビュー指摘管理表などが含まれる |
 
 ## 名指し参照の読込方法
 
@@ -32,21 +33,18 @@
 | 参照基準の適用前 | `plan-restoration-contracts.md` |
 | 参照基準の適用前 | `plan-structure-check.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/SKILL.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/writing-readers.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/writing.md` |
 | 参照基準の適用前 | `../../process-wi/SKILL.md` |
 | レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
 | 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` |
 | 本文で基準を使う資料を選択・取得する時 | `../../commit/references/commit-wi-records.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
 
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 計画ファイルの構成・概要と計画メタ情報に関する判断・作業の前 | `plan-file-standards-structure.md` |
+| 計画ファイルの構成・要約と計画メタ情報に関する判断・作業の前 | `plan-file-standards-structure.md` |
 | 実施内容に関する判断・作業の前 | `plan-file-standards-scope.md` |
-| 要件・外部仕様に関する判断・作業の前 | `plan-file-standards-requirements.md` |
-| 設計・実装方針・恒久化・リファクタリング・変更履歴に関する判断・作業の前 | `plan-file-standards-design.md` |
-| 検証と公開工程・バグ調査・要件の成立性・計画した検証の実行に関する判断・作業の前 | `plan-file-standards-verification.md` |
+| 検証・原因分析・計画した検証の実行に関する判断・作業の前 | `plan-file-standards-verification.md` |
 | 進捗ログに関する判断・作業の前 | `plan-file-standards-progress.md` |
 | 初回起草の雛形に関する判断・作業の前 | `plan-file-standards-template.md` |

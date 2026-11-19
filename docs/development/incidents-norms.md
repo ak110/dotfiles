@@ -49,10 +49,10 @@
   保存形式の名称、引用、悪い例と検出用データは役割を区別して保持する。
   書き直しの基準は`agent-basics:writing-standards`、検出定義は`scripts/check_agent_doc_tone.py`が持つ
 
-- 2026年10月2日: `agent-toolkit:add-awi-by-user`のセッションで、範囲語と例示を併せ持つ依頼（造語の例を挙げ、同じような造語が多いと述べた依頼）を受けた。
+- 2026年10月2日: `agent-toolkit:atk-mode`の作業`add-awi-by-user`のセッションで、範囲語と例示を併せ持つ依頼（造語の例を挙げ、同じような造語が多いと述べた依頼）を受けた。
   メインは例示の語形を起点とする検索結果だけを根拠にユーザーの問いへ回答し、同じ結果を`確定済みの観測`としてWI投入担当へ渡した。
   ユーザーが2回是正し、是正後に例示を伏せて独立に調査すると対象集合が広がった。
-  直接原因: 例示を伏せた独立した調査を定める`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`の項は発話の受領時にだけ読まれていた。
+  直接原因: 例示を伏せた独立した調査を定める`agent-toolkit:atk-mode/playbooks/user-utterance.md`の項は発話の受領時にだけ読まれていた。
   回答と受け渡しの手順を持つ`add-awi-by-user`手順2と`add-wi.parent.md`「渡す入力」は、その項を指さなかった。
   WI投入担当は例示を含む逐語本文を受け取るため例示を伏せた調査を担えないが、その関係も書かれていなかった。
   同じ手順は2026年8月に常時規範へ置かれた後、`agent-toolkit:delegation`へ移り、集約の際に移設先なしに削除されていた。
@@ -76,7 +76,8 @@
   作者の判定と由来による事前承認を撤去し、確認をユーザーの決定を覆す場合とエンドユーザーが観測する結果や認可・安全性の境界を変える場合に限った
 
 - 2026年10月6日: Claude Codeのメインが、確認の前に全文読む2資料のどちらも読まずに`AskUserQuestion`を2回発行した。
-  2資料は`agent-toolkit:user-confirmation-and-report`の読込表が定める`references/approval-scope.md`と`references/choice-construction.md`である。
+  2資料は、当時の確認のスキルの読込表が定めていた`approval-scope.md`と`choice-construction.md`である。
+  現行の所在は`agent-toolkit:atk-mode/playbooks/confirmation.md`「承認源と適用範囲」と`agent-toolkit:atk-mode/references/choice-construction.md`である。
   1回目は委譲先の未検証の件数を`共通前提:`行へ書き、ユーザーは回答でその前提を問い返した。
   同日、2026年10月6日「refactor(agent-toolkit): 確認・報告・WIの各スキルを読込表と工程の骨格へ整理し、領域内の矛盾を1つの判断へそろえる」、`f17c75b4f`の変更があった。
   その変更以後の記録では、`AskUserQuestion`4回のうち`choice-construction.md`の読取が先行したのは1回、`approval-scope.md`は0回だった。

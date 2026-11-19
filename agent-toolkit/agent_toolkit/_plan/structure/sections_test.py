@@ -14,11 +14,9 @@ from agent_toolkit._plan.structure import sections as plan_sections
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_structure_support import (
     _BASE,
-    _BUG_CAUSE_TABLE,
     _BUG_FILE_CONTENT,
     _HUMAN_DETAIL_CONTENT,
     _HUMAN_MAIN_CONTENT,
-    _LEGACY_BUG_FILE_CONTENT,
     _VALID_CONTENT,
     _VALID_DETAIL_CONTENT,
     _VALID_MAIN_CONTENT,
@@ -29,23 +27,93 @@ from agent_toolkit._testing.plan_structure_support import (
 pytestmark = pytest.mark.windows
 
 
+_RECORD = _plan_fixture.cause_record()
+_EXPANSION_LINE = _plan_fixture.cause_record_line("広がり")
+_RECORD_WITHOUT_EXPANSION = _RECORD.replace(f"{_EXPANSION_LINE}\n", "")
+_EXPANSION_CONTENT = _plan_format.CAUSE_RECORD_REQUIRED_LABELS["広がり"]
+_MISSING_EXPANSION = f"`広がり:`の行が無い（書く内容: {_EXPANSION_CONTENT}）"
+
+
 @pytest.mark.parametrize(
-    "record", ["", "原因を訂正し、期待結果で再検証した。", "| 項目 | 内容 |\n| --- | --- |\n| 対策 | 訂正 |"]
+    "line",
+    [
+        "- 広がり: 検索した。",
+        "* **広がり**: 検索した。",
+        "+ **広がり:** 検索した。",
+        "広がり：検索した。",
+        "    - 広がり: 検索した。",
+    ],
 )
-def test_bug_file_short_record_boundary(record: str) -> None:
-    """表なし短記録だけを受理し、空や不完全な詳細表へ降格しない。"""
-    errors = plan_sections.check_bug_file_structure(f"# 調査\n\n### 事象\n\n{record}\n")
-    assert bool(errors) is (not record or "|" in record)
+def test_cause_record_accepts_line_forms(line: str) -> None:
+    """リスト記号・強調・全角の区切りの有無によらず、行頭語で始まる行を記録の行として受理する。"""
+    assert not plan_sections.cause_record_errors(_RECORD.replace(_EXPANSION_LINE, line))
+
+
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        (_RECORD_WITHOUT_EXPANSION, _MISSING_EXPANSION),
+        (
+            _RECORD.replace(_EXPANSION_LINE, "- **広がり:**"),
+            f"`広がり:`の行に本文が無い（同じ行に書く内容: {_EXPANSION_CONTENT}）",
+        ),
+        (
+            f"{_RECORD}\n- 再発:",
+            f"`再発:`の行に本文が無い（同じ行に書く内容: {_plan_format.CAUSE_RECORD_OPTIONAL_LABELS['再発']}）",
+        ),
+        (_RECORD.replace(_EXPANSION_LINE, f"```markdown\n{_EXPANSION_LINE}\n```"), _MISSING_EXPANSION),
+    ],
+    ids=["missing", "empty", "empty-optional", "fenced-example"],
+)
+def test_cause_record_reports_missing_and_empty_lines(record: str, expected: str) -> None:
+    """欠けた行頭語と本文の無い行を、その行に書く内容とともに示す。コードフェンス内の例は記録に数えない。"""
+    assert plan_sections.cause_record_errors(record) == [expected]
+
+
+def test_cause_record_accepts_optional_lines_with_text() -> None:
+    """条件付きの`再発:`・`再発防止:`の行は、本文があれば受理し、`再発防止:`を`再発:`と読み違えない。"""
+    record = f"{_RECORD}\n- 再発防止: 検査を足し、同じ文章を消す。"
+    assert not plan_sections.cause_record_errors(record)
+    assert [line.label for line in plan_sections.cause_record_lines(record)][-1] == "再発防止"
+
+
+def test_cause_record_checks_each_h3_unit() -> None:
+    """H3ごとのバグ単位を個別に検査し、行頭語の行を持たない最初のH3より前の本文は単位として数えない。"""
+    content = f"原因分析の対象を2件に分けた。\n\n### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD_WITHOUT_EXPANSION}\n"
+    assert plan_sections.cause_record_errors(content) == [f"`### 事象B`: {_MISSING_EXPANSION}"]
+    preamble = content.replace("原因分析の対象を2件に分けた。", "- 期待: 前置きに書いた。")
+    assert any(error.startswith("最初のH3より前: `原因:`の行が無い") for error in plan_sections.cause_record_errors(preamble))
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        _plan_fixture.BUG_VARIANT_LEGACY_TABLES,
+        _plan_fixture.BUG_VARIANT_LEGACY_STANDALONE,
+        _plan_fixture.BUG_VARIANT_LEGACY_SHORT,
+        _plan_fixture.BUG_VARIANT_LEGACY_SHORT_LABELED,
+    ],
+)
+def test_saved_legacy_record_is_accepted_only_for_reading(variant: str) -> None:
+    """廃止した表と旧来の短い記録は、保存済みの読み取りでだけ受理し、新規の検査では行頭語の行を求めて拒否する。"""
+    content = _plan_fixture.bug_file(variant=variant)
+    assert not plan_sections.check_bug_file_structure(content)
+    assert plan_sections.has_legacy_cause_record(content)
+    errors = plan_sections.cause_record_errors(content)
+    assert any("`原因:`の行が無い" in error for error in errors), errors
+    assert any("廃止した表" in error for error in errors) is (
+        variant in {_plan_fixture.BUG_VARIANT_LEGACY_TABLES, _plan_fixture.BUG_VARIANT_LEGACY_STANDALONE}
+    )
+
+
+def test_incomplete_current_record_is_rejected_for_reading() -> None:
+    """現行だけが持つ行頭語を含む記録は旧形式として扱わず、読み取りでも欠けた行を診断する。"""
+    content = _plan_fixture.bug_file().replace("広がり", "近傍")
+    assert not plan_sections.has_legacy_cause_record(content)
+    assert any("`広がり:`の行が無い" in error for error in plan_sections.check_bug_file_structure(content))
 
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
-
-
-def test_bug_file_accepts_previous_action_table_for_reading() -> None:
-    """専用行のない保存済み調査表は読み取り互換と移行案内を保つ。"""
-    previous = "\n".join(line for line in _BUG_FILE_CONTENT.splitlines() if not line.startswith("| 処置が生む問題の検討 |"))
-    assert not plan_sections.check_bug_file_structure(previous)
-    assert plan_sections.has_legacy_bug_investigation_table(previous)
 
 
 @pytest.mark.parametrize(
@@ -63,8 +131,8 @@ def test_bug_file_accepts_previous_action_table_for_reading() -> None:
 )
 def test_optional_design_section_rejects_invalid_structure(section: str, target: str, expected: str) -> None:
     """任意の設計節も空欄・配置違い・重複を拒否する。"""
-    content = _plan_fixture.current_plan().replace(f"## {target}\n", f"{section}## {target}\n", 1)
-    errors = plan_sections.check_plan_single_file_structure(content)[1]
+    content = _plan_fixture.eight_section_plan().replace(f"## {target}\n", f"{section}## {target}\n", 1)
+    errors = plan_sections.check_plan_eight_section_structure(content)[1]
     assert any(expected in error for error in errors), errors
 
 
@@ -150,106 +218,6 @@ def test_human_readable_units_reject_ambiguous_exact_id() -> None:
 def test_bug_file_structure_accepts_canonical_sidecar() -> None:
     """H1直下のバグ単位と原因分析表・固定行の調査表を持つ付属ファイルを受理する。"""
     assert not plan_sections.check_bug_file_structure(_BUG_FILE_CONTENT)
-
-
-@pytest.mark.parametrize("row", ["類似見直し観点", "再発防止策"])
-@pytest.mark.parametrize(
-    ("value", "accepted"),
-    [
-        ("作り込み要因の候補はA、見逃し要因の候補はBであり、ともに採用する。", True),
-        ("作り込み要因の候補としてA、見逃し要因の候補としてBを採用する。", True),
-        ("作り込み要因の候補はA。見逃し要因の候補はB。両候補を採用する。", True),
-        ("作り込み要因の候補はA、見逃し要因の候補はB。費用が効果を上回るため、双方を不採用とする。", True),
-        ("作り込み要因の候補Aを採用する。見逃し要因の候補Bは不採用。既存対策で検出できる。", True),
-        ("作り込み要因の候補Aを採用。見逃し要因の候補Bを採用。作り込み要因の補足を記す。", True),
-        ("作り込み要因の候補Aを採用する。", False),
-        ("作り込み要因の候補Aを採用する。見逃し要因の候補はB。", False),
-        ("作り込み要因の候補はA、見逃し要因の候補はB。両系統とも原因確定後に採否を決める。", False),
-        ("作り込み要因の候補はA、見逃し要因の候補はB。両候補を不採用とする。", False),
-        ("作り込み要因の候補はA、見逃し要因の候補はB。双方の採用を保留する。", False),
-        ("作り込み: 経路A。見逃し: 試験B。両方を採用。", True),
-        ("作り込み候補: 集約を採用。見逃し候補: 試験を採用。", True),
-        ("作り込み側は集約を採用。見逃し側は費用が効果を上回るため不採用。", True),
-        ("作り込み要因は集約を採用。見逃し側は試験を採用。", True),
-        ("作り込み候補は費用が効果を上回るため不採用。見逃し候補の試験を採用。", True),
-        ("作り込み側は集約。見逃し側は試験。", False),
-        ("作り込み側は集約を採用。見逃し候補は試験。", False),
-        ("作り込み候補は集約。見逃し側は試験。双方の採用を保留する。", False),
-        ("作り込み側は不採用。見逃し候補の試験を採用。", False),
-    ],
-)
-def test_bug_file_candidate_decision_scope(row: str, value: str, *, accepted: bool) -> None:
-    """6区分化前の計画ファイルで、1行にまとめた候補列挙と共通・個別採否の適用範囲を検証する。
-
-    現行の調査表は系統ごとの行と採否の行へ分かれるため、この判定は保存済みの旧行構成にだけ適用する。
-    """
-    content = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_PREVIOUS_ROWS).splitlines()
-    content = [f"| {row} | {value} |" if line.startswith(f"| {row} |") else line for line in content]
-    errors = plan_sections.check_bug_file_structure("\n".join(content))
-    assert (not errors) is accepted, errors
-
-
-@pytest.mark.parametrize("value", ["", "該当なし", "該当なし。", "該当なし（）。"])
-def test_bug_file_rejects_unexplained_l4(value: str) -> None:
-    """L4の空欄と理由なし該当なしを計画ファイル検査で拒否する。"""
-    content = _BUG_FILE_CONTENT.replace(f"{_plan_fixture.CAUSE_FILLER} |", f"{value} |")
-    assert any("L4" in error for error in plan_sections.check_bug_file_structure(content))
-
-
-@pytest.mark.parametrize("factor", ["作り込み要因", "見逃し要因"])
-def test_bug_file_rejects_missing_candidate_factor(factor: str) -> None:
-    """6区分化前の調査表では、1行に両系統の候補と採否を要求する。"""
-    content = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_PREVIOUS_ROWS).replace(factor, "別系統")
-    assert any(factor in error for error in plan_sections.check_bug_file_structure(content))
-
-
-@pytest.mark.parametrize(
-    "row",
-    ["類似見直し観点（作り込み）", "類似見直し観点（見逃し）", "再発防止策（作り込み）", "再発防止策（見逃し）"],
-)
-@pytest.mark.parametrize("mode", ["missing", "empty"])
-def test_bug_file_rejects_missing_or_empty_candidate_row(row: str, mode: str) -> None:
-    """現行の調査表は4区分の候補行のいずれかが欠けるか空の記録を合格にしない。"""
-    line = _plan_fixture.bug_row(row)
-    content = _BUG_FILE_CONTENT.replace(f"{line}\n", "" if mode == "missing" else f"| {row} |  |\n")
-    errors = plan_sections.check_bug_file_structure(content)
-    expected = f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行" if mode == "missing" else "空の`内容`"
-    assert any(expected in error for error in errors), errors
-
-
-def test_bug_file_accepts_explained_l4_and_rejected_candidate() -> None:
-    """理由付きの該当なしと不採用を受理する。"""
-    content = _BUG_FILE_CONTENT.replace(
-        f"{_plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外で生じた構造と確認した。 |"
-    ).replace("を採用。", "を不採用。既存対策で検出でき継続費用が上回る。")
-    assert not plan_sections.check_bug_file_structure(content)
-
-
-def test_bug_file_structure_rejects_missing_cause_table() -> None:
-    """原因分析表のない新形式のバグ単位を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace(f"{_BUG_CAUSE_TABLE}\n\n", "")
-    errors = plan_sections.check_bug_file_structure(content)
-    assert any("原因分析表を調査表より前に置く" in error for error in errors), errors
-
-
-def test_bug_file_structure_rejects_mixed_new_and_legacy_tables() -> None:
-    """同じバグ単位に新形式と旧14行表が混在した場合を拒否する。"""
-    legacy_table = _LEGACY_BUG_FILE_CONTENT.split("\n\n", 2)[2]
-    assert plan_sections.check_bug_file_structure(f"{_BUG_FILE_CONTENT}\n\n{legacy_table}")
-
-
-def test_bug_file_structure_reports_literal_pipe_for_column_mismatch() -> None:
-    """セル内の未エスケープ半角縦線には原因と修正方法を示す。"""
-    content = _BUG_FILE_CONTENT.replace(
-        _plan_fixture.BUG_FILLER,
-        f"{_plan_fixture.BUG_FILLER} | 追加列",
-        1,
-    )
-
-    errors = plan_sections.check_bug_file_structure(content)
-
-    assert any("列数が一致しない" in error and "`\\|`へエスケープ" in error for error in errors), errors
-    assert not any("空の`内容`" in error for error in errors), errors
 
 
 def test_legacy_plan_accepts_legacy_history_review_identifier() -> None:
@@ -442,7 +410,7 @@ def test_metadata_prefers_canonical_placement() -> None:
     metadata, errors = _plan_format.parse_plan_metadata(content)
     assert not errors
     assert metadata is not None
-    assert metadata.is_canonical
+    assert metadata.parent == _plan_format.PLAN_H2_OVERVIEW
     assert metadata.values["ベースコミット"] == _BASE
 
 
@@ -651,7 +619,7 @@ def test_transferred_action_requires_registered_wi(
         directory.mkdir(parents=True)
         (directory / "20261027-162634-999.md").write_text("# 後続要求\n", encoding="utf-8")
     if human_format:
-        content = _plan_fixture.current_plan().replace(
+        content = _plan_fixture.eight_section_plan().replace(
             _plan_fixture.USER_ACTION_ROW,
             f"| 公開契約に必要な変更を実装する | ユーザー指示 | 移管 | {reason} |",
             1,
@@ -671,7 +639,7 @@ def test_transferred_action_requires_registered_wi(
             1,
         )
     skips: list[str] = []
-    check = plan_sections.check_plan_single_file_structure if human_format else plan_sections.check_plan_main_structure
+    check = plan_sections.check_plan_eight_section_structure if human_format else plan_sections.check_plan_main_structure
     errors = check(content, private_notes=notes, origin_skips=skips)[1]
     assert bool(errors) is rejected, errors
     if not notes_exist:

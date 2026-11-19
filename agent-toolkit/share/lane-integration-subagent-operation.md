@@ -11,7 +11,7 @@
 | 「マージありの統合」でmergeが競合で停止したとき、またはmerge後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
 | `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
 | 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
-| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
+| `adopt`・`reject`のメモを書く直前 | `../skills/atk-mode/playbooks/wi-drafting.md`、`../skills/atk-mode/references/states-and-dependencies.md` |
 
 ## 公開統合操作
 
@@ -75,7 +75,7 @@ CLIは選定YAMLにあるレーンの全WIがmanifestに載っているかを確
   CLIは共有実行枠（`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の定義を参照）を取得した後に上限を適用し、時間切れ・明示中断では所有する子孫の回収を確認する。
   親コマンドの終了だけで回収済みと判定せず、残存の診断があれば同じ実行記録から処置する。
   秒数は記録された同一検証の所要を基に通常完了を十分上回る有限値とする。
-  訂正表の保持・引継ぎは`../skills/write-plan/references/plan-file-standards-verification.md`「検証と公開工程」、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。
+  訂正表の保持・引継ぎは`../skills/write-plan/references/plan-file-standards-verification.md`「検証」、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。
   merge後は新HEADの変更箇所と関連する利用側を検証する。
   依存版指定・lock更新を含め、ローカルの範囲は`agent-basics:check-execution/references/verification-scope.md`の上限に従う。
   CIが全体を担う場合は全体の試験・静的検査をCIへ委ね、列挙した利用側と関連モジュールまでをmanifestへ渡す。

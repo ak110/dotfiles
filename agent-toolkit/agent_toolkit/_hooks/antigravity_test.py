@@ -37,7 +37,9 @@ def _run(payload: dict[str, Any], event: str, capsys: pytest.CaptureFixture[str]
 
 
 @pytest.mark.parametrize("plugin", ["agent-toolkit", "agent-basics"])
-@pytest.mark.parametrize("relative", ["SKILL.md", "references/search.md", "references/antigravity-full-instructions.md"])
+@pytest.mark.parametrize(
+    "relative", ["SKILL.md", "references/search.md", "playbooks/search.md", "references/antigravity-full-instructions.md"]
+)
 @pytest.mark.parametrize("partial", [False, True])
 def test_read_keeps_document_owner_for_shared_observation(tmp_path, monkeypatch, plugin, relative, partial):
     """全文を返した`SKILL.md`の読取だけを、資料の所有者付きでSkill観測へ渡す。部分取得と参照資料は渡さない。"""
@@ -63,7 +65,7 @@ def test_read_keeps_document_owner_for_shared_observation(tmp_path, monkeypatch,
         "tool_response": header if partial else path.read_text(encoding="utf-8"),
     }
     assert not antigravity._record_read(payload)  # noqa: SLF001  # pylint: disable=protected-access
-    if not partial and relative != "references/search.md":
+    if not partial and relative not in {"references/search.md", "playbooks/search.md"}:
         assert observed[0]["tool_input"] == {"skill": f"{plugin}:search"}
     else:
         assert not observed
@@ -403,3 +405,27 @@ def test_native_async_offsets_keep_original_bytes(tmp_path: pathlib.Path) -> Non
     )
     path.write_text(first + "\n" + second + "\n", encoding="utf-8")
     assert background_tasks.async_launch_offsets(str(path))["agy-1-0"] == len((first + "\n").encode())
+
+
+def test_session_start_claims_process_loop_before_state_update_failures(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """統括の確保は、SessionStartの状態更新や古い状態の除去が失敗しても先に成立し、入れ子の会話へ奪われない。"""
+    from agent_toolkit._common import process_loop_session  # pylint: disable=import-outside-toplevel
+
+    environ = {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "launch-agy"}
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("SessionStartの処理の失敗")
+
+    monkeypatch.setattr(antigravity.session_state, "sweep_stale_states", fail)
+    for conversation in ("agy-coordinator", "agy-nested"):
+        with pytest.raises(RuntimeError):
+            antigravity.main(json.dumps(_payload(tmp_path, conversationId=conversation)), event="SessionStart")
+
+    assert process_loop_session.is_identified_process_loop_session("agy-coordinator", environ)
+    assert not process_loop_session.is_identified_process_loop_session("agy-nested", environ)

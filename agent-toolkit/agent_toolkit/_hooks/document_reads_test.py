@@ -10,8 +10,10 @@ import pytest
 from agent_toolkit._common import plugin_roots, read_triggers, read_triggers_targets
 from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks.pretooluse import large_reads, read_delivery
+from agent_toolkit._testing.helpers import link_directory
 
 
+@pytest.mark.windows
 def test_receipt_candidates_share_document_scan_and_refresh_changed_body(tmp_path, monkeypatch):
     """名指しの無い節には候補を作らず、資料全体の候補で同サイズ更新も識別する。"""
     path = tmp_path / "document.md"
@@ -26,7 +28,7 @@ def test_receipt_candidates_share_document_scan_and_refresh_changed_body(tmp_pat
     monkeypatch.setattr(read_triggers_targets, "document_lines", observe_lines)
     versions = []
     for body in (text, text.replace("old", "new")):
-        path.write_text(body, encoding="utf-8")
+        path.write_text(body, encoding="utf-8", newline="\n")
         scans.clear()
         candidates = document_reads.receipt_candidates([read_triggers.ReadTarget(path)])
         received = document_reads.received_candidates(candidates, [body])
@@ -61,6 +63,7 @@ def test_receipt_preparation_excludes_unrelated_documents(tmp_path, monkeypatch,
     assert {target.path for args in calls for target in args[0]} == ({read_path} if tool_name == "Read" else set())
 
 
+@pytest.mark.windows
 def test_basics_reference_uses_observed_manifest_and_path(tmp_path):
     """Bashの読取は資料の所有プラグインを実在のmanifestから識別し、観測した実体を保持する。"""
     root = tmp_path / "agent-basics"
@@ -69,8 +72,39 @@ def test_basics_reference_uses_observed_manifest_and_path(tmp_path):
     path = root / "skills/writing-standards/references/writing.md"
     path.parent.mkdir(parents=True)
     path.write_text("# 品質基準\n必要な本文\n", encoding="utf-8")
-    reads = document_reads.bash_document_reads(f"cat -- {path}")
+    reads = document_reads.bash_document_reads(f"cat -- {shlex.quote(str(path))}")
     assert len(reads) == 1 and reads[0].plugin == "agent-basics" and reads[0].path == str(path)
+
+
+@pytest.mark.parametrize(
+    ("relative", "expected"),
+    [
+        ("SKILL.md", "SKILL.md"),
+        ("references/rule.md", "references/rule.md"),
+        ("playbooks/work.md", "playbooks/work.md"),
+        ("roles/add-wi.subagent.md", "roles/add-wi.subagent.md"),
+        ("scripts/tool.md", None),
+        ("playbooks/nested/work.md", None),
+        ("playbooks/work.txt", None),
+    ],
+)
+def test_skill_documents_include_playbooks_and_roles(tmp_path, relative, expected):
+    """手順書と役割文書を`references/`と同じ資料として識別し、`SKILL.md`だけをスキル名の根拠にする。"""
+    root = tmp_path / "agent-toolkit"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "agent-toolkit"}), encoding="utf-8")
+    path = root / "skills/atk-mode" / relative
+    path.parent.mkdir(parents=True)
+    path.write_text("# 資料の見出し\n本文\n", encoding="utf-8")
+    assert document_reads.skill_document(str(path)) == (("atk-mode", expected) if expected else None)
+    assert (document_reads.skill_name(path) is not None) is (relative == "SKILL.md")
+    reads = document_reads.bash_document_reads(f"cat -- {shlex.quote(str(path))}")
+    assert [(read.skill, read.relative_path, read.plugin) for read in reads] == (
+        [("atk-mode", expected, "agent-toolkit")] if expected else []
+    )
+    if expected and expected != "SKILL.md":
+        assert document_reads.body_returned("atk-mode", expected, "# 資料の見出し\n本文\n", path=str(path))
+        assert not document_reads.body_returned("atk-mode", expected, "# 別の資料\n", path=str(path))
 
 
 def test_hook_declarations_and_body_identity_use_the_effective_project(tmp_path, monkeypatch):
@@ -131,32 +165,34 @@ def test_hook_declarations_and_body_identity_use_the_effective_project(tmp_path,
         )
 
 
+@pytest.mark.windows
 @pytest.mark.parametrize("linked", [False, True])
 @pytest.mark.parametrize(
-    "relative,distribution",
+    "source_directory,document,distribution",
     [
-        ("dot_claude/skills/operate-ak110-projects/SKILL.md", ".codex/skills/operate-ak110-projects/SKILL.md"),
+        ("dot_claude/skills/operate-ak110-projects", "SKILL.md", ".codex/skills/operate-ak110-projects"),
+        ("dot_claude/skills/operate-ak110-projects", "references/ci-and-tooling.md", ".codex/skills/operate-ak110-projects"),
+        ("dot_claude/rules", "myprojects.md.tmpl", ".claude/rules"),
         (
-            "dot_claude/skills/operate-ak110-projects/references/ci-and-tooling.md",
-            ".codex/skills/operate-ak110-projects/references/ci-and-tooling.md",
-        ),
-        ("dot_claude/rules/myprojects.md.tmpl", ".claude/rules/myprojects.md"),
-        (
-            "dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
-            ".gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
+            "dot_gemini/antigravity-cli/skills/japanese-tech-writing",
+            "SKILL.md",
+            ".gemini/antigravity-cli/skills/japanese-tech-writing",
         ),
     ],
 )
-def test_chezmoi_source_and_distribution_link_require_full_body(tmp_path, monkeypatch, capsys, linked, relative, distribution):
-    """実在原本と配布形のリンクを通し、全文案内・起動配送・受信の共通契約を確かめる。"""
+def test_chezmoi_source_and_distribution_link_require_full_body(
+    tmp_path, monkeypatch, capsys, linked, source_directory, document, distribution
+):
+    """実在原本と配布先ディレクトリのリンクを通し、全文案内・起動配送・受信の共通契約を確かめる。"""
     root = pathlib.Path(__file__).resolve().parents[2]
-    source = root.parent / ".chezmoi-source" / relative
+    directory = root.parent / ".chezmoi-source" / source_directory
+    source = directory / document
     path = source
     if linked:
         link = tmp_path / distribution
         link.parent.mkdir(parents=True)
-        link.symlink_to(source)
-        path = link
+        link_directory(link, directory)
+        path = link / document
         assert path.resolve() == source
     text = path.read_text(encoding="utf-8")
     heading = next(line.removeprefix("## ") for line in text.splitlines() if line.startswith("## "))

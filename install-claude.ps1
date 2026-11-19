@@ -31,6 +31,7 @@ $script:codexPluginUpdated = $false
 $script:utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $codexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $codexPluginCacheRoot = Join-Path $codexHomeDir 'plugins/cache/ak110-dotfiles/agent-toolkit'
+$savedCacheRetry = '次回の実行が退避先から戻します。解消しない場合は退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。'
 
 # 配布対象ファイル一覧。
 # `scripts/gen_install_files.py`が`agent-toolkit/share/rules/common/*.md`から自動生成する。
@@ -188,28 +189,64 @@ function Test-CodexPluginStateChanged {
         $beforeState.Enabled -ne $afterState.Enabled
 }
 
-function Copy-CodexPluginCacheSnapshot {
-    param([string]$destination)
-    New-Item -ItemType Directory -Path $destination -Force | Out-Null
+# 旧versionはCODEX_HOME直下の固定の退避先へ移動し、使用中や別ボリュームで移動できない版だけ複製する。
+# 中断した実行が残した退避は、次回の実行がRestore-CodexPluginCacheSnapshotで戻す。
+# 目標versionはCLIが置き換えるため元の場所に残して複製し、plugin addの失敗時に戻せるようにする。
+function Move-CodexPluginCacheSnapshot {
+    param([string]$destination, [string]$targetVersion)
     if (-not (Test-Path -LiteralPath $codexPluginCacheRoot -PathType Container)) { return }
+    New-Item -ItemType Directory -Path $destination -Force | Out-Null
     foreach ($cache in @(Get-ChildItem -LiteralPath $codexPluginCacheRoot -Directory)) {
         if ($cache.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
-        Copy-Item -LiteralPath $cache.FullName -Destination (Join-Path $destination $cache.Name) -Recurse
+        # 復元途中の複製（~restoring）など、版でない名前は退避しない。
+        if ($cache.Name.Contains('~')) { continue }
+        $saved = Join-Path $destination $cache.Name
+        if ($cache.Name -ne $targetVersion) {
+            try { [IO.Directory]::Move($cache.FullName, $saved) } catch { Write-Verbose "移動できないため複製する: $($cache.FullName)" }
+        }
+        if (Test-Path -LiteralPath $cache.FullName) {
+            Copy-Item -LiteralPath $cache.FullName -Destination $saved -Recurse
+        }
     }
 }
 
 function Restore-CodexPluginCacheSnapshot {
     param([string]$savedRoot, [string]$installedVersion, [bool]$replaceExisting)
+    if (-not (Test-Path -LiteralPath $savedRoot -PathType Container)) { return }
     foreach ($saved in @(Get-ChildItem -LiteralPath $savedRoot -Directory)) {
-        if ($saved.Name -eq $installedVersion) { continue }
         $destination = Join-Path $codexPluginCacheRoot $saved.Name
-        if ($replaceExisting -and (Test-Path -LiteralPath $destination)) {
+        # 置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
+        $replaceMarker = Join-Path $savedRoot "$($saved.Name)~replace"
+        $staging = "$destination~restoring"
+        if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+        if (($replaceExisting -or (Test-Path -LiteralPath $replaceMarker)) -and (Test-Path -LiteralPath $destination)) {
+            New-Item -ItemType File -Path $replaceMarker -Force | Out-Null
             Remove-Item -LiteralPath $destination -Recurse -Force
-        } elseif (Test-Path -LiteralPath $destination) {
+        }
+        if ($saved.Name -eq $installedVersion -or (Test-Path -LiteralPath $destination)) {
+            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $saved.FullName -Recurse -Force
             continue
         }
         New-Item -ItemType Directory -Path $codexPluginCacheRoot -Force | Out-Null
-        Copy-Item -LiteralPath $saved.FullName -Destination $destination -Recurse
+        try {
+            [IO.Directory]::Move($saved.FullName, $destination)
+            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
+        } catch {
+            # cacheが別ボリュームへのリンクやjunctionの配下にあると移動できないため、
+            # 複製を仕上げてから元のパスへ置き、その後に退避を削除する。
+            Copy-Item -LiteralPath $saved.FullName -Destination $staging -Recurse
+            [IO.Directory]::Move($staging, $destination)
+            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $saved.FullName -Recurse -Force
+        }
+    }
+    # 版を元のパスへ戻した直後に中断すると、対応する退避の無い印だけが残る。
+    Get-ChildItem -LiteralPath $savedRoot -File -Force -Filter '*~replace' | Remove-Item -Force
+    # 退避先は名前が.で始まり、Linux・macOSのPowerShellでは隠し項目になるため-Forceで削除する。
+    Remove-Item -LiteralPath $savedRoot -Force
+    foreach ($parent in @((Split-Path -Parent $savedRoot), (Split-Path -Parent (Split-Path -Parent $savedRoot)))) {
+        if (-not (Get-ChildItem -LiteralPath $parent -Force)) { Remove-Item -LiteralPath $parent -Force }
     }
 }
 
@@ -218,6 +255,12 @@ function Install-CodexPlugin {
     $codexPluginId = "$pluginName@ak110-dotfiles"
     $codexPluginCacheRoot = Join-Path $codexHomeDir "plugins/cache/ak110-dotfiles/$pluginName"
     Write-Output "Codex側の$pluginName プラグインを設定します..."
+    $savedCacheRoot = Join-Path $codexHomeDir ".dotfiles-plugin-cache-saved/ak110-dotfiles/$pluginName"
+    try {
+        Restore-CodexPluginCacheSnapshot $savedCacheRoot '' $false
+    } catch {
+        throw "前回の実行が退避した旧cacheの復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) $savedCacheRetry"
+    }
     & codex plugin marketplace add ak110/dotfiles --json 2>&1 | Out-Null
     Invoke-RequiredNativeCommand codex @('plugin', 'marketplace', 'upgrade', 'ak110-dotfiles', '--json')
     $expectedVersion = Get-CodexExpectedPluginVersion $pluginName
@@ -231,17 +274,25 @@ function Install-CodexPlugin {
     Invoke-Download "$downloadRoot/agent-toolkit/scripts/atk-hook" (Join-Path $binDir 'atk-hook')
     Invoke-Download "$downloadRoot/agent-toolkit/scripts/atk-hook.cmd" $hookWrapper
     }
-    $savedCacheRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-plugin-cache." + [IO.Path]::GetRandomFileName())
-    Copy-CodexPluginCacheSnapshot $savedCacheRoot
+    try {
+        Move-CodexPluginCacheSnapshot $savedCacheRoot $expectedVersion
+    } catch {
+        $snapshotError = $_
+        try {
+            Restore-CodexPluginCacheSnapshot $savedCacheRoot '' $false
+        } catch {
+            throw "Codex plugin更新前の旧cacheの退避と復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) $savedCacheRetry"
+        }
+        throw $snapshotError
+    }
     try {
         Invoke-RequiredNativeCommand codex @('plugin', 'add', $codexPluginId, '--json')
     } catch {
         $addError = $_
         try {
             Restore-CodexPluginCacheSnapshot $savedCacheRoot '' $true
-            Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
         } catch {
-            throw "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) 退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+            throw "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) $savedCacheRetry"
         }
         throw $addError
     }
@@ -265,9 +316,8 @@ function Install-CodexPlugin {
         try {
             # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
             Restore-CodexPluginCacheSnapshot $savedCacheRoot $expectedVersion $false
-            Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
         } catch {
-            throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) 退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+            throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) $savedCacheRetry"
         }
     }
     Write-Output "Codex側の$pluginName プラグインを設定しました。"

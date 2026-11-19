@@ -152,25 +152,31 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
             assert self.stderr is not None
             rescue.callback(self.stderr.close)
             rescue.callback(process_tree.stop_process_tree, self)
-            if stage != "stop":
-                deadline = time.monotonic() + 30
-                while not release.with_suffix(".ready").exists():
-                    assert self.poll() is None and time.monotonic() < deadline
-                    time.sleep(0.01)
 
         def wait(self, timeout: float | None = None) -> int:
             if stage == "wait" and timeout == 0.1:
+                await_ready()
                 raise RuntimeError("wait失敗")
             return super().wait(timeout=timeout)
+
+    def await_ready() -> None:
+        # Windowsのランチャーは子を停止状態で生成し、Job所属後に再開する。
+        # 生成直後に準備完了を待つと再開前で必ず時間切れになるため、故障を注入する直前に待つ。
+        deadline = time.monotonic() + 30
+        while not release.with_suffix(".ready").exists():
+            assert processes[0].poll() is None and time.monotonic() < deadline
+            time.sleep(0.01)
 
     def start(reader: threading.Thread) -> None:
         readers.append(reader)
         if stage == "reader":
+            await_ready()
             raise RuntimeError("reader失敗")
         original_start(reader)
 
     def set_signal(signum: int, handler: Any) -> Any:
         if stage == "signal" and signum == launcher.signal.SIGTERM and callable(handler):
+            await_ready()
             raise RuntimeError("signal失敗")
         return original_signal(signum, handler)
 
@@ -634,8 +640,11 @@ def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleTy
                 assert process.wait(timeout=15) == 0
                 child_pid, detached_pid = json.loads(marker.read_text())
                 detached = psutil.Process(detached_pid)
-                assert psutil.pid_exists(child_pid)
-            assert not psutil.pid_exists(child_pid)
+                child = psutil.Process(child_pid)
+                assert child.is_running()
+            # JobのActiveProcessesは終了の開始で0になり、プロセスobjectが終了の通知状態になるのは直後（実測1ms以内）である。
+            # PIDの列挙はhandleが残る間も成功するため、終了signalを有限時間で待って確かめる。
+            child.wait(timeout=5)
             assert detached.is_running()
             assert unrelated.poll() is None
         finally:

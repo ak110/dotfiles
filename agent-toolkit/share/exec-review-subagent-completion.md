@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- |
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | | | |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md` | | | |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | | | |
+| AWIの形式を判断する前 | `../skills/atk-mode/references/awi-body.md` | | | |
 | 条件表を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `exec-review-recording-contract.md` | | | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |

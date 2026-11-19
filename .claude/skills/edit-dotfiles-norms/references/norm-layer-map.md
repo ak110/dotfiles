@@ -1,7 +1,7 @@
 # 規範の層と置き場所の地図
 
 本書は、本リポジトリ（dotfiles）でエージェント向け文書を追記・新設・移動するエージェントが、置き場所を層から順に選ぶための一覧である。
-選び方の手順は`agent-basics:writing-standards/references/agent-documents-placement-selection.md`「置き場所の選定」が定め、本書はその手順が使う層の一覧を持つ。
+選び方の手順は`agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所の選定」が定め、本書はその手順が使う層の一覧を持つ。
 各スキルの責務は、そのスキルの`description`と冒頭の責務文が定め、本書へ再掲しない。
 各層の本文が実際にどの起動区分へ届くかは`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表で確かめる。
 
@@ -17,7 +17,7 @@
 
 | 層 | 所在 | 読む主体 | 読む契機 | 置く内容 | 置かない内容 |
 | --- | --- | --- | --- | --- | --- |
-| 常時規範（共通） | `agent-toolkit/share/rules/common/` | 全エージェント（配布先全体） | 常時（ユーザー規範・`~/.codex/AGENTS.md`・委譲先の配送） | 優先順位、硬い制約、全工程の判断原則と、詳細へ届く起動契機 | 判断手順の詳細、特定工程・役割だけの規定（`agent-documents-additions-additions.md`「常時規範への追記条件」） |
+| 常時規範（共通） | `agent-toolkit/share/rules/common/` | 全エージェント（配布先全体） | 常時（ユーザー規範・`~/.codex/AGENTS.md`・委譲先の配送） | 優先順位、硬い制約、全工程の判断原則と、詳細へ届く起動契機 | 判断手順の詳細、特定工程・役割だけの規定（`agent-documents-additions.md`「常時規範への追記条件」） |
 | 共通の詳細 | `agent-toolkit/share/agent-conduct-details.md` | 全エージェント | 常時規範の各節が示す時点の明示読取 | 常時規範の節に対応する全エージェント共通の手順・例外 | 役割・工程・スキル固有の手順 |
 | 役割別規範 | `agent-toolkit/share/rules/rules-main.md`・`rules-subagent.md`とホスト別の`rules-*.md` | メインまたは委譲先のうち、規範が対象とする側（ホスト別は該当ホストだけ）。`all-repos`統括が起動するリポジトリ担当は、`rules-main*.md`を着手時に明示的に読む | 起動時の注入（SessionStart、SubagentStart、agents_serverの配送）と、リポジトリ担当の明示読取（`delivery-scope.md`） | 片側の役割だけに課す常時の規定 | 双方が守る受け渡しの規定（共通へ置く）、工程固有の手順 |
 | 役割文書 | `agent-toolkit/share/<役割名>.parent.md`・`<役割名>.subagent.md`と、同じ役割から読込表で読む`share/`配下の資料 | 委譲元（`.parent.md`）、委譲先（`.subagent.md`） | 役割の起動時と読込表の条件 | 役割固有の入力、手順、返却形式、受領と検収 | 他の役割や全エージェント共通の規定 |

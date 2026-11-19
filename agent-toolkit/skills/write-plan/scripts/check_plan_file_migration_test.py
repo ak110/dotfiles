@@ -168,7 +168,7 @@ def test_new_format_accepts_legacy_bug_file_reference_with_warning(
     errors, warnings = _check_new(work_dir, main_content, detail_content)
 
     assert not errors, errors
-    assert "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する" in warnings
+    assert "バグ調査ファイル参照が旧形式である。新規作成・改訂では計画本体の`## 原因分析`へ移行する" in warnings
 
 
 @pytest.mark.parametrize(
@@ -184,7 +184,7 @@ def test_rejects_current_single_file_structure_violations(
 ) -> None:
     """現行書式の固定節、固定表、見出し深度の違反を拒否する。"""
     work_dir, _base = repo
-    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(old, new, 1)
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).replace(old, new, 1)
 
     errors, _warnings = _check(work_dir, content)
 
@@ -200,7 +200,7 @@ def test_rejects_current_single_file_structure_violations(
         ),
         (
             _migration_legacy_bug_table_input,
-            "バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する",
+            "バグ調査結果が旧形式の本文内表である。新規作成・改訂では計画本体の`## 原因分析`へ移行する",
         ),
         (
             _migration_legacy_history_input,
@@ -232,7 +232,7 @@ def test_rejects_current_single_file_structure_violations(
         ),
         (
             _migration_legacy_bug_reference_input,
-            "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する",
+            "バグ調査ファイル参照が旧形式である。新規作成・改訂では計画本体の`## 原因分析`へ移行する",
         ),
         (
             _migration_legacy_two_file_id_input,
@@ -343,19 +343,20 @@ def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[path
 @pytest.mark.parametrize(
     "variant",
     [
-        _plan_fixture.BUG_VARIANT_BEFORE_HARM_ROWS,
-        _plan_fixture.BUG_VARIANT_PREVIOUS_ROWS,
-        _plan_fixture.BUG_VARIANT_LEGACY_ROWS,
+        _plan_fixture.BUG_VARIANT_LEGACY_TABLES,
+        _plan_fixture.BUG_VARIANT_LEGACY_STANDALONE,
+        _plan_fixture.BUG_VARIANT_LEGACY_SHORT,
+        _plan_fixture.BUG_VARIANT_LEGACY_SHORT_LABELED,
     ],
 )
 def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathlib.Path, str], variant: str) -> None:
-    """6区分化前と統廃合前の行構成を持つ調査表を読み取りで受理し、移行warningを返す。"""
+    """廃止した表と表以前の短い記録を持つ保存済みの付属ファイルを読み取りで受理し、移行warningを返す。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     legacy_bug_file = _plan_fixture.bug_file(variant=variant)
     errors, warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=legacy_bug_file)
     assert not errors, errors
-    assert any("現行より前の行構成" in warning for warning in warnings), warnings
+    assert any("廃止した表か表以前の形式で書いたバグ単位がある" in warning for warning in warnings), warnings
 
 
 def _run_rejecting_migration_warnings(work_dir: pathlib.Path, path: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -395,7 +396,7 @@ def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, st
 def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
     """改訂用CLI入力は移行警告を拒否しても実行工程の進捗行を保持する。"""
     work_dir, _base = repo
-    main_content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    main_content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     main_content = main_content.replace(
         _plan_fixture.PROGRESS_TABLE,
         _plan_fixture.PROGRESS_TABLE + _plan_fixture.PROGRESS_ROW,

@@ -1,11 +1,14 @@
 """background_tasks_nestedの契約テスト。"""
 
 import json
+import os
 import pathlib
+from unittest import mock
 
 import pytest
 
 from agent_toolkit._hooks import background_tasks as _background_tasks
+from agent_toolkit._hooks import background_tasks_entries
 from agent_toolkit._hooks.background_tasks import is_pending_async_work
 from agent_toolkit._testing.background_tasks_support import (
     _assistant_agent_entry,
@@ -30,6 +33,21 @@ _AGENT_MESSAGE = "<agent-message>委譲先からの途中報告</agent-message>"
 
 
 _TEXT = "作業途中です。"
+
+
+_COMPLETED_CHILD_ENTRIES = [
+    _user_entry("hello"),
+    _user_async_launched_entry("toolu_child", agent_id="child-id"),
+    _user_task_notification_entry("toolu_child", task_id="child-id"),
+    _user_entry("続き"),
+    _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+]
+
+
+_GRANDCHILD_ENTRIES = [
+    _assistant_agent_entry("toolu_grandchild"),
+    _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+]
 
 
 class TestIsPendingAsyncWork:
@@ -70,6 +88,76 @@ class TestIsPendingAsyncWork:
         ]
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
         assert is_pending_async_work(str(transcript), "", session_state=None) is True
+
+    def test_child_transcript_is_parsed_again_only_after_it_changes(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """変わっていない子transcriptは次の判定で解析し直さず、追記された子は読み直して新しい孫Agentを待機中と判定する。"""
+        entries = [
+            _user_entry("hello"),
+            _user_async_launched_entry("toolu_child", agent_id="child-id"),
+            _user_task_notification_entry("toolu_child", task_id="child-id"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        transcript = _write_nested_subagent_fixture(tmp_path, entries, [_user_entry("子の作業")])
+        reads = mock.Mock(wraps=background_tasks_entries._read_child_transcript_entries)  # pylint: disable=protected-access
+        monkeypatch.setattr(background_tasks_entries, "_read_child_transcript_entries", reads)
+
+        def stop_hook() -> bool:
+            # Stop hookは呼び出しごとに別プロセスで動くため、プロセス内の判定結果を持ち越さない。
+            _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+            return is_pending_async_work(str(transcript), "", session_state=None)
+
+        assert stop_hook() is False
+        assert stop_hook() is False
+        assert reads.call_count == 1
+        child = transcript.with_suffix("") / "subagents" / "agent-child-id.jsonl"
+        with child.open("a", encoding="utf-8") as stream:
+            for entry in (
+                _assistant_agent_entry("toolu_grandchild"),
+                _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
+            ):
+                stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        assert stop_hook() is True
+        assert reads.call_count == 2
+
+    def test_corrupt_child_metadata_is_not_cached(self, tmp_path: pathlib.Path) -> None:
+        """破損した子metadataは保存せず、同じサイズ・mtime_nsの正しいmetadataへ置き換わった次の判定で孫Agentを待機中と判定する。"""
+        transcript = _write_nested_subagent_fixture(tmp_path, _COMPLETED_CHILD_ENTRIES, _GRANDCHILD_ENTRIES)
+        metadata_path = transcript.with_suffix("") / "subagents" / "agent-child-id.meta.json"
+        valid = metadata_path.read_text(encoding="utf-8")
+        metadata_path.write_text(valid[:-1] + "!", encoding="utf-8")
+        stat = metadata_path.stat()
+
+        def stop_hook() -> bool:
+            _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+            return is_pending_async_work(str(transcript), "", session_state=None)
+
+        assert stop_hook() is False
+        metadata_path.write_text(valid, encoding="utf-8")
+        os.utime(metadata_path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        assert metadata_path.stat().st_size == stat.st_size
+        assert metadata_path.stat().st_mtime_ns == stat.st_mtime_ns
+        assert stop_hook() is True
+
+    def test_transient_child_read_failure_is_not_cached(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """子transcriptの一時的な読取失敗は同じ鍵で保存せず、次の判定で読めたら孫Agentを待機中と判定する。"""
+        transcript = _write_nested_subagent_fixture(tmp_path, _COMPLETED_CHILD_ENTRIES, _GRANDCHILD_ENTRIES)
+        real_read = background_tasks_entries._transcript.read_transcript_lines  # pylint: disable=protected-access
+        child_name = "agent-child-id.jsonl"
+
+        def fail_child(path: str, *args: object, **kwargs: object):
+            return None if pathlib.Path(path).name == child_name else real_read(path, *args, **kwargs)
+
+        def stop_hook() -> bool:
+            _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+            return is_pending_async_work(str(transcript), "", session_state=None)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(background_tasks_entries._transcript, "read_transcript_lines", fail_child)  # pylint: disable=protected-access
+            assert stop_hook() is False
+        assert stop_hook() is True
 
     @pytest.mark.parametrize(("operation", "pending"), [("enqueue", True), ("remove", False)])
     def test_queue_operation_completion_completes_grandchild(

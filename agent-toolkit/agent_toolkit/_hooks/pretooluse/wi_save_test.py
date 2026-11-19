@@ -51,7 +51,7 @@ def test_help_does_not_select_save_requirements(tmp_path):
 def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, report):
     """実読込表と保存本文を公開hookへ接続し、報告と通常保存の資料を区別する。"""
     root = pathlib.Path(__file__).resolve().parents[3]
-    sources = [root / "skills" / name / "SKILL.md" for name in ("wi-standards", "add-awi-by-user", "report-completion")]
+    sources = [root / "share" / "read-trigger-bootstrap.md", root / "skills" / "report-completion" / "SKILL.md"]
     rows = [
         row
         for source in sources
@@ -74,20 +74,12 @@ def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, rep
     assert result.returncode == 0 and not result.stderr
     for name in ("report-formats-uwi.md", "uwi-format.md"):
         assert (name in result.stdout) is report
-    for name in (
-        "draft-semantic-review.md",
-        "drafting-workflow-writing.md",
-        "drafting-workflow-validation.md",
-        "drafting-completion-validation.md",
-        "drafting-workflow-review-route.md",
-        "drafting-workflow-saving.md",
-        "drafting-completion-duplicates.md",
-    ):
+    for name in ("wi-drafting.md", "draft-semantic-review.md", "states-and-dependencies.md", "origin-and-approval.md"):
         assert (name in result.stdout) is not report
+    assert "playbooks/wi-saving.md" in result.stdout
     for row in rows:
         if ("wi-report-commit" if report else "wi-standard-commit") in row.operations:
             assert all(not target.heading and target.body().strip() for target in row.targets)
-    assert ("`agent-toolkit:wi-standards`" in result.stdout) is report
 
 
 @pytest.mark.parametrize("route", ["main", "付随型", "専念型", "omitted"])
@@ -96,11 +88,7 @@ def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeyp
     """付随型の検証は起草資料だけ、本保存は保存資料も案内する。"""
     root = pathlib.Path(__file__).resolve().parents[3]
     # 起草経路ごとの案内を確かめる。検証の段階の資料集合全体は別の試験で期待値と比べる。
-    sources = (
-        "skills/wi-standards/SKILL.md",
-        "skills/wi-standards/references/uwi-format.md",
-        "skills/user-confirmation-and-report/references/answer-transitions.md",
-    )
+    sources = ("share/read-trigger-bootstrap.md", "skills/atk-mode/roles/add-wi.subagent.md")
     rows = [
         row
         for source in sources
@@ -114,7 +102,7 @@ def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeyp
     log = tmp_path / "launch.jsonl"
     launch = "通常の依頼"
     if route != "main":
-        launch = f"次の文書の手順を実行せよ（出所: {root / 'share/add-wi.subagent.md'}）。\n入力:\n"
+        launch = f"次の文書の手順を実行せよ（出所: {root / 'skills/atk-mode/roles/add-wi.subagent.md'}）。\n入力:\n"
         if route != "omitted":
             launch += f"投入経路: {route}\n"
     _write_transcript(log, '<atk-auto source="agents-server" kind="delivery">\n' + launch + "\n</atk-auto>")
@@ -129,17 +117,13 @@ def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeyp
         },
     )
     assert result.returncode == 0 and not result.stderr
-    for name in ("drafting-workflow-writing.md", "drafting-workflow-validation.md", "drafting-completion-validation.md"):
+    # 起草と、回答済みUWIとの整合確認を含む保存前の確認は、原稿の内容を左右するため検証の段階でも届ける。
+    for name in ("playbooks/wi-drafting.md", "playbooks/wi-saving.md"):
         assert name in result.stdout
-    for name in ("drafting-workflow-saving.md", "drafting-completion-duplicates.md"):
-        assert (name in result.stdout) is not dry_run
-    for name in ("drafting-workflow-review-route.md", "draft-semantic-review.md"):
-        assert (name in result.stdout) is (route in {"main", "専念型"})
-    # 回答済みUWIとの整合確認は原稿の内容を左右するため、検証の段階でも届ける。
-    assert "wi-standards-operations.md" in result.stdout
-    # 保存先・状態だけの資料は本保存で、UWIだけで使う資料は通常AWIの検証へ届けない。
-    assert ("wi-standards-states.md" in result.stdout) is not dry_run
-    for name in ("user-confirmation-and-report-decisions.md", "origin-and-approval.md"):
+    # 独立した意味の確認は、付随型のWI投入担当では委譲元が行う。
+    assert ("draft-semantic-review.md" in result.stdout) is (route in {"main", "専念型"})
+    # 保存先・状態の資料と、確認の要否・由来の資料は本保存で届ける。
+    for name in ("states-and-dependencies.md", "playbooks/confirmation.md", "origin-and-approval.md"):
         assert (name in result.stdout) is not dry_run
     assert not HOOK_PAYLOAD.get()
 
@@ -162,14 +146,9 @@ def test_dry_run_stage_documents_match_expected_set():
         if "wi-standard-dry-run" in row.operations
         for target in row.targets
     }
-    drafting = {
-        "skills/wi-standards/references/drafting-workflow-writing.md",
-        "skills/wi-standards/references/drafting-workflow-validation.md",
-        "skills/wi-standards/references/drafting-completion-validation.md",
-    }
+    playbooks = ("skills/atk-mode/playbooks/wi-drafting.md", "skills/atk-mode/playbooks/wi-saving.md")
     assert actual == {
-        *(("skills/add-awi-by-user/SKILL.md", name) for name in drafting),
-        *(("skills/wi-standards/SKILL.md", name) for name in drafting),
-        ("skills/wi-standards/SKILL.md", "skills/wi-standards/references/wi-standards-operations.md"),
-        ("share/add-wi.subagent.md", "skills/wi-standards/SKILL.md"),
+        (source, name)
+        for source in ("share/read-trigger-bootstrap.md", "skills/atk-mode/roles/add-wi.subagent.md")
+        for name in playbooks
     }

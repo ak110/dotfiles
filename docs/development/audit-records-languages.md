@@ -9,7 +9,7 @@
 再検証は同ファイルから、この2つの依存の版指定を取得する。
 いずれかの依存が更新されたときに再検証する。
 
-## agent-basics/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
+## agent-basics/skills/writing-standards/references/textlint-violations.md：逐語引用の検出範囲：2026年9月5日
 
 本表は2026年9月5日に実際に動かして確かめた結果である。
 次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つのサンプルファイルを作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`にかけた。
@@ -72,7 +72,7 @@ em-dash（U+2014）を含む同じ形のサンプルを`scripts/check_dash.py`�
 2026年9月13日時点で、`main`と名前付きエージェントを列挙した名簿はClaude Code v2.1.206以降の版で付くことを確認した。
 再検証は`tools`に`SendMessage`を含む定義を、ほかの名前付きエージェントが稼働するセッションから起動し、サブエージェントの記録に名簿が現れるかと`claude --version`の版数を確認する。
 
-## agent-basics/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日
+## agent-basics/skills/writing-standards/references/textlint-violations.md：チェッカーが扱う規則：2026年9月10日
 
 2026年9月10日、pyfltr 3.17.9のtextlintと本リポジトリの`.textlintrc.yaml`（`preset-jtf-style`の`1.1.3.箇条書き`を`shouldUsePoint: false`で運用する設定）で確認した。
 全ての項目が句点で終わる順序付きリストは同ルールへ一致0件であった。
@@ -80,7 +80,7 @@ em-dash（U+2014）を含む同じ形のサンプルを`scripts/check_dash.py`�
 入れ子を独立した節へ移して各項目を1行に戻すと、再び一致0件であった。
 再検証は同じ順序付きリストについて入れ子を含む写しと含まない写しを作成し、`--commands=textlint`を指定した同じコマンドで一致件数を比べる。
 
-## agent-basics/skills/writing-standards/references/host-official-references.md：子Claudeへ環境値を渡す：2026年10月22日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：子Claudeへ環境値を渡す：2026年10月22日
 
 Claude Codeの[公式環境変数資料](https://code.claude.com/docs/en/env-vars)と[settings資料](https://code.claude.com/docs/en/settings)を参照する。
 settingsのenvは変数を削除できず、空の値はBash・MCPサーバー・hookへ継承される。

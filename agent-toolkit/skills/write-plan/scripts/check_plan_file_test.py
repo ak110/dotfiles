@@ -42,7 +42,7 @@ def test_accepts_canonical_plan(repo: tuple[pathlib.Path, str], *, bug: bool, ex
         else []
     )
     if bug:
-        expected.append("バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する")
+        expected.append("バグ調査結果が旧形式の本文内表である。新規作成・改訂では計画本体の`## 原因分析`へ移行する")
     expected.append("`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連WI`へ移行する")
     assert warnings == expected
 
@@ -255,7 +255,7 @@ def test_rejects_missing_skill_invocations(
 def test_missing_skill_reference_suggests_close_existing_name(repo: tuple[pathlib.Path, str]) -> None:
     """綴りの近い実在スキルがあれば候補として示す。"""
     work_dir, base = repo
-    invocation = f"Skillツールで`{_TOOLKIT_PREFIX}:plan-mod`を起動する。"
+    invocation = f"Skillツールで`{_TOOLKIT_PREFIX}:write-pla`を起動する。"
     errors, _warnings = _check(work_dir, _plan(work_dir, base).replace("対象の構造を更新する。", invocation))
     assert any(f"候補: {_TOOLKIT_PREFIX}:write-plan" in error for error in errors), errors
 
@@ -336,7 +336,7 @@ def test_accepts_current_single_file_plan(repo: tuple[pathlib.Path, str]) -> Non
     """現行の8節1ファイル計画を移行警告なしで受理する。"""
     work_dir, _base = repo
 
-    errors, warnings = _check(work_dir, _plan_fixture.current_plan(repo=work_dir.resolve()))
+    errors, warnings = _check(work_dir, _plan_fixture.eight_section_plan(repo=work_dir.resolve()))
 
     assert not errors, errors
     assert not warnings, warnings
@@ -346,7 +346,7 @@ def test_cli_checks_all_returned_agent_rule_paths(repo: tuple[pathlib.Path, str]
     """返却するパス一覧の全件が同じ本文に含まれるか確かめ、全欠落と修正後の成功を公開されたコマンドから確認する。"""
     work_dir, _base = repo
     path = work_dir / "paths.md"
-    content = _plan_fixture.current_plan(repo=work_dir.resolve())
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     path.write_text(content, encoding="utf-8")
     paths = ("AGENTS.md", ".claude/rules/new[1]+.md")
     args = ["--work-dir", str(work_dir), str(path)]

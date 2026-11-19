@@ -68,28 +68,74 @@ def is_runtime_generated(entry: dict[str, Any]) -> bool:
 
 # 委譲先は返却契約の行頭形式に加え、Markdownの箇条書きの項目記号を付けて報告することがある。
 # 行頭0〜3スペースの後の`- `・`* `・`+ `・`1. `・`1) `を項目記号とし、4スペース以上とタブはコード例として除く。
-_IMPROVEMENT_LINE = re.compile(rf"^ {{0,3}}(?:(?:[-*+]|\d+[.)])[ \t]+)?({re.escape(IMPROVEMENT_MARKER)}.*)$")
+_REPORT_LINE = re.compile(r"^ {0,3}(?:(?:[-*+]|\d+[.)])[ \t]+)?(.*?)\s*$")
 _LIST_ITEM = re.compile(r"^ {0,3}(?:[-*+]|\d+[.)])[ \t]")
+_INLINE_CODE = re.compile(r"`[^`\n]+`")
+
+CUE_NEGATION = (
+    r"(?!(?:は|が|も|では)?(?:無|な)(?:い|く|し|かっ)|(?:は|が|も)?見つから"
+    r"|(?:し|て|して)?い?(?:な(?:い|く|かっ)|ませ)|せず|(?:は|が)?[0０]件)"
+)
+"""判定語の直後が否定（「誤りは無い」「失敗しない」「漏れなく」「0件」など）の場合を除く先読み。"""
+REPORT_CUES = {
+    "deviation": (
+        r"(?:(?:バグ|不具合|(?<!非)欠陥|不備|不整合|誤り|間違い|ミス|漏れ|見落とし|取り違え|逸脱|退行)"
+        r"(?:を(?:見つけ|発見し|直し|修正し|是正し|訂正し|入れ|作り込|起こし|犯し)"
+        r"|が(?:あっ|あり(?!得|え|う)|見つか|分か|判明|残っ|起き|発生し)|だった|でした|であった|である)"
+        r"|間違(?:えた|えてい|ってい)|見落とし(?:た|てい)|取り違え(?:た|てい)|失念し"
+        r"|忘れてい(?:た|ました)|抜けてい(?:た|ました)|抜け落ち|漏れてい(?:た|ました)|漏らし(?:た|てい)"
+        r"|壊し(?:た|てい)|壊れてい(?:た|ました)|退行(?:させ|し(?:た|てい))|逸脱し(?:た|てい)|再発し(?:た|てい)"
+        r"|誤って(?!いるか)|を誤(?:り|った)|(?:私|自分|統括|判断|作業|前回|根本)の?(?:誤り|ミス)|(?:誤り|ミス)(?:です|でした|。|[:：])"
+        r"|同じ(?:誤り|失敗|ミス)を繰り返|(?:不備|退行|不具合|(?<!非)欠陥)を(?:検出|確認)し"
+        r"|忘れ(?:た(?!まま|場合|とき|時|ら|り)|ました)|失敗してい(?:た|ました))"
+    ),
+    "prevention": (
+        r"(?:ユーザー(?:から|に|が)?の?再?指摘|再指摘|再発(?!防止)|同じ(?:誤り|失敗|ミス|不具合|症状|問題|害|指摘)"
+        r"|(?:2|２|二)(?:回|度)目の(?:修正|失敗|指摘)|破損|消失|漏洩|漏えい|依頼の未達)"
+    ),
+    "absence": (
+        r"(?:仕組み|規範|規定|手順|検査|機構|経路|契約|試験|テスト|条文|定め|ルール|対策|hook|フック)"
+        r"(?:(?:が|は|も)(?:無|な)(?:い|く|かっ)|(?:が|は)?存在しな|(?:が|は)?欠けてい|の不在)"
+    ),
+    "no_change": r"(?:変えて|変更して|触って|いじって|編集して|書き換えて|手を加えて|改変して)い?(?:ない|ません|おらず)",
+}
+"""報告の形の手掛かりと判定語。語の一致で案内の候補を選ぶだけで、意味は推定しない。
+
+`deviation`は逸脱を示す報告で、逸脱を表す名詞に発見・是正・発生の述語が続く形、過去の逸脱を述べる動詞の形、
+誤りを自分や判断に帰属させる形（「判断の誤り」「誤って」「誤りです」「同じ失敗を繰り返」など）に一致させる。
+名詞だけの一致（「失敗」「指摘」「漏れ」など）は、作業の主題として正常な進捗の報告に現れるため対象から外す。
+仮定の形（「忘れた場合」「忘れたまま」）と問いの形（「誤っているか」）も外す。
+`prevention`は再発防止を検討する条件（ユーザーの指摘、同じ害の繰り返し、大きな害）、
+`absence`は仕組みや規範の不在の主張、`no_change`は変更の否定で、`agent-basics:bugfix`の入口と確認観点の条件に対応する。
+`hooks/send_to_user.tsx`は送達後の検査に使う種類（`deviation`・`prevention`）を同じ文字列で持つ。
+判定語を変える場合は両方を合わせる。一致は`improvement_status_advisor_test.py`が確かめる。
+"""
+_CUE_PATTERNS = {cue: re.compile(terms + CUE_NEGATION) for cue, terms in REPORT_CUES.items()}
 
 
-def improvement_line(line: str) -> str | None:
-    """1行が改善点の報告行なら項目記号と字下げを除いた本文を返し、引用・コード例の行は報告として扱わない。"""
+def report_line(line: str) -> str | None:
+    """1行が報告の本文なら項目記号と字下げを除いた本文を返し、引用・コード例の行は報告として扱わない。"""
     if line.startswith("\t") or line.lstrip().startswith(">"):
         return None
     if not _LIST_ITEM.match(line) and line.startswith("    "):
         return None
-    matched = _IMPROVEMENT_LINE.match(line)
-    return matched[1].rstrip() if matched else None
+    matched = _REPORT_LINE.match(line)
+    return matched[1] if matched else None
 
 
-def reported_improvement_lines(text: str, *, deduplicate: bool = True) -> list[str]:
-    """実際に報告した行を例から区別し、出所の行順が必要な照会では同文行も保持する。"""
+def improvement_line(line: str) -> str | None:
+    """1行が改善点の報告行なら項目記号と字下げを除いた本文を返し、引用・コード例の行は報告として扱わない。"""
+    body = report_line(line)
+    return body if body is not None and body.startswith(IMPROVEMENT_MARKER) else None
+
+
+def report_lines(text: str) -> list[str]:
+    """自動挿入の要素、フェンス内、引用、字下げのコード例を除いた報告の本文行を、項目記号を外して返す。"""
     text = re.sub(rf"<({_message_format.AUTO_ELEMENT_NAME_PATTERN})(?:\s[^>]*)?>.*?</\1>", "", text, flags=re.DOTALL)
     found: list[str] = []
     fence: str | None = None
     for line in text.splitlines():
-        stripped = line.lstrip()
-        marker = re.match(r"(`{3,}|~{3,})", stripped)
+        marker = re.match(r"(`{3,}|~{3,})", line.lstrip())
         if marker:
             run = marker[1]
             if fence is None:
@@ -97,7 +143,19 @@ def reported_improvement_lines(text: str, *, deduplicate: bool = True) -> list[s
             elif run[0] == fence[0] and len(run) >= len(fence):
                 fence = None
             continue
-        reported = improvement_line(line) if fence is None else None
-        if reported is not None:
-            found.append(reported)
+        body = report_line(line) if fence is None else None
+        if body is not None:
+            found.append(body)
+    return found
+
+
+def reported_improvement_lines(text: str, *, deduplicate: bool = True) -> list[str]:
+    """実際に報告した行を例から区別し、出所の行順が必要な照会では同文行も保持する。"""
+    found = [line for line in report_lines(text) if line.startswith(IMPROVEMENT_MARKER)]
     return list(dict.fromkeys(found)) if deduplicate else found
+
+
+def report_cues(text: str) -> frozenset[str]:
+    """報告の本文行（インラインコードを除く）が含む`REPORT_CUES`の手掛かりを返す。"""
+    body = "\n".join(_INLINE_CODE.sub("", line) for line in report_lines(text))
+    return frozenset(cue for cue, pattern in _CUE_PATTERNS.items() if pattern.search(body))

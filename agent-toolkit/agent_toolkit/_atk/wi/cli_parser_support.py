@@ -78,6 +78,19 @@ def _add_important_filter_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_target_branch_filter_arg(parser: argparse.ArgumentParser) -> None:
+    """一覧・全文表示・検索へ共通の宛先の系統の限定を登録する。"""
+    parser.add_argument(
+        "--target-branch",
+        metavar="BRANCH",
+        default=None,
+        help=(
+            "宛先の系統（repository登録のbranchesの名前）で限定する。target_branchを持たないWIはdefault_branchの系統として扱う。"
+            "`auto`は--target-repoの作業ツリーが追跡するブランチを系統とし、系統を登録しないrepositoryでは限定しない。"
+        ),
+    )
+
+
 def _add_mq_read_sync_args(parser: argparse.ArgumentParser) -> None:
     """`atk wi`の読み取り専用サブコマンドへ同期制御オプションを登録する。"""
     sync = parser.add_mutually_exclusive_group()

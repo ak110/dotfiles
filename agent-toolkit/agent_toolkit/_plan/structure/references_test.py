@@ -12,13 +12,12 @@ from agent_toolkit._plan.structure import parsing as plan_parsing
 from agent_toolkit._plan.structure import sections as plan_sections
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_structure_support import (
-    _BUG_CAUSE_TABLE,
     _BUG_FILE_CONTENT,
     _HUMAN_DETAIL_CONTENT,
     _HUMAN_MAIN_CONTENT,
     _HUMAN_PARTIAL_ROW,
     _LEGACY_CONTENT,
-    _LEGACY_ROWS_BUG_FILE_CONTENT,
+    _LEGACY_TABLES_BUG_FILE_CONTENT,
     _VALID_CONTENT,
     _VALID_DETAIL_CONTENT,
     _VALID_MAIN_CONTENT,
@@ -104,24 +103,19 @@ def test_related_wi_rejects_invalid_children(replacement: str, expected: str) ->
     assert any(expected in error for error in errors), errors
 
 
-def test_bug_file_structure_rejects_missing_fixed_row() -> None:
-    """付属ファイルの固定行の調査表から行が欠けた場合を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace(f"{_plan_fixture.bug_row(_plan_format.PLAN_BUG_TABLE_ROWS[0])}\n", "")
+def test_bug_file_structure_rejects_missing_record_line() -> None:
+    """付属ファイルの記録から`確認:`の行が欠けた場合を、欠けた行頭語と書く内容を示して拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(f"{_plan_fixture.cause_record_line('確認')}\n", "")
     errors = plan_sections.check_bug_file_structure(content)
-    assert any(f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行" in error for error in errors), errors
+    content_of_check = _plan_format.CAUSE_RECORD_REQUIRED_LABELS["確認"]
+    assert errors == [f"`### {_plan_fixture.BUG_UNIT_H3}`: `確認:`の行が無い（書く内容: {content_of_check}）"]
 
 
-def test_bug_file_structure_rejects_duplicate_cause_table() -> None:
-    """同じバグ単位の原因分析表が重複した場合を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace(_BUG_CAUSE_TABLE, f"{_BUG_CAUSE_TABLE}\n\n{_BUG_CAUSE_TABLE}", 1)
-    assert plan_sections.check_bug_file_structure(content)
-
-
-def test_bug_file_structure_accepts_legacy_row_layout() -> None:
-    """統廃合前の行構成を持つ調査表を読み取り互換で受理する。"""
-    assert not plan_sections.check_bug_file_structure(_LEGACY_ROWS_BUG_FILE_CONTENT)
-    assert plan_sections.has_legacy_bug_investigation_table(_LEGACY_ROWS_BUG_FILE_CONTENT)
-    assert not plan_sections.has_legacy_bug_investigation_table(_BUG_FILE_CONTENT)
+def test_bug_file_structure_accepts_saved_legacy_tables() -> None:
+    """廃止直前の原因分析表と調査表を持つ保存済みの付属ファイルを読み取りで受理し、移行の対象として判別する。"""
+    assert not plan_sections.check_bug_file_structure(_LEGACY_TABLES_BUG_FILE_CONTENT)
+    assert plan_sections.has_legacy_cause_record(_LEGACY_TABLES_BUG_FILE_CONTENT)
+    assert not plan_sections.has_legacy_cause_record(_BUG_FILE_CONTENT)
 
 
 def test_history_review_rows_reject_duplicate_track_and_round() -> None:

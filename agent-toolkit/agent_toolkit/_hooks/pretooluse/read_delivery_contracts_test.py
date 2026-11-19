@@ -28,10 +28,10 @@ from agent_toolkit._testing.read_delivery_support import (
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize("full", [False, True])
 @pytest.mark.parametrize("agent", ["main", "helper"])
-def test_add_awi_history_requires_whole_acquisition(tmp_path, monkeypatch, codex, full, agent):
-    """両ホストのメインの全文取得だけを相談の開始として保持する。"""
+def test_reading_the_playbook_does_not_start_consultation(tmp_path, monkeypatch, codex, full, agent):
+    """AWI投入の手順書を読んでも相談の開始は立たない。立てるのはユーザーの入力と起動入力だけである。"""
     root = tmp_path / "plugin"
-    skill = root / "skills/add-awi-by-user/SKILL.md"
+    skill = root / "skills/atk-mode/playbooks/add-awi-by-user.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# 相談\n本文の残り\n", encoding="utf-8")
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
@@ -42,7 +42,7 @@ def test_add_awi_history_requires_whole_acquisition(tmp_path, monkeypatch, codex
     if codex:
         payload["turn_id"] = "turn"
     observe_received(payload, "Read", {"file_path": str(skill)}, "consultation-read")
-    assert bool(session_state.read_state("consultation-read").get("add_awi_skill_invoked")) is (full and agent == "main")
+    assert "add_awi_skill_invoked" not in session_state.read_state("consultation-read")
 
 
 __all__ = ["_assert_acquired", "_canonical_method", "_guidance", "_local_plugin_root", "_memory", "_notice_body", "_rows"]

@@ -73,8 +73,12 @@ class TestStepFailureStopsExecution:
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
         monkeypatch.setattr(subprocess, "run", _fake_run({failed_command: exit_code}, calls))
         monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+        ready = tmp_path / "prune-ready"
+        monkeypatch.setenv(update_dotfiles_runtime.PRUNE_READY_ENV, str(ready))
 
         assert update_dotfiles.main() == 1
+        # 本体は中断していないため、ランチャーが整理へ進む印を残す。
+        assert ready.exists()
         assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
         err = capsys.readouterr().err
         assert "失敗しても後続の段を続けた段:" in err
@@ -146,8 +150,11 @@ class TestStepFailureStopsExecution:
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
         monkeypatch.setattr(subprocess, "run", _fake_run({"status": 2, "apply": 5}, calls))
         monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+        ready = tmp_path / "prune-ready"
+        monkeypatch.setenv(update_dotfiles_runtime.PRUNE_READY_ENV, str(ready))
 
         assert update_dotfiles.main() == 5
+        assert not ready.exists()
         assert "chezmoi status" in capsys.readouterr().err
 
     def test_mise_lock_discard_failure_continues_update(

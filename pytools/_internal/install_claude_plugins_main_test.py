@@ -35,6 +35,7 @@ from ._test_helpers import (
 def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     """旧pluginの削除は専用テストへ分け、開発機のプロセスを参照判定へ混ぜない。"""
     monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
+    monkeypatch.setattr(_install_claude_plugins.external_pstack, "run", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
     monkeypatch.setattr(_claude_plugin_references, "scan", lambda: ())
 

@@ -31,7 +31,7 @@ QCDの観点、3段判定、事実と推論の区別、硬い制約と努力目�
 | --- | --- | --- | --- | --- |
 | 実装に着手する直前（基準版を記録する時点）と、テスト・検証・CIの結果を成功時も含めて判定する前（プロジェクトの段階別・全体所要基準との比較を含む） | `references/diagnostics-results.md` | | | |
 | 変更範囲の検証で動かすチェックとテストを選ぶ前（計画の検証コマンドを書くとき、実装後に検証する前、計画の検証行・前回の実行・CI失敗の調査記録にある検証コマンドを再利用して実行する前、実行レビューで直接影響範囲を求めるとき） | `references/verification-scope.md` | | | |
-| 要求の結果を観測する手段と環境を選ぶ前 | `../writing-standards/references/testing-selection.md` | | | |
+| 要求の結果を観測する手段と環境を選ぶ前 | `../writing-standards/references/testing.md` | | | |
 | 受入シナリオ検証を実施する前（文書の試行、操作・故障注入・自動終了の失敗が使用する資源の所有者と共有範囲を判定するとき、本番の起動単位からの公開前観測を含む） | `references/acceptance-scenarios.md` | | | |
 | 起動時 | `agent-basics:writing-standards/references/quality-principles.md` | 起動時 | `skill:check-execution` | |
 
@@ -45,7 +45,7 @@ QCDの観点、3段判定、事実と推論の区別、硬い制約と努力目�
 
 ## 実行条件と結果
 
-1. 要求の結果を直接観測できるよう、読込表の`../writing-standards/references/testing-selection.md`「検証単位の選定」で手段と環境を選ぶ。
+1. 要求の結果を直接観測できるよう、読込表の`../writing-standards/references/testing.md`「検証単位の選定」で手段と環境を選ぶ。
    変更範囲は`verification-scope.md`、実装直前の基準版は`diagnostics.md`に従って確定する。
 2. 実行条件を保つため、構築・起動・単発実行の下層ツールを呼ぶ前に、作業ディレクトリからリポジトリルートまでのタスクランナー定義と、README・プロジェクト規範の案内を確認する。
    定義の例には`Makefile`、`mise.toml`、`justfile`、`Taskfile.yml`、`package.json`の`scripts`、`pyproject.toml`のタスクがあり、ツール固有の設定ファイルが無くても起動方法を持つことがある。

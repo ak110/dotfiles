@@ -12,7 +12,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 共有状態の保存場所や読み書きの担当を調べる前 | `agents-server-shared-state.md` |
-| 原因調査で発生位置と直接的原因を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
+| 原因調査で発生位置と原因を確定する前 | `agent-basics:bugfix/references/causes.md` |
 
 ## 観測できる記録の所在
 
@@ -56,7 +56,7 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 
 ## 切り分けの順序
 
-1. 原因分析の基準を揃えるため、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」を適用する。
+1. 原因分析の基準を揃えるため、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/causes.md`「観測と推測の区別」「場面ごとの確かめ方」を適用する。
 2. 発生箇所を絞るため、「観測できる記録の所在」から診断を取得する。
    通常の応答では`seconds_since_activity`で最後の活動からの経過時間を確認し、絶対時刻や実行パラメーターの比較には`show(verbose=True)`を使う。
    API失敗の公開診断にはエラー種別、HTTPステータスコード、経過時間、初期化診断には受信メッセージの種別と失敗箇所の詳細がある。

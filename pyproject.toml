@@ -53,6 +53,7 @@ git-justify = "pytools.git_justify:main"
 markdown-viewer = "pytools.markdown_viewer:main"
 mvdir = "pytools.mvdir:main"
 opus = "pytools.agent_launcher:main_opus"
+poteto-mode = "pytools.agent_launcher:main_poteto_mode"
 psgrep = "pytools.psgrep:main"
 py-imageconverter = "pytools.imageconverter:main"
 py-pdf-to-image = "pytools.pdf_to_image:main"
@@ -140,7 +141,7 @@ ty-args = [
     "--extra-search-path", "agent-toolkit/skills/write-plan/scripts",
     "--extra-search-path", "agent-toolkit/skills/process-wi/scripts",
     "--extra-search-path", "agent-toolkit/skills/review-session/scripts",
-    "--extra-search-path", "agent-toolkit/skills/wi-standards/scripts",
+    "--extra-search-path", "agent-toolkit/skills/atk-mode/scripts",
 ]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは

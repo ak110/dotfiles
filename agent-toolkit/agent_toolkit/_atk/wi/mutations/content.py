@@ -177,8 +177,9 @@ def _require_agent_edit_source(original: str, content: str) -> None:
         raise WebInputError(
             "エージェント環境ではsourceを新しくhumanに変更できません。",
             next_action=(
-                "本文先頭のfrontmatterのsourceへ、起動スキル名（プラグイン接頭辞を除く）を指定する。"
-                "スキルが無い場合はagentを指定して再実行する"
+                "本文先頭のfrontmatterのsourceへ、起動中の作業かスキルの名前を指定する"
+                "（プラグイン接頭辞を除く。`/atk-mode add-awi-by-user`なら`add-awi-by-user`）。"
+                "該当する作業もスキルも無い場合はagentを指定して再実行する"
             ),
         )
 
@@ -552,6 +553,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(1)
     try:
         _require_agent_edit_source(original, edited)
+        invalidate_repo_bound_metadata(original, edited)
         if message is not None or tmp_path is not None:
             # 既存本文が旧書式でも、置換後のUWIの`直接的原因`行は判定する。
             parsed_edited = _frontmatter.parse_frontmatter(edited)

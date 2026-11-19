@@ -5,6 +5,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import sys
 import typing
 from pathlib import Path
 
@@ -237,6 +238,11 @@ def ensure_tools_installed(mise_bin: Path) -> bool:
     return True
 
 
+def _stored_target(link: Path) -> Path:
+    """リンクが格納する参照先を、参照先を辿らずに返す。Windowsのジャンクションが返す拡張パスの接頭辞は外す。"""
+    return Path(os.fspath(link.readlink()).removeprefix("\\\\?\\"))
+
+
 def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
     """独立prefixのLSPへtsserverを接続し、完了時はTrueを返す。独自成果は保持する。"""
     servers = [path for path, (tool, _) in installs.items() if tool == "npm:typescript-language-server"]
@@ -247,12 +253,16 @@ def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
         if len(typescripts) != 1:
             raise OSError("現行のTypeScript 6導入先を一意に取得できない")
         source = typescripts[0] / "node_modules" / "typescript"
-        if not (source / "lib" / "tsserver.js").is_file():
+        # aubeの導入物では`source`自体がリンクになる。SSH配下のWindowsはRedirectionGuardにより、
+        # 非管理者が作ったジャンクションの通過をWinError 448で拒否するため、格納先を読んで実体で確かめる。
+        package = source.parent / _stored_target(source) if source.is_symlink() or source.is_junction() else source
+        if not (package / "lib" / "tsserver.js").is_file():
             raise OSError(f"tsserver.jsが見つからない: {source}")
         for server in servers:
             link = server / "node_modules" / "typescript"
-            if link.is_symlink():
-                previous = link.readlink()
+            linked = link.is_symlink() or link.is_junction()
+            if linked:
+                previous = _stored_target(link)
                 if previous == source:
                     continue
                 # この処理が作る絶対リンクと同じmise管理prefixだけを更新する。
@@ -272,7 +282,17 @@ def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
                 raise OSError(f"既存の実体を保持した: {link}")
             temporary = link.with_name(f".typescript-{secrets.token_hex(8)}")
             try:
-                temporary.symlink_to(source, target_is_directory=True)
+                if sys.platform == "win32":
+                    # シンボリックリンクは開発者モードか管理者権限が要る（WinError 1314）。ジャンクションは要らない。
+                    # pylint: disable=import-outside-toplevel,import-error
+                    import _winapi  # noqa: PLC0415 -- Windows専用
+
+                    _winapi.CreateJunction(str(source), str(temporary))
+                    if linked:
+                        # Windowsの置換は既存のディレクトリ項目へ上書きできない。
+                        link.unlink()
+                else:
+                    temporary.symlink_to(source, target_is_directory=True)
                 temporary.replace(link)
             finally:
                 temporary.unlink(missing_ok=True)

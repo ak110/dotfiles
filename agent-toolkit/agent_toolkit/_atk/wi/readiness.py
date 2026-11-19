@@ -6,6 +6,7 @@ import pathlib
 from collections.abc import Iterable
 from typing import Literal
 
+from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi.constants import (
     WI_PROCESSABLE_STATES,
@@ -61,6 +62,7 @@ class ReadinessResult:
     cooldown_pending: tuple[str, ...] = ()
     invalid_cooldowns: tuple[str, ...] = ()
     cooldown_values: tuple[tuple[str, str], ...] = ()
+    unregistered_branches: tuple[str, ...] = ()
 
     @property
     def actionable_count(self) -> int:
@@ -411,8 +413,15 @@ def calculate_readiness(
     now: datetime.datetime | None = None,
     snapshot: tuple[_wi_entries.EntryRecord, ...] | None = None,
     texts: EntryTexts | None = None,
+    branch_settings: _wi_branches.Registry | None = None,
+    target_branch: str | None = None,
 ) -> ReadinessResult:
-    """`active`全件と参照された終了項目から対象リポジトリの着手可否を算出する。"""
+    """`active`全件と参照された終了項目から対象リポジトリの着手可否を算出する。
+
+    `branch_settings`を渡した場合は、登録に無い系統を宛先に持つ項目を着手不能にする。
+    `target_branch`を渡した場合は、対象をその系統のWIに限る。別の系統のWIは着手可否・修復診断に数えず、
+    依存先としては内部依存待ちの外側になる。
+    """
     if now is None:
         now = datetime.datetime.now(datetime.UTC)
     if now.tzinfo is None:
@@ -434,7 +443,15 @@ def calculate_readiness(
         else tuple(
             entry
             for entry in all_active
-            if entry.frontmatter_broken or (canonical_target is not None and entry.target_repo == canonical_target)
+            if entry.frontmatter_broken
+            or (
+                canonical_target is not None
+                and entry.target_repo == canonical_target
+                and (
+                    target_branch is None
+                    or _wi_branches.matches(entry.text, entry.target_repo, target_branch, branch_settings or {})
+                )
+            )
         )
     )
     all_dependency_map = {
@@ -512,7 +529,20 @@ def calculate_readiness(
     )
     all_graph = {name: dependencies for name, dependencies in all_dependency_map.items() if dependencies is not None}
     cyclic = tuple(sorted((set(_cycle_members(all_graph)) & set(dependency_map)) - deferred))
-    permanently_blocked = set((*broken, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns))
+    unregistered_branches = (
+        ()
+        if branch_settings is None
+        else tuple(
+            sorted(
+                entry.filename
+                for entry in active
+                if not entry.frontmatter_broken and _wi_branches.unregistered(entry.text, entry.target_repo, branch_settings)
+            )
+        )
+    )
+    permanently_blocked = set(
+        (*broken, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns, *unregistered_branches)
+    )
     ready: list[str] = []
     blocked: list[str] = []
     internal_wait_targets: dict[tuple[str, str | None], tuple[QueueEntry, ...]] = {}
@@ -566,4 +596,5 @@ def calculate_readiness(
         cooldown_pending=tuple(sorted(cooldown_pending)),
         invalid_cooldowns=tuple(sorted(invalid_cooldowns)),
         cooldown_values=tuple(sorted(cooldown_values.items())),
+        unregistered_branches=unregistered_branches,
     )

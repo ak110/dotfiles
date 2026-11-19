@@ -55,6 +55,7 @@ def _install_into(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> ty
     monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", installed)
     monkeypatch.setattr(_install_claude_plugins, "_prerequisites_ok", lambda: True)
     monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
+    monkeypatch.setattr(_install_claude_plugins.external_pstack, "run", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(_claude_marketplace, "ensure_marketplace", lambda: True)

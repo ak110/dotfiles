@@ -60,7 +60,7 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
     def command(args: list[str]) -> bool:
         calls.append(args)
         if args[:2] == ["plugin", "add"]:
-            shutil.rmtree(cache_entry)
+            shutil.rmtree(cache_entry, ignore_errors=True)
         return True
 
     monkeypatch.setattr(install_codex_plugins, "_command", command)
@@ -90,8 +90,7 @@ def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkey
     def command(args: list[str]) -> bool:
         if args[:2] == ["plugin", "add"]:
             assert wrapper.read_text(encoding="utf-8") == "hook wrapper"
-            (previous / "hook.py").unlink()
-            previous.rmdir()
+            shutil.rmtree(previous, ignore_errors=True)
         return True
 
     monkeypatch.setattr(install_codex_plugins, "_command", command)
@@ -209,7 +208,7 @@ def test_running_codex_session_updates_without_removing_old_cache(
     def command(args: list[str]) -> bool:
         calls.append(args)
         if args[:2] == ["plugin", "add"]:
-            shutil.rmtree(previous)
+            shutil.rmtree(previous, ignore_errors=True)
             (cache / "1.2.3/agent_toolkit").mkdir(parents=True, exist_ok=True)
             (cache / "1.2.3/agent_toolkit/hook.py").write_text("new hook", encoding="utf-8")
             current.update(version="1.2.3", enabled=True)

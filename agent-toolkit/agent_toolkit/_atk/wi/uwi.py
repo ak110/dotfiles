@@ -54,7 +54,7 @@ _TRAILING_QUESTION = re.compile(r"か[。．]?(?:[（(][^（）()]*[）)])?[」�
 def _looks_like_question(message: str) -> bool:
     """UWIの質問本文の冒頭に問い（疑問文）があるかを簡易判定する。
 
-    判定条件の定義元は`agent-toolkit/skills/wi-standards/references/uwi-format.md`「構成」であり、
+    判定条件の定義元は`agent-toolkit:atk-mode/references/uwi-format.md`「構成」であり、
     同節は冒頭に疑問文を置き、末尾を`## 判断材料`とすることを質問の種類によらず定める。
     このため最初の行頭`## `より前（見出しが無ければ全体）だけを判定範囲とし、範囲内に`？`・`?`を含む文、
     または「か」で終わる文（後ろに句点、閉じ括弧、括弧書きの補足が続く場合を含む）が1つ以上あれば問いとみなす。
@@ -159,7 +159,7 @@ def warn_question_quality(filename: str, message: str, question_type: str | None
         _outcome.report_warning(
             f"{filename}の質問本文が単独で判断可能な情報を欠く可能性がある（{reason}）。",
             next_action=(
-                "agent-toolkit:wi-standardsが定める自己完結要件を満たす形に見直す。"
+                "`agent-toolkit:atk-mode/references/uwi-format.md`「載せる情報」に沿って、本文だけで対象が分かる形に見直す。"
                 f"直す場合は`atk wi edit {filename}`で本文を置き換える"
             ),
         )

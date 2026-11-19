@@ -25,8 +25,8 @@ commitメッセージには計画外の既存不良の修正であることと�
 本作業で扱った問題と根本原因を同じくする不良は、独立した既存不良として次回へ送らず、その問題の類似見直しの母集団として扱う（2026年10月10日のユーザー指示による`agent-basics:bugfix`への集約）。
 範囲・時機・完了は同スキルの次の資料に従う。
 
-- `agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」
-- `agent-basics:bugfix/references/root-cause-prevention-verification.md`「類似見直しと再発防止の完了」
+- `agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」
+- `agent-basics:bugfix/references/prevention.md`「案を比べる順」
 
 AWIを要さず見つけた主体が元の文脈で直す用途には、専用の起動・受領契約を用意する。
 契約は`agent-toolkit:delegation/references/investigation-delegation.md`に置く。

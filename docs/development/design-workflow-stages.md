@@ -6,7 +6,7 @@
 
 レビューと自動チェックの工程名は、対象と適用する契約の組み合わせで命名する。
 レビュー工程は実装後の実行レビューに一本化し、`track`は`exec-review`とする。
-実行レビューは、目的、認可、公開契約および過剰実装を`要件・外部仕様`の水準で評価する。
+実行レビューは、目的、認可、公開契約および過剰実装を要件と外部仕様の水準で評価する。
 再レビューは前回指摘、修正差分と直接影響範囲を確認する。
 再レビューを省略する経路では、修正担当が該当するレビュー限定基準を完成時に自己点検する。
 工程、証拠と配送の定義はagent-toolkitが所有する。
@@ -25,7 +25,7 @@
 | 実装担当 | `agent-toolkit/share/exec.subagent.md`の`レビュー修正の履歴統合` |
 | 実行レビュー担当 | `agent-toolkit/share/exec-review.subagent.md` |
 | 公開担当 | `agent-toolkit/share/session-termination.subagent.md` |
-| WI投入担当 | `agent-toolkit/share/add-wi.subagent.md` |
+| WI投入担当 | `agent-toolkit/skills/atk-mode/roles/add-wi.subagent.md` |
 | 監査担当 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
 | 調査担当 | `agent-toolkit/skills/delegation/references/runtime-routing.md` |
 | レビュー担当 | `agent-basics:review-standards/SKILL.md` |
@@ -36,10 +36,10 @@
 
 | 英語識別子 | 対応 |
 | --- | --- |
-| レビュー指摘管理表の系統値`exec-review` | 実行レビュー（要件・外部仕様の水準で成果物を評価する単一レビュー） |
+| レビュー指摘管理表の系統値`exec-review` | 実行レビュー（要件と外部仕様の水準で成果物を評価する単一レビュー） |
 | 保存済み表の`implementation-review`・`plan-conformance`・`independent` | 既存表の読み取り互換。新規レビューでは生成せず、`implementation-review`は読込時に`exec-review`へ正規化する |
 
-実行レビューを単独で記載する場合は、`要件・外部仕様`と照らし合わせて成果物を評価することを含める。
+実行レビューを単独で記載する場合は、要求（`## 反映内容と反映先`と`## 完成条件`）と照らし合わせて成果物を評価することを含める。
 保存済み表の旧`track`は履歴の読み取りにだけ用い、新しい指摘の登録、修正対象の指定およびチェックポイントの集計には用いない。
 
 新しい工程・サブエージェントは本分類へ収め、名称に対象と適用契約を含める。

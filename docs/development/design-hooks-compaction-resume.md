@@ -65,6 +65,7 @@ modからの`/restart`制限を回避する経路は作らない。
 メインの利用上限では、StopFailureのコマンドhookが再開要求を保存し、Function hooksの`turn.complete`が既存の再開予約へ接続する。
 Remote Control接続ではホストの自動継続が自動で始まらないため、起動形態に対応した再開の契機を確保する。
 コマンドhookは`rate_limit`時にClaude configの`agent-toolkit-function-hooks/rate-limit-{session_id}.txt`へ`requested`を書く。
+`turn.complete`の時点で`five_hour`か`seven_day`の使用率が100%以上の場合も、要求の保存が無くても同じ予約へ進む。
 `usage_limit_resume.ts`は要求を`consumed`へ変え、解除予定後に同じ会話へ継続指示を送る予約をsessionごとに1件保持する。
 予定時刻が無いか過ぎている場合は300秒後に再確認する。
 解除予定後に別turnが始まっていれば重複投入せず、予約の表示は投入・取消時に除く。

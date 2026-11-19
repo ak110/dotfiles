@@ -6,7 +6,7 @@ import shutil
 
 import pytest
 
-from agent_toolkit._common import plugin_roots, read_triggers
+from agent_toolkit._common import plugin_roots, read_triggers, task_documents
 from agent_toolkit._common.read_triggers_operations import missing_operation_rows
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 
@@ -27,7 +27,7 @@ def test_observable_read_conditions_have_delivery_operations():
     assert not issues, "\n".join(issues)
 
 
-@pytest.mark.parametrize("role", sorted(path.name for path in (_PLUGIN_ROOT / "share").glob("*.subagent.md")))
+@pytest.mark.parametrize("role", [path.name for path in task_documents.role_documents(_PLUGIN_ROOT)])
 def test_role_writing_skill_matches_operation_bootstrap(role):
     """起動する作成規範の名前空間がbootstrapと一致することを確認する。"""
     bootstrap = (_PLUGIN_ROOT / "share/read-trigger-bootstrap.md").read_text(encoding="utf-8")
@@ -39,7 +39,7 @@ def test_role_writing_skill_matches_operation_bootstrap(role):
     else:
         path = (_PLUGIN_ROOT / "share" / skill[1]).resolve()
         expected = f"{path.relative_to(_PLUGIN_ROOT.parent).parts[0]}:writing-standards"
-    body = (_PLUGIN_ROOT / "share" / role).read_text(encoding="utf-8")
+    body = task_documents.require_role_document(_PLUGIN_ROOT, role.removesuffix(".subagent.md")).read_text(encoding="utf-8")
     started = re.findall(r"`(agent-[^`]+:writing-standards)`(?=[^\n]*を起動)", body)
     assert not started or set(started) == {expected}, (role, started, expected)
 
@@ -96,18 +96,20 @@ def test_documents_read_together_do_not_repeat_read_table_rows():
 @pytest.mark.parametrize(
     "relative",
     [
-        "skills/user-confirmation-and-report/SKILL.md",
-        "skills/user-confirmation-and-report/references/user-utterance.md",
-        "skills/add-awi-by-user/SKILL.md",
-        "share/wi-draft-review.parent.md",
+        "skills/atk-mode/playbooks/add-awi-by-user.md",
+        "skills/atk-mode/roles/wi-draft-review.parent.md",
     ],
 )
 def test_user_input_classification_reaches_common_intervention_assessment(relative):
-    """受領・分類の段階から、共通の介入評価の同じ定義元へ直接到達する。"""
+    """ユーザーの入力を受領・分類する手順から、共通の介入評価の同じ定義元へ直接到達する。"""
     source = _PLUGIN_ROOT / relative
-    target = _PLUGIN_ROOT / "skills/user-confirmation-and-report/references/analysis-operations-intervention.md"
-    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
-    routes = [row for row in rows if "受領" in row.condition and "分類" in row.condition and target in row.documents]
+    target = _PLUGIN_ROOT / "skills/atk-mode/playbooks/user-utterance.md"
+    heading = "ユーザー介入と確認の判定"
+    assert read_triggers.ReadTarget(target, heading).body().strip()
+    reference = f"`agent-toolkit:atk-mode/playbooks/user-utterance.md`「{heading}」"
+    assert any(reference in line for line in source.read_text(encoding="utf-8").splitlines() if "分類" in line), relative
+    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
+    routes = [row for row in rows if target in row.documents]
     assert routes, relative
     assert all(row.kind == "判断" for row in routes)
     assert any(item.path == target and not item.heading and item.body().strip() for row in routes for item in row.targets), (
@@ -117,7 +119,7 @@ def test_user_input_classification_reaches_common_intervention_assessment(relati
 
 def test_every_role_has_explicit_parent_read_source():
     """全役割の共有契約か統合節が実在し、明示した範囲を取得できる。"""
-    sources = sorted((_PLUGIN_ROOT / "share").glob("*.subagent.md"))
+    sources = task_documents.role_documents(_PLUGIN_ROOT)
     assert sources
     for source in sources:
         targets = read_triggers.parent_contract_targets(source.name, _PLUGIN_ROOT)
@@ -127,12 +129,11 @@ def test_every_role_has_explicit_parent_read_source():
 
 # 配布版で届かない参照が報告された文書（20261028-161251-001）。
 _CROSS_PLUGIN_DOCUMENTS = (
-    "skills/user-confirmation-and-report/references/analysis-operations-intervention.md",
-    "skills/wi-standards/references/analysis-records.md",
+    "skills/atk-mode/playbooks/user-utterance.md",
+    "skills/atk-mode/references/analysis-records.md",
     "skills/review-session/references/analysis-operations-root-cause.md",
-    "skills/user-confirmation-and-report/references/communication-methods.md",
-    "skills/user-confirmation-and-report/references/user-utterance.md",
-    "skills/wi-standards/references/draft-semantic-review.md",
+    "skills/atk-mode/references/delivery.md",
+    "skills/atk-mode/references/draft-semantic-review.md",
 )
 
 
@@ -235,9 +236,8 @@ def test_relative_reference_outside_owner_plugin_is_rejected(tmp_path, line):
     [
         ("check-script-design.md", "program-messages.md"),
         ("mcp-server-design.md", "program-messages.md"),
-        ("claude-hooks-messages-format.md", "program-messages.md"),
-        ("notation-checks.md", "input-material.md"),
-        ("textlint-violations.md", "input-material.md"),
+        ("claude-hooks-block-warn.md", "program-messages.md"),
+        ("textlint-violations.md", "writing-genres.md"),
     ],
 )
 def test_writing_consumers_reach_split_material_without_obsolete_sections(consumer, material):
@@ -248,7 +248,7 @@ def test_writing_consumers_reach_split_material_without_obsolete_sections(consum
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
     assert any(item.path == target and item.body().strip() for row in rows for item in row.targets)
-    obsolete = {"読み手別の追加注意点", "ユーザー入力素材の取扱い"}
+    obsolete = {"ユーザー入力素材の取扱い"}
     assert not [
         item
         for row in rows
@@ -260,7 +260,7 @@ def test_writing_consumers_reach_split_material_without_obsolete_sections(consum
 def test_delegation_input_material_wrapper_reaches_quality_owner():
     """WI起草等が使うtoolkit側の素材節も、移設した品質基準の本文へ到達する。"""
     source = _PLUGIN_ROOT / "share/writing-operations.md"
-    target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/input-material.md"
+    target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/writing-genres.md"
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
     assert any(item.path == target and item.body().strip() for row in rows for item in row.targets)

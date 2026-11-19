@@ -21,13 +21,13 @@ def _guidance(repo_id: str, edit: str | None) -> str:
     quoted = shlex.quote(repo_id)
     if edit == "awi":
         return (
-            "直接編集せず、`agent-toolkit:wi-standards`を起動せよ。"
-            f"同スキルの投入手順に従い、対象リポジトリに`{repo_id}`を指定してAWIを投入せよ（cloneは不要）。"
+            "直接編集せず、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`を全文読め。"
+            f"同書の手順に従い、対象リポジトリに`{repo_id}`を指定してAWIを投入せよ（cloneは不要）。"
         )
     if edit == "deny":
         return "編集せず、必要な変更をユーザーへ報告せよ。"
     return (
-        "未登録のため、`agent-toolkit:user-confirmation-and-report`の`references/user-confirmation-and-report-decisions.md`"
+        "未登録のため、`agent-toolkit:atk-mode/playbooks/confirmation.md`"
         f"「未登録リポジトリの編集」に従って登録を確認せよ。承認後に`atk config repos add {quoted} --edit allow`を実行せよ。"
     )
 

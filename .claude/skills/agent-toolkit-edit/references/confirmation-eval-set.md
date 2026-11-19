@@ -12,9 +12,9 @@
 
 対象は、確認要否を定める次の条文を変える変更である。
 
-- `agent-toolkit/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」
-- `agent-toolkit/skills/add-awi-by-user/references/omission-check.md`「点検類型」の(j)
-- `agent-toolkit/skills/user-confirmation-and-report/references/choice-construction.md`「根拠の確定」
+- `agent-toolkit/skills/atk-mode/playbooks/confirmation.md`「確認要否の判定」
+- `agent-toolkit/skills/atk-mode/references/omission-check.md`「点検類型」の(j)
+- `agent-toolkit/skills/atk-mode/references/choice-construction.md`「根拠の確定」
 
 これらの変更では、確認を増やす向きと減らす向きの双方で、固定課題の変更前後の結果を比べてから採用する。
 必要な確認と技術判断の両方を保ち、過去の是正の反転を検出するためである。

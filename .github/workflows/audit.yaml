@@ -28,6 +28,7 @@ env:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 4
     container:
       image: ghcr.io/ak110/pyfltr:latest
     defaults:
@@ -93,6 +94,7 @@ jobs:
     # 撤去表の期限は日付で結果が変わるため、push・PR毎のCIとcommit hookでは判定せず、この定期ジョブで判定する。
     # 期限の14日前から失敗させ、通知を受けた開発者が期限前に表から外せるようにする（規則はpytools/_internal/removal_registry.py）。
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     container:
       image: ghcr.io/ak110/pyfltr:latest
     permissions:
@@ -116,6 +118,7 @@ jobs:
     # cargo-auditの導入はソースからのビルドでCリンカーを要し、pyfltrイメージには含まれない。
     # ci-rust-lintと同じく、コンテナーを使わずホストのrunnerでmiseのRustを使う。
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # Rustの検出はCode Scanningへ送らず、ジョブの失敗とログに残すため書き込み権限は要らない。
     permissions:
       contents: read

@@ -42,7 +42,7 @@ goalの上限停止は[goalのextension](https://github.com/openai/codex/blob/ru
 過去の観測条件と再検証手段は[audit-records-usage-limit.md](audit-records-usage-limit.md)の「docs/development/design-agents-runtime-handoff-resume.md：Codexの利用上限記録と再開：2026年10月14日」にある。
 起草時の元session記録はリポジトリ外の私有記録であり、設計判断の確認には上記の公開ソースとリポジトリ内の実装・テストを使う。
 
-最上位のCodex TUIの解除後の自動再開は実装せず、`/goal resume`か発話で続ける。
+最上位のCodex TUIの解除後の自動再開は実装せず、発話で続ける。
 利用上限で失敗したturnはStop hookを呼ばずに終わる。
 `/goal`の状態は`usage_limited`となり、自動継続を停止する。
 検討した案は、agents_serverが起動元threadのrolloutを監視し、解除予定時刻の後に`codex queue --thread <thread-id>`で再開の指示を1回送る方式である。

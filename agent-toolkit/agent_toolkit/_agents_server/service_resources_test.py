@@ -129,3 +129,31 @@ async def test_read_does_not_block_write_or_ack() -> None:
     assert await asyncio.wait_for(reading, 1) == "raw"
     assert await broker.transfer(resource, "G1", "G2")
     await broker.release(resource, "G2")
+
+
+@pytest.mark.asyncio
+async def test_release_ends_call_waiting_for_event_space_without_consumer() -> None:
+    """読む主体が止まった資源の解放は、イベントの空きを待つ実行中の操作を失敗させて完了する。
+
+    空きは生じないため、解放は実行中の操作の終了を、操作はイベントの空きを待ち合って終わらなかった（2026-11-19の実測）。
+    """
+    broker = ResourceBroker("G1")
+    closed: list[bool] = []
+    resource = ""
+
+    async def request() -> None:
+        while True:
+            await broker.emit(resource, {"kind": "sent"})
+
+    async def close() -> None:
+        closed.append(True)
+
+    resource = broker.register({"request": request, "close": close})
+    call = asyncio.create_task(broker.call(resource, "G1", "request", {}))
+    async with asyncio.timeout(2):
+        while broker.backlog(resource) != (256, 256):
+            await asyncio.sleep(0)
+        await broker.release(resource, "G1")
+    with pytest.raises(PermissionError):
+        await call
+    assert closed == [True]

@@ -179,7 +179,7 @@ def test_malformed_transcript_is_not_observed(tmp_path, value):
 @pytest.mark.parametrize("truncated", [False, True])
 def test_document_read_state_waits_for_outer_delivery(tmp_path, capsys, exit_code, truncated):
     """内側のnative結果だけでは、外側で実配送された本文の取得を確定しない。"""
-    path = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
+    path = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/causes.md"
     body = path.read_text(encoding="utf-8")
     payload = _payload(tmp_path, f"cat -- {path}", _cut(body) if truncated else body, exit_code=exit_code)
     if exit_code is None:

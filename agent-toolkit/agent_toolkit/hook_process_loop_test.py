@@ -143,6 +143,7 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     assert not termination_calls
 
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "loop-stop-integration")
     parent_responses = [invoke_stop(None, count) for count in range(1, 4)]
     assert "systemMessage" in parent_responses[-1]
     assert not abort_path.exists()

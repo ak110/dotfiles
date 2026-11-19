@@ -12,3 +12,5 @@ all_projects = ["euryale", "euryale-container"]
 windows_apps = ["stheno"]
 # media-remoteを自動起動するWindowsホスト
 media_remote = ["stheno"]
+# 互いにsshで接続でき、別OSでの検証と手作業の対象になる私用の2ホスト
+ssh_peers = ["stheno", "euryale"]

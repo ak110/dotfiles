@@ -64,4 +64,4 @@ Pythonの同じ実体を指すパス表記は正規化し、子にも渡らな�
 起動前の未実行は同じ受付から回復し、保存後の応答喪失は同じ識別子の照会で判断する。
 専用の常駐daemon、振り返り周期への依存、全工程を写す台帳は追加しない。
 受付・投入・報告を同じ成功値にまとめる案は、親が終了できる条件と未完了の責任を区別できないため採らない。
-運用契約は[wi-submission.md](../../agent-toolkit/share/wi-submission.md)が所有する。
+運用契約は[wi-submission.md](../../agent-toolkit/skills/atk-mode/playbooks/wi-submission.md)が所有する。

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._common import plugin_environment, task_documents
 
 from pytools._internal import antigravity_plugin as subject
 
@@ -37,6 +37,7 @@ def _source(tmp_path: Path) -> Path:
         "agents/worker.md": "---\nname: worker\ndescription: 作業を行う\n---\n作業する。\n",
         "share/rules/rules-main.md": "メインの指針。\n",
         "share/execute.subagent.md": "---\nrequired_inputs: [対象]\n---\n担当の入力を受け取って実装する。\n",
+        "skills/atk-mode/roles/review.subagent.md": "---\nrequired_inputs: [対象]\n---\n担当の入力を受け取って確かめる。\n",
         "skills/long/SKILL.md": "---\r\nname: long\r\ndescription: 長い工程を実行する\r\n---\r\n" + "全文を読む。\r\n" * 2000,
         "agent_toolkit/hook.py": "print('{}')\n",
         "agent_toolkit/hook_test.py": "# 配布しない試験。\n",
@@ -105,6 +106,8 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert (target / "agents/worker.md").is_file()
     assert (target / "agents/execute.md").is_file()
     assert str(target / "share/execute.subagent.md") in (target / "agents/execute.md").read_text()
+    assert str(target / "skills/atk-mode/roles/review.subagent.md") in (target / "agents/review.md").read_text()
+    assert subject.ROLE_DOCUMENT_DIRECTORIES == task_documents.ROLE_DOCUMENT_DIRECTORIES
     assert (target / "skills/long/SKILL.md").stat().st_size < 24_000
     assert (target / "skills/long/references/antigravity-full-instructions.md").read_text() == "全文を読む。\n" * 2000
     assert (target / "share/rules/rules-main.md").is_file()
@@ -125,7 +128,7 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     (source / "agent-toolkit" / _CHECK_SKILL).write_text("新しい定義")
     assert subject.check_diagnostics(source)
     assert subject.sync(source)
-    assert not stale.exists()
+    assert not stale.parent.exists()
     assert (target / _CHECK_SKILL).read_text() == "新しい定義"
 
 

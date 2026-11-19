@@ -28,7 +28,7 @@ from agent_toolkit._agents_server.file_operations import finish_task, run_file_o
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, append_bounded, utc_now
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import inherited_venv, plugin_environment, process_tree, runtime_environment, windows_job
+from agent_toolkit._common import plugin_environment, process_tree, runtime_environment, windows_job
 
 if typing.TYPE_CHECKING:
     import psutil
@@ -110,6 +110,13 @@ class JsonRpcProcess:
             "stderr": self._stderr_text.strip(),
         }
 
+    def diagnostic(self) -> dict[str, Any]:
+        """要求が進まない時に、読取の停止と受信済みの種別ごとの件数を返す。"""
+        return {
+            "reader_failure": None if self._reader_failure is None else str(self._reader_failure),
+            "received_message_types": dict(sorted(self._received_message_types.items())),
+        }
+
     async def start(self) -> None:
         """子プロセスを起動し、initialize/initializedを完了する。"""
         if self.process is not None:
@@ -117,7 +124,6 @@ class JsonRpcProcess:
         self._initialization_stage = "starting_process"
         try:
             environment = plugin_environment.cli_environment(plugin_roots.SERVER_PLUGIN_ROOT, child_environment.inherited())
-            inherited_venv.strip_inherited_venv(environment)
             environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
             # 委譲先のhookが軽量起動を判別する。turnを実行しない照会用の接続は起動区分を持たない。
             environment.pop(_delegated_session.LAUNCH_KIND_ENV, None)
@@ -300,9 +306,18 @@ class JsonRpcProcess:
             for future in tuple(self._pending.values()):
                 if not future.done():
                     future.set_exception(AppServerError(str(exc)))
+            # 失敗の報告を受けたsessionは終了として公開される。読まれない出力のままturnを続けさせないよう、先に止める。
+            try:
+                residual = await self.close()
+            except Exception as error:
+                _LOG.exception("出力を読めなくなったCodex App Serverを停止できません")
+                residual = [f"停止処理の失敗: {error!r}"]
+            reported = (
+                exc if not residual else AppServerError(f"{exc}; App Serverの停止を確認できない対象: {'; '.join(residual)}")
+            )
             if self._on_failure is not None:
                 with contextlib.suppress(Exception):
-                    await self._on_failure(exc)
+                    await self._on_failure(reported)
 
     async def _dispatch_stdout_line(self, raw_line: bytes) -> None:
         """復元済みの1 JSON-RPC recordを既存の応答・要求・通知処理へ渡す。"""
@@ -407,12 +422,14 @@ class JsonRpcProcess:
             )
         if not self._closed:
             self._closed = True
-            tasks = tuple(
-                task
-                for task in (self._reader_task, self._stderr_task)
-                if task is not None and task is not asyncio.current_task()
-            )
-            self._reader_task = None
+            # 失敗を検出した読取taskは、この停止の完了を待つ側になりうる。取り消しや完了待ちの対象に含めると
+            # 互いを待つ循環になるため、読取の失敗後は対象から除く。そのtaskは自身で失敗の報告まで進んで終わる。
+            reader = self._reader_task
+            if self._reader_failure is not None:
+                reader = None
+            else:
+                self._reader_task = None
+            tasks = tuple(task for task in (reader, self._stderr_task) if task is not None)
             self._stderr_task = None
             for task in tasks:
                 if not task.done():

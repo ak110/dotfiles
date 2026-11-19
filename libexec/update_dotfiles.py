@@ -267,8 +267,14 @@ def _run_codex_daemon_command(codex: str, action: str, timeout: int) -> str | No
 
 
 def _prepare_agent_toolkit_environment(total: int, *, timeout: float | None = None) -> None:
-    """主checkoutのatkが使う共有依存環境を、Git更新の直後に準備する。失敗は記録して後続の段を続ける。"""
+    """主checkoutのatkが使う共有依存環境を、Git更新の直後に準備する。失敗は記録して後続の段を続ける。
+
+    minimalはagent-toolkitを導入せず、更新後の整理が共有依存環境を削除するため準備しない。
+    """
     title = "agent-toolkitの共有依存環境の準備"
+    if dotfiles_mode.is_minimal():
+        update_dotfiles_runtime.logger.info("%s: minimalのため省略（agent-toolkitを導入しない）", title)
+        return
     launcher = update_dotfiles_runtime.DOTFILES_ROOT / "agent-toolkit" / "scripts" / "launch.py"
     argv = ["uv", "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher)]
     returncode, _ = _run_step(

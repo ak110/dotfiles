@@ -209,11 +209,74 @@ agent-basicsへ取り込んだ第三者素材の原典、改変内容と許諾�
    limitations under the License.
 ```
 
+## pstack
+
+- 原典: [cursor/plugins](https://github.com/cursor/plugins/tree/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack)の`pstack/`（確認commit `bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7`）。
+- 取り込んだ資料: `skills/figure-it-out/SKILL.md`。
+- 取り込み先: `skills/writing-standards/references/quality-principles-verification.md`。
+- 改変: 証拠の区分と判定不能の扱いの1文を日本語へ翻訳し、原則の要旨へ組み込んだ。
+- 許諾: [MIT License](https://github.com/cursor/plugins/blob/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack/LICENSE)。
+
+- 原典: [cursor/plugins](https://github.com/cursor/plugins/tree/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack)の`pstack/`（確認commit `bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7`）。
+- 取り込んだ資料と取り込み先:
+  - `skills/technical-writing/SKILL.md`「Pick the mode first」「One document, one mode.」。
+    取り込み先は`skills/writing-standards/references/writing-genres.md`。
+  - `skills/principle-build-the-lever/SKILL.md`「Do the first unit by hand…」。
+    取り込み先は`skills/writing-standards/references/file-editing.md`。
+  - `skills/principle-type-system-discipline/SKILL.md`「Brand semantic primitives.」。
+    取り込み先は`skills/writing-standards/references/implementation-time.md`。
+  - `skills/typescript-best-practices/SKILL.md`「Simplest total type」。
+    取り込み先は`skills/writing-standards/references/implementation-time.md`。
+  - `skills/no-comments/SKILL.md`「Offer the cheapest in-scope…」。
+    取り込み先は`skills/writing-standards/references/implementation-time.md`と`skills/writing-standards/references/review-only-criteria.md`。
+  - `agents/comment-sicko.md`「Surprises in our own code…」。
+    取り込み先は`skills/writing-standards/references/implementation-time.md`と`skills/writing-standards/references/review-only-criteria.md`。
+  - `skills/principle-boundary-discipline/SKILL.md`「Do not re-export transport…」。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-foundational-thinking/SKILL.md`「DRY the structure, not every line」。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-model-the-domain/SKILL.md`「Execution order is not ownership」。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-minimize-reader-load/SKILL.md`「Track two axes…」。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-exhaust-the-design-space/SKILL.md`。
+    取り込み先は`skills/writing-standards/references/design-heuristics.md`。
+  - `skills/principle-make-operations-idempotent/SKILL.md`「crashed at every possible point」。
+    取り込み先は`skills/writing-standards/references/testing.md`。
+  - `skills/tdd/SKILL.md`。
+    取り込み先は`skills/writing-standards/references/testing.md`。
+- 改変: 各語句を日本語へ翻訳し、取り込み先の節の判断基準へ組み込んだ。
+- 許諾: [MIT License](https://github.com/cursor/plugins/blob/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack/LICENSE)。
+
+```text
+MIT License
+
+Copyright (c) 2026 Lauren Tan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## ux-designer-skill
 
 - 原典: [szilu/ux-designer-skill](https://github.com/szilu/ux-designer-skill/tree/c869d32fd8df7bd7fcd1db68e93bd3e89eed5161)（確認commit `c869d32fd8df7bd7fcd1db68e93bd3e89eed5161`）。
 - 取り込んだ資料: `SKILL.md`。
-- 取り込み先: `skills/writing-standards/references/ui-ux.md`、`skills/writing-standards/references/ui-ux-patterns.md`。
+- 取り込み先: `skills/writing-standards/references/ui-ux.md`。
 - 改変: 日本語へ翻訳し、判断基準として要約・再構成して条件や説明を加えた。
 - 許諾: [MIT License](https://github.com/szilu/ux-designer-skill/blob/c869d32fd8df7bd7fcd1db68e93bd3e89eed5161/LICENSE)。
 
@@ -245,7 +308,7 @@ SOFTWARE.
 
 - 原典: [overseek944/frontend-ui-ux-skill](https://github.com/overseek944/frontend-ui-ux-skill/tree/fa25478d1f50f5dbd4f8119a03524fb14bb4277e)（確認commit `fa25478d1f50f5dbd4f8119a03524fb14bb4277e`）。
 - 取り込んだ資料: `SKILL.md`。
-- 取り込み先: `skills/writing-standards/references/ui-ux.md`、`skills/writing-standards/references/ui-ux-patterns.md`。
+- 取り込み先: `skills/writing-standards/references/ui-ux.md`。
 - 改変: 日本語へ翻訳し、判断基準として要約・再構成して条件や説明を加えた。
 - 許諾: [MIT License](https://github.com/overseek944/frontend-ui-ux-skill/blob/fa25478d1f50f5dbd4f8119a03524fb14bb4277e/LICENSE)。
 

@@ -41,6 +41,14 @@ from agent_toolkit._git import remote
 
 _LOG = logging.getLogger(__name__)
 SKILL = "agent-toolkit:wi-standards"
+"""独立WI投入の起動単位の名前。報告用UWIの`scope`、ロック、実行記録へ保存済みの値であり、同名のスキルは無い。"""
+_PLAYBOOK = pathlib.Path("skills/atk-mode/playbooks/wi-submission.md")
+"""子セッションが従う手順書の、plugin rootからの相対パス。"""
+_LAUNCH = (
+    f"`{SKILL}`は起動単位の保存上の名前であり、同名のスキルは起動しない。"
+    "入口のスキル`agent-toolkit:atk-mode`を起動し、起動入力の`arguments`が示す手順書を全文読んで従う。"
+)
+"""子セッションの目的文へ足す作業の始め方。起動単位の名前とスキルの実在を切り離す。"""
 _MODULE = "agent_toolkit._atk.wi.submit"
 _ID = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
 _RUN_ID = r"^[0-9a-f]{32}$"
@@ -595,10 +603,8 @@ def _execute(run_id: str) -> int:
     root = pathlib.Path(__file__).resolve().parents[3]
     args = argparse.Namespace(
         skill=SKILL,
-        args=(
-            f"独立WI受付: {path}。投入契約: {root / 'share/wi-submission.md'}。"
-            f"スキル本文: {root / 'skills/wi-standards/SKILL.md'}。投入セッション契約を適用する。"
-        ),
+        args=f"独立WI受付: {path}。手順書: {root / _PLAYBOOK}。投入セッション契約を適用する。",
+        launch=_LAUNCH,
         target_repo=run["target_repo"],
         work_dir=run["work_dir"],
         timeout=TIMEOUT_SECONDS,

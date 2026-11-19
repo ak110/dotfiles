@@ -61,7 +61,17 @@
    停滞を確定して停止する場合は、対象ごとにその根拠を記録してから停止する。
    Claude Codeでは`atk run-script record-stall-detection --`がその記録を作成し、終了コード0を返した対象のみを停止できる
 
-8. Codexにおける二層待機の識別子保持、外側セルと内側の`exec_command`のyield処理中における結果回収、巻き取り・代替起動・新規起動の扱いについては、`codex-runtime-waiting.md`「agents_serverの二層待機」に従う
+8. `kill`・`send_message`の配送が再発行しても確定しない場合は、同じ前提で待機や再発行を繰り返さず、`show`の応答と診断で所有サーバー（`owner_server_instance`）と照会したサーバー（`queried_server_instance`）を比べる。
+   異なる世代やプロセスが所有している場合は、その世代の退出・移譲を待つか、所有プロセスを処置する。
+   処置の前に、委譲先が保存した成果（引き継ぎ記録、結果ファイル、作業ツリーの差分）の所在を確かめて保全する。
+   サーバーのプロセスを止める前に、止める対象が自身のMCP接続先ではないことを確かめる（自身の接続先を止めると、以降の照会と回収ができなくなる）。
+   自身の接続先は、`list`が返す`queried_server_instance`と`server_generations`の`queried: true`の世代で識別する。
+   処置の後は、`show`で対象のstatusが終了状態へ変わり、`list`の`server_generations`から処置した世代が消えるまで観測する。
+   agents_serverのMCPを再接続する必要があれば、接続が健全な間に`apply_runtime_changes`の`targets`へ`agents_server`を指定して予約し、受付と反映結果を分けて確かめる。
+   会話内modが応答しないホスト（Codex、ホストUIの無い実行）では予約が失敗するため、エラーの次の操作が示すホストごとの再接続手段をユーザーへ依頼する。
+   接続を失った後は同じMCPのツールを呼べないため、ホストの再接続手段（Claude Codeでは`/mcp`）をユーザーへ依頼する
+
+9. Codexにおける二層待機の識別子保持、外側セルと内側の`exec_command`のyield処理中における結果回収、巻き取り・代替起動・新規起動の扱いについては、`codex-runtime-waiting.md`「agents_serverの二層待機」に従う
 
 ## 本文参照の取得条件
 

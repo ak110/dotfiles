@@ -127,7 +127,14 @@ class ProjectionHub:
         while True:
             target = self.registry.current()
             if target is not None and target["generation"] != self.generation:
-                return await service_rpc.request(target, "projection", payload)
+                try:
+                    return await service_rpc.request(target, "projection", payload)
+                except FileNotFoundError, ConnectionRefusedError:
+                    # 受付先の世代は終了している。接続前の失敗なので配送は起きておらず、戻した受付先で保存し直せる。
+                    restored = await run_file_operation(self.registry.restore)
+                    if restored is None or restored["process"] == target["process"]:
+                        raise
+                    continue
             await self._available.wait()
             try:
                 return await self._apply_local(payload)
@@ -263,13 +270,8 @@ class ServiceStatusWriter(status_file.StatusFileWriter):
             for session in sessions:
                 await session.drain_registration()
                 await session.publish_registration_async()
-            # 他sessionの保存を待つ間に、通知が新しい登録公開を始めることがある。
-            # snapshotは公開の完了後にしか取れないため、未完了が無い状態を確かめてから待機なしで写す。
-            while pending := [session for session in sessions if session.registration_pending]:
-                for session in pending:
-                    await session.drain_registration()
             observed = {
-                "sessions": [service_state.snapshot(session) for session in sessions],
+                "sessions": [await service_state.snapshot(session) for session in sessions],
                 "expired": self._hub._codec.encode(self.expired_sessions),
                 "published": list(self._published_results),
             }
@@ -314,8 +316,7 @@ class ServiceStatusWriter(status_file.StatusFileWriter):
 
     async def retain_result_async(self, session: state.SessionState | state.SessionResumeState) -> None:
         if isinstance(session, state.SessionState):
-            await session.drain_registration()
-            value = {"state": service_state.snapshot(session)}
+            value = {"state": await service_state.snapshot(session)}
         else:
             value = {"resume": self._hub._codec.encode(session)}
         await self._hub.request(self._identity, "retain_result_async", {"session": value})

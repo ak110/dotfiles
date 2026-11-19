@@ -7,6 +7,7 @@ import sys
 from collections.abc import Iterable, Iterator, Mapping
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import filters as _wi_filters
 from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPES, normalized_wi_type, unrepairable_entry_next_action
@@ -259,8 +260,10 @@ def select_entries(
     texts: EntryTexts | None = None,
     important: str | Iterable[str] = "all",
     snapshot: Iterable[EntryRecord] | None = None,
+    target_branch: str | None = None,
+    branch_settings: _wi_branches.Registry | None = None,
 ) -> list[EntryRecord]:
-    """一覧の状態・対象repo・種別・回答状況・source・重要フラグの積集合を返す。"""
+    """一覧の状態・対象repo・種別・回答状況・source・重要フラグ・宛先の系統の積集合を返す。"""
     selected: list[EntryRecord] = []
     states = _wi_filters.resolve_states(status)
     kinds = {entry_type} if isinstance(entry_type, str) else set(entry_type)
@@ -277,6 +280,8 @@ def select_entries(
         if not _wi_filters.source_matches_any(parse_source(text), source):
             continue
         if not _wi_filters.important_matches(text, important):
+            continue
+        if target_branch is not None and not _wi_branches.matches(text, entry[1], target_branch, branch_settings or {}):
             continue
         selected.append(entry)
     return selected

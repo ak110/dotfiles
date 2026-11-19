@@ -105,7 +105,7 @@ async def test_exec_review_condition_table_preflight(
         plan.write_text(f"# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n  - {other}: 別の要求\n", encoding="utf-8")
         params["計画"] = str(plan)
         params["レビュー基準"] = "計画、WI"
-    document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+    document = launch_requests.resolve_task_document_path("exec-review")
     sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
     monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
     if defect in {"valid", "old", "old-scope", "human"}:
@@ -275,7 +275,7 @@ async def test_exec_review_basis_preflight_rejects_before_launch(
         params |= {"レビュー基準": "WI", "WI記録": "20261028-130047-001.md"}
     else:
         params |= {"レビュー基準": "計画", "計画": str(tmp_path / "missing.md")}
-    document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+    document = launch_requests.resolve_task_document_path("exec-review")
     sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
     monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
     with pytest.raises(ActionableError) as rejected:
@@ -305,7 +305,7 @@ async def test_exec_review_basis_preflight_accepts_contract_inputs(
     extra = {"引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）", **params}
     if "計画" in params["レビュー基準"]:
         extra["計画"] = str(plan)
-    document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+    document = launch_requests.resolve_task_document_path("exec-review")
     sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
     monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
     response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=extra)

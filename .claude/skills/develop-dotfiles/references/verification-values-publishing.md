@@ -25,8 +25,10 @@ Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pyt
 必須checkの`pytest-toolkit (3.15)`が全分割の成功を集約する。
 以下のジョブはローカルの`make test`の実行対象外である。
 
-- `test-windows`ジョブ: Windows実機環境でのchezmoi適用、Windows固有のテスト、および公開ランチャーの動作確認。
+- `test-windows (tests)`ジョブ: Windows実機環境でのWindows固有のテスト、Codex統合、および公開ランチャーの動作確認。
   Windows固有のテストは`windows` markerを付けた試験が選ばれるため、Windows実機で確かめる試験を加えるときはCI定義ではなく試験側へmarkerを付ける
+- `test-windows (install)`ジョブ: Windows実機環境での`install.ps1`による初回導入、既存設定のバックアップ、主要ファイルの確認。
+  必須checkの`test-windows`が、この2つのjobの成功を集約する
 - `update-dotfiles-upgrade (windows)`ジョブ: Windows環境における旧バージョンからのupdate-dotfilesによるアップデート検証
 - `test-linux`ジョブ: `install.sh`およびchezmoiの実際の適用確認
 - `pytest (3.15)`・`pytest-toolkit (3.15, N/3)`ジョブ: Python 3.15・最低Git 2.34.1で直下とtoolkitのテストを各1回実行し、skills配下と横断不変条件も含める。
@@ -35,7 +37,7 @@ Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pyt
 - `plugin-version`ジョブ: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分と版数を比べる検証
 - `browser-e2e`ジョブ: 実際のブラウザーを用いたE2Eテスト（ローカル環境では`make test-browser`で実行可能）
 
-Linux上のOS判定値の模擬は、`../../../../agent-basics/skills/writing-standards/references/testing-platforms.md`「プラットフォーム分岐の検証」に従って実Windowsの保証と分ける。
+Linux上のOS判定値の模擬は、`../../../../agent-basics/skills/writing-standards/references/testing.md`「プラットフォーム分岐の検証」に従って実Windowsの保証と分ける。
 共有モジュールを変更するfixtureの影響、ランチャーの引数・待機・終了状態の受け渡し、パスAPIの戻り値と実体同一性、起動時の依存解決・環境作成は、ローカルでも先に前提を反証できる。
 実WindowsのAPIによる変換や権限・ファイル共有の副作用は実OSの観測と対応付け、準備済み開発環境の成功で配布環境の初回起動を保証しない。
 Windows分岐の実装、公開ランチャー、試験入力・配置・共有fixtureを変え、同等の結果を手元で観測できない場合は、認可済みの候補branchの既存CIで、公開branchへ反映する前にWindows側を確認する。

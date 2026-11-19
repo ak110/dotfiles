@@ -63,5 +63,4 @@
   統合と是正は依頼の実現に関わる範囲に限り、「過剰設計の抑制」と両立させる。
   役割を表す語としてのFDE（顧客の現場で課題の発見から成果までを担う技術者）は、規範の本文には書かず、求める行動を直接書いた。
   現行の規定の定義元は`agent-basics:writing-standards/references/quality-principles-roles.md`「役割分担」で、`01-agent.md`「役割分担」へ生成される。
-  場面ごとの規定は`agent-toolkit:add-awi-by-user`の手順2と、`agent-toolkit:user-confirmation-and-report`の2資料にある。
-  2資料は`references/user-utterance-incorporation.md`「原文の保持と取り込み」と`references/user-utterance-questions.md`「問い・提案・疑問形の扱い」である
+  場面ごとの規定は`agent-toolkit:atk-mode`の作業`add-awi-by-user`の手順2と、`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」「問い・提案・疑問形の扱い」にある

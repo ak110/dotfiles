@@ -244,7 +244,7 @@ os.environ.update(child)
 os.environ["CLAUDE_CONFIG_DIR"] = str(config)
 from agent_toolkit._atk.wi import submission_findings
 try:
-    findings = [0, len(submission_findings.user_events(session, "2000-01-01T00:00:00+00:00")), ""]
+    findings = [0, len(submission_findings.user_events(session, "2000-01-01T00:00:00+00:00").after_begin), ""]
 except Exception as error:
     findings = [1, 0, str(error)[-2000:]]
 print(json.dumps({

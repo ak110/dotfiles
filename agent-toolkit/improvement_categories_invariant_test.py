@@ -50,12 +50,12 @@ def _definitions() -> tuple[str, str, str, str]:
         ("../main-improvements.md", "改善点の処置・AWI化・報告"),
     )
     prevention = read_contract(
-        _ROOT.parent / "agent-basics/skills/bugfix/references/root-cause-prevention.md",
+        _ROOT.parent / "agent-basics/skills/bugfix/SKILL.md",
         _ROOT,
-        ("root-cause-prevention-requirements.md", "再発防止策の必須性"),
+        ("references/prevention.md", "再発防止を検討する"),
     )
     # 他節の箇条書きを区分の定義へ混ぜない。
-    prevention = prevention.split("理由を次の区分名で始める。", 1)[1].split("過去に採用して", 1)[0]
+    prevention = prevention.split("理由を次の区分名で始める。", 1)[1].split("\n## ", 1)[0]
     waiting = read_contract(
         _ROOT / "skills/delegation/references/waiting-and-monitoring.md",
         _ROOT,

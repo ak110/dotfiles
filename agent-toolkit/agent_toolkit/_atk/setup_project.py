@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import sys
 from pathlib import Path
 
 from agent_toolkit._atk import outcome
@@ -48,7 +49,8 @@ def _exclude_from_git(target: Path, path: Path) -> None:
     if toplevel is None or common_dir is None:
         return
     root = Path(toplevel).resolve()
-    pattern = "/" + path.resolve().relative_to(root).as_posix()
+    # リンク自身を除外するため、末尾の項目は辿らない。
+    pattern = "/" + (path.parent.resolve() / path.name).relative_to(root).as_posix()
     exclude = Path(common_dir) / "info" / "exclude"
     previous = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
     if pattern in (line.strip() for line in previous.splitlines()):
@@ -88,28 +90,52 @@ def migrate_project_instructions(target: Path) -> None:
         _exclude_from_git(target, claude_md)
 
 
+def _is_link(path: Path) -> bool:
+    return path.is_symlink() or path.is_junction()
+
+
+def _is_managed_skills_link(link: Path, source: Path) -> bool:
+    r"""`.agents/skills`のリンクが`.claude/skills`を共有するものかを返す。
+
+    Windowsのジャンクションは絶対パスを格納し、Gitが展開したリンクは区切りが`\`になるため、参照先の実体でも比べる。
+    """
+    if os.readlink(link) == _SKILLS_LINK_TARGET:
+        return True
+    return sys.platform == "win32" and link.exists() and link.resolve() == source.resolve()
+
+
 def _ensure_skills_link(target: Path) -> None:
     source = target / ".claude" / "skills"
     link = target / ".agents" / "skills"
     if not source.exists():
         return
     link.parent.mkdir(exist_ok=True)
-    if link.is_symlink():
-        actual = os.readlink(link)
-        if actual != _SKILLS_LINK_TARGET:
-            raise ValueError(f"期待しないリンク先: {link} -> {actual} （期待: {_SKILLS_LINK_TARGET}）")
-        return
-    if link.exists():
+    if _is_link(link):
+        if not _is_managed_skills_link(link, source):
+            raise ValueError(f"期待しないリンク先: {link} -> {os.readlink(link)} （期待: {_SKILLS_LINK_TARGET}）")
+        if link.exists():
+            return
+        # 以前の版がWindowsで作ったリンクは、相対パスの区切り`/`を解決できず壊れているため作り直す。
+        link.unlink()
+    elif link.exists():
         raise ValueError(f"シンボリックリンクではない項目を検出: {link}")
-    link.symlink_to(_SKILLS_LINK_TARGET)
+    if sys.platform == "win32":
+        # シンボリックリンクは開発者モードか管理者権限が要る（WinError 1314）。ジャンクションは要らない。
+        # pylint: disable=import-outside-toplevel,import-error
+        import _winapi  # noqa: PLC0415 -- Windows専用
+
+        _winapi.CreateJunction(str(source), str(link))
+        # Git for Windowsはジャンクションを辿り、共有した中身を未追跡の複製として並べる。
+        _exclude_from_git(target, link)
+    else:
+        link.symlink_to(_SKILLS_LINK_TARGET)
 
 
 def _remove_skills_link(target: Path) -> None:
     link = target / ".agents" / "skills"
-    if link.is_symlink():
-        actual = os.readlink(link)
-        if actual != _SKILLS_LINK_TARGET:
-            raise ValueError(f"期待しないリンク先のため削除しません: {link} -> {actual}")
+    if _is_link(link):
+        if not _is_managed_skills_link(link, target / ".claude" / "skills"):
+            raise ValueError(f"期待しないリンク先のため削除しません: {link} -> {os.readlink(link)}")
         link.unlink()
     elif link.exists():
         raise ValueError(f"シンボリックリンクではない項目を削除しません: {link}")

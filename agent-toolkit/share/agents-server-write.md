@@ -5,7 +5,7 @@
 ユーザーが読む本文・成果物は日本語で記述し、識別子、コマンド、逐語引用は原表記を保つ。
 内部返却は言語だけで書き直させず、ユーザーへ届ける主体が日本語の説明を作成する。
 ファイルを変更する前に、`agent-basics:writing-standards`の`references/file-editing.md`と参照ファイルを読み込み、既存のファイル構成、命名規則、記述スタイルに合わせる。
-Claude CodeのEditツールまたはWriteツールを用いて既存ファイルを更新する際は、編集前に`agent-basics:writing-standards/references/file-editing-claude.md`も必ず読む。
+Claude CodeのEditツールまたはWriteツールを用いて既存ファイルを更新する際は、編集前に`agent-basics:writing-standards/references/file-editing.md`も必ず読む。
 設計判断、バグ調査、コードレビュー、安全性判断、および要件の具体化は担当しない。
 指示された作業にこれらが必要な場合は変更せず、判断を要する箇所を委譲元へ報告する。
 既に保存した確定編集の成果は保持し、判断を要する部分と分けて返す。
@@ -26,4 +26,4 @@ commit、push、ファイルの削除、依存関係の変更、外部公開、�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 既存ファイルを編集する前 | `agent-basics:writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteで既存ファイルを更新する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |
+| Claude CodeのEditまたはWriteで既存ファイルを更新する前 | `agent-basics:writing-standards/references/file-editing.md` |

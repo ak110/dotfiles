@@ -266,3 +266,50 @@ test("CronListが公開されても所有taskが無い通常終了は通知を�
   expect(prompts).toEqual([]);
   expect(result.text).toBe("正常な調査結果");
 });
+
+// Stopが全待機の終了を判定した時点の回収要求（`periodic_recheck_collect`）を、modの要求処理へ読ませる。
+function collectRequest(on: On, options: { deleteDecision?: "allow" | "deny" } = {}) {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  const id = "c".repeat(32);
+  const calls: string[] = [];
+  const responses: { id: string; ok: boolean; reason: string }[] = [];
+  const prompts: string[] = [];
+  on("session.id", () => ({ value: "sess-1" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.list", () => ({ value: [{ name: `ui-request-sess-1-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false }] }));
+  on("fs.exists", () => ({ value: true }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "periodic_recheck_collect", input: {}, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => {
+    if (e.path.includes("/ui-response-")) responses.push(JSON.parse(e.text));
+    return { value: undefined };
+  });
+  on("tool.list", () => ({ value: ["CronList", "CronDelete"].map((name) => ({ name, description: name, mcp: false })) }));
+  on("tool.check", (_$, e) => ({ decision: e.tool === "CronDelete" ? options.deleteDecision ?? "allow" : "allow" }));
+  on("tool.call", { tool: "CronList" }, () => {
+    calls.push("CronList");
+    return { result: { jobs: [{ id: "common", prompt: COMMON_PROMPT }, { id: "obligation", prompt: COMMON_PROMPT.replace("</atk-auto>", "期限監視\n</atk-auto>") }] } };
+  });
+  on("tool.call", { tool: "CronDelete" }, (_$, e) => { calls.push(`CronDelete:${e.id}`); return { result: { id: e.id } }; });
+  on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ cron: "*/30 * * * *", prompt: COMMON_PROMPT }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+  on("prompt.submit", (_$, e) => { prompts.push(e.text); return { text: "" }; });
+  return { clock, calls, responses, prompts };
+}
+
+test("Stopの回収要求は共通promptのtaskだけを削除して応答する", async ($, on) => {
+  const { clock, calls, responses, prompts } = collectRequest(on);
+  await $.turn.start({ text: "作業", turnId: "t1" });
+  await clock.advance(100);
+  expect(calls).toEqual(["CronList", "CronDelete:common"]);
+  expect(responses).toEqual([expect.objectContaining({ ok: true, reason: "" })]);
+  expect(prompts).toEqual([]);
+});
+
+test("Stopの回収要求で削除できなければ理由を応答へ返し、次のターンを始めない", async ($, on) => {
+  const { clock, calls, responses, prompts } = collectRequest(on, { deleteDecision: "deny" });
+  await $.turn.start({ text: "作業", turnId: "t1" });
+  await clock.advance(100);
+  expect(calls).toEqual(["CronList"]);
+  expect(responses[0]?.reason).toContain("common: deny");
+  expect(prompts).toEqual([]);
+});

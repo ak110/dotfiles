@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import time
@@ -26,6 +27,18 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 
 AUTO_RESET_CHECK_INTERVAL = 30.0
+AUTO_RESET_RPC_TIMEOUT = 30.0
+
+
+@dataclasses.dataclass
+class _Progress:
+    """照会が時間内に終わらない時に、最後に到達した段階を示す。
+
+    送出の確認は、直接接続では書込みの完了、管理サービス経由では受信処理による送出通知の処理で届く。
+    """
+
+    method: str = ""
+    stage: typing.Literal["", "設定確認", "送出確認待ち", "応答待ち"] = ""
 
 
 def _reset_enabled() -> bool:
@@ -127,8 +140,13 @@ class CodexResetMixin:
 
     async def _check_auto_reset(self: CodexManager, session: SessionState, client: JsonRpcProcess, turn_seq: int) -> None:
         result = None
+        progress = _Progress()
+
+        def sent() -> None:
+            progress.stage = "応答待ち"
 
         async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            progress.method, progress.stage = method, "設定確認"
             enabled = await run_file_operation(_reset_enabled)
             if not enabled:
                 raise AppServerError("確認中にcodex_auto_resetが無効になった")
@@ -138,7 +156,8 @@ class CodexResetMixin:
                 or not self._auto_reset_eligible(session)
             ):
                 raise asyncio.CancelledError
-            return await client.request(method, params)
+            progress.stage = "送出確認待ち"
+            return await client.request(method, params, on_sent=sent)
 
         try:
             try:
@@ -156,13 +175,25 @@ class CodexResetMixin:
                 result = await codex_auto_reset.check_auto_reset(
                     request,
                     state_dir=root,
+                    rpc_timeout=AUTO_RESET_RPC_TIMEOUT,
                     permissions=permissions,
                     active=not session.interrupt_requested,
                     pace=pace,
                 )
                 if result.diagnostic:
                     _LOG.info("Codex自動reset: session_id=%s diagnostic=%s", session.session_id, result.diagnostic)
-            except AppServerError, OSError, TimeoutError, ValueError:
+            except TimeoutError:
+                _LOG.exception(
+                    "Codex自動resetの照会が時間内に終わりません: session_id=%s method=%s stage=%s connection=%s。"
+                    "stageが応答待ちならApp Serverの無応答、送出確認待ちでbacklogが上限なら受信処理の停滞、"
+                    "consumerが停止なら受信処理の停止で止まっている。"
+                    "停止した会話は利用枠回復後にsend_messageで継続してください",
+                    session.session_id,
+                    progress.method,
+                    progress.stage,
+                    client.diagnostic(),
+                )
+            except AppServerError, OSError, ValueError:
                 _LOG.exception(
                     "Codex自動resetを確認できません: session_id=%s。"
                     "この例外ログの接続・応答・保存状態を確認し、"

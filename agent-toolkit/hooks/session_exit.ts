@@ -1,6 +1,6 @@
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
-import { automatedMessage, changedWarning } from "./automated_message.ts";
+import { automatedMessage, changedWarning, startNextTurn } from "./automated_message.ts";
 import { isMarked, parseCronJobs, parseSchedule } from "./periodic_recheck.ts";
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/;
@@ -10,7 +10,7 @@ function isAbsolute(path: string): boolean {
 }
 
 // 終了要求の状態ファイルのパスを、セッションIDと設定ディレクトリの環境変数の値から求める。
-// hooks moduleは`$`を別ファイルの関数へ渡せないため、`$`を受け取らない形で`register.ts`の`session.start`と共有する。
+// `$`を受け取らない形で`register.ts`の`session.start`・`ui_requests.tsx`と共有する。
 export function exitStatePath(
   sessionId: string,
   configured: string | undefined,
@@ -40,6 +40,7 @@ function cleanupWarning(reason: string): string {
 }
 
 // Stopが同じターンの非同期判定を書き、ここで一度だけ消費する。欠落・不明は回収の許可にしない。
+// 通常はStopが判定と同時に`collectCommonTasks`を要求して回収を済ませており、ここでは残ったtaskの再評価と失敗の通知を担う。
 async function collectPeriodicRecheck($: EngineInterface, sessionId: string, aborted: boolean): Promise<string | null | undefined> {
   const path = await statePath($, sessionId, "recheck");
   if (!path) return undefined;
@@ -47,6 +48,16 @@ async function collectPeriodicRecheck($: EngineInterface, sessionId: string, abo
     const verdict = await $.fs.read(path);
     await $.fs.write(path, "consumed");
     if (verdict !== "complete" || aborted) return undefined;
+  } catch (error) {
+    return isMissing(error) ? undefined : cleanupWarning(String(error));
+  }
+  return collectCommonTasks($);
+}
+
+// 共通promptと一致する非durableの定期再確認taskを削除し、削除できなかった場合の警告を返す。対象が無ければ`null`を返す。
+// Stopの要求（`ui_requests.tsx`の`periodic_recheck_collect`）と`turn.complete`の両方から呼ぶ。
+export async function collectCommonTasks($: EngineInterface): Promise<string | null> {
+  try {
     // 軽量探索などCronListを持たない会話は、この回収機能の適用対象外である。
     // 非公開ツールをtool.checkへ渡すと例外になり、正常な返却後に不要な通知ターンが発生する。
     if (!(await $.tool.list()).some((tool) => tool.name === "CronList")) return null;
@@ -81,7 +92,7 @@ async function collectPeriodicRecheck($: EngineInterface, sessionId: string, abo
     }
     return failures.length ? cleanupWarning(failures.join("、")) : null;
   } catch (error) {
-    return isMissing(error) ? undefined : cleanupWarning(String(error));
+    return cleanupWarning(String(error));
   }
 }
 
@@ -132,7 +143,7 @@ export function register(on: On): void {
       const note = outcome === undefined ? undefined : changedWarning(deliveredFailures, sessionId, outcome ?? undefined);
       if (note) {
         // 同じ失敗による通知ターンの反復を避け、処置できる本文を会話へ一度届ける。
-        $.clock.after(0, async () => { await $.prompt.submit({ text: note }); });
+        $.clock.after(0, async () => { await startNextTurn($, note); });
       }
       return result;
     }

@@ -14,6 +14,9 @@ import {
 import {
   renderWaitingProgress
 } from "./wi_waiting.js";
+import {
+  updateCreateBranchChoices
+} from "./wi_create.js";
 
 function captureListLoadingView() {
   return {
@@ -216,6 +219,40 @@ function replaceOptions(select, values, firstLabel) {
   select.value = values.includes(selected) ? selected : '';
 }
 
+// 系統を登録したrepositoryは、まだ項目が無くても新規登録の候補へ出す。
+function renderRepoOptions() {
+  const values = [...new Set([...wiState.repoCandidates, ...Object.keys(wiState.branchRegistry)])];
+  byId('repo-options').replaceChildren(...values.map(value => {
+    const option = document.createElement('option');
+    option.value = value;
+    return option;
+  }));
+}
+
+// 系統を登録したrepositoryがある場合だけ、系統で限定する欄を出す。選択肢は登録した系統の和集合とする。
+function renderBranchFilter() {
+  const select = byId('target-branch-filter');
+  const branches = [...new Set(Object.values(wiState.branchRegistry).flatMap(item => item.branches))];
+  const registered = branches.length > 0;
+  byId('target-branch-filter-label').hidden = !registered;
+  select.hidden = !registered;
+  replaceOptions(select, registered ? branches : [], 'all');
+}
+
+export async function loadBranchRegistry({timing = {}} = {}) {
+  try {
+    const payload = await api('/api/branches', {timing});
+    wiState.branchRegistry = payload.repositories ?? {};
+    renderBranchFilter();
+    renderRepoOptions();
+    updateCreateBranchChoices();
+    return true;
+  } catch (error) {
+    setGlobalError(error.message);
+    return false;
+  }
+}
+
 export async function loadTargetRepos({timing = {}} = {}) {
   const generation = ++wiState.targetRepoRequestGeneration;
   const requestedState = byId('state-filter').value;
@@ -232,12 +269,8 @@ export async function loadTargetRepos({timing = {}} = {}) {
       if (generation !== wiState.targetRepoRequestGeneration || wiState.displayMode !== 'waiting') return false;
       replaceOptions(byId('waiting-target-filter'), waiting.repos, 'all');
     }
-    const datalist = byId('repo-options');
-    datalist.replaceChildren(...repos.map(value => {
-      const option = document.createElement('option');
-      option.value = value;
-      return option;
-    }));
+    wiState.repoCandidates = repos;
+    renderRepoOptions();
     return true;
   } catch (error) {
     const isCurrent = generation === wiState.targetRepoRequestGeneration &&
@@ -257,6 +290,7 @@ export async function clearFilters({timing = {}} = {}) {
   byId('answer-filter').value = 'all';
   byId('important-filter').value = 'all';
   byId('target-filter').value = '';
+  byId('target-branch-filter').value = '';
   byId('source-filter').value = '';
   setDisplayMode('normal');
   wiState.currentPage = 1;

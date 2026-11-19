@@ -148,15 +148,14 @@ def _run_subcommand(
 
 
 class TestUserConfirmationSkillPrompt:
-    """セッション開始後と会話圧縮後に、`agent-toolkit:user-confirmation-and-report`の起動を促す注記。
+    """セッション開始後と会話圧縮後の実ユーザー発話に、確認の手順書の取得を促す注記（撤去済み）を付けない。
 
     SessionStart、UserPromptSubmit、PostToolUse(Skill)のhookを`hook.py`のサブコマンドから順に起動し、
-    同スキルの内容が文脈に無い状態で届いた実ユーザー発話にだけ注記が付くことを確かめる。
-    注記が欠けると、同スキルが定める公開範囲の確認などの工程を想起する手掛かりが無いまま作業が始まる。
-    注記が過剰だと、起動済みの発話や機械注入のターンにも毎回同じ指示が載る。
+    入口の起動の前後、機械注入のターン、圧縮の後のどれでも注記が載らないことを確かめる。
     """
 
-    _SKILL = "agent-toolkit:user-confirmation-and-report"
+    _SKILL = "agent-toolkit:atk-mode"
+    _DOCUMENT = "atk-mode/playbooks/confirmation.md"
 
     @staticmethod
     def _session_start(
@@ -186,7 +185,7 @@ class TestUserConfirmationSkillPrompt:
 
     @classmethod
     def _has_notice(cls, context: str) -> bool:
-        return cls._SKILL in context
+        return cls._DOCUMENT in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
     def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -271,7 +270,7 @@ class TestUserConfirmationSkillPrompt:
         )
         assert generated.returncode == 0, generated.stderr
         assert generated.stdout.startswith('<atk-auto source="usage-limit-resume" kind="notice">\n')
-        document = _SCRIPTS_DIR.parent / "skills/user-confirmation-and-report/references/usage-limit.md"
+        document = _SCRIPTS_DIR.parent / "skills/atk-mode/references/usage-limit.md"
         assert document.is_file()
         assert json.dumps(str(document), ensure_ascii=False) in generated.stdout
         self._session_start("startup", tmp_path)
@@ -373,7 +372,7 @@ class TestMachineInjectedTurn:
         result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"] if result.stdout else ""
-        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" not in context
+        assert "atk-mode/playbooks/confirmation.md" not in context
         assert "cat --" not in context and "Get-Content" not in context
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
 
@@ -565,55 +564,19 @@ class TestNonMatchingPrompts:
         assert state["plan_mode_skill_invoked"] is True
 
 
-class TestRealignNoticeInjection:
-    """実ユーザー発話の全角記号から、両ホストへ認識合わせの起動を促す。"""
+class TestExclamationDoesNotTriggerNotice:
+    """全角の感嘆符は注記の契機にしない。認識のずれへの対処は受領側の発話への応答の手順が担う。"""
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
-    @pytest.mark.parametrize("prompt", ["！！直してほしい", "理解が違う！！", "確認\nここです！！"])
-    def test_same_realign_notice_is_delivered_once(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
-        sid = "realign-repeat"
-        for index in range(3):
-            result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
-            assert result.returncode == 0
-            if index:
-                assert "認識合わせ" not in result.stdout
-                continue
-            output = json.loads(result.stdout)["hookSpecificOutput"]
-            bodies = [body for body in _notice_bodies(output["additionalContext"]) if "ユーザー入力の受付時刻" not in body]
-            assert len(bodies) == 1
-            assert "agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」" in bodies[0]
-            assert "目標と問題の理解を確かめよ" in bodies[0]
-            assert set(_read_state(tmp_path, sid)) == {
-                "termination_evidence",
-                "notice_fingerprints",
-                "work_contract_input_sequence",
-            }
-
-    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
-    @pytest.mark.parametrize("prompt", ["直してほしい!!", "直してほしい！", "通常の依頼"])
-    def test_other_prompts_do_not_receive_realign_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
-        result = _run({"session_id": "realign-negative", "prompt": prompt, **host_fields}, state_dir=tmp_path)
-        assert result.returncode == 0
+    @pytest.mark.parametrize("prompt", ["！！直してほしい", "理解が違う！！", "確認\nここです！！", "直してほしい!!"])
+    def test_exclamation_alone_adds_no_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
+        result = _run({"session_id": "exclamation", "prompt": prompt, **host_fields}, state_dir=tmp_path)
+        assert result.returncode == 0, result.stderr
         assert "認識合わせ" not in result.stdout
-
-    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
-    @pytest.mark.parametrize(
-        ("extra", "prompt"),
-        [
-            ({"source": "system"}, "確認！！"),
-            ({}, '<atk-auto source="test" kind="goal">確認！！</atk-auto>'),
-            ({}, "<task-notification>完了！！</task-notification>"),
-            ({}, f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n確認！！"),
-        ],
-    )
-    def test_machine_injection_does_not_receive_realign_notice(
-        self, tmp_path: pathlib.Path, host_fields: dict, extra: dict, prompt: str
-    ) -> None:
-        result = _run({"session_id": "realign-machine", "prompt": prompt, **host_fields, **extra}, state_dir=tmp_path)
-        assert result.returncode == 0
-        assert "認識合わせ" not in result.stdout
-        assert "この発話を受けた時点で" not in result.stdout
-        assert set(_read_state(tmp_path, "realign-machine")) <= {"notice_fingerprints"}
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        bodies = _notice_bodies(output["additionalContext"])
+        assert len(bodies) == 1
+        assert "ユーザー入力の受付時刻" in bodies[0]
 
 
 class TestExampleScopeNotice:
@@ -630,7 +593,7 @@ class TestExampleScopeNotice:
         "例えばアプリ呼び出しの分がチャット画面の消費CRのバッジに表示されないとか？\n"
         "（報告者の勘違いの可能性もあるのでそれも含めて調査して。）"
     )
-    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "user-confirmation-and-report" / "references" / "user-utterance.md"
+    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "atk-mode" / "playbooks" / "user-utterance.md"
     _ROUTING_PATH = _SCRIPTS_DIR.parent / "skills" / "delegation" / "references" / "routing.md"
 
     @classmethod
@@ -639,7 +602,7 @@ class TestExampleScopeNotice:
         if not result.stdout:
             return []
         context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
-        return [body for body in _notice_bodies(context) if "references/user-utterance.md" in body] if context else []
+        return [body for body in _notice_bodies(context) if "playbooks/user-utterance.md" in body] if context else []
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_example_with_investigation_request_receives_notice(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
@@ -736,16 +699,15 @@ class TestExampleScopeNotice:
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_other_notices_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
-        """同じターンで成立した他の2つの注記と1つの`additionalContext`へ結合する。"""
+        """同じターンで成立した受付時刻の注記と1つの`additionalContext`へ結合する。"""
         sid = "example-combined"
-        result = _run({"session_id": sid, "prompt": self._PROMPT + "！！", **host_fields}, state_dir=tmp_path)
+        result = _run({"session_id": sid, "prompt": self._PROMPT, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 3
-        assert "agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」" in bodies[0]
-        assert "references/user-utterance.md" in bodies[1]
-        assert "ユーザー入力の受付時刻" in bodies[2]
+        assert len(bodies) == 2
+        assert "playbooks/user-utterance.md" in bodies[0]
+        assert "ユーザー入力の受付時刻" in bodies[1]
 
 
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])

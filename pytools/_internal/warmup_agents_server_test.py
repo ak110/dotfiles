@@ -8,14 +8,23 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import os
 import pathlib
+import shutil
 import subprocess
 import sys
+import time
+from typing import Any, cast
 
 import anyio
+import psutil
 import pytest
-from agent_toolkit._common import session_review
-from agent_toolkit._testing import late_descendant
+from agent_toolkit._agents_server import service_forward, service_transport
+from agent_toolkit._agents_server.service_generations import GenerationRegistry
+from agent_toolkit._common import plugin_environment, process_tree, session_review, windows_job
+from agent_toolkit._testing import isolation, late_descendant
+from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 from pytools._internal import common as _common
 from pytools._internal import post_apply_outcome
@@ -382,26 +391,7 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, behavior: str
 ) -> None:
     """公開MCPのinitializeとtools/listを使い、0件・停止・異常終了を起動成功へ混ぜない。"""
-    server = tmp_path / "server.py"
-    server.write_text(
-        "import json, pathlib, sys, time\n"
-        f"pathlib.Path({str(tmp_path / 'process.ready')!r}).touch()\n"
-        f"behavior = {behavior!r}\n"
-        "for line in sys.stdin:\n"
-        "    message = json.loads(line)\n"
-        "    if 'id' not in message: continue\n"
-        "    if behavior == 'exit':\n"
-        "        print('startup failed', file=sys.stderr); sys.exit(7)\n"
-        "    if behavior == 'timeout':\n"
-        f"        exec({late_descendant.held_source(tmp_path / 'startup.release')!r})\n"
-        "    if message['method'] == 'initialize':\n"
-        "        result = {'protocolVersion': '2025-11-25', 'capabilities': {'tools': {}},\n"
-        "                  'serverInfo': {'name': 'startup-probe', 'version': '1'}}\n"
-        "    else:\n"
-        "        result = {'tools': [] if behavior == 'empty' else [{'name': 'ping', 'inputSchema': {'type': 'object'}}]}\n"
-        "    print(json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': result}), flush=True)\n",
-        encoding="utf-8",
-    )
+    server = _probe_server(tmp_path, behavior)
     monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 0.5)
     tasks: list[asyncio.Task[None]] = []
     fail_after = anyio.fail_after
@@ -438,6 +428,215 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
         assert str(server) in outcome.message
     if behavior == "exit":
         assert "startup failed" in outcome.message
+
+
+def _stop_services(directory: pathlib.Path) -> None:
+    """公開前の候補を含め、隔離した管理領域に残る管理サービスを専用の起動元とともに止める。"""
+    for path in directory.glob("*.json"):
+        if path.name == "generations.json":
+            continue
+        identity = json.loads(path.read_text(encoding="utf-8"))["process"]
+        if not service_transport.process_alive(identity):
+            continue
+        with contextlib.suppress(psutil.NoSuchProcess):
+            service = psutil.Process(int(identity.split(":", 1)[0]))
+            owners = [process for process in service.parents() if _serves(process, directory)]
+            result = process_tree.stop_tree(owners[-1] if owners else service)
+            assert not result.residual and not result.unresolved, result.descriptions()
+        assert not service_transport.process_alive(identity)
+
+
+def _probe_server(tmp_path: pathlib.Path, behavior: str) -> pathlib.Path:
+    """initializeとtools/listへ`behavior`どおりに応答するMCPサーバーのスクリプトを作る。"""
+    server = tmp_path / "server.py"
+    server.write_text(
+        "import json, pathlib, sys, time\n"
+        f"pathlib.Path({str(tmp_path / 'process.ready')!r}).touch()\n"
+        f"behavior = {behavior!r}\n"
+        "for line in sys.stdin:\n"
+        "    message = json.loads(line)\n"
+        "    if 'id' not in message: continue\n"
+        "    if behavior == 'exit':\n"
+        "        print('startup failed', file=sys.stderr); sys.exit(7)\n"
+        "    if behavior == 'timeout':\n"
+        f"        exec({late_descendant.held_source(tmp_path / 'startup.release')!r})\n"
+        "    if message['method'] == 'initialize':\n"
+        "        result = {'protocolVersion': '2025-11-25', 'capabilities': {'tools': {}},\n"
+        "                  'serverInfo': {'name': 'startup-probe', 'version': '1'}}\n"
+        "    else:\n"
+        "        result = {'tools': [] if behavior == 'empty' else [{'name': 'ping', 'inputSchema': {'type': 'object'}}]}\n"
+        "    print(json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': result}), flush=True)\n",
+        encoding="utf-8",
+    )
+    return server
+
+
+@pytest.mark.parametrize("failed", ["service-start", "publish"])
+def test_startup_check_fails_when_service_is_not_started_or_published(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failed: str
+) -> None:
+    """管理サービスを起動できない場合と、確認の終了後に公開できない場合を、起動確認の成功として扱わない。"""
+    root = tmp_path / "root"
+    service = root / "agent_toolkit" / "_agents_server" / "service.py"
+    service.parent.mkdir(parents=True)
+    service.write_text("", encoding="utf-8")
+    command = [sys.executable, str(_probe_server(tmp_path, "ready")), "--project", str(root)]
+    deferred: list[str | None] = []
+
+    async def start_service(started: list[str], *, environment: dict[str, str]):
+        deferred.append(environment.get(service_forward.DEFER_PUBLISH_ENV))
+        code = 1 if failed == "service-start" else 0
+        return _warmup.plugin_warmup.CommandOutcome(started, subprocess.CompletedProcess(started, code, "", ""), 0)
+
+    def publish(_caller: object, target: pathlib.Path, *, timeout: float) -> dict:
+        assert target == root and timeout > 0
+        raise RuntimeError("候補の世代が生存していない")
+
+    monkeypatch.setattr(_warmup.plugin_warmup, "check_command", start_service)
+    monkeypatch.setattr(service_forward, "publish_service", publish)
+    outcome = asyncio.run(_CHECK_STARTUP(command))
+    assert not outcome.ok and f"段階={failed}" in outcome.message
+    # 確認用の接続より先に、公開を保留して起動する。
+    assert deferred == ["1"]
+
+
+_PLUGIN_ROOT = pathlib.Path(plugin_environment.__file__).resolve().parents[2]
+
+
+@pytest.fixture(name="service_environment", scope="module")
+def _service_environment(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+    """実の管理サービスを起動する試験が共用する、準備済みの依存環境を指す環境を返す。状態領域は各試験が指定する。"""
+    environment = {
+        key: value
+        for key, value in isolation.build_host_environ().items()
+        if key not in {"AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "VIRTUAL_ENV", "CLAUDECODE", "UV_FROZEN"}
+    }
+    # Windowsは依存環境のDLLを260文字を超えるパスから読み込めないため、試験名を含まない短い領域へ準備する。
+    environment["AGENT_TOOLKIT_RUNTIME_DATA"] = str(tmp_path_factory.mktemp("rt"))
+    prepare_plugin_environment(_PLUGIN_ROOT, environment, timeout=_REAL_MCP_PREPARE_TIMEOUT)
+    return environment
+
+
+def _serves(process: psutil.Process, directory: pathlib.Path) -> bool:
+    """`process`が`directory`の管理サービスか、その専用の起動元かを返す。"""
+    with contextlib.suppress(psutil.Error):
+        return str(directory) in process.cmdline()
+    return False
+
+
+def _launch_command(root: pathlib.Path) -> list[str]:
+    return [
+        sys.executable,
+        str(_PLUGIN_ROOT / "scripts" / "launch.py"),
+        "--project",
+        str(root),
+        str(root / "agent_toolkit" / "agents_server_mcp.py"),
+    ]
+
+
+@pytest.mark.windows
+@pytest.mark.timeout(240)
+@pytest.mark.cpu_limit(
+    3.0,
+    reason="実のlauncher・転送側・管理サービスを起動し、MCPのinitializeとtools/listを通して世代を公開する。",
+)
+def test_published_service_outlives_startup_check(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, service_environment: dict[str, str]
+) -> None:
+    """起動確認が公開した管理サービスの世代は、確認用の接続と子プロセスの終了後も生存し、次の版の確認で受付を引き継ぐ。
+
+    WindowsのMCP SDKは確認用の子プロセスを離脱不可のKILL_ON_JOB_CLOSEのJobへ入れ、接続を閉じるとJobの全プロセスを止める。
+    2026-11-18、確認用の転送側が起動した新世代が確認の終了とともに終了し、受付先が終了した世代を指し続けた。
+    """
+    environment = dict(service_environment, XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
+    # 起動確認は自身の環境を、起動する子プロセスと公開先の管理領域の解決に使う。
+    monkeypatch.setattr(os, "environ", environment)
+    monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 120.0)
+    # 同じ依存環境を使う次の版。コードの違いで別の世代になる。
+    updated = tmp_path / "updated" / "agent-toolkit"
+    shutil.copytree(_PLUGIN_ROOT, updated, ignore=shutil.ignore_patterns(".venv", "__pycache__", "node_modules", "*_test.py"))
+    with (updated / "agent_toolkit" / "agents_server_mcp.py").open("a", encoding="utf-8") as script:
+        script.write("# updated\n")
+    registry = GenerationRegistry(tmp_path / "agent-toolkit" / "services" / "agents-server")
+
+    def published(target: pathlib.Path) -> dict:
+        outcome = asyncio.run(_CHECK_STARTUP(_launch_command(target)))
+        assert outcome.ok, outcome.message
+        current = registry.current()
+        assert current is not None and current["generation"] == service_forward.code_identity(target)[0]
+        assert service_transport.process_alive(current["process"])
+        return current
+
+    try:
+        previous = published(_PLUGIN_ROOT)
+        published(updated)
+        # 会話を持たない旧世代は、次の世代の公開後に退出する。
+        deadline = time.monotonic() + 30
+        while service_transport.process_alive(previous["process"]):
+            assert time.monotonic() < deadline, "旧世代が退出しない"
+            time.sleep(0.1)
+    finally:
+        _stop_services(registry.directory)
+
+
+@pytest.mark.windows
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Jobの終了が所属プロセスを止める条件を実APIで確かめる")
+@pytest.mark.timeout(240)
+def test_service_outlives_killing_job_of_its_launcher(tmp_path: pathlib.Path, service_environment: dict[str, str]) -> None:
+    """離脱を許すKILL_ON_JOB_CLOSEのJobの中から起動した管理サービスは、そのJobの終了後も生存する。
+
+    SSHのセッションは所属プロセスをこの種類のJobへ入れ、venvのpython.exeは子を自動で離脱させるJobをその内側に作る。
+    2026-11-19、SSHのセッションから起動した管理サービスが外側のJobに残り、セッションの終了とともに終了した。
+    """
+    environment = dict(service_environment, XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
+    registry = GenerationRegistry(tmp_path / "agent-toolkit" / "services" / "agents-server")
+    try:
+        with windows_job.WindowsJob() as job:
+
+            def member(command: list[str]) -> subprocess.Popen[bytes]:
+                process = subprocess.Popen(  # pylint: disable=consider-using-with
+                    command, stdin=subprocess.DEVNULL, env=environment, creationflags=windows_job.CREATE_SUSPENDED
+                )
+                # _handleはWindows版CPythonの属性であり、Linux上の型検査からは解決できない。
+                job.assign_suspended(int(cast(Any, process)._handle), process.pid)  # pylint: disable=protected-access,no-member
+                return process
+
+            # 入力の無い転送側は、管理サービスをreadyにして公開した後で終了する。
+            launcher = member(_launch_command(_PLUGIN_ROOT))
+            unbroken = member([sys.executable, "-c", "import time; time.sleep(600)"])
+            assert launcher.wait(timeout=120) == 0
+            current = registry.current()
+            assert current is not None and service_transport.process_alive(current["process"])
+            # 管理サービスは専用の起動元が寿命を所有するため、起動元がJobに残ると、Jobの終了に遅れて管理サービスも止まる。
+            service = psutil.Process(int(current["process"].split(":", 1)[0]))
+            owners = [process for process in service.parents() if _serves(process, registry.directory)]
+            assert owners
+        # Jobの終了が所属プロセスへ届いたことを、離脱していない所属プロセスの終了で確かめる。
+        unbroken.wait(timeout=30)
+        exited, _running = psutil.wait_procs([service, *owners], timeout=3)
+        assert not exited
+        assert service_transport.process_alive(current["process"])
+    finally:
+        _stop_services(registry.directory)
+
+
+def test_unreclaimed_startup_process_is_reported_apart_from_startup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動確認が回収できなかった子プロセスを、起動の失敗へ混ぜず回収不能として返し、残る対象の確認を続ける。"""
+    commands = [["python", "first"], ["python", "second"]]
+
+    async def dependency(command):
+        return _warmup.plugin_warmup.CommandOutcome(command, subprocess.CompletedProcess(command, 0, "", ""), 0)
+
+    async def startup(command):
+        if command[-1] == "first":
+            raise process_tree.ReclaimError(["1: 残存"], [], context="起動確認")
+        return _STARTUP_OUTCOME(True, command[-1])
+
+    monkeypatch.setattr(_warmup.plugin_warmup, "check_command", dependency)
+    monkeypatch.setattr(_warmup, "_check_startup", startup)
+    first, second = asyncio.run(_CHECK_TARGETS(commands))
+    assert isinstance(first, process_tree.ReclaimError)
+    assert not isinstance(second, BaseException) and second[1] is not None and second[1].ok
 
 
 @pytest.mark.parametrize("failed", [None, "dependency", "startup", "exception"])

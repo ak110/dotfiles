@@ -347,6 +347,7 @@
 }
 #screen-wi .state-badge,
 #screen-wi .plan-badge,
+#screen-wi .branch-badge,
 #screen-wi .attention-badge,
 #screen-wi .blocked-badge {
   display: inline-flex;
@@ -361,6 +362,10 @@
 #screen-wi .plan-badge {
   color: #6941c6;
   background: #f4f3ff;
+}
+#screen-wi .branch-badge {
+  color: #05603a;
+  background: #d1fadf;
 }
 #screen-wi .attention-badge {
   color: #7a4e00;

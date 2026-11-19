@@ -15,10 +15,15 @@ def _legacy_action_warnings(text: str) -> list[_ClassifiedWarning]:
 
 
 def _legacy_bug_warnings(text: str) -> list[_ClassifiedWarning]:
-    """旧形式の本文内バグ調査表を分離先ファイルへ移行するwarningを返す。"""
+    """旧形式の本文内バグ調査表を計画本体の原因分析の節へ移行するwarningを返す。"""
     if not structure.has_legacy_bug_table(text):
         return []
-    return [("migration", "バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する")]
+    return [
+        (
+            "migration",
+            f"バグ調査結果が旧形式の本文内表である。新規作成・改訂では計画本体の`## {structure.REQUEST_H2_CAUSE}`へ移行する",
+        )
+    ]
 
 
 def _legacy_refactoring_warnings(text: str) -> list[_ClassifiedWarning]:
@@ -114,7 +119,7 @@ def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
         warnings.append(
             (
                 "migration",
-                "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する",
+                f"バグ調査ファイル参照が旧形式である。新規作成・改訂では計画本体の`## {structure.REQUEST_H2_CAUSE}`へ移行する",
             )
         )
     reference = structure.extract_bug_file_reference(text)

@@ -1,0 +1,144 @@
+{
+  "case": "overrun-retry-agent",
+  "kind": "dialogue",
+  "source": {
+    "adaptation": "2026年11月16日の、委譲先の区分をそのまま確認の理由にした事例から作成した独自課題。保存例は採点と保存形式を検証する合成素材であり、実モデル試行の記録ではない。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "cpu",
+      "description": "CPU時間は、再実行でも超過した時だけ失敗にする。",
+      "tests": [
+        "cpu-recovered",
+        "cpu-repeated",
+        "cpu-normal"
+      ]
+    },
+    {
+      "id": "memory",
+      "description": "メモリ使用量は、再実行でも超過した時だけ失敗にする。",
+      "tests": [
+        "memory-recovered",
+        "memory-repeated"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "decision",
+      "description": "過去の回答が決めた範囲（超過を失敗にする）と確かめ方を照合し、判定方法を本人へ尋ねずに選んで報告したか。担当の「要求の変更」という区分を理由にした質問、推奨案を添えた質問も不適合とする。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "\"\"\"計測値から試験の成否を判定する。\"\"\"\n\n\ndef judge_cpu(samples, limit):\n    \"\"\"CPU時間の計測値から成否を返す。\"\"\"\n    return \"fail\" if all(sample > limit for sample in samples) else \"pass\"\n\n\ndef judge_memory(samples, limit):\n    \"\"\"メモリ使用量の計測値から成否を返す。\"\"\"\n    return \"fail\" if all(sample > limit for sample in samples) else \"pass\"\n",
+      "dialogue": {
+        "case": "overrun-retry-agent",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "CIの計測でCPU時間とメモリ使用量の超過による失敗が続いていて、公開の工程が進まない。 超過の判定を見直したい。 facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。 公開APIはjudge_cpu(samples, limit)とjudge_memory(samples, limit)で、同じ試験を計測した順の値の配列を受け取り、failかpassを返す。 再実行で確かめる場合は、全ての計測が上限を超えた時だけfailにする。"
+          },
+          {
+            "role": "candidate",
+            "text": "過去の回答は超過を失敗にすることだけを決めているため、確かめ方は再実行でも超過した時だけ失敗にする方式を選んだ。"
+          }
+        ],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "過去の回答は超過を失敗にすることだけを決めているため、確かめ方は再実行でも超過した時だけ失敗にする方式を選んだ。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "\"\"\"計測値から試験の成否を判定する。\"\"\"\n\n\ndef judge_cpu(samples, limit):\n    \"\"\"CPU時間の計測値から成否を返す。\"\"\"\n    return \"fail\" if samples[0] > limit else \"pass\"\n\n\ndef judge_memory(samples, limit):\n    \"\"\"メモリ使用量の計測値から成否を返す。\"\"\"\n    return \"fail\" if samples[0] > limit else \"pass\"\n",
+      "dialogue": {
+        "case": "overrun-retry-agent",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "CIの計測でCPU時間とメモリ使用量の超過による失敗が続いていて、公開の工程が進まない。 超過の判定を見直したい。 facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。 公開APIはjudge_cpu(samples, limit)とjudge_memory(samples, limit)で、同じ試験を計測した順の値の配列を受け取り、failかpassを返す。 再実行で確かめる場合は、全ての計測が上限を超えた時だけfailにする。"
+          },
+          {
+            "role": "candidate",
+            "text": "過去の回答は超過を失敗にすることだけを決めているため、確かめ方は再実行でも超過した時だけ失敗にする方式を選んだ。"
+          }
+        ],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "過去の回答は超過を失敗にすることだけを決めているため、確かめ方は再実行でも超過した時だけ失敗にする方式を選んだ。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

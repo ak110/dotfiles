@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import re
@@ -18,6 +19,22 @@ def redact_stream_line(line: str, private_key: bool) -> tuple[str, bool]:
     begins = re.search(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", line) is not None
     ends = re.search(r"-----END [A-Z0-9 ]*PRIVATE KEY-----", line) is not None
     return ("[REDACTED]" if private_key else redact_secrets(line), (private_key or begins) and not ends)
+
+
+def is_error_event(line: str) -> bool:
+    """モデルCLIの構造化出力の1行が、会話本文ではなく失敗の診断を表すかを返す。
+
+    記録側は該当行だけを秘匿して残し、失敗報告側は該当行だけを転載する。両者が同じ判定を使う。
+    """
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return False
+    return isinstance(event, dict) and (
+        event.get("is_error") is True
+        or event.get("type") in {"error", "turn.failed"}
+        or isinstance(event.get("error"), (dict, str))
+    )
 
 
 def command(argv: list[str]) -> list[str]:

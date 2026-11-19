@@ -280,3 +280,29 @@ class TestConsoleTitleReset:
         )
 
         assert calls == expected
+
+
+@pytest.mark.parametrize("orchestrator", ["claude", "codex", "agy"])
+@pytest.mark.parametrize("resume", [None, "saved-session"])
+def test_session_env_lets_coordinator_be_identified_by_id(
+    tmp_path: pathlib.Path, orchestrator: str, resume: str | None
+) -> None:
+    """統括の環境は、起動ごとに新しいSessionStartの確保用の目印と、渡せる場合の会話IDを持つ。"""
+    env = {**os.environ, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "previous-launch"}
+    _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
+        argparse.Namespace(resume=resume),
+        _pl_session.build_process_loop_prompt(),
+        env,
+        orchestrator=orchestrator,
+        model="test-model",
+        effort="medium",
+        resume_pending=resume is not None,
+        cwd=tmp_path,
+    )
+    assert env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM"] not in {"", "previous-launch"}
+    if resume is not None:
+        assert env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] == resume
+    elif orchestrator == "claude":
+        assert env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV]
+    else:
+        assert _pl_env.PROCESS_LOOP_SESSION_ID_ENV not in env

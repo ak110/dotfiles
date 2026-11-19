@@ -15,10 +15,15 @@ for %%A in (%*) do if "%%~A"=="--prune" set "PRUNE_REQUESTED=1"
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" set "PRUNE_REQUESTED=0"
 rem 引数とパス内の!を保つため、uv実行と引数走査の後で遅延展開を有効にする。
 setlocal EnableDelayedExpansion
-if "!UPDATE_DOTFILES_EXIT!"=="0" if "%DOTFILES_PRUNE_OUTSIDE_UV%"=="1" if "!PRUNE_REQUESTED!"=="1" (
+rem 続行した失敗だけで本体を終えた場合（終了コード1）も、印があれば整理と事前構築へ進む。
+set "RUN_PRUNE=0"
+if "!UPDATE_DOTFILES_EXIT!"=="0" set "RUN_PRUNE=1"
+if defined DOTFILES_PRUNE_READY_FILE if exist "!DOTFILES_PRUNE_READY_FILE!" set "RUN_PRUNE=1"
+if "!RUN_PRUNE!"=="1" if "%DOTFILES_PRUNE_OUTSIDE_UV%"=="1" if "!PRUNE_REQUESTED!"=="1" (
     "!USERPROFILE!\.local\bin\dotfiles-post-apply.exe" --prune-only-if-minimal %*
-    set "UPDATE_DOTFILES_EXIT=!ERRORLEVEL!"
+    if "!UPDATE_DOTFILES_EXIT!"=="0" set "UPDATE_DOTFILES_EXIT=!ERRORLEVEL!"
 )
+if defined DOTFILES_PRUNE_READY_FILE if exist "!DOTFILES_PRUNE_READY_FILE!" del /q "!DOTFILES_PRUNE_READY_FILE!"
 rem 上のコメント末尾は旧legacy・logs版の再開位置。byte位置はランチャーテストで検証する。
 set "UV_SELF_UPDATE_WARNING=uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。対応不要（dotfilesの更新処理は継続しました）。"
 rem CP932のbatch文字列を、出力先に応じた文字コードで標準エラー出力へ渡す。
@@ -47,6 +52,7 @@ if "%~1"=="job" goto job_route
 :normal
 set "UV_SELF_UPDATE_FAILED=0"
 set "DOTFILES_PRUNE_OUTSIDE_UV=1"
+set "DOTFILES_PRUNE_READY_FILE=%LOCALAPPDATA%\agent-toolkit\update-prune-ready-%RANDOM%-%RANDOM%"
 set "PRUNE_REQUESTED=1"
 if "%~1"=="logs" set "PRUNE_REQUESTED=0"
 goto run

@@ -19,7 +19,8 @@ from agent_toolkit._common import claude_usage_limit
         turn_state.ResultContractWait({"agent_message": "原結果"}, "形式の回復"),
     ],
 )
-def test_transfer_retains_control_state_and_creates_new_locks(hold: turn_state.ResultHold) -> None:
+@pytest.mark.asyncio
+async def test_transfer_retains_control_state_and_creates_new_locks(hold: turn_state.ResultHold) -> None:
     session = state.SessionState(
         "parent",
         "/project",
@@ -35,7 +36,7 @@ def test_transfer_retains_control_state_and_creates_new_locks(hold: turn_state.R
         retention_deadline=123.4,
         codex_subagent_activity_ids={("thread", "turn", "item", "completed")},
     )
-    copied = service_state.restore(json.loads(json.dumps(service_state.snapshot(session))))
+    copied = service_state.restore(json.loads(json.dumps(await service_state.snapshot(session))))
     for field in dataclasses.fields(session):
         if field.name in {"turn_control_lock", "_registration_lock"}:
             assert getattr(copied, field.name) is not getattr(session, field.name)

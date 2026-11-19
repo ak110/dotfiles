@@ -94,6 +94,7 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     # 標識の有無で分岐する動作を検証するテストは自身で設定する。
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
+    "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM",
     # Claude Codeの設定ディレクトリとCodexのホームの指定。継承されると、隔離したホーム配下を前提にするテストの
     # 解決先が実行環境で変わる。指定した場合の解決を検証するテストは自身で設定する。
     "CLAUDE_CONFIG_DIR",
@@ -283,6 +284,23 @@ def apply_development_state_isolation(tmp_path: pathlib.Path, monkeypatch: pytes
             monkeypatch.delenv(name)
     # CIにはエージェントCLIが無い。開発機でも同じ条件にし、偽の実装へ差し替えていないテストを開発機で失敗させる。
     monkeypatch.setenv("PATH", path_value)
+
+
+@contextlib.contextmanager
+def isolated_development_state(root: pathlib.Path) -> Generator[None]:
+    """pytestの外の単発スクリプトへ、各テストと同じ6つの次元の隔離を区間の間だけ適用する。
+
+    ホーム・設定・状態の保存先と一時ディレクトリを`root`配下へ向け、区間の終了時に元の値へ戻す。
+    hook入力の再生などで製品の公開コマンドを呼ぶ検証が作る振り返り待ちなどの状態を、`root`配下へ書き込ませる。
+    保存先を呼出しごとに解決するモジュールは、区間に入る前にimportしたものも隔離先を使う。
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    # 同じrootへ入り直すと既存のリンクの作成が失敗し、CLIと同じディレクトリのツールがPATHから外れるため、区間ごとに作る。
+    links = pathlib.Path(tempfile.mkdtemp(prefix="isolated-path-", dir=root))
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        path_value = build_isolated_path(without_parent_venv_path(_HOST_ENVIRON.get("PATH", "")), links)
+        apply_development_state_isolation(root, monkeypatch, path_value)
+        yield
 
 
 def build_host_environ() -> dict[str, str]:

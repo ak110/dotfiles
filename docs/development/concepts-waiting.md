@@ -5,7 +5,7 @@
 会話に残った`/exit`のローカルコマンド記録は、続行発話の有無によらず元の未完了工程を続け、操作に触れる発話と振り返りの分析・報告を省く。
 関連する訂正・続行も同じ扱いとする。
 作業完了の表示はreport-completionの既存の固定文言で十分であるため、待機規定・予告書式と固定文言は維持する（2026年10月14日、ユーザー指示）。
-実行時の所在は`agent-toolkit:user-confirmation-and-report`の「割り込み・訂正・中止」と`agent-basics:bugfix`の`non-changing-request`である。
+実行時の所在は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「割り込み・訂正・中止」と`agent-basics:bugfix`の`non-changing-request`である。
 
 2026年10月13日、ユーザーは完了通知で同じセッションへ再開できる待機を常に背景起動へそろえ、ホストの複雑さに対してエージェントの行動を単純にすることを求めた。
 待機の種類・件数・goal条件で前景へ戻す分岐を除き、先に届いた通知から出力と終了状態を回収する。

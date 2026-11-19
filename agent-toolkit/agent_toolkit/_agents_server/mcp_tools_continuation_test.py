@@ -55,7 +55,7 @@ async def test_new_request_and_handoff_preserve_required_context(
         for _ in range(2):
             await mcp_tools.send_message(started["session_id"], "現在の作業を続行する")
         assert backend.send_calls == 3
-        document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+        document = launch_requests.resolve_task_document_path("exec-review")
         with pytest.raises(ValueError, match="役割文書が全文再掲"):
             await mcp_tools.send_message(started["session_id"], document.read_text(encoding="utf-8"))
         assert backend.send_calls == 3

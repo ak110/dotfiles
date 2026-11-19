@@ -3,50 +3,12 @@
 import subprocess
 import sys
 import time
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
 from agent_toolkit._common.windows_job import CREATE_SUSPENDED, WindowsJob
 from agent_toolkit._testing import late_descendant
-
-
-@pytest.mark.parametrize("in_job,limits", [(False, 0), (True, 0), (True, 0x800), (True, 0x1000)])
-def test_current_job_limits_distinguish_no_job_from_restricted_job(in_job, limits):
-    """Job非所属と離脱不可を区別し、外側Jobの制限を変更せず返す。"""
-
-    def membership(_process, _job, value):
-        value._obj.value = in_job  # pylint: disable=protected-access
-        return True
-
-    def query(handle, _kind, value, _size, _returned):
-        assert handle is None
-        value._obj.basic.flags = limits  # pylint: disable=protected-access
-        return True
-
-    job = WindowsJob.__new__(WindowsJob)
-    job._kernel = SimpleNamespace(  # pylint: disable=protected-access
-        GetCurrentProcess=lambda: 123, IsProcessInJob=membership, QueryInformationJobObject=query
-    )
-    assert job.current_job_limit_flags() == (limits if in_job else None)
-
-
-@pytest.mark.parametrize("operation", ["IsProcessInJob", "QueryInformationJobObject"])
-def test_current_job_query_failure_is_not_treated_as_unrestricted(operation):
-    """照会失敗を非所属や離脱許可へ変換しない。"""
-
-    def membership(_process, _job, value):
-        value._obj.value = True  # pylint: disable=protected-access
-        return operation != "IsProcessInJob"
-
-    job = WindowsJob.__new__(WindowsJob)
-    job._kernel = SimpleNamespace(  # pylint: disable=protected-access
-        GetCurrentProcess=lambda: 123, IsProcessInJob=membership, QueryInformationJobObject=lambda *_: False
-    )
-    job._ctypes = SimpleNamespace(WinError=lambda _: OSError("injected query failure"), get_last_error=lambda: 5)  # pylint: disable=protected-access
-    with pytest.raises(OSError, match="injected query failure"):
-        job.current_job_limit_flags()
 
 
 @pytest.mark.windows

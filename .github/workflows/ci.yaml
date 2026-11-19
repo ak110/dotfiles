@@ -15,6 +15,7 @@ jobs:
   common-ci-owner:
     name: common-ci-owner
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions:
       actions: read
       contents: read
@@ -51,6 +52,7 @@ jobs:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-linux (non-owner)' || 'test-linux' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 6
     steps:
       - name: 共通CI非所有経路
         if: needs.common-ci-owner.outputs.owns == 'false'
@@ -70,6 +72,7 @@ jobs:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'update-dotfiles-upgrade (windows) (non-owner)' || 'update-dotfiles-upgrade (windows)' }}
     runs-on: windows-latest
+    timeout-minutes: 19
     steps:
       - name: 共通CI非所有経路
         if: needs.common-ci-owner.outputs.owns == 'false'
@@ -85,10 +88,11 @@ jobs:
           path: dotfiles
       - uses: ./dotfiles/.github/actions/ci-update-dotfiles-upgrade-windows
         if: needs.common-ci-owner.outputs.owns == 'true'
-  test-windows:
+  test-windows-tests:
     needs: common-ci-owner
-    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (non-owner)' || 'test-windows' }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (tests) (non-owner)' || 'test-windows (tests)' }}
     runs-on: windows-latest
+    timeout-minutes: 11
     steps:
       - name: 共通CI非所有経路
         if: needs.common-ci-owner.outputs.owns == 'false'
@@ -104,11 +108,32 @@ jobs:
           path: dotfiles
       - uses: ./dotfiles/.github/actions/ci-test-windows
         if: needs.common-ci-owner.outputs.owns == 'true'
+  test-windows-install:
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (install) (non-owner)' || 'test-windows (install)' }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: Write-Output "$env:OWNER_REASON"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        with:
+          fetch-depth: 0
+          path: dotfiles
+      - uses: ./dotfiles/.github/actions/ci-install-windows
+        if: needs.common-ci-owner.outputs.owns == 'true'
   browser-e2e:
     needs: common-ci-owner
     if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 9
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
@@ -148,6 +173,7 @@ jobs:
     if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'rust-lint (non-owner)' || 'rust-lint' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - name: 共通CI非所有経路
         if: needs.common-ci-owner.outputs.owns == 'false'
@@ -176,6 +202,7 @@ jobs:
     name: statusline-version
     if: (github.event_name == 'pull_request' && github.base_ref == 'master') || (github.event_name == 'push' && github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -191,6 +218,7 @@ jobs:
     name: plugin-version
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -205,6 +233,7 @@ jobs:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'python-lint-other (3.15) (non-owner)' || 'python-lint-other (3.15)' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 11
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
@@ -250,6 +279,7 @@ jobs:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pylint (3.15) (non-owner)' || 'pylint (3.15)' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 11
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
@@ -285,6 +315,7 @@ jobs:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest (3.15) (non-owner)' || 'pytest (3.15)' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 6
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
@@ -346,6 +377,7 @@ jobs:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && format('pytest-toolkit (3.15, {0}) (non-owner)', matrix.shard) || format('pytest-toolkit (3.15, {0})', matrix.shard) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 14
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
@@ -417,6 +449,25 @@ jobs:
     if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest-toolkit (3.15) (non-owner)' || 'pytest-toolkit (3.15)' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 必須checkの全実行結果確認
+        env:
+          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+          NEEDS: ${{ toJSON(needs) }}
+        shell: bash
+        run: python3 scripts/ci_result.py
+  test-windows-result:
+    needs:
+      - common-ci-owner
+      - test-windows-tests
+      - test-windows-install
+    if: ${{ !cancelled() }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (non-owner)' || 'test-windows' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 必須checkの全実行結果確認
@@ -434,6 +485,7 @@ jobs:
     if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'python-lint (3.15) (non-owner)' || 'python-lint (3.15)' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: 必須checkの全実行結果確認

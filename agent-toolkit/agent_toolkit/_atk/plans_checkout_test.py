@@ -319,7 +319,7 @@ def test_public_save_all_then_restore_unfinished_plan(
     original = {}
     for name, wi in zip(names, ("20260930-175957-001.md", "20261004-044541-001.md"), strict=True):
         path = working / name
-        text = _plan_fixture.current_plan(related_wi=((wi, name),))
+        text = _plan_fixture.eight_section_plan(related_wi=((wi, name),))
         path.write_text(text, encoding="utf-8")
         args = argparse.Namespace(
             script_name="plan-progress",

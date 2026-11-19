@@ -19,7 +19,7 @@ PRの存在確認だけでは起動しない。
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failure-handling.md`、`agent-toolkit:commit/references/ci-failure-handling.md` |
+| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failures.md`、`agent-toolkit:commit/references/ci-failure-handling.md` |
 | 必須CIの結果を成功時も含めて検収する前 | `../develop-dotfiles/references/verification-values-speed.md` |
 | マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
 
@@ -27,7 +27,7 @@ PRの存在確認だけでは起動しない。
 
 - CIやリリース以外の工程が失敗した場合は、すでに完了した外部の状態を保持したまま、失敗した工程、現在の外部状態、runのURL、および再開に必要な情報を報告して停止する。
   PR作成やマージの再試行、auto-mergeの有効化、自動修復、自動ロールバックなどは行わない。
-- CIやリリースの実行（run）が失敗した場合は、run全体の終了状態と失敗ログを確認し、`agent-basics:bugfix/references/ci-failure-handling-classification.md`「再現性」に沿って原因を分類する。
+- CIやリリースの実行（run）が失敗した場合は、run全体の終了状態と失敗ログを確認し、`agent-basics:bugfix/references/ci-failures.md`「分類」の再現性に沿って原因を分類する。
   ネットワーク障害、配布元のタイムアウト、レート制限、ランナー障害などの一時的な外部要因が疑われる場合は、同ドキュメントの手順に従って広域障害の有無を確認したうえで、同一の原因について失敗したジョブを1回だけ再実行して検収を続行する。
 - 再実行しても再度失敗した場合、初回のログで一時的な外部要因が疑われない場合、またはログを取得できない場合は、元のrunの失敗状態を維持したまま、上記と同様の内容を報告して処理を停止する。
 
@@ -133,9 +133,3 @@ PRの存在確認だけでは起動しない。
 
 1. 作業の合否判定はリモート側の状態だけで行い、ローカルの作業ツリーやブランチの状態は判定から外す。
    `git status --short`の出力結果は現状の情報として完了報告に添え、リモート側の完了状況と、ローカルの`develop`を同期できたかどうかを明確に区別して報告する。
-
-## 本文参照の取得条件
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| CI失敗の分類と適切な対処：失敗の性質による分類の基準を適用する前 | `agent-basics:bugfix/references/ci-failure-handling-classification.md` |

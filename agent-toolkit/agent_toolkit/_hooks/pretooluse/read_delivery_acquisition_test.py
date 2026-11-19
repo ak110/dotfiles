@@ -1,6 +1,7 @@
 """役割の起動配送と、主体別の取得手段をまたぐ読込契約を確かめる。"""
 
 import json
+import os
 import shlex
 
 import pytest
@@ -8,8 +9,9 @@ import pytest
 from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks import document_reads, notice, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
-from agent_toolkit._testing.document_delivery import observe_received
+from agent_toolkit._testing.document_delivery import WINDOWS_HOOK_CPU_REASON, hook_text, observe_received
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
+from agent_toolkit._testing.helpers import link_directory
 from agent_toolkit._testing.read_delivery_acquisition_support import (
     _assert_continues_without_guidance,
     _state,
@@ -36,10 +38,11 @@ def test_compact_recovery_first_output_survives_notice_cycle(tmp_path, monkeypat
     assert state.get("notice_fingerprints")
 
 
+@pytest.mark.windows
 def test_unchecked_condition_keeps_notice_suppressed_until_actual_resolution(tmp_path, monkeypatch, state):
     """同scopeの非該当操作は抑止を保ち、公開全文取得後の再成立でだけ再配送する。"""
     document = tmp_path / "reference.md"
-    document.write_text("# 必須資料\n取得する固有基準\n", encoding="utf-8")
+    document.write_text("# 必須資料\n取得する固有基準\n", encoding="utf-8", newline="\n")
     row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("bash:printf json",), (document,))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
     payload = {"session_id": "unchecked", "cwd": str(tmp_path), "tool_name": "Bash"}
@@ -48,7 +51,7 @@ def test_unchecked_condition_keeps_notice_suppressed_until_actual_resolution(tmp
         command = "printf json" if suffix == "json" else "cat -- " + shlex.quote(str(tmp_path / "unrelated.txt"))
         result = _run_hook_in_process("pretooluse", {**payload, "tool_input": {"command": command}})
         assert result.returncode == 0 and not result.stderr
-        return result.stdout
+        return hook_text(result.stdout)
 
     assert str(document) in invoke("json")
     fingerprints = dict(state["notice_fingerprints"])
@@ -74,10 +77,11 @@ def test_unchecked_condition_keeps_notice_suppressed_until_actual_resolution(tmp
     )
     assert str(document) not in invoke("json")
     # 別操作で本文を更新したため、同じ宣言の資料が再び未取得となる。
-    document.write_text("# 必須資料\n更新された固有基準\n", encoding="utf-8")
+    document.write_text("# 必須資料\n更新された固有基準\n", encoding="utf-8", newline="\n")
     assert str(document) in invoke("json")
 
 
+@pytest.mark.windows
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize(
     "frontmatter,allows_read",
@@ -93,7 +97,7 @@ def test_skill_acquisition_respects_model_invocation(tmp_path, monkeypatch, stat
     skill = tmp_path / ".claude/skills/local/SKILL.md"
     skill.parent.mkdir(parents=True)
     body = f"---\nname: local\n{frontmatter}\n---\n# 基準\n固有の本文\n"
-    skill.write_text(body, encoding="utf-8")
+    skill.write_text(body, encoding="utf-8", newline="\n")
     row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:Do",), (skill,))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if host == "codex" else {})}
@@ -122,6 +126,8 @@ def test_skill_acquisition_respects_model_invocation(tmp_path, monkeypatch, stat
         )
 
 
+@pytest.mark.windows
+@pytest.mark.cpu_limit(2.0 if os.name == "nt" else 0.5, reason=WINDOWS_HOOK_CPU_REASON)
 @pytest.mark.parametrize("inside", [False, True])
 @pytest.mark.parametrize("linked", [False, True])
 @pytest.mark.parametrize("reading", ["Read", "Bash"])
@@ -133,12 +139,12 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
     project = tmp_path / "project"
     skill = project / ".claude/skills/local/SKILL.md"
     skill.parent.mkdir(parents=True)
-    skill.write_text("---\nname: local\n---\n# 基準\n固有の本文\n", encoding="utf-8")
+    skill.write_text("---\nname: local\n---\n# 基準\n固有の本文\n", encoding="utf-8", newline="\n")
     if linked:
         physical = tmp_path / "physical/skills/local"
         physical.parent.mkdir(parents=True)
         skill.parent.rename(physical)
-        skill.parent.symlink_to(physical, target_is_directory=True)
+        link_directory(skill.parent, physical)
         skill = skill.resolve()
     cwd = project if inside else tmp_path / "outside"
     cwd.mkdir(exist_ok=True)
@@ -155,7 +161,7 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
     }
     first = _run_hook_in_process("pretooluse", request)
     assert first.returncode == 0 and not first.stderr
-    assert (str(skill) in first.stdout) is not inside
+    assert (str(skill) in hook_text(first.stdout)) is not inside
     assert ("`local`" in first.stdout) is inside
     _assert_continues_without_guidance(_run_hook_in_process("pretooluse", request))
     assert not read_delivery.target_ready(
@@ -184,13 +190,13 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
             state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
         )
     if not inside:
-        assert str(skill) not in after.stdout
+        assert str(skill) not in hook_text(after.stdout)
         monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
         monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
         monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
         compact = _run_hook_in_process("rules_context", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
         assert compact.returncode == 0 and not compact.stderr
-        assert str(skill) not in compact.stdout and "`local`" not in compact.stdout
+        assert str(skill) not in hook_text(compact.stdout) and "`local`" not in compact.stdout
         assert "圧縮後に読むのは作業契約と会話の要約だけである" in compact.stdout
         failed = _run_hook_in_process(
             "posttooluse",
@@ -204,7 +210,7 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
         )
         assert failed.returncode == 0 and not failed.stderr
         guided = _run_hook_in_process("pretooluse", request)
-        assert guided.returncode == 0 and str(skill) in guided.stdout
+        assert guided.returncode == 0 and str(skill) in hook_text(guided.stdout)
         _assert_continues_without_guidance(_run_hook_in_process("pretooluse", request))
         assert not read_delivery.target_ready(
             state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main"
@@ -222,7 +228,7 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
         assert acquired.returncode == 0 and not acquired.stderr
         resumed = _run_hook_in_process("pretooluse", request)
         assert resumed.returncode == 0 and not resumed.stderr
-        assert str(skill) not in resumed.stdout and '"permissionDecision": "deny"' not in resumed.stdout
+        assert str(skill) not in hook_text(resumed.stdout) and '"permissionDecision": "deny"' not in resumed.stdout
 
 
 @pytest.mark.parametrize("tampered", [False, True])
@@ -275,9 +281,13 @@ def test_unconfirmed_conditions_and_foreign_roles_cannot_block(tmp_path, monkeyp
     assert not document_reads.content_ready(recorded, document_reads.content_fingerprint(reference), "main")
 
 
+@pytest.mark.windows
 @pytest.mark.cpu_limit(
-    1.0,
-    reason=("公開hook/CLIと実ファイル・プロセスを通す結合境界。修正前Linux4並列全件計測の所有CPU最大0.395秒。"),
+    4.0 if os.name == "nt" else 1.0,
+    reason=(
+        "公開hook/CLIと実ファイル・プロセスを通す結合境界。修正前Linux4並列全件計測の所有CPU最大0.395秒。"
+        + WINDOWS_HOOK_CPU_REASON
+    ),
 )
 @pytest.mark.parametrize("role_name", ["exec-review.subagent.md", "session-termination.subagent.md"])
 @pytest.mark.parametrize("select_current", [False, True])
@@ -287,12 +297,12 @@ def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypa
     share = root / "share"
     share.mkdir(parents=True)
     (root / ".claude-plugin").mkdir()
-    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8", newline="\n")
     needed, delegation, waiting, unrelated = (
         share / name for name in ("finding.md", "delegation.md", "waiting.md", "unrelated.md")
     )
     for path in (needed, delegation, waiting, unrelated):
-        path.write_text(f"# {path.stem}\n固有の基準\n", encoding="utf-8")
+        path.write_text(f"# {path.stem}\n固有の基準\n", encoding="utf-8", newline="\n")
     role = share / role_name
     other = share / ("session-termination.subagent.md" if role_name == "exec-review.subagent.md" else "exec-review.subagent.md")
     header = "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
@@ -303,11 +313,14 @@ def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypa
         + f"| 指摘保存 | `finding.md` | 操作 | `{'path:*.json' if select_current else 'tool:Inspect'}` |\n"
         + "| 独立文脈レビューを省く時 | `unrelated.md` | 判断 | `path:*.json` |\n",
         encoding="utf-8",
+        newline="\n",
     )
-    other.write_text("# 他担当\n" + header + "| 保存 | `unrelated.md` | 操作 | `path:*.json` |\n", encoding="utf-8")
+    other.write_text(
+        "# 他担当\n" + header + "| 保存 | `unrelated.md` | 操作 | `path:*.json` |\n", encoding="utf-8", newline="\n"
+    )
     transcript = tmp_path / "transcript.jsonl"
     prompt = f"次の文書の手順を実行せよ（出所: {role}）。\n指摘をJSONへ保存する。"
-    transcript.write_text(json.dumps({"type": "user", "message": {"content": prompt}}) + "\n", encoding="utf-8")
+    transcript.write_text(json.dumps({"type": "user", "message": {"content": prompt}}) + "\n", encoding="utf-8", newline="\n")
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
     monkeypatch.setattr(
         read_delivery,
@@ -339,7 +352,7 @@ def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypa
         read(path)
     compact = _run_hook_in_process("rules_context_codex", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
     assert compact.returncode == 0
-    assert all(str(path) not in compact.stdout for path in (delegation, waiting))
+    assert all(str(path) not in hook_text(compact.stdout) for path in (delegation, waiting))
     records = state[rules_context.OPERATION_SKILL_READY_KEY]
     assert all("main" in records[rules_context.carried_read_target_key(path)] for path in (delegation, waiting))
     target = tmp_path / "findings.json"
@@ -373,12 +386,14 @@ def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypa
         result = _run_hook_in_process("pretooluse", operation)
         assert result.returncode == 0 and not result.stderr
         assert '"permissionDecision": "deny"' not in result.stdout
-        assert all(str(path) not in result.stdout for path in (delegation, waiting, needed))
+        assert all(str(path) not in hook_text(result.stdout) for path in (delegation, waiting, needed))
     # 模擬ホストは許可された同じ保存入力をここで反映する。
-    target.write_text(body, encoding="utf-8")
+    target.write_text(body, encoding="utf-8", newline="\n")
     assert json.loads(target.read_text(encoding="utf-8"))["findings"] == [{"reason": "確認した指摘"}]
 
 
+@pytest.mark.windows
+@pytest.mark.cpu_limit(3.0 if os.name == "nt" else 0.5, reason=WINDOWS_HOOK_CPU_REASON)
 @pytest.mark.parametrize("role_name", [None, "exec.subagent.md", "lane-integration.subagent.md"])
 @pytest.mark.parametrize("history", ["new", "existing", "compact"])
 def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch, state, role_name, history):
@@ -387,24 +402,27 @@ def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch
     share = root / "share"
     share.mkdir(parents=True)
     (root / ".claude-plugin").mkdir()
-    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8", newline="\n")
     skill = root / "skills/shared/SKILL.md"
     skill_name = f"{root.name}:{skill.parent.name}"
     skill.parent.mkdir(parents=True)
-    skill.write_text("---\nname: shared\n---\n# 共通の基準\n本文\n", encoding="utf-8")
+    skill.write_text("---\nname: shared\n---\n# 共通の基準\n本文\n", encoding="utf-8", newline="\n")
     planning, integration = share / "planning.md", share / "integration.md"
     for path in (planning, integration):
-        path.write_text(f"# {path.stem}\n役割の固有基準\n", encoding="utf-8")
+        path.write_text(f"# {path.stem}\n役割の固有基準\n", encoding="utf-8", newline="\n")
     base, execution_role, integration_role = (
         share / name for name in ("base.md", "exec.subagent.md", "lane-integration.subagent.md")
     )
     header = "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
     operation = "read:agent-toolkit:*/skills/shared/SKILL.md"
-    base.write_text("# 共通\n" + header + f"| 選択 | `../skills/shared/SKILL.md` | 判断 | `{operation}` |\n", encoding="utf-8")
+    base.write_text(
+        "# 共通\n" + header + f"| 選択 | `../skills/shared/SKILL.md` | 判断 | `{operation}` |\n", encoding="utf-8", newline="\n"
+    )
     for source, target in ((execution_role, planning), (integration_role, integration)):
         source.write_text(
             "# 役割\n" + header + f"| 工程資料の選択 | `../skills/shared/SKILL.md`、`{target.name}` | 判断 | `{operation}` |\n",
             encoding="utf-8",
+            newline="\n",
         )
     rows = [row for source in (base, execution_role, integration_role) for row in read_triggers.parse_tables(source, root)]
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
@@ -418,7 +436,7 @@ def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch
         else "all-reposの統括。レーンを担当しない。"
     )
     transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(json.dumps({"type": "user", "message": {"content": prompt}}) + "\n", encoding="utf-8")
+    transcript.write_text(json.dumps({"type": "user", "message": {"content": prompt}}) + "\n", encoding="utf-8", newline="\n")
     payload = {"session_id": "test", "cwd": str(tmp_path), "transcript_path": str(transcript)}
     state["agents_server_cwd_by_session"] = {"child": str(tmp_path)}
 
@@ -460,13 +478,13 @@ def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch
         result = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
         assert result.returncode == 0 and not result.stderr
         assert '"permissionDecision": "deny"' not in result.stdout
-        assert all(str(path) not in result.stdout for path in (planning, integration))
+        assert all(str(path) not in hook_text(result.stdout) for path in (planning, integration))
         assert f"`{skill_name}`" not in result.stdout
-        assert str(skill) not in result.stdout
+        assert str(skill) not in hook_text(result.stdout)
         repeated = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
         assert repeated.returncode == 0 and not repeated.stderr
         assert '"permissionDecision": "deny"' not in repeated.stdout
-        assert all(str(path) not in repeated.stdout for path in (planning, integration, skill))
+        assert all(str(path) not in hook_text(repeated.stdout) for path in (planning, integration, skill))
     records = state[rules_context.OPERATION_SKILL_READY_KEY]
     for path in (planning, integration):
         assert document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") == "missing"
@@ -482,7 +500,7 @@ def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch
         for _ in range(2):
             result = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
             assert result.returncode == 0 and not result.stderr
-            assert all(str(path) not in result.stdout for path in (planning, integration, skill))
+            assert all(str(path) not in hook_text(result.stdout) for path in (planning, integration, skill))
     records = state[rules_context.OPERATION_SKILL_READY_KEY]
     for path in (planning, integration):
         ready = document_reads.content_ready(records, document_reads.content_fingerprint(path), "main")

@@ -278,7 +278,7 @@ def test_real_wi_dry_run_does_not_require_independent_submission(tmp_path, monke
     monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: root)
     sources = read_delivery.read_triggers.document_sources(root, str(tmp_path))
     rows = [row for source in sources for row in read_delivery.read_triggers.parse_tables(source, root, project=str(tmp_path))]
-    submission = root / "share/wi-submission.md"
+    submission = root / "skills/atk-mode/playbooks/wi-submission.md"
     row = next(item for item in rows if item.source.name == "finish-session-publishing.md" and submission in item.documents)
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     if old_selection:

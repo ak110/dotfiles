@@ -36,6 +36,7 @@
 6. レビューの指摘事項と、委譲先から追加の対策や残作業について判断を求められた内容の採否は、`agent-toolkit:/share/exec-review-responses.md`を読み込んで確定する。
    元の要求、公開契約、および利用場面からその処理が属する契約上の位置付けを確認し、`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」の必要性判定を適用した上で対策を選定する。
    完成条件の変更や除外へ進むかどうかの判断は、`../../../share/review-loop-coordination-escalation.md`「エスカレーションの事由別の扱い」に従う。
+   委譲先が判断要請へ付けた区分（「要件」「要求の変更」など）は、そのまま確認の理由にせず、`agent-toolkit:atk-mode/playbooks/confirmation.md`「要件と技術判断を分ける」で採否と確認の要否を判定する。
    裏付けを取得できなかった旨が記録されている行の扱いについては同スキルが定める。
 
    サブエージェントの出力（レビュー指摘や調査結果）は、指定されたレビュー指摘管理表に記録してから修正作業に着手する。
@@ -83,4 +84,4 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 品質判断の原則：事実と推論の基準を適用する前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |
+| 原則3（事実と推論）の基準を適用する前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |

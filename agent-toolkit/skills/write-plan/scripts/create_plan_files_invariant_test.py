@@ -18,14 +18,12 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.normative_contract import read_contract
 
-_DOCUMENTED_BUG_REFERENCE_PATTERN = re.compile(r"計画ファイル（バグ）: `([^`]+)`")
-
 
 def test_lane_planning_document_command_creates_plan_from_another_worktree(
     repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """起草手順4の実物の書式へ案件値を指定すると、異なるcwdから対象repoの計画を作成できる。"""
-    source, _ = _source(repo, tmp_path)
+    source = _source(repo, tmp_path)
     guide = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
     text = read_contract(guide, guide.parents[3], ("lane-planning-drafting.md", "計画の起草"))
     matched = re.search(r"`(atk run-script plan-create -- [^`]+)`", text)
@@ -56,33 +54,6 @@ def repo_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
     return _make_repo(tmp_path, monkeypatch)
 
 
-def _documented_bug_reference() -> str:
-    """計画ファイル作成基準が示す計画ファイル（バグ）の参照値を返す。"""
-    standards = pathlib.Path(__file__).resolve().parents[3] / "skills/write-plan/references/plan-file-standards.md"
-    text = read_contract(standards, standards.parents[3], ("plan-file-standards-structure.md", "計画ファイルの構成"))
-    references = _DOCUMENTED_BUG_REFERENCE_PATTERN.findall(text)
-    assert len(references) == 1, "計画ファイル（バグ）の参照値の記載例が1件に定まらない"
-    return references[0]
-
-
-def test_documented_bug_reference_is_accepted_without_substitution(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """計画ファイル作成基準の記載例を置換せず転記した本文を受理する。"""
-    reference = _documented_bug_reference()
-    assert reference.startswith(create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX)
-    source, bug_source = _source(repo, tmp_path, bug=True, bug_reference=reference)
-
-    paths = create_plan_files.create_plan_files(
-        source,
-        "13-0217_記載例の転記",
-        bug_source=bug_source,
-        home=tmp_path / "home",
-        work_dir=repo,
-    )
-
-    assert [path.name for path in paths] == ["13-0217_記載例の転記.md", "13-0217_記載例の転記.bugs.md"]
-    assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
-
-
 def _lane_plan_creation_step() -> str:
     """レーン担当が読む計画作成手順の本文を返す。"""
     task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
@@ -93,19 +64,13 @@ def _lane_plan_creation_step() -> str:
     return matches[0]
 
 
-@pytest.mark.parametrize("bug", [False, True])
 def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
-    repo: pathlib.Path,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    bug: bool,
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """計画作成手順が指示する引数名を現行CLIが受理する。"""
     step = _lane_plan_creation_step()
-    source, bug_source = _source(repo, tmp_path, bug=bug)
+    source = _source(repo, tmp_path)
     placeholders = {"--main-source": str(source), "--lane": "lane-02"}
-    if bug:
-        placeholders["--bugs-source"] = str(bug_source)
     argv: list[str] = []
     for option, value in placeholders.items():
         assert f"{option} <" in step, f"計画作成手順が{option}を指示していない"
@@ -117,27 +82,18 @@ def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
     captured = capsys.readouterr()
     assert result == 0, captured.err
     created = [pathlib.Path(line) for line in captured.out.splitlines() if line]
-    assert len(created) == (2 if bug else 1)
+    assert len(created) == 1
     assert all(path.exists() for path in created)
 
 
-@pytest.mark.parametrize("refactoring", [True, False])
 def test_document_template_supports_create_progress_and_commit_lookup(
-    repo: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    refactoring: bool,
+    repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """実在文書の雛形を記入し、公開操作だけで作成、進捗と対応の保存、取得まで進む。"""
     document = pathlib.Path(__file__).resolve().parents[1] / "references" / "plan-file-standards.md"
     text = read_contract(document, document.parents[3], ("plan-file-standards-template.md", "初回起草の雛形"))
     template = text.split("## 初回起草の雛形\n", 1)[1].split("```md\n", 1)[1].split("\n```", 1)[0]
     content = re.sub(r"<[^>]+>", "案件の記入内容", template).replace("/absolute/repository/path", str(repo))
-    if not refactoring:
-        start = content.index("| 対象 | 現状の問題 | 対応 |")
-        end = content.index("## 変更履歴", start)
-        content = content[:start] + "\n" + content[end:]
     notes = tmp_path / "private-notes"
     (notes / "processing").mkdir(parents=True)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))

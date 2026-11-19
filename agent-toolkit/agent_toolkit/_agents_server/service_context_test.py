@@ -5,7 +5,10 @@
 
 import asyncio
 import json
+import os
 import pathlib
+import subprocess
+import sys
 import time
 from types import SimpleNamespace
 from typing import cast
@@ -13,7 +16,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_toolkit._agents_server import service_context, service_io, service_turns
+from agent_toolkit._agents_server import service_context, service_io, service_transport, service_turns
+from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import effort_requests, runtime_environment, session_registry, session_release
 
@@ -128,3 +132,129 @@ async def test_accepted_effort_is_drained_through_control_save(monkeypatch, tmp_
         await asyncio.gather(monitor, return_exceptions=True)
         if pause is not None:
             await pause
+
+
+@pytest.mark.asyncio
+async def test_generations_distinguish_current_queried_and_retired(tmp_path):
+    """照会した世代・受付中の世代を区別し、退出済みの世代と強制終了した世代を除いて返す。
+
+    強制終了した世代は退出を記録できない。一覧から消えることを処置後の終了観測に使うため、プロセスの生死で判定する。
+    """
+    from agent_toolkit._agents_server.service_projection import ProjectionHub  # pylint: disable=import-outside-toplevel
+
+    directory = tmp_path / "services/agents-server"
+    hub = ProjectionHub("old", directory)
+    registry = hub.registry
+    alive = service_transport.process_identity(os.getpid())
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as killed:
+        try:
+            processes = {"gone": alive, "killed": service_transport.process_identity(killed.pid), "old": alive, "new": alive}
+        finally:
+            killed.kill()
+    # Windowsは子プロセスのhandleを保持する間は終了済みのプロセスも開けるため、handleを閉じる。
+    del killed
+    for name, version in (("gone", "0.9.0"), ("killed", "0.9.5"), ("old", "1.0.0"), ("new", "1.0.1")):
+        registry.reserve(name, tmp_path, version)
+        registry.publish(name, endpoint=name, process=processes[name], server_instance=f"instance-{name}")
+    registry.retire("gone", processes["gone"])
+    managers = service_context.ServiceManagers(state_root=tmp_path, projections=hub)
+    assert await managers.generations() == [
+        {"generation": "old", "epoch": 3, "server_instance": "instance-old", "current": False, "queried": True},
+        {"generation": "new", "epoch": 4, "server_instance": "instance-new", "current": True, "queried": False},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_monitor_ticks_do_not_enumerate_host_processes(monkeypatch, tmp_path):
+    """常駐する管理サービスの周期処理は、待機中の会話があってもホスト全体のプロセスを列挙しない。
+
+    周期処理の仕事量がホストのプロセス数に比例すると、常駐中のCPU使用が規模とともに増える。
+    """
+    import psutil  # pylint: disable=import-outside-toplevel
+
+    from agent_toolkit._testing.agents_server_support import _manager_with_fake  # pylint: disable=import-outside-toplevel
+
+    calls: list[str] = []
+
+    def counting(name, original):
+        def wrapper(*args, **kwargs):
+            calls.append(name)
+            return original(*args, **kwargs)
+
+        return wrapper
+
+    for name in ("process_iter", "pids"):
+        monkeypatch.setattr(psutil, name, counting(name, getattr(psutil, name)))
+    monkeypatch.setattr(psutil.Process, "children", counting("children", psutil.Process.children))
+    async with _manager_with_fake("codex") as (manager, _backend):
+        waiting = SessionState(session_id="waiting", cwd=str(tmp_path), status="running", engine="codex")
+        manager.sessions["waiting"] = waiting
+        caller = runtime_environment.CallerContext({"HOME": str(tmp_path)}, tmp_path)
+        pool = service_context.ServiceManagers(state_root=tmp_path)
+        pool.conversations["parent"] = service_context.Conversation(manager, caller)
+        # 実サービスと同じく管理サービスの周期処理（世代移行の確認）を監視の毎巡へ登録する。
+        # 周期処理が失敗すると自動再開まで進まないため、下の計数は周期処理の成功も含めて数える。
+        target = {"generation": "G1", "epoch": 1, "process": "1:owner"}
+        coordinator = ServiceCoordinator(target, tmp_path, pool, AsyncMock(), AsyncMock())
+        monkeypatch.setattr(coordinator.registry, "current", lambda: target)
+        assert getattr(pool.before_controls, "__self__", None) is coordinator
+        ticks = []
+        original_resume = manager._process_auto_resume
+
+        async def counted(**kwargs):
+            ticks.append(1)
+            return await original_resume(**kwargs)
+
+        monkeypatch.setattr(manager, "_process_auto_resume", counted)
+        async with pool:
+            async with asyncio.timeout(10):
+                while len(ticks) < 3:
+                    await asyncio.sleep(0.05)
+        manager.sessions.pop("waiting", None)
+    assert len(ticks) >= 3
+    assert not calls
+
+
+@pytest.mark.asyncio
+async def test_monitor_keeps_saving_state_while_migration_check_fails(monkeypatch, tmp_path, caplog):
+    """世代移行の確認が毎巡失敗しても状態保存は続け、自動再開だけを見送り、同じ失敗は1回だけ記録する。"""
+    from agent_toolkit._testing.agents_server_support import _manager_with_fake  # pylint: disable=import-outside-toplevel
+
+    async with _manager_with_fake("codex") as (manager, _backend):
+        # 空の会話は監視の1巡目で閉じられるため、待機中のsessionを持たせる。
+        manager.sessions["waiting"] = SessionState(session_id="waiting", cwd=str(tmp_path), status="running", engine="codex")
+        caller = runtime_environment.CallerContext({"HOME": str(tmp_path)}, tmp_path)
+        pool = service_context.ServiceManagers(state_root=tmp_path)
+        pool.conversations["parent"] = service_context.Conversation(manager, caller)
+        checks: list[int] = []
+        saves: list[int] = []
+        resumes: list[int] = []
+
+        async def failing_check() -> bool:
+            checks.append(1)
+            if len(checks) > 2:
+                return True
+            raise RuntimeError("移譲先が応答しない")
+
+        async def save_control_state() -> None:
+            saves.append(len(checks))
+
+        async def auto_resume(**_kwargs) -> bool:
+            resumes.append(len(checks))
+            return False
+
+        pool.before_controls = failing_check
+        monkeypatch.setattr(manager, "save_control_state", save_control_state)
+        monkeypatch.setattr(manager, "_process_auto_resume", auto_resume)
+        with caplog.at_level("INFO", logger=service_context._LOG.name):  # pylint: disable=protected-access
+            async with pool:
+                async with asyncio.timeout(10):
+                    while not resumes:
+                        await asyncio.sleep(0.05)
+        manager.sessions.pop("waiting", None)
+    assert saves and saves[0] == 1
+    assert resumes and min(resumes) == 3
+    failures = [record for record in caplog.records if "世代移行の確認が失敗しました" in record.getMessage()]
+    assert len(failures) == 1
+    assert "server_generations" in failures[0].getMessage() and "次の巡回" in failures[0].getMessage()
+    assert any("連続失敗2回" in record.getMessage() for record in caplog.records)

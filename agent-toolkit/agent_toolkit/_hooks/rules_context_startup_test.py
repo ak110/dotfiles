@@ -14,7 +14,7 @@ import shlex
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.wi import process_loop_log
+from agent_toolkit._atk.wi import process_loop_log, submit
 from agent_toolkit._common import plugin_environment, plugin_roots
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -232,6 +232,18 @@ def test_large_startup_input_keeps_all_data_within_hook_cap(tmp_path, monkeypatc
     assert str(path) in context
     assert json.loads(path.read_text(encoding="utf-8")) == data
     assert "references/answer-transitions.md" in context and "agent-toolkit:report-completion" in context
+
+
+@pytest.mark.parametrize(("skill", "launches"), [("agent-toolkit:review-session", True), (submit.SKILL, False)])
+def test_startup_input_asks_to_launch_only_existing_skill(skill, launches, monkeypatch, capsys):
+    """保存上の名前だけを持つ起動単位（`atk wi submit`）では、存在しないスキルの起動を求めない。"""
+    data = {"source": "run-skill", "skill": skill, "arguments": "入力"}
+    monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data))
+    assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}), host="claude") == 0
+    context = _output(capsys)
+    assert ("指定スキルを起動し" in context) is launches
+    assert ("目的文が示す始め方" in context) is not launches
+    assert "agent-toolkit:report-completion" in context.split("終了契約", 1)[1]
 
 
 def test_batch_startup_input_separates_procedure_from_termination(monkeypatch, capsys):

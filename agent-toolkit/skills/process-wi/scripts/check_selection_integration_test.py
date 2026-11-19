@@ -141,6 +141,27 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
     assert path.read_bytes() == saved
 
 
+def test_reopen_wi_keeps_explicit_pending_item_of_other_integrated_lane(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """統合済みレーンで明示的に未統合の項目は、別レーンのWIの再開後も未統合のまま公開前確認に残る。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変更する。")
+    _awi(notes, "b.md", "`src/model.py`を変更する。")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"], "統合状態": "未統合"},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": ["src/model.py"]},
+        ],
+        [{"レーン": "lane-01", "統合状態": "統合済み"}, {"レーン": "lane-02", "統合状態": "統合済み"}],
+    )
+    assert _dispatch(str(path), "--reopen-wi", "b.md", "--output", str(path), "--work-dir", str(repo)) == 0
+    after = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert [item["統合状態"] for item in after["選定"]] == ["未統合", "未統合"]
+    assert _dispatch(str(path), "--require-integrated", "--publication-lane", "lane-01") == 1
+
+
 @pytest.mark.parametrize("state,expected", [(None, 1), ("未統合", 1), ("統合済み", 0)])
 def test_public_check_overlap_uses_integration_state(
     env: tuple[pathlib.Path, pathlib.Path],
@@ -463,7 +484,7 @@ def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     other_before = other_source.read_bytes()
     old = notes / "plans" / "2026" / "10" / "23-1000_old.md"
     old.parent.mkdir(parents=True)
-    old.write_text(plan_fixture.current_plan(repo=tmp_path / "reclaimed-worktree"), encoding="utf-8")
+    old.write_text(plan_fixture.eight_section_plan(repo=tmp_path / "reclaimed-worktree"), encoding="utf-8")
     old_before = old.read_bytes()
     document = yaml.safe_load(selected.read_text(encoding="utf-8"))
     document["選定"][0]["再開位置"] = str(old)
@@ -482,7 +503,7 @@ def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     worktree = pathlib.Path(record["worktree"])
     plan = locations.working_plans_root(pathlib.Path.home()) / "15-1400_requirement-change.md"
     plan.parent.mkdir(parents=True, exist_ok=True)
-    plan.write_text(plan_fixture.current_plan(repo=worktree), encoding="utf-8")
+    plan.write_text(plan_fixture.eight_section_plan(repo=worktree), encoding="utf-8")
     _plan_operation(capsys, "plan-check", "--reject-migration-warnings", "--work-dir", str(worktree), str(plan))
     # 対象worktree不一致の拒否も維持する。
     _plan_operation(capsys, "plan-check", "--work-dir", str(repo), str(plan), expected=1)

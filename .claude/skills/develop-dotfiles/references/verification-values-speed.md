@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| テストとCIの所要基準を使う前 | `../../../../agent-basics/skills/writing-standards/references/testing-speed.md` |
+| テストとCIの所要基準を使う前 | `../../../../agent-basics/skills/writing-standards/references/testing.md` |
 | テストとCIの所要基準を使う前 | `agent-basics:check-execution/references/diagnostics-results.md` |
 
 ## テストとCIの所要基準
@@ -14,7 +14,7 @@
 執筆者は追加・変更するテストを次の段階へ分類し、レビュー担当はその段階の必要性と削減余地、結果確認担当は実測を確認する。
 共通の評価方法は次の資料に従う。
 
-- `../../../../agent-basics/skills/writing-standards/references/testing-speed.md`「速度」
+- `../../../../agent-basics/skills/writing-standards/references/testing.md`「速度」
 - `agent-basics:check-execution/references/diagnostics-results.md`「読む出力」
 
 | 必要な仕事 | テスト本体の改善判断値 |
@@ -43,6 +43,9 @@ pytestのCPU上限は別の合否契約とし、setup・call・teardownの試験
 原計測・GC/import控除・控除後の値と、プロセス全体のCPU・所有対象外の差分を既存JUnitへ残す。
 外部ライブラリ内部のnative threadや、試験が仕事を投入するAPIを持たない既存の常駐threadは、プロセス全体の診断だけで観測する。
 子プロセスのCPUと待機の実時間は計測の対象外とする。
+Windows CIのpytestは`--cpu-limit-record-only`を付け、CPU上限の超過を警告とJUnitへ記録するだけにする。
+GitHubのWindowsランナーでは同じ試験の所有CPUが再試行の間で最大2.7倍揺れ（run 44315531949）、固定の上限では安定して合否を決められないためである。
+CPUの回帰はLinuxのCIと、Windows実機でのローカル実行の上限判定で検出する。
 必要な実プロセス・実Git・ブラウザーなどの境界試験は、通常上限内で保証できない契約と最小構成の理由を示し、`pytest.mark.cpu_limit(seconds, reason=...)`で正の有限な個別上限を指定する。
 既存試験の移行はCPUを計測し、不要な準備・起動・待機を除き、必要な境界だけ個別指定してから失敗判定を有効にする。
 実時間のdurations表示と60秒のハング検出は維持し、CPU上限の成功を実時間改善の証明にしない。
@@ -54,6 +57,12 @@ CI workflowの全体基準は、対象HEADの実行開始から必須ジョブ�
 外部前提や別計画が必要な残作業だけ、原因、具体策、解除条件を付けて引き継ぐ。
 公開工程と必要な検証は、所要超過時も継続する。
 同条件比較では必須テスト集合、並列度、依存版、コンテナーと環境隔離の一致を確かめる。
+
+`ci.yaml`・`audit.yaml`・`release-statusline.yaml`の各ジョブの`timeout-minutes`は、遅延を失敗として検出する上限であり、上記の10分の改善判断値とは別に扱う。
+同じジョブ（OS・行列・所有の有無）の直近60 runから正常完了（スキップ・取消・失敗を除き、実処理のstepを実行したもの）の最大所要を採用し、その50%と60秒の大きい方を加えて分単位に切り上げる。
+結果集約ジョブは自身の開始から終了までだけを数え、先行ジョブの待ちを含めない。
+60 runに正常完了が無いか少ないジョブは、それより前の同じ定義の正常完了で補い、補った範囲を変更記録に残す。
+ジョブの構成を変えた場合と、律速の処理を短縮した場合は、変更後の正常完了の実績から算出し直す。
 この固有数値の適用範囲はdotfilesに限る。
 
 ## toolkitの所要記録更新

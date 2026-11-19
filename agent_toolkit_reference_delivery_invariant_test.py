@@ -15,13 +15,13 @@ def test_ci_failure_read_row_delivers_quality_and_operations() -> None:
     root = pathlib.Path(__file__).resolve().parent
     plugin = root / "agent-toolkit"
     source = root / ".claude/skills/merge-pr/SKILL.md"
-    quality = root / "agent-basics/skills/bugfix/references/ci-failure-handling.md"
+    quality = root / "agent-basics/skills/bugfix/references/ci-failures.md"
     operations = plugin / "skills/commit/references/ci-failure-handling.md"
     rows = read_triggers.parse_tables(source, plugin, strict=True)
     row = next(row for row in rows if quality in row.documents)
     assert set(row.documents) == {quality, operations}
     assert set(row.effective_operations) == {
-        "read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md",
+        "read:agent-basics:*/skills/bugfix/references/ci-failures.md",
         "read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md",
     }
     assert all(target.body() for target in row.targets)

@@ -98,6 +98,8 @@
                 <option value="human">human</option>
                 <option value="agent">agent</option>
               </select>
+              <label id="target-branch-filter-label" for="target-branch-filter" hidden>系統</label>
+              <select id="target-branch-filter" hidden><option value="">all</option></select>
             </div>
           </section>
         </div>
@@ -245,6 +247,10 @@
             <input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error">
             <datalist id="repo-options"></datalist>
             <p id="create-target-error" class="inline-error" hidden></p>
+          </div>
+          <div id="create-branch-fields" class="dialog-form-fields" hidden>
+            <label for="create-branch">系統（登録した系統の1つを選ぶ）</label>
+            <select id="create-branch" name="target_branch"></select>
           </div>
           <div id="uwi-fields" class="dialog-form-fields" hidden>
             <label for="create-scope">確認範囲（任意）</label>

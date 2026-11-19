@@ -44,7 +44,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `user_response_advisor.py` | 可視本文の欠落支援、notify | 人間入力ごとに本文の有無を調べる。回答の内容は判定せず、同じ不足の反復を共通noticeで抑止する |
 | `termination_order_advisor.py` | 起動証拠の不足支援、notify | Claude Codeだけで成果作業の起動不足を通知する。起動済み作業の送達・残工程と報告の固定句は判定しない |
 | `queued_notification_advisor.py` | 既存結果の配送、yield・notify | 他のblockが無ければホスト配送へ戻す。blockが残る場合だけ未配送対象の受領を一度案内する |
-| 旧`pending_question_advisor.py` | 意味判断、文書へ移管して撤去 | 疑問符・定型表現から質問の意味を推測する終了判定を撤去した。確認の要否と手段は`user-confirmation-and-report`が定める |
+| 旧`pending_question_advisor.py` | 意味判断、文書へ移管して撤去 | 疑問符・定型表現から質問の意味を推測する終了判定を撤去した。確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`、手段は`agent-toolkit:atk-mode/references/delivery.md`が定める |
 | `subagent_stop_advisor.py` | 返却契約の保護、block | 空の返却で委譲元が成果を失うことを防ぐ。内部返却の言語は判定しない |
 | `permissionrequest.py` | 権限応答 | Claude Codeの設定済みの自動許可を返す。新たな遮断・反復通知を持たない |
 | `session_end_cleanup.py`・`session_activity.py`・`stopfailure_notifier.py` | 記録と回収 | 状態の寿命、活動、API失敗を記録する。StopFailureは出力で遮断・通知できず、利用上限の再開予約だけを既存modへ渡す |
@@ -62,7 +62,7 @@ TSの反復抑止は既存modの寿命に合わせたMapを使う。
 
 UserPromptSubmitの180秒ごとの固定手順の再配送は撤去した。
 新しい発話の意味を判断する必要性と、同じ一般手順の再注入が必要なことは別であり、定期再注入の追加便益を示す観測を欠いたためである。
-一般手順は`user-confirmation-and-report`の既存規範へ保持する。
+一般手順は`agent-toolkit:atk-mode/playbooks/user-utterance.md`の既存規範へ保持する。
 起動・圧縮後の最初の実入力へ返していた起動案内と案内待ちの状態は、正しい準備前の警告を避けるため2026年11月15日に撤去した。
 
 ### 事前に防ぐ型と遮断後に対処する型
@@ -105,4 +105,4 @@ dotfiles個人用hookの7件のチェックのうち5件も撤去した。
 
 2026年10月1日、3日、5日および6日の各節が維持するとした「規範の想起を目的とするチェックをhookに置かない」方針は、この旧基準（元へ戻せない結果を防ぐものだけを残す）から導かれた。
 旧基準は2026年10月2日のユーザー指示で現行の費用比較へ改められた。
-以後の採否は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn-eligibility.md`「遮断・警告フックの成立条件」で判定する。
+以後の採否は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」で判定する。

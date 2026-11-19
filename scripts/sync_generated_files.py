@@ -37,9 +37,9 @@ RETURN_TARGETS = (
     ("exec", "share/exec.parent.md", "レーン担当の返却契約", 2),
     ("exec-review", "share/exec-review.parent.md", "実行レビューの返却契約", 2),
     ("reader-fit-review", "share/reader-fit-review.parent.md", "読者別探索の返却契約", 2),
-    ("wi-draft-review", "share/wi-draft-review.parent.md", "投入前レビューの返却契約", 2),
+    ("wi-draft-review", "skills/atk-mode/roles/wi-draft-review.parent.md", "投入前レビューの返却契約", 2),
     ("recurrence-self-check", "share/recurrence-self-check.parent.md", "セルフチェックの返却契約", 2),
-    ("add-wi", "share/add-wi.parent.md", "WI投入担当の返却契約", 2),
+    ("add-wi", "skills/atk-mode/roles/add-wi.parent.md", "WI投入担当の返却契約", 2),
     ("lane-integration", "share/exec.parent.md", "統合の返却契約", 2),
     ("copilot-review-audit", "skills/process-wi/references/review-audit-launch.md", "監査担当の返却契約", 3),
     ("refine-prompt", "skills/refine-prompt/SKILL.md", "評価担当の返却契約", 3),
@@ -83,7 +83,7 @@ def sync_return_contracts(root: Path = REPO_ROOT) -> None:
     plugin = root / "agent-toolkit"
     updated: dict[Path, str] = {}
     for role, relative, title, level in RETURN_TARGETS:
-        source = plugin / f"share/{role}.subagent.md"
+        source = task_documents.require_role_document(plugin, role)
         path = plugin / relative
         body = _return_body(source.read_text(encoding="utf-8"), role)
         # コード例の見出しは出力リテラルなので、フェンス外だけ階層を変える。
@@ -128,7 +128,7 @@ def sync_return_contracts(root: Path = REPO_ROOT) -> None:
         before, rest = text.split(start)
         _, after = rest.split(end)
         updated[path] = (
-            f"{before}{start}\n<!-- 生成元: share/{role}.subagent.md「出力」。手動編集しない。 -->\n"
+            f"{before}{start}\n<!-- 生成元: {source.relative_to(plugin).as_posix()}「出力」。手動編集しない。 -->\n"
             f"{'#' * level} {title}\n\n{body}\n{end}{after}"
         )
     for path, text in updated.items():
@@ -146,12 +146,13 @@ def sync_input_contracts(root: Path = REPO_ROOT) -> None:
         end = f"<!-- input-contract:{role}:end -->"
         if text.count(start) != 1 or text.count(end) != 1 or text.index(start) >= text.index(end):
             raise ValueError(f"{path}: {role}の入力生成境界が一意でない")
-        body = task_documents.input_contract_body(plugin / f"share/{role}.subagent.md")
+        source = task_documents.require_role_document(plugin, role)
+        body = task_documents.input_contract_body(source)
         before, rest = text.split(start)
         _, after = rest.split(end)
         updated[path] = (
             f"{before}{start}\n"
-            f"<!-- 生成元: share/{role}.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->\n"
+            f"<!-- 生成元: {source.relative_to(plugin).as_posix()}のrequired_inputs・optional_inputs。手動編集しない。 -->\n"
             f"{body}\n\n{end}{after}"
         )
     for path, text in updated.items():

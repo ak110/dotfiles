@@ -34,7 +34,7 @@
 統括CLIの終了だけで配下担当の停止を仮定せず、常駐が実プロセスと登録済みwriterの生存を確認する。
 停止未確認の担当、未統合レーンとdirtyなworktreeは保持する。
 例外や利用上限で統括CLIを止める経路は所有するプロセスの子孫も回収し、残存を検知した場合は所有を保持する。
-利用上限時の同じ会話の再開と、予告を受けた統括が先に保存する内容は、`../../user-confirmation-and-report/references/usage-limit.md`「常駐から起動された統括の保存と再開」に従う。
+利用上限時の同じ会話の再開と、予告を受けた統括が先に保存する内容は、`agent-toolkit:atk-mode/references/usage-limit.md`「常駐から起動された統括の保存と再開」に従う。
 同記録の「agent-toolkit/skills/process-wi/references/all-repos-orchestration-resources.md：登録集合：2026年11月12日」を参照する。
 
 ## worktreeと資源
@@ -57,8 +57,8 @@ resumeは既存の準備済み実体と未完了成果をそのまま再利用�
 
 本人は未完了の結果を`result_file`へ保存し、自分の会話IDで`atk wi process-loop resume ID`を予約して、受理を確認してから`atk agents-exit-session`を実行する。
 無人の本人再開にはIDを使い、通常のfinalだけにCLI終了を委ねる方法は対象外とする。
-元のgoalと未完了要求を保持し、達成扱いへの変更は対象外とする。
-本人ID予約時の終了操作は既存のPID・起動時刻確認を使うため、更新前hookが残っている場合も未達goalのturn完了を待たず終了できる。
+元の目的と未完了要求を保持し、達成扱いへの変更は対象外とする。
+本人ID予約時の終了操作は既存のPID・起動時刻確認を使うため、更新前hookが残っている場合も、目的が未達のturnの完了を待たず終了できる。
 
 常駐は旧CLIとwriterの終了を観測し、更新後の版から予約IDを再開する。
 workerの実行中は常駐自身のexec切替を保留し、新しいworkerに更新後の配布版を使う。
@@ -71,7 +71,7 @@ workerの実行中は常駐自身のexec切替を保留し、新しいworkerに�
 未回答UWIへの依存が未登録なら、`run-lanes-completion.md`「採否の確定と終了区分」3のUWI保存・依存登録・`inbox`への差戻しを先に行う。
 自分で調達できる入力の不足はこの回答待ちに含めず、通常の調査・再開へ渡す。
 
-**7.** 短時間の排他とPID・起動時刻・担当sessionの生存照会でorigin単位の所有を維持する。
+**7.** 短時間の排他とPID・起動時刻・担当sessionの生存照会で、対象（`target`が示すoriginと系統の組）単位の所有を維持する。
 
 所有待ちや準備失敗の対象を除いて、独立した対象の処理を継続する。
 異常終了では成果とlane_session_idをpreviousとして保持する。

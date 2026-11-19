@@ -9,7 +9,7 @@ lazy from typing import Any
 
 lazy from agent_toolkit._agents_server import tool_names
 lazy from agent_toolkit._atk.wi import uwi_scan
-lazy from agent_toolkit._common import session_state, shell_cwd
+lazy from agent_toolkit._common import session_state, shell_cwd, skill_modes
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
@@ -27,6 +27,7 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
     _GIT_PUSH_VALUE_OPTIONS,
     COMPLETION_REPORT,
     STATE_KEY,
+    TARGET_ENTRY_WORKS,
     TARGET_SKILLS,
 )
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
@@ -94,15 +95,37 @@ def _saved_operations(command: str) -> list[str]:
 # 読取の`tool_response`の形とStopの出力契約の監査記録は`docs/development/audit-records.md`の
 # 「agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日」にある。
 # 読取が本文を返したかの判定は`document_reads.py`が持つ。
-def _read_skills(command: str) -> list[_document_reads.DocumentRead]:
-    """Toolkitの対象資料を、返された本文の確認まで所有pluginと実体を保持して返す。"""
-    return [
-        read
-        for read in _document_reads.bash_document_reads(command)
-        if read.plugin == "agent-toolkit"
-        and read.relative_path == "SKILL.md"
-        and read.skill in {COMPLETION_REPORT, *TARGET_SKILLS}
-    ]
+def _started_work(skill: object, arguments: object) -> str | None:
+    """Skillの起動が始める対象の名前を返す。入口の起動は引数の先頭語から作業の名前を読む。"""
+    name = _skill_name(skill)
+    if name in {COMPLETION_REPORT, *TARGET_SKILLS}:
+        return name
+    if name == skill_modes.ENTRY_SKILL:
+        work = (arguments.split() or [""])[0] if isinstance(arguments, str) else ""
+        return work if work in TARGET_ENTRY_WORKS else None
+    return None
+
+
+def _start_label(work: str) -> str:
+    """成果作業の開始を示す表示名を返す。入口の作業は入口の起動の形で示す。"""
+    name = f"{skill_modes.ENTRY_SKILL} {work}" if work in TARGET_ENTRY_WORKS else work
+    return f"agent-toolkit:{name}の開始"
+
+
+def _read_work(read: _document_reads.DocumentRead) -> str | None:
+    """読取の対象が開始資料（対象スキルの`SKILL.md`か、入口の作業の手順書）であれば、対象の名前を返す。"""
+    if read.plugin != "agent-toolkit":
+        return None
+    if read.relative_path == "SKILL.md":
+        return read.skill if read.skill in {COMPLETION_REPORT, *TARGET_SKILLS} else None
+    if read.skill == skill_modes.ENTRY_SKILL:
+        return next((work for work in TARGET_ENTRY_WORKS if read.relative_path == f"playbooks/{work}.md"), None)
+    return None
+
+
+def _read_skills(command: str) -> list[tuple[str, _document_reads.DocumentRead]]:
+    """Toolkitの対象資料を、対象の名前とともに、返された本文の確認まで所有pluginと実体を保持して返す。"""
+    return [(work, read) for read in _document_reads.bash_document_reads(command) if (work := _read_work(read)) is not None]
 
 
 def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[dict[str, Any]]:
@@ -123,7 +146,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
         return []
     codex = is_codex_payload(payload)
     if tool_name == "Skill" and not codex:
-        skill = _skill_name(tool_input.get("skill"))
+        skill = _started_work(tool_input.get("skill"), tool_input.get("args"))
         if skill == COMPLETION_REPORT:
             completion: dict[str, Any] = {"kind": "completion"}
             response = payload.get("tool_response")
@@ -138,8 +161,8 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
                         path, _document_reads.content_fingerprint(path)
                     )
             return [completion]
-        if skill in TARGET_SKILLS:
-            record: dict[str, Any] = {"kind": "deliverable", "labels": [f"agent-toolkit:{skill}の開始"]}
+        if skill is not None:
+            record: dict[str, Any] = {"kind": "deliverable", "labels": [_start_label(skill)]}
             if isinstance(payload.get("cwd"), str) and (repository := _git_root(payload["cwd"])) is not None:
                 record["repository"] = str(repository)
             return [record]
@@ -173,7 +196,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
             item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
             if not codex and is_antigravity_payload(payload) and not host_truncated(payload.get("tool_response")):
                 text = _document_reads.response_text(payload.get("tool_response"))
-                for document in _read_skills(single):
+                for work, document in _read_skills(single):
                     if not _document_reads.body_returned(
                         document.skill,
                         document.relative_path,
@@ -184,10 +207,10 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
                         project=cwd,
                     ):
                         continue
-                    if document.skill == COMPLETION_REPORT:
+                    if work == COMPLETION_REPORT:
                         records.append({"kind": "completion"})
                     else:
-                        item_labels.append(f"agent-toolkit:{document.skill}の開始")
+                        item_labels.append(_start_label(work))
             if item_labels:
                 repository = _invocation_repository(invocation, current)
                 records.append(

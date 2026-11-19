@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import pathlib
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -22,15 +22,18 @@ from agent_toolkit._testing.agents_server_support_common import FakeBackend, _in
 
 @contextlib.asynccontextmanager
 async def claude_manager(
-    monkeypatch: pytest.MonkeyPatch, client: Any
+    monkeypatch: pytest.MonkeyPatch, client: Any, *, client_factory: Callable[[Any], Any] | None = None
 ) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, claude_backend.ClaudeServerManager]]:
-    """指定clientを使うClaude backendとManagerを生成直後から所有する。"""
+    """指定clientを使うClaude backendとManagerを生成直後から所有する。
+
+    CLIプロセスの起動し直しを再現する試験は、接続ごとのclientを`client_factory`で渡す。
+    """
     async with (
         server_manager.AgentsServerManager() as manager,
         claude_backend.ClaudeServerManager(
             manager.sessions,
             manager._condition,
-            client_factory=lambda _options: client,
+            client_factory=client_factory or (lambda _options: client),
             expire_session=manager._expire_session,
         ) as backend,
     ):

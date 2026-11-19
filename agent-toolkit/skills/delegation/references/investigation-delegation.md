@@ -1,7 +1,7 @@
 # 事象単位の調査の委譲
 
 本書は、バグ対応、CI失敗対応、または振り返りにおける事実収集において、事象ごとの客観的な観測事実の収集を独立した担当者へ委譲するエージェント向けに、委譲の単位と伝達すべき情報を定める。
-拡張原因分析の対象外となる不具合であっても、委譲する前に本書を確認する。
+委譲する前に本書を確認する。
 
 ## 名指し参照の読込方法
 
@@ -11,8 +11,7 @@
 | --- | --- | --- | --- |
 | 類似見直しの検索と個別判定を依頼・検収する前 | `../../../share/similar-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/similar-review.parent.md` |
 | 委譲元が調査対象の外で動き、起動時の`cwd`を決める時 | `agent-toolkit:process-wi/references/lanes.md` | | |
-| 調査担当の返却の各欄を検収する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 調査担当の返却の類似見直しと処置を検収する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`、`agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
+| 調査担当の返却の各欄を検収する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/bugfix/SKILL.md` |
 
 ## 調査の進め方と委譲時の入力
 
@@ -43,7 +42,7 @@
 
 自身の作業によって持ち込まれたものではない既存の不具合について、AWIを起草せずに不具合を発見したエージェント自身が元のコンテキストで修正する場合に、調査担当の起動および受領検収の手順を適用する。
 コンテキストを分離するのは調査工程のみとし、実際の修正作業は不具合を発見したエージェント自身が担当する。
-AWIとして登録して処理する場合（`agent-toolkit:process-wi`における即時対応や、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:/share/add-wi.parent.md`の手順を用いる。
+AWIとして登録して処理する場合（`agent-toolkit:process-wi`における即時対応や、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の手順を用いる。
 委譲先の手順は、`agent-toolkit:/share/defect-investigation.subagent.md`に定められている（所在参照）。
 返却形式は本書「調査担当の返却契約」に従う。
 
@@ -70,20 +69,18 @@ AWIとして登録して処理する場合（`agent-toolkit:process-wi`におけ
 返却される形式は、本書「調査担当の返却契約」の定めに従う。
 以下の項目を確認する。
 
-1. `状態`が`completed`となっている場合、直接的原因、根本原因、類似見直し、対策、回帰防止策、横展開処置、および再発防止策の各項目に具体的な値が記入されていることを確認する
+1. `状態`が`completed`となっている場合、`期待`・`原因`・`処置`・`広がり`・`確認`の各欄に具体的な値が記入されていることを確認する
 
-2. 対策が前提とする実入力・外部挙動について、分析記録の対象版、生成・変換・観測点・最終消費の対応を、bugfixの「直接的原因と事象時点の確定」で検収する。
+2. 返却の内容を、返却に示された`分析記録`の記載箇所およびコードやログの現物と突き合わせて検収する。
+   確かめるのは次の点である。
+   `原因`が観測の所在を持ち、推測の部分が推測と書かれていること。
+   `処置`が足す案である場合に、より前の案（無くす、単純にする、直す）を採用しない理由があること。
+   `広がり`が検索と結果を持つこと。
+   `再発`の欄がある場合は、前回と違う種類の対策を示すこと。
    返却欄の充足や独立走査だけで観測点の外側の保証を認めず、未確認の前提が採否を変える場合は、同じ調査担当へ支持・反証と観測範囲の補完を求める
 
-3. 調査完了の返却に含まれる直接的原因、根本原因、母集団、ならびに各種処置の根拠と適用条件について、返却に示された`分析記録`の記載箇所およびコードやログの現物と突き合わせて検収する。
-   同一の探索や分析をはじめからやり直すことは避け、情報の不足や内容の不一致がある場合は同一の調査担当者へ差し戻して追究させる。
-   合否の判定基準は、`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に従う。
-   `agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-severity-impact.md`も適用する。
-     `agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」を併用する。
-     `agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」も適用する。
-     `agent-basics:bugfix/references/root-cause-prevention-requirements.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md`も併用する。
-   本書ではこれらの品質基準を重複して定義しない。
-   `拡張原因分析`が`不要`とされた返却についても同一の基準で検収する
+3. 同一の探索や分析をはじめからやり直すことは避け、情報の不足や内容の不一致がある場合は同一の調査担当者へ差し戻して追究させる。
+   各欄の基準は`agent-basics:bugfix`が定め、本書では重複して定義しない
 
 4. `続行できない理由`として報告された内容が、認識の齟齬によって要件や期待結果の変更を伴う未確定事項である場合は、ユーザーへの確認事項としてエスカレーションする
 
@@ -99,31 +96,26 @@ AWIとして登録して処理する場合（`agent-toolkit:process-wi`におけ
 ```text
 状態: completed
 分析記録: <詳細な分析を保存したファイルの絶対パス>
-拡張原因分析: 要 | 不要
-直接的原因: <観測で確定した直接的原因と根拠>
-根本原因: <確定した根本原因（破られた不変条件か判断規則）と根拠>
-類似見直し: <QとC・Dの区別と重大度の結果、探索範囲・限界・許容する残存リスク、根本原因から導いた母集団と該当対象の一覧、独立走査を適用した場合の担当識別子と起点問題の摘出の有無。各対象の判定根拠、探索方法、履歴の期間と対象外とした範囲、未摘出の原因と見直し経過は分析記録の箇所で示す>
-対策: <変更する対象、変更の内容および修正後に確かめる観測>
-回帰防止策: <今回の事象そのものの再発を検出する回帰テストなどの処置>
-横展開処置: <類似見直しで該当とした各対象への処置>
-再発防止策: <処置と、作用する害の型および根本原因の単位>
+期待: <起きるはずだったことと、その期待が正しく必要である根拠。見直した場合はその結果>
+原因: <起こしたものと、確かめた観測の所在。推測の部分は推測と書く>
+処置: <無くす・単純にする・直す・足すのどれか、変更する対象と内容。より前の案を採用しない理由>
+広がり: <同じ仕組みの他の箇所と、同じ害への既存の対策を探した検索と結果、該当した対象ごとの処置。探索の範囲と限界、独立走査を適用した場合の担当識別子と起点の検出の有無>
+確認: <修正後に確かめる観測と方法>
+再発: <問い4で対策が既にあった場合だけ。前回の対策の所在と種類、効かなかった理由、今回変えた種類>
+再発防止: <再発防止を検討した場合だけ。採用する策と防ぐ害、または採用しない区分名と理由>
 ```
 
-各欄の値は、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に基づいて判定する。
-`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」も適用する。
-`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」を併用する。
-`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」も適用する。
-`拡張原因分析`の要否にかかわらず、すべての欄を同一の基準で記載する。
-類似見直しの該当件数が0件の場合や、採用すべき再発防止策がないと判断した場合も、同書が求める記録内容を該当欄に記載する。
+各欄に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」と、条件が成立した確認観点の資料に従う。
+`再発`と`再発防止`の欄は、条件が成立しない場合は行ごと省く。
 
 続行不能と追加報告行は、共通契約`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:defect-investigation:end -->
 
 ## 類似見直しの分担
 
-調査工程の責任者が、根本原因に基づく判定規則・母集団・判定基準を確定し、`share/similar-review.parent.md`に従って読取専用の類似見直し担当へ渡す。
-専用担当の工程別モデルは`chores`とし、原因分析と結果の採否は責任者が所有する。
-`execute`は原因分析担当のモデル区分であり、調査を開発の実行時点へ一律に割り当てる指定ではない。
+調査工程の責任者が、破られた条件か誤った判断の規則（`agent-basics:bugfix`の問い4）に基づく判定規則・母集団・判定基準を確定し、`share/similar-review.parent.md`に従って読取専用の類似見直し担当へ渡す。
+専用担当の工程別モデルは`chores`とし、原因の判断と結果の採否は責任者が所有する。
+`execute`は原因を調査する担当のモデル区分であり、調査を開発の実行時点へ一律に割り当てる指定ではない。
 登録時に確定した調査は、対象の変化や新しい証拠が再確認を要する場合に限って見直す。
 
 起点の詳細を知る担当への会話履歴の引継ぎは避け、専用担当へは判定規則・母集団・判定基準だけを渡す。

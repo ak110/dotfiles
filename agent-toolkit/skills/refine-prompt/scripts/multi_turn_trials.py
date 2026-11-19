@@ -26,6 +26,14 @@ CASES = (
     "purpose-boundary",
     "protection-removal-agent",
     "protection-removal-user",
+    "forbidden-guidance-agent",
+    "forbidden-guidance-user",
+    "overrun-retry-agent",
+    "overrun-retry-user",
+    "assumption-transcription",
+    "suppression-scope-agent",
+    "suppression-scope-user",
+    "merge-depth-agent",
 )
 
 

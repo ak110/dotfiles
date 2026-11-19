@@ -24,6 +24,9 @@ export const wiState = {
   detailSessionGeneration: 0,
   listRequestGeneration: 0,
   targetRepoRequestGeneration: 0,
+  // 系統を登録したrepositoryの識別子から`{branches, default_branch}`への対応。系統を登録しなければ空。
+  branchRegistry: {},
+  repoCandidates: [],
   knownEntryRequestGeneration: 0,
   listLoadingVisible: false,
   listRequestPending: false,

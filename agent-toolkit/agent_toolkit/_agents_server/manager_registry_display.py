@@ -105,6 +105,14 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
                     ),
                 ),
             )
+        queried = session_registry.owner_server_instance()
+        for identifier, (_started, entry) in listed.items():
+            if identifier in self.sessions or identifier in self._pending_resumes:
+                entry["owner_server_instance"] = queried
+            else:
+                # 退避した終了済みsessionは、登録簿へ最後に書いた所有サーバーを示す。
+                resolution = await run_file_operation(session_registry.resolve, identifier)
+                entry["owner_server_instance"] = resolution.server_instance
         sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: (item[0] is None, item[0] or ""))]
         if include_terminated:
             response: dict[str, Any] = {
@@ -159,8 +167,10 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
                 if diagnosis is not None:
                     return await self._owner_lost_show_response(diagnosis, verbose=verbose)
                 raise ActionableError(
-                    f"session {session_id} belongs to another writer's agents_server process and is still running",
-                    next_action="そのsessionを起動したroot sessionで`atk agents wait`を実行して結果を受領する",
+                    f"session {session_id} belongs to another writer's agents_server process and is still running; "
+                    + manager_registry_restore.ownership_detail(resolution),
+                    next_action="そのsessionを起動したroot sessionで`atk agents wait`を実行して結果を受領する。"
+                    + manager_registry_restore.OWNER_ELSEWHERE_NEXT_ACTION,
                 )
             session = await self._restore_registry_session(session_id, resolution=resolution)
             if session is None:

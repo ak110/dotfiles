@@ -199,7 +199,7 @@ def write_root_alias(
     root_session_id: str,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """現行session識別子のルート索引を書き、参照先を失った索引を回収する。"""
+    """現行session識別子のルート索引を書く。参照先を失った索引は期限の掃引（`shared_sweep`）が回収する。"""
     forwarded, _ = registry_forwarding.forward(
         "write_root_alias",
         {
@@ -212,18 +212,8 @@ def write_root_alias(
         return
     if not valid_session_id(current_session_id) or not valid_session_id(root_session_id):
         raise ValueError("invalid session_id")
-    directory = aliases_directory(state_root)
-    if directory.exists():
-        for path in directory.glob("*.json"):
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except OSError, UnicodeError, json.JSONDecodeError:
-                continue
-            target = payload.get("root_session_id") if isinstance(payload, dict) else None
-            if isinstance(target, str) and valid_session_id(target) and not status_directory(target, state_root).is_dir():
-                path.unlink(missing_ok=True)
     payload = {"version": 1, "root_session_id": root_session_id}
-    atomic_write(directory / f"{current_session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
+    atomic_write(aliases_directory(state_root) / f"{current_session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def resolve_status_owner_identity(

@@ -396,3 +396,40 @@ async def test_expired_session_kill_returns_success_response(
         assert "expired" not in manager.sessions
         assert manager.expired_sessions["expired"].session_id == "expired"
         assert backend.interrupt_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_rejected_kill_keeps_session_in_owner_loss_recovery() -> None:
+    """入力を拒否したkillは、所有者の喪失から復旧する対象を取り消さない。"""
+    async with _manager_with_fake("codex") as (manager, _backend):
+        manager._recovery_targets.add("thread-1")  # pylint: disable=protected-access
+
+        with pytest.raises(ValueError, match="timeout must be non-negative"):
+            await manager.kill("thread-1", timeout=-1)
+
+        assert "thread-1" in manager._recovery_targets  # pylint: disable=protected-access
+
+
+@pytest.mark.asyncio
+async def test_kill_during_recovery_interrupts_resumed_turn(tmp_path: pathlib.Path) -> None:
+    """自動復旧の途中に届いたkillは、復旧したturnの開始を待ってから中断を届ける。
+
+    2026-11-17、復旧の途中のkillが記録無しの`unknown session`を返した。
+    """
+    async with _manager_with_fake("codex") as (manager, backend):
+
+        async def recover() -> state.SessionState:
+            await asyncio.sleep(0.05)
+            session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+            manager.sessions[session.session_id] = session
+            return session
+
+        attempt = asyncio.create_task(recover())
+        manager._recovery_targets.add("thread-1")  # pylint: disable=protected-access
+        manager._recovery_attempts["thread-1"] = attempt  # pylint: disable=protected-access
+
+        response = await manager.kill("thread-1", timeout=0)
+
+        assert response["kill_requested"] is True
+        assert backend.interrupt_calls == 1
+        assert "thread-1" not in manager._recovery_targets  # pylint: disable=protected-access

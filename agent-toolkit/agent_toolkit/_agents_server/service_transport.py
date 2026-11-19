@@ -119,6 +119,24 @@ def process_identity(pid: int) -> str:
     return f"{pid}:{record.rsplit(')', 1)[1].split()[19]}"
 
 
+def process_alive(identity: object) -> bool:
+    """発見記録の起動単位（`pid:開始時刻`）のプロセスがまだ生存しているかを返す。"""
+    try:
+        pid = int(str(identity).split(":", 1)[0])
+        try:
+            return process_identity(pid) == identity
+        except PermissionError:
+            # 自身のアカウントの/procは常に読めるため、Linuxでの拒否は別アカウントのプロセスを示す。
+            # Windowsでは同じアカウントでも、非昇格のプロセスは別ログオンの昇格プロセス（SSH経由で起動した世代など）を開けない。
+            if os.name != "nt":
+                return False
+            from agent_toolkit._agents_server import windows_service_transport
+
+            return windows_service_transport.listed_process_alive(str(identity))
+    except FileNotFoundError, ProcessLookupError, ValueError:
+        return False
+
+
 def authenticate(peer: connection.Connection, *, server: bool, expected_process: str | None = None) -> int:
     """環境・操作本文の送受信前に、OSが与える相手のアカウントが自身と一致するか確かめる。"""
     if os.name == "nt":

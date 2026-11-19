@@ -11,7 +11,7 @@
 | 待機中の改善要求の登録時機を決める前 | `../../delegation/references/waiting-and-monitoring-independent-work.md` |
 | 公開後に追加修正を統合し再公開する前 | `finish-session-recovery.md` |
 | 実行レビューから差分範囲外の既存不良が返された時 | `../../../share/exec-review-parent-existing-defects.md` |
-| ユーザーの要求をWIの由来へ転記する時 | `../../wi-standards/references/wi-standards-origin.md` |
+| ユーザーの要求をWIの由来へ転記する時 | `agent-toolkit:atk-mode/references/origin-and-approval.md` |
 
 ## 開始後に追加されたWIの確認
 
@@ -19,13 +19,13 @@
 一覧の表示条件とは独立した開始時集合を同じ実行で保持し、再開時も同じ保存集合を使う。
 
 ```text
-atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --snapshot-output <開始時集合JSONの絶対パス>
+atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --target-branch=auto --snapshot-output <開始時集合JSONの絶対パス>
 ```
 
 30分点検ごとと公開工程の開始前に、次のコマンドで開始時集合に無い最新の処理可能WIを取得する。
 
 ```text
-atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --new-since <開始時集合JSONの絶対パス>
+atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --target-branch=auto --new-since <開始時集合JSONの絶対パス>
 ```
 
 未判定の各WIの本文を`atk wi show`で取得し、本書「即時対応」で対処時機を判定する。
@@ -70,7 +70,7 @@ all-reposでは統括が各対象の確認を所有する。
    このため、暫定規則を作った不備は、規範への最小修正を今回の公開に含め、正式対応のAWIは残る本格的な是正に使う。
    公開工程の開始前に、暫定規則の各項目へ対応する最小修正のcommitがあることを確かめる。
    並行・後続の別セッションにも影響する停止の回避策は、`../../../share/main-improvements.md`「停止の回避策の共有」に従い、既存のホスト固有の規範にも記録する。
-3. `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従って正式対応用のAWIを起草し、投入する。
+3. `agent-toolkit:atk-mode/roles/add-wi.parent.md`に従って正式対応用のAWIを起草し、投入する。
    暫定修正のコミットや差分、観測結果と検証結果、未確認事項、残りのテスト、独立した文脈でのレビュー、原因分析、類似箇所の見直し、再発防止策の情報を引き継ぐ。
    既存のAWIを再利用する場合は、これらの情報がすべて含まれていることを確認する。
    正式対応の時機は本書「即時対応」で判定し、今回追加なら選定と担当への追送まで進め、次回なら理由と再開条件を付けて引き継ぐ。
@@ -115,12 +115,12 @@ all-reposでは統括が各対象の確認を所有する。
 
 ## 対象外の不良と是正要求
 
-1. 本書「即時対応」の対処時機判定で次回へ渡す不良・是正要求・独立改善は、`add-wi.parent.md`への委譲を通じて`source: process-wi`のAWIとして投入する。
+1. 本書「即時対応」の対処時機判定で次回へ渡す不良・是正要求・独立改善は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`への委譲を通じて`source: process-wi`のAWIとして投入する。
    次回へ渡す理由は、欠陥と確定した既存不良なら`01-agent.md`「完遂と先送り」の該当する先送り条件名と根拠、未確定の候補・効率改善ならその区分の根拠と本書「即時対応」の比較結果から書き始める。
    再開条件も同じ既存記録へ残す。
    修正時機とAWIの登録時機を分け、待機中に判定できる改善要求は`../../delegation/references/waiting-and-monitoring-independent-work.md`「待機中の先行実施」に従って発見時に保存まで進める。
    次回修正の判定にかかわらず、投入は同じ工程で行う。
-   ユーザーからの要求は、`../../wi-standards/references/wi-standards-origin.md`「由来と承認」に従って発話を逐語的に転記する。
+   ユーザーからの要求は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従って発話を逐語的に転記する。
 
 2. メインエージェントは、即時対応の対象外とした既存不良についても、投入担当からの結果を受け取った時点で投入済みWIと対象箇所を自身の引き継ぎ記録に対応付け、報告元へその対応内容を伝える。
 

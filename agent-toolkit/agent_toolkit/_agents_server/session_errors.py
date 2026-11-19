@@ -6,6 +6,12 @@ import logging
 
 from agent_toolkit._common.next_action import ActionableError
 
+KILL_NOT_DELIVERED_NEXT_ACTION = (
+    "`atk agents wait`で状態を確認し、turnが続いていて中断が必要なら`kill`を再発行する。"
+    "再発行も配送を確定できなければ同じ前提で繰り返さず、`show`で所有サーバーと活動を確かめ、"
+    "`agent-toolkit:delegation`の`references/waiting-stalls.md`「停滞の検知と巻き取り」の手順へ進む"
+)
+
 
 class SessionInitializationTimeoutError(RuntimeError):
     """backendがsessionの初期化を上限内に完了せず、起動を打ち切ったことを示す。

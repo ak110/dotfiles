@@ -47,8 +47,8 @@
 - 規範、ガイド、設計文書などの説明文はこの3語を日本語で用い、エージェント名、設定キー、ファイル名など英語が必要な識別子だけ`plan`・`exec`系を用いる。
   3語の定義と綴りの使い分けの現行の規定は`agent-basics:writing-standards`にある
 - レビュー反復の原因判定は、`agent-basics:bugfix`の次の資料を参照する。
-  - `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`「反復した指摘の原因判定」
-  - `agent-basics:bugfix/references/root-cause-severity-quality.md`「前提の再検討」
+  - `agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」
+  - `agent-basics:bugfix/references/premises.md`「期待の出所」
 
   個別修正の反復から工程・規範の構造の見直しへ接続する導入目的を保つ
 - 過去計画30件のレビュー実績の実際の集計では、起草側の完成条件に対応の無い検出側専用の判定基準5件と、
@@ -67,7 +67,7 @@
   2026年10月7日のユーザー指示による。
   計画のリファクタリングの検討がファイルの分割などの細部に留まり、分割後の章構成と他の成果物との関係を評価していなかった事象を契機とする。
   「過剰設計の抑制」の追記の不採用は常時ロードの読込量を増やす知識の追記を対象とし、この評価の工程には適用しない。
-  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」にある
+  現行の規定は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」にある
 - 対象ファイル全体の読解は実装工程の規範とし、計画工程の調査範囲はコーディングエージェントの裁量に委ねる。
   理由は計画ファイルへ書かれない読解が実装工程へ引き継がれないことと、
   部分読解によるスタイル逸脱とリファクタリングの必要性の見逃しが実装工程で生じることとする（2026年9月2日、ユーザー指示）。
@@ -77,7 +77,7 @@
   契機は、2,154行のテストファイルの定数1行の修正に、全文読取で約24,000トークンを使った観測である。
   緩め方はエージェントが選定した。
   直近7日間の1,000行以上のファイルの編集5件では、編集前の全文読取が2件、部分読取が3件で、読取範囲と不良の対応を確定できる記録は無かった。
-  現行の規定は`agent-basics:writing-standards/references/implementation-time-style.md`「編集前の読解」にある
+  現行の規定は`agent-basics:writing-standards/references/implementation-time.md`「編集前の読解」にある
 
 ### 経緯（計画と実行の運用）
 

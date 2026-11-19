@@ -15,7 +15,6 @@ from agent_toolkit._hooks import (
     document_reads,
     plugin_resources,
     rules_context,
-    session_title,
     work_contract,
 )
 from agent_toolkit._hooks import notice as notice_module
@@ -237,8 +236,6 @@ def _mark(
     from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
     identifier = document_key(path, fingerprint)
-    if agent == "main" and path == plugin_resources.plugin_root() / "skills" / "add-awi-by-user" / "SKILL.md":
-        session_title.observe_add_awi(session_id, "agent-toolkit:add-awi-by-user")
     read_delivery.update_state(session_id, operation_skills.mark_ready(identifier, agent))
     if record_scopes and (not fingerprint or fingerprint == document_reads.content_fingerprint(path)):
         for metadata in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):

@@ -48,7 +48,7 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     session_area = _managed_temp.resolve_session_temp("caller-session")
     (session_area / "work-contract.md").write_text("目的: 引き継ぎ記録先の自動用意を確かめる\n", encoding="utf-8")
-    task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+    task_document = launch_requests.resolve_task_document_path("exec")
     input_lines = [
         line for line in _observed_input_lines(task_document.name, tmp_path) if not line.startswith("引き継ぎ記録先:")
     ]
@@ -78,7 +78,7 @@ async def test_start_keeps_given_handoff_path_and_rejects_other_missing_inputs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """委譲元が渡した`引き継ぎ記録先`はそのまま委譲プロンプトへ載せ、それ以外の必須入力の欠落は従来どおり拒否する。"""
-    task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+    task_document = launch_requests.resolve_task_document_path("exec")
     extra_params = dict(line.split(": ", 1) for line in _observed_input_lines(task_document.name, tmp_path))
     prompts: list[str] = []
 
@@ -308,7 +308,7 @@ def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_pat
 
     warning = launch_requests._validate_required_prompt_inputs(task_document, {})
     assert warning is not None
-    assert "`<役割名>.subagent.md`がshare配下ではありません" in warning
+    assert "`<役割名>.subagent.md`がagent-toolkitの役割文書の置き場所にありません" in warning
 
 
 def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_path: pathlib.Path) -> None:
@@ -322,4 +322,4 @@ def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_p
 
     warning = launch_requests._validate_required_prompt_inputs(task_document, {})
     assert warning is not None
-    assert "`<役割名>.subagent.md`がshare配下ではありません" in warning
+    assert "`<役割名>.subagent.md`がagent-toolkitの役割文書の置き場所にありません" in warning

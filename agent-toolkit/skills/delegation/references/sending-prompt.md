@@ -7,12 +7,12 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `delegation`、`read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `delegation`、`read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
+| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `delegation`、`read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
 | 再委譲の制限が委譲先へ自動で届くかを起動の形から確かめる時（操作対象外: ツールと結び付かない判断） | `delivery-scope.md` | | |
 
 ## 委譲プロンプトの構成
 
-文章量の判定は、`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に従う。
+文章量の判定は、`agent-basics:writing-standards/references/writing.md`「文章の共通規定」に従う。
 
 1. 入力の前提を固めるため、起動する前に、委譲する独立した作業内容、読み取り専用か書き込み可能か、完了条件、および結果の受領方法を確定しておく。
    書込単位と受領する証拠は`routing-units.md`「委譲単位の確定」に従って対応付け、親が持つ集約検証と子の完了条件を分ける。
@@ -52,7 +52,7 @@
      委譲先の文書や規範にすでに記載されている作業手順、権限、検証手順、返却形式、背景説明、経緯、判断の途中経過、委譲元の主観的な推測などは値に含めない。
      委譲先が独立して思考・判断する余地を先回りして狭めないためである。
    - 未検証の値: 自身で直接裏付けを取っていない値には、`sending-evidence.md`「未検証情報の取り扱い」に従って`未検証`と明記し、作業着手前の裏取りを求める。
-     他の主体による報告、記録、出力から得られた情報については、`agent-basics:writing-standards/references/investigation-sources.md`「根拠と主張の一致」に定める出所帰属のルールに従う。
+     他の主体による報告、記録、出力から得られた情報については、`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」に定める出所帰属のルールに従う。
      出所側で明示されていない内容を推測で補った値は、未裏付けの情報として取り扱う。
    - 完了条件・既知の事実・報告様式: `<役割名>.subagent.md`、agent定義、または基準となる既存の記録に含まれている内容についてはそれらの記録を参照させ、そこに記載のない固有の情報のみをプロンプトに記述する。
      調査・測定を委譲するときは、結果を読む委譲元の判断に必要な回答項目（確認済みの事実、使用したデータと測定条件、仮説とその根拠、未確認事項など）を起動前に選び、役割文書や共通の返却形式で決まらない項目だけを`通常完了の報告様式`などの既存の指定方法で補う。
@@ -79,13 +79,13 @@
      自由本文の起動とホスト組み込みの委譲では、本文へ書く。
      役割を指定した起動では、役割文書が規範指定の入力を宣言している場合に限り、その入力で渡す。
    - 内容が確定しているファイル編集を自由本文の起動かホスト組み込みの委譲で委ねる場合は、`agent-basics:writing-standards`の`references/file-editing.md`を適用条件として本文へ書く。
-     Claude CodeのEditまたはWriteツールを用いて既存ファイルを更新する場合に限り、`agent-basics:writing-standards`の`references/file-editing-claude.md`も編集前に読み込む条件を書く。
+     Claude CodeのEditまたはWriteツールを用いて既存ファイルを更新する場合に限り、`agent-basics:writing-standards`の`references/file-editing.md`も編集前に読み込む条件を書く。
      なお、軽量起動のwriteでは、`share/agents-server-write.md`の自動付与によってこの条件が伝達される。
    - 委譲先が自身と同一の役割へ再委譲せずに処理を完遂すべき条件は、`agent-toolkit/share/rules/rules-subagent.md`「委譲時の厳守事項」が定め、通常起動の委譲先とホスト組み込みの委譲先へ自動で届く（配送範囲は`delivery-scope.md`の表にある）。
      この規範の全文が届かない起動（軽量起動など）で、`<役割名>.subagent.md`、agent定義、適用規範のいずれにも明記が無く、制限が要る場合に限り、再委譲の制限を本文へ書く（`agents_server`には、委譲先のツール利用を委譲元から直接制限するパラメーターが存在しないため）。
 
    ユーザーが定性的な表現や程度の表現（「軽微」「過剰」「十分」など）で示した判定基準を、委譲先が適用する具体的な判定条文へと落とし込んで伝達する場合は、その要件を未確定事項として扱い、判定対象、判定主体、判定タイミング、および機械的な除外リストにするか現場判断にするかなどの具体化案を提示する。
-   案の優先順位がユーザー固有の判断に依存する場合は、`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従って事前に確認を取ってから送信する。
+   案の優先順位がユーザー固有の判断に依存する場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従って事前に確認を取ってから送信する。
    技術的な観点から一意に決定できる場合は確定させて送信した上で結果を報告する。
    ただし、ユーザーが判定条件を逐語的・具体的に指定した場合や、`agent-toolkit/share/rules/common/01-agent.md`「ユーザー発話の解釈」に基づいて技術判断で確定できる提案についてはこの対象外とする。
    解釈の違いによって委譲結果が左右される場合に限って適用する。
@@ -107,6 +107,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 委譲の基準を適用する前 | `../SKILL.md` |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 | 委譲：`<役割名>.parent.md`を持つ委譲の起動の基準を適用する前 | `delegation-role-launch.md` |
 | 委譲プロンプトの送信：未検証情報の取り扱いの基準を適用する前 | `sending-evidence.md` |

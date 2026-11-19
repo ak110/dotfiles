@@ -4,7 +4,7 @@
 起動対象: bulk-replace-review.subagent.md
 ```
 
-品質基準の正式な提供元は`agent-basics:writing-standards/references/bulk-replacement.md`である。
+品質基準の正式な提供元は`agent-basics:writing-standards/references/notation-rules.md`である。
 呼び出し元の読込条件を引き継ぎ、本書の運用条件と条件に該当する正式な資料の全文を読む。
 両方に同じ主題があれば、両方の全文を確認する。
 範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
@@ -18,13 +18,13 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 指摘の原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
-| bugfixの初動で詳細化条件が成立し、広域の類似見直しを行う前 | `similar-review.parent.md` |
+| 害が大きく、問い4（広がり）の走査を独立の担当へ渡す前 | `similar-review.parent.md` |
 
 ## 運用条件
 
-指摘の受領時はまず`agent-basics:bugfix`を起動し、本体の「初動の判断」に従う。
-詳細化条件が成立して広域の類似見直しが必要な場合だけ、検索と個別判定を`share/similar-review.parent.md`の専用担当へ渡す。
-発見経路だけでは詳細化せず、修正・再検証と短い記録による終了の条件はbugfixに従い、結果の採否は委譲元が確定する。
+指摘の受領時はまず`agent-basics:bugfix`を起動し、5つの問いを適用する。
+害が大きく広がりの走査を独立の担当へ渡す場合だけ、検索と個別判定を`share/similar-review.parent.md`の専用担当へ渡す。
+結果の採否は委譲元が確定する。
 
 - `git diff --word-diff=plain --word-diff-regex=.`による文字単位の差分をmanaged-tempへ保存し、後述の「起動」「受領」に従って変更箇所を全件レビューさせる。
   意図しない誤置換が多発する場合は、置換候補を絞り込んで再試行する。

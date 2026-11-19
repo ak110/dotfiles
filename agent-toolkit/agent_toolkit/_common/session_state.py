@@ -89,17 +89,23 @@ def sweep_stale_states(
     directory = state_path("unused").parent
     threshold = (time.time() if now is None else now) - max_age_seconds
     kept_state_name = state_path(keep_session_id).name if keep_session_id else None
+    stale = [
+        path
+        for path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}")
+        if path.name != kept_state_name and _is_stale(path, threshold)
+    ]
+    if not stale:
+        return 0
     # 相談が開いたまま入力待ちを続けても、自動振り返りの抑止を期限で失わない。
+    # 生存する会話の全件確認は、期限切れの候補がある場合だけ行う。
     consultations = {
         state_path(session_id).name
         for session_id in session_activity.living_root_session_ids()
         if read_state(session_id).get("add_awi_skill_invoked") is True
     }
     removed = 0
-    for path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}"):
-        if path.name == kept_state_name or path.name in consultations or not _is_stale(path, threshold):
-            continue
-        if _collect_stale_state(path, threshold):
+    for path in stale:
+        if path.name not in consultations and _collect_stale_state(path, threshold):
             removed += 1
     return removed
 

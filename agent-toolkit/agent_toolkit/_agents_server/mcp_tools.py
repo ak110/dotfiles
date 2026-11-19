@@ -87,14 +87,43 @@ def _manager() -> AgentsServerManager:
     return _SELECTED_MANAGER.get() or _MANAGER
 
 
+# 会話内modが応答しない場合（ホストUIの無い実行、mod未導入、Codex）の、要求とホストごとの回復操作。
+# Codexには会話内modが無く、MCPサーバーとpluginは会話の起動時に読み込まれる。
+_UI_UNAVAILABLE_NEXT_ACTIONS: dict[str, dict[str, str]] = {
+    "apply_runtime_changes": {
+        "claude": (
+            "反映は予約されていない。ユーザーへ、agents_server・pyfltrは`/mcp`で対象のMCPサーバーを再接続し、"
+            "pluginsは`/reload-plugins`を実行するよう依頼する。ホストUIの無い実行（`claude -p`など）では次の起動から反映される"
+        ),
+        "codex": (
+            "Codexには会話内modが無く、反映を予約できない。"
+            "ユーザーへ、この会話を終了して`codex resume`で再開し、MCPサーバーとpluginを読み込み直すよう依頼する"
+        ),
+    },
+    "compact_conversation": {
+        "claude": "圧縮は予約されていない。ユーザーへ`/compact`の実行を依頼する",
+        "codex": "Codexには会話内modが無く、圧縮を予約できない。ユーザーへ`/compact`の実行を依頼する",
+    },
+    "send_to_user": {
+        "claude": "本文は表示されていない。同じ本文を最終応答に書く",
+        "codex": "Codexには会話内modが無く、本文を表示できない。同じ本文を最終応答に書く",
+    },
+}
+
+
 async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
-    identifier = _manager().launcher_session_id()
+    manager = _manager()
+    identifier = manager.launcher_session_id()
     if identifier is None:
         raise ValueError("呼出元会話を解決できない。Claude CodeでMCPへ再接続する。")
-    return await function_hook_requests.request(identifier, operation, inputs)
+    try:
+        return await function_hook_requests.request(identifier, operation, inputs)
+    except TimeoutError as error:
+        host = "codex" if manager.launcher_is_codex else "claude"
+        raise ActionableError(str(error), next_action=_UI_UNAVAILABLE_NEXT_ACTIONS[operation][host]) from error
 
 
 @contextlib.asynccontextmanager
@@ -553,8 +582,24 @@ async def list_sessions(
     表示範囲を指定しない場合は未回収結果を持たない終了済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
     全件が必要な場合は`include_terminated`へ真を渡す。除いた件数が0なら`omitted`は省く。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
+    照会したサーバーの起動単位を`queried_server_instance`へ、各sessionを所有するサーバーの起動単位を`owner_server_instance`へ返す。
+    共有管理サービスでは退出しておらずプロセスが生存している世代を`server_generations`へ返し、受付中の世代（`current`）と照会した世代（`queried`）を示す。
+    同じ親会話のうち別の世代がまだ所有するsessionも一覧へ含め、応答しなかった世代は`unreachable_generations`へ次の操作（`next_action`）とともに返す。
     """
-    return await _manager().list_sessions(include_terminated=include_terminated)
+    manager = _manager()
+    response = await manager.list_sessions(include_terminated=include_terminated)
+    response["queried_server_instance"] = session_registry.owner_server_instance()
+    if _SERVICE_MANAGERS is not None:
+        # ターンの途中で更新を迎えた会話は終了境界まで旧世代が所有するため、同じ親会話の分を加える。
+        foreign = await _SERVICE_MANAGERS.other_generation_sessions(manager, include_terminated=include_terminated)
+        listed = {item["session_id"] for item in response["sessions"]}
+        response["sessions"].extend(item for item in foreign["sessions"] if item["session_id"] not in listed)
+        if foreign["unreachable"]:
+            response["unreachable_generations"] = foreign["unreachable"]
+    if _SERVICE_MANAGERS is not None and (generations := await _SERVICE_MANAGERS.generations()):
+        # 退出していない世代が複数あれば更新中か旧世代の残存であり、sessionの所有者を確かめる手掛かりにする。
+        response["server_generations"] = generations
+    return response
 
 
 @mcp.tool(
@@ -634,7 +679,7 @@ async def send_to_user(
         raise ValueError("本文を日本語で書き直すまで画面へ表示していない。")
     try:
         guidance = ""
-        if runtime_inserted.reported_improvement_lines(message):
+        if runtime_inserted.reported_improvement_lines(message) or runtime_inserted.report_cues(message):
             root = pathlib.Path(__file__).resolve().parents[2]
             checked = await run_file_operation(
                 subprocess.run,
@@ -646,11 +691,14 @@ async def send_to_user(
                 check=False,
             )
             if checked.returncode != 0:
-                raise ValueError("改善点報告の案内を取得するhookが失敗した")
+                raise ValueError("報告の案内を取得するhookが失敗した")
             guidance = json.loads(checked.stdout)["hookSpecificOutput"]["additionalContext"]
     except Exception:  # noqa: BLE001 -- 補助案内の失敗で本文の送達を止めない
-        _LOG.exception("改善点報告の取得案内を作成できない")
-        guidance = "改善点の判定資料を確認できなかった。share/rules/rules-main.mdの作業中の改善点の報告を確認せよ。"
+        _LOG.exception("報告の取得案内を作成できない")
+        guidance = (
+            "報告の判定資料を確認できなかった。改善点はshare/rules/rules-main.mdの作業中の改善点の報告を、"
+            "逸脱の報告はagent-basics:bugfixを確認せよ。"
+        )
     # 再開後の画面で、同じ本文を持つ別の呼出しの表示を取り違えないよう、呼出しの識別子を添える。
     tool_use_id = _TOOL_USE_ID.get()
     result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})

@@ -712,7 +712,7 @@ def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
             assert not any(other.path == target.path and other.heading for other in targets)
     for suffix in (
         "skills/process-wi/references/selection-procedure.md",
-        "skills/wi-standards/SKILL.md",
+        "skills/atk-mode/playbooks/wi-drafting.md",
         "skills/write-plan/SKILL.md",
         "share/single-lane-execution.md",
         "share/exec-review.parent.md",
@@ -811,11 +811,11 @@ def test_share_variable_and_absolute_role_keep_their_own_version(tmp_path):
 @pytest.mark.parametrize(
     "operation,expected,excluded",
     [
-        ("body-writing", "writing.md", {"program-messages.md", "input-material.md"}),
-        ("skill:writing-standards", "program-messages.md", {"input-material.md"}),
+        ("body-writing", "writing.md", {"program-messages.md", "writing-genres.md"}),
+        ("skill:writing-standards", "program-messages.md", {"writing-genres.md"}),
         (
-            "read:agent-basics:*/skills/writing-standards/references/input-material.md",
-            "input-material.md",
+            "read:agent-basics:*/skills/writing-standards/references/writing-genres.md",
+            "writing-genres.md",
             {"program-messages.md"},
         ),
     ],
@@ -847,18 +847,15 @@ def test_hook_message_judgment_route_reaches_message_and_program_material(condit
     source = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
     rows = read_triggers.parse_tables(source, root, strict=True)
     selected = [row for row in rows if all(term in row.condition for term in condition_terms)]
-    hook_material = source.parent / "references/claude-hooks-messages.md"
+    hook_material = source.parent / "references/claude-hooks-block-warn.md"
+    program_material = source.parent / "references/program-messages.md"
     routes = [row for row in selected if hook_material in row.documents]
     assert routes and all(row.kind == "判断" for row in routes)
-    targets = [target for row in routes for target in row.targets if target.path == hook_material]
+    # 本文から別の本文を読ませる連鎖を作らず、入口の同じ行が通知基準と出力基準の両方を選ぶ。
+    assert all(program_material in row.documents for row in routes)
+    targets = [target for row in routes for target in row.targets if target.path in {hook_material, program_material}]
+    assert {target.path for target in targets} == {hook_material, program_material}
     assert all(target.body().strip() for target in targets)
-    # 出力基準は整形の条件別資料が本文で名指しし、解析器が補う宣言で届く。
-    format_material = source.parent / "references/claude-hooks-messages-format.md"
-    assert any(format_material in row.documents for row in read_triggers.parse_tables(hook_material, root, strict=True))
-    followups = read_triggers.parse_tables(format_material, root, strict=True, named=True)
-    program_material = source.parent / "references/program-messages.md"
-    assert any(program_material in row.documents for row in followups)
-    assert any(target.path == program_material and target.body().strip() for row in followups for target in row.targets)
 
 
 @pytest.mark.parametrize(

@@ -41,6 +41,16 @@ def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generatio
         error.add_note(f"{label}（取得失敗: {failure}）")
 
 
+# 起動した世代を受付先として公開せず、候補のまま接続する指定。update-dotfilesの起動確認が、
+# 確認の終了後も候補が生存することを確かめてから`publish_service`で公開するために使う。
+DEFER_PUBLISH_ENV = "AGENT_TOOLKIT_DEFER_SERVICE_PUBLISH"
+
+# 応答の無い要求がこの秒数を超えたら、接続先世代の生存を短い照会で確かめる。
+# 正当に長いtool処理は照会に応答するため打ち切らず、停止・凍結した世代だけを配送未確定として返す。
+_STALL_SECONDS = 10.0
+_PROBE_SECONDS = 10.0
+
+
 def code_identity(root: pathlib.Path) -> tuple[str, str]:
     """同じ配布版を合流し、開発checkoutの同版編集も別世代として識別する。"""
     manifest = root / ".claude-plugin" / "plugin.json"
@@ -55,10 +65,50 @@ def code_identity(root: pathlib.Path) -> tuple[str, str]:
     return digest.hexdigest(), version
 
 
+def _launch_service(
+    command: list[str], attempts: list[dict[str, Any]], *, stderr: Any, cwd: pathlib.Path, env: dict[str, str]
+) -> subprocess.Popen[Any]:
+    """起動元からの分離を強い指定から順に試し、起動元に拒否された指定だけを次の指定へ替えて管理サービスを起動する。
+
+    離脱を許さないJobは、離脱を指定した起動をアクセス拒否で拒む。実行ファイルへの権限不足も同じ拒否になるため、
+    指定を替えた起動が成功した場合だけ、Jobによる拒否として診断へ残す。
+    """
+    refused = False
+    for index, flags in enumerate(attempts):
+        try:
+            process = subprocess.Popen(  # pylint: disable=consider-using-with
+                command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=cwd, env=env, **flags
+            )
+        except OSError as error:
+            if isinstance(error, PermissionError) and index + 1 < len(attempts):
+                refused = True
+                continue
+            error.add_note(f"管理サービス起動: executable={command[0]} cwd={cwd} flags={flags}")
+            raise
+        if refused:
+            warning = with_next_action(
+                "起動元のWindows Jobは離脱を許可していません。起動元のJobの制限を継承して管理サービスを起動しました。"
+                "そのJob終了後のサービス生存は保証しません。",
+                next_action=(
+                    "Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
+                    "確認できない場合は、起動元とこの診断を添えてagent-toolkitの管理者へ問い合わせてください。"
+                ),
+            )
+            print(warning, file=sys.stderr)
+            stderr.write((warning + "\n").encode("utf-8"))
+            stderr.flush()
+        return process
+    raise ValueError("管理サービスの起動指定がありません")
+
+
 def ensure_service(
     caller: runtime_environment.CallerContext, root: pathlib.Path, *, python: pathlib.Path | None = None
 ) -> dict[str, Any]:
-    """起動を世代ごとに合流し、MCPの通常導入経路だけでreadyへ到達させる。"""
+    """起動を世代ごとに合流し、MCPの通常導入経路だけでreadyへ到達させる。
+
+    呼出元の環境が`DEFER_PUBLISH_ENV`を指定していれば、readyの世代を受付先として公開せずに返す。
+    """
+    publish = caller.environment.get(DEFER_PUBLISH_ENV) != "1"
     directory = service_transport.namespace(caller)
     generation, version = code_identity(root)
     registry = GenerationRegistry(directory)
@@ -72,14 +122,12 @@ def ensure_service(
             current = registry.current()
             if current is not None and current["epoch"] > target["epoch"]:
                 return current
+            exited = None
             if ready.exists():
                 record = json.loads(ready.read_text(encoding="utf-8"))
-                pid = int(record["process"].split(":", 1)[0])
-                try:
-                    if service_transport.process_identity(pid) == record["process"]:
-                        return service_rpc.request_sync(record, "publish", {})
-                except FileNotFoundError, ProcessLookupError:
-                    pass
+                if service_transport.process_alive(record["process"]):
+                    return service_rpc.request_sync(record, "publish", {}) if publish else record
+                exited = record["process"]
             python = plugin_environment.prepared_python(root, caller.environment) or python or pathlib.Path(sys.executable)
             env = {
                 key: value
@@ -116,48 +164,23 @@ def ensure_service(
                 str(directory),
                 generation,
             ]
-            flags: dict[str, Any] = {"start_new_session": True}
+            attempts: list[dict[str, Any]] = [{"start_new_session": True}]
             with contextlib.ExitStack() as startup:
                 job = None
-                host_job_warning = ""
                 if os.name == "nt":
                     # 成功後のserviceは転送側から独立する。準備失敗時だけ全所属を回収する。
                     job = startup.enter_context(windows_job.WindowsJob(kill_on_close=False))
-                    creation_flags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
-                    parent_limits = job.current_job_limit_flags()
-                    if parent_limits is not None:
-                        host_job_warning = (
-                            f"起動元のWindows即時JobのLimitFlags={parent_limits:#x}。上位Jobの制限は変更しません。"
-                            "離脱を許可しない上位Jobがある場合、そのJob終了後のサービス生存は保証しません。"
-                        )
-                    if parent_limits is None or parent_limits & 0x00000800:
-                        creation_flags |= 0x01000000
-                    elif not parent_limits & 0x00001000:
-                        host_job_warning = (
-                            "起動元のWindows Jobは離脱を許可していません。外側Jobの制限を継承して管理サービスを起動します。"
-                            "そのJob終了後のサービス生存は保証しません。"
-                        )
-                    flags = {"creationflags": creation_flags}
+                    detached = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
+                    # 起動元のJobからの離脱を指定する。子を自動で離脱させるJob（venvのpython.exeが作るJobなど）の中でも、
+                    # 指定の無い子は外側のJob（SSHのセッションなど）に残り、そのJobの終了とともに止まる。
+                    # 離脱を許さないJobの中では離脱を指定した起動が拒否されるため、所属を継承して起動する。
+                    attempts = [
+                        {"creationflags": detached | windows_job.CREATE_BREAKAWAY_FROM_JOB},
+                        {"creationflags": detached},
+                    ]
                 stderr = startup.enter_context((directory / f"{generation}.stderr.log").open("wb"))
-                if host_job_warning:
-                    host_job_warning = with_next_action(
-                        host_job_warning,
-                        next_action=(
-                            "Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
-                            "確認できない場合は、起動元とこの診断を添えてagent-toolkitの管理者へ問い合わせてください。"
-                        ),
-                    )
-                    print(host_job_warning, file=sys.stderr)
-                    stderr.write((host_job_warning + "\n").encode("utf-8"))
-                    stderr.flush()
                 # サービスの寿命を転送側へ結び付けない。終了診断はサービスの起動単位が保存する。
-                try:
-                    process = subprocess.Popen(  # pylint: disable=consider-using-with
-                        command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=root, env=env, **flags
-                    )
-                except OSError as error:
-                    error.add_note(f"管理サービス起動: executable={command[0]} cwd={root} flags={flags}")
-                    raise
+                process = _launch_service(command, attempts, stderr=stderr, cwd=root, env=env)
                 try:
                     if job is not None:
                         native_process: Any = process
@@ -168,8 +191,10 @@ def ensure_service(
                         )
                     deadline = time.monotonic() + 30.0
                     while True:
-                        if ready.exists():
-                            record = json.loads(ready.read_text(encoding="utf-8"))
+                        record = json.loads(ready.read_text(encoding="utf-8")) if ready.exists() else None
+                        # サービスは受付を始めてから自身の記録を置く。その間に前回の記録で接続すると、
+                        # 新しいサービスへ前回の起動単位を期待して認証が失敗する。
+                        if record is not None and record["process"] != exited:
                             try:
                                 # Windowsのvenv launcherのPIDと実行本体のPIDは別になる。
                                 # readyは自己申告だけで受理せず、OSのpeer identityで確かめる。
@@ -180,10 +205,11 @@ def ensure_service(
                                     response = service_transport.receive(peer)
                                 if response != {"result": {"generation": generation}}:
                                     raise ValueError("管理サービスの世代が不正")
-                            except FileNotFoundError, ConnectionRefusedError:
+                            except FileNotFoundError, ConnectionRefusedError, TimeoutError:
+                                # 受付を始めた直後のサービスは最初の応答が遅れることがある。readyの期限まで確かめ直す。
                                 pass
                             else:
-                                published = service_rpc.request_sync(record, "publish", {})
+                                published = service_rpc.request_sync(record, "publish", {}) if publish else record
                                 # stdio終了から独立した子を保持し、退出した旧supervisorは親の生存中にもreapする。
                                 threading.Thread(target=process.wait, name="agents-service-reaper", daemon=True).start()
                                 return published
@@ -218,6 +244,86 @@ def ensure_service(
             file_lock.release_lock(handle)
 
 
+def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Path, *, timeout: float) -> dict[str, Any]:
+    """公開を保留して起動した候補の世代が生存していれば受付先として公開し、公開後の受付先を返す。
+
+    候補の起動と接続確認に使った子プロセスの終了後に呼び出す。候補が終了していれば公開せず、受付先を変更しない。
+    公開の要求の途中か直後に候補が終了していれば、生存する世代へ受付を戻してから失敗を送出する。
+    """
+    directory = service_transport.namespace(caller)
+    generation, version = code_identity(root)
+    registry = GenerationRegistry(directory)
+    generation = registry.reserve(generation, root, version)["generation"]
+    try:
+        try:
+            record = service_rpc.discovery(directory, generation)
+        except FileNotFoundError as error:
+            raise RuntimeError(f"候補の世代が起動していないため公開しません: generation={generation}") from error
+        if not service_transport.process_alive(record["process"]):
+            raise RuntimeError(
+                f"候補の世代が起動確認の終了後に生存していないため公開しません: "
+                f"generation={generation} process={record['process']}"
+            )
+        try:
+            accepted = service_rpc.request_sync(record, "publish", {}, timeout=timeout)
+        except Exception:
+            # 候補が受付先を公開した後、応答を返す前に終了すると、受付先は終了した世代を指す。生存する世代へ戻す。
+            registry.restore()
+            raise
+        if not service_transport.process_alive(accepted["process"]):
+            restored = registry.restore()
+            raise RuntimeError(
+                f"公開した受付先の世代が終了しました: generation={accepted['generation']} process={accepted['process']} "
+                f"現在の受付先={None if restored is None else restored['generation']}"
+            )
+        return accepted
+    except Exception as error:
+        _add_service_diagnostic(error, directory, generation)
+        raise
+
+
+def _probe(target: dict) -> str | None:
+    """接続先世代が短時間で応答するかを別接続で確かめ、応答しなければ理由を返す。"""
+    outcome: list[str | None] = []
+
+    def run() -> None:
+        try:
+            service_rpc.request_sync(target, "ping", {}, timeout=_PROBE_SECONDS)
+        except RuntimeError, ValueError:
+            # 応答は届いた（pingを持たない旧世代のエラー応答を含む）。生存している。
+            outcome.append(None)
+        except Exception as error:
+            outcome.append(f"{type(error).__name__}: {error}")
+        else:
+            outcome.append(None)
+
+    # 接続の確立自体が止まるホストでも監視を止めないよう、別threadで上限付きに待つ。
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(_PROBE_SECONDS + 5)
+    return outcome[0] if outcome else f"TimeoutError: {_PROBE_SECONDS + 5}秒以内に接続できません"
+
+
+def _stalled_response(identifier: str | int, method: str, target: dict, error: str) -> dict:
+    message = (
+        f"{method}の応答が{_STALL_SECONDS:g}秒以上無く、接続先の管理サービス（generation={target.get('generation')}; "
+        f"process={target.get('process')}）が生存確認に応答しません（{error}）。配送と実行は未確定です。"
+    )
+    next_action = (
+        "同じ要求を再送しない。上記processの接続先世代が停止・無応答かをOSのプロセス一覧"
+        "（Linuxは`ps -o pid,stat,etime -p <pid>`）で確かめ、応答が再開すれば`atk agents show <session_id>`で"
+        "対象sessionの状態を確認する。応答しないままなら当該プロセスを処置する。"
+        "このプロセスは自身のMCP接続の中継先である。"
+        "旧世代（`list`の`server_generations`で`current: false`）なら、処置後は現行世代へ自動で接続し直す。"
+        "現行世代なら処置するとこのMCP接続も終了し、ホストでの再接続（Claude Codeでは`/mcp`）が必要になる"
+    )
+    return {
+        "jsonrpc": "2.0",
+        "id": identifier,
+        "error": {"code": -32000, "message": with_next_action(message, next_action), "data": {"next_action": next_action}},
+    }
+
+
 class _Forwarder:
     """送信を静止してから接続を移し、未確定の要求は再送しない。"""
 
@@ -232,13 +338,45 @@ class _Forwarder:
         self.closed = False
         self.failure: Exception | None = None
         self.progress = 0
+        self.target: dict | None = None
+        self.sent_at: dict[str | int, float] = {}
+        self.abandoned: set[str | int] = set()
+        self._output_lock = threading.Lock()
         self._stdin = os.dup(0)
         self.reader = threading.Thread(target=self._read_input, daemon=True)
+        self.watchdog = threading.Thread(target=self._watch, daemon=True)
 
-    @staticmethod
-    def output(message: dict) -> None:
-        sys.stdout.buffer.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n")
-        sys.stdout.buffer.flush()
+    def output(self, message: dict) -> None:
+        # 受信threadと監視threadが同じstdoutへ書くため、1行単位で直列化する。
+        with self._output_lock:
+            sys.stdout.buffer.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n")
+            sys.stdout.buffer.flush()
+
+    def _watch(self) -> None:
+        """接続先世代が停止・凍結した間の要求を、無期限に待たせず配送未確定として返す。
+
+        2026-11-17、接続先の旧世代が停止した間のshow・killがMCP応答を返さず、呼出側が待ち続けた。
+        """
+        while True:
+            with self.condition:
+                self.condition.wait(_STALL_SECONDS / 2)
+                if self.closed or self.input_closed:
+                    return
+                now = time.monotonic()
+                stale = [identifier for identifier, sent in self.sent_at.items() if now - sent >= _STALL_SECONDS]
+                target = self.target
+            if not stale or target is None:
+                continue
+            error = _probe(target)
+            if error is None:
+                continue
+            with self.condition:
+                abandoned = [(identifier, self.pending.pop(identifier)) for identifier in stale if identifier in self.pending]
+                for identifier, _method in abandoned:
+                    self.sent_at.pop(identifier, None)
+                    self.abandoned.add(identifier)
+            for identifier, method in abandoned:
+                self.output(_stalled_response(identifier, method, target, error))
 
     def _read_input(self) -> None:
         buffered = b""
@@ -261,7 +399,15 @@ class _Forwarder:
                             self.initialized = True
                         if isinstance(method, str) and "id" in message:
                             self.pending[message["id"]] = method
-                        service_transport.send(self.peer, message)
+                            self.sent_at[message["id"]] = time.monotonic()
+                        peer = self.peer
+                        assert peer is not None  # wait_forで接続済みを確かめた
+                        try:
+                            service_transport.send(peer, message)
+                        except OSError:
+                            # 接続先の世代が終了した。入力の終了とは扱わず、送れなかった要求は未確定として
+                            # 接続の切替後に応答し、以後の入力は切替先へ送る。
+                            self.peer = None
             if buffered.strip():
                 raise ValueError("MCPの最終メッセージが改行で終了していません")
         except Exception as error:
@@ -321,7 +467,12 @@ class _Forwarder:
             if "method" not in message and "id" in message:
                 with self.condition:
                     self.pending.pop(message["id"], None)
+                    self.sent_at.pop(message["id"], None)
                     self.progress += 1
+                    if message["id"] in self.abandoned:
+                        # 配送未確定として応答済みの要求。同じidへ2つ目の応答を返さない。
+                        self.abandoned.discard(message["id"])
+                        continue
             self.output(message)
 
     def detach(self, peer: Any) -> None:
@@ -375,7 +526,10 @@ def forward(
     try:
         target = ensure_service(caller, root, python=python)
         bridge.reader.start()
+        bridge.watchdog.start()
         while True:
+            with bridge.condition:
+                bridge.target = target
             try:
                 with service_transport.connect(target["endpoint"], target["process"]) as peer:
                     try:
@@ -398,8 +552,16 @@ def forward(
                 if bridge.failure is not None:
                     raise bridge.failure
                 return 0
-            if bridge.pending:
-                for identifier, method in tuple(bridge.pending.items()):
+            # 監視threadが同じidを配送未確定として返すのと競合しないよう、取り出しと消去をロック下で行う。
+            with bridge.condition:
+                unresolved = tuple(bridge.pending.items())
+                bridge.pending.clear()
+                bridge.sent_at.clear()
+                bridge.abandoned.clear()
+            # 未確定の要求は再送せずエラーで返し、接続自体は現行世代へ切り替えて続ける。
+            # ここで終了するとMCP接続が失われ、委譲元が以後の照会・回収をできなくなる（2026-11-17）。
+            if unresolved:
+                for identifier, method in unresolved:
                     bridge.output(
                         {
                             "jsonrpc": "2.0",
@@ -412,7 +574,6 @@ def forward(
                             },
                         }
                     )
-                return 1
             current = registry.current()
             if current is None or (previous_reconnect == current["process"] and previous_progress == bridge.progress):
                 raise RuntimeError("管理サービスの接続が応答の無いまま繰り返し終了しました")

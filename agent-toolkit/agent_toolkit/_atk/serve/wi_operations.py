@@ -22,6 +22,7 @@ import mdit_py_plugins.footnote
 from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
+from agent_toolkit._atk.wi import branches as wi_branches
 from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._atk.wi import filters as wi_filters
 from agent_toolkit._atk.wi import frontmatter
@@ -205,7 +206,7 @@ def _created_at(filename: str) -> datetime.datetime | None:
 def _source_kind(source: typing.Any) -> str:
     """保存された投入元を一覧フィルターの分類へ変換する。
 
-    `agent-toolkit:wi-standards`の由来判定に従い、`source`の欠落だけを人間由来とし、
+    `agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」の由来判定に従い、`source`の欠落だけを人間由来とし、
     値を持つ項目をすべてエージェント由来とする。
     既知値の列挙を持たないため、新しい`source`値の追加で本関数を更新しない。
     """
@@ -240,6 +241,24 @@ def _entry(
         if updated_at is not None
         else datetime.datetime.fromtimestamp(path.stat().st_mtime, tz=datetime.UTC).isoformat(),
     }
+
+
+def _target_branch(metadata: dict[str, typing.Any], repo_id: object, registry: wi_branches.Registry) -> str | None:
+    """項目の実効の系統を返す。系統を登録していないrepository宛てで保存値も無ければ`None`を返す。
+
+    `wi_branches.effective`と同じ規則を、本文を読まずに解析済みのfrontmatterから求める。
+    保存値は系統の登録に無い名前でも、そのまま返して一覧と詳細に示す。
+    """
+    stored = metadata.get(wi_branches.KEY)
+    if isinstance(stored, str) and stored:
+        return stored
+    settings = registry.get(repo_id) if isinstance(repo_id, str) else None
+    return settings.default_branch if settings is not None else None
+
+
+def _branch_field(branch: str | None) -> dict[str, str]:
+    """実効の系統がある項目だけに`target_branch`を加える。系統未登録のrepository宛ての項目の形は変えない。"""
+    return {} if branch is None else {wi_branches.KEY: branch}
 
 
 def _unanswered_uwi_dependents(active: list[entry_index.IndexedEntry]) -> frozenset[pathlib.Path]:
@@ -448,6 +467,7 @@ class Operations:
         answered_filter = filters.get("answered", "all")
         plan_filter = filters.get("plan", "all")
         target_repo_filter = filters.get("target_repo")
+        target_branch_filter = filters.get(wi_branches.KEY)
         query_terms = [term for term in filters.get("q", "").casefold().split(" ") if term]
         period_weeks = PERIOD_WEEKS.get(filters.get("period", "all"))
         created_after = datetime.datetime.now() - datetime.timedelta(weeks=period_weeks) if period_weeks is not None else None
@@ -466,6 +486,7 @@ class Operations:
             else frozenset()
         )
         indexed_entries = [indexed for indexed in scanned if indexed.state in selected_states]
+        branch_registry = wi_branches.registry()
         for indexed in indexed_entries:
             if kind_filter not in ("all", indexed.kind):
                 continue
@@ -487,6 +508,9 @@ class Operations:
                 continue
             item_target_repo = _json_compatible(metadata.get("target_repo"))
             if not target_repo_matcher.matches(item_target_repo):
+                continue
+            item_branch = _target_branch(metadata, item_target_repo, branch_registry)
+            if target_branch_filter is not None and item_branch != target_branch_filter:
                 continue
             if filters.get("source") and not wi_filters.source_matches_any(
                 wi_filters.normalized_source(source), filters["source"]
@@ -522,7 +546,8 @@ class Operations:
                 )
                 indexed.derived[_LIST_ENTRY_KEY] = cached_entry
             # 依存先の回答で変わる導出値は、項目自身のキーで保持する表示キャッシュへ入れない。
-            result.append({**cached_entry[1], "blocked": indexed.path in blocked_paths})
+            # 実効の系統は系統の登録で変わるため、項目自身のキーで保持する表示キャッシュへ入れない。
+            result.append({**cached_entry[1], "blocked": indexed.path in blocked_paths, **_branch_field(item_branch)})
         if waiting:
             return sorted(result, key=lambda item: (item["important"] is not True, str(item["filename"]))), warnings
         return sorted(result, key=lambda item: str(item["filename"]), reverse=True), warnings
@@ -552,7 +577,10 @@ class Operations:
             body = parsed[1] if parsed is not None else text.removeprefix("\ufeff")
             kind = wi_constants.normalized_wi_type(metadata.get("type"))
             question_type, choices = _question_metadata(metadata, kind or "unknown")
-            detail_entry = _entry(path, kind or "unknown", state, text, metadata, body)
+            detail_entry = {
+                **_entry(path, kind or "unknown", state, text, metadata, body),
+                **_branch_field(_target_branch(metadata, metadata.get("target_repo"), wi_branches.registry())),
+            }
             display_text = text
             if kind == wi_constants.WI_TYPE_UWI and uwi_mutations.ANSWER_MARKER in text:
                 # 保存・回答抽出と同じ最後の区切りだけを、表示用本文から除く。
@@ -631,6 +659,16 @@ class Operations:
             return wi_sync.synchronize(self.private_notes, only_if_stale=True, lock_timeout=_BACKGROUND_SYNC_LOCK_TIMEOUT)
         except filelock.Timeout:
             return None
+
+    def branch_registry(self) -> dict[str, JsonObject]:
+        """系統を登録したrepositoryの識別子から、系統の名前と`default_branch`への対応を返す。
+
+        新規登録フォームの系統の選択肢と一覧の限定の選択肢に用いる。系統を登録したrepositoryが無ければ空を返す。
+        """
+        return {
+            repo_id: {"branches": list(settings.branches), "default_branch": settings.default_branch}
+            for repo_id, settings in wi_branches.registry().items()
+        }
 
     def target_repos(self, status: str = "active", *, now: datetime.datetime | None = None) -> list[str]:
         """指定状態のエントリに現れる対象リポジトリを昇順で返す。
@@ -742,6 +780,7 @@ class Operations:
         scope: str | None = None,
         question_type: str | None = None,
         choices: list[str] | None = None,
+        target_branch: str | None = None,
     ) -> list[str]:
         """エントリを原子的に追加する。
 
@@ -777,6 +816,7 @@ class Operations:
             question_type=question_type,
             choices=",".join(choices) if choices else None,
             storage=self._storage,
+            target_branch=target_branch,
         )
 
     def add_batch(self, text: str) -> dict[str, object]:

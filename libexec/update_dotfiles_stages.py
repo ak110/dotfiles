@@ -49,10 +49,16 @@ class Stage:
             raise ValueError(f"続行段{self.name}は次回起動で再試行されるため、回復の再試行を持たせない")
 
 
-# 時間上限は、永続ログの`stage終了`記録（Linux、2026-10-27〜11-12の179回）の最大所要に十分な余裕を持たせた値である。
-# `chezmoi apply`の最大は147.7秒、ほかのchezmoi段は0.2秒だった。Windowsはpost-applyが長いため、applyは12倍超にした。
+# chezmoiの軽い段の時間上限は、永続ログの`stage終了`記録（Linux、2026-10-27〜11-12の179回）の最大0.2秒に
+# 十分な余裕を持たせた値である。
 _TIMEOUT_CHEZMOI_LIGHT = 300
-_TIMEOUT_CHEZMOI_APPLY = 1800
+# `chezmoi apply`はpost-applyを含む。遅いdotfilesユーザーの環境で正常に終わり、停止時に待たせすぎない値として、
+# Windows（stheno）の永続ログ（2026-09〜11月）の成功83回の最大492秒に50%の余裕を加えて10秒単位で切り上げた。
+# CIの正常所要（直近5回の成功で最大312秒）からの遅延は、ジョブの時間上限で検出する。
+# 時間切れでない失敗は1回再試行するため、この段のchezmoiの最長待ちは2試行と再試行前の待機の合計（1485秒）になる。
+# Linuxでは各試行の前後にCodex管理daemonの停止・再開の待ちが別の上限で加わる。
+# post-applyの短縮（WI 20261118-173146-001）の後、OS別の実測から見直す。
+_TIMEOUT_CHEZMOI_APPLY = 740
 _TIMEOUT_PREPARE = 900
 _RETRY_WAIT = 5.0
 

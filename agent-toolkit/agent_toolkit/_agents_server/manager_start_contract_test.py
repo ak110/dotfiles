@@ -14,6 +14,7 @@ from agent_toolkit._agents_server import (
     agents_wait,
     backends,
     codex,
+    launch_requests,
     manager,
     mcp_tools,
     record_paths,
@@ -606,7 +607,7 @@ async def test_task_start_delivers_launcher_record_without_manual_input(
             path.write_text("{}\n", encoding="utf-8")
         found = record_paths.SessionRecord(engine, paths) if paths else None
         monkeypatch.setattr(record_paths, "find_session_record", lambda _session_id, **_kwargs: found)
-        role = pathlib.Path(__file__).parents[2] / "share" / "add-wi.subagent.md"
+        role = launch_requests.resolve_task_document_path("add-wi")
         await mcp_tools.start(
             cwd=str(tmp_path),
             subagent_md_path=str(role),

@@ -247,15 +247,18 @@ class TestUpdateClaudeSettings:
 class TestHomePlaceholder:
     """`__HOME__`プレースホルダーがホームディレクトリ絶対パスへ置換されることを検証する。"""
 
+    @pytest.mark.windows
     def test_placeholder_replaced_in_string(self, tmp_path: Path):
         managed = {"statusLine": {"command": "__HOME__/.local/bin/claude-statusline statusline"}}
         result = _run(tmp_path, managed)
-        assert result["statusLine"]["command"] == f"{Path.home()}/.local/bin/claude-statusline statusline"
+        # Git Bashへ渡すcommandは、Windowsでもフォワードスラッシュ表記のホームを使う。
+        assert result["statusLine"]["command"] == f"{Path.home().as_posix()}/.local/bin/claude-statusline statusline"
 
+    @pytest.mark.windows
     def test_placeholder_replaced_recursively_in_nested_structures(self, tmp_path: Path):
         managed = {"hooks": {"Stop": [{"hooks": [{"command": "__HOME__/x"}]}]}}
         result = _run(tmp_path, managed)
-        assert result["hooks"]["Stop"][0]["hooks"][0]["command"] == f"{Path.home()}/x"
+        assert result["hooks"]["Stop"][0]["hooks"][0]["command"] == f"{Path.home().as_posix()}/x"
 
     def test_string_without_placeholder_kept_as_is(self, tmp_path: Path):
         managed = {"language": "japanese"}

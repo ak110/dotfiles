@@ -1,7 +1,7 @@
 """未配送の完了通知をホストへ配送し、他のStop遮断が残る場合だけ受領を案内する。
 
 バックグラウンドタスクがターンの終了より前に完了すると、その完了通知は`queue-operation`の`enqueue`として
-最上位transcriptのキューへ入る。Stopフックや`/goal`の目標評価がターンを継続させても、
+最上位transcriptのキューへ入る。Stopフックがターンを継続させても、
 継続した応答がツールを呼ばない限り通知は配送されない。配送はツール呼び出し時の取り込み
 （`remove`の`absorbed_mid_turn`）か、ターン終了後の`dequeue`で起きる。
 実行主体が完了通知の到着を待ってツールを呼ばずにターンを終えると、継続のたびに同じ状態が続く。
@@ -14,7 +14,7 @@ Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を�
 ユーザーが入力欄へ取り戻した入力（`popAll`・`popOne`）は同じ本文の要素1件として除く。
 `dequeue`で取り出された要素は、その後に配送された`user`エントリの本文と比べて決め、
 該当する要素が無い場合だけ先頭とする。ホストは先頭以外の要素を先に取り出すことがあるためである。
-発火条件はキューの状態だけとし、`/goal`の有無、待機コマンドの種類および実行主体を条件に含めない。
+発火条件はキューの状態だけとし、待機コマンドの種類と実行主体を条件に含めない。
 
 配送へ戻す場合は案内済みの通知も含め、警告の回数と案内済み状態を更新しない。
 遮断が残る場合の警告は同じ通知へ1回だけ返し、状態へ識別子を保持する。
@@ -135,7 +135,7 @@ def evaluate(payload_text: str, *, allow_delivery: bool = False) -> tuple[str, s
     for content in _background_tasks.queued_task_notification_contents(entries):
         for notification in _notification_elements(content):
             if _first(_TASK_ID_RE, notification) in restarted_waits:
-                # 停止したwaitの通知でgoalをpauseせず、再開promptによる結果の再回収へ進める。
+                # 停止したwaitの通知は配送せず、再開promptによる結果の再回収へ進める。
                 continue
             key = _notification_key(notification)
             if key not in pending and (allow_delivery or key not in notified):

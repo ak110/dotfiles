@@ -1,7 +1,9 @@
 import type { EngineInterface, On } from "claude-code";
-import { exitStatePath } from "./session_exit.ts";
-import { awiStatusWarnings } from "./send_to_user.tsx";
+import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
+import { reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
+import { startNextTurn } from "./automated_message.ts";
+import { mountForStart } from "./periodic_recheck.ts";
 
 type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; targets?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
 import type { BackgroundWait, RuntimeChange } from "./state.d.ts";
@@ -76,7 +78,7 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           const placed = await $.ui.place({ id: request.id });
           ok = placed.isPlaced;
           reason = placed.isPlaced ? "" : placed.reason;
-          if (ok) reason = ["ユーザーの画面へ表示した。送達済み本文は再掲するな。", ...awiStatusWarnings(request.input.message)].join("\n");
+          if (ok) reason = ["ユーザーの画面へ表示した。送達済み本文は再掲するな。", ...reportWarnings(request.input.message)].join("\n");
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
           else if (typeof request.input.tool_use_id === "string") {
             const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};
@@ -122,7 +124,12 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           }
           ok = true;
         } else if (request.operation === "periodic_recheck") {
-          await $.state.set({ plugin: "agent-toolkit", key: "recheckRequested" }, true);
+          reason = await mountForStart($);
+          ok = true;
+        } else if (request.operation === "periodic_recheck_collect") {
+          // Stopが全待機の終了を判定した時点で回収し、ターンの終了直後のidleで実行中に発火時刻を迎えた発火分が届くのを防ぐ。
+          // 削除できなかった場合は`turn.complete`の回収が再評価して警告を届けるため、ここでは理由を応答へ返すだけにする。
+          reason = (await collectCommonTasks($)) ?? "";
           ok = true;
         } else if (request.operation === "background_complete" && typeof request.input.id === "string") {
           const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
@@ -149,6 +156,9 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           const response = responseBase.replace(/\.txt$/, `-${request.id}.txt`);
           await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
           if (request.detached) cleanupNeeded = true;
+        } else if (request.operation === "periodic_recheck" && reason) {
+          // hookが応答の待機を諦めた後の装着失敗は、失わないよう次のターンの入力として届ける。
+          await startNextTurn($, reason);
         }
         }
         if (cleanupNeeded && !cleanupFailed) {

@@ -246,6 +246,7 @@ async def _rpc(
         "events": resources.events,
         "acknowledge": resources.acknowledge,
         "release": resources.release,
+        "discard": resources.discard,
     }
     try:
         operation = payload.get("operation")
@@ -275,6 +276,11 @@ async def _rpc(
             result = None
         elif operation == "accept" and isinstance(arguments, dict):
             result = await coordinator.accept(arguments)
+        elif operation == "parent_sessions" and isinstance(arguments, dict):
+            result = await coordinator.parent_sessions(arguments["parent"], bool(arguments["include_terminated"]))
+        elif operation == "ping":
+            # 中継側の生存確認。管理の処理を伴わず、イベントループが応答できるかだけを返す。
+            result = {"generation": coordinator.generation}
         elif operation == "owns" and isinstance(arguments, dict):
             result = coordinator.owns(arguments["parent"], arguments["session_id"])
         elif operation in {"public_call", "owned_call"} and isinstance(arguments, dict):

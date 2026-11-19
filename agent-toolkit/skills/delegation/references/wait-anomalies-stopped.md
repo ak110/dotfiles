@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` |
+| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `agent-toolkit:atk-mode/playbooks/permission-denial.md` |
 
 ## ホストによる背景待機の停止後
 
@@ -28,5 +28,5 @@
    CIの監視でも同様の判断基準を適用し、既存のコミットSHAやベースライン、あるいは待機専用の記録を用いて`wait_ci.py`による観測を継続する。
    この観測操作によってCIジョブや委譲先の実処理自体が再起動されることはない。
    ホスト注記による行動指示は既存の優先順位に沿って解釈し、実際の権限拒否や技術的な不成立とは区別して扱う。
-   権限が拒否された場合は`../../user-confirmation-and-report/references/permission-denial.md`「共通判断」から拒否主体別の詳細を選び、実処理自体の再起動が必要な場合は既存の認可範囲や副作用の有無に基づいて判断する。
+   権限が拒否された場合は`agent-toolkit:atk-mode/playbooks/permission-denial.md`「共通判断」から拒否主体別の詳細を選び、実処理自体の再起動が必要な場合は既存の認可範囲や副作用の有無に基づいて判断する。
    Codexのcell IDやコマンドsession IDについては、公式に提供されている同一実行の継続機能を使って回収する。

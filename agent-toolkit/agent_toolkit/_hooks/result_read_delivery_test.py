@@ -30,7 +30,7 @@ def test_registered_operations_do_not_fail_during_unrelated_delivery_observation
 @pytest.mark.parametrize(
     "role,relative_material",
     [
-        ("add-wi", "skills/wi-standards/references/draft-semantic-review.md"),
+        ("add-wi", "skills/atk-mode/references/draft-semantic-review.md"),
         ("exec-review", "share/exec-review-parent-acceptance.md"),
     ],
 )
@@ -135,7 +135,7 @@ def test_conditional_confirmation_guidance_does_not_expand_question_denial(tmp_p
 def test_wait_preserves_drafted_result_when_read_guidance_is_unavailable(wait_environment, capsys, monkeypatch, failure):
     """資料の同定失敗や壊れた取得記録が、回収済みの原稿本文を失わせない。"""
     root = pathlib.Path(__file__).resolve().parents[2]
-    document = root / "share/add-wi.subagent.md"
+    document = root / "skills/atk-mode/roles/add-wi.subagent.md"
     session_registry.publish(
         "error-child",
         state=session_registry.PublicationState.RESULT_COMPLETED,

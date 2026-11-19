@@ -238,6 +238,28 @@ async def test_resume_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+async def test_resume_reports_removed_cwd_instead_of_missing_executable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """作業ディレクトリが削除された終了済みsessionへの追送は、PATHの確認ではなく作業ディレクトリの不在を返す。"""
+    worktree = tmp_path / "removed-worktree"
+    worktree.mkdir()
+    async with _manager_with_fake("codex") as (manager, backend):
+        session = state.SessionState("saved-session", str(worktree), engine="codex", turn_seq=1)
+        _complete(session, message="前のturn")
+        session.retention_deadline = asyncio.get_running_loop().time() - 1
+        manager.sessions[session.session_id] = session
+        worktree.rmdir()
+        _use_real_plugin_preflight(monkeypatch)
+
+        with pytest.raises(ValueError) as raised:
+            await manager.send_message("saved-session", "続行")
+
+        assert str(raised.value) == f"委譲先の作業ディレクトリが存在しないため委譲先を起動しない: cwd={worktree}"
+        assert not backend.resume_calls
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status", "expected_unobserved"),
     [("completed", None), ("running", ["child-session"])],

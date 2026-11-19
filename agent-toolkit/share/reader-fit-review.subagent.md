@@ -37,7 +37,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body-content.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/atk-mode/references/awi-body.md` |
 
 ## 入力
 
@@ -110,9 +110,9 @@ continuations:
 
 - 既知と未知の整理: 読者がすでに知っている情報の重複記載を省き、未習熟の用語、内部的な呼称、作業環境固有の識別子には簡潔な説明を添えて用いる。
   既存の対象を指す名詞句は、定義元の実体が存在すること、および読者が対象文書からその実体へ到達できることを確かめる。
-  別文書の節名・用語・事例の略記の示し方は、`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に従う。
+  別文書の節名・用語・事例の略記の示し方は、`agent-basics:writing-standards/references/writing.md`「文章の共通規定」に従う。
 - 情報の充足と到達性: 判断、操作、検証に必要な情報（目的、対象、条件、後続の手順、参照先）をすべて網羅し、根拠や出所として参照する対象は読者がアクセス可能なものに限定する（個人の作業メモ、進行中の計画ファイル、会話ログなどは読者が到達できるか確認する）。
-- 情報の必要性: `agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」の情報を追加する前の判定基準に従い、書き手のみが共有している文脈を読者の前提から除外する。
+- 情報の必要性: `agent-basics:writing-standards/references/writing.md`「文章の共通規定」の情報を追加する前の判定基準に従い、書き手のみが共有している文脈を読者の前提から除外する。
 - 指示先の一意性: 行為者と対象が一意に識別可能であり、指示語や相対的な表現が指す対象が本文のみから明確に定まることを確かめる。
 
 文書の種別がエージェント向け文書または委譲関連文書なら、役割への適合性についても判定する。
@@ -128,13 +128,13 @@ continuations:
 - 質問者が知らない内部的な呼称を、説明なしに使用していないこと。
 
 文書の種別がWIのユーザー向け記述（AWIのタイトルおよびH1直下、UWIの冒頭）なら、以下の項目も読者への適合性として判定する。
-想定読者であるユーザーは、`agent-toolkit:wi-standards`冒頭の用語基準が前提とする知識を備えているものとする。
+想定読者であるユーザーは、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」が前提とする知識を備えているものとする。
 
-- wi-standards冒頭の基準に基づく合否を対象部分のみから判定し、説明不足な表現や多義的な用語を漏れなく指摘する。
+- `agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」に基づく合否を対象部分のみから判定し、説明不足な表現や多義的な用語を漏れなく指摘する。
   各文書の内容の定義元は次のとおりとする。
-  - AWI: `../skills/wi-standards/references/awi-body-content.md`「節の構成と分担」のH1直下の項目。
+  - AWI: `../skills/atk-mode/references/awi-body.md`「節の構成と分担」のH1直下の項目。
     目的、変更の要点、変更後の結果を判定する。
-  - UWI: 同スキルの`references/uwi-format.md`「構成」。
+  - UWI: `../skills/atk-mode/references/uwi-format.md`「構成」。
 
 1. 「観点」で判定し、「出力」の形式で返す。
    集合の記述を個別の読了・判定へ代用しない。

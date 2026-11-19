@@ -329,7 +329,7 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
         "セッション開始・終了時に自動起動できる。"
         "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する。\n\n"
         "## 詳細\n\n"
-        f"失敗理由: {reason}\n"
+        f"失敗理由: {redact_secrets(reason)}\n"
         f"実行記録: {path}\n"
         f"{log}"
         f"次の操作: {action}"

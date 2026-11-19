@@ -4,17 +4,35 @@
 # pylint: disable=protected-access
 
 import asyncio
+import contextlib
+import dataclasses
+import json
+import os
 import pathlib
 import types
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from mcp.types import CallToolRequestParams
 
-from agent_toolkit._agents_server import service_io, service_rpc, state, turn_state
+from agent_toolkit._agents_server import (
+    service_context,
+    service_coordinator,
+    service_io,
+    service_rpc,
+    service_state,
+    service_transport,
+    shared_roots,
+    state,
+    turn_state,
+)
 from agent_toolkit._agents_server.service_context import Conversation, ServiceManagers
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
+from agent_toolkit._agents_server.service_projection import ProjectionHub
+from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._agents_server.service_resources import ResourceBroker
+from agent_toolkit._common import runtime_environment
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.runtime_environment import CallerContext
 
@@ -135,3 +153,377 @@ async def test_abort_waits_for_inflight_commit_and_reports_the_committed_owner(
         assert not abort.done()
         coordinator._received[identifier] = "transfer", {"generation": "origin"}
     assert await abort == {"owned": True}
+
+
+def _transfers(monkeypatch: pytest.MonkeyPatch, published: list[int] | None = None) -> list[tuple[str, list[int]]]:
+    """移譲先は予約と受入に成功する。各要求の時点で完了していた登録公開も記録する。"""
+    sent: list[tuple[str, list[int]]] = []
+
+    async def request(_target: dict, operation: str, _arguments: dict, **_kwargs: Any) -> dict:
+        sent.append((operation, list(published or [])))
+        return {"prepared": True} if operation == "prepare_move" else {"owned": True}
+
+    monkeypatch.setattr(service_rpc, "request", request)
+    return sent
+
+
+@pytest.mark.asyncio
+async def test_move_waits_registration_started_while_saving_control_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """移譲前の状態保存の応答を待つ間に始まった登録公開を、写す前に完了させる。
+
+    2026-11-17、この公開の完了前に写して「session登録の保存完了前には移譲できません」となり、継続指示の実行が失敗した。
+    """
+    coordinator, session, _backend = _coordinator(tmp_path, monkeypatch, current=False)
+    published: list[int] = []
+
+    async def publish() -> None:
+        await asyncio.sleep(0)
+        published.append(session.turn_seq)
+
+    async def save_control_state() -> None:
+        # 保存の応答を待つ間に届いた通知が、同じsessionで新しい登録公開を始める。
+        if not published:
+            session._registration_task = asyncio.create_task(publish())
+
+    coordinator.managers.conversations["parent"].manager.save_control_state = save_control_state
+    sent = _transfers(monkeypatch, published)
+    assert await coordinator.move(session.session_id) == {"moved": True}
+    assert sent == [("prepare_move", [0]), ("accept", [0])]
+
+
+@pytest.mark.parametrize("failure", ["control_save", "registration"])
+@pytest.mark.asyncio
+async def test_failed_save_before_transfer_returns_detached_resources_to_source(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """移譲前の状態保存か登録公開が失敗したら所有を移さず、切り離した実行資源と制御の受付を旧側へ戻して次の移譲を可能にする。"""
+    coordinator, session, backend = _coordinator(tmp_path, monkeypatch, current=False)
+    runtime = coordinator._runtime
+    assert runtime is not None
+    descriptor = {
+        "identifier": runtime.broker.register({"close": AsyncMock()}),
+        "origin": {"generation": runtime.generation, "process": runtime.target["process"]},
+    }
+    backend._clients[session.session_id].detach.return_value = descriptor
+    manager = coordinator.managers.conversations["parent"].manager
+
+    async def fail_registration() -> None:
+        await asyncio.sleep(0)
+        raise RuntimeError("保存先へ書けない")
+
+    async def start_failing_registration() -> None:
+        session._registration_task = asyncio.create_task(fail_registration())
+
+    manager.save_control_state.side_effect = (
+        OSError("保存先へ書けない") if failure == "control_save" else start_failing_registration
+    )
+    sent = _transfers(monkeypatch)
+    with pytest.raises((OSError, RuntimeError), match="保存先へ書けない"):
+        await coordinator.move(session.session_id)
+    assert not sent
+    backend.adopt_session.assert_awaited_once_with(session, descriptor, {})
+    assert manager.sessions == {session.session_id: session}
+    async with coordinator.gate.admit(new_turn=False, session_id=session.session_id):
+        pass
+    manager.save_control_state.side_effect = None
+    assert await coordinator.move(session.session_id) == {"moved": True}
+    assert [operation for operation, _published in sent] == ["prepare_move", "accept"]
+
+
+def _stoppable_client(coordinator: ServiceCoordinator, session: state.SessionState, backend: Any) -> dict:
+    """終了境界で止めると切り離し済みとして観測できるclientにし、切り離したときの実行資源の記述を返す。"""
+    runtime = coordinator._runtime
+    assert runtime is not None
+    descriptor = {
+        "identifier": runtime.broker.register({"close": AsyncMock()}),
+        "origin": {"generation": runtime.generation, "process": runtime.target["process"]},
+    }
+    client = backend._clients[session.session_id]
+    client.detach.return_value = descriptor
+    client.transferred = False
+    client.pause.side_effect = lambda: setattr(client, "transferred", True)
+    backend._wait_compaction_turns = {}
+    return descriptor
+
+
+@pytest.mark.asyncio
+async def test_client_stopped_at_boundary_resumes_when_acceptance_returns_before_move(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """終了境界で止めたclientは、移譲を待つ間に受付先が自世代へ戻れば取り込み直し、次の応答を受け取れる状態へ戻す。
+
+    公開を確定した新世代が終了すると、生存する旧世代へ受付が戻る。止めたままでは、その会話のdecodeが再開しない。
+    """
+    coordinator, session, backend = _coordinator(tmp_path, monkeypatch, current=False)
+    descriptor = _stoppable_client(coordinator, session, backend)
+    client = backend._clients[session.session_id]
+    current = [{"generation": "G3", "epoch": 3, "process": "3:new"}]
+    monkeypatch.setattr(coordinator.registry, "current", lambda: current[0])
+    # 同じsessionの別のtool呼出しがsessionの直列化を保持している間に、turnが終わる。
+    async with coordinator._locks.setdefault(session.session_id, asyncio.Lock()):
+        coordinator.boundary(session, client)
+        assert client.transferred
+        # 受付先の新世代が終了し、受付が旧世代へ戻る。
+        current[0] = coordinator.target
+    async with asyncio.timeout(5):
+        assert await coordinator.move(session.session_id) == {"moved": False}
+    backend.adopt_session.assert_awaited_once_with(session, descriptor, {})
+
+
+@pytest.mark.parametrize("failing_stage", [None, "projections.thaw", "registrations.thaw", "gate.thaw", "registry.restore"])
+@pytest.mark.asyncio
+async def test_client_stopped_during_update_resumes_after_publisher_keeps_acceptance(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing_stage: str | None,
+) -> None:
+    """準備中に終了境界で止めたclientは、公開元が受付を公開せずに確定か終了をしたら、静止の解除の段が失敗しても取り込み直す。
+
+    準備中に届いた移譲の要求は受付先が変わっていないため何もせずに終わる。その後の準備の終了でも取り込み直しを予約し直す。
+    """
+    coordinator, session, backend = _coordinator(tmp_path, monkeypatch)
+    coordinator.projections = types.SimpleNamespace(freeze=AsyncMock(), thaw=AsyncMock(), inventory=dict)
+    coordinator.registrations = types.SimpleNamespace(freeze=AsyncMock(), thaw=Mock())
+    descriptor = _stoppable_client(coordinator, session, backend)
+    client = backend._clients[session.session_id]
+    if failing_stage == "projections.thaw":
+        coordinator.projections.thaw.side_effect = OSError(failing_stage)
+    elif failing_stage == "registrations.thaw":
+        coordinator.registrations.thaw.side_effect = OSError(failing_stage)
+    elif failing_stage == "gate.thaw":
+        monkeypatch.setattr(coordinator.gate, "thaw", AsyncMock(side_effect=OSError(failing_stage)))
+    process = "2147483647:dead" if failing_stage == "registry.restore" else service_transport.process_identity(os.getpid())
+    if failing_stage == "registry.restore":
+        monkeypatch.setattr(coordinator.registry, "restore", Mock(side_effect=OSError(failing_stage)))
+    publisher = {"generation": "G4", "epoch": 4, "process": process}
+    await coordinator.prepare("token", publisher)
+    assert client.transferred
+    assert await coordinator.move(session.session_id) == {"moved": False}
+    backend.adopt_session.assert_not_awaited()
+    async with asyncio.timeout(5):
+        if failing_stage != "registry.restore":
+            await coordinator.commit_update("token", coordinator.target)
+        while not backend.adopt_session.await_count:
+            await asyncio.sleep(0.01)
+    backend.adopt_session.assert_awaited_once_with(session, descriptor, {})
+
+
+@pytest.mark.asyncio
+async def test_failed_move_on_owner_reports_undelivered_input_and_next_action(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """所有世代での移譲が失敗した追送は、汎用の内部エラーではなく未配送と次の操作をツールの結果で返す。"""
+    coordinator, session, _backend = _coordinator(tmp_path, monkeypatch)
+    manager = coordinator.managers.conversations["parent"].manager
+    manager.sessions.clear()
+
+    @contextlib.asynccontextmanager
+    async def scope(_params: CallToolRequestParams, **_kwargs: Any):
+        yield manager
+
+    monkeypatch.setattr(coordinator.managers, "scope", scope)
+    monkeypatch.setattr(coordinator, "_owner", AsyncMock(return_value={"generation": "G1", "epoch": 1, "process": "1:old"}))
+    monkeypatch.setattr(coordinator, "_owns", AsyncMock(return_value=True))
+
+    async def request(_target: dict, operation: str, _arguments: dict, **_kwargs: Any) -> dict:
+        if operation == "owned_call":
+            return {"move_required": True}
+        raise RuntimeError("OSError: 状態の保存先へ書けない")
+
+    monkeypatch.setattr(service_rpc, "request", request)
+    params = CallToolRequestParams(name="send_message", arguments={"session_id": session.session_id, "prompt": "続ける"})
+    with runtime_environment.bind(CallerContext({}, tmp_path)):
+        result = await coordinator.call_tool(None, params)
+    assert result.is_error
+    text = result.content[0].text
+    assert "未配送" in text and "状態の保存先へ書けない" in text and "次の操作" in text
+
+
+@pytest.mark.asyncio
+async def test_registry_derived_stopped_sessions_move_with_their_context(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """登録簿から復元した停止済み・期限切れのsessionも、通常の停止済みsessionと同様に型と結果・ターンを保って新世代の会話へ移る。
+
+    2026-11-18、旧世代の共有監視がこの状態を符号化できず毎巡失敗し、会話を新世代へ移せなかった。
+    """
+    stopped = state.RegistryResumeState(
+        "child",
+        str(tmp_path),
+        None,
+        None,
+        "claude",
+        turn_seq=2,
+        status="completed",
+        agent_message="未回収の結果",
+        finalized_at="2026-11-18T00:00:00+00:00",
+        result_root_session_id="root",
+        result_owner_status_file="owner.json",
+    )
+    expired = state.RegistryResumeState(
+        "gone", str(tmp_path / "removed"), None, None, "codex", turn_seq=1, status="interrupted"
+    )
+    local = state.SessionResumeState("local", str(tmp_path), None, None, "codex", turn_seq=4, status="completed")
+    old, _session, _backend = _coordinator(tmp_path, monkeypatch, current=False)
+    old.projections._codec = service_state._StateCodec()
+    old.managers.conversations.clear()
+    old.managers.conversations["context"] = Conversation(
+        Mock(sessions={}, expired_sessions={"gone": expired}, stopped_sessions={"child": stopped, "local": local}),
+        CallerContext({}, tmp_path),
+    )
+    packets: list[dict] = []
+
+    async def request(_target: dict, operation: str, arguments: dict, **_kwargs: Any) -> None:
+        assert operation == "move_context"
+        packets.append(json.loads(json.dumps(arguments)))
+
+    monkeypatch.setattr(service_rpc, "request", request)
+    assert not await old.tick()
+    assert "context" not in old.managers.conversations
+    new, _session, _backend = _coordinator(tmp_path, monkeypatch)
+    new.projections._codec = service_state._StateCodec()
+    received = Mock(expired_sessions={}, stopped_sessions={}, save_control_state=AsyncMock())
+
+    @contextlib.asynccontextmanager
+    async def scope(_params: CallToolRequestParams, **_kwargs: Any):
+        yield received
+
+    monkeypatch.setattr(new.managers, "scope", scope)
+    assert len(packets) == 1
+    await new.accept_context(packets[0])
+    assert received.stopped_sessions == {"child": stopped, "local": local}
+    assert received.expired_sessions == {"gone": expired}
+    # 基底の再開状態へ縮退すると、結果の原本の所在と照会時の鮮度確認が失われる。
+    copied = {**received.stopped_sessions, **received.expired_sessions}
+    assert {identifier: type(value) for identifier, value in copied.items()} == {
+        "child": state.RegistryResumeState,
+        "gone": state.RegistryResumeState,
+        "local": state.SessionResumeState,
+    }
+    received.save_control_state.assert_awaited_once()
+
+
+def _seed(source: str) -> dict:
+    """状態保存の代わりに、射影の保存の受付だけを通す操作。"""
+    return {
+        "identity": dataclasses.asdict(shared_roots.StatusFileIdentity("root", "root.json", None)),
+        "source": source,
+        "operation": "seed",
+        "arguments": {"groups": {}, "published": []},
+    }
+
+
+def _generation_one(
+    directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch, managers: ServiceManagers
+) -> tuple[ServiceCoordinator, dict, list[bool]]:
+    """受付先のままの旧世代G1と、準備を求める新世代の生存の切替を作る。"""
+    target = {"generation": "G1", "epoch": 1, "process": "1:owner"}
+    coordinator = ServiceCoordinator(
+        target, directory, managers, ProjectionHub("G1", directory), RegistryForwarder("G1", directory)
+    )
+    for registry in (coordinator.registry, coordinator.projections.registry, coordinator.registrations.registry):
+        monkeypatch.setattr(registry, "current", lambda: target)
+    exited = [False]
+    monkeypatch.setattr(service_transport, "process_alive", lambda process: not exited[0] or process == target["process"])
+    return coordinator, target, exited
+
+
+@pytest.mark.parametrize("exit_at", ["after_prepare", "during_prepare", None])
+@pytest.mark.asyncio
+async def test_prepare_left_by_exited_generation_is_released(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    exit_at: str | None,
+) -> None:
+    """準備させた新世代が受付を公開せず終了したら、旧世代は静止を解き、状態保存と新しいturnの受付を続ける。
+
+    この場合は受付公開の確定が届かず、静止したままだと状態保存・新しいturn・自動再開が止まり続ける。
+    新世代が生存している間は、準備中の引継ぎを失わないよう、生存の確認を繰り返しても静止を保つ。
+    """
+    monkeypatch.setattr(service_coordinator, "_PUBLISHER_PROBE_SECONDS", 0.01)
+    coordinator, _target, exited = _generation_one(tmp_path / "services" / "generations", monkeypatch, ServiceManagers())
+    freeze_projections = coordinator.projections.freeze
+
+    async def exit_while_preparing(token: str) -> None:
+        # 準備の途中で新世代が終了し、その終了の観測が残りの静止より先に進む。
+        exited[0] = True
+        await asyncio.sleep(0.1)
+        await freeze_projections(token)
+
+    if exit_at == "during_prepare":
+        monkeypatch.setattr(coordinator.projections, "freeze", exit_while_preparing)
+    await coordinator.prepare("token", {"generation": "G2", "epoch": 2, "process": "2:new"})
+    exited[0] = exit_at is not None
+    if exit_at is None:
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.2):
+                await coordinator.projections.apply(_seed("G1"))
+        assert not await coordinator.tick()
+        return
+    async with asyncio.timeout(2):
+        await coordinator.projections.apply(_seed("G1"))
+        async with coordinator.gate.admit(new_turn=True):
+            pass
+    assert await coordinator.tick()
+
+
+@pytest.mark.parametrize("waiting_save", ["release_request", "heartbeat"])
+@pytest.mark.asyncio
+async def test_update_left_by_exited_generation_is_released_while_monitor_waits_on_save(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    waiting_save: str,
+) -> None:
+    """共有監視の1巡が静止中の状態保存で止まっていても、準備させた新世代の終了を受けて静止を解き、その保存を完了させる。
+
+    解放要求の処理やheartbeatの保存は、静止中は解除を待つ。解除を同じ1巡の処理に置くと、そこへ到達しない。
+    """
+    session = state.SessionState("session", str(tmp_path), engine="codex", turn_end=turn_state.TurnEnd.COMPLETED)
+    saved: list[str] = []
+    managers = ServiceManagers(state_root=tmp_path)
+    coordinator, _target, exited = _generation_one(tmp_path / "services" / "generations", monkeypatch, managers)
+
+    async def save(reason: str) -> None:
+        await coordinator.projections.apply(_seed("G1"))
+        saved.append(reason)
+
+    async def stop(identifier: str, *, retain_result: bool) -> dict:
+        del retain_result
+        await save("release_request")
+        return {"session_id": identifier}
+
+    manager: Any = Mock(
+        sessions={session.session_id: session},
+        expired_sessions={},
+        _backends={},
+        _service_paused=set(),
+        save_control_state=lambda: save("heartbeat"),
+        stop=stop,
+        _process_auto_resume=AsyncMock(return_value=False),
+    )
+    managers.conversations["parent"] = Conversation(manager, CallerContext({}, tmp_path))
+    requested = {session.session_id} if waiting_save == "release_request" else set()
+
+    async def process_release_requests(sessions: dict, stop_session: Any, *, state_root: pathlib.Path) -> None:
+        del state_root
+        for identifier in tuple(requested & set(sessions)):
+            requested.discard(identifier)
+            await stop_session(identifier)
+
+    monkeypatch.setattr(service_context.session_release, "process_requests", process_release_requests)
+    await coordinator.prepare("token", {"generation": "G2", "epoch": 2, "process": "2:new"})
+    async with managers:
+        await asyncio.sleep(0.3)
+        assert not saved
+        exited[0] = True
+        async with asyncio.timeout(5):
+            while waiting_save not in saved:
+                await asyncio.sleep(0.01)

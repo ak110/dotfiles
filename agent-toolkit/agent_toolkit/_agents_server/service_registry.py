@@ -78,13 +78,18 @@ class RegistryForwarder:
         while True:
             with self._condition:
                 target = self.registry.current()
-                if target is not None and target["generation"] != self.generation:
-                    break
-                if self._freezes:
-                    self._condition.wait()
-                    continue
-                return self._save(payload)
-        return service_rpc.request_sync(target, "registry_mutation", payload)
+                if target is None or target["generation"] == self.generation:
+                    if self._freezes:
+                        self._condition.wait()
+                        continue
+                    return self._save(payload)
+            try:
+                return service_rpc.request_sync(target, "registry_mutation", payload)
+            except FileNotFoundError, ConnectionRefusedError:
+                # 受付先の世代は終了している。接続前の失敗なので配送は起きておらず、戻した受付先で保存し直せる。
+                restored = self.registry.restore()
+                if restored is None or restored["process"] == target["process"]:
+                    raise
 
     def _save(self, payload: dict[str, Any]) -> Any:
         operation = payload.get("operation")

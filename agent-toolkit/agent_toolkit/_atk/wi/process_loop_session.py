@@ -35,6 +35,7 @@ from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import process_loop_session as _coordinator_identity
 from agent_toolkit._common import session_record_paths as _record_paths
 from agent_toolkit._common import session_registry as _registry
 
@@ -67,10 +68,15 @@ def repository_input(
     previous_manifest = (ownership.previous or {}).get("manifest")
     if reuse_candidates and isinstance(previous_manifest, str):
         data = json.loads(pathlib.Path(previous_manifest).read_text(encoding="utf-8"))
-        previous_input = next((item for item in data["repositories"] if item["target_repo"] == snapshot.repository.repo_id), {})
+        previous_input = next(
+            (item for item in data["repositories"] if item.get("target", item["target_repo"]) == snapshot.repository.key), {}
+        )
+    branch = snapshot.repository.branch
     return {
         **previous_input,
+        "target": snapshot.repository.key,
         "target_repo": snapshot.repository.repo_id,
+        **({} if branch is None else {"target_branch": branch, "default_branch": snapshot.repository.default_branch}),
         "registered_worktree": str(snapshot.repository.worktree),
         "worktree": str(worktree),
         "common_dir": str(snapshot.repository.common_dir),
@@ -106,10 +112,10 @@ def resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
 
 
 def build_resume_prompt() -> str:
-    """元のgoalと保存済み成果を保ち、同じ実行の残工程だけを続行させる。"""
+    """元の目的と保存済み成果を保ち、同じ実行の残工程だけを続行させる。"""
     return _automated_prompt.wrap(
-        "保存済みの要求・認可・元のgoalと成果を確認し、最初の未完了工程から続行せよ。"
-        "未達goalを達成扱いに変えず、成功済みの操作を繰り返すな。",
+        "保存済みの要求・認可・元の目的と成果を確認し、最初の未完了工程から続行せよ。"
+        "未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind="resume",
     )
@@ -203,6 +209,8 @@ def _build_session_argv(
 ) -> tuple[list[str], pathlib.Path | None]:
     """選択したオーケストレーターの対話セッション用argvを構築する。"""
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
+    # 会話IDを渡せない新規起動とpicker再開では、統括の最初のSessionStartが会話IDを確保する。
+    env[_coordinator_identity.CLAIM_ENV] = uuid.uuid4().hex
     if orchestrator == "claude":
         info = _registry.resolve(args.resume).resume_info if resume_pending and args.resume else None
         if claude_connection is not None:

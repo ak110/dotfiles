@@ -8,7 +8,7 @@
 
 ホスト本体バイナリの検索は、ホスト機能に関する公式ドキュメントや提供元のIssueトラッカーにおける既知の報告の確認を補足するための手段である。
 調査の結論や回避策を採用するかどうかは、ドキュメントやIssueの内容と合わせて総合的に判断する。
-判断基準は`agent-basics:writing-standards`の`references/investigation.md`および`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に準拠する。
+判断基準は`agent-basics:writing-standards`の`references/investigation.md`および`agent-basics:bugfix/references/causes.md`「場面ごとの確かめ方」に準拠する。
 
 - バイナリの実体パスは、`B=$(readlink -f "$(command -v claude)")`や`C=$(readlink -f "$(command -v codex)")`を実行して解決する。
   特定のClaude Codeバージョンを対象にする場合は`~/.local/share/claude/versions/<バージョン>`を指定する。

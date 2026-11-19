@@ -2,7 +2,7 @@
 
 ## Codexの文脈長設定
 
-この設定を変える判断は`agent-toolkit:wi-standards/references/drafting-completion-policies.md`「方針と判断の記録との比較」の手順で本節と比較する。
+この設定を変える判断は`agent-toolkit:atk-mode/references/drafting-decisions.md`「方針と判断の記録との比較」の手順で本節と比較する。
 実行時の設定は`.chezmoi-source/dot_codex/modify_private_config.toml`が`model_context_window=1000000`と`model_auto_compact_token_limit=900000`を固定する。
 目的は、頻繁な自動圧縮による待ち時間と作業の進行阻害を避けることである。
 2026年10月9日のユーザーの明示的な復元要求で導入し、10月23日に削除した。

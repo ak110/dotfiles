@@ -23,8 +23,11 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.launch_requests import wrap_delivery_body
-from agent_toolkit._agents_server.responses import KILL_NOT_DELIVERED_NEXT_ACTION
-from agent_toolkit._agents_server.session_errors import ActionableTimeoutError, SessionOwnerGoneError
+from agent_toolkit._agents_server.session_errors import (
+    KILL_NOT_DELIVERED_NEXT_ACTION,
+    ActionableTimeoutError,
+    SessionOwnerGoneError,
+)
 from agent_toolkit._agents_server.state import (
     SessionResumeState,
     SessionState,
@@ -280,6 +283,12 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
     ) -> dict[str, Any]:
         """実行中turnへ中断を要求し、指定時間まで終了を待つ。"""
         await self._drain_diagnostics()
+        # 不正な入力のkillは、自動復旧の取消などの副作用を起こす前に拒否する。
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
+            raise ActionableError(
+                "timeout must be non-negative", next_action="`timeout`を省略して270秒で待つか、0以上の秒数を指定する"
+            )
+        await self._settle_recovery_before_kill(session_id, timeout if timeout > 0 else DEFAULT_SEND_MESSAGE_TIMEOUT)
         observed_session = self.sessions.get(session_id)
         observed_turn = (
             None
@@ -292,10 +301,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             await session.drain_registration()
         if self._status_writer is not None:
             await self._status_writer.drain()
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
-            raise ActionableError(
-                "timeout must be non-negative", next_action="`timeout`を省略して270秒で待つか、0以上の秒数を指定する"
-            )
         stopped_state = await self._resolve_stopped_session(session_id)
         recovered_state: SessionResumeState | None = None
         if stopped_state is None and session_id not in self.sessions and session_id not in self._pending_resumes:
@@ -308,7 +313,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             stopped_state = recovered_state
         if recovered_state is not None:
             response = self._recovered_result_response(recovered_state)
-            response["kill_requested"] = False
+            response["kill_requested"] = await self._cancel_owner_loss_recovery(session_id)
             return self._response_with_notices(response, await self._take_registry_notices(session_id))
         if stopped_state is not None:
             stopped_response = await self._take_stopped_result(session_id, stopped_state, collector="kill")

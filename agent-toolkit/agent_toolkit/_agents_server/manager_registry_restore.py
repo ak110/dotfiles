@@ -43,6 +43,24 @@ def _terminal_turn_status(
     return cast(Literal["completed", "failed", "interrupted"], turns[index][1])
 
 
+OWNER_ELSEWHERE_NEXT_ACTION = (
+    "終了を観測できないまま待機を繰り返さない。owner_server_instanceがqueried_server_instanceと異なり所有プロセスが生存している場合は、"
+    "所有する世代の退出・移譲を待ち、それでも状態が変わらなければ所有プロセスを止める前に、"
+    "止める対象が自身のMCP接続先（queried_server_instance）ではないことを確かめる"
+)
+
+
+def ownership_detail(resolution: session_registry.SessionResolution) -> str:
+    """実行中と記録した所有サーバーと、照会したサーバーを区別する診断を返す。"""
+    owner = resolution.owner_process
+    alive = None if owner is None else owner.exists()
+    return (
+        f"owner_server_instance={resolution.server_instance}; "
+        f"owner_pid={None if owner is None else owner.pid}; owner_alive={alive}; "
+        f"queried_server_instance={session_registry.owner_server_instance()}"
+    )
+
+
 class ManagerRegistryRestore(responses.ManagerResponses):
     """登録簿の所有状態と退避した結果から再開可能なsessionを解決する。"""
 
@@ -303,7 +321,10 @@ class ManagerRegistryRestore(responses.ManagerResponses):
         diagnosis = await self._diagnose_owner_lost(session_id, resolution)
         if diagnosis is not None:
             return ActionableError(diagnosis.message(), next_action=owner_lost.OWNER_LOST_NEXT_ACTION)
-        return ActionableError(f"error.recovery=turn_unobserved: {session_id}", next_action=next_action)
+        return ActionableError(
+            f"error.recovery=turn_unobserved: {session_id}; {ownership_detail(resolution)}",
+            next_action=next_action + "。" + OWNER_ELSEWHERE_NEXT_ACTION,
+        )
 
     @staticmethod
     def _is_registry_resume_state(resume_state: object) -> bool:

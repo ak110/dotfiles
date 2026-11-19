@@ -9,11 +9,11 @@
   現行の規定は`agent-toolkit/share/rules/rules-main.md`「ユーザー向け発話ルール」にある
 
 - ユーザーへの働きかけは、判断を求める「ユーザー確認」と判断を求めずに結果を届ける「ユーザーへの報告」の工程名で書く。
-  手段（構造化質問、事前承認型UWI、事後承認型UWI、報告用UWIなど）の選択は`agent-toolkit:user-confirmation-and-report`「手段の選択」へ集める。
+  手段（構造化質問、事前承認型UWI、事後承認型UWI、報告用UWIなど）の選択は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」へ集める。
   呼び出し側の条文は工程名で書く。
   報告は向きを示して「ユーザーへの報告」「ユーザーからの報告」と書き、向きを示さない複合語は使わない。
   手段名が各所へ散在し、モードとホストの条件に適合しない確認を招いたため、2026年9月30日のユーザー指示で集約した。
-  同日の指示により向きを示さない語を禁止し、確認とUWIを扱うスキルを工程名を表す現在の`agent-toolkit:user-confirmation-and-report`へ改名した。
+  同日の指示により向きを示さない語を禁止し、確認とUWIを扱うスキルを工程名を表す名前へ改名した（現行の所在は`agent-toolkit:atk-mode/playbooks/confirmation.md`）。
   自律モードの確認手段は、確認の種類と実際に働く回答期限で分ける。
   事前承認は回答期限が働く実行環境でだけその場で質問し、期限が働かない実行環境の事前承認と、事前承認以外の回答を待つ確認は最初から事前承認型UWIへ記録する。
   有限の回答期限を設定したprocess-loopのClaude統括も、その場で`AskUserQuestion`を使える。
@@ -22,7 +22,7 @@
   この回答は、2026年11月7日の事象を受けて質問を拒否しUWIへ固定した判断を置き換える（[operations-claude-settings.md](operations-claude-settings.md#質問ダイアログのタイムアウトの配布)「質問・ダイアログのタイムアウトの配布」）。
   事後承認は回答を待たずに事後承認型UWIへ記録し、作業を止めない。
   2026年9月30日のユーザー指示は、自律モードでも構造化質問を使えるとして`agent-toolkit:realign-with-user`の認識合わせを対象に含めるよう求めたものであり、同スキルは自律モードでもその場で質問する。
-  2026年10月6日に同スキルを廃止し、この扱いは`agent-toolkit:user-confirmation-and-report`「手段の選択」の表の認識合わせの行へ移った。
+  2026年10月6日に同スキルを廃止し、この扱いは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の表の認識合わせの行へ移った。
   2026年10月1日のcommit「feat: ユーザーとの認識合わせと自律確認の手順をつなぐ」、4b838401bfは、9月30日の指示を確認手段の共通表全体へ広げ、事後承認もその場の質問へ変えた。
   この一般化はエージェントの判断であり、回答期限を無期限とする配布設定のもとで手動起動のprocess-wiが回答まで止まり得たため、2026年10月4日のユーザー回答で現在の区分へ改めた。
   Codex Default modeの期限なしの例外、報告用UWIと個別UWIの用途は保持する
@@ -37,7 +37,7 @@
   UWIの回答形式は選択肢形式（`choice`と`yes-no`）に限り、自由記述（`free-form`）の新規作成を廃止する（同日、ユーザーコメント）。
   `AskUserQuestion`が選択肢を必須とし自由記述を「Other」で受ける形にそろえ、選択肢に無い回答はUWIの回答欄へ書き足して受ける。
   保存済みの`free-form`のUWIは読取互換として扱う。
-  現行の規範は`agent-toolkit:wi-standards`の`references/uwi-format.md`にある
+  現行の規範は`agent-toolkit:atk-mode/references/uwi-format.md`にある
 - `AskUserQuestion`の判断材料を本文へ自己完結させる規定の根拠は、
   ターン途中の地の文がハーネスの要約へ置換される事象の確認結果とする（2026年8月31日、Claude Code v2.1.251・Fable 5で再検証）。
   Fable稼働時も地の文は表示されるため、モデル条件付きの記述へ戻さない。
@@ -57,7 +57,7 @@
   成果物の誤り、認可、安全性、変更対象または回答の正否を左右する前提は確認を続ける。
   2026年10月8日に、断言された事実の裏付け調査の必要性をユーザーが問い直した指示による。
   過去の実績を説明した発話に対し、古い記録の探索を始めた観測が契機である。
-  現行の規定は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「割り込み・訂正・中止」にある。
+  現行の規定は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「割り込み・訂正・中止」にある。
   通常発話と確認回答へ届ける注記は`agent-toolkit/agent_toolkit/_hooks/posttooluse.py`の`VERIFICATION_NOTICE_BODY`が持つ
 - Markdownとして描画されることを前提に書いた成果物の本文をユーザーへ提示する時は、フェンス付きコードブロックで囲まず地の文へそのまま出力する。
   原文の改変を許さない逐語引用と、コード、コマンド、設定の断片は囲む（2026年9月8日、ユーザー指示。囲んだ本文が記法のまま表示され、見出しと箇条書きを構造として解釈できないことに由来する）

@@ -54,12 +54,12 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
     assert dispatch.main(json.dumps(payload)) == 0
     context = _context(capsys.readouterr())
     assert "agent-basics:bugfix" in context
-    assert "root-cause-analysis.md" not in context
+    assert "causes.md" not in context
     assert "記録の粒度は" not in context
     status = dispatch.main(json.dumps(payload))
     assert status == 0 and not _context(capsys.readouterr())
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
-    root_cause = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
+    root_cause = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/causes.md"
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
 
 
@@ -77,7 +77,7 @@ def test_short_initial_record_does_not_require_detailed_analysis_materials(tmp_p
     context = _context(capsys.readouterr())
     assert "agent-basics" in context
     assert "analysis-records.md" not in context
-    assert "root-cause-analysis.md" not in context
+    assert "causes.md" not in context
     skill = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/SKILL.md"
     result = {**payload, "hook_event_name": "PostToolUse"}
     if codex:
@@ -95,7 +95,7 @@ def test_short_initial_record_does_not_require_detailed_analysis_materials(tmp_p
     assert dispatch.main(json.dumps(payload)) == 0
     context = _context(capsys.readouterr())
     assert "analysis-records.md" not in context
-    assert "root-cause-analysis.md" not in context
+    assert "causes.md" not in context
 
 
 @pretooluse_support.read_delivery_preparation_scope()
@@ -110,7 +110,7 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     payload = _payload(tmp_path, False)
     assert dispatch.main(json.dumps(payload)) == 0
     context = _context(capsys.readouterr())
-    root_cause = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
+    root_cause = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/causes.md"
     assert "agent-basics:bugfix" in context
     skill = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/SKILL.md"
     assert skill.read_text(encoding="utf-8").strip() not in context
@@ -229,10 +229,8 @@ def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, caps
         payload["turn_id"] = "turn"
     for _attempt in range(2):
         reason = _denial(dispatch.main(json.dumps(payload)), capsys.readouterr())
-        assert "approval-scope.md" in reason
-        assert "choice-construction.md" in reason
-        assert "user-confirmation-and-report-decisions.md" in reason
-        assert "user-confirmation-and-report-questions.md" in reason
+        assert "`agent-toolkit:atk-mode/playbooks/confirmation.md`" in reason
+        assert "`agent-toolkit:atk-mode/references/choice-construction.md`" in reason
         assert "確認の要否を判断" in reason
 
 
@@ -283,7 +281,6 @@ def test_new_body_keeps_writing_standards_without_existing_edit_materials(
     if filename.endswith(".sh"):
         assert "references/bash.md" in context
     assert ("references/file-editing.md" in context) is exists
-    assert ("references/file-editing-claude.md" in context) is (exists and not codex)
 
 
 def test_next_request_detects_changed_read_document(tmp_path, monkeypatch, capsys):

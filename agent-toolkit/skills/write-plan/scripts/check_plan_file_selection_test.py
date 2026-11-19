@@ -30,7 +30,7 @@ def test_lane_selection_checks_related_wi_set(
     selected = {"match": (filename,), "replace": (other,), "extend": (filename, other)}[selection]
     plan_path = work_dir / "plan.md"
     plan_path.write_text(
-        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),)), encoding="utf-8"
+        _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),)), encoding="utf-8"
     )
     selection_path = work_dir / "selection.yaml"
     selection_path.write_text(
@@ -66,12 +66,12 @@ def test_lane_selection_combines_prior_plans(
     prior_paths = tuple(work_dir / f"prior-{index}.md" for index in range(prior_count))
     for index, prior_path in enumerate(prior_paths):
         prior_path.write_text(
-            _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((names[index], "先行要求"),)),
+            _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((names[index], "先行要求"),)),
             encoding="utf-8",
         )
     plan_path = work_dir / "additional.md"
     plan_path.write_text(
-        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((current_name, "追加要求"),)),
+        _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((current_name, "追加要求"),)),
         encoding="utf-8",
     )
     selection_path = work_dir / "selection.yaml"
@@ -97,7 +97,7 @@ def test_lane_selection_reads_current_field_names(repo: tuple[pathlib.Path, str]
     other = "20260831-000000-002.md"
     plan_path = work_dir / "plan.md"
     plan_path.write_text(
-        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),)), encoding="utf-8"
+        _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),)), encoding="utf-8"
     )
     selection_path = work_dir / "selection.yaml"
     selection_path.write_text(
@@ -128,7 +128,7 @@ def _run_lane_check_with_resumed(
     """再開位置を含む選定結果をそのまま`plan-check`のCLIに渡し、終了コードと標準エラーを返す。"""
     plan_path = work_dir / "plan.md"
     plan_path.write_text(
-        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=tuple((name, "要求") for name in related)),
+        _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=tuple((name, "要求") for name in related)),
         encoding="utf-8",
     )
     return _run_plan_cli(work_dir, monkeypatch, [plan_path], decisions, (_plan_fixture.WI_FILES[0][0],))
@@ -188,7 +188,7 @@ def test_lane_selection_rejects_duplicate_wi_across_plans(repo: tuple[pathlib.Pa
     """先行計画と追加計画の重複は、和集合が一致しても拒否する。"""
     work_dir, _base = repo
     filename = _plan_fixture.WI_FILES[0][0]
-    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),))
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),))
     plan_path = work_dir / "additional.md"
     prior_path = work_dir / "prior.md"
     plan_path.write_text(content, encoding="utf-8")
@@ -211,10 +211,10 @@ def test_cli_accepts_prior_plan_for_added_lane_wi(repo: tuple[pathlib.Path, str]
     prior_path = work_dir / "prior.md"
     plan_path = work_dir / "additional.md"
     prior_path.write_text(
-        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((prior_name, "先行要求"),)), encoding="utf-8"
+        _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((prior_name, "先行要求"),)), encoding="utf-8"
     )
     plan_path.write_text(
-        _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((current_name, "追加要求"),)), encoding="utf-8"
+        _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((current_name, "追加要求"),)), encoding="utf-8"
     )
     selection_path = work_dir / "selection.yaml"
     selection_path.write_text(
@@ -245,7 +245,7 @@ def test_lane_selection_rejects_missing_human_reason(repo: tuple[pathlib.Path, s
     """人間由来の実施行に根拠がない計画は、選定レーンを指定すると基準を満たさず失敗する。"""
     work_dir, _base = repo
     filename = _plan_fixture.WI_FILES[0][0]
-    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),))
+    content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),))
     content = content.replace(_plan_fixture.USER_ACTION_REASON, root, 1)
     plan_path = work_dir / "plan.md"
     plan_path.write_text(content, encoding="utf-8")

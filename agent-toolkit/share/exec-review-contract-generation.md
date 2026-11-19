@@ -8,7 +8,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
+| 形式判別前 | `../skills/atk-mode/references/awi-body.md` |
 | 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` |
 | 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
 | 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
@@ -23,7 +23,7 @@
 指定原本の欠落・読取不能は準備を失敗させ、最新本文で条件を作り直さない。
 通常のWI処理では現行キューを原本とする。
 
-計画なしでも、完成条件の条項化前に`../skills/wi-standards/references/awi-body-completion.md`「完成条件」で必要性と由来を判定する。
+計画の有無によらず、完成条件の条項化前に`../skills/atk-mode/references/awi-body-completion.md`「完成条件」で必要性と由来を判定する。
 判定は元の目的と保つべき結果に照らして行い、採用済みや計画に記載済みであることは必要性の根拠から除く。
 有効条件と不要なエージェント起草条件の除外根拠を既存の採否記録へ対応付け、明示要求や必要な品質の変更は既存の確認手順へ渡す。
 除外を記録したことと、有効な条件を網羅したことは別に確かめる。

@@ -1,14 +1,15 @@
 """役割の起動配送と、主体別の取得手段をまたぐ読込契約を確かめる。"""
 
 import json
+import os
 import shlex
-import subprocess
 
 import pytest
 
 from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._testing.document_delivery import WINDOWS_HOOK_CPU_REASON, hook_text, run_bash
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
 from agent_toolkit._testing.read_delivery_acquisition_support import (
     _assert_continues_without_guidance,
@@ -19,6 +20,8 @@ from agent_toolkit._testing.read_delivery_acquisition_support import (
 __all__ = ["_assert_continues_without_guidance", "_assert_no_read_guidance", "_state"]
 
 
+@pytest.mark.windows
+@pytest.mark.cpu_limit(2.0 if os.name == "nt" else 0.5, reason=WINDOWS_HOOK_CPU_REASON)
 @pytest.mark.parametrize("host,route", [("claude", "normal"), ("codex", "normal"), ("codex", "failure"), ("codex", "compact")])
 @pytest.mark.parametrize(
     "command,success",
@@ -38,17 +41,17 @@ __all__ = ["_assert_continues_without_guidance", "_assert_no_read_guidance", "_s
 def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeypatch, state, host, route, command, success):
     """単独・複合読取の取得証拠を判定し、未取得でも同じ書込の継続を許可する。"""
     reference = tmp_path / "reference.md"
-    reference.write_text("# 基準\n必要な内容\n", encoding="utf-8")
+    reference.write_text("# 基準\n必要な内容\n", encoding="utf-8", newline="\n")
     (tmp_path / "nested").mkdir()
     row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:Write",), (reference,))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
     payload = {"session_id": "chain", "cwd": str(tmp_path), **({"turn_id": "turn"} if host == "codex" else {})}
     writing = {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}}
     first = _run_hook_in_process("pretooluse", writing)
-    assert first.returncode == 0 and str(reference) in first.stdout
+    assert first.returncode == 0 and str(reference) in hook_text(first.stdout)
     _assert_continues_without_guidance(_run_hook_in_process("pretooluse", writing))
     if host == "codex":
-        guidance = first.stdout
+        guidance = hook_text(first.stdout)
         if route == "failure":
             guidance = rules_context.acquisition_failure(read_triggers.ReadTarget(reference), OSError("読取失敗"), shell=True)
         elif route == "compact":
@@ -59,10 +62,10 @@ def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeyp
             )
             assert result.returncode == 0 and not result.stderr
             assert "圧縮後に読むのは作業契約と会話の要約だけである" in result.stdout
-            assert str(reference) not in result.stdout
+            assert str(reference) not in hook_text(result.stdout)
             resumed = _run_hook_in_process("pretooluse", writing)
             assert resumed.returncode == 0 and not resumed.stderr
-            guidance = resumed.stdout
+            guidance = hook_text(resumed.stdout)
         assert str(reference) in guidance
     observed = _run_hook_in_process(
         "posttooluse",
@@ -81,9 +84,11 @@ def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeyp
     assert after.returncode == 0 and not after.stderr
     _assert_continues_without_guidance(after)
     if success:
-        assert str(reference) not in after.stdout
+        assert str(reference) not in hook_text(after.stdout)
 
 
+@pytest.mark.windows
+@pytest.mark.cpu_limit(1.5 if os.name == "nt" else 0.5, reason=WINDOWS_HOOK_CPU_REASON)
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize(
     "command,target,success",
@@ -115,11 +120,11 @@ def test_executed_static_read_records_acquisition_without_blocking_write(
     tmp_path, monkeypatch, state, host, command, target, success
 ):
     """実際に実行した静的読取の結果を公開hookへ渡し、取得記録と同じ書込の許可を確かめる。"""
-    (tmp_path / "reference.md").write_text("# 基準\n必要な内容\n", encoding="utf-8")
+    (tmp_path / "reference.md").write_text("# 基準\n必要な内容\n", encoding="utf-8", newline="\n")
     (tmp_path / "reference.json").write_text(json.dumps({"body": "本文"}, ensure_ascii=False), encoding="utf-8")
-    (tmp_path / "copy.md").write_text("写し\n", encoding="utf-8")
+    (tmp_path / "copy.md").write_text("写し\n", encoding="utf-8", newline="\n")
     for name in ("refa.md", "refb.md", "ref{a,b}.md"):
-        (tmp_path / name).write_text(f"# {name}\n", encoding="utf-8")
+        (tmp_path / name).write_text(f"# {name}\n", encoding="utf-8", newline="\n")
     (tmp_path / "nested").mkdir()
     reference = tmp_path / target
     row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:Write",), (reference,))
@@ -128,17 +133,7 @@ def test_executed_static_read_records_acquisition_without_blocking_write(
     writing = {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}}
     _run_hook_in_process("pretooluse", writing)
     _assert_continues_without_guidance(_run_hook_in_process("pretooluse", writing))
-    executed = subprocess.run(
-        # `cut -c`はバイト単位で抽出するため、マルチバイト文字の一部だけを含む出力を置換文字で受け取る。
-        ["bash", "-c", command],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=30,
-        check=False,
-    )
+    executed = run_bash(command, tmp_path)
     if success:
         assert executed.returncode == 0, executed.stderr
     observed = _run_hook_in_process(
@@ -218,6 +213,8 @@ def test_piped_role_read_keeps_acquisition_boundary_without_foreign_warning(tmp_
     )
 
 
+@pytest.mark.windows
+@pytest.mark.cpu_limit(3.0 if os.name == "nt" else 0.5, reason=WINDOWS_HOOK_CPU_REASON)
 @pytest.mark.parametrize("tool", ["Read", "Bash"])
 @pytest.mark.parametrize("order", ["reference-first", "invocation-first", "simultaneous"])
 def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, monkeypatch, state, tool, order):

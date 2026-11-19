@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` | | |
-| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` |
+| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `agent-toolkit:atk-mode/playbooks/wi-submission.md` | 判断 | `read:agent-toolkit:*/skills/atk-mode/playbooks/wi-submission.md` |
 | 公開版反映後の役割起動で稼働実装と資源の版相違が示された時 | `../../delegation/references/wait-anomalies-failures.md` | | |
 | WI実装commitの対応を継承する時 | `../../commit/references/history-rewrite-wi-records.md` | | |
 
@@ -61,7 +61,7 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --require-integrated
 
 公開結果に依存しない原稿・報告の構成・公開前の実績・結果JSONは先に準備し、未確定のCI・修正後の結果は確定後に補う。
 同じSHAの公開CI、必要な修正と再検証、リリースの順序、最終結果の確定、使用中資源の回収条件は維持する。
-公開後にも独立して成立するWI投入は、`share/wi-submission.md`の公開受付へ自己完結した要求を渡してよい。
+公開後にも独立して成立するWI投入は、`skills/atk-mode/playbooks/wi-submission.md`の公開受付へ自己完結した要求を渡してよい。
 永続受付と独立監督への所有移管を確認した後は、その投入自体を本回のwriter待機へ残さず、受付票と未完了の投入を報告へ区別して記載する。
 受付が成立しない場合は既存の投入担当の起動・検収・保存を同じセッションで完遂する。
 
@@ -111,10 +111,10 @@ CI監視で失敗jobを観測したら、全pipeline終了を待たず、入力S
 worktreeの作成・回収のようにGit共通ディレクトリの構成を変える操作は、公開担当の終了後に行う。
 並行作業の成果は公開担当の終了後にベースブランチへ統合し、`finish-session-recovery.md`「公開状態の検収と再起動」に従う。
 
-- キューへの投入: `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従い、公開担当の起動と同一の工程で投入担当へ委譲する（書き込み先はprivate-notes）。
+- キューへの投入: `agent-toolkit:atk-mode/roles/add-wi.parent.md`に従い、公開担当の起動と同一の工程で投入担当へ委譲する（書き込み先はprivate-notes）。
   公開担当の実行結果を観測して初めて内容が定まる項目については、結果が返却された後に渡す。
 - 読み取り調査とAWI原稿の準備: 公開結果を待たずに調査できる既知の警告の調査や、AWI原稿の起草作業は、主作業ツリーやprivate-notesへ書き込みを行わない独立した担当者へ委ねる。
-  準備した証拠や原稿は投入担当へ渡し、返却された原稿をメインエージェントが`../../../share/add-wi-parent-acceptance.md`「原稿の検収」で検収して採否を確定する。
+  準備した証拠や原稿は投入担当へ渡し、返却された原稿をメインエージェントが`agent-toolkit:atk-mode/roles/add-wi.parent.md`「原稿の検収」で検収して採否を確定する。
   確定した結果は、その後に送る元の作業完了報告へ含める。
   公開結果が必要となる問題の調査は、結果が確定した後に開始する。
 - 独立した追加工程: 長時間を要する公開・デプロイ・CI待機や追加の公開工程については、入力コミット、成果物、配備先、排他制御が必要なリソース、先行工程の成功が前提となるかどうかを、起動前にあらかじめ進捗記録へ記載する。

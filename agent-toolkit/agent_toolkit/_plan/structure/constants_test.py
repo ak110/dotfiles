@@ -11,9 +11,7 @@ from agent_toolkit._plan.structure import materials as plan_materials
 from agent_toolkit._plan.structure import sections as plan_sections
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_structure_support import (
-    _BUG_CAUSE_TABLE,
     _BUG_CONTENT,
-    _BUG_FILE_CONTENT,
     _BUG_SECTION,
     _HUMAN_DETAIL_CONTENT,
     _HUMAN_MAIN_CONTENT,
@@ -133,19 +131,6 @@ def test_human_readable_main_rejects_internal_identifiers_before_japanese(intern
     assert any("`## 実施内容`へ素材・要求・履歴・実装単位の合成ID" in error for error in errors), errors
 
 
-def test_bug_file_structure_rejects_cause_table_after_investigation_table() -> None:
-    """原因分析表が調査表の後にある新形式のバグ単位を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace(f"{_BUG_CAUSE_TABLE}\n\n", "") + f"\n{_BUG_CAUSE_TABLE}\n"
-    errors = plan_sections.check_bug_file_structure(content)
-    assert any("原因分析表を調査表より前に置く" in error for error in errors), errors
-
-
-def test_bug_file_structure_rejects_additional_table() -> None:
-    """正規の2表に追加表が置かれた場合を拒否する。"""
-    extra_table = "| 補足 | 内容 |\n| --- | --- |\n| 任意 | 値 |"
-    assert plan_sections.check_bug_file_structure(f"{_BUG_FILE_CONTENT}\n\n{extra_table}")
-
-
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
@@ -160,11 +145,11 @@ def test_history_origin_and_user_material_reference_are_checked(mutation: tuple[
     assert any(message in error for error in errors), errors
 
 
-def test_legacy_bug_table_predicate_requires_valid_fixed_table() -> None:
-    """バグ調査表は固定行の調査表を満たす場合だけ検出する。"""
+def test_legacy_bug_table_predicate_requires_valid_record() -> None:
+    """本文内に置いたバグ単位は、原因分析の記録が基準を満たす場合だけ旧配置として検出する。"""
     content = _BUG_CONTENT
     assert plan_sections.has_legacy_bug_table(content)
-    invalid = content.replace(f"{_plan_fixture.bug_row(_plan_format.PLAN_BUG_TABLE_ROWS[0])}\n", "")
+    invalid = content.replace(f"{_plan_fixture.cause_record_line('広がり')}\n", "")
     assert not plan_sections.has_legacy_bug_table(invalid)
 
 
@@ -268,11 +253,11 @@ def test_material_id_annotation_is_rejected_near_the_invalid_line(material_id: s
     assert f"提示素材の素材ID行に注記を含めない: {material_id}" in errors
 
 
-def test_bug_section_requires_fixed_twelve_rows() -> None:
-    """バグ調査表の12行から1行を削除した計画を拒否する。"""
-    content = _BUG_CONTENT.replace(f"{_plan_fixture.bug_row(_plan_format.PLAN_BUG_TABLE_ROWS[0])}\n", "")
+def test_bug_section_rejects_missing_record_line() -> None:
+    """本文内のバグ単位から`広がり:`の行を除いた計画を、欠けた行頭語を示して拒否する。"""
+    content = _BUG_CONTENT.replace(f"{_plan_fixture.cause_record_line('広がり')}\n", "")
     errors = plan_sections.check_plan_structure(content)
-    assert any(f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行の調査表" in error for error in errors)
+    assert any("`広がり:`の行が無い" in error for error in errors), errors
 
 
 def test_bug_section_is_required_only_for_bug_work_type() -> None:

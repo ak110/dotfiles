@@ -14,6 +14,7 @@ from pytools._internal import (
     claude_marketplace,
     claude_plugin_references,
     common,
+    external_pstack,
     install_claude_plugins,
     install_codex_plugins,
     plugin_warmup,
@@ -155,6 +156,7 @@ def test_claude_content_match_skips_install_but_reflects_source_edits(tmp_path: 
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
     monkeypatch.setattr(common, "resolve_executable", lambda *args, **kwargs: Path("cli"))
     monkeypatch.setattr(claude_marketplace, "ensure_marketplace", lambda: True)
+    monkeypatch.setattr(external_pstack, "run", lambda: False)
     monkeypatch.setattr(claude_marketplace, "is_directory_type_registered", lambda: True)
     monkeypatch.setattr(claude_plugin_references, "scan", lambda: [])
     calls: list[list[str]] = []

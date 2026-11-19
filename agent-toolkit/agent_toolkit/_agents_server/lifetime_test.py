@@ -41,6 +41,7 @@ def test_collected_windows_parent_is_pinned_before_it_exits(monkeypatch):
     child.ppid.return_value = parent.pid
     monkeypatch.setattr(psutil, "Process", lambda pid, **_kwargs: child if pid == child.pid else root)
     monkeypatch.setattr(psutil, "pids", lambda: [child.pid])
+    monkeypatch.setattr(psutil, "_ppid_map", lambda: {child.pid: parent.pid})
     monkeypatch.setattr(process_tree, "sys", types.SimpleNamespace(platform="win32"))
     monkeypatch.setattr(lifetime, "sys", types.SimpleNamespace(platform="win32"))
     monkeypatch.setattr(process_identity, "sys", types.SimpleNamespace(platform="win32"))

@@ -174,9 +174,9 @@ def test_failure_body_survives_manifest_and_log_removal(tmp_path, phase):
         assert "prepareが終了2" in details["error"] and "不足: transcript_path" in details["error"]
         assert "ログなし" in details["log"]["status"]
     else:
-        assert details["exit_code"] == 7 and details["log"]["truncated"]
-        assert "モデル起動後の診断" in details["log"]["stdout_stderr_tail"]
-        assert "[stderr] 回収失敗" in details["log"]["stdout_stderr_tail"]
+        assert details["exit_code"] == 7 and details["log"]["tail_truncated"]
+        assert "モデル起動後の診断" in "\n".join(details["log"]["error_events"])
+        assert "[stderr] 回収失敗" in details["log"]["tail"]
         assert snapshot["record_state"]["size_bytes"] == transcript.stat().st_size
         assert snapshot["record_state"]["modified_at"]
     assert "初期要求" not in body and "会話本文の検出用" not in body
@@ -220,3 +220,93 @@ def test_dangling_record_link_remains_a_prepare_failure(tmp_path):
     assert run_skill_batch.dispatch(run_skill_batch_test._args("manual"), lambda args: 99) == 1  # pylint: disable=protected-access
     assert len(session_review.pending()) == 1
     assert len(run_skill_batch_test._failure_awis(notes)) == 1  # pylint: disable=protected-access
+
+
+def test_model_failure_keeps_diagnostics_beyond_log_tail(tmp_path):
+    """会話出力が末尾を占めても、診断イベント・実行条件・終了状態を本文に残し、秘匿値と会話本文は転載しない。"""
+    log = tmp_path / "model.log"
+    conversation = '[stdout] {"type":"assistant","message":"会話本文の検出用' + "x" * 200 + '"}\n'
+    log.write_text(
+        "開始時刻: 2026-11-18T00:00:00+09:00\n"
+        "スキル: agent-toolkit:review-session\n"
+        "採用した候補: claude/opus\n"
+        '[stdout] {"type":"turn.failed","error":{"message":"上流が切断した"}}\n'
+        '[stdout] {"type":"result","subtype":"error_max_turns","is_error":true,"num_turns":40}\n'
+        + conversation * 100
+        + "[stderr] 回収失敗 token=abc123secret\n"
+        + "終了状態: exit code 7\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "targets": [{"session_id": "one", "transcript_path": str(tmp_path / "none.jsonl")}],
+        "error": "run-skill-exit-7: 振り返りを完了できなかった",
+        "exit_code": 7,
+        "log_path": str(log),
+    }
+    body = run_skill_batch_evidence.failure_details(manifest, run_skill_batch.PLUGIN_ROOT)
+    details = json.loads("\n".join(line[4:] for line in body.splitlines()[2:]))["log"]
+    assert details["header"] == [
+        "開始時刻: 2026-11-18T00:00:00+09:00",
+        "スキル: agent-toolkit:review-session",
+        "採用した候補: claude/opus",
+    ]
+    events = "\n".join(details["error_events"])
+    assert "上流が切断した" in events and "error_max_turns" in events
+    assert details["conversation_lines_omitted"] == 100
+    assert "終了状態: exit code 7" in details["tail"] and "回収失敗" in details["tail"]
+    assert "abc123secret" not in body and "会話本文の検出用" not in body
+
+
+def test_failure_details_keep_previous_scope_and_redact_error(tmp_path):
+    """準備に渡す前回の処理範囲を本文へ固定し、失敗理由の秘匿値を伏せる。"""
+    run_skill_batch_test._target(tmp_path, "one")  # pylint: disable=protected-access
+    target = session_review.pending()[0]
+    scope = {"records": {"main": {"through_line": 12, "digest": "d" * 64}}}
+    session_review.write(
+        session_review.directory() / "reviewed" / f"{session_review.key(target['host'], target['session_id'])}.json", scope
+    )
+    manifest = {"targets": [target], "error": "prepare-or-state: prepareが終了2: password=hunter2 不足: 範囲"}
+    body = run_skill_batch_evidence.failure_details(manifest, run_skill_batch.PLUGIN_ROOT)
+    details = json.loads("\n".join(line[4:] for line in body.splitlines()[2:]))
+    assert details["targets"][0]["previous_scope"] == scope
+    assert "不足: 範囲" in details["error"] and "hunter2" not in body
+
+
+def _log_details(tmp_path, text):
+    log = tmp_path / "model.log"
+    log.write_text(text, encoding="utf-8")
+    manifest = {"targets": [], "error": "run-skill-exit-7", "exit_code": 7, "log_path": str(log)}
+    body = run_skill_batch_evidence.failure_details(manifest, run_skill_batch.PLUGIN_ROOT)
+    return body, json.loads("\n".join(line[4:] for line in body.splitlines()[2:]))["log"]
+
+
+_HUGE = "y" * 200_000
+_LONG_EVENT = '[stdout] {"type":"result","is_error":true,"detail":"' + "y" * 3000 + '"}\n'
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"引数: {_HUGE}\n[stderr] 終了\n",
+        f"[stderr] 開始\n[stderr] {_HUGE}\n",
+        "[stderr] 開始\n" + _LONG_EVENT * 30,
+        f"引数: {_HUGE}\n" + _LONG_EVENT * 30 + f"[stderr] {_HUGE}\n",
+    ],
+    ids=["header", "tail", "events", "all"],
+)
+def test_log_diagnostics_stay_within_previous_tail_budget(tmp_path, text):
+    """巨大な行や大量の診断イベントがあっても、ログの抜粋は変更前の末尾の上限（8192バイト）を超えない。"""
+    _body, details = _log_details(tmp_path, text)
+    excerpt = [*details["header"], *details["error_events"], details["tail"]]
+    assert sum(len(line.encode()) for line in excerpt) <= 8192
+    assert any(_HUGE[:100] in line for line in excerpt)
+
+
+def test_log_diagnostics_redact_before_truncating_lines(tmp_path):
+    """行を切り詰める位置が資格情報の途中にあっても、資格情報の先頭を残さない。"""
+    token = "ghp_" + "A" * 40
+    prefix = '{"type":"result","is_error":true,"detail":"'
+    filler = "x" * (1990 - len(prefix) - len(" https://"))
+    payload = f"{prefix}{filler} https://{token}@github.com/owner/repo" + '"}'
+    body, _details = _log_details(tmp_path, f"[stdout] {payload}\n[stderr] 終了 https://{filler}{token}@github.com\n")
+    assert "ghp_" not in body

@@ -14,13 +14,13 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 2. hookの呼出主体が最上位でない: 常駐ループの最上位ではないため無条件approve
 3. 終了要求が`requested`で、Stop入力に有効な非`teammate`のバックグラウンドタスクが残る: 終了要求を`consumed`へ、
    `autonomous_exit_invoked`を偽へ戻してblockし、作業の終了を確かめてから終了工程をやり直すよう求める
-4. `is_pending_async_work`が真: 非同期処理または未回収の終了時の結果が残るためapprove
+4. `is_pending_async_work`が真: 非同期処理または未回収の終了時の結果が残るためapprove（Codexでは判定せず偽とする）
 5. `autonomous_exit_invoked`が真で、終了要求が実行待ち（`requested`）か要求ファイルを使わない終了方式: 呼び出し済みのためapprove
 6. `autonomous_exit_invoked`が真でも、終了要求ファイルが`requested`以外: 過去の呼び出しの記録が残っただけで
    `/exit`は実行されないため、記録を偽へ戻してblockし、終了工程の再実行を促す
 7. 上記いずれでもない: blockし、終了工程の実行を再び促す本文を返す
 
-6は、終了要求の後に目標の評価やユーザーの入力で作業が続いた会話が、最後のStopで古い記録によりapproveされ、
+6は、終了要求の後にStop hookの遮断やユーザーの入力で作業が続いた会話が、最後のStopで古い記録によりapproveされ、
 対話CLIが終了しないまま残ることを防ぐ。
 
 3の取り下げは、バックグラウンドタスクが残ったまま同じターンの完了時に動くFunction hooksが`/exit`を実行し、

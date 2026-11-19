@@ -5,7 +5,7 @@
 ## agent-basics/skills/check-execution/references/diagnostics.md：読む出力：2026年10月3日
 
 2026年10月3日、pyfltr 3.19.9でJSONLの要約と診断の粒度を確認した。
-`uv run --frozen pyfltr run --commands=textlint --no-fix agent-toolkit/share/add-wi.parent.md`は終了コード0だった。
+`uv run --frozen pyfltr run --commands=textlint --no-fix agent-toolkit/skills/atk-mode/roles/add-wi.parent.md`は終了コード0だった。
 診断レコードはseverity=warningのメッセージを1件持ち、コマンド結果はsucceeded・diagnostics=1、要約の`commands_summary.needs_action.warning`は0、`diagnostics`は1だった。
 導入済みパッケージの`pyfltr.output.jsonl._build_summary_record`も、各コマンドのstatusを数える処理と診断を集計する処理を分けていた。
 

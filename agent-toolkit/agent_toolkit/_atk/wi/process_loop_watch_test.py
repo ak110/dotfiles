@@ -165,6 +165,8 @@ class TestWaitForChanges:
         private_notes = self._make_private_notes(tmp_path)
         monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 0.1)
         monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.1)
+        # 同じworkerの先行の試験が監視資源の不足でポーリング監視へ切り替えた報告の状態を、stderrへ持ち込まない。
+        monkeypatch.setattr(_pl_watch, "_polling_fallback_reported", False)
 
         def fake_pull(_path: pathlib.Path) -> None:
             raise error

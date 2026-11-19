@@ -12,11 +12,11 @@ import pytest
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.lane_integration_support import (
-    _SHARE,
     _caller,
     _finalization_manifest,
     _integration_args,
     _integration_selection,
+    _role_document,
     _running,
     _write_args,
 )
@@ -157,7 +157,7 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
     _running("exec-writer", counted["exec-writer"], role="exec")
     _running("free-writer", counted["free-writer"])
     _running("sibling", counted["sibling"], role="exec", launcher="main")
-    _running("mention", counted["mention"], prompt=f"次の文書を読んで比べよ: {_SHARE / 'add-wi.subagent.md'}")
+    _running("mention", counted["mention"], prompt=f"次の文書を読んで比べよ: {_role_document('add-wi')}")
     _running("agreed", repo, role="exec")
     _running("finished", repo, role="exec", terminal=True)
     _running("elsewhere", nested, role="exec")
@@ -182,7 +182,7 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
         tree = worktree if cwd == worktree else repo.resolve()
         assert f"session_id={session_id}, label={session_id}-label" in stderr
         assert f"cwd={cwd}, 所属worktree={tree}" in stderr
-    assert f"役割文書={_SHARE / 'exec.subagent.md'}" in stderr
+    assert f"役割文書={_role_document('exec')}" in stderr
     assert "--writer-sessionへ反復指定" in stderr
     assert "作業ディレクトリを両worktreeの外にして起動し直してもよい" in stderr
     for excluded in ("caller", "main", "agreed", "finished", "elsewhere", "outside-reader"):

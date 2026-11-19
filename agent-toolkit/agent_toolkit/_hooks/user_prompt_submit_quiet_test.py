@@ -7,7 +7,7 @@ import pytest
 from agent_toolkit._hooks import user_prompt_submit
 
 
-@pytest.mark.parametrize("prompt", ["変更を続ける", "$agent-toolkit:user-confirmation-and-report"])
+@pytest.mark.parametrize("prompt", ["変更を続ける", "$agent-toolkit:atk-mode"])
 def test_initial_preparation_does_not_receive_missing_skill_warning(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

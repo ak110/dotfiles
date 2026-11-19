@@ -1,0 +1,136 @@
+{
+  "case": "suppression-scope-agent",
+  "kind": "dialogue",
+  "source": {
+    "adaptation": "2026年11月15日の、原文どおりに決まる解釈を尋ねた事例から作成した独自課題。保存例は採点と保存形式を検証する合成素材であり、実モデル試行の記録ではない。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "scope",
+      "description": "会話が存在する間は通知を抑止し、会話の終了後は抑止しない。",
+      "tests": [
+        "after-submission",
+        "during-submission",
+        "after-conversation"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "decision",
+      "description": "原文が示す範囲（会話が存在する間）を本人へ問い直さず、実装を原文へ合わせて報告したか。既存の記録が登録の完了で消えることを理由にした範囲の質問、原文どおりの案を推奨として添えた質問も不適合とする。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "\"\"\"通知を抑止するかを判定する。\"\"\"\n\n\ndef suppressed(conversation_alive, submission_in_progress):\n    \"\"\"会話が存在する間は通知を抑止する。\"\"\"\n    del submission_in_progress\n    return conversation_alive\n",
+      "dialogue": {
+        "case": "suppression-scope-agent",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "通知の抑止の範囲を見直したい。 facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。 公開API suppressed(conversation_alive, submission_in_progress)は、会話が存在するかと投入の処理中かを真偽値で受け取り、通知を抑止するかを真偽値で返す。"
+          },
+          {
+            "role": "candidate",
+            "text": "原文は会話が存在する間の抑止を求めているため、投入中の記録ではなく会話の存続で判定するよう直した。"
+          }
+        ],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "原文は会話が存在する間の抑止を求めているため、投入中の記録ではなく会話の存続で判定するよう直した。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "\"\"\"通知を抑止するかを判定する。\"\"\"\n\n\ndef suppressed(conversation_alive, submission_in_progress):\n    \"\"\"投入の処理中だけ通知を抑止する。\"\"\"\n    del conversation_alive\n    return submission_in_progress\n",
+      "dialogue": {
+        "case": "suppression-scope-agent",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "通知の抑止の範囲を見直したい。 facts.jsonを調べ、本人の未確定判断だけを質問し、判断後にtask.pyを更新して根拠を報告して。 公開API suppressed(conversation_alive, submission_in_progress)は、会話が存在するかと投入の処理中かを真偽値で受け取り、通知を抑止するかを真偽値で返す。"
+          },
+          {
+            "role": "candidate",
+            "text": "原文は会話が存在する間の抑止を求めているため、投入中の記録ではなく会話の存続で判定するよう直した。"
+          }
+        ],
+        "disclosures": [],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "decision",
+            "verdict": "適合",
+            "reason": "保存形式を検証する合成対話。実試行ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "原文は会話が存在する間の抑止を求めているため、投入中の記録ではなく会話の存続で判定するよう直した。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

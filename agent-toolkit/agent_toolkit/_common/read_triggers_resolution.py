@@ -11,9 +11,9 @@ import re
 from typing import TYPE_CHECKING
 
 from agent_toolkit._common import skill_modes
-from agent_toolkit._common.plugin_roots import resolve_plugin_root
+from agent_toolkit._common.plugin_roots import raise_for_incomplete_installation, resolve_plugin_root
 from agent_toolkit._common.read_triggers_model import _scope_cached
-lazy from agent_toolkit._common import read_triggers_model
+lazy from agent_toolkit._common import read_triggers_model, task_documents
 
 if TYPE_CHECKING:
     from agent_toolkit._common import read_triggers  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
@@ -28,9 +28,23 @@ def user_side_source(path: pathlib.Path) -> bool:
 
     これらの宣言はユーザーのリポジトリやホームにあり、プラグインの不変条件テストが保存前に検査できない。
     """
-    if any((parent / ".claude-plugin/plugin.json").is_file() for parent in path.parents):
-        return False
-    return any(parent.name == "skills" and parent.parent.name in _SKILL_HOMES for parent in path.parents)
+    in_plugin, in_skill_home = _directory_placement(path.parent)
+    return in_skill_home and not in_plugin
+
+
+@_scope_cached
+def _directory_placement(directory: pathlib.Path) -> tuple[bool, bool]:
+    """自身か祖先にplugin manifestを持つか、スキル置き場の`skills`の内側かを返す。
+
+    要求内では多数の宣言元が共有する祖先を1回だけ照会する（Windowsではファイル照会が高価）。
+    """
+    in_plugin = (directory / ".claude-plugin/plugin.json").is_file()
+    in_skill_home = directory.name == "skills" and directory.parent.name in _SKILL_HOMES
+    if directory.parent != directory:
+        parent_in_plugin, parent_in_skill_home = _directory_placement(directory.parent)
+        in_plugin = in_plugin or parent_in_plugin
+        in_skill_home = in_skill_home or parent_in_skill_home
+    return in_plugin, in_skill_home
 
 
 def read_operation(path: pathlib.Path) -> str:
@@ -220,6 +234,8 @@ def resolve_read_source(
         raise ValueError(f"{path}: read-sourceはプラグイン修飾した実ファイルを指定する")
     target = _direct_document(value, path, plugin_root, host, project=project)
     if target is None or not target.is_file():
+        if target is not None:
+            raise_for_incomplete_installation((target,))
         raise ValueError(f"{path}: read-sourceの実体が無い: {value}")
     return resolve_read_source(target, plugin_root, host, (*seen, path), project=project)
 
@@ -242,23 +258,24 @@ def parent_contract_targets(
 ) -> tuple[read_triggers.ReadTarget, ...]:
     """役割が名指しした起動・受領契約を解決する。自由本文から所有者を推測しない。
 
-    `role`は役割名か役割文書のパスを受け取る。share配下の実在する絶対パスはその文書の所属rootで解決する。
+    `role`は役割名か役割文書のパスを受け取る。役割文書の置き場所にある実在の絶対パスはその文書の所属rootで解決する。
+    起動・受領契約は役割文書と別の置き場所にあっても解決する（移行の途中は組が分かれうる）。
     """
     from agent_toolkit._common import read_triggers  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
     given = pathlib.Path(role)
     # 絶対パスの役割文書は、その文書が属する版の契約と組にする（起動側と同じrootを使う）。
-    if given.is_absolute() and given.parent.name == "share" and given.is_file():
-        plugin_root = given.parent.parent
+    if given.is_absolute() and given.is_file() and (owner := task_documents.role_document_plugin_root(given)) is not None:
+        plugin_root = owner
     role = given.name.removesuffix(".subagent.md").removesuffix(".md")
     if not re.fullmatch(r"[a-z][a-z0-9-]*", role):
         raise ValueError(f"不正な役割名: {role}")
-    source = plugin_root / "share" / (role + ".subagent.md")
-    parent = source.with_name(role + ".parent.md")
-    if parent.is_file():
+    source = task_documents.find_role_document(plugin_root, role + ".subagent.md")
+    parent = task_documents.find_role_document(plugin_root, role + ".parent.md")
+    if parent is not None:
         return (read_triggers.ReadTarget(parent),)
-    if not source.is_file():
-        raise ValueError(f"役割文書が存在しない: {source}")
+    if source is None:
+        raise ValueError(f"役割文書が存在しない: {plugin_root}の{role}.subagent.md")
     values = re.findall(r"^<!-- parent-read-source: (.+) -->$", source.read_text(encoding="utf-8"), re.M)
     if not values:
         raise ValueError(f"{source}: 起動・受領契約のparent-read-source宣言が無い")

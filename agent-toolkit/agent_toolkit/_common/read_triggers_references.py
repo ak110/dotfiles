@@ -9,7 +9,7 @@ import pathlib
 from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from agent_toolkit._common.plugin_roots import plugin_resolution_scope
+from agent_toolkit._common.plugin_roots import plugin_resolution_scope, raise_for_incomplete_installation
 from agent_toolkit._common.read_triggers_model import _REFERENCE, _REFERENCE_METHOD_HEADING
 from agent_toolkit._common.read_triggers_targets import _headings
 
@@ -55,6 +55,7 @@ def reference_method_targets(
         if target.path != owner:
             raise ValueError(f"{source}: 名指し参照の読込方法は共通の定義元を指定する: {target}")
         if not target.path.is_file():
+            raise_for_incomplete_installation((target.path,))
             raise ValueError(f"{source}: 名指し参照の読込方法の定義元が存在しない: {target}")
         target.body()
         result.append(target)
@@ -164,7 +165,7 @@ def simultaneous_duplicate_rows(
     """同じ読込表の1行で同時に全文を読む資料どうしが、同じ条件と資料の組の行を持つ箇所を返す。
 
     読み手は同時に読む資料の表を続けて読むため、同じ行が重なると同じ案内を繰り返し読む。
-    資料を分けたときに元の表を全分割先へ写すと生じる（`agent-documents-basics-read-tables.md`「読込表」）。
+    資料を分けたときに元の表を全分割先へ写すと生じる（`agent-documents-basics.md`「読込表」）。
     表の解析は呼出元が`parse_tables`で済ませた結果を受け取り、行の判定を別に組み立てない。
     同時に読む範囲は1行の資料列が指す資料に限る。同じ条件を複数行に書いた表は、汎用の条件で
     別々に選ぶ資料を並べることがあり、同時に読む組と区別できないため対象にしない。
@@ -194,7 +195,7 @@ def simultaneous_duplicate_rows(
                     f"{where}: 同時に全文を読む資料どうしで同じ読込表の行が重なる"
                     f"（条件: {condition}、資料: {'、'.join(materials)}、同時に読ませる行: {entry.source}:{entry.line}）。"
                     "次の操作: 本文がその条件を判断する資料1つに行を残し、他の資料から削る"
-                    "（`agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`「読込表」）。"
+                    "（`agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」）。"
                 )
     return issues
 

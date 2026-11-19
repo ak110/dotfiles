@@ -43,6 +43,10 @@ async def test_show_reports_another_writer_for_running_registry_record(
         assert "may have restarted" not in message
         assert "another writer" in message
         assert "atk agents wait" in message
+        # 所有サーバーと照会したサーバーを区別し、自身の接続先を止めない案内を返す。
+        assert "owner_server_instance=" in message
+        assert f"queried_server_instance={session_registry.owner_server_instance()}" in message
+        assert "自身のMCP接続先" in message
         await manager.close()
 
 

@@ -61,7 +61,7 @@ Claude Codeはツールを遅延読み込みし、スキーマを取得する最
 
 却下した代替案は3つある。
 PreToolUseで通知する案は、当時の、規範の想起を目的とするチェックをhookに置かない方針に反するため採らなかった。
-現行の判定基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn-eligibility.md`「遮断・警告フックの成立条件」にある。
+現行の判定基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
 旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。
 本節の判断そのものは見直していない。
 `agent-toolkit:delegation`のdescriptionへ起動の語を加える案は、descriptionを対象作業と発火条件に限る規定に反し、単発の委譲のたびにスキル本体と参照資料を読む費用を生む。
@@ -76,7 +76,7 @@ web-fetchを拒否して`explore`へ切り替えさせることは、ユーザ�
 `explore`がWebページの本文を取得できることは、同日にCodexの`explore`で確かめた。
 他の汎用定義へ対象を広げたのは、警告が作用しない理由が定義の種類によらないためである。
 
-この拒否は、`agent-basics:writing-standards`の`references/claude-hooks-block-warn-behavior.md`「遮断と警告の選択」が挙げる4つの場合（認可境界の逸脱、破壊的操作、データ整合性の毀損、公開契約の破壊）には当たらない。
+この拒否は、`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」が挙げる4つの場合（認可境界の逸脱、破壊的操作、データ整合性の毀損、公開契約の破壊）には当たらない。
 同節が拒否を限る理由は、拒否のたびにそのターンの入力と進行中の作業が失われることである。
 汎用定義の起動で失われる入力は依頼の本文であり、同じ本文を`agents_server`の`start`へ渡せば回復できるため、損失は起動1回分の再発行にとどまる。
 設定の外で委譲の作業全体が実行される費用より小さいと判断し、費用の比較で拒否を選んだ。

@@ -10,7 +10,7 @@ description: >
 第三者に届く文面は、投稿する前に、起草者とは独立した読み取り専用の担当者に検証させる。
 原文や資料から起草・推敲した文面の意味保持には`agent-toolkit:/share/writing-operations.md`「ユーザー入力素材の取扱い」を適用する。
 対象かどうかの判定、レビューの依頼、指摘の採否、および実際の投稿は、投稿を担当するエージェントが行う。
-投稿操作に必要な認可は`agent-toolkit:user-confirmation-and-report`に従って判定する。
+投稿操作に必要な認可は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」に従って判定する。
 
 投稿前レビューは、独立した担当者を起動できる手段とプラグイン全体の参照資料がそろっている環境で実施する。
 担当者を起動できない環境では、提示された文面と根拠を読み、検討結果を下書きとして返す。
@@ -22,13 +22,13 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 
 ## 対象
 
 第三者が読む外部サービスに向けて、エージェントが起草または加筆した人間向けの文面を対象とする。
 ユーザーから逐語で渡された文面、git push、およびコミットメッセージ（`agent-toolkit:commit`）は対象外とする。
-private-notesのWI本文も対象外であり、これらは`agent-toolkit:wi-standards`と`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従う。
+private-notesのWI本文も対象外であり、これらは`agent-toolkit:atk-mode/playbooks/wi-drafting.md`と`agent-toolkit:atk-mode/roles/add-wi.parent.md`に従う。
 
 ## 投稿前レビュー担当の起動と受領
 
@@ -79,7 +79,7 @@ private-notesのWI本文も対象外であり、これらは`agent-toolkit:wi-st
 2. レビュー結果を得られない場合（同じ入力で再起動しても結果を返さずに終了し続ける、あるいは`start`や同等の読み取り専用の委譲手段が使えない場合）は、投稿を中断する。
    原因と同等のレビュー手段を調査し、認可の範囲内で復旧できる場合は自ら処理を再開する。
    レビューの省略や公開結果の変更に追加の認可やユーザーの選好が必要となる場合に限り、文面と理由を示してユーザーに確認する。
-   確認は`../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+   確認は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 
 <!-- return-contract:external-write-review:start -->
 <!-- 生成元: share/external-write-review.subagent.md「出力」。手動編集しない。 -->

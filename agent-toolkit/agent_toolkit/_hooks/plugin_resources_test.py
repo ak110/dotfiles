@@ -12,9 +12,9 @@ from agent_toolkit._hooks import plugin_resources
 def test_skill_reference_includes_an_existing_absolute_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """実在する資料では、スキル名に加えて実在する絶対パスを併記する。"""
     monkeypatch.delenv(delegated_session.PLUGIN_ROOT_ENV, raising=False)
-    reference = plugin_resources.skill_reference("user-confirmation-and-report", "SKILL.md")
+    reference = plugin_resources.skill_reference("atk-mode", "SKILL.md")
 
-    assert "`agent-toolkit:user-confirmation-and-report`の`SKILL.md`" in reference
+    assert "`agent-toolkit:atk-mode`の`SKILL.md`" in reference
     quoted = reference.split("（`", 1)[1].removesuffix("`）")
     assert pathlib.Path(quoted).is_absolute()
     assert pathlib.Path(quoted).is_file()
@@ -23,9 +23,9 @@ def test_skill_reference_includes_an_existing_absolute_path(monkeypatch: pytest.
 def test_skill_reference_omits_the_path_when_the_resource_is_absent(monkeypatch: pytest.MonkeyPatch) -> None:
     """実体が無い場合は従来どおりスキル名と相対パスだけを返す。"""
     monkeypatch.delenv(delegated_session.PLUGIN_ROOT_ENV, raising=False)
-    reference = plugin_resources.skill_reference("user-confirmation-and-report", "references/absent.md")
+    reference = plugin_resources.skill_reference("atk-mode", "references/absent.md")
 
-    assert reference == "`agent-toolkit:user-confirmation-and-report`の`references/absent.md`"
+    assert reference == "`agent-toolkit:atk-mode`の`references/absent.md`"
 
 
 @pytest.mark.parametrize("value", ["", "relative", "/missing-plugin-root", "wrong-plugin"])

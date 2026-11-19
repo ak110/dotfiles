@@ -50,7 +50,9 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
     common_jobs = _common_job_names(workflow_data)
     assert set(common_jobs) == {
         "test-linux",
-        "test-windows",
+        "test-windows-tests",
+        "test-windows-install",
+        "test-windows-result",
         "update-dotfiles-upgrade-windows",
         "python-lint",
         "pylint",

@@ -20,7 +20,7 @@
 - 委譲元での起動・受領契約とサブエージェント定義はセットで更新する。
   単一の呼び出し元からのみ使われる契約はその工程の規範へ統合し、複数の呼び出し元で共有する起動契約は`<役割名>.parent.md`として分離できる。
   起動設定は`<役割名>.subagent.md`のfrontmatterで管理し、委譲元が起動準備のために定義本文を取得しなくても済む構造を保つ。
-- 独立して読み込まれる文書間で内容が重複する場合の採否は、`agent-basics:writing-standards/references/agent-documents-basics-ownership.md`「定義の所有者」に従う。
+- 独立して読み込まれる文書間で内容が重複する場合の採否は、`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」に従う。
 - 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と、`agent-toolkit:write-plan`でメインが委譲元となる側の双方を同一の変更単位で更新する（両系統は共通化されていない）。
 
 ## スキル間の連携
@@ -47,7 +47,7 @@ process-wiのモード固有資料は、共通契約を参照して読み替え�
 - 読込表の宣言は各文書の本文の表に置く。
   宣言と参照先への読込行は`agent-toolkit/read_triggers_invariant_test.py`で確かめる。
   読込表の別ファイル化の再発は`agent_basics_standalone_invariant_test.py`で確かめる。
-  書き方は`agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`「読込表」に従う。
+  書き方は`agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」に従う。
   agent-toolkitの文書では、`agent-toolkit:/share/agent-documents-operations.md`「読込表の宣言」にも従う。
 - 計画ファイルの見出し、固定H3、表の行名を改訂する場合は`plan-structure-constants.md`に従う。
 
@@ -66,12 +66,16 @@ agent-toolkitの判断に今も使う内容は、agent-toolkit側の同名スキ
 参照先の実在とagent-toolkitの名前空間・コマンドへの依存は`agent_basics_standalone_invariant_test.py`で確かめられる。
 新しく持ち込んだ未定義の用語は、この確認で捉える。
 
+`agent-basics/skills/bugfix/`の`SKILL.md`か確認観点を変える時は、各確認観点の末尾の「この観点が防ぐ失敗例」を変更後の本文へ当てる。
+`SKILL.md`と、その条件が指す確認観点だけを渡した独立した文脈へ失敗例の場面を示し、同じ誤りへ進まないことを確かめる。
+文章を足す変更では、`agent-basics:bugfix/references/prevention.md`「案を比べる順」に従い、同じ変更で消すか統合する文章を示す。
+
 agent-toolkitのリソースを編集する前は`agent-basics:writing-standards`も適用し、同スキルの読込表から配送、状態、起動、記録に関する運用条件を確認する。
 すでに取得済みの品質に関する記述は再利用する。
 
 ## エージェント向け文書の技術的条文
 
-観測に基づく技術的条文の新設・改訂は`agent-basics:writing-standards/references/investigation-technical-clauses.md`に従う。
+観測に基づく技術的条文の新設・改訂は`agent-basics:writing-standards/references/investigation.md`に従う。
 本リポジトリでは、観測の記録を`docs/development/audit-records.md`の索引から選ぶ記録ファイルへ置き、見出しを`<ファイルパス>：<節名>：<日付>`とする。
 記録には観測日、観測時のバージョン、再検証手段の3項目のみを書き、条文の末尾に記録の所在を示す文を1文置く。
 条文本文には観測環境やモデルのバージョンを書かない（対象バージョンは除く）。

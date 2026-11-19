@@ -1,5 +1,5 @@
 import type { On } from "claude-code";
-import { automatedMessage } from "./automated_message.ts";
+import { automatedMessage, startNextTurn } from "./automated_message.ts";
 import type { RuntimeChange } from "./ui_requests.tsx";
 
 export function register(on: On): void {
@@ -34,7 +34,7 @@ export function register(on: On): void {
       if (!change.notified) {
         change.notified = true;
         await $.state.set({ plugin: "agent-toolkit", key: "runtimeChange" }, change);
-        await $.prompt.submit({ text: automatedMessage("runtime-changes", "notice", "反映コマンドの応答を受け取った。受付や応答到着だけを成功とせず、次のtext/contextで成功・失敗・未確認を区別して残工程を続けよ。\n" + JSON.stringify(change.results)) });
+        await startNextTurn($, automatedMessage("runtime-changes", "notice", "反映コマンドの応答を受け取った。受付や応答到着だけを成功とせず、次のtext/contextで成功・失敗・未確認を区別して残工程を続けよ。\n" + JSON.stringify(change.results)));
       } else await $.state.set({ plugin: "agent-toolkit", key: "runtimeChange" }, change);
     });
     return result;

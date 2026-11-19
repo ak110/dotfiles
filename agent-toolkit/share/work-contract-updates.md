@@ -30,7 +30,7 @@
 継続だけの実ユーザー発言は既存要求を維持して元の未完了工程を再開し、同居する具体的な変更・訂正・中止・回答だけを統合する。
 エラー本文の確認と原因調査、新たな認可は再開の前提にしない。
 一度取り下げた既存要求を再度有効化する場合は、復元として明記する。
-両立しない要求や認可が不足している事項のみを`../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」へ渡す。
+両立しない要求や認可が不足している事項のみを`../skills/atk-mode/playbooks/confirmation.md`「確認要否の判定」へ渡す。
 質問への回答や部分的な修正を終えた後は、要求の原本と工程記録が示す元の未完了工程へ復帰する。
 別の要求が届いた場合でも、元の要求の残余工程はそのまま保持する。
 
@@ -44,5 +44,5 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/atk-mode/playbooks/confirmation.md` |
 | 現行の作業契約の基準を適用する前 | `work-contract.md` |

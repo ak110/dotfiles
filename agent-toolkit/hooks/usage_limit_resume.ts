@@ -1,5 +1,5 @@
 import type { EngineInterface, On, SessionRateLimit, Timer } from "claude-code";
-import { automatedMessage } from "./automated_message.ts";
+import { automatedMessage, startNextTurn } from "./automated_message.ts";
 import { exitStatePath } from "./session_exit.ts";
 
 // Python側のclaude_usage_limit.RECHECK_SECONDSと同じ再確認間隔を使う。
@@ -9,7 +9,7 @@ export function usageLimitResumePrompt(root: string): string {
     "usage-limit-resume",
     "notice",
     "利用上限による中断後、このターンを自動的に開始した。" +
-    `${JSON.stringify(`${root}/skills/user-confirmation-and-report/references/usage-limit.md`)}を読み、` +
+    `${JSON.stringify(`${root}/skills/atk-mode/references/usage-limit.md`)}を読み、` +
       "同書に従って再開情報を取得し、最初の未完了工程から続けよ。" +
       "未完了の作業が無い場合、既に続行済みの場合、ユーザーが中止を指示している場合は、何もせず終えよ。",
   );
@@ -82,6 +82,6 @@ async function schedule($: EngineInterface, state: Reservation): Promise<void> {
       return;
     }
     $.ui.status(undefined);
-    await $.prompt.submit({ text: usageLimitResumePrompt($.plugin.root) });
+    await startNextTurn($, usageLimitResumePrompt($.plugin.root));
   });
 }

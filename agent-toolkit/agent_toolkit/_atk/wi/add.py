@@ -10,6 +10,7 @@ import sys
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
@@ -22,7 +23,6 @@ from agent_toolkit._atk.wi.add_validation import (
     _EMPTY_AWI_ERROR,
     _EMPTY_AWI_NEXT_ACTION,
     _RESERVED_FRONTMATTER_KEYS,
-    AWI_CAUSE_TABLE_ROWS,
     _parse_leading_frontmatter,
     _require_agent_source,
     _target_repo_error,
@@ -82,6 +82,7 @@ def read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[
         )
     return {
         "target_repo": data.get("target_repo"),
+        **({_wi_branches.KEY: data[_wi_branches.KEY]} if _wi_branches.KEY in data else {}),
         "target_commit": data.get("target_commit"),
         "depends_on": depends_on,
         "cooldown_until": data.get("cooldown_until"),
@@ -92,8 +93,10 @@ def read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[
 
 def print_entry_details(details: dict[str, object | None]) -> None:
     """一致を確認したエントリの項目を決まった順で表示する。"""
-    for key in ("target_repo", "target_commit"):
-        value = details[key]
+    for key in ("target_repo", "target_branch", "target_commit"):
+        value = details.get(key)
+        if key == "target_branch" and value is None:
+            continue
         print(f"    {key}: {value if value is not None else 'なし'}")
     depends_on = details["depends_on"]
     rendered_dependencies = (
@@ -166,12 +169,17 @@ def _add_entries_locked(
     depends_on: tuple[str, ...] = (),
     cooldown_until: str | None = None,
     submitter_session: str | None = None,
+    item_branches: list[str | None] | None = None,
+    target_commit_branch: str | None = None,
 ) -> list[tuple[str, str]]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
 
     `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`だけを採用する
     （呼び出し元の`add_entries`が全件の存在と解決可否を検証済みとする）。
+    `item_branches`は呼び出し元が検証済みの各メッセージの宛先の系統で、`target_commit`はその系統が
+    `target_commit_branch`と一致する項目にだけ記録する。
     """
+    effective_branches: list[str | None] = [None for _ in parsed_messages] if item_branches is None else item_branches
     effective_repair_targets: list[str | None] = [None for _ in parsed_messages] if repair_targets is None else repair_targets
     effective_repair_kinds: list[str | None] = [None for _ in parsed_messages] if repair_kinds is None else repair_kinds
     if len(effective_repair_targets) != len(parsed_messages):
@@ -186,10 +194,11 @@ def _add_entries_locked(
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     counter = _wi_filenames.max_existing_seq(private_notes, timestamp) + 1
     generated: list[tuple[str, str]] = []
-    for (frontmatter, body), repair_target, repair_kind in zip(
+    for (frontmatter, body), repair_target, repair_kind, item_branch in zip(
         parsed_messages,
         effective_repair_targets,
         effective_repair_kinds,
+        effective_branches,
         strict=True,
     ):
         raw_target_repo = frontmatter.get("target_repo", target_repo)
@@ -207,8 +216,11 @@ def _add_entries_locked(
         while filename in _wi_filenames.existing_entry_filenames(private_notes):
             counter += 1
             filename = f"{timestamp}-{counter:03d}.md"
-        frontmatter_data: dict[str, object] = {"target_repo": item_target_repo, "type": entry_type, "state": WI_STATE_INBOX}
-        if target_commit is not None and item_target_repo == target_repo:
+        frontmatter_data: dict[str, object] = {"target_repo": item_target_repo}
+        if item_branch is not None:
+            frontmatter_data[_wi_branches.KEY] = item_branch
+        frontmatter_data.update(type=entry_type, state=WI_STATE_INBOX)
+        if target_commit is not None and item_target_repo == target_repo and item_branch == target_commit_branch:
             frontmatter_data["target_commit"] = target_commit
         if item_source:
             frontmatter_data["source"] = item_source
@@ -261,6 +273,7 @@ def add_entries(
     storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     saved_details: dict[str, dict[str, object | None]] | None = None,
     submitter_session: str | None = None,
+    target_branch: str | None = None,
 ) -> list[str]:
     """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
 
@@ -270,6 +283,9 @@ def add_entries(
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_wi_sync.repo_lock`取得前に全件の型・非空・解決可否を検証する。
     `submitter_session`はUWI種別のfrontmatterへだけ保存し、回答の通知先としてその会話のセッション状態へファイル名を記録する。
+    `target_branch`はfrontmatterに`target_branch`の無い`target_repo`宛ての項目の宛先の系統とする。
+    系統を登録したrepository宛てで省略した項目はdefault_branchの系統で保存し、登録に無い系統は保存前に拒否する。
+    `target_commit`は`target_repo`と`target_branch`の解決結果が一致する項目にだけ記録する。
     """
     parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
         messages=messages,
@@ -281,6 +297,7 @@ def add_entries(
         source=source,
         cooldown_until=cooldown_until,
     )
+    item_branches, target_commit_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
     with storage.mutation(private_notes) as mutation:
         written = _add_entries_locked(
             private_notes,
@@ -296,6 +313,8 @@ def add_entries(
             depends_on=depends_on,
             cooldown_until=normalized_cooldown,
             submitter_session=submitter_session,
+            item_branches=item_branches,
+            target_commit_branch=target_commit_branch,
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
@@ -317,6 +336,32 @@ def add_entries(
             next_action="回答の有無は`atk wi show <ファイル名>`で確かめる",
         )
     return generated
+
+
+def _resolve_item_branches(
+    parsed_messages: list[tuple[dict[str, object], str]],
+    target_repo: str | None,
+    target_branch: str | None,
+) -> tuple[list[str | None], str | None]:
+    """各メッセージの宛先の系統を保存前に検証し、`target_commit`を記録する系統と合わせて返す。"""
+    branch_settings = _wi_branches.registry()
+    resolved: list[str | None] = []
+    for frontmatter, _body in parsed_messages:
+        raw_target_repo = frontmatter.get("target_repo")
+        item_repo = resolve_repo_id_or_raise(raw_target_repo) if isinstance(raw_target_repo, str) else target_repo
+        raw_branch = frontmatter.get(_wi_branches.KEY)
+        if raw_branch is not None and (not isinstance(raw_branch, str) or not raw_branch):
+            raise WebInputError(
+                "target_branchは空でない文字列で指定してください",
+                next_action="frontmatterのtarget_branchへ登録した系統の名前を指定する",
+            )
+        requested = raw_branch if isinstance(raw_branch, str) else target_branch if item_repo == target_repo else None
+        assert item_repo is not None
+        resolved.append(_wi_branches.resolve_for_save(item_repo, requested, branch_settings))
+    commit_branch = (
+        _wi_branches.resolve_for_save(target_repo, target_branch, branch_settings) if target_repo is not None else None
+    )
+    return resolved, commit_branch
 
 
 def read_body_files(paths: list[str]) -> list[str]:
@@ -438,8 +483,22 @@ def cmd_add(
             next_action="--depends-onを外すか、--type=awiで投入し直す",
         )
         sys.exit(1)
+    target_branch = getattr(args, "target_branch", None)
     try:
-        target_commit = resolve_head_commit(local_worktree) if local_worktree is not None else None
+        commit_branch = (
+            _wi_branches.resolve_for_save(target_repo, target_branch, _wi_branches.registry()) if target_repo else None
+        )
+    except WebInputError as error:
+        _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
+        sys.exit(1)
+    try:
+        target_commit = (
+            None
+            if local_worktree is None
+            else resolve_head_commit(local_worktree)
+            if commit_branch is None
+            else resolve_head_commit(local_worktree, revision=f"refs/remotes/origin/{commit_branch}")
+        )
     except SystemExit:
         if collected_via_editor:
             _outcome.report_failure(
@@ -457,7 +516,7 @@ def cmd_add(
     sources = [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
     try:
         if args.dry_run:
-            _validate_add_entries(
+            parsed_messages, normalized_target_repo, _cooldown = _validate_add_entries(
                 messages=messages,
                 target_repo=target_repo,
                 entry_type=args.type,
@@ -467,6 +526,7 @@ def cmd_add(
                 source=args.source,
                 cooldown_until=getattr(args, "cooldown_until", None),
             )
+            _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
             print_draft_openings(messages, sources, compare_paths=args.compare_opening_file)
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
@@ -488,6 +548,7 @@ def cmd_add(
             cooldown_until=getattr(args, "cooldown_until", None),
             saved_details=saved_details,
             submitter_session=_resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
+            target_branch=target_branch,
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
@@ -512,7 +573,6 @@ def cmd_add(
 
 
 __all__ = [
-    "AWI_CAUSE_TABLE_ROWS",
     "_parse_leading_frontmatter",
     "body_is_effectively_empty",
     "has_synced_run_report",

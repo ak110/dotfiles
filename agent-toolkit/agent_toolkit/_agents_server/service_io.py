@@ -12,7 +12,9 @@ import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from typing import Any
 
-from agent_toolkit._agents_server import service_rpc
+import psutil
+
+from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.codex_protocol import AppServerError, JsonRpcResponseError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 
@@ -99,11 +101,16 @@ class Resource:
         params = {"resource_id": self.identifier, **arguments}
         if name != "transfer":
             params["owner_generation"] = self.runtime.owner
-        if self.origin["generation"] == self.runtime.generation and self.origin.get("process") == self.runtime.target.get(
-            "process"
-        ):
+        if self.local:
             return await getattr(self.runtime.broker, name)(**params)
         return await service_rpc.request(self.origin, name, params)
+
+    @property
+    def local(self) -> bool:
+        """元I/Oが同じプロセスのbrokerにあるかを返す。"""
+        return self.origin["generation"] == self.runtime.generation and self.origin.get("process") == self.runtime.target.get(
+            "process"
+        )
 
     def descriptor(self) -> dict[str, Any]:
         """環境や実行可能オブジェクトを含めず、元資源への参照だけを渡す。"""
@@ -225,6 +232,26 @@ class CodexResource:
         """元I/O側から通知された接続障害を返す。"""
         return self._reader_failure
 
+    def diagnostic(self) -> dict[str, Any]:
+        """要求が進まない時に、受信処理の生存と元I/O側の未確認イベント数を返す。
+
+        未確認イベントが上限に達すると、元I/Oは送出通知と後続の受信を止める。
+        元I/Oが別プロセスにある場合、未確認数はこのプロセスから読めない。
+        """
+        if not self.resource.local:
+            backlog = "別プロセス"
+        elif (counts := self.resource.runtime.broker.backlog(self.resource.identifier)) is None:
+            backlog = "解放済み"
+        else:
+            backlog = f"{counts[0]}/{counts[1]}"
+        return {
+            "consumer": "稼働中" if self._task is not None and not self._task.done() else "停止",
+            "acknowledged_sequence": self._sequence,
+            "transferred": self._detached,
+            "reader_failure": None if self._reader_failure is None else str(self._reader_failure),
+            "backlog": backlog,
+        }
+
     async def start(self) -> None:
         """通知consumerを先に有効化してから元I/Oを開始する。"""
         self._task = asyncio.create_task(self._consume())
@@ -278,10 +305,23 @@ class CodexResource:
             _LOG.exception("App Serverイベントの受信処理が停止しました: sequence=%d", self._sequence)
             if self._closed or self._detached:
                 return
+            cause = f"App Serverイベントの受信処理が停止しました: {error!r}。"
+            # 先に失敗を記録し、停止中の要求を接続へ送らせない。
             self._reader_failure = AppServerError(
-                f"App Serverイベントの受信処理が停止しました: {error!r}。"
-                "次の操作: 管理サービスのログで停止の原因を確認し、同じ作業を新しい委譲先で起動し直してください。"
+                f"{cause}次の操作: 管理サービスのログで停止の原因を確認し、同じ作業を新しい委譲先で起動し直してください。"
             )
+            # 失敗の報告を受けたsessionは終了として公開される。turnを続けさせないよう、App Serverを先に止める。
+            # brokerの登録解除は`close`が行う。送出通知の空き待ちで止まった要求が残ると解除が終わらないため、ここでは待たない。
+            try:
+                residual = await self.resource.operation("call", operation="shutdown", arguments={})
+            except Exception as stop_error:
+                _LOG.exception("受信処理が停止したApp Serverを停止できません: sequence=%d", self._sequence)
+                residual = [f"停止要求の失敗: {stop_error!r}"]
+            if residual:
+                self._reader_failure = AppServerError(
+                    f"{cause}App Serverの停止を確認できない対象: {'; '.join(residual)}。"
+                    "次の操作: この対象の終了を確かめてから、同じ作業を新しい委譲先で起動し直してください。"
+                )
             await self._failure(self._reader_failure)
 
     async def _consume_events(self) -> None:
@@ -357,12 +397,28 @@ class CodexResource:
 
     async def close(self) -> list[str]:
         """制御所有者の一致を確認して元I/Oを回収し、所属が残れば所有を保つ。"""
-        residual = await self.resource.operation("call", operation="shutdown", arguments={})
-        if residual:
-            return residual
-        await self.resource.operation("release")
+        released = False
+        try:
+            residual = await self.resource.operation("call", operation="shutdown", arguments={})
+        except ConnectionRefusedError, FileNotFoundError:
+            if service_transport.process_alive(self.resource.origin.get("process")):
+                raise
+            # 資源を所有した世代が先に終了した（2026-11-17、移譲途中の資源の停止で現行世代の終了が失敗した）。
+            # App Serverは元世代の子でstdinの終了とともに終わる。残っていれば停止を確認できないため所有を保つ。
+            pid = self.process.pid if self.process is not None else None
+            if pid is not None and psutil.pid_exists(pid):
+                origin = self.resource.origin.get("generation")
+                return [f"pid={pid}: 資源を所有した世代{origin}が終了し、App Serverの停止を確認できない"]
+        else:
+            if residual:
+                return residual
+            await self.resource.operation("release")
+            released = True
         self._closed = True
         if self._task is not None and self._task is not asyncio.current_task():
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
+        if released:
+            # 受信処理を止めた後の未確認イベントを読む主体は無い。残すとbrokerが資源を保持し続け、元世代が退出できない。
+            await self.resource.operation("discard")
         return []

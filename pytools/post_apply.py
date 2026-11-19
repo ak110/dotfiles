@@ -184,7 +184,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("skills/refine-prompt"), datetime.date(2026, 9, 29)),
         cleanup_paths.RemovedPath(Path("skills/export-session"), datetime.date(2026, 9, 29)),
         # 振り返りはagent-toolkit側のreview-sessionへ統合したため旧配布先を削除する。
-        cleanup_paths.RemovedPath(Path("skills/session-review"), datetime.date(2026, 5, 23)),
         cleanup_paths.RemovedPath(Path("skills/session-review-dotfiles"), datetime.date(2026, 8, 7)),
         # 現在のスキル名は add-awi。旧名 feedback-add の配布先ディレクトリを削除する。
         cleanup_paths.RemovedPath(Path("skills/feedback-add"), datetime.date(2026, 6, 16)),
@@ -228,7 +227,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("skills/refine-prompt"), datetime.date(2026, 9, 29)),
         cleanup_paths.RemovedPath(Path("skills/export-session"), datetime.date(2026, 9, 29)),
         # 振り返りはagent-toolkit側のreview-sessionへ統合したため旧配布先リンクを除去する。
-        cleanup_paths.RemovedPath(Path("skills/session-review"), datetime.date(2026, 5, 23)),
         cleanup_paths.RemovedPath(Path("skills/session-review-dotfiles"), datetime.date(2026, 8, 7)),
         # 現在のスキル名は add-awi。旧名 feedback-add の配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("skills/feedback-add"), datetime.date(2026, 6, 16)),
@@ -564,6 +562,9 @@ def main(
             )
             sys.exit(2)
     if args.prune_only or args.prune_only_if_minimal:
+        # ランチャーが進行可否の判定に使った印を回収する。ランチャーは外部コマンドに依存せず削除できない。
+        if ready := os.environ.get("DOTFILES_PRUNE_READY_FILE"):
+            Path(ready).unlink(missing_ok=True)
         lock = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks/update-dotfiles.lock"
         lock.parent.mkdir(parents=True, exist_ok=True)
         try:

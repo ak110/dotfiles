@@ -6,6 +6,7 @@ import os
 import pathlib
 import subprocess
 
+from agent_toolkit._atk import config_repositories as _config_repositories
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import atomic_file, state_paths, worktree_hooks
 from agent_toolkit._common import console_title as _console_title
@@ -180,10 +181,18 @@ def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib
     return True
 
 
-def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path | None:
+def branch_worktree_name(worktree_name: str, branch: str) -> str:
+    """系統ごとの常駐用worktree名を返す。"""
+    return f"{worktree_name}-{_config_repositories.branch_slug(branch)}"
+
+
+def _sync_worktree_with_upstream(
+    local_path: pathlib.Path, worktree_name: str, *, remote_branch: str | None = None
+) -> pathlib.Path | None:
     """worktreeを準備して対象リポジトリの上流最新へ追随させる。
 
     上流は現在ブランチの追跡先を優先し、利用不能な場合だけ`refs/remotes/origin/HEAD`を使う。
+    系統を登録したrepositoryでは`remote_branch`を受け取り、originのその系統のブランチを上流とする。
     解決結果はworktreeのfetch・作成・rebaseだけに用い、公開先を最初のプロンプトへ暗黙に設定しない。
 
     worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。
@@ -226,7 +235,11 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         return None
     if not project_hook and not _ensure_worktree_excluded(local_path):
         return None
-    upstream = _git_refs.resolve_branch(local_path, git_fn=_capture_ref, upstream=True)
+    upstream = (
+        _git_refs.resolve_branch(local_path, git_fn=_capture_ref, upstream=True)
+        if remote_branch is None
+        else _git_refs.BranchRef(f"refs/remotes/origin/{remote_branch}", remote_branch, "origin")
+    )
     if upstream is None:
         _next_action.report(
             f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}。"
@@ -278,6 +291,9 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         command = ["worktree", "add", str(worktree_path), branch]
         if not branch_exists:
             command = ["worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
+            if remote_branch is not None:
+                # 系統のworktreeは追跡先を系統のリモートブランチにし、`--target-branch auto`が系統を解決できるようにする。
+                command = ["worktree", "add", "--track", "-b", branch, str(worktree_path), upstream_branch]
         if project_hook:
             try:
                 try:
@@ -310,7 +326,14 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
                 if _git_output(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=worktree_path) != common:
                     raise ValueError("hook作成先のGit共通ディレクトリが対象と異なる")
                 current = _git_refs.resolve_branch(worktree_path, git_fn=_capture_ref)
-                if current is None or current.ref != f"refs/heads/{branch}":
+                if remote_branch is not None:
+                    # hookは登録パスの作業ツリーの先端から作るため、系統のリモートブランチから作り直す。
+                    switched = _run_worktree_git(
+                        ["-c", "submodule.recurse=false", "switch", "-C", branch, "--track", upstream_branch], worktree_path
+                    )
+                    if switched.returncode:
+                        raise ValueError(f"hook作成先のbranchを系統へ接続できない: {switched.stderr.strip()}")
+                elif current is None or current.ref != f"refs/heads/{branch}":
                     switched = _run_worktree_git(["-c", "submodule.recurse=false", "switch", "-c", branch], worktree_path)
                     if switched.returncode:
                         raise ValueError(f"hook作成先のbranchを接続できない: {switched.stderr.strip()}")
@@ -380,8 +403,12 @@ def prepare_session_target(
     *,
     worktree_name: str | None,
     resume_pending: bool,
+    branch: str | None = None,
 ) -> tuple[pathlib.Path, str] | None:
-    """worktreeを必要とする新規セッションの実行先とpromptを返す。"""
+    """worktreeを必要とする新規セッションの実行先とpromptを返す。
+
+    系統（`branch`）を持つ対象は、登録パスの作業ツリーのブランチを切り替えずに処理するため、常に系統ごとのworktreeを用意する。
+    """
     if resume_pending:
         if not local_path.is_dir() or not _git_output(["rev-parse", "--show-toplevel"], cwd=local_path):
             _warn_worktree_preparation_failure(
@@ -389,6 +416,11 @@ def prepare_session_target(
             )
             return None
         return local_path, prompt
+    if branch is not None:
+        prepared = _sync_worktree_with_upstream(
+            local_path, branch_worktree_name(worktree_name or _DEFAULT_WORKTREE_NAME, branch), remote_branch=branch
+        )
+        return None if prepared is None else (prepared, prompt)
     if worktree_name is None and target_repo_id != DOTFILES_REPO_ID:
         try:
             if not worktree_hooks.configured(local_path):

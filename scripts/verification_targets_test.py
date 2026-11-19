@@ -72,7 +72,7 @@ def test_empty_result_and_failed_listing_are_distinct(tmp_path: pathlib.Path, mo
 
 
 def test_invalid_source_and_unreadable_tracked_source(tmp_path: pathlib.Path) -> None:
-    """対象なしでは構文を要しないが、不在入力と追跡試験の欠損は拒否する。"""
+    """対象なしでは構文を要しないが、不在入力と解析できない追跡試験は拒否する。"""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "keep.txt").write_text("", encoding="utf-8")
     commit_all(tmp_path, "init")
@@ -82,13 +82,26 @@ def test_invalid_source_and_unreadable_tracked_source(tmp_path: pathlib.Path) ->
     source.write_text("def (", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     assert not consumer_tests(tmp_path, [])["candidates"]
-    source.unlink()
     module = tmp_path / "source.py"
     module.write_text("", encoding="utf-8")
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(SyntaxError):
         consumer_tests(tmp_path, ["source.py"])
     with pytest.raises(ValueError):
         uncovered_tests(tmp_path, ["a_test.py"], [str(tmp_path.parent)])
+
+
+def test_tracked_test_deleted_in_worktree_matches_staged_deletion(tmp_path: pathlib.Path) -> None:
+    """作業ツリーで削除しただけの追跡試験も、削除をstageした場合と同じく候補から外し、列挙を続ける。"""
+    root = init_repository(
+        tmp_path / "repo",
+        files={"source.py": "", "kept_test.py": "import source\n", "deleted_test.py": "import source\n"},
+        commit_message="init",
+    )
+    (root / "deleted_test.py").unlink()
+    unstaged = consumer_tests(root, ["source.py"])
+    assert [row["test"] for row in unstaged["candidates"]] == ["kept_test.py"]
+    subprocess.run(["git", "-C", str(root), "rm", "-q", "--cached", "--", "deleted_test.py"], check=True)
+    assert consumer_tests(root, ["source.py"]) == unstaged
 
 
 def test_package_imports_and_ambiguous_references(tmp_path: pathlib.Path) -> None:

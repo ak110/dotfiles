@@ -274,8 +274,14 @@ async def check_auto_reset(
 
 
 async def _rpc(request: Request, method: str, params: dict[str, Any], timeout: float) -> dict[str, Any]:
-    async with asyncio.timeout(timeout):
-        return await request(method, params)
+    scope = asyncio.timeout(timeout)
+    try:
+        async with scope:
+            return await request(method, params)
+    except TimeoutError as error:
+        if not scope.expired():
+            raise
+        raise TimeoutError(f"{method}が{timeout:g}秒以内に完了しない") from error
 
 
 @contextlib.asynccontextmanager

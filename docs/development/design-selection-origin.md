@@ -57,7 +57,7 @@ frontmatterの`source`は起票処理の記録として扱い、本文と原発�
 回答を得られない場合はUWIを保存して対象項目をholdとし、通常レーンから除外する。
 同一セッションで回答を受領した場合は、回答保存、UWI終了、依存解除を確認して、メインの選定工程または同じレーンを`continuation.md`が定める継続の規定で再開する。
 別リポジトリ項目の登録、突合および元項目の終了順序は、
-`agent-toolkit/skills/wi-standards/references/cross-repository-submission.md`を基準とする。
+`agent-toolkit/skills/atk-mode/references/cross-repository-submission.md`を基準とする。
 
 この境界では項目単位の永続的な由来スキーマを新設せず、既存の採否記録へ原文の根拠を残す。
 要求の由来とユーザー認可の確認を分け、起票処理や構造上の標識だけから承認を推定しない。
@@ -66,6 +66,6 @@ frontmatterの`source`は起票処理の記録として扱い、本文と原発�
 採否確定の事実とユーザー判断の手順を既存の受渡しへ統合することで、
 全項目の可視性と個別判断を保ちながら、計画の実施内容では採用系の行だけを実装対象として扱える。
 
-エージェントが新規項目を投入する場合は、`agent-toolkit:wi-standards`に従い投入したスキル名からプラグイン名の修飾を除いた値を`atk wi add --source`へ渡す。
-`agent-toolkit:add-awi-by-user`はユーザー発話を原文とする手動起動を含む全ての新規項目へ`source: add-awi-by-user`を保存する。
+エージェントが新規項目を投入する場合は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」に従い投入したスキル名からプラグイン名の修飾を除いた値を`atk wi add --source`へ渡す。
+`agent-toolkit:atk-mode`の作業`add-awi-by-user`はユーザー発話を原文とする手動起動を含む全ての新規項目へ`source: add-awi-by-user`を保存する。
 別リポジトリ項目の移管では新規起票の固定値を上書きせず、移管元に保存済みのsourceがある場合は同じ値を保持する。

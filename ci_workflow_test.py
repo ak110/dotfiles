@@ -159,12 +159,52 @@ def test_required_results_use_needs(workflow_data: dict[str, object], job_name: 
     assert step["run"] == "python3 scripts/ci_result.py"
 
 
+@pytest.mark.parametrize("name", ["ci.yaml", "audit.yaml", "release-statusline.yaml"])
+def test_every_job_fails_on_unintended_slowdown(name: str) -> None:
+    """全jobが明示の時間上限を持ち、意図しない遅延を既定の360分まで待たずに非成功とする。"""
+    text = (REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+    jobs = workflow_jobs(workflow_mapping(yaml.load(text, Loader=yaml.BaseLoader)))
+    for job_name, job in jobs.items():
+        minutes = str(workflow_mapping(job).get("timeout-minutes", ""))
+        assert minutes.isdecimal() and 0 < int(minutes) < 360, job_name
+
+
+def test_diagnostic_logs_are_saved_when_job_times_out() -> None:
+    """時間上限で止まりcancelledで終わったjobでも、診断ログを保存する。"""
+    saving = []
+    for action in sorted((REPO_ROOT / ".github" / "actions").glob("*/action.yml")):
+        runs = workflow_mapping(workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))["runs"])
+        for step in workflow_steps(runs):
+            if str(step.get("uses", "")).endswith("/upload-diagnostic-logs"):
+                saving.append(action.parent.name)
+                assert step.get("if") == "${{ failure() || cancelled() }}", action
+    assert saving
+
+
+def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
+    """診断ログの各保存stepは1つの保存元だけを対象にし、更新検証homeはrunner.temp配下を探す。
+
+    upload-artifactは1回の保存でWindowsのhome（C:）とrunner.temp（D:）をまたぐと共通の親を求められず失敗し、
+    失敗したjobのログを1件も残さない。更新検証は検証rootをrunner.tempへ置くため、保存先もそこへそろえる。
+    """
+    action = REPO_ROOT / ".github" / "actions" / "upload-diagnostic-logs" / "action.yml"
+    runs = workflow_mapping(workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))["runs"])
+    upgrade_patterns = []
+    for step in workflow_steps(runs):
+        patterns = [line.strip() for line in str(workflow_mapping(step["with"])["path"]).splitlines() if line.strip()]
+        roots = {pattern.split("/", 1)[0] for pattern in patterns}
+        assert len(roots) == 1, patterns
+        upgrade_patterns += [pattern for pattern in patterns if "update-dotfiles-upgrade-" in pattern]
+    assert upgrade_patterns
+    assert all(pattern.startswith("${{ runner.temp }}/") for pattern in upgrade_patterns), upgrade_patterns
+
+
 def test_required_check_display_names(workflow_data: dict[str, object]) -> None:
     """rulesetが参照する9表示名と、共通checkの非所有名を維持する。"""
     jobs = workflow_jobs(workflow_data)
     for key, display in {
         "test-linux": "test-linux",
-        "test-windows": "test-windows",
+        "test-windows-result": "test-windows",
         "python-lint-result": "python-lint (3.15)",
         "pytest-root": "pytest (3.15)",
         "pytest-toolkit-result": "pytest-toolkit (3.15)",

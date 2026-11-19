@@ -98,7 +98,7 @@
   背景原因: （根本原因）出所へ帰属させる主張の正しさを書き手本人の「確かめた」という判断だけで保証し、推定の範囲を記述先ごとの値の種類の閉じた列挙で定めていた。
   2026年10月7日の`a327492df`は記述先を広げ、10月8日の`d552912f7`は推定の種類へ事象の結果や影響を加えた。
   それでも実行主体の帰属は列挙に無く（範囲不足）、事象2の記述先の条文は文脈にあったのに適用されなかった（効果不足）。
-  対策: 出所へ帰属させる主張の定義を`agent-basics:writing-standards`の`agent-basics:writing-standards/references/investigation-sources.md`「根拠と主張の一致」の1か所へ置いた。
+  対策: 出所へ帰属させる主張の定義を`agent-basics:writing-standards`の`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」の1か所へ置いた。
   定義は出所が明示する内容だけを帰属させ、補った部分を推定として分け、書く時点で出所の該当箇所に照らして読めなければ未確認と書くことである。
   `agent-toolkit/rules/01-agent.md`「事実と推論」の文も、書く時点で出所に照らすことが読み取れる形へ改めた。
   記述先ごとの列挙（`rules-main.md`、`rules-subagent.md`、`sending.md`、`add-wi.parent.md`）は定義への参照へ置き換えた。

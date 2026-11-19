@@ -187,8 +187,8 @@ def test_same_range_reads_reach_consumers(tmp_path: pathlib.Path, separator: lis
     """同じ行範囲の読取入力を大量読取とcommit資料の消費側が認識する。"""
     root = pathlib.Path(large_reads.__file__).resolve().parents[3]
     targets = [
-        root / "skills/user-confirmation-and-report/references/approval-scope.md",
-        root / "skills/user-confirmation-and-report/references/choice-construction.md",
+        root / "skills/atk-mode/playbooks/confirmation.md",
+        root / "skills/atk-mode/references/choice-construction.md",
         root / "skills/commit/references/message.md",
     ]
     command = "; ".join(shlex.join(["sed", "-n", "1,400p", *separator, str(path)]) for path in targets)

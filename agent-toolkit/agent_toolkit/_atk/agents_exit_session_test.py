@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import sys
 import time
 import types
 import typing
@@ -41,6 +42,35 @@ def test_interactive_codex_argv_is_accepted(argv: list[str]) -> None:
 )
 def test_noninteractive_or_ambiguous_codex_argv_is_rejected(argv: list[str]) -> None:
     assert not agents_exit_session.is_interactive_codex(argv)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["agy"],
+        ["agy", "--model", "gemini-3.8-flash", "--effort", "high", "--mode", "auto", "-i", "inspect"],
+        ["agy", "--conversation", "cc963364", "-i", "resume"],
+        ["agy", "--mode=auto", "--dangerously-skip-permissions"],
+    ],
+)
+def test_interactive_agy_argv_is_accepted(argv: list[str]) -> None:
+    assert agents_exit_session.is_interactive_agy(argv)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["agy", "-p", "inspect", "--output-format", "stream-json"],
+        ["agy", "--print", "inspect"],
+        ["agy", "--prompt=inspect"],
+        ["agy", "acp"],
+        ["agy", "--help"],
+        ["agy", "-i"],
+        ["agy", "--unknown"],
+    ],
+)
+def test_noninteractive_or_ambiguous_agy_argv_is_rejected(argv: list[str]) -> None:
+    assert not agents_exit_session.is_interactive_agy(argv)
 
 
 def test_unsupported_host_reports_invocation_without_stopping(
@@ -173,10 +203,11 @@ def test_old_marker_from_resume_keeps_signal_path(monkeypatch: pytest.MonkeyPatc
 class _FakeProcess:
     """`_target`の判定に使うプロセスで、同関数が参照する属性だけを返す。"""
 
-    def __init__(self, pid: int, argv: list[str], executable: pathlib.Path) -> None:
+    def __init__(self, pid: int, argv: list[str], executable: pathlib.Path, terminal: str | None = None) -> None:
         self.pid = pid
         self._argv = argv
         self._executable = executable
+        self._terminal = terminal
 
     def cmdline(self) -> list[str]:
         return self._argv
@@ -187,9 +218,12 @@ class _FakeProcess:
     def create_time(self) -> float:
         return 1.0
 
+    def terminal(self) -> str | None:
+        return self._terminal
 
-def _identify(argv: list[str], executable: pathlib.Path) -> agents_exit_session.Target | None:
-    process = typing.cast(psutil.Process, _FakeProcess(123, argv, executable))
+
+def _identify(argv: list[str], executable: pathlib.Path, terminal: str | None = None) -> agents_exit_session.Target | None:
+    process = typing.cast(psutil.Process, _FakeProcess(123, argv, executable, terminal))
     return agents_exit_session._target(process)  # pylint: disable=protected-access  # noqa: SLF001
 
 
@@ -203,6 +237,22 @@ def test_versioned_executable_with_claude_argv_is_identified(tmp_path: pathlib.P
 
     assert target is not None
     assert (target.host, target.pid) == ("claude", 123)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="agyの終了対象はLinuxに限る")
+def test_interactive_agy_with_terminal_is_identified(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """端末を持つ対話のagyは終了対象とし、非対話実行と端末の無い起動は対象外とする。"""
+    executable = tmp_path / "agy"
+    executable.write_text("", encoding="utf-8")
+    monkeypatch.setattr(agents_exit_session.process_identity, "start_id", lambda process, **kwargs: "test-generation")
+    interactive = ["agy", "--mode", "auto", "-i", "inspect"]
+
+    target = _identify(interactive, executable, "/dev/pts/3")
+
+    assert target is not None
+    assert (target.host, target.pid) == ("agy", 123)
+    assert _identify(interactive, executable, None) is None
+    assert _identify(["agy", "-p", "inspect"], executable, "/dev/pts/3") is None
 
 
 def test_unrelated_process_is_not_identified(tmp_path: pathlib.Path) -> None:

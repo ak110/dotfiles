@@ -39,11 +39,13 @@ import json
 import re
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import asyncio
 lazy import shlex
 
 from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE, observe_verification
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
+lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import function_hook_requests
 lazy from agent_toolkit._common.json_lines import split_lines
@@ -72,6 +74,11 @@ _HOOK_ID = "posttooluse"
 
 _llm_notice = _notice_formatter(_HOOK_ID)
 
+# modの装着（`CronList`・`atk wait-schedule`・`CronCreate`）を待つ上限。
+# modのツール呼び出しにも設定hookが実行されるため、2026年11月18日の観測では約5秒かかった。
+# 上限を過ぎた後の装着失敗はmodが次のターンの入力として届ける。
+_PERIODIC_RECHECK_WAIT_SECONDS = 20
+
 
 def _executable_name(token: str) -> str:
     """実行トークンからディレクトリ部分を除いた実行ファイル名を返す。"""
@@ -86,7 +93,7 @@ _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 # --- ユーザーが書いた文への注記 ---
 
 VERIFICATION_NOTICE_BODY = (
-    "応答の前に、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance-correction.md`"
+    "応答の前に、`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
     "「割り込み・訂正・中止」に従い、現物との比較の要否を判定せよ。"
 )
 """ユーザーが書いた文の内容を現物で確かめる手順の所在を示す注記の本文。
@@ -99,10 +106,6 @@ importするため、循環importを避けて本モジュールに置く。
 規則で分類を誤ると、現物との比較を最も要する発話で注記が返らず、欠落にも気付けないためである。
 """
 
-_REALIGN_NOTICE_BODY = (
-    "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "`agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」に従って目標と問題の理解を確かめよ。"
-)
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として", "その手の")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
 
@@ -119,7 +122,7 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
         return None
     body = (
         "発話に例示の語がある。応答・具体化の前に、"
-        "`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`"
+        "`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
         "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断せよ。"
         "例示が上位の対象の一部なら、上位の対象を言葉で定め、例示以外の候補を探してから範囲を確定せよ。"
     )
@@ -133,14 +136,8 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
 
 def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]:
     """通常発話と質問への自由記述に共通の、内容に応じた注記を返す。"""
-    notices: list[str] = []
-    subject = subject or prompt
-    if "！！" in prompt:
-        body = _REALIGN_NOTICE_BODY
-        notices.append(_notice_formatter(source)(body, tag="notice", subject=subject))
-    if (example := _example_scope_notice(prompt, source, subject=subject)) is not None:
-        notices.append(example)
-    return notices
+    example = _example_scope_notice(prompt, source, subject=subject or prompt)
+    return [] if example is None else [example]
 
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
@@ -583,7 +580,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
             # pylint: disable-next=protected-access
             response = _agents_server_observations._extract_agents_server_structured_response(payload.get("tool_response"))
             if response.get("session_id") and response.get("status") != "failed" and not response.get("isError"):
-                function_hook_requests.enqueue(session_id, "periodic_recheck", {})
+                notices.extend(_mount_periodic_recheck(session_id))
     elif tool_name == "TaskStop":
         consume_completion(session_id, target_ids(tool_input))
         response = payload.get("tool_response")
@@ -602,6 +599,26 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         if tool_name == "Bash" and (completion_notice := _completion_report_notice(payload, tool_input)) is not None:
             notices.append(completion_notice)
     return notices
+
+
+def _mount_periodic_recheck(session_id: str) -> list[str]:
+    """modへ定期再確認のtaskの装着を依頼し、装着できなかった場合の警告を同じ`start`の結果へ添える。
+
+    `$.prompt.submit`による通知は実行中のターンの終了後にしか届かないため、modの応答を待って同じターンの中で届ける。
+    作成の成功と既にtaskを持つ場合は空の応答となり、何も添えない。
+    modを読み込んでいない会話（読込目印が`ready`でない）では待たない。
+    """
+    paths = function_hook_paths(session_id)
+    try:
+        if paths is None or paths[0].read_text(encoding="utf-8") != "ready":
+            return []
+        response = asyncio.run(
+            function_hook_requests.request(session_id, "periodic_recheck", {}, timeout=_PERIODIC_RECHECK_WAIT_SECONDS)
+        )
+    except OSError, ValueError:  # 期限切れ（TimeoutError）を含む。警告はmodが次のターンの入力として届ける
+        return []
+    warning = response.get("reason")
+    return [warning] if isinstance(warning, str) and warning else []
 
 
 def main(payload_text: str) -> int:

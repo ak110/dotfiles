@@ -71,7 +71,7 @@ description: >
 - `agent-toolkit/share/rules/rules-common.codex.md`: Codexの全エージェント向けの規範。
 - `agent-toolkit/share/rules/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範およびClaude Code固有の規範。
   Codex固有の差分が必要な場合は`rules-subagent.codex.md`を追加する。
-  振り分け基準は`agent-basics:writing-standards/references/agent-documents-additions-additions.md`「規範追記時の判定」に従う。
+  振り分け基準は`agent-basics:writing-standards/references/agent-documents-additions.md`「規範追記時の判定」に従う。
 - 環境変数の命名規則として、配布物内で完結するものは`AGENT_TOOLKIT_<PURPOSE>`、個人環境で完結するものは`DOTFILES_`を接頭辞とする。
   一覧は`references/claude-hooks-environment.md`にある。
 
@@ -81,10 +81,10 @@ description: >
 記述の配置場所は、読み込まれる時点と成立に必要な前提条件に基づいて決定する。
 次の資料を参照する。
 
-- `agent-basics:writing-standards/references/agent-documents-basics-purpose.md`
-- `agent-basics:writing-standards/references/agent-documents-basics-placement.md`
-- `agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`
-- `agent-basics:writing-standards/references/agent-documents-basics-ownership.md`
+- `agent-basics:writing-standards/references/agent-documents-basics.md`
+- `agent-basics:writing-standards/references/agent-documents-basics.md`
+- `agent-basics:writing-standards/references/agent-documents-basics.md`
+- `agent-basics:writing-standards/references/agent-documents-basics.md`
 
 特定のツール、データ、命名、CI、運用形態などを前提とする内容はプロジェクト側に置き、それらの固有要素を同種の別要素へ置き換えても判定基準・工程順・終了条件が成立する汎用的な内容のみを配布物の対象とする。
 

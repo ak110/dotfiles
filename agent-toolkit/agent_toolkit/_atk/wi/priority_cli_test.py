@@ -48,7 +48,7 @@ def test_cli_priority_flows_to_list_json_and_selection_order(
     assert isinstance(reason, dict) and reason["priority_release"] == "修正の配布"
     sys.path.insert(0, str(_SCRIPTS))
     try:
-        import selection_contract  # pylint: disable=import-outside-toplevel
+        import selection_contract  # pylint: disable=import-outside-toplevel,import-error
     finally:
         sys.path.remove(str(_SCRIPTS))
     check = selection_contract._check_selection_order  # pylint: disable=protected-access

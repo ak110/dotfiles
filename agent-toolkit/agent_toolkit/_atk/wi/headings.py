@@ -12,7 +12,8 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
 from agent_toolkit._atk.wi import frontmatter
-from agent_toolkit._common.markdown_headings import parse_headings, top_level_atx_headings
+from agent_toolkit._common import markdown_headings
+from agent_toolkit._common.markdown_headings import parse_headings
 
 
 def parse_h2_headings(text: str) -> list[tuple[Token, str]]:
@@ -26,33 +27,13 @@ def contains_h2(text: str) -> bool:
 
 
 def _h2_section_bodies(text: str) -> list[tuple[str, list[str]]]:
-    """ATX記法のトップレベルH2について、見出し名と本文の行を出現順で返す。
-
-    本文はその見出しの直後から次のH2の直前までとする。
-    引用や箇条書きの内側にあるH2と、setext記法の見出しは対象にしない。
-    """
-    normalized = frontmatter.normalize_newlines(text)
-    lines = normalized.split("\n")
-    # 次の見出しまでを本文とするため、境界の探索もトップレベルのATX H2だけに限る。
-    # 引用や箇条書きの内側にあるH2を境界へ含めると、節の本文の範囲がその行で終わり、非空の判定を誤る。
-    toplevel = top_level_atx_headings(normalized, 2)
-    sections: list[tuple[str, list[str]]] = []
-    for index, (token, content) in enumerate(toplevel):
-        assert token.map is not None
-        next_token = toplevel[index + 1][0] if index + 1 < len(toplevel) else None
-        end = next_token.map[0] if next_token is not None and next_token.map is not None else len(lines)
-        sections.append((content.strip(), lines[token.map[1] : end]))
-    return sections
+    """ATX記法のトップレベルH2について、見出し名と本文の行を出現順で返す。"""
+    return markdown_headings.h2_section_bodies(text)
 
 
 def h2_sections(text: str) -> list[tuple[str, bool]]:
-    """ATX記法のトップレベルH2について、見出し名と本文が非空かの対を出現順で返す。
-
-    空白だけの行を非空として数えない。
-    `## 実現性`のような固定書式の節があるかを判定する際に、引用・箇条書きの内側のH2とsetext記法の見出しを
-    節として数えないためである。
-    """
-    return [(name, any(line.strip() for line in body)) for name, body in _h2_section_bodies(text)]
+    """ATX記法のトップレベルH2について、見出し名と本文が非空かの対を出現順で返す。"""
+    return markdown_headings.h2_sections(text)
 
 
 def last_h2_section_lines(text: str, name: str) -> list[str] | None:

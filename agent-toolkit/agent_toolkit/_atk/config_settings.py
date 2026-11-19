@@ -410,15 +410,35 @@ def validate_mutable_setting(key: str, value: str) -> None:
 
 @dataclasses.dataclass(frozen=True)
 class ConfiguredRepository:
-    """同じoriginの登録先から登録順で最初の1件を残した対象と、その作業ツリー・Git共通ディレクトリ。"""
+    """process-loopの処理対象（repositoryと系統の組）と、登録した作業ツリー・Git共通ディレクトリ。
+
+    系統を登録しないrepositoryは`branch`がNoneの1件になり、処理対象の識別子`key`は`repo_id`と同じになる。
+    """
 
     repo_id: str
     worktree: pathlib.Path
     common_dir: pathlib.Path
+    branch: str | None = None
+    default_branch: str | None = None
+
+    @property
+    def key(self) -> str:
+        """所有・開始判定・結果の対応に使う処理対象の識別子を返す。"""
+        return target_key(self.repo_id, self.branch)
+
+    @property
+    def is_default(self) -> bool:
+        """repository単位の仕事（Dependabotなどの監査）を担う対象かを返す。"""
+        return self.branch is None or self.branch == self.default_branch
+
+
+def target_key(repo_id: str, branch: str | None) -> str:
+    """repositoryと系統の組の識別子を返す。系統の無い対象はrepository識別子そのものとする。"""
+    return repo_id if branch is None else f"{repo_id}@{branch}"
 
 
 def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
-    """移行済みのrepository登録からprocess-loop対象のGit実体を返す。"""
+    """移行済みのrepository登録からprocess-loop対象のGit実体を、系統ごとに展開して返す。"""
     try:
         repositories = repository_settings()
         result = []
@@ -428,7 +448,14 @@ def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
             location = config_repositories.locate(pathlib.Path(item["path"]))
             if location is None:
                 raise ValueError(f"登録先のGit作業ツリーを解決できない: {item['path']}")
-            result.append(ConfiguredRepository(repo_id, location.worktree, location.common_dir))
+            settings = config_repositories.branch_settings(item)
+            if settings is None:
+                result.append(ConfiguredRepository(repo_id, location.worktree, location.common_dir))
+                continue
+            result.extend(
+                ConfiguredRepository(repo_id, location.worktree, location.common_dir, branch, settings.default_branch)
+                for branch in settings.branches
+            )
         return tuple(result)
     except (OSError, UnicodeError, ValueError) as error:
         raise _next_action.ActionableError(
@@ -451,6 +478,15 @@ def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]
     if not isinstance(value, str):
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
     return config_repositories.parse(value, check_paths=check_paths)
+
+
+def repository_branch_settings() -> dict[str, config_repositories.BranchSettings]:
+    """系統を登録したrepositoryの識別子から系統の登録への対応を返す。"""
+    return {
+        repo_id: settings
+        for repo_id, item in repository_settings(check_paths=False).items()
+        if (settings := config_repositories.branch_settings(item)) is not None
+    }
 
 
 def check_repository_environment() -> None:

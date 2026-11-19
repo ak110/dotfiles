@@ -3,6 +3,7 @@
 
 # pylint: disable=protected-access
 
+import errno
 import shutil
 from pathlib import Path
 from typing import Any, cast
@@ -25,6 +26,14 @@ from pytools._internal.install_codex_plugins_test_helpers import (
 )
 from pytools._internal.install_codex_plugins_test_helpers import _empty_unused_plugins as _empty_unused_plugins
 from pytools._internal.install_codex_plugins_test_helpers import plugin_env_fixture as plugin_env_fixture
+
+
+def _cache() -> Path:
+    return install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit"
+
+
+def _saved_root() -> Path:
+    return install_codex_plugins.CODEX_HOME / ".dotfiles-plugin-cache-saved"
 
 
 @pytest.mark.parametrize(
@@ -87,30 +96,36 @@ def test_plugin_add_failure_keeps_legacy_link(
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
-def test_cache_restore_failure_is_reported(
+def test_cache_restore_failure_is_reported_and_recovered_by_next_run(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """CLI失敗後に旧cacheも復旧できない場合は、両方の失敗を診断する。"""
-    previous = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
+    """CLI失敗後に旧cacheも復旧できない場合は両方の失敗を診断し、次回の実行が退避先から戻す。"""
+    previous = _cache() / "1.2.2"
     previous.mkdir(parents=True)
     (previous / "marker").write_text("previous", encoding="utf-8")
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2")])
 
     def command(args: list[str]) -> bool:
         if args[:2] == ["plugin", "add"]:
-            shutil.rmtree(previous.parent)
+            shutil.rmtree(_cache())
             return False
         return True
 
+    original_rename = Path.rename
     original_copytree = shutil.copytree
 
-    def copytree(*args: Any, **kwargs: Any) -> Path:
-        destination = Path(args[1])
-        if destination.is_relative_to(previous.parent):
+    def rename(self: Path, target: Path) -> Path:
+        if Path(target).is_relative_to(_cache()):
             raise OSError("injected restore failure")
-        return original_copytree(*args, **kwargs)
+        return original_rename(self, target)
+
+    def copytree(source: Any, destination: Any, *args: Any, **kwargs: Any) -> Any:
+        if Path(destination).is_relative_to(_cache()):
+            raise OSError("injected restore failure")
+        return original_copytree(source, destination, *args, **kwargs)
 
     monkeypatch.setattr(install_codex_plugins, "_command", command)
+    monkeypatch.setattr(Path, "rename", rename)
     monkeypatch.setattr(install_codex_plugins.shutil, "copytree", copytree)
 
     with caplog.at_level("WARNING"):
@@ -120,6 +135,230 @@ def test_cache_restore_failure_is_reported(
     assert "plugin addと旧cacheの復旧に失敗" in caplog.text
     assert "injected restore failure" in caplog.text
     assert "表示された内容とパスをdotfilesの作者へ報告してください" in caplog.text
+    assert not previous.exists()
+
+    monkeypatch.setattr(Path, "rename", original_rename)
+    monkeypatch.setattr(install_codex_plugins.shutil, "copytree", original_copytree)
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
+    install_codex_plugins.run()
+
+    assert (previous / "marker").read_text(encoding="utf-8") == "previous"
+    assert not _saved_root().exists()
+
+
+class _Killed(BaseException):
+    """更新処理の強制終了を模す。"""
+
+
+def test_interrupted_update_is_recovered_by_next_run(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """退避中に強制終了した更新が残した旧versionを、更新の無い次回の実行が同じパスへ戻す。"""
+    for version in ("1.2.1", "1.2.2"):
+        (_cache() / version).mkdir(parents=True)
+        (_cache() / version / "marker").write_text(version, encoding="utf-8")
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2")])
+
+    def killed(args: list[str]) -> bool:
+        if args[:2] == ["plugin", "add"]:
+            shutil.rmtree(_cache())
+            raise _Killed
+        return True
+
+    monkeypatch.setattr(install_codex_plugins, "_command", killed)
+    with pytest.raises(_Killed):
+        install_codex_plugins.run()
+    assert not (_cache() / "1.2.1").exists()
+
+    # 強制終了の後に、atk-hookなどが同じ版を作り直した場合はその内容を残す。
+    (_cache() / "1.2.2").mkdir(parents=True)
+    (_cache() / "1.2.2/marker").write_text("recreated", encoding="utf-8")
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([]))
+    install_codex_plugins.run()
+
+    assert (_cache() / "1.2.1/marker").read_text(encoding="utf-8") == "1.2.1"
+    assert (_cache() / "1.2.2/marker").read_text(encoding="utf-8") == "recreated"
+    assert not _saved_root().exists()
+
+
+def _update_with_locked_version(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, calls: list[list[str]], *, copy_fails: bool
+) -> None:
+    """1.2.1を移動できない状態で1.2.2から1.2.3へ更新する。CLIは`plugin add`で全旧版を削除する。"""
+    for version in ("1.2.1", "1.2.2"):
+        (_cache() / version).mkdir(parents=True)
+        (_cache() / version / "marker").write_text(version, encoding="utf-8")
+    locked = _cache() / "1.2.1"
+    original_rename = Path.rename
+    original_copytree = shutil.copytree
+
+    def rename(self: Path, target: Path) -> Path:
+        if self == locked:
+            raise PermissionError("in use")
+        return original_rename(self, target)
+
+    def copytree(*args: Any, **kwargs: Any) -> Path:
+        if copy_fails:
+            raise OSError("injected copy failure")
+        return original_copytree(*args, **kwargs)
+
+    current: dict[str, Any] = {"version": "1.2.2", "enabled": True}
+
+    def codex_json(args: list[str]) -> dict[str, Any]:
+        return _local_marketplace(plugin_env) if args[1] == "marketplace" else _installed_state(**current)
+
+    def command(args: list[str]) -> bool:
+        calls.append(args)
+        if args[:2] == ["plugin", "add"]:
+            shutil.rmtree(_cache())
+            (_cache() / "1.2.3/agent_toolkit").mkdir(parents=True)
+            (_cache() / "1.2.3/agent_toolkit/hook.py").write_text("hook 1.2.3", encoding="utf-8")
+            current.update(version="1.2.3")
+        return True
+
+    monkeypatch.setattr(Path, "rename", rename)
+    monkeypatch.setattr(install_codex_plugins.shutil, "copytree", copytree)
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+    install_codex_plugins.run()
+
+
+def test_version_that_cannot_be_moved_is_copied_and_restored(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """移動できない版（Windowsで使用中など）は複製して退避し、CLIが削除した後に同じパスへ戻す。"""
+    _update_with_locked_version(plugin_env, monkeypatch, [], copy_fails=False)
+
+    assert {path.name for path in _cache().iterdir()} == {"1.2.1", "1.2.2", "1.2.3"}
+    assert (_cache() / "1.2.1/marker").read_text(encoding="utf-8") == "1.2.1"
+    assert (_cache() / "1.2.2/marker").read_text(encoding="utf-8") == "1.2.2"
+    assert not _saved_root().exists()
+
+
+def test_snapshot_failure_returns_moved_versions(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """退避の途中で失敗した場合は、移動済みの版を元へ戻してから失敗を伝え、`plugin add`を実行しない。"""
+    calls: list[list[str]] = []
+    with pytest.raises(OSError, match="injected copy failure"):
+        _update_with_locked_version(plugin_env, monkeypatch, calls, copy_fails=True)
+
+    assert (_cache() / "1.2.1/marker").read_text(encoding="utf-8") == "1.2.1"
+    assert (_cache() / "1.2.2/marker").read_text(encoding="utf-8") == "1.2.2"
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+    assert not _saved_root().exists()
+
+
+def test_cache_on_other_volume_is_copied_back(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """cacheと退避先が別ボリュームで名前の変更ができない場合も、複製で退避して同じパスへ戻す。"""
+    for version in ("1.2.1", "1.2.2"):
+        (_cache() / version).mkdir(parents=True)
+        (_cache() / version / "marker").write_text(version, encoding="utf-8")
+    original_rename = Path.rename
+
+    def rename(self: Path, target: Path) -> Path:
+        if self.is_relative_to(_saved_root()) != Path(target).is_relative_to(_saved_root()):
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        return original_rename(self, target)
+
+    current: dict[str, Any] = {"version": "1.2.2", "enabled": True}
+
+    def command(args: list[str]) -> bool:
+        if args[:2] == ["plugin", "add"]:
+            shutil.rmtree(_cache())
+            (_cache() / "1.2.3/agent_toolkit").mkdir(parents=True)
+            (_cache() / "1.2.3/agent_toolkit/hook.py").write_text("hook 1.2.3", encoding="utf-8")
+            current.update(version="1.2.3")
+        return True
+
+    monkeypatch.setattr(Path, "rename", rename)
+    monkeypatch.setattr(
+        install_codex_plugins,
+        "_codex_json",
+        lambda args: _local_marketplace(plugin_env) if args[1] == "marketplace" else _installed_state(**current),
+    )
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+    install_codex_plugins.run()
+
+    assert {path.name for path in _cache().iterdir()} == {"1.2.1", "1.2.2", "1.2.3"}
+    assert (_cache() / "1.2.1/marker").read_text(encoding="utf-8") == "1.2.1"
+    assert (_cache() / "1.2.2/marker").read_text(encoding="utf-8") == "1.2.2"
+    assert not _saved_root().exists()
+
+
+def test_interrupted_rollback_keeps_saved_version_for_next_run(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """plugin add失敗後の巻き戻しが元のパスを途中まで消して失敗しても、次回の実行が退避した内容で置き換える。"""
+    (_cache() / "1.2.1").mkdir(parents=True)
+    (_cache() / "1.2.1/marker").write_text("1.2.1", encoding="utf-8")
+    locked = _cache() / "1.2.1"
+    original_rename = Path.rename
+    original_rmtree = shutil.rmtree
+
+    def rename(self: Path, target: Path) -> Path:
+        if self == locked:
+            raise PermissionError("in use")
+        return original_rename(self, target)
+
+    def rmtree(path: Any, ignore_errors: bool = False) -> None:
+        if Path(path) == locked:
+            # Windowsでは開かれていないファイルだけが消え、使用中のファイルで削除が止まる。
+            (locked / "marker").unlink(missing_ok=True)
+            raise PermissionError("in use")
+        original_rmtree(path, ignore_errors=ignore_errors)
+
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2")])
+    monkeypatch.setattr(Path, "rename", rename)
+    monkeypatch.setattr(install_codex_plugins.shutil, "rmtree", rmtree)
+    monkeypatch.setattr(install_codex_plugins, "_command", lambda args: args[:2] != ["plugin", "add"])
+    with caplog.at_level("WARNING"):
+        install_codex_plugins.run()
+    assert "plugin addと旧cacheの復旧に失敗" in caplog.text
+    assert not (locked / "marker").exists()
+
+    monkeypatch.setattr(Path, "rename", original_rename)
+    monkeypatch.setattr(install_codex_plugins.shutil, "rmtree", original_rmtree)
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([]))
+    install_codex_plugins.run()
+
+    assert (locked / "marker").read_text(encoding="utf-8") == "1.2.1"
+    assert not _saved_root().exists()
+
+
+def test_disabled_plugin_still_recovers_saved_versions(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """無効化したpluginの版更新は保留しても、前回の実行が残した退避は戻す。"""
+    saved = _saved_root() / "ak110-dotfiles/agent-toolkit/1.2.1"
+    saved.mkdir(parents=True)
+    (saved / "marker").write_text("1.2.1", encoding="utf-8")
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2", enabled=False)])
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    install_codex_plugins.run()
+
+    assert (_cache() / "1.2.1/marker").read_text(encoding="utf-8") == "1.2.1"
+    assert not _saved_root().exists()
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+
+
+def test_interrupted_restore_leftovers_are_cleaned_by_next_run(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """復元の途中で中断した実行が残した印と複製は、次回の実行が片付けて退避先を空にする。
+
+    版を元のパスへ戻した直後の中断では退避の無い`~replace`の印だけが残り、
+    複製の途中の中断後に元のパスが再作成されると`~restoring`の複製が残る。
+    """
+    saved = _saved_root() / "ak110-dotfiles/agent-toolkit"
+    saved.mkdir(parents=True)
+    (saved / "1.2.0~replace").touch()
+    (saved / "1.2.1").mkdir()
+    (saved / "1.2.1/marker").write_text("1.2.1", encoding="utf-8")
+    for version in ("1.2.0", "1.2.1", "1.2.1~restoring"):
+        (_cache() / version).mkdir(parents=True)
+        (_cache() / version / "marker").write_text(version, encoding="utf-8")
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([]))
+
+    install_codex_plugins.run()
+
+    assert {path.name for path in _cache().iterdir()} == {"1.2.0", "1.2.1", "1.2.3"}
+    assert not _saved_root().exists()
 
 
 def test_post_install_verification_failure_keeps_legacy_link(

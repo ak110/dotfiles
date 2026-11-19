@@ -53,6 +53,25 @@ _NORM_RESTRUCTURE_RECORDS = pathlib.Path("docs/development/norm-restructure-2026
 _RETIRED_READING_TABLE_PATTERN = re.compile(r"(?:-delivery-\d+|reading-references)\.md$")
 
 
+# 内容を入口`atk-mode`の手順書へ移して廃止したスキル。過去の記録と保存値は当時の名前と配置を保持する。
+_ATK_MODE_RETIRED_SKILLS = ("add-awi-by-user", "wi-standards", "user-confirmation-and-report")
+
+
+# 対象版を固定した監査記録。当時の配置を記録として保持する。
+_FIXED_AUDIT_RECORDS = frozenset(
+    pathlib.Path(value)
+    for value in ("docs/development/audit-opus55-hosts-2026-11-15.json", "docs/development/audit-sol-2026-11-14.json")
+)
+
+
+def _names_retired_skill(reference: str, skills: tuple[str, ...]) -> bool:
+    """参照が`skills`のいずれかのスキル名か、その配下のパスを指す場合に真を返す。"""
+    return any(
+        reference == f"{_PLUGIN_PREFIX}:{skill}" or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")
+        for skill in skills
+    )
+
+
 _INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-hooks-202606-20260914.md")
 
 
@@ -105,11 +124,11 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     ): 1,
     (
         f"{_PLUGIN_PREFIX}:session-review",
-        pathlib.Path("agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/references/answer-transitions.md"),
     ): 2,
     (
         f"{_PLUGIN_PREFIX}:session-review-batch",
-        pathlib.Path("agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/references/answer-transitions.md"),
     ): 1,
     (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS_VALIDATION): 1,
     (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS_WORKFLOWS): 1,
@@ -122,6 +141,15 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:exit-session", pathlib.Path("docs/development/audit-records-session-records.md")): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
+    # 報告用UWIの`scope`として保存済みの起動単位の名前。同名のスキルは起動しない。
+    (f"{_PLUGIN_PREFIX}:wi-standards", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submit.py")): 1,
+    # 移行前の起動コマンドを含むセッション記録を読む試験の入力
+    (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submission_findings_test.py")): 3,
+    (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/skills/atk-mode/scripts/wi_quote_check_test.py")): 2,
+    (
+        f"{_PLUGIN_PREFIX}:add-awi-by-user",
+        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_user_events_test.py"),
+    ): 4,
     # 分割前のStop判定モジュールを当時の所在で記す障害事例
     (f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py", _INCIDENTS_WORKFLOWS): 1,
     # 廃止したスキルの経緯を記す方針・設計の記録
@@ -130,8 +158,18 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS_AUTHORIZATION): 2,
     # 判定台帳の説明が、基準commitの後に撤去したファイルを例として挙げる
     (f"{_PLUGIN_PREFIX}/skills/realign-with-user/SKILL.md", _NORM_RESTRUCTURE_README): 1,
+    (f"{_PLUGIN_PREFIX}/skills/user-confirmation-and-report/SKILL.md", _NORM_RESTRUCTURE_README): 1,
     # 切り出しスクリプトのテストが一時リポジトリへ作成するスキルのパス
     (f"{_PLUGIN_PREFIX}/skills/demo/SKILL.md", _NORM_RESTRUCTURE_CLAUSES_TEST): 1,
+    # 対象版を固定した監査記録が、後に削除した計画ファイルの基準を当時の所在で記す
+    **{
+        (f"{_PLUGIN_PREFIX}/skills/write-plan/references/plan-file-standards-{name}.md", pathlib.Path(audit)): 1
+        for name in ("design", "requirements")
+        for audit in (
+            "docs/development/audit-opus55-hosts-2026-11-15.json",
+            "docs/development/audit-sol-2026-11-14.json",
+        )
+    },
 }
 
 
@@ -193,11 +231,11 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
             "external-write-review",
             "plan-mode",
             "session-review",
+            *_ATK_MODE_RETIRED_SKILLS,
         )
-        if source.is_relative_to(_NORM_RESTRUCTURE_RECORDS) and any(
-            reference == f"{_PLUGIN_PREFIX}:{skill}" or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")
-            for skill in retired
-        ):
+        if source.is_relative_to(_NORM_RESTRUCTURE_RECORDS) and _names_retired_skill(reference, retired):
+            continue
+        if source in _FIXED_AUDIT_RECORDS and _names_retired_skill(reference, _ATK_MODE_RETIRED_SKILLS):
             continue
         key = (reference, source)
         if captured_versions.get(key):

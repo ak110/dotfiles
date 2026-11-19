@@ -34,7 +34,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 
 ## 読込表
 
@@ -43,28 +43,28 @@ description: >
 | 改善案を作成する前（エージェント向け文書が対象の場合） | `agent-basics:writing-standards/SKILL.md` | | | |
 | 対話と成果物を評価する多ターン試行を選んだ時と結果を受領する時 | `references/multi-turn-trials.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials.md` | |
 | 実セッションから小課題を作り、条文変更の効果を比較する方法を選んだ時 | `references/multi-turn-trials.md` | | | |
-| `audit`で文書を点検する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md`、`agent-basics:writing-standards/references/host-official-references.md` | 判断 | `skill:refine-prompt` | |
+| `audit`で文書を点検する前 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-basics:writing-standards/references/claude-hooks.md` | 判断 | `skill:refine-prompt` | |
 
 ## 使用条件
 
 起動の契機は、文書を新しく作る作業と指示文を改訂する作業の前に読む`references/evaluation-triggers.md`と、文書の点検を求める作業項目が定める。
 対象は利用頻度の高いスキルと自動化の中核となる文書に限り、起動コストに見合わない単発のプロンプトや、作成者の主観的な好みを反映するだけの作業は除外する。
 この除外は本スキルという手段の選択に限定する。
-プロンプトの欠陥が品質（Quality）に影響する場合は、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に従って処置の要否を判断する。
+プロンプトの欠陥が品質（Quality）に影響する場合は、`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」に従って処置の要否を判断する。
 指示と挙動の不一致を問題として調査するときは、原因を指示の曖昧さに限定せず、評価や追記案の検討に先立って`agent-basics:bugfix`を起動する。
-初動対応・原因分析・対策選定を進めた結果、指示文の改訂が必要と判断された場合に本スキルを適用する。
+同スキルの5つの問いを進めた結果、指示文の改訂が必要と判断された場合に本スキルを適用する。
 通常のプロンプト改善は、この不具合調査の流れとは区別して進める。
 
 ## 文書の点検
 
 引数`audit`で起動する点検は、モデルやホストの更新を契機に文書を見直すための、読み取り専用の点検である。
 費用のかかる通読を必要な文書に限るため、検索による判定と評価担当の通読の2段階で行う。
-点検観点と削減の判断基準は`agent-basics:writing-standards/references/agent-documents-additions-volume.md`「文書記述量の管理」に従う。
+点検観点と削減の判断基準は`agent-basics:writing-standards/references/agent-documents-additions.md`「文書記述量の管理」に従う。
 
 1. 常時配送される規範（`share/rules/common/`と`share/rules/rules-main*.md`などの起動時本文）、agent-basics・agent-toolkitのスキル本体とreferences、hookがエージェントへ返す通知文を列挙する。
    配送元の定義を使い、点検済みと未点検を区別する。
    ホストの更新による点検では、変更履歴の該当項目と関係する規範だけを対象にする。
-2. 処理するセッションのモデル・ホストに対応する公式プロンプトガイドを、`agent-basics:writing-standards/references/host-official-references.md`から確認する。
+2. 処理するセッションのモデル・ホストに対応する公式プロンプトガイドを、`agent-basics:writing-standards/references/claude-hooks.md`から確認する。
    対象の版と適用条件を確かめ、点検対象の一覧と取得した一次資料の保存先を点検資料へまとめる。
 3. 1段階目として、対象の全ファイルを点検の観点ごとに検索し、該当箇所を読んで判定する。
    ファイルごとに、該当なし、提案あり、本文を読まないと判定できない、のいずれかと、検索語・一致件数を記録する。
@@ -181,9 +181,9 @@ description: >
 ## 指摘の集約と改善案作成
 
 6. 元の意図を保つため、メインエージェントは重複や関連する指摘をまとめ、`agent-basics:review-standards`と同スキルの`references/reviewee.md`に基づいて採否を判定する。
-   転記を求める指摘は`agent-basics:writing-standards/references/agent-documents-basics-ownership.md`「定義の所有者」で評価し、採用する指摘の改善案をdiffで作る。
+   転記を求める指摘は`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」で評価し、採用する指摘の改善案をdiffで作る。
    評価担当の出力はユーザーへ直接表示されないため、指摘の原表現をできる限り保持する。
-7. `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に沿って、技術的な指摘の採否を自ら判断して反映する。
+7. `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に沿って、技術的な指摘の採否を自ら判断して反映する。
    目的や期待される結果の変更、あるいはユーザー固有の好みや認可が必要な事項に限ってユーザーに確認する。
 8. 元の依頼を完遂するため、反映後は対象の編集手順を定めたスキルと`agent-basics:check-execution`に従う。
    必要な評価と反映の後は、確認を挟まず元の残工程へ進む。
@@ -195,4 +195,4 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 固定課題による多ターン試行：両役の入力と返却の基準を適用する前 | `references/multi-turn-trials-dialogue.md` |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` |

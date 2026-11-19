@@ -79,8 +79,8 @@ def test_custom_command_error_patterns_capture_severity() -> None:
 AGENT_DOC_TONE_REPRESENTATIVES = (
     "AGENTS.md",
     "agent-toolkit/share/rules/common/01-agent.md",
-    "agent-toolkit/share/add-wi.parent.md",
-    "agent-toolkit/skills/add-awi-by-user/SKILL.md",
+    "agent-toolkit/skills/atk-mode/roles/add-wi.parent.md",
+    "agent-toolkit/skills/atk-mode/playbooks/add-awi-by-user.md",
     "agent-toolkit/skills/commit/references/ci-failure-handling.md",
     ".chezmoi-source/dot_claude/docs/session-review-dotfiles.md",
     ".chezmoi-source/dot_claude/skills/operate-ak110-projects/SKILL.md",

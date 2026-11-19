@@ -8,7 +8,7 @@ import os
 import pathlib
 import types
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -33,6 +33,7 @@ class _RawCodex:
         self.process = types.SimpleNamespace(pid=os.getpid())
         self.parent_environment: dict[str, str] = {}
         self.closed = 0
+        self.residual: list[str] = []
         self.calls: list[str] = []
         self.notification = notification
         self.server_request = server_request
@@ -54,7 +55,7 @@ class _RawCodex:
 
     async def close(self) -> list[str]:
         self.closed += 1
-        return []
+        return list(self.residual)
 
 
 @pytest.mark.asyncio
@@ -144,8 +145,10 @@ async def test_origin_resource_survives_three_owners_without_old_decoder(tmp_pat
         await asyncio.wait_for(serving, 10)
 
 
+@pytest.mark.parametrize("residual", [[], ["pid=7: codex app-server"]])
 @pytest.mark.asyncio
-async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.Path) -> None:
+async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.Path, residual: list[str]) -> None:
+    """受信処理の停止は、元I/OのApp Serverを止めてから接続障害として報告し、停止を確認できない対象を伝える。"""
     caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
     directory = service_transport.namespace(caller)
     broker = ResourceBroker("G1")
@@ -153,7 +156,7 @@ async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.
     serving = asyncio.create_task(service.run(directory, "G1", stop=stop, resources=broker))
     raw: _RawCodex | None = None
     client: service_io.CodexResource | None = None
-    failures: asyncio.Queue[BaseException] = asyncio.Queue()
+    failures: asyncio.Queue[tuple[BaseException, int]] = asyncio.Queue()
 
     async def save() -> None:
         raise RuntimeError("保存の失敗")
@@ -165,11 +168,13 @@ async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.
         pytest.fail("未発生のイベントを受信した")
 
     async def failure(error: BaseException) -> None:
-        failures.put_nowait(error)
+        assert raw is not None
+        failures.put_nowait((error, raw.closed))
 
     def factory(*args: Any) -> _RawCodex:
         nonlocal raw
         raw = _RawCodex(*args)
+        raw.residual = residual
         return raw
 
     try:
@@ -186,12 +191,80 @@ async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.
             await client.start()
             assert raw is not None
             await raw.notification({"value": "1"})
-            error = await failures.get()
+            error, closed = await failures.get()
+            assert closed == 1
             assert isinstance(error, AppServerError)
             assert "保存の失敗" in str(error)
+            assert all(item in str(error) for item in residual)
             assert client.reader_failure is error
     finally:
         if client is not None:
             await client.detach()
         stop.set()
         await asyncio.wait_for(serving, 10)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("app_server_alive", [False, True])
+async def test_close_after_owner_generation_exited(monkeypatch, app_server_alive):
+    """資源を所有した世代が先に終了しても終了処理を失敗させず、App Serverが残る場合だけ所有を保つ。
+
+    2026-11-17、移譲途中の資源の停止で現行世代の終了処理が失敗した。
+    """
+
+    class _Gone:
+        origin = {"generation": "G1", "process": "999999:gone"}
+
+        async def operation(self, *_args, **_kwargs):
+            raise ConnectionRefusedError("所有世代は終了済み")
+
+    async def unexpected(*_args):
+        raise AssertionError("呼ばれない")
+
+    client = service_io.CodexResource(cast(Any, _Gone()), unexpected, unexpected, unexpected)
+    client.process = types.SimpleNamespace(pid=4242)
+    monkeypatch.setattr(service_io.psutil, "pid_exists", lambda pid: app_server_alive and pid == 4242)
+
+    residual = await client.close()
+
+    assert bool(residual) is app_server_alive
+    if app_server_alive:
+        assert "pid=4242" in residual[0] and "G1" in residual[0]
+
+
+@pytest.mark.asyncio
+async def test_closing_after_reader_stopped_releases_resource_with_unread_events() -> None:
+    """受信処理が止まった後に閉じた資源は、未確認のイベントを残してbrokerに留まらない。
+
+    留まると、資源の解放を退出の条件とする元世代の管理サービスが退出できない。
+    """
+    broker = ResourceBroker("G1")
+    runtime = service_io.Runtime("G1", {"generation": "G1", "process": "1:owner"}, broker)
+    raw: _RawCodex | None = None
+    failures: list[BaseException] = []
+
+    def factory(*args: Any) -> _RawCodex:
+        nonlocal raw
+        raw = _RawCodex(*args)
+        return raw
+
+    async def stop_reading(_message: dict) -> None:
+        raise RuntimeError("受信処理の停止")
+
+    async def unexpected(_value: Any) -> None:
+        pytest.fail("未発生のイベントを受信した")
+
+    async def failure(error: BaseException) -> None:
+        failures.append(error)
+
+    client = service_io.CodexResource.create(runtime, factory, stop_reading, unexpected, failure)
+    await client.start()
+    assert raw is not None
+    async with asyncio.timeout(5):
+        for number in range(3):
+            await raw.notification({"number": number})
+        while not failures:
+            await asyncio.sleep(0)
+        assert await client.close() == []
+    assert raw.closed >= 1
+    assert broker.backlog(client.resource.identifier) is None

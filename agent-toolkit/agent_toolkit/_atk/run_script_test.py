@@ -11,7 +11,7 @@ import pytest
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import next_action, plugin_environment
-from agent_toolkit._testing import git_repository, termination_evidence_support
+from agent_toolkit._testing import git_repository, plan_fixture, termination_evidence_support
 from agent_toolkit._testing.isolation import restore_host_environment
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
@@ -354,75 +354,7 @@ def test_dispatch_keeps_worktree_inputs_independent(
 def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_path: pathlib.Path) -> None:
     repository = git_repository.init_repository(tmp_path / "repository", commit_message="base")
     source = tmp_path / "source.md"
-    source.write_text(
-        f"""# 外部入口検証
-
-## 概要
-
-登録済み入口を検証する。
-
-### 計画メタ情報
-
-- 起動経路: `agent-toolkit:write-plan`
-- 対象リポジトリ: `{repository}`
-- 関連WI: なし
-- 作業種別: 通常変更
-
-## 実施内容
-
-| 実施内容 | 由来 | 採否 | 根拠 |
-| --- | --- | --- | --- |
-| 登録済み入口を検証する | ユーザー指示 | 採用 | 原文の要求単位は1件であり、開放性を保ったまま実施範囲とする。 |
-
-## 要件・外部仕様
-
-隔離したhomeへ計画を保存する。
-
-### 受入シナリオ
-
-| シナリオ | 由来 | 消費主体と入口 | 利用目的と後続行動 | 操作 | 期待結果 | テスト |
-| --- | --- | --- | --- | --- | --- | --- |
-| 保存 | ユーザー指示 | 計画作成者と`atk` | 計画を保存し実装の基準にする | 隔離したhomeを渡す | 計画を保存する | 本テスト |
-
-## 恒久化・リファクタリング
-
-### 恒久化
-
-| 知見 | 出所 | 反映先 | 根拠 |
-| --- | --- | --- | --- |
-| 登録済み入口 | ユーザー指示 | テスト | 公開経路を固定するため。 |
-
-### リファクタリング
-
-| 対象 | 現状の問題 | 対応 |
-| --- | --- | --- |
-| 起動経路 | 実入口のテストが無い。 | 結合テストを追加する。 |
-
-## 変更履歴
-
-### ユーザー発言1
-
-```text
-登録済み入口を検証する。
-```
-
-## 検証
-
-| 区分 | 検証コマンド |
-| --- | --- |
-| 変更範囲の検証 | `pytest` |
-
-## 公開工程
-
-なし
-
-## 進捗ログ
-
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-""",
-        encoding="utf-8",
-    )
+    source.write_text(plan_fixture.request_plan(repo=repository), encoding="utf-8")
     outside = tmp_path / "outside"
     outside.mkdir()
     isolated_home = tmp_path / "home"

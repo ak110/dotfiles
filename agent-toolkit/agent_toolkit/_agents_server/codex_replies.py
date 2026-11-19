@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import typing
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -17,6 +18,7 @@ from agent_toolkit._agents_server.codex_protocol import (
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
+from agent_toolkit._agents_server.session_errors import KILL_NOT_DELIVERED_NEXT_ACTION
 from agent_toolkit._agents_server.state import SessionState, begin_reply, initialize_turn
 from agent_toolkit._atk.usage_limit_policy import should_wait
 from agent_toolkit._common import codex_usage_limit
@@ -24,6 +26,8 @@ from agent_toolkit._common.next_action import ActionableError
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
+
+_LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 
 class CodexRepliesMixin:
@@ -146,20 +150,53 @@ class CodexRepliesMixin:
         if not session.turn_id:
             raise ActionableError(
                 "the active Codex turn has no turn_id",
-                next_action="`atk agents wait`で状態を確認し、turnが続いていて中断が必要なら`kill`を再発行する",
+                next_action=KILL_NOT_DELIVERED_NEXT_ACTION,
             )
         client = self._owned_client(session)
         if client is None:
-            raise AppServerError("Codex App Server client is unavailable for interrupt")
+            failed = self._clients.get(session.session_id)
+            if failed is None or getattr(failed, "reader_failure", None) is None:
+                raise AppServerError("Codex App Server client is unavailable for interrupt")
+            await self._wait_failure_published(session)
+            return
+        turn_id = session.turn_id
+        stage = "送出確認待ち"
+
+        def sent() -> None:
+            nonlocal stage
+            stage = "応答待ち"
+
         try:
-            await client.request(
-                "turn/interrupt",
-                {"threadId": session.session_id, "turnId": session.turn_id},
-            )
+            await client.request("turn/interrupt", {"threadId": session.session_id, "turnId": turn_id}, on_sent=sent)
         except JsonRpcResponseError:
             if session.terminal:
                 return
             raise
+        except AppServerError as exc:
+            if getattr(client, "reader_failure", None) is None:
+                # 管理サービス経由では接続障害の通知より先に要求の失敗が届くことがあり、配送を確定できない。
+                raise ActionableError(str(exc), next_action=KILL_NOT_DELIVERED_NEXT_ACTION) from exc
+            await self._wait_failure_published(session)
+            return
+        except asyncio.CancelledError:
+            # killの配送期限による取消。止まった段階と接続の状態が無いと、配送未確定の原因を切り分けられない。
+            _LOG.warning(
+                "Codexのturn/interruptを完了前に取り消しました: session_id=%s turn_id=%s stage=%s connection=%s。"
+                "stageが応答待ちならApp Serverの無応答、送出確認待ちでbacklogが上限なら受信処理の停滞で止まっている",
+                session.session_id,
+                turn_id,
+                stage,
+                client.diagnostic(),
+            )
+            raise
+
+    async def _wait_failure_published(self: CodexManager, session: SessionState) -> None:
+        """受信を失った接続の失敗が、sessionの終了として公開されるのを待つ。
+
+        受信を失った接続はApp Serverを止めてから失敗を報告するため、中断要求は届かない。その公開を終了として待つ。
+        """
+        async with self._condition:
+            await self._condition.wait_for(lambda: session.terminal)
 
     async def _start_reply_locked(
         self: CodexManager,

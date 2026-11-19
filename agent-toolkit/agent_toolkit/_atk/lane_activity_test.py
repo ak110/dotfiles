@@ -19,6 +19,7 @@ from agent_toolkit._atk import agents_exit_session, lane
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk.wi import process_loop_session
 from agent_toolkit._common import session_registry
+from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._testing import git_repository, isolation
 from agent_toolkit._testing.lane_integration_support import _integration_args, _integration_selection, _legacy
 from agent_toolkit._testing.lane_support import _create, _create_args, _create_in, _invoke, _selection
@@ -401,6 +402,69 @@ def test_process_activity_ignores_nested_worktree(
     assert lane._process_activity(worktree) is None  # pylint: disable=protected-access
     location = worktree
     assert lane._process_activity(worktree)  # pylint: disable=protected-access
+
+
+@pytest.mark.skipif(os.name == "nt", reason="シンボリックリンクの作成権限に依存しないPOSIXで確かめる")
+def test_process_activity_follows_symlinked_cwd_and_argument(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """シンボリックリンク経由のcwdと絶対引数も、解決先のworktreeの使用として検出する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    link = tmp_path / "link"
+    link.symlink_to(worktree, target_is_directory=True)
+    sources: dict[str, Any] = {"cwd": str(tmp_path), "argv": ["program"]}
+
+    class Process:
+        """照会対象のcwdと引数を差し替えられる外部プロセス。"""
+
+        pid = 12345
+        info = {"username": lane.psutil.Process().username()}
+
+        def cwd(self) -> str:
+            return sources["cwd"]
+
+        def cmdline(self) -> list[str]:
+            return sources["argv"]
+
+    monkeypatch.setattr(lane.psutil, "process_iter", lambda *_args, **_kwargs: [Process()])
+    assert lane._process_activity(worktree) is None  # pylint: disable=protected-access
+    sources["cwd"] = str(link)
+    assert lane._process_activity(worktree)  # pylint: disable=protected-access
+    sources.update(cwd=str(tmp_path), argv=["program", f"--file={link / 'file'}"])
+    assert lane._process_activity(worktree)  # pylint: disable=protected-access
+
+
+def test_process_activity_resolves_registered_roots_once_per_scan(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """1回の走査で登録rootの解決をプロセス数・絶対引数数に比例して繰り返さない。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+
+    class Process:
+        """対象外のcwdと絶対引数を持つ外部プロセス。"""
+
+        pid = 12345
+        info = {"username": lane.psutil.Process().username()}
+
+        def cwd(self) -> str:
+            return str(tmp_path)
+
+        def cmdline(self) -> list[str]:
+            return ["program", f"--file={tmp_path / 'a'}", str(tmp_path / "b")]
+
+    preparations = []
+    original = git_worktrees.resolve_worktrees
+
+    def counted(entries):
+        preparations.append(1)
+        return original(entries)
+
+    monkeypatch.setattr(git_worktrees, "resolve_worktrees", counted)
+    monkeypatch.setattr(lane.psutil, "process_iter", lambda *_args, **_kwargs: [Process() for _ in range(50)])
+    assert lane._process_activity(worktree) is None  # pylint: disable=protected-access
+    assert len(preparations) == 1
 
 
 @pytest.mark.parametrize(

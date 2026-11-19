@@ -31,6 +31,7 @@ from agent_toolkit._testing.agents_server_resume_support import (
     _wait_with_timeout,
 )
 from agent_toolkit._testing.agents_server_resume_support import _isolate_session_registry as _isolate_session_registry
+from agent_toolkit._testing.agents_server_support_claude import claude_manager
 
 
 @pytest.mark.asyncio
@@ -301,6 +302,39 @@ async def test_kill_interrupts_while_initial_result_is_pending(
         client.emit(SystemMessage(session.session_id))
         response = await manager.send_message(session.session_id, "続行", timeout=1)
         assert response["delivery"] == "reply_started"
+
+
+@pytest.mark.asyncio
+async def test_replaced_cli_process_forgets_background_tasks_of_stopped_process(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """CLIプロセスを起動し直した会話は、止めた旧プロセスのバックグラウンドタスクを理由に結果を保留しない。
+
+    旧プロセスはタスクを止めても受信列へ終了を通知せず、新しいプロセスは`stopped`の通知を
+    初期化メッセージより前に送る（Claude Code 2.1.327とClaude Agent SDK 0.2.182で観測）。
+    """
+    stopped = ControlledClaudeClient("claude-replaced")
+    replacement = ControlledClaudeClient("claude-replaced")
+    replacement.messages = asyncio.Queue()
+    replacement.emit(TaskNotificationMessage("task-1", "stopped"))
+    replacement.emit(SystemMessage("claude-replaced"))
+    clients = iter([stopped, replacement])
+    async with claude_manager(monkeypatch, None, client_factory=lambda _options: next(clients)) as (manager, backend):
+        session = await _start(manager, tmp_path, monkeypatch)
+        stopped.emit(TaskStartedMessage("task-1"))
+        stopped.emit(ResultMessage("待機中: task-1"))
+        await _await_state(lambda: session.awaiting_auto_resume)
+
+        # 利用上限の解除後の継続と同じく、同じ会話の状態を保ったまま所有タスクとCLIプロセスを入れ替える。
+        await backend._resume_next_turn(session, "続行")
+        assert stopped.disconnected
+        replacement.emit(ResultMessage("最終結果"))
+        result = await _wait_with_timeout(manager, 1)
+
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "最終結果"
+        assert "error" not in result
 
 
 @pytest.mark.asyncio

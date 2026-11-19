@@ -2,7 +2,7 @@
 
 メインエージェントがAWIを取得し、計画の作成、実装、実行レビュー、および終了処理までを単一の実行フローの中でまとめて行う。
 別レーンへ委譲して並列処理する場合は`../SKILL.md`を使用する。
-実行中は自律モードで動作し、WIの共通契約は`../../wi-standards/SKILL.md`、工程ごとの責務と受け渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
+実行中は自律モードで動作し、WIの共通契約は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`、工程ごとの責務と受け渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 本スキルの処理は、キューや対象worktreeを読み書きできるファイル操作環境、Gitおよび`atk`のCLI、独立したレビュー担当の起動・結果受領手段、および参照資料がすべてそろっている環境で実施する。
 これらの操作機能が備わっていない環境では、提示されたWIの実施内容と計画原稿を整理し、未実施の実装・レビュー・公開タスクを明示する。
@@ -18,14 +18,13 @@
 | 工程の責務と受け渡しを確認する前 | `../../../share/workflow-phases.md` | | |
 | 操作機能がなく計画原稿を整理する前 | `quality-standards.md` | | |
 | 複数レーンへ処理を切り替える前、または既存不良の即時対応を判断する前 | `../SKILL.md` | | |
-| ユーザー確認の要否と手段を選ぶ前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| ユーザー確認の要否と手段を選ぶ前 | `agent-toolkit:atk-mode/playbooks/confirmation.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/atk-mode/playbooks/confirmation.md` |
 | 書き込みを委譲先へ分担させる前 | `agent-toolkit:delegation/references/mandatory-rules.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` |
-| 不良の類似見直しと再発防止を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | | |
 | 不良を発見し対処を判断する前 | `agent-basics:bugfix/SKILL.md` | | |
-| WIの共通契約を適用する前 | `../../wi-standards/SKILL.md` | | |
+| WIの共通契約を適用する前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` | | |
 | 対象WIの選定と処理開始を判断する前 | `selection-procedure.md` | | |
-| 既存不良の正式対応を登録する前 | `../../../share/add-wi.parent.md` | | |
-| 回答済みUWIの処理またはWIを終了する前 | `../../wi-standards/references/wi-standards-states.md` | | |
+| 既存不良の正式対応を登録する前 | `agent-toolkit:atk-mode/roles/add-wi.parent.md` | | |
+| 回答済みUWIの処理またはWIを終了する前 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | | |
 | 取得時の版が変わった記録を再利用する前 | `../../../share/exec-review-recording-grounds.md` | | |
 | WI実装commitの対応を記録する前 | `../../commit/references/commit-wi-records.md` | | |
 | 常時稼働サーバー反映の要否・再利用・開始条件を判断する前 | `../../report-completion/references/server-reflection.md` | | |
@@ -54,14 +53,14 @@ all-reposから受領した候補を処理する場合は、`all-repos-orchestra
 - `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`（所在参照）
 - `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`（所在参照）
 
-`agent-toolkit:write-plan`を起動した場合は、ユーザー確認の要否と手段を`agent-toolkit:user-confirmation-and-report`で選択し、計画の起草後は本書の実行順に戻って主作業ツリーで実装を進める。
+`agent-toolkit:write-plan`を起動した場合は、ユーザー確認の要否と手段を`agent-toolkit:atk-mode/playbooks/confirmation.md`で選択し、計画の起草後は本書の実行順に戻って主作業ツリーで実装を進める。
 計画のstemは`dd-HHmm_process-wi-single-lane`とし、実行レビューのレビューイーはメインエージェントとする。
 Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処理に対して定めているUWI記録と暫定判断のルールを本スキルにも適用する。
 バージョン番号は、対象リポジトリの版数管理規範における単一worktree向けの一般原則に従い、実装段階でメインエージェントが更新する。
 
 ## 処理の振り分け
 
-計画ファイルの作成要否を`agent-toolkit:write-plan`「計画ファイルの作成要否」に従って判定し、作成が必要な項目を「計画対象」、省略できる項目を「直接実装対象」として分類する。
+計画ファイルの作成要否を`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」に従って項目ごとに判定し、計画が要る項目を「計画対象」、要らない項目を「直接実装対象」として分類する。
 初期選定されたすべてのWIを記録した保存済み対応表をもとに、対象worktreeの全計画対象を1つの計画ファイルへまとめ、計画段階でのレビューは省略して実装後の実行レビューのみで検証する。
 専用のworktreeは新設せず、対応表に記載されたworktreeで実装する。
 
@@ -89,7 +88,7 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 今回の作業で混入した不良かを区別し、回避後や工程が完全には停止していない場合の扱いも、同書「即時対応」に従う。
 
 - 公開工程（実行順8）の開始前に見つけた不良は、観測事象、進行への影響度、および直接修正すべき範囲を確認する。
-  必要な修正を実施した後、観測結果、差分、検証結果、未完了の正式対応内容を`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の要求事項として渡し、`source: process-wi`のAWIとして保存する
+  必要な修正を実施した後、観測結果、差分、検証結果、未完了の正式対応内容を`agent-toolkit:atk-mode/roles/add-wi.parent.md`の要求事項として渡し、`source: process-wi`のAWIとして保存する
 - 今回の作業で混入させた不良や初期選定された要求に属する類似箇所は、元の要求の範囲内で是正する。
   独立改善の追加は同書の対処時機判定を経る
 - 公開工程の開始後に見つけた不良も、`immediate-fix.md`「対象外の不良と是正要求」に従い、公開を妨げる不良の修正と次のセッションの停止・遮断へ即時対応する。
@@ -103,7 +102,7 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 1. 処理可能なWI（processable）の一覧と各WIの本文を取得する。
    初回一覧に`--snapshot-output <開始時集合JSONの絶対パス>`を付け、all-reposから受領した場合は既存の`snapshot_file`を使う。
    30分点検と公開前の新着確認は`immediate-fix.md`「開始後に追加されたWIの確認」に従い、同じ開始時集合と判定済み記録を維持する。
-   同時に`atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス>`で回答済みUWIの本文を取得する。
+   同時に`atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto`で回答済みUWIの本文を取得する。
    frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く。
    対象worktreeごとに公開対象とベースブランチを明示し、`selection-procedure-candidates.md`「処理対象の決定」に定める開始時のCI点検を実施する。
    実装に着手する前に実際のCI状況を照会し、失敗ログの取得と残工程への影響判定を行う。
@@ -111,9 +110,9 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
    公開時のベースライン確認とCI検収も実行順8で実施する。
    `source: run-skill`の承認用UWIも対象にし、処理手順は`selection-procedure-candidates.md`「処理対象の決定」に従う。
    報告用UWIは次回の同じ起動単位の`atk run-skill`が扱う。
-   回答済みUWIは実装前に`../../wi-standards/references/wi-standards-states.md`「状態と依存」に従って終了するか処理対象へ加える。
+   回答済みUWIは実装前に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従って終了するか処理対象へ加える。
    依存関係が未解決の項目は、依存元のWIがprocessableであり同一の`target_repo`を対象としている場合に限り、今回の実行に含めて報告する。
-   依存元の状態変更や集合からの除外が必要な場合は、`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従って確認の要否を判断する。
+   依存元の状態変更や集合からの除外が必要な場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従って確認の要否を判断する。
    各WIについて、ファイル名、保存されている`target_repo`、Git操作に使用するworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OID、開始前の状態、計画対象か直接実装対象かの区分、完了済み工程と残工程を対応表にまとめる。
    処理を開始する前に、全件の内容を既存の引き継ぎ記録へ保存し、後続工程における比較の基準とする。
    同資料「集合確定直後の処理開始」に従い、`atk wi show`を用いて保存された`target_repo`と対応worktreeのoriginが一致していることを確認する。
@@ -123,7 +122,7 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
    初回の`atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`に渡す引数は、保存済み対応表の中で開始前にinbox状態であった全件からworktreeごとに抽出する。
    すでに処理開始済みの項目を重複して状態遷移させない。
    中断した実行を保存済みの対応表・計画・引き継ぎ記録から再開する場合と、回答済みUWIや、依存の解消・`unhold`で`inbox`へ戻った元項目を対応表へ加える場合も、作業の再開前に`atk wi show`で対応表の全件の現在の状態を照会し、`inbox`の項目を同じ操作で`processing`へ移す。
-   作業に着手する項目を開始経路によらず`processing`にする契約は、`../../wi-standards/references/wi-standards-states.md`「状態と依存」が示す状態遷移に従う。
+   作業に着手する項目を開始経路によらず`processing`にする契約は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」が示す状態遷移に従う。
    途中で処理が失敗した場合は、CLIの診断メッセージと残存状態を同じ対応表に記録し、未完了の工程から再開する。
    ユーザーの明示追加と本書「見つけた既存不良の扱い」で今回追加とした正式改善AWIは対応表へ反映し、後続工程の比較基準を更新する。
    集合固定後の追加は、`selection-procedure-addition.md`「処理対象WIの追加」の判断基準に従って扱う。
@@ -132,8 +131,9 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 3. 計画対象が存在する場合は、対象worktreeごとに計画ファイルを起草する。
    計画メタ情報の対象リポジトリ、および計画構造の自動チェックに渡す`--work-dir`にはそのworktreeを指定し、対応表にあるすべての計画対象を`--expected-wi <WIファイル名>`で繰り返し指定して、実装前に過不足のない一致を確認する。
    全件が直接実装対象である場合は計画ファイルを新設せず、対応表とレビュー対象集合の和によって網羅性を検収する。
-4. 対応表のworktreeにおいて、計画対象は`## 要件・外部仕様`に従い、直接実装対象はWIの要求事項と完成条件に従って実装する。
-   受入シナリオの具体化、検証単位の選定、検証結果の保存、独立文脈レビューへの受渡しは`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」に従う。
+4. 対応表のworktreeにおいて、計画対象は計画の`## 反映内容と反映先`と`## 完成条件`に従い、直接実装対象はWIの要求事項と完成条件に従って実装する。
+   8節形式の計画では、`agent-toolkit:write-plan`の`references/legacy-plan-file-standards.md`「8節形式」の対応表で節を読み替える。
+   完成条件の具体化、検証単位の選定、検証結果の保存、独立文脈レビューへの受渡しは`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」に従う。
    Git管理外のファイルを変更する場合は、最初の変更前に変更前のバックアップ複製を作成し、複製の対応関係は計画ファイルの`## 進捗ログ`、または直接実装の引き継ぎ記録に残す。
    コミット履歴の整理によって取得時の版が変わった記録の再利用については、`../../../share/exec-review-recording-grounds.md`「根拠の書き方」に従う。
    互いの成果に依存しないworktree間では作業を並行して進めてよい。
@@ -149,7 +149,7 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
    指摘に対する修正作業はメインエージェント自身が行い、同一の「開始時のHEAD」とレビュー指摘管理表を引き続き使用する。
 7. 各計画について`atk run-script plan-progress --`を実行して完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックが成功することを確認した上で計画バンドルを保存する。
 8. 各WIを`adopt`または`reject`する。
-   `adopt`時は`../../wi-standards/references/wi-standards-states.md`「状態と依存」に定めるコミット対応付けを用いる。
+   `adopt`時は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に定めるコミット対応付けを用いる。
    worktreeごとに`agent-toolkit:commit`の`references/publish.md`に従って公開する。
    採否は公開前に確定し、CI待機後へ延期しない。
    複数のリポジトリを対象とする場合は成果物間の依存順序を守り、互いに独立したリポジトリのpushを先にすべて完了させてからCI監視を並行して開始し、すべての実行識別子の終了を待って結果を個別に回収する。

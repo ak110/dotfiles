@@ -21,7 +21,7 @@ Claude Codeが会話イベントのハンドラーを登録するために読み
 Python側は、目印が`ready`であり、かつファイルの更新時刻が現在のClaude Codeプロセス起動時刻より後である場合に限り、終了要求ファイルへ`requested`を書き込んで`exit_requested`を返す。
 `turn.complete`はメインエージェントのターンでのみこの値を読み取り、値を`consumed`へ書き換えて`/exit`をキューへ投入する。
 目印がない場合やCodexでは、対話CLIプロセスを従来どおり終了させる。
-`process-loop resume ID`で本人IDの再開を予約済みの場合は、未達goalのまま再起動するため、このmodへ終了を遅延させず、既存のPID世代照合後に単一PIDへ終了要求を送る。
+`process-loop resume ID`で本人IDの再開を予約済みの場合は、目的が未達のまま再起動するため、このmodへ終了を遅延させず、既存のPID世代照合後に単一PIDへ終了要求を送る。
 予約の消費は次のCLIの実起動が担当し、終了コマンドは予約を保持する。
 
 `/exit`はセッション限りの未完了タスクが残ると確認画面を表示するため、`turn.complete`は`/exit`を投入する直前に、`durable`が真ではないcronタスクを削除する。
@@ -30,9 +30,8 @@ process-loopによって起動された会話の最上位Stopでは、終了要�
 この条件に該当する場合、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`は終了要求を`consumed`に戻して終了をブロックする。
 Stop hookは同じターンの`turn.complete`より先に動くため、取り下げた終了要求で`/exit`が実行されることはない。
 
-`/goal`の評価もStopの時点で行われ、未達ならターンを継続させるため、`turn.complete`の後始末が動くのは評価の後になる。
-Stop入力の`session_crons`・`background_tasks`・`last_assistant_message`に未完了と読める状態を残す後始末を`turn.complete`へ置く場合は、目標の設定下でその状態を評価より前に解消する主体と手順を別に定める。
-定期再確認の通常回収は、目標の設定下ではメインエージェントが最終ターンを閉じる前に削除する（`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」）。
+process-loopの統括と`atk run-skill`が起動したセッションでは、定期再確認の通常回収と同じ範囲のtaskを、メインエージェントが最終ターンを閉じる前にも削除する。
+手順は`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」、経緯は`docs/development/design-hooks-periodic-recheck.md`にある。
 
 Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終了要求は、Stopの全判定が完了した後に共通ハンドラー（`stop.py`）から発行される。
 終了要求が`requested`か特定PIDへの終了要求として成立した場合、そのStop hookの応答は停止の通知だけになる。

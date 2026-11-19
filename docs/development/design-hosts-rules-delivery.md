@@ -36,6 +36,9 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 | 作業ディレクトリからルートまでの各ディレクトリの`CLAUDE.local.md`と、同階層に`AGENTS.md`が無い場合の`CLAUDE.md` | `~/.codex/AGENTS.md`からの読込指示 |
 
 ユーザー単位の`*.local.md`と`~/.claude/CLAUDE.md`の2種類は実行ホストごとにユーザーが置くファイルであり、リポジトリから生成する`~/.codex/AGENTS.md`へ埋め込めない。
+dotfilesがホストを限って配る`*.local.md`もある。
+例は`.chezmoi-source/dot_claude/rules/ssh-peer-hosts.local.md.tmpl`で、`.chezmoidata.toml`の役割`ssh_peers`のホストだけに本文が出て、他のホストではファイルが作られない。
+ホストごとに中身が違うため、これも同様に埋め込めない。
 読込指示は実行時のファイルの有無によらず共通であるため、プロジェクト直下の`.claude/rules/`と同じ手段を選ぶ。
 2026年10月6日に、`agents_server`で起動したCodexの委譲先が、`~/.claude/rules/`直下の`*.local.md`が使えないと定めたコマンドを実行して失敗した。
 当時の読込指示はプロジェクト直下の3種だけを挙げ、ユーザー単位の規範を含めていなかった。
@@ -55,7 +58,7 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと`02-agent-operations.md`の任意の条文の有無を返させる。
 委譲先へ届く条文の範囲は実際に動かして確定し、届いている条文を`agent-toolkit/share/rules/rules-subagent.md`へ重複して置かない。
 
-容量超過時の整理は`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「記述量の水準」に従う。
+容量超過時の整理は`agent-basics/skills/writing-standards/references/agent-documents-additions.md`「記述量の水準」に従う。
 SessionStartの整理後の水準は、長いパス・最大の追加指示・作業契約の有無を組み合わせた最終出力で8,000文字以下とする。
 超過時は常時注入部分の場面固有の内容を判断前に読む既存資料へ移す。
 固定の規範・案内と可変の契約・パス・起動入力を分けて確認し、大入力の退避と予算内配送を維持する。

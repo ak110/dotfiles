@@ -8,7 +8,7 @@
 
 通知を遮断にする根拠: 警告では、送達した内容を応答本文へ再掲する事象が止まらなかった。
 遮断された主体は応答本文を`…`だけにするか、新しい内容を`send_to_user`で送るだけで回復できるため、
-`agent-basics:writing-standards`の`references/claude-hooks-block-warn-eligibility.md`の遮断の条件に当たる。
+`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`の遮断の条件に当たる。
 連続blockの上限は`stop.py`が管理する。
 
 委譲先での実行可否: ユーザーへ送達するメインだけを対象とし、サブエージェントと委譲先、`send_to_user`の無いCodexは判定しない。

@@ -15,6 +15,7 @@ from agent_toolkit._agents_server import mcp_tools, shared_roots, state, status_
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._testing.agents_server_support import (
+    LISTED_SESSION_KEYS,
     FakeBackend,
     UnavailableStartBackend,
     _complete,
@@ -319,12 +320,7 @@ async def test_success_response_key_sets_for_all_tools(
         listed = await manager.list_sessions(include_terminated=True)
         assert listed.keys() == {"sessions", "root_session_id"}
         assert listed["root_session_id"] == "root-session"
-        assert all(
-            {"session_id", "status"}
-            <= item.keys()
-            <= {"session_id", "status", "engine", "model", "effort", "started_at", "updated_at", "seconds_since_activity"}
-            for item in listed["sessions"]
-        )
+        assert all({"session_id", "status"} <= item.keys() <= LISTED_SESSION_KEYS for item in listed["sessions"])
 
 
 @pytest.mark.asyncio

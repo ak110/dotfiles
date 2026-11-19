@@ -1,47 +1,43 @@
 # Svelte／SvelteKit記述スタイル
 
-対象バージョン: Svelte 5系・SvelteKit 2〜3系。
-本書は、公式ドキュメント（<https://svelte.dev/docs>）のうち、runesモードにおいて判断を誤りやすい重要事項を抜粋してまとめたものである。
+対象の版: Svelte 5系、SvelteKit 2〜3系。
+本書は、runesモードで書くSvelteとSvelteKitのコードで、公式ドキュメント（<https://svelte.dev/docs>）のうち誤りやすい版に固有の事項を示す。
+サーバーの状態、CSRF、秘匿値の規定は`agent-basics:writing-standards/references/quality-principles-constraints.md`の適用である。
 
 ## runesの使い分け
 
-- リアクティブな状態変数は`$state`を用いて宣言する（トップレベルの`let`による単独宣言はリアクティブにならない）。
-- 派生する値は`$derived`、副作用を伴う処理は`$effect`に明確に分離し、`$effect`の中で状態を同期することは避ける。
-  従来のリアクティブ宣言`$:`は、runesモードではサポートされていない。
-- 外部ライブラリとのDOMの同期処理には、`$effect`よりも`{@attach ...}`を優先して使用する（公式推奨）。
-- コンポーネントのpropsは、`$props()`の分割代入を用いて宣言する。
-  `export let`はレガシーモードでのみ使用する。
+- リアクティブな状態は、トップレベルの`let`ではなく`$state`で宣言する。
+- 派生する値は`$effect`の中で同期せず`$derived`で宣言し、副作用だけを`$effect`に置く。
+  runesモードでは`$:`の代わりに`$derived`と`$effect`を使う。
+- 外部ライブラリとのDOMの同期は、`$effect`より`{@attach ...}`を選ぶ（公式の推奨）。
+- propsは`$props()`の分割代入で宣言し、`export let`はレガシーモードだけで使う。
 
 ## スニペットとコンポーネント分割
 
-- 同一スコープ内で完結するUIの表示断片はsnippetを用い、独立した状態管理、ライフサイクル、またはファイルをまたぐ再利用が必要なものは独立したコンポーネントとして切り出す。
-- コンポーネントタグ内に直接記述された内容は、暗黙の`children`スニペットとして`$props()`経由で受け取る。
-  名前付きスニペットは複数の挿入スロットが必要な場合に限り追加し、通常のpropの命名には`children`以外の名前を使用する。
-- スニペットを描画する際は`{@render name()}`構文を使用する。
-  通常の値のテキスト展開とスニペットの描画は、それぞれ専用の構文を用いて明確に区別する。
+- 同じスコープで完結する表示の断片はsnippet、独立した状態やファイルをまたぐ再利用が要るものはコンポーネントにする。
+- タグの中に直接書いた内容は、暗黙の`children`スニペットとして`$props()`で受け取る。
+  名前付きスニペットは挿入する場所が複数要る時だけ足し、通常のpropには`children`以外の名前を使う。
+- スニペットは`{@render name()}`で描画する。
 
 ## SvelteKitのload関数
 
-- データベースアクセスやファイル操作などの処理は、server load（`+page.server.ts`や`+layout.server.ts`）に配置する。
-  universal load（`+page.ts`や`+layout.ts`）はブラウザ環境でも実行されるため、外部に公開可能な情報のみを扱う。
-- 同一ルートにserver loadとuniversal loadの両方が存在する場合、server loadの戻り値がuniversal loadの引数`data`として渡される。
-- フォームの送信やデータの変更処理には、プログレッシブエンハンスメントに対応するform actions（`+page.server.ts`の`actions`）を優先して使用する。
-  CSRF対策は組み込みのOrigin検査が有効な場合に働き、`kit.csrf.trustedOrigins`へ`"*"`を含める（SvelteKit 3。2系では`csrf.checkOrigin: false`）と全面的に無効になる。
-  無効にする場合は代わりの防御を置く。
-  プロキシ経由のOrigin不一致は、アダプターの`ORIGIN`設定や`Sec-Fetch-Site`による判定で解決する。
-- APIキーなどの機密情報は、サーバー専用モジュール（`+page.server.ts`、`+layout.server.ts`、`+server.ts`、サーバーフック、および`$lib/server`配下）でのみ取り扱う。
+- データベースやファイルを扱う処理はserver load（`+page.server.ts`、`+layout.server.ts`）に置く。
+  universal load（`+page.ts`、`+layout.ts`）はブラウザーでも実行されるため、公開してよい情報だけを扱う。
+- 同じルートにserver loadとuniversal loadがある時は、server loadの戻り値がuniversal loadの引数`data`になる。
+- フォームの送信とデータの変更はform actions（`+page.server.ts`の`actions`）を優先する。
+- CSRFの防御は組み込みのOrigin検査が有効な時に働き、`kit.csrf.trustedOrigins`に`"*"`を含める（SvelteKit 3。2系では`csrf.checkOrigin: false`）と全面的に無効になる。
+  無効にする時は代わりの防御を置き、プロキシ経由のOriginの不一致はアダプターの`ORIGIN`設定か`Sec-Fetch-Site`による判定で解決する。
+- APIキーなどの秘匿値は、サーバー専用のモジュール（`+page.server.ts`、`+layout.server.ts`、`+server.ts`、サーバーフック、`$lib/server`の下）だけで扱う。
 
 ## SSR前提の実装
 
-- `window`や`document`などのブラウザ専用APIを呼び出す際は、事前に`$app/environment`の`browser`定数で判定する。
-  この判定は、トップレベルスクリプトや`$derived.by`などSSR（サーバーサイドレンダリング）時にも実行される箇所に配置する。
-  サーバー上では実行されない`$effect`の内部では、この判定を設ける必要はない（公式ドキュメントで不要とされている）。
+- `window`や`document`などのブラウザー専用APIは、`$app/environment`の`browser`で判定してから呼ぶ。
+  判定はトップレベルのscriptや`$derived.by`などSSRでも実行される箇所に置く（サーバーで実行されない`$effect`の中は判定が要らないと公式が示す）。
 
 ## セキュリティと状態共有
 
-- `{@html}`はHTMLエスケープを無効化するため、システム自身が安全に生成した静的コンテンツや、サニタイズ処理済みの安全な文字列のみを渡す。
-- サーバー側のモジュールスコープ変数やグローバル変数にユーザー固有のデータを保持すること、およびload関数内でストアやグローバル状態を書き換えることは避ける。
-  Node.js等のサーバープロセスは複数ユーザー間で共有される長寿命なプロセスであり、他ユーザーへの情報漏洩を引き起こすためである。
-- ユーザー固有の状態は、`cookies`を用いてセッションを認証した上でデータベースに永続化する。
-- SSRを伴う環境においてcontext経由で状態を共有する際は、親コンポーネントから子コンポーネントへの単方向の受け渡しとし、子から親への逆伝播を前提とした設計は避ける。
-  SSRレンダリング中の子コンポーネントでの状態更新は、すでにレンダリングが完了している親コンポーネントには反映されず、クライアント側でのhydration時に画面のちらつきを引き起こすためである。
+- `{@html}`はエスケープを無効にするため、システムが生成した静的な内容かサニタイズ済みの文字列だけを渡す。
+- サーバーのモジュールスコープやグローバルの変数にユーザー固有のデータを持つことと、load関数でストアやグローバルの状態を書き換えることを避ける。
+  サーバーのプロセスは複数のユーザーで共有されるため、他のユーザーへ情報が漏れる。
+- SSRでcontextを使って状態を共有する時は、親から子への一方向にする。
+  SSR中に子で更新した状態は描画済みの親に反映されず、hydrationで画面がちらつく。

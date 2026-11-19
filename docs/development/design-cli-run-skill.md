@@ -13,8 +13,10 @@
 
 `atk run-skill`が指定スキルを実行する子セッションは非対話起動（Claudeは`claude -p`、Codexは`codex exec`）とする。
 定期実行には操作する端末が無く、対話型のCLIは入力を待ったまま止まるためである。
-Claudeでは最初の入力を`/goal`へ渡し、目標評価で報告用UWIの保存までターンを続けさせる。
-Codexの非対話起動は`/goal`の行を通常の入力として残し目標として扱わないため（Codex 0.160.1で観測）、`atk-auto`要素の目的文だけを渡し、セッションはモデルの最終応答で終わる。
+全engineで`atk-auto`要素の目的文を通常の最初の入力として渡す。
+報告用UWIの保存までは、Stop hookの`run_skill_report_gate.py`が終了を遮断して続行させる（[design-hooks-termination-evidence.md](design-hooks-termination-evidence.md)「自動起動セッションの続行の判定」）。
+2026年11月まではClaudeだけ最初の入力を`/goal`へ渡し、目標評価で報告の保存までターンを続けさせていた。
+Codexの非対話起動は`/goal`の行を通常の入力として残し目標として扱わなかった（Codex 0.160.1で観測）。
 目的文は起動したセッション自身が担当するスキル名と認識したモードの工程の完遂を示し、起動元が子の終了後に行う検収と確定を含まないことを短く併記する。
 スキル全体の完遂だけを示した目的文では、目標の評価が起動元の同期検収まで子の未達と解釈し、子の担当工程を終えた後の終了を繰り返し遮断した（2026年11月5日のbatch実行の観測）。
 自由記述、scope、旧scope、実行ID、報告先、batch manifestは`AGENT_TOOLKIT_SESSION_START_INPUT`でSessionStartへ渡す。
@@ -29,6 +31,7 @@ Claudeの出力上限を超える入力はmanaged-tempへ原本を保存して�
 子セッションへはprocess-loop用の環境印（`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`と`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`）を渡さない。
 印はStopで`atk agents-exit-session`の実行記録を求めるhookを有効にし、そのコマンドは対話型のCLI本体だけを停止対象とするため、最終応答で終わる非対話セッションが時間上限まで終われなくなる。
 起動元がprocess-loopの子でも印を除く。
+run-skillの最上位の続行は、`run_skill.py`が渡す`AGENT_TOOLKIT_RUN_SKILL_ID`で対象を識別する`run_skill_report_gate.py`が担う。
 
 `atk run-skill`の指定スキルの実行中に利用上限へ達した場合は、ClaudeとCodexのどちらも解除後に同じ会話を再開する。
 Claudeは常に構造化出力から利用枠情報を取得し、`--resume`で継続する。
@@ -48,7 +51,7 @@ upstreamがある場合は実remoteへのpush到達も確かめ、全て成立�
 保存済みならWI保存先のcommit・pushを完了し、次回の実行を待つ。
 
 過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う。
-手順は`agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。
+手順は`agent-toolkit/skills/atk-mode/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。
 process-wiとprocess-loopは、回答済みの承認用UWIを`source`によらず処理対象へ含め、`run_skill_report: true`の報告用だけを除外する。
 承認された操作を次回の定期起動まで待たせないためであり、処理担当は`scope`のスキルを起動して承認後の操作を実施し、結果を記録する。
 次回定期実行は処理中の項目を取り込まず、終了済みの項目はactiveの取得に入らない。

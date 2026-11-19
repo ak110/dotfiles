@@ -6,7 +6,7 @@
 
 目的は外部から観測できる文言または挙動を変える実装で、変更前の期待値を保持するテストを変更範囲の検証の対象に必ず含め、実行レビューが未探索と未更新を区別できるようにすることである。
 探索証跡には対象、検索語、直接消費側と採否を残し、未探索と未更新を区別できるようにする。
-探索対象と方法は[plan-file-standards.md](../../agent-toolkit/skills/write-plan/references/plan-file-standards.md)「要件・外部仕様」、検証対象の選定は[変更範囲の検証の対象選定](../../agent-toolkit/share/verification-operations.md)が定める。
+探索対象と方法は[awi-body.md](../../agent-toolkit/skills/atk-mode/references/awi-body.md)「直接影響範囲」、検証対象の選定は[変更範囲の検証の対象選定](../../agent-toolkit/share/verification-operations.md)が定める。
 実行レビュー担当は提出された検証結果から成果物へ到達し、成果物の欠落だけなら不足記録、未更新の直接消費側が実在する場合は完了条件違反として扱う。
 探索結果を完了報告の要約だけへ埋め込む案は、対象集合と採否の再検収ができず、記録不足と実装欠陥を分離できないため採用しない。
 
@@ -30,7 +30,7 @@
 初回レビューは採用案とテストの期待値を読む前に、利用場面から消費主体が必要とする期待結果を導く。
 レビューイーは是正要求を目的、事実の認識と変更要求に分けて受け取る。
 2026年10月3日に、実装、テストの期待値とレビューが同じ採用前提を共有し、互いの一致で目的に適さない表示が合格した観測に由来する。
-判断基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」が所有し、レビュー側は導出の時点だけを定めて基準を複製しない。
+判断基準は`agent-basics:writing-standards`の`agent-basics:writing-standards/references/design-heuristics.md`「設計案の予備選別」が所有し、レビュー側は導出の時点だけを定めて基準を複製しない。
 役割ごとに別スキルへ分ける案は、両役割が同じ場面で一方だけを起動するため、起動手順と常時ロードされる`description`を二重に持つだけとなり採用しない。
 
 レビュー担当は`review-standards/references/reviewee.md`を読まず、レビューイーは`review-standards/references/reviewer.md`を読まない。
@@ -150,5 +150,5 @@ round 3以上で未解決指摘を受けたレビューイーは、局所修正�
 ユーザーの是正または実際の動作確認で前提が失効した場合は、その前提だけを根拠とする指摘、修正方針および追加機構を次回レビュー前に撤去し、その前提を必要としない要求だけを再判定する。
 
 レビューイーは、前回の是正と同じ違反した規定または同じ根本原因を示す指摘を再び受領した場合に、`agent-basics:bugfix`の原因分析の要否判定へ接続する。
-2026年10月10日のユーザー指示による`agent-basics:bugfix`への集約後、同じ根本原因の問題の母集団は同スキルの`references/root-cause-remediation.md`「類似見直し」が根本原因から導き、レビューの文書は母集団を独自に定めない。
+2026年10月10日のユーザー指示による`agent-basics:bugfix`への集約後、同じ原因の問題を探す範囲は同スキルの`references/spread.md`が原因から導き、レビューの文書は母集団を独自に定めない。
 全てのレビュー修正へ恒常的な全体走査を課す案は、反復しない大多数の修正へ同じ費用を課すため採用しない。
