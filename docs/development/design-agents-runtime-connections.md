@@ -29,7 +29,6 @@ API残高は月1回の付与などで外部から回復し、永続化した判�
 
 Claude SDKの初期化応答がMCP接続失敗を示す場合、新規起動・再開ごとに公開再接続APIを1回試す。
 再接続の反復を独自に増やす案は、SDKの回復境界へ別の待機を重ねるため採用しない。
-監査記録と再検証手段は`audit-records-agents-server.md`の「docs/development/design-agents-runtime-connections.md：MCP接続失敗の再接続：2026年10月20日」にある。
 
 Codexの接続先は、役割別の使用順（`codex_orchestrator_connections`・`codex_worker_connections`）と種別ごとのprovider IDから決める。
 委譲先は待機対象外のサブスク利用上限とAPIの不受理で、状態互換性を確認して使用順の次の候補へ同じ会話を移す。

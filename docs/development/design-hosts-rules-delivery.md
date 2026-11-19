@@ -59,6 +59,3 @@ SessionStartの整理後の水準は、長いパス・最大の追加指示・�
 超過時は常時注入部分の場面固有の内容を判断前に読む既存資料へ移す。
 固定の規範・案内と可変の契約・パス・起動入力を分けて確認し、大入力の退避と予算内配送を維持する。
 この水準はエージェントが選んだ整理時の目安であり、10,000文字の合否上限は変えない。
-根拠と再検証手順は、`docs/development/audit-records-hooks-protocol.md`の「docs/development/design-hosts-rules-delivery.md：SessionStartの整理後の水準：2026年11月15日」にある。
-agents_serverのツール説明とserver instructionsの整理水準は、`audit-records-mcp.md`を参照する。
-該当節は「docs/development/design-hosts-rules-delivery.md：agents_serverの説明整理後の水準：2026年11月15日」である。

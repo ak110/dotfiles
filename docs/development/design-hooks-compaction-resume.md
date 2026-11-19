@@ -54,8 +54,6 @@ modからの`/restart`制限を回避する経路は作らない。
 
 ## 利用上限後のメインの再開予約
 
-観測と再検証手段は`docs/development/audit-records-usage-limit.md`の「docs/development/design-hooks-compaction-resume.md：利用上限後のメインの再開予約：2026年10月14日」にある。
-
 メインの利用上限では、StopFailureのコマンドhookが再開要求を保存し、Function hooksの`turn.complete`が既存の再開予約へ接続する。
 Remote Control接続ではホストの自動継続が自動で始まらないため、起動形態に対応した再開の契機を確保する。
 `turn.complete`の時点で`five_hour`か`seven_day`の使用率が100%以上の場合も、要求の保存が無くても同じ予約へ進む。

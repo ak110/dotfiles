@@ -195,12 +195,12 @@ def test_reference_outside_distribution_is_detected(tmp_path: pathlib.Path) -> N
     path = skills / "sample/SKILL.md"
     path.write_text(
         "# 例\n\n`references/rule.md`と`docs/development/audit-records.md`と"
-        "`docs/development/audit-records-search.md`と`AGENTS.md`に従い、"
+        "`docs/development/audit-records-wi.md`と`AGENTS.md`に従い、"
         "`skills/atk-mode/roles/exec.subagent.md`を読む。\n",
         encoding="utf-8",
     )
     assert _unresolved_references(path, skills) == [
         f"{path}:3: docs/development/audit-records.md",
-        f"{path}:3: docs/development/audit-records-search.md",
+        f"{path}:3: docs/development/audit-records-wi.md",
         f"{path}:3: skills/atk-mode/roles/exec.subagent.md",
     ]

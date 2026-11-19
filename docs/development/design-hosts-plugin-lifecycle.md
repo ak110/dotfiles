@@ -82,7 +82,6 @@ cache version台帳、POSIXの原本接続、Windowsの原本接続とファイ�
 Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plugin.json`より優先し、同一rootから導入した場合は`hooks/list`が0件となる。
 また、相対シンボリックリンクを含むCodex専用wrapperを公式CLIで導入すると、snapshotには`.codex-plugin`だけが残り、リンク先のhook・skill・実行資源が含まれない。
 そのため、`agent-toolkit-codex/`は全資源を通常ファイルとして生成し、公式CLIへsnapshotと版数別cacheの管理を委ねる。
-検証条件と再検証手順は「[docs/development/design-hosts-plugin-lifecycle.md：Claude CodeとCodexの規範配置：2026年9月13日](audit-records-codex.md#docsdevelopmentdesign-hosts-plugin-lifecyclemdclaude-codeとcodexの規範配置2026年9月13日)」を参照する。
 
 ## plugin実体の回収と稼働中の参照
 

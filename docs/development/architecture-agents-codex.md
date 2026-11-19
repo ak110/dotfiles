@@ -11,7 +11,11 @@ launch.pyは準備済みの共有依存環境を配布root外のデータ領域�
 
 公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）と`atk agents wait`の入力、応答、待機上限および保持期限の契約は[design-agents-server-start.md](design-agents-server-start.md)などの公開ツール別の設計記録にある。
 
+MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。
+プラグイン配置の存続を前提とするローカルmoduleの遅延importは行わず、共有状態型はbackendとMCP層の共通moduleへ分離する。
 Claude Agent SDKはCodex実行時の依存と起動コストを増やさないため、Claude engineでoptionsを構築する時点まで遅延する。
+プラグイン導入後のウォームアップは、導入済み版のlaunch.pyへ`--check-dependencies`を渡し、PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。
+外部Claude/Codex sessionは開始しない。
 
 ## `atk`の解決とセッションへの受け渡し
 
