@@ -1,4 +1,4 @@
-# 読込表の監査記録: 初回分類と本文配送の撤去
+# 読込表の監査記録: 分類、本文配送の撤去と全文取得の観測
 
 ## agent-toolkit/share/read-trigger-bootstrap.md：操作を契機とする共有資料：2026年10月27日
 
@@ -64,3 +64,58 @@ Claude Code 2.1.311では、`agent-basics:bugfix`のSkill起動をhookが取得�
 詳細資料へのRead案内も届いたが、会話全体にそのReadはなく、原因分析を含むWrite入力がWriteのhook案内より先に生成された。
 全11hookとプロセスの終了コードは0だったが、詳細資料の取得と判断前の利用は確認できなかった。
 この各1回の観測から、別会話での取得や全対象の判断前利用を保証しない。
+
+以下は、2026年11月11日の分割で見出しを失った本節の続き（分類の再取得、節単位方式と全文取得方式の観測、再検証の手順）の要約である。
+数値の全量と中間版のSHA256はGitの履歴にある。
+
+分類は同じ4対象根と比較基準で取り直した。
+全文取得方式で最後に取得した分類は、宣言1790行（判断1741、操作34、起動時15）、4語の検索1616行、参照分類1313行で、未確定と照合不可は0行だった。
+宣言を含む249 sourceのSHA256は、分類の取得時の作業ツリーの本文と一致した。
+この参照分類は4語の候補に限り、候補外を含む宣言経路は`read_triggers_invariant_test.py`のstrict検査で確かめる。
+指定節は注目箇所であり、取得済みの判定単位はファイル全文とする。
+2回目と中間取得時の原本は保存先のGit履歴に無く、その件数とSHA256は参考値で、その版は再取得できない。
+全文取得方式の原本は次の取得時SHA256で特定し、行末はLFである。
+
+| 原本ファイル | 全文取得方式の取得時SHA256 |
+| --- | --- |
+| `read-delivery-20261027-routes.tsv` | `42fbc98017b58b4a2db9965ba46714e23562803c9fba8d4a6d64b95a8723b7d6` |
+| `read-delivery-20261027-search.tsv` | `40c41efeadf4e63e72b1bb901306feb4724695b0fd2571787a4a1cfcc2992cde` |
+| `read-delivery-20261027-references.tsv` | `96a36680f1a74e5cad6656e7ae059cc0084f25ffa31ab65cc3e3deec7e0bbbc5` |
+
+節ごとに取得済みを判定していた旧方式の制御会話では、`agent-basics/skills/writing-standards/references/python.md`の非連続の3節を2回のReadで取得した。
+Readの指定は前半がoffset 14・limit 63、後半がoffset 90・limit 40で、本文SHA256は`05a0ae8503778ae9db2de4bcedf5c231360604ae0b5512e10a02d927345d3e78`だった。
+前半だけでは指定節の取得済み状態がなく、後半の取得後に同じ主体とhashで取得済みとなった。
+是正前の判定へ生のPostToolUse入力を再生すると、前半は部分範囲の正常な末尾LFの省略を拒否して記録できず、LFを補っても全文座標のままでは選択節の被覆を合成できなかった。
+当時は末尾LFの省略を認め、Readとsedの区間を非連続節を順に連結した文字列上の座標へ変換した。
+全文末尾のLFが1個と2個の検体は、別の制御会話でどちらも全文が一致した。
+後続の全文取得方式では節指定を注目箇所として残し、取得済みの判定を全文被覆に統一した。
+旧方式の実装版は公開履歴から再現できず、その観測は再実行できない。
+
+全文取得方式の代表観測はClaude Code 2.1.311で、`b28807ac95b2e7b2059bb6a670f4daf1ce098f7f`に未commitの変更を加えた版で行った。
+自然会話では、Write後の案内、Read、再WriteとEditを観測したが、180秒上限で終わり最終応答はなかった。
+制御会話では同じPython資料の1〜50行、52行以降、51行の順にReadし、途中に未取得範囲がある間は全文取得済みにならず、51行の取得後に全文取得済みとなった。
+後続の自然会話は終了0で最終応答を得たが、basics側の原因分析資料は前半のRead出力が省略され、後半だけが記録されて全文取得済みにはならなかった。
+このときは`--plugin-dir`で指定したagent-toolkitと、インストール済みの別の場所のagent-basicsを読み込み、登録元とRead先の本文の同一性は確かめていない。
+観測した宣言は原因分析の操作と判断の2宣言とPython資料の1宣言に限り、他の宣言の個別の取得順と、公開イベントのないモデル内部の判断や利用は観測していない。
+
+現行方式の再観測では、起動前に対象worktreeのcommit OIDと未commit差分、agent-toolkitとagent-basicsのmanifestのversion、後掲の3 sourceのSHA256を記録する。
+同時に2 plugin配下の資料ファイルの絶対パスとSHA256を記録し、実際にReadした資料ごとに取得時のSHA256と比べる。
+起動は次のコマンドで行い、`<入力>`はPythonの可変デフォルト引数の不具合を調べて原因分析節を持つ短い報告書を新規に作る依頼とする。
+
+```sh
+timeout 180 claude -p --no-session-persistence --plugin-dir <worktree>/agent-toolkit --plugin-dir <worktree>/agent-basics --allowedTools Write,Read --output-format stream-json --verbose --include-hook-events '<入力>'
+```
+
+streamのplugin登録のpathとversion、SkillのBase directory、Readのpath・本文・hashが対象worktreeと一致することを確かめる。
+初回Write、PreToolUseの案内、SkillとRead、再WriteとEditをイベントの順序で確かめ、PostToolUseのRead結果の範囲・省略の有無と、同じ主体・資料hashの取得済み状態を記録する。
+未取得範囲、最終応答、終了状態も記録し、公開イベントからモデル内部の利用を推論しない。
+
+各観測の版と再検証で選ぶ版は、3 sourceのSHA256で次のとおり識別する。
+代表観測と後続自然観測の版は公開履歴からの再現を確認できず、歴史的な参考として扱う。
+後続自然観測の後に例外案内と不在資料向け案内を変えたため、その版は再検証で選ぶ版と同一ではない。
+
+| 実装source | 代表観測 | 後続自然観測 | 再検証で選ぶ版 |
+| --- | --- | --- | --- |
+| `agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py` | `0d3d86305b9e30d63782fa5ec120ea1e290e7ee884373ab144e591f38a407f8a` | `5401948b0b85a5e35f71c36506835e46a3985944cf064f35be6dda5fb08b92d6` | `541dfa9f284eed60737344a2c860ceab721b898fd287f77efd4c7578d9a81153` |
+| `agent-toolkit/agent_toolkit/_common/read_triggers.py` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` |
+| `agent-toolkit/agent_toolkit/_hooks/rules_context.py` | `9b00eba032e19e2c8d3575f41fb6e91dcfcadf9fe3bf205666d98408291e6b74` | `d57dfbd19f0e01e7a3d390f0b775ca0e2e22aebd4d7b191389f1e1fbd58c0364` | `50361034a30c66546ad75331ec5b9667923147d634f7f55fee22678f6bedb72c` |
