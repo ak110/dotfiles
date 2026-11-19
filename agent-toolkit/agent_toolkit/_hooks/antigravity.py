@@ -238,7 +238,7 @@ def _claim_user_step(session_id: str, step: dict[str, Any]) -> bool:
 
 
 def _native_subagent_context(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """SubagentStartの代替として、呼び出し先のPromptへ委譲先規範を配送する。"""
+    """SubagentStartの代替として、呼び出し先のPromptへ委譲先の入口の所在を配送する。"""
     call = payload.get("toolCall")
     if not isinstance(call, dict) or call.get("name") != "invoke_subagent":
         return None
@@ -251,7 +251,7 @@ def _native_subagent_context(payload: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(prompt, str):
         return None
     module = importlib.import_module("agent_toolkit._hooks.rules_context")
-    content = module.compose_subagent_start(host="agy")
+    content = module.compose_subagent_start()
     rewritten = f"{prompt}\n\n{content}"
     # protojsonのmap<string,string>と展開済みのobjectの双方で入力の符号化を保つ。
     value = json.dumps(rewritten, ensure_ascii=False) if _decoded(raw[key]) != raw[key] else rewritten

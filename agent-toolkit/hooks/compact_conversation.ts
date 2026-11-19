@@ -142,7 +142,7 @@ export function register(on: On, session: { delegated: boolean; backgroundChange
   on("session.compact", { trigger: /^(manual|auto|plugin|precompute)$/ }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e);
     const sessionId = await $.session.id();
-    const resolved = await $.process.run(pluginLaunchCommand($.plugin.root, "skills/delegation/scripts/compaction_record.py", [
+    const resolved = await $.process.run(pluginLaunchCommand($.plugin.root, "skills/atk-mode/scripts/compaction_record.py", [
       "--session-id", sessionId,
     ]), { timeoutMs: 30_000 });
     if (resolved.exitCode !== 0 || resolved.isStdoutTruncated) return next(e);
@@ -155,9 +155,10 @@ export function register(on: On, session: { delegated: boolean; backgroundChange
         role: "user" as const,
         text: automatedMessage("compact-conversation", "notice",
           // 受け取る側は圧縮が起きたことを知らない。出来事、要約が無いこと、最初の操作の順で伝える。
-          // 読む対象はこの直後に届くSessionStartの通知が示すため、ここでは重ねない。
+          // 読む対象と読み直す入口・手順書はこの直後に届くSessionStartの通知が示すため、ここでは重ねない。
           "会話が圧縮され、圧縮前のやり取りと要約は現在の文脈にない。" +
-          "直後の復元通知が示す作業契約と会話の要約を読み、作業状態を復元せよ。"),
+          "直後の復元通知が示す作業契約と会話の要約を読み、作業状態を復元せよ。" +
+          "同じ通知が求める入口と手順書の読み直しも、作業を再開する前に行え。"),
         toolUses: [],
       }],
     };

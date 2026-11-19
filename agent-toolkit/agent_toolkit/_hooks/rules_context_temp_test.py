@@ -70,7 +70,7 @@ def test_subagent_start_notifies_existing_session_temp_without_creating(
     output = _output(capsys)
 
     assert f"このセッションのmanaged-temp: {session_root}" in output
-    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
+    assert rules_context.SUBAGENT_ENTRY_NOTICE in output
 
 
 def test_subagent_start_without_parent_session_temp_omits_notice(

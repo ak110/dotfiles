@@ -195,7 +195,7 @@ def test_failed_extraction_keeps_resume_and_removes_stale_file(
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "TimeoutExpired" in output and "--conversation-digest" in output
-    assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
+    assert rules_context.ENTRY_COMPACT_NOTICE in output
     assert saved.exists() is cleanup_fails
     if cleanup_fails:
         assert "前回の要約ファイル" in output and "使用するな" in output
