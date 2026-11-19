@@ -6,12 +6,13 @@ import asyncio
 import dataclasses
 import json
 import pathlib
+import threading
 import time
 from typing import Any
 
 import pytest
 
-from agent_toolkit._common import session_registry, session_release
+from agent_toolkit._common import atomic_file, session_registry, session_release
 
 
 @dataclasses.dataclass
@@ -102,6 +103,57 @@ async def test_release_request_rechecks_owner_and_turn_and_preserves_failures(tm
             assert reason
             assert session_registry.resolve("child", state_root=tmp_path).state is session_registry.Resolution.TERMINAL
             assert calls == ([True] if condition in {"failed", "residual"} else [])
+        assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+    finally:
+        await task
+
+
+@pytest.mark.asyncio
+async def test_response_racing_requester_cleanup_is_not_left_behind(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """要求側が解放済みを観測して後始末する間に所有側が応答を書いても、両者の終了後に要求と応答が残らない。
+
+    2026-11-19のCI（run 44582845525）で、レーン再利用の解放後に応答だけが残った競合を固定する。
+    """
+    owner = session_registry.owner_process()
+    assert owner is not None
+    session_registry.publish(
+        "child",
+        state=session_registry.PublicationState.RESULT_COMPLETED,
+        cwd=str(tmp_path),
+        processes=(owner,),
+        state_root=tmp_path,
+    )
+    finished = threading.Event()
+
+    def requester() -> str | None:
+        try:
+            return session_release.request_release("child", tmp_path, deadline=time.monotonic() + 5, state_root=tmp_path)
+        finally:
+            finished.set()
+
+    original_write = atomic_file.atomic_write
+
+    def write_while_requester_finishes(path: pathlib.Path, content: str | bytes, **kwargs: Any) -> None:
+        if path.name.endswith(".release-response"):
+            finished.wait(timeout=0.5)
+        original_write(path, content, **kwargs)
+
+    monkeypatch.setattr(atomic_file, "atomic_write", write_while_requester_finishes)
+    task = asyncio.create_task(asyncio.to_thread(requester))
+    try:
+        async with asyncio.timeout(2):
+            while not list(session_registry.registry_directory(tmp_path).glob("*.release-request")):
+                await asyncio.sleep(0.001)
+
+        async def stop(session_id: str, *, retain_result: bool, **_kwargs: Any) -> dict[str, Any]:
+            assert retain_result
+            session_registry.release(session_id, reason="stopped", state_root=tmp_path)
+            return {}
+
+        await session_release.process_requests({"child": _Session(True, str(tmp_path))}, stop, state_root=tmp_path)
+        assert await task is None
         assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
     finally:
         await task
