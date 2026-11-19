@@ -83,6 +83,8 @@ cache version台帳、POSIXの原本接続、Windowsの原本接続とファイ�
 Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plugin.json`より優先し、同一rootから導入した場合は`hooks/list`が0件となる。
 また、相対シンボリックリンクを含むCodex専用wrapperを公式CLIで導入すると、snapshotには`.codex-plugin`だけが残り、リンク先のhook・skill・実行資源が含まれない。
 そのため、`agent-toolkit-codex/`は全資源を通常ファイルとして生成し、公式CLIへsnapshotと版数別cacheの管理を委ねる。
+再検証はCodex CLI 0.154.0で`pytools/_internal/codex_plugin_manifests_proxy_test.py`の`test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。
+この試験は、隔離した2つの`CODEX_HOME`での登録集合を確かめる。
 
 ## plugin実体の回収と稼働中の参照
 

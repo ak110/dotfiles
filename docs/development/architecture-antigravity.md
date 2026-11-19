@@ -26,3 +26,5 @@ post-applyは`~/.gemini/config/plugins.json`の`entries`へ作業ツリーの絶
 MCPとスキル本文中の実行用rootは、環境変数展開への依存を避けるため、生成時に配布rootの絶対パスへ投影する。
 
 Antigravityのスキル本文にも24,000バイトの読込上限があるため、生成処理は上限を超える`SKILL.md`のfrontmatterを短いSKILL.mdに保持し、本文を`references/antigravity-full-instructions.md`へ保存する。
+短いSKILL.mdは起動時に全文資料を読む。
+全文資料の相対参照は、保存先の`references/`ではなく元のスキルディレクトリを起点に解決する。

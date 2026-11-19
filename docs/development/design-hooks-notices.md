@@ -15,7 +15,9 @@ Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_i
 取得元の規範は`agent-toolkit/share/rules/rules-main.claude-code.md`「自身の会話の記録」に集約し、記録を使う消費文書は同節を参照する。
 入力の記録パスが実在しない場合は、同じsession IDのメイン記録を既存の解決処理で1件へ定める。
 開始時と別のディレクトリでの再開により入力が実在しないパスを示した観測へ対応する。
-入力項目とmatcherの典拠は[audit-records-hooks-lifecycle.md](audit-records-hooks-lifecycle.md)「docs/development/design-hooks-notices.md：通知の整形と反復検出：2026年10月13日」にある。
+入力項目とmatcherの典拠は公式の[Hooks reference](https://code.claude.com/docs/en/hooks)「Common input fields」「SessionStart」で、2026年10月13日にClaude Code 2.1.296の環境で確かめた。
+同資料は、transcriptが非同期に書かれ、現在のturnの最新メッセージを含まない場合があると記す。
+再検証は同じ2節の項目名とmatcherの値を比べ、制御したSessionStart入力をhook handlerへ渡して`additionalContext`の値を確かめる（`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`）。
 環境変数だけを案内する案はtranscriptの所在を消費側ごとの探索に残し、`UserPromptSubmit`で毎ターン配送する案は`SessionStart`が会話の切替境界を既に扱うため採らない。
 新しい状態ファイルや取得器は設けない。
 

@@ -68,7 +68,10 @@ agents_serverは委譲先の解除待ちを所有する。
 Remote Controlを無効にする案はユーザーの遠隔操作を失わせるため採らない。
 組織設定で省略される`classic.*`への依存を外し、コマンドhookの要求を`turn.complete`へ渡す。
 予約のタイマーはsession内にあり、module再読込で失われる。
-ホスト挙動の典拠と未観測範囲は[audit-records.md](audit-records.md)の利用上限後の再開の項にある。
+ホスト挙動の典拠は[mods API](https://code.claude.com/docs/en/plugins/mods/api)と[reference](https://code.claude.com/docs/en/plugins/mods/reference)で、2026年10月14日にClaude Code 2.1.299で確かめた。
+予約の再検証は`agent-toolkit/hooks/usage_limit_resume.test.ts`で偽の使用率・時計・turnを与え、StopFailureの`rate_limit`、猶予後のturn完了、予定時刻不明、既再開、委譲先除外と表示回収を分けて確かめる。
+実上限時の`percentUsed`と、猶予後の打切り時のStopFailure発火は観測しておらず、予約の永続化は検証の範囲に含めない。
+Remote Control接続での猶予通知と解除後のturnの対応付けは[audit-records-usage-limit.md](audit-records-usage-limit.md)「agent-toolkit/skills/atk-mode/references/usage-limit.md：利用上限後の再開：2026年10月14日」にある。
 
 ## ユーザーの要求と見直しの基準
 

@@ -6,6 +6,7 @@
 
 agent-toolkitの状態ディレクトリとmanaged-tempは、POSIXでは0o700で作成し、Windowsでは親（`%LOCALAPPDATA%`などユーザーprofile配下）から継承するACLで作成する。
 作成は`agent_toolkit._common.private_directory`へ集め、`private_directory_invariant_test.py`が0o700の`mkdir`と`mkdtemp`の直接の呼び出しを拒否する。
+Windowsの`os.mkdir`はmodeが0o700のとき`D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)`の保護付きDACLを付け、`tempfile.mkdtemp`も0o700を渡す。
 OWNER RIGHTSは対象の所有者を指し、昇格したプロセスが作成したファイルの所有者は`BUILTIN\Administrators`になるため、同じユーザーの非昇格のプロセスは読めない（2026年11月19日、管理サービスの世代索引で発生）。
 ユーザーprofile配下の継承するACLはユーザー・SYSTEM・Administratorsに限られるため、継承に任せても他のユーザーへは公開しない。
 作成後に保護付きDACLを継承へ付け替える案は、作成のたびにACLの操作と失敗の分岐を加えるため採らない。
@@ -79,8 +80,8 @@ sshのセッションは既に管理者の権限を持つため、任意のス�
 
 sshのコマンド行には短い起動部だけを置き、接続先の処理とスクリプトは標準入力からbase64で渡す。
 sshの既定シェルのcmd.exeの1行の上限（8191文字）に掛からないためである。
-タスクと作業ディレクトリの名前へ片付けてよい時刻（上限の120秒後）を入れ、各実行は期限を過ぎたものだけを片付けるため、同時に動く実行には触れない。
-上限に達した場合は、タスクを止めたうえで、コマンド行に作業ディレクトリを含むプロセスとその子孫を終了させる。
+接続先はスクリプトをユーザーの`%TEMP%`の作業ディレクトリへ置き、タスクの引数にはそのパスだけを渡し、タスクは出力と終了コードを同じディレクトリへ書く。
+作業ディレクトリは昇格したセッションが作るが、`%TEMP%`から継承するACLでユーザーが読み書きでき、実行の終わりに消す。
 
 起動部は標準入力を`[Console]::In`で読まず、そのハンドルを直接読むFileStreamで読む。
 Windows PowerShell 5.1（.NET Framework）のコンソールのstreamは、読む前に`PeekNamedPipe`でパイプの残りを調べる。

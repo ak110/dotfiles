@@ -38,7 +38,8 @@ clearと期限回収でもlockを削除せず、sessionごとのlockファイル
 0件では入力値を保ち、1件なら解決した記録を使う。
 複数件では会話IDの明示を求め、一意性を推定しない。
 開始時と別のディレクトリでの再開時に入力が実在しない記録を示したためである。
-観測と再検証手段は[audit-records-hooks-lifecycle.md](audit-records-hooks-lifecycle.md)「docs/development/design-hooks-session-state.md：通知の整形と反復検出：2026年10月20日」にある。
+この観測は2026年10月20日のClaude Code 2.1.304で、同じ会話のPreToolUse入力は開始時のworktree側にある実在する記録を示した。
+再検証は専用会話を開始時と別のディレクトリで再開し、SessionStartと同じ会話のPreToolUseの`transcript_path`と、そのファイルの実在を比べる。
 
 応答言語判定は、send_to_userの`message`と、ユーザーへ直接送達される最上位メインのStopの`last_assistant_message`を対象とする。
 AskUserQuestionの`questions[].question`・`header`と`options[].label`・`description`、ExitPlanModeの`plan`も既存の判定対象に保つ。

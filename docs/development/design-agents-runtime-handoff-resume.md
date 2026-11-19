@@ -31,7 +31,9 @@ process-loopは自身が起動した子の上限停止を確認し、後続turn�
 
 ホスト側の失敗時の終了とStop hookの条件は[turn.rs](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/session/turn.rs)にある。
 goalの上限停止は[goalのextension](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/ext/goal/src/extension.rs)で確認できる。
-過去の観測条件と再検証手段は[audit-records-usage-limit.md](audit-records-usage-limit.md)の「docs/development/design-agents-runtime-handoff-resume.md：Codexの利用上限記録と再開：2026年10月14日」にある。
+上限判定の根拠は、2026年10月14日にCodex CLI 0.162.1のrolloutで、上限で失敗したturnと直前の`token_count.rate_limits`の`used_percent`・`resets_at`を対応付けた観測である。
+再検証は偽のrollout・codex・時計でrun-skillとprocess-loopの再開を確かめ、最上位TUIは解除後の実機観測へ分ける。
+実上限到達からの再開と、即時拒否turnの`token_count`の有無は観測していない。
 起草時の元session記録はリポジトリ外の私有記録であり、設計判断の確認には上記の公開ソースとリポジトリ内の実装・テストを使う。
 
 最上位のCodex TUIの解除後の自動再開は実装せず、発話で続ける。
@@ -50,5 +52,8 @@ Codex CLI 0.164.0の実機観測では、共有daemonへ接続したidleのTUI�
 閉じた会話を無人で再開すると、ユーザーが画面で確認できない作業が承認設定のまま進む。
 このため送信の安全条件（TUIが開いている間だけ送る）を満たす手段が無く、監視を実装しない。
 共有daemonへ接続しない起動（`-c`などを指定したTUI）は`codex queue`の宛先にもならない。
-観測の条件と再検証手段は[audit-records-usage-limit.md](audit-records-usage-limit.md)の「docs/development/design-agents-runtime-handoff-resume.md：最上位のCodex TUIの解除後の再開：2026年10月24日」にある。
+再検証は、隔離した作業ディレクトリで`tmux -L <専用名> new-session -d -c <作業ディレクトリ> codex`を起動し、turnの後に`ps -o ppid`と`/proc/<pid>/environ`の変数名でMCPプロセスの親と`CODEX_THREAD_ID`の有無を確かめる。
+TUIを閉じる前後で`codex queue`を実行し、rolloutの`task_started`・`task_complete`を比べる。
+購読者の判別手段の有無は`codex app-server generate-json-schema --out <ディレクトリ>`のClientRequestで確かめる。
+実上限からの解除時刻での再開は観測していない。
 Codexがthreadの購読者を判別できる公開手段、またはMCPプロセスへ起動元のthreadを渡す手段を提供した版では、同じ方式を再評価できる。

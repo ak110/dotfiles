@@ -44,8 +44,7 @@ ownerと状態の書込主体は各起動が明示した値を優先する。
 miseの設定・信頼状態・導入先・キャッシュの所在は`MISE_CONFIG_DIR`・`MISE_STATE_DIR`・`MISE_DATA_DIR`・`MISE_CACHE_DIR`の公開名で引き継ぎ、XDGを変更しても呼出元が選んだmiseの所在と信頼設定を保つ。
 Claude向けとAgent Plugins向けのMCP定義へはCodex専用の`env_vars`を混ぜない。
 agents_serverが起動するCodex App Server・Claude CLI・Antigravity CLIは会話contextを除いた環境を継承し、各backendは明示した起動別の値を加える。
-Claude Codeのstdio環境の配送とremote変数による識別子の重複は、[audit-records.md](audit-records.md)の次の節にある。
-参照先は「docs/development/internals-agents-server-state-backends.md：バックエンド固有の接続とAPI状態：2026年10月18日」で、実MCPでの除去前後の観測も記録する。
+Claude Codeのstdio環境の配送とremote変数による識別子の重複の観測と再検証は、[internals-agents-server-state-backends.md](internals-agents-server-state-backends.md)「バックエンド固有の接続とAPI状態」にある。
 却下した代替案は、chezmoiのCodexプラグイン方針へ置く案と、子プロセスがshell設定などから値を回復する案である。
 前者の設定型は通信設定を受理せず、後者はCodexの公開機能で同じ結果を得られる。
 
