@@ -219,10 +219,10 @@ async def test_rpc_timeout_error_names_operation_and_limit(tmp_path: pathlib.Pat
 
 @pytest.mark.asyncio
 async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを従来の起動形で起動し、失敗を標準エラー付きで示す。
+    """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを要求の上限の内で起動し、失敗を標準エラー付きで示す。
 
     計画ファイル画面のbootstrap・op・argsを共通の起動へ渡すことを確かめる。
-    共通argvのPython版と依存は、serve/remote_test.pyが独立した期待値で検証する。
+    共通の起動のPythonの版、依存、起動し直しと期限は、serve/remote_test.pyが独立した期待値で検証する。
     """
     sent: list[tuple[list[str], float]] = []
 
@@ -236,16 +236,10 @@ async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeyp
         await plans_remote.default_ssh_runner("remote-host", "read", ["cGF0aA=="])
 
     assert "atk_serve_plans_remote_helper.py" in plans.REMOTE_BOOTSTRAP
-    # Pythonの版の照会も同じ失敗を返すため`3.15`を指定し、索引へ出ない起動の失敗の後に索引を使える形で起動し直す。
-    assert sent[-1] == (
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "remote-host",
-            *_atk_serve_remote.remote_command_argv(plans.REMOTE_BOOTSTRAP, "read", ["cGF0aA=="], python="3.15", offline=False),
-        ],
-        plans_roots.SSH_TIMEOUT_SEC,
-    )
+    command, _ = sent[-1]
+    assert command[:4] == ["ssh", "-o", "BatchMode=yes", "remote-host"]
+    assert plans.REMOTE_BOOTSTRAP in command[-3]
+    assert command[-2:] == ["read", "cGF0aA=="]
+    assert all(0 < timeout <= plans_roots.SSH_TIMEOUT_SEC for _, timeout in sent)
     assert "終了コード3" in str(error.value)
     assert "helper not found" in str(error.value)

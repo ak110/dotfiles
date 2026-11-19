@@ -7,6 +7,7 @@
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import re
@@ -26,12 +27,14 @@ _SSH_TERMINATE_TIMEOUT_SEC = 1.0
 TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 # リモートヘルパーを動かすPythonのマイナー版。
 _PYTHON_MINOR = "3.15"
-# Pythonの版を選ぶ単発SSHと、常駐の起動前に起動できるかを確かめる単発SSHの上限秒数。
+# 常駐の起動前に、版の照会を含めて同じ依存のPythonを起動できるかを確かめる段階全体の上限秒数。
 _PREPARE_TIMEOUT_SEC = 60.0
 # リモートヘルパーのuvが使う専用キャッシュ。SSHの起動ディレクトリであるリモートのホームからの相対パス。
 _HELPER_UV_CACHE = ".cache/agent-toolkit/remote-helper-uv"
 # sshが接続先へ接続できなかったときの終了コード。
 _SSH_CONNECTION_FAILED = 255
+# 単発のヘルパーのコードが動き始めたときに標準エラー出力へ書く1行。uvの起動の失敗とヘルパーの操作のエラーを区別する。
+_HELPER_STARTED = "atk-remote-helper-started"
 # 接続先ごとに、リモートヘルパーを起動できたPythonの版。`atk serve`のプロセスの間だけ覚える。
 _remote_pythons: dict[str, str] = {}
 
@@ -60,18 +63,6 @@ def stderr_excerpt(stderr: bytes) -> str:
     if len(text) > STDERR_EXCERPT_MAX_CHARS:
         return f"...{text[-STDERR_EXCERPT_MAX_CHARS:]}"
     return text
-
-
-async def run_helper(cmd: list[str], timeout: float) -> str:
-    """リモートヘルパーを単発のSSHで実行し、標準出力をUTF-8文字列で返す。
-
-    非0終了は`RemoteHelperError`として送出し、失敗元の標準エラー出力を呼び出し元へ渡す。
-    呼び出し元がキャンセルされた場合は子プロセスを終了させてから`CancelledError`を送出する。
-    """
-    returncode, stdout, stderr = await run_ssh(cmd, timeout=timeout)
-    if returncode != 0:
-        raise RemoteHelperError(returncode, stderr)
-    return stdout.decode("utf-8")
 
 
 class ServeStopping(Exception):  # noqa: N818  # 停止要求による打ち切りを表すため`Error`を付けない
@@ -155,7 +146,7 @@ def remote_bootstrap(helper_name: str) -> str:
     )
 
 
-async def _resolve_remote_python(host: str, *, ssh_options: tuple[str, ...]) -> str:
+async def _resolve_remote_python(host: str, *, ssh_options: tuple[str, ...], deadline: float) -> str:
     """リモートに導入済みのCPython 3.15の正式版のうち、最新のパッチ版（例: `3.15.2`）を返す。
 
     uvは`3.15`の指定を、管理Pythonのマイナー版のjunction（`cpython-3.15-windows-x86_64-none`）を経由して解決する。
@@ -163,13 +154,11 @@ async def _resolve_remote_python(host: str, *, ssh_options: tuple[str, ...]) -> 
     たどらせず、`os error 448`で起動できない。パッチ版を指定すると、uvは実体のディレクトリのPythonを使う。
     一覧を得られない場合と正式版が無い場合は`3.15`を返し、起動時のuv自身の探索と診断に任せる。
     接続先へ接続できない場合は、起動しても同じく失敗するため`RemoteHelperError`を送出する。
+    `deadline`（イベントループの時刻）までに一覧が届かなければ`subprocess.TimeoutExpired`を送出する。
     """
     command = ["ssh", *ssh_options, host, "uv", "python", "list", "--only-installed", "--cache-dir", _HELPER_UV_CACHE]
     command += ["--no-python-downloads", "--output-format", "json", _PYTHON_MINOR]
-    try:
-        returncode, stdout, stderr = await run_ssh(command, timeout=_PREPARE_TIMEOUT_SEC)
-    except subprocess.TimeoutExpired:
-        return _PYTHON_MINOR
+    returncode, stdout, stderr = await run_ssh(command, timeout=deadline - asyncio.get_running_loop().time())
     if returncode == _SSH_CONNECTION_FAILED:
         raise RemoteHelperError(returncode, stderr)
     try:
@@ -197,7 +186,7 @@ def _uv_run_python(python: str, *, offline: bool) -> list[str]:
     索引へ到達できなければ依存が専用キャッシュにあっても起動に失敗する。`offline`はキャッシュだけで解決させる。
     WindowsのSSHのセッションは昇格したtokenで動くため、`-B`でcheckoutへ`.pyc`を書かない。
     `--no-python-downloads`は、指定の版が無いときに管理Pythonを昇格したtokenで導入せず、起動を失敗させて
-    `_launch`に版を選び直させる。
+    `_attempts`の次の試行で版を選び直させる。
     `watchdog`は常駐モードの変更監視に、`platformdirs`は状態ディレクトリの解決
     （計画ファイル画面の作成日時の索引と、セッション画面が読むagents_serverの登録簿）に使う。
     """
@@ -234,41 +223,72 @@ def remote_command_argv(bootstrap: str, op: str, args: list[str], *, python: str
     return [*_uv_run_python(python, offline=offline), "-c", f'"{bootstrap}"', op, *args]
 
 
-async def _launch[T](host: str, ssh_options: tuple[str, ...], run: typing.Callable[[str, bool], typing.Awaitable[T]]) -> T:
-    """`run(Pythonの版, offline)`でリモートヘルパーを単発SSHで起動し、結果を返す。
+@dataclasses.dataclass(frozen=True)
+class _Attempt:
+    """リモートヘルパーの起動の1回の試行で、`uv run`へ渡すPythonの版と、索引へ出ずに起動するか。"""
 
-    接続先ごとに起動できた版を覚えて使い、まず索引へ出ずに起動する。版の照会と索引への問い合わせは、
-    起動が失敗したときだけ行う。覚えた版で失敗した場合は版が消えた場合（`uv python uninstall`など）に備えて
-    版を選び直し、索引から依存を取得できる形で1回だけ起動し直す。初回に専用キャッシュが空の場合も、この起動し直しで依存を取得する。
-    接続先へ接続できない失敗は、選び直しても変わらないためそのまま送出する。
+    python: str
+    offline: bool
+
+
+async def _attempts(host: str, ssh_options: tuple[str, ...], deadline: float) -> typing.AsyncGenerator[_Attempt]:
+    """リモートヘルパーの起動を試す順に試行を返す。前の試行でuvがヘルパーを起動できなかった場合だけ次を取り出す。
+
+    1. 接続先ごとに覚えた版で、索引へ出ずに起動する。版の照会のSSHを要求ごとに増やさない。
+    2. 版を選び直し、覚えた版と違えば、その版で索引へ出ずに起動する。版が消えても（`uv python uninstall`など）
+       依存は専用キャッシュに残るため、索引へ到達できなくても起動できる。
+    3. 選び直した版で、索引から依存を取得できる形で起動する。初めての接続先で専用キャッシュが空の場合も、ここで依存を取得する。
     """
     remembered = _remote_pythons.get(host)
-    python = remembered if remembered is not None else await _resolve_remote_python(host, ssh_options=ssh_options)
-    try:
-        result = await run(python, True)
-    except RemoteHelperError as error:
-        if error.returncode == _SSH_CONNECTION_FAILED:
-            raise
-        if remembered is not None:
-            python = await _resolve_remote_python(host, ssh_options=ssh_options)
-        result = await run(python, False)
-    _remote_pythons[host] = python
-    return result
+    if remembered is not None:
+        yield _Attempt(remembered, offline=True)
+    python = await _resolve_remote_python(host, ssh_options=ssh_options, deadline=deadline)
+    if python != remembered:
+        yield _Attempt(python, offline=True)
+    yield _Attempt(python, offline=False)
+
+
+async def _launch(host: str, ssh_options: tuple[str, ...], program: list[str], *, timeout: float) -> tuple[str, bytes]:
+    """`uv run`で起動したPythonへ`python -B`以降の`program`を渡して単発SSHで実行し、起動できた版と標準出力を返す。
+
+    `_attempts`の順に試し、ヘルパーが動いた試行で終える。終了コード0か、標準エラー出力の`_HELPER_STARTED`の行が、
+    ヘルパーが動いた印である。ヘルパーの操作のエラーは起動し直しても変わらないため、起動し直さずに`RemoteHelperError`で送出する。
+    印が無ければuvがヘルパーを起動できなかったとして次の試行へ進み、全て失敗すれば最後の失敗を送出する。
+    接続先へ接続できない失敗は、選び直しても変わらないためそのまま送出する。
+    版の照会と全ての試行は`timeout`秒の1つの期限を共有し、期限に達すると`subprocess.TimeoutExpired`を送出する。
+    呼び出し元がキャンセルされた場合は子プロセスを終了させてから`CancelledError`を送出する。
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    failure: RemoteHelperError | None = None
+    async with contextlib.aclosing(_attempts(host, ssh_options, deadline)) as attempts:
+        async for attempt in attempts:
+            command = ["ssh", *ssh_options, host, *_uv_run_python(attempt.python, offline=attempt.offline), *program]
+            returncode, stdout, stderr = await run_ssh(command, timeout=deadline - loop.time())
+            uv_output, started, helper_output = stderr.partition(_HELPER_STARTED.encode())
+            if returncode == 0 or started:
+                _remote_pythons[host] = attempt.python
+                if returncode != 0:
+                    raise RemoteHelperError(returncode, uv_output + helper_output)
+                return attempt.python, stdout
+            failure = RemoteHelperError(returncode, stderr)
+            if returncode == _SSH_CONNECTION_FAILED:
+                raise failure
+    assert failure is not None
+    raise failure
 
 
 async def run_remote_helper(
     bootstrap: str, host: str, op: str, args: list[str], *, ssh_options: tuple[str, ...], timeout: float
 ) -> str:
-    """リモートヘルパーを単発SSHで起動し、標準出力をUTF-8文字列で返す。失敗と停止の扱いは`run_helper`に従う。
+    """リモートヘルパーを単発SSHで起動し、標準出力をUTF-8文字列で返す。
 
-    Pythonの版と依存の取得は`_launch`に従う。
+    Pythonの版、依存の取得、失敗、期限と停止の扱いは`_launch`に従う。
+    bootstrapの前で`_HELPER_STARTED`の行を書き、ヘルパーの操作のエラーをuvの起動の失敗と区別させる。
     """
-
-    async def run(python: str, offline: bool) -> str:
-        argv = remote_command_argv(bootstrap, op, args, python=python, offline=offline)
-        return await run_helper(["ssh", *ssh_options, host, *argv], timeout=timeout)
-
-    return await _launch(host, ssh_options, run)
+    code = f"import sys; sys.stderr.write('{_HELPER_STARTED}' + chr(10)); {bootstrap}"
+    _, stdout = await _launch(host, ssh_options, ["-c", f'"{code}"', op, *args], timeout=timeout)
+    return stdout.decode("utf-8")
 
 
 async def send_rpc_request[T](
@@ -327,13 +347,7 @@ async def start_resident_helper(
     常駐の起動は成否が後から分かるため、起動の前に同じ依存のPythonを単発SSHで起動して、索引へ出ずに起動できる
     Pythonの版を`_launch`で確かめる。
     """
-
-    async def check(python: str, offline: bool) -> str:
-        argv = [*_uv_run_python(python, offline=offline), "-c", "pass"]
-        await run_helper(["ssh", *ssh_options, host, *argv], timeout=_PREPARE_TIMEOUT_SEC)
-        return python
-
-    python = await _launch(host, ssh_options, check)
+    python, _ = await _launch(host, ssh_options, ["-c", "pass"], timeout=_PREPARE_TIMEOUT_SEC)
     # 時間上限なし: 常駐の接続であり、要求ごとの応答待ちの上限は呼び出し側が持つ。
     proc = await asyncio.create_subprocess_exec(
         "ssh",
