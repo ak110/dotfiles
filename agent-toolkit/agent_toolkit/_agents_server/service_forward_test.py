@@ -1,6 +1,7 @@
 """MCP中継が、接続先世代の停止中の要求を有限時間で配送未確定として返す契約と、管理サービスの起動・公開を確かめる。"""
 
 import contextlib
+import hashlib
 import json
 import os
 import pathlib
@@ -286,3 +287,91 @@ def test_restart_does_not_mistake_exited_generation_record_for_new_service(
     published = service_forward.ensure_service(caller, root, python=pathlib.Path(sys.executable))
     assert published["process"] != exited
     assert published == json.loads((directory / "G1.json").read_text(encoding="utf-8"))
+
+
+_SETTLED = time.time() - 3600
+
+
+def _settle(root: pathlib.Path, offset: int = 0) -> None:
+    """書込から間もないファイルを、更新時刻の刻みの外の過去へ揃える。"""
+    for path in [root, *root.rglob("*")]:
+        os.utime(path, (_SETTLED + offset, _SETTLED + offset))
+
+
+def _plugin_root(root: pathlib.Path, version: str, modules: dict[str, str]) -> pathlib.Path:
+    """`agent_toolkit`配下へ`modules`を置いた配布物のrootを作る。"""
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin" / "plugin.json").write_text(json.dumps({"version": version}), encoding="utf-8")
+    for name, text in modules.items():
+        path = root / "agent_toolkit" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    _settle(root)
+    return root
+
+
+def _identity(root: pathlib.Path) -> str:
+    return service_forward.code_identity(root)[0]
+
+
+def _distributed_identity(root: pathlib.Path) -> str:
+    """配布済みの転送側が計算する世代。版と、試験を除く全モジュールの相対パス・内容を、パスの順に連結したSHA-256。"""
+    version = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
+    digest = hashlib.sha256(version.encode("utf-8"))
+    for path in sorted(path for path in (root / "agent_toolkit").rglob("*.py") if not path.name.endswith("_test.py")):
+        name = str(path.relative_to(root)).encode("utf-8")
+        content = path.read_bytes()
+        digest.update(len(name).to_bytes(8, "big") + name)
+        digest.update(len(content).to_bytes(8, "big") + content)
+    return digest.hexdigest()
+
+
+_MODULES = {
+    "__init__.py": "",
+    "_agents_server/service.py": "VALUE = 1\n",
+    "_agents_server/service_test.py": "def test_value() -> None: ...\n",
+}
+
+
+def test_code_identity_joins_same_code_and_separates_changed_code(tmp_path: pathlib.Path) -> None:
+    """同じ版・同じコードの配布物は置き場所によらず同じ世代へ合流し、開発checkoutの同版の編集と版の違いは別の世代になる。
+
+    試験とPython以外のファイルの変更は世代を変えない。
+    """
+    claude = _plugin_root(tmp_path / "claude" / "1.0.0" / "agent-toolkit", "1.0.0", _MODULES)
+    codex = _plugin_root(tmp_path / "codex" / "1.0.0" / "agent-toolkit", "1.0.0", _MODULES)
+    joined = _identity(claude)
+    assert _identity(codex) == joined
+    (claude / "agent_toolkit" / "_agents_server" / "service_test.py").write_text(
+        "def test_other() -> None: ...\n", encoding="utf-8"
+    )
+    (claude / "agent_toolkit" / "README.md").write_text("説明\n", encoding="utf-8")
+    _settle(claude, 1)
+    assert _identity(claude) == joined
+    # 同じ大きさの書き換えも、書き換え後の内容を新しく置いたrootと同じ世代として識別する。
+    (claude / "agent_toolkit" / "_agents_server" / "service.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _settle(claude, 2)
+    edited = _identity(claude)
+    assert edited != joined
+    assert edited == _identity(
+        _plugin_root(tmp_path / "fresh" / "agent-toolkit", "1.0.0", {**_MODULES, "_agents_server/service.py": "VALUE = 2\n"})
+    )
+    (claude / "agent_toolkit" / "added.py").write_text("", encoding="utf-8")
+    _settle(claude, 3)
+    assert _identity(claude) not in {joined, edited}
+    assert _identity(_plugin_root(tmp_path / "next" / "agent-toolkit", "1.0.1", _MODULES)) != joined
+
+
+def test_code_identity_keeps_the_distributed_definition(tmp_path: pathlib.Path) -> None:
+    """旧版の転送側も受付先のrootへ同じ計算をするため、世代の値は配布済みの定義と一致する。
+
+    パスの区切りより前に並ぶ文字（`-`）を含む名前と、隠しディレクトリを含む木と、実際の配布物で確かめる。
+    """
+    synthetic = _plugin_root(
+        tmp_path / "agent-toolkit",
+        "2.0.0",
+        {"a.py": "A\n", "a-b.py": "AB\n", "a/b.py": "B\n", "a/b_test.py": "T\n", ".hidden/x.py": "X\n", "z/__init__.py": ""},
+    )
+    real = pathlib.Path(service_forward.__file__).resolve().parents[2]
+    for root in (synthetic, real):
+        assert _identity(root) == _distributed_identity(root)
