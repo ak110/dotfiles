@@ -54,7 +54,7 @@ _DELEGATE_COMPLETION_VALUES = frozenset(
         "公開完了",
     }
 )
-"""`<役割名>.subagent.md`が成功の返却値として定める固定の先頭行。各値が`agent-toolkit/share/`の`<役割名>.subagent.md`に現れることをテストが確かめる。"""
+"""`<役割名>.subagent.md`が成功の返却値として定める固定の先頭行。各値が役割文書の置き場所にある`<役割名>.subagent.md`に現れることをテストが確かめる。"""
 
 
 _UNEXPECTED_EVENT_PREFIXES = ("想定外事象:", "想定外事象：")

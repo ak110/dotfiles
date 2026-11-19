@@ -148,7 +148,7 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --transfer-wi <追�
    メインの直接作業や別の担当を選んだ場合は、手順2が参照する書込所有の移し替えを終えてから、その担当へ同じ追加計画・検収・統合の契約を適用する。
    指示には、追加するWI名、専用worktreeとbranch、引き継ぎ記録、選定YAMLから本文と`プロジェクト規範の指定`を取得すること、現在の工程を中断・破棄せずに終えてからターンを終えずに追加計画の起草へ進むことを含める。
    割り当ての再検討だけを目的に稼働中の担当を中断させることは避ける。
-   工程境界の通知は`agent-toolkit:/share/exec.subagent.md`に従い、待機しない`計画検査完了`は`atk agents notify`の一方通知であるため一律の返答を求めない（求めると実装が止まる）。
+   工程境界の通知は`agent-toolkit:atk-mode/roles/exec.subagent.md`に従い、待機しない`計画検査完了`は`atk agents notify`の一方通知であるため一律の返答を求めない（求めると実装が止まる）。
    レーン担当は追加の指示の後の最初の工程境界のメッセージの先頭に、現在の工程の実行結果を含め、メインはその受領で追加工程の開始を認識して先行計画の凍結を保つ。
    追加計画の絶対パス、対象AWIの集合、保存状態、進捗をレーンの引き継ぎ記録へためて、全計画を実行レビューと統合へ渡す。
 6. 同じスレッドで再開できない場合は、公開応答の事実、対象、足りない条件を「続行できない理由」として報告し、同じレーンの回復について判断を仰ぐ。
@@ -170,13 +170,13 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --transfer-wi <追�
    メインは認可の管理、全体の調整、検収を担い、メイン自身が調べて文脈を持つ主題は渡し直さずに修正まで行ってよい。
    書込先は次のとおりとし、書込主体の交代は`agent-toolkit:delegation/references/mandatory-rules.md`「作業ツリーの保護」に従う。
    - レーンに割り当てていない主題: 本書「処理対象WIの追加」手順5で担当と資源を比べ、ファイルを変える場合は選定の所属レーンの専用worktreeで直す。
-     主作業ツリーへの統合とWI終了には、`agent-toolkit:/share/exec-parent-integration.md`「統合の許可」と`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「統合とAWI終了」の条件をそのまま適用する。
+     主作業ツリーへの統合とWI終了には、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」と`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「統合とAWI終了」の条件をそのまま適用する。
      最小限の直接修正は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応の手順」に従う。
    - レーンの主題: レーン担当へ追加の指示として返すことを基本とする。
      レーン担当の終了を確かめた後は、メインがそのレーンの専用worktreeを引き取ってよい。
-     引き取ったら`agent-toolkit:/share/exec.parent.md`「入力」の`書込担当一覧`を更新し、統合には同書「統合の指示と受領」の検収条件をメイン自身がCLIを実行する場合として適用する。
+     引き取ったら`agent-toolkit:atk-mode/roles/exec.parent.md`「入力」の`書込担当一覧`を更新し、統合には同書「統合の指示と受領」の検収条件をメイン自身がCLIを実行する場合として適用する。
 2. 実行中にユーザーから追加の指示があれば、既存の処理条件と比べて採否を決めた差分だけを処理条件へ反映する。
-   比較と採否は`agent-toolkit:/share/exec-review-responses.md`「指摘発生時の扱い」、範囲と論理関係の解釈は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」に従う。
+   比較と採否は`agent-toolkit:atk-mode/playbooks/review-fix.md`「担当種別ごとの修正」、範囲と論理関係の解釈は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」に従う。
    公開工程に入る前に届いた直接の実装要求も、同じ主題である限り処理を続けるための追加条件として扱い、公開工程の開始後に届いた指示は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「対象外の不良と是正要求」で扱う。
    主題が続いているかは元の要求・現物・既存の認可から自分で判断し、ユーザーだけが決められる目的・範囲・認可が残る場合に限って変更の前に確認する。
 3. 追加の指示で既存の要件が変わる場合は、変更前の要件で作業ツリーの外へ作った成果物（キューの項目、IssueやMRの本文など）を確かめ、終了・改訂・取り消しなどの方針を決めて追送の指示に含める。
@@ -196,7 +196,7 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --transfer-wi <追�
    - `completed`の要求を含む場合: レーンは起動せず、取得した全ての`ファイル名`を`atk wi set-dependencies`で元項目の`depends_on`へ加え、`atk wi return-to-inbox`で`inbox`へ差し戻す。
    - 全ての要求が`condition_not_met`の場合: 依存関係は加えず、条件不成立の理由か調査で確定した投入見送りの結論を、根拠と証拠の所在で確かめる。
      人間由来の要求を投入見送りとする判断は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「承認」に従って確定してから元項目の採否を確定する。
-3. `混在`区分の項目では、投入結果（要求の内容、投入先、`ファイル名`、`結果`）を`agent-toolkit:/share/exec.parent.md`の`上流投入結果`として渡す。
+3. `混在`区分の項目では、投入結果（要求の内容、投入先、`ファイル名`、`結果`）を`agent-toolkit:atk-mode/roles/exec.parent.md`の`上流投入結果`として渡す。
    `completed`の要求を含む項目は、統合の指示の`AWI終了区分`を`終了しない`にし、統合の検収の後にメインが全ての`ファイル名`を`depends_on`へ加えて`inbox`へ差し戻す。
    全ての要求が`condition_not_met`なら、通常の採否の確定を適用する。
 

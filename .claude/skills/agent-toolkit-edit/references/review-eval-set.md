@@ -1,7 +1,8 @@
 # レビュー担当への指示・モデル割り当ての評価セット
 
 レビュー担当への指示とモデルの割り当てを変える変更を、`scripts/review_eval_cases.json`の評価セットから「比べる事例の選び方」で選んだ事例について、変更の前後に比べてから採る手順書である。
-指示の例は`agent-toolkit/share/exec-review*.md`、`agent-toolkit/share/recurrence-self-check.parent.md`、`agent-basics:review-standards`である。
+指示の例は、実行レビューの役割文書と手順書（`agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md`、`agent-toolkit/skills/atk-mode/playbooks/exec-review.md`）である。
+ほかに`agent-toolkit/skills/atk-mode/roles/recurrence-self-check.parent.md`と`agent-basics:review-standards`も対象とする。
 見逃しと誤指摘の件数を実例で比べ、改訂が良くなったかを印象ではなく結果で決める。
 モデルの費用がかかるため、CIと定期の工程から外して手動で実行する。
 
@@ -23,7 +24,7 @@
    - 出力の`start`をそのまま`agents_server`の`start`へ渡し、比べるモデルは`model_type`で指定する。
      事例ごとの出力先の名前、合成素材の事例の計画の名前とcommit件名は、欠陥の事例と正常対照で同じ形の中立の名前になる。
      事例IDと種類は出力の`case`と`kind`だけにあるため、担当へは`start`だけを渡す。
-2. 変更前は稼働中のplugin rootの役割名（`exec-review`）を、変更後は作業ツリーの`agent-toolkit/share/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。
+2. 変更前は稼働中のplugin rootの役割名（`exec-review`）を、変更後は作業ツリーの`agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。
    agent-basicsのスキルなど役割文書の外の改訂は、稼働版へ反映した後の実行と、反映の前に保存した結果を比べる。
    事例の作業ツリーは過去の版のため、そのプロジェクトのスキルの読込表に現行のhookが解釈できない行があると、hookはその行を除いた旨を警告する。
    変更の前後で同じ保存版を同じhookが読むため比較の条件は変わらず、保存版とhookを変えずに評価を続けてよい。

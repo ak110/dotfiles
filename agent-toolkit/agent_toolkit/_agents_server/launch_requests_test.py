@@ -177,7 +177,7 @@ async def test_start_input_rejection_points_to_owning_contract(
     source = launch_requests.plugin_root.SERVER_PLUGIN_ROOT
     root = source
     contract_relative = {
-        "exec": pathlib.Path("share/exec.parent.md"),
+        "exec": pathlib.Path("skills/atk-mode/roles/exec.parent.md"),
         "repository-process": pathlib.Path("skills/atk-mode/playbooks/process-wi-all-repos.md"),
         "add-wi": pathlib.Path("skills/atk-mode/roles/add-wi.parent.md"),
     }[role]
@@ -279,7 +279,7 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
 async def test_start_resolves_role_name_to_own_plugin_root(
     form: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """役割名はサーバー自身のplugin rootの`share/<役割名>.subagent.md`へ解決し、絶対パスと同じ起動になる。
+    """役割名はサーバー自身のplugin rootの役割文書の置き場所にある`<役割名>.subagent.md`へ解決し、絶対パスと同じ起動になる。
 
     役割名を受理しないと、委譲元はplugin rootを探してから起動する必要がある。
     委譲プロンプトの1行目の出所が別のrootを指すと、委譲元と委譲先が別の版の文書を使う。
@@ -320,7 +320,7 @@ async def test_start_rejects_unresolvable_role_name_with_accepted_roles(
 ) -> None:
     """解決先の無い役割名と区切り文字か接尾辞を含む相対の値は起動せず、受理する役割名の一覧と次の操作を返す。
 
-    受理すると、`share/`直下の外の文書や作業ディレクトリ相対の文書を委譲先へ渡せてしまう。
+    受理すると、役割文書の置き場所の外の文書や作業ディレクトリ相対の文書を委譲先へ渡せてしまう。
     """
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -348,8 +348,8 @@ async def test_start_reports_missing_model_type_declaration_as_defect(
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     (tmp_path / ".claude-plugin").mkdir()
     (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document = tmp_path / "share/exec.subagent.md"
-    task_document.parent.mkdir()
+    task_document = tmp_path / "skills/atk-mode/roles/exec.subagent.md"
+    task_document.parent.mkdir(parents=True)
     task_document.write_text(
         "---\nmode: explore\nusage: chores\nrequired_inputs: []\nwrites_worktree: false\n---\n# タスク\n",
         encoding="utf-8",

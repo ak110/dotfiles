@@ -44,7 +44,7 @@ cwdと`launch_kind`だけでは統合先をcwdとする`delegate`の担当が書
 計画保存とWI終了の後に完了記録を別に実行する二段階案は、終了後のAWIを編集できず、保存済み計画の再保存を伴うため採らない。
 計測から外れるのはGit統合後の保存・終了の所要だけである。
 選定の統合済みは、確定値を受け取る記録を含む全最終化操作の成功後に記録する。
-実行契約は[`agent-toolkit:atk-mode/playbooks/process-wi.md`](../../agent-toolkit/skills/atk-mode/playbooks/process-wi.md)と`agent-toolkit/share/exec.parent.md`が持つ。
+実行契約は[`agent-toolkit:atk-mode/playbooks/process-wi.md`](../../agent-toolkit/skills/atk-mode/playbooks/process-wi.md)と`agent-toolkit/skills/atk-mode/roles/exec.parent.md`が持つ。
 
 準備・連絡・統合・回収の費用は、同じruntime・モデル・入力WI・開始commitと隔離キューで、1レーンのprocess-wiとprocess-wi single-laneを終了まで動かして比較する。
 共通の実装・レビュー・公開を運用部分と分け、親と全委譲先の取得可能なトークン・キャッシュ・呼出数と不足を保持する。

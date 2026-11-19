@@ -439,7 +439,8 @@ def test_agent_document_target_paths() -> None:
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/agents/example.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/rules/rules-main.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/plan-review.parent.md")
-    assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/exec.subagent.md")
+    assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/atk-mode/roles/exec.subagent.md")
+    assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/atk-mode/playbooks/review-fix.md")
     assert not _plan_format.is_agent_doc_target_file("pytools/example.py")
 
 

@@ -25,7 +25,7 @@ UXで操作停止を観測した場合は、その記録と未検証範囲を機
 文単位の意味検査の自動化は採らず、背景や別項目への割当にも同じ出典と除外理由を持つ行を使う。
 除外理由の行は主要完成状態として理由と原文・採否記録の一致を判定し、割当先の完成を判定する行とは区別する。
 第三の区分を加える案は既存の判定・統合契約を広げるため採らず、既存区分で判定する対象を明記する。
-定義は`agent-toolkit:/share/exec-review-recording-contract.md`「記録する行と要求単位」に置く。
+定義は`agent-toolkit:atk-mode/references/review-contract.md`「記録する行と要求単位」に置く。
 構造上の必要条件は`agent-toolkit/agent_toolkit/_plan/review_contract.py`へ集約し、公開startの検査とリポジトリ直下の`scripts/review_eval.py`の生成が同じ定義を使う。
 意味的な方式変更や過去証拠の充足は、この構造検査の成功とは別に検収する。
 評価事例は計画・commit対応・関連WIをGit保存版へ固定し、同じ抽出原本の一覧を生成・起動検査・レビューへ渡す。

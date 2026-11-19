@@ -31,7 +31,7 @@ def test_registered_operations_do_not_fail_during_unrelated_delivery_observation
     "role,relative_material",
     [
         ("add-wi", "skills/atk-mode/references/draft-semantic-review.md"),
-        ("exec-review", "share/exec-review-parent-acceptance.md"),
+        ("exec-review", "skills/atk-mode/playbooks/exec-review-loop.md"),
     ],
 )
 def test_wait_requests_unread_role_acceptance_material(

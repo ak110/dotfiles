@@ -11,7 +11,7 @@
 | セッション記録を復元・進捗・操作の観測へ使う前 | `../../../skills/atk-mode/references/work-contract.md` |
 | process-wi中の停止や反復の原因が既存不良である時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` |
 | 書込権限を移す前 | `agent-toolkit:delegation/references/mandatory-rules.md` |
-| 介入を扱う前 | `../../../share/exec-review-responses.md` |
+| 介入を扱う前 | `agent-toolkit:atk-mode/playbooks/review-fix.md` |
 | 残工程の担当を選ぶ前 | `routing.md` |
 | 委譲した成果が受入れ基準に届かず、再委譲やeffort・モデルの変更を判断する前（操作対象外: ツールと結び付かない判断） | `model-and-effort.md` |
 
@@ -38,7 +38,7 @@ handoff_fromでmodel_typeを省略すると前任の指定値を継承する。
    継続が不可能な場合に限って新たな担当者を起動し、検収済みの状態と残りの工程を1つの担当者へまとめて引き渡す。
    交代時の会話確認は`../../../skills/atk-mode/references/work-contract.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録は`base-contract-inputs.md`「入力の適格性と追送」の検収と同じ条件で読んで比較する
 
-2. ユーザー介入時は、`../../../share/exec-review-responses.md`「指摘発生時の扱い」で採否を確定した差分だけを追送する。
+2. ユーザー介入時は、`agent-toolkit:atk-mode/playbooks/review-fix.md`「担当種別ごとの修正」で採否を確定した差分だけを追送する。
    停止は、対象や前提が無効となり、続行すると誤った成果物ができる恐れがあり、稼働中の作業の完了まで対応を待てない場合に限る
 
 3. 継続先を確定するため、レーン担当者およびCI修正担当者を交代させる場合は、前任の識別子を再利用せず新規に起動する。
@@ -82,13 +82,13 @@ handoff_fromでmodel_typeを省略すると前任の指定値を継承する。
    記録がなければ委譲元がmanaged-tempへレビュー指摘管理表を作成し、絶対パスで渡す。
    レビュー担当者のセッションが継続できない場合は、同一の`model_type`で新たなレビュー担当者を起動する。
    その際、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、`round: <ラウンド番号>`の行、直前の修正作業による直接影響範囲、読み取り専用の対象範囲を引き渡す。
-   実行レビューの場合は、レビュー対象となるHEADの7文字以上の短縮OID（一意なもの）も併せて渡し、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の生成規則に従って`review_contract`を再生成する。
-   ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の保持先`に従い、管理表に記載された最大値から継続する。
+   実行レビューの場合は、レビュー対象となるHEADの7文字以上の短縮OID（一意なもの）も併せて渡し、`agent-toolkit:atk-mode/roles/exec-review.parent.md`の生成規則に従って`review_contract`を再生成する。
+   ラウンド番号は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`の`## ラウンド番号の保持先`に従い、管理表に記載された最大値から継続する。
    新たな担当者は、すでに解消済みの指摘を再調査せず、未解消の行と、そのラウンドで指定された確認範囲のみを対象とする
 
 ## 本文参照の取得条件
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 実行レビュー反復の調整の基準を適用する前 | `../../../share/review-loop-coordination.md` |
+| 実行レビュー反復の調整の基準を適用する前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md` |
 | 委譲の要否判定と委譲単位の確定：要否判定の基準を適用する前 | `routing-decisions.md` |

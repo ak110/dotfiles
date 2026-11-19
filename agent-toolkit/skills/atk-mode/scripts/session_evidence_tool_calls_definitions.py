@@ -75,6 +75,9 @@ _DYNAMIC_CHARS = "$`*?[]{}~" + session_evidence_execution.SUBSTITUTION_MARK
 
 _SUBAGENT_SUFFIX = ".subagent.md"
 
+_ROLE_DOCUMENT_DIRECTORIES = ("/share", "/skills/atk-mode/roles")
+"""役割文書を置くディレクトリの末尾。移行前の記録は`share/`の役割文書を読むため、旧所在も含める。"""
+
 
 def _may_name_definition(target: str) -> bool:
     """動的展開を含む読取対象が、`.subagent.md`で終わるパスになり得るかを返す。
@@ -87,7 +90,12 @@ def _may_name_definition(target: str) -> bool:
         patterned = [index for index, part in enumerate(parts) if any(char in part for char in "*?[")]
         if patterned:
             directory = parts[: patterned[-1]]
-            if directory and not any(char in "/".join(directory) for char in _DYNAMIC_CHARS) and directory[-1] != "share":
+            static = "/".join(directory)
+            if (
+                directory
+                and not any(char in static for char in _DYNAMIC_CHARS)
+                and not f"/{static}".endswith(_ROLE_DOCUMENT_DIRECTORIES)
+            ):
                 return False
     tail_start = 0
     index = 0

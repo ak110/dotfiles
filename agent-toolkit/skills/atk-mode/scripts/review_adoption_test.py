@@ -13,7 +13,9 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.session_evidence_support import write_jsonl
 
-_ROLE_PROMPT = "出所: /plugin/agent-toolkit/share/exec-review.subagent.md"
+_ROLE_PROMPT = "出所: /plugin/agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md"
+# 役割文書を`share/`から配送していた移行前の記録の標識。
+_LEGACY_ROLE_PROMPT = "出所: /plugin/agent-toolkit/share/exec-review.subagent.md"
 
 
 def _row(round_value: str, issue: str, level: str, response: str, reason: str, *, location: str = "file.py") -> str:
@@ -25,14 +27,14 @@ def _commit(repo: Path, time: str) -> None:
     git_repository.commit_all(repo, "試験データ", env={**os.environ, "GIT_AUTHOR_DATE": time, "GIT_COMMITTER_DATE": time})
 
 
-def _claude_review(path: Path, table: str, model: str) -> None:
+def _claude_review(path: Path, table: str, model: str, *, role_prompt: str = _ROLE_PROMPT) -> None:
     write_jsonl(
         path,
         [
             {
                 "type": "user",
                 "timestamp": "2026-11-03T00:00:00Z",
-                "message": {"role": "user", "content": f"{_ROLE_PROMPT}\nレビュー指摘管理表: /home/u/.claude/plans/{table}"},
+                "message": {"role": "user", "content": f"{role_prompt}\nレビュー指摘管理表: /home/u/.claude/plans/{table}"},
             },
             {
                 "type": "assistant",
@@ -91,7 +93,9 @@ def _dataset(tmp_path: Path) -> tuple[Path, Path, Path]:
     _commit(notes, "2026-11-03T12:00:00+00:00")
     claude = tmp_path / "claude"
     _claude_review(claude / "p/review.jsonl", "03-0000_known.exec-review.tsv", "claude-opus-5-5")
-    _claude_review(claude / "p/judgments.jsonl", "03-0002_judgments.exec-review.tsv", "claude-opus-5-5")
+    _claude_review(
+        claude / "p/judgments.jsonl", "03-0002_judgments.exec-review.tsv", "claude-opus-5-5", role_prompt=_LEGACY_ROLE_PROMPT
+    )
     # 委譲元の記録にも同じ表の名前が現れるが、役割文書の配送が無いため帰属させない。
     write_jsonl(
         claude / "p/main.jsonl",

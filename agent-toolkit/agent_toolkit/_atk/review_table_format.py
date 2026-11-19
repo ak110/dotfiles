@@ -53,7 +53,7 @@ _RECOVERY_GUIDANCE = (
 )
 _FIX_FORMAT_NEXT_ACTION = f"表を次の形式へ直して再実行する。{_RECOVERY_GUIDANCE}"
 _FIX_ROW_NEXT_ACTION = "`atk review-table show <PATH>`で該当行を確認し、表を直して再実行する"
-# 応答本文の必須ラベル。各ラベルに書く内容は`agent-toolkit:/share/exec-review-responses.md`が定める。
+# 応答本文の必須ラベル。各ラベルに書く内容は`agent-toolkit:atk-mode/references/review-record.md`が定める。
 # 類似見直しを終えた件数と不採用の根拠を記録時点で書かせるため、列を増やさず本文の行頭ラベルで表す。
 # 書く欄は増えるほど記録が遅くなるため、類似見直しは文章でなく件数だけを書かせる。
 SIMILAR_REVIEW_LABEL = "類似見直し完了件数:"
@@ -61,15 +61,15 @@ RESPONSE_LABELS = ("違反を確認した規定:", SIMILAR_REVIEW_LABEL, "採用
 NO_RESPONSE_REASON_LABELS = ("根拠の所在:", "判断主体:")
 DECISION_MAKER_VALUES = ("メイン", "レーン担当", "統括", "ユーザー", "レビュー担当")
 _TRANSFER_TARGET_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
-_LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘管理表への応答」"
+_LABEL_DEFINITION = "`agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表への応答」"
 # レビュー担当の指摘本文の必須ラベル。類似見直しを終えた件数を書く欄が無いと、見直しをしない選択が残るため必須にする。
 # 2回目以降のラウンドでは、指摘が前回の修正不足・修正の副作用・前回の見落とし・新しい変更・要求追加のどれかを区分で書かせる。
 ISSUE_LABELS = (SIMILAR_REVIEW_LABEL,)
 _COUNT_RE = re.compile(r"[0-9]+")
 CLASSIFICATION_LABEL = "区分:"
 CLASSIFICATION_VALUES = ("前回から残存", "修正に起因", "前回の見落とし", "新しい変更", "要求追加")
-_ISSUE_LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-recording-issues.md`「レビュー指摘管理表への登録」"
-# レビュー担当の指摘ではない担当の記録の書き出し（`agent-toolkit:/share/review-table-operations.md`）。
+_ISSUE_LABEL_DEFINITION = "`agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表への登録」"
+# レビュー担当の指摘ではない担当の記録の書き出し（`agent-toolkit:atk-mode/references/review-record.md`）。
 # この行は指摘本文の必須ラベルと再確認の対象外とする。
 _OWN_RECORD_PREFIX = "担当の記録:"
 # 再レビューでレビュー担当が前回の指摘行の応答を確かめた判定。応答のある列の末尾へ1行ずつ追記する。

@@ -11,6 +11,8 @@ from agent_toolkit._agents_server import launch_requests
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import task_documents
 
+_ROLES_DIR = pathlib.Path(__file__).resolve().parents[3] / "skills" / "atk-mode" / "roles"
+
 
 def _generate(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], request: dict) -> tuple[int, dict]:
     input_path = tmp_path / "委譲 要求.json"
@@ -35,7 +37,7 @@ def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, c
     result, generated = _generate(tmp_path, capsys, {"kind": "initial", "subagent_md_path": "exec", "extra_params": params})
     assert result == 0
     assert generated["kind"] == "initial"
-    document = pathlib.Path(__file__).resolve().parents[3] / "share" / "exec.subagent.md"
+    document = _ROLES_DIR / "exec.subagent.md"
     assert generated["prompt"].splitlines()[0] == f"{document}の手順を実行せよ。"
     assert task_documents.parse_named_inputs(generated["prompt"].splitlines()[1:]) == params
     assert "固有指示:\n  最初の要求\n  \n  追加の条件" in generated["prompt"]
@@ -57,7 +59,7 @@ def test_continuation_uses_existing_launch_record(tmp_path: pathlib.Path, capsys
     assert run_script.dispatch(argparse.Namespace(script_name="delegation-prompt", script_args=["--help"])) == 0
     help_text = capsys.readouterr().out
     assert all(field in help_text for field in ("continuation", "history_file", "instruction", "extra_params", "prompt"))
-    document = pathlib.Path(__file__).resolve().parents[3] / "share" / "exec-review.subagent.md"
+    document = _ROLES_DIR / "exec-review.subagent.md"
     history_path = tmp_path / "既存記録.json"
     history_path.write_text(
         json.dumps({"prompt": f"{document}の手順を実行せよ。", "followup_prompts": ["再レビューせよ\nround: 2"]}),
@@ -93,7 +95,7 @@ def test_continuation_accepts_all_plan_tables(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], multiple: bool
 ) -> None:
     """公開生成コマンドで単一表と全計画の配列を受理し、不正要素と旧roundを拒否する。"""
-    document = pathlib.Path(__file__).resolve().parents[3] / "share" / "exec.subagent.md"
+    document = _ROLES_DIR / "exec.subagent.md"
     tables = [tmp_path / "計画1.tsv", tmp_path / "計画2 の表.tsv"]
     for table in tables:
         table.write_text("指摘の記録\n", encoding="utf-8")

@@ -178,7 +178,12 @@ def test_stats_reports_compaction_interval_usage_for_claude(tmp_path: pathlib.Pa
         tmp_path,
         [
             {"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
-            _claude_call("2026-09-02T00:00:01Z", "t1", "Read", {"file_path": "/repo/agent-toolkit/share/exec.subagent.md"}),
+            _claude_call(
+                "2026-09-02T00:00:01Z",
+                "t1",
+                "Read",
+                {"file_path": "/repo/agent-toolkit/skills/atk-mode/roles/exec.subagent.md"},
+            ),
             _claude_result("2026-09-02T00:00:02Z", "t1", norm),
             _claude_call("2026-09-02T00:00:03Z", "t2", "Bash", {"command": "uv run pytest -q"}),
             _claude_result("2026-09-02T00:00:04Z", "t2", [{"type": "text", "text": "y" * 100}]),
@@ -186,7 +191,10 @@ def test_stats_reports_compaction_interval_usage_for_claude(tmp_path: pathlib.Pa
                 "2026-09-02T00:00:05Z",
                 "t3",
                 "Bash",
-                {"command": "sed -n 1,40p /home/u/.claude/plugins/cache/m/agent-toolkit/1.2.3/share/exec.subagent.md"},
+                {
+                    "command": "sed -n 1,40p "
+                    "/home/u/.claude/plugins/cache/m/agent-toolkit/1.2.3/skills/atk-mode/roles/exec.subagent.md"
+                },
             ),
             _claude_result("2026-09-02T00:00:06Z", "t3", "z" * 50),
             _claude_call("2026-09-02T00:00:07Z", "t4", "Bash", {"command": "rg -n x agent-basics/skills/bugfix/SKILL.md"}),
@@ -207,7 +215,9 @@ def test_stats_reports_compaction_interval_usage_for_claude(tmp_path: pathlib.Pa
             "line": 10,
             "tool_output_bytes": 470,
             "norm_doc_display_bytes": 350,
-            "norm_doc_display_top": [{"path": "agent-toolkit/share/exec.subagent.md", "count": 2, "bytes": 350}],
+            "norm_doc_display_top": [
+                {"path": "agent-toolkit/skills/atk-mode/roles/exec.subagent.md", "count": 2, "bytes": 350}
+            ],
         },
         {
             "kind": "stats-compaction-usage",
@@ -259,7 +269,8 @@ def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Pat
                     "type": "custom_tool_call",
                     "name": "exec",
                     "call_id": "c3",
-                    "input": 'text(await tools.exec_command({cmd:"cat -- /repo/agent-toolkit/share/exec.subagent.md",'
+                    "input": "text(await tools.exec_command("
+                    '{cmd:"cat -- /repo/agent-toolkit/skills/atk-mode/roles/exec.subagent.md",'
                     "max_output_tokens:20000}));",
                 },
             },
@@ -283,7 +294,7 @@ def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Pat
             "norm_doc_display_bytes": 74,
             "norm_doc_display_top": [
                 {"path": "agent-basics/skills/bugfix/references/spread.md", "count": 1, "bytes": 64},
-                {"path": "agent-toolkit/share/exec.subagent.md", "count": 1, "bytes": 10},
+                {"path": "agent-toolkit/skills/atk-mode/roles/exec.subagent.md", "count": 1, "bytes": 10},
             ],
         }
     ]

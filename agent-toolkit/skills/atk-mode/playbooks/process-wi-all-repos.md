@@ -139,7 +139,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 統括はレーン上限、共有の検証能力、各対象に固有の終了条件を守る。
 
 1. 要求の中の追加ファイルの編集はレーン担当の判断に任せ、重なりを理由とする事前通知や選定記録の更新は省く。
-   競合は対象リポジトリの直列統合で扱う（`agent-toolkit:/share/exec-subagent-implementation.md`「実装」）。
+   競合は対象リポジトリの直列統合で扱う（`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」）。
 2. 各担当は自分の対象で作業`process-wi`を完遂し、対象別の結果と残工程を統括へ返す。
    統括は直接担当の処理中も、他の対象からの確認と結果の受領、全体の統括を続ける。
 3. 通常の継続では、負荷の変動や軽い対象の終了があっても同じ担当を保つ。
@@ -173,7 +173,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 
 常駐は統括の起動前に対象worktreeを準備し、resumeでは既存の準備済みの実体と未完了の成果をそのまま再利用する。
 配下のレーンは`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`の公開`atk`操作で作り、対象別の`lane_session_id`を保つ。
-準備・統合・実行レビューは同書と`agent-toolkit:/share/exec.parent.md`へ、公開とCIの検収は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`へつなぐ。
+準備・統合・実行レビューは同書と`agent-toolkit:atk-mode/roles/exec.parent.md`へ、公開とCIの検収は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`へつなぐ。
 
 ## 更新のための本人再開
 

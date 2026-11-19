@@ -5,15 +5,16 @@ import re
 
 import session_evidence_candidates as evidence_candidates
 import session_review_evidence as evidence
+from agent_toolkit._common import task_documents
 
 
 def test_subagent_outputs_have_recognized_first_lines() -> None:
     """自由記述を返す担当を除き、全担当の先頭行を候補抽出が認識する。"""
-    share = pathlib.Path(evidence.__file__).resolve().parents[3] / "share"
+    plugin_root = pathlib.Path(evidence.__file__).resolve().parents[3]
     exceptions = {
         "copilot-review-audit.subagent.md": "監査結果の本文自体が成果物",
     }
-    documents = set(share.glob("*.subagent.md"))
+    documents = set(task_documents.role_documents(plugin_root))
     assert {path.name for path in documents if path.name in exceptions} == set(exceptions)
     for path in sorted(documents):
         if path.name in exceptions:

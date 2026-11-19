@@ -1,10 +1,10 @@
 # 担当の実行契約
 
 処理対象のWIを持つ1人の担当が、計画の要否の判定、計画、実装、実行レビューの調整、修正、統合の準備と最終化を同じthreadで続けて行う手順書である。
-レーン専用の資源を渡す複数レーンの実行ではレーン担当（`agent-toolkit:/share/exec.subagent.md`）が、対象worktreeへ直接実装するsingle-laneではメイン自身が使う。
+レーン専用の資源を渡す複数レーンの実行ではレーン担当（`agent-toolkit:atk-mode/roles/exec.subagent.md`）が、対象worktreeへ直接実装するsingle-laneではメイン自身が使う。
 メインとレーン担当が同じ計画やレビュー結果を重ねて読み、同じ判断を繰り返す往復を省くためである。
 複数レーンの実行では、メインが処理対象の選定、レーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの統合の許可、最終結果の検収を担う。
-実行レビューの起動と返却後の検収、既存不良の受領は`agent-toolkit:/share/exec-review.parent.md`に従い、起動するのはレーン担当（single-laneではメイン）自身である。
+実行レビューの起動と返却後の検収、既存不良の受領は`agent-toolkit:atk-mode/roles/exec-review.parent.md`に従い、起動するのはレーン担当（single-laneではメイン）自身である。
 終了条件は、レーン担当では`統合完了`を返した時点、single-laneのメインでは受領の確認を終えて呼出側の計画の保存・WIの終了・公開へ戻った時点である。
 
 ## 入力と書込所有
@@ -13,13 +13,13 @@
 複数レーンでは、メインが準備済みの資源記録、選定の原本、統合先のworktreeとブランチを初回の起動時に渡し、レーンの開始時刻を初回の起動直後に1回通知する（以後はその値を保つ）。
 入力の選定結果は、`pick-wi-check`が検証・保存した完成済みの選定YAMLとレーン識別子から読む（メインの生成入力、候補JSONL、定型欄は委譲プロンプトへ転記されない）。
 選定時の分類と要求の採否は別の判断であり、鮮度、省略値、担当モデルの不一致は同じ担当の引き継ぎ記録を通じてメインへ伝える。
-書込担当の一覧は`agent-toolkit:/share/exec.parent.md`の同名の入力として初回に受け取り、担当の交代・再開・追送の時に更新する。
+書込担当の一覧は`agent-toolkit:atk-mode/roles/exec.parent.md`の同名の入力として初回に受け取り、担当の交代・再開・追送の時に更新する。
 単一の書込担当（単一writer）と実行レビューの体制を保つ。
 専用資源の作成・統合・回収には既存のlane CLIを使い、準備済みの資源の所有登録は`atk lane create`が持つため、カレントディレクトリのworktreeにだけ書き込み、主作業ツリーへの書込は統合の時だけ行う。
 
 編集の境界はWIの要求である。
 選定の`書込対象`は初期配分の見込みであり、計画の起草や実装で要る要求内の編集先は、他のレーンとの重なりにかかわらず担当の判断で加える（追加一覧の送信、選定の更新、追加のログは要らない）。
-計画に含まれないファイルの作成・編集と、WIの要求を超える変更の扱いは`agent-toolkit:/share/exec-subagent-implementation.md`「実装」に従う。
+計画に含まれないファイルの作成・編集と、WIの要求を超える変更の扱いは`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」に従う。
 
 対象リポジトリの版数の規約で更新が要る場合は、レーン数にかかわらず版数の更新の種別とその根拠を計画（計画なしでは引き継ぎ記録）に書き、同じ実行の中の変更がより上位の区分に当たれば上位の区分を選ぶ。
 実際の版数の更新は公開工程の公開担当が行う。
@@ -43,26 +43,26 @@
    レビューの修正にも適用し、不具合は同じ入力で再現してから直す。
    `検証結果`は`agent-toolkit:atk-mode/playbooks/verification.md`に従って既存の引き継ぎ記録と進捗ログへ記録し、残る工程の担当と再開先も示す。
    計画の準備、実装の開始、実装の完了の各状態を保存し、同じ担当が処理を続ける。
-3. 実行レビュー: `agent-toolkit:/share/exec-review-parent-launch.md`の起動契約に従い、実装を担当していない実行レビュー担当を起動する。
+3. 実行レビュー: `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`の起動契約に従い、実装を担当していない実行レビュー担当を起動する。
    起動前に`agent-toolkit:atk-mode/playbooks/verification.md`に従い、取得版、入力条件、要求別の観測箇所を同じ検証記録へ対応付ける（レビュー担当はその記録を独立に読み、保存済みの成功の適用可否と、不足か影響差分に限った追加の観測を判断する）。
-   レビュー指摘管理表の作成と完成条件証拠の受領確認は`agent-toolkit:/share/exec-review-parent-acceptance.md`と`agent-toolkit:/share/exec-review-parent-existing-defects.md`に従う。
-   画面差分がある場合は`agent-toolkit:/share/usability-review.parent.md`に従ってユーザビリティレビュー担当も起動する。
+   レビュー指摘管理表の作成と完成条件証拠の受領確認は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`と`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`に従う。
+   画面差分がある場合は`agent-toolkit:atk-mode/roles/usability-review.parent.md`に従ってユーザビリティレビュー担当も起動する。
    各計画のレビュー基準と開始HEADは保つ。
-4. 収束: `agent-toolkit:/share/review-loop-coordination.md`の手順で指摘を収束させ、修正とGit履歴の統合は自分で行う（管理表の保存は`agent-toolkit:/share/exec-review-parent-correction.md`）。
+4. 収束: `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`の手順で指摘を収束させ、修正とGit履歴の統合は自分で行う（管理表の保存は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`）。
    要件や認可の変更、事後承認の確認が要る場合は、手順1の分担で対応する。
    事後承認はレビューの収束後かつ統合前の内容で発行し、レーン担当はメインから保存結果を受け取る。
    作業中の通常の問い合わせや状況確認には次の応答で答えて元の工程へ戻り、WIへ直接書かれた質問への回答用のUWIは呼出側の収束後の保存手順で保存する。
 5. 統合の準備と最終化: 実装を伴う対象は実行レビューの受理の後に、実装やマージを伴わない対象は採否の確定の後に、本手順を行う。
-   - レーン専用の資源を使う場合は、`agent-toolkit:/share/exec.parent.md`と`agent-toolkit:/share/exec-parent-integration.md`の検収に、完成条件証拠の受領時の受理記録を使う。
-     完成条件の意味の検収は`agent-toolkit:/share/exec-review-recording-integration.md`に従い、変更の影響を受ける条件と未検収の部分だけに行う。
+   - レーン専用の資源を使う場合は、`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の検収に、完成条件証拠の受領時の受理記録を使う。
+     完成条件の意味の検収は`agent-toolkit:atk-mode/references/review-record.md`に従い、変更の影響を受ける条件と未検収の部分だけに行う。
    - `agent-toolkit:atk-mode/roles/lane-integration.subagent.md`の契約に従い、検収済みのHEAD、全計画、WI、採否、受理した返却ファイルと`レビューHEAD`の組から統合入力を確定する。
-   - 複数レーンの実行では、統合入力を確定した後に`agent-toolkit:/share/exec.subagent.md`「出力」の`UWI保存状況`を含む`統合準備完了`を返す。
+   - 複数レーンの実行では、統合入力を確定した後に`agent-toolkit:atk-mode/roles/exec.subagent.md`「出力」の`UWI保存状況`を含む`統合準備完了`を返す。
      該当する回答と事後承認についてメインのUWIの保存とファイル名を受け取り、`統合許可`を受けてから統合へ進む（依存の条件とUWIの保存をメインが確かめるため。統合先のHEADの更新は`atk lane integrate`が1レーンずつに限る）。
    - `atk lane integrate`で統合、計画の保存、WIの終了処理を最終化し、`phase: finalized`を確かめてから通常の`統合完了`の形式だけをメインへ返す。
      `git-integrated`は最終化の途中の段階であり、計画の保存とWIの採否まで終えた`finalized`で完了とする。
    - 対象worktreeへ直接実装している場合は、既存の受領の確認を終えた後に呼出側の計画の保存、WIの終了、公開工程へ戻る。
 
-本契約の作業では、`agent-toolkit:/share/exec.parent.md`と`agent-toolkit:/share/exec.subagent.md`が定める定型の往復（準備通知、実装の開始・完了、レビューの修正、統合の開始）と応答を待つ指示を省く。
+本契約の作業では、`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/roles/exec.subagent.md`が定める定型の往復（準備通知、実装の開始・完了、レビューの修正、統合の開始）と応答を待つ指示を省く。
 同じ担当の継続した実行を優先する。
 省かずに保つのは、計画の自己監査、計画構造の自動チェック、採否と認可の検収、計画の凍結、実行レビュー、統合前のメインによるUWIの保存と結果の受領、統合時の検収条件、ユーザー判断の即時通知、必要な回答の待機、最終結果の検収である。
 実装やマージを行わない場合も、採否の確定、計画の保存、WIの終了処理は終える。
@@ -89,7 +89,7 @@
    ```
 
    メインの指示を受けてから実装へ進む。
-6. 禁止条件が無ければ、本書「計画検査完了の通知」を`計画ファイル: なし`として送り、応答を待たずに`agent-toolkit:/share/exec-subagent-implementation.md`「実装」へ進む（`マージなし`では統合の指示を待つ）。
+6. 禁止条件が無ければ、本書「計画検査完了の通知」を`計画ファイル: なし`として送り、応答を待たずに`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」へ進む（`マージなし`では統合の指示を待つ）。
    実装中を含め、4つの事項のどれかが本文と現物から決まらないと分かった場合と、人間由来の要求の縮小が要ると分かった場合は、本書「計画の起草」へ戻る。
 
 ## 計画の起草
@@ -113,7 +113,7 @@
      前提が変わった観点と、エージェントが加えた手段・検証は、必要性を現在の方針で判定してから計画の完成条件や検証へ写す。
      プロジェクト規範が指定する方針・障害の記録を読んだ成果は、守る条件と今回の採否・検証の対応として判断の根拠へ残す（記録の名前や取得済みであることは根拠にしない）。
      `agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」は常に行い、評価の条件は`agent-toolkit:atk-mode/references/awi-body.md`「既存箇所の見直し」に従う。
-     不具合対策では、`agent-basics:review-standards/references/reviewer.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も比べる（基準は`agent-toolkit:/share/exec-review-criteria.md`）。
+     不具合対策では、`agent-basics:review-standards/references/reviewer.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も比べる（基準は`agent-toolkit:atk-mode/playbooks/exec-review.md`）。
    - `選定`の各項目の`鮮度`が`notice`であることだけを理由に作業を止めない。
      現行の内容との不一致、既存の実装による充足済み、巻き戻しの危険のどれかを確かめた項目に限って関連の履歴を調べ、確認の条件、調べた履歴、採否への影響を`## 調査結果と判断根拠`へ残す。
    - レーン担当は、レーン数にかかわらず自分のレーン内の分担を`agent-toolkit:delegation/references/routing-decisions.md`と`agent-toolkit:delegation/references/routing-units.md`で検討する。
@@ -124,9 +124,9 @@
      大量のファイル編集では、実装の前に作業の構成を決め、要求と完成条件はレーンが1つのWIとして持ち、並行できる作業単位を、共通の変換規則と前提、出力元と直接消費するテスト、相互参照の整合の責任でまとめる。
      変換、参照の追随、保持の確認が同じ原本と対応表から進む構成にし、独立した準備は先行成果を待たずに始め、共有の定義は単一writerへ集める。
      内部の群の総数と同時数を分け、巡回全体のCと巨大WIの判定は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`「内部担当の同時数と巨大WIの判定」へつなぐ。
-     各群の実装・焦点の検証・commitが済んだ順に`agent-toolkit:/share/exec-review-parent-launch.md`の独立文脈レビューへ渡し、対象のHEAD・要求・直接影響の集合・成功の証拠を固定して、他の群の未確定の本文を混ぜない。
+     各群の実装・焦点の検証・commitが済んだ順に`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`の独立文脈レビューへ渡し、対象のHEAD・要求・直接影響の集合・成功の証拠を固定して、他の群の未確定の本文を混ぜない。
      共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）の重い検証と直列のHEADの更新は保ち、群間の契約・共有の生成物・組合せの差分・未達条件を最後に検収する。
-     文単位の大量の書換えで意味の保持を確かめる分担は、レーン担当の役割文書「操作区分」に従う。
+     文単位の大量の書換えで意味の保持を確かめる分担は、`agent-toolkit:atk-mode/playbooks/implementation.md`「文単位の大量書換えの意味の確認」に従う。
    - 独立した複製環境での対照実験など時間の要る比較調査は、入力と版を固定でき独立した複製へ出力できれば、通常の修正と並行して始める。
      開始前に`agent-basics:writing-standards/references/investigation.md`「実行結果の検証」の準備確認を終える。
      結果の到着を待つ工程だけを直列にし、作業の順を、先行成果、書込先、観測資源の競合から決めて`## 実施内容`へ書く。
@@ -138,14 +138,14 @@
      メインは`agent-toolkit:atk-mode/roles/add-wi.parent.md`の付随型で投入し、返ったファイル名をレーン担当へ渡し、レーン担当はそれを`移管`行の根拠へ書いてから計画を確定する。
    - `上流投入結果`を受け取った場合は、`結果`が`completed`の要求を採用範囲から除き、`移管`として投入先の`ファイル名`とともに記録する。
 2. 人間由来の要求を不採用・部分採用とする判断は、`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」に従い、計画の確定前にメインへ通知する。
-   完成条件の変更・除外についてのメインの技術判断は`agent-toolkit:/share/review-loop-coordination-escalation.md`「技術判断で外せる完成条件」に従い、旧条件、新条件か除外範囲、技術的な制約、保つ要求と根拠を実施内容の根拠欄へ書く。
+   完成条件の変更・除外についてのメインの技術判断は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「技術判断で外せる完成条件」に従い、旧条件、新条件か除外範囲、技術的な制約、保つ要求と根拠を実施内容の根拠欄へ書く。
    実装着手後の判断はレビュー指摘管理表へ書く。
 3. 通知した確認事項の回答を全て受け取って採否へ反映するまでは、回答待ちの間も進められる調査と下書きにとどめる。
 4. `agent-toolkit:atk-mode/references/plan-format.md`「初回起草の雛形」に案件の値を入れ、同書に従って計画本文を起草してmanaged-temp配下のファイルへ保存する。
    単一の計画では`plan-check`の行数の警告（1200行）を避けられない見込みなら、実装の前に分析単位と依存の順で自己完結した複数の計画へ分け、全ての計画を同じレーン・専用worktree・書込担当のまま管理する（確定後の事後の分割やレーンの再配分は行わない）。
    各計画は`atk run-script plan-create -- --main-source <計画本文の絶対パス> --lane <レーン識別子> --work-dir <計画メタ情報の対象リポジトリ>`で`~/.claude/plans`に作り、stemには同処理が生成した値を使う。
 5. 計画全体から、編集・新設・移動するエージェント向け文書の集合を確定し、全てのパスをリポジトリ相対パスで計画本文に書く。
-   この集合は、書込の認可の境界（WIの要求）の内側で着手時に想定した書込先の記録であり、実装中の追加は`agent-toolkit:/share/exec-subagent-implementation.md`「実装」に従う。
+   この集合は、書込の認可の境界（WIの要求）の内側で着手時に想定した書込先の記録であり、実装中の追加は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」に従う。
    次のコマンドを単独で実行し、集合の全てのパスを`--agent-rule-path <リポジトリ相対パス>`で繰り返し指定する。
 
    ```text

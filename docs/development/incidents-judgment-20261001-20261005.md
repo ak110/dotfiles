@@ -83,7 +83,7 @@
   対策: `commit_references`と、同じ原因の`awi_references`を撤去した（2026年10月3日「fix(agent-toolkit): レビュー契約の二重記載をなくし必要性を先に評価する」、`71bbcb627`）。
   構造は`atk run-script review-contract`が、参照と認可は受信したレビュー担当が評価する。
   再発防止として、WI起草の完成条件の固定と実行レビューの詳細確認より前に必要性を比べ、直接影響範囲の既存機構にも適用する。
-  必要性の比較の手順は`agent-toolkit:/share/exec-review-criteria.md`「初回レビュー」にある。
+  必要性の比較の手順は`agent-basics:review-standards/references/reviewer.md`「初回レビュー」にある。
   比較の基準は`../../agent-basics/skills/writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」、方式は[design-planning-review-contract.md](design-planning-review-contract.md#review_contractとレビュー指摘管理表)にある
 
 - 2026年10月3日: Stop hookへの対処をWI投入担当へ委譲したメインが、機能の目的と比べずに不具合と文面の直し方を述べ、ユーザーに2回是正された。

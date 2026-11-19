@@ -193,7 +193,11 @@ def test_abbreviated_paths_require_directory_context_and_existing_parent(
     assert capsys.readouterr().err == ""
 
 
-_PLUGIN_SHARE_FILES = ("agent-toolkit/share/exec.parent.md", "agent-toolkit/share/rules/rules-main.md", "share/README.md")
+_PLUGIN_SHARE_FILES = (
+    "agent-toolkit/skills/atk-mode/roles/exec.parent.md",
+    "agent-toolkit/share/rules/rules-main.md",
+    "share/README.md",
+)
 
 
 @pytest.mark.parametrize("wi_type", ["awi", "uwi"])
@@ -307,12 +311,12 @@ def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short
         notes,
         "glob.md",
         "`agent-toolkit/`配下のうち`share/rules/rules-*.md`と`share/exec-review.{parent,subagent}.md`、"
-        "略記の`rules/`と`share/exec.parent.md`を改める。`docs/development/*.md`の記述は変えない。あわせて`src/model.py`と`src/new_module.py`も変える。",
+        "略記の`rules/`と`skills/atk-mode/roles/exec.parent.md`を改める。`docs/development/*.md`の記述は変えない。あわせて`src/model.py`と`src/new_module.py`も変える。",
     )
     body = (notes / "processing/glob.md").read_text(encoding="utf-8")
     assert check_selection.reflected_paths(body, repo) == {
         "agent-toolkit/",
-        "agent-toolkit/share/exec.parent.md",
+        "agent-toolkit/skills/atk-mode/roles/exec.parent.md",
         "src/model.py",
         "src/new_module.py",
     }
@@ -331,13 +335,13 @@ def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.P
         "---\ntype: awi\nsource: test\n---\n\n# 題\n\n## 反映内容と反映先\n\n"
         "変更対象はsrc/model.pyとdocs/development/design.mdである。"
         "`share/rules/rules-*.md`、`agent-toolkit/share/rules/rules-*.md`、`share/exec-review.{parent,subagent}.md`、`src/*.py`を改める。"
-        "略記の`rules/`・`UCR/`・`share/exec.parent.md`、範囲`src/`と`missing/`、"
+        "略記の`rules/`・`UCR/`・`skills/atk-mode/roles/exec.parent.md`、範囲`src/`と`missing/`、"
         "src/のmodel.py・new_module.py・draft、`docs/development/new.md`と`docs/development/new.`も扱う。"
         "src/model.pyのWorker.runと`src/model.py:42`の`Service.start`も直す。\n"
     )
 
     assert check_selection.reflected_paths(body, repo) == {
-        "agent-toolkit/share/exec.parent.md",
+        "agent-toolkit/skills/atk-mode/roles/exec.parent.md",
         "docs/development/design.md",
         "docs/development/new.md",
         "src/",

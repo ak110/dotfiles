@@ -232,8 +232,9 @@ def _plugin_checkout(base: pathlib.Path, *, with_new: bool, broken: bool = False
         (root / ".claude-plugin/plugin.json").write_text(f'{{"name":"{manifest_name}"}}', encoding="utf-8")
         (root / "skills/bugfix/references").mkdir(parents=True)
         (root / "share").mkdir()
-    (base / "agent-toolkit/share/exec.parent.md").write_text("# 起動\n\n## 入力\n説明\n", encoding="utf-8")
-    (base / "agent-toolkit/share/exec.subagent.md").write_text("# 役割\n", encoding="utf-8")
+    (base / "agent-toolkit/skills/atk-mode/roles").mkdir(parents=True)
+    (base / "agent-toolkit/skills/atk-mode/roles/exec.parent.md").write_text("# 起動\n\n## 入力\n説明\n", encoding="utf-8")
+    (base / "agent-toolkit/skills/atk-mode/roles/exec.subagent.md").write_text("# 役割\n", encoding="utf-8")
     if with_new:
         (base / "agent-basics/skills/bugfix/references/new-reference.md").write_text("# 新設\n", encoding="utf-8")
         (base / "agent-toolkit/share/new-review.subagent.md").write_text("# 新設役割\n", encoding="utf-8")
@@ -278,12 +279,12 @@ def test_project_skill_reference_resolves_the_same_checkout_version(tmp_path, ca
 
 
 def test_share_variable_and_absolute_role_keep_their_own_version(tmp_path):
-    """share文書の`${CLAUDE_PLUGIN_ROOT}`と絶対パスの役割指定は、文書が属するrootで解決する。"""
+    """役割文書の`${CLAUDE_PLUGIN_ROOT}`と絶対パスの役割指定は、文書が属するrootで解決する。"""
     running = _plugin_checkout(tmp_path / "running", with_new=False)
     worktree = _plugin_checkout(tmp_path / "worktree", with_new=True)
-    share = worktree / "agent-toolkit/share/exec.subagent.md"
+    source = worktree / "agent-toolkit/skills/atk-mode/roles/exec.subagent.md"
     resolved = read_triggers.resolve_document(
-        "${CLAUDE_PLUGIN_ROOT}/share/new-review.parent.md", share, running / "agent-toolkit"
+        "${CLAUDE_PLUGIN_ROOT}/share/new-review.parent.md", source, running / "agent-toolkit"
     )
     assert resolved == (worktree / "agent-toolkit/share/new-review.parent.md").resolve()
     role = worktree / "agent-toolkit/share/new-review.subagent.md"

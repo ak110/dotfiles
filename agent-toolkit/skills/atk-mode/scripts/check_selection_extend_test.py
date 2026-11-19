@@ -341,15 +341,17 @@ def test_public_extend_updates_project_norm_spec_with_the_added_agent_document(
     """
     repo, notes = env
     (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
-    _write_files(repo, "agent-toolkit/share/exec.parent.md", ".claude/skills/edit/SKILL.md")
-    _awi(notes, "norm.md", "`agent-toolkit/share/exec.parent.md`を変える。")
+    _write_files(repo, "agent-toolkit/skills/atk-mode/roles/exec.parent.md", ".claude/skills/edit/SKILL.md")
+    _awi(notes, "norm.md", "`agent-toolkit/skills/atk-mode/roles/exec.parent.md`を変える。")
     decisions: list[dict[str, typing.Any]] = [
-        {"WI": "norm.md", "レーン": "lane-01", "書込対象": ["agent-toolkit/share/exec.parent.md"]}
+        {"WI": "norm.md", "レーン": "lane-01", "書込対象": ["agent-toolkit/skills/atk-mode/roles/exec.parent.md"]}
     ]
-    path = _norm_spec_selection(tmp_path, decisions, {"norm.md": f"agent-toolkit/share/exec.parent.md。{_READ_REQUEST}"})
+    path = _norm_spec_selection(
+        tmp_path, decisions, {"norm.md": f"agent-toolkit/skills/atk-mode/roles/exec.parent.md。{_READ_REQUEST}"}
+    )
     assert _dispatch("--work-dir", str(repo), str(path)) == 0, capsys.readouterr().err
     before = path.read_bytes()
-    spec = f"agent-toolkit/share/exec.parent.md、.claude/skills/edit/SKILL.md。{_READ_REQUEST}"
+    spec = f"agent-toolkit/skills/atk-mode/roles/exec.parent.md、.claude/skills/edit/SKILL.md。{_READ_REQUEST}"
     update: dict[str, typing.Any] = {"WI": "norm.md", "書込対象": [".claude/skills/edit/SKILL.md"]}
     if with_spec:
         update["プロジェクト規範の指定"] = spec
@@ -361,7 +363,7 @@ def test_public_extend_updates_project_norm_spec_with_the_added_agent_document(
     if with_spec:
         assert code == 0, error
         item = yaml.safe_load(path.read_text(encoding="utf-8"))["選定"][0]
-        assert item["書込対象"] == ["agent-toolkit/share/exec.parent.md", ".claude/skills/edit/SKILL.md"]
+        assert item["書込対象"] == ["agent-toolkit/skills/atk-mode/roles/exec.parent.md", ".claude/skills/edit/SKILL.md"]
         assert item["プロジェクト規範の指定"] == spec
         assert _dispatch("--work-dir", str(repo), str(path)) == 0
     else:

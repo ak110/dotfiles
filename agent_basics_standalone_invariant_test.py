@@ -22,7 +22,8 @@ _DISTRIBUTED_DOCUMENTS = sorted(_SKILLS.rglob("*.md"))
 # 条件付きの言及として許す形は設けず、agent-toolkitに固有の手順は該当工程のスキルへ置く。
 _TOOLKIT_DEPENDENCIES = {
     "agent-toolkitの名前空間": re.compile(r"agent-toolkit:"),
-    "agent-toolkitの共有文書": re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/share/"),
+    # 役割文書は`share/`から入口スキル`atk-mode`の配下へ移ったため、両方の所在を検出する。
+    "agent-toolkitの共有文書": re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/(?:share|skills/atk-mode)/"),
     "atkコマンド": re.compile(r"(?<![\w./-])atk(?=[\s`])"),
     "atk-autoの標識": re.compile(r"atk-auto"),
     "agent-toolkitのMCPツール": re.compile(r"agents_server|mcp__plugin_agent-toolkit"),
@@ -172,7 +173,8 @@ def test_reading_tables_are_not_split_into_other_files() -> None:
     ("line", "expected"),
     [
         ("詳細は`agent-toolkit:delegation`に従う。", "agent-toolkitの名前空間"),
-        ("`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を読む。", "agent-toolkitの共有文書"),
+        ("`${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.subagent.md`を読む。", "agent-toolkitの共有文書"),
+        ("`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/exec.subagent.md`を読む。", "agent-toolkitの共有文書"),
         ("`atk wi show`で取得する。", "atkコマンド"),
         ("全体を`atk-auto`要素で囲む。", "atk-autoの標識"),
         ("`agents_server`の`start`で起動する。", "agent-toolkitのMCPツール"),
@@ -194,11 +196,11 @@ def test_reference_outside_distribution_is_detected(tmp_path: pathlib.Path) -> N
     path.write_text(
         "# 例\n\n`references/rule.md`と`docs/development/audit-records.md`と"
         "`docs/development/audit-records-search.md`と`AGENTS.md`に従い、"
-        "`share/exec.subagent.md`を読む。\n",
+        "`skills/atk-mode/roles/exec.subagent.md`を読む。\n",
         encoding="utf-8",
     )
     assert _unresolved_references(path, skills) == [
         f"{path}:3: docs/development/audit-records.md",
         f"{path}:3: docs/development/audit-records-search.md",
-        f"{path}:3: share/exec.subagent.md",
+        f"{path}:3: skills/atk-mode/roles/exec.subagent.md",
     ]

@@ -89,7 +89,7 @@
 - `agent-toolkit:atk-mode`の作業`process-wi`のメインは選定結果へ要求単位の由来を書かず、レーン担当が計画起草時にAWI本文とfrontmatterから判定する。
   選定結果が持つのは消費側が実際に参照する項目だけとし、委譲先が自分で参照できる基準文書やデータから判定できる属性を載せない。
   項目数がWI件数に比例して増える一方、レーン担当は計画起草時にAWI原文を取得するためである（2026年9月15日、ユーザー指摘）。
-  現行の規範は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`と`agent-toolkit/share/exec.subagent.md`にある
+  現行の規範は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`と`agent-toolkit/skills/atk-mode/roles/exec.subagent.md`にある
 
 ## 多数の単純作業の分担
 
@@ -119,4 +119,4 @@
   推論担当の分担数と検証プロセスの同時実行負荷は別に判断し、ホスト全体の負荷指標だけで担当数を制限しない（検証の負荷とエージェントの並列数を混同していないかを問う、同日のユーザー指摘による）。
   軽量担当による一次確認の適否と所要の削減量は実証済みとして扱わず、同じ入力による全件検収との比較で判断する。
   実行時の規範は次の3か所に置く。
-  `agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md`「調査とレーン分け」は見積もり、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」は作業構成、`agent-toolkit/share/exec.subagent.md`「操作区分」は確認の分担を定める。
+  `agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md`「調査とレーン分け」は見積もり、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」は作業構成、`agent-toolkit/skills/atk-mode/playbooks/implementation.md`「文単位の大量書換えの意味の確認」は確認の分担を定める。

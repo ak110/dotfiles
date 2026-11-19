@@ -55,7 +55,7 @@ class _RetiredTerm:
 _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "証拠行": (
         # 既存の達成根拠へ付加された標識を読み、観測本文と分けて比較する箇所。
-        _AllowedLocation("agent-toolkit/share/exec-review.subagent.md", "`証拠行`"),
+        _AllowedLocation("agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md", "`証拠行`"),
     ),
     "計画レビュー": (
         # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
@@ -354,8 +354,8 @@ _RETIRED_TERMS = (
             ("通常完了の返却形式", "入力名`通常完了の報告様式`"),
             ("英語検知通知", "「`response_language_check`の通知」"),
             ("投入前チェック", "「`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入前の読み直し」」"),
-            ("レビュー調整", "「`share/review-loop-coordination.md`の手順」"),
-            ("調整手順", "「`share/review-loop-coordination.md`の手順」"),
+            ("レビュー調整", "「`skills/atk-mode/playbooks/exec-review-loop.md`の手順」"),
+            ("調整手順", "「`skills/atk-mode/playbooks/exec-review-loop.md`の手順」"),
             ("読者ごとの探索担当", "読者別探索担当"),
             ("振り返り担当", "現行の主体（メイン）"),
             ("Challenger", "前提を疑う観点"),
@@ -365,8 +365,8 @@ _RETIRED_TERMS = (
             ("非再現時の判断", "外部の既存挙動の再現観測が再現しない場合の扱い"),
             ("計画実装", "「実行」工程または`exec.subagent.md`の手順"),
             ("計画レビュー", "実行レビュー（計画のレビュー工程は廃止）"),
-            ("調整担当", "`share/review-loop-coordination.md`の手順を行う主体"),
-            ("調整主体", "`share/review-loop-coordination.md`の手順を行う主体"),
+            ("調整担当", "`skills/atk-mode/playbooks/exec-review-loop.md`の手順を行う主体"),
+            ("調整主体", "`skills/atk-mode/playbooks/exec-review-loop.md`の手順を行う主体"),
             ("固有の終端工程", "プロジェクト固有の公開後の操作"),
             # 文書・規範・契約・条件の名前
             ("規範文書", "エージェント向け文書"),

@@ -24,8 +24,8 @@ from agent_toolkit._testing.selection_check_support import fixture_env as fixtur
         (None, 1),
         ("なし", 1),
         ("", 1),
-        (f"agent-toolkit/share/exec.parent.md。{_READ_REQUEST}", 1),
-        (f"agent-toolkit/share/exec.parent.md、.claude/skills/edit/SKILL.md。{_READ_REQUEST}", 0),
+        (f"agent-toolkit/skills/atk-mode/roles/exec.parent.md。{_READ_REQUEST}", 1),
+        (f"agent-toolkit/skills/atk-mode/roles/exec.parent.md、.claude/skills/edit/SKILL.md。{_READ_REQUEST}", 0),
     ],
     ids=["omitted", "none", "empty", "partial", "complete"],
 )
@@ -43,14 +43,14 @@ def test_public_command_requires_project_norm_spec(
     """
     repo, notes = env
     (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
-    _write_files(repo, "agent-toolkit/share/exec.parent.md", ".claude/skills/edit/SKILL.md", "scripts/tool.py")
-    _awi(notes, "norm.md", "`agent-toolkit/share/exec.parent.md`と`.claude/skills/edit/SKILL.md`を変える。")
+    _write_files(repo, "agent-toolkit/skills/atk-mode/roles/exec.parent.md", ".claude/skills/edit/SKILL.md", "scripts/tool.py")
+    _awi(notes, "norm.md", "`agent-toolkit/skills/atk-mode/roles/exec.parent.md`と`.claude/skills/edit/SKILL.md`を変える。")
     _awi(notes, "code.md", "`scripts/tool.py`を変える。")
     decisions: list[dict[str, typing.Any]] = [
         {
             "WI": "norm.md",
             "レーン": "lane-01",
-            "書込対象": ["agent-toolkit/share/exec.parent.md", ".claude/skills/edit/SKILL.md"],
+            "書込対象": ["agent-toolkit/skills/atk-mode/roles/exec.parent.md", ".claude/skills/edit/SKILL.md"],
         },
         {"WI": "code.md", "レーン": "lane-02", "書込対象": ["scripts/tool.py"]},
     ]

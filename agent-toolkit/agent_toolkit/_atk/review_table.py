@@ -661,8 +661,8 @@ def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -
         )
         result["repetition_guidance"] = (
             "過去の指摘・応答と今回の指摘を読み、"
-            "agent-toolkit/share/review-loop-coordination.md「反復原因の判定」と"
-            "agent-toolkit/share/exec-review-responses.md「同じ指摘の反復」に従い、"
+            "agent-toolkit/skills/atk-mode/playbooks/exec-review-loop.md「反復原因の判定」と"
+            "agent-basics/skills/review-standards/references/reviewee.md「同じ指摘の反復」に従い、"
             "違反規定と発生条件を比較して反復原因を判定する"
         )
     return result

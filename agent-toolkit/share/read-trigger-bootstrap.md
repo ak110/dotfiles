@@ -25,7 +25,7 @@
 | 確認本文と選択肢を起草する前 | `../skills/atk-mode/playbooks/confirmation.md`、`../skills/atk-mode/references/choice-construction.md` | 判断 | `confirmation` |
 | 期待からの逸脱を認識し、診断・訂正・対処を判断する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `skill:agent-basics:bugfix` |
 | 原因分析の判断前と記述前 | `agent-basics:bugfix/SKILL.md` | 判断 | `skill:agent-basics:bugfix`、`root-cause-writing` |
-| レビュー指摘管理表を作成・更新する前 | `review-table-operations.md` | 判断 | `skill:agent-basics:review-standards` |
+| レビュー指摘管理表を作成・更新する前 | `agent-toolkit:atk-mode/references/review-record.md` | 判断 | `skill:agent-basics:review-standards` |
 | エージェント向け文書の編集前 | `agent-basics:writing-standards/SKILL.md`、`agent-toolkit:/share/agent-documents-operations.md` | 操作 | `agent-document-writing` |
 
 ## WIの起草と保存で読む資料
@@ -119,9 +119,9 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前（操作対象外: 過去の確認の分析） | `agent-toolkit:atk-mode/playbooks/review-session-analysis.md`、`agent-toolkit:atk-mode/playbooks/user-utterance.md` | | |
 | 検証対象の選定と計画、保存した結果の実行・取得、実行レビューで直接影響範囲を求める前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:atk-mode/references/workflow-phases.md` | | |
-| 専用レビュータスク契約を受領し、判定と返却する前（操作対象外: 役割の開始入力） | `agent-toolkit:/share/exec-review-criteria.md` | | |
-| 読者別探索を起動・検収する前 | `agent-toolkit:/share/exec-review-criteria.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/exec-review-criteria.md` |
-| 計画・WIの要件と証拠を判定する前 | `agent-toolkit:/share/exec-review-criteria.md` | | |
-| レビューイーとして採否と修正を確定する前 | `agent-toolkit:/share/exec-review-responses.md` | | |
-| 実行レビューの指摘登録・完成条件の判定と証拠記入の前 | `agent-toolkit:/share/exec-review-recording.md` | | |
+| 専用レビュータスク契約を受領し、判定と返却する前（操作対象外: 役割の開始入力） | `agent-toolkit:atk-mode/playbooks/exec-review.md` | | |
+| 読者別探索を起動・検収する前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/exec-review.md` |
+| 計画・WIの要件と証拠を判定する前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` | | |
+| レビューイーとして採否と修正を確定する前 | `agent-toolkit:atk-mode/playbooks/review-fix.md` | | |
+| 実行レビューの指摘登録・完成条件の判定と証拠記入の前 | `agent-toolkit:atk-mode/references/review-record.md` | | |
 | 実機確認だけを目的としてエージェントCLIや検証用委譲を起動する前 | `../skills/delegation/references/routing-experiments.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/routing-experiments.md` |

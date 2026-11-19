@@ -33,20 +33,20 @@ GENERATORS = (
     "scripts/sync_antigravity_plugin.py",
 )
 RETURN_TARGETS = (
-    ("similar-review", "share/similar-review.parent.md", "類似見直し担当の返却契約", 2),
-    ("exec", "share/exec.parent.md", "レーン担当の返却契約", 2),
-    ("exec-review", "share/exec-review.parent.md", "実行レビューの返却契約", 2),
+    ("similar-review", "skills/atk-mode/roles/similar-review.parent.md", "類似見直し担当の返却契約", 2),
+    ("exec", "skills/atk-mode/roles/exec.parent.md", "レーン担当の返却契約", 2),
+    ("exec-review", "skills/atk-mode/roles/exec-review.parent.md", "実行レビューの返却契約", 2),
     ("reader-fit-review", "share/reader-fit-review.parent.md", "読者別探索の返却契約", 2),
     ("wi-draft-review", "skills/atk-mode/roles/wi-draft-review.parent.md", "投入前レビューの返却契約", 2),
-    ("recurrence-self-check", "share/recurrence-self-check.parent.md", "セルフチェックの返却契約", 2),
+    ("recurrence-self-check", "skills/atk-mode/roles/recurrence-self-check.parent.md", "セルフチェックの返却契約", 2),
     ("add-wi", "skills/atk-mode/roles/add-wi.parent.md", "WI投入担当の返却契約", 2),
-    ("lane-integration", "share/exec.parent.md", "統合の返却契約", 2),
+    ("lane-integration", "skills/atk-mode/playbooks/lane-receipt.md", "統合の返却契約", 3),
     ("copilot-review-audit", "skills/atk-mode/playbooks/process-wi-review-audit.md", "監査担当の返却契約", 3),
     ("refine-prompt", "skills/atk-mode/playbooks/refine-prompt.md", "評価担当の返却契約", 3),
     ("defect-investigation", "skills/delegation/references/investigation-delegation.md", "調査担当の返却契約", 3),
     ("external-write-review", "skills/atk-mode/playbooks/review-external-writes.md", "投稿前レビューの返却契約", 3),
-    ("bulk-replace-review", "share/bulk-replace-review.parent.md", "一括置換後レビューの返却契約", 2),
-    ("usability-review", "share/usability-review.parent.md", "ユーザビリティレビューの返却契約", 2),
+    ("bulk-replace-review", "skills/atk-mode/roles/bulk-replace-review.parent.md", "一括置換後レビューの返却契約", 2),
+    ("usability-review", "skills/atk-mode/roles/usability-review.parent.md", "ユーザビリティレビューの返却契約", 2),
     ("session-termination", "skills/atk-mode/roles/session-termination.parent.md", "公開担当の返却契約", 2),
     ("repository-process", "skills/atk-mode/playbooks/process-wi-all-repos.md", "リポジトリ担当の返却契約", 3),
 )
@@ -103,8 +103,6 @@ def sync_return_contracts(root: Path = REPO_ROOT) -> None:
             if reference.startswith(("/", "${")) or ":" in reference:
                 return match[0]
             target = root / reference if reference.startswith("agent-toolkit/") else source.parent / reference
-            if reference == "exec-review-recording.md":
-                target = plugin / "share/exec-review-recording.md"
             if not target.is_file():
                 return match[0]
             return "`" + Path(os.path.relpath(target, path.parent)).as_posix() + separator + heading + "`"

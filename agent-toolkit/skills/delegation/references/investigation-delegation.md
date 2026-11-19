@@ -9,7 +9,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 類似見直しの検索と個別判定を依頼・検収する前 | `../../../share/similar-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/similar-review.parent.md` |
+| 類似見直しの検索と個別判定を依頼・検収する前 | `agent-toolkit:atk-mode/roles/similar-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/similar-review.parent.md` |
 | 委譲元が調査対象の外で動き、起動時の`cwd`を決める時 | `agent-toolkit:atk-mode/playbooks/process-wi.md` | | |
 | 調査担当の返却の各欄を検収する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/bugfix/SKILL.md` |
 
@@ -32,7 +32,7 @@
 ```
 
 <!-- input-contract:defect-investigation:start -->
-<!-- 生成元: share/defect-investigation.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+<!-- 生成元: skills/atk-mode/roles/defect-investigation.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 起動準備はこの契約の入力一覧で完結する。
 
@@ -43,7 +43,7 @@
 自身の作業によって持ち込まれたものではない既存の不具合について、AWIを起草せずに不具合を発見したエージェント自身が元のコンテキストで修正する場合に、調査担当の起動および受領検収の手順を適用する。
 コンテキストを分離するのは調査工程のみとし、実際の修正作業は不具合を発見したエージェント自身が担当する。
 AWIとして登録して処理する場合（`agent-toolkit:atk-mode`の作業`process-wi`における即時対応や、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の手順を用いる。
-委譲先の手順は、`agent-toolkit:/share/defect-investigation.subagent.md`に定められている（所在参照）。
+委譲先の手順は、`agent-toolkit:atk-mode/roles/defect-investigation.subagent.md`に定められている（所在参照）。
 返却形式は本書「調査担当の返却契約」に従う。
 
 ### 起動方法
@@ -88,7 +88,7 @@ AWIとして登録して処理する場合（`agent-toolkit:atk-mode`の作業`p
    検収時に不足が見つかった場合や、修正作業中に調査の前提と矛盾する新たな観測事実が得られた場合は、同一の調査担当者へその不足や観測内容をフィードバックして分析を補完させる
 
 <!-- return-contract:defect-investigation:start -->
-<!-- 生成元: share/defect-investigation.subagent.md「出力」。手動編集しない。 -->
+<!-- 生成元: skills/atk-mode/roles/defect-investigation.subagent.md「出力」。手動編集しない。 -->
 ### 調査担当の返却契約
 
 調査が完了したら、次の形式のみを返却する。
@@ -108,12 +108,12 @@ AWIとして登録して処理する場合（`agent-toolkit:atk-mode`の作業`p
 各欄に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」と、条件が成立した確認観点の資料に従う。
 `再発`と`再発防止`の欄は、条件が成立しない場合は行ごと省く。
 
-続行不能と追加報告行は、共通契約`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:defect-investigation:end -->
 
 ## 類似見直しの分担
 
-調査工程の責任者が、破られた条件か誤った判断の規則（`agent-basics:bugfix`の問い4）に基づく判定規則・母集団・判定基準を確定し、`share/similar-review.parent.md`に従って読取専用の類似見直し担当へ渡す。
+調査工程の責任者が、破られた条件か誤った判断の規則（`agent-basics:bugfix`の問い4）に基づく判定規則・母集団・判定基準を確定し、`skills/atk-mode/roles/similar-review.parent.md`に従って読取専用の類似見直し担当へ渡す。
 専用担当の工程別モデルは`chores`とし、原因の判断と結果の採否は責任者が所有する。
 `execute`は原因を調査する担当のモデル区分であり、調査を開発の実行時点へ一律に割り当てる指定ではない。
 登録時に確定した調査は、対象の変化や新しい証拠が再確認を要する場合に限って見直す。

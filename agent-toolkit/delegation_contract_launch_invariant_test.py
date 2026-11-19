@@ -59,12 +59,12 @@ def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> No
 @pytest.mark.parametrize(
     "relative,role",
     [
-        ("share/exec.parent.md", "exec"),
-        ("share/exec.parent.md", "lane-integration"),
-        ("share/exec-review.parent.md", "exec-review"),
+        ("skills/atk-mode/roles/exec.parent.md", "exec"),
+        ("skills/atk-mode/playbooks/lane-receipt.md", "lane-integration"),
+        ("skills/atk-mode/roles/exec-review.parent.md", "exec-review"),
         ("share/reader-fit-review.parent.md", "reader-fit-review"),
         ("skills/atk-mode/roles/wi-draft-review.parent.md", "wi-draft-review"),
-        ("share/recurrence-self-check.parent.md", "recurrence-self-check"),
+        ("skills/atk-mode/roles/recurrence-self-check.parent.md", "recurrence-self-check"),
         ("skills/atk-mode/roles/add-wi.parent.md", "add-wi"),
         ("skills/atk-mode/playbooks/process-wi-review-audit.md", "copilot-review-audit"),
         ("skills/atk-mode/playbooks/refine-prompt.md", "refine-prompt"),

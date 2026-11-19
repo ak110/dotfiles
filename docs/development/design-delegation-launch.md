@@ -123,7 +123,8 @@ Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキ�
 - レーン: レーン数によらず各レーンの同じ担当が計画・実装・実行レビューの調整・指摘対応を続ける。
   メインは選定、レーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの統合の許可と最終結果の検収を所有する（`agent-toolkit/skills/atk-mode/playbooks/process-wi-execution.md`）
 - 探索・原因分析・単純作業: 作業の細分化と起動単位の数を区別し、同じ背景と実行条件を使う確定済みの作業は1件の起動へまとめる。
-  調査担当は詳細な分析を保存原本へ置き、結論と原本の所在を返す（`agent-toolkit/skills/delegation/references/routing.md`、`agent-toolkit/share/defect-investigation.subagent.md`）
+  調査担当は詳細な分析を保存原本へ置き、結論と原本の所在を返す。
+  定義は`agent-toolkit/skills/delegation/references/routing.md`と`agent-toolkit/skills/atk-mode/roles/defect-investigation.subagent.md`にある
 - 保存済み結果の受渡し: `atk agents wait`の`agent_message_path`、CLIの保存先、MCPの結果の保存ファイルは、パスのまま次の消費者へ渡す（`agent-toolkit:delegation/references/receiving-followup.md`「受領後の扱い」）
 - 公開とCI: 計画と版数判断を保持するメインまたはリポジトリ担当の直接公開を通常とする。
   既決判断をそのまま使い、単一writer、CI修正担当、実行レビュー、公開後操作を保持する。

@@ -37,23 +37,23 @@ agent-toolkitの用語の索引である。
 | 公開工程判定 | 完成条件の判定 | `agent-toolkit:atk-mode/references/workflow-phases.md`「用語」 |
 | 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:atk-mode/references/awi-body.md`「直接影響範囲」 |
 | 変更範囲の検証 | 検証の範囲 | `agent-toolkit:atk-mode/references/plan-format.md`「検証」 |
-| 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:/share/exec-review-recording-integration.md`「統合時の完成条件判定」 |
-| 初回レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
-| 再レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
-| 引き継ぎ再レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
-| 実行レビュー担当 | 実行レビューの委譲先 | `agent-toolkit:/share/exec-review.subagent.md` |
-| ユーザビリティレビュー | 画面のレビュー | `agent-toolkit:/share/usability-review.parent.md` |
+| 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:atk-mode/references/review-record.md`「統合時の完成条件判定」 |
+| 初回レビュー | 実行レビューの回 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |
+| 再レビュー | 実行レビューの回 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |
+| 引き継ぎ再レビュー | 実行レビューの回 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |
+| 実行レビュー担当 | 実行レビューの委譲先 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |
+| ユーザビリティレビュー | 画面のレビュー | `agent-toolkit:atk-mode/roles/usability-review.parent.md` |
 | 画面差分 | 画面の変更 | `agent-toolkit:atk-mode/references/workflow-phases.md`「用語」 |
 | 並列画面レビュー | 画面差分のある運用 | `agent-toolkit:atk-mode/references/workflow-phases.md`「用語」 |
 | WI投入担当 | WI作成の委譲先 | `agent-toolkit:atk-mode/roles/add-wi.subagent.md` |
 | 投入前レビュー | WI原稿の保存前レビュー | `agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`冒頭 |
-| 一括置換後レビュー担当 | 一括置換の委譲先 | `agent-toolkit:/share/bulk-replace-review.subagent.md` |
+| 一括置換後レビュー担当 | 一括置換の委譲先 | `agent-toolkit:atk-mode/roles/bulk-replace-review.subagent.md` |
 | 投稿前レビュー担当 | 外部投稿の委譲先 | `agent-toolkit:atk-mode/roles/external-write-review.subagent.md` |
-| 調査担当 | 原因調査の委譲先 | `agent-toolkit:/share/defect-investigation.subagent.md` |
+| 調査担当 | 原因調査の委譲先 | `agent-toolkit:atk-mode/roles/defect-investigation.subagent.md` |
 | 読者別探索担当 | 読者適合の委譲先 | `agent-toolkit:/share/reader-fit-review.subagent.md` |
-| 再発防止セルフチェック | 具体的な再発防止観点を差分へ当てはめる工程 | `agent-toolkit:/share/recurrence-self-check.parent.md` |
-| 再発防止セルフチェック担当 | 再発防止観点の判定の委譲先 | `agent-toolkit:/share/recurrence-self-check.subagent.md`冒頭 |
-| 再発防止セルフチェック観点 | レビュー時に差分へ当てはめる項目 | `agent-toolkit:/share/recurrence-self-check-items.md`冒頭 |
+| 再発防止セルフチェック | 具体的な再発防止観点を差分へ当てはめる工程 | `agent-toolkit:atk-mode/roles/recurrence-self-check.parent.md` |
+| 再発防止セルフチェック担当 | 再発防止観点の判定の委譲先 | `agent-toolkit:atk-mode/roles/recurrence-self-check.subagent.md`冒頭 |
+| 再発防止セルフチェック観点 | レビュー時に差分へ当てはめる項目 | `agent-toolkit:atk-mode/references/recurrence-self-check-items.md`冒頭 |
 | プロンプト評価担当 | refine-promptの委譲先 | `agent-toolkit:atk-mode/roles/refine-prompt.subagent.md`冒頭 |
 | ユーザー確認 | ユーザーへの行為 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
 | ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
@@ -74,8 +74,8 @@ agent-toolkitの用語の索引である。
 | プロジェクト方針 | 方針の範囲 | `agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
 | 作成規範 | 品質基準 | `agent-basics:review-standards/SKILL.md`「対象成果物の作成規範」 |
 | 完成条件 | WI・計画の条件 | `agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」 |
-| レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
-| CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
+| レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表の共通操作」 |
+| CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit:atk-mode/references/review-record.md`「レビュー指摘管理表の共通操作」 |
 | セッション記録 | 会話の記録 | `agent-toolkit:atk-mode/references/session-records.md`冒頭 |
 | メイン記録 | 会話の記録 | `agent-toolkit:atk-mode/references/session-records.md`「Claude Codeの記録」 |
 | サブエージェント記録 | 会話の記録 | `agent-toolkit:atk-mode/references/session-records.md`「Claude Codeの記録」 |

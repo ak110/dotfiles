@@ -295,16 +295,17 @@ def test_return_sync_invalid_boundary_does_not_write_any_target(tmp_path, monkey
     targets = subject.RETURN_TARGETS[:2]
     monkeypatch.setattr(subject, "RETURN_TARGETS", targets)
     for role, relative, _title, _level in targets:
-        source = tmp_path / f"agent-toolkit/share/{role}.subagent.md"
+        source = tmp_path / f"agent-toolkit/skills/atk-mode/roles/{role}.subagent.md"
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_text("## 出力\n返却形式。\n", encoding="utf-8")
         target = tmp_path / "agent-toolkit" / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"<!-- return-contract:{role}:start -->\n<!-- return-contract:{role}:end -->", encoding="utf-8")
     last = tmp_path / "agent-toolkit" / targets[-1][1]
     last.write_text("境界なし", encoding="utf-8")
     first = tmp_path / "agent-toolkit" / targets[0][1]
     before = first.read_bytes()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="生成境界が一意でない"):
         subject.sync_return_contracts(tmp_path)
     assert first.read_bytes() == before
 
@@ -318,7 +319,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
         files.add("agent-toolkit/" + relative)
     files |= {
         "agent-toolkit/share/rules/rules-subagent.md",
-        "agent-toolkit/share/exec-review-recording.md",
+        "agent-toolkit/skills/atk-mode/references/review-record.md",
     }
     for relative in files:
         target = tmp_path / relative
@@ -328,7 +329,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     first = {relative: (tmp_path / relative).read_bytes() for relative in files}
     subject.sync_return_contracts(tmp_path)
     assert first == {relative: (tmp_path / relative).read_bytes() for relative in files}
-    review = (tmp_path / "agent-toolkit/share/exec-review.parent.md").read_text(encoding="utf-8")
+    review = (tmp_path / "agent-toolkit/skills/atk-mode/roles/exec-review.parent.md").read_text(encoding="utf-8")
     block = review.split("<!-- return-contract:exec-review:start -->")[1]
     assert "レビューHEAD:" in block and "読者別探索:" in block
     assert '"direct":' in block
@@ -338,8 +339,8 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     assert "fork_turns" not in block
     for role, relative, required, internal in (
         ("external-write-review", "skills/atk-mode/playbooks/review-external-writes.md", "3観点それぞれ", "## 観点"),
-        ("bulk-replace-review", "share/bulk-replace-review.parent.md", "読んだ変更箇所数:", "## 観点"),
-        ("usability-review", "share/usability-review.parent.md", "試行: <手段>", "## 操作"),
+        ("bulk-replace-review", "skills/atk-mode/roles/bulk-replace-review.parent.md", "読んだ変更箇所数:", "## 観点"),
+        ("usability-review", "skills/atk-mode/roles/usability-review.parent.md", "試行: <手段>", "## 操作"),
         (
             "session-termination",
             "skills/atk-mode/roles/session-termination.parent.md",
@@ -353,8 +354,8 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
         assert internal not in generated
         assert "required_inputs:" not in generated
         assert "作業の開始時に" not in generated
-    source = tmp_path / "agent-toolkit/share/exec-review.subagent.md"
-    target = tmp_path / "agent-toolkit/share/exec-review.parent.md"
+    source = tmp_path / "agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md"
+    target = tmp_path / "agent-toolkit/skills/atk-mode/roles/exec-review.parent.md"
     original = source.read_text(encoding="utf-8")
     added = original.replace("## 出力\n", "## 出力\n\n追加固有欄: 節先頭の返却値\n", 1)
     source.write_text(added, encoding="utf-8")
