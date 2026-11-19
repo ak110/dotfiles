@@ -77,6 +77,8 @@ process-loop、レーン操作、配布物保持が共有する状態も、同�
 `service_generations.py`が`generations.json`へ受付先、コード実体・版、準備順、OSプロセス世代を保存する。
 これはジョブ台帳ではなく、実行の復旧には既存セッション登録簿とbackendの物理記録を使う。
 `startup.lock`・`publish.lock`・`generations.lock`は固定名で保持し、世代ごとの`<generation>.json`にreadyの接続先、`<generation>.stderr.log`に起動診断を置く。
+転送側は世代の識別（`service_forward.code_identity`）の結果を`code-identity/index.json`へ保存し、rootの全モジュールの識別（inode・更新時刻・大きさ）が同じ間はその結果を使う。
+直下の`*.json`は世代の記録だけに使うため、この索引は下位のディレクトリへ置き、壊れた索引は再計算した結果で置き換える。
 認証値はIPCの非永続context内だけで扱い、世代登録・ログ・再開情報へ保存しない。
 Linuxは相互UID、Windowsは現在SIDのDACL・remote拒否とpeer PID世代で相手を認証する。
 所有移譲と初回旧stdioの限界は`docs/development/design-agents-server-service.md`に記録する。
