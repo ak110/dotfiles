@@ -20,15 +20,10 @@ from pytools._internal.common import atomic_write_text
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 QUALITY_SOURCE = "agent-basics/skills/writing-standards/references/quality-principles-{key}.md"
-QUALITY_TARGETS = (
-    ("agent-toolkit/share/rules/common/01-agent.md", "roles", "役割分担", 2),
-    ("agent-toolkit/share/rules/common/01-agent.md", "constraints", "規定の区分と標示", 3),
-    ("agent-toolkit/share/agents-server-base.md", "result", "結果の返却", 2),
-)
+QUALITY_TARGETS = (("agent-toolkit/skills/atk-mode/playbooks/subagent.md", "result", "結果の返却", 2),)
 GENERATORS = (
     "scripts/sync_codex_plugin_manifests.py",
     "scripts/gen_completions.py",
-    "scripts/gen_install_files.py",
     "scripts/sync_codex_agents.py",
     "scripts/sync_antigravity_plugin.py",
 )
@@ -36,14 +31,14 @@ RETURN_TARGETS = (
     ("similar-review", "skills/atk-mode/roles/similar-review.parent.md", "類似見直し担当の返却契約", 2),
     ("exec", "skills/atk-mode/roles/exec.parent.md", "レーン担当の返却契約", 2),
     ("exec-review", "skills/atk-mode/roles/exec-review.parent.md", "実行レビューの返却契約", 2),
-    ("reader-fit-review", "share/reader-fit-review.parent.md", "読者別探索の返却契約", 2),
+    ("reader-fit-review", "skills/atk-mode/roles/reader-fit-review.parent.md", "読者別探索の返却契約", 2),
     ("wi-draft-review", "skills/atk-mode/roles/wi-draft-review.parent.md", "投入前レビューの返却契約", 2),
     ("recurrence-self-check", "skills/atk-mode/roles/recurrence-self-check.parent.md", "セルフチェックの返却契約", 2),
     ("add-wi", "skills/atk-mode/roles/add-wi.parent.md", "WI投入担当の返却契約", 2),
     ("lane-integration", "skills/atk-mode/playbooks/lane-receipt.md", "統合の返却契約", 3),
     ("copilot-review-audit", "skills/atk-mode/playbooks/process-wi-review-audit.md", "監査担当の返却契約", 3),
     ("refine-prompt", "skills/atk-mode/playbooks/refine-prompt.md", "評価担当の返却契約", 3),
-    ("defect-investigation", "skills/delegation/references/investigation-delegation.md", "調査担当の返却契約", 3),
+    ("defect-investigation", "skills/atk-mode/playbooks/investigation-delegation.md", "調査担当の返却契約", 3),
     ("external-write-review", "skills/atk-mode/playbooks/review-external-writes.md", "投稿前レビューの返却契約", 3),
     ("bulk-replace-review", "skills/atk-mode/roles/bulk-replace-review.parent.md", "一括置換後レビューの返却契約", 2),
     ("usability-review", "skills/atk-mode/roles/usability-review.parent.md", "ユーザビリティレビューの返却契約", 2),
@@ -167,7 +162,7 @@ def relocate_path(reference: str, source: Path, target: Path) -> str:
 
 
 def sync_quality_principles(root: Path = REPO_ROOT) -> None:
-    """basics正本の指定節だけを、常時規範と軽量返却契約の既存配置先へ同期する。
+    """basics正本の指定節だけを、既存の配置先へ同期する。
 
     同梱した本文で判断できるよう生成時に取り込み、配布先ではtoolkit内の本文だけで品質判断を完結させる。
     後続のCodex・Antigravity生成は更新後の本文を使う。

@@ -38,7 +38,7 @@ CLIが終わると会話内のタイマーによる予約も失われるため�
 2. 通知を受けた時点で、完了済みの成果、未完了の工程、打ち切られた時の再開位置、再開情報を保存した絶対パスをユーザーへ報告する。
    解除後の再開はFunction hooks moduleかホストが自動で起動するため、この報告でユーザーへ再開の指示を求める必要は無い。
 3. `agents_server`で`api_error.type`が`usage_limit`になった委譲先は、制限の解除後に同じセッションで自動的に処理を再開する。
-   背景の`atk agents wait`や定期確認のタスクはそのまま保ち、停止の要否は`agent-toolkit:delegation/references/waiting-stalls.md`「停滞の検知と巻き取り」で判定する。
+   背景の`atk agents wait`や定期確認のタスクはそのまま保ち、停止の要否は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「停滞の検知と巻き取り」で判定する。
 4. 猶予通知が示す「実行中のサブエージェント」は、同じ会話で`Agent`ツールを使って起動した委譲先を指す。
    独立したセッションで動く`agents_server`の解除待ちには、その停止の案内を当てない。
 5. 中断の後に、ユーザーの再開指示、Function hooks moduleの再開プロンプト、ホストの自動継続のどれかを受けたら、保存した再開情報を読む。

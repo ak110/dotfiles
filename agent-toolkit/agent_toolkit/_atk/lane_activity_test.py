@@ -23,7 +23,7 @@ from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._testing import git_repository, isolation
 from agent_toolkit._testing.lane_integration_support import _integration_args, _integration_selection, _legacy
 from agent_toolkit._testing.lane_support import _create, _create_args, _create_in, _invoke, _selection
-from agent_toolkit._testing.session_release_support import retained_executor
+from agent_toolkit._testing.session_release_support import held_registry_lock, retained_executor
 
 
 @pytest.mark.parametrize("condition", ["unintegrated", "dirty", "unmerged", "active-session", "identity-less-session"])
@@ -190,7 +190,10 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     capsys: pytest.CaptureFixture[str],
     entrypoint: str,
 ) -> None:
-    """無応答の所有者を持つ複数登録を理由付きで保持し、解放待機を省いて終了要求と回収結果を返す。"""
+    """無応答の所有者を持つ複数登録を理由付きで保持し、解放待機を省いて終了要求と回収結果を返す。
+
+    別プロセスが登録簿を書き込み中でも、そのロックを待たずに10秒の上限内で終える。
+    """
     repo, selected, first = _create(tmp_path, monkeypatch, capsys)
     code, second, stderr = _create_in(capsys, monkeypatch, "lane-test-session", repo, selected, lane_id="lane-02")
     assert code == 0, stderr
@@ -209,17 +212,18 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
 
     monkeypatch.setattr(_lane_activity, "get_wait_timeout", unexpected_wait)
     started = lane.time.monotonic()
-    if entrypoint == "exit":
-        monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
-        with pytest.raises(SystemExit) as ended:
-            atk.main(["agents-exit-session"])
-        assert ended.value.code == 0
-        observed = json.loads(capsys.readouterr().out)
-        assert observed["exit_session_invoked"] is True
-        result = observed["lane_cleanup"]
-    else:
-        result = process_loop_session.cleanup_lane_session("lane-test-session")
-        assert "atk lane delete --session-id lane-test-session" in capsys.readouterr().err
+    with held_registry_lock("unresponsive-0"):
+        if entrypoint == "exit":
+            monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
+            with pytest.raises(SystemExit) as ended:
+                atk.main(["agents-exit-session"])
+            assert ended.value.code == 0
+            observed = json.loads(capsys.readouterr().out)
+            assert observed["exit_session_invoked"] is True
+            result = observed["lane_cleanup"]
+        else:
+            result = process_loop_session.cleanup_lane_session("lane-test-session")
+            assert "atk lane delete --session-id lane-test-session" in capsys.readouterr().err
     assert not result["removed"] and len(result["retained"]) == 2
     for index, (record, held) in enumerate(zip((first, second), result["retained"], strict=True)):
         assert f"unresponsive-{index}" in held["reason"] and "解放応答" in held["reason"]

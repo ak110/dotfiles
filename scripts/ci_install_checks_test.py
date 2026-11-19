@@ -40,7 +40,7 @@ def test_linux_placement(tmp_path: Path, host_environ: Callable[[], dict[str, st
 @pytest.mark.parametrize("missing", ["", ".vimrc", "path"])
 def test_linux_distribution_check(tmp_path: Path, host_environ: Callable[[], dict[str, str]], missing: str) -> None:
     """配布ファイルとPATH設定がそろった場合だけ配布確認が成功する。"""
-    for name in (".bashrc", ".vimrc", ".claude/rules/agent-toolkit/01-agent.md", ".ssh/config"):
+    for name in (".bashrc", ".vimrc", ".claude/rules/myprojects-common.md", ".ssh/config"):
         if name == missing:
             continue
         target = tmp_path / name

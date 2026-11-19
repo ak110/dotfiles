@@ -94,7 +94,7 @@ permissionsの明示的なdeny・askも上書きしない。
 対象の操作は、`git commit`、`git commit --amend`、`Write`・`Edit`・`MultiEdit`によるファイルの編集、外部サービスの設定を変えるコマンドなど、一般的な操作を広く含む。
 メインとサブエージェントのどちらの操作にも適用する。
 
-委譲先は`AskUserQuestion`を発行せず、拒否本文、分類名、拒否された操作と対象を`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」に従って委譲元へ報告する。
+委譲先は`AskUserQuestion`を発行せず、拒否本文、分類名、拒否された操作と対象を`agent-toolkit:atk-mode/playbooks/subagent.md`「確認事項の即時通知」に従って委譲元へ報告する。
 代替の手段で作業を進めた時と、下位の委譲先から拒否を受け取った時も、同様に委譲元へ引き継ぐ。
 委譲元はその拒否を自分が発行した操作と同様に扱い、設定ファイルとallow規則を確かめる。
 承認を得た後は、委譲先の状態によらずメインが該当の操作を直接実行する。
@@ -141,16 +141,16 @@ permissionsの明示的なdeny・askも上書きしない。
    通知が指定する遅延、再試行の回数、turnの停止の制約を守る。
 3. `gave no verdict (it skipped this action)`で`hard failure`・`Don't retry it`と示す操作は、同じ操作を再試行しない。
    読み取りと独立した作業を続け、その操作が要るなら対象・操作・通知本文を伝える。
-   委譲先は`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」で委譲元へ、メインは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」でユーザーへ伝える。
+   委譲先は`agent-toolkit:atk-mode/playbooks/subagent.md`「確認事項の即時通知」で委譲元へ、メインは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」でユーザーへ伝える。
    同じ変更を別のツールで実行して判定し直させることと、権限設定の変更は、対処に含めない。
 4. 操作が未起動・実行中・完了・成否不明のどれかと、未回収の対象の識別子を保持する。
-   待機を開始できない時の観測の続け方は`agent-toolkit:delegation/references/wait-anomalies-refusal.md`「待機を開始できない場合」に従う。
+   待機を開始できない時の観測の続け方は`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`「待機を開始できない場合」に従う。
 
 ## 手順どおりに進められない場合
 
 手順と規範は目的を達成する手段である（`agent-basics:writing-standards/references/quality-principles-qcd.md`）。
 手順どおりに進められない時も、目的から次の工程を選び直し、依頼の完遂を目指す。
-適用する前に、`agent-toolkit:/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」で適用対象の優先順位を確定する。
+適用する前に、`agent-toolkit:atk-mode/references/conduct.md`「方針が衝突する場合の優先順位」で適用対象の優先順位を確定する。
 その優先順位でも次の工程が決まらず、次のどれかを観測した時に本節を適用する。
 
 - 適用範囲が重なる2つ以上の手順や規範が、同じ状況で両立しない動作を求めている
@@ -162,22 +162,22 @@ permissionsの明示的なdeny・askも上書きしない。
 
 次の順に判定し、最初に成立した対応を選ぶ。
 
-1. 委譲先が受けた依頼文と適用中のスキルの規則が矛盾する時、または必要な権限や認証が足りない時は、`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従って委譲元へ差し戻す。
+1. 委譲先が受けた依頼文と適用中のスキルの規則が矛盾する時、または必要な権限や認証が足りない時は、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従って委譲元へ差し戻す。
 2. ユーザーの確認を要する事項に当たる時は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってユーザーへ確認する。
 3. ユーザーの目的、要件、必須の制約を保ったまま次の工程を実行できる時は、実行して作業を続ける。
    手段が複数あればQCDで選び、目的から工程が一意に決まる時は自分で判断して実施し、根拠を報告する。
    ユーザーの選好や承認が要る論点だけは判定順2で確認する。
-   規範や手段の方針から、QCDの明らかな悪化を理由に外れる時も、`agent-toolkit:/share/rules/common/01-agent.md`「QCDと3段判定」と判定順2に従う。
+   規範や手段の方針から、QCDの明らかな悪化を理由に外れる時も、`agent-basics:writing-standards/references/quality-principles-qcd.md`「QCD」と判定順2に従う。
 4. どの手段でも目的、要件、必須の制約を保てない時は、その操作に着手せず、その操作を待たずに進められる工程を続ける。
 
 下位の手順書や`<役割名>.subagent.md`が差し戻しや確認の対象を限定して列挙していても、本節の適用条件を満たす事象は判定順1と2の対象にする。
 その列挙は挙げた事象について差し戻しを必須とする規定として読む。
 
 選んだ対応と根拠は同じターンで報告し、判断に使った規範の所在と条文を示して、条文が明示する要求と自分の解釈を区別する。
-2つ以上の手順や規範が両立しない時は、それらのファイル名と節名を報告に含め、条文の矛盾は`agent-toolkit:/share/rules/common/01-agent.md`「完遂と先送り」に従って直すか登録する。
+2つ以上の手順や規範が両立しない時は、それらのファイル名と節名を報告に含め、条文の矛盾は`agent-toolkit:atk-mode/references/conduct.md`「完遂と先送り」に従って直すか登録する。
 条文を直す前に、本書「規範どうしが矛盾する場合の由来確定」で由来を確かめる。
 手順の前提が無いだけで規範の矛盾が無い時は、報告にとどめる。
-委譲先の返却の形は`agent-toolkit:/share/subagent-operations.md`「手順どおりに進められない場合の返却」が定める。
+委譲先の返却の形は`agent-toolkit:atk-mode/playbooks/subagent.md`「手順どおりに進められない場合の返却」が定める。
 
 ## 規範どうしが矛盾する場合の由来確定
 

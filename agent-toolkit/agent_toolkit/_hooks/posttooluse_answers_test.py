@@ -183,7 +183,7 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     assert "認識合わせ" not in context
     has_example = not text.startswith("`") and "例えば" in text
     assert ("「原文の保持と取り込み」" in context) == has_example
-    assert ("references/routing.md" in context) == (has_example and "調査" in text)
+    assert ("`explore`へ分担する案" in context) == (has_example and "調査" in text)
 
 
 # test-copy-contract: 同一回答の再送は抑止し、別の質問・回答・呼出IDでは通知を再び1回だけ配送する契約。

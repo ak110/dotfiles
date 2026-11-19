@@ -36,7 +36,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 
 ## 不変条件
 
-- メインが作業ツリーの書込を所有し、一部の書込を委譲先へ分担させる場合は`agent-toolkit:delegation/references/mandatory-rules.md`「作業ツリーの保護」に従う。
+- メインが作業ツリーの書込を所有し、一部の書込を委譲先へ分担させる場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従う。
 - 実行レビューは、実装を担当していない独立した担当が行う。
 - 人間由来の変更で不採用とする範囲がある場合は、ユーザーの確認を得てから終える。
 - 処理対象のWIは手順1で固定し、途中の追加はユーザーの明示の追加と、`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で今回追加と判定した正式改善AWIに限る。
@@ -109,11 +109,11 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
      採否は公開前に確定し、CIの待機の後へ延ばさない。
    - worktreeごとに`agent-toolkit:atk-mode/playbooks/commit.md`を読み、`agent-toolkit:atk-mode/playbooks/publish.md`に従って公開する。
    - 複数のリポジトリが対象なら成果物間の依存順を守り、互いに独立したリポジトリのpushを先に全て終えてからCIの監視を並行して始め、全ての実行識別子の終了を待って結果を個別に回収する。
-     待機中の操作は`agent-toolkit:delegation/references/waiting-and-monitoring-independent-work.md`「待機中の先行実施」で決め、CIの成功を前提とする公開後の操作はその対象の成功後に行う。
+     待機中の操作は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機中の先行実施」で決め、CIの成功を前提とする公開後の操作はその対象の成功後に行う。
    - 開発マシンで動く常時稼働サーバーへの反映は、`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」の条件を満たす場合にCIの待機と並行して始める。
      反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、稼働確認の結果を完了報告へ渡す。
-   - Claude Codeでpush後のCIの監視を待つ前に、`agent-toolkit:delegation/references/waiting-and-monitoring.md`を読む。
-     CIの待機のために会話圧縮を一律に手動で予約せず、`agent-toolkit:delegation/references/waiting-claude-code.md`「長時間待機前の会話圧縮」の条件付きの自動予約とホスト標準の圧縮に任せる。
+   - Claude Codeでpush後のCIの監視を待つ前に、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`を読む。
+     CIの待機のために会話圧縮を一律に手動で予約せず、`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「長時間待機前の会話圧縮」の条件付きの自動予約とホスト標準の圧縮に任せる。
      起動済みの`wait_ci.py`のバックグラウンドタスクを保ち、前景を占有せずにターンを終え、完了通知を受けた後に同じ入力と保存出力からCIの結果を回収する。
    - 中断や会話圧縮の後は、注入された要約を起点に計画、WI、資源の登録、CIの監視出力、担当別の引き継ぎ記録から状態を復元し、要約に書かれた作業順などで選定の集合を置き換えない。
    - 公開後に追加の修正を統合して再公開する場合は、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開状態の検収と再起動」に従う。

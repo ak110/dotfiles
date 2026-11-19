@@ -51,7 +51,7 @@ WIが確定した内容は、調べ直さずにそのまま使う。
 
 確認の要否、手段、UWIへの退避は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従い、入力のWIで確定済みの事項はそのまま使う。
 協調モードのメインは、`agent-toolkit:atk-mode/references/choice-construction.md`「質問ラウンド」でユーザーと認識を合わせてから起草する。
-`agent-toolkit:atk-mode`の作業`process-wi`のレーン担当は、確認事項が生じたら`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」で委譲元へ通知し、回答を得てから再開する（UWIの登録は委譲元が担う）。
+`agent-toolkit:atk-mode`の作業`process-wi`のレーン担当は、確認事項が生じたら`agent-toolkit:atk-mode/playbooks/subagent.md`「確認事項の即時通知」で委譲元へ通知し、回答を得てから再開する（UWIの登録は委譲元が担う）。
 レーンの起草と待機の区切りは`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`が定める。
 
 ## 進め方

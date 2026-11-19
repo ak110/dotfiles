@@ -1,13 +1,14 @@
-"""実行主体ごとの規範を起動時の文脈へ追加するhandler。
+"""起動時と圧縮後の文脈へ、入口の起動の案内とその場で決まる値を追加するhandler。
 
-委譲先かどうかは`_common.delegated_session`が判定する。
+規範の本文は載せない。メインへは入口のスキルの起動を、委譲先へは起動の本文の原本の所在を案内する。
+委譲先かどうかは`_hooks.agent_id`が、`agents_server`の環境変数と組み込みの委譲機能の子が入力に持つ`agent_id`で判定する。
 
 出力する自動挿入本文は`atk-auto`で囲む。process-loopが渡したユーザー自身の入力は
 `forwarded-user-input`で囲む。読み手のエージェントが区分ごとに生成主体と種別を
 判別できるようにするためであり、区分ごとに囲んだ本文を全体で重ねて囲まない。
 
 Claude CodeはJSONのadditionalContextを10,000文字で保存先とプレビューへ置き換える。
-条文をそのまま届けるため、最大構成の追加文脈を同じ上限へ収める契約テストを置く。
+通知をそのまま届けるため、最大構成の追加文脈を同じ上限へ収める契約テストを置く。
 """
 
 from __future__ import annotations
@@ -34,19 +35,16 @@ from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, session_state, wait_schedule
-lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session, is_process_loop_session
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import document_reads, repository_protection, session_title, timing, work_contract
-lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
+lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.message_format import xml_message
 lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
-RESPONSE_LANGUAGE_NOTICE = "言語の基準は、同時配送された`01-agent.md`「使用言語」を参照せよ。"
-QUALITY_CHECKPOINT_NOTICE = "圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。"
 ENTRY_START_NOTICE = "作業を始める前に、スキル`agent-toolkit:atk-mode`を起動せよ。"
 ENTRY_COMPACT_NOTICE = (
     "圧縮後に読む資料の限定とは別に、作業を再開する前にスキル`agent-toolkit:atk-mode`を起動し直せ。"
@@ -54,11 +52,13 @@ ENTRY_COMPACT_NOTICE = (
 )
 """入口のスキルの起動を求める案内。起動と読み直しを求める1行だけを持ち、規範の本文を載せない。
 
-文脈を引き継がずに始まる会話のメインへ届ける。委譲先へは起動の本文が規範を届けるため、案内しない。
+文脈を引き継がずに始まる会話のメインへ届ける。委譲先へは起動の本文が入口を届けるため、案内しない。
 """
 BACKGROUND_TASKS_DISABLED_NOTICE = (
-    "この`Claude Code`では`Bash`の背景実行が無効で、`run_in_background`は使えない。"
-    "待機は`agent-toolkit:delegation`の`references/waiting-and-monitoring-intervals.md`「待機区間の構成」に従え。"
+    "この`Claude Code`では`Bash`の背景実行が無効で、`run_in_background`は使えない。背景の指定を試さない。"
+    "`agents_server`の待機は単独の`atk agents wait`へ`Bash`の`timeout=600000`を指定して前景で実行し、"
+    "結果と終了コードを回収せよ。未終了で返った場合は同じコマンドを再発行せよ。"
+    "`sleep`や独自の待機ループで代替しない。"
 )
 """背景実行を無効にした起動で、使える待機方法をメインと委譲先へ伝える本文。
 
@@ -66,14 +66,15 @@ BACKGROUND_TASKS_DISABLED_NOTICE = (
 """
 
 SHARE_DIR = plugin_resources.plugin_root() / "share"
-# SHARE_DIRはplugin rootの算出にも使うため基点を保ち、役割別の規範だけ`share/rules/`から読む。
-RULES_DIR = SHARE_DIR / "rules"
-COMMON_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-common.claude-code.md"
-MAIN_RULES_PATH = RULES_DIR / "rules-main.md"
-MAIN_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-main.claude-code.md"
-MAIN_RULES_CODEX_PATH = RULES_DIR / "rules-main.codex.md"
-SUBAGENT_RULES_PATH = RULES_DIR / "rules-subagent.md"
-SUBAGENT_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-subagent.claude-code.md"
+SUBAGENT_PLAYBOOK_PATH = SHARE_DIR.parent / "skills" / "atk-mode" / "playbooks" / "subagent.md"
+"""委譲先の入口。`agents_server`が起動の本文を切り出す原本と同じファイルである。"""
+SUBAGENT_ENTRY_NOTICE = f"委譲を受けた担当である。作業の前に、委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`を全文読め。"
+"""起動の本文を受け取らない委譲先（ホストの組み込みの委譲機能で起動した担当）へ、入口の所在を示す1行。"""
+DELEGATED_COMPACT_NOTICE = (
+    "圧縮後に読む資料の限定とは別に、作業を再開する前に、"
+    f"委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`と、起動の入力が示した役割文書を読み直せ。"
+)
+"""委譲先の圧縮後に、起動の本文の原本と役割文書の読み直しを求める1行。"""
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 # 圧縮後に作業契約の後へ続く通知（原文の抽出先、資料の再取得案内）へ残す文字数。
 _COMPACTION_RESERVE = 1_500
@@ -84,11 +85,6 @@ _DIGEST_FAILURE_CAUSE_CHARS = 400
 # `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
-# 実行主体へ常時読み込ませる規範の境界。種別で読み手を区別する。
-NORMATIVE_ELEMENT = message_format.AUTO_INSERTED_ELEMENT
-NORMATIVE_SOURCE = "agent-toolkit"
-NORMATIVE_KIND_MAIN = "rules-main"
-NORMATIVE_KIND_SUBAGENT = "rules-subagent"
 
 
 def _resumed_for_original_goal_only() -> bool:
@@ -118,15 +114,11 @@ def _launch_input_process_wi(data: dict[str, Any], session_id: str) -> tuple[boo
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
     """SessionStartへ追加する本文を構成する。
 
-    冒頭には常時規範の使用言語への参照を置き、メインの最初の応答前にも定義元を示す。
-    圧縮時の復元基準への参照も同じ通知へまとめ、文字数上限内で必要な参照を届けるために本文や標識を重ねない。
-    委譲先にはメイン向けの言語通知を追加しない。
+    メインには文脈を引き継がずに始まる時に入口の起動を、委譲先には圧縮後に入口と役割文書の読み直しを案内する。
+    規範の本文は載せない。
 
     process-loopが渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
     担うに過ぎず、この指示の宛先ではない。
-
-    ホスト別のメイン向け規範は`rules-main.md`の後へ置く。Codexの全主体へ届く差分は`~/.codex/AGENTS.md`が
-    配送するため、ここではCodexのメインだけに適用する`rules-main.codex.md`を加える。
     """
     parts: list[str] = []
     if not delegated:
@@ -193,27 +185,13 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                     },
                 )
             )
-    normative_parts: list[str] = []
-    rule_notices: list[str] = []
-    if not delegated:
-        rule_notices.append(RESPONSE_LANGUAGE_NOTICE)
-    if source == "compact":
-        rule_notices.append(QUALITY_CHECKPOINT_NOTICE)
-    if not delegated and source in _CONTEXT_LOSING_SOURCES:
-        rule_notices.append(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE)
-    if rule_notices:
-        parts.append(_llm_notice("\n".join(rule_notices)))
+    if delegated:
+        if source == "compact":
+            parts.append(_llm_notice(DELEGATED_COMPACT_NOTICE))
+    elif source in _CONTEXT_LOSING_SOURCES:
+        parts.append(_llm_notice(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE))
     if host == "claude" and wait_schedule.background_tasks_disabled():
         parts.append(_llm_notice(BACKGROUND_TASKS_DISABLED_NOTICE))
-    if not delegated:
-        normative_parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
-        if host == "claude":
-            normative_parts.append(COMMON_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
-            normative_parts.append(MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
-        elif host == "codex":
-            normative_parts.append(MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip("\n"))
-    if normative_parts:
-        parts.append(_normative_context("\n\n".join(normative_parts), kind=NORMATIVE_KIND_MAIN))
     parts.append(_llm_notice(plugin_environment.cli_instructions(plugin_resources.plugin_root())))
     return "\n\n".join(parts) or None
 
@@ -330,11 +308,6 @@ def _compact_recovery_context() -> str:
         "会話が圧縮された。圧縮後に読むのは作業契約と会話の要約だけである。"
         "ほかの資料は、次に行う操作・判断の条件に該当した時に読め。"
     )
-
-
-def _normative_context(body: str, *, kind: str) -> str:
-    """規範本文へ生成主体と種別を持つ境界を付ける。"""
-    return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
 def session_temp_notice(session_temp: pathlib.Path | str, *, contract: pathlib.Path | None = None) -> str:
@@ -516,7 +489,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         return "\n".join(lines)
 
 
-def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
+def _subagent_temp_notice(session_temp: pathlib.Path | str, agent_id: object) -> str:
     """担当ごとの置き場所と、親の領域でのファイルの受渡しを通知する。"""
     if not isinstance(agent_id, str) or not agent_id:
         return session_temp_notice(session_temp)
@@ -532,17 +505,9 @@ def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
     )
 
 
-def compose_subagent_start(*, host: str) -> str:
-    """SubagentStartへ追加する本文を返す。"""
-    parts = [SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip("\n")]
-    if host == "claude":
-        parts.append(COMMON_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
-        parts.append(SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
-    return (
-        _normative_context("\n\n".join(parts), kind=NORMATIVE_KIND_SUBAGENT)
-        + "\n\n"
-        + _llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent))
-    )
+def compose_subagent_start() -> str:
+    """SubagentStartへ追加する本文を返す。入口の所在とCLIの起動部分だけを示し、規範の本文を載せない。"""
+    return f"{_llm_notice(SUBAGENT_ENTRY_NOTICE)}\n\n{_llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent))}"
 
 
 def _parse_payload(payload_text: str) -> dict[str, Any]:
@@ -560,7 +525,10 @@ def main(payload_text: str, *, host: str = "claude") -> int:
     payload = _parse_payload(payload_text)
     event_name = payload.get("hook_event_name")
     session_id = payload.get("session_id")
-    delegated = is_delegated(os.environ)
+    # 組み込みの委譲機能の子のSessionStartは、親と同じsession_idと自分のagent_idを持つ。
+    # 親の会話の記録と要約を変えないよう、メインの状態を扱う処理は主体がメインの時に限る。
+    subject = resolve_hook_agent_id(payload)
+    delegated = not is_main_agent_context(payload)
     if event_name == "SessionStart":
         if isinstance(session_id, str):
             claim_process_loop_session(session_id, os.environ)
@@ -586,7 +554,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 session_temp = managed_temp.resolve_session_temp(session_id)
         if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
             # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
-            forget_subject_notices(session_id, MAIN_AGENT_ID)
+            forget_subject_notices(session_id, subject)
         started = time.monotonic()
         content = compose_session_start(source, delegated=delegated, host=host)
         timing.record(payload, "rules_context", started, "ok", stage="normative-content")
@@ -599,7 +567,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             and (launch := _launch_input_process_wi(json.loads(raw), session_id))[0]
         ):
             # 自律モードの状態と表示名の種別は起動入力から立てる。エージェントによる入口の起動からは立てない。
-            # 圧縮後の再開では立て直さない（終了工程で戻した状態を復活させないため）。
+            # 圧縮後の再開では再び設定しない（終了工程で戻した状態を復活させないため）。
             update_state(session_id, session_state.set_process_wi_invoked)
             if host == "claude":
                 session_title.observe_skill(session_id, skill_modes.PROCESS_WI, launch[1])
@@ -624,12 +592,12 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                         else None
                     ),
                 )
-            if source in _OPERATION_SKILL_RESET_SOURCES:
+            if source in _OPERATION_SKILL_RESET_SOURCES and subject == MAIN_AGENT_ID:
                 reset_main_operation_skill_ready(session_id)
-            if source == "compact":
+            if source == "compact" and subject == MAIN_AGENT_ID:
                 work_contract.reset_notice(session_id)
             if session_temp is not None:
-                temp_text = session_temp_notice(session_temp)
+                temp_text = _subagent_temp_notice(session_temp, payload.get("agent_id"))
                 contract_context = None
                 if source == "compact" and not delegated and work_contract.exists(session_id):
                     # 圧縮後の通知と資料の再取得案内にも上限内の余白を残す。契約の本文と案内が収まらなければ、
@@ -650,7 +618,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             if source == "compact":
                 # ツールを使わない返却・回答の判断にも、圧縮後に読む範囲を1通で伝える。
                 recovery = _compact_recovery_context()
-                if host == "claude":
+                if host == "claude" and subject == MAIN_AGENT_ID:
                     started = time.monotonic()
                     compact_text = _compaction_notice(
                         session_id, payload.get("transcript_path"), session_temp, delegated=delegated
@@ -660,7 +628,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                         recovery = _llm_notice(compact_text)
                 content = f"{content}\n\n{recovery}" if content else recovery
     elif event_name == "SubagentStart":
-        content = compose_subagent_start(host=host)
+        content = compose_subagent_start()
         session_temp = _existing_session_temp(payload.get("session_id"))
         if session_temp is not None:
             content = f"{content}\n\n{_llm_notice(_subagent_temp_notice(session_temp, payload.get('agent_id')))}"

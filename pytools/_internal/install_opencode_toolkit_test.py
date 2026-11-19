@@ -29,6 +29,7 @@ def _source(root: Path) -> None:
     (entry / "roles").mkdir(parents=True)
     (entry / "SKILL.md").write_text("---\nname: atk-mode\ndescription: 入口\n---\n入口の本文\n", encoding="utf-8")
     (entry / "roles" / "worker.subagent.md").write_text("役割の原文\n", encoding="utf-8")
+    # 廃止した常時規範が配布元に残っていても、案内のファイルへ本文を連結しない。
     rules = root / "agent-toolkit" / "share" / "rules" / "common"
     rules.mkdir(parents=True)
     (rules / "01-agent.md").write_text("# 共通常時規範\n\n原文を保持する。\n", encoding="utf-8")
@@ -90,10 +91,10 @@ def test_post_apply_sync_preserves_settings_and_updates_owned_skills(
     metadata = yaml.safe_load(manual.read_text(encoding="utf-8").split("---", 2)[1])["metadata"]
     assert metadata == {"opencode/autoinvoke": "false", "opencode/slash": "true"}
     rules = (destination / "agent-toolkit.md").read_text(encoding="utf-8")
-    assert "# 共通常時規範\n\n原文を保持する。" in rules
     assert (root / "agent-toolkit").as_posix() in rules and (root / "agent-basics").as_posix() in rules
-    # hookを持たないホストへは、入口の起動を1行で案内し、入口の本文は規範ファイルへ載せない。
-    assert "作業の前と会話の圧縮の後に、`agent-toolkit-atk-mode`のスキルを読む。\n" in rules and "入口の本文" not in rules
+    # hookを持たないホストへは入口の起動を案内するだけとし、入口と常時規範の本文は載せない。
+    assert "作業の前と会話の圧縮の後に、`agent-toolkit-atk-mode`のスキルを読む。\n" in rules
+    assert "入口の本文" not in rules and "共通常時規範" not in rules
     # 役割文書は入口のスキルの配下にあるため、スキルだけを配置するホストへも届く。
     entry = destination / "skills" / "agent-toolkit-atk-mode"
     assert (entry / "roles" / "worker.subagent.md").read_text(encoding="utf-8") == "役割の原文\n"
@@ -133,3 +134,34 @@ def test_missing_cli_and_owned_path_conflict_do_not_overwrite_user_files(
     assert not results[0].ok and not results[0].changed
     assert conflict.read_text(encoding="utf-8") == "ユーザーのスキル"
     assert not (destination / "agent-toolkit.md").exists()
+
+
+def test_resync_replaces_legacy_rules_body_and_requires_entry_skill(tmp_path: Path) -> None:
+    """旧版が常時規範を連結した案内のファイルを案内だけへ置き換え、入口のスキルが無い配布元は書込前に失敗する。"""
+    root = tmp_path / "dotfiles"
+    _source(root)
+    destination = tmp_path / "config" / "opencode"
+    destination.mkdir(parents=True)
+    legacy = destination / "agent-toolkit.md"
+    legacy.write_text(
+        '<atk-auto source="dotfiles" kind="opencode-host">\n# OpenCodeでのagent-toolkit\n\n'
+        '<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/01-agent.md">\n'
+        "# 01-agent.md: エージェントの振る舞い\n</atk-auto>\n</atk-auto><!-- opencode-host -->\n",
+        encoding="utf-8",
+    )
+    config = destination / "opencode.json"
+    config.write_text(f'{{"instructions": ["{legacy.as_posix()}"]}}\n', encoding="utf-8")
+
+    assert install_opencode_toolkit.sync(root, destination)
+
+    body = legacy.read_text(encoding="utf-8")
+    assert 'kind="rules"' not in body and "01-agent.md" not in body
+    assert "`agent-toolkit-atk-mode`のスキルを読む" in body
+    # 登録は1件のまま保つ。
+    assert pytilpack.jsonc.loads(config.read_text(encoding="utf-8"))["instructions"] == [legacy.as_posix()]
+
+    (root / "agent-toolkit" / "skills" / "atk-mode" / "SKILL.md").unlink()
+    legacy.write_text('<atk-auto source="dotfiles" kind="opencode-host">\n旧版\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="atk-mode"):
+        install_opencode_toolkit.sync(root, destination)
+    assert legacy.read_text(encoding="utf-8") == '<atk-auto source="dotfiles" kind="opencode-host">\n旧版\n'

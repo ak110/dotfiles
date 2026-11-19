@@ -22,7 +22,7 @@ MCPサーバー内部の待機処理（公開ツールではない）と明示�
 MCPの待機は委譲先のMCPクライアントのツール呼び出し上限300秒の内側へ収める。
 明示的な資源解放の待機も同じ期限を使い、自動回収は解放を待たない。
 MCPのツール呼び出しに固有の制限を、その呼び出しを使う用途の関数だけに置くことで、CLIの上限の改訂が他の用途の保護条件を変えない。
-待機の発行形と応答の扱いは`agent-toolkit:delegation/references/waiting-and-monitoring-intervals.md`「待機区間の構成」が定める。
+待機の発行形と応答の扱いは`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機区間の構成」が定める。
 公開MCPツールの`wait`は2026年9月14日「`feat!: agents_serverの待機と軽量委譲を単純化する`」、`7a17eaaf5`で登録から外し、結果の待機をこのCLIへ一本化した。
 
 却下した代替案は、固定値を実効上限に近い値へ引き上げる案と、両bucketのうち短い保持期間を常に採る案である。

@@ -62,7 +62,7 @@ writes_worktree: true
    描画手段が使えない場合の`未確定`とは区別する。
    判定に必要な入力の不足も共通返却契約で返し、不足した範囲を合格に含めない。
 3. 再判定では、指摘の類型と全ての該当箇所を手順1で限定した範囲の中で探す。
-4. 引き継ぎ記録先へ、`agent-toolkit:delegation/references/handoff-record.md`の記録項目に加えて次を保存する。
+4. 引き継ぎ記録先へ、`agent-toolkit:atk-mode/references/work-contract.md`の記録項目に加えて次を保存する。
    - 対象HEADの7文字以上の一意な短縮OID、`round`、完遂を試みたシナリオ、観測した状態、キャプチャの絶対パス
    - 指摘ごとの問題の機構、対象範囲、該当箇所、確認条件
    - 画面ごとの原要求と確かめた品質に対する、観測結果と未検証の範囲
@@ -91,5 +91,5 @@ writes_worktree: true
 試行: <手段> | <実行したコマンド> | <終了コードまたは失敗の観測>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 環境による未確定の判定と試行結果は本節の固有結果として保持する。

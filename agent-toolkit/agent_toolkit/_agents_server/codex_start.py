@@ -20,7 +20,7 @@ from agent_toolkit._agents_server.codex_protocol import (
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
-from agent_toolkit._agents_server.launch_prompts import LIGHTWEIGHT_LAUNCH_KINDS, SUBAGENT_BASE_INSTRUCTIONS
+from agent_toolkit._agents_server.launch_prompts import LIGHTWEIGHT_LAUNCH_KINDS, base_instructions
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, initialize_turn
 from agent_toolkit._atk import codex_connection
@@ -124,7 +124,7 @@ class CodexStartMixin:
                 selection = None
         params: dict[str, Any] = {
             "cwd": cwd,
-            "baseInstructions": SUBAGENT_BASE_INSTRUCTIONS,
+            "baseInstructions": await run_file_operation(base_instructions),
             # Codexが承認を要すると判定するコマンドは拒否され、PermissionRequest hookは呼ばれない。
             # 委譲先の標準手順は承認を要しない操作で構成し、ホストの権限制約を維持する。
             "approvalPolicy": "never",

@@ -5,11 +5,11 @@
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
 | 資料ごとに取得命令・シェル/JavaScriptコード・予算説明をhook通知へ生成する | 2026-11-16（本行を含む撤去commit） | 固定の取得方法と今回の対象を同じ通知へ重ね、合流時の受信量を増やしていた。対象一覧へ置き換え、取得方法はホスト別規範へ集約した。 | `agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`「通知本文の整形」 | ホスト側の取得規範と一意な対象名だけでは取得できない実例を示し、既知の説明を通知ごとに反復しない場合 |
-| 機械確定できない読込条件を候補一覧として毎操作へ通知する | 2026-11-15（本行を含む撤去commit） | 条件原本と重なる大量列挙が、受信者に必要な判断と最初の操作を不明確にした。 | `agent-toolkit/share/read-trigger-contract-acquisition.md`「取得とチェック」、`agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`「通知本文の整形」 | 原本の読込表と確定必読の案内だけでは不足する実例を示し、無関係な列挙と誤必読化を増やさず解消できる場合 |
+| 機械確定できない読込条件を候補一覧として毎操作へ通知する | 2026-11-15（本行を含む撤去commit） | 条件原本と重なる大量列挙が、受信者に必要な判断と最初の操作を不明確にした。 | `docs/development/read-triggers-contract.md`「取得とチェック」、`agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`「通知本文の整形」 | 原本の読込表と確定必読の案内だけでは不足する実例を示し、無関係な列挙と誤必読化を増やさず解消できる場合 |
 | 初回入力直後のスキル未取得と、最初のツールでの作業契約未作成を通知する | 2026-11-15（本行を含む撤去commit） | 正しい準備を始める前や途中にも回避不能な欠如を指摘していた。 | `agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`「通知本文の整形」、`agent-toolkit/skills/atk-mode/references/work-contract.md`「更新する時点」 | 正しい準備操作を妨げず、依存する後続操作との境界で必要な対処だけを案内できる場合 |
-| 他担当の手順書を読む目的を推測し、起動契約へ切り替えるよう警告する | 2026-11-15（本行を含む撤去commit） | 正当な調査・検収と起動準備を区別できず、正しい読取にも警告した。 | `agent-toolkit/skills/delegation/references/delegation-sending.md`「送信」 | 読取目的を区別し、正当な調査・編集・検収を誤警告しないと確認できる場合 |
-| 受信予算が不明なままファイル容量だけで全文取得を警告し、同じ警告の不在で規範容量を検査する | 2026-11-15（本行を含む撤去commit） | 十分な予算や正規の分割取得にも警告し、実際の省略と区別できなかった。 | `agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`「通知本文の整形」、`agent-toolkit/share/rules/rules-common.codex.md`「Codex固有の入出力」 | 事前に受信不足を確定でき、正しい予算指定・分割取得へ誤警告しない場合 |
-| 圧縮前の取得履歴から資料候補を収集し、圧縮直後にパス一覧を案内する | 2026-11-12（本行を含む撤去commit） | 過去に選んだ資料と次の判断に必要な知識が対応せず、不要な再取得と必要資料の見落としを生んだ。現在工程のスキル・役割文書と読込表から選び直す汎用指示へ置換した。 | `docs/development/design-hooks-read-acquisition.md`「本文の取得観測と確認前の拒否の設計記録」、`agent-toolkit/share/rules/common/01-agent.md`「行動と手順の目的」 | 汎用指示だけでは必要な工程文書を再読しない事例を観測し、履歴候補一覧がその不足を補い、不要な再取得を増やさないと確認できる場合 |
+| 他担当の手順書を読む目的を推測し、起動契約へ切り替えるよう警告する | 2026-11-15（本行を含む撤去commit） | 正当な調査・検収と起動準備を区別できず、正しい読取にも警告した。 | `agent-toolkit/skills/atk-mode/playbooks/delegation.md`「送信」 | 読取目的を区別し、正当な調査・編集・検収を誤警告しないと確認できる場合 |
+| 受信予算が不明なままファイル容量だけで全文取得を警告し、同じ警告の不在で規範容量を検査する | 2026-11-15（本行を含む撤去commit） | 十分な予算や正規の分割取得にも警告し、実際の省略と区別できなかった。 | `agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`「通知本文の整形」、`agent-toolkit/skills/atk-mode/playbooks/host-codex.md`「Codex固有の入出力」 | 事前に受信不足を確定でき、正しい予算指定・分割取得へ誤警告しない場合 |
+| 圧縮前の取得履歴から資料候補を収集し、圧縮直後にパス一覧を案内する | 2026-11-12（本行を含む撤去commit） | 過去に選んだ資料と次の判断に必要な知識が対応せず、不要な再取得と必要資料の見落としを生んだ。現在工程のスキル・役割文書と読込表から選び直す汎用指示へ置換した。 | `docs/development/design-hooks-read-acquisition.md`「本文の取得観測と確認前の拒否の設計記録」、`agent-toolkit/skills/atk-mode/SKILL.md`「会話の圧縮の後」 | 汎用指示だけでは必要な工程文書を再読しない事例を観測し、履歴候補一覧がその不足を補い、不要な再取得を増やさないと確認できる場合 |
 | 読込表の配送操作`section:`と、読取の行範囲と節の交差で節単位の取得を判定する処理。読んだ資料の全見出しについて節単位の受信記録の候補を作る処理 | 2026-11-11（本行を追加した撤去commit） | 規範資料の全文読込への移行で、節を指定する宣言が規範以外を指す3行だけになった。状態と判定の分岐が不具合の原因になっていた。 | `docs/development/design-hooks-read-declarations.md`「宣言型読込表による操作前配送」 | 規範以外の記録について、節単位の取得をhookが判定する必要を複数の事例で観測した場合 |
 | 読取先を確定できないコマンドの文字列（`share/<役割名>`、`<役割名>.subagent`）から、他の担当の手順書を読む可能性を推測して警告する | 2026-11-11（本行を追加した撤去commit） | 起動契約を読む操作を手順書の読取と取り違えた。記録の全22回で起動契約への切替は0回、誤警告が11回だった。 | `docs/development/design-delegation.md`「起動準備と定義本文の読込」 | 読取先を確定できない操作で手順書を読んで起動した事例を複数観測し、推測した対象の種類を実在のファイルで区別できる場合 |
 | 本文が名指しする資料に、同じ文書の読込表の行を求める検査（参照先へ届く経路の検査） | 2026-11-11（本行を追加した撤去commit） | 本文の名指しを写した定型文の行が読込表の行の約3割を占め、読む量を増やしていた。解析器が名指しから同じ宣言を補うため、行を求める必要が無くなった。 | `docs/development/design-hooks-read-declarations.md`「宣言型読込表による操作前配送」 | 名指しからの補完をやめ、読む時点を表へ明示する方式へ戻す場合 |
@@ -103,4 +103,37 @@
 | 旧Stop定義の子session観測案内サブコマンドを互換入口として残す | 2026-10-08、commit: 433c23b5f | 旧Stop定義を保持するセッションが残っていなかった。 | 登録済みのhookサブコマンドだけを受け付ける。docs/development/design-hooks-responsibility.md「エントリーポイントと判定の集約」 | 撤去理由を解消できることを示した場合 |
 | 旧Stop定義の質問案内サブコマンドを互換入口として残す | 2026-10-08、commit: 433c23b5f | 旧Stop定義を保持するセッションが残っていなかった。 | 登録済みのhookサブコマンドだけを受け付ける。docs/development/design-hooks-responsibility.md「エントリーポイントと判定の集約」 | 撤去理由を解消できることを示した場合 |
 | 結果待ちのターン末尾を言語だけで遮断し書き直させる | 2026-11-11 | 途中待機を英語で述べるたびに書き直しのターンが増えた。2026年11月2日の72ea09448で末尾判定を撤去した後、11月4日の99d31ee1cが完了報告の保護と一緒に再導入していた。 | 待機対象が残るClaude CodeのStopだけを除き、作業を終える本文とCodexの保護を保つ。docs/development/design-hooks-host-adapters.md「複数ホスト向けの配布と入力変換」 | ユーザーが読む完了報告を保護しつつ途中待機を止めない境界を示し、過去の撤去理由と現在の方針を満たす場合 |
-| 会話圧縮の後に、復元手順の資料（compaction-recovery.md）、ユーザー発話の原文ファイル、会話抽出コマンドとその手順資料を順に読ませ、工程のスキルと役割文書を全文読み直させる | 2026-11-18（本行を含む撤去commit） | 復元だけで6往復・約5万字を使い、読み直した規範が文脈を埋めて次の圧縮を早めていた。 | 圧縮後に読むのは作業契約と発話だけの要約に限り、ほかの資料は操作・判断の条件に該当した時に読む。`agent-toolkit/share/rules/common/01-agent.md`「行動と手順の目的」、docs/development/design-hooks-session-state.md「出力の配送とセッション記録の解決」 | 作業契約と発話の要約だけでは復元できない工程を観測で示した場合 |
+| 会話圧縮の後に、復元手順の資料（compaction-recovery.md）、ユーザー発話の原文ファイル、会話抽出コマンドとその手順資料を順に読ませ、工程のスキルと役割文書を全文読み直させる | 2026-11-18（本行を含む撤去commit） | 復元だけで6往復・約5万字を使い、読み直した規範が文脈を埋めて次の圧縮を早めていた。 | 圧縮後に読むのは作業契約と発話だけの要約に限り、ほかの資料は操作・判断の条件に該当した時に読む。`agent-toolkit/skills/atk-mode/references/work-contract.md`「圧縮と再開の後の復元」、docs/development/design-hooks-session-state.md「出力の配送とセッション記録の解決」 | 作業契約と発話の要約だけでは復元できない工程を観測で示した場合 |
+
+## 常時規範と委譲のスキル
+
+2026年11月20日に、WI 20261116-000448-001で、全エージェントへ常に読み込ませる規範ファイル（常時規範）、それを各ホストへ配る仕組み、委譲の手順のスキル（`agent-toolkit/skills/delegation/`）を廃止した。
+廃止の理由は、全ての作業で読む量を減らし、必要な時に必要な手順書だけを読む構成にするためである。
+代わりに、全ての作業に当てはまる原則と硬い制約を入口のスキル`agent-toolkit:atk-mode`へ置き、作業ごとの手順を入口の表から選ぶ`playbooks/`と`references/`へ置いた。
+常時規範に付随していた`agent-toolkit/share/`の資料も移した。
+移した先は、同じ入口の手順書（`references/conduct.md`、`playbooks/main-reporting.md`、`roles/`など）と`docs/development/read-triggers-contract.md`である。
+置き場所と配送の現行の定義は`agent-toolkit/skills/atk-mode/references/agent-documents.md`「置き場所と配送」、設計の理由は[ルールの配置と配送の設計記録](design-hosts-rules-delivery.md)にある。
+
+常時規範を置いていた経緯は次のとおりである。
+
+- 2026年9月のユーザー指示で、全ての実行主体へ適用する条文だけを常時配る規範（`agent-toolkit/share/rules/common/`）とした。
+  メインだけと委譲先だけに適用する条文は`rules-main.md`と`rules-subagent.md`へ分け、hookと`agents_server`が起動時に文脈へ加えた。
+  1つのファイルへ混ぜるとメイン専用の条文が委譲先へ届くためであった。
+- 2026年11月7日のユーザー指示で、2か所に分かれていた原本を`agent-toolkit/share/rules/`の1か所へまとめた。
+- Codexへは全主体向けの条文を`~/.codex/AGENTS.md`へ埋め込み、メインだけの差分（`rules-main.codex.md`）をhookで加えた。
+  `~/.codex/AGENTS.md`はCodexの委譲先にも届くためであった。
+- 常時規範は全ての作業で毎回読まれるため、条文を足すたびにClaude Codeの`additionalContext`の上限とAntigravityの規則の容量予算に合わせた整理が要った。
+- 条文がセッション開始時の文脈にあっても、判断の時点で想起されない事象が続いた（[委譲手段の選択と待機の装着の手掛かり](design-hooks-pretooluse.md#委譲手段の選択と待機の装着の手掛かり)、[結果受領時の案内](design-agents-server-result-guidance.md)）。
+
+旧配布先は次のとおり回収する。
+
+- dotfilesの導入では、`pytools/_internal/removed_paths.py`が`~/.claude/rules/agent-toolkit/`と`~/.codex/agent-toolkit/rules/`を削除し、空になった`~/.codex/agent-toolkit/`も削除する。
+- 単体インストーラー`install-claude.sh`・`install-claude.ps1`は、旧版が配置した`~/.claude/rules/agent-toolkit/`、`~/.claude/rules/agent-basics/`、`~/.claude/rules-stage/`を削除する。
+- 生成物（`~/.codex/AGENTS.md`、OpenCodeの`agent-toolkit.md`、Antigravityの配布root）は、各生成器の再生成で旧い本文と`rules/`を除く。
+
+| 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
+| --- | --- | --- | --- | --- |
+| 全エージェントへ常に読み込ませる規範ファイル（`agent-toolkit/share/rules/`の`common/01-agent.md`、`common/02-agent-operations.md`、主体別・ホスト別の`rules-main*.md`、`rules-subagent*.md`、`rules-common.*.md`）で、全ての作業に共通の判断と操作の規範を届ける | 2026-11-20、commit: bc4d3d889 | 全ての作業で読む量を減らし、必要な時に必要な手順書だけを読む構成にするため。 | 全ての作業に当てはまる決まりは入口`agent-toolkit/skills/atk-mode/SKILL.md`に置き、それ以外は入口の表から条件ごとに選ぶ手順書へ置く。委譲先に共通の決まりは`playbooks/subagent.md`に置く。`agent-toolkit/skills/atk-mode/references/agent-documents.md`「置き場所と配送」、docs/development/design-hosts-rules-delivery.md「ルールの配置と配送」 | 入口と手順書の構成では必要な時点に規範へ到達できない事例を観測で示し、全ての作業で読む量の増加を上回る便益を示せる場合 |
+| 常時規範をホストごとに配る（`pytools/_internal/sync_agent_toolkit_rules.py`による`~/.claude/rules/agent-toolkit/`と`~/.codex/agent-toolkit/rules/`への同期、`scripts/codex_shared_rules.py`による`~/.codex/AGENTS.md`への埋め込み、Antigravityの`rules/`の生成と容量予算、OpenCodeの`instructions`への本文の連結、単体インストーラーの規範の配置と`scripts/gen_install_files.py`） | 2026-11-20、commit: b8e796c6f、ad1b27710、bcc12ee3d、0e5735b16 | 配る常時規範が無くなった。 | 入口の起動は、SessionStartの1行（Claude Code、Codex、Antigravity）とOpenCodeの`instructions`の数行の案内で求める。`~/.codex/AGENTS.md`は`myprojects-common.md`だけを埋め込む。`agent-toolkit/skills/atk-mode/references/agent-documents.md`「入口を届ける経路」、docs/development/architecture-distribution.md「アーキテクチャ: ホスト別配布とOpenCode」 | 常時規範を再導入する場合 |
+| SessionStart・SubagentStartのhookが、主体別の規範本文（`rules-main*.md`、`rules-subagent*.md`）と言語・品質の通知（`01-agent.md`「使用言語」「行動と手順の目的」への参照）を起動時の文脈へ差し込む | 2026-11-20、commit: 24ce59ec1 | 差し込む本文と参照先が無くなり、hookの通知へ規範の本文を差し込むと全ての作業で読む量が増える。 | SessionStartはメインへ入口の起動を求める1行、SubagentStartは`playbooks/subagent.md`の所在を示す1行だけを出し、`agents_server`の委譲先は`launch_prompts.py`が同書から切り出した起動の本文を受け取る。docs/development/design-hosts-rules-delivery.md「ルールの配置と配送」 | 入口と起動の本文では届かない規範を観測で示し、通知の本文の増加を上回る便益を示せる場合 |
+| 委譲の要否、起動、待機、受領、復旧の手順を、スキル（`agent-toolkit/skills/delegation/`）として入口とは別に起動させる | 2026-11-20、commit: bc4d3d889 | 入口の表から条件ごとに手順書を選ぶ構成へ統一し、委譲の段ごとに要る手順書だけを読むため。 | `agent-toolkit/skills/atk-mode/playbooks/delegation.md`（要否と起動）、`delegation-waiting.md`、`delegation-receiving.md`、`delegation-recovery.md`、`host-claude-code.md`、`host-codex.md`、`references/delegation-prompt.md`、`delegation-wait-anomalies.md`、`model-settings.md`、`hosts.md`、`work-contract.md`、`agent-documents.md`「配送範囲表」。保守者だけが使う事実はdocs/development/delegation-maintenance.md | 撤去理由を解消できることを示した場合 |

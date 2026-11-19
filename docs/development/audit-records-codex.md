@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日
+## agent-toolkit/skills/atk-mode/playbooks/host-codex.md：Codex固有の入出力：2026年10月19日
 
 2026年10月19日、Codex CLI 0.163.0で、戻り値の一部だけを表示すると識別子を失い、待機を重ねた。
 戻り値全体を表示した対照では、`write_stdin`で1つの待機を回収した。
@@ -10,7 +10,7 @@
 再検証では、長時間コマンドのyield結果が`session_id`を持ち`exit_code`を持たないこと、`text(r)`で両欄と本文が保持されること、同じ識別子で終了を回収できることを比べる。
 一次記録はリポジトリ外の作業記録にある。
 
-## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日
+## agent-toolkit/skills/atk-mode/playbooks/host-codex.md：Codex固有の入出力：2026年10月22日
 
 WI原本の2026年10月22日の観測（Codex CLI 0.163.0）では、起動直後の`ALL_TOOLS`へstdio MCPがまだ登録されず、20秒後の別の`exec`ではagents_serverの6ツールとpyfltrが現れた。
 2026年10月20日の比較記録では`tools.mcp__agents_server__start`の呼び出しが成功している。
@@ -20,7 +20,7 @@ WI原本の2026年10月22日の観測（Codex CLI 0.163.0）では、起動直�
 引数は該当要素の`description`のexec tool declarationから読み、同じ`exec`から`tools.mcp__agents_server__list({})`を呼ぶ。
 原稿担当は配布先の変更を認可されていないため、生成物配布後の通常委譲の試行は統合担当が行う。
 
-## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日
+## agent-toolkit/skills/atk-mode/playbooks/host-codex.md：Codex固有の入出力：2026年11月5日
 
 - 観測日: 2026年11月6日（起票時の2026年11月5日の観測に対する同一入力欄の再確認）。
 - 確認版: Codex CLI 0.166.0。
@@ -33,7 +33,7 @@ WI原本の2026年10月22日の観測（Codex CLI 0.163.0）では、起動直�
   両回収と外側pragmaに120000msを指定し、終了コード・両出力・同一識別子と先行終了を確認する。
   短い操作と追加入力を送る対話へ一律の長待機を課さない。
 
-## agent-toolkit/skills/delegation/references/codex-runtime-waiting.md：agents_serverの二層待機：2026年11月15日
+## agent-toolkit/skills/atk-mode/playbooks/host-codex.md：agents_serverの二層待機：2026年11月15日
 
 - 観測日: 2026年11月15日
 - 確認版: Codex CLI 0.169.0。

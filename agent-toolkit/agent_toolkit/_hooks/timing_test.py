@@ -18,7 +18,8 @@ def test_new_session_start_records_internal_stages(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(paths, "_state_root_path", lambda: tmp_path / "state")
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(run_skill_batch, "hook_request", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(rules_context, "is_delegated", lambda _env: False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(rules_context, "_conversation_identity_notice", lambda *_args: "")
     assert timing.managed_temp.find_session_temp("new-timing-session") is None
     assert (

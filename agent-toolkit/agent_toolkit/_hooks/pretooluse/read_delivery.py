@@ -4,6 +4,8 @@
 取得の観測だけを主体別の記録に反映する。
 実際に配送された必要範囲を記録し、旧版の受信と現在版の更新を区別する。
 軽量委譲は起動契約がスキルを使わないため対象外とする。
+純粋Readなどで依存案内を保留する根拠の観測は、docs/development/audit-records-read-delivery.mdの
+「agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py：並行Readの公開入力：2026年10月30日」にある。
 """
 
 from __future__ import annotations

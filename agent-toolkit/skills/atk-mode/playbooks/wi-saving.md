@@ -156,7 +156,7 @@
 1. ユーザーからキュー項目の外部更新（UWIへの回答、AWIの投入、ユーザーコメント、本文の編集、状態遷移など）を知らされたら、`atk wi show <ファイル名> --pull`で本文を強制同期して取得する。
    項目を特定するための一覧も`atk wi list --pull`で取得する。
    同期しても項目が無いか更新前のままなら、送信側の保存が終わっていない可能性がある。
-   次の確認時点を`agent-toolkit:delegation/references/waiting-and-monitoring-external.md`「外部サービスの状態変化を待つ場合」で決める。
+   次の確認時点を`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「外部サービスの状態変化を待つ場合」で決める。
    その時点で、特定済みなら`atk wi show <ファイル名> --pull`を、未特定なら同じ抽出条件の`atk wi list --pull`をやり直す。
    同期の成功と更新内容の到達は分けて扱う。
    通常の軽い参照、投入前の回答済みUWIとの整合確認、同期済みの候補の定期的な参照は、強制同期の対象から外す。

@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import threading
 import time
+import types
 
 import pytest
 
@@ -117,6 +119,72 @@ async def test_cli_request_applies_one_step_and_persists_history(actor):
     finally:
         # to_threadの取消だけでは同期CLIは止まらないため、有限期限の終了まで回収する。
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.parametrize("fault", ["read", "cleanup-request", "cleanup-response"])
+@pytest.mark.asyncio
+async def test_cli_request_survives_transient_sharing_denial(monkeypatch, fault):
+    """Windowsの一時的な共有拒否が、応答の最初の読取や要求側の後始末で一度起きても、effortの適用結果を成功として返す。
+
+    要求側を応答の最初の読取の直前で止め、所有側が適用と応答の公開を終えてから読ませる。
+    """
+    session = _session()
+    denied: list[str] = []
+    polling, answered = threading.Event(), threading.Event()
+    original_read, original_unlink = pathlib.Path.read_text, pathlib.Path.unlink
+
+    def read_text(self, *args, **kwargs):
+        if self.name.endswith(".effort-response"):
+            polling.set()
+            assert answered.wait(timeout=10), "所有側が応答を公開しない"
+            if fault == "read" and not denied:
+                denied.append(self.name)
+                raise PermissionError(13, "modeled WinError 32: sharing violation")
+        return original_read(self, *args, **kwargs)
+
+    def unlink(self, *args, **kwargs):
+        suffix = ".effort-request" if fault == "cleanup-request" else ".effort-response"
+        if fault.startswith("cleanup") and self.name.endswith(suffix) and not denied:
+            denied.append(self.name)
+            raise PermissionError(13, "modeled WinError 5: access denied")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    task = asyncio.create_task(asyncio.to_thread(effort_requests.request, "up", "child", {"CODEX_THREAD_ID": "parent"}))
+    try:
+        assert await asyncio.to_thread(polling.wait, 10), "要求側が応答を読まない"
+        await effort_control.process_requests({"child": session}, _catalog, _apply)
+        answered.set()
+        result = await task
+        assert result["effort"] == "medium" and result["changed"] is True
+        assert denied
+        assert not list(session_registry.registry_directory().glob("*.effort-*"))
+    finally:
+        answered.set()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+def test_persistent_read_denial_is_reported_with_path_and_error(monkeypatch):
+    """応答の読取拒否が期限まで続けば、期限切れに応答のパスと最後のOSエラーを加え、現在値の確認と再送しない案内を残す。"""
+    _session()
+    original_read = pathlib.Path.read_text
+
+    def read_text(self, *args, **kwargs):
+        if self.name.endswith(".effort-response"):
+            raise PermissionError(13, "modeled permanent EACCES", str(self))
+        return original_read(self, *args, **kwargs)
+
+    ticks = iter(range(10_000))
+    clock = types.SimpleNamespace(monotonic=lambda: float(next(ticks)), sleep=lambda _seconds: None)
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(effort_requests, "time", clock)
+    with pytest.raises(TimeoutError) as raised:
+        effort_requests.request("up", "child", {"CODEX_THREAD_ID": "parent"})
+    message = str(raised.value)
+    assert ".effort-response" in message and "modeled permanent EACCES" in message
+    assert "atk agents show" in message and "再送しない" in message
+    assert not list(session_registry.registry_directory().glob("*.effort-*"))
 
 
 @pytest.mark.parametrize("actor", ["sibling", "grandparent"])

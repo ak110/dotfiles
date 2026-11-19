@@ -6,7 +6,7 @@
 ## コンセプト
 
 用途、品質基準との責務分担、AWI・UWIの意味は[README](../../agent-toolkit/README.md)を参照。
-常時規範とスキル・フック・MCPを併用する構成と、ホストごとの機能範囲は[対応ホストと機能](../../agent-toolkit/README.md#対応ホストと機能)にまとめている。
+入口のスキル`atk-mode`と作業ごとのスキル・フック・MCPを併用する構成と、ホストごとの機能範囲は[対応ホストと機能](../../agent-toolkit/README.md#対応ホストと機能)にまとめている。
 
 ## 前提条件
 
@@ -70,7 +70,9 @@ Modは実行中のOSアカウントの権限で動くため、信頼できるも
 
 ### 常時有効な仕組み
 
-規範・フック・MCPの役割は[READMEの構成と機能](../../agent-toolkit/README.md#構成と機能)を参照。
+セッション開始時と会話の圧縮の後は、フックが入口のスキル`atk-mode`の起動を求める1行を通知する。
+エージェントはこの通知を受けて入口と作業ごとの手順書を読み、常時読み込む規範の配置は使わない。
+スキル・フック・MCPの役割は[READMEの構成と機能](../../agent-toolkit/README.md#構成と機能)を参照。
 各フックの判定条件とCodexでの対応範囲は[design-hooks-host-support.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)、Codexでの信頼操作は[Codex利用ガイド](codex-guide.md#フックの信頼確認)を参照。
 
 ### 手動で起動する主なスキル

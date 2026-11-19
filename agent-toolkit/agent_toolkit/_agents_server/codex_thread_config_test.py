@@ -295,7 +295,7 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
         resume_params = next(params for method, params in client.requests if method == "thread/resume")
 
         for params in (start_params, resume_params):
-            assert params["baseInstructions"] == subject.SUBAGENT_BASE_INSTRUCTIONS
+            assert params["baseInstructions"] == subject.base_instructions()
             instructions = params["developerInstructions"]
             assert str(plugin_root) in instructions
             command = next(
@@ -332,15 +332,15 @@ def test_developer_instructions_include_user_rules_except_embedded(
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     monkeypatch.setattr(plugin_roots, "SERVER_PLUGIN_ROOT", tmp_path / "plugin")
     rules = home / ".claude" / "rules"
-    (rules / "agent-toolkit").mkdir(parents=True)
+    rules.mkdir(parents=True)
     plain = rules / "env.local.md"
     plain.write_text("# env.local.md\n\nGitHubへ書き込まない。\n", encoding="utf-8")
     nested = rules / "team" / "review.md"
     nested.parent.mkdir()
     nested.write_text("# review.md\n\nレビューは日本語で書く。\n", encoding="utf-8")
-    embedded = rules / "agent-toolkit" / "01-agent.md"
+    embedded = rules / "myprojects-common.md"
     embedded.write_text(
-        '<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/01-agent.md">\n'
+        '<atk-auto source="dotfiles" kind="rules" path=".chezmoi-source/dot_claude/rules/myprojects-common.md">\n'
         "埋め込み済みの本文\n</atk-auto>\n",
         encoding="utf-8",
     )
@@ -353,8 +353,8 @@ def test_developer_instructions_include_user_rules_except_embedded(
     codex_home.mkdir()
     (codex_home / "AGENTS.md").write_text(
         "# 全体指示\n\n"
-        '<atk-auto source="agent-toolkit" kind="rules" '
-        'path="agent-toolkit/share/rules/common/01-agent.md">\n本文\n</atk-auto>\n',
+        '<atk-auto source="dotfiles" kind="rules" '
+        'path=".chezmoi-source/dot_claude/rules/myprojects-common.md">\n本文\n</atk-auto>\n',
         encoding="utf-8",
     )
 

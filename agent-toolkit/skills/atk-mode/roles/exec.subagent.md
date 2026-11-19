@@ -90,7 +90,7 @@ continuations:
 | `レビュー修正担当`か同じthreadの`レーン担当`がレビュー指摘を直してGit履歴へ統合する前（返す区切りは`対応完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md` | | |
 | `CI修正担当`が`CI記録`の失敗を直す前（前者は節「担当種別ごとの修正」を使い、返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md`、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` | | |
 | 変更範囲の検証が失敗した時（節「レーンの変更範囲の検証の失敗」を使う） | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` | | |
-| 計画の起草、計画なしの実装、修正の着手の前に、作業を内部の担当へ分けるかを決める前 | `agent-toolkit:delegation`の`references/routing.md` | | |
+| 計画の起草、計画なしの実装、修正の着手の前に、作業を内部の担当へ分けるかを決める前 | `agent-toolkit:atk-mode/playbooks/delegation.md` | | |
 | 計画の起草か実装の途中で、完成条件を対象から外すか変える前（節「完成条件の必要性と変更」を使う） | `agent-toolkit:atk-mode/playbooks/implementation.md` | | |
 
 ## 読込表
@@ -111,7 +111,7 @@ continuations:
 
 AWI本文を読んだら、本文が明示する担当とモデルの組を選定結果の`担当モデル`と比べる。
 一致しなければ、下位の担当を起動して補わずに、WIファイル名、本文の指定、選定結果の値を添えて「続行できない理由」を返す。
-比べ方と記録は`agent-toolkit:delegation/references/process-model-settings.md`「工程別モデル設定」に従う。
+比べ方と記録は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う。
 下位の担当へ渡すモデルは`agent-toolkit:atk-mode/playbooks/implementation.md`「レーン内の分担」で決める。
 
 要求単位の由来は、`atk wi show`で得たAWIの本文とfrontmatterから`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」で判定する。
@@ -123,7 +123,7 @@ AWI本文を読んだら、本文が明示する担当とモデルの組を選�
 
 他の入力は次のとおり扱う。
 
-- `引き継ぎ記録先`: 作業の記録先で、形式は`agent-toolkit:delegation/references/base-contract-handoff.md`にある。
+- `引き継ぎ記録先`: 作業の記録先で、形式は`agent-toolkit:atk-mode/references/delegation-prompt.md`にある。
   `（継続）`は先行する記録をそのまま引き継ぐ。
 - `書込担当一覧`: 重複の無いセッションIDのJSON配列で、現在のレーン担当、統合先のメインの実際のセッション、合意済みの他の書込担当を含む。
   初回の起動の直後に自分のIDを加えて保ち、担当の範囲を引き継ぎ記録へ対応付ける。
@@ -215,4 +215,4 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 終了の結果では、担当モデル、起動候補、物理記録から観測した`engine`、`model`、`effort`を分けて報告する。
 不一致は各値とその由来を引き継ぎ記録へ残し、観測できなかった値は未確認とする。
 
-工程の区切りでは、本書の役割固有の行と、`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行、一行返却を使う。
+工程の区切りでは、本書の役割固有の行と、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行、一行返却を使う。

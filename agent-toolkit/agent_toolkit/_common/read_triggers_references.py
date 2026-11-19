@@ -62,11 +62,6 @@ def reference_method_targets(
     return tuple(dict.fromkeys(result))
 
 
-def _is_rule_document(path: pathlib.Path, plugin_root: pathlib.Path) -> bool:
-    """常時規範と役割別の規範の原本（`share/rules/`配下）かを返す。配送はhookと同期処理が保証する。"""
-    return path.resolve().is_relative_to(plugin_root.resolve() / "share" / "rules")
-
-
 def _named_references(
     source: pathlib.Path,
     plugin_root: pathlib.Path,
@@ -101,14 +96,14 @@ def named_reference_rows(
     """本文が名指しし、読込表に明示の行が無い資料へ補う宣言を返す。
 
     読込表へ本文の名指しを写していた定型の行の代わりである。条件は`NAMED_REFERENCE_CONDITION`、契機は`判断`、
-    配送操作はその資料自身の読取とする。別の経路で届く資料（`share/rules/`配下の規範、「名指し参照の読込方法」の定義元、
-    宣言元自身）と、同じ文書に明示の行がある資料、実在しない参照には補わない。
-    読込元が別の文書へ解決される転送文書と、hookと同期処理が配送する`share/rules/`配下の規範は宣言元にしない。
+    配送操作はその資料自身の読取とする。別の経路で届く資料（「名指し参照の読込方法」の定義元、宣言元自身）と、
+    同じ文書に明示の行がある資料、実在しない参照には補わない。
+    読込元が別の文書へ解決される転送文書は宣言元にしない。
     """
     from agent_toolkit._common import read_triggers  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
     source = source.resolve()
-    if not source.is_file() or _is_rule_document(source, plugin_root):
+    if not source.is_file():
         return []
     if read_triggers.resolve_read_source(source, plugin_root, host, project=project) != source:
         return []
@@ -119,7 +114,7 @@ def named_reference_rows(
     result: list[read_triggers.ReadTrigger] = []
     for number, target in _named_references(source, plugin_root, host, project=project):
         path = target.path
-        if path in routed or not path.is_file() or _is_rule_document(path, plugin_root):
+        if path in routed or not path.is_file():
             continue
         routed.add(path)
         material = f"`{path}`"
@@ -145,6 +140,7 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
 
     読む経路は、読込表の明示の行か、`named_reference_rows`が補う宣言で成立する。
     定義の所在を示すだけの行には「所在参照」を明記する。
+    `<名前>`のような置き換え位置を含む名指しは名指しの書式の説明であり、実在を求めない。
     """
     from agent_toolkit._common import read_triggers  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
@@ -152,7 +148,7 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
     if read_triggers.resolve_read_source(source, plugin_root) != source.resolve():
         return
     for number, target in _named_references(source, plugin_root):
-        if not target.path.is_file():
+        if "<" not in str(target.path) and not target.path.is_file():
             raise ValueError(
                 f"{source}:{number}: 参照先が存在しない: {target.path}。"
                 "所属スキルを`agent-toolkit:<スキル>`の`references/...`の形で明記してください。"

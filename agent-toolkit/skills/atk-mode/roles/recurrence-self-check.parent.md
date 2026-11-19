@@ -6,14 +6,14 @@
 
 再発防止セルフチェックは、実行レビュー担当が通常の走査と並行して、独立した担当に観点ファイルの項目を今回の差分へ当てはめさせる工程である。
 実行レビュー担当が、初回レビュー、再レビュー、引き継ぎ再レビューの各ラウンドで本書を上から適用する。
-起動、終了の観測、失敗からの回復は`agent-toolkit:delegation`に従う。
+起動、終了の観測、失敗からの回復は`agent-toolkit:atk-mode/playbooks/delegation.md`に従う。
 
 ## 入力
 
 <!-- input-contract:recurrence-self-check:start -->
 <!-- 生成元: skills/atk-mode/roles/recurrence-self-check.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
-起動準備はこの契約の入力一覧で完結する。
+役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
 
 - 必須入力名: `観点ファイル`、`今回差分`、`変更ファイル一覧`、`対象worktree`、`未解決指摘`
 
@@ -95,6 +95,6 @@
 前回指摘: <識別子ごとの解消・未解消と根拠|なし>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 資料不足の場合は、影響する項目、欠けた資料と補完に必要な値を記す。
 <!-- return-contract:recurrence-self-check:end -->

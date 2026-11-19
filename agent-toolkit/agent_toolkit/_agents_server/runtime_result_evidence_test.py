@@ -122,7 +122,7 @@ def test_reader_fit_multiline_reason_preserves_finite_recovery(
     _records(path)
     monkeypatch.setattr(record_paths, "find_session_record", lambda _id: record_paths.SessionRecord("claude", (path,)))
     session = state.SessionState("runtime-test", str(tmp_path), launch_kind="explore", started_at=_START)
-    role = Path(__file__).resolve().parents[2] / "share" / "reader-fit-review.subagent.md"
+    role = Path(__file__).resolve().parents[2] / "skills" / "atk-mode" / "roles" / "reader-fit-review.subagent.md"
     session.prompt = task_documents.task_prompt_header(role) + "\n成果物: /example.md\n"
     reason = _DIAGNOSTIC if diagnostic else "この応答の実行予算では残工程を実行できない"
     result = {

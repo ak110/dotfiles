@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 import pytest
-from agent_toolkit._agents_server import launch_requests, result_contract, state
+from agent_toolkit._agents_server import launch_prompts, launch_requests, result_contract, state
 from agent_toolkit._common import task_documents
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.task_document_contract import validate_frontmatter
@@ -25,7 +25,7 @@ def test_distributed_frontmatter_is_valid(path: Path) -> None:
 def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
     """将来の役割も共通契約へ接続し、理由の区分欠落・集合外・インデント違反を検出する。"""
     body = path.read_text(encoding="utf-8").split("## 出力", 1)[1]
-    assert "rules-subagent.md" in body and "返却形式の受け渡し" in body
+    assert "subagent.md" in body and "返却形式の受け渡し" in body
     declaration = task_documents.read_declaration(path)
     assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
     session = state.SessionState(
@@ -45,7 +45,7 @@ def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
 
 def test_shared_classification_table_matches_runtime() -> None:
     """人が読む閉集合の各値を公開前検査が受理し、別の値を拒否する。"""
-    rules = (rules_context.RULES_DIR / "rules-subagent.md").read_text(encoding="utf-8")
+    rules = launch_prompts.result_contract()
     values = re.findall(r"^\| `([a-z_]+)` \|", rules, flags=re.MULTILINE)
     assert values and len(values) == len(set(values))
     document = rules_context.SHARE_DIR / "exec.subagent.md"

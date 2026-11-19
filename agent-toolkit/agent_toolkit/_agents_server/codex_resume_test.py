@@ -220,7 +220,7 @@ async def test_resume_waits_for_thread_close_after_unsubscribe(
             nonlocal attempts
             assert method == "thread/resume" and params == {
                 "threadId": "thread-1",
-                "baseInstructions": subject.SUBAGENT_BASE_INSTRUCTIONS,
+                "baseInstructions": subject.base_instructions(),
             }
             attempts += 1
             if attempts == 1:
@@ -378,7 +378,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
             "thread/resume",
             {
                 "threadId": "thread-saved",
-                "baseInstructions": subject.SUBAGENT_BASE_INSTRUCTIONS,
+                "baseInstructions": subject.base_instructions(),
                 "cwd": str(tmp_path),
                 "approvalPolicy": "never",
                 "sandbox": "danger-full-access",

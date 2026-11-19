@@ -40,7 +40,6 @@ class TestDefaultSteps:
             "Codex リンクの同期",
             "旧配布物の削除",
         },
-        "agent-toolkit ルールの同期": {"旧配布物の削除"},
         "Claude Code plugin のインストール": {"Claude Code CLI の導入と更新"},
         "Claude Code plugin cache の旧版削除": {"Claude Code plugin のインストール"},
         "agents_serverのuv環境ウォームアップ": {

@@ -14,7 +14,8 @@
 <!-- input-contract:exec:start -->
 <!-- 生成元: skills/atk-mode/roles/exec.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
-起動準備はこの契約の入力一覧で完結する。
+役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
+通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
 
 - 必須入力名: `担当種別`、`引き継ぎ記録先`、`書込担当一覧`
 - 任意入力名: `選定結果の出力先ファイル`、`レーン識別子`、`固有指示`、`上流投入結果`、`再開位置`、`レビュー指摘管理表`、`レビュー参考意見`、`CI記録`、`環境構築`、`先行調査記録`
@@ -29,7 +30,7 @@
 | `cwd` | 対象worktreeの絶対パス |
 | `subagent_md_path` | `exec` |
 | `extra_params` | 次の各入力 |
-| `model_type` | 選定結果の該当レーンの`担当モデル.実装担当`（指定が無ければ省く）。指定値と実行値の比較と記録は`agent-toolkit:delegation/references/process-model-settings.md`「工程別モデル設定」に従う |
+| `model_type` | 選定結果の該当レーンの`担当モデル.実装担当`（指定が無ければ省く）。指定値と実行値の比較と記録は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う |
 
 - `担当種別`: 通常は`レーン担当`、公開工程のCI失敗の修正では`CI修正担当`、同じthreadを続けられないレビュー修正では`レビュー修正担当`とする。
   統合だけを担う担当を新しく起こす場合も`レーン担当`とする（統合の手順は担当が`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`で読む）。
@@ -55,7 +56,7 @@
 - `書込担当一覧`: 重複の無い実際のsession IDのJSON配列。
   統合先のメインと合意済みの担当を初回に入れ、起動の直後に返った現在の担当のIDを加えて追送する。
   担当の交代、再開、単一レーンへの追送の時に更新し、担当範囲との対応を保つ。
-- `引き継ぎ記録先`: `agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
+- `引き継ぎ記録先`: `agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」に従う。
   `再開位置`を渡す再開、`レビュー修正担当`の起動、統合するレーン担当の新規の起動では、先行の記録をそのまま使わせるため`（継続）`とする。
 - `CI記録`: `CI修正担当`だけに渡す。
   `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`の7項目を1つの値にまとめ、全項目がそろうことを起動前に確かめて委譲プロンプトへ直接書く。
@@ -66,7 +67,7 @@
 両者を混同して一律にpushを禁じると、WIの`adopted`・`rejected`だけが未公開のまま残る。
 
 継続の指示は、同じthreadへ`send_message`の`instruction`と名前付きの`extra_params`で送り、その指示に要る値だけを渡す（初回の入力は担当が保持する）。
-組み込みの委譲機構では`agent-toolkit:delegation/references/sending-prompt.md`「委譲プロンプトの構成」で本文を作る。
+組み込みの委譲機構では`agent-toolkit:atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」で本文を作る。
 
 ## 読込表
 
@@ -102,7 +103,7 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 終了の結果では、担当モデル、起動候補、物理記録から観測した`engine`、`model`、`effort`を分けて報告する。
 不一致は各値とその由来を引き継ぎ記録へ残し、観測できなかった値は未確認とする。
 
-工程の区切りでは、本書の役割固有の行と、`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行、一行返却を使う。
+工程の区切りでは、本書の役割固有の行と、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行、一行返却を使う。
 <!-- return-contract:exec:end -->
 
 ## 条件と行動

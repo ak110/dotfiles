@@ -9,10 +9,10 @@ from agent_toolkit._agents_server import context_usage, resume_waits
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.cli_turn import CliTurnManager, decode_event, finalize_turn
 from agent_toolkit._agents_server.launch_prompts import (
-    LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
     PUBLIC_WAIT_NOTICE,
     cli_runtime_instructions,
+    launch_prompt,
     python_runtime_instructions,
 )
 from agent_toolkit._agents_server.session_errors import SessionOwnerGoneError
@@ -28,14 +28,14 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
     """役割、公開待機、保持配布物と委譲元のユーザー規範を本文先頭へ渡す。"""
     root = plugin_roots.SERVER_PLUGIN_ROOT
     parts = [
-        LAUNCH_SYSTEM_PROMPTS[launch_kind],
+        launch_prompt(launch_kind),
         PUBLIC_WAIT_NOTICE,
         cli_runtime_instructions(root),
         f"agent-toolkit plugin root: {root}",
     ]
     if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
         parts.append(python_runtime_instructions())
-    # 常時規範はインストールされたプラグインから受け取り、ホスト固有の規範を補う。
+    # ユーザーが置いた規範を補う。`rules/agent-toolkit/`は旧い配布物の置き場で、更新時に回収するため読まない。
     config = host_homes.claude_config_dir()
     candidates = [config / "CLAUDE.md", *sorted((config / "rules").rglob("*.md"))]
     for path in candidates:

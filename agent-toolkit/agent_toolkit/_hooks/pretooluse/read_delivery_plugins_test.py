@@ -127,7 +127,7 @@ def test_missing_scope_does_not_become_ready_from_a_whole_file_read(tmp_path, mo
 
 
 @pytest.mark.usefixtures("memory")
-@pytest.mark.parametrize("owner", ["agent-basics/skills/writing-standards", "agent-toolkit/skills/delegation"])
+@pytest.mark.parametrize("owner", ["agent-basics/skills/writing-standards", "agent-toolkit/skills/atk-mode"])
 def test_artifact_standards_use_the_author_declaration(monkeypatch, tmp_path, owner):
     source = tmp_path / "agent-basics/skills/review-standards/SKILL.md"
     author = tmp_path / owner / "SKILL.md"
@@ -179,11 +179,11 @@ def test_reference_to_another_root_does_not_activate_its_whole_skill_tree(tmp_pa
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
     project = tmp_path / ".claude/skills/local/SKILL.md"
     project.parent.mkdir(parents=True)
-    selected = foreign / "skills/delegation/SKILL.md"
+    selected = foreign / "skills/atk-mode/SKILL.md"
     project.write_text(
         "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n"
         "| --- | --- | --- | --- |\n"
-        f"| 選択時 | `{selected}` | 判断 | `read:*/delegation/SKILL.md` |\n",
+        f"| 選択時 | `{selected}` | 判断 | `read:*/atk-mode/SKILL.md` |\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [project])
@@ -198,9 +198,9 @@ def test_reference_to_another_root_does_not_activate_its_whole_skill_tree(tmp_pa
 @pytest.mark.parametrize("agy", [False, True])
 def test_same_named_plugin_read_uses_the_selected_physical_root(tmp_path, monkeypatch, shell, agy):
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
-    source = foreign / "skills/delegation/SKILL.md"
+    source = foreign / "skills/atk-mode/SKILL.md"
     row = parse_tables(source, active)[0]
-    path = active / "skills/delegation/SKILL.md"
+    path = active / "skills/atk-mode/SKILL.md"
     if agy:
         for root in (active, foreign):
             (root / "plugin.json").write_text((root / ".claude-plugin/plugin.json").read_text(), encoding="utf-8")
@@ -223,7 +223,7 @@ def test_same_named_plugin_read_uses_the_selected_physical_root(tmp_path, monkey
 def test_explicit_foreign_skill_keeps_startup_and_followup_declarations(tmp_path, monkeypatch, codex):
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [])
-    skill = foreign / "skills/delegation/SKILL.md"
+    skill = foreign / "skills/atk-mode/SKILL.md"
     initial, later = skill.parent / "initial.md", skill.parent / "later.md"
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
     inputs = {"file_path": str(skill)}
@@ -252,7 +252,7 @@ def test_selected_foreign_declaration_uses_current_source_and_actor(tmp_path, mo
     """明示選択した外部pluginの現行宣言だけを、選択した主体の後続操作へ再接続する。"""
     _active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [])
-    source = foreign / "skills/delegation/SKILL.md"
+    source = foreign / "skills/atk-mode/SKILL.md"
     initial = source.parent / "initial.md"
     replacement = source.parent / "replacement.md"
     replacement.write_text("# 現行資料\n現在の本文\n", encoding="utf-8")
@@ -265,7 +265,7 @@ def test_selected_foreign_declaration_uses_current_source_and_actor(tmp_path, mo
         source.write_text(
             "# 選択したskill\n| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
             + (
-                "| 初動 | `replacement.md` | 起動時 | `skill:delegation` |\n"
+                "| 初動 | `replacement.md` | 起動時 | `skill:atk-mode` |\n"
                 if change == "path"
                 else "| 別操作 | `initial.md` | 操作 | `tool:Other` |\n"
             ),
@@ -311,14 +311,14 @@ def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_re
     (root / ".claude-plugin/plugin.json").write_text(
         json.dumps({"name": "agent-toolkit", "version": "2.224.0"}), encoding="utf-8"
     )
-    skill = root / "skills/delegation/SKILL.md"
+    skill = root / "skills/atk-mode/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# 選択したskill\n", encoding="utf-8")
     initial = skill.parent / "initial.md"
     initial.write_text("# 初動\n判断前の本文\n", encoding="utf-8")
     rows = [
-        ReadTrigger(skill, 1, "起動時", ("skill:delegation",), (initial,)),
-        ReadTrigger(skill, 2, "判断", ("read:*/skills/delegation/SKILL.md",), (skill,), selector="same-document"),
+        ReadTrigger(skill, 1, "起動時", ("skill:atk-mode",), (initial,)),
+        ReadTrigger(skill, 2, "判断", ("read:*/skills/atk-mode/SKILL.md",), (skill,), selector="same-document"),
     ]
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
@@ -327,7 +327,7 @@ def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_re
 
     first = read_delivery.deliver(payload, tool, inputs, "test")
     assert not _guidance(first)
-    assert "agent-toolkit:delegation/initial.md" in _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
+    assert "agent-toolkit:atk-mode/initial.md" in _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
     observe_received({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
     assert _guidance(read_delivery.deliver(payload, tool, inputs, "test")) is None
 
@@ -335,10 +335,10 @@ def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_re
 @pytest.mark.parametrize("case", ["full", "section", "actor", "changed", "data"])
 def test_only_current_full_actor_proof_activates_plugin_declarations(tmp_path, monkeypatch, case):
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
-    path = foreign / "skills/delegation/SKILL.md"
+    path = foreign / "skills/atk-mode/SKILL.md"
     if case == "data":
         path = tmp_path / "task-input.md"
-        path.write_text((foreign / "skills/delegation/SKILL.md").read_text(), encoding="utf-8")
+        path.write_text((foreign / "skills/atk-mode/SKILL.md").read_text(), encoding="utf-8")
     key = read_delivery.document_key(path)
     if case == "section":
         key += "#heading:選択したskill"

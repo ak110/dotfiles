@@ -6,7 +6,8 @@ import pathlib
 import pytest
 
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import posttooluse, pretooluse
+from agent_toolkit._hooks import plugin_resources, posttooluse, pretooluse
+from agent_toolkit._testing.termination_evidence_support import claude_read_response
 
 pytestmark = pytest.mark.usefixtures("without_read_delivery", "unchanged_documents_resolution")
 
@@ -32,7 +33,17 @@ def test_restart_keeps_delegation_state(
     after.mkdir()
     monkeypatch.setattr("tempfile.tempdir", str(before))
     base = {"session_id": "restart-test", "cwd": str(tmp_path), "hook_event_name": "PostToolUse"}
-    posttooluse.main(json.dumps({**base, "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:delegation"}}))
+    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md")
+    posttooluse.main(
+        json.dumps(
+            {
+                **base,
+                "tool_name": "Read",
+                "tool_input": {"file_path": str(playbook)},
+                "tool_response": claude_read_response(playbook),
+            }
+        )
+    )
     posttooluse.main(
         json.dumps(
             {

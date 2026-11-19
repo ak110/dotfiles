@@ -139,8 +139,8 @@ class Observation:
 _RECOVERABLE = "省略は担当内で回収できる不足であり、続行できない理由にしない。"
 TRUNCATED_NOTICE = (
     "この読取の出力は省略された。判断に必要な未取得部分を補え。"
-    "`agent-toolkit/share/rules/rules-common.codex.md`「Codex固有の入出力」に従い、予算を確保するか行範囲を分割して回収せよ。"
-    + _RECOVERABLE
+    "内側の`exec_command`と外側の`functions.exec`の`max_output_tokens`をともに省略前の量以上へ上げて1回だけ再取得するか、"
+    "収まる行範囲に分けて回収せよ。" + _RECOVERABLE
 )
 TRUNCATED_OUTPUT_NOTICE = (
     "この出力は省略された。対象や条件を限定するか範囲を分けて再実行し、判断に必要な全量を回収せよ。" + _RECOVERABLE

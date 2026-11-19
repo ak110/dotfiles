@@ -32,10 +32,11 @@ def _source(tmp_path: Path) -> Path:
                 }
             }
         ),
+        # 廃止した常時規範が配布元に残っていても、常時ロードの規則へ投影しない。
         "share/rules/common/01-agent.md": "共通規範を守る。\n" * 1100,
         _CHECK_SKILL.as_posix(): "---\nname: check\ndescription: 検査する\n---\n${CLAUDE_PLUGIN_ROOT}/scripts/check.py\n",
         "agents/worker.md": "---\nname: worker\ndescription: 作業を行う\n---\n作業する。\n",
-        "share/rules/rules-main.md": "メインの指針。\n",
+        "share/guide.md": "メインの指針。\n",
         "share/execute.subagent.md": "---\nrequired_inputs: [対象]\n---\n担当の入力を受け取って実装する。\n",
         "skills/atk-mode/roles/review.subagent.md": "---\nrequired_inputs: [対象]\n---\n担当の入力を受け取って確かめる。\n",
         "skills/long/SKILL.md": "---\r\nname: long\r\ndescription: 長い工程を実行する\r\n---\r\n" + "全文を読む。\r\n" * 2000,
@@ -77,9 +78,15 @@ def _source(tmp_path: Path) -> Path:
 
 @pytest.mark.windows
 def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
-    """root配置、全6イベント、MCP、規範全文とサイズ、および再同期を同時に確認する。"""
-    assert subject.sync(source)
+    """root配置、全6イベント、MCP、常時ロードの規則を生成しないこと、および再同期を同時に確認する。"""
     target = source / "agent-toolkit-agy"
+    # 旧版が生成した常時ロードの規則は、同期が配布物の集合から外れたファイルとして消す。
+    legacy_rules = target / "rules"
+    legacy_rules.mkdir(parents=True)
+    (legacy_rules / "AGENTS.md").write_text("旧い常時規範\n", encoding="utf-8")
+    (legacy_rules / "AGENTS-02.md").write_text("---\ntrigger: always_on\n---\n\n旧い常時規範\n", encoding="utf-8")
+    assert subject.sync(source)
+    assert not legacy_rules.exists()
     assert json.loads((target / "plugin.json").read_text())["version"] == "1.2.3"
     # scripts/launch.pyが環境選択で必ず読む配布版のmanifestも保持する。
     assert (target / ".claude-plugin/plugin.json").read_bytes() == (
@@ -111,18 +118,11 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert subject.ROLE_DOCUMENT_DIRECTORIES == task_documents.ROLE_DOCUMENT_DIRECTORIES
     assert (target / "skills/long/SKILL.md").stat().st_size < 24_000
     assert (target / "skills/long/references/antigravity-full-instructions.md").read_text() == "全文を読む。\n" * 2000
-    assert (target / "share/rules/rules-main.md").is_file()
+    assert (target / "share/guide.md").is_file()
     assert (target / "scripts/launch.py.lock").is_file()
     assert not (target / "pyproject.toml").exists()
     assert not (target / "uv.lock").exists()
     assert not (target / "agent_toolkit/hook_test.py").exists()
-    rules = sorted((target / "rules").glob("*.md"), key=lambda path: path.name != "AGENTS.md")
-    assert len(rules) == 2
-    assert all(path.stat().st_size <= 24_000 for path in rules)
-    assert (
-        "".join(path.read_text().removeprefix("---\ntrigger: always_on\n---\n\n") for path in rules)
-        == (source / "agent-toolkit/share/rules/common/01-agent.md").read_text()
-    )
     assert not subject.check_diagnostics(source)
     assert not subject.sync(source)
     stale = target / "skills/obsolete/SKILL.md"
@@ -133,89 +133,6 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert subject.sync(source)
     assert not stale.parent.exists()
     assert (target / _CHECK_SKILL).read_text() == "新しい定義"
-
-
-def _boundary_rules(source: Path, tail: str, follow: str) -> str:
-    """前ファイルの残り容量へ`tail`だけが収まり、`follow`で上限を超える規範を書き、その本文を返す。"""
-    body_limit = subject.RULE_FILE_BYTES - len(b"---\ntrigger: always_on\n---\n\n")
-    filler = "共通規範を守る。\n"
-    room = len(tail.encode()) + 1
-    count, remainder = divmod(body_limit - room, len(filler.encode()))
-    # 残りの端数は1バイト文字で埋め、tailの直後でちょうど上限の1バイト手前になるようにする。
-    text = filler * count + "a" * remainder + "\n" + tail + follow + "続く本文。\n"
-    assert len((filler * count + "a" * remainder + "\n" + tail).encode()) <= body_limit
-    assert len((filler * count + "a" * remainder + "\n" + tail + follow).encode()) > body_limit
-    (source / "agent-toolkit/share/rules/common/01-agent.md").write_text(text, encoding="utf-8")
-    return text
-
-
-def _rule_chunks(source: Path) -> list[str]:
-    """生成順（AGENTS.md、AGENTS-02.md、…）に常時ロード前置を除いた規範の本文を返す。"""
-    outputs = {path: data for path, (data, _) in subject.outputs(source).items() if path.parent == Path("rules")}
-    assert all(len(data) <= subject.RULE_FILE_BYTES for data in outputs.values())
-    ordered = sorted(outputs.items(), key=lambda item: (item[0].name != "AGENTS.md", item[0].name))
-    return [data.decode().removeprefix("---\ntrigger: always_on\n---\n\n") for _, data in ordered]
-
-
-@pytest.mark.parametrize(
-    ("tail", "follow"),
-    [
-        ("## 使用言語\n\n", "成果物は日本語で書く。\n"),
-        ("## 判断指針\n\n### QCDと3段判定\n\n", "品質を先に守る。\n"),
-        ("## 見出し直後に空行が無い\n", "本文の1行目。\n"),
-    ],
-    ids=["heading-blank", "nested-headings", "heading-without-blank"],
-)
-def test_rules_keep_heading_with_following_body(source: Path, tail: str, follow: str) -> None:
-    """上限の近傍に置いた見出しは次のファイルへ繰り越し、全文保持と上限を同時に満たす。"""
-    text = _boundary_rules(source, tail, follow)
-    chunks = _rule_chunks(source)
-    assert len(chunks) == 2
-    assert "".join(chunks) == text
-    last_line = [line for line in chunks[0].splitlines() if line.strip()][-1]
-    assert not last_line.startswith("#")
-    assert chunks[1].startswith(tail + follow)
-
-
-def test_rules_ignore_hash_lines_inside_code_fence(source: Path) -> None:
-    """コードフェンス内の`#`行は見出しとして繰り越さず、従来どおり行境界で分ける。"""
-    text = _boundary_rules(source, "```bash\n# コメント\n", "echo 本文\n```\n")
-    chunks = _rule_chunks(source)
-    assert "".join(chunks) == text
-    assert chunks[0].endswith("# コメント\n")
-
-
-@pytest.mark.parametrize(
-    "body", ["あ" * 8001, "あ\n" * 11000, "あ\n" * 10000], ids=["long-line", "total-budget", "headers-budget"]
-)
-def test_size_failure_keeps_previous_distribution(source: Path, body: str) -> None:
-    """単行上限と全体予算の超過は、前回の生成物を書き換える前に拒否する。"""
-    subject.sync(source)
-    manifest = source / "agent-toolkit-agy/plugin.json"
-    before = manifest.read_bytes()
-    (source / "agent-toolkit/share/rules/common/01-agent.md").write_text(body)
-    with pytest.raises(ValueError):
-        subject.sync(source)
-    assert manifest.read_bytes() == before
-
-
-@pytest.mark.parametrize(("lines", "accepted"), [(16986, True), (18986, True), (19987, False)])
-def test_only_exceeding_budget_requires_reorganization(source: Path, lines: int, accepted: bool) -> None:
-    """整理後水準・水準と上限の間は生成し、超過だけを失敗させて前回の配布を保つ。"""
-    subject.sync(source)
-    target = source / "agent-toolkit-agy/rules"
-    before = {path.name: path.read_bytes() for path in target.glob("*.md")}
-    # ASCII本文と2ファイル目の常時ロード前置を合わせ、既存換算で17000・19000・20001 tokensにする。
-    body = "a\n" * lines
-    (source / "agent-toolkit/share/rules/common/01-agent.md").write_text(body, encoding="utf-8")
-    if not accepted:
-        with pytest.raises(ValueError, match="17000 tokens以下まで整理"):
-            subject.sync(source)
-        assert {path.name: path.read_bytes() for path in target.glob("*.md")} == before
-        return
-    subject.sync(source)
-    assert "".join(_rule_chunks(source)) == body
-    assert all(path.stat().st_size <= 24_000 for path in target.glob("*.md"))
 
 
 def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_path: Path, monkeypatch) -> None:
@@ -237,9 +154,9 @@ def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_
         "include_only": ["agent-toolkit-agy", "agent-basics-agy"],
     }
     assert not subject.run().changed
-    (source / "agent-toolkit/share/rules/rules-main.md").write_text("更新後のメイン指針")
+    (source / "agent-toolkit/share/guide.md").write_text("更新後のメイン指針")
     assert subject.run().changed
-    assert (source / "agent-toolkit-agy/share/rules/rules-main.md").read_text() == "更新後のメイン指針"
+    assert (source / "agent-toolkit-agy/share/guide.md").read_text() == "更新後のメイン指針"
     assert len(json.loads(registry.read_text())["entries"]) == 2
 
 

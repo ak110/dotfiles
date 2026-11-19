@@ -30,7 +30,7 @@
    MAJORでは認可の根拠も書く。
    具体的な版数と、既存の更新commitとの統合は`scripts/agent_toolkit_bump.py`に任せる。
 2. 版数を上げる計画では、差分の有無によらず定義元の2ファイルを変更対象の説明に含める。
-   生成器が整合を保証する派生物（派生マニフェスト、`agent-toolkit/share/rules/common/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など）は変更対象に並べず、正式な生成コマンドと生成結果の一致の確認を`## 検証`に書く。
+   生成器が整合を保証する派生物（派生マニフェスト、`myprojects-common.md`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など）は変更対象に並べず、正式な生成コマンドと生成結果の一致の確認を`## 検証`に書く。
 3. 版数の更新の完了条件は、プラグインごとに、公開済みの基準（push済みの最新のplugin manifest）に対して要求した種別以上の更新を含み、定義元の2ファイルと派生マニフェストの`version`が一致していることとする。
    既存の未pushの更新で条件を満たし、`scripts/agent_toolkit_bump.py`がファイルを変えずに終了コード0で終わった場合も完了とする。
 4. 新しいCLI、コマンド、ラッパースクリプトを公開する計画では、本書「新規CLI公開時の疎通確認」の導入手順を書く。
@@ -105,7 +105,6 @@ rebaseやmergeの後は、競合の有無によらず次の順で確かめる。
 1. `chezmoi apply`（または`update-dotfiles`）を実行する。
    事後処理は次を行う。
    - `pytools/_internal/install_claude_plugins.py`でClaude Code向けのagent-toolkitを導入・更新する。
-   - `post_apply`の`sync_agent_toolkit_rules`で`agent-toolkit/share/rules/common/`を配布先へ同期する。
    - `setup_codex_links`で、Codex向けのdotfiles固有のスキルと`docs`へのシンボリックリンクを作る。
    - Codexのmarketplaceを登録し、プラグインの導入と更新を終える。
 2. Claude Codeを再起動するか、`/reload-plugins`を実行する。
@@ -122,7 +121,7 @@ Codexのhook定義は、`pytools/_internal/codex_plugin_manifests.py`がイベ�
 
 Codexプラグインの導入版を変えた後は、導入版の混在を防ぐため、次の処理で使う資源を次の順で確定する。
 
-1. 保持していたrootの情報を捨て、`agent-toolkit:/share/rules/rules-common.codex.md`「Codexのplugin root解決」のmarketplaceを限った照会と抽出で解決し直す。
+1. 保持していたrootの情報を捨て、`agent-toolkit:atk-mode/playbooks/host-codex.md`「Codexのplugin root解決」のmarketplaceを限った照会と抽出で解決し直す。
    marketplaceは`ak110-dotfiles`とし、`installed`から`pluginId == "agent-toolkit@ak110-dotfiles"`を1つに特定する。
    起動通知の変更前のrootは、導入版を変える前の処理だけに使う。
 2. 新版のplugin cache directoryの中のroot、`skills/`、実行するスクリプトの実在と、manifestの`version`と導入版の一致を確かめてから使う。

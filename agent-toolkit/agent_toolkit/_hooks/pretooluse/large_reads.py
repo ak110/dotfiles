@@ -623,7 +623,7 @@ def check_large_bash_read(command: str, cwd: str) -> str | None:
 CLAUDE_BASH_OUTPUT_CHARS = 30_000
 """`BASH_MAX_OUTPUT_LENGTH`を設定しない場合のClaude CodeのBash出力の上限（文字）。"""
 CODEX_OUTPUT_TOKENS = 20_000
-"""Codexの資料取得で両層の`max_output_tokens`に明示する値（`share/rules/rules-common.codex.md`）。"""
+"""Codexの資料取得で両層の`max_output_tokens`に明示する値（`atk-mode`の`playbooks/host-codex.md`「Codex固有の入出力」）。"""
 _CODEX_ENVELOPE_TOKENS = 200
 """Codexの外側`functions.exec`のJSON包絡の見積り（トークン）。本文量が同じでも外側だけが超える場合を含める。"""
 

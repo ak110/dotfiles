@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-for required in "$HOME/.bashrc" "$HOME/.vimrc" "$HOME/.claude/rules/agent-toolkit/01-agent.md" "$HOME/.ssh/config"; do
+for required in "$HOME/.bashrc" "$HOME/.vimrc" "$HOME/.claude/rules/myprojects-common.md" "$HOME/.ssh/config"; do
     if [ ! -f "$required" ]; then
         printf '::error::必須ファイルがありません: %s。install.shとchezmoi適用のログで原因を確認し、修正後にRe-run failed jobsで再実行してください。\n' "$required"
         exit 1

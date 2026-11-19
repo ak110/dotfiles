@@ -5,7 +5,8 @@ Codexはagent-toolkitの標準構成に含まれ、単体インストーラー�
 本書はCodexに固有の操作と注意をまとめる。
 
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、dotfiles固有のグローバル`AGENTS.md`と共有リンクを配置しない。
-dotfilesユーザーは`update-dotfiles`または`chezmoi apply`で、Codex向け`AGENTS.md`、共有ルール、スキルのリンク、プラグインをまとめて設定する。
+dotfilesユーザーは`update-dotfiles`または`chezmoi apply`で、Codex向け`AGENTS.md`（dotfilesの個人用の規範）、スキルのリンク、プラグインをまとめて設定する。
+agent-toolkitの規範は`AGENTS.md`へ埋め込まず、SessionStartフックが入口のスキル`atk-mode`の起動を求める。
 配布される構成は[architecture-agents-codex.md](../development/architecture-agents-codex.md#codex向けの配布構成)を参照。
 
 ## Codexで`atk wi process-loop`を使う
@@ -75,10 +76,10 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 1. Codexの会話の入力欄に`/hooks`を入力して実行する。
 2. agent-toolkitの未信頼・変更済みフックを選び、表示された定義を確認して信頼する。
 3. そのセッションを終了し、新しいセッションを開始する。
-4. 新しいセッションで「起動時にagent-toolkitの規範を受け取ったか確認して」とエージェントへ尋ねる。
+4. 新しいセッションで「起動時に`atk-mode`の起動を求める通知を受け取ったか確認して」とエージェントへ尋ねる。
 
 `/hooks`はCodex内の操作であり、PowerShellやbashへ入力するコマンドではない。
-規範を読み込むSessionStartフックはセッション開始時に実行されるため、信頼した後にもう一度新しいセッションを開始する。
+入口の起動を求めるSessionStartフックはセッション開始時に実行されるため、信頼した後にもう一度新しいセッションを開始する。
 永続的な信頼登録の公開手段は確認できていないため、この確認と信頼操作は手動で行う。
 daemonの自動再起動の条件は[プラグイン更新の反映](#プラグイン更新の反映)を参照。
 

@@ -43,6 +43,7 @@ _ATK_MODE_RETIRED_SKILLS = (
     "refine-prompt",
     "review-external-writes",
     "export-session",
+    "delegation",
 )
 
 
@@ -51,6 +52,13 @@ _FIXED_AUDIT_RECORDS = frozenset(
     pathlib.Path(value)
     for value in ("docs/development/audit-opus55-hosts-2026-11-15.json", "docs/development/audit-sol-2026-11-14.json")
 )
+
+
+def _is_historical_record(source: pathlib.Path) -> bool:
+    """当時の配置を残す記録（対象版を固定した監査記録、障害の記録、撤去台帳）かを返す。"""
+    return source in _FIXED_AUDIT_RECORDS or (
+        source.parent == pathlib.Path("docs/development") and source.name.startswith(("incidents-", "removed-mechanisms"))
+    )
 
 
 def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) -> bool:
@@ -69,7 +77,8 @@ def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) 
 def _names_retired_skill(reference: str, skills: tuple[str, ...]) -> bool:
     """参照が`skills`のいずれかのスキル名か、その配下のパスを指す場合に真を返す。"""
     return any(
-        reference == f"{_PLUGIN_PREFIX}:{skill}" or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")
+        reference in (f"{_PLUGIN_PREFIX}:{skill}", f"{_PLUGIN_PREFIX}/skills/{skill}")
+        or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")
         for skill in skills
     )
 
@@ -211,7 +220,7 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     for reference, source in _collect_references(root, sources):
         if _reference_exists(root, reference):
             continue
-        if source in _FIXED_AUDIT_RECORDS and _names_retired_skill(reference, _ATK_MODE_RETIRED_SKILLS):
+        if _is_historical_record(source) and _names_retired_skill(reference, _ATK_MODE_RETIRED_SKILLS):
             continue
         key = (reference, source)
         if allowed_counts.get(key, 0) > 0:

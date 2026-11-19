@@ -30,8 +30,6 @@ from agent_toolkit._testing.pretooluse_support import (
 )
 
 _POSITIVE_OPERATIONS: dict[str, tuple[str, dict]] = {
-    # 組み込みの汎用定義（`subagent_type`の省略を含む）は起動を遮断されるため、対象外の`fork`で確かめる。
-    "delegation": ("Agent", {"subagent_type": "fork", "prompt": "調査する"}),
     "search": ("Grep", {"pattern": "x"}),
     "bugfix": ("Bash", {"command": "cat > /tmp/awi.md <<'EOF'\n## 原因分析\nEOF"}),
     "writing-standards": ("Write", {"file_path": "/work/notes.md", "content": "# 見出し\n"}),

@@ -14,6 +14,6 @@ WI・委譲・承認・記録・工程管理はagent-toolkitが担い、toolkit�
 - agent-toolkit: ユーザーとのやり取りの作法（確認の要否・時機・出し方、応答の順序や態度）と、作業の進め方（WI、委譲、認可、公開、振り返り、ツール運用）を置く
 - 迷ったときは「ユーザーや工程がなくても、成果物や判断の良し悪しを決める規定か」を問い、決めるならagent-basicsに置く
 
-この基準により、原因分析・レビュー・文書作成の場面での確認と応答の作法はagent-toolkitの`atk-mode`の手順書と常時規範`01-agent.md`に置く。
+この基準により、原因分析・レビュー・文書作成の場面での確認と応答の作法はagent-toolkitの`atk-mode`の入口と手順書に置く。
 手順書は`agent-toolkit:atk-mode/playbooks/confirmation.md`と`agent-toolkit:atk-mode/playbooks/user-utterance.md`である。
 報告・回答の正確さと、ユーザー入力を判断材料として検証する基準はagent-basicsの`review-standards`と`writing-standards`に置く。

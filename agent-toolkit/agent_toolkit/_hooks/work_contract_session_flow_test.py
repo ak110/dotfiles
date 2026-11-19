@@ -139,7 +139,7 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
     path.write_text("# 目的\n継続する\n## 即時対応で確定した暫定規則\n契約専用の新規則\n", encoding="utf-8")
     for tool, tool_input in (
-        ("Skill", {"skill": "agent-toolkit:delegation"}),
+        ("Skill", {"skill": "agent-toolkit:atk-mode"}),
         ("Read", {"file_path": str(path)}),
         ("Bash", {"command": "cat -- " + str(path)}),
     ):

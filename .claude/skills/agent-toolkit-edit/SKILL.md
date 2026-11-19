@@ -2,8 +2,7 @@
 name: agent-toolkit-edit
 user-invocable: false
 description: >
-  `agent-toolkit/`・`agent-basics/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
-  `agent-toolkit/share/rules/common/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
+  `agent-toolkit/`・`agent-basics/`配下のプラグイン（入口`atk-mode`と手順書を含むスキル・サブエージェント・フックスクリプト・marketplace記述）、
   `.claude-plugin/marketplace.json`を編集するときに使う。
   版数更新・marketplace管理、hookと役割文書の規約、内部仕様の資料の索引、レビュー担当の指示・モデル変更時の評価セットの比較と、評価の事例・合成素材の追加を含む。
 ---
@@ -30,12 +29,12 @@ description: >
 | 既存のhookの実装、登録、判定を変える計画の採否を決める（実装だけの改修を含む） | `docs/development/incidents.md`「区分」から「フックとセッション状態の不全」の所在ファイルを選んで同じ原因条件の事例を読み、`docs/development/design.md`の索引から選ぶhookの設計記録の該当節を読む。読んだ事例から守る条件を採否と検証へ対応付ける |
 | hook、自動チェック、永続状態、配送経路など新しい仕組みを足す計画を起草する、その変更を実行レビューする | `.claude/skills/edit-dotfiles-norms/SKILL.md` |
 | `agent-toolkit/agent_toolkit/`と`agent-toolkit/scripts/`の配置とimport、起動と依存の準備、toolkitのPython実装、機械チェックスクリプト、常駐CLIの待機と自動起動、MCPサーバーの識別子とツール名、プラグイン内の実行パス、権限設定、計画ファイルの構造定数、`atk serve`の静的資産を新設・変更する | `references/implementation.md` |
-| サブエージェント定義と役割文書（`<役割名>.parent.md`、`<役割名>.subagent.md`）か、それらが関わる手順を作る・改める | `references/roles.md`。コンテキスト境界の判断は`agent-toolkit:delegation/references/sub-agents-context.md` |
+| サブエージェント定義と役割文書（`<役割名>.parent.md`、`<役割名>.subagent.md`）か、それらが関わる手順を作る・改める | `references/roles.md`。コンテキスト境界の判断は`agent-toolkit:atk-mode/references/agent-documents.md` |
 | 配布するプラグインの文書、スキル、役割の契約を編集する、機構や外部インターフェースの変更に伴う文書と生成物の追随先を確定する、観測に基づく技術的条文と監査記録を扱う | `references/agent-documents.md` |
-| 読込表の行を書く・直す | `agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」、`agent-toolkit:/share/agent-documents-operations.md`「読込表の宣言」 |
-| WI処理の工程や運用を担うスキル、`share/`の`<役割名>.subagent.md`、`atk wi`の実装、`agent-toolkit/agent_toolkit/_atk/run_skill.py`、`agent-toolkit/agent_toolkit/_atk/orchestrator.py`を編集する | `agent-toolkit:atk-mode/references/workflow-overview.md`を読む。ユーザーの判断、操作、観測結果が変わる時だけ、対応する`docs/guide/`の節も読む |
+| 読込表の行を書く・直す | `agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」、`docs/development/read-triggers-contract.md`「読込表の宣言」 |
+| WI処理の工程や運用を担うスキル、`agent-toolkit/skills/atk-mode/roles/`の`<役割名>.subagent.md`、`atk wi`の実装、`agent-toolkit/agent_toolkit/_atk/run_skill.py`、`agent-toolkit/agent_toolkit/_atk/orchestrator.py`を編集する | `agent-toolkit:atk-mode/references/workflow-overview.md`を読む。ユーザーの判断、操作、観測結果が変わる時だけ、対応する`docs/guide/`の節も読む |
 | 統括の起動引数、turnの終了、再開、外部制御の経路を変える | `agent-toolkit:atk-mode/references/orchestrator-runtime.md`。同資料の実装由来の要約も同じ変更で直す |
-| スキル（`SKILL.md`、`references/`）を新設・編集する | `agent-toolkit:/share/agent-skills-operations.md` |
+| スキル（`SKILL.md`、`references/`）を新設・編集する | `agent-basics:writing-standards/references/agent-skills.md` |
 | `.ps1`、`.ps1.tmpl`、`.psm1`、`.psd1`を編集する | `agent-basics:writing-standards/references/powershell.md` |
 | レビュー担当への指示かモデルの割り当てを変える、レビュー評価の事例・合成素材を足す・直す | `references/review-eval-set.md` |
 | 確認要否を定める条文を変える | `references/confirmation-eval-set.md` |
@@ -57,15 +56,14 @@ description: >
 - `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するプラグインのroot。
 - `agent-basics/`: 成果物の品質のスキルを独立して配るプラグインのroot。
   toolkitからbasicsへの一方向の依存とする。
-- `agent-toolkit/share/rules/`: エージェントへ配る規範の原本の置き場所。
-  全主体へ常時配る規範は`common/`（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用）に置き、メイン、サブエージェント、委譲先の全てに当てる条文だけを置く。
-  `common/`にはサブディレクトリを作らない（`scripts/gen_install_files.py`とインストーラーは直下の`*.md`だけを名前で配布一覧へ並べて取得する）。
-  役割とホストごとに注入する規範は直下に置く。
-  メイン向けは`rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`、Codexの全エージェント向けは`rules-common.codex.md`、委譲先向けは`rules-subagent.md`・`rules-subagent.claude-code.md`とし、Codex固有の差分が要る時は`rules-subagent.codex.md`を足す。
-  振り分けの基準は`agent-basics:writing-standards/references/agent-documents-additions.md`「規範追記時の判定」、配布先と同期の手順は`.claude/skills/dotfiles-repo-layout/SKILL.md`「ディレクトリ構造に関する注意点」にある。
+- `agent-toolkit/skills/atk-mode/`: エージェントへ届ける規範の原本の置き場所。
+  入口の`SKILL.md`に全ての作業に当てはまる決まりを、`playbooks/`に作業ごとの手順書を、`references/`に形式の定義を、`roles/`に役割文書を置く。
+  メインはSessionStartのhookの案内（OpenCodeは設定の`instructions`の案内）で入口を起動し、委譲先は`agents_server`が`playbooks/subagent.md`から組み立てた起動の本文で受け取る。
+  置き場所と各起動区分への配送は`agent-toolkit:atk-mode/references/agent-documents.md`「置き場所と配送」にある。
+  振り分けの基準は`agent-basics:writing-standards/references/agent-documents-additions.md`「規範追記時の判定」にある。
 - 環境変数の接頭辞は、配布物の中で完結するものを`AGENT_TOOLKIT_<PURPOSE>`、個人の環境で完結するものを`DOTFILES_`とする。
 
-参照の方向は「dotfilesリポジトリ → プラグイン」と「プラグイン ↔ ルールファイル」を許す。
+参照の方向は「dotfilesリポジトリ → プラグイン」を許す。
 `pytools/`は同じリポジトリのagent-toolkitをeditableで導入して解決するため、`_`で始まるサブパッケージもimportしてよい。
 プライベートなモジュールを移す・改名する時は、同じ変更で`pytools/`のimportもそろえる。
 特定のツール、データ、命名、CI、運用の形態を前提とする内容はプロジェクトの側に置き、固有の要素を同種の別の要素へ置き換えても判定基準、工程の順、終了条件が成り立つ汎用の内容だけを配布物に入れる。
@@ -90,4 +88,4 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 工程別モデルの初期値とプリセット（`agent-toolkit/agent_toolkit/_atk/config_settings.py`）を編集する前 | `agent-toolkit:delegation/references/process-model-settings-candidates.md` | 操作 | `path:*/agent-toolkit/agent_toolkit/_atk/config_settings.py` |
+| 工程別モデルの初期値とプリセット（`agent-toolkit/agent_toolkit/_atk/config_settings.py`）を編集する前 | `agent-toolkit:atk-mode/references/model-settings.md` | 操作 | `path:*/agent-toolkit/agent_toolkit/_atk/config_settings.py` |

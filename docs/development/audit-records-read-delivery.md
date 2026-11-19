@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/share/rules/rules-common.codex.md：Codex固有の入出力：2026年10月30日
+## agent-toolkit/skills/atk-mode/playbooks/host-codex.md：Codex固有の入出力：2026年10月30日
 
 取得予算と省略時の回復の現行契約を指す。
 以下の9月29日の測定は、撤去済みの容量警告の判断根拠として残すものであり、48KiBを現行の読取可否の基準にはしない。

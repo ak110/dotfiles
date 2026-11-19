@@ -287,7 +287,7 @@ def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
 
 def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:
     """参照先の見出しを削除すると、その見出しを名前で指す全ての参照を未解決として報告する。"""
-    rules = tmp_path / _PLUGIN_PREFIX / "share" / "rules" / "common" / "01-agent.md"
+    rules = tmp_path / _PLUGIN_PREFIX / "skills" / "atk-mode" / "references" / "conduct.md"
     rules.parent.mkdir(parents=True)
     rules.write_text("# 規範\n\n### 調査と検証\n\n観測で主張を支える。\n", encoding="utf-8")
     skill = pathlib.Path(_PLUGIN_PREFIX, "skills", "sample", "SKILL.md")
@@ -295,15 +295,15 @@ def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -
     (tmp_path / skill).write_text(
         "\n".join(
             [
-                f"`{_PLUGIN_PREFIX}/share/rules/common/01-agent.md`「調査と検証」に従う。",
-                f"`{_PLUGIN_PREFIX}/share/rules/common/01-agent.md`の「調査と検証」を読む。",
-                "`${CLAUDE_PLUGIN_ROOT}/share/rules/common/01-agent.md`「調査と検証」を参照する。",
+                f"`{_PLUGIN_PREFIX}/skills/atk-mode/references/conduct.md`「調査と検証」に従う。",
+                f"`{_PLUGIN_PREFIX}/skills/atk-mode/references/conduct.md`の「調査と検証」を読む。",
+                "`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/references/conduct.md`「調査と検証」を参照する。",
             ]
         ),
         encoding="utf-8",
     )
     sources = [skill]
-    markdown_paths = [pathlib.Path(_PLUGIN_PREFIX, "share", "rules", "common", "01-agent.md"), skill]
+    markdown_paths = [pathlib.Path(_PLUGIN_PREFIX, "skills", "atk-mode", "references", "conduct.md"), skill]
     assert not _unresolved_heading_references(tmp_path, sources, markdown_paths)
 
     rules.write_text("# 規範\n\n観測で主張を支える。\n", encoding="utf-8")

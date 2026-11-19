@@ -599,7 +599,6 @@ class TestExampleScopeNotice:
         "（報告者の勘違いの可能性もあるのでそれも含めて調査して。）"
     )
     _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "atk-mode" / "playbooks" / "user-utterance.md"
-    _ROUTING_PATH = _SCRIPTS_DIR.parent / "skills" / "delegation" / "references" / "routing.md"
 
     @classmethod
     def _example_bodies(cls, result: subprocess.CompletedProcess[str]) -> list[str]:
@@ -611,13 +610,12 @@ class TestExampleScopeNotice:
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_example_with_investigation_request_receives_notice(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
-        """両ホストで、範囲判断の節と手順1の調査の手段の所在を示す注記を返す。"""
+        """両ホストで、範囲判断の節と、調査を分担するかの比較を求める注記を返す。"""
         result = _run({"session_id": "example-notice", "prompt": self._PROMPT, **host_fields}, state_dir=tmp_path)
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
-        assert "references/routing.md" in bodies[0]
+        assert "`explore`へ分担する案" in bodies[0]
         assert "「原文の保持と取り込み」" in bodies[0]
-        assert "「コンテキスト消費が大きい調査の切り出し」" in bodies[0]
         assert "調査へ着手する前" in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -650,7 +648,7 @@ class TestExampleScopeNotice:
         assert "「原文の保持と取り込み」" in bodies[0]
         assert "原文の対象と例示の関係を判断せよ" in bodies[0]
         assert "例示以外の候補を探してから範囲を確定せよ" in bodies[0]
-        assert "references/routing.md" not in bodies[0]
+        assert "`explore`へ分担する案" not in bodies[0]
         assert "自ら調査へ着手する前に" not in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -658,14 +656,14 @@ class TestExampleScopeNotice:
     def test_investigation_word_stems_cover_inflections(
         self, tmp_path: pathlib.Path, host_fields: dict, word_form: str
     ) -> None:
-        """調査を求める語の部分文字列は、活用形の発話にも手順1の調査の所在を加える。"""
+        """調査を求める語の部分文字列は、活用形の発話にも調査の分担の比較を加える。"""
         result = _run(
             {"session_id": "example-inflections", "prompt": f"例えば通信経路を{word_form}", **host_fields},
             state_dir=tmp_path,
         )
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
-        assert "references/routing.md" in bodies[0]
+        assert "`explore`へ分担する案" in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize(
@@ -776,7 +774,7 @@ def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathli
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert "<atk-auto" in context
     assert "ユーザーの発話ではない" in context
-    assert "完了通知で始まったターンの対処" in context
+    assert "通知が示す保存出力と終了状態を回収" in context
     assert "この発話を受けた時点で" not in context
 
 

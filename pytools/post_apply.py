@@ -67,7 +67,6 @@ from pytools._internal import (
     setup_tmux_plugins,
     setup_usage_allocation,
     setup_user_env,
-    sync_agent_toolkit_rules,
     sync_report,
     update_claude_settings,
     update_gemini_settings,
@@ -271,8 +270,6 @@ DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec(_OPENCODE_CLI, setup_opencode_cli.run, after=(_MISE, _CODEX_CLI, _CLAUDE_CLI), full_only=True),
     _StepSpec("OpenCode toolkit の同期", install_opencode_toolkit.run, after=(_OPENCODE_CLI,), full_only=True),
     _StepSpec("Herdr CLI の導入と更新", setup_herdr_cli.run, full_only=True),
-    # 旧配布物の削除と同じ配布先ディレクトリの旧ファイルを削除する。
-    _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run, after=(_CLEANUP,), full_only=True),
     _StepSpec(_CODEX_LINKS, setup_codex_links.run, full_only=True),
     _StepSpec(
         _CODEX_LOGS, restore_codex_logs.run, after=(_CODEX_LINKS,), platforms=_LINUX, host_resources=True, full_only=True

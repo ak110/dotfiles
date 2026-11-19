@@ -13,7 +13,8 @@
 <!-- input-contract:usability-review:start -->
 <!-- 生成元: skills/atk-mode/roles/usability-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
-起動準備はこの契約の入力一覧で完結する。
+役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
+通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
 
 - 必須入力名: `対象worktree`、`変更画面`、`主要シナリオ`、`検証環境`、`引き継ぎ記録先`、`round`
 - 任意入力名: `レーン識別子`
@@ -57,7 +58,7 @@
 試行: <手段> | <実行したコマンド> | <終了コードまたは失敗の観測>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 環境による未確定の判定と試行結果は本節の固有結果として保持する。
 <!-- return-contract:usability-review:end -->
 

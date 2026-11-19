@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit import hook
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import antigravity, host, notice, plugin_resources
+from agent_toolkit._hooks import antigravity, host, notice, plugin_resources, rules_context
 from agent_toolkit._hooks.antigravity import _Response
 from agent_toolkit._hooks.pretooluse import dispatch
 from agent_toolkit._hooks.pretooluse.decision import Decision
@@ -246,11 +246,11 @@ def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.C
     """invoke_subagentのPromptへ委譲先の規範を追加し、引数の符号化を保つ。"""
     prompt = json.dumps("調査せよ") if encoded else "調査せよ"
     raw = _payload(tmp_path, toolCall={"name": "invoke_subagent", "args": {"Prompt": prompt}})
-    skill = plugin_resources.skill_document_path("delegation", "SKILL.md")
+    skill = plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md")
     initial = _run(raw, "PreToolUse", capsys)
     assert initial["decision"] == "allow"
     delivered = json.dumps(_run(raw, "PostInvocation", capsys), ensure_ascii=False)
-    assert "agent-toolkit:delegation" in delivered
+    assert "agent-toolkit:atk-mode/playbooks/delegation.md" in delivered
     assert f"cat -- {skill}" not in delivered
     read = _payload(
         tmp_path,
@@ -267,8 +267,8 @@ def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.C
     rewritten = result["overwrite"]["Prompt"]
     rewritten = json.loads(rewritten) if encoded else rewritten
     assert rewritten.startswith("調査せよ")
-    assert "rules-subagent" in rewritten
-    assert 'kind="rules-subagent"' in rewritten
+    assert rules_context.SUBAGENT_ENTRY_NOTICE in rewritten
+    assert 'kind="rules-' not in rewritten
     for _ in range(12):
         if not _run(raw, "PostInvocation", capsys):
             break

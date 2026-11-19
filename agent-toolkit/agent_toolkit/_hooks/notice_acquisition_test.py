@@ -34,7 +34,7 @@ def test_content_notice_references_only_the_required_documents(prompt: str) -> N
     assert len(bodies) == 1
     body = bodies[0]
     assert "`agent-toolkit:atk-mode/playbooks/user-utterance.md`" in body
-    routing = "`references/routing.md`"
+    routing = "`explore`へ分担する案"
     if "調査" in prompt:
         assert routing in body
     else:

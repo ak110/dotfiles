@@ -134,7 +134,7 @@ def test_dry_run_stage_documents_match_expected_set():
     """検証の段階で届ける資料の集合を、全宣言元から集めて期待値と比べる。
 
     新しく検証の段階を付けた行は、この期待値の更新として表面化させる。
-    追加する前に`share/read-trigger-contract-declarations.md`のWI保存の基準を満たすか確かめる。
+    追加する前に`docs/development/read-triggers-contract.md`「列の受理形式」のWI保存の基準を満たすか確かめる。
     """
     root = pathlib.Path(__file__).resolve().parents[3]
     actual = {

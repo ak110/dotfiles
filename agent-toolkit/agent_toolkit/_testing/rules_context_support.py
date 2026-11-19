@@ -22,15 +22,12 @@ def _output(capsys: pytest.CaptureFixture[str]) -> str:
 def _session_start_length_report(output: str) -> str:
     """SessionStartの追加本文が上限を超えた場合の失敗本文を組み立てる。
 
-    超過分と文書別の長さを示し、追随すべき対象を失敗本文から確定できるようにする。
+    超過分と区分別の長さを示し、追随すべき通知を失敗本文から確定できるようにする。
     """
     total = len(output)
     overage = total - rules_context.CLAUDE_CODE_OUTPUT_LIMIT
-    breakdown = "、".join(
-        f"{path.name}={len(path.read_text(encoding='utf-8'))}文字"
-        for path in (rules_context.MAIN_RULES_PATH, rules_context.MAIN_RULES_CLAUDE_CODE_PATH)
-    )
+    breakdown = "、".join(f"{block.split('>', 1)[0]}={len(block)}文字" for block in output.split("<atk-auto ")[1:])
     return (
         f"SessionStartの追加本文が{total}文字であり、上限{rules_context.CLAUDE_CODE_OUTPUT_LIMIT}文字を"
-        f"{overage}文字超過した。文書別の長さ: {breakdown}"
+        f"{overage}文字超過した。区分別の長さ: {breakdown}"
     )

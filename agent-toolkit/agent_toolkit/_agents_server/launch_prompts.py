@@ -1,15 +1,17 @@
-"""委譲先へ渡すsystem promptと規範を`share/`配下の文書から読み込み、起動条件ごとに組み立てる。"""
+"""委譲先へ渡す起動の本文を`skills/atk-mode/playbooks/subagent.md`から切り出し、起動条件ごとに組み立てる。"""
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import pathlib
+import re
 import shlex
 import sys
 
+from agent_toolkit._agents_server import session_errors
 from agent_toolkit._agents_server.state import LaunchKind
-from agent_toolkit._agents_server.tool_descriptions import EXPLORE_BACKEND_CAPABILITIES, EXPLORE_COMMON_CAPABILITIES
 from agent_toolkit._common import message_format, plugin_environment, plugin_roots
 
 # ベース指示の公開入力契約と再検証はdocs/development/audit-records.mdの
@@ -38,32 +40,47 @@ TASK_MODEL_TYPES = {
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 
 
-def _read_share(name: str) -> str:
-    """共有プロンプトまたは規範を末尾改行なしで読む。"""
-    return (SHARE_DIR / name).read_text(encoding="utf-8").rstrip("\n")
+SUBAGENT_PLAYBOOK = SHARE_DIR.parent / "skills" / "atk-mode" / "playbooks" / "subagent.md"
+"""全modeと全backendの起動の本文の原本。見出しと標識で節を切り出す。"""
 
 
-def _read_prompt(name: str) -> str:
-    """Markdownの先頭見出しを除いた固定プロンプトを読む。"""
-    return _read_share(name).split("\n\n", maxsplit=1)[1]
+NOTICE_HEADING = "委譲を受けた担当であることの通知"
+CONSTRAINTS_HEADING = "硬い制約"
+ROLES_HEADING = "起動の種類ごとの役割"
+AUTO_RESUME_HEADING = "自動再開"
+ROLE_HEADINGS: dict[LaunchKind, str] = {"delegate": "通常の委譲", "explore": "探索", "shell": "実行", "write": "書込"}
+RESULT_CONTRACT_START = "<!-- subagent-result-contract:start -->"
+RESULT_CONTRACT_END = "<!-- subagent-result-contract:end -->"
+
+
+EXPLORE_CAPABILITIES = (
+    "explore: 対象成果物は読み取り専用。大きな検索結果は条件の絞込みか分割取得で必要範囲を最後まで読み、"
+    "省略や未読を不在・件数・網羅性の根拠にしない。"
+    "完成条件から全文読取と所在探索を分け、割当範囲の未読・未走査は担当内で完了する。"
+    "切り詰め・保存出力は行範囲を分けて最後まで読む。"
+    "行数は取得単位の選択にだけ使い、本文の有無・内容・読了は読んだ本文で判定する。"
+    "読む前に空かだけ確かめる場合はwc -cかtest -sを使う。"
+    "wc -lは改行文字の数であり、改行で終わらない最終行を数えない。"
+    "最後の取得範囲はsed -n '<開始行>,$p' -- <絶対パス>のように末尾まで指定する。"
+    "権限・到達不能・入力不足など自身で解消できない未確認だけを範囲と理由付きで返す。環境作成・権限拡大・再委譲は禁止。"
+    "確定した操作はshell、自由な判断を伴う書込はdelegateへ渡す。"
+    "shellとdelegateは書込を拒否せず、対象と許可する操作は委譲元が定める。"
+    "全backendでGitの読取照会（git grep・git show・git diff）、本文・属性検索（rg・find）、"
+    "標準の読取（ハーネスのRead、cat、sed -n '<開始行>,<終了行>p' -- <絶対パス>、JSONはjq）と"
+    "pyfltr grepなどの読取MCPを使える。長い本文は行範囲を分けて最後まで読む。"
+    "cat・sed・jqはPOSIXシェル前提で、shell未指定のコマンドがPowerShellで動くなら実在を確かめたbashをshellへ指定し、"
+    "bashが無ければGet-Content -LiteralPath <絶対パス> -Encoding utf8とSelect-Object -Skip・-Firstで同じ行範囲を読む。"
+    "Codexでは内側コマンドと外側セルの両方へ収め、合計量が不明な全文取得は別セルに分ける。"
+    "対象成果物・委譲入力・ユーザーデータの作成・変更・削除は禁止。"
+    "実行環境が管理するキャッシュ・状態・保存出力はこの変更禁止対象と区別する。"
+)
+"""探索の起動の本文へ「探索」の節に続けて加える、読取の手段と完遂の条件。"""
 
 
 NORMATIVE_ELEMENT = message_format.AUTO_INSERTED_ELEMENT
 
 
 NORMATIVE_SOURCE = "agent-toolkit"
-
-
-SUBAGENT_BASE_INSTRUCTIONS = _read_prompt("agents-server-base.md")
-
-
-RESULT_REPORT_INSTRUCTIONS = (
-    _read_share("rules/rules-subagent.md")
-    .split("<!-- subagent-result-contract:start -->", maxsplit=1)[1]
-    .split("<!-- subagent-result-contract:end -->", maxsplit=1)[0]
-    .strip()
-)
-"""共通規範を省く軽量委譲にも渡す、同梱済みの結果返却短節。"""
 
 
 def _normative(body: str, *, kind: str) -> str:
@@ -75,75 +92,118 @@ def _normative(body: str, *, kind: str) -> str:
     return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
-# 通常委譲へ追加する規範は、起動フックと共有するrules-subagent.mdが定める。
-SUBAGENT_RULES = _read_share("rules/rules-subagent.md")
-
-
-CLAUDE_CODE_SUBAGENT_RULES = (
-    _read_share("rules/rules-common.claude-code.md") + "\n\n" + _read_share("rules/rules-subagent.claude-code.md")
-)
-
-
-# 委譲先の実行主体は、両backendが用意する指示ではユーザーと直接対話する主体として起動される。
-# 実行主体は起動方法の違いを観測できないため、委譲先であることを明示の指示で伝え、
-# 規範が主体別に定める条文を適用できるようにする。
-# Codexの`developerInstructions`はdeveloper roleメッセージとして注入され、ホストが用意する指示を置換しない。
-DELEGATE_NOTICE = _read_prompt("agents-server-delegate-notice.md")
-
-
-_DELEGATE_ROLE = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-delegate.md')}", kind="delegate")
-
-
-DELEGATE_SYSTEM_PROMPT = f"{_DELEGATE_ROLE}\n\n{_normative(SUBAGENT_RULES, kind='rules-subagent')}"
-
-
-CLAUDE_DELEGATE_SYSTEM_PROMPT = (
-    f"{_DELEGATE_ROLE}\n\n{_normative(f'{SUBAGENT_RULES}\n\n{CLAUDE_CODE_SUBAGENT_RULES}', kind='rules-subagent')}"
-)
-
-
-def _explore_system_prompt(backend: str) -> str:
-    """共通の探索契約へ、選んだbackendの調査手段を加える。"""
-    return _normative(
-        f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}\n\n"
-        f"{EXPLORE_COMMON_CAPABILITIES}{EXPLORE_BACKEND_CAPABILITIES[backend]}\n\n{RESULT_REPORT_INSTRUCTIONS}",
-        kind="explore",
+def _missing(what: str) -> session_errors.ActionableRuntimeError:
+    """原本の欠落を、空の本文で起動する代わりに起動の失敗として返す。"""
+    return session_errors.ActionableRuntimeError(
+        f"起動の本文の原本`{SUBAGENT_PLAYBOOK}`に{what}",
+        next_action="原本の見出しと標識を直すか、agent-toolkitの配布物を更新してから起動し直す",
     )
 
 
-EXPLORE_SYSTEM_PROMPT = _explore_system_prompt("codex")
+@functools.cache
+def _playbook_lines() -> tuple[str, ...]:
+    """原本を行の列で読む。配布物はprocessの起動中に変わらないため、最初の起動で読んだ本文を使い続ける。"""
+    try:
+        return tuple(SUBAGENT_PLAYBOOK.read_text(encoding="utf-8").splitlines())
+    except (OSError, UnicodeError) as error:
+        raise _missing(f"読めない（{error}）") from error
 
 
-CLAUDE_EXPLORE_SYSTEM_PROMPT = _explore_system_prompt("claude")
+def _headings(lines: tuple[str, ...]) -> list[tuple[int, int, str]]:
+    """コードフェンスの外の見出しを、行番号・階層・見出し名の組で返す。"""
+    found: list[tuple[int, int, str]] = []
+    fence = ""
+    for index, line in enumerate(lines):
+        if marker := re.match(r"^(`{3,}|~{3,})", line):
+            if not fence:
+                fence = marker[1]
+            elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                fence = ""
+            continue
+        if not fence and (heading := re.match(r"^(#{1,6}) +(.+?) *$", line)):
+            found.append((index, len(heading[1]), heading[2]))
+    return found
 
 
-SHELL_SYSTEM_PROMPT = _normative(
-    f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}\n\n{RESULT_REPORT_INSTRUCTIONS}", kind="shell"
-)
+def _section(level: int, title: str, *, within: tuple[int, int] | None = None) -> tuple[int, int]:
+    """見出しの行と、次の同じか上の階層の見出しの直前までの範囲を返す。"""
+    lines = _playbook_lines()
+    headings = _headings(lines)
+    lower, upper = within or (0, len(lines))
+    matches = [
+        index
+        for index, (line, depth, name) in enumerate(headings)
+        if depth == level and name == title and lower <= line < upper
+    ]
+    if len(matches) != 1:
+        raise _missing(f"{'#' * level}「{title}」が{'無い' if not matches else '複数ある'}")
+    begin = headings[matches[0]][0]
+    end = next((line for line, depth, _ in headings[matches[0] + 1 :] if depth <= level), len(lines))
+    return begin, min(end, upper)
 
 
-WRITE_SYSTEM_PROMPT = _normative(
-    f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}\n\n{RESULT_REPORT_INSTRUCTIONS}", kind="write"
-)
+def _body(level: int, title: str, *, within: tuple[int, int] | None = None) -> str:
+    """見出しより下の本文を返す。空なら起動を止める。"""
+    begin, end = _section(level, title, within=within)
+    body = "\n".join(_playbook_lines()[begin + 1 : end]).strip()
+    if not body:
+        raise _missing(f"{'#' * level}「{title}」の本文が無い")
+    return body
 
 
-# 起動条件の種別ごとの指示。ホストの基本指示の置換と、役割・規範の配送はbackendが分けて組み立てる。
-LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
-    "delegate": DELEGATE_SYSTEM_PROMPT,
-    "explore": EXPLORE_SYSTEM_PROMPT,
-    "shell": SHELL_SYSTEM_PROMPT,
-    "write": WRITE_SYSTEM_PROMPT,
-}
+def _role_body(title: str) -> str:
+    """H2「起動の種類ごとの役割」の中のH3の本文を返す。"""
+    return _body(3, title, within=_section(2, ROLES_HEADING))
 
 
-# 同じsessionの自動再開を実際に行うbackend（ClaudeとCodex）だけが起動時の指示へ加える。
-# 自動再開は、backendが子の起動結果を追跡集合へ接続していることで成立する。
-AUTO_RESUME_NOTICE = _normative(_read_prompt("agents-server-auto-resume.md"), kind="auto-resume")
+def result_contract() -> str:
+    """軽量の委譲にも渡す、返却の決まりの区間を返す。"""
+    text = "\n".join(_playbook_lines())
+    if text.count(RESULT_CONTRACT_START) != 1 or text.count(RESULT_CONTRACT_END) != 1:
+        raise _missing(f"標識`{RESULT_CONTRACT_START}`と`{RESULT_CONTRACT_END}`が1組だけ無い")
+    body = text.split(RESULT_CONTRACT_START, 1)[1].split(RESULT_CONTRACT_END, 1)[0].strip()
+    if not body:
+        raise _missing(f"標識`{RESULT_CONTRACT_START}`の区間が空である")
+    return body
+
+
+def base_instructions() -> str:
+    """ホストの組み込みのメイン向け指示に代えて渡す、委譲先であることの通知。"""
+    return _body(2, NOTICE_HEADING)
+
+
+def _hard_constraints() -> str:
+    """役割によらず全modeへ渡す硬い制約の節を、見出しごと返す。"""
+    return f"## {CONSTRAINTS_HEADING}\n\n{_body(2, CONSTRAINTS_HEADING)}"
+
+
+def launch_prompt(kind: LaunchKind) -> str:
+    """起動の種類の本文を原本から組み立てる。全backendが最初の起動と再開・継続の両方で使う。
+
+    通常の委譲は役割ごとの節を除いた原本の全文と「通常の委譲」を、軽量の委譲は通知・硬い制約・役割・返却の決まりだけを渡す。
+    """
+    if kind == "delegate":
+        begin, end = _section(2, ROLES_HEADING)
+        lines = _playbook_lines()
+        whole = "\n".join((*lines[:begin], *lines[end:])).strip()
+        return _normative(f"{whole}\n\n{_role_body(ROLE_HEADINGS[kind])}", kind=kind)
+    role = _role_body(ROLE_HEADINGS[kind])
+    if kind == "explore":
+        role += f"\n\n{EXPLORE_CAPABILITIES}"
+    return _normative(f"{base_instructions()}\n\n{_hard_constraints()}\n\n{role}\n\n{result_contract()}", kind=kind)
+
+
+def auto_resume_notice() -> str:
+    """同じsessionの自動再開を実際に行うbackend（ClaudeとCodex）だけが起動時の指示へ加える本文。
+
+    自動再開は、backendが子の起動結果を追跡集合へ接続していることで成立する。
+    """
+    return _normative(_role_body(AUTO_RESUME_HEADING), kind="auto-resume")
 
 
 ADVICE_REQUEST_NOTICE = _normative(
     "この委譲先は、自分を起動した直上の委譲元へ技術的な助言を依頼できる。\n"
-    "助言依頼を出す条件と手順は`agent-toolkit:delegation/references/advice-request.md`にある。"
+    "助言依頼を出す条件と手順は`agent-toolkit:atk-mode/playbooks/advice-request.md`にある。"
     "助言依頼を検討するときに、この資料の全文を読め。",
     kind="advice-request",
 )

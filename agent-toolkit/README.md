@@ -14,7 +14,7 @@ Codexでは両プラグインを明示的に導入・更新する。
 
 | ホスト | 利用できる機能と導入方法 |
 | --- | --- |
-| ローカルClaude Code・Claude DesktopのCode | 統合インストーラーで規範・スキル・フック・MCP・CLIを設定する |
+| ローカルClaude Code・Claude DesktopのCode | 統合インストーラーでスキル・フック・MCP・CLIを設定する |
 | Codex | 統合インストーラーでプラグインと共有MCP・CLIを設定する。フックはユーザーによる信頼確認が必要 |
 | claude.aiのChat・Claude DesktopのChat | マーケットプレイスまたはZIPからスキルを利用する。CLI・hook・local MCPは使えない |
 | Claude DesktopのCowork | プラグインを追加する。hook・local MCPの利用にはホストの対応、uvとネットワーク、組織の許可が必要 |
@@ -23,7 +23,7 @@ Codexでは両プラグインを明示的に導入・更新する。
 | Antigravity CLI | dotfilesの更新処理が生成版`agent-toolkit-agy`と`agent-basics-agy`を登録する |
 
 Agent Pluginsの可搬な構成はrootのmanifestとスキル・MCP定義である。
-ホスト固有のフック、常時規範の配置、依存環境の準備は、対応ホストの導入手順に従う。
+ホスト固有のフック、入口スキル`atk-mode`の起動の案内、依存環境の準備は、対応ホストの導入手順に従う。
 プラグインの追加だけで統合インストーラーの全設定が有効になるわけではない。
 ClaudeのZIP作成・アップロードと各環境の設定は[詳細ガイド](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#詳細設定と操作)を参照。
 
@@ -54,8 +54,8 @@ Windowsでは次を実行する。
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
 ```
 
-両インストーラーはClaude CodeとCodexの双方へ、プラグイン、規範、共有`agents_server` MCP、`atk`コマンドを設定する。
-Claude Codeでは常時規範を`~/.claude/rules/agent-toolkit/`へ配置し、プラグインと併用する。
+両インストーラーはClaude CodeとCodexの双方へ、プラグイン、共有`agents_server` MCP、`atk`コマンドを設定する。
+規範はプラグインの入口スキル`atk-mode`と手順書にあり、セッションの開始時にフックがその起動を案内する。
 前提の3コマンドのいずれかが見つからない場合は、何も書き込まずにエラー終了する。
 Codexの既存`~/.codex/AGENTS.md`は保持し、dotfiles固有のグローバル規範と共有リンクは配置しない。
 配置とホスト固有の注意は[Codex利用ガイド](https://github.com/ak110/dotfiles/blob/master/docs/guide/codex-guide.md)を参照。
@@ -107,8 +107,8 @@ atk serve
 
 ## 構成と機能
 
-- [skills/](skills/): WI起草・処理、委譲、commit、振り返り、会話の出力など、作業に応じて起動する手順
-- [share/rules/common/](share/rules/common/): 行動原則と実行運用の常時規範。
+- [skills/atk-mode/](skills/atk-mode/): 作業の前に起動する入口スキル。
+  判断の原則と硬い制約を入口に、WI起草・処理、委譲、commit、振り返り、会話の出力などの手順を作業ごとの手順書に置く。
   部分的な変更はユーザー・プロジェクトの規範やプロンプトで指定できる
 - [フックの構成](https://github.com/ak110/dotfiles/tree/master/agent-toolkit/hooks): 操作前の警告・遮断、セッション開始時と圧縮後の規範案内、日本語での応答・完了報告の確認など。
   対応範囲はホストごとに異なる
@@ -127,7 +127,7 @@ atk serve
 実行中のセッションは更新前の版を使い続けるため、更新後は新しいセッションを開始する。
 Codexのdaemon再起動を案内された場合は、[プラグイン更新の反映](https://github.com/ak110/dotfiles/blob/master/docs/guide/codex-guide.md#プラグイン更新の反映)に従う。
 
-削除する場合はClaude CodeとCodexのプラグイン管理からagent-toolkitを除去し、`~/.claude/rules/agent-toolkit/`と`~/.local/bin`の`atk`ラッパーを削除する。
+削除する場合はClaude CodeとCodexのプラグイン管理からagent-toolkitを除去し、`~/.local/bin`の`atk`ラッパーを削除する。
 agent-basicsは単独利用できるため、引き続き使うかに応じて保持または除去する。
 共有MCPの設定を確認し、今回の導入で追加した`agents_server`を除去する。
 独自に追加した設定と作業記録は保持する。

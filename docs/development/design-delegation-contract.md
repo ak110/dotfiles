@@ -43,13 +43,13 @@ WI作成専用セッションでは要求数によらずメインが調査・起
 LinuxからWindows向けの開発を可能にするWIの作成で、到達範囲を問う質問の選択肢説明にあったタスク配置をレビューが確定要件とし、技術判断で決められる分担をユーザーへ追加確認した観測に由来する。
 
 親の会話履歴の大半を委譲先も要する作業では、Claude Codeの`Agent` forkとCodexの`spawn_agent`全履歴forkを使える。
-判定基準は`agent-toolkit:delegation`の`references/routing.md`へ集約し、ホスト別の起動形だけを各runtime資料へ分ける。
+判定基準は`agent-toolkit:atk-mode/playbooks/delegation.md`「会話を引き継ぐ委譲」へ集約し、ホスト別の起動形だけを`playbooks/host-claude-code.md`と`playbooks/host-codex.md`へ分ける。
 forkは起動時点の会話を入力として共有するため、委譲プロンプトへ同じ背景を書き直さずに済む。
 独立文脈レビューと工程別モデル設定のある委譲は、先入観のない評価または指定effortを守るため新規セッションの起動を保つ。
 agents_serverへfork機能を実装する案は、ホスト標準の起動手段でユーザーが選んだ結果へ到達でき、別の実装と保守を増やすため採用しない。
 
-単発の委譲は常時規範の基本委譲契約を適用し、対象、読取・書込権限、完了条件および受領後に成果物を直接確かめる検収を確定する。
-工程別モデル設定、複数主体調整、継続、停滞検知または巻き取りを使う高度な委譲だけが、`agent-toolkit:delegation`の手順を適用する。
+委譲は入口`agent-toolkit:atk-mode`の表から`playbooks/delegation.md`を選び、対象、読取・書込権限、完了条件および受領後に成果物を直接確かめる検収を確定する。
+工程別モデル設定、継続、停滞検知または巻き取りは、同書が条件ごとに示す`delegation-waiting.md`、`delegation-receiving.md`、`delegation-recovery.md`と`references/model-settings.md`を必要な時だけ読む。
 
 委譲元が委譲プロンプトへ載せる値に起因する欠落は、委譲元が起動前に防ぐ。
 委譲先の`<役割名>.subagent.md`が要求する必須入力が委譲プロンプトにそろっていること、絶対パスで示す入力のうち起動時点で作成済みのものが実在すること、および委譲先が受領した値から自ら解決して読むplugin配下の資源が実在することを、委譲元が起動前に確認する。
@@ -96,7 +96,7 @@ Claude Codeで委譲先がさらに読み取り専用調査・レビューを委
 返す委譲先と受領する委譲元は同じ配列境界を契約テストで検証する。
 区切り文字を含む散文値は、複数件の境界とAWI・commitの対応を一意に復元できないため採用しない。
 
-知識境界として、委譲の要否判定は`agent-toolkit/share/rules/common/01-agent.md`が持ち、
+知識境界として、委譲の要否判定は`agent-toolkit:atk-mode/playbooks/delegation.md`「要否判定」が持ち、
 `agent-toolkit:atk-mode`の作業`process-wi`は委譲の要否を判定する場面だけを定める。
 工程別モデル設定を持つ委譲では、委譲する工程を定める節が用いるキーを指定する。
 却下した代替案は、割り込み作業の委譲先を一律に単一のキーへ固定する案である。
@@ -110,7 +110,7 @@ Claude Codeで委譲先がさらに読み取り専用調査・レビューを委
 観点、読者像、返却項目および権限を毎回同じ内容で定める委譲は、委譲元の規範に契約を置くと起動のたびに委譲プロンプトへ書き直され、委譲プロンプトが長くなり表現も揺れる。
 このため投稿前レビュー（`external-write-review`）、自動コードレビュー監査（`copilot-review-audit`）、文章成果物の読者別探索（`reader-fit-review`）、一括置換後レビュー（`bulk-replace-review`）はペアで定める。
 委譲元は対象と実行時の値だけを渡す。
-委譲先へ届く規範とスキルは限られる（`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表）ため、判定基準を`<役割名>.subagent.md`の中で完結させる。
+委譲先へ届く規範とスキルは限られる（`agent-toolkit:atk-mode/references/agent-documents.md`「配送範囲表」）ため、判定基準を`<役割名>.subagent.md`の中で完結させる。
 読み取り専用の3件は`mode: explore`で軽量に起動する。
 書込を伴う監査は通常委譲の`execute`とする。
 読者別探索の初回から、実行レビュー担当が変更前・現行・今回差分と直接影響範囲を渡す。
@@ -124,5 +124,5 @@ Claude Codeで委譲先がさらに読み取り専用調査・レビューを委
 比較元が不足したまま全体探索へ戻す案は、無関係な既存部分を再レビューへ戻すため採用しない。
 探索指摘の採否は受領したレビュー担当が確定し、実行レビューでは走査結果の全指摘をレビュー指摘管理表の行または不採用理由へ対応付ける。
 返却前に各指摘の対応を確かめ、採用分の統合だけで受領を終える案は未対応の指摘を検出できないため採用しない。
-成果物、読者、対象コマンドが毎回異なる単発の起草（`start`の`write`）、コマンド実行（`start`の`shell`）、探索（`agent-toolkit:delegation`の`references/routing.md`）は自由本文の起動に残す。
+成果物、読者、対象コマンドが毎回異なる単発の起草（`start`の`write`）、コマンド実行（`start`の`shell`）、探索（`agent-toolkit:atk-mode/playbooks/delegation.md`「軽量の起動」）は自由本文の起動に残す。
 契約の大半が起動ごとの値であり、ペアへ移しても委譲プロンプトは短くならないためである。

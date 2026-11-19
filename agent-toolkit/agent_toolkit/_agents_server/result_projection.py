@@ -43,7 +43,7 @@ IMPROVEMENT_RESULT_NEXT_ACTION = (
     "転記する各行は字下げを除く行頭に`気付いた改善点:`を原文のまま置き、標識の前と、標識とコロンの間へ報告元などの語を入れない。"
     "報告元と確かめた範囲は標識行の原文の後ろか別の行に添える。"
     "同じ送達先へ成功確認済みで原文・対象・観測が同じ行は再通知しない。送信失敗・成否不明・記録欠落を既報として抑制しない。"
-    "未確認の主張の扱いなど残りの細則は`agent-toolkit:delegation`の`references/receiving-followup.md`「受領後の扱い」に従う"
+    "委譲先が観測していない主張は、委譲先の主張として出所を添えて転記する"
 )
 
 
@@ -79,7 +79,7 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
                 READER_FIT_REVIEW_RESULT_NEXT_ACTION if reader_fit else REVIEW_RESULT_NEXT_ACTION,
                 (
                     "agent-basics:review-standards/SKILL.md",
-                    "agent-toolkit:/share/reader-fit-review.parent.md#「受領」"
+                    "agent-toolkit:atk-mode/roles/reader-fit-review.parent.md#「受領」"
                     if reader_fit
                     else "agent-basics:review-standards/references/reviewee.md",
                 ),
@@ -88,7 +88,7 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
     message = result.get("agent_message")
     if isinstance(message, str) and runtime_inserted.reported_improvement_lines(message):
         guidance.append(
-            (IMPROVEMENT_RESULT_NEXT_ACTION, ("agent-toolkit:delegation/references/receiving.md#「受領後の扱い」",))
+            (IMPROVEMENT_RESULT_NEXT_ACTION, ("agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」",))
         )
     return guidance
 

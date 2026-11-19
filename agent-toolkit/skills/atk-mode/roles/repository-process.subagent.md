@@ -40,7 +40,7 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 配下へ委譲する前 | `agent-toolkit:delegation/references/process-model-settings.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
+| 配下へ委譲する前 | `agent-toolkit:atk-mode/references/model-settings.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/references/model-settings.md` |
 
 ## 入力
 
@@ -59,7 +59,7 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 - `previous`: 前回の未完了の成果と再開位置。
   指定があれば完了済みの工程を繰り返さず、残る工程から再開する。
 - `追加指示`: 統括が受けた`instruct`のうち、この対象に関係する部分。
-- `引き継ぎ記録先`: 担当範囲の進捗と再開位置を残す記録（扱いは`agent-toolkit:delegation/references/handoff-record.md`）。
+- `引き継ぎ記録先`: 担当範囲の進捗と再開位置を残す記録（扱いは`agent-toolkit:atk-mode/references/work-contract.md`）。
 
 ## 処理
 
@@ -67,7 +67,7 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
    受け取った候補の扱いは`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「取得済み候補の受領」、担当の分担は同書「担当の役割」に従う。
 2. 共通の規範の読込は再利用し、プロジェクト固有の規範、計画・検証・レビュー・公開、候補・所有・`lane_session_id`・`writer_sessions`は対象ごとに分ける。
    1つの対象がユーザー判断待ちか続行不能になっても、理由と再開先を記録して独立した他の対象の処理を続ける。
-3. 改善点は`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従って統括へ送り、確認事項、担当外の発見、報告用UWIの材料は統括へ返す。
+3. 改善点は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従って統括へ送り、確認事項、担当外の発見、報告用UWIの材料は統括へ返す。
 4. 祖先の対話CLIの終了（`atk agents-exit-session`）は統括に任せる。
 5. 起動したレーン担当とwriterのsession IDを記録し、終了を観測してから返す。
 
@@ -89,7 +89,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 結果: <公開結果、CI、処理したAWIと採否の要約>
 ```
 
-続行不能の場合は`状態:`行の代わりに`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
+続行不能の場合は`状態:`行の代わりに`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
 統括担当はこの返却を`result_file`の`blocked`として記録する。
 `user_decision`・`authorization`・`inaccessible_input`の不足をユーザーだけが提供できる場合は、統括担当が同じprocess-wiの実行内で処置する。
 

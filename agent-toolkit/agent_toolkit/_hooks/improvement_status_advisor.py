@@ -1,6 +1,6 @@
 """報告の送達の前後に、判定資料の取得と改善点の報告の書式を案内し、未調査を理由にした`不要`へ再確認を促す。
 
-`share/rules/rules-main.md`「作業中の改善点の報告」は、処置とAWI化を決める前に担当・処置を決める最小調査を求める。
+改善点の報告（`atk-mode`の`playbooks/main-reporting.md`「作業中の改善点の報告」）は、処置とAWI化を決める前に担当・処置を決める最小調査を求める。
 原因を調べていないことを見送りの理由にした報告は、その調査を省いたまま処置不要と判断している。
 逸脱の報告は、今回の事象へ`agent-basics:bugfix`を適用し、同スキルの「記録」の行頭語（`処置:`と条件付きの`再発防止:`）で
 今回の是正と再発防止の採否を示す。
@@ -35,7 +35,7 @@ _HOOK_ID = "improvement_status_advisor"
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
 # `不要`の理由の先頭に置く区分名。
-# 書式と区分は`share/rules/rules-main.md`「進捗報告」のテンプレート直下にある。
+# 書式と区分の定義元は`atk-mode`の`playbooks/main-reporting.md`「進捗報告」にある。通知は区分を本文に挙げる。
 _UNNEEDED_CATEGORIES = ("非欠陥", "処置済み", "被覆", "見送り")
 _UNNEEDED_STATUS = re.compile(r"AWI化ステータス:\s*不要[ \t]*")
 _CATEGORY_STATUS = re.compile(r"AWI化ステータス:\s*(不要|予定)[ \t]*")
@@ -92,11 +92,14 @@ def _format_notice(lines: list[str]) -> str:
         for matched in _CATEGORY_STATUS.finditer(line):
             if not line[matched.end() :].startswith(categories[matched.group(1)]):
                 return _notice(
-                    "改善点報告の区分名が、常時規範のテンプレートの書式と一致しない。",
+                    "改善点報告の区分名が、報告行の書式と一致しない。",
                     removable_cause=True,
                     subject=line,
-                    fix="`share/rules/rules-main.md`「進捗報告」のテンプレート直下の書式・区分で報告行を直せ。"
-                    "書式の修正だけなら判定資料の追加取得は不要である。",
+                    fix=f"報告行を`AWI化ステータス: {matched.group(1)} <区分> "
+                    + ("<理由>" if matched.group(1) == "不要" else "<再開条件>")
+                    + "`の形に直せ。区分は"
+                    + "・".join(f"`{name}`" for name in categories[matched.group(1)])
+                    + "から選べ。",
                 )
             if line[matched.end() :].startswith("見送り") and matched.group(1) == "不要":
                 report = line[matched.end() :].split("AWI化ステータス:", 1)[0]
@@ -132,7 +135,7 @@ def _read_notice(payload: dict, session_id: str, cues: frozenset[str], *, improv
     if improvements:
         wanted += [
             (basics / "skills/bugfix/references/prevention.md", _IMPROVEMENT_PURPOSE),
-            (root / "skills/delegation/references/waiting-and-monitoring.md", _IMPROVEMENT_PURPOSE),
+            (root / "skills/atk-mode/playbooks/delegation-waiting.md", _IMPROVEMENT_PURPOSE),
         ]
         startup = os.environ.get(mcp_environment.SESSION_START_INPUT_ENV, "{}")
         try:
@@ -210,7 +213,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         "該当行: " + " / ".join(lines),
         removable_cause=True,
         subject="\n".join(lines),
-        fix="`share/main-improvements.md`「作業中の改善点の報告」に従い、最小調査と処置・担当の決定をして報告を更新せよ。",
+        fix="担当と処置を決めるのに足りる最小調査をし、処置・担当を決めてから、その結果に基づいて報告を更新せよ。",
     )
     return "notify", "\n\n".join(filter(None, (guidance, reason_notice)))
 

@@ -25,7 +25,7 @@
 <!-- input-contract:external-write-review:start -->
 <!-- 生成元: skills/atk-mode/roles/external-write-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
-起動準備はこの契約の入力一覧で完結する。
+役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
 
 - 必須入力名: `文面ファイル`、`投稿先と目的`、`根拠の所在`
 
@@ -74,7 +74,7 @@
 <指摘ごとの該当行、観点の番号、問題点、修正案。0件なら3観点それぞれの「指摘なし」>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:external-write-review:end -->
 
 返す報告に含める項目: 投稿した文面の所在と投稿先、レビューの未解決の指摘数と採否、投稿しなかった場合はその理由。

@@ -6,7 +6,7 @@ import pathlib
 import pytest
 
 from _test_helpers import REPO_ROOT, installer_runners, make_command_stubs, read_log_lines, run_installer
-from _test_helpers import rules_url_fixture as _rules_url_fixture  # noqa: F401  # pytestがfixtureとして収集する。
+from _test_helpers import raw_base_url_fixture as _raw_base_url_fixture  # noqa: F401  # pytestがfixtureとして収集する。
 
 LEGACY_CODEX_MCP_CASES = REPO_ROOT / "pytools" / "_internal" / "legacy_codex_mcp_cases.json"
 
@@ -32,7 +32,7 @@ def test_preserves_existing_user_codex_mcp(
     kind: str,
     config: object,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
@@ -40,7 +40,7 @@ def test_preserves_existing_user_codex_mcp(
     before = (home / ".claude.json").read_bytes()
     stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log)
 
     assert (home / ".claude.json").read_bytes() == before
     assert not any("claude mcp add" in line or "claude mcp remove" in line for line in read_log_lines(stub_log))
@@ -61,7 +61,7 @@ def test_does_not_register_user_codex_mcp_when_only_non_user_state_exists(
     kind: str,
     config: object | None,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
@@ -69,7 +69,7 @@ def test_does_not_register_user_codex_mcp_when_only_non_user_state_exists(
         _write_claude_config(home, config)
     stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log)
 
     assert not any("claude mcp add" in line for line in read_log_lines(stub_log))
     assert not any("claude mcp remove" in line for line in read_log_lines(stub_log))
@@ -90,7 +90,7 @@ def test_legacy_codex_mcp_cases_match_installers(
     config: object,
     legacy: bool,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     """両インストーラーは共有ケース表の旧定義だけをUser scope限定で削除し、それ以外の定義を保持する。"""
     home = tmp_path / "home"
@@ -99,7 +99,7 @@ def test_legacy_codex_mcp_cases_match_installers(
     before = (home / ".claude.json").read_bytes()
     stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log)
 
     removals = sum("claude mcp remove --scope user codex" in line for line in read_log_lines(stub_log))
     assert removals == (1 if legacy else 0)
@@ -122,27 +122,27 @@ def test_fails_closed_for_invalid_claude_config(
     kind: str,
     content: str,
     tmp_path: pathlib.Path,
-    rules_url: str,
+    raw_base_url: str,
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
     (home / ".claude.json").write_text(content, encoding="utf-8")
     stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
+    result = run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
 
     assert result.returncode != 0
     assert not any("claude mcp add" in line for line in read_log_lines(stub_log))
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_fails_closed_when_claude_config_is_unreadable(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+def test_fails_closed_when_claude_config_is_unreadable(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
     home = tmp_path / "home"
     home.mkdir()
     (home / ".claude.json").mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)
 
-    result = run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
+    result = run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
 
     assert result.returncode != 0
     assert not any("claude mcp add" in line for line in read_log_lines(stub_log))

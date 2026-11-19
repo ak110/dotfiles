@@ -106,7 +106,7 @@ statusline（`rust/claude-statusline/`配下）を変更した場合は、レー
   2026年10月27日にユーザーが`atk wi pull`と`atk serve logs`の利用を示したことを受けた、エージェントによる採否基準の是正である。
   現行規範は次の資料にある。
 
-  - `agent-toolkit/share/rules/common/02-agent-operations.md`「引用と引数」
+  - `agent-toolkit:atk-mode/references/operations.md`「引用と引数」
   - `agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」
 
 - キュー管理リポジトリを更新する`atk`のサブコマンドは、内部で実行する`git`の標準出力と標準エラーを取り込み、成功した場合は出力しない。
@@ -124,7 +124,7 @@ statusline（`rust/claude-statusline/`配下）を変更した場合は、レー
 - `atk`は受け取るエージェントが次の判断に使う行だけを出力し、結果と無関係な補足行は人の端末でも出力しない。
   呼び出すエージェントは標準出力と標準エラーをパイプへ渡さず、全量の機械処理は保存ファイルへ別の呼び出しで行う（2026年9月30日、ユーザー指示）。
   出力の設計の理由は[design-cli-output.md](design-cli-output.md#atkの出力に含める情報)「atkの出力に含める情報」が記録する。
-  呼び出す側の現行の規範は`agent-toolkit/share/rules/common/02-agent-operations.md`「ツール・コマンド運用」にある
+  呼び出す側の現行の規範は`agent-toolkit:atk-mode/references/operations.md`「ツール・コマンド運用」にある
 - `atk`・MCP・hookがエージェントへ渡す情報は、受信主体がその情報で行う判断・操作があるものに限り、人間向けの表示と分ける。
   文脈の長さ・使用量・上限・使用率はエージェントへ渡さず、`atk agents list`・`show`では人の端末だけに表示する（2026年11月6日、ユーザー指示）。
   自動圧縮を前提とするため、値を渡すと使用量を理由にした引き継ぎや停止の判断を誘う。

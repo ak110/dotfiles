@@ -2,7 +2,6 @@
 
 import json
 import pathlib
-import re
 
 import pytest
 
@@ -12,10 +11,6 @@ from agent_toolkit._common.response_language_check import (
 )
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
-_RULES_FILE = _SCRIPTS_DIR.parent / "share" / "rules" / "common" / "01-agent.md"
-
-# hookメッセージがエージェント向け文書の見出しを鉤括弧付きで引用する形式。
-_RULE_HEADING_REFERENCE_PATTERN = re.compile(r"01-agent\.md「([^」]+)」")
 
 
 def _make_mixed(japanese_count: int, english_word_count: int) -> str:

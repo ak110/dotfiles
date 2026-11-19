@@ -1,13 +1,13 @@
 # 委譲の起動・分担の設計記録
 
 本書は[設計記録の索引](design.md)から主題別に分割した記録であり、機構の目的、構造の理由、知識境界と却下した代替案を保持する。
-実行時に適用する規範は、各節が参照する現行のルールファイルとスキルが定める。
+実行時に適用する規範は、各節が参照する現行のスキルと手順書が定める。
 
 ## 起動準備と定義本文の読込
 
 呼び元は共有する起動契約または単一呼び元へ統合した契約から入力を決め、起動準備のための`.subagent.md`本文取得を禁止する。
 agents_serverが起動設定と必須入力を解決し、呼び元の文脈へ委譲先の手順を重複して読み込む必要を除く。
-起動時の規範は`agent-toolkit:delegation`の`SKILL.md`「送信」が定める。
+起動時の規範は`agent-toolkit:atk-mode/playbooks/delegation.md`「送信」が定める。
 編集、自身が受領した定義の確認、返却後の出力契約の検収は目的を区別して保持する。
 違反の検出は既存のreview-sessionの記録収集・必須候補と、原記録に基づく分類へ接続する。
 毎読取時に目的を判定して遮断する案は、編集や検収にも判定負担を課すため採らない。
@@ -44,7 +44,7 @@ agents_serverが起動設定と必須入力を解決し、呼び元の文脈へ�
 サーバーが補完した引き継ぎ記録先も冒頭の入力へ含める。
 入力値の各行は既存の名前付き入力形式で字下げし、自由な値に含まれる見出しから挿入位置を推測しない。
 先頭識別行は役割の復元、継続、hook、振り返りの既存読取と共通なので変更しない。
-送信の規範は`agent-toolkit/skills/delegation/references/sending-prompt.md`「委譲プロンプトの構成」が所有する。
+送信の規範は`agent-toolkit/skills/atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」が所有する。
 
 規範本文を削る案は、今回の作業指示の配置を明確にする要求と異なるため採らない。
 
@@ -52,8 +52,8 @@ agents_serverが起動設定と必須入力を解決し、呼び元の文脈へ�
 
 目的は広域検索、全体テスト、大量のログ取得で、後続判断に必要な終了状態と要約を取得することである。
 直接実行で保存結果を分割取得する案と、軽量担当へ実行と観測をまとめる案を総費用で比較する。
-構造の理由は、規範本体を`agent-toolkit/share/rules/common/02-agent-operations.md`のツール・コマンド運用へ1条だけ置き、分離の実体を`agents_server`の`start`の`shell`へ集約する点にある。
-ルールファイルの規範はメインエージェントとサブエージェントの双方へ等しく適用されるため、担当別の`<役割名>.subagent.md`へ同じ規範を複製しない。
+構造の理由は、規範本体を`agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」へ1条だけ置き、分離の実体を`agents_server`の`start`の`shell`へ集約する点にある。
+委譲を起動する主体はメインか委譲先かによらず同じ手順書を読むため、担当別の`<役割名>.subagent.md`へ同じ規範を複製しない。
 判断理由は実行環境の能力によらず分離を成立させることにある。
 スキル形式では起動条件がfrontmatterの値で決まるため、規範の読込を避ける意図で指定した値が後続の編集で反転し得る。
 Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキストの起動へ写像せず、選択したスキルの本文を現在のコンテキストへ展開するため、スキル形式での起動は実行環境ごとに別の手順を持つ。
@@ -70,7 +70,7 @@ Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキ�
 調査の結論だけを得る読み取り専用の探索委譲は、本節の分離実行とは目的が異なる。
 探索委譲は所在の特定と候補の列挙を分担する。
 いずれも文脈温存だけでは分担せず、起動・初回読込・圧縮後再読・検収の費用を、並行性や軽量モデルの利益と比較する。
-知識境界として、1件の探索を自ら行うかを決める量の目安はagents_serverのserver instructionsが持ち、作業全体の分業は`agent-toolkit:delegation`のrouting.md「要否判定」「委譲単位の確定」が定める。
+知識境界として、1件の探索を自ら行うかを決める量の目安はagents_serverのserver instructionsが持ち、作業全体の分業は`agent-toolkit:atk-mode/playbooks/delegation.md`「要否判定」「委譲単位の確定」が定める。
 仕様・挙動を確定する段階では対象ファイルの全体読解を維持する。
 却下した代替案は、本節の分離手段へ探索委譲を併記する案である。
 同じ場面で2つの分離手段が並び、選択基準が目的から手段の一覧へ移るため採用しない。
@@ -93,8 +93,8 @@ Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキ�
   メインは選定、レーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの統合の許可と最終結果の検収を所有する（`agent-toolkit/skills/atk-mode/playbooks/process-wi-execution.md`）
 - 探索・原因分析・単純作業: 作業の細分化と起動単位の数を区別し、同じ背景と実行条件を使う確定済みの作業は1件の起動へまとめる。
   調査担当は詳細な分析を保存原本へ置き、結論と原本の所在を返す。
-  定義は`agent-toolkit/skills/delegation/references/routing.md`と`agent-toolkit/skills/atk-mode/roles/defect-investigation.subagent.md`にある
-- 保存済み結果の受渡し: `atk agents wait`の`agent_message_path`、CLIの保存先、MCPの結果の保存ファイルは、パスのまま次の消費者へ渡す（`agent-toolkit:delegation/references/receiving-followup.md`「受領後の扱い」）
+  定義は`agent-toolkit/skills/atk-mode/playbooks/delegation.md`「委譲単位の確定」と`agent-toolkit/skills/atk-mode/roles/defect-investigation.subagent.md`にある
+- 保存済み結果の受渡し: `atk agents wait`の`agent_message_path`、CLIの保存先、MCPの結果の保存ファイルは、パスのまま次の消費者へ渡す（`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「受領後の扱い」）
 - 公開とCI: 計画と版数判断を保持するメインまたはリポジトリ担当の直接公開を通常とする。
   既決判断をそのまま使い、単一writer、CI修正担当、実行レビュー、公開後操作を保持する。
   独立並行やモデルの使い分けの利益が総費用を上回る場合だけ公開担当へ委譲する（`agent-toolkit/skills/atk-mode/roles/session-termination.parent.md`「直接実行」）。

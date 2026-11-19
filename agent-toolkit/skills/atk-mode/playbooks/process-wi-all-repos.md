@@ -66,7 +66,8 @@
 <!-- input-contract:repository-process:start -->
 <!-- 生成元: skills/atk-mode/roles/repository-process.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
-起動準備はこの契約の入力一覧で完結する。
+役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
+通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
 
 - 必須入力名: `引き継ぎ記録先`
 - 任意入力名: `repositories`、`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`
@@ -90,7 +91,7 @@
    - まとめ担当では、割り当てる対象要素をそのまま順序付きのJSON配列へ保存し、単一対象の各欄の代わりにその絶対パスを`repositories`へ渡す。
    - `previous`、`common_dir`、`registered_worktree`、`target`、`target_branch`、`default_branch`は、対象要素に値がある場合だけ渡す。
    - `追加指示`は、`instruct`のうち対象に関係する部分がある場合だけ渡す。
-   - `引き継ぎ記録先`: 省略と継続時の扱いは`agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
+   - `引き継ぎ記録先`: 省略と継続時の扱いは`agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」に従う。
 2. 統括は巡回の開始時刻とタイムゾーンを全体作業契約へ記録し、起動時に既存の`whole_contract_path`で渡す。
 3. 起動入力の組み方を新しくした回か変えた回に限り、まず1件だけ起動し、担当が入力どおりの対象と候補で処理へ入ったことを確かめてから残りを並行して起動する。
    組み方の誤りを担当1件の費用で見つけるためであり、同じ組み方を繰り返す回は確かめずに並行して起動する。
@@ -124,7 +125,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 結果: <公開結果、CI、処理したAWIと採否の要約>
 ```
 
-続行不能の場合は`状態:`行の代わりに`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
+続行不能の場合は`状態:`行の代わりに`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
 統括担当はこの返却を`result_file`の`blocked`として記録する。
 `user_decision`・`authorization`・`inaccessible_input`の不足をユーザーだけが提供できる場合は、統括担当が同じprocess-wiの実行内で処置する。
 
@@ -146,6 +147,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
    終了済みの担当から回復する場合だけ、既存の終了観測と所有の移譲の後に、今回の未完了の集合から直接担当を選び直す。
 4. 配下の担当の確認事項・担当外の発見・改善点は統括へ届き、報告用UWIは統括が実行全体で1回作る。
    配下の担当は祖先の対話CLIを終える`atk agents-exit-session`を呼ばず、返却と終了観測を統括へ渡す。
+   リポジトリ担当は着手時に`agent-toolkit:atk-mode/playbooks/main-reporting.md`を読み、同書の報告と点検を統括へ向けて行う。
    統括自身は対象別の結果を保存した後、最上位の終了手順で統括CLIを終える。
 5. 統括は、自分が観測した不良・是正要求・改善点と、配下の担当からの報告へ、`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」の対処時機の判定を適用する。
    - 受け取った時に処置の根拠と残る前提を検収し、独立した別要求はその時点から起草を進める（投入準備の前倒しは`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」）。
@@ -153,7 +155,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
    - 今回追加とした正式改善AWIは対象の担当へ渡し、保存済みの正式名、選定への追加、担当への追送を確かめる。
    - 最小の直接修正の担当・基点・時機は同書「レーンの変更範囲へ加える修正の認可」で決め、統合済みの対象の独立した修正をレーンへ繰り返し加えない。
    - 回避と正式対応AWIだけの報告では、次のセッションで同じ停止が起きない根拠を確かめ、根拠が無ければ書込を担う配下の担当へ直接の修正を指示して検証結果を受け取る。
-6. 配下の担当を待つ間の進捗点検では、`agent-toolkit:delegation/references/waiting-and-monitoring-progress.md`「成果物側の観測」に従い、活動の有無と、工程の所要・反復の妥当性を分けて判断する。
+6. 配下の担当を待つ間の進捗点検では、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「成果物側の観測」に従い、活動の有無と、工程の所要・反復の妥当性を分けて判断する。
 
 ## 登録集合
 

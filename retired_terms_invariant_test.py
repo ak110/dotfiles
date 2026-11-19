@@ -279,8 +279,8 @@ _RETIRED_TERMS = (
         )
         for term, replacement, extra_allowed in (
             ("確認スキル", "`agent-toolkit:atk-mode/playbooks/confirmation.md`", ()),
-            ("委譲スキル", "`agent-toolkit:delegation`", ()),
-            ("工程スキル", "`agent-toolkit:delegation`以外のスキルなど、指す範囲を説明する句", ()),
+            ("委譲スキル", "委譲の手順書（`agent-toolkit:atk-mode/playbooks/delegation.md`）", ()),
+            ("工程スキル", "委譲の手順書以外の手順書など、指す範囲を説明する句", ()),
             ("自律終了スキル", "`atk agents-exit-session`の起動記録", ()),
             ("終了スキル", "`atk agents-exit-session`、または終了工程", ()),
             (
@@ -379,7 +379,7 @@ _RETIRED_TERMS = (
             ("執筆規範", "作成規範"),
             ("違反契約", "「違反した規定」"),
             ("計画契約", "「対応する計画」"),
-            ("一般継続契約", "「continuation.mdが定める継続の規定」"),
+            ("一般継続契約", "「`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」の規定」"),
             ("変更契約", "「変更した契約」"),
             ("実行時固有契約", "「実行ホスト別の参照資料の規定」"),
             ("失敗契約", "「失敗した検証が確かめる契約」"),
@@ -393,7 +393,7 @@ _RETIRED_TERMS = (
             ("延期`adopt`契約", "「lane-integration.subagent.mdの延期adoptの条件」"),
             ("本文契約", "「`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」の要件」"),
             ("process-wi契約", "「process-wiの規定の読み替え」"),
-            ("分割規範", "「share/rules/rules-common.codex.md「Codex固有の入出力」の分割取得の規定」"),
+            ("分割規範", "「host-codex.md「Codex固有の入出力」の分割取得の規定」"),
             ("公開契約基準", "説明へ"),
             ("導入目的の記録", "導入目的の調査記録"),
             # 表・記録・報告の名前
@@ -457,7 +457,7 @@ _RETIRED_TERMS = (
             ("起動API", "`agents_server`の`start`"),
             ("役割種別", "`mode`"),
             ("起動種別", "`mode`"),
-            ("固定指示", "`share/agents-server-*.md`のファイル名"),
+            ("固定指示", "起動の本文"),
             ("呼び元用文書", "`<役割名>.parent.md`"),
             ("親文書", "`<役割名>.parent.md`"),
             ("親用文書", "`<役割名>.parent.md`"),
@@ -514,7 +514,7 @@ _RETIRED_TERMS = (
             ("境界標識", "`atk-auto`"),
             ("AWI処理スキル", "`agent-toolkit:atk-mode`の作業`process-wi`"),
             ("認識合わせスキル", "`agent-toolkit:atk-mode/references/delivery.md`「認識合わせ」"),
-            ("即時報告", "即時通知（`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」）"),
+            ("即時報告", "即時通知（`agent-toolkit/skills/atk-mode/playbooks/subagent.md`「確認事項の即時通知」）"),
             ("編集スキル", "スキル名"),
             ("担当スキル", "個別のスキル名"),
             ("外部依存未達", "`dependency-unmet-external`"),
@@ -531,7 +531,7 @@ _RETIRED_TERMS = (
         )
     ),
     # 委譲先の返却形式の状態値（2026年10月6日に廃止）。続行不能は`続行できない理由:`の行だけで表す。
-    # 定義は`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」を正とする。
+    # 定義は`agent-toolkit/skills/atk-mode/playbooks/subagent.md`「返却形式の受け渡し」を正とする。
     _RetiredTerm(
         term="needs_escalation",
         replacement="`続行できない理由:`の行（地の文では「続行できない理由を返す」）",
@@ -570,15 +570,11 @@ _RETIRED_TERMS = (
     ),
     # 報告の向きを示さない呼称。「ユーザー」と「報告」を直結した語はユーザーへ届ける報告と
     # ユーザーから寄せられた報告のどちらにも読めるため使わない。
-    # 定義は`agent-toolkit/share/rules/common/01-agent.md`「役割分担」を正とする。
-    # 同文書とその生成物だけが禁止する語そのものを持つ。
+    # 定義は`agent-toolkit/skills/atk-mode/playbooks/main-reporting.md`「ユーザー向け発話ルール」を正とする。
     _RetiredTerm(
         term=_REPORT_DIRECTION_TERM,
         replacement="ユーザーへの報告、またはユーザーからの報告",
         allowed=(
-            # 語の使用停止を定める規定と、それを写した生成物
-            _AllowedLocation("agent-toolkit/share/rules/common/01-agent.md"),
-            _AllowedLocation(".chezmoi-source/dot_codex/AGENTS.md"),
             # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
@@ -680,14 +676,12 @@ def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Pat
 
 
 def test_report_direction_term_outside_allowed_paths_is_reported(tmp_path: pathlib.Path) -> None:
-    """報告の向きを示さない語は、定義を持つ規範とその生成物の外で報告し、向きを示す言い方は報告しない。"""
+    """報告の向きを示さない語を報告し、向きを示す言い方は報告しない。"""
     _init_repo(
         tmp_path,
         {
             "docs/note.md": f"前置き\n2026年の{_REPORT_DIRECTION_TERM}に由来する\n",
             "docs/clean.md": "ユーザーへの報告とユーザーからの報告\n",
-            "agent-toolkit/share/rules/common/01-agent.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
-            ".chezmoi-source/dot_codex/AGENTS.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
         },
     )
     terms = tuple(retired for retired in _RETIRED_TERMS if retired.term == _REPORT_DIRECTION_TERM)

@@ -20,7 +20,7 @@ from agent_toolkit._testing.pretooluse_support import run_without_read_delivery 
 
 _PLUGIN_ROOT = _SHARE_DIR.parent
 _EXEC_DOCUMENT = _ROLES_DIR / "exec.subagent.md"
-_READER_FIT_DOCUMENT = _SHARE_DIR / "reader-fit-review.subagent.md"
+_READER_FIT_DOCUMENT = _ROLES_DIR / "reader-fit-review.subagent.md"
 
 
 @pytest.fixture(name="task_documents", params=["checkout", "__w"])

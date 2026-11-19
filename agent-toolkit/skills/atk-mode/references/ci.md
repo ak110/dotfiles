@@ -67,10 +67,10 @@ push前のbaselineが無い場合と、他の主体がpushしたcommitを待つ�
 atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専用JSONの絶対パス> --repo <owner/repo> --forge github --ref <destination-ref> --source-ref <source-ref>
 ```
 
-- 起動と結果の回収は`agent-toolkit:delegation/references/waiting-and-monitoring-intervals.md`「待機区間の構成」に従う。
+- 起動と結果の回収は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機区間の構成」に従う。
   背景で起動し、他の独立した待機より先に届いた通知から回収する。
   同じbaselineの監視が起動済みなら、新しく起動せずにそのプロセスを回収する。
-- ホストが背景の監視を停止した場合は、`agent-toolkit:delegation/references/wait-anomalies-stopped.md`「ホストによる背景待機の停止後」に従う。
+- ホストが背景の監視を停止した場合は、`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`「ホストによる背景待機の停止後」に従う。
   CIのジョブは再実行せず、停止した監視と出力を回収して、同じSHAとbaseline（か待機専用の記録）で監視を再開する。
 - `--timeout`は判定するrunと同じジョブ構成（実行するジョブ、パスの条件によるスキップ、マトリックス、軽量実行の有無）を持つ過去の成功runの所要に、登録の猶予と変動の余裕を足した有限の値にする。
   GitHub Actionsの所要は`updatedAt - startedAt`で、`gh run view <run ID> --json startedAt,updatedAt,jobs`などでジョブ構成と合わせて確かめる。
@@ -78,7 +78,7 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
   所要を取得できない時は`--timeout`を省き、省略時の270秒を使う。
 - ホストが背景のコマンドを止める上限は、`--timeout`より長くする（ホストが先に止めると判定の結果が失われる）。
   見積もった総待機がホストの背景実行の最大（Claude Codeの`Bash`では7,200,000ミリ秒）を超える時は、最大より短い`--timeout`で起動し、終了コード2を受けてから同じ対象を待ち直す。
-- Codexでは`agent-toolkit:delegation/references/codex-runtime-waiting.md`「agents_serverの二層待機」に従い、未起動の監視を通知で再開できる小さい担当へ渡す案と、元の担当での二層の回収を総費用で選ぶ。
+- Codexでは`agent-toolkit:atk-mode/playbooks/host-codex.md`「agents_serverの二層待機」に従い、未起動の監視を通知で再開できる小さい担当へ渡す案と、元の担当での二層の回収を総費用で選ぶ。
   起動済みの監視は、短い`--timeout`へ分割したり、プラグインのrootの更新を契機に別プロセスへ置き換えたりせず、同じ実行ハンドルで回収する。
 - `--baseline`による判定が終わるまで、同じcommitのワークフローを`gh workflow run`などで手動起動しない。
   `wait_ci.py`はbaselineに無い同じcommitのrunも監視に含めるため、手動起動したrunの失敗がCI全体の失敗になる。

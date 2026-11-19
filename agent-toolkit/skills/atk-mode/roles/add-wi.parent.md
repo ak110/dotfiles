@@ -19,7 +19,8 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 <!-- input-contract:add-wi:start -->
 <!-- 生成元: skills/atk-mode/roles/add-wi.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
-起動準備はこの契約の入力一覧で完結する。
+役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
+通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
 
 - 必須入力名: `投入する要求`、`引き継ぎ記録先`
 - 任意入力名: `投入経路`
@@ -35,7 +36,7 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
    共通の入力は別ファイルにして、要求ファイルから絶対パスで指す。
 2. 要求ごとの欄は`agent-toolkit:atk-mode/references/add-wi-inputs.md`「投入する要求の欄」と「要求の種類ごとの追加の欄」に従って書く。
 
-- `引き継ぎ記録先`: `agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
+- `引き継ぎ記録先`: `agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」に従う。
 - `投入経路`: 「起動方法」の専念型の条件に当たれば`専念型`を指定し、それ以外は省略して付随型とする。
 
 ## 起動方法
@@ -79,7 +80,7 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 本人情報の不足で続行不能を返す前に、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に沿って、手元の情報と既存の判断で解けないことと、残る値がユーザー固有であることを確かめる。
 既存の理由欄と成立性の証拠に、必要な判断、試した取得・代替と限界、残る本人固有の値、並行して完了できる範囲を対応付ける。
 
-続行不能、状態・結果行の抑止と追加報告行は、共通契約`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能、状態・結果行の抑止と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 以下の理由・区分の2行は、続行できない要求にだけ配置する。
 
 ### 起草の返却
@@ -143,7 +144,7 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 ## 受領と検収
 
 1. 返却対象を取り違えないよう、要求識別子と起動応答の`session_id`を対応付ける。
-   質問への回答と要件の更新は同じsessionへ`send_message`で送り、続けられなければ`agent-toolkit:delegation/references/continuation.md`「継続と新規起動」で引き継ぐ。
+   質問への回答と要件の更新は同じsessionへ`send_message`で送り、続けられなければ`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」で引き継ぐ。
 2. 専念型は「保存の検収」で保存・再利用、要求集合、投入前レビューの収束を確かめ、不備を元の担当へ戻す。
    付随型は「原稿の検収」へ進む。
 
@@ -165,7 +166,7 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 5. 「WI投入担当の返却契約」の形式・省略規則と検収結果を確かめ、合格した要求識別子へ直ちに保存を指示する。
    他の担当の返却や別AWIの確定は待たずに進め、同じ担当の中の依存順だけを守る。
    指示は`send_message`の`instruction`に`保存開始`、`extra_params`の`要求識別子`に合格した対象を渡す（初回の要求本文は担当が保持している）。
-   組み込み委譲では`agent-toolkit:delegation/references/sending.md`の生成CLIを使う。
+   組み込み委譲では`agent-toolkit:atk-mode/references/delegation-prompt.md`の生成CLIを使う。
    不合格は「修正と再開」へ戻す。
 
 ### 続行できない理由の扱い

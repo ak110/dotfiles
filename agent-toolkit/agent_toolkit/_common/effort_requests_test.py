@@ -1,11 +1,11 @@
-"""移譲中の遅着要求を同一ファイル・同一期限で回収する境界。"""
+"""移譲中の遅着要求を同一ファイル・同一期限で回収する境界と、要求側の後始末と重なった応答を残さないこと。"""
 
 import json
 import time
 
 import pytest
 
-from agent_toolkit._common import effort_requests, session_registry
+from agent_toolkit._common import atomic_file, effort_requests, session_registry
 
 
 @pytest.mark.parametrize("condition", ["late", "expired", "answered", "unsupported", "deleted"])
@@ -53,3 +53,28 @@ def test_pending_preserves_request_identity_during_transfer(tmp_path, monkeypatc
             assert not path.exists()
         else:
             assert json.loads(path.read_text(encoding="utf-8")) == packet
+
+
+@pytest.mark.parametrize("withdrawn", [False, True])
+def test_response_remains_only_while_request_is_held(tmp_path, monkeypatch, withdrawn):
+    """要求が残る間は応答を渡し、書込と重なって要求側が要求と応答を消した後には応答を残さない。"""
+    directory = session_registry.registry_directory(tmp_path)
+    directory.mkdir(parents=True, exist_ok=True)
+    request = directory / "token.effort-request"
+    request.write_text("{}", encoding="utf-8")
+    response = request.with_suffix(".effort-response")
+    original_write = atomic_file.atomic_write
+
+    def write_after_requester_cleanup(path, content, **kwargs):
+        if withdrawn:
+            # 要求側（旧版を含む）は期限切れで待機を終え、要求、応答の順に消す。
+            request.unlink()
+            response.unlink(missing_ok=True)
+        original_write(path, content, **kwargs)
+
+    monkeypatch.setattr(atomic_file, "atomic_write", write_after_requester_cleanup)
+    effort_requests.respond(request, {"session_id": "child", "effort": "medium"})
+    if withdrawn:
+        assert not request.exists() and not response.exists()
+    else:
+        assert json.loads(response.read_text(encoding="utf-8")) == {"session_id": "child", "effort": "medium"}

@@ -49,7 +49,7 @@
 ## 判定の観点と並行する探索
 
 1. 走査を始める前に、文章成果物があれば本書「読者別探索」を、毎ラウンド本書「再発防止セルフチェックの起動と受領」を並行して起動する。
-   起動と終了の観測は`agent-toolkit:delegation/references/runtime-routing.md`「実行手段」に従い、`agents_server`が使えないCodexの代替では`fork_turns: "none"`で独立した文脈を保つ。
+   起動と終了の観測は`agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」に従い、`agents_server`が使えないCodexの代替では`fork_turns: "none"`で独立した文脈を保つ。
 2. 各要求単位と変更面を`agent-basics:review-standards/references/reviewer.md`「初回レビュー」の手順で走査し、指摘は同「指摘内容」で書く。
    判定は`agent-basics:review-standards/references/reviewer-execution.md`「実行レビューの判定」の各節で行い、計画、WI、CI記録の読み方と語の読み替えは本書「計画と表の優先」「実行レビューの判定」による。
 3. 走査の結果は、観点を1つ終えるごとに`agent-toolkit:atk-mode/references/review-record.md`「走査記録と差分外の不良」の走査記録へ保存する。
@@ -110,7 +110,7 @@
 
 ## 読者別探索
 
-文章成果物があれば、直接確認か読者別探索担当の起動を選び、受領までを`agent-toolkit:/share/reader-fit-review.parent.md`の「起動」「入力」「受領」に従って行う。
+文章成果物があれば、直接確認か読者別探索担当の起動を選び、受領までを`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`の「起動」「入力」「受領」に従って行う。
 
 ユーザーがAWIの`## ユーザーコメント`かUWIの`## 回答`へ担当者宛てに直接書いた質問（AWI本文へ転記された質問を除く）への回答下書きは、Gitの差分に無くても、検証結果が示す絶対パスを成果物、種別を「質問への回答」、読者を「質問したユーザー」として渡す。
 事実を言い切る記述の根拠と現物を自分でも確かめ、根拠が欠ければ種類1として下書きの修正へ差し戻す。
@@ -167,6 +167,6 @@
 
 - 正常に終えた時は、`指摘件数: <非負整数>`と`要件仕様件数: <非負整数>`（そのラウンドで登録した`指摘レベル`が`要件`か`仕様`の件数）の2行を返し、指摘の本文は含めない。
 - 基準の文書を読む時に切り詰めの通知を受けた場合だけ、続けて`切り詰め: <文書の絶対パス> <全文読解の成否>`（`全文到達`、または`未到達`とその範囲）の1行を書く。
-- `気付いた改善点:`の行と、続行不能の区分と理由は、`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+- `気付いた改善点:`の行と、続行不能の区分と理由は、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 
 返す報告に含める項目: 実行レビュー担当は役割文書「出力」の各行と延期の記録の所在、専用レビュータスク契約の担当は本書「完了報告」の2行と切り詰めの行。

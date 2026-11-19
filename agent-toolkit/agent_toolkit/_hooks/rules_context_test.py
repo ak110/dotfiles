@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 
@@ -125,143 +126,118 @@ def test_conversation_identity_notice_is_limited_to_claude_main(
     assert "この会話のtranscript:" not in output
 
 
+def _document_references(output: str) -> set[str]:
+    """通知が名指しするMarkdownの資料を返す。規範のファイルへの案内が混入していないかの判定に使う。"""
+    return set(re.findall(r"[^\s`「」（）]+\.md", output))
+
+
+@pytest.mark.parametrize("delegated", [False, True])
+@pytest.mark.parametrize("host", ["claude", "codex", "agy"])
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
-def test_session_start_main_claude_includes_main_and_claude_rules(
-    source: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+def test_session_start_carries_no_rule_bodies_or_rule_file_pointers(
+    source: str, host: str, delegated: bool, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """SessionStartは規範の本文も規範のファイルへの案内も載せず、CLIの起動部分は届ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": source}))
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": source}), host=host)
     output = _output(capsys)
-    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
-    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
-    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
-    assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
-    assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
-    assert "日本語で書け" not in rules_context.RESPONSE_LANGUAGE_NOTICE
-    assert "「使用言語」を参照せよ" in rules_context.RESPONSE_LANGUAGE_NOTICE
-    assert "思考を除いてエージェントが書く全ての文" not in output
-    normative_start = (
-        f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
-        f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
-    )
-    assert output.count(normative_start) == 1
-    assert output.endswith(f"</{rules_context.NORMATIVE_ELEMENT}>")
-    normative_body = output.split(normative_start, maxsplit=1)[1]
-    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in normative_body
-    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in normative_body
-    assert normative_body.count(rules_context.COMMON_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip()) == 1
-
-
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGENT_TOOLKIT_OWNER_SESSION", "owner")],
-)
-def test_session_start_delegated_omits_main_rules(
-    name: str, value: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setenv(name, value)
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
-    output = _output(capsys)
-    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
-    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
-    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
-    assert rules_context.RESPONSE_LANGUAGE_NOTICE not in output
+    assert 'kind="rules-' not in output
+    assert _document_references(output) <= {str(rules_context.SUBAGENT_PLAYBOOK_PATH)}
     assert str(rules_context.SHARE_DIR.parent / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")) in output
 
 
-def test_session_start_compact_prepends_quality_notice(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+_DELEGATED_ENVIRONMENTS = [None, ("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGENT_TOOLKIT_OWNER_SESSION", "owner")]
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("agent_id", [None, "builtin-child"])
+@pytest.mark.parametrize("environment", _DELEGATED_ENVIRONMENTS)
+@pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
+def test_session_start_delegated_requests_reread_only_after_compaction(
+    environment: tuple[str, str] | None,
+    source: str,
+    agent_id: str | None,
+    host: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """委譲先へは圧縮の後だけ、起動の本文の原本と役割文書の読み直しを1行で求める。メインへは渡さない。
+
+    委譲先は`agents_server`の環境変数か、組み込みの委譲機能の子が入力に持つ`agent_id`で判定する。
+    委譲先の起動時は起動の本文かSubagentStartが入口を届けるため、案内を重ねない。
+    """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact"}))
+    if environment is not None:
+        monkeypatch.setenv(*environment)
+    payload = {"hook_event_name": "SessionStart", "source": source} | ({"agent_id": agent_id} if agent_id else {})
+    handler = rules_context.main if host == "claude" else rules_context_codex.main
+    handler(json.dumps(payload))
     output = _output(capsys)
-    assert output.index(rules_context.QUALITY_CHECKPOINT_NOTICE) < output.index(
-        rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip()
+    delegated = environment is not None or agent_id is not None
+    assert output.count(rules_context.DELEGATED_COMPACT_NOTICE) == (1 if delegated and source == "compact" else 0)
+    if delegated:
+        assert rules_context.ENTRY_START_NOTICE not in output
+        assert rules_context.ENTRY_COMPACT_NOTICE not in output
+    assert "\n" not in rules_context.DELEGATED_COMPACT_NOTICE
+    assert str(rules_context.SUBAGENT_PLAYBOOK_PATH) in rules_context.DELEGATED_COMPACT_NOTICE
+    assert rules_context.SUBAGENT_PLAYBOOK_PATH.is_file()
+
+
+def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """組み込みの子の圧縮は、親と同じsession_idでもメインの記録と会話の要約に触れず、子の記録と一時領域だけを扱う。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("子の圧縮でメインの会話の要約を作った")
+
+    monkeypatch.setattr(rules_context.process_tree, "run_with_timeout", unexpected)
+    session_id = "builtin-child-compact"
+    main_notice, child_notice = "pretooluse|main|notice", "pretooluse|child-1|notice"
+    update_state(
+        session_id,
+        lambda _state: {
+            rules_context.OPERATION_SKILL_READY_KEY: {"skill:example": [rules_context.MAIN_AGENT_ID]},
+            "notice_fingerprints": {main_notice: ["main"], child_notice: ["child"]},
+        },
     )
-
-    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact"}))
+    transcript = tmp_path / "main-transcript.jsonl"
+    transcript.write_text("{}\n", encoding="utf-8")
+    payload = {
+        "hook_event_name": "SessionStart",
+        "source": "compact",
+        "session_id": session_id,
+        "agent_id": "child-1",
+        "transcript_path": str(transcript),
+    }
+    assert rules_context.main(json.dumps(payload)) == 0
     output = _output(capsys)
-    assert rules_context.QUALITY_CHECKPOINT_NOTICE in output
-    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
-    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
+    state = read_state(session_id)
+    assert state[rules_context.OPERATION_SKILL_READY_KEY]["skill:example"] == [rules_context.MAIN_AGENT_ID]
+    assert state["notice_fingerprints"] == {main_notice: ["main"]}
+    assert f"このサブエージェント専用の一時領域: {tmp_path / 'agent-child-1'}" in output
+    assert "compaction-digest" not in output
+    assert not (tmp_path / "compaction-digest").exists()
+    assert rules_context.DELEGATED_COMPACT_NOTICE in output
 
 
-def test_session_start_main_places_response_language_notice_first(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """使用言語の1文を、同じ本文の他の条文より前へ置く。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact"}))
-    output = _output(capsys)
-    notice_index = output.index(rules_context.RESPONSE_LANGUAGE_NOTICE)
-
-    assert notice_index < output.index(rules_context.QUALITY_CHECKPOINT_NOTICE)
-    assert notice_index < output.index(
-        f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
-        f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
-    )
-
-
-# test-copy-contract: 委譲環境とSubagentStartを入力に、メイン向け通知を別主体へ誤配送しない契約。
-def test_response_language_notice_absent_for_delegates(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """委譲先とサブエージェントの本文へ使用言語の1文を渡さない。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact"}))
-    assert rules_context.RESPONSE_LANGUAGE_NOTICE not in _output(capsys)
-
-    rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "general-purpose"}))
-    assert rules_context.RESPONSE_LANGUAGE_NOTICE not in _output(capsys)
-
-
-# test-copy-contract: Codex開始入力には共通規範を配送し、Claude専用規範を混入させないホスト別配送契約。
-def test_session_start_codex_excludes_claude_code_rules(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    rules_context_codex.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
-    output = _output(capsys)
-    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
-    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
-
-
-def test_codex_main_receives_codex_main_rules(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """Codexのメインだけが`rules-main.codex.md`を`rules-main.md`の後で受け取り、委譲先とClaude Codeは受け取らない。"""
-    main_rules = rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip()
-    codex_main_rules = rules_context.MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip()
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-
-    rules_context_codex.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
-    codex_output = _output(capsys)
-    assert codex_output.index(main_rules) < codex_output.index(codex_main_rules)
-
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
-    assert codex_main_rules not in _output(capsys)
-
-    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    rules_context_codex.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
-    delegated_output = _output(capsys)
-    assert main_rules not in delegated_output
-    assert codex_main_rules not in delegated_output
-    rules_context_codex.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "explorer"}))
-    assert codex_main_rules not in _output(capsys)
-
-
-# test-copy-contract: 主体種別と委譲環境を変えてもサブエージェント規範だけを配送し、メイン規範を混入させない契約。
+# test-copy-contract: 主体種別・委譲環境・ホストを変えても、サブエージェントへは入口の所在の1行だけを配送する契約。
 @pytest.mark.parametrize("agent_type", ["Explore", "Plan", "general-purpose", "plan-reviewer"])
 @pytest.mark.parametrize("environment", [None, "delegated", "owner"])
-def test_subagent_start_claude_includes_common_and_claude_subagent_rules(
-    agent_type: str, environment: str | None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_subagent_start_points_to_subagent_entry_without_rule_bodies(
+    agent_type: str,
+    environment: str | None,
+    host: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -269,20 +245,15 @@ def test_subagent_start_claude_includes_common_and_claude_subagent_rules(
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     elif environment == "owner":
         monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner")
-    rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": agent_type}))
+    handler = rules_context.main if host == "claude" else rules_context_codex.main
+    handler(json.dumps({"hook_event_name": "SubagentStart", "agent_type": agent_type}))
     output = _output(capsys)
-    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
-    assert rules_context.SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
-    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
-
-
-# test-copy-contract: CodexのSubagentStartには共通規範を配送し、Claude専用規範を混入させない契約。
-def test_subagent_start_codex_excludes_claude_code_rules(capsys: pytest.CaptureFixture[str]) -> None:
-    """CodexのSubagentStartへClaude固有規範を追加しない。"""
-    rules_context_codex.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "explorer"}))
-    output = _output(capsys)
-    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
-    assert rules_context.SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
+    assert _notice_lines(output, rules_context.SUBAGENT_ENTRY_NOTICE) == [rules_context.SUBAGENT_ENTRY_NOTICE]
+    assert str(rules_context.SUBAGENT_PLAYBOOK_PATH) in rules_context.SUBAGENT_ENTRY_NOTICE
+    assert rules_context.SUBAGENT_PLAYBOOK_PATH.is_file()
+    assert 'kind="rules-' not in output
+    assert _document_references(output) == {str(rules_context.SUBAGENT_PLAYBOOK_PATH)}
+    assert rules_context.ENTRY_START_NOTICE not in output
 
 
 def test_session_start_context_fits_claude_code_cap(
@@ -311,7 +282,7 @@ def test_session_start_guides_main_to_entry_with_one_line(
 ) -> None:
     """文脈を失って始まる会話のメインへ、入口の起動を1行で案内する。入口の本文は通知へ載せない。
 
-    委譲先へは起動の本文が規範を届けるため、案内しない。
+    委譲先へは起動の本文が入口を届けるため、案内しない。
     """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -334,12 +305,7 @@ def test_session_start_guides_main_to_entry_with_one_line(
         return
     assert "\n" not in expected and "agent-toolkit:atk-mode" in expected
     # 同じ区分に並ぶのは1行の案内だけであり、入口の本文の行は通知のどこにも無い。
-    one_line_notices = {
-        rules_context.RESPONSE_LANGUAGE_NOTICE,
-        rules_context.QUALITY_CHECKPOINT_NOTICE,
-        rules_context.ENTRY_START_NOTICE,
-        rules_context.ENTRY_COMPACT_NOTICE,
-    }
+    one_line_notices = {rules_context.ENTRY_START_NOTICE, rules_context.ENTRY_COMPACT_NOTICE}
     assert set(_notice_lines(output, expected)) <= one_line_notices
     entry = (rules_context.SHARE_DIR.parent / "skills" / "atk-mode" / "SKILL.md").read_text(encoding="utf-8")
     headings = [line for line in entry.split("\n---\n", 1)[1].splitlines() if line.startswith("#")]

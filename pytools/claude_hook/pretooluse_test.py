@@ -21,7 +21,6 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
 _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
-_AT_RULES_DIR = _AT_DIR / "share" / "rules" / "common"
 
 # 文字列リテラルで直接書くと本ファイル自身が警告を発する原因になるため、
 # テスト対象の「言及される名前」はプログラム的に組み立てる。
@@ -202,9 +201,9 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "せよ" in message
         assert '<atk-auto source="dotfiles/claude_hook_pretooluse"' in message
 
-    # test-copy-contract: 規範ファイルへのEditのnew_stringを入力し、個人固有名の警告を観測する。
-    def test_warn_in_agent_toolkit_rules(self):
-        target = str(_AT_RULES_DIR / "01-agent.md")
+    # test-copy-contract: 規範を持つ入口のスキルへのEditのnew_stringを入力し、個人固有名の警告を観測する。
+    def test_warn_in_agent_toolkit_entry_skill(self):
+        target = str(_AT_DIR / "skills" / "atk-mode" / "SKILL.md")
         result = _run(
             {
                 "tool_name": "Edit",

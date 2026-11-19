@@ -22,7 +22,7 @@ AWIの登録や既存AWIの存在は起票の証拠として扱い、原因の�
 | 引数の先頭語が`batch`と完全一致する | `agent-toolkit:atk-mode/playbooks/review-session-batch.md`を全文読んで従う |
 | それ以外（引数なしを含む） | 本書「工程」を上から行う |
 | 工程1の準備が失敗した | 本書「準備の失敗」 |
-| 事実関係の調査を独立した担当へ分担する | `agent-toolkit:delegation`を起動する |
+| 事実関係の調査を独立した担当へ分担する | `agent-toolkit:atk-mode/playbooks/delegation.md`を全文読む |
 | 工程の途中で追加の発話や指摘を受けた | `agent-toolkit:atk-mode/references/work-contract.md`「追加入力の統合」で要求へ反映し、既存の証拠で影響する工程へ戻って処置した後、元の未完了の工程を続ける |
 | 対話で起動した振り返りで、投入する要求が巡回や作業の進め方の改善である | `agent-toolkit:atk-mode/playbooks/add-awi-by-user.md`「稼働中の巡回への連絡」 |
 
@@ -43,7 +43,7 @@ AWIの登録や既存AWIの存在は起票の証拠として扱い、原因の�
 
 `atk run-script session-review-prepare`を1回実行し、全担当の発話、ツールの入力、実行結果を時系列の会話の流れ、問題候補、統計へまとめる。
 出力先の作業ディレクトリは、実行ごとに対象セッションのmanaged-tempの中へ自動で確保される。
-Claude CodeではSessionStartが通知した現在のtranscriptの絶対パスで対象を指定する（`agent-toolkit:/share/rules/rules-main.claude-code.md`「自身の会話の記録」）。
+Claude CodeではSessionStartが通知した現在のtranscriptの絶対パスで対象を指定する（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「自身の会話の記録」）。
 Codexでは`CODEX_THREAD_ID`、OpenCodeでは`ses_`から始まるセッションIDを使う。
 `--target-repo`は対象リポジトリを確実に特定できた時だけ指定する。
 

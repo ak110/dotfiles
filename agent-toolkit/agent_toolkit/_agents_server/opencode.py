@@ -31,25 +31,23 @@ def build_command(prompt: str, model: str | None, effort: str | None, conversati
 
 
 def system_prompt(launch_kind: LaunchKind) -> str:
-    """pluginの共通規範・委譲先規範・ユーザー規範を本文先頭へ連結する。"""
+    """起動の本文とユーザー規範を本文先頭へ連結する。
+
+    `~/.claude/rules/agent-toolkit/`は旧い配布物の置き場で、更新時に回収するため読まない。
+    """
     root = plugin_roots.SERVER_PLUGIN_ROOT
-    files = sorted((root / "share" / "rules" / "common").glob("*.md"))
-    role_prompt = launch_prompts.LAUNCH_SYSTEM_PROMPTS[launch_kind]
-    if launch_kind != "delegate":
-        # OpenCodeは全文も配送するため、軽量指示に含まれる同じ返却契約を除く。
-        role_prompt = role_prompt.replace(launch_prompts.RESULT_REPORT_INSTRUCTIONS, "")
-        files.append(root / "share" / "rules" / "rules-subagent.md")
+    sections = [launch_prompts.launch_prompt(launch_kind), launch_prompts.cli_runtime_instructions(root)]
+    sections.append(f"agent-toolkit plugin root: {root}\nagent-toolkitのskillと内部資源はこのrootから読む。")
     user_rules = host_homes.claude_config_dir() / "rules"
     if user_rules.is_dir():
-        files.extend(sorted(path for path in user_rules.rglob("*.md") if path.is_file()))
-    sections = [role_prompt, launch_prompts.cli_runtime_instructions(root)]
-    sections.append(f"agent-toolkit plugin root: {root}\nagent-toolkitのskillと内部資源はこのrootから読む。")
-    for path in files:
-        sections.append(
-            message_format.auto_message(
-                path.read_text(encoding="utf-8"), source="agents-server", kind="rules", attributes={"path": str(path)}
+        for path in sorted(user_rules.rglob("*.md")):
+            if not path.is_file() or path.is_relative_to(user_rules / "agent-toolkit"):
+                continue
+            sections.append(
+                message_format.auto_message(
+                    path.read_text(encoding="utf-8"), source="agents-server", kind="rules", attributes={"path": str(path)}
+                )
             )
-        )
     return "\n\n".join(sections)
 
 

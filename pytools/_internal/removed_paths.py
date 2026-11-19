@@ -57,6 +57,9 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("rules/agent-toolkit/04-styles.md"), datetime.date(2026, 7, 26)),
         cleanup_paths.RemovedPath(Path("rules/agent-toolkit/05-terminology.md"), datetime.date(2026, 7, 26)),
         cleanup_paths.RemovedPath(Path("rules/agent-toolkit/06-monitoring.md"), datetime.date(2026, 7, 26)),
+        # 常時規範の配布を廃止し、入口のスキル`atk-mode`と手順書へ移したため、post-applyの同期が
+        # 所有していた配布先を丸ごと削除する。残すと廃止したスキルの起動を求める旧い規範が読まれ続ける。
+        cleanup_paths.RemovedPath(Path("rules/agent-toolkit"), datetime.date(2026, 11, 20)),
     ],
     Path.home() / ".codex": [
         # agent定義（feedbacks-planner・plan-executor・plan-review-executor）を廃止し、
@@ -78,6 +81,10 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         # 現在のスキル名は operate-ak110-projects。旧名の配布先リンクを削除する。
         cleanup_paths.RemovedPath(Path("skills/sync-cross-project"), datetime.date(2026, 9, 13)),
         cleanup_paths.RemovedPath(Path("skills/ak110-projects-operations"), datetime.date(2026, 11, 1)),
+        # 常時規範の配布の廃止に伴い、post-applyの同期が所有していたCodex向けの配布先を削除する。
+        # 親は他に配布物が無いため、空になった場合だけ削除する。
+        cleanup_paths.RemovedPath(Path("agent-toolkit/rules"), datetime.date(2026, 11, 20)),
+        cleanup_paths.RemovedPath(Path("agent-toolkit"), datetime.date(2026, 11, 20), empty_dir_only=True),
     ],
     Path.home() / ".config": [
         # pyfltr v3.14.1で口語表現チェッカーが内蔵化されたため

@@ -28,12 +28,11 @@ dotfiles導入では`chezmoi apply`が`~/dotfiles/agent-toolkit/scripts`をPATH�
 dotfiles導入はCodex向けに次を配置する。
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、これらを配置しない。
 
-- `~/.codex/AGENTS.md`: Codex向けの基本記述と、agent-toolkitの基本原則・製品横断の実行運用を埋め込む（`scripts/sync_codex_agents.py`が生成）
-- `~/.codex/agent-toolkit/rules`: agent-toolkitのルール原本を`atk-auto`の境界付き本文としてコピーで同期する
+- `~/.codex/AGENTS.md`: 全リポジトリへ適用する個人用の規範（`myprojects-common.md`）を`atk-auto`の境界付き本文として埋め込む（`scripts/sync_codex_agents.py`が生成）。
+  agent-toolkitの規範は入口のスキル`agent-toolkit:atk-mode`と手順書が持ち、ここへは埋め込まない
+- スキルなどの共有対象: リンクで配布する
 
-`agent-toolkit/share/rules/common`は配布先で境界を付けた本文へ書き換えるためコピーで同期し、書き換えを要さない共有対象はリンクで配布する。
 chezmoiの`symlink_`はWindowsで特権不足により失敗するため、`chezmoi apply`後処理（`pytools.post_apply`）の専用ステップがリンクを生成する（Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション）。
-`~/.codex/rules`はCodexの承認ルール用ディレクトリでありMarkdownルールと互換性がないため、Markdownルールは`~/.codex/agent-toolkit/rules`へ置く。
 Codexはプロジェクト直下の`.claude/rules/`と`.claude/skills/`を自動では読まない。
 プロジェクト専用スキルは`.agents/skills -> .claude/skills`のシンボリックリンクで共有する。
 

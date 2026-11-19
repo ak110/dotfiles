@@ -19,7 +19,7 @@ Codexの各pollの`wall_time_seconds`は全体区間を測らないため使わ�
 
 Claude CodeのBashとPowerShellは、出力が上限（`bashOutputMaxChars`、指定しない場合30,000。比較はUTF-8のバイト数）を超えると全量を保存先へ書き、モデルへ渡すツール結果を`<persisted-output>`と出力の先頭約2KBの抜粋へ置き換える。
 抜粋は取得結果の全体と同じ位置と形で届くため、2026年10月6日のセッションでは、メインがエージェント向け文書を数件まとめて`cat`した結果の抜粋だけを読み、保存先を読まずに委譲を起動した。
-`02-agent-operations.md`の`Read`の箇条は残りを読むよう定めていたが、条件の主語が`Read`であり、Bashで読んだ結果へ当てはめる想起だけに任せていた。
+当時の常時規範`02-agent-operations.md`の`Read`の箇条は残りを読むよう定めていたが、条件の主語が`Read`であり、Bashで読んだ結果へ当てはめる想起だけに任せていた。
 
 そこで`posttooluse.py`が、`tool_response`に空でない文字列の`persistedOutputPath`を持つBashとPowerShellの結果へ`hookSpecificOutput.updatedToolOutput`を返す（判定と本文は`persisted_output.py`）。
 次の操作の行では、保存先を`Read`で範囲を指定せず`allow_large: true`を付けて読み、`PARTIAL view`の部分取得かエラーが返った場合だけ残りを`offset`と`limit`で読むよう案内する。

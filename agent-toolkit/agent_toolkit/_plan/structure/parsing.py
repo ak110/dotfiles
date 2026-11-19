@@ -199,35 +199,6 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     return PlanMetadata(parent, tuple(entries), values, tuple(related_wi), tuple(base_candidates)), []
 
 
-def is_agent_facing_md(rel_path: str) -> bool:
-    """パス文字列がコーディングエージェント向けMarkdownの対象種別かを判定する。
-
-    対象は拡張子`.md`のファイルのうち、次のいずれかに該当するもの。
-    ルートの`AGENTS.md`・`CLAUDE.md`。パスを構成する要素に`rules`を含むもの
-    （`agent-toolkit/share/rules/common/`・`.claude/rules/`・`.chezmoi-source/dot_claude/rules/`等）。
-    末尾から3番目のパスを構成する要素が`skills`かつファイル名が`SKILL.md`のもの
-    （`agent-toolkit/skills/<name>/SKILL.md`・`.claude/skills/<name>/SKILL.md`・
-    `.chezmoi-source/dot_claude/skills/<name>/SKILL.md`等）。
-    パスを構成する要素に`references`と`skills`の両方を含むもの。パスを構成する要素に`agents`を含むもの。
-    パスを構成する要素の完全一致で判定し、部分文字列一致は行わない。
-    `posttooluse.py`の条件付き禁止形の警告通知が対象種別の判定に使う。
-    """
-    p = pathlib.PurePosixPath(rel_path.replace("\\", "/"))
-    parts = p.parts
-    name = p.name
-    if not name.endswith(".md"):
-        return False
-    if len(parts) == 1 and name in ("AGENTS.md", "CLAUDE.md"):
-        return True
-    if "rules" in parts[:-1]:
-        return True
-    if len(parts) >= 3 and parts[-3] == "skills" and name == "SKILL.md":
-        return True
-    if "references" in parts[:-1] and "skills" in parts[:-1]:
-        return True
-    return "agents" in parts[:-1]
-
-
 # `(^|/)`接頭辞で先頭一致・任意の親ディレクトリ配下一致の両方を許容する
 # （`pretooluse.py`側が絶対パス・tmp_path配下等の任意接頭辞パスを渡す既存挙動を保つ）。
 AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -270,7 +241,6 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     種類ごとに`agent-toolkit/`直下とプロジェクトの`.claude/`直下の両方の層を判定する。
     `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
     basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。
-    `is_agent_facing_md`とは判定対象範囲が異なる。
     """
     normalized = str(file_path).replace("\\", "/")
     if not normalized:

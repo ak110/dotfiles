@@ -10,7 +10,7 @@ Stop hookが起動不足を示した時、作業を完了して終えるなら�
 
 ## プロジェクト規範による省略
 
-メインは、`agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」に基づいて、その作業で完了報告を省くかを判断する。
+メインは、`agent-toolkit/skills/atk-mode/references/conduct.md`「方針が衝突する場合の優先順位」に基づいて、その作業で完了報告を省くかを判断する。
 省く場合は、次のJSONを一時領域へ保存し、`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`で記録してから通常の報告をする。
 
 ```json

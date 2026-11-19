@@ -610,7 +610,7 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
     recoverable = all(_response_language_check.explanation_is_japanese(text) for _, text in fields)
     repeated = _language_retry(_payload, tool_name, tool_input, remember=recoverable)
     for name, text in fields:
-        # rules-main.claude-code.md「ユーザー確認（AskUserQuestion）」がlabel末尾へ求める固定表記。
+        # `atk-mode`の`playbooks/host-claude-code.md`「ユーザー確認（AskUserQuestion）」がlabel末尾へ求める固定表記。
         # 本文・説明の英語判定と文字化け判定には、この除外を適用しない。
         if tool_name == "AskUserQuestion" and name.endswith(".label"):
             text = text.removesuffix("(Recommended)").rstrip()

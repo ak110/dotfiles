@@ -118,7 +118,7 @@ def test_failed_result_selects_only_its_improvement_guidance(tmp_path, status, i
     if status == "failed":
         assert result_reads.observe("s", "main", {"stdout": summary}, deferred=False) == documents
     if improvement:
-        assert documents == ["agent-toolkit:delegation/references/receiving.md#「受領後の扱い」"]
+        assert documents == ["agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」"]
     else:
         assert not documents
 
@@ -163,7 +163,7 @@ def test_public_hook_receipt_guides_before_next_delegation(tmp_path, monkeypatch
     }
     guided = _run_hook_in_process("pretooluse", operation)
     assert guided.returncode == 0
-    expected = "reviewee.md" if status == "completed" else "receiving.md"
+    expected = "reviewee.md" if status == "completed" else "delegation-receiving.md"
     assert expected in guided.stdout
     if status != "completed":
         assert "reviewee.md" not in guided.stdout

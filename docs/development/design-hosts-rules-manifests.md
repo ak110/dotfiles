@@ -1,25 +1,25 @@
-# 常時規範とplugin manifestの設計記録
+# 共有原本とplugin manifestの設計記録
 
-[設計記録の索引](design.md)から参照する、常時規範とplugin manifestの記録である。
+[設計記録の索引](design.md)から参照する、共有原本とplugin manifestの記録である。
 
 ## 共有原本とCodex固有の上書き
 
 Codexのコマンド回収は、外側の`functions.exec`のcellと内側の`exec_command`のsessionを別の実行識別子として扱う。
 返却本文とともに`exit_code`と`session_id`を保持し、cellは`functions.wait`、sessionは`write_stdin`で同じ起動の終了まで回収する。
 `session_id`がある間に同じ待機コマンドを再発行すると、先行実行を回収する前に次の待機も開始するため採用しない。
-契約の定義元は`rules-common.codex.md`へ集約し、Codex向けAGENTSの正式生成で全主体へ届ける。
+契約の定義元は`agent-toolkit/skills/atk-mode/playbooks/host-codex.md`「Codex固有の入出力」へ集約する。
 
 hook・MCP定義などホスト別に明確に分離された資源を除き、Claude CodeとCodexに共通するルール・スキルは`agent-toolkit/`の共有原本で定義する。
-Codexだけの公開能力との差分は上書きとして置き、常時規範へCodex固有の条件を持ち込まない。
-Codexの全主体へ適用する差分は`agent-toolkit/share/rules/rules-common.codex.md`へ置き、`scripts/sync_codex_agents.py`が`~/.codex/AGENTS.md`へ埋め込む。
-Codexのメインだけへ適用する差分は`agent-toolkit/share/rules/rules-main.codex.md`へ置き、`SessionStart` hookがCodexのメインへ`rules-main.md`の後に加える。
-`~/.codex/AGENTS.md`はCodexのサブエージェントと委譲先にも届くため、メイン向けの差分を同じファイルへ置くとメイン専用の条文が全主体へ届く。
+Codexだけの公開能力との差分は上書きとして置き、共通の入口と手順書へCodex固有の条件を持ち込まない。
+Codexに固有の操作は、全主体向けとメイン向けを`agent-toolkit/skills/atk-mode/playbooks/host-codex.md`の1ファイルへ置き、冒頭の「読む節」の表が条件と主体ごとに読む節を選ばせる。
+本文を自動では配らず読む主体が節を選ぶため、メイン向けの節を同じファイルへ置いても委譲先へは届かない。
+ホスト間の差の一覧は`agent-toolkit/skills/atk-mode/references/hosts.md`にある。
 Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
 Codexの委譲は、`spawn_agent`・`send_message`・`followup_task`・`wait_agent`・`interrupt_agent`を使うネイティブ方式とagents_server方式を分ける。
-ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが配送する`rules-subagent.md`を独立した入力とする。
-agents_serverの通常委譲は`_agents_server/launch_prompts.py`から同じ共通委譲先規範を配送する。
-各起動区分の委譲先へ届く規範は`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表が示す。
-Claude Code固有の委譲先規範はCodexへ配送しない。
+ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが所在を示す`playbooks/subagent.md`を独立した入力とする。
+agents_serverの委譲は`_agents_server/launch_prompts.py`が同じ`playbooks/subagent.md`から切り出した節を起動の本文として配送する。
+各起動区分の委譲先へ届く規範は`agent-toolkit:atk-mode/references/agent-documents.md`「配送範囲表」が示す。
+Claude Codeに固有の操作は`playbooks/host-claude-code.md`へ置き、Codexの主体には読ませない。
 この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
 生成物は手編集せず、原本と正式生成器を更新して同期する。
 

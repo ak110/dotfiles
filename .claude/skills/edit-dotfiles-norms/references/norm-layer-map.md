@@ -3,7 +3,7 @@
 本書は、本リポジトリ（dotfiles）でエージェント向け文書を追記・新設・移動するエージェントが、置き場所を層から順に選ぶための一覧である。
 選び方の手順は`agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所の選定」が定め、本書はその手順が使う層の一覧を持つ。
 各スキルの責務は、そのスキルの`description`と冒頭の責務文が定め、本書へ再掲しない。
-各層の本文が実際にどの起動区分へ届くかは`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表で確かめる。
+各層の本文が実際にどの起動区分へ届くかは`agent-toolkit:atk-mode/references/agent-documents.md`「配送範囲表」で確かめる。
 
 ## 層の一覧
 
@@ -13,13 +13,12 @@
 
 | 層 | 所在 | 読む主体 | 読む契機 | 置く内容 | 置かない内容 |
 | --- | --- | --- | --- | --- | --- |
-| 常時規範（共通） | `agent-toolkit/share/rules/common/` | 全エージェント（配布先全体） | 常時（ユーザー規範・`~/.codex/AGENTS.md`・委譲先の配送） | 優先順位、硬い制約、全工程の判断原則と、詳細へ届く起動契機 | 判断手順の詳細、特定工程・役割だけの規定（`agent-documents-additions.md`「常時規範への追記条件」） |
-| 共通の詳細 | `agent-toolkit/share/agent-conduct-details.md` | 全エージェント | 常時規範の各節が示す時点の明示読取 | 常時規範の節に対応する全エージェント共通の手順・例外 | 役割・工程・スキル固有の手順 |
-| 役割別規範 | `agent-toolkit/share/rules/rules-main.md`・`rules-subagent.md`とホスト別の`rules-*.md` | メインまたは委譲先のうち、規範が対象とする側（ホスト別は該当ホストだけ）。`all-repos`統括が起動するリポジトリ担当は、`rules-main*.md`を着手時に明示的に読む | 起動時の注入（SessionStart、SubagentStart、agents_serverの配送）と、リポジトリ担当の明示読取（`delivery-scope.md`） | 片側の役割だけに課す常時の規定 | 双方が守る受け渡しの規定（共通へ置く）、工程固有の手順 |
-| 役割文書 | `agent-toolkit/share/<役割名>.parent.md`・`<役割名>.subagent.md`と、同じ役割から読込表で読む`share/`配下の資料 | 委譲元（`.parent.md`）、委譲先（`.subagent.md`） | 役割の起動時と読込表の条件 | 役割固有の入力、手順、返却形式、受領と検収 | 他の役割や全エージェント共通の規定 |
+| 入口 | `agent-toolkit/skills/atk-mode/SKILL.md` | agent-toolkitを導入した環境の全メイン | 作業の前と会話の圧縮の後（SessionStartのhookの案内。OpenCodeは設定の`instructions`の案内） | 全ての作業に当てはまる原則の要旨、硬い制約、ユーザーの方針、作業と手順書の表 | 1つの作業だけの手順、形式の定義（上限は5,000トークン。`agent-documents-additions.md`「常時規範への追記条件」） |
+| 委譲先の入口 | `agent-toolkit/skills/atk-mode/playbooks/subagent.md` | 全ての委譲先 | `agents_server`の起動の本文（全mode）。`Agent`ツールの委譲先はSubagentStartの通知の案内で読む | 委譲先に共通の制約、委譲元と双方が守る受け渡し（状態行、続行不能の区分、通知）、起動の種類ごとの権限 | 役割固有の手順（役割文書へ置く） |
+| 手順書 | `agent-toolkit/skills/atk-mode/playbooks/`（ホスト固有の操作は`host-*.md`） | 入口の表の条件に当たったエージェント | 入口の「作業と手順書」の条件が成立した時 | 1つの作業の流れ（メインの報告と点検、委譲の起動・待機・受領・復旧、commitなど） | 全ての作業に当てはまる決まり（入口へ置く）、形式の定義 |
+| 形式の定義と細則 | `agent-toolkit/skills/atk-mode/references/`（特定の判断だけに要る細則は`conduct.md`） | 手順書の段が指したエージェント | 手順書の段が指した時 | 1主題の形式の定義、入口と原則で言えない特定の判断の細則 | 作業の流れ（手順書へ置く） |
+| 役割文書 | `agent-toolkit/skills/atk-mode/roles/<役割名>.parent.md`・`<役割名>.subagent.md` | 委譲元（`.parent.md`）、委譲先（`.subagent.md`） | `.subagent.md`は起動の本文として届き、`.parent.md`は委譲元が起動の前に読む | 役割固有の入力、手順、返却形式、受領と検収 | 他の役割や全エージェント共通の規定 |
 | agent-basicsのスキル | `agent-basics/skills/<スキル>/SKILL.md`と`references/` | 品質基準を適用する全プロジェクトのエージェント | 常時（frontmatterの`description`）、スキル起動時（本文）、読込表の条件（references） | 成果物の品質基準（文章、コード、設計、レビュー、検索、不具合対応） | agent-toolkitの工程・WI・委譲の運用、dotfiles固有の事実 |
-| agent-toolkitのスキル | `agent-toolkit/skills/<スキル>/SKILL.md`と`references/` | agent-toolkitを使う全プロジェクトのエージェント | 常時（frontmatterの`description`）、スキル起動時（本文）、読込表の条件（references） | 工程と運用（WI、計画、委譲、レビュー工程、確認と報告、commitなど）。スキルの責務に一致するものだけ | 責務の異なる工程の規定、全エージェント共通の手順 |
-| 配送文と注入 | `agent-toolkit/share/agents-server-*.md` | agents_serverの委譲先（`Agent`ツールのサブエージェントへは届かない。`agent-toolkit/agents/`のagent定義は無い） | 起動時の配送・注入 | 起動区分ごとの権限と返却の短い契約 | 役割固有の手順（役割文書へ置く） |
 | hook通知・CLIの出力 | `agent-toolkit/agent_toolkit/_hooks/`、`agent-toolkit/hooks/`、`atk`の`次の操作` | 通知の契機に当たったエージェント | 操作・ターンの境界（hookの発火、コマンドの実行） | 機械的な検出・強制の結果、必要な操作、規範の節への参照 | 判断手順や条件の本文（規範の節に書いて参照する） |
 | dotfilesのプロジェクト規範 | `AGENTS.md`、`.claude/skills/`（本スキルなど） | 本リポジトリを編集するエージェントだけ | 常時（`AGENTS.md`）、スキル起動時、読込表の条件 | 本リポジトリ固有の構成、開発・公開手順、記録の所在 | 配布先でも必要な規範（agent-basics・agent-toolkitへ置く） |
 
@@ -28,7 +27,7 @@
 
 ## 選定の例
 
-2026年11月、全エージェントが30分ごとに行う進捗点検の手順が、hook通知の本文（`progress_self_check.py`）と`agent-toolkit:delegation`のreferencesへ追記された。
-読む主体は全エージェント、読む契機は通知を受けた時であり、表では「共通の詳細」が該当する。
-`agent-toolkit:delegation`は委譲の責務に一致せず、hook通知は判断手順の本文を置かない層のため、どちらも置き場所から外れる。
-現在は手順を`agent-conduct-details.md`「進捗点検」に置き、通知はその節を参照する。
+2026年11月、全エージェントが30分ごとに行う進捗点検の手順が、hook通知の本文（`progress_self_check.py`）と委譲の資料へ追記された。
+読む主体は全エージェント、読む契機は通知を受けた時であり、表では「手順書」が該当する。
+委譲の資料は委譲の責務に一致せず、hook通知は判断手順の本文を置かない層のため、どちらも置き場所から外れる。
+現在は手順を`agent-toolkit:atk-mode/playbooks/main-reporting.md`「進捗点検」に置き、通知はその節を参照する。

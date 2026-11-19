@@ -27,7 +27,7 @@ def _reader_request(tmp_path):
     paths = [str(tmp_path / name) for name in ("first.md", "second.md")]
     for path in paths:
         pathlib.Path(path).write_text("# 対象\n本文\n", encoding="utf-8")
-    role = pathlib.Path(__file__).resolve().parents[2] / "share/reader-fit-review.subagent.md"
+    role = pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/roles/reader-fit-review.subagent.md"
     _, prompt, kind, _ = launch_requests.task_document_request(
         str(role),
         {
