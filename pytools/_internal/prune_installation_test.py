@@ -795,9 +795,16 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
                 maintenance = psutil.Process(int(output.strip()))
                 # 保持役のロックで整理を待っている間に独立プロセスの世代を保持し、記録の後に同じ所有として回収する。
                 owned = process_tree.collect_descendants(maintenance.pid, pins=pins, include_root=True)
-                # 整理の失敗や記録の時間切れで落ちても独立プロセスを残さないよう、
-                # `pins.close`より先に動く後始末で回収する。
-                request.addfinalizer(lambda: process_tree.stop_tree(None, known=owned, pins=pins))
+                assert owned, "独立プロセスの世代を保持できなかった"
+
+                def reap_maintenance() -> None:
+                    # 独立プロセスは記録の後もuv以外の整理を続け、一時領域のロックを保持する。
+                    # この試験の対象外で、所要は負荷で変わる（Windows CIで試験の終了から55秒後もロックを保持し、
+                    # pytestの一時領域の回収が失敗した）。試験の成否によらず`pins.close`より先に回収し、残存を報告する。
+                    stopped = process_tree.stop_tree(None, known=owned, pins=pins)
+                    assert not stopped.residual and not stopped.unresolved, stopped.descriptions()
+
+                request.addfinalizer(reap_maintenance)
             # Jobの終了が所属プロセスへ届いたことを、離脱していない所属プロセスの終了で確かめる。
             unbroken.wait(timeout=30)
             assert maintenance.is_running(), "Jobの終了とともに独立プロセスが止まった"
@@ -813,8 +820,3 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
     assert record.exists(), "独立プロセスが60秒以内に結果を記録しなかった"
     assert json.loads(record.read_text(encoding="utf-8"))["result"] == "completed"
     assert not marker.exists()
-    # 独立プロセスは記録の後もuv以外の整理を続け、一時領域のロックを保持する。この試験の対象外で、所要は負荷で変わる
-    # （Windows CIで試験の終了から55秒後もロックを保持し、pytestの一時領域の回収が失敗した）。自然な終了を待たずに回収する。
-    assert owned, "独立プロセスの世代を保持できなかった"
-    stopped = process_tree.stop_tree(None, known=owned, pins=pins)
-    assert not stopped.residual and not stopped.unresolved, stopped.descriptions()
