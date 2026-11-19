@@ -700,6 +700,7 @@ class TestGenericAgentLaunchBlock:
         assert f"`mode`が{mode}の`agents_server`の`start`へ発行せよ" in reason
         assert "references/runtime-routing.md" in reason
         assert "ツール名と入力全体を変えずに再発行してよい" in reason
+        assert "`agent-basics:fetch-sources`" in reason
         repeated = _run(payload, env_overrides=env)
         assert repeated.returncode == 0, repeated.stderr
         assert not repeated.stderr
