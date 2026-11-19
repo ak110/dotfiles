@@ -241,6 +241,7 @@ def _peer(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) ->
         ("error", "medium", 1),
         ("corrupt", "medium", 1),
         ("mcp-error", "medium", 1),
+        ("mcp-unavailable", "medium", 0),
         ("elicitation", "medium", 0),
         ("elicitation-cancel", "medium", 130),
     ],
@@ -273,8 +274,12 @@ async def test_public_launcher_preserves_work_and_stop_contract(peer: _Peer, mod
     if mode not in {"completed", "cancel"}:
         assert output["cwd"] == record["cwd"]
         assert record["turns"][-1]["status"] == "completed"
-        child = json.loads((peer.root / "children" / f"{record['id']}.json").read_text(encoding="utf-8"))
-        assert child["direct_parent"] == record["id"]
+        if mode == "mcp-unavailable":
+            # agents_serverが起動しなくてもCodexは使え、復旧した仕事は子孫の復元なしで続く。
+            assert not (peer.root / "children" / f"{record['id']}.json").exists()
+        else:
+            child = json.loads((peer.root / "children" / f"{record['id']}.json").read_text(encoding="utf-8"))
+            assert child["direct_parent"] == record["id"]
     if mode == "partial":
         assert (peer.root / "metadata-observed").exists()
     if mode == "lost-response":
