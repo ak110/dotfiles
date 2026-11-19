@@ -92,7 +92,7 @@ def test_main_delivers_large_script_to_remote(
 ) -> None:
     """数十KBのスクリプトでも、起動部がremote.ps1を引数付きで実行し、その結果の行を読み取る。
 
-    Linuxのpwshには予定タスクのコマンドが無いため、remote.ps1はその失敗を結果の行で返す。
+    Linuxのpwshにはタスクスケジューラーへ接続するCOMが無いため、remote.ps1はその失敗を結果の行で返す。
     引数が届かない場合や起動部が本文を復元できない場合は、結果の行が無い失敗になる。
     """
     bin_dir = tmp_path / "bin"
@@ -112,7 +112,7 @@ def test_main_delivers_large_script_to_remote(
     stderr = capsys.readouterr().err
     assert excinfo.value.code == 125
     assert "sthenoでの準備か後始末に失敗した" in stderr
-    assert "Get-ScheduledTask" in stderr
+    assert "ComObject" in stderr
 
 
 def _run_runner(tmp_path: pathlib.Path, script: str) -> tuple[str, str]:
