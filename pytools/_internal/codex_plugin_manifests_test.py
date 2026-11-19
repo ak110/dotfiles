@@ -282,6 +282,32 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 
+def test_local_codex_mcp_opens_installed_script_from_session_cwd(
+    manifest_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codexは導入したpluginのMCP設定の変数を展開せず、`cwd`の無いserverを会話のcwdで起動する。
+
+    pyfltrは会話のcwdを既定の検査対象にするため、`cwd`を持たず、`codex plugin add`が置く版付きの導入先の
+    起動スクリプトを絶対パスで開く必要がある（2026-11-19、Codex 0.170で`${PLUGIN_ROOT}`のまま起動に失敗）。
+    """
+    codex_home = tmp_path / "codex-home"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    source_path = manifest_root / subject.MCP_SOURCE
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    launch = ["run", "python", "${CLAUDE_PLUGIN_ROOT}/scripts/launch.py", "agent_toolkit/_common/pyfltr_entry.py", "mcp"]
+    source["mcpServers"]["pyfltr"] = {"command": "uv", "args": launch}
+    source_path.write_text(json.dumps(source), encoding="utf-8")
+
+    subject.sync(manifest_root)
+
+    local = json.loads((manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET / ".mcp.codex.json").read_text(encoding="utf-8"))
+    pyfltr = local["mcpServers"]["pyfltr"]
+    installed = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit" / _plugin_data()["version"]
+    assert "cwd" not in pyfltr
+    assert pyfltr["args"] == ["run", "python", str(installed / "scripts/launch.py"), *launch[3:]]
+    assert subject.check(manifest_root) is True
+
+
 def test_sync_ignores_tracked_file_deleted_from_worktree(manifest_root: Path) -> None:
     """commit前の追跡ファイル削除をCodex pluginの原本集合から除く。"""
     deleted = manifest_root / "agent-toolkit/deleted.md"
