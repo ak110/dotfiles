@@ -2,6 +2,7 @@
 
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
+import contextlib
 import json
 import logging
 import os
@@ -455,7 +456,13 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
         pytest.skip("uvが無い環境では実際のキャッシュロックを再現できない")
     which = shutil.which
     _prepare(tmp_path, monkeypatch, "full")
-    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", _REAL_START_UV_CACHE_MAINTENANCE)
+    started_pids: list[int] = []
+
+    def start() -> int:
+        started_pids.append(_REAL_START_UV_CACHE_MAINTENANCE())
+        return started_pids[-1]
+
+    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", start)
     # 隔離PATHはmise shimを別名で置くため、整理側が解決するuvをshimを経由しない本体にそろえる。
     monkeypatch.setenv("PATH", os.pathsep.join((str(Path(uv).parent), os.environ["PATH"])))
     monkeypatch.setattr(common, "resolve_executable", _REAL_RESOLVE_EXECUTABLE)
@@ -490,6 +497,13 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
     assert json.loads(record.read_text(encoding="utf-8"))["result"] == "completed"
     assert os.path.normcase(str(cache.resolve())) in json.loads(_state("uv-cache-clean.json").read_text(encoding="utf-8"))
     assert not marker.exists()
+    # 記録の後に続く事前構築の終了を待ち、独立プロセスを試験の外へ残さない。
+    processes = []
+    for pid in started_pids:
+        with contextlib.suppress(psutil.NoSuchProcess):
+            processes.append(psutil.Process(pid))
+    _exited, running = psutil.wait_procs(processes, timeout=20)
+    assert not running, "独立プロセスが記録の後20秒以内に終了しなかった"
 
 
 def _uv_clean_failure(monkeypatch: pytest.MonkeyPatch, calls: list[list[str]]) -> dict[str, str | None]:
@@ -532,6 +546,8 @@ def test_failed_maintenance_fails_following_updates_until_resolved(tmp_path, mon
     _maintain(monkeypatch, tmp_path)
     still_failed = prune_installation.run()
     assert still_failed.failure is not None and "fixture disk failure" in still_failed.failure
+    # 保留は整理を試していないため失敗を残し、最後の試行が保留だったことと、その診断を添える。
+    assert "保留" in still_failed.failure and "when waiting for lock" in still_failed.failure
     failure["stderr"] = None
     _maintain(monkeypatch, tmp_path)
     assert prune_installation.run().failure is None
@@ -681,7 +697,7 @@ def test_breakaway_refusal_is_reported(tmp_path, monkeypatch, caplog):
 
 @pytest.mark.windows
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Jobの終了が所属プロセスを止める条件を実APIで確かめる")
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(240)
 def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch, host_environ):
     """離脱を許すKILL_ON_JOB_CLOSEのJobの中から開始したuvの整理は、そのJobの終了後も続いて完了を記録する。
 

@@ -333,6 +333,9 @@ class _UvMaintenanceRecord:
     result: UvMaintenanceResult
     finished_at: str
     detail: str
+    # 未解消の失敗の後に保留した、最後の試行の時刻と診断。失敗の表示に添える。
+    deferred_at: str = ""
+    deferred_detail: str = ""
 
 
 def _record_path() -> Path:
@@ -345,24 +348,29 @@ def _read_uv_maintenance_record() -> _UvMaintenanceRecord | None:
         data = json.loads(_record_path().read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
-    if not isinstance(data, dict) or not all(isinstance(data.get(key), str) for key in ("result", "finished_at", "detail")):
-        raise ValueError("result・finished_at・detailの文字列がありません")
-    return _UvMaintenanceRecord(UvMaintenanceResult(data["result"]), data["finished_at"], data["detail"])
+    fields = {field.name for field in dataclasses.fields(_UvMaintenanceRecord)}
+    if (
+        not isinstance(data, dict)
+        or not {"result", "finished_at", "detail"} <= set(data) <= fields
+        or not all(isinstance(value, str) for value in data.values())
+    ):
+        raise ValueError("result・finished_at・detailなどの項目が文字列ではありません")
+    return _UvMaintenanceRecord(**{**data, "result": UvMaintenanceResult(data["result"])})
 
 
 def _write_uv_maintenance_record(result: UvMaintenanceResult, detail: str) -> None:
-    """結果を記録する。保留は未解消の失敗を上書きせず、次の更新は解消まで失敗を表示する。"""
+    """結果を記録する。保留は整理を試していないため、未解消の失敗を残して保留した試行を添える。"""
+    now = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+    record = _UvMaintenanceRecord(result, now, detail)
     if result is UvMaintenanceResult.DEFERRED:
         try:
             previous = _read_uv_maintenance_record()
         except OSError, ValueError:
             previous = None
         if previous is not None and previous.result is UvMaintenanceResult.FAILED:
-            return
-    finished_at = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-    common.atomic_write_json(
-        _record_path(), {"result": result.value, "finished_at": finished_at, "detail": detail}, tag="prune"
-    )
+            record = dataclasses.replace(previous, deferred_at=now, deferred_detail=detail)
+    if not common.atomic_write_json(_record_path(), dataclasses.asdict(record), tag="prune"):
+        logger.error("prune: uvの整理の結果を記録できません: %s。次の更新は前回の記録を表示する", _record_path())
 
 
 def clean_uv_cache() -> tuple[UvMaintenanceResult, str]:
@@ -425,10 +433,12 @@ def _report_previous_uv_maintenance() -> post_apply_outcome.PostApplyOutcome:
     if record.result is UvMaintenanceResult.DEFERRED:
         logger.info("prune: 前回のuvの整理は保留した（%s）: %s。%s永続ログ: %s", record.finished_at, record.detail, retry, log)
     elif record.result is UvMaintenanceResult.FAILED:
-        return post_apply_outcome.PostApplyOutcome(
-            failure=f"uv: 前回の整理の独立プロセスが失敗した（{record.finished_at}）: {record.detail}",
-            next_action=f"永続ログ（{log}）の診断を確認して原因を解消し、update-dotfilesを再実行してください。{retry}",
-        )
+        failure = f"uv: 前回の整理の独立プロセスが失敗した（{record.finished_at}）: {record.detail}"
+        next_action = f"永続ログ（{log}）の診断を確認して原因を解消し、update-dotfilesを再実行してください。{retry}"
+        if record.deferred_at:
+            failure += f"。その後の整理は保留した（{record.deferred_at}）: {record.deferred_detail}"
+            next_action += "保留が続く場合は、保留の診断が示すuvの使用を終えてから再実行してください。"
+        return post_apply_outcome.PostApplyOutcome(failure=failure, next_action=next_action)
     return post_apply_outcome.PostApplyOutcome()
 
 

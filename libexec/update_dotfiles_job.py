@@ -282,6 +282,8 @@ def _worker(job: pathlib.Path) -> int:
     env = os.environ.copy()
     env["DOTFILES_PRUNE_OUTSIDE_UV"] = "1"
     env["PYTHONIOENCODING"] = "utf-8:replace"
+    # 前回の更新が始めたuvの全消去は最長600秒キャッシュを排他するため、uvの既定の待機上限（300秒）より長く待つ。
+    env.setdefault("UV_LOCK_TIMEOUT", "900")
     home_bin = pathlib.Path.home() / ".local/bin"
     uv = str(home_bin / ("uv.exe" if sys.platform == "win32" else "uv"))
     code = 1
