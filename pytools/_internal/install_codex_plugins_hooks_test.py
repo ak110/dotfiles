@@ -21,6 +21,9 @@ from pytools._internal.install_codex_plugins_test_helpers import _REAL_HOOKS_LIS
 from pytools._internal.install_codex_plugins_test_helpers import _empty_unused_plugins as _empty_unused_plugins
 from pytools._internal.install_codex_plugins_test_helpers import plugin_env_fixture as plugin_env_fixture
 
+if sys.platform == "win32":
+    from agent_toolkit._testing import windows_tokens
+
 
 @pytest.mark.parametrize("respond", [True, False])
 def test_hooks_list_closes_real_stdout_after_response_or_eof(monkeypatch: pytest.MonkeyPatch, respond: bool) -> None:
@@ -245,11 +248,15 @@ def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pyt
         assert calls[-1] == [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/hook.py", "pretooluse"]
 
 
+@pytest.mark.windows
 def test_hook_wrapper_restores_missing_pinned_root_from_same_claude_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """commit中の自動更新で旧cacheが消えても、独立した同版cacheからhook起動コマンドを復旧する。"""
     home = tmp_path / "home"
+    if sys.platform == "win32":
+        windows_tokens.create_profile_directory(home)
+        monkeypatch.setenv("USERPROFILE", str(home))
     wrapper = home / ".local/bin/atk-hook"
     wrapper.parent.mkdir(parents=True)
     shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook", wrapper)
@@ -275,6 +282,8 @@ def test_hook_wrapper_restores_missing_pinned_root_from_same_claude_version(
         raise SystemExit(runpy.run_path(str(wrapper))["main"]())
 
     assert (pinned / "marker").read_text(encoding="utf-8") == version
+    if sys.platform == "win32":
+        assert windows_tokens.readable_without_administrators(pinned / "marker")
     assert not (pinned / ".venv").exists()
     assert calls == [[sys.executable, str(pinned / "scripts/launch.py"), "agent_toolkit/hook.py", "pretooluse"]]
 

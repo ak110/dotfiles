@@ -1,9 +1,5 @@
 # dotfilesのコミットメッセージ方針と.gitmessage
 
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
 ## コミットメッセージ方針と.gitmessage
 
 `<plugin root>/skills/atk-mode/references/commit-message.md`に記載されているコミットメッセージ方針と、`.gitmessage`テンプレートは、それぞれ配布される対象範囲が異なる。

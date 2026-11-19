@@ -21,6 +21,10 @@ _TOKEN_QUERY = 0x0008
 _TOKEN_DUPLICATE = 0x0002
 _TOKEN_ASSIGN_PRIMARY = 0x0001
 _TOKEN_IMPERSONATE = 0x0004
+_GENERIC_WRITE = 0x40000000
+_CREATE_NEW = 1
+_FILE_ATTRIBUTE_NORMAL = 0x80
+_INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 
 class _SidAndAttributes(ctypes.Structure):
@@ -52,6 +56,10 @@ def _api() -> tuple[Any, Any]:
     }
     kernel_signatures = {
         "CreateDirectoryW": ([wintypes.LPCWSTR, pointer], wintypes.BOOL),
+        "CreateFileW": (
+            [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, pointer, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE],
+            wintypes.HANDLE,
+        ),
         "GetCurrentProcess": ([], wintypes.HANDLE),
         "CloseHandle": ([wintypes.HANDLE], wintypes.BOOL),
         "LocalFree": ([pointer], pointer),
@@ -81,16 +89,33 @@ def _process_token() -> Generator[Any]:
         kernel.CloseHandle(token)
 
 
-def create_directory(path: pathlib.Path, sddl: str) -> None:
-    """SDDLで指定したセキュリティ記述子を付けてディレクトリを作成する。"""
+@contextlib.contextmanager
+def _security_attributes(sddl: str) -> Generator[Any]:
     advapi, kernel = _api()
     descriptor = ctypes.c_void_p()
     _check(advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, ctypes.byref(descriptor), None))
+    attributes = _SecurityAttributes(ctypes.sizeof(_SecurityAttributes), descriptor, False)
     try:
-        attributes = _SecurityAttributes(ctypes.sizeof(_SecurityAttributes), descriptor, False)
-        _check(kernel.CreateDirectoryW(str(path), ctypes.byref(attributes)))
+        yield ctypes.byref(attributes)
     finally:
         kernel.LocalFree(descriptor)
+
+
+def create_directory(path: pathlib.Path, sddl: str) -> None:
+    """SDDLで指定したセキュリティ記述子を付けてディレクトリを作成する。"""
+    _, kernel = _api()
+    with _security_attributes(sddl) as attributes:
+        _check(kernel.CreateDirectoryW(str(path), attributes))
+
+
+def create_file(path: pathlib.Path, sddl: str) -> None:
+    """SDDLで指定したセキュリティ記述子を付けて空のファイルを作成する。DACLを省いたSDDLでは親から継承する。"""
+    _, kernel = _api()
+    with _security_attributes(sddl) as attributes:
+        handle = kernel.CreateFileW(str(path), _GENERIC_WRITE, 0, attributes, _CREATE_NEW, _FILE_ATTRIBUTE_NORMAL, None)
+        if handle == _INVALID_HANDLE_VALUE:
+            raise _windows.WinError(_windows.get_last_error())
+    kernel.CloseHandle(handle)
 
 
 def create_profile_directory(path: pathlib.Path) -> None:

@@ -268,7 +268,7 @@ def test_prune_only_entry_runs_only_prune_and_propagates_failure(
     monkeypatch.setattr(post_apply.warmup_pyfltr_mcp, "run", post_apply_outcome.PostApplyOutcome)
     calls: list[str] = []
 
-    def prune() -> post_apply_outcome.PostApplyOutcome:
+    def prune(**_kwargs: object) -> post_apply_outcome.PostApplyOutcome:
         calls.append("prune")
         return post_apply_outcome.PostApplyOutcome(failure=failure, next_action="権限を確認する" if failure else None)
 

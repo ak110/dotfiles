@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## .claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月4日
+## .claude/skills/develop-dotfiles/references/verification.md：変更範囲の検証の値：2026年10月4日
 
 pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。
 指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。
@@ -28,7 +28,7 @@ uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。
 rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
-## .claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月18日
+## .claude/skills/develop-dotfiles/references/verification.md：変更範囲の検証の値：2026年10月18日
 
 Python 3.15、CIと同じimageのdigest `sha256:b13645f08610527422a741872c2457ee7b0e2ce96880acee22be2f1984477600`で、lockだけの変更によるsdistビルドの差を観測した。
 基準commit `a151f22a2a3447cfc4925e2a708d279138de46f4`のarchiveへ、`uv.lock`のzstandard依存2行から`python_full_version < '3.14'`のmarkerだけを除いた入力を作成した。
@@ -43,7 +43,7 @@ marker保持側は終了0、除去側はzstandard 0.25.0のビルドに到達し
 `update`から`$(MAKE) ci-deps-check`を除いたMakefileでは、同じ試験が失敗することを確かめる。
 `make -n update`では両lockの更新後に`ci-deps-check`の`docker run`が出力された。
 
-## .claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年11月9日
+## .claude/skills/develop-dotfiles/references/verification.md：変更範囲の検証の値：2026年11月9日
 
 pyfltr 3.27.0の`uv run --frozen pyfltr config list --all --output-format json`で、`mypy-fast`・`pylint-fast`・`pyright-fast`がfalse、`ruff-check-fast`がtrueであることを確認した。
 実効値の取得は設定だけを照会し、各ツールを実行した観測とは区別する。

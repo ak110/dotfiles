@@ -1,13 +1,5 @@
 # 再発の記録の手順
 
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 過去の対策が再発を防げなかった理由を分類する前 | `agent-basics:bugfix/references/recurrence.md` |
-
 ## 再発の記録
 
 本節は、dotfilesの不具合を原因分析した担当（process-wiのレーン、add-awi-by-user、review-sessionなど）に適用する。
@@ -20,7 +12,7 @@
   事例が無ければ元の事象を事例として`incidents.md`「区分」の所在ファイルへ置いてから行を加える
 - ユーザーから反復の指摘（「何度も」「散々」「前にも」など）を受けた決定は、是正と同じ変更で`docs/development/concepts.md`の該当節へ決定の要旨（何を守るか、何をしてはならないか）を1行で加える。
   要旨が既にあれば、是正の内容に合わせて更新する。
-  決定が索引から読めないまま次の変更が入ると、全件照合（`SKILL.md`の読込表直後の段落）で衝突が見えないためである
+  決定が索引から読めないまま次の変更が入ると、`.claude/skills/edit-dotfiles-norms/SKILL.md`「既存の方針との照合」の全件照合で衝突を確認できないためである
 - 是正するAWIと元の対策のAWIの対応はWIの側に保つ。
   元の対策が採用済みAWIにあれば、次の操作で効果確認を`insufficient`にし、是正するAWIと対応付ける
 

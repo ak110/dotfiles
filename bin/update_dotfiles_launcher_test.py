@@ -14,6 +14,10 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _LAUNCHER = _ROOT / "bin" / "update-dotfiles"
 _WINDOWS_LAUNCHER = _ROOT / "bin" / "update-dotfiles.cmd"
 _LINUX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="BashランチャーはLinuxで検証する")
+# 更新本体を起動するuvは、前回の更新が始めたuvの全消去がキャッシュを排他する最長600秒
+# （`pytools/_internal/prune_installation.py`の`_command`の時間上限）より長くロックを待つ。
+# uvの既定の300秒では、全消去が長い場合に更新本体の開始前にロック待ちで失敗する。
+_LOCK_WAIT_ASSERTION = "assert int(os.environ.get('UV_LOCK_TIMEOUT', '300')) > 600, os.environ.get('UV_LOCK_TIMEOUT')"
 _UPDATE_WARNING = (
     "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。"
     "対応不要（dotfilesの更新処理は継続しました）。"
@@ -243,7 +247,7 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
     assert calls == [
         ["native", "self", "update"],
         ["native", "python", "install", "--upgrade", "3.15"],
-        ["native", "python", "find", "3.15"],
+        ["native", "python", "find", "--no-cache", "3.15"],
         [
             "native",
             "run",
@@ -289,7 +293,7 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
     assert calls == [
         ["native", "self", "update"],
         ["native", "python", "install", "--upgrade", "3.15"],
-        ["native", "python", "find", "3.15"],
+        ["native", "python", "find", "--no-cache", "3.15"],
         [
             "native",
             "run",
@@ -657,6 +661,7 @@ def test_public_launcher_prune_boundary_with_real_uv(
     (libexec / "update_dotfiles.py").write_text(
         "import argparse, os, pathlib\n"
         "assert os.environ.get('DOTFILES_PRUNE_OUTSIDE_UV') == '1'\n"
+        f"{_LOCK_WAIT_ASSERTION}\n"
         "parser = argparse.ArgumentParser()\n"
         "parser.add_argument('--prune', action='store_true')\n"
         "parser.add_argument('--mode', choices=['minimal', 'full'])\n"
@@ -699,6 +704,7 @@ def test_public_launcher_prune_boundary_with_real_uv(
         command = [str(launcher)]
     environment = host_environ()
     environment.pop("CODEX_THREAD_ID", None)
+    environment.pop("UV_LOCK_TIMEOUT", None)
     environment.update(
         {
             "HOME": str(home),
@@ -735,6 +741,7 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
 ) -> None:
     """両OSの公開ランチャーからnative workerへ接続し、同一jobの結果だけを再取得する。"""
     environment = host_environ()
+    environment.pop("UV_LOCK_TIMEOUT", None)
     home = tmp_path / "home with spaces"
     native = home / ".local/bin" / ("uv.exe" if os.name == "nt" else "uv")
     native.parent.mkdir(parents=True)
@@ -758,7 +765,8 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     )
     counter = tmp_path / "updates"
     (libexec / "update_dotfiles.py").write_text(
-        "import pathlib\n"
+        "import os, pathlib\n"
+        f"{_LOCK_WAIT_ASSERTION}\n"
         f"with pathlib.Path({str(counter)!r}).open('a', encoding='utf-8') as output:\n"
         "    output.write('update\\n')\n"
         "print('worker update', flush=True)\n"

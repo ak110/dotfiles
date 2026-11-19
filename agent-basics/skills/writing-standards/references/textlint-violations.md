@@ -25,9 +25,6 @@
 | textlint | 検出対象 | 対象外 |
 | ダッシュチェック | 検出対象 | 対象外 |
 
-観測の記録は`docs/development/audit-records-languages.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/textlint-violations.md：逐語引用の検出範囲：2026年9月5日」である。
-
 ## 文章チェックの一括実行
 
 1. pyfltrと表記のチェッカーを導入したプロジェクトでは、本書「チェックの対象範囲」と「逐語引用の検出範囲」で対象を選ぶ（拡張子は`.md`、`.py`、`.txt`、`.yaml`、`.yml`、`.toml`で、コードのコメント行を含む）。
@@ -103,9 +100,6 @@
 - 箇条書きの記号の内側に番号を書かず、番号付きリストを使う（markdownlint-cli2の自動正規化で判別しにくくなるため）。
 - 同じ階層の見出しは区別する語を添えて一意にする（markdownlint `MD024`）。
 - 地の文のダッシュ記号（emダッシュ、horizontal bar、2倍ダッシュ）はダッシュ記号チェックが検出し、コードブロック、インラインコード、URLは対象外である。
-
-観測の記録は`docs/development/audit-records-languages.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/textlint-violations.md：チェッカーが扱う規則：2026年9月10日」である。
 
 ## typosの誤検出への対処
 

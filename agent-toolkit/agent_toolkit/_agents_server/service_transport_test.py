@@ -6,6 +6,7 @@
 import ast
 import asyncio
 import contextlib
+import ctypes
 import json
 import os
 import pathlib
@@ -17,7 +18,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
-import psutil
 import pytest
 from mcp.types import CallToolRequestParams, CallToolResult
 
@@ -80,42 +80,81 @@ def test_peer_identity_rejects_wrong_account_or_process_before_payload(
         assert not peer.poll()
 
 
-@pytest.mark.parametrize("later_seconds,alive", [(0, True), (1, False)])
+def _denied(_pid: int) -> str:
+    raise PermissionError(13, "Access is denied", None, 5)
+
+
+@pytest.mark.parametrize("listed_offset,alive", [(0, True), (1, False), (None, False)])
 def test_windows_process_alive_matches_unopenable_process_by_process_list(
-    monkeypatch: pytest.MonkeyPatch, later_seconds: int, alive: bool
+    monkeypatch: pytest.MonkeyPatch, listed_offset: int | None, alive: bool
 ) -> None:
-    """開けない同じアカウントの世代をプロセス一覧の作成時刻で生存と判定し、後から起動したPID再利用のプロセスと区別する。
+    """開けない同じアカウントの世代をプロセス一覧の作成時刻で生存と判定し、PID再利用の別プロセスと、一覧に無い世代は終了とする。
 
     2026-11-18、Windowsで非昇格の対話ログオンのtokenからSSHログオンの昇格プロセスを開くと、アクセス拒否（5）になった。
     """
-    listed = psutil.Process(os.getpid()).create_time()
-    # Windowsの起動単位は作成時刻のFILETIME（1601年からの100ナノ秒単位）を持つ。
-    created = round((listed + later_seconds) * 10_000_000) + 116444736000000000
-
-    def denied(_pid: int) -> str:
-        raise PermissionError(13, "Access is denied", None, 5)
-
-    monkeypatch.setattr(service_transport, "process_identity", denied)
+    created = 134_000_000_000_000_000
+    monkeypatch.setattr(service_transport, "process_identity", _denied)
     monkeypatch.setattr(service_transport, "os", SimpleNamespace(name="nt"))
-    assert service_transport.process_alive(f"{os.getpid()}:{created}") is alive
+    monkeypatch.setattr(
+        windows_service_transport,
+        "_listed_create_time",
+        lambda pid: None if listed_offset is None or pid != 4242 else created + listed_offset,
+    )
+    assert service_transport.process_alive(f"4242:{created}") is alive
 
 
-@pytest.mark.parametrize("error", [psutil.NoSuchProcess(4242), psutil.AccessDenied(4242)])
-def test_windows_process_alive_treats_unlisted_unopenable_process_as_exited(
-    monkeypatch: pytest.MonkeyPatch, error: psutil.Error
+def test_windows_process_list_entries_are_read_by_pid() -> None:
+    """プロセス一覧のバッファを、可変長の各項目を辿って対象PIDの作成時刻まで読む。"""
+    entry_size = ctypes.sizeof(windows_service_transport._SystemProcessInformation)
+    entries = [(4, 111), (4242, 222), (99, 333)]
+    snapshot = ctypes.create_string_buffer(entry_size * len(entries) + 7)
+    for index, (pid, created) in enumerate(entries):
+        entry = windows_service_transport._SystemProcessInformation.from_buffer(snapshot, index * entry_size)
+        entry.UniqueProcessId, entry.CreateTime = pid, created
+        entry.NextEntryOffset = entry_size if index + 1 < len(entries) else 0
+    assert windows_service_transport._find_create_time(snapshot, 4242) == 222
+    assert windows_service_transport._find_create_time(snapshot, 99) == 333
+    assert windows_service_transport._find_create_time(snapshot, 5) is None
+
+
+@pytest.mark.parametrize("reports_needed", [True, False], ids=["needed", "no-needed"])
+@pytest.mark.parametrize("status", [0xC0000004, 0xC0000023], ids=["info-length-mismatch", "buffer-too-small"])
+def test_windows_process_list_grows_buffer_until_listing_fits(
+    monkeypatch: pytest.MonkeyPatch, status: int, reports_needed: bool
 ) -> None:
-    """開けない世代の作成時刻をプロセス一覧からも得られなければ、呼び出し元の場面表と同じく終了した世代とする。"""
+    """一覧が最初に確保したバッファに収まらない場合、不足の通知の種類と必要量の返却の有無によらず、広げて取り直して読む。"""
+    required = 3 << 20
+    sizes: list[int] = []
 
-    def denied(_pid: int) -> str:
-        raise PermissionError(13, "Access is denied", None, 5)
+    def query(_information_class: int, snapshot: Any, size: int, needed: Any) -> int:
+        sizes.append(size)
+        assert len(sizes) <= 8, f"バッファが広がらない: {sizes}"
+        if size < required:
+            needed._obj.value = required if reports_needed else 0
+            return status - (1 << 32)
+        entry = windows_service_transport._SystemProcessInformation.from_buffer(snapshot)
+        entry.UniqueProcessId, entry.CreateTime = 4242, 222
+        return 0
 
-    def unlisted(_pid: int) -> Any:
-        raise error
+    monkeypatch.setattr(
+        windows_service_transport,
+        "_windows",
+        SimpleNamespace(WinDLL=lambda _name: SimpleNamespace(NtQuerySystemInformation=query)),
+    )
+    assert windows_service_transport._listed_create_time(4242) == 222
 
-    monkeypatch.setattr(service_transport, "process_identity", denied)
-    monkeypatch.setattr(service_transport, "os", SimpleNamespace(name="nt"))
-    monkeypatch.setattr(psutil, "Process", unlisted)
-    assert service_transport.process_alive("4242:1") is False
+
+def test_stdlib_only_forwarding_side_does_not_import_psutil() -> None:
+    """標準ライブラリだけで動く転送側が使う生存判定のモジュールは、psutilを読み込まない。
+
+    転送側が別ログオンの昇格世代に当たると、依存環境の外でpsutilを読み込んで失敗した。
+    """
+    for module in (service_transport, windows_service_transport):
+        tree = ast.parse(pathlib.Path(module.__file__ or "").read_text(encoding="utf-8"))
+        imported = {
+            alias.name.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names
+        } | {node.module.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
+        assert "psutil" not in imported, module.__name__
 
 
 # 終了した世代の起動単位。PIDは別アカウントのプロセスが再利用し、照会がアクセス拒否で失敗する。

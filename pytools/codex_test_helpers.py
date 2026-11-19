@@ -213,9 +213,19 @@ def _proxy() -> None:
                     "authStatus": "unsupported",
                     "runtimeStatus": "failed",
                 }
-            result = (
-                {"data": [], "nextCursor": "agents"} if params.get("cursor") is None else {"data": [agents], "nextCursor": None}
-            )
+            selected = params.get("serverName")
+            if selected is None or params.get("threadId") is None:
+                # Codex 0.170は会話の接続を使えない照会で、対象のMCPを新しく起動して破棄する。
+                with (_ROOT / "discovery-launches").open("a", encoding="utf-8") as launches:
+                    launches.write(f"{selected or '*'}\n")
+            if selected is not None:
+                result = {"data": [agents] if selected == "agents_server" else [], "nextCursor": None}
+            else:
+                result = (
+                    {"data": [], "nextCursor": "agents"}
+                    if params.get("cursor") is None
+                    else {"data": [agents], "nextCursor": None}
+                )
         elif method == "mcpServer/tool/call":
             record = _read(_thread_file(params["threadId"]))
             if _MODE in {"elicitation", "elicitation-cancel"} and record["starts"]:
@@ -373,7 +383,9 @@ def _actor(arguments: list[str]) -> int:
             thread = result["thread"]["id"]
             if _MODE == "tui-reset":
                 # 届いた通知を読まずに閉じ、OSが接続をリセットする。通常TUIは切断の後に端末を戻してから終了する。
-                select.select([connection], [], [], 5)
+                # 通知を応答と同じ読取で受け取り済みなら、socketはもう読取可能にならないため待たない。
+                if not wire.pending:
+                    select.select([connection], [], [], 5)
                 stream.close()
                 connection.close()
                 (_ROOT / "tui-reset").touch()

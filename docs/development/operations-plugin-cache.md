@@ -34,5 +34,6 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
   - `claude-plugins-official`配下はcommit hashなど自然順に並ばない版名を持つため、導入時刻で後継を決める
   - `plugin.json`を欠く不完全な版は版ディレクトリのmtimeで代替する
 - `installPath`の更新後に判定するため、工程は「Claude Code pluginのインストール」の直後に置く
-- `~/.codex/plugins/cache`は導入処理が1版だけを保持するため対象外とする。
-  シンボリックリンクとディレクトリジャンクションは辿らず削除しない
+- `~/.codex/plugins/cache`は対象外とする。
+  Codexの旧版はCodex pluginの導入処理（`install_codex_plugins.py`）が同じ猶予期間と導入時刻の選び方で削除する（[設計記録](design-hosts-plugin-lifecycle.md#codexのlocal-plugin導入)）
+- シンボリックリンクとディレクトリジャンクションは辿らず削除しない

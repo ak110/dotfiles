@@ -24,9 +24,6 @@ Claude Codeの`agents/`のfrontmatterの項目名と値は、公式ドキュメ�
 - `skills`で注入されたスキルの本文には配置ディレクトリの絶対パスが付くため、プラグイン内の他のファイルはそこから特定したプラグインのrootからの相対パスで解決できる。
   スキルの`references/`は`skills`の宣言だけでは読み込まれないため、必要な参照文書は定義の本文から明示的に読ませる。
 
-観測の記録は`docs/development/audit-records-languages.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/sub-agents.md：Claude Codeのfrontmatter：2026年8月19日」である。
-
 ## コンテキスト境界
 
 通常の委譲は、会話の文脈が完全に独立している前提で設計する。
@@ -41,8 +38,6 @@ Claude Codeの`agents/`のfrontmatterの項目名と値は、公式ドキュメ�
 - `main`とセッション内で動いている他の名前付きエージェントの名簿（`tools`に`SendMessage`が含まれ、他に名前付きエージェントがいる場合）
 
 委譲元は定義の本文を読まずに委譲プロンプトを組み立てるため、起動に要る入力の項目は委譲元の側の手順書に書く。
-観測の記録は`docs/development/audit-records-languages.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月13日」である。
 
 ## `<役割名>.parent.md`と`<役割名>.subagent.md`の構成
 

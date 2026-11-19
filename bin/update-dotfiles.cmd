@@ -52,6 +52,8 @@ if "%~1"=="job" goto job_route
 :normal
 set "UV_SELF_UPDATE_FAILED=0"
 set "DOTFILES_PRUNE_OUTSIDE_UV=1"
+rem 前回の更新が始めたuvの全消去は最長600秒キャッシュを排他するため、uvの既定の待機上限（300秒）より長く待つ。
+if not defined UV_LOCK_TIMEOUT set "UV_LOCK_TIMEOUT=900"
 set "DOTFILES_PRUNE_READY_FILE=%LOCALAPPDATA%\agent-toolkit\update-prune-ready-%RANDOM%-%RANDOM%"
 set "PRUNE_REQUESTED=1"
 if "%~1"=="logs" set "PRUNE_REQUESTED=0"

@@ -19,8 +19,6 @@ MCP仕様は版`2025-11-25`を対象とし、使うSDKが対応する仕様の�
 `mcp-server-dev`は公式マーケットプレイス（`anthropics/claude-plugins-official`）のプラグインである。
 有効化しなくても`~/.claude/plugins/marketplaces/claude-plugins-official/plugins/mcp-server-dev/skills/`か[GitHubの同じ配下](https://github.com/anthropics/claude-plugins-official/tree/main/plugins/mcp-server-dev/skills)から読める。
 `build-mcp-server`の冒頭の「Anthropic Directory hard requirements」はAnthropic Directoryへ提出するサーバーだけの審査条件であり、読み書きのツール分割の必須化や説明文での行動指示の禁止を含めて本書の推奨から除く。
-取得した版と再検証の手順は、配布物の外の`docs/development/audit-records-mcp.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月2日」にある。
-`mcp-server-dev`の資料は同書の「agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月29日」にある。
 
 ## 仕様が要求する契約
 
@@ -91,6 +89,3 @@ Claude Codeを対象に含める時は次を設計条件にし、他のホスト
 - `readOnlyHint: true`と`idempotentHint: true`のツールは、接続断などで実行済みの可能性がある失敗の後にも再試行され、`readOnlyHint: true`のツールは並行して呼ばれることもある。
 - MCPツールの出力が10,000トークンを超えると警告が出て、デフォルトでは25,000トークンに制限される（環境変数`MAX_MCP_OUTPUT_TOKENS`で変更できる）。
   大きなデータを返す必要があるツールは、`tools/list`の`_meta["anthropic/maxResultSizeChars"]`で上限を引き上げられる（画像を返すツールは対象外）。
-
-説明文の上限の典拠は、`docs/development/audit-records-mcp.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日」にある。
-注釈による再試行の観測は、同書の「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月29日」にある。

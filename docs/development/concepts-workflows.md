@@ -17,7 +17,7 @@
   確認記録は適用先のリポジトリの外へ置き、dotfilesプラグインの中を保存先に指定できる。
   dotfiles本体には、個人プロジェクト以外の固有情報を書かない。
   設定やCIの現在の推奨形はpyfltrの推奨ガイドを正とし、台帳は変更の日付と理由、推奨ガイドに載らない改善を扱う。
-  現行の規定は`operate-ak110-projects`スキルの`references/followup-procedure.md`にある
+  台帳への記録の現行の規定は`operate-ak110-projects`スキルの`references/project-synchronization.md`「台帳への追記」、一覧の外のプロジェクトへの適用の検討は同`references/followup-procedure.md`にある
 
 ### Windowsと`update-dotfiles`の運用
 

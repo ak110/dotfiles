@@ -12,12 +12,8 @@ from ctypes import wintypes as w
 from multiprocessing import connection
 from typing import Any
 
-lazy import psutil
-
 # Windows専用属性はLinuxの型情報に無いため、OS境界内で動的に解決する。
 _windows: Any = ctypes
-# FILETIME（1601年からの100ナノ秒単位）でのUNIX時刻の起点。
-_FILETIME_UNIX_EPOCH = 116444736000000000
 
 
 def _api() -> tuple[Any, Any]:
@@ -90,19 +86,75 @@ def process_identity(pid: int) -> str:
         return _identity(handle, pid)
 
 
-def listed_process_alive(identity: str) -> bool:
-    """開けないプロセスが記録した起動単位のプロセスかを、開く権限の要らないシステムのプロセス一覧の作成時刻で判定する。
+class _UnicodeString(ctypes.Structure):
+    _fields_ = [("Length", w.USHORT), ("MaximumLength", w.USHORT), ("Buffer", ctypes.c_void_p)]
 
-    psutilは開けないプロセスの作成時刻をプロセス一覧から秒の浮動小数で返すため、丸め誤差を許す。
-    PIDの再利用は元のプロセスの終了後に限られ、作成時刻の差は元のプロセスの生存時間を超える。
-    プロセス一覧でも作成時刻を得られない場合は記録した起動単位と確かめられず、Linuxの拒否と同じく終了した世代として扱う。
+
+class _SystemProcessInformation(ctypes.Structure):
+    """`NtQuerySystemInformation(SystemProcessInformation)`が返すプロセス1件の先頭部分。"""
+
+    _fields_ = [
+        ("NextEntryOffset", w.ULONG),
+        ("NumberOfThreads", w.ULONG),
+        ("WorkingSetPrivateSize", ctypes.c_int64),
+        ("HardFaultCount", w.ULONG),
+        ("NumberOfThreadsHighWatermark", w.ULONG),
+        ("CycleTime", ctypes.c_uint64),
+        ("CreateTime", ctypes.c_int64),
+        ("UserTime", ctypes.c_int64),
+        ("KernelTime", ctypes.c_int64),
+        ("ImageName", _UnicodeString),
+        ("BasePriority", ctypes.c_long),
+        ("UniqueProcessId", ctypes.c_void_p),
+    ]
+
+
+_SYSTEM_PROCESS_INFORMATION = 5
+_STATUS_INFO_LENGTH_MISMATCH = 0xC0000004
+_STATUS_BUFFER_TOO_SMALL = 0xC0000023
+
+
+def _find_create_time(snapshot: Any, pid: int) -> int | None:
+    """プロセス一覧のバッファから、指定PIDの作成時刻（FILETIME）を返す。一覧に無ければ`None`を返す。"""
+    offset = 0
+    while True:
+        entry = _SystemProcessInformation.from_buffer(snapshot, offset)
+        if entry.UniqueProcessId == pid:
+            return entry.CreateTime
+        if not entry.NextEntryOffset:
+            return None
+        offset += entry.NextEntryOffset
+
+
+def _listed_create_time(pid: int) -> int | None:
+    """開く権限の要らないシステムのプロセス一覧から、指定PIDの作成時刻（FILETIME）を返す。"""
+    query = _windows.WinDLL("ntdll").NtQuerySystemInformation
+    query.argtypes = [ctypes.c_int, ctypes.c_void_p, w.ULONG, ctypes.POINTER(w.ULONG)]
+    query.restype = ctypes.c_long
+    size = 1 << 20
+    while True:
+        snapshot = ctypes.create_string_buffer(size)
+        needed = w.ULONG(0)
+        status = query(_SYSTEM_PROCESS_INFORMATION, snapshot, size, ctypes.byref(needed))
+        if status & 0xFFFFFFFF in (_STATUS_INFO_LENGTH_MISMATCH, _STATUS_BUFFER_TOO_SMALL):
+            # 一覧は照会ごとに変わるため、返された必要量に余裕を持たせて取り直す。
+            # 必要量が返らない（0）場合も取り直しが終わるよう、少なくとも倍へ広げる。
+            size = max(needed.value + (1 << 16), size * 2)
+            continue
+        if status < 0:
+            raise OSError(f"プロセス一覧の取得に失敗しました: NTSTATUS=0x{status & 0xFFFFFFFF:08X}")
+        return _find_create_time(snapshot, pid)
+
+
+def listed_process_alive(identity: str) -> bool:
+    """開けないプロセスが記録した起動単位のプロセスかを、システムのプロセス一覧の作成時刻で判定する。
+
+    転送側は標準ライブラリだけで動くため、psutilは使わずntdllから一覧を得る。
+    一覧の作成時刻は`GetProcessTimes`と同じFILETIMEで、記録した起動単位と一致を比べる。
+    PIDが再利用されていれば作成時刻が異なり、一覧に無ければ終了した世代として扱う。
     """
     pid, created = (int(part) for part in identity.split(":", 1))
-    try:
-        listed = psutil.Process(pid).create_time()
-    except psutil.NoSuchProcess, psutil.AccessDenied:
-        return False
-    return abs(listed - (created - _FILETIME_UNIX_EPOCH) / 10_000_000) < 0.001
+    return _listed_create_time(pid) == created
 
 
 def _sid(handle: int) -> str:

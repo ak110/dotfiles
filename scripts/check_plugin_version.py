@@ -8,7 +8,7 @@
 対象は`.claude-plugin/marketplace.json`の`plugins[]`が`source`で指すプラグイン（agent-toolkit、agent-basics）である。
 Codexの導入処理は版数の不一致だけで再導入するため、版数を据え置いた変更は稼働環境へ届かない。
 そこでプラグインroot配下の差分は、`*_test.py`だけの差分を除き、コメント・docstring・文書・内部整理も含めて
-版数更新を要する変更として扱う。判定基準は`.claude/skills/agent-toolkit-edit/references/version-bump.md`「判定基準」と一致させる。
+版数更新を要する変更として扱う。判定基準は`.claude/skills/agent-toolkit-edit/references/distribution.md`「判定基準」と一致させる。
 
 CIの`plugin-version` jobと、公開担当がpush前のローカル検証で明示的に有効化するpyfltrの`plugin-version`が呼ぶ。
 

@@ -192,6 +192,7 @@ function Test-CodexPluginStateChanged {
 # 旧versionはCODEX_HOME直下の固定の退避先へ移動し、使用中や別ボリュームで移動できない版だけ複製する。
 # 中断した実行が残した退避は、次回の実行がRestore-CodexPluginCacheSnapshotで戻す。
 # 目標versionはCLIが置き換えるため元の場所に残して複製し、plugin addの失敗時に戻せるようにする。
+# 移動できない旧versionも元の場所に残して複製し、CLIが途中まで消した場合に復元で補えるよう~copiedの印を付ける。
 function Move-CodexPluginCacheSnapshot {
     param([string]$destination, [string]$targetVersion)
     if (-not (Test-Path -LiteralPath $codexPluginCacheRoot -PathType Container)) { return }
@@ -203,10 +204,33 @@ function Move-CodexPluginCacheSnapshot {
         $saved = Join-Path $destination $cache.Name
         if ($cache.Name -ne $targetVersion) {
             try { [IO.Directory]::Move($cache.FullName, $saved) } catch { Write-Verbose "移動できないため複製する: $($cache.FullName)" }
+            if (Test-Path -LiteralPath $cache.FullName) {
+                New-Item -ItemType File -Path "$saved~copied" -Force | Out-Null
+            }
         }
         if (Test-Path -LiteralPath $cache.FullName) {
             Copy-Item -LiteralPath $cache.FullName -Destination $saved -Recurse
         }
+    }
+}
+
+# 退避した版にあって元のパスに無いファイルとディレクトリを補う。
+# 元のパスに残るファイルはCLIが消せなかった使用中のファイルであり、置き換えずに残す。
+# 各ファイルは隣で複製を仕上げてから名前の変更で置き、途中で止まっても欠けたファイルを元の名前で残さない。
+function Complete-CodexPluginCacheFromSnapshot {
+    param([string]$saved, [string]$destination)
+    $savedFull = (Get-Item -LiteralPath $saved -Force).FullName
+    foreach ($item in @(Get-ChildItem -LiteralPath $savedFull -Recurse -Force)) {
+        $target = Join-Path $destination $item.FullName.Substring($savedFull.Length).TrimStart('\', '/')
+        if ($item.PSIsContainer) {
+            New-Item -ItemType Directory -Path $target -Force | Out-Null
+            continue
+        }
+        if (Test-Path -LiteralPath $target) { continue }
+        $staging = "$target~restoring"
+        if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Force }
+        Copy-Item -LiteralPath $item.FullName -Destination $staging
+        Move-Item -LiteralPath $staging -Destination $target
     }
 }
 
@@ -217,32 +241,38 @@ function Restore-CodexPluginCacheSnapshot {
         $destination = Join-Path $codexPluginCacheRoot $saved.Name
         # 置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
         $replaceMarker = Join-Path $savedRoot "$($saved.Name)~replace"
+        # 複製で退避した使用中の版は使用中のファイルが残って置き換えられないため、元のパスに無いファイルだけを補う。
+        $copiedMarker = Join-Path $savedRoot "$($saved.Name)~copied"
+        $copied = Test-Path -LiteralPath $copiedMarker
         $staging = "$destination~restoring"
         if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
-        if (($replaceExisting -or (Test-Path -LiteralPath $replaceMarker)) -and (Test-Path -LiteralPath $destination)) {
+        if (($replaceExisting -or (Test-Path -LiteralPath $replaceMarker)) -and -not $copied -and (Test-Path -LiteralPath $destination)) {
             New-Item -ItemType File -Path $replaceMarker -Force | Out-Null
             Remove-Item -LiteralPath $destination -Recurse -Force
         }
         if ($saved.Name -eq $installedVersion -or (Test-Path -LiteralPath $destination)) {
-            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
+            if ($copied -and $saved.Name -ne $installedVersion) {
+                Complete-CodexPluginCacheFromSnapshot $saved.FullName $destination
+            }
+            Remove-Item -LiteralPath $replaceMarker, $copiedMarker -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $saved.FullName -Recurse -Force
             continue
         }
         New-Item -ItemType Directory -Path $codexPluginCacheRoot -Force | Out-Null
         try {
             [IO.Directory]::Move($saved.FullName, $destination)
-            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $replaceMarker, $copiedMarker -Force -ErrorAction SilentlyContinue
         } catch {
             # cacheが別ボリュームへのリンクやjunctionの配下にあると移動できないため、
             # 複製を仕上げてから元のパスへ置き、その後に退避を削除する。
             Copy-Item -LiteralPath $saved.FullName -Destination $staging -Recurse
             [IO.Directory]::Move($staging, $destination)
-            Remove-Item -LiteralPath $replaceMarker -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $replaceMarker, $copiedMarker -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $saved.FullName -Recurse -Force
         }
     }
     # 版を元のパスへ戻した直後に中断すると、対応する退避の無い印だけが残る。
-    Get-ChildItem -LiteralPath $savedRoot -File -Force -Filter '*~replace' | Remove-Item -Force
+    Get-ChildItem -LiteralPath $savedRoot -File -Force | Where-Object { $_.Name -like '*~replace' -or $_.Name -like '*~copied' } | Remove-Item -Force
     # 退避先は名前が.で始まり、Linux・macOSのPowerShellでは隠し項目になるため-Forceで削除する。
     Remove-Item -LiteralPath $savedRoot -Force
     foreach ($parent in @((Split-Path -Parent $savedRoot), (Split-Path -Parent (Split-Path -Parent $savedRoot)))) {

@@ -241,6 +241,7 @@ PY
 # 旧versionはCODEX_HOME直下の固定の退避先へ移動する。別ボリュームではmvが複製する。
 # 中断した実行が残した退避は、次回の実行が_restore_codex_plugin_cachesで戻す。
 # 目標versionはCLIが置き換えるため元の場所に残して複製し、plugin addの失敗時に戻せるようにする。
+# 移動できない旧versionも元の場所に残して複製し、CLIが途中まで消した場合に復元で補えるよう~copiedの印を付ける。
 _snapshot_codex_plugin_caches() {
     local destination="$1"
     local target_version="$2"
@@ -253,10 +254,32 @@ _snapshot_codex_plugin_caches() {
         case "${cache##*/}" in *'~'*) continue ;; esac
         if [ "${cache##*/}" != "$target_version" ]; then
             mv "$cache" "$destination/" 2>/dev/null || true
+            if [ -e "$cache" ]; then
+                : >"$destination/${cache##*/}~copied" || return 1
+            fi
         fi
         if [ -e "$cache" ]; then
             cp -a "$cache" "$destination/" || return 1
         fi
+    done
+}
+
+# 退避した版にあって元のパスに無いファイルとディレクトリを補う。
+# 元のパスに残るファイルはCLIが消せなかった使用中のファイルであり、置き換えずに残す。
+# 各ファイルは隣で複製を仕上げてから名前の変更で置き、途中で止まっても欠けたファイルを元の名前で残さない。
+_complete_codex_plugin_cache() {
+    local saved="$1"
+    local destination="$2"
+    (cd "$saved" && find . -mindepth 1 -type d) | while IFS= read -r item; do
+        mkdir -p "$destination/$item" || exit 1
+    done || return 1
+    (cd "$saved" && find . ! -type d) | while IFS= read -r item; do
+        if [ -e "$destination/$item" ] || [ -L "$destination/$item" ]; then
+            continue
+        fi
+        rm -f "$destination/$item~restoring" || exit 1
+        cp -a "$saved/$item" "$destination/$item~restoring" || exit 1
+        mv "$destination/$item~restoring" "$destination/$item" || exit 1
     done
 }
 
@@ -272,6 +295,7 @@ _restore_codex_plugin_caches() {
     local version=""
     local destination=""
     local replace_marker=""
+    local copied_marker=""
     local staging=""
     local same_volume=0
     [ -d "$saved_root" ] || return 0
@@ -285,31 +309,36 @@ _restore_codex_plugin_caches() {
         destination="$CODEX_PLUGIN_CACHE_ROOT/$version"
         # 置き換えの途中で失敗した版は印を残し、次回の実行も途中まで消えた元のパスより退避した内容を優先する。
         replace_marker="$saved_root/$version~replace"
+        # 複製で退避した使用中の版は使用中のファイルが残って置き換えられないため、元のパスに無いファイルだけを補う。
+        copied_marker="$saved_root/$version~copied"
         staging="$destination~restoring"
         rm -rf "$staging" || return 1
-        if { [ "$replace_existing" -eq 1 ] || [ -e "$replace_marker" ]; } && { [ -e "$destination" ] || [ -L "$destination" ]; }; then
+        if { [ "$replace_existing" -eq 1 ] || [ -e "$replace_marker" ]; } && [ ! -e "$copied_marker" ] && { [ -e "$destination" ] || [ -L "$destination" ]; }; then
             : >"$replace_marker" || return 1
             rm -rf "$destination" || return 1
         fi
         if [ "$version" = "$installed_version" ] || [ -e "$destination" ] || [ -L "$destination" ]; then
-            rm -f "$replace_marker" || return 1
+            if [ -e "$copied_marker" ] && [ "$version" != "$installed_version" ]; then
+                _complete_codex_plugin_cache "$saved" "$destination" || return 1
+            fi
+            rm -f "$replace_marker" "$copied_marker" || return 1
             rm -rf "$saved" || return 1
             continue
         fi
         if [ "$same_volume" -eq 1 ]; then
             mv "$saved" "$destination" || return 1
-            rm -f "$replace_marker" || return 1
+            rm -f "$replace_marker" "$copied_marker" || return 1
         else
             # 別ボリュームのmvは複製と削除を兼ね、途中の失敗で元のパスに欠けた版を残し得るため、
             # 複製を仕上げてから元のパスへ置き、その後に退避を削除する。
             cp -a "$saved" "$staging" || return 1
             mv "$staging" "$destination" || return 1
-            rm -f "$replace_marker" || return 1
+            rm -f "$replace_marker" "$copied_marker" || return 1
             rm -rf "$saved" || return 1
         fi
     done
     # 版を元のパスへ戻した直後に中断すると、対応する退避の無い印だけが残る。
-    rm -f "$saved_root"/*~replace || return 1
+    rm -f "$saved_root"/*~replace "$saved_root"/*~copied || return 1
     rmdir "$saved_root" || return 1
     rmdir "${saved_root%/*}" "${saved_root%/*/*}" 2>/dev/null || true
 }

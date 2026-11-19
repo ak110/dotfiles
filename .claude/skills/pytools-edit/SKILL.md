@@ -9,68 +9,47 @@ description: >
 
 # pytools・scripts・binの編集
 
-このスキルは、本リポジトリにおけるコマンドラインツールや開発スクリプトの配置規約および実装規約をまとめたものである。
-
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| テストの配置・検証・環境準備の手順を選ぶ前 | `../develop-dotfiles/SKILL.md` |
-
-## 読込表
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| `bin/`配下の`*.cmd`を書込ツールで扱う前 | `agent-basics:writing-standards`の`references/encoding.md` |
-| `rust/`配下のクレートを編集する前 | `agent-basics:writing-standards`の`references/rust.md` |
+本リポジトリのコマンドラインツールと開発スクリプトの配置と実装の規約である。
+テストの配置と検証の手順は`.claude/skills/develop-dotfiles/SKILL.md`の表から選ぶ。
 
 ## 配置規約
 
-- `pytools/`のトップレベルには、`project.scripts`から参照される公開CLIモジュール（`<name>.py`またはサブパッケージ`<name>/`）を配置し、bash補完（argcomplete）に対応させる。
-  サブパッケージ構成にする場合は、`__init__.py`で`_cli.py`の`main`を再エクスポートし、`project.scripts`からはそのパッケージの`main`を参照するように設定する。
-- 内部でのみ使用するプライベートなヘルパーモジュールは、`pytools/_internal/`配下に配置する。
-- 開発時やCIの工程（prek、Makefile、pyfltr、CI）から起動するスクリプトは、`scripts/`配下に配置する（エンドユーザーの日常的な環境で実行するものは対象外）。
-- 他のプログラムから呼び出され、`pytools`パッケージの外側でエンドユーザーの環境（LinuxおよびWindows）で動作する実行ファイルは`libexec/`配下に配置する（`bin/`のランチャー、chezmoiの後処理スクリプト、systemd unit、フック定義から起動されるスクリプトなど）。
-  両OSで正しく動作するように記述する。
-- `scripts/`や`libexec/`配下のPythonスクリプトは`[project.scripts]`には登録せず、PEP 723形式の単独実行スクリプト、またはプロジェクト環境で直接起動するスクリプトとして記述する。
-  配布用wheelパッケージには`pytools`のみが含まれるため、`pytools`内から`scripts/`や`libexec/`をimportすることは禁止する。
-- 単純なコマンドラッパーを作成する場合は、`scripts/new_bin_cmd.py <name> <command...>`を実行して、`bin/<name>`と`bin/<name>.cmd`のペアを生成する。
-- 実行頻度が非常に高いフックやstatusline相当のスクリプトは、Windows環境における`uv run`の起動オーバーヘッドを考慮し、ネイティブバイナリ化を第一候補として検討する（先行事例として`rust/claude-statusline/`を参照）。
+- `pytools/`のトップレベルには、`project.scripts`から参照する公開CLIモジュール（`<name>.py`かサブパッケージ`<name>/`）を置き、bash補完（argcomplete）に対応させる。
+  サブパッケージにする場合は、`__init__.py`で`_cli.py`の`main`を再エクスポートし、`project.scripts`からはパッケージの`main`を参照する。
+- 内部だけで使うヘルパーは`pytools/_internal/`に置く。
+- 開発とCIの工程（prek、Makefile、pyfltr、CI）から起動するスクリプトは`scripts/`に置く。
+- 他のプログラムから呼ばれ、`pytools`の外でエンドユーザーの環境（LinuxとWindows）で動く実行ファイル（`bin/`のランチャー、chezmoiの後処理、systemd unit、フック定義から起動するスクリプトなど）は`libexec/`に置き、両OSで動くように書く。
+- `scripts/`と`libexec/`のPythonスクリプトは`[project.scripts]`に登録せず、PEP 723の単独実行スクリプトか、プロジェクト環境で直接起動するスクリプトとして書く。
+  配布用wheelは`pytools`だけを含むため、`pytools`がimportしてよいのは`pytools`の中だけである。
+- 単純なコマンドラッパーは`scripts/new_bin_cmd.py <name> <command...>`で`bin/<name>`と`bin/<name>.cmd`の対を生成する。
+- 起動頻度の高いフックやstatusline相当のスクリプトは、Windowsでの`uv run`の起動の費用を考え、ネイティブバイナリ化を第一候補にする（先例は`rust/claude-statusline/`）。
+- `rust/`配下は`rust/<クレート名>/`の単位でCargoクレートとして置き、書き方は`agent-basics:writing-standards/references/rust.md`に従う。
 
 ## 実装規約
 
-- dotfilesの作業ツリーの位置を取得する際は、必ず`pytools._internal.common.find_dotfiles_root()`を使用する。
-  CI環境やエンドユーザー環境では作業ツリーが`$HOME`直下にあるとは限らず、また階層数に基づく相対解決はディレクトリ構成の変更時に壊れやすいため、`~/dotfiles`という固定パスや`Path(__file__)`からの階層計算で取得しない。
-  なお、ルートが見つからず`None`が返された場合の処理は呼び出し元が判断する。
-  `pytools`をimportできないPEP 723スクリプトに限っては、`Path(__file__)`を起点として解決する。
-  `CHEZMOI_WORKING_TREE`の読み取りは対象外とする。
-- bash、PowerShell、JSON、chezmoiテンプレート内に記述されている`~/dotfiles`という固定パスは、`install.sh`がクローンする既定の配置場所を前提としている。
-  これには`.chezmoi-source/dot_bashrc`、`share/claude_settings_json_managed.win32.json`、`bin/lab-bg`などが該当する。
-  クローン先の前提を変更する場合は、これらの記述も漏れなくそろえる。
-- Claude Codeに依存しない汎用的な共通処理は、`pytools/_internal/common.py`（`find_dotfiles_root()`、`run_subprocess()`、`atomic_write_*()`など）に配置する。
-  Claude Code固有の定数や`run_claude()`は`pytools/_internal/claude_common.py`に配置する。
-  新しく関数等を作成する前に、既存の公開APIが存在しないかをあらかじめ確認する（努力目標）。
-- `bin/`配下の`*.cmd`ファイルはCP932（Shift_JIS）でエンコードされている。
-  書き込みツールで編集する際は、`agent-basics:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従う。
-  ASCII文字のみの修正であれば`sed -i`を用いて行う。
-- 非ASCII文字を標準出力や標準エラー出力へ書き出すPython CLIツールは、処理の開始時に両ストリームを`io.TextIOWrapper`を用いてUTF-8かつ`errors="replace"`で再構成する。
-  英語版Windowsなどの環境でシステムの既定エンコーディングに依存していると、日本語を出力した瞬間に文字コードエラーで停止するためである。
-- 上記のストリーム再構成を通さずに直接出力されるログメッセージや標準出力の文面は、`str.encode("cp932")`が成功する文字の範囲に収める（U+20BB7などの一部の漢字や、em dash、en dash、`✓`、`•`などはCP932でエンコードできないため使用を避ける）。
-- `pytools/post_apply.py`における各ステップの`run`メソッドは、必ず`PostApplyOutcome`のみを返すように実装する。
-  処理の失敗をスキップとして扱うか失敗として扱うかの基準は、`pytools/_internal/post_apply_outcome.py`にある`PostApplyOutcome`のdocstringに従う。
-  対象OSの指定は`_StepSpec.platforms`のみで行う。
-- 外部コマンドの失敗をエラーメッセージ、例外、警告へと変換する際は、`pytools/_internal/common.py`の`format_cli_error()`による出力結果を含める。
-  この関数は、キャプチャ済みの標準エラー出力と標準出力を併記し、両方が空であれば終了コードを、コマンド自体を実行できなかった場合はその旨を返す。
-  終了コードだけを伝えても、失敗の原因や復旧に向けた次の操作がdotfilesユーザーに伝わらないためである。
-  なお、接続不能などの環境異常（例: `systemctl --user`がユーザーマネージャーに接続できない場合など）は、対象サービス自体の状態（無効化されている、起動していないなど）として解釈するのではなく、環境側の問題として区別したうえで復旧手順を案内する。
-- post_applyのステップにおいて、外部ツールが存在しないことを理由にステップ全体をスキップする場合は、そのツールを同一または先行するステップで自動導入するか、あるいは`README.md`に手動での復旧手順を明記しておく。
-  なお、dotfilesユーザーが各自で導入先を選択するようなアプリケーションは除く。
-- post_applyの処理で配置されるファイル（ランチャー、フラグファイル、systemd unitなど）はchezmoiの管理外となるため、適切に登録しておかないと古い生成物が配布先に残り続けてしまう。
-  そのため、配置先のパスを変更したり処理自体を廃止したりした場合は、同じ変更の中で旧パスを`_REMOVED_PATHS`（dotfilesユーザー自身が編集する可能性のあるファイルは`_REMOVED_PATHS_IF_CONTENT`）に登録する。
-  撤去テーブル（この2つおよび`update_claude_settings.py`の除去テーブル）への登録日の記入と、6か月経過後の削除は`dotfiles-repo-layout`「ディレクトリ構造に関する注意点」の規則に従う。
-  登録日の有無は`pytools/removed_paths_invariant_test.py`が検査し、期限の確認は日付で結果が変わるためcommit hookでは行わず、定期実行のAudit workflowが期限の14日前から報告する。
-- `rust/`配下のコードは、`rust/<クレート名>/`という単位でCargoクレートとして配置し、実装作法は`agent-basics:writing-standards`の`references/rust.md`に従う。
-  通常の`make test`では`rust/`配下は検証されないため、変更を加えたクレート内で`cargo fmt --check`、`cargo clippy`、`cargo test`を変更範囲のローカル検証として実行する（CIでは`rust-lint`ジョブがこれを検証する）。
-  クレートのバージョン番号を更新する際は、`release-dotfiles`の手順を参照する。
+- dotfilesの作業ツリーの位置は`pytools._internal.common.find_dotfiles_root()`で取得する（`None`の扱いは呼び出し元が決める）。
+  CIとエンドユーザーの環境では作業ツリーが`$HOME`直下とは限らず、階層数による相対解決は構成の変更で壊れるため、`~/dotfiles`の固定パスと`Path(__file__)`からの階層計算は使わない。
+  `pytools`をimportできないPEP 723スクリプトだけは`Path(__file__)`を起点にする。
+  `CHEZMOI_WORKING_TREE`の読取は対象外とする。
+- bash、PowerShell、JSON、chezmoiテンプレートの`~/dotfiles`の固定パスは`install.sh`のクローン先を前提にしている。
+  該当は`.chezmoi-source/dot_bashrc`、`share/claude_settings_json_managed.win32.json`、`bin/lab-bg`などである。
+  クローン先の前提を変える時はこれらもそろえる。
+- Claude Codeに依存しない共通処理は`pytools/_internal/common.py`に置く（`find_dotfiles_root()`、`run_subprocess()`、`atomic_write_*()`、`format_cli_error()`など）。
+  Claude Code固有の定数と`run_claude()`は`pytools/_internal/claude_common.py`に置く。
+  関数を新しく作る前に既存の公開APIを確かめる（努力目標）。
+- `bin/`配下の`*.cmd`はCP932（Shift_JIS）である。
+  書込ツールで編集する時は`agent-basics:writing-standards/references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCII文字だけの修正は`sed -i`で行う。
+- 非ASCII文字を標準出力・標準エラーへ書くPythonのCLIは、開始時に両ストリームを`io.TextIOWrapper`でUTF-8かつ`errors="replace"`に再構成する（英語版Windowsなどで既定の文字コードに依存すると、日本語の出力で停止するため）。
+  再構成を通さずに出すログと標準出力の文面は、`str.encode("cp932")`が成功する文字に収める（U+20BB7などの一部の漢字、em dash、en dash、`✓`、`•`は使わない）。
+- `pytools/post_apply.py`の各ステップの`run`は`PostApplyOutcome`だけを返し、失敗をスキップと失敗のどちらで扱うかは`pytools/_internal/post_apply_outcome.py`の`PostApplyOutcome`のdocstringに従う。
+  対象OSは`_StepSpec.platforms`だけで指定する。
+- 外部コマンドの失敗をエラーメッセージ、例外、警告へ変える時は、`format_cli_error()`の結果（標準エラーと標準出力の併記、両方が空なら終了コード、実行できなければその旨）を含める。
+  終了コードだけでは原因と復旧の操作が伝わらないためである。
+  接続不能などの環境の異常（`systemctl --user`がユーザーマネージャーに接続できない、など）は、対象サービスの状態と区別して環境側の問題として復旧手順を案内する。
+- post_applyのステップで外部ツールが無いことを理由にステップ全体を省く場合は、そのツールを同じか先行するステップで自動導入するか、`README.md`に手動の復旧手順を書く（導入先をユーザーが選ぶアプリケーションは除く）。
+- post_applyが配置するファイル（ランチャー、フラグファイル、systemd unitなど）はchezmoiの管理外である。
+  配置先を変えたか処理を廃止した場合は、同じ変更で旧パスを`pytools/_internal/removed_paths.py`の`_REMOVED_PATHS`（ユーザーが編集しうるファイルは`_REMOVED_PATHS_IF_CONTENT`）へ登録する。
+  撤去テーブル（この2つと`update_claude_settings.py`の除去テーブル）の登録日と6か月後の削除は`.claude/skills/dotfiles-repo-layout/SKILL.md`「ディレクトリ構造に関する注意点」に従う。
+  登録日の有無は`pytools/removed_paths_invariant_test.py`が確かめ、期限は定期実行のAudit workflowが14日前から報告する。
+- 通常の`make test`は`rust/`配下を検証しないため、変えたクレートで`cargo fmt --check`、`cargo clippy`、`cargo test`を実行する（CIでは`rust-lint`ジョブが検証する）。
+  クレートの版数の更新は`.claude/skills/release-dotfiles/SKILL.md`の手順1に従う。

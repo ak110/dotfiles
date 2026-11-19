@@ -6,130 +6,90 @@ description: 「PRをマージして」などの明示的な依頼を受けた�
 
 # PRマージの完遂手順
 
-明示的なPRマージ依頼や、`agent-toolkit:process-wi`の終了時に日次リリースの条件（`release-dotfiles`「developとmasterのリリース運用」を参照）を満たした場合にのみ実行する。
-PRの存在確認だけでは起動しない。
-リリースの成否はリモートのブランチ、CI、および必要なリリースの結果に基づいて判定し、ローカルの作業ツリーやブランチはユーザーの変更を壊さない範囲でのみ操作する。
-`gh`コマンドの受け付け可能な引数形式や取得できる項目は、操作を実行する直前にヘルプで確認する。
+明示的なマージの依頼か、`release-dotfiles`「developとmasterのリリース運用」の手順から起動された時だけ、PRをマージして検収まで終える手順書である。
+PRの状態を尋ねられただけの時は、状態を1回取得して報告するところで終える（マージと継続の監視は始めない）。
+合否はリモートのブランチ、CI、リリースの結果で判定し、ローカルの作業ツリーとブランチはユーザーの変更を壊さない範囲でだけ操作する（`agent-basics:writing-standards/references/quality-principles-constraints.md`）。
+`gh`の引数の形式と取得できる項目は、操作の直前にヘルプで確かめる。
+どの段で止まっても、本書「失敗時の対応」に従う。
 
-## 名指し参照の読込方法
+## 手順
 
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+1. 対象PRを決める。
+   PR番号かURLの指定があればそのPRを、無ければ`develop`から`master`へのopenなPRが1件だけの時にそのPRを対象とする。
+   0件か複数なら番号かURLの指定を求めて停止する。
+   headが`develop`以外かbaseが`master`以外のPRは、状態を変えずに停止し、GitHubの既存の設定はそのまま保つ。
+2. マージ前の確認事項を確かめる。
+   1. `git fetch origin develop master`の後、`origin/develop`とPRの`headRefOid`が同じcommitを指すことを確かめ、この`headRefOid`を確認対象として保持する。
+   2. PRがopenでdraftでなく、baseが`master`、headが`develop`で、mergeableであることを確かめる。
+      前提はリモートの状態だけとする。
+   3. 基準のrefを`origin/develop`として本書「ローカルdevelopブランチの同期条件」を判定し、満たさなければローカルには手を加えずにリモートの処理だけで完遂する。
+   4. 対象PRに`event=pull_request`、`workflow=CI`、`name=statusline-version`のチェックが登録されるまで、`gh pr checks`のJSONを上限回数付きで繰り返し確かめる。
+      数えるのは`pull_request`起点のチェックだけである（`push`起点の同名チェックの成功の後に、`pull_request`起点のチェックが遅れて登録される場合があるため）。
+      観測結果と再検証手順は`docs/development/audit-records-project-environment.md`「.claude/skills/merge-pr/SKILL.md：マージ前の確認事項：2026年10月5日」にある。
+   5. `gh pr checks --required --watch`で必須チェックの完了を待つ。
+      成功の後、`headRefOid`が保持した値と一致したまま`mergeStateStatus=CLEAN`になるまで上限回数付きで待つ。
+   6. 照会の途中でheadが変わったら直ちに停止する。
+      待機の上限、照会の失敗、対象の不一致、チェックの失敗、headの変更、`CLEAN`以外の状態のどれかでも、マージせずに停止する。
+3. 必須チェックを待つのと並行して、レビュー本文と行ごとのコメントを取得し、各指摘の妥当性をコードとエージェント向け文書に照らして判定する。
+   妥当な指摘は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」に従って同じセッションで直すものと次へ回すものに分け、後者だけをAWIとして登録する。
+   妥当でない指摘は登録せず、判断の根拠を報告に残す。
+   全ての指摘の処置を終えてからマージへ進む。
+   同じセッションで直した場合は、直した後のheadを新しい確認対象として手順2からやり直す（直す前の必須チェックの成功を根拠にマージしない）。
+4. マージする。
+   直前に`headRefOid`と`mergeStateStatus`を取り直し、確認対象のcommitと一致して`CLEAN`であることを確かめる（一致しなければ停止して報告する）。
+   操作直前のhead OIDをアトミックな一致条件として渡し、明示的なマージコミットを作る。
+   自動マージとマージ後のブランチ削除は指定せずに実行する。
+   この一致条件を`gh`で保証できない場合はマージを見送る。
+   マージのコマンドは1回だけ実行し、失敗したら再試行せずに理由と再開に必要な情報を報告する。
+   コマンドが受け付けられたこととマージされたことは別に確かめ、PRの`state`が`MERGED`で`mergeCommit.oid`が取れることを照会して確かめる。
+5. マージ後にブランチを同期する。
+   1. `git fetch origin master`の後、PRの`mergeCommit.oid`と`origin/master`が一致することを確かめ、以降のGit操作は`origin/master`を基準にする。
+   2. `origin/develop`は、ローカルブランチを操作元にせず`git push origin origin/master:refs/heads/develop`で直接更新し、fetchの後に`origin/develop`と`origin/master`の短縮OID（7文字以上）が一致することを確かめる。
+   3. 手順2でローカルの同期ができると見込んでいた場合は、実行の直前に基準のrefを`origin/master`として同期条件を判定し直し、`develop` worktreeのパスがマージ前と同じことも確かめる。
+      満たせば`git -C <develop worktreeの絶対パス> merge --ff-only origin/master`を実行して`origin/master`との一致を確かめる。
+      満たさなければローカルの同期だけを省き、理由、対象worktreeの絶対パス、ローカルの`develop`と`origin/master`の短縮OIDを完了報告へ書く。
+   4. マージ後の`master`と`develop`へのpushに伴うCIは、必須チェックを通ったheadと同じツリーの再確認なので、完了を待たずに進めてよい（努力目標）。
+      statuslineを含む場合は手順6で検収する。
+6. マージコミットの第一親との差分に`rust/claude-statusline/`の変更があれば、リリースを検収する（無ければ省く）。
+   1. `origin/master`の完全OIDに対応する`Release statusLine`のrunを完全なdatabase IDで特定し、`prepare`ジョブが省かれずに実行されたrunの完了を待つ。
+      `gate`以外の全ジョブが省かれたrunは対象外として次のrunを待ち、`prepare`の実行可否が決まるまで監視する。
+      master CIの失敗でrun自体が作られない場合は本書「失敗時の対応」に従う。
+   2. `Cargo.toml`の版数に対応する`statusline-v<version>`タグが`origin/master`を指すことを確かめる。
+   3. GitHub Releaseがあり、`pytools/_internal/setup_statusline_binary.py`の`ASSET_NAME_POSIX`と`ASSET_NAME_WINDOWS`の名前の添付物があることを確かめる。
+   4. 同じ`origin/master`の完全OIDに対応する結果だけを検収の対象とする。
+7. マージ後に到着したレビューを1回だけ確かめる（GitHub Copilotのレビューはマージの後に遅れて届くことがある）。
+   `atk review-audit pending --repo <OWNER>/<REPO>`の終了コードが0で、JSONの`reviews`と`threads`が取れて対象PRがどちらにも無ければ、取得を省く。
+   それ以外（対象PRがある、終了コードが0以外、解析できない）は、対象PRのCopilotのレビュー本文とスレッドを1回取得し、取得、判定、GitHubへの記録、判定済みの記録は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`に従って対象PRだけに行う。
+   新しいレビューの要求と到着の待機はしない（未着分は次回以降の`agent-toolkit:process-wi`の選定工程の監査が取得する）。
+   直すべき指摘は手順3と同じく分け、同じセッションで直す場合は`develop`への通常の変更とし、マージをやり直さず次回のリリースPRで公開する。
+8. `agent-toolkit:process-wi`の終了処理から起動した場合に限り、マージの後に同じセッションで`develop`へ加えた変更は、変更範囲のローカル検証を全て通してからpushし、CIのrunが起動したことを確かめた時点で公開工程を終える（CIの完了は待たない）。
+   次回のリリースPRで必須チェックを改めて待ち、`master`は必須CIを通ったマージコミットだけで更新されるため、未検証の変更は`develop`に留まる。
+   省いたCIのrunのURLを完了報告に書く。
+9. 完了を判定する。
+   - `origin/develop`と`origin/master`の短縮OIDの一致を確かめ、マージ対象の必須CIと必要なリリースの検収が成功していること。
+   - 手順7を1回行い、各指摘の分類と処置が決まっていること。
+   - ローカルの`develop`を同期した場合は、`origin/master`との一致を確かめていること。
 
-## 読込表
+   合否はリモートの状態だけで判定し、`git status --short`の出力は現状の情報として添える。
+   手順8の変更は、検収済みのマージの結果と分けて報告する。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failures.md`、`agent-toolkit:atk-mode/references/ci.md` |
-| 必須CIの結果を成功時も含めて検収する前 | `../develop-dotfiles/references/verification-values-speed.md` |
-| マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
-
-## 失敗時の対応
-
-- CIやリリース以外の工程が失敗した場合は、すでに完了した外部の状態を保持したまま、失敗した工程、現在の外部状態、runのURL、および再開に必要な情報を報告して停止する。
-  PR作成やマージの再試行、auto-mergeの有効化、自動修復、自動ロールバックなどは行わない。
-- CIやリリースの実行（run）が失敗した場合は、run全体の終了状態と失敗ログを確認し、`agent-basics:bugfix/references/ci-failures.md`「分類」の再現性に沿って原因を分類する。
-  ネットワーク障害、配布元のタイムアウト、レート制限、ランナー障害などの一時的な外部要因が疑われる場合は、同ドキュメントの手順に従って広域障害の有無を確認したうえで、同一の原因について失敗したジョブを1回だけ再実行して検収を続行する。
-- 再実行しても再度失敗した場合、初回のログで一時的な外部要因が疑われない場合、またはログを取得できない場合は、元のrunの失敗状態を維持したまま、上記と同様の内容を報告して処理を停止する。
-
-## 対象PRの選択
-
-1. PR番号かURLが明示されている場合は、そのPRを対象とする。
-   指定がない場合は、`develop`から`master`へのopenなPRが1件のみ存在する場合に限って対象とする。
-   該当するPRが0件か複数件ある場合は、PR番号やURLの指定を求めて停止する。
-   headが`develop`以外、またはbaseが`master`以外のPRは、状態を変更せずに停止する。
-   なお、GitHub側のリポジトリ設定でheadブランチを`develop`に制限するような操作は行わず、既存の設定をそのまま維持する。
+返す報告に含める項目: 対象PRと確認したhead OID、マージコミットの完全OID、`origin/develop`と`origin/master`の一致、必須CIとReleaseの検収結果、ローカルの`develop`の同期の可否と理由、レビューの指摘の処置、`git status --short`。
 
 ## ローカルdevelopブランチの同期条件
 
-ユーザーの未コミットの変更やローカルブランチを保護するため、ローカルの`develop`ブランチは次の全条件を満たす場合のみ同期する（基準とするrefは参照元の各節で指定する）。
+ユーザーの未コミットの変更とローカルブランチを守るため、ローカルの`develop`は次の全てを満たす時だけ同期する（基準のrefは手順の各段が指定する）。
 
-- `git worktree list --porcelain`を実行したとき、`branch refs/heads/develop`を持つworktreeが1件だけ存在する（その絶対パスを`develop` worktreeとする）。
-- そのworktreeで`git status --porcelain`を実行した結果が空であり、現在のブランチが`develop`である。
-- rebase、merge、cherry-pickが中断した状態にない（対象worktreeのGitディレクトリ内に`rebase-merge`、`rebase-apply`、`MERGE_HEAD`、`CHERRY_PICK_HEAD`が存在しない）。
-- `git merge-base --is-ancestor HEAD <基準ref>`の終了コードが0である（fast-forwardマージが可能である）。
+- `git worktree list --porcelain`で`branch refs/heads/develop`を持つworktreeが1件だけある（その絶対パスを`develop` worktreeとする）。
+- そのworktreeの`git status --porcelain`が空で、現在のブランチが`develop`である。
+- rebase、merge、cherry-pickが中断していない（worktreeのGitディレクトリに`rebase-merge`、`rebase-apply`、`MERGE_HEAD`、`CHERRY_PICK_HEAD`が無い）。
+- `git merge-base --is-ancestor HEAD <基準のref>`の終了コードが0である。
 
-## マージ前の確認事項
+## 失敗時の対応
 
-1. `git fetch origin develop master`を実行したあと、`origin/develop`と、PR情報から取得した`headRefOid`が同一のcommitを指していることを確認し、この`headRefOid`を確認対象のcommitとして保持する。
-2. PRがopen状態かつdraftでなく、baseが`master`、headが`develop`であり、マージ可能な状態（mergeable）であることを確かめる。
-   マージの前提条件はこれらのリモート側の状態のみとし、ローカル環境の状態は前提条件に含めない。
-3. 後続の処理でローカルの`develop`を同期できるかどうかは、基準refを`origin/develop`として「ローカルdevelopブランチの同期条件」を判定する。
-   条件を満たさない場合はローカル環境には手を加えず、リモート側の処理のみで完遂する。
-4. 必須チェックの完了を待つ前に、対象PRに`event=pull_request`、`workflow=CI`、`name=statusline-version`のチェックが登録されるまで待機する。
-   この待機は、`gh pr checks`のJSON出力を上限回数付きで繰り返し確認して行う。
-   同じheadに対する`push`イベント起点の同名チェックは対象に含めない。
-   これは、`push`起点のチェックが成功したあとに、`pull_request`起点の`statusline-version`チェックが非同期で遅れて登録される場合があるためである。
-   観測結果と再検証手順は`docs/development/audit-records-project-environment.md`「.claude/skills/merge-pr/SKILL.md：マージ前の確認事項：2026年10月5日」を参照する。
-5. チェックの登録を確認したあと、`gh pr checks --required --watch`を実行して必須チェックが完了するまで待機する。
-   チェック成功後は、保持していたheadと`headRefOid`が一致した状態を維持したまま、`mergeStateStatus=CLEAN`になるまで上限回数を設けて待機する。
-6. 各種照会の途中でheadが変更された場合は直ちに処理を停止する。
-   待機上限への到達、照会の失敗、対象の不一致、チェックの失敗、headの変更、`CLEAN`以外のステータスが確認された場合はマージせずに停止する。
-   必須チェックの失敗時は「失敗時の対応」に従い、それ以外の理由による停止では外部の状態と再開に必要な情報を報告する。
-
-## レビューコメントの確認
-
-1. 必須チェックの完了を待つ処理と並行して、対象PRのレビュー本文と行ごとのコメントを取得し、各指摘の妥当性をコード実装やエージェント向け文書と照らし合わせて判定する。
-2. 妥当と判断した指摘は、`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」に従って、同一セッション内で対応するものと次セッション以降へ回すものに分類し、後者のみをAWIとして登録する。
-   妥当ではないと判断した指摘は登録せず、その判断根拠を報告に残す。
-3. すべての指摘に対する判定と処置を完了させてからマージの工程へ進む。
-   同一セッション内で修正した場合は、修正後のPR headを新たな確認対象として「マージ前の確認事項」を最初からやり直す（修正前の必須チェック成功を根拠としてマージしない）。
-
-## PRのマージ手順
-
-1. マージを実行する直前に`headRefOid`と`mergeStateStatus`を再取得し、確認対象のcommitと一致しており、ステータスが`CLEAN`であることを確かめる（一致しない場合は処理を停止して報告する）。
-2. マージの実行時には、操作直前のhead OIDをアトミックな一致条件として渡し、明示的なマージコミットを作成する。
-   自動マージの指定やマージ後のブランチ削除は指定せずに実行する。
-   この条件を`gh`コマンドで保証できない場合は、マージを見送る。
-   マージコマンドは1回のみ実行し、失敗した場合は再試行せずに失敗理由と再開に必要な情報を報告する。
-
-## マージ後のブランチ同期とCI確認
-
-1. `git fetch origin master`を実行したあと、PRの`mergeCommit.oid`と`origin/master`が一致するか確認する。
-   以降のGit操作は`origin/master`を基準として行う。
-2. `origin/develop`の更新は、ローカルブランチを操作元にせず、`git push origin origin/master:refs/heads/develop`を実行して直接更新する。
-   fetch後に`origin/develop`と`origin/master`の短縮OID（7文字以上）が一致するか確認する。
-3. ローカルの`develop`の同期が可能であると見込んでいた場合は、実行直前に基準refを`origin/master`として「ローカルdevelopブランチの同期条件」を再確認し、`develop` worktreeのパスがマージ前と変わっていないことも確かめる。
-   条件を満たしていれば`git -C <develop worktreeの絶対パス> merge --ff-only origin/master`を実行し、`origin/master`と一致するか確認する。
-   もし条件が崩れていた場合はローカルの同期処理のみをスキップし、スキップした理由、対象worktreeの絶対パス、ローカルの`develop`および`origin/master`の短縮OIDを完了報告に記録する。
-4. マージ後のmasterへのpushや同期後のdevelopへのpushに伴うCIは、すでに必須チェックを通過したPR headと同一ツリーの再確認となるため、完了を待たずに進めてよい（努力目標）。
-   ただし、statuslineの変更を含む場合のmaster CIの結果は、後述の「条件付きリリース検収」で、master pushのCI成功を契機に起動する`Release statusLine` runの成否を通じて確認する。
-
-## 条件付きリリース検収
-
-1. マージコミットの第一親との差分に`rust/claude-statusline/`の変更が含まれていない場合は、この工程をスキップする。
-   変更が含まれている場合は、以下の点を確認する。
-2. `origin/master`の完全OIDに対応する`Release statusLine`のrunを完全なdatabase IDで特定し、`prepare`ジョブがスキップされずに実行されたrunが完了するまで待機する。
-   `gate`以外のすべてのジョブがスキップされたrunは対象外として次のrunを待ち、`prepare`の実行可否が未確定の間は確定するまで状況を監視する。
-   master CIが失敗したことでrun自体が作成されない場合は、「失敗時の対応」に従う。
-3. マニフェスト（`Cargo.toml`）のバージョン番号に対応する`statusline-v<version>`タグが、`origin/master`を指していること。
-4. GitHub Releaseが作成されており、`pytools/_internal/setup_statusline_binary.py`で定義された`ASSET_NAME_POSIX`および`ASSET_NAME_WINDOWS`という名前のアセットが添付されていること。
-5. 同一の`origin/master`完全OIDに対応する実行結果のみを検収の対象とする。
-   Release runが失敗した場合は「失敗時の対応」を適用し、タグ、Release、アセットの検収に失敗した場合は外部の状態、失敗した工程、runのURL、および再開に必要な情報を報告する。
-
-## マージ後に到着したレビューの確認
-
-1. GitHub Copilotによるレビューはマージ完了後に遅れて到着することがあるため、前述の2つの工程を終えた段階で1回だけ確認する。
-2. `atk review-audit pending --repo <OWNER>/<REPO>`を実行し、終了コードが0でJSONの`reviews`および`threads`が正常に取得でき、かつ対象PRがどちらにも含まれていない場合はレビューの取得を省略する。
-   それ以外の場合（対象PRが含まれている、終了コードが非0、または出力が解析不能な場合）は、対象PRのCopilotによるレビュー本文とスレッドを1回取得する。
-3. レビューの取得、妥当性の判定、GitHubへの記録、および判定済み情報の記録は、`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`に従い、対象はそのPRのみに限定する。
-   新たなレビューを要求したり、到着を待機したりすることはない（未着分のレビューは、次回以降の`agent-toolkit:process-wi`選定工程の監査で取得される）。
-4. 修正が必要と判断した指摘は、「レビューコメントの確認」で述べた振り分けルールに従って処理する。
-   同一セッション内で修正する場合は`develop`への通常の変更として扱い、マージ工程を再度実行することはせず、次回のリリースPRでの公開に委ねる。
-
-## マージ後にdevelopへ加えた変更のCI確認
-
-1. `agent-toolkit:process-wi`の終了処理から本スキルを実行した場合のみ、マージ完了後に同じセッション内で`develop`へ加えた変更は、pushを行ってCI runが起動したことを確認した時点で公開工程を完了とし、CIの完了待ちは省略する。
-   次回のリリースPR作成時に改めて必須チェックの完了を待機することになり、また`master`ブランチは必須CIを通過したマージコミットのみで更新されるため、未検証の変更が`master`に混入することなく`develop`内に留まるためである。
-   変更範囲のローカル検証は通常どおりすべてパスさせてからpushを行い、省略したCIのrun URLを完了報告に記録する。
-   なお、本スキルのマージ工程自体のCI検収は、前述の各節の規定に従って確実に完了させる。
-
-## 完了条件
-
-- マージ後のブランチ同期時に`origin/develop`と`origin/master`の短縮OIDが一致していることを確認し、マージ対象の必須CIおよび必要なリリースの検収が成功していること。
-- 「マージ後に到着したレビューの確認」を1回実施し、各指摘の分類と必要な処置を確定していること。
-- ローカルの`develop`ブランチを同期した場合は、その同期処理において`origin/master`との一致を確認していること。
-
-マージ完了後に同じセッション内で`develop`へ加えた変更がある場合は、「マージ後にdevelopへ加えた変更のCI確認」に定めた条件に基づいて判定し、検収済みのマージ結果とは区別して報告する。
-
-1. 作業の合否判定はリモート側の状態だけで行い、ローカルの作業ツリーやブランチの状態は判定から外す。
-   `git status --short`の出力結果は現状の情報として完了報告に添え、リモート側の完了状況と、ローカルの`develop`を同期できたかどうかを明確に区別して報告する。
+- CIとリリース以外の工程が失敗したら、完了した外部の状態を保ったまま、失敗した工程、現在の外部の状態、runのURL、再開に必要な情報を報告して停止する。
+  PRの作成やマージの再試行、auto-mergeの有効化、自動修復、自動ロールバックはしない。
+- CIかリリースのrunが失敗したら、run全体の終了状態と失敗のログを確かめる。
+  原因は`agent-basics:bugfix/references/ci-failures.md`「分類」と`agent-toolkit:atk-mode/references/ci.md`で分類する。
+  ネットワーク障害、配布元のタイムアウト、レート制限、ランナー障害などの一時的な外因が疑われる時は、同資料に従って広域の障害を確かめたうえで、同じ原因について失敗したジョブを1回だけ再実行して検収を続ける。
+- 再実行でも失敗した場合、初回のログで一時的な外因が疑われない場合、ログを取得できない場合は、元のrunの失敗を保ったまま上と同じ内容を報告して停止する。
+- 必須CIの結果の所要の判定は`.claude/skills/develop-dotfiles/references/verification.md`「テストとCIの所要基準」に従う。

@@ -149,7 +149,7 @@ class TestAgentNameParameterAccepted:
     @pytest.mark.parametrize("name_value", ["impl-1", "", None])
     def test_name_parameter_does_not_block(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
         """`name`キーの値によらず、委譲に必要な他の条件を満たす起動はブロックされない。"""
-        sid = f"agent-name-accept-{tool_name.lower()}-{name_value!r}"
+        sid = f"agent-name-accept-{tool_name.lower()}-{repr(name_value).encode().hex()}"
         result = _run_after_generic_reissue(
             {
                 "tool_name": tool_name,
@@ -741,7 +741,7 @@ class TestGenericAgentLaunchBlock:
         """明示した文字列以外の`subagent_type`は汎用定義と判定できないため、遮断も通知もしない。"""
         result = _run_after_skill_acquisition(
             {
-                "session_id": f"non-string-{tool_name}-{agent_type!r}",
+                "session_id": f"non-string-{tool_name}-{repr(agent_type).encode().hex()}",
                 "tool_name": tool_name,
                 "tool_input": {"subagent_type": agent_type, "prompt": "担当の作業を進める。"},
             },

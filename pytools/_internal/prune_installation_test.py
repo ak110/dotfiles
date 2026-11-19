@@ -2,19 +2,46 @@
 
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
+import contextlib
 import json
+import logging
 import os
+import shutil
 import stat
 import subprocess
+import sys
+import time
 import types
 import typing
 from pathlib import Path
 
+import filelock
+import platformdirs
 import psutil
 import pytest
-from agent_toolkit._common import dotfiles_mode
+from agent_toolkit._common import dotfiles_mode, windows_job
 
-from pytools._internal import _test_helpers, common, prune_installation, setup_mise
+from pytools import post_apply
+from pytools._internal import (
+    _test_helpers,
+    common,
+    post_apply_outcome,
+    prune_installation,
+    setup_mise,
+    update_log,
+    warmup_pyfltr_mcp,
+)
+
+_REAL_RESOLVE_EXECUTABLE = common.resolve_executable
+_REAL_RUN_SUBPROCESS = common.run_subprocess
+_REAL_START_UV_CACHE_MAINTENANCE = prune_installation.start_uv_cache_maintenance
+_UV_CACHE_MAINTENANCE = ["uv-cache-maintenance"]
+_HOLDER_SCRIPT = "import sys; print('ready', flush=True); sys.stdin.read()"
+
+
+def _state(name: str) -> Path:
+    """更新・整理・独立プロセスが共有する状態領域のパスを、公開の配置規則（platformdirs）で求める。"""
+    return Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / name
 
 
 def _prepare(tmp_path, monkeypatch, mode, installed=None):
@@ -50,6 +77,13 @@ def _prepare(tmp_path, monkeypatch, mode, installed=None):
     monkeypatch.setattr(common, "resolve_executable", lambda name: Path("/fixture") / name)
     monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: str(Path("/fixture") / name))
     calls = []
+
+    def start_uv_cache_maintenance() -> int:
+        calls.append(_UV_CACHE_MAINTENANCE)
+        return 4242
+
+    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", start_uv_cache_maintenance)
+    monkeypatch.setattr(warmup_pyfltr_mcp, "run", post_apply_outcome.PostApplyOutcome)
 
     def run(command, **_kwargs):
         calls.append(command)
@@ -151,7 +185,10 @@ def test_full_keeps_project_development_tools_and_old_environments(tmp_path, mon
     result = prune_installation.run()
     assert result.failure is None
     assert all("uninstall" not in command for command in calls)
-    assert ["/fixture/uv", "cache", "clean"] in calls
+    assert _UV_CACHE_MAINTENANCE in calls
+    assert ["/fixture/mise", "cache", "prune"] in calls
+    assert ["/fixture/npm", "cache", "verify"] in calls
+    assert ["/fixture/pnpm", "store", "prune"] in calls
 
 
 @pytest.mark.parametrize("missing", ["exe", "cmdline", "both"])
@@ -374,24 +411,23 @@ def test_full_cache_cleanup_tracks_success_per_root_and_30_day_boundary(tmp_path
     _, calls = _prepare(tmp_path, monkeypatch, "full")
     now = 10000000.0
     monkeypatch.setattr(prune_installation.time, "time", lambda: now)
-    assert prune_installation.run().failure is None
+    completed = (prune_installation.UvMaintenanceResult.COMPLETED, "")
+    assert prune_installation.clean_uv_cache() == completed
     assert calls.count(["/fixture/uv", "cache", "clean"]) == 1
-    assert prune_installation.run().failure is None
+    assert prune_installation.clean_uv_cache() == completed
     now += 29 * 86400
-    assert prune_installation.run().failure is None
+    assert prune_installation.clean_uv_cache() == completed
     assert calls.count(["/fixture/uv", "cache", "clean"]) == 1
     assert calls.count(["/fixture/uv", "cache", "prune"]) == 2
     now += 86400
-    assert prune_installation.run().failure is None
+    assert prune_installation.clean_uv_cache() == completed
     assert calls.count(["/fixture/uv", "cache", "clean"]) == 2
-    assert ["/fixture/npm", "cache", "verify"] in calls
-    assert ["/fixture/pnpm", "store", "prune"] in calls
     assert not any("--force" in command for command in calls if "uv" in command[0])
 
 
 @pytest.mark.parametrize("locked", [False, True])
-def test_uv_cleanup_failure_preserves_success_time_and_continues_other_tools(tmp_path, monkeypatch, locked):
-    """競合・通常失敗で成功日時を記録せず、他ツールの整理と次回再試行を保つ。"""
+def test_uv_cleanup_failure_preserves_success_time(tmp_path, monkeypatch, locked):
+    """競合は保留、それ以外は失敗として区別し、どちらも成功日時を記録せず次回に全消去を再試行する。"""
     _, calls = _prepare(tmp_path, monkeypatch, "full")
     normal = common.run_subprocess
     failing = True
@@ -403,11 +439,325 @@ def test_uv_cleanup_failure_preserves_success_time_and_continues_other_tools(tmp
         return normal(command, **kwargs)
 
     monkeypatch.setattr(common, "run_subprocess", execute)
-    result = prune_installation.run()
-    assert result.deferred is locked
-    assert (result.failure is None) is locked
-    assert ["/fixture/mise", "cache", "prune"] in calls
-    assert ["/fixture/npm", "cache", "verify"] in calls
+    results = prune_installation.UvMaintenanceResult
+    result, _detail = prune_installation.clean_uv_cache()
+    assert result is (results.DEFERRED if locked else results.FAILED)
     failing = False
-    assert prune_installation.run().failure is None
+    assert prune_installation.clean_uv_cache()[0] is results.COMPLETED
     assert calls.count(["/fixture/uv", "cache", "clean"]) == 2
+
+
+@pytest.mark.windows
+def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_environ):
+    """他のuvが使用中でも整理を待たずに戻り、使用の終了後にuvの全消去と成功記録を完了する。"""
+    native_path = os.pathsep.join(part for part in host_environ()["PATH"].split(os.pathsep) if Path(part).name != "shims")
+    uv = shutil.which("uv", path=native_path)
+    if uv is None:
+        pytest.skip("uvが無い環境では実際のキャッシュロックを再現できない")
+    which = shutil.which
+    _prepare(tmp_path, monkeypatch, "full")
+    started_pids: list[int] = []
+
+    def start() -> int:
+        started_pids.append(_REAL_START_UV_CACHE_MAINTENANCE())
+        return started_pids[-1]
+
+    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", start)
+    # 隔離PATHはmise shimを別名で置くため、整理側が解決するuvをshimを経由しない本体にそろえる。
+    monkeypatch.setenv("PATH", os.pathsep.join((str(Path(uv).parent), os.environ["PATH"])))
+    monkeypatch.setattr(common, "resolve_executable", _REAL_RESOLVE_EXECUTABLE)
+    monkeypatch.setattr(common, "run_subprocess", _REAL_RUN_SUBPROCESS)
+    monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: None)
+    monkeypatch.setattr(shutil, "which", lambda name, path=None: None if name in {"npm", "pnpm"} else which(name, path=path))
+    cache = tmp_path / "uv-cache"
+    marker = cache / "archive-v0" / "previous-entry"
+    marker.mkdir(parents=True)
+    monkeypatch.setenv("UV_CACHE_DIR", str(cache))
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+    # 実行中の`uv run`はキャッシュの共有ロックを終了まで保持する。
+    # 時間上限なし: 標準入力の終了で止まる保持役であり、終了時のcloseで止まる。
+    with subprocess.Popen(
+        [uv, "run", "--no-project", "--python", sys.executable, "python", "-c", _HOLDER_SCRIPT],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as holder:
+        assert holder.stdout is not None and holder.stdout.readline().strip() == "ready"
+        started = time.monotonic()
+        result = prune_installation.run()
+        elapsed = time.monotonic() - started
+    assert elapsed < 10, f"使用中のuvキャッシュの整理を{elapsed:.1f}秒待った"
+    assert result.failure is None
+    record = _state("uv-cache-maintenance.json")
+    # 試験全体の時間上限（`--timeout=60`）より先に期限を迎え、未完了を期限切れでなく診断付きの失敗で示す。
+    deadline = time.monotonic() + 30
+    while not record.exists() and time.monotonic() < deadline:
+        time.sleep(0.2)
+    assert record.exists(), "独立プロセスが30秒以内に結果を記録しなかった"
+    assert json.loads(record.read_text(encoding="utf-8"))["result"] == "completed"
+    assert os.path.normcase(str(cache.resolve())) in json.loads(_state("uv-cache-clean.json").read_text(encoding="utf-8"))
+    assert not marker.exists()
+    # 記録の後に続く事前構築の終了を待ち、独立プロセスを試験の外へ残さない。
+    processes = []
+    for pid in started_pids:
+        with contextlib.suppress(psutil.NoSuchProcess):
+            processes.append(psutil.Process(pid))
+    _exited, running = psutil.wait_procs(processes, timeout=20)
+    assert not running, "独立プロセスが記録の後20秒以内に終了しなかった"
+
+
+def _uv_clean_failure(monkeypatch: pytest.MonkeyPatch, calls: list[list[str]]) -> dict[str, str | None]:
+    """uvの全消去・pruneを、返す辞書の`stderr`の診断で失敗させる。`None`の間は成功させる。"""
+    normal = common.run_subprocess
+    failure: dict[str, str | None] = {"stderr": None}
+
+    def execute(command, **kwargs):
+        stderr = failure["stderr"]
+        if Path(command[0]).stem == "uv" and command[1:] in (["cache", "clean"], ["cache", "prune"]) and stderr is not None:
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 2, "", stderr)
+        return normal(command, **kwargs)
+
+    monkeypatch.setattr(common, "run_subprocess", execute)
+    return failure
+
+
+def _maintain(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """独立プロセスの公開入口を実行し、永続ログの本文を返す。"""
+    log = tmp_path / "update-dotfiles.log"
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", log)
+    post_apply.main(["--internal-uv-cache-maintenance"])
+    return log.read_text(encoding="utf-8") if log.exists() else ""
+
+
+def test_failed_maintenance_fails_following_updates_until_resolved(tmp_path, monkeypatch):
+    """独立プロセスの失敗は、解消するまで次の更新の失敗として診断・次の操作・永続ログのパスとともに返す。
+
+    保留は未解消の失敗を上書きしない。修正前は失敗が永続ログにだけ残り、更新の画面と終了コードから消えていた。
+    """
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    failure = _uv_clean_failure(monkeypatch, calls)
+    failure["stderr"] = "error: fixture disk failure"
+    _maintain(monkeypatch, tmp_path)
+    failed = prune_installation.run()
+    assert failed.failure is not None and "fixture disk failure" in failed.failure
+    assert failed.next_action is not None and str(update_log.LOG_PATH) in failed.next_action
+    failure["stderr"] = "error: Timeout (30s) when waiting for lock on cache"
+    _maintain(monkeypatch, tmp_path)
+    still_failed = prune_installation.run()
+    assert still_failed.failure is not None and "fixture disk failure" in still_failed.failure
+    # 保留は整理を試していないため失敗を残し、最後の試行が保留だったことと、その診断を添える。
+    assert "保留" in still_failed.failure and "when waiting for lock" in still_failed.failure
+    failure["stderr"] = None
+    _maintain(monkeypatch, tmp_path)
+    assert prune_installation.run().failure is None
+
+
+def test_corrupt_clean_record_is_reported_with_its_path(tmp_path, monkeypatch):
+    """全消去の成功記録が壊れると整理は毎回失敗するため、次の更新は記録のパスを示して失敗を返す。"""
+    _prepare(tmp_path, monkeypatch, "full")
+    state = _state("uv-cache-clean.json")
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text("{", encoding="utf-8")
+    _maintain(monkeypatch, tmp_path)
+    result = prune_installation.run()
+    assert result.failure is not None and str(state) in result.failure
+
+
+def test_deferred_maintenance_is_announced_with_log_path(tmp_path, monkeypatch, caplog):
+    """使用中で保留した独立プロセスの結果は、次の更新が失敗にせず、永続ログのパスとともに案内する。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    _uv_clean_failure(monkeypatch, calls)["stderr"] = "error: Timeout (30s) when waiting for lock on cache"
+    _maintain(monkeypatch, tmp_path)
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        result = prune_installation.run()
+    assert result.failure is None
+    notices = [record.getMessage() for record in caplog.records if "保留" in record.getMessage()]
+    assert notices and "when waiting for lock" in notices[0] and str(update_log.LOG_PATH) in notices[0]
+
+
+def test_unexpected_maintenance_exception_is_logged_and_reported(tmp_path, monkeypatch):
+    """独立プロセスの想定外の例外は、出力を持たないプロセスから永続ログと次の更新の失敗へ届く。"""
+    _prepare(tmp_path, monkeypatch, "full")
+
+    def explode(_uv: Path) -> None:
+        raise KeyError("fixture-unexpected")
+
+    monkeypatch.setattr(prune_installation, "_clean_uv_cache", explode)
+    log = _maintain(monkeypatch, tmp_path)
+    assert "Traceback" in log and "KeyError: 'fixture-unexpected'" in log
+    result = prune_installation.run()
+    assert result.failure is not None and "fixture-unexpected" in result.failure
+
+
+def test_maintenance_defers_while_update_is_running(tmp_path, monkeypatch):
+    """更新が更新ロックを保持する間、独立プロセスはロックを待たずに整理を保留し、uvの排他操作を重ねない。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    lock = _state("locks/update-dotfiles.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    with filelock.FileLock(str(lock), timeout=0, preserve_lock_file=True):
+        _maintain(monkeypatch, tmp_path)
+    assert time.monotonic() - started < 5
+    assert not [command for command in calls if command[1:3] in (["cache", "clean"], ["cache", "prune"])]
+    record = json.loads(_state("uv-cache-maintenance.json").read_text(encoding="utf-8"))
+    assert record["result"] == "deferred"
+
+
+def test_prune_after_update_starts_maintenance_after_releasing_update_lock(tmp_path, monkeypatch):
+    """更新後の整理は、更新ロックを解放してから独立プロセスを開始し、独立プロセスがロックを取得できる。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
+    acquirable: list[bool] = []
+
+    def start() -> int:
+        try:
+            with filelock.FileLock(str(_state("locks/update-dotfiles.lock")), timeout=0, preserve_lock_file=True):
+                acquirable.append(True)
+        except filelock.Timeout:
+            acquirable.append(False)
+        return 4242
+
+    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", start)
+    post_apply.main(["--prune-only-if-minimal"], runner=lambda: pytest.fail("通常の更新工程へ到達した"))
+    assert acquirable == [True]
+    assert ["/fixture/mise", "cache", "prune"] in calls
+
+
+@pytest.mark.parametrize("cause", ["installation", "start"])
+def test_mcp_environment_is_prepared_without_maintenance_process(tmp_path, monkeypatch, cause):
+    """独立プロセスを開始しない・できない場合も、キャッシュ内のMCP環境をこのプロセスで事前構築する。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    warmups: list[str] = []
+
+    def warmup() -> post_apply_outcome.PostApplyOutcome:
+        warmups.append("warmup")
+        return post_apply_outcome.PostApplyOutcome()
+
+    monkeypatch.setattr(warmup_pyfltr_mcp, "run", warmup)
+    if cause == "installation":
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
+    else:
+
+        def refuse() -> int:
+            raise PermissionError("fixture")
+
+        monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", refuse)
+    result = prune_installation.run()
+    assert result.failure is not None
+    assert warmups == ["warmup"]
+    if cause == "installation":
+        # 導入実体の整理に失敗した場合は、従来どおり取得キャッシュを整理しない。
+        assert not calls
+    else:
+        assert result.failure.startswith("uv: ")
+        assert ["/fixture/mise", "cache", "prune"] in calls
+        assert ["/fixture/npm", "cache", "verify"] in calls
+        assert ["/fixture/pnpm", "store", "prune"] in calls
+
+
+def test_missing_uv_still_prepares_mcp_environment_in_maintenance_process(tmp_path, monkeypatch):
+    """uvを解決できない更新でも独立プロセスを開始し、独立プロセスは対象なしを記録してMCP環境を事前構築する。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    monkeypatch.setattr(common, "resolve_executable", lambda name: None)
+    assert prune_installation.run().failure is None
+    assert _UV_CACHE_MAINTENANCE in calls
+    warmups: list[str] = []
+
+    def warmup() -> post_apply_outcome.PostApplyOutcome:
+        warmups.append("warmup")
+        return post_apply_outcome.PostApplyOutcome()
+
+    monkeypatch.setattr(warmup_pyfltr_mcp, "run", warmup)
+    _maintain(monkeypatch, tmp_path)
+    assert warmups == ["warmup"]
+    assert json.loads(_state("uv-cache-maintenance.json").read_text(encoding="utf-8"))["result"] == "none"
+
+
+def test_breakaway_refusal_is_reported(tmp_path, monkeypatch, caplog):
+    """起動元のWindows Jobに離脱を拒まれ、離脱なしで独立プロセスを開始した場合は警告で記録する。"""
+    _prepare(tmp_path, monkeypatch, "full")
+    started: list[int] = []
+
+    def popen(_command, **options):
+        started.append(options["creationflags"])
+        if options["creationflags"] & windows_job.CREATE_BREAKAWAY_FROM_JOB:
+            raise PermissionError(5, "アクセスが拒否されました")
+        return types.SimpleNamespace(pid=4242, wait=lambda: 0)
+
+    monkeypatch.setattr(prune_installation, "start_uv_cache_maintenance", _REAL_START_UV_CACHE_MAINTENANCE)
+    monkeypatch.setattr(prune_installation, "os", types.SimpleNamespace(name="nt"))
+    monkeypatch.setattr(prune_installation, "subprocess", types.SimpleNamespace(Popen=popen, DEVNULL=subprocess.DEVNULL))
+    with caplog.at_level(logging.WARNING):
+        assert prune_installation.start_uv_cache_maintenance() == 4242
+    assert len(started) == 2 and not started[1] & windows_job.CREATE_BREAKAWAY_FROM_JOB
+    assert any("離脱を許可しない" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.windows
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Jobの終了が所属プロセスを止める条件を実APIで確かめる")
+@pytest.mark.timeout(240)
+def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch, host_environ):
+    """離脱を許すKILL_ON_JOB_CLOSEのJobの中から開始したuvの整理は、そのJobの終了後も続いて完了を記録する。
+
+    更新jobとprocess-loopは、起動した子孫をこの種類のJobで所有し、終了時にまとめて止める。
+    """
+    native_path = os.pathsep.join(part for part in host_environ()["PATH"].split(os.pathsep) if Path(part).name != "shims")
+    uv = shutil.which("uv", path=native_path)
+    assert uv is not None
+    _prepare(tmp_path, monkeypatch, "minimal")
+    cache = tmp_path / "uv-cache"
+    marker = cache / "archive-v0" / "previous-entry"
+    marker.mkdir(parents=True)
+    monkeypatch.setenv("UV_CACHE_DIR", str(cache))
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+    monkeypatch.setenv("PATH", os.pathsep.join((str(Path(uv).parent), os.environ["PATH"])))
+    record = _state("uv-cache-maintenance.json")
+    starter = "from pytools._internal import prune_installation as p; print(p.start_uv_cache_maintenance(), flush=True)"
+    # 実行中の`uv run`はキャッシュの共有ロックを終了まで保持し、独立プロセスの全消去をJobの終了後まで待たせる。
+    # 時間上限なし: 標準入力の終了で止まる保持役であり、終了時のcloseで止まる。
+    with subprocess.Popen(
+        [uv, "run", "--no-project", "--python", sys.executable, "python", "-c", _HOLDER_SCRIPT],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as holder:
+        assert holder.stdout is not None and holder.stdout.readline().strip() == "ready"
+        members: list[subprocess.Popen[str]] = []
+        try:
+            with windows_job.WindowsJob() as job:
+
+                def member(command: list[str]) -> subprocess.Popen[str]:
+                    # 時間上限なし: Jobの終了で止まる所属プロセスであり、終了はfinallyで回収する。
+                    process = subprocess.Popen(  # pylint: disable=consider-using-with
+                        command, stdout=subprocess.PIPE, text=True, creationflags=windows_job.CREATE_SUSPENDED
+                    )
+                    members.append(process)
+                    # _handleはWindows版CPythonの属性であり、Linux上の型検査からは解決できない。
+                    job.assign_suspended(
+                        int(typing.cast(typing.Any, process)._handle),  # pylint: disable=protected-access,no-member
+                        process.pid,
+                    )
+                    return process
+
+                launcher = member([sys.executable, "-c", starter])
+                unbroken = member([sys.executable, "-c", "import time; time.sleep(600)"])
+                output, _ = launcher.communicate(timeout=60)
+                assert launcher.returncode == 0, output
+                maintenance = psutil.Process(int(output.strip()))
+            # Jobの終了が所属プロセスへ届いたことを、離脱していない所属プロセスの終了で確かめる。
+            unbroken.wait(timeout=30)
+            assert maintenance.is_running(), "Jobの終了とともに独立プロセスが止まった"
+            assert not record.exists(), "独立プロセスがJobの終了前に整理を終え、Jobの終了後の生存を確かめられない"
+        finally:
+            for process in members:
+                if process.poll() is None:
+                    process.kill()
+                process.communicate(timeout=10)
+    deadline = time.monotonic() + 60
+    while not record.exists() and time.monotonic() < deadline:
+        time.sleep(0.2)
+    assert record.exists(), "独立プロセスが60秒以内に結果を記録しなかった"
+    assert json.loads(record.read_text(encoding="utf-8"))["result"] == "completed"
+    assert not marker.exists()

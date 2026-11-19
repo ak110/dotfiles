@@ -15,7 +15,6 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 from collections.abc import AsyncGenerator, Callable, Generator
 from types import SimpleNamespace
 from typing import Any
@@ -408,10 +407,9 @@ class _LaunchedServer:
                         assert not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
                         continue
                     command = process.cmdline()
-                    if not command and (
-                        not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
-                    ):
-                        # 状態確認の後に終了した子は、zombieになった時点でcmdlineが空になる。
+                    if not command:
+                        # 終了処理中のプロセスは、メモリ解放後からzombie化までの間もcmdlineが空になる。終了の完了を待つ。
+                        assert not process_tree.wait_until_released([process], timeout=_LAUNCH_TIMEOUT)
                         continue
                     assert command == arguments
                     result = process_tree.stop_tree(process)
@@ -496,13 +494,6 @@ class _LaunchedServer:
             logging_config.InstanceReference(path.stem, 1), state_root=self.state_dir
         )
         return reference["status"]
-
-    def await_event(self, name: str) -> None:
-        """診断ファイルに指定のイベントが現れるまで、上限付きで待つ。"""
-        deadline = time.monotonic() + _LAUNCH_TIMEOUT
-        while not any(event["event"] == name for event in self.events()):
-            assert time.monotonic() < deadline, f"診断に{name}が現れない"
-            time.sleep(0.05)
 
     def server_pid(self) -> int:
         return next(event["pid"] for event in self.events() if event["event"] == "started")
@@ -646,12 +637,8 @@ def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher
         assert server.process.stdin is not None
         server.process.stdin.close()
         server.wait()
-        deadline = time.monotonic() + _LAUNCH_TIMEOUT
         # 孤児の回収時機はPID 1に依存する。終了済みzombieは記録を書けず、PIDが残っていても停止済みである。
-        with contextlib.suppress(psutil.NoSuchProcess):
-            while server_process.is_running() and server_process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-                assert time.monotonic() < deadline, "SIGKILLしたサーバーが停止していない"
-                time.sleep(0.05)
+        assert not process_tree.wait_until_released([server_process], timeout=_LAUNCH_TIMEOUT)
 
         names = {event["event"] for event in server.events()}
         assert not names & logging_config.TERMINATION_EVENTS

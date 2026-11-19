@@ -10,35 +10,17 @@ from agent_toolkit._common import read_triggers
 from agent_toolkit._testing.normative_contract import read_contract
 
 
-def test_ci_failure_read_row_delivers_quality_and_operations() -> None:
-    """同じ失敗受領条件で、品質と工程の二資料が資料列と、そこから導出した配送操作の両方から取得される。"""
-    root = pathlib.Path(__file__).resolve().parent
-    plugin = root / "agent-toolkit"
-    source = root / ".claude/skills/merge-pr/SKILL.md"
-    quality = root / "agent-basics/skills/bugfix/references/ci-failures.md"
-    operations = plugin / "skills/atk-mode/references/ci.md"
-    rows = read_triggers.parse_tables(source, plugin, strict=True)
-    row = next(row for row in rows if quality in row.documents)
-    assert set(row.documents) == {quality, operations}
-    assert set(row.effective_operations) == {
-        "read:agent-basics:*/skills/bugfix/references/ci-failures.md",
-        "read:agent-toolkit:*/skills/atk-mode/references/ci.md",
-    }
-    assert all(target.body() for target in row.targets)
-
-
 def test_session_state_design_reference_reaches_local_development_rule() -> None:
     """配布実装の開発用docstringから、実在するローカル規約の設計節に到達する。"""
     root = pathlib.Path(__file__).resolve().parent
     source = root / "agent-toolkit/agent_toolkit/_common/session_state.py"
     docstring = ast.get_docstring(ast.parse(source.read_text(encoding="utf-8")))
     assert docstring is not None
-    reference = re.search(r"`([^`]+session-state-and-flags\.md)`", docstring)
+    reference = re.search(r"`([^`]+internals-session-state-common\.md)`", docstring)
     assert reference is not None
     target = root / reference[1]
-    assert target == root / ".claude/skills/agent-toolkit-edit/references/session-state-and-flags.md"
-    text = read_contract(target, root / "agent-toolkit", ("session-state-and-flags-common.md", "状態ファイルの設計"))
-    assert "## 状態ファイルの設計" in text
+    assert target == root / "docs/development/internals-session-state-common.md"
+    assert "## 状態ファイルの設計" in target.read_text(encoding="utf-8")
 
 
 def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:

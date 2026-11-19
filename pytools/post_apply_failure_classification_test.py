@@ -35,6 +35,7 @@ from pytools._internal import (
     prune_foreign_tools,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
+    removed_paths,
     restore_agent_toolkit_acl,
     restore_codex_logs,
     setup_agy_cli,
@@ -220,8 +221,8 @@ def _cleanup_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     base = tmp_path / "home" / ".claude"
     (base / "old").mkdir(parents=True)
     entry = cleanup_paths.RemovedPath(Path("old"), datetime.date.today())
-    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {base: [entry]})
-    monkeypatch.setattr(post_apply, "_REMOVED_PATHS_IF_CONTENT", {})
+    monkeypatch.setattr(removed_paths, "_REMOVED_PATHS", {base: [entry]})
+    monkeypatch.setattr(removed_paths, "_REMOVED_PATHS_IF_CONTENT", {})
     monkeypatch.setattr(cleanup_paths.shutil, "rmtree", _raise(PermissionError("denied")))
 
 

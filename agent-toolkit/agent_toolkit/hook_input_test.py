@@ -6,16 +6,53 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import typing
 
 import pytest
 
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._testing.hook_support import _copy_entrypoint, _registered_subcommands
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 
 
 _SUBCOMMANDS = _registered_subcommands()
+
+
+class _SessionStartRun(typing.NamedTuple):
+    result: subprocess.CompletedProcess[str]
+    created: set[pathlib.Path]
+
+
+def _run_session_start(
+    root: pathlib.Path, session_id: object, transcript: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> _SessionStartRun:
+    """前身の会話の状態を置いた隔離環境で公開hookのSessionStart処理を実行し、その環境の下に作られたパスを返す。"""
+    temporary = root / "tmp"
+    temporary.mkdir(parents=True)
+    monkeypatch.setenv("XDG_STATE_HOME", str(root / "state"))
+    monkeypatch.setenv("LOCALAPPDATA", str(root / "state"))
+    assert session_state.update_state("previous", lambda _previous: {"plan_mode_skill_invoked": True})
+    env = os.environ.copy()
+    env.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
+    env.pop("AGENT_TOOLKIT_OWNER_SESSION", None)
+    env.update({"TMPDIR": str(temporary), "TEMP": str(temporary), "TMP": str(temporary)})
+    payload = {
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "session_id": session_id,
+        "transcript_path": str(transcript),
+    }
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPT), "rules_context"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        env=env,
+    )
+    return _SessionStartRun(result, {path.relative_to(root) for path in root.rglob("*")})
 
 
 class TestStandardInputAndPayloadDump:
@@ -143,6 +180,43 @@ class TestStandardInputAndPayloadDump:
         }
         assert (state_directory / ".state.lock").exists()
         assert not (temp_directory / "claude-agent-toolkit-current.json").exists()
+
+    @pytest.mark.parametrize(
+        "session_id",
+        ["bad id/..", "../escape", "a/b", "line\nbreak", "日本語", ["../escape"], {"a": "../escape"}, 123],
+    )
+    def test_invalid_session_id_is_treated_as_absent_without_state_creation(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: object
+    ) -> None:
+        """状態ファイル名へ使えない会話IDは、型によらず会話IDの無いSessionStartと同じ扱いとし、状態の継承も含めて状態を作らない。"""
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(json.dumps({"sessionId": "previous"}) + "\n", encoding="utf-8")
+        absent = _run_session_start(tmp_path / "absent", "", transcript, monkeypatch)
+        invalid = _run_session_start(tmp_path / "invalid", session_id, transcript, monkeypatch)
+
+        assert absent.result.returncode == invalid.result.returncode == 0
+        assert invalid.created == absent.created
+        assert not invalid.result.stderr
+
+    def test_invalid_session_id_is_reported_in_notice_accepting_event(self, tmp_path: pathlib.Path) -> None:
+        """補正した会話IDの診断は、stderrへ出さず通知を受理するイベントの追加文脈で届ける。"""
+        entrypoint = self._copy_entrypoint(tmp_path)
+        self._write_echo_module(tmp_path)
+        payload = json.dumps({"session_id": "bad id/..", "hook_event_name": "PreToolUse"})
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "pretooluse"],
+            input=payload,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        output = json.loads(result.stdout)
+        assert result.returncode == 0
+        assert not result.stderr
+        assert output["session_id"] == ""
+        assert "会話IDが不正" in output["hookSpecificOutput"]["additionalContext"]
 
     def test_module_import_error_uses_utf8_stderr(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)

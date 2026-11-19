@@ -86,7 +86,7 @@ AGENT_DOC_TONE_REPRESENTATIVES = (
     ".chezmoi-source/dot_claude/skills/operate-ak110-projects/SKILL.md",
     ".chezmoi-source/dot_claude/skills/operate-ak110-projects/references/doc-structure.md",
     ".claude/skills/agent-toolkit-edit/SKILL.md",
-    ".claude/skills/agent-toolkit-edit/references/agents-server-investigation.md",
+    ".claude/skills/agent-toolkit-edit/references/distribution.md",
     "agent-toolkit/delegation_contract_invariant_test.py",
     "agent-toolkit/skills/skill_interfaces_invariant_test.py",
     "agent-toolkit/skills/review-session/session_review_contract_invariant_test.py",

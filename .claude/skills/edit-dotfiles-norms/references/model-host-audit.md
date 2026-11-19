@@ -1,13 +1,5 @@
 # モデルとホストの更新時の点検の手順
 
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| モデルとホストの更新時の点検で、基準にする公式ガイドの掲載を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` |
-
 ## モデルとホストの更新時の点検
 
 規範を編集する作業の開始時に、自分のモデルIDとホスト（Claude Code、Codex）の版を、`docs/development/audit-records.md`の最新の「規範の点検記録」と比べる。

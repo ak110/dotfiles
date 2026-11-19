@@ -52,7 +52,9 @@ GitLabの設定は[Projects API](https://docs.gitlab.com/api/projects/)と[独�
    1件の作成が失敗しても、残りの作成を続ける。
 
 `--write-baseline`と`--wait-sha`では、`--repo`（ローカルパスではなく`owner/repo`かホスト名を含むURL）、`--forge <github|gitlab>`、`--ref`、`--source-ref`を全て明示する。
+`wait_ci.py`は`--ref`で指定した宛先のブランチかタグの短縮名を、GitHubでは`gh run list --branch`へ、GitLabでは`glab ci list --ref`へ渡す。
 `--baseline`での待機と再起動はbaselineの保存値を使うため、これらを省く。
+GitLabのホストを`--repo`で省いた場合は、`GITLAB_HOST`、`GITLAB_URI`、`GL_HOST`の順に使い、どれも設定していなければglabの設定を使う。
 GitLabでは、`GITLAB_API_HOST`をリポジトリの識別子やSSHの接続先から上書きせず、baselineの作成と監視・再開で同じ接続の設定を使う。
 
 ### 待機の起動と回収

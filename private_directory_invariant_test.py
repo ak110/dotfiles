@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import re
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _SCANNED = (
@@ -22,16 +23,30 @@ _EXEMPT = (
     _ROOT / "agent-toolkit" / "agent_toolkit" / "_testing",
 )
 _OWNER_ONLY_MODE = 0o700
+_HOOK_SHIM = _ROOT / "agent-toolkit" / "scripts" / "atk-hook"
+_PYTHON_SHEBANG = re.compile(rb"^#!\s*(?:(?:\S*/)?env\s+(?:-S\s+)?)?(?:\S*/)?python(?:\d+(?:\.\d+)*)?(?:\s|$)")
 
 
-def _production_sources() -> list[pathlib.Path]:
+def _is_python_source(path: pathlib.Path) -> bool:
+    if path.suffix:
+        return path.suffix == ".py"
+    # atk-hookはshで起動し、自分自身をPythonに渡す。
+    if path == _HOOK_SHIM:
+        return True
+    with path.open("rb") as stream:
+        return bool(_PYTHON_SHEBANG.match(stream.readline(256)))
+
+
+def _production_sources(bases: tuple[pathlib.Path, ...]) -> list[pathlib.Path]:
     return sorted(
         path
-        for base in _SCANNED
-        for path in base.rglob("*.py")
-        if not path.name.endswith("_test.py")
+        for base in bases
+        for path in base.rglob("*")
+        if path.is_file()
+        and not path.name.endswith("_test.py")
         and path.name != "conftest.py"
         and not any(path.is_relative_to(exempt) for exempt in _EXEMPT)
+        and _is_python_source(path)
     )
 
 
@@ -92,7 +107,7 @@ def _owner_only_creation_lines(source: str) -> list[int]:
 def test_owner_only_directories_are_created_through_private_directory() -> None:
     """配布するコードは0o700の`mkdir`と`mkdtemp`を直接呼ばない。"""
     violations: list[str] = []
-    for path in _production_sources():
+    for path in _production_sources(_SCANNED):
         source = path.read_text(encoding="utf-8")
         # 構文解析は該当し得る記述を含むファイルだけに限り、全ファイルの解析を避ける。
         if any(word in source for word in ("mkdtemp", "TemporaryDirectory", "0o700", "448", "S_IRWXU")):
@@ -101,6 +116,18 @@ def test_owner_only_directories_are_created_through_private_directory() -> None:
         "Windowsでも非昇格のプロセスが読めるよう、modeは`private_directory.MODE`、"
         f"一時ディレクトリは`private_directory.make_temporary`か`private_directory.temporary`を使う: {violations}"
     )
+
+
+def test_extensionless_scripts_are_selected_by_interpreter(tmp_path: pathlib.Path) -> None:
+    """拡張子が無い場合は、Pythonを直接起動する形式とenv経由の形式を検査する。"""
+    for name, header in {
+        "direct": "#!/usr/bin/python3",
+        "env": "#!/usr/bin/env python3",
+        "flags": "#!/usr/bin/env -S python3.15 -I",
+        "shell": "#!/bin/sh\nexec python3 other.py",
+    }.items():
+        (tmp_path / name).write_text(header + "\n", encoding="utf-8")
+    assert [path.name for path in _production_sources((tmp_path,))] == ["direct", "env", "flags"]
 
 
 def test_detector_finds_each_owner_only_creation_form() -> None:

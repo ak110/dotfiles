@@ -141,7 +141,7 @@ def test_public_hook_does_not_attach_persistent_inventory_to_invalid_or_start_pa
     seen = []
     monkeypatch.setattr(_hook, "_record_activity", lambda *_args, **_kwargs: None)
 
-    def consume(*_args):
+    def consume(*_args, **_kwargs):
         seen.append(_reusable.get())
         return 0
 

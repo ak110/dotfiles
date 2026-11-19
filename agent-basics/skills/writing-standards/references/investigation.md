@@ -77,11 +77,6 @@
   配置・登録状態・環境変数が分岐の条件になる時は、隔離の成立と別に、期待する分岐に入ることを通知や状態遷移の直接の観測で確かめてから展開する。
   複製の対象には主入力と、処理側が参照する関連資料や対象リポジトリの識別情報を含め、実行環境の不備による判定不能は比較の結果から除く。
 
-観測の記録は`docs/development/audit-records-investigation.md`の次の節にある。
-
-- 「agent-basics/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月9日」
-- 「agent-basics/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月18日（1）」
-
 ### エージェントCLIを検証で起動する時の隔離
 
 共有状態を扱うホスト・ツール・エージェントCLI（`claude -p`、`codex exec`など）を実行して検証する時は、公式の状態隔離手段（`CODEX_HOME`など）で必要な状態だけを一時領域へ隔離する。

@@ -40,9 +40,15 @@ def _target(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _run(argv: list[str], target: pathlib.Path) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        argv, capture_output=True, check=False, timeout=_CHILD_TIMEOUT, env={**os.environ, "READ_TARGET": str(target)}
-    )
+    try:
+        return subprocess.run(
+            argv, capture_output=True, check=False, timeout=_CHILD_TIMEOUT, env={**os.environ, "READ_TARGET": str(target)}
+        )
+    except subprocess.TimeoutExpired as error:
+        # 停止した子のどの段階で止まったかを、CIの失敗記録だけで判断できるよう、取得済みの出力を失敗へ残す。
+        raise TimeoutError(
+            f"{argv[0]}が{_CHILD_TIMEOUT}秒で終わらなかった: stdout={error.stdout!r} stderr={error.stderr!r}"
+        ) from error
 
 
 def _powershells() -> list[str]:
@@ -82,7 +88,7 @@ def test_bash_found_by_get_command_reads_the_line_range(tmp_path: pathlib.Path, 
     # WSLの起動用`bash.exe`のように、実在しても起動できないか応答しないbashは案内の「実在を確認したbash」に当たらない。
     try:
         launchable = _run([bash, "-c", "true"], target).returncode == 0
-    except subprocess.TimeoutExpired:
+    except TimeoutError:
         launchable = False
     if not launchable:
         pytest.skip(f"Get-Commandが返したbashを起動できない: {bash}")

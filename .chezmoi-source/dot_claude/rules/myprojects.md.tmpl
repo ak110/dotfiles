@@ -13,21 +13,15 @@
 - `D:\VC\_Develop\gv`
 - `D:\VC\_Develop\lc`
 
-開発言語は異なるが、ツールチェインやドキュメント構成は揃える方針とする。
-片方を変更する場合、もう片方への変更要否を確認し、必要ならユーザーへ提案する。
+開発言語は異なるが、ツールチェインとドキュメント構成は揃える。
+片方を変更する場合は、もう片方への変更の要否を確かめ、要ればユーザーへ提案する。
 
 {{- else if has $hostname .host_roles.all_projects }}
 
 ## プロジェクト間の同期
 
-以下のディレクトリは全て同一作者によるプロジェクト。
-ツールチェインやドキュメント構成は揃える方針とする。
-
-全プロジェクトに反映する可能性のある変更時と、姉妹プロジェクト（gv・lc含む）自体の編集時は、
-`operate-ak110-projects`スキルを使用する。
-同期対象マトリクス・意図的な差異・ドキュメント章構成・追従作業の手順・gv/lcのLinux編集注意・
-着手時の依存更新・リリース運用・足回りファイルの推奨設定維持は同スキルに集約する。
-依存管理一般のpnpm既知問題は`agent-basics:writing-standards`の`references/dependency-management.md`に集約する。
+以下のディレクトリは全て同一作者によるプロジェクトであり、ツールチェインとドキュメント構成を揃える。
+全プロジェクトに反映しうる変更と、姉妹プロジェクト（gv・lcを含む）自体の編集では、`operate-ak110-projects`スキルを使う。
 
 ### プロジェクト一覧
 
@@ -42,7 +36,6 @@
 | `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows・Linux | Linuxは`mise run setup-linux`で環境を構築し、`mise run test`（dotnet-testを除く）と`mise run build`を実行できる。文書生成・文書lintでpnpm併用 |
 
 検証を実行するOSは`atk config repos`の`platforms`で管理する。
-process-wiでのローカル検査と対象OSのCIの分担は`agent-toolkit:process-wi`「検証環境」に従う。
 
 `~/dotfiles`が持つagent-toolkitとagent-basicsは、この一覧の外のエンドユーザーやプロジェクト（業務のプロジェクトなど）へも配布される。
 その規範や機能の要否と適用範囲は、この一覧のプロジェクトに場面があるかだけで判断しない。

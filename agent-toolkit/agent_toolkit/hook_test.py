@@ -15,6 +15,7 @@ import pytest
 from agent_toolkit import hook as _hook
 from agent_toolkit._common import inherited_venv, plugin_environment, session_state
 from agent_toolkit._hooks import notice
+from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.hook_support import _definition_commands
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -138,6 +139,58 @@ def test_failure_merges_with_partial_output_as_one_json(monkeypatch, subcommand,
     assert 'source="hook" kind="warn"' in context
     assert "故障注入" in context
     assert ("既存の通知" in context) is partial
+
+
+@pytest.mark.parametrize("event_name", ["PostToolUse", "PostToolUseFailure", "PermissionDenied"])
+def test_failure_keeps_event_output_contract(monkeypatch, event_name: str) -> None:
+    """処理の例外は入力のイベント名で出力契約に合う形へ返し、通知を受理しないイベントでは出力しない。"""
+    module = importlib.import_module("agent_toolkit._hooks.posttooluse")
+
+    def fail(_payload, **_kwargs):
+        raise RuntimeError("故障注入")
+
+    monkeypatch.setattr(module, "main", fail)
+    result = _run_hook_in_process("posttooluse", {"session_id": "failure-event", "hook_event_name": event_name})
+    assert result.returncode == 0
+    assert not result.stderr
+    output = json.loads(result.stdout) if result.stdout.strip() else {}
+    assert validate_hook_output(event_name, output) == []
+    if event_name == "PermissionDenied":
+        assert "故障注入" not in result.stdout
+    else:
+        assert output["hookSpecificOutput"]["hookEventName"] == event_name
+        assert "故障注入" in output["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize(
+    ("subcommand", "event_name"),
+    [
+        ("pretooluse", "PreToolUse"),
+        ("posttooluse", "PostToolUse"),
+        ("posttooluse", "PostToolUseFailure"),
+        ("posttooluse", "PermissionDenied"),
+        ("user_prompt_submit", "UserPromptSubmit"),
+    ],
+)
+def test_invalid_session_id_warning_keeps_event_output_contract(subcommand: str, event_name: str) -> None:
+    """不正な会話IDの警告は、入力のイベント名で出力契約に合う形へ連結し、受理しないイベントでは出力しない。"""
+    payload = {
+        "session_id": "bad id/..",
+        "hook_event_name": event_name,
+        "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
+        "tool_input": {"session_id": "missing"},
+        "tool_response": {},
+        "prompt": "続行します",
+    }
+    result = _run_hook_in_process(subcommand, payload)
+    assert result.returncode == 0
+    output = json.loads(result.stdout) if result.stdout.strip() else {}
+    assert validate_hook_output(event_name, output) == []
+    if event_name == "PermissionDenied":
+        assert "会話IDが不正" not in result.stdout
+    else:
+        assert output["hookSpecificOutput"]["hookEventName"] == event_name
+        assert "会話IDが不正" in output["hookSpecificOutput"]["additionalContext"]
 
 
 def test_discarded_codex_stop_notice_is_not_recorded(monkeypatch) -> None:

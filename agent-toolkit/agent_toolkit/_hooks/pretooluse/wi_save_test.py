@@ -107,7 +107,7 @@ def test_author_route_and_save_stage_select_required_documents(tmp_path, monkeyp
     result = _run_hook_in_process(
         "pretooluse",
         {
-            "session_id": f"stage-{route}-{dry_run}",
+            "session_id": f"stage-{route.encode().hex()}-{dry_run}",
             "cwd": str(tmp_path),
             "transcript_path": str(log),
             "tool_name": "Bash",

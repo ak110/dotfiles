@@ -161,9 +161,6 @@ hookの通知、CLIの次の操作、自動挿入の本文などの機械生成�
 - 達成すべき性質を規定し、手段（ツール、実行順序、検索語、正規表現、単語リスト）に限る場合は理由と網羅の根拠を書く。
   網羅を担保できない場合は文脈を含めて全体を確かめる方法と比べる（既知のキーワードだけを候補にすると、それ以外の異常が漏れる）。
 
-観測の記録は`docs/development/audit-records-agent-documents.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/agent-documents-basics.md：条件と範囲の記述：2026年11月11日」である。
-
 ## 語調と現行規則の表現
 
 - 思考量を指示する文の代わりに確かめる観点と判断の条件を書き、推論量は実行環境が指定できればeffortで調整する（努力目標。思考量の指示は時間と出力を増やすため）。
@@ -178,6 +175,3 @@ hookの通知、CLIの次の操作、自動挿入の本文などの機械生成�
   要る明確さと拘束力を伝える語は残す（語の種類や追加の経緯だけを根拠にした削除は対象外）。
 - 例示は、正しい表現と、それが満たす性質や成り立つ条件で示す。
   識別子（API名、オプション名、戻り値の形式など）は保ち、逐語の引用、過去の観測、検出用のデータは一般の例示と区別する。
-
-観測の記録は`docs/development/audit-records-agent-documents.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日」である。

@@ -67,9 +67,6 @@ uvとPEP 723のスクリプト（`# /// script`のメタデータ）には次の
 - `uv run --script`では、スクリプト用のlockfileがある時だけ`--frozen`を付ける。
   lockfileが無いと`Unable to find lockfile for Python script`（終了コード2）で失敗するため、固定したい時は先に`uv lock --script <スクリプトの絶対パス>`で作る。
 
-観測の記録は`docs/development/audit-records-languages.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/python.md：実行環境：2026年8月17日」である。
-
 ### argparseとCLIエントリポイント
 
 - 既存のパーサーへオプションを足す前に、同じ名前空間で同じオプション文字列が使われていないかを検索する（重複は実行時の衝突エラーになる）。
@@ -99,8 +96,6 @@ Windowsのvenvの`python.exe`は、Python本体を子プロセスとして起動
 そのため`subprocess.Popen([sys.executable, ...]).pid`は、子プロセスの中の`os.getpid()`と一致しない。
 子プロセス自身のPIDと比べるテストでは、子プロセスに標準出力かファイルで自分のPIDを報告させる。
 プロセスツリーの根として停止や生存を確かめる目的なら、`Popen.pid`をそのまま使える。
-観測の記録は`docs/development/audit-records-languages.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/python.md：テストコード（pytest）：2026年10月20日」である。
 
 ### 環境変数・設定ディレクトリのテスト隔離
 
@@ -123,6 +118,3 @@ Windowsのvenvの`python.exe`は、Python本体を子プロセスとして起動
 - tyとmypyが両方有効な環境で型の警告を抑える時は、`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`を同じ行に併記する。
 - 実行中のOSに無い標準モジュールのimportには、OS判定の分岐の両側と、特定のOS専用のモジュールやテストの中でも、`# pylint: disable=import-error`と理由を書く。
   pylintは`sys.platform`や`os.name`の分岐を無視の条件として扱わないため、片方だけ抑えると別のOSで初めてエラーになる。
-
-観測の記録は`docs/development/audit-records-languages.md`にある。
-該当節は「agent-basics/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日」である。

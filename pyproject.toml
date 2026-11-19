@@ -105,7 +105,7 @@ dev = [
 # `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
 # 記載の手順と理由は`.claude/skills/edit-dotfiles-norms/references/project-norm-designation.md`が定め、
 # 対象範囲の一致は`project_norm_spec_invariant_test.py`が確かめる。
-# `target-seconds`は本リポジトリを処理する1回の巡回の目標所要（3時間。`.claude/skills/develop-dotfiles/SKILL.md`）。
+# `target-seconds`は本リポジトリを処理する1回の巡回の目標所要（3時間。`.claude/skills/develop-dotfiles/references/process-wi-duration.md`）。
 # 実測から選定量を決める目標。選定後の超過は警告として配分を比較し、着手済みの項目は外さない。
 target-seconds = 10800
 # 目標に収まる量が少なくても、候補がある限りこの件数まで先頭から選ぶ。

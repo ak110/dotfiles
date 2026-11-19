@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## .claude/skills/agent-toolkit-edit/references/agents-server-shared-state-backends.md：バックエンド固有の接続とAPI状態：2026年10月18日
+## docs/development/internals-agents-server-state-backends.md：バックエンド固有の接続とAPI状態：2026年10月18日
 
 会話contextの継承に関する2026年10月16日の調査記録と、2026年10月18日の実stdio MCPでの変更前後の観測を分けて示す。
 元の調査の一次記録と今回の観測JSON・標準エラー・実行スクリプトは、リポジトリ外に保持する。
@@ -33,7 +33,7 @@
 環境除去の単体検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`を使う。
 全backendの登録前の重複拒否は`_agents_server/manager_test.py`の`test_start_rejects_duplicate_session_id`で再検証する。
 
-## .claude/skills/agent-toolkit-edit/references/session-state-and-flags.md：自己編集の取得継承：2026年11月2日
+## docs/development/internals-session-state-document-receipts.md：自己編集の取得継承：2026年11月2日
 
 - 観測日: 2026年11月2日。
 - 観測時の版: Claude Code 2.1.316の実行ファイル内にあるEdit・Writeの出力スキーマとPostToolUse呼出しを確認した。

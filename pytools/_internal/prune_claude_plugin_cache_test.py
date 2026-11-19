@@ -17,7 +17,7 @@ from pathlib import Path
 import psutil
 import pytest
 
-from pytools._internal import claude_plugin_references, log_format, prune_claude_plugin_cache
+from pytools._internal import claude_plugin_references, log_format, plugin_cache_versions, prune_claude_plugin_cache
 
 from ._test_helpers import ResidentProcesses
 
@@ -208,7 +208,7 @@ def test_keeps_expired_versions_while_claude_runs_despite_clock_correction(
     """
     monkeypatch.setattr(claude_plugin_references, "scan", _REAL_SCAN)
     # 起動時刻を旧版が現行だった期間へ収めるため、旧版の導入を1時間前、後継版の導入を1時間後に置き、猶予を負にして候補へ含める。
-    monkeypatch.setattr(prune_claude_plugin_cache, "GRACE_DAYS", -1)
+    monkeypatch.setattr(plugin_cache_versions, "GRACE_DAYS", -1)
     old = _make_version(plugins_root, "mkt", "tool", "1.0.0", 1 / 24)
     current = _make_version(plugins_root, "mkt", "tool", "2.0.0", -1 / 24)
     older = _make_version(plugins_root, "mkt", "tool", "0.9.0", 3)

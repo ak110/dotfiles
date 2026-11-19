@@ -26,6 +26,9 @@ Linuxは可視コマンドの接続先をwrapperへ変更する前に、公式�
 接続断またはdaemon世代の交代を観測すると、公開`initialize`・`thread/resume`・`thread/turns/list`で保存済み状態を確認する。
 元turnが未完了で現在のwriterが無く、明示中止と新しいユーザーturnも無い場合だけ`turn/start`で未完了工程の継続を求める。
 通常の会話開始・resumeとdaemon復旧の双方で、会話に属するagents_serverの`list`を公開MCP RPCから呼び、モデルの最初のツール要求へ依存せず共通の子孫復旧へ接続する。
+`list`の有無は`mcpServerStatus/list`へ`threadId`と`serverName`を指定して確かめ、会話のMCP接続を再利用する。
+Codex 0.170は`serverName`を省いた照会で設定済みの全MCPを、`threadId`を省いた照会で指定したMCPを新しく起動して破棄する。
+`serverName`を省いていた間は、会話の開始・resume・daemon復旧のたびにagents_serverを含む全MCPが余分に起動していた（2026-11-19、sthenoのCodexのログで観測）。
 agents_serverのMCPが起動に失敗すると、`mcpServerStatus/list`の項目は`list`ツールを持たない。
 Codex本体はMCPの起動失敗を`mcpServer/startupStatus/updated`でTUIへ通知して会話を続けるため、起動管理も子孫の復元だけを見送り、TUIを止めない。
 2026-11-19にsthenoで、状態ファイルのACLの破損によりagents_serverが毎回起動に失敗し、起動管理が会話の開始とresumeのたびにTUIを止めていた。

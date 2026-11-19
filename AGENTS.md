@@ -1,51 +1,33 @@
 # AGENTS.md: dotfiles
 
 このリポジトリはchezmoiで管理するdotfilesリポジトリであり、`.chezmoi-source/`配下のファイルを`~/.*`へ展開する。
-また、多数の小さなコマンドラインツールや、Claude Code用の共有設定（ルールやプラグイン）も備えている。
+多数の小さなコマンドラインツールと、Claude Code・Codex向けの共有設定（プラグイン`agent-toolkit`と`agent-basics`）も持つ。
+成果物の品質は`agent-basics`、WI・委譲・認可・完了報告の運用は`agent-toolkit`に従う。
 
-この作業ツリーでPythonコードを実行するときは、標準ライブラリだけで済む簡単な確認には`python3`を使い、リポジトリの依存関係やモジュールを利用する処理には`uv run --frozen python`を使う。
-常時規範にある`python -c`は起動形式の例示であり、実行ファイル`python`が環境に存在することを保証するものではない。
+Pythonは、標準ライブラリだけで済む簡単な確認には`python3`を、リポジトリの依存やモジュールを使う処理には`uv run --frozen python`を使う。
+規範にある`python -c`は起動の形の例であり、実行ファイル`python`があることは保証しない。
 
-## process-wiの終了条件
-
-本リポジトリを対象に含む巡回（別cwdのall-repos統括を含む）は、実測から原則3時間に収まる量を選び、選んだ分の全工程を完遂したら終了する。
-選定には件数の下限を設け、回答済みUWIを先に、AWIは最古の1件と優先区分`urgent`の最古の1件を交互に並べた順で先頭から選ぶ。
-着手後は選んだ全件と必要な品質工程を保持する。
-目標を超えた回は原因と改善をAWIへ記録し、次の巡回で処理する。
-所要時間の判定、検収、巨大WIの個別承認は`.claude/skills/develop-dotfiles/references/process-wi-duration.md`に従う。
-
-## 詳細な参照先
-
-以下の各文書には、これまでの経緯や根拠、構造の記録をまとめている。
-実際に作業する際に従う規範は、`agent-toolkit/share/rules/common/`配下や各スキルを参照する。
-
-- 開発者向けドキュメントの一覧: [docs/development/index.md](docs/development/index.md)
-- リポジトリ全体の構成、配布対象と開発対象の区別、プラットフォーム対応、bash補完の運用、PowerShellスクリプトの注意事項、agent-toolkitの3形式での配布と`agents_server` MCPの配置、ホームディレクトリ配下を編集する前の確認手順: [docs/development/architecture.md](docs/development/architecture.md)
-- 運用機能の詳細（`sync_generated_files.py`の起動形式、tmux自動アタッチ、常駐サービス、Windowsの電源設定、post-applyキャッシュ、chezmoiの命名規則）: [docs/development/operations.md](docs/development/operations.md)
-- 機構の目的、構造の理由、知識境界、却下した案を記録した設計記録の索引: [docs/development/design.md](docs/development/design.md)
-- 過去のAWIを通じて確定した方針や意向: [docs/development/concepts.md](docs/development/concepts.md)
-- 再発防止の判断材料となる障害や欠陥の記録: [docs/development/incidents.md](docs/development/incidents.md)
-- 導入後に撤去した仕組みを働きで引く台帳（新しい仕組みを加える前の照合に使う）: [docs/development/removed-mechanisms.md](docs/development/removed-mechanisms.md)
-- 各規範の条文が根拠としている検証記録の日付、版数、再検証の手順: [docs/development/audit-records.md](docs/development/audit-records.md)
+スキルや手順の使い方を尋ねられただけの時は、案内で終え、作業を始めない。
 
 ## 本リポジトリのスキル
 
-以下のスキルはリポジトリ直下の`.claude/skills/`配下にある、本リポジトリ専用の非配布スキルである。
-それぞれのスキルを起動する場面は、各スキルの`description`に従う。
+`.claude/skills/`配下の、本リポジトリ専用の非配布スキルである。
+作業に合うスキルを起動し、スキルの入口の表から資料を選ぶ。
 
-| スキル | 扱う範囲 |
+| 作業 | スキル |
 | --- | --- |
-| `develop-dotfiles` | テスト、コード整形、依存関係の更新手順、リポジトリ全体のテスト配置、コミットメッセージの方針、ホスト本体のバイナリ検索手順、振り返り用ドキュメントの参照先 |
-| `release-dotfiles` | `develop`と`master`のリリース運用、日次リリースの判定と実施 |
-| `dotfiles-repo-layout` | ロールとファイル群の対応関係、配布元と配布先の対応関係 |
-| `edit-dotfiles-norms` | エージェント向け文書の改訂、変更した規範の自セッションへの適用、process-wiのメインが記述する`プロジェクト規範の指定`、規範を削除・縮小する際の消失確認 |
-| `agent-toolkit-edit` | `agent-toolkit/`配下と`.claude-plugin/marketplace.json`の編集、バージョン更新と編集手順、権限設定の配置 |
-| `pytools-edit` | `pytools/`、`scripts/`、`libexec/`、`bin/`、`rust/`配下の配置規約と実装規約 |
-| `sync-platform-pair` | LinuxとWindowsのペアファイルの同期 |
-| `merge-pr` | PRのマージ、マージ後のブランチ同期、CIおよび必要なリリースの検収 |
+| テスト、整形、依存の更新、検証の範囲と実行、作業ツリーの準備、コミットメッセージの方針、ホスト本体のバイナリの検索 | `develop-dotfiles` |
+| 本リポジトリを対象に含むprocess-wiの巡回の所要時間の目標と終了条件 | `develop-dotfiles`の`references/process-wi-duration.md` |
+| `develop`と`master`のリリース運用、日次リリースの判定と実施 | `release-dotfiles` |
+| PRのマージ、マージ後のブランチの同期、CIと必要なリリースの検収 | `merge-pr` |
+| `agent-toolkit/`・`agent-basics/`と`.claude-plugin/marketplace.json`の編集、版数の更新、権限設定の配置 | `agent-toolkit-edit` |
+| エージェント向け文書の改訂、変更した規範の自セッションへの適用、`プロジェクト規範の指定`、規範の削除・縮小 | `edit-dotfiles-norms` |
+| ロールとファイル群の対応、配布元と配布先の対応 | `dotfiles-repo-layout` |
+| `pytools/`、`scripts/`、`libexec/`、`bin/`、`rust/`の配置と実装 | `pytools-edit` |
+| LinuxとWindowsのペアファイルの同期 | `sync-platform-pair` |
 
-## 成果物の品質基準
+## 記録の所在
 
-本リポジトリでは`agent-basics`を適用する。
-コード、ドキュメント、設定の作成や変更では`agent-basics:writing-standards`を用い、レビューや指摘の採否判断では`agent-basics:review-standards`を適用する。
-また、WI、委譲、認可、完了報告の運用は`agent-toolkit`に従う。
+経緯、根拠、構造の記録は`docs/development/index.md`から選ぶ。
+主な索引は、構成の`architecture.md`、運用の`operations.md`、設計の`design.md`、確定した方針の`concepts.md`、障害の`incidents.md`、撤去した仕組みの`removed-mechanisms.md`、内部仕様の`internals.md`である。
+各規範の条文が根拠とする検証の日付、版数、再検証の手順は`docs/development/audit-records.md`にある。

@@ -3,7 +3,7 @@
 Claude Codeは`plugin install`と`plugin update`で`<cache>/<marketplace>/<name>/<version>/`を新設するだけで、
 旧版を削除しない。一方、起動中のClaude Codeセッションは起動時に解決した版ディレクトリを
 `hooks.json`と`.mcp.json`の`${CLAUDE_PLUGIN_ROOT}`から参照し続けるため、旧版を即時に削除すると
-そのセッションのhookとMCPが失敗する。そこで後継版の導入から`GRACE_DAYS`日が経過した版のうち、
+そのセッションのhookとMCPが失敗する。そこで後継版の導入から`plugin_cache_versions.GRACE_DAYS`日が経過した版のうち、
 `claude_plugin_references`が稼働中の参照の終了を判定できた版だけを削除する。
 経過日数は削除の候補を選ぶ条件であり、参照の終了を表さない。参照中の版は保持し、参照の終了後の`update-dotfiles`で削除する。
 
@@ -18,16 +18,12 @@ import shutil
 import time
 from pathlib import Path
 
-from pytools._internal import claude_common, claude_plugin_references, log_format, post_apply_outcome
+from pytools._internal import claude_common, claude_plugin_references, log_format, plugin_cache_versions, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
 _TAG = "plugin cache"
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
-
-# 後継版の導入から旧版を削除するまでの猶予日数。
-# 稼働中の参照は別に判定するため、この値は参照を判定する候補の選択だけに使う。
-GRACE_DAYS = 7
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
@@ -50,7 +46,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             )
         )
         return post_apply_outcome.PostApplyOutcome()
-    deadline = time.time() - GRACE_DAYS * 86400
+    # 稼働中の参照は別に判定するため、猶予期間は参照を判定する候補の選択だけに使う。
+    deadline = time.time() - plugin_cache_versions.GRACE_DAYS * 86400
     removed = 0
     held = 0
     failures: list[str] = []
@@ -154,28 +151,7 @@ def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -
         candidates = [child for child in plugin_dir.iterdir() if not _is_link_like(child) and child.is_dir()]
     except OSError:
         return []
-    timed = sorted(((_installed_at(child), child) for child in candidates), key=lambda item: (item[0], item[1].name))
-    expired: list[Path] = []
-    for index, (_, version_dir) in enumerate(timed[:-1]):
-        if _resolve(version_dir) in installed:
-            continue
-        successor_installed_at = timed[index + 1][0]
-        if successor_installed_at <= deadline:
-            expired.append(version_dir)
-    return expired
-
-
-def _installed_at(version_dir: Path) -> float:
-    """版ディレクトリの導入時刻を返す。`plugin.json`を欠く場合は版ディレクトリのmtimeで代替する。"""
-    try:
-        return (version_dir / ".claude-plugin" / "plugin.json").stat().st_mtime
-    except OSError:
-        pass
-    try:
-        return version_dir.stat().st_mtime
-    except OSError:
-        # 時刻を得られない版は最新とみなし、後継の判定にも削除の対象にも使わない。
-        return float("inf")
+    return plugin_cache_versions.expired(candidates, installed, deadline, ".claude-plugin/plugin.json")
 
 
 def _remove_version_dir(version_dir: Path, cache_resolved: Path) -> bool:

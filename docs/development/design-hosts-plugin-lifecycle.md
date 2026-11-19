@@ -29,15 +29,21 @@ Codex 0.166.0の操作lock待機375秒、停止猶予最大300秒、強制終了
 `plugins`や`plugins/cache`が別ボリュームへのリンク・マウント・junctionの配下にある構成も許容し、名前の変更が失敗したversionは複製で退避・復元する。
 複製で戻す場合は元のパスの隣（`<version>~restoring`）で複製を仕上げてから名前の変更で元のパスへ置き、その後に退避を削除するため、途中で失敗しても欠けた版を元のパスに残さない。
 目標versionと、Windowsで使用中のファイルを含むなどの理由で移動できないversionは元の場所に残して複製し、元の実体はCLIの処理に任せる。
+使用中で移動できないversionには退避先へ`<version>~copied`の印を置く。
+Windowsでは使用中のファイルとそれを含むディレクトリを削除できないため、CLIの削除は元のパスにそれらを残して途中で止まる。
+印のあるversionの復元は元のパスを置き換えず、元のパスに無いファイルとディレクトリだけを退避した内容から補う。
+各ファイルは隣（`<name>~restoring`）で複製を仕上げてから名前の変更で置くため、途中で止まっても欠けたファイルを元の名前で残さない。
+2026年11月19日のsthenoでは、agent-toolkit 2.272.0がファイル0件のディレクトリとして元のパスに残っていた。
+ディレクトリの更新時刻が2.272.2の導入と同じ07:13であり、補完の無い復元が残した版と推定する。
 移動先と同じversionが元のパスに再作成されていた場合（`atk-hook`の復旧など）は、再作成された実体を残して退避した側を削除する。
-`plugin add`の失敗後の巻き戻しは元のパスの内容を退避した内容で置き換える。
+`plugin add`の失敗後の巻き戻しは元のパスの内容を退避した内容で置き換える（`~copied`の印のあるversionは置き換えずに補う）。
 元のパスの削除が途中で失敗した場合に備えて、削除の前に退避先へ`<version>~replace`の印を置き、置き換えを終えてから消す。
 印の残るversionは、次回の実行も途中まで消えた元のパスより退避した内容を優先して置き換える。
 版を元のパスへ戻した直後の中断で退避の無い印だけが残った場合や、`~restoring`の複製が残った場合は、次回の実行がそれらを消す。
 `~`を含む名前は版として退避しない。
 強制終了などで復元前に中断した場合は退避先が残り、次回の更新処理が`plugin add`の判定より前に同じ規則で戻す。
 退避から復旧までを1つの保護区間とし、復旧後はCodexを使う処理へ戻らず更新関数を終了する。
-これにより個別コマンドのcache副作用を前提とせず、更新関数の終了時に既存セッションが参照する全旧パスの存在を保証する。
+これにより個別コマンドのcache副作用を前提とせず、更新関数の終了時に退避した全旧パスの存在を保証する。
 Codex 0.163.0では、App Serverの`plugin/list` RPCもlocal marketplaceの新versionを自動導入し、更新関数の外で全旧cacheを削除する。
 この上流のcache寿命不整合は[openai/codex#31383](https://github.com/openai/codex/issues/31383)で複数版・複数OSから報告され、live hookの再読込も[openai/codex#36605](https://github.com/openai/codex/issues/36605)などで未解決である。
 dotfiles向けの生成済みhook定義は、版付きcacheの外へ先に配置する`atk-hook`を使う。
@@ -55,7 +61,28 @@ Claude Code側も不要な外部`compact-plus@compact-plus`を除去する。
 圧縮後のユーザー発話の復元はagent-toolkit自身のhookが担う。
 post-apply案内とWindowsのjunction除去処理は維持する。
 cache version台帳、POSIXの原本接続、Windowsの原本接続とファイル同期は設けない。
-旧versionの実体は、保存済みセッションが保持した絶対パスを再開後も使えるように更新処理が保持する。
+旧versionの実体は、保存済みセッションが保持した絶対パスを再開後も使えるように、後継versionの導入から猶予期間（`plugin_cache_versions.py`の`GRACE_DAYS`、7日）を過ぎるまで更新処理が保持する。
+猶予期間を過ぎた旧versionは、退避より前に更新処理が削除する（2026年11月19日のユーザー決定「Codexの古いのは消して」）。
+それまでの設計は全旧versionを保持し、sthenoではagent-toolkitが37版（1.79GB、81,225ファイル）に増えていた。
+
+- 導入時刻は各versionの`.codex-plugin/plugin.json`のmtimeとし、Claude Codeの旧版cache整理と同じ選び方（[Claude Code plugin cache](operations-plugin-cache.md)）を使う。
+- 導入中のversionと目標のversionは日数によらず残す。
+- 稼働中のCodex（`codex_processes.py`の分類のうち更新ループを除く）は起動時に現行だったversionを使い続ける。
+  最も早く起動したCodexより後に後継が導入されたversionも残し、起動時刻を取得できないCodexがあれば削除しない。
+- 削除はversionを`<version>~removing`へ名前の変更で切り離してから行う。
+  Windowsで使用中のファイルを含むため移動できないversionは残し、欠けた版を元のパスに作らない。
+  切り離した後の削除が途中で止まった場合は、次回の実行が`~removing`を削除する。
+- 明示的に無効なpluginは削除しない。
+
+会話の開始から再開までの間隔を観測して7日に決めた。
+2026年11月19日にeuryale（Linux、10,491件）とstheno（Windows、621件）のCodexのセッション記録（`sessions/`と`archived_sessions/`のrollout）を調べた。
+ファイル名の開始時刻から最終書込（mtime）までは、最長でeuryaleが3.2日、sthenoが2.2日だった。
+最長の1件は75.9時間の間隔を置いて同じrolloutへ追記しており、再開した会話も同じファイルへ書く。
+7日はその2倍以上の余裕を持ち、Claude Codeの旧版cache整理と同じ値である。
+同日の版の分布では、sthenoのagent-toolkit 37版のうち25版（1.54GB、57,562ファイル）を削除して12版（0.25GB、23,663ファイル）を残し、agent-basicsは29版のうち20版を削除する。
+euryaleのagent-toolkit 8版（0.18GB）は全て期間内で、削除する版は無い。
+14日で区切るとsthenoのagent-toolkitは19版（0.39GB、32,648ファイル）が残る。
+猶予期間を過ぎた旧versionの会話を再開すると、hookは`atk-hook`の復旧で動くが、会話の履歴が指す旧versionのskillなどの絶対パスは失われる。
 
 シンボリックリンク方式は代替案として却下する。
 Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plugin.json`より優先し、同一rootから導入した場合は`hooks/list`が0件となる。
@@ -73,8 +100,9 @@ agent-toolkitの更新では旧versionを自動復旧し、Codexの稼働状態�
 
 | 処理 | 参照の判定 | 延期後の再開 |
 | --- | --- | --- |
-| Codexのpost-apply更新（`install_codex_plugins.py`） | 更新前の全通常versionディレクトリを`CODEX_HOME`直下の退避先へ移動し、CLIの処理後に同じ絶対パスへ戻す | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗は導入成功と区別して報告し、退避先を残して次回の実行で戻す |
-| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | post-apply更新と同じ退避先へ、更新前の全通常versionディレクトリを移動する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗時は退避先と報告先を表示して非0で終わり、次回の実行で戻す |
+| Codexのpost-apply更新（`install_codex_plugins.py`） | 猶予期間内の全通常versionディレクトリを`CODEX_HOME`直下の退避先へ移動し、CLIの処理後に同じ絶対パスへ戻す | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗は導入成功と区別して報告し、退避先を残して次回の実行で戻す |
+| Codexの旧version回収（`install_codex_plugins.py`の`_prune_retired_versions`） | 後継の導入からの経過日数と、`codex_processes.py`の起動時刻（更新ループを除く最も早い起動）。Windowsでは移動できない版を使用中とみなす | 使用の終了後の`update-dotfiles`で削除する |
+| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | post-apply更新と同じ退避先へ、更新前の全通常versionディレクトリを移動する。旧versionの回収は持たない | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗時は退避先と報告先を表示して非0で終わり、次回の実行で戻す |
 | Claude Codeの旧版cache整理（`prune_claude_plugin_cache.py`） | `claude_plugin_references.py`。その版の配下を指すプロセスと、その版が現行だった期間に起動したClaude Codeセッション | 参照の終了後の`update-dotfiles`で削除する |
 | Claude Codeの現行版cache欠落修復（`install_claude_plugins.py`） | `claude_plugin_references.py`。導入先を指すプロセスと、起動時刻を問わない稼働中のClaude Codeセッション | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではClaude Codeのセッションを全て終了してから`update-dotfiles`を再実行する |
 | Codexの不要pluginの除去（`install_codex_plugins.py`の`_remove_unused_plugins`） | `codex_processes.py`の役割分類。`session`だけを数え、管理daemonとその補助実行体・更新ループは数えない | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |
@@ -94,5 +122,6 @@ daemon自動再起動と旧versionの保持は独立している。
 sthenoの34版（約7.6万ファイル、約1.6GiB）を実際のCodex CLIで更新した計測では、更新関数の所要が中央値165秒から14秒に、元のパスから到達できない区間が91秒から14秒に縮んだ（各5回、2026年11月18日）。
 最新版へhookを付け替える案は、旧版のskill・MCP・遅延importを守れないため採らない。
 プロセス終了まで更新を延期する案は、後から再開できる保存済みセッションを判定できず、Codexを常用する環境で更新が完了しないため採らない。
-稼働中のCodexの起動時刻より前に置き換わった旧versionを回収する案も、同じ理由で採らない。
+稼働中のCodexの起動時刻だけで旧versionの回収を判定する案も、同じ理由で採らない。
 `codex resume`で再開したプロセスは起動時刻が新しく、再開した会話の履歴が指す旧versionの絶対パスを使い続ける。
+そのため起動時刻は猶予期間に加えて保持を延ばす条件にだけ使い、再開した会話は猶予期間で守る。

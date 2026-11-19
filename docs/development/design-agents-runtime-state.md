@@ -55,7 +55,7 @@ CLIの`list`と`wait`は索引か現行識別子自身の状態ディレクト�
 対応確認済みの空状態は通常の空状態として扱う。
 却下した代替案は、両側がClaude Codeプロセスの識別子を環境変数から解決する案と、鍵を作業ディレクトリへ変える案である。
 前者はMCPサーバープロセスに`CLAUDE_PID`が渡らないため成立せず、後者は同じディレクトリで複数の会話を同時に動かすと会話ごとの行を区別できないため採用しない。
-共有状態ごとの基準となる記録と、それを読み書きする処理の対応は`.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md`が定める。
+共有状態ごとの基準となる記録と、それを読み書きする処理の対応は`docs/development/internals-agents-server-state.md`が定める。
 Claude Codeが直接起動した`agents_server`は`root.json`を書き、委譲先の中で起動した`agents_server`は自身を収容するsessionの識別子を名前とするファイルを書く。
 backendへ渡すrootはManagerの`StatusFileWriter.root_session_id`に統一する。
 環境にownerが無く生成されたrootも、Codex App Serverの子環境とthread開始・再開のMCP設定、host索引、Claude SDKの起動・再開、Antigravityの子環境へ渡す。
@@ -96,7 +96,7 @@ statuslineの実装とプラグインの実装は別々の仕組みで更新さ�
 Python側の解決は`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir`だけが持ち、書き手と読み手が別のディレクトリを指さないよう、状態ファイルを扱う全ての処理がこの関数を使う。
 複数のプロセスが排他に使うロックファイルは、同じモジュールの`lock_dir`が返す状態ディレクトリ配下の`locks/`へ置く。
 レビュー指摘管理表と監査のロックもここへ置き、`~/.claude`配下へは置かない。
-`agents-server/wait-locks/`は共有状態の登録と組で働くロックであり、`.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md`の構造に従って`locks/`の対象から外す。
+`agents-server/wait-locks/`は共有状態の登録と組で働くロックであり、`docs/development/internals-agents-server-state.md`の構造に従って`locks/`の対象から外す。
 
 `atk agents wait`が読む状態ファイルは表示と外部待機のための投影である。
 取得済みのsession識別子は投影の消失後も保持し、結果または通知が無い間は`status: running`を返す。

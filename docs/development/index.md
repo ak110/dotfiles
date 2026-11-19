@@ -9,6 +9,7 @@
 - [docs/development/architecture.md](architecture.md): リポジトリ構成・プラットフォーム対応・補完運用・agent-toolkitの3形式配布
 - [docs/development/operations.md](operations.md): 運用機能のホスト固有事項と詳細仕様
 - [docs/development/commit-types.md](commit-types.md): コミットメッセージのtypeの判定例
+- [docs/development/internals.md](internals.md): 実装者向けの内部仕様（agents_serverの共有状態、セッション状態とフラグ、委譲先の調査手順、環境変数）の索引
 
 ## 記録の索引
 

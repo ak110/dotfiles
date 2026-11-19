@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools import post_apply
+from pytools._internal import removed_paths
 from pytools._internal.post_apply_test_helpers import _IMPORT_HOME, _redirect_removed_paths_to, _registered_paths
 from pytools._internal.post_apply_test_helpers import _isolate_sync_report as _isolate_sync_report
 from pytools._internal.post_apply_test_helpers import _isolate_update_log as _isolate_update_log
@@ -30,9 +30,9 @@ def test_removed_paths_bases_are_distribution_targets() -> None:
         )
     }
     # ホーム直下へ配布した設定（`~/.screenrc`など）は内容一致の表だけがホームを基点にする。
-    assert set(post_apply._REMOVED_PATHS) <= allowed  # noqa: SLF001
-    assert set(post_apply._REMOVED_PATHS_IF_CONTENT) <= allowed | {_IMPORT_HOME}  # noqa: SLF001
-    bases = set(post_apply._REMOVED_PATHS) | set(post_apply._REMOVED_PATHS_IF_CONTENT)  # noqa: SLF001
+    assert set(removed_paths._REMOVED_PATHS) <= allowed  # noqa: SLF001
+    assert set(removed_paths._REMOVED_PATHS_IF_CONTENT) <= allowed | {_IMPORT_HOME}  # noqa: SLF001
+    bases = set(removed_paths._REMOVED_PATHS) | set(removed_paths._REMOVED_PATHS_IF_CONTENT)  # noqa: SLF001
     assert _IMPORT_HOME / "dotfiles" not in bases
 
 
@@ -43,7 +43,7 @@ def test_removes_legacy_plans_viewer_config_and_shim() -> None:
     assert Path("claude-plans-viewer") in local_bin
     assert Path("claude-plans-viewer.exe") in local_bin
     # 旧systemd unitは停止と無効化を経てから削除するため、この一括削除の対象へ含めない。
-    for entries in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
+    for entries in removed_paths._REMOVED_PATHS.values():  # noqa: SLF001
         assert not [entry for entry in entries if "claude-plans-viewer.service" in entry.path.name]
 
 
@@ -88,18 +88,18 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
     kept: tuple[str, ...],
 ) -> None:
     """実際の登録内容を一時ホームへ適用し、旧生成物だけが削除されることを確かめる。"""
-    registered = post_apply._REMOVED_PATHS[_IMPORT_HOME / base]  # noqa: SLF001
+    registered = removed_paths._REMOVED_PATHS[_IMPORT_HOME / base]  # noqa: SLF001
     home_dir = tmp_path / "home"
     target_dir = home_dir / base
     monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.setenv("USERPROFILE", str(home_dir))
-    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {target_dir: registered})
-    monkeypatch.setattr(post_apply, "_REMOVED_PATHS_IF_CONTENT", {})
+    monkeypatch.setattr(removed_paths, "_REMOVED_PATHS", {target_dir: registered})
+    monkeypatch.setattr(removed_paths, "_REMOVED_PATHS_IF_CONTENT", {})
     for name in (*removed, *kept):
         (target_dir / name).parent.mkdir(parents=True, exist_ok=True)
         (target_dir / name).write_text("x\n", encoding="utf-8")
 
-    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed  # noqa: SLF001
 
     assert changed is True
     for name in removed:
@@ -125,7 +125,7 @@ def test_cleanup_removes_empty_ipython_dirs_from_table(
     default_readme.parent.mkdir(parents=True)
     default_readme.write_text("old\n", encoding="utf-8")
 
-    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed  # noqa: SLF001
 
     assert changed is True
     assert not (ipython_dir / "profile_default").exists()
@@ -143,7 +143,7 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_startup(
     user_script = default_readme.parent / "00-user.py"
     user_script.write_text("print('user')\n", encoding="utf-8")
 
-    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed  # noqa: SLF001
 
     assert changed is True
     assert not default_readme.exists()
@@ -167,7 +167,7 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_profile_root(
     active_config.parent.mkdir(parents=True)
     active_config.write_text("active\n", encoding="utf-8")
 
-    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed  # noqa: SLF001
 
     assert changed is True
     assert not default_readme.exists()
@@ -184,7 +184,7 @@ def test_removed_ipython_profile_cleanup_skips_missing_profile(
     """配布済みファイルも親ディレクトリも存在しない場合は変更なしとする。"""
     _redirect_removed_paths_to(monkeypatch, tmp_path)
 
-    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed  # noqa: SLF001
 
     assert changed is False
 
@@ -202,7 +202,7 @@ def test_removed_ipython_profile_cleanup_preserves_symlink_target(
     profile_link = ipython_dir / "profile_default"
     profile_link.symlink_to(outside_profile, target_is_directory=True)
 
-    changed = post_apply._cleanup_removed_paths().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed  # noqa: SLF001
 
     assert changed is False
     assert profile_link.is_symlink()
@@ -218,21 +218,21 @@ def test_cleanup_removes_unedited_ipython_kernel_config(
     distributed = (pytestconfig.rootpath / "testdata/post_apply/ipython_kernel_config.py.txt").read_bytes()
     home_dir = tmp_path / "home"
     ipython_dir = home_dir / ".ipython"
-    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {})
+    monkeypatch.setattr(removed_paths, "_REMOVED_PATHS", {})
     monkeypatch.setattr(
-        post_apply,
+        removed_paths,
         "_REMOVED_PATHS_IF_CONTENT",
-        {ipython_dir: post_apply._REMOVED_PATHS_IF_CONTENT[_IMPORT_HOME / ".ipython"]},  # noqa: SLF001
+        {ipython_dir: removed_paths._REMOVED_PATHS_IF_CONTENT[_IMPORT_HOME / ".ipython"]},  # noqa: SLF001
     )
     target = ipython_dir / "profile_ipy" / "ipython_kernel_config.py"
     target.parent.mkdir(parents=True)
 
     target.write_bytes(distributed + b"c.IPKernelApp.matplotlib = 'inline'\n")
-    assert post_apply._cleanup_removed_paths().changed is False  # noqa: SLF001
+    assert removed_paths.cleanup().changed is False  # noqa: SLF001
     assert target.exists()
 
     target.write_bytes(distributed)
-    assert post_apply._cleanup_removed_paths().changed is True  # noqa: SLF001
+    assert removed_paths.cleanup().changed is True  # noqa: SLF001
     assert not target.exists()
 
 
@@ -257,19 +257,19 @@ def test_cleanup_removes_unedited_retired_configs(
     """撤去した配布設定は撤去前の配布物と同じ内容なら削除し、1バイトでも違えば残す。"""
     distributed = (pytestconfig.rootpath / "testdata/post_apply" / fixture_name).read_bytes()
     target_dir = tmp_path / "home" / base
-    monkeypatch.setattr(post_apply, "_REMOVED_PATHS", {})
+    monkeypatch.setattr(removed_paths, "_REMOVED_PATHS", {})
     monkeypatch.setattr(
-        post_apply,
+        removed_paths,
         "_REMOVED_PATHS_IF_CONTENT",
-        {target_dir: post_apply._REMOVED_PATHS_IF_CONTENT[_IMPORT_HOME / base]},  # noqa: SLF001
+        {target_dir: removed_paths._REMOVED_PATHS_IF_CONTENT[_IMPORT_HOME / base]},  # noqa: SLF001
     )
     target = target_dir / relative
     target.parent.mkdir(parents=True, exist_ok=True)
 
     target.write_bytes(distributed + b"#")
-    assert post_apply._cleanup_removed_paths().changed is False  # noqa: SLF001
+    assert removed_paths.cleanup().changed is False  # noqa: SLF001
     assert target.exists()
 
     target.write_bytes(distributed)
-    assert post_apply._cleanup_removed_paths().changed is True  # noqa: SLF001
+    assert removed_paths.cleanup().changed is True  # noqa: SLF001
     assert not target.exists()
