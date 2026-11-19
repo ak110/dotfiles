@@ -66,7 +66,8 @@
 
 - 2026年9月5日: process-wi終了時のレビュー見逃し対策を計画レビューした際、review-session後の1回確認というユーザー提案を、Copilotレビュー要求、生成完了待機および再取得反復へ拡大した。
   直接原因: 指摘された見逃し問題の採否とレビュー担当が示した完全待機手段の採否を分離せず、`対応要否=yes`を修正方針の採用として扱った。
-  対策: レビュー指摘を検討材料と位置付け、追加要件、変更認可または手段指定として扱わない契約を`agent-basics:review-standards`の`references/reviewee.md`の受領時契約へ集約する。
+  対策: レビュー指摘を検討材料と位置付け、追加要件、変更認可または手段指定として扱わない契約を`agent-toolkit:reviewee-standards`の受領時契約へ集約する。
+  現行の参照先`agent-basics:review-standards`の`references/reviewee.md`が受領時の判断を定める。
   指摘と修正手段の採否は「レビュー指摘の位置付け」、成果物を変更する前の確認は「指摘発生時の扱い」にある
 
 - 2026年9月5日: push直後には未着だったGitHub Copilotレビューを終了前に再取得せず、過去PRのreview本文と未解決threadも残した。
