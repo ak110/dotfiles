@@ -34,8 +34,13 @@ pytestmark = pytest.mark.windows
         + "秒。"
     ),
 )
-def test_retained_root_cohort_can_finish_normally(host_environ, monkeypatch):
-    """既知cohortの全終了を検収し、不要な全OS再走査によるtimeoutを防ぐ。"""
+@pytest.mark.parametrize("listed_after_exit", [False, True], ids=["observed-exit", "listed-after-exit"])
+def test_retained_root_cohort_can_finish_normally(host_environ, monkeypatch, listed_after_exit):
+    """既知cohortの全終了を検収し、不要な全OS再走査によるtimeoutを防ぐ。
+
+    Windowsのpsutilは、終了直後のプロセスを一覧から消えるまで実行中と報告することがある（CIで観測）。
+    起点の終了はこの報告によらず、wait済みのPopenから確定する。
+    """
     with (
         subprocess.Popen(
             [sys.executable, "-c", "import sys; sys.stdin.readline()"], stdin=subprocess.PIPE, env=host_environ()
@@ -48,7 +53,13 @@ def test_retained_root_cohort_can_finish_normally(host_environ, monkeypatch):
         parent.stdin.close()
         assert parent.wait(timeout=10) == 0
         monkeypatch.setattr(process_tree, "_scan_descendants", lambda *_args, **_kwargs: pytest.fail("終了済み所有の再走査"))
-        assert process_tree.stop_owned_process(parent, context="既知の起点", known=known, pins=pins) is None
+        observed = psutil.Process.is_running
+        with (
+            mock.patch.object(psutil.Process, "is_running", lambda target: target.pid == parent.pid or observed(target))
+            if listed_after_exit
+            else contextlib.nullcontext()
+        ):
+            assert process_tree.stop_owned_process(parent, context="既知の起点", known=known, pins=pins) is None
         assert not process_tree.wait_until_released(known, timeout=1)
 
 
