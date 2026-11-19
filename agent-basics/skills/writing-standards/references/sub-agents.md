@@ -10,7 +10,8 @@ Claude Codeの`agents/`のfrontmatterの項目名と値は、公式ドキュメ�
 `agents/`にはサブエージェント定義だけを置く。
 `agents/`は再帰的に走査され、サブディレクトリのファイルも定義として登録される（プラグインでは`<plugin-name>:<サブディレクトリ名>:<name>`として公開される）。
 定義が参照する資料のうち、そのサブエージェントの工程だけで使うものは対応するスキルの`references/`に置く。
-複数のスキルや定義で共有する資料はプラグイン内の共有用のディレクトリ（例: `share/`）に置き、プラグインのrootを示す変数（Claude Codeでは`${CLAUDE_PLUGIN_ROOT}`）を前置したパスで参照する。
+複数のスキルや定義で共有する資料は責務の合うスキルの`references/`に置き、プラグインのrootを示す変数（Claude Codeでは`${CLAUDE_PLUGIN_ROOT}`）を前置したパスで参照する。
+スキルの外に独自の共有ディレクトリ（`share/`など）を設けると、スキルの配下だけを配置するホスト（OpenCodeなど）へ届かない。
 
 ## Claude Codeのfrontmatter
 
