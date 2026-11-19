@@ -12,8 +12,6 @@ startup_documents:
 
 # 自動コードレビュー監査担当タスク
 
-<!-- parent-read-source: agent-toolkit:/skills/atk-mode/playbooks/process-wi-review-audit.md#自動コードレビュー監査担当の起動と受領 -->
-
 対象のGitHubリポジトリで、Copilot由来のレビュー指摘と未判定のDependabotアラートを1回取得して監査し、分類、GitHubへの記録、判定済みの記録までを終える。
 対象リポジトリの追跡対象ファイルとcommit履歴は変えない。
 要修正と判定した項目の是正とAWIへの記録は委譲元が行う。

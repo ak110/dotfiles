@@ -48,12 +48,12 @@ startup_documents:
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 判定の観点と並行する探索・再発防止セルフチェックの起動と受領に関する判断・作業の前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` | 判断 | `delegation-result`、`delegation`、`read:agent-toolkit:*/skills/atk-mode/playbooks/exec-review.md` | |
-| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:atk-mode/playbooks/verification.md` | | | |
-| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `agent-toolkit:atk-mode/roles/recurrence-self-check.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/recurrence-self-check.parent.md` | |
-| 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `agent-toolkit:atk-mode/roles/reader-fit-review.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/roles/reader-fit-review.parent.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判定の観点と並行する探索・再発防止セルフチェックの起動と受領に関する判断・作業の前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` |
+| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:atk-mode/playbooks/verification.md` |
+| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `agent-toolkit:atk-mode/roles/recurrence-self-check.parent.md` |
+| 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `agent-toolkit:atk-mode/roles/reader-fit-review.parent.md` |
 
 ## 入力
 

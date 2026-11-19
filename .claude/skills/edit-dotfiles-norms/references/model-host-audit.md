@@ -5,7 +5,7 @@
 規範を編集する作業の開始時に、自分のモデルIDとホスト（Claude Code、Codex）の版を、`docs/development/audit-records.md`の最新の「規範の点検記録」と比べる。
 公式ガイドが`agent-basics:writing-standards/references/claude-hooks.md`に挙がっていることは、点検済みの根拠にしない。
 
-- モデルIDが点検記録に無い場合（記録が1件も無い場合を含む）は、そのモデルを基準にした規範全体の点検（`agent-toolkit:atk-mode/playbooks/refine-prompt.md`「文書の点検」。所在参照）を求めるAWIを登録する。
+- モデルIDが点検記録に無い場合（記録が1件も無い場合を含む）は、そのモデルを基準にした規範全体の点検（`agent-toolkit:atk-mode/playbooks/refine-prompt.md`「文書の点検」）を求めるAWIを登録する。
   同じモデルの点検を求める未終了のAWIがあれば登録しない。
   基準はそのモデルの公式ガイドとし、モデル別のガイドが無ければ同資料が挙げる提供元の一般ガイドを使って、点検記録へその旨を記す。
   モデル別のガイドが同資料に挙がっていなければ、点検のAWIへ同資料への追加を含める

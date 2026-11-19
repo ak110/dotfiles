@@ -87,21 +87,21 @@ startup_documents:
 担当種別と工程が当たる行の資料を、その工程を始める前に全文読む。
 返す区切りの形式は、読む資料か本書「出力」にある。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| `レーン担当`が計画の要否の判定、計画の起草、再開、実行レビューの起動と収束、統合の準備を始める前（返す区切りは`計画作成完了`、`計画検査完了`、`計画なし準備完了`、`統合準備完了`）（操作対象外: 担当自身の工程の開始であり、ツールの操作の時点ではない） | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` | | |
-| 実装を始める前（`実装開始`の受領後、待機しない`計画検査完了`の通知後、修正の入力の受領後。返す区切りは`実装完了`）（操作対象外: 担当自身の工程の開始であり、ツールの操作の時点ではない） | `agent-toolkit:atk-mode/playbooks/implementation.md` | | |
-| `レビュー修正担当`か同じthreadの`レーン担当`がレビュー指摘を直してGit履歴へ統合する前（返す区切りは`対応完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md` | | |
-| `CI修正担当`が`CI記録`の失敗を直す前（前者は節「担当種別ごとの修正」を使い、返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md`、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` | | |
-| 変更範囲の検証が失敗した時（節「レーンの変更範囲の検証の失敗」を使う） | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` | | |
-| 計画の起草、計画なしの実装、修正の着手の前に、作業を内部の担当へ分けるかを決める前 | `agent-toolkit:atk-mode/playbooks/delegation.md` | | |
-| 計画の起草か実装の途中で、完成条件を対象から外すか変える前（節「完成条件の必要性と変更」を使う） | `agent-toolkit:atk-mode/playbooks/implementation.md` | | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `レーン担当`が計画の要否の判定、計画の起草、再開、実行レビューの起動と収束、統合の準備を始める前（返す区切りは`計画作成完了`、`計画検査完了`、`計画なし準備完了`、`統合準備完了`） | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` |
+| 実装を始める前（`実装開始`の受領後、待機しない`計画検査完了`の通知後、修正の入力の受領後。返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/implementation.md` |
+| `レビュー修正担当`か同じthreadの`レーン担当`がレビュー指摘を直してGit履歴へ統合する前（返す区切りは`対応完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md` |
+| `CI修正担当`が`CI記録`の失敗を直す前（前者は節「担当種別ごとの修正」を使い、返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md`、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` |
+| 変更範囲の検証が失敗した時（節「レーンの変更範囲の検証の失敗」を使う） | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` |
+| 計画の起草、計画なしの実装、修正の着手の前に、作業を内部の担当へ分けるかを決める前 | `agent-toolkit:atk-mode/playbooks/delegation.md` |
+| 計画の起草か実装の途中で、完成条件を対象から外すか変える前（節「完成条件の必要性と変更」を使う） | `agent-toolkit:atk-mode/playbooks/implementation.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `agent-toolkit:atk-mode/roles/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/lane-integration.subagent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `agent-toolkit:atk-mode/roles/lane-integration.subagent.md` |
 
 ## 入力
 

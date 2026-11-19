@@ -6,13 +6,13 @@
 
 AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ委ねる委譲元が、起動、入力の受け渡し、返却の検収に使う。
 `agent-toolkit:atk-mode`の作業`process-wi`のレーン工程で上流リポジトリへの投入を要する項目も、この委譲で扱う。
-担当の手順と返却形式は`agent-toolkit:atk-mode/roles/add-wi.subagent.md`が定める（所在参照）。
+担当の手順と返却形式は`agent-toolkit:atk-mode/roles/add-wi.subagent.md`が定める。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/playbooks/wi-drafting.md` |
-| 原稿の意味を検収する前 | `agent-toolkit:atk-mode/references/draft-semantic-review.md`、`agent-toolkit:atk-mode/playbooks/wi-drafting.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/draft-semantic-review.md`、`read:agent-toolkit:*/skills/atk-mode/playbooks/wi-drafting.md` |
-| 続行不能の返却から質問・資料提供UWIを組む前（圧縮後も同じ） | `agent-toolkit:atk-mode/playbooks/confirmation.md` | 判断 | `delegation-result`、`confirmation` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md` |
+| 原稿の意味を検収する前 | `agent-toolkit:atk-mode/references/draft-semantic-review.md`、`agent-toolkit:atk-mode/playbooks/wi-drafting.md` |
+| 続行不能の返却から質問・資料提供UWIを組む前（圧縮後も同じ） | `agent-toolkit:atk-mode/playbooks/confirmation.md` |
 
 ## 入力
 
