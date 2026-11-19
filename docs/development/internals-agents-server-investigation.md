@@ -53,7 +53,6 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
    API失敗の公開診断にはエラー種別、HTTPステータスコード、経過時間、初期化診断には受信メッセージの種別と失敗箇所の詳細がある。
    Claude接続候補の試行・選択・失敗は`claude_connection_attempt`・`claude_connection_selected`・`claude_connection_failed`を確認する。
    API切替は`claude_api_switch`、MCP再接続成否は`claude_mcp_recovered`・`claude_mcp_recovery_failed`を確認する。
-   MCP再接続の監査記録は`docs/development/audit-records-agents-server.md`「docs/development/design-agents-runtime-connections.md：MCP接続失敗の再接続：2026年10月20日」にある。
 
 3. 停止契機を特定するため、中断（`interrupted`）では`diagnostics.next_action`の行範囲（`sed -n '<開始行>,<終了行>p' -- <絶対パス>`）で終了診断を読む。
    受信シグナル、標準入力の切断、終了ステータスの有無を確認する。

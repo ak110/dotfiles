@@ -5,7 +5,6 @@
 ## 通知の整形と反復検出
 
 `QUALITY_CHECKPOINT_NOTICE`は`SessionStart(source=compact)`だけを発火境界とし、Claude CodeとCodexの双方で`rules_context`がメイン向け条文と同じ非遮断の`additionalContext`へ結合して返す。
-通知の本文は`agent-toolkit/agent_toolkit/_hooks/rules_context.py`が持ち、意味判定やセッション状態を持たない。
 
 Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_id`と絶対パスの`transcript_path`を「この会話のセッションID」「この会話のtranscript」として加える。
 同じプロジェクトの記録を更新時刻順に選んでも、現在の会話の記録とは限らない。
@@ -16,12 +15,12 @@ Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_i
 取得元の規範は`agent-toolkit/share/rules/rules-main.claude-code.md`「自身の会話の記録」に集約し、記録を使う消費文書は同節を参照する。
 入力の記録パスが実在しない場合は、同じsession IDのメイン記録を既存の解決処理で1件へ定める。
 開始時と別のディレクトリでの再開により入力が実在しないパスを示した観測へ対応する。
-解決件数ごとの扱いは後掲「出力の配送とセッション記録の解決」に従う。
-入力項目とmatcherの典拠は[audit-records-hooks-lifecycle.md](audit-records-hooks-lifecycle.md)「docs/development/design-hooks-notices.md：通知の整形と反復検出：2026年10月13日」にある。
+入力項目とmatcherの典拠は公式の[Hooks reference](https://code.claude.com/docs/en/hooks)「Common input fields」「SessionStart」で、2026年10月13日にClaude Code 2.1.296の環境で確かめた。
+同資料は、transcriptが非同期に書かれ、現在のturnの最新メッセージを含まない場合があると記す。
+再検証は同じ2節の項目名とmatcherの値を比べ、制御したSessionStart入力をhook handlerへ渡して`additionalContext`の値を確かめる（`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`）。
 環境変数だけを案内する案はtranscriptの所在を消費側ごとの探索に残し、`UserPromptSubmit`で毎ターン配送する案は`SessionStart`が会話の切替境界を既に扱うため採らない。
 新しい状態ファイルや取得器は設けない。
 
-block通知の解消手段は、`agent-toolkit/agent_toolkit/_hooks/notice.py`のblock専用整形関数へ集約する。
 フックが誤発火した場合でも、通知を受領した主体が抜けられる状態を保つことが目的である。
 強制境界を単一にしないと解消手段の欠落を機械的に検出できないため、既存の`formatter`へ引数を追加せず、
 warn通知の既存契約へ影響しない独立関数とする。
@@ -31,25 +30,20 @@ warn通知の既存契約へ影響しない独立関数とする。
 
 PreToolUseの遮断はツール呼び出し全体を実行せず、同じ呼び出しの別のコマンドや処理も実行しない。
 遮断通知は原因と次の操作を示す。
-PreToolUse側の遮断通知の生成はnotices.pyの共通整形へ集約し、操作ごとの保護条件に応じた原因と次の操作を保持する。
 ツール呼び出しが未実行であることはホストの遮断結果から分かるため、通知本文への定型の追記は省く。
 
 同じ会話・呼出主体・操作範囲の原因、対象と対処が同じ通知は初回だけ届ける。
 `notice_cycle`は現在成立する原因を記録し、解消した原因を除くため、状態変化後の再発は再び届けられる。
-`formatter`と`warning_formatter`は既存のセッション状態へ本文と次の操作の指紋を保存する。
 反復回数から遮断への昇格は行わず、実害を防ぐblockは操作ごとの条件で毎回判断する。
-旧呼出元の昇格・要旨指定は引数の受理だけを保持する。
 目的は原因、対象と対処の変化を届け、同じ条件が続く間の重複通知を抑えることである。
 知識境界として、原因と対象は通知を生成する判定処理が定め、通知の整形処理はセッション状態に保持した本文と次の操作の指紋から配送の要否を判断する。
 通知を生成する判定処理ごとに反復判定を実装する案は、同じ判定が判定処理の数だけ増えるため採用しない。
-通知の指紋による集約は`_hooks/notice.py`の`formatter`と`warning_formatter`が所有し、遮断条件は操作ごとの判定処理が所有する。
 
 CodexのPreToolUseは、handler本文と`hook.py`が加える障害通知を合流した最終境界で、追加コンテキストと判定理由の合計容量を判定する。
 [Codexのhook仕様](https://learn.chatgpt.com/docs/hooks#large-hook-output)はモデル可視のhandler出力に既定の約2,500トークンの枠を設けるため、長い案内をそのまま返すと本文の中間が失われる。
 `warning_context.bounded_codex_context`はUTF-8バイト数で保守的に判定し、超えた通知全体を既存のsession managed-tempへ原子的に保存して、絶対パスと読取コマンドを持つ短い通知へ置換する。
 保存先は全文のdigestで再利用し、独立した配送台帳や保持状態を加えない。
 保存できない場合は原因の種類と復旧先を短く示し、元通知を未配送のまま保つ。
-許可・拒否の判定値と短い理由は保持し、長い理由は全文を保存して詳細確認の案内へ置換する。
 Claudeの出力と別イベントの出力は変更しない。
 短い参照の提示は既存の通知反復抑止と取得案内の提示へ記録し、資料本文の取得記録は消費しない。
 詳細の読取後も、資料本文の取得は通常の外側配送観測で確定する。
@@ -58,14 +52,12 @@ dispatch内だけで容量を判定する案は後から追加される障害通
 ### エージェント宛ての通知の画面への写し
 
 Claude Codeの最上位メインでは、次のhookがエージェントへ返す通知を、同じ応答の`systemMessage`にも載せる（2026年11月11日）。
-対象はPreToolUse、PostToolUse・PostToolUseFailure・PermissionDenied、UserPromptSubmitである。
 ユーザーが通知を読み、エージェントが気付きにくい改善案を思いつけるようにするためである（2026年11月10日のユーザーの依頼と確認回答「是正する通知を全文」）。
 導入前の実画面（Claude Code 2.1.322）では、PreToolUseの警告とUserPromptSubmitの通知は表示されず、拒否の理由は先頭の1行（包装の開始タグ）だけが表示されていた。
 写しはエージェント宛てと同じ`atk-auto`の開始・終了タグを保ち、同じ応答の複数の通知を1つにまとめる。
 生成元と種別を画面で識別しやすくするため、包装を外して日本語の見出しに置き換える当初の方式を改めた（2026年11月12日のユーザーの指摘）。
 上限（10,000文字）を超えた場合の保存先への置き換えはホストに任せ、要約の機構は持たない。
 写しはhookの入口（`agent-toolkit/agent_toolkit/hook.py`）が、応答のエージェント宛ての欄から組み立てる。
-欄は`additionalContext`、拒否の`permissionDecisionReason`、`decision: "block"`の`reason`で、その内容と配送は元のまま保つ。
 各判定処理で個別に付ける案は、今後加える通知が既定で表示されなくなるため採らない。
 写す通知は、同じhookの呼出しで`message_format.auto_message`が生成した通知の記録から、欄に現れた包装済みの全文を選ぶ。
 別の通知の本文に引用として含まれる通知は、外側の通知の一部として写す。
@@ -83,9 +75,8 @@ Stop・SubagentStopはホストが画面へ表示するため変えない。
 hook入力が`agent_id`を持つサブエージェント内の呼出しと、`agents_server`の委譲先はユーザーの画面を持たないため付けない。
 Codex・Antigravity向けの出力は変えない。
 
-## 効率化の仕組みの棚卸し（2026年11月）
+## ユーザーの要求と見直しの基準
 
-横断的な記録の条件と限界は[設計索引](design.md)の「効率化の仕組みの棚卸し」を参照。
 反復する本文の初期の短縮はエージェントが起草し、11月の初回だけの案内への集約は、毎回の警告を避けるユーザーの指示に由来する。
 判定は維持とし、同じ条件の同じ通知だけを抑える。
 通知の省略は、未確認の結果の成功判定や、新しい事実・必要な終了観測の通知を省く根拠にしない。

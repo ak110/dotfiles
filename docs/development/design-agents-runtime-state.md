@@ -17,7 +17,6 @@
 区分の意味と返却形式は共通規範が所有し、実装は構造と有限回だけを扱う。
 
 停止と再開はsessionの`turn_control_lock`で直列化する。
-停止は所有するSDK task、委譲先CLIの根プロセスと子孫のcleanup完了を確認してから、未終了turnを`interrupted`として公開する。
 cleanupに失敗した場合は所有handleを保持し、同じ対象の停止を再試行できるようにする。
 
 MCPの起動スクリプト（`agents_server_mcp.py`の`main`）は共有サービスへ転送するだけで、委譲先の子孫を所有しない。
@@ -25,17 +24,9 @@ MCPの起動スクリプト（`agents_server_mcp.py`の`main`）は共有サー�
 通常のmanager終了は全backendのcloseを先に開始し、一部の停止不能が他backendの停止要求を妨げないようにする。
 回収には既存の所有handleを使い、プロセス名から停止対象を探す処理を増やさない。
 
-外側のstdlib bootstrapも起動時の親を監視する。
-POSIXでは親PIDの一致、Windowsでは保持した親kernel handleで消滅を判定し、自ら起動したサーバーへ停止を要求する。
-親消滅・signal時はサーバー自身の終了処理（backendのclose）を先に完走できるよう30秒待ち、終了しなければbootstrapが所有するprocess groupまたは子孫の有限回収へ進む。
-子、stderr reader、pipe、signal handlerは同じcontextで回収する。
-直接起動・ランチャー経由・内側MCPは同じ起動スクリプトを通るため、起動元の違いで所有子孫の回収の手順は変わらない。
-
 `agents_server`が`start`で起動したsessionは、Claude CodeのUIでは`atk agents wait`の応答が届くまで状態を観測できない。
 このため`agents_server`はルートセッションごとのディレクトリへ生存中のsessionの状態ファイルを出力し、`claude-statusline`の`statusline`モードがセッション行の次の行以降へ1 sessionを1行で表示する。
 
-状態ファイルは`atk config get state_dir`が返すディレクトリ配下の`agents-server/<ルートセッション識別子>/<書込主体>.json`とする。
-終了時の結果の未回収判定は、結果ファイルを扱える処理では公開済み・回収済み・未公開を区別する共通述語で行い、状態ファイルを記述できない処理だけは内部の配送済み状態へ縮退する。
 各書込主体は自身の状態ファイルと対応する一時ファイルだけを削除し、共有する終了時の結果と通知は保持期限を超えたものだけを回収する。
 別の書込主体の表示、未回収の終了時の結果、上り通知を起動または終了時の初期化で削除する案は、同じルートに属する並行した委譲の観測を失わせるため採用しない。
 ルートセッション識別子は`AGENT_TOOLKIT_OWNER_SESSION`、無ければMCPサーバー起動時の`CLAUDE_CODE_SESSION_ID`から取る。
@@ -44,42 +35,26 @@ Claude Codeが同一プロセスのままsession識別子を切り替えると�
 `claude --resume`で起動した場合も、MCPサーバーへ渡る`CLAUDE_CODE_SESSION_ID`と、会話のBashとフックが受け取る再開した会話の識別子が異なり得る（2026年10月2日の観測）。
 このため`agents-server/aliases/<現行のsession識別子>.json`へ索引を置き、statuslineと`atk agents wait`は会話IDの索引を経てルートセッション識別子を解決する。
 `atk agents notify`は所有者sessionを直接解決する方式を保ち、索引を読まない。
-MCPサーバーは`start`、`send_message`、`list`の応答（`show`の`verbose`では解決可能な場合）に、自身の状態ファイル書込先として解決した`root_session_id`を含める。
-`list`は保持sessionが0件でも`root_session_id`を返す。
 PostToolUseフックは、操作名を列挙せず、`root_session_id`を持つ応答であれば1か所の判定でその値を索引へ直接書く。
 再起動した会話の最初のMCP操作が終了済みsessionへの`send_message`であっても索引を書けるようにするためである。
 同じフックが`start`と`send_message`の新しいturnを待機対象へ登録するときは、`atk agents wait`と同じく索引を経たルートを使い、登録と読み取りを同じ名前空間にそろえる。
 状態ファイルは1秒単位で集約され、応答直後には起動したsessionが未反映であり得るため、状態ディレクトリの走査による逆引きは行わない。
-CLIの`list`と`wait`は索引か現行識別子自身の状態ディレクトリでルートsessionとの対応を確認する。
-対応未確認かつ対象0件ではCLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行するよう案内する。
-対応確認済みの空状態は通常の空状態として扱う。
 却下した代替案は、両側がClaude Codeプロセスの識別子を環境変数から解決する案と、鍵を作業ディレクトリへ変える案である。
 前者はMCPサーバープロセスに`CLAUDE_PID`が渡らないため成立せず、後者は同じディレクトリで複数の会話を同時に動かすと会話ごとの行を区別できないため採用しない。
 共有状態ごとの基準となる記録と、それを読み書きする処理の対応は`docs/development/internals-agents-server-state.md`が定める。
-Claude Codeが直接起動した`agents_server`は`root.json`を書き、委譲先の中で起動した`agents_server`は自身を収容するsessionの識別子を名前とするファイルを書く。
-backendへ渡すrootはManagerの`StatusFileWriter.root_session_id`に統一する。
-環境にownerが無く生成されたrootも、Codex App Serverの子環境とthread開始・再開のMCP設定、host索引、Claude SDKの起動・再開、Antigravityの子環境へ渡す。
 backendごとに環境から解決するとManagerの保存先と通知先が分かれるため、その独立解決を撤去した。
 通知側の全root走査と手動環境設定は採らない。
 計画所有記録の解決は変更せず、Antigravity固有の通知元識別子取得と通知成功はこの配送の保証外とする。
 資料のplugin rootはこのルートsession識別子とは別の入力である。
 Codex backendは起動通知に載せる`SERVER_PLUGIN_ROOT`を`AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT`としてApp Serverの子環境と開始・再開の内側MCPへ渡す。
-ホスト登録hookの実行コードが別配置にあっても、資料の列挙、参照解決、取得記録、起動時・圧縮後のCLI案内はこの選択を使う。
-無指定時はhook自身の配布物を使い、不正な明示rootは診断する。
-agent-basicsは選択したrootに対する既存の兄弟plugin・ホスト導入情報から解決する。
 別版の同名資料を取得済みと同一視する案は、版の混在を隠すため採らない。
-収容sessionの識別子は、Claude backendの委譲先では`AGENT_TOOLKIT_DELEGATED_SESSION`が示すとおり自身の`CLAUDE_CODE_SESSION_ID`、Codex backendの委譲先では`CODEX_THREAD_ID`から取る。
-いずれも親の`agents_server`が公開する`session_id`と同じ値である。
-Codex委譲先自身のシェルには`CODEX_THREAD_ID`が存在するため、Codex委譲先のシェルで動く待機処理と通知処理は共有状態ディレクトリを解決できる。
 PostToolUseフックの環境に`CODEX_THREAD_ID`が無い場合は、フック入力の検証済み現行session識別子を既存の書込主体解決へ補完し、同じ書込主体の`wait-targets`へ子sessionの開始とreply再開を登録する。
 フック入力を新しい台帳へ保存する案は、待機CLIとは別に基準となる記録を増やすため採用しない。
 Codex backendが子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継承した`AGENT_TOOLKIT_DELEGATED_SESSION`を除く扱いと、その理由は`design-hosts-rules-delivery.md`「ルールの配置と配送」にある。
 一方、Codexホストから直接起動したMCPサーバープロセスは、所有session識別子とCodex thread識別子のいずれも持たないため状態ファイルを書かない。
 所有session識別子だけが存在し、書込主体を識別できない場合も状態ファイルを書かない。
 共通の`root.json`では、同じディレクトリに書く主体を区別できない。
-書込側はsession状態の更新を1秒で集約し、自身の生存中のsession全体を原子的に全置換する。
 書込主体は状態ファイルのトップレベルへ生存の印`heartbeat_at`を置き、稼働中は一定間隔で更新する。
-読取側は`heartbeat_at`が失効した状態ファイルを表示から外す。
 書込主体は自身のflushのたびに、`heartbeat_at`が失効した他の状態ファイルを削除する。
 書込主体の異常終了では状態ファイルの回収も終了状態への更新も動かないため、生存の印を持たない設計では`status`が`running`のままのsessionが表示に残り続ける。
 状態ファイル名は書込主体のhost session識別子であり、同じ識別子が再び使われないため、後続の`agents_server`起動でも古い状態ファイルは除かれない。
@@ -90,11 +65,8 @@ statuslineの実装とプラグインの実装は別々の仕組みで更新さ�
 第1の案は収容主体が保持するagents_serverのsession識別子と、状態ファイル名が用いるhost session識別子が別体系であり、対応表を新設しないと対象を特定できない。
 第2の案は進捗の更新が届かない長時間のturnと書込主体の消失を区別できない。
 第3の案は読取側のstatuslineへOS別のプロセス照会を持ち込み、識別子の再利用を排除するために追加の情報を要する。
-読取側はLinuxで`XDG_STATE_HOME`または`HOME/.local/state`、Windowsで`LOCALAPPDATA`から同じディレクトリを解決する。
 Python側の解決は`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir`だけが持ち、書き手と読み手が別のディレクトリを指さないよう、状態ファイルを扱う全ての処理がこの関数を使う。
-複数のプロセスが排他に使うロックファイルは、同じモジュールの`lock_dir`が返す状態ディレクトリ配下の`locks/`へ置く。
 レビュー指摘管理表と監査のロックもここへ置き、`~/.claude`配下へは置かない。
-`agents-server/wait-locks/`は共有状態の登録と組で働くロックであり、`docs/development/internals-agents-server-state.md`の構造に従って`locks/`の対象から外す。
 
 `atk agents wait`が読む状態ファイルは表示と外部待機のための投影である。
 取得済みのsession識別子は投影の消失後も保持し、結果または通知が無い間は`status: running`を返す。

@@ -31,7 +31,9 @@
   同じ主体が取得済みの本文をEdit・MultiEdit・Writeで変更した成功では、編集応答の`originalFile`から変更前後の本文を確かめ、変更前に存在した種類の取得証拠だけを新hashへ引き継ぐ。
   参照取得で継承するのは本文取得の証拠に限る。
   `originalFile`が欠落・null、`staged`や`userModified`、編集失敗、別主体・外部変更・Bashの書換えは継承の対象外とする。
-  ホスト応答の観測と再検証手段は`docs/development/audit-records-project-environment.md`「docs/development/internals-session-state-document-receipts.md：自己編集の取得継承：2026年11月2日」にある。
+  ホスト応答は2026年11月2日にClaude Code 2.1.316の実行ファイルでEdit・Writeの出力スキーマとPostToolUse呼出しを確かめたもので、MultiEditの実ホスト応答型とCRLF正規化時の継承は未確認である。
+  再検証は`.claude/skills/develop-dotfiles/references/host-binaries.md`「ホスト本体のバイナリの検索」に従い、対象版の`originalFile`の出力型と`tool_response`への引渡しを確かめる。
+  継承の境界は`agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_acquisition_updates_test.py`の`test_hook_self_edit_twice_preserves_acquired_body`（取得済み本文の自己編集）と`test_hook_unknown_edits_require_reacquisition`（未取得編集など継承しない変更）で検証する。
   `selected-read-target:<JSON>`は選択済みパス・見出しと選択元の`declarations`配列（`source`・`operations`・`kind`・`selector`）を保持し、持越し時に現行宣言へ接続する。
   対応の無い旧選択は保存したパス・見出しを解決し、失われた見出しを除く。
   `modified-agent-document:<絶対パス>`は変更文書、`review-reference:<絶対パス>`はprepareの参照資料、`read-trigger-role:<絶対パス>`は役割を保持する。

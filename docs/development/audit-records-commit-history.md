@@ -27,7 +27,7 @@ Git 2.47.3で、`commit.verbose=true`を設定した隔離リポジトリ2つへ
 
 ## agent-toolkit/skills/atk-mode/playbooks/history-rewrite.md：fixupの実行上の制約：2026年10月18日
 
-Git 2.34.1と2.47.3で、`compare_history_test.py`の隔離履歴に対する20件のテストが成功した。
+Git 2.34.1と2.47.3で、当時の`compare_history_test.py`（commit `771933f6c`）の隔離履歴に対する20件のテストが成功した。
 Git 2.34.1はCIと同じUbuntuの`git_2.34.1-1ubuntu1_amd64.deb`を一時領域へ展開して使用し、SHA-256は`0a0bd5c85eafb688025d68e69f49919591b22abf8b7d608d7e64307714d361ca`だった。
 `rebase.updateRefs=true`と別branchを置いた。
 文書と同じ`GIT_SEQUENCE_EDITOR=:`、`-c rebase.updateRefs=false rebase -i --autosquash`でfixupを統合した。
@@ -35,7 +35,9 @@ Git 2.34.1はCIと同じUbuntuの`git_2.34.1-1ubuntu1_amd64.deb`を一時領域�
 Git 2.47.3で局所設定のfalseだけを除いた対照は、別branchのOID保持の試験で失敗した。
 履歴検収は空白・path・mode・type・binary・曖昧な対応を区別し、統合後の対応表を公開記録操作へ渡した。
 
-再検証では上記debを展開した`usr/bin`をPATHの先頭、`usr/lib/git-core`を`GIT_EXEC_PATH`へ設定し、`git --version`を確認して同じ20件を実行する。
+再検証では上記debを展開した`usr/bin`をPATHの先頭、`usr/lib/git-core`を`GIT_EXEC_PATH`へ設定し、`git --version`を確認して当時の20件を実行する。
+現行の`compare_history_rewrites_test.py`では、`test_autosquash_cli_validates_invariants_and_many_to_one_mapping`が別branchのOID・最終tree・制御件名を確かめる。
+`test_generated_mapping_is_consumed_by_public_record_commands`は対応表の公開記録への引渡しを確かめる。
 新しいGitでは通常のPATHで同じテストを実行し、参照更新機能が有効な環境でも局所指定が保護することを確認する。
 サブモジュールの作業状態を保持する局所設定は同じautosquashへ併用でき、履歴比較はGit 2.38以降だけの`patch-id --verbatim`を呼び出さない。
 

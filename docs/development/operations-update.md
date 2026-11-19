@@ -14,6 +14,8 @@ WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換�
 呼び出したコマンドと無関係なツールの自動導入が実行され、その失敗が更新処理全体を止めるためである。
 ツール自体はpost-apply工程で`mise install`を明示的に実行して導入するため、`MISE_AUTO_INSTALL=0`の影響を受けない。
 
+## `update-dotfiles`のgit pull工程と退避の回収
+
 `update-dotfiles`のgit pull工程には待ち時間の上限を設ける。
 環境変数を設定しない場合は600秒とし、環境変数`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`へ秒数を与えて調整する。
 `0`を与えると上限を無効化する。
@@ -23,17 +25,14 @@ GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が
 子孫を終了させるのは、`git`と`ssh`が出力のハンドルを保持したまま停止すると、直接の子を終了させるだけでは待機が終わらないためである。
 `chezmoi apply`工程へは上限を設けない。
 
-CLIを`agent-toolkit/bin/atk`から`agent-toolkit/scripts/atk`へ移す前に起動した`update-dotfiles`は、pullと未コミット内容の復元の後、旧パスの不在により退避の回収で終了コード1となる場合がある。
-「復元は成功しましたが退避の回収は未完了です」と表示された場合は、作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。
-確かめられたら、その実行が表示した完全なrefだけを`./agent-toolkit/scripts/atk worktree-stash drop <ref>`で回収し、`./bin/update-dotfiles`を再実行する。
-Windowsではそれぞれ`agent-toolkit\scripts\atk.cmd`と`bin\update-dotfiles.cmd`を使う。
+`update-dotfiles`が「復元は成功しましたが退避の回収は未完了です」と表示した場合は、作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。
+確かめられたら、その実行が表示した完全なrefだけを`atk worktree-stash drop <ref>`で回収し、`update-dotfiles`を再実行する。
 復元を確認できない場合はrefを保持して原因を調べる。
 
 ## dotfilesプラグインの適用と更新
 
 dotfiles本体の`plugins/<プラグイン名>/`へ拡張を置く。
 `plugins/`は本体のGit追跡対象から外れ、各プラグインは独立したGitリポジトリとしても管理できる。
-導入時の配置例は[README.md](../../README.md)の設定の説明を参照する。
 
 `chezmoi apply`の本体後処理が完了した後、プラグインをディレクトリ名順に適用する。
 各プラグインでは`.chezmoi-source/`があればchezmoiで強制適用し、続いて`post_apply.py`があればuvで実行する。
@@ -44,7 +43,6 @@ dotfiles本体の`plugins/<プラグイン名>/`へ拡張を置く。
 プラグインのapplyに失敗した場合は、そのプラグインの`post_apply.py`を省略する。
 他のプラグインの適用は続け、applyと後処理の失敗を集約して更新結果へ返す。
 失敗したプラグインの配布物・スクリプトとコマンド出力を確認し、原因を解消して`update-dotfiles`を再実行する。
-
 `update-dotfiles`は本体のpull後、chezmoiの初期化・適用前に、Git管理されたプラグインを名前順でpullする。
 Git管理されていないプラグインはそのまま適用する。
 pullの失敗とタイムアウトでは以後の更新を停止し、プラグイン名と出力を更新ログへ残す。
@@ -53,13 +51,11 @@ pullの失敗とタイムアウトでは以後の更新を停止し、プラグ�
 ## 導入モードと不要ツール・キャッシュの整理
 
 `agent_toolkit._common.dotfiles_mode`が初回導入前から使える標準ライブラリだけの設定取得機能を提供する。
-保存先は`atk config`と同じ`config.json`、キーは`dotfiles_mode`、値は`full`と`minimal`、既定値は`full`である。
 `install.sh --mode`・`install.ps1 -Mode`・`update-dotfiles --mode`・`dotfiles-post-apply --mode`は指定値を保存し、`AGENT_TOOLKIT_CONFIG_DOTFILES_MODE`で後続のテンプレートと後処理へ渡す。
 引数を省略した実行は環境変数、保存値、既定値の順に解決する。
 `atk config get dotfiles_mode`と`atk config set dotfiles_mode <mode>`は共有依存環境の準備前にも使える。
 
 配布用mise設定は`config.toml.tmpl`がモードに応じて生成する。
-actionlint・editorconfig-checker・git-cliff・pinact・shellcheck・shfmt・typosはリポジトリの`mise.toml`と`mise.lock`が保持する。
 `make update-mise-locks`は`update_global_mise.py`でfullの設定を一時展開し、配布用lockとテンプレート内のdotnet版を更新する。
 実行ホストの保存済みモードは変更しない。
 
@@ -69,44 +65,39 @@ mise・シェル基本ツール・tmux・pytools・dotfilesプラグインの反
 minimalのmise操作はホームを実行位置とし、作業ツリーの開発ツールとglobal nodeの追加を省く。
 
 `update-dotfiles`の本体が中断せずに終えた後は、full・minimalとも不要ツールと取得キャッシュを整理する。
+`--prune`は互換入力として受理し、指定の有無で整理結果を変えない。
+更新ランチャーが渡す`dotfiles-post-apply --prune-only-if-minimal`も互換名として残し、モードによらず更新と共通のロックを取得して整理する。
+単独の`dotfiles-post-apply`も通常工程の後に同じ整理をする。
 続行した失敗だけで終えた場合（終了コード1）も整理へ進み、本体の終了コードは変えない。
 Windowsでは常駐が使う管理Pythonの更新を見送る回が続くため、成功時だけに限ると整理とMCPの事前構築が行われない。
 本体は中断しなかった場合だけランチャーが渡したパスへ印を作成し、整理したpost-applyが印を回収する。
-`--prune`は互換入力として受理し、指定の有無で整理結果を変えない。
-更新ランチャーはuvの外から`dotfiles-post-apply --prune-only-if-minimal`へ元の引数を渡す。
-この内部引数も互換名として残し、モードによらず更新と共通のロックを取得して整理する。
-単独の`dotfiles-post-apply`も通常工程の後に同じ整理をする。
+Claude CodeとCodexの設定・会話履歴は削除対象に含めない。
 対象は現行のmise定義とモードから求める。
 fullでは他プロジェクトの設定と稼働プロセスが使う版を`mise prune`の判定で保持し、固定一覧による全版削除は行わない。
 minimalでは従来の対象外ランタイム・SDK・AI関連と作業ツリーのツールを、使用中保護を確認して除去する。
 取得キャッシュはuvの通常pruneと、実キャッシュルートごとの全消去成功から30日経過した場合のcleanを使い分ける。
 初回も全消去し、競合・失敗では成功日時を更新せず次の通常更新で再試行する。
+miseはcache prune、導入済みのnpmはcache verify、pnpmはstore pruneを使う。
+Cargoは標準のグローバルキャッシュ自動回収に委ね、通常更新での回収を保証しない。
+uvの整理では再取得が増え、オフラインで再利用できる範囲が減る場合がある。
+rustup・cargo・`.dotnet`は設定とユーザー導入物を残し、ランタイムとキャッシュの子ディレクトリを整理する。
 uv・mise・npm・pnpmの整理は更新から切り離した独立プロセスで行い、更新とprocess-loopはその終了を待たない。
-uvの整理は使用中なら30秒までロックを待ち、全消去はキャッシュの量に比例する時間、他のuvの操作もロックで待たせるためである。
 整理は更新ロックを解放してから独立プロセスを開始し、独立プロセスは更新ロックを待たずに取得して、取れなければ保留する。
+独立プロセスはuvの整理の後に更新ロックを解放してmise・npm・pnpmを整理し、整理専用のロックで二重起動を防ぐ。
+このため後続の更新はnpmの全件検査を待たない。
+Codexの管理daemonは公開CLIで停止し、通常セッションや対象実体を使うプロセスがあれば削除を開始せず、理由と再実行方法を返す。
+uvの整理は使用中なら30秒までロックを待ち、全消去はキャッシュの量に比例する時間、他のuvの操作もロックで待たせるためである。
 独立プロセスはuvの整理の間だけ更新ロックを保持し、実行中の更新や別の整理とuvの排他操作を重ねない。
 整理の間に始めたuvの操作（次の更新の`uv run`やMCPの依存環境のsyncなど）は、全消去が終わるまで待つ。
 独立プロセスは全消去を最長600秒で打ち切り、uvの既定のロック待ちの上限は300秒である。
 このため更新ランチャーは更新本体を起動するuvへ900秒の待機上限（`UV_LOCK_TIMEOUT`の未指定時）を渡し、管理Pythonの解決はキャッシュを使わずに待たない。
+独立プロセスはuvの整理の後に、キャッシュ内の旧MCP環境を事前構築する。
+MCP・hook・atkの外側のuv起動だけをno-cacheとし、共有依存環境の内側syncは共有キャッシュを利用する。
+起動済みの旧ランチャーへ設定は遡及しないため、活動中セッションを停止せず、再接続後の通常更新で回収する。
 全消去が300秒を超えた場合、その間に更新の外で始めたuvの操作（MCPの依存環境のsyncなど）はロック待ちで失敗しうる。
-独立プロセスはuvの整理後に更新ロックを解放してmise・npm・pnpmを整理する。
-整理専用のロックで二重起動を防ぎ、後続の更新はnpmの全件検査を待たない。
 対象なし・保留・失敗・完了の結果は時刻と診断とともに永続ログへ残し、状態領域の`uv-cache-maintenance.json`と`tools-cache-maintenance.json`に分けて記録する。
-想定外の例外も同じく記録する。
 次の更新の整理は記録を読み、完了を表示し、保留は永続ログのパスとともに案内する。
 失敗は次の操作と永続ログのパスとともに更新の失敗（終了コード1）として表示し、process-loopの失敗通知へ届ける。
 表示は失敗した回の次の更新になり、独立プロセスが整理を完了するか対象なしを記録するまで続く。
 保留は整理を試していないため失敗の記録を残し、最後の保留の時刻と診断を失敗の表示に添える。
-miseはcache prune、導入済みのnpmはcache verify、pnpmはstore pruneを使う。
-Cargoは標準のグローバルキャッシュ自動回収に委ね、通常更新での回収を保証しない。
-uvの整理では再取得が増え、オフラインで再利用できる範囲が減る場合がある。
-独立プロセスはuvの整理の後に、キャッシュ内の旧MCP環境を事前構築する。
-導入実体の整理に失敗して取得キャッシュを整理しない場合と、独立プロセスを起動できない場合は、整理したプロセスが事前構築する。
-Windowsで起動元のJobが離脱を許可しない場合は、離脱せずに独立プロセスを起動して警告を記録する。
-MCP・hook・atkの外側のuv起動だけをno-cacheとし、共有依存環境の内側syncは共有キャッシュを利用する。
-起動済みの旧ランチャーへ設定は遡及しないため、活動中セッションを停止せず、再接続後の通常更新で回収する。
-rustup・cargo・`.dotnet`は設定とユーザー導入物を残し、ランタイムとキャッシュの子ディレクトリを整理する。
-mise専用のdotnet-rootも削除する。
-Claude CodeとCodexの設定・会話履歴は削除対象に含めない。
-Codexの管理daemonは公開CLIで停止し、通常セッションや対象実体を使うプロセスがあれば削除を開始せず、理由と再実行方法を返す。
 `atk config set dotfiles_mode minimal`による設定保存だけでは削除せず、次の`update-dotfiles`の本体が中断せずに終えた後（続行した失敗だけの終了を含む）に整理する。

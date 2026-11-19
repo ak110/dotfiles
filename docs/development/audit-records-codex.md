@@ -10,17 +10,6 @@
 再検証では、長時間コマンドのyield結果が`session_id`を持ち`exit_code`を持たないこと、`text(r)`で両欄と本文が保持されること、同じ識別子で終了を回収できることを比べる。
 一次記録はリポジトリ外の作業記録にある。
 
-## docs/development/design-hosts-plugin-lifecycle.md：Claude CodeとCodexの規範配置：2026年9月13日
-
-2026年9月13日、Codex CLI 0.154.0でローカルmarketplaceを隔離`CODEX_HOME`へ導入して検証した。
-`agent-toolkit/`直下にAgent Plugins用`plugin.json`がある構成では、`.codex-plugin/plugin.json`のhook定義よりroot manifestが優先され、app-serverの`hooks/list`は0件を返した。
-root manifestを除いたwrapperから相対シンボリックリンクでhook・skill・実行資源へ接続した構成では、公式CLIのsnapshotに`.codex-plugin`だけが残り、リンク先は含まれなかった。
-全資源を通常ファイルとして含む`agent-toolkit-codex/`では、`hooks/list`が8イベントを返した。
-対象は`sessionStart`、`subagentStart`、`preToolUse`、`postToolUse`、`permissionRequest`、`userPromptSubmit`、`subagentStop`、`sessionEnd`である。
-project trustの有無で登録集合は変わらなかった。
-再検証ではCodex CLI 0.154.0で`pytools/_internal/codex_plugin_manifests_proxy_test.py::test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。
-隔離した2つの`CODEX_HOME`における登録集合、SessionStartの管理一時領域生成、SessionEndの回収を確認する。
-
 ## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日
 
 WI原本の2026年10月22日の観測（Codex CLI 0.163.0）では、起動直後の`ALL_TOOLS`へstdio MCPがまだ登録されず、20秒後の別の`exec`ではagents_serverの6ツールとpyfltrが現れた。

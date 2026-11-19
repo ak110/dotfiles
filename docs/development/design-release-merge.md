@@ -23,6 +23,7 @@ ruleset一覧には個別ref条件が含まれないため、同名候補の完�
 `required_linear_history`はマージコミット要件と両立しないため設定しない。
 
 GitHubのruleset API仕様は、2026年8月26日時点の[Rulesets REST API](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10)を参照する。
+
 workflowの`workflow_run`入力境界は同日時点の[workflow_runイベント仕様](https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#workflow_run)を参照する。
 
 ## マージ後の同期と検収
@@ -36,6 +37,7 @@ PRマージ後は、`origin/master`をマージコミットの基準として保
 以前は「commitが同一」「ツリーが同一」などの省略条件を個別に判定していたが、マージコミットをdevelopへ同期した直後にdevelop側の条件が成立せず、同じ中身のCIを待つ事象が起きたため撤去した。
 必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commitが一致することの確認は省略しない。
 Release runはmaster CIの成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論はRelease runの検収で確かめる。
+
 同期push後に`git fetch origin develop master`する。
 `git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`を個別に実行し、各出力の一意な短縮OIDを比較して、マージコミットとdevelopへ同期したコミットの一致を確認する。
 ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。
@@ -51,11 +53,3 @@ statuslineの差分がない場合はRelease成果物を検収しない。
 ローカルの同期状態をリリースの成立条件へ含める案は、公開対象がrefで固定された後も無関係な作業中の差分でリリースを停止させるため採用しない。
 
 PRマージ、branch同期およびRelease検収の詳細は、プロジェクトスキル[merge-pr](../../.claude/skills/merge-pr/SKILL.md)を実行時の手順とする。
-
-## 初回のbranch初期化
-
-初回branch初期化は1回だけ実行する。
-実装済みHEADのrefからローカル`develop`を作成して公開し、developのCIを確認する。
-`origin/master`の移行前OIDを保存し、初回リリースPRを作成しない。
-ローカル`develop`と`origin/develop`のOID一致を確認した後、ローカル`master`の削除直前OIDを記録して削除する。
-公開またはCIが失敗した場合はローカル`master`を削除せず、成立済みの外部状態と再開点を報告する。

@@ -54,7 +54,7 @@ fastから不足するツールがあれば、その成功だけで計画のlint
 ## develop-dotfiles：Git動作テストの状態準備：2026年10月9日
 
 出所はリポジトリ外に保存した対照結果と、導入commit `b20e6f20514a381648c730bbf828e2f8ac9e3522`、修正commit `f071d6348670a39e797e9dc54f6276e1e9dad8f6`の実装である。
-対象は`agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_test.py`の`TestBashGitRevParseShortMultiple.test_individual_revision_fix_succeeds`。
+対象は`agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_git_test.py`の`TestBashGitRevParseShortMultiple::test_individual_revision_fix_succeeds`。
 入力は`git rev-parse`のoption `--short`、`--short=12`、`--verify`、`--verify --quiet`とrevision `HEAD`、`HEAD~1`の8組である。
 
 | 履歴条件 | HEADの4入力 | HEAD~1の4入力 |

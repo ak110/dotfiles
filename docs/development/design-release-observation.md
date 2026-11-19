@@ -18,12 +18,6 @@ all-reposの公開・CI・確認・再開は対象リポジトリの担当が所
 ホームの常駐プログラムは担当別の返却と再開記録を保持し、対象へのGit操作は担当に任せる。
 1担当の回答待ちは他担当の成功を取り消す条件にせず、各担当の公開状態と未判定を別々に保持する。
 
-公開担当の完了後に`agent-toolkit:atk-mode/playbooks/report-completion.md`を読む。
-同スキルは元作業の完了報告を送り、続けて`atk agents-exit-session`を単独で実行する。
-振り返りはSessionStart/SessionEndを契機に起動する`/atk-mode review-session batch`が、非活動のセッションを非同期にまとめて分析する（`design-session-review-completion.md`「完了報告と振り返りの関係」）。
-その結果は作業完了報告とは独立して届ける。
-各工程は同じ完了本文を再生成しない。
-
 公開担当の返却後に、メインはベースbranch、追跡ref、最新HEADのCIと作業ツリーを確認する。
 前回push後に是正レーンまたは主作業ツリーのcommitが統合された場合は、全レーンの終了と書込主体の解放を確認してから追加差分だけを公開担当へ再び渡す。
 前回公開済み成果の版数更新、プロジェクト固有の公開後の操作、延期adoptを重ねず、最新HEADのpushとCI成功を同じセッションで検収する。

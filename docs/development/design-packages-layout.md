@@ -5,8 +5,6 @@
 ## agent-toolkit/agent_toolkit/のパッケージ構成
 
 `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置く。
-該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`とする。
-リモートホスト上で読み込んで実行するヘルパー2件（`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`）は`agent-toolkit/scripts/`に置く。
 それ以外の実装モジュールは、責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ収める。
 この6つを依存の層とし、この並び順を層の順序とする。
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
@@ -15,9 +13,9 @@
 ただし`_hooks`をimportできる起動スクリプトは`hook.py`だけとする。
 `_hooks`はhookの実装だけを持ち、シェルのコマンド文字列の解析やセッション状態ファイルの読み書きのようにhook以外からも使う処理は`_common`などの前の層へ置く。
 テスト専用の共有ヘルパーは`_testing`へ収める。
-`_testing`は層の順序に含めない例外とし、`*_test.py`・`conftest.py`と`_testing`配下のモジュールだけがimportできる。
 利用側がテストだけのモジュール（計画本文のテスト入力の組み立て、hook出力契約のJSON Schemaなど）も`_testing`へ置き、本番のサブパッケージに残さない。
 Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repository.py`に1つ置き、各テストは同じ手順を個別に持たない。
+`_testing`は層の順序に含めない例外とし、`*_test.py`・`conftest.py`と`_testing`配下のモジュールだけがimportできる。
 
 構造の目的は、モジュールの所属をディレクトリで表し、ファイル名の接頭辞を前提としない参照へ変えることである。
 接頭辞による群分けは、群に属するモジュールが増えるほど一覧の見通しを損なう。
@@ -25,11 +23,9 @@ Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repositor
 サブパッケージは、所属と依存の向きの双方をディレクトリ階層で表す。
 
 これらのスクリプトだけを直下へ残すのは、ファイルパスが配布物の外部契約であるためである。
-`agent-toolkit/hooks/hooks.json`・`agent-toolkit/mcp.json`・`agent-toolkit/scripts/atk`と2つのインストーラーは、共通の`scripts/launch.py`へ起動対象のパスを渡す。
-リモートホスト側のヘルパーは、リモートホスト上の固定パスから本文を読み込んで実行する。
+直下に置く公開ファイルは接頭辞`_`を付けずに命名する。
 直下のスクリプトを含む全てのモジュールをサブパッケージへ移す案は、これらの外部契約を同時に変えるため採らない。
 
-直下に置く公開ファイルは接頭辞`_`を付けずに命名する。
 旧`_managed_temp.py`は、標準コマンドで一時領域を扱う2026年10月25日のユーザー指示に従って撤去した。
 
 サブパッケージ内のimportには相対importを使わず絶対importを使う。
@@ -38,16 +34,13 @@ Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repositor
 同スクリプトは層の順序に反するimportと、`*_test.py`・`conftest.py`・`_testing`配下以外のモジュールからの`_testing`のimportも検出して失敗する。
 同スクリプトは`agent-toolkit/agent_toolkit/`直下に公開スクリプト、`__init__.py`、`conftest.py`およびテスト以外のモジュールがある場合も失敗する。
 層の順序の判定はサブパッケージに加えて、直下の公開スクリプトと`skills/*/scripts/`配下の非テストのスクリプトも走査し、`hook.py`以外の起動スクリプトからの`_hooks`のimportを失敗にする。
+`_testing`配下をこの走査から除くのは、テスト専用の依存を使う場所が`_testing`であり、本番のコードから`_testing`へのimportを前述の走査が失敗にするため、開発用の依存が本番のコードへ届かないからである。
 同じ走査で、`_testing`配下を除く非テストのモジュールが開発用の依存グループのパッケージ（`jsonschema`など）とpytools専用のパッケージをimportした場合も失敗にする。
 対象は、リポジトリ直下の`pyproject.toml`が宣言し、`agent-toolkit/scripts/launch.py.lock`に無いパッケージである。
 開発環境には開発用の依存が導入済みのためテストは成功するが、配布先の環境には無く、そのモジュールを読み込んだ時点で失敗するためである。
-`_testing`配下をこの走査から除くのは、テスト専用の依存を使う場所が`_testing`であり、本番のコードから`_testing`へのimportを前述の走査が失敗にするため、開発用の依存が本番のコードへ届かないからである。
 
 モジュール名からは所属を表す接頭辞を除く。
 ただしPythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。
-`help`・`format`・`list`のように組込み名と重なる名前は、担う責務を表す語へ置き換える。
-
-対象モジュールの動作テストは、`develop-dotfiles/references/verification.md`「テスト配置」に従い、同じディレクトリへ`<モジュール名>_test.py`として置く。
 `--import-mode`を指定せずにpytestを実行すると（`prepend`）、パッケージに属するテストはパッケージ名を含む一意なモジュール名で読み込まれる。
 そのため、直下へ平坦に並べていたときに必要だったファイル名の一意性の制約が外れる。
 既存のファイル名は維持し、この緩和を理由とする改名はしない。
@@ -72,7 +65,6 @@ ruffには特定の規則のファイル単位の抑止だけを禁じる設定�
 
 `_hooks`の実装モジュールは、関数の実行時までだけ使う依存を`lazy import`・`lazy from`で読み込む。
 hookはイベントごとに別プロセスで起動し、入力に応じて処理分岐の大半を実行せずに終わる。
-それでもトップレベルのimportは初期化時に全て実行されるため、例えばPreToolUseは対象外の入力でも委譲の観測や報告の解析の依存まで読み込んでいた。
 Python 3.15はPEP 810に従い、`lazy`を付けたimportを初回の使用時に読み込む。
 dotfilesとagent-toolkitのPython下限は3.15とする。
 CLIと`pytools/`の各コマンドも、ヘルプや補完など一部の処理でだけ使う依存に同じ書き方を使う。
@@ -84,15 +76,15 @@ CLIと`pytools/`の各コマンドも、ヘルプや補完など一部の処理�
 構文を解釈できない旧Pythonでも同じファイルを通常のimportとして実行できることが、列挙方式を採用した理由である。
 Python 3.15以降だけを前提にするユーザーの要求を受けて、この判断を改めた。
 下限が3.15になったため旧版向けの互換は不要となり、列挙とimport文が離れた書き方は、importの追加・削除・改名の際に列挙だけが古いまま残る原因になる。
+各import文へ`lazy`を付ける書き方は、遅延の対象を文そのものが示すため、この不一致が生じない。
 例えば`from <パッケージ> import <サブモジュール>`の形で読むサブモジュールを列挙しても遅延されない。
 列挙と比べる名前は文のモジュール名だからである。
 Python 3.15.0で`from xml import dom`に`xml.dom`を列挙すると通常のmoduleとなり、`xml`の列挙と`lazy from`では遅延される。
 宣言と実際の読み込みのこの不一致は、列挙の文面からは見分けにくい。
-各import文へ`lazy`を付ける書き方は、遅延の対象を文そのものが示すため、この不一致が生じない。
 
 importを関数の中へ移す案は、トップレベルでimportする記述規約から外れ、関数ごとに抑制コメントを要するため採らない。
 全プロセスの遅延を切り替える`-X lazy_imports=all`、独自のloaderと読み込み結果の永続キャッシュは、モジュールごとの指定だけで目的の読み込み数の削減を得られるため設けない。
-`agent-toolkit/agent_toolkit/hook_test.py`は公開`hook.py`を子プロセスで実行し、遅延を無効化した対照より読み込むモジュールが少なく、応答が同じであることを確かめる。
+`agent-toolkit/agent_toolkit/hook_inventory_test.py`の`TestLazyDependencyLoading`は公開`hook.py`を子プロセスで実行し、遅延を無効化した対照より読み込むモジュールが少なく、応答が同じであることを確かめる。
 PEP 810は無効化の指定として`-X lazy_imports=none`を記すが、Python 3.15.0はこの値を拒否するため、対照は`sys.set_lazy_imports_filter`へ常に偽を返す関数を渡して作成する。
 
 ## agent-toolkitの依存の宣言と開発環境
@@ -117,7 +109,6 @@ Claude Codeのdirectory型marketplaceは、これを版ディレクトリへ複�
 - `launch.py.lock`が宣言と一致すること
 
 開発用とpytools専用の依存をagent_toolkitの本番コードがimportする誤りは、統合した環境ではテストで検出できないため`scripts/check_script_imports.py`が検出する。
-
 直下から検査するため、mypyは`agent-toolkit/`を`mypy_path`に加えて`agent_toolkit`を解決する。
 共有キャッシュ（`MYPY_CACHE_DIR`）に残る旧構成の保存済み情報は誤ったattr-definedを再生するため、キャッシュの互換性に含まれる設定値を旧構成と変えて使わせない（直下の`pyproject.toml`の注記）。
 

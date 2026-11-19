@@ -75,15 +75,11 @@ v2.1.296: Changed the default limit on MCP tool descriptions sent up front and o
 
 agents_serverは全説明とinstructionsを初期送信の4,096文字以内に保つ。
 検索後の16,384文字も同時に満たすため、検索の有無で説明を変えない。
-説明長とinstructions長は`agent-toolkit/agent_toolkit/_agents_server/tool_descriptions_test.py`の次の2件が確かめる。
-
-- `test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`
-- `test_lightweight_selection_reaches_instructions_and_mode_schema`
-
-説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは次の2件が確かめる。
-
-- `launch_prompts_test.py::test_explore_capabilities_are_shared_with_public_schema`
-- `mcp_tools_test.py::test_public_start_schema_delivers_explore_capabilities`
+説明長とinstructions長は`_agents_server/tool_descriptions_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が確かめる。
+説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは、`tool_descriptions.py`が`start`の説明へこの定数を連結する構成と、同じ説明長の試験で保つ。
+登録済み`start`の説明と`mode`引数への到達、軽量modeの選択基準、起動プロンプトへの能力説明の有無を確かめていた3件の試験は、定数の写しを含む試験の整理として2026年11月12日の`7d138ed8d`で除いた。
+現行の試験が確かめるのは長さだけである。
+配送内容の再検証は、公開schemaの`start`の説明と`mode`引数を取得し、組立箇所（`tool_descriptions.py`と起動プロンプトの組立）と照合して行う。
 
 再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。
 値が変わった場合は同書の「ホスト固有の条件」、`tool_descriptions.py`の`START_DESCRIPTION`直前のコメントと前記のテストを改める。
@@ -110,15 +106,3 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 
 再検証は後続版の本体を`develop-dotfiles`「ホスト本体のバイナリの検索」の手順で`mayHaveRun`と`isConcurrencySafe(){return`を検索し、再試行と並行実行の条件を比べる。
 条件が変わった場合は同書の「ホスト固有の条件」を改める。
-
-## docs/development/design-hosts-rules-delivery.md：agents_serverの説明整理後の水準：2026年11月15日
-
-各ツール説明とserver instructionsの4,096文字の上限に対し、超過を是正した後の目安を各3,200文字以下とする。
-これはエージェントの選定値であり、ホストの制限や通常の追記量の実測値ではない。
-必須入力・modeの選択・最小例・結果受領の説明を残す固定部分と、引数自身の説明へ整理できる部分を区別する。
-896文字の余裕は数回の短い説明段落の追記を見込み、行数の60%を一律適用せずに選んだ。
-共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions.md`「記述量の水準」に従う。
-上限以下のstart・showなどをこの目安だけで削減せず、既存のtool_descriptions_test.pyの合否上限と全引数説明の検査を保つ。
-2026年11月15日の登録済み説明の手動観測では、startは3,650文字、showは2,685文字、instructionsは1,954文字だった。
-全6ツールとinstructionsが4,096文字以下であり、上限超過が無いため、3,200文字の目安を理由にstartを削減しなかった。
-超過時の再検証では、同じlist_toolsの登録済み説明とinstructionsを取得し、必須引数・最小例を残して整理後の水準へ到達したかを確認する。
