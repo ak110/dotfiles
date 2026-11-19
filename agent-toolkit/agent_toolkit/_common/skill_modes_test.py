@@ -26,6 +26,24 @@ def test_split_mode(skill, arguments, mode, remaining):
     assert skill_modes.split_mode(f"agent-toolkit:{skill}", arguments) == (mode, remaining)
 
 
+def test_bare_work_name_has_the_same_scope_as_qualified_name():
+    scope = skill_modes.invocation_scope
+    assert (
+        scope("review-session", "batch")
+        == scope("agent-toolkit:review-session", "batch")
+        == "agent-toolkit:review-session batch"
+    )
+    assert scope("review-session", None) == "agent-toolkit:review-session"
+    assert scope("other", "batch") == "other"
+
+
+@pytest.mark.parametrize(
+    ("host", "command"), [("claude", "/atk-mode review-session batch"), ("codex", "$atk-mode review-session batch")]
+)
+def test_entry_command_follows_host_form(host, command):
+    assert skill_modes.entry_command(host, "review-session batch") == command
+
+
 def test_scope_ignores_free_text_and_separates_modes():
     scope = skill_modes.invocation_scope
     assert scope(skill_modes.PROCESS_WI, "single-lane A") == scope(skill_modes.PROCESS_WI, "single-lane B")

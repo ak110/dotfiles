@@ -43,6 +43,7 @@ from agent_toolkit._common import (
     session_activity,
     session_registry,
     session_review,
+    skill_modes,
 )
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 lazy from agent_toolkit._atk import run_skill_state
@@ -67,7 +68,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         return None
     if event not in {"SessionStart", "SessionEnd"}:
         return None
-    notice = session_review.launch_notice() if event == "SessionStart" else None
+    notice = session_review.launch_notice(host) if event == "SessionStart" else None
     count = len(session_review.pending())
     if not count:
         return notice
@@ -75,7 +76,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         if event == "SessionStart":
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                "まとめて振り返る場合は`/atk-mode review-session batch`を実行せよ。"
+                f"まとめて振り返る場合は`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
             )
             return "\n".join(part for part in (notice, waiting) if part)
         return notice

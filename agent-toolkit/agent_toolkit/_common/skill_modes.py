@@ -52,6 +52,16 @@ def resolve_work(skill: str, arguments: str | None) -> tuple[str, str | None]:
     return f"agent-toolkit:{match[1]}", (arguments or "")[match.end() :]
 
 
+def qualified(skill: str) -> str:
+    """入口配下の作業の無修飾の名前を`agent-toolkit:<作業>`へそろえる。他の名前はそのまま返す。"""
+    return f"agent-toolkit:{skill}" if skill in ENTRY_WORKS else skill
+
+
+def entry_command(host: str, arguments: str) -> str:
+    """ホストがユーザーの入力として受け付ける、入口`atk-mode`の起動の形を返す。Codexは`$`、それ以外は`/`で始める。"""
+    return f"{'$' if host == 'codex' else '/'}{ENTRY_SKILL} {arguments}"
+
+
 def split_mode(skill: str, arguments: str | None) -> tuple[str | None, str | None]:
     """先頭語が完全一致する場合だけモードとして消費する。"""
     match = re.match(r"\s*(\S+)(?:\s+|$)", arguments or "")
@@ -62,6 +72,7 @@ def split_mode(skill: str, arguments: str | None) -> tuple[str | None, str | Non
 
 def invocation_scope(skill: str, arguments: str | None) -> str:
     """自由記述の違いに依存しない起動単位を返す。"""
+    skill = qualified(skill)
     mode, _ = split_mode(skill, arguments)
     return f"{skill} {mode}" if mode else skill
 

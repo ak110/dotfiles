@@ -135,9 +135,11 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
     if args.skill is not None:
+        # 無修飾の作業名（`review-session`など）と入口`atk-mode`への作業の名指しを、どちらも作業の修飾名へそろえる。
+        # 起動単位・起動入力・目的文・報告の保存・再開時の比較で名前を一致させるためである。
+        args.skill = skill_modes.qualified(args.skill)
         skill, arguments = skill_modes.resolve_work(args.skill, args.args)
         if skill != args.skill:
-            # 入口`atk-mode`への作業の名指しは、作業の修飾名での起動と同じ起動単位・起動入力・目的文・再開時の比較にする。
             args.skill, args.args = skill, arguments or None
     if identifier := getattr(args, "resume", None):
         try:

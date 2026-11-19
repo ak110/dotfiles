@@ -21,16 +21,19 @@ __all__ = ["_engine_env"]
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.456秒。"),
 )
 @pytest.mark.parametrize(
-    "engine,arguments",
+    "engine,arguments,skill",
     [
-        ("claude", None),
-        ("claude", "auto"),
-        ("claude", "batchx"),
-        ("claude", "batch auto 任意の着眼点"),
-        ("codex", "batch auto 任意の着眼点"),
+        ("claude", None, "agent-toolkit:review-session"),
+        ("claude", "auto", "agent-toolkit:review-session"),
+        ("claude", "batchx", "agent-toolkit:review-session"),
+        ("claude", "batch auto 任意の着眼点", "agent-toolkit:review-session"),
+        ("codex", "batch auto 任意の着眼点", "agent-toolkit:review-session"),
+        ("claude", "batch auto 任意の着眼点", "review-session"),
     ],
 )
-def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, monkeypatch, capsys, engine, arguments) -> None:
+def test_batch_uses_existing_runner_and_report_receipt(
+    engine_env, tmp_path, monkeypatch, capsys, engine, arguments, skill
+) -> None:
     """2会話の実prepareから偽ホスト・同期済み報告・範囲確定まで公開CLIで検証する。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     for name in ("one", "two"):
@@ -51,7 +54,7 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
     options = ["--target-repo", str(engine_env.repo)]
     if arguments is not None:
         options.extend(["--args", arguments])
-    code, _out, error = _run([*options, "agent-toolkit:review-session"], capsys)
+    code, _out, error = _run([*options, skill], capsys)
     assert code == 0, error
     assert len(_records(engine_env, "session")) == 1
     manifests = list((session_review.directory() / "runs").glob("*.json"))
