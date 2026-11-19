@@ -8,9 +8,10 @@ import subprocess
 import time
 from collections.abc import Mapping
 
-from agent_toolkit._common import effort, session_registry
+from agent_toolkit._common import session_registry
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import agent_id, document_reads, notice
+lazy from agent_toolkit._common import effort
 
 THRESHOLD = 250_000
 STATE_KEY = "normative_read_volume"

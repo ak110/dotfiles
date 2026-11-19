@@ -20,6 +20,12 @@
 
 別のホストへは`ssh {{ $peer }}`で、鍵認証により対話なしに接続できる（{{ $peer }}は{{ $peerOs }}）。
 {{ if eq $peer "stheno" }}sthenoにsshで入ったときの既定シェルはcmd.exeである。
+sshのセッションはUACで昇格したトークンで動き、そこで書いたファイルは普段の非昇格のプロセスから読めなくなる。
+ログや設定の読み取りはsshで直接行ってよい。
+`update-dotfiles`、`codex`、`claude`、`uv`、ファイルの作成など状態を書く処理は、`ssh-unelevated stheno <PowerShellスクリプトのファイル>`（省略時は標準入力）で非昇格の権限で実行する（ユーザーがsthenoにログオンしている必要がある）。
+`update-dotfiles`のような長い処理では`--timeout`（秒）を指定する。
+手元でCtrl-Cしても接続先の処理は上限まで続く。
+詳細は`ssh-unelevated --help`にある。
 {{ end -}}
 接続できるかは実行時に保証されないため、失敗したら診断し、行えなかった操作と理由を残作業として報告する。
 

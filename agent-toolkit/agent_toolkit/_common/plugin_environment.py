@@ -8,7 +8,6 @@
 import errno
 import hashlib
 import json
-import logging
 import os
 import platform
 import shlex
@@ -18,9 +17,10 @@ from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
+lazy import logging
 
 from agent_toolkit._common import inherited_venv
-from agent_toolkit._common.shell_tokens import atk_launcher_name
+lazy from agent_toolkit._common.shell_tokens import atk_launcher_name
 
 RUNTIME_DATA_ENV = "AGENT_TOOLKIT_RUNTIME_DATA"
 RUNTIME_ENVIRONMENT_ENV = inherited_venv.PLUGIN_RUNTIME_ENVIRONMENT_KEY

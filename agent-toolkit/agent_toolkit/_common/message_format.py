@@ -13,7 +13,7 @@ import contextlib
 import re
 from collections.abc import Generator, Mapping
 from typing import NamedTuple
-from xml.sax.saxutils import quoteattr
+lazy from xml.sax.saxutils import quoteattr
 
 AUTO_INSERTED_ELEMENT = "atk-auto"
 LEGACY_AUTO_INSERTED_ELEMENT = "agent-toolkit-auto-inserted"
