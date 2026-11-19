@@ -7,7 +7,7 @@ import pathlib
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server.launch_requests_materials import _check_explore_materials
+from agent_toolkit._agents_server.launch_requests_materials import _check_explore_materials, check_lane_owner_inputs
 from agent_toolkit._common import read_triggers, task_documents
 from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
@@ -79,6 +79,7 @@ def check_declared_inputs(
             ),
         )
     _check_explore_materials(task_document, extra_params)
+    check_lane_owner_inputs(extra_params)
 
 
 def _input_contract_guidance(task_document: pathlib.Path) -> str:

@@ -6,6 +6,7 @@ from __future__ import annotations
 # pylint: disable=protected-access
 import json
 import pathlib
+import re
 from unittest.mock import AsyncMock
 
 import pytest
@@ -192,6 +193,32 @@ def test_lane_owner_launch_without_lane_input_is_rejected(missing: str, tmp_path
     del extra_params[missing]
 
     with pytest.raises(ActionableError, match=rf"必須入力が欠けています: {missing};"):
+        launch_requests._validate_required_prompt_inputs(task_document, extra_params)
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "rejected", "reason"),
+    [
+        ("所有登録", "lane-01.json", "所有登録", "所有登録ファイルを絶対パスで読めない"),
+        ("所有登録", "{root}/missing.json", "所有登録", "所有登録ファイルを絶対パスで読めない"),
+        ("所有登録", "{root}/other-lane.json", "レーン識別子", "`lane`（lane-02）と一致しない"),
+        ("統合先branch", "main", "統合先branch", "`base_branch`（develop）と一致しない"),
+        ("統合先worktree", "{root}/missing", "統合先worktree", "実在するディレクトリの絶対パスではない"),
+        ("レーン開始時刻", "2026-11-15T13:17:00", "レーン開始時刻", "時差付きISO 8601"),
+        ("レーン開始時刻", "2999-01-01T00:00:00+09:00", "レーン開始時刻", "現在時刻より後"),
+    ],
+)
+def test_lane_owner_launch_with_wrong_value_is_rejected(
+    name: str, value: str, rejected: str, reason: str, tmp_path: pathlib.Path
+) -> None:
+    """統括が渡したレーンの値が所有登録と合わないか形式が不正なら、起動前に入力名と理由を示して拒否する。"""
+    task_document = launch_requests.resolve_task_document_path("exec")
+    extra_params = _observed_input_params("exec.subagent.md", tmp_path)
+    assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
+    (tmp_path / "other-lane.json").write_text('{"lane": "lane-02", "base_branch": "develop"}\n', encoding="utf-8")
+    extra_params[name] = value.format(root=tmp_path)
+
+    with pytest.raises(ActionableError, match=rf"レーン担当の入力が不成立です: {rejected}: .*{re.escape(reason)}"):
         launch_requests._validate_required_prompt_inputs(task_document, extra_params)
 
 

@@ -1,4 +1,4 @@
-"""レビューと探索の起動に必要な保存資料の検査。"""
+"""レビューと探索の起動に必要な保存資料と、レーン担当の資源の入力値の検査。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server.launch_requests_preflight import PREFLIGHT_TIMEOUT
+from agent_toolkit._atk import lane_integration_input
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter, headings
 from agent_toolkit._atk.wi.constants import normalized_wi_type
@@ -292,6 +293,45 @@ def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, s
         evidence = params["根拠の所在"].strip()
         if evidence.startswith(("/", "`/", "[")) or pathlib.PureWindowsPath(evidence).is_absolute():
             _material_paths("根拠の所在", evidence)
+
+
+def _lane_input_error(name: str, reason: str) -> ActionableError:
+    return ActionableError(
+        f"レーン担当の入力が不成立です: {name}: {reason}。委譲先は起動していない。",
+        next_action=(
+            "`atk lane create`の出力（record_path、base_branch、lane）と記録した`レーン開始時刻`から値を取り直し、"
+            "同じ入力で`start`を再発行する"
+        ),
+    )
+
+
+def check_lane_owner_inputs(params: Mapping[str, str]) -> None:
+    """渡されたレーンの資源と統合先の値を、所有登録と照らして起動前に検査する。
+
+    検査は値の形式と所有登録との一致までで、所有登録がこの担当のレーンのものかは`レーン識別子`が渡された時だけ確かめる。
+    """
+    if "所有登録" in params:
+        path = pathlib.Path(params["所有登録"])
+        try:
+            record = json.loads(path.read_text(encoding="utf-8")) if path.is_absolute() else None
+        except OSError, UnicodeError, json.JSONDecodeError:
+            record = None
+        if not isinstance(record, dict):
+            raise _lane_input_error("所有登録", f"`atk lane create`の所有登録ファイルを絶対パスで読めない: {path}")
+        for name, key in (("レーン識別子", "lane"), ("統合先branch", "base_branch")):
+            if name in params and params[name] != record.get(key):
+                raise _lane_input_error(name, f"所有登録の`{key}`（{record.get(key)}）と一致しない: {params[name]}")
+    if "統合先worktree" in params:
+        target = pathlib.Path(params["統合先worktree"])
+        if not target.is_absolute() or not target.is_dir():
+            raise _lane_input_error("統合先worktree", f"実在するディレクトリの絶対パスではない: {target}")
+    if "レーン開始時刻" in params:
+        try:
+            lane_integration_input.check_lane_started_before_now(
+                lane_integration_input.lane_started_at(params["レーン開始時刻"])
+            )
+        except ValueError as error:
+            raise _lane_input_error("レーン開始時刻", str(error)) from error
 
 
 _REVIEW_BASES = ("計画", "CI記録", "WI")
