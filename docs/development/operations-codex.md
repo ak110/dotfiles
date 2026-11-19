@@ -14,6 +14,7 @@ WindowsでCodexのセッション（`codex_processes.py`の`session`）が実行
 
 Windowsでは、導入が置き換えるスタンドアローン版（`packages/standalone/`）と、除去するmise版・npm版の配置から起動したプロセスがある間は、導入と除去を延期する。
 判定は`setup_cli_common.is_windows_cli_running`がプロセスの実行ファイルと、node・miseが起動したスクリプトの所在で行い、所在を読めず衝突を否定できないプロセスでも延期する。
+mise版・npm版の一覧を取得できない場合は、除去する配置が無いとは扱わず、Codexのスクリプトを起動したnode・miseと、起動したスクリプトを読めないnode・miseがあれば延期する。
 
 ## Codex診断ログの通常ストレージ復元
 

@@ -264,6 +264,7 @@ def _install_npm_codex(
         ("desktop-app", False),
         ("npx-session", False),
         ("standalone-session", True),
+        ("standalone-helper-exe-denied", True),
         ("npm-session", True),
         ("mise-session", True),
         ("mise-session-exe-denied", True),
@@ -293,6 +294,8 @@ def test_windows_defers_only_while_files_to_replace_or_remove_run(
             windows_process(rf"{_NPX_CODEX}\{_NATIVE_IN_PACKAGE}"),
         ],
         "standalone-session": [windows_process(str(standalone / "bin" / "codex.exe"))],
+        # 会話が起動した同梱の実行体で、実行ファイルだけを読めない。
+        "standalone-helper-exe-denied": [windows_process(str(standalone / "codex-path" / "rg.exe"), denied=["exe"])],
         "npm-session": [
             windows_process(_NODE, str(npm_package / "bin" / "codex.js")),
             windows_process(str(npm_package / _NATIVE_IN_PACKAGE.replace("\\", "/"))),
@@ -323,6 +326,55 @@ def test_windows_defers_only_while_files_to_replace_or_remove_run(
     assert bool(requests) is not deferred
     assert ("実行中のため導入と移行を次回へ延期" in caplog.text) is deferred
     assert not any("uninstall" in command for command, _ in calls)
+
+
+@pytest.mark.parametrize("failing_query", ["mise", "npm"])
+@pytest.mark.parametrize(("scenario", "deferred"), [("daemon-and-update-loop", False), ("node-cmdline-denied", True)])
+def test_windows_defers_when_files_to_remove_cannot_be_listed(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, failing_query: str, scenario: str, deferred: bool
+) -> None:
+    """削除先の照会に失敗した場合は削除先が無いとは扱わず、削除する版の実行を否定できないプロセスがあれば延期する。
+
+    照会の失敗が一時的だと、導入後の移行の照会は成功し、実行中の版を削除する。
+    """
+    _isolate(monkeypatch, tmp_path, "win32")
+    monkeypatch.setattr(setup_cli_common, "is_windows_cli_running", _IS_WINDOWS_CLI_RUNNING)
+    monkeypatch.setattr(prune_codex_packages, "run", post_apply_outcome.PostApplyOutcome)
+    monkeypatch.setattr(setup_codex_cli, "install_recovery_launcher", lambda *args, **kwargs: None)
+    answer_npm = None
+    if failing_query == "npm":
+        _, answer_npm = _install_npm_codex(monkeypatch, tmp_path)
+    processes = {
+        "daemon-and-update-loop": [
+            windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"),
+            windows_process(_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"),
+        ],
+        # 旧版のCodexを起動したnodeで、起動したスクリプトを読めない。
+        "node-cmdline-denied": [windows_process(_NODE, denied=["cmdline"])],
+    }[scenario]
+    patch_windows_processes(monkeypatch, processes)
+    calls: list[_Call] = []
+    launcher = codex_runtime.standalone_root() / "current" / "bin" / "codex.exe"
+    fake_run = _make_fake_run(calls, launcher=launcher, mise_list=_MISE_LISTING if failing_query == "mise" else "[]")
+    query = {"mise": ["ls", "--json"], "npm": ["root", "--global"]}[failing_query]
+    queried: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str] | None:
+        if command[1:3] == query:
+            queried.append(command)
+            if len(queried) == 1:
+                return subprocess.CompletedProcess(command, 1, "", "temporary failure")
+        return (answer_npm(command) if answer_npm else None) or fake_run(command, **kwargs)
+
+    monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", run)
+    requests: list[httpx.Request] = []
+
+    with caplog.at_level(logging.INFO), _make_client(requests) as client:
+        setup_codex_cli.run(client)
+
+    assert bool(requests) is not deferred
+    assert ("実行中のため導入と移行を次回へ延期" in caplog.text) is deferred
+    assert any(command[1] == "uninstall" for command, _ in calls) is not deferred
 
 
 @pytest.mark.parametrize("status_code", [429, 500, 599])

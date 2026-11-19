@@ -135,7 +135,10 @@ def migrate_npm_launchers(
         extra_search_directories=extra_search_directories,
         excluded_launchers=(canonical_launcher, *excluded_launchers),
     ):
-        owner = _owning_npm_package(package_name, launcher)
+        try:
+            owner = _owning_npm_package(package_name, launcher)
+        except _NpmQueryError as error:
+            owner = _unconfirmed_launcher_message(launcher, str(error))
         if isinstance(owner, str):
             logger.warning(log_format.format_status(cli_name, owner))
             continue
@@ -164,20 +167,25 @@ def npm_packages_to_remove(
     *,
     extra_search_directories: Iterable[Path] = (),
     excluded_launchers: Iterable[Path] = (),
-) -> tuple[Path, ...]:
+) -> tuple[Path, ...] | None:
     """`migrate_npm_launchers`が`npm uninstall --global`で削除するパッケージのディレクトリを、削除せずに返す。
 
     引数は`migrate_npm_launchers`と同じ意味を持つ。正規の導入先は`canonical_prefix`の配下として除く。
+    npmの導入先の照会に失敗した場合は、削除先を確定できないことを`None`で表す。
+    後の`migrate_npm_launchers`の照会が成功すると削除するため、削除先が無いこととは区別する。
     """
-    owners = (
-        _owning_npm_package(package_name, launcher)
-        for launcher in _iter_noncanonical_launchers(
-            cli_name,
-            canonical_prefix,
-            extra_search_directories=extra_search_directories,
-            excluded_launchers=excluded_launchers,
-        )
-    )
+    try:
+        owners = [
+            _owning_npm_package(package_name, launcher)
+            for launcher in _iter_noncanonical_launchers(
+                cli_name,
+                canonical_prefix,
+                extra_search_directories=extra_search_directories,
+                excluded_launchers=excluded_launchers,
+            )
+        ]
+    except _NpmQueryError:
+        return None
     return tuple(owner[1] for owner in owners if not isinstance(owner, str))
 
 
@@ -186,11 +194,12 @@ class CliFiles:
     """導入・更新・移行が書き換えるCLIの配置。
 
     `replaced`は導入・更新が置き換えるファイルかディレクトリ、`removed`は移行が削除するnpm版・mise版のパッケージである。
+    `removed`の`None`は、削除先の照会に失敗し、削除するパッケージを確定できないことを表す。
     Windowsでは、ここから起動したプロセスの実行中に置き換えや削除をすると、実行中のファイルと衝突する。
     """
 
     replaced: tuple[Path, ...]
-    removed: tuple[Path, ...] = ()
+    removed: tuple[Path, ...] | None = ()
 
 
 def is_windows_cli_running(cli_name: str, files: Callable[[], CliFiles]) -> bool:
@@ -204,7 +213,8 @@ def is_windows_cli_running(cli_name: str, files: Callable[[], CliFiles]) -> bool
     if sys.platform != "win32":
         return False
     targets = files()
-    replaced, removed = _windows_paths(targets.replaced), _windows_paths(targets.removed)
+    replaced = _windows_paths(targets.replaced)
+    removed = None if targets.removed is None else _windows_paths(targets.removed)
     # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
     # 同じ後処理の中の先行する列挙が残した値を使わないよう、現在のPIDから新しく構築したProcessで判定する。
     for listed in psutil.process_iter():
@@ -221,10 +231,15 @@ def is_windows_cli_running(cli_name: str, files: Callable[[], CliFiles]) -> bool
     return False
 
 
+class _NpmQueryError(Exception):
+    """npmのグローバル導入先の照会に失敗した。削除するパッケージが無いこととは区別する。"""
+
+
 def _owning_npm_package(package_name: str, launcher: Path) -> tuple[Path, Path] | str:
     """ランチャーを導入したnpmと、そのnpmが削除するパッケージのディレクトリを返す。
 
     帰属を確認できず保持する場合は、保持の理由を述べる警告文を返す。
+    npmの導入先の照会に失敗した場合は`_NpmQueryError`を送出する。
     """
     npm = _adjacent_npm(launcher.parent)
     if npm is None:
@@ -348,6 +363,7 @@ def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None 
 
     解決できない場合は`None`を返す。`unresolved`を渡した場合は、解決できなかった情報を
     そのリストへ1件追加する（呼び出し元がユーザーへ保持の理由を示すために使う）。
+    npmの導入先の照会に失敗した場合は`_NpmQueryError`を送出する。
     """
     prefix_result = common.run_subprocess([str(npm), "prefix", "--global"], timeout=common.COMMAND_TIMEOUT, tag=npm.name)
     root_result = common.run_subprocess([str(npm), "root", "--global"], timeout=common.COMMAND_TIMEOUT, tag=npm.name)
@@ -359,11 +375,9 @@ def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None 
         or root_result.returncode != 0
         or not (root_result.stdout or "").strip()
     ):
-        _record_unresolved(
-            unresolved,
-            f"npmの導入先を取得できない: prefix={_command_output(prefix_result)} root={_command_output(root_result)}",
+        raise _NpmQueryError(
+            f"npmの導入先を取得できない: prefix={_command_output(prefix_result)} root={_command_output(root_result)}"
         )
-        return None
     prefix = common.safe_resolve(Path(prefix_result.stdout.strip()))
     root = common.safe_resolve(Path(root_result.stdout.strip()))
     if not _is_relative_to(root, prefix):
@@ -444,15 +458,18 @@ def _windows_paths(paths: Iterable[Path]) -> tuple[PureWindowsPath, ...]:
 
 
 def _located_in(value: str, locations: tuple[PureWindowsPath, ...]) -> bool:
-    """Windowsのパスが配置のいずれかと一致するかその配下にあるかを、大文字小文字と区切りの表記に依らず判定する。"""
-    path = PureWindowsPath(value)
+    r"""Windowsのパスが配置のいずれかと一致するかその配下にあるかを、大文字小文字と区切りの表記に依らず判定する。
+
+    command lineに現れる`\\?\`の接頭辞は除いて比較する。
+    """
+    path = PureWindowsPath(value.removeprefix("\\\\?\\"))
     return any(path.is_relative_to(location) for location in locations)
 
 
 def _process_conflicts(
     cli_name: str,
     replaced: tuple[PureWindowsPath, ...],
-    removed: tuple[PureWindowsPath, ...],
+    removed: tuple[PureWindowsPath, ...] | None,
     name: str | None,
     exe: str | None,
     cmdline: list[str] | None,
@@ -460,14 +477,17 @@ def _process_conflicts(
     """読めた属性から、書き換える配置から起動したプロセスか、その可能性を否定できないプロセスかを判定する。
 
     `name`・`exe`・`cmdline`の`None`は、権限が無く読めなかったことを表す。
+    `removed`の`None`は、削除先の照会に失敗し、削除するnpm版・mise版を確定できないことを表す。
     """
-    if exe and _located_in(exe, (*replaced, *removed)):
+    # 実行ファイルを読めない場合も、command lineの先頭の実行パスが書き換える配置にあれば数える。
+    executable = exe or (cmdline[0] if cmdline else "")
+    if executable and _located_in(executable, (*replaced, *(removed or ()))):
         return True
     program = PureWindowsPath(exe or name or (cmdline[0] if cmdline else "")).name.lower()
     if program in {cli_name, f"{cli_name}.exe"}:
         # 実行ファイルの所在を読めない同名の実行体は、書き換える配置から起動した可能性を除けない。
         return not exe
-    if program not in {"node", "node.exe", "mise", "mise.exe"} or not removed:
+    if program not in {"node", "node.exe", "mise", "mise.exe"} or removed == ():
         return False
     if cmdline is None:
         # 起動したスクリプトを読めないnode・miseは、削除するnpm版・mise版を実行している可能性を除けない。
@@ -475,9 +495,10 @@ def _process_conflicts(
     entry = _script_entry(program, cmdline)
     if entry is None:
         return False
-    if PureWindowsPath(entry).anchor:
+    if removed is not None and PureWindowsPath(entry).anchor:
         return _located_in(entry, removed) or _located_in(str(common.safe_resolve(Path(entry))), removed)
-    # 名前や相対パスで指定したCLIは所在を確定できず、削除するnpm版・mise版から起動した可能性を除けない。
+    # 名前や相対パスで指定したCLIと、削除先を確定できない場合のCLIは、所在で判定できず、
+    # 削除するnpm版・mise版から起動した可能性を除けない。
     launcher_names = {cli_name, *(f"{cli_name}{suffix}" for suffix in (".exe", ".cmd", ".ps1", ".js"))}
     return PureWindowsPath(entry).name.lower() in launcher_names
 

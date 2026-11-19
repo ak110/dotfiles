@@ -142,7 +142,9 @@ def _files_to_replace_or_remove() -> setup_cli_common.CliFiles:
         extra_search_directories=_nvm_bin_directories(),
         excluded_launchers=codex_runtime.wrapper_launchers(),
     )
-    return setup_cli_common.CliFiles(replaced=(root,), removed=(*_mise_install_paths(), *npm_packages))
+    mise_paths = _mise_install_paths()
+    removed = None if npm_packages is None or mise_paths is None else (*mise_paths, *npm_packages)
+    return setup_cli_common.CliFiles(replaced=(root,), removed=removed)
 
 
 def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[str] | None:
@@ -333,15 +335,18 @@ def _installed_mise_versions(mise: Path) -> tuple[list[dict[str, object]], str]:
     return [entry for entry in listed if isinstance(entry, dict) and entry.get("installed")], ""
 
 
-def _mise_install_paths() -> list[Path]:
+def _mise_install_paths() -> list[Path] | None:
     """`_remove_mise_versions`が削除するmise版の導入先を返す。
 
-    一覧を取得できない場合は`_remove_mise_versions`も削除しないため、空を返す。
+    一覧を取得できない場合は、削除先を確定できないことを`None`で表す。
+    後の`_remove_mise_versions`の取得が成功すると削除するため、削除先が無いこととは区別する。
     """
     mise = _find_mise()
     if mise is None:
         return []
-    installed, _ = _installed_mise_versions(mise)
+    installed, failure = _installed_mise_versions(mise)
+    if failure:
+        return None
     return [Path(path) for entry in installed if isinstance(path := entry.get("install_path"), str)]
 
 

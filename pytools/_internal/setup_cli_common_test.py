@@ -18,7 +18,10 @@ from pytools._internal._test_helpers import patch_windows_processes, windows_pro
 
 @pytest.mark.parametrize("stderr", ["npm ERR! permission denied", ""])
 def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog, stderr):
-    """npmの診断を保持の理由へ含め、空出力の失敗には終了コードを示す。"""
+    """npmの導入先の照会に失敗した場合は削除先を確定できないと返し、移行は保持して診断を保持の理由へ含める。
+
+    空出力の失敗には終了コードを示す。
+    """
     old = tmp_path / "old"
     old.mkdir()
     launcher = old / "codex"
@@ -31,6 +34,7 @@ def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog,
         return subprocess.CompletedProcess(command, 1, "", stderr)
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fail)
+    assert setup_cli_common.npm_packages_to_remove("codex", "@openai/codex", tmp_path / "canonical") is None
     assert not setup_cli_common.migrate_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/bin/codex", tmp_path / "canonical"
     )
@@ -607,6 +611,17 @@ _CODEX_FILES = setup_cli_common.CliFiles(replaced=(Path(_STANDALONE),), removed=
         # 導入が置き換えるスタンドアローン版から起動した会話と、会話が起動した同梱の実行体。
         pytest.param(windows_process(rf"{_STANDALONE_RELEASE}\bin\codex.exe"), True, id="standalone-session"),
         pytest.param(windows_process(rf"{_STANDALONE_RELEASE}\codex-path\rg.exe"), True, id="standalone-helper"),
+        # 実行ファイルだけを読めない場合は、command lineの先頭の実行パスで所在を確かめる。
+        pytest.param(
+            windows_process(rf"{_STANDALONE_RELEASE}\codex-path\rg.exe", denied=["exe"]),
+            True,
+            id="standalone-helper-exe-denied",
+        ),
+        pytest.param(
+            windows_process(rf"\\?\{_STANDALONE_RELEASE}\codex-path\rg.exe", denied=["exe"]),
+            True,
+            id="standalone-helper-extended-path",
+        ),
         # 2026-11-19のsthenoで動いていた管理daemonと更新ループ。
         pytest.param(windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"), False, id="update-loop"),
         pytest.param(
@@ -681,6 +696,33 @@ def test_windows_node_is_not_counted_without_npm_or_mise_version_to_remove(monke
 
     files = setup_cli_common.CliFiles(replaced=(Path(_STANDALONE),))
     assert not setup_cli_common.is_windows_cli_running("codex", lambda: files)
+
+
+@pytest.mark.parametrize(
+    ("process", "expected"),
+    [
+        pytest.param(windows_process(_NODE, denied=["cmdline"]), True, id="node-cmdline-denied"),
+        pytest.param(windows_process(_MISE, denied=["exe", "cmdline"]), True, id="mise-unreadable"),
+        pytest.param(windows_process(_NODE, rf"{_NPM_CODEX}\bin\codex.js"), True, id="npm-node"),
+        pytest.param(windows_process(_MISE, "exec", "--", "codex"), True, id="mise-launcher-name"),
+        pytest.param(windows_process(rf"{_STANDALONE_RELEASE}\bin\codex.exe"), True, id="standalone-session"),
+        pytest.param(windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"), False, id="update-loop"),
+        pytest.param(
+            windows_process(_DAEMON_EXE, "app-server", "--managed-daemon", denied=["cmdline"]),
+            False,
+            id="daemon-cmdline-denied",
+        ),
+        pytest.param(windows_process(_NODE, "C:/work/codex-project/server.js"), False, id="project-server"),
+    ],
+)
+def test_windows_counts_node_and_mise_when_files_to_remove_are_unknown(
+    monkeypatch, process: types.SimpleNamespace, expected: bool
+) -> None:
+    """削除先の照会に失敗した場合は削除先が無いとは扱わず、削除するnpm版・mise版の実行を否定できないnode・miseを数える。"""
+    patch_windows_processes(monkeypatch, [process])
+
+    files = setup_cli_common.CliFiles(replaced=(Path(_STANDALONE),), removed=None)
+    assert setup_cli_common.is_windows_cli_running("codex", lambda: files) is expected
 
 
 @pytest.mark.parametrize(
