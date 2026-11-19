@@ -75,7 +75,7 @@ def code_identity(root: pathlib.Path, directory: pathlib.Path) -> tuple[str, str
     saved = _saved_identities(index)
     if (generation := saved.get(fingerprint)) is not None:
         return generation, version
-    # 定義の連結順はPathの順序であり、文字列の順序と異なり得る（`a-b.py`と`a/b.py`など）。
+    # 定義の連結順はPathの順序であり、文字列の順序と異なり得る（区切り文字の前後で順序が変わる）。
     generation = _code_digest(root, version, sorted(pathlib.Path(path) for path, _identity in modules))
     recent = time.time_ns() - _RECENT_NS
     if all(identity[1] < recent for _path, identity in modules):
