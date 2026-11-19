@@ -78,13 +78,9 @@ def test_cli_retains_selected_and_live_releases(
     assert cli.main(["--dry-run"]) == 0
     assert all(path.is_dir() for path in obsolete)
     assert cli.main([]) == 0
-    if os.name == "nt":
-        assert all(path.is_dir() for path in obsolete)
-    else:
-        assert all(not path.exists() for path in obsolete)
+    assert all(not path.exists() for path in obsolete)
     assert all(path.is_dir() for path in [*live, *selected])
-    output = capsys.readouterr()
-    assert "実行中" in output.err if os.name == "nt" else "使用中 pid 10" in output.out
+    assert "使用中 pid 10" in capsys.readouterr().out
     processes.clear()
     assert cli.main([]) == 0
     assert all(not path.exists() for path in live)
@@ -219,19 +215,28 @@ def test_help_preserves_packages(monkeypatch: pytest.MonkeyPatch, tmp_path: path
     assert old.is_dir()
 
 
-@pytest.mark.parametrize("running", [False, True])
-def test_windows_defers_running_codex(
+@pytest.mark.parametrize(
+    ("role", "deferred"),
+    [(None, False), ("update-loop", False), ("managed-daemon", False), ("session", True)],
+)
+def test_windows_defers_only_for_codex_sessions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
-    running: bool,
+    role: codex_processes.CodexRole | None,
+    deferred: bool,
 ) -> None:
-    """WindowsのOS方針を隔離入力で検証し、実際の共有不可排他はWindows実機へ分ける。"""
+    """Windowsでは会話のCodexだけで整理を延期し、常駐する管理daemonと更新ループの版は使用中として保持する。
+
+    WindowsのOS方針を隔離入力で検証し、実際の共有不可排他はWindows実機へ分ける。
+    """
     current = _release(tmp_path, "standalone", "0.162.1")
+    busy = _release(tmp_path, "standalone", "0.160.0")
     old = _release(tmp_path, "standalone", "0.150.0")
     (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
     monkeypatch.setattr(prune_codex_packages, "_install_lock", lambda *args, **kwargs: contextlib.nullcontext())
-    processes = (codex_processes.CodexProcess(1, "codex", "update-loop", str(current / "codex")),) if running else ()
+    processes = () if role is None else (codex_processes.CodexProcess(1, "codex", role, str(busy / "bin" / "codex")),)
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: processes)
     result = prune_codex_packages.prune(home=tmp_path, windows=True)
-    assert bool(result.deferred) == running
-    assert old.exists() == running
+    assert bool(result.deferred) is deferred
+    assert old.exists() is deferred
+    assert busy.exists() is (role is not None)

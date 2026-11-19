@@ -92,7 +92,8 @@ def _prune_package(root: pathlib.Path, result: PruneResult, *, windows: bool, dr
     retained = _selected_releases(root)
     processes = codex_processes.codex_processes()
     identified = [process for process in processes if process.identified]
-    if windows and identified:
+    # 常駐する管理daemonと更新ループで延期するとWindowsでは整理が実行されないため、これらの版は使用中として保持する。
+    if windows and any(process.role == "session" for process in identified):
         raise _DeferredError("Codex実行中。Codexを終了して次回に整理する")
     for process in identified:
         if not process.executable:
