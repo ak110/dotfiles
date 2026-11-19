@@ -62,3 +62,10 @@ provider IDは`codex_credits_provider`・`codex_payg_provider`が持ち、`subsc
 切替のための新しい上限台帳や監視は設けず、既存の監視と再開情報を使う。
 APIへ移った会話の再開は新規起動の回復判定から独立させる。
 接続先判定とcold resumeの詳細は[design-agents-server-connections.md](design-agents-server-connections.md#起動候補と観測identity)にある。
+
+## 効率化の仕組みの棚卸し（2026年11月）
+
+横断的な記録の条件と限界は[設計索引](design.md)の「効率化の仕組みの棚卸し」を参照。
+API残高不足の観測を永続化せず定期的に確かめ直すことは、2026年10月の実会話でユーザーが求めた。
+1時間の保持はエージェントの判断で、専用の初期WIは特定できていない。
+判定は維持とし、接続と認証の選択権は設定側に保ち、認証の失敗を隠すことと認証情報の複製はしない。

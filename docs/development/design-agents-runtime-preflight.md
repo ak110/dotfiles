@@ -45,3 +45,9 @@ codexの委譲先では、hookの定義が変わると承認済みの記録が�
 知識境界として、claudeの権限モードは`agent-toolkit/agent_toolkit/_agents_server/claude_options.py`、codexの設定は`agent-toolkit/agent_toolkit/_agents_server/codex.py`が持つ。
 codexで同名のコマンドラインオプションを渡す案と、`-c`による設定上書きで渡す案は、いずれも`codex app-server`が`bypass_hook_trust`を受理しないため採用しない。
 claudeで`crossSessionInbound`設定により受信を拒否する案は、追加設定ファイルとユーザー設定のいずれで渡しても初期化タイムアウトを解消しないため採用しない。
+
+## 効率化の仕組みの棚卸し（2026年11月）
+
+横断的な記録の条件と限界は[設計索引](design.md)の「効率化の仕組みの棚卸し」を参照。
+起動失敗後の空待ちの防止と短い初期化上限はユーザーの要求で、最終の50秒・150秒は実測に基づくエージェントの補正である。
+判定は維持。

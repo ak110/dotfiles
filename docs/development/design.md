@@ -24,7 +24,7 @@
 | 計画と実行レビューへの受渡し | 作業項目から計画を作成し、実装結果が要件に沿うか確認する実行レビューへ渡す工程。review_contractとレビュー指摘管理表、レビュー修正の履歴統合、複数レーンの統合、計画ファイルの構成、WI実装commitの対応を扱う | [計画と実行レビューの分担](design-planning-review.md)、[レビュー契約と指摘管理表](design-planning-review-contract.md)、[付帯作業の所有、WI実装commitの対応とレビュー修正の履歴統合](design-planning-commit-mapping.md)、[複数レーンの統合と版数更新](design-planning-integration.md)、[計画の作成要否と成果物基準](design-planning-criteria.md)、[レーンの計画確認](design-planning-lane-check.md)、[計画ファイルの領域構成と保存](design-planning-storage.md) |
 | 検収根拠とレビュー担当間の知識境界 | 完成条件を満たす証拠を保存し、実行レビューと画面の使いやすさを確認するレビューへ渡す仕組み。レビュー担当とレビューイーの知識境界、完成条件証拠と証拠検査を扱う | [直接消費側探索とレビューの知識境界](design-review-boundaries.md)、[レビューイーの採否判断](design-reviewee-decisions.md)、[ユーザビリティと完成条件の判定](design-review-acceptance.md) |
 | フックの責務・通知・セッション状態 | hookはエージェントの操作前後などに自動で起動する処理。責務境界、遮断・警告の存廃判定、Stopフック、通知の整形、複数ホスト向けの配布、イベントごとの個別設計、進捗のセルフチェック通知、セッション状態の共有を扱う | [フックの責務境界と判定の集約](design-hooks-responsibility.md)、[Bashコマンドの解析とheredoc遮断](design-hooks-shell-parsing.md)、[遮断・警告フックの存廃判定](design-hooks-eligibility.md)、[Stopの共通ハンドラー](design-hooks-stop-handler.md)、[Stopの通知と入力待ち判定](design-hooks-stop-notices.md)、[終了工程の証拠](design-hooks-termination-evidence.md)、[通知の整形と画面への写し](design-hooks-notices.md)、[複数ホストの入力変換と出力契約](design-hooks-host-adapters.md)、[ユーザー発話への注入と注記](design-hooks-user-prompt.md)、[進捗のセルフチェック通知](design-hooks-progress.md)、[commitと委譲手段の選択の支援](design-hooks-pretooluse.md)、[読込宣言の解析と資料解決](design-hooks-read-declarations.md)、[本文の取得観測と確認前の拒否](design-hooks-read-acquisition.md)、[コマンド時間と退避出力の観測](design-hooks-posttooluse.md)、[会話圧縮と利用上限後の再開予約](design-hooks-compaction-resume.md)、[定期再確認の装着と回収](design-hooks-periodic-recheck.md)、[ユーザーへの本文送達](design-hooks-send-to-user.md)、[フックごとのホスト対応範囲](design-hooks-host-support.md)、[セッション状態と記録解決](design-hooks-session-state.md)、[通知仕様の追随と読込宣言の回復](design-hooks-declaration-recovery.md) |
-| 一時成果物とキューリポジトリの回復 | managed-tempは一時成果物の管理領域。MQはWIキューの管理層で、項目を保存するGitリポジトリの分岐回復を扱う | [design-storage.md](design-storage.md) |
+| 一時成果物とキューリポジトリの回復 | managed-tempは一時成果物の管理領域。MQはWIキューの管理層で、項目を保存するGitリポジトリの分岐回復を扱う | [design-storage.md](design-storage.md)、[保持実体の共有とレーン資源の回収](design-storage-shared-resources.md) |
 | Windowsの昇格と状態の権限 | 同じユーザーの昇格したプロセスと非昇格のプロセスが共有する状態ディレクトリの作成と旧版のACLの修復、昇格した`update-dotfiles`での管理サービスの扱い、sshから非昇格で実行する`ssh-unelevated`を扱う | [design-windows-permissions.md](design-windows-permissions.md) |
 | branch・CI所有権・公開・終了 | developは開発用、masterはリリース用のGit branch。CIは変更の自動検証。CIの実処理所有権、rulesetとマージ後の同期、公開と検証、公開状態の観測を含む公開工程を扱う | [developとmasterのbranch・リリース設計](design-release-branches.md)、[CIの実処理所有権](design-release-ci-ownership.md)、[rulesetとマージ後の同期](design-release-merge.md)、[公開工程と並行工程](design-release-workflow.md)、[公開工程の検証](design-release-verification.md)、[公開状態の観測](design-release-observation.md)、[公開の認可と短絡](design-release-authorization.md) |
 | CLIの入力・結果・公開境界 | atkはagent-toolkitのコマンド。CLIはコマンドラインからの呼び出し口。引数の拒否、結果行と出力の内容、次の操作、長い出力の保存、`atk run-skill`を扱う | [公開出力とworktreeの選択](design-cli-launch.md)、[有限終了コマンドとWI投入の監督](design-cli-execution.md)、[サブコマンド登録と引数拒否](design-cli-arguments.md)、[結果行と出力に含める情報](design-cli-output.md)、[失敗と警告の次の操作](design-cli-next-action.md)、[長い出力の自動保存](design-cli-auto-save.md)、[commitと計画検証の公開境界](design-cli-public-boundaries.md)、[定期実行からのスキル起動](design-cli-run-skill.md) |
@@ -36,8 +36,8 @@
 2026年11月10日に、効率化のために加えた仕組みの便益、不具合と回避手段を見直した。
 各主題の本文末尾に、目的と導入・拡張時期、不具合の件数と所要、実測した効果、既存の回避手段、存廃の判定を記録する。
 57行の導入・拡張の由来を確認し、方式の要求・選択と、結果の要求への具体化を分けて各行に記録した。
-委譲サーバー、CLI、フック、AWI処理の工程の4主題は、主題別の本文に無い由来、実測、判定だけを仕組みごとに統合先の末尾へ残した。
-この4主題の導入時期と壊れたときの既存手段は、主題別の本文とGitの履歴から確かめる。
+委譲サーバー、CLI、フック、AWI処理の工程の4主題は、主題別の本文に無い由来、実測、判定と今も判断に使う条件だけを、仕組みごとに対応する主題別の本文の該当箇所か末尾へ移した。
+この4主題の導入時期は、主題別の本文とGitの履歴から確かめる。
 初期要求や個別の拡張を特定できなかった範囲は未確定として残す。
 ユーザーが要求・選択した手段は、その由来を保ち、同条件の測定で決めるか維持とする。
 現行の方式と既に撤去した方式を分け、既存の機能・データ・資源の保護は保つ。
@@ -50,6 +50,8 @@
 作業項目の原本はリポジトリ外にあり、引継ぎが必要な変更だけ保存済みの項目名を記す。
 
 同じ入力・並行条件の全体所要が不明な値は、効果が無いことの証明には使わない。
+各主題の本文で実測を記さない仕組みは、同じ代表入力・並行条件で仕組みの有無を比べた全体所要が未測定である。
+判定の「単純化」には、以前に独自の方式を撤去して標準の手段へまとめた変更の維持も含む。
 ユーザーが方式を指定していない現行の補助機構で、実測便益を示せず不具合の報告がある場合は、単純化または撤去の実施結果・独立した引継ぎ先へ対応付ける。
 ユーザーが要求・選択した方式は維持するか、同条件の比較測定で変更を決める。
 限定区間の対照、費用モデル、異なる入力の前後値は、全体所要の対照から分ける。
