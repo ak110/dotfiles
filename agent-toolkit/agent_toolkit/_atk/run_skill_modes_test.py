@@ -188,3 +188,28 @@ def test_resume_rejects_entry_form_for_other_work(engine_env, monkeypatch, capsy
         code, _out, error = _run(["--resume", run_id, *extra], capsys)
         assert code == 2 and ("一致しない" in error or "変更できない" in error)
     assert len(_records(engine_env, "session")) == 1
+
+
+@pytest.mark.parametrize("resume_form", ["unqualified", "qualified", "entry", "omitted"])
+def test_resume_accepts_record_saved_with_unqualified_work_name(engine_env, monkeypatch, capsys, resume_form):
+    """更新前の起動が無修飾の作業名で保存した記録は、同じ作業の各指定で再開でき、保存した名前は書き換えない。"""
+    set_orchestrate_environment(monkeypatch, "claude:test-model/low")
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "1")
+    code, _out, error = _run(["--target-repo", str(engine_env.repo), skill_modes.PROCESS_WI], capsys)
+    assert code != 0, error
+    run_id = _records(engine_env, "session")[0]["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    saved = next((engine_env.state / "agent-toolkit" / "run-skill" / "runs").glob(f"{run_id}.json"))
+    payload = json.loads(saved.read_text(encoding="utf-8"))
+    payload["input"]["skill"] = "process-wi"
+    saved.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "0")
+    skill = {
+        "unqualified": ["process-wi"],
+        "qualified": [skill_modes.PROCESS_WI],
+        "entry": ["agent-toolkit:atk-mode"],
+        "omitted": [],
+    }[resume_form]
+    _code, _out, error = _run(["--resume", run_id, *skill], capsys)
+    assert "一致しない" not in error, error
+    assert len(_records(engine_env, "session")) == 2
+    assert json.loads(saved.read_text(encoding="utf-8"))["input"]["skill"] == "process-wi"

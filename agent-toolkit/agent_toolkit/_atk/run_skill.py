@@ -148,7 +148,12 @@ def dispatch(args: argparse.Namespace) -> int:
                 args.args is not None and args.args != record.input.arguments
             ):
                 raise ValueError("--resumeでは元の対象・cwd・時間予算・スキル引数を変更できない")
-            if args.skill is not None and args.skill != record.input.skill and not _is_entry_of(args.skill, record.input.skill):
+            # 更新前の起動は作業名を無修飾で保存するため、保存名も指定名と同じ規則で修飾名へそろえて比べる。
+            if (
+                args.skill is not None
+                and args.skill != skill_modes.qualified(record.input.skill)
+                and not _is_entry_of(args.skill, record.input.skill)
+            ):
                 raise ValueError("--resumeのスキルが元の実行と一致しない")
         except (OSError, ValueError) as error:
             _outcome.report_failure(
