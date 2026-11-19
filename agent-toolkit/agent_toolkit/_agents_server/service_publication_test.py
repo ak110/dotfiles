@@ -31,7 +31,7 @@ from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
 from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._agents_server.service_resources import ResourceBroker
-from agent_toolkit._common import runtime_environment
+from agent_toolkit._common import runtime_environment, session_registry
 
 # 終了した受付先への接続の失敗はOSごとに例外が異なる（Windowsの名前付きパイプは`FileNotFoundError`）ため、Windowsでも確かめる。
 pytestmark = pytest.mark.windows
@@ -390,7 +390,7 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
             with pytest.raises(RuntimeError, match="正常な退役の記録"):
                 await coordinator.publish()
         else:
-            monkeypatch.setattr(service_coordinator, "_RETIREMENT_WAIT_SECONDS", 0.5)
+            monkeypatch.setattr(service_coordinator, "_COMMIT_WAIT_SECONDS", 0.5)
             with pytest.raises(EOFError):
                 await coordinator.publish()
         current = registry.current()
@@ -414,8 +414,8 @@ from mcp.types import CallToolRequestParams
 from agent_toolkit._agents_server import mcp_tools, service, service_io, service_transport, state, turn_state
 from agent_toolkit._common import runtime_environment
 
-directory, parent, session_id, turn, failure = sys.argv[1:]
-directory, failure = pathlib.Path(directory), pathlib.Path(failure)
+directory, parent, session_id, turn, failure, finish = sys.argv[1:]
+directory, failure, finish = pathlib.Path(directory), pathlib.Path(failure), pathlib.Path(finish)
 listen = service_transport.listen
 
 
@@ -449,7 +449,7 @@ async def main():
     caller = runtime_environment.CallerContext(dict(os.environ, CODEX_THREAD_ID=parent), pathlib.Path.cwd())
     with service_io.bind(coordinator._runtime), runtime_environment.bind(caller):
         async with managers.scope(CallToolRequestParams(name="list", arguments={}), identifier_override=parent) as manager:
-            manager.sessions[session_id] = state.SessionState(
+            session = manager.sessions[session_id] = state.SessionState(
                 session_id,
                 str(pathlib.Path.cwd()),
                 engine="codex",
@@ -457,11 +457,55 @@ async def main():
                 publish_registry=True,
             )
             await manager.save_control_state()
+    while not finish.exists() and not serving.done():
+        await asyncio.sleep(0.05)
+    session.record_turn_completed()
     await serving
 
 
 asyncio.run(main())
 """
+
+_PARENT, _SESSION = "parent-conversation", "child-session"
+_OWNED = {"parent": _PARENT, "session_id": _SESSION}
+
+
+def _isolated_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    state_root = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_root))
+    monkeypatch.setenv("LOCALAPPDATA", str(state_root))
+    return service_transport.namespace(runtime_environment.CallerContext(dict(os.environ), tmp_path))
+
+
+async def _wait_for_discovery(directory: pathlib.Path, generation: str, process: subprocess.Popen) -> dict[str, Any]:
+    async with asyncio.timeout(10):
+        while not (directory / f"{generation}.json").exists():
+            assert process.poll() is None
+            await asyncio.sleep(0.01)
+    return json.loads((directory / f"{generation}.json").read_text(encoding="utf-8"))
+
+
+async def _launch_previous_generation(
+    tmp_path: pathlib.Path, directory: pathlib.Path, turn: str, processes: list[subprocess.Popen]
+) -> dict[str, Any]:
+    """会話を1件持つ旧世代`old`を別プロセスで起動して受付先に公開し、その会話を所有するまで待つ。
+
+    `tmp_path/inject-failure`を作ると旧世代の受付が例外で終わり、`tmp_path/finish-turn`を作ると会話のturnが終わる。
+    """
+    registry = GenerationRegistry(directory)
+    registry.reserve("old", tmp_path / "old", "1.0.0")
+    script = tmp_path / "previous" / "previous_generation.py"
+    script.parent.mkdir()
+    script.write_text(_PREVIOUS_GENERATION, encoding="utf-8")
+    arguments = [str(directory), _PARENT, _SESSION, turn, str(tmp_path / "inject-failure"), str(tmp_path / "finish-turn")]
+    # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、呼出元が終了を見届けた後で手放す。
+    processes.append(subprocess.Popen([sys.executable, str(script), *arguments], cwd=tmp_path))  # pylint: disable=consider-using-with
+    old = await _wait_for_discovery(directory, "old", processes[-1])
+    registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
+    async with asyncio.timeout(30):
+        while not await service_rpc.request(old, "owns", _OWNED):
+            await asyncio.sleep(0.05)
+    return old
 
 
 async def _start_generation(directory: pathlib.Path, generation: str, stop: asyncio.Event) -> tuple[asyncio.Task, dict]:
@@ -486,36 +530,14 @@ async def test_publication_succeeds_only_if_previous_generation_handed_over_its_
 
     2026-11-20の独立検証で、会話を持つ旧世代がSIGTERMか例外で終了すると、終了時の後始末が退役を記録して公開が成功を返した。
     """
-    state_root = tmp_path / "state"
-    monkeypatch.setenv("XDG_STATE_HOME", str(state_root))
-    monkeypatch.setenv("LOCALAPPDATA", str(state_root))
-    directory = service_transport.namespace(runtime_environment.CallerContext(dict(os.environ), tmp_path))
+    directory = _isolated_directory(tmp_path, monkeypatch)
     registry = GenerationRegistry(directory)
-    registry.reserve("old", tmp_path / "old", "1.0.0")
-    script = tmp_path / "previous" / "previous_generation.py"
-    script.parent.mkdir()
-    script.write_text(_PREVIOUS_GENERATION, encoding="utf-8")
-    failure = tmp_path / "inject-failure"
-    parent, session_id = "parent-conversation", "child-session"
-    turn = "COMPLETED" if ending == "moved_then_retired" else "IN_PROGRESS"
-    # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、終了を見届けた後で手放す。
-    processes = [
-        subprocess.Popen(  # pylint: disable=consider-using-with
-            [sys.executable, str(script), str(directory), parent, session_id, turn, str(failure)], cwd=tmp_path
-        )
-    ]
+    processes: list[subprocess.Popen] = []
     stop = asyncio.Event()
     serving = None
     try:
-        async with asyncio.timeout(10):
-            while not (directory / "old.json").exists():
-                assert processes[0].poll() is None
-                await asyncio.sleep(0.01)
-        old = json.loads((directory / "old.json").read_text(encoding="utf-8"))
-        registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
-        async with asyncio.timeout(30):
-            while not await service_rpc.request(old, "owns", {"parent": parent, "session_id": session_id}):
-                await asyncio.sleep(0.05)
+        turn = "COMPLETED" if ending == "moved_then_retired" else "IN_PROGRESS"
+        old = await _launch_previous_generation(tmp_path, directory, turn, processes)
         registry.reserve("new", tmp_path / "new", "1.0.1")
         serving, new = await _start_generation(directory, "new", stop)
         deliver = service_rpc.request
@@ -525,12 +547,12 @@ async def test_publication_succeeds_only_if_previous_generation_handed_over_its_
             if ending == "moved_then_retired":
                 await asyncio.to_thread(process.wait, 30)
             else:
-                assert await deliver(old, "owns", {"parent": parent, "session_id": session_id})
-                assert not await deliver(new, "owns", {"parent": parent, "session_id": session_id})
+                assert await deliver(old, "owns", _OWNED)
+                assert not await deliver(new, "owns", _OWNED)
                 if ending == "sigterm":
                     process.terminate()
                 elif ending == "exception":
-                    failure.touch()
+                    (tmp_path / "inject-failure").touch()
                 else:
                     process.kill()
                 await asyncio.to_thread(process.wait, 30)
@@ -546,12 +568,67 @@ async def test_publication_succeeds_only_if_previous_generation_handed_over_its_
             if ending == "moved_then_retired":
                 accepted = await deliver(new, "publish", {})
                 assert accepted["generation"] == "new"
-                assert await deliver(new, "owns", {"parent": parent, "session_id": session_id})
+                assert await deliver(new, "owns", _OWNED)
             else:
                 with pytest.raises(RuntimeError, match="正常な退役の記録"):
                     await deliver(new, "publish", {})
         current = registry.current()
         assert current is not None and current["generation"] == "new"
+    finally:
+        stop.set()
+        if serving is not None:
+            await asyncio.gather(serving, return_exceptions=True)
+        for process in processes:
+            process.kill()
+            process.wait()
+
+
+@pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")
+@pytest.mark.parametrize("disturbance", ["commit_lost_once", "commit_response_lost"])
+@pytest.mark.asyncio
+async def test_publication_succeeds_after_lost_commit_while_previous_generation_runs_a_turn(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, disturbance: str
+) -> None:
+    """進行中のturnを持つ旧世代との確定の通信を1回失っても公開は成功し、turnの終了後に会話と登録簿の所有が新世代へ移り、旧世代は退役する。
+
+    確定を配送前に失った場合も、旧世代が受け取った後で応答だけを失った場合も、生存する旧世代へ同じ確定を送り直して済ませる。
+    2026-11-20の独立検証で、旧世代は受付先の前進を観測して静止を解き、会話を持ったまま正しく動き続けたが、
+    公開元は旧世代の退役だけを待って10秒後に失敗を返した。
+    """
+    directory = _isolated_directory(tmp_path, monkeypatch)
+    registry = GenerationRegistry(directory)
+    processes: list[subprocess.Popen] = []
+    stop = asyncio.Event()
+    serving = None
+    try:
+        old = await _launch_previous_generation(tmp_path, directory, "IN_PROGRESS", processes)
+        registry.reserve("new", tmp_path / "new", "1.0.1")
+        serving, new = await _start_generation(directory, "new", stop)
+        deliver = service_rpc.request
+        lost: list[str] = []
+
+        async def request(target: dict[str, Any], operation: str, arguments: dict, **kwargs: Any) -> Any:
+            if operation == "commit_update" and not lost:
+                lost.append(operation)
+                if disturbance == "commit_response_lost":
+                    await deliver(target, operation, arguments, **kwargs)
+                raise ConnectionResetError("確定の通信を失った")
+            return await deliver(target, operation, arguments, **kwargs)
+
+        monkeypatch.setattr(service_rpc, "request", request)
+        async with asyncio.timeout(30):
+            accepted = await deliver(new, "publish", {})
+        assert accepted["generation"] == "new"
+        assert lost == ["commit_update"]
+        assert await deliver(old, "owns", _OWNED)
+        assert not await deliver(new, "owns", _OWNED)
+        (tmp_path / "finish-turn").touch()
+        assert await asyncio.to_thread(processes[0].wait, 30) == 0
+        processes.pop()
+        assert await deliver(new, "owns", _OWNED)
+        owner = session_registry.resolve(_SESSION, state_root=directory.parent.parent)
+        assert owner.server_instance == new["server_instance"]
+        assert registry.retired("old", old["process"])
     finally:
         stop.set()
         if serving is not None:

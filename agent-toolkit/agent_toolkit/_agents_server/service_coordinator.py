@@ -66,10 +66,10 @@ _PUBLISHER_PROBE_SECONDS = 1.0
 # 所有世代への所有照会の待機上限。生存する世代は即時に応答するため、停止した世代だけを短時間で判別する。
 _OWNER_PROBE_SECONDS = 10.0
 
-# 確定が届かなかった旧世代の退役の記録を待つ上限と確認の間隔。会話を持たない旧世代は受付先の前進を観測して短時間で退役する。
+# 確定が届かなかった旧世代へ確定を送り直し、退役の記録を確かめる上限と間隔。
 # 確認ごとに世代索引のロックを取るため、退役を記録する旧世代とロックを取り合わない程度に間隔を空ける。
-_RETIREMENT_WAIT_SECONDS = 10.0
-_RETIREMENT_POLL_SECONDS = 0.25
+_COMMIT_WAIT_SECONDS = 10.0
+_COMMIT_RETRY_SECONDS = 0.25
 
 
 @dataclasses.dataclass
@@ -175,24 +175,32 @@ class ServiceCoordinator:
                         file_lock.release_lock(handle)
 
     async def _commit(self, previous: dict, token: str) -> None:
-        """静止させた旧世代へ確定を通知する。届かなかった確定は、旧世代が退役を記録していれば済んだものとして扱う。
+        """静止させた旧世代へ確定を届ける。届かなければ、旧世代が生存する間は同じ確定を送り直し、終了していれば退役の記録で成否を決める。
 
-        旧世代は受付先の前進を観測しても静止を解いて退役するため、確定の接続より先に終了することがある。
-        この修正より前の版の旧世代も、確定の到着を待たずに退役する。
+        確定の受理は冪等で、解除済みの準備へ届いた確定は捨てられるため、送り直しても静止の解除は1回だけになる。
+        旧世代は受付先の前進を観測しても静止を解くため、会話を持つ旧世代は確定を失っても動き続け、退役するのはturnの終了後になる。
+        会話を持たない旧世代は確定の接続より先に退役して終了することがあり、この修正より前の版の旧世代は確定の到着を待たずに退役する。
         旧世代は引き継ぐ会話・資源を残さずに終了した場合だけ退役を記録する（`service.run`）。
         記録が無いまま終了した旧世代は、それらを持ったまま停止・例外・強制終了で終わったことがあり得るため、公開の失敗として返す。
         """
         current = self._current()
-        try:
-            await service_rpc.request(previous, "commit_update", {"token": token, "current": current})
-        except (OSError, EOFError) as error:
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + _RETIREMENT_WAIT_SECONDS
-            while True:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _COMMIT_WAIT_SECONDS
+        while True:
+            try:
+                await service_rpc.request(previous, "commit_update", {"token": token, "current": current})
+                return
+            except (OSError, EOFError) as error:
                 # 旧世代は終了の前に退役を記録する。生存を確かめてから記録を読み、終了を観測した時点までの記録を判定に含める。
                 alive = service_transport.process_alive(previous["process"])
                 if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
-                    break
+                    _LOG.info(
+                        "旧世代が確定を受け取らずに退役したため、確定を済んだものとして扱います: generation=%s error=%s: %s",
+                        previous["generation"],
+                        type(error).__name__,
+                        error,
+                    )
+                    return
                 if not alive:
                     raise RuntimeError(
                         "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
@@ -202,13 +210,7 @@ class ServiceCoordinator:
                     ) from error
                 if loop.time() >= deadline:
                     raise
-                await asyncio.sleep(_RETIREMENT_POLL_SECONDS)
-            _LOG.info(
-                "旧世代が確定を受け取らずに退役したため、確定を済んだものとして扱います: generation=%s error=%s: %s",
-                previous["generation"],
-                type(error).__name__,
-                error,
-            )
+            await asyncio.sleep(_COMMIT_RETRY_SECONDS)
 
     def bind_runtime(self, runtime: service_io.Runtime) -> service_io.Runtime:
         """現在のbackendにだけ終了境界を知らせ、資源のoriginは変えない。"""
