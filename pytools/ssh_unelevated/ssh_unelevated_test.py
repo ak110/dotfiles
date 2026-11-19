@@ -1,8 +1,8 @@
 """ssh_unelevatedの試験。
 
 予定タスクを使う接続先の処理はWindowsでしか動かないため、ここでは結果の解釈と、pwshで動かせる部分
-（sshの起動部から`remote.ps1`へ引数が届くこと、`runner.ps1`が出力と終了コードを残すこと、
-予定タスクのジョブの外でスクリプトを起動できない場合に理由を残すこと）を確かめる。
+（sshの起動部から`remote.ps1`へ引数が届くこと、本文が届かない場合に起動部が上限で終わること、
+`runner.ps1`が出力と終了コードを残すこと、予定タスクのジョブの外でスクリプトを起動できない場合に理由を残すこと）を確かめる。
 """
 
 import codecs
@@ -114,6 +114,43 @@ def test_main_delivers_large_script_to_remote(
     assert excinfo.value.code == 125
     assert "sthenoでの準備か後始末に失敗した" in stderr
     assert "ComObject" in stderr
+
+
+@_requires_pwsh
+@pytest.mark.skipif(sys.platform == "win32", reason="偽のsshをshebangのPythonスクリプトで作る")
+def test_main_reports_stdin_not_arriving(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """標準入力の本文が届かない場合、接続先のPowerShellは上限で自ら終了し、診断付きの終了コード125を返す。
+
+    偽のsshは、起動部のpwshの標準入力を開いたまま何も書かない。
+    手元の上限（--timeoutとsshの余裕の和）より先に終わることで、接続先のプロセスが残らないことを確かめる。
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_ssh = bin_dir / "ssh"
+    fake_ssh.write_text(
+        f"#!{sys.executable}\n"
+        "import subprocess, sys\n"
+        "process = subprocess.Popen(['pwsh', *sys.argv[-1].split()[1:]], stdin=subprocess.PIPE)\n"
+        "sys.exit(process.wait())\n",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(_cli, "_STDIN_TIMEOUT_SECONDS", 3)
+    monkeypatch.setattr(_cli, "_SSH_MARGIN_SECONDS", 60)
+    script = tmp_path / "script.ps1"
+    script.write_text("Write-Output 'script-ran'", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        _cli.main(["--timeout", "1", "stheno", str(script)])
+
+    captured = capsys.readouterr()
+    assert excinfo.value.code == 125
+    assert "script-ran" not in captured.out
+    assert "標準入力から本文を3秒以内に読み終えられなかった" in captured.err
+    assert "結果が返らなかった" in captured.err
 
 
 def _run_runner(tmp_path: pathlib.Path, script: str) -> tuple[str, str]:

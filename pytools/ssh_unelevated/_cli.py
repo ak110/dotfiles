@@ -20,13 +20,9 @@ from importlib import resources
 from pytools._internal.cli import enable_completion
 from pytools._internal.common import process_scope
 
-# 接続先のPowerShellが、標準入力のbase64をUTF-8の本文へ戻して実行する起動部。
-# sshの既定シェルがcmd.exeの場合の1行の上限（8191文字）に掛からないよう、本文は標準入力で渡す。
-_BOOTSTRAP = (
-    "$ProgressPreference='SilentlyContinue';"
-    "Invoke-Expression ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadToEnd())))"
-)
 _RESULT_PREFIX = b"\nSSH_UNELEVATED_RESULT:"
+# 接続先の起動部が標準入力から本文を読み終えるまでの上限。
+_STDIN_TIMEOUT_SECONDS = 60
 # 接続、タスクの登録、後始末に要する時間の見込み。上限にこれを足しても終わらないsshは打ち切る。
 _SSH_MARGIN_SECONDS = 120
 _DEFAULT_TIMEOUT_SECONDS = 1800
@@ -144,8 +140,28 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 def build_ssh_command(host: str) -> list[str]:
-    """接続先で起動部を実行するsshのコマンド行を返す。"""
-    encoded = base64.b64encode(_BOOTSTRAP.encode("utf-16-le")).decode("ascii")
+    """接続先で起動部を実行するsshのコマンド行を返す。
+
+    起動部は、標準入力のbase64をUTF-8の本文へ戻して実行する。
+    sshの既定シェルがcmd.exeの場合の1行の上限（8191文字）に掛からないよう、本文は標準入力で渡す。
+    標準入力は`[Console]::In`で読まず、そのハンドルを直接読むFileStreamで読む。
+    Windows PowerShell 5.1（.NET Framework）のコンソールのstreamは、空のまま開いているパイプを読むとパイプのハンドルを待ち、
+    後から本文やEOFが届いても戻らない。sshdが本文かEOFを書き込む前に読み始めた実行が止まっていた（2026年11月19日、sthenoで観測）。
+    """
+    bootstrap = (
+        "$ProgressPreference='SilentlyContinue';"
+        "$s=[Console]::OpenStandardInput();"
+        "$h=$s.GetType().GetField('_handle',[Reflection.BindingFlags]'NonPublic,Instance').GetValue($s);"
+        "$f=New-Object IO.FileStream($h,[IO.FileAccess]::Read);"
+        "$m=New-Object IO.MemoryStream;"
+        f"if(-not $f.CopyToAsync($m).Wait({_STDIN_TIMEOUT_SECONDS * 1000})){{"
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+        "[Console]::Error.WriteLine('ssh-unelevated: 接続先が標準入力から本文を"
+        f"{_STDIN_TIMEOUT_SECONDS}秒以内に読み終えられなかった。sshの接続を確かめてから再実行する。');exit 1}}"
+        "Invoke-Expression ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("
+        "[Text.Encoding]::ASCII.GetString($m.ToArray()))))"
+    )
+    encoded = base64.b64encode(bootstrap.encode("utf-16-le")).decode("ascii")
     return ["ssh", "-o", "BatchMode=yes", "--", host, f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"]
 
 
