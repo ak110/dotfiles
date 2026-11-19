@@ -14,7 +14,7 @@ import shlex
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.wi import process_loop_log, submit
+from agent_toolkit._atk.wi import process_loop_identity, process_loop_log, submit
 from agent_toolkit._common import plugin_environment, plugin_roots, session_state, skill_modes
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -276,6 +276,9 @@ def test_startup_input_sets_autonomous_state(data, autonomous, kind, actor, monk
     monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data, ensure_ascii=False))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    if data["source"] == "process-loop":
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", session_id)
     if actor == "delegated":
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     source = "compact" if actor == "compact" else "startup"
@@ -286,6 +289,59 @@ def test_startup_input_sets_autonomous_state(data, autonomous, kind, actor, monk
     expected = autonomous and actor == "main"
     assert bool(state.get(session_state.PROCESS_WI_STATE_KEY)) is expected
     assert state.get("session_title_kind") == (kind if expected else None)
+
+
+def _process_loop_input(manifest: pathlib.Path) -> dict[str, str]:
+    data = {"source": "process-loop", "skill": skill_modes.PROCESS_WI, "mode": "all-repos", "manifest": str(manifest)}
+    return {"AGENT_TOOLKIT_SESSION_START_INPUT": json.dumps(data, ensure_ascii=False)}
+
+
+@pytest.mark.parametrize("resume_only", [True, False])
+def test_picker_resume_of_ordinary_conversation_stays_out_of_autonomous_mode(resume_only, monkeypatch, capsys, tmp_path):
+    """`process-loop resume`のpickerで統括でない会話を選んだ再開は、元の目的の続行だけを通知し自律モードを立てない。
+
+    統括の会話を選んだ再開（`resume_only`が偽）は、作業`process-wi all-repos`の統括として立てる。
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"instruction": ""}), encoding="utf-8")
+    environ = _process_loop_input(manifest)
+    process_loop_identity.prepare(environ)
+    process_loop_identity.acknowledge(environ, resume_only=resume_only)
+    environ |= {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "picker"}
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+    payload = {"hook_event_name": "SessionStart", "source": "resume", "session_id": "picked", "cwd": str(tmp_path)}
+    assert rules_context.main(json.dumps(payload), host="claude") == 0
+    assert ("再開予約から同じ会話を再開した" in _output(capsys)) is resume_only
+    state = session_state.read_state("picked")
+    assert bool(state.get(session_state.PROCESS_WI_STATE_KEY)) is not resume_only
+    assert state.get("session_title_kind") == (None if resume_only else "all-repos")
+
+
+@pytest.mark.parametrize(
+    "coordinator_env",
+    [{"AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": "coordinator"}, {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "claim"}],
+)
+def test_nested_cli_inheriting_launch_environment_stays_out_of_autonomous_mode(coordinator_env, monkeypatch, capsys, tmp_path):
+    """統括が起動した入れ子のCLIは起動入力と環境印を継承するが、会話IDが統括と異なるため自律モードを立てない。"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    for name, value in {
+        **_process_loop_input(tmp_path / "manifest.json"),
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
+        **coordinator_env,
+    }.items():
+        monkeypatch.setenv(name, value)
+    for session_id in ("coordinator", "nested"):
+        payload = {"hook_event_name": "SessionStart", "source": "startup", "session_id": session_id}
+        assert rules_context.main(json.dumps(payload), host="claude") == 0
+        capsys.readouterr()
+    assert session_state.read_state("coordinator").get(session_state.PROCESS_WI_STATE_KEY) is True
+    nested = session_state.read_state("nested")
+    assert not nested.get(session_state.PROCESS_WI_STATE_KEY)
+    assert nested.get("session_title_kind") is None
 
 
 def test_batch_startup_input_separates_procedure_from_termination(monkeypatch, capsys):
