@@ -281,26 +281,39 @@ def test_previous_selection_in_history_is_retained(
     assert "selection-history" in result.retained[previous]
 
 
-def test_selection_recorded_before_unrecorded_switch_is_retained(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    """記録の後にcurrentが切り替わった場合は、記録時の選択が直前の版にあたるため、記録した2つの版を残す。"""
-    current = _release(tmp_path, "app-server-daemon", "0.171.0")
+def test_stale_selection_history_skips_only_its_package(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """選択中の版の記録ではない古いselection-historyでは、公式の整理と同じくそのパッケージの整理を見送る。
+
+    記録の後にcurrentが切り替わると、記録に無い実際の直前の版を特定できない。
+    """
+    current = _release(tmp_path, "app-server-daemon", "0.172.0")
+    unrecorded_previous = _release(tmp_path, "app-server-daemon", "0.171.0")
     recorded = _release(tmp_path, "app-server-daemon", "0.170.0")
-    previous = _release(tmp_path, "app-server-daemon", "0.169.0")
-    old = _release(tmp_path, "app-server-daemon", "0.168.0")
+    old = _release(tmp_path, "app-server-daemon", "0.169.0")
     root = current.parent.parent
     (root / "current").symlink_to(current, target_is_directory=True)
-    (root / "selection-history").write_text(f"{recorded.name}\n{previous.name}\n2049 1234 1795023560.0\n", encoding="utf-8")
+    (root / "selection-history").write_text(f"{recorded.name}\n{old.name}\n2049 1234 1795023560.0\n", encoding="utf-8")
+    standalone = _release(tmp_path, "standalone", "0.172.0")
+    standalone_old = _release(tmp_path, "standalone", "0.169.0")
+    (standalone.parent.parent / "current").symlink_to(standalone, target_is_directory=True)
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
 
     result = prune_codex_packages.prune(home=tmp_path, windows=False)
 
-    assert result.removed == [old]
-    assert all(path.is_dir() for path in (current, recorded, previous))
+    assert not result.failures
+    assert result.removed == [standalone_old]
+    assert all(path.is_dir() for path in (current, unrecorded_previous, recorded, old))
 
 
-@pytest.mark.parametrize("history", ["0.170.0-x86_64-unknown-linux-musl\n../outside\n", "../outside\n\n"])
+@pytest.mark.parametrize(
+    "history",
+    [
+        "0.170.0-x86_64-unknown-linux-musl\n../outside\n",
+        "../outside\n\n",
+        # releases直下にある、releasesの外へのリンク。
+        "0.170.0-x86_64-unknown-linux-musl\nlinked\n",
+    ],
+)
 def test_invalid_selection_history_fails_without_removal(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], history: str
 ) -> None:
@@ -309,10 +322,14 @@ def test_invalid_selection_history_fails_without_removal(
     current = _release(tmp_path, "standalone", "0.170.0")
     old = _release(tmp_path, "standalone", "0.150.0")
     root = current.parent.parent
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "releases" / "linked").symlink_to(outside, target_is_directory=True)
     (root / "current").symlink_to(current, target_is_directory=True)
     (root / "selection-history").write_text(history, encoding="utf-8")
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
 
     assert cli.main([]) == 1
     assert old.is_dir()
-    assert "selection-historyの記録が不正" in capsys.readouterr().err
+    assert outside.is_dir()
+    assert "selection-history" in capsys.readouterr().err
