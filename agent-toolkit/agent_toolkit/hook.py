@@ -153,7 +153,8 @@ def main(argv: list[str]) -> int:
             resolution = plugin_resolution_scope(session_id=session_id)
     try:
         with cycle, resolution:
-            result = _invoke_module(module, payload_text, payload, argv, input_warning)
+            extra = {"input_warning": input_warning} if input_warning else {}
+            result = _invoke_module(module, payload_text, payload, argv, **extra)
         timing.record(payload, argv[0], started, "returned-zero" if result == 0 else "nonzero")
         return result
     except Exception as exc:  # noqa: BLE001 -- フック障害でも操作を継続する
@@ -163,21 +164,33 @@ def main(argv: list[str]) -> int:
 
 
 _WARNING_EVENTS = {"pretooluse": "PreToolUse", "posttooluse": "PostToolUse", "user_prompt_submit": "UserPromptSubmit"}
+# `additionalContext`を受理するイベント。posttooluseは他にPermissionDeniedも担当するが、その出力契約は`retry`だけを許す。
+_CONTEXT_EVENTS = frozenset({"PreToolUse", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit"})
 
 
-def _append_warning(result: dict, subcommand: str, warning: str) -> None:
-    """通知を受理するイベントの応答へ、既存の追加文脈を保って警告を連結する。"""
+def _warning_event(subcommand: str, payload: object) -> str | None:
+    """警告を連結できるイベント名を返す。入力のイベント名を優先し、受理しないイベントではNoneを返す。"""
     if subcommand not in _WARNING_EVENTS:
+        return None
+    event = payload.get("hook_event_name") if isinstance(payload, dict) else None
+    event = event if isinstance(event, str) and event else _WARNING_EVENTS[subcommand]
+    return event if event in _CONTEXT_EVENTS else None
+
+
+def _append_warning(result: dict, subcommand: str, warning: str, payload: object = None) -> None:
+    """通知を受理するイベントの応答へ、既存の追加文脈を保って警告を連結する。"""
+    event = _warning_event(subcommand, payload)
+    if event is None:
         return
     specific = result.setdefault("hookSpecificOutput", {})
-    specific["hookEventName"] = _WARNING_EVENTS[subcommand]
+    specific["hookEventName"] = event
     specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
 
 
 def _failure_response(subcommand: str, error: Exception, response: dict | None = None, *, payload: object = None) -> dict:
     """通知を受理するイベントだけへ、既存応答と単一JSONで障害を返す。"""
     result = response if response is not None else {}
-    if subcommand in _WARNING_EVENTS:
+    if _warning_event(subcommand, payload) is not None:
         warning = _notice_formatter("hook")(
             f"agent-toolkitの自動処理{subcommand}で想定外のエラーが起きた: {type(error).__name__}: {error}。"
             "この診断は元の操作の成否を示さない。",
@@ -185,7 +198,7 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
             removable_cause=False,
             fix="元の操作の結果を確認せよ。自動処理の失敗が再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
         )
-        _append_warning(result, subcommand, warning)
+        _append_warning(result, subcommand, warning, payload)
     if response is None and result:
         _bound_pretooluse_context(result, payload, subcommand)
         _notice.emit_response(result)
@@ -251,7 +264,7 @@ def _add_user_copy(
 
 
 def _invoke_module(
-    module: types.ModuleType, payload_text: str, payload: object, argv: list[str], input_warning: str = ""
+    module: types.ModuleType, payload_text: str, payload: object, argv: list[str], *, input_warning: str = ""
 ) -> int:
     """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。
 
@@ -284,7 +297,7 @@ def _invoke_module(
             response = _failure_response(argv[0], error, response or {})
         generated.extend(failure_notices)
         raw = json.dumps(response, ensure_ascii=False) if response else ""
-    if input_warning and argv[0] in _WARNING_EVENTS:
+    if input_warning and _warning_event(argv[0], payload) is not None:
         with _common_message_format.record_generated() as input_notices:
             warning = _notice_formatter("hook")(
                 input_warning,
@@ -294,7 +307,7 @@ def _invoke_module(
             )
         generated.extend(input_notices)
         response = response if response is not None else {}
-        _append_warning(response, argv[0], warning)
+        _append_warning(response, argv[0], warning, payload)
         raw = json.dumps(response, ensure_ascii=False)
     if response is not None and _bound_pretooluse_context(response, payload, argv[0]):
         raw = (json.dumps(response, ensure_ascii=False) + ("\n" if raw.endswith("\n") else "")) if response else ""
