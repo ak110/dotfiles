@@ -150,7 +150,7 @@ def test_cleanup_removes_retired_always_on_rules_but_keeps_personal_rules(
 
     assert not (claude_dir / "rules/agent-toolkit").exists()
     assert not (codex_dir / "agent-toolkit/rules").exists()
-    # Codexの親は他の配布物が無いため空なら削除し、利用者のファイルが残る場合は保持する。
+    # Codexの親は他の配布物が無いため空なら削除し、ユーザーのファイルが残る場合は保持する。
     assert (codex_dir / "agent-toolkit").exists() is codex_user_file
     for path in kept:
         assert path.read_text(encoding="utf-8") == "x\n"

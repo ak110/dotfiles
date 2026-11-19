@@ -136,10 +136,7 @@ def test_missing_cli_and_owned_path_conflict_do_not_overwrite_user_files(
     assert not (destination / "agent-toolkit.md").exists()
 
 
-def test_resync_replaces_legacy_rules_body_and_requires_entry_skill(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_resync_replaces_legacy_rules_body_and_requires_entry_skill(tmp_path: Path) -> None:
     """旧版が常時規範を連結した案内のファイルを案内だけへ置き換え、入口のスキルが無い配布元は書込前に失敗する。"""
     root = tmp_path / "dotfiles"
     _source(root)
