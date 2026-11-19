@@ -19,7 +19,7 @@ import filelock
 import platformdirs
 import psutil
 import pytest
-from agent_toolkit._common import dotfiles_mode, windows_job
+from agent_toolkit._common import dotfiles_mode, process_tree, windows_job
 
 from pytools import post_apply
 from pytools._internal import (
@@ -459,11 +459,14 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
         pytest.skip("uvが無い環境では実際のキャッシュロックを再現できない")
     which = shutil.which
     _prepare(tmp_path, monkeypatch, "full")
-    started_pids: list[int] = []
+    maintenance: list[psutil.Process] = []
 
     def start() -> int:
-        started_pids.append(_REAL_START_UV_CACHE_MAINTENANCE())
-        return started_pids[-1]
+        pid = _REAL_START_UV_CACHE_MAINTENANCE()
+        # 終了後に再利用されたPIDの別プロセスを回収しないよう、起動直後の識別を保持する。
+        with contextlib.suppress(psutil.NoSuchProcess):
+            maintenance.append(psutil.Process(pid))
+        return pid
 
     monkeypatch.setattr(prune_installation, "start_cache_maintenance", start)
     # 隔離PATHはmise shimを別名で置くため、整理側が解決するuvをshimを経由しない本体にそろえる。
@@ -500,13 +503,12 @@ def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_en
     assert json.loads(record.read_text(encoding="utf-8"))["result"] == "completed"
     assert os.path.normcase(str(cache.resolve())) in json.loads(_state("uv-cache-clean.json").read_text(encoding="utf-8"))
     assert not marker.exists()
-    # 記録の後に続く事前構築の終了を待ち、独立プロセスを試験の外へ残さない。
-    processes = []
-    for pid in started_pids:
-        with contextlib.suppress(psutil.NoSuchProcess):
-            processes.append(psutil.Process(pid))
-    _exited, running = psutil.wait_procs(processes, timeout=20)
-    assert not running, "独立プロセスが記録の後20秒以内に終了しなかった"
+    # 独立プロセスは記録の後もuv以外の整理とMCPの事前構築を続ける。どちらもこの試験の対象外で、
+    # 所要は実行環境の負荷と導入済みのツールで変わる（Windows CIで記録の後20秒を超えた）。
+    # 自然な終了を待たずに回収し、独立プロセスを試験の外へ残さない。
+    for process in maintenance:
+        stopped = process_tree.stop_tree(process)
+        assert not stopped.residual and not stopped.unresolved, stopped.descriptions()
 
 
 def _uv_clean_failure(monkeypatch: pytest.MonkeyPatch, calls: list[list[str]]) -> dict[str, str | None]:
