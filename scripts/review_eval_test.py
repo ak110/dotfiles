@@ -360,10 +360,12 @@ def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, c
     assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
     (prepared,) = _results(capsys)
     assert prepared["start"]["subagent_md_path"] == "wi-draft-review"
+    case_dir = pathlib.Path(prepared["start"]["cwd"]).parent
+    assert case_dir.parent == out
     assert prepared["start"]["extra_params"] == {
-        "計画": str(out / "missed" / "01-0000_case.md"),
+        "計画": str(case_dir / "01-0000_case.md"),
         "起点": old,
-        "記録": f"{out / 'missed'}/handoff.md",
+        "記録": f"{case_dir}/handoff.md",
     }
     subprocess.run(prepared["cleanup"], check=True)
 
@@ -429,7 +431,7 @@ def test_prepare_rejects_incomplete_generation_or_saved_input(tmp_path, monkeypa
         assert "--repo <名前>" not in captured.err
     else:
         assert "revision" in captured.err
-    assert not (out / "missed/worktree").exists()
+    assert not list(out.glob("*/worktree"))
 
 
 def test_store_then_prepare_uses_saved_plan_and_contract(tmp_path, monkeypatch, capsys) -> None:
@@ -628,6 +630,44 @@ def test_prepare_accepts_output_path_with_backslashes(tmp_path, capsys) -> None:
     plan_text = pathlib.Path(prepared["start"]["extra_params"]["計画"]).read_text(encoding="utf-8")
     assert f"- 対象リポジトリ: `{worktree}`" in plan_text
     subprocess.run(prepared["cleanup"], check=True, capture_output=True)
+
+
+def _reviewer_view(prepared: dict, out: pathlib.Path) -> dict:
+    """担当が受け取る起動入力、作業ツリーと計画の置き場所にある名前、commit件名を、出力先を伏せて返す。"""
+    start = prepared["start"]
+    worktree = pathlib.Path(start["cwd"])
+
+    def shown(value: str) -> str:
+        return value.replace(str(out), "<out>")
+
+    return {
+        "cwd": shown(start["cwd"]),
+        "subagent_md_path": start["subagent_md_path"],
+        "extra_params": {key: shown(value) for key, value in start["extra_params"].items()},
+        "files": sorted(path.name for path in worktree.parent.iterdir()),
+        "subjects": _git(worktree, "log", "--format=%s").splitlines(),
+    }
+
+
+@pytest.mark.parametrize("material", ["guide-split", "handoff-record", "recheck-ledger"])
+def test_prepare_hides_case_identity_from_reviewer(tmp_path, capsys, material) -> None:
+    """同じ素材の欠陥の事例と正常対照で、担当へ渡る入力は事例ごとの置き場所と開始時のHEADを除いて同じになり、
+    事例ID、事例の種類、素材の差分と計画のファイル名を含まない。"""
+    cases = [case for case in review_eval.load_cases() if case.material is not None and case.material.name == material]
+    assert {case.kind for case in cases} > {"正常対照"}
+    comparable = []
+    for case in cases:
+        assert case.material is not None
+        assert review_eval.main(["prepare", "--out", str(tmp_path), "--case", case.id]) == 0
+        (prepared,) = _results(capsys)
+        view = _reviewer_view(prepared, tmp_path)
+        text = json.dumps(view, ensure_ascii=False)
+        cues = {case.id, case.kind, case.material.change, case.material.plan, "defect", "control"}
+        assert not [cue for cue in cues if cue in text], text
+        case_name = pathlib.Path(prepared["start"]["cwd"]).parent.name
+        comparable.append(text.replace(case_name, "<case>").replace(view["extra_params"]["開始時のHEAD"], "<base>"))
+        subprocess.run(prepared["cleanup"], check=True, capture_output=True)
+    assert len(set(comparable)) == 1, comparable
 
 
 _SMALL_FINDINGS = {

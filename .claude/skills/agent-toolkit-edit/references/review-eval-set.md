@@ -21,6 +21,8 @@
    - 出力の`temporary_evidence`は、渡す計画と条件表が参照する一時領域のパスの件数（`referenced`）と、現存しないパス（`missing`）を示す。
      `missing`が空でない事例は、評価の前に、証拠を欠測と明記した評価用の計画を`store`で保存して`fixtures`へ指定する。
    - 出力の`start`をそのまま`agents_server`の`start`へ渡し、比べるモデルは`model_type`で指定する。
+     事例ごとの出力先の名前、合成素材の事例の計画の名前とcommit件名は、欠陥の事例と正常対照で同じ形の中立の名前になる。
+     事例IDと種類は出力の`case`と`kind`だけにあるため、担当へは`start`だけを渡す。
 2. 変更前は稼働中のplugin rootの役割名（`exec-review`）を、変更後は作業ツリーの`agent-toolkit/share/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。
    agent-basicsのスキルなど役割文書の外の改訂は、稼働版へ反映した後の実行と、反映の前に保存した結果を比べる。
    事例の作業ツリーは過去の版のため、そのプロジェクトのスキルの読込表に現行のhookが解釈できない行があると、hookはその行を除いた旨を警告する。

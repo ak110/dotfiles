@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import functools
+import hashlib
 import json
 import os
 import pathlib
@@ -426,7 +427,10 @@ _MATERIAL_GIT = (
 
 
 def _material_inputs(case: _Case, material: _Material, case_dir: pathlib.Path) -> _Inputs:
-    """合成素材の差分から変更前と変更後の2つのcommitを持つリポジトリを作り、素材の計画とWI原本を入力にする。"""
+    """合成素材の差分から変更前と変更後の2つのcommitを持つリポジトリを作り、素材の計画とWI原本を入力にする。
+
+    計画の名前とcommit件名は、同じ素材の事例どうしで同じ名前にし、素材のファイル名（欠陥の差分か正常対照か）を担当へ見せない。
+    """
     plan_path = material.root / material.plan
     plan_text = plan_path.read_bytes().decode("utf-8")
     names = commit_mapping.plan_allowed_wis(plan_text, plan_path) if case.extra_params is None else set()
@@ -438,7 +442,7 @@ def _material_inputs(case: _Case, material: _Material, case_dir: pathlib.Path) -
     repo.mkdir()
     _git(repo, "init", "-q")
     oids = []
-    for patch, message in ((material.root / "base.diff", "変更前"), (material.root / material.change, material.change)):
+    for patch, message in ((material.root / "base.diff", "変更前"), (material.root / material.change, "変更後")):
         _git(repo, "apply", "--index", str(patch))
         _git(repo, *_MATERIAL_GIT, "commit", "-q", "--no-verify", "-m", message)
         oids.append(_git(repo, "rev-parse", "HEAD"))
@@ -446,16 +450,24 @@ def _material_inputs(case: _Case, material: _Material, case_dir: pathlib.Path) -
         repo=repo,
         base=oids[0],
         head=oids[1],
-        plan_name=material.plan,
+        plan_name="plan.md",
         plan_text=plan_text,
         texts=texts,
         retarget_repair=f"{plan_path}の計画メタ情報へ対象リポジトリの行を1件だけ書く",
     )
 
 
+def _case_dir_name(case: _Case) -> str:
+    """事例の出力先の名前。担当へ渡すパスから事例ID（欠陥の事例か正常対照か）を読み取れないよう、IDの要約値にする。"""
+    return hashlib.sha256(case.id.encode("utf-8")).hexdigest()[:12]
+
+
 def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> dict[str, Any]:
-    """事例の入力を`out/<事例ID>/`へ再構成し、レビュー担当の起動に渡す値を返す。"""
-    case_dir = out / case.id
+    """事例の入力を`out`の下の事例ごとの出力先へ再構成し、レビュー担当の起動に渡す値を返す。
+
+    事例IDと種類は返す値の`case`・`kind`だけに置き、`start`（担当へ渡す値）と出力先の名前には含めない。
+    """
+    case_dir = out / _case_dir_name(case)
     inputs = (
         _saved_inputs(case, case_dir, repos, private_notes)
         if case.material is None
@@ -667,7 +679,7 @@ def _cleanup_scored(case: _Case, table: pathlib.Path, *, retain: bool) -> dict[s
     worktree = table.resolve().parent / "worktree"
     if not worktree.exists():
         return {"status": "absent"}
-    if worktree.parent.name != case.id or not (worktree / ".git").is_file():
+    if worktree.parent.name != _case_dir_name(case) or not (worktree / ".git").is_file():
         return {"status": "retained", "reason": "評価用worktreeの配置を確認できない"}
     if retain:
         return {"status": "retained", "reason": "後続参照あり。" + _cleanup_retained_environment(worktree)}
