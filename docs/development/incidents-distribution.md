@@ -43,7 +43,8 @@
   その際、旧名の削除を`post_apply`の旧配布物削除へ加えなかった。
   旧配布物削除の規定は`.chezmoi-source/`配下のファイルだけを対象とし、`post_apply`の工程が生成するファイルを含まなかった。
   同じ原因で、廃止した工程が配置した`~/.config/agent-toolkit/feedback-inbox.enabled`と`review-balance-mode.claude-heavy`も残存していた。
-  対策: 3件の旧生成物（`atk.cmd`を含む）を`pytools/post_apply.py`の`_REMOVED_PATHS`へ登録する。
+  対策: 3件の旧生成物（`atk.cmd`を含む）を`_REMOVED_PATHS`へ登録した。
+  当時の定義元は`pytools/post_apply.py`、現在は`pytools/_internal/removed_paths.py`である。
   `pytools-edit`スキルの実装規約へ、工程が配置するファイルの配置先を改名または工程を廃止する場合に旧パスを登録する規定を加える
 
 - 2026年9月30日: Windowsホストで`actionlint`が`command not found`（終了コード127）となり、`mise which actionlint`は「No executable found for configured tool」で終了コード1を返した。
