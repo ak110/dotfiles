@@ -5,10 +5,6 @@
 各スキルの責務は、そのスキルの`description`と冒頭の責務文が定め、本書へ再掲しない。
 各層の本文が実際にどの起動区分へ届くかは`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表で確かめる。
 
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
 ## 層の一覧
 
 上の行ほど読む主体が広く、読む契機が早い。

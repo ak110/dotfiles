@@ -10,63 +10,45 @@ description: >
 
 # dotfilesのリリース運用
 
-このスキルは、本リポジトリにおける`develop`と`master`のリリース運用手順、および日次リリースの判定手順をまとめたものである。
-公開前の検証手順は`develop-dotfiles`の`references/publishing.md`を参照する。
-
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-## 関連する記録
-
-branch初期化、GitHubの保護設定、マージ後の詳細手順は、[developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)と[branchとリリースの設計](../../../docs/development/design-release-branches.md#developとmasterのbranchリリース設計)に記録がある（所在参照）。
-主checkoutのfast-forward後に常時稼働サーバーへ反映する手順は、[atk serveへの反映](../../../docs/development/operations-services.md#fast-forward後のatk-serveへの反映)にある（所在参照）。
-いずれも規範以外の記録であり、必要な範囲を選んで読む。
-
-## 常時稼働サーバーへの反映
-
-主checkoutをfast-forwardした後は、稼働中の`atk-serve.service`を再起動する。
-反映と稼働確認は[atk serveへの反映](../../../docs/development/operations-services.md#fast-forward後のatk-serveへの反映)に従う。
-反映したHEAD、再起動の終了コード、active/runningとHTTPの確認結果を公開担当の完了報告へ残す。
+`develop`で開発した変更を、`master`へのリリースPRで公開する手順書である。
+`master`は必須CIを全て通ったマージコミットだけで更新し、マージ、再試行、ロールバックはいずれも手順の中で明示して1回ずつ行う（auto-mergeと自動の再試行・ロールバックは使わない）。
+公開範囲について明示の指示があれば、それを最優先とする。
+経緯は`docs/development/operations-release.md`「日次リリースの自動実施」、branchの初期化と保護設定は`docs/development/design-release-branches.md`にある。
 
 ## developとmasterのリリース運用
 
-日常の開発作業は`develop`ブランチ上で行い、リリースは`master`に向けたPRを通じて実施する。
-`master`ブランチは、必須CIをすべて通過したマージコミットのみによって更新する。
-auto-mergeの有効化や、失敗時の自動再試行、自動ロールバックの導入は行わない。
+対象は、`agent-toolkit:process-wi`の作業と、`operate-ak110-projects`「リリース運用」の恒常的な認可か明示の指定で公開まで担当する協調モードの作業である。
+メインエージェントが次の手順で日次リリースの要否を判定して実施する。
+この範囲に当たらない作業では、リリースPRを手で作り、マージの後は`merge-pr`の手順でブランチの同期、CI、必要なリリースを検収する。
 
-`agent-toolkit:process-wi`による作業、および`operate-ak110-projects`「リリース運用」の恒常的な認可や明示的な指定によって公開まで担当する協調モードの作業を対象とする。
-メインエージェントが以下の手順で日次リリースの要否を判定し、実施する（背景や経緯は[日次リリースの自動実施](../../../docs/development/operations-release.md#日次リリースの自動実施)を参照）。
-なお、公開範囲について明示的な指示がある場合は、それを最優先とする。
-
-1. 公開工程でのpushとCIの成功後、公開する差分を判定する。
-   `agent-toolkit:atk-mode/references/git-identifier.md`で解決した`origin/develop`と`origin/master`が同じcommitなら、その旨を報告してPR作成を見送る。
-   差分があれば、WIキューの消化状態や変更を利用する主体によらず次へ進む。
-2. 同一の最上位セッションでリリースPRを1件マージ済みなら、追加分は`develop`へのpushとCI成功まで確認する。
-   長い継続中は`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で追加のリリースPRを作成し、セッション終了を待たない。
+1. `develop`へpushする前に、`rust/claude-statusline/`配下の差分（試験と試験入力だけ、`Cargo.lock`だけの変更を含む）があれば、`rust/claude-statusline/Cargo.toml`の`version`を上げる。
+   `release-statusline.yaml`は差分のあるマージごとに`statusline-v<version>`タグを作るため、据え置くと既存のタグと衝突する。
+   レーン担当は更新の根拠を計画か引き継ぎ記録へ残し、公開担当はその根拠が統合差分にも当てはまることと、版数と`Cargo.lock`の整合を確かめる。
+   最終の検証は`.claude/skills/develop-dotfiles/references/verification.md`「公開前の検証」のとおりpyfltrへ`--enable=statusline-version`を渡し、レーンの途中のcommitでは無効のまま保つ。
+2. pushとCIの成功の後、公開する差分を判定する。
+   `agent-toolkit:atk-mode/references/git-identifier.md`で解決した`origin/develop`と`origin/master`が同じcommitなら、その旨を報告してPRの作成を見送る。
+   差分があれば、WIキューの消化状態や変更を使う主体によらず次へ進む。
+3. 同じ最上位セッションでリリースPRを1件マージ済みなら、追加分は`develop`へのpushとCIの成功まで確かめる。
+   長い継続中は`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で追加のリリースPRを作り、セッションの終了を待たない。
    期限より前にセッションを終える場合は、追加分を次のセッションのPRへまとめる。
-   ただし、マージ済みの`master`の不具合修正を`develop`へ公開した場合は、不具合を残さないため同じセッションでも追加のリリースPRを作成してマージする（ユーザー指示、2026年10月28日）。
-3. 重複PRを防ぐため、同じheadとbaseを持つopenなPRを確認する。
+   マージ済みの`master`の不具合の修正を`develop`へ公開した場合は、不具合を残さないため、同じセッションでも追加のリリースPRを作ってマージする（ユーザー指示、2026年10月28日）。
+4. 同じheadとbaseを持つopenなPRを確かめる。
    1件なら再利用し、複数なら候補の番号とURLを報告して停止する。
-   0件なら、タイトルと本文を書く前に`agent-basics:writing-standards/references/writing-genres.md`「判断と行動を求める記述」を読み、その変更説明の基準でタイトルと本文を書いてmanaged-tempへ保存する。
-   本文は、エンドユーザーに影響する変更を先頭の章に置き、変更の種類ごとに章を分け、変更を1件ずつ項目にして、エンドユーザーが読んで分かる粒度で書く。
-   版数は末尾の章にまとめる。
-   章の名前と数はその回の変更に合わせ、変更が1件だけのPRは章を設けずに書く。
-   手本は#209である（エンドユーザーに影響する変更、エージェントの作業手順の変更、不具合の修正と試験、版数の4章に分け、タイトルは「リポジトリごとの編集制約と推論量の途中変更、一括処理の所要短縮」）。
-   作成直前に`agent-toolkit:review-external-writes`を起動し（タイトルも文面ファイルへ含める）、PRを作成する。
-4. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチ同期、CI確認、および必要なリリースの検収まで完了させる。
-   今回masterへ反映した変更の採用記録からエンドユーザー側の未実施操作を拾う。
-   `agent-toolkit:process-wi/references/finish-session.md`「エンドユーザー側の操作が必要な変更」に従って設定を進め、専用案内UWIを登録する。
-   developへのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。
-5. PRの作成やマージに失敗した時点で停止し、外部状態、失敗工程、runのURLと再開に必要な情報を報告する。
-   自動再試行とロールバックは行わない。
+   0件なら、`agent-basics:writing-standards/references/writing-genres.md`「判断と行動を求める記述」の変更説明の基準でタイトルと本文を書き、一時領域へ保存する。
+   - 本文は1分で読める要約にし、詳しい証拠は記録（計画、WI、CIのrun）の所在で示す。
+   - エンドユーザーに影響する変更を先頭の章に置き、変更の種類ごとに章を分け、変更を1件ずつ項目にして、エンドユーザーが読んで分かる粒度で書く。
+   - 版数は末尾の章にまとめる。
+     章の名前と数はその回の変更に合わせ、変更が1件だけのPRは章を設けずに書く。
+   - 手本は#209である（エンドユーザーに影響する変更、エージェントの作業手順の変更、不具合の修正と試験、版数の4章。タイトルは「リポジトリごとの編集制約と推論量の途中変更、一括処理の所要短縮」）。
 
-上記の公開範囲に該当しない作業では、リリースPRを手動で作成し、マージ完了後に`merge-pr`の手順に沿ってブランチ同期、CI、および必要なリリースを検収する。
+   作成の直前に`agent-toolkit:review-external-writes`を起動し（タイトルも文面ファイルへ含める）、PRを作る。
+5. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチの同期、CIの確認、必要なリリースの検収まで終える。
+6. 今回`master`へ反映した変更の採用記録から、エンドユーザー側の未実施の操作を拾う。
+   `agent-toolkit:process-wi/references/finish-session.md`「エンドユーザー側の操作が必要な変更」に従って設定を進め、専用の案内UWIを登録する。
+   `develop`へのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。
+7. 主checkoutをfast-forwardした後は、稼働中の`atk-serve.service`を再起動する。
+   反映と稼働の確認は`docs/development/operations-services.md`「fast-forward後のatk serveへの反映」に従い、反映したHEAD、再起動の終了コード、active/runningとHTTPの確認結果を完了報告へ残す。
+8. PRの作成かマージに失敗した時点で停止し、外部の状態、失敗した工程、runのURL、再開に必要な情報を報告する。
+   再開は報告した情報から手で行い、自動の再試行とロールバックは使わずに済ませる。
 
-statusline（`rust/claude-statusline/`配下）に変更を加えた場合は、どの手順でリリースする場合であっても、必ず`rust/claude-statusline/Cargo.toml`の`version`を更新する。
-レーン担当者は更新の根拠を計画や引き継ぎ記録へ残す。
-公開担当者はその根拠が統合差分にも当てはまるか確認し、`develop`へpushする前に版数と`Cargo.lock`の整合を確かめる。
-対象は配下の全ファイルの差分であり、テストコード・テスト入力のみや`Cargo.lock`のみの変更も含む。
-GitHub Actionsの`release-statusline.yaml`は差分があるマージごとに`statusline-v<version>`タグを生成するため、据え置くと既存タグと衝突する。
-公開前の最終検証は`develop-dotfiles`の`references/publishing.md`「公開前の検証」に従い、pyfltrへ`--enable=statusline-version`を指定し、既存チェックの結果を確認する。
-レーンの途中commitでは既定無効を維持し、採番の完了は公開担当が検収する。
+返す報告に含める項目: PRのURL、マージコミットの完全OID、CIとReleaseのrunの結果、反映したHEADと`atk serve`の確認結果、登録した案内UWI、停止した場合の外部の状態と再開に必要な情報。

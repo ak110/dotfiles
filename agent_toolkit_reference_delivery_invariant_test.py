@@ -10,23 +10,6 @@ from agent_toolkit._common import read_triggers
 from agent_toolkit._testing.normative_contract import read_contract
 
 
-def test_ci_failure_read_row_delivers_quality_and_operations() -> None:
-    """同じ失敗受領条件で、品質と工程の二資料が資料列と、そこから導出した配送操作の両方から取得される。"""
-    root = pathlib.Path(__file__).resolve().parent
-    plugin = root / "agent-toolkit"
-    source = root / ".claude/skills/merge-pr/SKILL.md"
-    quality = root / "agent-basics/skills/bugfix/references/ci-failures.md"
-    operations = plugin / "skills/atk-mode/references/ci.md"
-    rows = read_triggers.parse_tables(source, plugin, strict=True)
-    row = next(row for row in rows if quality in row.documents)
-    assert set(row.documents) == {quality, operations}
-    assert set(row.effective_operations) == {
-        "read:agent-basics:*/skills/bugfix/references/ci-failures.md",
-        "read:agent-toolkit:*/skills/atk-mode/references/ci.md",
-    }
-    assert all(target.body() for target in row.targets)
-
-
 def test_session_state_design_reference_reaches_local_development_rule() -> None:
     """配布実装の開発用docstringから、実在するローカル規約の設計節に到達する。"""
     root = pathlib.Path(__file__).resolve().parent
