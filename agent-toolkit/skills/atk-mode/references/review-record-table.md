@@ -16,7 +16,7 @@ CI対応レビュー指摘管理表は、計画ファイルの無いCI失敗へ�
 
 - 基準に`計画`を含む: 計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`（複数の計画を含むレビュー単位では作成順で最初の計画のstem）。
 - 基準が`WI`だけの直接実装: `~/.claude/plans/wi-<処理開始時点の短縮OID>.exec-review.tsv`。
-- 基準が`CI記録`だけの、公開工程のCI失敗の修正: `~/.claude/plans/ci-<修正系列の開始時のHEADの短縮OID>.exec-review.tsv`。
+- 基準に`計画`を含まず`CI記録`を含む、公開工程のCI失敗の修正（`WI`との併用を含む）: `~/.claude/plans/ci-<修正系列の開始時のHEADの短縮OID>.exec-review.tsv`。
 
 レビュー担当は最初に読む前に表の在否を確かめ、初回のレビューで無い時だけ`atk review-table init <表の絶対パス>`で作る。
 起動元は表を作らずにレビュー担当を起動する。
@@ -28,4 +28,4 @@ CI対応レビュー指摘管理表は、計画ファイルの無いCI失敗へ�
 
 - 基準が`WI`だけ: 最終化まで保持し、レーンの統合では`atk lane integrate`が`phase: finalized`を返した後、直接実装では受領確認と意味の検収を終えた後に、private-notesへ保存せずに削除する。
 - 基準に`計画`を含む: 計画を管理する担当が、計画バンドルと一緒に`agent-toolkit:atk-mode/references/plan-storage.md`「計画ファイルの保存と参照」で保存する。
-- 基準が`CI記録`だけ: `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正系列」に従って修正系列の単位で引き継ぎ、同節の手順6で保存する（`process-wi`の公開工程では公開担当が行う）。
+- 基準に`計画`を含まず`CI記録`を含む: `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正系列」に従って修正系列の単位で引き継ぎ、同節の手順6で保存する（`process-wi`の公開工程では公開担当が行う）。
