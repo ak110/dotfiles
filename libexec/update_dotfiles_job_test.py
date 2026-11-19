@@ -129,12 +129,19 @@ def _invoke(project: tuple[pathlib.Path, dict[str, str]], *arguments: str) -> su
     )
 
 
-def _wait_file(path: pathlib.Path) -> None:
+def _wait_file(path: pathlib.Path) -> str:
+    """同期点のファイルが現れて読めるまで待ち、本文を返す。
+
+    Windowsでは置換で公開した直後の名前を、置換したプロセスが閉じるまで開けない（PermissionError）。
+    """
     deadline = time.monotonic() + 15
-    while not path.exists():
-        if time.monotonic() >= deadline:
-            pytest.fail(f"同期点に到達しません: {path}")
-        time.sleep(0.02)
+    while True:
+        try:
+            return path.read_text(encoding="utf-8")
+        except FileNotFoundError, PermissionError:
+            if time.monotonic() >= deadline:
+                pytest.fail(f"同期点に到達しません: {path}")
+            time.sleep(0.02)
 
 
 def _job(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
@@ -310,9 +317,9 @@ def _pending_output_job(
     ) as controller:
         try:
             _wait_file(output_child)
-            _wait_file(pathlib.Path(environment["READY"]))
+            ready = int(_wait_file(pathlib.Path(environment["READY"])))
             with contextlib.suppress(psutil.NoSuchProcess):
-                psutil.Process(int(pathlib.Path(environment["READY"]).read_text(encoding="utf-8"))).wait(timeout=15)
+                psutil.Process(ready).wait(timeout=15)
             yield controller, _job(project)
         finally:
             pathlib.Path(environment["RELEASE"]).touch()
@@ -403,8 +410,7 @@ def test_public_job_preserves_service_with_closed_output(project: tuple[pathlib.
     try:
         result = _invoke(project)
         assert result.returncode == 0, result.stdout + result.stderr
-        _wait_file(pathlib.Path(environment["CHILD_READY"]))
-        service = psutil.Process(int(pathlib.Path(environment["CHILD_READY"]).read_text(encoding="utf-8")))
+        service = psutil.Process(int(_wait_file(pathlib.Path(environment["CHILD_READY"]))))
         assert service.is_running() and service.status() != psutil.STATUS_ZOMBIE
     finally:
         if service is not None:
@@ -495,11 +501,10 @@ def test_native_worker_output_contract(
     ):
         try:
             if scenario != "read-error":
-                _wait_file(output_child)
-                child = psutil.Process(int(output_child.read_text(encoding="utf-8")))
-                _wait_file(pathlib.Path(environment["READY"]))
+                child = psutil.Process(int(_wait_file(output_child)))
+                ready = int(_wait_file(pathlib.Path(environment["READY"])))
                 with contextlib.suppress(psutil.NoSuchProcess):
-                    psutil.Process(int(pathlib.Path(environment["READY"]).read_text(encoding="utf-8"))).wait(timeout=15)
+                    psutil.Process(ready).wait(timeout=15)
                 if scenario == "late":
                     pathlib.Path(environment["RELEASE"]).touch()
                 if scenario == "stop":
