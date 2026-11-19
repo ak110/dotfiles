@@ -383,7 +383,9 @@ def _actor(arguments: list[str]) -> int:
             thread = result["thread"]["id"]
             if _MODE == "tui-reset":
                 # 届いた通知を読まずに閉じ、OSが接続をリセットする。通常TUIは切断の後に端末を戻してから終了する。
-                select.select([connection], [], [], 5)
+                # 通知を応答と同じ読取で受け取り済みなら、socketはもう読取可能にならないため待たない。
+                if not wire.pending:
+                    select.select([connection], [], [], 5)
                 stream.close()
                 connection.close()
                 (_ROOT / "tui-reset").touch()
