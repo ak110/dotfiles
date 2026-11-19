@@ -45,6 +45,7 @@ SUBAGENT_PLAYBOOK = SHARE_DIR.parent / "skills" / "atk-mode" / "playbooks" / "su
 
 
 NOTICE_HEADING = "委譲を受けた担当であることの通知"
+CONSTRAINTS_HEADING = "硬い制約"
 ROLES_HEADING = "起動の種類ごとの役割"
 AUTO_RESUME_HEADING = "自動再開"
 ROLE_HEADINGS: dict[LaunchKind, str] = {"delegate": "通常の委譲", "explore": "探索", "shell": "実行", "write": "書込"}
@@ -171,10 +172,15 @@ def base_instructions() -> str:
     return _body(2, NOTICE_HEADING)
 
 
+def _hard_constraints() -> str:
+    """役割によらず全modeへ渡す硬い制約の節を、見出しごと返す。"""
+    return f"## {CONSTRAINTS_HEADING}\n\n{_body(2, CONSTRAINTS_HEADING)}"
+
+
 def launch_prompt(kind: LaunchKind) -> str:
     """起動の種類の本文を原本から組み立てる。全backendが最初の起動と再開・継続の両方で使う。
 
-    通常の委譲は役割ごとの節を除いた原本の全文と「通常の委譲」を、軽量の委譲は通知・役割・返却の決まりだけを渡す。
+    通常の委譲は役割ごとの節を除いた原本の全文と「通常の委譲」を、軽量の委譲は通知・硬い制約・役割・返却の決まりだけを渡す。
     """
     if kind == "delegate":
         begin, end = _section(2, ROLES_HEADING)
@@ -184,7 +190,7 @@ def launch_prompt(kind: LaunchKind) -> str:
     role = _role_body(ROLE_HEADINGS[kind])
     if kind == "explore":
         role += f"\n\n{EXPLORE_CAPABILITIES}"
-    return _normative(f"{base_instructions()}\n\n{role}\n\n{result_contract()}", kind=kind)
+    return _normative(f"{base_instructions()}\n\n{_hard_constraints()}\n\n{role}\n\n{result_contract()}", kind=kind)
 
 
 def auto_resume_notice() -> str:

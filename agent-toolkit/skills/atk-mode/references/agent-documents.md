@@ -46,7 +46,7 @@ Claude Codeの`Agent`ツールの委譲先でスキルが使えるかは確か�
 | 文書 | Claude Codeのメイン | Codexのメイン | `agents_server`の`task`・`delegate` | `agents_server`の`explore`・`write`・`shell` | `Agent`ツールの委譲先 | Codexの組み込み委譲先 |
 | --- | --- | --- | --- | --- | --- | --- |
 | agent-toolkitのスキル（入口を含む） | 届く | 届く | 届く（Antigravityは有効なプラグインから。OpenCodeは自動登録せず、plugin rootの`skills/`から明示的に読む） | Claudeは届かない（`skills=[]`）。Codexは`write`・`shell`だけ（`explore`はプラグイン無効）。Antigravityは届く | 未確認 | 未確認 |
-| `playbooks/subagent.md`と役割文書 | 届かない | 届かない | 起動の本文 | 起動の本文 | 依頼文の指示で読む | 依頼文の指示で読む |
+| `playbooks/subagent.md`と役割文書 | 届かない | 届かない | 起動の本文 | 起動の本文（`subagent.md`の通知、「硬い制約」、役割の節、「返却形式の受け渡し」） | 依頼文の指示で読む | 依頼文の指示で読む |
 | ユーザーが`~/.claude/rules/`に置いた規範 | 届く（ユーザー規範） | `playbooks/host-codex.md`の読込指示（直下の`*.local.md`だけ） | Claudeはユーザー設定の読込元、Codexはdeveloper指示、Antigravityは起動・再開の指示、OpenCodeは指示の先頭 | 同左 | 親のメモリー階層（組み込みの`Explore`・`Plan`を除く） | `playbooks/host-codex.md`の読込指示（直下の`*.local.md`だけ） |
 | 作業ディレクトリのプロジェクト規範（`AGENTS.md`など） | 届く | 届く | Claude、Codex、Antigravityは届く。OpenCodeは未確認 | Claudeは届かない。Codexは届かない（`project_doc_max_bytes=0`）。Antigravityは届く。OpenCodeは未確認 | 届く（組み込みの`Explore`・`Plan`を除く） | 届く |
 

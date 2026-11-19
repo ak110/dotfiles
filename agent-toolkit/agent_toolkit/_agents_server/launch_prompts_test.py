@@ -144,20 +144,21 @@ _KINDS: tuple[LaunchKind, ...] = ("delegate", "explore", "shell", "write")
 
 @pytest.mark.usefixtures("agents_server_isolation", "playbook")
 def test_launch_kinds_reach_sdk_with_their_sections(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """原本の節が起動の種類ごとに切り出され、別の種類の本文を含まずにSDKへ届く。"""
+    """原本の節が起動の種類ごとに切り出され、別の種類の本文を含まずにSDKへ届く。硬い制約は全ての種類へ届く。"""
     captured = _capture_options(monkeypatch)
     for kind in _KINDS:
         claude_options._build_options(str(tmp_path), "model", "medium", launch_kind=kind)  # pylint: disable=protected-access
         delivered = captured["system_prompt"]
         assert isinstance(delivered, str)
         assert delivered.count(_MARKERS["notice"]) == 1, kind
+        assert delivered.count(_MARKERS["constraints"]) == 1, kind
         assert delivered.count(_MARKERS["result"]) == 1, kind
         assert _MARKERS["fenced"] in delivered, kind
         assert _MARKERS["auto-resume"] in delivered, kind
         assert delivered.count(_MARKERS[kind]) == 1, kind
         for other in set(_KINDS) - {kind}:
             assert _MARKERS[other] not in delivered, (kind, other)
-        for whole_only in ("intro", "constraints", "closing"):
+        for whole_only in ("intro", "closing"):
             assert (_MARKERS[whole_only] in delivered) is (kind == "delegate"), (kind, whole_only)
         assert (launch_prompts.EXPLORE_CAPABILITIES in delivered) is (kind == "explore"), kind
 
@@ -207,6 +208,7 @@ def test_distributed_playbook_assembles_every_launch_kind(kind: LaunchKind) -> N
     launch_prompts._playbook_lines.cache_clear()
     body = launch_prompts.launch_prompt(kind)
     assert body.count(launch_prompts.base_instructions()) == 1
+    assert body.count("## " + launch_prompts.CONSTRAINTS_HEADING) == 1
     assert body.count(launch_prompts.result_contract()) == 1
     assert "## 返却形式の受け渡し" in launch_prompts.result_contract()
     assert "## " + launch_prompts.ROLES_HEADING not in body
