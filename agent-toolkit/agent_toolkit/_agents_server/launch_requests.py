@@ -454,9 +454,7 @@ def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
     """サーバーが所有する共通入力を、役割文書の入力宣言から分離して加える。"""
     record_line = f"引き継ぎ記録先: {path}（新規）\n" if path is not None else ""
     return auto_message(
-        record_line
-        + f"{root / 'skills/atk-mode/references/work-contract.md'}と"
-        + f"{root / 'skills/delegation/references/handoff-record.md'}に従い、"
+        record_line + f"{root / 'skills/atk-mode/references/work-contract.md'}に従い、"
         "委譲先自身が新規・継続の指定に応じて記録を作成・更新する。"
         "記録は割当範囲を所有し、委譲元は終了後の検収で読む。",
         source="agents-server",

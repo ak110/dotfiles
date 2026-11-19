@@ -536,7 +536,7 @@ _GENERIC_READ_CONDITION = read_triggers.NAMED_REFERENCE_CONDITION
 def _launch_read_errors(share: pathlib.Path) -> list[str]:
     """起動契約の読込案内が、起動する委譲先の手順書を定型の条件で読ませる行を返す。
 
-    委譲元は委譲先の手順書を読まずに起動する（`agent-toolkit:delegation`「送信」）。
+    委譲元は委譲先の手順書を読まずに起動する（`agent-toolkit:atk-mode`の`playbooks/delegation.md`）。
     返却後の検収・編集・調査で読む行は条件へその時点を書き、手順の所有者を示すだけの本文は「所在参照」と明記する。
     時点を書いた行が無い本文の名指しは、定型の条件の宣言が補われるため報告する。
     """

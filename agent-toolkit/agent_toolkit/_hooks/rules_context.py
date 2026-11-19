@@ -57,8 +57,10 @@ ENTRY_COMPACT_NOTICE = (
 文脈を引き継がずに始まる会話のメインへ届ける。委譲先へは起動の本文が規範を届けるため、案内しない。
 """
 BACKGROUND_TASKS_DISABLED_NOTICE = (
-    "この`Claude Code`では`Bash`の背景実行が無効で、`run_in_background`は使えない。"
-    "待機は`agent-toolkit:delegation`の`references/waiting-and-monitoring-intervals.md`「待機区間の構成」に従え。"
+    "この`Claude Code`では`Bash`の背景実行が無効で、`run_in_background`は使えない。背景の指定を試さない。"
+    "`agents_server`の待機は単独の`atk agents wait`へ`Bash`の`timeout=600000`を指定して前景で実行し、"
+    "結果と終了コードを回収せよ。未終了で返った場合は同じコマンドを再発行せよ。"
+    "`sleep`や独自の待機ループで代替しない。"
 )
 """背景実行を無効にした起動で、使える待機方法をメインと委譲先へ伝える本文。
 

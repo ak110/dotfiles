@@ -14,9 +14,8 @@ import { automatedMessage, changedWarning } from "./automated_message.ts";
 // サブエージェントは完了通知で待機を解く。
 // 設計と不採用とした代替は`docs/development/design-hooks-periodic-recheck.md`「`start`の処理の中での定期再確認の装着」にある。
 
-const RUNTIME_REFERENCE = "`agent-toolkit:delegation`の`references/claude-code-runtime-waiting.md`「待機中の定期再確認と背景転換」";
 // 定期再確認のpromptの1行目に置く標識。`agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`の`PERIODIC_RECHECK_MARKER`と
-// 同じリテラルとし、一致は`agent-toolkit/skills/delegation/references/runtime_contract_invariant_test.py`が確かめる。
+// 同じリテラルとし、一致は`agent-toolkit/agent_toolkit/_hooks/periodic_recheck_marker_invariant_test.py`が確かめる。
 export const PERIODIC_RECHECK_MARKER = '<atk-auto source="periodic-recheck" kind="periodic-recheck">';
 const CRON_EXPRESSION = /^\S+( \S+){4}$/;
 // `atk wait-schedule`は`claude auth status`を最大5秒待つ。`uv run`の環境同期を含めても収まる上限を取る。
@@ -32,7 +31,8 @@ function notMounted(reason: string): string {
     "periodic-recheck",
     "warn",
     `待機状況の定期確認taskを自動作成できなかった（理由: ${reason}）。` +
-      `理由に示したツールの許可と公開状態を確認せよ。待機方法は${RUNTIME_REFERENCE}を参照せよ。`,
+      "理由に示したツールの許可と公開状態を確認せよ。" +
+      "確認できるまでは、委譲先とバックグラウンドタスクの完了通知を待って結果を回収せよ。",
   );
 }
 

@@ -43,7 +43,7 @@ RETURN_TARGETS = (
     ("lane-integration", "skills/atk-mode/playbooks/lane-receipt.md", "統合の返却契約", 3),
     ("copilot-review-audit", "skills/atk-mode/playbooks/process-wi-review-audit.md", "監査担当の返却契約", 3),
     ("refine-prompt", "skills/atk-mode/playbooks/refine-prompt.md", "評価担当の返却契約", 3),
-    ("defect-investigation", "skills/delegation/references/investigation-delegation.md", "調査担当の返却契約", 3),
+    ("defect-investigation", "skills/atk-mode/playbooks/investigation-delegation.md", "調査担当の返却契約", 3),
     ("external-write-review", "skills/atk-mode/playbooks/review-external-writes.md", "投稿前レビューの返却契約", 3),
     ("bulk-replace-review", "skills/atk-mode/roles/bulk-replace-review.parent.md", "一括置換後レビューの返却契約", 2),
     ("usability-review", "skills/atk-mode/roles/usability-review.parent.md", "ユーザビリティレビューの返却契約", 2),

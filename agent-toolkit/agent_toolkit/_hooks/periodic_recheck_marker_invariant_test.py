@@ -5,7 +5,7 @@ import re
 
 from agent_toolkit._hooks import user_prompt_submit
 
-_MOD_DEFINITION = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "periodic_recheck.ts"
+_MOD_DEFINITION = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "periodic_recheck.ts"
 
 
 def test_mod_marker_matches_the_hook_marker() -> None:

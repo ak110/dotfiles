@@ -142,7 +142,7 @@ export function register(on: On, session: { delegated: boolean; backgroundChange
   on("session.compact", { trigger: /^(manual|auto|plugin|precompute)$/ }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e);
     const sessionId = await $.session.id();
-    const resolved = await $.process.run(pluginLaunchCommand($.plugin.root, "skills/delegation/scripts/compaction_record.py", [
+    const resolved = await $.process.run(pluginLaunchCommand($.plugin.root, "skills/atk-mode/scripts/compaction_record.py", [
       "--session-id", sessionId,
     ]), { timeoutMs: 30_000 });
     if (resolved.exitCode !== 0 || resolved.isStdoutTruncated) return next(e);

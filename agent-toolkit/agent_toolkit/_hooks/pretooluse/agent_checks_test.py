@@ -198,13 +198,13 @@ class TestTaskStopBlock:
         assert "TaskStopの対象" in reason
         assert "バックグラウンドタスクの所有記録も停滞検知完了記録も無い" in reason
         assert "対象別の停滞検知完了記録を作成" in reason
-        assert "references/waiting-and-monitoring.md" in reason
-        assert "「停滞の検知と巻き取り」節" in reason
+        assert "`active_tool_uses`と`api_error`が無く活動が止まっていること" in reason
+        assert "atk run-script record-stall-detection" in reason
 
-    def test_block_message_refers_user_intervention_to_owner_section(self, state_dir: dict[str, str]) -> None:
-        """遮断文面がユーザー介入時の扱いを所有者の節（delegation「継続と新規起動」）へ委ねる。"""
+    def test_block_message_states_user_intervention_handling(self, state_dir: dict[str, str]) -> None:
+        """遮断文面が、ユーザー介入時に停止せず差分を追送する操作をその場で示す。"""
         reason = _denial_reason(self._invoke("task-stop-message-route", state_dir))
-        assert "ユーザーの介入時は`agent-toolkit:delegation`「継続と新規起動」を確認せよ" in reason
+        assert "ユーザーの介入では停止せず、採否を確定した差分を稼働中の担当へ追送せよ" in reason
 
     @pytest.mark.parametrize(
         ("label", "tool_input"),
@@ -639,7 +639,7 @@ class TestAgentTaskLaunchIndependence:
         assert result.returncode == 0
         specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
         assert specific.get("permissionDecision") != "deny"
-        assert "agent-toolkit:delegation" not in result.stderr
+        assert "playbooks/delegation.md" not in result.stderr
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.cpu_limit(
@@ -698,7 +698,7 @@ class TestGenericAgentLaunchBlock:
         assert "対応する`mode`" in reason
         mode = "`explore`" if agent_type in {"Explore", "web-fetch"} else "`delegate`または役割文書のある`task`"
         assert f"`mode`が{mode}の`agents_server`の`start`へ発行せよ" in reason
-        assert "references/runtime-routing.md" in reason
+        assert "例外は、`agents_server`の`MCP`ツールを呼べない場合" in reason
         assert "ツール名と入力全体を変えずに再発行してよい" in reason
         assert "`agent-basics:fetch-sources`" in reason
         repeated = _run(payload, env_overrides=env)
@@ -768,7 +768,7 @@ class TestGenericAgentLaunchBlock:
 
 
 class TestWorkflowSkillInvocation:
-    """`agent-toolkit:delegation`以外のスキルの起動が、`agent-toolkit:delegation`の状態記録または事前案内を発生させないことを確認する。"""
+    """工程のスキルの起動が、委譲の手順書（`atk-mode`の`playbooks/delegation.md`）の状態記録または事前案内を発生させないことを確認する。"""
 
     @pytest.mark.parametrize(
         "skill_name",
@@ -784,7 +784,7 @@ class TestWorkflowSkillInvocation:
         ],
     )
     def test_no_delegation_notice_for_workflow_skill(self, tmp_path: pathlib.Path, skill_name: str) -> None:
-        """`agent-toolkit:delegation`以外のスキルを起動しても委譲に関する追加出力を返さない。"""
+        """工程のスキルを起動しても委譲に関する追加出力を返さない。"""
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
@@ -794,7 +794,7 @@ class TestWorkflowSkillInvocation:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(result)
+        assert "playbooks/delegation.md" not in _additional_context(result)
 
     def test_no_notice_for_other_skill(self, tmp_path: pathlib.Path) -> None:
         """Skill取得時に条件候補・委譲に関する追加出力を返さない。"""
@@ -822,10 +822,10 @@ class TestWorkflowSkillInvocation:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(result)
+        assert "playbooks/delegation.md" not in _additional_context(result)
 
     def test_agent_launch_after_workflow_skill_is_allowed(self, tmp_path: pathlib.Path) -> None:
-        """`agent-toolkit:delegation`以外のスキルの起動後のAgent起動も、`agent-toolkit:delegation`の起動状態を問わない。"""
+        """工程のスキルの起動後のAgent起動も、委譲の手順書の取得状態を問わず遮断しない。"""
         env = _plan_file_state_env(tmp_path)
         skill_result = _run_after_skill_acquisition(
             {
@@ -844,11 +844,11 @@ class TestWorkflowSkillInvocation:
             env_overrides=env,
         )
         assert skill_result.returncode == 0, skill_result.stderr
-        assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(skill_result)
+        assert "playbooks/delegation.md" not in _additional_context(skill_result)
         assert agent_result.returncode == 0
         specific = json.loads(agent_result.stdout).get("hookSpecificOutput", {}) if agent_result.stdout else {}
         assert specific.get("permissionDecision") != "deny"
-        assert "agent-toolkit:delegation" not in agent_result.stderr
+        assert "playbooks/delegation.md" not in agent_result.stderr
 
 
 @pytest.mark.parametrize(

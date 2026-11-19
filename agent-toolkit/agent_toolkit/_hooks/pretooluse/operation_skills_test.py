@@ -183,14 +183,14 @@ def test_codex_inputs_match_required_skill_operations(payload: dict, skills: lis
         "echo rule > AGENTS.md",
         "printf rule 2>>.claude/rules/local.md",
         "printf rule | tee .claude/skills/x/SKILL.md",
-        "sed -i 's/old/new/' agent-toolkit/share/rules/common/01-agent.md",
+        "sed -i 's/old/new/' agent-toolkit/skills/atk-mode/playbooks/commit.md",
         "sed --in-place -e 's/old/new/' CLAUDE.md",
         "python3 -c \"p='AGENTS.md'; open(p,'w').write('rule')\"",
         "uv run --frozen python -c \"from pathlib import Path; Path('.claude/rules/x.md').write_text('rule')\"",
         "python3 - <<'PY'\np='.claude/skills/server-log-review/SKILL.md'\nopen(p,'w').write('rule')\nPY",
         "python3 -c \"from pathlib import Path; p=Path('AGENTS.md'); p.write_bytes(b'rule')\"",
         "for item in one; do printf rule > AGENTS.md; done",
-        "if test -f marker; then sed -i 's/old/new/' agent-toolkit/share/rules/common/01-agent.md; fi",
+        "if test -f marker; then sed -i 's/old/new/' agent-toolkit/skills/atk-mode/playbooks/commit.md; fi",
         "case value in one) printf rule | tee .claude/skills/x/SKILL.md;; esac",
         "time for item in one; do cp ordinary.md AGENTS.md; done",
         "! if test -f marker; then cp ordinary.md .claude/rules/local.md; fi",
@@ -390,7 +390,7 @@ def test_bash_document_write_option_boundaries(command: str) -> None:
         "cp AGENTS.md /tmp/AGENTS.md.bak",
         "mv AGENTS.md ordinary.md",
         "install -d AGENTS.md",
-        "install -vd .claude/rules agent-toolkit/share/rules/common",
+        "install -vd .claude/rules agent-toolkit/skills/atk-mode/playbooks",
         "install --help AGENTS.md",
         "rsync AGENTS.md ordinary.md",
         "perl -e 'print 1' AGENTS.md",
@@ -579,31 +579,30 @@ def test_verification_queries_do_not_require_check_execution(payload: dict) -> N
     ),
 )
 def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: str) -> None:
-    """資料不足を警告し、取得を観測するまで準備済みとして記録しない。"""
+    """委譲操作は委譲の手順書の取得を求め、取得を観測するまで準備済みとして記録しない。"""
     env = _plan_file_state_env(tmp_path)
-    for session in ("ready", "codex-delegation"):
+    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md")
+    for session in ("claude-delegation", "codex-delegation"):
         (managed_temp.resolve_session_temp(session) / "work-contract.md").write_text("委譲の試験\n", encoding="utf-8")
-    _record_skill(env, "ready", "agent-toolkit:delegation")
-    payload = {"tool_name": tool, "tool_input": {"prompt": "調査する", "subagent_type": "specialist"}, "session_id": "ready"}
-    # 起動手段の拒否とは分け、許可された専用定義で取得前後の案内を検証する。
-    assert "`agent-toolkit:delegation`" not in _additional_context(_run(payload, env))
+    payload = {
+        "tool_name": tool,
+        "tool_input": {"prompt": "調査する", "subagent_type": "specialist"},
+        "session_id": "claude-delegation",
+    }
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
-    result = _run(codex, env)
-    assert result.returncode == 0
-    assert "`agent-toolkit:delegation`" in _additional_context(result)
-    assert result.stderr == ""
-    state_file = session_state.state_path("codex-delegation")
-    state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
-    ready = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    assert "agent-toolkit:delegation" not in ready
-    assert not any(key.startswith("read-trigger:") for key in ready)
-    _acquire(env, codex, "delegation")
-    state = _read_session_state(tmp_path, "codex-delegation")
-    assert any(
-        key.startswith("read-trigger:") and "/skills/delegation/SKILL.md" in key and "main" in owners
-        for key, owners in state[rules_context.OPERATION_SKILL_READY_KEY].items()
-    )
-    assert "`agent-toolkit:delegation`" not in _additional_context(_run(codex, env))
+    # 起動手段の拒否とは分け、許可された専用定義で取得前後の案内を検証する。
+    for session_id, subject in (("claude-delegation", payload), ("codex-delegation", codex)):
+        result = _run(subject, env)
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert "playbooks/delegation.md" in _additional_context(result)
+        state_file = session_state.state_path(session_id)
+        state = _read_session_state(tmp_path, session_id) if state_file.exists() else {}
+        target = read_triggers.ReadTarget(playbook)
+        records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+        assert document_reads.acquisition_state(records, target, "main") == "missing"
+        _acquire_document(env, subject, playbook)
+        assert "playbooks/delegation.md" not in _additional_context(_run(subject, env))
 
 
 def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:
@@ -621,40 +620,23 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
     delivered = _run(valid, env)
     assert delivered.returncode == 0
-    assert "`agent-toolkit:delegation`" in _additional_context(delivered)
+    assert "playbooks/delegation.md" in _additional_context(delivered)
     state = _read_session_state(tmp_path, "blocked")
     records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    target = read_triggers.ReadTarget(plugin_resources.skill_document_path("delegation", "SKILL.md"))
+    target = read_triggers.ReadTarget(plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md"))
     assert document_reads.acquisition_state(records, target, "main") == "missing"
     assert delivered.stderr == ""
 
 
-def _record_skill(env: dict[str, str], session_id: str, skill: str, **extra: object) -> None:
-    result = run_hook(
-        "posttooluse",
-        {
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Skill",
-            "tool_input": {"skill": skill},
-            "tool_response": "起動成功",
-            "session_id": session_id,
-            **extra,
-        },
-        env,
-    )
-    assert result.returncode == 0
+def _acquire_document(env: dict[str, str], payload: dict, path: pathlib.Path) -> None:
+    """主体の区分に応じたホスト本来の手段で資料の全文を取得し、PostToolUseへ観測させる。
 
-
-def _acquire(env: dict[str, str], payload: dict, skill: str) -> None:
-    """主体の区分に応じたホスト本来の手段で`SKILL.md`を取得し、PostToolUseへ観測させる。
-
-    Claude CodeはSkill起動、Codexは`SKILL.md`の全文を返したBashの読取を観測の入力とする。
+    Claude CodeはReadの結果、Codexは全文を返したBashの読取を観測の入力とする。
     """
     extra = {key: payload[key] for key in ("agent_id", "turn_id") if key in payload}
     if "turn_id" not in payload:
-        _record_skill(env, payload["session_id"], f"agent-toolkit:{skill}", **extra)
+        _record_read(env, payload["session_id"], path, **extra)
         return
-    path = plugin_resources.skill_document_path(skill, "SKILL.md")
     acquisition = {
         "hook_event_name": "PostToolUse",
         "tool_name": "Bash",

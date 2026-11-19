@@ -10,7 +10,7 @@ writes_worktree: false
 
 # 既存不良の調査担当タスク
 
-<!-- parent-read-source: agent-toolkit:delegation/references/investigation-delegation.md#既存不良の調査担当の起動と受領 -->
+<!-- parent-read-source: agent-toolkit:atk-mode/playbooks/investigation-delegation.md#既存不良の調査担当の起動と受領 -->
 
 受け取った既存不良について`agent-basics:bugfix`の5つの問い（期待、原因、処置、広がり、確認）に答え、処置を確定して返す。
 コードの修正、対象リポジトリとキューへの書込、AWIの投入、委譲元の元の作業の続行は、委譲元が担う。

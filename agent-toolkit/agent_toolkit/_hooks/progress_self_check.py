@@ -30,9 +30,7 @@ from datetime import UTC, datetime
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
-from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
-from agent_toolkit._hooks.document_reads import reference_name
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 SELF_CHECK_INTERVAL_SECONDS = 30 * 60
@@ -59,9 +57,13 @@ _RESERVED_AT_KEY = "reserved_at"
 _reservations: list[tuple[str, str, float]] = []
 
 _SELF_CHECK_NOTICE_BODY = (
-    "律速担当の内部工程の現在の残量・速度・待ちを確認し、構成を比較して必要な組み直しを指示せよ。"
-    "手順は`{path}`「進捗点検」と、"
-    "`agent-toolkit:delegation/references/waiting-and-monitoring-progress.md`「成果物側の観測」に従え。"
+    "作業記録・要求原本・計画を読み直し、工程・開始時点・経過時間を目標と前回の成果に比べよ。"
+    "有効な全要求について成果・証拠・未達・残工程を確かめ、全工程に対する進捗率の概算と根拠を出せ。"
+    "律速担当の内部工程の現在の残量・速度・待ちを確認し、並行化・分割・検証の集約・独立工程の前倒しを比べて、"
+    "必要な組み直しを指示せよ。品質の維持に必要な工程は省かない。"
+    "成果物の状態は`git -C <worktree> status --porcelain=v1`、`git -C <worktree> rev-parse --short HEAD`、"
+    "`wc -l -- <file>`、`stat -L -c %Y -- <file>`で観測し、担当の生存と未回収の結果は実行識別子の照会で確かめよ。"
+    "組み直さずに続ける場合は、その根拠を点検の報告（委譲先は次の工程返却）に含めよ。"
 )
 
 
@@ -216,18 +218,13 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         return None
     # 整形や後続の出力が例外で終わっても終了時に予約を外せるよう、整形より先に解除の対象へ登録する。
     _reservations.append((session_id, agent_id, current_time))
-    path = reference_name(plugin_resources.plugin_root() / "share/agent-conduct-details.md")
     observed_at = datetime.fromtimestamp(current_time, tz=UTC).isoformat()
     elapsed_text = (
         f"この主体の初回観測から{_format_elapsed(elapsed)}たった。"
         if elapsed >= 0
         else "初回観測の保存時刻が通知生成時刻より後にあるため、経過時間は不明。"
     )
-    body = (
-        f"通知生成時刻: {observed_at}。{elapsed_text}"
-        + _saturation_text(session_id)
-        + _SELF_CHECK_NOTICE_BODY.format(path=path)
-    )
+    body = f"通知生成時刻: {observed_at}。{elapsed_text}" + _saturation_text(session_id) + _SELF_CHECK_NOTICE_BODY
     text = _llm_notice(body, tag="notice")
     if not text:
         return None

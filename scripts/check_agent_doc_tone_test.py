@@ -286,7 +286,7 @@ def test_report_mode_prints_metrics_without_judging(tmp_path: pathlib.Path, caps
 def test_norm_example_paths_are_checked(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
     """例を置く各ファイルも密度の判定へ到達し、超過した指標を報告する。"""
     owner = (
-        "agent-toolkit/skills/delegation/references"
+        "agent-toolkit/skills/atk-mode/references"
         if name == "textlint-violations.md"
         else "agent-basics/skills/writing-standards/references"
     )

@@ -222,7 +222,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
     root = tmp_path / "agent-toolkit"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    skill = root / "skills/delegation/SKILL.md"
+    skill = root / "skills/atk-mode/SKILL.md"
     reference = skill.parent / "references/reference.md"
     reference.parent.mkdir(parents=True)
     skill.write_text("---\nname: target\n---\n# 対象\n固有本文\n", encoding="utf-8")
@@ -256,7 +256,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
         invoke("PreToolUse", "Skill", {"skill": "agent-toolkit:review-session"})
 
     def acquire_skill():
-        invoke("PostToolUse", "Skill", {"skill": "agent-toolkit:delegation"}, "起動済み")
+        invoke("PostToolUse", "Skill", {"skill": "agent-toolkit:atk-mode"}, "起動済み")
 
     write = {"file_path": str(tmp_path / "output.md"), "content": "本文"}
     if order == "invocation-first":
@@ -273,7 +273,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
             state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
         )
         return
-    assert "`agent-toolkit:delegation`" in guidance
+    assert "`agent-toolkit:atk-mode`" in guidance
     inputs = {"file_path": str(skill)} if tool == "Read" else {"command": "cat -- " + shlex.quote(str(skill))}
     invoke("PreToolUse", tool, inputs)
     invoke("PostToolUse", tool, inputs, skill.read_text(encoding="utf-8"))
@@ -283,7 +283,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
         select_invocation()
         following = invoke("PreToolUse", "Write", write)
     if order == "reference-first":
-        assert "`agent-toolkit:delegation`" in following
+        assert "`agent-toolkit:atk-mode`" in following
     else:
         _assert_no_read_guidance(following)
     assert not read_delivery.target_ready(

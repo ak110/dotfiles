@@ -20,7 +20,7 @@ def _guidance_documents() -> list[pathlib.Path]:
     basics = resolve_plugin_root("agent-basics", root)
     return [
         basics / "skills/bugfix/references/prevention.md",
-        root / "skills/delegation/references/waiting-and-monitoring.md",
+        root / "skills/atk-mode/playbooks/delegation-waiting.md",
         root / "skills/atk-mode/playbooks/process-wi-immediate-fix.md",
     ]
 
@@ -57,8 +57,8 @@ def test_uninvestigated_reason_is_notified(text: str, monkeypatch: pytest.Monkey
     decision, body = improvement_status_advisor.evaluate(_payload(text))
     assert decision == "notify"
     assert 'kind="warn"' in body
-    assert "main-improvements.md" in body
     assert "最小調査" in body
+    assert "share/" not in body
 
 
 @pytest.mark.parametrize(
@@ -153,7 +153,7 @@ def test_missing_guidance_is_notified_before_report(
     paths = _guidance_documents if kind != "add-awi" else _guidance_documents[:2]
     _assert_guidance_commands(body, paths)
     assert "prevention.md" in body
-    assert "waiting-and-monitoring.md" in body
+    assert "delegation-waiting.md" in body
     assert ("immediate-fix.md" in body) == (kind != "add-awi")
     assert "見直せ" in body
 
@@ -192,13 +192,13 @@ def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> 
 # test-copy-contract: 不正な報告区分の入力には書式修正だけを案内し、追加資料の取得へ誤誘導しない契約。
 @pytest.mark.parametrize("status", ["不要。調査で正常と確認", "予定 入力が届いたら再開"])
 def test_format_correction_uses_delivered_template_without_extra_reads(status: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """区分名の取り違えは常時配送された書式で直せ、追加資料の全文取得へ誘導しない。"""
+    """区分名の取り違えは通知が挙げる書式と区分で直せ、追加資料の全文取得へ誘導しない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     session_state.update_state("improvement-status", lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: {}})
     result = _run_hook_in_process("improvement_status_advisor", _payload(f"気付いた改善点: A（AWI化ステータス: {status}）"))
     assert result.returncode == 0
     body = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert "テンプレート直下" in body
+    assert "の形に直せ。区分は" in body
     assert "cat -- " not in body
     assert "Get-Content" not in body
 

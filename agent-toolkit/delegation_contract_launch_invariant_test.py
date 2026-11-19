@@ -69,7 +69,7 @@ def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> No
         ("skills/atk-mode/playbooks/process-wi-review-audit.md", "copilot-review-audit"),
         ("skills/atk-mode/playbooks/refine-prompt.md", "refine-prompt"),
         ("skills/atk-mode/playbooks/review-external-writes.md", "external-write-review"),
-        ("skills/delegation/references/investigation-delegation.md", "defect-investigation"),
+        ("skills/atk-mode/playbooks/investigation-delegation.md", "defect-investigation"),
     ],
 )
 def test_caller_owns_generated_return_contract_boundary(relative: str, role: str) -> None:

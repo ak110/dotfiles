@@ -63,8 +63,8 @@ class RuntimeCode:
                     "ホストのMCP再接続でコードを更新し、同じstart入力を再発行する。"
                     "再接続手段がない場合は、既存の自由本文delegateを新しいプロセスから役割起動する中継として使う。"
                     "原要求・入力・全体作業契約・担当識別子と結果の受領責任を維持する。"
-                    "配下の実行中・結果未回収・再開可能を確認する回復手順は"
-                    "agent-toolkit:delegation/references/wait-anomalies-failures.md「役割資源との版相違」に従う。"
+                    "再接続の前に、起動済みの担当の識別子・稼働状態・未回収の結果・再開の入力を引き継ぎ記録へ保存し、"
+                    "稼働中の担当を一括で停止しない。再接続の後は同じ担当を照会して継続と結果の回収を引き継ぐ。"
                     "新しい同版の組でも失敗する場合は元診断の入力・文書を直す"
                 )
             raise ActionableError(f"{context}元診断: {error}", next_action=action) from error

@@ -52,5 +52,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     return "block", _block_notice(
         "今回の完了本文を日本語の説明として判定できないため、終了を止めた。"
         + f"判定対象の冒頭: {response_language_check._plain_text(text)[:80]}\n",  # pylint: disable=protected-access
-        fix="`agent-toolkit/share/agent-conduct-details.md`「使用言語」の「言語検査の通知への対処」に従い、判定して書き直すか再出力してから停止せよ。",
+        fix=(
+            "検出された箇所が自身の説明なら、成果・判断・未達と指定の返却形式、引用・入力素材を保って説明を日本語で書き直してから停止せよ。"
+            "日本語以外が引用・入力素材・技術的な識別子だけなら、完了本文を変えずにそのまま再出力して停止せよ。"
+        ),
     )

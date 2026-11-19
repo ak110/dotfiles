@@ -15,7 +15,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 委譲操作の前 | `../skills/delegation/SKILL.md` | 操作 | `delegation` |
+| 委譲操作の前 | `../skills/atk-mode/playbooks/delegation.md` | 操作 | `delegation` |
 | 検索の前 | `agent-basics:search/SKILL.md` | 操作 | `search` |
 | 原因分析の記述の前 | `agent-basics:bugfix/SKILL.md` | 操作 | `root-cause-writing` |
 | 個別の一時領域の作成の前 | `../skills/atk-mode/playbooks/managed-temp.md` | 操作 | `managed-temp-create` |
@@ -101,7 +101,7 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | セッション記録の集計・分析 | `agent-toolkit:atk-mode/references/session-records.md` | | |
 | process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `agent-toolkit:atk-mode/references/orchestrator-runtime.md` | | |
 | ユーザーの入力素材を整理して取り込む時 | `agent-basics:writing-standards/references/writing-genres.md` | | |
-| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/delegation-sending.md` | | |
+| 文章の書き直しを委ねる時 | `agent-toolkit:atk-mode/playbooks/delegation.md` | | |
 | 人間向け文書の役割と残す内容を選ぶ時 | `agent-basics:writing-standards/references/document-types.md`、`agent-toolkit:atk-mode/references/workflow-overview.md` | | |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `agent-toolkit:atk-mode/references/defined-names.md` | | |
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-data-interfaces.md` | | |
@@ -109,12 +109,12 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | スキル（`SKILL.md`・`references/`）を新設・編集する時 | `agent-toolkit:/share/agent-skills-operations.md` | | |
 | process-wiのレーンworktreeを作成・保持・回収する時 | `agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md` | | |
-| エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` | | |
-| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:delegation/references/sub-agents-context.md` | | |
+| エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:atk-mode/references/agent-documents.md` | | |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:atk-mode/references/agent-documents.md` | | |
 | `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `agent-basics:writing-standards/references/claude-hooks.md` | | |
 | auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:atk-mode/playbooks/permission-denial.md`が扱う） | `agent-toolkit:atk-mode/references/auto-mode-rule-addition.md` | | |
 | エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-toolkit:atk-mode/playbooks/refine-prompt.md` | | |
-| 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` |
+| 事象単位の調査を委譲する前 | `agent-toolkit:atk-mode/playbooks/investigation-delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/playbooks/investigation-delegation.md` |
 | CI失敗を扱う前 | `agent-toolkit:atk-mode/references/ci.md` | | |
 | 修正commitが必要なCI失敗の修正担当・CI記録・修正系列を扱う前 | `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` | | |
 | ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前（操作対象外: 過去の確認の分析） | `agent-toolkit:atk-mode/playbooks/review-session-analysis.md`、`agent-toolkit:atk-mode/playbooks/user-utterance.md` | | |
@@ -125,4 +125,4 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | 計画・WIの要件と証拠を判定する前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` | | |
 | レビューイーとして採否と修正を確定する前 | `agent-toolkit:atk-mode/playbooks/review-fix.md` | | |
 | 実行レビューの指摘登録・完成条件の判定と証拠記入の前 | `agent-toolkit:atk-mode/references/review-record.md`、`agent-toolkit:atk-mode/references/review-record-verdicts.md` | | |
-| 実機確認だけを目的としてエージェントCLIや検証用委譲を起動する前 | `../skills/delegation/references/routing-experiments.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/routing-experiments.md` |
+| 実機確認だけを目的としてエージェントCLIや検証用委譲を起動する前 | `../skills/atk-mode/playbooks/delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/playbooks/delegation.md` |

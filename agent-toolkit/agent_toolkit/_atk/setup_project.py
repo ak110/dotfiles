@@ -160,24 +160,9 @@ def _rules_paths(target: Path) -> tuple[Path, Path]:
     return target / ".claude" / "rules" / "agent-toolkit", target / ".claude" / "rules" / "agent-basics"
 
 
-def _copy_rules(target: Path) -> None:
-    source = Path(__file__).resolve().parents[2] / "share" / "rules" / "common"
-    if not source.is_dir():
-        raise ValueError(f"配布元の規範がありません: {source}")
-    destination, legacy = _rules_paths(target)
-    _remove_rules_dir(legacy)
-    _remove_rules_dir(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination)
-
-
 def build_parser(parser: argparse.ArgumentParser) -> None:
     """`atk setup-project`の引数を登録する。"""
-    options = parser.add_mutually_exclusive_group()
-    options.add_argument(
-        "--with-rules", action="store_true", help="agent-toolkit/share/rules/common/配下の規範をプロジェクトへ複製する。"
-    )
-    options.add_argument("--clean", action="store_true", help="配置済みの共有リンクと規範を削除する。")
+    parser.add_argument("--clean", action="store_true", help="配置済みの共有リンクと、以前に複製した規範を削除する。")
 
 
 def dispatch(args: argparse.Namespace) -> int:
@@ -192,8 +177,6 @@ def dispatch(args: argparse.Namespace) -> int:
         else:
             migrate_project_instructions(target)
             _ensure_skills_link(target)
-            if args.with_rules:
-                _copy_rules(target)
     except (OSError, ValueError) as error:
         outcome.report_failure(
             f"プロジェクトの設定を完了できません: {error}",

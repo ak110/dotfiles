@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-SOURCE = Path(__file__).parent / "share/rules/rules-common.codex.md"
+SOURCE = Path(__file__).parent / "skills/atk-mode/playbooks/host-codex.md"
 
 # 例はPOSIX shの書式で、権限の拒否もPOSIXのファイル権限で再現する。
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="規範の例はPOSIX shで実行する")

@@ -118,7 +118,7 @@ def test_failed_result_selects_only_its_improvement_guidance(tmp_path, status, i
     if status == "failed":
         assert result_reads.observe("s", "main", {"stdout": summary}, deferred=False) == documents
     if improvement:
-        assert documents == ["agent-toolkit:delegation/references/receiving.md#「受領後の扱い」"]
+        assert documents == ["agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」"]
     else:
         assert not documents
 

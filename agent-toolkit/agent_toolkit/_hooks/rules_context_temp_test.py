@@ -15,10 +15,11 @@ import pytest
 from agent_toolkit._atk import managed_temp, run_skill_batch
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
-from agent_toolkit._hooks import posttooluse, pretooluse, rules_context
+from agent_toolkit._hooks import plugin_resources, posttooluse, pretooluse, rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
 from agent_toolkit._testing.rules_context_support import _output
+from agent_toolkit._testing.termination_evidence_support import claude_read_response
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
@@ -119,11 +120,11 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
     [("clear", False, True), ("compact", False, True), ("compact", True, True), ("resume", False, False)],
 )
 @pytest.mark.parametrize(
-    ("skill_name", "operation"),
+    ("acquired", "operation"),
     [
         ("agent-basics:search", {"tool_name": "Bash", "tool_input": {"command": "rg x"}}),
         (
-            "agent-toolkit:delegation",
+            "playbooks/delegation.md",
             {"tool_name": "Agent", "tool_input": {"prompt": "調査する", "subagent_type": "specialist"}},
         ),
     ],
@@ -142,10 +143,13 @@ def test_session_start_resets_operation_skill_ready_for_main(
     source: str,
     delegated: bool,
     main_warns: bool,
-    skill_name: str,
+    acquired: str,
     operation: dict,
 ) -> None:
-    """`clear`・`compact`の後は検索・委譲の本文を再配送し、サブエージェントの記録と`resume`の後の判定を保つ。"""
+    """`clear`・`compact`の後は検索・委譲の本文を再配送し、サブエージェントの記録と`resume`の後の判定を保つ。
+
+    検索はスキルの起動、委譲は手順書の全文の読取を取得として観測させる。
+    """
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
@@ -175,23 +179,24 @@ def test_session_start_resets_operation_skill_ready_for_main(
         return _hook_context(pretooluse.main, payload)
 
     for agent_id in (None, "sub-1"):
-        skill_payload: dict[str, object] = {
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Skill",
-            "tool_input": {"skill": skill_name},
-            "tool_response": "起動成功",
-            "session_id": "reset-skill",
-        }
+        acquisition_payload = {"hook_event_name": "PostToolUse", "session_id": "reset-skill", **_acquisition(acquired)}
         if agent_id is not None:
-            skill_payload["agent_id"] = agent_id
-        _hook_context(posttooluse.main, skill_payload)
+            acquisition_payload["agent_id"] = agent_id
+        _hook_context(posttooluse.main, acquisition_payload)
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
     # 専用定義の起動を使い、起動手段の拒否と資料の取得案内を分ける。
-    acquisition = f"`{skill_name}`"
-    assert (acquisition in _operation_context(None)) is main_warns
-    assert acquisition not in _operation_context("sub-1")
+    assert (acquired in _operation_context(None)) is main_warns
+    assert acquired not in _operation_context("sub-1")
+
+
+def _acquisition(acquired: str) -> dict[str, object]:
+    """スキル名はSkillの起動、手順書はClaude CodeのReadが全文を返した結果として、取得のPostToolUseの入力を返す。"""
+    if not acquired.endswith(".md"):
+        return {"tool_name": "Skill", "tool_input": {"skill": acquired}, "tool_response": "起動成功"}
+    path = plugin_resources.skill_document_path("atk-mode", acquired)
+    return {"tool_name": "Read", "tool_input": {"file_path": str(path)}, "tool_response": claude_read_response(path)}
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

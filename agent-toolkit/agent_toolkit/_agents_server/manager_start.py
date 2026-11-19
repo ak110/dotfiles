@@ -72,8 +72,8 @@ def model_override_warnings(
                 f"モデル設定の{'直接候補継承' if inherited else '上書き'}: "
                 f"適用工程={default_type or '候補列直接指定（工程設定を参照しない）'}; 指定値={model_type}。"
                 f"現在の工程設定を使うには{restore}。"
-                "正当なユーザー指定・試行・同じ要求への個別引上げは受理する。条件は"
-                "agent-toolkit:delegation/references/process-model-settings.mdとmodel-and-effort.mdを確認する。"
+                "ユーザーが指定した値、試行、同じ要求に限った個別の引き上げは受理し、"
+                "以後の初回起動には工程設定を使う。"
             ),
         }
     ]
