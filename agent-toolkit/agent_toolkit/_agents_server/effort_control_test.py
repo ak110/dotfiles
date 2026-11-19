@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 
 import pytest
 
@@ -155,6 +156,28 @@ async def test_cli_request_survives_transient_sharing_denial(monkeypatch, fault)
         assert not list(session_registry.registry_directory().glob("*.effort-*"))
     finally:
         await asyncio.gather(task, return_exceptions=True)
+
+
+def test_persistent_read_denial_is_reported_with_path_and_error(monkeypatch):
+    """応答の読取拒否が期限まで続けば、期限切れに応答のパスと最後のOSエラーを加え、現在値の確認と再送しない案内を残す。"""
+    _session()
+    original_read = pathlib.Path.read_text
+
+    def read_text(self, *args, **kwargs):
+        if self.name.endswith(".effort-response"):
+            raise PermissionError(13, "modeled permanent EACCES", str(self))
+        return original_read(self, *args, **kwargs)
+
+    ticks = iter(range(10_000))
+    clock = types.SimpleNamespace(monotonic=lambda: float(next(ticks)), sleep=lambda _seconds: None)
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(effort_requests, "time", clock)
+    with pytest.raises(TimeoutError) as raised:
+        effort_requests.request("up", "child", {"CODEX_THREAD_ID": "parent"})
+    message = str(raised.value)
+    assert ".effort-response" in message and "modeled permanent EACCES" in message
+    assert "atk agents show" in message and "再送しない" in message
+    assert not list(session_registry.registry_directory().glob("*.effort-*"))
 
 
 @pytest.mark.parametrize("actor", ["sibling", "grandparent"])

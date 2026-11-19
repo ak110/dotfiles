@@ -73,12 +73,25 @@ def respond(request: pathlib.Path, response_path: pathlib.Path, response: dict[s
 _TRANSIENT_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16)
 
 
-def read_response(response_path: pathlib.Path) -> str | None:
-    """公開済みの応答を読む。無い間と一時的な共有拒否の間は`None`を返し、呼出側が要求の期限内で次の巡回に読み直す。"""
+def read_response(response_path: pathlib.Path) -> tuple[str | None, PermissionError | None]:
+    """公開済みの応答を読み、本文と読取拒否を返す。
+
+    応答が無い間と読取拒否の間は本文が`None`になり、呼出側が要求の期限内で次の巡回に読み直す。
+    一時的な共有拒否はこの再読で吸収される。期限まで拒否が続いた場合に原因を報告できるよう、拒否は呼出側へ返す。
+    """
     try:
-        return response_path.read_text(encoding="utf-8")
-    except FileNotFoundError, PermissionError:
-        return None
+        return response_path.read_text(encoding="utf-8"), None
+    except FileNotFoundError:
+        return None, None
+    except PermissionError as error:
+        return None, error
+
+
+def denial_detail(response_path: pathlib.Path, denial: PermissionError | None) -> str:
+    """期限まで応答を読めなかった理由の説明を返す。読取拒否が無ければ空文字列を返す。"""
+    if denial is None:
+        return ""
+    return f"（応答ファイル{response_path}を読めなかった。最後のOSエラー: {denial}）"
 
 
 def remove_requester_files(*paths: pathlib.Path) -> None:

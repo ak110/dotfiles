@@ -82,6 +82,7 @@ def request_release(
         )
         started = time.monotonic()
         next_progress = started
+        denial: PermissionError | None = None
         while True:
             current = session_registry.resolve(session_id, state_root=state_root)
             executing = any(process.exists() for process in processes[1:])
@@ -91,7 +92,8 @@ def request_release(
                 return "解放待機中に担当が再開したため保持した"
             if current.state is session_registry.Resolution.UNREADABLE:
                 return "解放待機中の担当登録を読めないため保持した"
-            if (text := registry_requests.read_response(response_path)) is not None:
+            text, denial = registry_requests.read_response(response_path)
+            if text is not None:
                 response = json.loads(text)
                 if not isinstance(response, dict):
                     return "解放応答の形式を検収できない"
@@ -106,7 +108,9 @@ def request_release(
                     return None
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                return "期限までに所有側の解放応答と実行プロセスの終了を確認できない"
+                return "期限までに所有側の解放応答と実行プロセスの終了を確認できない" + registry_requests.denial_detail(
+                    response_path, denial
+                )
             now = time.monotonic()
             if now >= next_progress:
                 print(

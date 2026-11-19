@@ -160,13 +160,18 @@ async def test_response_racing_requester_cleanup_is_not_left_behind(
         await task
 
 
+@pytest.mark.parametrize("owner_first", [False, True])
 @pytest.mark.parametrize("fault", ["read", "cleanup-request", "cleanup-response"])
 @pytest.mark.parametrize("failing", [False, True])
 @pytest.mark.asyncio
 async def test_transient_sharing_denial_does_not_override_release_result(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fault: str, failing: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fault: str, failing: bool, owner_first: bool
 ) -> None:
-    """Windowsの一時的な共有拒否が応答の最初の読取や要求側の後始末で一度起きても、所有側の結果（成功と具体的な失敗理由）を返す。"""
+    """Windowsの一時的な共有拒否が応答の最初の読取や要求側の後始末で一度起きても、所有側の結果（成功と具体的な失敗理由）を返す。
+
+    要求側が登録簿の解放済みだけで成功を確定すると、応答は読まれない。
+    `owner_first`は要求の公開直後に所有側が解放と応答の公開を済ませる順序で、要求側のスケジューリングに結果が依らないことを固定する。
+    """
     owner = session_registry.owner_process()
     assert owner is not None
     session_registry.publish(
@@ -192,32 +197,88 @@ async def test_transient_sharing_denial_does_not_override_release_result(
             raise PermissionError(13, "modeled WinError 5: access denied")
         original_unlink(self, *args, **kwargs)
 
+    async def stop(session_id: str, **_kwargs: Any) -> dict[str, Any]:
+        if failing:
+            raise OSError("解放に失敗")
+        session_registry.release(session_id, reason="stopped", state_root=tmp_path)
+        return {}
+
+    sessions = {"child": _Session(True, str(tmp_path))}
+    loop = asyncio.get_running_loop()
+    original_write = atomic_file.atomic_write
+
+    def write_then_let_owner_finish(path: pathlib.Path, content: str | bytes, **kwargs: Any) -> None:
+        original_write(path, content, **kwargs)
+        if path.name.endswith(".release-request"):
+            asyncio.run_coroutine_threadsafe(
+                session_release.process_requests(sessions, stop, state_root=tmp_path), loop
+            ).result(timeout=5)
+
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
     monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    if owner_first:
+        monkeypatch.setattr(atomic_file, "atomic_write", write_then_let_owner_finish)
     task = asyncio.create_task(
         asyncio.to_thread(
             session_release.request_release, "child", tmp_path, deadline=time.monotonic() + 5, state_root=tmp_path
         )
     )
     try:
-        async with asyncio.timeout(2):
-            while not list(session_registry.registry_directory(tmp_path).glob("*.release-request")):
-                await asyncio.sleep(0.001)
-
-        async def stop(session_id: str, **_kwargs: Any) -> dict[str, Any]:
-            if failing:
-                raise OSError("解放に失敗")
-            session_registry.release(session_id, reason="stopped", state_root=tmp_path)
-            return {}
-
-        await session_release.process_requests({"child": _Session(True, str(tmp_path))}, stop, state_root=tmp_path)
+        if not owner_first:
+            async with asyncio.timeout(2):
+                while not list(session_registry.registry_directory(tmp_path).glob("*.release-request")):
+                    await asyncio.sleep(0.001)
+            await session_release.process_requests(sessions, stop, state_root=tmp_path)
         reason = await task
         if failing:
             assert reason is not None and "解放に失敗" in reason
         else:
             assert reason is None
-        assert denied
+        # 成功は登録簿だけで確定でき、応答を読まずに終えることがある。後始末の削除は必ず呼ばれる。
+        assert denied or (fault == "read" and not failing)
         assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+    finally:
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_persistent_read_denial_is_reported_with_path_and_error(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """応答の読取拒否が期限まで続けば、期限切れだけでなく応答のパスと最後のOSエラーを報告する。"""
+    owner = session_registry.owner_process()
+    assert owner is not None
+    session_registry.publish(
+        "child",
+        state=session_registry.PublicationState.RESULT_COMPLETED,
+        cwd=str(tmp_path),
+        processes=(owner,),
+        state_root=tmp_path,
+    )
+    original_read = pathlib.Path.read_text
+
+    def read_text(self: pathlib.Path, *args: Any, **kwargs: Any) -> str:
+        if self.name.endswith(".release-response"):
+            raise PermissionError(13, "modeled permanent EACCES", str(self))
+        return original_read(self, *args, **kwargs)
+
+    async def stop(_session_id: str, **_kwargs: Any) -> dict[str, Any]:
+        raise OSError("解放に失敗")
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            session_release.request_release, "child", tmp_path, deadline=time.monotonic() + 0.5, state_root=tmp_path
+        )
+    )
+    try:
+        async with asyncio.timeout(2):
+            while not list(session_registry.registry_directory(tmp_path).glob("*.release-response")):
+                await session_release.process_requests({"child": _Session(True, str(tmp_path))}, stop, state_root=tmp_path)
+                await asyncio.sleep(0.001)
+        reason = await task
+        assert reason is not None and "期限までに" in reason
+        assert ".release-response" in reason and "modeled permanent EACCES" in reason
     finally:
         await asyncio.gather(task, return_exceptions=True)
 

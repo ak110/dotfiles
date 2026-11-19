@@ -121,14 +121,17 @@ def request(
     }
     try:
         atomic_file.atomic_write(request_path, json.dumps(packet, ensure_ascii=False) + "\n")
+        denial: PermissionError | None = None
         while time.monotonic() < deadline:
-            if (text := registry_requests.read_response(response_path)) is not None:
+            text, denial = registry_requests.read_response(response_path)
+            if text is not None:
                 response = json.loads(text)
                 if not isinstance(response, dict) or response.get("session_id") != target:
                     raise ValueError("effort応答の対象を確認できない")
                 return response
             time.sleep(0.05)
-        raise TimeoutError("effort変更の応答を確認できない。atk agents showで現在値を確認し、自動で再送しない")
+        detail = registry_requests.denial_detail(response_path, denial)
+        raise TimeoutError(f"effort変更の応答を確認できない{detail}。atk agents showで現在値を確認し、自動で再送しない")
     finally:
         # 所有側は応答を書いた後に要求の有無で自分の応答を消すかを決めるため、要求を先に消す。
         with session_registry.registry_lock(target, state_root=state_root):
