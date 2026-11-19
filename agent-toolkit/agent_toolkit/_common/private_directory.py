@@ -9,7 +9,7 @@ OWNER RIGHTS（OW）は対象の所有者を指し、昇格したプロセスが
 （2026-11-19、SSHで昇格して実行した`update-dotfiles`が書き直した管理サービスの世代索引を、非昇格の旧世代が読めずに停止した）。
 状態を置く`%LOCALAPPDATA%`などのユーザーprofile配下は、継承するACLでユーザー・SYSTEM・Administratorsに限られるため、
 Windowsでは継承に任せても所有者以外へ公開しない。
-利用者が指定した親（`pytools/repack_archive.py`の作業ディレクトリなど）では、親のACLの範囲に公開する。
+呼び出し元が指定した親（`pytools/repack_archive.py`の作業ディレクトリなど）では、親のACLの範囲に公開する。
 """
 
 from __future__ import annotations
