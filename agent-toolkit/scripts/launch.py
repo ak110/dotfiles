@@ -38,9 +38,6 @@ agents_serverのMCPサーバーだけは子プロセスとして起動して終�
 
 import argparse
 import contextlib
-import ctypes
-import ctypes.wintypes
-import datetime
 import json
 import os
 import shutil
@@ -53,10 +50,13 @@ import time
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, BinaryIO
+lazy import ctypes
+lazy import ctypes.wintypes
+lazy import datetime
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from agent_toolkit._common import dotfiles_mode, environment_usage, inherited_venv, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 lazy from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common import dotfiles_mode, environment_usage, inherited_venv, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
 _AGENTS_SERVICE_TARGET = Path("agent_toolkit") / "_agents_server" / "service.py"
@@ -101,7 +101,7 @@ def main() -> int:
         path = caller_environment.get("PATH", "").split(os.pathsep)
         if path and Path(path[0]).resolve() == Path(sys.executable).resolve().parent:
             caller_environment["PATH"] = os.pathsep.join(path[1:])
-        environment = plugin_environment.launch_environment(root, caller_environment)
+        python = plugin_environment.prepared_python(root, caller_environment)
     except OSError as exc:
         next_action.report(
             f"起動環境を準備できないため、agent-toolkitを起動できません: {exc}",
@@ -120,8 +120,7 @@ def main() -> int:
         if dispatched is not None:
             return dispatched
     if options.prepare:
-        return _prepare(root, uv, environment)
-    python = plugin_environment.prepared_python(root, caller_environment)
+        return _prepare(root, uv, caller_environment)
     if python is None and options.prepare_if_missing:
         # dotfilesの更新直後は依存の固定内容が変わり、後段の準備まで共有依存環境が無い。
         # CLIは呼び出し元が結果を待つため、準備してから起動する。hook・MCPと関数hookから起動する`atk.py`は
@@ -131,7 +130,7 @@ def main() -> int:
             file=sys.stderr,
             flush=True,
         )
-        prepared = _prepare(root, uv, environment)
+        prepared = _prepare(root, uv, caller_environment)
         if prepared != 0:
             return prepared
         python = plugin_environment.prepared_python(root, caller_environment)
@@ -142,7 +141,7 @@ def main() -> int:
         )
         return 1
     if target == root / "agent_toolkit/hook.py" and not options.hook_worker:
-        return _run_hook(root, target, options.arguments, persist_claude_env=options.persist_claude_env)
+        return _run_hook(root, target, options.arguments)
     # 共有の管理サービスを持たない旧版のroot（update-dotfilesの起動確認が新しいlauncherで確かめる、
     # ホストがまだ参照している旧版のplugin cacheなど）は、旧版のlauncherが`--agents-service`を受け付けないため、
     # 管理サービスへ転送せずにMCPサーバーを直接起動する。
@@ -185,7 +184,7 @@ def main() -> int:
         return 1
 
 
-def _run_hook(root: Path, target: Path, arguments: list[str], *, persist_claude_env: bool) -> int:
+def _run_hook(root: Path, target: Path, arguments: list[str]) -> int:
     """ホストの入力を保持し、起動準備と本体を同じ所有groupの時間予算へ含める。"""
     payload = sys.stdin.buffer.read()
     try:
@@ -204,8 +203,6 @@ def _run_hook(root: Path, target: Path, arguments: list[str], *, persist_claude_
         )
         return 1
     command = [sys.executable, str(Path(__file__).resolve()), "--project", str(root), "--hook-worker"]
-    if persist_claude_env:
-        command.append("--persist-claude-env")
     command.extend([str(target), *arguments])
     # 元のバイト列を再シリアライズせず渡す。pipeへの書込待ちを監視側へ持ち込まない。
     with tempfile.TemporaryFile() as input_stream:
@@ -240,9 +237,10 @@ def _run_hook(root: Path, target: Path, arguments: list[str], *, persist_claude_
 
 def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
     """依存だけを一時環境へ同期し、完了後に共有環境として公開する。"""
-    target = plugin_environment.project_environment(root, environment)
     started = time.monotonic()
     try:
+        environment = plugin_environment.launch_environment(root, environment)
+        target = Path(environment["UV_PROJECT_ENVIRONMENT"])
         with plugin_environment.prepare_lock(target):
             if plugin_environment.prepared_python(root, environment) is not None:
                 plugin_environment.record_source(root, target)

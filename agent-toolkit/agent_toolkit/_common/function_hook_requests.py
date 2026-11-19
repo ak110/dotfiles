@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import contextlib
 import json
 import pathlib
@@ -13,6 +12,7 @@ import time
 import uuid
 from collections.abc import Callable
 from typing import Any
+lazy import asyncio
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))

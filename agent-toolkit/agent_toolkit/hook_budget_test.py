@@ -46,5 +46,8 @@ def test_plain_command_hook_stays_within_module_budget(tmp_path: pathlib.Path, e
     assert result.returncode == 0, result.stderr
     modules = [line.rsplit("|", 1)[-1].strip() for line in result.stderr.splitlines() if line.startswith("import time:")]
     assert "pydantic" not in modules
+    if event == "PostToolUse":
+        assert "agent_toolkit._common.task_documents" not in modules
+        assert "agent_toolkit._common.effort" not in modules
     budget = _MODULE_BUDGETS[subcommand]
     assert len(modules) <= budget, f"{event}の読込{len(modules)}件が予算{budget}件を超えた"
