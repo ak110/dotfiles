@@ -150,3 +150,38 @@ def test_process_modes_reach_public_runner_with_original_arguments(
         "（起動入力の`free_text`が空でなければ引数の後ろへ続ける）。\n</atk-auto>"
     )
     assert record["argv"][-1] == expected
+
+
+@pytest.mark.parametrize("resume_form", ["entry", "entry-with-work", "qualified", "omitted"])
+def test_resume_accepts_entry_and_qualified_forms_of_the_same_work(engine_env, monkeypatch, capsys, resume_form):
+    """入口`atk-mode`で作業を名指しして起動した実行は、入口の形でも作業の修飾名でもスキル名の省略でも再開できる。"""
+    set_orchestrate_environment(monkeypatch, "claude:test-model/low")
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "1")
+    code, _out, error = _run(
+        ["--target-repo", str(engine_env.repo), "--args", "process-wi single-lane X", "agent-toolkit:atk-mode"], capsys
+    )
+    assert code != 0, error
+    run_id = _records(engine_env, "session")[0]["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "0")
+    skill = {
+        "entry": ["agent-toolkit:atk-mode"],
+        "entry-with-work": ["--args", "process-wi single-lane X", "agent-toolkit:atk-mode"],
+        "qualified": [skill_modes.PROCESS_WI],
+        "omitted": [],
+    }[resume_form]
+    code, _out, error = _run(["--resume", run_id, *skill], capsys)
+    assert code == 0, error
+    assert len(_records(engine_env, "session")) == 2
+
+
+def test_resume_rejects_entry_form_for_other_work(engine_env, monkeypatch, capsys):
+    """入口で名指しした別の作業や無関係なスキルは、元の実行と一致しないため再開しない。"""
+    set_orchestrate_environment(monkeypatch, "claude:test-model/low")
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "1")
+    code, _out, error = _run(["--target-repo", str(engine_env.repo), skill_modes.PROCESS_WI], capsys)
+    assert code != 0, error
+    run_id = _records(engine_env, "session")[0]["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    for extra in (["--args", "review-session", "agent-toolkit:atk-mode"], ["my-skill"]):
+        code, _out, error = _run(["--resume", run_id, *extra], capsys)
+        assert code == 2 and ("一致しない" in error or "変更できない" in error)
+    assert len(_records(engine_env, "session")) == 1

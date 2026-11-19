@@ -134,12 +134,19 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
+    if args.skill is not None:
+        skill, arguments = skill_modes.resolve_work(args.skill, args.args)
+        if skill != args.skill:
+            # 入口`atk-mode`への作業の名指しは、作業の修飾名での起動と同じ起動単位・起動入力・目的文・再開時の比較にする。
+            args.skill, args.args = skill, arguments or None
     if identifier := getattr(args, "resume", None):
         try:
             record = _run_state.load(identifier)
-            if any(getattr(args, name, None) is not None for name in ("target_repo", "work_dir", "timeout", "args")):
+            if any(getattr(args, name, None) is not None for name in ("target_repo", "work_dir", "timeout")) or (
+                args.args is not None and args.args != record.input.arguments
+            ):
                 raise ValueError("--resumeでは元の対象・cwd・時間予算・スキル引数を変更できない")
-            if args.skill is not None and args.skill != record.input.skill:
+            if args.skill is not None and args.skill != record.input.skill and not _is_entry_of(args.skill, record.input.skill):
                 raise ValueError("--resumeのスキルが元の実行と一致しない")
         except (OSError, ValueError) as error:
             _outcome.report_failure(
@@ -162,10 +169,6 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.skill is None:
         _outcome.report_failure("スキル名が必要", next_action="スキル名または--resume <RUN_ID>を指定する")
         return 2
-    skill, arguments = skill_modes.resolve_work(args.skill, args.args)
-    if skill != args.skill:
-        # 入口`atk-mode`への作業の名指しは、作業の修飾名での起動と同じ起動単位・起動入力・目的文にする。
-        args.skill, args.args = skill, arguments or None
     if getattr(args, "timeout", None) is None:
         args.timeout = DEFAULT_TIMEOUT_SECONDS
     if skill_modes.invocation_scope(args.skill, args.args) == session_review.BATCH_SCOPE:
@@ -173,6 +176,11 @@ def dispatch(args: argparse.Namespace) -> int:
 
         return run_skill_batch.dispatch(args, _dispatch_once)
     return _dispatch_once(args)
+
+
+def _is_entry_of(requested: str, saved: str) -> bool:
+    """作業を名指しせず入口`atk-mode`だけで指定した`--resume`が、保存済みの作業の実行を指すか。"""
+    return requested.removeprefix("agent-toolkit:") == skill_modes.ENTRY_SKILL and skill_modes.entry_work(saved) is not None
 
 
 def _dispatch_once(args: argparse.Namespace) -> int:
