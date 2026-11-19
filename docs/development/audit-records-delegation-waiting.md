@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日
+## agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日
 
 2026-09-21に、Claude Codeの背景ジョブ完了通知が届いた後も、同じ`atk agents wait`の実プロセスが稼働している事例を観測した。
 通知後に`ps -eo pid,etimes,args`を実行し、PID 3566782、3566794および3566974の同じ待機が経過時間155秒で残っていることを確認した。
@@ -11,18 +11,7 @@
 呼び出し元が待機と照会を発行せずターンを終えた後、同じ背景タスクが結果本文を伴う2回目の`completed`通知を送った。
 再検証は背景タスクの通知と`ps -eo pid,etimes,args`の結果を比較し、同じ待機プロセスの生存と後続の`atk agents wait`の終了コードを確認する。
 
-## agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日
-
-HEAD 2026年10月4日「fix: 不変条件のテストを通常のcommitで自動実行する」、`80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
-保持記録から解決した値を`atk watch --worktree "$worktree_path"`と
-`atk watch --file "$artifact_path"`へ個別に渡し、両方の終了コード0を確認した。
-前者は作業ツリーのdirty件数とHEAD、後者はファイルのlinesとageを返した。
-Cronの発火や委譲sessionの終了はこの観測の対象へ含めず、状態と完了通知を用いる既存契約を保つ。
-再検証は同じ公開ヘルプを取得し、その回の読み取り可能な作業ツリーと通常ファイルを保持記録から解決して、
-上記の各コマンドへ渡す。
-cwd、コマンド、標準出力、標準エラーと終了コードを保存し、項目と受理形式を比べる。
-
-## agent-toolkit/skills/delegation/references/claude-code-runtime.md：一時領域と成果物の観測：2026年10月9日
+## agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md：稼働状態の観測と継続依頼：2026年10月9日
 
 2026年10月9日10:49～10:50 JST、Claude Code 2.1.295で、メインが`Agent`を使って背景の委譲先1件を起動した。
 委譲先の作業は`sleep 5; echo`を4回実行するだけとした。
@@ -40,7 +29,7 @@ cwd、コマンド、標準出力、標準エラーと終了コードを保存�
 2026年9月20日、`atk agents wait`が`agents_server`の状態投影に対象を持たない状態を終了コード10で報告し、実行ホストの組み込み委譲は同じ状態投影へ登録されないことを確認した。
 再検証は`agents_server` sessionと組み込み委譲をそれぞれ起動し、`atk agents list`への登録有無、`atk agents wait`の終了コードおよびホストの委譲一覧が返すstatusを比較する。
 
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月2日
+## agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md：背景ジョブの起動形（Claude Code）：2026年9月2日
 
 2026年9月2日に別のセッションが起動した背景ジョブの実行識別子を`TaskOutput`へ渡すと、`No task found with ID`で拒否された。
 一方、そのジョブの出力ファイルには絶対パスで到達でき、全出力と`[exited with code 0]`が残っていた。
@@ -51,7 +40,7 @@ cwd、コマンド、標準出力、標準エラーと終了コードを保存�
 2026年9月3日から9月4日にかけて、`agents_server`の`start`で起動した委譲先が外部コマンドの完了待ちを表明し、`status: completed`で終了した。
 その後、待機対象のコマンドが終了しても委譲先は再開しなかった。
 
-## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日
+## agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md：背景ジョブの起動形（Claude Code）：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260で次の2点を確認した。
 終了コード7で終わる`run_in_background=true`のBashについて、起動結果が返した出力ファイルは出力の全量と`[exited with code 7]`を保持した。
@@ -73,7 +62,7 @@ hookの判定は`background_task_outputs_test.py`で、明示背景化・実行�
 2回とも警告でblockが空、完了後は警告も空であることを確認する。
 Goalの自然発生を待たず、進捗の照会を終了時の結果へ代用しない。
 
-## agent-toolkit/skills/delegation/references/waiting-claude-code.md：Codex最上位の待機条件：2026年11月2日
+## agent-toolkit/skills/atk-mode/playbooks/host-codex.md：agents_serverの二層待機：2026年11月2日
 
 - 観測日: 2026年11月2日。
 - 確認版: Codex CLI0.166.0。

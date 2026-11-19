@@ -96,7 +96,7 @@
   実機では、PreToolUseで`additionalContext`だけを返すhookを置いて`Agent`ツールを呼び、呼び出しが実行されたうえで通知がツール結果と同時に表示されることを確かめる。
   2026年11月10日には、組み込みのweb-fetchとExploreの起動に対する警告が起動を止めず、起動の結果と同時に表示された。
 
-## agent-toolkit/share/rules/rules-main.claude-code.md：ツールの入出力：2026年11月15日
+## agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md：ツールの入出力：2026年11月15日
 
 - 観測日: 2026年11月15日。
 - 観測版: Claude Code 2.1.325、Opus 5.5、Linuxのtmux対話会話。
