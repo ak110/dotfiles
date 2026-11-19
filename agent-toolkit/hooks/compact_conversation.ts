@@ -7,6 +7,8 @@ import { exitStatePath } from "./session_exit.ts";
 // 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月9日」に記録する。
 // 待機時の自動処理とsession.compactの契約は同資料の
 // 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月23日」にある。
+// 圧縮の要約を原本の所在へ置き換える方式の観測と再検証は同資料の
+// 「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。
 
 import type { BackgroundWait } from "./ui_requests.tsx";
 type Decision = { at: string; task: string; reason: string; tokens?: number; window?: number; pending: boolean; turnRunning: boolean };

@@ -12,18 +12,12 @@ from _test_helpers import _AUDIT_RECORDS, _SOURCE_SUFFIXES, _tracked_source_path
 # 監査記録の見出しを、索引元の条文またはコードが同じ文字列で指すことを検査する。
 # 索引元は、テスト（`*_test.py`）と`docs/`配下を除く追跡ファイルと、見出しのファイル部分が指すファイル自身とする。
 # テスト、設計記録と判定台帳は見出しを索引元として持たずに引用するため、そこにだけ現れる見出しは参照元を持たない。
-# 常時規範（`agent-toolkit/share/rules/common/`配下と`agent-toolkit/share/rules/rules-*.md`）は全主体が毎回読む。
+# 入口`atk-mode`の規範（`SKILL.md`、`playbooks/`、`references/`、`roles/`）は作業のたびに読む。
 # そのため条文へ索引の文を置かず、見出しそのものを索引とする。
-# ファイル部分が常時規範を指す見出しは、そのファイルに節名と同じ見出しがあることで参照ありとする。
+# ファイル部分が入口の規範を指す見出しは、そのファイルに節名と同じ見出しがあることでも参照ありとする。
 # agent-basicsの配布物はagent-basicsユーザーにも配り、配布物の外の記録を指すとリンク切れになる。
 # そのため条文へ索引の文を置かず、ファイルに節名と同じ見出しがあることでも参照ありとする。
 # 規範原本を`share/rules/`へ集める前の見出しは旧パスのまま当時の記録として残すため、現在の所在へ読み替えて照合する。
-_RULE_DOCUMENT_RELOCATIONS = (
-    ("agent-toolkit/rules/", "agent-toolkit/share/rules/common/"),
-    ("agent-toolkit/share/rules-", "agent-toolkit/share/rules/rules-"),
-)
-
-
 _AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
 
 
@@ -50,23 +44,17 @@ def _reference_text(root: pathlib.Path, source: pathlib.Path) -> str:
     return f"{content}\n{_comment_joined(content)}"
 
 
-def _current_rule_path(path: pathlib.Path) -> pathlib.Path:
-    """旧配置の規範パスを現在の所在へ読み替える。"""
-    value = path.as_posix()
-    for old, new in _RULE_DOCUMENT_RELOCATIONS:
-        if value.startswith(old):
-            return pathlib.Path(new + value.removeprefix(old))
-    return path
-
-
 def _is_rule_document(path: pathlib.Path) -> bool:
-    """常時規範（`agent-toolkit/share/rules/common/`直下と`agent-toolkit/share/rules/rules-*.md`）のパスかを返す。旧配置も読み替えて判定する。"""
-    path = _current_rule_path(path)
+    """入口`atk-mode`の規範（`SKILL.md`、`playbooks/`、`references/`、`roles/`のMarkdown）のパスかを返す。
+
+    規範へ監査記録の索引の文を置くと、作業のたびに読む量が増えるため、見出しのファイルと節の実在で判定する。
+    """
     if path.suffix != ".md":
         return False
-    parent = path.parent.as_posix()
-    return parent == "agent-toolkit/share/rules/common" or (
-        parent == "agent-toolkit/share/rules" and path.name.startswith("rules-")
+    value = path.as_posix()
+    base = "agent-toolkit/skills/atk-mode/"
+    return value == base + "SKILL.md" or (
+        value.startswith(base) and path.parent.as_posix().removeprefix(base) in {"playbooks", "references", "roles"}
     )
 
 
@@ -80,7 +68,7 @@ def _section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str
     parts = heading.split("：")
     if len(parts) < 3:
         return False
-    rule_file = _current_rule_path(pathlib.Path(parts[0]))
+    rule_file = pathlib.Path(parts[0])
     section = "：".join(parts[1:-1])
     if rule_file not in tracked:
         return False
@@ -98,7 +86,7 @@ def _audit_record_content(root: pathlib.Path) -> str:
 def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
     """監査記録のH2見出しのうち参照元を持たないものを返す。
 
-    常時規範を指す見出しはファイルと節の実在で判定する。他の見出しは索引元の追跡ファイルか
+    入口の規範を指す見出しはファイルと節の実在でも参照ありとする。他の見出しは索引元の追跡ファイルか
     見出しのファイル部分が指すファイル自身に現れるかで判定し、agent-basicsの配布物を指す見出しはファイルと節の実在でも参照ありとする。
     """
     headings = _audit_headings(_audit_record_content(root))
@@ -114,9 +102,7 @@ def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]
     unreferenced: list[str] = []
     for heading in headings:
         own_file = pathlib.Path(heading.split("：", 1)[0])
-        if _is_rule_document(own_file):
-            if not _section_exists(root, tracked, heading):
-                unreferenced.append(heading)
+        if _is_rule_document(own_file) and _section_exists(root, tracked, heading):
             continue
         if heading in (colon_corpus if "：" in heading else corpus):
             continue
@@ -147,7 +133,7 @@ def test_audit_record_headings_are_referenced() -> None:
     root = pathlib.Path(__file__).resolve().parent
     unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root, _SOURCE_SUFFIXES | {".ts", ".tsx"}))
     assert not unreferenced, (
-        "参照元を持たない監査記録の見出し（常時規範とagent-basicsの配布物を指す見出しは条文へ索引の文を置かず、見出しのファイルと節名を条文の現在の所在へ直す。"
+        "参照元を持たない監査記録の見出し（入口atk-modeの規範とagent-basicsの配布物を指す見出しは条文へ索引の文を置かず、見出しのファイルと節名を条文の現在の所在へ直す。"
         "それ以外は索引元へ索引の1文を置くか、索引先の無い記録を削除する）:\n" + "\n".join(unreferenced)
     )
 
@@ -213,28 +199,29 @@ def test_unreferenced_audit_heading_detector_ignores_tests_and_docs(tmp_path: pa
 
 
 def test_rule_audit_heading_requires_existing_section(tmp_path: pathlib.Path) -> None:
-    """常時規範を指す見出しは、索引の文の有無にかかわらず、ファイルに同名の節がある場合だけ参照ありとする。"""
-    existing = "agent-toolkit/rules/01-a.md：節A：2026年1月1日"
-    renamed = "agent-toolkit/rules/01-a.md：消えた節：2026年1月2日"
-    share_existing = "agent-toolkit/share/rules-main.md：節B：2026年1月3日"
-    missing_file = "agent-toolkit/share/rules-gone.md：節C：2026年1月4日"
+    """入口の規範を指す見出しは、ファイルに同名の節があれば索引の文が無くても参照ありとする。"""
+    skill = "agent-toolkit/skills/atk-mode"
+    existing = f"{skill}/playbooks/a.md：節A：2026年1月1日"
+    renamed = f"{skill}/playbooks/a.md：消えた節：2026年1月2日"
+    entry_existing = f"{skill}/SKILL.md：節B：2026年1月3日"
+    missing_file = f"{skill}/references/gone.md：節C：2026年1月4日"
     audit = tmp_path / _AUDIT_RECORDS
     audit.parent.mkdir(parents=True)
     audit.write_text(
         "# 監査記録\n\n"
-        + "".join(f"## {heading}\n\n記録。\n\n" for heading in (existing, renamed, share_existing, missing_file)),
+        + "".join(f"## {heading}\n\n記録。\n\n" for heading in (existing, renamed, entry_existing, missing_file)),
         encoding="utf-8",
     )
     files = {
-        pathlib.Path("agent-toolkit/share/rules/common/01-a.md"): "# 規範\n\n## 上位\n\n### 節A\n\n本文。\n",
-        pathlib.Path("agent-toolkit/share/rules/rules-main.md"): "# 規範\n\n## 節B\n\n本文。\n",
-        pathlib.Path("tool.py"): f"# 監査記録は「{renamed}」と「{missing_file}」にある。\n",
+        pathlib.Path(skill, "playbooks/a.md"): "# 規範\n\n## 上位\n\n### 節A\n\n本文。\n",
+        pathlib.Path(skill, "SKILL.md"): "# 規範\n\n## 節B\n\n本文。\n",
+        pathlib.Path("tool.py"): f"# 監査記録は「{missing_file}」にある。\n",
     }
     for path, content in files.items():
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_text(content, encoding="utf-8")
 
-    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, *files]) == [renamed, missing_file]
+    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, *files]) == [renamed]
 
 
 @pytest.mark.parametrize("split_records", [False, True])

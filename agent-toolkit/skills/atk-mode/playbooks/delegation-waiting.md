@@ -223,9 +223,3 @@ Codexで実行中の担当の中断を避ける条件と、利用上限の待ち
 ## 返す報告に含める項目
 
 回収した結果の`session_id`と`agent_message_path`、未回収の対象と待機の状態、停滞と判断した根拠と処置（催促、巻き取り、停止）、再開した観測、続行できない理由を返す。
-
-観測の条件と再検証は`docs/development/audit-records-delegation-waiting.md`の次の節にある。
-
-- 「agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：待機区間の構成：2026年9月3日」
-- 「agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：完了通知を待ってターンを終える場合：2026年10月10日」
-- 「agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：待機区間の構成：2026年11月2日」

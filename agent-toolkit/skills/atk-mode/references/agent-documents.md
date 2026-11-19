@@ -47,11 +47,11 @@ Claude Codeの`Agent`ツールの委譲先でスキルが使えるかは確か�
 | --- | --- | --- | --- | --- | --- | --- |
 | agent-toolkitのスキル（入口を含む） | 届く | 届く | 届く（Antigravityは有効なプラグインから。OpenCodeは自動登録せず、plugin rootの`skills/`から明示的に読む） | Claudeは届かない（`skills=[]`）。Codexは`write`・`shell`だけ（`explore`はプラグイン無効）。Antigravityは届く | 未確認 | 未確認 |
 | `playbooks/subagent.md`と役割文書 | 届かない | 届かない | 起動の本文 | 起動の本文 | 依頼文の指示で読む | 依頼文の指示で読む |
-| ユーザーが`~/.claude/rules/`に置いた規範 | 届く（ユーザー規範） | `~/.codex/AGENTS.md`の読込指示（直下の`*.local.md`だけ） | Claudeはユーザー設定の読込元、Codexはdeveloper指示、Antigravityは起動・再開の指示、OpenCodeは指示の先頭 | 同左 | 親のメモリー階層（組み込みの`Explore`・`Plan`を除く） | `~/.codex/AGENTS.md`の読込指示（直下の`*.local.md`だけ） |
+| ユーザーが`~/.claude/rules/`に置いた規範 | 届く（ユーザー規範） | `playbooks/host-codex.md`の読込指示（直下の`*.local.md`だけ） | Claudeはユーザー設定の読込元、Codexはdeveloper指示、Antigravityは起動・再開の指示、OpenCodeは指示の先頭 | 同左 | 親のメモリー階層（組み込みの`Explore`・`Plan`を除く） | `playbooks/host-codex.md`の読込指示（直下の`*.local.md`だけ） |
 | 作業ディレクトリのプロジェクト規範（`AGENTS.md`など） | 届く | 届く | Claude、Codex、Antigravityは届く。OpenCodeは未確認 | Claudeは届かない。Codexは届かない（`project_doc_max_bytes=0`）。Antigravityは届く。OpenCodeは未確認 | 届く（組み込みの`Explore`・`Plan`を除く） | 届く |
 
 - `~/.claude/rules/myprojects.md`のようにClaude Code向けに配布する規範は、Codexでは`agents_server`の委譲先だけに届く。
-- `~/.claude/CLAUDE.md`は、Claudeの各起動区分へはユーザー設定の読込元から、Codexのエージェントへは`~/.codex/AGENTS.md`の読込指示から届く。
+- `~/.claude/CLAUDE.md`は、Claudeの各起動区分へはユーザー設定の読込元から、Codexのエージェントへは`playbooks/host-codex.md`「Claude Code向けに配置された規範の読込」から届く。
 - Antigravityのメインと委譲先は、`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`も読む。
 - OpenCodeの委譲先でプロジェクト規範が要る時は、要る本文を依頼文へ含める。
 - `atk wi process-loop`が対話CLIで起動する統括はメインの列、統括が`agents_server`で起動するリポジトリ担当は`task`・`delegate`の列の配送を受ける。
@@ -86,5 +86,3 @@ agent-toolkitのスキルと手順書を書く時の差分である。
 - 会話履歴、プロジェクトの`AGENTS.md`、hookの通知に規範が含まれる場合も、委譲先に共通の決まりは起動の本文で届ける。
   委譲先に共通の決まりの原本は`playbooks/subagent.md`の1つであり、`agents_server`の全modeとCodexとOpenCodeの起動へ同じ原本から届ける。
 - Claude Codeに固有の委譲先向けの記述は、Claude Codeの委譲先だけへ届ける。
-
-監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/atk-mode/references/agent-documents.md：コンテキスト境界：2026年9月27日」にある。
