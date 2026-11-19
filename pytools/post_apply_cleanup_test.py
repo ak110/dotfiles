@@ -99,7 +99,7 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
         (target_dir / name).parent.mkdir(parents=True, exist_ok=True)
         (target_dir / name).write_text("x\n", encoding="utf-8")
 
-    changed = removed_paths.cleanup().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed
 
     assert changed is True
     for name in removed:
@@ -125,7 +125,7 @@ def test_cleanup_removes_empty_ipython_dirs_from_table(
     default_readme.parent.mkdir(parents=True)
     default_readme.write_text("old\n", encoding="utf-8")
 
-    changed = removed_paths.cleanup().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed
 
     assert changed is True
     assert not (ipython_dir / "profile_default").exists()
@@ -143,7 +143,7 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_startup(
     user_script = default_readme.parent / "00-user.py"
     user_script.write_text("print('user')\n", encoding="utf-8")
 
-    changed = removed_paths.cleanup().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed
 
     assert changed is True
     assert not default_readme.exists()
@@ -167,7 +167,7 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_profile_root(
     active_config.parent.mkdir(parents=True)
     active_config.write_text("active\n", encoding="utf-8")
 
-    changed = removed_paths.cleanup().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed
 
     assert changed is True
     assert not default_readme.exists()
@@ -184,7 +184,7 @@ def test_removed_ipython_profile_cleanup_skips_missing_profile(
     """配布済みファイルも親ディレクトリも存在しない場合は変更なしとする。"""
     _redirect_removed_paths_to(monkeypatch, tmp_path)
 
-    changed = removed_paths.cleanup().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed
 
     assert changed is False
 
@@ -202,7 +202,7 @@ def test_removed_ipython_profile_cleanup_preserves_symlink_target(
     profile_link = ipython_dir / "profile_default"
     profile_link.symlink_to(outside_profile, target_is_directory=True)
 
-    changed = removed_paths.cleanup().changed  # noqa: SLF001
+    changed = removed_paths.cleanup().changed
 
     assert changed is False
     assert profile_link.is_symlink()
@@ -228,11 +228,11 @@ def test_cleanup_removes_unedited_ipython_kernel_config(
     target.parent.mkdir(parents=True)
 
     target.write_bytes(distributed + b"c.IPKernelApp.matplotlib = 'inline'\n")
-    assert removed_paths.cleanup().changed is False  # noqa: SLF001
+    assert removed_paths.cleanup().changed is False
     assert target.exists()
 
     target.write_bytes(distributed)
-    assert removed_paths.cleanup().changed is True  # noqa: SLF001
+    assert removed_paths.cleanup().changed is True
     assert not target.exists()
 
 
@@ -267,9 +267,9 @@ def test_cleanup_removes_unedited_retired_configs(
     target.parent.mkdir(parents=True, exist_ok=True)
 
     target.write_bytes(distributed + b"#")
-    assert removed_paths.cleanup().changed is False  # noqa: SLF001
+    assert removed_paths.cleanup().changed is False
     assert target.exists()
 
     target.write_bytes(distributed)
-    assert removed_paths.cleanup().changed is True  # noqa: SLF001
+    assert removed_paths.cleanup().changed is True
     assert not target.exists()
