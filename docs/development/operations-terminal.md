@@ -11,8 +11,10 @@ tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終�
 ## Claude Code入力待ちの通知ベル
 
 Linuxでは、Claude Codeの入力待ち時に端末ベルを送出するフックを`share/claude_settings_json_managed.posix.json`で配布する。
+tmux内では`monitor-bell`（tmuxの初期値は有効）がwindowへベルフラグを設定し、catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベルアイコンが表示される。
+catppuccinが提供する`icon`の書式はcurrent・lastなど全フラグをアイコン化するため、`@catppuccin_window_flags_icon_format`をベル分岐だけへ上書きし、表示対象をベルアイコンに限定する。
 
-- フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないため、JSON出力の`terminalSequence`フィールドでBELを返し、Claude Code自身の端末への書き込みで送出させる
+- フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないため、JSON出力の`terminalSequence`フィールドでBELを返し、Claude Code自身の端末への書き込みで送出させる（公式仕様でtmux内動作が明記されている。対話セッションで画面表示中のみ送出される）
 - 質問（AskUserQuestion）は`PreToolUse`のツール名matcherで表示と同時に確定的に鳴らす。
   許可待ち等は`Notification`の入力待ち系4種別で鳴らす。
   AskUserQuestionがNotificationを発生させるかは公式資料に記載が無いため、Notificationを前提としない
@@ -27,6 +29,8 @@ Linuxでは、Claude Codeの入力待ち時に端末ベルを送出するフッ�
 ## tmuxウィンドウのコマンド実行中表示
 
 tmux内の対話シェルでコマンドを実行している間は、ステータスライン上のウィンドウ名を`@thm_peach`の前景色と太字で表示する。
+ウィンドウ名自体は`automatic-rename`に任せる。
+`.tmux.conf`のcatppuccinウィンドウ書式が`#{P:}`で同じウィンドウ内の全ペインを集約し、いずれかのペインが実行中の場合にウィンドウ名を強調する。
 実行状態はペイン単位で保持する。
 ウィンドウ単位で保持すると、先に終了したペインの解除が実行を続けている別のペインの表示まで削除するためである。
 `mise activate bash`は`PROMPT_COMMAND`の先頭へ自身のフックを挿入するため、解除要素は末尾に置く。

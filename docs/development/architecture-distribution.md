@@ -22,9 +22,12 @@ Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、`agen
 `atk-hook`はlive sessionが保持する`PLUGIN_ROOT`を優先し、その変数が指す版付きCodex cacheが欠落した場合は、Claude Code側に残る同版cacheを同じCodex絶対パスへ原子的に復旧する。
 同版が無い場合はClaude Codeの現行導入版からhookを起動し、編集途中のdotfiles作業ツリーは自動fallbackに使わない。
 現行versionの導入と有効状態の管理はCodex公式CLIへ委ね、旧版保存台帳は設けない。
+共有するCodex hook定義は、ホストが渡す`${PLUGIN_ROOT}/scripts/launch.py`からその版のhookを起動する。
+dotfilesが生成する`agent-toolkit-codex/`のhook定義は、個人binの`atk-hook`を安定した起動コマンドにし、インストーラーは`codex plugin add`より先にこのコマンドを配置する。
 
 Codexは`.codex-plugin/plugin.json`が指すMCP設定の`${PLUGIN_ROOT}`を展開せず、相対の`cwd`だけをplugin rootから解決する。
 `cwd`の無いserverは会話のcwdで起動する（Codex 0.170の`codex-mcp/src/plugin_config.rs`で確認）。
+Codex向け`agents_server`は`cwd`をplugin rootに固定し、Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開をCodexの起動契約へ流用しない。
 pyfltrは対象を省いた呼び出しで会話のcwdのプロジェクトを調べるため、`cwd`をplugin rootへ固定しない。
 dotfilesが生成する`agent-toolkit-codex/`のMCP定義は、`${PLUGIN_ROOT}`を`codex plugin add`の導入先である`$CODEX_HOME/plugins/cache/<marketplace名>/agent-toolkit/<版>`の絶対パスへ展開する。
 展開する前はCodexのpyfltr MCPが会話のcwdからの相対パス`${PLUGIN_ROOT}/scripts/launch.py`を開けず、起動のたびに失敗していた（2026-11-18にLinux、2026-11-19にWindowsのCodex 0.170で観測）。

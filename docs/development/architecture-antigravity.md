@@ -22,5 +22,7 @@ basics側は独立した品質スキル集で、実行基盤のhook・MCP・Pyth
 
 post-applyは`~/.gemini/config/plugins.json`の`entries`へ作業ツリーの絶対パスと`include_only`を追加し、他の登録と継承設定を保持する。
 プラグインの有効/無効を記録するユーザーの`config.json`は変更しない。
+登録や更新後は新しいagyセッションで反映を確認する。
+MCPとスキル本文中の実行用rootは、環境変数展開への依存を避けるため、生成時に配布rootの絶対パスへ投影する。
 
 Antigravityのスキル本文にも24,000バイトの読込上限があるため、生成処理は上限を超える`SKILL.md`のfrontmatterを短いSKILL.mdに保持し、本文を`references/antigravity-full-instructions.md`へ保存する。

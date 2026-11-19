@@ -8,10 +8,14 @@
 `.bashrc`は非対話シェルでも、Linuxに限り`TMPDIR`を`${XDG_CACHE_HOME:-$HOME/.cache}/agent-toolkit/tmp`へ設定する。
 作成できない場合は`TMPDIR`を設定しない。
 指すディレクトリが無いとPythonの`tempfile`は警告なしに`/tmp`へ戻るためである。
+Pythonの`tempfile`、pytest、Node、Rust、Claude Code本体とhookは`TMPDIR`を一時ディレクトリの置き場所として使うため、プログラムごとの設定なしにディスク上へ移る。
+ディレクトリは権限0700で作成する。
 Windowsは一時ディレクトリがディスク上にあるため対象外であり、`.bashrc`はWindowsへ配布しない。
 
 ディスク上の一時領域はtmpfsと違って再起動で空にならないため、`~/.config/user-tmpfiles.d/dotfiles-tmp.conf`が7日より古い項目を削除する。
 7日はmanaged-tempの自動削除の期限に合わせた値である。
+削除するのは、最終更新・最終アクセス・状態変更（ディレクトリは最終更新と最終アクセス）の全てが7日より古い項目である（`man 5 tmpfiles.d`）。
+読み取るだけの項目が最終アクセスによって残るのは、最終アクセスの時刻を更新するマウントの場合に限る（`noatime`のマウントでは最終更新と状態変更だけで判定される）。
 対象は`agent-toolkit/tmp`配下だけで、兄弟のmanaged-tempは自身の自動削除が扱う。
 `setup_tmpfiles_clean.py`は役割によらず全Linuxホストでこのタイマーを有効化する。
 

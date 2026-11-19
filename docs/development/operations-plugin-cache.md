@@ -20,7 +20,9 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 - 現行版の必須ファイルの欠落を修復する「Claude Code pluginのインストール」工程も、導入先を削除して再導入するため同じ判定を使う。
   導入先を参照するプロセスか稼働中のClaude Codeセッション（起動時刻を問わない）があれば修復を延期し、欠落ファイル、保持した導入先、再開の操作を警告する
 - 導入時刻には各版の`.claude-plugin/plugin.json`のmtimeを用いる。
-  版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）
+  版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）。
+  `claude-plugins-official`配下はcommit hashなど自然順に並ばない版名を持つため、版名の順序ではなく導入時刻で後継を決める
+- 本工程は`installPath`の更新後に判定するため、「Claude Code pluginのインストール」工程の直後に置く
 - `~/.codex/plugins/cache`は対象外とする。
   Codexの旧版はCodex pluginの導入処理が同じ猶予期間と導入時刻の選び方で削除する（[設計記録](design-hosts-plugin-lifecycle.md#codexのlocal-plugin導入)）
 - シンボリックリンクとディレクトリジャンクションは辿らず削除しない

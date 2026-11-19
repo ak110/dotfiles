@@ -25,9 +25,13 @@
     miseのshimはサービス実行環境でバージョン未解決となり起動しないため優先しない
   - このランチャー生成処理は2026年7月27日（1116f984）まで`~/.local/bin/atk`へランチャーを生成しており、改名時に旧名が残存した。
     `post_apply`の旧配布物削除がこの旧ランチャーと`atk.cmd`を除去し、dotfilesホストの`atk`を作業ツリー版へ解決させる
+  - `install-claude.sh`もagent-toolkit単体のユーザー向けに同じ`~/.local/bin/atk`へ別系統のラッパーを生成するが、dotfilesホストでは実行しない前提であり、この生成処理とは無関係である
 - lingerが無効な場合はログアウトで停止する。
   常駐させるには`sudo loginctl enable-linger <user>`を手動実行する
-- 計画ビューアー統合に伴う`/cpv/`の一度限りの手動移行（Apacheの設定は管理対象外のため`chezmoi apply`では変更されない）は、`/cpv/`の`ProxyPass`をポート28766へ向け直すか、`/cpv/`の設定ブロックを削除する。
+- 計画ビューアー統合に伴う`/cpv/`の一度限りの手動移行（Apacheの設定は管理対象外のため`chezmoi apply`では変更されない）は、次のどちらかとする。
+  `/cpv/`の`ProxyPass`・`ProxyPassReverse`をポート28765から28766へ向け直し、`RequestHeader set X-Forwarded-Prefix /cpv`を維持して`/cpv/`を残す。
+  または`/cpv/`の設定ブロックを削除する。
+  変更後は`sudo apachectl configtest`で構文を確認してから`sudo systemctl reload apache2`を実行する。
   既存の`/atk/`を開くエンドユーザーのアクセス先と表示は変わらない
 
 ### fast-forward後のatk serveへの反映
