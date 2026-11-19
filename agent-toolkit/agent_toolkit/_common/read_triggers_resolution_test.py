@@ -1,12 +1,15 @@
 """宣言解析内の解決再利用と、要求境界での再取得を検証する。"""
 
 import contextlib
+import os
 import pathlib
+import time
+import types
 from typing import Any
 
 import pytest
 
-from agent_toolkit._common import read_triggers
+from agent_toolkit._common import read_triggers, read_triggers_resolution
 
 
 def test_resolution_cache_is_request_local(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,3 +86,70 @@ def test_user_side_source_requires_skill_home_outside_plugins(tmp_path: pathlib.
     }
     with read_triggers.resolution_scope() if scoped else contextlib.nullcontext():
         assert {path: read_triggers.user_side_source(path) for path in cases} == cases
+
+
+def _os_with(**overrides: Any) -> types.SimpleNamespace:
+    """列挙が使うOS操作のうち、指定したものだけを差し替える。"""
+    names = ("stat", "scandir", "fspath", "fsencode", "path")
+    return types.SimpleNamespace(**{name: overrides.get(name, getattr(os, name)) for name in names})
+
+
+def _skill_tree(root: pathlib.Path, skills: range) -> None:
+    for index in skills:
+        (root / f"skill{index}" / "references").mkdir(parents=True, exist_ok=True)
+        (root / f"skill{index}" / "SKILL.md").write_text("# 本文\n", encoding="utf-8")
+        (root / f"skill{index}" / "references" / "guide.md").write_text("# 資料\n", encoding="utf-8")
+
+
+def _settle(root: pathlib.Path, seconds_ago: int) -> None:
+    """全ディレクトリの最後の変更から、時刻の刻み（ext3は1秒）より十分に時間が過ぎた状態にする。"""
+    settled = (time.time_ns() // 1_000_000_000 - seconds_ago) * 1_000_000_000
+    for directory in [root, *(path for path in root.rglob("*") if path.is_dir())]:
+        os.utime(directory, ns=(settled, settled))
+
+
+def test_unchanged_skill_tree_is_not_listed_again_regardless_of_size(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """変化の無いhookでは文書数を倍にしてもディレクトリを列挙せず、一覧は列挙した結果と一致する。"""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
+    listed: list[str] = []
+
+    def counting_scandir(path):
+        listed.append(os.fspath(path))
+        return os.scandir(path)
+
+    monkeypatch.setattr(read_triggers_resolution, "os", _os_with(scandir=counting_scandir))
+    root = tmp_path / "skills"
+    for count, seconds_ago in ((20, 60), (40, 30)):
+        _skill_tree(root, range(count))
+        _settle(root, seconds_ago)
+        expected = sorted(root.rglob("*.md"))
+        rounds = []
+        for _hook in range(3):
+            listed.clear()
+            assert read_triggers.canonical_markdown_files(root) == expected
+            rounds.append(len(listed))
+        assert rounds == [1 + 2 * count, 0, 0]
+
+
+def test_document_added_within_the_same_timestamp_tick_is_listed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """更新時刻の刻みが粗いファイルシステムで、直前のhookと同じ刻みの中に追加した文書を次のhookで列挙する。"""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
+    tick = time.time_ns() // 1_000_000_000 * 1_000_000_000
+
+    def coarse_stat(path):
+        status = os.stat(path)
+        return types.SimpleNamespace(st_ino=status.st_ino, st_mtime_ns=tick, st_ctime_ns=tick)
+
+    monkeypatch.setattr(read_triggers_resolution, "os", _os_with(stat=coarse_stat))
+    root = tmp_path / "skills"
+    _skill_tree(root, range(2))
+    assert len(read_triggers.canonical_markdown_files(root)) == 4
+    added = root / "skill0" / "references" / "added.md"
+    added.write_text("# 追加\n", encoding="utf-8")
+    assert added in read_triggers.canonical_markdown_files(root)
