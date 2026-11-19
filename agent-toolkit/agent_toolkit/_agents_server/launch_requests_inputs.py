@@ -57,8 +57,8 @@ def check_declared_inputs(
     declaration: task_documents.TaskDocumentDeclaration,
     extra_params: Mapping[str, str],
 ) -> None:
-    """必須入力の欠落と宣言外の入力名を拒否する。"""
-    missing = [name for name in declaration.required if name not in extra_params]
+    """必須入力（入力の値で成立した条件付きの必須入力を含む）の欠落と宣言外の入力名を拒否する。"""
+    missing = [name for name in declaration.required_for(extra_params) if name not in extra_params]
     if missing:
         raise ActionableError(
             f"必須入力が欠けています: {', '.join(missing)}; `subagent_md_path`: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}",

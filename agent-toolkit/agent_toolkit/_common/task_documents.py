@@ -15,6 +15,7 @@ import json
 import pathlib
 import re
 import typing
+from collections.abc import Collection, Mapping
 
 import markdown_it
 import yaml
@@ -141,7 +142,11 @@ def input_contract_body(task_document: pathlib.Path) -> str:
     if declaration.launch_kind == "delegate":
         lines.append(WHOLE_CONTRACT_PREPARATION)
     lines.append("")
-    for label, names in (("必須入力名", declaration.required), ("任意入力名", declaration.optional)):
+    conditional = [
+        ("条件付きの必須入力名（" + "、".join(f"`{name}`が`{value}`" for name, value in entry.when) + "の時）", entry.inputs)
+        for entry in declaration.required_when
+    ]
+    for label, names in (("必須入力名", declaration.required), *conditional, ("任意入力名", declaration.optional)):
         if not names:
             if label == "必須入力名":
                 lines.append(f"- {label}: なし")
@@ -184,6 +189,55 @@ class ContinuationDeclaration:
         return frozenset((*self.required, *self.optional))
 
 
+type InputCondition = tuple[tuple[str, str], ...]
+"""入力名と値の組。全ての入力の値が完全に一致した時に成立する（frontmatterの`when`）。"""
+
+
+def parse_when(raw: object, declared: Collection[str]) -> InputCondition:
+    """frontmatterの`when`（宣言済みの入力名から空でない文字列の値への空でない対応）を解析する。"""
+    if (
+        not isinstance(raw, dict)
+        or not raw
+        or any(not isinstance(name, str) or name not in declared for name in raw)
+        or any(not isinstance(value, str) or not value for value in raw.values())
+    ):
+        raise ValueError(f"whenは宣言済みの入力名から空でない文字列の値への対応で指定する: {raw!r}")
+    return tuple(raw.items())
+
+
+def when_matches(condition: InputCondition, params: Mapping[str, str]) -> bool:
+    """`condition`の全ての入力が、渡された値と完全に一致するかを返す。"""
+    return all(params.get(name) == value for name, value in condition)
+
+
+@dataclasses.dataclass(frozen=True)
+class ConditionalInputs:
+    """`when`が成立した時だけ必須になる入力（frontmatterの`required_inputs_when`の要素）。"""
+
+    when: InputCondition
+    inputs: tuple[str, ...]
+
+
+def parse_required_inputs_when(raw: object, declared: Collection[str]) -> tuple[ConditionalInputs, ...]:
+    """`required_inputs_when`を解析する。`when`と`inputs`の入力名は`declared`に含まれる必要がある。"""
+    if not isinstance(raw, list):
+        raise ValueError("required_inputs_whenは配列で指定する")
+    entries: list[ConditionalInputs] = []
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"when", "inputs"}:
+            raise ValueError(f"required_inputs_whenの要素はwhenとinputsだけを持つ: {entry!r}")
+        inputs = entry["inputs"]
+        if (
+            not isinstance(inputs, list)
+            or not inputs
+            or any(not isinstance(name, str) or name not in declared for name in inputs)
+            or len(set(inputs)) != len(inputs)
+        ):
+            raise ValueError(f"required_inputs_whenのinputsは宣言済みの入力名を重複なく並べる: {inputs!r}")
+        entries.append(ConditionalInputs(when=parse_when(entry["when"], declared), inputs=tuple(inputs)))
+    return tuple(entries)
+
+
 @dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
     """役割文書が宣言する入力名・mode・モデル段位・用途・書込の値。
@@ -200,6 +254,7 @@ class TaskDocumentDeclaration:
     # 共通の状態行（`状態:`）以外に、返却形式が先頭の固定行として定める値。
     # `:`で終わる値は前方一致、それ以外は行全体の一致（直後の全角括弧の補足を許す）で受理する。
     result_heads: tuple[str, ...] = ()
+    required_when: tuple[ConditionalInputs, ...] = ()
 
     @property
     def accepted(self) -> frozenset[str]:
@@ -208,6 +263,14 @@ class TaskDocumentDeclaration:
         待機と再開の方針は採用したbackendの能力に従ってサーバーが起動の本文（`launch_prompts.py`）で伝えるため、委譲元が渡す共通入力は持たない。
         """
         return frozenset(self.required) | frozenset(self.optional)
+
+    def required_for(self, params: Mapping[str, str]) -> tuple[str, ...]:
+        """`params`で成立した`required_when`の入力を加えた必須入力名を、宣言順に重複なく返す。"""
+        names = list(self.required)
+        for entry in self.required_when:
+            if when_matches(entry.when, params):
+                names.extend(name for name in entry.inputs if name not in names)
+        return tuple(names)
 
 
 def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
@@ -363,13 +426,16 @@ def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) ->
             for head in heads
         ):
             raise ValueError("result_headsは値を含む固定行の配列で指定する")
+        required = tuple(values["required_inputs"])
+        optional = tuple(values.get("optional_inputs", []))
         return TaskDocumentDeclaration(
-            required=tuple(values["required_inputs"]),
-            optional=tuple(values.get("optional_inputs", [])),
+            required=required,
+            optional=optional,
             launch_kind=mode,
             writes_worktree=writes,
             model_type=values["model_type"],
             result_heads=tuple(heads),
+            required_when=parse_required_inputs_when(values.get("required_inputs_when", []), (*required, *optional)),
             continuations=tuple(
                 ContinuationDeclaration(
                     instruction=entry["instruction"],

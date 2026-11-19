@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from agent_toolkit._agents_server import launch_requests
+from agent_toolkit._common import task_documents
 from agent_toolkit._testing.task_document_contract import validate_frontmatter
 
 
@@ -60,6 +61,72 @@ def test_frontmatter_inputs_are_checked_before_launch(tmp_path: Path, inputs: di
     path = _document(tmp_path, "input-check", _settings())
     with pytest.raises(ValueError, match=expected):
         launch_requests.task_document_request(str(path), inputs)
+
+
+def _conditional_settings() -> dict:
+    """`担当種別`が`統合あり`の時だけ`記録`を必須にする役割の設定。"""
+    return {
+        **_settings(),
+        "required_inputs": ["担当種別"],
+        "optional_inputs": ["記録", "観点"],
+        "required_inputs_when": [{"when": {"担当種別": "統合あり"}, "inputs": ["記録"]}],
+    }
+
+
+@pytest.mark.parametrize(
+    "inputs, missing",
+    [
+        ({"担当種別": "統合あり"}, "記録"),
+        ({"担当種別": "統合あり", "観点": "到達性"}, "記録"),
+        ({"担当種別": "統合なし"}, None),
+        ({"担当種別": "統合あり（補足）"}, None),
+        ({"担当種別": "統合あり", "記録": "/abs/record.json"}, None),
+    ],
+)
+def test_conditional_required_inputs_are_checked_before_launch(tmp_path: Path, inputs: dict, missing: str | None) -> None:
+    """条件の入力の値が完全に一致した時だけ、条件付きの入力の欠落を通常の必須入力と同じ形で拒否する。"""
+    path = _document(tmp_path, "conditional-check", _conditional_settings())
+    if missing is None:
+        _model, prompt, _mode, _handoff = launch_requests.task_document_request(str(path), inputs)
+        assert all(f"{name}: {value}" in prompt for name, value in inputs.items())
+        return
+    with pytest.raises(ValueError, match=rf"必須入力が欠けています: {missing};"):
+        launch_requests.task_document_request(str(path), inputs)
+
+
+def test_conditional_required_inputs_reach_generated_input_contract(tmp_path: Path) -> None:
+    """起動側の入力契約へ、条件と条件付きの必須入力名を生成する。"""
+    path = _document(tmp_path, "conditional-check", _conditional_settings())
+    body = task_documents.input_contract_body(path)
+    assert "- 条件付きの必須入力名（`担当種別`が`統合あり`の時）: `記録`" in body.splitlines()
+    assert "- 任意入力名: `記録`、`観点`" in body.splitlines()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"when": {"担当種別": "統合あり"}, "inputs": ["記録"]},
+        [{"when": {"担当種別": "統合あり"}, "inputs": ["未宣言"]}],
+        [{"when": {"未宣言": "統合あり"}, "inputs": ["記録"]}],
+        [{"when": {}, "inputs": ["記録"]}],
+        [{"when": {"担当種別": True}, "inputs": ["記録"]}],
+        [{"when": "担当種別", "inputs": ["記録"]}],
+        [{"when": {"担当種別": "統合あり"}, "inputs": []}],
+        [{"when": {"担当種別": "統合あり"}, "inputs": ["記録", "記録"]}],
+        [{"when": {"担当種別": "統合あり"}, "inputs": "記録"}],
+        [{"when": {"担当種別": "統合あり"}}],
+        [{"when": {"担当種別": "統合あり"}, "inputs": ["記録"], "condition": "補足"}],
+    ],
+)
+def test_invalid_conditional_required_inputs_are_rejected(tmp_path: Path, value: object) -> None:
+    """未宣言の入力名と形式違反を、配布前の静的検査と起動時の解析の両方で拒否する。"""
+    settings = _conditional_settings()
+    settings["required_inputs_when"] = value
+    path = _document(tmp_path, "conditional-check", settings)
+    declaration = validate_frontmatter(path, path.read_text(encoding="utf-8"))
+    assert isinstance(declaration, str) and "frontmatter" in declaration
+    with pytest.raises(ValueError, match="frontmatter"):
+        launch_requests.task_document_request(str(path), {"担当種別": "統合あり", "記録": "/abs/record.json"})
 
 
 @pytest.mark.parametrize(
