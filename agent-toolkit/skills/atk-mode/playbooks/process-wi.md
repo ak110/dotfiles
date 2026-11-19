@@ -58,6 +58,9 @@
   担当の種別にはレーン担当、レビュー修正担当、CI修正担当がある（区分は`agent-toolkit:/share/exec.subagent.md`の操作区分）。
 - **主作業ツリー**: マージ先のbranchをcheckoutしている作業ツリー。
   常駐起動では、process-loopが対象リポジトリ（系統を登録したリポジトリでは系統）ごとに準備して統括へ渡した作業ツリーを指し、統括自身の起動cwdとは区別する。
+  この作業ツリーはマージ先のbranchの代わりに、それを追跡する専用branch（`worktree-`で始まる名前）をcheckoutしている。
+  `agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」のうちbranch名の項目は、`# branch.upstream`がマージ先のbranchの追跡refであることで確かめる。
+  公開用に別のbranch名が要る場合もHEADを切り替えずに`git push <remote> HEAD:refs/heads/<公開用branch>`で送り、中間commitの検証などで切り替えた場合は工程の終わりに専用branchへ戻す。
 - **公開担当**: 公開工程（push、CI、検証の失敗の修正、プロジェクト固有の公開後の操作、延期adoptなど）を担う委譲先で、委譲の範囲は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」にある。
 - **即時対応**: 現在の影響と先送り条件に基づいて、直接修正と正式対応の時機を判定して実施すること（`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」）。
 
