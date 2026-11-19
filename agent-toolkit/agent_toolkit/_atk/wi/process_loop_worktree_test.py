@@ -198,13 +198,25 @@ def _diverged_worktree(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Pa
 
 
 # 上位から順に止め、rebaseが子の終了を見て状態を片付ける前に止める。
+# CIのコンテナーには`ps`が無いので、Linuxでは`/proc`から親をたどる。
 _KILL_ANCESTORS_HOOK = """#!/bin/sh
+parent_of() {
+  if [ -r "/proc/$1/stat" ]; then
+    sed 's/.*) //' "/proc/$1/stat" | cut -d' ' -f2
+  else
+    ps -o ppid= -p "$1" | tr -d ' '
+  fi
+}
 pids=
 pid=$PPID
 while [ -n "$pid" ] && [ "$pid" != "$ATK_TEST_SYNC_PID" ] && [ "$pid" -gt 1 ]; do
   pids="$pid $pids"
-  pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+  pid=$(parent_of "$pid")
 done
+if [ "$pid" != "$ATK_TEST_SYNC_PID" ]; then
+  echo "post-checkout hookからworkerまでの祖先をたどれなかった: $pids" >&2
+  exit 1
+fi
 kill -KILL "$ATK_TEST_SYNC_PID" $pids
 """
 
