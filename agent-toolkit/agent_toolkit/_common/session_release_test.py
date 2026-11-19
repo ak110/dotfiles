@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit._common import atomic_file, session_registry, session_release
+from agent_toolkit._testing.session_release_support import held_registry_lock
 
 
 @dataclasses.dataclass
@@ -157,6 +158,61 @@ async def test_response_racing_requester_cleanup_is_not_left_behind(
         assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
     finally:
         await task
+
+
+@pytest.mark.asyncio
+async def test_response_during_registry_write_does_not_delay_release_of_other_sessions(tmp_path: pathlib.Path) -> None:
+    """別プロセスが1件のsessionの登録簿を書き込み中でも、所有側はその応答を返し、同じ監視が扱う別sessionを期限内に解放する。"""
+    owner = session_registry.owner_process()
+    assert owner is not None
+    for session_id in ("busy", "idle"):
+        session_registry.publish(
+            session_id,
+            state=session_registry.PublicationState.RESULT_COMPLETED,
+            cwd=str(tmp_path),
+            processes=(owner,),
+            state_root=tmp_path,
+        )
+    handled = asyncio.Event()
+
+    async def stop(session_id: str, *, retain_result: bool, **_kwargs: Any) -> dict[str, Any]:
+        assert retain_result
+        if session_id == "busy":
+            handled.set()
+            raise OSError("解放に失敗")
+        session_registry.release(session_id, reason="stopped", state_root=tmp_path)
+        return {}
+
+    sessions = {session_id: _Session(True, str(tmp_path)) for session_id in ("busy", "idle")}
+    stopping = asyncio.Event()
+
+    async def monitor() -> None:
+        while not stopping.is_set():
+            await session_release.process_requests(sessions, stop, state_root=tmp_path)
+            await asyncio.sleep(0.01)
+
+    monitoring = asyncio.create_task(monitor())
+    busy: asyncio.Task[str | None] | None = None
+    try:
+        with held_registry_lock("busy", state_root=tmp_path):
+            busy = asyncio.create_task(
+                asyncio.to_thread(
+                    session_release.request_release, "busy", tmp_path, deadline=time.monotonic() + 5, state_root=tmp_path
+                )
+            )
+            async with asyncio.timeout(3):
+                await handled.wait()
+            idle = await asyncio.to_thread(
+                session_release.request_release, "idle", tmp_path, deadline=time.monotonic() + 3, state_root=tmp_path
+            )
+        assert idle is None
+        assert "解放に失敗" in (await busy or "")
+    finally:
+        stopping.set()
+        await monitoring
+        if busy is not None:
+            await asyncio.gather(busy, return_exceptions=True)
+    assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
 
 
 @pytest.mark.parametrize("registered_paths", [False, True])

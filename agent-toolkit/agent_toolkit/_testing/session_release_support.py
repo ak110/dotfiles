@@ -1,4 +1,4 @@
-"""レーン回収試験の実cwd保持子と所有managerの寿命、結果の受領と再開を扱う。"""
+"""レーン回収試験の実cwd保持子と所有managerの寿命、結果の受領と再開、別プロセスによる登録簿の書込の滞りを扱う。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import dataclasses
 import pathlib
 import subprocess
 import sys
-from collections.abc import AsyncGenerator
+import threading
+from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
 import pytest
@@ -88,3 +89,27 @@ async def retained_executor(
             monkeypatch.setattr(backend, "release_session", release)
             await manager.activate_async()
             yield RetainedExecutor(session.session_id, root, executor, backend.release_calls, manager)
+
+
+@contextlib.contextmanager
+def held_registry_lock(session_id: str, *, state_root: pathlib.Path | None = None) -> Generator[None]:
+    """別プロセスが登録簿を書いている間のように、ブロックの間だけsessionの登録簿ロックを別threadで保持する。
+
+    ロックを待つ処理が試験を止めたままにしないよう、自動終了の10秒の上限を越える15秒で手放す。
+    """
+    acquired = threading.Event()
+    finished = threading.Event()
+
+    def hold() -> None:
+        with session_registry.registry_lock(session_id, state_root=state_root):
+            acquired.set()
+            finished.wait(timeout=15)
+
+    holder = threading.Thread(target=hold, daemon=True)
+    holder.start()
+    try:
+        assert acquired.wait(timeout=5)
+        yield
+    finally:
+        finished.set()
+        holder.join(timeout=5)
