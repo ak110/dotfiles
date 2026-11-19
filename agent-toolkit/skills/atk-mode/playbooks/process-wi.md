@@ -29,7 +29,8 @@
 | --- | --- |
 | WIの選定を始める時、明示された目標から実行する時 | `agent-toolkit:atk-mode/playbooks/process-wi-selection.md` |
 | レーン分け、所要の配分、内部担当の同時数と巨大WIを判定する時 | `agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md` |
-| 選定YAMLを生成または消費する時 | `agent-toolkit:atk-mode/references/process-wi-selection-format.md` |
+| 選定YAMLを生成する時 | `agent-toolkit:atk-mode/references/process-wi-selection-format.md` |
+| 生成済みの選定YAMLや再開記録を読む時 | `agent-toolkit:atk-mode/references/process-wi-selection-format.md`「欄の意味」 |
 | 所要の見込み、初回配分の算定根拠、予測補正を扱う時 | `agent-toolkit:atk-mode/references/process-wi-selection-estimates.md` |
 | 含めた理由、除外した理由、選定の構成を尋ねられた時 | `agent-toolkit:atk-mode/playbooks/process-wi-selection-explanation.md` |
 | 対象がGitHub上にあり、選定の前に監査の要否を決める時 | `agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md` |
