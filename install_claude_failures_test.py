@@ -170,6 +170,33 @@ def test_failed_toolkit_update_keeps_retired_rules(
 
 
 @pytest.mark.parametrize("kind", installer_runners())
+def test_failed_codex_toolkit_update_keeps_retired_rules(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
+    """Claude Code側の更新が通ってもCodex側のagent-toolkitを導入できずに止まった時は、旧版の常時規範を削除しない。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+    retired = home / ".claude" / "rules" / "agent-toolkit" / "01-agent.md"
+    retired.parent.mkdir(parents=True)
+    retired.write_text("# 旧い常時規範\n", encoding="utf-8")
+
+    result = run_installer(
+        kind,
+        home,
+        raw_base_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        fail_pattern="codex plugin add agent-toolkit",
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "claude plugin update agent-toolkit@ak110-dotfiles --scope=user" in read_log_lines(stub_log)
+    assert "stub failure: codex plugin add agent-toolkit" in result.stderr
+    assert retired.read_text(encoding="utf-8") == "# 旧い常時規範\n"
+    assert "削除（旧い常時規範）" not in result.stdout
+
+
+@pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize(
     "fail_pattern",
     ["claude plugin marketplace add", "claude plugin install", "claude plugin uninstall"],

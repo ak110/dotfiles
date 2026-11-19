@@ -609,9 +609,9 @@ main() {
     _install_codex_basics
     if [ "$INSTALL_TOOLKIT" -eq 1 ]; then
         _install_agent_toolkit
-        # 新しい入口を導入できてから回収する。更新に失敗した環境では旧版の規範を使い続けられる。
-        _remove_retired_rules
         _install_codex_plugin
+        # Claude Code・Codexの両方へ新しい入口を導入できてから回収する。どちらかの更新に失敗した環境では旧版の規範を使い続けられる。
+        _remove_retired_rules
         _warm_agents_server
         _migrate_legacy_codex_mcp
         _install_atk_wrapper

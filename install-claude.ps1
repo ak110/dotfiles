@@ -540,9 +540,9 @@ function Main {
     Install-AgentBasicsPlugin
     Install-CodexBasicsPlugin
     Install-AgentToolkitPlugin
-    # 新しい入口を導入できてから回収する。更新に失敗した環境では旧版の規範を使い続けられる。
-    Uninstall-RetiredRule
     Install-CodexPlugin
+    # Claude Code・Codexの両方へ新しい入口を導入できてから回収する。どちらかの更新に失敗した環境では旧版の規範を使い続けられる。
+    Uninstall-RetiredRule
     Initialize-AgentsServer
     Move-LegacyCodexMcp
     Install-AtkWrapper
