@@ -182,7 +182,7 @@ async def test_start_input_rejection_points_to_owning_contract(
         "add-wi": pathlib.Path("skills/atk-mode/roles/add-wi.parent.md"),
     }[role]
     if placement == "sectionless" and role == "repository-process":
-        pytest.skip("parent-read-sourceが節を明示する役割は入力節の選択を使わない")
+        pytest.skip("手順書の契約は`起動対象:`の直前の見出しを示し、入力節の選択を使わない")
     role_relative = task_documents.require_role_document(source, role).relative_to(source)
     if placement != "current":
         root = tmp_path / "other-plugin"
@@ -228,7 +228,7 @@ async def test_start_input_rejection_points_to_owning_contract(
     assert "`start`を再発行" in message
     if placement in {"unresolved", "sectionless"}:
         assert "入力説明の起動・受領契約を解決できません" in message
-        assert "parent-read-source宣言・参照先を修復" in message
+        assert "役割を`起動対象:`に挙げる契約と入力の節を修復" in message
         assert "入力の意味・制約は" not in message
         if placement == "sectionless":
             assert "入力を説明するH2節" in message

@@ -8,7 +8,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server.launch_requests_materials import _check_explore_materials
-from agent_toolkit._common import read_triggers, task_documents
+from agent_toolkit._common import task_documents
+from agent_toolkit._common.markdown_headings import parse_headings
 from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
 
@@ -84,41 +85,62 @@ def check_declared_inputs(
 
 
 def _input_contract_guidance(task_document: pathlib.Path) -> str:
-    """拒否した役割と同じ版の、入力説明を所有する契約と節を案内する。"""
+    """拒否した役割と同じ版の、入力説明を所有する契約と節を案内する。
+
+    契約は役割文書と同じplugin rootで役割を`起動対象:`に挙げる文書とする。`<役割名>.parent.md`は入力の節、
+    手順書は`起動対象:`の直前の見出しの節を示す。
+    """
+    role = task_document.name.removesuffix(task_documents.TASK_DOCUMENT_SUFFIX)
     try:
-        targets = read_triggers.parent_contract_targets(task_document.name, task_documents.document_plugin_root(task_document))
-        inputs = tuple(
-            read_triggers.ReadTarget(target.path, target.heading or _input_section(target.path)) for target in targets
-        )
-        for target in inputs:
-            target.body()
+        root = task_documents.document_plugin_root(task_document)
+        contracts = list(dict.fromkeys(path for path, name in task_documents.launch_contract_documents(root) if name == role))
+        if not contracts:
+            raise ValueError(f"{root}に{role}.subagent.mdを`起動対象:`に挙げる契約が無い")
+        targets = [
+            (path, _input_section(path) if path.name == f"{role}.parent.md" else _launch_section(path, role))
+            for path in contracts
+        ]
     except (OSError, UnicodeError, ValueError) as error:
         return (
             f"入力説明の起動・受領契約を解決できません: {error}。"
-            "指定した役割文書と同じplugin rootの共有parentまたはparent-read-source宣言・参照先を修復し、"
+            "指定した役割文書と同じplugin rootで、役割を`起動対象:`に挙げる契約と入力の節を修復し、"
             "入力説明を確認する。"
         )
-    return "入力の意味・制約は" + "、".join(f"`{target.path}`「{target.heading}」" for target in inputs) + "で確認する。"
+    return "入力の意味・制約は" + "、".join(f"`{path}`「{heading}」" for path, heading in targets) + "で確認する。"
 
 
 _INPUT_SECTIONS = ("入力", "渡す入力")
 
 
 def _input_section(contract: pathlib.Path) -> str:
-    """見出しを指定しない親契約から、入力を説明するH2節を1つ選ぶ。
+    """`<役割名>.parent.md`から、入力を説明するH2節を1つ選ぶ。
 
     親契約の入力節名は役割ごとに`入力`と`渡す入力`がある。固定名を補うと他方の役割で
     見出し解決エラーになり、拒否の修正に必要な説明へ到達できない。
     """
-    names = [
-        line.removeprefix("## ").strip()
-        for _number, line, visible in read_triggers.document_lines(contract.read_text(encoding="utf-8"))
-        if visible and line.startswith("## ")
-    ]
-    found = [name for name in names if name in _INPUT_SECTIONS]
+    found = [name for _token, name in parse_headings(contract.read_text(encoding="utf-8"), 2) if name in _INPUT_SECTIONS]
     if len(found) != 1:
         raise ValueError(f"{contract}: 入力を説明するH2節（{'・'.join(_INPUT_SECTIONS)}）が{len(found)}件ある")
     return found[0]
+
+
+def _launch_section(contract: pathlib.Path, role: str) -> str:
+    """手順書のうち、役割を`起動対象:`に挙げる行の直前にある見出し（H2・H3）を返す。"""
+    text = contract.read_text(encoding="utf-8")
+    line = next(
+        index
+        for index, value in enumerate(text.splitlines())
+        if value.startswith("起動対象: ") and f"{role}.subagent.md" in value.removeprefix("起動対象: ").split(",")
+    )
+    headings = sorted(
+        (token.map[0], name)
+        for level in (2, 3)
+        for token, name in parse_headings(text, level)
+        if token.map is not None and token.map[0] < line
+    )
+    if not headings:
+        raise ValueError(f"{contract}: {role}.subagent.mdの`起動対象:`より前に見出しが無い")
+    return headings[-1][1]
 
 
 def named_input_lines(params: Mapping[str, str]) -> list[str]:

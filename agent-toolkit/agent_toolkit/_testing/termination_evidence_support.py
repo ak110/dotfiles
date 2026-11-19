@@ -13,9 +13,7 @@ from agent_toolkit._agents_server import state as server_state
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import automated_prompt, session_state
 from agent_toolkit._hooks import posttooluse, pretooluse, termination_evidence, user_prompt_submit
-from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import agents_server_support
-from agent_toolkit._testing.pretooluse_support import codex_delivered_payload, codex_execution_payload
 
 CONTINUATION = '<atk-auto source="stop" kind="continuation">判断を記録する</atk-auto>'
 
@@ -43,7 +41,6 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     monkeypatch.setenv("TEMP", str(tmp_path))
     monkeypatch.setenv("TMP", str(tmp_path))
     (tmp_path / "transcript.jsonl").touch()
-    # 終了証拠は各試験の文書・操作で検証する。配布規範全件の解析はread_deliveryの結合試験が担う。
     root = tmp_path / "norms/agent-toolkit"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -51,9 +48,6 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     playbook.parent.mkdir(parents=True)
     playbook.write_text(COMPLETION_PLAYBOOK_TEXT, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", str(root))
-    # 導入済みの品質プラグインの宣言も、終了証拠の判定には不要。
-    # 実際の本文読取・配送receiptは保ち、宣言表の入力だけをこのfixtureへ限定する。
-    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [playbook])
 
 
 def _tool(
@@ -64,7 +58,6 @@ def _tool(
     response: object,
     *,
     codex: bool,
-    native_exit_code: int | None = None,
 ) -> None:
     """公開hookのPreToolUseとPostToolUseへ、同じ呼び出しの入力と応答を供給する。"""
     payload: dict[str, Any] = {
@@ -79,17 +72,9 @@ def _tool(
         payload["turn_id"] = "codex-turn"
     with contextlib.redirect_stdout(io.StringIO()):
         pretooluse.main(json.dumps(payload))
-    if native_exit_code is not None:
-        payload = codex_execution_payload(payload, directory, exit_code=native_exit_code)
     payload["tool_response"] = response
     with contextlib.redirect_stdout(io.StringIO()):
         posttooluse.main(json.dumps(payload))
-    if codex:
-        delivered = codex_delivered_payload(payload, directory)
-        with contextlib.redirect_stdout(io.StringIO()):
-            pretooluse.main(
-                json.dumps({**delivered, "hook_event_name": "PreToolUse", "tool_name": "ObserveDelivery", "tool_input": {}})
-            )
 
 
 def supply_commit(directory: pathlib.Path, call_id: str = "commit", *, codex: bool = False) -> None:

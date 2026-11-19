@@ -9,25 +9,11 @@ import pathlib
 import re
 
 from agent_toolkit._common import startup_documents, task_documents
+from agent_toolkit._testing.normative_contract import read_table_rows
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _UNCONDITIONAL = re.compile(r"(?:起動時|着手時|起動直後|開始時|受領時)")
 """起動するたびに必ず成立する、読込表の「時点または条件」の値。"""
-
-
-def _read_table_conditions(text: str) -> list[str]:
-    """読込表（見出し行に「時点または条件」と「全文読む資料」を持つ表）の各行の条件を返す。"""
-    conditions: list[str] = []
-    in_table = False
-    for line in text.splitlines():
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else None
-        if cells is None:
-            in_table = False
-        elif "時点または条件" in cells and "全文読む資料" in cells:
-            in_table = True
-        elif in_table and not set(cells[0]) <= {"-", ":"}:
-            conditions.append(cells[0])
-    return conditions
 
 
 def test_role_documents_have_no_unconditional_read_rows() -> None:
@@ -35,7 +21,7 @@ def test_role_documents_have_no_unconditional_read_rows() -> None:
     found = [
         f"{document.name}: {condition}"
         for document in task_documents.role_documents(_ROOT)
-        for condition in _read_table_conditions(document.read_text(encoding="utf-8"))
+        for condition, _documents in read_table_rows(document.read_text(encoding="utf-8"))
         if _UNCONDITIONAL.fullmatch(condition)
     ]
     assert not found, "起動直後に読ませる資料はstartup_documentsへ置く:\n" + "\n".join(found)
@@ -65,4 +51,4 @@ def test_unconditional_row_detection_reports_startup_rows() -> None:
         "| 時点または条件 | 全文読む資料 |\n| --- | --- |\n"
         "| 着手時 | `a.md` |\n| 判定する前 | `b.md` |\n\n| 条件 | 行動 |\n| --- | --- |\n| 起動時 | 手順 |\n"
     )
-    assert [condition for condition in _read_table_conditions(text) if _UNCONDITIONAL.fullmatch(condition)] == ["着手時"]
+    assert [condition for condition, _ in read_table_rows(text) if _UNCONDITIONAL.fullmatch(condition)] == ["着手時"]

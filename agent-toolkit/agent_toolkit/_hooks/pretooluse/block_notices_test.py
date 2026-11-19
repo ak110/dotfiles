@@ -11,7 +11,7 @@ import re
 import pytest
 
 from agent_toolkit._hooks import notice
-from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
+from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 
 _RESULT = "この呼び出しは全体を実行していない（同じ呼び出しに含まれる他のコマンドや処理を含む）。"
@@ -20,7 +20,7 @@ _RESULT = "この呼び出しは全体を実行していない（同じ呼び出
 @pytest.fixture(autouse=True)
 def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
     """通知の理由と次操作を検査し、対象外の全資料の解析は繰り返さない。"""
-    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 @pytest.mark.parametrize("codex", [False, True])

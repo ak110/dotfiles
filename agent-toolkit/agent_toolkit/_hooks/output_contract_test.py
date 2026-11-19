@@ -15,7 +15,6 @@ import pytest
 from agent_toolkit._common import session_state
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
-from agent_toolkit._testing.pretooluse_support import prepare_read_delivery
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _HOOK_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -120,8 +119,6 @@ def test_registered_hook_output_matches_event_contract(
 ) -> None:
     fixture_name, expects_output = _FIXTURES[(event_name, subcommand)]
     payload, env = _build_fixture(event_name, fixture_name, tmp_path)
-    if subcommand == "pretooluse":
-        prepare_read_delivery(payload, env)
     result = subprocess.run(
         [sys.executable, str(_HOOK_SCRIPT), subcommand],
         input=json.dumps(payload, ensure_ascii=False),
@@ -458,7 +455,6 @@ def test_pretooluse_public_entry_returns_host_output(
     elif scenario == "block":
         payload["tool_name"] = "mcp__agents_server__kill"
         payload["tool_input"] = {"session_id": "missing"}
-    prepare_read_delivery(payload, environment)
     result = subprocess.run(
         [sys.executable, str(_HOOK_SCRIPT), "pretooluse"],
         input=json.dumps(payload, ensure_ascii=False),

@@ -13,9 +13,9 @@ import sys
 import pytest
 
 _HOOK = pathlib.Path(__file__).resolve().parent / "hook.py"
-# 2026-11-19のBash lsの実測はPreToolUse 310件、PostToolUse 316件（不要な依存の読込を省いた後）。
+# 2026-11-20のBash lsの実測はPreToolUse 254件、PostToolUse 253件（読込表の配送と受信の追跡を撤去した後）。
 # 予算を引き上げる変更は、増えた依存と必要な理由をここへ記録する。
-_MODULE_BUDGETS = {"pretooluse": 340, "posttooluse": 350}
+_MODULE_BUDGETS = {"pretooluse": 280, "posttooluse": 280}
 
 
 @pytest.mark.skipif(os.name == "nt", reason="読込数の予算はLinuxの実測で定める")

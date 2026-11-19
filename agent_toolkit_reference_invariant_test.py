@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import subprocess
 
 import pytest
 from agent_toolkit._common import skill_modes
@@ -47,11 +48,31 @@ _ATK_MODE_RETIRED_SKILLS = (
 )
 
 
-# 対象版を固定した監査記録。当時の配置を記録として保持する。
+# 対象版を固定した監査記録。当時の配置を記録として保持し、パスの参照は記録が固定した版で確かめる。
 _FIXED_AUDIT_RECORDS = frozenset(
     pathlib.Path(value)
-    for value in ("docs/development/audit-opus55-hosts-2026-11-15.json", "docs/development/audit-sol-2026-11-14.json")
+    for value in (
+        "docs/development/audit-opus55-hosts-2026-11-15.json",
+        "docs/development/audit-opus55-hosts-2026-11-15-notifications.json",
+        "docs/development/audit-sol-2026-11-14.json",
+    )
 )
+
+
+def _exists_in_fixed_version(root: pathlib.Path, source: pathlib.Path, reference: str) -> bool:
+    """対象版を固定した監査記録が名指しするパスが、記録の固定した版（`target_commit`か`対象版`）に実在するかを返す。"""
+    if source not in _FIXED_AUDIT_RECORDS or reference.startswith(f"{_PLUGIN_PREFIX}:"):
+        return False
+    record = json.loads((root / source).read_text(encoding="utf-8"))
+    commit = record.get("target_commit") or record.get("対象版")
+    if not isinstance(commit, str):
+        return False
+    result = subprocess.run(  # noqa: S603
+        ["git", "-C", str(root), "cat-file", "-e", f"{commit}:{reference}"],  # noqa: S607
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def _is_historical_record(source: pathlib.Path) -> bool:
@@ -221,6 +242,8 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
         if _reference_exists(root, reference):
             continue
         if _is_historical_record(source) and _names_retired_skill(reference, _ATK_MODE_RETIRED_SKILLS):
+            continue
+        if _exists_in_fixed_version(root, source, reference):
             continue
         key = (reference, source)
         if allowed_counts.get(key, 0) > 0:

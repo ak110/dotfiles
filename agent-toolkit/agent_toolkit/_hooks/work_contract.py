@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
-import json
+import hashlib
 import os
 import pathlib
+import re
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import read_triggers
-from agent_toolkit._common.delegated_session import is_delegated
-from agent_toolkit._common.session_state import update_state
-from agent_toolkit._hooks import document_reads
+from agent_toolkit._common import delegated_session
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
+lazy from agent_toolkit._common import session_registry, startup_documents
 
 RECORD_NAME = "work-contract.md"
 DELEGATED_NOTICE_KEY = "whole_contract_notified"
+"""委譲先の主体ごとに、更新を案内した全体作業契約の版（SHA-256）を持つセッション状態の項目。"""
+DELEGATED_LAUNCH_KEY = "whole_contract_launch"
+"""委譲先が起動時に受け取った全体作業契約の所在と版。登録簿の起動本文から1回だけ求めて保持する。"""
 
 NOTICE_BODY_LIMIT = 4_000
 """通知へ載せる契約本文の上限（文字）。
@@ -120,40 +124,84 @@ def reset_notice(session_id: str) -> None:
     resolve_notice(session_id, "pretooluse", "main", subject="main")
 
 
-def delegated_notice(session_id: str, records: dict, state: dict, *, agent: str = "main") -> tuple[str, str] | None:
-    """受領した全体契約の未読版を、本文配送や遮断をせず1回案内する。"""
-    if not is_delegated(os.environ):
+@dataclasses.dataclass(frozen=True)
+class DelegatedLaunch:
+    """委譲先の起動本文が渡した、全体作業契約と引き継ぎ記録の所在。"""
+
+    whole_contract: pathlib.Path | None = None
+    whole_contract_sha256: str | None = None
+    """起動本文へ全文を入れた時点の全体作業契約の版。本文を入れていない起動では`None`とする。"""
+    handoff: str | None = None
+
+
+def delegated_launch(session_id: str) -> DelegatedLaunch | None:
+    """`agents_server`の登録簿にある起動本文から、委譲先が受け取った全体作業契約と引き継ぎ記録の所在を返す。
+
+    登録簿に無いsession（組み込みの委譲機能の子や、登録前の起動）は`None`とする。
+    """
+    if not re.fullmatch(r"[0-9A-Za-z_-]+", session_id):
         return None
-    delivered = state.get(DELEGATED_NOTICE_KEY, {})
-    seen = delivered.get(agent, []) if isinstance(delivered, dict) else []
-    for key, actors in records.items():
-        if not key.startswith("startup-input-target:") or agent not in actors:
-            continue
-        metadata = json.loads(key.removeprefix("startup-input-target:"))
-        if "input:作業契約" not in metadata.get("selectors", [metadata.get("selector", "")]):
-            continue
-        path = pathlib.Path(metadata["path"])
-        try:
-            fingerprint = document_reads.content_fingerprint(path)
-        except OSError:
-            return (
-                f"全体作業契約を取得できない。原本: `{path}`。",
-                "委譲元へ原本の所在と読取可能性を確認せよ。",
-            )
-        status = document_reads.acquisition_state(records, read_triggers.ReadTarget(path), agent)
-        if status == "current" or fingerprint in seen:
-            continue
-        text = (
-            f"全体作業契約が取得後に更新された。原本: `{path}`。"
-            if status == "updated"
-            else f"全体作業契約の現行版を全文取得したことを確認できない。原本: `{path}`。"
+    try:
+        resolution = session_registry.resolve(session_id)
+    except OSError, ValueError:
+        return None
+    info = resolution.resume_info or resolution.handoff_info
+    if info is None:
+        return None
+    prompt = info.launch_info.prompt
+    path = delegated_session.prompt_whole_contract_path(prompt)
+    return DelegatedLaunch(
+        whole_contract=path,
+        whole_contract_sha256=startup_documents.delivered_versions(prompt).get(path) if path is not None else None,
+        handoff=delegated_session.prompt_handoff_path(prompt),
+    )
+
+
+def _launched_contract(session_id: str) -> tuple[pathlib.Path, str] | None:
+    """起動時に全文を受け取った全体作業契約の所在と版を、セッション状態の記録から返す。
+
+    初回だけ登録簿を読み、結果を記録する。登録簿にまだ無いsessionは記録せず、次の操作で再び読む。
+    """
+    recorded = read_state(session_id).get(DELEGATED_LAUNCH_KEY)
+    if not isinstance(recorded, dict):
+        launch = delegated_launch(session_id)
+        if launch is None:
+            return None
+        recorded = (
+            {"path": str(launch.whole_contract), "sha256": launch.whole_contract_sha256}
+            if launch.whole_contract is not None and launch.whole_contract_sha256 is not None
+            else {}
         )
-        notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, fingerprint)
-        action = "現行要求を確かめ、「即時対応で確定した暫定規則」を含めて続行へ適用せよ。"
-        if status == "missing":
-            action = "原本を全文読み、" + action
-        return text, action
-    return None
+        update_state(session_id, lambda state: {**state, DELEGATED_LAUNCH_KEY: recorded})
+    path, digest = recorded.get("path"), recorded.get("sha256")
+    return (pathlib.Path(path), digest) if isinstance(path, str) and isinstance(digest, str) else None
+
+
+def delegated_notice(session_id: str, *, agent: str = "main") -> tuple[str, str] | None:
+    """委譲先が起動時に受け取った全体作業契約が更新された場合に、更新後の版ごとに1回だけ案内する。
+
+    比べるのは、登録簿の起動本文に入れた版と現在の原本の版である。本文の配送と遮断はしない。
+    """
+    if not session_id or not delegated_session.is_delegated(os.environ):
+        return None
+    launched = _launched_contract(session_id)
+    if launched is None:
+        return None
+    path, delivered = launched
+    try:
+        current = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return (
+            f"全体作業契約を読めない。原本: `{path}`。",
+            "委譲元へ原本の所在と読取可能性を確認せよ。",
+        )
+    notified = read_state(session_id).get(DELEGATED_NOTICE_KEY, {})
+    seen = notified.get(agent, []) if isinstance(notified, dict) else []
+    if current == delivered or current in seen:
+        return None
+    text = f"全体作業契約が起動後に更新された。原本: `{path}`。"
+    notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, current)
+    return text, "原本を全文読み、現行要求と「即時対応で確定した暫定規則」を確かめて続行へ適用せよ。"
 
 
 def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
@@ -177,9 +225,4 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
         )
     if len(body) > budget:
         return f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめよ。{RETURN_CRITERION}"
-    text = f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"
-    for metadata in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):
-        notice_module.stage_delivery(
-            text, session_id, "operation_skill_delivered_agents", document_reads.receipt_key(metadata), "main"
-        )
-    return text
+    return f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"

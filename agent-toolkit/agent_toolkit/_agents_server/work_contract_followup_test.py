@@ -98,8 +98,7 @@ async def test_public_start_delivers_whole_contract_reference(
     prompt = manager.start.await_args.args[1]
     assert f"全体作業契約: {whole}" in prompt
     assert "目的: A全体\n保持対象: Aの利点・X・Y・ZZ\n" in prompt
-    assert '"selectors": ["input:作業契約"]' in prompt
-    assert 'kind="startup-document"' in prompt
+    assert f'kind="startup-document">\n資料: {whole}\n' in prompt
     explicit = handoff_input in {"新規", "継続"}
     designation = handoff_input if explicit else "新規"
     expected_count = 2 if mode == "task" and handoff_input is None else 1

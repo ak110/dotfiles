@@ -68,7 +68,7 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 ## 資料の取得
 
 - hookが示した対象は、導入済みのスキル名なら`Skill`で起動し、参照資料、起動が禁じられたスキル、別の版の写しなら`Read`で読む。
-- `agent-toolkit:<スキル>/<パス>`は起動の通知が示す実在のplugin rootの`skills/<スキル>/<パス>`へ、`agent-toolkit:/share/<資料>`はroot直下の`share/<資料>`へ解決する。
+- `agent-toolkit:<スキル>/<パス>`は起動の通知が示す実在のplugin rootの`skills/<スキル>/<パス>`へ解決する。
 - 明示された実パスは、その実体を読む。
 
 ## Code Modeでのツールの探索と実行結果の回収

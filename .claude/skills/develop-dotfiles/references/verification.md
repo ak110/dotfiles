@@ -66,7 +66,7 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
   `agents_server`のMCPツールと`atk agents wait`の公開レスポンスの項目も含み、コメントと空白だけの変更は除く。
   公開レスポンスの変更では、同じレスポンスを読むMCP層・CLIの待機処理・自動再開の後処理の各試験を配置によらず追跡する。
 - パッケージ外の呼び出し元: 既存の配置は`agent-toolkit/skills/*/scripts/`、`agent-toolkit/`直下のスクリプトと試験、`pytools/`、`scripts/`、`libexec/`、リポジトリ直下の結合試験であり、将来の別の配置の利用側も同じ基準で含める。
-  生成資料の読取契約では`agent_toolkit_read_trigger_agy_integration_test.py`、共有のGit処理では`libexec/update_dotfiles.py`・`update_dotfiles_stash.py`とその試験も追跡する。
+  共有のGit処理では`libexec/update_dotfiles.py`・`update_dotfiles_stash.py`とその試験も追跡する。
 - 配布パッケージの版の指定を変えたら`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。
   対象は`agent-toolkit/.mcp.json`（生成される`mcp.json`と`.mcp.codex.json`を含む）、依存の宣言、`.chezmoi-source/`の導入・更新処理が渡す版の指定である。
   依存の宣言は、リポジトリ直下の`pyproject.toml`と`agent-toolkit/scripts/launch.py`のインラインメタデータの`dependencies`を指す。

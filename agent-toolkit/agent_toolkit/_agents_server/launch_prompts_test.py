@@ -21,7 +21,7 @@ from agent_toolkit._agents_server import (
     session_errors,
 )
 from agent_toolkit._agents_server.state import LaunchKind
-from agent_toolkit._common import plugin_roots
+from agent_toolkit._common import delegated_session, plugin_roots
 from agent_toolkit._testing.agents_server_claude_support import _capture_options
 
 
@@ -213,3 +213,9 @@ def test_distributed_playbook_assembles_every_launch_kind(kind: LaunchKind) -> N
     assert "## 返却形式の受け渡し" in launch_prompts.result_contract()
     assert "## " + launch_prompts.ROLES_HEADING not in body
     assert launch_prompts.auto_resume_notice()
+
+
+# test-copy-contract: 起動側とhook側の区分を比べ、スキルを使わない軽量の委譲先へスキルの起動を案内する不整合を防ぐ。
+def test_lightweight_launch_kinds_match_hook_copy() -> None:
+    """hookが読む軽量起動の写しは、agents_serverが軽量起動として扱う区分と一致する。"""
+    assert delegated_session.LIGHTWEIGHT_LAUNCH_KINDS == launch_prompts.LIGHTWEIGHT_LAUNCH_KINDS

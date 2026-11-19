@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
+from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 # 主体と起動環境の判定に必要なフィールドを持つ合成PreToolUse入力。
 _QUESTION = {"questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]}

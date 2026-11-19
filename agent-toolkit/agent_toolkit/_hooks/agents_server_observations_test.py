@@ -26,7 +26,7 @@ from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._testing import agents_server_support
 from agent_toolkit._testing.termination_evidence_support import claude_read_response
 
-pytestmark = pytest.mark.usefixtures("_forbid_backend_process", "without_read_delivery")
+pytestmark = pytest.mark.usefixtures("_forbid_backend_process", "without_skill_notices")
 
 
 @pytest.mark.parametrize("operation", ["start", "send_message"])

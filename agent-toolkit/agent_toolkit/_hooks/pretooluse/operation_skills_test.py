@@ -1,52 +1,199 @@
-"""既存のシェル・編集・委譲・検証の各操作に対する検出条件を確かめる。
+"""操作の直前に起動を求めるスキルについて、操作の判定と公開hookの案内を確かめる。
 
-配送、取得、主体、圧縮および両ホストの応答契約はread_delivery_test.pyが検証する。
-本ファイルは既存のテストコードの入力を使って検出条件を確かめ、同じ状態遷移に対する子プロセス起動の反復を省く。
+判定の試験は、検索・原因分析の記述・本文の作成と更新・エージェント向け文書の書込・検証の実行の各判定関数と
+書込先の解析（`written_paths`）の境界を、既存のシェル・編集ツールの入力で確かめる。
+案内の試験は公開PreToolUse・PostToolUse hookを同一プロセスで呼び、主体と文脈ごとにスキル1件につき1回だけ案内すること、
+`Skill`で起動したスキル・軽量の委譲先・遮断した呼び出し・一時領域だけへの書込で案内しないこと、
+案内済みのスキルの操作を判定しないことを確かめる。表の全項目と委譲先の主体の区分の組は`operation_skills_invariant_test.py`が確かめる。
 """
+
+# 判定関数は表の項目の内側の入口であり、境界の試験で直接呼ぶ。
+# pylint: disable=protected-access
 
 from __future__ import annotations
 
-import json
 import os
 import pathlib
+import re
+import subprocess
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import read_triggers, session_state
-from agent_toolkit._hooks import document_reads, plugin_resources, rules_context
-from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
-from agent_toolkit._testing.document_delivery import run_hook
+from agent_toolkit._common import delegated_session, session_state
+from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._hooks.termination_evidence_state import STATE_KEY as TERMINATION_EVIDENCE_KEY
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
-    _read_session_state,
     _run,
-    codex_execution_payload,
+    _run_posttooluse,
+    denial_reason,
 )
 
 _SEARCH_SKILL = "agent-basics:search"
-_WARN_OPENING = '<atk-auto source="pretooluse" kind="block">'
-
-_DELEGATION_TOOLS = (
-    "Agent",
-    "Task",
-    "spawn_agent",
-    "mcp__plugin_agent-toolkit_agents_server__start",
-    "mcp__plugin_agent-toolkit_agents_server__send_message",
-    "mcp__plugin_agent-toolkit_agents_server__kill",
-    "mcp__plugin_agent-toolkit_agents_server__list",
-)
-
-
-@pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
-def test_delegation_warning_preserves_permission_and_context(tool: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert operation_skills.operation_matches("delegation", tool, {"prompt": "調査する"})
+_BUGFIX_SKILL = "agent-basics:bugfix"
+_WRITING_SKILL = "agent-basics:writing-standards"
+_CHECK_EXECUTION_SKILL = "agent-basics:check-execution"
+_NOTICE = re.compile(r"スキル`([^`]+)`をまだ起動していなければ")
+"""起動を求める案内から、案内したスキルの名前を取り出す。"""
+_ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n- 期待: 対象の全件を処理する。\n- 原因: 範囲の指定の誤り。\n"
 
 
 def _bash(command: str, session_id: str, **extra: object) -> dict:
     return {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id, **extra}
+
+
+def _add_file_patch(path: pathlib.Path, body: str) -> dict:
+    """Codexの`apply_patch`でファイルを追加する入力を返す。"""
+    lines = "".join(f"+{line}\n" for line in body.splitlines())
+    return {"command": f"*** Begin Patch\n*** Add File: {path}\n{lines}*** End Patch\n"}
+
+
+def _notified(result: subprocess.CompletedProcess[str]) -> set[str]:
+    """公開hookが正常に終わったことを確かめ、応答が起動を案内したスキルの名前を返す。"""
+    assert result.returncode == 0
+    assert not result.stderr
+    return set(_NOTICE.findall(_additional_context(result)))
+
+
+@pytest.fixture(name="temp_root")
+def _temp_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """managed-tempの一時rootを試験の専用領域へ向けて返す。"""
+    root = tmp_path / "managed-temp"
+    monkeypatch.setattr(managed_temp, "temp_root_path", lambda: root)
+    return root
+
+
+def _host_operations(work: pathlib.Path, temp: pathlib.Path) -> dict[str, dict[str, dict]]:
+    """表の項目ごとに、Claude CodeとCodexがその操作で送るツール名と入力を返す。
+
+    各入力は表の他の項目に当たらない。原因分析は、AWIの原稿と同じく一時領域へ書いて本文の作成・更新から外す。
+    """
+    return {
+        "search": {
+            "claude": {"tool_name": "Grep", "tool_input": {"pattern": "needle", "path": str(work)}},
+            "codex": {"tool_name": "Bash", "tool_input": {"command": f"rg -n needle {work}"}},
+        },
+        "bugfix": {
+            "claude": {"tool_name": "Write", "tool_input": {"file_path": str(temp / "awi.md"), "content": _ROOT_CAUSE_BODY}},
+            "codex": {"tool_name": "apply_patch", "tool_input": _add_file_patch(temp / "awi.md", _ROOT_CAUSE_BODY)},
+        },
+        "writing-standards": {
+            "claude": {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(work / "notes.md"), "old_string": "旧", "new_string": "新"},
+            },
+            "codex": {"tool_name": "apply_patch", "tool_input": _add_file_patch(work / "notes.md", "# 見出し\n")},
+        },
+        "check-execution": {
+            "claude": {"tool_name": "Bash", "tool_input": {"command": "uv run --frozen pytest a_test.py"}},
+            "codex": {"tool_name": "mcp__pyfltr__run", "tool_input": {"paths": [str(work / "a.py")]}},
+        },
+    }
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("entry", operation_skills.OPERATION_SKILLS, ids=lambda entry: entry.short_name)
+def test_each_operation_notifies_only_its_skill(
+    tmp_path: pathlib.Path, temp_root: pathlib.Path, entry: operation_skills.OperationSkill, host: str
+) -> None:
+    """表の各操作で、対応するスキルだけの起動を案内する。Codexは`turn_id`を持つ入力で確かめる。"""
+    operation = _host_operations(tmp_path / "work", temp_root)[entry.short_name][host]
+    payload = {**operation, "session_id": f"{entry.short_name}-{host}", "cwd": str(tmp_path)}
+    if host == "codex":
+        payload["turn_id"] = "turn-1"
+    assert _notified(_run(payload, _plan_file_state_env(tmp_path))) == {entry.skill_name}
+
+
+def test_one_call_with_several_operations_notifies_each_skill(tmp_path: pathlib.Path) -> None:
+    """検索と文書書込を含む1つのBash呼び出しでは、両方のスキルを同じ応答で案内する。"""
+    payload = _bash("rg x; printf rule > AGENTS.md", "compound", cwd=str(tmp_path))
+    assert _notified(_run(payload, _plan_file_state_env(tmp_path))) == {_SEARCH_SKILL, _WRITING_SKILL}
+
+
+def test_notice_is_given_once_per_subject(tmp_path: pathlib.Path) -> None:
+    """同じ主体へは2回目の同じ操作で案内せず、別の主体（サブエージェント）へは改めて案内する。"""
+    env = _plan_file_state_env(tmp_path)
+    main = {"tool_name": "Grep", "tool_input": {"pattern": "needle"}, "session_id": "subjects"}
+    child = {**main, "agent_id": "child"}
+    assert _notified(_run(main, env)) == {_SEARCH_SKILL}
+    assert not _notified(_run(main, env))
+    assert _notified(_run(child, env)) == {_SEARCH_SKILL}
+    assert not _notified(_run(child, env))
+
+
+@pytest.mark.parametrize("skill", ["agent-basics:search", "search"])
+def test_launched_skill_is_not_notified(tmp_path: pathlib.Path, skill: str) -> None:
+    """Claude Codeの`Skill`で起動したスキルは、完全名と短縮名のどちらでも以後案内しない。他のスキルは案内する。"""
+    env = _plan_file_state_env(tmp_path)
+    launch = {"hook_event_name": "PostToolUse", "tool_name": "Skill", "tool_input": {"skill": skill}, "session_id": "launched"}
+    assert _run_posttooluse(launch, env).returncode == 0
+    assert not _notified(_run(_bash("rg -n needle .", "launched"), env))
+    assert _notified(_run(_bash("uv run --frozen pytest a_test.py", "launched"), env)) == {_CHECK_EXECUTION_SKILL}
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("kind", ["explore", "shell", "write"])
+def test_lightweight_delegate_is_not_notified(tmp_path: pathlib.Path, kind: str, host: str) -> None:
+    """スキルを使わない前提で起動した軽量の委譲先には、表の操作でも案内しない。"""
+    marker = {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"} if host == "claude" else {"AGENT_TOOLKIT_OWNER_SESSION": "owner"}
+    env = {**_plan_file_state_env(tmp_path), **marker, delegated_session.LAUNCH_KIND_ENV: kind}
+    extra = {"turn_id": "turn-1"} if host == "codex" else {}
+    assert not _notified(_run(_bash("rg -n needle .", f"{kind}-{host}", **extra), env))
+
+
+def test_blocked_call_does_not_record_notice(tmp_path: pathlib.Path) -> None:
+    """遮断した呼び出しでは案内を記録せず、遮断後の通常の呼び出しで案内する。"""
+    env = _plan_file_state_env(tmp_path)
+    blocked = _run(_bash("rg -n needle . && pkill -f needle", "blocked"), env)
+    assert denial_reason(blocked)
+    assert not _notified(blocked)
+    assert _notified(_run(_bash("rg -n needle .", "blocked"), env)) == {_SEARCH_SKILL}
+
+
+@pytest.mark.parametrize("tool", ["Write", "Bash", "apply_patch"])
+def test_temporary_area_writes_are_not_notified(tmp_path: pathlib.Path, temp_root: pathlib.Path, tool: str) -> None:
+    """一時領域だけへの書込では本文の作成・更新を案内せず、同じ主体の成果物への書込で案内する。"""
+    env = _plan_file_state_env(tmp_path)
+
+    def payload(path: pathlib.Path) -> dict:
+        tool_input = {
+            "Write": {"file_path": str(path), "content": "本文\n"},
+            "Bash": {"command": f"cat > {path} <<'EOF'\n本文\nEOF"},
+            "apply_patch": _add_file_patch(path, "本文\n"),
+        }[tool]
+        extra = {"turn_id": "turn-1"} if tool == "apply_patch" else {}
+        return {"tool_name": tool, "tool_input": tool_input, "session_id": "temporary", "cwd": str(tmp_path), **extra}
+
+    assert not _notified(_run(payload(temp_root / "session" / "draft.md"), env))
+    assert _notified(_run(payload(tmp_path / "work" / "draft.md"), env)) == {_WRITING_SKILL}
+
+
+def test_mixed_temporary_and_artifact_writes_are_artifact_body_writing(tmp_path: pathlib.Path, temp_root: pathlib.Path) -> None:
+    """一時領域と成果物の両方へ書く呼び出しは、成果物の本文の作成・更新に当たる。"""
+    draft = temp_root / "draft.md"
+    mixed = {"command": f"tee {draft} {tmp_path / 'notes.md'} <<<'本文'"}
+    assert operation_skills._is_artifact_body_writing("Bash", mixed, str(tmp_path))
+    assert not operation_skills._is_artifact_body_writing("Bash", {"command": f"tee {draft} <<<'本文'"}, str(tmp_path))
+
+
+def test_notified_skill_is_not_judged_again(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """案内済みのスキルについては操作を判定せず、判定が失敗する状態でもhookは案内なしで通る。"""
+    env = _plan_file_state_env(tmp_path)
+    payload = _bash("rg -n needle .", "judged-once")
+    assert _notified(_run(payload, env)) == {_SEARCH_SKILL}
+    calls: list[tuple[object, ...]] = []
+
+    def failing(*args: object) -> bool:
+        calls.append(args)
+        raise AssertionError("案内済みのスキルの操作を判定した")
+
+    monkeypatch.setattr(operation_skills, "_is_search_operation", failing)
+    repeated = _run(payload, env)
+    assert not _notified(repeated)
+    assert not calls
+    assert "案内済みのスキルの操作を判定した" not in repeated.stdout
 
 
 @pytest.mark.parametrize(
@@ -67,9 +214,9 @@ def _bash(command: str, session_id: str, **extra: object) -> dict:
     ],
     ids=lambda payload: payload["tool_input"].get("command") or payload["tool_name"],
 )
-def test_search_inputs_match_read_guidance_operation(payload: dict) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert operation_skills.operation_matches("search", payload["tool_name"], payload["tool_input"])
+def test_search_inputs_are_search_operations(payload: dict) -> None:
+    """検索ツールと、リポジトリ・ディレクトリを検索するコマンドを複合文の内側も含めて検索と判定する。"""
+    assert operation_skills._is_search_operation(payload["tool_name"], payload["tool_input"])
 
 
 @pytest.mark.parametrize(
@@ -86,12 +233,11 @@ def test_search_inputs_match_read_guidance_operation(payload: dict) -> None:
         "ls -la",
     ],
 )
-def test_non_search_commands_do_not_warn(command: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert not operation_skills.operation_matches("search", "Bash", {"command": command})
+def test_non_search_commands_are_not_search_operations(command: str) -> None:
+    """標準入力の検索、再帰しない`grep`、他のコマンドの引数を検索と判定しない。"""
+    assert not operation_skills._is_search_operation("Bash", {"command": command})
 
 
-@pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize(
     ("arguments", "recursive"),
     [
@@ -108,17 +254,9 @@ def test_non_search_commands_do_not_warn(command: str) -> None:
         ("-ne-R /dev/null", False),
     ],
 )
-def test_grep_long_values_preserve_public_search_guidance(tmp_path, monkeypatch, codex, arguments, recursive):
-    """長形式の値が終端や再帰指定と同形でも、実際の再帰指定だけで検索基準を案内する。"""
-    # grepの引数判定に関係しない全規範の解析を避け、検索操作の宣言だけを渡す。
-    guide = pathlib.Path(__file__).resolve().parents[4] / "agent-basics/skills/search/SKILL.md"
-    rows = [read_triggers.ReadTrigger(guide, 1, "操作", ("search",), (guide,))]
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
-    payload = _bash("grep " + arguments, "grep-value-boundary", **({"turn_id": "t"} if codex else {}))
-    result = _run(payload, _plan_file_state_env(tmp_path))
-    assert result.returncode == 0 and not result.stderr
-    context = _additional_context(result)
-    assert (_SEARCH_SKILL in context or "/skills/search/SKILL.md" in context) is recursive
+def test_grep_option_values_do_not_count_as_recursion(arguments: str, recursive: bool) -> None:
+    """長形式の値が終端や再帰指定と同形でも、実際の再帰指定だけで`grep`を検索と判定する。"""
+    assert operation_skills._is_search_operation("Bash", {"command": "grep " + arguments}) is recursive
 
 
 @pytest.mark.parametrize(
@@ -168,11 +306,11 @@ def test_write_paths_respect_option_roles(command: str, expected: list[str], tmp
     ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "agent-doc"],
 )
 def test_codex_inputs_match_required_skill_operations(payload: dict, skills: list[str]) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
+    """Codexの`Bash`・`apply_patch`の入力を、表の該当する項目の操作と判定する。"""
     matched = {
         entry.short_name
         for entry in operation_skills.OPERATION_SKILLS
-        if entry.matches(payload["tool_name"], payload["tool_input"])
+        if entry.matches(payload["tool_name"], payload["tool_input"], "")
     }
     assert set(skills) <= matched
 
@@ -197,9 +335,9 @@ def test_codex_inputs_match_required_skill_operations(payload: dict, skills: lis
         "coproc WORKER if test -f marker; then cp -t .claude/rules AGENTS.md; fi",
     ],
 )
-def test_agent_document_bash_writing_matches_guidance_operation(command: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert operation_skills.operation_matches("agent-document-writing", "Bash", {"command": command})
+def test_agent_document_bash_writing_is_detected(command: str) -> None:
+    """エージェント向け文書へのBashの書込を、複合文の内側も含めて判定する。"""
+    assert operation_skills._is_agent_document_writing("Bash", {"command": command})
 
 
 @pytest.mark.parametrize(
@@ -221,9 +359,9 @@ def test_agent_document_bash_writing_matches_guidance_operation(command: str) ->
         "python3 - <<'PY'\ndef example():\n    open('AGENTS.md','w').write('rule')\nPY",
     ],
 )
-def test_non_agent_document_writes_and_examples_do_not_warn(command: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert not operation_skills.operation_matches("agent-document-writing", "Bash", {"command": command})
+def test_non_agent_document_writes_and_examples_are_not_detected(command: str) -> None:
+    """読取、通常文書への書込、本文中の例をエージェント向け文書の書込と判定しない。"""
+    assert not operation_skills._is_agent_document_writing("Bash", {"command": command})
 
 
 @pytest.mark.parametrize(
@@ -242,9 +380,9 @@ def test_non_agent_document_writes_and_examples_do_not_warn(command: str) -> Non
         ),
     ],
 )
-def test_edit_tool_agent_document_writing_and_skill_context(tool: str, tool_input: dict) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert operation_skills.operation_matches("agent-document-writing", tool, tool_input)
+def test_edit_tool_agent_document_writing_is_detected(tool: str, tool_input: dict) -> None:
+    """編集ツールの対象と移動元・移動先のどちらかがエージェント向け文書なら判定する。"""
+    assert operation_skills._is_agent_document_writing(tool, tool_input)
 
 
 @pytest.mark.parametrize(
@@ -265,9 +403,9 @@ def test_edit_tool_agent_document_writing_and_skill_context(tool: str, tool_inpu
         ),
     ],
 )
-def test_body_edit_delivers_writing_standards_per_actor(tool, tool_input):
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert operation_skills.operation_matches("body-writing", tool, tool_input)
+def test_body_edits_are_body_writing(tool: str, tool_input: dict) -> None:
+    """本文を変える編集ツールの入力を、言語と文書種別によらず本文の作成・更新と判定する。"""
+    assert operation_skills.is_body_writing(tool, tool_input)
 
 
 @pytest.mark.parametrize(
@@ -282,20 +420,9 @@ def test_body_edit_delivers_writing_standards_per_actor(tool, tool_input):
         ("apply_patch", {"command": "*** Begin Patch\n*** Update File: source.py\n*** Move to: renamed.py\n*** End Patch"}),
     ],
 )
-def test_operations_without_body_edit_do_not_deliver(tool, tool_input):
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert not operation_skills.operation_matches("body-writing", tool, tool_input)
-
-
-# test-copy-contract: 複合Bash入力の検索と文書書込を実matcherが両方選ぶ契約を検査する。
-def test_operation_skills_for_one_operation_share_one_notice() -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    matched = {
-        entry.short_name
-        for entry in operation_skills.OPERATION_SKILLS
-        if entry.matches("Bash", {"command": "rg x; printf rule > AGENTS.md"})
-    }
-    assert {"search", "writing-standards"} <= matched
+def test_operations_without_body_edit_are_not_body_writing(tool: str, tool_input: dict) -> None:
+    """読取、本文を持たない入力、削除、本文を変えない移動を本文の作成・更新と判定しない。"""
+    assert not operation_skills.is_body_writing(tool, tool_input)
 
 
 _WRITE_FORMS = [
@@ -320,27 +447,27 @@ _WRITE_FORMS = [
 
 @pytest.mark.parametrize("form", _WRITE_FORMS)
 @pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
-def test_bash_static_document_suffix_matches_guidance_operation(form: str, prefix: str) -> None:
-    """展開される先頭と操作形式を組み合わせ、エージェント向け文書の編集条件への一致を検証する。"""
+def test_bash_static_document_suffix_is_agent_document_writing(form: str, prefix: str) -> None:
+    """展開される先頭と操作形式を組み合わせ、エージェント向け文書の書込の判定への一致を検証する。"""
     closing_quote = '"' if prefix.startswith('"') else ""
     path = prefix + ".claude/rules/AGENTS.md" + closing_quote
     directory = prefix + ".claude/rules/" + closing_quote
     literal = prefix.replace('"', "") + ".claude/rules/AGENTS.md"
     command = form.format(path=path, directory=directory, literal=literal)
-    assert operation_skills.operation_matches("agent-document-writing", "Bash", {"command": command})
+    assert operation_skills._is_agent_document_writing("Bash", {"command": command})
 
 
 @pytest.mark.parametrize("form", _WRITE_FORMS)
 @pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
-def test_bash_static_ordinary_suffix_does_not_warn(form: str, prefix: str) -> None:
-    """同じ操作と各展開表記でも通常文書の書込は警告しない。"""
+def test_bash_static_ordinary_suffix_is_not_agent_document_writing(form: str, prefix: str) -> None:
+    """同じ操作と各展開表記でも、通常文書の書込はエージェント向け文書の書込と判定しない。"""
     closing_quote = '"' if prefix.startswith('"') else ""
     command = form.replace("AGENTS.md", "README.md").format(
         path=prefix + "docs/README.md" + closing_quote,
         directory=prefix + "docs/" + closing_quote,
         literal=prefix.replace('"', "") + "docs/README.md",
     )
-    assert not operation_skills.operation_matches("agent-document-writing", "Bash", {"command": command})
+    assert not operation_skills._is_agent_document_writing("Bash", {"command": command})
 
 
 @pytest.mark.parametrize(
@@ -372,8 +499,8 @@ def test_bash_static_ordinary_suffix_does_not_warn(form: str, prefix: str) -> No
     ],
 )
 def test_bash_document_write_option_boundaries(command: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert operation_skills.operation_matches("agent-document-writing", "Bash", {"command": command})
+    """値を取るオプションと転送先の指定を読み分け、エージェント向け文書への書込を判定する。"""
+    assert operation_skills._is_agent_document_writing("Bash", {"command": command})
 
 
 @pytest.mark.parametrize(
@@ -401,8 +528,8 @@ def test_bash_document_write_option_boundaries(command: str) -> None:
     ],
 )
 def test_bash_document_write_negative_boundaries(command: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert not operation_skills.operation_matches("agent-document-writing", "Bash", {"command": command})
+    """未知の展開、複製元、ヘルプ表示、本文を書かないコマンドをエージェント向け文書の書込と判定しない。"""
+    assert not operation_skills._is_agent_document_writing("Bash", {"command": command})
 
 
 @pytest.mark.parametrize(
@@ -435,17 +562,9 @@ def test_bash_document_write_negative_boundaries(command: str) -> None:
     ],
 )
 def test_perl_document_write_option_and_program_boundaries(options: str, writes: bool) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert (
-        operation_skills.operation_matches(
-            "agent-document-writing", "Bash", {"command": f"perl {options} ~/.claude/rules/x.md"}
-        )
-        is writes
-    )
-
-
-_BUGFIX_SKILL = "agent-basics:bugfix"
-_ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n- 期待: 対象の全件を処理する。\n- 原因: 範囲の指定の誤り。\n"
+    """perlのオプションの値とprogramfile以降の引数を読み分け、in-place編集だけを書込と判定する。"""
+    command = f"perl {options} ~/.claude/rules/x.md"
+    assert operation_skills._is_agent_document_writing("Bash", {"command": command}) is writes
 
 
 @pytest.mark.parametrize(
@@ -461,57 +580,18 @@ _ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n- 期待: 対象の全件を�
     ],
     ids=["write", "edit", "multiedit", "bash"],
 )
-def test_root_cause_writing_matches_bugfix_guidance_operation(payload: dict) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert operation_skills.operation_matches("root-cause-writing", payload["tool_name"], payload["tool_input"])
+def test_root_cause_writing_is_detected(payload: dict) -> None:
+    """編集ツールとBashで`## 原因分析`の見出しを書く入力を、原因分析の記述と判定する。"""
+    assert operation_skills._is_root_cause_writing(payload["tool_name"], payload["tool_input"])
 
 
 @pytest.mark.parametrize(
     "content",
     ["## 原因分析の根拠\n", "### 原因分析\n", "`## 原因分析`を置く\n", "本文だけ\n"],
 )
-def test_writing_without_root_cause_heading_does_not_warn(content: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert not operation_skills.operation_matches(
-        "root-cause-writing", "Write", {"file_path": "/example/awi.md", "content": content}
-    )
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        "mktemp -d '/cache/session/lane-02-XXXXXXXX'",
-        "mktemp --directory -p /cache/session",
-        "mktemp -dp /cache/session work-XXXXXXXX",
-        "/usr/bin/mktemp -p /cache/session -d",
-        "cd /repo && mktemp -d /cache/session/x-XXXXXXXX",
-        'for l in a b; do mktemp -d "/cache/session/$l-XXXXXXXX"; done',
-        "cd /repo && d=$(mktemp -d /cache/session/y-XXXXXXXX)",
-    ],
-)
-def test_temp_directory_create_triggers_managed_temp(command: str) -> None:
-    """個別の一時ディレクトリを作成する静的な呼出しを、置換と複合文の内側も含めて検出する。"""
-    assert operation_skills.operation_matches("managed-temp-create", "Bash", {"command": command})
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        "mktemp /cache/session/file-XXXXXXXX",
-        "mktemp -p /cache/session",
-        "mktemp -- -d",
-        "rm -rf -- /cache/session/x-12345678",
-        "git grep -F 'mktemp -d'",
-        "printf '%s' 'mktemp -d'",
-        "atk wi list",
-    ],
-)
-def test_other_commands_do_not_warn_managed_temp(command: str) -> None:
-    """一時ファイルの作成、回収、他のコマンドの引数を一時ディレクトリの作成として扱わない。"""
-    assert not operation_skills.operation_matches("managed-temp-create", "Bash", {"command": command})
-
-
-_CHECK_EXECUTION_SKILL = "agent-basics:check-execution"
+def test_writing_without_root_cause_heading_is_not_root_cause_writing(content: str) -> None:
+    """見出しだけから成る行でない記述を、原因分析の記述と判定しない。"""
+    assert not operation_skills._is_root_cause_writing("Write", {"file_path": "/example/awi.md", "content": content})
 
 
 _VERIFICATION_PAYLOADS = [
@@ -539,9 +619,9 @@ _VERIFICATION_PAYLOADS = [
     _VERIFICATION_PAYLOADS,
     ids=lambda payload: payload["tool_input"].get("command") or payload["tool_name"],
 )
-def test_verification_operations_require_check_execution_and_scope_reference(payload: dict) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert operation_skills.operation_matches("verification", payload["tool_name"], payload["tool_input"])
+def test_verification_operations_are_detected(payload: dict) -> None:
+    """検証ツール・タスクランナー・pyfltrのMCPツールの実行を、検証の実行と判定する。"""
+    assert operation_skills.is_verification_operation(payload["tool_name"], payload["tool_input"])
 
 
 @pytest.mark.parametrize(
@@ -565,111 +645,9 @@ def test_verification_operations_require_check_execution_and_scope_reference(pay
     ],
     ids=lambda payload: payload["tool_input"].get("command") or payload["tool_name"],
 )
-def test_verification_queries_do_not_require_check_execution(payload: dict) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
-    assert not operation_skills.operation_matches("verification", payload["tool_name"], payload["tool_input"])
-
-
-@pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
-@pytest.mark.cpu_limit(
-    4.0,
-    reason=(
-        "両hostの2sessionへ資料1件を取得させ、公開Pre3回/Post2回と外側配送で案内解除と取得状態を検証する（"
-        "Linux限定再確認のCPU合計最大1.848秒）。"
-    ),
-)
-def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: str) -> None:
-    """委譲操作は委譲の手順書の取得を求め、取得を観測するまで準備済みとして記録しない。"""
-    env = _plan_file_state_env(tmp_path)
-    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md")
-    for session in ("claude-delegation", "codex-delegation"):
-        (managed_temp.resolve_session_temp(session) / "work-contract.md").write_text("委譲の試験\n", encoding="utf-8")
-    payload = {
-        "tool_name": tool,
-        "tool_input": {"prompt": "調査する", "subagent_type": "specialist"},
-        "session_id": "claude-delegation",
-    }
-    codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
-    # 起動手段の拒否とは分け、許可された専用定義で取得前後の案内を検証する。
-    for session_id, subject in (("claude-delegation", payload), ("codex-delegation", codex)):
-        result = _run(subject, env)
-        assert result.returncode == 0
-        assert result.stderr == ""
-        assert "playbooks/delegation.md" in _additional_context(result)
-        state_file = session_state.state_path(session_id)
-        state = _read_session_state(tmp_path, session_id) if state_file.exists() else {}
-        target = read_triggers.ReadTarget(playbook)
-        records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
-        assert document_reads.acquisition_state(records, target, "main") == "missing"
-        _acquire_document(env, subject, playbook)
-        assert "playbooks/delegation.md" not in _additional_context(_run(subject, env))
-
-
-def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:
-    env = _plan_file_state_env(tmp_path)
-    blocked = {"tool_name": _DELEGATION_TOOLS[4], "tool_input": {"session_id": "unknown"}, "session_id": "blocked"}
-    result = _run(blocked, env)
-    assert result.returncode == 0
-    assert not result.stderr
-    specific = json.loads(result.stdout)["hookSpecificOutput"]
-    assert specific["permissionDecision"] == "deny"
-    assert specific["permissionDecisionReason"]
-    state_file = session_state.state_path("blocked")
-    state = _read_session_state(tmp_path, "blocked") if state_file.exists() else {}
-    assert rules_context.OPERATION_SKILL_READY_KEY not in state
-    valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
-    delivered = _run(valid, env)
-    assert delivered.returncode == 0
-    assert "playbooks/delegation.md" in _additional_context(delivered)
-    state = _read_session_state(tmp_path, "blocked")
-    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    target = read_triggers.ReadTarget(plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md"))
-    assert document_reads.acquisition_state(records, target, "main") == "missing"
-    assert delivered.stderr == ""
-
-
-def _acquire_document(env: dict[str, str], payload: dict, path: pathlib.Path) -> None:
-    """主体の区分に応じたホスト本来の手段で資料の全文を取得し、PostToolUseへ観測させる。
-
-    Claude CodeはReadの結果、Codexは全文を返したBashの読取を観測の入力とする。
-    """
-    extra = {key: payload[key] for key in ("agent_id", "turn_id") if key in payload}
-    if "turn_id" not in payload:
-        _record_read(env, payload["session_id"], path, **extra)
-        return
-    acquisition = {
-        "hook_event_name": "PostToolUse",
-        "tool_name": "Bash",
-        "tool_input": {"command": f"cat {path}"},
-        "tool_response": path.read_text(encoding="utf-8"),
-        "session_id": payload["session_id"],
-        **extra,
-    }
-    result = run_hook("posttooluse", codex_execution_payload(acquisition, pathlib.Path(env["TMPDIR"]), exit_code=0), env)
-    assert result.returncode == 0
-
-
-def _record_read(env: dict[str, str], session_id: str, path: pathlib.Path, **extra: object) -> None:
-    """Claude CodeのReadが資料の全文を返したPostToolUseを観測させる。
-
-    `tool_response`の形はClaude Code 2.1.303の本体のReadの結果（`type`・`file`）から写した。
-    """
-    text = path.read_text(encoding="utf-8")
-    lines = len(text.splitlines())
-    file = {"filePath": str(path), "content": text, "numLines": lines, "startLine": 1, "totalLines": lines}
-    result = run_hook(
-        "posttooluse",
-        {
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Read",
-            "tool_input": {"file_path": str(path)},
-            "tool_response": {"type": "text", "file": file},
-            "session_id": session_id,
-            **extra,
-        },
-        env,
-    )
-    assert result.returncode == 0
+def test_verification_queries_are_not_verification_operations(payload: dict) -> None:
+    """保存ログの表示、ヘルプ・一覧などの照会、構築と導入を検証の実行と判定しない。"""
+    assert not operation_skills.is_verification_operation(payload["tool_name"], payload["tool_input"])
 
 
 @pytest.mark.parametrize(
@@ -681,12 +659,8 @@ def _record_read(env: dict[str, str], session_id: str, path: pathlib.Path, **ext
     ]
     + [("apply_patch", "mixed")],
 )
-def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool: str, target: str) -> None:
-    """記録先1件だけへの編集を許し、混在と原稿への編集では基準取得を求める。"""
-    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
-    # 記録先の除外と執筆基準の取得を求める1宣言だけを入力へ渡す。
-    rows = [read_triggers.ReadTrigger(author, 1, "操作", ("body-writing",), (author,))]
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: str) -> None:
+    """記録先1件だけへの編集では本文の作成・更新を案内せず、混在と他のファイルへの編集では案内する。"""
     env = _plan_file_state_env(tmp_path)
     own = str(tmp_path / "handoff.md")
     other = str(tmp_path / "awi-draft.md")
@@ -706,18 +680,13 @@ def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, monkeypatch: pytest.
             f"*** Begin Patch\n*** Add File: {own}\n+到達点\n*** Add File: {other}\n+原稿\n*** End Patch\n"
         )
     payload = {"tool_name": tool, "tool_input": inputs[tool], "session_id": "handoff-exempt"}
-    result = _run(payload, env)
-    assert ("`agent-basics:writing-standards`" in _additional_context(result)) is (target != "own")
-    state = _read_session_state(tmp_path, "handoff-exempt") if session_state.state_path("handoff-exempt").exists() else {}
-    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    assert document_reads.acquisition_state(records, read_triggers.ReadTarget(author), "main") == "missing"
-    assert result.returncode == 0
-    assert result.stderr == ""
+    assert (_WRITING_SKILL in _notified(_run(payload, env))) is (target != "own")
 
 
 @pytest.mark.parametrize("exists", [False, True])
 @pytest.mark.parametrize("tool", ["Write", "apply_patch", "Bash"])
-def test_existing_file_edit_distinguishes_creation(tmp_path, tool, exists):
+def test_body_writing_does_not_depend_on_existing_file(tmp_path: pathlib.Path, tool: str, exists: bool) -> None:
+    """新規作成と既存ファイルの書き換えを、どちらも本文の作成・更新と判定する。"""
     target = tmp_path / "memo.md"
     if exists:
         target.write_text("旧本文\n", encoding="utf-8")
@@ -726,45 +695,7 @@ def test_existing_file_edit_distinguishes_creation(tmp_path, tool, exists):
         "apply_patch": {"command": f"*** Begin Patch\n*** Add File: {target}\n+新本文\n*** End Patch"},
         "Bash": {"command": f"cat > {target} <<'EOF'\n新本文\nEOF"},
     }
-    assert operation_skills.is_existing_file_edit(tool, inputs[tool], str(tmp_path)) is exists
-    assert operation_skills.operation_matches("body-writing", tool, inputs[tool])
-
-
-@pytest.mark.parametrize("tool", ["Edit", "MultiEdit", "apply_patch"])
-def test_partial_edit_requires_current_body_even_when_missing(tmp_path, tool):
-    target = tmp_path / "missing.md"
-    inputs: dict[str, dict] = {
-        "Edit": {"file_path": str(target), "old_string": "旧", "new_string": "新"},
-        "MultiEdit": {"file_path": str(target), "edits": [{"old_string": "旧", "new_string": "新"}]},
-        "apply_patch": {"command": f"*** Begin Patch\n*** Update File: {target}\n@@\n-旧\n+新\n*** End Patch"},
-    }
-    assert operation_skills.is_existing_file_edit(tool, inputs[tool], str(tmp_path))
-
-
-def test_existing_file_edit_uses_command_cwd(tmp_path):
-    folder = tmp_path / "sub"
-    folder.mkdir()
-    (folder / "memo.md").write_text("旧", encoding="utf-8")
-    assert operation_skills.is_existing_file_edit("Bash", {"command": "cd sub && sed -i 's/旧/新/' memo.md"}, str(tmp_path))
-    assert not operation_skills.is_existing_file_edit("Bash", {"command": "cat memo.md"}, str(folder))
-
-
-def test_missing_file_is_rechecked_between_requests(tmp_path):
-    target = tmp_path / "memo.md"
-    data = {"file_path": str(target), "content": "新"}
-    assert not operation_skills.is_existing_file_edit("Write", data, str(tmp_path))
-    target.write_text("旧", encoding="utf-8")
-    assert operation_skills.is_existing_file_edit("Write", data, str(tmp_path))
-
-
-def test_unreadable_path_does_not_count_as_creation(tmp_path, monkeypatch):
-    def denied(_path, **_kwargs):
-        raise PermissionError("読取不可")
-
-    monkeypatch.setattr(pathlib.Path, "stat", denied)
-    assert operation_skills.is_existing_file_edit(
-        "Write", {"file_path": str(tmp_path / "memo.md"), "content": "新"}, str(tmp_path)
-    )
+    assert operation_skills.is_body_writing(tool, inputs[tool], str(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -790,8 +721,7 @@ def test_discard_output_is_not_body_writing(tmp_path: pathlib.Path, form: str) -
         paths = operation_skills.written_paths("Bash", data, str(tmp_path))
         if path == os.devnull:
             assert not paths
-            assert not operation_skills.is_existing_file_edit("Bash", data, str(tmp_path))
-            assert not operation_skills.operation_matches("body-writing", "Bash", data, str(tmp_path))
+            assert not operation_skills.is_body_writing("Bash", data, str(tmp_path))
         else:
             assert paths == [path]
 
@@ -805,11 +735,10 @@ def test_discard_alias_and_mixed_output_keep_ordinary_files(tmp_path: pathlib.Pa
     ordinary.write_text("旧本文", encoding="utf-8")
     for command in ("cat > AGENTS.md <<<'本文'", "python3 - <<'PY'\nopen('AGENTS.md', 'w').write('本文')\nPY"):
         assert not operation_skills.written_paths("Bash", {"command": command}, str(tmp_path))
-        assert not operation_skills.operation_matches("body-writing", "Bash", {"command": command}, str(tmp_path))
+        assert not operation_skills.is_body_writing("Bash", {"command": command}, str(tmp_path))
     data = {"command": "tee AGENTS.md NUL <<<'本文'"}
     assert operation_skills.written_paths("Bash", data, str(tmp_path)) == [str(ordinary)]
-    assert operation_skills.operation_matches("body-writing", "Bash", data, str(tmp_path))
-    assert operation_skills.is_existing_file_edit("Bash", data, str(tmp_path))
+    assert operation_skills.is_body_writing("Bash", data, str(tmp_path))
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのfd別名を確認する")
@@ -818,27 +747,18 @@ def test_standard_stream_alias_is_not_discarded_by_name(tmp_path: pathlib.Path, 
     """fdの名前だけでは通常ファイルへの書込を除外しない。"""
     data = {"command": f"cat > {alias} <<<'本文'"}
     assert operation_skills.written_paths("Bash", data, str(tmp_path))
-    assert operation_skills.operation_matches("body-writing", "Bash", data, str(tmp_path))
+    assert operation_skills.is_body_writing("Bash", data, str(tmp_path))
 
 
-def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開Pre/Post hookで破棄だけを本文編集やリポジトリ編集として扱わない。"""
-    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
-    rows = [
-        read_triggers.ReadTrigger(author, 1, "操作", ("body-writing", "existing-file-edit"), (author,)),
-    ]
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path) -> None:
+    """公開Pre/Post hookで破棄だけを本文の作成・更新や終了工程の作業として扱わない。"""
     env = _plan_file_state_env(tmp_path)
     payload = _bash(f"cat > {os.devnull} <<<'本文'", "discard-public", cwd=str(tmp_path))
-    result = _run(payload, env)
+    assert _WRITING_SKILL not in _notified(_run(payload, env))
+    result = _run_posttooluse({**payload, "tool_response": "", "hook_event_name": "PostToolUse"}, env)
     assert result.returncode == 0
-    context = _additional_context(result)
-    assert "/references/file-editing.md" not in context
-    assert "/skills/writing-standards/SKILL.md" not in context
-    result = run_hook("posttooluse", {**payload, "tool_response": "", "hook_event_name": "PostToolUse"}, env)
-    assert result.returncode == 0
-    state = _read_session_state(tmp_path, "discard-public")
-    assert not state.get("termination_evidence", {}).get("works")
+    state = session_state.read_state("discard-public")
+    assert not state.get(TERMINATION_EVIDENCE_KEY, {}).get("works")
 
 
 @pytest.mark.parametrize("tool", ["Write", "Edit", "apply_patch"])
@@ -850,8 +770,7 @@ def test_edit_tools_exclude_discard_destination(tmp_path: pathlib.Path, tool: st
         "apply_patch": {"command": f"*** Begin Patch\n*** Update File: {os.devnull}\n@@\n-旧\n+新\n*** End Patch"},
     }[tool]
     assert not operation_skills.written_paths(tool, data, str(tmp_path))
-    assert not operation_skills.is_existing_file_edit(tool, data, str(tmp_path))
-    assert not operation_skills.operation_matches("body-writing", tool, data, str(tmp_path))
+    assert not operation_skills.is_body_writing(tool, data, str(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -875,4 +794,4 @@ def test_partial_suffix_identifies_document_kind_without_a_real_path(tmp_path: p
     """未知の接頭部の後の静的な末尾は、文書種別の識別にだけ使う。"""
     data = {"command": 'cat > "$ROOT/.claude/skills/x/SKILL.md" <<<x'}
     assert not operation_skills.written_paths("Bash", data, str(tmp_path))
-    assert operation_skills.operation_matches("agent-document-writing", "Bash", data, str(tmp_path))
+    assert operation_skills._is_agent_document_writing("Bash", data, str(tmp_path))

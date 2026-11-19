@@ -13,7 +13,6 @@ import pytest
 from agent_toolkit._common import shell_segments
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.shell_tokens import is_agents_wait_command, join_words, split_words, strip_redirections
-from agent_toolkit._hooks import codex_read_observation
 from agent_toolkit._plan.structure import verification
 from agent_toolkit._testing import cli_examples
 
@@ -27,39 +26,7 @@ def test_quoted_operators_are_data_for_every_consumer(command: str) -> None:
     segments = shell_segments.extract_execution_segments(command)
     assert len(segments) == 1
     assert strip_redirections(segments[0].tokens) == ("cat", "a;b>c|d.md")
-    assert codex_read_observation.read_command_groups(command, read_prefix=True) == [["cat", "a;b>c|d.md"]]
-    plan = codex_read_observation.read_plan(command)
-    assert [read.argv for read in plan] == [("cat", "a;b>c|d.md")]
     assert tuple(split_words(join_words(segments[0].tokens))) == segments[0].tokens
-
-
-@pytest.mark.parametrize(
-    ("command", "groups", "prefix_groups", "plan_reads"),
-    [
-        pytest.param("cat a.md && cat b.md", 2, 2, 2, id="and-chain-is-a-read"),
-        pytest.param("cat a.md; cat b.md", 2, None, 2, id="semicolon-hides-failure"),
-        pytest.param("cat a.md\ncat b.md", 2, None, 2, id="newline-hides-failure"),
-        pytest.param("cat a.md | head", None, None, 0, id="pipe-loses-output"),
-        pytest.param("cat a.md > out", None, None, 0, id="redirect-loses-output"),
-        pytest.param("cat a.md 2>&1", None, None, 0, id="fd-redirect"),
-        pytest.param("cat a.md || true", None, None, 0, id="or-hides-failure"),
-        pytest.param('cat "$TARGET"', 1, None, 0, id="expansion"),
-        pytest.param("cat '$TARGET'", 1, 1, 1, id="single-quoted-dollar-is-literal"),
-    ],
-)
-def test_operators_change_read_acquisition(
-    command: str, groups: int | None, prefix_groups: int | None, plan_reads: int
-) -> None:
-    """実際の連結・パイプ・リダイレクト・展開は、取得記録と警告候補の受理条件どおりに分かれる。
-
-    取得記録（`read_prefix`）は単独と`&&`連結の静的読取だけを受理し、`;`・改行による失敗の隠蔽、
-    出力の喪失、展開を含む入力を受理しない。警告候補の区切り（`read_prefix`なし）は`;`と改行も受理する。
-    """
-    result = codex_read_observation.read_command_groups(command)
-    assert (None if result is None else len(result)) == groups
-    prefix = codex_read_observation.read_command_groups(command, read_prefix=True)
-    assert (None if prefix is None else len(prefix)) == prefix_groups
-    assert len(codex_read_observation.read_plan(command)) == plan_reads
 
 
 @pytest.mark.parametrize(

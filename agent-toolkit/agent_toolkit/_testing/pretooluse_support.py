@@ -6,28 +6,21 @@
 import ast
 import contextlib
 import functools
-import hashlib
 import io
 import json
 import os
 import pathlib
-import shlex
 import subprocess
 import sys
-from collections.abc import Generator
 
 import pytest
 
 from agent_toolkit import hook as _hook
 from agent_toolkit._common import message_format as _message_format
-from agent_toolkit._common import persisted_output_reference, read_triggers, state_paths
+from agent_toolkit._common import persisted_output_reference
 from agent_toolkit._common.session_state import state_path
-from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing import git_repository
-lazy from agent_toolkit._common.session_state import read_state
-lazy from agent_toolkit._hooks import agent_id, notice, rules_context
-lazy from agent_toolkit._hooks.pretooluse import dispatch as pretooluse_dispatch
-lazy from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
+lazy from agent_toolkit._hooks.pretooluse import operation_skills
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
@@ -154,34 +147,6 @@ def codex_execution_payload(payload: dict, directory: pathlib.Path, *, exit_code
     with transcript.open("a", encoding="utf-8") as stream:
         stream.writelines(json.dumps(record) + "\n" for record in records)
     return {**payload, "transcript_path": str(transcript)}
-
-
-def codex_delivered_payload(payload: dict, directory: pathlib.Path | None = None) -> dict:
-    """合成分岐試験の応答を外側rolloutへ保存し、後続Preが読む実体を返す。
-
-    実ホストの形と配送時機は`../_hooks/pretooluse/read_delivery_host_samples_test.py`の標本で別に検収する。
-    """
-    actor = payload.get("agent_id", "main")
-    identity = json.dumps([payload.get("session_id", "test"), actor]).encode("utf-8")
-    directory = directory or state_paths.state_dir() / "test-deliveries"
-    path = pathlib.Path(
-        payload.get(
-            "agent_transcript_path",
-            payload.get("transcript_path", directory / (hashlib.sha256(identity).hexdigest() + ".jsonl")),
-        )
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    record = {
-        "type": "response_item",
-        "payload": {
-            "type": "custom_tool_call_output",
-            "call_id": "synthetic",
-            "output": [{"type": "input_text", "text": json.dumps(payload.get("tool_response"), ensure_ascii=False)}],
-        },
-    }
-    with path.open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(record, ensure_ascii=False) + "\n")
-    return {**payload, "transcript_path": str(path), **({"agent_transcript_path": str(path)} if actor != "main" else {})}
 
 
 def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
@@ -441,111 +406,11 @@ def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str = "codex-
     }
 
 
-@contextlib.contextmanager
-def read_delivery_preparation_scope() -> Generator[None]:
-    """資料・導入情報・解決環境が不変の試験区間だけ、静的な解析を共有する。
+def run_without_skill_notices(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """操作の直前のスキルの案内が対象外の判定試験で、その案内だけを空にして公開hookを呼ぶ。
 
-    各入力の選択・配送・主体別の取得と公開hookの呼出しは毎回行う。
-    資料や環境を変える前にこの区間を終了し、次の区間で解析し直す。
-    """
-    with read_triggers.resolution_scope():
-        yield
-
-
-def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> None:
-    """他のチェックの前提として、宣言資料を主体の取得操作で読む。"""
-    if not isinstance(payload, dict) or not payload.get("session_id"):
-        return
-
-    with pytest.MonkeyPatch.context() as patch:
-        for name, value in (env_overrides or {}).items():
-            patch.setenv(name, value)
-        # 準備中の操作は資料を変更しないため、同じhost・cwdの宣言を取得イベントごとに再解析しない。
-        patch.setattr(read_delivery, "declarations", functools.lru_cache(maxsize=None)(read_delivery.declarations))
-        session_id = payload["session_id"]
-        for _attempt in range(12):
-            decision = read_delivery.deliver(payload, payload.get("tool_name", ""), payload.get("tool_input", {}), session_id)
-            # ここで採用した案内を配送済みにし、未配送の試作結果とは区別する。
-            notice.record_delivery("\n".join(decision.notices))
-            records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
-            agent = agent_id.resolve_hook_agent_id(payload)
-            targets = [
-                target
-                for target in read_delivery.selected_targets(records, agent)
-                if not read_delivery.target_ready(records, target, agent)
-            ]
-            # 他のチェックの通過試験では、条件付き候補も取得済みの前提にそろえる。
-            # 候補の未取得通知そのものは、準備を使わないread_deliveryの試験で検証する。
-            if not targets and any(
-                marker in notice
-                for notice in decision.notices
-                for marker in ("操作前に読む資料が未取得", "現在の操作に関連する読込条件の候補")
-            ):
-                targets = [
-                    target
-                    for row in read_delivery.declarations(str(payload.get("cwd", "")))
-                    if read_delivery.row_matches(
-                        row, payload.get("tool_name", ""), payload.get("tool_input", {}), str(payload.get("cwd", ""))
-                    )
-                    for target in row.targets
-                    if not read_delivery.target_ready(records, target, agent)
-                ]
-            if not targets:
-                return
-            subject = operation_skills.resolve_subject(payload)
-            if subject == operation_skills.SUBJECT_CODEX:
-                paths = list(dict.fromkeys(target.path for target in targets))
-                event = {
-                    **payload,
-                    "hook_event_name": "PostToolUse",
-                    "tool_name": "Bash",
-                    "tool_input": {"command": "cat -- " + shlex.join(map(str, paths))},
-                    "tool_response": {
-                        "stdout": "".join(path.read_text(encoding="utf-8") for path in paths),
-                        "exit_code": 0,
-                    },
-                }
-                assert _run_posttooluse(event, env_overrides or {}).returncode == 0
-                delivered = codex_delivered_payload(event)
-                assert (
-                    _run(
-                        {**delivered, "hook_event_name": "PreToolUse", "tool_name": "ObserveDelivery", "tool_input": {}},
-                        env_overrides,
-                    ).returncode
-                    == 0
-                )
-                continue
-            for target in targets:
-                subject = operation_skills.resolve_subject(payload)
-                skill = read_delivery.skill_name(target.path)
-                if subject != operation_skills.SUBJECT_CODEX and skill:
-                    tool_name, tool_input = "Skill", {"skill": skill}
-                else:
-                    tool_name, tool_input = "Read", {"file_path": str(target.path)}
-                event = {
-                    **payload,
-                    "hook_event_name": "PostToolUse",
-                    "tool_name": tool_name,
-                    "tool_input": tool_input,
-                    "tool_response": {"stdout": target.path.read_text(encoding="utf-8"), "exit_code": 0},
-                }
-                assert _run_posttooluse(event, env_overrides or {}).returncode == 0
-        raise AssertionError("読込済み前提を構築できなかった")
-
-
-def run_after_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """宣言読込の前提を満たして、試験対象のチェックへ公開hookから到達する。"""
-    with read_delivery_preparation_scope():
-        prepare_read_delivery(payload, env_overrides)
-        return _run(payload, env_overrides)
-
-
-def run_without_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """資料配送が対象外の判定試験で、配送だけを空の境界へ差し替える。
-
-    取得記録・宣言・配送自体の試験はrun_after_read_deliveryか公開hookを使う。
-    対象外の全宣言解析を準備として繰り返さず、他の判定と公開応答は製品を通す。
+    案内そのものの試験（`operation_skills_test.py`）は`_run`を使う。他の判定と公開応答は製品を通す。
     """
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(pretooluse_dispatch, "read_delivery", lambda *_args, **_kwargs: Decision())
+        patch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
         return _run(payload, env_overrides)

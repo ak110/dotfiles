@@ -656,7 +656,7 @@ async def send_to_user(
         raise ValueError("本文を日本語で書き直すまで画面へ表示していない。")
     try:
         guidance = ""
-        if runtime_inserted.reported_improvement_lines(message) or runtime_inserted.report_cues(message):
+        if runtime_inserted.reported_improvement_lines(message):
             root = pathlib.Path(__file__).resolve().parents[2]
             checked = await run_file_operation(
                 subprocess.run,

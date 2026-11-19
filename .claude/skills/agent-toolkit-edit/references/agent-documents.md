@@ -31,8 +31,8 @@
 - 入口`agent-toolkit/skills/atk-mode/SKILL.md`と`playbooks/subagent.md`の編集は生成物を変えないが、版数の更新は要る。
   各起動の区分へ届く文書は`agent-toolkit:atk-mode/references/agent-documents.md`「配送範囲表」で確かめる。
   `playbooks/subagent.md`は、`agents_server`が全modeの委譲先の起動の本文へ組み立てる原本であり、`Agent`ツールの委譲先はSubagentStartの通知の案内で読む。
-- 読込表の宣言は各文書の本文の表に置く。
-  宣言と参照先の読込の行は`agent-toolkit/read_triggers_invariant_test.py`が、読込表の別ファイル化の再発は`agent_basics_standalone_invariant_test.py`が検出する。
+- 読込表は各文書の本文の表に置く。
+  読込表の別ファイル化の再発は`agent_basics_standalone_invariant_test.py`が検出する。
 
 ## agent-basicsとの責務境界
 

@@ -8,38 +8,14 @@ import shlex
 
 import pytest
 
-from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
-from agent_toolkit._testing import pretooluse_support
 from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _write_session_state
-from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
-
-
-def test_preparation_scope_refreshes_changed_read_table(tmp_path) -> None:
-    """反復準備の共有を終了した後は、資料の参照先変更を新しく解析する。"""
-    source = tmp_path / "SKILL.md"
-    first, second = tmp_path / "first.md", tmp_path / "second.md"
-    for target in (first, second):
-        target.write_text("# 判断基準\n本文\n", encoding="utf-8")
-    table = (
-        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
-        "| --- | --- | --- | --- |\n"
-        "| 判断する前 | `{name}` | 判断 | `body-writing` |\n"
-    )
-    source.write_text(table.format(name=first.name), encoding="utf-8")
-    with pretooluse_support.read_delivery_preparation_scope():
-        for _ in range(2):
-            rows = read_triggers.parse_tables(source, tmp_path, strict=True)
-            assert rows[0].documents == (first,)
-    source.write_text(table.format(name=second.name), encoding="utf-8")
-    with pretooluse_support.read_delivery_preparation_scope():
-        rows = read_triggers.parse_tables(source, tmp_path, strict=True)
-        assert rows[0].documents == (second,)
+from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 
 @pytest.mark.parametrize("host", ["claude-code", "codex"])

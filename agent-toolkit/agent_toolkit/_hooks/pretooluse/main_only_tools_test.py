@@ -5,7 +5,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, run_without_read_delivery
+from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, run_without_skill_notices
 
 
 @pytest.mark.parametrize("tool", ["send_to_user", "compact_conversation", "apply_runtime_changes"])
@@ -15,7 +15,7 @@ def test_main_only_mcp_tools_enforce_actor(tmp_path: pathlib.Path, tool: str, ac
     env = _plan_file_state_env(tmp_path)
     env["AGENT_TOOLKIT_DELEGATED_SESSION"] = "1" if actor == "delegate" else ""
     env["AGENT_TOOLKIT_OWNER_SESSION"] = "parent" if actor == "owner" else ""
-    result = run_without_read_delivery(
+    result = run_without_skill_notices(
         {
             "tool_name": f"{prefix}{tool}",
             "tool_input": {"message": "処理結果を報告する。"} if tool == "send_to_user" else {},

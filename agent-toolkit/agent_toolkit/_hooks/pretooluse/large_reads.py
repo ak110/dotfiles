@@ -10,11 +10,10 @@ lazy import re
 lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
-lazy from agent_toolkit._common import host_homes, read_triggers, shell_cwd
+lazy from agent_toolkit._common import host_homes, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import is_unknown_word
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
-lazy from agent_toolkit._hooks.document_reads import reference_name
 
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
 _SEARCH_COMMANDS = frozenset({"rg", "grep", "egrep", "fgrep"})
@@ -587,6 +586,32 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
     )
 
 
+def _is_normative_document(path: pathlib.Path) -> bool:
+    """規範原本とホスト向けの写しを、記録類のMarkdownから区別する。"""
+    path = path.resolve()
+    if path.name in {"AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "GEMINI.md"}:
+        return True
+    # ホスト側のリンクをresolveするとchezmoiの原本へ戻るため、配布元も同じ範囲で識別する。
+    if path.name.endswith((".md", ".md.tmpl")):
+        for parent in path.parents:
+            if parent.name not in {"skills", "rules"}:
+                continue
+            host = parent.parent
+            if host.name == "antigravity-cli" and host.parent.name == "dot_gemini":
+                host = host.parent
+            if host.name in {"dot_claude", "dot_codex", "dot_agents", "dot_gemini"} and host.parent.name == ".chezmoi-source":
+                return True
+    if path.suffix != ".md":
+        return False
+    if any(
+        parent.name in {"skills", "rules"} and parent.parent.name in {".claude", ".codex", ".agents", ".gemini"}
+        for parent in path.parents
+    ):
+        return True
+    owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+    return owner is not None and path.relative_to(owner).parts[0] in {"skills", "share", "rules"}
+
+
 def check_large_bash_read(command: str, cwd: str) -> str | None:
     """規範の見出し抽出を警告する。受信予算が不明な通常読取は警告しない。"""
     extracted = []
@@ -609,13 +634,13 @@ def check_large_bash_read(command: str, cwd: str) -> str | None:
             if is_dynamic_read_operand(operand) or not pathlib.Path(operand).is_absolute() and not current.resolved:
                 continue
             path = _resolve_path(operand, current.path)
-            if path.is_file() and read_triggers.is_normative_document(path):
+            if path.is_file() and _is_normative_document(path):
                 extracted.append(path.resolve())
     if extracted:
         paths = list(dict.fromkeys(extracted))
         return _large_warning(
             "エージェント向け文書を見出しの正規表現で範囲抽出しようとしている: " + "、".join(map(str, paths)),
-            fix="全文を取得せよ。\n" + "\n".join(f"- {reference_name(path, cwd=cwd)}" for path in paths),
+            fix="全文を取得せよ。",
         )
     return None
 
@@ -632,36 +657,20 @@ def check_bundled_read(
     command: str,
     cwd: str,
     *,
-    records: dict,
-    agent: str,
     codex: bool,
     environment: dict[str, str],
     max_output_tokens: object = None,
 ) -> str | None:
-    """複数ファイルの全文表示の合計を出力の上限と比べ、収まらない取得の分割と取得済み本文の再利用を案内する。
-
-    取得済みの判定は、同じ主体が同じ本文版を全文で受信した記録だけを使う。
-    本文の変更・会話圧縮後の記録消去・切り詰めで未回収の本文は取得済みに含めず、必要な再取得を妨げない。
-    """
-    from agent_toolkit._git import document_acquisition  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
+    """複数ファイルの全文表示の合計を出力の上限と比べ、収まらない取得の分割を案内する。"""
     paths = display_read_paths(command, cwd)
     if len(paths) < 2:
         return None
-    acquired: list[pathlib.Path] = []
-    remaining: list[pathlib.Path] = []
-    for path in paths:
-        try:
-            current = read_triggers.is_normative_document(path) and (
-                document_acquisition.acquisition_state(records, read_triggers.ReadTarget(path), agent) == "current"
-            )
-        except OSError, ValueError:
-            current = False
-        (acquired if current else remaining).append(path)
     # 容量の比較は全文表示と確定した読取だけに限る。範囲表示や検索の入力をファイル全体の量で数えると、
     # 正常な分割取得にも超過を断定するため。
     full = {path.resolve() for group in bash_read_paths(command, cwd) for path in group}
-    remaining = [path for path in remaining if path in full]
+    remaining = [path for path in paths if path in full]
+    if len(remaining) < 2:
+        return None
     sizes = {path: path.stat().st_size for path in remaining}
     if codex:
         budget = max_output_tokens if isinstance(max_output_tokens, int) and max_output_tokens > 0 else CODEX_OUTPUT_TOKENS
@@ -678,17 +687,9 @@ def check_bundled_read(
             except OSError:
                 estimate += sizes[path]
         unit = "文字"
-    over = len(remaining) >= 2 and estimate > budget
-    if not over and not acquired:
+    if estimate <= budget:
         return None
-    lines = []
-    if over:
-        lines.append(f"複数ファイルの合計の見積り{estimate}{unit}が出力の上限{budget}{unit}を超え、切り詰められる。")
-    if acquired:
-        lines.append("同じ本文版を全文で取得済みの資料が含まれる: " + "、".join(map(str, acquired)))
-    fix = []
-    if over:
-        fix.append("上限に収まる単位へファイルを分けて取得し、切り詰められた本文は未取得として補え。")
-    if acquired:
-        fix.append("取得済みの資料は再取得せず、取得済みの本文を使え。")
-    return _large_warning("".join(lines), fix="".join(fix))
+    return _large_warning(
+        f"複数ファイルの合計の見積り{estimate}{unit}が出力の上限{budget}{unit}を超え、切り詰められる。",
+        fix="上限に収まる単位へファイルを分けて取得し、切り詰められた本文は未取得として補え。",
+    )

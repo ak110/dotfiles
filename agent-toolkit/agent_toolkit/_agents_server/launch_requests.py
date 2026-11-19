@@ -35,9 +35,9 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import delegated_session, read_triggers, runtime_environment, session_registry, task_documents
+from agent_toolkit._common import delegated_session, runtime_environment, session_registry, startup_documents, task_documents
 from agent_toolkit._common.markdown_headings import parse_headings
-from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
+from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
 
 __all__ = [
@@ -333,29 +333,7 @@ def delegate_request(
     ) + "\n\n" + whole_contract, path
 
 
-_WHOLE_CONTRACT_KIND = "work-contract-reference"
-
-_WHOLE_CONTRACT_LINE_PREFIX = "全体作業契約: "
-
-_WHOLE_CONTRACT_OPENING = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "agents-server", "kind": _WHOLE_CONTRACT_KIND})
-
 _WHOLE_CONTRACT_REISSUE = "`whole_contract_path`へ既存の全体作業契約の絶対パスを指定して`start`を再発行する"
-
-
-def _delivered_whole_contract(prompt: str) -> pathlib.Path | None:
-    """配送済みの起動本文から、サーバーが加えた全体作業契約の絶対パスを取り出す。
-
-    依頼本文が同じ語を含んでも取り違えないよう、サーバーが付けた要素の内側だけを読む。
-    旧形式の未解決の通知と要素の不在は`None`とする。
-    """
-    start = prompt.rfind(_WHOLE_CONTRACT_OPENING)
-    if start < 0:
-        return None
-    first_line = prompt[start + len(_WHOLE_CONTRACT_OPENING) :].lstrip("\n").split("\n", 1)[0]
-    if not first_line.startswith(_WHOLE_CONTRACT_LINE_PREFIX):
-        return None
-    path = pathlib.Path(first_line.removeprefix(_WHOLE_CONTRACT_LINE_PREFIX).strip())
-    return path if path.is_absolute() else None
 
 
 def _inherited_whole_contract(launcher_session_id: str | None) -> pathlib.Path | None:
@@ -371,7 +349,7 @@ def _inherited_whole_contract(launcher_session_id: str | None) -> pathlib.Path |
     except ValueError, OSError:
         return None
     for info in (resolution.resume_info, resolution.handoff_info):
-        if info is not None and (path := _delivered_whole_contract(info.launch_info.prompt)) is not None:
+        if info is not None and (path := delegated_session.prompt_whole_contract_path(info.launch_info.prompt)) is not None:
             return path
     return None
 
@@ -441,13 +419,15 @@ def whole_contract_reference(
     """解決済みの全体契約の参照と本文を、担当の判断が始まる前に同じ起動本文へ届ける。"""
     path = _resolve_whole_contract(whole_contract_path, launcher_session_id)
     body = (
-        f"{_WHOLE_CONTRACT_LINE_PREFIX}{path}\n"
+        f"{delegated_session.WHOLE_CONTRACT_LINE_PREFIX}{path}\n"
         "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
         "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
     )
-    target = read_triggers.ReadTarget(path)
-    delivered = read_triggers.startup_documents([target], plugin_root.SERVER_PLUGIN_ROOT, {target: {"input:作業契約"}})
-    return auto_message(body, source="agents-server", kind=_WHOLE_CONTRACT_KIND) + "\n\n" + delivered
+    return (
+        auto_message(body, source="agents-server", kind=delegated_session.WHOLE_CONTRACT_KIND)
+        + "\n\n"
+        + startup_documents.render([path])
+    )
 
 
 def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
