@@ -25,7 +25,7 @@
 <!-- input-contract:external-write-review:start -->
 <!-- 生成元: skills/atk-mode/roles/external-write-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
-起動準備はこの契約の入力一覧で完結する。
+役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
 
 - 必須入力名: `文面ファイル`、`投稿先と目的`、`根拠の所在`
 

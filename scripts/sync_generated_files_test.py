@@ -113,6 +113,20 @@ def test_input_contract_tracks_declaration_changes(tmp_path: Path, embedded: boo
     assert _generated_input_errors(plugin)
 
 
+@pytest.mark.parametrize("mode", task_documents.LAUNCH_KINDS)
+def test_input_contract_names_whole_contract_only_for_normal_launch(tmp_path: Path, mode: str) -> None:
+    """通常起動の生成契約だけが全体作業契約の準備と公開入力を案内し、軽量の起動には前提を加えない。"""
+    source = tmp_path / "share/new-role.subagent.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        f"---\nmode: {mode}\nmodel_type: chores\nrequired_inputs: [必須]\nwrites_worktree: false\n---\n# 新役割\n",
+        encoding="utf-8",
+    )
+    body = task_documents.input_contract_body(source)
+    assert ("whole_contract_path" in body) == (mode == "delegate")
+    assert "準備はこの契約の入力一覧で完結する" not in body
+
+
 def test_input_sync_checks_all_boundaries_before_writing(tmp_path: Path) -> None:
     """後続の生成境界が欠けても、先行契約を変更しない。"""
     plugin = tmp_path / "agent-toolkit"

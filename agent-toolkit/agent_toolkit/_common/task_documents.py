@@ -37,8 +37,19 @@ INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$
 TASK_DOCUMENT_SUFFIX = ".subagent.md"
 TASK_PROMPT_REFERENCES = "\n## 手順・参照資料\n"
 INPUT_CONTRACT_NOTICE = (
-    "入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。\n起動準備はこの契約の入力一覧で完結する。"
+    "入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。\n"
+    "役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。"
 )
+WHOLE_CONTRACT_PREPARATION = (
+    "通常起動（`mode: delegate`）の共通の準備: 起動の前に"
+    "`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、"
+    "`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。"
+)
+"""通常起動だけが前提にする共通の準備。`start`は全体作業契約が解決できない通常起動を拒否する。
+
+役割の入力一覧だけを完全な一覧として示すと、全体作業契約を作らずに起動して拒否され、作り直して起動し直す往復が起きた。
+軽量の起動（`explore`・`shell`・`write`）は全体作業契約を検査しないため、この準備を案内しない。
+"""
 
 
 ROLE_DOCUMENT_DIRECTORIES: tuple[str, ...] = ("skills/atk-mode/roles", "share")
@@ -119,11 +130,17 @@ def launch_contract_documents(plugin_root: pathlib.Path) -> list[tuple[pathlib.P
 
 
 def input_contract_body(task_document: pathlib.Path) -> str:
-    """共通の宣言解析から、呼出側へ配置する入力名と所有の説明を生成する。"""
+    """共通の宣言解析から、呼出側へ配置する入力名と所有の説明を生成する。
+
+    通常起動の役割には、役割固有の入力とは別の共通の準備（全体作業契約）を加える。
+    """
     declaration = read_declaration_unchecked(task_document)
     if isinstance(declaration, str):
         raise ValueError(declaration)
-    lines = [INPUT_CONTRACT_NOTICE, ""]
+    lines = [INPUT_CONTRACT_NOTICE]
+    if declaration.launch_kind == "delegate":
+        lines.append(WHOLE_CONTRACT_PREPARATION)
+    lines.append("")
     for label, names in (("必須入力名", declaration.required), ("任意入力名", declaration.optional)):
         if not names:
             if label == "必須入力名":
