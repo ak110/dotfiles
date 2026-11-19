@@ -163,7 +163,7 @@ _DOTFILES_PYPROJECT = pathlib.Path(__file__).resolve().parents[3] / "pyproject.t
 
 
 _READ_REQUEST = (
-    "docs/development/concepts.mdとdocs/development/incidents.mdの全文と、該当する分割ファイルの節を計画の採否確定前に読む"
+    "docs/development/concepts.mdの決定の要旨を全件読み、docs/development/incidents.mdの区分から関連する分割ファイルの節を選ぶ"
 )
 
 
