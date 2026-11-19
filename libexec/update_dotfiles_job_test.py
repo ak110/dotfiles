@@ -18,6 +18,7 @@ from unittest.mock import Mock
 
 import psutil
 import pytest
+from agent_toolkit._common import windows_security
 from agent_toolkit._testing import helpers, late_descendant
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -565,6 +566,33 @@ def test_job_retrieval_waits_for_result_publication(
     finally:
         released.join()
     assert f"job {job.name}: 終了 exit=7" in capsys.readouterr().out
+
+
+@pytest.mark.windows
+@pytest.mark.skipif(sys.platform != "win32", reason="共有違反と同じPermissionErrorになる権限の拒否はWindowsの挙動")
+def test_job_retrieval_does_not_wait_on_denied_result(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """結果の読取がACLで拒否された場合は、置換の完了を待たずに取得の失敗を返す。"""
+    monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(tmp_path))
+    job = update_dotfiles_job.state_root() / str(uuid.uuid4())
+    job.mkdir(parents=True)
+    for name in ("stdout.log", "stderr.log"):
+        (job / name).write_bytes(b"")
+    result = job / "result.json"
+    result.write_text(json.dumps({"exit_code": 7, "finished_at": "2026-11-19T00:00:00+00:00"}), "utf-8")
+    user = f"*{windows_security.user_sid()}"
+    # 本文の読取（RD）だけを拒否する。READ_CONTROLまで拒否すると、後で拒否の項目を外せない。
+    subprocess.run(["icacls", str(result), "/deny", f"{user}:(RD)"], check=True, capture_output=True, timeout=30)
+    try:
+        started = time.monotonic()
+        assert update_dotfiles_job.main(["job", job.name]) == 1
+        elapsed = time.monotonic() - started
+    finally:
+        # 拒否の項目を残すと、一時領域の削除も拒否される。
+        subprocess.run(["icacls", str(result), "/remove:d", user], check=True, capture_output=True, timeout=30)
+    assert elapsed < 2, f"権限の拒否を共有違反として{elapsed:.1f}秒読み直した"
+    assert "更新jobを取得・開始できません" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("cancel", [False, True], ids=["controller-killed", "ctrl-c"])
