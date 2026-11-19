@@ -197,14 +197,27 @@ def _diverged_worktree(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Pa
     return local, worktree, local_commit, upstream
 
 
+# 上位から順に止め、rebaseが子の終了を見て状態を片付ける前に止める。
+_KILL_ANCESTORS_HOOK = """#!/bin/sh
+pids=
+pid=$PPID
+while [ -n "$pid" ] && [ "$pid" != "$ATK_TEST_SYNC_PID" ] && [ "$pid" -gt 1 ]; do
+  pids="$pid $pids"
+  pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+done
+kill -KILL "$ATK_TEST_SYNC_PID" $pids
+"""
+
+
 def _kill_worker_during_sync_rebase(local: pathlib.Path) -> None:
     """process-loopのworkerを、追随のrebaseがHEADを切り離した時点でrebaseごと強制終了する。
 
-    常駐の停止時に`process_tree`がworkerの木を止める場面を、post-checkout hookからのSIGKILLで再現する。
+    常駐の停止時に`process_tree`がworkerの木を止める場面を、post-checkout hookからworkerまでの祖先へのSIGKILLで再現する。
+    Git 2.34はrebaseの切り離しを子の`git checkout`で行うので、hookの親だけを止めるとrebaseが状態を片付けてしまう。
     """
     hook = local / ".git" / "hooks" / "post-checkout"
     hook.parent.mkdir(parents=True, exist_ok=True)
-    hook.write_text('#!/bin/sh\nkill -KILL "$ATK_TEST_SYNC_PID" "$PPID"\n', encoding="utf-8")
+    hook.write_text(_KILL_ANCESTORS_HOOK, encoding="utf-8")
     hook.chmod(0o755)
     try:
         child = subprocess.run(
