@@ -159,3 +159,13 @@ class GenerationRegistry:
                             break
                     else:
                         entries.pop(name, None)
+
+    def retired(self, generation: str, process: str) -> bool:
+        """世代の起動単位が終了の前に退役を記録したかを返す。
+
+        退役を記録するのは`retire`だけであり、索引から世代を除くのも退役を記録した世代の回収に限る。
+        強制終了のように`retire`を経ずに終了した起動単位は、退役を記録しないまま索引に残る。
+        """
+        with self._locked(write=False) as data:
+            entry = data["generations"].get(generation)
+            return entry is None or (bool(entry.get("retired")) and entry.get("process") == process)

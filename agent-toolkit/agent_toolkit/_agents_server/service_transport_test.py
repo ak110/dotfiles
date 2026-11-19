@@ -189,13 +189,15 @@ async def _publish(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 async def _commit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """確定の接続を閉じた旧世代が終了していれば、公開を失敗させず確定を済んだものとして扱う。"""
+    """確定が届かず、退役を記録しないまま終了した旧世代は、退役を待たずに公開の失敗として返す。"""
     coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
-    request = AsyncMock(side_effect=EOFError)
-    monkeypatch.setattr(service_rpc, "request", request)
+    registry = GenerationRegistry(tmp_path)
+    registry.reserve("G0", tmp_path, "1.0.0")
+    registry.publish("G0", endpoint="G0", process=_REUSED)
+    monkeypatch.setattr(service_rpc, "request", AsyncMock(side_effect=EOFError))
     async with asyncio.timeout(5):
-        await coordinator._commit({"generation": "G0", "epoch": 1, "process": _REUSED}, "token")
-    request.assert_awaited_once()
+        with pytest.raises(RuntimeError, match="正常な退役の記録"):
+            await coordinator._commit({"generation": "G0", "epoch": 1, "process": _REUSED}, "token")
 
 
 def _freezable(coordinator: Any) -> None:

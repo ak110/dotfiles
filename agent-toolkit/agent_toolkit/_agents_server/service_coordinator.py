@@ -66,17 +66,19 @@ _PUBLISHER_PROBE_SECONDS = 1.0
 # 所有世代への所有照会の待機上限。生存する世代は即時に応答するため、停止した世代だけを短時間で判別する。
 _OWNER_PROBE_SECONDS = 10.0
 
-# 確定の接続を閉じた旧世代の終了を待つ上限と確認の間隔。会話を持たない旧世代は退出の判定から短時間で終了する。
-_PREVIOUS_EXIT_SECONDS = 10.0
-_PREVIOUS_EXIT_POLL_SECONDS = 0.1
+# 確定が届かなかった旧世代の退役の記録を待つ上限と確認の間隔。会話を持たない旧世代は受付先の前進を観測して短時間で退役する。
+# 確認ごとに世代索引のロックを取るため、退役を記録する旧世代とロックを取り合わない程度に間隔を空ける。
+_RETIREMENT_WAIT_SECONDS = 10.0
+_RETIREMENT_POLL_SECONDS = 0.25
 
 
 @dataclasses.dataclass
 class _Update:
     """公開元の世代が求めた1回の準備。静止を解くのは、この準備の監視task（`_supervise`）だけとする。
 
-    公開元は受付の公開後に確定（`commit_update`）を通知する。確定より先に公開元が終了すれば、監視taskが放棄として扱う。
-    どちらの場合も、準備が静止を掛け終えてから解く。先に解くと、後から掛かる静止を解く主体が残らない。
+    公開元は受付の公開後に確定（`commit_update`）を通知する。確定より先に受付先の前進を観測すれば確定と同じに扱い、
+    確定より先に公開元が終了すれば放棄として扱う。
+    どの場合も、準備が静止を掛け終えてから解く。先に解くと、後から掛かる静止を解く主体が残らない。
     """
 
     publisher: dict
@@ -173,22 +175,35 @@ class ServiceCoordinator:
                         file_lock.release_lock(handle)
 
     async def _commit(self, previous: dict, token: str) -> None:
-        """静止させた旧世代へ確定を通知する。確定を受け取らずに終了した旧世代には、解く静止が残っていない。
+        """静止させた旧世代へ確定を通知する。届かなかった確定は、旧世代が退役を記録していれば済んだものとして扱う。
 
-        この修正より前の版の旧世代は、確定の到着を待たずに退出し、確定の接続を閉じる。
-        旧世代の終了は接続の切断より遅れて観測されるため、上限の間だけ終了を待ってから失敗と判定する。
+        旧世代は受付先の前進を観測しても静止を解いて退役するため、確定の接続より先に終了することがある。
+        この修正より前の版の旧世代も、確定の到着を待たずに退役する。
+        退役の記録が無いまま終了した旧世代は、会話を持ったまま強制終了されたことがあり得るため、公開の失敗として返す。
         """
         current = self._current()
         try:
             await service_rpc.request(previous, "commit_update", {"token": token, "current": current})
         except (OSError, EOFError) as error:
-            deadline = asyncio.get_running_loop().time() + _PREVIOUS_EXIT_SECONDS
-            while service_transport.process_alive(previous["process"]):
-                if asyncio.get_running_loop().time() >= deadline:
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + _RETIREMENT_WAIT_SECONDS
+            while True:
+                # 旧世代は終了の前に退役を記録する。生存を確かめてから記録を読み、終了を観測した時点までの記録を判定に含める。
+                alive = service_transport.process_alive(previous["process"])
+                if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
+                    break
+                if not alive:
+                    raise RuntimeError(
+                        "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
+                        "旧世代の会話は新世代へ移っていないことがあります: "
+                        f"generation={previous['generation']} process={previous['process']} "
+                        f"error={type(error).__name__}: {error}"
+                    ) from error
+                if loop.time() >= deadline:
                     raise
-                await asyncio.sleep(_PREVIOUS_EXIT_POLL_SECONDS)
+                await asyncio.sleep(_RETIREMENT_POLL_SECONDS)
             _LOG.info(
-                "旧世代が確定を受け取らずに終了したため、確定を済んだものとして扱います: generation=%s error=%s: %s",
+                "旧世代が確定を受け取らずに退役したため、確定を済んだものとして扱います: generation=%s error=%s: %s",
                 previous["generation"],
                 type(error).__name__,
                 error,
@@ -249,14 +264,18 @@ class ServiceCoordinator:
             self.target["epoch"] = current["epoch"]
         return current or self.target
 
+    def _superseded(self) -> bool:
+        """受付先が自世代より新しい世代へ進んだかを、世代索引から判定する。"""
+        return self._current()["epoch"] > self.target["epoch"]
+
     def can_retire(self) -> bool:
         """接続数や経過時間で強制終了せず、元資源と担当状態がなくなったことだけで退出する。
 
-        準備した更新（`_updates`）も担当状態に含める。公開元は受付を公開した後で確定を送るため、
-        受付先の切替を観測した時点では確定の接続がまだ届いていないことがある。
+        準備した更新（`_updates`）も担当状態に含め、受付先の切替の直後に届く確定の接続を閉じないようにする。
+        監視taskは確定が届かなくても受付先の前進で更新を外すため、退出は確定の到着に依存しない。
         """
         return (
-            self._current()["epoch"] > self.target["epoch"]
+            self._superseded()
             and not self._updates
             and not self.managers.conversations
             and self._runtime is not None
@@ -327,8 +346,8 @@ class ServiceCoordinator:
     async def commit_update(self, token: str, current: dict) -> None:
         """公開元が通知した確定を準備の監視taskへ渡し、静止の解除を待つ。
 
-        解除済みの準備へ遅れて届いた確定は捨てる。解除済みなら公開元の終了を受けて受付を戻した後であり、
-        確定の受付先を観測すると終了した世代へ受付を向け直す。
+        解除済みの準備へ遅れて届いた確定は捨てる。解除済みなら、同じ受付先を世代索引から観測した後か、
+        公開元の終了を受けて受付を戻した後である。後者で確定の受付先を観測すると、終了した世代へ受付を向け直す。
         """
         update = self._updates.get(token)
         if update is None:
@@ -338,19 +357,25 @@ class ServiceCoordinator:
         await update.released.wait()
 
     async def _supervise(self, token: str, update: _Update) -> None:
-        """公開元の確定と終了のうち先に起きた方を受けて、準備が掛けた静止を1回だけ解く。
+        """公開元の確定、受付先の前進、公開元の終了のうち最初に起きたものを受けて、準備が掛けた静止を1回だけ解く。
 
-        静止中は共有監視の周期処理も保存の待機で止まり得るため、周期処理に頼らず公開元の生存を確かめる。
-        生存する公開元が確定を通知しない間は、準備中の引継ぎを失わないよう時間では解かない。
+        公開元は受付を公開した後で必ず確定を送るため、受付先が自世代より新しい世代へ進んだことは確定と同じ意味を持つ。
+        確定が一時的な通信の失敗で届かなくても、常駐する公開元の終了を待たずに静止を解き、退役できる。
+        静止中は共有監視の周期処理も保存の待機で止まり得るため、周期処理に頼らず公開元の生存と受付先を確かめる。
+        生存する公開元が確定を通知せず受付先も進まない間は、準備中の引継ぎを失わないよう時間では解かない。
         """
         try:
-            while not update.committed.done() and service_transport.process_alive(update.publisher["process"]):
+            while (
+                not update.committed.done()
+                and service_transport.process_alive(update.publisher["process"])
+                and not self._superseded()
+            ):
                 await asyncio.wait((update.committed,), timeout=_PUBLISHER_PROBE_SECONDS)
             await update.frozen.wait()
             if update.committed.done():
                 current = update.committed.result()
             else:
-                # 公開元は確定を通知せずに終了した。公開済みなら受付先は終了した世代を指すため、生存する世代へ戻す。
+                # 公開元が確定を通知せずに終了していれば、受付先は終了した世代を指すことがあるため生存する世代へ戻す。
                 await run_file_operation(self.registry.restore)
                 current = self._current()
             await self.gate.observe_current(current)
