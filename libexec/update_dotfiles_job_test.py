@@ -92,6 +92,13 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
     (native / "uv").write_text(
         "#!/usr/bin/env bash\n"
         'printf "%s\\n" "$*" >> "$CALLS"\n'
+        # REAL_UVの指定時は、Pythonの解決だけを実uvへ渡し、要求版をこの試験のPythonへ置き換える。
+        'if [[ "$1 $2" == "python find" && -n "${REAL_UV:-}" ]]; then\n'
+        '  arguments=(); for argument in "$@"; do\n'
+        '    if [[ "$argument" == 3.15 ]]; then arguments+=("$NATIVE_PYTHON"); else arguments+=("$argument"); fi\n'
+        "  done\n"
+        '  exec "$REAL_UV" "${arguments[@]}"\n'
+        "fi\n"
         'if [[ "$1 $2" == "python find" ]]; then\n'
         '  if [[ "${INSTALL_REQUIRED:-0}" == 1 && ! -f "$HOME/installed" ]]; then exit 2; fi\n'
         '  printf "%s\\n" "$NATIVE_PYTHON"; exit 0\nfi\n'
@@ -157,7 +164,12 @@ def test_public_codex_job_orders_pipeline_and_retrieves_same_result(
     metadata = json.loads((job / "input.json").read_text(encoding="utf-8"))
     assert metadata["arguments"] == ["--prune"] and metadata["thread_id"] == "own-thread"
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
-    assert calls[:4] == ["self update", "python install --upgrade 3.15", "python find 3.15", "python find 3.15"]
+    assert calls[:4] == [
+        "self update",
+        "python install --upgrade 3.15",
+        "python find --no-cache 3.15",
+        "python find --no-cache 3.15",
+    ]
     assert calls[4].startswith("run --no-project --script ")
     assert calls[5:] == ([] if run_exit else ["prune --prune-only-if-minimal --prune"])
     explicit = _invoke(project, "job", job.name)
@@ -165,6 +177,33 @@ def test_public_codex_job_orders_pipeline_and_retrieves_same_result(
     assert explicit.returncode == own.returncode == result.returncode
     assert "更新出力" in own.stdout and "更新診断" in explicit.stderr
     assert pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines().count("self update") == 1
+
+
+@_POSIX
+def test_python_lookup_does_not_wait_for_uv_cache_cleanup(
+    project: tuple[pathlib.Path, dict[str, str]], tmp_path: pathlib.Path
+) -> None:
+    """前回の更新が始めたuvの全消去がキャッシュを排他している間も、jobの起動前のPython解決は待たずに成功する。
+
+    uvの全消去はキャッシュの量に比例する時間（2026-11-19に68秒を観測）排他ロックを保持する。
+    キャッシュを使う`uv python find`はその間ロックを待ち、60秒の上限を超えると更新を開始できなかった。
+    """
+    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # POSIX専用でありWindowsには存在しない。
+
+    _root, environment = project
+    native_path = os.pathsep.join(part for part in environment["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
+    real_uv = shutil.which("uv", path=native_path)
+    assert real_uv is not None
+    cache = tmp_path / "uv-cache"
+    cache.mkdir()
+    # 待機の上限を短くし、ロックを待つ解決を60秒の上限まで待たずに失敗させる。
+    environment.update({"REAL_UV": real_uv, "UV_CACHE_DIR": str(cache), "UV_LOCK_TIMEOUT": "2"})
+    with (cache / ".lock").open("a", encoding="utf-8") as cleanup:
+        # uvの全消去と同じく、キャッシュのロックを排他で保持する。
+        fcntl.flock(cleanup, fcntl.LOCK_EX)
+        result = _invoke(project)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "更新出力" in result.stdout
 
 
 @pytest.mark.parametrize("arguments", [["logs"], ["--help"], ["--prune", "-h"]])
@@ -194,7 +233,7 @@ def test_process_loop_job_skips_uv_self_update(project: tuple[pathlib.Path, dict
     assert result.returncode == 0, result.stdout + result.stderr
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
     assert len(calls) == 3
-    assert calls[0] == "python find 3.15" and calls[1].startswith("run --no-project --script ")
+    assert calls[0] == "python find --no-cache 3.15" and calls[1].startswith("run --no-project --script ")
     assert calls[2] == "prune --prune-only-if-minimal"
 
 

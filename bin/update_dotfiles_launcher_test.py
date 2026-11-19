@@ -243,7 +243,7 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
     assert calls == [
         ["native", "self", "update"],
         ["native", "python", "install", "--upgrade", "3.15"],
-        ["native", "python", "find", "3.15"],
+        ["native", "python", "find", "--no-cache", "3.15"],
         [
             "native",
             "run",
@@ -289,7 +289,7 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
     assert calls == [
         ["native", "self", "update"],
         ["native", "python", "install", "--upgrade", "3.15"],
-        ["native", "python", "find", "3.15"],
+        ["native", "python", "find", "--no-cache", "3.15"],
         [
             "native",
             "run",

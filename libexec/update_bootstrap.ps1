@@ -89,12 +89,13 @@ try {
         $script:bootstrapFailures += @{title='管理Pythonの更新'; detail="$_"}
         Write-UpdateError ("管理Pythonの更新を完了できませんでした: $_。既存版で続行し、次回起動時に再試行します。")
     }
-    $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '3.15') -Probe
+    # 前回の更新が始めたuvの整理がキャッシュを排他している間も待たないよう、キャッシュを使わずに解決する。
+    $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '--no-cache', '3.15') -Probe
     if ($findCode -ne 0) {
         try { [void](Invoke-UpdateStage '管理Pythonの導入' abort 900 $UvPath @('python', 'install', '3.15')) }
         catch [System.TimeoutException] { throw }
         catch { [void](Invoke-UpdateStage '管理Pythonの導入' abort 900 $UvPath @('python', 'install', '3.15')) }
-        $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '3.15') -Probe
+        $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '--no-cache', '3.15') -Probe
         if ($findCode -ne 0) { throw '使える3.15がありません。uv python install 3.15を実行してください。' }
     }
     if (@($script:bootstrapFailures | Where-Object { $_.title -eq '管理Pythonの更新' }).Count -and

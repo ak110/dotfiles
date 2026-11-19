@@ -5,6 +5,10 @@ import logging.handlers
 from pathlib import Path
 
 import filelock
+import platformdirs
+
+# 更新とpost-applyと独立プロセスが共有する永続ログ。`libexec/update_dotfiles_runtime.py`の`LOG_PATH`と同じパス。
+LOG_PATH = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "update-dotfiles.log"
 
 
 class ProcessSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):

@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import filelock
-import platformdirs
 from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import dotfiles_mode, process_tree
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
@@ -81,7 +80,7 @@ from pytools._internal import (
 
 logger = logging.getLogger(__name__)
 
-_UPDATE_LOG_PATH = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "update-dotfiles.log"
+_UPDATE_LOG_PATH = update_log.LOG_PATH
 _UPDATE_RUN_ID_ENV = "UPDATE_DOTFILES_RUN_ID"
 _UPDATE_LOG_MAX_BYTES = 2 * 1024 * 1024
 _UPDATE_LOG_BACKUP_COUNT = 3
@@ -354,17 +353,16 @@ def main(
     parser.add_argument("--prune-only-if-minimal", action="store_true", help="互換入力。モードによらず更新後の整理を実行する")
     parser.add_argument("--internal-uv-cache-maintenance", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args([] if runner is not None and argv is None else argv)
+    if args.internal_uv_cache_maintenance:
+        # 整理が起動した独立プロセス。モードは起動元が環境変数で渡す。
+        with _configure_logging():
+            prune_installation.maintain_uv_cache()
+        return
     if args.prune_only and (args.prune or args.mode is not None):
         parser.error("--prune-onlyは--pruneおよび--modeと同時に指定できません")
     if args.prune_only and args.prune_only_if_minimal:
         parser.error("--prune-onlyと--prune-only-if-minimalは同時に指定できません")
     dotfiles_mode.select(args.mode)
-    if args.internal_uv_cache_maintenance:
-        # 整理が起動した独立プロセス。uvの整理で消えたキャッシュ内のMCP環境を、整理の後に事前構築する。
-        with _configure_logging():
-            prune_installation.clean_uv_cache()
-            warmup_pyfltr_mcp.run()
-        return
     if args.prune:
         os.environ["DOTFILES_PRUNE"] = "1"
     if runner is None:
@@ -397,16 +395,17 @@ def main(
         # ランチャーが進行可否の判定に使った印を回収する。ランチャーは外部コマンドに依存せず削除できない。
         if ready := os.environ.get("DOTFILES_PRUNE_READY_FILE"):
             Path(ready).unlink(missing_ok=True)
-        lock = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks/update-dotfiles.lock"
+        lock = prune_installation.update_lock_path()
         lock.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with filelock.FileLock(str(lock), timeout=600, preserve_lock_file=True), _configure_logging():
-                result = prune_installation.run()
-                if result.failure is not None:
-                    logger.error("%s。次の操作: %s", result.failure, result.next_action)
-                    sys.exit(1)
-        except filelock.Timeout:
-            print("他の更新が実行中のため整理を保留。次回のupdate-dotfilesで再試行します。", file=sys.stderr)
+        with _configure_logging():
+            try:
+                result = prune_installation.run(lock=filelock.FileLock(str(lock), timeout=600, preserve_lock_file=True))
+            except filelock.Timeout:
+                print("他の更新が実行中のため整理を保留。次回のupdate-dotfilesで再試行します。", file=sys.stderr)
+                return
+            if result.failure is not None:
+                logger.error("%s。次の操作: %s", result.failure, result.next_action)
+                sys.exit(1)
         return
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     with _configure_logging() as persistent_log_ready:
