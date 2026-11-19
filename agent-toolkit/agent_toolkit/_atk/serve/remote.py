@@ -152,26 +152,39 @@ def remote_bootstrap(helper_name: str) -> str:
     )
 
 
-async def _resolve_remote_python(host: str, *, ssh_options: tuple[str, ...], deadline: float) -> str:
-    """リモートに導入済みのCPython 3.15の正式版のうち、最新のパッチ版（例: `3.15.2`）を返す。
+def _time_left(deadline: float, command: list[str]) -> float:
+    """`deadline`（イベントループの時刻）までの残り秒数を、`command`のSSHを始める直前に返す。
+
+    子プロセスの終了待ちなどで期限を過ぎていれば、結果を使えない接続を始めずに`subprocess.TimeoutExpired`を送出する。
+    """
+    remaining = deadline - asyncio.get_running_loop().time()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired(command, 0)
+    return remaining
+
+
+async def _resolved_pythons(host: str, *, ssh_options: tuple[str, ...], deadline: float) -> typing.AsyncGenerator[str]:
+    """リモートに導入済みのCPython 3.15の正式版のうち、最新のパッチ版（例: `3.15.2`）を選んで返す。
 
     uvは`3.15`の指定を、管理Pythonのマイナー版のjunction（`cpython-3.15-windows-x86_64-none`）を経由して解決する。
     junctionは非昇格のuvが作り、WindowsのSSHのセッションは昇格したtokenで動くため、RedirectionGuardがjunctionを
     たどらせず、`os error 448`で起動できない。パッチ版を指定すると、uvは実体のディレクトリのPythonを使う。
     一覧を得られない場合と正式版が無い場合は`3.15`を返し、起動時のuv自身の探索と診断に任せる。
-    照会が`_RESOLVE_TIMEOUT_SEC`に達し、`deadline`（イベントループの時刻）まで時間が残る場合も`3.15`を返す。
+    照会が`_RESOLVE_TIMEOUT_SEC`に達し、`deadline`まで時間が残る場合は、先に`3.15`を返す。
+    その版で起動できずに次を取り出された場合は、`deadline`までを上限に照会し直して選んだ版を返す。
     接続先へ接続できない場合は、起動しても同じく失敗するため`RemoteHelperError`を送出する。
     `deadline`までに一覧が届かなければ`subprocess.TimeoutExpired`を送出する。
     """
     command = ["ssh", *ssh_options, host, "uv", "python", "list", "--only-installed", "--cache-dir", _HELPER_UV_CACHE]
     command += ["--no-python-downloads", "--output-format", "json", _PYTHON_MINOR]
-    remaining = deadline - asyncio.get_running_loop().time()
+    remaining = _time_left(deadline, command)
     try:
         returncode, stdout, stderr = await run_ssh(command, timeout=min(_RESOLVE_TIMEOUT_SEC, remaining))
     except subprocess.TimeoutExpired:
         if remaining <= _RESOLVE_TIMEOUT_SEC:
             raise
-        return _PYTHON_MINOR
+        yield _PYTHON_MINOR
+        returncode, stdout, stderr = await run_ssh(command, timeout=_time_left(deadline, command))
     if returncode == _SSH_CONNECTION_FAILED:
         raise RemoteHelperError(returncode, stderr)
     try:
@@ -186,7 +199,7 @@ async def _resolve_remote_python(host: str, *, ssh_options: tuple[str, ...], dea
         and entry.get("implementation") == "cpython"
         and (match := pattern.fullmatch(str(entry.get("version", ""))))
     ]
-    return f"{_PYTHON_MINOR}.{max(patches)}" if patches else _PYTHON_MINOR
+    yield f"{_PYTHON_MINOR}.{max(patches)}" if patches else _PYTHON_MINOR
 
 
 def _uv_run_python(python: str, *, offline: bool) -> list[str]:
@@ -248,17 +261,21 @@ async def _attempts(host: str, ssh_options: tuple[str, ...], deadline: float) ->
     """リモートヘルパーの起動を試す順に試行を返す。前の試行でuvがヘルパーを起動できなかった場合だけ次を取り出す。
 
     1. 接続先ごとに覚えた版で、索引へ出ずに起動する。版の照会のSSHを要求ごとに増やさない。
-    2. 版を選び直し、覚えた版と違えば、その版で索引へ出ずに起動する。版が消えても（`uv python uninstall`など）
-       依存は専用キャッシュに残るため、索引へ到達できなくても起動できる。
-    3. 選び直した版で、索引から依存を取得できる形で起動する。初めての接続先で専用キャッシュが空の場合も、ここで依存を取得する。
+    2. 版を選び直し（`_resolved_pythons`）、選んだ版ごとに、まだ試していなければその版で索引へ出ずに起動する。
+       版が消えても（`uv python uninstall`など）依存は専用キャッシュに残るため、索引へ到達できなくても起動できる。
+    3. 同じ版で、索引から依存を取得できる形で起動する。初めての接続先で専用キャッシュが空の場合も、ここで依存を取得する。
     """
+    tried: set[_Attempt] = set()
     remembered = _remote_pythons.get(host)
     if remembered is not None:
+        tried.add(_Attempt(remembered, offline=True))
         yield _Attempt(remembered, offline=True)
-    python = await _resolve_remote_python(host, ssh_options=ssh_options, deadline=deadline)
-    if python != remembered:
-        yield _Attempt(python, offline=True)
-    yield _Attempt(python, offline=False)
+    async with contextlib.aclosing(_resolved_pythons(host, ssh_options=ssh_options, deadline=deadline)) as pythons:
+        async for python in pythons:
+            for attempt in (_Attempt(python, offline=True), _Attempt(python, offline=False)):
+                if attempt not in tried:
+                    tried.add(attempt)
+                    yield attempt
 
 
 async def _launch(host: str, ssh_options: tuple[str, ...], program: list[str], *, timeout: float) -> tuple[str, bytes]:
@@ -269,16 +286,16 @@ async def _launch(host: str, ssh_options: tuple[str, ...], program: list[str], *
     印が無ければuvがヘルパーを起動できなかったとして次の試行へ進み、全て失敗すれば最後の失敗を送出する。
     接続先へ接続できない失敗は、選び直しても変わらないためそのまま送出する。
     版の照会と全ての試行は`timeout`秒の1つの期限を共有し、期限に達すると上限を`timeout`秒とする`subprocess.TimeoutExpired`を送出する。
+    期限を過ぎた後は、照会も試行も新しいSSHを始めない。
     呼び出し元がキャンセルされた場合は子プロセスを終了させてから`CancelledError`を送出する。
     """
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
+    deadline = asyncio.get_running_loop().time() + timeout
     failure: RemoteHelperError | None = None
     try:
         async with contextlib.aclosing(_attempts(host, ssh_options, deadline)) as attempts:
             async for attempt in attempts:
                 command = ["ssh", *ssh_options, host, *_uv_run_python(attempt.python, offline=attempt.offline), *program]
-                returncode, stdout, stderr = await run_ssh(command, timeout=deadline - loop.time())
+                returncode, stdout, stderr = await run_ssh(command, timeout=_time_left(deadline, command))
                 helper_stderr, started = _HELPER_STARTED_LINE.subn(b"", stderr, count=1)
                 if returncode == 0 or started:
                     _remote_pythons[host] = attempt.python

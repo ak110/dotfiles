@@ -334,6 +334,23 @@ async def test_launch_failure_after_reresolution_reports_the_last_failure(add_re
 
 
 @pytest.mark.asyncio
+async def test_launch_does_not_repeat_a_failed_attempt(add_remote_host: _AddRemoteHost) -> None:
+    """選び直した版が覚えた版と同じなら、失敗した索引へ出ない起動を繰り返さず、索引から依存を取得して起動する。
+
+    専用キャッシュだけが消えた接続先で、同じ起動を繰り返すとSSHの往復だけが増える。
+    """
+    name, host = add_remote_host("3.15.2")
+    await _run_one_shot(name)
+    host.cached = False
+    attempts = host.attempts
+
+    await _run_one_shot(name)
+
+    # 覚えた版で索引へ出ない起動の失敗、版の照会、索引を使う起動。
+    assert (host.attempts - attempts, host.helpers) == (3, ["3.15.2", "3.15.2"])
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("newline", [b"\n", b"\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize("cached", [True, False], ids=["remembered-and-warm", "first-contact"])
 async def test_helper_operation_error_is_reported_without_relaunch(
