@@ -1,0 +1,46 @@
+# Windowsの昇格と状態ディレクトリの権限の設計記録
+
+[設計記録の索引](design.md)から参照する、同じユーザーの昇格したプロセスと非昇格のプロセスが状態を共有するための記録である。
+
+## 所有者だけが使うディレクトリの作成
+
+agent-toolkitの状態ディレクトリとmanaged-tempは、POSIXでは0o700で作成し、Windowsでは親（`%LOCALAPPDATA%`などユーザーprofile配下）から継承するACLで作成する。
+作成は`agent_toolkit._common.private_directory`へ集め、`private_directory_invariant_test.py`が0o700の`mkdir`と`mkdtemp`の直接の呼び出しを拒否する。
+Windowsの`os.mkdir`はmodeが0o700のとき`D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)`の保護付きDACLを付け、`tempfile.mkdtemp`も0o700を渡す。
+OWNER RIGHTSは対象の所有者を指し、昇格したプロセスが作成したファイルの所有者は`BUILTIN\Administrators`になるため、同じユーザーの非昇格のプロセスは読めない（2026年11月19日、管理サービスの世代索引で発生）。
+ユーザーprofile配下の継承するACLはユーザー・SYSTEM・Administratorsに限られるため、継承に任せても他のユーザーへは公開しない。
+作成後に保護付きDACLを継承へ付け替える案は、作成のたびにACLの操作と失敗の分岐を加えるため採らない。
+
+## 旧版の保護付きDACLの修復
+
+旧版が付けた保護付きDACLは、更新後処理の工程（`pytools/_internal/restore_agent_toolkit_acl.py`）が継承へ戻す。
+同工程は`%LOCALAPPDATA%\agent-toolkit`配下を`windows_security.restore_inheritance`で走査する。
+旧版のOWNER RIGHTSのACEを明示したディレクトリは、配下の全項目のACLを読める場合だけ保護を外し、配下の継承をOSに計算し直させる。
+非昇格のtokenで保護を外すと、OSは書けない配下（昇格したプロセスが作成した項目）を更新しないまま成功を返し、以後の走査でその配下を見つけられなくなるためである（2026年11月19日、WindowsのCIで観測）。
+読めない配下を含むディレクトリは変更せず、管理者として起動した端末での`update-dotfiles`の実行を案内する。
+`icacls /reset /T`はjunctionの先までたどりうるため案内しない。
+継承したOWNER RIGHTSのACEは対象にしない。
+WindowsのCIでは更新検証のhomeが`tempfile.mkdtemp`の配下にあり、継承したACEも対象にした版は戻した後も全配下を対象と誤認し、2823件の配下ごとに走査と再計算を繰り返して93.7秒を要した。
+明示したACEだけを対象にした版は、同じ更新検証で5件を戻して5.7秒で終え、明示したOWNER RIGHTSのACEは残らなかった。
+走査はリンクとjunctionをたどらず、OSの継承の再計算がjunctionの先のACLを変えないこともCIで確かめた。
+変更する対象は、reparse pointをたどらずに開いたハンドルで旧版のACEを確かめ、同じハンドルで変更する。
+昇格した実行の判定と変更の間に、非昇格のプロセスが対象をjunctionへ差し替えても、差し替え先のACLを変えないためである。
+pytestは一時領域を0o700で作成するため、managed-temp配下の試験の一時領域も修復の対象になる。
+WindowsのCIでは、空のディレクトリ5051件の走査とACLの読取が0.62秒だったため、更新のたびに走査する。
+修復を管理サービスの起動時に行う案は、起動の上限30秒の内側で配下全体を走査することになり、昇格した実行が書く前に戻す順序も保証できないため採らない。
+
+## 昇格した更新での管理サービスの扱い
+
+UACの管理者承認モードで動くユーザーがWindowsで昇格したプロセスから`update-dotfiles`を実行した場合、agents_serverのウォームアップは依存の準備だけを行う。
+管理サービスの起動と公開は省略し、起動条件の成功記録も残さず、次の非昇格の実行へ延期する。
+管理者承認モードでは同じユーザーの通常のプロセスが非昇格のtokenで動き、非昇格の会話の転送側は昇格したプロセスを開けず、昇格したプロセスが受付先として公開した管理サービスとの接続を認証できないためである。
+`windows_security.is_elevated_above_user_processes`が、自身のtokenの昇格とUACのポリシー（`EnableLUA`、組み込みAdministratorの`FilterAdministratorToken`）から判定する。
+SSHのログオンのtokenの種類から通常のプロセスの昇格を判別できるかは確かめていないためである。
+UACが無効な環境と、承認モードを適用しない組み込みAdministrator（GitHub ActionsのWindows runner）では、通常のプロセスも昇格したtokenで動くため、起動と公開を省略しない。
+昇格したtokenで起動した会話（SSH経由の`claude`など）の転送側が管理サービスを起動して公開する場合は対象外で、同じ問題が残る。
+
+`update-dotfiles`自体は昇格した実行を拒否しない。
+GitHub ActionsのWindows runnerは昇格したtokenで初回導入と旧版からの更新を検証し、SSHからの更新も昇格したtokenで動くためである。
+状態ディレクトリは継承するACLで作成するため、昇格した実行が書いたファイルも同じユーザーの非昇格のプロセスが読める。
+別の作業の調査では、SSHの昇格したtoken（High Mandatory Level）でRedirectionGuardが有効になり、非昇格のユーザーが作成したjunctionをたどれず`WinError 448`になった。
+修復の工程はjunctionをたどらないため影響を受けないが、ほかの工程は昇格した実行で同じ形の失敗を起こしうる。

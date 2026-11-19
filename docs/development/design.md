@@ -25,6 +25,7 @@
 | 検収根拠とレビュー担当間の知識境界 | 完成条件を満たす証拠を保存し、実行レビューと画面の使いやすさを確認するレビューへ渡す仕組み。レビュー担当とレビューイーの知識境界、完成条件証拠と証拠検査を扱う | [design-review-evidence.md](design-review-evidence.md) |
 | フックの責務・通知・セッション状態 | hookはエージェントの操作前後などに自動で起動する処理。責務境界、遮断・警告の存廃判定、Stopフック、通知の整形、複数ホスト向けの配布、イベントごとの個別設計、進捗のセルフチェック通知、セッション状態の共有を扱う | [design-hooks.md](design-hooks.md) |
 | 一時成果物とキューリポジトリの回復 | managed-tempは一時成果物の管理領域。MQはWIキューの管理層で、項目を保存するGitリポジトリの分岐回復を扱う | [design-storage.md](design-storage.md) |
+| Windowsの昇格と状態の権限 | 同じユーザーの昇格したプロセスと非昇格のプロセスが共有する状態ディレクトリの作成と旧版のACLの修復、昇格した`update-dotfiles`での管理サービスの扱いを扱う | [design-windows-permissions.md](design-windows-permissions.md) |
 | branch・CI所有権・公開・終了 | developは開発用、masterはリリース用のGit branch。CIは変更の自動検証。CIの実処理所有権、rulesetとマージ後の同期、公開と検証、公開状態の観測を含む公開工程を扱う | [design-release.md](design-release.md) |
 | CLIの入力・結果・公開境界 | atkはagent-toolkitのコマンド。CLIはコマンドラインからの呼び出し口。引数の拒否、結果行と出力の内容、次の操作、長い出力の保存、`atk run-skill`を扱う | [design-cli.md](design-cli.md) |
 | 画面統合とセッション・計画一覧 | atk serveは作業状況や計画をブラウザーで確認する画面を提供するコマンド。画面統合、計画ファイル画面、SSEと接続維持、サーバーの停止、WI画面、セッション画面を扱う | [design-serve.md](design-serve.md) |
