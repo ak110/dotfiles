@@ -1,6 +1,6 @@
 """このディレクトリ配下のテストが共有するヘルパー。
 
-セッション状態ファイルの読込、transcriptファイルの生成、配送本文の出所標識の検証を提供する。
+セッション状態ファイルの読込、transcriptファイルの生成、配送本文の出所標識の検証、置換で公開した記録の読込を提供する。
 fixtureは`conftest.py`に置き、テストからimportして使うヘルパーは本ファイルへ置く
 （リポジトリ内に`conftest.py`が複数あるとモジュール名が衝突し、
 型チェッカーがimport元を一意に解決できないため）。
@@ -31,6 +31,18 @@ _RESOURCE_PREFIX_PATTERN = re.compile(
     rf".*?\n</{_AUTO}>\n\n(?P<delivery>.*)\Z",
     re.DOTALL,
 )
+
+
+def read_published(path: pathlib.Path) -> str | None:
+    """別プロセスが一時ファイルからの置換で公開した記録の本文を返す。まだ読めなければNoneを返す。
+
+    Windowsでは置換した直後の名前を、置換したプロセスが閉じるまで開けない（PermissionError）。
+    存在だけを待って読むと、この共有違反で失敗する。
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError, PermissionError:
+        return None
 
 
 def link_directory(link: pathlib.Path, target: pathlib.Path) -> None:

@@ -18,7 +18,7 @@ from unittest.mock import Mock
 
 import psutil
 import pytest
-from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing import helpers, late_descendant
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -133,18 +133,13 @@ def _invoke(project: tuple[pathlib.Path, dict[str, str]], *arguments: str) -> su
 
 
 def _wait_file(path: pathlib.Path) -> str:
-    """同期点のファイルが現れて読めるまで待ち、本文を返す。
-
-    Windowsでは置換で公開した直後の名前を、置換したプロセスが閉じるまで開けない（PermissionError）。
-    """
+    """同期点のファイルを読めるまで待ち、本文を返す。"""
     deadline = time.monotonic() + 15
-    while True:
-        try:
-            return path.read_text(encoding="utf-8")
-        except FileNotFoundError, PermissionError:
-            if time.monotonic() >= deadline:
-                pytest.fail(f"同期点に到達しません: {path}")
-            time.sleep(0.02)
+    while (text := helpers.read_published(path)) is None:
+        if time.monotonic() >= deadline:
+            pytest.fail(f"同期点に到達しません: {path}")
+        time.sleep(0.02)
+    return text
 
 
 def _job(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
