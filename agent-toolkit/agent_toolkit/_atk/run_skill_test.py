@@ -174,7 +174,7 @@ def test_wi_save_and_edit_bind_report_to_run(
     saved = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert saved is not None and saved[0]["run_skill_run_id"] == "run-1"
     assert saved[0]["state"] == "inbox"
-    assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert wi_add.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
     body_file = tmp_path / "report-update.md"
     body_file.write_text("更新後の実行結果を確認してください。", encoding="utf-8")
     with pytest.raises(SystemExit) as updated:
@@ -194,7 +194,7 @@ def test_wi_save_and_edit_bind_report_to_run(
     assert saved is not None and saved[0]["run_skill_run_id"] == "run-1"
     assert saved[0]["state"] == "inbox"
     assert "更新後の実行結果" in saved[1]
-    assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert wi_add.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
 
 
 @pytest.mark.parametrize("collision", ["none", "branch-tag", "remote-current", "remote-ref"])
@@ -227,11 +227,11 @@ def test_report_sync_uses_current_branch_config_with_ref_collisions(tmp_path: pa
     report.write_text(content, encoding="utf-8")
     git_repository.commit_all(notes, "report")
 
-    assert not wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert not wi_add.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
     git_repository.run_git(notes, "push", "origin", "HEAD:refs/heads/published/reports")
-    assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert wi_add.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
     report.write_text(content + "未commitの変更\n", encoding="utf-8")
-    assert not wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert not wi_add.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
 
 
 def test_diagnostic_stream_preserves_conversation_but_redacts_errors(engine_env, capsys):

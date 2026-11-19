@@ -46,20 +46,20 @@ def test_run_report_sync_ignores_later_answer_and_state(tmp_path: pathlib.Path, 
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n"
     )
     report.write_text(content, encoding="utf-8")
-    assert not add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert not add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
     git_repository.commit_all(notes, "report")
-    assert not add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert not add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
     git_repository.run_git(notes, "push", "origin", "HEAD")
     updated = content.replace("state: inbox", f"state: {outcome}") + "了解した。\n\n## 処理結果\n採否を記録した。\n"
     report.write_text(updated, encoding="utf-8")
     git_repository.commit_all(notes, "answer")
-    assert add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
     report.write_text(updated.replace("分析した。", "追加の分析をした。"), encoding="utf-8")
-    assert not add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert not add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
     git_repository.commit_all(notes, "edit report")
-    assert not add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert not add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
     git_repository.run_git(notes, "push", "origin", "HEAD")
-    assert add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    assert add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
 
 
 @pytest.mark.parametrize("dry_run", [[], ["--dry-run"]])

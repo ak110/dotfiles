@@ -109,7 +109,7 @@ if not concurrent and mode in {"normal", "concurrent-once"}:
         request_id=item, status="unnecessary", files=[], reason="隔離シナリオで不要と確定した"
     ) for item in run["request_ids"]]))
     notes = private_notes.default_private_notes()
-    if not add.has_synced_run_report(notes, run_id=run_id, skill=submit.SKILL):
+    if not add.has_synced_run_report(notes, run_id=run_id, scope=submit.SKILL):
         add.add_entries(notes, messages=["---\\nrun_skill_report: true\\n---\\n\\n処置を完了した。"],
             target_repo=run["target_repo"], source="run-skill", now=datetime.datetime.now(datetime.UTC),
             entry_type="uwi", question_type="yes-no", scope=submit.SKILL)

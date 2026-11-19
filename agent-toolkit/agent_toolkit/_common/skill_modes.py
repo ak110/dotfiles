@@ -53,8 +53,19 @@ def resolve_work(skill: str, arguments: str | None) -> tuple[str, str | None]:
 
 
 def qualified(skill: str) -> str:
-    """入口配下の作業の無修飾の名前を`agent-toolkit:<作業>`へそろえる。他の名前はそのまま返す。"""
+    """入口配下の作業の無修飾の名前を`agent-toolkit:<作業>`へそろえる。他の名前はそのまま返す。
+
+    作業名を比べる箇所は、比べる両側を値の読み取り時にこの関数（起動単位は`invocation_scope`・`canonical_scope`）でそろえる。
+    修飾名へそろえる前の`atk run-skill`は無修飾の作業名を実行記録へ保存した。
+    再開したホストはその起動入力どおりの`scope`で報告を保存するため、保存済みの値は書き換えずに比べる側でそろえる。
+    """
     return f"agent-toolkit:{skill}" if skill in ENTRY_WORKS else skill
+
+
+def canonical_scope(scope: str) -> str:
+    """保存済みの起動単位（報告用UWIの`scope`など）の先頭の作業名を`qualified`でそろえる。モード語などの後続は保つ。"""
+    name, separator, rest = scope.partition(" ")
+    return f"{qualified(name)}{separator}{rest}"
 
 
 def entry_command(host: str, arguments: str) -> str:

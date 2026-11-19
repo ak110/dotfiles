@@ -52,7 +52,7 @@ def test_blocks_until_report_is_saved(tmp_path: pathlib.Path, calls: list[dict[s
 
     assert decision == "block"
     assert 'source="run_skill_report_gate"' in reason
-    assert [(call["run_id"], call["skill"]) for call in calls] == [(_RUN_ID, _SKILL)]
+    assert [(call["run_id"], call["scope"]) for call in calls] == [(_RUN_ID, _SKILL)]
 
 
 def test_approves_after_report_is_saved(

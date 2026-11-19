@@ -456,7 +456,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
 def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> None:
     """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
     report_synced = add.has_synced_run_report(
-        private_notes.default_private_notes(), run_id=manifest["run_id"], skill=session_review.BATCH_SCOPE
+        private_notes.default_private_notes(), run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE
     )
     session_review.BatchWriter(path).complete(report_synced=report_synced)
     run_skill_state.mark_completed(manifest["run_id"])
@@ -522,7 +522,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         if old.get("analysis_succeeded") and add.has_synced_run_report(
             private_notes.default_private_notes(),
             run_id=old["run_id"],
-            skill=old.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
+            scope=old.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
         ):
             session_review.BatchWriter(path).complete(report_synced=True)
             run_skill_state.mark_completed(old["run_id"])

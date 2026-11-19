@@ -139,9 +139,11 @@ def _read_notice(payload: dict, session_id: str, cues: frozenset[str], *, improv
             source = json.loads(startup)
         except ValueError:
             source = {}
-        process_wi = state.get("session_title_kind") in {"process-wi", "single-lane"} or (
-            isinstance(source, dict)
-            and (source.get("source") == "process-loop" or source.get("skill") == skill_modes.PROCESS_WI)
+        skill = source.get("skill") if isinstance(source, dict) else None
+        process_wi = (
+            state.get("session_title_kind") in {"process-wi", "single-lane"}
+            or (isinstance(source, dict) and source.get("source") == "process-loop")
+            or (isinstance(skill, str) and skill_modes.qualified(skill) == skill_modes.PROCESS_WI)
         )
         if process_wi:
             wanted.append((root / "skills/atk-mode/playbooks/process-wi-immediate-fix.md", _IMPROVEMENT_PURPOSE))
