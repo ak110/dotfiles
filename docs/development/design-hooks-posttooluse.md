@@ -32,7 +32,6 @@ Claude CodeのBashとPowerShellは、出力が上限（`bashOutputMaxChars`、�
 保存先のファイルは元の全量を保持する。
 
 Claude Code 2.1.296の`Read`は`allow_large: true`を受け付け、通常の上限（25,000トークン、全文で256KB）の代わりにコンテキストの空きに応じた量を1回で返す。
-観測は`audit-records-rules-operations.md`「agent-toolkit/rules/02-agent-operations.md：出力の保持と観測：2026年10月12日」にある。
 保存先の読取をこの`Read`へ移し、通常上限に合わせた分割を案内しない。
 一方、未読の通知は保持する。
 `Read`の上限の緩和は、Bash・PowerShellの退避と、届いた抜粋を全量と誤認することのどちらも防がないためである。

@@ -13,7 +13,7 @@ description: >
 `develop`で開発した変更を、`master`へのリリースPRで公開する手順書である。
 `master`は必須CIを全て通ったマージコミットだけで更新し、マージ、再試行、ロールバックはいずれも手順の中で明示して1回ずつ行う（auto-mergeと自動の再試行・ロールバックは使わない）。
 公開範囲について明示の指示があれば、それを最優先とする。
-経緯は`docs/development/operations-release.md`「日次リリースの自動実施」、branchの初期化と保護設定は`docs/development/design-release-branches.md`にある。
+日次リリースの経緯は`docs/development/concepts-workflows.md`「developとmasterのリリース運用」、branchの初期化と保護設定は`docs/development/design-release-branches.md`にある。
 
 ## developとmasterのリリース運用
 

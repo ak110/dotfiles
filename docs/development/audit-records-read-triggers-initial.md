@@ -1,7 +1,5 @@
 # 読込表の監査記録: 初回分類と本文配送の撤去
 
-[読込表の記録一覧](audit-records-read-triggers.md)から各方式の分類と観測を参照する。
-
 ## agent-toolkit/share/read-trigger-bootstrap.md：操作を契機とする共有資料：2026年10月27日
 
 本節は、読込表の宣言と表外の資料参照を分類し、取得を案内する経路と対応付けた記録である。

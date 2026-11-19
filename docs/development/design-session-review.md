@@ -3,7 +3,6 @@
 本書は[設計記録の索引](design.md)から主題別に分割した記録であり、機構の目的、構造の理由、知識境界と却下した代替案を保持する。
 実行時に適用する規範は、各節が参照する現行のルールファイルとスキルが定める。
 
-- [手順スキルの改名](design-skill-renaming.md)
 - [振り返りの起動と失敗回復](design-session-review-startup.md)
 - [通読資料と費用の集計](design-session-review-materials.md)
 - [振り返り準備と会話の流れ](design-session-review-preparation.md)

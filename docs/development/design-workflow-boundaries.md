@@ -12,7 +12,6 @@
 - [上流投入とレーン工程](design-selection-upstream-lanes.md)
 - [レーンの継続と要求の由来](design-selection-origin.md)
 - [レーン配分の上限と単独稼働](design-lane-allocation.md)
-- [2026年10月のレーン配分試算](design-lane-allocation-estimate.md)
 - [処理中の処理対象WIの追加](design-wi-addition.md)
 - [反映後の観測と再開](design-post-release-observation.md)
 - [処理中の不良への即時対応](design-workflow-remediation.md)

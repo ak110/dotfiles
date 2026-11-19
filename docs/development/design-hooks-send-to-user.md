@@ -46,7 +46,7 @@ Code Modeの実ツール呼出しはtranscriptで`<synthetic>`のモデル名を
 
 Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIが要約（progress updateの要約）へ置き換えて返す。
 原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。
-根拠は`audit-records-claude-output.md`の「agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月6日」、事象は`incidents-validation.md`の2026年10月6日の項にある。
+事象は`incidents-validation.md`の2026年10月6日の項にある。
 
 ツールの入力は要約されないため、途中報告と最後の回答の両方をツールの入力で運ぶ。
 確認質問は既存の質問手段を使う。
