@@ -31,8 +31,8 @@ Linuxでremote-controlを使わない直接CLIを終了対象として確認で�
 所有登録は選定原本から写したレーンのWI集合と統合状態、rebase後の対応表と検証記録も持つため、managed-tempにある選定原本が失効した後の再開と回収も同じ所有登録から判定する。
 状態ディレクトリの絶対パスは`atk config get state_dir`で取得する。
 WIの本文と`processing`の状態はprivate-notesのキュー、計画と進捗ログは`~/.claude/plans`が保持する。
-新しい会話のprocess-wiは[選定手順](../../agent-toolkit/skills/process-wi/references/selection-procedure.md)に従い、`atk lane delete --list`で残存登録と回収結果を読み、WIに対応する計画を`atk plans list`から解決する。
-再開する工程は計画の進捗ログから決め、[中断レーンの再開](agent-toolkit:process-wi/references/run-lanes-integration.md)に従って新しいレーン担当へ計画と既存worktree・branch・現在HEADを渡す。
+新しい会話のprocess-wiは[選定手順](../../agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md)に従い、`atk lane delete --list`で残存登録と回収結果を読み、WIに対応する計画を`atk plans list`から解決する。
+再開する工程は計画の進捗ログから決め、[中断レーンの再開](agent-toolkit:atk-mode/playbooks/process-wi-lanes.md)に従って新しいレーン担当へ計画と既存worktree・branch・現在HEADを渡す。
 資源を再利用するときは旧所有主体の終了を確認し、`atk lane create`の`--reuse-record <record_path>`へ所有登録のパスを渡して新しい所有sessionへ移す。
 この再開は保存した状態からの復元であり、親は中断した会話履歴を新しい会話へ複製しない。
 対応する計画や所有を一意に確定できない場合は、既存の再開手順が続行できない理由を返す。

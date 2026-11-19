@@ -20,7 +20,7 @@
    計画が要るレーンは原則1つの計画にまとめ、単一の計画では行数の警告を避けられない初回の起草に限り`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」の手順4で分ける。
    依存先の失敗や保留、上流投入の完了待ちで必要な成果が得られなければ後続を依存待ちにし、成果を得てから再開する。
    ユーザーの明示の指示で加わった依存先が既存のレーンにある場合は、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理中に確定した必須是正レーン」で受け入れられるかを確かめ、同じレーンで受け入れられない項目は待つ。
-5. 稼働中が1レーンになっても、未着手のAWIは同じレーンで続ける（移管には計画の分割と書込所有の移譲が要り、`agent-toolkit:write-plan/references/plan-file-standards.md`の計画凍結に反するため）。
+5. 稼働中が1レーンになっても、未着手のAWIは同じレーンで続ける（移管には計画の分割と書込所有の移譲が要り、`agent-toolkit:atk-mode/references/plan-format.md`の計画凍結に反するため）。
    単独稼働の短縮は選定時の段階設計で図る。
 6. レーン担当を起動する時は、`agent-toolkit:/share/exec.parent.md`が定める入力を渡し、担当の境界も確かめられる既存の`選定結果の出力先ファイル`を渡す。
    - 境界や先行条件を更新した場合は、関係する担当へ既存の追送の経路で更新した選定結果の所在と差分を渡す（既存の追送で足り、専用の同期状態や常時のポーリングは不要である）。
@@ -48,7 +48,7 @@
 
 1. 計画準備の返却の扱いと、待機が要る場合の`実装開始`か`実装なし`の返却は`agent-toolkit:/share/exec-parent-planning.md`「計画準備の受領」に従う。
    `実装完了`の受領、実行レビューとユーザビリティレビュー、指摘の修正と収束の判定は同書「実装完了の受領」に従う。
-2. 実行レビューの前に、取得版、入力・環境の条件、要求別の観測箇所を`agent-toolkit:/share/verification-evidence.md`の検証記録へ対応付けさせる（保存済みの結果の適用の可否と追加の観測の範囲は実行レビュー担当が判断する）。
+2. 実行レビューの前に、取得版、入力・環境の条件、要求別の観測箇所を`agent-toolkit:atk-mode/playbooks/verification.md`の検証記録へ対応付けさせる（保存済みの結果の適用の可否と追加の観測の範囲は実行レビュー担当が判断する）。
 3. 選定結果の担当モデル、起動側が解決したモデルの候補、終了後の実行ログから観測した実行のidentityを別々の値として比べ、不一致は値と出所を分け、観測できなければ未観測として後続へ渡す。
 4. レーン担当から確認事項や事後承認の対象を受けたら、その時点で根拠と既存の認可を確かめる。
    発行の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`で決める。
@@ -88,7 +88,8 @@
        自己操作の手段が成り立つかは同節の自己観測の判定で確かめる。
        - 自分で前提を整えて次回観測できる項目（プロセスの起動、反映待ちなど）: 実装を繰り返さずに観測へ回し、確認の要否・解決の見込み・統括への通知・UWIの保存と依存か冷却による差し戻しは同節に従う。
        - ユーザーの操作か追加の認可が無ければ前提を整えられない項目（実行ログでユーザーが起動したと確かめたセッションの停止など）: 自己操作が成り立たないと確かめたものに限り、完成条件を変えずにUWIで前提の充足を求める。
-         元AWIは「状態と依存」の承認型UWIと元項目の規定に従って`depends_on`へUWIを加えて`inbox`へ戻し、操作の主体と選択肢は`agent-toolkit:atk-mode/references/uwi-format.md`「ユーザーへ操作を依頼する場合」で振り分ける。
+         元AWIは`agent-toolkit:atk-mode/references/states-and-dependencies.md`「承認型UWIと元項目」に従って`depends_on`へUWIを加えて`inbox`へ戻す。
+         操作の主体と選択肢は`agent-toolkit:atk-mode/references/uwi-format.md`「ユーザーへ操作を依頼する場合」で振り分ける。
          UWIには、必要な操作か認可、観測結果、足りない前提、自己操作が成り立たない根拠を書く（同じ観測を無批判に次回へ回すと、前提が整わないまま同じ処理を繰り返すため）。
 
    複数の要求を持つAWIは、採用した要求を全て満たし、未解決の保留が残らない場合だけファイル全体を`adopt`する。
@@ -100,7 +101,7 @@
    レーン担当へ任せる統合の指示と、メイン自身がCLIを実行する場合の検収は`agent-toolkit:/share/exec.parent.md`と`agent-toolkit:/share/exec-parent-integration.md`に従う。
    内部の群の焦点の検証と独立文脈レビューは`agent-toolkit:/share/exec-subagent-implementation.md`「実装」と`agent-toolkit:/share/exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
    レーン担当は群の保存が終わった順にレビューを始め、全群の完了を待つ一斉の初回レビューは避ける。
-   共有実行枠（`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」）へ群ごとに早く投入し、群別の対象の和集合と元WIの全条件の対応を保つ。
+   共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）へ群ごとに早く投入し、群別の対象の和集合と元WIの全条件の対応を保つ。
    受理済みの同じ本文・環境・契約の結果は再利用し、全群の取り込み後に群間の契約、共有の生成物、組合せの差分と未達条件を検収してから統合入力を確定する。
 2. Git統合、全計画の保存、WIの採否の確定、選定の統合状態の更新は、同じ所有登録から`atk lane integrate`が一括で行う。
    引数とmanifestの作り方は`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」に従い、メイン自身が呼ぶ場合も独立文脈のレビューと完成条件の判定を通った同じ入力を使う。
@@ -118,7 +119,7 @@
    セッションのmanaged-tempと証拠のファイルは専用worktreeの中に置かない（回収の対象から外すため）。
    統合済みの判定を確かめてからbranchを`-D`で削除するのは、通常の`-d`がupstreamを基準に判定し、push前のローカル統合を未統合として削除を拒否するためである。
    監査記録は`docs/development/audit-records-wi.md`にある。
-   該当の節は「agent-toolkit/skills/process-wi/references/run-lanes-integration.md「統合とAWI終了」：所有資源の回収：2026年9月3日」である。
+   該当の節は「agent-toolkit/skills/atk-mode/playbooks/process-wi-lanes.md「統合とAWI終了」：所有資源の回収：2026年9月3日」である。
 
 ### 未回収レーンの再回収
 
@@ -151,10 +152,10 @@
 1. 専用worktreeの両親のOID、競合したパス、両側の要求と解消の方針を確かめる。
    所有する要求の範囲で解消できれば同じレーン担当が続け、追加の判断か認可が要る単位だけを委譲元へ返す（対象worktreeとmerge進行中の状態と必要な判断を伝え、未保存の成果は保つ）。
 2. 両側の要求を保って競合を解消し、解消したパスだけをステージングして通常のmerge commitを作り、既存の実装のOIDはそのまま保つ。
-   - 解消で生じた変更と影響するAWIを、`agent-toolkit:commit/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
+   - 解消で生じた変更と影響するAWIを、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
    - 競合箇所、解消の方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表へ1行加え、同じ行に`atk review-table respond`で解消内容を書く。
      行の書き方は`agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
-   - 影響する利用側を検証し、解消差分を独立した実行レビューにかけ、既存の実行レビュー担当から現在のHEADの判定を受理する（`agent-toolkit:/share/exec-review-parent-correction.md`）。
+   - 影響する利用側を検証し、解消差分を実行レビューにかけ、既存の実行レビュー担当から現在のHEADの判定を受理する（`agent-toolkit:/share/exec-review-parent-correction.md`）。
 3. クリーンな現在のHEADを`--reviewed-head`へ渡し、受理済みのレビューとcommitの対応を反映したmanifestで、`atk lane integrate`へ`--restart-review`を付けて再開する。
    統合先がさらに進んだ場合も同じ節に従って追加でmergeし、その影響だけを検収する。
 

@@ -2,8 +2,8 @@
 
 修正commitが必要と確定したCI失敗と全体検証の失敗を、誰がどの記録で直し、どの条件でレビューして再pushするかの手順書である。
 作業`process-wi`のレーン担当・メイン・リポジトリ担当と、公開工程の公開担当が使う。
-CI失敗の取得・分類・原因分析は`agent-toolkit:commit/references/ci-failure-handling.md`にある。
-push先・run監視・証拠の保存と後始末は`agent-toolkit:commit/references/push-and-ci.md`に、直接原因の特定は`agent-basics:bugfix`にある。
+CI失敗の取得・分類・原因分析は`agent-toolkit:atk-mode/references/ci.md`にある。
+push先・run監視・証拠の保存と後始末は`agent-toolkit:atk-mode/playbooks/publish.md`に、直接原因の特定は`agent-basics:bugfix`にある。
 本書が扱うのは、書込の所有、修正の担当、CI記録、修正系列と回数、先行CI、レビューの起動である。
 終了条件は、修正系列のCI成功を判定し、計画と指摘管理表を再保存した時点である。
 
@@ -29,7 +29,7 @@ push先・run監視・証拠の保存と後始末は`agent-toolkit:commit/refere
 
 最初のCI失敗（公開工程では全体検証の失敗を含む）から、CIが成功するか工程が終わるまでを1つの修正系列とする。
 修正回数、CI記録、レビュー指摘管理表、`修正系列の開始時のHEAD`はこの単位で引き継ぎ、原因commitが変わっても回数を数え続ける。
-回数は、ログの該当箇所と直接原因に対応付けた是正の件数で数え、原因commitへ取り込んだ修正（`agent-toolkit:commit/references/push-and-ci.md`「pushと監視」の「原因commitへ取り込む区分」）も1回と数える。
+回数は、ログの該当箇所と直接原因に対応付けた是正の件数で数え、原因commitへ取り込んだ修正（`agent-toolkit:atk-mode/playbooks/publish.md`「pushと監視」の「原因commitへ取り込む区分」）も1回と数える。
 ユーザーの割り込み操作と独立した事象へのcommitは回数から除く。
 取り込んだ場合は、`exec-review`へ渡す`原因commitOID`に履歴書き換え後に解決できる値を使い、書き換え前後のOIDの対応と`git range-diff`の結果をCI記録へ残す。
 
@@ -39,7 +39,7 @@ push先・run監視・証拠の保存と後始末は`agent-toolkit:commit/refere
      同じ修正系列の実行レビュー（`レビュー基準: 計画`）にも同じパスを渡す。
    - 未保存の計画は`~/.claude/plans`のパスをそのまま渡し、対応する計画が無ければ`なし`とする。
 2. 修正者は、原因の修正、全項目の検証、差分の検収、ステージング、commitを終える。
-   修正前の計画は`agent-toolkit:commit/references/ci-failure-handling.md`「選択の流れ」に従い、公開工程の外で自ら直す場合は同節の手順4の計画を使う。
+   修正前の計画は`agent-toolkit:atk-mode/references/ci.md`「選択の流れ」に従い、公開工程の外で自ら直す場合は同節の手順4の計画を使う。
    外部サービスの障害など、修正commitを要さない失敗では実装担当を起動しない。
 3. 先行CI: 手元では失敗した条件の成否を観測できず、認可済みの作業ブランチで対象ジョブと直接影響範囲を実行できる場合は、修正commitを早めにpushして先行CIで確かめる。
    - 対象リポジトリ・ブランチへのpush認可と書込担当の終了を確かめてから、`push-and-ci.md`「push前」「pushと監視」の通常の操作を使う。
@@ -64,7 +64,8 @@ push先・run監視・証拠の保存と後始末は`agent-toolkit:commit/refere
      受領を確かめた新しい返却ファイルの所在も同じ進捗ログへ記録する。
    - 同じ修正系列の中では同じレビュー指摘管理表を引き継ぐ。
 5. 成功の判定: 修正系列を完了とするCIの成功は、失敗したジョブを判定対象に含み、期待される終了状態（許容された失敗を含む）で正常終了したパイプライン（GitHub Actionsではrun）に限る。
-   push先で対象ジョブが実行されない場合（保護ブランチ限定、スケジュール実行、特定パスの変更条件など）は、ジョブの実行環境を含むローカル再現（`agent-toolkit:commit/references/ci-failure-handling.md`「分類判定の補助」）で成否を確かめる。
+   push先で対象ジョブが実行されない場合（保護ブランチ限定、スケジュール実行、特定パスの変更条件など）は、ジョブの実行環境を含むローカル再現で成否を確かめる。
+   再現は`agent-toolkit:atk-mode/references/ci.md`「失敗ログとartifactの取得」に従い、同じSHAで行う。
    ローカル再現もできない場合は、未確認のジョブ、試した再現手順、残る実行条件の差をエスカレーションとして報告する。
 6. 再保存: 修正系列の完了時に、起動側が`atk plans commit <private-notes/plans/からの相対パス>`で計画を再保存し、成功の表示と警告が無いことを確かめる。
    CI記録を基準とする`ci-<修正系列の開始時のHEAD>.exec-review.tsv`も同じ時点で`atk plans commit ci-<修正系列の開始時のHEAD>.exec-review.tsv`で保存する。
@@ -92,7 +93,7 @@ push先・run監視・証拠の保存と後始末は`agent-toolkit:commit/refere
 4. 本書「修正系列」手順4の起動条件に当たる修正では、実行レビューを1件起動する。
    `レビュー基準: 計画`の表は計画の再保存時に、`レビュー基準: CI記録`の表は修正系列の終了処理時に公開担当が保存し、結果を引き継ぎ記録へ残す。
 5. 修正commitを受け取るたびに、版数、manifest、生成ファイルの同期、push、CIの確認を判定し直す。
-   CI修正担当が修正を原因commitへ取り込んだ場合は、`agent-toolkit:commit/references/push-and-ci.md`「pushと監視」の「原因commitへ取り込む区分」に従う。
+   CI修正担当が修正を原因commitへ取り込んだ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「pushと監視」の「原因commitへ取り込む区分」に従う。
    期待値を明示した`--force-with-lease`で同じブランチを更新し、更新後のHEADと新しいbaselineでCIを確かめ直す。
    pushする範囲は変えず、キューの操作はまだ`adopt`していないAWIだけに行う。
 6. 再push後に新しい失敗が起きた場合は、新しい原因commitについて対応する計画の有無を判定し直し、手順1へ戻る。

@@ -18,15 +18,16 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 - レーン担当の起動と実行: `agent-toolkit:/share/exec.parent.md`、`agent-toolkit:/share/exec.subagent.md`。
 - 公開担当の起動と実行: `agent-toolkit:atk-mode/roles/session-termination.parent.md`、`agent-toolkit:atk-mode/roles/session-termination.subagent.md`。
 
-- `agent-toolkit:write-plan`を起動した場合は、ユーザー確認の要否と手段を`agent-toolkit:atk-mode/playbooks/confirmation.md`で選び、計画の起草後は本書の実行順へ戻って主作業ツリーで実装する。
+- メインが`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って計画を作る場合は、ユーザー確認の要否と手段を`agent-toolkit:atk-mode/playbooks/confirmation.md`で選ぶ。
+  計画の起草後は本書の実行順へ戻り、主作業ツリーで実装する。
 - 計画のstemは`dd-HHmm_process-wi-single-lane`とし、実行レビューのレビューイーはメインとする。
-- Codex環境では、`agent-toolkit:write-plan/references/codex-runtime.md`が専用処理に定めるUWIの記録と暫定判断の規則を本処理にも適用する。
+- Codex環境では、`agent-toolkit:atk-mode/playbooks/write-plan.md`が専用処理に定めるUWIの記録と暫定判断の規則を本処理にも適用する。
 - 版数は、対象リポジトリの版数管理の規範のうち単一worktree向けの一般原則に従い、実装の段階でメインが更新する。
 
 ## 処理の振り分け
 
 計画が要る項目を「計画対象」、要らない項目を「直接実装対象」として、本書「実行順」手順1の対応表へ区分を書く。
-区分を書く前に`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」を取得し、WIごとに同節の4つの事項（何をどう変えるか、外部から観測できる仕様、完成を判定する条件、バグ対応では確定した原因分析）を本文と現物に照らして判定する。
+区分を書く前に`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」を取得し、WIごとに同節の4つの事項（何をどう変えるか、外部から観測できる仕様、完成を判定する条件、バグ対応では確定した原因分析）を本文と現物に照らして判定する。
 計画を省略する項目は、区分の欄に省略の条件を満たす変更内容を短く併記する。
 例えば「直接実装、4事項は本文で確定: `X`の初期値を`a`から`b`へ変える」と書く。
 定義を取得しないまま付けた「直接実装」の区分は、手順3の計画の省略と手順4の直接実装の根拠に使わない（過去に、定義を読まずに付けた区分のまま計画を省いた誤りがあったため）。
@@ -88,13 +89,13 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはそのworktreeを指定し、対応表の全ての計画対象を`--expected-wi <WIファイル名>`で繰り返し指定して、実装前に過不足なく一致することを確かめる。
    全件が直接実装対象なら計画ファイルを作らず、対応表とレビュー対象の集合の和で網羅を検収する。
 4. 対応表のworktreeで、計画対象は計画の`## 反映内容と反映先`と`## 完成条件`に従い、直接実装対象はWIの要求と完成条件に従って実装する。
-   - 8節形式の計画では、`agent-toolkit:write-plan/references/legacy-plan-file-standards.md`「8節形式」の対応表で節を読み替える。
+   - 8節形式の計画では、`agent-toolkit:atk-mode/references/plan-legacy-formats.md`「8節形式」の対応表で節を読み替える。
    - 完成条件の具体化、検証単位の選定、検証結果の保存、独立文脈レビューへの受け渡しは`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」に従う。
    - Git管理外のファイルを変える場合は、最初の変更の前に変更前の複製を作り、対応を計画の`## 進捗ログ`か直接実装の引き継ぎ記録に残す。
    - commit履歴の整理で取得時の版が変わった記録の再利用は、`agent-toolkit:/share/exec-review-recording-grounds.md`「根拠の書き方」に従う。
    - 互いの成果に依存しないworktreeの間では作業を並行して進めてよい。
-   - commitは`agent-toolkit:commit`で作り、WI実装commitごとに、計画（直接実装では引き継ぎ記録）と同じstemの対応記録ファイルへ記録する。
-     記録の手段は`agent-toolkit:commit/references/commit-wi-records.md`「WI実装commitの対応」に従う。
+   - commitは`agent-toolkit:atk-mode/playbooks/commit.md`で作り、WI実装commitごとに、計画（直接実装では引き継ぎ記録）と同じstemの対応記録ファイルへ記録する。
+     記録の手段は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う。
      レビュー指摘の修正、CI修正、commit履歴の変更の後も同じ手順に従い、手順8の前に最新の対応を取得して`adopt`へ渡す。
 5. 保存済みの対応表から、対象worktreeに属する全ての計画対象と直接実装対象の和を導き、1件の実行レビューを起動する。
    全ての対応表の所在と区分は同じ引き継ぎ記録から辿れるように保つ。
@@ -106,10 +107,10 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 8. 採否と公開:
    - 各WIを`adopt`か`reject`し、`adopt`では`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」のcommitの対応付けを使う。
      採否は公開前に確定し、CIの待機の後へ延ばさない。
-   - worktreeごとに`agent-toolkit:commit`を起動し、`agent-toolkit:commit/references/publish.md`に従って公開する。
+   - worktreeごとに`agent-toolkit:atk-mode/playbooks/commit.md`を読み、`agent-toolkit:atk-mode/playbooks/publish.md`に従って公開する。
    - 複数のリポジトリが対象なら成果物間の依存順を守り、互いに独立したリポジトリのpushを先に全て終えてからCIの監視を並行して始め、全ての実行識別子の終了を待って結果を個別に回収する。
      待機中の操作は`agent-toolkit:delegation/references/waiting-and-monitoring-independent-work.md`「待機中の先行実施」で決め、CIの成功を前提とする公開後の操作はその対象の成功後に行う。
-   - 開発マシンで動く常時稼働サーバーへの反映は、`agent-toolkit:report-completion/references/server-reflection.md`の条件を満たす場合にCIの待機と並行して始める。
+   - 開発マシンで動く常時稼働サーバーへの反映は、`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」の条件を満たす場合にCIの待機と並行して始める。
      反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、稼働確認の結果を完了報告へ渡す。
    - Claude Codeでpush後のCIの監視を待つ前に、`agent-toolkit:delegation/references/waiting-and-monitoring.md`を読む。
      CIの待機のために会話圧縮を一律に手動で予約せず、`agent-toolkit:delegation/references/waiting-claude-code.md`「長時間待機前の会話圧縮」の条件付きの自動予約とホスト標準の圧縮に任せる。
@@ -120,6 +121,6 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    初回・直接処置・追加・延期の全対象について、現在のキューと保存済みの採否・再開条件の一致を確かめ、未達は未達として報告する。
    一時的に作ったレビュー指摘管理表は、正式な保存か回収の契約に従って処理する。
    - 明示的に委譲されたリポジトリ担当は、役割の契約に従って成果・検証・公開・反映の結果と残工程を委譲元へ返し、報告用UWI・送達・祖先ホストの終了は担当しない。
-   - 自分が報告を所有するメインは、成果・検証・公開の結果を`agent-toolkit:report-completion`の作業完了報告へ1回にまとめて送り、公開結果の受領だけで終えずに同スキルの終了処理まで行う。
+   - 自分が報告を所有するメインは、成果・検証・公開の結果を`agent-toolkit:atk-mode/playbooks/report-completion.md`の作業完了報告へ1回にまとめて送り、公開結果の受領だけで終えずに同書の終了処理まで行う。
 
 返す報告に含める項目: 対応表（区分と省略理由を含む）、計画と実行レビューの結果、採否と公開・CIの結果、反映の結果、残工程と再開条件、保存状態の確認結果。

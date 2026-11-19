@@ -3,7 +3,7 @@ name: release-dotfiles
 user-invocable: false
 description: >
   dotfilesリポジトリで`develop`から`master`へのリリースPRを作成・マージするとき、
-  日次リリースの判定と実施を`agent-toolkit:process-wi`または公開まで認可された協調モードで行うとき、
+  日次リリースの判定と実施を`agent-toolkit:atk-mode`の作業`process-wi`または公開まで認可された協調モードで行うとき、
   主checkoutをfast-forwardした後に常時稼働する`atk serve`へ反映するとき、
   `rust/claude-statusline/`の変更に伴う`Cargo.toml`のバージョン更新を判定するときに起動する。
 ---
@@ -17,7 +17,7 @@ description: >
 
 ## developとmasterのリリース運用
 
-対象は、`agent-toolkit:process-wi`の作業と、`operate-ak110-projects`「リリース運用」の恒常的な認可か明示の指定で公開まで担当する協調モードの作業である。
+対象は、`agent-toolkit:atk-mode`の作業`process-wi`の作業と、`operate-ak110-projects`「リリース運用」の恒常的な認可か明示の指定で公開まで担当する協調モードの作業である。
 メインエージェントが次の手順で日次リリースの要否を判定して実施する。
 この範囲に当たらない作業では、リリースPRを手で作り、マージの後は`merge-pr`の手順でブランチの同期、CI、必要なリリースを検収する。
 
@@ -44,7 +44,7 @@ description: >
    作成の直前に`agent-toolkit:review-external-writes`を起動し（タイトルも文面ファイルへ含める）、PRを作る。
 5. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチの同期、CIの確認、必要なリリースの検収まで終える。
 6. 今回`master`へ反映した変更の採用記録から、エンドユーザー側の未実施の操作を拾う。
-   `agent-toolkit:process-wi/references/finish-session.md`「エンドユーザー側の操作が必要な変更」に従って設定を進め、専用の案内UWIを登録する。
+   `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「エンドユーザー側の操作が必要な変更」に従って設定を進め、専用の案内UWIを登録する。
    `develop`へのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。
 7. 主checkoutをfast-forwardした後は、稼働中の`atk-serve.service`を再起動する。
    反映と稼働の確認は`docs/development/operations-services.md`「fast-forward後のatk serveへの反映」に従い、反映したHEAD、再起動の終了コード、active/runningとHTTPの確認結果を完了報告へ残す。

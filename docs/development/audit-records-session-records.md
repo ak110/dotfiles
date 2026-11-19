@@ -24,7 +24,7 @@
 一致は0件であった。
 いずれの記録も最初のuser役レコードの本文は実行環境が挿入する前置きであった。
 前置きは``# AGENTS.md instructions``または``<recommended_plugins>``で始まる。
-`agent-toolkit:process-wi`をuser役の本文へ含む記録は304件であった。
+`agent-toolkit:atk-mode`の作業`process-wi`をuser役の本文へ含む記録は304件であった。
 この304件の`session_meta`を確認すると、`originator`は`agent-toolkit-codex-app-server`が303件、`codex-tui`が1件であった。
 再検証はClaude Codeの記録から`Launching skill:`を含む行を1件取得して`tool_result`の構造を確認し、Codexの記録から同じスキル名を含む行を取得してレコード種別を確認する。
 あわせてCodexの記録から`atk wi process-loop`が渡す起動プロンプトの完全一致と包含の件数を数える。

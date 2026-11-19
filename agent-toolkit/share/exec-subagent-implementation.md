@@ -8,14 +8,14 @@
 | --- | --- |
 | 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics.md` |
 | 初回実装の案の前提を評価する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
-| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
+| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/playbooks/process-wi-execution.md` |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
 | CI修正担当として原因を調べる前と、不具合の再現と修正後の確認を行う前 | `agent-basics:bugfix/SKILL.md` |
-| 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) |
+| 計画を起草するか既存計画から再開する直前 | [`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`](../skills/atk-mode/playbooks/process-wi-execution.md) |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
 | 手動観測を保存する前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
 | `検証結果`を書く前 | `agent-toolkit:atk-mode/playbooks/verification.md` |
-| 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) |
+| 変更範囲の検証が失敗したとき | [`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`](../skills/atk-mode/playbooks/process-wi-lanes.md) |
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`（語の基準） |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` |
 | レビュー指摘管理表へ担当が行を足す前 | `review-table-operations.md` |
@@ -40,7 +40,7 @@
    エージェントが選んだ設計・検証手段は結果・品質・認可・制約を保って変更できる。
    計画凍結は`agent-toolkit:atk-mode/references/plan-format.md`「計画ファイルの構成」に従う。
    実装中の同一計画内での変更受入と、統合後に要求が変わったWIの再開を区別する。
-   後者は`../skills/process-wi/references/lane-planning-resume.md`に従い、現在worktreeの新計画へ切り替える。
+   後者は`../skills/atk-mode/playbooks/process-wi-execution.md`に従い、現在worktreeの新計画へ切り替える。
 
 2. 初回実装（CI修正では修正）の直前に、`agent-basics:check-execution`の`references/diagnostics.md`が定める基準版の一意な短縮OIDを記録し、レビュー修正や履歴統合の後も同一の基準版を使用する。
    各検証の実行後は、同資料「読む出力」の共通基準に従って診断メッセージや警告、および個別・全体の所要時間を判定し、比較対象のバージョンと、残す判断をした診断の意味・影響・帰属・理由を検証結果および進捗ログに記録する。
@@ -52,7 +52,7 @@
    不具合の再現と修正後の確認・証拠保存は、`agent-basics:bugfix`の問い2（原因）と問い5（確認）で行う。
    計画凍結後の仕様変更は既存のレビュー指摘管理表および採否・変更記録と関連付ける。
 
-4. 初回実装では、`lane-planning.md`「計画の起草」で選んだ最も近い既存実装と契約・構造を比較し、入力値・時間経過・操作順・保持状態・反復の境界を検証する。
+4. 初回実装では、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」で選んだ最も近い既存実装と契約・構造を比較し、入力値・時間経過・操作順・保持状態・反復の境界を検証する。
    採用案の必要性を既存構造への一致と分け、「前提を疑う観点」で責務移動・既存機構や上流への統合・削除・簡素化を比較する。
    採否は`agent-basics:writing-standards/references/design-heuristics.md`「案の採否と実施順の判定」に従う。
    不具合対策は`exec-review-criteria.md`「初回レビュー」で害の解消と呼び出し側修正も比較する。
@@ -127,7 +127,7 @@
 16. 結果に影響を与える実装、テスト、入力値、および消費側の期待値を整合させ、`../skills/atk-mode/playbooks/commit.md`「commitとフックの検証」に定めるタイミングで最終的な変更範囲の検証と有限回の手動観測を実施する。
     保存済みの成功結果と失敗限定の結果の統合は、`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
 
-17. 実装の完了前に、手順3で具体化した受入シナリオを受入シナリオ検証（`workflow-phases.md`）によって自己検収し、公開されている呼び出し手段と入力値を用いて期待結果と実際の結果が一致することを確認する。
+17. 実装の完了前に、手順3で具体化した受入シナリオを受入シナリオ検証（`agent-toolkit:atk-mode/references/workflow-phases.md`）によって自己検収し、公開されている呼び出し手段と入力値を用いて期待結果と実際の結果が一致することを確認する。
     提出前には、変更する契約と保持する契約から正常・境界・失敗時の利用結果を差分と突き合わせ、既存試験の成功だけで要求の充足を推定しない。
     ドキュメントに関する条件については、送受信の主体、入力、条件、次操作、参照先の間で、渡される値と受理される値が一致しているかを検証する。
     `検証結果`にはシナリオ別のテスト名と合否、手動判定結果の保存先、検証済み・未実施・条件変更の判断を明確に区別して記載する。

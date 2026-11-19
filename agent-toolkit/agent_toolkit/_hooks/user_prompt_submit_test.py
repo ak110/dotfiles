@@ -16,7 +16,7 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit import hook
-from agent_toolkit._common import automated_prompt, session_state
+from agent_toolkit._common import automated_prompt, session_state, skill_modes
 from agent_toolkit._hooks import posttooluse, progress_self_check, user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import _read_state as _read_full_state
@@ -407,7 +407,7 @@ class TestSlashCommandDetection:
             ("/agent-toolkit:atk-mode process-wi all-repos", True),
             ("/atk-mode process-wi-extra", False),
             ("/process-wi", False),
-            ("/agent-toolkit:process-wi", False),
+            (f"/{skill_modes.PROCESS_WI}", False),
         ],
     )
     def test_entry_command_names_process_wi(self, tmp_path: pathlib.Path, prompt: str, autonomous: bool):
@@ -480,7 +480,7 @@ class TestNonMatchingPrompts:
         """process-loopが渡す起動時プロンプトは注記の対象から外し、経過時間も記録しない。"""
         sid = "automated-prompt"
         goal = automated_prompt.wrap(
-            "`agent-toolkit:process-wi`を完遂してください。",
+            f"`{skill_modes.PROCESS_WI}`を完遂してください。",
             source=automated_prompt.SOURCE_PROCESS_LOOP,
             kind=automated_prompt.KIND_GOAL,
         )
@@ -495,7 +495,7 @@ class TestNonMatchingPrompts:
     def test_claude_treats_codex_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "claude-dollar-command"
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:process-wi"},
+            {"session_id": sid, "prompt": f"${skill_modes.PROCESS_WI}"},
             state_dir=tmp_path,
         )
 
@@ -509,7 +509,7 @@ class TestNonMatchingPrompts:
         result = _run(
             {
                 "session_id": sid,
-                "prompt": "/agent-toolkit:process-wi",
+                "prompt": f"/{skill_modes.PROCESS_WI}",
                 "model": "gpt-5",
             },
             state_dir=tmp_path,

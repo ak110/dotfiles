@@ -15,8 +15,8 @@ from create_plan_files_test import (  # pylint: disable=import-error,unused-impo
 
 from agent_toolkit import atk
 from agent_toolkit._atk import run_script
+from agent_toolkit._common import read_triggers
 from agent_toolkit._testing import git_repository
-from agent_toolkit._testing.normative_contract import read_contract
 
 
 def test_lane_planning_document_command_creates_plan_from_another_worktree(
@@ -24,8 +24,8 @@ def test_lane_planning_document_command_creates_plan_from_another_worktree(
 ) -> None:
     """起草手順4の実物の書式へ案件値を指定すると、異なるcwdから対象repoの計画を作成できる。"""
     source = _source(repo, tmp_path)
-    guide = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
-    text = read_contract(guide, guide.parents[3], ("lane-planning-drafting.md", "計画の起草"))
+    guide = pathlib.Path(__file__).resolve().parents[3] / "skills/atk-mode/playbooks/process-wi-execution.md"
+    text = read_triggers.ReadTarget(guide, "計画の起草").body()
     matched = re.search(r"`(atk run-script plan-create -- [^`]+)`", text)
     assert matched is not None
     command = matched[1]
@@ -56,10 +56,10 @@ def repo_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
 
 def _lane_plan_creation_step() -> str:
     """レーン担当が読む計画作成手順の本文を返す。"""
-    task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
-    content = read_contract(task_path, task_path.parents[3], ("lane-planning-drafting.md", "計画の起草"))
-    steps = re.split(r"\n(?=\*\*\d+\.\*\* )", content)
-    matches = [step for step in steps if re.match(r"\*\*\d+\.\*\* ", step) and "plan-create" in step]
+    task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/atk-mode/playbooks/process-wi-execution.md"
+    content = read_triggers.ReadTarget(task_path, "計画の起草").body()
+    steps = re.split(r"\n(?=\d+\. )", content)
+    matches = [step for step in steps if re.match(r"\d+\. ", step) and "plan-create" in step]
     assert len(matches) == 1
     return matches[0]
 

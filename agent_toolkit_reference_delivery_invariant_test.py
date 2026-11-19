@@ -24,18 +24,25 @@ def test_session_state_design_reference_reaches_local_development_rule() -> None
 
 
 def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:
-    """現行all-repos統括から取得済み候補を受け取る担当へ、受渡し契約を接続する。"""
+    """all-repos統括から候補を受け取るリポジトリ担当を、入口と役割文書の両方から受渡しの節へ接続する。"""
     root = pathlib.Path(__file__).resolve().parent
-    source = root / "agent-toolkit/skills/process-wi/references/lanes.md"
-    row_text = next(
-        line for line in source.read_text(encoding="utf-8").splitlines() if "| `all-repos-orchestration.md` |" in line
-    )
-    assert "`agent-toolkit:process-wi all-repos`の統括から" in row_text
-    rows = read_triggers.parse_tables(source, root / "agent-toolkit", strict=True)
-    expected = source.with_name("all-repos-orchestration.md")
-    row = next(row for row in rows if expected in row.documents)
-    assert row.effective_operations == ("read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md",)
-    assert row.targets[0].body()
+    plugin = root / "agent-toolkit"
+    atk_mode = plugin / "skills/atk-mode"
+    handoff = atk_mode / "playbooks/process-wi-all-repos.md"
+    with read_triggers.resolution_scope():
+        for source, condition in (
+            (atk_mode / "playbooks/process-wi.md", "all-reposの統括からリポジトリ担当として候補を受け取った"),
+            (atk_mode / "roles/repository-process.subagent.md", "「取得済み候補の受領」"),
+        ):
+            resolved = [
+                found
+                for _number, line, visible in read_triggers.document_lines(source.read_text(encoding="utf-8"))
+                if visible and condition in line
+                for found in read_triggers.material_targets(line, source, plugin, references_only=True)
+            ]
+            assert any(
+                found.path == handoff and "取得済み候補の受領" in found.heading and found.body() for found in resolved
+            ), source
 
 
 def test_quality_definition_forwarders_reach_distinct_basics_documents() -> None:

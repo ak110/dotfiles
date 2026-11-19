@@ -102,7 +102,7 @@
   対策: 反復内は開始前更新1回に限定し、正常終了後の2回目を削除する
 
 - 2026年9月1日: 実装レビュー収束後の計画最終化について、一方のレーンの実装担当が最終化まで実行し、他方のレーンの実装担当は職務定義との矛盾を理由に呼び出し元へ差し戻した。
-  直接原因: `plan-executor.parent.md`が最終化の主体を呼び出し元と定める一方、`run-lanes.md`の記述がレーン側の工程として読めた。
+  直接原因: `plan-executor.parent.md`が最終化の主体を呼び出し元と定める一方、`agent-toolkit:atk-mode/playbooks/process-wi.md`の記述がレーン側の工程として読めた。
   対策: 最終化の主体を計画ファイルを所有する呼び出し元へ一意化し、レーン側の文書には主体と時機を同じ内容で記述する
 
 - 2026年9月1日: レビュー担当threadへの継続指示が`unknown session`で拒否され、再レビューの収束を確認できないままマージ、WIの採否確定および資源回収が停止した。
@@ -125,7 +125,7 @@
   待機を別の主体へ引き継ぐ場合は、その出力ファイルの絶対パスも渡す
 
 - 2026年9月3日と9月5日: Claude Codeが`The model's tool call could not be parsed (retry also failed).`を返し、
-  `agent-toolkit:process-wi`のメインセッションが応答を返せないまま、ユーザーの再開指示まで工程が止まった。
+  `agent-toolkit:atk-mode`の作業`process-wi`のメインセッションが応答を返せないまま、ユーザーの再開指示まで工程が止まった。
   直接原因: 未確定。
   記録された`message.model`は`<synthetic>`で、`isApiErrorMessage`は真であり、
   直前のassistantレコードは`stop_reason`が`tool_use`でありながらツール呼び出しを1件も記録していない。

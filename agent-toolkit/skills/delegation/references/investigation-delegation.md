@@ -10,7 +10,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 類似見直しの検索と個別判定を依頼・検収する前 | `../../../share/similar-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/similar-review.parent.md` |
-| 委譲元が調査対象の外で動き、起動時の`cwd`を決める時 | `agent-toolkit:process-wi/references/lanes.md` | | |
+| 委譲元が調査対象の外で動き、起動時の`cwd`を決める時 | `agent-toolkit:atk-mode/playbooks/process-wi.md` | | |
 | 調査担当の返却の各欄を検収する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/bugfix/SKILL.md` |
 
 ## 調査の進め方と委譲時の入力
@@ -42,7 +42,7 @@
 
 自身の作業によって持ち込まれたものではない既存の不具合について、AWIを起草せずに不具合を発見したエージェント自身が元のコンテキストで修正する場合に、調査担当の起動および受領検収の手順を適用する。
 コンテキストを分離するのは調査工程のみとし、実際の修正作業は不具合を発見したエージェント自身が担当する。
-AWIとして登録して処理する場合（`agent-toolkit:process-wi`における即時対応や、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の手順を用いる。
+AWIとして登録して処理する場合（`agent-toolkit:atk-mode`の作業`process-wi`における即時対応や、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の手順を用いる。
 委譲先の手順は、`agent-toolkit:/share/defect-investigation.subagent.md`に定められている（所在参照）。
 返却形式は本書「調査担当の返却契約」に従う。
 
@@ -54,7 +54,7 @@ AWIとして登録して処理する場合（`agent-toolkit:process-wi`におけ
 
 | 引数 | 値 |
 | --- | --- |
-| `cwd` | 調査対象のリポジトリの作業ツリーの絶対パス。不具合を発見したエージェントがその作業ツリーで動いている場合は自身の作業ディレクトリ、対象の外で動く場合（常駐起動の統括など）は対象の主作業ツリー（`agent-toolkit:process-wi`の`references/lanes.md`「用語」。常駐起動では集合JSONの`worktree`）とする |
+| `cwd` | 調査対象のリポジトリの作業ツリーの絶対パス。不具合を発見したエージェントがその作業ツリーで動いている場合は自身の作業ディレクトリ、対象の外で動く場合（常駐起動の統括など）は対象の主作業ツリー（`agent-toolkit:atk-mode/playbooks/process-wi.md`「用語」。常駐起動では集合JSONの`worktree`）とする |
 | `subagent_md_path` | `defect-investigation` |
 | `extra_params` | 後述の「渡す入力」の各項目 |
 

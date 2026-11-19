@@ -8,8 +8,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../../share/session-conversation-extraction.md` |
-| process-wi中の停止や反復の原因が既存不良である時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../../skills/atk-mode/references/work-contract.md` |
+| process-wi中の停止や反復の原因が既存不良である時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` |
 | 書込権限を移す前 | `agent-toolkit:delegation/references/mandatory-rules.md` |
 | 介入を扱う前 | `../../../share/exec-review-responses.md` |
 | 残工程の担当を選ぶ前 | `routing.md` |
@@ -27,7 +27,7 @@ handoff_fromでmodel_typeを省略すると前任の指定値を継承する。
    独立文脈レビューと元担当の終了確認を保ち、書込権限の移動は`mandatory-rules.md`「作業ツリーの保護」に従う。
    担当の交代やモデル・実行手段の変更は、担当の回復として扱う。
    停止や失敗反復の原因が既存不良なら、欠陥の処置は回復と別に判定する。
-   `agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件を前提とし、process-wiの実行中は`../../process-wi/references/immediate-fix.md`「即時対応」で対処時機を具体化する。
+   `agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件を前提とし、process-wiの実行中は`../../atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で対処時機を具体化する。
    可用性の障害と同型のツール入力失敗への切替条件は`fallback-launch.md`「代替起動」に従う。
 
    自身で実行可能な処理を残したままの返却が繰り返される場合は、同一の担当者へ再送を重ねる前に、担当者の交代、作業単位の再編、モデルや実行手段の変更を総コストの観点から比較検討する。
@@ -36,7 +36,7 @@ handoff_fromでmodel_typeを省略すると前任の指定値を継承する。
    これは通信エラーによる継続不能とは区別して判断する。
    同一計画の起草から実装、および変更範囲の検証までは、同一のレーン担当者が同一のworktreeにおいて一貫して実施する。
    継続が不可能な場合に限って新たな担当者を起動し、検収済みの状態と残りの工程を1つの担当者へまとめて引き渡す。
-   交代時の会話確認は`../../../share/session-conversation-extraction.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録は`base-contract-inputs.md`「入力の適格性と追送」の検収と同じ条件で読んで比較する
+   交代時の会話確認は`../../../skills/atk-mode/references/work-contract.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録は`base-contract-inputs.md`「入力の適格性と追送」の検収と同じ条件で読んで比較する
 
 2. ユーザー介入時は、`../../../share/exec-review-responses.md`「指摘発生時の扱い」で採否を確定した差分だけを追送する。
    停止は、対象や前提が無効となり、続行すると誤った成果物ができる恐れがあり、稼働中の作業の完了まで対応を待てない場合に限る

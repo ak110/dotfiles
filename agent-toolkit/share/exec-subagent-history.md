@@ -9,7 +9,7 @@
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | | |
 | 手動観測を保存する前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
 | `検証結果`を書く前 | `agent-toolkit:atk-mode/playbooks/verification.md` | | |
-| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration.subagent.md` |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/lane-integration.subagent.md` |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` | | |
 
 ## レビュー修正の履歴統合
@@ -51,7 +51,7 @@
   パスが欠けている行がある場合は、適切に保存したうえで記載し直す。
 - 返却する`検証結果`と同一の内容が、進捗ログ（計画を作成している場合は`atk run-script plan-progress --`）にすでに記録されていること。
 
-`画面差分`は担当した差分に含まれる画面資産の有無から判定し（定義は`workflow-phases.md`「用語」を参照）、`あり`の場合は変更した画面資産のリポジトリ相対パスを列挙する。
+`画面差分`は担当した差分に含まれる画面資産の有無から判定し（定義は`agent-toolkit:atk-mode/references/workflow-phases.md`「用語」を参照）、`あり`の場合は変更した画面資産のリポジトリ相対パスを列挙する。
 
 ## 本文参照の取得条件
 

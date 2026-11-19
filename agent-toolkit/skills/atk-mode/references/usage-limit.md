@@ -23,7 +23,7 @@ Claudeの統括は、起動元が同じ会話の利用可能な接続を選び�
 Codexの統括が上限で終了した時は、次の巡回の可用性の判定と保存済みの作業資源から再開する。
 利用可能な候補が無ければ、起動元が解除予定時刻（不明なら再確認の時点）まで待つ。
 CLIが終わると会話内のタイマーによる予約も失われるため、再開先を結果ファイルと引き継ぎ記録へ保存する。
-巡回の更新、結果の検収、`previous`と明示のresumeの扱いは`agent-toolkit:process-wi/references/all-repos-orchestration-resources.md`「登録集合」にある。
+巡回の更新、結果の検収、`previous`と明示のresumeの扱いは`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「登録集合」にある。
 
 ## 利用上限の猶予通知を受けたときの続行と再開
 

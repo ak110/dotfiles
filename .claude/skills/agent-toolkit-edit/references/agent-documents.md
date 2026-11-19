@@ -13,7 +13,7 @@
 
 ## スキルとサブエージェントの編集
 
-- 実行レビューの契約を変える時は、`agent-toolkit:process-wi`の側と、`agent-toolkit:atk-mode/playbooks/write-plan.md`でメインが委譲元になる側の両方を同じ変更で直す（両系統は別々に実装されている）。
+- 実行レビューの契約を変える時は、`agent-toolkit:atk-mode`の作業`process-wi`の側と、`agent-toolkit:atk-mode/playbooks/write-plan.md`でメインが委譲元になる側の両方を同じ変更で直す（両系統は別々に実装されている）。
 - process-wiのモード固有の資料は、共通の契約を参照して読み替えを定義する。
   共通の側の工程はモード固有の資料に依存させず、起動時に引数に合う資料を選ぶ。
 

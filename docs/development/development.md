@@ -90,7 +90,7 @@ Pythonの検出結果は従来どおりCode Scanningで管理する。
   無効化する方針を採用する。
   あわせて`.github/workflows/audit.yaml`が`uv audit`を定期実行し、
   検出結果をSARIFでCode Scanningへ送る。
-  Dependabot alertsの未解決分は、`agent-toolkit:process-wi`が
+  Dependabot alertsの未解決分は、`/atk-mode process-wi`が
   1回の実行ごとに行う自動コードレビュー監査（`atk review-audit pending`）で取得し、削除済みマニフェストに
   紐づく誤検知は却下し、実在する脆弱性は依存更新へ回す。
   `atk wi process-loop`の待機中確認は、

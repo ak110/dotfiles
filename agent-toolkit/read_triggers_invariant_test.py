@@ -139,11 +139,7 @@ _CROSS_PLUGIN_DOCUMENTS = (
 
 @pytest.mark.parametrize(
     "skill,documents,shared",
-    [
-        # 即時対応の詳細手順は全モードで同じ条件から読むため、モード資料の排他とは別に許す。
-        ("process-wi", {"lanes.md", "single-lane.md", "all-repos.md"}, {"immediate-fix.md"}),
-        ("review-session", {"current-session.md", "batch.md"}, set()),
-    ],
+    [("review-session", {"current-session.md", "batch.md"}, set())],
 )
 def test_mode_entries_keep_exclusive_judgment_routes(skill, documents, shared):
     """入力に合う資料だけを選ぶ条件付きの取得契約を保持する。"""
@@ -151,33 +147,56 @@ def test_mode_entries_keep_exclusive_judgment_routes(skill, documents, shared):
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
     assert {path.name for row in rows for path in row.documents} == documents | shared
     assert all(row.kind == "判断" and len(row.documents) == 1 for row in rows)
-    normal = "current-session.md" if skill == "review-session" else "lanes.md"
-    text = (source.parent / "references" / normal).read_text(encoding="utf-8")
-    if skill == "review-session":
-        assert "references/batch.md" not in text
-        assert "session-review-state -- finish" not in text
-        assert "session-review-state -- complete" in text
+    text = (source.parent / "references" / "current-session.md").read_text(encoding="utf-8")
+    assert "references/batch.md" not in text
+    assert "session-review-state -- finish" not in text
+    assert "session-review-state -- complete" in text
 
 
-def test_process_wi_body_defines_immediate_fix_for_all_modes():
-    """即時対応の定義と対象の判定基準を、全モードで起動時に届くprocess-wiの本文に保持する。
+def test_process_wi_entry_routes_immediate_fix_for_all_modes():
+    """全モードで最初に読む入口の手順書から、即時対応の定義と対象の判定基準へ届く。
 
-    定義が条件付きの参照資料にしか無いと、ユーザーが時機の指示として「即時対応」を使った場面で
-    資料の必要性に気付けず、語感で範囲を選ぶ誤りが起きる。
+    定義が条件付きの手順書にしか無い場合も、ユーザーが時機の指示として「即時対応」を使った場面を
+    入口の条件の行に含めておけば、語感で範囲を選ぶ前に定義を読める。
     """
-    source = _PLUGIN_ROOT / "skills" / "process-wi" / "SKILL.md"
-    body = read_triggers.ReadTarget(source, "即時対応").body()
-    for required in (
-        "現時点で起きている不良",
-        "今回の正式対応",
-        "先送り",
-        "共通規範",
-        "潜在不良・効率改善",
-        "references/immediate-fix.md",
-    ):
+    playbooks = _PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks"
+    entry = (playbooks / "process-wi.md").read_text(encoding="utf-8")
+    route = "`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`"
+    assert any("「即時対応」" in line and route in line for line in entry.splitlines() if line.startswith("| "))
+    body = read_triggers.ReadTarget(playbooks / "process-wi-immediate-fix.md", "即時対応").body()
+    for required in ("今回混入した不良", "欠陥と確定した不良", "正式対応まで是正", "先送り条件", "効率改善"):
         assert required in body
-    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
-    assert any("即時対応" in row.condition and {path.name for path in row.documents} == {"immediate-fix.md"} for row in rows)
+
+
+@pytest.mark.parametrize(
+    "phase,context,suffix",
+    [
+        ("選定", "開始時のCI点検", "skills/atk-mode/playbooks/process-wi-selection.md"),
+        ("計画の要否", "区分を書く前", "skills/atk-mode/playbooks/write-plan.md"),
+        ("計画の起草", "計画対象があれば", "skills/atk-mode/playbooks/process-wi-execution.md"),
+        ("確認", "確認の要否", "skills/atk-mode/playbooks/confirmation.md"),
+        ("実行レビュー", "実行レビューの起動", "share/exec-review.parent.md"),
+        ("要件検収", "`検証結果`", "skills/atk-mode/playbooks/verification.md"),
+        ("レビュー収束", "収束", "share/review-loop-coordination.md"),
+        ("公開", "公開する", "skills/atk-mode/playbooks/publish.md"),
+        ("終了", "作業完了報告", "skills/atk-mode/playbooks/report-completion.md"),
+    ],
+)
+def test_single_lane_playbooks_reach_each_phase_document(phase, context, suffix):
+    """single-laneの手順書と担当の実行契約で、各工程の手順の名指しが工程の資料の実在する本文へ解決する。
+
+    作業`process-wi`の手順書は読込表を持たず、工程の手順の中で読む資料を名指しする。
+    名指しが工程の手順から外れるか解決できなくなると、その工程に入った担当が資料へ届かない。
+    """
+    playbooks = _PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks"
+    bodies: list[str] = []
+    with read_triggers.resolution_scope():
+        for source in (playbooks / "process-wi-single-lane.md", playbooks / "process-wi-execution.md"):
+            for _number, line, visible in read_triggers.document_lines(source.read_text(encoding="utf-8")):
+                if visible and context in line:
+                    targets = read_triggers.material_targets(line, source, _PLUGIN_ROOT, references_only=True)
+                    bodies.extend(target.body() for target in targets if target.path == _PLUGIN_ROOT / suffix)
+    assert any(bodies), phase
 
 
 def test_cross_plugin_references_resolve_in_codex_cache_layout(tmp_path, monkeypatch):

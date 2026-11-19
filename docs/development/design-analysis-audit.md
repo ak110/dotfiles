@@ -57,7 +57,7 @@ Qの確保に必要な複数の観点と再発防止策を組み合わせられ�
 
 ## 自動コードレビュー監査の判定済み記録
 
-目的は`agent-toolkit:process-wi`の自動コードレビュー監査が毎セッションで全Pull Requestのreview本文を再判定する状態を解消し、判定の作業量がPull Requestの累積件数へ比例しない形にすることである。
+目的は`agent-toolkit:atk-mode`の作業`process-wi`の自動コードレビュー監査が毎セッションで全Pull Requestのreview本文を再判定する状態を解消し、判定の作業量がPull Requestの累積件数へ比例しない形にすることである。
 構造の理由は、判定の入力集合を外部サービス側の状態だけで決めず、自セッション側の処理済み記録との差分で決める点にある。
 review threadは解決状態を持つが、inline commentもreview threadも伴わないreview本文は対応する状態を持たない。
 このため取得は全Pull Requestのまま維持し、判定だけを差分へ限定する。
@@ -68,7 +68,7 @@ review threadは解決状態を持つが、inline commentもreview threadも伴�
 記録先は`atk config get state_dir`が返す状態ディレクトリとし、`atk review-audit`が読み書きする。
 対象リポジトリ配下へ置く案は、監査が成果物を変更するため採用しない。
 private-notesへ置く案は、監査のたびにキュー操作とリモート同期が増えるため採用しない。
-知識境界として、記録の有無を判定へ反映する手順は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持つ。
+知識境界として、記録の有無を判定へ反映する手順は`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`が持つ。
 記録の保存形式とパス解決は`agent-toolkit/agent_toolkit/_atk/review_audit.py`が持つ。
 未処置対象の取得も`atk review-audit pending`が持つ。
 全Pull Requestのreviewとreview threadをpagination終端まで取得し、判定済みreviewを除いた結果を構造化して返す。
@@ -84,8 +84,8 @@ private-notesへ置く案は、監査のたびにキュー操作とリモート�
 目的は判定の妥当性をユーザーと後続のセッションがGitHubのPull Request画面だけで確認できるようにすることである。
 構造の理由は、分類と根拠を保持する主体を、判定を再導出できる索引である`review-audit.json`と、人間向けの基準となる記録であるGitHubの本文へ分けた点にある。
 未解決のreview threadへは`addPullRequestReviewThreadReply`で分類と根拠を返信してから`resolveReviewThread`で解決し、threadを伴わないreview本文へは`gh pr comment`で投稿する。
-知識境界として、書き込みの手順と承認の扱いは`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持つ。
-監査担当の実行範囲は`agent-toolkit/skills/process-wi/references/review-audit-launch.md`が持つ。
+知識境界として、書き込みの手順と承認の扱いは`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`が持つ。
+監査担当の実行範囲は`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`が持つ。
 `dismissPullRequestReview`で分類を残す案は、Copilotのreviewが`COMMENTED`状態で到着し、`dismissPullRequestReview`が`COMMENTED`状態を受理しないため採用しない。
 `resolveReviewThread`の`resolutionReason`で分類を保持する案は、読み取り型`PullRequestReviewThread`が`resolutionReason`を返さず、後続のセッションが機械的に取得できないため採用しない。
 
@@ -100,9 +100,9 @@ GitHub APIの`default_branch`が指すブランチの完全SHAを、判定済み
 マニフェスト取得のref、pendingのrevision、list/markの`--revision`を同じSHAへ固定する。
 pendingはそのSHAでのマニフェストの実在を判定し、監査担当は同一マニフェストの解決済み版を各ecosystemの規則で修正版と比較する。
 版の比較を要する判定は監査担当が担い、新しいAPI版比較器は設けない。
-判定と却下・投稿直前レビューの手順と認可は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が定める。
+判定と却下・投稿直前レビューの手順と認可は`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`が定める。
 返却は`agent-toolkit/share/copilot-review-audit.subagent.md`が定める。
-起動と受領は`agent-toolkit/skills/process-wi/references/review-audit-launch.md`が定める。
+起動と受領は`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`が定める。
 process-loopのアラート確認は`agent-toolkit/agent_toolkit/_atk/wi/process_loop_alerts.py`が持つ。
 
 判定済み番号は`review-audit.json`へ`dependabot:<番号>`として確認SHAとともに記録し、同版での反復監査を抑止する。

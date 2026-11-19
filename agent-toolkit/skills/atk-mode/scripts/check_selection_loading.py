@@ -130,7 +130,11 @@ def _generate_selection(judgments: object, candidates: pathlib.Path, *, addition
         )
     except (OSError, UnicodeError, ValueError, KeyError, TypeError) as error:
         raise InputError(
-            str(error), next_action="候補情報と意味判断をselection-format.mdの生成入力へそろえて再実行する"
+            str(error),
+            next_action=(
+                "候補情報と意味判断を`agent-toolkit:atk-mode/references/process-wi-selection-format.md`"
+                "「選定の生成入力」へそろえて再実行する"
+            ),
         ) from error
 
 
@@ -165,7 +169,8 @@ def load_selection(
     if isinstance(selection, dict) and not additional and _selection.INITIAL_ALLOCATION_KEY not in selection:
         errors.append(
             "初回配分がない。初回候補WI・レーン割当・不可分成分の構成WIと結合条件を、"
-            "元候補と初回選定の記録から補い、selection-format.mdの初回配分の形式で再実行する"
+            "元候補と初回選定の記録から補い、`agent-toolkit:atk-mode/references/process-wi-selection-format.md`"
+            "「選定結果の書式」の`初回配分`の形式で再実行する"
         )
     if errors or model_errors:
         next_action = f"{_FIX_MODEL}。{_FIX_CONTENT}" if model_errors else _FIX_CONTENT

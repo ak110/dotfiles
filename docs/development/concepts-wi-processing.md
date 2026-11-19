@@ -19,15 +19,15 @@
 - 調査スレッドは複数のAWIをまとめてよく、調査対象ファイルが重なる項目を優先する。
   重なりは同値関係ではないため、機械的な分割規則と担当件数の上限を置かない。
   本項の判断は現行の工程構造ではレーン分けが担い、
-  規範は`agent-toolkit/skills/process-wi/references/selection-procedure.md`にある
-- `agent-toolkit:process-wi`のメインは選定工程で処理対象を確定した直後に、選定時点で`inbox`だった全項目を一括で`processing`へ移す。
+  規範は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`にある
+- `agent-toolkit:atk-mode`の作業`process-wi`のメインは選定工程で処理対象を確定した直後に、選定時点で`inbox`だった全項目を一括で`processing`へ移す。
   メインは出力の検収時に配置を確認し、計画ファイル・worktree・実装担当の起動をその後へ置く。
   2026年8月のユーザー指示により、着手中の占有範囲を外部観測と中断後の再開位置から識別するための順序とした。
   2026年9月に遷移の実行主体をpickerへ移し、2026年10月9日のユーザー指示で選定とともにメインへ移した
-- 1回の`agent-toolkit:process-wi`は初回の候補と配分を保持し、30分点検と公開前に開始時識別子集合との差分で新着を確認する。
+- 1回の`agent-toolkit:atk-mode`の作業`process-wi`は初回の候補と配分を保持し、30分点検と公開前に開始時識別子集合との差分で新着を確認する。
   新着確認・即時対応のユーザー指定を受け、既存項目の状態変化と新規投入を区別する方式を採る。
   全レーンの後始末後に全件を再選定する運用は加えない。
-  実行規範は`agent-toolkit:process-wi/references/immediate-fix.md`「開始後に追加されたWIの確認」にある
+  実行規範は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」にある
 - 処理中に明示された追加WIは、初期選定中ならメインが同じthreadで元の出力へ集合和と重複除外で合流する。
   状態移行済みの項目を再遷移させず、最新の保存後のチェックと意味検収を保つ。
   選定完了後は追加YAMLを既存の統合操作で検収して元の固定出力へ保存する。
@@ -43,7 +43,7 @@
   同じprocess-wiの1回の実行への追加を目的とするAWIは保存結果の正式ファイル名の受領直後、ユーザー指定のWIは指示と対象の確定直後に選定へ渡す。
   並行する他の要求の起草・検収・保存の一括完了を開始条件へ結び付けない。
   未告知新着を無判定で追加せず、次回向けの正式対応AWIを無条件に今回へ戻さない。
-  現行手順は`agent-toolkit:process-wi/references/selection-procedure-addition.md`「処理対象WIの追加」と`run-lanes.md`にある
+  現行手順は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」と`agent-toolkit:atk-mode/playbooks/process-wi.md`にある
 - AWIとUWIの元ファイル名は`## 実施内容`の由来欄が保持し、廃止した`## 提示素材`は読み取り互換に限定する
   AWI本文とUWI本文は計画へ複製せず、本セッションで受領したユーザー発言は計画の`## ユーザー指摘の逐語引用`へ原文のまま記録する
 - 実装中の作業記録は`## 進捗ログ`へ分離する
@@ -52,7 +52,7 @@
 - キューにない素材の逐語本文・回答全文は計画外の明示入力として調査、起草、初回レビュー、再レビューへ保持し、計画本文へ転記しない
 - 初回起動後に追送されたユーザー発言は、起草担当が逐語本文、入力種別、出所および引用範囲を保持して真正性を保証する。
   レビュー担当はその真正性を再判定せず、計画本文と逐語引用の対応だけを比べる
-- 選定時のファイル単位の分類とhold判定は`agent-toolkit/skills/process-wi/references/selection-procedure.md`が定める。
+- 選定時のファイル単位の分類とhold判定は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`が定める。
   要求の採否と通常の終了はレーン担当が行う
 - 採用済み内容を統合した元項目と、検収済みの別リポジトリ移管元は`reject`せず、統合先または移管先を`note`へ記録して`rm`で除去する
 - 技術的な失敗、入力不足、外部条件待ちは不採用へ変換せずactive状態に保つ。
@@ -80,16 +80,16 @@
   正常終了後の2回目は次の反復の開始前更新へ委ねる
 - `update-dotfiles`の成功を契機に`atk wi process-loop`が自己再起動する場合は、再起動先の開始前更新を1回だけ抑止する。
   再起動の契機となった更新と再起動直後の開始前更新は同じ上流状態を対象とするため、2回目で取得する内容が変わらない
-- 常駐実行の起動目的文は、`agent-toolkit:process-wi`の完遂に加えて`atk agents-exit-session`による
+- 常駐実行の起動目的文は、`agent-toolkit:atk-mode`の作業`process-wi`の完遂に加えて`atk agents-exit-session`による
   セッション終了までを求める。
   目的文を短く保つ整理で終了工程の要求を削除しない
   （2026年8月、ユーザー指示）
 - process-loop起動セッション以外は、常に別セッションでprocess-loopが並行稼働している前提で
   作業する
-- `agent-toolkit:process-wi`のメインは選定結果へ要求単位の由来を書かず、レーン担当が計画起草時にAWI本文とfrontmatterから判定する。
+- `agent-toolkit:atk-mode`の作業`process-wi`のメインは選定結果へ要求単位の由来を書かず、レーン担当が計画起草時にAWI本文とfrontmatterから判定する。
   選定結果が持つのは消費側が実際に参照する項目だけとし、委譲先が自分で参照できる基準文書やデータから判定できる属性を載せない。
   項目数がWI件数に比例して増える一方、レーン担当は計画起草時にAWI原文を取得するためである（2026年9月15日、ユーザー指摘）。
-  現行の規範は`agent-toolkit/skills/process-wi/references/selection-procedure.md`と`agent-toolkit/share/exec.subagent.md`にある
+  現行の規範は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`と`agent-toolkit/share/exec.subagent.md`にある
 
 ## 多数の単純作業の分担
 
@@ -119,4 +119,4 @@
   推論担当の分担数と検証プロセスの同時実行負荷は別に判断し、ホスト全体の負荷指標だけで担当数を制限しない（検証の負荷とエージェントの並列数を混同していないかを問う、同日のユーザー指摘による）。
   軽量担当による一次確認の適否と所要の削減量は実証済みとして扱わず、同じ入力による全件検収との比較で判断する。
   実行時の規範は次の3か所に置く。
-  `agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md`「調査とレーン分け」は見積もり、`lane-planning-drafting.md`「計画の起草」は作業構成、`agent-toolkit/share/exec.subagent.md`「操作区分」は確認の分担を定める。
+  `agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md`「調査とレーン分け」は見積もり、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」は作業構成、`agent-toolkit/share/exec.subagent.md`「操作区分」は確認の分担を定める。

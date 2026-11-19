@@ -113,7 +113,7 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
         params["repositories"] = str(source)
     else:
         params.update(target)
-    role = rules_context.SHARE_DIR / "repository-process.subagent.md"
+    role = rules_context.SHARE_DIR.parent / "skills/atk-mode/roles/repository-process.subagent.md"
     whole = tmp_path / "work-contract.md"
     whole.write_text("目的: 対象別の公開入力を保持する\n", encoding="utf-8")
     model, prompt, mode, _handoff = launch_requests.task_document_request(str(role), params, whole_contract_path=str(whole))

@@ -258,7 +258,7 @@ def main(payload_text: str) -> int:
                 session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
 
             # 自律モードは入口`atk-mode`への作業`process-wi`の名指しだけで立てる（スキル`process-wi`は廃止した）。
-            if named_by_entry and full_name == "agent-toolkit:process-wi":
+            if named_by_entry and full_name == skill_modes.PROCESS_WI:
                 update_state(session_id, set_process_wi_invoked)
 
     title = None if is_codex else session_title.proposed_title(session_id, payload.get("session_title"))

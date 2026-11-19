@@ -2,7 +2,7 @@
 
 全てのレーンが終わった後に、公開対象を判定し、公開担当（直接実行か委譲）で公開して検収し、回復と再公開を経て、完了報告と終了までを行う手順書である。
 作業`process-wi`のメイン（single-laneのメイン、複数レーンのメイン、all-reposの統括とリポジトリ担当）が使う。
-版数の更新、生成物の同期、push前のチェック、push、CIの確認、公開後の操作の定義は`agent-toolkit:commit/references/publish.md`にあり、本書は公開の担当の割り当て、単一の書込の主体、レーンの資源の保持、延期の扱いを定める。
+版数の更新、生成物の同期、push前のチェック、push、CIの確認、公開後の操作の定義は`agent-toolkit:atk-mode/playbooks/publish.md`にあり、本書は公開の担当の割り当て、単一の書込の主体、レーンの資源の保持、延期の扱いを定める。
 終了条件は、公開状態の4項目と選定全体の処置を検収し、報告と終了の処理を終えた時点である。
 
 公開工程は、公開する単位に属するレーンが完了し、その単位の自動コードレビュー監査を起動した場合は返却の受領と処置の確定を終えた時点で始める（単位を分けていなければ選定全体が対象）。
@@ -10,7 +10,7 @@
 - レーンの完了は、通常レーンではfast-forwardマージ、`adopt`、計画の保存が済んだ状態を指す。
   固有の指示で`adopt`を延期したレーンと`上流投入`が`混在`のレーンでは、ffマージと計画の保存が済んだ状態（`混在`では元の項目を依存付きで`inbox`へ戻した状態）を指す。
 - 巡回の最終完了は、単位ごとの公開の成功とは別に、選定全体の処置と最終SHAのCI成功で判定する。
-  長い処理の間も、統合済みで公開できる変更は`agent-toolkit:workflow-overview/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で先に公開し、未完了のレーン・WI・計画・所有と元の要求は保つ。
+  長い処理の間も、統合済みで公開できる変更は`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で先に公開し、未完了のレーン・WI・計画・所有と元の要求は保つ。
 - 公開工程の開始前に、選定メインが`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」を行い、今回追加と判定した項目は必要な工程を終えてから公開へ進む。
   公開対象は、選定で確定した項目と、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」で合流した項目である。
   目標が明示されている場合の必要な作業は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」に従い、それ以外の新規の項目は次回へ残す。
@@ -49,7 +49,7 @@
      選定の原本の所在とこの判断の記録は、公開担当とall-reposの全体の結果へ引き継ぐ。
 2. 公開対象の変更や外部操作が1つも無く、公開状態の4項目が全て成り立つ場合に限り、公開担当を起動せずに`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」へ進む。
    - 外部操作は、選定結果の`選定`で`レーン`が`なし`、`上流投入`が`なし`以外、`プロジェクト固有の公開後の操作の順序`が`既定`以外の項目と、このセッションで回答を受けたUWI、選定工程で記録したプロジェクト固有の公開後の操作、レーン工程から引き継いだ延期`adopt`の対象である。
-   - これらが無ければ、`agent-toolkit:commit/references/push-and-ci.md`「公開状態の4項目」を主作業ツリーから読み取り専用で取得する（レーンの統合に伴う未公開のcommitもこの4項目で検出される）。
+   - これらが無ければ、`agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」を主作業ツリーから読み取り専用で取得する（レーンの統合に伴う未公開のcommitもこの4項目で検出される）。
    - 4項目が全て成り立てば、本書「公開状態の検収と再起動」で検収済みとして扱う。
 
 ### 独立した公開単位
@@ -87,10 +87,10 @@
    回収はGit共通ディレクトリを変え、`agent-toolkit:atk-mode/roles/session-termination.parent.md`「起動前の前提」の単一writerの条件と競合するためである。
    それより前に`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」の回収の時点を迎えたレーンは公開担当の起動前に回収し、残りは公開とCI修正を含む全工程と外部プロセスの終了後に回収する。
 6. 統合後に保存済みの計画をcheckoutして履歴書換えへ追随させるメインか配下の担当は、全ての計画バンドルを更新・再保存する。
-   手順は`agent-toolkit:commit/references/history-rewrite-wi-records.md`「WI実装commitの対応の継承」に従い、成功と警告を検収してから公開担当を起動する。
+   手順は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」に従い、成功と警告を検収してから公開担当を起動する。
    同じ`plan-rewrite`の処理が、統合時に採否を確定したAWIの対応commitと件名も新しいcommitへ付け替える。
    通常のレーンの統合はOIDを保つmergeなので、この追随の対象外である。
-7. メインはレーン数によらず、各レーンの記録を対象リポジトリの版数の採番規範に照らし、未公開の統合変更に適用する最上位の`bump種別`を決める（選び方は`agent-toolkit:commit/references/publish.md`）。
+7. メインはレーン数によらず、各レーンの記録を対象リポジトリの版数の採番規範に照らし、未公開の統合変更に適用する最上位の`bump種別`を決める（選び方は`agent-toolkit:atk-mode/playbooks/publish.md`）。
    公開担当は既決の種別で、版数の更新、生成物の同期、push前のチェック、push、CIの確認、失敗時の修正、割り当てられた公開後の操作、延期`adopt`を終える。
    CIの監視で失敗したjobを見たら、全pipelineの終了を待たずに入力SHA・job・診断・残る監視の識別子をCI修正担当へ渡す。
    CI修正担当は単一writerを保って診断と是正を始める（`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「検証またはCIの失敗」）。
@@ -109,7 +109,7 @@
       公開結果が要る問題の調査は結果の確定後に始める。
     - 独立した追加の工程: 長い公開・デプロイ・CIの待機や追加の公開工程は、入力commit、成果物、配備先、排他の要る資源、先行の成功を前提とするかを起動前に進捗記録へ書く。
       独立して進められる工程は別のエージェントへ任せて並行させ、先行の成功を入力とする工程は先行の成功を確かめてから始める。
-    - 常時稼働サーバーへの反映: `agent-toolkit:report-completion/references/server-reflection.md`の共通の条件を使う。
+    - 常時稼働サーバーへの反映: `agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」の共通の条件を使う。
       反映と稼働確認の手段があるプロジェクトでは、全レーンの統合を検収して資源を保ったまま、反映の入力が使えるようになった時点で反映と再起動を始める（push済みのSHAならpushの確認後、ローカルの成果なら必要なローカルの検収後）。
       CIが未判定でもこの条件を満たせば進め、同じSHAのCIの監視を並行して続けて巡回の最終完了の前に結果を検収する（CIの成功を前提とするリリースや配備は既存の成功条件を保つ）。
       再起動の前に入力SHA、CIの監視の担当・実行識別子・保存出力、未完了の工程と再開位置を既存の引き継ぎ記録へ保ち、反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、稼働確認の結果を完了報告へ渡す。
@@ -128,7 +128,7 @@
 
 1. 公開担当からCIの照会不能か公開後の操作の前提不足が返った場合は、公開状態の4項目が成り立っていても本節へ進む。
    確認済みのpush、全体検証、版数の更新、生成物の同期、公開後の操作、WIの採否の確定の各到達点を保ち、残るCIの判定と公開後の操作を公開工程の未完了の事項として扱う（成功済みの公開後の操作もそのまま保つ）。
-   回復、確認、個別のUWIの保存と回答を要する未終了の項目の保留は、`agent-toolkit:commit/references/publish.md`「公開工程の続行不能からの再開」に従う。
+   回復、確認、個別のUWIの保存と回答を要する未終了の項目の保留は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能からの再開」に従う。
    全体検証の失敗を含む場合は`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「検証またはCIの失敗」へ渡し、全体の成功はCIの未判定の解消とは別に全体の結果で判定する。
 2. 公開担当の引き継ぎ記録で再開位置と証拠を管理する。
    関連する計画があれば`atk plans checkout`の後に`atk run-script plan-progress --`で進捗を記録し、`atk plans commit`で保存する。
@@ -144,7 +144,7 @@
 
 ## 公開状態の検収と再起動
 
-1. report-completionによる報告の前に、公開状態の4項目（`agent-toolkit:commit/references/push-and-ci.md`）の検収を確かめる。
+1. report-completionによる報告の前に、公開状態の4項目（`agent-toolkit:atk-mode/playbooks/publish.md`）の検収を確かめる。
    短絡時の検収か`agent-toolkit:atk-mode/roles/session-termination.parent.md`「受領と検収」で得た4項目は、主作業ツリーや対象の参照を変える操作や外部からの更新が間に無ければそのまま使い、それ以外は現在のGit状態から取り直す。
    公開担当が返した`ベースbranchの状態`は、取り直した4項目と突き合わせて確かめる。
 2. 公開担当の結果の返却後に、主作業ツリーのHEAD、追跡ref、最新のHEADのCIの状態、作業ツリーの状態を確かめる。
@@ -160,11 +160,11 @@
 ## 完了報告と終了
 
 1. 単独のメインは公開工程の検収後に`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「報告前に確かめる保存状態」を実行し、現在のキュー・再開記録・レーンの最終化との一致を確かめる。
-   その後`agent-toolkit:report-completion`へ進んで、成果・検証・公開結果・未達を同じ作業完了報告へまとめる。
+   その後`agent-toolkit:atk-mode/playbooks/report-completion.md`へ進んで、成果・検証・公開結果・未達を同じ作業完了報告へまとめる。
 2. 終了前にも選定の原本へ`atk run-script pick-wi-check -- <選定YAMLの絶対パス> --require-integrated`を実行し、公開後の追加や再開で未統合へ戻った項目が無いかを確かめる。
    未統合があれば残工程を続け、正当な延期だけを対象・理由・解除条件・再開先に対応付ける。
    入力の不正や読み取れない状態を完了と扱わず、元の選定を回復して検収し直す。
-3. 自律モードでは報告用UWIの保存の成功と警告を検収し、元の要求と実際の送達、残工程、新しい指摘の処置を確かめてから、同スキルの終了処理へ進む。
+3. 自律モードでは報告用UWIの保存の成功と警告を検収し、元の要求と実際の送達、残工程、新しい指摘の処置を確かめてから、同書の終了処理へ進む。
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
    最終報告には公開結果と元の要求に対する到達点を含める。
 4. 統括からのリポジトリの委譲は、`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「リポジトリ担当の返却契約」に従って統括へ成果を返し、`atk agents-exit-session`は実行しない。

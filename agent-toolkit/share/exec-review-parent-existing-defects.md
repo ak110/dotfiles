@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-immediate-fix.md` |
 | 基準の参照時 | `agent-toolkit:atk-mode/roles/add-wi.parent.md` | | |
 | 基準の参照時 | `agent-basics:bugfix/SKILL.md` | | |
 | 基準の参照時 | `../skills/atk-mode/playbooks/confirmation.md` | | |
@@ -34,7 +34,7 @@
 - 投入担当の完了を待たずに、レビューの収束、統合、公開を並行して進める。
   投入担当の終了はバックグラウンド完了通知で確かめ、最終の作業完了報告の前までに全担当の終了を確かめる。
   この終了確認は統合や公開を始める前提条件から除く
-- 保存済みAWIの正式名を受領したら、process-wi中は読込表の`immediate-fix.md`「開始後に追加されたWIの確認」の受領時の判定へ進む。
+- 保存済みAWIの正式名を受領したら、process-wi中は読込表の`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」の受領時の判定へ進む。
   共通の先送り条件に当たる場合を除き、今回の選定・担当・追加計画へ接続し、是正結果の受領まで既存の引き継ぎ記録で追跡する。
   同じセッション、process-wiでは同じ巡回での是正を原則とし、AWIの保存後も是正結果の検収まで継続する。
   正式名は`../skills/atk-mode/references/report-formats.md`「作業完了報告のフォーマット」の`### 投入したWI`でも報告する
@@ -42,7 +42,7 @@
   投入先リポジトリ外のファイルが対象として返った場合は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`「続行できない理由の扱い」に従って投入先と要求の組を確定し直す
 
 次回へ渡す対象は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件内で選び、事象・原因・対応案を投入担当がAWIへ保存する。
-process-wi中は読込表の`immediate-fix.md`「即時対応」で現在の影響と先送り条件から正式対応の時機を判定する。
+process-wi中は読込表の`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で現在の影響と先送り条件から正式対応の時機を判定する。
 残工程や次のセッションを停止・遮断する不具合は、観測根拠から「進行を妨げる欠陥」と判定し、広がりの探索と再発防止の検討に先行して直接修正する。
 修正は`agent-basics:bugfix`と`01-agent.md`「完遂と先送り」、process-wi中の最小修正は前述の「即時対応」に従う。
 正式対応では、品質への影響、レビュー対象と原因が同じか、処置の完了を同スキルの5つの問いで判定する。

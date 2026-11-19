@@ -7,7 +7,7 @@
   背景原因: 作業項目の結論を再利用して比較検討を省く規定と、採用する行の根拠を`-`にできる規定が、目的・現在の方針・利用条件の一致を前提にしていなかった。
   採用済みであることや記載済みであることが、手段をユーザーの要件と同じ強さで固定した。
   対策: 省略と再利用の条件を、結論の前提が今も一致する範囲へ狭めた。
-  反映先は`lane-planning-drafting.md`手順1、`plan-file-standards-scope.md`「実施内容」、`plan-file-standards-structure.md`「計画ファイルの構成」である。
+  反映先は`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`手順1、`plan-file-standards-scope.md`「実施内容」、`plan-file-standards-structure.md`「計画ファイルの構成」である。
   `exec-subagent-inputs.md`、`exec-review-contract-generation.md`にも反映した。
   完成条件が手段を先取りした作業項目の原稿（起草側の必要性の判定が使われなかった別の持込み）も、受け手の判定し直しの入力に含める。
   再発（2026年11月11日）: 効果不足で、2026年9月25日・10月2日・10月28日・11月11日の対策は起票と条項化の側に作用した。
@@ -26,7 +26,7 @@
   受け取った時の発話の分類（照会）が、回答の後に分かった事実による判定し直しへつながっていなかった。
   過去の対策との関係: 2026年10月7日の事例（ユーザーの是正で`bugfix`を起動しなかった）の対策は振り返りへ作用し、会話の中の入口は対象外だった（範囲不足）。
   2026年10月19日〜31日の事例（本文の配送の再導入で方針と照合しなかった）は、当時は方針の記録が足りなかった点が今回と違い、今回は記録と読む規範があるのに使わなかった（未適用）。
-  対策: 読んだ記録の成果を、守る条件と今回の採否・検証の対応として計画の判断の根拠へ残すようにし、実行レビューがその対応を使う（`edit-dotfiles-norms`、`lane-planning-drafting.md`、`distribution-and-hooks.md`）。
+  対策: 読んだ記録の成果を、守る条件と今回の採否・検証の対応として計画の判断の根拠へ残すようにし、実行レビューがその対応を使う（`edit-dotfiles-norms`、`process-wi-execution.md`、`distribution-and-hooks.md`）。
   照会への回答の調査で不備が分かった場合は`bugfix`の初動へ進み、受け取った時の分類を判定し直す（`user-utterance-questions.md`、`analysis-operations-intervention.md`）。
 - 2026年11月11日: 同じ処理の中で起きた作業のミスが分析されなかった。
   対象のミスには、`commit-with-timeout`へ`commit`を重ねて渡した引数の誤り、広すぎるプロセスとファイルの検索があった。

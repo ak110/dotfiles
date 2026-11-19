@@ -13,7 +13,7 @@
 内部群の総数と、読取・実装・レビューを合わせた巡回全体の同時数Cを分け、資源・サービス・総費用と必要品質の比較からCを選ぶ。
 費用を無視した最大化、着手後の対象削減、品質工程の省略と時間都合の次回送りは採らない。
 群ごとの独立した保存HEADと成功証拠を受理し、最終検収は群間契約・共有生成物・組合せ差分と未達を扱う。
-同時数と巨大WIの判断は`agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md`「内部担当の同時数と巨大WIの判定」にある。
+同時数と巨大WIの判断は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md`「内部担当の同時数と巨大WIの判定」にある。
 内部群の構成は`agent-toolkit/skills/delegation/references/routing-units.md`「委譲単位の確定」に従う。
 dotfiles固有の選定量と終了条件は`AGENTS.md`から取得する。
 
@@ -21,7 +21,7 @@ dotfiles固有の選定量と終了条件は`AGENTS.md`から取得する。
 全体担当が必要作業、優先度、局所結果の採否、方針転換、完了を所有し、局所の設計と独立文脈レビューを保つ。
 目標から具体化した必要作業は既存のWI・追加計画・選定合流で同一実行へ加える。
 目標の明示がない通常キュー処理の固定集合は維持する。
-実行規範は`agent-toolkit:process-wi/references/lanes-goals.md`「明示された目標からの実行」にある。
+実行規範は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」にある。
 
 2026年10月9日のユーザー指示で、両ホストの選定をメインへ移し、pickerを廃止した。
 2026年10月10日の指示で、意味判断をメインに保ち、取得済み候補から鮮度・初回配分と型付き辺の定型欄をpick-wi-checkで生成して確認・保存する形へ改めた。
@@ -50,7 +50,7 @@ Codexのパス単位の信頼設定へ渡す作業ディレクトリをレーン
 WIの選定・追加・状態管理と本文の受渡しの方針は、[WI選定と処理](concepts-wi-processing.md#wi選定と処理)を参照。
 
 通常型AWIを複数件処理する場合、ファイル単位の終了、通常レーンおよびキュー操作の責務境界は
-`agent-toolkit/skills/process-wi/references/selection-procedure.md`が定める。
+`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`が定める。
 後段レーンは、先行成果を要しない読み取り専用調査と計画下書きを先に準備できる。
 取得版・事実と仮定を記録し、先行統合後の最新HEADからworktreeを作成して、差分に応じて調査を更新し正式計画を起草・検査する。
 書込競合と実際の成果依存を区別し、開始可能な通常レーンを準備待ちで遅らせない。
@@ -58,7 +58,7 @@ WIの選定・追加・状態管理と本文の受渡しの方針は、[WI選定
 先行調査や選定の補助など統合先へ書き込まない担当は、作業ディレクトリを統合先とレーンのworktreeの外にして起動する。
 2026年11月11日の巡回で、作業ディレクトリを統合先にした補助の担当2件を`atk lane integrate`の稼働判定が書込担当と数え、2つのレーンの統合が止まった観測に由来する。
 役割の分からない担当を判定から一律に除く案は、書き込む担当の見逃しを招くため採らない。
-実行契約は`agent-toolkit/skills/process-wi/references/lane-resources.md`「後段レーンの先行調査」が定める。
+実行契約は`agent-toolkit/skills/atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」が定める。
 時間の見込みが6000秒を超えても全件を同じ実行で処理し、レーン数上限の内側で独立群を並行する段階案と単一段階案を比較する。
 各段階の最長実装時間と直列統合時間の和を全段階で合計し、短い案を採用する。
 段階ごとに別名を増やして累計のレーン数上限を超えない。
@@ -76,7 +76,7 @@ WIの選定・追加・状態管理と本文の受渡しの方針は、[WI選定
 sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 移管先ファイル名を記録して元項目を終了する。
-`agent-toolkit:atk-mode`の作業`add-awi-by-user`と`agent-toolkit:process-wi`を起動したセッションでは、成果物種別を制限する指示が対象とする作業・工程・主体を確定し、その範囲内で制限を主題分類より先に適用する。
+`agent-toolkit:atk-mode`の作業`add-awi-by-user`と`agent-toolkit:atk-mode`の作業`process-wi`を起動したセッションでは、成果物種別を制限する指示が対象とする作業・工程・主体を確定し、その範囲内で制限を主題分類より先に適用する。
 限定範囲外の是正には通常の依頼範囲・認可・確認要否を適用し、後続工程と委譲先へも種類と限定範囲を一体で引き継ぐ。
 対象名の変更、修正を求める表現、主題の変化は、AWI投入専用のセッションへ直接実装の権限を加えない。
 主題分類は許容された成果物種別の内側で既存項目への反映と別項目の投入を選ぶためにだけ用いる
@@ -96,7 +96,7 @@ sourceがある場合は同じ値を渡す。
 
 WI作成、計画、実行、実行レビューは、それぞれ要求と完成条件の確定、WIの本文から決まらない実装境界と完成条件の補足、公開された呼び出し手段（コマンド、画面、API、hookなど）からのテストを含む実装、意図・回帰・過剰設計の独立検収を担う。
 前工程の出口を後工程の入力とし、同じ判断を後工程で起草し直さない。
-詳細な工程契約は`agent-toolkit/share/workflow-phases.md`が定める。
+詳細な工程契約は`agent-toolkit/skills/atk-mode/references/workflow-phases.md`が定める。
 全体の自動チェックとCIは公開工程の検収で判定する（2026年9月24日、ユーザー指示）。
 
 工程と検証の正式名は、実装後の実行レビューと、変更ファイルと直接消費側に限る変更範囲の検証とする。
@@ -142,7 +142,7 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
   計画には、WIの本文から決まらない部分と検証コマンドなど計画自身の出口だけを書く。
   計画側で導出し直すのは、入力にWIが無い計画、WIが該当する節を持たない場合、WIの記述と現物の食い違いを観測した場合に限る。
   協調モードの計画でも先にAWIを作成する手順の1本化は採らない（2026年9月30日、ユーザー回答。AWIの投入と計画の起草が同じ調査と記述を二重に行っていたことに由来する）。
-  現在は`agent-toolkit:atk-mode/references/plan-format.md`「計画ファイルの構成」「実施内容」と`agent-toolkit/skills/process-wi/references/lane-planning.md`が定める。
+  現在は`agent-toolkit:atk-mode/references/plan-format.md`「計画ファイルの構成」「実施内容」と`agent-toolkit/skills/atk-mode/playbooks/process-wi-execution.md`が定める。
   要件の成立性は`agent-toolkit:atk-mode/references/awi-body-completion.md`「要件の成立性」が定める
 - 実行時進捗ログは中断再開用の粗い工程記録、レビュー指摘管理表は個別指摘の詳細として維持する。
   用途の異なる記録を件数で結合しない

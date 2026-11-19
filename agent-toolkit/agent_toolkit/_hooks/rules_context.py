@@ -102,7 +102,7 @@ def _launch_input_process_wi(data: dict[str, Any]) -> tuple[bool, str | None]:
     if not isinstance(skill, str):
         return False, None
     work, work_arguments = skill_modes.resolve_work(skill, arguments if isinstance(arguments, str) else None)
-    return work == "agent-toolkit:process-wi", work_arguments
+    return skill_modes.entry_work(work) == "process-wi", work_arguments
 
 
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
@@ -596,7 +596,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             # 圧縮後の再開では立て直さない（終了工程で戻した状態を復活させないため）。
             update_state(session_id, session_state.set_process_wi_invoked)
             if host == "claude":
-                session_title.observe_skill(session_id, "agent-toolkit:process-wi", launch[1])
+                session_title.observe_skill(session_id, skill_modes.PROCESS_WI, launch[1])
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         started = time.monotonic()

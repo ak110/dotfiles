@@ -194,7 +194,7 @@ agents_serverのturnに独自の作業予算・時間枠・ツール回数枠が
 ツール実行前の簡潔な`commentary`（説明）を要求するホスト環境では、ツール呼び出しの直前に短い`commentary`を出力する。
 コード評価を伴うコマンドでは実行内容、読み取り対象、確認目的を説明し、承認を要するコマンドでは内容、影響範囲、復元手順を実行前に説明する。
 
-context windowを切り替える前は、枯渇通知を受けた場合も含め、`share/work-contract.md`「作成と所有」に従って自身の役割と起動入力に対応する記録先を確定する。
+context windowを切り替える前は、枯渇通知を受けた場合も含め、`skills/atk-mode/references/work-contract.md`「作成と所有」に従って自身の役割と起動入力に対応する記録先を確定する。
 記録先がない単発の委譲でも、未完了の工程を残して切り替える場合は同節の記録先未指定時の扱いに従う。
 現在の依頼、進捗、残工程、原本や委譲入力の所在は、同書「記録する内容」が定める作業記録と各原本に保存する。
 委譲先の記録内容と更新は`agent-toolkit:delegation`の`references/handoff-record.md`に従う。
@@ -206,7 +206,7 @@ context windowを切り替える前は、枯渇通知を受けた場合も含め
 許可された取得手段で復元できない場合に限り、参照した所在と失敗した操作を明記して返す。
 会話圧縮後の復元でも、一時的な作業対象、処理対象のWI、保留事項、承認状態、当初の作業目的、確定済みの要件、残存する完成条件を、対象リポジトリ、private-notes、またはホストの記録原本から再解決し、出所情報の提示には記録原本の記述を使用する。
 工程を定める資料の再取得は`01-agent.md`「行動と手順の目的」、Claude Code向けの規範本文の再取得は本書「Claude Code向けに配置された規範の読込」に従う。
-要約は原本の取得の手掛かりとし、`${CLAUDE_PLUGIN_ROOT}/share/work-contract-boundaries.md`「工程境界での要求と成果の確認」に従って要求・訂正・認可・未完了の操作を原本から復元する。
+要約は原本の取得の手掛かりとし、`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/references/work-contract.md`「工程境界での要求と成果の確認」に従って要求・訂正・認可・未完了の操作を原本から復元する。
 セッション記録の取得は`skills/review-session/references/session-records.md`「会話の少量取得」に従い、全体要求と前回以降の変更を原文・結果へ対応付ける。
 起動入力・追加入力と作業記録の要求を比較し、追送による要求変更と保持した実行識別子も復元する。
 履歴を参照できない場合も保存済みの原本と記録から復元を進め、取得できない範囲だけを委譲元へ返す。
@@ -226,7 +226,7 @@ Codexの組み込み委譲機能（`spawn_agent`で起動したスレッド）�
 
 ## AWI処理の開始時の横断同期
 
-個人プロジェクトの`agent-toolkit:process-wi`で選定を担当するメインは、選定を始める前に`operate-ak110-projects`を起動し、同期の調査と依存更新の要否の判定結果を、そのセッションの後続の工程へ渡す。
+個人プロジェクトの`agent-toolkit:atk-mode`の作業`process-wi`で選定を担当するメインは、選定を始める前に`operate-ak110-projects`を起動し、同期の調査と依存更新の要否の判定結果を、そのセッションの後続の工程へ渡す。
 判定済みの条件を受けて依存更新だけを実施するレーンは、この契機では起動しない。
 
 ## WI作成時の追従判定
@@ -240,7 +240,7 @@ Codexの組み込み委譲機能（`spawn_agent`で起動したスレッド）�
 
 - 協調モードの変更で、公開範囲を判定する前（恒常的な認可と明示の指定の優先を適用する）
 - patch、minorまたはmajorのリリースを求められ、具体的な公開コマンドを選ぶ前
-- 一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わった時（リリースの要否を判定する）
+- 一連の作業（`agent-toolkit:atk-mode`の作業`process-wi`の公開工程を含む）がpushとCI成功まで終わった時（リリースの要否を判定する）
 
 agent-toolkit自身のversion bump、個人プロジェクトの外、Dockerイメージの再構築およびworkflowの内部の処理は対象外とする。
 
@@ -362,7 +362,7 @@ process-wiでは、処理を終えたリポジトリでも律速でなく資源�
 
 ## 協調と自律
 
-`agent-toolkit:process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。
+`agent-toolkit:atk-mode`の作業`process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。
 ユーザーが確定した継続的な方針・要件は、保存の前に`agent-toolkit/share/agent-conduct-details.md`「協調と自律」を全文読む。
 確認要否・手段・UWI・回答後の遷移は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従い、確認前に「QCDと3段判定」を適用する。
 ユーザーが確定した目的・要件・観測される結果の判断を変えるには、新しいユーザーの判断が必要である（手段の扱いと区別は`agent-toolkit/share/agent-conduct-details.md`「協調と自律」）。

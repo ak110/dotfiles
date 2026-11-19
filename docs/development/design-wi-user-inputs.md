@@ -29,7 +29,7 @@ sourceの原値と予約節は由来と確認境界を示す情報であり、�
 
 ## 却下した代替案
 
-`agent-toolkit:atk-mode`の作業`add-awi-by-user`と`agent-toolkit:process-wi`を起動したセッションの同一主題に対する追加指示は、それぞれの手順が定める成果物へ反映する。
+`agent-toolkit:atk-mode`の作業`add-awi-by-user`と`agent-toolkit:atk-mode`の作業`process-wi`を起動したセッションの同一主題に対する追加指示は、それぞれの手順が定める成果物へ反映する。
 主題の継続かAWI投入と直接実装の境界が不明な場合は、変更または投入の前に確認する。
 
 会話内の作業一覧だけで進捗を管理する案は、中断後に依存関係とユーザー回答を再現できないため採用しない。

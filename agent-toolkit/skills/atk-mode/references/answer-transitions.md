@@ -8,8 +8,8 @@
 
 処理するUWIは場面で決まる。
 
-- `agent-toolkit:process-wi`の実行中は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従う。
-  回答が得られたUWIは`agent-toolkit:process-wi/references/selection-procedure-addition.md`「処理対象WIの追加」へ渡す。
+- `agent-toolkit:atk-mode`の作業`process-wi`の実行中は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従う。
+  回答が得られたUWIは`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」へ渡す。
   処理中の主題を保留していたUWIの回答だけを同じセッションで反映し、保留していた工程を再開する。
   それ以外の回答済みUWIは、ユーザーが告げた場合を除き、次のprocess-wiの実行の選定に任せる。
 - process-wiの実行中でないセッションは、自セッション（委譲先を含む）が投入したUWIだけを処理し、セッションを終える前に、回答の反映から回答を待っていた作業の再開までを終える。

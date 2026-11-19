@@ -701,42 +701,6 @@ def test_redirect_cycle_is_actionable_error(tmp_path):
         read_triggers.resolve_read_source(first, tmp_path)
 
 
-def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
-    root = pathlib.Path(__file__).resolve().parents[2]
-    sources = (root / "skills/process-wi/references/single-lane.md", root / "share/single-lane-execution.md")
-    rows = [row for source in sources for row in read_triggers.parse_tables(source, root, strict=True)]
-    targets = [target for row in rows for target in row.targets]
-    assert len(targets) == len(set(targets))
-    for target in targets:
-        if not target.heading:
-            assert not any(other.path == target.path and other.heading for other in targets)
-    for suffix in (
-        "skills/process-wi/references/selection-procedure.md",
-        "skills/atk-mode/playbooks/wi-drafting.md",
-        "skills/atk-mode/playbooks/write-plan.md",
-        "share/single-lane-execution.md",
-        "share/exec-review.parent.md",
-        "skills/atk-mode/playbooks/verification.md",
-        "skills/atk-mode/playbooks/publish.md",
-        "skills/atk-mode/playbooks/report-completion.md",
-    ):
-        assert any(str(target.path).endswith(suffix) for target in targets), suffix
-    for suffix, condition in (
-        ("selection-procedure.md", "対象WIの選定"),
-        ("playbooks/write-plan.md", "計画の要否"),
-        ("exec-review.parent.md", "実装に着手する前"),
-        ("playbooks/verification.md", "検証結果の記録前"),
-        ("review-loop-coordination.md", "レビュー指摘への対応"),
-        ("playbooks/publish.md", "公開する前"),
-        ("playbooks/report-completion.md", "終了処理へ進む前"),
-    ):
-        assert any(
-            any(str(target.path).endswith(suffix) for target in row.targets)
-            and condition in row.source.read_text(encoding="utf-8").splitlines()[row.line - 1]
-            for row in rows
-        ), suffix
-
-
 def _plugin_checkout(base: pathlib.Path, *, with_new: bool, broken: bool = False) -> pathlib.Path:
     """agent-toolkitとagent-basicsを同居させたcheckoutを作り、そのrootを返す。"""
     for name in ("agent-toolkit", "agent-basics"):

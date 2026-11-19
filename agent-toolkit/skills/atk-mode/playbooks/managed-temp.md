@@ -13,7 +13,7 @@
 | セッションのmanaged-tempの通知が無い、`.git`を含む、別のファイルシステム名前空間から使う | 本書「一時root直下に作成する領域」 |
 | セッションの終了後やWIの完了後に参照する記録 | 作成時に対象AWIの本文か計画の`## 進捗ログ`へ書く |
 | 版管理や自動同期が有効な設定領域を変更する前 | 本書「設定領域を変更する前の一時バックアップ」 |
-| process-wiのレーンworktree | `agent-toolkit:process-wi/references/lane-worktree-management.md`に従う |
+| process-wiのレーンworktree | `agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`に従う |
 
 ## 一時rootと自動削除
 

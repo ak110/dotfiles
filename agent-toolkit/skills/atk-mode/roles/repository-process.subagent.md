@@ -34,7 +34,7 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 登録全体の判断、確認事項のユーザーへの中継、実行全体の完了報告と報告用UWIは統括が所有する。
 本担当はreport-completionの起動、報告用UWI、ユーザーへの最終送達、祖先ホストの終了を担当しない。
 この除外は本書で判断でき、除外の確認のためのスキル本体・termination-evidenceの取得や`omit-completion`の記録は要らない。
-必要な常時稼働サーバーへの反映は`agent-toolkit:report-completion/references/server-reflection.md`を使い、結果を委譲元へ返す。
+必要な常時稼働サーバーへの反映は`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」を使い、結果を委譲元へ返す。
 
 ## 読込表
 

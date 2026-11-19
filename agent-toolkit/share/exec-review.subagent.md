@@ -45,9 +45,9 @@ continuations:
 `agent-basics:writing-standards`の資料は、同書における指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠として用いる。
 初回レビューでは、適用対象となる`agent-basics:writing-standards`の`references/review-only-criteria.md`の全基準を同一の実行レビュー内でまとめて点検し、基準ごとの担当者の分割は対象外とする。
 本担当の役割はレビューおよび判定に必要な検証の実行にとどめ、実装や修正の作業は委譲元が別のエージェントへ割り当てる。
-実行レビューの入力、責務、出口の各条件は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
+実行レビューの入力、責務、出口の各条件は`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/references/workflow-phases.md`に従う。
 
-担当工程へ着手する前に、`${CLAUDE_PLUGIN_ROOT}/share/work-contract-boundaries.md`「工程境界での要求と成果の確認」に従って`全体作業契約`を読み、判定結果を自身の記録に残す。
+担当工程へ着手する前に、`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/references/work-contract.md`「工程境界での要求と成果の確認」に従って`全体作業契約`を読み、判定結果を自身の記録に残す。
 
 ## 名指し参照の読込方法
 
@@ -56,7 +56,7 @@ continuations:
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` |
-| 本文でこの資料の基準を参照・取得する時 | `workflow-phases.md` |
+| 本文でこの資料の基準を参照・取得する時 | `agent-toolkit:atk-mode/references/workflow-phases.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/atk-mode/references/commit-wi-records.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/atk-mode/playbooks/managed-temp.md` |
 | 本文でこの資料の基準を参照・取得する時 | `exec.parent.md`、`exec-parent-integration.md` |

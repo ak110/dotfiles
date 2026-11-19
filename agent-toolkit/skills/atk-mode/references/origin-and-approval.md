@@ -58,13 +58,15 @@ WIの作成者と起票の契機（`source`）は、個々の要求の出所と�
 モードがあればスキル名、半角空白、モードを連結し、モードが無い通常起動ではスキル名だけを使う。
 scopeに入れるのはモード語までとし、それ以外の自由記述は除く。
 
-| 起動スキル | 起動入力のmode | scope |
+| 起動入力のskill | 起動入力のmode | scope |
 | --- | --- | --- |
 | `agent-toolkit:review-session` | なし | `agent-toolkit:review-session` |
 | `agent-toolkit:review-session` | `batch` | `agent-toolkit:review-session batch` |
 | `agent-toolkit:process-wi` | なし | `agent-toolkit:process-wi` |
 | `agent-toolkit:process-wi` | `single-lane` | `agent-toolkit:process-wi single-lane` |
 | `agent-toolkit:process-wi` | `all-repos` | `agent-toolkit:process-wi all-repos` |
+
+起動入力の`skill`が作業`process-wi`の修飾名の行は、入口`atk-mode`の作業`process-wi`の起動単位を表す（同名のスキルは無い）。
 
 次回の同じ起動単位はこのscopeのUWIを取り込み、通常起動や別モードのUWIと区別する。
 旧保存データの取り込みは`agent-toolkit:atk-mode/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」に従う。

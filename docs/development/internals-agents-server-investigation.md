@@ -107,5 +107,5 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
   詳細な診断情報を採取するには、必ず`--debug-file`オプションを使用してファイルに出力させる。
 - プロセス起動が「委譲先の作業ディレクトリでプラグインの起動コマンドが失敗した」というエラーで拒否された場合、主な原因は委譲先の作業ディレクトリ上で`uv`や`uvx`が実行できないことにある。
   例外情報に記録された`cwd`や標準エラー出力を確認する。
-  miseの設定が未信頼（untrusted）になっている場合は、委譲元の手順（`agent-toolkit/skills/process-wi/references/selection-procedure.md`など）に従って`mise trust`を実行するなどの準備をする。
+  miseの設定が未信頼（untrusted）になっている場合は、委譲元の手順（`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`など）に従って`mise trust`を実行するなどの準備をする。
   それより前に起動された委譲先で発生した接続エラーについては、前述の接続失敗記録の一覧から該当ログを確認する。

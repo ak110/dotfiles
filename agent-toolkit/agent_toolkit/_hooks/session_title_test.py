@@ -5,7 +5,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._common import session_state
+from agent_toolkit._common import session_state, skill_modes
 from agent_toolkit._hooks import posttooluse, rules_context, user_prompt_submit
 from agent_toolkit._hooks.pretooluse import read_delivery
 
@@ -27,9 +27,7 @@ def test_consultation_history_survives_other_skill(codex, capsys):
     user_prompt_submit.main(json.dumps(payload))
     capsys.readouterr()
     assert session_state.read_state(session)["add_awi_skill_invoked"] is True
-    posttooluse.main(
-        json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:process-wi"}})
-    )
+    posttooluse.main(json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": skill_modes.PROCESS_WI}}))
     capsys.readouterr()
     assert session_state.read_state(session)["session_title_kind"] == "process-wi"
     assert session_state.read_state(session)["add_awi_skill_invoked"] is True
@@ -168,7 +166,7 @@ def test_all_repos_title_stays_across_plan_switches(
             {
                 "session_id": session,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-wi", "args": arguments},
+                "tool_input": {"skill": skill_modes.PROCESS_WI, "args": arguments},
             }
         )
     )
@@ -187,7 +185,7 @@ def test_all_repos_title_stays_across_plan_switches(
                 {
                     "session_id": session,
                     "tool_name": "Skill",
-                    "tool_input": {"skill": "agent-toolkit:process-wi", "args": "single-lane"},
+                    "tool_input": {"skill": skill_modes.PROCESS_WI, "args": "single-lane"},
                 }
             )
         )
@@ -209,7 +207,7 @@ def test_process_loop_child_keeps_plan_title(
             {
                 "session_id": session,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-wi", "args": "single-lane"},
+                "tool_input": {"skill": skill_modes.PROCESS_WI, "args": "single-lane"},
             }
         )
     )

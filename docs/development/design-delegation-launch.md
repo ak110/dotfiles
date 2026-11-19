@@ -117,17 +117,17 @@ Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキ�
 工程ごとの対応は次のとおりである。
 
 - 選定理由への質問: 選定したメインが保存済みの選定結果と判断から答える。
-  説明担当は撤去し、未取得の事実の収集だけを読み取り専用の探索へ渡す（`agent-toolkit/skills/process-wi/references/selection-explanation.md`）
+  説明担当は撤去し、未取得の事実の収集だけを読み取り専用の探索へ渡す（`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-explanation.md`）
 - WI投入: 委譲元の初動は投入先と要求の範囲の確定に必要な観測に限り、原因・対策・類似見直しの確定はWI投入担当が所有する。
   付随型の原稿返却、委譲元の意味の検収、保存開始の二段階と、専念型の投入前レビューは保つ（`agent-toolkit/skills/atk-mode/roles/add-wi.parent.md`）
 - レーン: レーン数によらず各レーンの同じ担当が計画・実装・実行レビューの調整・指摘対応を続ける。
-  メインは選定、レーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの統合の許可と最終結果の検収を所有する（`agent-toolkit/share/single-lane-execution.md`）
+  メインは選定、レーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの統合の許可と最終結果の検収を所有する（`agent-toolkit/skills/atk-mode/playbooks/process-wi-execution.md`）
 - 探索・原因分析・単純作業: 作業の細分化と起動単位の数を区別し、同じ背景と実行条件を使う確定済みの作業は1件の起動へまとめる。
   調査担当は詳細な分析を保存原本へ置き、結論と原本の所在を返す（`agent-toolkit/skills/delegation/references/routing.md`、`agent-toolkit/share/defect-investigation.subagent.md`）
 - 保存済み結果の受渡し: `atk agents wait`の`agent_message_path`、CLIの保存先、MCPの結果の保存ファイルは、パスのまま次の消費者へ渡す（`agent-toolkit:delegation/references/receiving-followup.md`「受領後の扱い」）
 - 公開とCI: 計画と版数判断を保持するメインまたはリポジトリ担当の直接公開を通常とする。
   既決判断をそのまま使い、単一writer、CI修正担当、実行レビュー、公開後操作を保持する。
-  独立並行やモデルの使い分けの利益が総費用を上回る場合だけ公開担当へ委譲する（`agent-toolkit/share/session-termination.parent.md`「直接実行」）。
+  独立並行やモデルの使い分けの利益が総費用を上回る場合だけ公開担当へ委譲する（`agent-toolkit/skills/atk-mode/roles/session-termination.parent.md`「直接実行」）。
   公開担当の独立性自体はレビューではないため、常時分離する案は採らない
 - 振り返り: `agent-toolkit:review-session`はメインが全体像の把握と最終判断を担い、費用確認で親子の重複と機械的な転記を最初に判定する。
   読み取り専用の分担から全文の再調査を組み立て直す受渡しは採らない

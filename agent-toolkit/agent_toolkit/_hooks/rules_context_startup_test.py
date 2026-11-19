@@ -15,7 +15,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log, submit
-from agent_toolkit._common import plugin_environment, plugin_roots, session_state
+from agent_toolkit._common import plugin_environment, plugin_roots, session_state, skill_modes
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
@@ -234,7 +234,7 @@ def test_large_startup_input_keeps_all_data_within_hook_cap(tmp_path, monkeypatc
     assert "references/answer-transitions.md" in context and "playbooks/report-completion.md" in context
 
 
-@pytest.mark.parametrize("skill", ["agent-toolkit:review-session", "agent-toolkit:process-wi", submit.SKILL])
+@pytest.mark.parametrize("skill", ["agent-toolkit:review-session", skill_modes.PROCESS_WI, submit.SKILL])
 def test_startup_input_does_not_inject_launch(skill, monkeypatch, capsys):
     """作業の始め方は目的文が示し、SessionStartは起動を差し込まずに終了契約の所在だけを示す。"""
     data = {"source": "run-skill", "skill": skill, "arguments": "入力"}
@@ -247,7 +247,7 @@ def test_startup_input_does_not_inject_launch(skill, monkeypatch, capsys):
 
 def test_process_loop_startup_points_to_result_contract(monkeypatch, capsys):
     """常駐の統括には、移した手順書の「結果と終了」を終了契約として示す。"""
-    data = {"source": "process-loop", "skill": "agent-toolkit:process-wi", "mode": "all-repos", "manifest": "/m.json"}
+    data = {"source": "process-loop", "skill": skill_modes.PROCESS_WI, "mode": "all-repos", "manifest": "/m.json"}
     monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data))
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}), host="claude") == 0
     contract = _output(capsys).split("終了契約", 1)[1]
@@ -258,8 +258,8 @@ def test_process_loop_startup_points_to_result_contract(monkeypatch, capsys):
 @pytest.mark.parametrize(
     ("data", "autonomous", "kind"),
     [
-        ({"source": "process-loop", "skill": "agent-toolkit:process-wi", "mode": "all-repos"}, True, "all-repos"),
-        ({"source": "run-skill", "skill": "agent-toolkit:process-wi", "arguments": "single-lane 追加"}, True, "single-lane"),
+        ({"source": "process-loop", "skill": skill_modes.PROCESS_WI, "mode": "all-repos"}, True, "all-repos"),
+        ({"source": "run-skill", "skill": skill_modes.PROCESS_WI, "arguments": "single-lane 追加"}, True, "single-lane"),
         ({"source": "run-skill", "skill": "agent-toolkit:atk-mode", "arguments": "process-wi"}, True, "process-wi"),
         ({"source": "run-skill", "skill": "agent-toolkit:review-session", "arguments": "batch"}, False, None),
         ({"source": "run-skill", "skill": "example:check", "arguments": "process-wi"}, False, None),

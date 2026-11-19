@@ -25,7 +25,7 @@
 レビュー単位ごとの成果物の受け渡し方法は、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
 組み込み委譲におけるメッセージ本文の生成は、`../skills/delegation/references/sending-prompt.md`「委譲プロンプトの構成」に従う。
 
-レーン数によらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。
+レーン数によらず`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/playbooks/process-wi-execution.md`を適用する。
 起動の`固有指示`に資源記録・統合先worktree・branchを渡し、直後にレーン開始時刻を追送する。
 メインは定型の準備・実装・レビュー・統合開始の往復を省き、ユーザー判断の通知、レーン間の競合・依存調停、後述の統合許可、最終結果の受領を担う。
 統合前検収はレーンが行い、メインは返却結果を検収する。

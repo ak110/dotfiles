@@ -67,7 +67,7 @@ def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> No
         ("skills/atk-mode/roles/wi-draft-review.parent.md", "wi-draft-review"),
         ("share/recurrence-self-check.parent.md", "recurrence-self-check"),
         ("skills/atk-mode/roles/add-wi.parent.md", "add-wi"),
-        ("skills/process-wi/references/review-audit-launch.md", "copilot-review-audit"),
+        ("skills/atk-mode/playbooks/process-wi-review-audit.md", "copilot-review-audit"),
         ("skills/refine-prompt/SKILL.md", "refine-prompt"),
         ("skills/delegation/references/investigation-delegation.md", "defect-investigation"),
     ],

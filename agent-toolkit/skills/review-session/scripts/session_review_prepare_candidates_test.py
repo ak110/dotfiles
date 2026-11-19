@@ -11,6 +11,7 @@ import pytest
 import session_review_prepare as prepare
 
 from agent_toolkit._atk.wi import layout
+from agent_toolkit._common import skill_modes
 from agent_toolkit._testing import session_evidence_support as support
 from agent_toolkit._testing.session_review_prepare_support import _FIXED_NOW, _LONG_INTERVENTION, _bundle_rows, _work_dir
 from agent_toolkit._testing.session_review_prepare_support import _isolate_failure_ledger as _isolate_failure_ledger
@@ -201,7 +202,7 @@ def test_prepare_counts_wi_processed_inside_compound_commands(
         (
             "<command-name>/goal</command-name>\n"
             '<command-args><atk-auto source="process-loop" kind="goal">'
-            "`agent-toolkit:process-wi`を完遂してください。</atk-auto></command-args>",
+            f"`{skill_modes.PROCESS_WI}`を完遂してください。</atk-auto></command-args>",
             {"user-intervention": 2},
             None,
         ),

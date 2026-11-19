@@ -26,8 +26,8 @@ from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_s
 # スキル`process-wi`を廃止する前の記録を判別するために残す。入口`atk-mode`の起動は引数を含まないため、
 # 起動の`tool_use`の引数か目的文で判別する。
 _CLAUDE_PROCESS_WI_MARKERS = (
-    "Launching skill: agent-toolkit:process-wi",
-    "Launching skill: agent-toolkit:process-wi all-repos",
+    f"Launching skill: {skill_modes.PROCESS_WI}",
+    f"Launching skill: {skill_modes.PROCESS_WI} all-repos",
     "Launching skill: agent-toolkit:process-wi-all-repos",
 )
 _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
@@ -39,7 +39,7 @@ _PROCESS_WI_GOAL_BODIES = (
     skill_modes.PROCESS_WI_LAUNCH_MARKER,
     PROCESS_LOOP_GOAL_BODY,
     PROCESS_WI_GOAL_BODY,
-    "agent-toolkit:process-wi all-reposを完遂する",
+    f"{skill_modes.PROCESS_WI} all-reposを完遂する",
     "agent-toolkit:process-wi-all-reposを完遂する",
 )
 
@@ -154,7 +154,7 @@ def _claude_process_wi_marker(record: dict[str, Any]) -> bool:
             if isinstance(tool_input, dict) and isinstance(tool_input.get("skill"), str):
                 arguments = tool_input.get("args")
                 work, _ = skill_modes.resolve_work(tool_input["skill"], arguments if isinstance(arguments, str) else None)
-                if work == "agent-toolkit:process-wi":
+                if work == skill_modes.PROCESS_WI:
                     return True
     return False
 

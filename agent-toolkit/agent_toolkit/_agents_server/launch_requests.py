@@ -396,7 +396,7 @@ def _explicit_whole_contract(value: str) -> pathlib.Path:
             f"whole_contract_pathの全体作業契約を使えません: {value}: {reason}。委譲先は起動していない。",
             next_action=(
                 "既存の全体作業契約の絶対パスを`whole_contract_path`へ指定するか、"
-                "`share/work-contract.md`に従ってそのパスへ記録を作成し、同じ入力で`start`を再発行する"
+                "`skills/atk-mode/references/work-contract.md`に従ってそのパスへ記録を作成し、同じ入力で`start`を再発行する"
             ),
         )
     return path
@@ -426,7 +426,7 @@ def _resolve_whole_contract(whole_contract_path: str | None, launcher_session_id
         raise ActionableError(
             f"全体作業契約が未作成です: {expected}。委譲先は起動していない。",
             next_action=(
-                f"`share/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する。"
+                f"`skills/atk-mode/references/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する。"
                 f"別の記録を使う場合は{_WHOLE_CONTRACT_REISSUE}"
             ),
         )
@@ -454,7 +454,9 @@ def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
     """サーバーが所有する共通入力を、役割文書の入力宣言から分離して加える。"""
     record_line = f"引き継ぎ記録先: {path}（新規）\n" if path is not None else ""
     return auto_message(
-        record_line + f"{root / 'share/work-contract.md'}と{root / 'skills/delegation/references/handoff-record.md'}に従い、"
+        record_line
+        + f"{root / 'skills/atk-mode/references/work-contract.md'}と"
+        + f"{root / 'skills/delegation/references/handoff-record.md'}に従い、"
         "委譲先自身が新規・継続の指定に応じて記録を作成・更新する。"
         "記録は割当範囲を所有し、委譲元は終了後の検収で読む。",
         source="agents-server",

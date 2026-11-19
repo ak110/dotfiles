@@ -90,7 +90,7 @@
    - まとめ担当では、割り当てる対象要素をそのまま順序付きのJSON配列へ保存し、単一対象の各欄の代わりにその絶対パスを`repositories`へ渡す。
    - `previous`、`common_dir`、`registered_worktree`、`target`、`target_branch`、`default_branch`は、対象要素に値がある場合だけ渡す。
    - `追加指示`は、`instruct`のうち対象に関係する部分がある場合だけ渡す。
-   - `引き継ぎ記録先`の省略と継続時の扱いは`agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
+   - `引き継ぎ記録先`: 省略と継続時の扱いは`agent-toolkit:delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
 2. 統括は巡回の開始時刻とタイムゾーンを全体作業契約へ記録し、起動時に既存の`whole_contract_path`で渡す。
 3. 起動入力の組み方を新しくした回か変えた回に限り、まず1件だけ起動し、担当が入力どおりの対象と候補で処理へ入ったことを確かめてから残りを並行して起動する。
    組み方の誤りを担当1件の費用で見つけるためであり、同じ組み方を繰り返す回は確かめずに並行して起動する。
@@ -167,7 +167,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 統括CLIの終了だけで配下の担当の停止を仮定せず、常駐が実プロセスと登録済みwriterの生存を確かめ、停止が未確認の担当、未統合のレーン、dirtyなworktreeを保つ。
 利用上限の時の同じ会話の再開と、予告を受けた統括が先に保存する内容は、`agent-toolkit:atk-mode/references/usage-limit.md`「常駐から起動された統括の保存と再開」に従う。
 監査記録は同資料が名指す`docs/development/audit-records-wi.md`にある。
-該当の節は「agent-toolkit/skills/process-wi/references/all-repos-orchestration-resources.md：登録集合：2026年11月12日」である。
+該当の節は「agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos.md：登録集合：2026年11月12日」である。
 
 ## worktreeと資源
 

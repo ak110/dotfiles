@@ -33,15 +33,15 @@ agents_serverの配送結果と、受信側が本文を読んで処置したこ�
 同時に起動する統括会話は1つで、統括は選定・レビュー・公開・CI・完了報告・報告用UWI・結果の保存まで担当する。
 会話の再開は`resume [ID|auto]`で予約した場合に限り、予約の無い起動は新しい会話で始める。
 今回の対象が1リポジトリならレーン数の上限によらず統括が自ら処理し、複数なら負荷が最大のリポジトリを統括が直接担当する。
-具体的な選定と継続は`agent-toolkit:process-wi/references/all-repos-starting.md`「開始と振り分け」に従う。
-登録と再開の条件は`agent-toolkit:process-wi/references/all-repos-orchestration.md`に従う。
+具体的な選定と継続は`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「開始と振り分け」に従う。
+登録と再開の条件は`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`に従う。
 計画・検証・レビュー・公開は対象worktreeごとに分け、process-wiの実行全体の完了報告は統括が行う。
 
-非常駐の全体処理は`agent-toolkit:process-wi all-repos`を手動で起動し、同スキルは`atk wi process-loop --once`で常駐と同じ取得・所有・準備・検収・回収を1集合に対して行う。
+非常駐の全体処理は`agent-toolkit:atk-mode`の作業`process-wi all-repos`を手動で起動し、同作業は`atk wi process-loop --once`で常駐と同じ取得・所有・準備・検収・回収を1集合に対して行う。
 対象が0件なら待たずに終わり、未完了・所有待ち・準備失敗が残れば非0で終わる。
 次回の再開は`atk wi process-loop resume auto`で予約し、停止中は予約の後に`--once`を起動する。
 `resume ID`は指定会話、値を省いた`resume`はCLIの会話選択画面を予約し、`resume-cancel`は未消費の予約を取り消し、予約状態は`status`で確かめる。
-対象リポジトリの単発処理は`agent-toolkit:process-wi`か`agent-toolkit:process-wi single-lane`を使う。
+対象リポジトリの単発処理は`agent-toolkit:atk-mode`の作業`process-wi`か`agent-toolkit:atk-mode`の作業`process-wi single-lane`を使う。
 
 ## 常駐・単発・明示再開の違い
 
@@ -61,7 +61,7 @@ agents_serverの配送結果と、受信側が本文を読んで処置したこ�
 未検証の変更を期限のために公開せず、外部待ちで期限を守れない場合は、期限・阻害・次の確認時機を未達事項として保存する。
 新着の受け入れや同じ会話での継続を理由に、既存のリリース頻度を下げない。
 
-規範・配布版の更新は、同じ会話で更新を取り込めるホストの公開手段を優先し、使えない場合は`agent-toolkit:process-wi/references/all-repos-orchestration-resources.md`「更新のための本人再開」で同じ会話の未完了作業を保持する。
+規範・配布版の更新は、同じ会話で更新を取り込めるホストの公開手段を優先し、使えない場合は`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「更新のための本人再開」で同じ会話の未完了作業を保持する。
 稼働開始から20時間の点検で新しい作業の開始を保留し、保存、公開、writerの終了観測、更新、同じ会話の再開、稼働版の確認へ進む。
 各段階の上限（`update-dotfiles`の60分、起動時の実ID確定の120秒など）を点検の最大30分と合成し、24時間までの残りに収まるかを確かめ、超える場合はその差だけ早く保守へ入る。
 実際の停止・再開を観測できない場合は、最長稼働時間や版の取り込みを保証済みと扱わず、阻害と未完了の工程を上流へ返す。

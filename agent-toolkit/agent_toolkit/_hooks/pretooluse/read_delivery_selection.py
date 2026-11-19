@@ -150,7 +150,7 @@ def dynamic_targets(
             elif path is not None:
                 raise ValueError(
                     f"{row.source}:{row.line}: {row.selector}の作業契約が無い: {path}。"
-                    "agent-toolkit/share/work-contract.md「作成と所有」に従って作成せよ。"
+                    "agent-toolkit/skills/atk-mode/references/work-contract.md「作成と所有」に従って作成せよ。"
                 )
         if not targets:
             raise ValueError(f"{row.source}:{row.line}: {row.selector}の起動時配送入力が無い")

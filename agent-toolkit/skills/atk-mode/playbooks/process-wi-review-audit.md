@@ -33,7 +33,7 @@
 <!-- input-contract:copilot-review-audit:end -->
 
 選定メインが監査を委譲する時に、本節で監査担当を起動して結果を受け取る。
-監査担当の役割文書は`agent-toolkit:/share/copilot-review-audit.subagent.md`にあり、返却の項目は本書「監査担当の返却契約」に従う。
+監査担当の役割文書は`agent-toolkit:/share/copilot-review-audit.subagent.md`にあり（所在参照）、返却の項目は本書「監査担当の返却契約」に従う。
 
 ### 起動
 
@@ -99,7 +99,7 @@ Dependabotアラートの取得状態: <取得できた場合は「取得済み�
 
 ## 取得
 
-1. 通常は`agent-toolkit:/share/copilot-review-audit.subagent.md`の`pending取得結果`を入力に使う。
+1. 通常は、起動入力`pending取得結果`（`atk review-audit pending`の標準出力を保存したJSON）を使う。
    `reviews`には未判定のCopilot由来レビューのPR番号とdatabaseId、`threads`には未解決のCopilot由来threadを持つPR番号が入る。
    `reviews`の各本文は本書「判定」のREST APIで取得し、インラインコメントは`threads`の各PRに対してだけ取得する。
 2. pendingのJSONを受け取れない環境では、次のGraphQLクエリで監査対象を直接取得する。

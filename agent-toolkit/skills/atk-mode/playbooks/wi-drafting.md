@@ -23,7 +23,8 @@
 AWIは後続の`process-wi`の担当への作業依頼、UWIはユーザーへの判断・資料・操作・報告内容の確認の依頼である（UWIの承認型は`agent-toolkit:atk-mode/references/uwi-format.md`「承認型ごとの内容」）。
 別項目の完了待ちと時間経過待ちはUWIにせず、依存と冷却時間で表す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」）。
 投入した要求は次回以降の`process-wi`が処理し、投入元のセッションの処理対象とは分ける。
-例外は`agent-toolkit:process-wi/references/lanes-goals.md`「明示された目標からの実行」の作業と、`agent-toolkit:process-wi/references/immediate-fix.md`「即時対応」で今回の追加とした正式改善AWIである。
+例外は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」の作業である。
+`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で今回の追加とした正式改善AWIも例外とする。
 現在の依頼と承認の範囲で要る是正（今回の作業が入れた欠陥と、完成に要る追随修正を含む）はそのセッションで終え、後続の独立した作業要求だけをWIにする。
 事象を改善要求にするかは、`agent-basics:writing-standards/references/quality-principles-facts.md`「報告の選別と判断記録」で決める。
 
@@ -69,7 +70,7 @@ AWIは後続の`process-wi`の担当への作業依頼、UWIはユーザーへ�
 ### 出所と観測の取得
 
 `確定済みの観測`は、対象と条件が一致する範囲で、取得済みの記録位置と保存出力を再利用する。
-前後の発話と操作の位置は`agent-toolkit:/share/session-conversation-extraction.md`「会話の少量取得」で探し、要求・判断・認可は次の`--user-events`と必要な`--detail`で原文と直前の提案を比べて確定する。
+前後の発話と操作の位置は`agent-toolkit:atk-mode/references/work-contract.md`「会話の少量取得」で探し、要求・判断・認可は次の`--user-events`と必要な`--detail`で原文と直前の提案を比べて確定する。
 
 ```sh
 atk run-script session-review-evidence -- --delegation-record root --user-events

@@ -19,7 +19,7 @@ Claude Code 2.1.292のセッションで、要求本文を`extra_params`へ埋�
 
 2026年8月31日から9月2日までの5セッションの観測で、出力トークン量はレーン数へほぼ比例し、レーン数を増やしたセッションで所要時間が短くなる傾向は観測されなかった。
 
-## agent-toolkit/skills/process-wi/references/run-lanes-integration.md「統合とAWI終了」：所有資源の回収：2026年9月3日
+## agent-toolkit/skills/atk-mode/playbooks/process-wi-lanes.md「統合とAWI終了」：所有資源の回収：2026年9月3日
 
 2026年9月3日にgit version 2.43.0で、upstreamを設定した専用branchをローカルの`develop`へ統合した直後に`branch -d`が未統合として拒否されることを確認した。
 再検証は`git branch -vv`で追跡先を確認して同じ状態の`branch -d`の終了コードを観測する。
@@ -35,7 +35,7 @@ agent-toolkit 2.199.0の基準commitは2026年10月8日「Merge pull request #14
 再検証ではmanaged-tempへ異なる通常名とCI名のパスを用意し、前記のinit、バイト数確認、validateを順に実行する。
 列の順序と旧形式の読み取り互換は`atk review-table --help`で確認する。
 
-## agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：内部担当の同時数と巨大WIの判定：2026年11月12日
+## agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md：内部担当の同時数と巨大WIの判定：2026年11月12日
 
 Linux、Python 3.15.2、6論理CPUの環境で、起動材料検査、接続環境、ログ回転、終了検収、記録索引、部分取得、規範点検、実機hookの8代表群を隔離して観測した。
 実装とレビューの合計同時数は4、重い検証はホスト共通の2枠とした。
@@ -146,7 +146,7 @@ commitのhookは、`develop`・`master`・`main`以外のブランチではpytes
 前提失敗や品質の往復を除外せず、代表外の全規範点検・別ホスト・実機・公開CI・後始末を含む次回全量の経路へ対応付ける。
 未確認工程は0秒や成功へ置換せず、下限計算と実行可能な上側の予測を区別する。
 
-## agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：調査とレーン分け：2026年11月17日
+## agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md：調査とレーン分け：2026年11月17日
 
 効率化の仕組みの棚卸し（2026年11月10日統合）より後の巡回について、巡回の集合JSONと結果ファイル（`~/.local/state/agent-toolkit/process-loop-ownership/rounds/`）の更新時刻と結果の本文から集計した。
 所要は集合JSONの作成から結果ファイルの最終更新までで、公開・後始末を含む。

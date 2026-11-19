@@ -54,7 +54,7 @@
   - `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」
   - `agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」
 
-  受領・統合条件は`exec.parent.md`・`run-lanes.md`にある
+  受領・統合条件は`exec.parent.md`・`agent-toolkit:atk-mode/playbooks/process-wi.md`にある
 - 対象、操作または設計の選択は、許容性、必要性、実装品質の順に判定する。
   エージェントの範囲逸脱には新しい承認制限を加えず、既存の承認判定を技術的な必要性の判定より前へ置いて対処する
   （2026年9月、ユーザー指示。必要性から判断を始めると、自ら採用した設計が求める追加操作を元の依頼の要件として扱うため）

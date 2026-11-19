@@ -25,7 +25,10 @@ _FIX_PATHS = "位置引数へメインが保存した選定結果YAMLの絶対�
 _FIX_PRIVATE_NOTES = "`atk config get private_notes`が返す場所が実在し読み取れることを確かめてから、同じコマンドを再実行する"
 
 
-_FIX_CONTENT = "選定結果の該当する欄を`selection-format.md`「選定結果の書式」の欄名と型へ直してから、同じコマンドを再実行する"
+_FIX_CONTENT = (
+    "選定結果の該当する欄を`agent-toolkit:atk-mode/references/process-wi-selection-format.md`「選定結果の書式」の"
+    "欄名と型へ直してから、同じコマンドを再実行する"
+)
 
 
 class InputError(_next_action.ActionableError):

@@ -91,7 +91,8 @@ _NEXT_COMPONENT_LANE = "不可分成分の全WIを同じ初回レーンへ割り
 _NEXT_LANE_BOUND = (
     "メインの直接作業・別のサブエージェント・既存レーンへの合流を品質・費用・時間で比較し、"
     "統合済み・後段を含めて上限内のレーンへまとめ、複数成分は同じレーンで順に扱う。"
-    "担当者の選択とレーンという資源の数を区別し、selection-procedure-addition.md手順5に従う"
+    "担当者の選択とレーンという資源の数を区別し、"
+    "`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」手順5に従う"
 )
 
 
@@ -168,7 +169,9 @@ def generate_selection(
     if not isinstance(judgments, dict):
         raise ValueError("判断入力は選定・レーンの所要時間・結合条件を持つ写像で指定する")
     if set(judgments) - (_TOP_LEVEL_KEYS | {"結合条件", "除外候補"}):
-        raise ValueError("判断入力に未知の欄がある。selection-format.mdの生成入力へそろえる")
+        raise ValueError(
+            "判断入力に未知の欄がある。`agent-toolkit:atk-mode/references/process-wi-selection-format.md`「選定の生成入力」へそろえる"
+        )
     if _selection.INITIAL_ALLOCATION_KEY in judgments:
         raise ValueError("初回配分は生成側が候補と判断から作成するため、判断入力から除く")
     require_shared_wait_basis(judgments.get(_selection.ESTIMATE_CORRECTION_KEY))

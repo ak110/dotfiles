@@ -8,7 +8,6 @@ import re
 from agent_toolkit._agents_server import launch_prompts
 from agent_toolkit._common import read_triggers, task_documents
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
-from agent_toolkit._testing.normative_contract import read_contract
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 
@@ -498,20 +497,10 @@ def _h2_section(content: str, heading: str) -> str:
 
 
 def _lane_planning_contract(plugin_root: pathlib.Path) -> str:
-    """exec.subagent.mdの読込表で計画の起草の時点に読む行と、その参照文書をひとつの契約として返す。"""
+    """exec.subagent.mdの読込表で計画の起草の時点に読む行と、その参照先の担当の実行契約をひとつの契約として返す。"""
     executor = task_documents.require_role_document(plugin_root, "exec").read_text(encoding="utf-8")
-    entry = next(line for line in _h2_section(executor, "読込表").splitlines() if "references/lane-planning.md" in line)
-    return (
-        entry
-        + "\n"
-        + read_contract(
-            plugin_root / "skills/process-wi/references/lane-planning.md",
-            plugin_root,
-            ("lane-planning-no-plan.md", "作成要否と計画なしの準備"),
-            ("lane-planning-drafting.md", "計画の起草"),
-            ("lane-planning-resume.md", "再開"),
-        )
-    )
+    entry = next(line for line in _h2_section(executor, "読込表").splitlines() if "process-wi-execution.md" in line)
+    return entry + "\n" + (plugin_root / "skills/atk-mode/playbooks/process-wi-execution.md").read_text(encoding="utf-8")
 
 
 # `<役割名>.parent.md`が起動の形を委ねていた旧来の共通節。役割名を本文へ書かず、委譲元に共通節を読ませて
@@ -586,28 +575,15 @@ def _launch_read_errors(share: pathlib.Path) -> list[str]:
 
 
 def _selection_procedure(plugin_root: pathlib.Path) -> str:
-    """選定と検収の同じ所有者が読む手順を取得する。"""
-    return read_contract(
-        plugin_root / "skills/process-wi/references/selection-procedure.md",
-        plugin_root,
-        ("selection-procedure-candidates.md", "処理対象の決定"),
-        ("selection-procedure-allocation.md", "調査とレーン分け"),
-        ("selection-procedure-validation.md", "保存後のチェック"),
-        ("selection-procedure-addition.md", "処理対象WIの追加"),
-    )
+    """選定と検収の同じ所有者が読む手順（選定、レーン分け、処理中の追加）を取得する。"""
+    playbooks = plugin_root / "skills/atk-mode/playbooks"
+    names = ("process-wi-selection.md", "process-wi-selection-allocation.md", "process-wi-additions.md")
+    return "\n".join((playbooks / name).read_text(encoding="utf-8") for name in names)
 
 
 def _selection_format(plugin_root: pathlib.Path) -> str:
-    """生成・消費が共有する書式の定義を取得する。"""
-    reference = plugin_root / "skills/process-wi/references"
-    layout = read_contract(
-        plugin_root / "skills/process-wi/references/selection-format.md",
-        plugin_root,
-        ("selection-format-generation.md", "選定の生成入力"),
-        ("selection-format-schema.md", "選定結果の書式"),
-    )
-    fields = read_contract(reference / "selection-format-schema.md", plugin_root, ("selection-format-fields.md", "欄の意味"))
-    return layout + fields.removeprefix((reference / "selection-format-schema.md").read_text(encoding="utf-8"))
+    """生成・消費が共有する書式の定義（書式、欄の意味、生成入力を1か所に持つ）を取得する。"""
+    return (plugin_root / "skills/atk-mode/references/process-wi-selection-format.md").read_text(encoding="utf-8")
 
 
 def _selection_documents(plugin_root: pathlib.Path) -> str:

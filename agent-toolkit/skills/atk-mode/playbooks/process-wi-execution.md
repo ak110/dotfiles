@@ -39,12 +39,12 @@
 2. 実装: 計画かWIの要求から、実装前に受入シナリオの公開された呼び出し手段、入力と初期状態、有効な期待結果、検出する失敗を具体化する。
    受入シナリオの品質基準は`agent-basics:check-execution/references/acceptance-scenarios.md`にある。
    この領域の固有の運用（エージェント向け文書の試行、検証資源の分離、常駐サービスの公開前の観測）は`agent-toolkit:atk-mode/references/workflow-phases.md`にある。
-   受入確認と通常検証の比較・実行単位・起動形は`agent-toolkit:/share/verification-operations.md`で選び、実装、自己検収、commitを終える。
+   受入確認と通常検証の比較・実行単位・起動形は`agent-toolkit:atk-mode/playbooks/verification.md`で選び、実装、自己検収、commitを終える。
    レビューの修正にも適用し、不具合は同じ入力で再現してから直す。
-   `検証結果`は`agent-toolkit:/share/verification-evidence.md`に従って既存の引き継ぎ記録と進捗ログへ記録し、残る工程の担当と再開先も示す。
+   `検証結果`は`agent-toolkit:atk-mode/playbooks/verification.md`に従って既存の引き継ぎ記録と進捗ログへ記録し、残る工程の担当と再開先も示す。
    計画の準備、実装の開始、実装の完了の各状態を保存し、同じ担当が処理を続ける。
 3. 実行レビュー: `agent-toolkit:/share/exec-review-parent-launch.md`の起動契約に従い、実装を担当していない実行レビュー担当を起動する。
-   起動前に`agent-toolkit:/share/verification-evidence.md`に従い、取得版、入力条件、要求別の観測箇所を同じ検証記録へ対応付ける（レビュー担当はその記録を独立に読み、保存済みの成功の適用可否と、不足か影響差分に限った追加の観測を判断する）。
+   起動前に`agent-toolkit:atk-mode/playbooks/verification.md`に従い、取得版、入力条件、要求別の観測箇所を同じ検証記録へ対応付ける（レビュー担当はその記録を独立に読み、保存済みの成功の適用可否と、不足か影響差分に限った追加の観測を判断する）。
    レビュー指摘管理表の作成と完成条件証拠の受領確認は`agent-toolkit:/share/exec-review-parent-acceptance.md`と`agent-toolkit:/share/exec-review-parent-existing-defects.md`に従う。
    画面差分がある場合は`agent-toolkit:/share/usability-review.parent.md`に従ってユーザビリティレビュー担当も起動する。
    各計画のレビュー基準と開始HEADは保つ。
@@ -71,7 +71,7 @@
 
 計画の要否は、計画本文の起草へ進む前に次の順で判定する（定義を読まずに付けた区分のまま計画を省いた過去の誤りを防ぐため）。
 
-1. `再開位置`が指定されていないAWIについて、`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」を読み、各AWIの本文を`atk wi show`で読む。
+1. `再開位置`が指定されていないAWIについて、`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」を読み、各AWIの本文を`atk wi show`で読む。
    選定時の分類、`source`の値、選定時に付いた区分の名前ではなく、本文を読んで事項ごとに判定する。
    同節の4つの事項が本文と現物から決まるAWIを計画なしで処理し、決まらないAWIは計画が要るAWIとして本書「計画の起草」で1つの計画にまとめる（分ける条件は同節の手順4）。
    要求変更で`再開位置: なし`へ切り替えたAWIは新しい計画に含める。
@@ -105,7 +105,7 @@
   先行調査の計画の下書きを材料にしても、本節の正式な起草・自己監査・構造検査は行い、記録が未完了か取得できない場合は使える成果だけを使って通常の調査から続ける。
 - 計画中に同じ要求の重複が分かった場合は、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」に従って元の担当・計画・成果へつなぎ、残差の採否と各AWIの処置を記録する（同じファイルへの書込競合は要求の重複とは別に扱う）。
 
-1. `agent-toolkit:write-plan`を起動して同スキルの読込表の資料を読み、AWI、プロジェクト規範、対象の実装、既存のテスト、生成・配布の手段、類似の実装を調べる。
+1. `agent-toolkit:atk-mode/playbooks/write-plan.md`と、同書「条件と行動」が示す資料を読み、AWI、プロジェクト規範、対象の実装、既存のテスト、生成・配布の手段、類似の実装を調べる。
    調査は通常AWIの起草と同じ内容とし、対象をAWIの本文と現物から決まらない部分に限る。
    - 対象の実装を読む前に、要求と公開契約から比べる対象の最も近い既存の実装を選び、境界の候補を、入力値、時間経過、操作の順序、保持する状態、反復、権限や環境の差などの軸から選ぶ。
    - 調査の後、変更箇所が責務を負う必要性、既存の機構への統合、上流ツールや共有設定への移管、機構の削除や簡素化を比べ、結論を`agent-toolkit:atk-mode/references/awi-body.md`「調査結果と判断根拠」の退けた案と理由として`## 調査結果と判断根拠`へ書く。
@@ -120,12 +120,12 @@
      直接行う単位と委譲する単位を、理由とともに`## 実施内容`（計画なしでは引き継ぎ記録）へ書く。
      計画の起草、設計の判断、原因分析はレーン担当自身が行い、内部の担当には内容が確定した作業を渡す。
      分担の記載には、書込の単位ごとに委譲先の工程か自分で行う理由を書く（工程の区分は`agent-toolkit:delegation/references/process-model-settings.md`「工程別モデル設定」）。
-   - 多数の対象へ同じ作業を適用する要求では、`agent-toolkit:write-plan/references/plan-file-standards-scope.md`「実施内容」の実施方式も比べ、採用した方式と理由を書く。
+   - 多数の対象へ同じ作業を適用する要求では、`agent-toolkit:atk-mode/references/plan-format.md`「実施内容」の実施方式も比べ、採用した方式と理由を書く。
      大量のファイル編集では、実装の前に作業の構成を決め、要求と完成条件はレーンが1つのWIとして持ち、並行できる作業単位を、共通の変換規則と前提、出力元と直接消費するテスト、相互参照の整合の責任でまとめる。
      変換、参照の追随、保持の確認が同じ原本と対応表から進む構成にし、独立した準備は先行成果を待たずに始め、共有の定義は単一writerへ集める。
      内部の群の総数と同時数を分け、巡回全体のCと巨大WIの判定は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`「内部担当の同時数と巨大WIの判定」へつなぐ。
      各群の実装・焦点の検証・commitが済んだ順に`agent-toolkit:/share/exec-review-parent-launch.md`の独立文脈レビューへ渡し、対象のHEAD・要求・直接影響の集合・成功の証拠を固定して、他の群の未確定の本文を混ぜない。
-     共有実行枠（`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」）の重い検証と直列のHEADの更新は保ち、群間の契約・共有の生成物・組合せの差分・未達条件を最後に検収する。
+     共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）の重い検証と直列のHEADの更新は保ち、群間の契約・共有の生成物・組合せの差分・未達条件を最後に検収する。
      文単位の大量の書換えで意味の保持を確かめる分担は、レーン担当の役割文書「操作区分」に従う。
    - 独立した複製環境での対照実験など時間の要る比較調査は、入力と版を固定でき独立した複製へ出力できれば、通常の修正と並行して始める。
      開始前に`agent-basics:writing-standards/references/investigation.md`「実行結果の検証」の準備確認を終える。
@@ -138,10 +138,10 @@
      メインは`agent-toolkit:atk-mode/roles/add-wi.parent.md`の付随型で投入し、返ったファイル名をレーン担当へ渡し、レーン担当はそれを`移管`行の根拠へ書いてから計画を確定する。
    - `上流投入結果`を受け取った場合は、`結果`が`completed`の要求を採用範囲から除き、`移管`として投入先の`ファイル名`とともに記録する。
 2. 人間由来の要求を不採用・部分採用とする判断は、`agent-toolkit:/share/rules/rules-subagent.md`「確認事項の即時通知」に従い、計画の確定前にメインへ通知する。
-   完成条件の変更・除外についてのメインの技術判断は`agent-toolkit:/share/review-loop-coordination.md`「技術判断で外せる完成条件」に従い、旧条件、新条件か除外範囲、技術的な制約、保つ要求と根拠を実施内容の根拠欄へ書く。
+   完成条件の変更・除外についてのメインの技術判断は`agent-toolkit:/share/review-loop-coordination-escalation.md`「技術判断で外せる完成条件」に従い、旧条件、新条件か除外範囲、技術的な制約、保つ要求と根拠を実施内容の根拠欄へ書く。
    実装着手後の判断はレビュー指摘管理表へ書く。
 3. 通知した確認事項の回答を全て受け取って採否へ反映するまでは、回答待ちの間も進められる調査と下書きにとどめる。
-4. `agent-toolkit:write-plan/references/plan-file-standards-template.md`「初回起草の雛形」に案件の値を入れ、同書に従って計画本文を起草してmanaged-temp配下のファイルへ保存する。
+4. `agent-toolkit:atk-mode/references/plan-format.md`「初回起草の雛形」に案件の値を入れ、同書に従って計画本文を起草してmanaged-temp配下のファイルへ保存する。
    単一の計画では`plan-check`の行数の警告（1200行）を避けられない見込みなら、実装の前に分析単位と依存の順で自己完結した複数の計画へ分け、全ての計画を同じレーン・専用worktree・書込担当のまま管理する（確定後の事後の分割やレーンの再配分は行わない）。
    各計画は`atk run-script plan-create -- --main-source <計画本文の絶対パス> --lane <レーン識別子> --work-dir <計画メタ情報の対象リポジトリ>`で`~/.claude/plans`に作り、stemには同処理が生成した値を使う。
 5. 計画全体から、編集・新設・移動するエージェント向け文書の集合を確定し、全てのパスをリポジトリ相対パスで計画本文に書く。
@@ -157,7 +157,7 @@
    - 計画を分けた場合は、全ての計画を位置引数に並べて1回で実行する。
    - 処理中に追加されたAWIの計画では、同じレーンの先行する凍結済みの計画を全て`--prior-plan <先行計画の絶対パス>`で指定する。
    - 不一致のパスは一覧から除かず、計画本文を直して同じ集合で確かめ直す。
-   - 各オプションの仕様は`agent-toolkit:write-plan/references/plan-structure-check.md`にある。
+   - 各オプションの仕様は`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画構造の自動チェック」にある。
 6. `## 実施内容`に人間由来の`部分採用`か`不採用`の行がある場合と、ユーザーの依頼かWIで明示された禁止条件が`## 実施内容`にある場合は、次の行だけを返し、同じthreadでメインの`実装開始`か`実装なし`を待つ。
    それ以外は本書「計画検査完了の通知」へ進む。
 
@@ -195,7 +195,7 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
 残っていた観測のみの再開は旧計画を引き継ぎ、次の凍結と代行の条件を適用する。
 
 再開位置が計画ファイルの絶対パスの場合は、H1直下の要約、`## 反映内容と反映先`、`## 完成条件`、`## ユーザー指摘の逐語引用`、`## 進捗ログ`と、同じstemのレビュー指摘管理表の応答を読む。
-8節形式の計画では、`agent-toolkit:write-plan/references/legacy-plan-file-standards.md`「8節形式」の対応表で節を読み替える。
+8節形式の計画では、`agent-toolkit:atk-mode/references/plan-legacy-formats.md`「8節形式」の対応表で節を読み替える。
 計画本文と管理表の応答が一致しない場合は管理表の応答を現在の確定情報とし、進捗ログの最終行の位置から既存の計画を引き継いで再開する。
 
 `再開位置: 計画なし`の場合は、引き継ぎ記録からAWIの集合、採否、検証コマンドを得て、完了済みのcommitを`git merge-base <専用branch> <ベースbranch>`と`git log <その結果>..<専用branch>`で特定する。
@@ -234,7 +234,7 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
 共有hookなど複数のレーンの進行を妨げる不良は、解除に要る最小範囲の修正を呼出側の即時対応の契約へ渡し、同じレーンに属する無関係な全作業の終了と束ねて待たせない。
 独立文脈レビュー、所有、必須の検証と統合の直列化は保つ。
 
-後続へ渡す未コミットの検証は、`agent-toolkit:/share/verification-evidence-observation.md`「検証時本文の保存」に従って実行前に本文を保存し、返却前に保存物から実行時の本文を取り直せることと、返却対象への適用の理由が記録されていることを確かめる。
+後続へ渡す未コミットの検証は、`agent-toolkit:atk-mode/playbooks/verification.md`「検証時本文の保存」に従って実行前に本文を保存し、返却前に保存物から実行時の本文を取り直せることと、返却対象への適用の理由が記録されていることを確かめる。
 
 ## 追加と再開
 

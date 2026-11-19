@@ -2,7 +2,7 @@
 
 複数のセッションとユーザーの操作にまたがるWI処理の全体像である。
 WI処理の工程や運用に関わる問題の原因分析と対策、運用工程や自動化の変更計画、ユーザーへの運用説明の前に読む。
-各工程の入力と出口は`agent-toolkit:/share/workflow-phases.md`、各工程の手順は`agent-toolkit:process-wi`と`agent-toolkit:atk-mode`の手順書が定める。
+各工程の入力と出口は`agent-toolkit:atk-mode/references/workflow-phases.md`、各工程の手順は`agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の手順書が定める。
 キュー、process-loop、レーンの現物を照会・操作できない環境では、机上の説明と実際の設定・状態の変更を分けて扱う。
 
 ## 利用形態と起動主体
@@ -10,8 +10,8 @@ WI処理の工程や運用に関わる問題の原因分析と対策、運用工
 | 利用形態 | 起動主体と公開操作 | 処理の責務 |
 | --- | --- | --- |
 | 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を処理する。計画の要否は`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決める |
-| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と統括会話の起動を管理する。統括が`agent-toolkit:process-wi all-repos`で登録全体の対象を処理し、報告まで担当する |
-| まとめ処理型 | ユーザーが`agent-toolkit:process-wi single-lane`を手動で起動する | 蓄積されたWIを1回の実行でまとめて処理する |
+| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と統括会話の起動を管理する。統括が`agent-toolkit:atk-mode`の作業`process-wi all-repos`で登録全体の対象を処理し、報告まで担当する |
+| まとめ処理型 | ユーザーが`agent-toolkit:atk-mode`の作業`process-wi single-lane`を手動で起動する | 蓄積されたWIを1回の実行でまとめて処理する |
 | 定期実行型 | ユーザーがcronなどに`atk run-skill`を登録する | WIキューを経由せずにスキル1件を自律モードで実行し、結果は報告用UWIで、判断を要する対応は事前承認型UWIで届ける |
 
 process-loopの起動・待機・制御を扱う前に`atk wi process-loop --help`で条件を確かめる。
@@ -29,7 +29,7 @@ process-loopはホームディレクトリなどから実行し、`process_loop`
 系統を省いたWIは`--default-branch`の系統へ入る。
 両方の系統に要る修正は取り込み元の系統へ入れ、取り込む側はリリースの前に取り込み元をマージする。
 WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に従う。
-処理は`agent-toolkit:process-wi/SKILL.md`「系統を登録したリポジトリ」に従う。
+処理は`agent-toolkit:atk-mode/playbooks/process-wi.md`「系統を登録したリポジトリ」に従う。
 リリース前の確認は`agent-toolkit:atk-mode/playbooks/publish.md`「プロジェクト固有の公開後の操作とリリース」に従う。
 
 ## 要求から公開までの担当
@@ -37,13 +37,13 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 1. 要求の具体化: メインが元の要求・回答・既存の認可を確かめ、対象を選定して配分する。
    ユーザー固有の判断が要る箇所は、その回答に依存する処理の前に確認する。
 2. 計画と実装: レーン担当が割り当てられた要求から計画・実装・検証を進め、実行レビューの入力を確定する。
-   レーン数によらない継続と受け渡しの条件は`agent-toolkit:/share/single-lane-execution.md`に従う。
+   レーン数によらない継続と受け渡しの条件は`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`に従う。
 3. 独立文脈レビュー: 実装を担当していないレビュー担当が成果を検収する。
    再レビューは前回の指摘、修正差分、直接影響範囲を確かめる。
 4. 統合: レーン担当が検収済みの成果を統合する。
    複数レーンではメインが依存条件を満たしたレーンへ統合を許可し、`atk lane integrate`は統合先HEADを1レーンずつ更新する。
-5. 公開と後始末: メインが`agent-toolkit:process-wi/references/finish-session.md`の公開・CI・保存状態を検収し、報告と終了へ進む。
-   準備・統合・回収の公開操作は`atk lane create`、`atk lane integrate`、`atk lane delete`で、実行前に`agent-toolkit:process-wi/references/run-lanes.md`の該当節を確かめる。
+5. 公開と後始末: メインが`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の公開・CI・保存状態を検収し、報告と終了へ進む。
+   準備・統合・回収の公開操作は`atk lane create`、`atk lane integrate`、`atk lane delete`で、実行前に`agent-toolkit:atk-mode/playbooks/process-wi.md`の該当節を確かめる。
    保持資源の回復は同書と`atk lane delete --help`、`atk lane recover --help`の条件と診断に従う。
 
 必要なユーザー確認は特定の工程の末まで延ばさず、回答の後は次節の担当と契機で再開する。
@@ -55,9 +55,9 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 ## 要求の登録と判断待ちからの再開
 
 目標から必要な作業を構成する依頼は、通常の対話と、単一リポジトリのprocess-wiへの追加指示で受け付ける。
-通常の対話は既存の作業契約と計画へ、process-wiは`agent-toolkit:process-wi/references/lanes-goals.md`「明示された目標からの実行」へつなぐ。
+通常の対話は既存の作業契約と計画へ、process-wiは`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」へつなぐ。
 メインが全体の作業構成・結果の採否・方針転換・完了を所有し、局所の担当が設計・実装、独立した担当が実行レビューを担う。
-通常のキュー処理は初回の対象と配分を保ち、開始後の新着の確認と今回追加の判断は`agent-toolkit:process-wi/references/immediate-fix.md`「開始後に追加されたWIの確認」に従う。
+通常のキュー処理は初回の対象と配分を保ち、開始後の新着の確認と今回追加の判断は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従う。
 
 要求の登録は、ユーザーが`atk wi add`、`/atk-mode add-awi-by-user`、`atk serve`のWI管理画面から行うほか、処理中のエージェントと`agent-toolkit:review-session`からも投入できる。
 本文の形式は`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。
@@ -69,7 +69,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 ユーザーは`atk wi answer`か`atk serve`から回答する。
 回答済みのUWIのうち、`run_skill_report: true`の報告用は同じ対象リポジトリ・同じスキルの次回の`atk run-skill`で、報告用を除く承認用はprocess-wiの次回の実行でメインが取り込む。
 `source`が`run-skill`の場合は`scope`のスキルを解決して承認後の手順を使い、解決できなければ続行できない理由を返す。
-処理中のprocess-wiセッションへユーザーから回答が伝えられた場合は、同じセッションの処理対象へ加える（`agent-toolkit:process-wi/references/selection-procedure-addition.md`「処理対象WIの追加」）。
+処理中のprocess-wiセッションへユーザーから回答が伝えられた場合は、同じセッションの処理対象へ加える（`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」）。
 
 ## 完了後の振り返り
 

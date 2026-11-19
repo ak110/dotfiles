@@ -125,7 +125,10 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "skill",
         nargs="?",
         metavar="SKILL",
-        help="実行するスキル名（`agent-toolkit:process-wi`のような修飾名、またはプロジェクトのスキル名）。",
+        help=(
+            "実行するスキル名（`agent-toolkit:review-session`のような修飾名、またはプロジェクトのスキル名）。"
+            f"入口`atk-mode`の作業は作業の修飾名（`{skill_modes.PROCESS_WI}`など）で指定する。"
+        ),
     )
 
 
@@ -255,7 +258,7 @@ def build_goal(skill: str, skill_args: str | None, *, launch: str | None = None)
     子の終了後に起動元が行う検収と確定を担当範囲から外すことを短く示す。
 
     始め方は全てのホストで目的文が示す（SessionStartは起動を差し込まない）。
-    入口`atk-mode`の作業の名前を持つスキル（`agent-toolkit:process-wi`など）と入口の起動は、入口を作業と引数で起動させ、
+    入口`atk-mode`の作業の名前（`skill_modes.ENTRY_WORKS`。修飾名と接頭辞の無い名前）と入口の起動は、入口を作業と引数で起動させ、
     それ以外はそのスキルの起動を書く。
     `launch`は、`skill`が保存上の作業名で同名のスキルを持たない起動（`atk wi submit`）が、作業の始め方を1文で渡す。
     起動単位の名前（ロック、ログ、報告用UWIの`scope`）は`skill`のまま保ち、スキルの実在に依存させない。
@@ -264,8 +267,7 @@ def build_goal(skill: str, skill_args: str | None, *, launch: str | None = None)
     if launch is not None:
         return f"このセッションが担当する作業`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{launch}"
     work, work_args = skill_modes.resolve_work(skill, skill_args)
-    name = work.removeprefix("agent-toolkit:")
-    if work.startswith("agent-toolkit:") and name in skill_modes.ENTRY_WORKS:
+    if (name := skill_modes.entry_work(work)) is not None:
         start = skill_modes.entry_launch(skill_modes.invocation_scope(name, work_args), free_text=True)
     else:
         start = f"スキル`{skill}`を起動して始める（起動入力の`free_text`が空でなければ引数として渡す）。"

@@ -9,7 +9,7 @@ stemは次の形にする（`dd`は作成日、`HHmm`は作成時刻）。
 
 | `起動経路` | stem |
 | --- | --- |
-| `agent-toolkit:process-wi`のレーン | `dd-HHmm_process-wi_レーンNN` |
+| `agent-toolkit:atk-mode`の作業`process-wi`のレーン | `dd-HHmm_process-wi_レーンNN` |
 | メインによる起動 | `dd-HHmm_<日本語の簡潔な名詞>` |
 
 1. 計画は、`atk run-script plan-create --`で`~/.claude/plans`直下に1つのファイル`<stem>.md`として作る。
@@ -33,11 +33,11 @@ stemは次の形にする（`dd`は作成日、`HHmm`は作成時刻）。
      削除は`agent-toolkit:/share/exec-review-parent-correction.md`「レビュー指摘管理表の保存」に従う。
    - 公開工程のCI失敗の修正: `ci-<修正系列の開始時のHEADの短縮OID>.exec-review.tsv`。
      修正系列の終了時に`atk plans commit ci-<同じ短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
-     保存の時機は`agent-toolkit:process-wi/references/ci-fix-series.md`の`入力計画`の段落に従う。
+     保存の時機は`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`の`入力計画`の段落に従う。
 6. 計画は、実行レビューが収束するまで`~/.claude/plans`直下で更新し、収束したら`atk plans commit <~/.claude/plans直下のメイン計画ファイル名>`で`private-notes/plans/yyyy/MM/`へ移して保存する。
    計画ファイルと付属ファイルは同じcommitで保存される。
-   - `agent-toolkit:process-wi`のレーンが実行レビューの収束の前に終わる場合も、`agent-toolkit:/share/lane-integration-subagent-finalization.md`「計画最終化」に従い、統合の記録を追記した後に1回保存する。
+   - `agent-toolkit:atk-mode`の作業`process-wi`のレーンが実行レビューの収束の前に終わる場合も、`agent-toolkit:atk-mode/references/lane-integration-format.md`「計画最終化」に従い、統合の記録を追記した後に1回保存する。
    - 実行レビューを行わない計画（観測だけの再開で取得した計画、「マージなし」の計画）も保存し、観測の完了と`計画検査完了`の通知は保存の契機から外す。
-   - 保存済みの計画は完了した作業の記録として扱い、後のセッションで実装する時は新しい計画ファイルを作る（中断したレーンの再開は`agent-toolkit:process-wi/references/run-lanes.md`に従う）。
+   - 保存済みの計画は完了した作業の記録として扱い、後のセッションで実装する時は新しい計画ファイルを作る（中断したレーンの再開は`agent-toolkit:atk-mode/playbooks/process-wi.md`に従う）。
    - 保存済みの計画をcheckoutして履歴の書き換えに追従させた主体は、その工程の最後に、更新した全ての計画バンドルを`atk plans commit`で保存し直す。
      未完了のWIと延期（adopt）を含む計画も対象にし、終了コード0と、未適用・未完了の警告が無いことを確かめる。

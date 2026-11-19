@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from agent_toolkit._common import session_state
+from agent_toolkit._common import session_state, skill_modes
 from agent_toolkit._hooks import work_contract
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._testing.pretooluse_support import (
@@ -774,7 +774,7 @@ class TestWorkflowSkillInvocation:
         [
             "agent-toolkit:atk-mode",
             "atk-mode",
-            "agent-toolkit:process-wi",
+            skill_modes.PROCESS_WI,
             "process-wi",
             "agent-toolkit:review-session",
             "review-session",

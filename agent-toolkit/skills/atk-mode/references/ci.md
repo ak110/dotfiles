@@ -3,7 +3,7 @@
 公開先のCI定義の有無の判定、`wait_ci.py`（`atk run-script wait-ci`）による待機、CIの失敗の証拠の取得と修正の公開を定める。
 `agent-toolkit:atk-mode/playbooks/publish.md`の「push前」「pushと監視」の段から使う。
 CIの失敗を認識したら`agent-basics:bugfix`を起動し、失敗の分類と対処は同スキルの`references/ci-failures.md`に従う。
-修正commitを要するCI失敗の担当と修正系列は、`agent-toolkit:process-wi/references/ci-fix-series.md`に従う。
+修正commitを要するCI失敗の担当と修正系列は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`に従う。
 
 ## 公開先に対応するCI定義の判定
 
@@ -154,16 +154,16 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
    修正や再投入の前に、`agent-basics:bugfix`を起動済みであることを確かめる。
 2. 失敗したジョブの全体を確かめて修正の範囲を確定する。
    分類の結果（VRTでは差分の分類を含む）は既存のCIの記録か進捗へ記し、計画を作る場合は計画の調査の工程へ記す。
-   `agent-toolkit:process-wi`の公開工程では、公開工程が管理する原因分析の結果へ記す。
+   `agent-toolkit:atk-mode`の作業`process-wi`の公開工程では、公開工程が管理する原因分析の結果へ記す。
 3. 環境要因か、自セッションの変更と無関係と分類した場合は、`atk wi list --type=awi --status=active`で同じ事象を扱うAWIを探す。
    該当があれば`atk wi show <ファイル名> --skip-pull`で本文の緩和策を読み、`agent-basics:bugfix/references/ci-failures.md`「対処」の選択肢と比べる。
 4. 選んだ対処、baselineなどの基準の情報、CIの生の観測、分析の結果を引き継ぐ。
-   公開工程では、公開担当がこれらをCIの記録として保持し、CI修正担当へ渡す（`agent-toolkit:process-wi/references/ci-fix-series.md`）。
+   公開工程では、公開担当がこれらをCIの記録として保持し、CI修正担当へ渡す（`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`）。
 5. 分かっている修正は全てまとめて、1回のpushで公開する。
    元のbaselineの待機が終わった時点の出力にある全ての失敗ジョブを修正の範囲に含める。
    失敗の全体を取得できない時は、先にその原因を除く。
 6. 再pushのたびに新しいbaselineで監視し、前回失敗したジョブが新しいpushの監視の対象に含まれることを確かめる。
-   含まれない場合は、`agent-toolkit:process-wi/references/ci-fix-series.md`「修正commitが必要なCI失敗を修正するエージェント」の修正系列の定めに従う。
+   含まれない場合は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正commitが必要なCI失敗を修正するエージェント」の修正系列の定めに従う。
 7. 原因の調査でCIのジョブを手動で再実行した場合も、同じbaselineで`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を呼び直し、baselineに基づく判定を再現できるこのスクリプトに監視を任せる。
    許された再実行でも失敗が解消しない場合は最終状態を「CI未通過」とし、その事実と帰属の判定を、完了の報告、採否の記録、`atk run-script plan-progress --`による計画の進捗ログに記す。
 

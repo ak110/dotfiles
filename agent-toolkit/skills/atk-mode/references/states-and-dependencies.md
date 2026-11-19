@@ -15,7 +15,7 @@ WIの保存先は`private-notes/yyyy/MM/<filename>`に固定し、種別と保�
 
 重要フラグはfrontmatterの`important: true`で表し、キーの省略はfalse、解除はキーの削除とする。
 一覧、検索、全件表示、Web画面の一覧では、重要度のフィルター`all`、`yes`、`no`を使える。
-重要フラグは通常の`agent-toolkit:process-wi`の選定、優先度、状態遷移に影響せず、ユーザーが対象集合として明示した時だけ参照する。
+重要フラグは通常の`agent-toolkit:atk-mode`の作業`process-wi`の選定、優先度、状態遷移に影響せず、ユーザーが対象集合として明示した時だけ参照する。
 
 選定の優先度は、重要フラグとは別の優先区分（frontmatterの`priority: urgent`と、根拠の3欄`priority_impact`、`priority_evidence`、`priority_release`）で表す。
 urgentは、処理を後に回すと具体的な損失が続く項目（処理の停止や遮断、誤った判断や成果物、エンドユーザーの環境での継続的な失敗、データ損失の危険など）に限り、観測した影響、観測条件と根拠の所在、解除条件を示せる時だけ付ける。
@@ -23,14 +23,14 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 起票時はWI投入担当が、処理中に新たな影響や解消を観測した時は処理担当が、`atk wi set-priority`で付与、更新、解除する。
 区分の無い項目は通常の扱いとする。
 巡回の選定量から外れた未着手の項目は、量の調整だけを理由に保留、本文の変更、依存の追加をせず、`inbox`のまま次回の候補に残す。
-選ぶ順序と件数の下限は`agent-toolkit:process-wi/references/selection-procedure-allocation.md`に従う。
+選ぶ順序と件数の下限は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`に従う。
 
 ## 状態と一覧集合
 
 | 分類 | 値 | 意味 |
 | --- | --- | --- |
 | 保存状態 | `inbox` | 次の処理主体による取得を待っている。依存が未解決なら`blocked`と判定する |
-| 保存状態 | `processing` | `agent-toolkit:process-wi`などが取得し、処理を進めている |
+| 保存状態 | `processing` | `agent-toolkit:atk-mode`の作業`process-wi`などが取得し、処理を進めている |
 | 保存状態 | `hold` | ユーザーかエージェントが編集中のため、自動処理の対象から外れている |
 | 保存状態 | `adopted` | 採用した要求の実施が完了した |
 | 保存状態 | `rejected` | 全ての要求を採用しないことが確定した |
@@ -41,7 +41,7 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 
 今処理すべき項目の重複は、`active`の項目の本文同士を比べて確かめる。
 過去の同様の要求は、`--state=all`で終了済みの項目も含めて取得して確かめる。
-`agent-toolkit:process-wi`は`processable`の項目だけを候補の選定、優先度の評価、依存の判定、個別指示の読み取りの対象にする。
+`agent-toolkit:atk-mode`の作業`process-wi`は`processable`の項目だけを候補の選定、優先度の評価、依存の判定、個別指示の読み取りの対象にする。
 
 ## 状態遷移
 
@@ -53,8 +53,8 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 | `inbox`→`hold` | `atk wi hold` | 項目の修正が要ると判断した主体。ユーザーの回答待ちには使わず、本書「承認型UWIと元項目」の依存で表す |
 | `processing`→`hold` | `atk wi hold --state=processing <ファイル名>` | 項目を処理しているセッションが、本文の修正が要ると判断した時点。エージェント環境では`--state=processing`が無いと失敗する |
 | `hold`→`inbox` | `atk wi unhold` | 項目を修正した主体が、保存した本文の一致を確かめた時点 |
-| `inbox`→`processing` | `atk wi start-processing` | 項目の作業に着手する主体が、開始の契機によらず着手の時点で先に実行する。対象は通常のAWI、作業を伴う回答済みUWI（是正を求める回答が保存された事後承認型UWIと、元項目での追加作業を求める回答済みの事前承認型UWI）、依存の解消や`unhold`で`inbox`へ戻った元項目である。開始の契機は`agent-toolkit:process-wi`の選定、中断した実行の再開、実行中の回答の反映、`agent-toolkit:process-wi`の外での回答の反映を含む |
-| `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のメインエージェントが、回答済みで未終了のUWI（是正要求を含まない事後承認型を含む）を、AWIの処理を始める前に終了する時 |
+| `inbox`→`processing` | `atk wi start-processing` | 項目の作業に着手する主体が、開始の契機によらず着手の時点で先に実行する。対象は通常のAWI、作業を伴う回答済みUWI（是正を求める回答が保存された事後承認型UWIと、元項目での追加作業を求める回答済みの事前承認型UWI）、依存の解消や`unhold`で`inbox`へ戻った元項目である。開始の契機は`agent-toolkit:atk-mode`の作業`process-wi`の選定、中断した実行の再開、実行中の回答の反映、`agent-toolkit:atk-mode`の作業`process-wi`の外での回答の反映を含む |
+| `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:atk-mode`の作業`process-wi`のメインエージェントが、回答済みで未終了のUWI（是正要求を含まない事後承認型を含む）を、AWIの処理を始める前に終了する時 |
 | `processing`→`adopted` | `atk wi adopt` | メインエージェントが回答済みUWIを終了する時と、作業レーンがマージの完了後かコード変更を伴わない要求充足の確定後にAWIを終了する時。実装commitはcommitごとに`--commit <OID>`を渡し、補足は`--note`か`--note-file`に書く。コード差分の無い充足では`--commit`を省き、充足の根拠を処理結果に書く |
 | `processing`→`rejected` | `atk wi reject` | 計画工程で確定した全要求の不採用を、メインエージェントが確かめた後にレーンが実行する |
 | `hold`→`adopted`か`rejected` | `atk wi adopt`、`atk wi reject` | 保留中の項目の採否が確定して残作業が無い時に、採否を確定した主体が`unhold`を実行せずに直接終了する（`unhold`すると、終了の前に`atk wi process-loop`が取得し得る） |
@@ -110,8 +110,8 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 キューは処理環境を区別しないため、別の環境で処理する旨の回答の後も元の項目は今の環境の巡回対象に残る（その結果になる選択肢を出さない基準は`agent-toolkit:atk-mode/references/uwi-format.md`「構成」）。
 
 1. 回答が保存されたUWIと、そのUWIを`depends_on`に持つ元の項目は、同じキューの処理候補に入る。
-   次にそのキューを処理する`agent-toolkit:process-wi`のメインエージェントは、両方を同じ実行の処理対象へ加え、同じ作業レーンへ割り当てる。
-   実行中にユーザーから回答を伝えられた場合は、`agent-toolkit:process-wi/references/selection-procedure-addition.md`「処理対象WIの追加」に沿って取り込む。
+   次にそのキューを処理する`agent-toolkit:atk-mode`の作業`process-wi`のメインエージェントは、両方を同じ実行の処理対象へ加え、同じ作業レーンへ割り当てる。
+   実行中にユーザーから回答を伝えられた場合は、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」に沿って取り込む。
 2. レーンは回答を反映してUWIを終了し、依存が解消した元の項目を処理して終了する。
    回答によって元の項目側の追加作業が要らなくなった場合は、メインエージェントがUWIを終了し、元の項目だけを処理対象に加える。
 3. 同じ元の項目が依存する未回答のUWIが他に残る間、元の項目は`blocked`のままで、回答済みのUWIは先に終了してよい。
@@ -151,7 +151,7 @@ UWIに期限が保存されていると着手可否の判定で不正な期限�
 
 UWIは、ユーザーの判断、資料の提供、操作が要ることを根拠に起票し、1件で1つの問いを扱う。
 起票の要否は環境の違いではなく、ユーザーだけが出せる入力や認可の不足で決める。
-既に認可を得た操作はUWIにせず、`agent-toolkit:process-wi`の外部操作の手順で実施する。
+既に認可を得た操作はUWIにせず、`agent-toolkit:atk-mode`の作業`process-wi`の外部操作の手順で実施する。
 一連の作業が終わった後に要るユーザー側の対応は、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」でUWIの登録の要否を決める。
 登録する場合は、関連するAWIの完了工程に登録の予定を書き、そのAWIの担当がUWIの保存を確かめる。
 

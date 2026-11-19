@@ -24,7 +24,7 @@ from agent_toolkit._atk.wi import process_loop_session as _session
 from agent_toolkit._atk.wi import process_loop_worktree as _worktree
 from agent_toolkit._atk.wi import submit as _submit
 from agent_toolkit._common import console_title as _console_title
-from agent_toolkit._common import mcp_environment, process_tree
+from agent_toolkit._common import mcp_environment, process_tree, skill_modes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import registry_index as _registry_index
 from agent_toolkit._common import session_registry as _registry
@@ -325,7 +325,7 @@ def _run_coordinator(
             resume_session_id=resume,
         )
         env[mcp_environment.SESSION_START_INPUT_ENV] = json.dumps(
-            {"source": "process-loop", "skill": "agent-toolkit:process-wi", "mode": "all-repos", "manifest": str(manifest)},
+            {"source": "process-loop", "skill": skill_modes.PROCESS_WI, "mode": "all-repos", "manifest": str(manifest)},
             ensure_ascii=False,
         )
         session_args = argparse.Namespace(**vars(args))

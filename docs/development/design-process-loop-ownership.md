@@ -60,7 +60,7 @@ Git統合だけ済んだgit-integratedも未完了であり、integration.phase�
 記録はホストの対象別stateに置き、別ホストのWIをholdしない。
 統括IDと対象別所有を分け、次巡回でも対象別のpreviousと準備済みworktree・lane_session_idを保持する。
 統括と配下writerの終了を確認してから所有解放と既存laneを回収し、停止未確認、未統合、dirty、使用中は保持する。
-登録・候補・回収の契約は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)が所有する。
+登録・候補・回収の契約は[`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`](../../agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos.md)が所有する。
 
 所有記録の段階は`process_loop_ownership.py`が4段階の型へ復元し、取得・更新・解放・保留の遷移を所有する。
 保存JSONのbool組合せは読取境界で検証し、PID世代の生存照会は段階と別に扱う。

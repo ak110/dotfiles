@@ -105,7 +105,7 @@ process-wiでは、処理を終えたリポジトリでも律速でなく資源�
 
 ## 協調と自律
 
-`agent-toolkit:process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。
+`agent-toolkit:atk-mode`の作業`process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。
 ユーザーが確定した継続的な方針・要件は、保存の前に`agent-toolkit/share/agent-conduct-details.md`「協調と自律」を全文読む。
 確認要否・手段・UWI・回答後の遷移は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従い、確認前に「QCDと3段判定」を適用する。
 ユーザーが確定した目的・要件・観測される結果の判断を変えるには、新しいユーザーの判断が必要である（手段の扱いと区別は`agent-toolkit/share/agent-conduct-details.md`「協調と自律」）。

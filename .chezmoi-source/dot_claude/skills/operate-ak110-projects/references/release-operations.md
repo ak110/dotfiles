@@ -16,7 +16,7 @@
 
 `gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは、ユーザーの恒常的な認可に基づき、エージェントが要否とバージョン区分（パッチかマイナー）を判断して実施する。
 メジャーはユーザーの明示指示がある場合だけとする。
-この認可は`agent-toolkit:process-wi`の手動の起動、`atk wi process-loop`による常駐の起動、前節の認可か明示の指定で公開まで扱う協調モードの作業に適用し、リリースのたびのユーザー確認とUWIは省く。
+この認可は`agent-toolkit:atk-mode`の作業`process-wi`の手動の起動、`atk wi process-loop`による常駐の起動、前節の認可か明示の指定で公開まで扱う協調モードの作業に適用し、リリースのたびのユーザー確認とUWIは省く。
 リリースworkflowを持たないプロジェクトは対象外とし、リリースworkflowを持ったプロジェクトは属性表で対象へ加える。
 
 ## GLATasks本番配備の恒常的な認可
@@ -29,7 +29,7 @@ CI成功、既存の手順の安全確認、配備後のhealthcheckと結果の�
 ## 実施時機と前提
 
 1. 一連の作業の公開（pushとCI成功）が終わった時点で、リリースの要否を判定する。
-   `agent-toolkit:process-wi`では、公開担当の返却の後に`agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」の成立を確かめ、`agent-toolkit:atk-mode/playbooks/report-completion.md`を読む前に判定する。
+   `agent-toolkit:atk-mode`の作業`process-wi`では、公開担当の返却の後に`agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」の成立を確かめ、`agent-toolkit:atk-mode/playbooks/report-completion.md`を読む前に判定する。
 2. ローカルのベースbranchがリポジトリのdefault branchであり、未pushのcommitと未commitの変更が無いことを確かめる。
    成り立たない場合はリリースせず、その理由を完了の報告へ含める。
    `releaser`は未pushのcommitをpushするため、この前提でpushの所有者を保つ。

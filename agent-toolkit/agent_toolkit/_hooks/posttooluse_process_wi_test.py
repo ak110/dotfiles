@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._common import session_state
+from agent_toolkit._common import session_state, skill_modes
 from agent_toolkit._testing.helpers import _read_state
 from agent_toolkit._testing.posttooluse_support import _run, _state_path
 
@@ -21,7 +21,7 @@ class TestAgentLaunchDoesNotEnterAutonomousMode:
             ("agent-toolkit:atk-mode", "process-wi"),
             ("agent-toolkit:atk-mode", "process-wi all-repos"),
             ("atk-mode", "process-wi single-lane 追加"),
-            ("agent-toolkit:process-wi", None),
+            (skill_modes.PROCESS_WI, None),
         ],
     )
     def test_skill_launch_keeps_flag_unset(self, tmp_path: pathlib.Path, skill: str, arguments: str | None) -> None:

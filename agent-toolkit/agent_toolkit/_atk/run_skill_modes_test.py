@@ -8,7 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import run_skill
-from agent_toolkit._common import session_review
+from agent_toolkit._common import session_review, skill_modes
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 from agent_toolkit._testing.run_skill_support import _engine_env, _records, _run, _startup_input
 
@@ -103,11 +103,9 @@ def test_final_goal_is_only_skill_completion(engine_env, monkeypatch, capsys, en
 
 
 def test_mode_lock_ignores_focus_and_keeps_other_modes_separate(tmp_path):
-    from agent_toolkit._common import skill_modes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
     def lock(arguments):
         return run_skill._lock_path(  # noqa: SLF001  # pylint: disable=protected-access
-            tmp_path, skill_modes.invocation_scope("agent-toolkit:process-wi", arguments)
+            tmp_path, skill_modes.invocation_scope(skill_modes.PROCESS_WI, arguments)
         )
 
     assert lock("single-lane A") == lock("single-lane B")
@@ -122,7 +120,7 @@ def test_process_modes_reach_public_runner_with_original_arguments(engine_env, m
     argv = ["--target-repo", str(engine_env.repo)]
     if arguments is not None:
         argv.extend(["--args", arguments])
-    argv.append("agent-toolkit:process-wi")
+    argv.append(skill_modes.PROCESS_WI)
     code, _out, error = _run(argv, capsys)
     assert code == 0, error
     record = _records(engine_env, "session")[0]
@@ -136,7 +134,7 @@ def test_process_modes_reach_public_runner_with_original_arguments(engine_env, m
         else None
     )
     assert data["mode"] == mode
-    expected_skill = "agent-toolkit:process-wi" + (" " + mode if mode else "")
+    expected_skill = skill_modes.PROCESS_WI + (" " + mode if mode else "")
     expected_work = "process-wi" + (" " + mode if mode else "")
     expected = (
         f'<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`{expected_skill}`の工程を完遂する'

@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | 改善点の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/prevention.md` | | |
 | 待機中に改善の投入や独立作業を前倒しする前 | `../skills/delegation/references/waiting-and-monitoring-independent-work.md` | | |
-| process-wiで改善の対処時機を決める前 | `../skills/process-wi/references/immediate-fix.md` | | |
+| process-wiで改善の対処時機を決める前 | `../skills/atk-mode/playbooks/process-wi-immediate-fix.md` | | |
 | 規範読込と委譲結果の改善報告を受領する前 | `../skills/delegation/references/receiving-followup.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
 | 逸脱を報告する前と、当座の訂正と再発防止を判断する前 | `agent-basics:bugfix/SKILL.md` | | |
 
@@ -28,7 +28,7 @@
 全報告の書式・区分:
 
 - `済 <WI名>`: 保存済み。
-  process-wiは`済 <WI名> 今回追加`か`済 <WI名> 次回 <理由>`とし、理由は読込表の`immediate-fix.md`「対象外の不良と是正要求」に従う。
+  process-wiは`済 <WI名> 今回追加`か`済 <WI名> 次回 <理由>`とし、理由は読込表の`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「対象外の不良と是正要求」に従う。
 - `予定 <区分> <再開条件>`: 登録の前提待ち。
   区分は`判断待ち`・`認可待ち`・`入力待ち`・`書込競合`。
 - `即時対応`: 今回是正する。
@@ -66,7 +66,7 @@
 改善点は`rules/common/01-agent.md`「事実と推論」で選び、発見時に処置・AWI化を決める。
 報告行の書式・区分は「進捗報告」のテンプレート直下に定義する。
 
-process-wiの対応時機は読込表の`immediate-fix.md`で判定する。
+process-wiの対応時機は読込表の`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`で判定する。
 登録と修正を区別し、転記も同書式を使う。
 `不要`の定義は`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」を参照する。
 all-repos統括を含む全メインは、待機中に判定できる改善を発見時に既存項目と比較してAWIを保存する。

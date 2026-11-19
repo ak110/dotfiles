@@ -8,8 +8,9 @@ WIは作成年月ごとの固定パスへ置き、保存状態をfrontmatterの`
 現行の実装契約と配置の理由は[design-wi.md](design-wi.md)にある。
 固定配置は状態遷移で参照が変わる欠陥を是正する設計判断であり、重要フラグの操作と通常選定の関係はユーザーが指定した要求に由来する。
 
-現行の規範は`agent-toolkit:atk-mode/references/states-and-dependencies.md`、`agent-toolkit:process-wi`および`agent-toolkit:atk-mode/references/plan-format.md`にある。
-選定の詳細は`agent-toolkit/skills/process-wi/references/selection-procedure.md`と`selection-format.md`が持つ。
+現行の規範は`agent-toolkit:atk-mode/references/states-and-dependencies.md`と`agent-toolkit:atk-mode/references/plan-format.md`にある。
+`agent-toolkit:atk-mode`の作業`process-wi`の手順書も、処理の中での状態の扱いを定める。
+選定の詳細は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`と`agent-toolkit:atk-mode/references/process-wi-selection-format.md`が持つ。
 WI処理の機構を設計した理由（却下した代替案など）は、[design.md](design.md)の索引から主題別の設計記録を選んで読む。
 
 - キュー項目の削除はGit履歴から復旧できる手段として維持し、エージェントが自身の誤りで投入した項目の整理に用いる

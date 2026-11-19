@@ -146,7 +146,7 @@ def test_hook_invoked_skill_self_edit_twice_keeps_invocation(tmp_path, monkeypat
     root = tmp_path / "agent-toolkit"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    skill = root / "skills/process-wi/SKILL.md"
+    skill = root / "skills/delegation/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("---\nname: target\n---\n# 基準\n本文0\n", encoding="utf-8")
     row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:Edit",), (skill,))
@@ -159,7 +159,7 @@ def test_hook_invoked_skill_self_edit_twice_keeps_invocation(tmp_path, monkeypat
             **payload,
             "hook_event_name": "PostToolUse",
             "tool_name": "Skill",
-            "tool_input": {"skill": "agent-toolkit:process-wi"},
+            "tool_input": {"skill": "agent-toolkit:delegation"},
             "tool_response": "起動済み",
         },
     )
@@ -191,10 +191,10 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
     root = tmp_path / "agent-toolkit"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    skill = root / "skills/process-wi/SKILL.md"
+    skill = root / "skills/delegation/SKILL.md"
     reference = skill.parent / "references/reference.md"
     reference.parent.mkdir(parents=True)
-    skill.write_text("---\nname: process-wi\n---\n# 基準\n本文\n", encoding="utf-8")
+    skill.write_text("---\nname: delegation\n---\n# 基準\n本文\n", encoding="utf-8")
     reference.write_text("# 参照元\n本文\n", encoding="utf-8")
     named = read_triggers.ReadTrigger(reference, 1, "操作", ("read:*/reference.md", "tool:Write"), (skill,))
     invocation = read_triggers.ReadTrigger(root / "source.md", 1, "操作", ("skill:example-plan", "tool:Write"), (skill,))
@@ -222,11 +222,11 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
     if purpose == "reference":
         invoke("PostToolUse", "Read", {"file_path": str(skill)}, skill.read_text(encoding="utf-8"))
     else:
-        invoke("PostToolUse", "Skill", {"skill": "agent-toolkit:process-wi"}, "起動済み")
+        invoke("PostToolUse", "Skill", {"skill": "agent-toolkit:delegation"}, "起動済み")
     compact = _run_hook_in_process("rules_context", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
     assert compact.returncode == 0 and not compact.stderr
     context = json.loads(compact.stdout)["hookSpecificOutput"]["additionalContext"]
-    skill_step = "`agent-toolkit:process-wi`"
+    skill_step = "`agent-toolkit:delegation`"
     assert skill_step not in context
     assert str(skill) not in context
     failure = rules_context.acquisition_failure(read_triggers.ReadTarget(skill, "欠落"), ValueError("見出し不明"), shell=False)
@@ -243,7 +243,7 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
         assert not read_delivery.target_ready(
             state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
         )
-        invoke("PostToolUse", "Skill", {"skill": "agent-toolkit:process-wi"}, "起動済み")
+        invoke("PostToolUse", "Skill", {"skill": "agent-toolkit:delegation"}, "起動済み")
         _assert_no_read_guidance(invoke("PreToolUse", "Write", write))
         assert read_delivery.target_ready(
             state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True

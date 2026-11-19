@@ -14,6 +14,7 @@ import pytest
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import process_loop_env, process_loop_log, process_loop_session
+from agent_toolkit._common import skill_modes
 
 
 def test_agy_probe_works_without_tier_settings(tmp_path: pathlib.Path) -> None:
@@ -92,7 +93,7 @@ def test_process_loop_agy_interactive_and_resume(
     delivered = argv[argv.index("-i") + 1]
     assert delivered == (
         '<atk-auto source="process-loop" kind="goal">\n'
-        "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
+        f"このセッションが統括として担当する{skill_modes.PROCESS_WI} all-reposの工程を完遂する"
         "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）。"
         "スキル`agent-toolkit:atk-mode`を作業`process-wi all-repos`で起動して始める。\n</atk-auto>"
     )

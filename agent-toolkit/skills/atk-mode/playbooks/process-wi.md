@@ -50,7 +50,7 @@
 
 - **メイン**: メインエージェント。
 - **選定工程、レーン工程、公開工程**: この作業の3つの主な工程。
-  公開工程の定義は`agent-toolkit:commit/references/publish.md`の冒頭にあり、この作業では公開担当が担う。
+  公開工程の定義は`agent-toolkit:atk-mode/playbooks/publish.md`の冒頭にあり、この作業では公開担当が担う。
 - **処理対象WI**: メインが選定で確定した、1回の実行で処理するAWIの集合。
   ユーザーの明示の追加、明示された目標から具体化した必要作業、即時対応で今回追加と判定した正式改善AWIも含む。
 - **レーン**: 処理対象を割り当てる作業の単位で、1つの専用branchと専用worktreeを持つ。
@@ -63,7 +63,7 @@
 
 ## 不変条件
 
-- 計画ファイルの作成要否は、`agent-toolkit:write-plan`の`SKILL.md`「計画ファイルの作成要否」の定義を取得してからAWIごとに本文と現物で判定する。
+- 計画ファイルの作成要否は、`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」の定義を取得してからAWIごとに本文と現物で判定する。
   計画が要るAWIは実装前に起草する計画へ含め、処理中に加えたAWIは確定済みの計画と分けて追加計画に置き、計画の要らないAWIはWIの要求と完成条件を実装とレビューの基準にする。
 - 計画の事前レビューは置かず、実装の後に各計画を最終の実装HEADで、要件と外部仕様の水準の実行レビューで確かめる。
 - 専用worktreeへの書込はレーン担当が持ち（メインが`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「同一主題の追加指示」で引き取った場合を除く）、主作業ツリーへの書込は統合の時に限る。
@@ -141,9 +141,9 @@ GitHub CopilotのレビューとDependabotアラートの監査はリポジト�
 
 工程の区切りは確認の理由から外し、ユーザーの判断が本当に要る事項だけを確認待ちにして、その判断を待たずに進められる工程は続ける。
 回答がすぐに得られない確認事項は`agent-toolkit:atk-mode/playbooks/confirmation.md`「未確定判断の保留と暫定判断」に従ってUWIへ移し、`processing`の元項目も同じ手順でそのUWIへの依存を保存して`inbox`へ戻す。
-作業完了の報告を所有するメインは、この作業で作ったcommitを公開してから`agent-toolkit:report-completion`に従って報告する。
-明示的に委譲されたリポジトリ担当は役割の契約に従って委譲元へ返し、担当から外れるために同スキルの本体やtermination-evidenceを取得することと、`omit-completion`の記録は避ける。
-反映が要る担当は`agent-toolkit:report-completion/references/server-reflection.md`を使い、反映と稼働確認の結果を返す。
+作業完了の報告を所有するメインは、この作業で作ったcommitを公開してから`agent-toolkit:atk-mode/playbooks/report-completion.md`に従って報告する。
+明示的に委譲されたリポジトリ担当は役割の契約に従って委譲元へ返し、担当から外れるために同書やtermination-evidenceを取得することと、`omit-completion`の記録は避ける。
+反映が要る担当は`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」を使い、反映と稼働確認の結果を返す。
 公開工程の承認スコープは、選定工程で判別した結果を`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「公開工程の承認スコープ」に従って使う。
 
 返す報告に含める項目: 処理対象WIごとの採否と公開のcommit、確かめた範囲、未達と見送りの理由と再開条件、ユーザーの判断が要る事項、適用した手順書。

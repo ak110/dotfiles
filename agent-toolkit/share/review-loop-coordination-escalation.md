@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` |
 | レビュー指摘管理表へ担当が行を足す前 | `review-table-operations.md` |
 
 ## エスカレーションの事由別の扱い
@@ -28,12 +28,12 @@
 | 外部状態または権限の不足 | 回復手段を確認し、ユーザーによる操作が必要な場合はユーザー確認を実施する。既存不良が原因なら、下記の既存不良の行も適用する | 必要 |
 | 同一論点に関する2回目以降の差し替え | 指摘内容と変更実体を突き合わせて変更の意図と影響範囲を確認し、それでも確定できない場合に限りユーザー確認を行ってから修正する。反復回数のみを確認の判断条件にしない（`agent-toolkit:/share/exec-review-responses-recurrence.md`「同じ指摘の反復」） | 必要 |
 | 技術的に解消可能な実装欠陥 | レビューイーが同一工程内で修正を実施する | 不要 |
-| 対象リポジトリや配布物のhook・CLI・規範などの既存不良による続行不能 | 担当の回復と欠陥の処置を分け、`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件内で判定する。process-wiの実行中は`../skills/process-wi/references/immediate-fix.md`「即時対応」で対処時機を具体化する | 必要 |
+| 対象リポジトリや配布物のhook・CLI・規範などの既存不良による続行不能 | 担当の回復と欠陥の処置を分け、`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件内で判定する。process-wiの実行中は`../skills/atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で対処時機を具体化する | 必要 |
 | 同一スレッドを継続できない場合 | 後続の担当へ同一の計画ファイル（`~/.claude/plans`配下）、レビュー指摘管理表、および確定済みの判断事項を引き継ぐ。既存不良が原因なら前行の欠陥の処置も判定する | 必要 |
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` |
 
 「再開位置の記録」が「必要」とされている項目では、計画ファイルを`~/.claude/plans`へ保存し、`atk run-script plan-progress --`を実行して`## 進捗ログ`に完了した工程、続行できない理由、および再開位置を記録する。
 キュー項目は現在の状態のまま維持する。

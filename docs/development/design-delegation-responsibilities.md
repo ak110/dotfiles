@@ -36,7 +36,7 @@ all-reposのオーケストレーターは登録集合の取得、対象別所�
 対象cwdの担当は取得済み候補を受領し、そのリポジトリのメインとして規範・選定・レーン・監査・公開を完遂する。
 レーン上限と選定YAML、候補・所有・writer・公開結果を対象別に保ち、直接担当も各対象の準備済みworktreeとプロジェクト規範を使用する。
 まとめ担当は共通読込を再利用し、対象固有の規範と成果は合流させない。
-取得と開始条件の共有は[design-process-loop.md](design-process-loop.md)、実行契約は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)に置く。
+取得と開始条件の共有は[design-process-loop.md](design-process-loop.md)、実行契約は[`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`](../../agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos.md)に置く。
 
 メインはキュー、ユーザー合意、公開認可、要求と調査対象、確定済み計画ならびに実装結果を知り、工程全体の完了を所有する。
 メインは要求を再定義せず、各担当の起動、同一threadの継続および工程遷移を自ら制御する。

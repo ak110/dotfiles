@@ -12,7 +12,7 @@ import pytest
 import session_evidence_catalog as catalog
 import session_review_evidence as evidence
 
-from agent_toolkit._common import session_family
+from agent_toolkit._common import session_family, skill_modes
 from agent_toolkit._common.session_family import _load_records_checked, _RecordLoad
 from agent_toolkit._testing.session_evidence_support import (
     TOOL_CALL_THREAD,
@@ -208,7 +208,9 @@ def _catalog_fixture(tmp_path: pathlib.Path, runtime: str) -> list[str]:
     ):
         session_id = f"{prefix * 8}-{prefix * 4}-4{prefix * 3}-8{prefix * 3}-{prefix * 12}"
         timestamp = f"2026-09-10T00:00:0{second}Z"
-        text = "agent-toolkit:process-wiを実行する" if workflow else "通常の依頼"
+        # 入口の作業の手動起動と、スキルを廃止する前の起動の記録を、どちらもprocess-wiとして判別する。
+        launch = "/atk-mode process-wi all-repos" if prefix == "a" else f"{skill_modes.PROCESS_WI}を実行する"
+        text = launch if workflow else "通常の依頼"
         if runtime == "claude":
             records = [{"type": "user", "timestamp": timestamp, "cwd": cwd, "message": {"role": "user", "content": text}}]
             path = root / f"{session_id}.jsonl"

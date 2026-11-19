@@ -2,7 +2,7 @@
 
 作業`process-wi`の選定結果（選定YAML）の欄、省略時の値、欄の意味を定める唯一の定義である。
 選定YAMLは対象リポジトリごとに生成して保存し、all-reposの統括でも、候補とレーンはリポジトリごとの別のYAMLに置く。
-メインは選定と追加の入力を書く時に、レーン担当・統合担当・公開担当は保存済みの選定結果を読む時に使う。
+メインは選定と追加の入力を書く時に、レーン担当と公開担当は保存済みの選定結果を読む時に使う。
 選定の手順は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`に、所要時間の見込みと補正の算定は`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`にある。
 形の検査は`pick-wi-check`が行い、違反には直し方を`次の操作:`で示すため、本書は検査が判定できない意味と、書く時に決める値を扱う。
 

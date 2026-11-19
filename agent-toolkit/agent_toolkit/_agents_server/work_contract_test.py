@@ -85,7 +85,7 @@ def test_normal_task_gets_one_record_path(
     root = tmp_path / "retained-plugin"
     document = root / "share/task.subagent.md"
     document.parent.mkdir(parents=True)
-    references = [root / "share/work-contract.md", root / "skills/delegation/references/handoff-record.md"]
+    references = [root / "skills/atk-mode/references/work-contract.md", root / "skills/delegation/references/handoff-record.md"]
     for reference in references:
         reference.parent.mkdir(parents=True, exist_ok=True)
         reference.write_text(f"資料本文: {reference.name}\n", encoding="utf-8")
@@ -137,7 +137,7 @@ async def test_delegate_preserves_original_and_returns_same_record(
     assert delivered.startswith(original + "\n\n")
     assert f"引き継ぎ記録先: {path}（新規）" in delivered
     assert response["handoff_record_path"] == str(path)
-    for relative in ("share/work-contract.md", "skills/delegation/references/handoff-record.md"):
+    for relative in ("skills/atk-mode/references/work-contract.md", "skills/delegation/references/handoff-record.md"):
         reference = plugin_root.SERVER_PLUGIN_ROOT / relative
         assert reference.is_absolute() and reference.is_file()
         assert reference.parent != tmp_path
@@ -208,7 +208,7 @@ async def test_lightweight_task_does_not_deliver_contract_materials(
     prompt = call.args[1]
     assert "引き継ぎ記録先:" not in prompt
     assert "全体作業契約:" not in prompt
-    assert "share/work-contract.md" not in prompt
+    assert "skills/atk-mode/references/work-contract.md" not in prompt
     assert "skills/delegation/references/handoff-record.md" not in prompt
 
 

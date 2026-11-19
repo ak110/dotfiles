@@ -340,7 +340,12 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
         ("external-write-review", "skills/review-external-writes/SKILL.md", "3観点それぞれ", "## 観点"),
         ("bulk-replace-review", "share/bulk-replace-review.parent.md", "読んだ変更箇所数:", "## 観点"),
         ("usability-review", "share/usability-review.parent.md", "試行: <手段>", "## 操作"),
-        ("session-termination", "share/session-termination.parent.md", "延期後にadoptしたAWI:", "## 生成物とpush"),
+        (
+            "session-termination",
+            "skills/atk-mode/roles/session-termination.parent.md",
+            "延期後にadoptしたAWI:",
+            "## 生成物とpush",
+        ),
     ):
         text = (tmp_path / "agent-toolkit" / relative).read_text(encoding="utf-8")
         generated = text.split(f"<!-- return-contract:{role}:start -->")[1].split(f"<!-- return-contract:{role}:end -->")[0]

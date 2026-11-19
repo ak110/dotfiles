@@ -12,8 +12,14 @@ ENTRY_SKILL = "atk-mode"
 ENTRY_WORKS = ("add-awi-by-user", "process-wi", "review-session", "export-session")
 """入口が受け付ける、ユーザーが名指しする作業の名前。"""
 
+PROCESS_WI = "agent-toolkit:process-wi"
+"""作業`process-wi`の修飾名。
+
+入口の起動の読み替え先、`atk run-skill`の位置引数、起動入力の`skill`、WIの`scope`に保存する値であり、同名のスキルは無い。
+"""
+
 PROCESS_WI_LAUNCH_MARKER = f"スキル`agent-toolkit:{ENTRY_SKILL}`を作業`process-wi"
-"""子セッションの目的文のうち、作業`process-wi`の起動を表す部分。会話記録から起動を判別する側も使う。"""
+"""子セッションの目的文のうち、作業`process-wi`の起動を表す部分。セッション記録から起動を判別する側も使う。"""
 
 
 def entry_launch(scope: str, *, free_text: bool) -> str:
@@ -24,6 +30,12 @@ def entry_launch(scope: str, *, free_text: bool) -> str:
     """
     tail = "（起動入力の`free_text`が空でなければ引数の後ろへ続ける）" if free_text else ""
     return f"スキル`agent-toolkit:{ENTRY_SKILL}`を作業`{scope}`で起動して始める{tail}。"
+
+
+def entry_work(skill: str) -> str | None:
+    """入口が受け付ける作業の名前を、修飾名（`agent-toolkit:<作業>`）か接頭辞の無い名前から返す。それ以外はNone。"""
+    name = skill.removeprefix("agent-toolkit:")
+    return name if name in ENTRY_WORKS else None
 
 
 def resolve_work(skill: str, arguments: str | None) -> tuple[str, str | None]:

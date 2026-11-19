@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._common import skill_modes
 from agent_toolkit._plan import locations as _plan_locations
 
 ROOT_DESCRIPTION = "WIキュー、計画、レビュー記録、一時領域と委譲セッションを操作する。\n\n目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。`session-review-evidence`の`--grep`・`--tool-calls`は長い結果を保存した場合だけ、記録位置・kind・存在するrole/tool・改行を空白にした本文の先頭160文字を1件1行で続けて書く（短縮時は`…`、該当なしは`一致: 0件`）。一致が20件を超える場合は、全件数・kindとrole/tool別の件数・記録別の件数に続けて保存順の先頭20件だけを書き、残り件数と保存先から読む方法を示す。`--summary-only`と`--fixed-string`はこの一覧の対象外とする。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
@@ -96,7 +97,9 @@ HELP: dict[str, dict[str, str]] = {
     "atk run-skill": {
         "summary": "定期実行から任意のスキルを自律モードで1回実行する",
         "description": "定期実行から任意のスキルを自律モードで1回実行する。\n\n目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_model`の候補列から可用な候補を選び（Claudeは利用可能な統括接続への切替を先に試し、代替がない場合の利用上限の待機はengine別設定に従う）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。--work-dirで実行cwdを指定した場合は--target-repoに報告先repo URLも受理する。review-session batch（--args batch agent-toolkit:review-session）はアカウント共通排他・非活動対象の固定・対象別準備・報告同期後の範囲確定を行い、対象0件ではモデルを起動しない。報告先は対象最多のrepo、全対象不明なら実行pluginの配布元とする。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名とモードの組（通常起動はスキル名）となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n再開: `atk run-skill --resume <RUN_ID>`で、ログの「実行識別子」を指定する。元の会話・実行ID・報告先・batchの準備範囲・残時間を引き継ぎ、同じログへ追記する。再開時はスキル・対象・cwd・引数・timeoutを変更しない。完了済み実行は再起動しない。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキル・モードの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_model`の設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 未完了の実行入力とログは保持する。完了済みの再開記録とログは、最終更新から30日経過後の実行開始時に回収する。ロックは実行の終了時に解放する。",
-        "epilog": "実行例:\n\n  atk run-skill --target-repo /absolute/path/to/repo my-skill\n  atk run-skill --args '対象: web' --timeout 7200 agent-toolkit:process-wi\n\ncronへ登録する例（標準出力を破棄し、失敗行だけをcronのメール通知へ渡す）:\n\n  PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin\n  0 3 */3 * * atk run-skill --target-repo /home/user/repo my-skill >/dev/null",
+        "epilog": "実行例:\n\n  atk run-skill --target-repo /absolute/path/to/repo my-skill\n  atk run-skill --args '対象: web' --timeout 7200 "
+        + skill_modes.PROCESS_WI
+        + "\n\ncronへ登録する例（標準出力を破棄し、失敗行だけをcronのメール通知へ渡す）:\n\n  PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin\n  0 3 */3 * * atk run-skill --target-repo /home/user/repo my-skill >/dev/null",
     },
     "atk wi": {
         "summary": "AWIとUWIのキューを操作する",
@@ -278,7 +281,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans": {
         "summary": "計画ファイルを取得・保存・一覧表示する",
-        "description": "計画ファイルを取得・保存・一覧表示する。\n\n目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧も提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認をするとき。保存の契機は、計画バンドルでは`agent-toolkit:atk-mode/references/plan-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:process-wi`の`ci-fix-series.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 同期相手が無ければローカルだけで完了する。\n復元・後始末: `commit`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "description": "計画ファイルを取得・保存・一覧表示する。\n\n目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧も提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認をするとき。保存の契機は、計画バンドルでは`agent-toolkit:atk-mode/references/plan-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 同期相手が無ければローカルだけで完了する。\n復元・後始末: `commit`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-0900_example.md",
     },
     "atk plans checkout": {
@@ -288,7 +291,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans commit": {
         "summary": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする",
-        "description": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする。\n\n目的: 指定した計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`からprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたはCI対応レビュー指摘管理表の保存の契機に達したとき。契機は、計画バンドルでは`agent-toolkit:atk-mode/references/plan-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:process-wi`の`ci-fix-series.md`が定める。\n対象と出力: 計画バンドルは年月階層へ、CI対応レビュー指摘管理表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、`~/.claude/plans`直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは`~/.claude/plans`直下のメイン計画ファイル名、`private-notes/plans/`からの相対のメイン計画パス、または`"
+        "description": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする。\n\n目的: 指定した計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`からprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたはCI対応レビュー指摘管理表の保存の契機に達したとき。契機は、計画バンドルでは`agent-toolkit:atk-mode/references/plan-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`が定める。\n対象と出力: 計画バンドルは年月階層へ、CI対応レビュー指摘管理表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、`~/.claude/plans`直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは`~/.claude/plans`直下のメイン計画ファイル名、`private-notes/plans/`からの相対のメイン計画パス、または`"
         + CI_REVIEW_TABLE_NAME_FORMAT
         + "`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commitまたはpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
         "epilog": "実行例:\n\n  atk plans commit /absolute/home/.claude/plans/01-0900_example.md",

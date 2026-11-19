@@ -254,7 +254,19 @@ def test_real_wi_dry_run_does_not_require_independent_submission(tmp_path, monke
     sources = read_delivery.read_triggers.document_sources(root, str(tmp_path))
     rows = [row for source in sources for row in read_delivery.read_triggers.parse_tables(source, root, project=str(tmp_path))]
     submission = root / "skills/atk-mode/playbooks/wi-submission.md"
-    row = next(item for item in rows if item.source.name == "finish-session-publishing.md" and submission in item.documents)
+    # 作業process-wiの手順書と完了報告の手順書は読込表を持たないため、廃止した公開工程の読込表の判断行と同じ宣言を加える。
+    row = read_delivery.read_triggers.ReadTrigger(
+        root / "skills/atk-mode/playbooks/process-wi-publishing.md",
+        1,
+        "判断",
+        ("read:agent-toolkit:*/skills/atk-mode/playbooks/wi-submission.md",),
+        (submission,),
+        condition="公開後にも独立して成立するWI投入を別実行へ引き継ぐ前",
+        material="`agent-toolkit:atk-mode/playbooks/wi-submission.md`",
+        plugin_root=root,
+    )
+    assert not any(submission in item.documents for item in rows)
+    rows.append(row)
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     if old_selection:
         read_delivery._select_targets("test", [ReadTarget(submission)], "main", rows=[row])  # pylint: disable=protected-access

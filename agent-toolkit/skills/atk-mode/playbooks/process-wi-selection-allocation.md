@@ -9,7 +9,7 @@
 全体の完了時間は最も遅いレーンで決まり、レーンを増やすほど起動の固定費も増える。
 レーン数の上限、6000秒の比較、全工程の所要算定、巨大WIの承認は、ユーザーが決めた時間目標の運用であり、全ての選定で行う。
 監査記録は`docs/development/audit-records-wi.md`にある。
-レーン数ごとの所要の比較の節は「agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：調査とレーン分け：2026年11月17日」である。
+レーン数ごとの所要の比較の節は「agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md：調査とレーン分け：2026年11月17日」である。
 配分の節は「agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年8月31日」である。
 
 ## 調査とレーン分け
@@ -45,7 +45,7 @@
    - 実装・検証・直列統合の時間と、共有資源の処理能力と待ちも見積もり、上限内の並列数、独立準備の先行、準備・検証の集約を比べる。
    - 多数のファイルを編集するWIは1回だけ割り当て、ファイル群ごとの分担はレーン内で行う前提で、スクリプトで完結する変換、内部担当へ分担できる処理、レーン担当に残る判断・検収・検証・統合を分けて見込む。
      見込みは、各群を直列に足した値と全処理が同時に進む前提の値の間にあり、内部の作業構成から求める。
-   - 共有の待ちの記録が無い場合は0秒にせず、共有実行枠（`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」）と統合の順番から推定する。
+   - 共有の待ちの記録が無い場合は0秒にせず、共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）と統合の順番から推定する。
    - `target-seconds`がある場合は、補正後の全体の完了見込みを目標と比べる。
      超える場合（`pick-wi-check`は警告し、選定は止めない）は、上限の内側で段階の組み直し、独立した準備の先行、準備・検証の集約を比べ、採った案と比べた見込みを`目標超過時の配分比較`へ記録する。
      超過が残っても組み直しの判断を30分ごとの進捗点検で続ける。
@@ -103,7 +103,7 @@ agents_serverは役割とエンジンを問わず全担当を合算し、マシ�
    未承認と拒否の時は通常の時間対象に保ち、承認後も全件の実装、必要な品質、公開を保つ。
 
 同時数の監査記録は`docs/development/audit-records-wi.md`にある。
-該当節は「agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：内部担当の同時数と巨大WIの判定：2026年11月12日」である。
+該当節は「agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md：内部担当の同時数と巨大WIの判定：2026年11月12日」である。
 
 ## 反映先と上流投入
 

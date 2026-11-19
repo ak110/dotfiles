@@ -8,7 +8,7 @@
 | --- | --- |
 | 基準の参照時 | `exec-subagent-implementation.md` |
 | 基準の参照時 | `usability-review.parent.md` |
-| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
+| 基準の参照時 | `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` |
 | 基準の参照時 | `review-loop-coordination-rounds.md` |
 | 基準の参照時 | `../skills/delegation/SKILL.md` |
 | 基準の参照時 | `exec.parent.md`、`exec-parent-integration.md` |
@@ -18,7 +18,7 @@
 | 基準の参照時 | `exec-parent-launch.md` |
 | 基準の参照時 | `exec-review-responses-completion.md` |
 | 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` |
-| 基準の参照時 | `lane-integration-subagent-operation.md` |
+| 基準の参照時 | `agent-toolkit:atk-mode/references/lane-integration-format.md` |
 | 基準の参照時 | `agent-toolkit:atk-mode/references/plan-storage.md` |
 | `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` |
@@ -69,7 +69,7 @@ amendやautosquashでHEADのコミットOIDが変わるため、統合入力HEAD
 2. 「応答済みの判定」で、未応答の指摘が0件であることと、指摘管理表の該当行に修正前後の短縮OIDの対応が記録されていることを確かめる
 3. 専用branchのHEADを`git rev-parse --short=7`で解決し、指摘管理表にある修正後の短縮OIDと一致することを確かめる
 4. その値を統合入力HEAD（`exec.parent.md`、`exec-parent-integration.md`参照）として保持する。
-   `lane-integration-subagent-operation.md`「マージありの統合」のコミット一致確認はこの値で行う
+   `agent-toolkit:atk-mode/references/lane-integration-format.md`「マージありの統合」のコミット一致確認はこの値で行う
 5. 受領確認では、最後に実際にレビューした時点の`レビューHEAD`と突き合わせ、判定行の対象コミットを修正後のHEADへ形式的に付け替えない
 
 ## レビュー指摘管理表の保存
@@ -80,7 +80,7 @@ amendやautosquashでHEADのコミットOIDが変わるため、統合入力HEAD
   統合の検査と再開で表を参照するため、最終化が終わるまでは保持する。
   保存先はprivate-notesの管理外とする
 - 基準が`CI記録`のみの場合: 同じ修正系列では同じ指摘管理表と`修正系列の開始時のHEAD`を引き継ぎ、系列の完了時に`atk plans commit ci-<修正系列の開始時のHEAD>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
-  保存の時機は`agent-toolkit:process-wi/references/ci-fix-series.md`の「入力計画」に従い、`process-wi`の公開工程では公開担当が実行する
+  保存の時機は`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`の「入力計画」に従い、`process-wi`の公開工程では公開担当が実行する
 - 基準に`計画`を含む場合: 計画を管理するエージェントが、`agent-toolkit:atk-mode/references/plan-storage.md`「計画ファイルの保存と参照」に従って計画バンドルとともに保存する
 
 ## 本文参照の取得条件

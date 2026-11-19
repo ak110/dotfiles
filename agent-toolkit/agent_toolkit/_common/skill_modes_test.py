@@ -28,6 +28,6 @@ def test_split_mode(skill, arguments, mode, remaining):
 
 def test_scope_ignores_free_text_and_separates_modes():
     scope = skill_modes.invocation_scope
-    assert scope("agent-toolkit:process-wi", "single-lane A") == scope("agent-toolkit:process-wi", "single-lane B")
-    assert scope("agent-toolkit:process-wi", "single-lane") != scope("agent-toolkit:process-wi", "all-repos")
+    assert scope(skill_modes.PROCESS_WI, "single-lane A") == scope(skill_modes.PROCESS_WI, "single-lane B")
+    assert scope(skill_modes.PROCESS_WI, "single-lane") != scope(skill_modes.PROCESS_WI, "all-repos")
     assert scope("agent-toolkit:review-session", "batch auto") != scope("agent-toolkit:review-session", "auto")

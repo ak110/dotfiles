@@ -74,7 +74,7 @@ manifestは次の欄を持つJSONオブジェクトである。
     CIが全体を担う場合は全体の試験と静的検査をCIへ任せて、列挙した利用側と関連モジュールまでを渡し、CIが無いか実行されない場合の全体検証を含めて選んだ範囲と根拠を引き継ぎ記録へ残す。
   - コマンド自身の上限（pyfltrのcommand-timeoutなど）を使い、外側の上限が要る場合は`verification_timeout`へ指定する。
     秒数は記録された同じ検証の所要をもとに通常の完了を十分上回る有限の値にする。
-    訂正表の保持と引き継ぎは`agent-toolkit:write-plan/references/plan-file-standards-verification.md`「検証」に、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。
+    訂正表の保持と引き継ぎは`agent-toolkit:atk-mode/references/plan-format.md`「検証」に、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。
   - 内容の変更後は古い成功を使わず、現在の内容の検証と受理へ戻る。
 - `handoff`: 計画を作っていない場合に使う既存の引き継ぎ記録の絶対パス（計画がある場合は省略できる）。
 - `verification_records`: 任意の保存済みの実行記録JSONの絶対パスの配列（省略時は空の配列。`integration.results`の`verification-<番号>.record_path`を渡せる）。
@@ -140,7 +140,7 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 1. 受理済みの完成条件証拠がある計画は、返却ファイルの絶対パスを`受理済みの完成条件証拠`として進捗ログに記録する（後続のレビューが参照する）。
 2. `計画ファイル名一覧`が`[]`の場合は、`plan-check`と計画の保存を省き、稼働の記録、統合の結果、AWIの終了前の状態を引き継ぎ記録に残して、`保存した計画ファイル`として`[]`を返す。
    予測補正記録は対象AWIの本文へ保存する。
-   テンプレートの本文は`agent-toolkit:write-plan/references/plan-file-standards-progress.md`「進捗ログ」が参照する`予測補正記録`の書式とする。
+   テンプレートの本文は`agent-toolkit:atk-mode/references/plan-format.md`「進捗ログ」が参照する`予測補正記録`の書式とする。
    `完了時刻=`に`{{completed_at}}`、`総経過秒=`に`{{lane_seconds}}`を指定した1件を書く。
    保存は`atk wi edit <AWIのファイル名> --append --body-file {{expand-file:<テンプレートの絶対パス>}} --target-repo=<統合先worktree>`で行う。
    manifestでは該当のAWIの終了のargvより前に置く（終了済みの項目は`atk wi edit`の対象外になるため）。
@@ -174,7 +174,7 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 - 採用と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終える。
   `adopt`のcommitの紐付けは同書「状態と依存」の遷移表に従い、開始時や統合時のHEADを一律に複製しない。
   複数のcommitは`--commit <OID>`を繰り返し、補足のメモは`--note-file`で書く。
-- 対応commitは、`agent-toolkit:commit/references/commit-wi-records.md`「WI実装commitの対応」の取得手順で計画か引き継ぎ記録と同じstemの対応記録ファイルから取得し、`--worktree`に統合後のworktreeを渡す。
+- 対応commitは、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」の取得手順で計画か引き継ぎ記録と同じstemの対応記録ファイルから取得し、`--worktree`に統合後のworktreeを渡す。
 - commitを記録する採否の操作では、統合先worktreeの絶対パスを`--target-repo`に渡す。
 - プロジェクト固有の公開後の操作の完了まで延期する項目は状態を変えず、該当のAWIとOIDの組を全て返す。
 - `終了しない`項目、観測のみの再開で未処理となった項目、観測結果が完成条件を満たさなかった項目は状態を変えない。
