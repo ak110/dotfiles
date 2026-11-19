@@ -114,30 +114,29 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     軽量種別の`<役割名>.subagent.md`の委譲先はファイルを書けない1工程の担当であり、引き継ぎ記録を持たないため集合から除く。
     """
     share = pathlib.Path(__file__).resolve().parent / "share"
+    entry = share.parent / "skills" / "atk-mode"
     parents = _role_files(share, ".parent.md")
     recipients = _role_files(share, ".subagent.md")
-    # 役割別の規範は`share/rules/`へ置くため、共有文書と同じ集合で引き継ぎ記録の参照を比べる。
+    # 委譲先と委譲元が共通に読む手順書は入口`atk-mode`へ置くため、役割文書と同じ集合で引き継ぎ記録の参照を比べる。
+    shared = [
+        entry / "playbooks" / name
+        for name in ("subagent.md", "delegation.md", "delegation-recovery.md", "host-claude-code.md", "host-codex.md")
+    ] + [entry / "references" / name for name in ("work-contract.md", "conduct.md", "operations.md")]
     markdown = {
-        path.name: path.read_text(encoding="utf-8")
-        for path in sorted({*share.glob("*.md"), *(share / "rules").glob("*.md"), *parents, *recipients})
+        path.name: path.read_text(encoding="utf-8") for path in sorted({*share.glob("*.md"), *shared, *parents, *recipients})
     }
     lightweight = {path.name for path in recipients if _declaration(path).launch_kind in ("explore", "write", "shell")}
     parent_names = {
         path.name for path in parents if not set(_marker_values(path, _LAUNCH_TARGET_PREFIX, recipient=False)[0]) <= lightweight
     }
     recipient_names = {path.name for path in recipients} - lightweight
-    contract_names = {name for name, content in markdown.items() if "## 多段工程の引き継ぎ記録" in content}
-    # 現行要求の記録仕様（入口`atk-mode`の作業契約）は、役割別の起動契約と共通の引き継ぎ記録先を使う。
-    entry = share.parent / "skills" / "atk-mode"
-    markdown["work-contract.md"] = (entry / "references" / "work-contract.md").read_text(encoding="utf-8")
-    contract_names.add("work-contract.md")
-    # Codexの文脈切替は既存の引き継ぎ記録へ保存・復元を接続する。
-    contract_names.add("rules-common.codex.md")
+    contract_names = {name for name, content in markdown.items() if "### 多段工程の引き継ぎ記録" in content}
+    # 現行要求の記録仕様（作業契約）と、起動・後任の起動で記録先を渡す委譲の手順書も引き継ぎ契約を持つ。
+    contract_names |= {"work-contract.md", "delegation.md", "delegation-recovery.md"}
     expected_names = parent_names | recipient_names | contract_names
-    # 入力・起動・統合の各判断で読む規範資料も、同じ役割の引き継ぎ契約を所有する。
+    # 入力・統合の各判断で読む規範資料も、同じ役割の引き継ぎ契約を所有する。
     roles = entry / "roles"
     for owner, materials in (
-        (share / "rules/rules-subagent.md", (("../subagent-operations.md", "多段工程の記録・引き継ぎ"),)),
         (roles / "exec.parent.md", (("../playbooks/lane-receipt.md", "統合"),)),
         (roles / "exec-review.parent.md", (("../playbooks/exec-review-loop.md", "入力"),)),
     ):
