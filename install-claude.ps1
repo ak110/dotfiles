@@ -537,11 +537,11 @@ function Main {
     }
     Assert-Command uv 'uv' 'https://docs.astral.sh/uv/getting-started/installation/'
 
-    Uninstall-RetiredRule
-
     Install-AgentBasicsPlugin
     Install-CodexBasicsPlugin
     Install-AgentToolkitPlugin
+    # 新しい入口を導入できてから回収する。更新に失敗した環境では旧版の規範を使い続けられる。
+    Uninstall-RetiredRule
     Install-CodexPlugin
     Initialize-AgentsServer
     Move-LegacyCodexMcp

@@ -605,12 +605,12 @@ main() {
     fi
     _require_command uv "uv" "https://docs.astral.sh/uv/getting-started/installation/"
 
-    _remove_retired_rules
-
     _install_agent_basics
     _install_codex_basics
     if [ "$INSTALL_TOOLKIT" -eq 1 ]; then
         _install_agent_toolkit
+        # 新しい入口を導入できてから回収する。更新に失敗した環境では旧版の規範を使い続けられる。
+        _remove_retired_rules
         _install_codex_plugin
         _warm_agents_server
         _migrate_legacy_codex_mcp

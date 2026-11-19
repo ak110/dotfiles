@@ -130,6 +130,47 @@ def test_required_claude_update_failure_keeps_diagnostics_and_next_action(
 
 @pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize(
+    ("command", "occurrence"),
+    [
+        pytest.param("claude plugin marketplace update ak110-dotfiles", 1, id="basics-marketplace"),
+        pytest.param("claude plugin marketplace update ak110-dotfiles", 2, id="toolkit-marketplace"),
+        pytest.param("claude plugin update agent-toolkit@ak110-dotfiles --scope=user", 1, id="toolkit-plugin"),
+    ],
+)
+def test_failed_toolkit_update_keeps_retired_rules(
+    kind: str,
+    command: str,
+    occurrence: int,
+    tmp_path: pathlib.Path,
+    raw_base_url: str,
+) -> None:
+    """新しいagent-toolkitを導入できずに止まった時は、旧版で使っていた常時規範を削除しない。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+    (stub_bin / "claude").write_text(_CLAUDE_DIAGNOSTIC_STUB, encoding="utf-8")
+    retired = home / ".claude" / "rules" / "agent-toolkit" / "01-agent.md"
+    retired.parent.mkdir(parents=True)
+    retired.write_text("# 旧い常時規範\n", encoding="utf-8")
+
+    result = run_installer(
+        kind,
+        home,
+        raw_base_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        check=False,
+        extra_env={"CLAUDE_FAIL_COMMAND": command, "CLAUDE_FAIL_OCCURRENCE": str(occurrence)},
+    )
+
+    assert result.returncode != 0
+    assert read_log_lines(stub_log)[-1] == command
+    assert retired.read_text(encoding="utf-8") == "# 旧い常時規範\n"
+    assert "削除（旧い常時規範）" not in result.stdout
+
+
+@pytest.mark.parametrize("kind", installer_runners())
+@pytest.mark.parametrize(
     "fail_pattern",
     ["claude plugin marketplace add", "claude plugin install", "claude plugin uninstall"],
 )

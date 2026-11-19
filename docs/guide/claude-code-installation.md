@@ -59,6 +59,7 @@ setupの制限時間とネットワーク設定は[クラウド環境の設定](
 - dotfilesユーザー: `update-dotfiles`の後処理が`~/.claude/rules/agent-toolkit/`と`~/.codex/agent-toolkit/rules/`を削除する。
   Codex向け`AGENTS.md`、Antigravityのプラグイン、OpenCodeの`agent-toolkit.md`も同じ実行で規範の本文を含まない内容へ置き換わる。
 - 単体インストーラー: `install-claude.sh`と`install-claude.ps1`を再実行すると、`~/.claude/rules/agent-toolkit/`、`~/.claude/rules/agent-basics/`、`~/.claude/rules-stage/`を削除する。
+  削除はagent-toolkitプラグインの導入・更新が成功した後に行い、更新に失敗して止まった時は旧い規範を残す。
   agent-basicsだけを導入する`--basics-only`（`-BasicsOnly`）では削除しない。
 - プラグインだけの導入と`--basics-only`: 自動では回収しない。
   以前に単体インストーラーで導入した環境では、次のコマンドで削除する。
