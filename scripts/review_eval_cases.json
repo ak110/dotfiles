@@ -299,6 +299,344 @@
         "revision": "7a52e312876c61f0d939b2875e6c416e03660e86",
         "plan": "review-eval/draft-export-effect-sufficient/plan.md"
       }
+    },
+    {
+      "id": "small-verification-table-scope",
+      "kind": "正しい指摘",
+      "role": "exec-review",
+      "material": {
+        "name": "guide-split",
+        "change": "change.diff",
+        "plan": "plan-table-scope.md"
+      },
+      "origin": {
+        "cases": [
+          "correct-verification-table-scope"
+        ]
+      },
+      "description": "資料の分割で増えた資料と説明、それらを読む試験が、計画の検証表から漏れている小さい事例",
+      "expect": {
+        "detect": [
+          {
+            "id": "verification-table-scope",
+            "description": "検証表が最終差分の変更ファイル（分割で増えた資料と説明）と直接利用側の試験を覆っていないことを指摘する",
+            "patterns": [
+              "検証(表|コマンド|対象|範囲)",
+              "usage_links_test|cli_list_test|writing-(business|research)|usage\\.md|直接影響|利用側|消費側|未計上"
+            ]
+          }
+        ],
+        "absent": []
+      }
+    },
+    {
+      "id": "small-known-consumer-tests",
+      "kind": "見逃し",
+      "role": "exec-review",
+      "material": {
+        "name": "guide-split",
+        "change": "change.diff",
+        "plan": "plan-known-consumer.md"
+      },
+      "origin": {
+        "cases": [
+          "missed-known-consumer-tests"
+        ]
+      },
+      "description": "探索で一致した既知の利用側の試験が、実行対象と個別の結果へ引き継がれない小さい事例",
+      "expect": {
+        "detect": [
+          {
+            "id": "known-consumer-not-executed",
+            "description": "探索で一致した既知の利用側の試験（cli_list_test）が、実行対象と個別の結果へ引き継がれていないことを指摘する",
+            "patterns": [
+              "cli_list_test",
+              "未実行|実行(対象|結果)|検証対象|個別|含まれ|不足|漏れ"
+            ]
+          }
+        ],
+        "absent": []
+      }
+    },
+    {
+      "id": "small-verification-evidence-control",
+      "kind": "正常対照",
+      "role": "exec-review",
+      "material": {
+        "name": "guide-split",
+        "change": "change.diff",
+        "plan": "plan-control.md"
+      },
+      "origin": {
+        "cases": [
+          "correct-verification-table-scope",
+          "missed-known-consumer-tests"
+        ]
+      },
+      "description": "同じ変更で、検証表が最終差分と直接利用側を覆い、各試験の個別の結果がそろう正常対照",
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "verification-table-scope",
+            "description": "検証表が最終差分の変更ファイル（分割で増えた資料と説明）と直接利用側の試験を覆っていないことを指摘する",
+            "patterns": [
+              "検証(表|コマンド|対象|範囲)",
+              "usage_links_test|cli_list_test|writing-(business|research)|usage\\.md|直接影響|利用側|消費側|未計上"
+            ]
+          },
+          {
+            "id": "known-consumer-not-executed",
+            "description": "探索で一致した既知の利用側の試験（cli_list_test）が、実行対象と個別の結果へ引き継がれていないことを指摘する",
+            "patterns": [
+              "cli_list_test",
+              "未実行|実行(対象|結果)|検証対象|個別|含まれ|不足|漏れ"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "small-handoff-record-readers",
+      "kind": "見逃し",
+      "role": "exec-review",
+      "material": {
+        "name": "handoff-record",
+        "change": "defect.diff",
+        "plan": "plan-defect.md"
+      },
+      "origin": {
+        "source": "private-notes plans/2026/11/17-2114_process-wi-single-lane.exec-review.tsv の行12〜17（ラウンド3〜8）。dotfilesの036460db4から4354f2fa8・d2c68e8be"
+      },
+      "description": "記録を作る前提を変えたのに、記録を読む側（委譲プロンプト、検収、説明）と、読めない場合と不在の区別を扱わない小さい事例",
+      "expect": {
+        "detect": [
+          {
+            "id": "prompt-reader",
+            "description": "後任の委譲プロンプトが、記録の不在を扱わずに記録を最初に読ませることを指摘する",
+            "patterns": [
+              "prompt\\.py|compose|プロンプト",
+              "不在|無い|作られな|作らな|存在しな|未作成"
+            ]
+          },
+          {
+            "id": "accept-reader",
+            "description": "委譲元の検収が、記録の不在で失敗するか不在を扱わないことを指摘する",
+            "patterns": [
+              "accept|検収",
+              "不在|無い|作られな|作らな|存在しな|未作成|FileNotFoundError"
+            ]
+          },
+          {
+            "id": "doc-reader",
+            "description": "説明の後任・委譲元の段が、記録を作らない前任の規定と一致しないことを指摘する",
+            "patterns": [
+              "handoff\\.md",
+              "不在|無い|作られな|作らな|未作成|無条件|必ず"
+            ]
+          },
+          {
+            "id": "unreadable-vs-absent",
+            "description": "作った記録を読めない場合（権限、通常ファイルでない、本文を解釈できない）を不在と区別しないと、記録にしか無い値を失うことを指摘する",
+            "patterns": [
+              "読めな|取得できな|権限|Permission|ディレクトリ|IsADirectory|破損|解釈できな",
+              "不在|無い|未作成|区別|取り違え|同じ扱い|同一視"
+            ]
+          }
+        ],
+        "absent": []
+      }
+    },
+    {
+      "id": "small-handoff-record-readers-control",
+      "kind": "正常対照",
+      "role": "exec-review",
+      "material": {
+        "name": "handoff-record",
+        "change": "control.diff",
+        "plan": "plan-control.md"
+      },
+      "origin": {
+        "source": "private-notes plans/2026/11/17-2114_process-wi-single-lane.exec-review.tsv の行12〜17（ラウンド3〜8）。dotfilesの036460db4から4354f2fa8・d2c68e8be"
+      },
+      "description": "同じ前提の変更で、読む側の全てが読めた・不在・それ以外で読めないの3つを扱う正常対照",
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "prompt-reader",
+            "description": "後任の委譲プロンプトが、記録の不在を扱わずに記録を最初に読ませることを指摘する",
+            "patterns": [
+              "prompt\\.py|compose|プロンプト",
+              "不在|無い|作られな|作らな|存在しな|未作成"
+            ]
+          },
+          {
+            "id": "accept-reader",
+            "description": "委譲元の検収が、記録の不在で失敗するか不在を扱わないことを指摘する",
+            "patterns": [
+              "accept|検収",
+              "不在|無い|作られな|作らな|存在しな|未作成|FileNotFoundError"
+            ]
+          },
+          {
+            "id": "doc-reader",
+            "description": "説明の後任・委譲元の段が、記録を作らない前任の規定と一致しないことを指摘する",
+            "patterns": [
+              "handoff\\.md",
+              "不在|無い|作られな|作らな|未作成|無条件|必ず"
+            ]
+          },
+          {
+            "id": "unreadable-vs-absent",
+            "description": "作った記録を読めない場合（権限、通常ファイルでない、本文を解釈できない）を不在と区別しないと、記録にしか無い値を失うことを指摘する",
+            "patterns": [
+              "読めな|取得できな|権限|Permission|ディレクトリ|IsADirectory|破損|解釈できな",
+              "不在|無い|未作成|区別|取り違え|同じ扱い|同一視"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "small-recheck-ledger",
+      "kind": "見逃し",
+      "role": "exec-review",
+      "material": {
+        "name": "recheck-ledger",
+        "change": "defect.diff",
+        "plan": "plan-defect.md"
+      },
+      "origin": {
+        "source": "private-notes plans/2026/11/17-2114_process-wi-single-lane.exec-review.tsv の行19〜32（ラウンド9〜13）。dotfilesのb47bc0ef4から4c28936e2"
+      },
+      "description": "前回指摘の判定を加えた変更で、入力・既存の状態・操作の順・読む側の組合せから導ける欠陥が残る小さい事例",
+      "expect": {
+        "detect": [
+          {
+            "id": "misreference",
+            "description": "対応不十分・未対応の判定が別の指摘の残りを登録した行を指せ、元の指摘を引き継がないまま収束することを指摘する",
+            "patterns": [
+              "residual|残り|残存|引き継",
+              "別の|他の|無関係|取り違え|共有|同じ行|紐付|対応付"
+            ]
+          },
+          {
+            "id": "verdict-only-round",
+            "description": "判定だけのroundを現在のroundに数えず、確認済みのroundより前へ記録でき、確認済みのroundの集計や収束が変わることを指摘する",
+            "patterns": [
+              "判定(だけ|のみ)|指摘(の行)?(だけ|のみ)|current_round|現在のround|最大のround",
+              "前の(round|ラウンド)|過去の(round|ラウンド)|より前|確認済み|集計が変わ|収束が変わ"
+            ]
+          },
+          {
+            "id": "response-after-verdict",
+            "description": "判定の後に書き換えた応答が、確かめ済みの完了として数えられることを指摘する",
+            "patterns": [
+              "respond|応答",
+              "判定(の)?(後|あと)|判定済み|判定のある|確かめた後|checks",
+              "完了|確かめ済み|収束"
+            ]
+          },
+          {
+            "id": "help-example",
+            "description": "add-many --helpが示す一括入力の例が必須の区分を欠き、表示されたまま実行すると失敗することを指摘する",
+            "patterns": [
+              "ヘルプ|help|epilog|入力例|JSON例|案内",
+              "add-many|items-file|一括",
+              "区分|category|失敗|拒否|実行できな"
+            ]
+          },
+          {
+            "id": "help-cross-test",
+            "description": "CLIの全サブコマンドを走査するhelp_testが、recheckの--row-idの独自の型変換で失敗し、実行対象からも漏れていることを指摘する",
+            "patterns": [
+              "help_test|横断",
+              "失敗|エラー|ERROR|FAIL|未実行|実行対象|検証対象"
+            ]
+          },
+          {
+            "id": "bulk-respond-drops",
+            "description": "respond-manyが行を作り直し、判定（checks）と区分を消すことを指摘する",
+            "patterns": [
+              "respond-many|respond_many|一括",
+              "判定|checks|区分|category",
+              "消え|消す|失われ|残らな|削除|作り直"
+            ]
+          }
+        ],
+        "absent": []
+      }
+    },
+    {
+      "id": "small-recheck-ledger-control",
+      "kind": "正常対照",
+      "role": "exec-review",
+      "material": {
+        "name": "recheck-ledger",
+        "change": "control.diff",
+        "plan": "plan-control.md"
+      },
+      "origin": {
+        "source": "private-notes plans/2026/11/17-2114_process-wi-single-lane.exec-review.tsv の行19〜32（ラウンド9〜13）。dotfilesのb47bc0ef4から4c28936e2"
+      },
+      "description": "同じ契約で、判定の記録・集計・応答・案内・横断試験の欠陥を構造で防いだ正常対照",
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "misreference",
+            "description": "対応不十分・未対応の判定が別の指摘の残りを登録した行を指せ、元の指摘を引き継がないまま収束することを指摘する",
+            "patterns": [
+              "residual|残り|残存|引き継",
+              "別の|他の|無関係|取り違え|共有|同じ行|紐付|対応付"
+            ]
+          },
+          {
+            "id": "verdict-only-round",
+            "description": "判定だけのroundを現在のroundに数えず、確認済みのroundより前へ記録でき、確認済みのroundの集計や収束が変わることを指摘する",
+            "patterns": [
+              "判定(だけ|のみ)|指摘(の行)?(だけ|のみ)|current_round|現在のround|最大のround",
+              "前の(round|ラウンド)|過去の(round|ラウンド)|より前|確認済み|集計が変わ|収束が変わ"
+            ]
+          },
+          {
+            "id": "response-after-verdict",
+            "description": "判定の後に書き換えた応答が、確かめ済みの完了として数えられることを指摘する",
+            "patterns": [
+              "respond|応答",
+              "判定(の)?(後|あと)|判定済み|判定のある|確かめた後|checks",
+              "完了|確かめ済み|収束"
+            ]
+          },
+          {
+            "id": "help-example",
+            "description": "add-many --helpが示す一括入力の例が必須の区分を欠き、表示されたまま実行すると失敗することを指摘する",
+            "patterns": [
+              "ヘルプ|help|epilog|入力例|JSON例|案内",
+              "add-many|items-file|一括",
+              "区分|category|失敗|拒否|実行できな"
+            ]
+          },
+          {
+            "id": "help-cross-test",
+            "description": "CLIの全サブコマンドを走査するhelp_testが、recheckの--row-idの独自の型変換で失敗し、実行対象からも漏れていることを指摘する",
+            "patterns": [
+              "help_test|横断",
+              "失敗|エラー|ERROR|FAIL|未実行|実行対象|検証対象"
+            ]
+          },
+          {
+            "id": "bulk-respond-drops",
+            "description": "respond-manyが行を作り直し、判定（checks）と区分を消すことを指摘する",
+            "patterns": [
+              "respond-many|respond_many|一括",
+              "判定|checks|区分|category",
+              "消え|消す|失われ|残らな|削除|作り直"
+            ]
+          }
+        ]
+      }
     }
   ]
 }

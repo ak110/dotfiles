@@ -1,0 +1,46 @@
+diff --git a/docs/handoff.md b/docs/handoff.md
+--- a/docs/handoff.md
++++ b/docs/handoff.md
+@@ -4,8 +4,9 @@
+
+ ## 前任
+
+-前任は、終了する前に必ず引き継ぎ記録を書く。
+-書く値は、後任が再開に使う値と、役割が記録へ書くと定めた項目である。
++前任は、他の原本（依頼、計画、commit、成果物）から復元できない値がある時だけ引き継ぎ記録を書く。
++書く値は、その値と、役割が記録へ書くと定めた項目である。
++書く値が無ければ記録を作らない。
+
+ ## 後任
+
+diff --git a/relay/record.py b/relay/record.py
+--- a/relay/record.py
++++ b/relay/record.py
+@@ -7,7 +7,9 @@ import pathlib
+
+
+ def write(path: pathlib.Path, values: dict[str, str]) -> None:
+-    """引き継ぎ記録を書く。値が無い場合も空の記録を作る。"""
++    """引き継ぎ記録を書く。他の原本から復元できない値が無ければ、記録を作らない。"""
++    if not values:
++        return
+     path.write_text(json.dumps(values, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
+diff --git a/tests/record_test.py b/tests/record_test.py
+--- a/tests/record_test.py
++++ b/tests/record_test.py
+@@ -12,11 +12,11 @@ class RecordTest(unittest.TestCase):
+             record.write(path, {"成果物": "/work/out.md"})
+             self.assertEqual(record.read(path), {"成果物": "/work/out.md"})
+
+-    def test_empty_values_create_empty_record(self) -> None:
++    def test_empty_values_create_no_record(self) -> None:
+         with tempfile.TemporaryDirectory() as directory:
+             path = pathlib.Path(directory) / "handoff.json"
+             record.write(path, {})
+-            self.assertEqual(record.read(path), {})
++            self.assertFalse(path.exists())
+
+
+ if __name__ == "__main__":

@@ -1,0 +1,90 @@
+diff --git a/docs/usage.md b/docs/usage.md
+--- a/docs/usage.md
++++ b/docs/usage.md
+@@ -1,5 +1,5 @@
+ # 使い方
+
+-調査結果を報告する時は、`guides/writing.md`「調査報告」の基準で書く。
+-社外へ依頼を送る時は、`guides/writing.md`「業務文書」の基準で書く。
++調査結果を報告する時は、`guides/writing-research.md`「調査報告」の基準で書く。
++社外へ依頼を送る時は、`guides/writing-business.md`「業務文書」の基準で書く。
+ どの資料に見出しがあるか分からない時は、`python3 -m guidekit.cli find <見出し>`で引く。
+diff --git a/guidekit/catalog.py b/guidekit/catalog.py
+--- a/guidekit/catalog.py
++++ b/guidekit/catalog.py
+@@ -5,7 +5,7 @@ from __future__ import annotations
+ import pathlib
+
+ ROOT = pathlib.Path(__file__).resolve().parent.parent / "guides"
+-GUIDES = ("writing",)
++GUIDES = ("writing", "writing-business", "writing-research")
+
+
+ def path(name: str) -> pathlib.Path:
+diff --git a/guides/writing-business.md b/guides/writing-business.md
+new file mode 100644
+--- /dev/null
++++ b/guides/writing-business.md
+@@ -0,0 +1,8 @@
++# 業務文書の基準
++
++共通の基準は`writing.md`にある。
++
++## 業務文書
++
++- 宛先と期限を冒頭に書く。
++- 依頼する操作を箇条書きにする。
+diff --git a/guides/writing-research.md b/guides/writing-research.md
+new file mode 100644
+--- /dev/null
++++ b/guides/writing-research.md
+@@ -0,0 +1,8 @@
++# 調査報告の基準
++
++共通の基準は`writing.md`にある。
++
++## 調査報告
++
++- 観測した事実と推論を分けて書く。
++- 事実には出典を添える。
+diff --git a/guides/writing.md b/guides/writing.md
+--- a/guides/writing.md
++++ b/guides/writing.md
+@@ -1,16 +1,8 @@
+ # 文章の基準
+
++用途ごとの基準は、業務文書を`writing-business.md`、調査報告を`writing-research.md`に置く。
++
+ ## 共通
+
+ - 1文に1つの内容を書く。
+ - 結論を先に書く。
+-
+-## 業務文書
+-
+-- 宛先と期限を冒頭に書く。
+-- 依頼する操作を箇条書きにする。
+-
+-## 調査報告
+-
+-- 観測した事実と推論を分けて書く。
+-- 事実には出典を添える。
+diff --git a/tests/catalog_test.py b/tests/catalog_test.py
+--- a/tests/catalog_test.py
++++ b/tests/catalog_test.py
+@@ -5,10 +5,13 @@ from guidekit import catalog
+
+ class CatalogTest(unittest.TestCase):
+     def test_sections_follow_document_order(self) -> None:
+-        self.assertEqual(catalog.sections("writing"), ["共通", "業務文書", "調査報告"])
++        self.assertEqual(catalog.sections("writing"), ["共通"])
++        self.assertEqual(catalog.sections("writing-business"), ["業務文書"])
++        self.assertEqual(catalog.sections("writing-research"), ["調査報告"])
+
+     def test_find_returns_guide_with_heading(self) -> None:
+-        self.assertEqual(catalog.find("調査報告"), "writing")
++        self.assertEqual(catalog.find("共通"), "writing")
++        self.assertEqual(catalog.find("調査報告"), "writing-research")
+
+     def test_unknown_guide_is_rejected(self) -> None:
+         with self.assertRaises(KeyError):

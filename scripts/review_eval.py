@@ -7,6 +7,8 @@
 起動は`uv run --frozen python scripts/review_eval.py <prepare|score|store> ...`とする。
 レビュー担当の起動はagents_serverのMCP（`start`）からしか行えないため、本コマンドは起動に渡す入力の準備と、
 返却された管理表の採点と、消費済み評価worktreeの回収を担う。
+事例の入力は、private-notesに保存した過去の計画と対象リポジトリのcommitから再構成するか、
+`review_eval_materials/`の合成素材（差分・計画・WI原本）から小さいリポジトリを作って用意する。
 手順は`.claude/skills/agent-toolkit-edit/references/review-eval-set.md`にある。
 """
 
@@ -16,6 +18,7 @@ import argparse
 import dataclasses
 import functools
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -31,6 +34,7 @@ from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import commit_mapping, review_contract
 
 CASES_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_cases.json")
+MATERIALS_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_materials")
 _ISSUE_COLUMN = 3
 _LOCATION_COLUMN = 2
 
@@ -45,6 +49,23 @@ class _Expectation:
 
     def matches(self, text: str) -> bool:
         return all(pattern.search(text) for pattern in self.patterns)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Material:
+    """`review_eval_materials/<name>/`の合成素材。
+
+    `base.diff`を当てた版を変更前、さらに`change`の差分を当てた版を変更後とし、`plan`の計画と同じ場所のWI原本で評価する。
+    元のAWI・計画の本文を公開リポジトリへ転記しないよう、判断に要る契約・提供側・利用側・提出結果だけを一般化して持つ。
+    """
+
+    name: str
+    change: str
+    plan: str
+
+    @property
+    def root(self) -> pathlib.Path:
+        return MATERIALS_PATH / self.name
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,6 +86,10 @@ class _Case:
     # 評価用の資料の保存版。`revision`はprivate-notesの完全OID、`plan`と`contract`はそのcommitでのパス（どちらも省略可）。
     # `plan`は保存版の計画の代わりにレビュー担当へ渡す評価用の計画、`contract`は自動生成の代わりに渡す確かめた条件表である。
     fixtures: dict[str, str] = dataclasses.field(default_factory=dict)
+    # 合成素材から入力を用意する事例。指定した事例は`repo`・`plan`・`revision`・`wi_revisions`・`fixtures`を持たない。
+    material: _Material | None = None
+    # 元事例との対応。`cases`は同じ評価セットの全履歴版の事例ID、`source`は事例を持たない原本の所在と範囲である。
+    origin: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 def _expectations(items: list[dict[str, Any]]) -> tuple[_Expectation, ...]:
@@ -91,6 +116,15 @@ def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
                 or (case.fixtures and "revision" not in case.fixtures)
             ):
                 raise ValueError(f"{case.id}: fixturesにはrevisionと、planかcontractの保存パスの辞書が必要")
+            if case.material is not None:
+                missing = [
+                    name
+                    for name in ("base.diff", case.material.change, case.material.plan)
+                    if not (case.material.root / name).is_file()
+                ]
+                if missing:
+                    raise ValueError(f"{case.id}: 合成素材{case.material.root}に{', '.join(missing)}が無い")
+        _check_origins(cases)
     except (ValueError, KeyError, TypeError, re.error) as error:
         raise ActionableError(
             f"評価セットを読み込めない: {path}: {error!r}",
@@ -103,24 +137,51 @@ def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
     return cases
 
 
+def _check_origins(cases: list[_Case]) -> None:
+    """小さい事例が指す元事例が評価セットに残っていることを確かめる。元事例を消すと対応が失われるため拒否する。"""
+    ids = {case.id for case in cases}
+    for case in cases:
+        origin = case.origin
+        if not isinstance(origin, dict) or not set(origin) <= {"cases", "source"}:
+            raise ValueError(f"{case.id}: originにはcases（元事例IDの配列）かsource（原本の所在）だけを書く")
+        cited = origin.get("cases", [])
+        if not isinstance(cited, list) or not all(isinstance(value, str) for value in cited):
+            raise ValueError(f"{case.id}: origin.casesには事例IDの配列が必要")
+        if unknown := sorted(set(cited) - ids):
+            raise ValueError(f"{case.id}: originの元事例が評価セットに無い: {', '.join(unknown)}")
+        if "source" in origin and (not isinstance(origin["source"], str) or not origin["source"]):
+            raise ValueError(f"{case.id}: origin.sourceには原本の所在を文字列で書く")
+        if case.material is not None and not origin:
+            raise ValueError(f"{case.id}: 合成素材の事例には元事例との対応（origin）が必要")
+
+
 def _parse_cases(data: dict[str, Any]) -> list[_Case]:
-    return [
-        _Case(
-            id=item["id"],
-            kind=item["kind"],
-            role=item["role"],
-            repo=item["repo"],
-            plan=item["plan"],
-            revision=item["revision"],
-            description=item["description"],
-            detect=_expectations(item["expect"]["detect"]),
-            absent=_expectations(item["expect"]["absent"]),
-            extra_params=item.get("extra_params"),
-            wi_revisions=item.get("wi_revisions", {}),
-            fixtures=item.get("fixtures", {}),
-        )
-        for item in data["cases"]
-    ]
+    return [_parse_case(item) for item in data["cases"]]
+
+
+def _parse_case(item: dict[str, Any]) -> _Case:
+    material = item.get("material")
+    if material is not None:
+        saved = sorted({"repo", "plan", "revision", "wi_revisions", "fixtures"} & item.keys())
+        if saved:
+            raise ValueError(f"{item['id']}: materialの事例は{', '.join(saved)}を持たない（入力は合成素材から作る）")
+        material = _Material(material["name"], material["change"], material["plan"])
+    return _Case(
+        id=item["id"],
+        kind=item["kind"],
+        role=item["role"],
+        repo=item["repo"] if material is None else "",
+        plan=item["plan"] if material is None else "",
+        revision=item["revision"] if material is None else "",
+        description=item["description"],
+        detect=_expectations(item["expect"]["detect"]),
+        absent=_expectations(item["expect"]["absent"]),
+        extra_params=item.get("extra_params"),
+        wi_revisions=item.get("wi_revisions", {}),
+        fixtures=item.get("fixtures", {}),
+        material=material,
+        origin=item.get("origin", {}),
+    )
 
 
 def _commit_range(commits_path: pathlib.Path) -> tuple[str, str]:
@@ -276,6 +337,10 @@ def store(
 
     AWIと計画の本文を含むため、公開リポジトリには置かない。保持期限のある一時領域にも置かない。
     """
+    if case.material is not None:
+        raise ValueError(
+            f"{case.id}は合成素材の事例で、保存版を使わない。計画は{case.material.root / case.material.plan}を直接直す"
+        )
     if plan is None and contract is None:
         raise ValueError("--planか--contractの少なくとも一方を指定する")
     saved: dict[str, str] = {}
@@ -294,8 +359,30 @@ def store(
     return {"case": case.id, "fixtures": {"revision": revision, **saved}}
 
 
-def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> dict[str, Any]:
-    """事例の入力を`out/<事例ID>/`へ再構成し、レビュー担当の起動に渡す値を返す。"""
+@dataclasses.dataclass(frozen=True)
+class _Inputs:
+    """事例の出力先へ書き出す入力。
+
+    `retarget_repair`があれば計画の対象リポジトリの行を今回の作業ツリーへ付け替え、付け替えられない時の直し方として示す。
+    """
+
+    repo: pathlib.Path
+    base: str
+    head: str
+    plan_name: str
+    plan_text: str
+    texts: dict[str, str]
+    retarget_repair: str | None
+
+
+def _new_case_dir(case_dir: pathlib.Path) -> None:
+    if case_dir.exists():
+        raise FileExistsError(f"出力先が既にある: {case_dir}。別の--outを指定するか、前回の準備を回収する")
+    case_dir.mkdir(parents=True)
+
+
+def _saved_inputs(case: _Case, case_dir: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> _Inputs:
+    """private-notesの保存版と、計画のcommit対応記録が指す対象リポジトリのcommitから入力を再構成する。"""
     if case.repo not in repos:
         raise ValueError(f"対象リポジトリの所在が無い: {case.repo}。--repo {case.repo}=<絶対パス>を指定して再実行する")
     repo = repos[case.repo]
@@ -305,24 +392,85 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
     commits_text = _saved_text(private_notes, case.revision, f"{case.plan}.wi-commits.jsonl")
     names = commit_mapping.plan_allowed_wis(plan_text, pathlib.Path(f"{case.plan}.md")) if case.extra_params is None else set()
     texts = _saved_wis(case, private_notes, names)
-    case_dir = out / case.id
-    if case_dir.exists():
-        raise FileExistsError(f"出力先が既にある: {case_dir}。別の--outを指定するか、前回の準備を回収する")
-    case_dir.mkdir(parents=True)
+    _new_case_dir(case_dir)
     commits = case_dir / "wi-commits.jsonl"
     commits.write_bytes(commits_text.encode("utf-8"))
     base, head = _commit_range(commits)
-    base_oid = _git(repo, "rev-parse", "--verify", f"{base}^{{commit}}")
-    head_oid = _git(repo, "rev-parse", "--verify", f"{head}^{{commit}}")
-    worktree = case_dir / "worktree"
-    plan = case_dir / pathlib.Path(f"{case.plan}.md").name
-    if "plan" in case.fixtures:
+    return _Inputs(
+        repo=repo,
+        base=_git(repo, "rev-parse", "--verify", f"{base}^{{commit}}"),
+        head=_git(repo, "rev-parse", "--verify", f"{head}^{{commit}}"),
+        plan_name=pathlib.Path(f"{case.plan}.md").name,
+        plan_text=plan_text,
+        texts=texts,
         # 評価用の計画は保存時の作業ツリーを指しているため、今回の準備で作る作業ツリーへ付け替える。
+        retarget_repair=(
+            f"評価セットのfixtures.plan（{case.fixtures['plan']}）を直し、storeで保存し直す"
+            if "plan" in case.fixtures
+            else None
+        ),
+    )
+
+
+# 合成素材のcommitでは、実行中のOSアカウントのGit設定（署名、hook）を使わない。
+_MATERIAL_GIT = (
+    "-c",
+    "user.name=review-eval",
+    "-c",
+    "user.email=review-eval@example.invalid",
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    f"core.hooksPath={os.devnull}",
+)
+
+
+def _material_inputs(case: _Case, material: _Material, case_dir: pathlib.Path) -> _Inputs:
+    """合成素材の差分から変更前と変更後の2つのcommitを持つリポジトリを作り、素材の計画とWI原本を入力にする。"""
+    plan_path = material.root / material.plan
+    plan_text = plan_path.read_bytes().decode("utf-8")
+    names = commit_mapping.plan_allowed_wis(plan_text, plan_path) if case.extra_params is None else set()
+    if missing := sorted(name for name in names if not (material.root / name).is_file()):
+        raise ValueError(f"合成素材{material.root}に計画の関連WIの原本が無い: {', '.join(missing)}。原本を素材へ置く")
+    texts = {name: (material.root / name).read_bytes().decode("utf-8") for name in sorted(names)}
+    _new_case_dir(case_dir)
+    repo = case_dir / "repository"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    oids = []
+    for patch, message in ((material.root / "base.diff", "変更前"), (material.root / material.change, material.change)):
+        _git(repo, "apply", "--index", str(patch))
+        _git(repo, *_MATERIAL_GIT, "commit", "-q", "--no-verify", "-m", message)
+        oids.append(_git(repo, "rev-parse", "HEAD"))
+    return _Inputs(
+        repo=repo,
+        base=oids[0],
+        head=oids[1],
+        plan_name=material.plan,
+        plan_text=plan_text,
+        texts=texts,
+        retarget_repair=f"{plan_path}の計画メタ情報へ対象リポジトリの行を1件だけ書く",
+    )
+
+
+def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> dict[str, Any]:
+    """事例の入力を`out/<事例ID>/`へ再構成し、レビュー担当の起動に渡す値を返す。"""
+    case_dir = out / case.id
+    inputs = (
+        _saved_inputs(case, case_dir, repos, private_notes)
+        if case.material is None
+        else _material_inputs(case, case.material, case_dir)
+    )
+    repo, base_oid, texts = inputs.repo, inputs.base, inputs.texts
+    worktree = case_dir / "worktree"
+    plan = case_dir / inputs.plan_name
+    plan_text = inputs.plan_text
+    if inputs.retarget_repair is not None:
         plan_text, replaced = _TARGET_REPOSITORY_LINE.subn(rf"\g<1>`{worktree}`", plan_text)
         if replaced != 1:
             raise ActionableError(
                 f"評価用の計画に計画メタ情報の対象リポジトリの行が1件無い: {case.id}（{replaced}件）",
-                next_action=f"評価セットのfixtures.plan（{case.fixtures['plan']}）を直し、storeで保存し直す",
+                next_action=inputs.retarget_repair,
             )
     plan.write_bytes(plan_text.encode("utf-8"))
     delivered = [plan_text]
@@ -374,7 +522,7 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
             contract.write_text(contract_text, encoding="utf-8")
             extra_params["review_contract"] = str(contract)
             delivered.append(contract_text)
-    _git(repo, "worktree", "add", "--detach", str(worktree), head_oid)
+    _git(repo, "worktree", "add", "--detach", str(worktree), inputs.head)
     referenced = sorted(
         {path for text in delivered for path in _TEMPORARY_PATH.findall(text) if not path.startswith(str(case_dir))}
     )

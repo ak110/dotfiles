@@ -5,7 +5,7 @@ description: >
   `agent-toolkit/`・`agent-basics/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
   `agent-toolkit/share/rules/common/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
   `.claude-plugin/marketplace.json`を編集するときに使う。
-  版数更新・marketplace管理、hookと役割文書の規約、内部仕様の資料の索引、レビュー担当の指示・モデル変更時の評価セットの比較を含む。
+  版数更新・marketplace管理、hookと役割文書の規約、内部仕様の資料の索引、レビュー担当の指示・モデル変更時の評価セットの比較と、評価の事例・合成素材の追加を含む。
 ---
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex・Antigravity）
@@ -37,7 +37,7 @@ description: >
 | 統括の起動引数、turnの終了、再開、外部制御の経路を変える | `agent-toolkit:atk-mode/references/orchestrator-runtime.md`。同資料の実装由来の要約も同じ変更で直す |
 | スキル（`SKILL.md`、`references/`）を新設・編集する | `agent-toolkit:/share/agent-skills-operations.md` |
 | `.ps1`、`.ps1.tmpl`、`.psm1`、`.psd1`を編集する | `agent-basics:writing-standards/references/powershell.md` |
-| レビュー担当への指示かモデルの割り当てを変える | `references/review-eval-set.md` |
+| レビュー担当への指示かモデルの割り当てを変える、レビュー評価の事例・合成素材を足す・直す | `references/review-eval-set.md` |
 | 確認要否を定める条文を変える | `references/confirmation-eval-set.md` |
 
 ## 内部仕様の索引

@@ -1,0 +1,293 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1 @@
++__pycache__/
+diff --git a/README.md b/README.md
+new file mode 100644
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,7 @@
++# ledger
++
++レビュー指摘の管理表を記録するCLIである。
++レビュー担当が指摘を登録し、レビューイーが応答を書く。
++
++- 実行は`python3 -m ledger.cli --table <管理表のパス> <サブコマンド>`で行う。
++- 試験は`python3 -m unittest discover -s tests -p '*_test.py'`で全件を実行する。
+diff --git a/ledger/__init__.py b/ledger/__init__.py
+new file mode 100644
+--- /dev/null
++++ b/ledger/__init__.py
+@@ -0,0 +1 @@
++"""レビュー指摘の管理表を扱うパッケージ。"""
+diff --git a/ledger/cli.py b/ledger/cli.py
+new file mode 100644
+--- /dev/null
++++ b/ledger/cli.py
+@@ -0,0 +1,67 @@
++"""管理表を操作するCLI。"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import pathlib
++import sys
++
++from ledger import store
++
++_ADD_MANY_EPILOG = """\
++--items-fileには、指摘を次の形のJSON配列で書く。
++  [{"round": 1, "issue": "集計が空の表で失敗する"}]
++"""
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(prog="ledger", description="レビュー指摘の管理表を操作する。")
++    parser.add_argument("--table", type=pathlib.Path, default=pathlib.Path("review.json"), help="管理表のパス")
++    sub = parser.add_subparsers(dest="command", required=True)
++    add = sub.add_parser("add", help="指摘を1行追加する")
++    add.add_argument("--round", type=int, required=True, help="レビューのround")
++    add.add_argument("--issue", required=True, help="指摘の本文")
++    add_many = sub.add_parser(
++        "add-many",
++        help="指摘をまとめて追加する",
++        epilog=_ADD_MANY_EPILOG,
++        formatter_class=argparse.RawDescriptionHelpFormatter,
++    )
++    add_many.add_argument("--items-file", type=pathlib.Path, required=True, help="指摘のJSON配列のファイル")
++    respond = sub.add_parser("respond", help="指摘の行へ応答を書く")
++    respond.add_argument("--row-id", type=int, required=True, help="行の識別子")
++    respond.add_argument("--text", required=True, help="応答の本文")
++    respond_many = sub.add_parser("respond-many", help="応答をまとめて書く")
++    respond_many.add_argument("--items-file", type=pathlib.Path, required=True, help="応答のJSON配列のファイル")
++    summary = sub.add_parser("summary", help="roundの集計を出す")
++    summary.add_argument("--round", type=int, required=True, help="集計するround")
++    return parser
++
++
++def _items(path: pathlib.Path) -> list[dict]:
++    return json.loads(path.read_text(encoding="utf-8"))
++
++
++def main(argv: list[str] | None = None) -> int:
++    args = build_parser().parse_args(argv)
++    try:
++        if args.command == "add":
++            print(store.add(args.table, args.round, args.issue))
++        elif args.command == "add-many":
++            for row_id in store.add_many(args.table, _items(args.items_file)):
++                print(row_id)
++        elif args.command == "respond":
++            store.respond(args.table, args.row_id, args.text)
++        elif args.command == "respond-many":
++            store.respond_many(args.table, _items(args.items_file))
++        else:
++            print(json.dumps(store.summary(args.table, args.round), ensure_ascii=False))
++    except (KeyError, ValueError) as error:
++        print(f"失敗: {error}", file=sys.stderr)
++        return 1
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/ledger/store.py b/ledger/store.py
+new file mode 100644
+--- /dev/null
++++ b/ledger/store.py
+@@ -0,0 +1,77 @@
++"""レビュー指摘の管理表。1つのJSONファイルへ指摘の行を配列で記録する。"""
++
++from __future__ import annotations
++
++import json
++import pathlib
++
++
++def load(path: pathlib.Path) -> list[dict]:
++    """管理表の行を読む。ファイルが無ければ空の表として扱う。"""
++    if not path.exists():
++        return []
++    return json.loads(path.read_text(encoding="utf-8"))
++
++
++def _save(path: pathlib.Path, rows: list[dict]) -> None:
++    path.write_text(json.dumps(rows, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
++
++
++def _row(row_id: int, round_: int, issue: str, response: str) -> dict:
++    return {"id": row_id, "round": round_, "issue": issue, "response": response}
++
++
++def _find(rows: list[dict], row_id: int) -> dict:
++    if not 1 <= row_id <= len(rows):
++        raise ValueError(f"行{row_id}は無い")
++    return rows[row_id - 1]
++
++
++def _validate(round_: int, issue: str) -> None:
++    if round_ < 1:
++        raise ValueError("roundは1以上の整数")
++    if not issue.strip():
++        raise ValueError("指摘の本文が空")
++
++
++def add(path: pathlib.Path, round_: int, issue: str) -> int:
++    """指摘を1行追加し、行の識別子を返す。"""
++    return add_many(path, [{"round": round_, "issue": issue}])[0]
++
++
++def add_many(path: pathlib.Path, items: list[dict]) -> list[int]:
++    """指摘をまとめて追加し、行の識別子を返す。itemsは{"round": round, "issue": 本文}の配列で、1件でも不正なら表を変えない。"""
++    rows = load(path)
++    added = []
++    for item in items:
++        _validate(item["round"], item["issue"])
++        rows.append(_row(len(rows) + 1, item["round"], item["issue"], ""))
++        added.append(len(rows))
++    _save(path, rows)
++    return added
++
++
++def respond(path: pathlib.Path, row_id: int, text: str) -> None:
++    """指摘の行へレビューイーの応答を書く。書き直しは前の応答を置き換える。"""
++    if not text.strip():
++        raise ValueError("応答の本文が空")
++    rows = load(path)
++    _find(rows, row_id)["response"] = text
++    _save(path, rows)
++
++
++def respond_many(path: pathlib.Path, items: list[dict]) -> None:
++    """複数の行へ応答を書く。itemsは{"id": 行の識別子, "response": 応答の本文}の配列。"""
++    rows = load(path)
++    for item in items:
++        row = _find(rows, item["id"])
++        if not item["response"].strip():
++            raise ValueError(f"行{item['id']}の応答の本文が空")
++        rows[row["id"] - 1] = _row(row["id"], row["round"], row["issue"], item["response"])
++    _save(path, rows)
++
++
++def summary(path: pathlib.Path, round_: int) -> dict:
++    """指定したroundの指摘の件数と、応答の無い件数を返す。"""
++    current = [row for row in load(path) if row["round"] == round_]
++    return {"findings": len(current), "unanswered": sum(1 for row in current if not row["response"])}
+diff --git a/tests/cli_test.py b/tests/cli_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/cli_test.py
+@@ -0,0 +1,24 @@
++import contextlib
++import io
++import json
++import pathlib
++import tempfile
++import unittest
++
++from ledger import cli
++
++
++class CliTest(unittest.TestCase):
++    def test_add_respond_and_summary(self) -> None:
++        with tempfile.TemporaryDirectory() as directory:
++            table = str(pathlib.Path(directory) / "review.json")
++            output = io.StringIO()
++            with contextlib.redirect_stdout(output):
++                self.assertEqual(cli.main(["--table", table, "add", "--round", "1", "--issue", "集計が失敗する"]), 0)
++                self.assertEqual(cli.main(["--table", table, "respond", "--row-id", "1", "--text", "直した"]), 0)
++                self.assertEqual(cli.main(["--table", table, "summary", "--round", "1"]), 0)
++        self.assertEqual(json.loads(output.getvalue().splitlines()[-1]), {"findings": 1, "unanswered": 0})
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/help_test.py b/tests/help_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/help_test.py
+@@ -0,0 +1,42 @@
++"""全てのサブコマンドについて、ヘルプの表示と必須引数の受理を確かめる横断試験。"""
++
++import argparse
++import contextlib
++import io
++import unittest
++
++from ledger import cli
++
++
++def _subparsers() -> dict[str, argparse.ArgumentParser]:
++    parser = cli.build_parser()
++    action = next(item for item in parser._actions if isinstance(item, argparse._SubParsersAction))
++    return dict(action.choices)
++
++
++def _sample(action: argparse.Action) -> str:
++    if action.choices:
++        return str(next(iter(action.choices)))
++    return "1" if action.type in (int, float) else "value"
++
++
++class HelpTest(unittest.TestCase):
++    def test_every_subcommand_shows_help(self) -> None:
++        for name in _subparsers():
++            with self.subTest(name), contextlib.redirect_stdout(io.StringIO()):
++                with self.assertRaises(SystemExit) as raised:
++                    cli.build_parser().parse_args([name, "--help"])
++                self.assertEqual(raised.exception.code, 0)
++
++    def test_every_subcommand_accepts_sample_required_arguments(self) -> None:
++        for name, child in _subparsers().items():
++            arguments = [name]
++            for action in child._actions:
++                if action.required and action.option_strings:
++                    arguments += [action.option_strings[0], _sample(action)]
++            with self.subTest(name), contextlib.redirect_stderr(io.StringIO()):
++                cli.build_parser().parse_args(arguments)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/store_test.py b/tests/store_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/store_test.py
+@@ -0,0 +1,34 @@
++import pathlib
++import tempfile
++import unittest
++
++from ledger import store
++
++
++class StoreTest(unittest.TestCase):
++    def setUp(self) -> None:
++        self._directory = tempfile.TemporaryDirectory()
++        self.table = pathlib.Path(self._directory.name) / "review.json"
++
++    def tearDown(self) -> None:
++        self._directory.cleanup()
++
++    def test_summary_counts_unanswered_findings_of_round(self) -> None:
++        store.add(self.table, 1, "集計が空の表で失敗する")
++        store.add(self.table, 1, "ヘルプの例が古い")
++        store.respond(self.table, 1, "空の表を0件として扱った")
++        self.assertEqual(store.summary(self.table, 1), {"findings": 2, "unanswered": 1})
++
++    def test_respond_many_writes_each_response(self) -> None:
++        store.add(self.table, 1, "集計が空の表で失敗する")
++        store.add(self.table, 1, "ヘルプの例が古い")
++        store.respond_many(self.table, [{"id": 1, "response": "直した"}, {"id": 2, "response": "例を直した"}])
++        self.assertEqual([row["response"] for row in store.load(self.table)], ["直した", "例を直した"])
++
++    def test_empty_issue_is_rejected(self) -> None:
++        with self.assertRaises(ValueError):
++            store.add(self.table, 1, " ")
++
++
++if __name__ == "__main__":
++    unittest.main()
