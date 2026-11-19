@@ -16,7 +16,6 @@ from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve.plans import local_scan as plans_local_scan
 from agent_toolkit._atk.serve.plans import remote as plans_remote
 from agent_toolkit._atk.serve.plans import rendering as plans_rendering
-from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
 from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing import serve_remote_support
@@ -219,9 +218,10 @@ async def test_rpc_timeout_error_names_operation_and_limit(tmp_path: pathlib.Pat
 
 @pytest.mark.asyncio
 async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを要求の上限の内で起動し、失敗を標準エラー付きで示す。
+    """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを要求全体で30秒の上限の内で起動し、失敗を標準エラー付きで示す。
 
-    計画ファイル画面のbootstrap・op・argsを共通の起動へ渡すことを確かめる。
+    計画ファイル画面のbootstrap・op・argsと要求全体の上限を共通の起動へ渡すことを確かめる。
+    共通の起動は版の照会と全ての試行で要求の期限を共有し、最初の起動の試行が上限のほぼ全てを受け取る。
     共通の起動のPythonの版、依存、起動し直しと期限は、serve/remote_test.pyが独立した期待値で検証する。
     """
     sent: list[tuple[list[str], float]] = []
@@ -240,6 +240,6 @@ async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeyp
     assert command[:4] == ["ssh", "-o", "BatchMode=yes", "remote-host"]
     assert plans.REMOTE_BOOTSTRAP in command[-3]
     assert command[-2:] == ["read", "cGF0aA=="]
-    assert all(0 < timeout <= plans_roots.SSH_TIMEOUT_SEC for _, timeout in sent)
+    assert max(timeout for _, timeout in sent) == pytest.approx(30.0, abs=0.5)
     assert "終了コード3" in str(error.value)
     assert "helper not found" in str(error.value)

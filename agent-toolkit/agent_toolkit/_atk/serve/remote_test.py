@@ -110,7 +110,10 @@ class _RemoteHost:
     導入済みのパッチ版の指定だけが起動する（2026-11-19、sthenoで観測）。
     索引へ出ない起動（`--offline`）は、依存が専用キャッシュにある場合だけ成功する。
     uvが起動するPythonの代わりに、起動形の`python -B`以降を試験のPythonで接続先のホームから実行する。
-    ホームのセッション画面のヘルパーは一覧を返し、記録の`read`では記録が消えた場合と同じく`FileNotFoundError`で終わる。
+    ホームのセッション画面のヘルパーは一覧を返し、記録の`read`では記録が消えた場合と同じく`FileNotFoundError`を示して終わる。
+    示す誤りは1行とし、警告本文が末尾だけを残して切り詰めても、ヘルパーが開始の印として書く行が本文に残るかを観測できる形にする。
+    `trace`は、接続先のシェルが`sh -x`と同じく実行するコマンドを標準エラー出力へ書く場合を模す。
+    `newline`は、接続先が標準エラー出力に書く改行で、WindowsのPythonはCRLFで書く。
     """
 
     def __init__(
@@ -122,6 +125,8 @@ class _RemoteHost:
         self.cached = cached
         self.reachable = True
         self.index_reachable = True
+        self.trace = False
+        self.newline = b"\n"
         self.attempts = 0
         self.listings = 0
         self.index_fetches = 0
@@ -129,7 +134,10 @@ class _RemoteHost:
         helper = home / "dotfiles" / "agent-toolkit" / "scripts" / "atk_serve_sessions_remote_helper.py"
         helper.parent.mkdir(parents=True)
         helper.write_text(
-            "import sys\nif sys.argv[1] == 'read':\n    raise FileNotFoundError(sys.argv[2])\nsys.stdout.write('[]')\n",
+            "import sys\n"
+            "if sys.argv[1] == 'read':\n"
+            "    sys.exit('FileNotFoundError: ' + sys.argv[2])\n"
+            "sys.stdout.write('[]')\n",
             encoding="utf-8",
         )
 
@@ -137,6 +145,12 @@ class _RemoteHost:
         self.attempts += 1
         if not self.reachable:
             return 255, b"", b"ssh: connect to host remote port 22: Connection refused"
+        # `["ssh", host, ...]`の3要素目以降が、接続先のシェルが実行するコマンドである。
+        returncode, stdout, stderr = self._run(command[2:])
+        trace = f"+ {' '.join(command[2:])}\n".encode() if self.trace else b""
+        return returncode, stdout, (trace + stderr).replace(b"\n", self.newline)
+
+    def _run(self, command: list[str]) -> tuple[int, bytes, bytes]:
         if command[command.index("uv") + 1] == "python":
             self.listings += 1
             entries = [{"implementation": "cpython", "version": version} for version in self.installed]
@@ -320,14 +334,19 @@ async def test_launch_failure_after_reresolution_reports_the_last_failure(add_re
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize("cached", [True, False], ids=["remembered-and-warm", "first-contact"])
-async def test_helper_operation_error_is_reported_without_relaunch(add_remote_host: _AddRemoteHost, cached: bool) -> None:
+async def test_helper_operation_error_is_reported_without_relaunch(
+    add_remote_host: _AddRemoteHost, cached: bool, newline: bytes
+) -> None:
     """起動した後のヘルパーの操作のエラーは、版を選び直したり起動し直したりせず、ヘルパーの標準エラー出力のまま示す。
 
     一覧の表示の後に消えた記録の`read`で、ヘルパーの`FileNotFoundError`を起動の失敗として扱って索引を使う形で起動し直し、
     索引へ届かない接続先では`Failed to fetch`だけが返って本当の原因が消えた（2026-11-19の検証で観測）。
+    ヘルパーが開始の印として書く行は、改行がCRLFでも印と判定し、エンドユーザーへ示す誤りの文には含めない。
     """
     name, host = add_remote_host("3.15.2", cached=cached)
+    host.newline = newline
     if cached:
         await _run_one_shot(name)
         host.index_reachable = False
@@ -339,21 +358,51 @@ async def test_helper_operation_error_is_reported_without_relaunch(add_remote_ho
         )
 
     assert str(error.value).endswith("FileNotFoundError: gone.jsonl")
+    assert "atk-remote-helper-started" not in str(error.value)
     assert host.helpers[-1:] == ["3.15.2"]
     # 温まった接続先は覚えた版での起動だけ、初めての接続先は照会と、索引へ出ない起動の失敗と、索引を使う起動。
     assert (host.attempts - attempts, host.listings - listings) == ((1, 0) if cached else (3, 1))
 
 
 @pytest.mark.asyncio
-async def test_one_shot_to_unresponsive_host_ends_within_its_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """応答しない接続先への単発の要求は、版の照会と起動を合わせて要求の上限で`subprocess.TimeoutExpired`になる。
+@pytest.mark.parametrize("remembered", [False, True], ids=["first-contact", "remembered-python-gone"])
+async def test_command_trace_of_remote_shell_is_not_taken_for_helper_start(
+    add_remote_host: _AddRemoteHost, remembered: bool
+) -> None:
+    """接続先のシェルがコマンドのトレースを標準エラー出力へ書いても、uvが起動できなかった試行から次の試行へ進む。
+
+    トレースにはコマンドの文字列の中の開始の印も現れる。印を標準エラー出力の部分文字列で探すと、ヘルパーが動いたと誤って判定し、
+    専用キャッシュが空の初めての起動も、消えた版の選び直しも失敗し続けた（2026-11-19の検証で、`/bin/sh -x`で観測）。
+    """
+    name, host = add_remote_host("3.15.2")
+    if remembered:
+        await _run_one_shot(name)
+        host.installed = {"3.15.3"}
+    host.trace = True
+
+    await _run_one_shot(name)
+
+    assert host.helpers[-1:] == ["3.15.3" if remembered else "3.15.2"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("resolve_timeout", "ssh_runs"), [(10.0, 1), (0.3, 2)], ids=["deadline-in-listing", "deadline-in-launch"]
+)
+async def test_one_shot_to_unresponsive_host_ends_within_its_timeout(
+    monkeypatch: pytest.MonkeyPatch, resolve_timeout: float, ssh_runs: int
+) -> None:
+    """応答しない接続先への単発の要求は、版の照会と起動を合わせて要求の上限で、その上限を示す`subprocess.TimeoutExpired`になる。
 
     版を覚えていない接続先で、版の照会が別の上限を持ち、`read`の上限30秒に対して90秒待った（2026-11-19の検証で観測）。
+    照会が自身の上限で打ち切られた場合は残り時間で起動を試し、要求の期限に達した後はSSHを増やさない。
     """
+    monkeypatch.setattr(serve_remote, "_RESOLVE_TIMEOUT_SEC", resolve_timeout)
     real_exec = asyncio.create_subprocess_exec
+    runs: list[tuple[str, ...]] = []
 
     async def unresponsive(*cmd: str, **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        del cmd
+        runs.append(cmd)
         return await real_exec(sys.executable, "-c", "import time; time.sleep(120)", **kwargs)
 
     monkeypatch.setattr(serve_remote.asyncio, "create_subprocess_exec", unresponsive)
@@ -362,10 +411,12 @@ async def test_one_shot_to_unresponsive_host_ends_within_its_timeout(monkeypatch
     )
     started = time.monotonic()
 
-    with pytest.raises(subprocess.TimeoutExpired):
+    with pytest.raises(subprocess.TimeoutExpired) as error:
         await asyncio.wait_for(request, timeout=10)
 
     assert time.monotonic() - started < 3
+    assert error.value.timeout == 1
+    assert len(runs) == ssh_runs
 
 
 @pytest.mark.asyncio
@@ -491,25 +542,56 @@ async def test_helper_launch_writes_only_its_own_uv_cache_and_starts_offline_onc
     assert inside
 
 
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name != "posix", reason="応答しないPythonの代わりに、PATHの後方へシェルスクリプトを置く")
+async def test_one_shot_launches_when_python_listing_stalls(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """実際のuvで、接続先のPATHの後方に応答しない`python3.15`があっても、版の照会を打ち切って起動し、一覧を返す。
+
+    `uv python list`はPATHの全てのPythonを調べ、`uv run --python 3.15`は最初に見つけたPythonで起動する。
+    照会が要求の期限まで待つと、起動できる接続先で一度も起動を試さずに一覧の取得が失敗した（2026-11-19の検証で観測）。
+    照会の上限と要求の上限は、`atk serve`の値（照会10秒、一覧300秒）を縮めて使う。
+    """
+    home = tmp_path / "home"
+    helper = home / "dotfiles" / "agent-toolkit" / "scripts" / "atk_serve_sessions_remote_helper.py"
+    helper.parent.mkdir(parents=True)
+    helper.write_text("print('[]')\n", encoding="utf-8")
+    wheels = tmp_path / "wheels"
+    _write_dependency_wheels(wheels)
+    environment = _remote_host_environment(home, tmp_path / "uv-cache", tmp_path)
+    _route_ssh_to_local_shell(monkeypatch, home, environment)
+    with _package_index(wheels) as index_url:
+        environment["UV_DEFAULT_INDEX"] = index_url
+        assert (await _one_shot_output(f"warm-{uuid.uuid4().hex}")).strip() == "[]"
+    stalled = tmp_path / "stalled"
+    stalled.mkdir()
+    release = tmp_path / "stalled.release"
+    (stalled / "python3.15").write_text(f"#!/bin/sh\nwhile [ ! -e '{release}' ]; do sleep 0.05; done\n", encoding="utf-8")
+    (stalled / "python3.15").chmod(0o755)
+    environment["PATH"] += os.pathsep + str(stalled)
+    monkeypatch.setattr(serve_remote, "_RESOLVE_TIMEOUT_SEC", 0.5)
+
+    try:
+        output = await serve_remote.run_remote_helper(
+            sessions.REMOTE_BOOTSTRAP, f"stalled-{uuid.uuid4().hex}", "list", [], ssh_options=(), timeout=10
+        )
+    finally:
+        release.touch()
+
+    assert output.strip() == "[]"
+
+
 def _route_ssh_to_local_shell(monkeypatch: pytest.MonkeyPatch, home: pathlib.Path, environment: dict[str, str]) -> None:
     """単発と常駐のSSHを、接続先のホームで起動形の要素を空白で連結したコマンドをシェルで実行する形へ置き換える。
 
     `ssh_options`を空にした呼び出しの`["ssh", host, ...]`の3要素目以降が、接続先のシェルへ渡る起動形である。
+    POSIXのシェルは`exec`で起動形のuvに置き換わる。
+    単発SSHが上限で子プロセスを終了すると、sshの場合と同じく標準出力と標準エラー出力の書き手が終わる。
     """
-
-    async def shell(command: typing.Sequence[str], **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        return await asyncio.create_subprocess_shell(" ".join(command[2:]), cwd=home, env=environment, **kwargs)
-
-    async def fake_run_ssh(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
-        proc = await shell(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        assert proc.returncode is not None
-        return proc.returncode, stdout, stderr
+    replace_shell = "exec " if os.name == "posix" else ""
 
     async def fake_exec(*cmd: str, **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        return await shell(cmd, **kwargs)
+        return await asyncio.create_subprocess_shell(replace_shell + " ".join(cmd[2:]), cwd=home, env=environment, **kwargs)
 
-    monkeypatch.setattr(serve_remote, "run_ssh", fake_run_ssh)
     monkeypatch.setattr(serve_remote.asyncio, "create_subprocess_exec", fake_exec)
 
 
