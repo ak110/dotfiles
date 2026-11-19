@@ -59,7 +59,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 メインが全体の作業構成・結果の採否・方針転換・完了を所有し、局所の担当が設計・実装、独立した担当が実行レビューを担う。
 通常のキュー処理は初回の対象と配分を保ち、開始後の新着の確認と今回追加の判断は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従う。
 
-要求の登録は、ユーザーが`atk wi add`、`/atk-mode add-awi-by-user`、`atk serve`のWI管理画面から行うほか、処理中のエージェントと`agent-toolkit:review-session`からも投入できる。
+要求の登録は、ユーザーが`atk wi add`、`/atk-mode add-awi-by-user`、`atk serve`のWI管理画面から行うほか、処理中のエージェントと振り返り（`/atk-mode review-session`）からも投入できる。
 本文の形式は`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。
 由来は`agent-toolkit:atk-mode/references/origin-and-approval.md`、状態と依存関係は`agent-toolkit:atk-mode/references/states-and-dependencies.md`に従う。
 
@@ -74,9 +74,9 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 ## 完了後の振り返り
 
 作業の完了後は、報告を所有するメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`で結果を報告して終わる。
-Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`agent-toolkit:review-session batch`が非同期でまとめて分析する。
+Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`/atk-mode review-session batch`が非同期でまとめて分析する。
 batchが投入したAWIは、ユーザーの内容確認を待たずに採否の検討と処理の対象になり、エージェント由来の要求の採否は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」で判断する。
-手動の`agent-toolkit:review-session`は現在のセッション全体を対象とし、引数は追加の着眼点として扱う。
+手動の`/atk-mode review-session`は現在のセッション全体を対象とし、引数は追加の着眼点として扱う。
 自動起動は`session_review_auto_start`で切り替え、無効でも待ち記録を保持して手動のbatchで処理できる。
 
 ## 運用変更を検討する観点
@@ -101,4 +101,4 @@ agent-toolkitが使う作業用の文書は、次の定義に従う。
 | 計画ファイル | `agent-toolkit:atk-mode/references/plan-format.md` |
 | 実行レビュー指摘管理表（実装担当とレビュー担当が是正の状況を共有する） | `agent-basics:review-standards`、`agent-toolkit:/share/review-table-operations.md` |
 | コミットメッセージ | `agent-toolkit:atk-mode/references/commit-message.md` |
-| PR・MRの説明、Release本文 | `agent-basics:writing-standards/references/writing-genres.md`「判断と行動を求める記述」。投稿の前は`agent-toolkit:review-external-writes` |
+| PR・MRの説明、Release本文 | `agent-basics:writing-standards/references/writing-genres.md`「判断と行動を求める記述」。投稿の前は`agent-toolkit:atk-mode/playbooks/review-external-writes.md` |

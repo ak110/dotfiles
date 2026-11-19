@@ -24,7 +24,7 @@
 UWI終了の判断基準は`agent-basics:bugfix`が定める。
 書式と自動チェックは`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が担う。
 計画側の配置契約は`agent-toolkit:atk-mode/references/plan-format.md`が持つ。
-`agent-toolkit:review-session`は問題候補の列挙と
+振り返り（`/atk-mode review-session`）は問題候補の列挙と
 `agent-basics:bugfix`の起動だけを持ち、再発防止策の必須性を独自に定めない。
 振り返りを経由しないバグ対応にも同じ必須性を適用するためである。
 

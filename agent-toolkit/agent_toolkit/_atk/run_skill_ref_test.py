@@ -39,4 +39,4 @@ def test_synced_report_with_branch_tag_collision(
     )
     if same_name_tag:
         git_repository.run_git(notes, "tag", "feature/reports")
-    assert wi_add.has_synced_run_report(notes, run_id="run-namespace", skill="my-skill")
+    assert wi_add.has_synced_run_report(notes, run_id="run-namespace", scope="my-skill")

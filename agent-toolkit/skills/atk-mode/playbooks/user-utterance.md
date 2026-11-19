@@ -132,7 +132,7 @@ AWIは、末尾に一度残した原文と各項目を`agent-toolkit:atk-mode/re
 - 必要な確認の欠落: ユーザーしか持たない情報を推測で確定し、誤った成果物、作業の未実施、ユーザーからの是正を招いた事象（技術とQCDで判断して確認を省いたものは除く）
 - 本来不要な操作・回答・再依頼・是正をユーザーに行わせた事象（必要な確認への回答を除く）
 - 品質を損ねた事象（成果物の欠陥、手戻り、同じ指摘の反復など）
-- 所要時間の目標を超えた事象（`agent-toolkit:review-session/references/duration-analysis.md`「所要時間の分析と改善」の目標時間と、`reference_document`が定める目標時間）
+- 所要時間の目標を超えた事象（`agent-toolkit:atk-mode/references/review-session-cost.md`「所要時間の分析と改善」の目標時間と、`reference_document`が定める目標時間）
 - 同じ成果物で同じ責任範囲のレビューの第3ラウンド
 
 ## 割り込み・訂正・中止

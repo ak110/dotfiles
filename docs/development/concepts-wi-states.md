@@ -5,7 +5,7 @@
 WIは作成年月ごとの固定パスへ置き、保存状態をfrontmatterの`state`へ分離する。
 重要フラグは状態と独立させ、設定・解除・表示と、重要・非重要による表示対象の限定に使う。
 通常のprocess-wiの選定は、ユーザーが重要項目を対象として明示した場合だけこの値を参照する。
-現行の実装契約と配置の理由は[design-wi.md](design-wi.md)にある。
+現行の実装契約と配置の理由は[design-wi-queue.md](design-wi-queue.md)にある。
 固定配置は状態遷移で参照が変わる欠陥を是正する設計判断であり、重要フラグの操作と通常選定の関係はユーザーが指定した要求に由来する。
 
 現行の規範は`agent-toolkit:atk-mode/references/states-and-dependencies.md`と`agent-toolkit:atk-mode/references/plan-format.md`にある。
@@ -55,5 +55,5 @@ WI処理の機構を設計した理由（却下した代替案など）は、[de
 
 ### 経緯（WIの状態と遷移）
 
-- 計画実装型AWIと`atk wi convert-to-plan`による計画化の手順は、2026年9月13日のユーザー指示で廃止した（`concepts-planning-history.md`の同日の項）。
+- 計画実装型AWIと`atk wi convert-to-plan`による計画化の手順は、2026年9月13日のユーザー指示で廃止した（`concepts-planning.md`の同日の項）。
   `plan_file`を持つ保存済み項目は表示で見分ける読取互換だけを残し、新しい項目へは書かせない

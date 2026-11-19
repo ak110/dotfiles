@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 
 import pytest
 
 from agent_toolkit._atk import run_skill
+from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._common import session_review, skill_modes
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 from agent_toolkit._testing.run_skill_support import _engine_env, _records, _run, _startup_input
@@ -21,16 +23,19 @@ __all__ = ["_engine_env"]
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.456秒。"),
 )
 @pytest.mark.parametrize(
-    "engine,arguments",
+    "engine,arguments,skill",
     [
-        ("claude", None),
-        ("claude", "auto"),
-        ("claude", "batchx"),
-        ("claude", "batch auto 任意の着眼点"),
-        ("codex", "batch auto 任意の着眼点"),
+        ("claude", None, "agent-toolkit:review-session"),
+        ("claude", "auto", "agent-toolkit:review-session"),
+        ("claude", "batchx", "agent-toolkit:review-session"),
+        ("claude", "batch auto 任意の着眼点", "agent-toolkit:review-session"),
+        ("codex", "batch auto 任意の着眼点", "agent-toolkit:review-session"),
+        ("claude", "batch auto 任意の着眼点", "review-session"),
     ],
 )
-def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, monkeypatch, capsys, engine, arguments) -> None:
+def test_batch_uses_existing_runner_and_report_receipt(
+    engine_env, tmp_path, monkeypatch, capsys, engine, arguments, skill
+) -> None:
     """2会話の実prepareから偽ホスト・同期済み報告・範囲確定まで公開CLIで検証する。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     for name in ("one", "two"):
@@ -51,7 +56,7 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
     options = ["--target-repo", str(engine_env.repo)]
     if arguments is not None:
         options.extend(["--args", arguments])
-    code, _out, error = _run([*options, "agent-toolkit:review-session"], capsys)
+    code, _out, error = _run([*options, skill], capsys)
     assert code == 0, error
     assert len(_records(engine_env, "session")) == 1
     manifests = list((session_review.directory() / "runs").glob("*.json"))
@@ -185,3 +190,45 @@ def test_resume_rejects_entry_form_for_other_work(engine_env, monkeypatch, capsy
         code, _out, error = _run(["--resume", run_id, *extra], capsys)
         assert code == 2 and ("一致しない" in error or "変更できない" in error)
     assert len(_records(engine_env, "session")) == 1
+
+
+@pytest.mark.parametrize(
+    ("mode", "resume_form"),
+    [(None, "unqualified"), (None, "qualified"), (None, "entry"), (None, "omitted"), ("batch", "omitted")],
+)
+def test_resume_completes_run_saved_with_unqualified_work_name(engine_env, monkeypatch, capsys, mode, resume_form):
+    """作業名を修飾名へそろえる前のCLIで中断した実行は、各指定の再開で完了し、保存記録と報告のscopeは保存時の値を保つ。
+
+    そろえる前の`atk run-skill review-session`は、起動入力の作業名と取込対象scopeを無修飾で保存した。
+    再開したホストはその起動入力どおり無修飾の`scope`で報告を保存する。
+    """
+    set_orchestrate_environment(monkeypatch, "claude:test-model/low")
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "1")
+    monkeypatch.setenv("FAKE_REPORT_MODE", "missing")
+    code, _out, error = _run(["--target-repo", str(engine_env.repo), "agent-toolkit:review-session"], capsys)
+    assert code != 0, error
+    run_id = _records(engine_env, "session")[0]["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    saved = engine_env.state / "agent-toolkit" / "run-skill" / "runs" / f"{run_id}.json"
+    payload = json.loads(saved.read_text(encoding="utf-8"))
+    legacy_scope = "review-session" + (f" {mode}" if mode else "")
+    payload["input"].update(
+        skill="review-session", arguments=mode, mode=mode, free_text="" if mode else None, accepted_scopes=[legacy_scope]
+    )
+    saved.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "0")
+    monkeypatch.setenv("FAKE_REPORT_MODE", "saved")
+    skill = {
+        "unqualified": ["review-session"],
+        "qualified": ["agent-toolkit:review-session"],
+        "entry": ["agent-toolkit:atk-mode"],
+        "omitted": [],
+    }[resume_form]
+    code, _out, error = _run(["--resume", run_id, *skill], capsys)
+    assert code == 0, error
+    record = json.loads(saved.read_text(encoding="utf-8"))
+    assert record["status"] == "completed"
+    assert record["input"] == payload["input"]
+    report = frontmatter.parse_frontmatter(
+        (pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]) / "2026/10" / f"{run_id}.md").read_text(encoding="utf-8")
+    )
+    assert report is not None and report[0]["scope"] == legacy_scope

@@ -15,7 +15,7 @@
 1. 使うworktreeの版の`atk info`でplugin rootを確かめ、`atk run-script multi-turn-trials -- --list`で課題を取る。
    `protection-removal-agent`、`protection-removal-user`、`purpose-boundary`を使う。
    前の2課題は保護の由来による確認の判断を、後の1課題は目的の確認の後の`technical-autonomy`などを比べる。
-2. 固定課題の手順は`agent-toolkit:refine-prompt/references/multi-turn-trials.md`と`agent-toolkit:refine-prompt/references/multi-turn-trials-comparisons.md`にある。
+2. 固定課題の手順は`agent-toolkit:atk-mode/playbooks/refine-prompt-trials.md`にある。
    変更前後の文書と、同じ公開素材、初期状態、モデル、effort、開示条件、終了条件、採点基準をそろえ、新しい文脈で試す。
    公開素材と対象文書の複製だけを評価の対象へ渡し、非公開の要件、以前の返却と採点結果は仲介担当が保つ。
 3. 機能の要件と対話中の判断を別に採点し、質問の要否と時機は全対話と引用から判定する。

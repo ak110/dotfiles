@@ -9,7 +9,7 @@
 確認への回答では、WIキューを経由しない単発実行コマンドと毎回の報告用UWIを選んだ（2026年10月6日）。
 実装は`agent-toolkit/agent_toolkit/_atk/run_skill.py`が持つ。
 モデル候補の解決、可用性判定、利用上限の待機と正常終了の判定は、`atk wi process-loop`と共通の`agent-toolkit/agent_toolkit/_atk/orchestrator.py`が持つ。
-可用性判定を軽量工程のモデル・effort `low`・軽量起動で行う理由は[design-process-loop.md](design-process-loop.md)にある。
+可用性判定を軽量工程のモデル・effort `low`・軽量起動で行う理由は[design-process-loop-orchestrator.md](design-process-loop-orchestrator.md)にある。
 
 `atk run-skill`が指定スキルを実行する子セッションは非対話起動（Claudeは`claude -p`、Codexは`codex exec`）とする。
 定期実行には操作する端末が無く、対話型のCLIは入力を待ったまま止まるためである。

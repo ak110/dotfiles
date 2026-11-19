@@ -52,6 +52,27 @@ def resolve_work(skill: str, arguments: str | None) -> tuple[str, str | None]:
     return f"agent-toolkit:{match[1]}", (arguments or "")[match.end() :]
 
 
+def qualified(skill: str) -> str:
+    """入口配下の作業の無修飾の名前を`agent-toolkit:<作業>`へそろえる。他の名前はそのまま返す。
+
+    作業名を比べる箇所は、比べる両側を値の読み取り時にこの関数（起動単位は`invocation_scope`・`canonical_scope`）でそろえる。
+    修飾名へそろえる前の`atk run-skill`は無修飾の作業名を実行記録へ保存した。
+    再開したホストはその起動入力どおりの`scope`で報告を保存するため、保存済みの値は書き換えずに比べる側でそろえる。
+    """
+    return f"agent-toolkit:{skill}" if skill in ENTRY_WORKS else skill
+
+
+def canonical_scope(scope: str) -> str:
+    """保存済みの起動単位（報告用UWIの`scope`など）の先頭の作業名を`qualified`でそろえる。モード語などの後続は保つ。"""
+    name, separator, rest = scope.partition(" ")
+    return f"{qualified(name)}{separator}{rest}"
+
+
+def entry_command(host: str, arguments: str) -> str:
+    """ホストがユーザーの入力として受け付ける、入口`atk-mode`の起動の形を返す。Codexは`$`、それ以外は`/`で始める。"""
+    return f"{'$' if host == 'codex' else '/'}{ENTRY_SKILL} {arguments}"
+
+
 def split_mode(skill: str, arguments: str | None) -> tuple[str | None, str | None]:
     """先頭語が完全一致する場合だけモードとして消費する。"""
     match = re.match(r"\s*(\S+)(?:\s+|$)", arguments or "")
@@ -62,12 +83,17 @@ def split_mode(skill: str, arguments: str | None) -> tuple[str | None, str | Non
 
 def invocation_scope(skill: str, arguments: str | None) -> str:
     """自由記述の違いに依存しない起動単位を返す。"""
+    skill = qualified(skill)
     mode, _ = split_mode(skill, arguments)
     return f"{skill} {mode}" if mode else skill
 
 
 def accepted_scopes(skill: str, arguments: str | None) -> tuple[str, ...]:
-    """保存済みUWIを取り込む起動単位を返す。新規保存はinvocation_scopeを使う。"""
+    """保存済みUWIを取り込む起動単位を返す。新規保存はinvocation_scopeを使う。
+
+    更新前の`atk run-skill`は、指定された作業名を修飾せずにscopeへ保存した（`review-session`、`review-session batch`など）。
+    作業名が入口の作業なら、無修飾の形も含める。
+    """
     scope = invocation_scope(skill, arguments)
     legacy = {
         "agent-toolkit:review-session": ("agent-toolkit:session-review",),
@@ -76,4 +102,11 @@ def accepted_scopes(skill: str, arguments: str | None) -> tuple[str, ...]:
             "agent-toolkit:session-review-batch",
         ),
     }
-    return (scope, *legacy.get(scope, ()))
+    candidates = (scope, *legacy.get(scope, ()))
+    unqualified = (
+        name.removeprefix("agent-toolkit:") + separator + rest
+        for candidate in candidates
+        for name, separator, rest in [candidate.partition(" ")]
+        if entry_work(name) is not None and name.startswith("agent-toolkit:")
+    )
+    return (*candidates, *unqualified)

@@ -26,11 +26,6 @@
 *.lock linguist-generated
 arid-baseline.json linguist-generated
 
-# 規範再編の機械記録。案内のREADME.mdなど人が書いたMarkdownは含めない。
-/docs/development/norm-restructure-20261022/*.json linguist-generated
-/docs/development/norm-restructure-20261022/*.tsv linguist-generated
-/docs/development/norm-restructure/*.tsv linguist-generated
-
 # 同梱した第三者の文面は自作の規範・ソースと区別する。
 /agent-basics/THIRD-PARTY-NOTICES.md linguist-vendored
 /agent-toolkit/THIRD-PARTY-NOTICES.md linguist-vendored

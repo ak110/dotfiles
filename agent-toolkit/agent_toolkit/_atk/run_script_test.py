@@ -24,7 +24,7 @@ def test_public_multi_turn_trials_prepares_and_grades_saved_artifacts(
     restore_host_environment(monkeypatch)
     trial = json.loads(
         (
-            run_script.PLUGIN_ROOT / "skills/refine-prompt/fixtures/multi-turn" / case.replace("-", "_") / "private/trial.json"
+            run_script.PLUGIN_ROOT / "skills/atk-mode/fixtures/multi-turn" / case.replace("-", "_") / "private/trial.json"
         ).read_text(encoding="utf-8")
     )
     command = [sys.executable, "-m", "agent_toolkit.atk", "run-script", "multi-turn-trials", "--"]
@@ -90,7 +90,7 @@ def test_public_multi_turn_trials_execution_failure_has_retry_action(
     """単独試行の障害診断から同一条件の再試行まで、公開gradeと保存結果で確認する。"""
     restore_host_environment(monkeypatch)
     trial = json.loads(
-        (run_script.PLUGIN_ROOT / "skills/refine-prompt/fixtures/multi-turn/verification_status/private/trial.json").read_text(
+        (run_script.PLUGIN_ROOT / "skills/atk-mode/fixtures/multi-turn/verification_status/private/trial.json").read_text(
             encoding="utf-8"
         )
     )

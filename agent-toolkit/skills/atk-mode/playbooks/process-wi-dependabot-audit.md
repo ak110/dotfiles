@@ -47,7 +47,7 @@
 1. 誤検知と是正済みのアラートは`state=dismissed`、`dismissed_reason=inaccurate`で却下する。
    `dismissed_comment`（280文字以内）には、manifest、package、確認SHA、解決済みの版と修正版を書き、不在の場合は確認SHAでmanifestが存在しないことを書く。
    キュー項目の識別子はコメントに含めない。
-2. `dismissed_comment`をファイルへ保存し、投稿の直前に`agent-toolkit:review-external-writes`を起動して指摘を反映する。
+2. `dismissed_comment`をファイルへ保存し、投稿の直前に`agent-toolkit:atk-mode/playbooks/review-external-writes.md`を読んで指摘を反映する。
 
    ```sh
    gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state=dismissed -f dismissed_reason=inaccurate -F dismissed_comment=@<COMMENT_FILE>

@@ -1,6 +1,6 @@
 # 公開状態の観測の設計記録
 
-[設計記録の索引](design.md)と[branch・CI所有権・公開・終了の設計記録](design-release.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 ## 公開状態の観測
 
@@ -20,7 +20,7 @@ all-reposの公開・CI・確認・再開は対象リポジトリの担当が所
 
 公開担当の完了後に`agent-toolkit:atk-mode/playbooks/report-completion.md`を読む。
 同スキルは元作業の完了報告を送り、続けて`atk agents-exit-session`を単独で実行する。
-振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動のセッションを非同期にまとめて分析する（`design-session-review-completion.md`「完了報告と振り返りの関係」）。
+振り返りはSessionStart/SessionEndを契機に起動する`/atk-mode review-session batch`が、非活動のセッションを非同期にまとめて分析する（`design-session-review-completion.md`「完了報告と振り返りの関係」）。
 その結果は作業完了報告とは独立して届ける。
 各工程は同じ完了本文を再生成しない。
 

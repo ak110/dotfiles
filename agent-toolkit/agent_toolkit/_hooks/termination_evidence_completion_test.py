@@ -71,7 +71,7 @@ _PLAYBOOK = "plugin/skills/atk-mode/playbooks/report-completion.md"
         (f"echo {_PLAYBOOK}", _PLAYBOOK),
         (f"cat {_PLAYBOOK}", f"cat: {_PLAYBOOK}: No such file"),
         (f"grep -n 作業完了報告 {_PLAYBOOK}", "1:# 作業完了報告とセッションの完了処理"),
-        ("cat plugin/skills/review-session/SKILL.md", "---\nname: review-session\n---\n"),
+        ("cat plugin/skills/atk-mode/playbooks/review-session.md", "---\nname: review-session\n---\n"),
         (f"cat {_PLAYBOOK}", ""),
     ],
 )

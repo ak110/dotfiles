@@ -29,7 +29,7 @@ def test_bugfix_start_does_not_request_other_analysis_workflows(tmp_path, monkey
     for path in (
         "atk-mode/references/analysis-records.md",
         "delegation/references/investigation-delegation.md",
-        "review-session/references/analysis-operations-root-cause.md",
+        "atk-mode/playbooks/review-session-analysis.md",
         "atk-mode/playbooks/user-utterance.md",
     ):
         assert path not in result.stdout
@@ -43,7 +43,7 @@ def test_user_intervention_analysis_requests_both_operation_references(tmp_path,
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     session = "bootstrap-intervention"
     payload = {"session_id": session, "cwd": str(tmp_path)}
-    source = root / "skills/review-session/references/analysis-operations-root-cause.md"
+    source = root / "skills/atk-mode/playbooks/review-session-analysis.md"
     selected = _run_hook_in_process(
         "pretooluse",
         {**payload, "tool_name": "Bash", "tool_input": {"command": "cat -- " + shlex.quote(str(source))}},
@@ -51,7 +51,7 @@ def test_user_intervention_analysis_requests_both_operation_references(tmp_path,
     assert selected.returncode == 0 and not selected.stderr
     context = json.loads(selected.stdout)["hookSpecificOutput"]["additionalContext"] if selected.stdout else ""
     assert "条件の成立は未確定" not in context
-    assert "review-session/references/analysis-operations-root-cause.md" not in context
+    assert "atk-mode/playbooks/review-session-analysis.md" not in context
     assert "atk-mode/playbooks/user-utterance.md" not in context
     result = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Do", "tool_input": {}})
     assert result.returncode == 0 and not result.stderr and not result.stdout

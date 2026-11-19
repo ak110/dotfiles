@@ -3,7 +3,7 @@
 ## 所要時間とコスト
 
 レーン分けは`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`が定める。
-所要時間の分析の現行の規定は`agent-toolkit/skills/review-session/references/duration-analysis.md`の「所要時間の分析と改善」にある。
+所要時間の分析の現行の規定は`agent-toolkit/skills/atk-mode/references/review-session-cost.md`の「所要時間の分析と改善」にある。
 
 - 速度や資源使用量の改善を主目的とする作業は、変更前のボトルネックと、同じ負荷・比較可能な条件での変更前後の数値を測定し、挙動の維持とトレードオフを報告する。
   一般的な手順整理やコスト削減は推定による判断を保つ。
@@ -67,7 +67,7 @@
   （2026年9月16日、ユーザー回答。AWI 51件を7レーンへ件数で分けた処理回で、
   レーン別の稼働時間が2298秒から6708秒まで広がった観測に由来する）。
   現行の規定は`agent-toolkit/skills/atk-mode/playbooks/process-wi-selection.md`にある
-- `agent-toolkit:review-session`の時間目標の値・計測区間・用途は、`references/duration-analysis.md`「所要時間の分析と改善」に集約する。
+- 振り返り（`/atk-mode review-session`）の時間目標の値・計測区間・用途は、`agent-toolkit:atk-mode/references/review-session-cost.md`「所要時間の分析と改善」に集約する。
   2026年9月15日の900秒目標は同月25日に300秒へ改められた。
   2026年11月3日のユーザー回答により、目標を超えた場合に時間改善案を必須とする判断だけへ用途を限定した。
   必要な調査の範囲・順序・省略・先送り・停止には使わず、超過しない場合も証拠から改善案を判断する

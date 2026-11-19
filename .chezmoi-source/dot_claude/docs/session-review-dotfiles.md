@@ -1,6 +1,6 @@
 # dotfiles環境の振り返り観点
 
-`agent-toolkit:review-session`の振り返りで、メインが問題の原因と対策を確定する時と、所要時間を分析する時に適用する。
+`/atk-mode review-session`の振り返りで、メインが問題の原因と対策を確定する時と、所要時間を分析する時に適用する。
 振り返りの`atk run-script session-review-prepare`が出力するJSONの`reference_document`が、本文書の絶対パスを示す。
 
 ## セッションの所要時間目標
@@ -19,7 +19,7 @@
   所要時間の超過はC・Dの問題であり、`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」で扱う。
   超過の区間に品質を下げた手戻りなどQに影響する問題が含まれる場合も、その問題を同節で扱う。
 - 適切に並列化されていれば全体の処理件数が所要時間へ与える影響は小さいという前提で、並列化の成立条件と律速区間を調べ、件数の増加自体を超過の原因や許容の理由にしない。
-  過去の対策との比較は`agent-toolkit:review-session/references/analysis-actions.md`「原因と対策」に従う。
+  過去の対策との比較は`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「原因と対策」に従う。
 
 巡回の終了条件は、dotfilesリポジトリの`AGENTS.md`と`.claude/skills/develop-dotfiles/references/process-wi-duration.md`「所要時間と終了条件」に従う。
 毎回、次回の候補全体の180分以内の見込みを根拠とともに検収するまで、必要な改善の実装と公開を続ける。

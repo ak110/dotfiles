@@ -32,9 +32,9 @@ def test_goal_separates_child_completion_from_launcher_verification(mode, skill_
     report = (root / "atk-mode/playbooks/report-completion.md").read_text(encoding="utf-8")
     assert "報告の同期検収は、子セッションの終了後" in report
     assert "子自身の完了条件へ含めない" in report
-    assert ("references/batch.md" in context) is (mode == "batch")
+    assert ("playbooks/review-session-batch.md" in context) is (mode == "batch")
     if mode == "batch":
-        batch = (root / "review-session/references/batch.md").read_text(encoding="utf-8")
+        batch = (root / "atk-mode/playbooks/review-session-batch.md").read_text(encoding="utf-8")
         assert "atk run-script session-review-state -- finish" in batch
         assert "起動元run-skillがbatchセッションの終了後に報告の同期を検収" in batch
         assert "処理済みの確定はbatchセッション自身の完了条件に含めず" in batch

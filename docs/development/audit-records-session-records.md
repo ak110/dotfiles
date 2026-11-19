@@ -2,17 +2,17 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/skills/review-session/references/session-records.md：H1直下：2026年9月2日
+## agent-toolkit/skills/atk-mode/references/session-records.md：H1直下：2026年9月2日
 
 2026年9月2日に`~/.claude/projects`配下と`~/.codex/sessions`配下の記録で確認した。
 再検証は両ディレクトリの記録から対象のキーを検索する。
 
-## agent-toolkit/skills/review-session/references/session-records.md：集計値の典拠：2026年9月3日
+## agent-toolkit/skills/atk-mode/references/session-records.md：集計値の典拠：2026年9月3日
 
-本節の記述は2026年9月3日に`agent-toolkit/skills/review-session/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。
+本節の記述は2026年9月3日に`agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。
 再検証は同じ2つの関数を読む。
 
-## agent-toolkit/skills/review-session/references/session-records.md：スキル起動の判定：2026年9月10日
+## agent-toolkit/skills/atk-mode/references/session-records.md：スキル起動の判定：2026年9月10日
 
 2026年9月10日に確認した。
 `~/.claude/projects`配下でClaude Code 2.1.252と2.1.267の記録を読んだ。
@@ -30,14 +30,14 @@
 あわせてCodexの記録から`atk wi process-loop`が渡す起動プロンプトの完全一致と包含の件数を数える。
 user役レコードの`text`の先頭が前置きであることも確認する。
 
-## agent-toolkit/skills/review-session/references/session-records.md：Claude Codeの記録：2026年10月6日
+## agent-toolkit/skills/atk-mode/references/session-records.md：Claude Codeの記録：2026年10月6日
 
 2026年10月6日にClaude Code 2.1.291の本体（`~/.local/share/claude/versions/2.1.291`）を確かめた。
 出力の項目`narration_block_indexes`の説明は該当する`thinking`ブロックを「server summaries of the prose between tool calls, not the model's own reasoning」と記す。
 本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して再検証する。
 検索の手順は`.claude/skills/develop-dotfiles/references/host-binaries.md`「ホスト本体のバイナリの検索」に従う。
 
-## agent-toolkit/skills/review-session/references/session-records.md：暗号化された値：2026年10月7日
+## agent-toolkit/skills/atk-mode/references/session-records.md：暗号化された値：2026年10月7日
 
 2026年10月7日に公式文書「Thinking」（<https://platform.claude.com/docs/en/build-with-claude/thinking>、同日取得）を確かめた。
 節「Thinking encryption」は`signature`を「The `signature` field is opaque: don't interpret or parse it.」と定め、`redacted_thinking`の`data`を「opaque and encrypted」と記す。

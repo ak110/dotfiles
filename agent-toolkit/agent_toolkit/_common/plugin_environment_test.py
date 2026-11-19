@@ -273,8 +273,8 @@ def test_public_launcher_child_receives_caller_environment_and_internal_restarts
     """
     root = tmp_path / "plugin"
     _copy_plugin_code(root)
-    scripts = Path(subject.__file__).resolve().parents[2] / "skills/review-session/scripts"
-    shutil.copytree(scripts, root / "skills/review-session/scripts", ignore=shutil.ignore_patterns("__pycache__", "*_test.py"))
+    scripts = Path(subject.__file__).resolve().parents[2] / "skills/atk-mode/scripts"
+    shutil.copytree(scripts, root / "skills/atk-mode/scripts", ignore=shutil.ignore_patterns("__pycache__", "*_test.py"))
     (root / "probe.py").write_text(_CHILD_ENVIRONMENT_PROBE, encoding="utf-8")
     caller = host_environ()
     for key in (

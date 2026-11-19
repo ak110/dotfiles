@@ -43,6 +43,7 @@ from agent_toolkit._common import (
     session_activity,
     session_registry,
     session_review,
+    skill_modes,
 )
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 lazy from agent_toolkit._atk import run_skill_state
@@ -67,7 +68,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         return None
     if event not in {"SessionStart", "SessionEnd"}:
         return None
-    notice = session_review.launch_notice() if event == "SessionStart" else None
+    notice = session_review.launch_notice(host) if event == "SessionStart" else None
     count = len(session_review.pending())
     if not count:
         return notice
@@ -75,7 +76,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         if event == "SessionStart":
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                "まとめて振り返る場合は`/agent-toolkit:review-session batch`を実行せよ。"
+                f"まとめて振り返る場合は`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
             )
             return "\n".join(part for part in (notice, waiting) if part)
         return notice
@@ -455,7 +456,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
 def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> None:
     """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
     report_synced = add.has_synced_run_report(
-        private_notes.default_private_notes(), run_id=manifest["run_id"], skill=session_review.BATCH_SCOPE
+        private_notes.default_private_notes(), run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE
     )
     session_review.BatchWriter(path).complete(report_synced=report_synced)
     run_skill_state.mark_completed(manifest["run_id"])
@@ -521,7 +522,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         if old.get("analysis_succeeded") and add.has_synced_run_report(
             private_notes.default_private_notes(),
             run_id=old["run_id"],
-            skill=old.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
+            scope=old.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
         ):
             session_review.BatchWriter(path).complete(report_synced=True)
             run_skill_state.mark_completed(old["run_id"])

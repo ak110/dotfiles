@@ -83,4 +83,4 @@
 - commitとPR説明の帰属行（セッションURLを含む）はClaude Codeの既定のまま残し、投稿前レビューと振り返りはこれらを内部識別子の混入として扱わない。
   managed settingsの`attribution.sessionUrl`と`attribution.pr`も設定しない。
   2026年10月5日、セッションURLをcommitとPR説明から外す案に対して、ユーザーが設定を増やさず既定のままとすると回答したことに由来する。
-  現行の規定は`agent-toolkit/share/external-write-review.subagent.md`「観点」の3項目めにある
+  現行の規定は`agent-toolkit/skills/atk-mode/roles/external-write-review.subagent.md`「観点」の3項目めにある

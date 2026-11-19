@@ -14,12 +14,17 @@ from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import markdown_headings as _markdown_headings
+from agent_toolkit._common import skill_modes
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
 
 
-def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, skill: str) -> bool:
-    """当該実行の報告UWIが、保存本文と同じ内容でcommit・必要なpushへ到達したかを返す。"""
+def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: str) -> bool:
+    """当該実行の起動単位`scope`の報告UWIが、保存本文と同じ内容でcommit・必要なpushへ到達したかを返す。
+
+    `scope`と報告の`scope`は、どちらも`skill_modes.canonical_scope`でそろえて比べる。
+    """
+    expected = skill_modes.canonical_scope(scope)
     if not private_notes.is_dir():
         return False
     with _wi_sync.repo_lock(private_notes, timeout=30):
@@ -67,7 +72,8 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, skill: st
                 if not (
                     data.get("type") == WI_TYPE_UWI
                     and data.get("source") == "run-skill"
-                    and data.get("scope") == skill
+                    and isinstance(saved_scope := data.get("scope"), str)
+                    and skill_modes.canonical_scope(saved_scope) == expected
                     and data.get("run_skill_report") == "true"
                     and data.get("run_skill_run_id") == run_id
                 ):

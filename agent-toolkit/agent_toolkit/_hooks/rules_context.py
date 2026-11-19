@@ -165,9 +165,10 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                     "「`atk run-skill`の過去の実行のUWI」に従って過去の実行のUWIを照会せよ。"
                 )
                 if data.get("batch_manifest"):
-                    # batch.mdは起動から保存までの手順全体であり、終了契約に含めない。
+                    # batchの手順書は起動から保存までの手順全体であり、終了契約に含めない。
                     guidance += (
-                        "\nbatchの起動から保存までは、agent-toolkit:review-sessionのreferences/batch.mdを全文読んで従え。"
+                        "\nbatchの起動から保存までは、"
+                        "`agent-toolkit:atk-mode/playbooks/review-session-batch.md`を全文読んで従え。"
                     )
                 guidance += f"\n次の終了契約を読め: 完了報告の手順書`{completion_playbook_path()}`"
             if not resume_only:
@@ -452,7 +453,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         result = process_tree.run_with_timeout(
             [
                 sys.executable,
-                str(SHARE_DIR.parent / "skills/review-session/scripts/session_review_prepare.py"),
+                str(SHARE_DIR.parent / "skills/atk-mode/scripts/session_review_prepare.py"),
                 *options,
                 "--work-dir",
                 str(output.parent),

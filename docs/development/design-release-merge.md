@@ -1,6 +1,6 @@
 # rulesetとマージ後の同期の設計記録
 
-[設計記録の索引](design.md)と[branch・CI所有権・公開・終了の設計記録](design-release.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 ## rulesetの更新手順
 

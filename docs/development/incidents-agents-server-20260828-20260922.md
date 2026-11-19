@@ -1,6 +1,6 @@
 # 障害・欠陥の記録: agents_serverと委譲基盤の不全（2026年8月28日〜2026年9月22日）
 
-[agents_serverと委譲基盤の不全](incidents-agents-server.md#agents_serverと委譲基盤の不全)の事例を発生時期別に収録する。
+[agents_serverと委譲基盤の不全](incidents.md#agents_serverと委譲基盤の不全)の事例を発生時期別に収録する。
 
 - 2026年8月28日: 複数レーンの計画レビュー中に、先に完了した計画担当へ指摘を返す時点で30分の結果保持期限を超え、`send_message`が`session retention expired`を返して同一会話を再開できなかった。
   直接原因: Codexの`thread/resume`とClaude Agent SDKの`resume`は保持中sessionの内部replyだけから利用でき、期限切れ後に呼び出し元の正確な識別子から到達する公開入力がなかった。

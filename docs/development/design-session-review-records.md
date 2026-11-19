@@ -1,6 +1,6 @@
 # 記録の解決と集合照会の設計記録
 
-[設計記録の索引](design.md)と[振り返り・知見集約の設計記録](design-session-review.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 Claude Codeは現在のtranscript絶対パスを`atk run-script session-review-prepare`へ渡す。
 Codexはメインの`CODEX_THREAD_ID`を渡す。

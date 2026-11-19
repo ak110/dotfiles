@@ -14,7 +14,7 @@
   秘匿値が現れ得ることを理由に、ツール呼び出しの引数、コマンド文字列その他の入力を表示から除かない
   （2026年9月15日、ユーザー指示）。
   `agents_server`のstatusline表示がツール名だけを載せ、同じツールを繰り返す区間で稼働と停止を区別できなかった観測に由来する。
-  現行の実装契約は[design-agents-runtime.md](design-agents-runtime-statusline.md#statuslineの表示)の「statuslineの表示」にある
+  現行の実装契約は[design-agents-runtime-statusline.md](design-agents-runtime-statusline.md#statuslineの表示)の「statuslineの表示」にある
 - `atk wi process-loop`は登録した全対象を1つの統括会話で処理し、常駐の端末の前景で対話CLIとして起動して、ユーザーが処理中の画面を見て直接入力できる状態を保つ。
   会話を対象ごとに分ける変更、通常の起動を非対話CLIへ置き換える変更、予約のない前回会話の再開は、新しいユーザー判断なしに導入しない
   （2026年11月17日、ユーザー指示）。

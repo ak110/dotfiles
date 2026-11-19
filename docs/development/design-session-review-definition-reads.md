@@ -1,6 +1,6 @@
 # 定義本文の取得と起動準備の設計記録
 
-[設計記録の索引](design.md)と[振り返り・知見集約の設計記録](design-session-review.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 ## 定義本文の取得と起動準備の判定
 
@@ -13,7 +13,7 @@
 Codexの`functions.exec`では、`atk run-script session-review-evidence`が同じturnの外側セルの呼出しから結果までの区間を使い、帰属が一意な内側実行（`CommandExecution`）の実際のコマンド文字列を既存の解析処理へ渡す。
 候補の`calls`と個別証拠の`definition_reads`に外側セルと内側実行の入力・結果位置を残し、対応付けられない内側実行も独立した要素として保持する。
 異なる識別子の一致や完了順に依存しない。
-用語、位置の構造、理由区分は`agent-toolkit:review-session/references/analysis-definition-reads.md`「定義本文の読込の判定」が定義する。
+用語、位置の構造、理由区分は`agent-toolkit:atk-mode/references/review-session-triage.md`「定義本文の読込の判定」が定義する。
 動的な実行入力・対象展開と解析できない区間は、手順書を読む可能性がある場合に限って`definition-read-unresolved`へ分け、公開prepareの必須候補と索引へ接続する。
 代入だけの区間、引数の無い`env`、`command -v`、構文語は読む可能性が無いため出さない。
 固定の末尾から`.subagent.md`になり得ない動的な対象（`$d/test-linux.log`など）も出さない。
@@ -38,7 +38,7 @@ Get-Contentは対象パラメーターと既知オプションの値を分け、
 静的な入力と対象の対応は、実行結果の成功や本文の読了を確定するものではない。
 `agent-toolkit:delegation`の`SKILL.md`「送信」が禁止する起動準備の本文読込は、次の資料の判定に従う。
 
-- `agent-toolkit:review-session`の`agent-toolkit:review-session/references/analysis-definition-reads.md`「定義本文の読込の判定」
+- `agent-toolkit:atk-mode/references/review-session-triage.md`「定義本文の読込の判定」
 
 原因・対策・保存先の対応を必須とする。
 成功・単発・費用だけを理由に対策を省く判断から外す。

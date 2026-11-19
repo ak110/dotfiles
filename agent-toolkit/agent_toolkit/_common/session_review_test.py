@@ -158,7 +158,7 @@ def test_launch_receipt_transfers_failure_ownership(tmp_path: pathlib.Path, monk
     session_review.launch_result()
     assert session_review.read(path)["status"] == "accepted"
     assert session_review.read(path)["manifest_path"] == str(manifest)
-    assert session_review.launch_notice() is None
+    assert session_review.launch_notice("claude") is None
 
 
 @pytest.mark.parametrize("windows", [False, True])
@@ -176,12 +176,12 @@ def test_launch_owner_interruption_is_reported_once(monkeypatch: pytest.MonkeyPa
     )
     monkeypatch.setattr(session_review.session_registry.ProcessIdentity, "exists", lambda _self: False)
     monkeypatch.setattr(session_review, "os", types.SimpleNamespace(name="nt" if windows else "posix"))
-    notice = session_review.launch_notice() or ""
+    notice = session_review.launch_notice("codex") or ""
     assert "受付前に終了" in notice
     assert "診断.log" in notice
     assert ("Get-Content -LiteralPath" if windows else "cat --") in notice
-    assert "`/agent-toolkit:review-session batch`を実行せよ" in notice
-    assert session_review.launch_notice() is None
+    assert "`$atk-mode review-session batch`を実行せよ" in notice
+    assert session_review.launch_notice("codex") is None
 
 
 def _transcript(path: pathlib.Path, text: str, *, append: bool = False) -> None:

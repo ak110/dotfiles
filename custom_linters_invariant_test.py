@@ -89,7 +89,7 @@ AGENT_DOC_TONE_REPRESENTATIVES = (
     ".claude/skills/agent-toolkit-edit/references/distribution.md",
     "agent-toolkit/delegation_contract_invariant_test.py",
     "agent-toolkit/skills/skill_interfaces_invariant_test.py",
-    "agent-toolkit/skills/review-session/session_review_contract_invariant_test.py",
+    "agent-toolkit/skills/atk-mode/references/session_review_contract_invariant_test.py",
     "agent-toolkit/skills/atk-mode/references/history_rewrite_invariant_test.py",
     "agent-toolkit/share/task_documents_invariant_test.py",
     "agent-toolkit/share/rules/common/rules_invariant_test.py",

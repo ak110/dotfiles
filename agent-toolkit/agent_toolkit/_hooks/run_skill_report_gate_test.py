@@ -9,6 +9,7 @@ import pytest
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._common import mcp_environment
 from agent_toolkit._hooks import run_skill_report_gate
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import _write_transcript
 
 _RUN_ID = "run-1"
@@ -51,7 +52,7 @@ def test_blocks_until_report_is_saved(tmp_path: pathlib.Path, calls: list[dict[s
 
     assert decision == "block"
     assert 'source="run_skill_report_gate"' in reason
-    assert [(call["run_id"], call["skill"]) for call in calls] == [(_RUN_ID, _SKILL)]
+    assert [(call["run_id"], call["scope"]) for call in calls] == [(_RUN_ID, _SKILL)]
 
 
 def test_approves_after_report_is_saved(
@@ -99,3 +100,39 @@ def test_approves_without_checking_outside_target(
 
     assert run_skill_report_gate.evaluate(_payload(tmp_path, **extra)) == ("approve", "")
     assert not calls
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.parametrize(
+    ("skill", "arguments", "report_scope", "decision"),
+    [
+        ("agent-toolkit:process-wi", "single-lane 追加指示", "agent-toolkit:process-wi single-lane", "approve"),
+        ("agent-toolkit:process-wi", "single-lane 追加指示", "agent-toolkit:process-wi", "block"),
+        ("review-session", None, "review-session", "approve"),
+        ("review-session", None, "agent-toolkit:review-session", "approve"),
+    ],
+    ids=["mode", "other-mode", "unqualified-record", "qualified-report-for-unqualified-record"],
+)
+def test_judges_saved_report_by_scope_of_startup_input(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    skill: str,
+    arguments: str | None,
+    report_scope: str,
+    decision: str,
+) -> None:
+    """`scope`が起動入力のスキルとモードから求めた起動単位と同じ報告だけを保存済みとし、作業名の修飾の有無は区別しない。"""
+    report = (
+        f"---\nstate: inbox\ntype: uwi\nsource: run-skill\nscope: {json.dumps(report_scope)}\n"
+        f"run_skill_report: true\nrun_skill_run_id: {_RUN_ID}\n---\n報告\n"
+    )
+    notes = git_repository.init_repository(tmp_path / "notes", files={"2026/10/report.md": report}, commit_message="report")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setenv(run_skill_report_gate.RUN_ID_ENV, _RUN_ID)
+    monkeypatch.setenv(
+        mcp_environment.SESSION_START_INPUT_ENV,
+        json.dumps({"source": "run-skill", "skill": skill, "arguments": arguments}, ensure_ascii=False),
+    )
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+
+    assert run_skill_report_gate.evaluate(_payload(tmp_path))[0] == decision

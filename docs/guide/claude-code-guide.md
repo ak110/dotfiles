@@ -64,13 +64,12 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 
 - `agent-toolkit:atk-mode <作業> [入力]`: 作業の入口。
   `add-awi-by-user`、`process-wi`、`review-session`、`export-session`を作業の名前として渡せる。
-  AWIの登録は`/agent-toolkit:atk-mode add-awi-by-user <要求>`、AWIの処理は`/agent-toolkit:atk-mode process-wi [single-lane|all-repos]`で起動する。
-  `review-session`、`export-session`は順に入口の配下へ移すため、移行が済むまでは今の名前での起動も使える
-- `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。
-  引数で着眼点を追加できる
-- `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。
+  AWIの登録は`/agent-toolkit:atk-mode add-awi-by-user <要求>`、AWIの処理は`/agent-toolkit:atk-mode process-wi [single-lane|all-repos]`で起動する
+- `agent-toolkit:atk-mode review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。
+  後ろに着眼点を追加できる
+- `agent-toolkit:atk-mode review-session batch`: 振り返り待ちのセッションをまとめて分析する。
   既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
-- `agent-toolkit:export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
+- `agent-toolkit:atk-mode export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
 
 ## 更新と削除
 
@@ -80,9 +79,14 @@ dotfiles管理下のマシンでは`chezmoi apply`でも更新できる。
 
 AWIの登録は、スキル`add-awi-by-user`を直接起動する形から`/agent-toolkit:atk-mode add-awi-by-user`へ変わった（Codexでは`$atk-mode add-awi-by-user`）。
 古い名前のスキルは無くなったため、更新後は新しい形で起動する。
-あわせて、内部用のスキル`wi-standards`と`user-confirmation-and-report`を廃止し、内容を入口`atk-mode`の配下の手順書へ移した。
+振り返りとセッション記録の出力も、スキル`review-session`・`export-session`を直接起動する形から入口`atk-mode`の作業へ変わった。
+起動は`/agent-toolkit:atk-mode review-session`・`/agent-toolkit:atk-mode export-session`とする（Codexでは`$atk-mode review-session`など）。
+定期実行の`atk run-skill agent-toolkit:review-session --args batch`は、そのまま使える。
+あわせて、内部用のスキル`wi-standards`、`user-confirmation-and-report`、`refine-prompt`、`review-external-writes`を廃止した。
+内容は入口`atk-mode`の配下の手順書へ移した。
 プラグインとして導入した環境と`update-dotfiles`で更新する環境では、更新時に古いスキルのディレクトリも置き換わる。
-スキルのディレクトリを手作業で複製した環境では、`add-awi-by-user`、`wi-standards`、`user-confirmation-and-report`のディレクトリを削除する。
+スキルのディレクトリを手作業で複製した環境では、古いスキルのディレクトリを削除する。
+対象は`add-awi-by-user`、`wi-standards`、`user-confirmation-and-report`、`review-session`、`export-session`、`refine-prompt`、`review-external-writes`である。
 
 接続ごとに管理する旧版から共有管理サービスへ初めて更新する場合、起動中のClaude Code・Codexの会話は終了まで旧接続を使う。
 旧版には状態を引き継ぐ通信機能が無いため、会話を強制終了せず、次の通常起動から新版へ移る。

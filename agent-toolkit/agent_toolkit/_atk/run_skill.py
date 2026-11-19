@@ -135,18 +135,21 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
     if args.skill is not None:
+        # 無修飾の作業名（`review-session`など）と入口`atk-mode`への作業の名指しを、どちらも作業の修飾名へそろえる。
+        args.skill = skill_modes.qualified(args.skill)
         skill, arguments = skill_modes.resolve_work(args.skill, args.args)
         if skill != args.skill:
-            # 入口`atk-mode`への作業の名指しは、作業の修飾名での起動と同じ起動単位・起動入力・目的文・再開時の比較にする。
             args.skill, args.args = skill, arguments or None
     if identifier := getattr(args, "resume", None):
         try:
             record = _run_state.load(identifier)
+            # 保存記録は書き換えず、読んだ作業名を指定名と同じ規則でそろえ、以降の比較と起動単位はこの値で行う。
+            saved_skill = skill_modes.qualified(record.input.skill)
             if any(getattr(args, name, None) is not None for name in ("target_repo", "work_dir", "timeout")) or (
                 args.args is not None and args.args != record.input.arguments
             ):
                 raise ValueError("--resumeでは元の対象・cwd・時間予算・スキル引数を変更できない")
-            if args.skill is not None and args.skill != record.input.skill and not _is_entry_of(args.skill, record.input.skill):
+            if args.skill is not None and args.skill != saved_skill and not _is_entry_of(args.skill, saved_skill):
                 raise ValueError("--resumeのスキルが元の実行と一致しない")
         except (OSError, ValueError) as error:
             _outcome.report_failure(
@@ -156,7 +159,7 @@ def dispatch(args: argparse.Namespace) -> int:
         if record.status == "completed" and record.input.batch_manifest is None:
             _outcome.report_success(f"既に完了した実行: {record.input.run_id}（ログ: {record.log_path}）")
             return 0
-        args.skill, args.args = record.input.skill, record.input.arguments
+        args.skill, args.args = saved_skill, record.input.arguments
         args.target_repo = record.input.target_repo or str(record.work_dir)
         args.work_dir = str(record.work_dir) if record.input.target_repo is not None else None
         args.timeout, args.run_id = record.remaining, record.input.run_id
@@ -279,7 +282,8 @@ def build_goal(skill: str, skill_args: str | None, *, launch: str | None = None)
     if launch is not None:
         return f"このセッションが担当する作業`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{launch}"
     if (name := skill_modes.entry_work(skill)) is not None:
-        start = skill_modes.entry_launch(skill_modes.invocation_scope(name, skill_args), free_text=True)
+        work = skill_modes.invocation_scope(name, skill_args).removeprefix("agent-toolkit:")
+        start = skill_modes.entry_launch(work, free_text=True)
     else:
         start = f"スキル`{skill}`を起動して始める（起動入力の`free_text`が空でなければ引数として渡す）。"
     return f"このセッションが担当するスキル`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）。{start}"
@@ -530,7 +534,7 @@ def _run_locked(
                 output=output,
                 codex_home=codex_home,
                 run_id=run_id,
-                skill=scope,
+                scope=scope,
                 executor=executor,
                 allow_connection_switch=allow_connection_switch,
             )
@@ -710,7 +714,7 @@ def _wait_session(
     output: _SessionOutput,
     codex_home: pathlib.Path,
     run_id: str,
-    skill: str,
+    scope: str,
     executor: _registry.ProcessIdentity | None,
     allow_connection_switch: bool = False,
 ) -> int:
@@ -786,7 +790,7 @@ def _wait_session(
                 return returncode
         if _orchestrator.is_normal_session_exit(orchestrator, returncode):
             try:
-                saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, skill=skill)
+                saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, scope=scope)
             except (OSError, subprocess.SubprocessError) as error:
                 saved = False
                 _log_line(log, f"報告の保存確認に失敗した: {error}")

@@ -518,7 +518,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
     # 自動取得される予約メタデータを、専用監督が所有する同じ実行へ結び付ける。
     os.environ["AGENT_TOOLKIT_RUN_SKILL_ID"] = run["run_id"]
     try:
-        if not add.has_synced_run_report(notes, run_id=run["run_id"], skill=SKILL):
+        if not add.has_synced_run_report(notes, run_id=run["run_id"], scope=SKILL):
             with sync.repo_lock(notes, timeout=30):
                 reports = []
                 for entry in layout.iter_entry_paths(notes):
@@ -552,7 +552,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
                     question_type="yes-no",
                     storage=sync.Storage(lock_timeout=30),
                 )
-        run["report_synced"] = add.has_synced_run_report(notes, run_id=run["run_id"], skill=SKILL)
+        run["report_synced"] = add.has_synced_run_report(notes, run_id=run["run_id"], scope=SKILL)
         run["report_error"] = None
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, filelock.Timeout) as error:
         run["report_synced"] = False

@@ -29,6 +29,7 @@ from agent_toolkit._common import (
     session_launchers,
     session_registry,
     session_state,
+    skill_modes,
     state_paths,
 )
 
@@ -469,7 +470,7 @@ def launch_result(*, manifest: pathlib.Path | None = None) -> None:
         LaunchAttempt.model_validate(read(path)).receipt(manifest).save(path)
 
 
-def launch_notice() -> str | None:
+def launch_notice(host: str) -> str | None:
     """次の開始時に、受付されず終了した起動試行だけを一度通知する。"""
     failures = []
     with locked():
@@ -496,7 +497,7 @@ def launch_notice() -> str | None:
     return (
         "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。次のコマンドで診断ログを取得せよ: "
         + "、".join(failures)
-        + "。原因を確認・是正して`/agent-toolkit:review-session batch`を実行せよ。"
+        + f"。原因を確認・是正して`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
         "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"
     )
 

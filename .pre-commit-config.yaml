@@ -14,8 +14,7 @@ repos:
     hooks:
       # テキストフォーマット。
       - id: trailing-whitespace
-        # 判定台帳のTSVは末尾の空のセルをタブで区切るため、行末のタブを保つ。
-        exclude: '\.cmd$|^docs/development/norm-restructure/.*\.tsv$'
+        exclude: '\.cmd$'
       # Windowsで通常ファイル化するGit symlinkのリンク先へ末尾改行を追加しない。
       - id: end-of-file-fixer
         exclude: '\.cmd$|(^|/)\.agents/skills$'
@@ -39,9 +38,6 @@ repos:
       - id: detect-private-key
       # ファイル検証。
       - id: check-added-large-files
-        # 6,297条文の台帳と互換性の検証記録は原形で保存する。対象の5ファイルだけを許容する。
-        exclude: >-
-          ^docs/development/norm-restructure-20261022/(ledger\.tsv|mapping\.json|reverse-index\.tsv|source-manifest\.json|public-compatibility\.json)$
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
         exclude: '\.tmpl$'

@@ -833,7 +833,7 @@ def mark_ready(identifier: str, agent: str) -> Callable[[dict], dict | None]:
 
 
 def resolve_subject(payload: dict) -> str:
-    """主体の区分を返す。区分ごとの取得手段と記録する観測は`docs/development/design-hooks.md`の該当節が定める。"""
+    """主体の区分を返す。区分ごとの取得手段と記録する観測は`docs/development/design-hooks-read-acquisition.md`の該当節が定める。"""
     if _delegated_session.is_lightweight_delegated(os.environ):
         return SUBJECT_LIGHTWEIGHT
     if is_codex_payload(payload) or is_antigravity_payload(payload):

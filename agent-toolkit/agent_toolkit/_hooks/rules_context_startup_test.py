@@ -350,5 +350,5 @@ def test_batch_startup_input_separates_procedure_from_termination(monkeypatch, c
     monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data))
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}), host="claude") == 0
     before, contract = _output(capsys).split("終了契約", 1)
-    assert "references/answer-transitions.md" in before and "references/batch.md" in before
+    assert "references/answer-transitions.md" in before and "playbooks/review-session-batch.md" in before
     assert "playbooks/report-completion.md" in contract and "batch.md" not in contract

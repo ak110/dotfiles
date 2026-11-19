@@ -1,6 +1,6 @@
 # 障害・欠陥の記録: agents_serverと委譲基盤の不全（2026年9月30日〜2026年10月31日）
 
-[agents_serverと委譲基盤の不全](incidents-agents-server.md#agents_serverと委譲基盤の不全)の事例を発生時期別に収録する。
+[agents_serverと委譲基盤の不全](incidents.md#agents_serverと委譲基盤の不全)の事例を発生時期別に収録する。
 
 - 2026年9月30日: 工程別設定`codex:sol/medium,claude:opus[1m]/medium`の`start`が、`sol`系列の最新版として解決した`gpt-6.1-sol`で起動し、接続先がそのモデルを提供しないため最初のturnが失敗した。
   候補は第2候補のclaudeへ切り替わらず、呼び出し元が`model_type`を手で指定して起動し直した。

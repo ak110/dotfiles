@@ -275,11 +275,11 @@ def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
     paths = [
         pathlib.Path("src/sample.py"),
         pathlib.Path("src/sample_test.py"),
-        pathlib.Path("docs/development/design-hosts.md"),
+        pathlib.Path("docs/development/design-hosts-rules-delivery.md"),
         pathlib.Path("docs/development/architecture.md"),
         pathlib.Path("docs/development/operations.md"),
-        pathlib.Path("docs/development/concepts-runtime.md"),
-        pathlib.Path("docs/development/incidents-validation.md"),
+        pathlib.Path("docs/development/concepts-codex-context.md"),
+        pathlib.Path("docs/development/incidents-reporting.md"),
     ]
 
     assert _extended_heading_reference_sources(paths) == [paths[0], paths[2], paths[3], paths[4]]

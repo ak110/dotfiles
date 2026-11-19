@@ -1,6 +1,6 @@
 # process-loopのworktree隔離の設計記録
 
-[設計記録の索引](design.md)と[継続処理の起動・隔離・制御の設計記録](design-process-loop.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 ## process-loopのworktree隔離
 

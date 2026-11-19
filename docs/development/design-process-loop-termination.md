@@ -1,6 +1,6 @@
 # Codexセッションの終了の設計記録
 
-[設計記録の索引](design.md)と[継続処理の起動・隔離・制御の設計記録](design-process-loop.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 ## Codexのprocess-loopセッションの終了
 
@@ -15,7 +15,7 @@
 
 ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:atk-mode/playbooks/report-completion.md`が元の作業の完了報告を送り、続いて`atk agents-exit-session`がセッションを終了する。
 終了工程の実行記録が無い終了は、Stop hookの`autonomous_exit.py`が遮断して続行させる（[design-hooks-termination-evidence.md](design-hooks-termination-evidence.md)「自動起動セッションの続行の判定」）。
-振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動になったセッションを非同期に分析する（`design-session-review-completion.md`「完了報告と振り返りの関係」）。
+振り返りはSessionStart/SessionEndを契機に起動する`/atk-mode review-session batch`が、非活動になったセッションを非同期に分析する（`design-session-review-completion.md`「完了報告と振り返りの関係」）。
 その結果は作業完了報告とは独立して届ける。
 起動時の終了能力probeと、停止要求の直前に終了対象を新規識別する扱いは`design-workflow-termination.md`「セッションの終了」にある。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。

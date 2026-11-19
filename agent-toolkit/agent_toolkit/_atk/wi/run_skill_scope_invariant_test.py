@@ -138,7 +138,10 @@ def test_renamed_review_imports_saved_scopes_without_rewriting(tmp_path, monkeyp
         notes, status="active", target_repo="github.com/example/myrepo", entry_type="uwi", answered="all", source="run-skill"
     )
     accepted = data["accepted_scopes"]
-    assert accepted == [expected_scope, *list(scopes[1:] if arguments else scopes[:1])]
+    assert accepted[: 1 + len(scopes[1:] if arguments else scopes[:1])] == [
+        expected_scope,
+        *list(scopes[1:] if arguments else scopes[:1]),
+    ]
     imported = []
     for path, _repo, text, _state, _kind in selected:
         parsed = frontmatter.parse_frontmatter(text)
@@ -147,3 +150,38 @@ def test_renamed_review_imports_saved_scopes_without_rewriting(tmp_path, monkeyp
             imported.append(parsed[0]["scope"])
         assert path.read_text(encoding="utf-8") == text
     assert set(imported) == set(scopes[1:] if arguments else scopes[:1])
+
+
+@pytest.mark.parametrize(
+    "skill,arguments,legacy_scope",
+    [
+        ("agent-toolkit:review-session", None, "review-session"),
+        ("agent-toolkit:review-session", "batch", "review-session batch"),
+        (skill_modes.PROCESS_WI, "single-lane", "process-wi single-lane"),
+        (skill_modes.PROCESS_WI, None, "process-wi"),
+    ],
+)
+def test_new_run_imports_uwi_saved_with_unqualified_work_name_by_older_cli(
+    tmp_path, monkeypatch, skill_invocation, skill, arguments, legacy_scope
+):
+    """作業名を修飾名へそろえる前のCLIが無修飾で保存した確認UWIを、新規実行の取込対象scopeが受け付ける。"""
+    expected_scope = skill + (" " + arguments if arguments else "")
+    data = skill_invocation(skill, arguments, expected_scope)
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    repository = tmp_path / "myrepo"
+    repository.mkdir()
+    monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(repository))
+    assert (
+        _invoke_uwi_add(
+            tmp_path, str(repository), "--source", "run-skill", "--scope", legacy_scope, body="この操作の事前承認を求める。"
+        ).code
+        == 0
+    )
+    selected = entries.select_entries(
+        notes, status="active", target_repo="github.com/example/myrepo", entry_type="uwi", answered="all", source="run-skill"
+    )
+    saved = [frontmatter.parse_frontmatter(text) for _path, _repo, text, _state, _kind in selected]
+    assert [parsed[0]["scope"] for parsed in saved if parsed is not None] == [legacy_scope]
+    assert legacy_scope in data["accepted_scopes"]
+    assert data["accepted_scopes"][0] == expected_scope

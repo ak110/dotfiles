@@ -11,7 +11,7 @@ MCPサーバーは`start`が解決した候補のengineに従ってCodex backend
 起動側と回収側は`_common/plugin_root_leases.py`の共通契約で使用中の実体を保護する。
 文書解決と内側MCPの起動も同じ保持実体を使い、配布元の更新・削除後も起動時の版へ到達できる。
 
-公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）と`atk agents wait`の入力、応答、待機上限および保持期限の契約は[design-agents-server.md](design-agents-server.md)の「公開ツールの契約」が記録する。
+公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）と`atk agents wait`の入力、応答、待機上限および保持期限の契約は[design-agents-server-start.md](design-agents-server-start.md)などの公開ツール別の設計記録にある。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
 MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。

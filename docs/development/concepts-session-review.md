@@ -13,13 +13,13 @@
 - 成功した複雑な手順も、準備・実行・検収・後始末、値の転記、工程境界と離れた区間の反復を通読から探し、品質を保つ簡略化を提案へつなぐ。
   2026年10月10日の改善要求を反映した。
   失敗や候補の標識が無いこと、律速でないこと、300秒以内であることだけで外さず、守る成果と要求元、適用頻度、入力の組み直しと保守の費用を比べる。
-  新しい候補抽出・監視・常設担当・全操作の台帳は加えず、`agent-toolkit/skills/review-session/SKILL.md`の通読と`references/analysis.md`の既存の比較判断へ統合する
+  新しい候補抽出・監視・常設担当・全操作の台帳は加えず、`agent-toolkit/skills/atk-mode/playbooks/review-session-analysis.md`の工程2の通読と同書「通読で使う比較」へ統合する
 
 - 振り返りでは、従った規範や手順そのものがQCDに見合ったかを懐疑的に見直し、成果に比べて費用や時間が大きかった規定、往復を増やした規定、前提が失われて目的を失った規定の縮小・撤去・簡素化を提案する。
   2026年10月27日のユーザー指示「大事なのはQCDなのでそういう規範も時々懐疑的に見直すようにしてほしい。例えばsession-reviewで全体の流れを見直したときとかにそういうところに気付けるといいんだけど」による。
-  現行の規定は`agent-toolkit/skills/review-session/SKILL.md`「工程」の手順2にある
+  現行の規定は`agent-toolkit/skills/atk-mode/playbooks/review-session-analysis.md`の工程2の手順5にある
 
-- 振り返り自身の時間目標は、`agent-toolkit/skills/review-session/references/duration-analysis.md`「所要時間の分析と改善」へ定義を集約する。
+- 振り返り自身の時間目標は、`agent-toolkit/skills/atk-mode/references/review-session-cost.md`「所要時間の分析と改善」へ定義を集約する。
   2026年11月3日の回答により、目標の用途は時間改善案の必須性の判断だけとし、必要な調査の範囲と順序は変えない。
   超過の分析は次の振り返りへ送らず、今回の終了前に原因、必要な追加WI投入と最終報告へ接続する
   （2026年10月9日、ユーザーの是正）。
@@ -30,15 +30,15 @@
 - 2026年10月9日、ユーザーが示した正しい行動と必要な確認の優先順位に従い、必要なユーザー確認の欠落を再発防止策の独立した必須対象へ加えた。
   ユーザーだけの値を推定で埋め、誤った成果物、要求された作業の未実施または是正を生んだ事象を扱う。
   技術とQCDで確定する判断を確認しなかったことは含めない。
-  現行の規定は`agent-toolkit:review-session/references/analysis-actions.md`「原因と対策」にある
+  現行の規定は`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`の工程4の手順2と`agent-toolkit:atk-mode/playbooks/user-utterance.md`「ユーザー介入と確認の判定」にある
 - 時間分析は当回の短縮案だけで終えず、過去対策の原因・適用条件・反映状態と今回の結果を比較する。
   適切な並列化を前提に全体の処理件数は所要時間をあまり左右しないというユーザーの判断を用い、件数増加自体を超過の原因や許容理由にしない
   （2026年10月8日、ユーザー指示）。
-  レーン集中への局所対策を報告しても同じ律速条件が残ったため、時間分析と反復判定を`agent-toolkit:review-session/references/analysis-actions.md`「原因と対策」へ接続する。
+  レーン集中への局所対策を報告しても同じ律速条件が残ったため、時間分析と反復判定を`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「原因と対策」へ接続する。
   登録・統合と効果を区別し、未反映・未適用・範囲不足・適用後の同原因・別原因を分析する。
   dotfiles固有の前提は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`で届け、品質確認工程と利用上限待機の方針は維持する
 - 2026年10月28日の要求により、通常作業の終了・公開からの同期振り返りを撤去し、SessionStart/SessionEndの軽量な登録・起動を契機に非活動の対象を非同期batchで分析する。
-  手動の`agent-toolkit:review-session`は現在のセッション全体と全手順を維持し、引数は追加の着眼点とする。
+  手動の`/atk-mode review-session`は現在のセッション全体と全手順を維持し、引数は追加の着眼点とする。
   batchも対象ごとに同じ分析基準を使う。
   全記録からの探索と最終判断は分析担当が所有し、読取範囲の分担、区間をまたぐ問題、未確認範囲を検収する。
   既調査の証拠と判断を再利用し、不足・変更・不一致の範囲だけを補う。
@@ -53,17 +53,17 @@
   既存の`confirmation`は保持して動作へ影響させず、エージェント由来の要求の採否は懐疑的に検討する。
   通常の期限待ちの`cooldown_until`、依存関係、保留およびUWIによる認可は維持する。
   現行の規定は`agent-toolkit/skills/atk-mode/references/states-and-dependencies.md`にある
-- `agent-toolkit:review-session`はユーザー介入と未解決証拠を全件保持し、blockまたはwarnのhook通知だけを
+- 振り返り（`/atk-mode review-session`）はユーザー介入と未解決証拠を全件保持し、blockまたはwarnのhook通知だけを
   発生源ごとの件数上位5変種と代表位置へ限定する（2026年9月14日、ユーザー指示）。
   発火した発生源は事前に防ぐ型か遮断後に対処する型かで判定し、遮断後に対処する型の発火は欠陥として扱わない
   （2026年9月29日、ユーザー指示。発火した全発生源へ改善提案を求めた2026年9月14日の規定が、失敗しない事前計測だけを遮断の回避手段に残したため改めた）。
   応答言語hookの警告は正常動作として問題候補から除き、件数だけを数える
   （2026年9月30日、ユーザー指示。振り返りのたびに同じ見送り判定を繰り返しても対策が生まれないため）
-- `agent-toolkit:review-session`はユーザー介入と同じく、次の4事象を前例の有無によらず再発防止策の必須対象とする。
+- 振り返り（`/atk-mode review-session`）はユーザー介入と同じく、次の4事象を前例の有無によらず再発防止策の必須対象とする。
   不適切なユーザー確認（必要なユーザー確認を除く）、ユーザーの手を煩わせた事象、品質に悪影響があった事象、所要時間目標を超過した事象である。
   2026年10月7日のユーザー指示による。
   必須のユーザー介入を規範の当てはめ誤りとして見送った振り返りへの是正に続けて、ユーザーが前例の有無によらず対策必須とするよう求めた。
-  現行の規定は`agent-toolkit:review-session/references/analysis-actions.md`「原因と対策」にあり、必須の候補の追跡の構造は`design-session-review-startup.md`「review-sessionの構成と候補抽出」にある
+  現行の規定は`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「原因と対策」にあり、必須の候補の追跡の構造は`design-session-review-startup.md`「review-sessionの構成と候補抽出」にある
 - 完了処理中の割り込みは元の要求と必要な作業完了報告へ取り込み、担当内の処置を続ける。
   改善点の直接原因と影響は発見・受領時に最低限調べ、既調査を再利用し、担当外の処置と標識行を上流へ渡す。
   同期振り返りの再起動を終了条件へ戻さない

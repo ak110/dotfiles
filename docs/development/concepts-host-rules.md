@@ -24,7 +24,7 @@ Claudeメインの`SKILL.md`は`disable-model-invocation: true`に限り成功�
 必要な資料を取得せずに委譲を起動・追送する操作やWIを投入・編集する操作も、未取得を理由とするhookの拒否や、規範を読まないと書けない引数による拒否へ変えず、警告を維持する。
 hookによる拒否は過去に運用したが、誤判定時の副作用とコンテキストの無駄が大きかったというユーザーの判断による（2026年11月9日）。
 警告後も守られなかった操作・取得されなかった資料は、振り返りで改善を検討する対象とする。
-現行の規定は`agent-toolkit/skills/review-session/references/analysis-triage.md`「一次選別」のhook通知にある。
+現行の規定は`agent-toolkit/skills/atk-mode/references/review-session-triage.md`「一次選別」のhook通知にある。
 出所は2026年10月19日のユーザー指摘に基づく採用方針と、同月27日のユーザーによる再確認である。
 本文配送を再導入した7454e5938の方式を撤去する。
 この方針はホスト・ツール・目的を問わず適用し、Codexのnative読取の出力省略を補う目的でもhookの追加文脈へ資料本文を載せない。
@@ -38,7 +38,7 @@ hookによる拒否は過去に運用したが、誤判定時の副作用とコ�
 
 規範資料は、成立する読込条件から選んだファイルの全文を読み、前提・例外を含む基準へ到達して適用する。
 節名は基準の所在を示す手掛かりとし、無関係な本文を読む構成は条件別のファイル分割で整える。
-実行時の案内と取得判定は`agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py`、構造の理由は[design-hooks.md](design-hooks-read-declarations.md#宣言型読込表による操作前配送)にある。
+実行時の案内と取得判定は`agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py`、構造の理由は[design-hooks-read-declarations.md](design-hooks-read-declarations.md#宣言型読込表による操作前配送)にある。
 
 現在の役割に適用する行だけを選び、判断契機の自然文条件は明示的な資料選択以外を確認候補として扱う（2026年10月31日の確定契約）。
 確認候補は主体が条件を確かめて判断前に必要な基準へ到達するための補助であり、必読案内済みや遮断の根拠に含めない。

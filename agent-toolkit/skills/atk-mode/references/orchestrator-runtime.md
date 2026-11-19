@@ -4,7 +4,7 @@ process-loop・run-skillの統括の挙動（起動、turn終了、再開、外�
 起動形、turn終了とプロセスの終了、再開の契機を分けて判断し、会話の再開と、稼働中のturnへの入力やモデル・effortの変更は、それぞれの公開操作と適用条件で確かめる。
 下表は起動・監督コードから確かめた構成の要約で、コマンドは比較のための抜粋である（認証・権限・出力の引数を省く）。
 実行の手順は各公開コマンドの`--help`を使う。
-実装の所在と設計の経緯は、開発リポジトリの`docs/development/design-process-loop.md`、`design-cli.md`、`design-agents-runtime.md`にある。
+実装の所在と設計の経緯は、開発リポジトリの`docs/development/design-process-loop-control.md`、`design-cli-run-skill.md`、`design-agents-runtime-state.md`にある。
 配布環境でこれらが無い場合は、plugin rootの`agent_toolkit/_atk/wi/process_loop*.py`、`agent_toolkit/_atk/run_skill.py`、`agent_toolkit/_agents_server/`と公開ヘルプから確かめる。
 
 ## 起動形の比較

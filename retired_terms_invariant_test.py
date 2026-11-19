@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import pathlib
 import subprocess
 
@@ -33,16 +32,10 @@ class _AllowedLocation:
     """指定した場合は、この文字列を含む行だけを許容する。"""
     line_exact: str | None = None
     """指定した場合は、この行だけを許容する。"""
-    line_sha256: str | None = None
-    """長い固定引用の行全体（LFを除くUTF-8）のSHA256。指定時はパスも完全一致させる。"""
 
     def allows(self, path: str, line: str) -> bool:
         """指定の行を許容するかを返す。"""
         if not pathlib.PurePosixPath(path).match(self.path_pattern):
-            return False
-        if self.line_sha256 is not None and (
-            path != self.path_pattern or hashlib.sha256(line.encode("utf-8")).hexdigest() != self.line_sha256
-        ):
             return False
         return (self.line_substring is None or self.line_substring in line) and (
             self.line_exact is None or self.line_exact == line
@@ -63,7 +56,6 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "証拠行": (
         # 既存の達成根拠へ付加された標識を読み、観測本文と分けて比較する箇所。
         _AllowedLocation("agent-toolkit/share/exec-review.subagent.md", "`証拠行`"),
-        _AllowedLocation("docs/development/design-review-evidence.md", "「証拠行」"),
     ),
     "計画レビュー": (
         # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
@@ -108,26 +100,6 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "鮮度情報": (
         # `atk wi list --with-staleness`のオプション説明（ヘルプの説明として維持する）
         _AllowedLocation("agent-toolkit/agent_toolkit/_atk/wi/cli_read_parsers.py"),
-        # 基準版/取得時のwi list --help標準出力を、それぞれの保存行のまま保持する。
-        _AllowedLocation(
-            "docs/development/norm-restructure-20261022/public-compatibility.json",
-            line_sha256="d746348ce3178eaa3f95fa9020c86f15300dcce8fe2caab497c1ebbc4a254bbb",
-        ),
-        _AllowedLocation(
-            "docs/development/norm-restructure-20261022/public-compatibility.json",
-            line_sha256="ca642ce458e6036b3e7edd5194273c40aabb75b92c05512c9f1140f7471245dc",
-        ),
-    ),
-    "追加集合": (
-        # 返却された計量Markdown全文と診断時README sentenceの固定引用2行。
-        _AllowedLocation(
-            "docs/development/norm-restructure-20261022/source-manifest.json",
-            line_sha256="2949ac1228d3ba652ca407bf989793128a4142b85bba8a902a7a59f805123552",
-        ),
-        _AllowedLocation(
-            "docs/development/norm-restructure-20261022/source-manifest.json",
-            line_sha256="ea3eb39a98a0a491870ac01386e81ac2497d849ba6299b2d8b2e667be03c8980",
-        ),
     ),
     "自律実行": (
         # ユーザーの設定から取り除く旧版の文面と一致させる文字列
@@ -143,8 +115,6 @@ _REPORT_DIRECTION_TERM = "ユーザー報告"
 
 _ENDING_TERM_ALLOWED = (
     _AllowedLocation("retired_terms_invariant_test.py"),
-    # 今回の表記変更の対象から除外した、過去の条文・観測の保存記録。
-    _AllowedLocation("docs/development/norm-restructure*/*"),
     # 保存済みの旧計画を読む際の見出し一覧。
     _AllowedLocation("agent-toolkit/skills/atk-mode/references/plan-legacy-formats.md"),
     # 保存済み記録の旧名を現行の役割・工程へ対応付ける説明だけを許容する。
@@ -262,8 +232,6 @@ _RETIRED_TERMS = (
         term="独立した実行レビュー",
         replacement="実行レビュー（レビューの形態を指す場合は独立文脈レビュー）",
         allowed=(
-            # 是正前の条文・観測の保存記録
-            _AllowedLocation("docs/development/norm-restructure*/*"),
             # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
@@ -570,14 +538,14 @@ _RETIRED_TERMS = (
         allowed=(
             # 過去のセッション記録に残る旧形式の返却を読む定数と、その読み取り互換を確かめるテスト
             _AllowedLocation(
-                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates_returns.py",
+                "agent-toolkit/skills/atk-mode/scripts/session_evidence_candidates_returns.py",
                 line_exact='_ESCALATION_RETURN_STATUS = "needs_escalation"',
             ),
             _AllowedLocation(
-                "agent-toolkit/skills/review-session/scripts/session_evidence_bundle_failures_test.py", "needs_escalation"
+                "agent-toolkit/skills/atk-mode/scripts/session_evidence_bundle_failures_test.py", "needs_escalation"
             ),
             _AllowedLocation(
-                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates_returns_test.py", "needs_escalation"
+                "agent-toolkit/skills/atk-mode/scripts/session_evidence_candidates_returns_test.py", "needs_escalation"
             ),
             # 日付の付いた過去の障害記録
             _AllowedLocation("docs/development/incidents*.md"),
@@ -592,7 +560,6 @@ _RETIRED_TERMS = (
         replacement="`agent-basics:bugfix`の入口の「書き出す場面」と確認観点の条件",
         allowed=(
             # 廃止前の条文・観測の保存記録と、日付の付いた過去の障害記録・監査記録
-            _AllowedLocation("docs/development/norm-restructure*/*"),
             _AllowedLocation("docs/development/incidents*.md"),
             _AllowedLocation("docs/development/audit-*.json"),
             # 廃止を記す方針記録
@@ -619,14 +586,7 @@ _RETIRED_TERMS = (
 )
 
 
-# 規範の再構築の判定台帳は、基準commitの条文の先頭を逐語で抜粋した記録であり、撤去前の名称を含む。
-# 全ての撤去語に共通する許容箇所として扱う。
 _VERBATIM_RECORD_LOCATIONS = (
-    _AllowedLocation("docs/development/norm-restructure/*.tsv"),
-    # 正式台帳の原文・由来・逆引きも固定引用として保持し、READMEや他の文書は検査する。
-    _AllowedLocation("docs/development/norm-restructure-20261022/ledger.tsv"),
-    _AllowedLocation("docs/development/norm-restructure-20261022/mapping.json"),
-    _AllowedLocation("docs/development/norm-restructure-20261022/reverse-index.tsv"),
     # 撤去した仕組みの台帳（索引と主題別の分割先）は、撤去した仕組みと役割を当時の名称で記録して照合に使う。
     _AllowedLocation("docs/development/removed-mechanisms*.md"),
 )
@@ -639,7 +599,7 @@ def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = 
     excluded_paths = [
         f":(glob,exclude){location.path_pattern}"
         for location in _VERBATIM_RECORD_LOCATIONS
-        if location.line_substring is None and location.line_exact is None and location.line_sha256 is None
+        if location.line_substring is None and location.line_exact is None
     ]
     # 全語を1回の`git grep`で走査し、行ごとに含む語を判定する。
     # 語ごとに起動すると、1回の呼び出しで200件超のサブプロセスを起動し、
@@ -756,17 +716,16 @@ def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -
     ("relative", "body", "rejected"),
     [
         (
-            "docs/development/concepts-principles.md",
+            "docs/development/concepts-planning.md",
             "  「終端工程」は内容に応じて「公開工程」「公開後の操作」「終了工程」を指す。\n",
             False,
         ),
-        ("docs/development/concepts-principles.md", "終端工程を開始する。\n", True),
-        ("docs/development/design-review-evidence.md", "過去の標識「証拠行」を読む。\n", False),
-        ("docs/development/design-review-evidence.md", "証拠行を新たに記す。\n", True),
-        ("docs/development/design-review-evidence.md", "振り返り担当を起動する。\n", True),
-        ("docs/development/design-session-review.md", "撤去した振り返り担当の経緯。\n", False),
-        ("docs/development/design-session-review.md", "起草担当を追加する。\n", True),
-        ("docs/development/design-cli.md", "標識「証拠行」を読む。\n", True),
+        ("docs/development/concepts-planning.md", "終端工程を開始する。\n", True),
+        ("docs/development/design-review-acceptance.md", "過去の標識「証拠行」を読む。\n", True),
+        ("docs/development/design-review-acceptance.md", "証拠行を新たに記す。\n", True),
+        ("docs/development/design-review-acceptance.md", "振り返り担当を起動する。\n", True),
+        ("docs/development/design-session-review-analysis.md", "撤去した振り返り担当の経緯。\n", False),
+        ("docs/development/design-session-review-analysis.md", "起草担当を追加する。\n", True),
         ("docs/development/design.md", "標識「証拠行」を読む。\n", True),
         ("docs/development/design.md", "振り返り担当の経緯。\n", True),
         (
@@ -793,97 +752,3 @@ def test_moved_design_records_preserve_allowed_line_scope(
     if rejected:
         assert len(violations) == 1
         assert violations[0].startswith(f"{relative}:1:")
-
-
-@pytest.mark.parametrize(
-    "relative",
-    [
-        "docs/development/norm-restructure/record.tsv",
-        "docs/development/norm-restructure-20261022/ledger.tsv",
-        "docs/development/norm-restructure-20261022/mapping.json",
-        "docs/development/norm-restructure-20261022/reverse-index.tsv",
-    ],
-)
-def test_verbatim_ledger_data_keeps_current_document_checks(tmp_path: pathlib.Path, relative: str) -> None:
-    """固定引用を持つデータだけを許容し、案内・現行規範・同じディレクトリの別ファイルを検査する。"""
-    current = [
-        "docs/development/norm-restructure-20261022/README.md",
-        "docs/development/norm-restructure-20261022/current-notes.tsv",
-        "agent-toolkit/share/rules/common/current.md",
-    ]
-    term = next(item for item in _RETIRED_TERMS if item.term == "近接検証")
-    _init_repo(tmp_path, dict.fromkeys([relative, *current], term.term + "\n"))
-
-    violations = _find_violations(tmp_path, (term,))
-
-    assert len(violations) == len(current)
-    assert {item.split(":", 1)[0] for item in violations} == set(current)
-
-
-@pytest.mark.parametrize(
-    ("term", "relative", "expected_sha256"),
-    [
-        (
-            "追加集合",
-            "docs/development/norm-restructure-20261022/source-manifest.json",
-            "2949ac1228d3ba652ca407bf989793128a4142b85bba8a902a7a59f805123552",
-        ),
-        (
-            "追加集合",
-            "docs/development/norm-restructure-20261022/source-manifest.json",
-            "ea3eb39a98a0a491870ac01386e81ac2497d849ba6299b2d8b2e667be03c8980",
-        ),
-        (
-            "鮮度情報",
-            "docs/development/norm-restructure-20261022/public-compatibility.json",
-            "d746348ce3178eaa3f95fa9020c86f15300dcce8fe2caab497c1ebbc4a254bbb",
-        ),
-        (
-            "鮮度情報",
-            "docs/development/norm-restructure-20261022/public-compatibility.json",
-            "ca642ce458e6036b3e7edd5194273c40aabb75b92c05512c9f1140f7471245dc",
-        ),
-    ],
-)
-def test_formal_saved_quote_allows_only_exact_path_value_and_term(
-    tmp_path: pathlib.Path, term: str, relative: str, expected_sha256: str
-) -> None:
-    """保存した4行だけを許容し、パス・値・語の変更と新規説明を検出する。"""
-    lines = (_ROOT / relative).read_text(encoding="utf-8").splitlines()
-    matches = [line for line in lines if hashlib.sha256(line.encode("utf-8")).hexdigest() == expected_sha256]
-    assert len(matches) == 1
-    saved = matches[0]
-    changed = saved.replace(term, term + "改訂", 1)
-    other_term = "鮮度情報" if term == "追加集合" else "追加集合"
-    # 同じファイルに新規起草したreasonも検査する。
-    reason = '        "reason": "' + term + 'を使う新しい説明"'
-    other = '        "sentence": "' + term + 'を含む別の行"'
-    moved = "moved/" + relative
-    current = "docs/development/norm-restructure-20261022/README.md"
-    note = "docs/development/norm-restructure-20261022/current-notes.json"
-    rule = "agent-toolkit/share/rules/common/current.md"
-    _init_repo(
-        tmp_path,
-        {
-            relative: "\n".join([saved, changed, reason, other, other_term]) + "\n",
-            moved: saved + "\n",
-            current: saved + "\n",
-            note: saved + "\n",
-            rule: saved + "\n",
-        },
-    )
-    terms = tuple(item for item in _RETIRED_TERMS if item.term in {term, other_term})
-
-    violations = _find_violations(tmp_path, terms)
-
-    assert len(violations) == 8
-    assert {value.split(": ", 1)[0] for value in violations} == {
-        f"{relative}:2",
-        f"{relative}:3",
-        f"{relative}:4",
-        f"{relative}:5",
-        f"{moved}:1",
-        f"{current}:1",
-        f"{note}:1",
-        f"{rule}:1",
-    }

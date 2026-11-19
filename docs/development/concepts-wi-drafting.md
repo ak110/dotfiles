@@ -68,13 +68,13 @@ CIや再現テストで自己確認できる事項を、ユーザーの実機確
   2026年9月30日の、独立要求ごとに担当を分けて別件を追送しない指示は、2026年10月30日のユーザー判断により、件数で分けず総費用でまとめる方針へ改めた。
   起動後に生じた要求も同じ比較で割り当てる扱いは、同じ担当による複数要求の順次処理を受け入れた判断からの技術的導出である。
   現行の所在は`agent-toolkit:atk-mode/roles/add-wi.parent.md`「起動方法」と`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」にある
-- `agent-toolkit:review-session`が対策のAWIを投入する場合は、原因と対策が確定した時点で振り返り結果報告の中身を全て予告として示してからWI投入担当を起動する。
+- 振り返り（`/atk-mode review-session`）が対策のAWIを投入する場合は、原因と対策が確定した時点で振り返り結果報告の中身を全て予告として示してからWI投入担当を起動する。
   投入が予告どおりに終わった場合の最終報告は、完了の旨と投入したAWIのファイル名・H1タイトルの一覧だけとする（2026年9月30日、ユーザー指示。AWI登録を待つ間にエージェントが何をしようとしているかをユーザーが分からないことに由来する）。
   batchでは確定要求を分析担当が直接起草し、独立した投入前レビューを経る。
   全対象の横断整理後、保存の直前に全要求を予告する。
   全要求が揃う時点で予告の内容を保ち、起草待ちの直列区間を減らすためである。
   通常の振り返りは起動前に予告する。
-  現行の規定は`agent-toolkit/skills/review-session/references/session-analysis.md`「工程5」と`agent-toolkit/skills/atk-mode/playbooks/report-completion.md`にある
+  現行の規定は`agent-toolkit/skills/atk-mode/playbooks/review-session-analysis.md`「工程5」と`agent-toolkit/skills/atk-mode/playbooks/report-completion.md`にある
 - 完了報告と振り返りの予告はユーザーへ直接届ける（2026年10月4日、ユーザー指示）。
   報告ごとの起草・確認・再出力はこの指示で除いた。
   2026年10月8日の整理ではClaude Codeの途中と末尾の本文をsend_to_userへ一本化し、ツールの無い環境は終了本文で届ける。

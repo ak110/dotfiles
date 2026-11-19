@@ -1,6 +1,6 @@
 # 比較材料と未確認範囲の設計記録
 
-[設計記録の索引](design.md)と[振り返り・知見集約の設計記録](design-session-review.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 成功した作業の比較材料は、異常候補と分けて既存の収集記録から生成する。
 bundleの`comparison-materials.jsonl`が委譲入力・明示読取・命令文字列だけの観測を区別し、prepareが別文書`comparison-materials.md`の概要から全文位置へ接続する。

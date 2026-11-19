@@ -1,6 +1,6 @@
 # 振り返りの起動と失敗回復の設計記録
 
-[設計記録の索引](design.md)と[振り返り・知見集約の設計記録](design-session-review.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)から参照する主題別の記録である。
 
 ## review-sessionの構成と候補抽出
 
@@ -34,3 +34,37 @@ SessionStartでの登録をやめて最初の発話で登録する案は通常�
 起動側とスキルのfinishは同じ短時間ロックで交換し、保存済みJSONのキーを保持する。
 分析成功と報告同期が揃ったbatchだけを完了にし、準備後の新しい世代は別に残す。
 これらを1つのstatusへ統合する案は、分析・報告・追記が別々に進む関係を失うため採らない。
+
+## batchの共有状態
+
+2026年11月19日に、振り返りのbatchの手順書（`agent-toolkit:atk-mode/playbooks/review-session-batch.md`）から状態の詳しい説明を外し、本節へ移した。
+手順書にはエージェントが守る所有の境界と処理済みを確定する条件だけを残している。
+
+`_common/session_review.py`はhookと活動状態の削除から独立した、OSアカウント共通の`{state_dir}/session-review/`を管理する。
+
+- `pending/<host>-<session_id>.json`: 最上位のSessionStartがhost、会話ID、記録パス、cwd、リポジトリ、開始時の更新時刻、登録世代、batch由来かを保存する。
+  処理済みの会話のUserPromptSubmitも再登録する。
+  委譲先とサブエージェントは登録せず、成功の確定か取消しまで保持する。
+- `reviewed/<host>-<session_id>.json`: prepareが増分を選ぶための、記録ごとの最後の完全な行と同一性を保持し、古い結果が返っても確定済みの範囲を保つ。
+  batchの部分分析では、欠測の情報と、末尾の欠測を含む観測済みの物理範囲も保持する。
+  元の記録が全て無く、pending、未解決の失敗、未確定のmanifestのどれからも参照されない時だけ回収する。
+- `runs/`: 実行IDごとのmanifestに、開始日時、固定した対象、報告先、準備範囲、分析結果、プロセス、失敗を保持し、中断後の報告同期と未確定範囲の検収に使う。
+  開始日時の無い旧manifestは、mtimeを自動起動の間隔の基準にする。
+  成功を確定したか報告を同期した失敗で、全対象がpendingから除かれたmanifestとログは、run-skillと同じ30日で回収する。
+  未確定と報告未達のものは確定まで保持する。
+- `record-index/<runtime>-<走査rootのハッシュ>.json`: `_common/record_metadata_index.py`が、カタログ走査の使う記録ごとの本文なしの値を保存する。
+  記録の識別（inode、更新時刻、大きさ）と値を計算するコードの版が同じ記録は解析し直さず、全記録の列挙とstatは照会のたびに行う。
+  壊れた索引と別のコードの索引は、解析し直した値で置き換える。
+- `state.lock`: 登録、状態の更新、成功の確定を短時間だけ排他する。
+  モデルの起動、利用上限の待機、WIの保存はこの排他の外で行う。
+- `batch.lock`: 自動と手動の全リポジトリで、対象の選定から報告同期の検収と成功の確定まで共有する。
+  親が中断した時も、プロセスの識別と、子の起動引数に含めた固有のmanifestパスで生存を確かめ、二重起動を防ぐ。
+- `failures/`: 起票済みの失敗キーを保持する（扱いは本書「review-sessionの構成と候補抽出」）。
+  版の無い旧記録は、初回の照会時の配布版を基準にする。
+  手動の再試行も、未完了の既存の失敗報告AWIを再利用する。
+
+起動元は`AGENT_TOOLKIT_SESSION_REVIEW_BATCH`でmanifestを、`AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO`で報告先を子へ渡す。
+`session_review_auto_start`がfalseでも待ちを登録し、SessionStartで件数と手動の操作を通知する。
+batchの起動時の回収では、共有の起動診断`launch.log`も、pendingと未確定のmanifestが無く、最終更新から30日を過ぎた時だけ削除する。
+単発のprepareは指定が無ければ厳格に読み込み（部分の読込は`--allow-partial-records`）、単発の`complete`は未確認範囲を含む準備結果を拒否する。
+欠測を明示した部分分析を確定するのはbatchだけである。

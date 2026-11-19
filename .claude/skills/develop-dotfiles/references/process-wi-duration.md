@@ -31,7 +31,7 @@
 
 ## 所要分析の基準値
 
-`agent-toolkit:review-session`の`references/duration-analysis.md`が巡回の比較で読む、目標を達成できていた時期の基準値である。
+`agent-toolkit:atk-mode/references/review-session-cost.md`が巡回の比較で読む、目標を達成できていた時期の基準値である。
 基準の時期は2026年9月下旬とする（巡回がレーン数によらず3時間以内に終わっていた時期）。
 Claude Codeのセッション記録は10月29日より前が残っていないため、Codexの担当の記録（`~/.codex/sessions/2026/`）と計画ファイルの進捗ログ（`private-notes/plans/2026/`）から求めた。
 2026年11月15日に集計した値で、比較の相手には同じ日に集計した11月の値を併記する。

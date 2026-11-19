@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import pathlib
 import re
-import subprocess
-import warnings
 
 import pytest
-from agent_toolkit._testing.git_repository import commit_all, init_repository, run_git
+from agent_toolkit._common import skill_modes
 
 from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths
 
@@ -31,28 +28,6 @@ _PYTHON_PATH_PATTERN = re.compile(
 )
 
 
-# 基準版の原文・由来・逆引きを固定引用として保持する正式データ。READMEと他の文書は検査する。
-_VERBATIM_REFERENCE_SOURCES = frozenset(
-    pathlib.Path(value)
-    for value in (
-        "docs/development/norm-restructure-20261022/ledger.tsv",
-        "docs/development/norm-restructure-20261022/mapping.json",
-        "docs/development/norm-restructure-20261022/reverse-index.tsv",
-    )
-)
-
-
-_SOURCE_MANIFEST = pathlib.Path("docs/development/norm-restructure-20261022/source-manifest.json")
-
-
-# 読込表の別ファイル（`*-delivery-<n>.md`、`*reading-references.md`）は本文の読込表へ統合して廃止した。
-# 規範再構成の記録は作成時点の配置を保持するため、記録が指すこれらの参照には現在の実体を求めない。
-_NORM_RESTRUCTURE_RECORDS = pathlib.Path("docs/development/norm-restructure-20261022")
-
-
-_RETIRED_READING_TABLE_PATTERN = re.compile(r"(?:-delivery-\d+|reading-references)\.md$")
-
-
 # 内容を入口`atk-mode`の手順書へ移して廃止したスキル。過去の記録と保存値は当時の名前と配置を保持する。
 _ATK_MODE_RETIRED_SKILLS = (
     "add-awi-by-user",
@@ -64,6 +39,10 @@ _ATK_MODE_RETIRED_SKILLS = (
     "workflow-overview",
     "managed-temp",
     "process-wi",
+    "review-session",
+    "refine-prompt",
+    "review-external-writes",
+    "export-session",
 )
 
 
@@ -72,6 +51,19 @@ _FIXED_AUDIT_RECORDS = frozenset(
     pathlib.Path(value)
     for value in ("docs/development/audit-opus55-hosts-2026-11-15.json", "docs/development/audit-sol-2026-11-14.json")
 )
+
+
+def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) -> bool:
+    """コードと設定の中の、入口`atk-mode`の作業名の修飾名（`agent-toolkit:review-session`など）かを返す。
+
+    作業名は`atk run-skill`の位置引数、報告用UWIの`scope`、起動入力の値として保存され、同名のスキルが無くても実在の名前である。
+    文書（Markdown）の修飾名と、コード中の起動の形（`/`か`$`を前置した修飾名）は起動の案内になりうるため、
+    新しい起動の形へ直すか個別に許可する。起動の形が1つでもあるファイルでは、そのファイルの同じ修飾名を全て未解決とする。
+    """
+    if source.suffix == ".md" or reference.removeprefix(f"{_PLUGIN_PREFIX}:") not in skill_modes.ENTRY_WORKS:
+        return False
+    content = (root / source).read_text(encoding="utf-8")
+    return re.search(rf"[/$]{re.escape(reference)}(?![A-Za-z0-9_-])", content) is None
 
 
 def _names_retired_skill(reference: str, skills: tuple[str, ...]) -> bool:
@@ -91,7 +83,7 @@ _INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-judgment-202608
 _INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-stagnation-202607-20260906.md")
 
 
-_INCIDENTS_REVIEW_SCOPE = pathlib.Path("docs/development/incidents-review-scope-20260901-20261003.md")
+_INCIDENTS_REVIEW_SCOPE = pathlib.Path("docs/development/incidents-review-scope-202607-202608.md")
 
 
 _CONCEPTS_CONFIRMATION_DECISIONS = pathlib.Path("docs/development/concepts-confirmation-decisions.md")
@@ -99,12 +91,6 @@ _CONCEPTS_CONFIRMATION_FORMAT = pathlib.Path("docs/development/concepts-confirma
 
 
 _DESIGN_HOSTS_AUTHORIZATION = pathlib.Path("docs/development/design-hosts-authorization.md")
-
-
-_NORM_RESTRUCTURE_README = pathlib.Path("docs/development/norm-restructure/README.md")
-
-
-_NORM_RESTRUCTURE_CLAUSES_TEST = pathlib.Path("scripts/norm_restructure_clauses_test.py")
 
 
 _SESSION_RECORDS = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records.py")
@@ -119,7 +105,7 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS_TEST): 1,
     (
         f"{_PLUGIN_PREFIX}:process-wi-all-repos",
-        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_candidates_users.py"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/scripts/session_evidence_candidates_users.py"),
     ): 1,
     (f"{_PLUGIN_PREFIX}:session-review-batch", pathlib.Path("agent-toolkit/agent_toolkit/_common/session_review.py")): 1,
     (f"{_PLUGIN_PREFIX}:session-review", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 2,
@@ -155,6 +141,12 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 1,
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/constants.py")): 2,
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 6,
+    # 作業`review-session`の保存値（報告用UWIの`scope`、起動入力の`skill`）と、変えない公開コマンド`atk run-skill`の位置引数。
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 4,
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/report-completion.md")): 1,
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/review-session-batch.md")): 2,
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/references/review-session-cost.md")): 1,
+    (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("docs/guide/claude-code-guide.md")): 1,
     # 報告用UWIの`scope`として保存済みの起動単位の名前。同名のスキルは起動しない。
     (f"{_PLUGIN_PREFIX}:wi-standards", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submit.py")): 1,
     # 移行前の起動コマンドを含むセッション記録を読む試験の入力
@@ -162,11 +154,11 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/skills/atk-mode/scripts/wi_quote_check_test.py")): 2,
     (
         f"{_PLUGIN_PREFIX}:add-awi-by-user",
-        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_user_events_test.py"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/scripts/session_evidence_user_events_test.py"),
     ): 4,
     (
         f"{_PLUGIN_PREFIX}:write-plan",
-        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_review_evidence_user_events_test.py"),
+        pathlib.Path("agent-toolkit/skills/atk-mode/scripts/session_review_evidence_user_events_test.py"),
     ): 2,
     # 保存済みの計画が計画メタ情報の`起動経路`に持つ値。値は自由記述で、計画の検査は起動先の実在を求めない。
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_testing/plan_fixture.py")): 5,
@@ -185,11 +177,6 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_CONFIRMATION_DECISIONS): 1,
     (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_CONFIRMATION_FORMAT): 1,
     (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS_AUTHORIZATION): 2,
-    # 判定台帳の説明が、基準commitの後に撤去したファイルを例として挙げる
-    (f"{_PLUGIN_PREFIX}/skills/realign-with-user/SKILL.md", _NORM_RESTRUCTURE_README): 1,
-    (f"{_PLUGIN_PREFIX}/skills/user-confirmation-and-report/SKILL.md", _NORM_RESTRUCTURE_README): 1,
-    # 切り出しスクリプトのテストが一時リポジトリへ作成するスキルのパス
-    (f"{_PLUGIN_PREFIX}/skills/demo/SKILL.md", _NORM_RESTRUCTURE_CLAUSES_TEST): 1,
 }
 
 
@@ -226,108 +213,22 @@ def _reference_exists(root: pathlib.Path, reference: str) -> bool:
 def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
     """実体へ解決できない参照と不足した既知の事故記録参照を返す。"""
     allowed_counts = _allowed_unresolved_reference_counts(sources)
-    captured_versions = _captured_reference_versions(root, sources)
-    unverified_capture_versions: set[str] = set()
     unresolved: list[tuple[str, pathlib.Path]] = []
     for reference, source in _collect_references(root, sources):
         if _reference_exists(root, reference):
             continue
-        if source.is_relative_to(_NORM_RESTRUCTURE_RECORDS) and _RETIRED_READING_TABLE_PATTERN.search(reference):
-            continue
-        # 再構成時点の固定台帳では、品質・技術・検索の移設前の公開名と配置を保持する。
-        retired = (
-            "bugfix",
-            "check-execution",
-            "review-standards",
-            "writing-standards",
-            "gitlab-ci-usage",
-            "pytilpack-usage",
-            "search",
-            "secret-files",
-            "single-lane-process",
-            "process-wi-all-repos",
-            "session-review-batch",
-            "completion-report",
-            "external-write-review",
-            "plan-mode",
-            "session-review",
-            *_ATK_MODE_RETIRED_SKILLS,
-        )
-        if source.is_relative_to(_NORM_RESTRUCTURE_RECORDS) and _names_retired_skill(reference, retired):
-            continue
         if source in _FIXED_AUDIT_RECORDS and _names_retired_skill(reference, _ATK_MODE_RETIRED_SKILLS):
             continue
         key = (reference, source)
-        if captured_versions.get(key):
-            captured_version = captured_versions[key].pop()
-            captured = subprocess.run(
-                ["git", "cat-file", "-e", f"{captured_version}:{reference}"],
-                cwd=root,
-                check=False,
-                capture_output=True,
-            )
-            if captured.returncode == 0:
-                continue
-            captured_commit = run_git(root, "cat-file", "-e", f"{captured_version}^{{commit}}", check=False)
-            if captured_commit.returncode != 0:
-                shallow = run_git(root, "rev-parse", "--is-shallow-repository", check=False)
-                if shallow.returncode == 0 and shallow.stdout.strip() == "true":
-                    if captured_version not in unverified_capture_versions:
-                        warnings.warn(
-                            f"{_SOURCE_MANIFEST}: 浅いcheckoutに取得版{captured_version}が無いため、"
-                            "sourcesの当時版の実体照合は未実施。現在参照の検査は継続する。",
-                            RuntimeWarning,
-                            stacklevel=2,
-                        )
-                        unverified_capture_versions.add(captured_version)
-                    continue
         if allowed_counts.get(key, 0) > 0:
             allowed_counts[key] -= 1
+            continue
+        if _names_entry_work(root, reference, source):
             continue
         unresolved.append(key)
     for key, remaining_count in allowed_counts.items():
         unresolved.extend([key] * remaining_count)
     return unresolved
-
-
-def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]) -> dict[tuple[str, pathlib.Path], list[str]]:
-    """固定manifestの取得ソースだけを、その記録が宣言した取得版へ対応付ける。
-
-    READMEや任意のJSON、manifest内でも取得ソース一覧にない参照は現在の実体で検査する。
-    有効な取得版とSHA-256を持つinventoryの各キー1回と、取得版の変更一覧（`implementation_changes_from_v5`）で
-    変更後のSHA-256を持つ各項目の`path`1回を歴史参照にする。
-    同じ値がそれ以外のfieldにも現れる場合は、その追加参照を現在の実体で検査する。
-    呼出側は取得版のGitオブジェクトを照合し、浅いcheckoutの取得版不在は未検収と報告する。
-    """
-    if _SOURCE_MANIFEST not in sources:
-        return {}
-    manifest = json.loads((root / _SOURCE_MANIFEST).read_text(encoding="utf-8"))
-    captured_head = manifest.get("head_at_capture")
-    captured_sources = manifest.get("sources")
-    if (
-        not isinstance(captured_head, str)
-        or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", captured_head) is None
-        or not isinstance(captured_sources, dict)
-    ):
-        return {}
-    captured: dict[tuple[str, pathlib.Path], list[str]] = {}
-    for reference, metadata in captured_sources.items():
-        if (
-            isinstance(metadata, dict)
-            and isinstance(metadata.get("sha256"), str)
-            and re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]) is not None
-        ):
-            captured.setdefault((reference, _SOURCE_MANIFEST), []).append(captured_head)
-    changes = manifest.get("implementation_changes_from_v5")
-    for change in changes if isinstance(changes, list) else []:
-        if (
-            isinstance(change, dict)
-            and isinstance(change.get("path"), str)
-            and isinstance(change.get("after_sha256"), str)
-            and re.fullmatch(r"[0-9a-f]{64}", change["after_sha256"]) is not None
-        ):
-            captured.setdefault((change["path"], _SOURCE_MANIFEST), []).append(captured_head)
-    return captured
 
 
 @pytest.mark.cpu_limit(
@@ -340,18 +241,6 @@ def test_agent_toolkit_references_resolve() -> None:
     assert any(path.parts[0] == ".claude" for path in sources)
     unresolved = _unresolved_references(root, sources)
     assert not unresolved, _format_unresolved(unresolved)
-
-
-def test_retired_reading_table_is_allowed_only_in_restructure_records(tmp_path: pathlib.Path) -> None:
-    """廃止した読込表の別ファイルへの参照は、規範再構成の記録でだけ許し、現行文書では検出する。"""
-    reference = f"{_PLUGIN_PREFIX}/skills/example/SKILL-delivery-1.md"
-    record = _NORM_RESTRUCTURE_RECORDS / "public-compatibility.json"
-    current = pathlib.Path(".claude/skills/example/SKILL.md")
-    for relative in (record, current):
-        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / relative).write_text(reference, encoding="utf-8")
-
-    assert _unresolved_references(tmp_path, [record, current]) == [(reference, current)]
 
 
 def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
@@ -373,6 +262,25 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
     assert _unresolved_references(tmp_path, [source]) == [(f"{_PLUGIN_PREFIX}/skills/contract_test.py", source)]
 
 
+def test_entry_work_names_resolve_only_outside_documents(tmp_path: pathlib.Path) -> None:
+    """入口の作業名はコードの保存値として受理し、文書とコード中の起動の形は同名のスキルが無ければ未解決とする。"""
+    reference = f"{_PLUGIN_PREFIX}:review-session"
+    code = pathlib.Path("scope.py")
+    document = pathlib.Path("guide.md")
+    for relative in (code, document):
+        (tmp_path / relative).write_text(f'SCOPE = "{reference} batch"\n', encoding="utf-8")
+    slash = pathlib.Path("slash_notice.py")
+    (tmp_path / slash).write_text(f'NOTICE = "`/{reference} batch`を実行せよ"\n', encoding="utf-8")
+    dollar = pathlib.Path("dollar_notice.py")
+    (tmp_path / dollar).write_text(f'NOTICE = "`${reference}`を起動せよ"\n', encoding="utf-8")
+
+    assert _unresolved_references(tmp_path, [code, document, slash, dollar]) == [
+        (reference, document),
+        (reference, slash),
+        (reference, dollar),
+    ]
+
+
 def test_duration_node_ids_are_not_current_skill_invocations(tmp_path: pathlib.Path) -> None:
     """所要記録の架空入力は案内と区別し、同じ文字列の現行文書は検査する。"""
     reference = f"{_PLUGIN_PREFIX}:fixture-only"
@@ -383,76 +291,6 @@ def test_duration_node_ids_are_not_current_skill_invocations(tmp_path: pathlib.P
     (tmp_path / current).write_text(reference, encoding="utf-8")
 
     assert _unresolved_references(tmp_path, [record, current]) == [(reference, current)]
-
-
-def test_captured_source_manifest_resolves_only_recorded_files_at_capture_commit(tmp_path: pathlib.Path) -> None:
-    """撤去済みの取得ソースは取得版で確かめ、未取得・架空・版不明の参照は欠損として残す。"""
-    reference = f"{_PLUGIN_PREFIX}/agent_toolkit/captured_example.py"
-    repository = init_repository(tmp_path / "repo", files={reference: "# 取得時の本文\n"})
-    captured_head = commit_all(repository, "取得版")
-    (repository / reference).unlink()
-    manifest = repository / _SOURCE_MANIFEST
-    manifest.parent.mkdir(parents=True)
-    captured_sources = {reference: {"sha256": hashlib.sha256("# 取得時の本文\n".encode()).hexdigest()}}
-    data = {"head_at_capture": captured_head, "sources": captured_sources}
-    manifest.write_text(json.dumps(data), encoding="utf-8")
-    current = pathlib.Path("current-notes.json")
-    (repository / current).write_text(json.dumps({"path": reference}), encoding="utf-8")
-
-    assert _unresolved_references(repository, [_SOURCE_MANIFEST, current]) == [(reference, current)]
-
-    data["current_reference"] = reference
-    manifest.write_text(json.dumps(data), encoding="utf-8")
-    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(reference, _SOURCE_MANIFEST)]
-    del data["current_reference"]
-
-    recorded_hash = captured_sources[reference]["sha256"]
-    captured_sources[reference]["sha256"] = "不正な取得hash"
-    manifest.write_text(json.dumps(data), encoding="utf-8")
-    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(reference, _SOURCE_MANIFEST)]
-    captured_sources[reference]["sha256"] = recorded_hash
-
-    nonexistent = f"{_PLUGIN_PREFIX}/agent_toolkit/never_captured.py"
-    captured_sources[nonexistent] = {"sha256": "a" * 64}
-    manifest.write_text(json.dumps(data), encoding="utf-8")
-    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(nonexistent, _SOURCE_MANIFEST)]
-
-    data["head_at_capture"] = "0" * 40
-    manifest.write_text(json.dumps(data), encoding="utf-8")
-    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [
-        (reference, _SOURCE_MANIFEST),
-        (nonexistent, _SOURCE_MANIFEST),
-    ]
-
-
-def test_captured_manifest_in_shallow_checkout_keeps_current_references_checked(tmp_path: pathlib.Path) -> None:
-    """取得commitの無い浅いcheckoutは歴史照合の未実施を示し、現在参照の欠損を検出する。"""
-    reference = f"{_PLUGIN_PREFIX}/agent_toolkit/captured_example.py"
-    text = "# 取得時の本文\n"
-    repository = init_repository(tmp_path / "origin", files={reference: text})
-    captured_head = commit_all(repository, "取得版")
-    (repository / reference).unlink()
-    manifest = repository / _SOURCE_MANIFEST
-    manifest.parent.mkdir(parents=True)
-    data = {"head_at_capture": captured_head, "sources": {reference: {"sha256": hashlib.sha256(text.encode()).hexdigest()}}}
-    manifest.write_text(json.dumps(data), encoding="utf-8")
-    commit_all(repository, "保存済み取得inventoryを保持してsourceを撤去")
-    shallow = tmp_path / "shallow"
-    run_git(tmp_path, "clone", "--depth=1", repository.as_uri(), str(shallow))
-    assert run_git(shallow, "cat-file", "-e", f"{captured_head}^{{commit}}", check=False).returncode != 0
-
-    with pytest.warns(RuntimeWarning, match="当時版の実体照合は未実施"):
-        assert not _unresolved_references(shallow, [_SOURCE_MANIFEST])
-
-    data["current_reference"] = reference
-    (shallow / _SOURCE_MANIFEST).write_text(json.dumps(data), encoding="utf-8")
-    current = pathlib.Path("current-notes.json")
-    (shallow / current).write_text(json.dumps({"path": reference}), encoding="utf-8")
-    with pytest.warns(RuntimeWarning, match="当時版の実体照合は未実施"):
-        assert _unresolved_references(shallow, [_SOURCE_MANIFEST, current]) == [
-            (reference, _SOURCE_MANIFEST),
-            (reference, current),
-        ]
 
 
 def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:
@@ -559,38 +397,10 @@ def test_incident_history_rejects_different_unresolved_references(tmp_path: path
     assert str(source) in formatted
 
 
-def test_verbatim_ledger_references_preserve_current_document_checks(tmp_path: pathlib.Path) -> None:
-    """正式データの固定引用を保持し、同階層のREADME・別JSON・現行文書の参照不良を全て検出する。"""
-    historical = [
-        pathlib.Path("docs/development/norm-restructure-20261022") / name
-        for name in ("ledger.tsv", "mapping.json", "reverse-index.tsv")
-    ]
-    current = [
-        pathlib.Path("docs/development/norm-restructure-20261022/README.md"),
-        pathlib.Path("docs/development/norm-restructure-20261022/current-notes.json"),
-        pathlib.Path(".claude/skills/example/SKILL.md"),
-    ]
-    references = [
-        f"{_PLUGIN_PREFIX}:archived-example",
-        f"{_PLUGIN_PREFIX}/skills/archived-example/SKILL.md",
-        f"{_PLUGIN_PREFIX}/agent_toolkit/archived_example.py",
-    ]
-    for relative in [*historical, *current]:
-        target = tmp_path / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("\n".join(references), encoding="utf-8")
-
-    unresolved = _unresolved_references(tmp_path, [*historical, *current])
-
-    assert unresolved == [(reference, source) for source in current for reference in references]
-
-
 def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
     """指定した追跡ファイルからスキルの起動名と相対パス参照を収集する。"""
     references: list[tuple[str, pathlib.Path]] = []
     for relative in sources:
-        if relative in _VERBATIM_REFERENCE_SOURCES:
-            continue
         # キーは実行案内ではなく、旧入力や架空の起動名も含むpytest node IDである。
         if relative == pathlib.Path("agent-toolkit/agent_toolkit/_testing/test_durations.json"):
             continue

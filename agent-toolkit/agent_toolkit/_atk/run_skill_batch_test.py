@@ -116,13 +116,28 @@ def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatc
     assert session_review.read(path)["status"] == "completed"
 
 
+@pytest.mark.parametrize(
+    ("host", "command"), [("claude", "/atk-mode review-session batch"), ("codex", "$atk-mode review-session batch")]
+)
+def test_hook_disabled_announces_start_form_of_each_host(tmp_path, monkeypatch, host, command) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
+    transcript = tmp_path / "main.jsonl"
+    transcript.write_text("{}\n", encoding="utf-8")
+    notice = run_skill_batch.hook_request(
+        {"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path), "transcript_path": str(transcript)},
+        host=host,
+    )
+    assert notice is not None
+    assert f"`{command}`" in notice
+
+
 def test_hook_disabled_records_and_announces_pending(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
     notice = run_skill_batch.hook_request(
         {"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path)}, host="codex"
     )
     assert notice is not None
-    assert "1件" in notice and "/agent-toolkit:review-session batch" in notice
+    assert "1件" in notice and "`$atk-mode review-session batch`" in notice
     assert session_review.pending()[0]["host"] == "codex"
     assert run_skill_batch.hook_request({"hook_event_name": "SessionEnd", "session_id": "main"}, host="codex") is None
 
@@ -280,7 +295,7 @@ def test_hook_launch_normal_outcomes_do_not_report_failure(tmp_path, monkeypatch
             assert run_skill_batch.dispatch(_args(), unexpected) == 1
     else:
         assert run_skill_batch.dispatch(_args(), unexpected) == 0
-    assert session_review.launch_notice() is None
+    assert session_review.launch_notice("claude") is None
     assert bool(session_review.pending()) == (condition == "active")
 
 
