@@ -24,19 +24,20 @@ public sealed class UvOutputRecord : TextWriter {
     }
     public override Encoding Encoding { get { return Encoding.UTF8; } }
     public override void WriteLine(string line) {
-        if (MatchText != null && line.Contains(MatchText)) Matched = true;
+        string plain = Regex.Replace(line, @"\x1b\[[0-9;:]*m", "");
+        if (MatchText != null && plain.Contains(MatchText)) Matched = true;
         bool visible = true;
         if (routine != null) {
-            PrivateKey |= line.Contains("PRIVATE KEY-----");
-            Saved.Add(sensitive.IsMatch(line) ? "[REDACTED]" : line);
-            bool ordinary = line.Length == 0 || routine.IsMatch(line);
-            visible = !ordinary && (actionable.IsMatch(line) || (continuation && line[0]==' '));
+            PrivateKey |= plain.Contains("PRIVATE KEY-----");
+            Saved.Add(sensitive.IsMatch(plain) ? "[REDACTED]" : line);
+            bool ordinary = plain.Length == 0 || routine.IsMatch(plain);
+            visible = !ordinary && (actionable.IsMatch(plain) || (continuation && plain[0]==' '));
             continuation = visible;
             if (!visible) {
                 Hidden.Add(line);
                 if (!ordinary) {
                     Summary = line;
-                    if (line.Contains("cause:") || line.StartsWith("error:")) Cause = line;
+                    if (plain.Contains("cause:") || plain.StartsWith("error:")) Cause = line;
                 }
             }
         }

@@ -23,7 +23,7 @@ _SCRIPT = pathlib.Path(__file__).with_name("update_dotfiles.py")
 
 
 def _forward(line: bytes) -> None:
-    plain = re.sub(rb"\x1b\[[0-9;]*m", b"", line)
+    plain = re.sub(rb"\x1b\[[0-9;:]*m", b"", line)
     if re.fullmatch(rb"Installed [0-9]+ packages? in (?:[0-9.]+(?:ns|us|\xc2\xb5s|\xce\xbcs|ms|s|m|h) ?)+\r?\n", plain):
         if sys.platform == "win32":
             base = os.environ.get("LOCALAPPDATA") or pathlib.Path.home() / "AppData/Local"
@@ -33,7 +33,7 @@ def _forward(line: bytes) -> None:
         try:
             log.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(dir=log.parent, delete_on_close=False) as output:
-                output.write(plain)
+                output.write(line)
                 output.close()
                 os.replace(output.name, log)
             return

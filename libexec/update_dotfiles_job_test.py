@@ -26,6 +26,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import update_dotfiles_job  # noqa: E402  # pylint: disable=wrong-import-position
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
+_INSTALL_COUNT = "\x1b[2mInstalled \x1b[1m3 packages\x1b[0m in 6ms\x1b[0m"
 _POSIX = pytest.mark.skipif(sys.platform == "win32", reason="fake uvとUnixシグナルはPOSIXで検証する")
 
 
@@ -110,7 +111,7 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
         '  printf "%s\\n" "$NATIVE_PYTHON"; exit 0\nfi\n'
         'if [[ "$1 $2" == "python install" ]]; then touch "$HOME/installed"; exit "${PYTHON_EXIT:-0}"; fi\n'
         'if [[ "$1 $2" == "self update" ]]; then exit "${SELF_EXIT:-0}"; fi\n'
-        'if [[ "$1" == run ]]; then echo "Installed 3 packages in 6ms" >&2; shift 3; exec "$NATIVE_PYTHON" "$@"; fi\n'
+        f'if [[ "$1" == run ]]; then echo "{_INSTALL_COUNT}" >&2; shift 3; exec "$NATIVE_PYTHON" "$@"; fi\n'
         "exit 33\n",
         encoding="utf-8",
     )
@@ -169,8 +170,8 @@ def test_public_codex_job_orders_pipeline_and_retrieves_same_result(
     assert result.returncode == (run_exit or prune_exit), result.stdout + result.stderr
     job = _job(project)
     assert "更新出力" in result.stdout and "更新診断" in result.stderr
-    assert "Installed 3 packages" not in result.stderr
-    assert "Installed 3 packages in 6ms" in (job.parent.parent / "uv-更新本体の依存準備.log").read_text(encoding="utf-8")
+    assert "3 packages" not in result.stderr
+    assert (job.parent.parent / "uv-更新本体の依存準備.log").read_bytes() == (_INSTALL_COUNT + "\n").encode()
     metadata = json.loads((job / "input.json").read_text(encoding="utf-8"))
     assert metadata["arguments"] == ["--prune"] and metadata["thread_id"] == "own-thread"
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()

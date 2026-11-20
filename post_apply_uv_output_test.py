@@ -17,7 +17,10 @@ _EXECUTABLES = "Installed 35 executables: test-example, token-inspect"
 _CHANGE = " ~ pytools==0.1.0"
 _WARNING = "warning: add the tool directory to PATH"
 _ACTION = "Run uv tool update-shell to update PATH"
-_LAST_WARNING = "warning: last diagnostic before interrupt"
+_COLOR_WARNING = "\x1b[1m\x1b[33mwarning\x1b[39m\x1b[0m\x1b[1m:\x1b[0m tool directory is not on PATH"
+_COLOR_ACTION = "\x1b[1mRun\x1b[0m uv tool update-shell"
+_CONTINUATION = "\x1b[2m  then restart the shell\x1b[0m"
+_LAST_WARNING = "\x1b[33mwarning\x1b[0m: last diagnostic before interrupt"
 _ERROR = "error: cannot install the tool"
 
 
@@ -55,6 +58,7 @@ def test_uv_reinstall_output(tmp_path: Path, shell: str, code: int, save: bool) 
     )
     (binary / ("example.exe" if powershell else "example")).touch(mode=0o755)
     lines = [_ROUTINE, _EXECUTABLES, "Checking the package cache", _CHANGE, _WARNING, _ACTION]
+    lines += [_COLOR_WARNING, _COLOR_ACTION, _CONTINUATION]
     if code:
         lines += ["diagnostic token=fixture-value", _ERROR, "hint: retry the installation"]
     interrupt = tmp_path / "interrupt.py"
@@ -160,7 +164,7 @@ def test_uv_reinstall_output(tmp_path: Path, shell: str, code: int, save: bool) 
         assert all(line in detail for line in lines if "token=" not in line)
         assert "fixture-value" not in detail
         assert _ROUTINE not in screen and _EXECUTABLES not in screen and "Checking the package cache" not in screen
-        assert all(line in screen for line in (_CHANGE, _WARNING, _ACTION))
+        assert all(line in screen for line in (_CHANGE, _WARNING, _ACTION, _COLOR_WARNING, _COLOR_ACTION, _CONTINUATION))
         if code:
             assert _ERROR in screen and str(log) in screen
             assert "hint: retry the installation" in screen

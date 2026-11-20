@@ -14,7 +14,7 @@ with_uv_output() (
         routine="^(${patterns[*]})$"
     fi
     local saved='' hidden='' summary='' cause='' continuation=0 private_key=0
-    local interrupted=0 code=0 line
+    local interrupted=0 code=0 line plain sgr=$'\e''\[[0-9;:]*m'
     trap 'interrupted=1' INT
     # lastpipeで読み手をこのシェルに置く。INTでuvが終了してもパイプに残る末尾まで読む。
     set +e +m
@@ -23,22 +23,24 @@ with_uv_output() (
     capture_uv_command() {
         "$@" 2>&1 | {
             while IFS= read -r line || [[ -n "$line" ]]; do
+                plain=${line%$'\r'}
+                while [[ "$plain" =~ $sgr ]]; do plain=${plain//"${BASH_REMATCH[0]}"/}; done
                 # shellcheck disable=SC2034 # stage_attemptが修復の要否をこの値から判定する。
-                if [[ -n "${match_text:-}" && "$line" == *"$match_text"* ]]; then matched=1; fi
+                if [[ -n "${match_text:-}" && "$plain" == *"$match_text"* ]]; then matched=1; fi
                 if [[ -z "$routine" ]]; then
                     printf '%s\n' "$line" >&2
                     continue
                 fi
-                if [[ "${line,,}" =~ $sensitive ]]; then saved+='[REDACTED]'$'\n'; else saved+="$line"$'\n'; fi
-                if [[ "$line" == *'PRIVATE KEY-----'* ]]; then private_key=1; fi
-                if [[ -n "$line" && ! "$line" =~ $routine ]]; then
-                    if [[ "$line" =~ $actionable || ($continuation == 1 && "$line" == ' '*) ]]; then
+                if [[ "${plain,,}" =~ $sensitive ]]; then saved+='[REDACTED]'$'\n'; else saved+="$line"$'\n'; fi
+                if [[ "$plain" == *'PRIVATE KEY-----'* ]]; then private_key=1; fi
+                if [[ -n "$plain" && ! "$plain" =~ $routine ]]; then
+                    if [[ "$plain" =~ $actionable || ($continuation == 1 && "$plain" == ' '*) ]]; then
                         printf '%s\n' "$line" >&2
                         continuation=1
                         continue
                     fi
                     summary=$line
-                    if [[ "$line" == *'cause:'* || "$line" == 'error:'* ]]; then cause=$line; fi
+                    if [[ "$plain" == *'cause:'* || "$plain" == 'error:'* ]]; then cause=$line; fi
                 fi
                 continuation=0
                 hidden+="$line"$'\n'
