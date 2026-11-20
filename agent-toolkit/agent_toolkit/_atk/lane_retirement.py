@@ -1,53 +1,10 @@
 """古いレーンの確実に取込み済みの成果を判定する。"""
 
-import collections
 import pathlib
 import typing
 
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._git import command as git_command
-
-
-def _verbatim_patches(repo: pathlib.Path, common: str, tip: str) -> collections.Counter[bytes]:
-    span = f"{common}..{tip}"
-    commits = _lane_records.git(repo, "rev-list", "--no-merges", "--max-count=512", span).splitlines()
-    if len(commits) >= 512:
-        raise ValueError("比較対象が512commit以上ある。統合先から履歴を辿れる状態になってから再判定する")
-    patch = git_command.run(
-        [
-            "log",
-            "--no-merges",
-            "--format=commit %H",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--ignore-submodules=none",
-            "--submodule=short",
-            "--full-index",
-            "--no-renames",
-            "--binary",
-            "-p",
-            span,
-        ],
-        repo,
-        check=True,
-        capture_output=True,
-        timeout=_lane_records.TIMEOUT,
-    ).stdout
-    identities = git_command.run(
-        ["patch-id", "--verbatim"],
-        repo,
-        input=patch,
-        check=True,
-        capture_output=True,
-        timeout=_lane_records.TIMEOUT,
-    ).stdout
-    rows = [line.split() for line in identities.splitlines()]
-    if any(len(row) != 2 for row in rows):
-        raise ValueError("パッチの一致結果を解釈できないため回収しない")
-    if not set(commits) <= {commit.decode("ascii") for _, commit in rows}:
-        raise ValueError("パッチを確認できないcommitを含むため回収しない")
-    return collections.Counter(patch_id for patch_id, _ in rows)
 
 
 def prove(record: dict[str, typing.Any], repo: pathlib.Path) -> dict[str, str]:
@@ -78,14 +35,12 @@ def prove(record: dict[str, typing.Any], repo: pathlib.Path) -> dict[str, str]:
         return {"head": head, "base_head": base_head, "basis": "ancestor"}
     if reached.returncode != 1:
         raise ValueError(f"git merge-baseが終了{reached.returncode}: {reached.stderr.strip()}")
-    if _lane_records.git(repo, "rev-list", "--merges", f"{base_head}..{head}"):
-        raise ValueError("統合先へ含まれないmerge commitがあるため回収しない")
-    common = _lane_records.git(repo, "merge-base", head, base_head)
-    lane_patches = _verbatim_patches(repo, common, head)
-    base_patches = _verbatim_patches(repo, common, base_head)
-    if not lane_patches or not lane_patches <= base_patches:
-        raise ValueError("統合先へ含まれない変更があるため回収しない")
-    return {"head": head, "base_head": base_head, "basis": "equivalent-patch"}
+    # パッチIDには適用箇所が含まれないため、内容が完全に同じ場合だけ祖先関係の代替に使う。
+    lane_tree = _lane_records.git(repo, "rev-parse", f"{head}^{{tree}}")
+    base_tree = _lane_records.git(repo, "rev-parse", f"{base_head}^{{tree}}")
+    if lane_tree != base_tree:
+        raise ValueError("統合先へ含まれない変更があるか、完全な内容一致を確認できないため回収しない")
+    return {"head": head, "base_head": base_head, "basis": "identical-tree"}
 
 
 def orphan_candidates(repo: pathlib.Path, registered: list[dict[str, typing.Any]]) -> list[dict[str, str | None]]:

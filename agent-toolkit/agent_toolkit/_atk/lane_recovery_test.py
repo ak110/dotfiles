@@ -43,7 +43,7 @@ def test_delete_uses_held_selection_after_selection_file_expires(
 
 
 @pytest.mark.cpu_limit(3.0, reason="実Gitの旧レーン、統合先の履歴と公開回収操作を比較する。")
-@pytest.mark.parametrize("kind", ["merged", "equivalent", "whitespace", "dirty", "running", "unique", "initial"])
+@pytest.mark.parametrize("kind", ["merged", "same-tree", "equivalent", "whitespace", "dirty", "running", "unique", "initial"])
 def test_retired_lane_only_removes_covered_changes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
@@ -57,6 +57,9 @@ def test_retired_lane_only_removes_covered_changes(
         head = git_repository.commit_all(worktree, "レーン成果")
         if kind in {"merged", "dirty", "running"}:
             git_repository.run_git(repo, "merge", "--ff-only", head)
+        elif kind == "same-tree":
+            git_repository.run_git(repo, "commit", "--allow-empty", "-m", "別の履歴")
+            git_repository.run_git(repo, "cherry-pick", head)
         elif kind == "equivalent":
             (repo / "other.txt").write_text("他の変更\n", encoding="utf-8")
             git_repository.commit_all(repo, "統合先の別の変更")
@@ -72,11 +75,11 @@ def test_retired_lane_only_removes_covered_changes(
 
     code, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
 
-    if kind in {"merged", "equivalent"}:
+    if kind in {"merged", "same-tree"}:
         assert code == 0 and result["removed"] == ["lane-01"], stderr
         assert not record_path.exists() and not worktree.exists()
         proof = result["retirement_inputs"][0]
-        assert proof["basis"] == ("ancestor" if kind == "merged" else "equivalent-patch")
+        assert proof["basis"] == ("ancestor" if kind == "merged" else "identical-tree")
         assert proof["selection"]["integrated"] is False
         assert selected.exists()
     else:
