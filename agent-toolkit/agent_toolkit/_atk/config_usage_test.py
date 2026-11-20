@@ -82,6 +82,7 @@ def test_rejected_model_window_without_percent_excludes_only_that_model(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:opus/high,claude:sonnet/low")
     usage_settings.record_metadata("claude", {"account": "account", "contract": "plan"})
+    monkeypatch.setattr(usage_refresh, "enabled", lambda: True)
     usage_refresh.record_claude_event({"status": "rejected", "rateLimitType": "seven_day_opus", "resetsAt": 200})
     assert config.parse_unresolved_model_candidates("execute") == [("claude", "sonnet", "low")]
     assert _main(tmp_path, "config", "usage") == 0
@@ -90,6 +91,25 @@ def test_rejected_model_window_without_percent_excludes_only_that_model(
     assert "100%" not in decision
     monkeypatch.setattr(config_usage.time, "time", lambda: 201.0)
     assert config.parse_unresolved_model_candidates("execute") == [("claude", "opus", "high"), ("claude", "sonnet", "low")]
+
+
+def test_claude_only_at_limit_shows_no_candidate_unless_api_connection_available(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:opus/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription, credits")
+    usage_settings.record_metadata("claude", {"account": "account", "contract": "plan"})
+    usage_refresh.record_claude_report({"rate_limits": {"limits": [{"kind": "weekly_all", "percent": 100}]}})
+    assert _main(tmp_path, "config", "usage") == 0
+    decision = capsys.readouterr().out.splitlines()[0]
+    assert "優先順: なし" in decision and "weekly_all" in decision and "100%" in decision
+    with pytest.raises(ValueError, match="weekly_all"):
+        config.parse_unresolved_model_candidates("execute")
+    key_file = tmp_path / "credits.env"
+    key_file.write_text("ANTHROPIC_API_KEY=test\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(key_file))
+    assert config.parse_unresolved_model_candidates("execute") == [("claude", "opus", "high")]
 
 
 def test_emergency_override_precedes_subscription_quota(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

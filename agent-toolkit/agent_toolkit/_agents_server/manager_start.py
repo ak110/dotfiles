@@ -92,26 +92,29 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         """起動条件を検証し、除外後の候補列を設定順で返す。
 
         除外中の候補は状態ディレクトリに保存した記録を読む。
-        除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
+        保存した記録だけで残りの候補が尽きた場合は、その記録を無視する。現在の利用上限による除外は取り消さない。
         """
         await self._drain_candidate_records()
         await run_file_operation(usage_refresh.ensure_fresh, environment=child_environment.inherited())
+        quota_excluded: dict[ModelCandidate, str] = {}
         try:
-            candidates = await run_file_operation(_atk_config.parse_unresolved_model_candidates, model_type)
+            candidates = await run_file_operation(
+                _atk_config.parse_unresolved_model_candidates, model_type, excluded=quota_excluded
+            )
         except ValueError as error:
             raise ActionableError(str(error), next_action=MODEL_TYPE_NEXT_ACTION) from error
         if codex_models.needs_catalog(candidates):
             catalog = await backends.model_catalog(self._backend(backends.CODEX_ENGINE)).list_models()
             candidates = codex_models.resolve_candidates(candidates, catalog)
-        if not candidates:
+        if not candidates and not quota_excluded:
             raise ActionableError(
                 f"no model candidates remain for model_type: {model_type}", next_action=MODEL_TYPE_NEXT_ACTION
             )
-        unsupported: dict[ModelCandidate, str] = {}
-        forced = dict(excluded_candidates or {})
-        unsupported.update(forced)
+        unsupported = quota_excluded | dict(excluded_candidates or {})
         candidates = [candidate for candidate in candidates if candidate not in unsupported]
         if not candidates:
+            if quota_excluded:
+                return [], unsupported
             raise ActionableError(
                 "no model candidates remain: " + "; ".join(unsupported.values()), next_action=MODEL_TYPE_NEXT_ACTION
             )

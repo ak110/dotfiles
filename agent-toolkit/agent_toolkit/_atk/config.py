@@ -289,16 +289,22 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
     ]
 
 
-def parse_unresolved_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
-    """工程名または直接候補列から候補の3つ組を返す。"""
+def parse_unresolved_model_candidates(
+    model_type: str, *, excluded: dict[tuple[str, str, str], str] | None = None
+) -> list[tuple[str, str, str]]:
+    """工程名または直接候補列を解決する。excludedの指定時は、全滅時も起動側に除外理由を渡す。"""
     if model_type in _config_settings.MODEL_TYPES:
         selected = parse_stage_model_candidates(resolve_mutable_setting(f"{model_type}_model"))
-        return config_usage.select_candidates(
+        candidates, reason = config_usage.select_candidates(
             selected,
             model_type,
             automatic=resolve_mutable_setting("usage_auto_allocation") == "true",
             activity_mode=resolve_mutable_setting("usage_activity_mode"),
-        )[0]
+            excluded=excluded,
+        )
+        if not candidates and excluded is None:
+            raise ValueError(reason)
+        return candidates
     try:
         return parse_stage_model_candidates(model_type)
     except ValueError as error:

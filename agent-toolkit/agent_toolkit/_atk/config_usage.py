@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from agent_toolkit._atk import config_settings, help_text, usage_allocation
+from agent_toolkit._atk import claude_connection, config_settings, help_text, usage_allocation
 from agent_toolkit._common import registry_index, session_registry, usage_observation
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -69,18 +69,23 @@ def _profile_windows(observed: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def select_candidates(
-    candidates: list[tuple[str, str, str]], role: str, *, automatic: bool, activity_mode: str
+    candidates: list[tuple[str, str, str]],
+    role: str,
+    *,
+    automatic: bool,
+    activity_mode: str,
+    excluded: dict[tuple[str, str, str], str] | None = None,
 ) -> tuple[list[tuple[str, str, str]], str]:
     if not automatic:
         return candidates, "自動配分は無効。通常設定と明示指定を使用する"
     temporary = temporary_settings()
     connection_key = config_settings.connection_order_key("claude", "orchestrator" if role == "orchestrate" else "delegate")
-    connections = (
+    connections = config_settings.parse_connection_order(
         os.environ.get(config_settings.config_env_name(connection_key))
         or temporary.get(connection_key)
         or config_settings.raw_mutable_setting(connection_key)
     )
-    if "payg" in connections.split(","):
+    if "payg" in connections:
         return candidates, "明示した追加課金接続を優先し、サブスクリプション残量で候補を並べ替えない"
     observed: dict[str, Any]
     try:
@@ -108,10 +113,23 @@ def select_candidates(
     state = read_settings()
     decisions = state.get("decisions", {})
     previous = decisions.get(role, {}).get("engine") if isinstance(decisions, dict) else None
-    selected, reason = usage_allocation.choose(
-        candidates, role=role, windows=windows, rates=rates, activity_ratio=activity, previous=previous
+    has_credits = (
+        role != "orchestrate"
+        and "credits" in connections
+        and any(window.claude_limit_reason for window in windows)
+        and any(item.kind == "credits" for item in claude_connection.candidates("delegate").connections)
     )
-    if role != "orchestrate" and selected[0][0] != previous:
+    selected, reason = usage_allocation.choose(
+        candidates,
+        role=role,
+        windows=windows,
+        rates=rates,
+        activity_ratio=activity,
+        previous=previous,
+        excluded=excluded,
+        subscription_only=not has_credits,
+    )
+    if selected and role != "orchestrate" and selected[0][0] != previous:
         path = settings_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.with_suffix(".lock").open("a+", encoding="utf-8") as lock:
@@ -192,7 +210,8 @@ def dispatch(
         )
     except ValueError as error:
         selected, reason = [], f"候補不足: {error}。config set execute_modelで候補を確認する"
-    print(f"優先順: {','.join(dict.fromkeys(item[0] for item in selected))}。{reason}")
+    engines = ",".join(dict.fromkeys(item[0] for item in selected)) or "なし"
+    print(f"優先順: {engines}。{reason}")
     print("統括: 保存された候補を維持し、通常の利用上限では回復を待つ")
     observed = usage_observation.snapshot()
     visible_windows = _profile_windows(observed)

@@ -34,7 +34,7 @@ def _applies(window: QuotaWindow, candidates: list[tuple[str, str, str]], role: 
     return isinstance(surface, dict) and "code" in str(surface.get("display_name", "")).casefold()
 
 
-def choose(
+def _rank(
     candidates: list[tuple[str, str, str]],
     *,
     role: str,
@@ -43,10 +43,6 @@ def choose(
     activity_ratio: float = 1.0,
     previous: str | None = None,
 ) -> tuple[list[tuple[str, str, str]], str]:
-    if not candidates:
-        raise ValueError("利用できる候補がない")
-    if role == "orchestrate":
-        return list(candidates), "統括は保存された候補を維持し、通常の上限では同じ会話で回復を待つ"
     now = time.time()
     status = {}
     for engine in ("codex", "claude"):
@@ -105,3 +101,37 @@ def choose(
     if not codex_room and not claude_room:
         reason += "（余裕不明または不足）"
     return result, reason
+
+
+def choose(
+    candidates: list[tuple[str, str, str]],
+    *,
+    role: str,
+    windows: list[QuotaWindow],
+    rates: dict[str, float],
+    activity_ratio: float = 1.0,
+    previous: str | None = None,
+    excluded: dict[tuple[str, str, str], str] | None = None,
+    subscription_only: bool = True,
+) -> tuple[list[tuple[str, str, str]], str]:
+    if not candidates:
+        raise ValueError("利用できる候補がない")
+    if role == "orchestrate":
+        return list(candidates), "統括は保存された候補を維持し、通常の上限では同じ会話で回復を待つ"
+    limits = {}
+    if subscription_only:
+        for window in windows:
+            if reason := window.claude_limit_reason:
+                for candidate in candidates:
+                    if candidate[0] == "claude" and _applies(window, [candidate], role):
+                        limits[candidate] = reason
+    if excluded is not None:
+        excluded.update(limits)
+    remaining = [candidate for candidate in candidates if candidate not in limits]
+    reason = "、".join(dict.fromkeys(limits.values()))
+    if not remaining:
+        return [], reason
+    selected, priority = _rank(
+        remaining, role=role, windows=windows, rates=rates, activity_ratio=activity_ratio, previous=previous
+    )
+    return selected, f"{priority}。除外: {reason}" if limits else priority

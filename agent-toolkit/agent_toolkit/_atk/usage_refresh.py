@@ -18,7 +18,7 @@ from typing import Any
 
 from agent_toolkit._atk import claude_connection, config
 from agent_toolkit._common import claude_connection as claude_settings
-from agent_toolkit._common import codex_models, json_lines, process_tree, usage_observation, usage_settings
+from agent_toolkit._common import claude_usage_limit, codex_models, json_lines, process_tree, usage_observation, usage_settings
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
@@ -251,6 +251,7 @@ def record_claude_event(info: Any) -> None:
         if isinstance(info, dict)
         else {key: getattr(info, key, None) for key in ("utilization", "rate_limit_type", "resets_at")}
     )
+    limit = claude_usage_limit.from_info(info)
     utilization = _number(values.get("utilization"), 1)
     kind = values.get("rateLimitType", values.get("rate_limit_type"))
     if not isinstance(kind, str) or kind == "overage":
@@ -271,6 +272,7 @@ def record_claude_event(info: Any) -> None:
                 time.time(),
                 scope=scope,
                 contract=contract,
+                rejected=limit is not None and limit.is_wait_target,
             )
         ]
     )

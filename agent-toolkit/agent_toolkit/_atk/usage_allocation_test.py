@@ -65,3 +65,19 @@ def test_forecast_demotes_claude_before_high_usage(monkeypatch):
     result, reason = choose(candidates, role="execute", windows=[window], rates={rate_key(window): 0.1}, previous="claude")
     assert result == candidates[::-1]
     assert all(detail in reason for detail in ("weekly", "20%", "30%"))
+
+
+def test_roomy_codex_precedes_claude_even_after_claude_was_preferred(monkeypatch):
+    monkeypatch.setattr(usage_allocation.time, "time", lambda: 100.0)
+    candidates = [("claude", "opus", "high"), ("codex", "sol", "low")]
+    codex = QuotaWindow("codex", "c", "primary", 20, 200, 100)
+    for used in (None, 20, 95, 100):
+        claude = QuotaWindow("claude", "a", "weekly", used, 200, 100)
+        result, _reason = choose(
+            candidates,
+            role="execute",
+            windows=[codex, claude],
+            rates={rate_key(codex): 0.01, rate_key(claude): 0.01},
+            previous="claude",
+        )
+        assert result == ([candidates[1]] if used == 100 else candidates[::-1])
