@@ -8,6 +8,7 @@ import datetime
 import json
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import claude_agent_sdk
 import pytest
@@ -20,6 +21,7 @@ from agent_toolkit._agents_server import (
     context_usage,
     manager,
     mcp_tools,
+    result_projection,
     shared_layout,
     state,
     status_file,
@@ -65,11 +67,17 @@ async def _assert_public_error(owner, session, tmp_path, monkeypatch, capsys):
     """同じ状態をMCPのlist/showと公開CLIのlist/waitへ通し、文脈量をエージェント向けの応答へ出さない。"""
     monkeypatch.setattr(mcp_tools, "_MANAGER", owner)
     context_usage.record_context_usage(session, 53500, 1000000)
+    # 通知の受信時刻は変えず、各公開操作が経過秒を計算する時刻だけを決める。
+    first_at = datetime.datetime.fromisoformat(session.api_error["first_at"])
+    clock = Mock(wraps=datetime.datetime)
+    clock.now.return_value = first_at
+    monkeypatch.setattr(result_projection, "datetime", SimpleNamespace(datetime=clock, UTC=datetime.UTC))
     shown = await mcp_tools.show_session(session.session_id)
     listed = (await mcp_tools.list_sessions())["sessions"][0]
     for payload in (shown, listed):
         assert "context_tokens" not in json.dumps(payload) and "context_window" not in json.dumps(payload)
     expected = shown["api_error"]
+    assert expected["elapsed_seconds"] == 0
     assert listed["api_error"] == expected
     directory = shared_layout.status_directory("root-session", tmp_path)
     directory.mkdir(parents=True, exist_ok=True)
@@ -91,10 +99,11 @@ async def _assert_public_error(owner, session, tmp_path, monkeypatch, capsys):
     assert "context_tokens" not in cli_list and "context_window" not in cli_list
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
+    clock.now.return_value = first_at + datetime.timedelta(seconds=7)
     assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 3
     rows = [json.loads(row) for row in capsys.readouterr().out.splitlines()]
     running = next(row for row in rows if row.get("status") == "running")
-    assert running["api_error"] == expected
+    assert running["api_error"] == expected | {"elapsed_seconds": 7}
     assert all("context_tokens" not in json.dumps(row) and "context_window" not in json.dumps(row) for row in rows)
     return expected
 
