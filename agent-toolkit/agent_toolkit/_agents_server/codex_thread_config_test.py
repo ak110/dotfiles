@@ -18,7 +18,7 @@ import pytest
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server import shared_roots, state
-from agent_toolkit._common import inherited_venv, plugin_environment
+from agent_toolkit._common import inherited_venv, plugin_environment, windows_powershell
 from agent_toolkit._testing.agents_server_support import FakeCodexClient, _complete
 from agent_toolkit._testing.codex_backend_support import _return, _return_none, _ThreadStartClient, _TierClient
 from agent_toolkit._testing.codex_plugin_support import _make_plugin_root, _owned_async_child
@@ -282,6 +282,7 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     plugin_root = plugin_roots.resolve_stable_plugin_root(source)
     shutil.rmtree(source)
     monkeypatch.setattr(plugin_roots, "SERVER_PLUGIN_ROOT", plugin_root)
+    monkeypatch.setattr(windows_powershell, "can_run_script", lambda script: script.is_file())
     cli_instructions = plugin_environment.cli_instructions
     monkeypatch.setattr(plugin_environment, "cli_instructions", lambda root: cli_instructions(root, windows=windows))
     client = _TierClient()
@@ -301,7 +302,7 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
             command = next(
                 line.removeprefix("起動部分: ") for line in instructions.splitlines() if line.startswith("起動部分: ")
             )
-            entry = plugin_root / "scripts" / ("atk.cmd" if windows else "atk")
+            entry = plugin_root / "scripts" / ("atk.ps1" if windows else "atk")
             assert entry.is_file()
             if windows:
                 assert command == "& '" + str(entry).replace("'", "''") + "'"

@@ -5,13 +5,13 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import re
 import shlex
 
 import pytest
 
+from agent_toolkit._common import plugin_environment
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import rules_context, rules_context_codex
 from agent_toolkit._hooks.pretooluse import operation_skills
@@ -113,7 +113,7 @@ def test_session_start_carries_no_rule_bodies_or_rule_file_pointers(
     output = _output(capsys)
     assert 'kind="rules-' not in output
     assert _document_references(output) <= {str(rules_context.SUBAGENT_PLAYBOOK_PATH)}
-    assert str(rules_context.PLUGIN_ROOT / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")) in output
+    assert plugin_environment.cli_instructions(rules_context.PLUGIN_ROOT) in output
 
 
 _DELEGATED_ENVIRONMENTS = [None, ("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGENT_TOOLKIT_OWNER_SESSION", "owner")]

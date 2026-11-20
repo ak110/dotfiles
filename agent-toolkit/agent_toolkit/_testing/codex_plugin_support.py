@@ -69,7 +69,7 @@ def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool, root
     (root / "agent_toolkit").mkdir()
     (root / "agent_toolkit" / "agents_server_mcp.py").write_text("# entry\n", encoding="utf-8")
     (root / "scripts").mkdir()
-    for name in ("launch.py", "atk", "atk.cmd"):
+    for name in ("launch.py", "atk", "atk.cmd", "atk.ps1"):
         (root / "scripts" / name).write_text("# entry\n", encoding="utf-8")
     (root / ".venv").mkdir()
     (root / ".venv" / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")

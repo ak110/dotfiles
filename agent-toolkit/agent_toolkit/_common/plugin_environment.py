@@ -20,7 +20,7 @@ from typing import BinaryIO
 lazy import logging
 
 from agent_toolkit._common import inherited_venv
-lazy from agent_toolkit._common.shell_tokens import atk_launcher_name
+lazy from agent_toolkit._common import shell_tokens, windows_powershell
 
 RUNTIME_DATA_ENV = "AGENT_TOOLKIT_RUNTIME_DATA"
 RUNTIME_ENVIRONMENT_ENV = inherited_venv.PLUGIN_RUNTIME_ENVIRONMENT_KEY
@@ -306,6 +306,18 @@ def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> No
 def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
     """直接起動と委譲の文脈へ、同じrootのCLIとホストに合う呼び方を示す。"""
     is_windows = os.name == "nt" if windows is None else windows
-    entry = root / "scripts" / atk_launcher_name(windows=is_windows)
-    command = "& '" + str(entry).replace("'", "''") + "'" if is_windows else shlex.quote(str(entry))
-    return f"起動部分: {command}\nこの起動部分へサブコマンドと引数を続けよ。CLIはこの配布物と、その版の依存環境を使う。"
+    scripts = root / "scripts"
+    warning = ""
+    if is_windows:
+        entry = scripts / shell_tokens.ATK_POWERSHELL
+        if not windows_powershell.can_run_script(entry):
+            entry = scripts / shell_tokens.ATK_BATCH
+            warning = "\ncmd.exeが別のコマンドとして解釈しうるため、|・&・<・>・^を含む引数は渡さない。"
+        command = "& '" + str(entry).replace("'", "''") + "'"
+    else:
+        command = shlex.quote(str(scripts / shell_tokens.ATK_POSIX))
+    shell = "Windows PowerShell 5.1で" if is_windows else ""
+    return (
+        f"起動部分: {command}\n{shell}この起動部分へサブコマンドと引数を続けよ。"
+        f"CLIはこの配布物と、その版の依存環境を使う。{warning}"
+    )

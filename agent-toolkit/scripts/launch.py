@@ -124,7 +124,7 @@ def main() -> int:
     if python is None and options.prepare_if_missing:
         # dotfilesの更新直後は依存の固定内容が変わり、後段の準備まで共有依存環境が無い。
         # CLIは呼び出し元が結果を待つため、準備してから起動する。hook・MCPと関数hookから起動する`atk.py`は
-        # ホストの短い時間上限で起動されるため待たせず、CLIの起動部分（`scripts/atk`・`scripts/atk.cmd`）だけがこの指定を渡す。
+        # ホストの短い時間上限で起動されるため待たせず、CLIの起動部分だけがこの指定を渡す。
         print(
             "agent-toolkitの共有依存環境を準備してから起動します（通常は数十秒。並行する準備があれば完了を待ちます）。",
             file=sys.stderr,

@@ -15,7 +15,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_identity, process_loop_log, submit
-from agent_toolkit._common import plugin_environment, plugin_roots, session_state, skill_modes
+from agent_toolkit._common import plugin_environment, plugin_roots, session_state, skill_modes, windows_powershell
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
@@ -137,11 +137,12 @@ def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("PATH", "/user/tools")
+    monkeypatch.setattr(windows_powershell, "can_run_script", lambda script: script.is_file())
     cli_instructions = plugin_environment.cli_instructions
     monkeypatch.setattr(plugin_environment, "cli_instructions", lambda root: cli_instructions(root, windows=windows))
     assert rules_context.main(json.dumps({"hook_event_name": event, "source": "startup"}), host=host) == 0
     output = _output(capsys)
-    entry = rules_context.PLUGIN_ROOT / "scripts" / ("atk.cmd" if windows else "atk")
+    entry = rules_context.PLUGIN_ROOT / "scripts" / ("atk.ps1" if windows else "atk")
     assert entry.is_file()
     command = next(line.removeprefix("起動部分: ") for line in output.splitlines() if line.startswith("起動部分: "))
     notified_entry = pathlib.Path(shlex.split(command)[-1])

@@ -81,7 +81,9 @@
   全量の選別と機械処理は、保存されたファイルへ別の呼び出しで行う。
   常駐と追従の表示（`atk serve`、常駐の`atk wi process-loop`、`atk agents logs --follow`）を背景で起動する時の出力のリダイレクトは例外とする。
 - 複数の対象の取得は、`atk config get execute_model chores_model`のように対応するコマンドへまとめて渡し、指定の形は公開ヘルプで確かめる。
-- 同じセッションで`atk`の不具合や遅さを直した場合は、修正を検証した後の残工程で、修正を含むworktreeの`agent-toolkit/scripts/atk`（Windowsでは`agent-toolkit/scripts/atk.cmd`）から起動する。
+- 同じセッションで`atk`の不具合や遅さを直した場合は、修正を検証した後の残工程で、修正を含むworktreeの`agent-toolkit/scripts/atk`から起動する。
+  Windows PowerShellでは同じ場所の`atk.ps1`を使う。
+  実行ポリシーまたは配布物の印のために使えない場合は`atk.cmd`を使い、`|`・`&`・`<`・`>`・`^`を含む引数は渡さない。
   起動時に通知される配布版は公開と配布の前の修正を含まず、hookとMCPはセッションの途中では切り替わらないため、公開後に起動したセッションから修正済みの版になる。
 
 ### 完了と不在の確認

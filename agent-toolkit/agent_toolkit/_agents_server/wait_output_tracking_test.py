@@ -171,6 +171,7 @@ def test_stop_after_collection_and_resume_releases_only_on_success(content, is_e
         ("Bash", "C:/x/atk.cmd agents wait"),
         ("Bash", r"'C:\x\atk.py' agents wait"),
         ("PowerShell", r"& 'C:\x\atk.cmd' agents wait"),
+        ("PowerShell", r"& 'C:\x\atk.ps1' agents wait"),
     ],
 )
 @pytest.mark.asyncio

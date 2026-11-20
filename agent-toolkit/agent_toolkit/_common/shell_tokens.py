@@ -151,13 +151,11 @@ def split_words(text: str) -> list[ShellWord]:
     return words
 
 
-ATK_LAUNCHER_NAMES = ("atk", "atk.cmd", "atk.py")
+ATK_POSIX = "atk"
+ATK_POWERSHELL = "atk.ps1"
+ATK_BATCH = "atk.cmd"
+ATK_LAUNCHER_NAMES = (ATK_POSIX, ATK_POWERSHELL, ATK_BATCH, "atk.py")
 ATK_SHELL_TOOLS = frozenset({"Bash", "PowerShell"})
-
-
-def atk_launcher_name(*, windows: bool) -> str:
-    """ホスト向けに案内するランチャー名を返す。"""
-    return ATK_LAUNCHER_NAMES[1 if windows else 0]
 
 
 def is_atk_command(tokens: Sequence[str]) -> bool:
