@@ -48,13 +48,20 @@ def test_windows_cli_instructions(
 def test_policy_matches_windows_powershell(monkeypatch: pytest.MonkeyPatch, restrict_process: bool) -> None:
     if restrict_process:
         monkeypatch.setenv("PSEXECUTIONPOLICYPREFERENCE", "AllSigned")
+    shell = Path(os.environ["SYSTEMROOT"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    # 比較元には5.1自身が起動時に組み立てるモジュール探索先を使わせる。
+    reference_env = os.environ.copy()
+    reference_env.pop("PSMODULEPATH", None)
     expected = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"],
+        [str(shell), "-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"],
+        env=reference_env,
         check=True,
         capture_output=True,
         timeout=30,
     )
-    assert windows_powershell._execution_policy().casefold() == expected.stdout.decode("ascii").strip().casefold()  # pylint: disable=protected-access
+    policy = expected.stdout.decode("ascii").strip().casefold()
+    assert policy
+    assert windows_powershell._execution_policy().casefold() == policy  # pylint: disable=protected-access
 
 
 @pytest.mark.windows
