@@ -8,11 +8,12 @@ import io
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from agent_toolkit._atk.managed_temp import paths, resources
+from agent_toolkit._atk.managed_temp import creation, paths, resources, sweep
 from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 
 from pytools import post_apply
@@ -46,6 +47,25 @@ def test_persistent_log_redacts_plugin_output_only(capsys: pytest.CaptureFixture
     assert "stage=plugin exit=7 stderr:\n" in saved
     assert "RuntimeError" in saved
     assert "[REDACTED]" in saved
+
+
+def test_warmup_pressure_keeps_weekend_contract(monkeypatch):
+    session = creation.resolve_session_temp("weekend")
+    contract = session / "work-contract.md"
+    contract.write_text("再開条件", encoding="utf-8")
+    stamp = time.time() - 3 * 86400
+    standalone = paths.temp_root() / "handoff.md"
+    standalone.write_text("引き継ぎ", encoding="utf-8")
+    for path in (contract, session, standalone):
+        os.utime(path, (stamp, stamp))
+    monkeypatch.delenv(sweep.MIN_FREE_RATIO_ENV, raising=False)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=237 * 1024**3, free=19 * 1024**3))
+
+    plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+
+    assert standalone.read_text(encoding="utf-8") == "引き継ぎ"
+    assert creation.find_session_temp("weekend") == session
+    assert contract.read_text(encoding="utf-8") == "再開条件"
 
 
 def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatch, capsys):
