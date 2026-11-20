@@ -15,7 +15,7 @@ from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
-from mcp.types import CallToolRequestParams, ToolAnnotations
+from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult, TextContent, ToolAnnotations
 from pydantic import Field
 
 from agent_toolkit._agents_server import (
@@ -580,6 +580,25 @@ async def list_sessions(
     return response
 
 
+def relay_result(
+    name: str, result: CallToolResult | InputRequiredResult, owner: dict, queried: dict
+) -> CallToolResult | InputRequiredResult:
+    """別世代のshow成功応答へ、実行所有者と照会の受付先を同じ形式で示す。"""
+    if name != "show" or not isinstance(result, CallToolResult) or result.is_error or result.structured_content is None:
+        return result
+    detail = {
+        **result.structured_content,
+        "owner_server_instance": owner["server_instance"],
+        "queried_server_instance": queried["server_instance"],
+    }
+    return result.model_copy(
+        update={
+            "structured_content": detail,
+            "content": [TextContent(type="text", text=json.dumps(detail, ensure_ascii=False, indent=2))],
+        }
+    )
+
+
 @mcp.tool(
     name="show",
     title="委譲sessionの詳細",
@@ -638,6 +657,8 @@ async def show_session(
     `not_collected`（終了診断の導入前の記録）、`missing`、`unreadable`のいずれかで、`next_action`が読み取り操作を示す。
     過去に中断したturnがあるsessionは、再開・解放の後も`interrupted_turns`へturn番号・理由・`diagnostics`の組を返す。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
+    `queried_server_instance`は照会を受け付けたサーバーの起動単位、`owner_server_instance`は所有サーバーの起動単位を示す。
+    終了済みなら登録簿に残る最後の所有者を示し、識別できない値はnullとする。生存確認には`list`の世代一覧も使う。
     終了時の結果本文は返さないため、受領には`atk agents wait`を使う。
     """
     await _manager().take_over_orphaned_session(session_id)

@@ -588,6 +588,52 @@ async def test_prepare_move_failure_after_client_stopped_adopts_session_back(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("moving", [False, True], ids=["owned-by-old-generation", "ownership-unconfirmed"])
+async def test_show_keeps_owner_and_queried_generation_distinct(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, moving: bool
+) -> None:
+    coordinator, session, _backend = _coordinator(tmp_path, monkeypatch)
+    manager = coordinator.managers.conversations["parent"].manager
+    manager.sessions.clear()
+    coordinator.target["server_instance"] = "queried-instance"
+
+    @contextlib.asynccontextmanager
+    async def scope(_params: CallToolRequestParams, **_kwargs: Any):
+        yield manager
+
+    monkeypatch.setattr(coordinator.managers, "scope", scope)
+    owner = {"generation": "G1", "epoch": 1, "process": "1:old", "server_instance": "old-owner"}
+    monkeypatch.setattr(coordinator, "_owner", AsyncMock(return_value=owner if not moving else None))
+    monkeypatch.setattr(coordinator, "_owns", AsyncMock(return_value=True))
+    if moving:
+        coordinator._uncertain[session.session_id] = "移譲の結果を確認できない"
+    # 未更新の旧世代の正常応答にも、受付側で両識別子を補える。
+    original = {"session_id": session.session_id, "status": "running"}
+    request = AsyncMock(
+        return_value={
+            "result": {
+                "content": [{"type": "text", "text": json.dumps(original)}],
+                "structuredContent": original,
+            }
+        }
+    )
+    monkeypatch.setattr(service_rpc, "request", request)
+    params = CallToolRequestParams(name="show", arguments={"session_id": session.session_id})
+    with runtime_environment.bind(CallerContext({}, tmp_path)):
+        result = await coordinator.call_tool(None, params)
+    if moving:
+        assert result.is_error
+        assert "所有を確認できず" in result.content[0].text
+        assert result.structured_content is None
+        request.assert_not_awaited()
+    else:
+        expected = {**original, "owner_server_instance": "old-owner", "queried_server_instance": "queried-instance"}
+        assert not result.is_error
+        assert result.structured_content == expected
+        assert json.loads(result.content[0].text) == expected
+
+
+@pytest.mark.asyncio
 async def test_failed_move_on_owner_reports_undelivered_input_and_next_action(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
