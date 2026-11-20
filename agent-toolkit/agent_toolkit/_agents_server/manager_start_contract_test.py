@@ -305,6 +305,30 @@ async def test_tight_claude_prefers_available_codex(tmp_path: pathlib.Path, monk
         assert "excluded_candidates" not in response
 
 
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("tight_claude_allocation")
+async def test_recovered_weekly_subscription_starts_claude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
+    usage_settings.record_metadata("claude", {"account": "test", "contract": "plan"})
+    now = time.time()
+    with monkeypatch.context() as clock:
+        clock.setattr(time, "time", lambda: now - 1)
+        usage_refresh.record_claude_event({"status": "rejected", "rateLimitType": "seven_day"})
+        clock.setattr(time, "time", lambda: now)
+        usage_refresh.record_claude_report({"rate_limits": {"limits": [{"kind": "weekly_all", "percent": 0}]}})
+    client = agents_server_support.FakeClaudeClient(
+        [[agents_server_support.SystemMessage("recovered"), agents_server_support.ResultMessage("完了")]]
+    )
+    async with agents_server_support.claude_manager(monkeypatch, client) as (current, _backend):
+        agents_server_support.install_backend(current, "codex", UnavailableProbeBackend(current.sessions, "codex"))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        response = await _start_allocation_task(tmp_path)
+        assert response["launch_identity"]["engine"] == "claude"
+        assert [item["engine"] for item in response["excluded_candidates"]] == ["codex"]
+        assert len(client.queries) == 1
+        assert current.sessions[response["session_id"]].usage_limit_first_at is None
+
+
 @pytest.mark.parametrize("codex_available", [False, True])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("tight_claude_allocation")

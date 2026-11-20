@@ -93,6 +93,49 @@ def test_rejected_model_window_without_percent_excludes_only_that_model(
     assert config.parse_unresolved_model_candidates("execute") == [("claude", "opus", "high"), ("claude", "sonnet", "low")]
 
 
+@pytest.mark.parametrize(
+    "sdk_kind,report_kind,model",
+    [
+        ("seven_day", "weekly_all", None),
+        ("five_hour", "session", None),
+        ("seven_day_opus", "weekly_scoped", "Opus"),
+        ("seven_day_sonnet", "weekly_scoped", "Sonnet"),
+    ],
+)
+def test_latest_claude_window_controls_allocation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    sdk_kind: str,
+    report_kind: str,
+    model: str | None,
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", f"claude:{(model or 'opus').lower()}/low")
+    monkeypatch.setattr(usage_refresh, "enabled", lambda: True)
+    usage_settings.record_metadata("claude", {"account": "account", "contract": "plan"})
+    scope = {"model": {"display_name": model}} if model else None
+
+    def decision() -> str:
+        assert _main(tmp_path, "config", "usage") == 0
+        return capsys.readouterr().out.splitlines()[0]
+
+    usage_refresh.record_claude_event({"status": "rejected", "rateLimitType": sdk_kind})
+    monkeypatch.setattr(config_usage.time, "time", lambda: 101.0)
+    usage_refresh.record_claude_report({"rate_limits": {"limits": [{"kind": report_kind, "scope": scope, "percent": 0}]}})
+    assert decision().startswith("優先順: claude。")
+    monkeypatch.setattr(config_usage.time, "time", lambda: 102.0)
+    usage_refresh.record_claude_event({"status": "rejected", "rateLimitType": sdk_kind})
+    assert "rejected" in decision()
+    monkeypatch.setattr(config_usage.time, "time", lambda: 103.0)
+    usage_refresh.record_claude_report({"rate_limits": {"limits": [{"kind": report_kind, "scope": scope, "percent": 100}]}})
+    assert "100%" in decision()
+    monkeypatch.setattr(config_usage.time, "time", lambda: 104.0)
+    usage_refresh.record_claude_event({"status": "allowed", "rateLimitType": sdk_kind})
+    assert decision().startswith("優先順: claude。")
+
+
 def test_claude_only_at_limit_shows_no_candidate_unless_api_connection_available(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
