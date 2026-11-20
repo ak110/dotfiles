@@ -39,7 +39,8 @@ lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn
 # 例示の語と調査を求める語、欠陥の指摘を表す語は、引用を除いたユーザー自身の依頼文から探す。
 # posttooluseがbugfix_gateを取り込む向きに保つため、共有する定義はこちらへ置く。
 QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
-_BUGFIX_SKILLS = frozenset({"agent-basics:bugfix", "bugfix"})
+BUGFIX_SKILL = "agent-basics:bugfix"
+_BUGFIX_SKILLS = frozenset({BUGFIX_SKILL, "bugfix"})
 # 欠陥の指摘を表す語。貼り付けた素材（コードブロック、インラインコード、引用行）は除いた本文へ適用する。
 _DEFECT_RE = re.compile(
     r"バグ|不具合|不良|欠陥|おかしい|おかしく|間違|誤り|誤っ|誤動作|壊れ|動かな|動いて(?:い)?ない|機能しな|"
@@ -135,7 +136,7 @@ def observe_verification(payload: dict) -> None:
     if _wait_ci_operation(tool_name, tool_input):
         # wait-ciの1はCI失敗、6は途中の新規失敗。待機timeoutやrun未登録は別の状態である。
         failed = _ci_exit_code(payload) in (1, 6)
-    elif operation_skills.operation_matches("verification", tool_name, tool_input):
+    elif operation_skills.is_verification_operation(tool_name, tool_input):
         failed = failed or isinstance(code, int) and not isinstance(code, bool) and code != 0
     else:
         return
@@ -172,8 +173,8 @@ def verification_notice(payload: dict, tool_name: str, tool_input: dict, session
     if not (
         commit
         or _wait_ci_operation(tool_name, tool_input)
-        or operation_skills.operation_matches("verification", tool_name, tool_input)
-        or operation_skills.operation_matches("body-writing", tool_name, tool_input, str(payload.get("cwd", "")))
+        or operation_skills.is_verification_operation(tool_name, tool_input)
+        or operation_skills.is_body_writing(tool_name, tool_input, str(payload.get("cwd", "")))
     ):
         return ""
     return _failure_notice(

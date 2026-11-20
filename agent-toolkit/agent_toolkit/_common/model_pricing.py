@@ -10,7 +10,7 @@ import dataclasses
 import re
 from typing import Any
 
-PRICE_DATE = "2026-11-11"
+PRICE_DATE = "2026-11-20"
 OPENAI_SOURCE = "https://developers.openai.com/api/docs/pricing"
 CLAUDE_SOURCE = "https://platform.claude.com/docs/en/about-claude/pricing"
 
@@ -44,6 +44,7 @@ def _claude(input_rate: float, read_rate: float, output_rate: float) -> ModelPri
 
 MODEL_PRICES = {
     "gpt-6-astra": _openai(10, 1, 50),
+    "gpt-6.2-sol": _openai(2, 0.10, 10, source="https://developers.openai.com/api/docs/models/gpt-6.2-sol"),
     "gpt-6.1-sol": _openai(2, 0.10, 10),
     "gpt-6.1-terra": _openai(1, 0.05, 5),
     "gpt-6-sol": _openai(2, 0.20, 10, source="https://developers.openai.com/api/docs/models/gpt-6-sol"),

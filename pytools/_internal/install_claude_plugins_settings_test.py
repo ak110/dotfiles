@@ -11,6 +11,7 @@ import pytest
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
+from pytools._internal import claude_plugin_settings
 from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
@@ -44,8 +45,8 @@ def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
 def _enabled_target_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     """管理対象pluginがsettingsで有効な状態を返す。"""
     monkeypatch.setattr(
-        _install_claude_plugins,
-        "_read_enabled_plugins_from_file",
+        claude_plugin_settings,
+        "read_enabled_plugins",
         lambda: {
             "agent-toolkit@ak110-dotfiles": True,
             "sample-plugin@ak110-dotfiles": True,
@@ -245,7 +246,7 @@ class TestHappyPathDirectoryType:
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", marketplace_path)
         # 実環境の settings.json を参照しないよう、存在しないパスへ差し替える。
         # `_claude_marketplace._SETTINGS_JSON_PATH` は `_check_marketplace_from_file` の参照先、
-        # `_claude_common.SETTINGS_JSON_PATH` は `_read_enabled_plugins_from_file` の参照先
+        # `_claude_common.SETTINGS_JSON_PATH` は `read_enabled_plugins` の参照先
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         monkeypatch.setattr(_claude_common, "SETTINGS_JSON_PATH", tmp_path / "settings.json")
 

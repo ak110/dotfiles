@@ -13,8 +13,8 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import notice, rules_context
-from agent_toolkit._hooks.pretooluse import warning_context
+from agent_toolkit._hooks import notice
+from agent_toolkit._hooks.pretooluse import operation_skills, warning_context
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 
@@ -75,14 +75,14 @@ def test_codex_final_context_includes_long_decision_reason_in_budget(monkeypatch
 
 
 @pytest.mark.parametrize("failure", [False, True])
-def test_codex_final_context_spills_whole_notices_without_consuming_receipt(monkeypatch, failure):
-    """追加入力の障害通知も全文へ保存し、短い参照では資料取得を確定しない。"""
+def test_codex_final_context_spills_whole_notices_and_carries_receipts(monkeypatch, failure):
+    """追加入力の障害通知も全文へ保存し、案内の配送の記録は保存先の参照の配送へ引き継ぐ。"""
     module = importlib.import_module("agent_toolkit._hooks.pretooluse")
     identifier = "bounded-final"
     original = "\n\n".join(f"通知{index}: /資料/" + "長いパスと取得例" * 80 for index in range(5))
 
     def handler(_payload, **_kwargs):
-        notice.stage_delivery(original, identifier, rules_context.OPERATION_SKILL_READY_KEY, "main", "source-body")
+        notice.stage_delivery(original, identifier, operation_skills.NOTIFIED_KEY, "main", "source-body")
         notice.emit_response(
             {
                 "hookSpecificOutput": {
@@ -114,13 +114,12 @@ def test_codex_final_context_spills_whole_notices_without_consuming_receipt(monk
     assert full.startswith(original)
     assert ("合流後の障害" in full) is failure
     assert "permissionDecisionReason:\n独立した所有境界" in full
-    assert not session_state.read_state(identifier).get(rules_context.OPERATION_SKILL_READY_KEY)
+    assert session_state.read_state(identifier)[operation_skills.NOTIFIED_KEY] == {"main": ["source-body"]}
     if not failure:
         repeated = _run_hook_in_process("pretooluse", payload)
         specific = json.loads(repeated.stdout)["hookSpecificOutput"]
         assert specific["permissionDecision"] == "deny"
         assert not specific.get("additionalContext")
-        assert not session_state.read_state(identifier).get(rules_context.OPERATION_SKILL_READY_KEY)
 
 
 @pytest.mark.parametrize(
@@ -132,7 +131,7 @@ def test_context_that_needs_no_spill_preserves_delivery(monkeypatch, codex, subc
     original = "資料本文" * (1000 if large else 1)
 
     def handler(_payload, **_kwargs):
-        notice.stage_delivery(original, identifier, rules_context.OPERATION_SKILL_READY_KEY, "main", "received")
+        notice.stage_delivery(original, identifier, operation_skills.NOTIFIED_KEY, "main", "received")
         notice.emit_response({"hookSpecificOutput": {"additionalContext": original}})
         return 0
 
@@ -141,7 +140,7 @@ def test_context_that_needs_no_spill_preserves_delivery(monkeypatch, codex, subc
     result = _run_hook_in_process(subcommand, payload)
     assert result.returncode == 0 and not result.stderr
     assert json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"] == original
-    assert session_state.read_state(identifier)[rules_context.OPERATION_SKILL_READY_KEY]["main"] == ["received"]
+    assert session_state.read_state(identifier)[operation_skills.NOTIFIED_KEY]["main"] == ["received"]
 
 
 def test_codex_spill_failure_preserves_denial_and_unreceived_state(monkeypatch):
@@ -152,7 +151,7 @@ def test_codex_spill_failure_preserves_denial_and_unreceived_state(monkeypatch):
         raise OSError("書込不可")
 
     def handler(_payload, **_kwargs):
-        notice.stage_delivery(original, "save-failure", rules_context.OPERATION_SKILL_READY_KEY, "main", "unreceived")
+        notice.stage_delivery(original, "save-failure", operation_skills.NOTIFIED_KEY, "main", "unreceived")
         notice.emit_response(
             {
                 "hookSpecificOutput": {
@@ -172,4 +171,4 @@ def test_codex_spill_failure_preserves_denial_and_unreceived_state(monkeypatch):
     assert specific["permissionDecision"] == "deny" and specific["permissionDecisionReason"] == "保護を維持"
     assert "保存に失敗" in specific["additionalContext"]
     assert len(specific["additionalContext"].encode("utf-8")) <= 2000
-    assert not session_state.read_state("save-failure").get(rules_context.OPERATION_SKILL_READY_KEY)
+    assert not session_state.read_state("save-failure").get(operation_skills.NOTIFIED_KEY)

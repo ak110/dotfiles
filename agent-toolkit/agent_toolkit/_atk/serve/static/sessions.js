@@ -309,13 +309,16 @@ function costText(cost, pending = false) {
   if (!cost) return pending ? "推定費用: 算出中" : "推定費用: 取得不能";
   const amount = cost.amount;
   const unknown = amount.unknown_responses || 0;
+  const models = Object.entries(amount.unknown_models || {})
+    .map(([model, count]) => `${model || "モデル名なし"} ${count.toLocaleString()}件`).join("、");
+  const unknownText = `単価不明 ${unknown.toLocaleString()}件${models ? `（${models}）` : ""}`;
   if (!amount.known_usd && (unknown || amount.incomplete)) {
-    return unknown ? `推定費用: 単価不明 ${unknown.toLocaleString()}件` : "推定費用: 一部未算出";
+    return unknown ? `推定費用: ${unknownText}` : "推定費用: 一部未算出";
   }
   const value = amount.known_usd > 0 && amount.known_usd < 0.0001 ? "<$0.0001"
     : new Intl.NumberFormat("ja-JP", {style: "currency", currency: "USD", maximumFractionDigits: 4}).format(amount.known_usd);
   const parts = [`推定${unknown || amount.incomplete ? "（既知分）" : ""} ${value} USD`];
-  if (unknown) parts.push(`単価不明 ${unknown.toLocaleString()}件`);
+  if (unknown) parts.push(unknownText);
   if (amount.incomplete) parts.push("一部未算出");
   return parts.join(" / ");
 }

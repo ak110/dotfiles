@@ -10,6 +10,8 @@ from agent_toolkit._common.task_documents import (
     LAUNCH_KINDS,
     ContinuationDeclaration,
     TaskDocumentDeclaration,
+    parse_required_inputs_when,
+    parse_startup_documents,
 )
 
 
@@ -30,7 +32,13 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
             raise ValueError("frontmatterのキーが重複しています")
         values = yaml.safe_load(body)
         required_fields = {"mode", "model_type", "required_inputs", "writes_worktree"}
-        allowed_fields = required_fields | {"optional_inputs", "continuations", "result_heads"}
+        allowed_fields = required_fields | {
+            "optional_inputs",
+            "required_inputs_when",
+            "continuations",
+            "result_heads",
+            "startup_documents",
+        }
         if set(values) - allowed_fields or required_fields - set(values):
             raise ValueError(
                 f"frontmatterの項目が不正です: 必須欠落={sorted(required_fields - set(values))}; "
@@ -67,6 +75,8 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
             raise ValueError("result_headsは前後に空白の無い重複しない文字列の配列で、共通の`状態:`を含めない")
         if set(required) & set(optional):
             raise ValueError("必須入力と任意入力が重複しています")
+        required_when = parse_required_inputs_when(values.get("required_inputs_when", []), (*required, *optional))
+        startup = parse_startup_documents(values.get("startup_documents", []), frozenset((*required, *optional)))
         raw_continuations = values.get("continuations", [])
         if not isinstance(raw_continuations, list):
             raise ValueError("continuationsは配列で指定する")
@@ -114,6 +124,8 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
             continuations=tuple(continuations),
             model_type=model_type,
             result_heads=tuple(heads),
+            required_when=required_when,
+            startup_documents=startup,
         )
     except (TypeError, ValueError, yaml.YAMLError) as error:
         return f"必須入力を確認できません: frontmatterが不正です: {task_document}: {error}"

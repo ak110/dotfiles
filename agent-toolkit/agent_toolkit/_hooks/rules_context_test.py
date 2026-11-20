@@ -9,48 +9,15 @@ import os
 import pathlib
 import re
 import shlex
-import subprocess
 
 import pytest
 
-from agent_toolkit._common import plugin_roots
-from agent_toolkit._common.plugin_roots import _plugin_inventory
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import rules_context, rules_context_codex
+from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
 from agent_toolkit._testing.rules_context_support import _output, _session_start_length_report
-
-
-@pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
-def test_session_start_reacquires_plugin_inventory_for_the_same_session(tmp_path, monkeypatch, capsys, source):
-    """同IDの再起動でも最初だけ再取得し、次hookは一覧を共有して他の状態を保つ。"""
-    session_id = "inventory-restart"
-    executable = tmp_path / "claude"
-    executable.touch()
-    monkeypatch.setattr(plugin_roots.shutil, "which", lambda *_args, **_kwargs: str(executable))
-    monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
-    calls = []
-
-    def acquire(args, **_kwargs):
-        calls.append(args)
-        return subprocess.CompletedProcess(args, 0, json.dumps([{"generation": len(calls)}]), "")
-
-    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", acquire)
-    update_state(session_id, lambda _state: {"unrelated": {"preserved": True}})
-
-    def hook_request():
-        with plugin_roots.plugin_resolution_scope(session_id=session_id):
-            return _plugin_inventory("claude", tmp_path)
-
-    assert hook_request() == hook_request() == [{"generation": 1}]
-    assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": source, "session_id": session_id})) == 0
-    capsys.readouterr()
-    assert "plugin_inventory" not in read_state(session_id)
-    assert read_state(session_id)["unrelated"] == {"preserved": True}
-    assert hook_request() == hook_request() == [{"generation": 2}]
-    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("source", ("startup", "resume", "clear", "compact", "fork"))
@@ -146,7 +113,7 @@ def test_session_start_carries_no_rule_bodies_or_rule_file_pointers(
     output = _output(capsys)
     assert 'kind="rules-' not in output
     assert _document_references(output) <= {str(rules_context.SUBAGENT_PLAYBOOK_PATH)}
-    assert str(rules_context.SHARE_DIR.parent / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")) in output
+    assert str(rules_context.PLUGIN_ROOT / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")) in output
 
 
 _DELEGATED_ENVIRONMENTS = [None, ("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGENT_TOOLKIT_OWNER_SESSION", "owner")]
@@ -178,12 +145,14 @@ def test_session_start_delegated_requests_reread_only_after_compaction(
     handler(json.dumps(payload))
     output = _output(capsys)
     delegated = environment is not None or agent_id is not None
+    assert ("send_to_user" in output) == (host == "claude" and not delegated)
     assert output.count(rules_context.DELEGATED_COMPACT_NOTICE) == (1 if delegated and source == "compact" else 0)
     if delegated:
         assert rules_context.ENTRY_START_NOTICE not in output
         assert rules_context.ENTRY_COMPACT_NOTICE not in output
-    assert "\n" not in rules_context.DELEGATED_COMPACT_NOTICE
-    assert str(rules_context.SUBAGENT_PLAYBOOK_PATH) in rules_context.DELEGATED_COMPACT_NOTICE
+    notice = rules_context.delegated_compact_notice(None)
+    assert "\n" not in notice
+    assert str(rules_context.SUBAGENT_PLAYBOOK_PATH) in notice
     assert rules_context.SUBAGENT_PLAYBOOK_PATH.is_file()
 
 
@@ -204,7 +173,7 @@ def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     update_state(
         session_id,
         lambda _state: {
-            rules_context.OPERATION_SKILL_READY_KEY: {"skill:example": [rules_context.MAIN_AGENT_ID]},
+            operation_skills.NOTIFIED_KEY: {"main": ["agent-basics:search"], "child-1": ["agent-basics:search"]},
             "notice_fingerprints": {main_notice: ["main"], child_notice: ["child"]},
         },
     )
@@ -220,7 +189,7 @@ def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     assert rules_context.main(json.dumps(payload)) == 0
     output = _output(capsys)
     state = read_state(session_id)
-    assert state[rules_context.OPERATION_SKILL_READY_KEY]["skill:example"] == [rules_context.MAIN_AGENT_ID]
+    assert state[operation_skills.NOTIFIED_KEY] == {"main": ["agent-basics:search"]}
     assert state["notice_fingerprints"] == {main_notice: ["main"]}
     assert f"このサブエージェント専用の一時領域: {tmp_path / 'agent-child-1'}" in output
     assert "compaction-digest" not in output
@@ -307,7 +276,7 @@ def test_session_start_guides_main_to_entry_with_one_line(
     # 同じ区分に並ぶのは1行の案内だけであり、入口の本文の行は通知のどこにも無い。
     one_line_notices = {rules_context.ENTRY_START_NOTICE, rules_context.ENTRY_COMPACT_NOTICE}
     assert set(_notice_lines(output, expected)) <= one_line_notices
-    entry = (rules_context.SHARE_DIR.parent / "skills" / "atk-mode" / "SKILL.md").read_text(encoding="utf-8")
+    entry = (rules_context.PLUGIN_ROOT / "skills" / "atk-mode" / "SKILL.md").read_text(encoding="utf-8")
     headings = [line for line in entry.split("\n---\n", 1)[1].splitlines() if line.startswith("#")]
     assert headings and not any(f"\n{heading}\n" in output for heading in headings)
 

@@ -9,8 +9,6 @@ writes_worktree: false
 
 # 一括置換後レビュー担当タスク
 
-<!-- parent-read-source: agent-toolkit:/skills/atk-mode/roles/bulk-replace-review.parent.md -->
-
 多数の箇所で語句を置き換えた文字単位の差分を全件読み、置換で元の意味や対応関係が変わった箇所を報告する。
 差分の修正と文章の書き直しは委譲元が行う。
 

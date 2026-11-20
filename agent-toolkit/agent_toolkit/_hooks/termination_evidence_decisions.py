@@ -29,7 +29,8 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
 def missing_completion(work: dict[str, Any], *, context_loaded: bool | None = None) -> list[str]:
     """文脈の読込証拠と有効な省略を欠く成果作業を返す。
 
-    `None`は従来の直接呼出側として作業別の証拠を使う。明示した偽では圧縮前の作業別証拠を再利用しない。
+    `context_loaded`はメインの文脈に手順書の現在の版があるか（`completion_in_context`）を渡す。
+    `None`は作業別の起動証拠を使う。偽を明示した場合は、圧縮前に得た作業別の起動証拠を再利用しない。
     """
     if context_loaded is True or (context_loaded is None and work.get("completion_report")):
         return []

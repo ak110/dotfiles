@@ -41,11 +41,24 @@ SSE_STALL_SEC = SSE_HEARTBEAT_SEC * 3
 """ブラウザーがSSEを再接続するまでの無通信時間。heartbeat 3回分の欠落を接続の停止とみなす。"""
 
 
+def _log_worker_failure(operation: str, error: BaseException) -> None:
+    if isinstance(error, _git_sync.RepoLockTimeoutError):
+        logger.warning("%sに失敗しました: %s", operation, error.reason)
+    else:
+        logger.error("%sに失敗しました: %s", operation, error, exc_info=error)
+
+
 class BoundedWorkers:
     """要求がキャンセルされた後も、同期処理が完了するまで同時実行枠を保持する。"""
 
     def __init__(self, limit: int) -> None:
         self._semaphore = asyncio.Semaphore(limit)
+        self._detached: set[asyncio.Task[typing.Any]] = set()
+
+    def _finish_detached(self, task: asyncio.Task[typing.Any]) -> None:
+        self._detached.discard(task)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            _log_worker_failure(task.get_name(), error)
 
     async def run[**P, R](self, function: typing.Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         """同期関数を、同時実行数を制限したスレッドで実行する。"""
@@ -74,7 +87,15 @@ class BoundedWorkers:
                     if timing is not None:
                         timing.work_ms += (time.perf_counter() - started) * 1000
 
-        return await asyncio.shield(asyncio.create_task(managed()))
+        task = asyncio.create_task(managed())
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            operation = getattr(function, "__qualname__", type(function).__qualname__)
+            task.set_name(f"要求の中断後の{operation}")
+            self._detached.add(task)
+            task.add_done_callback(self._finish_detached)
+            raise
 
 
 # 停止要求で打ち切った要求へ返す応答本文。WI・計画ファイル・セッションの各画面はAPIの`error`を表示する。
@@ -204,18 +225,21 @@ class ServeRuntime:
         """同時に届いた同期要求へ同じ実行結果を返す。"""
         if self.sync_task is None or self.sync_task.done():
             self.sync_task = asyncio.create_task(self.workers.run(self.operations.sync))
-        current = self.sync_task
-        try:
-            result = await asyncio.shield(current)
-            self.state.publish("sync-ok")
-            return result
-        except Exception:
+            self.sync_task.add_done_callback(self._sync_finished)
+        return await asyncio.shield(self.sync_task)
+
+    def _sync_finished(self, task: asyncio.Task[bool]) -> None:
+        """全要求が切断しても、共有した同期の結果を1回だけ通知する。"""
+        if self.sync_task is task:
+            self.sync_task = None
+        if task.cancelled():
+            return
+        if (error := task.exception()) is not None:
+            _log_worker_failure("WIのGit同期", error)
             self.state.publish("sync-error")
             self.sync_requested.set()
-            raise
-        finally:
-            if current.done() and self.sync_task is current:
-                self.sync_task = None
+        else:
+            self.state.publish("sync-ok")
 
     async def background_sync_loop(self) -> None:
         """一定間隔でリポジトリを更新し、失敗時は次周期で再試行する。"""

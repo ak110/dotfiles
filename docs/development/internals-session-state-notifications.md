@@ -21,8 +21,7 @@ hookの診断計測はセッションのmanaged-tempにある`hook-timings.jsonl
 ## 通知反復系
 
 Codex PreToolUseの長い追加通知は、既存のsession managed-tempへ全文を保存し、短い保存先参照を提示する。
-参照の提示は既存の通知反復抑止と取得案内の提示へ記録する。
-資料本文の取得証拠は、当該資料の外側配送を観測した既存の記録から確認する。
+参照の提示は、元の通知が持つ配送記録（通知反復抑止と、操作の直前のスキルなどの案内済みの記録）を参照の配送へ引き継ぐ（`pretooluse/warning_context.py`）。
 
 - `persistent_warning_fingerprints`: `_atk/outcome.py`が、共通起動の持続状態ならびにhookの引数不整合に関する警告本文のフィンガープリント（指紋情報）を記録する。
   同じ会話で初めて報告する内容だけを出力する。

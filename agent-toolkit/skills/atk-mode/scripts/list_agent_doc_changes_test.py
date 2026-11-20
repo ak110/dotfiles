@@ -32,7 +32,7 @@ def _repository(tmp_path: pathlib.Path) -> pathlib.Path:
     repository.mkdir()
     git_repository.init_repository(repository)
     _write(repository / "README.md", "初版\n")
-    _write(repository / "agent-toolkit" / "share" / "old.subagent.md", "旧\n")
+    _write(repository / "agent-toolkit" / "skills" / "atk-mode" / "roles" / "old.subagent.md", "旧\n")
     return repository
 
 
@@ -45,8 +45,8 @@ def test_lists_only_agent_documents_changed_between_revisions(
     _write(repository / "agent-basics" / "skills" / "search" / "SKILL.md", "検索\n")
     _write(repository / "README.md", "改訂\n")
     _write(repository / "agent-toolkit" / "agent_toolkit" / "tool.py", "VALUE = 1\n")
-    (repository / "agent-toolkit" / "share" / "old.subagent.md").rename(
-        repository / "agent-toolkit" / "share" / "new.subagent.md"
+    (repository / "agent-toolkit" / "skills" / "atk-mode" / "roles" / "old.subagent.md").rename(
+        repository / "agent-toolkit" / "skills" / "atk-mode" / "roles" / "new.subagent.md"
     )
     target = _commit_all(repository, "change")
 
@@ -56,8 +56,8 @@ def test_lists_only_agent_documents_changed_between_revisions(
     assert json.loads(out) == [
         "AGENTS.md",
         "agent-basics/skills/search/SKILL.md",
-        "agent-toolkit/share/new.subagent.md",
-        "agent-toolkit/share/old.subagent.md",
+        "/".join(("agent-toolkit", "skills", "atk-mode", "roles", "new.subagent.md")),
+        "/".join(("agent-toolkit", "skills", "atk-mode", "roles", "old.subagent.md")),
     ]
 
 
@@ -107,8 +107,8 @@ def test_unknown_revision_fails_with_reason(repository: pathlib.Path, capsys: py
         (".claude/skills/tool/SKILL.md", "通常"),
         (".chezmoi-source/dot_claude/skills/tool/SKILL.md.tmpl", "通常"),
         (".claude/agents/reviewer.md", "通常"),
-        ("/".join(("agent-toolkit", "share", "reviewer.subagent.md")), "通常"),
-        ("/".join(("agent-toolkit", "share", "rules", "common", "rule.md")), "通常"),
+        ("/".join(("agent-toolkit", "skills", "atk-mode", "roles", "reviewer.subagent.md")), "通常"),
+        ("/".join(("agent-toolkit", "skills", "atk-mode", "playbooks", "rule.md")), "通常"),
         ("/".join(("agent-toolkit", "skills", "tool", "SKILL.md")), "通常"),
         ("/".join(("agent-toolkit", "skills", "tool", "references", "detail.md")), "通常"),
         ("/".join(("agent-toolkit", "agents", "reviewer.md")), "通常"),
@@ -136,7 +136,7 @@ def test_public_review_risk_includes_deleted_and_renamed_source(
 ) -> None:
     """通常要素の削除と人間向けMarkdownへの改名でも旧パスを判定する。"""
     base = _commit_all(repository, "base")
-    source = repository / "agent-toolkit/share/old.subagent.md"
+    source = repository / "agent-toolkit" / "skills" / "atk-mode" / "roles" / "old.subagent.md"
     if rename:
         source.rename(repository / "guide.md")
     else:

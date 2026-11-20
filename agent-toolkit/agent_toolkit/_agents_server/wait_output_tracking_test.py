@@ -14,7 +14,7 @@ from agent_toolkit._agents_server import responses, resume_waits, state, turn_st
 @pytest.mark.parametrize(
     ("operation", "arguments"),
     [
-        ("start", {"subagent_md_path": "/plugin/share/exec.subagent.md", "extra_params": {}}),
+        ("start", {"subagent_md_path": "/plugin/skills/atk-mode/roles/exec.subagent.md", "extra_params": {}}),
         ("start", {"mode": "delegate", "prompt": "調査", "model_type": "execute"}),
         ("start", {"mode": "explore", "prompt": "調査"}),
         ("start", {"mode": "write", "prompt": "起草"}),

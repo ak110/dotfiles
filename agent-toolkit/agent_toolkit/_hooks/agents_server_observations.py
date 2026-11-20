@@ -184,7 +184,7 @@ def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
         if not path.is_absolute():
             name = f"{task_path}{task_documents.TASK_DOCUMENT_SUFFIX}"
             # 文書が無い役割名も、旧文書の記録のファイル名の対応へ渡す。
-            path = task_documents.find_role_document(launch_prompts.SHARE_DIR.parent, name) or launch_prompts.SHARE_DIR / name
+            path = task_documents.role_document_directory(launch_prompts.PLUGIN_ROOT) / name
         declaration = task_documents.read_declaration(path)
         if isinstance(declaration, task_documents.TaskDocumentDeclaration) and declaration.model_type is not None:
             return declaration.model_type

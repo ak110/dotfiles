@@ -37,10 +37,10 @@ TASK_MODEL_TYPES = {
 """frontmatterを持たない旧版の役割文書だけに使う工程の読取互換。新しい役割は追加しない。"""
 
 
-SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
+PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-SUBAGENT_PLAYBOOK = SHARE_DIR.parent / "skills" / "atk-mode" / "playbooks" / "subagent.md"
+SUBAGENT_PLAYBOOK = PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks" / "subagent.md"
 """全modeと全backendの起動の本文の原本。見出しと標識で節を切り出す。"""
 
 

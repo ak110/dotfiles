@@ -82,6 +82,48 @@ def test_codex_path_string_or_failed_read_is_not_evidence(tmp_path: pathlib.Path
     assert _missing_completion(tmp_path) == ["commit"]
 
 
+@pytest.mark.parametrize(
+    ("command", "response"),
+    [
+        (f"sed -n '1,1p' {_PLAYBOOK}", "# 作業完了報告\n"),
+        (f"sed -n '2,200p' {_PLAYBOOK}", "\n本文\n末尾\n"),
+        (f"cat {_PLAYBOOK}", "Warning: truncated output (original token count: 9000)\n# 作業完了報告\n…\n末尾\n"),
+        (f"cat {_PLAYBOOK} > copy.md", ""),
+    ],
+)
+def test_codex_partial_read_of_existing_playbook_is_not_evidence(tmp_path: pathlib.Path, command: str, response: str) -> None:
+    """実在する手順書でも、途中で終わる範囲・省略された結果・リダイレクトした読取は起動証拠にしない。"""
+    playbook = tmp_path / _PLAYBOOK
+    playbook.parent.mkdir(parents=True)
+    playbook.write_text("# 作業完了報告\n\n本文\n末尾\n", encoding="utf-8")
+    supply_commit(tmp_path, codex=True)
+    _tool(tmp_path, "read", "Bash", {"command": command}, response, codex=True)
+    assert _missing_completion(tmp_path) == ["commit"]
+    _tool(tmp_path, "full", "Bash", {"command": f"sed -n '1,200p' {_PLAYBOOK}"}, playbook.read_text(), codex=True)
+    assert _missing_completion(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("command", "accepted"),
+    [
+        ("R=plugin/skills/atk-mode/playbooks; sed -n '1,$p' -- \"${R}/report-completion.md\"", True),
+        (f"cat {_PLAYBOOK} | head -1; cat copy.md", False),
+        (f"sed -n '1p' {_PLAYBOOK}; cat copy.md", False),
+        (f"cat {_PLAYBOOK} > copy.md; cat copy.md", False),
+    ],
+)
+def test_codex_completion_read_keeps_shell_context(tmp_path: pathlib.Path, command: str, *, accepted: bool) -> None:
+    """応答に全文があっても、手順書そのものの読取が出力を返した場合だけ完了の証拠にする。"""
+    playbook = tmp_path / _PLAYBOOK
+    playbook.parent.mkdir(parents=True)
+    body = "# 作業完了報告\n\n本文\n"
+    playbook.write_text(body, encoding="utf-8")
+    (tmp_path / "copy.md").write_text(body, encoding="utf-8")
+    supply_commit(tmp_path, codex=True)
+    _tool(tmp_path, "read", "Bash", {"command": command}, body, codex=True)
+    assert _missing_completion(tmp_path) == ([] if accepted else ["commit"])
+
+
 def test_claude_failed_or_unrelated_skill_is_not_evidence(tmp_path: pathlib.Path) -> None:
     """失敗した入口の完了報告の起動、入口の他の作業、他のスキルの起動を起動証拠にしない。"""
     supply_commit(tmp_path)
@@ -224,7 +266,6 @@ def test_bundled_commit_values_reach_public_completion_evidence(tmp_path, codex,
         {"command": command},
         response,
         codex=codex,
-        native_exit_code=0 if codex else None,
     )
     assert ("commit" in _missing_completion(tmp_path)) is recorded
 

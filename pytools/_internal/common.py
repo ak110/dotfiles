@@ -1,5 +1,6 @@
 """pytools共通の汎用処理（実行ファイルの解決、サブプロセス実行、JSONの読み込みと原子的な書き込み、dotfilesルートの解決）。"""
 
+import codecs
 import contextlib
 import json
 import logging
@@ -353,6 +354,7 @@ def load_json_dict(
     default: dict[str, object] | None = None,
     *,
     tag: str | None = None,
+    encoding: str = "utf-8",
 ) -> dict[str, object] | None:
     """JSONファイルをトップレベルdictとして読み込む。
 
@@ -363,7 +365,7 @@ def load_json_dict(
     if default is None:
         default = {}
     try:
-        raw = path.read_text(encoding="utf-8")
+        raw = path.read_text(encoding=encoding)
     except FileNotFoundError:
         return default
     except OSError as e:
@@ -525,10 +527,12 @@ def _atomic_edit_jsonc(
     if not updates:
         return False
     original = path.read_text(encoding="utf-8")
-    updated = pytilpack.jsonc.edit(original, updates)
-    if updated == original:
+    prefix = "\ufeff" if original.startswith("\ufeff") else ""
+    text = original.removeprefix(prefix)
+    updated = pytilpack.jsonc.edit(text, updates)
+    if updated == text:
         return False
-    return atomic_write_text(path, updated, tag=tag)
+    return atomic_write_text(path, prefix + updated, tag=tag)
 
 
 def write_settings_hybrid(
@@ -537,6 +541,7 @@ def write_settings_hybrid(
     data: object,
     *,
     tag: str | None = None,
+    preserve_bom: bool = False,
 ) -> bool:
     """マージ結果を対象ファイルへ書き戻すハイブリッド経路。
 
@@ -544,7 +549,7 @@ def write_settings_hybrid(
     経路（``_atomic_edit_jsonc``）で書き戻す。構造変化を含む場合やJSONC形式の
     更新に失敗した場合は全書き換え経路（``json.dumps`` + ``atomic_write_text``）へ
     フォールバックする。両経路とも原子的書き込みで統一しており、書き込み失敗時は
-    ``False`` を返す。
+    ``False`` を返す。``preserve_bom`` を指定すると全書き換えでも既存のUTF-8 BOMを保つ。
 
     ``pytilpack.jsonc.edit`` は元テキストの再パース時に、コンカレントな他プロセス
     書き込みでパス構造が変化した場合に ``KeyError``・``IndexError``・``TypeError``・
@@ -556,16 +561,27 @@ def write_settings_hybrid(
         with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
             if _atomic_edit_jsonc(path, updates, tag=tag):
                 return True
-    content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
-    return atomic_write_text(path, content, tag=tag)
+    return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
 
 
-def atomic_write_json(path: Path, data: object, *, tag: str | None = None) -> bool:
+def atomic_write_json(path: Path, data: object, *, tag: str | None = None, preserve_bom: bool = False) -> bool:
     """JSONファイルを同一ディレクトリのtempfile + `Path.replace` で原子的に保存する。
 
+    ``preserve_bom`` を指定すると既存ファイルのUTF-8 BOMを保ち、新規ファイルには付けない。
     Claude Code起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
     ``False`` を返して呼び出し元に委ねる（post_apply全体を中断させない）。
     ``tag`` を指定するとログメッセージのラベルに使用する。``None`` の場合はエラーログを出力しない。
     """
     content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    if preserve_bom:
+        try:
+            with path.open("rb") as stream:
+                if stream.read(len(codecs.BOM_UTF8)) == codecs.BOM_UTF8:
+                    content = "\ufeff" + content
+        except FileNotFoundError:
+            pass  # 新規ファイルはBOMなしのUTF-8で作る。
+        except OSError as error:
+            if tag is not None:
+                logger.info(log_format.format_status(tag, f"{path} のBOMを確認できないため書き込めません: {error}"))
+            return False
     return atomic_write_text(path, content, tag=tag)

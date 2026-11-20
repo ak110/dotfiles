@@ -12,9 +12,10 @@ agent-toolkitの規範は、全エージェントへ常に読み込ませるフ�
 `SessionStart`フックは、メインへ入口の起動を求める1行だけを出し、委譲先へは圧縮の後に`playbooks/subagent.md`と役割文書の読み直しを求める1行だけを出す。
 `SubagentStart`フックは、全ホストで`playbooks/subagent.md`の絶対パスを示す1行を出す。
 `agents_server`の委譲先は、`agent_toolkit/_agents_server/launch_prompts.py`が`playbooks/subagent.md`から見出しと標識で切り出した節を起動の本文として受け取る。
+起動の本文には、通常の委譲で使う全体作業契約と、役割文書が宣言した資料の全文も入る（[読込表と起動時の配送](read-triggers-contract.md)「起動時の配送」）。
 委譲先の判定は`agent_toolkit/_common/delegated_session.py`が持ち、`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`の場合と`AGENT_TOOLKIT_OWNER_SESSION`が設定されている場合を`agents_server`の子とする。
 後者を併用するのは、Codex backendがstatusline表示の判定のために子のApp Serverから前者を除くためである。
-知識境界として、条文の本文は入口と手順書が持ち、フックは所在を示すだけ、`agents_server`は原本から節を切り出すだけで、内容を判定しない。
+知識境界として、条文の本文は入口と手順書が持ち、フックは所在を示すだけ、`agents_server`は原本から節を切り出し、宣言された資料を入れるだけで、内容を判定しない。
 Claude Codeの`additionalContext`文字列は10,000文字の上限へ合わせ、最大構成の追加文脈を同上限内に保つテストを`agent-toolkit/agent_toolkit/_hooks/rules_context_startup_test.py`へ置く。
 ファイル保存と2,000文字のプレビューは別の出力契約として扱い、それぞれの観測条件と保証範囲を監査記録へ残す。
 Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案はClaude委譲先の中で起動したCodex委譲先がstatusline表示でClaude委譲先と誤判定されるため採らない。

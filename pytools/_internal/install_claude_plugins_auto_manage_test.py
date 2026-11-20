@@ -14,6 +14,7 @@ import pytest
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
+from pytools._internal import claude_plugin_settings
 from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
@@ -125,9 +126,9 @@ class TestAutoDisablePlugins:
         )
         # settings.json の読み取りを固定値で差し替える
         monkeypatch.setattr(
-            _install_claude_plugins,
-            "_read_enabled_plugins_from_file",
-            lambda: enabled_map,
+            claude_plugin_settings,
+            "read_enabled_plugins",
+            lambda: enabled_map or {},
         )
 
         calls: list[list[str]] = []
@@ -246,8 +247,8 @@ class TestRunAutoDisable:
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(
-            _install_claude_plugins,
-            "_read_enabled_plugins_from_file",
+            claude_plugin_settings,
+            "read_enabled_plugins",
             lambda: {"agent-toolkit@ak110-dotfiles": True},
         )
         # 有効化対象の自動 install/enable には立ち入らないよう空集合にする
@@ -304,8 +305,8 @@ class TestRunNoAutomaticStateChange:
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(
-            _install_claude_plugins,
-            "_read_enabled_plugins_from_file",
+            claude_plugin_settings,
+            "read_enabled_plugins",
             lambda: {
                 "agent-toolkit@ak110-dotfiles": True,
                 "sample-plugin@ak110-dotfiles": True,
@@ -362,7 +363,7 @@ class TestUnusedPlugins:
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
         monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {"dummy@ak110-dotfiles": True})
+        monkeypatch.setattr(claude_plugin_settings, "read_enabled_plugins", lambda: {"dummy@ak110-dotfiles": True})
         plugin_ids = {"compact-plus@compact-plus"} if installed else set()
         calls: list[list[str]] = []
 

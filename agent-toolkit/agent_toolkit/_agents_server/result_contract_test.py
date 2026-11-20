@@ -28,11 +28,12 @@ from agent_toolkit._testing.agents_server_support import ResultMessage
 
 
 def _task_session(tmp_path: pathlib.Path) -> state.SessionState:
-    share = tmp_path / "agent-toolkit" / "share"
-    share.mkdir(parents=True)
-    (share.parent / ".claude-plugin").mkdir()
-    (share.parent / ".claude-plugin" / "plugin.json").write_text('{"name": "agent-toolkit"}', encoding="utf-8")
-    document = share / "exec.subagent.md"
+    plugin = tmp_path / "agent-toolkit"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "agent-toolkit"}', encoding="utf-8")
+    roles = task_documents.role_document_directory(plugin)
+    roles.mkdir(parents=True)
+    document = roles / "exec.subagent.md"
     document.write_text("# 担当\n", encoding="utf-8")
     return state.SessionState("task", str(tmp_path), prompt=task_documents.task_prompt_header(document))
 
@@ -447,7 +448,7 @@ async def test_consumption_survives_registry_publication_and_new_owner(
 
 def _role_session(name: str, **fields: Any) -> state.SessionState:
     """配布する役割文書で起動したtaskを作る。宣言と検査の食い違いを実物の文書で検出する。"""
-    document = task_documents.find_role_document(launch_prompts.SHARE_DIR.parent, name)
+    document = task_documents.find_role_document(launch_prompts.PLUGIN_ROOT, name)
     assert document is not None, name
     return state.SessionState("role", str(document.parent), prompt=task_documents.task_prompt_header(document), **fields)
 

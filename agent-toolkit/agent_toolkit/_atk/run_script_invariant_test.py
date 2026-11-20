@@ -24,7 +24,7 @@ def _registered_parser(monkeypatch: pytest.MonkeyPatch, script_name: str) -> arg
 
 def test_public_documents_examples_use_real_parsers() -> None:
     """配布原本と利用ガイドの完全な実行例を、登録先の実parserが受理するか確かめる。"""
-    roots = [run_script.PLUGIN_ROOT / name for name in ("skills", "share", "rules")]
+    roots = [run_script.PLUGIN_ROOT / "skills"]
     guide = run_script.PLUGIN_ROOT.parent / "docs" / "guide"
     if guide.is_dir():
         roots.append(guide)

@@ -6,6 +6,10 @@
 
 報告本文は既存agents_server MCPの`send_to_user`で受け、会話内modが`ui.place`で実描画を確認してから成功を返す。
 MCP単独では描画できないという制約を、期限付きの要求と確認応答で解消した。
+MCPの登録名だけでは、表示を引き受けるmodがあるかは分からない。
+そこで会話内modは、委譲先ではなく端末画面がある時だけ、このMCPツールの`tool.describe`でメインの発話の送り先を示し、`isDeferred: false`で初回のツール一覧へ載せる。
+Claude CodeのメインのSessionStartは、その会話のツール説明を参照させる。
+指定が無い時や表示が失敗した時には通常の応答本文で伝える。
 Code Modeで実行されない`tool.call`・`tool.check`イベントには登録しない。
 メイン限定の判定はMCPの起動元と設定PreToolUseの`agent_id`・委譲環境印で行う。
 本文の日本語確認はMCP、描画はmod、送達後の再掲禁止は既存Stop判定が所有する。

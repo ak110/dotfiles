@@ -9,7 +9,7 @@ import functools
 import pathlib
 import re
 import shlex
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 from agent_toolkit._common.heredocs import heredoc_bodies, mask_heredoc_bodies
 from agent_toolkit._common.shell_segments import (
@@ -150,11 +150,7 @@ def extract_bash_effects(command: str) -> list[BashInvocation]:
     入出力先の確定度は実行位置の確定と独立している。未知の実行を空の結果にすると、構文から確定した出力先まで失うため、
     書込先を求める消費側はこの関数を使う。未知の文のコマンド名や引数は推定しない。
     """
-    token = _INCLUDE_UNKNOWN_EXECUTIONS.set(True)
-    try:
-        return extract_bash_invocations(command)
-    finally:
-        _INCLUDE_UNKNOWN_EXECUTIONS.reset(token)
+    return list(_cached_bash_invocations(command, True, resolve_variables=True))
 
 
 def extract_bash_invocations(command: str) -> list[BashInvocation]:
@@ -169,11 +165,13 @@ def extract_bash_invocations(command: str) -> list[BashInvocation]:
 
 
 @functools.lru_cache(maxsize=256)
-def _cached_bash_invocations(command: str, include_unknown: bool) -> tuple[BashInvocation, ...]:
+def _cached_bash_invocations(
+    command: str, include_unknown: bool, *, resolve_variables: bool = False
+) -> tuple[BashInvocation, ...]:
     """同じコマンド文字列の解析結果を共有する。
 
     1回のhookは同じコマンドを宣言の行ごとに何十回も判定するため、解析をやり直すと所要の大半を占める。
-    結果は入力の文字列と未知の実行を含めるかだけで決まり、要素は不変なので、複製した一覧を返せば共有してよい。
+    結果の要素は不変なので、呼び出し元には一覧の複製を返せる。
     """
     token = _INCLUDE_UNKNOWN_EXECUTIONS.set(include_unknown)
     try:
@@ -183,7 +181,66 @@ def _cached_bash_invocations(command: str, include_unknown: bool) -> tuple[BashI
         return ()
     finally:
         _INCLUDE_UNKNOWN_EXECUTIONS.reset(token)
-    return tuple(invocations) if end == len(tokens) else ()
+    if end != len(tokens):
+        return ()
+    if resolve_variables and "$" in command:
+        return tuple(_resolve_path_variables(invocations))
+    return tuple(invocations)
+
+
+def _forget_modified_variables(tokens: tuple[str, ...], values: dict[str, str]) -> None:
+    if not tokens or not values:
+        return
+    command, *args = tokens
+    if command in {"source", ".", "eval", "let"}:
+        values.clear()
+    elif command in {"unset", "read", "export", "declare", "local", "typeset", "readonly", "readarray", "mapfile"} or (
+        command == "printf" and args[:1] == ["-v"]
+    ):
+        if any(STATIC_UNKNOWN in arg or "[" in arg for arg in args):
+            values.clear()
+        else:
+            for arg in args:
+                name, equals, _ = arg.partition("=")
+                if command != "export" or equals:
+                    values.pop(name, None)
+
+
+def _resolve_path_word(word: str, values: dict[str, str], *, assignment: bool = False) -> str:
+    def substitute(match: re.Match[str]) -> str:
+        replacement = values.get(match["name"], STATIC_UNKNOWN)
+        if match["unquoted"] and not assignment and re.search(r"[\s*?\[]", replacement):
+            return STATIC_UNKNOWN
+        return replacement
+
+    return re.sub(r"\x00(?P<unquoted>!?)(?P<name>[a-zA-Z_][a-zA-Z_0-9]*)\x00", substitute, word)
+
+
+def _resolve_path_variables(invocations: Sequence[BashInvocation]) -> Iterator[BashInvocation]:
+    """読取と書込のパスに使う変数を、同じシェルの先行する単独代入だけから解決する。"""
+    assignments: dict[tuple[object, ...], dict[str, str]] = {(): {}}
+    for invocation in invocations:
+        scope = invocation.cwd_scope
+        for length in range(1, len(scope) + 1):
+            assignments.setdefault(scope[:length], assignments[scope[: length - 1]].copy())
+        values = assignments[scope]
+
+        stdout, stderr = invocation.variable_outputs
+        tokens = tuple(_resolve_path_word(token, values) for token in invocation.variable_tokens)
+        yield dataclasses.replace(
+            invocation,
+            variable_tokens=tokens,
+            variable_outputs=(
+                _resolve_path_word(stdout, values) if isinstance(stdout, str) else stdout,
+                _resolve_path_word(stderr, values) if isinstance(stderr, str) else stderr,
+            ),
+        )
+        _forget_modified_variables(tokens, values)
+        for assignment in invocation.standalone_assignments:
+            name, _, value = assignment.partition("=")
+            values[name] = (
+                _resolve_path_word(value, values, assignment=True) if invocation.assignments_definite else STATIC_UNKNOWN
+            )
 
 
 def _bash_tokens(command: str) -> list[_BashToken]:
@@ -259,7 +316,7 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
             pieces.append(_UNKNOWN_BASH_WORD)
             static_pieces.append(STATIC_UNKNOWN)
             reference = re.fullmatch(r"\$\{([a-zA-Z_][a-zA-Z_0-9]*)\}", command[start_expansion:index])
-            variable_pieces.append(f"\x00{reference[1]}\x00" if reference else STATIC_UNKNOWN)
+            variable_pieces.append(f"\x00{'!' if quote is None else ''}{reference[1]}\x00" if reference else STATIC_UNKNOWN)
             known = False
             continue
         if (
@@ -276,7 +333,9 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
             static_pieces.append(STATIC_UNKNOWN)
             reference = command[index + 1 : end]
             variable_pieces.append(
-                f"\x00{reference}\x00" if re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9]*", reference) else STATIC_UNKNOWN
+                f"\x00{'!' if quote is None else ''}{reference}\x00"
+                if re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9]*", reference)
+                else STATIC_UNKNOWN
             )
             known = False
             index = end
@@ -610,9 +669,10 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
         shell = shell_c_argument(segment.tokens)
         # 本文の確定は本文自身の語だけで決まる。後続の`$0`・位置引数が未知でも、静的な本文の入出力は失わない。
         if shell is not None and _UNKNOWN_BASH_WORD not in shell:
+            nested = extract_bash_effects(shell) if _INCLUDE_UNKNOWN_EXECUTIONS.get() else extract_bash_invocations(shell)
             result.extend(
                 dataclasses.replace(item, environment_assignments=(*assignments, *item.environment_assignments))
-                for item in _isolated_cwd_scope(extract_bash_invocations(shell))
+                for item in _isolated_cwd_scope(nested)
             )
         else:
             result.append(

@@ -98,32 +98,9 @@ def test_windows_job_runs_link_and_prepare_lock_boundaries(workflow_data: dict[s
 
 # Windowsで失敗していたクロスプラットフォーム試験。Windows境界テストが収集するよう`windows` markerを保つ。
 _WINDOWS_CROSS_PLATFORM_TESTS = {
-    "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_acquisition_commands_test.py": {
-        "test_hook_chain_records_acquisition_without_blocking_write",
-        "test_executed_static_read_records_acquisition_without_blocking_write",
-        "test_named_skill_reference_and_invocation_keep_separate_evidence",
-    },
-    "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_acquisition_test.py": {
-        "test_unchecked_condition_keeps_notice_suppressed_until_actual_resolution",
-        "test_skill_acquisition_respects_model_invocation",
-        "test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct",
-        "test_role_finding_save_keeps_current_acquisition_evidence",
-        "test_selected_shared_skill_keeps_current_role_boundary",
-    },
-    "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_compaction_test.py": {
-        "test_public_hook_reuses_received_content_across_paths",
-        "test_compaction_resets_acquisition_read_through_a_same_content_copy",
-        "test_compaction_reguides_only_current_documents_without_blocking",
-        "test_public_guidance_distinguishes_new_scope_target_and_compaction",
-    },
     "agent-toolkit/agent_toolkit/_atk/wi/add_source_test.py": {
         "test_edit_accepts_minimal_agent_awi",
         "test_public_batch_preserves_source",
-    },
-    "agent-toolkit/agent_toolkit/_hooks/document_reads_test.py": {
-        "test_receipt_candidates_share_document_scan_and_refresh_changed_body",
-        "test_basics_reference_uses_observed_manifest_and_path",
-        "test_chezmoi_source_and_distribution_link_require_full_body",
     },
     "pytools/_internal/setup_mise_tools_test.py": {
         "test_run_connects_and_repeats_without_changing_link",

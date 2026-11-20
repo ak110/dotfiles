@@ -5,7 +5,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery_matching
+from agent_toolkit._hooks.pretooluse import operation_skills
 
 
 @pytest.mark.parametrize("suffix", ["setup.sh", "note.md", "app.py"])
@@ -28,13 +28,8 @@ def test_variable_write_matches_literal(
     variable = {"command": f"T={directory}; " + command.format(path=f"{reference}/{suffix}")}
     assert operation_skills.written_paths("Bash", variable, "") == [str(target)]
     assert operation_skills.written_paths("Bash", variable, "") == operation_skills.written_paths("Bash", literal, "")
-    for operation in ("body-writing", "existing-file-edit"):
-        assert read_delivery_matching.matches(operation, "Bash", variable, "") == read_delivery_matching.matches(
-            operation, "Bash", literal, ""
-        )
-        if suffix != "app.py":
-            assert not read_delivery_matching.matches(operation, "Bash", variable, "")
-    assert read_delivery_matching.matches("path:*.py", "Bash", variable, "") == (suffix == "app.py")
+    writing = operation_skills._is_artifact_body_writing  # pylint: disable=protected-access
+    assert writing("Bash", variable, "") == writing("Bash", literal, "") == (suffix == "app.py")
 
 
 @pytest.mark.parametrize(

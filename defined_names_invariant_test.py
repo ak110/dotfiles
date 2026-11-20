@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 import re
 
-from agent_toolkit._common import read_triggers
+from _test_helpers import resolve_plugin_reference
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _LIST_PATH = pathlib.PurePosixPath("agent-toolkit/skills/atk-mode/references/defined-names.md")
@@ -48,7 +48,7 @@ def _find_violations(repo_root: pathlib.Path) -> list[str]:
             continue
         value = match.group(1)
         source_path = (
-            read_triggers.resolve_document(value, repo_root / _LIST_PATH, repo_root / "agent-toolkit")
+            resolve_plugin_reference(value, repo_root)
             if value.startswith(("agent-toolkit:", "agent-basics:"))
             else repo_root / value
         )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import dataclasses
 import datetime
 import math
@@ -42,7 +43,7 @@ class CostEstimate:
 
     reported_usd: float = 0
     usage_estimate_usd: float = 0
-    unknown_responses: int = 0
+    unknown_models: collections.Counter[str] = dataclasses.field(default_factory=collections.Counter)
     unknown_tokens: dict[str, int] = dataclasses.field(default_factory=lambda: dict.fromkeys(model_pricing.TOKEN_COMPONENTS, 0))
     incomplete: bool = False
 
@@ -50,7 +51,7 @@ class CostEstimate:
         """別の物理記録の集計を加える。"""
         self.reported_usd = math.fsum((self.reported_usd, other.reported_usd))
         self.usage_estimate_usd = math.fsum((self.usage_estimate_usd, other.usage_estimate_usd))
-        self.unknown_responses += other.unknown_responses
+        self.unknown_models.update(other.unknown_models)
         self.incomplete |= other.incomplete
         for key, value in other.unknown_tokens.items():
             self.unknown_tokens[key] += value
@@ -59,11 +60,12 @@ class CostEstimate:
         """不明な応答を0 USDとして扱わず、既知分と合計の確定可否を返す。"""
         known = math.fsum((self.reported_usd, self.usage_estimate_usd))
         return {
-            "estimated_usd": known if not self.unknown_responses and not self.incomplete else None,
+            "estimated_usd": known if not self.unknown_models and not self.incomplete else None,
             "known_usd": known,
             "reported_usd": self.reported_usd,
             "usage_estimate_usd": self.usage_estimate_usd,
-            "unknown_responses": self.unknown_responses,
+            "unknown_responses": self.unknown_models.total(),
+            "unknown_models": dict(self.unknown_models),
             "unknown_tokens": dict(self.unknown_tokens),
             "incomplete": self.incomplete,
         }
@@ -209,7 +211,7 @@ def estimate_record(record: CostRecord, *, covered_by: _Snapshot | None = None) 
         short_write = _number(creation.get("ephemeral_5m_input_tokens")) if isinstance(creation, dict) else 0
         amount = model_pricing.response_price(model, tokens, short_write_tokens=short_write)
         if amount is None:
-            result.unknown_responses += 1
+            result.unknown_models[model or ""] += 1
             for key, value in tokens.items():
                 result.unknown_tokens[key] += value
         else:

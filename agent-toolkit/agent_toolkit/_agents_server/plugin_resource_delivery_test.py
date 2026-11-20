@@ -116,23 +116,23 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
     """保持toolkitと導入basicsを分離し、解決処理の外部一覧だけを差し替える。"""
     source = plugin_root.SERVER_PLUGIN_ROOT
     toolkit = tmp_path / "held/toolkit-2.248.0"
-    for directory in ("skills/atk-mode/playbooks", "share", "scripts", ".claude-plugin"):
+    for directory in ("skills/atk-mode/playbooks", "skills/atk-mode/roles", "scripts", ".claude-plugin"):
         (toolkit / directory).mkdir(parents=True, exist_ok=True)
+    (toolkit / "skills/atk-mode/references").mkdir(parents=True)
     for relative in (
         ".claude-plugin/plugin.json",
         ".mcp.json",
         "skills/atk-mode/playbooks/subagent.md",
+        "skills/atk-mode/references/work-contract.md",
         "scripts/atk",
         "scripts/atk.cmd",
     ):
         shutil.copyfile(source / relative, toolkit / relative)
-    task = toolkit / "share/resource-probe.subagent.md"
+    task = toolkit / "skills/atk-mode/roles/resource-probe.subagent.md"
     task.write_text(
-        "---\nmode: delegate\nmodel_type: chores\nrequired_inputs: []\noptional_inputs: []\nwrites_worktree: true\n---\n"
-        "# 資料配送確認担当\n\n受領した品質資料を参照する。\n\n"
-        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
-        "| --- | --- | --- | --- |\n"
-        "| 起動時 | `agent-basics:writing-standards/references/writing.md` | 起動時 | |\n",
+        "---\nmode: delegate\nmodel_type: chores\nrequired_inputs: []\noptional_inputs: []\nwrites_worktree: true\n"
+        "startup_documents:\n- agent-basics:writing-standards/references/writing.md\n---\n"
+        "# 資料配送確認担当\n\n受領した品質資料を参照する。\n",
         encoding="utf-8",
     )
     inventory = ResourceInventory(tmp_path, toolkit)
@@ -250,7 +250,7 @@ async def _start(
     if mode == "task":
         return await mcp_tools.start(
             cwd=str(project),
-            subagent_md_path=str(resources.toolkit / "share/resource-probe.subagent.md"),
+            subagent_md_path=str(resources.toolkit / "skills/atk-mode/roles/resource-probe.subagent.md"),
             extra_params={},
             model_type=candidates,
             whole_contract_path=str(whole),
@@ -392,16 +392,6 @@ def _stale_claude_installation(
 
     `shared_folder`では、両scopeが同じ配布元フォルダー（`readFromFolder`）を読む導入を再現する。
     """
-    task = resources.toolkit / "share/resource-probe.subagent.md"
-    body = task.read_text(encoding="utf-8")
-    task.write_text(
-        body.replace(
-            "受領した品質資料を参照する。\n",
-            "受領した品質資料を参照する。\n\n## 名指し参照の読込方法\n\n"
-            "名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。\n\n",
-        ),
-        encoding="utf-8",
-    )
     user = resources.basics("claude", resources.root / "project-a")
     stale = resources.root / "installed/claude/stale/1.18.0/agent-basics"
     for root in (user, stale):
@@ -409,14 +399,8 @@ def _stale_claude_installation(
         references.mkdir(parents=True, exist_ok=True)
         (root / "skills/writing-standards/SKILL.md").write_text("# 品質基準\n", encoding="utf-8")
         (references / "writing.md").write_text(f"# 必読資料\n{root.parent.name}の必読本文\n", encoding="utf-8")
-        (references / "read-method.md").write_text("# 読込方法\n", encoding="utf-8")
         (root / ".claude-plugin").mkdir(exist_ok=True)
         (root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "agent-basics"}), encoding="utf-8")
-    # 旧版の必読資料は転送文書とし、転送先の欠落も同じ診断になることを確かめる。
-    (stale / "skills/writing-standards/references/writing.md").write_text(
-        "<!-- read-source: agent-basics:writing-standards/references/writing-body.md -->\n", encoding="utf-8"
-    )
-    (stale / "skills/writing-standards/references/writing-body.md").write_text("# 必読資料\n", encoding="utf-8")
     (stale / missing).unlink()
 
     def inventory(host: str, _project: pathlib.Path) -> list[dict[str, Any]]:
@@ -443,19 +427,10 @@ def _stale_claude_installation(
     return stale, user
 
 
-@pytest.mark.parametrize(
-    "missing",
-    [
-        "skills/writing-standards/references/writing.md",
-        "skills/writing-standards/references/writing-body.md",
-        "skills/writing-standards/references/read-method.md",
-    ],
-    ids=["startup-row", "read-source", "reference-method"],
-)
 @pytest.mark.parametrize("shared_folder", [False, True], ids=["separate-roots", "shared-folder"])
 @pytest.mark.asyncio
 async def test_role_start_names_incomplete_selected_installation(
-    resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, missing: str, shared_folder: bool
+    resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, shared_folder: bool
 ) -> None:
     """選択したproject導入に必須資料が無ければ、user導入へ切り替えず、修復する導入と不足資料を示して起動しない。
 
@@ -463,6 +438,7 @@ async def test_role_start_names_incomplete_selected_installation(
     修復後の同じ入力では、選択したproject導入の資料で起動する。
     """
     project = resources.root / "project-a"
+    missing = "skills/writing-standards/references/writing.md"
     stale, user = _stale_claude_installation(resources, monkeypatch, missing, project, shared_folder=shared_folder)
     async with manager.AgentsServerManager(None) as current:
         backend = ResourceBackend(current.sessions, "claude")

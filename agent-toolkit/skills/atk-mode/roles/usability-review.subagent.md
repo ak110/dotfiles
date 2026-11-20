@@ -13,6 +13,8 @@ required_inputs:
 optional_inputs:
 - レーン識別子
 writes_worktree: true
+startup_documents:
+- agent-basics:review-standards/references/reviewer-usability.md
 ---
 
 # ユーザビリティレビュータスク
@@ -21,12 +23,6 @@ writes_worktree: true
 判定の手順と基準は`agent-basics:review-standards/references/reviewer-usability.md`「ユーザビリティレビューの判定」にあり、起動時に届く。
 指摘の範囲と内容は`agent-basics:review-standards/references/reviewer.md`「基本方針」「指摘内容」に従う。
 着手時に`agent-basics:review-standards`を起動する。
-
-## 読込表
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 着手時 | `agent-basics:review-standards/references/reviewer-usability.md` | 起動時 | `role:usability-review` | |
 
 ## 入力
 

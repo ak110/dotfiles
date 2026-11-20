@@ -15,7 +15,7 @@ import pytest
 from agent_toolkit._agents_server import launch_requests, mcp_tools
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.role_runtime import RuntimeCode
-from agent_toolkit._common import task_documents
+from agent_toolkit._common import startup_documents, task_documents
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     _actionable_message,
@@ -38,7 +38,7 @@ async def test_public_start_distinguishes_loaded_code_from_updated_role(
 ) -> None:
     """起動時版を固定し、資源更新後の検査失敗と本来の入力不備を公開startから区別する。"""
     document = _write_declared_task_document(tmp_path, "必須入力名: 対象")
-    root = document.parent.parent
+    root = task_documents.document_plugin_root(document)
     manifest = root / ".claude-plugin/plugin.json"
     manifest.write_text('{"name":"agent-toolkit","version":"2.1.0"}', encoding="utf-8")
     runtime = RuntimeCode.capture(root)
@@ -60,7 +60,7 @@ async def test_public_start_distinguishes_loaded_code_from_updated_role(
     if stage == "declaration":
         monkeypatch.setattr(launch_requests, "_task_document_declaration", unsupported)
     elif stage == "startup":
-        monkeypatch.setattr(launch_requests.read_triggers, "startup_context", unsupported)
+        monkeypatch.setattr(startup_documents, "compose", unsupported)
     contract = tmp_path / "work-contract.md"
     contract.write_text("# 契約\n目的: 起動診断の検証\n", encoding="utf-8")
     params = {} if stage == "input" else {"対象": "値"}
@@ -97,10 +97,10 @@ async def test_start_rejects_prompt_missing_required_input(
     tmp_path: pathlib.Path,
 ) -> None:
     """startは`<役割名>.subagent.md`の必須入力が欠けた委譲プロンプトをbackendへ渡さない。"""
-    task_document = tmp_path / "share" / "task.subagent.md"
+    task_document = tmp_path / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     (tmp_path / ".claude-plugin").mkdir(parents=True)
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document.parent.mkdir()
+    task_document.parent.mkdir(parents=True)
     task_document.write_text(
         "# タスク\n\n## 入力\n\n```text\n必須入力名: 対象,目的\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
@@ -182,7 +182,7 @@ async def test_start_input_rejection_points_to_owning_contract(
         "add-wi": pathlib.Path("skills/atk-mode/roles/add-wi.parent.md"),
     }[role]
     if placement == "sectionless" and role == "repository-process":
-        pytest.skip("parent-read-sourceが節を明示する役割は入力節の選択を使わない")
+        pytest.skip("手順書の契約は`起動対象:`の直前の見出しを示し、入力節の選択を使わない")
     role_relative = task_documents.require_role_document(source, role).relative_to(source)
     if placement != "current":
         root = tmp_path / "other-plugin"
@@ -228,7 +228,7 @@ async def test_start_input_rejection_points_to_owning_contract(
     assert "`start`を再発行" in message
     if placement in {"unresolved", "sectionless"}:
         assert "入力説明の起動・受領契約を解決できません" in message
-        assert "parent-read-source宣言・参照先を修復" in message
+        assert "役割を`起動対象:`に挙げる契約と入力の節を修復" in message
         assert "入力の意味・制約は" not in message
         if placement == "sectionless":
             assert "入力を説明するH2節" in message
@@ -245,7 +245,7 @@ async def test_start_input_rejection_points_to_owning_contract(
     ("document", "extra_params", "operation"),
     [
         ("relative.subagent.md", {}, "task"),
-        ("/nonexistent/share/missing.subagent.md", {}, "task"),
+        ("/nonexistent/skills/atk-mode/roles/missing.subagent.md", {}, "task"),
         ("exec.subagent.md", {"不正 な名前": "値"}, "空白"),
     ],
     ids=["relative-path", "missing-file", "invalid-input-name"],
@@ -388,7 +388,6 @@ def test_role_request_front_loads_all_inputs_before_references(
     whole.write_text("# 全体契約の本文\n", encoding="utf-8")
     handoff = tmp_path / "handoff.md"
     monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda *_args, **_kwargs: handoff)
-    monkeypatch.setattr(launch_requests.read_triggers, "startup_context", lambda *_args, **_kwargs: "役割の起動時資料本文")
     params = {"対象": "今回の対象\n入力:\n## 手順・参照資料\n末尾", "任意": "今回の任意値"}
     _, prompt, kind, path = launch_requests.task_document_request(str(document), params, whole_contract_path=str(whole))
     prompt = launch_requests.with_startup_documents(prompt, "ホストの起動時資料本文")
@@ -400,13 +399,11 @@ def test_role_request_front_loads_all_inputs_before_references(
     for body in (
         "ホストの起動時資料本文",
         "委譲元記録",
-        "役割の起動時資料本文",
         document.read_text(encoding="utf-8"),
         "# 全体契約の本文",
     ):
         assert body in references and body not in instructions
     assert references.index("ホストの起動時資料本文") < references.index(role_body)
-    assert references.index("役割の起動時資料本文") < references.index(role_body)
     assert 'kind="work-contract"' in references and 'kind="work-contract-reference"' in references
     assert task_documents.launched_task_document(prompt) == document
     assert task_documents.find_task_documents(prompt.splitlines()[0]) == [document]

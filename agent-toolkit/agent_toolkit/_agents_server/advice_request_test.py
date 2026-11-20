@@ -33,10 +33,10 @@ def test_advice_request_eligibility(parent, engine, model, phase, kind, expected
 @pytest.mark.parametrize("phase", ["review", "review_fast"])
 def test_review_role_is_excluded_with_explicit_candidate(tmp_path, phase):
     root = tmp_path / "agent-toolkit"
-    (root / "share").mkdir(parents=True)
+    (root / "skills/atk-mode/roles").mkdir(parents=True)
     (root / ".claude-plugin").mkdir()
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    role = root / "share/custom.subagent.md"
+    role = root / "skills/atk-mode/roles/custom.subagent.md"
     role.write_text(
         f"---\nmode: delegate\nmodel_type: {phase}\nwrites_worktree: false\nrequired_inputs: []\n---\n", encoding="utf-8"
     )

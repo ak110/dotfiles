@@ -6,16 +6,14 @@ import pathlib
 import re
 
 import pytest
-from agent_toolkit._common import read_triggers
 
-from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths
+from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths, resolve_plugin_reference
 
 # 見出し名で節を指す参照を検査する規範Markdownの範囲。
 _NORMATIVE_MARKDOWN_PREFIXES = (
     "agent-basics/skills/",
     f"{_PLUGIN_PREFIX}/rules/",
     f"{_PLUGIN_PREFIX}/skills/",
-    f"{_PLUGIN_PREFIX}/share/",
     ".claude/skills/",
     ".chezmoi-source/dot_claude/",
 )
@@ -79,7 +77,7 @@ def _resolve_heading_reference_target(
     for variable in _PLUGIN_ROOT_VARIABLES:
         reference = reference.replace(variable, f"{_PLUGIN_PREFIX}/")
     if reference.startswith(("agent-toolkit:", "agent-basics:")):
-        return read_triggers.resolve_document(reference, root / source, root / _PLUGIN_PREFIX), False
+        return resolve_plugin_reference(reference, root), False
     if skill:
         bases = [pathlib.Path(plugin or _PLUGIN_PREFIX, "skills", skill), pathlib.Path(plugin or _PLUGIN_PREFIX, "skills")]
     else:
@@ -87,13 +85,57 @@ def _resolve_heading_reference_target(
     for base in bases:
         candidate = root / base / reference
         if candidate.is_file():
-            return read_triggers.resolve_read_source(candidate, root / _PLUGIN_PREFIX), False
+            return candidate, False
     if skill:
         return None, True
     suffix_matches = [path for path in markdown_paths if path.as_posix().endswith(f"/{reference}")]
     if len(suffix_matches) == 1:
-        return read_triggers.resolve_read_source(root / suffix_matches[0], root / _PLUGIN_PREFIX), False
+        return root / suffix_matches[0], False
     return None, len(suffix_matches) > 1
+
+
+_QUALIFIED_SKILL_PATTERN = re.compile(rf"`(?P<plugin>{_PLUGIN_PREFIX}|agent-basics):(?P<skill>[A-Za-z0-9_-]+)`")
+
+
+def _contextual_targets(root: pathlib.Path, prefix: str, reference: str, name: str) -> set[pathlib.Path]:
+    """同じ行で参照より前に名指ししたスキルの配下で、相対パスの参照を解決し、節名を含む実体を返す。
+
+    「`agent-basics:bugfix`を起動し、同スキルの`SKILL.md`「…」」のように、直前に名指ししたスキルの資料を指す記法を扱う。
+    """
+    if reference.startswith(("/", "agent-toolkit:", "agent-basics:", "${")):
+        return set()
+    found = set()
+    for match in _QUALIFIED_SKILL_PATTERN.finditer(prefix):
+        candidate = root / match.group("plugin") / "skills" / match.group("skill") / reference
+        if candidate.is_file() and name in candidate.read_text(encoding="utf-8"):
+            found.add(candidate)
+    return found
+
+
+_FENCE_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
+_HEADING_LINE_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+
+
+def _section_body(path: pathlib.Path, name: str) -> str:
+    """コードフェンスの外で`name`と一致する見出しが1つだけある場合に、その節の本文を返す。無いか複数ならValueErrorを送出する。"""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    headings: list[tuple[int, int, str]] = []
+    fence = ""
+    for index, line in enumerate(lines):
+        if marker := _FENCE_PATTERN.match(line):
+            if not fence:
+                fence = marker[1]
+            elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                fence = ""
+            continue
+        if not fence and (heading := _HEADING_LINE_PATTERN.match(line)):
+            headings.append((index, len(heading[1]), heading[2]))
+    matches = [position for position, (_, _, title) in enumerate(headings) if title == name]
+    if len(matches) != 1:
+        raise ValueError(f"{path}: 見出し「{name}」が{len(matches)}件ある")
+    start, level, _ = headings[matches[0]]
+    end = next((line for line, depth, _ in headings[matches[0] + 1 :] if depth <= level), len(lines))
+    return "\n".join(lines[start + 1 : end])
 
 
 # 「<節名>」の直後で段落番号により位置を指す記法。節の改訂で番号がずれても検査を通るため失敗にする。
@@ -122,7 +164,7 @@ def _missing_named_identifiers(content: str, match: re.Match[str], target: pathl
     if not names:
         return []
     try:
-        body = read_triggers.ReadTarget(target, match.group("name")).body()
+        body = _section_body(target, match.group("name"))
     except ValueError:
         return []
     return [name for name in names if name not in body]
@@ -146,26 +188,12 @@ def _unresolved_heading_references(
             target, ambiguous = _resolve_heading_reference_target(
                 root, source, match.group("skill"), match.group("path"), markdown_paths, match.group("plugin")
             )
-            line = content[
-                content.rfind("\n", 0, match.start()) + 1 : content.find("\n", match.end())
-                if "\n" in content[match.end() :]
-                else len(content)
-            ]
-            contextual = [
-                item
-                for item in read_triggers.material_targets(
-                    line,
-                    root / source,
-                    root / _PLUGIN_PREFIX,
-                    references_only=True,
-                    context=read_triggers.reference_context(
-                        content[: content.rfind("\n", 0, match.start())], root / source, root / _PLUGIN_PREFIX
-                    ),
-                )
-                if match.group("name") in item.heading and item.path.is_file()
-            ]
-            if len({item.path for item in contextual}) == 1:
-                target = contextual[0].path
+            line_start = content.rfind("\n", 0, match.start()) + 1
+            contextual = _contextual_targets(
+                root, content[line_start : match.start()], match.group("path"), match.group("name")
+            )
+            if len(contextual) == 1:
+                target = contextual.pop()
             reference = f"{match.group('path')}「{match.group('name')}」"
             if target is None:
                 if ambiguous:
@@ -193,8 +221,7 @@ def test_normative_heading_references_resolve() -> None:
     markdown_paths = [path for path in tracked if path.suffix == ".md"]
     sources = _normative_markdown_paths(tracked)
     assert any(path.as_posix().startswith(".claude/skills/") for path in sources)
-    with read_triggers.resolution_scope():
-        unresolved = _unresolved_heading_references(root, sources, markdown_paths)
+    unresolved = _unresolved_heading_references(root, sources, markdown_paths)
     assert not unresolved, _format_unresolved(unresolved)
 
 
@@ -210,8 +237,7 @@ def test_code_and_design_heading_references_resolve() -> None:
     sources = _extended_heading_reference_sources(tracked)
     assert any(path.suffix == ".py" for path in sources)
     assert any(path.as_posix().startswith("docs/development/design") for path in sources)
-    with read_triggers.resolution_scope():
-        unresolved = _unresolved_heading_references(root, sources, markdown_paths)
+    unresolved = _unresolved_heading_references(root, sources, markdown_paths)
     assert not unresolved, _format_unresolved(unresolved)
 
 
@@ -227,29 +253,6 @@ def test_heading_symbol_reference_fails_after_heading_removal(tmp_path: pathlib.
     markdown_paths = [standard.relative_to(tmp_path)]
 
     assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [("docs/standard.md「消えた節」", source)]
-
-
-def test_heading_reference_follows_explicit_compatibility_source(tmp_path: pathlib.Path) -> None:
-    """転送先の節の実在を検査し、消えた節を互換入口の案内文で補わない。"""
-    toolkit = tmp_path / "agent-toolkit"
-    basics = tmp_path / "agent-basics"
-    (basics / ".claude-plugin").mkdir(parents=True)
-    (basics / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
-    actual = basics / "skills/writing-standards/references/rule.md"
-    actual.parent.mkdir(parents=True)
-    actual.write_text("# 品質\n## 判定\n本文\n", encoding="utf-8")
-    wrapper = toolkit / "skills/sample/references/rule.md"
-    wrapper.parent.mkdir(parents=True)
-    wrapper.write_text(
-        "# 入口\n\n<!-- read-source: agent-basics:writing-standards/references/rule.md -->\n\n判定を引き継ぐ。\n",
-        encoding="utf-8",
-    )
-    source = pathlib.Path("source.md")
-    (tmp_path / source).write_text("`agent-basics:writing-standards`の`references/rule.md`「判定」\n", encoding="utf-8")
-    paths = [actual.relative_to(tmp_path), wrapper.relative_to(tmp_path), source]
-    assert not _unresolved_heading_references(tmp_path, [source], paths)
-    actual.write_text("# 品質\n節を撤去した。\n", encoding="utf-8")
-    assert _unresolved_heading_references(tmp_path, [source], paths) == [("references/rule.md「判定」", source)]
 
 
 def test_heading_reference_keeps_same_skill_context(tmp_path: pathlib.Path) -> None:

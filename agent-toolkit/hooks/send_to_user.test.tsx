@@ -1,5 +1,28 @@
-import { expect, test } from "claude-code/testing";
+import { expect, mock, test } from "claude-code/testing";
 import { reportWarnings } from "./send_to_user.tsx";
+
+for (const [surface, delegated, tool, shouldDeliver] of [
+  ["terminal", false, "mcp__plugin_agent-toolkit_agents_server__send_to_user", true],
+  ["terminal", true, "mcp__plugin_agent-toolkit_agents_server__send_to_user", false],
+  ["desktop", false, "mcp__plugin_agent-toolkit_agents_server__send_to_user", false],
+  [null, false, "mcp__plugin_agent-toolkit_agents_server__send_to_user", false],
+  ["terminal", false, "mcp__other__send_to_user", false],
+] as const) {
+  test(`初回のツール一覧で発話の送り先を示す条件: ${surface}/${delegated}/${tool}`, async ($, on) => {
+    mock.env(on, { AGENT_TOOLKIT_DELEGATED_SESSION: delegated ? "1" : "" });
+    on("session.surfaces", () => ({ value: surface ? [surface] : [] }));
+    on("tool.describe", (_$, e) => ({ description: e.description, isDeferred: true }));
+    const original = { description: "表示に成功した時だけ確認を返す。", isDeferred: true } as const;
+    const shown = await $.tool.describe({ tool, ...original, provider: { plugin: "mcp:agents_server", tier: "user" } });
+    if (shouldDeliver) {
+      expect(shown.isDeferred).toBe(false);
+      for (const purpose of ["メイン", "進捗", "完了報告", "質問", "確認依頼"]) expect(shown.description).toContain(purpose);
+      expect(shown.description).toContain(original.description);
+    } else {
+      expect(shown).toEqual(original);
+    }
+  });
+}
 
 for (const [message, warns] of [
   ["気付いた改善点: 対象。AWI化ステータス: 不要 被覆 既存の処置がある", false],
@@ -18,7 +41,7 @@ for (const [message, warns] of [
   });
 }
 
-// 入力はPythonの`improvement_status_advisor_test.py`の`_REPORTS`と同じ固定の報告で、送達後に欠けた記録の行頭語を期待する。
+// 固定の報告ごとに、送達後に欠けた記録の行頭語を期待する。
 for (const [message, heads] of [
   ["作業中に自分の手順漏れを見つけたため、漏れた手順をその場で実施した。", ["処置"]],
   ["引数の誤りを直し、再実行で成功した。", ["処置"]],
@@ -30,7 +53,7 @@ for (const [message, heads] of [
   ["実装を終え、変更範囲の試験が通った。", []],
   ["変更範囲の試験を実行し、失敗0件で誤りは無いことを確かめた。", []],
   ["レビューで指摘が3件あり、対応している。CIではpytestが2件失敗した。考慮漏れの有無は次の工程で確かめる。", []],
-  // 以下は`improvement_status_advisor_test.py`の`_FIRST_PERSON_DEVIATIONS`と同じ、一人称で逸脱を述べた実際の報告の形。
+  // 以下は一人称で逸脱を述べた実際の報告の形と、仮定・問い・否定の形。
   ["原稿の件数とファイル数を誤って伝えていた。", ["処置"]],
   ["誤って作業ツリーのファイルを削除した。", ["処置"]],
   ["起票の前に所有範囲を判定していなかったことが根本の誤りで、費用の比較はその次だった。", ["処置"]],
@@ -44,7 +67,9 @@ for (const [message, heads] of [
   ["失敗していた試験を直した。", ["処置"]],
   ["自分の対応で同じ失敗を繰り返していた。", ["処置", "再発防止"]],
   ["登録し直しを忘れたまま判定する操作は、CLIが受け付けない。", []],
+  ["記録を忘れた場合の扱いを先に洗い出す。", []],
   ["やり方のどこが誤っているかを調べる。", []],
+  ["設定は誤っていない。", []],
 ] as const) {
   test(`逸脱の報告に欠けた記録の行だけを警告する: ${message}`, () => {
     const warnings = reportWarnings(message);

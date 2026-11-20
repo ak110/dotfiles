@@ -358,33 +358,28 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
     """
     directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
     registry = GenerationRegistry(directory)
-    # Windowsは終了したプロセスもhandleが残る間は開けるため、終了させた後で起動した側のhandleを手放す。
-    processes = [subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])]  # pylint: disable=consider-using-with
-    old = _target(directory, "old", 1, service_transport.process_identity(processes[0].pid))
     # 同じ配置の新しい世代があると、退役した世代は索引から回収される。
     roots = {"old": tmp_path / "old", "new": tmp_path / ("old" if ending == "collected" else "new")}
     for generation, version in (("old", "1.0.0"), ("new", "1.0.1")):
         roots[generation].mkdir(exist_ok=True)
         registry.reserve(generation, roots[generation], version)
-    registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
-    coordinator = _coordinator(directory, _target(directory, "new", 2, service_transport.process_identity(os.getpid())))
+    # 終了後も起動側のhandleを保持し、Windowsでプロセスをまだ開ける状態で公開の成否を確かめる。
+    with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as process:
+        old = _target(directory, "old", 1, service_transport.process_identity(process.pid))
+        registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
+        coordinator = _coordinator(directory, _target(directory, "new", 2, service_transport.process_identity(os.getpid())))
 
-    def end_previous() -> None:
-        if ending in {"retired", "collected"}:
-            registry.retire("old", old["process"])
-        if ending != "alive":
-            process = processes.pop()
-            process.kill()
-            process.wait()
+        async def request(_previous: dict[str, Any], operation: str, _arguments: dict, **_kwargs: Any) -> dict:
+            if operation == "commit_update":
+                if ending != "alive" and process.poll() is None:
+                    if ending in {"retired", "collected"}:
+                        registry.retire("old", old["process"])
+                    process.kill()
+                    process.wait()
+                raise EOFError
+            return {}
 
-    async def request(_previous: dict[str, Any], operation: str, _arguments: dict, **_kwargs: Any) -> dict:
-        if operation == "commit_update":
-            end_previous()
-            raise EOFError
-        return {}
-
-    monkeypatch.setattr(service_rpc, "request", request)
-    try:
+        monkeypatch.setattr(service_rpc, "request", request)
         if ending in {"retired", "collected"}:
             accepted = await coordinator.publish()
             assert accepted["generation"] == "new"
@@ -397,10 +392,7 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
                 await coordinator.publish()
         current = registry.current()
         assert current is not None and current["generation"] == "new"
-    finally:
-        for process in processes:
-            process.kill()
-            process.wait()
+        assert registry.retired("old", old["process"]) == (ending in {"retired", "collected"})
 
 
 _PREVIOUS_GENERATION = """

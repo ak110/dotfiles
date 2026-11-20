@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
@@ -47,16 +48,23 @@ _ATK_MODE_RETIRED_SKILLS = (
 )
 
 
-# 対象版を固定した監査記録。当時の配置を記録として保持する。
-_FIXED_AUDIT_RECORDS = frozenset(
-    pathlib.Path(value)
-    for value in ("docs/development/audit-opus55-hosts-2026-11-15.json", "docs/development/audit-sol-2026-11-14.json")
-)
+# 履歴のないcheckoutでも監査時点の実在を検査する。更新時は全パスを `git ls-tree -rt --name-only <対象版>` と照合する。
+_FIXED_AUDIT_PATH_DIGESTS = {
+    pathlib.Path(
+        "docs/development/audit-opus55-hosts-2026-11-15.json"
+    ): "60d8eda599b255619a7c1237515ad5877d7efff03a5b8ccd43da313ec46c1563",
+    pathlib.Path(
+        "docs/development/audit-opus55-hosts-2026-11-15-notifications.json"
+    ): "1ca1078b1bd2d06f6766056491bc008fc0babe811ff93c0227b530b276b05600",
+    pathlib.Path(
+        "docs/development/audit-sol-2026-11-14.json"
+    ): "5c097f8e8af332499fc6c33ee13c1c10adcaa8101ba15446a1c47a402b35cab8",
+}
 
 
 def _is_historical_record(source: pathlib.Path) -> bool:
     """当時の配置を残す記録（対象版を固定した監査記録、障害の記録、撤去台帳）かを返す。"""
-    return source in _FIXED_AUDIT_RECORDS or (
+    return source in _FIXED_AUDIT_PATH_DIGESTS or (
         source.parent == pathlib.Path("docs/development") and source.name.startswith(("incidents-", "removed-mechanisms"))
     )
 
@@ -396,7 +404,7 @@ def test_incident_history_rejects_different_unresolved_references(tmp_path: path
 
 
 def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
-    """指定した追跡ファイルからスキルの起動名と相対パス参照を収集する。"""
+    """固定版の監査パスを検証し、現在のツリーで解決する起動名とパスを返す。"""
     references: list[tuple[str, pathlib.Path]] = []
     for relative in sources:
         # キーは実行案内ではなく、旧入力や架空の起動名も含むpytest node IDである。
@@ -404,6 +412,15 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
             continue
         content = (root / relative).read_text(encoding="utf-8")
         references.extend((match.group(), relative) for match in _SKILL_INVOCATION_PATTERN.finditer(content))
-        references.extend((match.group().rstrip("/"), relative) for match in _SKILL_PATH_PATTERN.finditer(content))
-        references.extend((match.group(), relative) for match in _PYTHON_PATH_PATTERN.finditer(content))
+        paths = [match.group().rstrip("/") for match in _SKILL_PATH_PATTERN.finditer(content)]
+        paths.extend(match.group() for match in _PYTHON_PATH_PATTERN.finditer(content))
+        if relative in _FIXED_AUDIT_PATH_DIGESTS:
+            record = json.loads(content)
+            commit = record.get("target_commit") or record["対象版"]
+            snapshot = "\n".join([commit, *sorted(set(paths))])
+            assert hashlib.sha256(snapshot.encode()).hexdigest() == _FIXED_AUDIT_PATH_DIGESTS[relative], (
+                f"{relative}: 対象版または参照パスの集合が変わったため、対象版 {commit} のGitツリーと照合してください"
+            )
+        else:
+            references.extend((path, relative) for path in paths)
     return references

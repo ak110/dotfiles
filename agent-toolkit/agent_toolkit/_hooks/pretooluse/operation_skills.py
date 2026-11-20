@@ -1,7 +1,9 @@
-"""操作の静的な判定と、既存の取得記録APIを保持する。
+"""操作の直前に起動を求めるagent-basicsのスキルの表と、その操作の静的な判定と案内。
 
-取得対象の宣言は読込表と`share/read-trigger-bootstrap.md`、配送と新しい取得観測は
-`read_delivery.py`が所有する。本モジュールは配送処理へ依存せず、操作判定と取得記録を提供する。
+表（`OPERATION_SKILLS`）は入口`atk-mode`が操作・判断の前に起動を求める4つのスキルに限る。
+案内は主体と文脈（会話圧縮・clearで初期化）ごとにスキル1件につき1回の非遮断の通知とし、
+案内済みのスキルとClaude Codeの`Skill`で起動済みのスキルについては操作を判定しない。
+書込先の解析（`written_paths`）は終了工程の証拠の採取も使う。
 """
 
 from __future__ import annotations
@@ -10,27 +12,25 @@ import dataclasses
 import os
 import pathlib
 import re
+lazy import tempfile
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
 
-lazy from agent_toolkit._atk.wi import frontmatter
+lazy from agent_toolkit._atk import managed_temp
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
-lazy from agent_toolkit._common.read_triggers_model import WI_SAVE_OPERATIONS
-lazy from agent_toolkit._common.shell_tokens import is_atk_command, split_words
+lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
-lazy from agent_toolkit._hooks import rules_context as _rules_context
 lazy from agent_toolkit._hooks import tool_input as _tool_input
-lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.message_format import llm_notice
+lazy from agent_toolkit._hooks.notice import stage_delivery
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
-lazy from agent_toolkit._hooks.pretooluse.agent_checks import AGENTS_SERVER_HOOK_TOOL_NAMES
-lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths, sed_read_range
-lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES
+lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
 lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 _SEARCH_COMMANDS = frozenset({"rg", "find"})
@@ -59,30 +59,15 @@ _GREP_LONG_OPTIONS_WITH_VALUE = frozenset(
 )
 
 
-SKILL_DOCUMENT = "SKILL.md"
-
-SUBJECT_LIGHTWEIGHT = "lightweight"
-SUBJECT_CODEX = "codex"
-SUBJECT_SUBAGENT = "subagent"
-SUBJECT_MAIN = "main"
-"""主体の区分。メインはClaude Codeのメイン会話とagents_serverのtask・delegateのClaude委譲先を含む。"""
-
-
 @dataclasses.dataclass(frozen=True)
 class OperationSkill:
-    """操作を起動の契機とするスキルと、その操作の判定関数、必須の参照資料の組。"""
+    """操作を起動の契機とするスキルと、その操作の判定関数の組。"""
 
     skill_name: str
     short_name: str
     operation: str
-    matches: Callable[[str, dict], bool]
-    references: tuple[str, ...] = ()
-    """`SKILL.md`に加えて取得を求める、スキルのディレクトリからの相対パス。"""
-
-    @property
-    def documents(self) -> tuple[str, ...]:
-        """取得を求める全資料の相対パス。"""
-        return (SKILL_DOCUMENT, *self.references)
+    matches: Callable[[str, dict, str], bool]
+    """ツール名、ツール入力、操作時点のcwdから、操作に当たるかを返す。"""
 
 
 def _grep_is_recursive(arguments: Sequence[str]) -> bool:
@@ -156,53 +141,6 @@ def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
         return isinstance(command, str) and _ROOT_CAUSE_HEADING.search(command) is not None
     fields = _tool_input.new_content_fields(tool_name, tool_input)
     return fields is not None and any(_ROOT_CAUSE_HEADING.search(value) for _, value in fields)
-
-
-# 起草規範の配送に使う原稿の目印。いずれも原稿の書式が必ず持つ見出しだけから成る行とする。
-# AWIは`## 反映内容と反映先`、UWIは`## 判断材料`、計画初版は`### 計画メタ情報`を持つ。
-_DRAFT_HEADINGS = {
-    "awi-draft-writing": re.compile(r"^## 反映内容と反映先[ \t]*$", re.MULTILINE),
-    "uwi-draft-writing": re.compile(r"^## 判断材料[ \t]*$", re.MULTILINE),
-    "plan-draft-writing": re.compile(r"^### 計画メタ情報[ \t]*$", re.MULTILINE),
-}
-
-
-def _is_draft_writing(operation: str, tool_name: str, tool_input: dict) -> bool:
-    """WI原稿・計画初版の本文を書く操作かを、書く本文の見出し行で返す。
-
-    原稿は一時領域に置かれることが多いが、保存されてユーザーと後続の担当が読む成果物であり、
-    書込先ではなく本文の形で判定する。判定の範囲は`_is_root_cause_writing`と同じとする。
-    """
-    pattern = _DRAFT_HEADINGS[operation]
-    if tool_name == "Bash":
-        command = tool_input.get("command")
-        return isinstance(command, str) and pattern.search(command) is not None
-    fields = _tool_input.new_content_fields(tool_name, tool_input)
-    return fields is not None and any(pattern.search(value) for _, value in fields)
-
-
-def _is_temp_directory_create(tool_name: str, tool_input: dict) -> bool:
-    """個別の一時ディレクトリを作成する`mktemp -d`の実行かを返す。
-
-    一時領域の手順書（`atk-mode`の`playbooks/managed-temp.md`）を配送する契機に使う。
-
-    作成先の選択は同手順書が定めるため、作成先の指定によらず対象とする。
-    複合文と置換の内側も共通のBash解析から実行位置を得て判定し、他のコマンドの引数は起動に含めない。
-    一時ファイルだけを作成する`mktemp`は対象外とする。
-    """
-    if tool_name != "Bash":
-        return False
-    command = tool_input.get("command")
-    if not isinstance(command, str):
-        return False
-    for invocation in extract_bash_invocations(command):
-        tokens = invocation.segment.tokens
-        if not tokens or pathlib.PurePath(tokens[0]).name != "mktemp":
-            continue
-        options = tokens[1 : tokens.index("--")] if "--" in tokens else tokens[1:]
-        if any(option == "--directory" or re.fullmatch(r"-[A-Za-z]*d[A-Za-z]*", option) for option in options):
-            return True
-    return False
 
 
 def _python_write_paths(code: str) -> list[str]:
@@ -442,22 +380,9 @@ def _bash_write_paths(command: str, cwd: str | None = None, *, partial: bool = F
             elif cwd is None and base.unresolved_expression is None:
                 paths.append(value)
 
-    assignments: dict[tuple[object, ...], dict[str, str]] = {(): {}}
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd or "", effects=True):
-        scope = invocation.cwd_scope
-        for length in range(1, len(scope) + 1):
-            assignments.setdefault(scope[:length], assignments[scope[: length - 1]].copy())
-        values = assignments[scope]
-
-        def resolve(value: str, values: dict[str, str] = values) -> str:
-            return re.sub(r"\x00([a-zA-Z_][a-zA-Z_0-9]*)\x00", lambda match: values.get(match[1], STATIC_UNKNOWN), value)
-
-        found = [resolve(target) for target in invocation.variable_outputs if isinstance(target, str)]
-        tokens = tuple(resolve(token) for token in invocation.variable_tokens)
-        # 単独代入だけを後続へ渡す。条件文内の代入は以前の既知値も無効にする。
-        for assignment in invocation.standalone_assignments:
-            name, _, value = assignment.partition("=")
-            values[name] = resolve(value) if invocation.assignments_definite else STATIC_UNKNOWN
+        found = [target for target in invocation.variable_outputs if isinstance(target, str)]
+        tokens = invocation.variable_tokens
         if not invocation.execution_known or not tokens:
             append_paths(found, current)
             continue
@@ -500,130 +425,6 @@ def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
     ]
 
 
-def _diagnostic_tokens(tokens: Sequence[str]) -> bool:
-    """既知の照会・結果回収・非修正検証だけを選び、任意のスクリプト実行へは広げない。"""
-    name, *arguments = tokens
-    name = pathlib.PurePath(name).name
-    if name == "git":
-        # -C以外の値付きglobal optionは実行設定を変更できるため、照会の免除へ含めない。
-        while arguments and arguments[0].startswith("-"):
-            option = arguments.pop(0)
-            if option == "-C" and arguments:
-                arguments.pop(0)
-            elif option != "--no-pager":
-                return False
-        return (
-            bool(arguments)
-            and arguments[0] in {"diff", "status", "log", "show", "ls-files", "rev-parse", "merge-base"}
-            and not any(option.split("=", 1)[0] in {"--ext-diff", "--textconv"} for option in arguments[1:])
-        )
-    if name in {"cat", "head", "tail", "wc", "stat", "cmp", "diff", "jq", "grep", "egrep", "fgrep"}:
-        return True
-    if name == "rg":
-        return not any(option.split("=", 1)[0] == "--pre" for option in arguments)
-    if name == "sed":
-        return sed_read_range(tuple(tokens)) is not None
-    if name in {"pytest", "py.test", "mypy", "pyright"}:
-        return not any(option.split("=", 1)[0] in {"--install-types", "--createstub"} for option in arguments)
-    if name == "ty":
-        return arguments[:1] == ["check"]
-    if name == "ruff":
-        return (
-            arguments[:1] == ["check"]
-            and "--no-fix" in arguments
-            and not {"--fix", "--fix-only"}.intersection(arguments)
-            or arguments[:1] == ["format"]
-            and bool({"--check", "--diff"}.intersection(arguments))
-        )
-    if name == "pyfltr" and arguments:
-        if arguments[0] in {"show-run", "list-runs"}:
-            return True
-        # no-fixでもformatter段は書き換えるため、非修正checkerへの明示限定を必要とする。
-        commands = [
-            arguments[index + 1] if option == "--commands" and index + 1 < len(arguments) else option.partition("=")[2]
-            for index, option in enumerate(arguments)
-            if option.partition("=")[0] == "--commands"
-        ]
-        return (
-            arguments[0] == "run"
-            and "--no-fix" in arguments
-            and len(commands) == 1
-            and bool(commands[0])
-            and set(commands[0].split(","))
-            <= {"pytest", "mypy", "pyright", "ty", "pylint", "ruff-check", "arid", "colloquial-check"}
-        )
-    return False
-
-
-def is_diagnostic_operation(tool_name: str, tool_input: dict, cwd: str) -> bool:
-    """診断・結果回収だけから成る静的なBash入力を判定する。保存・追記先の新旧や配置は問わない。
-
-    書込先の検出は維持する。本判定は資料未取得による限定遮断の免除だけに使い、
-    本文編集・未知の実行位置・動的展開・自動修正の混在では保護を維持する。
-    """
-    command = tool_input.get("command")
-    if tool_name != "Bash" or not isinstance(command, str) or any(char in command for char in ("$", "`")):
-        return False
-    # 関数定義やグループで隠した実行、heredocの本文を診断コマンドと推定しない。
-    try:
-        words = [word for _connector, segment in _shell_segments.split_bash_commands(command) for word in split_words(segment)]
-    except ValueError:
-        return False
-    if any(
-        set("()") & set(word.unquoted)
-        or word.unquoted in {"{", "}"}
-        or (word.redirection and word.unquoted.lstrip("0123456789").startswith(("<<", "<>")))
-        or _shell_segments.ENV_ASSIGN_PATTERN.match(word.unquoted)
-        for word in words
-    ):
-        return False
-    segments = _shell_segments.extract_execution_pipelines(command, expand_shell=False)
-    if not segments or any(not segment.resolved for pipeline in segments for segment in pipeline):
-        return False
-    invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
-    if not invocations or any(
-        not invocation.arguments_known
-        or invocation.captured
-        or invocation.inline_input
-        or not current.resolved
-        or any(STATIC_UNKNOWN in target for target in invocation.static_outputs if isinstance(target, str))
-        for invocation, current in invocations
-    ):
-        return False
-    diagnostic = False
-    for index, (invocation, _current) in enumerate(invocations):
-        tokens = invocation.segment.tokens
-        name = pathlib.PurePath(tokens[0]).name
-        if name == "cd" and not invocation.output_redirected:
-            continue
-        if name == "tee" and index and invocations[index - 1][0].output_pipe:
-            continue
-        if not _diagnostic_tokens(tokens):
-            return False
-        diagnostic = True
-    return diagnostic
-
-
-def is_existing_file_edit(tool_name: str, tool_input: dict, cwd: str) -> bool:
-    """新規の全文作成と、現行本文を前提とする編集・上書きを区別する。"""
-    operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
-    if operations is not None and any(
-        not operation.is_whole_write and operation.path and not _is_discard_path(pathlib.Path(operation.path))
-        for operation in operations
-    ):
-        return True
-    for path in written_paths(tool_name, tool_input, cwd):
-        try:
-            pathlib.Path(path).stat()
-        except FileNotFoundError:
-            continue
-        except OSError:
-            # 調査不能を新規作成とみなして、既存本文の確認を免除しない。
-            return True
-        return True
-    return False
-
-
 def _is_agent_document_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
     """編集ツールとBashの書込先がエージェント向け文書なら真を返す。"""
     if tool_name == "Bash":
@@ -639,7 +440,7 @@ def _is_agent_document_writing(tool_name: str, tool_input: dict, cwd: str = "") 
     )
 
 
-def _is_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
+def is_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
     """編集入力と、静的に確定した本文書込を同じ基準で判定する。"""
     if tool_name == "Bash":
         command = tool_input.get("command")
@@ -666,6 +467,30 @@ def _is_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
         )
         for operation in operations or []
     )
+
+
+def _is_temporary_path(path: str) -> bool:
+    """成果物ではない一時領域（managed-tempの一時rootと、Claude Codeの一時領域）の配下かを返す。
+
+    Claude Codeはタスク出力とscratchpadを`<一時ディレクトリ>/claude-<uid>/`の下へ置く。
+    一時ディレクトリ全体は作業ツリーの検証用複製なども置かれ得るため含めない。
+    """
+    candidate = pathlib.Path(path).resolve()
+    roots = [managed_temp.temp_root_path()]
+    if hasattr(os, "getuid"):
+        roots.append(pathlib.Path(tempfile.gettempdir()) / f"claude-{os.getuid()}")
+    return any(candidate.is_relative_to(root.resolve()) for root in roots)
+
+
+def _is_artifact_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
+    """成果物の本文の作成・更新かを返す。
+
+    一時領域だけへの書込は、使い捨てのスクリプト・データと作業記録などの個人記録であり、成果物の本文に当たらない。
+    """
+    written = written_paths(tool_name, tool_input, cwd)
+    if written and all(_is_temporary_path(path) for path in written):
+        return False
+    return is_body_writing(tool_name, tool_input, cwd)
 
 
 def _bash_body_writing(command: str, cwd: str = "") -> bool:
@@ -714,14 +539,6 @@ def _bash_body_writing(command: str, cwd: str = "") -> bool:
             ):
                 return True
     return False
-
-
-def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:
-    """既存の委譲ツール集合から、起動・追送・観測・巻取りの操作を判定する。
-
-    委譲の手順書（`atk-mode`の`playbooks/delegation.md`）を配送する契機に使う。
-    """
-    return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES | {"spawn_agent"}
 
 
 _VERIFICATION_MCP_TOOL_NAMES = frozenset({"mcp__plugin_agent-toolkit_pyfltr__run", "mcp__pyfltr__run"})
@@ -777,7 +594,7 @@ def _is_verification_tokens(tokens: Sequence[str]) -> bool:
     return name in {"playwright", "cargo", "dotnet"} and tuple(rest[:1]) == ("test",)
 
 
-def _is_verification_operation(tool_name: str, tool_input: dict) -> bool:
+def is_verification_operation(tool_name: str, tool_input: dict) -> bool:
     """`agent-basics:check-execution`の起動の契機とする検証の実行かを返す。
 
     複合文と置換の内側も共通のBash解析から実行位置を得て判定する。保存ログの表示と状態の照会は対象外とする。
@@ -793,118 +610,84 @@ def _is_verification_operation(tool_name: str, tool_input: dict) -> bool:
 
 
 OPERATION_SKILLS: tuple[OperationSkill, ...] = (
-    OperationSkill("agent-basics:search", "search", "検索", _is_search_operation),
-    OperationSkill("agent-basics:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
-    OperationSkill("agent-basics:writing-standards", "writing-standards", "本文の作成・更新", _is_body_writing),
+    OperationSkill("agent-basics:search", "search", "検索", lambda name, data, _cwd: _is_search_operation(name, data)),
+    OperationSkill(
+        "agent-basics:bugfix", "bugfix", "原因分析の記述", lambda name, data, _cwd: _is_root_cause_writing(name, data)
+    ),
+    OperationSkill("agent-basics:writing-standards", "writing-standards", "本文の作成・更新", _is_artifact_body_writing),
     OperationSkill(
         "agent-basics:check-execution",
         "check-execution",
         "検証の実行",
-        _is_verification_operation,
-        references=("references/verification-scope.md",),
+        lambda name, data, _cwd: is_verification_operation(name, data),
     ),
 )
-"""操作を起動の契機とするスキルの表。"""
+"""操作の直前に起動を求めるスキルの表。案内の文面と対象はこの表だけから作る。"""
+
+NOTIFIED_KEY = "operation_skills_notified"
+"""主体ごとに、案内したスキルと`Skill`で起動したスキルの完全名を持つセッション状態の項目。"""
 
 
 def canonical_skill_name(skill_name: object) -> str | None:
     """Skill起動の名前が表のスキルを指す場合に、その完全名を返す。"""
-    entry = _entry(skill_name)
-    return entry.skill_name if entry is not None else None
+    return next(
+        (entry.skill_name for entry in OPERATION_SKILLS if skill_name in {entry.skill_name, entry.short_name}),
+        None,
+    )
 
 
-def _entry(skill_name: object) -> OperationSkill | None:
-    if not isinstance(skill_name, str):
-        return None
-    return next((entry for entry in OPERATION_SKILLS if skill_name in {entry.skill_name, entry.short_name}), None)
+def notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
+    """表のスキルの操作を検出したら、そのスキルの起動を求める通知を返す。
+
+    通知は出力へ採用された時に案内済みとして記録する。スキルを起動できない軽量の委譲先には返さない。
+    """
+    if not session_id or _delegated_session.is_lightweight_delegated(os.environ):
+        return []
+    subject = _agent_id.resolve_hook_agent_id(payload)
+    records = read_state(session_id).get(NOTIFIED_KEY)
+    done = records.get(subject, []) if isinstance(records, dict) else []
+    cwd = str(payload.get("cwd", ""))
+    texts = []
+    for entry in OPERATION_SKILLS:
+        if entry.skill_name in done or not entry.matches(tool_name, tool_input, cwd):
+            continue
+        text = llm_notice(
+            f"{entry.operation}の操作を検出した。スキル`{entry.skill_name}`をまだ起動していなければ、起動して手順に従え。",
+            "pretooluse",
+        )
+        stage_delivery(text, session_id, NOTIFIED_KEY, subject, entry.skill_name)
+        texts.append(text)
+    return texts
 
 
-def mark_ready(identifier: str, agent: str) -> Callable[[dict], dict | None]:
-    def _mutator(state: dict) -> dict | None:
-        recorded = state.get(_rules_context.OPERATION_SKILL_READY_KEY)
-        recorded = dict(recorded) if isinstance(recorded, dict) else {}
-        agents = recorded.get(identifier)
-        agents = list(agents) if isinstance(agents, list) else []
-        if agent in agents:
+def observe_skill(session_id: str, subject: str, skill_name: object) -> None:
+    """Claude Codeの`Skill`で起動した表のスキルを、その主体へ以後案内しないよう記録する。"""
+    name = canonical_skill_name(skill_name)
+    if name is None or not session_id:
+        return
+
+    def record(state: dict) -> dict | None:
+        records = state.get(NOTIFIED_KEY)
+        records = dict(records) if isinstance(records, dict) else {}
+        values = records.get(subject)
+        values = list(values) if isinstance(values, list) else []
+        if name in values:
             return None
-        recorded[identifier] = [*agents, agent]
-        state[_rules_context.OPERATION_SKILL_READY_KEY] = recorded
+        records[subject] = [*values, name]
+        state[NOTIFIED_KEY] = records
         return state
 
-    return _mutator
+    update_state(session_id, record)
 
 
-def resolve_subject(payload: dict) -> str:
-    """主体の区分を返す。区分ごとの取得手段と記録する観測は`docs/development/design-hooks-read-acquisition.md`の該当節が定める。"""
-    if _delegated_session.is_lightweight_delegated(os.environ):
-        return SUBJECT_LIGHTWEIGHT
-    if is_codex_payload(payload) or is_antigravity_payload(payload):
-        return SUBJECT_CODEX
-    if _agent_id.resolve_hook_agent_id(payload) != _agent_id.MAIN_AGENT_ID:
-        return SUBJECT_SUBAGENT
-    return SUBJECT_MAIN
+def forget_subject(session_id: str, subject: str) -> None:
+    """文脈を失った主体（会話圧縮・clear）の記録を消し、次の操作で再び案内する。"""
 
+    def forget(state: dict) -> dict | None:
+        records = state.get(NOTIFIED_KEY)
+        if not isinstance(records, dict) or subject not in records:
+            return None
+        state[NOTIFIED_KEY] = {key: value for key, value in records.items() if key != subject}
+        return state
 
-def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str, *, dry_run: bool | None = None) -> set[bool]:
-    """保存に渡された本文の報告標識を読む。未指定・読取不能は通常保存として扱う。"""
-    if tool_name != "Bash" or not isinstance(tool_input.get("command"), str):
-        return set()
-    kinds = set()
-    for invocation, current in shell_cwd.bash_invocation_cwds(tool_input["command"], cwd):
-        tokens = invocation.static_tokens
-        if not is_atk_command(tokens) or tokens[1:3] not in {("wi", "add"), ("wi", "edit")}:
-            continue
-        if "--help" in tokens or "-h" in tokens:
-            continue
-        if dry_run is not None and ("--dry-run" in tokens) != dry_run:
-            continue
-        bodies = [
-            tokens[index + 1] if value == "--body-file" and index + 1 < len(tokens) else value.partition("=")[2]
-            for index, value in enumerate(tokens)
-            if value == "--body-file" or value.startswith("--body-file=")
-        ]
-        if not bodies:
-            kinds.add(False)
-        for value in bodies:
-            if STATIC_UNKNOWN in value:
-                # 実行位置の確定だけでは、展開される各引数の値は確定しない。
-                kinds.add(False)
-                continue
-            path = pathlib.Path(value).expanduser()
-            if not path.is_absolute():
-                if not current.resolved:
-                    kinds.add(False)
-                    continue
-                path = pathlib.Path(current.path) / path
-            try:
-                parsed = frontmatter.parse_frontmatter(frontmatter.decode_entry_text(path.read_bytes()))
-            except OSError, UnicodeError:
-                parsed = None
-            kinds.add(parsed is not None and parsed[0].get("run_skill_report") == "true")
-    return kinds
-
-
-def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str = "") -> bool | None:
-    """共通語彙の操作を判定し、担当外の語彙はNoneを返す。"""
-    if operation in WI_SAVE_OPERATIONS:
-        dry_run = None if operation == "wi-standard-self-review" else operation.endswith("-dry-run")
-        return operation.startswith("wi-report-") in _wi_save_kinds(tool_name, tool_input, cwd, dry_run=dry_run)
-    predicates = {
-        "delegation": _is_delegation_operation,
-        "search": _is_search_operation,
-        "root-cause-writing": _is_root_cause_writing,
-        "managed-temp-create": _is_temp_directory_create,
-        "body-writing": lambda name, data: _is_body_writing(name, data, cwd),
-        "existing-file-edit": lambda name, data: is_existing_file_edit(name, data, cwd),
-        "claude-existing-file-edit": lambda name, data: (
-            name in {"Edit", "MultiEdit", "Write"} and is_existing_file_edit(name, data, cwd)
-        ),
-        "verification": _is_verification_operation,
-        "agent-document-writing": lambda name, data: _is_agent_document_writing(name, data, cwd),
-        "confirmation": lambda name, _input: name in {"AskUserQuestion", "request_user_input", "request_user_input_async"},
-        "awi-draft-writing": lambda name, data: _is_draft_writing("awi-draft-writing", name, data),
-        "uwi-draft-writing": lambda name, data: _is_draft_writing("uwi-draft-writing", name, data),
-        "plan-draft-writing": lambda name, data: _is_draft_writing("plan-draft-writing", name, data),
-    }
-    predicate = predicates.get(operation)
-    return predicate(tool_name, tool_input) if predicate is not None else None
+    update_state(session_id, forget)
