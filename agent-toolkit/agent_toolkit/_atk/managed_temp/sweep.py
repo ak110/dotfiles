@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import enum
 import functools
 import hashlib
 import json
@@ -118,6 +119,11 @@ def _disk_usage(path: pathlib.Path) -> typing.Any:
     return shutil.disk_usage(path)
 
 
+def _allocated_bytes(metadata: os.stat_result) -> int:
+    blocks = getattr(metadata, "st_blocks", None)
+    return metadata.st_size if blocks is None else blocks * 512
+
+
 def _tree_bytes(path: pathlib.Path) -> int:
     """対象の実使用量（バイト）を、リンクを辿らずに数える。数えられない項目は0として扱う。"""
     total = 0
@@ -126,7 +132,7 @@ def _tree_bytes(path: pathlib.Path) -> int:
         current = pending.pop()
         try:
             metadata = current.lstat()
-            total += getattr(metadata, "st_blocks", 0) * 512 or metadata.st_size
+            total += _allocated_bytes(metadata)
             if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
                 with os.scandir(current) as children:
                     pending.extend(current / child.name for child in children)
@@ -166,17 +172,19 @@ def _registered_worktree(git_file: pathlib.Path, area: pathlib.Path) -> bool:
         return False
 
 
-def _latest_update_and_worktree(path: pathlib.Path, now_ns: int) -> tuple[int, bool]:
-    """領域自身と配下の最終更新時刻（ナノ秒）と、登録済みworktreeがあるかを返す。リンクは辿らない。
+def _inspect_tree(path: pathlib.Path, now_ns: int) -> tuple[int, bool, int]:
+    """領域自身と配下の最終更新時刻（ナノ秒）と、登録済みworktreeの有無、実使用量を返す。リンクは辿らない。
 
     配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
     記述子で辿れる環境では親の記述子からの相対名で走査し、連結長がPATH_MAXを超える木も調べる。
     """
-    latest = _update_time(path.lstat(), now_ns)
-    registered = False
+    metadata = path.lstat()
     if _DESCRIPTOR_WALK:
         with permissions.directory(path) as opened:
-            return _latest_under(opened, latest, path, path, now_ns)
+            return _inspect_under(opened, metadata, path, path, now_ns)
+    latest = _update_time(metadata, now_ns)
+    size = _allocated_bytes(metadata)
+    registered = False
     pending = [path]
     while pending:
         directory = pending.pop()
@@ -184,29 +192,38 @@ def _latest_update_and_worktree(path: pathlib.Path, now_ns: int) -> tuple[int, b
             for child in children:
                 metadata = child.stat(follow_symlinks=False)
                 latest = max(latest, _update_time(metadata, now_ns))
+                size += _allocated_bytes(metadata)
                 if child.name == ".git" and stat.S_ISREG(metadata.st_mode):
                     registered |= _registered_worktree(pathlib.Path(child.path), path)
                 if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
                     pending.append(pathlib.Path(child.path))
-    return latest, registered
+    return latest, registered, size
 
 
-def _latest_under(directory: int, latest: int, current: pathlib.Path, area: pathlib.Path, now_ns: int) -> tuple[int, bool]:
-    """記述子が指すディレクトリの配下を相対名で辿り、`_latest_update_and_worktree`と同じ値を返す。"""
+def _inspect_under(
+    directory: int, metadata: os.stat_result, current: pathlib.Path, area: pathlib.Path, now_ns: int
+) -> tuple[int, bool, int]:
+    """記述子が指すディレクトリの配下を相対名で辿り、`_inspect_tree`と同じ値を返す。"""
+    latest = _update_time(metadata, now_ns)
+    size = _allocated_bytes(metadata)
     registered = False
     with os.scandir(directory) as children:
         listed = list(children)
     for child in listed:
         metadata = child.stat(follow_symlinks=False)
-        latest = max(latest, _update_time(metadata, now_ns))
         child_path = current / child.name
         if child.name == ".git" and stat.S_ISREG(metadata.st_mode):
             registered |= _registered_worktree(child_path, area)
         if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
             with permissions.directory(child.name, dir_fd=directory, expected=metadata, display_path=child_path) as nested:
-                latest, nested_registered = _latest_under(nested, latest, child_path, area, now_ns)
+                nested_latest, nested_registered, nested_size = _inspect_under(nested, metadata, child_path, area, now_ns)
+            latest = max(latest, nested_latest)
             registered |= nested_registered
-    return latest, registered
+            size += nested_size
+        else:
+            latest = max(latest, _update_time(metadata, now_ns))
+            size += _allocated_bytes(metadata)
+    return latest, registered, size
 
 
 def _legacy_lock_path(state_root: pathlib.Path, path: pathlib.Path) -> pathlib.Path:
@@ -355,7 +372,7 @@ def _examine(
 ) -> bool:
     """1件を調べ、削除した場合は真を返す。保持した対象は次の掃引で調べ直す。"""
     if stat.S_ISDIR(metadata.st_mode):
-        latest, has_git = _latest_update_and_worktree(child, now_ns)
+        latest, has_git, _size = _inspect_tree(child, now_ns)
     else:
         latest, has_git = _update_time(metadata, now_ns), False
     if child in protected_sessions or plugin_root_in_use(child) or has_live_owner(child):
@@ -447,11 +464,17 @@ def _below_floor(temp_root: pathlib.Path) -> bool:
     return usage.free < usage.total * _min_free_ratio()
 
 
+class _ReclaimScope(enum.Enum):
+    WHOLE = enum.auto()
+    CONTENTS = enum.auto()
+    UNCLASSIFIED = enum.auto()
+
+
 class _PressureCandidate(typing.NamedTuple):
     latest: int
     path: pathlib.Path
     metadata: os.stat_result
-    session_area: bool
+    scope: _ReclaimScope
     size: int
 
 
@@ -474,6 +497,7 @@ def _reclaim_for_space(
     deleted: list[pathlib.Path],
     failed: list[tuple[pathlib.Path, str]],
     *,
+    cutoff_ns: int,
     after_daily_sweep: bool,
 ) -> SpacePressure | None:
     """空きは毎回確認し、再帰走査と警告を共有の5分間隔へまとめる。"""
@@ -494,7 +518,14 @@ def _reclaim_for_space(
         # 試行開始を記録し、失敗や中断でも次の起動による即時の全走査を避ける。
         _save_sweep_time(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME)
         return _reclaim_space(
-            state_root, temp_root, now_ns, protected_sessions, deleted, failed, after_daily_sweep=after_daily_sweep
+            state_root,
+            temp_root,
+            now_ns,
+            protected_sessions,
+            deleted,
+            failed,
+            cutoff_ns=cutoff_ns,
+            after_daily_sweep=after_daily_sweep,
         )
 
 
@@ -506,12 +537,13 @@ def _reclaim_space(
     deleted: list[pathlib.Path],
     failed: list[tuple[pathlib.Path, str]],
     *,
+    cutoff_ns: int,
     after_daily_sweep: bool,
 ) -> SpacePressure | None:
     """空きが下限を割る場合に限り、保持期間を待たず使用中でない対象を最終更新の古い順に回収する。
 
     使用中・保護セッション・登録済みworktree・保持配布物・リンクは、期限の掃引と同じ判定で残す。
-    停止中の会話も通常期限までは再開できる。会話の領域では、日次掃引と同じ判定で再生成物だけを回収する。
+    停止中の会話も通常期限までは再開できる。期限内の会話では日次掃引と同じ判定で再生成物だけを回収する。
     """
     try:
         usage = _disk_usage(temp_root)
@@ -525,6 +557,7 @@ def _reclaim_space(
     except OSError as error:
         failed.append((pathlib.Path(error.filename or state_root / ".sessions"), _failure_reason(error)))
         legacy_sessions = None
+    references = functools.cache(resources.process_references)
     candidates: list[_PressureCandidate] = []
     with os.scandir(temp_root) as children:
         listed = sorted(children, key=lambda child: child.name)
@@ -543,9 +576,9 @@ def _reclaim_space(
             if session_area and after_daily_sweep:
                 continue
             if directory:
-                latest, has_git = _latest_update_and_worktree(child, now_ns)
+                latest, has_git, size = _inspect_tree(child, now_ns)
             else:
-                latest, has_git = _update_time(metadata, now_ns), False
+                latest, has_git, size = _update_time(metadata, now_ns), False, _allocated_bytes(metadata)
             if (
                 child in protected_sessions
                 or has_git
@@ -554,23 +587,41 @@ def _reclaim_space(
                 or has_live_owner(child)
             ):
                 continue
+            if latest < cutoff_ns:
+                scope = _ReclaimScope.WHOLE
+            elif session_area:
+                scope = _ReclaimScope.CONTENTS
+            elif directory and resources.is_tagged_cache(child):
+                observed = references()
+                if (
+                    (hasattr(os, "getuid") and metadata.st_uid != os.getuid())
+                    or observed is None
+                    or any(reference.is_relative_to(child) for reference in observed)
+                ):
+                    continue
+                scope = _ReclaimScope.WHOLE
+            else:
+                scope = _ReclaimScope.UNCLASSIFIED
         except FileNotFoundError:
             continue
         except (OSError, ManagedTempError) as error:
             failed.append((child, _failure_reason(error)))
             continue
-        candidates.append(_PressureCandidate(latest, child, metadata, session_area, _tree_bytes(child)))
-    candidates.sort(key=lambda item: (item.latest, item.path.name))
-    # 使用中の領域を除いた候補をすべて消しても不足が解消しないなら、独立した領域でも再生成物だけを回収する。
-    insufficient = sum(item.size for item in candidates) < floor - usage.free
+        candidates.append(_PressureCandidate(latest, child, metadata, scope, size))
+    # 期限切れと再生成指定のある対象を先に回収する。期限内の会話の記録は、不足分の見積もりにも含めない。
+    candidates.sort(key=lambda item: (item.scope == _ReclaimScope.UNCLASSIFIED, item.latest, item.path.name))
+    unclassified_bytes = sum(item.size for item in candidates if item.scope == _ReclaimScope.UNCLASSIFIED)
     sizes: list[tuple[str, int]] = []
     free = usage.free
-    references = functools.cache(resources.process_references)
-    for _latest, child, metadata, session_area, size in candidates:
+    for _latest, child, metadata, scope, size in candidates:
         if free >= floor:
             break
+        contents_only = scope == _ReclaimScope.CONTENTS
+        if scope == _ReclaimScope.UNCLASSIFIED:
+            contents_only = unclassified_bytes < floor - free
+            unclassified_bytes -= size
         try:
-            if session_area or insufficient:
+            if contents_only:
                 if after_daily_sweep or not stat.S_ISDIR(metadata.st_mode):
                     continue
                 removed = _clean_regenerable(child, references, failed)
@@ -636,7 +687,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         deleted_early: list[pathlib.Path] = []
         failed_early: list[tuple[pathlib.Path, str]] = []
         pressure = _reclaim_for_space(
-            state_root, temp_root, now_ns, protected, deleted_early, failed_early, after_daily_sweep=False
+            state_root, temp_root, now_ns, protected, deleted_early, failed_early, cutoff_ns=cutoff_ns, after_daily_sweep=False
         )
         return SweepResult(deleted_early, tuple(failed_early), pressure)
     # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
@@ -674,7 +725,9 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
                 failed.append((child, _failure_reason(error)))
-    pressure = _reclaim_for_space(state_root, temp_root, now_ns, protected_sessions, deleted, failed, after_daily_sweep=True)
+    pressure = _reclaim_for_space(
+        state_root, temp_root, now_ns, protected_sessions, deleted, failed, cutoff_ns=cutoff_ns, after_daily_sweep=True
+    )
     if failed and deleted:
         # 再生成物の回収に失敗しても、続く期限・空き容量の掃引で親ごと回収できれば対処は不要。
         removed = set(deleted)

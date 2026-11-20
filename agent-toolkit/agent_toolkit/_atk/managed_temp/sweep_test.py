@@ -213,13 +213,13 @@ def test_legacy_state_is_collected_individually() -> None:
 def _count_walks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
     """配下の走査を受けた対象を記録するリストを返す。"""
     walks: list[pathlib.Path] = []
-    original = sweep._latest_update_and_worktree  # pylint: disable=protected-access
+    original = sweep._inspect_tree  # pylint: disable=protected-access
 
-    def counting(path: pathlib.Path, now_ns: int) -> tuple[int, bool]:
+    def counting(path: pathlib.Path, now_ns: int) -> tuple[int, bool, int]:
         walks.append(path)
         return original(path, now_ns)
 
-    monkeypatch.setattr(sweep, "_latest_update_and_worktree", counting)
+    monkeypatch.setattr(sweep, "_inspect_tree", counting)
     return walks
 
 
@@ -550,6 +550,13 @@ def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatc
     # 容量1000のうち使用1600B相当ではなく、空きが10%（100）を割るよう基準の空きを設定する。
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 1700, paths.temp_root()))
 
+    tree_bytes = sweep._tree_bytes  # pylint: disable=protected-access
+
+    def measure(path: pathlib.Path) -> int:
+        assert path != newer, "先頭の回収で下限に戻るのに、残りの木を容量計測のため再走査した"
+        return tree_bytes(path)
+
+    monkeypatch.setattr(sweep, "_tree_bytes", measure)
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
     assert result.pressure is not None
@@ -559,6 +566,51 @@ def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatc
     assert result.pressure.top_reclaimed[0][0] == "old-abc"
     assert result.pressure.free_after > result.pressure.free_before
     assert newer.exists()
+
+
+def test_pressure_reclaims_newly_expired_session_between_daily_sweeps(monkeypatch: pytest.MonkeyPatch) -> None:
+    _first_sweep_done()
+    session = managed_temp.resolve_session_temp("expired-between-sweeps")
+    mib = 1024 * 1024
+    (session / "payload").write_bytes(b"x" * (4 * mib))
+    _age(session, 7)
+    disk = _FakeDisk(100 * mib, 12 * mib, paths.temp_root())
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    assert not managed_temp.sweep_managed_temp(now=_NOW).deleted
+    result = managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(hours=2))
+    assert result.deleted == [session] and not result.failed and not session.exists()
+    assert result.pressure is not None and result.pressure.free_after == 12 * mib
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["between-daily-sweeps", "forced"])
+@pytest.mark.parametrize("disk_mib", [80, 128], ids=["reachable", "unreachable"])
+def test_pressure_reclaims_tagged_root_before_unclassified(monkeypatch: pytest.MonkeyPatch, force: bool, disk_mib: int) -> None:
+    _first_sweep_done()
+    mib = 1024 * 1024
+    cache = _area("standalone", days=2, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+    (cache / "data").write_bytes(b"x" * (8 * mib))
+    _age(cache, 2)
+    unknown = _area("unclassified", days=3, files={"CACHEDIR.TAG": "not a cache tag"})
+    disk = _FakeDisk(disk_mib * mib, 10 * mib, paths.temp_root())
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=force)
+
+    assert result.deleted == [cache] and not result.failed and not cache.exists()
+    assert result.pressure is not None and result.pressure.still_low == (disk_mib == 128)
+    assert result.pressure.free_after - result.pressure.free_before >= 8 * mib
+    assert unknown.is_dir()
+
+
+@pytest.mark.parametrize("references_known", [True, False], ids=["busy", "unknown"])
+def test_pressure_keeps_tagged_root_unless_unused(monkeypatch: pytest.MonkeyPatch, references_known: bool) -> None:
+    _first_sweep_done()
+    cache = _area("standalone", days=2, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=8))
+    monkeypatch.setattr(resources, "process_references", lambda: [cache / "active"] if references_known else None)
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not result.deleted and not result.failed and cache.exists()
 
 
 @pytest.mark.parametrize("force", [False, True], ids=["between-daily-sweeps", "forced"])
@@ -630,7 +682,7 @@ def test_normal_free_space_does_not_reclaim_or_scan(monkeypatch: pytest.MonkeyPa
     _first_sweep_done()
     kept = _area("recent-abc", days=3)
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 0, 500))  # pylint: disable=protected-access
-    monkeypatch.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("全走査をした"))
+    monkeypatch.setattr(sweep, "_inspect_tree", lambda *_args: pytest.fail("全走査をした"))
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
@@ -723,7 +775,7 @@ def test_pressure_retry_interval_keeps_free_checks(monkeypatch: pytest.MonkeyPat
     assert first.pressure is not None and first.pressure.still_low
     calls = len(observed)
     with monkeypatch.context() as guarded:
-        guarded.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("再帰走査を反復した"))
+        guarded.setattr(sweep, "_inspect_tree", lambda *_args: pytest.fail("再帰走査を反復した"))
         guarded.setattr(sweep, "_tree_bytes", lambda *_args: pytest.fail("使用量計算を反復した"))
         for seconds in (0, 1, 299):
             assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(seconds=seconds)).pressure is None
@@ -744,7 +796,7 @@ def test_pressure_busy_lock_does_not_wait_or_scan(monkeypatch: pytest.MonkeyPatc
     """他の試行がロックを保持する間は待たず、共有領域の再帰走査を重ねない。"""
     _first_sweep_done()
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 950, 50))  # pylint: disable=protected-access
-    monkeypatch.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("並行走査した"))
+    monkeypatch.setattr(sweep, "_inspect_tree", lambda *_args: pytest.fail("並行走査した"))
     lock_path = paths.state_root() / ".sweep/pressure.lock"
     with lock_path.open("a+", encoding="utf-8") as locked:
         file_lock.acquire_lock(locked, blocking=False)

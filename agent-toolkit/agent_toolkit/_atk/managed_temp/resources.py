@@ -60,7 +60,11 @@ def _regenerable(path: pathlib.Path) -> bool:
         )
     if path.name == "target" and _input_file(project / "Cargo.toml") and _input_file(project / "Cargo.lock"):
         return True
-    # CACHEDIR.TAGはキャッシュ生成側の明示指定。固有のキャッシュ名の列挙を増やさない。
+    return is_tagged_cache(path)
+
+
+def is_tagged_cache(path: pathlib.Path) -> bool:
+    """生成側が有効なCACHEDIR.TAGでキャッシュと明示したディレクトリかを返す。"""
     tag = path / "CACHEDIR.TAG"
     if tag.is_symlink() or not _input_file(tag):
         return False
