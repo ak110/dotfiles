@@ -44,7 +44,7 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
                         session,
                         None
                         if self._status_writer is None
-                        else (await self._status_writer.result_state_async(session.session_id)) == "consumed",
+                        else (await self._status_writer.result_state_async(session.session_id, session=session)) == "consumed",
                     ),
                 ),
             )
@@ -74,7 +74,8 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
                             session,
                             None
                             if self._status_writer is None
-                            else (await self._status_writer.result_state_async(session.session_id)) == "consumed",
+                            else (await self._status_writer.result_state_async(session.session_id, session=session))
+                            == "consumed",
                         ),
                     ),
                 ),
@@ -100,7 +101,8 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
                             session,
                             None
                             if self._status_writer is None
-                            else (await self._status_writer.result_state_async(session.session_id)) == "consumed",
+                            else (await self._status_writer.result_state_async(session.session_id, session=session))
+                            == "consumed",
                         ),
                     ),
                 ),
@@ -192,6 +194,8 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
         ) or bool(
             isinstance(session, SessionResumeState) and session.status in TERMINAL_STATUSES and not session.result_delivered
         )
+        if result_available and self._status_writer is not None:
+            result_available = await self._status_writer.result_state_async(session_id, session=session) != "consumed"
         response: dict[str, Any] = {
             "session_id": session.session_id,
             "status": status,
@@ -275,7 +279,7 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
                 response["root_session_id"] = self._status_writer.root_session_id
         if registry_resolved or isinstance(session, RegistryResumeState):
             # 自プロセスが起動していないsessionの通知は、委譲元のサーバーが替わると旧ルートに残るため併せて回収する。
-            response = self._response_with_notices(response, await self._take_registry_notices(session_id))
+            response = self._deliver_notices(response, await self._read_registry_notices(session_id))
         return response
 
     async def _owner_lost_show_response(self, diagnosis: owner_lost.OwnerLost, *, verbose: bool) -> dict[str, Any]:
@@ -320,4 +324,4 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
             response.update(state.fast_mode_fields(info.engine, info.fast_mode))
             if self._status_writer is not None:
                 response["root_session_id"] = self._status_writer.root_session_id
-        return self._response_with_notices(response, await self._take_registry_notices(session_id))
+        return self._deliver_notices(response, await self._read_registry_notices(session_id))

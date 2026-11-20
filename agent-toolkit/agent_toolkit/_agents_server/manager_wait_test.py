@@ -22,6 +22,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import session_registry
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -72,21 +73,149 @@ async def test_reply_cleanup_preserves_a_result_published_before_delivery_return
                 "root-session", session.session_id, "root.json", collector="observer", state_root=tmp_path
             )
             assert error is None and claimed is not None
-        delete_result = writer.delete_result_async
+        send = manager._send_with_resources
 
-        async def complete_before_cleanup(identifier, *, collector, **kwargs):
-            if collector == "send-message":
-                _complete(session, message="新しい本文")
-                await writer.flush_async()
-            await delete_result(identifier, collector=collector, **kwargs)
+        async def finish_before_response(current, prompt):
+            delivery = await send(current, prompt)
+            _complete(session, message="新しい本文")
+            await writer.flush_async()
+            return delivery
 
-        monkeypatch.setattr(writer, "delete_result_async", complete_before_cleanup)
+        monkeypatch.setattr(manager, "_send_with_resources", finish_before_response)
         reply = await manager.send_message(session.session_id, "次の作業")
         assert reply["delivery"] == "reply_started"
+        assert ("previous_result" in reply) == (not previous_consumed)
         published = writer.read_result(session.session_id)
         assert published is not None and published["turn_seq"] == 2 and published["agent_message"] == "新しい本文"
         assert not session.result_delivered
         assert (await manager.wait())["agent_message"] == "新しい本文"
+
+
+@pytest.mark.asyncio
+async def test_reply_leaves_second_turn_for_cli_while_first_turn_is_being_collected(tmp_path):
+    async with _writer_backed_manager(tmp_path) as (manager, writer):
+        session = state.SessionState("overlap", str(tmp_path), announced=True, turn_seq=1)
+        manager.sessions[session.session_id] = session
+        _complete(session, message="最初の本文")
+        await writer.flush_async()
+        state.begin_reply(session)
+        _complete(session, message="次の本文")
+        await writer.flush_async()
+
+        directory = shared_layout.results_directory("root-session", tmp_path)
+        with retained_results._locked(directory / ".overlap.claim.lock"):
+            sending = asyncio.create_task(manager.send_message(session.session_id, "続行"))
+            done, _ = await asyncio.wait({sending}, timeout=2)
+        response = await sending
+        assert sending in done and response["delivery"] == "reply_started"
+        assert "previous_result" not in response
+        for expected in ("最初の本文", "次の本文"):
+            result, error = writer.take_result(session.session_id, collector="cli")
+            assert error is None and result is not None and result["agent_message"] == expected
+        assert writer.take_result(session.session_id, collector="cli") == (None, None)
+
+
+@pytest.mark.parametrize("operation", ["wait", "expired-wait", "stopped-wait", "kill", "stopped-kill"])
+@pytest.mark.asyncio
+async def test_result_lock_does_not_claim_the_result_or_withhold_notices(tmp_path, operation):
+    async with _writer_backed_manager(tmp_path) as (manager, writer):
+        session = state.SessionState("receipt", str(tmp_path), announced=True, turn_seq=1)
+        manager.sessions[session.session_id] = session
+        session_registry.publish(
+            session.session_id,
+            state=session_registry.PublicationState.RESULT_COMPLETED,
+            launcher_session_id="root-session",
+            state_root=tmp_path,
+        )
+        _complete(session, message="本文")
+        await writer.flush_async()
+        if operation.startswith("expired"):
+            manager._expire_session(session.session_id)
+            await manager._wait_for_resource_release(session.session_id)
+        if operation.startswith("stopped"):
+            await manager.stop(session.session_id, retain_result=True)
+        _write_notice(shared_layout.notices_directory("root-session", tmp_path), session.session_id, 1, "1", "連絡")
+        directory = shared_layout.results_directory("root-session", tmp_path)
+        with retained_results._locked(directory / ".receipt.claim.lock"):
+            for attempt in range(2):
+                if operation.endswith("wait"):
+                    response = await manager.wait()
+                    assert response["status"] == "running"
+                else:
+                    response = await manager.kill(session.session_id)
+                    assert response["status"] == "completed" and not response["kill_requested"]
+                assert response.get("notices", []) == ([{"body": "連絡"}] if attempt == 0 else [])
+                assert "agent_message" not in response
+        assert (await manager.wait())["agent_message"] == "本文"
+        assert "agent_message" not in await manager.wait()
+
+
+@pytest.mark.parametrize("operation", ["send", "wait", "kill", "expired-wait", "stopped-wait", "stopped-kill", "kill-stop"])
+@pytest.mark.parametrize("expires", [False, True])
+@pytest.mark.asyncio
+async def test_result_survives_deadline_at_response_save_or_notices(tmp_path, monkeypatch, operation, expires):
+    """保存・通知待ちで期限に達すれば原本を、期限内なら応答を通じて同じ終了結果を一度だけ渡す。"""
+    async with _writer_backed_manager(tmp_path) as (manager, writer):
+        session = state.SessionState("response-boundary", str(tmp_path), announced=True, turn_seq=1)
+        manager.sessions[session.session_id] = session
+        session_registry.publish(
+            session.session_id,
+            state=session_registry.PublicationState.RESULT_COMPLETED,
+            launcher_session_id="root-session",
+            state_root=tmp_path,
+        )
+        _complete(session, message="診断本文", error={"message": "失敗理由"})
+        await writer.flush_async()
+        if operation.startswith("expired"):
+            manager._expire_session(session.session_id)
+            await manager._wait_for_resource_release(session.session_id)
+        if operation.startswith("stopped"):
+            await manager.stop(session.session_id, retain_result=True)
+        _write_notice(shared_layout.notices_directory("root-session", tmp_path), session.session_id, 1, "1", "連絡")
+        step = "_save_started_session" if operation == "send" else "_read_notices"
+        if operation == "kill-stop":
+            step = "stop"
+        original = getattr(manager, step)
+        boundary = asyncio.timeout(None)
+
+        async def at_boundary(*args, **kwargs):
+            value = await original(*args, **kwargs)
+            if expires:
+                boundary.reschedule(asyncio.get_running_loop().time())
+                await asyncio.sleep(0)
+            return value
+
+        monkeypatch.setattr(manager, step, at_boundary)
+        if operation == "send":
+            call = manager.send_message(session.session_id, "次の依頼")
+        elif operation.endswith("wait"):
+            call = manager.wait()
+        else:
+            call = manager.kill(session.session_id, stop=operation == "kill-stop")
+        if expires:
+            with pytest.raises(TimeoutError):
+                async with boundary:
+                    await call
+            result, error = writer.take_result(session.session_id, collector="cli")
+            assert error is None
+            assert writer.take_notices(session.session_id) == [{"body": "連絡"}]
+        else:
+            async with boundary:
+                response = await call
+            result = response["previous_result"] if operation == "send" else response
+            if operation == "send":
+                assert "notices" not in response
+                assert writer.take_notices(session.session_id) == [{"body": "連絡"}]
+            else:
+                assert response["notices"] == [{"body": "連絡"}]
+            if operation == "kill-stop":
+                retained, error = writer.take_result(session.session_id, collector="cli")
+                assert error is None and retained is not None and retained["agent_message"] == "診断本文"
+        assert not writer.take_notices(session.session_id)
+        assert result is not None and result["agent_message"] == "診断本文"
+        assert result["status"] == "failed" and result["error"] == {"message": "失敗理由"}
+        await writer.flush_async()
+        assert writer.take_result(session.session_id, collector="cli") == (None, None)
 
 
 @pytest.mark.asyncio

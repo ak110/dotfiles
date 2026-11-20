@@ -56,6 +56,47 @@ from agent_toolkit._testing.agents_server_support import (
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+async def test_send_during_reconnect_waits_only_for_same_session(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """旧接続を閉じている間、同じsessionの追送だけを止め、取り消した指示は渡さない。"""
+    entered, proceed, queued = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    received: list[tuple[str, str]] = []
+
+    async def deliver(session: state.SessionState, prompt: str) -> dict[str, str]:
+        received.append((session.session_id, prompt))
+        if prompt == "再開":
+            entered.set()
+            await proceed.wait()
+        return {"delivery": "reply_started"}
+
+    async with claude.ClaudeServerManager() as manager, asyncio.TaskGroup() as group:
+        monkeypatch.setattr(manager, "_send_message_owned", deliver)
+        session = state.SessionState("current", str(tmp_path), engine="claude")
+        other = state.SessionState("other", str(tmp_path), engine="claude")
+
+        async def followup() -> None:
+            queued.set()
+            await manager.send_message(session, "取り消す")
+
+        first = group.create_task(manager.send_message(session, "再開"))
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        waiting = group.create_task(followup())
+        await asyncio.wait_for(queued.wait(), timeout=3)
+        await asyncio.wait_for(manager.send_message(other, "別の指示"), timeout=3)
+        assert received == [("current", "再開"), ("other", "別の指示")]
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        proceed.set()
+        await first
+        await manager.send_message(session, "次の指示")
+
+    assert received == [("current", "再開"), ("other", "別の指示"), ("current", "次の指示")]
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
 async def test_backend_adoption_changes_decoder_without_reconnecting_or_querying(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -578,7 +619,7 @@ async def test_claude_reply_without_working_directory_keeps_previous_turn(
         assert session_registry.resolve(session.session_id).recorded_turn_seq == 1
         if not received:
             assert await _cli_wait(manager) == [("completed", "初回完了")]
-            await manager.save_control_state()
+            # 次の保存を待たず、cwdを戻した直後に追送する。
 
         workdir.mkdir()
         reply = await asyncio.wait_for(manager.send_message(session.session_id, "次の指示"), 5)

@@ -14,8 +14,10 @@ from agent_toolkit._agents_server import (
     codex_resume_state,
     handoff_next_action,
     manager_base,
+    notice_inbox,
     record_paths,
     result_projection,
+    retained_results,
     state,
     status_file,
 )
@@ -24,6 +26,7 @@ from agent_toolkit._agents_server.manager_base import PendingResume
 from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
     ModelCandidate,
+    RegistryResumeState,
     SessionResumeState,
     SessionState,
 )
@@ -316,22 +319,15 @@ class ManagerResponses(manager_base.ManagerBase):
             next_action=UNKNOWN_SESSION_NEXT_ACTION,
         )
 
-    def _take_notices(self, session_id: str) -> list[dict[str, str]]:
-        """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
+    async def _read_notices(self, session_id: str) -> list[notice_inbox.PendingNotice]:
         if self._status_writer is None:
             return []
-        return self._status_writer.take_notices(session_id)
-
-    async def _take_notices_async(self, session_id: str) -> list[dict[str, str]]:
-        """通知の排他回収の完了を待って返す。"""
-        if self._status_writer is None:
-            return []
-        return await self._status_writer.take_notices_async(session_id)
+        return await self._status_writer.read_notices_async(session_id)
 
     async def _result_response_async(
-        self, session: SessionState, *, include_progress: bool = True, include_result: bool = True, consume: bool = True
+        self, session: SessionState, *, include_progress: bool = True, include_result: bool = True
     ) -> dict[str, Any]:
-        """記録の読取をworkerで待ち、消費を指定した応答だけを回収済みにする。"""
+        """記録の読取をworkerで待ち、結果を消費せずに応答を組み立てる。"""
         identity = (
             await run_file_operation(observed_session_identity, session.session_id)
             if include_result and session.terminal
@@ -341,15 +337,14 @@ class ManagerResponses(manager_base.ManagerBase):
             session,
             include_progress=include_progress,
             include_result=include_result,
-            consume=consume,
             observed_identity=identity,
             identity_read=True,
         )
 
     @staticmethod
-    def _response_with_notices(response: dict[str, Any], notices: list[dict[str, str]]) -> dict[str, Any]:
-        """回収した通知がある場合だけ応答へ追加する。"""
-        if notices:
+    def _deliver_notices(response: dict[str, Any], pending: list[notice_inbox.PendingNotice]) -> dict[str, Any]:
+        """応答が確定してから通知を回収し、取得できた本文だけを加える。"""
+        if notices := notice_inbox.consume_notices(pending):
             response["notices"] = notices
         return response
 
@@ -359,11 +354,10 @@ class ManagerResponses(manager_base.ManagerBase):
         *,
         include_progress: bool = True,
         include_result: bool = True,
-        consume: bool = True,
         observed_identity: dict[str, str] | None = None,
         identity_read: bool = False,
     ) -> dict[str, Any]:
-        """waitまたはkillの応答を組み立て、返した終了時の結果を回収済みにする。
+        """waitまたはkillの応答を組み立てる。原本の回収は呼び出し元が応答の最後で確定する。
 
         `elapsed_seconds`はturnの`started_at`起点である。
         最終活動時刻と停滞の印は`list`が返すため、本応答へは載せない。
@@ -393,18 +387,44 @@ class ManagerResponses(manager_base.ManagerBase):
         )
         if next_action is not None:
             response = result_projection.append_result_next_action(response, next_action)
-        if consume and "agent_message" in response:
-            session.result_delivered = True
-            session.touch()
         return response
 
-    def _kill_result_response(self, session: SessionState, *, kill_requested: bool) -> dict[str, Any]:
-        """killの応答を組み立て、回収した通知がある場合だけ付ける。"""
-        response = self._result_response(session, include_progress=False)
-        if "agent_message" in response and self._status_writer is not None:
-            self._status_writer.delete_result(session.session_id, collector="kill")
-        response["kill_requested"] = kill_requested
-        return self._response_with_notices(response, self._take_notices(session.session_id))
+    async def _claim_resume_result(
+        self, resume_state: SessionResumeState, response: dict[str, Any], *, collector: str
+    ) -> dict[str, Any] | None:
+        """退避元の違いによらず、同じturnの排他回収に成功した本文だけを返す。"""
+        session_id = resume_state.session_id
+        if isinstance(resume_state, RegistryResumeState) and resume_state.result_root_session_id is not None:
+            claimed, error = await retained_results.take_for_response(
+                resume_state.result_root_session_id,
+                session_id,
+                resume_state.result_owner_status_file,
+                expected_turn_seq=resume_state.turn_seq,
+                expected_finalized_at=resume_state.finalized_at,
+                collector=collector,
+                state_root=self._status_writer.state_root if self._status_writer is not None else None,
+            )
+            if error is not None:
+                raise ActionableError(
+                    f"保存済みの子の結果を回収できない: {session_id}: {error}",
+                    next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
+                )
+            return None if claimed is None else {**response, **claimed}
+        if self._status_writer is not None:
+            await self._status_writer.retain_result_async(resume_state)
+            claimed, error = await self._status_writer.take_result_async(
+                session_id,
+                collector=collector,
+                expected_turn_seq=resume_state.turn_seq,
+                expected_finalized_at=resume_state.finalized_at,
+            )
+            if error is not None:
+                raise ActionableError(
+                    f"保存済みの子の結果を回収できない: {session_id}: {error}",
+                    next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
+                )
+            return None if claimed is None else response
+        return response
 
     async def _resume_response(self, pending: PendingResume, ticket: int) -> dict[str, Any]:
         """同じ再開taskの配送結果を返し、呼び出し取消時は対応promptだけを外す。"""
@@ -423,6 +443,6 @@ class ManagerResponses(manager_base.ManagerBase):
             response["error"] = {"codexErrorInfo": codex_resume_state.WRITER_CONFLICT}
         previous_result = pending.take_previous_result()
         if previous_result:
-            response["previous_result"] = previous_result
+            response["previous_result"] = state.PreviousResult(previous_result, pending.state)
         response.update(vars(self).get("_admission_wait_fields", {}).pop(session.session_id, {}))
         return response

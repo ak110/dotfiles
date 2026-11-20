@@ -13,33 +13,36 @@ import os
 import pathlib
 from typing import Any
 
-from agent_toolkit._agents_server import context_usage, status_reader
+from agent_toolkit._agents_server import context_usage, retained_results, status_reader
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
-from agent_toolkit._agents_server.notice_inbox import take_notices
+from agent_toolkit._agents_server.notice_inbox import PendingNotice, consume_notices, read_notices
 from agent_toolkit._agents_server.retained_results import read_retained_result, take_result
 from agent_toolkit._agents_server.shared_layout import (
     hosts_directory,
     list_root_session_ids,
     list_status_files,
     notices_directory,
+    result_session_id,
     results_directory,
     status_directory,
     valid_session_id,
     wait_targets_directory,
 )
-from agent_toolkit._agents_server.shared_roots import PROCESS_ROOT_PREFIX, StatusFileIdentity
+from agent_toolkit._agents_server.shared_roots import PROCESS_ROOT_PREFIX, StatusFileIdentity, resolve_host_writer
 from agent_toolkit._agents_server.shared_sweep import sweep_stale_shared_state
 from agent_toolkit._agents_server.state import (
     RESULT_RETENTION_SECONDS,
     TERMINAL_STATUSES,
+    RegistryResumeState,
     SessionResumeState,
     SessionState,
     fast_mode_fields,
     has_uncollected_result,
     terminal_result_payload,
+    utc_now,
 )
 from agent_toolkit._agents_server.wait_targets import release_wait_target
-from agent_toolkit._common import interval_gate, session_registry
+from agent_toolkit._common import interval_gate, session_launchers, session_registry
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
@@ -99,6 +102,8 @@ class StatusFileWriter:
         expired_sessions: dict[str, SessionResumeState] | None = None,
     ) -> None:
         self._sessions = sessions
+        # 回収競合で起動を保留した直接の子。表示だけに使い、登録簿や結果を書かない。
+        self._recovering: dict[str, SessionState] = {}
         self._expired_sessions: dict[str, SessionResumeState] = {} if expired_sessions is None else expired_sessions
         self._identity = identity
         self._state_root = state_root
@@ -109,6 +114,7 @@ class StatusFileWriter:
         self._aggregate_seconds = aggregate_seconds
         self._flush_handle: asyncio.TimerHandle | None = None
         self._retention_handle: asyncio.TimerHandle | None = None
+        # 旧世代へ渡すsession単位の索引。受領判定にはディスク上の終了結果別の公開記録を使う。
         self._published_results: set[str] = set()
         self._projected_host_session_id: str | None = None
         self._active = False
@@ -211,6 +217,7 @@ class StatusFileWriter:
         self._remove_stale_status_files()
         for session in self._sessions.values():
             session.publish_registration()
+        self._expose_legacy_slots()
         self._write_terminal_results()
         visible, now, payload = self._projection()
         self._write_projection(payload)
@@ -238,9 +245,10 @@ class StatusFileWriter:
             for session in tuple(self._sessions.values()):
                 await session.drain_registration()
                 await session.publish_registration_async()
+            await run_file_operation(self._expose_legacy_slots)
             for session in tuple(self._sessions.values()):
                 if session.result_delivered:
-                    await self._delete_result_async_unlocked(session.session_id, collector="status-sync")
+                    await self._discard_delivered_async(session)
                 elif session.result_available:
                     turn = session.turn_seq, session.finalized_at
                     result_state = await self.result_state_async(session.session_id)
@@ -292,6 +300,34 @@ class StatusFileWriter:
         if error is not None:
             raise error
 
+    def show_recovery_wait(self, previous: SessionResumeState) -> None:
+        """旧結果の回収待ちを開始待ちの行として表示し、実行所有と旧結果の原本は変えない。"""
+        if (waiting := self._recovering.get(previous.session_id)) is not None and waiting.turn_seq == previous.turn_seq:
+            return
+        waiting = SessionState(
+            session_id=previous.session_id,
+            cwd=previous.cwd,
+            engine=previous.engine,
+            model=previous.model,
+            effort=previous.effort,
+            fast_mode=previous.fast_mode,
+            model_type=previous.model_type,
+            launch_kind=previous.launch_kind,
+            turn_seq=previous.turn_seq,
+            announced=True,
+            status=previous.status,
+            started_at=previous.started_at or previous.updated_at or utc_now(),
+            last_action="中断結果の回収後に同じ会話を自動で再開する",
+        )
+        session_registry.LaunchInfo.of(previous).apply_to(waiting)
+        self._recovering[previous.session_id] = waiting
+        self.schedule()
+
+    def clear_recovery_wait(self, identifier: str) -> None:
+        """復旧の決着、取消、別の所有者への移転を次の表示へ反映する。"""
+        if self._recovering.pop(identifier, None) is not None:
+            self.schedule()
+
     def _projection(
         self,
         live_hosts: set[str] | None = None,
@@ -309,7 +345,7 @@ class StatusFileWriter:
         visible: list[SessionState | SessionResumeState] = [
             session
             for session in self._sessions.values()
-            if session.announced
+            if (session.announced or session.session_id in self._recovering)
             and (
                 session.session_id in live_hosts
                 or (
@@ -321,10 +357,14 @@ class StatusFileWriter:
                 )
             )
         ]
+        visible.extend(waiting for key, waiting in self._recovering.items() if key not in self._sessions)
         visible.extend(
             session
             for session in self._expired_sessions.values()
-            if session.session_id in live_hosts and session.session_id not in self._sessions and session.started_at is not None
+            if session.session_id in live_hosts
+            and session.session_id not in self._sessions
+            and session.session_id not in self._recovering
+            and session.started_at is not None
         )
         visible.sort(key=lambda session: session.started_at or "")
         payload: dict[str, Any] = {
@@ -374,53 +414,106 @@ class StatusFileWriter:
                 session.finalized_at is not None
                 and session.status in TERMINAL_STATUSES
                 and not session.result_delivered
-                and await self.result_state_async(session.session_id) == "unpublished"
+                and await self.result_state_async(session.session_id, session=session) == "unpublished"
                 and turn == (session.turn_seq, session.finalized_at)
                 and session.finalized_at is not None
             ):
                 await self._write_terminal_result_async(session)
 
-    async def delete_result_async(self, session_id: str, *, collector: str) -> None:
-        """進行中の結果保存を待ってから削除する。"""
-        async with self._write_lock:
-            await self._delete_result_async_unlocked(session_id, collector=collector)
+    def _expose_legacy_slots(self) -> None:
+        retained_results.expose_legacy_slots(
+            results_directory(self.root_session_id, self._state_root), self._identity.file_name
+        )
 
-    async def _delete_result_async_unlocked(self, session_id: str, *, collector: str) -> None:
+    def _result_path(self, session_id: str) -> pathlib.Path:
         if not valid_session_id(session_id):
             raise ValueError(f"invalid session_id: {session_id}")
-        path = results_directory(self.root_session_id, self._state_root) / f"{session_id}.json"
-        await run_file_operation(path.unlink, missing_ok=True)
-        self._published_results.discard(session_id)
-        _LOG.info("result_deleted session_id=%s writer=%s collector=%s", session_id, self._identity.file_name, collector)
+        return results_directory(self.root_session_id, self._state_root) / f"{session_id}.json"
 
-    async def result_state_async(self, session_id: str) -> str:
-        """公開台帳をloopで読み、存在確認をworkerで待つ。"""
-        if session_id not in self._published_results:
-            return "unpublished"
-        exists = await run_file_operation(self.result_exists, session_id)
-        return "published" if exists else "consumed"
+    async def _discard_delivered_async(self, session: SessionState | SessionResumeState) -> None:
+        if session.finalized_at is None:
+            return
+        end = session.turn_seq, session.finalized_at
+        if await self.result_state_async(session.session_id, session=session) != "consumed":
+            await run_file_operation(self.delete_result, session.session_id, collector="status-sync", expected_end=end)
+
+    async def delete_result_async(
+        self, session_id: str, *, collector: str, expected_end: retained_results.ResultEnd | None = None
+    ) -> bool:
+        """進行中の結果保存を待ち、指定した終了結果だけを回収する。"""
+        async with self._write_lock:
+            return await run_file_operation(self.delete_result, session_id, collector=collector, expected_end=expected_end)
+
+    def stopped_result_writer(self, session_id: str, root: str) -> StatusFileIdentity:
+        """登録簿のルートと委譲元を使い、最新原本の回収後も同じ親の旧turnを破棄する。"""
+        path = session_registry.registry_directory(self._state_root) / f"{session_id}.json"
+        launcher = session_launchers.read_launcher(path)
+        if launcher is None and root == self.root_session_id:
+            return self._identity
+        if launcher is None or launcher == root:
+            return StatusFileIdentity(root, "root.json", None)
+        return resolve_host_writer(StatusFileIdentity(root, f"{launcher}.json", launcher), self._state_root)
+
+    async def discard_stopped_session_async(
+        self, session: SessionResumeState, *, expected_owner: tuple[str | None, int | None]
+    ) -> None:
+        """停止したsessionの原本を、登録簿から復元した場合も元の書込主体で破棄する。"""
+        root = self.root_session_id
+        owner = self._identity.file_name
+        if isinstance(session, RegistryResumeState) and session.result_root_session_id is not None:
+            root = session.result_root_session_id
+            owner = session.result_owner_status_file
+        async with self._write_lock:
+            forget_session = await run_file_operation(
+                retained_results.discard_stopped_session,
+                root,
+                session.session_id,
+                owner,
+                through_turn=session.turn_seq,
+                finalized_at=session.finalized_at,
+                state_root=self._state_root,
+                expected_owner=expected_owner,
+            )
+            if forget_session and (root, owner) == (self.root_session_id, self._identity.file_name):
+                self._published_results.discard(session.session_id)
+
+    async def result_state_async(self, session_id: str, *, session: SessionState | SessionResumeState | None = None) -> str:
+        """照会を始めた時点の終了結果の公開状態を返す。"""
+        session = session or self._sessions.get(session_id) or self._expired_sessions.get(session_id)
+        if session is not None and session.finalized_at is not None:
+            end = session.turn_seq, session.finalized_at
+            path = self._result_path(session_id)
+            if isinstance(session, RegistryResumeState) and session.result_root_session_id is not None:
+                path = results_directory(session.result_root_session_id, self._state_root) / path.name
+            observed = await run_file_operation(retained_results.result_state, path, end)
+            return observed if end == (session.turn_seq, session.finalized_at) else "unpublished"
+        return "unpublished"
 
     async def take_result_async(
-        self, session_id: str, *, collector: str, expected_turn_seq: int | None = None
+        self, session_id: str, *, collector: str, expected_turn_seq: int | None = None, expected_finalized_at: str | None = None
     ) -> tuple[dict[str, Any] | None, str | None]:
         """結果の排他回収を待ち、公開台帳をloop上で更新する。"""
         async with self._write_lock:
-            result = await run_file_operation(
-                take_result,
+            result = await retained_results.take_for_response(
                 self.root_session_id,
                 session_id,
                 self._identity.file_name,
                 collector=collector,
                 state_root=self._state_root,
                 expected_turn_seq=expected_turn_seq,
+                expected_finalized_at=expected_finalized_at,
             )
             if result[0] is not None:
                 self._published_results.discard(session_id)
             return result
 
+    async def read_notices_async(self, session_id: str) -> list[PendingNotice]:
+        """取消可能な読取では通知の原本を残す。"""
+        return await run_file_operation(self.read_notices, session_id)
+
     async def take_notices_async(self, session_id: str) -> list[dict[str, str]]:
-        """通知の一度だけの回収をworkerで待つ。"""
-        return await run_file_operation(self.take_notices, session_id)
+        """旧転送元の回収要求にも、読取が完了してから本文を返す。"""
+        return consume_notices(await self.read_notices_async(session_id))
 
     async def deactivate_async(self) -> None:
         """保存taskの終了後に予約を解除して所有ファイルを回収する。"""
@@ -433,23 +526,19 @@ class StatusFileWriter:
         await run_file_operation(self._remove_owned_and_expired_files)
         self._published_results.clear()
 
-    def delete_result(self, session_id: str, *, collector: str) -> None:
-        """回収済みまたは所有解除するsessionの終了時の結果を削除する。"""
-        if not valid_session_id(session_id):
-            raise ValueError(f"invalid session_id: {session_id}")
-        path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
-        else:
-            _LOG.info(
-                "result_deleted session_id=%s writer=%s collector=%s",
-                session_id,
-                self._identity.file_name,
-                collector,
-            )
+    def delete_result(self, session_id: str, *, collector: str, expected_end: retained_results.ResultEnd | None = None) -> bool:
+        """指定した終了結果を回収する。引数を省略した従来の呼び出しでは旧名の結果を消す。"""
+        path = self._result_path(session_id)
+        if expected_end is None:
+            payload, error = self.take_result(session_id, collector=collector)
+            if error is not None:
+                raise OSError(error)
+            return payload is not None
+        removed = retained_results.discard_result(path, self._identity.file_name, expected_end)
         self._published_results.discard(session_id)
+        if removed:
+            _LOG.info("result_deleted session_id=%s writer=%s collector=%s", session_id, self._identity.file_name, collector)
+        return removed
 
     def delete_wait_target(self, session_id: str) -> None:
         """自身の書込主体が登録した待機対象を明示破棄する。"""
@@ -457,19 +546,13 @@ class StatusFileWriter:
 
     def result_exists(self, session_id: str) -> bool:
         """指定sessionの終了時の結果ファイルが存在するかを返す。"""
-        if not valid_session_id(session_id):
-            raise ValueError(f"invalid session_id: {session_id}")
-        return (results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json").is_file()
+        path = self._result_path(session_id)
+        return path.is_file() or any(path.parent.glob(f"{session_id}.*.json"))
 
-    def read_result(self, session_id: str) -> dict[str, Any] | None:
-        """指定sessionの保存済み終了時の結果を検証して返す。"""
-        if not valid_session_id(session_id):
-            raise ValueError(f"invalid session_id: {session_id}")
-        path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
-        try:
-            payload: Any = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
-            return None
+    def read_result(self, session_id: str, *, expected_turn_seq: int | None = None) -> dict[str, Any] | None:
+        """指定したturnの保存済み終了結果を検証して返す。"""
+        self._result_path(session_id)
+        payload = read_retained_result(self.root_session_id, session_id, self._state_root, expected_turn_seq=expected_turn_seq)
         if (
             not isinstance(payload, dict)
             or payload.get("status") not in TERMINAL_STATUSES
@@ -496,13 +579,20 @@ class StatusFileWriter:
 
     def result_state(self, session_id: str) -> str:
         """自プロセスが公開した終了時の結果の公開状態を返す。"""
-        if session_id not in self._published_results:
+        session = self.sessions.get(session_id) or self.expired_sessions.get(session_id)
+        if session is None:
+            return "published" if self.result_exists(session_id) else "unpublished"
+        if session.finalized_at is None or session.result_delivered:
             return "unpublished"
-        return "published" if self.result_exists(session_id) else "consumed"
+        return retained_results.result_state(self._result_path(session_id), (session.turn_seq, session.finalized_at))
 
     def take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収する。"""
-        return take_notices(
+        return consume_notices(self.read_notices(session_id))
+
+    def read_notices(self, session_id: str) -> list[PendingNotice]:
+        """自身の投影に宛てた通知を回収せずに読む。"""
+        return read_notices(
             self._identity.root_session_id,
             session_id,
             self._state_root,
@@ -513,7 +603,10 @@ class StatusFileWriter:
     def _write_terminal_results(self) -> None:
         for session in self._sessions.values():
             if session.result_delivered:
-                self.delete_result(session.session_id, collector="status-sync")
+                if session.finalized_at is not None:
+                    self.delete_result(
+                        session.session_id, collector="status-sync", expected_end=(session.turn_seq, session.finalized_at)
+                    )
                 continue
             if not session.result_available:
                 continue
@@ -524,31 +617,29 @@ class StatusFileWriter:
             self._write_terminal_result(session)
 
     def _write_terminal_result(self, session: SessionState | SessionResumeState) -> None:
-        assert session.finalized_at is not None
-        assert session.retention_deadline is not None
-        payload = terminal_result_payload(session)
-        payload["owner_status_file"] = self._identity.file_name
-        payload["session"] = _serialize_retained_session(session)
-        directory = results_directory(self._identity.root_session_id, self._state_root)
-        atomic_write(directory / f"{session.session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
+        payload = self._result_payload(session)
+        retained_results.publish_result(self._result_path(session.session_id), payload)
         self._published_results.add(session.session_id)
         _LOG.info("result_written session_id=%s writer=%s", session.session_id, self._identity.file_name)
 
-    async def _write_terminal_result_async(self, session: SessionState | SessionResumeState) -> None:
-        assert session.finalized_at is not None
-        assert session.retention_deadline is not None
-        turn = session.turn_seq, session.finalized_at
+    def _result_payload(self, session: SessionState | SessionResumeState) -> dict[str, Any]:
         payload = terminal_result_payload(session)
         payload["owner_status_file"] = self._identity.file_name
         payload["session"] = _serialize_retained_session(session)
-        path = results_directory(self.root_session_id, self._state_root) / f"{session.session_id}.json"
+        return payload
+
+    async def _write_terminal_result_async(self, session: SessionState | SessionResumeState) -> None:
+        payload = self._result_payload(session)
+        path = self._result_path(session.session_id)
 
         async def write_and_reflect() -> None:
-            await run_file_operation(atomic_write, path, json.dumps(payload, ensure_ascii=False) + "\n")
-            if turn != (session.turn_seq, session.finalized_at) or session.result_delivered:
-                await run_file_operation(path.unlink, missing_ok=True)
-                return
+            await run_file_operation(retained_results.publish_result, path, payload)
             self._published_results.add(session.session_id)
+            if session.result_delivered and (session.turn_seq, session.finalized_at) == (
+                payload["turn_seq"],
+                payload["finalized_at"],
+            ):
+                await self._discard_delivered_async(session)
             _LOG.info("result_written session_id=%s writer=%s", session.session_id, self._identity.file_name)
 
         await finish_task(asyncio.create_task(write_and_reflect()))
@@ -588,7 +679,8 @@ class StatusFileWriter:
             retained_owners = {
                 payload.get("owner_status_file")
                 for path in results.glob("*.json")
-                if (payload := read_retained_result(self.root_session_id, path.stem, self._state_root)) is not None
+                if (identifier := result_session_id(path)) is not None
+                and (payload := read_retained_result(self.root_session_id, identifier, self._state_root)) is not None
             }
             for path in hosts.iterdir():
                 if not path.is_file() or path.stat().st_mtime >= cutoff:
@@ -764,6 +856,8 @@ def _serialize_retained_session(session: SessionState | SessionResumeState) -> d
     """表示期限後もCLIの詳細表示へ必要な起動情報を結果と共に残す。"""
     return {
         "session_id": session.session_id,
+        "turn_seq": session.turn_seq,
+        "finalized_at": session.finalized_at,
         "cwd": session.cwd,
         "engine": session.engine,
         "model": session.model,

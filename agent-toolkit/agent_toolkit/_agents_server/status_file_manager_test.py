@@ -91,8 +91,9 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
         result_path = shared_layout.results_directory("root", tmp_path) / f"{session.session_id}.json"
         assert result_path.exists()
 
-        await manager.send_message(session.session_id, "続行")
+        reply = await manager.send_message(session.session_id, "続行")
 
+        assert reply["previous_result"]["agent_message"] == "前の結果"
         assert not result_path.exists()
         await manager.close()
 

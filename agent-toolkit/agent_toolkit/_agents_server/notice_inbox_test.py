@@ -80,3 +80,42 @@ def test_wait_round_without_notices_reads_no_status_files(tmp_path: pathlib.Path
     (directory / "target.20260907T010000000000.0123456789abcdef.json").write_text(json.dumps(notice), encoding="utf-8")
     assert take() == [{"body": "届いた"}]
     assert loaded == ["root"]
+
+
+def test_reading_notices_is_repeatable_and_only_the_winner_delivers(tmp_path: pathlib.Path) -> None:
+    """通知の読取や破損の診断は原本を消さず、CLIとMCPのうち実際に回収できた側だけが返す。"""
+    directory = shared_layout.notices_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    session_registry.publish(
+        "target", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="parent", state_root=tmp_path
+    )
+    damaged = directory / "target.bad.json"
+    damaged.write_bytes(b"{")
+    pending = notice_inbox.read_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json"
+    )
+    assert pending == notice_inbox.read_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json"
+    )
+    assert damaged.read_bytes() == b"{"
+    taken = notice_inbox.take_notices(
+        "root",
+        "target",
+        tmp_path,
+        stash_directory=tmp_path / "run",
+        recipient_session_id="parent",
+        owner_status_file="root.json",
+    )
+    assert len(taken) == 1 and "破損" in taken[0]["body"]
+    assert not notice_inbox.consume_notices(pending)
+    assert (
+        notice_inbox.take_notices(
+            "root",
+            "target",
+            tmp_path,
+            stash_directory=tmp_path / "run",
+            recipient_session_id="parent",
+            owner_status_file="root.json",
+        )
+        == taken
+    )

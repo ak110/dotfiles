@@ -15,7 +15,16 @@ import pytest
 # テストでは共通監視と所有移管の内部境界を直接検証する。
 # pylint: disable=protected-access
 from agent_toolkit import atk
-from agent_toolkit._agents_server import agents_wait, codex, responses, resume_waits, shared_sweep, state, wait_output_tracking
+from agent_toolkit._agents_server import (
+    agents_wait,
+    codex,
+    responses,
+    resume_waits,
+    shared_sweep,
+    state,
+    wait_output_tracking,
+    wait_targets,
+)
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import ActionableError
@@ -142,6 +151,41 @@ async def test_stop_keeps_new_owner_and_discards_stale_local_state(
         assert session.session_id not in manager.stopped_sessions
         assert "show" in changed.value.next_action
         assert writer.result_exists(session.session_id)
+
+
+@pytest.mark.asyncio
+async def test_stop_keeps_successor_result_published_after_registry_release(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _resume_test_manager(monkeypatch, tmp_path) as (manager, writer):
+        install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+        child = state.SessionState("changing-owner", str(tmp_path), engine="codex", turn_seq=1, publish_registry=True)
+        _complete(child)
+        manager.sessions[child.session_id] = child
+        await child.drain_registration()
+        writer.flush()
+        release = session_registry.release
+        successor = state.SessionState(child.session_id, str(tmp_path), engine="codex", turn_seq=2)
+        _complete(successor, message="新所有者の結果")
+
+        def release_then_resume(identifier: str, **kwargs: Any) -> bool:
+            if not release(identifier, **kwargs):
+                return False
+            session_registry.set_owner_server_instance("successor")
+            session_registry.publish(identifier, state=session_registry.PublicationState.RESULT_COMPLETED, turn_seq=2)
+            wait_targets.retain_wait_targets(writer.root_session_id, writer.path.name, [identifier], tmp_path)
+            writer.retain_result(successor)
+            return True
+
+        monkeypatch.setattr(session_registry, "release", release_then_resume)
+        assert await manager.stop(child.session_id) == {}
+        assert child.session_id in writer._published_results
+        assert wait_targets.read_wait_targets(writer.root_session_id, writer.path.name, tmp_path) == ({child.session_id}, None)
+        with pytest.raises(ActionableError, match="所有者またはturn"):
+            await manager.stop(child.session_id)
+        result, error = writer.take_result(child.session_id, collector="cli")
+        assert error is None and result is not None and result["agent_message"] == "新所有者の結果"
+        assert writer.take_result(child.session_id, collector="cli") == (None, None)
 
 
 @pytest.mark.parametrize("engine", ["codex", "claude", "agy", "opencode"])

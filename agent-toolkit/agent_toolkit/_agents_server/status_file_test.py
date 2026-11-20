@@ -218,7 +218,8 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
     assert visible.result_delivered is True
     assert not result_path.exists()
     writer.deactivate()
-    assert not writer.path.parent.exists()
+    assert not writer.path.exists()
+    assert not result_path.exists()
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])

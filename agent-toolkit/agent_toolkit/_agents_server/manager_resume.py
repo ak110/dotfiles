@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import dataclasses
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
@@ -18,6 +17,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     manager_registry,
     result_contract,
+    retained_results,
     service_io,
     service_turns,
     shared_layout,
@@ -38,7 +38,7 @@ from agent_toolkit._agents_server.resume_waits import (
     finalize_pending_result,
     has_pending_auto_resume_targets,
 )
-from agent_toolkit._agents_server.state import ResumePrompt, SessionResumeState, SessionState
+from agent_toolkit._agents_server.state import PreviousResult, ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
 from agent_toolkit._common import session_registry, task_documents
 from agent_toolkit._common.delegated_session import FINAL_RESPONSE_NOTICE
@@ -61,8 +61,8 @@ def note_admission_wait(session: SessionState, ticket: admission.Admission) -> N
         )
 
 
-class ResumeClaimedElsewhere(ActionableError):
-    """別所有者が同じ会話の再開を予約し、起動結果の観測を要する。"""
+class ResumeDeferred(ActionableError):
+    """別の操作との競合でbackendの再開には着手していない。"""
 
 
 class ManagerResume(manager_registry.ManagerRegistry):
@@ -280,8 +280,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             # 配送した完了だけを消費する。別の子の終了と次の実行は新しい観測単位になる。
             session.terminal_child_session_ids.difference_update(identifiers)
             session.codex_terminal_subagent_thread_ids.difference_update(identifiers)
-            if self._status_writer is not None:
-                await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
+            await self._discard_automatic_reply(session, delivery)
             return
 
         # 保留対象が背景taskの終了だけで消えた場合は確定しない。backendはその終了に続く再開turnの結果で
@@ -338,7 +337,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         )
         finalize_pending_result(session, touch=False, keep_resume_chain=True)
         try:
-            await self._send_with_resources(session, prompt)
+            delivery = await self._send_with_resources(session, prompt)
         except Exception as exc:
             clear_overload_resume(session)
             session.status = pending_result["status"]
@@ -348,8 +347,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.touch()
             return
         session.api_error = None
-        if self._status_writer is not None:
-            await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
+        await self._discard_automatic_reply(session, delivery)
 
     async def _resume_after_usage_limit(self, session: SessionState) -> None:
         """利用上限の解除予定時刻を迎えたsessionへ、同じ作業を続ける指示を新しいturnとして送る。
@@ -370,7 +368,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         finalize_pending_result(session, touch=False, keep_resume_chain=True)
         try:
-            await self._send_with_resources(session, prompt)
+            delivery = await self._send_with_resources(session, prompt)
         except Exception as exc:
             clear_usage_limit_wait(session)
             session.status = pending_result["status"]
@@ -379,14 +377,18 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.record_turn_completed()
             session.touch()
             return
-        if self._status_writer is not None:
-            await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
+        await self._discard_automatic_reply(session, delivery)
+
+    async def _discard_automatic_reply(self, session: SessionState, delivery: dict[str, Any]) -> None:
+        previous = delivery.get("previous_result")
+        if self._status_writer is not None and isinstance(previous, PreviousResult) and (end := previous.end) is not None:
+            await self._status_writer.delete_result_async(session.session_id, collector="auto-resume", expected_end=end)
 
     async def _pending_resume_status(self, pending: PendingResume) -> dict[str, Any]:
         """進行中の再開操作を通常のrunning状態として射影する。"""
         session = self.sessions.get(pending.state.session_id)
         if session is not None:
-            return await self._result_response_async(session)
+            return await self._result_response_async(session, include_result=False)
         response: dict[str, Any] = {"status": "running", "progress": ""}
         elapsed_seconds = turn_elapsed_seconds(pending.state.started_at)
         if elapsed_seconds is not None:
@@ -398,6 +400,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
         resume_state: SessionResumeState,
         prompt: ResumePrompt,
         on_failure: Callable[[str, Exception], Awaitable[None]] | None = None,
+        *,
+        supersede_interruption: bool = False,
     ) -> SessionState:
         """backendの再開を完了し、失敗時だけ再試行用状態を復元する。"""
         session_id = resume_state.session_id
@@ -407,7 +411,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session_registry.claim_resume, session_id, resume_state.turn_seq, state_root=self._state_root()
             )
             if not claimed:
-                raise ResumeClaimedElsewhere(
+                raise ResumeDeferred(
                     f"同じsessionの再開が別の処理で進行しています: {session_id}",
                     next_action="同じ`session_id`を`show`で確認し、`atk agents wait`で終了を観測する",
                 )
@@ -430,13 +434,14 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 provider_args["state_provider"] = resume_state.codex_state_provider
             if resume_state.engine in {"claude", "codex"}:
                 provider_args["handoff_prompt"] = resume_state.prompt
-            if self._is_registry_resume_state(resume_state):
-                # 再開後の即時結果を旧turnの回収で消さないよう、接続開始より前に旧結果を回収する。
-                await self._take_stopped_result(session_id, resume_state, collector="resume")
-                self.stopped_sessions.pop(session_id, None)
-                resume_state = dataclasses.replace(resume_state, result_delivered=True)
-            if self._status_writer is not None:
-                await self._status_writer.delete_result_async(session_id, collector="send-message")
+            if supersede_interruption and self._is_registry_resume_state(resume_state):
+                # 所有者喪失の自動復旧は、中断結果を再開後の最終結果に置き換える。
+                try:
+                    await self._take_stopped_result(session_id, resume_state, collector="auto-resume")
+                except retained_results.ResultBeingCollected as busy:
+                    if self._status_writer is not None and session_id in self._recovery_targets:
+                        self._status_writer.show_recovery_wait(resume_state)
+                    raise ResumeDeferred(busy.reason, next_action=busy.next_action) from busy
             # 止まっているsessionを再び動かす追送も、マシン全体の同時稼働数の上限に空きが出るまで待つ。
             ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
             try:
@@ -475,9 +480,12 @@ class ManagerResume(manager_registry.ManagerRegistry):
             )
             return session
         except BaseException as error:
+            if supersede_interruption and isinstance(error, ResumeDeferred):
+                # 次の復旧は登録簿から判断する。元の中断をwaitの最終結果として戻さない。
+                raise
             if session_id not in self.sessions:
                 self.expired_sessions[session_id] = resume_state
-            if on_failure is not None and isinstance(error, Exception) and not isinstance(error, ResumeClaimedElsewhere):
+            if on_failure is not None and isinstance(error, Exception):
                 # 待機側が旧turnを回収済みとして対象から外す前に、失敗通知を確定する。
                 await on_failure(session_id, error)
             raise
@@ -506,6 +514,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         previous_result: dict[str, Any] | None,
         *,
         on_failure: Callable[[str, Exception], Awaitable[None]] | None = None,
+        supersede_interruption: bool = False,
     ) -> tuple[PendingResume, int]:
         """期限切れ状態を一意な進行中再開操作へ原子的に移す。"""
         session_id = resume_state.session_id
@@ -522,7 +531,9 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     # eager起動では予約だけを先に保持し、pendingの登録後に実処理を始める。
                     await asyncio.sleep(0)
                     entered = True
-                    return await self._run_resume(resume_state, resume_prompt, on_failure)
+                    return await self._run_resume(
+                        resume_state, resume_prompt, on_failure, supersede_interruption=supersede_interruption
+                    )
             finally:
                 if not entered:
                     self.expired_sessions[session_id] = resume_state
@@ -534,7 +545,9 @@ class ManagerResume(manager_registry.ManagerRegistry):
         task = (
             asyncio.create_task(owned_resume(), eager_start=True)
             if gate is not None
-            else asyncio.create_task(self._run_resume(resume_state, resume_prompt, on_failure))
+            else asyncio.create_task(
+                self._run_resume(resume_state, resume_prompt, on_failure, supersede_interruption=supersede_interruption)
+            )
         )
         if task.done() and not task.cancelled() and task.exception() is not None:
             task.result()
@@ -616,6 +629,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
         結果本文を保持したまま所有主体だけが終了した場合は、直前結果を応答へ含める。
         """
         await self._wait_for_resource_release(resume_state.session_id)
+        if previous_result and self._status_writer is not None and not self._is_registry_resume_state(resume_state):
+            await self._status_writer.retain_result_async(resume_state)
         pending, ticket = self._start_resume(
             resume_state,
             prompt,

@@ -71,13 +71,41 @@ pub(crate) fn read_state_files(directory: &Path) -> Vec<StateFile> {
             parse_state_file(file_name, &value, Utc::now())
         })
         .collect::<Vec<_>>();
-    retain_displayed_sessions(&mut files, |session_id| {
-        directory
-            .join("results")
-            .join(format!("{session_id}.json"))
-            .is_file()
-    });
+    let results = directory.join("results");
+    retain_displayed_sessions(&mut files, |session| has_result(&results, session));
     files
+}
+
+fn has_result(directory: &Path, session: &Session) -> bool {
+    if !valid_session_id(&session.session_id) {
+        return false;
+    }
+    let flat = directory.join(format!("{}.json", session.session_id));
+    let Some((seq, finalized)) = &session.result_end else {
+        return flat.is_file();
+    };
+    let matches_end = |path| {
+        fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .map_or(false, |result| {
+                result["turn_seq"].as_u64() == Some(*seq)
+                    && result["finalized_at"].as_str() == Some(finalized)
+            })
+    };
+    if matches_end(flat) {
+        return true;
+    }
+    let prefix = format!("{}.{seq}-", session.session_id);
+    fs::read_dir(directory)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(&prefix) && name.ends_with(".json") && matches_end(entry.path())
+        })
 }
 
 /// 終了sessionは未回収の結果があるか、稼働中の子孫へつながる場合だけ残す。
@@ -86,7 +114,7 @@ pub(crate) fn read_state_files(directory: &Path) -> Vec<StateFile> {
 /// 親自身の結果回収だけで行を除くと、稼働中の孫が親を失った行として残る。
 pub(super) fn retain_displayed_sessions(
     files: &mut [StateFile],
-    mut result_exists: impl FnMut(&str) -> bool,
+    mut result_exists: impl FnMut(&Session) -> bool,
 ) {
     let live_hosts = live_descendant_hosts(files);
     for file in files.iter_mut() {
@@ -95,7 +123,7 @@ pub(super) fn retain_displayed_sessions(
                 session.status.as_str(),
                 "completed" | "failed" | "interrupted"
             ) || live_hosts.contains(&session.session_id)
-                || result_exists(&session.session_id)
+                || result_exists(session)
         });
     }
 }
@@ -187,6 +215,12 @@ pub(super) fn parse_session(value: &Value) -> Option<Session> {
     required_string(object, "model_type")?;
     let session = Session {
         session_id: required_string(object, "session_id")?,
+        result_end: object.get("turn_seq").and_then(Value::as_u64).zip(
+            object
+                .get("finalized_at")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        ),
         engine: required_string(object, "engine")?,
         model,
         effort,

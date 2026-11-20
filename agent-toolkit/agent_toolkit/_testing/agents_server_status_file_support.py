@@ -157,9 +157,9 @@ class _FakeStatusBackend:
 
     async def send_message(self, session: state.SessionState, _prompt: str) -> dict[str, object]:
         """新しいreply turnを開始する。"""
-        session.turn_seq += 1
-        state.initialize_turn(session)
-        return {"delivery": "reply_started", "previous_result": None}
+        previous = session.previous_result()
+        state.begin_reply(session)
+        return {"delivery": "reply_started", "previous_result": previous}
 
 
 class _UnavailableStatusBackend(_FakeStatusBackend):

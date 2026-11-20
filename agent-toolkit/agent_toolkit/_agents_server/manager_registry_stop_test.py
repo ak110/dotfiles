@@ -90,6 +90,47 @@ async def test_stop_removes_status_file_projection_and_retained_result(
 
 
 @pytest.mark.asyncio
+async def test_explicit_stop_discards_only_its_sessions_outstanding_turns(tmp_path: pathlib.Path) -> None:
+    writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("parent", "root.json", None), state_root=tmp_path)
+    async with server_manager.AgentsServerManager(writer) as manager:
+        backend = FakeBackend(manager.sessions, "codex")
+        install_backend(manager, "codex", backend)
+        writer.activate()
+        turns = []
+        for seq in (1, 2, 3):
+            session = state.SessionState("child", str(tmp_path), engine="codex", turn_seq=seq)
+            _complete(session, message=f"turn {seq}")
+            if seq == 1:
+                # 旧writerが公開した旧名の原本には、turn別の公開記録がまだない。
+                original = shared_layout.results_directory("parent", tmp_path) / "child.json"
+                original.parent.mkdir(exist_ok=True)
+                original.write_text(json.dumps(state.terminal_result_payload(session)), encoding="utf-8")
+            else:
+                writer.retain_result(session)
+            turns.append(session)
+        manager.sessions["child"] = turns[-1]
+        sibling = state.SessionState("sibling", str(tmp_path), engine="codex")
+        _complete(sibling, message="別の子")
+        writer.retain_result(sibling)
+
+        assert (await manager.kill("child"))["agent_message"] == "turn 3"
+        assert writer.result_exists("child")
+        for _ in range(2):
+            assert await manager.stop("child") == {}
+            # 破棄前の観測を再保存しても、旧名にもturn別名にも原本を戻さない。
+            for previous in turns:
+                writer.retain_result(previous)
+            await writer.flush_async()
+            assert not writer.result_exists("child")
+            assert (await manager.list_sessions())["sessions"] == []
+            assert not (await manager.show_session("child"))["result_available"]
+            assert await manager.wait() == {"status": "expired"}
+        result, error = writer.take_result("sibling", collector="cli")
+        assert error is None and result is not None and result["agent_message"] == "別の子"
+        assert backend.release_calls == ["child"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("operation", "collector"), (("kill", "kill"), ("send_message", "send-message")))
 async def test_result_deletion_logs_actual_mcp_actor(
     operation: str,

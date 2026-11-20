@@ -759,18 +759,19 @@ def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status
         return set()
     retained: set[str] = set()
     for path in paths:
-        if path.suffix != ".json" or not path.is_file() or not shared_layout.valid_session_id(path.stem):
+        identifier = shared_layout.result_session_id(path)
+        if identifier is None or not path.is_file():
             continue
         result, error = _read_result(path)
         if error is not None:
             if owner_status_file == "root.json":
-                retained.add(path.stem)
+                retained.add(identifier)
             continue
         if result is None:
             continue
         recorded_owner = result.get("owner_status_file")
         if recorded_owner == owner_status_file or recorded_owner is None and owner_status_file == "root.json":
-            retained.add(path.stem)
+            retained.add(identifier)
     return retained
 
 

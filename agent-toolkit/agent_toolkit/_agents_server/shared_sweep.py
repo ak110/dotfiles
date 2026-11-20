@@ -13,6 +13,7 @@ from agent_toolkit._agents_server import compaction_metrics, logging_config, wai
 from agent_toolkit._agents_server.shared_layout import (
     RESERVED_DIRECTORY_NAMES,
     aliases_directory,
+    result_session_id,
     status_directory,
     valid_session_id,
 )
@@ -52,10 +53,7 @@ def sweep_stale_shared_state(
             continue
         try:
             files = tuple(path for path in directory.rglob("*") if path.is_file())
-            if any(
-                path.parent == directory / "results" and path.suffix == ".json" and valid_session_id(path.stem)
-                for path in files
-            ):
+            if any(path.parent == directory / "results" and result_session_id(path) is not None for path in files):
                 continue
             latest = max((path.stat().st_mtime for path in files), default=directory.stat().st_mtime)
             if latest < cutoff:

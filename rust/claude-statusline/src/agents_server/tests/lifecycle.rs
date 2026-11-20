@@ -161,7 +161,7 @@ fn terminal_sessions_require_result_files() {
     file.sessions[2].status = "failed".to_string();
 
     let mut files = [file];
-    retain_displayed_sessions(&mut files, |session_id| session_id == "retained");
+    retain_displayed_sessions(&mut files, |session| session.session_id == "retained");
 
     assert_eq!(
         files[0]
@@ -222,7 +222,7 @@ fn terminal_parent_stays_while_grandchild_runs() {
         retain_displayed_sessions(&mut files, |_| false);
         assert!(displayed_ids(&files).is_empty());
         let mut files = [parent(), grandchild("completed")];
-        retain_displayed_sessions(&mut files, |session_id| session_id == "parent");
+        retain_displayed_sessions(&mut files, |session| session.session_id == "parent");
         assert_eq!(displayed_ids(&files), ["parent"]);
     }
 }
@@ -319,5 +319,36 @@ fn running_descendant_with_expired_heartbeat_keeps_no_parent() {
     let files = read_state_files(&directory);
 
     assert!(displayed_ids(&files).is_empty());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn result_from_another_end_does_not_keep_terminal_row() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory =
+        std::env::temp_dir().join(format!("statusline-result-{}-{nonce}", std::process::id()));
+    let results = directory.join("results");
+    fs::create_dir_all(&results).unwrap();
+    let mut row = status_session("child", "completed", "2025-12-31T23:59:00+00:00");
+    row["turn_seq"] = 2.into();
+    row["finalized_at"] = "later".into();
+    let now = Utc::now().to_rfc3339();
+    let root = serde_json::json!({"version": 1, "host_session_id": null, "updated_at": now, "heartbeat_at": now, "sessions": [row]});
+    fs::write(directory.join("root.json"), root.to_string()).unwrap();
+    fs::write(
+        results.join("child.json"),
+        r#"{"turn_seq":2,"finalized_at":"earlier"}"#,
+    )
+    .unwrap();
+    assert!(displayed_ids(&read_state_files(&directory)).is_empty());
+    fs::write(
+        results.join(format!("child.2-{}.json", "a".repeat(64))),
+        r#"{"turn_seq":2,"finalized_at":"later"}"#,
+    )
+    .unwrap();
+    assert_eq!(displayed_ids(&read_state_files(&directory)), ["child"]);
     fs::remove_dir_all(directory).unwrap();
 }

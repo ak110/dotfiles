@@ -207,9 +207,7 @@ class CliTurnManager:
                 raise ActionableError(
                     f"the active {self.NAME} turn has not finished", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION
                 )
-            previous_result = result_projection.with_result_next_action(
-                {"status": session.status, "agent_message": session.agent_message, "error": session.error}, session.label
-            )
+            previous_result = session.previous_result()
             await self._stop_owned_task(session.session_id)
             await self._start_turn(
                 prompt,

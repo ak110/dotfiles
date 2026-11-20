@@ -9,11 +9,67 @@ import dataclasses
 import pathlib
 from typing import Any
 
-from agent_toolkit._agents_server import service_rpc, service_state, shared_roots, state, status_file
+from agent_toolkit._agents_server import (
+    retained_results,
+    service_rpc,
+    service_state,
+    shared_layout,
+    shared_roots,
+    state,
+    status_file,
+    status_reader,
+    turn_state,
+)
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_registry import restore_generation
 from agent_toolkit._common.next_action import ActionableError
+
+type SlotEnds = set[tuple[str, retained_results.ResultEnd]]
+
+
+@dataclasses.dataclass
+class LegacyObservation:
+    projection: dict
+    slots: SlotEnds
+
+
+type FrozenSlots = dict[tuple[str, str], LegacyObservation]
+
+
+def observe_legacy_slots(state_root: pathlib.Path, process: str) -> FrozenSlots:
+    """旧hubを静止する前に旧名の原本を読む。静止中は旧CLIもその原本を削除できる。"""
+    slots: FrozenSlots = {}
+    pid = process.partition(":")[0]
+    for root in shared_layout.list_root_session_ids(state_root):
+        for path in shared_layout.list_status_files(root, state_root):
+            try:
+                status = status_reader.read_payload(path)
+            except OSError, UnicodeError, ValueError:
+                continue
+            writer = status.get("writer_process")
+            rows = status.get("sessions")
+            if not isinstance(writer, dict) or str(writer.get("pid")) != pid or not isinstance(rows, list):
+                continue
+            for row in rows:
+                # 終了結果別の公開記録を持つwriterは、表示にもturn_seqを保存する。
+                if (
+                    not isinstance(row, dict)
+                    or "turn_seq" in row
+                    or row.get("status") not in ("completed", "failed", "interrupted")
+                ):
+                    continue
+                identifier = row.get("session_id")
+                if not isinstance(identifier, str) or not shared_layout.valid_session_id(identifier):
+                    continue
+                original = shared_layout.results_directory(root, state_root) / f"{identifier}.json"
+                try:
+                    end = retained_results.legacy_publication(original)
+                except OSError, UnicodeError, ValueError:
+                    continue
+                if end is not None:
+                    slots.setdefault((root, path.name), LegacyObservation(status, set())).slots.add((identifier, end))
+    return slots
 
 
 class _RetryProjection(Exception):
@@ -30,6 +86,7 @@ class ProjectionHub:
         self.loop = asyncio.get_running_loop()
         self.writers: dict[tuple[str, str], status_file.StatusFileWriter] = {}
         self.groups: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        self._legacy_slots: dict[tuple[str, str], SlotEnds] = {}
         self._codec = service_state._StateCodec()
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._epochs = {name: entry["epoch"] for name, entry in self.registry.generations().items()}
@@ -99,16 +156,23 @@ class ProjectionHub:
                 {
                     "identity": dataclasses.asdict(writer._identity),
                     "groups": dict(self.groups[key]),
+                    "turn_receipts": True,
                     "published": list(writer._published_results),
                 }
                 for key, writer in self.writers.items()
             ]
         }
 
-    async def seed(self, inventory: dict) -> None:
+    async def seed(self, inventory: dict, *, observed: FrozenSlots | None = None) -> None:
         """受付公開前はファイルを書かず、受け取った観測をメモリーへ保持する。"""
         for item in inventory["writers"]:
-            await self._apply_local({"identity": item["identity"], "operation": "seed", "arguments": item})
+            identity = item["identity"]
+            key = identity["root_session_id"], identity["file_name"]
+            await self._apply_local({"identity": identity, "operation": "seed", "arguments": item})
+            if not item.get("turn_receipts"):
+                self._legacy_slots[key] = await run_file_operation(
+                    self._legacy_handover, self.writers[key], item, (observed or {}).get(key)
+                )
 
     async def activate(self) -> None:
         """受付を公開した後、書込主体ごとにロックを取った時点の観測から状態ファイルを書く。
@@ -123,19 +187,31 @@ class ProjectionHub:
     async def _render(self, key: tuple[str, str]) -> dict:
         """書込主体が持つ各世代の観測を世代順に重ねて状態ファイルへ書く。呼出元は書込主体のロックを持つ。"""
         writer = self.writers[key]
+        if key in self._legacy_slots:
+            for identifier, end in self._legacy_slots[key]:
+                await run_file_operation(retained_results.mark_published, writer._result_path(identifier), end)
+            del self._legacy_slots[key]
         previous = writer.sessions
         combined: dict[str, state.SessionState] = {}
         expired = {}
         ordered = sorted(self.groups[key].items(), key=lambda item: self._epochs.get(item[0], 0))
         for _source, group in ordered:
             for item in group["sessions"]:
-                session = service_state.restore(item)
+                fields = group.get("source_results", {}).get(item["session_id"]["value"], {})
+                session = service_state.restore({**item, **fields})
                 prior = previous.get(session.session_id)
                 if prior is not None and (prior.turn_seq, prior.finalized_at) == (
                     session.turn_seq,
                     session.finalized_at,
                 ):
                     session.result_delivered |= prior.result_delivered
+                # 旧転送元が中間版の誤った受領を再送しても、未回収の原本を消さない。
+                if (
+                    session.result_delivered
+                    and not group.get("turn_receipts")
+                    and await writer.result_state_async(session.session_id, session=session) == "published"
+                ):
+                    session.result_delivered = False
                 # 観測用の状態は登録簿の制御所有者を書き換えない。
                 session.publish_registry = False
                 combined[session.session_id] = session
@@ -146,6 +222,7 @@ class ProjectionHub:
         writer._expired_sessions = expired
         await writer.flush_async()
         return {
+            "turn_receipts": True,
             "delivered": [
                 [session.session_id, session.turn_seq, session.finalized_at]
                 for session in combined.values()
@@ -153,6 +230,41 @@ class ProjectionHub:
             ],
             "published": list(writer._published_results),
         }
+
+    def _legacy_handover(
+        self, writer: status_file.StatusFileWriter, inventory: dict, observed: LegacyObservation | None
+    ) -> SlotEnds:
+        """原本の観測が無い旧形式だけ、旧hub同士の初回描画と同じ台帳で凍結turnを決着する。"""
+        slots = set(observed.slots) if observed is not None else set()
+        # 静止までに旧hubがもう一度保存した場合、以前見た原本とは別のturnも旧CLIへ届き得る。
+        seen = set()
+        if observed is not None:
+            try:
+                if status_reader.read_payload(writer.path) == observed.projection:
+                    seen = {identifier for identifier, _ in slots}
+            except OSError, UnicodeError, ValueError:
+                pass
+        listed = set(inventory["published"])
+        latest = {}
+        for source in sorted(inventory["groups"], key=lambda name: self._epochs.get(name, 0)):
+            group = inventory["groups"][source]
+            for item in group["sessions"]:
+                identifier = item["session_id"]["value"]
+                latest[identifier] = group, item
+                if identifier in group["published"]:
+                    listed.add(identifier)
+        for identifier, (group, item) in latest.items():
+            if group.get("turn_receipts"):
+                continue
+            session = service_state.restore(item)
+            if session.finalized_at is None or not session.result_available:
+                continue
+            # 単一slotの旧writerは「台帳にあり、旧名が無い」を回収済みとした。
+            # これは過去の回収turnの特定ではない。引継ぎ後の別turnには適用しない。
+            missing = (session.turn_seq, session.finalized_at) if identifier not in seen and identifier in listed else None
+            if end := retained_results.legacy_publication(writer._result_path(identifier), missing=missing):
+                slots.add((identifier, end))
+        return slots
 
     async def apply(self, payload: dict) -> Any:
         """現在もwriterを所有する世代だけが、許可した射影操作を保存する。"""
@@ -220,6 +332,7 @@ class ProjectionHub:
                     await writer.deactivate_async()
                     self.writers.pop(key)
                     self.groups.pop(key)
+                    self._legacy_slots.pop(key, None)
                 else:
                     # 残る世代の観測から、同じロックの中で書き直す。ロックを離してから書くと、その間の保存を古い値へ戻す。
                     await self._render(key)
@@ -247,12 +360,20 @@ class ProjectionHub:
             return self._codec.encode(result)
 
 
+async def seed_from_previous(hub: ProjectionHub, directory: pathlib.Path, previous: dict, target: dict, token: str) -> None:
+    """旧CLIが静止中に回収する前に旧名を観測し、静止後の台帳とともに引き継ぐ。"""
+    observed = await run_file_operation(observe_legacy_slots, directory.parent.parent, previous["process"])
+    inventory = await service_rpc.request(previous, "prepare_update", {"token": token, "target": target})
+    await hub.seed(inventory, observed=observed)
+
+
 class ServiceStatusWriter(status_file.StatusFileWriter):
-    """制御辞書をManagerに残し、共有ファイルへの変更だけをhubへ渡す。"""
+    """終了結果の原本を転送元で確定し、表示用の観測を現行hubへ渡す。"""
 
     def __init__(self, sessions, identity, hub: ProjectionHub, **kwargs) -> None:
         super().__init__(sessions, identity, state_root=hub.state_root, **kwargs)
         self._hub = hub
+        self._admitted = False
 
     async def activate_async(self) -> None:
         self._active = True
@@ -265,60 +386,104 @@ class ServiceStatusWriter(status_file.StatusFileWriter):
             if self._flush_handle is not None:
                 self._flush_handle.cancel()
                 self._flush_handle = None
+            waiting = dict(self._recovering)
             sessions = tuple(self.sessions.values())
             for session in sessions:
                 await session.drain_registration()
                 await session.publish_registration_async()
-            observed = {
-                "sessions": [await service_state.snapshot(session) for session in sessions],
-                "expired": self._hub._codec.encode(self.expired_sessions),
-                "published": list(self._published_results),
-            }
-            saved = await self._hub.request(self._identity, "snapshot", observed)
-            self._published_results = set(saved["published"])
-            for identifier, turn, finalized in saved["delivered"]:
+            snapshots = []
+            source_results = {}
+            ends = {}
+            for session in sessions:
+                item = await service_state.snapshot(session)
+                if waiting.pop(session.session_id, None) is not None:
+                    item["announced"] = self._hub._codec.encode(True)
+                snapshots.append(item)
+                if session.finalized_at is not None and (session.result_available or session.result_delivered):
+                    identifier = session.session_id
+                    ends[identifier] = session.turn_seq, session.finalized_at
+                    source_results[identifier] = await self._prepare_result_view(item)
+            for projection in waiting.values():
+                snapshots.append(await service_state.snapshot(projection))
+            if self._admitted:
+                await run_file_operation(
+                    retained_results.expose_legacy_slots,
+                    shared_layout.results_directory(self.root_session_id, self._state_root),
+                    self._identity.file_name,
+                    sessions=set(self.sessions) | self.expired_sessions.keys(),
+                )
+            await self._hub.request(
+                self._identity,
+                "snapshot",
+                {
+                    "turn_receipts": True,
+                    "source_results": source_results,
+                    "sessions": snapshots,
+                    "expired": self._hub._codec.encode(self.expired_sessions),
+                    "published": [],
+                },
+            )
+            self._admitted = True
+            for identifier, end in ends.items():
+                observed = await run_file_operation(retained_results.result_state, self._result_path(identifier), end)
                 session = self.sessions.get(identifier)
-                if session is not None and (session.turn_seq, session.finalized_at) == (turn, finalized):
+                if observed == "consumed" and session is not None and (session.turn_seq, session.finalized_at) == end:
                     session.result_delivered = True
+
+    async def _prepare_result_view(self, item: dict) -> dict:
+        """原本を公開してから、旧hubが表示だけを行う観測と、新hubが復元する終了状態に分ける。"""
+        session = service_state.restore(item)
+        await self._ensure_admitted(session.session_id)
+        if session.result_delivered:
+            await self._discard_delivered_async(session)
+        else:
+            await run_file_operation(
+                retained_results.publish_result, self._result_path(session.session_id), self._result_payload(session)
+            )
+        fields = {key: item[key] for key in ("turn_end", "result_delivered", "retention_deadline")}
+        # 旧hubには終了statusを表示させるが、turnの完了通知（旧名の書込）も受領通知（削除）も渡さない。
+        item["turn_end"] = self._hub._codec.encode(turn_state.TurnEnd.IN_PROGRESS)
+        item["result_delivered"] = self._hub._codec.encode(False)
+        if await self.result_state_async(session.session_id, session=session) == "consumed":
+            item["retention_deadline"] = self._hub._codec.encode(0.0)
+        return fields
+
+    async def _ensure_admitted(self, identifier: str) -> None:
+        """初回の射影が既に終了結果を含む場合も、既存writerとの競合を確かめてから書く。"""
+        if not self._admitted:
+            await self._hub.request(self._identity, "result_state_async", {"session_id": identifier})
+            self._admitted = True
 
     async def deactivate_async(self) -> None:
         self._active = False
+        self._admitted = False
         for handle in (self._flush_handle, self._retention_handle):
             if handle is not None:
                 handle.cancel()
         self._flush_handle = self._retention_handle = None
         await self._hub.request(self._identity, "deactivate", {})
 
-    async def result_state_async(self, session_id: str) -> str:
-        return await self._hub.request(self._identity, "result_state_async", {"session_id": session_id})
+    async def result_state_async(self, session_id: str, *, session=None) -> str:
+        # 受付世代が入れ替わっても結果の原本と公開記録は同じ。旧hubへ新しい引数を送らない。
+        if session is None:
+            local = self.sessions.get(session_id) or self.expired_sessions.get(session_id)
+            if local is None or local.finalized_at is None:
+                return await self._hub.request(self._identity, "result_state_async", {"session_id": session_id})
+        return await super().result_state_async(session_id, session=session)
 
-    async def delete_result_async(self, session_id: str, *, collector: str) -> None:
-        await self._hub.request(self._identity, "delete_result_async", {"session_id": session_id, "collector": collector})
-        self._published_results.discard(session_id)
-
-    async def take_result_async(self, session_id: str, *, collector: str, expected_turn_seq: int | None = None):
-        result = await self._hub.request(
-            self._identity,
-            "take_result_async",
-            {
-                "session_id": session_id,
-                "collector": collector,
-                "expected_turn_seq": expected_turn_seq,
-            },
-        )
-        if result[0] is not None:
-            self._published_results.discard(session_id)
-        return result
+    async def read_notices_async(self, session_id: str):
+        await self._ensure_admitted(session_id)
+        return await super().read_notices_async(session_id)
 
     async def take_notices_async(self, session_id: str):
         return await self._hub.request(self._identity, "take_notices_async", {"session_id": session_id})
 
     async def retain_result_async(self, session: state.SessionState | state.SessionResumeState) -> None:
         if isinstance(session, state.SessionState):
-            value = {"state": await service_state.snapshot(session)}
-        else:
-            value = {"resume": self._hub._codec.encode(session)}
-        await self._hub.request(self._identity, "retain_result_async", {"session": value})
+            while session.registration_pending:
+                await session.drain_registration()
+        await self._ensure_admitted(session.session_id)
+        await super().retain_result_async(session)
 
     def delete_wait_target(self, session_id: str) -> None:
         # Managerは同期ファイル操作をworkerで実行する。loop上では同期RPCを待たない。

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
+
+import pytest
 
 from agent_toolkit._agents_server import (
     retained_results,
@@ -79,3 +82,30 @@ def test_take_result_keeps_other_owner_result(tmp_path: pathlib.Path) -> None:
     )
     assert owner.take_result("child-session", collector="mcp-wait") == ({"status": "completed"}, None)
     assert not result_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_at_claim_worker_completion_preserves_original(tmp_path, monkeypatch):
+    writer = subject.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
+    path = shared_layout.results_directory("root", tmp_path) / "child.json"
+    finalized_at = "2026-11-20T12:00:00Z"
+    payload = {"status": "completed", "agent_message": "完了本文", "turn_seq": 1, "finalized_at": finalized_at}
+    retained_results.publish_result(path, payload)
+    loop = asyncio.get_running_loop()
+    boundary = asyncio.timeout(None)
+    mark = retained_results.mark_published
+
+    def expire_on_return(path, end):
+        mark(path, end)
+        loop.call_soon_threadsafe(boundary.reschedule, loop.time())
+
+    with monkeypatch.context() as patch:
+        patch.setattr(retained_results, "mark_published", expire_on_return)
+        with pytest.raises(TimeoutError):
+            async with boundary:
+                await writer.take_result_async(
+                    "child", collector="mcp-wait", expected_turn_seq=1, expected_finalized_at=finalized_at
+                )
+    result, error = writer.take_result("child", collector="cli")
+    assert error is None and result is not None and result["agent_message"] == "完了本文"
+    assert writer.take_result("child", collector="cli") == (None, None)

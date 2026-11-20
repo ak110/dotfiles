@@ -9,8 +9,10 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._agents_server import agents_wait, shared_layout, shared_roots, state, status_file
+from agent_toolkit._agents_server import agents_wait, shared_layout, shared_roots, state, status_file, wait_targets
 from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._common import session_registry
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
     _complete,
@@ -160,6 +162,53 @@ async def test_recovered_session_stop_discards_previous_process_result(
 
         assert not backend.release_calls
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_recovered_stop_finds_older_turns_after_latest_was_collected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    session_id = "recovered-stop"
+    _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
+    session_registry.publish(
+        session_id,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
+        engine="codex",
+        turn_seq=2,
+        owner_root_session_id="original",
+        launcher_session_id="parent",
+    )
+    shared_roots.write_host_alias("original", "writer", "parent", tmp_path)
+    original, neighbor, current = [
+        status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity(root, name, None), state_root=tmp_path)
+        for root, name in (("original", "writer.json"), ("original", "other.json"), ("current", "writer.json"))
+    ]
+    for writer, body in ((original, "停止対象"), (neighbor, "別の所有者"), (current, "別ルート")):
+        session = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=1)
+        _complete(session, message=body)
+        writer.retain_result(session)
+        wait_targets.retain_wait_targets(writer.root_session_id, writer.path.name, [session_id], tmp_path)
+
+    async with server_manager.AgentsServerManager(current) as manager:
+        assert await manager.stop(session_id) == {}
+        assert await manager.stop(session_id) == {}
+        assert session_id in current._published_results
+        assert original.take_result(session_id, collector="cli") == (None, None)
+        assert wait_targets.read_wait_targets("original", "writer.json", tmp_path) == (set(), None)
+        session_registry.publish(
+            session_id, state=session_registry.PublicationState.RESULT_COMPLETED, turn_seq=3, owner_root_session_id="original"
+        )
+        successor = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=3)
+        _complete(successor, message="再開後")
+        original.retain_result(successor)
+        with pytest.raises(ActionableError, match="所有者またはturn"):
+            await manager.stop(session_id)
+    result, error = original.take_result(session_id, collector="cli")
+    assert error is None and result is not None and result["agent_message"] == "再開後"
+    for writer, body in ((neighbor, "別の所有者"), (current, "別ルート")):
+        assert wait_targets.read_wait_targets(writer.root_session_id, writer.path.name, tmp_path) == ({session_id}, None)
+        result, error = writer.take_result(session_id, collector="cli")
+        assert error is None and result is not None and result["agent_message"] == body
 
 
 @pytest.mark.asyncio

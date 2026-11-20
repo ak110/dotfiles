@@ -307,6 +307,54 @@ async def test_close_after_cancelled_flush_waits_for_worker_and_removes_projecti
         assert not list(writer.path.parent.glob(".root.json.*.tmp"))
 
 
+@pytest.mark.asyncio
+async def test_collecting_one_end_preserves_a_later_end_with_the_same_turn_number(tmp_path, monkeypatch):
+    """CLIが結果を退避してから削除するまでの間も、別の終了結果を公開・回収できる。"""
+    session = state.SessionState("child", str(tmp_path), announced=True, turn_seq=1)
+    writer = status_file.StatusFileWriter(
+        {"child": session}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path
+    )
+    _complete(session, message="先の終了")
+    first_end = session.finalized_at
+    await writer.activate_async()
+    entered, release = asyncio.Event(), threading.Event()
+    loop = asyncio.get_running_loop()
+    stash = tmp_path / "run" / "results" / "child.json"
+    write = retained_results.atomic_write
+
+    def save(path, *args, **kwargs):
+        write(path, *args, **kwargs)
+        if path == stash:
+            loop.call_soon_threadsafe(entered.set)
+            assert release.wait(5)
+
+    monkeypatch.setattr(retained_results, "atomic_write", save)
+    taking = asyncio.create_task(
+        asyncio.to_thread(
+            retained_results.take_result, "root", "child", "root.json", state_root=tmp_path, collector="cli", stash_path=stash
+        )
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        session.finalized_at = None
+        _complete(session, message="後の終了")
+        assert session.finalized_at != first_end
+        await writer.flush_async()
+    finally:
+        release.set()
+        first, error = await taking
+        await writer.drain(cancel_scheduled=True)
+    assert error is None and first is not None and first["agent_message"] == "先の終了"
+    second, error = await writer.take_result_async(
+        "child", collector="wait", expected_turn_seq=1, expected_finalized_at=session.finalized_at
+    )
+    assert error is None and second is not None and second["agent_message"] == "後の終了"
+    await writer.flush_async()
+    assert session.result_delivered
+    assert not writer.result_exists("child")
+    await writer.deactivate_async()
+
+
 @pytest.mark.parametrize("race", ["collected", "new-turn"])
 @pytest.mark.asyncio
 async def test_result_changed_during_save_is_not_republished(
@@ -317,11 +365,9 @@ async def test_result_changed_during_save_is_not_republished(
         "session", str(tmp_path), announced=True, status="completed", turn_end=turn_state.TurnEnd.COMPLETED
     )
     session.touch()
-    writer = status_file.StatusFileWriter(
-        {"session": session}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path
-    )
+    writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     await writer.activate_async()
-    writer.delete_result("session", collector="prepare")
+    writer.sessions["session"] = session
     entered, release = _block_named_replace(monkeypatch, "session.json")
     flush = asyncio.create_task(writer.flush_async())
     try:
@@ -335,7 +381,7 @@ async def test_result_changed_during_save_is_not_republished(
         await flush
         await writer.drain()
         writer.deactivate()
-    assert not writer.result_exists("session")
+    assert writer.result_exists("session") == (race == "new-turn")
     assert writer.result_state("session") == "unpublished"
 
 
