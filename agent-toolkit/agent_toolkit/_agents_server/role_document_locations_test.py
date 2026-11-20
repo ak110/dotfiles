@@ -10,6 +10,7 @@ import pytest
 
 from agent_toolkit._agents_server import launch_requests, launch_requests_inputs, mcp_tools, result_contract, state
 from agent_toolkit._common import task_documents
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.launch_requests_support import TaskManager
 
 _ROLE = "located"
@@ -81,7 +82,7 @@ async def test_start_launches_role_from_role_directory(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("form", "expected"),
-    [("role-name", "役割名に対応する文書が無い"), ("absolute-path", "not an agent-toolkit task document")],
+    [("role-name", "役割名に対応する文書が無い"), ("absolute-path", "旧版のshare/")],
 )
 async def test_start_rejects_role_left_in_share(
     form: str, expected: str, plugin: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -98,6 +99,30 @@ async def test_start_rejects_role_left_in_share(
             whole_contract_path=str(_contract(tmp_path)),
         )
 
+    assert not prompts
+
+
+@pytest.mark.asyncio
+async def test_start_guides_old_plugin_cache_users_to_restart(
+    plugin: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    current = _place(plugin)
+    old_root = tmp_path / "cache" / "agent-toolkit" / "2.278.1"
+    old = _place(old_root, "share")
+    _place(old_root, ".claude-plugin", "plugin.json", '{"name":"agent-toolkit"}')
+    prompts = _manager(monkeypatch)
+
+    with pytest.raises(ActionableError) as rejected:
+        await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path=str(old),
+            extra_params={"対象": "値", "目的": "値"},
+            whole_contract_path=str(_contract(tmp_path)),
+        )
+
+    assert "旧版" in rejected.value.reason and str(old) in rejected.value.reason
+    assert "会話を再起動" in rejected.value.next_action
+    assert str(current) in rejected.value.message
     assert not prompts
 
 

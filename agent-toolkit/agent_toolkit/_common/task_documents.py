@@ -305,16 +305,19 @@ class TaskDocumentDeclaration:
         return tuple(names)
 
 
-def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
-    """agent-toolkit pluginの役割文書の置き場所の直下にある`<役割名>.subagent.md`だけを受理する。"""
-    root = role_document_plugin_root(path)
-    if root is None:
-        return False
+def is_agent_toolkit_plugin_root(root: pathlib.Path) -> bool:
+    """manifestの名前がagent-toolkitであるかを返す。"""
     try:
         manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     except OSError, UnicodeError, json.JSONDecodeError:
         return False
     return isinstance(manifest, dict) and manifest.get("name") == "agent-toolkit"
+
+
+def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
+    """agent-toolkit pluginの役割文書の置き場所の直下にある`<役割名>.subagent.md`だけを受理する。"""
+    root = role_document_plugin_root(path)
+    return root is not None and is_agent_toolkit_plugin_root(root)
 
 
 def read_declaration(task_document: pathlib.Path, document_text: str | None = None) -> TaskDocumentDeclaration | str:
