@@ -11,7 +11,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk import outcome, run_skill, run_skill_state
-from agent_toolkit._common import session_review
+from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, session_evidence_support
 from agent_toolkit._testing.run_skill_support import _engine_env, _Env, _records, _run
 
@@ -99,6 +99,8 @@ def test_unreadable_record_does_not_block_new_run(engine_env: _Env, capsys: pyte
 @pytest.mark.cpu_limit(1.0, reason="実prepare・偽ホストの子プロセス・実Gitの報告同期を通してbatchの完了を検収する。")
 def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_path, monkeypatch, capsys) -> None:
     """旧形式の完了記録が残っていても、Codexの待ち対象を準備し、同期済み報告と処理済み範囲を残す。"""
+    # 準備前の合成会話に実ホスト上のプロセスはない。
+    monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     _write_record(
         engine_env,
         "2" * 32,

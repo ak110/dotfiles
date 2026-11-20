@@ -21,7 +21,7 @@ import psutil
 import pytest
 from agent_toolkit._agents_server import service_forward, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
-from agent_toolkit._common import plugin_environment, process_tree, session_review, windows_job
+from agent_toolkit._common import plugin_environment, plugin_environment_cleanup, process_tree, session_review, windows_job
 from agent_toolkit._testing import isolation, late_descendant
 from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
@@ -73,6 +73,8 @@ def _setup(
     """
     monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None)
+    # 合成の導入環境を参照する実プロセスはない。回収処理そのものは実行する。
+    monkeypatch.setattr(plugin_environment_cleanup, "_process_references", lambda: ([], False))
 
     async def ready(_command):
         return _STARTUP_OUTCOME(True, "起動確認済み")
