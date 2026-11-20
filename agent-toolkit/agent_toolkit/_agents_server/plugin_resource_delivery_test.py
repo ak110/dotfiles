@@ -111,12 +111,6 @@ class ResourceInventory:
         )
 
 
-def _write_common_documents(references: pathlib.Path) -> None:
-    """通常の委譲の起動が全文を入れるagent-basicsの共通の資料を、導入の`references`へ置く。"""
-    for name in ("quality-principles.md", "quality-principles-facts.md"):
-        (references / name).write_text(f"# {name}\n", encoding="utf-8")
-
-
 @pytest.fixture(name="resources")
 def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> ResourceInventory:
     """保持toolkitと導入basicsを分離し、解決処理の外部一覧だけを差し替える。"""
@@ -154,7 +148,6 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
                 required = material.parent / "references/writing.md"
                 required.parent.mkdir()
                 required.write_text(f"# 必読資料\n{host}/{project.name}/{generation}の必読本文\n", encoding="utf-8")
-                _write_common_documents(required.parent)
                 manifest = root / ("plugin.json" if host == "agy" else ".claude-plugin/plugin.json")
                 manifest.parent.mkdir(parents=True, exist_ok=True)
                 manifest.write_text(json.dumps({"name": "agent-basics"}), encoding="utf-8")
@@ -406,7 +399,6 @@ def _stale_claude_installation(
         references.mkdir(parents=True, exist_ok=True)
         (root / "skills/writing-standards/SKILL.md").write_text("# 品質基準\n", encoding="utf-8")
         (references / "writing.md").write_text(f"# 必読資料\n{root.parent.name}の必読本文\n", encoding="utf-8")
-        _write_common_documents(references)
         (root / ".claude-plugin").mkdir(exist_ok=True)
         (root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "agent-basics"}), encoding="utf-8")
     (stale / missing).unlink()
@@ -435,18 +427,10 @@ def _stale_claude_installation(
     return stale, user
 
 
-@pytest.mark.parametrize(
-    "missing",
-    [
-        "skills/writing-standards/references/writing.md",
-        "skills/writing-standards/references/quality-principles.md",
-    ],
-    ids=["role-document", "common-document"],
-)
 @pytest.mark.parametrize("shared_folder", [False, True], ids=["separate-roots", "shared-folder"])
 @pytest.mark.asyncio
 async def test_role_start_names_incomplete_selected_installation(
-    resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, missing: str, shared_folder: bool
+    resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, shared_folder: bool
 ) -> None:
     """選択したproject導入に必須資料が無ければ、user導入へ切り替えず、修復する導入と不足資料を示して起動しない。
 
@@ -454,6 +438,7 @@ async def test_role_start_names_incomplete_selected_installation(
     修復後の同じ入力では、選択したproject導入の資料で起動する。
     """
     project = resources.root / "project-a"
+    missing = "skills/writing-standards/references/writing.md"
     stale, user = _stale_claude_installation(resources, monkeypatch, missing, project, shared_folder=shared_folder)
     async with manager.AgentsServerManager(None) as current:
         backend = ResourceBackend(current.sessions, "claude")

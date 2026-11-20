@@ -134,9 +134,6 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
         path = root / "skills/writing-standards/references/writing.md"
         path.parent.mkdir(parents=True)
         path.write_text(f"# {label}の基準\n{label}だけの品質本文\n", encoding="utf-8")
-        # 通常の委譲の起動が全文を入れる共通の資料も、各導入に置く。
-        for common in ("quality-principles.md", "quality-principles-facts.md"):
-            (path.parent / common).write_text(f"# {common}\n", encoding="utf-8")
         manifest = root / ".claude-plugin/plugin.json"
         manifest.parent.mkdir()
         manifest.write_text('{"name":"agent-basics"}', encoding="utf-8")

@@ -24,19 +24,16 @@ hookと`agents_server`は読込表を解析せず、条件の判定と資料の�
 ## 起動時の配送
 
 `agents_server`は委譲先の起動の本文へ、担当が判断を始める前に読む資料の全文を入れる。
-無条件に読ませる資料を次の2か所の宣言に集め、起動の本文の大きさで量を確かめられるようにする。
-実装は`agent-toolkit/agent_toolkit/_common/startup_documents.py`にある。
-
-| 宣言 | 入れる起動 | 資料 |
-| --- | --- | --- |
-| `startup_documents.COMMON_DOCUMENTS` | 全ての通常の委譲（launch kind `delegate`） | 起動の本文が無条件に従わせる3件（原則の索引、事実と推論の原則、作業契約の資料） |
-| 役割文書のfrontmatterの`startup_documents` | その役割の起動（軽量の起動の役割を含む） | 役割に固有の資料 |
+役割に固有の資料は、軽量の起動も含めて役割文書のfrontmatterの`startup_documents`で宣言する。
+共通の初動は委譲先の入口に置く。
+品質原則の索引と事実・返却の資料は、入口が示す制約や返却時の基準と重なるため一律には入れない。
+作業契約の書き方は委譲元や復元の手順も含むため、委譲先には引き継ぎ記録の新規・継続の扱いと、記録する時に使う節の所在を示す。
 
 - `startup_documents`の要素は資料の参照の文字列か、`document`と`when`を持つ対応表で書く。
   参照は`<plugin名>:<スキル名>/<相対パス>.md`の形とする。
   `when`は宣言済みの入力名と文字列の値の組であり、起動の入力が全ての組と一致する時だけ資料を入れる。
   解析は`agent-toolkit/agent_toolkit/_common/task_documents.py`の`parse_startup_documents`が行い、形式の誤りは起動前に拒否する。
-- 起動直後に読まれていた候補のうち入れない資料と理由は、`startup_documents.NOT_DELIVERED`に置く。
+- 読込表の読み方は列名から分かるため、`read-method.md`は一律に入れない。
 - 全体作業契約は、起動の入力が示す記録の全文を同じ形式で入れる（`agent-toolkit/agent_toolkit/_agents_server/launch_requests.py`の`whole_contract_reference`）。
 
 ### 本文の形式
@@ -55,7 +52,7 @@ hookと`agents_server`は読込表を解析せず、条件の判定と資料の�
 ### 資料の解決
 
 `agent-toolkit/agent_toolkit/_agents_server/manager_start.py`の`_startup_documents`が、起動候補ごとのhostとcwdで資料を解決する。
-共通の資料は`agents_server`の配布物から、役割の資料は役割文書と同じ配布物（作業ツリーの写しを含む）から解決する。
+役割の資料は役割文書と同じ配布物（作業ツリーの写しを含む）から解決する。
 作業ツリーで役割文書を改訂する担当が、稼働版に無い新設の資料を同じ作業ツリーから受け取れるようにするためである。
 全rootを作業ツリーへ切り替える案と、欠けた資料を別版から順に探す案は、通常の導入版の選択を壊し版の混在を隠すため採らない。
 
@@ -64,5 +61,5 @@ hookと`agents_server`は読込表を解析せず、条件の判定と資料の�
 - Claude Codeの導入一覧から選んだ導入先に資料が欠けていれば、`agent-toolkit/agent_toolkit/_common/plugin_roots.py`の`raise_for_incomplete_installation`がその導入を修復する操作を示して起動前に失敗する。
   導入先の外の欠落は文書の誤りとして診断する。
 - 役割の資料を解決できない失敗は、役割の版と対応付けて起動前に返す。
-- `agent-toolkit/startup_documents_invariant_test.py`が全ての役割の資料と`NOT_DELIVERED`の候補の実在を確かめる。
+- `agent-toolkit/startup_documents_invariant_test.py`が全ての役割の資料の実在を確かめる。
   起動の本文への挿入と解決の振る舞いは`agent-toolkit/agent_toolkit/_agents_server/startup_documents_test.py`が確かめる。

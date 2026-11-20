@@ -15,7 +15,7 @@ import pytest
 from agent_toolkit._agents_server import launch_requests, mcp_tools, resume_waits, tool_descriptions
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import session_registry, startup_documents, state_paths, task_documents
+from agent_toolkit._common import session_registry, state_paths, task_documents
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_support import _actionable_message, _manager_with_fake, _observed_input_lines
 from agent_toolkit._testing.helpers import delivery_payload
@@ -156,7 +156,7 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
 
         payloads = [delivery_payload(value) for value in backend.prompts]
         # 通常の委譲の起動だけが、本文の後へ起動時に読む資料の全文を受け取る。
-        assert payloads[0].startswith(f"起動本文\n\n{startup_documents.NOTICE}\n\n")
+        assert payloads[0] == "起動本文"
         assert payloads[1:4] == [
             "探索本文",
             tool_descriptions.shell_prompt("make test", "終了状態だけ"),
@@ -180,9 +180,9 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
         await manager.start("plan", body, str(tmp_path))
 
         delivered = backend.prompts[0]
-        assert delivery_payload(delivered).startswith(f"{body}\n\n{startup_documents.NOTICE}\n\n")
+        assert delivery_payload(delivered) == body
         assert delivered.count("<agent-toolkit-auto-inserted ") == 1
-        assert delivered.count("<atk-auto ") == 2 + len(startup_documents.COMMON_DOCUMENTS)
+        assert delivered.count("<atk-auto ") == 2
 
 
 @pytest.mark.asyncio

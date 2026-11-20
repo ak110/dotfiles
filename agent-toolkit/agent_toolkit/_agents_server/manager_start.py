@@ -170,26 +170,21 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
     def _startup_documents(
         role_document: pathlib.Path | None,
         inputs: Mapping[str, str] | None,
-        launch_kind: LaunchKind,
         engine: str,
         cwd: str,
     ) -> str:
         """起動の本文へ入れる資料を、候補のhostとcwdで解決する。
 
-        役割の起動の失敗は、役割の版と対応付けて起動前に返す。役割文書の無い軽量の起動は資料を入れない。
+        役割の起動の失敗は、役割の版と対応付けて起動前に返す。役割文書の無い起動は資料を入れない。
         """
         if role_document is None:
-            if launch_kind != "delegate":
-                return ""
-            return startup_documents.compose(None, {}, SERVER_PLUGIN_ROOT, launch_kind=launch_kind, host=engine, project=cwd)
+            return ""
         return plugin_root.SERVER_RUNTIME_CODE.check_role(
             "起動時資料の検査",
             role_document,
             lambda: startup_documents.compose(
                 role_document,
-                dict(inputs or {}),
-                SERVER_PLUGIN_ROOT,
-                launch_kind=launch_kind,
+                inputs or {},
                 host=engine,
                 project=cwd,
             ),
@@ -246,7 +241,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                     launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, engine, cwd
                 )
                 initial_documents = await run_file_operation(
-                    self._startup_documents, startup_document, startup_inputs, launch_kind, engine, cwd
+                    self._startup_documents, startup_document, startup_inputs, engine, cwd
                 )
                 delivery_body = (
                     resource_instructions

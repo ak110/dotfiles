@@ -19,7 +19,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 _BASICS = SERVER_PLUGIN_ROOT.parent / "agent-basics" / "skills"
 _ATK_MODE = SERVER_PLUGIN_ROOT / "skills" / "atk-mode"
-_COMMON_BODIES = (
+_ON_DEMAND_BODIES = (
     _BASICS / "writing-standards/references/quality-principles.md",
     _BASICS / "writing-standards/references/quality-principles-facts.md",
     _ATK_MODE / "references/work-contract.md",
@@ -49,14 +49,18 @@ async def _delivered(
 
 
 @pytest.mark.asyncio
-async def test_role_launch_delivers_common_and_declared_documents(
+async def test_role_launch_delivers_contract_and_declared_document(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """通常の委譲の役割には、共通の資料と役割が宣言した手順書の全文が届く。"""
+    """通常の委譲の役割には、全体作業契約と役割が宣言した手順書の全文が届く。"""
     _prepare_exec_review_plan(tmp_path)
     prompt = await _delivered(monkeypatch, tmp_path, "exec-review")
-    for path in (*_COMMON_BODIES, _ATK_MODE / "playbooks/exec-review.md"):
-        assert _body(path) in prompt, path
+    assert startup_documents.delivered_versions(prompt).keys() == {
+        tmp_path / "work-contract.md",
+        _ATK_MODE / "playbooks/exec-review.md",
+    }
+    assert _body(_ATK_MODE / "playbooks/exec-review.md") in prompt
+    assert not any(_body(path) in prompt for path in _ON_DEMAND_BODIES)
 
 
 @pytest.mark.parametrize(("kind", "delivered"), [("レーン担当", True), ("CI修正担当", False)])
@@ -64,22 +68,21 @@ async def test_role_launch_delivers_common_and_declared_documents(
 async def test_conditional_document_follows_launch_input(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, kind: str, delivered: bool
 ) -> None:
-    """`when`の入力が一致した起動だけに条件付きの資料が届き、共通の資料は条件によらず届く。"""
+    """`when`の入力が一致した起動だけに条件付きの資料が届き。"""
     params = _observed_input_params("exec.subagent.md", tmp_path) | {"担当種別": kind}
     prompt = await _delivered(monkeypatch, tmp_path, "exec", params)
     assert (_body(_ATK_MODE / "playbooks/process-wi-execution.md") in prompt) is delivered
-    assert all(_body(path) in prompt for path in _COMMON_BODIES)
 
 
 @pytest.mark.asyncio
 async def test_lightweight_role_receives_only_its_declared_documents(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """軽量の起動の役割には、役割が宣言した資料だけが届き、通常の委譲の共通の資料は入らない。"""
+    """軽量の起動の役割には、役割が宣言した資料だけが届き。"""
     params = {"判定規則": "固定文字列の一致", "母集団": "agent-toolkit/skills配下の.md", "判定基準": "同じ誤りの再発"}
     prompt = await _delivered(monkeypatch, tmp_path, "similar-review", params)
     assert _body(_BASICS / "bugfix/references/spread.md") in prompt
-    assert not any(_body(path) in prompt for path in _COMMON_BODIES)
+    assert not any(_body(path) in prompt for path in _ON_DEMAND_BODIES)
 
 
 def _role_plugin(root: pathlib.Path, startup: str) -> pathlib.Path:

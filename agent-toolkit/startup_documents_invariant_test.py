@@ -1,8 +1,7 @@
 """役割の起動直後に読ませる資料が、起動の本文の宣言だけに集まっていることを確かめる。
 
 無条件に読ませる資料を読込表へ足すと、起動の本文の大きさに表れずに個別の読込として隠れる。
-起動直後に読ませる資料は、役割文書のfrontmatterの`startup_documents`か、全ての通常の委譲に共通の
-`startup_documents.COMMON_DOCUMENTS`に置く。
+起動直後に読ませる資料は、役割文書のfrontmatterの`startup_documents`に置く。
 """
 
 import pathlib
@@ -28,7 +27,7 @@ def test_role_documents_have_no_unconditional_read_rows() -> None:
 
 
 def test_startup_documents_exist() -> None:
-    """全ての役割の起動の本文へ入る資料と、入れない理由を記した候補が実在する。"""
+    """全ての役割の起動の本文へ入る資料が実在する。"""
     missing = []
     for document, references in startup_documents.role_startup_reading(_ROOT):
         for reference in references:
@@ -36,13 +35,7 @@ def test_startup_documents_exist() -> None:
                 startup_documents.resolve(reference, _ROOT)
             except ValueError as error:
                 missing.append(f"{document.name}: {error}")
-    for reference in startup_documents.NOT_DELIVERED:
-        try:
-            startup_documents.resolve(reference, _ROOT)
-        except ValueError as error:
-            missing.append(f"NOT_DELIVERED: {error}")
     assert not missing, "\n".join(missing)
-    assert not set(startup_documents.NOT_DELIVERED) & set(startup_documents.COMMON_DOCUMENTS)
 
 
 def test_unconditional_row_detection_reports_startup_rows() -> None:

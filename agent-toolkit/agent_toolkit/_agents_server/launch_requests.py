@@ -422,7 +422,7 @@ def whole_contract_reference(
     path = _resolve_whole_contract(whole_contract_path, launcher_session_id)
     body = (
         f"{delegated_session.WHOLE_CONTRACT_LINE_PREFIX}{path}\n"
-        "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
+        "直後の要素に全体作業契約の本文がある。同じ版を取り直さず、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
         "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
     )
     return (
@@ -436,9 +436,9 @@ def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
     """サーバーが所有する共通入力を、役割文書の入力宣言から分離して加える。"""
     record_line = f"引き継ぎ記録先: {path}（新規）\n" if path is not None else ""
     return auto_message(
-        record_line + f"{root / 'skills/atk-mode/references/work-contract.md'}に従い、"
-        "委譲先自身が新規・継続の指定に応じて記録を作成・更新する。"
-        "記録は割当範囲を所有し、委譲元は終了後の検収で読む。",
+        record_line + "継続なら最初に自分の引き継ぎ記録を読む。新規で書く値が無ければ作成しない。"
+        "未回収の実行、Git管理外の成果物、再開位置、役割固有の項目などを記録する時は、"
+        f"{root / 'skills/atk-mode/references/work-contract.md'}「引き継ぎ記録」に従う。",
         source="agents-server",
         kind="work-contract",
     )
