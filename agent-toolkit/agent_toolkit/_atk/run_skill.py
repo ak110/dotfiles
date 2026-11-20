@@ -213,6 +213,7 @@ def _log_preflight_failure(args: argparse.Namespace, log: typing.TextIO, stage: 
     message = redact_secrets(detail)
     args.batch_failure = f"run-skill-preflight-{stage}: {message}"
     _log_line(log, f"終了状態: {args.batch_failure}")
+    _log_line(log, f"次の操作: {next_action}")
     _outcome.report_failure(message, next_action=next_action)
     return 2
 
@@ -232,11 +233,14 @@ def _dispatch_with_log(
             f"--timeoutは正の秒数で指定する（指定値: {args.timeout}）",
             next_action=f"--timeoutを省略して{DEFAULT_TIMEOUT_SECONDS}秒とするか、正の秒数を指定する",
         )
-    candidates: list[tuple[str, str, str]] = (
-        [(record.engine, record.model, record.effort)]
-        if record is not None
-        else _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する")
-    )
+    try:
+        candidates: list[tuple[str, str, str]] = (
+            [(record.engine, record.model, record.effort)]
+            if record is not None
+            else _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する", raise_error=True)
+        )
+    except ActionableError as error:
+        return _log_preflight_failure(args, log, "model-config", str(error), next_action=error.next_action)
     work_dir = getattr(args, "work_dir", None)
     if record is not None:
         repo_root = record.work_dir

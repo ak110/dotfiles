@@ -139,7 +139,7 @@ def session_env(env: dict[str, str], orchestrator: str, *, platform: str = os.na
     return result
 
 
-def resolve_specs(*, rerun_action: str) -> list[tuple[str, str, str]]:
+def resolve_specs(*, rerun_action: str, raise_error: bool = False) -> list[tuple[str, str, str]]:
     """orchestrate用途のengine順とhigh段位のモデル設定を候補ごとの(orchestrator, model, effort)として返す。
 
     設定値の書式不正、旧モデル設定の移行の停止、旧環境変数の残存の場合は修正手順を案内してexit 2で終了する。
@@ -149,17 +149,21 @@ def resolve_specs(*, rerun_action: str) -> list[tuple[str, str, str]]:
         usage_refresh.ensure_fresh()
         candidates = _config.parse_unresolved_model_candidates("orchestrate")
     except _next_action.ActionableError as error:
-        _next_action.report(f"orchestrateのモデル設定を読めません。{error}", next_action=error.next_action)
+        message = f"orchestrateのモデル設定を読めません。{error}"
+        if raise_error:
+            raise _next_action.ActionableError(message, next_action=error.next_action) from error
+        _next_action.report(message, next_action=error.next_action)
         sys.exit(2)
     try:
         return _config.resolve_catalog(candidates)
     except ValueError as error:
-        _next_action.report(
-            f"orchestrateのCodexモデル解決に失敗しました（候補: {_format_candidates(candidates)}）。{error}",
-            next_action=(
-                f"`codex`へのログインを確認するか、`atk config set orchestrate_model <候補列>`で候補を変えてから{rerun_action}"
-            ),
+        message = f"orchestrateのCodexモデル解決に失敗しました（候補: {_format_candidates(candidates)}）。{error}"
+        next_action = (
+            f"`codex`へのログインを確認するか、`atk config set orchestrate_model <候補列>`で候補を変えてから{rerun_action}"
         )
+        if raise_error:
+            raise _next_action.ActionableError(message, next_action=next_action) from error
+        _next_action.report(message, next_action=next_action)
         sys.exit(2)
 
 

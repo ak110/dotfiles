@@ -10,7 +10,7 @@ import typing
 
 import pytest
 
-from agent_toolkit._atk import outcome, run_skill, run_skill_state
+from agent_toolkit._atk import config, outcome, run_skill, run_skill_state
 from agent_toolkit._common import session_review
 from agent_toolkit._testing import git_repository, session_evidence_support
 from agent_toolkit._testing.run_skill_support import _engine_env, _Env, _records, _run
@@ -160,6 +160,7 @@ def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_p
     ("case", "exit_code", "diagnostic"),
     [
         ("preflight", 2, "synthetic record sweep failed"),
+        ("model-config", 2, "synthetic model settings failed"),
         ("child", 7, "[stderr] session stderr line"),
     ],
 )
@@ -180,6 +181,12 @@ def test_batch_preserves_failure_log(
             raise ValueError(diagnostic)
 
         monkeypatch.setattr(run_skill, "_remove_expired_logs", fail_sweep)
+    elif case == "model-config":
+
+        def fail_settings(*_args: object, **_kwargs: object) -> None:
+            raise run_skill.ActionableError(diagnostic, next_action="合成モデル設定を確認する")
+
+        monkeypatch.setattr(config, "parse_unresolved_model_candidates", fail_settings)
     else:
         monkeypatch.setenv("FAKE_REPORT_MODE", "missing")
         monkeypatch.setenv("FAKE_SESSION_EXIT", str(exit_code))
@@ -201,8 +208,9 @@ def test_batch_preserves_failure_log(
         if f"session_review_failure_key: {manifest['failure_key']}" in (body := path.read_text(encoding="utf-8"))
     ]
     assert diagnostic in failure_body
-    if case == "preflight":
+    if case != "child":
         assert diagnostic in manifest["error"]
+        assert "次の操作:" in log_path.read_text(encoding="utf-8")
         assert not _records(engine_env, "session")
     else:
         assert _records(engine_env, "session")
