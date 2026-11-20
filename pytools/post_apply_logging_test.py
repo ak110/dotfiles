@@ -119,7 +119,7 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     captured = capsys.readouterr()
     screen = captured.out + captured.err
     assert "保持1件、削除1件、保留1件" in screen
-    assert screen.count("update-dotfiles logs") == 1
+    assert "update-dotfiles logs" not in screen
     saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
     assert "一時資源1件の回収を保留" in screen
     assert "アクセス権" in captured.err
@@ -162,8 +162,8 @@ def test_update_reports_unresolved_permission_error_and_retries(blocked, mode, r
         with post_apply._configure_logging():
             plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
         screen = capsys.readouterr()
-        assert not screen.out and len(screen.err.splitlines()) == 2
-        assert "一時資源1件" in screen.err and screen.err.count("update-dotfiles logs") == 1
+        assert not screen.out and len(screen.err.splitlines()) == 1
+        assert "一時資源1件" in screen.err and "update-dotfiles logs" not in screen.err
         saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
         assert any(
             reason in line and str(restricted) in line and os.strerror(errno.EACCES) in line for line in saved.splitlines()

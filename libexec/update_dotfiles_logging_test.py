@@ -149,8 +149,8 @@ def test_dependency_warning_points_to_its_diagnostic_once(
         assert ("原因の明細" in _run_logs_cli().stdout) == (parent_exit is not None)
 
 
-@pytest.mark.parametrize("fault", ["child-report-rename", "child-log-rename", "parent-final-append"])
-def test_child_locates_its_own_warning_before_parent_finishes(
+@pytest.mark.parametrize("fault", ["child-report-rename", "child-log-rename", "parent-final-append", "saved-in-backup"])
+def test_parent_locates_saved_child_warning_across_retries(
     logs_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], fault: str
 ) -> None:
     """同期結果や他のレコードの成否ではなく、警告の明細を書いた時の結果で所在を示す。"""
@@ -181,18 +181,21 @@ def test_child_locates_its_own_warning_before_parent_finishes(
                 child_fault.setattr(post_apply.sync_report.os, "replace", fail_rename)
             if fault == "child-log-rename":
                 child_fault.setattr(post_apply, "_UPDATE_LOG_MAX_BYTES", 1)
-            with pytest.raises(SystemExit) as child:
-                post_apply.main(runner=runner)
-        assert child.value.code == 0
+            for _ in range(2):
+                with pytest.raises(SystemExit) as child:
+                    post_apply.main(runner=runner)
+                assert child.value.code == 0
         child_screen = capsys.readouterr().err
+        if fault == "saved-in-backup":
+            logs_path.rename(logs_path.with_suffix(".log.1"))
         if fault == "parent-final-append":
             monkeypatch.setattr(parent, "_open", no_space)
         assert update_dotfiles_runtime.finish(0) == 0
     parent_screen = capsys.readouterr().err
-    assert "永続ログ:" not in parent_screen and "この標準エラー" not in parent_screen
-    assert child_screen.count("手動で") == 1
+    assert "永続ログ:" not in child_screen and "この標準エラー" not in parent_screen
+    assert child_screen.count("手動で") == 2
     saved = fault != "child-log-rename"
-    assert child_screen.count("update-dotfiles logs") == int(saved)
+    assert parent_screen.count("update-dotfiles logs") == int(saved)
     assert ("不足パッケージ名" in _run_logs_cli().stdout) == saved
     assert ("不足パッケージ名" in child_screen) != saved
     assert ("この標準エラー" in child_screen) != saved

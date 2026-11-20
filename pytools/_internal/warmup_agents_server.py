@@ -10,6 +10,7 @@ hookとMCPに同じデータ領域が提供される場合は同じ版の環境�
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import tempfile
@@ -170,28 +171,30 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
     if root is not None:
         environment[service_forward.DEFER_PUBLISH_ENV] = "1"
     inherited_job = False
-    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as errors:
+    service_output = ""
+    with contextlib.ExitStack() as capture:
+        errors = None
         try:
             parameters = StdioServerParameters(command=command[0], args=list(command[1:]), env=environment)
             remaining = _STARTUP_TIMEOUT
             if root is not None:
                 # 入力の無い転送側は、管理サービスをreadyにした後で接続せずに終了する。
-                # anyioの期限は取消しを回収処理の待機にも届け続けるため、子の回収を待つ区間はasyncioの期限で区切る。
-                async with asyncio.timeout(remaining):
-                    service = await plugin_warmup.check_command(command, environment=environment, stderr_file=errors)
+                # 常駐サービス自身のstderrは世代別ログへ向く。起動元だけのパイプを終了まで読む。
+                service = await plugin_warmup.check_command(command, environment=environment, timeout=remaining)
+                if service.result is None:
+                    service_output = service.error
+                    raise RuntimeError(service.error.partition("\n")[0])
+                service_output = service.result.stderr
                 if not service.ok:
-                    if service.result is None:
-                        raise RuntimeError(service.error)
                     if service.result.stdout:
-                        errors.write(f"\nstdout: {service.result.stdout}\n")
+                        service_output += f"\nstdout: {service.result.stdout}"
                     raise RuntimeError(f"管理サービスを起動できません (exit {service.result.returncode})")
-                # この子が起動した世代は確認後も常駐する。後続の短命なstdio接続の警告とは分ける。
-                errors.seek(0)
-                inherited_job = service_forward.INHERITED_JOB_WARNING in errors.read()
+                inherited_job = service_forward.INHERITED_JOB_WARNING in service_output
                 remaining -= time.monotonic() - started
                 if remaining <= 0:
                     raise TimeoutError("管理サービスの起動だけで起動上限に達しました")
             phase = "process-start"
+            errors = capture.enter_context(tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace"))
             with anyio.fail_after(remaining):
                 async with stdio_client(parameters, errlog=errors) as streams:
                     read, write = streams
@@ -208,8 +211,10 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
                 caller = runtime_environment.CallerContext(os.environ, Path.cwd())
                 await asyncio.to_thread(service_forward.publish_service, caller, root, timeout=_STARTUP_TIMEOUT)
         except Exception as exc:  # noqa: BLE001  # 公開transportの例外群とstderrをpost-applyへ伝える。
-            errors.seek(0)
-            output = errors.read()
+            output = service_output
+            if errors is not None:
+                errors.seek(0)
+                output += "\n" + errors.read()
             message = f"MCP起動確認に失敗 (段階={phase}、対象={command[-1]}): {_exception_summary(exc)}"
             if phase != "publish" and (
                 reason := plugin_warmup.output_summary(output.replace(service_forward.INHERITED_JOB_WARNING, ""))

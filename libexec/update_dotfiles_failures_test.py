@@ -100,7 +100,7 @@ class TestStepFailureStopsExecution:
         err = capsys.readouterr().err
         assert err.count("次の操作:") == 1
         assert err.count("永続ログ:") == 1
-        assert err.count("失敗の詳細は update-dotfiles logs") == 1
+        assert err.count("診断の詳細は update-dotfiles logs") == 1
         assert err.index("失敗しても後続の段を続けた段:") < err.index("次の操作:") < err.index("永続ログ:")
 
     def test_forwarded_apply_failure_does_not_claim_to_have_saved_child_output(
@@ -340,8 +340,8 @@ class TestCapturedStderr:
         assert "fatal: pull failed" not in captured.out
         assert captured.err == (
             "fatal: pull failed\n次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。\n"
-            f"更新本体の永続ログ: {update_dotfiles_runtime.LOG_PATH}\n"  # noqa: SLF001
-            "失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。\n"
+            f"更新の永続ログ: {update_dotfiles_runtime.LOG_PATH}\n"  # noqa: SLF001
+            "診断の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。\n"
         )
         assert len(calls) == 1
 

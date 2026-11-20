@@ -536,6 +536,23 @@ def _probe_server(tmp_path: pathlib.Path, behavior: str, *, stderr: str = "") ->
     return server
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIXのファイルサイズ制限を使う")
+def test_service_start_keeps_stderr_when_child_cannot_write_files(tmp_path, caplog):
+    """子が通常ファイルに追記できないときも、起動前に出た原因と終了値を回収する。"""
+    service = tmp_path / "agent_toolkit" / "_agents_server" / "service.py"
+    service.parent.mkdir(parents=True)
+    service.touch()
+    script = (
+        "import os, resource, sys\n"
+        "resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))\n"
+        "try: os.write(2, b'missing dependency XYZ\\nstartup failed\\n')\n"
+        "finally: sys.exit(17)\n"
+    )
+    outcome = asyncio.run(_CHECK_STARTUP([sys.executable, "-c", script, "--project", str(tmp_path)]))
+    assert not outcome.ok and "exit 17" in outcome.message and "startup failed" in outcome.message
+    assert "missing dependency XYZ" in caplog.text
+
+
 @pytest.mark.parametrize("failed", ["service-start", "publish", None])
 @pytest.mark.parametrize("inherited_job", [False, True])
 def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_output(
@@ -554,13 +571,14 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
     command = [sys.executable, str(probe), "--project", str(root)]
     deferred: list[str | None] = []
 
-    async def start_service(started: list[str], *, environment: dict[str, str], stderr_file):
-        stderr_file.write("常駐起動の標準エラー\n")
+    async def start_service(started: list[str], *, environment: dict[str, str], timeout: float):
+        assert timeout > 0
+        stderr = "常駐起動の標準エラー\n"
         if inherited_job:
-            stderr_file.write(service_forward.INHERITED_JOB_WARNING + "\n")
+            stderr += service_forward.INHERITED_JOB_WARNING + "\n"
         deferred.append(environment.get(service_forward.DEFER_PUBLISH_ENV))
         code = 1 if failed == "service-start" else 0
-        return _warmup.plugin_warmup.CommandOutcome(started, subprocess.CompletedProcess(started, code, "", ""), 0)
+        return _warmup.plugin_warmup.CommandOutcome(started, subprocess.CompletedProcess(started, code, "", stderr), 0)
 
     def publish(_caller: object, target: pathlib.Path, *, timeout: float) -> dict:
         assert target == root and timeout > 0

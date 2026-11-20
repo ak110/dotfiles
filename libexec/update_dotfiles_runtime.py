@@ -168,9 +168,9 @@ def finish(returncode: int) -> int:
     if returncode != 0:
         stage = f"{current_stage_title}（exit={returncode}）の" if current_stage_title and not last_stderr_tail else ""
         print(f"次の操作: {stage}失敗理由を確認し、update-dotfilesを再実行してください。", file=sys.stderr)
-        if parent_log_saved:
-            print(f"更新本体の永続ログ: {LOG_PATH}", file=sys.stderr)
-            print("失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
+    if parent_log_saved or (current_run_id and update_log.has_step_diagnostic(LOG_PATH, LOG_BACKUP_COUNT, current_run_id)):
+        print(f"更新の永続ログ: {LOG_PATH}", file=sys.stderr)
+        print("診断の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
     return returncode
 
 

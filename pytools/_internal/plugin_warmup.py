@@ -1,7 +1,6 @@
 """agent-toolkit pluginの有効版選択とuv環境ウォームアップを共有する。"""
 
 import asyncio
-import contextlib
 import datetime
 import json
 import logging
@@ -14,7 +13,6 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
 
 import psutil
 from agent_toolkit._atk.managed_temp import sweep
@@ -499,43 +497,48 @@ class CommandOutcome:
 
 
 async def check_command(
-    command: Sequence[str], *, environment: Mapping[str, str] | None = None, stderr_file: TextIO | None = None
+    command: Sequence[str], *, environment: Mapping[str, str] | None = None, timeout: float | None = None
 ) -> CommandOutcome:
     """依存確認を非同期に待ち、取消し・時間切れでも所有する子孫を回収する。"""
     started = time.monotonic()
     result = None
     error = ""
+    stdout = stderr = b""
     try:
-        process = await asyncio.create_subprocess_exec(
-            *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=stderr_file or subprocess.PIPE, env=environment
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=_WARMUP_TIMEOUT)
-            assert process.returncode is not None
-            result = subprocess.CompletedProcess(
-                list(command),
-                process.returncode,
-                stdout.decode("utf-8", errors="replace"),
-                stderr.decode("utf-8", errors="replace") if stderr is not None else "",
+        async with asyncio.timeout(_WARMUP_TIMEOUT if timeout is None else timeout):
+            process = await asyncio.create_subprocess_exec(
+                *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment
             )
-        finally:
-            if process.returncode is None:
-                descendants = process_tree.collect_descendants(process.pid)
-                with contextlib.suppress(psutil.NoSuchProcess):
-                    descendants.insert(0, psutil.Process(process.pid))
-                # 回収の待機だけを退避し、ログはthread-local捕捉のある親workerで出力する。
-                residual = await asyncio.to_thread(process_tree.reclaim_processes, descendants)
-                if residual:
-                    raise process_tree.ReclaimError(
-                        [process_tree.describe(item) for item in residual], residual, context="依存確認"
-                    )
+            output = asyncio.create_task(process.communicate())
+            try:
+                # 期限を過ぎても、回収前にパイプへ届いた診断を同じ読み手から受け取る。
+                await asyncio.wait([output])
+            finally:
+                descendants = (
+                    process_tree.collect_descendants(process.pid, include_root=True) if process.returncode is None else []
+                )
+                if descendants:
+                    residual = await asyncio.to_thread(process_tree.reclaim_processes, descendants)
+                    if residual:
+                        output.cancel()
+                        raise process_tree.ReclaimError(
+                            [process_tree.describe(item) for item in residual], residual, context="依存確認"
+                        )
                 try:
-                    await asyncio.wait_for(process.communicate(), timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
+                    stdout, stderr = await asyncio.wait_for(output, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
                 except TimeoutError as reap_error:
-                    # 子を止めた後もパイプが閉じないのは、列挙外の子孫が出力を保持しているためである。
                     raise process_tree.ReclaimError(
                         [f"{process.pid}: 終了後も出力のパイプが閉じない"], descendants, context="依存確認"
                     ) from reap_error
+        assert process.returncode is not None
+        result = subprocess.CompletedProcess(
+            list(command),
+            process.returncode,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
     except (OSError, TimeoutError) as exc:
         error = f"{type(exc).__name__}: {exc}"
+        if stdout or stderr:
+            error += "\n" + b"\n".join(filter(None, (stdout, stderr))).decode("utf-8", errors="replace")
     return CommandOutcome(list(command), result, time.monotonic() - started, error)

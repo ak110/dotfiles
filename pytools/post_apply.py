@@ -94,6 +94,12 @@ def _run_id() -> str:
 class _DiagnosticFormatter(logging.Formatter):
     """画面や診断元は変えず、例外を含む整形後の保存本文だけを伏せる。"""
 
+    def formatMessage(self, record: logging.LogRecord) -> str:  # noqa: N802 -- logging.Formatterの契約
+        """実際に保存する診断に種別を付け、更新親が同じ実行の診断だけを案内できるようにする。"""
+        if update_log.is_step_diagnostic(record):
+            record.message = update_log.STEP_DIAGNOSTIC + record.message
+        return super().formatMessage(record)
+
     def format(self, record: logging.LogRecord) -> str:
         """永続ログ向けに資格情報を除いた本文を返す。"""
         return redact_secrets(super().format(record))
@@ -147,15 +153,16 @@ def _configure_logging() -> Generator[update_log.ProcessSafeRotatingFileHandler 
         file_handler = None
         try:
             _UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            lookup = "、直近の更新は update-dotfiles logs" if _UPDATE_RUN_ID_ENV in os.environ else ""
             file_handler = update_log.ProcessSafeRotatingFileHandler(
                 _UPDATE_LOG_PATH,
                 max_bytes=_UPDATE_LOG_MAX_BYTES,
                 backup_count=_UPDATE_LOG_BACKUP_COUNT,
                 encoding="utf-8",
                 diagnostic_hint=(
-                    f"  post-applyの永続ログ: {_UPDATE_LOG_PATH}（run={run_id}、"
-                    f"世代移動後は .1 から .{_UPDATE_LOG_BACKUP_COUNT}{lookup}）"
+                    ""
+                    if _UPDATE_RUN_ID_ENV in os.environ
+                    else f"  post-applyの永続ログ: {_UPDATE_LOG_PATH}（run={run_id}、"
+                    f"世代移動後は .1 から .{_UPDATE_LOG_BACKUP_COUNT}）"
                 ),
             )
         except OSError as error:
