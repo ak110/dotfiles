@@ -46,6 +46,7 @@ def test_saved_lane_cohort(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     )
     (event,) = read_jsonl(capsys)
     assert event["kind"] == "stats-lane-costs"
+    assert event["estimate_basis"] == "selected_plans"
     assert event["plans"]["by_kind"] == {"通常変更": {"plans": 1, "wis": 2, "median_minutes_per_wi": 63}}
     assert event["plans"]["phase_minutes_per_wi"] == {"実装": 60, "検証": 3}
     assert event["plans"]["capped_intervals"] == 1
@@ -78,6 +79,70 @@ def test_saved_lane_missing_inputs(tmp_path: Path, capsys: pytest.CaptureFixture
     assert evidence.main(["--stats", "--saved-rollout", str(tmp_path / "absent")]) == 0
     (absent,) = read_jsonl(capsys)
     assert absent["matched_calls"]["total_seconds"] is absent["read_calls"] is None
+
+
+@pytest.mark.parametrize(
+    ("cwd", "expected"),
+    [
+        ("/work/process-wi-lane-01", 1),
+        ("/work/process-wi-develop-lane-01", 1),
+        (r"C:\work\process-wi-release-1.0-deadbeef-lane-99\src", 1),
+        ("/work/lane-10", 1),
+        ("/work/session-old/lane-11-fsas5qk6/wt", 1),
+        ("/work/not-process-wi-lane-01", 0),
+        ("/work/lane-012", 0),
+    ],
+)
+def test_saved_lane_names(tmp_path: Path, capsys: pytest.CaptureFixture[str], cwd: str, expected: int) -> None:
+    path = tmp_path / "rollout.jsonl"
+    _rollout(path, cwd)
+    assert evidence.main(["--stats", "--saved-rollout", str(path)]) == 0
+    (event,) = read_jsonl(capsys)
+    assert (event["lane_files"], event["matched_calls"]["samples"]) == (expected, 3 * expected)
+
+
+@pytest.mark.parametrize("second_wi", [True, False])
+def test_saved_lane_plan_without_interval(tmp_path: Path, capsys: pytest.CaptureFixture[str], *, second_wi: bool) -> None:
+    start = "| 2026-09-24 00:00 | 開始 | |\n"
+    end = "| 2026-09-24 00:10 | 終了 | |\n"
+    (tmp_path / "first.md").write_text(
+        "- 対象リポジトリ: `/work/lane-01`\n  - 20260924-000000-001.md\n" + start + end, encoding="utf-8"
+    )
+    (tmp_path / "second.md").write_text(
+        "- 対象リポジトリ: `/work/lane-02`\n" + ("  - 20260924-000000-002.md\n" if second_wi else "") + start, encoding="utf-8"
+    )
+    for lane in ("lane-01", "lane-02"):
+        _rollout(tmp_path / f"{lane}.jsonl", f"/work/{lane}")
+    assert evidence.main(["--stats", "--saved-plan", str(tmp_path / "*.md"), "--saved-rollout", str(tmp_path / "*.jsonl")]) == 0
+    (event,) = read_jsonl(capsys)
+    assert event["matched_calls"]["samples"] == 6
+    assert event["plans"]["plans_without_wis"] == (0 if second_wi else 1)
+    assert event["plans"]["related_wi_count"] == (2 if second_wi else None)
+    assert event["plans"]["plan_wi_count"] == 1
+    assert event["estimate_plan_wis"] == (2 if second_wi else None)
+    assert event["estimated_calls_per_wi"] == (3 if second_wi else None)
+    assert event["estimated_reads_per_wi"] == (1 if second_wi else None)
+
+
+def test_saved_lane_unpaired_worktrees(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    plan = tmp_path / "plan.md"
+    plan.write_text("- 対象リポジトリ: `/work/process-wi-main-lane-01`\n  - 20261115-000000-001.md\n", encoding="utf-8")
+    path = tmp_path / "rollout.jsonl"
+    args = ["--stats", "--saved-plan", str(plan), "--saved-rollout", str(path)]
+    _rollout(path, "/work/process-wi-release-lane-01/src")
+    assert evidence.main(args) == 0
+    (event,) = read_jsonl(capsys)
+    assert event["unpaired_plans"] == [str(plan)]
+    assert event["gaps"]["rollout_worktrees_without_plan"] == 1
+    assert event["matched_calls"]["samples"] == 3
+    assert event["estimated_calls_per_wi"] is None
+
+    _rollout(path, "/work/process-wi-main-lane-01/src")
+    assert evidence.main(args) == 0
+    (event,) = read_jsonl(capsys)
+    assert event["unpaired_plans"] == []
+    assert event["estimated_calls_per_wi"] == 3
+    assert event["estimate_basis"] == "worktrees"
 
 
 @pytest.mark.parametrize("others", [[], ["--stats", "--owner-session"], ["--stats", "--since", "2026-09-24"]])

@@ -31,7 +31,10 @@ _CALL_TYPES = (
     ("edit", r"apply_patch|\*\*\* Begin Patch"),
     ("git", r"\bgit\b"),
 )
-_LANE = re.compile(r"process-wi-lane|/lane-0[0-9]")
+_LANE = re.compile(
+    r"(?:^|/)(?:process-wi-(?:[A-Za-z0-9._-]+-)?lane-[0-9]{2}"
+    r"|process-wi-lane|lane-[0-9]{2}(?:-[^/]+/wt)?)(?:/|$)"
+)
 
 
 def _files(patterns: list[str]) -> tuple[list[Path], list[str]]:
@@ -49,17 +52,23 @@ def _classify(value: str, patterns: tuple[tuple[str, str], ...], other: str) -> 
     return next((name for name, pattern in patterns if re.search(pattern, value)), other)
 
 
-def _plan_costs(paths: list[Path]) -> dict[str, Any]:
+def _plan_costs(paths: list[Path]) -> tuple[dict[str, Any], dict[Path, str]]:
     per_kind: dict[str, list[float]] = defaultdict(list)
     wi_counts: Counter[str] = Counter()
     phases: dict[str, float] = defaultdict(float)
     capped = excluded = sidecars = 0
+    related_wis = plans_without_wis = 0
+    worktrees = {}
     for path in paths:
         if path.name.endswith(".bugs.md"):
             sidecars += 1
             continue
         text = path.read_text(encoding="utf-8")
+        target = re.search(r"^- 対象リポジトリ: (.+)$", text, re.M)
+        worktrees[path] = target[1].strip().strip("`").replace("\\", "/").rstrip("/") if target else ""
         wis = set(re.findall(r"^\s+- (\d{8}-\d{6}-\d{3})\.md", text, re.M))
+        related_wis += len(wis)
+        plans_without_wis += not wis
         rows = sorted(
             (datetime.datetime.fromisoformat(stamp), label)
             for stamp, label in re.findall(r"^\| (\d{4}-\d\d-\d\d[T ]\d\d:\d\d)[^|]*\|([^|]*)\|", text, re.M)
@@ -83,6 +92,8 @@ def _plan_costs(paths: list[Path]) -> dict[str, Any]:
         "files": len(paths),
         "skipped_bug_files": sidecars,
         "excluded_without_wis_or_intervals": excluded,
+        "plans_without_wis": plans_without_wis,
+        "related_wi_count": related_wis if related_wis and not plans_without_wis else None,
         "interval_cap_minutes": 120,
         "capped_intervals": capped,
         "plan_wi_count": total,
@@ -91,7 +102,7 @@ def _plan_costs(paths: list[Path]) -> dict[str, Any]:
             for kind, values in per_kind.items()
         },
         "phase_minutes_per_wi": {phase: minutes / total for phase, minutes in phases.items()},
-    }
+    }, worktrees
 
 
 def _call_type(arguments: Any) -> str:
@@ -145,6 +156,7 @@ class _LaneCalls:
     read_bytes: int = 0
     read_outputs: int = 0
     lane_files: int = 0
+    worktrees: set[str] = field(default_factory=set)
 
     def collect(self, path: Path) -> None:
         cwd = next(
@@ -158,8 +170,11 @@ class _LaneCalls:
         if not isinstance(cwd, str):
             self.gaps["missing_cwd_files"] += 1
             return
-        if not _LANE.search(cwd):
+        cwd = cwd.replace("\\", "/")
+        lane = _LANE.search(cwd)
+        if lane is None:
             return
+        self.worktrees.add(cwd[: lane.end()].rstrip("/"))
         self.lane_files += 1
         pending: dict[str, tuple[datetime.datetime | None, str]] = {}
         last_output = model = effort = None
@@ -220,13 +235,19 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
     """明示した期間の統計を返す。1件あたりの呼出数は同じ範囲の計画WI数を分母とする推定。"""
     plans, missing_plans = _files(plan_patterns)
     rollouts, missing_rollouts = _files(rollout_patterns)
-    work = _plan_costs(plans)
+    work, worktrees = _plan_costs(plans)
     calls = _LaneCalls()
     for path in rollouts:
         calls.collect(path)
+    unpaired_plans: list[str] = []
+    estimate_basis = "worktrees" if any(worktrees.values()) else "selected_plans"
+    if rollouts and estimate_basis == "worktrees":
+        unpaired_plans = [str(path) for path, target in worktrees.items() if target not in calls.worktrees]
+        calls.gaps["plans_without_lane_rollout"] = len(unpaired_plans)
+        calls.gaps["rollout_worktrees_without_plan"] = len(calls.worktrees.difference(worktrees.values()))
     all_seconds = [value for group in calls.durations.values() for value in group]
     reads = len(calls.durations.get("read-norms", []))
-    wis = work["plan_wi_count"]
+    wis = work["related_wi_count"]
     missing = missing_plans + missing_rollouts
     known_reads = bool(all_seconds) and not calls.durations.get("unknown")
     complete_output = calls.read_outputs == reads and known_reads
@@ -239,6 +260,7 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
         "plan_patterns": plan_patterns,
         "rollout_patterns": rollout_patterns,
         "unmatched_patterns": missing,
+        "unpaired_plans": unpaired_plans,
         "plans": work,
         "rollout_files": len(rollouts),
         "lane_files": calls.lane_files,
@@ -254,6 +276,7 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
         "read_output_chars": calls.read_chars if complete_output else None,
         "read_output_utf8_bytes": calls.read_bytes if complete_output else None,
         "estimate_plan_wis": denominator,
+        "estimate_basis": estimate_basis if denominator else None,
         "estimated_calls_per_wi": len(all_seconds) / denominator if denominator else None,
         "estimated_tool_seconds_per_wi": sum(all_seconds) / denominator if denominator else None,
         "estimated_thinking_seconds_per_wi": sum(thinking_seconds) / denominator if denominator and thinking_seconds else None,

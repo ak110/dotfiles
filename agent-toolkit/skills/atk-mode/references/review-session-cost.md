@@ -130,13 +130,18 @@ atk run-script session-review-evidence -- --stats --saved-plan "$plan" --saved-r
 
 - 同じ巡回の同じレーン集合を指定する。
   日付で選んだ履歴では、計画の日付とrolloutの開始日をそろえ、どちらもファイル全体を使う。
-  `estimate_plan_wis`は有効な各計画内で重複を除いた関連WI数の和で、採用件数ではない。
-  呼出しを個々のWIに帰属させた実測ではなく、この分母で割った推定である。
+  計画の「対象リポジトリ」に同じ作業ディレクトリのrolloutがない場合（`unpaired_plans`）、またはrolloutのレーンに対応する計画がない場合、全体のWIあたりの値は`null`とする。
+  全計画に対象欄がない旧形式では、`estimate_basis: selected_plans` は入力を選んだ側の対応付けに基づく推定を指す。
+  その対応を特定できないときは計画とrolloutを別々に集計し、率は欠測とする。
+  呼出しの分母は全レーン計画の関連WI数（`plans.related_wi_count`）で、計画内の重複を除き、進捗行が無い計画も数える。
+  関連WIを特定できない計画（`plans.plans_without_wis`）があれば、分母とWIあたりの推定値は`null`になる。
+  `estimated_calls_per_wi`は同じ範囲の呼出しをこの分母（`estimate_plan_wis`）で割った推定であり、個々のWIに帰属する呼出しや採用件数を測った値ではない。
 - `plans.by_kind`は作業種別ごとの計画数・WI数と、各計画の「時刻差の和÷関連WI数」の中央値である。
   分精度の隣接時刻差を各120分で打ち切り、工程は終了側の欄の語で分類する。
   初回記録前・最終記録後は含まず、実働の近似である。
-  `phase_minutes_per_wi`は全種別の工程別合計をWI数の和で割った値で、中央値ではない。
-- `matched_calls`はcwdが `process-wi-lane` または `/lane-0[0-9]` に一致する記録内で、IDと時刻がそろう呼出しから結果までの秒数。
+  `phase_minutes_per_wi`は全種別の工程別合計を、進捗が2行以上あり実働を計算できた計画の関連WI数（`plans.plan_wi_count`）で割る。
+- `matched_calls`はレーンの作業ディレクトリ内でIDと時刻がそろう呼出しから結果までの秒数。
+  `process-wi-lane-NN`、系統付きの `process-wi-<系統>-lane-NN`、旧配置の `lane-NN`・`lane-NN-<一時名>/wt`・`process-wi-lane` を対象とする（NNは2桁）。
   合計は並列区間も足す。
   `thinking_proxy`は同じ記録の直近の出力から次の呼出しまでの0秒以上600秒未満の間隔で、推論だけの時間ではない。
   ターン境界はまたがず、モデルと推論量が同じ群の標本数・中央値を比べる。
