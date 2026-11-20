@@ -7,6 +7,7 @@ uvの自己更新・管理Python・pytools再導入の明細は、工程別の�
 Linuxでは`$XDG_STATE_HOME/agent-toolkit`（既定は`~/.local/state/agent-toolkit`）、Windowsでは`%LOCALAPPDATA%\agent-toolkit`に置く。
 `uv-<工程>.log`に直近の成功時の明細を残し、非ゼロ終了の明細は`uv-<工程>-failed.log`に分ける。
 端末には変更と警告、失敗時の原因と保存先を表示し、保存できない場合は明細を標準エラーへ戻す。
+更新本体の依存準備でuvが表示する導入件数は、同じディレクトリの`uv-更新本体の依存準備.log`に残す。
 WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換できずに自己更新が失敗することがある。
 この場合も`update-dotfiles`はインストール済みのuvで更新を続行し、処理の最後に失敗と次回の再試行を案内する。
 `atk wi process-loop`からの起動では、常駐中の`uvx`による実行ファイル競合を避けるため自己更新を省略し、

@@ -12,6 +12,16 @@ import pytest
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _LAUNCHER = _ROOT / "bin" / "update-dotfiles"
+_BODY_COMMAND = ["native", "run", "--no-project", "--script", str(_ROOT / "libexec/update_dotfiles.py")]
+_PROXY_COMMAND = [
+    "native",
+    "run",
+    "--no-cache",
+    "--quiet",
+    "--no-project",
+    "--script",
+    str(_ROOT / "libexec/update_script_run.py"),
+]
 _WINDOWS_LAUNCHER = _ROOT / "bin" / "update-dotfiles.cmd"
 _LINUX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="BashランチャーはLinuxで検証する")
 # 更新本体を起動するuvは、前回の更新が始めたuvの全消去がキャッシュを排他する最長600秒
@@ -76,9 +86,11 @@ if [[ "${{1-}} ${{2-}}" == "python install" ]]; then
     exit "${{PYTHON_UPGRADE_EXIT:-0}}"
 fi
 if [[ "${{1-}} ${{2-}}" == "python find" ]]; then
+    if [[ -n "${{NATIVE_PYTHON:-}}" ]]; then printf '%s\n' "$NATIVE_PYTHON"; fi
     exit "${{PYTHON_FIND_EXIT:-0}}"
 fi
 if [[ "${{1-}}" == "run" ]]; then
+    if [[ -n "${{_DOTFILES_UV_STDERR:-}}" ]]; then printf 'Installed 3 packages in 6ms\n' >&2; fi
     printf 'uv run stderr\n' >&2
     # 続行した失敗だけで本体を終えた場合の印を、本体と同じく作成する。
     [[ "${{UV_RUN_MARK:-0}}" != 1 ]] || : > "$DOTFILES_PRUNE_READY_FILE"
@@ -180,6 +192,7 @@ def _run_launcher(
             "HOME": str(home),
             "PATH": str(path_dir),
             "UV_CALL_LOG": str(call_log),
+            "NATIVE_PYTHON": sys.executable,
             "UV_SELF_UPDATE_EXIT": str(self_update_exit),
             "UV_SELF_UPDATE_MESSAGE": self_update_message,
             "UV_RUN_EXIT": str(run_exit),
@@ -248,7 +261,11 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
         tmp_path, native_uv=True, path_uv=True, arguments=arguments, self_update_message="info: Checking for updates..."
     )
     logs = tmp_path / "home/.local/state/agent-toolkit"
-    for label, message in (("uvの自己更新", "Checking for updates"), ("管理Pythonの更新", "latest supported patch")):
+    for label, message in (
+        ("uvの自己更新", "Checking for updates"),
+        ("管理Pythonの更新", "latest supported patch"),
+        ("更新本体の依存準備", "Installed 3 packages"),
+    ):
         assert message not in result.stdout + result.stderr
         assert message in (logs / f"uv-{label}.log").read_text(encoding="utf-8")
 
@@ -257,14 +274,7 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
         ["native", "self", "update"],
         ["native", "python", "install", "--upgrade", "3.15"],
         ["native", "python", "find", "--no-cache", "3.15"],
-        [
-            "native",
-            "run",
-            "--no-project",
-            "--script",
-            str(_ROOT / "libexec" / "update_dotfiles.py"),
-            *arguments,
-        ],
+        [*_BODY_COMMAND, *arguments],
     ]
     assert (tmp_path / "post-apply-calls").read_bytes().split(b"\0") == [
         b"--prune-only-if-minimal",
@@ -303,13 +313,7 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
         ["native", "self", "update"],
         ["native", "python", "install", "--upgrade", "3.15"],
         ["native", "python", "find", "--no-cache", "3.15"],
-        [
-            "native",
-            "run",
-            "--no-project",
-            "--script",
-            str(_ROOT / "libexec" / "update_dotfiles.py"),
-        ],
+        _BODY_COMMAND,
     ]
     diagnostics = [line for line in result.stderr.splitlines() if "Ctrl+C" not in line]
     detail = tmp_path / "home/.local/state/agent-toolkit/uv-uvの自己更新-failed.log"
@@ -341,15 +345,7 @@ def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib
     )
 
     assert result.returncode == run_exit
-    assert calls == [
-        [
-            "native",
-            "run",
-            "--no-project",
-            "--script",
-            str(_ROOT / "libexec" / "update_dotfiles.py"),
-        ]
-    ]
+    assert calls == [_PROXY_COMMAND]
     assert result.stderr.splitlines() == [
         "更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。",
         "uv run stderr",
@@ -446,6 +442,7 @@ def test_launcher_replacement_preserves_update_exit(
     replacement = current if version != "current" else b"@echo off\r\nexit /b 99\r\n"
     libexec = tmp_path / "libexec"
     libexec.mkdir()
+    shutil.copy2(_ROOT / "libexec/update_script_run.py", libexec)
     prune_probe = libexec / "prune.py"
     prune_probe.write_text("raise SystemExit(0)\n", encoding="utf-8")
     if os.name != "nt":
@@ -454,6 +451,7 @@ def test_launcher_replacement_preserves_update_exit(
         endpoint.chmod(0o755)
     calls = tmp_path / "update-calls"
     (libexec / "update_dotfiles.py").write_text(
+        "from update_script_run import restore_stderr\nrestore_stderr()\n"
         "import pathlib\n"
         f"with pathlib.Path({str(calls)!r}).open('a', encoding='utf-8') as stream:\n"
         "    stream.write('update\\n')\n"
@@ -496,6 +494,7 @@ def test_launcher_runs_cleanup_after_continued_failures_only(
     )
     libexec = tmp_path / "libexec"
     libexec.mkdir()
+    shutil.copy2(_ROOT / "libexec/update_script_run.py", libexec)
     (libexec / "prune.py").write_text(probe, encoding="utf-8")
     if os.name == "nt":
         endpoint = b'"!USERPROFILE!\\.local\\bin\\dotfiles-post-apply.exe"'
@@ -508,6 +507,7 @@ def test_launcher_runs_cleanup_after_continued_failures_only(
     launcher.write_bytes(current)
     launcher.chmod(0o755)
     (libexec / "update_dotfiles.py").write_text(
+        "from update_script_run import restore_stderr\nrestore_stderr()\n"
         "import os, pathlib\n"
         f"with pathlib.Path({str(calls)!r}).open('a', encoding='utf-8') as stream:\n"
         "    stream.write('update\\n')\n"
@@ -672,15 +672,19 @@ def test_public_launcher_prune_boundary_with_real_uv(
     shutil.copy2(real_uv, native_uv)
     libexec = tmp_path / "libexec"
     libexec.mkdir()
+    shutil.copy2(_ROOT / "libexec/update_script_run.py", libexec)
     calls = tmp_path / "calls"
     (libexec / "update_dotfiles.py").write_text(
-        "import argparse, os, pathlib\n"
+        "from update_script_run import restore_stderr\nrestore_stderr()\n"
+        "import argparse, os, pathlib, subprocess, sys\n"
         "assert os.environ.get('DOTFILES_PRUNE_OUTSIDE_UV') == '1'\n"
         f"{_LOCK_WAIT_ASSERTION}\n"
         "parser = argparse.ArgumentParser()\n"
         "parser.add_argument('--prune', action='store_true')\n"
         "parser.add_argument('--mode', choices=['minimal', 'full'])\n"
         "parser.parse_args()\n"
+        "subprocess.run([sys.executable, '-c', "
+        "\"import sys; print('Installed 29 packages in 123ms',file=sys.stderr)\"], check=True)\n"
         f"pathlib.Path({str(calls)!r}).write_text('update\\n', encoding='utf-8')\n"
         f"raise SystemExit({run_exit})\n",
         encoding="utf-8",
@@ -745,6 +749,7 @@ def test_public_launcher_prune_boundary_with_real_uv(
         if prune:
             expected.append("prune")
     assert observed == expected
+    assert ("Installed 29 packages in 123ms" in result.stderr) is not help_requested
 
 
 @pytest.mark.parametrize("run_exit", [0, 23])
@@ -763,6 +768,7 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     shutil.copy2(real_uv, native)
     libexec = tmp_path / "libexec"
     libexec.mkdir()
+    shutil.copy2(_ROOT / "libexec/update_script_run.py", libexec)
     job_source = (_ROOT / "libexec/update_dotfiles_job.py").read_text(encoding="utf-8")
     endpoint = 'str(home_bin / ("dotfiles-post-apply.exe" if sys.platform == "win32" else "dotfiles-post-apply"))'
     assert job_source.count(endpoint) == 1
@@ -790,6 +796,7 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     )
     counter = tmp_path / "updates"
     (libexec / "update_dotfiles.py").write_text(
+        "from update_script_run import restore_stderr\nrestore_stderr()\n"
         "import os, pathlib\n"
         f"{_LOCK_WAIT_ASSERTION}\n"
         f"with pathlib.Path({str(counter)!r}).open('a', encoding='utf-8') as output:\n"

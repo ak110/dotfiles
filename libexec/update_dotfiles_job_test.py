@@ -40,7 +40,7 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
     common.mkdir(parents=True)
     shutil.copy2(_ROOT / "agent-toolkit/agent_toolkit/_common/windows_job.py", common / "windows_job.py")
     shutil.copy2(_ROOT / "bin/update-dotfiles", root / "bin/update-dotfiles")
-    for name in ("update_bootstrap.sh", "update_stage.sh", "uv_output.sh", "uv_output_patterns.txt"):
+    for name in ("update_bootstrap.sh", "update_stage.sh", "uv_output.sh", "uv_output_patterns.txt", "update_script_run.py"):
         shutil.copy2(_ROOT / "libexec" / name, root / "libexec" / name)
     (root / "libexec/update_uv.sh").write_text('"$1" self update\n', encoding="utf-8")
     child_source = (
@@ -48,6 +48,7 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
         + late_descendant.held_source(tmp_path / "output.release")
     )
     (root / "libexec/update_dotfiles.py").write_text(
+        "from update_script_run import restore_stderr\nrestore_stderr()\n"
         "import os, pathlib, subprocess, sys, time\n"
         "if set(sys.argv[1:]) & {'logs', '-h', '--help'}:\n"
         "    print('saved log or help')\n"
@@ -109,7 +110,7 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
         '  printf "%s\\n" "$NATIVE_PYTHON"; exit 0\nfi\n'
         'if [[ "$1 $2" == "python install" ]]; then touch "$HOME/installed"; exit "${PYTHON_EXIT:-0}"; fi\n'
         'if [[ "$1 $2" == "self update" ]]; then exit "${SELF_EXIT:-0}"; fi\n'
-        'if [[ "$1" == run ]]; then shift 3; exec "$NATIVE_PYTHON" "$@"; fi\n'
+        'if [[ "$1" == run ]]; then echo "Installed 3 packages in 6ms" >&2; shift 3; exec "$NATIVE_PYTHON" "$@"; fi\n'
         "exit 33\n",
         encoding="utf-8",
     )
@@ -168,6 +169,8 @@ def test_public_codex_job_orders_pipeline_and_retrieves_same_result(
     assert result.returncode == (run_exit or prune_exit), result.stdout + result.stderr
     job = _job(project)
     assert "更新出力" in result.stdout and "更新診断" in result.stderr
+    assert "Installed 3 packages" not in result.stderr
+    assert "Installed 3 packages in 6ms" in (job.parent.parent / "uv-更新本体の依存準備.log").read_text(encoding="utf-8")
     metadata = json.loads((job / "input.json").read_text(encoding="utf-8"))
     assert metadata["arguments"] == ["--prune"] and metadata["thread_id"] == "own-thread"
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
@@ -287,6 +290,7 @@ def _output_child(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
         encoding="utf-8",
     )
     (root / "libexec/update_dotfiles.py").write_text(
+        "from update_script_run import restore_stderr\nrestore_stderr()\n"
         "import os, pathlib, subprocess, sys\n"
         f"child_process = subprocess.Popen([sys.executable, {str(child)!r}], "
         "start_new_session=os.environ.get('CHILD_SESSION') == '1')\n"
@@ -407,6 +411,7 @@ def test_public_job_preserves_service_with_closed_output(project: tuple[pathlib.
         "t.write_text(str(os.getpid())); t.replace(p); " + late_descendant.held_source(release)
     )
     (root / "libexec/update_dotfiles.py").write_text(
+        "from update_script_run import restore_stderr\nrestore_stderr()\n"
         "import os, pathlib, subprocess, sys\n"
         f"subprocess.Popen([sys.executable, '-c', {child_source!r}], "
         "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)\n",
@@ -480,7 +485,7 @@ def test_native_worker_output_contract(
         "run = job._run_command\n"
         "def mapped(command, directory, deadline, env):\n"
         "    native = [sys.executable, str(pathlib.Path(__file__).with_name('update_dotfiles.py'))] "
-        "if command[1:2] == ['run'] else [sys.executable, '-c', 'pass']\n"
+        "if pathlib.Path(command[1]).name == 'update_script_run.py' else [sys.executable, '-c', 'pass']\n"
         "    return run(native, directory, deadline, env)\n"
         "job._run_command = mapped\n"
         "if scenario == 'read-error':\n"

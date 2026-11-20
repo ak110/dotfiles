@@ -82,6 +82,11 @@ sys.path.insert(0, str(SOURCE_ROOT))
 sys.path.insert(0, str(SOURCE_ROOT / "agent-toolkit"))
 sys.path.insert(0, str(SOURCE_ROOT / "libexec"))
 
+if __name__ == "__main__":
+    from update_script_run import restore_stderr
+
+    restore_stderr()
+
 import update_dotfiles_git  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_process  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
