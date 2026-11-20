@@ -46,7 +46,7 @@ batchは同じ判断材料と区分を報告用UWIの1件へ集約し、対象ID
 - `候補`: `candidate_total`と、`candidate_counts`の種別ごとの件数（`atk run-script session-review-evidence`による除外の後）。
   0件なら`0件`だけを書く。
 - `所要時間`: `elapsed_seconds`（セッションの最初の記録から準備の時点までの秒数）。
-  目標値、計測区間、用途は`agent-toolkit:atk-mode/references/review-session-cost.md`「所要時間の分析と改善」に従い、目標との差は改善案が必須かの判断にだけ使う。
+  目標値、計測区間、用途は`agent-toolkit:atk-mode/references/review-session-cost.md`「所要時間の分析と改善」に従い、目標との差と、欠陥の有無および対策の採否を分けて書く。
 - `費用確認`: `agent-toolkit:atk-mode/references/review-session-cost.md`「コストの無駄の確認」の比較結果を毎回1行で書く。
   現状維持を選んだ場合も、成果、実際の作業量、品質を保つ対案と比べた結論を書く。
 - `改善見込み`: 同じ比較結果から、時間改善案の合計短縮見込み、改善後の所要時間、目標値との差、超過時の律速区間をここ1か所にまとめる（各AWIにはその案に固有の値だけを書く）。
