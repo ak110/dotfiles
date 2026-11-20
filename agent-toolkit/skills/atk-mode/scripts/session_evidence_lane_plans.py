@@ -57,33 +57,35 @@ class SavedPlan:
         return reference.parent.parts[-2:] == (".claude", "plans") and self.branch is not None and self.branch == branch
 
 
-def _assignment_fields(text: str) -> tuple[list[str | None], set[str]]:
+type Assignment = tuple[str | None, frozenset[str]]
+
+
+def _assignment_fields(text: str) -> Assignment | None:
     task = _delegation_request(_RESOURCES.sub("", text.strip(), count=1))
     if not task:
-        return ([] if is_runtime_inserted_text(text) or not text.strip() else [None]), set()
+        return None if is_runtime_inserted_text(text) or not text.strip() else (None, frozenset())
     if _ROLE_HEADER.match(task):
         try:
             fields = task_documents.task_prompt_inputs(task)
         except ValueError:
-            return [None], set()
+            return None, frozenset()
         plan, wis = fields.get("計画"), fields.get("担当WI", "")
     elif writer := _WRITER_ASSIGNMENT.match(task):
         plan, wis = writer["plan"], writer["wis"]
     else:
-        return ([None] if re.search(r"^計画:", task, re.M) else []), set()
+        return (None, frozenset()) if re.search(r"^(?:計画|担当WI):", task, re.M) else None
     assigned_wis = set(re.split(r"[、,\s]+", wis.strip())) if wis else set()
     if any(not PLAN_QUEUE_ID_PATTERN.fullmatch(wi) for wi in assigned_wis):
-        return [None], set()
-    return [plan], assigned_wis
+        return None, frozenset()
+    return plan, frozenset(assigned_wis)
 
 
 @dataclass
 class RolloutAssignment:
     """最初の呼出し以前の依頼と、その後の担当変更を区別する。"""
 
-    references: set[str | None] = field(default_factory=set)
+    assignments: set[Assignment] = field(default_factory=set)
     branches: set[str] = field(default_factory=set)
-    assigned_wis: set[str] = field(default_factory=set)
     calls_started: bool = False
     assigned_before_calls: bool = False
 
@@ -95,31 +97,29 @@ class RolloutAssignment:
                 self.branches.add(branch)
         elif entry_type == "response_item" and payload.get("role") == "user" and payload.get("type") == "message":
             for text in _codex_text_blocks(payload.get("content")):
-                references, wis = _assignment_fields(text)
-                self.references.update(references)
-                self.assigned_wis.update(wis)
-            if self.references and not self.calls_started:
+                if (assignment := _assignment_fields(text)) is not None:
+                    self.assignments.add(assignment)
+            if self.assignments and not self.calls_started:
                 self.assigned_before_calls = True
         elif payload.get("type") in {"function_call", "custom_tool_call"}:
             self.calls_started = True
 
-    def pair(self, worktree: str, plans: list[SavedPlan]) -> Path | str:
-        """確認できた計画のパス、または欠測の理由を返す。"""
+    def pair(self, worktree: str, plans: list[SavedPlan]) -> tuple[Path, frozenset[str]] | str:
+        """計画のパスと明示された担当WI、または欠測の理由を返す。"""
         if not self.calls_started:
             return "rollouts_without_calls"
-        if not self.assigned_before_calls or self.references == {None}:
+        if not self.assigned_before_calls:
             return "rollouts_without_plan_assignment"
-        if len(self.references) != 1 or len(self.branches) > 1:
+        if len(self.assignments) != 1 or len(self.branches) > 1:
             return "rollouts_with_ambiguous_assignment"
-        name = next(iter(self.references))
-        assert name is not None
+        name, wis = next(iter(self.assignments))
+        if not name:
+            return "rollouts_without_plan_assignment"
         reference = PurePosixPath(name.replace("\\", "/"))
         branch = next(iter(self.branches), None)
-        candidates = [
-            plan.path for plan in plans if self.assigned_wis <= plan.wis and plan.matches(reference, worktree, branch)
-        ]
+        candidates = [plan.path for plan in plans if wis <= plan.wis and plan.matches(reference, worktree, branch)]
         if not candidates:
             return "rollouts_without_matching_plan"
         if len(candidates) > 1:
             return "rollouts_with_ambiguous_assignment"
-        return candidates[0]
+        return candidates[0], wis

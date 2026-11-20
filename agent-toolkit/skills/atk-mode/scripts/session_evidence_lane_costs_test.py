@@ -23,11 +23,12 @@ def _plan(root: Path, name: str, worktree: str, wis: list[str], progress: str = 
     return path
 
 
-def _task(plan: Path | str) -> str:
+def _task(plan: Path | str, *wis: str) -> str:
     document = Path.cwd() / "exec-review.subagent.md"
+    assignment = "担当WI: " + "、".join(wis) + "\n" if wis else ""
     return (
         '<atk-auto source="agents-server" kind="delivery">\n'
-        f"次の文書の手順を実行せよ（出所: {document}）。\n役割: 実行レビュータスク\n入力:\n計画: {plan}\n"
+        f"次の文書の手順を実行せよ（出所: {document}）。\n役割: 実行レビュータスク\n入力:\n計画: {plan}\n{assignment}"
         "## 手順・参照資料\nレビューの手順\n</atk-auto>"
     )
 
@@ -72,7 +73,9 @@ def test_saved_lane_cohort(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     )
     with plan.open("a", encoding="utf-8") as stream:
         stream.write("\n| 2026-11-15 | 日付だけの結果 | 完了 |\n\n## 対象外\n\n  - 20261115-111111-001.md: 別レーンが実装\n")
-    task = _task(plan).replace(str(Path.cwd() / "exec-review.subagent.md"), r"C:\plugins\roles\exec-review.subagent.md")
+    task = _task(plan, "20261115-000000-001.md").replace(
+        str(Path.cwd() / "exec-review.subagent.md"), r"C:\plugins\roles\exec-review.subagent.md"
+    )
     _rollout(tmp_path / "lane.jsonl", "/work/lane-01", task=task)
     _rollout(tmp_path / "main.jsonl", "/work/main")
     assert (
@@ -83,14 +86,14 @@ def test_saved_lane_cohort(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     )
     (event,) = read_jsonl(capsys)
     assert event["kind"] == "stats-lane-costs"
-    assert event["estimate_basis"] == "assigned_plans"
-    assert event["plans"]["by_kind"] == {"通常変更": {"plans": 1, "wis": 2, "median_minutes_per_wi": 63}}
-    assert event["plans"]["phase_minutes_per_wi"] == {"実装": 60, "検証": 3}
-    assert event["plans"]["capped_intervals"] == 1
+    assert event["plan_wide_rates"] is None
+    assert event["plans"]["recorded_work"]["by_kind"] == {"通常変更": {"plans": 1, "wis": 2, "median_minutes_per_wi": 93}}
+    assert event["plans"]["recorded_work"]["phase_minutes_per_wi"] == {"実装": 90, "検証": 3}
+    assert event["plans"]["legacy_estimate"]["capped_intervals"] == 0
     assert event["plans"]["progress_rows_without_minute"] == 1
-    assert (event["rollout_files"], event["lane_files"], event["estimate_plan_wis"]) == (2, 1, 2)
+    assert (event["rollout_files"], event["lane_files"], event["assigned_record_rates"]["wi_count"]) == (2, 1, 1)
     assert (event["matched_calls"]["samples"], event["matched_calls"]["total_seconds"]) == (3, 5)
-    assert (event["estimated_calls_per_wi"], event["estimated_tool_seconds_per_wi"]) == (1.5, 2.5)
+    assert (event["assigned_record_rates"]["calls_per_wi"], event["assigned_record_rates"]["tool_seconds_per_wi"]) == (3, 5)
     assert (event["read_calls"], event["read_output_chars"], event["read_output_utf8_bytes"]) == (1, 3, 9)
     (gap,) = event["thinking_proxy"]
     assert (gap["model"], gap["effort"], gap["samples"], gap["median_seconds"]) == ("test-model", "medium", 1, 7)
@@ -107,7 +110,7 @@ def test_saved_lane_missing_inputs(tmp_path: Path, capsys: pytest.CaptureFixture
     (event,) = read_jsonl(capsys)
     assert event["unmatched_patterns"] == [missing]
     assert event["matched_calls"]["samples"] == 2
-    assert event["read_output_chars"] is event["read_output_utf8_bytes"] is event["estimated_calls_per_wi"] is None
+    assert event["read_output_chars"] is event["read_output_utf8_bytes"] is event["assigned_record_rates"] is None
     assert event["gaps"] == {
         "invalid_rows": 1,
         "rollouts_without_plan_assignment": 1,
@@ -146,8 +149,8 @@ def test_saved_lane_plan_without_interval(tmp_path: Path, capsys: pytest.Capture
     end = "| 2026-09-24 00:10 | 終了 | |\n"
     first = _plan(tmp_path, "15-0000_first.md", "/work/lane-01", ["20260924-000000-001"], start + end)
     second = _plan(tmp_path, "17-0000_second.md", "/work/lane-02", ["20260924-000000-002"] if second_wi else [], start)
-    for lane, plan in (("lane-01", first), ("lane-02", second)):
-        _rollout(tmp_path / f"{lane}.jsonl", f"/work/{lane}", task=_task(plan))
+    for index, (lane, plan) in enumerate((("lane-01", first), ("lane-02", second)), 1):
+        _rollout(tmp_path / f"{lane}.jsonl", f"/work/{lane}", task=_task(plan, f"20260924-000000-00{index}.md"))
     assert (
         evidence.main(["--stats", "--saved-plan", str(first.parent / "*.md"), "--saved-rollout", str(tmp_path / "*.jsonl")])
         == 0
@@ -156,10 +159,12 @@ def test_saved_lane_plan_without_interval(tmp_path: Path, capsys: pytest.Capture
     assert event["matched_calls"]["samples"] == 6
     assert event["plans"]["plans_without_wis"] == (0 if second_wi else 1)
     assert event["plans"]["related_wi_count"] == (2 if second_wi else None)
-    assert event["plans"]["plan_wi_count"] == 1
-    assert event["estimate_plan_wis"] == (2 if second_wi else None)
-    assert event["estimated_calls_per_wi"] == (3 if second_wi else None)
-    assert event["estimated_reads_per_wi"] == (1 if second_wi else None)
+    assert event["plans"]["legacy_estimate"]["plan_wi_count"] == 1
+    rates = event["assigned_record_rates"]
+    if second_wi:
+        assert (rates["wi_count"], rates["calls_per_wi"], rates["reads_per_wi"]) == (2, 3, 1)
+    else:
+        assert rates is None
 
 
 def test_saved_lane_unpaired_worktrees(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -172,14 +177,15 @@ def test_saved_lane_unpaired_worktrees(tmp_path: Path, capsys: pytest.CaptureFix
     assert event["unpaired_plans"] == [str(plan)]
     assert event["gaps"]["rollouts_without_matching_plan"] == 1
     assert event["matched_calls"]["samples"] == 3
-    assert event["estimated_calls_per_wi"] is None
+    assert event["assigned_record_rates"] is None
 
     _rollout(path, "/work/process-wi-main-lane-01/src", task=_task(plan))
     assert evidence.main(args) == 0
     (event,) = read_jsonl(capsys)
     assert event["unpaired_plans"] == []
-    assert event["estimated_calls_per_wi"] == 3
-    assert event["estimate_basis"] == "assigned_plans"
+    assert event["assigned_record_rates"] is None
+    assert event["gaps"]["rollouts_without_assigned_wis"] == 1
+    assert event["plan_wide_rates"] is None
 
 
 @pytest.mark.parametrize("others", [[], ["--stats", "--owner-session"], ["--stats", "--since", "2026-09-24"]])
@@ -200,28 +206,30 @@ def test_saved_lane_reused_across_rounds(tmp_path: Path, capsys: pytest.CaptureF
             f"| 2026-11-{day} 05:00 | 実装commit | worktree={cwd}、branch={branch}。 |\n",
         )
         record = tmp_path / f"{day}.jsonl"
-        _rollout(record, cwd, task=_task("/user/.claude/plans/" + plan.name), branch=branch, day=day)
+        _rollout(
+            record, cwd, task=_task("/user/.claude/plans/" + plan.name, f"202611{day}-040000-001.md"), branch=branch, day=day
+        )
         rounds[day] = plan, record, branch
     first, second = rounds["15"], rounds["17"]
     args = ["--stats", "--saved-plan", str(second[0]), "--saved-rollout", str(second[1])]
     assert evidence.main([*args, "--saved-plan", str(first[0]), "--saved-rollout", str(first[1])]) == 0
     (both,) = read_jsonl(capsys)
-    assert both["estimated_calls_per_wi"] == 3
+    assert both["assigned_record_rates"]["calls_per_wi"] == 3
     assert evidence.main([*args, "--saved-rollout", str(first[1])]) == 0
     (missing,) = read_jsonl(capsys)
     assert missing["matched_calls"]["samples"] == both["matched_calls"]["samples"] == 6
     assert missing["gaps"]["rollouts_without_matching_plan"] == 1
     assert missing["paired_rollouts"] == {str(second[0]): [str(second[1])]}
-    assert all(value is None for key, value in missing.items() if key.startswith("estimate"))
+    assert missing["assigned_record_rates"] is missing["plan_wide_rates"] is None
     assert evidence.main(args) == 0
     (single,) = read_jsonl(capsys)
-    assert (single["matched_calls"]["samples"], single["estimated_calls_per_wi"]) == (3, 3)
+    assert (single["matched_calls"]["samples"], single["assigned_record_rates"]["calls_per_wi"]) == (3, 3)
 
     _rollout(second[1], cwd, task=_task("/user/.claude/plans/" + second[0].name), branch=first[2])
     assert evidence.main(args) == 0
     (wrong_round,) = read_jsonl(capsys)
     assert wrong_round["gaps"]["rollouts_without_matching_plan"] == 1
-    assert wrong_round["estimated_calls_per_wi"] is None
+    assert wrong_round["assigned_record_rates"] is None
 
 
 @pytest.mark.parametrize(
@@ -262,4 +270,76 @@ def test_saved_lane_unproven_assignment(tmp_path: Path, capsys: pytest.CaptureFi
     (event,) = read_jsonl(capsys)
     assert event["matched_calls"]["samples"] == 3
     assert event["unpaired_plans"] == [str(plan)]
-    assert event["estimated_calls_per_wi"] is None
+    assert event["assigned_record_rates"] is None
+
+
+@pytest.mark.parametrize("pause", [0, 60])
+def test_saved_lane_recorded_work_excludes_breaks(tmp_path: Path, capsys: pytest.CaptureFixture[str], pause: int) -> None:
+    hour = 9 + pause // 60
+    wi = ["20261115-000000-001"]
+    new = _plan(
+        tmp_path,
+        "recorded.md",
+        "/work/lane-01",
+        wi,
+        "| 2026-11-15 09:00 | 開始: 実装 | |\n| 2026-11-15 09:10 | 実装完了 | |\n"
+        f"| 2026-11-15 {hour:02}:10 | 開始: 検証 | |\n| 2026-11-15 {hour:02}:20 | 終了: 検証 | |",
+    )
+    old = _plan(
+        tmp_path,
+        "legacy.md",
+        "/work/lane-02",
+        wi,
+        "| 2026-11-15 09:00 | 作業開始 | |\n| 2026-11-15 12:00 | 実装完了 | |",
+    )
+    assert evidence.main(["--stats", "--saved-plan", str(new), "--saved-plan", str(old)]) == 0
+    (event,) = read_jsonl(capsys)
+    measured = event["plans"]["recorded_work"]
+    assert measured["by_kind"]["通常変更"]["median_minutes_per_wi"] == 20
+    assert measured["phase_minutes_per_wi"] == {"実装": 10, "検証": 10}
+    assert measured["between_phase_minutes_per_wi"] == pause
+    legacy = event["plans"]["legacy_estimate"]
+    assert legacy["by_kind"]["通常変更"]["median_minutes_per_wi"] == 120
+    assert legacy["capped_intervals"] == 1
+
+
+@pytest.mark.parametrize(
+    "ending",
+    [
+        "| 2026-11-15 | 終了: 実装 | |",
+        "| 2026-11-15 00:10ごろ | 終了: 実装 | |",
+        "| 2026-11-15 00:10 | 開始: 検証 | |",
+        "| 2026-11-15 00:10 | 終了: 検証 | |",
+        "| 2026-11-15 00:10 | 途中経過 | |",
+    ],
+)
+def test_incomplete_recorded_work_is_not_estimated(tmp_path: Path, capsys: pytest.CaptureFixture[str], ending: str) -> None:
+    plan = _plan(tmp_path, "new.md", "/work/lane-01", ["20261115-000000-001"], "| 2026-11-15 00:00 | 開始: 実装 | |\n" + ending)
+    assert evidence.main(["--stats", "--saved-plan", str(plan)]) == 0
+    (event,) = read_jsonl(capsys)
+    measured = event["plans"]["recorded_work"]
+    assert measured["incomplete_plans"] == 1
+    assert measured["between_phase_minutes_per_wi"] is None
+    assert measured["by_kind"] == event["plans"]["legacy_estimate"]["by_kind"] == {}
+
+
+def test_assignment_union_is_not_plan_completion(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    wis = ["20261115-000000-001", "20261115-000000-002"]
+    plan = _plan(tmp_path, "plan.md", "/work/lane-01", wis)
+    for index, subset in enumerate((wis[:1], wis)):
+        _rollout(tmp_path / f"{index}.jsonl", "/work/lane-01", task=_task(plan, *(wi + ".md" for wi in subset)))
+    args = ["--stats", "--saved-plan", str(plan), "--saved-rollout", str(tmp_path / "*.jsonl")]
+    assert evidence.main(args) == 0
+    (event,) = read_jsonl(capsys)
+    assert event["matched_calls"]["samples"] == 6
+    assert event["assigned_record_rates"]["wi_count"] == 2
+    assert event["assigned_record_rates"]["calls_per_wi"] == 3
+    assert event["plan_wide_rates"] is None
+    # 同じ計画でも、呼出しの後から担当WIを足して記録全体の分母にはできない。
+    with (tmp_path / "0.jsonl").open("a", encoding="utf-8") as stream:
+        message = {"role": "user", "type": "message", "content": _task(plan, wis[1] + ".md")}
+        stream.write("\n" + json.dumps({"type": "response_item", "payload": message}))
+    assert evidence.main(args) == 0
+    (changed,) = read_jsonl(capsys)
+    assert changed["gaps"]["rollouts_with_ambiguous_assignment"] == 1
+    assert changed["assigned_record_rates"] is None

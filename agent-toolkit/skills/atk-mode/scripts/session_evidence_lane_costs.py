@@ -13,19 +13,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agent_toolkit._plan.structure import parse_plan_metadata, progress_log_rows
-from agent_toolkit._plan.structure.constants import PLAN_QUEUE_ID_PATTERN
 from session_evidence_lane_plans import RolloutAssignment, SavedPlan
+from session_evidence_lane_work import plan_costs
 
-_PHASES = (
-    ("観測", r"観測|実機|実描画|tmux|隔離"),
-    ("レビュー", r"レビュー|指摘|review|読者|読み手|再発"),
-    ("統合", r"統合|merge|rebase|追随"),
-    ("公開CI", r"公開|CI|push|リリース"),
-    ("検証", r"検証|pytest|pyfltr|テスト"),
-    ("計画", r"計画|選定|起草"),
-    ("実装", r"実装|commit|修正|是正"),
-)
 _CALL_TYPES = (
     ("test/lint", r"pytest|pyfltr|make (test|check)|uv run --frozen pyfltr"),
     ("wait/agents", r"agents (wait|notify)|write_stdin"),
@@ -54,73 +44,6 @@ def _files(patterns: list[str]) -> tuple[list[Path], list[str]]:
 
 def _classify(value: str, patterns: tuple[tuple[str, str], ...], other: str) -> str:
     return next((name for name, pattern in patterns if re.search(pattern, value)), other)
-
-
-def _plan_costs(paths: list[Path]) -> tuple[dict[str, Any], list[SavedPlan]]:
-    per_kind: dict[str, list[float]] = defaultdict(list)
-    wi_counts: Counter[str] = Counter()
-    phases: dict[str, float] = defaultdict(float)
-    capped = excluded = sidecars = undated_rows = 0
-    related_wis = plans_without_wis = 0
-    plans: list[SavedPlan] = []
-    for path in paths:
-        if path.name.endswith(".bugs.md"):
-            sidecars += 1
-            continue
-        text = path.read_text(encoding="utf-8")
-        metadata, _ = parse_plan_metadata(text)
-        target = metadata.values.get("対象リポジトリ", "") if metadata else ""
-        wis = {name for name, _ in metadata.related_wi} if metadata else set()
-        if (metadata and metadata.values.get("関連WI")) or any(not PLAN_QUEUE_ID_PATTERN.fullmatch(name) for name in wis):
-            wis.clear()
-        try:
-            progress = progress_log_rows(text)
-        except ValueError:
-            progress = []
-        plans.append(SavedPlan.from_progress(path, target.replace("\\", "/").rstrip("/"), frozenset(wis), progress))
-        related_wis += len(wis)
-        plans_without_wis += not wis
-        rows = []
-        for stamp, label, _note in progress:
-            minute = re.match(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d", stamp)
-            try:
-                if minute:
-                    rows.append((datetime.datetime.fromisoformat(minute[0]), label))
-                    continue
-            except ValueError:
-                pass
-            undated_rows += 1
-        rows.sort()
-        if not wis or len(rows) < 2:
-            excluded += 1
-            continue
-        kind = metadata.values.get("作業種別", "?") if metadata else "?"
-        minutes = 0.0
-        for (start, _), (end, label) in zip(rows, rows[1:], strict=False):
-            duration = (end - start).total_seconds() / 60
-            capped += duration > 120
-            minutes += min(duration, 120)
-            phase = "工程間" if label.strip().startswith("開始:") else _classify(label, _PHASES, "その他")
-            phases[phase] += min(duration, 120)
-        per_kind[kind].append(minutes / len(wis))
-        wi_counts[kind] += len(wis)
-    total = wi_counts.total()
-    return {
-        "files": len(paths),
-        "skipped_bug_files": sidecars,
-        "excluded_without_wis_or_intervals": excluded,
-        "plans_without_wis": plans_without_wis,
-        "related_wi_count": related_wis if related_wis and not plans_without_wis else None,
-        "interval_cap_minutes": 120,
-        "capped_intervals": capped,
-        "progress_rows_without_minute": undated_rows,
-        "plan_wi_count": total,
-        "by_kind": {
-            kind: {"plans": len(values), "wis": wi_counts[kind], "median_minutes_per_wi": statistics.median(values)}
-            for kind, values in per_kind.items()
-        },
-        "phase_minutes_per_wi": {phase: minutes / total for phase, minutes in phases.items()},
-    }, plans
 
 
 def _call_type(arguments: Any) -> str:
@@ -178,7 +101,7 @@ class _LaneCalls:
     read_bytes: int = 0
     read_outputs: int = 0
     lane_files: int = 0
-    paired: dict[Path, list[str]] = field(default_factory=lambda: defaultdict(list))
+    paired: dict[Path, dict[str, frozenset[str]]] = field(default_factory=lambda: defaultdict(dict))
 
     def collect(self, path: Path, plans: list[SavedPlan]) -> None:
         cwd = next(
@@ -238,10 +161,13 @@ class _LaneCalls:
                 self.record_result(pair, last_output, payload.get("output"))
         self.gaps["unmatched_calls"] += len(pending)
         match = assignment.pair(cwd[: lane.end()].rstrip("/"), plans)
-        if isinstance(match, Path):
-            self.paired[match].append(str(path))
-        else:
+        if isinstance(match, str):
             self.gaps[match] += 1
+            return
+        plan, wis = match
+        self.paired[plan][str(path)] = wis
+        if not wis:
+            self.gaps["rollouts_without_assigned_wis"] += 1
 
     def record_result(self, pair: tuple[datetime.datetime | None, str], end: datetime.datetime | None, output: Any) -> None:
         start, category = pair
@@ -260,10 +186,10 @@ class _LaneCalls:
 
 
 def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[str, Any]:
-    """明示した期間の統計を返す。1件あたりの呼出数は同じ範囲の計画WI数を分母とする推定。"""
+    """指定した担当記録の実数と、その記録に明示された担当WIあたりの値を返す。"""
     plans, missing_plans = _files(plan_patterns)
     rollouts, missing_rollouts = _files(rollout_patterns)
-    work, saved_plans = _plan_costs(plans)
+    work, saved_plans = plan_costs(plans)
     calls = _LaneCalls()
     for path in rollouts:
         calls.collect(path, saved_plans)
@@ -271,13 +197,13 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
     calls.gaps["plans_without_lane_rollout"] = len(unpaired_plans)
     all_seconds = [value for group in calls.durations.values() for value in group]
     reads = len(calls.durations.get("read-norms", []))
-    wis = work["related_wi_count"]
+    assigned_count = sum(len(frozenset[str]().union(*records.values())) for records in calls.paired.values())
     missing = missing_plans + missing_rollouts
     known_reads = bool(all_seconds) and not calls.durations.get("unknown")
     complete_output = calls.read_outputs == reads and known_reads
     call_gaps = calls.gaps.keys() - {"excluded_thinking_intervals", "missing_read_outputs"}
     incomplete = any(calls.gaps[key] for key in call_gaps)
-    denominator = wis if wis and all_seconds and not missing and not incomplete else None
+    denominator = assigned_count if all_seconds and not missing and not incomplete else None
     thinking_seconds = [value for group in calls.thinking.values() for value in group]
     return {
         "kind": "stats-lane-costs",
@@ -285,7 +211,10 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
         "rollout_patterns": rollout_patterns,
         "unmatched_patterns": missing,
         "unpaired_plans": unpaired_plans,
-        "paired_rollouts": {str(path): paths for path, paths in calls.paired.items()},
+        "paired_rollouts": {str(plan): list(records) for plan, records in calls.paired.items()},
+        "assigned_wis_by_rollout": {
+            path: sorted(wis) for records in calls.paired.values() for path, wis in records.items() if wis
+        },
         "plans": work,
         "rollout_files": len(rollouts),
         "lane_files": calls.lane_files,
@@ -300,12 +229,17 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
         "read_outputs": calls.read_outputs,
         "read_output_chars": calls.read_chars if complete_output else None,
         "read_output_utf8_bytes": calls.read_bytes if complete_output else None,
-        "estimate_plan_wis": denominator,
-        "estimate_basis": "assigned_plans" if denominator else None,
-        "estimated_calls_per_wi": len(all_seconds) / denominator if denominator else None,
-        "estimated_tool_seconds_per_wi": sum(all_seconds) / denominator if denominator else None,
-        "estimated_thinking_seconds_per_wi": sum(thinking_seconds) / denominator if denominator and thinking_seconds else None,
-        "estimated_reads_per_wi": reads / denominator if denominator and known_reads else None,
-        "estimated_read_chars_per_wi": calls.read_chars / denominator if denominator and complete_output else None,
-        "estimated_read_utf8_bytes_per_wi": calls.read_bytes / denominator if denominator and complete_output else None,
+        # 担当WIが全件現れても、保存されなかった担当記録の有無はこの入力から分からない。
+        "plan_wide_rates": None,
+        "assigned_record_rates": {
+            "wi_count": denominator,
+            "calls_per_wi": len(all_seconds) / denominator,
+            "tool_seconds_per_wi": sum(all_seconds) / denominator,
+            "thinking_seconds_per_wi": sum(thinking_seconds) / denominator if thinking_seconds else None,
+            "reads_per_wi": reads / denominator if known_reads else None,
+            "read_chars_per_wi": calls.read_chars / denominator if complete_output else None,
+            "read_utf8_bytes_per_wi": calls.read_bytes / denominator if complete_output else None,
+        }
+        if denominator
+        else None,
     }
