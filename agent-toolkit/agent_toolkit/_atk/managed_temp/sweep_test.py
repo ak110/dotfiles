@@ -111,19 +111,26 @@ def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None
     assert not record.exists()
 
 
-def test_expired_parent_reclaims_failed_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """キャッシュ単体の削除に失敗しても、同じ掃引で親ごと回収した対象には対処を求めない。"""
-    area = _area("expired-cache", days=8, files={"cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+@pytest.mark.parametrize("whole_removal_fails", [False, True])
+def test_expired_area_reclaims_cache_even_if_whole_removal_fails(
+    monkeypatch: pytest.MonkeyPatch, whole_removal_fails: bool
+) -> None:
+    area = _area("session-expired", days=8, files={"cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
     monkeypatch.setattr(resources, "process_references", lambda: [])
 
-    def refuse(cache: pathlib.Path) -> None:
-        raise PermissionError(f"削除権限がない: {cache}")
+    if whole_removal_fails:
 
-    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=refuse))
+        def refuse(_path: pathlib.Path) -> None:
+            raise PermissionError("busy handoff")
+
+        monkeypatch.setattr(sweep, "remove_tree", refuse)
     result = managed_temp.sweep_managed_temp(now=_NOW)
-    assert area in result.deleted
-    assert not area.exists()
-    assert not result.failed
+    if whole_removal_fails:
+        assert result.failed == ((area, "busy handoff"),)
+        assert area.is_dir() and result.deleted == [area / "cache"]
+    else:
+        assert not result.failed and result.deleted == [area]
+    assert not (area / "cache").exists()
 
 
 @pytest.mark.skipif(
@@ -215,9 +222,9 @@ def _count_walks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
     walks: list[pathlib.Path] = []
     original = sweep._inspect_tree  # pylint: disable=protected-access
 
-    def counting(path: pathlib.Path, now_ns: int) -> tuple[int, bool, int]:
+    def counting(path: pathlib.Path, now_ns: int, times: sweep.CleanupTimes) -> tuple[int, bool, int]:
         walks.append(path)
-        return original(path, now_ns)
+        return original(path, now_ns, times)
 
     monkeypatch.setattr(sweep, "_inspect_tree", counting)
     return walks
@@ -580,6 +587,124 @@ def test_pressure_reclaims_newly_expired_session_between_daily_sweeps(monkeypatc
     result = managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(hours=2))
     assert result.deleted == [session] and not result.failed and not session.exists()
     assert result.pressure is not None and result.pressure.free_after == 12 * mib
+
+
+@pytest.mark.parametrize("age_days", [8, 7])
+@pytest.mark.parametrize("first", ["daily", "pressure"])
+@pytest.mark.parametrize("next_daily", [False, True], ids=["next-start", "next-day"])
+def test_cache_removal_does_not_renew_session(
+    monkeypatch: pytest.MonkeyPatch, age_days: int, first: str, next_daily: bool
+) -> None:
+    """7日ちょうどなら記録だけを残し、内部キャッシュを回収した時刻で期限を延ばさない。"""
+    if first == "pressure":
+        _first_sweep_done()
+    session = _area(
+        "old-prefix-abc",
+        days=age_days,
+        files={"scratch/cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"},
+    )
+    reference = paths.state_root() / ".sessions" / hashlib.sha256(b"cache-clock").hexdigest()
+    reference.parent.mkdir()
+    reference.write_text(json.dumps({"path": str(session)}), encoding="utf-8")
+    mib = 1024 * 1024
+    record = session / "handoff"
+    record.write_bytes(b"x" * (5 * mib))
+    cache = session / "scratch/cache"
+    (cache / "data").write_bytes(b"c" * mib)
+    _age(session, 8)
+    # 最後の利用が回収される側にあっても、その時刻から7日間は再開できる。
+    _age(cache / "data", age_days)
+    disk = _FakeDisk(100 * mib, 13 * mib, paths.temp_root())
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+
+    initial = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not initial.failed and not cache.exists()
+    if age_days == 7:
+        assert managed_temp.find_session_temp("cache-clock") == session
+        assert record.read_bytes() == b"x" * (5 * mib)
+        assert disk(session).free == 8 * mib
+    else:
+        assert disk(session).free == 13 * mib
+
+    later = _NOW + (datetime.timedelta(days=1) if next_daily else datetime.timedelta(minutes=70))
+    assert not managed_temp.sweep_managed_temp(now=later).failed
+    assert not session.exists() and disk(session).free == 13 * mib
+
+
+@pytest.mark.parametrize("descriptor_walk", [False, True])
+@pytest.mark.parametrize("change", ["write-during", "rename-during", "rename-after"])
+def test_cache_removal_keeps_a_concurrent_handoff(monkeypatch: pytest.MonkeyPatch, change: str, descriptor_walk: bool) -> None:
+    monkeypatch.setattr(
+        sweep, "_DESCRIPTOR_WALK", descriptor_walk and os.scandir in os.supports_fd and os.open in os.supports_dir_fd
+    )
+    session = _area(
+        "session-resumed",
+        days=7,
+        files={"handoff": "original", "cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55"},
+    )
+    record = session / "handoff"
+    now = datetime.datetime.now(datetime.UTC)
+    _set_times(record, (now - datetime.timedelta(days=6, hours=23)).timestamp())
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    original_rmtree = shutil.rmtree
+
+    def remove_and_resume(path: pathlib.Path) -> None:
+        original_rmtree(path)
+        if change == "write-during":
+            record.write_text("resumed", encoding="utf-8")
+        elif change == "rename-during":
+            record.rename(session / "renamed")
+
+    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=remove_and_resume))
+    assert managed_temp.sweep_managed_temp(now=now).deleted == [session / "cache"]
+    if change == "rename-after":
+        record.rename(session / "renamed")
+    current = record if change == "write-during" else session / "renamed"
+    timestamp = current.stat().st_mtime_ns
+    assert not managed_temp.sweep_managed_temp(now=now + datetime.timedelta(days=1)).deleted
+    assert current.read_text(encoding="utf-8") == ("resumed" if change == "write-during" else "original")
+    assert current.stat().st_mtime_ns == timestamp
+
+
+def test_cleanup_time_evidence_expires_or_can_be_lost(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = datetime.datetime.now(datetime.UTC)
+    cache = _area(
+        "session-cache", days=0, files={"cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55", "record": "keep"}
+    )
+    stamp = (now - datetime.timedelta(days=6, hours=23)).timestamp()
+    for entry in [*cache.rglob("*"), cache]:
+        _set_times(entry, stamp)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    assert managed_temp.sweep_managed_temp(now=now).deleted == [cache / "cache"]
+    receipts = paths.state_root() / ".sweep/cache-parents"
+    (receipt,) = receipts.iterdir()
+    name = receipt.name
+    receipt.unlink()
+    assert not managed_temp.sweep_managed_temp(now=now + datetime.timedelta(days=1), force=True).deleted
+    assert (cache / "record").read_text(encoding="utf-8") == "keep"
+    (receipts / name).touch()
+    assert managed_temp.sweep_managed_temp(now=now + datetime.timedelta(days=8), force=True).deleted == [cache]
+    assert not list(receipts.iterdir())
+
+
+def test_pressure_rechecks_expired_session_after_another_removal(monkeypatch: pytest.MonkeyPatch) -> None:
+    _first_sweep_done()
+    first = _area("old-scratch", days=9)
+    session = _area("session-resumed", days=8)
+    record = session / "payload.txt"
+    original_remove = sweep.remove_tree
+
+    def resume_during_removal(path: pathlib.Path) -> None:
+        original_remove(path)
+        if path == first:
+            record.write_text("resumed", encoding="utf-8")
+
+    monkeypatch.setattr(sweep, "remove_tree", resume_during_removal)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=7))
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not result.failed and result.deleted == [first]
+    assert record.read_text(encoding="utf-8") == "resumed"
 
 
 @pytest.mark.parametrize("force", [False, True], ids=["between-daily-sweeps", "forced"])

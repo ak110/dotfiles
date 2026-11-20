@@ -1,7 +1,7 @@
 """一時root直下の期限切れの対象の自動掃引と、旧版が残した状態の個別回収。
 
-掃引は`atk`の共通起動から毎回呼ばれる。起動ごとの全走査を避けるため、前回の掃引を終えた時刻だけを
-状態rootの1ファイル（`.sweep/last-sweep`）へ記録し、前回から1日が過ぎていない起動では一覧も取らずに戻る。
+掃引は`atk`の共通起動から毎回呼ばれる。日次掃引の終了時刻は状態rootの`.sweep/last-sweep`に記録する。
+前回から1日未満でディスクの空きに余裕がある起動は、一覧も取らずに戻る。
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import typing
 import psutil
 
 from agent_toolkit._atk.managed_temp import creation, paths, permissions, resources
+from agent_toolkit._atk.managed_temp.cleanup_times import CleanupTimes, update_time
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
 from agent_toolkit._common import file_lock, plugin_root_leases, private_directory, process_identity, registry_index
@@ -146,17 +147,6 @@ def _now_ns(now: datetime.datetime) -> int:
     return int(reference.timestamp() * _NANOSECONDS_PER_SECOND)
 
 
-def _update_time(metadata: os.stat_result, now_ns: int) -> int:
-    """未来の更新時刻は状態変更時刻へ置き換え、状態変更時刻も未来なら判定基準時刻を返す。
-
-    掃引は走査の前に判定基準時刻を取得するため、走査中に並行する主体が作った・変えた項目は
-    状態変更時刻も未来になる。それを古い側へ倒すと使用中の領域を消し、消した領域は回復できない。
-    判定基準時刻として保持しても、次回の掃引が実際の時刻で再判定して回収できる。
-    """
-    stamp = metadata.st_mtime_ns if metadata.st_mtime_ns <= now_ns else metadata.st_ctime_ns
-    return min(stamp, now_ns)
-
-
 def _registered_worktree(git_file: pathlib.Path, area: pathlib.Path) -> bool:
     """領域外のgitdirと逆参照が一致するworktreeだけを保護する。"""
     try:
@@ -172,7 +162,7 @@ def _registered_worktree(git_file: pathlib.Path, area: pathlib.Path) -> bool:
         return False
 
 
-def _inspect_tree(path: pathlib.Path, now_ns: int) -> tuple[int, bool, int]:
+def _inspect_tree(path: pathlib.Path, now_ns: int, times: CleanupTimes) -> tuple[int, bool, int]:
     """領域自身と配下の最終更新時刻（ナノ秒）と、登録済みworktreeの有無、実使用量を返す。リンクは辿らない。
 
     配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
@@ -181,8 +171,8 @@ def _inspect_tree(path: pathlib.Path, now_ns: int) -> tuple[int, bool, int]:
     metadata = path.lstat()
     if _DESCRIPTOR_WALK:
         with permissions.directory(path) as opened:
-            return _inspect_under(opened, metadata, path, path, now_ns)
-    latest = _update_time(metadata, now_ns)
+            return _inspect_under(opened, metadata, path, path, now_ns, times)
+    latest = times.activity(path, metadata, now_ns)
     size = _allocated_bytes(metadata)
     registered = False
     pending = [path]
@@ -191,7 +181,12 @@ def _inspect_tree(path: pathlib.Path, now_ns: int) -> tuple[int, bool, int]:
         with os.scandir(directory) as children:
             for child in children:
                 metadata = child.stat(follow_symlinks=False)
-                latest = max(latest, _update_time(metadata, now_ns))
+                stamp = (
+                    times.activity(pathlib.Path(child.path), metadata, now_ns)
+                    if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata)
+                    else update_time(metadata, now_ns)
+                )
+                latest = max(latest, stamp)
                 size += _allocated_bytes(metadata)
                 if child.name == ".git" and stat.S_ISREG(metadata.st_mode):
                     registered |= _registered_worktree(pathlib.Path(child.path), path)
@@ -201,14 +196,14 @@ def _inspect_tree(path: pathlib.Path, now_ns: int) -> tuple[int, bool, int]:
 
 
 def _inspect_under(
-    directory: int, metadata: os.stat_result, current: pathlib.Path, area: pathlib.Path, now_ns: int
+    directory: int, metadata: os.stat_result, current: pathlib.Path, area: pathlib.Path, now_ns: int, times: CleanupTimes
 ) -> tuple[int, bool, int]:
     """記述子が指すディレクトリの配下を相対名で辿り、`_inspect_tree`と同じ値を返す。"""
-    latest = _update_time(metadata, now_ns)
     size = _allocated_bytes(metadata)
     registered = False
     with os.scandir(directory) as children:
         listed = list(children)
+    latest = times.activity(current, metadata, now_ns, children=lambda: {entry.name: entry.inode() for entry in listed})
     for child in listed:
         metadata = child.stat(follow_symlinks=False)
         child_path = current / child.name
@@ -216,12 +211,14 @@ def _inspect_under(
             registered |= _registered_worktree(child_path, area)
         if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
             with permissions.directory(child.name, dir_fd=directory, expected=metadata, display_path=child_path) as nested:
-                nested_latest, nested_registered, nested_size = _inspect_under(nested, metadata, child_path, area, now_ns)
+                nested_latest, nested_registered, nested_size = _inspect_under(
+                    nested, metadata, child_path, area, now_ns, times
+                )
             latest = max(latest, nested_latest)
             registered |= nested_registered
             size += nested_size
         else:
-            latest = max(latest, _update_time(metadata, now_ns))
+            latest = max(latest, update_time(metadata, now_ns))
             size += _allocated_bytes(metadata)
     return latest, registered, size
 
@@ -361,6 +358,12 @@ def _legacy_session_references(state_root: pathlib.Path, *, skip_unreadable: boo
             yield reference, target
 
 
+def _inspect_entry(child: pathlib.Path, metadata: os.stat_result, now_ns: int, times: CleanupTimes) -> tuple[int, bool, int]:
+    if stat.S_ISDIR(metadata.st_mode):
+        return _inspect_tree(child, now_ns, times)
+    return update_time(metadata, now_ns), False, _allocated_bytes(metadata)
+
+
 def _examine(
     state_root: pathlib.Path,
     child: pathlib.Path,
@@ -368,16 +371,18 @@ def _examine(
     cutoff_ns: int,
     now_ns: int,
     protected_sessions: set[pathlib.Path],
+    times: CleanupTimes,
     deleted_children: list[pathlib.Path] | None = None,
+    *,
+    inspected: tuple[int, bool, int] | None = None,
 ) -> bool:
-    """1件を調べ、削除した場合は真を返す。保持した対象は次の掃引で調べ直す。"""
-    if stat.S_ISDIR(metadata.st_mode):
-        latest, has_git, _size = _inspect_tree(child, now_ns)
-    else:
-        latest, has_git = _update_time(metadata, now_ns), False
+    """1件を調べ、削除した場合は真を返す。日次掃引ではworktreeの外の兄弟も期限で回収する。"""
+    latest, has_git, _size = inspected if inspected is not None else _inspect_entry(child, metadata, now_ns, times)
     if child in protected_sessions or plugin_root_in_use(child) or has_live_owner(child):
         return False
     if has_git:
+        if deleted_children is None:
+            return False
         # 登録worktree自身は木全体を保護し、包含する親では無関係な兄弟だけを期限判定する。
         with permissions.directory(child) if _DESCRIPTOR_WALK else contextlib.nullcontext():
             if _registered_worktree(child / ".git", child):
@@ -386,10 +391,10 @@ def _examine(
                 nested_metadata = nested.lstat()
                 if paths.is_link(nested_metadata):
                     continue
-                if (
-                    _examine(state_root, nested, nested_metadata, cutoff_ns, now_ns, protected_sessions, deleted_children)
-                    and deleted_children is not None
-                ):
+                removed = _examine(
+                    state_root, nested, nested_metadata, cutoff_ns, now_ns, protected_sessions, times, deleted_children
+                )
+                if removed:
                     deleted_children.append(nested)
         return False
     if latest >= cutoff_ns:
@@ -465,6 +470,7 @@ def _below_floor(temp_root: pathlib.Path) -> bool:
 
 
 class _ReclaimScope(enum.Enum):
+    EXPIRED_SESSION = enum.auto()
     WHOLE = enum.auto()
     CONTENTS = enum.auto()
     UNCLASSIFIED = enum.auto()
@@ -482,8 +488,17 @@ def _clean_regenerable(
     area: pathlib.Path,
     references: typing.Callable[[], list[pathlib.Path] | None],
     failed: list[tuple[pathlib.Path, str]],
+    last_use_ns: int | None,
+    times: CleanupTimes,
+    now_ns: int,
 ) -> list[pathlib.Path]:
-    cleaned = resources.cleanup_regenerable(area, references=references)
+    cleaned = resources.cleanup_regenerable(
+        area,
+        references=references,
+        observe_parent=(
+            functools.partial(times.observe_parent, last_use_ns=last_use_ns, now_ns=now_ns) if last_use_ns is not None else None
+        ),
+    )
     failed.extend((pathlib.Path(row["path"]), row["reason"]) for row in cleaned["retained"] if row.get("failed"))
     resources.log_retained(cleaned["retained"])
     return [pathlib.Path(path) for path in cleaned["removed"]]
@@ -499,6 +514,7 @@ def _reclaim_for_space(
     *,
     cutoff_ns: int,
     after_daily_sweep: bool,
+    times: CleanupTimes | None = None,
 ) -> SpacePressure | None:
     """空きは毎回確認し、再帰走査と警告を共有の5分間隔へまとめる。"""
     if not _below_floor(temp_root):
@@ -526,6 +542,7 @@ def _reclaim_for_space(
             failed,
             cutoff_ns=cutoff_ns,
             after_daily_sweep=after_daily_sweep,
+            times=times if times is not None else CleanupTimes(state_root, cutoff_ns),
         )
 
 
@@ -539,6 +556,7 @@ def _reclaim_space(
     *,
     cutoff_ns: int,
     after_daily_sweep: bool,
+    times: CleanupTimes,
 ) -> SpacePressure | None:
     """空きが下限を割る場合に限り、保持期間を待たず使用中でない対象を最終更新の古い順に回収する。
 
@@ -575,10 +593,7 @@ def _reclaim_space(
             )
             if session_area and after_daily_sweep:
                 continue
-            if directory:
-                latest, has_git, size = _inspect_tree(child, now_ns)
-            else:
-                latest, has_git, size = _update_time(metadata, now_ns), False, _allocated_bytes(metadata)
+            latest, has_git, size = _inspect_entry(child, metadata, now_ns, times)
             if (
                 child in protected_sessions
                 or has_git
@@ -588,7 +603,9 @@ def _reclaim_space(
             ):
                 continue
             if latest < cutoff_ns:
-                scope = _ReclaimScope.WHOLE
+                scope = _ReclaimScope.EXPIRED_SESSION if session_area else _ReclaimScope.WHOLE
+                if session_area and os.name == "nt":
+                    metadata = child.lstat()
             elif session_area:
                 scope = _ReclaimScope.CONTENTS
             elif directory and resources.is_tagged_cache(child):
@@ -613,7 +630,7 @@ def _reclaim_space(
     unclassified_bytes = sum(item.size for item in candidates if item.scope == _ReclaimScope.UNCLASSIFIED)
     sizes: list[tuple[str, int]] = []
     free = usage.free
-    for _latest, child, metadata, scope, size in candidates:
+    for latest, child, metadata, scope, size in candidates:
         if free >= floor:
             break
         contents_only = scope == _ReclaimScope.CONTENTS
@@ -624,11 +641,19 @@ def _reclaim_space(
             if contents_only:
                 if after_daily_sweep or not stat.S_ISDIR(metadata.st_mode):
                     continue
-                removed = _clean_regenerable(child, references, failed)
+                removed = _clean_regenerable(child, references, failed, latest, times, now_ns)
                 if not removed:
                     continue
                 deleted.extend(removed)
                 size = max(0, size - _tree_bytes(child))
+            elif scope == _ReclaimScope.EXPIRED_SESSION:
+                # 候補を並べてから他の領域の回収中に再開され得る。丸ごと消す会話だけ現在の記録を確認する。
+                current = child.lstat()
+                if paths.is_link(current) or not os.path.samestat(metadata, current):
+                    continue
+                if not _examine(state_root, child, current, cutoff_ns, now_ns, protected_sessions, times):
+                    continue
+                deleted.append(child)
             elif _remove(state_root, child, metadata):
                 deleted.append(child)
             else:
@@ -690,6 +715,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             state_root, temp_root, now_ns, protected, deleted_early, failed_early, cutoff_ns=cutoff_ns, after_daily_sweep=False
         )
         return SweepResult(deleted_early, tuple(failed_early), pressure)
+    times = CleanupTimes(state_root, cutoff_ns)
     # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
     with contextlib.suppress(OSError):
         plugin_root_leases.sweep_plugin_root_records()
@@ -711,22 +737,40 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             continue
         if paths.is_link(metadata):
             continue
+        latest = None
         try:
-            # 記録の7日保持とは別に、消費が終了した作業環境だけを先に回収する。
+            inspected = _inspect_entry(child, metadata, now_ns, times)
+            latest = inspected[0]
+            if _examine(
+                state_root, child, metadata, cutoff_ns, now_ns, protected_sessions, times, deleted, inspected=inspected
+            ):
+                deleted.append(child)
+                continue
+        except (OSError, ManagedTempError) as error:
+            if os.path.lexists(child):
+                failed.append((child, _failure_reason(error)))
+        # 全体の走査・削除が失敗しても、別に確認できる未使用キャッシュは回収する。
+        try:
             if (
                 child.is_dir()
                 and child not in protected_sessions
                 and not plugin_root_in_use(child)
                 and not has_live_owner(child)
             ):
-                deleted.extend(_clean_regenerable(child, references, failed))
-            if _examine(state_root, child, metadata, cutoff_ns, now_ns, protected_sessions, deleted):
-                deleted.append(child)
+                deleted.extend(_clean_regenerable(child, references, failed, latest, times, now_ns))
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
                 failed.append((child, _failure_reason(error)))
     pressure = _reclaim_for_space(
-        state_root, temp_root, now_ns, protected_sessions, deleted, failed, cutoff_ns=cutoff_ns, after_daily_sweep=True
+        state_root,
+        temp_root,
+        now_ns,
+        protected_sessions,
+        deleted,
+        failed,
+        cutoff_ns=cutoff_ns,
+        after_daily_sweep=True,
+        times=times,
     )
     if failed and deleted:
         # 再生成物の回収に失敗しても、続く期限・空き容量の掃引で親ごと回収できれば対処は不要。

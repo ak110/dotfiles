@@ -145,7 +145,12 @@ def _transient_error(error: OSError | subprocess.SubprocessError) -> bool:
     )
 
 
-def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pathlib.Path] | None]) -> dict[str, Any]:
+def cleanup_regenerable(
+    root: pathlib.Path,
+    *,
+    references: Callable[[], list[pathlib.Path] | None],
+    observe_parent: Callable[[pathlib.Path], Callable[[set[str]], None]] | None = None,
+) -> dict[str, Any]:
     """所有・消費終了を確定した領域の環境を回収し、保持理由も同じ結果へ返す。
 
     登録worktreeは呼出側で所有を確定する。通常のプロジェクトをこの操作へ渡さない。
@@ -166,6 +171,8 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
 
     for directory, children, _files in os.walk(root, followlinks=False, onerror=unreadable):
         parent = pathlib.Path(directory)
+        finish = None
+        removed_names: set[str] = set()
         candidates = children.copy()
         children.clear()
         for name in candidates:
@@ -214,8 +221,16 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
                 retain_error(str(path), "再生成物の確認失敗", error)
                 continue
             try:
+                if observe_parent is not None and finish is None:
+                    finish = observe_parent(parent)
                 shutil.rmtree(path)
+                removed_names.add(name)
                 result["removed"].append(str(path))
             except OSError as error:
                 retain_error(str(path), "回収失敗", error)
+        if finish is not None and removed_names:
+            try:
+                finish(removed_names)
+            except OSError as error:
+                retain_error(str(parent), "回収後の親の確認に失敗", error)
     return result
