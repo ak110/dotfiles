@@ -305,6 +305,42 @@ async def test_tight_claude_prefers_available_codex(tmp_path: pathlib.Path, monk
         assert "excluded_candidates" not in response
 
 
+@pytest.mark.parametrize("codex_available", [False, True])
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("tight_claude_allocation")
+async def test_exhausted_claude_is_excluded_without_a_query(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, codex_available: bool
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
+    tomorrow = int(time.time()) + 86400
+    usage_refresh.record_claude_report(
+        {"rate_limits": {"limits": [{"kind": "weekly", "percent": 100, "resets_at": tomorrow}]}}, account="test"
+    )
+    stream = agents_server_support._rejected_stream(  # pylint: disable=protected-access
+        "seven_day", tomorrow, before_init=False, session_id="limited-claude"
+    )
+    client = agents_server_support.FakeClaudeClient([stream])
+    async with agents_server_support.claude_manager(monkeypatch, client) as (current, _backend):
+        codex_backend = (ObservedBackend if codex_available else UnavailableProbeBackend)(current.sessions, "codex")
+        agents_server_support.install_backend(current, "codex", codex_backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        if codex_available:
+            response = await _start_allocation_task(tmp_path)
+            assert response["launch_identity"]["engine"] == "codex"
+            excluded = response["excluded_candidates"]
+            assert [item["engine"] for item in excluded] == ["claude"]
+            reason = excluded[0]["reason"]
+        else:
+            with pytest.raises(session_errors.ActionableRuntimeError, match="no available model candidates") as raised:
+                await _start_allocation_task(tmp_path)
+            reason = str(raised.value)
+            assert "claude" in reason and "candidateDependencyUnavailable" in reason
+            assert not current.sessions
+        assert "weekly" in reason and "100%" in reason
+        assert not client.queries
+
+
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("tight_claude_allocation")
 async def test_prelaunch_candidate_exhaustion(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -75,6 +75,23 @@ def test_public_usage_matches_launch_candidates(tmp_path: pathlib.Path, capsys: 
     assert details["usage"]["windows"][0]["used_percent"] is not None
 
 
+def test_rejected_model_window_without_percent_excludes_only_that_model(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:opus/high,claude:sonnet/low")
+    usage_settings.record_metadata("claude", {"account": "account", "contract": "plan"})
+    usage_refresh.record_claude_event({"status": "rejected", "rateLimitType": "seven_day_opus", "resetsAt": 200})
+    assert config.parse_unresolved_model_candidates("execute") == [("claude", "sonnet", "low")]
+    assert _main(tmp_path, "config", "usage") == 0
+    decision = capsys.readouterr().out.splitlines()[0]
+    assert "seven_day_opus" in decision and "rejected" in decision
+    assert "100%" not in decision
+    monkeypatch.setattr(config_usage.time, "time", lambda: 201.0)
+    assert config.parse_unresolved_model_candidates("execute") == [("claude", "opus", "high"), ("claude", "sonnet", "low")]
+
+
 def test_emergency_override_precedes_subscription_quota(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert _main(tmp_path, "config", "set", "execute_model", "claude:chosen/high,codex:fallback/low") == 0
     assert _main(tmp_path, "config", "set", "usage_auto_allocation", "true") == 0
