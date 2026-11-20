@@ -589,7 +589,7 @@ _SMALL_CASES = (
 )
 
 
-@pytest.mark.parametrize("case_id", ["intent-open-defect", "intent-open-control"])
+@pytest.mark.parametrize("case_id", ["intent-fixed-defect", "intent-fixed-control"])
 def test_prepare_body_review_links_dry_run_to_the_same_draft(tmp_path, capsys, case_id) -> None:
     """本文の合成対照を公開dry-runへ渡し、レビューに必要な原稿・原要求・冒頭の対応を返す。"""
     assert review_eval.main(["prepare", "--out", str(tmp_path), "--case", case_id]) == 0

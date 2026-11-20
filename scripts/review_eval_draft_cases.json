@@ -87,11 +87,11 @@
         "plan": "context.md"
       },
       "extra_params": {
-        "確認段階": "本文",
-        "原稿": "{worktree}/draft.md",
+        "確認段階": "方針",
         "要求と出所": "{worktree}/requirements.md",
         "成立性の証拠": "{worktree}/observations.md",
-        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）",
+        "方針": "{worktree}/draft.md"
       },
       "expect": {
         "detect": [
@@ -129,11 +129,11 @@
         "plan": "context.md"
       },
       "extra_params": {
-        "確認段階": "本文",
-        "原稿": "{worktree}/draft.md",
+        "確認段階": "方針",
         "要求と出所": "{worktree}/requirements.md",
         "成立性の証拠": "{worktree}/observations.md",
-        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）",
+        "方針": "{worktree}/draft.md"
       },
       "expect": {
         "detect": [],
