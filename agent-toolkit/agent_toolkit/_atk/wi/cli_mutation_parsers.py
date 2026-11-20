@@ -119,6 +119,16 @@ def _add_wi_add_parser(sub: Any) -> None:
             "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
     )
+    add.add_argument(
+        "--process-wi-timing",
+        choices=("this-run", "next-run"),
+        help="process-wi実行中のAWIを今回（this-run）か次回（next-run）へ渡す指定。",
+    )
+    add.add_argument(
+        "--defer-category",
+        choices=("investigation", "agreement", "external-wait", "cross-repository", "host-unavailable"),
+        help="--process-wi-timing=next-runで必要な先送り条件の区分。",
+    )
     _arguments.add_target_repo_arg(
         add,
         help_extra=(
