@@ -23,6 +23,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     lifetime,
     logging_config,
+    result_projection,
     shared_roots,
     state,
     status_file,
@@ -506,7 +507,10 @@ async def kill(
     `show`の`ownership`が`owner_lost`のsessionでは、登録簿のpidと起動時刻が一致する委譲先CLIだけを停止し、
     停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """
-    return await _manager().kill(session_id, timeout, stop)
+    result = await _manager().kill(session_id, timeout, stop)
+    if result_projection.is_finalized_wait_statement(result):
+        return result_projection.with_result_next_action(result, result.get("label"))
+    return result
 
 
 @mcp.tool(
@@ -641,8 +645,8 @@ async def show_session(
     バックグラウンドタスクの後の結果が不要なら`kill`で保留中の結果を受け取れる。
     完了通知が届かない保留は、背景実行のBashの上限（Claude Codeで環境変数を設定しない場合は2時間）に余裕を加えた期限で打ち切る。
     子session・バックグラウンドタスクの完了待ちの保留は追送では確定しない。
-    打ち切り、`kill`、または期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送で確定した時点で
-    待機対象が残った結果は`error`の`heldResultFinalized`が真で、再開したturnの結果ではない。残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
+    待機表明の保留を確定した結果は`error`の`heldResultFinalized`が真で、再開したturnの結果ではない。
+    残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
     `unobservedSessions`に識別子を持つ。`unobservedSessions`だけでは保留の確定と区別できない。
     終了したsessionが空でない`error`を保持する場合は、`error`を返す。失敗の原因と次の操作の判断に使える。
     共有の登録簿だけから復元したsessionは`error`を保持しないため返さず、原因は`atk agents wait`の終了行で受け取る。

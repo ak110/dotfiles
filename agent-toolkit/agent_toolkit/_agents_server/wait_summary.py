@@ -14,7 +14,7 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import resume_waits, state
+from agent_toolkit._agents_server import resume_waits, state, turn_state
 
 TERMINAL_LINE_PREFIX = "終了行: "
 WAIT_BODY_START_PREFIX = "本文開始: session_id="
@@ -37,7 +37,7 @@ _TERMINAL_STATUS_RE = re.compile(r"\sstatus=([a-z_]+)(?:\s|$)")
 def render(rows: Iterable[Mapping[str, Any]]) -> str:
     """待機結果の行から、通知・終了の内訳と上限内の本文を持つ要約を返す。
 
-    保留した結果を待機対象が残ったまま確定した終了時の結果は、`unfinished_waits`へ残った待機対象の件数を加える。
+    待機表明を確定した結果は、`unfinished_waits`へ残った待機対象の件数を加える。対象が残っていなければ0とする。
     結果本文はその時点の待機表明であり再開したturnの結果ではないことを、委譲元が終了行だけから判別できるようにする。
     本文は`本文開始:`と`本文終了:`の行で囲み、委譲元が待機の出力を1回読むだけで本文まで受け取れるようにする。
     要約全体が上限を超える本文と、読めない本文ファイルは表示せず、`agent_message_path`から読ませる。
@@ -71,7 +71,7 @@ def render(rows: Iterable[Mapping[str, Any]]) -> str:
                 ),
             ]
             unfinished_waits = _unfinished_wait_count(result.get("error"))
-            if unfinished_waits:
+            if unfinished_waits is not None:
                 fields.append(f"unfinished_waits={unfinished_waits}")
             terminal_lines.append((f"{TERMINAL_LINE_PREFIX}{' '.join(fields)}", _terminal_body(result)))
     notice_line = f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）\n" if notice_count else ""
@@ -150,14 +150,14 @@ def _utf8_size(text: str) -> int:
     return len(text.encode("utf-8"))
 
 
-def _unfinished_wait_count(error: object) -> int:
+def _unfinished_wait_count(error: object) -> int | None:
     """保留した結果の確定時に残ったバックグラウンドタスクと子sessionの件数を返す。
 
     `unobservedSessions`は再開したturnの終了など保留と無関係な処理でも記録されるため、
     保留の確定が付ける`heldResultFinalized`を持つ結果だけを数える。
     """
-    if not isinstance(error, dict) or error.get(resume_waits.HELD_RESULT_FINALIZED_KEY) is not True:
-        return 0
+    if not isinstance(error, dict) or error.get(turn_state.HELD_RESULT_FINALIZED_KEY) is not True:
+        return None
     return sum(
         len(identifiers)
         for key in (resume_waits.UNFINISHED_BACKGROUND_TASKS_KEY, resume_waits.UNOBSERVED_SESSIONS_KEY)

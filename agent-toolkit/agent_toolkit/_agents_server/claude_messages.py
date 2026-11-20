@@ -108,6 +108,19 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
     session.touch()
 
 
+def is_model_less_task_notification(message: Any) -> bool:
+    """通知だけを処理した空の成功結果を、依頼turnの結果から区別する。"""
+    origin = getattr(message, "origin", None)
+    return (
+        isinstance(origin, dict)
+        and origin.get("kind") == "task-notification"
+        and getattr(message, "subtype", None) == "success"
+        and not getattr(message, "is_error", False)
+        and getattr(message, "num_turns", None) == 0
+        and not getattr(message, "result", None)
+    )
+
+
 def _returns_to_subscription(session: SessionState) -> bool:
     """利用上限でAPIへ移した委譲先が、解除予定時刻を過ぎ、使用順で現在の種別より前にサブスクリプションを持つかを返す。"""
     retry_at = session.claude_subscription_retry_at

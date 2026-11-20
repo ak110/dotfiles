@@ -13,7 +13,15 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import commands, shared_layout, state, wait_output_tracking, wait_summary
+from agent_toolkit._agents_server import (
+    commands,
+    result_projection,
+    shared_layout,
+    state,
+    wait_output_tracking,
+    wait_run,
+    wait_summary,
+)
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import session_activity, session_registry, state_paths
 from agent_toolkit._testing.agents_server_commands_support import _write_root_sessions
@@ -35,6 +43,38 @@ def test_agents_wait_passes_explicit_root_to_waiter(
         atk.main(["agents", "wait", "--root-session-id", "mcp-root"])
 
     assert received == ["mcp-root"]
+
+
+def test_recover_published_wait_drops_legacy_review_receipt(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """旧版が公開して未配送だった待機表明も、通常のレビュー完了として案内し直さない。"""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    old = {
+        "session_id": "session-1",
+        "label": "scope-review",
+        "status": "completed",
+        "agent_message": "待機中: child",
+        "error": {"heldResultFinalized": True},
+        "next_action": "既存の補足\n" + result_projection.REVIEW_RESULT_NEXT_ACTION,
+        "read_requirements": [
+            "agent-basics:review-standards/SKILL.md",
+            "agent-basics:review-standards/references/reviewee.md",
+            "agent-basics:bugfix/SKILL.md",
+        ],
+    }
+    run = wait_run.RunningRun(run_id="published-run", targets=["session-1"]).publish(json.dumps(old), 0, "stdout")
+    path = tmp_path / "published-run.json"
+    path.write_text(run.model_dump_json(exclude_unset=True), encoding="utf-8")
+
+    assert commands.agents_wait._consume_wait_result(path) == 0
+    output = capsys.readouterr().out
+    assert "unfinished_waits=0" in output
+    assert "既存の補足" in output
+    assert "`show`" in output
+    assert "agent-basics:bugfix/SKILL.md" in output
+    assert "レビューの指摘を受領した" not in output
+    assert "review-standards" not in output
 
 
 @pytest.mark.usefixtures("session_environment")
@@ -256,6 +296,11 @@ def test_agents_wait_writes_notice_and_terminal_summary(
             " unfinished_waits=2",
             id="remaining-targets",
         ),
+        pytest.param(
+            {"heldResultFinalized": True},
+            ' error={"heldResultFinalized":true} unfinished_waits=0',
+            id="finalized-without-remaining-targets",
+        ),
     ],
 )
 @pytest.mark.usefixtures("session_environment")
@@ -283,9 +328,12 @@ def test_agents_wait_terminal_line_marks_result_finalized_with_remaining_waits(
         atk.main(["agents", "wait"])
 
     body_path = managed_temp.session_temp_path("root-session") / "agents-wait" / "session-1.md"
-    assert capsys.readouterr().out.splitlines()[1] == (
-        f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}{suffix}"
-    )
+    line = capsys.readouterr().out.splitlines()[1]
+    if (error or {}).get("heldResultFinalized"):
+        expected = " next_action=これは再開したturnの結果ではなく待機表明。`show`で現在のturnと待機対象の状態を確かめる"
+        assert expected in line
+        line = line.replace(expected, "")
+    assert line == (f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}{suffix}")
 
 
 @pytest.mark.parametrize(("excess", "shown"), [pytest.param(0, True, id="at-limit"), pytest.param(1, False, id="over-limit")])

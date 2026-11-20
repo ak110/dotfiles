@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
-from agent_toolkit._agents_server import api_credits, child_environment, state, turn_state
+from agent_toolkit._agents_server import api_credits, child_environment, result_contract, state, turn_state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
 from agent_toolkit._atk import claude_connection, usage_limit_policy
@@ -37,14 +37,6 @@ UNOBSERVED_SESSIONS_KEY = "unobservedSessions"
 """終了を観測していなかった孫sessionの識別子を`error`へ記録する項目名。
 
 保留の確定に加え、自動再開を消費した後のturnの終了など保留と無関係な処理でも記録する。
-"""
-
-
-HELD_RESULT_FINALIZED_KEY = "heldResultFinalized"
-"""待機表明の保留を、待機対象が残ったまま確定したことを`error`へ示す項目名。
-
-`unobservedSessions`は保留と無関係な処理でも記録されるため、確定した結果が再開したturnの結果ではないことは
-この項目だけで判別する。
 """
 
 
@@ -173,13 +165,14 @@ def finalize_pending_result(
     それ以外（`kill`、期限を持たない利用上限・過負荷の保留への委譲元の`send_message`、期限到来、ストリーム終端）は連鎖を終える。
     子session・バックグラウンドタスクの完了待ちの保留への`send_message`は本関数で確定せず、待機対象を引き継いで新しいturnを開始する。
     連鎖を終える確定では、確定の時点で稼働中のバックグラウンドタスクと終了を観測していない孫sessionを`error`へ記録し、
-    待機対象が残ったまま確定したことを`heldResultFinalized`で示す。
+    待機対象が残るか再開turnの結果を受け取れずに確定したことを`heldResultFinalized`で示す。
     保留した結果は待機表明であり、待機対象が残るまま公開する結果は再開turnの結果ではないことを委譲元へ示すためである。
     追跡集合から既に外した未観測の孫sessionは`unobserved_sessions`で渡す。既存の`error`の内容は保つ。
     """
     result = session.pending_result
     if result is None:
         raise RuntimeError("auto-resume wait has no pending result")
+    wait_statement = is_background_completion_wait(session) and result_contract.is_wait_statement(result.get("agent_message"))
     unfinished_tasks = set(session.live_tasks)
     unobserved = set(session.live_child_session_ids) | set(session.codex_live_subagent_thread_ids) | set(unobserved_sessions)
     session.clear_hold()
@@ -192,11 +185,16 @@ def finalize_pending_result(
     session.agent_message = result["agent_message"]
     session.error = result["error"]
     session.record_turn_completed()
-    if not keep_resume_chain and (unfinished_tasks or unobserved):
+    if not keep_resume_chain and (unfinished_tasks or unobserved or wait_statement):
         _merge_error_identifiers(session, UNFINISHED_BACKGROUND_TASKS_KEY, unfinished_tasks)
         _merge_error_identifiers(session, UNOBSERVED_SESSIONS_KEY, unobserved)
-        assert isinstance(session.error, dict)
-        session.error[HELD_RESULT_FINALIZED_KEY] = True
+        error: dict[str, Any]
+        if isinstance(session.error, dict):
+            error = session.error
+        else:
+            error = {"message": str(session.error)} if nonempty_error(session.error) else {}
+        error[turn_state.HELD_RESULT_FINALIZED_KEY] = True
+        session.error = error
     if touch:
         session.touch()
 

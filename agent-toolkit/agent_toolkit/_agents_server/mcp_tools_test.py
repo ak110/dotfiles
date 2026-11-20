@@ -74,6 +74,25 @@ def test_public_tools_expose_single_start_with_modes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_public_kill_marks_wait_statement_without_review_receipt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """killで保留を打ち切って受け取る待機表明にも、再開結果でないことを案内する。"""
+    result = {
+        "status": "completed",
+        "label": "scope-review",
+        "agent_message": "待機中: child",
+        "error": {"heldResultFinalized": True},
+    }
+    manager = SimpleNamespace(kill=AsyncMock(return_value=result))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    answer = await mcp_tools.kill("session-1", 1, False)
+
+    assert answer["error"] == result["error"]
+    assert "`show`" in answer["next_action"]
+    assert "レビューの指摘を受領した" not in answer["next_action"]
+    assert "read_requirements" not in answer
+
+
+@pytest.mark.asyncio
 async def test_public_start_returns_label_of_started_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
