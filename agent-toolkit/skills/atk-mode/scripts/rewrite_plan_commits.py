@@ -3,7 +3,7 @@
 書換えで検収した範囲全体の対応表（WI対応を持たないcommitを含む）と書換え前のHEADを受け取り、
 書換え前のHEADから到達でき、現在のHEADから到達できないcommitだけを付け替える。
 対象commitを含む記録では、どちらのHEADにも無いOIDを変えずに残し、その件数と値を表示する。
-直近の対応に今回の書換えの識別値がある記録は変えない。旧形式の対応だけでは適用済みと判定しない。
+今回の書換えの証拠が対応履歴と一致する記録は変えない。対応だけでは適用済みと判定しない。
 それ以外で対象commitが無く、どちらのHEADにも無いOIDを持つ記録は、過去の書換えの未追記として拒否する。
 作業中・保存済み計画とmanaged-tempから未指定の対象記録を検出し、複数の対応表は書換え順に合成する。
 全ての記録を検証してから書込みを始め、対応表の不足・過去の書換えの未追記・対応表の誤り・保存済み計画のいずれかがあれば
@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
+import json
 import pathlib
 import shutil
 import subprocess
@@ -28,6 +30,7 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi.mutations import result_commits
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._plan import commit_mapping, locations
 
 _CURRENT_OMISSION_ACTION = (
@@ -49,6 +52,14 @@ class _Record:
 
     path: pathlib.Path
     handoff: bool
+
+    @property
+    def staging(self) -> pathlib.Path:
+        return self.path.with_suffix(".wi-rewrite.pending")
+
+    @property
+    def receipt(self) -> pathlib.Path:
+        return self.path.with_suffix(".wi-rewrite.receipt")
 
 
 def _missing_records(worktree: pathlib.Path, records: list[_Record], operation: commit_mapping.RewriteOperation) -> list[str]:
@@ -117,12 +128,88 @@ def _allowed_wis(record: _Record, content: str, events: list[dict[str, object]])
     return commit_mapping.plan_allowed_wis(content, record.path)
 
 
-def _check_writable(record: _Record, completed_step: str, result: str) -> None:
-    """書込みの前に、追記する行を本文へ組み込めるかを書き込まずに確かめる。"""
-    if record.handoff:
-        append_progress_log.append_handoff_log(record.path, completed_step, result, writer=lambda _path, _text: None)
+def _events_digest(events: list[dict[str, object]]) -> str:
+    history = json.dumps(events, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(history.encode("utf-8")).hexdigest()
+
+
+@dataclasses.dataclass(frozen=True)
+class _Receipt:
+    """書換えの識別値と、本文・対応履歴それぞれの書込み前後のハッシュ。"""
+
+    operation: str
+    old_body: str
+    new_body: str
+    old_events: str
+    new_events: str
+
+    @classmethod
+    def read(cls, path: pathlib.Path) -> _Receipt | None:
+        try:
+            fields = path.read_text(encoding="ascii").splitlines()
+        except FileNotFoundError:
+            return None
+        if len(fields) != 5:
+            raise ValueError(f"書換えの証拠が不正です: {path}")
+        return cls(*fields)
+
+    def write(self, path: pathlib.Path) -> None:
+        atomic_write(path, "\n".join(dataclasses.astuple(self)) + "\n")
+
+
+@dataclasses.dataclass(frozen=True)
+class _Update:
+    record: _Record
+    change: commit_mapping.RangeRewrite
+    receipt: _Receipt | None = None
+    body: str | None = None
+
+
+def _prepare(
+    record: _Record, worktree: pathlib.Path, operation: commit_mapping.RewriteOperation, completed_step: str, result: str
+) -> _Update:
+    raw = record.path.read_bytes()
+    content = raw.decode("utf-8")
+    events = commit_mapping.read_events(record.path, content)
+    history = _events_digest(events)
+    body = hashlib.sha256(raw).hexdigest()
+    staging = record.staging
+    pending = _Receipt.read(staging / "receipt")
+    if pending is not None:
+        # replaceはデータを公開すると同時にステージ側の名前を消す。旧版が同じ対応を書いても消えない。
+        body_pending = (staging / "body").exists()
+        mapping_pending = (staging / "mapping").exists()
+        if (
+            pending.operation != operation.operation_id
+            or body != (pending.old_body if body_pending else pending.new_body)
+            or history != (pending.old_events if mapping_pending else pending.new_events)
+        ):
+            raise _next_action.ActionableError(
+                f"未完了の書換えと操作または記録が一致しません: {record.path}",
+                next_action="中断した書換えの両HEAD・対応表と記録を確認し、元の引数で再実行する",
+            )
+        applied = not mapping_pending
     else:
-        append_progress_log.append_progress_log(record.path, completed_step, result, writer=lambda _path, _text: None)
+        done = _Receipt.read(record.receipt)
+        applied = done is not None and (done.operation, done.new_events) == (operation.operation_id, history)
+    change = commit_mapping.range_rewrite_event(
+        worktree, events, _allowed_wis(record, content, events), operation, applied=applied
+    )
+    if pending is not None or change.event is None:
+        return _Update(record, change, pending)
+
+    prepared: list[str] = []
+    append = append_progress_log.append_handoff_log if record.handoff else append_progress_log.append_progress_log
+    append(record.path, completed_step, result, writer=lambda _path, value: prepared.append(value))
+    updated = prepared[0]
+    receipt = _Receipt(
+        operation.operation_id,
+        body,
+        hashlib.sha256(updated.encode()).hexdigest(),
+        history,
+        _events_digest([*events, change.event]),
+    )
+    return _Update(record, change, receipt, updated)
 
 
 def _plan_events(
@@ -131,18 +218,15 @@ def _plan_events(
     operation: commit_mapping.RewriteOperation,
     completed_step: str,
     result: str,
-) -> tuple[list[tuple[_Record, commit_mapping.RangeRewrite]], list[str], list[str]]:
+) -> tuple[list[_Update], list[str], list[str]]:
     """全記録を検証し、記録ごとの追記イベントと、対応表の不足・過去の書換えの未追記・その他の失敗の行を返す。"""
-    planned: list[tuple[_Record, commit_mapping.RangeRewrite]] = []
+    planned: list[_Update] = []
     problems: list[str] = []
     actions: list[str] = []
-    for record in records:
+    for record in dict.fromkeys(records):
         try:
-            content = record.path.read_text(encoding="utf-8")
-            events = commit_mapping.read_events(record.path, content)
-            change = commit_mapping.range_rewrite_event(worktree, events, _allowed_wis(record, content, events), operation)
-            if change.event is not None:
-                _check_writable(record, completed_step, result)
+            update = _prepare(record, worktree, operation, completed_step, result)
+            change = update.change
         except _next_action.ActionableError as error:
             problems.append(f"{record.path}: {error.reason}")
             actions.append(
@@ -166,25 +250,44 @@ def _plan_events(
             problems.append(f"{record.path}: 過去の書換えの未追記（書換え前後のHEADのどちらにも無い記録済みOID）: {oid}")
         if change.past_omissions:
             actions.append(_PAST_OMISSION_ACTION)
-        planned.append((record, change))
+        planned.append(update)
     return planned, problems, list(dict.fromkeys(actions))
 
 
-def _append_record(record: _Record, event: dict[str, object], completed_step: str, result: str) -> None:
-    """対応記録の追記に失敗したら本文を戻し、再実行で進捗の行が重複するのを防ぐ。"""
-    with tempfile.TemporaryDirectory(dir=record.path.parent) as directory:
-        # 容量不足で追記できなくても、本文の復元には新たな書込みを要しない。
-        original = pathlib.Path(directory) / record.path.name
-        shutil.copy2(record.path, original)
-        if record.handoff:
-            append_progress_log.append_handoff_log(record.path, completed_step, result)
-        else:
-            append_progress_log.append_progress_log(record.path, completed_step, result)
-        try:
-            commit_mapping.append_event(record.path, event)
-        except OSError:
-            original.replace(record.path)
-            raise
+def _append_record(update: _Update) -> None:
+    """本文、対応、証拠の順に公開する。中断した場合は、まだ置き換えていないファイルから再開する。"""
+    record = update.record.path
+    staging = update.record.staging
+    mapping = commit_mapping.mapping_path(record)
+    assert update.receipt is not None
+    with tempfile.TemporaryDirectory(dir=record.parent) as directory:
+        scratch = pathlib.Path(directory)
+        if update.body is not None:
+            assert update.change.event is not None
+            prepared = scratch / "prepared"
+            prepared.mkdir()
+            atomic_write(prepared / "body", update.body)
+            atomic_write(prepared / "mapping", commit_mapping.appended_content(record, update.change.event))
+            update.receipt.write(prepared / "receipt")
+            prepared.replace(staging)
+
+        body = staging / "body"
+        next_mapping = staging / "mapping"
+        if body.exists():
+            original = scratch / "original"
+            shutil.copy2(record, original)
+            try:
+                body.replace(record)
+                next_mapping.replace(mapping)
+            except OSError:
+                if not body.exists():
+                    original.replace(record)
+                staging.rename(scratch / "rolled-back")
+                raise
+        elif next_mapping.exists():
+            next_mapping.replace(mapping)
+        update.receipt.write(update.record.receipt)
+        staging.rename(scratch / "finished")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -250,7 +353,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         names: set[str] = set()
-        for record, _change in planned:
+        for update in planned:
+            record = update.record
             content = record.path.read_text(encoding="utf-8")
             events = commit_mapping.read_events(record.path, content)
             mapping = commit_mapping.read_mapping(args.worktree, events, _allowed_wis(record, content, events))
@@ -267,22 +371,24 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     for name in updated_wis:
         print(f"終了AWIの対応commitを更新: {name}")
-    for record, change in planned:
+    for update in planned:
+        record, change = update.record, update.change
         retained = ""
         if change.retained:
             retained = f" 範囲外として残したOID（{len(change.retained)}件）: {', '.join(change.retained)}"
         event = change.event
-        if event is None:
-            print(f"変更なし: {record.path}{retained}")
-            continue
         try:
-            _append_record(record, event, args.completed_step, args.result)
+            if update.receipt is not None:
+                _append_record(update)
         except OSError as error:
             _next_action.report(
                 f"{record.path}: 履歴変更の対応を追記できません: {error}",
                 next_action="書込エラーを解消し、同じ引数で再実行する。追記済みの記録は変えない",
             )
             return 1
+        if event is None:
+            print(f"変更なし: {record.path}{retained}")
+            continue
         rewritten = event["rewrite"]
         assert isinstance(rewritten, dict)
         print(f"追記: {record.path}（{len(rewritten)}件）{retained}")

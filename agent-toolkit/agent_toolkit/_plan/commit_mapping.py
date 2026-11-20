@@ -184,13 +184,18 @@ def read_events(record: pathlib.Path, content: str) -> list[dict[str, object]]:
     return body_events(content) + file_events(mapping_path(record))
 
 
-def append_event(record: pathlib.Path, event: dict[str, object]) -> None:
-    """対応記録ファイルへ1回の記録を1行で追記する。"""
+def appended_content(record: pathlib.Path, event: dict[str, object]) -> str:
+    """既存の対応記録に従来形式のJSONを1行加えた内容を返す。"""
     path = mapping_path(record)
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
     if existing and not existing.endswith("\n"):
         existing += "\n"
-    atomic_write(path, existing + json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+    return existing + json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
+
+
+def append_event(record: pathlib.Path, event: dict[str, object]) -> None:
+    """対応記録ファイルへ1回の記録を1行で追記する。"""
+    atomic_write(mapping_path(record), appended_content(record, event))
 
 
 def _decode(payload: str) -> dict[str, object]:
@@ -226,7 +231,7 @@ def read_mapping(
             for oid in oids:
                 assert isinstance(oid, str)
                 mapping.setdefault(_full_oid(worktree, oid, allow_missing=allow_missing), set()).update(names)
-        elif set(event) in ({"rewrite"}, {"rewrite", "operation_id"}):
+        elif set(event) == {"rewrite"}:
             replacements = event["rewrite"]
             if not isinstance(replacements, dict) or not replacements:
                 raise _fail("履歴変更のOID対応がありません")
@@ -621,7 +626,12 @@ class RangeRewrite:
 
 
 def range_rewrite_event(
-    worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str], operation: RewriteOperation
+    worktree: pathlib.Path,
+    events: list[dict[str, object]],
+    allowed_wis: set[str],
+    operation: RewriteOperation,
+    *,
+    applied: bool = False,
 ) -> RangeRewrite:
     """旧HEADにだけ含まれるOIDを付け替える。今回の対象も適用済みの追記も無い記録は、範囲外のOIDを未追記とする。"""
     mapping = read_mapping(worktree, events, allowed_wis)
@@ -635,7 +645,7 @@ def range_rewrite_event(
         else:
             outside.append(oid)
     if not targets:
-        if outside and events[-1].get("operation_id") == operation.operation_id:
+        if applied:
             return RangeRewrite(retained=tuple(outside))
         return RangeRewrite(past_omissions=tuple(outside))
     rewrite = operation.replacements
@@ -645,7 +655,7 @@ def range_rewrite_event(
     for oid in targets:
         _check_assignment(oid, rewrite[oid], mapping[oid])
         resolved[short_oid(worktree, oid)] = _short_value(worktree, rewrite[oid], names=mapping[oid])
-    return RangeRewrite(event={"rewrite": resolved, "operation_id": operation.operation_id}, retained=tuple(outside))
+    return RangeRewrite(event={"rewrite": resolved}, retained=tuple(outside))
 
 
 def get_commits(
