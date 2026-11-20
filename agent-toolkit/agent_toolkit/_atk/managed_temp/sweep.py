@@ -9,12 +9,12 @@ from __future__ import annotations
 import contextlib
 import datetime
 import enum
-import errno
 import functools
 import hashlib
 import json
 import os
 import pathlib
+import re
 import secrets
 import shutil
 import stat
@@ -26,6 +26,7 @@ from agent_toolkit._atk.managed_temp import creation, paths, permissions, resour
 from agent_toolkit._atk.managed_temp.cleanup_times import CleanupTimes, update_time
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
+from agent_toolkit._atk.managed_temp.sweep_lock import Access, sweep_access
 from agent_toolkit._common import file_lock, plugin_root_leases, private_directory, process_identity, registry_index
 
 _RECORD_NAME = ".sweep/last-sweep"
@@ -229,40 +230,36 @@ def _legacy_lock_path(state_root: pathlib.Path, path: pathlib.Path) -> pathlib.P
     return state_root / f"{hashlib.sha256(os.fsencode(path)).hexdigest()}{_LEGACY_CLEANUP_LOCK_SUFFIX}"
 
 
-def _legacy_marker(area: pathlib.Path) -> dict[str, typing.Any]:
+def _legacy_marker(area: pathlib.Path) -> dict[str, typing.Any] | None:
+    """不在だけをNoneとする。読取不能なら削除に使う旧版のロックも特定できない。"""
     marker = area / paths.LEGACY_MARKER_NAME
     try:
         metadata = marker.lstat()
-        if not stat.S_ISREG(metadata.st_mode) or paths.is_link(metadata):
-            return {}
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(metadata.st_mode) or paths.is_link(metadata):
+        raise ManagedTempError(f"旧版の管理記録が通常ファイルではない: {marker}")
+    try:
         record = json.loads(marker.read_text(encoding="utf-8"))
-    except FileNotFoundError, UnicodeError, ValueError:
-        return {}
-    return record if isinstance(record, dict) else {}
-
-
-def _legacy_original_path(area: pathlib.Path) -> pathlib.Path:
-    """旧markerが記録した元の対象パスを返す。後始末中の隔離先は元の対象のロックで旧版と排他する。"""
-    recorded = _legacy_marker(area).get("path")
-    return pathlib.Path(recorded) if isinstance(recorded, str) and pathlib.Path(recorded).is_absolute() else area
+    except (UnicodeError, ValueError) as error:
+        raise ManagedTempError(f"旧版の管理記録を読めない: {marker}: {error}") from error
+    if not isinstance(record, dict):
+        raise ManagedTempError(f"旧版の管理記録がオブジェクトではない: {marker}")
+    return record
 
 
 @contextlib.contextmanager
-def _try_lock(path: pathlib.Path, *, report_errors: bool = False) -> typing.Generator[bool]:
+def _try_lock(path: pathlib.Path) -> typing.Generator[bool]:
     """競合時は待たずに偽を渡す。旧版の状態を個別に扱う場合は開けない対象も次回へ残す。"""
     try:
         handle = path.open("a+", encoding="utf-8")
     except OSError:
-        if report_errors:
-            raise
         yield False
         return
     with handle:
         try:
             file_lock.acquire_lock(handle, blocking=False)
-        except OSError as error:
-            if report_errors and error.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
-                raise
+        except OSError:
             yield False
             return
         try:
@@ -280,9 +277,10 @@ def _unlink_released_lock(path: pathlib.Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def _remove_legacy_area(state_root: pathlib.Path, area: pathlib.Path) -> bool:
+def _remove_legacy_area(state_root: pathlib.Path, area: pathlib.Path, marker: dict[str, typing.Any]) -> bool:
     """旧marker付きの領域を、旧版のcleanupロックを待たずに取れた場合だけ削除する。取れなければ偽を返す。"""
-    original = _legacy_original_path(area)
+    recorded = marker.get("path")
+    original = pathlib.Path(recorded) if isinstance(recorded, str) and pathlib.Path(recorded).is_absolute() else area
     lock_path = _legacy_lock_path(state_root, original)
     collected = False
     with _try_lock(lock_path) as locked:
@@ -371,6 +369,24 @@ def _legacy_session_references(state_root: pathlib.Path, *, skip_unreadable: boo
             yield reference, target
 
 
+def _sweep_entries(temp_root: pathlib.Path, state_root: pathlib.Path) -> list[pathlib.Path]:
+    children = sorted(temp_root.iterdir())
+    try:
+        separate = not temp_root.samefile(state_root)
+    except FileNotFoundError:
+        # 一度も状態を書けないまま満杯になった場合、一時rootには回収対象だけがある。
+        return children
+    if separate:
+        return children
+    # Windowsでは一時領域も状態もLOCALAPPDATA配下に置く。旧参照・登録簿は割当先の有無で別途回収する。
+    return [
+        child
+        for child in children
+        if child.name not in {".sweep", ".sessions", ".sweep-schedule"}
+        and not re.fullmatch(r"[0-9a-f]{64}\.json(?:\.cleanup\.lock|\.consuming-.+)?", child.name)
+    ]
+
+
 def _inspect_entry(child: pathlib.Path, metadata: os.stat_result, now_ns: int, times: CleanupTimes) -> tuple[int, bool, int]:
     if stat.S_ISDIR(metadata.st_mode):
         return _inspect_tree(child, now_ns, times)
@@ -417,8 +433,11 @@ def _examine(
 
 def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_result) -> bool:
     """回収可と判定済みの1件を削除し、削除した場合は真を返す。"""
-    if stat.S_ISDIR(metadata.st_mode) and os.path.lexists(child / paths.LEGACY_MARKER_NAME):
-        return _remove_legacy_area(state_root, child)
+    if stat.S_ISDIR(metadata.st_mode):
+        with permissions.directory(child, expected=metadata) if _DESCRIPTOR_WALK else contextlib.nullcontext():
+            marker = _legacy_marker(child)
+        if marker is not None:
+            return _remove_legacy_area(state_root, child, marker)
     remove_tree(child)
     return True
 
@@ -483,8 +502,8 @@ def _below_floor(temp_root: pathlib.Path) -> bool:
 
 
 class _ReclaimScope(enum.Enum):
-    EXPIRED_SESSION = enum.auto()
-    WHOLE = enum.auto()
+    EXPIRED = enum.auto()
+    TAGGED_CACHE = enum.auto()
     CONTENTS = enum.auto()
     UNCLASSIFIED = enum.auto()
 
@@ -549,61 +568,50 @@ def _reclaim_space(
         failed.append((pathlib.Path(error.filename or state_root / ".sessions"), _failure_reason(error)))
         legacy_sessions = None
     references = functools.cache(resources.process_references)
-    candidates: list[_PressureCandidate] = []
-    with os.scandir(temp_root) as children:
-        listed = sorted(children, key=lambda child: child.name)
-    for entry in listed:
-        child = temp_root / entry.name
-        try:
-            metadata = entry.stat(follow_symlinks=False)
-            if paths.is_link(metadata):
-                continue
-            directory = stat.S_ISDIR(metadata.st_mode)
-            session_area = (
+
+    def candidate(child: pathlib.Path) -> _PressureCandidate | None:
+        metadata = child.lstat()
+        if paths.is_link(metadata) or child in protected_sessions or plugin_root_in_use(child):
+            return None
+        directory = stat.S_ISDIR(metadata.st_mode)
+        with permissions.directory(child, expected=metadata) if directory and _DESCRIPTOR_WALK else contextlib.nullcontext():
+            session = (
                 legacy_sessions is None
                 or child in legacy_sessions
                 or (
                     directory
                     and (
                         child.name.startswith(f"{creation.SESSION_TEMP_PREFIX}-")
-                        or isinstance(_legacy_marker(child).get("session_id"), str)
+                        or isinstance((_legacy_marker(child) or {}).get("session_id"), str)
                     )
                 )
             )
-            if session_area and after_daily_sweep:
-                continue
+            if (session and after_daily_sweep) or has_live_owner(child):
+                return None
             latest, has_git, size = _inspect_entry(child, metadata, now_ns, times)
-            if (
-                child in protected_sessions
-                or has_git
-                or plugin_root_in_use(child)
-                or latest >= now_ns - _PRESSURE_GRACE_NS
-                or has_live_owner(child)
-            ):
-                continue
+            if has_git or latest >= now_ns - _PRESSURE_GRACE_NS:
+                return None
             if latest < cutoff_ns:
-                scope = _ReclaimScope.EXPIRED_SESSION if session_area else _ReclaimScope.WHOLE
-                if session_area and os.name == "nt":
-                    metadata = child.lstat()
-            elif session_area:
+                scope = _ReclaimScope.EXPIRED
+            elif session:
                 scope = _ReclaimScope.CONTENTS
             elif directory and resources.is_tagged_cache(child):
-                observed = references()
-                if (
-                    (hasattr(os, "getuid") and metadata.st_uid != os.getuid())
-                    or observed is None
-                    or any(reference.is_relative_to(child) for reference in observed)
-                ):
-                    continue
-                scope = _ReclaimScope.WHOLE
+                if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+                    return None
+                scope = _ReclaimScope.TAGGED_CACHE
             else:
                 scope = _ReclaimScope.UNCLASSIFIED
+        return _PressureCandidate(latest, child, metadata, scope, size)
+
+    candidates: list[_PressureCandidate] = []
+    for child in _sweep_entries(temp_root, state_root):
+        try:
+            if (item := candidate(child)) is not None:
+                candidates.append(item)
         except FileNotFoundError:
             continue
         except (OSError, ManagedTempError) as error:
             failed.append((child, _failure_reason(error)))
-            continue
-        candidates.append(_PressureCandidate(latest, child, metadata, scope, size))
     # 期限切れと再生成指定のある対象を先に回収する。期限内の会話の記録は、不足分の見積もりにも含めない。
     candidates.sort(key=lambda item: (item.scope == _ReclaimScope.UNCLASSIFIED, item.latest, item.path.name))
     unclassified_bytes = sum(item.size for item in candidates if item.scope == _ReclaimScope.UNCLASSIFIED)
@@ -617,26 +625,30 @@ def _reclaim_space(
             contents_only = unclassified_bytes < floor - free
             unclassified_bytes -= size
         try:
+            if contents_only and (after_daily_sweep or not stat.S_ISDIR(metadata.st_mode)):
+                continue
+            # 順位と不足分は見積もりに過ぎない。消す対象だけ、先行する回収の間に利用や用途が変わっていないか調べる。
+            current = candidate(child)
+            if (
+                current is None
+                or not os.path.samestat(metadata, current.metadata)
+                or (current.latest, current.scope) != (latest, scope)
+            ):
+                continue
             if contents_only:
-                if after_daily_sweep or not stat.S_ISDIR(metadata.st_mode):
-                    continue
                 removed = _clean_regenerable(child, references, failed, latest, times, now_ns)
                 if not removed:
                     continue
                 deleted.extend(removed)
                 size = max(0, size - _tree_bytes(child))
-            elif scope == _ReclaimScope.EXPIRED_SESSION:
-                # 候補を並べてから他の領域の回収中に再開され得る。丸ごと消す会話だけ現在の記録を確認する。
-                current = child.lstat()
-                if paths.is_link(current) or not os.path.samestat(metadata, current):
-                    continue
-                if not _examine(state_root, child, current, cutoff_ns, now_ns, protected_sessions, times):
-                    continue
-                deleted.append(child)
-            elif _remove(state_root, child, metadata):
-                deleted.append(child)
             else:
-                continue
+                if scope == _ReclaimScope.TAGGED_CACHE:
+                    observed = resources.process_references()
+                    if observed is None or any(reference.is_relative_to(child) for reference in observed):
+                        continue
+                if not _remove(state_root, child, current.metadata):
+                    continue
+                deleted.append(child)
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
                 failed.append((child, _failure_reason(error)))
@@ -675,32 +687,31 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
     cutoff_ns = now_ns - max_age_days * 86_400 * _NANOSECONDS_PER_SECOND
     try:
         temp_root = paths.temp_root()
-        state_root = paths.state_root()
+        state_root = paths.state_root(create=False)
     except ManagedTempError as error:
         return SweepResult([], ((paths.temp_root_path(), _failure_reason(error)),))
     if not force and not _sweep_due(state_root, now_ns) and not _below_floor(temp_root):
         return SweepResult([], ())
-    lock = state_root / ".sweep/pressure.lock"
-    # 親の更新時刻を読む前から回収結果を保存するまで同じロックを保持する。通常のatk起動は別の掃引を待たない。
     try:
-        lock.parent.mkdir(mode=private_directory.MODE, exist_ok=True)
-        with _try_lock(lock, report_errors=True) as locked:
-            if not locked:
+        with sweep_access(temp_root, state_root) as access:
+            if access == Access.BUSY:
                 return SweepResult([], ())
-            return _sweep_locked(temp_root, state_root, now_ns, cutoff_ns, daily=force or _sweep_due(state_root, now_ns))
+            return _sweep_locked(
+                temp_root, state_root, now_ns, cutoff_ns, daily=force or _sweep_due(state_root, now_ns), access=access
+            )
     except OSError as error:
-        return SweepResult([], ((pathlib.Path(error.filename or lock), _failure_reason(error)),))
+        return SweepResult([], ((pathlib.Path(error.filename or state_root), _failure_reason(error)),))
 
 
 def _sweep_locked(
-    temp_root: pathlib.Path, state_root: pathlib.Path, now_ns: int, cutoff_ns: int, *, daily: bool
+    temp_root: pathlib.Path, state_root: pathlib.Path, now_ns: int, cutoff_ns: int, *, daily: bool, access: Access
 ) -> SweepResult:
     pressure_due = _sweep_due(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME, interval_ns=_PRESSURE_INTERVAL_NS)
     if not daily and not pressure_due:
         return SweepResult([], ())
     times = CleanupTimes(state_root, cutoff_ns)
     # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
-    if daily:
+    if daily and access == Access.FULL:
         with contextlib.suppress(OSError):
             plugin_root_leases.sweep_plugin_root_records()
     protected_sessions = {
@@ -710,8 +721,14 @@ def _sweep_locked(
     }
     deleted: list[pathlib.Path] = []
     failed: list[tuple[pathlib.Path, str]] = []
-    if daily:
-        _daily_sweep(temp_root, state_root, now_ns, cutoff_ns, protected_sessions, times, deleted, failed)
+    if daily or access == Access.EXPIRED_ONLY:
+        _daily_sweep(temp_root, state_root, now_ns, cutoff_ns, protected_sessions, times, deleted, failed, access=access)
+    if access == Access.EXPIRED_ONLY:
+        if not deleted:
+            failed.append(
+                (state_root / ".sweep/pressure.lock", "ディスクに空きがなく、ロックの作成前に回収できる期限切れの領域もない")
+            )
+        return SweepResult(deleted, tuple(failed))
     pressure = None
     if pressure_due:
         pressure = _reclaim_space(
@@ -745,14 +762,13 @@ def _daily_sweep(
     times: CleanupTimes,
     deleted: list[pathlib.Path],
     failed: list[tuple[pathlib.Path, str]],
+    *,
+    access: Access,
 ) -> None:
     references = functools.cache(resources.process_references)
-    with os.scandir(temp_root) as children:
-        listed = sorted(children, key=lambda child: child.name)
-    for entry in listed:
-        child = temp_root / entry.name
+    for child in _sweep_entries(temp_root, state_root):
         try:
-            metadata = entry.stat(follow_symlinks=False)
+            metadata = child.lstat()
         except FileNotFoundError:
             continue
         if paths.is_link(metadata):
@@ -762,13 +778,23 @@ def _daily_sweep(
             inspected = _inspect_entry(child, metadata, now_ns, times)
             latest = inspected[0]
             if _examine(
-                state_root, child, metadata, cutoff_ns, now_ns, protected_sessions, times, deleted, inspected=inspected
+                state_root,
+                child,
+                metadata,
+                cutoff_ns,
+                now_ns,
+                protected_sessions,
+                times,
+                deleted if access == Access.FULL else None,
+                inspected=inspected,
             ):
                 deleted.append(child)
                 continue
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
                 failed.append((child, _failure_reason(error)))
+        if access == Access.EXPIRED_ONLY:
+            continue
         # 全体の走査・削除が失敗しても、別に確認できる未使用キャッシュは回収する。
         try:
             if (

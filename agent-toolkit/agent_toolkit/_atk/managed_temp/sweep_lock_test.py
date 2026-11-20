@@ -1,0 +1,206 @@
+"""共通ロックが作れない掃引と、権限を回復してから判定する領域の回帰試験。"""
+
+from __future__ import annotations
+
+import contextlib
+import errno
+import hashlib
+import json
+import os
+import pathlib
+import stat
+import subprocess
+import sys
+import typing
+from types import SimpleNamespace
+
+import pytest
+
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk.managed_temp import paths, sweep
+from agent_toolkit._atk.managed_temp.sweep_test import _NOW, _age, _area, _FakeDisk, _first_sweep_done, _legacy_lock
+from agent_toolkit._common import file_lock
+
+pytestmark = pytest.mark.windows
+
+
+@pytest.fixture(autouse=True)
+def _enable_pressure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(sweep.MIN_FREE_RATIO_ENV, raising=False)
+
+
+@pytest.mark.parametrize("existing_lock", [False, True])
+@pytest.mark.parametrize("entry", ["daily", "forced", "pressure"])
+def test_full_disk_can_reclaim_expired_without_creating_a_lock(
+    monkeypatch: pytest.MonkeyPatch, existing_lock: bool, entry: str
+) -> None:
+    if entry == "pressure":
+        _first_sweep_done()
+    expired = _area("session-expired", days=9, files={"payload": "x" * 1300})
+    fresh = _area("session-weekend", days=3, files={"handoff": "keep"})
+    busy = _area("session-busy", days=9, files={sweep.OWNER_FILE: sweep.owner_token()})
+    lock = paths.state_root() / ".sweep/pressure.lock"
+    if existing_lock:
+        lock.parent.mkdir(exist_ok=True)
+        lock.touch()
+    original_open = pathlib.Path.open
+
+    def full(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if path == lock and any(flag in mode for flag in "awx") and not path.exists():
+            raise OSError(errno.ENOSPC, "disk full", str(path))
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "open", full)
+    disk = _FakeDisk(10000, 1304 + (busy / sweep.OWNER_FILE).stat().st_size, paths.temp_root())
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    assert disk(expired).free == 0
+    original_remove = sweep.remove_tree
+
+    def competing_sweep(path: pathlib.Path) -> None:
+        original_remove(path)
+        # 回収で空きが戻り、別の起動が通常ロックを作れる時点でも並行掃引しない。
+        attempt = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import pathlib, sys\nfrom agent_toolkit._atk.managed_temp.sweep_lock import sweep_access\n"
+                "with sweep_access(*map(pathlib.Path, sys.argv[1:])) as access: print(access.name)",
+                str(expired.parent),
+                str(lock.parent.parent),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+        assert attempt.stdout.strip() == "BUSY"
+
+    monkeypatch.setattr(sweep, "remove_tree", competing_sweep)
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=entry == "forced")
+    assert result.deleted == [expired] and not result.failed
+    assert disk(expired).free == 1300
+    assert (fresh / "handoff").read_text(encoding="utf-8") == "keep" and busy.is_dir()
+
+
+@pytest.mark.skipif(not hasattr(os, "O_PATH") or os.geteuid() == 0, reason="非rootの実際の権限回復を検証する")
+@pytest.mark.parametrize("kind", ["expired", "legacy-busy", "legacy-weekend", "live", "unreadable-owner", "broken-marker"])
+def test_pressure_inspects_mode_zero_area_before_removing_it(monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
+    _first_sweep_done()
+    area = _area("old-prefix", days=9, files={"handoff": "keep"})
+    if kind.startswith("legacy"):
+        (area / paths.LEGACY_MARKER_NAME).write_text(json.dumps({"path": str(area), "session_id": "s"}), encoding="utf-8")
+    if kind == "broken-marker":
+        (area / paths.LEGACY_MARKER_NAME).write_bytes(b"invalid json")
+    if kind in {"live", "unreadable-owner"}:
+        owner = area / sweep.OWNER_FILE
+        owner.write_text(sweep.owner_token(), encoding="ascii")
+        if kind == "unreadable-owner":
+            owner.chmod(0)
+    mib = 1024 * 1024
+    if kind == "expired":
+        (area / "payload").write_bytes(b"x" * (7 * mib))
+    _age(area, 3 if kind == "legacy-weekend" else 9)
+    # mode 000の木を空き容量の模擬値の計算のために開かない。
+    monkeypatch.setattr(
+        sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100 * mib, free=(6 if area.exists() else 13) * mib)
+    )
+    area.chmod(0)
+    try:
+        with contextlib.ExitStack() as stack:
+            if kind == "legacy-busy":
+                handle = stack.enter_context(_legacy_lock(area).open("a+b"))
+                file_lock.acquire_lock(handle)
+            result = managed_temp.sweep_managed_temp(now=_NOW)
+        assert result.deleted == ([area] if kind == "expired" else [])
+        assert result.pressure is not None and result.pressure.free_before == 6 * mib
+        assert result.pressure.free_after == (13 if kind == "expired" else 6) * mib
+        if kind == "broken-marker":
+            assert result.failed and paths.LEGACY_MARKER_NAME in result.failed[0][1]
+        elif kind != "legacy-weekend":
+            assert not result.failed
+        if kind != "expired":
+            assert stat.S_IMODE(area.stat().st_mode) == 0
+            area.chmod(0o700)
+            assert (area / "handoff").read_text(encoding="utf-8") == "keep"
+    finally:
+        if area.exists():
+            area.chmod(0o700)
+
+
+def test_sweep_reports_lock_open_errors_without_scanning(monkeypatch: pytest.MonkeyPatch) -> None:
+    area = _area("expired", days=9)
+    lock = paths.state_root() / ".sweep/pressure.lock"
+    original_open = pathlib.Path.open
+
+    def denied(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        if path == lock:
+            raise PermissionError(errno.EACCES, "cannot open lock", str(path))
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "open", denied)
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not result.deleted and area.exists()
+    assert len(result.failed) == 1 and result.failed[0][0] == lock and "cannot open lock" in result.failed[0][1]
+
+
+def test_full_state_directory_does_not_sweep_inside_a_retained_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    area = _area(
+        "session-weekend",
+        days=3,
+        files={"handoff": "keep", "cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55"},
+    )
+    root = paths.state_root()
+    original_mkdir = pathlib.Path.mkdir
+
+    def full(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> None:
+        if path == root / ".sweep":
+            raise OSError(errno.ENOSPC, "disk full", str(path))
+        original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", full)
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not result.deleted and result.failed
+    assert (area / "handoff").read_text(encoding="utf-8") == "keep" and (area / "cache").is_dir()
+    assert not (root / ".sweep").exists()
+
+
+@pytest.mark.parametrize("daily", [False, True])
+def test_sweep_keeps_its_own_lock_and_session_references_in_shared_root(monkeypatch: pytest.MonkeyPatch, daily: bool) -> None:
+    root = paths.temp_root()
+    monkeypatch.setattr(paths, "_state_root_path", lambda: root)
+    session = _area("old-prefix", days=3, files={"handoff": "keep"})
+    reference = root / ".sessions" / hashlib.sha256(b"weekend").hexdigest()
+    reference.parent.mkdir()
+    reference.write_text(json.dumps({"path": str(session)}), encoding="utf-8")
+    _age(reference.parent, 9)
+    registry = _legacy_lock(session).with_suffix("").with_suffix("")
+    registry.write_text(json.dumps({"path": str(session)}), encoding="utf-8")
+    _age(registry, 9)
+    _first_sweep_done()
+    lock = root / ".sweep/pressure.lock"
+    lock.touch()
+    _age(lock.parent, 9)
+    identity = lock.stat()
+    expired = _area("expired", days=10)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=0))
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=daily)
+    assert not result.failed and result.deleted == [expired]
+    assert os.path.samestat(identity, lock.stat()) and registry.is_file()
+    assert managed_temp.find_session_temp("weekend") == session and (session / "handoff").is_file()
+
+
+def test_full_disk_recovers_when_no_sweep_state_has_ever_been_created(monkeypatch: pytest.MonkeyPatch) -> None:
+    expired = _area("expired", days=9)
+    state = paths.state_root_path()
+    assert not state.exists()
+    original_mkdir = pathlib.Path.mkdir
+
+    def full(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> None:
+        if path == state:
+            raise OSError(errno.ENOSPC, "disk full", str(path))
+        original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", full)
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert result.deleted == [expired] and not result.failed and not state.exists()
