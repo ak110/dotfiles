@@ -3,6 +3,8 @@
 set -euo pipefail
 uv_path=$1
 root=${BASH_SOURCE[0]%/*}
+# shellcheck source=libexec/uv_output.sh
+source "$root/uv_output.sh"
 export UPDATE_DOTFILES_BOOTSTRAP_FAILURES=''
 if ! command -v timeout >/dev/null; then
     printf '%s\n' 'timeoutが見つからないため更新を開始できません。coreutilsを導入して再実行してください。' >&2
@@ -21,7 +23,33 @@ timed_stage() {
     printf '%s: %sCtrl+Cで中断できます。\n' "$name" "$wait_hint" >&2
     local code=0
     ((bootstrap_interrupted == 0)) || return 130
-    timeout --foreground "$limit" bash "$root/update_stage.sh" "$@" || code=$?
+    stage_command() {
+        if [[ "$name" == '管理Pythonの検索' ]]; then
+            # stdoutはpython_pathの値として呼出し元へ返す。
+            timeout --foreground "$limit" bash "$root/update_stage.sh" "$@" >&3
+        else
+            timeout --foreground "$limit" bash "$root/update_stage.sh" "$@"
+        fi
+    }
+    stage_attempt() {
+        if [[ "$name" != 'uvの自己更新' ]]; then
+            capture_uv_command stage_command "$@"
+            return
+        fi
+        local match_text='but the standalone installer was used to install uv to' matched=0
+        local deadline=$((SECONDS + limit)) status=0
+        capture_uv_command stage_command "$@" || status=$?
+        ((status != 130)) || return 130
+        ((status != 0)) || return 0
+        ((status != 124)) || return 124
+        ((matched)) || return 1
+        # uvと修復installerで元の段の時間上限を共有する。
+        limit=$((deadline - SECONDS))
+        ((limit > 0)) || return 124
+        capture_uv_command printf '%s\n' 'uvの導入先の記録を現在の実体へそろえるため、公式installerで再導入する。'
+        capture_uv_command stage_command bash "$root/update_uv.sh" "$uv_path"
+    }
+    with_uv_output "$name" stage_attempt "$@" 3>&1 || code=$?
     ((bootstrap_interrupted == 0)) || return 130
     return "$code"
 }
@@ -60,7 +88,7 @@ if [[ ! -x "$uv_path" ]]; then
     fi
 fi
 if [[ "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != 1 ]]; then
-    run_stage 'uvの自己更新' continue 300 bash "$root/update_uv.sh" "$uv_path"
+    run_stage 'uvの自己更新' continue 300 "$uv_path" self update
     run_stage '管理Pythonの更新' continue 900 "$uv_path" python install --upgrade 3.15
 fi
 # 前回の更新が始めたuvの整理がキャッシュを排他している間も待たないよう、キャッシュを使わずに解決する。

@@ -234,6 +234,7 @@ def test_async_command_timeout_or_cancellation_reclaims_child_tree(tmp_path, mon
         "import pathlib, subprocess, sys, time\n"
         f"child = subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / 'nested.release')!r}])\n"
         f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid))\n"
+        "print('deadline diagnostic', file=sys.stderr, flush=True)\n"
         "child.wait(timeout=120)\n",
         encoding="utf-8",
     )
@@ -251,6 +252,7 @@ def test_async_command_timeout_or_cancellation_reclaims_child_tree(tmp_path, mon
         else:
             outcome = await task
             assert not outcome.ok and "TimeoutError" in outcome.error
+            assert "deadline diagnostic" in outcome.error
 
     asyncio.run(check())
     pid = int(pid_file.read_text())

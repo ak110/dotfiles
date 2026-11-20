@@ -2,11 +2,11 @@
 setlocal DisableDelayedExpansion
 set "SCRIPT_DIR=%~dp0.."
 set "UV=%USERPROFILE%\.local\bin\uv.exe"
-rem bootstrap checks uv------------
+rem bootstrap checks uv--------------------
 goto start
 :run
 (
-"%UV%" run --no-project --script "%SCRIPT_DIR%\libexec\update_dotfiles.py" %*
+"%UV%" %UPDATE_RUN_ARGS% "%SCRIPT_DIR%\libexec\%UPDATE_SCRIPT_PY%" %*
 rem ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 rem 123456789012345
 rem x
@@ -50,6 +50,8 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 if defined CODEX_THREAD_ID goto job_route
 if "%~1"=="job" goto job_route
 :normal
+set "UPDATE_RUN_ARGS=run --no-project --script"
+set "UPDATE_SCRIPT_PY=update_dotfiles.py"
 set "UV_SELF_UPDATE_FAILED=0"
 set "DOTFILES_PRUNE_OUTSIDE_UV=1"
 rem 前回の更新が始めたuvの全消去は最長600秒キャッシュを排他するため、uvの既定の待機上限（300秒）より長く待つ。
@@ -60,6 +62,8 @@ if "%~1"=="logs" set "PRUNE_REQUESTED=0"
 if "%~1"=="logs" goto run
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" goto run
 powershell.exe -NoLogo -NoProfile -Command "$message='更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。'; if ([Console]::IsErrorRedirected) { $writer=[IO.StreamWriter]::new([Console]::OpenStandardError(), [Text.UTF8Encoding]::new($false)); try { $writer.WriteLine($message) } finally { $writer.Dispose() } } else { [Console]::Error.WriteLine($message) }"
+set "UPDATE_RUN_ARGS=run --no-cache --quiet --no-project --script"
+set "UPDATE_SCRIPT_PY=update_script_run.py"
 goto run
 
 :job_route

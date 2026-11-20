@@ -117,7 +117,7 @@ def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tm
 
         async def startup(command):
             name = Path(command[-1]).name
-            return warmup._StartupOutcome(not (name == "second" and fail_second), f"{name}-root-detail")
+            return warmup._StartupOutcome(not (name == "second" and fail_second), f"{name}-root-detail", inherited_job=True)
 
         monkeypatch.setattr(warmup.plugin_warmup, "check_command", dependency)
         monkeypatch.setattr(warmup, "_check_startup", startup)
@@ -143,11 +143,14 @@ def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tm
     assert log.index("first-root-detail") < log.index("second-root-detail") < log.index("independent-detail")
     assert "first-root-detail" not in screen
     assert screen.count("second-root-detail") == int(fail_second)
+    assert screen.count("そのJob終了後のサービス生存は保証しません") == 1
+    assert screen.count("次の操作:") == 1  # Jobの対処だけ。失敗時の再実行案内は親が出す。
+    assert (post_apply_outcome.CHECK_UPDATE_LOG in log) is fail_second
 
 
 @pytest.mark.parametrize("via_update_dotfiles", [False, True], ids=["standalone", "via-update-dotfiles"])
-def test_recovery_guidance_is_printed_once_only_for_standalone_run(monkeypatch, capsys, via_update_dotfiles):
-    """案内は単独実行でだけ1回出し、`update-dotfiles`経由では`update-dotfiles`の終了時に任せる。"""
+def test_only_standalone_child_prints_log_and_update_retry(monkeypatch, capsys, via_update_dotfiles):
+    """単独時だけ例外を書いた子が所在と再実行を案内し、更新中は親がまとめて案内する。"""
     if via_update_dotfiles:
         monkeypatch.setenv(post_apply._UPDATE_RUN_ID_ENV, "run-1")  # noqa: SLF001
 

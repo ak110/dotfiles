@@ -9,7 +9,6 @@ import argparse
 import contextlib
 import io
 import logging
-import logging.handlers
 import os
 import shutil
 import sys
@@ -95,6 +94,12 @@ def _run_id() -> str:
 class _DiagnosticFormatter(logging.Formatter):
     """画面や診断元は変えず、例外を含む整形後の保存本文だけを伏せる。"""
 
+    def formatMessage(self, record: logging.LogRecord) -> str:  # noqa: N802 -- logging.Formatterの契約
+        """実際に保存する診断に種別を付け、更新親が同じ実行の診断だけを案内できるようにする。"""
+        if update_log.is_step_diagnostic(record):
+            record.message = update_log.STEP_DIAGNOSTIC + record.message
+        return super().formatMessage(record)
+
     def format(self, record: logging.LogRecord) -> str:
         """永続ログ向けに資格情報を除いた本文を返す。"""
         return redact_secrets(super().format(record))
@@ -111,14 +116,15 @@ class _BelowWarningFilter(logging.Filter):
 class _ScreenFilter(logging.Filter):
     """ユーザーの判断に使わない行を画面から外す。永続ログのハンドラーには付けない。"""
 
-    def __init__(self, *, updating: bool) -> None:
+    def __init__(self, *, updating: bool, persistent_log_ready: bool) -> None:
         super().__init__()
         self.updating = updating
+        self.persistent_log_ready = persistent_log_ready
 
     def filter(self, record: logging.LogRecord) -> bool:
         """画面へ出力するレコードなら真を返す。"""
         if log_format.is_log_only(record):
-            return False
+            return not self.persistent_log_ready and record.levelno >= logging.WARNING
         if self.updating and record.levelno < logging.WARNING:
             return getattr(record, log_format.LOG_ONLY_ATTR, None) is False
         # 依存ライブラリhttpxのリクエスト記録。WARNING以上は標準エラー側で表示する。
@@ -126,7 +132,7 @@ class _ScreenFilter(logging.Filter):
 
 
 @contextlib.contextmanager
-def _configure_logging() -> Generator[bool]:
+def _configure_logging() -> Generator[update_log.ProcessSafeRotatingFileHandler | None]:
     """ログを出力先で分離し、符号化不能文字でレコードを欠落させない。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
@@ -144,7 +150,7 @@ def _configure_logging() -> Generator[bool]:
         stderr_handler.setFormatter(formatter)
         run_id = _run_id()
         handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
-        persistent_log_ready = False
+        file_handler = None
         try:
             _UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             file_handler = update_log.ProcessSafeRotatingFileHandler(
@@ -152,21 +158,22 @@ def _configure_logging() -> Generator[bool]:
                 max_bytes=_UPDATE_LOG_MAX_BYTES,
                 backup_count=_UPDATE_LOG_BACKUP_COUNT,
                 encoding="utf-8",
+                diagnostic_hint=(
+                    ""
+                    if _UPDATE_RUN_ID_ENV in os.environ
+                    else f"  post-applyの永続ログ: {_UPDATE_LOG_PATH}（run={run_id}、"
+                    f"世代移動後は .1 から .{_UPDATE_LOG_BACKUP_COUNT}）"
+                ),
             )
         except OSError as error:
-            print(
-                f"  永続ログを開始できませんでした: {_UPDATE_LOG_PATH}: {error}。処理は継続します。"
-                f"次の操作: {_UPDATE_LOG_PATH.parent}の書込権限を確認し、update-dotfilesを再実行してください。",
-                file=sys.stderr,
-            )
+            print(f"  post-applyの永続ログを開始できませんでした: {error}。この標準エラーに診断を表示します。", file=sys.stderr)
         else:
             cleanup.callback(file_handler.close)
             file_handler.setLevel(logging.INFO)
             file_handler.setFormatter(_DiagnosticFormatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
             handlers.append(file_handler)
-            persistent_log_ready = True
-        updating = persistent_log_ready and (_UPDATE_RUN_ID_ENV in os.environ or "DOTFILES_PRUNE_READY_FILE" in os.environ)
-        screen_filter = _ScreenFilter(updating=updating)
+        updating = file_handler is not None and (_UPDATE_RUN_ID_ENV in os.environ or "DOTFILES_PRUNE_READY_FILE" in os.environ)
+        screen_filter = _ScreenFilter(updating=updating, persistent_log_ready=file_handler is not None)
         stdout_handler.addFilter(screen_filter)
         stderr_handler.addFilter(screen_filter)
         root_logger = logging.getLogger()
@@ -176,7 +183,7 @@ def _configure_logging() -> Generator[bool]:
         cleanup.callback(setattr, root_logger, "handlers", previous_handlers)
         root_logger.handlers[:] = handlers
         root_logger.setLevel(logging.INFO)
-        yield persistent_log_ready
+        yield file_handler
 
 
 @dataclass
@@ -413,7 +420,7 @@ def main(
                 sys.exit(1)
         return
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
-    with _configure_logging() as persistent_log_ready:
+    with _configure_logging():
         logger.info("post-apply開始", extra=log_format.LOG_ONLY)
         results, recommendations = (runner or run)()
         failed = [r for r in results if not r.ok]
@@ -431,11 +438,8 @@ def main(
         _print_plugin_recommendations(recommendations)
         if failed:
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
-            # `update-dotfiles`経由の実行では、`update-dotfiles`の終了時の案内が1回だけ次の操作と永続ログの所在を示す。
-            if _UPDATE_RUN_ID_ENV not in os.environ:
-                logger.error("次の操作: %s", _post_apply_recovery_action())
-                if persistent_log_ready:
-                    logger.error("永続ログ: %s（末尾の失敗理由を確認してください）", _UPDATE_LOG_PATH)
+        if failed and _UPDATE_RUN_ID_ENV not in os.environ:
+            logger.error("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。")
         _print_post_apply_notices(notices)
         logger.info("post-apply終了: exit=%d", 1 if failed else 0, extra=log_format.LOG_ONLY)
         sys.exit(1 if failed else 0)
@@ -547,15 +551,6 @@ class _StepOutcome:
     skip_reason: str | None = None
 
 
-def _post_apply_recovery_action() -> str:
-    """現在の実行が使う出力先から、失敗後の操作を案内する。"""
-    action = "失敗理由を確認し、update-dotfilesを再実行してください。"
-    for handler in logging.getLogger().handlers:
-        if isinstance(handler, logging.handlers.RotatingFileHandler):
-            return f"{action} 永続ログ {handler.baseFilename} の末尾を確認してください。"
-    return f"{action} 永続ログを開始できなかった場合は、この標準エラーの失敗理由を確認してください。"
-
-
 _RECLAIM_BLOCKED = (
     "先行工程が起動した子プロセスを回収できないため開始しない。"
     "失敗した工程の診断にあるPIDと起動コマンドを確認して終了させ、update-dotfilesを再実行する"
@@ -590,7 +585,11 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
             next_action="工程の実装が返す値をPostApplyOutcomeへ直してください。",
         )
     if ret.failure is not None:
-        logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action)
+        if ret.next_action == post_apply_outcome.CHECK_UPDATE_LOG:
+            logger.error("    %s: 失敗: %s", step.name, ret.failure)
+            logger.info("    %s: 次の操作: %s", step.name, ret.next_action, extra=log_format.LOG_ONLY)
+        else:
+            logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action, extra=log_format.SHOW)
         failure = _StepResult(
             name=step.name, ok=False, changed=ret.changed, notices=ret.notices, reason=ret.failure, deferred=ret.deferred
         )

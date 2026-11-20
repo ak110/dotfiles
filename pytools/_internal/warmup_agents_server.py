@@ -10,11 +10,11 @@ hookとMCPに同じデータ領域が提供される場合は同じ版の環境�
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import tempfile
 import time
-import traceback
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,28 +67,34 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         checks = _check_targets(commands)
     outcomes = asyncio.run(checks)
     failures: list[str] = []
+    inherited_job_targets: list[str] = []
     dependencies_ready = True
     reclaim_errors = [outcome for outcome in outcomes if isinstance(outcome, process_tree.ReclaimError)]
     for command, outcome in zip(commands, outcomes, strict=True):
         if isinstance(outcome, BaseException):
-            logger.warning(log_format.format_status(_TAG, f"対象の確認に失敗: {command[-1]} / {outcome}"))
-            failures.append(command[-1])
+            logger.error("%s の確認に失敗", command[-1], exc_info=outcome, extra=log_format.LOG_ONLY)
+            failures.append(f"{command[-1]}: {_exception_summary(outcome)}")
             continue
         dependency, startup = outcome
         dependency.report(target=log_format.home_short(Path(command[-1])), tag=_TAG)
         if not dependency.ok:
             dependencies_ready = False
         if startup is not None:
-            (logger.info if startup.ok else logger.warning)(log_format.format_status(_TAG, startup.message))
-            if not startup.ok:
-                failures.append(command[-1])
+            if startup.inherited_job:
+                inherited_job_targets.append(command[-1])
+            if startup.ok:
+                logger.info(log_format.format_status(_TAG, startup.message), extra=log_format.LOG_ONLY)
+            else:
+                failures.append(startup.message)
+    if inherited_job_targets:
+        logger.warning("%s: %s", ", ".join(inherited_job_targets), service_forward.INHERITED_JOB_WARNING)
     if reclaim_errors:
         # 回収不能は他の確認失敗と分け、post-applyが後続工程を開始しないよう例外で伝える。
         raise reclaim_errors[0]
     if failures:
         return post_apply_outcome.PostApplyOutcome(
-            failure="準備後の起動確認に失敗: " + ", ".join(failures),
-            next_action="`update-dotfiles logs`の起動段階・標準エラーを確認し、`update-dotfiles`を再実行する",
+            failure="; ".join(failures),
+            next_action=post_apply_outcome.CHECK_UPDATE_LOG,
         )
     if dependencies_ready:
         if not elevated:
@@ -103,6 +109,15 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 class _StartupOutcome:
     ok: bool
     message: str
+    inherited_job: bool = False
+
+
+def _exception_summary(error: BaseException) -> str:
+    """MCPのタスク群の外側の例外ではなく、原因の例外を1行で返す。"""
+    while isinstance(error, BaseExceptionGroup):
+        error = error.exceptions[0]
+    reason = str(error).partition("\n")[0][:240]
+    return f"{type(error).__name__}: {reason}" if reason else type(error).__name__
 
 
 async def _check_targets(
@@ -152,26 +167,33 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
     started = time.monotonic()
     phase = "service-start"
     root = _service_root(command)
-    environment = dict(os.environ)
+    environment = dict(os.environ, PYTHONIOENCODING="utf-8")
     if root is not None:
         environment[service_forward.DEFER_PUBLISH_ENV] = "1"
-    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors:
+    inherited_job = False
+    service_output = ""
+    with contextlib.ExitStack() as capture:
+        errors = None
         try:
             parameters = StdioServerParameters(command=command[0], args=list(command[1:]), env=environment)
             remaining = _STARTUP_TIMEOUT
             if root is not None:
                 # 入力の無い転送側は、管理サービスをreadyにした後で接続せずに終了する。
-                # anyioの期限は取消しを回収処理の待機にも届け続けるため、子の回収を待つ区間はasyncioの期限で区切る。
-                async with asyncio.timeout(remaining):
-                    service = await plugin_warmup.check_command(command, environment=environment)
+                # 常駐サービス自身のstderrは世代別ログへ向く。起動元だけのパイプを終了まで読む。
+                service = await plugin_warmup.check_command(command, environment=environment, timeout=remaining)
+                service_output = (service.result.stderr if service.result is not None else service.error).replace("\r\n", "\n")
+                if service.result is None:
+                    raise RuntimeError(service_output.partition("\n")[0])
                 if not service.ok:
-                    raise RuntimeError(
-                        "管理サービスを起動できません: " + (service.error or common.format_cli_error(service.result))
-                    )
+                    if service.result.stdout:
+                        service_output += f"\nstdout: {service.result.stdout}"
+                    raise RuntimeError(f"管理サービスを起動できません (exit {service.result.returncode})")
+                inherited_job = service_forward.INHERITED_JOB_WARNING in service_output
                 remaining -= time.monotonic() - started
                 if remaining <= 0:
                     raise TimeoutError("管理サービスの起動だけで起動上限に達しました")
             phase = "process-start"
+            errors = capture.enter_context(tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace"))
             with anyio.fail_after(remaining):
                 async with stdio_client(parameters, errlog=errors) as streams:
                     read, write = streams
@@ -187,19 +209,32 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
                 phase = "publish"
                 caller = runtime_environment.CallerContext(os.environ, Path.cwd())
                 await asyncio.to_thread(service_forward.publish_service, caller, root, timeout=_STARTUP_TIMEOUT)
-        except process_tree.ReclaimError:
-            raise
         except Exception as exc:  # noqa: BLE001  # 公開transportの例外群とstderrをpost-applyへ伝える。
-            errors.seek(0)
-            return _StartupOutcome(
-                False,
-                f"MCP起動確認に失敗 (段階={phase}、{time.monotonic() - started:.1f}秒、対象={command[-1]}) / "
-                + "".join(traceback.format_exception(exc))
-                + errors.read(),
+            output = service_output
+            if errors is not None:
+                errors.seek(0)
+                output += "\n" + errors.read()
+            message = f"MCP起動確認に失敗 (段階={phase}、対象={command[-1]}): {_exception_summary(exc)}"
+            if phase != "publish" and (
+                reason := plugin_warmup.output_summary(output.replace(service_forward.INHERITED_JOB_WARNING, ""))
+            ):
+                message += f" / 子の出力: {reason}"
+            logger.error(
+                "%s (%.1f秒)\n子の出力:\n%s",
+                message,
+                time.monotonic() - started,
+                output,
+                exc_info=True,
+                extra=log_format.LOG_ONLY,
             )
+            if isinstance(exc, process_tree.ReclaimError):
+                raise
+            return _StartupOutcome(False, message, inherited_job)
     published = "・管理サービスの公開" if root is not None else ""
     return _StartupOutcome(
-        True, f"MCPのinitialize・tools/list・終了{published}を確認 ({time.monotonic() - started:.1f}秒): {command[-1]}"
+        True,
+        f"MCPのinitialize・tools/list・終了{published}を確認 ({time.monotonic() - started:.1f}秒): {command[-1]}",
+        inherited_job,
     )
 
 

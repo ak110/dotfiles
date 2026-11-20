@@ -322,7 +322,6 @@ def _worker(job: pathlib.Path) -> int:
     # 前回の更新が始めたuvの全消去は最長600秒キャッシュを排他するため、uvの既定の待機上限（300秒）より長く待つ。
     env.setdefault("UV_LOCK_TIMEOUT", "900")
     home_bin = pathlib.Path.home() / ".local/bin"
-    uv = str(home_bin / ("uv.exe" if sys.platform == "win32" else "uv"))
     code = 1
     try:
         if sys.platform == "linux":
@@ -335,9 +334,7 @@ def _worker(job: pathlib.Path) -> int:
         ready = job / "prune-ready"
         env["DOTFILES_PRUNE_READY_FILE"] = str(ready)
         print("更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。", file=sys.stderr, flush=True)
-        code = _run_command(
-            [uv, "run", "--no-project", "--script", str(_ROOT / "libexec/update_dotfiles.py"), *arguments], job, deadline, env
-        )
+        code = _run_command([sys.executable, str(_ROOT / "libexec/update_script_run.py"), *arguments], job, deadline, env)
         # 続行した失敗だけで終えた本体も、整理と事前構築へ進める。終了コードは本体の値を保つ。
         if code == 0 or ready.exists():
             prune_code = _run_command(

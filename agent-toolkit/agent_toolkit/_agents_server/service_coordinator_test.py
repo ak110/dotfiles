@@ -470,6 +470,39 @@ async def test_client_stopped_at_boundary_resumes_when_acceptance_returns_before
     backend.adopt_session.assert_awaited_once_with(session, descriptor, {})
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("returned", [False, True])
+async def test_background_move_after_codex_client_was_discarded(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, returned: bool
+) -> None:
+    coordinator, session, _ = _coordinator(tmp_path, monkeypatch, current=False)
+    runtime = coordinator._runtime
+    assert runtime is not None
+    manager = coordinator.managers.conversations["parent"].manager
+    backend = manager._backends["codex"] = codex.AppServerManager(manager.sessions)
+    identifier = session.session_id
+    resource_id = runtime.broker.register({"shutdown": AsyncMock(return_value=[]), "close": AsyncMock()})
+    descriptor = {"identifier": resource_id, "sequence": 0, "origin": runtime.target, "pid": None, "environment": {}}
+    with service_io.bind(runtime):
+        await backend.adopt_session(session, descriptor, {})
+    client = coordinator._client(backend, identifier)
+    async with coordinator._locks.setdefault(identifier, asyncio.Lock()):
+        coordinator.boundary(session, client)
+        await runtime.broker.emit(resource_id, {"kind": "notification", "value": {}})
+        await backend.release_session(session)
+        assert runtime.broker.backlog(resource_id) is None
+        if returned:
+            monkeypatch.setattr(coordinator.registry, "current", lambda: coordinator.target)
+    request = AsyncMock(side_effect=[{"prepared": True}, {"owned": True}])
+    monkeypatch.setattr(service_rpc, "request", request)
+    assert await coordinator._moving[identifier] == {"moved": not returned}
+    assert (identifier in manager.sessions) == returned
+    if returned:
+        request.assert_not_awaited()
+    else:
+        assert request.await_args_list[0].args[2]["resource"] is None
+
+
 @pytest.mark.parametrize("failing_stage", [None, "projections.thaw", "registrations.thaw", "gate.thaw", "registry.restore"])
 @pytest.mark.asyncio
 async def test_client_stopped_during_update_resumes_after_publisher_keeps_acceptance(
@@ -492,8 +525,9 @@ async def test_client_stopped_during_update_resumes_after_publisher_keeps_accept
         coordinator.registrations.thaw.side_effect = OSError(failing_stage)
     elif failing_stage == "gate.thaw":
         monkeypatch.setattr(coordinator.gate, "thaw", AsyncMock(side_effect=OSError(failing_stage)))
-    process = "2147483647:dead" if failing_stage == "registry.restore" else service_transport.process_identity(os.getpid())
+    process = service_transport.process_identity(os.getpid())
     if failing_stage == "registry.restore":
+        monkeypatch.setattr(service_coordinator, "_PUBLISHER_PROBE_SECONDS", 0.01)
         monkeypatch.setattr(coordinator.registry, "restore", Mock(side_effect=OSError(failing_stage)))
     publisher = {"generation": "G4", "epoch": 4, "process": process}
     await coordinator.prepare("token", publisher)
@@ -501,7 +535,10 @@ async def test_client_stopped_during_update_resumes_after_publisher_keeps_accept
     assert await coordinator.move(session.session_id) == {"moved": False}
     backend.adopt_session.assert_not_awaited()
     async with asyncio.timeout(5):
-        if failing_stage != "registry.restore":
+        if failing_stage == "registry.restore":
+            # 準備中の移譲を確かめた後に公開元を終了させ、復旧workerとの実行順に依存させない。
+            monkeypatch.setattr(service_transport, "process_alive", lambda _process: False)
+        else:
             await coordinator.commit_update("token", coordinator.target)
         while not backend.adopt_session.await_count:
             await asyncio.sleep(0.01)

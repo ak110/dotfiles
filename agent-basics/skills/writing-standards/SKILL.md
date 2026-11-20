@@ -109,7 +109,7 @@ description: >
 | `rs` | `references/rust.md` |
 | `cs` | `references/csharp.md` |
 | `sh`・`bash`・`sh.tmpl` | `references/bash.md` |
-| `ps1`・`ps1.tmpl`・`psm1`・`psd1` | `references/powershell.md` |
+| `ps1`・`ps1.tmpl`・`psm1`・`psd1`、PowerShellからCOMで共有Office文書を編集する時 | `references/powershell.md` |
 | `cmd`・`bat` | `references/windows-batch.md` |
 | `Dockerfile` | `references/dockerfiles.md` |
 | `.github/workflows/*.yaml`・`.github/workflows/*.yml` | `references/github-actions.md` |

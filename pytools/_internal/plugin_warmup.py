@@ -1,7 +1,6 @@
 """agent-toolkit pluginの有効版選択とuv環境ウォームアップを共有する。"""
 
 import asyncio
-import contextlib
 import datetime
 import json
 import logging
@@ -145,7 +144,7 @@ def run(
     if startup_failures:
         return post_apply_outcome.PostApplyOutcome(
             failure="準備後の起動確認に失敗: " + ", ".join(startup_failures),
-            next_action="`update-dotfiles logs`の起動段階・標準エラーを確認し、`update-dotfiles`を再実行する",
+            next_action=post_apply_outcome.CHECK_UPDATE_LOG,
         )
     return post_apply_outcome.PostApplyOutcome()
 
@@ -241,15 +240,14 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
         else:
             rows = plugin_environment_cleanup.cleanup(required, os.environ)
             for row in rows:
-                logger.info("共有依存環境: %s", json.dumps(row, ensure_ascii=False), extra=log_format.LOG_ONLY)
+                level = logging.WARNING if row["status"] == "deferred" else logging.INFO
+                logger.log(level, "共有依存環境: %s", json.dumps(row, ensure_ascii=False), extra=log_format.LOG_ONLY)
             counts = Counter(row["status"] for row in rows)
-            action = "。保留が続く場合は update-dotfiles logs で理由を確認してください" if counts["deferred"] else ""
             logger.info(
-                "共有依存環境: 保持%d件、削除%d件、保留%d件%s",
+                "共有依存環境: 保持%d件、削除%d件、保留%d件",
                 counts["retained"],
                 counts["deleted"],
                 counts["deferred"],
-                action,
                 extra=log_format.SHOW if counts["deferred"] else log_format.LOG_ONLY,
             )
     except (OSError, ValueError, IndexError, psutil.Error) as error:
@@ -273,8 +271,7 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
         logger.warning("一時資源の回収を保留: %s: %s", target, error, extra=log_format.LOG_ONLY)
     if result.failed:
         logger.warning(
-            "一時資源%d件の回収を保留した。update-dotfiles logs で対象と理由を確認し、"
-            "権限不足の場合は対象のアクセス権を修正してから update-dotfiles を再実行してください",
+            "一時資源%d件の回収を保留した。権限不足の場合は対象のアクセス権を修正してから update-dotfiles を再実行してください",
             len(result.failed),
         )
     for target in result.deleted:
@@ -454,6 +451,14 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
     return CommandOutcome(list(cmd), result, time.monotonic() - started).report(target=target, tag=tag)
 
 
+def output_summary(output: str) -> str:
+    """子の出力の末尾から理由を1行だけ取る。「次の操作」は別に案内し、元の本文は保存する。"""
+    for line in reversed(common.strip_ansi(output).splitlines()):
+        if line.strip() and not line.startswith(("次の操作:", "Traceback ", " ", "\t")):
+            return line[:240]
+    return ""
+
+
 @dataclass(frozen=True)
 class CommandOutcome:
     """並列実行中の診断を保持し、親workerで対象順に表示する。"""
@@ -481,48 +486,59 @@ class CommandOutcome:
             if self.result is None
             else f"環境構築が異常終了 (exit {self.result.returncode}、{self.elapsed:.1f}秒): {target}"
         )
+        output = self.error if self.result is None else self.result.stderr or self.result.stdout
+        if reason := output_summary(output):
+            summary += f": {reason}"
         command = subprocess.list2cmdline(self.command) if sys.platform == "win32" else shlex.join(self.command)
-        message = f"{summary} / {self.error or common.format_cli_error(self.result)}。手動で`{command}`を実行する"
+        logger.warning("%s: %s", target, self.error or common.format_cli_error(self.result), extra=log_format.LOG_ONLY)
+        message = f"{summary}。手動で`{command}`を実行する"
         logger.warning(log_format.format_status(tag, message))
         return False
 
 
-async def check_command(command: Sequence[str], *, environment: Mapping[str, str] | None = None) -> CommandOutcome:
+async def check_command(
+    command: Sequence[str], *, environment: Mapping[str, str] | None = None, timeout: float | None = None
+) -> CommandOutcome:
     """依存確認を非同期に待ち、取消し・時間切れでも所有する子孫を回収する。"""
     started = time.monotonic()
     result = None
     error = ""
+    stdout = stderr = b""
     try:
-        process = await asyncio.create_subprocess_exec(
-            *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=_WARMUP_TIMEOUT)
-            assert process.returncode is not None
-            result = subprocess.CompletedProcess(
-                list(command),
-                process.returncode,
-                stdout.decode("utf-8", errors="replace"),
-                stderr.decode("utf-8", errors="replace"),
+        async with asyncio.timeout(_WARMUP_TIMEOUT if timeout is None else timeout):
+            process = await asyncio.create_subprocess_exec(
+                *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment
             )
-        finally:
-            if process.returncode is None:
-                descendants = process_tree.collect_descendants(process.pid)
-                with contextlib.suppress(psutil.NoSuchProcess):
-                    descendants.insert(0, psutil.Process(process.pid))
-                # 回収の待機だけを退避し、ログはthread-local捕捉のある親workerで出力する。
-                residual = await asyncio.to_thread(process_tree.reclaim_processes, descendants)
-                if residual:
-                    raise process_tree.ReclaimError(
-                        [process_tree.describe(item) for item in residual], residual, context="依存確認"
-                    )
+            output = asyncio.create_task(process.communicate())
+            try:
+                # 期限を過ぎても、回収前にパイプへ届いた診断を同じ読み手から受け取る。
+                await asyncio.wait([output])
+            finally:
+                descendants = (
+                    process_tree.collect_descendants(process.pid, include_root=True) if process.returncode is None else []
+                )
+                if descendants:
+                    residual = await asyncio.to_thread(process_tree.reclaim_processes, descendants)
+                    if residual:
+                        output.cancel()
+                        raise process_tree.ReclaimError(
+                            [process_tree.describe(item) for item in residual], residual, context="依存確認"
+                        )
                 try:
-                    await asyncio.wait_for(process.communicate(), timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
+                    stdout, stderr = await asyncio.wait_for(output, timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
                 except TimeoutError as reap_error:
-                    # 子を止めた後もパイプが閉じないのは、列挙外の子孫が出力を保持しているためである。
                     raise process_tree.ReclaimError(
                         [f"{process.pid}: 終了後も出力のパイプが閉じない"], descendants, context="依存確認"
                     ) from reap_error
+        assert process.returncode is not None
+        result = subprocess.CompletedProcess(
+            list(command),
+            process.returncode,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
     except (OSError, TimeoutError) as exc:
         error = f"{type(exc).__name__}: {exc}"
+        if stdout or stderr:
+            error += "\n" + b"\n".join(filter(None, (stdout, stderr))).decode("utf-8", errors="replace")
     return CommandOutcome(list(command), result, time.monotonic() - started, error)

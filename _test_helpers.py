@@ -490,3 +490,49 @@ def _statusline_job(workflow: dict[str, object]) -> dict[str, object]:
     ]
     assert len(jobs) == 1
     return jobs[0]
+
+
+# POSIX上のPowerShell試験ではWin32 Jobの代わりに実Processのパイプを読む。
+POSIX_UPDATE_STAGE_JOB = """Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
+public sealed class UpdateStageJob : IDisposable {
+    Process process; Task<string> output, error; bool disposed;
+    public UpdateStageJob(string program, string arguments, bool probe, System.IO.TextWriter diagnostics) {
+        var start = new ProcessStartInfo(program, arguments);
+        start.UseShellExecute = false; start.RedirectStandardOutput = true; start.RedirectStandardError = true;
+        process = Process.Start(start);
+        output = Task.Run(() => Read(process.StandardOutput, probe ? null : diagnostics));
+        error = Task.Run(() => Read(process.StandardError, diagnostics));
+    }
+    static string Read(System.IO.StreamReader stream, System.IO.TextWriter diagnostics) {
+        if (diagnostics == null) return stream.ReadToEnd();
+        string line;
+        while ((line = stream.ReadLine()) != null) { lock(diagnostics) diagnostics.WriteLine(line); }
+        return "";
+    }
+    public bool Wait(int milliseconds) { return process.WaitForExit(milliseconds); }
+    public int ExitCode { get { return process.ExitCode; } }
+    public void Stop() {
+        if (!process.HasExited) process.Kill(true);
+        if (!process.WaitForExit(5000)) throw new TimeoutException("native Processが残っています");
+    }
+    public string ReadOutput() {
+        if (output == null) return "";
+        if (!output.Wait(5000)) throw new TimeoutException("native出力を回収できません");
+        return output.Result + error.Result;
+    }
+    public string ReadDiagnostic() { return error.Result; }
+    public void Dispose() {
+        if (disposed) return;
+        try { Stop(); if (output != null && !output.Wait(5000)) throw new TimeoutException("readerが残っています"); }
+        catch (Exception error) {
+            throw new InvalidOperationException("次の操作: 試験のstdout/stderrとdriver.ps1を確認し、"
+                + "native Processとreaderの残存を回収して再実行してください。", error);
+        }
+        finally { process.Dispose(); disposed = true; }
+    }
+}
+'@
+"""

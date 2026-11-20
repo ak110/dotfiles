@@ -1,0 +1,10 @@
+((authorization|api[ _-]?key|token|secret|passw(or)?d)[a-z0-9_.-]*[^a-z0-9_.-]*[:=]([^=]|$)|(bearer|basic) +[a-z0-9._~+/=-]+|://[^ /]+@|[?&][^ =]*(key|auth|sig|credential)[^ =]*=)
+^[ ]*(warning:|hint:|help:|note:|To |Run |Please |success:|次の操作:|[-+~] |(Updated|Upgraded|Installed) (uv|uvx|CPython|Python) |uvの導入先の記録を)
+info: Checking for updates\.\.\.
+success: You're already on version .*
+Python [0-9.]+ is already on the latest supported patch release
+[ ]*(Resolved|Prepared|Installed|Uninstalled|Audited|Checked) [0-9]+ packages? in .*
+[ ]*(Building|Built|Downloading|Downloaded) .+
+Installed [0-9]+ executables?:.*
+[ ]*\[pytools\] 変更なし .*
+[ ]*\[pytools\] 更新対象の使用中プロセス: 候補[0-9]+件 再起動可[0-9]+件 再起動不可[0-9]+件

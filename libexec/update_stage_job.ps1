@@ -33,9 +33,9 @@ public sealed class UpdateStageJob : IDisposable {
     [DllImport("kernel32", SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr process,out uint code);
     [DllImport("kernel32")] static extern IntPtr GetStdHandle(int kind);
     [DllImport("kernel32")] static extern bool CloseHandle(IntPtr handle);
-    IntPtr job,process; AnonymousPipeServerStream pipe; Task<string> output; bool disposed;
+    IntPtr job,process; AnonymousPipeServerStream pipe, diagnosticPipe; Task<string> output, diagnostic; bool disposed;
     static Exception Error() { return new Win32Exception(Marshal.GetLastWin32Error()); }
-    public UpdateStageJob(string program,string arguments,bool probe) {
+    public UpdateStageJob(string program,string arguments,bool probe,TextWriter diagnostics) {
         job=CreateJobObject(IntPtr.Zero,null); if(job==IntPtr.Zero) throw Error();
         ProcessInfo info=new ProcessInfo();
         try {
@@ -43,12 +43,18 @@ public sealed class UpdateStageJob : IDisposable {
             if(!SetInformationJobObject(job,9,ref limits,Marshal.SizeOf(typeof(Limits)))) throw Error();
             Startup startup=new Startup(); startup.size=Marshal.SizeOf(startup); startup.flags=0x100;
             startup.input=GetStdHandle(-10); startup.output=GetStdHandle(-11); startup.error=GetStdHandle(-12);
-            if(probe) { pipe=new AnonymousPipeServerStream(PipeDirection.In,HandleInheritability.Inheritable); startup.output=pipe.ClientSafePipeHandle.DangerousGetHandle(); }
+            pipe=new AnonymousPipeServerStream(PipeDirection.In,HandleInheritability.Inheritable);
+            startup.output=pipe.ClientSafePipeHandle.DangerousGetHandle();
+            if(probe) {
+                diagnosticPipe=new AnonymousPipeServerStream(PipeDirection.In,HandleInheritability.Inheritable);
+                startup.error=diagnosticPipe.ClientSafePipeHandle.DangerousGetHandle();
+            } else startup.error=startup.output;
             if(!CreateProcess(program,new StringBuilder("\""+program+"\" "+arguments),IntPtr.Zero,IntPtr.Zero,true,4|0x08000000,IntPtr.Zero,null,ref startup,out info)) throw Error();
             process=info.process;
             if(!AssignProcessToJobObject(job,process)) throw Error();
             if(ResumeThread(info.thread)==0xffffffff) throw Error();
-            if(pipe!=null) { pipe.DisposeLocalCopyOfClientHandle(); output=Task.Run(()=>{using(var reader=new StreamReader(pipe,Encoding.UTF8)) return reader.ReadToEnd();}); }
+            output=StartReader(pipe,probe ? null : diagnostics);
+            if(probe) diagnostic=StartReader(diagnosticPipe,diagnostics);
         } catch (Exception failure) {
             try {
                 if(process!=IntPtr.Zero) {
@@ -68,14 +74,32 @@ public sealed class UpdateStageJob : IDisposable {
         var clock=System.Diagnostics.Stopwatch.StartNew();
         while(true) { Accounting info; if(!QueryInformationJobObject(job,1,out info,Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero)) throw Error(); if(info.active==0) return; if(clock.ElapsedMilliseconds>=5000) throw new TimeoutException("Jobの所属プロセスが残っています"); Thread.Sleep(10); }
     }
-    public string ReadOutput() { if(output==null) return ""; if(!output.Wait(5000)) throw new TimeoutException("標準出力readerが終了しません"); return output.Result; }
+    static Task<string> StartReader(AnonymousPipeServerStream stream, TextWriter diagnostics) {
+        stream.DisposeLocalCopyOfClientHandle();
+        return Task.Run(()=>{
+            using (var reader=new StreamReader(stream,Encoding.UTF8)) {
+                if (diagnostics==null) return reader.ReadToEnd();
+                string line;
+                while ((line=reader.ReadLine())!=null) diagnostics.WriteLine(line);
+                return "";
+            }
+        });
+    }
+    static string Read(Task<string> reader) {
+        if(reader==null) return "";
+        if(!reader.Wait(5000)) throw new TimeoutException("出力readerが終了しません");
+        return reader.Result;
+    }
+    public string ReadOutput() { return Read(output); }
+    public string ReadDiagnostic() { return Read(diagnostic); }
     public void Dispose() {
         if(disposed) return; disposed=true;
         try { if(job!=IntPtr.Zero) Stop(); }
         finally {
             try {
                 if(pipe!=null) pipe.Dispose();
-                if(output!=null && !output.Wait(5000)) throw new TimeoutException("標準出力readerを解放できません");
+                if(diagnosticPipe!=null) diagnosticPipe.Dispose();
+                Read(output); Read(diagnostic);
             } finally {
                 if(process!=IntPtr.Zero) CloseHandle(process);
                 if(job!=IntPtr.Zero) CloseHandle(job);
@@ -87,9 +111,9 @@ public sealed class UpdateStageJob : IDisposable {
 }
 function Start-UpdateStageProcess {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = '更新段の内部起動。実行の採否は呼び出し元が判定し、生成直後のJob所有を保証する。')]
-    param([string]$Program, [string[]]$Arguments, [bool]$Probe)
+    param([string]$Program, [string[]]$Arguments, [bool]$Probe, [IO.TextWriter]$Diagnostics)
     # CommandLineToArgvW互換の引用で、末尾のバックスラッシュも引数内へ保つ。
     $quoted = @($Arguments | ForEach-Object { '"' + [regex]::Replace([regex]::Replace($_, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"' }) -join ' '
     $executable = (Get-Command -Name $Program -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-    return [UpdateStageJob]::new($executable, $quoted, $Probe)
+    return [UpdateStageJob]::new($executable, $quoted, $Probe, $Diagnostics)
 }

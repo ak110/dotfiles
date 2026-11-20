@@ -31,7 +31,7 @@ from agent_toolkit._agents_server.service_context import Conversation, ServiceMa
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_move_source import MoveSource
 from agent_toolkit._agents_server.service_projection import ProjectionHub
-from agent_toolkit._agents_server.service_registry import RegistryForwarder
+from agent_toolkit._agents_server.service_registry import RegistryForwarder, restore_generation
 from agent_toolkit._common import file_lock, runtime_environment, session_registry
 from agent_toolkit._common.next_action import ActionableError
 
@@ -108,7 +108,7 @@ class ServiceCoordinator:
         self.registry = GenerationRegistry(directory)
         self.gate = service_turns.TurnGate(self.generation, target)
         self._ended: dict[str, tuple[int, str | None]] = {}
-        self._ended_clients: dict[str, Any] = {}
+        self._ended_sdk_clients: dict[str, Any] = {}
         self._moving: dict[str, asyncio.Task[dict]] = {}
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._updates: dict[str, _Update] = {}
@@ -132,9 +132,8 @@ class ServiceCoordinator:
                 previous = None
                 token = uuid.uuid4().hex
                 try:
-                    # 終了した受付先を残して公開すると、生存する世代の保存を静止せずに受付を切り替える。
-                    # 先に受付を戻し、生存する世代を引継ぎの相手にする。
-                    current = await run_file_operation(self.registry.restore)
+                    # 先に受付を生存する世代へ戻し、その世代の保存を静止してから公開する。
+                    current = await restore_generation(self.registry)
                     # 受付を戻すと、起動済みの未公開の世代のepochは戻した世代より新しい値へ振り直される。
                     entry = self.registry.generations().get(self.generation)
                     if entry is not None:
@@ -233,7 +232,7 @@ class ServiceCoordinator:
     def started(self, session: Any) -> None:
         """背景完了で自律開始したturnへ、前turnの終了境界を持ち越さない。"""
         self._ended.pop(session.session_id, None)
-        self._ended_clients.pop(session.session_id, None)
+        self._ended_sdk_clients.pop(session.session_id, None)
 
     @contextlib.asynccontextmanager
     async def input_scope(self, session: Any) -> AsyncGenerator[bool]:
@@ -308,8 +307,9 @@ class ServiceCoordinator:
     def boundary(self, session: Any, client: Any) -> None:
         """backendの実終了だけを記録し、準備中または新受付公開後は次のdecodeを止める。"""
         self._ended[session.session_id] = session.turn_seq, session.turn_id
-        if client is not None:
-            self._ended_clients[session.session_id] = client
+        # SDKは所有taskの終了時にbackendの参照が消える。Codexは解放までbackend自身が所有する。
+        if session.engine == "claude" and client is not None:
+            self._ended_sdk_clients[session.session_id] = client
         current = self._current()
         if current["generation"] == self.generation and not self._updates:
             return
@@ -392,7 +392,7 @@ class ServiceCoordinator:
                 current = update.committed.result()
             else:
                 # 公開元が確定を通知せずに終了していれば、受付先は終了した世代を指すことがあるため生存する世代へ戻す。
-                await run_file_operation(self.registry.restore)
+                await restore_generation(self.registry)
                 current = self._current()
             await self.gate.observe_current(current)
         finally:
@@ -426,7 +426,7 @@ class ServiceCoordinator:
         )
         for identifier in set(self._ended) - retained:
             self._ended.pop(identifier, None)
-            self._ended_clients.pop(identifier, None)
+            self._ended_sdk_clients.pop(identifier, None)
         for identifier, task in tuple(self._moving.items()):
             if task.done():
                 if not task.cancelled():
@@ -441,7 +441,7 @@ class ServiceCoordinator:
                 self._incoming.pop(identifier, None)
         if self._current()["generation"] != self.generation:
             # 受付先の世代が公開後に終了していれば、生存する世代へ受付を戻して既存の会話を続ける。
-            await run_file_operation(self.registry.restore)
+            await restore_generation(self.registry)
         current = self._current()
         await self.gate.observe_current(current)
         for identifier in tuple(self._pending_restores):
@@ -568,7 +568,7 @@ class ServiceCoordinator:
         return (
             getattr(backend, "_sdk_clients", {}).get(identifier)
             or getattr(backend, "_clients", {}).get(identifier)
-            or self._ended_clients.get(identifier)
+            or self._ended_sdk_clients.get(identifier)
         )
 
     async def parent_sessions(self, parent: str, include_terminated: bool) -> list:
@@ -893,7 +893,7 @@ class ServiceCoordinator:
                     raise RuntimeError("移譲先が制御所有を確定しませんでした")
                 source.forget(manager)
                 self._ended.pop(identifier, None)
-                self._ended_clients.pop(identifier, None)
+                self._ended_sdk_clients.pop(identifier, None)
                 await manager.save_control_state()
             return {"moved": True}
 

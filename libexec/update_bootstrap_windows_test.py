@@ -193,7 +193,7 @@ def test_stage_classification(tmp_path: pathlib.Path) -> None:
         "foreach ($case in $cases) { "
         "$script:bootstrapFailures=@(); $failed=$false; $code=$null; "
         "try { $code=Invoke-UpdateStage test $case[0] 1 unused @() -Probe:$case[1] "
-        "-Start {$p} -Wait {$true} -Stop {} -Output {' probe '} -ExitCode {$case[2]} } "
+        "-Start {$p} -Wait {$true} -Stop {} -Output {' probe '} -Diagnostic {''} -ExitCode {$case[2]} } "
         "catch { $failed=$true }; "
         "if ($failed -ne $case[3]) {throw 'classification'}; "
         "if (-not $failed -and $code -ne $case[2]) {throw 'code'}; "
@@ -208,7 +208,7 @@ def test_stage_timeout_and_unknown_ownership(tmp_path: pathlib.Path) -> None:
     result = _run_stage(
         tmp_path,
         "$p=New-Object PSObject; $p | Add-Member ScriptMethod Dispose {}; "
-        "$code=Invoke-UpdateStage test continue 1 unused @() -Start { $p } -Wait { $false } -Stop {}; "
+        "$code=Invoke-UpdateStage test continue 1 unused @() -Start { $p } -Wait { $false } -Stop {} -Output {''}; "
         "if ($code -ne 124) { throw 'timeout' }; "
         "try { Invoke-UpdateStage test continue 1 unused @() -Start { $p } -Wait { $true } "
         "-ExitCode {0} -Stop {throw 'unknown'}; throw 'not propagated' } "
@@ -280,7 +280,7 @@ def test_stage_continued_failure_reaches_update_result(tmp_path: pathlib.Path, m
     result = _run_stage(
         tmp_path,
         "$p=New-Object PSObject; $p | Add-Member ScriptMethod Dispose {}; "
-        "$null=Invoke-UpdateStage test continue 1 unused @() -Start {$p} -Wait {$true} -ExitCode {17} -Stop {}; "
+        "$null=Invoke-UpdateStage test continue 1 unused @() -Start {$p} -Wait {$true} -ExitCode {17} -Stop {} -Output {''}; "
         "ConvertTo-Json -InputObject @($script:bootstrapFailures) -Compress | "
         "Set-Content -LiteralPath $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -Encoding UTF8",
     )

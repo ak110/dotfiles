@@ -82,6 +82,11 @@ sys.path.insert(0, str(SOURCE_ROOT))
 sys.path.insert(0, str(SOURCE_ROOT / "agent-toolkit"))
 sys.path.insert(0, str(SOURCE_ROOT / "libexec"))
 
+if __name__ == "__main__":
+    from update_script_run import restore_stderr
+
+    restore_stderr()
+
 import update_dotfiles_git  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_process  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
@@ -90,7 +95,7 @@ from agent_toolkit._common import dotfiles_mode, process_tree  # noqa: E402  # p
 from update_dotfiles_process import run_git_pull  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_runtime import child_env  # noqa: E402  # pylint: disable=wrong-import-position
 
-from pytools._internal import codex_processes, sync_report  # noqa: E402  # pylint: disable=wrong-import-position
+from pytools._internal import codex_processes, sync_report, update_log  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def _run_step(
@@ -317,19 +322,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def _show_logs() -> int:
     """保存済みの直近の更新実行を、複数行レコードと世代境界を保って表示する。"""
-    header = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} run=(\S+) \S+ ")
     records: list[tuple[str, str]] = []
     run_id = ""
-    for generation in range(update_dotfiles_runtime.LOG_BACKUP_COUNT, -1, -1):
-        path = (
-            update_dotfiles_runtime.LOG_PATH.with_name(f"{update_dotfiles_runtime.LOG_PATH.name}.{generation}")
-            if generation
-            else update_dotfiles_runtime.LOG_PATH
-        )
+    paths = update_log.generations(update_dotfiles_runtime.LOG_PATH, update_dotfiles_runtime.LOG_BACKUP_COUNT)
+    for path in reversed(paths):
         try:
             with path.open(encoding="utf-8") as log_file:
                 for line in log_file:
-                    match = header.match(line)
+                    match = update_log.RECORD_HEADER.match(line)
                     if match is not None:
                         run_id = match[1]
                     records.append((run_id, line))
@@ -501,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
             if log_handler is None:
                 update_dotfiles_runtime.continue_after_failure(
                     "永続ログの開始",
-                    f"{update_dotfiles_runtime.LOG_PATH.parent}の書込権限と空き容量を確認してupdate-dotfilesを再実行してください。",
+                    f"{update_dotfiles_runtime.LOG_PATH.parent}の書込権限と空き容量を確認してください。",
                     "永続ログを開始できない",
                 )
             try:
@@ -552,7 +552,6 @@ def main(argv: list[str] | None = None) -> int:
             return update_dotfiles_runtime.finish(0)
         finally:
             update_dotfiles_runtime.current_run_id = None
-            update_dotfiles_runtime.persistent_log_ready = False
             update_dotfiles_runtime.current_stage_title = None
             update_dotfiles_runtime.last_stderr_tail = None
             update_dotfiles_runtime.continued_failures.clear()

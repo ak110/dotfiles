@@ -46,6 +46,15 @@ def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generatio
 # 確認の終了後も候補が生存することを確かめてから`publish_service`で公開するために使う。
 DEFER_PUBLISH_ENV = "AGENT_TOOLKIT_DEFER_SERVICE_PUBLISH"
 
+INHERITED_JOB_WARNING = with_next_action(
+    "起動元のWindows Jobは離脱を許可していません。起動元のJobの制限を継承して管理サービスを起動しました。"
+    "そのJob終了後のサービス生存は保証しません。",
+    next_action=(
+        "Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
+        "確認できない場合は、起動元とこの診断を添えてagent-toolkitの管理者へ問い合わせてください。"
+    ),
+)
+
 # 応答の無い要求がこの秒数を超えたら、接続先世代の生存を短い照会で確かめる。
 # 正当に長いtool処理は照会に応答するため打ち切らず、停止・凍結した世代だけを配送未確定として返す。
 _STALL_SECONDS = 10.0
@@ -146,16 +155,8 @@ def _launch_service(
             error.add_note(f"管理サービス起動: executable={command[0]} cwd={cwd} flags={flags}")
             raise
         if refused:
-            warning = with_next_action(
-                "起動元のWindows Jobは離脱を許可していません。起動元のJobの制限を継承して管理サービスを起動しました。"
-                "そのJob終了後のサービス生存は保証しません。",
-                next_action=(
-                    "Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
-                    "確認できない場合は、起動元とこの診断を添えてagent-toolkitの管理者へ問い合わせてください。"
-                ),
-            )
-            print(warning, file=sys.stderr)
-            stderr.write((warning + "\n").encode("utf-8"))
+            print(INHERITED_JOB_WARNING, file=sys.stderr)
+            stderr.write((INHERITED_JOB_WARNING + "\n").encode("utf-8"))
             stderr.flush()
         return process
     raise ValueError("管理サービスの起動指定がありません")

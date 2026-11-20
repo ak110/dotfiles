@@ -180,8 +180,18 @@ def _record(repo: pathlib.Path, record: pathlib.Path, previous: str, wis: list[s
 
 
 def _snapshot(records: list[pathlib.Path]) -> dict[pathlib.Path, bytes | None]:
-    """記録本文と対応記録ファイルのバイト列を返す。"""
-    paths = [*records, *(commit_mapping.mapping_path(record) for record in records)]
+    """本文、対応履歴、再試行の証拠と準備中のファイルを比較する。"""
+    paths = [
+        path
+        for record in records
+        for path in (
+            record,
+            commit_mapping.mapping_path(record),
+            record.with_suffix(".wi-rewrite.receipt"),
+            *record.with_suffix(".wi-rewrite.history").glob("*"),
+            *record.with_suffix(".wi-rewrite.pending").glob("*"),
+        )
+    ]
     return {path: path.read_bytes() if path.exists() else None for path in paths}
 
 
@@ -260,6 +270,210 @@ def _read_commits(capsys: pytest.CaptureFixture[str]) -> list[str]:
     output = json.loads(capsys.readouterr().out)
     assert isinstance(output["commits"], list)
     return output["commits"]
+
+
+def test_rewrite_keeps_cherry_pick_source_and_unmerged_commit(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同じAWIのcherry-pick元と別AWIの未統合commitを残し、取り込んだcommitだけを付け替える。"""
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main")
+    base = _commit(repo, "base")
+    source = _commit(repo, "feature")
+    git_repository.git_output(repo, "reset", "--hard", base)
+    git_repository.git_output(repo, "switch", "-c", "lane")
+    pending = _commit(repo, "pending")
+    git_repository.git_output(repo, "switch", "main")
+    git_repository.git_output(repo, "cherry-pick", "--allow-empty", "-x", source)
+    old = git_repository.git_output(repo, "rev-parse", "HEAD")
+    record = _handoff(tmp_path / "handoff.md")
+    commit_mapping.append_event(record, {"commits": [source, old], "awi": [WI_A]})
+    commit_mapping.append_event(record, {"commit": pending, "awi": [WI_B]})
+    records_before = commit_mapping.mapping_path(record).read_bytes()
+
+    git_repository.git_output(repo, "commit", "--amend", "--allow-empty", "-m", "renamed feature")
+    new = git_repository.git_output(repo, "rev-parse", "HEAD")
+    rewrite = tmp_path / "rewrite.json"
+    rewrite.write_text(json.dumps({old: new}), encoding="utf-8")
+    args = [
+        f"--worktree={repo}",
+        f"--previous-head={old}",
+        f"--rewrite-map={rewrite}",
+        "--completed-step=amend",
+        "--result=件名変更",
+        f"--handoff={record}",
+    ]
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-rewrite", script_args=args)) == 0
+    line = next(line for line in capsys.readouterr().out.splitlines() if line.startswith(f"追記: {record}（1件）"))
+    assert "範囲外" in line and "2件" in line and source in line and pending in line
+    assert commit_mapping.mapping_path(record).read_bytes().startswith(records_before)
+    events = commit_mapping.read_events(record, record.read_text(encoding="utf-8"))
+    assert commit_mapping.read_mapping(repo, events, {WI_A, WI_B}) == {source: {WI_A}, new: {WI_A}, pending: {WI_B}}
+
+
+@pytest.mark.parametrize("failure", ["body", "mapping", "receipt"])
+def test_retry_after_second_record_write_failure(
+    rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """2件目の本文・対応・証拠の書込失敗後、同じ引数で残りだけを1回更新できる。"""
+    commit_mapping.append_event(rebased.plan, {"commit": rebased.orphan, "awi": [WI_A]})
+    table = rebased.range_map("a", "u", "b")
+    pairs = json.loads(table.read_text(encoding="utf-8"))
+    pairs[rebased.old["a"]] = [{"commit": rebased.new["a"], "awi": [WI_A]}, {"commit": rebased.new["u"], "awi": [WI_S]}]
+    table.write_text(json.dumps(pairs), encoding="utf-8")
+    args = rebased.argv(table)
+    before = _snapshot([rebased.handoff, rebased.unaffected])
+    blocked = {
+        "body": rebased.handoff,
+        "mapping": commit_mapping.mapping_path(rebased.handoff),
+        "receipt": rebased.handoff.with_suffix(".wi-rewrite.receipt"),
+    }[failure]
+    replace = os.replace
+
+    def fail_replace(source: str, destination: pathlib.Path) -> None:
+        if destination == blocked:
+            raise PermissionError(str(blocked))
+        replace(source, destination)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "replace", fail_replace)
+        assert rewrite_plan_commits.main(args) == 1
+    assert str(blocked) in capsys.readouterr().err
+    with rebased.plan.open("a", encoding="utf-8") as stream:
+        stream.write("\n書込みの失敗を調査した。\n")
+    commit_mapping.append_event(rebased.plan, {"commit": rebased.new["u"], "awi": [WI_A]})
+    first_done = _snapshot([rebased.plan])
+    if failure != "receipt":
+        assert _snapshot([rebased.handoff, rebased.unaffected]) == before
+    git_repository.git_output(rebased.repo, "config", "core.abbrev", "16")
+    assert rewrite_plan_commits.main(args) == 0
+    assert f"変更なし: {rebased.plan} 範囲外として残したOID（1件）: {rebased.orphan}" in capsys.readouterr().out
+    assert _snapshot([rebased.plan]) == first_done
+    events = commit_mapping.read_events(rebased.handoff, rebased.handoff.read_text(encoding="utf-8"))
+    assert commit_mapping.read_mapping(rebased.repo, events, {WI_B}) == {rebased.new["b"]: {WI_B}}
+    assert rebased.handoff.read_text(encoding="utf-8").count("レーン統合のrebase") == 1
+
+    done = _snapshot([rebased.plan, rebased.handoff, rebased.unaffected])
+    pairs[rebased.old["a"]].reverse()
+    table.write_text(json.dumps({oid[:12]: pairs[oid] for oid in reversed(pairs)}), encoding="utf-8")
+    assert rewrite_plan_commits.main(args) == 0
+    assert _snapshot([rebased.plan, rebased.handoff, rebased.unaffected]) == done
+
+
+@pytest.mark.parametrize("boundary", ["prepare", "body", "mapping", "receipt"])
+def test_interrupted_rewrite_resumes_only_its_own_operation(
+    rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, boundary: str
+) -> None:
+    """各置換の直後に中断しても、別の書換えは進めず、元の操作だけが残りを1回公開する。"""
+    record = rebased.plan
+    commit_mapping.append_event(record, {"commit": rebased.orphan, "awi": [WI_A]})
+    table = rebased.range_map("a", "u", "b")
+    args = rebased.argv(table)
+    mapping = commit_mapping.mapping_path(record)
+    destination = {
+        "prepare": record.with_suffix(".wi-rewrite.pending"),
+        "body": record,
+        "mapping": mapping,
+        "receipt": record.with_suffix(".wi-rewrite.receipt"),
+    }[boundary]
+    replace = os.replace
+
+    def interrupt(source: str, target: pathlib.Path) -> None:
+        replace(source, target)
+        if target == destination:
+            raise KeyboardInterrupt
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "replace", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            rewrite_plan_commits.main(args)
+    if boundary == "prepare":
+        # 旧版が同じ本文と対応を書いた場合でも、この操作による置換の完了とは区別する。
+        staging = record.with_suffix(".wi-rewrite.pending")
+        original_body, original_mapping = record.read_bytes(), mapping.read_bytes()
+        record.write_bytes((staging / "body").read_bytes())
+        mapping.write_bytes((staging / "mapping").read_bytes())
+        other = _snapshot([record, rebased.handoff, rebased.unaffected])
+        assert rewrite_plan_commits.main(args) == 1
+        assert _snapshot([record, rebased.handoff, rebased.unaffected]) == other
+        record.write_bytes(original_body)
+        mapping.write_bytes(original_mapping)
+    before = _snapshot([record, rebased.handoff, rebased.unaffected])
+    rebased.range_map("a", "b")
+    assert rewrite_plan_commits.main(args) == 1
+    assert _snapshot([record, rebased.handoff, rebased.unaffected]) == before
+    rebased.range_map("a", "u", "b")
+    assert rewrite_plan_commits.main(args) == 0
+    assert record.read_text(encoding="utf-8").count("レーン統合のrebase") == 1
+    rewrites = [event for event in commit_mapping.file_events(mapping) if "rewrite" in event]
+    assert len(rewrites) == 1 and set(rewrites[0]) == {"rewrite"}
+    after = _snapshot([record, rebased.handoff, rebased.unaffected])
+    assert rewrite_plan_commits.main(args) == 0
+    assert _snapshot([record, rebased.handoff, rebased.unaffected]) == after
+
+
+@pytest.mark.parametrize("difference", ["previous-head", "current-head", "unrecorded-commit", "other-awi"])
+def test_distinct_operation_with_same_record_projection(
+    rebased: _Rebased, capsys: pytest.CaptureFixture[str], difference: str
+) -> None:
+    """記録1件の旧新OIDと割当が一致しても、両端のHEAD・全対応・全割当の違う回は未追記として拒否する。"""
+    commit_mapping.append_event(rebased.plan, {"commit": rebased.orphan, "awi": [WI_A]})
+    table = rebased.range_map("a", "u", "b")
+    pairs = json.loads(table.read_text(encoding="utf-8"))
+    pairs[rebased.old["a"]] = [{"commit": rebased.new["a"], "awi": [WI_A]}]
+    table.write_text(json.dumps(pairs), encoding="utf-8")
+    args = rebased.argv(table)
+    plan_only = [arg for arg in args if not arg.startswith("--handoff=")]
+    assert rewrite_plan_commits.main(plan_only) == 0
+    capsys.readouterr()
+
+    if difference == "previous-head":
+        git_repository.git_output(rebased.repo, "switch", "--detach", rebased.previous_head)
+        other = _commit(rebased.repo, "later old tip")
+        git_repository.git_output(rebased.repo, "switch", "--detach", rebased.new["b"])
+        args = [f"--previous-head={other}" if arg.startswith("--previous-head=") else arg for arg in args]
+    elif difference == "current-head":
+        _commit(rebased.repo, "later new tip")
+    elif difference == "unrecorded-commit":
+        del pairs[rebased.old["u"]]
+    else:
+        pairs[rebased.old["a"]][0]["awi"].append(WI_B)
+    table.write_text(json.dumps(pairs), encoding="utf-8")
+
+    before = _snapshot([rebased.plan, rebased.handoff, rebased.unaffected])
+    assert rewrite_plan_commits.main(args) == 1
+    assert "過去の書換えの未追記" in capsys.readouterr().err
+    assert _snapshot([rebased.plan, rebased.handoff, rebased.unaffected]) == before
+
+
+@pytest.mark.parametrize("history", ["new-only", "different-target", "different-assignment", "matching-legacy"])
+def test_rewrite_destination_is_not_proof_of_application(
+    rebased: _Rebased, capsys: pytest.CaptureFixture[str], history: str
+) -> None:
+    """新OIDの存在や、宛先・AWI割当の異なる書換えは今回の適用を示さない。"""
+    stale = _handoff(rebased.repo.parent / "stale.md")
+    commit_mapping.append_event(stale, {"commit": rebased.orphan, "awi": [WI_S]})
+    rewrite = rebased.range_map("a", "u", "b")
+    if history == "new-only":
+        commit_mapping.append_event(stale, {"commit": rebased.new["b"], "awi": [WI_S]})
+    else:
+        old = rebased.old["a"]
+        commit_mapping.append_event(stale, {"commit": old, "awi": [WI_S]})
+        if history == "matching-legacy":
+            commit_mapping.append_event(stale, {"rewrite": {old: rebased.new["a"]}})
+        elif history == "different-target":
+            commit_mapping.append_event(stale, {"rewrite": {old: rebased.new["b"]}})
+        else:
+            first, second = rebased.new["a"], rebased.new["b"]
+            commit_mapping.append_event(
+                stale, {"rewrite": {old: [{"commit": first, "awi": [WI_S]}, {"commit": second, "awi": []}]}}
+            )
+            pairs = json.loads(rewrite.read_text(encoding="utf-8"))
+            pairs[old] = [{"commit": first, "awi": [WI_A]}, {"commit": second, "awi": [WI_S]}]
+            rewrite.write_text(json.dumps(pairs), encoding="utf-8")
+    before = _snapshot([rebased.plan, rebased.handoff, rebased.unaffected, stale])
+    assert rewrite_plan_commits.main(rebased.argv(rewrite, extra=(f"--handoff={stale}",))) == 1
+    assert f"{stale}: 過去の書換えの未追記" in capsys.readouterr().err
+    assert _snapshot([rebased.plan, rebased.handoff, rebased.unaffected, stale]) == before
 
 
 @pytest.mark.cpu_limit(
@@ -387,6 +601,7 @@ def test_fixup_squash_inherits_union(tmp_path: pathlib.Path, monkeypatch: pytest
 )
 def test_missing_recorded_oid_fails_without_writes(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """書換え前のHEADから到達できる記録済みOIDが対応表に無いと、全記録を変えずに失敗し、記録・OID・次の操作を示す。"""
+    commit_mapping.append_event(rebased.plan, {"commit": rebased.orphan, "awi": [WI_A]})
     records = [rebased.plan, rebased.handoff, rebased.unaffected]
     before = _snapshot(records)
 
