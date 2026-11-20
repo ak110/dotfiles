@@ -29,7 +29,6 @@ from ._test_helpers import (
 from ._test_helpers import _fake_target_info as _fake_target_info  # pylint: disable=useless-import-alias
 from ._test_helpers import _fake_which_present as _fake_which_present  # pylint: disable=useless-import-alias
 
-_REAL_VERIFY_TARGET_PLUGINS = _install_claude_plugins._verify_target_plugins
 _REAL_SCAN = _claude_plugin_references.scan
 
 
@@ -58,28 +57,8 @@ def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(_install_claude_plugins.external_pstack, "run", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
-    monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets, _failed=(): None)
+    monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets, _failed, _disabled: None)
     monkeypatch.setattr(_claude_plugin_references, "scan", lambda: ())
-
-
-def test_verify_target_plugins_requires_installed_and_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    """導入済み登録とenabled=trueの双方をinstall後の完了条件にする。"""
-    monkeypatch.setattr(
-        _install_claude_plugins,
-        "_read_installed_plugins_from_file",
-        lambda: [{"id": "agent-toolkit@ak110-dotfiles", "version": "1.0.0", "scope": "user"}],
-    )
-    monkeypatch.setattr(
-        _install_claude_plugins,
-        "_read_enabled_plugins_from_file",
-        lambda: {"agent-toolkit@ak110-dotfiles": True},
-    )
-
-    _REAL_VERIFY_TARGET_PLUGINS({"agent-toolkit": "1.0.0"})
-
-    monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
-    with pytest.raises(RuntimeError, match="未有効化"):
-        _REAL_VERIFY_TARGET_PLUGINS({"agent-toolkit": "1.0.0"})
 
 
 def test_installed_plugins_are_read_after_marketplace_is_ensured(

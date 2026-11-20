@@ -2,15 +2,12 @@
 
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
 対象プラグインは`.claude-plugin/marketplace.json`の`plugins[]`をSSOTとして動的に決定する。
-前提条件（`claude` CLI / `uv` CLIがPATHにある）を満たさない場合は完全にスキップし、
-dotfiles apply全体の失敗にはしない。前提を満たしたうえで管理対象pluginの導入・更新が失敗した場合と、
-導入後の版・有効状態が目標と一致しない場合は例外を送出し、後処理の工程の失敗として扱わせる。
+前提条件（`claude` CLI / `uv` CLIがPATHにある）を満たさない場合はスキップする。
 """
 
 import json
 import logging
 import shutil
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, cast
 
@@ -75,10 +72,14 @@ _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
 )
 
 
+class _PluginSettingsError(RuntimeError):
+    """導入済みpluginのユーザー設定が期待した状態でない。"""
+
+
 def run() -> post_apply_outcome.PostApplyOutcome:
     """Claude Code pluginをインストール・更新し、ユーザーへ案内する推奨コマンドを結果へ含める。
 
-    管理対象pluginの導入・更新の失敗と、導入後の状態が目標と一致しない場合は、警告を出力してスキップと数える。
+    管理対象pluginを目標の版へ導入できない場合は警告してスキップし、導入済みpluginの有効・無効の設定不一致は失敗と数える。
     外部marketplaceのpluginの自動無効化（設定の書き換え）の失敗は失敗と数える。
     稼働中の参照を守るためにplugin cacheの修復を延期した場合は延期と数える。
     """
@@ -88,9 +89,14 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     external_changed = external_pstack.run() or external_changed
     try:
         changed, recommendations, disable_failed_count, artifact_failed_count, deferred = _install_plugins()
+    except _PluginSettingsError as error:
+        return post_apply_outcome.PostApplyOutcome(
+            failure=str(error),
+            next_action="~/.claude/settings.json の enabledPlugins で対象pluginの設定を確認する。",
+        )
     except RuntimeError as error:
         logger.warning(
-            log_format.format_status("plugins", f"導入または更新に失敗: {error}。`update-dotfiles`を再実行する"),
+            log_format.format_status("plugins", f"導入または更新をスキップ: {error}。`update-dotfiles`を再実行する"),
         )
         return post_apply_outcome.PostApplyOutcome(changed=external_changed)
     failures: list[str] = []
@@ -142,6 +148,10 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
         )
         return external_changed, [], 0, 0, False
 
+    # marketplace修復もpluginの登録を変更するため、その前の明示的な無効化だけをユーザー設定として扱う。
+    initial_enabled = _read_enabled_plugins_from_file() or {}
+    initially_disabled = {plugin_id for plugin_id, enabled in initial_enabled.items() if not enabled}
+
     if not claude_marketplace.ensure_marketplace():
         return external_changed, [], 0, 0, False
 
@@ -187,7 +197,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
     installed_count = 0
     resynced_count = 0
     # 管理対象の導入・更新に失敗したplugin名と操作。サマリ行の後に工程の失敗として送出する。
-    failed_operations: list[str] = []
+    failed_operations: dict[str, str] = {}
     # CLI が成功終了した plugin だけを、キャッシュ実体の検査対象にする。
     cache_check_names: list[str] = []
     for name, target in target_versions.items():
@@ -198,7 +208,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
                 installed_count += 1
                 cache_check_names.append(name)
             else:
-                failed_operations.append(f"{name} (install)")
+                failed_operations[name] = "install"
         elif target and current != target:
             logger.info(log_format.format_status(name, f"更新を検出: {current} -> {target}"))
             if _update_plugin(name):
@@ -206,7 +216,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
                 updated_count += 1
                 cache_check_names.append(name)
             else:
-                failed_operations.append(f"{name} (update)")
+                failed_operations[name] = "update"
         elif is_directory_type and not _plugin_content_matches(dotfiles_root, name):
             logger.info(
                 log_format.format_status(name, f"最新 ({current or '不明'}) のため directory 型キャッシュを再同期"),
@@ -216,7 +226,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
                 resynced_count += 1
                 cache_check_names.append(name)
             else:
-                failed_operations.append(f"{name} (install)")
+                failed_operations[name] = "install"
         else:
             logger.info(log_format.format_status(name, f"最新 ({current or '不明'})"))
             latest_count += 1
@@ -253,11 +263,11 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
             f"サマリ: 最新 {latest_count} 件 / 更新 {updated_count} 件 / 新規 {installed_count} 件"
             + (f" / 再同期 {resynced_count} 件" if resynced_count else "")
             + (f" / 自動無効化 {disabled_count} 件" if disabled_count else "")
-            + (f" / 失敗 {failed_count} 件" if failed_count else ""),
+            + (f" / CLI操作の失敗 {failed_count} 件" if failed_count else ""),
         ),
     )
     # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
-    _verify_target_plugins(target_versions, failed_operations)
+    _verify_target_plugins(target_versions, failed_operations, initially_disabled)
     return external_changed or any_change, recommendations, disable_failed_count, artifact_failed_count, cache_deferred
 
 
@@ -488,7 +498,7 @@ def _extract_plugin_version_map(data: object) -> dict[str, str]:
     """`claude plugin list --json` の戻り値からuser scopeのname → version辞書を構築する。
 
     本スクリプトは ``--scope=user`` でインストールするため、
-    user scopeのエントリのみを対象とする。``scope`` フィールドが存在しない
+    対象marketplaceのuser scopeのエントリのみを対象とする。``scope`` フィールドが存在しない
     エントリは後方互換のため含める。
 
     実機で確認した形式（Claude Code 2.x）: list[dict]で各要素が以下を持つ。
@@ -529,11 +539,11 @@ def _extract_plugin_version_map(data: object) -> dict[str, str]:
 
 
 def _name_from_entry(entry: dict[str, object]) -> str | None:
-    """`plugin list` の1エントリからplugin名を取り出す（優先順位: `id` の `@` 前 → `name`）。"""
+    """対象marketplaceのplugin名を返す。marketplaceを持たない旧形式は名前で判定する。"""
     raw_id = entry.get("id")
     if isinstance(raw_id, str):
-        # `id` は `<name>@<marketplace>` 形式。`@` がなければそのまま返す
-        return raw_id.split("@", 1)[0]
+        plugin_name, separator, marketplace = raw_id.partition("@")
+        return plugin_name if not separator or marketplace == claude_common.MARKETPLACE_NAME else None
     name = entry.get("name")
     if isinstance(name, str):
         return name
@@ -922,10 +932,12 @@ def _remove_stale_source_environment(dotfiles_root: Path) -> bool:
     return True
 
 
-def _verify_target_plugins(target_versions: dict[str, str], failed_operations: Sequence[str] = ()) -> None:
-    """管理対象pluginが目標の版でuser scopeへ導入され、有効であることを実体から検証する。
+def _verify_target_plugins(
+    target_versions: dict[str, str], failed_operations: dict[str, str], initially_disabled: set[str]
+) -> None:
+    """管理対象pluginのuser scopeの版と、明示的な無効化を含む有効設定を検証する。
 
-    `failed_operations`は同じ回に失敗した`claude plugin install`・`update`（`<plugin名> (<操作>)`）で、
+    `failed_operations`は同じ回に失敗した`claude plugin install`・`update`（plugin名から操作への対応）で、
     実体の検証結果と併せて1つの例外へまとめる。CLIが成功終了しても版が変わらない場合は版の不一致で検出する。
     """
     raw_data: object = _read_installed_plugins_from_file()
@@ -934,28 +946,33 @@ def _verify_target_plugins(target_versions: dict[str, str], failed_operations: S
     if raw_data is None:
         raise RuntimeError("install後のplugin一覧を取得できませんでした")
     installed = _extract_plugin_version_map(raw_data)
-    missing = sorted(name for name in target_versions if name not in installed)
-    enabled = _read_enabled_plugins_from_file()
-    disabled = sorted(
-        f"{name}@{claude_common.MARKETPLACE_NAME}"
-        for name in target_versions
-        if enabled is None or enabled.get(f"{name}@{claude_common.MARKETPLACE_NAME}") is not True
-    )
-    mismatched = sorted(
-        f"{name} ({installed[name]} != {target})"
-        for name, target in target_versions.items()
-        if target and name in installed and installed[name] != target
-    )
+    enabled = _read_enabled_plugins_from_file() or {}
+    missing: list[str] = []
+    mismatched: list[str] = []
+    setting_mismatches: list[str] = []
+    for name, target in sorted(target_versions.items()):
+        if name not in installed:
+            missing.append(name)
+        elif target and installed[name] != target:
+            mismatched.append(f"{name} ({installed[name]} != {target})")
+        elif name not in failed_operations:
+            # 導入できなかったpluginの設定欠落は、独立した設定の失敗ではない。
+            plugin_id = f"{name}@{claude_common.MARKETPLACE_NAME}"
+            expected = plugin_id not in initially_disabled
+            if enabled.get(plugin_id) is not expected:
+                setting_mismatches.append(f"{plugin_id} (期待値: {str(expected).lower()})")
     failures: list[str] = []
     if failed_operations:
-        failures.append(f"CLI失敗: {', '.join(failed_operations)}")
+        operations = ", ".join(f"{name} ({operation})" for name, operation in failed_operations.items())
+        failures.append(f"CLI失敗: {operations}")
     if missing:
         failures.append(f"未インストール: {', '.join(missing)}")
     if mismatched:
         failures.append(f"版不一致: {', '.join(mismatched)}")
-    if disabled:
-        failures.append(f"未有効化: {', '.join(disabled)}")
+    if setting_mismatches:
+        failures.append(f"enabledPlugins の設定不一致: {', '.join(setting_mismatches)}")
+        raise _PluginSettingsError(" / ".join(failures))
     if failures:
         message = " / ".join(failures)
         raise RuntimeError(f"Claude Code pluginのinstall後の状態検証に失敗しました: {message}")
-    logger.info(log_format.format_status("plugins", "install後の導入・有効化状態を確認しました"))
+    logger.info(log_format.format_status("plugins", "install後の導入状態と設定を確認しました"))

@@ -69,7 +69,7 @@ def _install_into(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> ty
     monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
     monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
     monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
-    monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets, _failed=(): None)
+    monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets, _failed, _disabled: None)
     monkeypatch.setattr(_claude_plugin_references, "scan", lambda: ())
 
     def configure(install_path: pathlib.Path, writer: typing.Callable[[pathlib.Path], None] = _write_plugin_copy) -> None:

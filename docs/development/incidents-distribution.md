@@ -25,6 +25,7 @@
   直接原因: marketplaceのremove/add前に取得した導入一覧を修復後も再利用し、plugin installの終了コードを導入・有効化実体の代わりに完了根拠とした。
   加えてupdate-dotfilesとpost-applyが永続ログを持たず、過去実行の分岐を再構成できなかった。
   対策: marketplace修復後に導入一覧を再読し、非TTY installと導入・有効化実体の事後検証を完了条件にする。
+  現在の有効化の検証では、導入前からユーザー設定で明示的に無効なpluginには `false`、それ以外には `true` を期待する。
   全段とpost-applyステップの開始、終了、所要時間、結果を、機密本文を除外したサイズ制限付き永続ログへ記録する
 
 - 2026年9月13日: 別のWindows環境で、未コミット内容の退避時に`atk`を解決できず`FileNotFoundError: [WinError 2]`でstage 1が停止した。
