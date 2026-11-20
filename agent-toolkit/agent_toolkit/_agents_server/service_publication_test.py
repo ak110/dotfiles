@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -33,7 +34,7 @@ from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
 from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._agents_server.service_resources import ResourceBroker
-from agent_toolkit._common import runtime_environment, session_registry
+from agent_toolkit._common import registry_forwarding, runtime_environment, session_registry
 
 # 終了した受付先への接続の失敗はOSごとに例外が異なる（Windowsの名前付きパイプは`FileNotFoundError`）ため、Windowsでも確かめる。
 pytestmark = pytest.mark.windows
@@ -147,6 +148,51 @@ async def test_surviving_generation_releases_update_abandoned_by_exited_publishe
     projections: Any = coordinator.projections
     registrations.thaw.assert_called_once_with("token")
     projections.thaw.assert_awaited_once_with("token")
+
+
+@pytest.mark.asyncio
+async def test_supervisor_restores_acceptance_with_all_workers_waiting_on_registration(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory, old, new = _superseded(tmp_path, publish_new=False)
+    coordinator = _coordinator(directory, old)
+    registrations = coordinator.registrations = RegistryForwarder("old", directory)
+    exited = False
+    monkeypatch.setattr(service_transport, "process_alive", lambda process: process == old["process"] or not exited)
+    monkeypatch.setattr(service_coordinator, "_PUBLISHER_PROBE_SECONDS", 0.01)
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(ThreadPoolExecutor(max_workers=2))
+    waiting: asyncio.Queue[None] = asyncio.Queue()
+    wait = registrations._condition.wait
+
+    def waiting_on_freeze() -> bool:
+        loop.call_soon_threadsafe(waiting.put_nowait, None)
+        return wait()
+
+    monkeypatch.setattr(registrations._condition, "wait", waiting_on_freeze)
+    await coordinator.prepare("token", new)
+    released = coordinator._updates["token"].released
+    aliases = ["first", "second"]
+    with registry_forwarding.bind(registrations.forward):
+        saves = [asyncio.create_task(asyncio.to_thread(shared_roots.write_root_alias, alias, "root")) for alias in aliases]
+    try:
+        async with asyncio.timeout(5):
+            for _ in saves:
+                await waiting.get()
+            coordinator.registry.publish("new", endpoint=new["endpoint"], process=new["process"])
+            exited = True
+            await released.wait()
+            assert coordinator.gate.current["generation"] == "old"
+            assert coordinator.gate.current["epoch"] == new["epoch"]
+            await asyncio.gather(*saves)
+        for alias in aliases:
+            path = shared_roots.aliases_directory(registrations.state_root) / f"{alias}.json"
+            assert json.loads(path.read_text(encoding="utf-8"))["root_session_id"] == "root"
+    finally:
+        # 修正前の待ち合わせでも、workerを残さず試験を終了する。
+        exited = True
+        registrations.thaw("token")
+        await asyncio.gather(*saves, *coordinator._supervisors)
 
 
 @pytest.mark.parametrize(

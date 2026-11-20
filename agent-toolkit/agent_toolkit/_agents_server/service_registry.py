@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import pathlib
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from agent_toolkit._agents_server import service_rpc, shared_roots
-from agent_toolkit._agents_server.file_operations import run_file_operation
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_state import _StateCodec
 from agent_toolkit._common import registry_forwarding, session_registry
+
+_RECOVERY_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agents-server-recovery")
+
+
+async def restore_generation(registry: GenerationRegistry) -> dict[str, Any] | None:
+    """静止の解除に必要な復旧は、登録保存が解除を待つexecutorへ並べない。"""
+    return await finish_task(asyncio.get_running_loop().run_in_executor(_RECOVERY_EXECUTOR, registry.restore))
 
 
 class RegistryForwarder:
@@ -87,7 +96,7 @@ class RegistryForwarder:
                 return service_rpc.request_sync(target, "registry_mutation", payload)
             except FileNotFoundError, ConnectionRefusedError:
                 # 受付先の世代は終了している。接続前の失敗なので配送は起きておらず、戻した受付先で保存し直せる。
-                restored = self.registry.restore()
+                restored = _RECOVERY_EXECUTOR.submit(self.registry.restore).result()
                 if restored is None or restored["process"] == target["process"]:
                     raise
 

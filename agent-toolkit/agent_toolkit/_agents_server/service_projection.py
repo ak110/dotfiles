@@ -12,6 +12,7 @@ from typing import Any
 from agent_toolkit._agents_server import service_rpc, service_state, shared_roots, state, status_file
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
+from agent_toolkit._agents_server.service_registry import restore_generation
 from agent_toolkit._common.next_action import ActionableError
 
 
@@ -162,7 +163,7 @@ class ProjectionHub:
                     return await service_rpc.request(target, "projection", payload)
                 except FileNotFoundError, ConnectionRefusedError:
                     # 受付先の世代は終了している。接続前の失敗なので配送は起きておらず、戻した受付先で保存し直せる。
-                    restored = await run_file_operation(self.registry.restore)
+                    restored = await restore_generation(self.registry)
                     if restored is None or restored["process"] == target["process"]:
                         raise
                     continue

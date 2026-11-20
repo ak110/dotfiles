@@ -18,7 +18,7 @@ async def run_sync_operation[T](
     return await finish_task(task, on_success=on_success)
 
 
-async def finish_task[T](task: asyncio.Task[T], *, on_success: Callable[[T], None] | None = None) -> T:
+async def finish_task[T](task: asyncio.Future[T], *, on_success: Callable[[T], None] | None = None) -> T:
     """taskの終了と成功時の反映を済ませ、呼出元へキャンセルを伝える。"""
     cancelled = False
     try:
