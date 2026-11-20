@@ -147,8 +147,10 @@ def _run_launcher(
         assert timeout is not None
         (path_dir / "timeout").unlink()
         (path_dir / "timeout").write_text(
-            '#!/usr/bin/env bash\n[[ "$1" == --kill-after=10 ]] || exit 99\nshift 2\n'
-            f'exec "{timeout}" --kill-after=.1 .3 "$@"\n',
+            '#!/usr/bin/env bash\ncase "$1" in\n'
+            f'  --foreground) shift 2; exec "{timeout}" --foreground .3 "$@";;\n'
+            f'  --kill-after=10) shift; exec "{timeout}" --kill-after=.1 "$@";;\n'
+            "  *) exit 99;;\nesac\n",
             encoding="utf-8",
         )
         (path_dir / "timeout").chmod(0o755)
@@ -302,7 +304,8 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
             str(_ROOT / "libexec" / "update_dotfiles.py"),
         ],
     ]
-    assert result.stderr.splitlines() == [_UPDATE_WARNING, "uv run stderr"]
+    diagnostics = [line for line in result.stderr.splitlines() if "Ctrl+C" not in line]
+    assert diagnostics == [_UPDATE_WARNING, "uv run stderr"]
 
 
 @_LINUX_ONLY
@@ -338,7 +341,10 @@ def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib
             str(_ROOT / "libexec" / "update_dotfiles.py"),
         ]
     ]
-    assert result.stderr == "uv run stderr\n"
+    assert result.stderr.splitlines() == [
+        "更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。",
+        "uv run stderr",
+    ]
     assert (tmp_path / "post-apply-calls").exists() is (run_exit == 0)
 
 
@@ -753,7 +759,14 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     assert job_source.count(endpoint) == 1
     job_source = job_source.replace(endpoint, 'sys.executable, str(_ROOT / "libexec/prune.py")')
     (libexec / "update_dotfiles_job.py").write_text(job_source, encoding="utf-8")
-    for name in ("update_bootstrap.ps1", "update_stage.ps1", "update_stage_job.ps1", "locking_process.ps1"):
+    for name in (
+        "update_bootstrap.ps1",
+        "update_stage.ps1",
+        "update_stage_job.ps1",
+        "locking_process.ps1",
+        "update_bootstrap.sh",
+        "update_stage.sh",
+    ):
         shutil.copy2(_ROOT / "libexec" / name, libexec / name)
     prune_calls = tmp_path / "prune-calls"
     (libexec / "prune.py").write_text(

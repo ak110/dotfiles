@@ -40,7 +40,8 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
     common.mkdir(parents=True)
     shutil.copy2(_ROOT / "agent-toolkit/agent_toolkit/_common/windows_job.py", common / "windows_job.py")
     shutil.copy2(_ROOT / "bin/update-dotfiles", root / "bin/update-dotfiles")
-    shutil.copy2(_ROOT / "libexec/update_bootstrap.sh", root / "libexec/update_bootstrap.sh")
+    for name in ("update_bootstrap.sh", "update_stage.sh"):
+        shutil.copy2(_ROOT / "libexec" / name, root / "libexec" / name)
     (root / "libexec/update_uv.sh").write_text('"$1" self update\n', encoding="utf-8")
     child_source = (
         "import os,pathlib; pathlib.Path(os.environ['CHILD_READY']).write_text(str(os.getpid())); "
@@ -170,14 +171,13 @@ def test_public_codex_job_orders_pipeline_and_retrieves_same_result(
     metadata = json.loads((job / "input.json").read_text(encoding="utf-8"))
     assert metadata["arguments"] == ["--prune"] and metadata["thread_id"] == "own-thread"
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
-    assert calls[:4] == [
+    assert calls[:3] == [
         "self update",
         "python install --upgrade 3.15",
         "python find --no-cache 3.15",
-        "python find --no-cache 3.15",
     ]
-    assert calls[4].startswith("run --no-project --script ")
-    assert calls[5:] == ([] if run_exit else ["prune --prune-only-if-minimal --prune"])
+    assert calls[3].startswith("run --no-project --script ")
+    assert calls[4:] == ([] if run_exit else ["prune --prune-only-if-minimal --prune"])
     explicit = _invoke(project, "job", job.name)
     own = _invoke(project, "job")
     assert explicit.returncode == own.returncode == result.returncode
@@ -340,11 +340,15 @@ def test_public_job_collects_output_after_parent_exit(
         stdout, stderr = controller.communicate(timeout=20)
         assert controller.returncode == run_exit, stdout + stderr
         assert "後続出力" * 20000 in stdout
-        assert stderr == "後続診断" * 20000
+        saved = (job / "stderr.log").read_text(encoding="utf-8")
+        notice, diagnostics = saved.split("\n", 1)
+        assert "更新本体の起動" in notice and "Ctrl+C" in notice
+        assert diagnostics == "後続診断" * 20000
+        assert stderr[stderr.index(notice) :] == saved
         retrieved = _invoke(project, "job", job.name)
         assert retrieved.returncode == run_exit
         assert retrieved.stdout == (job / "stdout.log").read_text(encoding="utf-8") + f"job {job.name}: 終了 exit={run_exit}\n"
-        assert retrieved.stderr == stderr == (job / "stderr.log").read_text(encoding="utf-8")
+        assert retrieved.stderr[retrieved.stderr.index(notice) :] == saved
 
 
 @pytest.mark.parametrize("cancel", [False, True], ids=["deadline", "stop"])
@@ -387,7 +391,10 @@ def test_public_job_limits_output_wait_after_parent_exit(
         assert not psutil.pid_exists(int(output_child.read_text(encoding="utf-8")))
         retrieved = _invoke(project, "job", job.name)
         assert retrieved.returncode == controller.returncode
-        assert retrieved.stderr == stderr
+        saved = (job / "stderr.log").read_text(encoding="utf-8")
+        assert (
+            retrieved.stderr[retrieved.stderr.index("更新本体の起動:") :] == stderr[stderr.index("更新本体の起動:") :] == saved
+        )
 
 
 @_POSIX
@@ -514,7 +521,7 @@ def test_native_worker_output_contract(
             assert json.loads((job / "result.json").read_text(encoding="utf-8"))["exit_code"] == code
             if scenario == "late":
                 assert (job / "stdout.log").read_text(encoding="utf-8") == "後続出力" * 20000
-                assert (job / "stderr.log").read_text(encoding="utf-8") == "後続診断" * 20000
+                assert (job / "stderr.log").read_text(encoding="utf-8").split("\n", 1)[1] == "後続診断" * 20000
             if scenario == "detached":
                 assert child is not None and child.is_running()
             if scenario in ("deadline", "stop"):
