@@ -99,15 +99,12 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
                 owner_status_file=manager._status_writer.path.name,
             )
             if environment_owner is None:
-                assert (
-                    notice_inbox.take_notices(
-                        other._status_writer.root_session_id,
-                        session.session_id,
-                        state_root=tmp_path,
-                        recipient_session_id=other._status_writer.launcher_session_id(),
-                        owner_status_file=other._status_writer.path.name,
-                    )
-                    == []
+                assert not notice_inbox.take_notices(
+                    other._status_writer.root_session_id,
+                    session.session_id,
+                    state_root=tmp_path,
+                    recipient_session_id=other._status_writer.launcher_session_id(),
+                    owner_status_file=other._status_writer.path.name,
                 )
         finally:
             await manager.close()
