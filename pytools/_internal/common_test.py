@@ -328,11 +328,11 @@ class TestCollectValueOnlyUpdates:
 
     def test_identical_returns_empty(self):
         """同一値なら空dictを返す。"""
-        assert common._collect_value_only_updates({"a": 1}, {"a": 1}) == {}  # noqa: SLF001
+        assert common._collect_value_only_updates({"a": 1}, {"a": 1}, {"a": 1}) == {}  # noqa: SLF001
 
     def test_scalar_change_returns_path_mapping(self):
         """スカラー値の書き換えはpath→新値のマッピングを返す。"""
-        result = common._collect_value_only_updates({"a": 1}, {"a": 2})  # noqa: SLF001
+        result = common._collect_value_only_updates({"a": 1}, {"a": 2}, {"a": 1})  # noqa: SLF001
         assert result == {("a",): 2}
 
     def test_nested_scalar_change(self):
@@ -340,34 +340,36 @@ class TestCollectValueOnlyUpdates:
         result = common._collect_value_only_updates(  # noqa: SLF001
             {"outer": {"inner": 1}},
             {"outer": {"inner": 2}},
+            {"outer": {"inner": 1}},
         )
         assert result == {("outer", "inner"): 2}
 
     def test_key_addition_returns_none(self):
         """キー追加を含む差分はNoneを返す（構造変化）。"""
-        assert common._collect_value_only_updates({"a": 1}, {"a": 1, "b": 2}) is None  # noqa: SLF001
+        assert common._collect_value_only_updates({"a": 1}, {"a": 1, "b": 2}, {"a": 1}) is None  # noqa: SLF001
 
     def test_key_deletion_returns_none(self):
         """キー削除を含む差分はNoneを返す。"""
-        assert common._collect_value_only_updates({"a": 1, "b": 2}, {"a": 1}) is None  # noqa: SLF001
+        assert common._collect_value_only_updates({"a": 1, "b": 2}, {"a": 1}, {"a": 1, "b": 2}) is None  # noqa: SLF001
 
     def test_list_change_returns_none(self):
         """list全体の差し替えはNoneを返す。"""
-        assert common._collect_value_only_updates({"a": [1, 2]}, {"a": [1, 2, 3]}) is None  # noqa: SLF001
+        assert common._collect_value_only_updates({"a": [1, 2]}, {"a": [1, 2, 3]}, {"a": [1, 2]}) is None  # noqa: SLF001
 
     def test_list_same_returns_empty(self):
         """list同一なら空dictを返す。"""
-        assert common._collect_value_only_updates({"a": [1, 2]}, {"a": [1, 2]}) == {}  # noqa: SLF001
+        assert common._collect_value_only_updates({"a": [1, 2]}, {"a": [1, 2]}, {"a": [1, 2]}) == {}  # noqa: SLF001
 
     def test_type_change_returns_none(self):
         """型変化（dict→scalarなど）はNoneを返す。"""
-        assert common._collect_value_only_updates({"a": {"b": 1}}, {"a": "string"}) is None  # noqa: SLF001
+        assert common._collect_value_only_updates({"a": {"b": 1}}, {"a": "string"}, {"a": {"b": 1}}) is None  # noqa: SLF001
 
     def test_multiple_scalar_changes(self):
         """複数のスカラー変更が同時に検出される。"""
         result = common._collect_value_only_updates(  # noqa: SLF001
             {"a": 1, "b": 2, "c": {"d": 3}},
             {"a": 10, "b": 2, "c": {"d": 30}},
+            {"a": 1, "b": 2, "c": {"d": 3}},
         )
         assert result == {("a",): 10, ("c", "d"): 30}
 
@@ -405,11 +407,11 @@ class TestEditJsoncValues:
 class TestWriteSettingsHybrid:
     """`write_settings_hybrid` の分岐と失敗経路のテスト。"""
 
-    def test_prepared_source_is_saved_without_reformatting_equivalent_values(self, tmp_path: Path):
+    def test_insert_key_preserves_equivalent_values(self, tmp_path: Path):
         path = tmp_path / "settings.json"
         path.write_bytes(b'{ /* keep */ "n": 2.0 }')
         prepared = '{ "days": 180, /* keep */ "n": 2.0 }'
-        assert common.write_settings_hybrid(path, {"days": 180, "n": 2.0}, {"days": 180, "n": 2}, prepared_source=prepared)
+        assert common.write_settings_hybrid(path, {"n": 2.0}, {"days": 180, "n": 2}, insert_key="days")
         assert path.read_bytes() == prepared.encode()
 
     def test_scalar_change_uses_jsonc_edit(self, tmp_path: Path):
@@ -429,6 +431,13 @@ class TestWriteSettingsHybrid:
         text = path.read_text(encoding="utf-8")
         assert "// コメント" not in text
         assert json.loads(text) == {"a": 1, "b": 2}
+
+    def test_full_rewrite_does_not_revert_a_user_type_change(self, tmp_path: Path):
+        path = tmp_path / "settings.json"
+        latest = b'{"user": 1 /* number, not boolean */}'
+        path.write_bytes(latest)
+        assert not common.write_settings_hybrid(path, {"user": True}, {"user": True, "added": []})
+        assert path.read_bytes() == latest
 
     def test_new_file_uses_full_write(self, tmp_path: Path):
         """既存ファイル無しなら全書き換え経路で新規作成する。"""

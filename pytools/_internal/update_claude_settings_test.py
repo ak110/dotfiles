@@ -325,6 +325,47 @@ class TestJsoncCommentPreservation:
         assert not mod.run().changed
         assert path.read_bytes() == written
 
+    @pytest.mark.parametrize(
+        ("latest", "expected"),
+        [
+            (
+                '{ /* new reason */ "theme": "light", "limit": 6 }',
+                '{ "cleanupPeriodDays": 180, /* new reason */ "theme": "light", "limit": 9 }',
+            ),
+            (
+                '{ /* keep */ "cleanupPeriodDays": 180, "extra": {}, "limit": 6 }',
+                '{ /* keep */ "cleanupPeriodDays": 180, "extra": {}, "limit": 9 }',
+            ),
+            (
+                '{ /* already saved */ "cleanupPeriodDays": 180, "limit": 9 }',
+                '{ /* already saved */ "cleanupPeriodDays": 180, "limit": 9 }',
+            ),
+            ('{ "limit": {"user": true} }', None),
+            ('{ "cleanupPeriodDays": {"user": true}, "limit": 6 }', None),
+            ('{ "renamed": 6 }', None),
+            ('{ "theme":', None),
+        ],
+        ids=["user-save", "days-already-set", "both-already-set", "changed-type", "days-object", "renamed", "invalid"],
+    )
+    def test_run_merges_only_pending_changes_into_latest_save(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, latest: str, expected: str | None
+    ) -> None:
+        path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180, "limit": 9})
+        path.write_text('{ /* old reason */ "theme": "dark", "limit": 6 }', encoding="utf-8")
+        read = Path.read_text
+
+        def read_then_save(file: Path, *args, **kwargs) -> str:
+            result = read(file, *args, **kwargs)
+            if file == path:
+                monkeypatch.setattr(Path, "read_text", read)
+                path.write_text(latest, encoding="utf-8")
+            return result
+
+        monkeypatch.setattr(Path, "read_text", read_then_save)
+        outcome = mod.run()
+        assert (outcome.failure is None) == (expected is not None)
+        assert path.read_bytes() == (latest if expected is None else expected).encode()
+
     @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
     def test_retention_insertion_with_scalar_updates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newline: str

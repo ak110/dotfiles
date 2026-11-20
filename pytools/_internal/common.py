@@ -484,38 +484,39 @@ def atomic_write_bytes(path: Path, content: bytes, *, mode: int | None = None, t
 def _collect_value_only_updates(
     original: object,
     updated: object,
+    latest: object,
     path: tuple[str | int, ...] = (),
 ) -> dict[Sequence[str | int], object] | None:
     """既存パスの値置換のみで済む差分を収集する。
 
     `pytilpack.jsonc.edit` が扱える更新（既存パスの値書き換え）のみで
     ``original`` から ``updated`` への変化を再現できる場合、
-    パス→新値のマッピングを返す。
+    最新の設定でも同じ型のスカラーを指すパスと、まだ反映されていない新値を返す。
     構造変化（片方のみに存在するキー・list全体の差し替え・型変化）を
     検出した場合は ``None`` を返し、呼び出し元にフォールバック（全書き換え）を促す。
     ``list`` は要素同一（順序含む）でなければ構造変化として扱う。
     """
     if type(original) is not type(updated):
         return None
+    if type(latest) is not type(updated):
+        return {} if original == updated else None
     if isinstance(original, dict):
-        assert isinstance(updated, dict)
+        assert isinstance(updated, dict) and isinstance(latest, dict)
         original_dict = cast("dict[str | int, object]", original)
         updated_dict = cast("dict[str | int, object]", updated)
-        if set(original_dict.keys()) != set(updated_dict.keys()):
+        if original_dict.keys() != updated_dict.keys():
             return None
         result: dict[Sequence[str | int], object] = {}
         for key in original_dict:
-            sub = _collect_value_only_updates(original_dict[key], updated_dict[key], (*path, key))
+            sub = _collect_value_only_updates(original_dict[key], updated_dict[key], latest.get(key), (*path, key))
             if sub is None:
                 return None
             result.update(sub)
         return result
+    if updated in (original, latest):
+        return {}
     if isinstance(original, list):
-        if original != updated:
-            return None
-        return {}
-    if original == updated:
-        return {}
+        return None
     return {path: updated}
 
 
@@ -529,37 +530,60 @@ def _edit_jsonc_values(source: str, updates: Mapping[Sequence[str | int], object
     return prefix + re.sub("\n", lambda _: next(line_endings), edited)
 
 
+def _insert_root_setting(source: str, key: str, value: object, *, has_members: bool) -> str:
+    """jsonc.editでは追加できないキーを、解析済みのオブジェクトの開き括弧の直後へ挿入する。"""
+    # ルートの前に置かれたコメント内の「{」は挿入位置ではない。
+    tokens = re.finditer(r"//[^\r\n]*|/\*.*?\*/|\{", source, re.DOTALL)
+    start = next(token.end() for token in tokens if token[0] == "{")
+    rest = source[start:]
+    indent = rest[: len(rest) - len(rest.lstrip())]
+    entry = f"{json.dumps(key)}: {json.dumps(value)}"
+    return source[:start] + indent + entry + ("," if has_members else "") + rest
+
+
 def write_settings_hybrid(
     path: Path,
     original: object,
     data: object,
     *,
     tag: str | None = None,
-    prepared_source: str | None = None,
+    insert_key: str | None = None,
     preserve_bom: bool = False,
 ) -> bool:
-    """マージ結果を対象ファイルへ書き戻すハイブリッド経路。
+    """保存直前のJSONCに既存スカラーの差分と指定されたルートキーの追加だけを反映する。
 
-    既存パスの値置換のみで済む差分ならJSONCコメント・空行・インデントを維持する
-    経路で書き戻す。``prepared_source`` は呼び出し元が編集したJSONCで、
-    この場合は ``original`` にその解析値を渡し、残りの置換と一度に保存する。
-    構造変化を含む場合やJSONC形式の更新に失敗した場合は全書き換え経路（``json.dumps`` + ``atomic_write_text``）へ
-    フォールバックする。両経路とも原子的書き込みで統一しており、書き込み失敗時は
-    ``False`` を返す。``preserve_bom`` を指定すると全書き換えでも既存のUTF-8 BOMを保つ。
-
-    ``pytilpack.jsonc.edit`` は元テキストの再パース時に、コンカレントな他プロセス
-    書き込みでパス構造が変化した場合に ``KeyError``・``IndexError``・``TypeError``・
-    ``ValueError`` を送出する。これらを捕捉して全書き換え経路へ倒す。
+    その他の構造変更は初読時の内容が残っている場合だけ全書き換えする。
+    ``insert_key`` は既存ファイルに初めて追加するキーに限って指定する。
     """
-    if prepared_source is not None and original == data:
-        return atomic_write_bytes(path, prepared_source.encode("utf-8"), tag=tag)
-    updates = _collect_value_only_updates(original, data) if path.exists() else None
-    if updates:
+    try:
+        source = path.read_text(encoding="utf-8", newline="")
+        latest = pytilpack.jsonc.loads(re.sub(r"\r\n?", "\n", source.removeprefix("\ufeff")))
+    except FileNotFoundError:
+        if insert_key is None and original == {}:
+            return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
+        return False
+    except OSError, ValueError:
+        return False
+
+    edited = source
+    base = original
+    if insert_key is not None:
+        if not isinstance(original, dict) or not isinstance(data, dict) or not isinstance(latest, dict):
+            return False
+        value = data[insert_key]
+        if insert_key not in latest:
+            edited = _insert_root_setting(source, insert_key, value, has_members=bool(latest))
+        base = {**original, insert_key: latest.get(insert_key, value)}
+
+    updates = {} if base == data else _collect_value_only_updates(base, data, latest)
+    if updates is not None:
         with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
-            source = prepared_source if prepared_source is not None else path.read_text(encoding="utf-8", newline="")
-            edited = _edit_jsonc_values(source, updates)
-            if prepared_source is not None or edited != source:
-                return atomic_write_bytes(path, edited.encode("utf-8"), tag=tag)
+            if updates:
+                edited = _edit_jsonc_values(edited, updates)
+            return edited == source or atomic_write_bytes(path, edited.encode("utf-8"), tag=tag)
+    # dictの等価比較では、JSONのtrueと1を区別できない。
+    if json.dumps(latest) != json.dumps(original):
+        return False
     return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
 
 
