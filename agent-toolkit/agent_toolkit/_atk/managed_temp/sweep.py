@@ -759,7 +759,7 @@ def _daily_sweep(
             metadata = child.lstat()
         except FileNotFoundError:
             continue
-        if paths.is_link(metadata):
+        if child in protected_sessions or paths.is_link(metadata):
             continue
         latest = None
         try:
