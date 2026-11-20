@@ -161,6 +161,7 @@ def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_p
     [
         ("preflight", 2, "synthetic record sweep failed"),
         ("model-config", 2, "synthetic model settings failed"),
+        ("execution-setup", 1, "synthetic process identity failed"),
         ("child", 7, "[stderr] session stderr line"),
     ],
 )
@@ -187,6 +188,12 @@ def test_batch_preserves_failure_log(
             raise run_skill.ActionableError(diagnostic, next_action="合成モデル設定を確認する")
 
         monkeypatch.setattr(config, "parse_unresolved_model_candidates", fail_settings)
+    elif case == "execution-setup":
+
+        def fail_launch(*_args: object, **_kwargs: object) -> None:
+            raise run_skill.ActionableError(diagnostic, next_action="合成プロセスの状態を確認する")
+
+        monkeypatch.setattr(run_skill, "_run_locked", fail_launch)
     else:
         monkeypatch.setenv("FAKE_REPORT_MODE", "missing")
         monkeypatch.setenv("FAKE_SESSION_EXIT", str(exit_code))
@@ -197,7 +204,8 @@ def test_batch_preserves_failure_log(
     (manifest_path,) = (session_review.directory() / "runs").glob("*.json")
     manifest = session_review.read(manifest_path)
     assert [item["session_id"] for item in manifest["prepared"]] == [session_id]
-    assert manifest["status"] == "failed" and manifest["exit_code"] == exit_code
+    assert manifest["status"] == "failed"
+    assert manifest["exit_code"] == (None if case == "execution-setup" else exit_code)
     log_path = pathlib.Path(manifest["log_path"])
     assert log_path in session_review.protected_logs()
     assert diagnostic in log_path.read_text(encoding="utf-8")
@@ -208,6 +216,8 @@ def test_batch_preserves_failure_log(
         if f"session_review_failure_key: {manifest['failure_key']}" in (body := path.read_text(encoding="utf-8"))
     ]
     assert diagnostic in failure_body
+    if case == "execution-setup":
+        assert "合成プロセスの状態を確認する" in failure_body
     if case != "child":
         assert diagnostic in manifest["error"]
         assert "次の操作:" in log_path.read_text(encoding="utf-8")

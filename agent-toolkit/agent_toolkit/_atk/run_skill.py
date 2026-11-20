@@ -206,6 +206,8 @@ def _dispatch_once(args: argparse.Namespace) -> int:
             return _dispatch_with_log(args, record, log, log_path, progress)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             _log_line(log, f"終了状態: 起動または実行に失敗した: {error}")
+            if isinstance(error, ActionableError):
+                _log_line(log, f"次の操作: {error.next_action}")
             raise
 
 
@@ -288,9 +290,11 @@ def _dispatch_with_log(
         except filelock.Timeout:
             args.run_skill_concurrent = True
             _log_line(log, "終了状態: 同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった")
+            next_action = "進行中の実行の終了を確認してから、`atk run-skill`を元の引数で再実行する"
+            _log_line(log, f"次の操作: {next_action}")
             _outcome.report_failure(
                 f"同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった（ログ: {log_path}）",
-                next_action="進行中の実行の終了を確認してから、`atk run-skill`を元の引数で再実行する",
+                next_action=next_action,
             )
             return CONCURRENT_EXIT_CODE
         with _console_title.console_title(_TITLE):
