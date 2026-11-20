@@ -1,3 +1,4 @@
+import asyncio
 import os
 import pathlib
 import stat
@@ -7,8 +8,10 @@ from collections.abc import Callable
 from typing import NoReturn
 
 import pytest
+from agent_toolkit._common import codex_models
 
-from pytools import agent_launcher
+from pytools import agent_launcher, codex_launcher
+from pytools._internal.codex_transport import RpcChannel
 
 # 計画で指定された分岐条件を、外部プロセスを起動せず直接検証する。
 # pylint: disable=protected-access
@@ -200,18 +203,18 @@ def test_posix_launch_replaces_process_with_command_name(
         (agent_launcher.main_terra, "terra"),
     ],
 )
-def test_codex_entrypoint_uses_shared_profile_and_runtime(
+def test_codex_entrypoint_uses_shared_config_and_runtime(
     entrypoint: Entrypoint,
     family: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     binary = tmp_path / "codex"
-    args = ["--profile", "work", "-c", "model_provider=provider", "--cd", str(tmp_path), "--", "--model"]
+    args = ["-c", "model_provider=provider", "--cd", str(tmp_path), "--", "--model"]
     calls: list[tuple[pathlib.Path, list[str]]] = []
 
     def list_models(command: tuple[str, ...], *, cwd: str | None) -> list[dict[str, str]]:
-        assert command == (str(binary), "--profile", "work", "-c", "model_provider=provider", "app-server", "--stdio")
+        assert command == (str(binary), "-c", "model_provider=provider", "app-server", "--stdio")
         assert cwd == str(tmp_path)
         return [{"model": f"gpt-5.7-{family}"}, {"model": f"gpt-9.2-{family}"}]
 
@@ -220,7 +223,7 @@ def test_codex_entrypoint_uses_shared_profile_and_runtime(
         return 23
 
     monkeypatch.setattr(agent_launcher.codex_runtime, "find_runtime_launcher", lambda *, windows: binary)
-    monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", list_models)
+    monkeypatch.setattr(codex_models, "list_models_at", list_models)
     monkeypatch.setattr(agent_launcher.codex_launcher, "launch_resolved", launch)
     with pytest.raises(SystemExit, match="23"):
         entrypoint(args)
@@ -233,6 +236,7 @@ def test_codex_entrypoint_uses_shared_profile_and_runtime(
         ["--help"],
         ["--version"],
         ["login"],
+        ["-a", "never", "login", "status"],
         ["plugin", "list"],
         ["--model=exact"],
         ["--model", "exact"],
@@ -242,9 +246,9 @@ def test_codex_entrypoint_uses_shared_profile_and_runtime(
     ],
 )
 def test_codex_catalog_not_needed(args: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    binary = pathlib.Path("codex")
+    binary = pathlib.Path("codex").absolute()
     monkeypatch.setattr(agent_launcher.codex_runtime, "find_runtime_launcher", lambda *, windows: binary)
-    monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", lambda *a, **kw: pytest.fail("一覧は不要"))
+    monkeypatch.setattr(codex_models, "list_models_at", lambda *a, **kw: pytest.fail("一覧は不要"))
     calls: list[tuple[pathlib.Path, list[str]]] = []
 
     def launch(runtime: pathlib.Path, arguments: list[str]) -> int:
@@ -261,13 +265,13 @@ def test_codex_catalog_failure_points_to_explicit_model(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    binary = pathlib.Path("codex")
+    binary = pathlib.Path("codex").absolute()
     monkeypatch.setattr(agent_launcher.codex_runtime, "find_runtime_launcher", lambda *, windows: binary)
 
     def fail(*args: object, **kwargs: object) -> list[dict[str, str]]:
         raise ValueError("ここは非公開の疑似診断")
 
-    monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", fail)
+    monkeypatch.setattr(codex_models, "list_models_at", fail)
     monkeypatch.setattr(agent_launcher.codex_launcher, "launch_resolved", lambda *args: pytest.fail("起動してはいけない"))
     with pytest.raises(SystemExit, match="1"):
         agent_launcher.main_sol([])
@@ -276,6 +280,79 @@ def test_codex_catalog_failure_points_to_explicit_model(
     assert "--model" in diagnostic
     assert "--model-type" not in diagnostic
     assert "非公開の疑似診断" not in diagnostic
+
+
+@pytest.mark.parametrize("args", [["-p", "work"], ["exec", "--ignore-user-config", "prompt"]])
+def test_codex_catalog_never_replaces_requested_settings(
+    args: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(agent_launcher.codex_runtime, "find_runtime_launcher", lambda *, windows: pathlib.Path("codex"))
+    monkeypatch.setattr(codex_models, "list_models_at", lambda *a, **kw: pytest.fail("異なる設定に変えない"))
+    monkeypatch.setattr(agent_launcher.codex_launcher, "launch_resolved", lambda *args: pytest.fail("起動してはいけない"))
+    with pytest.raises(SystemExit, match="1"):
+        agent_launcher.main_sol(args)
+    assert "--model" in capsys.readouterr().err
+
+
+def test_codex_runtime_disappears_before_launch(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(agent_launcher.codex_runtime, "find_runtime_launcher", lambda *, windows: pathlib.Path("gone"))
+
+    def disappeared(*args: object) -> int:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(agent_launcher.codex_launcher, "launch_resolved", disappeared)
+    with pytest.raises(SystemExit, match="127"):
+        agent_launcher.main_sol(["--model=exact"])
+    assert "update-dotfiles" in capsys.readouterr().err
+
+
+def test_codex_completion_uses_same_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    binary = tmp_path / "native-codex"
+    monkeypatch.setattr(agent_launcher.codex_runtime, "find_runtime_launcher", lambda *, windows: binary)
+
+    def options(path: str) -> list[str]:
+        assert path == str(binary)
+        return ["--model", "--profile"]
+
+    monkeypatch.setattr(agent_launcher, "_get_claude_options", options)
+    assert agent_launcher._complete_codex_options("--m") == ["--model"]
+
+
+@pytest.mark.asyncio
+async def test_codex_remote_catalog_uses_the_same_authenticated_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = "catalog-fixture-token"
+    monkeypatch.setenv("TEST_CODEX_REMOTE_BEARER", token)
+    finished = asyncio.Event()
+
+    async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            channel = RpcChannel(reader, writer, client=False)
+            await channel.handshake(token=token)
+            initialize = await channel.receive()
+            assert initialize["method"] == "initialize"
+            await channel.send({"id": initialize["id"], "result": {}})
+            assert (await channel.receive())["method"] == "initialized"
+            request = await channel.receive()
+            assert request["method"] == "model/list"
+            await channel.send({"id": request["id"], "result": {"data": [{"model": "gpt-12-sol"}]}})
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            finished.set()
+
+    async with await asyncio.start_server(serve, "127.0.0.1", 0) as server:
+        assert server.sockets
+        port = server.sockets[0].getsockname()[1]
+        catalog = await codex_launcher._remote_model_catalog(
+            pathlib.Path("not-used"), f"ws://127.0.0.1:{port}/catalog", "TEST_CODEX_REMOTE_BEARER"
+        )
+        await asyncio.wait_for(finished.wait(), 3)
+    assert codex_models.latest_model("sol", catalog) == "gpt-12-sol"
 
 
 def test_codex_missing_returns_127(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -290,6 +367,8 @@ def test_codex_missing_returns_127(capsys: pytest.CaptureFixture[str], monkeypat
     [
         (["--model=exact"], True),
         (["--model", "exact"], True),
+        (["--resume", "--model", "exact"], True),
+        (["--resume", "session", "--model", "exact"], True),
         (["--settings", "--model", "--", "prompt"], False),
         (["--", "--model"], False),
         (["--help"], True),

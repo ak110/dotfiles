@@ -12,8 +12,6 @@ import sys
 from collections.abc import Callable
 from typing import NoReturn
 
-lazy from agent_toolkit._common import codex_models
-
 from pytools._internal import common
 from pytools._internal.cli import enable_completion
 lazy from pytools import codex_launcher
@@ -73,8 +71,9 @@ def _suppress_claude_default_model(arguments: list[str]) -> bool:
         name, equal, _value = token.partition("=")
         if name in {"--model", "--help", "-h", "--version", "-v", "-V"}:
             return True
-        if name in _CLAUDE_VALUE_OPTIONS:
-            index += 0 if equal else 1
+        if name in _CLAUDE_VALUE_OPTIONS and not equal:
+            if name not in {"--resume", "-r"} or (index + 1 < len(arguments) and not arguments[index + 1].startswith("-")):
+                index += 1
         elif not name.startswith("-") and not seen_positional:
             if name in _CLAUDE_MANAGEMENT:
                 return True
@@ -143,10 +142,10 @@ def _complete_claude_options(prefix: str, **_: object) -> list[str]:
 
 
 def _complete_codex_options(prefix: str, **_: object) -> list[str]:
-    codex_bin = _resolve_command("codex", pathlib.Path.home(), _resolve_executable)
+    codex_bin = codex_runtime.find_runtime_launcher(windows=os.name == "nt")
     if codex_bin is None:
         return []
-    return [option for option in _get_claude_options(codex_bin) if option.startswith(prefix)]
+    return [option for option in _get_claude_options(str(codex_bin)) if option.startswith(prefix)]
 
 
 def _enable_model_completion(command_name: str) -> None:
@@ -379,23 +378,23 @@ def _main_codex(family: str, argv: list[str] | None) -> NoReturn:
     if binary is None:
         print("codexコマンドが見つかりません。update-dotfilesでCodexを導入して再実行してください。", file=sys.stderr)
         sys.exit(127)
+    binary = binary.absolute()
     try:
         catalog_args = codex_launcher.series_catalog_arguments(arguments)
         if catalog_args is not None:
-            settings, cwd = catalog_args
-            try:
-                catalog = codex_models.list_models_at((str(binary), *settings, "app-server", "--stdio"), cwd=cwd)
-            except (OSError, ValueError) as error:
-                # App Serverの診断には引数で渡した設定の機密値が含まれる場合がある。
-                raise ValueError("モデル一覧を取得できません") from error
-            arguments = ["-m", codex_models.latest_model(family, catalog), *arguments]
+            arguments = ["-m", codex_launcher.resolve_series_model(binary, family, catalog_args), *arguments]
     except ValueError as error:
         print(
             f"Codexの{family}系列を選べません: {error}。接続とログインを確認するか、--modelで完全IDを指定してください。",
             file=sys.stderr,
         )
         sys.exit(1)
-    sys.exit(codex_launcher.launch_resolved(binary, arguments))
+    try:
+        status = codex_launcher.launch_resolved(binary, arguments)
+    except OSError:
+        print("codexを起動できません。update-dotfilesでCodexの導入先を確認してください。", file=sys.stderr)
+        status = 127
+    sys.exit(status)
 
 
 def main_astra(argv: list[str] | None = None) -> NoReturn:
