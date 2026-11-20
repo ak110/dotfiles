@@ -594,10 +594,37 @@ class RangeRewrite:
     retained: tuple[str, ...] = ()
 
 
+def _destinations_by_oid(worktree: pathlib.Path, value: object) -> set[tuple[str, frozenset[str] | None]]:
+    """旧OIDの対応先を、記録順や短縮OIDの桁数によらず比べられる形で返す。"""
+    return {
+        (_full_oid(worktree, oid), None if names is None else frozenset(names)) for oid, names in rewrite_destinations(value)
+    }
+
+
+def _already_rewritten(
+    worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str], rewrite: RewriteMap
+) -> bool:
+    """直近の追記にある旧OIDと、その記録に割り当てた宛先が今回の書換えと一致するかを返す。"""
+    recorded = events[-1].get("rewrite")
+    if not isinstance(recorded, dict):
+        return False
+    before = read_mapping(worktree, events[:-1], allowed_wis)
+    for old, applied in recorded.items():
+        source = _full_oid(worktree, old)
+        # 対応表にはHEADに残ったOIDの自己対応も入るが、それは今回の書換えではない。
+        if source not in rewrite or _is_ancestor(worktree, source, "HEAD"):
+            return False
+        expected = _resolved_value(worktree, rewrite[source], names=before[source])
+        if _destinations_by_oid(worktree, applied) != _destinations_by_oid(worktree, expected):
+            return False
+    return True
+
+
 def range_rewrite_event(
-    worktree: pathlib.Path, mapping: dict[str, set[str]], rewrite: RewriteMap, previous_head: str
+    worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str], rewrite: RewriteMap, previous_head: str
 ) -> RangeRewrite:
-    """旧HEADにだけ含まれるOIDを付け替える。両HEADに無いOIDは、同じ記録に対象が無い時だけ未追記とする。"""
+    """旧HEADにだけ含まれるOIDを付け替える。今回の対象も適用済みの追記も無い記録は、範囲外のOIDを未追記とする。"""
+    mapping = read_mapping(worktree, events, allowed_wis)
     previous = _full_oid(worktree, previous_head)
     targets = []
     outside = []
@@ -609,6 +636,8 @@ def range_rewrite_event(
         else:
             outside.append(oid)
     if not targets:
+        if outside and _already_rewritten(worktree, events, allowed_wis, rewrite):
+            return RangeRewrite(retained=tuple(outside))
         return RangeRewrite(past_omissions=tuple(outside))
     if missing := tuple(oid for oid in targets if oid not in rewrite):
         return RangeRewrite(missing=missing, retained=tuple(outside))

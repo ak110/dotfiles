@@ -3,7 +3,8 @@
 書換えで検収した範囲全体の対応表（WI対応を持たないcommitを含む）と書換え前のHEADを受け取り、
 書換え前のHEADから到達でき、現在のHEADから到達できないcommitだけを付け替える。
 対象commitを含む記録では、どちらのHEADにも無いOIDを変えずに残し、その件数と値を表示する。
-対象commitを含まない記録にどちらのHEADにも無いOIDがあれば、過去の書換えの未追記として拒否する。
+今回の書換えを追記済みの記録は変えない。
+それ以外で対象commitが無く、どちらのHEADにも無いOIDを持つ記録は、過去の書換えの未追記として拒否する。
 作業中・保存済み計画とmanaged-tempから未指定の対象記録を検出し、複数の対応表は書換え順に合成する。
 全ての記録を検証してから書込みを始め、対応表の不足・過去の書換えの未追記・対応表の誤り・保存済み計画のいずれかがあれば
 どの記録も変えずに失敗する。計画には進捗ログの1行を、引き継ぎ記録には`<完了した工程>: <結果>`の1行を追記する。
@@ -18,7 +19,9 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import pathlib
+import shutil
 import subprocess
+import tempfile
 
 import append_progress_log
 from agent_toolkit._atk import managed_temp
@@ -136,8 +139,9 @@ def _plan_events(
         try:
             content = record.path.read_text(encoding="utf-8")
             events = commit_mapping.read_events(record.path, content)
-            mapping = commit_mapping.read_mapping(worktree, events, _allowed_wis(record, content, events))
-            change = commit_mapping.range_rewrite_event(worktree, mapping, rewrite, previous_head)
+            change = commit_mapping.range_rewrite_event(
+                worktree, events, _allowed_wis(record, content, events), rewrite, previous_head
+            )
             if change.event is not None:
                 _check_writable(record, completed_step, result)
         except _next_action.ActionableError as error:
@@ -165,6 +169,23 @@ def _plan_events(
             actions.append(_PAST_OMISSION_ACTION)
         planned.append((record, change))
     return planned, problems, list(dict.fromkeys(actions))
+
+
+def _append_record(record: _Record, event: dict[str, object], completed_step: str, result: str) -> None:
+    """対応記録の追記に失敗したら本文を戻し、再実行で進捗の行が重複するのを防ぐ。"""
+    with tempfile.TemporaryDirectory(dir=record.path.parent) as directory:
+        # 容量不足で追記できなくても、本文の復元には新たな書込みを要しない。
+        original = pathlib.Path(directory) / record.path.name
+        shutil.copy2(record.path, original)
+        if record.handoff:
+            append_progress_log.append_handoff_log(record.path, completed_step, result)
+        else:
+            append_progress_log.append_progress_log(record.path, completed_step, result)
+        try:
+            commit_mapping.append_event(record.path, event)
+        except OSError:
+            original.replace(record.path)
+            raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -257,11 +278,14 @@ def main(argv: list[str] | None = None) -> int:
         if event is None:
             print(f"変更なし: {record.path}{retained}")
             continue
-        if record.handoff:
-            append_progress_log.append_handoff_log(record.path, args.completed_step, args.result)
-        else:
-            append_progress_log.append_progress_log(record.path, args.completed_step, args.result)
-        commit_mapping.append_event(record.path, event)
+        try:
+            _append_record(record, event, args.completed_step, args.result)
+        except OSError as error:
+            _next_action.report(
+                f"{record.path}: 履歴変更の対応を追記できません: {error}",
+                next_action="書込エラーを解消し、同じ引数で再実行する。追記済みの記録は変えない",
+            )
+            return 1
         rewritten = event["rewrite"]
         assert isinstance(rewritten, dict)
         print(f"追記: {record.path}（{len(rewritten)}件）{retained}")
