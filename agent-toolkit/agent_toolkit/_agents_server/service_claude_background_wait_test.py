@@ -88,7 +88,7 @@ async def test_generation_move_keeps_background_wait(
                 client = clients[0]
                 client.pause()
                 descriptor = await client.detach()
-                # 背景タスクの進捗イベントで旧世代のevents待ちが戻る（無ければ30秒で戻る）。
+                # バックグラウンドタスクの進捗イベントで旧世代のevents待ちが戻る（無ければ30秒で戻る）。
                 await messages.put(_state("idle"))
                 await asyncio.gather(*tuple(source._tasks))
                 held_after_pause = session.awaiting_auto_resume
