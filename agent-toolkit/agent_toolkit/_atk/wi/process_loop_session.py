@@ -333,7 +333,9 @@ def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "")
     sys.exit(returncode)
 
 
-def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None) -> dict[str, Any]:
+def cleanup_lane_session(
+    lane_session_id: str, *, target_repo: str | None = None, retire_integrated: bool = False
+) -> dict[str, Any]:
     """担当の終了を確定した後に、終了sessionの解放応答を待たず同じ適格判定でレーン資源を回収する。
 
     単一起動の子終了後と、all-reposで担当の所有を解放した後の両方でこの処理を実行する。
@@ -345,7 +347,10 @@ def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None
     scope = "" if target_repo is None else f"{target_repo}: "
     fields: dict[str, Any] = {} if target_repo is None else {"target_repo": target_repo}
     try:
-        cleanup = _lane.cleanup_session(lane_session_id, wait_release=False)
+        if retire_integrated:
+            cleanup = _lane.cleanup_session(lane_session_id, wait_release=False, retire_integrated=True)
+        else:
+            cleanup = _lane.cleanup_session(lane_session_id, wait_release=False)
     except Exception as error:
         # 境界層で全例外を捕捉する。回収できなかった資源は登録とともに残り、同じ操作で再回収できる。
         _process_loop_log.append("lane_cleanup", **fields, lane_session_id=lane_session_id, error=str(error))

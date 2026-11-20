@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._atk import lane
+from agent_toolkit._atk import lane, lane_activity
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository
@@ -40,6 +40,49 @@ def test_delete_uses_held_selection_after_selection_file_expires(
     else:
         assert code == 1 and result["retained"][0]["reason"] == "選定の統合状態が未統合"
         assert pathlib.Path(record["worktree"]).is_dir() and pathlib.Path(record["record_path"]).is_file()
+
+
+@pytest.mark.cpu_limit(3.0, reason="実Gitの旧レーン、統合先の履歴と公開回収操作を比較する。")
+@pytest.mark.parametrize("kind", ["merged", "equivalent", "whitespace", "dirty", "running", "unique", "initial"])
+def test_retired_lane_only_removes_covered_changes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
+) -> None:
+    """未統合の選定の終了を偽らず、確認済み取込み・未使用・cleanの旧資源だけ回収する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _selection(selected, integrated=False)
+    worktree = pathlib.Path(record["worktree"])
+    record_path = pathlib.Path(record["record_path"])
+    if kind != "initial":
+        (worktree / "lane-content.txt").write_text("  成果\n", encoding="utf-8")
+        head = git_repository.commit_all(worktree, "レーン成果")
+        if kind in {"merged", "dirty", "running"}:
+            git_repository.run_git(repo, "merge", "--ff-only", head)
+        elif kind == "equivalent":
+            (repo / "other.txt").write_text("他の変更\n", encoding="utf-8")
+            git_repository.commit_all(repo, "統合先の別の変更")
+            git_repository.run_git(repo, "cherry-pick", head)
+        elif kind == "whitespace":
+            (repo / "lane-content.txt").write_text("成果\n", encoding="utf-8")
+            git_repository.commit_all(repo, "別の内容")
+    if kind == "dirty":
+        (worktree / "local.txt").write_text("未保存", encoding="utf-8")
+    if kind == "running":
+        monkeypatch.setattr(lane_activity, "worktree_activity", lambda *_a, **_k: "使用中")
+    git_repository.run_git(repo, "branch", "user-owned")
+
+    code, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
+
+    if kind in {"merged", "equivalent"}:
+        assert code == 0 and result["removed"] == ["lane-01"], stderr
+        assert not record_path.exists() and not worktree.exists()
+        proof = result["retirement_inputs"][0]
+        assert proof["basis"] == ("ancestor" if kind == "merged" else "equivalent-patch")
+        assert proof["selection"]["integrated"] is False
+        assert selected.exists()
+    else:
+        assert code == 1 and result["retained"], stderr
+        assert record_path.exists() and worktree.is_dir()
+    assert git_repository.git_output(repo, "branch", "--list", "user-owned").strip() == "user-owned"
 
 
 @pytest.mark.usefixtures("leaf_git_commands")

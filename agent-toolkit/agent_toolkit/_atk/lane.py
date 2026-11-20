@@ -71,6 +71,11 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     delete_parser = help_text.add_command(children, "delete", **help_text.HELP["atk lane delete"])
     delete_parser.add_argument("--session-id", help="回収する所有session。省略すると実行環境から解決する。")
     delete_parser.add_argument("--list", action="store_true", help="全sessionの登録と前回結果を読み、削除しない。")
+    delete_parser.add_argument(
+        "--retire-integrated",
+        action="store_true",
+        help="終了確認済みの旧所有sessionで、取込み済みの未統合登録を回収する。--session-idが必要。",
+    )
     recover_parser = help_text.add_command(children, "recover", **help_text.HELP["atk lane recover"])
     recover_parser.add_argument("--session-id", required=True, help="回復する旧登録の所有session。")
     recover_parser.add_argument("--lane", action="append", default=None, help="対象のlane-NN。省略すると全登録。複数指定可能。")
@@ -136,7 +141,10 @@ def dispatch(args: argparse.Namespace) -> int:
         elif args.lane_subcommand == "recover":
             result = _lane_cleanup.recover(session_id, args.lane)
         else:
-            result = _lane_cleanup.cleanup_session(session_id)
+            retire = getattr(args, "retire_integrated", False)
+            if retire and not args.session_id:
+                raise ValueError("--retire-integratedには終了確認済みの--session-idが必要")
+            result = _lane_cleanup.cleanup_session(session_id, retire_integrated=retire)
         print(json.dumps(result, ensure_ascii=False))
         if result.get("target_advanced"):
             outcome.report_warning(
