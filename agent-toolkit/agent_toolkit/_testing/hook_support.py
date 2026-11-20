@@ -5,14 +5,11 @@ import os
 import pathlib
 import subprocess
 import sys
-from collections.abc import Iterator
 
 import pytest
 
-from agent_toolkit._common import read_triggers
-from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
-lazy from agent_toolkit._hooks.pretooluse import dispatch
+lazy from agent_toolkit._hooks.pretooluse import operation_skills
 
 _SCRIPT = (pathlib.Path(__file__).resolve().parents[1] / "hook_test.py").parent / "hook.py"
 
@@ -112,17 +109,7 @@ def _call_hook_in_process(
     return result.stderr if expected_code == 2 else result.stdout
 
 
-@pytest.fixture(name="unchanged_documents_resolution")
-def _unchanged_documents_resolution() -> Iterator[None]:
-    """資料・導入情報・解決環境を変えない試験の間だけ、読込表と資料の静的な参照解決を共有する。
-
-    製品のhookは要求ごとに解決し直す。この共有は試験の終了時に破棄し、資料を変える試験には使わない。
-    """
-    with read_triggers.resolution_scope():
-        yield
-
-
-@pytest.fixture(name="without_read_delivery")
-def _without_read_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
-    """資料取得を検査しない公開hook試験で、対象外の配送だけを分離する。"""
-    monkeypatch.setattr(dispatch, "read_delivery", lambda *_args, **_kwargs: Decision())
+@pytest.fixture(name="without_skill_notices")
+def _without_skill_notices(monkeypatch: pytest.MonkeyPatch) -> None:
+    """操作の直前のスキルの案内が対象外の公開hook試験で、その案内だけを空にする。"""
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])

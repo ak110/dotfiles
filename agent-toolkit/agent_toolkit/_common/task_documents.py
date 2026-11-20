@@ -1,6 +1,6 @@
 """agent-toolkitの役割文書（`<役割名>.subagent.md`）の所在を解決し、宣言された起動設定を読む。
 
-役割文書の置き場所は`ROLE_DOCUMENT_DIRECTORIES`だけが定める。
+役割文書の置き場所は`ROLE_DOCUMENT_DIRECTORY`だけが定める。
 
 現行形式は先頭のYAML frontmatterで、mode・モデル段位・用途・入力・継続・書込を宣言する。
 旧版の`## 入力`直後の`text`コードブロックにある宣言行は、保持された役割文書とsessionの読取互換として扱う。
@@ -15,6 +15,7 @@ import json
 import pathlib
 import re
 import typing
+from collections.abc import Collection, Mapping
 
 import markdown_it
 import yaml
@@ -52,64 +53,58 @@ WHOLE_CONTRACT_PREPARATION = (
 """
 
 
-ROLE_DOCUMENT_DIRECTORIES: tuple[str, ...] = ("skills/atk-mode/roles", "share")
+ROLE_DOCUMENT_DIRECTORY = "skills/atk-mode/roles"
 """役割文書と起動・受領契約（`<役割名>.parent.md`）を置く、plugin rootからの相対ディレクトリ。
 
-先頭は入口スキル`atk-mode`の配下（移行先）、`share`は移行前の置き場所である。
-スキルの配下だけを配置するホストへも役割文書を届けるために移行しており、移行の途中は両方を解決する。
-同じ名前の文書を両方へ置かない（`share/task_documents_invariant_test.py`が確かめる）。
+スキルの配下だけを配置するホストへも役割文書を届けるため、入口スキル`atk-mode`の配下に置く。
 """
+_ROLE_DOCUMENT_PARTS = tuple(ROLE_DOCUMENT_DIRECTORY.split("/"))
 
 
-def role_document_directories(plugin_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """`plugin_root`の役割文書の置き場所を、解決の優先順に返す。"""
-    return tuple(plugin_root.joinpath(*directory.split("/")) for directory in ROLE_DOCUMENT_DIRECTORIES)
+def role_document_directory(plugin_root: pathlib.Path) -> pathlib.Path:
+    """`plugin_root`の役割文書の置き場所を返す。"""
+    return plugin_root.joinpath(*_ROLE_DOCUMENT_PARTS)
 
 
 def role_document_plugin_root(path: pathlib.Path) -> pathlib.Path | None:
     """役割文書の置き場所の直下にあるパスから、その文書が属するplugin rootを返す。置き場所の外ならNoneを返す。"""
-    for directory in ROLE_DOCUMENT_DIRECTORIES:
-        parts = tuple(directory.split("/"))
-        if path.parent.parts[-len(parts) :] == parts:
-            return path.parents[len(parts)]
+    if path.parent.parts[-len(_ROLE_DOCUMENT_PARTS) :] == _ROLE_DOCUMENT_PARTS:
+        return path.parents[len(_ROLE_DOCUMENT_PARTS)]
     return None
 
 
 def document_plugin_root(path: pathlib.Path) -> pathlib.Path:
-    """役割文書が属するplugin rootを返す。置き場所の外の文書（隔離した試験の入力など）は2階層上とみなす。"""
-    return role_document_plugin_root(path) or path.parents[1]
+    """置き場所を確かめた役割文書が属するplugin rootを返す。置き場所の外の文書は`ValueError`で拒否する。"""
+    root = role_document_plugin_root(path)
+    if root is None:
+        raise ValueError(f"役割文書の置き場所（{ROLE_DOCUMENT_DIRECTORY}）の外にある: {path}")
+    return root
 
 
 def find_role_document(plugin_root: pathlib.Path, name: str) -> pathlib.Path | None:
     """ファイル名（`<役割名>.subagent.md`・`<役割名>.parent.md`）に対応する実在の文書を返す。"""
-    for directory in role_document_directories(plugin_root):
-        if (candidate := directory / name).is_file():
-            return candidate
-    return None
+    candidate = role_document_directory(plugin_root) / name
+    return candidate if candidate.is_file() else None
 
 
 def require_role_document(plugin_root: pathlib.Path, role: str) -> pathlib.Path:
     """役割名に対応する`<役割名>.subagent.md`を返す。無ければ探した置き場所を示して失敗する。"""
     document = find_role_document(plugin_root, role + TASK_DOCUMENT_SUFFIX)
     if document is None:
-        raise ValueError(
-            f"役割文書が存在しない: {plugin_root}の{'・'.join(ROLE_DOCUMENT_DIRECTORIES)}に{role}.subagent.mdが無い"
-        )
+        raise ValueError(f"役割文書が存在しない: {role_document_directory(plugin_root)}に{role}.subagent.mdが無い")
     return document
 
 
 def role_documents(plugin_root: pathlib.Path, suffix: str = TASK_DOCUMENT_SUFFIX) -> list[pathlib.Path]:
-    """全ての置き場所にある、`suffix`で終わる文書をファイル名順に返す。"""
-    found = [path for directory in role_document_directories(plugin_root) for path in directory.glob(f"*{suffix}")]
-    return sorted(found, key=lambda path: path.name)
+    """置き場所にある、`suffix`で終わる文書をファイル名順に返す。"""
+    return sorted(role_document_directory(plugin_root).glob(f"*{suffix}"), key=lambda path: path.name)
 
 
 def launch_contract_documents(plugin_root: pathlib.Path) -> list[tuple[pathlib.Path, str]]:
     """起動対象を宣言した全契約と役割名を返す。返却生成の対象表には依存しない。"""
     contracts: list[tuple[pathlib.Path, str]] = []
     markdown = markdown_it.MarkdownIt()
-    paths = [*sorted((plugin_root / "share").glob("*.md")), *sorted((plugin_root / "skills").rglob("*.md"))]
-    for path in paths:
+    for path in sorted((plugin_root / "skills").rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         if "起動対象: " not in text:
             continue
@@ -141,7 +136,11 @@ def input_contract_body(task_document: pathlib.Path) -> str:
     if declaration.launch_kind == "delegate":
         lines.append(WHOLE_CONTRACT_PREPARATION)
     lines.append("")
-    for label, names in (("必須入力名", declaration.required), ("任意入力名", declaration.optional)):
+    conditional = [
+        ("条件付きの必須入力名（" + "、".join(f"`{name}`が`{value}`" for name, value in entry.when) + "の時）", entry.inputs)
+        for entry in declaration.required_when
+    ]
+    for label, names in (("必須入力名", declaration.required), *conditional, ("任意入力名", declaration.optional)):
         if not names:
             if label == "必須入力名":
                 lines.append(f"- {label}: なし")
@@ -184,11 +183,97 @@ class ContinuationDeclaration:
         return frozenset((*self.required, *self.optional))
 
 
+type InputCondition = tuple[tuple[str, str], ...]
+"""入力名と値の組。全ての入力の値が完全に一致した時に成立する（frontmatterの`when`）。"""
+
+
+def parse_when(raw: object, declared: Collection[str]) -> InputCondition:
+    """frontmatterの`when`（宣言済みの入力名から空でない文字列の値への空でない対応）を解析する。"""
+    if (
+        not isinstance(raw, dict)
+        or not raw
+        or any(not isinstance(name, str) or name not in declared for name in raw)
+        or any(not isinstance(value, str) or not value for value in raw.values())
+    ):
+        raise ValueError(f"whenは宣言済みの入力名から空でない文字列の値への対応で指定する: {raw!r}")
+    return tuple(raw.items())
+
+
+def when_matches(condition: InputCondition, params: Mapping[str, str]) -> bool:
+    """`condition`の全ての入力が、渡された値と完全に一致するかを返す。"""
+    return all(params.get(name) == value for name, value in condition)
+
+
+@dataclasses.dataclass(frozen=True)
+class ConditionalInputs:
+    """`when`が成立した時だけ必須になる入力（frontmatterの`required_inputs_when`の要素）。"""
+
+    when: InputCondition
+    inputs: tuple[str, ...]
+
+
+def parse_required_inputs_when(raw: object, declared: Collection[str]) -> tuple[ConditionalInputs, ...]:
+    """`required_inputs_when`を解析する。`when`と`inputs`の入力名は`declared`に含まれる必要がある。"""
+    if not isinstance(raw, list):
+        raise ValueError("required_inputs_whenは配列で指定する")
+    entries: list[ConditionalInputs] = []
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"when", "inputs"}:
+            raise ValueError(f"required_inputs_whenの要素はwhenとinputsだけを持つ: {entry!r}")
+        inputs = entry["inputs"]
+        if (
+            not isinstance(inputs, list)
+            or not inputs
+            or any(not isinstance(name, str) or name not in declared for name in inputs)
+            or len(set(inputs)) != len(inputs)
+        ):
+            raise ValueError(f"required_inputs_whenのinputsは宣言済みの入力名を重複なく並べる: {inputs!r}")
+        entries.append(ConditionalInputs(when=parse_when(entry["when"], declared), inputs=tuple(inputs)))
+    return tuple(entries)
+
+
+STARTUP_DOCUMENT_REFERENCE = re.compile(r"(?:agent-toolkit|agent-basics):[a-z0-9-]+/(?:[a-z0-9-]+/)*[a-z0-9.-]+\.md")
+"""`startup_documents`が受理する資料の参照。`<plugin名>:<スキル名>/<スキルのディレクトリからの相対パス>`の形とする。"""
+
+
+@dataclasses.dataclass(frozen=True)
+class StartupDocument:
+    """役割の起動の本文へ全文を入れる資料。`when`の全ての入力が値と完全に一致した時だけ入れる。"""
+
+    reference: str
+    when: InputCondition = ()
+
+    def applies(self, inputs: Mapping[str, str]) -> bool:
+        """起動の入力がこの資料の条件を満たすかを返す。"""
+        return when_matches(self.when, inputs)
+
+
+def parse_startup_documents(values: object, accepted: frozenset[str]) -> tuple[StartupDocument, ...]:
+    """frontmatterの`startup_documents`を検証して読む。形式の誤りは起動前に拒否する。"""
+    if not isinstance(values, list):
+        raise ValueError("startup_documentsは資料の参照の配列で指定する")
+    documents: list[StartupDocument] = []
+    for value in values:
+        entry = {"document": value} if isinstance(value, str) else value
+        if not isinstance(entry, dict) or set(entry) - {"document", "when"}:
+            raise ValueError(f"startup_documentsの要素は参照の文字列か{{document, when}}で指定する: {value!r}")
+        reference = entry.get("document")
+        if not isinstance(reference, str) or not STARTUP_DOCUMENT_REFERENCE.fullmatch(reference):
+            raise ValueError(f"startup_documentsの参照は`<plugin名>:<スキル名>/<相対パス>.md`で指定する: {reference!r}")
+        try:
+            when = parse_when(entry["when"], accepted) if "when" in entry else ()
+        except ValueError as error:
+            raise ValueError(f"startup_documentsの{error}") from error
+        documents.append(StartupDocument(reference, when))
+    return tuple(documents)
+
+
 @dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
     """役割文書が宣言する入力名・mode・モデル段位・用途・書込の値。
 
     `writes_worktree`は起動時のcwdが属する作業ツリーへ書き込む役割かを表す。
+    `startup_documents`は役割の起動の本文へ全文を入れる、役割に固有の資料である（modeによらず入れる）。
     """
 
     required: tuple[str, ...]
@@ -200,6 +285,8 @@ class TaskDocumentDeclaration:
     # 共通の状態行（`状態:`）以外に、返却形式が先頭の固定行として定める値。
     # `:`で終わる値は前方一致、それ以外は行全体の一致（直後の全角括弧の補足を許す）で受理する。
     result_heads: tuple[str, ...] = ()
+    required_when: tuple[ConditionalInputs, ...] = ()
+    startup_documents: tuple[StartupDocument, ...] = ()
 
     @property
     def accepted(self) -> frozenset[str]:
@@ -209,17 +296,28 @@ class TaskDocumentDeclaration:
         """
         return frozenset(self.required) | frozenset(self.optional)
 
+    def required_for(self, params: Mapping[str, str]) -> tuple[str, ...]:
+        """`params`で成立した`required_when`の入力を加えた必須入力名を、宣言順に重複なく返す。"""
+        names = list(self.required)
+        for entry in self.required_when:
+            if when_matches(entry.when, params):
+                names.extend(name for name in entry.inputs if name not in names)
+        return tuple(names)
 
-def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
-    """agent-toolkit pluginの役割文書の置き場所の直下にある`<役割名>.subagent.md`だけを受理する。"""
-    root = role_document_plugin_root(path)
-    if root is None:
-        return False
+
+def is_agent_toolkit_plugin_root(root: pathlib.Path) -> bool:
+    """manifestの名前がagent-toolkitであるかを返す。"""
     try:
         manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     except OSError, UnicodeError, json.JSONDecodeError:
         return False
     return isinstance(manifest, dict) and manifest.get("name") == "agent-toolkit"
+
+
+def is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
+    """agent-toolkit pluginの役割文書の置き場所の直下にある`<役割名>.subagent.md`だけを受理する。"""
+    root = role_document_plugin_root(path)
+    return root is not None and is_agent_toolkit_plugin_root(root)
 
 
 def read_declaration(task_document: pathlib.Path, document_text: str | None = None) -> TaskDocumentDeclaration | str:
@@ -363,13 +461,18 @@ def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) ->
             for head in heads
         ):
             raise ValueError("result_headsは値を含む固定行の配列で指定する")
+        required = tuple(values["required_inputs"])
+        optional = tuple(values.get("optional_inputs", []))
+        startup = parse_startup_documents(values.get("startup_documents", []), frozenset((*required, *optional)))
         return TaskDocumentDeclaration(
-            required=tuple(values["required_inputs"]),
-            optional=tuple(values.get("optional_inputs", [])),
+            required=required,
+            optional=optional,
+            startup_documents=startup,
             launch_kind=mode,
             writes_worktree=writes,
             model_type=values["model_type"],
             result_heads=tuple(heads),
+            required_when=parse_required_inputs_when(values.get("required_inputs_when", []), (*required, *optional)),
             continuations=tuple(
                 ContinuationDeclaration(
                     instruction=entry["instruction"],

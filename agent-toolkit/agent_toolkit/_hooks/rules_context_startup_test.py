@@ -24,7 +24,7 @@ from agent_toolkit._testing.rules_context_support import _output, _session_start
 
 # test-copy-contract: 実際に生成したSubagentStart全出力がホストの文字数上限に収まる容量契約。
 def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixture[str]) -> None:
-    """Claude固有規範を含むSubagentStart本文がhook上限へ収まる。"""
+    """SubagentStart本文がhook上限へ収まる。"""
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "general-purpose"}))
     assert len(_output(capsys)) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 
@@ -141,13 +141,13 @@ def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
     monkeypatch.setattr(plugin_environment, "cli_instructions", lambda root: cli_instructions(root, windows=windows))
     assert rules_context.main(json.dumps({"hook_event_name": event, "source": "startup"}), host=host) == 0
     output = _output(capsys)
-    entry = rules_context.SHARE_DIR.parent / "scripts" / ("atk.cmd" if windows else "atk")
+    entry = rules_context.PLUGIN_ROOT / "scripts" / ("atk.cmd" if windows else "atk")
     assert entry.is_file()
     command = next(line.removeprefix("起動部分: ") for line in output.splitlines() if line.startswith("起動部分: "))
     notified_entry = pathlib.Path(shlex.split(command)[-1])
     plugin_root = notified_entry.parent.parent
     assert notified_entry == entry
-    assert plugin_root == rules_context.SHARE_DIR.parent
+    assert plugin_root == rules_context.PLUGIN_ROOT
     basics = plugin_roots.resolve_plugin_root("agent-basics", plugin_root)
     skill = basics / "skills" / "writing-standards" / "SKILL.md"
     assert skill.is_file()

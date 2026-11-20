@@ -2,18 +2,11 @@
 
 import json
 import pathlib
-import shutil
-import subprocess
 
 import pytest
 
-from agent_toolkit import hook as _hook
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import plugin_roots as resource_roots
-from agent_toolkit._common.plugin_roots import _inventories, _plugin_inventory, _reusable
-from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
-from agent_toolkit._testing.hook_support import _call_hook_in_process, _registered_subcommands, _run_with_module_record
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+from agent_toolkit._testing.hook_support import _registered_subcommands, _run_with_module_record
 
 _SUBCOMMANDS = _registered_subcommands()
 
@@ -72,81 +65,3 @@ class TestLazyDependencyLoading:
         unused = set(_UNUSED_BRANCH_MODULES) - set(used_modules)
         assert unused <= eager_modules
         assert not unused & lazy_modules
-
-
-@pytest.mark.parametrize("host", ["claude", "codex", "agy", "opencode"])
-@pytest.mark.parametrize("command", ["pretooluse", "posttooluse", "stop", "permissionrequest"])
-def test_public_hook_owns_one_inventory_scope_per_session(tmp_path, monkeypatch, command, host):
-    """各handlerの消費側で一覧を共有し、別sessionと例外後の要求を混ぜない。"""
-    executable = tmp_path / "claude"
-    executable.touch()
-    monkeypatch.setattr(shutil, "which", lambda *_args, **_kwargs: str(executable))
-    monkeypatch.setattr(_hook, "_record_activity", lambda *_args, **_kwargs: None)
-    acquired = []
-    observed = []
-    fail = False
-
-    # 設定済みmarketplaceが無いCodexでは、marketplace一覧の取得だけで導入情報の取得を終える。
-    codex_cli = codex_plugin_cli([], marketplaces=[])
-
-    def inventory(args, **kwargs):
-        acquired.append(args)
-        if host == "codex":
-            return codex_cli(args, **kwargs)
-        return subprocess.CompletedProcess(args, 0, "[]", "")
-
-    def native(_host):
-        acquired.append(_host)
-        return []
-
-    def consume(_module, _text, payload, _args):
-        _plugin_inventory(host, tmp_path)
-        _plugin_inventory(host, tmp_path)
-        cache = _reusable.get()
-        observed.append((payload["session_id"], cache is not None))
-        if fail:
-            raise RuntimeError("消費側の失敗")
-        return 0
-
-    monkeypatch.setattr(resource_roots.process_tree, "run_with_timeout", inventory)
-    monkeypatch.setattr(resource_roots, "_native_inventory", native)
-    monkeypatch.setattr(_hook, "_invoke_module", consume)
-    for session_id in ("one", "one", "two"):
-        _call_hook_in_process(monkeypatch, command, {"session_id": session_id, "hook_event_name": "PostToolUse"})
-    assert observed == [("one", True), ("one", True), ("two", True)]
-    # 設定から一覧の入力を特定できるClaude CodeとCodexは、同じsessionの2回目のhookで一覧を取り直さない。
-    reused = host in {"claude", "codex"}
-    assert len(acquired) == (2 if reused else 3)
-    fail = True
-    _call_hook_in_process(monkeypatch, command, {"session_id": "three", "hook_event_name": "PostToolUse"})
-    assert _inventories.get() is None and _reusable.get() is None
-    fail = False
-    _call_hook_in_process(monkeypatch, command, {"session_id": "four", "hook_event_name": "PostToolUse"})
-    assert len(acquired) == (4 if reused else 5)
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        None,
-        [],
-        {},
-        {"session_id": ""},
-        {"session_id": 1},
-        {"session_id": "../other"},
-        {"session_id": "one", "hook_event_name": "SessionStart"},
-    ],
-)
-def test_public_hook_does_not_attach_persistent_inventory_to_invalid_or_start_payload(monkeypatch, payload):
-    seen = []
-    monkeypatch.setattr(_hook, "_record_activity", lambda *_args, **_kwargs: None)
-
-    def consume(*_args, **_kwargs):
-        seen.append(_reusable.get())
-        return 0
-
-    monkeypatch.setattr(_hook, "_invoke_module", consume)
-    result = _run_hook_in_process("pretooluse", payload)
-    assert result.returncode == 0
-    assert seen == [None]
-    assert _inventories.get() is None and _reusable.get() is None

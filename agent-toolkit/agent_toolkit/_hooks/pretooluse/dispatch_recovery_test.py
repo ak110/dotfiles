@@ -7,18 +7,14 @@ import json
 
 import pytest
 
-from agent_toolkit._hooks.pretooluse import dispatch
+from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 
 
 @pytest.fixture(autouse=True)
-def _isolate_read_guidance(monkeypatch):
-    """言語と正常拒否の公開出力を、資料選択の処理時間から分離する。"""
-
-    def delivered(*_args, **_kwargs):
-        return Decision()
-
-    monkeypatch.setattr(dispatch, "read_delivery", delivered)
+def _isolate_skill_notices(monkeypatch):
+    """言語と正常拒否の公開出力を、操作の直前のスキルの案内から分離する。"""
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 def _reason(payload: dict, tool: str, inputs: dict, capsys) -> str | None:

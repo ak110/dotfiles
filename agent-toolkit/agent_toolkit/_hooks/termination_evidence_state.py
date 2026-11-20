@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 lazy from typing import Any
@@ -172,6 +173,38 @@ def _finished(data: dict[str, Any], work: dict[str, Any]) -> bool:
     return bool(work.get("completion_report") or work.get("omit_completion")) and data.get(
         "last_human_input", data.get("last_input")
     ) != work.get("input_at_last_call")
+
+
+CONTEXT_KEY = "completion_context"
+"""メインが最後の会話圧縮の後に読み込んだ完了報告の手順書の版（SHA-256）を保持する、状態のキー。"""
+
+
+def playbook_digest() -> str | None:
+    """完了報告の手順書の現在の版のSHA-256を返す。読めなければ`None`を返す。"""
+    try:
+        return hashlib.sha256(completion_playbook_path().read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def completion_in_context(session_id: str) -> bool:
+    """メインの文脈に完了報告の手順書の現在の版があるか（最後の会話圧縮の後に起動・全文読込をしたか）を返す。"""
+    data = session_state.read_state(session_id).get(STATE_KEY)
+    recorded = data.get(CONTEXT_KEY) if isinstance(data, dict) else None
+    return recorded is not None and recorded == playbook_digest()
+
+
+def forget_completion_context(session_id: str) -> None:
+    """会話圧縮・clearで手順書の本文が文脈から外れたため、文脈の読込の記録を消す。"""
+
+    def forget(state: dict[str, Any]) -> dict[str, Any] | None:
+        data = state.get(STATE_KEY)
+        if not isinstance(data, dict) or CONTEXT_KEY not in data:
+            return None
+        data.pop(CONTEXT_KEY)
+        return state
+
+    session_state.update_state(session_id, forget)
 
 
 def _position(payload: dict[str, Any]) -> int:

@@ -11,7 +11,7 @@ import re
 import pytest
 
 from agent_toolkit._hooks import notice
-from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
+from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 
 _RESULT = "この呼び出しは全体を実行していない（同じ呼び出しに含まれる他のコマンドや処理を含む）。"
@@ -20,7 +20,7 @@ _RESULT = "この呼び出しは全体を実行していない（同じ呼び出
 @pytest.fixture(autouse=True)
 def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
     """通知の理由と次操作を検査し、対象外の全資料の解析は繰り返さない。"""
-    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -44,9 +44,9 @@ def test_block_notices_preserve_cause_and_next_action(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], codex: bool, case: str
 ) -> None:
     """遮断理由と復旧操作を保持し、ホストが示す未実行の説明を重ねない。"""
-    document = tmp_path / "plugin/share/sample.subagent.md"
+    document = tmp_path / "plugin/skills/atk-mode/roles/sample.subagent.md"
     document.parent.mkdir(parents=True)
-    manifest = document.parent.parent / ".claude-plugin/plugin.json"
+    manifest = tmp_path / "plugin/.claude-plugin/plugin.json"
     manifest.parent.mkdir()
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     document.write_text("## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")

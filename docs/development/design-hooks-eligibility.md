@@ -26,12 +26,13 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | 同 WindowsのPATH | 回復可能な支援、warn | Windows上のClaude CodeのBashに限り、ドライブ文字の分断を案内する |
 | `pretooluse/task_document_launch.py` | 入力契約の保護と起動支援 | 定型起動の必須入力の欠落はblock。自由本文の起動形式と宣言外の説明はwarn。コンテキストへの取込みだけを実害としない |
 | `pretooluse/content_checks.py` | 回復可能な支援、warn | 文字化け、ツール境界タグ、PowerShellの改行、lockfile・manifestを対象とし、再編集・再生成を案内する |
-| `pretooluse/large_reads.py` | 回復可能な支援、warn | 原記録参照の専用照会と大量読取の予算確認を案内する。予算内の標準読取を通し、超過・省略時は分割取得へ接続する |
+| `pretooluse/large_reads.py` | 回復可能な支援、warn | 原記録の直接参照、規範の見出しの抽出、出力の上限を超える複数ファイルの取得へ、適切な取得方法を案内する。上限内の標準読取は通す |
 | `pretooluse/dispatch.py` 背景出力・帰属行 | 関連操作の支援・配送 | 途中出力の取扱いと、`commit-message.md`の読取時点（Claude Codeの`Read`を含む）に観測した帰属行を共通noticeで通知する |
-| `pretooluse/read_delivery.py` | 関連操作に必要な資料の初回warn | 通常読取・診断・結果回収・質問・既存復旧を保つ。現在の資料を案内し、取得証拠と案内の実配送を分ける。未取得を理由に再書込を遮断しない |
-| `posttooluse.py` | 観測・配送・出力の変換 | 所有・取得証拠を記録し、計画構造、回答UWI、完了処理の関連案内を共通noticeへ集約する。退避出力の置換は結果取得先を保つ |
+| `pretooluse/operation_skills.py` | 関連操作の支援、warn | 検索、原因分析の記述、本文の作成・更新、検証の実行の直前に、対応するagent-basicsのスキルの起動を主体と文脈ごとに1回案内する。`Skill`で起動を観測したスキル、軽量の委譲先、一時領域だけへの書込は対象外とする |
+| `work_contract.py` 委譲先の全体作業契約 | 関連操作の支援、warn | 起動時に入れた版から原本が更新された時に、更新後の版ごと主体ごとに1回案内する。本文の配送と遮断はしない |
+| `posttooluse.py` | 観測・配送・出力の変換 | 所有と終了工程の起動証拠を記録し、計画構造、回答UWI、完了処理、Codexが省略した出力の回収（`codex_truncation.py`）の案内を共通noticeへ集約する。退避出力の置換は結果取得先を保つ |
 | `user_prompt_submit.py` | 状態観測・関連規範の配送 | 実ユーザー入力と機械生成を区別する。意味の判定は受領側が文書に従って行う |
-| `rules_context.py`・`rules_context_codex.py` | 起動時の規範配送 | ホストと主体ごとの役割・一時領域・原記録の所在を届ける。開始・圧縮という受領境界に対応する |
+| `rules_context.py`・`rules_context_codex.py` | 起動時の案内の配送 | メインへ入口の起動、委譲先へ入口文書の所在を案内し、一時領域・原記録の所在を届ける。規範の本文は載せない。開始・圧縮という受領境界に対応する |
 | `response_language_advisor.py` | ユーザー向け本文の言語保護、block | 内部返却とClaude Codeの非同期処理を待つStopを除き、作業を終える最上位メインの本文を判定する。Codexの完了本文の保護と、誤検出時に成果・判断・未達を保って終了する手段を維持する |
 | `busy_loop_guard.py`・`autonomous_exit.py` | 常駐運用の終了保証、halt・block | 対象の常駐セッションだけで機械的な無進捗と終了操作の有無を扱う。正当な非同期待機を除く |
 | `plan_save_advisor.py` | 回復可能な支援、notify | 所有する現存計画を知らせ、保存契機の判断は受領側へ残す。同じ対象を抑止し、対象変化と解消後の再発を通知する |

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
+import os
 import pathlib
 from typing import Any, cast
 
 import pytest
 
-from agent_toolkit._agents_server import service_projection, service_state, shared_roots, state
+from agent_toolkit._agents_server import service_projection, service_state, service_transport, shared_roots, state
 from agent_toolkit._agents_server.manager import AgentsServerManager
+from agent_toolkit._agents_server.service_generations import GenerationRegistry
+from agent_toolkit._common import session_layout
 
 
 class _Codec:
@@ -131,3 +135,133 @@ async def test_startup_publishes_registry_derived_resume_state_kept_as_expired(t
     expired = codec.decode(json.loads(json.dumps(hub.requests[0][1]["expired"])))
     assert expired == {"child": resume}
     assert type(expired["child"]) is state.RegistryResumeState  # pylint: disable=unidiomatic-typecheck
+
+
+_PARENTS = ("first-parent", "second-parent")
+
+
+def _identity(parent: str) -> dict[str, Any]:
+    return dataclasses.asdict(shared_roots.StatusFileIdentity(parent, "root.json", None))
+
+
+async def _observed(hub: service_projection.ProjectionHub, parent: str, progress: str, effort: str | None) -> dict[str, Any]:
+    """世代が親会話ごとに保存する観測（状態表示の保存要求の本文）を作る。"""
+    session = state.SessionState(f"{parent}-child", "/work", engine="codex", effort=effort, announced=True)
+    session.set_progress(progress)
+    return {
+        "sessions": [await service_state.snapshot(session)],
+        "expired": hub._codec.encode({}),  # pylint: disable=protected-access
+        "published": [],
+    }
+
+
+async def _published_hub(tmp_path: pathlib.Path, groups: dict[str, tuple[str, str | None]]) -> service_projection.ProjectionHub:
+    """旧世代から2つの親会話の観測を受け取り、受付を公開した直後の新世代の状態表示を作る。"""
+    directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
+    registry = GenerationRegistry(directory)
+    process = service_transport.process_identity(os.getpid())
+    for generation, version in (("old", "1.0.0"), ("new", "1.0.1")):
+        registry.reserve(generation, tmp_path / generation, version)
+    registry.publish("old", endpoint="old", process=process)
+    hub = service_projection.ProjectionHub("new", directory)
+    inventory = {
+        "writers": [
+            {
+                "identity": _identity(parent),
+                "groups": {source: await _observed(hub, parent, *value) for source, value in groups.items()},
+                "published": [],
+            }
+            for parent in _PARENTS
+        ]
+    }
+    await hub.seed(inventory)
+    registry.publish("new", endpoint="new", process=process)
+    return hub
+
+
+def _displayed(tmp_path: pathlib.Path, parent: str) -> tuple[str, str | None]:
+    """ユーザーのstatuslineが読む状態ファイルから、親会話の子sessionの進捗とeffortを読む。"""
+    path = session_layout.status_directory(parent, tmp_path / "agent-toolkit") / "root.json"
+    [session] = json.loads(path.read_text(encoding="utf-8"))["sessions"]
+    return session["progress"], session["effort"]
+
+
+async def _hold_first_parent(
+    hub: service_projection.ProjectionHub, monkeypatch: pytest.MonkeyPatch, release: asyncio.Event
+) -> tuple[asyncio.Task, asyncio.Lock]:
+    """1件目の親会話で通知の読み取りに書込主体のロックを持たせ、後続の保存と再描画をロックの順に並ばせる。"""
+    key = (_PARENTS[0], "root.json")
+
+    async def take_notices_async(session_id: str) -> list:
+        del session_id
+        await release.wait()
+        return []
+
+    monkeypatch.setattr(hub.writers[key], "take_notices_async", take_notices_async)
+    reading = asyncio.create_task(
+        hub.apply(
+            {
+                "identity": _identity(_PARENTS[0]),
+                "source": "old",
+                "operation": "take_notices_async",
+                "arguments": {"session_id": f"{_PARENTS[0]}-child"},
+            }
+        )
+    )
+    lock = hub._locks[key]  # pylint: disable=protected-access
+    await _queued(lock, 0)
+    return reading, lock
+
+
+async def _queued(lock: asyncio.Lock, waiters: int) -> None:
+    """ロックが保持され、指定数の要求が待つまで進める。保存と再描画の順序を待ち時間に頼らずに固定する。"""
+    while not lock.locked() or len(lock._waiters or ()) < waiters:  # pylint: disable=protected-access
+        await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_publication_keeps_progress_saved_by_previous_generation_while_activating(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開が状態表示を再適用するまでに旧世代が保存した進捗とeffortを、公開の後も表示に残す。
+
+    2026-11-20の独立検証で、公開がロックを取る前に選んだ観測を再適用し、保存済みの進捗とeffortを空へ戻した。
+    """
+    hub = await _published_hub(tmp_path, {"old": ("", None)})
+    release = asyncio.Event()
+    async with asyncio.timeout(10):
+        reading, lock = await _hold_first_parent(hub, monkeypatch, release)
+        saved = await _observed(hub, _PARENTS[0], "probe-checkpoint-2", "high")
+        saving = asyncio.create_task(
+            hub.apply({"identity": _identity(_PARENTS[0]), "source": "old", "operation": "snapshot", "arguments": saved})
+        )
+        await _queued(lock, 1)
+        activating = asyncio.create_task(hub.activate())
+        await _queued(lock, 2)
+        release.set()
+        await asyncio.gather(reading, saving, activating)
+    assert _displayed(tmp_path, _PARENTS[0]) == ("probe-checkpoint-2", "high")
+    assert _displayed(tmp_path, _PARENTS[1]) == ("", None)
+
+
+@pytest.mark.asyncio
+async def test_progress_saved_while_other_generation_leaves_parent_stays_displayed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同じ親会話から旧世代の観測が外れる間に新世代が保存した進捗とeffortを、外れた後の再描画で古い値へ戻さない。"""
+    hub = await _published_hub(tmp_path, {"old": ("old-progress", "low"), "new": ("", None)})
+    release = asyncio.Event()
+    async with asyncio.timeout(10):
+        reading, lock = await _hold_first_parent(hub, monkeypatch, release)
+        leaving = asyncio.create_task(
+            hub.apply({"identity": _identity(_PARENTS[0]), "source": "old", "operation": "deactivate", "arguments": {}})
+        )
+        await _queued(lock, 1)
+        saved = await _observed(hub, _PARENTS[0], "probe-checkpoint-2", "high")
+        saving = asyncio.create_task(
+            hub.apply({"identity": _identity(_PARENTS[0]), "source": "new", "operation": "snapshot", "arguments": saved})
+        )
+        await _queued(lock, 2)
+        release.set()
+        await asyncio.gather(reading, leaving, saving)
+    assert _displayed(tmp_path, _PARENTS[0]) == ("probe-checkpoint-2", "high")

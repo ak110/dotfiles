@@ -188,6 +188,18 @@ async def _publish(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
     request.assert_not_awaited()
 
 
+async def _commit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """確定が届かず、退役を記録しないまま終了した旧世代は、退役を待たずに公開の失敗として返す。"""
+    coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
+    registry = GenerationRegistry(tmp_path)
+    registry.reserve("G0", tmp_path, "1.0.0")
+    registry.publish("G0", endpoint="G0", process=_REUSED)
+    monkeypatch.setattr(service_rpc, "request", AsyncMock(side_effect=EOFError))
+    async with asyncio.timeout(5):
+        with pytest.raises(RuntimeError, match="正常な退役の記録"):
+            await coordinator._commit({"generation": "G0", "epoch": 1, "process": _REUSED}, "token")
+
+
 def _freezable(coordinator: Any) -> None:
     coordinator.projections = cast(Any, SimpleNamespace(freeze=AsyncMock(), thaw=AsyncMock(), inventory=dict))
     coordinator.registrations = cast(Any, SimpleNamespace(freeze=AsyncMock(), thaw=Mock()))
@@ -201,6 +213,21 @@ async def _tick(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None
     await coordinator.tick()
     assert not coordinator._received
     assert not coordinator._incoming
+
+
+async def _reclaim_unadopted(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """元世代が終了してPIDが再利用されても、closeの応答を受け取った資源だけ回収済みとする。"""
+    for acknowledged in (True, False):
+        coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
+        coordinator.managers.conversations.clear()
+        coordinator._pending_adoptions["expired"] = {
+            "parent": "parent",
+            "resource": {"identifier": "raw", "origin": {"generation": "G0", "process": _REUSED}},
+        }
+        release = None if acknowledged else EOFError()
+        monkeypatch.setattr(service_rpc, "request", AsyncMock(side_effect=[release, ConnectionRefusedError()]))
+        await coordinator.tick()
+        assert coordinator.holds_handover() == (not acknowledged)
 
 
 async def _foreign_sessions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -327,7 +354,9 @@ async def _publish_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 # 起動単位の生存判定を呼ぶ箇所ごとの、照会を拒否された終了済み世代の場面。
 _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch], Awaitable[None]]] = {
     "service_coordinator.ServiceCoordinator.publish": _publish,
+    "service_coordinator.ServiceCoordinator._commit": _commit,
     "service_coordinator.ServiceCoordinator.tick": _tick,
+    "service_coordinator.ServiceCoordinator._reclaim_unadopted": _reclaim_unadopted,
     "service_coordinator.ServiceCoordinator._foreign_sessions": _foreign_sessions,
     "service_coordinator.ServiceCoordinator._owns": _owns,
     "service_coordinator.ServiceCoordinator._supervise": _supervise,

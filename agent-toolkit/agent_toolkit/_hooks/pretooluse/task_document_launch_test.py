@@ -11,16 +11,24 @@ import subprocess
 import pytest
 
 from agent_toolkit._testing.pretooluse_support import (
+    _PLUGIN_ROOT,
     _ROLES_DIR,
-    _SHARE_DIR,
     _additional_context,
     _plan_file_state_env,
 )
-from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
+from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
-_PLUGIN_ROOT = _SHARE_DIR.parent
 _EXEC_DOCUMENT = _ROLES_DIR / "exec.subagent.md"
 _READER_FIT_DOCUMENT = _ROLES_DIR / "reader-fit-review.subagent.md"
+
+
+def _lane_inputs(tmp_path: pathlib.Path) -> str:
+    """`担当種別: レーン担当`の起動で必須になる入力の行。所有登録のファイルも作る。"""
+    (tmp_path / "lane-01.json").write_text('{"lane": "lane-01", "base_branch": "develop"}\n', encoding="utf-8")
+    return (
+        f"所有登録: {tmp_path / 'lane-01.json'}\n統合先worktree: {tmp_path}\n"
+        "統合先branch: develop\nレーン開始時刻: 2026-11-15T13:17:00+09:00\n"
+    )
 
 
 @pytest.fixture(name="task_documents", params=["checkout", "__w"])
@@ -50,7 +58,8 @@ def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: p
     specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "deny"
     assert "引き継ぎ記録先" in specific["permissionDecisionReason"]
-    valid = prompt + f'引き継ぎ記録先: {tmp_path / "引継ぎ 記録.md"}\n書込担当一覧: ["session-main"]\n'
+    assert "所有登録" in specific["permissionDecisionReason"]
+    valid = prompt + f'引き継ぎ記録先: {tmp_path / "引継ぎ 記録.md"}\n書込担当一覧: ["session-main"]\n' + _lane_inputs(tmp_path)
     result = _invoke_after_generic_reissue(tool_name, valid, tmp_path)
     assert result.returncode == 0 and not result.stderr
     specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
@@ -205,6 +214,7 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
             "  ",
             '書込担当一覧: ["session-main"]',
             "レーン識別子: lane-01",
+            _lane_inputs(tmp_path).rstrip(),
         ]
     )
     passed = _invoke("Agent", minimal, tmp_path)
@@ -359,7 +369,7 @@ def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathl
     """パスの後に空白を置いた定型の命令と宣言済みの入力だけの本文は、宣言外の指示を持たないため通す。"""
     prompt = (
         f"{_EXEC_DOCUMENT} の手順を実行せよ。\n担当種別: レーン担当\n"
-        f'引き継ぎ記録先: {tmp_path / "handoff.md"}\n書込担当一覧: ["session-main"]\n'
+        f'引き継ぎ記録先: {tmp_path / "handoff.md"}\n書込担当一覧: ["session-main"]\n' + _lane_inputs(tmp_path)
     )
 
     result = _invoke_after_generic_reissue("Agent", prompt, tmp_path)

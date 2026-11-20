@@ -152,6 +152,21 @@ def test_price_brackets_follow_each_response_input(model: str, count: int, expec
 
 
 @pytest.mark.parametrize(
+    ("uncached", "expected"),
+    [(200_000, (400_000 + 50_000 + 5200 + 1000) / 1e6), (200_001, (800_004 + 100_000 + 10_400 + 1500) / 1e6)],
+)
+def test_sol_62_prices_full_request_at_context_boundary(uncached: int, expected: float) -> None:
+    """書込と読取を含む入力が272Kを1超えると、出力を含む応答全体が長文単価に変わる。"""
+    tokens = {
+        "input_tokens": uncached,
+        "cache_creation_input_tokens": 20_000,
+        "cache_read_input_tokens": 52_000,
+        "output_tokens": 100,
+    }
+    assert model_pricing.response_price("gpt-6.2-sol", tokens) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
     ("model", "count", "short_write", "expected"),
     [
         # 入力8・1時間書込16・読取0.20・出力40。5分書込は10。
@@ -199,6 +214,23 @@ def test_unknown_model_is_not_zero_cost(
     assert result["unknown_tokens"]["output_tokens"] == output_tokens
     assert result["pricing"]["as_of"] == model_pricing.PRICE_DATE
     assert result["pricing"]["sources"]
+
+
+def test_unknown_model_counts_include_children_once() -> None:
+    """同じ未知名は親子で合算し、各内訳は自身の応答だけを数える。"""
+    root = session_cost.CostRecord("root", "claude", [_claude("1", "future-sol", {"input_tokens": 1})])
+    child = session_cost.CostRecord(
+        "child",
+        "claude",
+        [_claude("2", "future-sol", {"input_tokens": 2}), _claude("3", "other", {"output_tokens": 1})],
+        "subagent",
+        "root",
+    )
+    cost = session_cost.estimate_family([root, child, child])
+    assert cost["unknown_responses"] == 3
+    assert cost["unknown_models"] == {"future-sol": 2, "other": 1}
+    assert cost["breakdown"]["self"]["unknown_models"] == {"future-sol": 1}
+    assert cost["breakdown"]["claude_subagents"]["unknown_models"] == {"future-sol": 1, "other": 1}
 
 
 def test_incomplete_family_keeps_known_subtotal() -> None:

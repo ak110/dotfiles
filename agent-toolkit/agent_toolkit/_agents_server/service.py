@@ -329,10 +329,13 @@ async def run(
     resources = resources or ResourceBroker(generation, owner_identity=instance.instance_id)
     registry = RegistryForwarder(generation, directory)
     projections = ProjectionHub(generation, directory)
+    # 公開元は退役の記録で引継ぎの成否を判定するため、会話・資源を持ったまま終わる世代は停止や例外でも記録しない。
+    handed_over = True
     try:
         with registry_forwarding.bind(registry.forward):
             async with ServiceManagers(state_root=directory.parent.parent, projections=projections) as managers:
                 mcp_tools._SERVICE_MANAGERS = managers
+                coordinator: ServiceCoordinator | None = None
                 try:
                     target = {
                         "generation": generation,
@@ -400,6 +403,8 @@ async def run(
 
                             task.add_done_callback(completed)
                 finally:
+                    # 会話を回収する前に判定する。回収の後では、終了の時点で持っていた会話を観測できない。
+                    handed_over = coordinator is None or not coordinator.holds_handover()
                     mcp_tools._SERVICE_MANAGERS = None
                     for peer in peers:
                         service_transport.disconnect(peer)
@@ -411,7 +416,8 @@ async def run(
             await projections.close()
         finally:
             try:
-                GenerationRegistry(directory).retire(generation, service_transport.process_identity(os.getpid()))
+                if handed_over:
+                    GenerationRegistry(directory).retire(generation, service_transport.process_identity(os.getpid()))
             finally:
                 error = sys.exception()
                 if error is None:

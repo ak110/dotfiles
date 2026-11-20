@@ -92,6 +92,8 @@ APIリクエストの`display`パラメーターが`"updates"`の応答のうち
 - Codexは各`token_count.info.last_token_usage`と直前の`turn_context.model`を使い、キャッシュ読み取りと推論出力はそれぞれ1回だけ数える。
 - OpenCodeは`step_finish`のpartが持つ`tokens`（`input`、`output`、`cache.read`、`cache.write`）を使う。
 - 単価が不明な応答（単価表に無いモデルと、モデル名を持たないOpenCodeの応答）は`unknown_responses`と`unknown_tokens`に残り、合計の`estimated_usd`はnull、算出できた範囲は`known_usd`になる。
+  `unknown_models`はこれらの応答をモデル名ごとに数える。
+  モデル名が記録されていない応答のキーは空文字列になる。
 - 料金表の出所、基準日、区分、計算式、TTL不明時の仮定は、`cost-metrics-coverage.pricing`の内容を併記する。
 
 `atk serve`の費用の表示も同じ記録の収集と計算を使う。

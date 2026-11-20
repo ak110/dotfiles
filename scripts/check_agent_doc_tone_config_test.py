@@ -217,7 +217,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     application = tmp_path / "agent-toolkit" / "agent_toolkit" / "new_module.py"
     helper = application.parent / "_testing" / "helper.py"
     path_config = tmp_path / "agent-toolkit" / "config.json"
-    density = tmp_path / "agent-toolkit" / "share" / "density.md"
+    density = tmp_path / "agent-toolkit" / "skills" / "atk-mode" / "roles" / "density.md"
     example.parent.mkdir(parents=True)
     application.parent.mkdir(parents=True)
     helper.parent.mkdir(parents=True)

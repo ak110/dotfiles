@@ -66,13 +66,19 @@ _PUBLISHER_PROBE_SECONDS = 1.0
 # 所有世代への所有照会の待機上限。生存する世代は即時に応答するため、停止した世代だけを短時間で判別する。
 _OWNER_PROBE_SECONDS = 10.0
 
+# 初回の確定からの期限と、確定が届かなかった旧世代への再送間隔。
+# 確認ごとに世代索引のロックを取るため、退役を記録する旧世代とロックを取り合わない程度に間隔を空ける。
+_COMMIT_WAIT_SECONDS = 10.0
+_COMMIT_RETRY_SECONDS = 0.25
+
 
 @dataclasses.dataclass
 class _Update:
     """公開元の世代が求めた1回の準備。静止を解くのは、この準備の監視task（`_supervise`）だけとする。
 
-    公開元は受付の公開後に確定（`commit_update`）を通知する。確定より先に公開元が終了すれば、監視taskが放棄として扱う。
-    どちらの場合も、準備が静止を掛け終えてから解く。先に解くと、後から掛かる静止を解く主体が残らない。
+    公開元は受付の公開後に確定（`commit_update`）を通知する。確定より先に受付先の前進を観測すれば確定と同じに扱い、
+    確定より先に公開元が終了すれば放棄として扱う。
+    どの場合も、準備が静止を掛け終えてから解く。先に解くと、後から掛かる静止を解く主体が残らない。
     """
 
     publisher: dict
@@ -164,16 +170,52 @@ class ServiceCoordinator:
                 finally:
                     try:
                         if previous is not None:
-                            await service_rpc.request(
-                                previous,
-                                "commit_update",
-                                {
-                                    "token": token,
-                                    "current": self._current(),
-                                },
-                            )
+                            await self._commit(previous, token)
                     finally:
                         file_lock.release_lock(handle)
+
+    async def _commit(self, previous: dict, token: str) -> None:
+        """静止させた旧世代へ確定を届ける。届かなければ、旧世代が生存する間は同じ確定を送り直し、終了していれば退役の記録で成否を決める。
+
+        確定の受理は冪等で、解除済みの準備へ届いた確定は捨てられるため、送り直しても静止の解除は1回だけになる。
+        旧世代は受付先の前進を観測しても静止を解くため、会話を持つ旧世代は確定を失っても動き続け、退役するのはturnの終了後になる。
+        会話を持たない旧世代は確定の接続より先に退役して終了することがあり、この修正より前の版の旧世代は確定の到着を待たずに退役する。
+        旧世代は引き継ぐ会話・資源を残さずに終了した場合だけ退役を記録する（`service.run`）。
+        記録が無いまま終了した旧世代は、それらを持ったまま停止・例外・強制終了で終わったことがあり得るため、公開の失敗として返す。
+        """
+        arguments = {"token": token, "current": self._current()}
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _COMMIT_WAIT_SECONDS
+        first_error: OSError | EOFError | None = None
+        try:
+            async with asyncio.timeout_at(deadline):
+                while True:
+                    try:
+                        await service_rpc.request(previous, "commit_update", arguments, timeout=deadline - loop.time())
+                        return
+                    except (OSError, EOFError) as error:
+                        first_error = first_error or error
+
+                    # 旧世代の終了直前の退役も確認するため、生存を確かめてから記録を読む。
+                    alive = service_transport.process_alive(previous["process"])
+                    if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
+                        _LOG.info(
+                            "旧世代が確定前に退役しました: generation=%s error=%s: %s",
+                            previous["generation"],
+                            type(first_error).__name__,
+                            first_error,
+                        )
+                        return
+                    if not alive:
+                        raise RuntimeError(
+                            "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
+                            "旧世代の会話は新世代へ移っていないことがあります: "
+                            f"generation={previous['generation']} process={previous['process']} "
+                            f"error={type(first_error).__name__}: {first_error}"
+                        ) from first_error
+                    await asyncio.sleep(_COMMIT_RETRY_SECONDS)
+        except TimeoutError as timeout:
+            raise first_error or timeout from None
 
     def bind_runtime(self, runtime: service_io.Runtime) -> service_io.Runtime:
         """現在のbackendにだけ終了境界を知らせ、資源のoriginは変えない。"""
@@ -230,16 +272,31 @@ class ServiceCoordinator:
             self.target["epoch"] = current["epoch"]
         return current or self.target
 
-    def can_retire(self) -> bool:
-        """接続数や経過時間で強制終了せず、元資源と担当状態がなくなったことだけで退出する。"""
-        return (
-            self._current()["epoch"] > self.target["epoch"]
-            and not self.managers.conversations
-            and self._runtime is not None
-            and not self._runtime.broker._resources
-            and not self._incoming
-            and not self._pending_adoptions
+    def _superseded(self) -> bool:
+        """受付先が自世代より新しい世代へ進んだかを、世代索引から判定する。"""
+        return self._current()["epoch"] > self.target["epoch"]
+
+    def holds_handover(self) -> bool:
+        """受付先の世代へ引き継ぐ会話、raw資源、受入中の移譲、取り込み待ちが残るかを返す。
+
+        退出の判定と、終了時に退役を記録するかの判定（`service.run`）が共有する。
+        残したまま終了した世代は、その会話と実行資源を失わせている。
+        """
+        return bool(
+            self.managers.conversations
+            or self._runtime is None
+            or self._runtime.broker._resources
+            or self._incoming
+            or self._pending_adoptions
         )
+
+    def can_retire(self) -> bool:
+        """接続数や経過時間で強制終了せず、受付先が進み、引き継ぐものがなくなったことだけで退出する。
+
+        準備した更新（`_updates`）も退出を止め、受付先の切替の直後に届く確定の接続を閉じないようにする。
+        監視taskは確定が届かなくても受付先の前進で更新を外すため、退出は確定の到着に依存しない。
+        """
+        return self._superseded() and not self._updates and not self.holds_handover()
 
     def _conversation(self, identifier: str) -> tuple[str, Conversation] | None:
         return next(
@@ -303,8 +360,8 @@ class ServiceCoordinator:
     async def commit_update(self, token: str, current: dict) -> None:
         """公開元が通知した確定を準備の監視taskへ渡し、静止の解除を待つ。
 
-        解除済みの準備へ遅れて届いた確定は捨てる。解除済みなら公開元の終了を受けて受付を戻した後であり、
-        確定の受付先を観測すると終了した世代へ受付を向け直す。
+        解除済みの準備へ遅れて届いた確定は捨てる。解除済みなら、同じ受付先を世代索引から観測した後か、
+        公開元の終了を受けて受付を戻した後である。後者で確定の受付先を観測すると、終了した世代へ受付を向け直す。
         """
         update = self._updates.get(token)
         if update is None:
@@ -314,19 +371,25 @@ class ServiceCoordinator:
         await update.released.wait()
 
     async def _supervise(self, token: str, update: _Update) -> None:
-        """公開元の確定と終了のうち先に起きた方を受けて、準備が掛けた静止を1回だけ解く。
+        """公開元の確定、受付先の前進、公開元の終了のうち最初に起きたものを受けて、準備が掛けた静止を1回だけ解く。
 
-        静止中は共有監視の周期処理も保存の待機で止まり得るため、周期処理に頼らず公開元の生存を確かめる。
-        生存する公開元が確定を通知しない間は、準備中の引継ぎを失わないよう時間では解かない。
+        公開元は受付を公開した後で必ず確定を送るため、受付先が自世代より新しい世代へ進んだことは確定と同じ意味を持つ。
+        確定が一時的な通信の失敗で届かなくても、常駐する公開元の終了を待たずに静止を解き、退役できる。
+        静止中は共有監視の周期処理も保存の待機で止まり得るため、周期処理に頼らず公開元の生存と受付先を確かめる。
+        生存する公開元が確定を通知せず受付先も進まない間は、準備中の引継ぎを失わないよう時間では解かない。
         """
         try:
-            while not update.committed.done() and service_transport.process_alive(update.publisher["process"]):
+            while (
+                not update.committed.done()
+                and service_transport.process_alive(update.publisher["process"])
+                and not self._superseded()
+            ):
                 await asyncio.wait((update.committed,), timeout=_PUBLISHER_PROBE_SECONDS)
             await update.frozen.wait()
             if update.committed.done():
                 current = update.committed.result()
             else:
-                # 公開元は確定を通知せずに終了した。公開済みなら受付先は終了した世代を指すため、生存する世代へ戻す。
+                # 公開元が確定を通知せずに終了していれば、受付先は終了した世代を指すことがあるため生存する世代へ戻す。
                 await run_file_operation(self.registry.restore)
                 current = self._current()
             await self.gate.observe_current(current)
@@ -405,28 +468,67 @@ class ServiceCoordinator:
         return False
 
     async def _retry_adoptions(self) -> None:
-        for identifier, packet in tuple(self._pending_adoptions.items()):
-            if self._locks.setdefault(identifier, asyncio.Lock()).locked():
-                continue
-            found = self._conversation(identifier)
-            if found is None:
-                continue
-            with self.managers._bound(found[1]):
-                await self._finish_adoption(found[1].manager, packet)
+        for identifier in tuple(self._pending_adoptions):
+            lock = self._locks.setdefault(identifier, asyncio.Lock())
+            if not lock.locked():
+                async with lock:
+                    await self._finish_adoption(identifier)
 
-    async def _finish_adoption(self, manager: Any, packet: dict) -> None:
-        session = service_state.restore(packet["session"])
-        identifier = session.session_id
-        session = manager.sessions[identifier]
-        backend = manager._backend(session.engine)
-        client = self._client(backend, identifier)
-        if packet["resource"] is not None and (client is None or client.transferred):
-            await backend.adopt_session(session, packet["resource"], packet["auxiliary"])
-            if packet["writer_session_id"] is not None:
-                backend._writer_session_ids[identifier] = packet["writer_session_id"]
-        await manager.save_control_state()
-        manager._service_paused.discard(identifier)
-        self._pending_adoptions.pop(identifier, None)
+    async def _reclaim_unadopted(self, descriptor: dict) -> bool:
+        """本体を失った資源は元のbrokerで閉じ、未確認イベントも残っていないことを確かめる。"""
+        assert self._runtime is not None
+        resource = service_io.Resource.attach(self._runtime, descriptor)
+        if not descriptor.get("closed"):
+            try:
+                await resource.operation("release")
+            except KeyError, OSError, EOFError, RuntimeError:
+                # 前回の応答だけを失った場合、releaseは解放済みの資源を拒む。
+                # discardは未解放や所有者違いなら失敗し、解放済みか登録が無ければ成功する。
+                _LOG.debug("未取り込み資源の解放結果を確認します: %s", resource.identifier, exc_info=True)
+            else:
+                descriptor["closed"] = True
+        try:
+            await resource.operation("discard")
+        except OSError, EOFError, RuntimeError:
+            # closeの応答後に元プロセスが終了すれば、メモリー上のイベントも残らない。
+            if not descriptor.get("closed") or service_transport.process_alive(resource.origin["process"]):
+                _LOG.warning("未取り込み資源の回収を再試行します: %s", resource.identifier, exc_info=True)
+                return False
+        return True
+
+    async def _finish_adoption(self, identifier: str) -> None:
+        """移譲で受け取ったsessionのraw資源を取り込み、状態を保存してから制御を受け付ける。
+
+        保存の失敗などで残った取り込み待ちは、本体が保持期限や会話の回収で解放された後も残る。
+        取り込み済みのraw資源は本体の解放が回収し、再開情報は会話の文脈に残るため、失うものは無く待ちを終える。
+        未取り込みのraw資源は元のbrokerで回収できるまで待ちを残す。
+        """
+        packet = self._pending_adoptions.get(identifier)
+        if packet is None:
+            return
+        found = self._conversation(identifier)
+        if found is None:
+            if packet["resource"] is not None and not await self._reclaim_unadopted(packet["resource"]):
+                return
+            conversation = self.managers.conversations.get(packet["parent"])
+            if conversation is not None:
+                conversation.manager._service_paused.discard(identifier)
+            self._pending_adoptions.pop(identifier, None)
+            return
+        manager = found[1].manager
+        with self.managers._bound(found[1]):
+            session = manager.sessions[identifier]
+            backend: Any = manager._backend(session.engine)
+            client = self._client(backend, identifier)
+            if packet["resource"] is not None and (client is None or client.transferred):
+                await backend.adopt_session(session, packet["resource"], packet["auxiliary"])
+                if packet["writer_session_id"] is not None:
+                    backend._writer_session_ids[identifier] = packet["writer_session_id"]
+            # 本体が解放された後の待ちでも、取り込み済みを判別できるようにする。
+            packet["resource"] = None
+            await manager.save_control_state()
+            manager._service_paused.discard(identifier)
+            self._pending_adoptions.pop(identifier, None)
 
     async def accept_context(self, packet: dict) -> None:
         current = self._current()
@@ -519,9 +621,7 @@ class ServiceCoordinator:
         if conversation is None or identifier not in conversation.manager.sessions:
             return {"move_required": True}
         session = conversation.manager.sessions[identifier]
-        if identifier in self._pending_adoptions:
-            with self.managers._bound(conversation):
-                await self._finish_adoption(conversation.manager, self._pending_adoptions[identifier])
+        await self._finish_adoption(identifier)
         next_turn = params.name == "send_message" and (session.terminal or self._ended_turn(session))
         try:
             async with self.gate.admit(new_turn=next_turn, session_id=identifier):
@@ -613,8 +713,8 @@ class ServiceCoordinator:
                 self._locks.setdefault(identifier, asyncio.Lock()) if isinstance(identifier, str) else contextlib.nullcontext()
             )
             async with lock:
-                if isinstance(identifier, str) and identifier in self._pending_adoptions:
-                    await self._finish_adoption(manager, self._pending_adoptions[identifier])
+                if isinstance(identifier, str):
+                    await self._finish_adoption(identifier)
                 next_turn = (
                     params.name == "start"
                     or params.name == "send_message"
@@ -890,5 +990,5 @@ class ServiceCoordinator:
                     self._pending_adoptions[identifier] = packet
                     self._incoming.pop(identifier, None)
                     manager._schedule_session_expiry(session)
-                    await self._finish_adoption(manager, packet)
+                    await self._finish_adoption(identifier)
                     return {"owned": True}

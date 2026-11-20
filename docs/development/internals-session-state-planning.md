@@ -8,10 +8,14 @@ run-skillの再開入力と寿命は`docs/development/internals-agents-server-st
 run-skillが保持する元の実行入力・会話・時間予算は、[共有状態資料のrun-skillの再開入力](internals-agents-server-state-run-skill.md)に従う。
 通常のhook状態JSONへ複製しない。
 
-- `whole_contract_notified`: 委譲先の主体ごとに、全体作業契約の再読案内を最終出力へ採用した内容ハッシュの一覧を保持する。
-  PreToolUseと圧縮後のSessionStartが、起動時の正式な作業契約入力と既存の資料読了記録から未読版を判定する。
-  本文は配送せず、同じ版は1回だけ非遮断で案内する。
-  実際の全文読取後は案内を抑止し、compact時はこの通知記録を削除して所在を再案内する。
+- `whole_contract_notified`: 委譲先の主体ごとに、全体作業契約の更新を案内した版（本文のSHA-256）の一覧を保持する。
+  PreToolUseの`work_contract.delegated_notice`が`whole_contract_launch`の版と原本の現在の版を比べ、異なる版を主体ごとに1回だけ非遮断で案内する。
+  案内は最終出力へ採用した時に記録し、本文は配送しない。
+  compactのSessionStartがこの記録を削除する。
+  セッション状態と同じ寿命で保持する。
+- `whole_contract_launch`: 委譲先が起動時に受け取った全体作業契約の所在と版（起動の本文の`kind="startup-document"`の要素が示す本文識別子）。
+  最初の判定で`agents_server`の登録簿の起動本文から求めて保持し、登録簿にまだ無いsessionは記録せず次の操作で求め直す。
+  起動の本文に契約の全文が無い起動では空の値を記録し、更新を案内しない。
   セッション状態と同じ寿命で保持する。
 - `work_contract_input_sequence`: UserPromptSubmitが実ユーザー入力ごとに進める整数。
   初期値は0で、機械注入の間は値を保つ。

@@ -55,8 +55,8 @@ _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
         "Codexの入力欄で`/hooks`を実行し、agent-toolkitの未信頼・変更済みフックの定義を確認して信頼してください。"
         "その後、そのセッションを終了して新しいセッションを開始してください。"
-        "セッションの開始時（SessionStart）に規範を読み込みます。"
-        "新しいセッションでエージェントに「起動時にagent-toolkitの規範を受け取ったか確認して」と尋ねてください。"
+        "セッションの開始時（SessionStart）に、入口のスキル`agent-toolkit:atk-mode`を起動する案内が届きます。"
+        "新しいセッションでエージェントに「起動時にatk-modeを起動する案内を受け取ったか確認して」と尋ねてください。"
         "フックの永続的な信頼登録は手動です。稼働中のdaemonはplugin更新時に自動で再起動します。"
     ),
     command="/hooks",

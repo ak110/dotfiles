@@ -106,6 +106,9 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     (notes / "2026/10").mkdir(parents=True, exist_ok=True)
     old = notes / "2026/10" / (run_id + ".md")
     body = old.read_text().split("\\n---\\n", 1)[1] + "\\n再開後の報告更新\\n" if old.exists() else "定期実行の報告\\n"
+    if data["batch_manifest"]:
+        prepared = json.loads(pathlib.Path(data["batch_manifest"]).read_text(encoding="utf-8"))["prepared"]
+        body += "\\n".join(item["session_id"] for item in prepared) + "\\n"
     saved_id = "other-run" if mode == "other" else run_id
     if os.environ.get("FAKE_REPORT_ANSWER"):
         body += "\\n## 回答\\n\\n<!-- ユーザーはこの行以降に回答を追記する -->\\n"
@@ -128,9 +131,11 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
             subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
             subprocess.run(["git", "-C", str(notes), "commit", "-qm", "other report"], check=True)
 if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_BATCH"):
-    from agent_toolkit._common import session_review
-    manifest_path = pathlib.Path(os.environ["AGENT_TOOLKIT_SESSION_REVIEW_BATCH"])
-    session_review.BatchWriter(manifest_path).analyze()
+    from argparse import Namespace
+    from agent_toolkit._atk import run_script
+    finish = run_script.dispatch(Namespace(script_name="session-review-state", script_args=["finish"]))
+    if finish:
+        sys.exit(finish)
 if os.environ.get("FAKE_SESSION_LIMIT_COUNT"):
     counter = record_dir / "session-count"
     count = int(counter.read_text()) if counter.exists() else 0

@@ -110,17 +110,48 @@ class ProjectionHub:
             await self._apply_local({"identity": item["identity"], "operation": "seed", "arguments": item})
 
     async def activate(self) -> None:
-        for key, writer in tuple(self.writers.items()):
-            if groups := self.groups[key]:
-                source, arguments = next(iter(groups.items()))
-                await self.apply(
-                    {
-                        "identity": dataclasses.asdict(writer._identity),
-                        "source": source,
-                        "operation": "snapshot",
-                        "arguments": arguments,
-                    }
-                )
+        """受付を公開した後、書込主体ごとにロックを取った時点の観測から状態ファイルを書く。
+
+        ロックの外で選んだ観測を書くと、ロックを待つ間に旧世代が保存した進捗やeffortを古い値へ戻す。
+        """
+        for key in tuple(self.writers):
+            async with self._locks.setdefault(key, asyncio.Lock()):
+                if self.groups.get(key):
+                    await self._render(key)
+
+    async def _render(self, key: tuple[str, str]) -> dict:
+        """書込主体が持つ各世代の観測を世代順に重ねて状態ファイルへ書く。呼出元は書込主体のロックを持つ。"""
+        writer = self.writers[key]
+        previous = writer.sessions
+        combined: dict[str, state.SessionState] = {}
+        expired = {}
+        ordered = sorted(self.groups[key].items(), key=lambda item: self._epochs.get(item[0], 0))
+        for _source, group in ordered:
+            for item in group["sessions"]:
+                session = service_state.restore(item)
+                prior = previous.get(session.session_id)
+                if prior is not None and (prior.turn_seq, prior.finalized_at) == (
+                    session.turn_seq,
+                    session.finalized_at,
+                ):
+                    session.result_delivered |= prior.result_delivered
+                # 観測用の状態は登録簿の制御所有者を書き換えない。
+                session.publish_registry = False
+                combined[session.session_id] = session
+                if prior is None and session.session_id in group["published"]:
+                    writer._published_results.add(session.session_id)
+            expired.update(self._codec.decode(group["expired"]))
+        writer._sessions = combined
+        writer._expired_sessions = expired
+        await writer.flush_async()
+        return {
+            "delivered": [
+                [session.session_id, session.turn_seq, session.finalized_at]
+                for session in combined.values()
+                if session.result_delivered
+            ],
+            "published": list(writer._published_results),
+        }
 
     async def apply(self, payload: dict) -> Any:
         """現在もwriterを所有する世代だけが、許可した射影操作を保存する。"""
@@ -152,7 +183,6 @@ class ProjectionHub:
         ):
             raise ValueError("射影する書込主体の識別が不正です")
         key = identity.root_session_id, identity.file_name
-        refresh = None
         async with self._locks.setdefault(key, asyncio.Lock()):
             target = self.registry.current()
             if payload["operation"] != "seed" and (
@@ -181,36 +211,7 @@ class ProjectionHub:
                 result = None
             elif operation == "snapshot":
                 self.groups[key][payload["source"]] = arguments
-                previous = writer.sessions
-                combined: dict[str, state.SessionState] = {}
-                expired = {}
-                ordered = sorted(self.groups[key].items(), key=lambda item: self._epochs.get(item[0], 0))
-                for _source, group in ordered:
-                    for item in group["sessions"]:
-                        session = service_state.restore(item)
-                        prior = previous.get(session.session_id)
-                        if prior is not None and (prior.turn_seq, prior.finalized_at) == (
-                            session.turn_seq,
-                            session.finalized_at,
-                        ):
-                            session.result_delivered |= prior.result_delivered
-                        # 観測用の状態は登録簿の制御所有者を書き換えない。
-                        session.publish_registry = False
-                        combined[session.session_id] = session
-                        if prior is None and session.session_id in group["published"]:
-                            writer._published_results.add(session.session_id)
-                    expired.update(self._codec.decode(group["expired"]))
-                writer._sessions = combined
-                writer._expired_sessions = expired
-                await writer.flush_async()
-                result = {
-                    "delivered": [
-                        [session.session_id, session.turn_seq, session.finalized_at]
-                        for session in combined.values()
-                        if session.result_delivered
-                    ],
-                    "published": list(writer._published_results),
-                }
+                result = await self._render(key)
             elif operation == "deactivate":
                 self.groups[key].pop(payload["source"], None)
                 if not self.groups[key]:
@@ -219,8 +220,8 @@ class ProjectionHub:
                     self.writers.pop(key)
                     self.groups.pop(key)
                 else:
-                    source, group = next(iter(self.groups[key].items()))
-                    refresh = {"identity": payload["identity"], "source": source, "operation": "snapshot", "arguments": group}
+                    # 残る世代の観測から、同じロックの中で書き直す。ロックを離してから書くと、その間の保存を古い値へ戻す。
+                    await self._render(key)
                 result = None
             elif operation in {
                 "result_state_async",
@@ -242,10 +243,7 @@ class ProjectionHub:
                     result = await getattr(writer, operation)(**values)
             else:
                 raise ValueError("未対応の射影操作です")
-            encoded = self._codec.encode(result)
-        if refresh is not None:
-            await self.apply(refresh)
-        return encoded
+            return self._codec.encode(result)
 
 
 class ServiceStatusWriter(status_file.StatusFileWriter):

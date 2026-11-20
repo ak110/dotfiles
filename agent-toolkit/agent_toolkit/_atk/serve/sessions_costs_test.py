@@ -17,7 +17,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk.serve import sessions
-from agent_toolkit._testing.serve_sessions_support import _claude_record, _context, _start_warmer, _wait_until
+from agent_toolkit._testing.serve_sessions_support import _claude_record, _codex_record, _context, _start_warmer, _wait_until
 
 
 def test_cost_warmer_preserves_unreclaimed_owner_before_restarting(tmp_path, monkeypatch):
@@ -115,6 +115,27 @@ def test_family_cost_is_reused_until_a_family_record_changes(tmp_path: pathlib.P
     changed = sessions.read_local_cost(restarted, "claude", str(record))
     assert len(estimated) == 2
     assert changed["known_usd"] > first["known_usd"]
+
+
+def test_saved_unpriced_sol_is_recalculated_without_record_changes(tmp_path: pathlib.Path) -> None:
+    """旧料金表で単価不明だった記録を開き直すと、新単価の額を返す。"""
+    record = _codex_record(tmp_path)
+    with record.open("a", encoding="utf-8") as stream:
+        for entry in [
+            {"type": "turn_context", "payload": {"model": "gpt-6.2-sol"}},
+            {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 1000}}}},
+        ]:
+            stream.write(json.dumps(entry) + "\n")
+    state_dir = tmp_path / "state"
+    cache = state_dir / "serve" / "session-costs.json"
+    cache.parent.mkdir(parents=True)
+    old_cost = {"estimated_usd": None, "known_usd": 0, "unknown_responses": 1, "pricing": {"as_of": "2026-11-11"}}
+    family = {"stamps": sessions._session_costs.family_stamps([record]), "cost": old_cost}
+    cache.write_text(json.dumps({"version": 1, "families": {str(record): family}}), encoding="utf-8")
+
+    cost = sessions.read_local_cost(_context(tmp_path, state_dir=state_dir), "codex", str(record))
+    assert cost["estimated_usd"] == pytest.approx(0.002)
+    assert cost["unknown_responses"] == 0
 
 
 def test_cost_warmer_precomputes_listed_family_in_worker_process(

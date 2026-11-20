@@ -6,6 +6,7 @@ from __future__ import annotations
 # pylint: disable=protected-access
 import json
 import pathlib
+import re
 from unittest.mock import AsyncMock
 
 import pytest
@@ -176,6 +177,61 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     extra_params = _observed_input_params(task_name, tmp_path)
     if task_name == "exec-review.subagent.md":
         _prepare_exec_review_plan(tmp_path)
+
+    assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
+
+
+_LANE_OWNER_INPUTS = ("所有登録", "統合先worktree", "統合先branch", "レーン開始時刻")
+
+
+@pytest.mark.parametrize("missing", _LANE_OWNER_INPUTS)
+def test_lane_owner_launch_without_lane_input_is_rejected(missing: str, tmp_path: pathlib.Path) -> None:
+    """`担当種別: レーン担当`の起動で資源と統合先と開始時刻のどれかが欠けると、起動前に不足の名前を示して拒否する。"""
+    task_document = launch_requests.resolve_task_document_path("exec")
+    extra_params = _observed_input_params("exec.subagent.md", tmp_path)
+    assert extra_params["担当種別"] == "レーン担当" and set(_LANE_OWNER_INPUTS) <= set(extra_params)
+    del extra_params[missing]
+
+    with pytest.raises(ActionableError, match=rf"必須入力が欠けています: {missing};"):
+        launch_requests._validate_required_prompt_inputs(task_document, extra_params)
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "rejected", "reason"),
+    [
+        ("所有登録", "lane-01.json", "所有登録", "所有登録ファイルを絶対パスで読めない"),
+        ("所有登録", "{root}/missing.json", "所有登録", "所有登録ファイルを絶対パスで読めない"),
+        ("所有登録", "{root}/other-lane.json", "レーン識別子", "`lane`（lane-02）と一致しない"),
+        ("統合先branch", "main", "統合先branch", "`base_branch`（develop）と一致しない"),
+        ("統合先worktree", "{root}/missing", "統合先worktree", "実在するディレクトリの絶対パスではない"),
+        ("レーン開始時刻", "2026-11-15T13:17:00", "レーン開始時刻", "時差付きISO 8601"),
+        ("レーン開始時刻", "2999-01-01T00:00:00+09:00", "レーン開始時刻", "現在時刻より後"),
+    ],
+)
+def test_lane_owner_launch_with_wrong_value_is_rejected(
+    name: str, value: str, rejected: str, reason: str, tmp_path: pathlib.Path
+) -> None:
+    """統括が渡したレーンの値が所有登録と合わないか形式が不正なら、起動前に入力名と理由を示して拒否する。"""
+    task_document = launch_requests.resolve_task_document_path("exec")
+    extra_params = _observed_input_params("exec.subagent.md", tmp_path)
+    assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
+    (tmp_path / "other-lane.json").write_text('{"lane": "lane-02", "base_branch": "develop"}\n', encoding="utf-8")
+    extra_params[name] = value.format(root=tmp_path)
+
+    with pytest.raises(ActionableError, match=rf"レーン担当の入力が不成立です: {rejected}: .*{re.escape(reason)}"):
+        launch_requests._validate_required_prompt_inputs(task_document, extra_params)
+
+
+@pytest.mark.parametrize("kind", ["CI修正担当", "レビュー修正担当"])
+def test_fix_owner_launch_does_not_need_lane_inputs(kind: str, tmp_path: pathlib.Path) -> None:
+    """修正担当の起動は、レーン担当だけの入力が無くても起動前の検査で拒否されない。"""
+    task_document = launch_requests.resolve_task_document_path("exec")
+    extra_params = {
+        name: value
+        for name, value in _observed_input_params("exec.subagent.md", tmp_path).items()
+        if name not in _LANE_OWNER_INPUTS
+    }
+    extra_params["担当種別"] = kind
 
     assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
 

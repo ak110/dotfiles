@@ -34,7 +34,7 @@
 <!-- input-contract:copilot-review-audit:end -->
 
 選定メインが監査を委譲する時に、本節で監査担当を起動して結果を受け取る。
-監査担当の役割文書は`agent-toolkit:atk-mode/roles/copilot-review-audit.subagent.md`にあり（所在参照）、返却の項目は本書「監査担当の返却契約」に従う。
+監査担当の役割文書は`agent-toolkit:atk-mode/roles/copilot-review-audit.subagent.md`にあり、返却の項目は本書「監査担当の返却契約」に従う。
 
 ### 起動
 

@@ -35,9 +35,9 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import delegated_session, read_triggers, runtime_environment, session_registry, task_documents
+from agent_toolkit._common import delegated_session, runtime_environment, session_registry, startup_documents, task_documents
 from agent_toolkit._common.markdown_headings import parse_headings
-from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
+from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
 
 __all__ = [
@@ -95,15 +95,27 @@ def _accepted_role_names() -> list[str]:
 def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
     """`subagent_md_path`の絶対パスはそのまま、役割名はサーバー自身のplugin rootの役割文書へ解決する。
 
-    置き場所は`task_documents.ROLE_DOCUMENT_DIRECTORIES`が定める。
+    置き場所は`task_documents.ROLE_DOCUMENT_DIRECTORY`が定める。
 
     委譲元は自身のシェルでplugin rootを解決できないことがあり、サーバーは自身のplugin rootを一意に持つため、
     役割名を受理して委譲元と同じ版の文書へ解決する。区切り文字か接尾辞を含む相対の値は役割名として扱わずに拒否する。
     """
     task_document = pathlib.Path(subagent_md_path)
     if task_document.is_absolute():
-        # 置き場所の外の絶対パスは後段の所在の検査へ渡す。
-        owner = task_documents.document_plugin_root(task_document)
+        if (
+            task_document.parent.name == "share"
+            and task_document.name.endswith(_TASK_DOCUMENT_SUFFIX)
+            and task_documents.is_agent_toolkit_plugin_root(task_document.parent.parent)
+        ):
+            current = task_documents.find_role_document(plugin_root.SERVER_PLUGIN_ROOT, task_document.name)
+            reason = f"subagent_md_pathがagent-toolkit旧版のshare/を参照しています: {task_document}"
+            if current is not None:
+                reason += f"。現在の役割文書: {current}"
+            raise ActionableError(reason, next_action="プラグイン更新後は会話を再起動し、新しいスキル本文を読み直す")
+        owner = task_documents.role_document_plugin_root(task_document)
+        if owner is None:
+            # 置き場所の外の絶対パスは、そのまま後段の所在の検査へ渡す。
+            return task_document
         return plugin_root.resolve_stable_plugin_root(owner) / task_document.relative_to(owner)
     is_role_name = not any(part in subagent_md_path for part in ("/", "\\", _TASK_DOCUMENT_SUFFIX))
     if is_role_name and subagent_md_path:
@@ -333,29 +345,7 @@ def delegate_request(
     ) + "\n\n" + whole_contract, path
 
 
-_WHOLE_CONTRACT_KIND = "work-contract-reference"
-
-_WHOLE_CONTRACT_LINE_PREFIX = "全体作業契約: "
-
-_WHOLE_CONTRACT_OPENING = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "agents-server", "kind": _WHOLE_CONTRACT_KIND})
-
 _WHOLE_CONTRACT_REISSUE = "`whole_contract_path`へ既存の全体作業契約の絶対パスを指定して`start`を再発行する"
-
-
-def _delivered_whole_contract(prompt: str) -> pathlib.Path | None:
-    """配送済みの起動本文から、サーバーが加えた全体作業契約の絶対パスを取り出す。
-
-    依頼本文が同じ語を含んでも取り違えないよう、サーバーが付けた要素の内側だけを読む。
-    旧形式の未解決の通知と要素の不在は`None`とする。
-    """
-    start = prompt.rfind(_WHOLE_CONTRACT_OPENING)
-    if start < 0:
-        return None
-    first_line = prompt[start + len(_WHOLE_CONTRACT_OPENING) :].lstrip("\n").split("\n", 1)[0]
-    if not first_line.startswith(_WHOLE_CONTRACT_LINE_PREFIX):
-        return None
-    path = pathlib.Path(first_line.removeprefix(_WHOLE_CONTRACT_LINE_PREFIX).strip())
-    return path if path.is_absolute() else None
 
 
 def _inherited_whole_contract(launcher_session_id: str | None) -> pathlib.Path | None:
@@ -371,7 +361,7 @@ def _inherited_whole_contract(launcher_session_id: str | None) -> pathlib.Path |
     except ValueError, OSError:
         return None
     for info in (resolution.resume_info, resolution.handoff_info):
-        if info is not None and (path := _delivered_whole_contract(info.launch_info.prompt)) is not None:
+        if info is not None and (path := delegated_session.prompt_whole_contract_path(info.launch_info.prompt)) is not None:
             return path
     return None
 
@@ -441,22 +431,24 @@ def whole_contract_reference(
     """解決済みの全体契約の参照と本文を、担当の判断が始まる前に同じ起動本文へ届ける。"""
     path = _resolve_whole_contract(whole_contract_path, launcher_session_id)
     body = (
-        f"{_WHOLE_CONTRACT_LINE_PREFIX}{path}\n"
-        "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
+        f"{delegated_session.WHOLE_CONTRACT_LINE_PREFIX}{path}\n"
+        "直後の要素に全体作業契約の本文がある。同じ版を取り直さず、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
         "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
     )
-    target = read_triggers.ReadTarget(path)
-    delivered = read_triggers.startup_documents([target], plugin_root.SERVER_PLUGIN_ROOT, {target: {"input:作業契約"}})
-    return auto_message(body, source="agents-server", kind=_WHOLE_CONTRACT_KIND) + "\n\n" + delivered
+    return (
+        auto_message(body, source="agents-server", kind=delegated_session.WHOLE_CONTRACT_KIND)
+        + "\n\n"
+        + startup_documents.render([path])
+    )
 
 
 def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
     """サーバーが所有する共通入力を、役割文書の入力宣言から分離して加える。"""
     record_line = f"引き継ぎ記録先: {path}（新規）\n" if path is not None else ""
     return auto_message(
-        record_line + f"{root / 'skills/atk-mode/references/work-contract.md'}に従い、"
-        "委譲先自身が新規・継続の指定に応じて記録を作成・更新する。"
-        "記録は割当範囲を所有し、委譲元は終了後の検収で読む。",
+        record_line + "継続なら最初に自分の引き継ぎ記録を読む。新規で書く値が無ければ作成しない。"
+        "未回収の実行、Git管理外の成果物、再開位置、役割固有の項目などを記録する時は、"
+        f"{root / 'skills/atk-mode/references/work-contract.md'}「引き継ぎ記録」に従う。",
         source="agents-server",
         kind="work-contract",
     )
@@ -468,9 +460,6 @@ def task_document_request(
     *,
     whole_contract_path: str | None = None,
     launcher_session_id: str | None = None,
-    host: str = "claude",
-    project: pathlib.Path | str | None = None,
-    include_startup: bool = True,
 ) -> tuple[str, str, LaunchKind, pathlib.Path | None]:
     """役割と名前付き入力からmodel種別、プロンプト、mode、サーバーが用意した引き継ぎ記録先を返す。
 
@@ -479,6 +468,7 @@ def task_document_request(
     宣言しない通常起動にも共通入力として専用の記録先を加える。
     委譲元が値を渡した場合と軽量起動の4要素目は`None`とする。
     `whole_contract_path`と`launcher_session_id`は通常起動の全体作業契約の解決（`whole_contract_reference`）へ渡す。
+    起動の本文へ入れる資料（`startup_documents`）は、起動の候補ごとのhostとcwdで解決するため、`start`が加える。
     """
     task_document = resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
@@ -541,22 +531,6 @@ def task_document_request(
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         check_declared_inputs(task_document, declaration, extra_params)
-    # 起動時の資料は、受領した役割の判断が始まる前に同じ会話へ届ける。
-    initial_documents = (
-        plugin_root.SERVER_RUNTIME_CODE.check_role(
-            "起動時資料の検査",
-            task_document,
-            lambda: read_triggers.startup_context(
-                task_document,
-                task_documents.document_plugin_root(task_document),
-                dict(extra_params),
-                host=host,
-                project=project,
-            ),
-        )
-        if launch_kind == "delegate" and include_startup
-        else ""
-    )
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
@@ -580,10 +554,8 @@ def task_document_request(
         "入力:",
         *named_input_lines(inputs),
         task_documents.TASK_PROMPT_REFERENCES.strip("\n"),
+        document_text,
     ]
-    if initial_documents:
-        prompt_lines.append(initial_documents)
-    prompt_lines.append(document_text)
     if launch_kind == "delegate":
         notice_path = handoff_path if _HANDOFF_INPUT_NAME not in extra_params else None
         prompt_lines.append(handoff_notice(notice_path, task_documents.document_plugin_root(task_document)))

@@ -13,9 +13,6 @@ AskUserQuestion / ExitPlanMode:
 
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
 - ユーザーが直接読む英語主体の質問本文・計画本文の書き直し要求 (block)
-- 確認の前に読む資料（`agent-toolkit:atk-mode/playbooks/confirmation.md`）を読まないままメインが呼んだ
-  確認ツール（`AskUserQuestion`・`request_user_input`・`request_user_input_async`）の拒否 (block)。
-  警告は回答と一緒に届き害を防げないため、質問の表示前に拒否する。宣言や記録を読めない場合は拒否しない
 
 mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
@@ -39,11 +36,6 @@ Bash:
 - 読取の引数・診断破棄、atk出力の接続とwaitの背景化の警告 (warn)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
 - commitメッセージの規則（`atk-mode`の`references/commit-message.md`）の読取時に、観測した帰属行を先行配送 (warn)
-- 操作を起動の契機とするスキル（`agent-basics:search`・`agent-basics:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
-
-Grep / Glob:
-
-- `agent-basics:search`が未起動のままの検索の、文脈ごとに1回の警告 (warn)
 
 TaskStop:
 
@@ -56,7 +48,12 @@ Write / Edit / MultiEdit / apply_patch:
 - lockfile / 生成物ディレクトリの直接編集 (warn)
 - Pythonと計画Markdownの末尾へ混入したツール境界タグ (warn)
 - manifestファイルの手編集 (warn)
-- `agent-basics:bugfix`が未起動のままの`## 原因分析`の見出し行の記述の、文脈ごとに1回の警告 (warn)
+
+全ツール共通:
+
+- 操作の直前に起動を求めるスキル（`operation_skills.OPERATION_SKILLS`の検索・原因分析の記述・本文の作成と更新・
+  検証の実行）の、主体と文脈ごとにスキル1件につき1回の案内 (notice)
+- 委譲先の全体作業契約が起動後に更新された場合の、更新後の版ごとに1回の案内 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 
@@ -94,7 +91,6 @@ lazy from agent_toolkit._hooks import (
     bugfix_gate,
     command_timing,
     repository_protection,
-    rules_context,
     work_contract,
 )
 lazy from agent_toolkit._hooks import (
@@ -126,9 +122,6 @@ lazy from agent_toolkit._hooks.pretooluse.large_reads import (
     session_record_reference_warning,
 )
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
-lazy from agent_toolkit._hooks.pretooluse.read_delivery import deliver as read_delivery
-lazy from agent_toolkit._hooks.pretooluse.read_delivery_conditions import _work_record_only
-lazy from agent_toolkit._hooks.pretooluse.read_delivery_paths import _acquiring
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
     _check_bash_option_after_terminator,
@@ -217,9 +210,7 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
     # ホスト判定はpayload読込直後に一度だけ行い、以降の判定処理の選択と入力アダプターへ同じ値を渡す。
     is_codex = is_codex_payload(payload)
 
-    operations = [entry.operation for entry in _operation_skills.OPERATION_SKILLS if entry.matches(tool_name, tool_input)]
-    scope = "pretooluse:" + str(tool_name) + ":" + ",".join(operations)
-    with notice_cycle(session_id, scope, _agent_id.resolve_hook_agent_id(payload)):
+    with notice_cycle(session_id, "pretooluse:" + str(tool_name), _agent_id.resolve_hook_agent_id(payload)):
         pending_notices: list[str] = list(initial_notices)
         if tool_name not in _USER_FACING_TEXT_TOOL_NAMES:
             _language_retry(payload, tool_name, tool_input, remember=False)
@@ -227,15 +218,6 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
         protection = repository_protection.check(tool_name, tool_input, str(payload.get("cwd", "")))
         if protection is not None:
             decision = dataclasses.replace(decision, block="\n\n".join(filter(None, (decision.block, protection))))
-        if decision.block is None:
-            delivery = read_delivery(payload, tool_name, tool_input, session_id)
-            if delivery.block is not None:
-                pending_notices.extend(decision.notices)
-                if decision.context:
-                    pending_notices.append(decision.context)
-                decision = delivery
-            elif delivery.notices:
-                decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
         if decision.block is None and not decision.allow and not is_codex:
             authorization = operation_permissions.pretooluse(payload)
             if authorization is not None:
@@ -244,28 +226,11 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                     allow=authorization.allow,
                     notices=decision.notices + ((authorization.context,) if authorization.context else ()),
                 )
-        from agent_toolkit._hooks import effort_notice  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-        if (effort_advice := effort_notice.observe(payload)) is not None:
-            pending_notices.append(effort_advice)
         if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
             pending_notices.append(warning)
-        state = read_state(session_id)
-        cwd = str(payload.get("cwd", ""))
-        preparing = _acquiring(tool_name, tool_input, cwd) or _work_record_only(
-            _operation_skills.written_paths(tool_name, tool_input, cwd), payload, session_id
-        )
-        # 操作の分類はPreToolUseが所有し、契約の所在・版の判定から分離する。
-        contract_update = (
-            None
-            if preparing
-            else work_contract.delegated_notice(
-                session_id,
-                state.get(rules_context.OPERATION_SKILL_READY_KEY, {}),
-                state,
-                agent=_agent_id.resolve_hook_agent_id(payload),
-            )
-        )
+        if decision.block is None:
+            pending_notices.extend(_operation_skills.notices(payload, tool_name, tool_input, session_id))
+        contract_update = work_contract.delegated_notice(session_id, agent=_agent_id.resolve_hook_agent_id(payload))
         if contract_update:
             pending_notices.append(
                 _llm_notice(
@@ -414,12 +379,9 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
             warnings.append(record_warning)
     elif read_warning := check_large_bash_read(command, cwd):
         warnings.append(read_warning)
-    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     if bundled_warning := check_bundled_read(
         command,
         cwd,
-        records=records if isinstance(records, dict) else {},
-        agent=_agent_id.resolve_hook_agent_id(payload),
         codex=is_codex,
         environment=dict(os.environ),
         max_output_tokens=tool_input.get("max_output_tokens"),
@@ -599,7 +561,7 @@ def _language_retry(payload: dict, tool_name: str, tool_input: dict, *, remember
 
 
 def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: dict) -> Decision:
-    """質問・計画本文の文字化けと、確認の前に読む資料の未読を確かめ、警告として返す。
+    """質問・計画本文の記述言語と文字化けを確かめる。
 
     ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
     遮断するとそのターンの入力と作業を失い、同じ確認を再発行する必要があるため、警告で返す。

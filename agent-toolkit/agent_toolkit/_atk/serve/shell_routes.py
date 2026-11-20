@@ -66,7 +66,11 @@ def register_error_handlers(app: quart.Quart) -> None:
     @app.errorhandler(filelock.Timeout)
     async def lock_conflict(error: filelock.Timeout) -> tuple[quart.Response, int]:
         del error
-        return quart.jsonify(error="別の操作が進行中です", code="lock_conflict"), 409
+        return quart.jsonify(
+            error="別の操作が進行中です",
+            code="lock_conflict",
+            next_action="別の操作の終了を待って再試行する",
+        ), 409
 
     @app.errorhandler(_atk_git_sync.RebaseInProgressError)
     async def rebase_in_progress(error: _atk_git_sync.RebaseInProgressError) -> tuple[quart.Response, int]:

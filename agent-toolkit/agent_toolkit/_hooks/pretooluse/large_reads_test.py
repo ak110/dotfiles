@@ -6,7 +6,6 @@ import shlex
 
 import pytest
 
-from agent_toolkit._git import document_acquisition
 from agent_toolkit._hooks import pretooluse, work_contract
 from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_skills
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, sed_read_range
@@ -484,9 +483,7 @@ def _bundle(tmp_path, sizes):
 def test_bundled_read_over_claude_budget_is_split(tmp_path, limit, warned):
     """合計の文字数が出力の上限を超える複数ファイルの全文表示だけに分割を案内する。"""
     _paths, command = _bundle(tmp_path, (29, 29))  # 先頭の識別文字を含めて各30文字
-    warning = large_reads.check_bundled_read(
-        command, str(tmp_path), records={}, agent="main", codex=False, environment={"BASH_MAX_OUTPUT_LENGTH": limit}
-    )
+    warning = large_reads.check_bundled_read(command, str(tmp_path), codex=False, environment={"BASH_MAX_OUTPUT_LENGTH": limit})
     assert (warning is not None and "分けて取得" in warning) is warned
 
 
@@ -494,9 +491,7 @@ def test_bundled_partial_reads_are_not_counted_as_full_text(tmp_path):
     """範囲表示の分割取得は、ファイル全体の量が上限を超えても超過を案内しない。"""
     paths, _command = _bundle(tmp_path, (99, 99))
     command = "sed -n '1p' -- " + " ".join(str(path) for path in paths)
-    warning = large_reads.check_bundled_read(
-        command, str(tmp_path), records={}, agent="main", codex=False, environment={"BASH_MAX_OUTPUT_LENGTH": "100"}
-    )
+    warning = large_reads.check_bundled_read(command, str(tmp_path), codex=False, environment={"BASH_MAX_OUTPUT_LENGTH": "100"})
     assert warning is None
 
 
@@ -504,28 +499,6 @@ def test_bundled_read_codex_budget_includes_envelope(tmp_path):
     """本文の見積りが予算内でも、外側のJSON包絡を含めて超える場合は分割を案内する。"""
     _paths, command = _bundle(tmp_path, (99, 99))  # UTF-8で各298バイト、見積り各100トークン
     budget = 200 + large_reads._CODEX_ENVELOPE_TOKENS  # pylint: disable=protected-access
-    within = large_reads.check_bundled_read(
-        command, str(tmp_path), records={}, agent="main", codex=True, environment={}, max_output_tokens=budget
-    )
-    over = large_reads.check_bundled_read(
-        command, str(tmp_path), records={}, agent="main", codex=True, environment={}, max_output_tokens=budget - 1
-    )
+    within = large_reads.check_bundled_read(command, str(tmp_path), codex=True, environment={}, max_output_tokens=budget)
+    over = large_reads.check_bundled_read(command, str(tmp_path), codex=True, environment={}, max_output_tokens=budget - 1)
     assert within is None and over is not None
-
-
-def test_bundled_read_reuses_only_current_full_receipts(tmp_path):
-    """同じ本文版を全文で受信した資料だけを再取得不要とし、本文の変更後は再取得を妨げない。"""
-    paths, command = _bundle(tmp_path, (10, 10))
-    fingerprint = document_acquisition.bytes_fingerprint(paths[0].read_bytes())
-    records = {f"{document_acquisition.READ_TRIGGER_PREFIX}{paths[0]}#sha256:{fingerprint}": ["main"]}
-    reused = large_reads.check_bundled_read(command, str(tmp_path), records=records, agent="main", codex=False, environment={})
-    assert reused is not None and str(paths[0]) in reused and "再取得せず" in reused
-    assert (
-        large_reads.check_bundled_read(command, str(tmp_path), records=records, agent="other", codex=False, environment={})
-        is None
-    )
-    paths[0].write_text("変更後", encoding="utf-8")
-    assert (
-        large_reads.check_bundled_read(command, str(tmp_path), records=records, agent="main", codex=False, environment={})
-        is None
-    )

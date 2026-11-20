@@ -47,7 +47,7 @@ from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, Sessi
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import usage_refresh
-from agent_toolkit._common import codex_models, read_triggers, task_documents
+from agent_toolkit._common import codex_models, startup_documents, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.plugin_roots import PluginRootError
 
@@ -166,6 +166,30 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         response.update(ticket.response_fields())
         return response
 
+    @staticmethod
+    def _startup_documents(
+        role_document: pathlib.Path | None,
+        inputs: Mapping[str, str] | None,
+        engine: str,
+        cwd: str,
+    ) -> str:
+        """起動の本文へ入れる資料を、候補のhostとcwdで解決する。
+
+        役割の起動の失敗は、役割の版と対応付けて起動前に返す。役割文書の無い起動は資料を入れない。
+        """
+        if role_document is None:
+            return ""
+        return plugin_root.SERVER_RUNTIME_CODE.check_role(
+            "起動時資料の検査",
+            role_document,
+            lambda: startup_documents.compose(
+                role_document,
+                inputs or {},
+                host=engine,
+                project=cwd,
+            ),
+        )
+
     async def _start_admitted(
         self,
         model_type: str,
@@ -216,21 +240,8 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 resource_instructions = await run_file_operation(
                     launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, engine, cwd
                 )
-                initial_documents = (
-                    await run_file_operation(
-                        plugin_root.SERVER_RUNTIME_CODE.check_role,
-                        "起動時資料の検査",
-                        startup_document,
-                        lambda engine=engine: read_triggers.startup_context(
-                            startup_document,
-                            task_documents.document_plugin_root(startup_document),
-                            dict(startup_inputs or {}),
-                            host=engine,
-                            project=cwd,
-                        ),
-                    )
-                    if startup_document is not None and launch_kind == "delegate"
-                    else ""
+                initial_documents = await run_file_operation(
+                    self._startup_documents, startup_document, startup_inputs, engine, cwd
                 )
                 delivery_body = (
                     resource_instructions

@@ -54,7 +54,9 @@ async def test_send_message_preserves_background_and_mixed_waits(
         assert "previous_result" not in response
         assert session.status == "running"
         assert set(session.live_tasks) == {"task-1"}
-        assert [delivery_payload(value) for value in client.queries] == ["調査", "続行"]
+        launched, continued = (delivery_payload(value) for value in client.queries)
+        assert launched == "調査"
+        assert continued == "続行"
 
         client.emit(ResultMessage("追送後も待機"))
         await _await_state(lambda: session.awaiting_auto_resume)

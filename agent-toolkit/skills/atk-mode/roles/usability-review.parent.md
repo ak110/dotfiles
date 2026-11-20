@@ -21,7 +21,7 @@
 
 <!-- input-contract:usability-review:end -->
 
-起動側が決める値は次のとおりである（各入力の意味は`agent-toolkit:atk-mode/roles/usability-review.subagent.md`「入力」が定め、所在参照）。
+起動側が決める値は次のとおりである（各入力の意味は`agent-toolkit:atk-mode/roles/usability-review.subagent.md`「入力」が定める）。
 
 - `主要シナリオ`: 計画かWIが定めたエンドユーザーの作業の流れと、そこで確かめるUXの観点。
   変更画面ごとに求める改善と、今回の変更による既存品質の退行を確かめる観点を書き、原要求か確かめる品質が画面ごとに違えばシナリオも分ける。

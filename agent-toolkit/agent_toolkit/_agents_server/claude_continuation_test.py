@@ -7,6 +7,8 @@ from __future__ import annotations
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import asyncio
+import contextlib
+import io
 import json
 import pathlib
 from types import SimpleNamespace
@@ -16,8 +18,12 @@ import claude_agent_sdk
 import pytest
 from claude_agent_sdk import ToolResultBlock, UserMessage
 
+from agent_toolkit import atk
 from agent_toolkit._agents_server import (
+    agents_wait,
     claude,
+    launch_requests,
+    launch_requests_preflight,
     responses,
     service_io,
     service_rpc,
@@ -31,6 +37,7 @@ from agent_toolkit._agents_server.plugin_root import SERVER_PLUGIN_ROOT
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_claude_support import _finished_failed_claude_session
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
@@ -467,3 +474,116 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
         assert not manager.expired_sessions
         assert manager.sessions[session.session_id].status == "running"
         await backend.close()
+
+
+async def _cli_wait(manager: server_manager.AgentsServerManager) -> list[tuple[Any, Any]]:
+    """別プロセスの`atk agents wait`と同じ公開CLIを同じ状態ディレクトリへ1回実行し、受け取った結果を返す。"""
+    writer = manager._status_writer
+    assert writer is not None
+
+    def run() -> list[tuple[Any, Any]]:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.suppress(SystemExit):
+            atk.main(["agents", "wait", "--root-session-id", writer.root_session_id])
+        rows = [json.loads(line) for line in out.getvalue().splitlines() if line.startswith("{")]
+        return [(row.get("status"), row.get("agent_message")) for row in rows]
+
+    return await asyncio.to_thread(run)
+
+
+class _WorkdirClaudeClient(QueueClaudeClient):
+    """SDKの`SubprocessCLITransport.connect`と同じく、作業ディレクトリが無ければCLIを起動せずに接続を失敗させる。"""
+
+    def __init__(self, cwd: str, streams: list[list[Any]]) -> None:
+        super().__init__(streams)
+        self.cwd = cwd
+
+    async def connect(self) -> None:
+        if not pathlib.Path(self.cwd).is_dir():
+            raise claude_agent_sdk.CLIConnectionError(f"Working directory does not exist: {self.cwd}")
+        await super().connect()
+
+
+@pytest.mark.parametrize("received", [False, True], ids=["unreceived", "received_before_reply"])
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_claude_reply_without_working_directory_keeps_previous_turn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, received: bool
+) -> None:
+    """次のturnを新しいCLIで始める追送は、作業ディレクトリ（回収済みのworktree）が無ければ会話を変えずに失敗を返す。
+
+    再送しても、前のturnの終了状態・turn番号・結果の受領状態と登録簿の記録は変わらず、未受領の結果は
+    別プロセスの`atk agents wait`で受け取れる。作業ディレクトリを戻せば同じ会話の次のturnを始められ、
+    受け取り済みの前の結果は追送の`previous_result`で再び返さない。
+    """
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    streams = [
+        [SystemMessage("claude-gone-cwd"), AssistantMessage("初回"), ResultMessage("初回完了")],
+        [SystemMessage("claude-gone-cwd"), AssistantMessage("再開"), ResultMessage("再開後の完了")],
+    ]
+    clients: list[_WorkdirClaudeClient] = []
+
+    def factory(options: Any) -> _WorkdirClaudeClient:
+        client = _WorkdirClaudeClient(options.cwd, streams if not clients else streams[1:])
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(claude, "_build_options", lambda cwd, *_args, **_kwargs: SimpleNamespace(cwd=cwd))
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda *_args: 0.5)
+    # 所有タスクの無い会話の再開の事前確認は、製品と同じく作業ディレクトリの不在を拒否する。
+    # プラグインの起動コマンドの実行だけを省く。
+    monkeypatch.setattr(launch_requests, "check_plugin_commands", launch_requests_preflight.check_plugin_commands)
+    monkeypatch.setattr(launch_requests_preflight, "PREFLIGHT_COMMANDS", ())
+    async with (
+        server_manager.AgentsServerManager() as manager,
+        claude.ClaudeServerManager(
+            manager.sessions,
+            manager._condition,
+            client_factory=factory,
+            expire_session=manager._expire_session,
+            publish_registry=True,
+        ) as backend,
+    ):
+        install_backend(manager, "claude", backend)
+        manager._wait_timeouts["main"] = 1
+        assert manager._status_writer is not None
+        await manager._status_writer.activate_async()
+        session = await backend.start("初回", str(workdir))
+        session.announced = True
+        async with manager._condition:
+            await asyncio.wait_for(manager._condition.wait_for(lambda: session.result_available), 2)
+        await manager.save_control_state()
+        if received:
+            assert await _cli_wait(manager) == [("completed", "初回完了")]
+            await manager.save_control_state()
+        # 接続を設定で管理し始めると、`inherit`で始めた会話は次のturnを使用順の先頭の接続の新しいCLIで始める。
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
+        workdir.rmdir()
+
+        with pytest.raises(ActionableError, match="作業ディレクトリが存在しない"):
+            await asyncio.wait_for(manager.send_message(session.session_id, "次の指示"), 5)
+        await manager.save_control_state()
+        shown = await manager.show_session(session.session_id)
+        assert (shown["status"], shown["result_available"], session.turn_seq) == ("completed", not received, 1)
+        registered = session_registry.resolve(session.session_id)
+        assert (registered.state, registered.recorded_turn_seq) == (session_registry.Resolution.TERMINAL, 1)
+
+        # 旧CLIを止めた会話への再送は、所有タスクの無い会話の再開として同じく作業ディレクトリの不在を返す。
+        with pytest.raises(ActionableError, match="作業ディレクトリが存在しない"):
+            await asyncio.wait_for(manager.send_message(session.session_id, "次の指示"), 5)
+        await manager.save_control_state()
+        shown = await manager.show_session(session.session_id)
+        assert (shown["status"], shown["result_available"]) == ("completed", not received)
+        assert session_registry.resolve(session.session_id).recorded_turn_seq == 1
+        if not received:
+            assert await _cli_wait(manager) == [("completed", "初回完了")]
+            await manager.save_control_state()
+
+        workdir.mkdir()
+        reply = await asyncio.wait_for(manager.send_message(session.session_id, "次の指示"), 5)
+        assert reply["delivery"] == "reply_started"
+        assert "previous_result" not in reply
+        following = await asyncio.wait_for(manager.wait(), 2)
+        assert (following["status"], following["agent_message"]) == ("completed", "再開後の完了")
+        assert manager.sessions[session.session_id].turn_seq == 2

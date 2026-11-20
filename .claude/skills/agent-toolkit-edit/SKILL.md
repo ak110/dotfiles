@@ -31,7 +31,7 @@ description: >
 | `agent-toolkit/agent_toolkit/`と`agent-toolkit/scripts/`の配置とimport、起動と依存の準備、toolkitのPython実装、機械チェックスクリプト、常駐CLIの待機と自動起動、MCPサーバーの識別子とツール名、プラグイン内の実行パス、権限設定、計画ファイルの構造定数、`atk serve`の静的資産を新設・変更する | `references/implementation.md` |
 | サブエージェント定義と役割文書（`<役割名>.parent.md`、`<役割名>.subagent.md`）か、それらが関わる手順を作る・改める | `references/roles.md`。コンテキスト境界の判断は`agent-toolkit:atk-mode/references/agent-documents.md` |
 | 配布するプラグインの文書、スキル、役割の契約を編集する、機構や外部インターフェースの変更に伴う文書と生成物の追随先を確定する、観測に基づく技術的条文と監査記録を扱う | `references/agent-documents.md` |
-| 読込表の行を書く・直す | `agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」、`docs/development/read-triggers-contract.md`「読込表の宣言」 |
+| 読込表の行を書く・直す | `agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」 |
 | WI処理の工程や運用を担うスキル、`agent-toolkit/skills/atk-mode/roles/`の`<役割名>.subagent.md`、`atk wi`の実装、`agent-toolkit/agent_toolkit/_atk/run_skill.py`、`agent-toolkit/agent_toolkit/_atk/orchestrator.py`を編集する | `agent-toolkit:atk-mode/references/workflow-overview.md`を読む。ユーザーの判断、操作、観測結果が変わる時だけ、対応する`docs/guide/`の節も読む |
 | 統括の起動引数、turnの終了、再開、外部制御の経路を変える | `agent-toolkit:atk-mode/references/orchestrator-runtime.md`。同資料の実装由来の要約も同じ変更で直す |
 | スキル（`SKILL.md`、`references/`）を新設・編集する | `agent-basics:writing-standards/references/agent-skills.md` |
@@ -86,6 +86,6 @@ description: >
 
 編集操作で配送する資料は次の表で宣言する。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 工程別モデルの初期値とプリセット（`agent-toolkit/agent_toolkit/_atk/config_settings.py`）を編集する前 | `agent-toolkit:atk-mode/references/model-settings.md` | 操作 | `path:*/agent-toolkit/agent_toolkit/_atk/config_settings.py` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 工程別モデルの初期値とプリセット（`agent-toolkit/agent_toolkit/_atk/config_settings.py`）を編集する前 | `agent-toolkit:atk-mode/references/model-settings.md` |

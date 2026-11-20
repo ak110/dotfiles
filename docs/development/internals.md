@@ -40,7 +40,7 @@ hook間で共有する状態ファイルの設計、生存期間、排他制御�
 | Function hooksの終了要求、定期再確認や利用上限の再開予約、待機時圧縮の判定記録 | `docs/development/internals-session-state-function-hooks.md` |
 | 作業契約の状態、plan・セッション名の状態 | `docs/development/internals-session-state-planning.md` |
 | 振り返り・モード・無進捗停止の状態、進捗点検の状態 | `docs/development/internals-session-state-progress.md` |
-| 確認・操作スキルの起動、資料取得証拠、読込の選択・案内や終了工程の証拠 | `docs/development/internals-session-state-document-receipts.md` |
+| 検証失敗後のbugfixの起動、操作の直前のスキルの案内、終了工程の証拠 | `docs/development/internals-session-state-operation-skills.md` |
 | hookの診断計測、通知の反復抑止・配送状態 | `docs/development/internals-session-state-notifications.md` |
 | agents_serverの呼出・所有・待機の観測状態 | `docs/development/internals-session-state-agents-server.md` |
 | バックグラウンドタスクの所有・通知・停止の状態 | `docs/development/internals-session-state-background-tasks.md` |

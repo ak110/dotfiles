@@ -74,12 +74,20 @@ async def test_send_to_user_carries_tool_use_id_from_request_meta(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("message", "consulted"), [("作業中に自分の手順漏れを見つけて直した。", True), ("確認が完了した。", False)]
+    ("message", "consulted"),
+    [
+        ("気付いた改善点: 対象。AWI化ステータス: 不要 原因不明", True),
+        ("作業中に自分の手順漏れを見つけて直した。", False),
+        ("確認が完了した。", False),
+    ],
 )
-async def test_send_to_user_consults_report_guidance_for_deviation_reports(
+async def test_send_to_user_consults_report_guidance_for_improvement_lines(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, message: str, consulted: bool
 ) -> None:
-    """改善点の行が無い逸脱の報告でも送達前の案内を照会し、結果を`guidance`で返す。"""
+    """改善点の行を含む報告だけ送達前の案内を照会し、結果を`guidance`で返す。
+
+    逸脱の報告に欠けた記録の行は、送達後に`hooks/send_to_user.tsx`が案内する。
+    """
     request = AsyncMock(side_effect=lambda *_args: {"status": "confirmed"})
     monkeypatch.setattr(function_hook_requests, "request", request)
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))

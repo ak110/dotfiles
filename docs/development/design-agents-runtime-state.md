@@ -47,7 +47,8 @@ backendごとに環境から解決するとManagerの保存先と通知先が分
 計画所有記録の解決は変更せず、Antigravity固有の通知元識別子取得と通知成功はこの配送の保証外とする。
 資料のplugin rootはこのルートsession識別子とは別の入力である。
 Codex backendは起動通知に載せる`SERVER_PLUGIN_ROOT`を`AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT`としてApp Serverの子環境と開始・再開の内側MCPへ渡す。
-別版の同名資料を取得済みと同一視する案は、版の混在を隠すため採らない。
+hookは通知が示す資料と終了工程の手順書をこのrootから解決する。
+別版の同名資料を同じ版とみなす案は、版の混在を隠すため採らない。
 PostToolUseフックの環境に`CODEX_THREAD_ID`が無い場合は、フック入力の検証済み現行session識別子を既存の書込主体解決へ補完し、同じ書込主体の`wait-targets`へ子sessionの開始とreply再開を登録する。
 フック入力を新しい台帳へ保存する案は、待機CLIとは別に基準となる記録を増やすため採用しない。
 Codex backendが子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継承した`AGENT_TOOLKIT_DELEGATED_SESSION`を除く扱いと、その理由は`design-hosts-rules-delivery.md`「ルールの配置と配送」にある。

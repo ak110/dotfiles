@@ -11,10 +11,9 @@ from typing import Any
 import pytest
 
 from agent_toolkit._atk import run_script
-from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import rules_context, user_prompt_submit, work_contract
-from agent_toolkit._hooks.pretooluse import read_delivery
-from agent_toolkit._testing.document_delivery import run_hook
+from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook
 
 
 @pytest.mark.parametrize("candidates", [0, 1, 2])
@@ -98,12 +97,12 @@ def test_compact_extracts_original_user_events(
     ],
 )
 def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, instructions, retained):
-    """原文の選択から公開取得・反復抑止・契約への統合と再開までを接続する。"""
+    """圧縮後の通知が示す要約の所在と本文から、契約への統合と再開までを接続する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr(work_contract, "record_path", lambda _session: tmp_path / "work-contract.md")
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
     contract = tmp_path / "work-contract.md"
     contract.write_text("目的: 作業を完了する\n", encoding="utf-8")
@@ -132,22 +131,8 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
     # hookの標準出力はJSONなので、Windowsのパス区切りはエスケープされた形で現れる。
     shown = json.dumps(str(original), ensure_ascii=False)[1:-1]
     assert compact.returncode == 0 and shown in compact.stdout
-    operation = {
-        "session_id": session,
-        "cwd": str(tmp_path),
-        "tool_name": "Write",
-        "tool_input": {"file_path": str(tmp_path / "result.md"), "content": "# 結果\n"},
-    }
-    guided = run_hook("pretooluse", operation)
-    assert guided.returncode == 0 and shown in guided.stdout, read_state(session)
     body = original.read_text(encoding="utf-8")
     assert all(f"- ユーザー: {prompt}\n" in body for prompt in instructions)
-    received = run_hook(
-        "posttooluse", {**operation, "tool_name": "Read", "tool_input": {"file_path": str(original)}, "tool_response": body}
-    )
-    assert received.returncode == 0
-    resumed = run_hook("pretooluse", operation)
-    assert resumed.returncode == 0 and shown not in resumed.stdout
     # 自然文の採否はエージェントの責務であり、この試験では判定済みの契約を消費側へ渡す。
     contract.write_text(f"目的: 作業を完了する\n現在の指示: {retained}\n", encoding="utf-8")
     restart = run_hook("user_prompt_submit", {"session_id": session, "prompt": "続きを進めて"})

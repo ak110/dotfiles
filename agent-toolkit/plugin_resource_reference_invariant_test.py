@@ -59,26 +59,29 @@ def test_plugin_root_references_resolve() -> None:
 
 def test_unresolved_reference_is_reported(tmp_path: pathlib.Path) -> None:
     """欠損参照を相対パスと参照元パスで報告する。"""
-    present = tmp_path / "share/present.subagent.md"
-    present.parent.mkdir()
+    present = tmp_path / "skills/atk-mode/roles/present.subagent.md"
+    present.parent.mkdir(parents=True)
     present.write_text("存在する\n", encoding="utf-8")
     source = tmp_path / "references.md"
-    source.write_text(f"{_PREFIX}share/present.subagent.md\n{_PREFIX}share/missing.subagent.md\n", encoding="utf-8")
+    source.write_text(
+        f"{_PREFIX}skills/atk-mode/roles/present.subagent.md\n{_PREFIX}skills/atk-mode/roles/missing.subagent.md\n",
+        encoding="utf-8",
+    )
 
     assert _collect_references(tmp_path) == [
-        ("share/present.subagent.md", pathlib.Path("references.md")),
-        ("share/missing.subagent.md", pathlib.Path("references.md")),
+        ("skills/atk-mode/roles/present.subagent.md", pathlib.Path("references.md")),
+        ("skills/atk-mode/roles/missing.subagent.md", pathlib.Path("references.md")),
     ]
     unresolved = _unresolved_references(tmp_path)
-    assert unresolved == [("share/missing.subagent.md", pathlib.Path("references.md"))]
+    assert unresolved == [("skills/atk-mode/roles/missing.subagent.md", pathlib.Path("references.md"))]
     formatted = _format_unresolved(unresolved)
-    assert "share/missing.subagent.md" in formatted
+    assert "skills/atk-mode/roles/missing.subagent.md" in formatted
     assert "references.md" in formatted
 
 
 def test_test_files_are_excluded_from_references(tmp_path: pathlib.Path) -> None:
     """テストコードの参照は収集せず、同じ参照を持つ実行時資源の参照は収集する。"""
-    missing = f"{_PREFIX}share/missing.subagent.md\n"
+    missing = f"{_PREFIX}skills/atk-mode/roles/missing.subagent.md\n"
     (tmp_path / "hooks").mkdir()
     (tmp_path / "hooks" / "entry_test.py").write_text(f'PROMPT = "{missing.strip()}"\n', encoding="utf-8")
     (tmp_path / "conftest.py").write_text(f'PROMPT = "{missing.strip()}"\n', encoding="utf-8")
@@ -86,6 +89,6 @@ def test_test_files_are_excluded_from_references(tmp_path: pathlib.Path) -> None
     (tmp_path / "skill.md").write_text(missing, encoding="utf-8")
 
     assert _collect_references(tmp_path) == [
-        ("share/missing.subagent.md", pathlib.Path("hooks/entry.py")),
-        ("share/missing.subagent.md", pathlib.Path("skill.md")),
+        ("skills/atk-mode/roles/missing.subagent.md", pathlib.Path("hooks/entry.py")),
+        ("skills/atk-mode/roles/missing.subagent.md", pathlib.Path("skill.md")),
     ]
