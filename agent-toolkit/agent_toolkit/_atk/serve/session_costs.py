@@ -31,6 +31,7 @@ import typing
 from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import windows_job
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.model_pricing import PRICE_DATE
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class FamilyCostCache:
                 error,
             )
             return
-        if not isinstance(payload, dict) or payload.get("version") != _CACHE_VERSION:
+        if not isinstance(payload, dict) or payload.get("version") != _CACHE_VERSION or payload.get("price_date") != PRICE_DATE:
             return
         families = payload.get("families")
         if isinstance(families, dict):
@@ -148,7 +149,9 @@ class FamilyCostCache:
             if not self._dirty:
                 return
             self._dirty = False
-            content = json.dumps({"version": _CACHE_VERSION, "families": self._families}, ensure_ascii=False)
+            content = json.dumps(
+                {"version": _CACHE_VERSION, "price_date": PRICE_DATE, "families": self._families}, ensure_ascii=False
+            )
         if self._path is None:
             return
         try:

@@ -18,6 +18,8 @@
 
 他に、ルートごとの推定費用（`cost-metrics-session`）、hook通知の件数（`cost-metrics-hook-notice`）、読めた記録の範囲（`cost-metrics-coverage`）の行を返す。
 推定費用（`estimated_usd`）は単価不明や記録不足があるとnullになり、`known_usd`と`unknown_responses`・`unknown_tokens`が算出できた部分と不明の量を示す。
+`unknown_models`は単価不明の応答数をモデル名別に示す。
+モデル名のない応答のキーは空文字列になる。
 hook通知は、ツール結果だけにある遮断も数え、同一呼び出しの重複と通常の標準出力・会話中の引用を除く。
 各記録は1回だけ数え、委譲先はルートの開始週へ合算する。
 ルート候補は更新時刻が開始より前なら読込前に除き、選んだルートの子孫は更新時刻で除外しない。
