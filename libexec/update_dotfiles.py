@@ -501,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
             if log_handler is None:
                 update_dotfiles_runtime.continue_after_failure(
                     "永続ログの開始",
-                    f"{update_dotfiles_runtime.LOG_PATH.parent}の書込権限と空き容量を確認してupdate-dotfilesを再実行してください。",
+                    f"{update_dotfiles_runtime.LOG_PATH.parent}の書込権限と空き容量を確認してください。",
                     "永続ログを開始できない",
                 )
             try:
@@ -552,7 +552,6 @@ def main(argv: list[str] | None = None) -> int:
             return update_dotfiles_runtime.finish(0)
         finally:
             update_dotfiles_runtime.current_run_id = None
-            update_dotfiles_runtime.persistent_log_ready = False
             update_dotfiles_runtime.current_stage_title = None
             update_dotfiles_runtime.last_stderr_tail = None
             update_dotfiles_runtime.continued_failures.clear()

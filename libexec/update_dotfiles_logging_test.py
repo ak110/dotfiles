@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import collections.abc
+import contextlib
 import io
 import logging
 import pathlib
@@ -24,6 +25,9 @@ from update_dotfiles_test_helpers import _real_stash_runtime as _real_stash_runt
 from update_dotfiles_test_helpers import _run_logs_cli  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_test_helpers import _separate_git_recovery as _separate_git_recovery  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_test_helpers import _skip_agent_toolkit_prepare as _skip_agent_toolkit_prepare  # noqa: E402  # pylint: disable=wrong-import-position
+
+from pytools import post_apply  # noqa: E402  # pylint: disable=wrong-import-position
+from pytools._internal import plugin_warmup  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def test_persistent_log_redacts_only_saved_diagnostic() -> None:
@@ -98,6 +102,52 @@ def test_logs_cli_shows_latest_update_only(logs_path: pathlib.Path) -> None:
     assert not result.stderr
 
 
+@pytest.mark.parametrize("parent_exit", [None, 0, 7], ids=["standalone", "update-success", "update-failure"])
+@pytest.mark.parametrize("storage", ["saved", "open-failure", "append-failure"])
+def test_dependency_warning_points_to_its_diagnostic_once(
+    logs_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    parent_exit: int | None,
+    storage: str,
+) -> None:
+    """依存構築の失敗は警告に留め、親の終了値や保存可否によらず同じ対処を繰り返さない。"""
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", logs_path)
+    monkeypatch.setattr(update_dotfiles_runtime, "LOG_PATH", logs_path)
+    if storage == "open-failure":
+        logs_path.mkdir()
+    else:
+        logs_path.write_text("2026-11-18 12:00:00,000 run=10-1 INFO 以前の更新\n", encoding="utf-8")
+
+    def runner():
+        if storage == "append-failure":
+            logs_path.unlink()
+            logs_path.mkdir()
+        command = ["warmup-fixture"]
+        result = subprocess.CompletedProcess(command, 7, "原因の明細", "失敗の要旨")
+        plugin_warmup.CommandOutcome(command, result, 0).report(target="fixture", tag="warmup")
+        return [], []
+
+    if parent_exit is not None:
+        monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "11-1")
+        monkeypatch.setattr(update_dotfiles_runtime, "current_run_id", "11-1")
+    with update_dotfiles_runtime.configure_persistent_log("11-1") if parent_exit is not None else contextlib.nullcontext():
+        with pytest.raises(SystemExit) as child:
+            post_apply.main(runner=runner)
+        assert child.value.code == 0
+        if parent_exit is not None:
+            assert update_dotfiles_runtime.finish(parent_exit) == parent_exit
+    screen = capsys.readouterr().err
+    assert screen.count("手動で`warmup-fixture`") == 1
+    assert screen.count("次の操作:") == int(parent_exit == 7)
+    assert screen.count(f"永続ログ: {logs_path}") == int(storage == "saved")
+    assert screen.count("update-dotfiles logs") == int(storage == "saved" and parent_exit is not None)
+    assert ("原因の明細" in screen) == (storage != "saved")
+    if storage == "saved":
+        assert "原因の明細" in logs_path.read_text(encoding="utf-8")
+        assert ("原因の明細" in _run_logs_cli().stdout) == (parent_exit is not None)
+
+
 @pytest.mark.windows
 def test_update_parent_and_post_apply_child_can_rotate_the_same_log(
     logs_path: pathlib.Path,
@@ -150,18 +200,18 @@ def test_logs_cli_preserves_rotated_multiline_records(logs_path: pathlib.Path, e
     """成功・失敗の実行を世代境界から読み、diffとpost-applyの続きも保つ。"""
     first = "2026-10-01 12:00:00,000 run=100-2 INFO update-dotfiles開始: root=test\n"
     diff = "2026-10-01 12:00:01,000 run=100-2 INFO chezmoi diffの出力:\n-old\n+日本語の差分\n"
-    post_apply = "2026-10-01 12:00:02,000 run=100-2 WARNING post-applyの記録\nTraceback: 保存した続き\n"
+    post_apply_record = "2026-10-01 12:00:02,000 run=100-2 WARNING post-applyの記録\nTraceback: 保存した続き\n"
     finish = f"2026-10-01 12:00:03,000 run=100-2 INFO update-dotfiles終了: exit={exit_code}\n"
     logs_path.with_name(f"{logs_path.name}.3").write_text(
         "2026-10-01 11:00:00,000 run=9-1 INFO 以前の更新\n" + first, encoding="utf-8"
     )
     logs_path.with_name(f"{logs_path.name}.1").write_text(diff, encoding="utf-8")
-    logs_path.write_text(post_apply + finish, encoding="utf-8")
+    logs_path.write_text(post_apply_record + finish, encoding="utf-8")
 
     result = _run_logs_cli()
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == first + diff + post_apply + finish
+    assert result.stdout == first + diff + post_apply_record + finish
     assert not result.stderr
 
 

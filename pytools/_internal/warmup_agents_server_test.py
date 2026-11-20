@@ -443,7 +443,7 @@ class TestFailureHandling:
         monkeypatch.setattr(_warmup, "_check_startup", fail_startup)
         outcome = _warmup.run()
         assert outcome.failure and "起動確認に失敗" in outcome.failure
-        assert outcome.next_action and "update-dotfiles logs" in outcome.next_action
+        assert outcome.next_action == post_apply_outcome.CHECK_UPDATE_LOG
         assert len(observed) == 1
         assert "--check-dependencies" not in observed[0]
         assert "--prepare" not in observed[0]
@@ -545,7 +545,7 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
     failed: str | None,
     inherited_job: bool,
 ) -> None:
-    """常駐起動と確認用接続の両方から診断が出ても、確認用のJobの制約だけでは利用者へ警告しない。"""
+    """常駐起動と確認用接続の両方から診断が出ても、確認用接続だけのJob警告は画面に出さない。"""
     root = tmp_path / "root"
     service = root / "agent_toolkit" / "_agents_server" / "service.py"
     service.parent.mkdir(parents=True)

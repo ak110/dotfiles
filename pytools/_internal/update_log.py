@@ -17,8 +17,13 @@ LOG_PATH = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) /
 class ProcessSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
     """書込と世代移動を排他し、Windowsで他writerのrenameを妨げない。"""
 
-    def __init__(self, filename: Path, *, max_bytes: int, backup_count: int, encoding: str = "utf-8") -> None:
+    def __init__(
+        self, filename: Path, *, max_bytes: int, backup_count: int, encoding: str = "utf-8", screen_handlers: bool = False
+    ) -> None:
         self._file_lock = filelock.FileLock(str(filename) + ".lock", timeout=30, preserve_lock_file=True)
+        self.write_failed = False
+        self.screen_handlers = screen_handlers
+        self.diagnostic_source: str | None = None
         super().__init__(filename, maxBytes=max_bytes, backupCount=backup_count, encoding=encoding, delay=True)
         # 開始時の書込可否は従来どおり確認するが、待機中にファイルを開いたままにしない。
         with self._file_lock, self._open():
@@ -29,6 +34,7 @@ class ProcessSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
         try:
             with self._file_lock:
                 try:
+                    self.write_failed = False
                     super().emit(record)
                 finally:
                     if self.stream is not None:
@@ -36,10 +42,14 @@ class ProcessSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
                         self.stream = None
         except OSError, filelock.Timeout:
             self.handleError(record)
+        if record.levelno >= logging.WARNING and log_format.is_log_only(record):
+            if not self.write_failed:
+                self.diagnostic_source = "log"
+            elif self.diagnostic_source is None:
+                self.diagnostic_source = "stderr"
 
     def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802 -- logging.Handlerの契約
         """画面から省いた失敗の詳細は、開始後に追記・世代移動できなくなっても失わない。"""
-        if record.levelno >= logging.WARNING and log_format.is_log_only(record):
-            print(f"永続ログへ診断を書き込めません: {self.baseFilename}\n{self.format(record)}", file=sys.stderr)
-        else:
-            super().handleError(record)
+        self.write_failed = True
+        if not self.screen_handlers or (record.levelno >= logging.WARNING and log_format.is_log_only(record)):
+            print(self.format(record), file=sys.stderr)

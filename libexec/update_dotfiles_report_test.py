@@ -95,7 +95,7 @@ def test_finish_aggregates_bootstrap_failures_and_preserves_body_failure(
         recorded.extend(failures)
 
     monkeypatch.setattr(report, "report", collect)
-    monkeypatch.setattr(runtime.sync_report, "write_finish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runtime.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
     monkeypatch.setattr(runtime, "current_run_id", "test")
     monkeypatch.setattr(runtime, "continued_failures", [])
     monkeypatch.setattr(runtime, "current_stage_title", "chezmoi apply")

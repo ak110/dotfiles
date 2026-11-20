@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 # 工程固有の対処がなく、実行の最後に親がまとめて案内する場合。
-CHECK_UPDATE_LOG = "`update-dotfiles logs`の失敗理由を確認し、`update-dotfiles`を再実行する"
+CHECK_UPDATE_LOG = "失敗理由を確認し、`update-dotfiles`を再実行する"
 
 
 @dataclass(frozen=True)

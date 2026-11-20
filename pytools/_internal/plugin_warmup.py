@@ -146,7 +146,7 @@ def run(
     if startup_failures:
         return post_apply_outcome.PostApplyOutcome(
             failure="準備後の起動確認に失敗: " + ", ".join(startup_failures),
-            next_action="`update-dotfiles logs`の起動段階・標準エラーを確認し、`update-dotfiles`を再実行する",
+            next_action=post_apply_outcome.CHECK_UPDATE_LOG,
         )
     return post_apply_outcome.PostApplyOutcome()
 
@@ -242,15 +242,14 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
         else:
             rows = plugin_environment_cleanup.cleanup(required, os.environ)
             for row in rows:
-                logger.info("共有依存環境: %s", json.dumps(row, ensure_ascii=False), extra=log_format.LOG_ONLY)
+                level = logging.WARNING if row["status"] == "deferred" else logging.INFO
+                logger.log(level, "共有依存環境: %s", json.dumps(row, ensure_ascii=False), extra=log_format.LOG_ONLY)
             counts = Counter(row["status"] for row in rows)
-            action = "。保留が続く場合は update-dotfiles logs で理由を確認してください" if counts["deferred"] else ""
             logger.info(
-                "共有依存環境: 保持%d件、削除%d件、保留%d件%s",
+                "共有依存環境: 保持%d件、削除%d件、保留%d件",
                 counts["retained"],
                 counts["deleted"],
                 counts["deferred"],
-                action,
                 extra=log_format.SHOW if counts["deferred"] else log_format.LOG_ONLY,
             )
     except (OSError, ValueError, IndexError, psutil.Error) as error:
@@ -274,8 +273,7 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
         logger.warning("一時資源の回収を保留: %s: %s", target, error, extra=log_format.LOG_ONLY)
     if result.failed:
         logger.warning(
-            "一時資源%d件の回収を保留した。update-dotfiles logs で対象と理由を確認し、"
-            "権限不足の場合は対象のアクセス権を修正してから update-dotfiles を再実行してください",
+            "一時資源%d件の回収を保留した。権限不足の場合は対象のアクセス権を修正してから update-dotfiles を再実行してください",
             len(result.failed),
         )
     for target in result.deleted:
@@ -495,7 +493,7 @@ class CommandOutcome:
             summary += f": {reason}"
         command = subprocess.list2cmdline(self.command) if sys.platform == "win32" else shlex.join(self.command)
         logger.warning("%s: %s", target, self.error or common.format_cli_error(self.result), extra=log_format.LOG_ONLY)
-        message = f"{summary}。`update-dotfiles logs`の診断を確認し、手動で`{command}`を実行する"
+        message = f"{summary}。手動で`{command}`を実行する"
         logger.warning(log_format.format_status(tag, message))
         return False
 

@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 current_run_id: str | None = None
 
-persistent_log_ready = False
+persistent_log: update_log.ProcessSafeRotatingFileHandler | None = None
 
 current_stage_title: str | None = None
 
@@ -102,7 +102,7 @@ class _DiagnosticFormatter(logging.Formatter):
 @contextlib.contextmanager
 def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
     """更新診断用のログを開き、終了時に登録を外して閉じる。構成不能時はNoneを渡す。"""
-    global persistent_log_ready  # noqa: PLW0603
+    global persistent_log  # noqa: PLW0603
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         handler = update_log.ProcessSafeRotatingFileHandler(
@@ -112,12 +112,7 @@ def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
             encoding="utf-8",
         )
     except OSError as error:
-        print(
-            f"永続ログを開始できませんでした: {LOG_PATH}: {error}。"
-            f"{LOG_PATH.parent}の書込権限と空き容量を確認してupdate-dotfilesを再実行してください。",
-            file=sys.stderr,
-        )
-        persistent_log_ready = False
+        print(f"永続ログを開始できませんでした: {error}", file=sys.stderr)
         yield None
         return
     with contextlib.ExitStack() as cleanup:
@@ -127,8 +122,11 @@ def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
         logger.propagate = False
-        persistent_log_ready = True
-        yield handler
+        persistent_log = handler
+        try:
+            yield handler
+        finally:
+            persistent_log = None
 
 
 def finish(returncode: int) -> int:
@@ -157,8 +155,9 @@ def finish(returncode: int) -> int:
     if continued_failures:
         returncode = _report_continued_failures(returncode)
     logger.info("update-dotfiles終了: exit=%d", returncode)
+    diagnostic_source = None
     if current_run_id is not None:
-        sync_report.write_finish(
+        post_apply = sync_report.write_finish(
             current_run_id,
             status="succeeded" if returncode == 0 else "failed",
             exit_code=returncode,
@@ -166,12 +165,18 @@ def finish(returncode: int) -> int:
             stderr_tail=None if returncode == 0 else last_stderr_tail,
             finished_at=sync_report.now_text(),
         )
+        diagnostic_source = post_apply.get("diagnostic_source")
     if returncode != 0:
         # post-applyは`update-dotfiles`経由の実行では失敗後の案内を出さないため、次の操作はここで1回だけ示す。
         print("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。", file=sys.stderr)
-        if persistent_log_ready:
-            print(f"永続ログ: {LOG_PATH}", file=sys.stderr)
-            print("失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
+    if persistent_log is not None and persistent_log.write_failed:
+        print(f"永続ログへ診断を書き込めません: {LOG_PATH}。この標準エラーを確認してください。", file=sys.stderr)
+    elif diagnostic_source == "stderr":
+        print("post-applyの診断はこの標準エラーを確認してください。", file=sys.stderr)
+    elif diagnostic_source == "log" or (returncode != 0 and persistent_log is not None):
+        print(f"永続ログ: {LOG_PATH}", file=sys.stderr)
+        kind = "失敗" if returncode else "警告"
+        print(f"{kind}の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
     return returncode
 
 

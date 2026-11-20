@@ -126,7 +126,7 @@ class _ScreenFilter(logging.Filter):
 
 
 @contextlib.contextmanager
-def _configure_logging() -> Generator[bool]:
+def _configure_logging() -> Generator[update_log.ProcessSafeRotatingFileHandler | None]:
     """ログを出力先で分離し、符号化不能文字でレコードを欠落させない。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
@@ -144,7 +144,7 @@ def _configure_logging() -> Generator[bool]:
         stderr_handler.setFormatter(formatter)
         run_id = _run_id()
         handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
-        persistent_log_ready = False
+        file_handler = None
         try:
             _UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             file_handler = update_log.ProcessSafeRotatingFileHandler(
@@ -152,21 +152,18 @@ def _configure_logging() -> Generator[bool]:
                 max_bytes=_UPDATE_LOG_MAX_BYTES,
                 backup_count=_UPDATE_LOG_BACKUP_COUNT,
                 encoding="utf-8",
+                screen_handlers=True,
             )
         except OSError as error:
-            print(
-                f"  永続ログを開始できませんでした: {_UPDATE_LOG_PATH}: {error}。処理は継続します。"
-                f"次の操作: {_UPDATE_LOG_PATH.parent}の書込権限を確認し、update-dotfilesを再実行してください。",
-                file=sys.stderr,
-            )
+            if _UPDATE_RUN_ID_ENV not in os.environ:
+                print(f"  永続ログを開始できませんでした: {error}。この標準エラーに診断を表示します。", file=sys.stderr)
         else:
             cleanup.callback(file_handler.close)
             file_handler.setLevel(logging.INFO)
             file_handler.setFormatter(_DiagnosticFormatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
             handlers.append(file_handler)
-            persistent_log_ready = True
-        updating = persistent_log_ready and (_UPDATE_RUN_ID_ENV in os.environ or "DOTFILES_PRUNE_READY_FILE" in os.environ)
-        screen_filter = _ScreenFilter(updating=updating, persistent_log_ready=persistent_log_ready)
+        updating = file_handler is not None and (_UPDATE_RUN_ID_ENV in os.environ or "DOTFILES_PRUNE_READY_FILE" in os.environ)
+        screen_filter = _ScreenFilter(updating=updating, persistent_log_ready=file_handler is not None)
         stdout_handler.addFilter(screen_filter)
         stderr_handler.addFilter(screen_filter)
         root_logger = logging.getLogger()
@@ -176,7 +173,13 @@ def _configure_logging() -> Generator[bool]:
         cleanup.callback(setattr, root_logger, "handlers", previous_handlers)
         root_logger.handlers[:] = handlers
         root_logger.setLevel(logging.INFO)
-        yield persistent_log_ready
+        try:
+            yield file_handler
+        finally:
+            if file_handler is not None and file_handler.write_failed and _UPDATE_RUN_ID_ENV not in os.environ:
+                print(
+                    f"  永続ログへ診断を書き込めません: {_UPDATE_LOG_PATH}。この標準エラーを確認してください。", file=sys.stderr
+                )
 
 
 @dataclass
@@ -413,14 +416,18 @@ def main(
                 sys.exit(1)
         return
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
-    with _configure_logging() as persistent_log_ready:
+    with _configure_logging() as log_file:
         logger.info("post-apply開始", extra=log_format.LOG_ONLY)
         results, recommendations = (runner or run)()
         failed = [r for r in results if not r.ok]
         updated = [r for r in results if r.ok and r.changed]
         skipped = [r for r in results if r.ok and not r.changed]
         notices = _pytools_install_notices() + [notice for result in results for notice in result.notices]
-        _record_sync_report(updated=updated, skipped=skipped, failed=failed, notices=notices)
+        log_ready = log_file is not None and not log_file.write_failed
+        diagnostic_source = log_file.diagnostic_source if log_file else "stderr"
+        _record_sync_report(
+            updated=updated, skipped=skipped, failed=failed, notices=notices, diagnostic_source=diagnostic_source
+        )
         logger.info(
             "完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件",
             len(updated),
@@ -431,13 +438,13 @@ def main(
         _print_plugin_recommendations(recommendations)
         if failed:
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
-            # `update-dotfiles`経由の実行では、`update-dotfiles`の終了時の案内が1回だけ次の操作と永続ログの所在を示す。
-            if _UPDATE_RUN_ID_ENV not in os.environ:
-                if persistent_log_ready:
-                    logger.error("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。")
-                    logger.error("永続ログ: %s（末尾の失敗理由を確認してください）", _UPDATE_LOG_PATH)
-                else:
-                    logger.error("次の操作: この標準エラーの失敗理由を確認し、update-dotfilesを再実行してください。")
+        if _UPDATE_RUN_ID_ENV not in os.environ:
+            if failed:
+                logger.error("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。")
+            if diagnostic_source == "log" or (failed and log_ready and diagnostic_source != "stderr"):
+                logger.warning(
+                    "永続ログ: %s（run=%s、世代移動後は .1 から .%d）", _UPDATE_LOG_PATH, _run_id(), _UPDATE_LOG_BACKUP_COUNT
+                )
         _print_post_apply_notices(notices)
         logger.info("post-apply終了: exit=%d", 1 if failed else 0, extra=log_format.LOG_ONLY)
         sys.exit(1 if failed else 0)
@@ -449,6 +456,7 @@ def _record_sync_report(
     skipped: list[_StepResult],
     failed: list[_StepResult],
     notices: list[post_apply_outcome.PostApplyNotice],
+    diagnostic_source: str | None,
 ) -> None:
     """post-apply段の結果を同期結果の記録へ残す。
 
@@ -463,6 +471,7 @@ def _record_sync_report(
             "failed": len(failed),
             "failed_steps": [{"name": result.name, "reason": result.reason, "detail": result.detail} for result in failed],
             "notices": list(dict.fromkeys(notice.message for notice in notices)),
+            "diagnostic_source": diagnostic_source,
         },
     )
 
