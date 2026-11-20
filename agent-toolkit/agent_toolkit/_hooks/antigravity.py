@@ -2,7 +2,7 @@
 
 protojsonのcamelCaseとJSON文字列のツール引数は受信時に正規化する。
 SessionStartとツールイベントの通知は排他更新付きセッション状態へ保存し、
-InvocationでephemeralMessageとして配送する。常時規範はプラグインが配送する。
+InvocationでephemeralMessageとして配送する。
 """
 
 from __future__ import annotations

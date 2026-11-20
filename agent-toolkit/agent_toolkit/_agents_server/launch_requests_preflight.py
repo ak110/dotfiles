@@ -55,14 +55,19 @@ def _run_preflight_command(command: tuple[str, ...], cwd: str) -> tuple[str, str
     return None
 
 
-def _check_plugin_commands_sync(cwd: str) -> None:
-    """委譲先の作業ディレクトリでプラグインの起動コマンドが動くことを確かめる。"""
+def require_working_directory(cwd: str) -> None:
+    """委譲先のCLIを起動できない、作業ディレクトリの不在を拒否する。"""
     if not pathlib.Path(cwd).is_dir():
-        # 作業ディレクトリが無いと`subprocess.run`は実行ファイルの不在と同じ例外を送出し、PATHの確認を誤って案内する。
         raise ActionableError(
             f"委譲先の作業ディレクトリが存在しないため委譲先を起動しない: cwd={cwd}",
             next_action="作業ディレクトリを同じパスへ復元してから再実行する。復元しない場合は既存のディレクトリを`cwd`に指定して新しく起動する",
         )
+
+
+def _check_plugin_commands_sync(cwd: str) -> None:
+    """委譲先の作業ディレクトリでプラグインの起動コマンドが動くことを確かめる。"""
+    # 作業ディレクトリが無いと`subprocess.run`は実行ファイルの不在と同じ例外を送出し、PATHの確認を誤って案内する。
+    require_working_directory(cwd)
     for command in PREFLIGHT_COMMANDS:
         failure = _run_preflight_command(command, cwd)
         if failure is not None:

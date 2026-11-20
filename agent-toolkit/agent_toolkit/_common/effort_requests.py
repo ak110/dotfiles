@@ -121,18 +121,21 @@ def request(
     }
     try:
         atomic_file.atomic_write(request_path, json.dumps(packet, ensure_ascii=False) + "\n")
+        denial: PermissionError | None = None
         while time.monotonic() < deadline:
-            if response_path.is_file():
-                response = json.loads(response_path.read_text(encoding="utf-8"))
+            text, denial = registry_requests.read_response(response_path)
+            if text is not None:
+                response = json.loads(text)
                 if not isinstance(response, dict) or response.get("session_id") != target:
                     raise ValueError("effort応答の対象を確認できない")
                 return response
             time.sleep(0.05)
-        raise TimeoutError("effort変更の応答を確認できない。atk agents showで現在値を確認し、自動で再送しない")
+        detail = registry_requests.denial_detail(response_path, denial)
+        raise TimeoutError(f"effort変更の応答を確認できない{detail}。atk agents showで現在値を確認し、自動で再送しない")
     finally:
+        # 所有側は応答を書いた後に要求の有無で自分の応答を消すかを決めるため、要求を先に消す。
         with session_registry.registry_lock(target, state_root=state_root):
-            request_path.unlink(missing_ok=True)
-            response_path.unlink(missing_ok=True)
+            registry_requests.remove_requester_files(request_path, response_path)
 
 
 def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Path, dict[str, Any]]]:
@@ -192,6 +195,5 @@ def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Pat
 
 
 def respond(path: pathlib.Path, response: dict[str, Any]) -> None:
-    """要求がまだ保持されている場合だけ、同名の応答を原子的に書く。"""
-    if path.exists():
-        atomic_file.atomic_write(path.with_suffix(".effort-response"), json.dumps(response, ensure_ascii=False) + "\n")
+    """同名の応答を原子的に書く。要求側が要求を消した後なら、書いた応答も消して残さない。"""
+    registry_requests.respond(path, path.with_suffix(".effort-response"), response)

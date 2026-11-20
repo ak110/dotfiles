@@ -13,7 +13,7 @@
 - `AGENT_TOOLKIT_DELEGATED_SESSION`: Claude Code（backend）の委譲先として起動したセッションであることを示す印（値`1`）。
   委譲先であるかの判定（`is_delegated`）は、この印または後述の`AGENT_TOOLKIT_OWNER_SESSION`のいずれかを保持している場合を対象とし、常駐実行の終了保証を最上位セッションに限定する判定などに使用する。
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得または作成した計画バンドルの所有元として記録する、委譲元セッションの識別子。
-  `agents_server`が起動した子セッションのみが保持するため、Codex backendの委譲先を含めてメイン向け規範の追加を省略する判定にも使用する。
+  `agents_server`が起動した子セッションのみが保持するため、Codex backendの委譲先を含めてメイン向けの入口の起動の案内の追加を省略する判定にも使用する。
 - `AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`: `agents_server`がClaude backendおよびCodex backendの委譲先へ渡す起動区分（`delegate`、`explore`、`shell`、`write`）。
   軽量起動の判定（`is_lightweight_delegated`）がこれを参照し、操作の直前のスキルの案内（`pretooluse/operation_skills.py`）を軽量の委譲先へ出さない判定に用いる。
   Function hooks moduleは参照しない。

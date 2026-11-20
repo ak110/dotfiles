@@ -20,6 +20,7 @@ from agent_toolkit._agents_server import (
     child_environment,
     claude_settings,
     engine_availability,
+    launch_requests_preflight,
     result_projection,
     resume_waits,
     service_io,
@@ -234,6 +235,9 @@ class ClaudeServerManager(ClaudeStream):
             # 観測根拠は`docs/development/audit-records-agents-server.md`の
             # 「agent-toolkit/agent_toolkit/_agents_server/claude.py：CLIプロセスの終了とバックグラウンドタスクの通知：2026年11月19日」にある。  # noqa: E501
             existing_session.live_tasks.clear()
+            # SDKは作業ディレクトリが無いと接続で失敗し、その時点で会話は次のturnへ進んでいるため、先に拒否する。
+            # 渡し先を決めてから次のturnを始めるまでに待機を増やさないよう、同期で確かめる。
+            launch_requests_preflight.require_working_directory(cwd)
             begin_reply(existing_session, preserve_waits=True)
         selected = connection_kind
         role = "orchestrator" if model_type == "orchestrate" else "delegate"
