@@ -3,8 +3,8 @@
 書換えで検収した範囲全体の対応表（WI対応を持たないcommitを含む）と書換え前のHEADを受け取り、
 書換え前のHEADから到達でき、現在のHEADから到達できないcommitだけを付け替える。
 対象commitを含む記録では、どちらのHEADにも無いOIDを変えずに残し、その件数と値を表示する。
-今回の書換えの証拠が対応履歴と一致する記録は変えない。対応だけでは適用済みと判定しない。
-それ以外で対象commitが無く、どちらのHEADにも無いOIDを持つ記録は、過去の書換えの未追記として拒否する。
+再試行では、今回の適用イベントまでの履歴が証拠と一致するか調べる。その後の追記も検査し、当時残したOIDは未追記に数えない。
+対象commitの無い記録では、それ以外のどちらのHEADにも無いOIDを過去の書換えの未追記として拒否する。
 作業中・保存済み計画とmanaged-tempから未指定の対象記録を検出し、複数の対応表は書換え順に合成する。
 全ての記録を検証してから書込みを始め、対応表の不足・過去の書換えの未追記・対応表の誤り・保存済み計画のいずれかがあれば
 どの記録も変えずに失敗する。計画には進捗ログの1行を、引き継ぎ記録には`<完了した工程>: <結果>`の1行を追記する。
@@ -21,6 +21,7 @@ import dataclasses
 import hashlib
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -60,6 +61,9 @@ class _Record:
     @property
     def receipt(self) -> pathlib.Path:
         return self.path.with_suffix(".wi-rewrite.receipt")
+
+    def operation_receipt(self, operation: str) -> pathlib.Path:
+        return self.path.with_suffix(".wi-rewrite.history") / operation
 
 
 def _missing_records(worktree: pathlib.Path, records: list[_Record], operation: commit_mapping.RewriteOperation) -> list[str]:
@@ -128,8 +132,11 @@ def _allowed_wis(record: _Record, content: str, events: list[dict[str, object]])
     return commit_mapping.plan_allowed_wis(content, record.path)
 
 
+_HISTORY_JSON = json.JSONEncoder(sort_keys=True, separators=(",", ":"))
+
+
 def _events_digest(events: list[dict[str, object]]) -> str:
-    history = json.dumps(events, sort_keys=True, separators=(",", ":"))
+    history = _HISTORY_JSON.encode(events)
     return hashlib.sha256(history.encode("utf-8")).hexdigest()
 
 
@@ -149,12 +156,38 @@ class _Receipt:
             fields = path.read_text(encoding="ascii").splitlines()
         except FileNotFoundError:
             return None
-        if len(fields) != 5:
+        if len(fields) != 5 or not re.fullmatch(r"[0-9a-f]{64}", fields[0]):
             raise ValueError(f"書換えの証拠が不正です: {path}")
         return cls(*fields)
 
     def write(self, path: pathlib.Path) -> None:
         atomic_write(path, "\n".join(dataclasses.astuple(self)) + "\n")
+
+    def publish(self, record: _Record) -> None:
+        # 旧版は固定名の証拠を1件だけ置き換える。旧版が残した証拠も別の操作で失われないようにする。
+        previous = self.read(record.receipt)
+        if previous is not None and previous.operation != self.operation:
+            archive = record.operation_receipt(previous.operation)
+            previous.write(archive)
+        self.write(record.receipt)
+        self.write(record.operation_receipt(self.operation))
+
+    def applied_count(self, events: list[dict[str, object]], record: pathlib.Path) -> int:
+        """既存の証拠と同じJSON配列のハッシュを、各書換えイベントまで計算し、一致した位置を返す。"""
+        history = hashlib.sha256(b"[")
+        for count, event in enumerate(events, 1):
+            if count > 1:
+                history.update(b",")
+            history.update(_HISTORY_JSON.encode(event).encode())
+            if "rewrite" in event:
+                prefix = history.copy()
+                prefix.update(b"]")
+                if prefix.hexdigest() == self.new_events:
+                    return count
+        raise _next_action.ActionableError(
+            f"適用時の対応履歴が書換えの証拠と一致しません: {record}",
+            next_action="置換・削除された対応履歴を確認し、適用時の記録を復元して再実行する",
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -163,6 +196,7 @@ class _Update:
     change: commit_mapping.RangeRewrite
     receipt: _Receipt | None = None
     body: str | None = None
+    published: _Receipt | None = None
 
 
 def _prepare(
@@ -175,27 +209,30 @@ def _prepare(
     body = hashlib.sha256(raw).hexdigest()
     staging = record.staging
     pending = _Receipt.read(staging / "receipt")
+    done = _Receipt.read(record.receipt)
+    if done is None or done.operation != operation.operation_id:
+        done = _Receipt.read(record.operation_receipt(operation.operation_id))
+    mapping_pending = pending is not None and (staging / "mapping").exists()
     if pending is not None:
-        # replaceはデータを公開すると同時にステージ側の名前を消す。旧版が同じ対応を書いても消えない。
-        body_pending = (staging / "body").exists()
-        mapping_pending = (staging / "mapping").exists()
-        if (
-            pending.operation != operation.operation_id
-            or body != (pending.old_body if body_pending else pending.new_body)
-            or history != (pending.old_events if mapping_pending else pending.new_events)
+        # mappingの置換前は旧版の書込みを上書きしない。置換後に公開するのは証拠だけで、正当な追記は残す。
+        expected_body = pending.old_body if (staging / "body").exists() else pending.new_body
+        if pending.operation != operation.operation_id or (
+            mapping_pending and (body, history) != (expected_body, pending.old_events)
         ):
             raise _next_action.ActionableError(
                 f"未完了の書換えと操作または記録が一致しません: {record.path}",
                 next_action="中断した書換えの両HEAD・対応表と記録を確認し、元の引数で再実行する",
             )
-        applied = not mapping_pending
-    else:
-        done = _Receipt.read(record.receipt)
-        applied = done is not None and (done.operation, done.new_events) == (operation.operation_id, history)
+        if not mapping_pending:
+            done = pending
     change = commit_mapping.range_rewrite_event(
-        worktree, events, _allowed_wis(record, content, events), operation, applied=applied
+        worktree,
+        events,
+        _allowed_wis(record, content, events),
+        operation,
+        applied_count=done.applied_count(events, record.path) if done and done.operation == operation.operation_id else 0,
     )
-    if pending is not None or change.event is None:
+    if mapping_pending or change.event is None:
         return _Update(record, change, pending)
 
     prepared: list[str] = []
@@ -209,7 +246,7 @@ def _prepare(
         history,
         _events_digest([*events, change.event]),
     )
-    return _Update(record, change, receipt, updated)
+    return _Update(record, change, receipt, updated, pending)
 
 
 def _plan_events(
@@ -269,6 +306,9 @@ def _append_record(update: _Update) -> None:
             atomic_write(prepared / "body", update.body)
             atomic_write(prepared / "mapping", commit_mapping.appended_content(record, update.change.event))
             update.receipt.write(prepared / "receipt")
+            if update.published is not None:
+                update.published.publish(update.record)
+                staging.rename(scratch / "published")
             prepared.replace(staging)
 
         body = staging / "body"
@@ -286,7 +326,7 @@ def _append_record(update: _Update) -> None:
                 raise
         elif next_mapping.exists():
             next_mapping.replace(mapping)
-        update.receipt.write(update.record.receipt)
+        update.receipt.publish(update.record)
         staging.rename(scratch / "finished")
 
 

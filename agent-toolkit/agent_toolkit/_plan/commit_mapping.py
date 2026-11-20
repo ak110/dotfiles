@@ -217,6 +217,20 @@ def read_mapping(
     重複判定や、最終対応を選別してから実在を検査する取得に使う。
     """
     mapping: dict[str, set[str]] = {}
+    _apply_events(worktree, events, allowed_wis, mapping, allow_missing=allow_missing)
+    return mapping
+
+
+def _apply_events(
+    worktree: pathlib.Path,
+    events: list[dict[str, object]],
+    allowed_wis: set[str],
+    mapping: dict[str, set[str]],
+    *,
+    allow_missing: bool = False,
+    retained: set[str] | None = None,
+) -> None:
+    """追記を順に適用し、途中で対応が消えたOIDを適用時からの保持集合から除く。"""
     for event in events:
         if set(event) in ({"commit", "awi"}, {"commits", "awi"}):
             oids = [event["commit"]] if "commit" in event else event["commits"]
@@ -253,13 +267,14 @@ def read_mapping(
                         mapping[full_old] if names is None else names
                     )
                 _check_assignment(full_old, new, mapping[full_old])
+            if retained is not None:
+                retained.difference_update(old for old in olds if old not in inherited)
             for old in olds:
                 mapping.pop(old, None)
             for new, wis in inherited.items():
                 mapping.setdefault(new, set()).update(wis)
         else:
             raise _fail(f"commit対応の項目が不正です: {sorted(event)}")
-    return mapping
 
 
 def commit_event(
@@ -631,10 +646,12 @@ def range_rewrite_event(
     allowed_wis: set[str],
     operation: RewriteOperation,
     *,
-    applied: bool = False,
+    applied_count: int = 0,
 ) -> RangeRewrite:
     """旧HEADにだけ含まれるOIDを付け替える。今回の対象も適用済みの追記も無い記録は、範囲外のOIDを未追記とする。"""
-    mapping = read_mapping(worktree, events, allowed_wis)
+    mapping = read_mapping(worktree, events[:applied_count], allowed_wis)
+    retained = set(mapping)
+    _apply_events(worktree, events[applied_count:], allowed_wis, mapping, retained=retained)
     targets = []
     outside = []
     for oid in mapping:
@@ -645,9 +662,10 @@ def range_rewrite_event(
         else:
             outside.append(oid)
     if not targets:
-        if applied:
-            return RangeRewrite(retained=tuple(outside))
-        return RangeRewrite(past_omissions=tuple(outside))
+        return RangeRewrite(
+            retained=tuple(oid for oid in outside if oid in retained),
+            past_omissions=tuple(oid for oid in outside if oid not in retained),
+        )
     rewrite = operation.replacements
     if missing := tuple(oid for oid in targets if oid not in rewrite):
         return RangeRewrite(missing=missing, retained=tuple(outside))

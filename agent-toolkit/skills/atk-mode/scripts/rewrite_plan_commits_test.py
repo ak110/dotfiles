@@ -188,6 +188,7 @@ def _snapshot(records: list[pathlib.Path]) -> dict[pathlib.Path, bytes | None]:
             record,
             commit_mapping.mapping_path(record),
             record.with_suffix(".wi-rewrite.receipt"),
+            *record.with_suffix(".wi-rewrite.history").glob("*"),
             *record.with_suffix(".wi-rewrite.pending").glob("*"),
         )
     ]
@@ -339,6 +340,7 @@ def test_retry_after_second_record_write_failure(
     assert str(blocked) in capsys.readouterr().err
     with rebased.plan.open("a", encoding="utf-8") as stream:
         stream.write("\n書込みの失敗を調査した。\n")
+    commit_mapping.append_event(rebased.plan, {"commit": rebased.new["u"], "awi": [WI_A]})
     first_done = _snapshot([rebased.plan])
     if failure != "receipt":
         assert _snapshot([rebased.handoff, rebased.unaffected]) == before
