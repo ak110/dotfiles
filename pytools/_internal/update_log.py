@@ -2,10 +2,13 @@
 
 import logging
 import logging.handlers
+import sys
 from pathlib import Path
 
 import filelock
 import platformdirs
+
+from pytools._internal import log_format
 
 # 更新とpost-applyと独立プロセスが共有する永続ログ。`libexec/update_dotfiles_runtime.py`の`LOG_PATH`と同じパス。
 LOG_PATH = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "update-dotfiles.log"
@@ -33,3 +36,10 @@ class ProcessSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
                         self.stream = None
         except OSError, filelock.Timeout:
             self.handleError(record)
+
+    def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802 -- logging.Handlerの契約
+        """画面から省いた失敗の詳細は、開始後に追記・世代移動できなくなっても失わない。"""
+        if record.levelno >= logging.WARNING and log_format.is_log_only(record):
+            print(f"永続ログへ診断を書き込めません: {self.baseFilename}\n{self.format(record)}", file=sys.stderr)
+        else:
+            super().handleError(record)

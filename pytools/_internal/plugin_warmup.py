@@ -14,6 +14,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 import psutil
 from agent_toolkit._atk.managed_temp import sweep
@@ -454,6 +455,14 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
     return CommandOutcome(list(cmd), result, time.monotonic() - started).report(target=target, tag=tag)
 
 
+def output_summary(output: str) -> str:
+    """子の出力の末尾から理由を1行だけ取る。「次の操作」は別に案内し、元の本文は保存する。"""
+    for line in reversed(common.strip_ansi(output).splitlines()):
+        if line.strip() and not line.startswith(("次の操作:", "Traceback ", " ", "\t")):
+            return line[:240]
+    return ""
+
+
 @dataclass(frozen=True)
 class CommandOutcome:
     """並列実行中の診断を保持し、親workerで対象順に表示する。"""
@@ -481,20 +490,26 @@ class CommandOutcome:
             if self.result is None
             else f"環境構築が異常終了 (exit {self.result.returncode}、{self.elapsed:.1f}秒): {target}"
         )
+        output = self.error if self.result is None else self.result.stderr or self.result.stdout
+        if reason := output_summary(output):
+            summary += f": {reason}"
         command = subprocess.list2cmdline(self.command) if sys.platform == "win32" else shlex.join(self.command)
-        message = f"{summary} / {self.error or common.format_cli_error(self.result)}。手動で`{command}`を実行する"
+        logger.warning("%s: %s", target, self.error or common.format_cli_error(self.result), extra=log_format.LOG_ONLY)
+        message = f"{summary}。`update-dotfiles logs`の診断を確認し、手動で`{command}`を実行する"
         logger.warning(log_format.format_status(tag, message))
         return False
 
 
-async def check_command(command: Sequence[str], *, environment: Mapping[str, str] | None = None) -> CommandOutcome:
+async def check_command(
+    command: Sequence[str], *, environment: Mapping[str, str] | None = None, stderr_file: TextIO | None = None
+) -> CommandOutcome:
     """依存確認を非同期に待ち、取消し・時間切れでも所有する子孫を回収する。"""
     started = time.monotonic()
     result = None
     error = ""
     try:
         process = await asyncio.create_subprocess_exec(
-            *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment
+            *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=stderr_file or subprocess.PIPE, env=environment
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=_WARMUP_TIMEOUT)
@@ -503,7 +518,7 @@ async def check_command(command: Sequence[str], *, environment: Mapping[str, str
                 list(command),
                 process.returncode,
                 stdout.decode("utf-8", errors="replace"),
-                stderr.decode("utf-8", errors="replace"),
+                stderr.decode("utf-8", errors="replace") if stderr is not None else "",
             )
         finally:
             if process.returncode is None:

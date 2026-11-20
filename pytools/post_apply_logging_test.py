@@ -17,7 +17,7 @@ from agent_toolkit._atk.managed_temp import creation, paths, resources, sweep
 from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 
 from pytools import post_apply
-from pytools._internal import common, install_codex_plugins, plugin_warmup, post_apply_outcome, setup_herdr_cli
+from pytools._internal import common, install_codex_plugins, log_format, plugin_warmup, post_apply_outcome, setup_herdr_cli
 from pytools._internal.post_apply_test_helpers import _isolate_sync_report as _isolate_sync_report
 from pytools._internal.post_apply_test_helpers import _isolate_update_log as _isolate_update_log
 
@@ -47,6 +47,22 @@ def test_persistent_log_redacts_plugin_output_only(capsys: pytest.CaptureFixture
     assert "stage=plugin exit=7 stderr:\n" in saved
     assert "RuntimeError" in saved
     assert "[REDACTED]" in saved
+
+
+@pytest.mark.parametrize("unwritable", ["open", "append", None])
+def test_failure_detail_reaches_stderr_if_not_saved(tmp_path, capsys, unwritable):
+    path = tmp_path / "update-dotfiles.log"
+    if unwritable == "open":
+        path.mkdir()
+    with post_apply._configure_logging():
+        if unwritable == "append":
+            path.unlink()
+            path.mkdir()
+        logging.getLogger("warmup").warning("子の標準エラーと対処", extra=log_format.LOG_ONLY)
+    screen = capsys.readouterr().err
+    assert ("子の標準エラーと対処" in screen) is (unwritable is not None)
+    if unwritable is None:
+        assert "子の標準エラーと対処" in path.read_text(encoding="utf-8")
 
 
 def test_warmup_pressure_keeps_weekend_contract(monkeypatch):

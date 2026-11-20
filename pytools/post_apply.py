@@ -9,7 +9,6 @@ import argparse
 import contextlib
 import io
 import logging
-import logging.handlers
 import os
 import shutil
 import sys
@@ -111,14 +110,15 @@ class _BelowWarningFilter(logging.Filter):
 class _ScreenFilter(logging.Filter):
     """ユーザーの判断に使わない行を画面から外す。永続ログのハンドラーには付けない。"""
 
-    def __init__(self, *, updating: bool) -> None:
+    def __init__(self, *, updating: bool, persistent_log_ready: bool) -> None:
         super().__init__()
         self.updating = updating
+        self.persistent_log_ready = persistent_log_ready
 
     def filter(self, record: logging.LogRecord) -> bool:
         """画面へ出力するレコードなら真を返す。"""
         if log_format.is_log_only(record):
-            return False
+            return not self.persistent_log_ready and record.levelno >= logging.WARNING
         if self.updating and record.levelno < logging.WARNING:
             return getattr(record, log_format.LOG_ONLY_ATTR, None) is False
         # 依存ライブラリhttpxのリクエスト記録。WARNING以上は標準エラー側で表示する。
@@ -166,7 +166,7 @@ def _configure_logging() -> Generator[bool]:
             handlers.append(file_handler)
             persistent_log_ready = True
         updating = persistent_log_ready and (_UPDATE_RUN_ID_ENV in os.environ or "DOTFILES_PRUNE_READY_FILE" in os.environ)
-        screen_filter = _ScreenFilter(updating=updating)
+        screen_filter = _ScreenFilter(updating=updating, persistent_log_ready=persistent_log_ready)
         stdout_handler.addFilter(screen_filter)
         stderr_handler.addFilter(screen_filter)
         root_logger = logging.getLogger()
@@ -433,9 +433,11 @@ def main(
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
             # `update-dotfiles`経由の実行では、`update-dotfiles`の終了時の案内が1回だけ次の操作と永続ログの所在を示す。
             if _UPDATE_RUN_ID_ENV not in os.environ:
-                logger.error("次の操作: %s", _post_apply_recovery_action())
                 if persistent_log_ready:
+                    logger.error("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。")
                     logger.error("永続ログ: %s（末尾の失敗理由を確認してください）", _UPDATE_LOG_PATH)
+                else:
+                    logger.error("次の操作: この標準エラーの失敗理由を確認し、update-dotfilesを再実行してください。")
         _print_post_apply_notices(notices)
         logger.info("post-apply終了: exit=%d", 1 if failed else 0, extra=log_format.LOG_ONLY)
         sys.exit(1 if failed else 0)
@@ -547,15 +549,6 @@ class _StepOutcome:
     skip_reason: str | None = None
 
 
-def _post_apply_recovery_action() -> str:
-    """現在の実行が使う出力先から、失敗後の操作を案内する。"""
-    action = "失敗理由を確認し、update-dotfilesを再実行してください。"
-    for handler in logging.getLogger().handlers:
-        if isinstance(handler, logging.handlers.RotatingFileHandler):
-            return f"{action} 永続ログ {handler.baseFilename} の末尾を確認してください。"
-    return f"{action} 永続ログを開始できなかった場合は、この標準エラーの失敗理由を確認してください。"
-
-
 _RECLAIM_BLOCKED = (
     "先行工程が起動した子プロセスを回収できないため開始しない。"
     "失敗した工程の診断にあるPIDと起動コマンドを確認して終了させ、update-dotfilesを再実行する"
@@ -590,7 +583,11 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
             next_action="工程の実装が返す値をPostApplyOutcomeへ直してください。",
         )
     if ret.failure is not None:
-        logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action)
+        if ret.next_action == post_apply_outcome.CHECK_UPDATE_LOG:
+            logger.error("    %s: 失敗: %s", step.name, ret.failure)
+            logger.info("    %s: 次の操作: %s", step.name, ret.next_action, extra=log_format.LOG_ONLY)
+        else:
+            logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action)
         failure = _StepResult(
             name=step.name, ok=False, changed=ret.changed, notices=ret.notices, reason=ret.failure, deferred=ret.deferred
         )

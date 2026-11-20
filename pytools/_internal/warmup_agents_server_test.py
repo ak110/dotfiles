@@ -451,7 +451,7 @@ class TestFailureHandling:
 
 @pytest.mark.parametrize("behavior", ["ready", "empty", "timeout", "exit"])
 def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, behavior: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, behavior: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     """公開MCPのinitializeとtools/listを使い、0件・停止・異常終了を起動成功へ混ぜない。"""
     server = _probe_server(tmp_path, behavior)
@@ -490,7 +490,8 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
         assert "MCP起動確認に失敗" in outcome.message
         assert str(server) in outcome.message
     if behavior == "exit":
-        assert "startup failed" in outcome.message
+        assert "startup failed" in outcome.message and "Traceback" not in outcome.message
+        assert "startup failed" in caplog.text and "Traceback" in caplog.text
 
 
 def _stop_services(directory: pathlib.Path) -> None:
@@ -509,12 +510,13 @@ def _stop_services(directory: pathlib.Path) -> None:
         assert not service_transport.process_alive(identity)
 
 
-def _probe_server(tmp_path: pathlib.Path, behavior: str) -> pathlib.Path:
+def _probe_server(tmp_path: pathlib.Path, behavior: str, *, stderr: str = "") -> pathlib.Path:
     """initializeとtools/listへ`behavior`どおりに応答するMCPサーバーのスクリプトを作る。"""
     server = tmp_path / "server.py"
     server.write_text(
         "import json, pathlib, sys, time\n"
         f"pathlib.Path({str(tmp_path / 'process.ready')!r}).touch()\n"
+        f"sys.stderr.write({stderr!r})\n"
         f"behavior = {behavior!r}\n"
         "for line in sys.stdin:\n"
         "    message = json.loads(line)\n"
@@ -534,31 +536,47 @@ def _probe_server(tmp_path: pathlib.Path, behavior: str) -> pathlib.Path:
     return server
 
 
-@pytest.mark.parametrize("failed", ["service-start", "publish"])
-def test_startup_check_fails_when_service_is_not_started_or_published(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failed: str
+@pytest.mark.parametrize("failed", ["service-start", "publish", None])
+@pytest.mark.parametrize("inherited_job", [False, True])
+def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_output(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    failed: str | None,
+    inherited_job: bool,
 ) -> None:
-    """管理サービスを起動できない場合と、確認の終了後に公開できない場合を、起動確認の成功として扱わない。"""
+    """常駐起動と確認用接続の両方から診断が出ても、確認用のJobの制約だけでは利用者へ警告しない。"""
     root = tmp_path / "root"
     service = root / "agent_toolkit" / "_agents_server" / "service.py"
     service.parent.mkdir(parents=True)
     service.write_text("", encoding="utf-8")
-    command = [sys.executable, str(_probe_server(tmp_path, "ready")), "--project", str(root)]
+    probe = _probe_server(tmp_path, "ready", stderr=service_forward.INHERITED_JOB_WARNING + "\n短命な確認の診断\n")
+    command = [sys.executable, str(probe), "--project", str(root)]
     deferred: list[str | None] = []
 
-    async def start_service(started: list[str], *, environment: dict[str, str]):
+    async def start_service(started: list[str], *, environment: dict[str, str], stderr_file):
+        stderr_file.write("常駐起動の標準エラー\n")
+        if inherited_job:
+            stderr_file.write(service_forward.INHERITED_JOB_WARNING + "\n")
         deferred.append(environment.get(service_forward.DEFER_PUBLISH_ENV))
         code = 1 if failed == "service-start" else 0
         return _warmup.plugin_warmup.CommandOutcome(started, subprocess.CompletedProcess(started, code, "", ""), 0)
 
     def publish(_caller: object, target: pathlib.Path, *, timeout: float) -> dict:
         assert target == root and timeout > 0
-        raise RuntimeError("候補の世代が生存していない")
+        if failed == "publish":
+            raise RuntimeError("候補の世代が生存していない")
+        return {}
 
     monkeypatch.setattr(_warmup.plugin_warmup, "check_command", start_service)
     monkeypatch.setattr(service_forward, "publish_service", publish)
     outcome = asyncio.run(_CHECK_STARTUP(command))
-    assert not outcome.ok and f"段階={failed}" in outcome.message
+    assert outcome.ok is (failed is None)
+    assert outcome.inherited_job is (inherited_job and failed != "service-start")
+    if failed is not None:
+        assert f"段階={failed}" in outcome.message
+        assert "常駐起動の標準エラー" in caplog.text and "Traceback" in caplog.text
+        assert ("短命な確認の診断" in caplog.text) is (failed == "publish")
     # 確認用の接続より先に、公開を保留して起動する。
     assert deferred == ["1"]
 
