@@ -39,6 +39,7 @@ CASES_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_cases.json"
 MATERIALS_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_materials")
 _ISSUE_COLUMN = 3
 _LOCATION_COLUMN = 2
+_DRAFT_BODY_INPUTS = ("原稿", "要求と出所", "成立性の証拠")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -212,16 +213,25 @@ def _commit_range(commits_path: pathlib.Path) -> tuple[str, str]:
     return f"{order[0]}^", order[-1]
 
 
-def _git(repo: pathlib.Path, *args: str) -> str:
-    result = subprocess.run(
+def _run_git(repo: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         ["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
     )
+
+
+def _git(repo: pathlib.Path, *args: str) -> str:
+    result = _run_git(repo, *args)
     if result.returncode != 0:
         raise RuntimeError(
             f"git {' '.join(args)}が失敗した（終了コード{result.returncode}）: {result.stderr.strip()}。"
             f"リポジトリ{str(repo)!r}が指定commitを含むかを確かめ、必要ならそのリポジトリでfetchして再実行する"
         )
     return result.stdout.strip()
+
+
+def _remove_eval_worktree(repo: pathlib.Path, worktree: pathlib.Path) -> None:
+    """回収の出力は例外に保持し、操作案内は呼び出し側で決める。"""
+    _run_git(repo, "worktree", "remove", str(worktree)).check_returncode()
 
 
 def _requirements(texts: dict[str, str]) -> dict[str, tuple[int, int]]:
@@ -469,46 +479,76 @@ def _case_dir_name(case: _Case) -> str:
 
 def _prepare_draft_opening(case_dir: pathlib.Path, params: dict[str, str]) -> None:
     """本文段階の原稿を保存せず検証し、レビュー用の成立性の証拠へ抽出の対応を加える。"""
-    draft = pathlib.Path(params["原稿"]).resolve(strict=True)
-    evidence = pathlib.Path(params["成立性の証拠"]).read_text(encoding="utf-8")
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "agent_toolkit.atk",
-            "wi",
-            "add",
-            "--dry-run",
-            "--target-repo",
-            "github.com/review-eval/fixture",
-            "--source",
-            "add-awi-by-user",
-            "--body-file",
-            str(draft),
-        ],
-        cwd=case_dir,
-        env={**os.environ, "AGENT_TOOLKIT_PRIVATE_NOTES": str(case_dir)},
-        capture_output=True,
-        encoding="utf-8",
-        check=False,
-    )
+    draft = pathlib.Path(params["原稿"])
+    texts: dict[str, str] = {}
+    for name in _DRAFT_BODY_INPUTS:
+        path = pathlib.Path(params[name])
+        try:
+            if not path.is_absolute():
+                raise ValueError("絶対パスで指定する")
+            texts[name] = path.read_text(encoding="utf-8")
+            if name == "原稿":
+                draft = path.resolve(strict=True)
+        except (OSError, ValueError) as error:
+            raise ActionableError(
+                f"本文評価の{name}を読めない: {path}（{error}）",
+                next_action="該当するextra_paramsを読めるUTF-8ファイルへ直し、新しい--outで同じ事例をprepareする",
+            ) from error
+    command = [
+        sys.executable,
+        "-m",
+        "agent_toolkit.atk",
+        "wi",
+        "add",
+        "--dry-run",
+        "--target-repo",
+        "github.com/review-eval/fixture",
+        "--source",
+        "add-awi-by-user",
+        "--body-file",
+        str(draft),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=case_dir,
+            env={**os.environ, "AGENT_TOOLKIT_PRIVATE_NOTES": str(case_dir)},
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+        )
+    except (OSError, UnicodeError) as error:
+        raise ActionableError(
+            f"本文評価のdry-runを実行して出力を取得できない: {draft}（{error}）",
+            next_action="Pythonからatkを起動できるかと出力の文字コードを確認し、新しい--outで同じ事例をprepareする",
+        ) from error
     lines = result.stdout.splitlines()
     if result.returncode or len(lines) < 2 or lines[0] != f"原稿: {draft}" or not lines[1].startswith("冒頭保存先: "):
         raise ActionableError(
             f"本文評価のdry-runに失敗した: {draft}（終了 {result.returncode}）\n{result.stderr or result.stdout}",
-            next_action="評価用原稿とdry-runの出力を確認し、prepareをやり直す",
+            next_action="評価用原稿とdry-runの出力を確認し、新しい--outで同じ事例をprepareする",
         )
     opening = pathlib.Path(lines[1].removeprefix("冒頭保存先: "))
-    if not opening.is_absolute() or not opening.is_file():
+    try:
+        if not opening.is_absolute():
+            raise ValueError("絶対パスではない")
+        opening.read_text(encoding="utf-8")
+    except (OSError, ValueError) as error:
         raise ActionableError(
-            f"dry-runが返した冒頭を取得できない: {opening}",
-            next_action="managed-tempの保存先と読取権限を確認し、同じ原稿でprepareをやり直す",
-        )
+            f"dry-runが返した冒頭を取得できない: {opening}（{error}）",
+            next_action="managed-tempの保存先と読取権限を確認し、新しい--outで同じ事例をprepareする",
+        ) from error
     evidence_path = case_dir / "evidence.md"
-    evidence_path.write_text(
-        f"{evidence.rstrip()}\n\n原稿: {draft}\n冒頭保存先: {opening}\n",
-        encoding="utf-8",
-    )
+    try:
+        evidence_path.write_text(
+            f"{texts['成立性の証拠'].rstrip()}\n\n原稿: {draft}\n冒頭保存先: {opening}\n",
+            encoding="utf-8",
+        )
+    except (OSError, UnicodeError) as error:
+        raise ActionableError(
+            f"本文評価の成立性の証拠を保存できない: {evidence_path}（{error}）",
+            next_action="保存先の書込権限と空き容量を確認し、新しい--outで同じ事例をprepareする",
+        ) from error
     params["成立性の証拠"] = str(evidence_path)
 
 
@@ -517,12 +557,10 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
 
     事例IDと種類は返す値の`case`・`kind`だけに置き、`start`（担当へ渡す値）と出力先の名前には含めない。
     """
-    draft_body = (
-        case.role == "wi-draft-review" and case.extra_params is not None and case.extra_params.get("確認段階") == "本文"
-    )
+    declared = case.extra_params or {}
+    draft_body = case.role == "wi-draft-review" and declared.get("確認段階", "本文") == "本文"
     if draft_body:
-        declared = case.extra_params or {}
-        missing = [name for name in ("原稿", "要求と出所", "成立性の証拠") if not declared.get(name)]
+        missing = [name for name in _DRAFT_BODY_INPUTS if not declared.get(name)]
         if missing:
             raise ActionableError(
                 f"本文評価に必要な入力がない: {case.id}: {', '.join(missing)}",
@@ -599,8 +637,27 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
     if draft_body:
         try:
             _prepare_draft_opening(case_dir, extra_params)
-        except OSError, ValueError, ActionableError:
-            _git(repo, "worktree", "remove", str(worktree))
+        except (OSError, ValueError) as error:
+            try:
+                _remove_eval_worktree(repo, worktree)
+            except (OSError, subprocess.CalledProcessError, UnicodeError) as cleanup_error:
+                retry = (
+                    error.next_action
+                    if isinstance(error, ActionableError)
+                    else "最初の失敗を修正し、新しい--outで同じ事例をprepareする"
+                )
+                detail = (
+                    f"git worktree removeが失敗した（終了コード{cleanup_error.returncode}）"
+                    if isinstance(cleanup_error, subprocess.CalledProcessError)
+                    else str(cleanup_error)
+                )
+                raise ActionableError(
+                    f"{error}\n評価用worktreeを回収できない: {worktree}（{detail}）",
+                    next_action=(
+                        "Gitの起動条件を確かめ、記載したworktreeに変更や未追跡ファイルがあれば保存してから、強制削除せずに回収する。"
+                        f"その後、{retry}"
+                    ),
+                ) from cleanup_error
             raise
     referenced = sorted(
         {path for text in delivered for path in _TEMPORARY_PATH.findall(text) if not path.startswith(str(case_dir))}

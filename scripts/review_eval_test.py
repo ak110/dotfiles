@@ -345,7 +345,7 @@ def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, c
     cases = tmp_path / "cases.json"
     data = json.loads(_write_cases(cases).read_text(encoding="utf-8"))
     data["cases"][0]["role"] = "wi-draft-review"
-    data["cases"][0]["extra_params"] = {"計画": "{plan}", "起点": "{base}", "記録": "{case_dir}/handoff.md"}
+    data["cases"][0]["extra_params"] = {"確認段階": "方針", "計画": "{plan}", "起点": "{base}", "記録": "{case_dir}/handoff.md"}
     cases.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setattr(review_eval, "CASES_PATH", cases)
     repo, _base, old, new = _case_repository(tmp_path)
@@ -363,6 +363,7 @@ def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, c
     case_dir = pathlib.Path(prepared["start"]["cwd"]).parent
     assert case_dir.parent == out
     assert prepared["start"]["extra_params"] == {
+        "確認段階": "方針",
         "計画": str(case_dir / "01-0000_case.md"),
         "起点": old,
         "記録": f"{case_dir}/handoff.md",
@@ -611,12 +612,19 @@ def test_prepare_body_review_links_dry_run_to_the_same_draft(tmp_path, capsys, c
     assert subprocess.run(prepared["cleanup"], check=False).returncode == 0
 
 
-def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, capsys, monkeypatch) -> None:
+@pytest.mark.parametrize("failure", ["missing-input", "omitted-stage", "unreadable-file"])
+def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, capsys, monkeypatch, failure) -> None:
     """本文の事例で必須の資料を指定し忘れた場合は、worktreeを作らず修正する項目を案内する。"""
     collection = pathlib.Path(review_eval.__file__).with_name("review_eval_draft_cases.json")
     cases = json.loads(collection.read_text(encoding="utf-8"))["cases"]
     case = next(case for case in cases if case["id"] == "intent-fixed-defect")
-    del case["extra_params"]["成立性の証拠"]
+    params = case["extra_params"]
+    if failure == "unreadable-file":
+        params["成立性の証拠"] = "{worktree}/missing.md"
+    else:
+        del params["成立性の証拠"]
+        if failure == "omitted-stage":
+            del params["確認段階"]
     path = tmp_path / "cases.json"
     path.write_text(json.dumps({"cases": [case]}, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setattr(review_eval, "CASES_PATH", path)
@@ -624,7 +632,63 @@ def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, 
     assert review_eval.main(["prepare", "--out", str(out)]) == 1
     errors = capsys.readouterr().err
     assert "成立性の証拠" in errors and "次の操作: " in errors
-    assert not out.exists()
+    if failure == "unreadable-file":
+        assert "新しい--out" in errors
+        assert not list(out.glob("*/worktree"))
+    else:
+        assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "cleanup_failure",
+    [None, "start", "dirty", "decode"],
+)
+def test_prepare_body_review_recovers_from_evidence_write_failure(tmp_path, capsys, monkeypatch, cleanup_failure) -> None:
+    """抽出後の証拠保存に失敗したら、評価用worktreeを回収し、新しい出力先での再準備を案内する。"""
+
+    def create_case_with_unwritable_evidence(case_dir: pathlib.Path) -> None:
+        case_dir.mkdir(parents=True)
+        (case_dir / "evidence.md").mkdir()
+
+    monkeypatch.setattr(review_eval, "_new_case_dir", create_case_with_unwritable_evidence)
+
+    run = subprocess.run
+
+    def run_with_cleanup_failure(args, *, check=False, **kwargs):
+        if args[0] == "git" and args[3:5] == ["worktree", "remove"]:
+            if cleanup_failure == "start":
+                raise FileNotFoundError("Gitを起動できない")
+            if cleanup_failure == "decode":
+                raise UnicodeError("Gitの出力を読めない")
+            if cleanup_failure == "dirty":
+                (pathlib.Path(args[-1]) / "test-local-change").write_text("回収しない変更", encoding="utf-8")
+        return run(args, check=check, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run_with_cleanup_failure)
+    out = tmp_path / "out"
+    try:
+        assert review_eval.main(["prepare", "--out", str(out), "--case", "intent-fixed-control"]) == 1
+        error = capsys.readouterr().err
+        assert "成立性の証拠を保存できない:" in error and "evidence.md" in error
+        assert "書込権限と空き容量" in error and "新しい--out" in error
+        remaining = list(out.glob("*/worktree"))
+        if cleanup_failure is None:
+            assert not remaining
+        else:
+            (worktree,) = remaining
+            assert "評価用worktreeを回収できない:" in error and str(worktree) in error
+            assert "fetch" not in error and "--force" not in error
+            assert "変更や未追跡ファイルがあれば保存してから、強制削除せずに回収する" in error
+            if cleanup_failure == "dirty":
+                assert "git worktree removeが失敗した（終了コード" in error
+                assert (worktree / "test-local-change").is_file()
+            else:
+                assert ("Gitを起動できない" if cleanup_failure == "start" else "Gitの出力を読めない") in error
+    finally:
+        monkeypatch.setattr(subprocess, "run", run)
+        for worktree in out.glob("*/worktree"):
+            (worktree / "test-local-change").unlink(missing_ok=True)
+            _git(worktree.parent / "repository", "worktree", "remove", str(worktree))
 
 
 def _unittest(worktree: pathlib.Path, *targets: str) -> int:
