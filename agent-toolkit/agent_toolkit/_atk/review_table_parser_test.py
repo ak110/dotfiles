@@ -226,8 +226,9 @@ def test_skill_review_table_options_match_accepted_cli_vectors(
     """スキル本文のオプション集合を受理ケースの仕様集合へ固定する。"""
     plugin_root = pathlib.Path(__file__).parents[2]
     skill_path = plugin_root / relative_path
-    text = skill_path.read_text(encoding="utf-8")
-    if subcommand == "respond":
+    if subcommand == "add":
+        text = named_document(skill_path, plugin_root, "../references/review-record.md")
+    else:
         text = "\n" + named_document(skill_path, plugin_root, "../references/review-record-response.md")
         text = text.split("\n# レビュー指摘管理表への応答\n", 1)[1].split("\n## ", 1)[0]
     assert marker in text
@@ -236,7 +237,9 @@ def test_skill_review_table_options_match_accepted_cli_vectors(
         child.content
         for token in markdown_it.MarkdownIt().parse(text)
         for child in token.children or ()
-        if child.type == "code_inline" and child.content.startswith(("--", f"atk review-table {subcommand} "))
+        if child.type == "code_inline"
+        and child.content != f"atk review-table {subcommand} --help"
+        and child.content.startswith(("--", f"atk review-table {subcommand} "))
     ]
     documented = {option for span in spans for option in re.findall(r"--[a-z-]+", span)}
     accepted = {
