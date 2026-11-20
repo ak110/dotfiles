@@ -464,7 +464,8 @@ def cmd_add(
                     next_action=_user_comment.AGENT_USER_COMMENT_ADD_NEXT_ACTION,
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
-            join_current = _require_process_wi_timing(args, frontmatter) or join_current
+            if not args.dry_run:
+                join_current = _require_process_wi_timing(args, frontmatter) or join_current
             _require_agent_source(frontmatter, args.source)
             try:
                 require_agent_awi_sections(
