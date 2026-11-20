@@ -8,8 +8,42 @@ import pytest
 import rewrite_plan_commits
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._testing import git_repository
-from rewrite_plan_commits_test import WI_A, _commit, _Rebased, _snapshot
+from rewrite_plan_commits_test import WI_A, WI_B, WI_S, _commit, _Rebased, _snapshot
 from rewrite_plan_commits_test import _rebased_fixture as _rebased_fixture  # pylint: disable=useless-import-alias
+
+
+@pytest.mark.parametrize("mapped", [True, False])
+def test_retry_with_new_in_range_and_out_of_range_commits(
+    rebased: _Rebased, capsys: pytest.CaptureFixture[str], mapped: bool
+) -> None:
+    """別AWIの範囲外OIDが後から加わっても、同じ記録の新たな対象は対応表に従って処理する。"""
+    table = rebased.range_map("a", "b", "u") if mapped else rebased.range_map("a", "b")
+    args = rebased.argv(table)
+    assert rewrite_plan_commits.main(args) == 0
+    record = rebased.handoff
+    commit_mapping.append_event(record, {"commit": rebased.orphan, "awi": [WI_S]})
+    commit_mapping.append_event(record, {"commit": rebased.old["u"], "awi": [WI_A]})
+    before = _snapshot([rebased.plan, record, rebased.unaffected])
+    if not mapped:
+        assert rewrite_plan_commits.main(args) == 1
+        error = capsys.readouterr().err
+        assert "対応表の不足" in error and rebased.old["u"] in error
+        assert _snapshot([rebased.plan, record, rebased.unaffected]) == before
+        return
+
+    notice = f"範囲外として残したOID（1件）: {rebased.orphan}"
+    assert rewrite_plan_commits.main(args) == 0
+    assert f"追記: {record}（1件） {notice}" in capsys.readouterr().out
+    events = commit_mapping.read_events(record, record.read_text(encoding="utf-8"))
+    assert commit_mapping.read_mapping(rebased.repo, events, {WI_A, WI_B, WI_S}) == {
+        rebased.new["b"]: {WI_B},
+        rebased.new["u"]: {WI_A},
+        rebased.orphan: {WI_S},
+    }
+    done = _snapshot([rebased.plan, record, rebased.unaffected])
+    assert rewrite_plan_commits.main(args) == 0
+    assert f"変更なし: {record} {notice}" in capsys.readouterr().out
+    assert _snapshot([rebased.plan, record, rebased.unaffected]) == done
 
 
 @pytest.mark.parametrize("edit", ["missing", "past", "reintroduced"])
