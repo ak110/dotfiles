@@ -270,14 +270,19 @@ async def test_engine_dependency_exhaustion_is_request_local(tmp_path: pathlib.P
         )
 
 
-@pytest.fixture
-def tight_claude_allocation(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, agents_server_isolation: None) -> None:
+@pytest.fixture(name="claude_allocation")
+def _claude_allocation(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, agents_server_isolation: None) -> None:
     del agents_server_isolation
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(usage_refresh, "ensure_fresh", lambda **_kwargs: None)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:test/medium,codex:gpt-6-sol/medium")
     usage_settings.record_metadata("claude", {"account": "test"})
+
+
+@pytest.fixture
+def tight_claude_allocation(claude_allocation: None) -> None:
+    del claude_allocation
     usage_observation.observe(
         [usage_observation.QuotaWindow("claude", "test", "weekly", 95, None, time.time())],
         setting_signature="unknown",
@@ -306,10 +311,11 @@ async def test_tight_claude_prefers_available_codex(tmp_path: pathlib.Path, monk
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("tight_claude_allocation")
+@pytest.mark.usefixtures("claude_allocation")
 async def test_recovered_weekly_subscription_starts_claude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
     usage_settings.record_metadata("claude", {"account": "test", "contract": "plan"})
+    assert usage_refresh.enabled(force=True)
     now = time.time()
     with monkeypatch.context() as clock:
         clock.setattr(time, "time", lambda: now - 1)

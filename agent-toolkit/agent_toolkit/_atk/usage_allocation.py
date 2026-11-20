@@ -6,23 +6,65 @@ import json
 import math
 import re
 import time
+from collections.abc import Callable
+from typing import Any
 
+from agent_toolkit._common import claude_usage_limit
 from agent_toolkit._common.usage_observation import QuotaWindow, rate_key
 
 
-def _applies(window: QuotaWindow, candidates: list[tuple[str, str, str]], role: str) -> bool:
-    if window.scope in {"all", role}:
-        return True
-    if window.scope.startswith("model:"):
-        return any(
-            engine == window.engine and window.scope[6:].casefold() in model.casefold() for engine, model, _effort in candidates
-        )
+def _scope(raw: str) -> str | dict[str, Any]:
+    if not raw.startswith("{"):
+        return raw
     try:
-        scope = json.loads(window.scope)
+        scope = json.loads(raw)
     except ValueError:
-        return False
-    if not isinstance(scope, dict):
-        return False
+        return raw
+    return scope if any(value is not None for value in scope.values()) else "all"
+
+
+def _claude_meter(window: QuotaWindow) -> tuple[str, str]:
+    if meter := claude_usage_limit.REPORT_WINDOWS.get(window.window_id):
+        return meter
+    scope = _scope(window.scope)
+    if isinstance(scope, str):
+        return window.window_id, scope
+    if window.window_id == "weekly_scoped":
+        model = scope.get("model")
+        if isinstance(model, dict) and not scope.get("surface"):
+            name = model.get("display_name")
+            if isinstance(name, str):
+                family = name.casefold().removeprefix("claude ").removesuffix(" models")
+                return window.window_id, f"model:{family}"
+    return window.window_id, window.scope
+
+
+def current_windows(windows: list[QuotaWindow], now: float) -> list[QuotaWindow]:
+    """同じClaude枠の新旧を解決してから期限を見る。最新観測が期限切れでも古い拒否へは戻さない。"""
+    latest: dict[tuple[str, str, str, str], QuotaWindow] = {}
+    others = []
+    for window in windows:
+        if window.engine != "claude":
+            others.append(window)
+            continue
+        key = (window.account, window.contract, *_claude_meter(window))
+        previous = latest.get(key)
+        if previous is None or (window.observed_at, bool(window.claude_limit_reason)) > (
+            previous.observed_at,
+            bool(previous.claude_limit_reason),
+        ):
+            latest[key] = window
+    return [w for w in [*others, *latest.values()] if now - w.observed_at <= 600 and (w.resets_at is None or w.resets_at > now)]
+
+
+def _applies(window: QuotaWindow, candidates: list[tuple[str, str, str]], role: str) -> bool:
+    scope = _scope(window.scope)
+    if isinstance(scope, str):
+        if scope.startswith("model:"):
+            return any(
+                engine == window.engine and scope[6:].casefold() in model.casefold() for engine, model, _effort in candidates
+            )
+        return scope in {"all", role}
     model = scope.get("model")
     if isinstance(model, dict) and isinstance(model.get("display_name"), str):
         label = set(re.findall(r"[a-z]+", model["display_name"].casefold())) - {"claude", "model"}
@@ -112,19 +154,21 @@ def choose(
     activity_ratio: float = 1.0,
     previous: str | None = None,
     excluded: dict[tuple[str, str, str], str] | None = None,
-    subscription_only: bool = True,
+    subscription_only: bool | Callable[[], bool] = True,
 ) -> tuple[list[tuple[str, str, str]], str]:
     if not candidates:
         raise ValueError("利用できる候補がない")
     if role == "orchestrate":
         return list(candidates), "統括は保存された候補を維持し、通常の上限では同じ会話で回復を待つ"
     limits = {}
-    if subscription_only:
-        for window in windows:
-            if reason := window.claude_limit_reason:
-                for candidate in candidates:
-                    if candidate[0] == "claude" and _applies(window, [candidate], role):
-                        limits[candidate] = reason
+    windows = current_windows(windows, time.time())
+    for window in windows:
+        if reason := window.claude_limit_reason:
+            for candidate in candidates:
+                if candidate[0] == "claude" and _applies(window, [candidate], role):
+                    limits[candidate] = reason
+    if limits and not (subscription_only() if callable(subscription_only) else subscription_only):
+        limits.clear()
     if excluded is not None:
         excluded.update(limits)
     remaining = [candidate for candidate in candidates if candidate not in limits]

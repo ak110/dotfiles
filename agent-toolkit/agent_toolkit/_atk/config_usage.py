@@ -93,11 +93,6 @@ def select_candidates(
     except OSError, ValueError, KeyError, TypeError:
         observed = {"windows": [], "rates": {}, "mixed": True}
     windows = [usage_observation.QuotaWindow(**item) for item in _profile_windows(observed)]
-    windows = [
-        window
-        for window in windows
-        if time.time() - window.observed_at <= 600 and (window.resets_at is None or window.resets_at > time.time())
-    ]
     activity = 1.0 if activity_mode == "continuous" else observed.get("activity_ratio", 1.0)
     if not isinstance(activity, (int, float)) or not math.isfinite(activity):
         activity = 1.0
@@ -113,12 +108,12 @@ def select_candidates(
     state = read_settings()
     decisions = state.get("decisions", {})
     previous = decisions.get(role, {}).get("engine") if isinstance(decisions, dict) else None
-    has_credits = (
-        role != "orchestrate"
-        and "credits" in connections
-        and any(window.claude_limit_reason for window in windows)
-        and any(item.kind == "credits" for item in claude_connection.candidates("delegate").connections)
-    )
+
+    def subscription_only() -> bool:
+        return "credits" not in connections or not any(
+            item.kind == "credits" for item in claude_connection.candidates("delegate").connections
+        )
+
     selected, reason = usage_allocation.choose(
         candidates,
         role=role,
@@ -127,7 +122,7 @@ def select_candidates(
         activity_ratio=activity,
         previous=previous,
         excluded=excluded,
-        subscription_only=not has_credits,
+        subscription_only=subscription_only,
     )
     if selected and role != "orchestrate" and selected[0][0] != previous:
         path = settings_path()
@@ -218,7 +213,11 @@ def dispatch(
     for engine in ("claude", "codex"):
         if not any(window["engine"] == engine for window in visible_windows):
             print(f"{engine}: 利用枠は取得不明。config usage --refreshで取得する")
+    effective_windows = set(
+        usage_allocation.current_windows([usage_observation.QuotaWindow(**row) for row in visible_windows], time.time())
+    )
     for window in visible_windows:
+        quota = usage_observation.QuotaWindow(**window)
         remaining = "不明" if window["used_percent"] is None else f"{100 - window['used_percent']:g}%"
         resets = (
             "不明"
@@ -227,12 +226,9 @@ def dispatch(
         )
         sampled = datetime.datetime.fromtimestamp(window["observed_at"], datetime.UTC).astimezone().isoformat()
         label = json.dumps([window["engine"], window["window_id"], window["scope"]], ensure_ascii=False)
-        pace = observed.get("rates", {}).get(usage_observation.rate_key(usage_observation.QuotaWindow(**window)))
+        pace = observed.get("rates", {}).get(usage_observation.rate_key(quota))
         pace_text = "不明" if pace is None else f"{pace:g}ポイント/稼働秒"
-        fresh = time.time() - window["observed_at"] <= 600 and (
-            window["resets_at"] is None or window["resets_at"] > time.time()
-        )
-        validity = "判定対象" if fresh else "過去の観測（現在は取得不明）"
+        validity = "判定対象" if quota in effective_windows else "過去の観測（判定対象外）"
         print(f"{label}: 観測残量={remaining}、回復={resets}、ペース={pace_text}、最終観測={sampled}、{validity}")
     normal = config_settings.load_config()
     model_settings = {

@@ -115,7 +115,7 @@ def test_latest_claude_window_controls_allocation(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", f"claude:{(model or 'opus').lower()}/low")
     monkeypatch.setattr(usage_refresh, "enabled", lambda: True)
     usage_settings.record_metadata("claude", {"account": "account", "contract": "plan"})
-    scope = {"model": {"display_name": model}} if model else None
+    scope = {"model": {"display_name": model} if model else None, "surface": None}
 
     def decision() -> str:
         assert _main(tmp_path, "config", "usage") == 0

@@ -1,5 +1,9 @@
 """候補の保持とひっ迫回避の試験。"""
 
+from dataclasses import replace
+
+import pytest
+
 from agent_toolkit._atk import usage_allocation
 from agent_toolkit._atk.usage_allocation import choose
 from agent_toolkit._common.usage_observation import QuotaWindow, rate_key
@@ -12,7 +16,8 @@ def test_unknown_prefers_codex():
     assert "不明" in reason
 
 
-def test_claude_tight():
+def test_claude_tight(monkeypatch):
+    monkeypatch.setattr(usage_allocation.time, "time", lambda: 100.0)
     windows = [QuotaWindow("claude", "a", "w", 90, None, 0)]
     claude = [("claude", "a", "low"), ("claude", "b", "high")]
     assert choose(claude, role="execute", windows=windows, rates={})[0] == claude
@@ -49,7 +54,8 @@ def test_different_window_percentages_have_separate_paces(monkeypatch):
     assert choose(candidates, role="execute", windows=windows, rates=rates)[0] == candidates
 
 
-def test_tight_scoped_window_only_affects_matching_model():
+def test_tight_scoped_window_only_affects_matching_model(monkeypatch):
+    monkeypatch.setattr(usage_allocation.time, "time", lambda: 100.0)
     window = QuotaWindow("claude", "a", "scoped", 97, 1000, 100, scope="model:sonnet")
     for model, tight in [("sonnet", True), ("opus", False)]:
         candidates = [("claude", model, "low"), ("codex", "other", "low")]
@@ -81,3 +87,31 @@ def test_roomy_codex_precedes_claude_even_after_claude_was_preferred(monkeypatch
             previous="claude",
         )
         assert result == ([candidates[1]] if used == 100 else candidates[::-1])
+
+
+@pytest.mark.parametrize("different", ["account", "contract", "window", "model", "surface"])
+def test_recovery_only_supersedes_same_claude_window(monkeypatch, different):
+    monkeypatch.setattr(usage_allocation.time, "time", lambda: 102.0)
+    rejected = QuotaWindow("claude", "a", "seven_day_opus", None, None, 100, scope="model:opus", contract="plan", rejected=True)
+    recovered = QuotaWindow(
+        "claude", "a", "weekly_scoped", 0, None, 101, scope='{"model":{"display_name":"Opus"}}', contract="plan"
+    )
+    other = {
+        "account": replace(recovered, account="b"),
+        "contract": replace(recovered, contract="other"),
+        "window": replace(recovered, window_id="weekly_all", scope="all"),
+        "model": replace(recovered, scope='{"model":{"display_name":"Sonnet"}}'),
+        "surface": replace(recovered, scope='{"surface":{"display_name":"Code"}}'),
+    }[different]
+    candidates = [("claude", "opus", "low"), ("claude", "sonnet", "low")]
+    selected, reason = choose(candidates, role="execute", windows=[other, rejected], rates={})
+    assert selected == candidates[1:] and "seven_day_opus" in reason
+
+
+def test_expired_newer_report_does_not_restore_old_rejection(monkeypatch):
+    monkeypatch.setattr(usage_allocation.time, "time", lambda: 102.0)
+    older = QuotaWindow("claude", "a", "five_hour", None, None, 100, rejected=True)
+    newer = QuotaWindow("claude", "a", "session", 100, 102, 101)
+    candidates = [("claude", "opus", "low")]
+    selected, _reason = choose(candidates, role="execute", windows=[newer, older], rates={})
+    assert selected == candidates

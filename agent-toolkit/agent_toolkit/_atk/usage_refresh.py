@@ -256,7 +256,7 @@ def record_claude_event(info: Any) -> None:
     kind = values.get("rateLimitType", values.get("rate_limit_type"))
     if not isinstance(kind, str) or kind == "overage":
         return
-    scope = "model:" + kind.removeprefix("seven_day_") if kind in {"seven_day_opus", "seven_day_sonnet"} else "all"
+    _report_kind, scope = claude_usage_limit.REPORT_WINDOWS.get(kind, (kind, "all"))
     profile = usage_settings.read_metadata("claude")
     contract = str(profile.get("contract", ""))
     if not contract or contract.startswith("unknown"):

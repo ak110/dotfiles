@@ -15,7 +15,14 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-WAIT_LIMIT_TYPES = frozenset({"seven_day", "seven_day_opus", "seven_day_sonnet", "five_hour"})
+# SDKのrateLimitTypeに対応する /usage の(kind, scope)。
+REPORT_WINDOWS = {
+    "five_hour": ("session", "all"),
+    "seven_day": ("weekly_all", "all"),
+    "seven_day_opus": ("weekly_scoped", "model:opus"),
+    "seven_day_sonnet": ("weekly_scoped", "model:sonnet"),
+}
+WAIT_LIMIT_TYPES = frozenset(REPORT_WINDOWS)
 # 解除予定時刻が無いか過ぎた場合に、同じClaudeの可用性を確かめ直す間隔。
 # 解除まで待ち続けるため回数と総時間の上限は置かない。間隔は確認の起動費用と解除後の再開の遅れの釣り合いで選ぶ。
 RECHECK_SECONDS = 300.0
