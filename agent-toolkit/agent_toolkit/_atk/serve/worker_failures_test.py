@@ -34,7 +34,8 @@ async def test_add_lock_conflict_can_be_retried(tmp_path: pathlib.Path, monkeypa
 
     retry = await client.post("/api/entries", json=_ADD)
     assert retry.status_code == 201
-    assert list(_saved_files(notes)) == (await retry.get_json())["filenames"]
+    [filename] = (await retry.get_json())["filenames"]
+    assert list(_saved_files(notes)) == [filename]
 
 
 @pytest.mark.asyncio

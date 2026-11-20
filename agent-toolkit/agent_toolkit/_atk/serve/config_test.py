@@ -182,6 +182,7 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
     assert await response.get_json() == {
         "error": "別の操作が進行中です",
         "code": "lock_conflict",
+        "next_action": "別の操作の終了を待って再試行する",
     }
 
 
