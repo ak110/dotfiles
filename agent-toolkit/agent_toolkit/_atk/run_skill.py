@@ -393,9 +393,9 @@ def _run_locked(
         env[mcp_environment.SESSION_START_INPUT_ENV] = record.input.model_dump_json()
     session_id: str | None = record.session_id if record is not None else None
     if orchestrator == "claude":
-        # 非対話CLIは最終応答で終了するため、子の結果を同じターンで回収させる。
-        # このenvは利用上限解除後の同一会話の再開でも使う。
-        env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
+        if getattr(args, "batch_manifest", None):
+            # 一括振り返りでは対象全件を同じ実行で検収するため、子の結果を前景で回収する。
+            env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
         session_id = session_id or str(uuid.uuid4())
         progress.message(f"Claudeのセッション識別子: {session_id}")
         argv = [
