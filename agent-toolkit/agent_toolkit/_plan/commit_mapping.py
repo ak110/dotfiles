@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
+import hashlib
 import json
 import pathlib
 import re
@@ -141,12 +143,12 @@ def short_oid(worktree: pathlib.Path, oid: str) -> str:
     return short if result.returncode == 0 and short and oid.startswith(short) else oid
 
 
-def resolve_commit(worktree: pathlib.Path, revision: str) -> str:
-    """指定したworktreeで実在し現在のHEADに含まれるcommitの完全OIDを返す。"""
+def resolve_commit(worktree: pathlib.Path, revision: str, *, head: str = "HEAD") -> str:
+    """指定したworktreeで実在し対象HEADに含まれるcommitの完全OIDを返す。"""
     oid = _full_oid(worktree, revision)
     try:
         verified = command.output(["rev-parse", "--verify", "--end-of-options", f"{oid}^{{commit}}"], worktree)
-        present = command.run(["merge-base", "--is-ancestor", verified, "HEAD"], worktree, capture_output=True, text=True)
+        present = command.run(["merge-base", "--is-ancestor", verified, head], worktree, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError) as error:
         raise _git_fail(f"実装commitを解決できません: {revision}: {error}", worktree) from error
     if _OID.fullmatch(verified) is None or present.returncode != 0:
@@ -224,7 +226,7 @@ def read_mapping(
             for oid in oids:
                 assert isinstance(oid, str)
                 mapping.setdefault(_full_oid(worktree, oid, allow_missing=allow_missing), set()).update(names)
-        elif set(event) == {"rewrite"}:
+        elif set(event) in ({"rewrite"}, {"rewrite", "operation_id"}):
             replacements = event["rewrite"]
             if not isinstance(replacements, dict) or not replacements:
                 raise _fail("履歴変更のOID対応がありません")
@@ -389,20 +391,20 @@ def _check_assignment(old: str, value: object, names: set[str]) -> None:
         )
 
 
-def _resolved_value(worktree: pathlib.Path, value: object, *, names: set[str] | None = None) -> RewriteValue:
+def _resolved_value(worktree: pathlib.Path, value: object, *, head: str = "HEAD") -> RewriteValue:
     destinations = rewrite_destinations(value)
     if isinstance(value, str):
-        return resolve_commit(worktree, value)
-    return [
-        {"commit": resolve_commit(worktree, oid), "awi": sorted((wis or set()) if names is None else (wis or set()) & names)}
-        for oid, wis in destinations
-    ]
+        return resolve_commit(worktree, value, head=head)
+    return [{"commit": resolve_commit(worktree, oid, head=head), "awi": sorted(wis or set())} for oid, wis in destinations]
 
 
-def _short_value(worktree: pathlib.Path, value: RewriteValue) -> RewriteValue:
+def _short_value(worktree: pathlib.Path, value: RewriteValue, *, names: set[str] | None = None) -> RewriteValue:
     if isinstance(value, str):
         return short_oid(worktree, value)
-    return [{"commit": short_oid(worktree, oid), "awi": sorted(wis or set())} for oid, wis in rewrite_destinations(value)]
+    return [
+        {"commit": short_oid(worktree, oid), "awi": sorted((wis or set()) if names is None else (wis or set()) & names)}
+        for oid, wis in rewrite_destinations(value)
+    ]
 
 
 def load_rewrite_map(source: pathlib.Path) -> RewriteMap:
@@ -482,16 +484,47 @@ def _is_ancestor(worktree: pathlib.Path, oid: str, head: str) -> bool:
     return result.returncode == 0
 
 
-def load_range_rewrite(worktree: pathlib.Path, source: pathlib.Path | list[pathlib.Path], previous_head: str) -> RewriteMap:
-    """書換えで検収した範囲全体の旧OIDから新OIDへのJSON対応を読み、完全OIDの対応を返す。
+@dataclasses.dataclass(frozen=True)
+class RewriteOperation:
+    """書換え前後のHEADと、全記録に共通する検収済み対応表。OIDは全て完全OIDとする。"""
+
+    previous_head: str
+    current_head: str
+    replacements: RewriteMap
+
+    @functools.cached_property
+    def operation_id(self) -> str:
+        """対応表のキー、分割先とAWIの列挙順によらない識別値を返す。"""
+        table = {
+            old: value
+            if isinstance(value, str)
+            else sorted((oid, sorted(wis or set())) for oid, wis in rewrite_destinations(value))
+            for old, value in self.replacements.items()
+        }
+        payload = json.dumps([self.previous_head, self.current_head, table], sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def load_range_rewrite(
+    worktree: pathlib.Path, source: pathlib.Path | list[pathlib.Path], previous_head: str
+) -> RewriteOperation:
+    """書換え前後のHEADを確定し、範囲全体の対応表を合成・検証する。
 
     範囲全体の対応表はWI対応を持たないcommitも含む。各項目は、旧OIDが書換え前のHEADから到達でき、
     新OIDが現在のHEADに含まれる場合に受理する。書換えで変わらなかったcommit（旧OIDが現在のHEADにも含まれる）は、
     新OIDが旧OIDと同じ場合だけ受理する。
     """
     try:
+        previous = command.output(["rev-parse", "--verify", "--end-of-options", f"{previous_head}^{{commit}}"], worktree)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise CommitMappingError(
+            f"書換え前のHEADをcommitへ解決できません: {previous_head}",
+            next_action="書換えの直前に取得したHEADを--previous-headへ渡して再実行する",
+        ) from error
+    current = _full_oid(worktree, "HEAD")
+    try:
         sources = [source] if isinstance(source, pathlib.Path) else source
-        replacements = _compose_rewrites(worktree, sources, previous_head)
+        replacements = _compose_rewrites(worktree, sources, previous)
     except CommitMappingError as error:
         raise CommitMappingError(error.reason, next_action=_FIX_RANGE_MAP) from error
     except (OSError, ValueError) as error:
@@ -502,39 +535,30 @@ def load_range_rewrite(worktree: pathlib.Path, source: pathlib.Path | list[pathl
         ) from error
     if not isinstance(replacements, dict) or not replacements:
         raise CommitMappingError("履歴変更の対応は非空のJSONオブジェクトが必要です", next_action=_FIX_RANGE_MAP)
-    try:
-        previous = _full_oid(worktree, previous_head)
-        command.output(["rev-parse", "--verify", "--end-of-options", f"{previous}^{{commit}}"], worktree)
-    except (CommitMappingError, OSError, subprocess.SubprocessError) as error:
-        raise CommitMappingError(
-            f"書換え前のHEADをcommitへ解決できません: {previous_head}",
-            next_action="書換えの直前に取得したHEADを--previous-headへ渡して再実行する",
-        ) from error
     resolved: RewriteMap = {}
     for old, new in replacements.items():
         if not isinstance(old, str) or not old:
             raise CommitMappingError(f"履歴変更の対応が不正です: {old} -> {new}", next_action=_FIX_RANGE_MAP)
         try:
             full_old = _full_oid(worktree, old)
-            full_new = _resolved_value(worktree, new)
+            full_new = _resolved_value(worktree, new, head=current)
         except CommitMappingError as error:
             raise CommitMappingError(
                 f"新OIDが現在のHEADに含まれないか、旧新OIDを解決できません: {old} -> {new}", next_action=_FIX_RANGE_MAP
             ) from error
         if not _is_ancestor(worktree, full_old, previous):
             raise CommitMappingError(f"旧OIDが書換え前のHEADから到達できません: {old}", next_action=_FIX_RANGE_MAP)
-        if any(full_old != oid for oid, _names in rewrite_destinations(full_new)) and _is_ancestor(worktree, full_old, "HEAD"):
+        if any(full_old != oid for oid, _names in rewrite_destinations(full_new)) and _is_ancestor(worktree, full_old, current):
             raise CommitMappingError(
                 f"現在のHEADに残る旧OIDが別の新OIDへ対応付けられています: {old} -> {new}", next_action=_FIX_RANGE_MAP
             )
         resolved[full_old] = full_new
-    return resolved
+    return RewriteOperation(previous, current, resolved)
 
 
 def _compose_rewrites(worktree: pathlib.Path, sources: list[pathlib.Path], previous_head: str) -> RewriteMap:
     """書換え順に対応を合成し、最終OIDがHEADに含まれるかを確かめる。"""
     composed: RewriteMap = {}
-    previous = _full_oid(worktree, previous_head) if len(sources) > 1 else previous_head
     for index, source in enumerate(sources):
         current = {_full_oid(worktree, old): value for old, value in load_rewrite_map(source).items()}
         if index == 0:
@@ -572,16 +596,18 @@ def _compose_rewrites(worktree: pathlib.Path, sources: list[pathlib.Path], previ
                     raise _fail(f"AWIの明示割当と全体割当を合成できません: {old}")
                 updated[old] = targets
         for old, value in current.items():
-            if old not in updated and _is_ancestor(worktree, old, previous):
+            if old not in updated and _is_ancestor(worktree, old, previous_head):
                 updated[old] = value
         composed = updated
     return composed
 
 
-def rewritten_commits(worktree: pathlib.Path, mapping: dict[str, set[str]], previous_head: str) -> list[str]:
+def rewritten_commits(
+    worktree: pathlib.Path, mapping: dict[str, set[str]], previous_head: str, current_head: str = "HEAD"
+) -> list[str]:
     """書換え前HEADから到達でき、現在のHEADに残っていない記録済みcommitを返す。"""
     previous = _full_oid(worktree, previous_head)
-    return [oid for oid in mapping if _is_ancestor(worktree, oid, previous) and not _is_ancestor(worktree, oid, "HEAD")]
+    return [oid for oid in mapping if _is_ancestor(worktree, oid, previous) and not _is_ancestor(worktree, oid, current_head)]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -594,58 +620,32 @@ class RangeRewrite:
     retained: tuple[str, ...] = ()
 
 
-def _destinations_by_oid(worktree: pathlib.Path, value: object) -> set[tuple[str, frozenset[str] | None]]:
-    """旧OIDの対応先を、記録順や短縮OIDの桁数によらず比べられる形で返す。"""
-    return {
-        (_full_oid(worktree, oid), None if names is None else frozenset(names)) for oid, names in rewrite_destinations(value)
-    }
-
-
-def _already_rewritten(
-    worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str], rewrite: RewriteMap
-) -> bool:
-    """直近の追記にある旧OIDと、その記録に割り当てた宛先が今回の書換えと一致するかを返す。"""
-    recorded = events[-1].get("rewrite")
-    if not isinstance(recorded, dict):
-        return False
-    before = read_mapping(worktree, events[:-1], allowed_wis)
-    for old, applied in recorded.items():
-        source = _full_oid(worktree, old)
-        # 対応表にはHEADに残ったOIDの自己対応も入るが、それは今回の書換えではない。
-        if source not in rewrite or _is_ancestor(worktree, source, "HEAD"):
-            return False
-        expected = _resolved_value(worktree, rewrite[source], names=before[source])
-        if _destinations_by_oid(worktree, applied) != _destinations_by_oid(worktree, expected):
-            return False
-    return True
-
-
 def range_rewrite_event(
-    worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str], rewrite: RewriteMap, previous_head: str
+    worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str], operation: RewriteOperation
 ) -> RangeRewrite:
     """旧HEADにだけ含まれるOIDを付け替える。今回の対象も適用済みの追記も無い記録は、範囲外のOIDを未追記とする。"""
     mapping = read_mapping(worktree, events, allowed_wis)
-    previous = _full_oid(worktree, previous_head)
     targets = []
     outside = []
     for oid in mapping:
-        if _is_ancestor(worktree, oid, "HEAD"):
+        if _is_ancestor(worktree, oid, operation.current_head):
             continue
-        if _is_ancestor(worktree, oid, previous):
+        if _is_ancestor(worktree, oid, operation.previous_head):
             targets.append(oid)
         else:
             outside.append(oid)
     if not targets:
-        if outside and _already_rewritten(worktree, events, allowed_wis, rewrite):
+        if outside and events[-1].get("operation_id") == operation.operation_id:
             return RangeRewrite(retained=tuple(outside))
         return RangeRewrite(past_omissions=tuple(outside))
+    rewrite = operation.replacements
     if missing := tuple(oid for oid in targets if oid not in rewrite):
         return RangeRewrite(missing=missing, retained=tuple(outside))
     resolved: RewriteMap = {}
     for oid in targets:
         _check_assignment(oid, rewrite[oid], mapping[oid])
-        resolved[short_oid(worktree, oid)] = _short_value(worktree, _resolved_value(worktree, rewrite[oid], names=mapping[oid]))
-    return RangeRewrite(event={"rewrite": resolved}, retained=tuple(outside))
+        resolved[short_oid(worktree, oid)] = _short_value(worktree, rewrite[oid], names=mapping[oid])
+    return RangeRewrite(event={"rewrite": resolved, "operation_id": operation.operation_id}, retained=tuple(outside))
 
 
 def get_commits(

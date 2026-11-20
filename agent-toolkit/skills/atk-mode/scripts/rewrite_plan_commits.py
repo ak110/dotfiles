@@ -3,7 +3,7 @@
 書換えで検収した範囲全体の対応表（WI対応を持たないcommitを含む）と書換え前のHEADを受け取り、
 書換え前のHEADから到達でき、現在のHEADから到達できないcommitだけを付け替える。
 対象commitを含む記録では、どちらのHEADにも無いOIDを変えずに残し、その件数と値を表示する。
-今回の書換えを追記済みの記録は変えない。
+直近の対応に今回の書換えの識別値がある記録は変えない。旧形式の対応だけでは適用済みと判定しない。
 それ以外で対象commitが無く、どちらのHEADにも無いOIDを持つ記録は、過去の書換えの未追記として拒否する。
 作業中・保存済み計画とmanaged-tempから未指定の対象記録を検出し、複数の対応表は書換え順に合成する。
 全ての記録を検証してから書込みを始め、対応表の不足・過去の書換えの未追記・対応表の誤り・保存済み計画のいずれかがあれば
@@ -51,7 +51,7 @@ class _Record:
     handoff: bool
 
 
-def _missing_records(worktree: pathlib.Path, records: list[_Record], previous: str) -> list[str]:
+def _missing_records(worktree: pathlib.Path, records: list[_Record], operation: commit_mapping.RewriteOperation) -> list[str]:
     """既存の対応記録から書換え対象を導き、入力に指定されていない記録を返す。"""
     working = locations.working_plans_root()
     saved = locations.new_plans_root()
@@ -76,7 +76,7 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], previous: s
             if root in (working, saved) and record.stem in provided_stems:
                 continue
             try:
-                affected = _candidate_affected(worktree, path, record, previous)
+                affected = _candidate_affected(worktree, path, record, operation)
             except OSError, ValueError:
                 # 処理対象と確定していない候補は、読取から書換え対象の判定までのどの段階で失敗しても除外する。
                 # 他リポジトリの短縮OID、過去の書換え、無関係な不正記録が該当する。明示指定した記録は
@@ -90,7 +90,9 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], previous: s
     return problems
 
 
-def _candidate_affected(worktree: pathlib.Path, mapping_file: pathlib.Path, record: pathlib.Path, previous: str) -> list[str]:
+def _candidate_affected(
+    worktree: pathlib.Path, mapping_file: pathlib.Path, record: pathlib.Path, operation: commit_mapping.RewriteOperation
+) -> list[str]:
     """探索で見つけた候補1件を評価し、今回の書換えで現在のHEADから外れた記録済みcommitを返す。
 
     候補の評価に加える検証段階は本関数の中へ置き、呼出元の除外方針が全段階へ作用するようにする。
@@ -100,7 +102,7 @@ def _candidate_affected(worktree: pathlib.Path, mapping_file: pathlib.Path, reco
         events = commit_mapping.body_events(record.read_text(encoding="utf-8")) + events
     names = _allowed_wis(_Record(record, True), "", events)
     mapping = commit_mapping.read_mapping(worktree, events, names, allow_missing=True)
-    return commit_mapping.rewritten_commits(worktree, mapping, previous)
+    return commit_mapping.rewritten_commits(worktree, mapping, operation.previous_head, operation.current_head)
 
 
 def _allowed_wis(record: _Record, content: str, events: list[dict[str, object]]) -> set[str]:
@@ -126,8 +128,7 @@ def _check_writable(record: _Record, completed_step: str, result: str) -> None:
 def _plan_events(
     worktree: pathlib.Path,
     records: list[_Record],
-    rewrite: commit_mapping.RewriteMap,
-    previous_head: str,
+    operation: commit_mapping.RewriteOperation,
     completed_step: str,
     result: str,
 ) -> tuple[list[tuple[_Record, commit_mapping.RangeRewrite]], list[str], list[str]]:
@@ -139,9 +140,7 @@ def _plan_events(
         try:
             content = record.path.read_text(encoding="utf-8")
             events = commit_mapping.read_events(record.path, content)
-            change = commit_mapping.range_rewrite_event(
-                worktree, events, _allowed_wis(record, content, events), rewrite, previous_head
-            )
+            change = commit_mapping.range_rewrite_event(worktree, events, _allowed_wis(record, content, events), operation)
             if change.event is not None:
                 _check_writable(record, completed_step, result)
         except _next_action.ActionableError as error:
@@ -228,17 +227,15 @@ def main(argv: list[str] | None = None) -> int:
     if any(not path.is_absolute() for path in paths):
         parser.error("--worktree、--rewrite-map、--planおよび--handoffには絶対パスを指定します")
     try:
-        rewrite = commit_mapping.load_range_rewrite(args.worktree, args.rewrite_map, args.previous_head)
-        missing = _missing_records(args.worktree, records, args.previous_head)
+        operation = commit_mapping.load_range_rewrite(args.worktree, args.rewrite_map, args.previous_head)
+        missing = _missing_records(args.worktree, records, operation)
         if missing:
             _next_action.report(
                 "\n".join(missing),
                 next_action="未指定の全記録を入力へ加えて再実行する。保存済み計画はatk plans checkoutで取得する",
             )
             return 1
-        planned, problems, actions = _plan_events(
-            args.worktree, records, rewrite, args.previous_head, args.completed_step, args.result
-        )
+        planned, problems, actions = _plan_events(args.worktree, records, operation, args.completed_step, args.result)
     except _next_action.ActionableError as error:
         _next_action.report(
             f"履歴変更の対応を追記できません: {error.reason}",
@@ -260,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
             for assigned in mapping.values():
                 names.update(assigned)
         updated_wis = result_commits.rewrite_adopted_commits(
-            private_notes.default_private_notes(), worktree=args.worktree, filenames=names, rewrite=rewrite
+            private_notes.default_private_notes(), worktree=args.worktree, filenames=names, rewrite=operation.replacements
         )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, _next_action.ActionableError) as error:
         _next_action.report(

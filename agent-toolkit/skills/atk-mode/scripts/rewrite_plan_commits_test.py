@@ -306,7 +306,11 @@ def test_retry_after_second_record_write_failure(
 ) -> None:
     """2件目の本文か対応記録を書けなければ、同じ引数で残りだけを1回更新できる。"""
     commit_mapping.append_event(rebased.plan, {"commit": rebased.orphan, "awi": [WI_A]})
-    args = rebased.argv(rebased.range_map("a", "u", "b"))
+    table = rebased.range_map("a", "u", "b")
+    pairs = json.loads(table.read_text(encoding="utf-8"))
+    pairs[rebased.old["a"]] = [{"commit": rebased.new["a"], "awi": [WI_A]}, {"commit": rebased.new["u"], "awi": [WI_S]}]
+    table.write_text(json.dumps(pairs), encoding="utf-8")
+    args = rebased.argv(table)
     before = _snapshot([rebased.handoff, rebased.unaffected])
     blocked = rebased.handoff if failure == "body" else commit_mapping.mapping_path(rebased.handoff)
     replace = os.replace
@@ -330,8 +334,48 @@ def test_retry_after_second_record_write_failure(
     assert commit_mapping.read_mapping(rebased.repo, events, {WI_B}) == {rebased.new["b"]: {WI_B}}
     assert rebased.handoff.read_text(encoding="utf-8").count("レーン統合のrebase") == 1
 
+    done = _snapshot([rebased.plan, rebased.handoff, rebased.unaffected])
+    pairs[rebased.old["a"]].reverse()
+    table.write_text(json.dumps({oid[:12]: pairs[oid] for oid in reversed(pairs)}), encoding="utf-8")
+    assert rewrite_plan_commits.main(args) == 0
+    assert _snapshot([rebased.plan, rebased.handoff, rebased.unaffected]) == done
 
-@pytest.mark.parametrize("history", ["new-only", "different-target", "different-assignment"])
+
+@pytest.mark.parametrize("difference", ["previous-head", "current-head", "unrecorded-commit", "other-awi"])
+def test_distinct_operation_with_same_record_projection(
+    rebased: _Rebased, capsys: pytest.CaptureFixture[str], difference: str
+) -> None:
+    """記録1件の旧新OIDと割当が一致しても、両端のHEAD・全対応・全割当の違う回は未追記として拒否する。"""
+    commit_mapping.append_event(rebased.plan, {"commit": rebased.orphan, "awi": [WI_A]})
+    table = rebased.range_map("a", "u", "b")
+    pairs = json.loads(table.read_text(encoding="utf-8"))
+    pairs[rebased.old["a"]] = [{"commit": rebased.new["a"], "awi": [WI_A]}]
+    table.write_text(json.dumps(pairs), encoding="utf-8")
+    args = rebased.argv(table)
+    plan_only = [arg for arg in args if not arg.startswith("--handoff=")]
+    assert rewrite_plan_commits.main(plan_only) == 0
+    capsys.readouterr()
+
+    if difference == "previous-head":
+        git_repository.git_output(rebased.repo, "switch", "--detach", rebased.previous_head)
+        other = _commit(rebased.repo, "later old tip")
+        git_repository.git_output(rebased.repo, "switch", "--detach", rebased.new["b"])
+        args = [f"--previous-head={other}" if arg.startswith("--previous-head=") else arg for arg in args]
+    elif difference == "current-head":
+        _commit(rebased.repo, "later new tip")
+    elif difference == "unrecorded-commit":
+        del pairs[rebased.old["u"]]
+    else:
+        pairs[rebased.old["a"]][0]["awi"].append(WI_B)
+    table.write_text(json.dumps(pairs), encoding="utf-8")
+
+    before = _snapshot([rebased.plan, rebased.handoff, rebased.unaffected])
+    assert rewrite_plan_commits.main(args) == 1
+    assert "過去の書換えの未追記" in capsys.readouterr().err
+    assert _snapshot([rebased.plan, rebased.handoff, rebased.unaffected]) == before
+
+
+@pytest.mark.parametrize("history", ["new-only", "different-target", "different-assignment", "matching-legacy"])
 def test_rewrite_destination_is_not_proof_of_application(
     rebased: _Rebased, capsys: pytest.CaptureFixture[str], history: str
 ) -> None:
@@ -344,7 +388,9 @@ def test_rewrite_destination_is_not_proof_of_application(
     else:
         old = rebased.old["a"]
         commit_mapping.append_event(stale, {"commit": old, "awi": [WI_S]})
-        if history == "different-target":
+        if history == "matching-legacy":
+            commit_mapping.append_event(stale, {"rewrite": {old: rebased.new["a"]}})
+        elif history == "different-target":
             commit_mapping.append_event(stale, {"rewrite": {old: rebased.new["b"]}})
         else:
             first, second = rebased.new["a"], rebased.new["b"]
