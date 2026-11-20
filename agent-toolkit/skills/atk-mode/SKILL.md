@@ -69,8 +69,6 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
-ユーザーへの回答や成果物を確定する前に、`playbooks/main-reporting.md`「ユーザー向け発話ルール」が未読なら読む。
-
 一般の作業では、次の操作・判断の前に対応する資料を全文読む（スキルは起動する）。
 
 | 操作・判断 | 読む資料 |
@@ -79,7 +77,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | 発話の解釈、指摘・訂正・割り込み | `playbooks/user-utterance.md` |
 | 権限拒否、手順どおりに進められない時 | `playbooks/permission-denial.md` |
 | 確認・報告の手段、途中で送る報告 | `references/delivery.md` |
-| メインの途中報告、30分の進捗点検、改善点の報告 | `playbooks/main-reporting.md` |
+| 途中報告、進捗点検、改善点の報告、回答・成果物の確定 | `playbooks/main-reporting.md` |
 | WIの起草、保存と取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
 | WIの状態・依存・保留、由来と承認、回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
@@ -99,18 +97,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 ## 委譲
 
-独立して並行できる作業と、読む量が多く結論だけが要る調査を`agents_server`で委譲し、少数の呼び出しで済む確認は自分で行う。
-認可、全体の調整、検収、成果の所有、終了の観測は委譲元が担う。
-起動候補を事前に特定せず、どのモデルにも通じる目的、維持する挙動、検収できる成果を渡す。
-高速化では省いてはいけない処理を、レビューでは利用者に影響する問題と根拠を指定し、処理の削除や指摘数だけを成果とみなさない。
-
-投稿者が主に使ったGPT-6.1 Solでは、レビュー、原因分析、バックエンド実装で強みが見られた一方、防御や設計が過剰になり、説明を並べて判断を避けることがあった。
-GPT-6.1 Solとして実行するあなたは、根拠から判断し、対症療法を重ねず原因を除く方法を選ぶ。
-画面では動くだけで終えず、見た目と使いやすさを確かめる。
-利用者は、Codex系が目的より指示の字面や件数を優先する傾向を挙げた。
-必要な処理を削る高速化や、実用性より指摘数を優先するレビューがその例である。
-Codex系として実行するあなたは、明示された目標や件数だけを最適化する前に、保つべき挙動と利用者が得る結果を確かめる。
-個別の助言は入力から対象モデルであると分かる実行担当が使い、モデルが不明でも共通の入力と検収条件で進める。
+委譲元と実行担当は`references/model-settings.md`「モデル選定と判断の偏り」に従う。
 
 ## 報告に含める項目
 
