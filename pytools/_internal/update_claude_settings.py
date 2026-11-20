@@ -380,11 +380,14 @@ def update_claude_settings(
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     key = "cleanupPeriodDays"
-    if source is not None and key not in original and data == {**original, key: managed.get(key)}:
-        updated = _insert_root_setting(source, key, data[key], has_members=bool(original))
-        written = common.atomic_write_bytes(settings_path, updated.encode("utf-8"), tag=short)
-    else:
-        written = common.write_settings_hybrid(settings_path, original, data, tag=short, preserve_bom=True)
+    patch_base = original
+    prepared_source = None
+    if source is not None and key not in original and key in data:
+        prepared_source = _insert_root_setting(source, key, data[key], has_members=bool(original))
+        patch_base = {**original, key: data[key]}
+    written = common.write_settings_hybrid(
+        settings_path, patch_base, data, tag=short, prepared_source=prepared_source, preserve_bom=True
+    )
     if not written:
         return None
     logger.info(log_format.format_status(short, "更新しました"))

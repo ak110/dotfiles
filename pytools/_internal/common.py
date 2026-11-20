@@ -519,27 +519,14 @@ def _collect_value_only_updates(
     return {path: updated}
 
 
-def _atomic_edit_jsonc(
-    path: Path,
-    updates: Mapping[Sequence[str | int], object],
-    *,
-    tag: str | None = None,
-) -> bool:
-    """JSONCファイルの既存パスの値を書き換えてコメント・空行・インデントを維持する。
-
-    ``pytilpack.jsonc.edit`` で書き換えた結果を ``atomic_write_text`` で保存する。
-    ``updates`` が空の場合は書き込みをせず ``False`` を返す。
-    書き換え結果が元テキストと一致した場合も ``False`` を返す。
-    """
-    if not updates:
-        return False
-    original = path.read_text(encoding="utf-8")
-    prefix = "\ufeff" if original.startswith("\ufeff") else ""
-    text = original.removeprefix(prefix)
-    updated = pytilpack.jsonc.edit(text, updates)
-    if updated == text:
-        return False
-    return atomic_write_text(path, prefix + updated, tag=tag)
+def _edit_jsonc_values(source: str, updates: Mapping[Sequence[str | int], object]) -> str:
+    """既存パスのスカラー値だけを置換し、BOMと各行の元の改行を維持する。"""
+    prefix = "\ufeff" if source.startswith("\ufeff") else ""
+    text = source.removeprefix(prefix)
+    # jsonc.editの行コメントはLFで終わる。スカラーのJSON表記は物理行を増減させない。
+    line_endings = iter(re.findall(r"\r\n?|\n", text))
+    edited = pytilpack.jsonc.edit(re.sub(r"\r\n?", "\n", text), updates)
+    return prefix + re.sub("\n", lambda _: next(line_endings), edited)
 
 
 def write_settings_hybrid(
@@ -548,13 +535,15 @@ def write_settings_hybrid(
     data: object,
     *,
     tag: str | None = None,
+    prepared_source: str | None = None,
     preserve_bom: bool = False,
 ) -> bool:
     """マージ結果を対象ファイルへ書き戻すハイブリッド経路。
 
     既存パスの値置換のみで済む差分ならJSONCコメント・空行・インデントを維持する
-    経路（``_atomic_edit_jsonc``）で書き戻す。構造変化を含む場合やJSONC形式の
-    更新に失敗した場合は全書き換え経路（``json.dumps`` + ``atomic_write_text``）へ
+    経路で書き戻す。``prepared_source`` は呼び出し元が編集したJSONCで、
+    この場合は ``original`` にその解析値を渡し、残りの置換と一度に保存する。
+    構造変化を含む場合やJSONC形式の更新に失敗した場合は全書き換え経路（``json.dumps`` + ``atomic_write_text``）へ
     フォールバックする。両経路とも原子的書き込みで統一しており、書き込み失敗時は
     ``False`` を返す。``preserve_bom`` を指定すると全書き換えでも既存のUTF-8 BOMを保つ。
 
@@ -562,12 +551,15 @@ def write_settings_hybrid(
     書き込みでパス構造が変化した場合に ``KeyError``・``IndexError``・``TypeError``・
     ``ValueError`` を送出する。これらを捕捉して全書き換え経路へ倒す。
     """
-    updates: Mapping[Sequence[str | int], object] | None
+    if prepared_source is not None and original == data:
+        return atomic_write_bytes(path, prepared_source.encode("utf-8"), tag=tag)
     updates = _collect_value_only_updates(original, data) if path.exists() else None
     if updates:
         with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
-            if _atomic_edit_jsonc(path, updates, tag=tag):
-                return True
+            source = prepared_source if prepared_source is not None else path.read_text(encoding="utf-8", newline="")
+            edited = _edit_jsonc_values(source, updates)
+            if prepared_source is not None or edited != source:
+                return atomic_write_bytes(path, edited.encode("utf-8"), tag=tag)
     return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
 
 

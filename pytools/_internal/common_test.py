@@ -394,28 +394,23 @@ class TestAtomicWriteBytes:
         assert target.read_bytes() == b"OLD"
 
 
-class TestAtomicEditJsonc:
-    """`_atomic_edit_jsonc` のテスト。"""
+class TestEditJsoncValues:
+    """スカラー置換は元のテキストのうち、指定したパスの値だけを変える。"""
 
-    def test_empty_updates_returns_false(self, tmp_path: Path):
-        """updatesが空の場合、書き込みせずFalseを返す。"""
-        path = tmp_path / "target.jsonc"
-        path.write_text('{"a": 1}', encoding="utf-8")
-        assert common._atomic_edit_jsonc(path, {}) is False  # noqa: SLF001
-        assert path.read_text(encoding="utf-8") == '{"a": 1}'
-
-    def test_preserves_comments(self, tmp_path: Path):
-        """コメントを維持したまま値を書き換える。"""
-        path = tmp_path / "target.jsonc"
-        path.write_text('{\n  // コメント\n  "a": 1\n}\n', encoding="utf-8")
-        assert common._atomic_edit_jsonc(path, {("a",): 2}) is True  # noqa: SLF001
-        text = path.read_text(encoding="utf-8")
-        assert "// コメント" in text
-        assert '"a": 2' in text
+    def test_preserves_mixed_line_endings_and_comments(self):
+        source = '\ufeff{\r  // コメント\r\n  "a": 1\n}\r'
+        assert common._edit_jsonc_values(source, {("a",): 2}) == source.replace("1", "2")  # noqa: SLF001
 
 
 class TestWriteSettingsHybrid:
     """`write_settings_hybrid` の分岐と失敗経路のテスト。"""
+
+    def test_prepared_source_is_saved_without_reformatting_equivalent_values(self, tmp_path: Path):
+        path = tmp_path / "settings.json"
+        path.write_bytes(b'{ /* keep */ "n": 2.0 }')
+        prepared = '{ "days": 180, /* keep */ "n": 2.0 }'
+        assert common.write_settings_hybrid(path, {"days": 180, "n": 2.0}, {"days": 180, "n": 2}, prepared_source=prepared)
+        assert path.read_bytes() == prepared.encode()
 
     def test_scalar_change_uses_jsonc_edit(self, tmp_path: Path):
         """スカラー変更のみならJSONC編集経路でコメントを維持する。"""

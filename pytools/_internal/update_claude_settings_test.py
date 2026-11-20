@@ -325,6 +325,30 @@ class TestJsoncCommentPreservation:
         assert not mod.run().changed
         assert path.read_bytes() == written
 
+    @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
+    def test_retention_insertion_with_scalar_updates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newline: str
+    ) -> None:
+        managed = {"language": "japanese", "permissions": {"defaultMode": "auto"}, "bashOutputMaxChars": 62000}
+        path = _setup_run_paths(tmp_path, monkeypatch, {**managed, "cleanupPeriodDays": 180})
+        source = (
+            '// { "language": "old" }\n{\n'
+            '    "language": "english", // english\n'
+            '    "permissions": {"defaultMode" : "plan"},\n'
+            '    "bashOutputMaxChars": 60000,\n'
+            '    "user": {"defaultMode": "plan", "n": 60000},\n}\n'
+        )
+        expected = (
+            source.replace('{\n    "language"', '{\n    "cleanupPeriodDays": 180,\n    "language"')
+            .replace('"english"', '"japanese"')
+            .replace('"plan"', '"auto"', 1)
+            .replace("60000", "62000", 1)
+        )
+        path.write_bytes(source.replace("\n", newline).encode("utf-8-sig"))
+        assert mod.run().changed
+        assert path.read_bytes() == expected.replace("\n", newline).encode("utf-8-sig")
+        assert not mod.run().changed
+
     def test_add_to_empty_jsonc(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180})
         path.write_bytes(b"// {\r\n{\r\n  /* empty */\r\n}\r\n")
@@ -343,9 +367,9 @@ class TestJsoncCommentPreservation:
     @pytest.mark.parametrize("add_key", [False, True], ids=["scalar", "full-rewrite"])
     def test_update_preserves_file_encoding(self, tmp_path: Path, encoding: str, add_key: bool):
         """どちらの書き戻しでもBOMの有無とユーザー設定を保ち、値だけの更新ではコメントも残す。"""
-        managed = {"language": "english"}
+        managed: dict[str, str | int] = {"language": "english"}
         if add_key:
-            managed["newKey"] = "newValue"
+            managed.update({"newKey": "newValue", "cleanupPeriodDays": 180})
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps(managed), encoding="utf-8")
         target_path = tmp_path / "settings.json"
