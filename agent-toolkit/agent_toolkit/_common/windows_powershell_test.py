@@ -11,6 +11,7 @@ import pytest
 from agent_toolkit._common import plugin_environment, windows_powershell
 
 
+@pytest.mark.windows
 @pytest.mark.parametrize(
     ("policy", "marked", "expected"),
     [
@@ -56,28 +57,33 @@ def test_policy_matches_windows_powershell(monkeypatch: pytest.MonkeyPatch, rest
 
 
 @pytest.mark.windows
-@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell 5.1とNTFSの配布経路を使う")
+@pytest.mark.skipif(os.name != "nt" and not shutil.which("pwsh"), reason="PowerShellが必要")
 @pytest.mark.parametrize(
-    ("argv", "exit_code", "marked"),
+    ("argv", "exit_code"),
     [
-        ([], 0, False),
-        (["wi", "grep", "-e", "red|blue", "R&D", "<tag>", "x^2", "two words"], 1, False),
-        (["wi", "process-loop", "status"], 7, False),
-        (["info"], 0, True),
+        ([], 0),
+        (["wi", "grep", "-e", "red|blue", "R&D", "<tag>", "x^2", "two words", "日本語"], 1),
+        (["wi", "grep", "-F", "--", "--%"], 1),
+        (["wi", "process-loop", "status"], 7),
+        (["wi", "process-loop", "status"], 75),
     ],
 )
 def test_notified_launcher_delivers_argv(
-    tmp_path: Path, argv: list[str], exit_code: int, marked: bool, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, argv: list[str], exit_code: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """配布スクリプトとネイティブuvを通り、atk.pyで観測したargv、再起動先、終了値を比べる。"""
     source = Path(plugin_environment.__file__).resolve().parents[2] / "scripts"
     root = tmp_path / "plugin root"
     scripts = root / "scripts"
     scripts.mkdir(parents=True)
-    for name in ("atk.cmd", "atk.ps1"):
-        shutil.copyfile(source / name, scripts / name)
-    if marked:
-        (scripts / "atk.ps1:Zone.Identifier").write_bytes(b"[ZoneTransfer]\r\nZoneId=3\r\n")
+    shutil.copyfile(source / "atk.ps1", scripts / "atk.ps1")
+    shell = "powershell.exe" if os.name == "nt" else "pwsh"
+    if os.name != "nt":
+        monkeypatch.setattr(windows_powershell, "_execution_policy", lambda: "RemoteSigned")
+        uv = shutil.which("uv")
+        assert uv is not None
+        (tmp_path / "uv.exe").symlink_to(uv)
+        monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
     restart = tmp_path / "new root"
     for release in (root, restart):
         (release / "scripts").mkdir(parents=True, exist_ok=True)
@@ -92,23 +98,28 @@ def test_notified_launcher_delivers_argv(
         (release / "agent_toolkit/atk.py").write_text(
             "import json, os, sys\nfrom pathlib import Path\n"
             "print(json.dumps(sys.argv[1:]))\n"
-            "if sys.argv[1:3] == ['wi', 'process-loop']:\n"
+            "if sys.argv[1:3] == ['wi', 'process-loop'] and os.environ['PROBE_EXIT'] != '75':\n"
             "    Path(os.environ['AGENT_TOOLKIT_RESTART_SPEC']).write_text("
-            "os.environ['NEXT_SCRIPT'] + '\\nnew|value\\ntwo words\\n', encoding='utf-8')\n"
+            "os.environ['RESTART_CONTENT'], encoding='utf-8')\n"
             "    sys.exit(75)\nsys.exit(int(os.environ['PROBE_EXIT']))\n",
             encoding="utf-8",
         )
-    monkeypatch.setenv("NEXT_SCRIPT", str(restart / "agent_toolkit/atk.py"))
+    restart_argv = ["wi", "grep", "-e", "red|blue", "-e", "two words", "--", "--%"]
+    monkeypatch.setenv("RESTART_CONTENT", "\n".join([str(restart / "agent_toolkit/atk.py"), *restart_argv, ""]))
     monkeypatch.setenv("PROBE_EXIT", str(exit_code))
     monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
     monkeypatch.setenv("PATH", str(plugin_environment.base_python().parent) + os.pathsep + os.environ["PATH"])
     command = plugin_environment.cli_instructions(root, windows=True).splitlines()[0].removeprefix("起動部分: ")
     # 記号を含む試験値は、バッチでないことを確かめてから渡す。
-    expected = scripts / ("atk.cmd" if marked else "atk.ps1")
+    expected = scripts / "atk.ps1"
     assert command == "& '" + str(expected).replace("'", "''") + "'"
-    arguments = " ".join("'" + value.replace("'", "''") + "'" for value in argv)
+    inputs = tmp_path / "search-terms.txt"
+    inputs.write_text("".join(value + "\n" for value in argv), encoding="utf-8")
+    monkeypatch.setenv("PROBE_ARGV", str(inputs))
+    monkeypatch.setenv("PROBE_ENTRY", str(expected))
+    invoke = "$values = [IO.File]::ReadAllLines($env:PROBE_ARGV); & $env:PROBE_ENTRY @values; exit $LASTEXITCODE"
     result = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", f"{command} {arguments}; exit $LASTEXITCODE"],
+        [shell, "-NoProfile", "-NonInteractive", "-Command", invoke],
         cwd=tmp_path,
         capture_output=True,
         check=False,
@@ -116,4 +127,4 @@ def test_notified_launcher_delivers_argv(
     )
     assert result.returncode == exit_code, result.stderr
     observed = [json.loads(line) for line in result.stdout.splitlines()]
-    assert observed == ([argv, ["new|value", "two words"]] if argv[:2] == ["wi", "process-loop"] else [argv])
+    assert observed == ([argv, restart_argv] if exit_code == 7 else [argv])

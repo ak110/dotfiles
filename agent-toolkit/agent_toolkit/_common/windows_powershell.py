@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+lazy from agent_toolkit._common import process_tree
+
 
 def _execution_policy() -> str:
     """通常の設定はレジストリから読み、グループポリシーがある場合と設定が無い場合はPowerShellに照会する。"""
@@ -36,7 +38,7 @@ def _execution_policy() -> str:
     if not system_root:
         return ""
     shell = Path(system_root) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-    result = subprocess.run(
+    result = process_tree.run_with_timeout(
         [str(shell), "-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"],
         stdin=subprocess.DEVNULL,
         capture_output=True,
