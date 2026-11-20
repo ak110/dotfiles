@@ -481,29 +481,34 @@ def atomic_write_bytes(path: Path, content: bytes, *, mode: int | None = None, t
     return _atomic_write(path, lambda tmp: tmp.write(content), binary=True, mode=mode, tag=tag)
 
 
+def json_values_equal(left: object, right: object) -> bool:
+    """JSONの値を比較する。Pythonの等値比較と異なり、入れ子でも真偽と数値を区別する。"""
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(json_values_equal(value, right[key]) for key, value in left.items())
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(json_values_equal(a, b) for a, b in zip(left, right, strict=True))
+    return isinstance(left, bool) == isinstance(right, bool) and left == right
+
+
 def _collect_value_only_updates(
     original: object,
     updated: object,
-    latest: object,
     path: tuple[str | int, ...] = (),
 ) -> dict[Sequence[str | int], object] | None:
-    """保存直前のJSONCに適用するスカラー置換を集める。構造変更が必要ならNoneを返す。"""
-    if isinstance(original, dict) and isinstance(updated, dict) and isinstance(latest, dict):
-        original_dict = cast("dict[str | int, object]", original)
-        updated_dict = cast("dict[str | int, object]", updated)
-        if original_dict.keys() != updated_dict.keys():
+    """既存パスのスカラー置換を集める。構造変更が必要ならNoneを返す。"""
+    if isinstance(original, dict) and isinstance(updated, dict):
+        if original.keys() != updated.keys():
             return None
         result: dict[Sequence[str | int], object] = {}
-        for key in original_dict:
-            sub = _collect_value_only_updates(original_dict[key], updated_dict[key], latest.get(key), (*path, key))
+        for key, value in original.items():
+            sub = _collect_value_only_updates(value, updated[key], (*path, key))
             if sub is None:
                 return None
             result.update(sub)
         return result
-    # JSONの数値は表記によらず比較する。Pythonと違い、JSONのtrueと1は別の値。
-    if any(value == updated and isinstance(value, bool) == isinstance(updated, bool) for value in (original, latest)):
+    if json_values_equal(original, updated):
         return {}
-    if any(isinstance(value, (dict, list)) for value in (original, updated, latest)):
+    if isinstance(original, (list, dict)) or isinstance(updated, (list, dict)):
         return None
     return {path: updated}
 
@@ -518,15 +523,15 @@ def _edit_jsonc_values(source: str, updates: Mapping[Sequence[str | int], object
     return prefix + re.sub("\n", lambda _: next(line_endings), edited)
 
 
-def _insert_root_setting(source: str, key: str, value: object, *, has_members: bool) -> str:
-    """jsonc.editでは追加できないキーを、解析済みのオブジェクトの開き括弧の直後へ挿入する。"""
+def _insert_root_settings(source: str, additions: dict, *, has_members: bool) -> str:
+    """jsonc.editでは追加できないルートキーを、既存のメンバーとコメントの前へ挿入する。"""
     # ルートの前に置かれたコメント内の「{」は挿入位置ではない。
     tokens = re.finditer(r"//[^\r\n]*|/\*.*?\*/|\{", source, re.DOTALL)
     start = next(token.end() for token in tokens if token[0] == "{")
     rest = source[start:]
     indent = rest[: len(rest) - len(rest.lstrip())]
-    entry = f"{json.dumps(key)}: {json.dumps(value)}"
-    return source[:start] + indent + entry + ("," if has_members else "") + rest
+    entries = [f"{json.dumps(key)}: {json.dumps(value, ensure_ascii=False)}" for key, value in additions.items()]
+    return source[:start] + indent + ("," + indent).join(entries) + ("," if has_members else "") + rest
 
 
 def write_settings_hybrid(
@@ -535,43 +540,29 @@ def write_settings_hybrid(
     data: object,
     *,
     tag: str | None = None,
-    insert_key: str | None = None,
+    source: str | None = None,
     preserve_bom: bool = False,
 ) -> bool:
-    """保存直前のJSONCに既存スカラーの差分と指定されたルートキーの追加だけを反映する。
+    """既存のスカラー値はJSONC上で編集し、構造変更や編集できない場合はJSONで原子的に保存する。
 
-    その他の構造変更は初読時の内容が残っている場合だけ全書き換えする。
-    ``insert_key`` は既存ファイルに初めて追加するキーに限って指定する。
+    合成元の本文を渡した場合は、その本文へのルートキーの追加でもコメントと改行を保つ。
+    本文を渡さない呼び出し元では従来どおり、スカラーの編集時にファイルを読み直す。
     """
-    try:
-        source = path.read_text(encoding="utf-8", newline="")
-        latest = pytilpack.jsonc.loads(re.sub(r"\r\n?", "\n", source.removeprefix("\ufeff")))
-    except FileNotFoundError:
-        if insert_key is None and original == {}:
-            return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
-        return False
-    except OSError, ValueError:
-        return False
-
-    edited = source
-    base = original
-    if insert_key is not None:
-        if not isinstance(original, dict) or not isinstance(data, dict) or not isinstance(latest, dict):
-            return False
-        value = data[insert_key]
-        if insert_key not in latest:
-            edited = _insert_root_setting(source, insert_key, value, has_members=bool(latest))
-        base = {**original, insert_key: latest.get(insert_key, value)}
-
-    updates = _collect_value_only_updates(base, data, latest)
-    if updates is not None:
-        with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
-            if updates:
-                edited = _edit_jsonc_values(edited, updates)
-            return edited == source or atomic_write_bytes(path, edited.encode("utf-8"), tag=tag)
-    # dictの等価比較では、JSONのtrueと1を区別できない。
-    if json.dumps(latest) != json.dumps(original):
-        return False
+    unedited = source
+    if source is not None and isinstance(original, dict) and isinstance(data, dict):
+        additions = {key: value for key, value in data.items() if key not in original}
+        if additions:
+            source = _insert_root_settings(source, additions, has_members=bool(original))
+            original = original | additions
+    if source is not None or path.exists():
+        updates = _collect_value_only_updates(original, data)
+        if updates is not None:
+            with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
+                if source is None:
+                    source = unedited = path.read_text(encoding="utf-8", newline="")
+                if updates:
+                    source = _edit_jsonc_values(source, updates)
+                return source == unedited or atomic_write_bytes(path, source.encode("utf-8"), tag=tag)
     return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
 
 

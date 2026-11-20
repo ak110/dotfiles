@@ -26,6 +26,20 @@ from pytools._internal.update_claude_settings_test_helpers import (
 )
 
 
+def _save_after_read(monkeypatch: pytest.MonkeyPatch, path: Path, latest: str) -> None:
+    """設定を読み終えた時点で、ユーザーの保存を再現する。"""
+    read = Path.read_text
+
+    def read_then_save(file: Path, *args, **kwargs) -> str:
+        result = read(file, *args, **kwargs)
+        if file == path:
+            monkeypatch.setattr(Path, "read_text", read)
+            path.write_text(latest, encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(Path, "read_text", read_then_save)
+
+
 class TestUpdateClaudeSettings:
     """~/.claude/settings.json 向けマージテスト。"""
 
@@ -348,9 +362,7 @@ class TestJsoncCommentPreservation:
                 '{ /* already saved */ "cleanupPeriodDays": 180.0, "limit": 9e0 }',
                 '{ /* already saved */ "cleanupPeriodDays": 180.0, "limit": 9e0 }',
             ),
-            ('{ "limit": {"user": true} }', None),
-            ('{ "cleanupPeriodDays": {"user": true}, "limit": 6 }', None),
-            ('{ "renamed": 6 }', None),
+            ('{ "renamed": 6 }', '{ "cleanupPeriodDays": 180, "limit": 9, "renamed": 6 }'),
             ('{ "theme":', None),
         ],
         ids=[
@@ -359,8 +371,6 @@ class TestJsoncCommentPreservation:
             "exponent",
             "days-already-set",
             "both-already-set",
-            "changed-type",
-            "days-object",
             "renamed",
             "invalid",
         ],
@@ -370,19 +380,64 @@ class TestJsoncCommentPreservation:
     ) -> None:
         path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180, "limit": 9})
         path.write_text('{ /* old reason */ "theme": "dark", "limit": 6 }', encoding="utf-8")
-        read = Path.read_text
-
-        def read_then_save(file: Path, *args, **kwargs) -> str:
-            result = read(file, *args, **kwargs)
-            if file == path:
-                monkeypatch.setattr(Path, "read_text", read)
-                path.write_text(latest, encoding="utf-8")
-            return result
-
-        monkeypatch.setattr(Path, "read_text", read_then_save)
+        _save_after_read(monkeypatch, path, latest)
         outcome = mod.run()
         assert (outcome.failure is None) == (expected is not None)
         assert path.read_bytes() == (latest if expected is None else expected).encode()
+
+    @pytest.mark.parametrize("platform", ["linux", "win32"])
+    @pytest.mark.parametrize(
+        ("before", "reorder"),
+        [("60000.0", False), ("6e4", False), ("60000", True)],
+        ids=["decimal", "exponent", "sorted-keys"],
+    )
+    def test_run_merges_missing_managed_keys_after_normalizing_save(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        pytestconfig: pytest.Config,
+        platform: str,
+        before: str,
+        reorder: bool,
+    ) -> None:
+        path = tmp_path / "settings.json"
+        monkeypatch.setattr(mod, "_SETTINGS_PATH", path)
+        monkeypatch.setattr(mod, "_CONFIG_PATH", tmp_path / "claude.json")
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: pytestconfig.rootpath)
+        monkeypatch.setattr(mod, "sys", SimpleNamespace(platform=platform))
+        assert mod.run().changed
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        del settings["cleanupPeriodDays"], settings["awaySummaryEnabled"]
+        settings.update(theme="夜", bashOutputMaxChars=60000)
+        source = json.dumps(settings, ensure_ascii=False)
+        path.write_text(source.replace('"bashOutputMaxChars": 60000', '"bashOutputMaxChars": ' + before), encoding="utf-8")
+        latest = json.dumps(settings, ensure_ascii=False, sort_keys=reorder)
+        _save_after_read(monkeypatch, path, "/* テーマを保つ */ " + latest)
+
+        outcome = mod.run()
+        assert outcome.changed and outcome.failure is None
+        saved = path.read_text(encoding="utf-8")
+        assert "/* テーマを保つ */" in saved
+        assert pytilpack.jsonc.loads(saved) == {
+            **settings,
+            "cleanupPeriodDays": 180,
+            "awaySummaryEnabled": False,
+            "bashOutputMaxChars": 62000,
+        }
+        assert not mod.run().changed
+        assert path.read_text(encoding="utf-8") == saved
+
+    def test_structural_update_uses_latest_user_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        managed = {"permissions": {"defaultMode": "auto"}, "cleanupPeriodDays": 180}
+        path = _setup_run_paths(tmp_path, monkeypatch, managed)
+        path.write_text('{"permissions": {}, "user": true}', encoding="utf-8")
+        _save_after_read(monkeypatch, path, '{"user": 1, "theme": "light", "permissions": {}}')
+
+        outcome = mod.run()
+        assert outcome.changed and outcome.failure is None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data == {**managed, "theme": "light", "user": 1}
+        assert not isinstance(data["user"], bool)
 
     @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
     def test_retention_insertion_with_scalar_updates(
@@ -423,7 +478,7 @@ class TestJsoncCommentPreservation:
         assert path.read_bytes() == source
 
     @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
-    @pytest.mark.parametrize("add_key", [False, True], ids=["scalar", "full-rewrite"])
+    @pytest.mark.parametrize("add_key", [False, True], ids=["scalar", "add-keys"])
     def test_update_preserves_file_encoding(self, tmp_path: Path, encoding: str, add_key: bool):
         """どちらの書き戻しでもBOMの有無とユーザー設定を保ち、値だけの更新ではコメントも残す。"""
         managed: dict[str, str | int] = {"language": "english"}
@@ -440,7 +495,8 @@ class TestJsoncCommentPreservation:
         assert written.startswith(codecs.BOM_UTF8) == (encoding == "utf-8-sig")
         text = target_path.read_text(encoding=encoding)
         if add_key:
-            assert json.loads(text) == {**managed, "enabledPlugins": {"sample@local": False}}
+            assert "// ユーザーコメント" in text
+            assert pytilpack.jsonc.loads(text) == {**managed, "enabledPlugins": {"sample@local": False}}
         else:
             assert text == original.replace("japanese", "english")
         assert update_claude_settings(managed_path, target_path) is False
