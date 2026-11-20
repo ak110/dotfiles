@@ -17,6 +17,7 @@ for (const [surface, delegated, tool, shouldDeliver] of [
     if (shouldDeliver) {
       expect(shown.isDeferred).toBe(false);
       for (const purpose of ["メイン", "進捗", "完了報告", "質問", "確認依頼"]) expect(shown.description).toContain(purpose);
+      expect(shown.description).toContain("`…`だけ");
       expect(shown.description).toContain(original.description);
     } else {
       expect(shown).toEqual(original);
