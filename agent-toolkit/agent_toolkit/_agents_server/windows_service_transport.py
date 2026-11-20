@@ -14,6 +14,8 @@ from typing import Any
 
 # Windows専用属性はLinuxの型情報に無いため、OS境界内で動的に解決する。
 _windows: Any = ctypes
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_SYNCHRONIZE = 0x100000
 
 
 def _api() -> tuple[Any, Any]:
@@ -21,6 +23,7 @@ def _api() -> tuple[Any, Any]:
     security = _windows.WinDLL("advapi32", use_last_error=True)
     signatures = {
         "OpenProcess": ([w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
+        "WaitForSingleObject": ([w.HANDLE, w.DWORD], w.DWORD),
         "GetProcessTimes": ([w.HANDLE, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p], w.BOOL),
         "CloseHandle": ([w.HANDLE], w.BOOL),
         "LocalFree": ([ctypes.c_void_p], ctypes.c_void_p),
@@ -54,9 +57,12 @@ def _check(result: Any) -> Any:
 
 
 @contextlib.contextmanager
-def _process(pid: int):
+def _process(pid: int, *, require_running: bool = False):
     kernel, _ = _api()
-    handle = kernel.OpenProcess(0x1000, False, pid)
+    access = _PROCESS_QUERY_LIMITED_INFORMATION
+    if require_running:
+        access |= _SYNCHRONIZE
+    handle = kernel.OpenProcess(access, False, pid)
     if not handle:
         code = _windows.get_last_error()
         error = _windows.WinError(code)
@@ -66,6 +72,12 @@ def _process(pid: int):
             raise ProcessLookupError(errno.ESRCH, os.strerror(errno.ESRCH), pid) from error
         raise error
     try:
+        if require_running:
+            # 他のhandleが残ると、終了済みのプロセスも開けて作成時刻を読める。
+            status = kernel.WaitForSingleObject(handle, 0)
+            _check(status != 0xFFFFFFFF)  # WAIT_FAILED
+            if status == 0:  # WAIT_OBJECT_0: プロセスが終了した。
+                raise ProcessLookupError(errno.ESRCH, os.strerror(errno.ESRCH), pid)
         yield handle
     finally:
         _check(kernel.CloseHandle(handle))
@@ -81,8 +93,8 @@ def _identity(handle: int, pid: int) -> str:
 
 
 def process_identity(pid: int) -> str:
-    """保持したprocess handleの作成時刻でPID再利用を区別する。"""
-    with _process(pid) as handle:
+    """同じhandleで生存を確認し、作成時刻でPID再利用を区別する。"""
+    with _process(pid, require_running=True) as handle:
         return _identity(handle, pid)
 
 
