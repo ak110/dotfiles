@@ -24,6 +24,7 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
         "git-C",
         "commit-wrapper",
         "codex-skill",
+        "codex-skill-variable",
         "plan-edit",
         "other-cd",
         "other-edit",
@@ -51,6 +52,7 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
         "git-C": f"git -C {shlex.quote(str(repo))} commit -m 変更",
         "commit-wrapper": "atk run-script commit-with-timeout -- --timeout 3 -- -m 変更",
         "codex-skill": f"cd {shlex.quote(str(repo))} && cat plugin/skills/atk-mode/playbooks/process-wi.md",
+        "codex-skill-variable": f'R=plugin/skills/atk-mode/playbooks; cd {shlex.quote(str(repo))} && cat "$R/process-wi.md"',
         "other-cd": f"cd {shlex.quote(str(other))} && git commit -m 変更",
         "other-redirect": f"echo x > {shlex.quote(str(other / 'README.md'))}",
         "unknown": 'cd "$D" && git commit -m 変更',
@@ -68,15 +70,15 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
         )
     else:
         tool, data = "Bash", {"command": commands[case]}
-    response = "---\nname: process-wi\n---\n" if case == "codex-skill" else {"exit_code": 0}
-    if case == "codex-skill":
+    response = "---\nname: process-wi\n---\n" if case.startswith("codex-skill") else {"exit_code": 0}
+    if case.startswith("codex-skill"):
         skill = repo / "plugin/skills/atk-mode/playbooks/process-wi.md"
         skill.parent.mkdir(parents=True)
         skill.write_text("---\nname: process-wi\n---\n", encoding="utf-8")
         manifest = repo / "plugin/.claude-plugin/plugin.json"
         manifest.parent.mkdir()
         manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    _tool(repo, "action", tool, data, response, codex=case == "codex-skill")
+    _tool(repo, "action", tool, data, response, codex=case.startswith("codex-skill"))
     document = {
         "session_id": "evidence-test",
         "action": "omit-completion",

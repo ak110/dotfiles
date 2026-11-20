@@ -108,6 +108,7 @@ def test_codex_partial_read_of_existing_playbook_is_not_evidence(tmp_path: pathl
     [
         ("R=plugin/skills/atk-mode/playbooks; sed -n '1,$p' -- \"${R}/report-completion.md\"", True),
         (f"cat {_PLAYBOOK} | head -1; cat copy.md", False),
+        (f"sed -n '1p' {_PLAYBOOK}; cat copy.md", False),
         (f"cat {_PLAYBOOK} > copy.md; cat copy.md", False),
     ],
 )

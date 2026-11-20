@@ -13,8 +13,9 @@ import json
 import pathlib
 lazy from collections.abc import Callable, Iterator, Mapping
 
+lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS
-lazy from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
+lazy from agent_toolkit._hooks.pretooluse.large_reads import invocation_read_paths, sed_read_range
 
 
 def response_text(response: object) -> str:
@@ -53,13 +54,24 @@ def shell_full_reads(command: str, cwd: str, text: str, wanted: Callable[[pathli
     """シェルのコマンドが全文を表示し、結果`text`が現在の全文を含む、`wanted`が真のファイルを返す。"""
     if not text:
         return
-    for paths in bash_read_paths(command, cwd, include_partial=True, first_line_only=True):
-        for path in paths:
-            if not wanted(path):
-                continue
-            body = (_current_text(path) or "").strip()
-            if body and body in text:
-                yield path
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd, effects=True):
+        yield from invocation_full_reads(invocation, current, text, wanted)
+
+
+def invocation_full_reads(
+    invocation: shell_cwd.BashInvocation, cwd: shell_cwd.CwdResolution, text: str, wanted: Callable[[pathlib.Path], bool]
+) -> Iterator[pathlib.Path]:
+    """現在の全文を出力した読取を、その呼出しの行範囲と出力先を保って判定する。"""
+    for path in invocation_read_paths(invocation, cwd, include_partial=True, first_line_only=True):
+        if not wanted(path):
+            continue
+        body = _current_text(path) or ""
+        if not (content := body.strip()) or content not in text:
+            continue
+        line_range = sed_read_range(invocation.variable_tokens)
+        if line_range and line_range[2] is not None and len(body.removesuffix("\n").split("\n")) > line_range[2]:
+            continue
+        yield path
 
 
 def full_reads(
