@@ -208,7 +208,7 @@ def compose_session_start(
         parts.append(
             _llm_notice(
                 "その場で回答を求める質問・選択には、ツール一覧にあれば`AskUserQuestion`を使え。"
-                "現在の入力に端末modが添えた指定か、この会話のツール説明の指定がある時だけ、発話本文を`send_to_user`で送れ。"
+                "現在の入力に端末`mod`が添えた指定か、この会話のツール説明の指定がある時だけ、発話本文を`send_to_user`で送れ。"
                 "どちらも無い時は通常の応答本文で伝えよ。"
             )
         )
