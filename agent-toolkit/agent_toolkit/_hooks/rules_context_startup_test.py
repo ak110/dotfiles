@@ -104,6 +104,8 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     root = pathlib.Path("/" + "r" * (root_length - 1))
     assert len(str(root)) == root_length
     session_temp = root / "cache" / "agent-toolkit" / "managed-temp" / "session-0123456789abcdef"
+    # 仮のrootでも、Windowsでは引用の説明を含む長い方の通知を測る。
+    monkeypatch.setattr(windows_powershell, "can_run_script", lambda _script: True)
     cli_instructions = plugin_environment.cli_instructions
     monkeypatch.setattr(plugin_environment, "cli_instructions", lambda _root: cli_instructions(root, windows=windows))
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda _session_id: session_temp)

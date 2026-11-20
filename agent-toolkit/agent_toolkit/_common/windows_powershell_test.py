@@ -38,6 +38,7 @@ def test_windows_cli_instructions(
     command, note = plugin_environment.cli_instructions(scripts.parent, windows=True).split("\n", 1)
     assert command == "起動部分: & '" + str(scripts / expected).replace("'", "''") + "'"
     assert ("|・&・<・>・^を含む引数は渡さない" in note) is (expected == "atk.cmd")
+    assert ("wi grep -F '--' '--needle'" in note) is (expected == "atk.ps1")
     assert "ExecutionPolicy" not in command + note
 
 
@@ -59,17 +60,22 @@ def test_policy_matches_windows_powershell(monkeypatch: pytest.MonkeyPatch, rest
 @pytest.mark.windows
 @pytest.mark.skipif(os.name != "nt" and not shutil.which("pwsh"), reason="PowerShellが必要")
 @pytest.mark.parametrize(
-    ("argv", "exit_code"),
+    ("command_tail", "argv", "exit_code"),
     [
-        ([], 0),
-        (["wi", "grep", "-e", "red|blue", "R&D", "<tag>", "x^2", "two words", "日本語"], 1),
-        (["wi", "grep", "-F", "--", "--%"], 1),
-        (["wi", "process-loop", "status"], 7),
-        (["wi", "process-loop", "status"], 75),
+        ("", [], 0),
+        (
+            "wi grep -e 'red|blue' 'R&D' '<tag>' 'x^2' 'it''s fine' 日本語",
+            ["wi", "grep", "-e", "red|blue", "R&D", "<tag>", "x^2", "it's fine", "日本語"],
+            1,
+        ),
+        ("wi grep -F '--' '--needle'", ["wi", "grep", "-F", "--", "--needle"], 0),
+        ("wi grep -F '--' '--%'", ["wi", "grep", "-F", "--", "--%"], 1),
+        ("wi process-loop status", ["wi", "process-loop", "status"], 7),
+        ("wi process-loop status", ["wi", "process-loop", "status"], 75),
     ],
 )
 def test_notified_launcher_delivers_argv(
-    tmp_path: Path, argv: list[str], exit_code: int, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, command_tail: str, argv: list[str], exit_code: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """配布スクリプトとネイティブuvを通り、atk.pyで観測したargv、再起動先、終了値を比べる。"""
     source = Path(plugin_environment.__file__).resolve().parents[2] / "scripts"
@@ -113,11 +119,7 @@ def test_notified_launcher_delivers_argv(
     # 記号を含む試験値は、バッチでないことを確かめてから渡す。
     expected = scripts / "atk.ps1"
     assert command == "& '" + str(expected).replace("'", "''") + "'"
-    inputs = tmp_path / "search-terms.txt"
-    inputs.write_text("".join(value + "\n" for value in argv), encoding="utf-8")
-    monkeypatch.setenv("PROBE_ARGV", str(inputs))
-    monkeypatch.setenv("PROBE_ENTRY", str(expected))
-    invoke = "$values = [IO.File]::ReadAllLines($env:PROBE_ARGV); & $env:PROBE_ENTRY @values; exit $LASTEXITCODE"
+    invoke = f"{command} {command_tail}; exit $LASTEXITCODE"
     result = subprocess.run(
         [shell, "-NoProfile", "-NonInteractive", "-Command", invoke],
         cwd=tmp_path,

@@ -307,17 +307,22 @@ def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
     """直接起動と委譲の文脈へ、同じrootのCLIとホストに合う呼び方を示す。"""
     is_windows = os.name == "nt" if windows is None else windows
     scripts = root / "scripts"
-    warning = ""
+    argument_note = ""
     if is_windows:
         entry = scripts / shell_tokens.ATK_POWERSHELL
-        if not windows_powershell.can_run_script(entry):
+        if windows_powershell.can_run_script(entry):
+            argument_note = (
+                "\n空白や記号を含む値は単一引用符で囲み、値の中の ' は '' と書く。"
+                "atkに渡す区切りも '--' と入力する（例: wi grep -F '--' '--needle'）。"
+            )
+        else:
             entry = scripts / shell_tokens.ATK_BATCH
-            warning = "\ncmd.exeが別のコマンドとして解釈しうるため、|・&・<・>・^を含む引数は渡さない。"
+            argument_note = "\ncmd.exeが別のコマンドとして解釈しうるため、|・&・<・>・^を含む引数は渡さない。"
         command = "& '" + str(entry).replace("'", "''") + "'"
     else:
         command = shlex.quote(str(scripts / shell_tokens.ATK_POSIX))
     shell = "Windows PowerShell 5.1で" if is_windows else ""
     return (
         f"起動部分: {command}\n{shell}この起動部分へサブコマンドと引数を続けよ。"
-        f"CLIはこの配布物と、その版の依存環境を使う。{warning}"
+        f"CLIはこの配布物と、その版の依存環境を使う。{argument_note}"
     )
