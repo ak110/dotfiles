@@ -62,11 +62,14 @@ def test_public_usage_matches_launch_candidates(tmp_path: pathlib.Path, capsys: 
         setting_signature="unknown",
         active_seconds=0,
     )
-    assert config.parse_unresolved_model_candidates("execute") == [("codex", "new-model", "low")]
+    assert config.parse_unresolved_model_candidates("execute") == [
+        ("codex", "new-model", "low"),
+        ("claude", "original", "high"),
+    ]
     capsys.readouterr()
     assert _main(tmp_path, "config", "usage") == 0
     lines = capsys.readouterr().out.splitlines()
-    assert "codex" in lines[0]
+    assert all(detail in lines[0] for detail in ("codex,claude", "Claude", "ひっ迫", "weekly", "97%"))
     details = json.loads(lines[-1])
     assert details["settings"]["execute_model"]["effective"] == "claude:original/high,codex:new-model/low"
     assert details["usage"]["windows"][0]["used_percent"] is not None
@@ -81,7 +84,7 @@ def test_emergency_override_precedes_subscription_quota(tmp_path: pathlib.Path, 
         setting_signature="unknown",
         active_seconds=0,
     )
-    assert config.parse_unresolved_model_candidates("execute") == [("codex", "fallback", "low")]
+    assert config.parse_unresolved_model_candidates("execute") == [("codex", "fallback", "low"), ("claude", "chosen", "high")]
     assert _main(tmp_path, "config", "temporary", "set", "claude_worker_connections", "payg") == 0
     assert config.parse_unresolved_model_candidates("execute") == [("claude", "chosen", "high"), ("codex", "fallback", "low")]
     assert _main(tmp_path, "config", "temporary", "clear") == 0

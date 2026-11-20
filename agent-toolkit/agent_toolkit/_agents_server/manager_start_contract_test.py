@@ -6,6 +6,7 @@ import os
 import pathlib
 import re
 import sys
+import time
 from typing import Any
 
 import pytest
@@ -25,7 +26,8 @@ from agent_toolkit._agents_server import (
     unavailable_candidates,
 )
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._common import atomic_file, session_registry, state_paths
+from agent_toolkit._atk import usage_refresh
+from agent_toolkit._common import atomic_file, session_registry, state_paths, usage_observation, usage_settings
 from agent_toolkit._testing import agents_server_support
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -268,26 +270,61 @@ async def test_engine_dependency_exhaustion_is_request_local(tmp_path: pathlib.P
         )
 
 
+@pytest.fixture
+def tight_claude_allocation(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, agents_server_isolation: None) -> None:
+    del agents_server_isolation
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(usage_refresh, "ensure_fresh", lambda **_kwargs: None)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:test/medium,codex:gpt-6-sol/medium")
+    usage_settings.record_metadata("claude", {"account": "test"})
+    usage_observation.observe(
+        [usage_observation.QuotaWindow("claude", "test", "weekly", 95, None, time.time())],
+        setting_signature="unknown",
+        active_seconds=0,
+    )
+
+
+async def _start_allocation_task(cwd: pathlib.Path) -> dict[str, Any]:
+    return await mcp_tools.start(
+        cwd=str(cwd),
+        subagent_md_path="add-wi",
+        extra_params={"投入する要求": "request=/repo=awi=配分の試験", "引き継ぎ記録先": str(cwd / "handoff.md")},
+    )
+
+
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("tight_claude_allocation")
+async def test_tight_claude_prefers_available_codex(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with manager.AgentsServerManager(None) as current:
+        for engine in ("claude", "codex"):
+            agents_server_support.install_backend(current, engine, ObservedBackend(current.sessions, engine))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        response = await _start_allocation_task(tmp_path)
+        assert response["session_id"] == "codex-session"
+        assert "excluded_candidates" not in response
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("tight_claude_allocation")
 async def test_prelaunch_candidate_exhaustion(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """全候補が型付きの事前判定で不成立のとき、候補ごとの理由と次の操作を公開startの失敗で返す。"""
-    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     async with manager.AgentsServerManager(None) as current:
         probes = {engine: UnavailableProbeBackend(current.sessions, engine) for engine in ("codex", "claude")}
         for engine, probe in probes.items():
             agents_server_support.install_backend(current, engine, probe)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-        candidates = "codex:gpt-6-sol/medium,claude:test/medium"
         with pytest.raises(session_errors.ActionableRuntimeError) as raised:
-            await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type=candidates)
+            await _start_allocation_task(tmp_path)
         message = agents_server_support._actionable_message(raised.value)  # pylint: disable=protected-access
         assert "no available model candidates" in message
         assert message.count("candidateDependencyUnavailable") == 2
+        assert all(model in message for model in ("gpt-6-sol", "test"))
         assert [probe.probe_calls for probe in probes.values()] == [1, 1]
         assert not current.sessions
         assert all(not probe.start_calls for probe in probes.values())
         recorded = unavailable_candidates.load_unavailable_candidates(
-            candidates, "explore", now=datetime.datetime.now(datetime.UTC)
+            "execute", "delegate", now=datetime.datetime.now(datetime.UTC)
         )
         assert set(recorded.values()) == {"candidateDependencyUnavailable"}
         assert {candidate[0] for candidate in recorded} == {"codex", "claude"}
@@ -310,14 +347,13 @@ class _UsageLimitedCodexClient(agents_server_support.FakeCodexClient):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("tight_claude_allocation")
 async def test_codex_usage_limit_without_connection_advances_to_next_engine(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Codexが利用上限で試す接続先を持たない起動は、次のengineの候補で起動し、除外の理由と解除予定を応答へ載せる。"""
-    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setenv(atk_config._config_env_name("codex_worker_connections"), "subscription")  # pylint: disable=protected-access
     monkeypatch.setenv(atk_config._config_env_name("codex_usage_limit_wait"), "five-hour")  # pylint: disable=protected-access
-    candidates = "codex:gpt-6-sol/medium,claude:test/medium"
     clients: list[_UsageLimitedCodexClient] = []
     for _ in range(2):
         async with manager.AgentsServerManager(None) as current, codex.AppServerManager(current.sessions) as limited:
@@ -332,7 +368,7 @@ async def test_codex_usage_limit_without_connection_advances_to_next_engine(
             agents_server_support.install_backend(current, "codex", limited)
             agents_server_support.install_backend(current, "claude", selected)
             monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-            response = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type=candidates)
+            response = await _start_allocation_task(tmp_path)
             assert response["session_id"] == "claude-session" and response["engine"] == "claude"
             excluded = response["excluded_candidates"]
             assert [item["engine"] for item in excluded] == ["codex"]

@@ -1,7 +1,5 @@
 """候補の保持とひっ迫回避の試験。"""
 
-import pytest
-
 from agent_toolkit._atk import usage_allocation
 from agent_toolkit._atk.usage_allocation import choose
 from agent_toolkit._common.usage_observation import QuotaWindow, rate_key
@@ -16,9 +14,15 @@ def test_unknown_prefers_codex():
 
 def test_claude_tight():
     windows = [QuotaWindow("claude", "a", "w", 90, None, 0)]
-    with pytest.raises(ValueError, match="ひっ迫"):
-        choose([("claude", "a", "b")], role="execute", windows=windows, rates={})
-    assert choose([("claude", "a", "b")], role="orchestrate", windows=windows, rates={})[0]
+    claude = [("claude", "a", "low"), ("claude", "b", "high")]
+    assert choose(claude, role="execute", windows=windows, rates={})[0] == claude
+    candidates = [*claude, ("agy", "other", "low"), ("codex", "c", "low")]
+    assert choose(candidates, role="execute", windows=windows, rates={}, previous="claude")[0] == [
+        candidates[3],
+        candidates[2],
+        *claude,
+    ]
+    assert choose(candidates, role="orchestrate", windows=windows, rates={})[0] == candidates
 
 
 def test_reset_horizon_and_activity_change_decision(monkeypatch):
@@ -45,8 +49,19 @@ def test_different_window_percentages_have_separate_paces(monkeypatch):
     assert choose(candidates, role="execute", windows=windows, rates=rates)[0] == candidates
 
 
-def test_scoped_model_limit_does_not_exclude_another_model():
+def test_tight_scoped_window_only_affects_matching_model():
     window = QuotaWindow("claude", "a", "scoped", 97, 1000, 100, scope="model:sonnet")
-    assert choose([("claude", "opus", "low")], role="execute", windows=[window], rates={})[0]
-    with pytest.raises(ValueError, match="ひっ迫"):
-        choose([("claude", "sonnet", "low")], role="execute", windows=[window], rates={})
+    for model, tight in [("sonnet", True), ("opus", False)]:
+        candidates = [("claude", model, "low"), ("codex", "other", "low")]
+        result, reason = choose(candidates, role="execute", windows=[window], rates={}, previous="claude")
+        assert result == (candidates[::-1] if tight else candidates)
+        assert ("ひっ迫" in reason) == tight
+
+
+def test_forecast_demotes_claude_before_high_usage(monkeypatch):
+    monkeypatch.setattr(usage_allocation.time, "time", lambda: 100.0)
+    candidates = [("claude", "a", "low"), ("codex", "b", "low")]
+    window = QuotaWindow("claude", "account", "weekly", 80, 400, 100)
+    result, reason = choose(candidates, role="execute", windows=[window], rates={rate_key(window): 0.1}, previous="claude")
+    assert result == candidates[::-1]
+    assert all(detail in reason for detail in ("weekly", "20%", "30%"))
