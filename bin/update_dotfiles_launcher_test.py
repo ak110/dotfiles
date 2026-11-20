@@ -71,6 +71,7 @@ if [[ "${{1-}}" == "self" && "${{2-}}" == "update" ]]; then
     exit "${{UV_SELF_UPDATE_EXIT:-0}}"
 fi
 if [[ "${{1-}} ${{2-}}" == "python install" ]]; then
+    echo 'Python 3.15 is already on the latest supported patch release' >&2
     if [[ "${{STALL_UPGRADE:-0}}" == 1 && "${{3-}}" == --upgrade ]]; then while :; do :; done; fi
     exit "${{PYTHON_UPGRADE_EXIT:-0}}"
 fi
@@ -93,7 +94,7 @@ def _make_path(tmp_path: pathlib.Path, *, with_uv: bool) -> pathlib.Path:
     """ランチャーが必要とするコマンドだけを持つPATHを作成する。"""
     path_dir = tmp_path / "path"
     path_dir.mkdir()
-    for command in ("bash", "sh", "dirname", "readlink", "timeout", "sleep"):
+    for command in ("bash", "sh", "dirname", "readlink", "timeout", "sleep", "mkdir", "mktemp", "mv", "rm"):
         command_path = shutil.which(command)
         assert command_path is not None
         (path_dir / command).symlink_to(command_path)
@@ -243,7 +244,13 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
     """公式パスをPATHより優先し、更新後のrunへ全引数を渡す。"""
     arguments = ["--force", "value with spaces"]
 
-    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=True, arguments=arguments)
+    result, calls = _run_launcher(
+        tmp_path, native_uv=True, path_uv=True, arguments=arguments, self_update_message="info: Checking for updates..."
+    )
+    logs = tmp_path / "home/.local/state/agent-toolkit"
+    for label, message in (("uvの自己更新", "Checking for updates"), ("管理Pythonの更新", "latest supported patch")):
+        assert message not in result.stdout + result.stderr
+        assert message in (logs / f"uv-{label}.log").read_text(encoding="utf-8")
 
     assert result.returncode == 0
     assert calls == [
@@ -305,7 +312,9 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
         ],
     ]
     diagnostics = [line for line in result.stderr.splitlines() if "Ctrl+C" not in line]
-    assert diagnostics == [_UPDATE_WARNING, "uv run stderr"]
+    detail = tmp_path / "home/.local/state/agent-toolkit/uv-uvの自己更新-failed.log"
+    assert diagnostics == [f"exit=1 (詳細: {detail})", _UPDATE_WARNING, "uv run stderr"]
+    assert "exit=1" in detail.read_text(encoding="utf-8")
 
 
 @_LINUX_ONLY
@@ -766,6 +775,9 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
         "locking_process.ps1",
         "update_bootstrap.sh",
         "update_stage.sh",
+        "uv_output.sh",
+        "uv_output.ps1",
+        "uv_output_patterns.txt",
     ):
         shutil.copy2(_ROOT / "libexec" / name, libexec / name)
     prune_calls = tmp_path / "prune-calls"

@@ -40,7 +40,7 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
     common.mkdir(parents=True)
     shutil.copy2(_ROOT / "agent-toolkit/agent_toolkit/_common/windows_job.py", common / "windows_job.py")
     shutil.copy2(_ROOT / "bin/update-dotfiles", root / "bin/update-dotfiles")
-    for name in ("update_bootstrap.sh", "update_stage.sh"):
+    for name in ("update_bootstrap.sh", "update_stage.sh", "uv_output.sh", "uv_output_patterns.txt"):
         shutil.copy2(_ROOT / "libexec" / name, root / "libexec" / name)
     (root / "libexec/update_uv.sh").write_text('"$1" self update\n', encoding="utf-8")
     child_source = (

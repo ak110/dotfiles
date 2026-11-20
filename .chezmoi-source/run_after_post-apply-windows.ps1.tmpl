@@ -22,6 +22,7 @@ if ([Console]::IsOutputRedirected) {
 }
 try {
 
+. "{{ joinPath .chezmoi.workingTree "libexec/uv_output.ps1" }}"
 $cacheDir = Join-Path $env:LOCALAPPDATA 'dotfiles'
 $hashFile = Join-Path $cacheDir 'pytools.hash'
 $currentHash = '{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}'
@@ -96,7 +97,7 @@ if ($needsReinstall) {
             $unrestorableProcs += $p
         }
     }
-    Write-Host "  [pytools] 更新対象の使用中プロセス: 候補$($lockingProcs.Count)件 再起動可$($restorableProcs.Count)件 再起動不可$($unrestorableProcs.Count)件"
+    Write-UvOutput pytools-check 0 "  [pytools] 更新対象の使用中プロセス: 候補$($lockingProcs.Count)件 再起動可$($restorableProcs.Count)件 再起動不可$($unrestorableProcs.Count)件"
     if ($unrestorableProcs.Count -gt 0) {
         $reinstallDeferred = $true
         $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'deferred'
@@ -131,8 +132,13 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         # ハッシュ書き込みは uv tool install と期待シム実在再確認の両方が成功した場合のみ実行する。
         # ユーザーPATHへの`~\.local\bin`の登録は post-apply の「bin PATH 登録 (Windows)」工程が行う。
         # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
-        & uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}"
-        if ($LASTEXITCODE -ne 0) { throw "uv tool install が失敗しました (exit=$LASTEXITCODE)" }
+        $ErrorActionPreference = 'Continue'
+        try {
+            $detail = & uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" 2>&1
+            $installCode = $LASTEXITCODE
+        } finally { $ErrorActionPreference = 'Stop' }
+        Write-UvOutput pytools $installCode ($detail -join "`n")
+        if ($installCode -ne 0) { throw "uv tool install が失敗しました (exit=$installCode)" }
         if (-not (Test-ExpectedShims)) {
             throw '期待シムが生成されていません'
         }
@@ -143,12 +149,11 @@ if ($needsReinstall -and -not $reinstallDeferred) {
     } catch {
         $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'failed'
         $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = $_.Exception.Message
-        Write-Host "  [pytools] インストールに失敗しました (後続処理は継続): $_。次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。"
     }
 } elseif ($reinstallDeferred) {
     Write-Host '  [pytools] 既存版で後続処理を継続。次の操作: 使用中プロセスの終了後にupdate-dotfilesを再実行してください。'
 } else {
-    Write-Host '  [pytools] 変更なし (ハッシュキャッシュヒット)'
+    Write-UvOutput pytools-check 0 '  [pytools] 変更なし (ハッシュキャッシュヒット)'
 }
 
 # 再導入のために media-remote を停止したかと再導入の要否を post-apply へ渡す。
@@ -165,6 +170,7 @@ if (Test-Path $postApplyBin) {
     & $postApplyBin
     exit $LASTEXITCODE
 } else {
+    if ($env:DOTFILES_PYTOOLS_INSTALL_STATE -eq 'failed') { Write-UpdateError $env:DOTFILES_PYTOOLS_INSTALL_DETAIL }
     Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ。次の操作: uv tool install --exclude-newer-package pyfltr=false --editable `"{{ .chezmoi.workingTree }}`"を実行し、update-dotfilesを再実行してください。"
 }
 } finally {

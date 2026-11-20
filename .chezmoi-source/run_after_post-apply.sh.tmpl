@@ -10,6 +10,8 @@
 # 3. dotfiles-post-apply を最終出力主体として実行する。
 
 set -eu
+# shellcheck disable=SC1090,SC1091
+source "{{ .chezmoi.workingTree }}/libexec/uv_output.sh"
 
 # pytools（agent-toolkitのパッケージを含む）のプロジェクト定義ハッシュを比較し、変化があるときだけ uv tool install
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles"
@@ -57,16 +59,22 @@ if [ "$needs_reinstall" = 1 ]; then
     echo "  [pytools] ${reason} → 再インストール"
     # Linuxでは更新対象を保持するプロセスを停止せず、失敗時は既存版とハッシュを温存して次回へ延期する。
     # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
-    if uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" && test_expected_shims; then
+    install_code=0
+    install_output=$(uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" 2>&1) || install_code=$?
+    write_uv_output pytools "$install_code" "$install_output"
+    if [ "$install_code" = 0 ] && test_expected_shims; then
         mkdir -p "$cache_dir"
         printf '%s' "$current_hash" >"$hash_file"
     else
         DOTFILES_PYTOOLS_INSTALL_STATE="failed"
-        DOTFILES_PYTOOLS_INSTALL_DETAIL="uv tool install または期待シム検査が失敗しました"
-        echo "  [pytools] インストールに失敗しました (後続処理は継続)。次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。"
+        if [ "$install_code" = 0 ]; then
+            DOTFILES_PYTOOLS_INSTALL_DETAIL="期待シムが生成されていません"
+        else
+            DOTFILES_PYTOOLS_INSTALL_DETAIL="uv tool install: exit=$install_code"
+        fi
     fi
 else
-    echo "  [pytools] 変更なし (ハッシュキャッシュヒット)"
+    write_uv_output pytools-check 0 "  [pytools] 変更なし (ハッシュキャッシュヒット)"
 fi
 
 post_apply_bin="$HOME/.local/bin/dotfiles-post-apply"
@@ -77,5 +85,8 @@ if [ -x "$post_apply_bin" ]; then
     # post-applyの案内を更新処理全体の最終出力にするため、後続処理を置かずexecする。
     exec "$post_apply_bin"
 else
+    if [ -n "$DOTFILES_PYTOOLS_INSTALL_DETAIL" ]; then
+        printf '  [pytools] %s\n' "$DOTFILES_PYTOOLS_INSTALL_DETAIL" >&2
+    fi
     echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: uv tool install --exclude-newer-package pyfltr=false --editable \"{{ .chezmoi.workingTree }}\"を実行し、update-dotfilesを再実行してください。"
 fi

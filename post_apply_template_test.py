@@ -125,6 +125,8 @@ def test_windows_locking_processes_classify_and_record_restart_state(
     assert powershell is not None
     text = _read(WINDOWS_TEMPLATE)
     prologue = text[text.index("$originalOutputEncoding = [Console]::OutputEncoding") : text.index("try {")]
+    output_helper = str(REPO_ROOT / "libexec/uv_output.ps1").replace("'", "''")
+    state = str(tmp_path / "state").replace("'", "''")
     classifier = (WINDOWS_TEMPLATE.parent.parent / "libexec/locking_process.ps1").read_text(encoding="utf-8-sig")
     start = text.index("if ($needsReinstall) {")
     end = text.index("\n\n# post-apply 配下の出力", start)
@@ -170,6 +172,7 @@ function Start-Sleep {
     param([int] $Milliseconds)
 }
 """
+            + f". '{output_helper}'\n$env:LOCALAPPDATA = '{state}'\n"
             + classifier
             + "\nfunction Invoke-PytoolsMediaRemoteStop { param($Processes) "
             "foreach ($p in $Processes) { Stop-Process -Id $p.ProcessId } }\n" + "\n" + body + "\n" + result_expression,
@@ -185,7 +188,9 @@ function Start-Sleep {
 
         assert completed.returncode == 0, completed.stderr or completed.stdout
         output = completed.stdout.splitlines()
-        return json.loads(output[-1]), output[:-1]
+        details = tmp_path / "state/agent-toolkit/uv-pytools-check.log"
+        assert "更新対象の使用中プロセス:" not in completed.stdout + completed.stderr
+        return json.loads(output[-1]), details.read_text(encoding="utf-8").splitlines()[1:]
 
     def run_reinstall_scenario(name: str, fixtures: str, unavailable: bool = False) -> tuple[dict[str, object], list[str]]:
         return run_scenario(
@@ -338,11 +343,11 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
     """Linux側は更新対象を保持するプロセスを停止せず、成功時だけハッシュを更新する。"""
     text = _read(LINUX_TEMPLATE)
     install = text.index(
-        "if uv tool install --exclude-newer-package pyfltr=false "
-        '--editable "{{ .chezmoi.workingTree }}" && test_expected_shims; then'
+        "install_output=$(uv tool install --exclude-newer-package pyfltr=false "
+        '--editable "{{ .chezmoi.workingTree }}" 2>&1) || install_code=$?'
     )
     hash_write = text.index('printf \'%s\' "$current_hash" >"$hash_file"')
-    failure = text.index("インストールに失敗しました", hash_write)
+    failure = text.index('DOTFILES_PYTOOLS_INSTALL_DETAIL="uv tool install: exit=$install_code"', hash_write)
 
     assert "プロセスを停止せず" in text[:install]
     assert install < hash_write < failure
@@ -426,10 +431,11 @@ public class Program {
         Console.OutputEncoding = new System.Text.UTF8Encoding(false);
         string name = Path.GetFileNameWithoutExtension(System.Reflection.Assembly.GetExecutingAssembly().Location);
         string log = Environment.GetEnvironmentVariable("BOOTSTRAP_LOG");
-        if (name == "powershell") return 0;
+        if (name == "powershell") { Console.WriteLine("info: Checking for updates..."); return 0; }
         if (name == "python") { File.AppendAllText(log, "restart\\n"); return 0; }
         if (args.Length < 2) return 0;
         if (args[0] == "python" && args[1] == "install") {
+            Console.Error.WriteLine("Python 3.15 is already on the latest supported patch release");
             File.AppendAllText(log, "upgrade\\n");
             return int.Parse(Environment.GetEnvironmentVariable("UPGRADE_EXIT"));
         }
@@ -466,7 +472,9 @@ public class Program {
         tool_python.chmod(0o755)
         fake_uv.write_text(
             "#!/usr/bin/env bash\n"
-            'if [[ "$1 $2" == "python install" ]]; then printf "upgrade\\n" >> "$BOOTSTRAP_LOG"; exit "$UPGRADE_EXIT"; fi\n'
+            'if [[ "$1 $2" == "python install" ]]; then '
+            'echo "Python 3.15 is already on the latest supported patch release" >&2; '
+            'printf "upgrade\\n" >> "$BOOTSTRAP_LOG"; exit "$UPGRADE_EXIT"; fi\n'
             'if [[ "$1 $2" == "tool dir" ]]; then printf "%s\\n" "$TOOL_BASE"; fi\n'
             'if [[ "$1 $2" == "python dir" ]]; then printf "%s\\n" "$PYTHON_BASE"; fi\n'
             'if [[ "$1 $2" == "python list" ]]; then\n'
@@ -478,7 +486,7 @@ public class Program {
             encoding="utf-8",
         )
         fake_uv.chmod(0o755)
-        powershell_stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        powershell_stub.write_text("#!/usr/bin/env bash\necho 'info: Checking for updates...'\n", encoding="utf-8")
         powershell_stub.chmod(0o755)
     driver = tmp_path / "driver.ps1"
     command = "arbitrary-python" if blocked else "pytools.media_remote"
@@ -489,12 +497,13 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 public sealed class UpdateStageJob : IDisposable {
-    Process process; Task<string> output; bool disposed;
+    Process process; Task<string> output, error; bool disposed, isProbe;
     public UpdateStageJob(string program, string arguments, bool probe) {
         var start = new ProcessStartInfo(program, arguments);
-        start.UseShellExecute = false; start.RedirectStandardOutput = probe;
+        start.UseShellExecute = false; start.RedirectStandardOutput = true; start.RedirectStandardError = true; isProbe = probe;
         process = Process.Start(start);
-        if (probe) output = Task.Run(() => process.StandardOutput.ReadToEnd());
+        output = Task.Run(() => process.StandardOutput.ReadToEnd());
+        error = Task.Run(() => process.StandardError.ReadToEnd());
     }
     public bool Wait(int milliseconds) { return process.WaitForExit(milliseconds); }
     public int ExitCode { get { return process.ExitCode; } }
@@ -505,8 +514,9 @@ public sealed class UpdateStageJob : IDisposable {
     public string ReadOutput() {
         if (output == null) return "";
         if (!output.Wait(5000)) throw new TimeoutException("native出力を回収できません");
-        return output.Result;
+        return output.Result + (isProbe ? "" : error.Result);
     }
+    public string ReadDiagnostic() { return error.Result; }
     public void Dispose() {
         if (disposed) return;
         try { Stop(); if (output != null && !output.Wait(5000)) throw new TimeoutException("readerが残っています"); }
@@ -557,6 +567,12 @@ public sealed class UpdateStageJob : IDisposable {
         deferred.write_text("9", encoding="utf-8")
     result = invoke()
     assert result.returncode == (1 if missing else 0), result.stderr + result.stdout
+    assert "Checking for updates" not in result.stdout + result.stderr
+    assert "Checking for updates" in (deferred.parent / "uv-uvの自己更新.log").read_text(encoding="utf-8")
+    if not blocked and not inventory_error:
+        suffix = "-failed" if upgrade_exit else ""
+        assert "latest supported patch" not in result.stdout + result.stderr
+        assert "latest supported patch" in (deferred.parent / f"uv-管理Pythonの更新{suffix}.log").read_text(encoding="utf-8")
     if report_failure:
         assert str(tmp_path) in result.stderr
         assert "書込権限を修復してupdate-dotfilesを再実行" in result.stderr

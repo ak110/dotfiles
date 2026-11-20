@@ -4,13 +4,6 @@ $ErrorActionPreference = 'Stop'
 $script:bootstrapFailures = @()
 $script:lastStageOutput = ''
 . (Join-Path $PSScriptRoot 'locking_process.ps1')
-function Write-UpdateError {
-    param([string]$Message)
-    if ([Console]::IsErrorRedirected) {
-        $writer = [System.IO.StreamWriter]::new([Console]::OpenStandardError(), [System.Text.UTF8Encoding]::new($false))
-        try { $writer.WriteLine($Message) } finally { $writer.Dispose() }
-    } else { [Console]::Error.WriteLine($Message) }
-}
 . (Join-Path $PSScriptRoot 'update_stage.ps1')
 function Test-PythonPatchPending {
     # keyはビルド日付を含まず、同じpatch版の新しいビルドを検出できない。更新できない回の見送りの判定にだけ使う。

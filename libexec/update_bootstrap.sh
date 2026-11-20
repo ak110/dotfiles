@@ -3,6 +3,8 @@
 set -euo pipefail
 uv_path=$1
 root=${BASH_SOURCE[0]%/*}
+# shellcheck source=libexec/uv_output.sh
+source "$root/uv_output.sh"
 export UPDATE_DOTFILES_BOOTSTRAP_FAILURES=''
 if ! command -v timeout >/dev/null; then
     printf '%s\n' 'timeoutが見つからないため更新を開始できません。coreutilsを導入して再実行してください。' >&2
@@ -21,7 +23,14 @@ timed_stage() {
     printf '%s: %sCtrl+Cで中断できます。\n' "$name" "$wait_hint" >&2
     local code=0
     ((bootstrap_interrupted == 0)) || return 130
-    timeout --foreground "$limit" bash "$root/update_stage.sh" "$@" || code=$?
+    local output
+    if [[ "$name" == '管理Pythonの検索' ]]; then
+        # 検索結果のstdoutはpython_pathの値。stderrだけを明細として扱う。
+        { output=$(timeout --foreground "$limit" bash "$root/update_stage.sh" "$@" 2>&1 >&3 3>&-) || code=$?; } 3>&1
+    else
+        output=$(timeout --foreground "$limit" bash "$root/update_stage.sh" "$@" 2>&1) || code=$?
+    fi
+    write_uv_output "$name" "$code" "$output"
     ((bootstrap_interrupted == 0)) || return 130
     return "$code"
 }
