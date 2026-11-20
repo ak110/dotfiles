@@ -111,10 +111,16 @@ class _BelowWarningFilter(logging.Filter):
 class _ScreenFilter(logging.Filter):
     """ユーザーの判断に使わない行を画面から外す。永続ログのハンドラーには付けない。"""
 
+    def __init__(self, *, updating: bool) -> None:
+        super().__init__()
+        self.updating = updating
+
     def filter(self, record: logging.LogRecord) -> bool:
         """画面へ出力するレコードなら真を返す。"""
         if log_format.is_log_only(record):
             return False
+        if self.updating and record.levelno < logging.WARNING:
+            return getattr(record, log_format.LOG_ONLY_ATTR, None) is False
         # 依存ライブラリhttpxのリクエスト記録。WARNING以上は標準エラー側で表示する。
         return not (record.levelno < logging.WARNING and (record.name == "httpx" or record.name.startswith("httpx.")))
 
@@ -131,12 +137,10 @@ def _configure_logging() -> Generator[bool]:
         cleanup.callback(stdout_handler.close)
         stdout_handler.setLevel(logging.DEBUG)
         stdout_handler.addFilter(_BelowWarningFilter())
-        stdout_handler.addFilter(_ScreenFilter())
         stdout_handler.setFormatter(formatter)
         stderr_handler = logging.StreamHandler(sys.stderr)
         cleanup.callback(stderr_handler.close)
         stderr_handler.setLevel(logging.WARNING)
-        stderr_handler.addFilter(_ScreenFilter())
         stderr_handler.setFormatter(formatter)
         run_id = _run_id()
         handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
@@ -161,6 +165,10 @@ def _configure_logging() -> Generator[bool]:
             file_handler.setFormatter(_DiagnosticFormatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
             handlers.append(file_handler)
             persistent_log_ready = True
+        updating = persistent_log_ready and (_UPDATE_RUN_ID_ENV in os.environ or "DOTFILES_PRUNE_READY_FILE" in os.environ)
+        screen_filter = _ScreenFilter(updating=updating)
+        stdout_handler.addFilter(screen_filter)
+        stderr_handler.addFilter(screen_filter)
         root_logger = logging.getLogger()
         previous_handlers = root_logger.handlers.copy()
         previous_level = root_logger.level
@@ -406,16 +414,20 @@ def main(
         return
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     with _configure_logging() as persistent_log_ready:
-        logger.info("post-apply開始")
+        logger.info("post-apply開始", extra=log_format.LOG_ONLY)
         results, recommendations = (runner or run)()
         failed = [r for r in results if not r.ok]
         updated = [r for r in results if r.ok and r.changed]
         skipped = [r for r in results if r.ok and not r.changed]
         notices = _pytools_install_notices() + [notice for result in results for notice in result.notices]
         _record_sync_report(updated=updated, skipped=skipped, failed=failed, notices=notices)
-        # logger.info("") だと format により末尾空白が付与されるため、stdout に直接出力する。
-        print(flush=True)
-        logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
+        logger.info(
+            "完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件",
+            len(updated),
+            len(skipped),
+            len(failed),
+            extra=log_format.SHOW if failed else log_format.LOG_ONLY,
+        )
         _print_plugin_recommendations(recommendations)
         if failed:
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
@@ -425,7 +437,7 @@ def main(
                 if persistent_log_ready:
                     logger.error("永続ログ: %s（末尾の失敗理由を確認してください）", _UPDATE_LOG_PATH)
         _print_post_apply_notices(notices)
-        logger.info("post-apply終了: exit=%d", 1 if failed else 0)
+        logger.info("post-apply終了: exit=%d", 1 if failed else 0, extra=log_format.LOG_ONLY)
         sys.exit(1 if failed else 0)
 
 
@@ -459,7 +471,7 @@ def _print_plugin_recommendations(recommendations: list[str]) -> None:
     if not recommendations:
         return
     print(flush=True)
-    logger.info("推奨プラグイン設定:")
+    logger.info("推奨プラグイン設定:", extra=log_format.SHOW)
     # コマンド行はそのままコピー&ペーストで実行されるため、ログのformatterが付けるインデントを避けて
     # stdout に直接出力する。cmd.exe では `^` 継続後に行頭空白が前行へ連結されたまま残り、
     # `&& <空白>...` の空白がコマンド名として解釈されて貼り付けが失敗するため、行頭は無インデントとする。
@@ -484,9 +496,7 @@ def _print_post_apply_notices(notices: list[post_apply_outcome.PostApplyNotice])
         return
     print(file=sys.stderr, flush=True)
     for notice in unique_notices:
-        logger.warning(notice.message)
-        if notice.command is not None:
-            print(notice.command, file=sys.stderr, flush=True)
+        logger.warning("%s", notice.render())
 
 
 def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:
@@ -674,7 +684,12 @@ def _emit_outcome(label: str, outcome: _StepOutcome) -> None:
         return
     if outcome.skip_reason is not None:
         # HOMEの差し替えによる省略は、手動観測の実行者が画面で確認できるよう表示する。
-        logger.info("%s: %s", label, outcome.skip_reason)
+        logger.info(
+            "%s: %s",
+            label,
+            outcome.skip_reason,
+            extra=log_format.SHOW if not outcome.result.ok or outcome.skip_reason == _SKIP_SUBSTITUTED_HOME else None,
+        )
         return
     start_record, *rest = outcome.records
     root_logger.handle(start_record)

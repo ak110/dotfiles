@@ -329,8 +329,9 @@ class TestRun:
         heading = next(index for index, line in enumerate(lines) if line.startswith("  [1/3] HTTPを使う工程 ("))
         assert lines[heading + 1] == "      http: 変更なし"
         assert any(line.startswith("  [2/3] claudeを使う工程 (") for line in lines)
-        assert "完了: 更新 0 件 / スキップ 3 件 / 失敗 0 件" in out
+        assert "完了: 更新" not in out
         log_text = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+        assert "完了: 更新 0 件 / スキップ 3 件 / 失敗 0 件" in log_text
         assert "HTTP Request: GET" in log_text
         assert "claude: exec: plugin list" in log_text
         assert "claude: exit 0: plugin list" in log_text

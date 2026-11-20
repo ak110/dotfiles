@@ -68,6 +68,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     "media-remote",
                     "dotfiles-media-remote.exeが見つからないためスキップ。`update-dotfiles`を再実行してpytoolsを導入する",
                 ),
+                extra=log_format.SHOW,
             )
             return post_apply_outcome.PostApplyOutcome()
         vbs_changed = _ensure_vbs(vbs, exe)

@@ -57,6 +57,9 @@ if not defined UV_LOCK_TIMEOUT set "UV_LOCK_TIMEOUT=900"
 set "DOTFILES_PRUNE_READY_FILE=%LOCALAPPDATA%\agent-toolkit\update-prune-ready-%RANDOM%-%RANDOM%"
 set "PRUNE_REQUESTED=1"
 if "%~1"=="logs" set "PRUNE_REQUESTED=0"
+if "%~1"=="logs" goto run
+for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" goto run
+powershell.exe -NoLogo -NoProfile -Command "$message='更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。'; if ([Console]::IsErrorRedirected) { $writer=[IO.StreamWriter]::new([Console]::OpenStandardError(), [Text.UTF8Encoding]::new($false)); try { $writer.WriteLine($message) } finally { $writer.Dispose() } } else { [Console]::Error.WriteLine($message) }"
 goto run
 
 :job_route

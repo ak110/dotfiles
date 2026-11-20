@@ -98,6 +98,7 @@ def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tm
 
     並列に進む依存確認を列挙順と逆に完了させ、表示と永続ログが列挙順を保つことを確かめる。
     """
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
     warmup = post_apply.warmup_agents_server
     commands = [["python", str(tmp_path / name)] for name in ("first", "second")]
     monkeypatch.setattr(
@@ -140,7 +141,8 @@ def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tm
     screen = captured.out + captured.err
     log = (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
     assert log.index("first-root-detail") < log.index("second-root-detail") < log.index("independent-detail")
-    assert screen.count("first-root-detail") == screen.count("second-root-detail") == 1
+    assert "first-root-detail" not in screen
+    assert screen.count("second-root-detail") == int(fail_second)
 
 
 @pytest.mark.parametrize("via_update_dotfiles", [False, True], ids=["standalone", "via-update-dotfiles"])

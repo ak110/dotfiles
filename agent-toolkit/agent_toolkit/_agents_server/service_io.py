@@ -362,6 +362,15 @@ class CodexResource:
         """適用中のイベントの保存だけを完走し、次のdecodeを止める。"""
         self._detached = True
 
+    async def resume(self) -> None:
+        """所有を保つ旧clientで保存済みの位置からdecodeを続け、配送中の要求のcallbackを保持する。"""
+        async with self._dispatch:
+            # 保存済みの位置の再確認は所有が違えば失敗し、transferと異なり配送中の要求の完了を待たない。
+            await self.resource.operation("acknowledge", sequence=self._sequence)
+            self._detached = False
+            if self._task is None or self._task.done():
+                self._task = asyncio.create_task(self._consume())
+
     async def detach(self) -> dict[str, Any]:
         """解釈と保存を完走してからconsumerだけを解除し、App Serverをcloseしない。"""
         async with self._dispatch:

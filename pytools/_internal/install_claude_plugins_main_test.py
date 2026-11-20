@@ -173,18 +173,22 @@ class TestRunFlow:
         # 既に無効で最新版のケースではinstallを必要としない。
         cli = make_installed_two_plugin_fake([]) if before is False and after is False else install_with_settings
         monkeypatch.setattr(_common, "run_subprocess", cli)
-        monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update.log")
+        log_path = tmp_path / "update.log"
+        monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", log_path)
         monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
         with pytest.raises(SystemExit) as exit_info:
             post_apply.main(runner=lambda: post_apply.run([("Claude Code plugin", _install_claude_plugins.run)]))
 
         captured = capsys.readouterr()
         assert exit_info.value.code == expected_exit
-        assert f"失敗 {expected_exit} 件" in captured.out
+        summary = f"失敗 {expected_exit} 件"
+        assert summary in log_path.read_text(encoding="utf-8")
         if expected_exit:
+            assert summary in captured.out
             assert plugin_id in captured.err
             assert "enabledPlugins" in captured.err
         else:
+            assert summary not in captured.out
             assert "失敗" not in captured.err
             assert "再実行" not in captured.err + captured.out
             enabled = json.loads(settings.read_text(encoding=encoding))["enabledPlugins"]

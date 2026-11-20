@@ -68,6 +68,7 @@ from session_evidence_extract import (
 from session_evidence_hook_notices import (
     _hook_notice_events,
 )
+from session_evidence_lane_costs import lane_costs
 from session_evidence_records import (
     _collect_records,
     _resolve_claude_transcript,
@@ -106,6 +107,21 @@ def main(
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
+    if args.saved_plan or args.saved_rollout:
+        if not args.stats or any(
+            value is not None and value is not False
+            for name, value in vars(args).items()
+            if name not in {"stats", "saved_plan", "saved_rollout"}
+        ):
+            return _print_error(
+                "保存済みレーン統計の引数が不正", next_action="--statsと--saved-plan・--saved-rolloutだけを指定する"
+            )
+        try:
+            event = lane_costs(args.saved_plan or [], args.saved_rollout or [])
+        except (OSError, ValueError) as error:
+            return _print_error(str(error), next_action="計画とrolloutのパスと形式を確認する")
+        _print_events([event])
+        return 0
     if args.scan_claude_projects or args.scan_codex_history:
         if not args.tool_calls or not args.failure_fixed_string or args.since is None or args.observation_boundary is None:
             return _print_error(

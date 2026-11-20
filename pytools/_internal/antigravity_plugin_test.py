@@ -154,9 +154,14 @@ def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_
         "path": str(source),
         "include_only": ["agent-toolkit-agy", "agent-basics-agy"],
     }
-    assert not subject.run().changed
+    cache = source / "agent-toolkit-agy/agent_toolkit/__pycache__"
+    cache.mkdir()
+    (cache / "hook.cpython-315.pyc").write_bytes(b"runtime cache")
+    unchanged = subject.run()
+    assert not unchanged.changed and not unchanged.notices
     (source / "agent-toolkit" / _GUIDE).write_text("更新後のメイン指針")
-    assert subject.run().changed
+    updated = subject.run()
+    assert updated.changed and [notice.message for notice in updated.notices] == [subject.UPDATED_NOTICE]
     assert (source / "agent-toolkit-agy" / _GUIDE).read_text() == "更新後のメイン指針"
     assert len(json.loads(registry.read_text())["entries"]) == 2
 

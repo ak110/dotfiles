@@ -4,7 +4,8 @@
 拡張思考の表示をエージェントから観測できないため、応答はユーザーへ届く本文の有無で判定する。
 ツール呼び出しより前の地の文が要約へ置き換わる事象をこの判定で検出することはしない。発話したつもりで届いていない事象は
 発話を契機とする判定では捉えられず、原文を`send_to_user`で運ぶ規範とツールで扱う（2026年10月6日、ユーザーの判断）。
-回答の意味は判定せず、拡張思考とツール呼び出しは本文へ数えない。
+回答の意味は判定しない。`AskUserQuestion`が回答待ち、またはユーザーが中断・拒否した質問で終われば別の本文を求めない。
+回答が返った後は、質問前の前置きをその回答への応答に数えない。
 例外は人間の入力が単純な了承（ユーザーが原文で示した「単純に了承したパターン」）だけの場合で、
 `…`だけの本文で終えるStopは通知しない。規範（`atk-mode`の`playbooks/main-reporting.md`「ユーザー向け発話ルール」と
 `playbooks/host-claude-code.md`「ターンの終え方」）は伝える内容が無い場合に`…`だけで終えることを許し、了承には伝える回答が無いためである。
@@ -100,6 +101,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     # 最後の人間入力以降の記録と、最後の本文が`…`だけかを、背景待機の免除判定のために保つ。
     scanned: list[dict] = []
     human_start = 0
+    question_id: str | None = None
     last_ellipsis = False
     for index, line in enumerate(lines):
         try:
@@ -110,17 +112,21 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             continue
         scanned.append(entry)
         prompt = _input_text(entry)
-        if prompt is not None:
-            human_prompt = _human_prompt(entry, prompt)
-            if human_prompt is not None:
-                input_subject = f"{index}|{line}"
-                human_start = len(scanned) - 1
-                if not needs_response:
-                    acknowledged_only, ellipsis_only = True, False
-                acknowledged_only = acknowledged_only and _is_acknowledgement(human_prompt)
-                needs_response = True
-            elif prompt.lstrip().startswith("<task-notification>"):
-                needs_response = False
+        human_prompt = _human_prompt(entry, prompt) if prompt is not None else None
+        answered = False
+        if human_prompt is not None:
+            question_id = None
+        elif input_subject:
+            question_id, answered = _question_update(entry, question_id)
+        if human_prompt is not None or answered:
+            input_subject = f"{index}|{line}"
+            human_start = len(scanned) - 1
+            if not needs_response:
+                acknowledged_only, ellipsis_only = True, False
+            acknowledged_only = acknowledged_only and human_prompt is not None and _is_acknowledgement(human_prompt)
+            needs_response = True
+        elif prompt is not None and prompt.lstrip().startswith("<task-notification>"):
+            needs_response = False
         elif entry.get("type") == "assistant":
             message = entry.get("message")
             if entry.get("isApiErrorMessage"):
@@ -143,12 +149,17 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if (
         not needs_response
         or (acknowledged_only and ellipsis_only)
+        or question_id is not None
         or (last_ellipsis and _awaits_background(scanned[human_start:], session_id, path))
     ):
         notice.resolve_notice(session_id, "user_response_advisor", "evaluate", subject="main")
         return "approve", ""
     _stop_session.append_stop_log(session_id, "notify_missing_user_response", {})
-    delivery = "応答本文" if is_codex_payload(payload) else "ツール説明が指定した`send_to_user`（指定の無い環境では応答本文）"
+    delivery = (
+        "応答本文"
+        if is_codex_payload(payload)
+        else "現在の入力に端末modが添えた案内か、この会話のツール説明で指定された`send_to_user`（指定の無い環境では応答本文）"
+    )
     body = _notice(
         "人間の発話の後に、ユーザーへ届いた応答本文が無い。",
         fix=f"伝える予定だった回答・判断・確認結果を{delivery}で届けよ。",
@@ -156,6 +167,29 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         subject=input_subject,
     )
     return ("notify", body) if body else ("approve", "")
+
+
+def _question_update(entry: dict, question_id: str | None) -> tuple[str | None, bool]:
+    """直近の未回答の質問IDと、この記録でその回答を受け取ったかを返す。"""
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list) or entry.get("isApiErrorMessage"):
+        return question_id, False
+    for block in content:
+        match entry.get("type"), block:
+            case "assistant", {"type": "tool_use", "name": "AskUserQuestion", "id": str() as identifier} if identifier:
+                question_id = identifier
+            case "user", {"type": "tool_result", "tool_use_id": str() as identifier} if identifier == question_id:
+                if block.get("is_error") is not True:
+                    return None, True
+                # ユーザーが閉じた質問と、hookの遮断などで表示されなかった質問を区別する。
+                denial = entry.get("toolDenialKind")
+                if denial in ("user-rejected", "interrupted") or (
+                    denial is None and entry.get("toolUseResult") == "User rejected tool use"
+                ):
+                    return question_id, False
+                question_id = None
+    return question_id, False
 
 
 def _awaits_background(entries: list[dict], session_id: str, transcript_path: str) -> bool:

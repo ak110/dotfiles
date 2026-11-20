@@ -86,6 +86,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 "https://docs.astral.sh/uv/getting-started/installation/ の手順でuvを導入し、"
                 "`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return post_apply_outcome.PostApplyOutcome()
     dotfiles = common.find_dotfiles_root()
@@ -95,6 +96,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 "atk-serve",
                 "dotfilesルートが見つからないため設定を見送る。`update-dotfiles`を再実行して導入と設定をやり直す",
             ),
+            extra=log_format.SHOW,
         )
         return post_apply_outcome.PostApplyOutcome()
 

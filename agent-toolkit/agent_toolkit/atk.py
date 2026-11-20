@@ -66,7 +66,7 @@ lazy from agent_toolkit._git import command as _git_command
 _MANAGED_TEMP_CHECK_NEXT_ACTION = (
     "本来の操作は継続した。表示した原因（所有者・権限など）を除去すると、1日後以降の`atk`の起動で再び回収を試みる"
 )
-"""managed-tempの期限切れの対象を自動削除できなかった場合に添える次の操作。"""
+"""managed-tempの対象を自動削除できなかった場合に添える次の操作。"""
 
 
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
@@ -425,7 +425,7 @@ def main(
     if sweep_result.failed and not _delegated_session.is_delegated(os.environ):
         for path, reason in sweep_result.failed:
             _outcome.report_persistent_warning(
-                f"managed-tempの期限切れの対象を自動削除できなかった: {path}: {reason}",
+                f"managed-tempの対象を自動削除できなかった: {path}: {reason}",
                 next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
             )
     # 空きの不足は全セッションの書込を止める共有の状態であり、回収した対象の記録も回収した起動が残すため、委譲先にも出力する。

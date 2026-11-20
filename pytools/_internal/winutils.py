@@ -11,6 +11,8 @@ import ntpath
 import typing
 from pathlib import PureWindowsPath
 
+from pytools._internal import log_format
+
 logger = logging.getLogger(__name__)
 
 
@@ -102,7 +104,9 @@ def broadcast_environment_change() -> None:
             ctypes.byref(result),
         )
     except Exception as e:  # noqa: BLE001 -- 通知失敗は致命ではない
-        logger.info("環境変数変更のブロードキャストに失敗: %s。変更を反映するため新しい端末を開き直す", e)
+        logger.info(
+            "環境変数変更のブロードキャストに失敗: %s。変更を反映するため新しい端末を開き直す", e, extra=log_format.SHOW
+        )
 
 
 def _load_kernel32(ctypes_module: typing.Any) -> typing.Any:

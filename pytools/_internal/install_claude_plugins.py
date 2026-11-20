@@ -134,6 +134,7 @@ def _install_plugins(initial_enabled: dict[str, bool]) -> tuple[bool, list[str],
                 "plugins",
                 "dotfiles ルート (marketplace.json) が見つからずスキップ。`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return external_changed, [], 0, 0, False
 
@@ -172,6 +173,7 @@ def _install_plugins(initial_enabled: dict[str, bool]) -> tuple[bool, list[str],
                         "plugins",
                         "インストール済み plugin 一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
                     ),
+                    extra=log_format.SHOW,
                 )
                 return external_changed, [], 0, 0, False
         changed, recommendations, disable_failed, artifact_failed, deferred = _sync_plugins(
@@ -414,7 +416,8 @@ def _auto_disable_plugins(raw_data: object, enabled_map: dict[str, bool] | None)
             continue
         if error := claude_plugin_settings.disable_plugin(plugin_id):
             logger.info(
-                log_format.format_status(plugin_id, f"{error}。`claude plugin disable {plugin_id} --scope=user`を実行する")
+                log_format.format_status(plugin_id, f"{error}。`claude plugin disable {plugin_id} --scope=user`を実行する"),
+                extra=log_format.SHOW,
             )
             failed += 1
         else:
@@ -488,6 +491,7 @@ def _prerequisites_ok() -> bool:
                 "plugins",
                 "claude CLI 未検出のためスキップ。`update-dotfiles`を再実行してClaude Codeを導入する",
             ),
+            extra=log_format.SHOW,
         )
         return False
     if common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
@@ -498,6 +502,7 @@ def _prerequisites_ok() -> bool:
                 "https://docs.astral.sh/uv/getting-started/installation/ "
                 "の手順でuvを導入して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return False
     return True
@@ -517,6 +522,7 @@ def _get_installed_plugins_raw() -> object | None:
                 "`claude plugin list --json` の出力 JSON を解析できませんでした。"
                 "`claude plugin list --json`の出力を確認して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return None
 
@@ -595,6 +601,7 @@ def _read_target_info(dotfiles_root: Path) -> tuple[dict[str, str], set[str]]:
                 f"marketplace.json の読み込みに失敗: {e}。"
                 f"{manifest}の読み取り権限とJSONの書式を修正して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return {}, set()
     plugins = data.get("plugins") if isinstance(data, dict) else None
@@ -646,6 +653,7 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
             f"アンインストールに失敗: {common.format_cli_error(result)}。"
             f"`claude plugin uninstall {name}@{claude_common.MARKETPLACE_NAME} --keep-data`を実行する",
         ),
+        extra=log_format.SHOW,
     )
     return False
 
@@ -677,6 +685,7 @@ def _install_plugin(name: str) -> bool:
                     f"`claude plugin install {name}@{claude_common.MARKETPLACE_NAME} "
                     "--scope=user`を実行する",
                 ),
+                extra=log_format.SHOW,
             )
             return False
         current = _plugin_cache_directory(name)
@@ -701,6 +710,7 @@ def _update_plugin(name: str) -> bool:
                     f"`claude plugin update {name}@{claude_common.MARKETPLACE_NAME} "
                     "--scope=user`を実行する",
                 ),
+                extra=log_format.SHOW,
             )
             return False
         current = _plugin_cache_directory(name)

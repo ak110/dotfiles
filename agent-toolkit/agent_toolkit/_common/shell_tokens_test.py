@@ -21,7 +21,7 @@ def test_atk_launcher_names_are_one_definition(windows: bool) -> None:
         assert any(segment.resolved and predicate(segment.tokens) for segment in segments)
 
 
-@pytest.mark.parametrize("name", ["atk", "atk.cmd", "atk.py"])
+@pytest.mark.parametrize("name", ["atk", "atk.ps1", "atk.cmd", "atk.py"])
 @pytest.mark.parametrize("prefix", ["", "C:/Users/x/", "C:\\Users\\x\\"])
 def test_atk_launchers_accept_windows_paths(name: str, prefix: str) -> None:
     assert shell_tokens.is_agents_wait_command((prefix + name, "agents", "wait"))

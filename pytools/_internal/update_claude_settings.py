@@ -14,7 +14,6 @@ import sys
 import typing
 from pathlib import Path
 
-# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import pytilpack.jsonc
 
 from pytools._internal import (
@@ -356,28 +355,42 @@ def update_claude_settings(
         _merge(managed, json.loads(override_path.read_text(encoding="utf-8")))
     managed = typing.cast("dict[str, typing.Any]", _substitute_home_placeholder(managed))
 
-    # settings.jsonはJSONC形式（コメント・末尾カンマ許容）で書かれる場合があるため
-    # `pytilpack.jsonc.loads`でパースする。純JSONも受理する。
-    data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8-sig")) if settings_path.exists() else {}
-
-    original = copy.deepcopy(data)
-    if strip_legacy_codex_timeout:
-        _strip_legacy_codex_timeout(data)
-    _strip_removed_hooks(data, removed_hook_substrings)
-    _strip_managed_hooks(data, managed)
-    _strip_removed_env_keys(data, removed_env_keys)
-    _strip_removed_keys(data, removed_keys)
-    _strip_removed_list_items(data, removed_list_item_substrings)
-    _strip_stale_labeled_list_items(data, managed, stale_labeled_list_paths)
-    _merge(data, managed)
-    _warn_orphan_dotfiles_hook_commands(data, managed_path)
+    def read_and_merge() -> tuple[str | None, dict, dict]:
+        try:
+            source = settings_path.read_text(encoding="utf-8", newline="")
+        except FileNotFoundError:
+            source = None
+        original = (
+            pytilpack.jsonc.loads(source.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n"))
+            if source is not None
+            else {}
+        )
+        data = copy.deepcopy(original)
+        if strip_legacy_codex_timeout:
+            _strip_legacy_codex_timeout(data)
+        _strip_removed_hooks(data, removed_hook_substrings)
+        _strip_managed_hooks(data, managed)
+        _strip_removed_env_keys(data, removed_env_keys)
+        _strip_removed_keys(data, removed_keys)
+        _strip_removed_list_items(data, removed_list_item_substrings)
+        _strip_stale_labeled_list_items(data, managed, stale_labeled_list_paths)
+        _merge(data, managed)
+        return source, original, data
 
     short = log_format.home_short(settings_path)
-    if data == original:
+    source, original, data = read_and_merge()
+    if not common.json_values_equal(original, data):
+        # 初読は更新要否の判定だけに使い、保存する値とコメントは同じ最新の本文から得る。
+        try:
+            source, original, data = read_and_merge()
+        except OSError, ValueError:
+            return None
+    _warn_orphan_dotfiles_hook_commands(data, managed_path)
+    if common.json_values_equal(original, data):
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    if not common.write_settings_hybrid(settings_path, original, data, tag=short, preserve_bom=True):
+    if not common.write_settings_hybrid(settings_path, original, data, tag=short, source=source, preserve_bom=True):
         return None
     logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):

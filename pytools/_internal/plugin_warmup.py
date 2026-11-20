@@ -250,6 +250,7 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
                 counts["deleted"],
                 counts["deferred"],
                 action,
+                extra=log_format.SHOW if counts["deferred"] else log_format.LOG_ONLY,
             )
     except (OSError, ValueError, IndexError, psutil.Error) as error:
         logger.warning(
@@ -273,13 +274,13 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
     if result.failed:
         logger.warning(
             "一時資源%d件の回収を保留した。update-dotfiles logs で対象と理由を確認し、"
-            "使用中の場合は利用終了後に、権限不足の場合は削除権限を確認してから update-dotfiles を再実行してください",
+            "権限不足の場合は対象のアクセス権を修正してから update-dotfiles を再実行してください",
             len(result.failed),
         )
     for target in result.deleted:
         logger.info("一時資源を回収: %s", target, extra=log_format.LOG_ONLY)
     if result.deleted:
-        logger.info("一時資源を%d件回収した", len(result.deleted))
+        logger.info("一時資源を%d件回収した", len(result.deleted), extra=log_format.LOG_ONLY)
 
 
 def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:
@@ -294,6 +295,7 @@ def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Pat
                     tag,
                     f"対象が存在しないため除外: {log_format.home_short(candidate)}。`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
             continue
         targets.append(candidate)
@@ -469,7 +471,10 @@ class CommandOutcome:
     def report(self, *, target: str, tag: str) -> bool:
         """標準出力・標準エラーを対象と対応付け、成功と失敗の診断を表示する。"""
         if self.ok:
-            logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{self.elapsed:.1f}秒): {target}"))
+            logger.info(
+                log_format.format_status(tag, f"環境構築を確認 (exit 0、{self.elapsed:.1f}秒): {target}"),
+                extra=log_format.LOG_ONLY,
+            )
             return True
         summary = (
             f"環境構築に失敗 (exit codeなし、{self.elapsed:.1f}秒): {target}"

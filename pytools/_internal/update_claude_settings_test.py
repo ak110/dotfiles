@@ -7,8 +7,10 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import pytilpack.jsonc
 
 from pytools._internal import common
 from pytools._internal import update_claude_settings as mod
@@ -22,6 +24,20 @@ from pytools._internal.update_claude_settings_test_helpers import (
     _run,
     _setup_run_paths,
 )
+
+
+def _save_after_read(monkeypatch: pytest.MonkeyPatch, path: Path, latest: str) -> None:
+    """設定を読み終えた時点で、ユーザーの保存を再現する。"""
+    read = Path.read_text
+
+    def read_then_save(file: Path, *args, **kwargs) -> str:
+        result = read(file, *args, **kwargs)
+        if file == path:
+            monkeypatch.setattr(Path, "read_text", read)
+            path.write_text(latest, encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(Path, "read_text", read_then_save)
 
 
 class TestUpdateClaudeSettings:
@@ -289,20 +305,185 @@ class TestHomePlaceholder:
 
 
 class TestJsoncCommentPreservation:
-    """JSONCコメント維持経路のテスト。
+    """既存のJSONCに対する設定更新と文字コードの維持を検証する。"""
 
-    既存パスの値置換のみで済む更新は`pytilpack.jsonc.edit`経由で書き戻され、
-    ユーザーが加えた行コメント・空行・独自インデントを維持する。
-    構造変化（キー追加・list変更）を含む更新は現行の`json.dumps`経路にフォールバックする。
-    """
+    @pytest.mark.parametrize("platform", ["linux", "win32"])
+    @pytest.mark.parametrize("previous", [None, 30], ids=["missing", "30-days"])
+    def test_run_updates_history_retention(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pytestconfig: pytest.Config, platform: str, previous: int | None
+    ) -> None:
+        """配布原本を新規適用し、旧設定への再適用ではコメントと独自設定を保って180日にする。"""
+        path = tmp_path / "settings.json"
+        monkeypatch.setattr(mod, "_SETTINGS_PATH", path)
+        monkeypatch.setattr(mod, "_CONFIG_PATH", tmp_path / "claude.json")
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: pytestconfig.rootpath)
+        monkeypatch.setattr(mod, "sys", SimpleNamespace(platform=platform))
+        assert mod.run().changed
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        days = settings.pop("cleanupPeriodDays")
+        assert isinstance(days, int) and days == 180
+        if previous is not None:
+            settings["cleanupPeriodDays"] = previous
+        prefix = '/* { "cleanupPeriodDays": 10 } */\n'
+        theme = '  // テーマを選んだ理由\n  "theme": "dark",'
+        source = prefix + json.dumps(settings, indent=2).removesuffix("\n}") + ",\n" + theme + "\n}\n"
+        path.write_text(source, encoding="utf-8-sig")
+
+        assert mod.run().changed
+        written = path.read_bytes()
+        assert written.startswith(codecs.BOM_UTF8)
+        text = path.read_text(encoding="utf-8-sig")
+        assert prefix in text
+        assert theme in text
+        assert pytilpack.jsonc.loads(text) == {**settings, "theme": "dark", "cleanupPeriodDays": 180}
+        assert not mod.run().changed
+        assert path.read_bytes() == written
+
+    @pytest.mark.parametrize(
+        ("latest", "expected"),
+        [
+            (
+                '{ /* new reason */ "theme": "light", "limit": 6 }',
+                '{ "cleanupPeriodDays": 180, /* new reason */ "theme": "light", "limit": 9 }',
+            ),
+            (
+                '{ /* new reason */ "theme": "light", "limit": 6.0 }',
+                '{ "cleanupPeriodDays": 180, /* new reason */ "theme": "light", "limit": 9 }',
+            ),
+            (
+                '{ /* new reason */ "theme": "light", "limit": 6E+0, "cleanupPeriodDays": 3e1 }',
+                '{ /* new reason */ "theme": "light", "limit": 9, "cleanupPeriodDays": 180 }',
+            ),
+            (
+                '{ /* keep */ "cleanupPeriodDays": 180, "extra": {}, "limit": 6 }',
+                '{ /* keep */ "cleanupPeriodDays": 180, "extra": {}, "limit": 9 }',
+            ),
+            (
+                '{ /* already saved */ "cleanupPeriodDays": 180.0, "limit": 9e0 }',
+                '{ /* already saved */ "cleanupPeriodDays": 180.0, "limit": 9e0 }',
+            ),
+            ('{ "renamed": 6 }', '{ "cleanupPeriodDays": 180, "limit": 9, "renamed": 6 }'),
+            ('{ "theme":', None),
+        ],
+        ids=[
+            "user-save",
+            "decimal",
+            "exponent",
+            "days-already-set",
+            "both-already-set",
+            "renamed",
+            "invalid",
+        ],
+    )
+    def test_run_merges_only_pending_changes_into_latest_save(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, latest: str, expected: str | None
+    ) -> None:
+        path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180, "limit": 9})
+        path.write_text('{ /* old reason */ "theme": "dark", "limit": 6 }', encoding="utf-8")
+        _save_after_read(monkeypatch, path, latest)
+        outcome = mod.run()
+        assert (outcome.failure is None) == (expected is not None)
+        assert path.read_bytes() == (latest if expected is None else expected).encode()
+
+    @pytest.mark.parametrize("platform", ["linux", "win32"])
+    @pytest.mark.parametrize(
+        ("before", "reorder"),
+        [("60000.0", False), ("6e4", False), ("60000", True)],
+        ids=["decimal", "exponent", "sorted-keys"],
+    )
+    def test_run_merges_missing_managed_keys_after_normalizing_save(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        pytestconfig: pytest.Config,
+        platform: str,
+        before: str,
+        reorder: bool,
+    ) -> None:
+        path = tmp_path / "settings.json"
+        monkeypatch.setattr(mod, "_SETTINGS_PATH", path)
+        monkeypatch.setattr(mod, "_CONFIG_PATH", tmp_path / "claude.json")
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: pytestconfig.rootpath)
+        monkeypatch.setattr(mod, "sys", SimpleNamespace(platform=platform))
+        assert mod.run().changed
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        del settings["cleanupPeriodDays"], settings["awaySummaryEnabled"]
+        settings.update(theme="夜", bashOutputMaxChars=60000)
+        source = json.dumps(settings, ensure_ascii=False)
+        path.write_text(source.replace('"bashOutputMaxChars": 60000', '"bashOutputMaxChars": ' + before), encoding="utf-8")
+        latest = json.dumps(settings, ensure_ascii=False, sort_keys=reorder)
+        _save_after_read(monkeypatch, path, "/* テーマを保つ */ " + latest)
+
+        outcome = mod.run()
+        assert outcome.changed and outcome.failure is None
+        saved = path.read_text(encoding="utf-8")
+        assert "/* テーマを保つ */" in saved
+        assert pytilpack.jsonc.loads(saved) == {
+            **settings,
+            "cleanupPeriodDays": 180,
+            "awaySummaryEnabled": False,
+            "bashOutputMaxChars": 62000,
+        }
+        assert not mod.run().changed
+        assert path.read_text(encoding="utf-8") == saved
+
+    def test_structural_update_uses_latest_user_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        managed = {"permissions": {"defaultMode": "auto"}, "cleanupPeriodDays": 180}
+        path = _setup_run_paths(tmp_path, monkeypatch, managed)
+        path.write_text('{"permissions": {}, "user": true}', encoding="utf-8")
+        _save_after_read(monkeypatch, path, '{"user": 1, "theme": "light", "permissions": {}}')
+
+        outcome = mod.run()
+        assert outcome.changed and outcome.failure is None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data == {**managed, "theme": "light", "user": 1}
+        assert not isinstance(data["user"], bool)
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
+    def test_retention_insertion_with_scalar_updates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newline: str
+    ) -> None:
+        managed = {"language": "japanese", "permissions": {"defaultMode": "auto"}, "bashOutputMaxChars": 62000}
+        path = _setup_run_paths(tmp_path, monkeypatch, {**managed, "cleanupPeriodDays": 180})
+        source = (
+            '// { "language": "old" }\n{\n'
+            '    "language": "english", // english\n'
+            '    "permissions": {"defaultMode" : "plan"},\n'
+            '    "bashOutputMaxChars": 60000,\n'
+            '    "user": {"defaultMode": "plan", "n": 60000},\n}\n'
+        )
+        expected = (
+            source.replace('{\n    "language"', '{\n    "cleanupPeriodDays": 180,\n    "language"')
+            .replace('"english"', '"japanese"')
+            .replace('"plan"', '"auto"', 1)
+            .replace("60000", "62000", 1)
+        )
+        path.write_bytes(source.replace("\n", newline).encode("utf-8-sig"))
+        assert mod.run().changed
+        assert path.read_bytes() == expected.replace("\n", newline).encode("utf-8-sig")
+        assert not mod.run().changed
+
+    def test_add_to_empty_jsonc(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180})
+        path.write_bytes(b"// {\r\n{\r\n  /* empty */\r\n}\r\n")
+        assert mod.run().changed
+        assert path.read_bytes() == b'// {\r\n{\r\n  "cleanupPeriodDays": 180\r\n  /* empty */\r\n}\r\n'
+
+    def test_run_leaves_invalid_jsonc_untouched(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180})
+        source = b'{\n  // incomplete value\n  "theme":\n}\n'
+        path.write_bytes(source)
+        with pytest.raises(json.JSONDecodeError):
+            mod.run()
+        assert path.read_bytes() == source
 
     @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
-    @pytest.mark.parametrize("add_key", [False, True], ids=["scalar", "full-rewrite"])
+    @pytest.mark.parametrize("add_key", [False, True], ids=["scalar", "add-keys"])
     def test_update_preserves_file_encoding(self, tmp_path: Path, encoding: str, add_key: bool):
         """どちらの書き戻しでもBOMの有無とユーザー設定を保ち、値だけの更新ではコメントも残す。"""
-        managed = {"language": "english"}
+        managed: dict[str, str | int] = {"language": "english"}
         if add_key:
-            managed["newKey"] = "newValue"
+            managed.update({"newKey": "newValue", "cleanupPeriodDays": 180})
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps(managed), encoding="utf-8")
         target_path = tmp_path / "settings.json"
@@ -314,7 +495,8 @@ class TestJsoncCommentPreservation:
         assert written.startswith(codecs.BOM_UTF8) == (encoding == "utf-8-sig")
         text = target_path.read_text(encoding=encoding)
         if add_key:
-            assert json.loads(text) == {**managed, "enabledPlugins": {"sample@local": False}}
+            assert "// ユーザーコメント" in text
+            assert pytilpack.jsonc.loads(text) == {**managed, "enabledPlugins": {"sample@local": False}}
         else:
             assert text == original.replace("japanese", "english")
         assert update_claude_settings(managed_path, target_path) is False

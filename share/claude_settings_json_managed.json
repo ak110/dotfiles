@@ -23,6 +23,7 @@
   },
   "awaySummaryEnabled": false,
   "bashOutputMaxChars": 62000,
+  "cleanupPeriodDays": 180,
   "dialogExpiry": "never",
   "disableClaudeAiConnectors": true,
   "enableArtifact": false,

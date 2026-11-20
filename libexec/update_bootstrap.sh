@@ -8,11 +8,29 @@ if ! command -v timeout >/dev/null; then
     printf '%s\n' 'timeoutが見つからないため更新を開始できません。coreutilsを導入して再実行してください。' >&2
     exit 127
 fi
+# 外側は端末の前景でCtrl+Cと期限を内側へ渡す。内側のtimeoutは段専用の
+# プロセス群を作り、応答しない子には10秒後にKILLを送る。
+# waitを担当する段が子孫を止めて戻るまで、呼出し元は終了しない。
+bootstrap_interrupted=0
+trap 'bootstrap_interrupted=1' INT
+timed_stage() {
+    local name=$1 limit=$2
+    shift 2
+    local wait_hint=''
+    case "$name" in 管理Pythonの更新 | 管理Pythonの導入) wait_hint='uvキャッシュの整理中は待つ場合があります。' ;; esac
+    printf '%s: %sCtrl+Cで中断できます。\n' "$name" "$wait_hint" >&2
+    local code=0
+    ((bootstrap_interrupted == 0)) || return 130
+    timeout --foreground "$limit" bash "$root/update_stage.sh" "$@" || code=$?
+    ((bootstrap_interrupted == 0)) || return 130
+    return "$code"
+}
 run_stage() {
     local name=$1 classification=$2 limit=$3
     shift 3
     local code=0
-    timeout --kill-after=10 "$limit" "$@" || code=$?
+    timed_stage "$name" "$limit" "$@" || code=$?
+    ((code != 130)) || exit 130
     if ((code != 0)); then
         UPDATE_DOTFILES_BOOTSTRAP_FAILURES+="$name: exit=$code"$'\n'
         if [[ "$name" == 'uvの自己更新' ]]; then
@@ -46,11 +64,17 @@ if [[ "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != 1 ]]; then
     run_stage '管理Pythonの更新' continue 900 "$uv_path" python install --upgrade 3.15
 fi
 # 前回の更新が始めたuvの整理がキャッシュを排他している間も待たないよう、キャッシュを使わずに解決する。
-if ! python_path="$(timeout --kill-after=10 60 "$uv_path" python find --no-cache 3.15)"; then
+find_python() {
+    timed_stage '管理Pythonの検索' 60 "$uv_path" python find --no-cache 3.15
+}
+python_path="$(find_python)" || {
+    [[ $? != 130 ]] || exit 130
     run_stage '管理Pythonの導入' abort 900 "$uv_path" python install 3.15 ||
         run_stage '管理Pythonの導入' abort 900 "$uv_path" python install 3.15
-    python_path="$(timeout --kill-after=10 60 "$uv_path" python find --no-cache 3.15)"
-fi
+    python_path="$(find_python)"
+}
 if [[ "$UPDATE_DOTFILES_BOOTSTRAP_FAILURES" == *'管理Pythonの更新'* && "$python_path" =~ 3\.15\.[0-9]+(a|b|rc)[0-9]+ ]]; then
     printf '%s\n' "残った管理Pythonはpre-releaseです: $python_path。次回起動時に更新を再試行します。" >&2
 fi
+trap - INT
+((bootstrap_interrupted == 0)) || exit 130

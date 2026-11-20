@@ -126,6 +126,7 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
         "skills/atk-mode/references/work-contract.md",
         "scripts/atk",
         "scripts/atk.cmd",
+        "scripts/atk.ps1",
     ):
         shutil.copyfile(source / relative, toolkit / relative)
     task = toolkit / "skills/atk-mode/roles/resource-probe.subagent.md"

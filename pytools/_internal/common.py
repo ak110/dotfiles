@@ -333,6 +333,7 @@ def run_subprocess(
                 "外部と通信するコマンドなら接続先へのネットワーク到達（プロキシ設定を含む）を、"
                 "それ以外なら同じ資源を使う他のプロセスが無いかを確かめてから`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return None
     except (OSError, subprocess.SubprocessError) as e:
@@ -345,6 +346,7 @@ def run_subprocess(
                 "呼び出し元へ失敗を返して処理を継続した。"
                 "表示されたコマンドの実行ファイル・引数とアクセス権を確認して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return None
 
@@ -375,6 +377,7 @@ def load_json_dict(
                     tag,
                     f"{path} の読み込みに失敗: {e}。このファイルの読み取り権限を修正して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         return None
     try:
@@ -387,6 +390,7 @@ def load_json_dict(
                     f"{path} の JSON 解析に失敗: {e}。"
                     "このファイルをトップレベルがオブジェクトのJSONへ修正して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         return None
     if not isinstance(data, dict):
@@ -397,6 +401,7 @@ def load_json_dict(
                     f"{path} がトップレベル dict でないためスキップ。"
                     "このファイルをトップレベルがオブジェクトのJSONへ修正して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         return None
     return cast("dict[str, object]", data)
@@ -420,6 +425,7 @@ def _atomic_write(
                     tag,
                     f"ディレクトリ作成に失敗: {e}。{path.parent}の書き込み権限を修正して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         return False
     tmp_path: Path | None = None
@@ -447,6 +453,7 @@ def _atomic_write(
                     "このファイルと親ディレクトリの書き込み権限を修正し、"
                     "ファイルを使用中のアプリを終了して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         if tmp_path is not None:
             with contextlib.suppress(OSError):
@@ -474,65 +481,57 @@ def atomic_write_bytes(path: Path, content: bytes, *, mode: int | None = None, t
     return _atomic_write(path, lambda tmp: tmp.write(content), binary=True, mode=mode, tag=tag)
 
 
+def json_values_equal(left: object, right: object) -> bool:
+    """JSONの値を比較する。Pythonの等値比較と異なり、入れ子でも真偽と数値を区別する。"""
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(json_values_equal(value, right[key]) for key, value in left.items())
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(json_values_equal(a, b) for a, b in zip(left, right, strict=True))
+    return isinstance(left, bool) == isinstance(right, bool) and left == right
+
+
 def _collect_value_only_updates(
     original: object,
     updated: object,
     path: tuple[str | int, ...] = (),
 ) -> dict[Sequence[str | int], object] | None:
-    """既存パスの値置換のみで済む差分を収集する。
-
-    `pytilpack.jsonc.edit` が扱える更新（既存パスの値書き換え）のみで
-    ``original`` から ``updated`` への変化を再現できる場合、
-    パス→新値のマッピングを返す。
-    構造変化（片方のみに存在するキー・list全体の差し替え・型変化）を
-    検出した場合は ``None`` を返し、呼び出し元にフォールバック（全書き換え）を促す。
-    ``list`` は要素同一（順序含む）でなければ構造変化として扱う。
-    """
-    if type(original) is not type(updated):
-        return None
-    if isinstance(original, dict):
-        assert isinstance(updated, dict)
-        original_dict = cast("dict[str | int, object]", original)
-        updated_dict = cast("dict[str | int, object]", updated)
-        if set(original_dict.keys()) != set(updated_dict.keys()):
+    """既存パスのスカラー置換を集める。構造変更が必要ならNoneを返す。"""
+    if isinstance(original, dict) and isinstance(updated, dict):
+        if original.keys() != updated.keys():
             return None
         result: dict[Sequence[str | int], object] = {}
-        for key in original_dict:
-            sub = _collect_value_only_updates(original_dict[key], updated_dict[key], (*path, key))
+        for key, value in original.items():
+            sub = _collect_value_only_updates(value, updated[key], (*path, key))
             if sub is None:
                 return None
             result.update(sub)
         return result
-    if isinstance(original, list):
-        if original != updated:
-            return None
+    if json_values_equal(original, updated):
         return {}
-    if original == updated:
-        return {}
+    if isinstance(original, (list, dict)) or isinstance(updated, (list, dict)):
+        return None
     return {path: updated}
 
 
-def _atomic_edit_jsonc(
-    path: Path,
-    updates: Mapping[Sequence[str | int], object],
-    *,
-    tag: str | None = None,
-) -> bool:
-    """JSONCファイルの既存パスの値を書き換えてコメント・空行・インデントを維持する。
+def _edit_jsonc_values(source: str, updates: Mapping[Sequence[str | int], object]) -> str:
+    """既存パスのスカラー値だけを置換し、BOMと各行の元の改行を維持する。"""
+    prefix = "\ufeff" if source.startswith("\ufeff") else ""
+    text = source.removeprefix(prefix)
+    # jsonc.editの行コメントはLFで終わる。スカラーのJSON表記は物理行を増減させない。
+    line_endings = iter(re.findall(r"\r\n?|\n", text))
+    edited = pytilpack.jsonc.edit(re.sub(r"\r\n?", "\n", text), updates)
+    return prefix + re.sub("\n", lambda _: next(line_endings), edited)
 
-    ``pytilpack.jsonc.edit`` で書き換えた結果を ``atomic_write_text`` で保存する。
-    ``updates`` が空の場合は書き込みをせず ``False`` を返す。
-    書き換え結果が元テキストと一致した場合も ``False`` を返す。
-    """
-    if not updates:
-        return False
-    original = path.read_text(encoding="utf-8")
-    prefix = "\ufeff" if original.startswith("\ufeff") else ""
-    text = original.removeprefix(prefix)
-    updated = pytilpack.jsonc.edit(text, updates)
-    if updated == text:
-        return False
-    return atomic_write_text(path, prefix + updated, tag=tag)
+
+def _insert_root_settings(source: str, additions: dict, *, has_members: bool) -> str:
+    """jsonc.editでは追加できないルートキーを、既存のメンバーとコメントの前へ挿入する。"""
+    # ルートの前に置かれたコメント内の「{」は挿入位置ではない。
+    tokens = re.finditer(r"//[^\r\n]*|/\*.*?\*/|\{", source, re.DOTALL)
+    start = next(token.end() for token in tokens if token[0] == "{")
+    rest = source[start:]
+    indent = rest[: len(rest) - len(rest.lstrip())]
+    entries = [f"{json.dumps(key)}: {json.dumps(value, ensure_ascii=False)}" for key, value in additions.items()]
+    return source[:start] + indent + ("," + indent).join(entries) + ("," if has_members else "") + rest
 
 
 def write_settings_hybrid(
@@ -541,26 +540,29 @@ def write_settings_hybrid(
     data: object,
     *,
     tag: str | None = None,
+    source: str | None = None,
     preserve_bom: bool = False,
 ) -> bool:
-    """マージ結果を対象ファイルへ書き戻すハイブリッド経路。
+    """既存のスカラー値はJSONC上で編集し、構造変更や編集できない場合はJSONで原子的に保存する。
 
-    既存パスの値置換のみで済む差分ならJSONCコメント・空行・インデントを維持する
-    経路（``_atomic_edit_jsonc``）で書き戻す。構造変化を含む場合やJSONC形式の
-    更新に失敗した場合は全書き換え経路（``json.dumps`` + ``atomic_write_text``）へ
-    フォールバックする。両経路とも原子的書き込みで統一しており、書き込み失敗時は
-    ``False`` を返す。``preserve_bom`` を指定すると全書き換えでも既存のUTF-8 BOMを保つ。
-
-    ``pytilpack.jsonc.edit`` は元テキストの再パース時に、コンカレントな他プロセス
-    書き込みでパス構造が変化した場合に ``KeyError``・``IndexError``・``TypeError``・
-    ``ValueError`` を送出する。これらを捕捉して全書き換え経路へ倒す。
+    合成元の本文を渡した場合は、その本文へのルートキーの追加でもコメントと改行を保つ。
+    本文を渡さない呼び出し元では従来どおり、スカラーの編集時にファイルを読み直す。
     """
-    updates: Mapping[Sequence[str | int], object] | None
-    updates = _collect_value_only_updates(original, data) if path.exists() else None
-    if updates:
-        with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
-            if _atomic_edit_jsonc(path, updates, tag=tag):
-                return True
+    unedited = source
+    if source is not None and isinstance(original, dict) and isinstance(data, dict):
+        additions = {key: value for key, value in data.items() if key not in original}
+        if additions:
+            source = _insert_root_settings(source, additions, has_members=bool(original))
+            original = original | additions
+    if source is not None or path.exists():
+        updates = _collect_value_only_updates(original, data)
+        if updates is not None:
+            with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
+                if source is None:
+                    source = unedited = path.read_text(encoding="utf-8", newline="")
+                if updates:
+                    source = _edit_jsonc_values(source, updates)
+                return source == unedited or atomic_write_bytes(path, source.encode("utf-8"), tag=tag)
     return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
 
 
@@ -582,6 +584,9 @@ def atomic_write_json(path: Path, data: object, *, tag: str | None = None, prese
             pass  # 新規ファイルはBOMなしのUTF-8で作る。
         except OSError as error:
             if tag is not None:
-                logger.info(log_format.format_status(tag, f"{path} のBOMを確認できないため書き込めません: {error}"))
+                logger.info(
+                    log_format.format_status(tag, f"{path} のBOMを確認できないため書き込めません: {error}"),
+                    extra=log_format.SHOW,
+                )
             return False
     return atomic_write_text(path, content, tag=tag)

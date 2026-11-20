@@ -56,6 +56,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     "SendTo",
                     f"ターゲット未配置のためスキップ: {target}。`update-dotfiles`を再実行してpytoolsを導入する",
                 ),
+                extra=log_format.SHOW,
             )
             continue
         if _is_up_to_date(lnk, target):

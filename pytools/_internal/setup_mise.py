@@ -43,6 +43,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     "未検出のためスキップ。"
                     "https://mise.jdx.dev/getting-started.html の手順でmiseを導入して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
             return post_apply_outcome.PostApplyOutcome()
 

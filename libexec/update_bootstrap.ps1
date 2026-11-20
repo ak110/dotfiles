@@ -25,6 +25,7 @@ function Test-PythonPatchPending {
 
 try {
     if (-not (Test-Path -LiteralPath $UvPath)) {
+        Write-UpdateError 'uvの導入: Ctrl+Cで中断できます。'
         $env:UV_INSTALL_DIR = Split-Path -Parent $UvPath
         $env:UV_NO_MODIFY_PATH = '1'
         # 自己更新補助と同じ公式の導入経路を使う。
@@ -35,7 +36,9 @@ try {
     }
     try {
     if (-not $PrepareOnly -and $env:AGENT_TOOLKIT_PROCESS_LOOP_SESSION -ne '1') {
+        Write-UpdateError 'uvの自己更新: Ctrl+Cで中断できます。'
         [void](Invoke-UpdateStage 'uvの自己更新' continue 300 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'update_uv.ps1'), $UvPath))
+        Write-UpdateError '管理Pythonの更新: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。'
         $excluded = @($PID)
         $processes = @(Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction Stop)
         $ancestor = $PID
@@ -90,11 +93,14 @@ try {
         Write-UpdateError ("管理Pythonの更新を完了できませんでした: $_。既存版で続行し、次回起動時に再試行します。")
     }
     # 前回の更新が始めたuvの整理がキャッシュを排他している間も待たないよう、キャッシュを使わずに解決する。
+    Write-UpdateError '管理Pythonの検索: Ctrl+Cで中断できます。'
     $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '--no-cache', '3.15') -Probe
     if ($findCode -ne 0) {
+        Write-UpdateError '管理Pythonの導入: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。'
         try { [void](Invoke-UpdateStage '管理Pythonの導入' abort 900 $UvPath @('python', 'install', '3.15')) }
         catch [System.TimeoutException] { throw }
         catch { [void](Invoke-UpdateStage '管理Pythonの導入' abort 900 $UvPath @('python', 'install', '3.15')) }
+        Write-UpdateError '管理Pythonの検索: Ctrl+Cで中断できます。'
         $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '--no-cache', '3.15') -Probe
         if ($findCode -ne 0) { throw '使える3.15がありません。uv python install 3.15を実行してください。' }
     }

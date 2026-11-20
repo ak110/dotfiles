@@ -1,6 +1,7 @@
 import { automatedMessage } from "./automated_message.ts";
 
-export const turnEndAfterDelivery = "最後の送達に成功したら、送達の確認や要約は書かず、通常の対話は`…`だけで閉じる。";
+export const turnEndAfterDelivery = "回答を求める質問・選択は、ツール一覧に`AskUserQuestion`があればそれで尋ね、なければmessageで送る。" +
+  "最後の送達に成功し、次に尋ねることもなければ、送達の確認や要約は書かず、通常の対話は`…`だけで閉じる。";
 
 // `AWI化ステータス`の値ごとに、理由の先頭に置く区分名と、区分名で始まらない場合の警告を対応付ける。
 // 書式と区分の定義元は`skills/atk-mode/playbooks/main-reporting.md`「進捗報告」にある。警告は区分を本文に挙げ、定義元を読まずに直せるようにする。

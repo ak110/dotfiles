@@ -10,6 +10,12 @@ class PostApplyNotice:
     message: str
     command: str | None = None
 
+    def render(self) -> str:
+        """本文にないコマンドだけを次の行へ字下げして示す。"""
+        if self.command is None or f"`{self.command}`" in self.message:
+            return self.message
+        return f"{self.message}\n    {self.command}"
+
 
 @dataclass(frozen=True)
 class PostApplyOutcome:

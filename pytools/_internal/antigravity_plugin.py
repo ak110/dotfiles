@@ -153,12 +153,13 @@ def sync(root: Path, plugin_name: str = "agent-toolkit") -> bool:
     for path in target.rglob("*"):
         if (path.is_file() or path.is_symlink()) and path.relative_to(target) not in expected:
             path.unlink()
-            changed = True
+            # 配布物に含めない実行時キャッシュの削除は、プラグイン自体の更新ではない。
+            if not _EXCLUDED.intersection(path.relative_to(target).parts):
+                changed = True
     # 廃止したスキルなど、配布物が無くなったディレクトリを残さない。
     for path in sorted(target.rglob("*"), reverse=True):
         if path.is_dir() and not path.is_symlink() and not any(path.iterdir()):
             path.rmdir()
-            changed = True
     for relative, (data, mode) in expected.items():
         path = target / relative
         # atomic_write_bytesのmode適用はUnixのみ。Windowsでも同じ比較条件で再同期を判定する。

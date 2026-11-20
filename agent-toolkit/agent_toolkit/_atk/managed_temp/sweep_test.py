@@ -13,11 +13,12 @@ import stat
 import subprocess
 import sys
 import typing
+from types import SimpleNamespace
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.managed_temp import paths, permissions, sweep
+from agent_toolkit._atk.managed_temp import paths, permissions, resources, sweep
 from agent_toolkit._common import file_lock, plugin_root_leases, state_paths
 
 pytestmark = pytest.mark.windows
@@ -110,6 +111,28 @@ def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None
     assert not record.exists()
 
 
+@pytest.mark.parametrize("whole_removal_fails", [False, True])
+def test_expired_area_reclaims_cache_even_if_whole_removal_fails(
+    monkeypatch: pytest.MonkeyPatch, whole_removal_fails: bool
+) -> None:
+    area = _area("session-expired", days=8, files={"cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+
+    if whole_removal_fails:
+
+        def refuse(_path: pathlib.Path) -> None:
+            raise PermissionError("busy handoff")
+
+        monkeypatch.setattr(sweep, "remove_tree", refuse)
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    if whole_removal_fails:
+        assert result.failed == ((area, "busy handoff"),)
+        assert area.is_dir() and result.deleted == [area / "cache"]
+    else:
+        assert not result.failed and result.deleted == [area]
+    assert not (area / "cache").exists()
+
+
 @pytest.mark.skipif(
     os.scandir not in os.supports_fd or os.open not in os.supports_dir_fd, reason="記述子による相対名の走査を提供しない環境"
 )
@@ -197,13 +220,13 @@ def test_legacy_state_is_collected_individually() -> None:
 def _count_walks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
     """配下の走査を受けた対象を記録するリストを返す。"""
     walks: list[pathlib.Path] = []
-    original = sweep._latest_update_and_worktree  # pylint: disable=protected-access
+    original = sweep._inspect_tree  # pylint: disable=protected-access
 
-    def counting(path: pathlib.Path, now_ns: int) -> tuple[int, bool]:
+    def counting(path: pathlib.Path, now_ns: int, times: sweep.CleanupTimes) -> tuple[int, bool, int]:
         walks.append(path)
-        return original(path, now_ns)
+        return original(path, now_ns, times)
 
-    monkeypatch.setattr(sweep, "_latest_update_and_worktree", counting)
+    monkeypatch.setattr(sweep, "_inspect_tree", counting)
     return walks
 
 
@@ -259,7 +282,7 @@ def test_sweep_record_write_failure_does_not_stop_atk(monkeypatch: pytest.Monkey
 
     assert result == sweep.SweepResult([area], ())
     record_directory = paths.state_root() / ".sweep"
-    assert not record_directory.exists() or not list(record_directory.iterdir())
+    assert {entry.name for entry in record_directory.iterdir()} == {"pressure.lock"}
     later = _area("later-abc", days=8)
     assert later in managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=1)).deleted
 
@@ -473,7 +496,11 @@ def test_sweep_recovers_unreadable_owned_tree_and_restores_retained_modes(
     locked.chmod(0)
     try:
         result = managed_temp.sweep_managed_temp(now=_NOW)
-        assert not result.failed
+        # 使用中なら探索せず、親ごと回収できた場合も、対処が必要な失敗は残らない。
+        if protection in {"fresh", "worktree"} and not os.access(locked, os.R_OK):
+            assert [target for target, _reason in result.failed] == [locked]
+        else:
+            assert not result.failed
         assert (area in result.deleted) is (protection == "expired")
         assert area.exists() is (protection != "expired")
         if protection != "expired":
@@ -530,6 +557,13 @@ def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatc
     # 容量1000のうち使用1600B相当ではなく、空きが10%（100）を割るよう基準の空きを設定する。
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 1700, paths.temp_root()))
 
+    tree_bytes = sweep._tree_bytes  # pylint: disable=protected-access
+
+    def measure(path: pathlib.Path) -> int:
+        assert path != newer, "先頭の回収で下限に戻るのに、残りの木を容量計測のため再走査した"
+        return tree_bytes(path)
+
+    monkeypatch.setattr(sweep, "_tree_bytes", measure)
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
     assert result.pressure is not None
@@ -541,12 +575,283 @@ def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatc
     assert newer.exists()
 
 
+def test_pressure_reclaims_newly_expired_session_between_daily_sweeps(monkeypatch: pytest.MonkeyPatch) -> None:
+    _first_sweep_done()
+    session = managed_temp.resolve_session_temp("expired-between-sweeps")
+    mib = 1024 * 1024
+    (session / "payload").write_bytes(b"x" * (4 * mib))
+    _age(session, 7)
+    disk = _FakeDisk(100 * mib, 12 * mib, paths.temp_root())
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    assert not managed_temp.sweep_managed_temp(now=_NOW).deleted
+    result = managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(hours=2))
+    assert result.deleted == [session] and not result.failed and not session.exists()
+    assert result.pressure is not None and result.pressure.free_after == 12 * mib
+
+
+@pytest.mark.parametrize("age_days", [8, 7])
+@pytest.mark.parametrize("first", ["daily", "pressure"])
+@pytest.mark.parametrize("next_daily", [False, True], ids=["next-start", "next-day"])
+def test_cache_removal_does_not_renew_session(
+    monkeypatch: pytest.MonkeyPatch, age_days: int, first: str, next_daily: bool
+) -> None:
+    """7日ちょうどなら記録だけを残し、内部キャッシュを回収した時刻で期限を延ばさない。"""
+    if first == "pressure":
+        _first_sweep_done()
+    session = _area(
+        "old-prefix-abc",
+        days=age_days,
+        files={"scratch/cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"},
+    )
+    reference = paths.state_root() / ".sessions" / hashlib.sha256(b"cache-clock").hexdigest()
+    reference.parent.mkdir()
+    reference.write_text(json.dumps({"path": str(session)}), encoding="utf-8")
+    mib = 1024 * 1024
+    record = session / "handoff"
+    record.write_bytes(b"x" * (5 * mib))
+    cache = session / "scratch/cache"
+    (cache / "data").write_bytes(b"c" * mib)
+    _age(session, 8)
+    # 最後の利用が回収される側にあっても、その時刻から7日間は再開できる。
+    _age(cache / "data", age_days)
+    disk = _FakeDisk(100 * mib, 13 * mib, paths.temp_root())
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+
+    initial = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not initial.failed and not cache.exists()
+    if age_days == 7:
+        assert managed_temp.find_session_temp("cache-clock") == session
+        assert record.read_bytes() == b"x" * (5 * mib)
+        assert disk(session).free == 8 * mib
+    else:
+        assert disk(session).free == 13 * mib
+
+    later = _NOW + (datetime.timedelta(days=1) if next_daily else datetime.timedelta(minutes=70))
+    assert not managed_temp.sweep_managed_temp(now=later).failed
+    assert not session.exists() and disk(session).free == 13 * mib
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["daily", "forced"])
+def test_overlapping_sweeps_do_not_renew_session(monkeypatch: pytest.MonkeyPatch, force: bool) -> None:
+    session = _area(
+        "session-boundary",
+        days=7,
+        files={
+            **{f"cache-{i}/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55" for i in range(2)},
+            "handoff": "keep",
+        },
+    )
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=6))
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    overlapping: list[sweep.SweepResult] = []
+    remove = shutil.rmtree
+
+    def remove_with_competing_sweep(cache: pathlib.Path) -> None:
+        remove(cache)
+        if not overlapping:
+            # 親の更新時刻を記録する前に、別の起動が2個目を消せる順序を再現する。
+            with monkeypatch.context() as inner:
+                inner.setattr(resources, "shutil", SimpleNamespace(rmtree=remove))
+                overlapping.append(managed_temp.sweep_managed_temp(now=_NOW, force=force))
+
+    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=remove_with_competing_sweep))
+    first = managed_temp.sweep_managed_temp(now=_NOW, force=force)
+    assert (session / "handoff").read_text(encoding="utf-8") == "keep"
+    assert overlapping == [sweep.SweepResult([], ())]
+    assert not first.failed and set(first.deleted) == {session / "cache-0", session / "cache-1"}
+    assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=70)).deleted == [session]
+
+
+def test_pressure_recognizes_legacy_session_marker_without_reference(monkeypatch: pytest.MonkeyPatch) -> None:
+    _first_sweep_done()
+    session = _area("old-prefix-abc", days=3, files={"handoff": "keep"})
+    marker = session / paths.LEGACY_MARKER_NAME
+    marker.write_text(json.dumps({"path": str(session), "session_id": "old-session", "schema_version": 6}), encoding="utf-8")
+    _age(session, 3)
+    # この領域を消せば空きの下限に戻る場合も、会話の記録を7日以内には消さない。
+    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 50 + marker.stat().st_size + 4, paths.temp_root()))
+    assert not managed_temp.sweep_managed_temp(now=_NOW).deleted
+    assert (session / "handoff").read_text(encoding="utf-8") == "keep"
+    assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(days=5), force=True).deleted == [session]
+
+
+@pytest.mark.parametrize("descriptor_walk", [False, True])
+@pytest.mark.parametrize("change", ["write-during", "rename-during", "rename-after"])
+def test_cache_removal_keeps_a_concurrent_handoff(monkeypatch: pytest.MonkeyPatch, change: str, descriptor_walk: bool) -> None:
+    monkeypatch.setattr(
+        sweep, "_DESCRIPTOR_WALK", descriptor_walk and os.scandir in os.supports_fd and os.open in os.supports_dir_fd
+    )
+    session = _area(
+        "session-resumed",
+        days=7,
+        files={"handoff": "original", "cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55"},
+    )
+    record = session / "handoff"
+    now = datetime.datetime.now(datetime.UTC)
+    _set_times(record, (now - datetime.timedelta(days=6, hours=23)).timestamp())
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    original_rmtree = shutil.rmtree
+
+    def remove_and_resume(path: pathlib.Path) -> None:
+        original_rmtree(path)
+        if change == "write-during":
+            record.write_text("resumed", encoding="utf-8")
+        elif change == "rename-during":
+            record.rename(session / "renamed")
+
+    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=remove_and_resume))
+    assert managed_temp.sweep_managed_temp(now=now).deleted == [session / "cache"]
+    if change == "rename-after":
+        record.rename(session / "renamed")
+    current = record if change == "write-during" else session / "renamed"
+    timestamp = current.stat().st_mtime_ns
+    assert not managed_temp.sweep_managed_temp(now=now + datetime.timedelta(days=1)).deleted
+    assert current.read_text(encoding="utf-8") == ("resumed" if change == "write-during" else "original")
+    assert current.stat().st_mtime_ns == timestamp
+
+
+def test_cleanup_time_evidence_expires_or_can_be_lost(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = datetime.datetime.now(datetime.UTC)
+    cache = _area(
+        "session-cache", days=0, files={"cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55", "record": "keep"}
+    )
+    stamp = (now - datetime.timedelta(days=6, hours=23)).timestamp()
+    for entry in [*cache.rglob("*"), cache]:
+        _set_times(entry, stamp)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    assert managed_temp.sweep_managed_temp(now=now).deleted == [cache / "cache"]
+    receipts = paths.state_root() / ".sweep/cache-parents"
+    (receipt,) = receipts.iterdir()
+    name = receipt.name
+    receipt.unlink()
+    assert not managed_temp.sweep_managed_temp(now=now + datetime.timedelta(days=1), force=True).deleted
+    assert (cache / "record").read_text(encoding="utf-8") == "keep"
+    (receipts / name).touch()
+    assert managed_temp.sweep_managed_temp(now=now + datetime.timedelta(days=8), force=True).deleted == [cache]
+    assert not list(receipts.iterdir())
+
+
+def test_pressure_rechecks_expired_session_after_another_removal(monkeypatch: pytest.MonkeyPatch) -> None:
+    _first_sweep_done()
+    first = _area("old-scratch", days=9)
+    session = _area("session-resumed", days=8)
+    record = session / "payload.txt"
+    original_remove = sweep.remove_tree
+
+    def resume_during_removal(path: pathlib.Path) -> None:
+        original_remove(path)
+        if path == first:
+            record.write_text("resumed", encoding="utf-8")
+
+    monkeypatch.setattr(sweep, "remove_tree", resume_during_removal)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=7))
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not result.failed and result.deleted == [first]
+    assert record.read_text(encoding="utf-8") == "resumed"
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["between-daily-sweeps", "forced"])
+@pytest.mark.parametrize("disk_mib", [80, 128], ids=["reachable", "unreachable"])
+def test_pressure_reclaims_tagged_root_before_unclassified(monkeypatch: pytest.MonkeyPatch, force: bool, disk_mib: int) -> None:
+    _first_sweep_done()
+    mib = 1024 * 1024
+    cache = _area("standalone", days=2, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+    (cache / "data").write_bytes(b"x" * (8 * mib))
+    _age(cache, 2)
+    unknown = _area("unclassified", days=3, files={"CACHEDIR.TAG": "not a cache tag"})
+    disk = _FakeDisk(disk_mib * mib, 10 * mib, paths.temp_root())
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=force)
+
+    assert result.deleted == [cache] and not result.failed and not cache.exists()
+    assert result.pressure is not None and result.pressure.still_low == (disk_mib == 128)
+    assert result.pressure.free_after - result.pressure.free_before >= 8 * mib
+    assert unknown.is_dir()
+
+
+@pytest.mark.parametrize("references_known", [True, False], ids=["busy", "unknown"])
+def test_pressure_keeps_tagged_root_unless_unused(monkeypatch: pytest.MonkeyPatch, references_known: bool) -> None:
+    _first_sweep_done()
+    cache = _area("standalone", days=2, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=8))
+    monkeypatch.setattr(resources, "process_references", lambda: [cache / "active"] if references_known else None)
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not result.deleted and not result.failed and cache.exists()
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["between-daily-sweeps", "forced"])
+@pytest.mark.parametrize("disk_mib", [16, 128], ids=["recoverable", "external-shortage"])
+def test_pressure_preserves_resume_records_but_reclaims_session_cache(
+    monkeypatch: pytest.MonkeyPatch, force: bool, disk_mib: int
+) -> None:
+    _first_sweep_done()
+    session = managed_temp.resolve_session_temp("weekend")
+    contract = session / "work-contract.md"
+    contract.write_text("再開条件", encoding="utf-8")
+    handoff = session / "notes" / "引き継ぎ"
+    handoff.parent.mkdir()
+    handoff.write_bytes(b"only copy")
+    cache = session / "scratch" / "cache"
+    cache.mkdir(parents=True)
+    (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n", encoding="ascii")
+    payload_size = 1024 * 1024
+    (cache / "data").write_bytes(b"x" * payload_size)
+    _age(session, 3)
+    disk = _FakeDisk(disk_mib * payload_size, 2 * payload_size, paths.temp_root())
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    free_before = disk(session).free
+
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=force)
+
+    assert result.deleted == [cache] and not result.failed
+    assert not cache.exists() and disk(session).free >= free_before + payload_size
+    if not force:
+        assert result.pressure is not None and result.pressure.reclaimed_bytes >= payload_size
+        assert result.pressure.free_after == disk(session).free
+    assert managed_temp.resolve_session_temp("weekend") == session
+    assert contract.read_text(encoding="utf-8") == "再開条件" and handoff.read_bytes() == b"only copy"
+    _age(session, 7)
+    assert session not in managed_temp.sweep_managed_temp(now=_NOW, force=True).deleted
+    assert session in managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(seconds=1), force=True).deleted
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["between-daily-sweeps", "forced"])
+def test_pressure_reports_unremoved_cache_in_legacy_session(monkeypatch: pytest.MonkeyPatch, force: bool) -> None:
+    _first_sweep_done()
+    session = _area(
+        "old-prefix-abc",
+        days=3,
+        files={"handoff.md": "keep", "cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"},
+    )
+    reference = paths.state_root() / ".sessions" / hashlib.sha256(b"old-session").hexdigest()
+    reference.parent.mkdir()
+    reference.write_text(json.dumps({"path": str(session)}), encoding="utf-8")
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=237, free=19))
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+
+    def refuse(cache: pathlib.Path) -> None:
+        raise PermissionError(f"permission denied: {cache}")
+
+    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=refuse))
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=force)
+
+    assert not result.deleted
+    assert len(result.failed) == 1 and result.failed[0][0] == session / "cache" and "permission denied" in result.failed[0][1]
+    assert result.pressure is not None and result.pressure.still_low
+    assert managed_temp.resolve_session_temp("old-session") == session
+    assert (session / "handoff.md").read_text(encoding="utf-8") == "keep"
+
+
 def test_normal_free_space_does_not_reclaim_or_scan(monkeypatch: pytest.MonkeyPatch) -> None:
     """空きが10%以上なら、間隔内の起動は何も回収せず走査もしない。"""
     _first_sweep_done()
     kept = _area("recent-abc", days=3)
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 0, 500))  # pylint: disable=protected-access
-    monkeypatch.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("全走査をした"))
+    monkeypatch.setattr(sweep, "_inspect_tree", lambda *_args: pytest.fail("全走査をした"))
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
@@ -605,14 +910,23 @@ def test_space_pressure_keeps_area_whose_owner_process_is_alive(monkeypatch: pyt
         finished.wait()
         dead_token = f"{finished.pid} "
     direct = _area("direct-abc", days=3, files={"big": "x" * 300, sweep.OWNER_FILE: sweep.owner_token()})
-    nested = _area("session-abc", days=3, files={"big": "x" * 300, f"atk-command-x/{sweep.OWNER_FILE}": sweep.owner_token()})
+    nested = _area(
+        "session-abc",
+        days=3,
+        files={
+            "cache/big": "x" * 300,
+            "cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n",
+            f"atk-command-x/{sweep.OWNER_FILE}": sweep.owner_token(),
+        },
+    )
+    monkeypatch.setattr(resources, "process_references", lambda: [])
     dead = _area("dead-abc", days=3, files={"big": "x" * 300, sweep.OWNER_FILE: dead_token})
-    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 1000, paths.temp_root()))
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=1000, free=50))
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
     assert result.pressure is not None
-    assert direct.exists() and nested.exists() and not dead.exists()
+    assert direct.exists() and (nested / "cache/big").is_file() and not dead.exists()
 
 
 def test_pressure_retry_interval_keeps_free_checks(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -630,7 +944,7 @@ def test_pressure_retry_interval_keeps_free_checks(monkeypatch: pytest.MonkeyPat
     assert first.pressure is not None and first.pressure.still_low
     calls = len(observed)
     with monkeypatch.context() as guarded:
-        guarded.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("再帰走査を反復した"))
+        guarded.setattr(sweep, "_inspect_tree", lambda *_args: pytest.fail("再帰走査を反復した"))
         guarded.setattr(sweep, "_tree_bytes", lambda *_args: pytest.fail("使用量計算を反復した"))
         for seconds in (0, 1, 299):
             assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(seconds=seconds)).pressure is None
@@ -651,7 +965,7 @@ def test_pressure_busy_lock_does_not_wait_or_scan(monkeypatch: pytest.MonkeyPatc
     """他の試行がロックを保持する間は待たず、共有領域の再帰走査を重ねない。"""
     _first_sweep_done()
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 950, 50))  # pylint: disable=protected-access
-    monkeypatch.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("並行走査した"))
+    monkeypatch.setattr(sweep, "_inspect_tree", lambda *_args: pytest.fail("並行走査した"))
     lock_path = paths.state_root() / ".sweep/pressure.lock"
     with lock_path.open("a+", encoding="utf-8") as locked:
         file_lock.acquire_lock(locked, blocking=False)

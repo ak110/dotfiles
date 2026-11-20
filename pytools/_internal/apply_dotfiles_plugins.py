@@ -6,7 +6,7 @@ from pathlib import Path
 
 import platformdirs
 
-from pytools._internal import common, post_apply_outcome
+from pytools._internal import common, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +105,15 @@ def _execute(plugin: Path, operation: str, argv: list[str], failures: list[str])
     result = common.run_subprocess(argv, cwd=plugin, env_overrides={"PYTHONIOENCODING": "utf-8:replace"})
     if result is not None:
         if result.stdout:
-            logger.info("%s %s stdout:\n%s", plugin.name, operation, result.stdout)
+            logger.info(
+                "%s %s stdout:\n%s",
+                plugin.name,
+                operation,
+                result.stdout,
+                extra=log_format.SHOW if operation == "post_apply.py" else None,
+            )
         if result.stderr:
-            logger.info("%s %s stderr:\n%s", plugin.name, operation, result.stderr)
+            logger.info("%s %s stderr:\n%s", plugin.name, operation, result.stderr, extra=log_format.SHOW)
     if result is None or result.returncode != 0:
         code = "起動失敗" if result is None else f"exit {result.returncode}"
         failures.append(f"{plugin.name}: {operation} ({code}): {common.format_cli_error(result)}")

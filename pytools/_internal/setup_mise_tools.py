@@ -100,6 +100,7 @@ def ensure_global_node(mise_bin: Path) -> bool:
                 "mise",
                 f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}。`mise use --global node@lts`を手動実行する",
             ),
+            extra=log_format.SHOW,
         )
         return False
 

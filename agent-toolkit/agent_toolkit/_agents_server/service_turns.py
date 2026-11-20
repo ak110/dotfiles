@@ -120,11 +120,12 @@ class TurnGate:
                 lambda: not any(ticket.session_id == session_id for ticket, _ in self._tickets.values())
             )
 
-    async def pause_session(self, session_id: str) -> None:
-        """後着の操作を未配送で返し、受理済みの操作だけを回収する。"""
+    async def pause_session(self, session_id: str, *, drain: bool = True) -> None:
+        """後着の操作を未配送で返す。同じ所有者で通知を再開する場合は配送済みの操作を待たない。"""
         async with self._condition:
             self._paused.add(session_id)
-        await self.drain_session(session_id)
+        if drain:
+            await self.drain_session(session_id)
 
     async def resume_session(self, session_id: str) -> None:
         """所有を変更していない移譲の失敗だけを解除する。"""

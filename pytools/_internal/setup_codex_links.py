@@ -33,7 +33,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 "codex links",
                 "dotfiles ルートが見つからずスキップ。リンクが不要なら対応不要です。"
                 "リンクを使う場合はdotfilesの作業ツリー内でupdate-dotfilesを実行してください。",
-            )
+            ),
+            extra=log_format.SHOW,
         )
         return post_apply_outcome.PostApplyOutcome()
 

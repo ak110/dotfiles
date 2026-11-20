@@ -201,9 +201,10 @@ def test_wait_collects_posttooluse_registered_result_and_releases_target(
         ("Bash", "C:/Users/x/dotfiles/agent-toolkit/scripts/atk.cmd agents wait"),
         ("Bash", r"'C:\Users\x\dotfiles\agent-toolkit\scripts\atk.cmd' agents wait"),
         ("PowerShell", r"& 'C:\Users\x\dotfiles\agent-toolkit\scripts\atk.cmd' agents wait"),
+        ("PowerShell", r"& 'C:\Users\x\dotfiles\agent-toolkit\scripts\atk.ps1' agents wait"),
     ],
 )
-def test_windows_atk_cmd_wait_clears_pending_observation(
+def test_windows_atk_wait_clears_pending_observation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool_name: str, command: str
 ) -> None:
     """Windows向け起動形の回収後はStopの未観測警告を解消する。"""

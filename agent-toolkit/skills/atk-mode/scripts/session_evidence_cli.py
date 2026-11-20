@@ -127,6 +127,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--allow-partial-records", action="store_true", help="破損行を欠測として保持して正常行を読む。")
     parser.add_argument("--failure-fixed-string", help="失敗したツール結果の固定文字列。--tool-callsと併用する。")
+    parser.add_argument(
+        "--saved-plan", action="append", metavar="GLOB", help="--statsで集計する保存済みのレーン計画（複数指定可）。"
+    )
+    parser.add_argument(
+        "--saved-rollout", action="append", metavar="GLOB", help="--statsで集計する同期間のCodex記録（複数指定可）。"
+    )
     scan = parser.add_mutually_exclusive_group()
     scan.add_argument("--scan-claude-projects", metavar="DIR", help="Claudeの複数projectを収納する絶対ディレクトリ。")
     scan.add_argument("--scan-codex-history", metavar="DIR", help="Codexの履歴を収納する絶対ディレクトリ。")

@@ -58,7 +58,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """mise管理版と重複するdotfiles外の導入物を削除する。"""
     mise = setup_mise_binary.find_mise_binary()
     if mise is None:
-        logger.info(log_format.format_status(_TAG, "miseが未導入のため対象なし。mise セットアップ工程の結果を確認する"))
+        logger.info(
+            log_format.format_status(_TAG, "miseが未導入のため対象なし。mise セットアップ工程の結果を確認する"),
+            extra=log_format.SHOW,
+        )
         return post_apply_outcome.PostApplyOutcome()
     managed = _managed_names(mise)
     layout = _host_layout()

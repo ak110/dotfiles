@@ -62,11 +62,17 @@ def state_root_path() -> pathlib.Path:
     return pathlib.Path(os.path.abspath(_state_root_path()))
 
 
-def _ensure_private_directory(path: pathlib.Path, label: str) -> pathlib.Path:
+def _ensure_private_directory(path: pathlib.Path, label: str, *, create: bool = True) -> pathlib.Path:
     """POSIXでは同一ユーザー所有で0700、Windowsでは継承するACLのディレクトリとして準備する。リンクと他者所有は拒否する。"""
     try:
-        path.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
-        metadata = path.lstat()
+        if create:
+            path.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            if create:
+                raise
+            return path
         if not stat.S_ISDIR(metadata.st_mode):
             raise ManagedTempError(
                 f"{label}が通常ディレクトリではない: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
@@ -89,9 +95,17 @@ def temp_root() -> pathlib.Path:
     return _ensure_private_directory(temp_root_path(), "一時ディレクトリのルート")
 
 
-def state_root() -> pathlib.Path:
-    """状態rootを準備して絶対パスを返す。"""
-    return _ensure_private_directory(state_root_path(), "外部状態ディレクトリ")
+def state_root(*, create: bool = True) -> pathlib.Path:
+    """状態rootの絶対パスを返す。既存の状態は検証し、掃引前の照会では不在のまま使う。"""
+    return _ensure_private_directory(state_root_path(), "外部状態ディレクトリ", create=create)
+
+
+def prepare_sweep_directory(root: pathlib.Path) -> pathlib.Path:
+    """掃引の記録先を作る。状態rootがまだ無い場合も所定のmodeで作る。"""
+    root.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
+    directory = root / ".sweep"
+    directory.mkdir(mode=private_directory.MODE, exist_ok=True)
+    return directory
 
 
 def is_link(metadata: os.stat_result) -> bool:

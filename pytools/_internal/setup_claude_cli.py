@@ -34,6 +34,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
                 f"導入と移行を次回へ延期: {setup_cli_common.describe_processes(running, 'Claude Code')}。"
                 "Claude Codeを終了して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return post_apply_outcome.PostApplyOutcome()
     if launcher.is_file():

@@ -334,6 +334,7 @@ def _worker(job: pathlib.Path) -> int:
                 raise OSError(ctypes.get_errno(), "更新workerの子孫所有を設定できません")
         ready = job / "prune-ready"
         env["DOTFILES_PRUNE_READY_FILE"] = str(ready)
+        print("更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。", file=sys.stderr, flush=True)
         code = _run_command(
             [uv, "run", "--no-project", "--script", str(_ROOT / "libexec/update_dotfiles.py"), *arguments], job, deadline, env
         )

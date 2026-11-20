@@ -29,6 +29,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.service_context import Conversation, ServiceManagers
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
+from agent_toolkit._agents_server.service_move_source import MoveSource
 from agent_toolkit._agents_server.service_projection import ProjectionHub
 from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._common import file_lock, runtime_environment, session_registry
@@ -116,6 +117,7 @@ class ServiceCoordinator:
         self._incoming: dict[str, dict] = {}
         self._received: dict[str, tuple[str, dict]] = {}
         self._uncertain: dict[str, str] = {}
+        self._pending_restores: dict[str, MoveSource] = {}
         self._contexts: set[str] = set()
         self._pending_adoptions: dict[str, dict] = {}
         self._supervisors: set[asyncio.Task[None]] = set()
@@ -417,7 +419,7 @@ class ServiceCoordinator:
             _LOG.error("準備の静止の解除で失敗しました", exc_info=error)
 
     async def tick(self) -> bool:
-        """受付が先に進んだ場合だけ、未終了の移譲を再確認する。"""
+        """未確定の旧所有者の復旧を再試行し、受付が先に進んでいれば終了した会話を移す。"""
         await self._retry_adoptions()
         retained = {identifier for item in self.managers.conversations.values() for identifier in item.manager.sessions} | set(
             self._pending_adoptions
@@ -442,6 +444,11 @@ class ServiceCoordinator:
             await run_file_operation(self.registry.restore)
         current = self._current()
         await self.gate.observe_current(current)
+        for identifier in tuple(self._pending_restores):
+            if self._conversation(identifier) is None:
+                del self._pending_restores[identifier]
+            elif not self._updates:
+                self._schedule_move(identifier)
         if current["generation"] == self.generation:
             return not self._updates
         for conversation in tuple(self.managers.conversations.values()):
@@ -709,11 +716,19 @@ class ServiceCoordinator:
                             next_action="showで状態を確認し、現在の処理の終了後に同じ入力を送る",
                         )
                     return await self.call_tool(context, params)
+            if isinstance(identifier, str) and identifier in self._pending_restores and (task := self._moving.get(identifier)):
+                # 巡回が予約した所有確認に合流する。照会自身は再試行を増やさない。
+                await asyncio.wait((task,))
             lock = (
                 self._locks.setdefault(identifier, asyncio.Lock()) if isinstance(identifier, str) else contextlib.nullcontext()
             )
             async with lock:
                 if isinstance(identifier, str):
+                    if identifier in self._pending_restores or identifier in self._uncertain:
+                        raise ActionableError(
+                            f"session {identifier}の所有を確認できず、要求は未配送です",
+                            next_action="管理サービスの登録簿で所有世代を確認し、通信の復旧後に再照会する",
+                        )
                     await self._finish_adoption(identifier)
                 next_turn = (
                     params.name == "start"
@@ -791,55 +806,46 @@ class ServiceCoordinator:
             session = manager.sessions[identifier]
             backend: Any = manager._backends.get(session.engine)
             current = self._current()
-            if current["generation"] == self.generation:
-                if self._updates:
-                    return {"moved": False}
-                # 公開元の終了などで受付先が自世代へ戻った。止めたままではこの会話のdecodeが再開しない。
-                with self.managers._bound(conversation):
-                    client = self._client(backend, identifier)
-                    if client is not None and client.transferred:
-                        auxiliary = await backend.export_service_state(identifier)
-                        descriptor = await client.detach()
-                        await self._restore_source(backend, session, descriptor, auxiliary)
+            source_is_current = current["generation"] == self.generation
+            if source_is_current and self._updates:
                 return {"moved": False}
-            if not self._ended_turn(session):
-                return {"moved": False}
-            await self.gate.pause_session(identifier)
             with self.managers._bound(conversation):
+                if pending := self._pending_restores.get(identifier):
+                    await self._restore_source(manager, pending)
+                    return {"moved": False}
+                if not source_is_current and not self._ended_turn(session):
+                    return {"moved": False}
                 client = self._client(backend, identifier)
-                descriptor = None
-                auxiliary = {}
-                if client is not None:
-                    auxiliary = await backend.export_service_state(identifier)
-                    client.pause()
-                    await self.gate.drain_session(identifier)
+                if source_is_current and (client is None or not client.transferred):
+                    return {"moved": False}
+                source = MoveSource(client, backend, session)
+                try:
+                    # 受付が戻った場合は、配送済みの要求を待たず同じclientの通知を復旧する。
+                    if not source_is_current:
+                        await self.gate.pause_session(identifier)
+                        source.client = self._client(backend, identifier)
+                    elif session.engine == "codex":
+                        await self.gate.pause_session(identifier, drain=False)
+                    await source.detach(self.gate, source_is_current=source_is_current)
+                except Exception, asyncio.CancelledError:
                     if session.engine == "codex":
-                        await backend._stop_auto_reset(identifier)
-                    descriptor = await client.detach()
+                        await self._restore_source(manager, source)
+                    raise
+                if source_is_current:
+                    await self._restore_source(manager, source)
+                    return {"moved": False}
                 # 切り離した後、移譲先が受入を予約するまでに失敗したら所有を移さず、実行資源と制御の受付を旧側へ戻す。
                 try:
-                    if client is not None and session.engine == "claude":
-                        tasks = [task for task, name in backend._task_sessions.items() if name == identifier]
-                        await asyncio.gather(*tasks)
-                    await manager.save_control_state()
-                    packet = {
-                        "transfer_id": uuid.uuid4().hex,
-                        "source": self.target,
-                        "parent": parent,
-                        "caller": _caller_payload(conversation.caller),
-                        "session": await service_state.snapshot(session),
-                        "resource": descriptor,
-                        "auxiliary": auxiliary,
-                        "writer_session_id": getattr(backend, "_writer_session_ids", {}).get(identifier),
-                    }
+                    await source.save_control_state(manager)
+                    packet = await source.packet(self.target, parent, _caller_payload(conversation.caller))
                     prepared = await service_rpc.request(current, "prepare_move", packet)
-                except Exception:
-                    await self._restore_source(backend, session, descriptor, auxiliary)
+                except Exception, asyncio.CancelledError:
+                    await self._restore_source(manager, source)
                     raise
                 if not prepared.get("prepared"):
-                    await self._restore_source(backend, session, descriptor, auxiliary)
+                    await self._restore_source(manager, source)
                     return {"moved": False}
-                if client is not None and not await client.resource.operation(
+                if (client := source.client) is not None and not await client.resource.operation(
                     "transfer",
                     expected_owner=client.resource.runtime.owner,
                     new_owner=current.get("server_instance", current["generation"]),
@@ -880,36 +886,36 @@ class ServiceCoordinator:
                                         expected_owner=current.get("server_instance", current["generation"]),
                                         new_owner=client.resource.runtime.owner,
                                     )
-                                await self._restore_source(backend, session, descriptor, auxiliary)
+                                await self._restore_source(manager, source)
                         if not accepted.get("owned"):
                             raise
                 if not accepted.get("owned"):
                     raise RuntimeError("移譲先が制御所有を確定しませんでした")
-                manager._cancel_retention_timer(identifier)
-                manager.sessions.pop(identifier, None)
-                if backend is not None:
-                    for name in (
-                        "_clients",
-                        "_sdk_clients",
-                        "_wait_compactors",
-                        "_service_compaction_checkpoints",
-                        "_writer_session_ids",
-                    ):
-                        getattr(backend, name, {}).pop(identifier, None)
+                source.forget(manager)
                 self._ended.pop(identifier, None)
                 self._ended_clients.pop(identifier, None)
                 await manager.save_control_state()
             return {"moved": True}
 
-    async def _restore_source(self, backend: Any, session: Any, descriptor: dict | None, auxiliary: dict) -> None:
-        if descriptor is not None:
-            assert self._runtime is not None
-            resource = service_io.Resource.attach(self._runtime, descriptor)
-            if not await resource.operation("transfer", expected_owner=self._runtime.owner, new_owner=self._runtime.owner):
-                self._uncertain[session.session_id] = "旧生I/Oの制御所有を確認できません"
-                raise RuntimeError(self._uncertain[session.session_id])
-            await backend.adopt_session(session, descriptor, auxiliary)
-        await self.gate.resume_session(session.session_id)
+    async def _restore_source(self, manager: Any, source: MoveSource) -> None:
+        identifier = source.session.session_id
+        if source.session.engine == "codex":
+            manager._service_paused.add(identifier)
+        try:
+            await source.confirm_owner(self._runtime)
+        except (PermissionError, RuntimeError, KeyError) as error:
+            self._pending_restores.pop(identifier, None)
+            self._uncertain[identifier] = str(error)
+            raise
+        except OSError, EOFError, asyncio.CancelledError:
+            if source.session.engine == "codex":
+                self._pending_restores[identifier] = source
+            raise
+        self._pending_restores.pop(identifier, None)
+        await source.restore()
+        await self.gate.resume_session(identifier)
+        if source.session.engine == "codex":
+            manager._service_paused.discard(identifier)
 
     def prepare_move(self, packet: dict) -> dict:
         """所有変更前の入力を検証し、モデルを実行しない非永続の受入予約を作る。"""

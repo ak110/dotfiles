@@ -87,7 +87,7 @@ def test_persistent_warning_once_per_session(
         assert raised.value.code == 0
         output = capsys.readouterr()
         assert json.loads(output.out)["cron"] == "result"
-        assert ("managed-tempの期限切れの対象を自動削除できなかった" in output.err) is expected
+        assert ("managed-tempの対象を自動削除できなかった" in output.err) is expected
         if expected:
             assert "persistent deletion failure" in output.err and str(failed) in output.err
 

@@ -3,17 +3,21 @@
 
 # pylint: disable=protected-access
 
+import errno
 import io
 import json
 import logging
+import os
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from agent_toolkit._atk.managed_temp import resources
+from agent_toolkit._atk.managed_temp import creation, paths, resources, sweep
 from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 
 from pytools import post_apply
-from pytools._internal import plugin_warmup, post_apply_outcome
+from pytools._internal import common, install_codex_plugins, plugin_warmup, post_apply_outcome, setup_herdr_cli
 from pytools._internal.post_apply_test_helpers import _isolate_sync_report as _isolate_sync_report
 from pytools._internal.post_apply_test_helpers import _isolate_update_log as _isolate_update_log
 
@@ -45,7 +49,27 @@ def test_persistent_log_redacts_plugin_output_only(capsys: pytest.CaptureFixture
     assert "[REDACTED]" in saved
 
 
+def test_warmup_pressure_keeps_weekend_contract(monkeypatch):
+    session = creation.resolve_session_temp("weekend")
+    contract = session / "work-contract.md"
+    contract.write_text("再開条件", encoding="utf-8")
+    stamp = time.time() - 3 * 86400
+    standalone = paths.temp_root() / "handoff.md"
+    standalone.write_text("引き継ぎ", encoding="utf-8")
+    for path in (contract, session, standalone):
+        os.utime(path, (stamp, stamp))
+    monkeypatch.delenv(sweep.MIN_FREE_RATIO_ENV, raising=False)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=237 * 1024**3, free=19 * 1024**3))
+
+    plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+
+    assert standalone.read_text(encoding="utf-8") == "引き継ぎ"
+    assert creation.find_session_temp("weekend") == session
+    assert contract.read_text(encoding="utf-8") == "再開条件"
+
+
 def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(tmp_path))
     monkeypatch.setattr(plugin_environment_cleanup, "_process_references", lambda: ([], False))
     current, old, broken = (tmp_path / "environments" / name for name in ("current-key", "old-key", "broken-key"))
@@ -56,11 +80,23 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     monkeypatch.setattr(plugin_environment, "record_source", lambda *args: None)
     monkeypatch.setattr(plugin_warmup.session_review, "sweep", lambda **kwargs: None)
 
-    def sweep(**_kwargs):
-        resources.log_retained([{"path": "resource-key", "reason": "使用中", "retryable": True}])
-        return plugin_warmup.sweep.SweepResult([tmp_path / "deleted-key"], ((tmp_path / "locked-key", "使用中"),))
+    area = paths.temp_root() / "cleanup-test"
+    for name in ("deleted-key", "busy-key", "denied-key"):
+        cache = area / name
+        cache.mkdir(parents=True)
+        (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n", encoding="ascii")
+    (area / "protected").symlink_to(current, target_is_directory=True)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    remove_tree = resources.shutil.rmtree
 
-    monkeypatch.setattr(plugin_warmup.sweep, "sweep_managed_temp", sweep)
+    def remove(cache: Path) -> None:
+        if cache.name == "denied-key":
+            raise PermissionError(errno.EACCES, "access denied", str(cache))
+        if cache.name == "busy-key":
+            raise OSError(errno.EBUSY, "resource busy", str(cache))
+        remove_tree(cache)
+
+    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=remove))
 
     with post_apply._configure_logging():
         plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([["python", "--project", "root"]]))
@@ -69,9 +105,93 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     assert "保持1件、削除1件、保留1件" in screen
     assert "update-dotfiles logs" in screen
     saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
-    assert "再生成物1件" in screen and "一時資源1件" in screen
-    for name in (current.name, old.name, broken.name, "resource-key", "deleted-key", "locked-key"):
+    assert "一時資源1件の回収を保留" in screen
+    assert "アクセス権" in captured.err
+    assert f"一時資源の回収を保留: {area / 'denied-key'}" in saved
+    assert f"一時資源の回収を保留: {area / 'busy-key'}" not in saved
+    for detail in ("再生成物2件", "保護対象を回収から除外", "一時資源を1件回収", "resource busy", "access denied"):
+        assert detail not in screen and detail in saved
+    for name in (current.name, old.name, broken.name, "busy-key", "deleted-key", "denied-key"):
         assert name not in screen and name in saved
+
+
+@pytest.mark.skipif(not hasattr(os, "O_PATH") or os.geteuid() == 0, reason="Linuxの非rootアカウントでアクセス拒否を再現する")
+@pytest.mark.parametrize(
+    ("blocked", "mode", "reason"),
+    [
+        ("project", 0o100, "走査不能"),
+        ("project/cache/CACHEDIR.TAG", 0, "再生成物の確認失敗"),
+        ("project/.venv", 0, "再生成物の確認失敗"),
+        ("project/cache", 0o500, "回収失敗"),
+    ],
+    ids=["walk", "tag-read", "marker-lookup", "remove"],
+)
+def test_update_reports_unresolved_permission_error_and_retries(blocked, mode, reason, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(tmp_path))
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    area = paths.temp_root() / "permission-test"
+    project = area / "project"
+    cache = project / (".venv" if blocked == "project/.venv" else "cache")
+    cache.mkdir(parents=True)
+    if cache.name == ".venv":
+        (cache / "pyvenv.cfg").touch()
+        (project / "uv.lock").touch()
+    else:
+        (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n", encoding="ascii")
+    restricted = area / blocked
+    original = restricted.stat().st_mode
+    restricted.chmod(mode)
+    try:
+        with post_apply._configure_logging():
+            plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+        screen = capsys.readouterr()
+        assert not screen.out and len(screen.err.splitlines()) == 1
+        assert "一時資源1件" in screen.err and "update-dotfiles logs" in screen.err
+        saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
+        assert any(
+            reason in line and str(restricted) in line and os.strerror(errno.EACCES) in line for line in saved.splitlines()
+        )
+    finally:
+        restricted.chmod(original)
+    assert cache.is_dir()
+    with post_apply._configure_logging():
+        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+    assert capsys.readouterr() == ("", "")
+    assert not cache.exists()
+
+
+def test_update_hides_success_but_preserves_manual_recovery(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
+    malformed = tmp_path / "settings.json"
+    malformed.write_text("{", encoding="utf-8")
+
+    def step():
+        logging.getLogger("update-test").info("成功した操作の明細")
+        assert common.load_json_dict(malformed, {}, tag="fixture") is None
+        return post_apply_outcome.PostApplyOutcome()
+
+    with pytest.raises(SystemExit) as result:
+        post_apply.main(runner=lambda: post_apply.run([("設定", step)]))
+    assert result.value.code == 0
+    screen = capsys.readouterr()
+    assert str(malformed) in screen.out and "再実行" in screen.out
+    log = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
+    for detail in ("成功した操作の明細", "[1/1] 設定", "完了: 更新", "post-apply終了"):
+        assert detail not in screen.out + screen.err and detail in log
+
+
+def test_actionable_notices_show_each_command_once(capsys):
+    with post_apply._configure_logging():
+        post_apply._print_post_apply_notices(
+            [
+                install_codex_plugins._CODEX_HOOK_TRUST_NOTICE,
+                setup_herdr_cli._deferred_notice(inside_session=True),
+            ]
+        )
+    screen = capsys.readouterr().err
+    assert screen.count("/hooks") == 1
+    assert "    herdr update" in screen.splitlines()
 
 
 def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:
