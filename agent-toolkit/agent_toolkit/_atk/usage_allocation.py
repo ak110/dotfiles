@@ -52,7 +52,7 @@ def choose(
     for engine in ("codex", "claude"):
         applicable = [w for w in windows if w.engine == engine and _applies(w, candidates, role)]
         margins = []
-        tight = False
+        pressure = ""
         unknown = not applicable
         for window in applicable:
             rate = rates.get(rate_key(window))
@@ -60,7 +60,8 @@ def choose(
             if used is None or not math.isfinite(used) or not 0 <= used <= 100:
                 unknown = True
                 continue
-            tight |= engine == "claude" and used >= 90
+            if engine == "claude" and used >= 90:
+                pressure = f"{window.window_id}の使用率{used:g}%が90%以上"
             if (
                 window.resets_at is None
                 or not math.isfinite(window.resets_at)
@@ -74,12 +75,15 @@ def choose(
                 continue
             demand = max(0, window.resets_at - now) * rate * activity_ratio
             margins.append((100 - used, demand))
-            tight |= demand > 100 - used
-        status[engine] = (tight, not unknown and bool(margins) and all(left >= demand * 1.2 for left, demand in margins))
-    result = [c for c in candidates if not (c[0] == "claude" and status["claude"][0] and role != "orchestrate")]
-    if not result:
-        raise ValueError("Claudeの利用枠がひっ迫し、利用できる候補がない")
-    preferred = "claude" if status["codex"][0] and status["claude"][1] else "codex"
+            if demand > 100 - used:
+                pressure = f"{window.window_id}の回復までの推定需要{demand:g}%が残量{100 - used:g}%を超過"
+        status[engine] = (pressure, not unknown and bool(margins) and all(left >= demand * 1.2 for left, demand in margins))
+    claude_pressure, claude_room = status["claude"]
+    codex_pressure, codex_room = status["codex"]
+    result = list(candidates)
+    if claude_pressure:
+        result.sort(key=lambda candidate: candidate[0] == "claude")
+    preferred = "claude" if codex_pressure and claude_room and not claude_pressure else "codex"
     if (
         previous in status
         and any(candidate[0] == previous for candidate in result)
@@ -92,9 +96,12 @@ def choose(
     if unavailable:
         preferred = result[0][0]
     result.sort(key=lambda candidate: candidate[0] != preferred)
+    if claude_pressure and any(candidate[0] == "claude" for candidate in candidates):
+        action = "他の候補を先に試す" if preferred != "claude" else "Claudeだけが設定されているためそのまま試す"
+        return result, f"Claudeの利用枠がひっ迫（{claude_pressure}）。{action}"
     reason = f"{preferred}優先"
     if unavailable:
         reason += "（推奨engineのモデル候補が未設定）"
-    if not status["codex"][1] and not status["claude"][1]:
+    if not codex_room and not claude_room:
         reason += "（余裕不明または不足）"
     return result, reason

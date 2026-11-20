@@ -81,7 +81,7 @@ def select_candidates(
         or config_settings.raw_mutable_setting(connection_key)
     )
     if "payg" in connections.split(","):
-        return candidates, "明示した追加課金接続を優先し、サブスクリプション残量による除外を停止する"
+        return candidates, "明示した追加課金接続を優先し、サブスクリプション残量で候補を並べ替えない"
     observed: dict[str, Any]
     try:
         observed = usage_observation.snapshot()
