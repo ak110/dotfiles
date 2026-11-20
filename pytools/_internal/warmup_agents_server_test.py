@@ -553,6 +553,8 @@ def test_service_start_keeps_stderr_when_child_cannot_write_files(tmp_path, capl
     assert "missing dependency XYZ" in caplog.text
 
 
+@pytest.mark.windows
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
 @pytest.mark.parametrize("failed", ["service-start", "publish", None])
 @pytest.mark.parametrize("inherited_job", [False, True])
 def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_output(
@@ -561,6 +563,7 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
     caplog: pytest.LogCaptureFixture,
     failed: str | None,
     inherited_job: bool,
+    newline: str,
 ) -> None:
     """常駐起動と確認用接続の両方から診断が出ても、確認用接続だけのJob警告は画面に出さない。"""
     root = tmp_path / "root"
@@ -570,6 +573,7 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
     probe = _probe_server(tmp_path, "ready", stderr=service_forward.INHERITED_JOB_WARNING + "\n短命な確認の診断\n")
     command = [sys.executable, str(probe), "--project", str(root)]
     deferred: list[str | None] = []
+    check_command = _warmup.plugin_warmup.check_command
 
     async def start_service(started: list[str], *, environment: dict[str, str], timeout: float):
         assert timeout > 0
@@ -578,7 +582,8 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
             stderr += service_forward.INHERITED_JOB_WARNING + "\n"
         deferred.append(environment.get(service_forward.DEFER_PUBLISH_ENV))
         code = 1 if failed == "service-start" else 0
-        return _warmup.plugin_warmup.CommandOutcome(started, subprocess.CompletedProcess(started, code, "", stderr), 0)
+        script = f"import sys; sys.stderr.reconfigure(newline={newline!r}); sys.stderr.write({stderr!r}); sys.exit({code})"
+        return await check_command([started[0], "-c", script], environment=environment, timeout=timeout)
 
     def publish(_caller: object, target: pathlib.Path, *, timeout: float) -> dict:
         assert target == root and timeout > 0
@@ -595,6 +600,8 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
         assert f"段階={failed}" in outcome.message
         assert "常駐起動の標準エラー" in caplog.text and "Traceback" in caplog.text
         assert ("短命な確認の診断" in caplog.text) is (failed == "publish")
+    if failed == "service-start":
+        assert "子の出力: 常駐起動の標準エラー" in outcome.message
     # 確認用の接続より先に、公開を保留して起動する。
     assert deferred == ["1"]
 

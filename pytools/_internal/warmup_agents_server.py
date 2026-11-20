@@ -181,10 +181,9 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
                 # 入力の無い転送側は、管理サービスをreadyにした後で接続せずに終了する。
                 # 常駐サービス自身のstderrは世代別ログへ向く。起動元だけのパイプを終了まで読む。
                 service = await plugin_warmup.check_command(command, environment=environment, timeout=remaining)
+                service_output = (service.result.stderr if service.result is not None else service.error).replace("\r\n", "\n")
                 if service.result is None:
-                    service_output = service.error
-                    raise RuntimeError(service.error.partition("\n")[0])
-                service_output = service.result.stderr
+                    raise RuntimeError(service_output.partition("\n")[0])
                 if not service.ok:
                     if service.result.stdout:
                         service_output += f"\nstdout: {service.result.stdout}"
