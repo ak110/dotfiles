@@ -162,7 +162,10 @@ def sync(root: Path, destination: Path) -> bool:
 def run() -> post_apply_outcome.PostApplyOutcome:
     """OpenCode CLIの導入後にグローバルスキルと入口の案内を同期する。"""
     if setup_opencode_cli.find_launcher() is None:
-        logger.info(log_format.format_status("OpenCode toolkit", "CLIが無いためスキップ。`update-dotfiles`で導入を再試行する"))
+        logger.info(
+            log_format.format_status("OpenCode toolkit", "CLIが無いためスキップ。`update-dotfiles`で導入を再試行する"),
+            extra=log_format.SHOW,
+        )
         return post_apply_outcome.PostApplyOutcome()
     root = common.find_dotfiles_root()
     if root is None:

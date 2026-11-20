@@ -55,6 +55,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
                 f"導入と移行を次回へ延期: {setup_cli_common.describe_processes(running, 'Codex')}。"
                 "Codexを終了して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return post_apply_outcome.PostApplyOutcome()
     result = _run_installer(client)

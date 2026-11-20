@@ -115,6 +115,7 @@ def setup(
                 log_tag,
                 f"実行ファイルが未配置: {executable_path}。`update-dotfiles`を再実行して実行ファイルを配置する",
             ),
+            extra=log_format.SHOW,
         )
         return False
     changed = _ensure_unit_content(unit_path, unit_content, log_tag)
@@ -209,6 +210,7 @@ def setup_timer(
                 log_tag,
                 f"実行ファイルが未配置: {executable_path}。`update-dotfiles`を再実行して実行ファイルを配置する",
             ),
+            extra=log_format.SHOW,
         )
         return False
 
@@ -279,6 +281,7 @@ def _report_linger_status(log_tag: str) -> None:
                 log_tag,
                 f"linger 無効: ログアウト中も常駐させるには `sudo loginctl enable-linger {user}` を手動実行する",
             ),
+            extra=log_format.SHOW,
         )
 
 

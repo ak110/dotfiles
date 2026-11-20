@@ -265,7 +265,7 @@ class TestPytoolsInstallNotices:
         (tmp_path / "notice.stdout.txt").write_text(captured.out, encoding="utf-8")
         (tmp_path / "notice.stderr.txt").write_text(captured.err, encoding="utf-8")
         assert expected in captured.err
-        assert "update-dotfiles" in captured.err.splitlines()
+        assert "    update-dotfiles" in captured.err.splitlines()
 
     def test_notice_includes_detail(
         self,

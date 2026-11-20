@@ -553,7 +553,7 @@ def test_failed_maintenance_fails_following_updates_until_resolved(tmp_path, mon
     still_failed = prune_installation.run()
     assert still_failed.failure is not None and "fixture disk failure" in still_failed.failure
     # 保留は整理を試していないため失敗を残し、最後の試行が保留だったことと、その診断を添える。
-    assert "保留" in still_failed.failure and "when waiting for lock" in still_failed.failure
+    assert "保留" in still_failed.failure and "when waiting for lock" not in still_failed.failure
     failure["stderr"] = None
     _maintain(monkeypatch, tmp_path)
     assert prune_installation.run().failure is None
@@ -593,17 +593,51 @@ def test_corrupt_clean_record_is_reported_with_its_path(tmp_path, monkeypatch):
     assert result.failure is not None and str(state) in result.failure
 
 
-def test_deferred_maintenance_is_announced_with_log_path(tmp_path, monkeypatch, caplog):
+@pytest.mark.skipif(sys.platform != "linux", reason="Linuxのprocfsでロックの保持者を確認する")
+def test_uv_lock_holder_in_persistent_log_only(tmp_path, monkeypatch, capsys, host_environ):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    path = os.pathsep.join(part for part in host_environ()["PATH"].split(os.pathsep) if Path(part).name != "shims")
+    uv = shutil.which("uv", path=path)
+    assert uv is not None
+    monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(prune_installation, "_UV_LOCK_TIMEOUT_SECONDS", "1")
+    log = tmp_path / "update-dotfiles.log"
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", log)
+    for flags in ([], ["--no-cache"]):
+        command = [uv, "run", *flags, "--no-project", "--python", sys.executable, "python", "-c", _HOLDER_SCRIPT]
+        with subprocess.Popen(command, cwd=tmp_path, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as holder:
+            try:
+                assert holder.stdout is not None and holder.stdout.readline().strip() == "ready"
+                with post_apply._configure_logging():
+                    if flags:
+                        prune_installation._clean_uv_cache(Path(uv))
+                    else:
+                        with pytest.raises(prune_installation._InUseError):
+                            prune_installation._clean_uv_cache(Path(uv))
+                        assert f"保持者: PID {holder.pid} (" in log.read_text(encoding="utf-8")
+            finally:
+                assert holder.stdin is not None
+                holder.stdin.close()
+    screen = capsys.readouterr()
+    assert not screen.out and not screen.err
+
+
+def test_deferred_maintenance_is_announced_with_log_path(tmp_path, monkeypatch, capsys):
     """使用中で保留した独立プロセスの結果は、次の更新が失敗にせず、永続ログのパスとともに案内する。"""
     _, calls = _prepare(tmp_path, monkeypatch, "full")
-    _uv_clean_failure(monkeypatch, calls)["stderr"] = "error: Timeout (30s) when waiting for lock on cache"
+    detail = "Cache is currently in-use\nerror: Timeout (30s) when waiting for lock on cache"
+    _uv_clean_failure(monkeypatch, calls)["stderr"] = detail
     _maintain(monkeypatch, tmp_path)
-    caplog.clear()
-    with caplog.at_level(logging.INFO):
+    capsys.readouterr()
+    with post_apply._configure_logging():
         result = prune_installation.run()
     assert result.failure is None
-    notices = [record.getMessage() for record in caplog.records if "保留" in record.getMessage()]
-    assert notices and "when waiting for lock" in notices[0] and str(update_log.LOG_PATH) in notices[0]
+    screen = capsys.readouterr()
+    assert not screen.err
+    assert screen.out.splitlines() == [
+        f"  prune: uvキャッシュが使用中のため整理を保留しました。整理は次回の更新時に再試行します。詳細: {update_log.LOG_PATH}"
+    ]
+    assert detail in (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
 
 
 def test_unexpected_maintenance_exception_is_logged_and_reported(tmp_path, monkeypatch):

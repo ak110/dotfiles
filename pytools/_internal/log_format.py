@@ -8,6 +8,8 @@ from pathlib import Path
 # `logger.info(..., extra=LOG_ONLY)`で付け、post-applyの標準出力ハンドラーが除く。
 LOG_ONLY_ATTR = "post_apply_log_only"
 LOG_ONLY = types.MappingProxyType({LOG_ONLY_ATTR: True})
+# INFOでも失敗や利用者の操作を伝える行は、更新の画面に残す。
+SHOW = types.MappingProxyType({LOG_ONLY_ATTR: False})
 
 
 def is_log_only(record: logging.LogRecord) -> bool:

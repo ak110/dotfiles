@@ -27,7 +27,7 @@ import platformdirs
 import psutil
 from agent_toolkit._common import dotfiles_mode, plugin_environment, windows_job
 
-from pytools._internal import codex_processes, common, post_apply_outcome, setup_mise, update_log, warmup_pyfltr_mcp
+from pytools._internal import codex_processes, common, log_format, post_apply_outcome, setup_mise, update_log, warmup_pyfltr_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -310,12 +310,32 @@ def _clean_uv_cache(uv: Path) -> None:
     now = time.time()
     last = successes.get(key)
     clean = last is None or now - last >= 30 * 86400
-    _command([str(uv), "cache", "clean" if clean else "prune"])
+    try:
+        _command([str(uv), "cache", "clean" if clean else "prune"])
+    except _InUseError:
+        if sys.platform == "linux":
+            _log_uv_lock_holders(cache / ".lock")
+        raise
     if clean:
         successes[key] = time.time()
         state.parent.mkdir(parents=True, exist_ok=True)
         if not common.atomic_write_json(state, successes, tag="prune"):
             raise OSError(f"uv全消去の成功日時を保存できません: {state}")
+
+
+def _log_uv_lock_holders(lock: Path) -> None:
+    """Linuxのロック表から、競合したファイルの保持者だけを永続ログに記録する。"""
+    try:
+        info = lock.stat()
+        identity = f"{os.major(info.st_dev):02x}:{os.minor(info.st_dev):02x}:{info.st_ino}"
+        for line in Path("/proc/locks").read_text(encoding="ascii").splitlines():
+            fields = line.split()
+            # 待機者の行は第2列が矢印で、保持者の行とは列位置が異なる。
+            if len(fields) >= 6 and fields[5] == identity and fields[4].isdigit():
+                pid = int(fields[4])
+                logger.info("prune: %s の保持者: PID %d (%s)", lock, pid, psutil.Process(pid).name(), extra=log_format.LOG_ONLY)
+    except (OSError, psutil.Error) as error:
+        logger.info("prune: %s の保持者を特定できません: %s", lock, error, extra=log_format.LOG_ONLY)
 
 
 class _CacheGroup(enum.StrEnum):
@@ -445,7 +465,7 @@ def maintain_caches() -> None:
 def _report_previous_maintenance(group: _CacheGroup) -> post_apply_outcome.PostApplyOutcome:
     """前回の独立プロセスの結果を表示する。保留は案内し、失敗は解消するまで更新の失敗として返す。"""
     log = update_log.LOG_PATH
-    retry = "整理は更新のたびに独立プロセスで再試行し、結果を次の更新で表示します。"
+    retry = "整理は次回の更新時に再試行します。"
     try:
         record = _read_maintenance_record(group)
     except (OSError, ValueError) as error:
@@ -457,16 +477,21 @@ def _report_previous_maintenance(group: _CacheGroup) -> post_apply_outcome.PostA
         return post_apply_outcome.PostApplyOutcome()
     if record.result is MaintenanceResult.DEFERRED:
         logger.info(
-            "prune: 前回の%sの整理は保留した（%s）: %s。%s永続ログ: %s", group, record.finished_at, record.detail, retry, log
+            "prune: 前回の%sの整理は保留した（%s）: %s", group, record.finished_at, record.detail, extra=log_format.LOG_ONLY
         )
+        if group is _CacheGroup.UV and _UV_LOCK_TIMEOUT_MARKER in record.detail:
+            logger.info("prune: uvキャッシュが使用中のため整理を保留しました。%s詳細: %s", retry, log, extra=log_format.SHOW)
     elif record.result is MaintenanceResult.COMPLETED:
-        logger.info("prune: 前回の%sのキャッシュ整理は完了（%s）", group, record.finished_at)
+        logger.info("prune: 前回の%sのキャッシュ整理は完了（%s）", group, record.finished_at, extra=log_format.LOG_ONLY)
     elif record.result is MaintenanceResult.FAILED:
         failure = f"{group}: 前回の整理の独立プロセスが失敗した（{record.finished_at}）: {record.detail}"
         next_action = f"永続ログ（{log}）の診断を確認して原因を解消し、update-dotfilesを再実行してください。{retry}"
         if record.deferred_at:
-            failure += f"。その後の整理は保留した（{record.deferred_at}）: {record.deferred_detail}"
-            next_action += "保留が続く場合は、保留の診断が示すツールの使用を終えてから再実行してください。"
+            logger.info(
+                "prune: %sの整理を保留（%s）: %s", group, record.deferred_at, record.deferred_detail, extra=log_format.LOG_ONLY
+            )
+            failure += f"。その後の整理は保留した（{record.deferred_at}）"
+            next_action += "保留が続く場合は、永続ログの診断が示すツールの使用を終えてから再実行してください。"
         return post_apply_outcome.PostApplyOutcome(failure=failure, next_action=next_action)
     return post_apply_outcome.PostApplyOutcome()
 
@@ -521,8 +546,9 @@ def _start_maintenance(*, clean: bool) -> post_apply_outcome.PostApplyOutcome:
             failure = f"キャッシュ整理の独立プロセスを起動できません: {error}"
         else:
             logger.info(
-                "prune: キャッシュ整理を独立プロセスで開始した。結果は次の更新で表示し、永続ログ（%s）へ記録する",
+                "prune: キャッシュ整理を独立プロセスで開始した。結果は永続ログ（%s）へ記録する",
                 update_log.LOG_PATH,
+                extra=log_format.LOG_ONLY,
             )
             return post_apply_outcome.PostApplyOutcome()
     warmup_pyfltr_mcp.run()

@@ -49,7 +49,7 @@ class RemovedPathIfContent:
 def _report_failure(failures: list[str] | None, message: str) -> None:
     """検査または削除の失敗を`failures`へ加える。`failures`が無い場合は警告として記録して処理を続ける。"""
     if failures is None:
-        logger.info("%s（スキップして続行した）", message)
+        logger.info("%s（スキップして続行した）", message, extra=log_format.SHOW)
     else:
         failures.append(message)
 

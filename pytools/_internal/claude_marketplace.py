@@ -74,6 +74,7 @@ def ensure_marketplace() -> bool:
                 "dotfiles ルートが見つからず登録をスキップ。"
                 "chezmoiの作業ツリーに`.claude-plugin/marketplace.json`を復元して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return False
     add_result = claude_common.run_claude(
@@ -89,6 +90,7 @@ def ensure_marketplace() -> bool:
                 f'`claude plugin marketplace add "{dotfiles_root}" '
                 "--scope=user`を実行する",
             ),
+            extra=log_format.SHOW,
         )
         return False
     logger.info(log_format.format_status("marketplace", f"{claude_common.MARKETPLACE_NAME} を登録しました"))
@@ -124,6 +126,7 @@ def repair_marketplace() -> bool:
                 "dotfiles ルートが見つからず修復をスキップ。"
                 "chezmoiの作業ツリーに`.claude-plugin/marketplace.json`を復元して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return False
 
@@ -168,6 +171,7 @@ def repair_marketplace() -> bool:
             f"`claude plugin marketplace remove {claude_common.MARKETPLACE_NAME}`の後に`claude "
             f'plugin marketplace add "{dotfiles_root}" --scope=user`を実行する',
         ),
+        extra=log_format.SHOW,
     )
     return False
 
@@ -193,6 +197,7 @@ def refresh_marketplace() -> bool:
                 f"(続行): {common.format_cli_error(result)}。"
                 f"手動で`claude plugin marketplace update {claude_common.MARKETPLACE_NAME}`を実行する",
             ),
+            extra=log_format.SHOW,
         )
         return False
     return True

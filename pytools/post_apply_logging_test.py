@@ -13,7 +13,7 @@ from agent_toolkit._atk.managed_temp import resources
 from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 
 from pytools import post_apply
-from pytools._internal import plugin_warmup, post_apply_outcome
+from pytools._internal import common, install_codex_plugins, plugin_warmup, post_apply_outcome, setup_herdr_cli
 from pytools._internal.post_apply_test_helpers import _isolate_sync_report as _isolate_sync_report
 from pytools._internal.post_apply_test_helpers import _isolate_update_log as _isolate_update_log
 
@@ -46,6 +46,7 @@ def test_persistent_log_redacts_plugin_output_only(capsys: pytest.CaptureFixture
 
 
 def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(tmp_path))
     monkeypatch.setattr(plugin_environment_cleanup, "_process_references", lambda: ([], False))
     current, old, broken = (tmp_path / "environments" / name for name in ("current-key", "old-key", "broken-key"))
@@ -57,7 +58,12 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     monkeypatch.setattr(plugin_warmup.session_review, "sweep", lambda **kwargs: None)
 
     def sweep(**_kwargs):
-        resources.log_retained([{"path": "resource-key", "reason": "使用中", "retryable": True}])
+        resources.log_retained(
+            [
+                {"path": "resource-key", "reason": "使用中", "retryable": True},
+                {"path": "protected", "reason": "原本", "retryable": False},
+            ]
+        )
         return plugin_warmup.sweep.SweepResult([tmp_path / "deleted-key"], ((tmp_path / "locked-key", "使用中"),))
 
     monkeypatch.setattr(plugin_warmup.sweep, "sweep_managed_temp", sweep)
@@ -69,9 +75,44 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     assert "保持1件、削除1件、保留1件" in screen
     assert "update-dotfiles logs" in screen
     saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
-    assert "再生成物1件" in screen and "一時資源1件" in screen
+    assert "一時資源1件の回収を保留" in screen
+    for detail in ("再生成物1件", "保護対象を回収から除外", "一時資源を1件回収"):
+        assert detail not in screen and detail in saved
     for name in (current.name, old.name, broken.name, "resource-key", "deleted-key", "locked-key"):
         assert name not in screen and name in saved
+
+
+def test_update_hides_success_but_preserves_manual_recovery(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
+    malformed = tmp_path / "settings.json"
+    malformed.write_text("{", encoding="utf-8")
+
+    def step():
+        logging.getLogger("update-test").info("成功した操作の明細")
+        assert common.load_json_dict(malformed, {}, tag="fixture") is None
+        return post_apply_outcome.PostApplyOutcome()
+
+    with pytest.raises(SystemExit) as result:
+        post_apply.main(runner=lambda: post_apply.run([("設定", step)]))
+    assert result.value.code == 0
+    screen = capsys.readouterr()
+    assert str(malformed) in screen.out and "再実行" in screen.out
+    log = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
+    for detail in ("成功した操作の明細", "[1/1] 設定", "完了: 更新", "post-apply終了"):
+        assert detail not in screen.out + screen.err and detail in log
+
+
+def test_actionable_notices_show_each_command_once(capsys):
+    with post_apply._configure_logging():
+        post_apply._print_post_apply_notices(
+            [
+                install_codex_plugins._CODEX_HOOK_TRUST_NOTICE,
+                setup_herdr_cli._deferred_notice(inside_session=True),
+            ]
+        )
+    screen = capsys.readouterr().err
+    assert screen.count("/hooks") == 1
+    assert "    herdr update" in screen.splitlines()
 
 
 def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:

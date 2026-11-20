@@ -91,7 +91,8 @@ def _enable_tmpfiles_clean_timer() -> bool:
     next_action = "systemdのユーザーセッションがある環境で`update-dotfiles`を再実行する"
     if shutil.which("systemctl") is None:
         logger.info(
-            log_format.format_status(tag, f"systemctlが無いため一時ファイルの経過削除タイマーの有効化を見送る。{next_action}")
+            log_format.format_status(tag, f"systemctlが無いため一時ファイルの経過削除タイマーの有効化を見送る。{next_action}"),
+            extra=log_format.SHOW,
         )
         return False
     manager = common.run_subprocess(["systemctl", "--user", "show-environment"], timeout=15.0, tag=tag)
@@ -105,6 +106,7 @@ def _enable_tmpfiles_clean_timer() -> bool:
                 f"ユーザーマネージャーが停止している場合は`sudo systemctl start user@{os.getuid()}.service`で起動し、"
                 f"{next_action}",
             ),
+            extra=log_format.SHOW,
         )
         return False
     enabled = common.run_subprocess(["systemctl", "--user", "is-enabled", _TMPFILES_CLEAN_TIMER_NAME], timeout=15.0, tag=tag)

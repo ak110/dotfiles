@@ -333,6 +333,7 @@ def run_subprocess(
                 "外部と通信するコマンドなら接続先へのネットワーク到達（プロキシ設定を含む）を、"
                 "それ以外なら同じ資源を使う他のプロセスが無いかを確かめてから`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return None
     except (OSError, subprocess.SubprocessError) as e:
@@ -345,6 +346,7 @@ def run_subprocess(
                 "呼び出し元へ失敗を返して処理を継続した。"
                 "表示されたコマンドの実行ファイル・引数とアクセス権を確認して`update-dotfiles`を再実行する",
             ),
+            extra=log_format.SHOW,
         )
         return None
 
@@ -375,6 +377,7 @@ def load_json_dict(
                     tag,
                     f"{path} の読み込みに失敗: {e}。このファイルの読み取り権限を修正して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         return None
     try:
@@ -387,6 +390,7 @@ def load_json_dict(
                     f"{path} の JSON 解析に失敗: {e}。"
                     "このファイルをトップレベルがオブジェクトのJSONへ修正して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         return None
     if not isinstance(data, dict):
@@ -397,6 +401,7 @@ def load_json_dict(
                     f"{path} がトップレベル dict でないためスキップ。"
                     "このファイルをトップレベルがオブジェクトのJSONへ修正して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         return None
     return cast("dict[str, object]", data)
@@ -420,6 +425,7 @@ def _atomic_write(
                     tag,
                     f"ディレクトリ作成に失敗: {e}。{path.parent}の書き込み権限を修正して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         return False
     tmp_path: Path | None = None
@@ -447,6 +453,7 @@ def _atomic_write(
                     "このファイルと親ディレクトリの書き込み権限を修正し、"
                     "ファイルを使用中のアプリを終了して`update-dotfiles`を再実行する",
                 ),
+                extra=log_format.SHOW,
             )
         if tmp_path is not None:
             with contextlib.suppress(OSError):
@@ -582,6 +589,9 @@ def atomic_write_json(path: Path, data: object, *, tag: str | None = None, prese
             pass  # 新規ファイルはBOMなしのUTF-8で作る。
         except OSError as error:
             if tag is not None:
-                logger.info(log_format.format_status(tag, f"{path} のBOMを確認できないため書き込めません: {error}"))
+                logger.info(
+                    log_format.format_status(tag, f"{path} のBOMを確認できないため書き込めません: {error}"),
+                    extra=log_format.SHOW,
+                )
             return False
     return atomic_write_text(path, content, tag=tag)

@@ -791,12 +791,7 @@ def _append_notices_to_exception(error: Exception, notices: list[post_apply_outc
     unique_notices = tuple(dict.fromkeys(notices))
     if not unique_notices:
         return
-    rendered = []
-    for notice in unique_notices:
-        rendered.append(notice.message)
-        if notice.command is not None:
-            rendered.append(notice.command)
-    _append_exception_message(error, "post-apply案内:\n" + "\n".join(rendered))
+    _append_exception_message(error, "post-apply案内:\n" + "\n".join(notice.render() for notice in unique_notices))
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
