@@ -502,3 +502,22 @@ def test_bundled_read_codex_budget_includes_envelope(tmp_path):
     within = large_reads.check_bundled_read(command, str(tmp_path), codex=True, environment={}, max_output_tokens=budget)
     over = large_reads.check_bundled_read(command, str(tmp_path), codex=True, environment={}, max_output_tokens=budget - 1)
     assert within is None and over is not None
+
+
+@pytest.mark.parametrize(
+    ("command", "names"),
+    [
+        ('R=docs; cat ${R}/first.md; echo done; cat "$R/second.md"', ["first.md", "second.md"]),
+        ("R=docs; sed -n '1,$p' -- $R/first.md", ["first.md"]),
+        ('cat "$R/first.md"', []),
+        ('R=$UNSET; cat "$R/first.md"', []),
+        ('R=$(pwd); cat "$R/first.md"', []),
+        ('R=docs; true || R=other; cat "$R/first.md"', []),
+        ('(R=docs); cat "$R/first.md"', []),
+        ('R=docs; cat "$R/first.md" | head -1', []),
+        ('R=docs; cat "$R/first.md" > copy.md', []),
+    ],
+)
+def test_full_read_paths_from_same_shell_assignments(tmp_path: pathlib.Path, command: str, names: list[str]) -> None:
+    paths = [path for group in bash_read_paths(command, str(tmp_path)) for path in group]
+    assert paths == [tmp_path / "docs" / name for name in names]

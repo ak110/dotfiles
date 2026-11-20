@@ -5,6 +5,7 @@ Codex・Antigravityはスキルを入口の読取で始め、Claude Codeでも`R
 
 import json
 import pathlib
+import shlex
 
 import pytest
 
@@ -35,6 +36,9 @@ def _read(kind: str, path: pathlib.Path, cwd: pathlib.Path) -> dict:
     codex = {**base, "turn_id": "turn", "tool_name": "Bash"}
     if kind == "codex-sed":
         return {**codex, "tool_input": {"command": f"sed -n '1,2000p' {path}"}, "tool_response": text}
+    if kind == "codex-variable":
+        command = f'R={shlex.quote(str(path.parent))}; cat "$R/SKILL.md"'
+        return {**codex, "tool_input": {"command": command}, "tool_response": text}
     if kind == "codex-partial":
         head = "\n".join(text.splitlines()[:3]) + "\n"
         return {**codex, "tool_input": {"command": f"sed -n '1,3p' {path}"}, "tool_response": head}
@@ -67,7 +71,9 @@ def test_full_read_of_bugfix_entry_clears_verification_failure(tmp_path: pathlib
     assert pending is not counted
 
 
-@pytest.mark.parametrize(("kind", "counted"), [("claude-read", True), ("codex-sed", True), ("codex-partial", False)])
+@pytest.mark.parametrize(
+    ("kind", "counted"), [("claude-read", True), ("codex-sed", True), ("codex-variable", True), ("codex-partial", False)]
+)
 def test_full_read_of_skill_entry_stops_its_notice(tmp_path: pathlib.Path, kind: str, counted: bool) -> None:
     """検索のスキルの入口の全文を返した読取の後は、検索の操作へ起動の案内を出さない。"""
     assert _run_hook_in_process("posttooluse", _read(kind, _entry("search"), tmp_path)).returncode == 0
