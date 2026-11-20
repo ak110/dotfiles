@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
-import functools
 import logging
 import pathlib
 import uuid
@@ -67,7 +66,7 @@ _PUBLISHER_PROBE_SECONDS = 1.0
 # 所有世代への所有照会の待機上限。生存する世代は即時に応答するため、停止した世代だけを短時間で判別する。
 _OWNER_PROBE_SECONDS = 10.0
 
-# 確定が届かなかった旧世代へ確定を送り直し、退役の記録を確かめる上限と間隔。
+# 初回の確定からの期限と、確定が届かなかった旧世代への再送間隔。
 # 確認ごとに世代索引のロックを取るため、退役を記録する旧世代とロックを取り合わない程度に間隔を空ける。
 _COMMIT_WAIT_SECONDS = 10.0
 _COMMIT_RETRY_SECONDS = 0.25
@@ -184,41 +183,39 @@ class ServiceCoordinator:
         旧世代は引き継ぐ会話・資源を残さずに終了した場合だけ退役を記録する（`service.run`）。
         記録が無いまま終了した旧世代は、それらを持ったまま停止・例外・強制終了で終わったことがあり得るため、公開の失敗として返す。
         """
-        commit = functools.partial(service_rpc.request, previous, "commit_update", {"token": token, "current": self._current()})
+        arguments = {"token": token, "current": self._current()}
         loop = asyncio.get_running_loop()
         deadline = loop.time() + _COMMIT_WAIT_SECONDS
+        first_error: OSError | EOFError | None = None
         try:
-            await commit()
-            return
-        except (OSError, EOFError) as error:
-            first_error = error
+            async with asyncio.timeout_at(deadline):
+                while True:
+                    try:
+                        await service_rpc.request(previous, "commit_update", arguments, timeout=deadline - loop.time())
+                        return
+                    except (OSError, EOFError) as error:
+                        first_error = first_error or error
 
-        while True:
-            # 旧世代の終了直前の退役も確認するため、生存を確かめてから記録を読む。
-            alive = service_transport.process_alive(previous["process"])
-            if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
-                _LOG.info(
-                    "旧世代が確定前に退役しました: generation=%s error=%s: %s",
-                    previous["generation"],
-                    type(first_error).__name__,
-                    first_error,
-                )
-                return
-            if not alive:
-                raise RuntimeError(
-                    "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
-                    "旧世代の会話は新世代へ移っていないことがあります: "
-                    f"generation={previous['generation']} process={previous['process']} "
-                    f"error={type(first_error).__name__}: {first_error}"
-                ) from first_error
-            try:
-                async with asyncio.timeout_at(deadline):
+                    # 旧世代の終了直前の退役も確認するため、生存を確かめてから記録を読む。
+                    alive = service_transport.process_alive(previous["process"])
+                    if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
+                        _LOG.info(
+                            "旧世代が確定前に退役しました: generation=%s error=%s: %s",
+                            previous["generation"],
+                            type(first_error).__name__,
+                            first_error,
+                        )
+                        return
+                    if not alive:
+                        raise RuntimeError(
+                            "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
+                            "旧世代の会話は新世代へ移っていないことがあります: "
+                            f"generation={previous['generation']} process={previous['process']} "
+                            f"error={type(first_error).__name__}: {first_error}"
+                        ) from first_error
                     await asyncio.sleep(_COMMIT_RETRY_SECONDS)
-                    await commit(timeout=deadline - loop.time())
-                    return
-            except OSError, EOFError:
-                if loop.time() >= deadline:
-                    raise first_error from None
+        except TimeoutError as timeout:
+            raise first_error or timeout from None
 
     def bind_runtime(self, runtime: service_io.Runtime) -> service_io.Runtime:
         """現在のbackendにだけ終了境界を知らせ、資源のoriginは変えない。"""

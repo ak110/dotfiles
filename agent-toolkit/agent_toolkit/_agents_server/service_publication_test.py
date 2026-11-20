@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import os
@@ -11,6 +12,7 @@ import pathlib
 import subprocess
 import sys
 import time
+from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -452,6 +454,7 @@ async def main():
 
         async def delay_response(token, current):
             await commit(token, current)
+            pathlib.Path("commit-accepted").touch()
             await asyncio.sleep(60)
 
         coordinator.commit_update = delay_response
@@ -706,6 +709,44 @@ async def test_publication_succeeds_after_lost_commit_while_previous_generation_
             process.wait()
 
 
+@contextlib.asynccontextmanager
+async def _publisher_with_delayed_commit_response(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> AsyncGenerator[dict]:
+    directory = _isolated_directory(tmp_path, monkeypatch)
+    processes: list[subprocess.Popen] = []
+    stop = asyncio.Event()
+    serving = None
+    try:
+        await _launch_previous_generation(tmp_path, directory, "IN_PROGRESS", processes, mode="delay_response")
+        GenerationRegistry(directory).reserve("new", tmp_path / "new", "1.0.1")
+        serving, new = await _start_generation(directory, "new", stop)
+        yield new
+    finally:
+        for process in processes:
+            process.kill()
+            process.wait()
+        stop.set()
+        if serving is not None:
+            await asyncio.gather(serving, return_exceptions=True)
+
+
+@pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")
+@pytest.mark.asyncio
+async def test_first_commit_response_deadline_releases_publication(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """旧世代が最初の確定を受理して応答だけが遅れても、公開元は10秒で期限切れを返し、直後の公開を通す。"""
+    async with _publisher_with_delayed_commit_response(tmp_path, monkeypatch) as new:
+        started = time.monotonic()
+        with pytest.raises(RuntimeError, match="TimeoutError"):
+            await service_rpc.request(new, "publish", {}, timeout=30)
+        elapsed = time.monotonic() - started
+        assert (await service_rpc.request(new, "publish", {}, timeout=2))["generation"] == "new"
+        assert (tmp_path / "commit-accepted").exists()
+        assert 9 <= elapsed <= 12
+
+
 @pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")
 @pytest.mark.parametrize("delay_response", [True, False], ids=["late-response", "repeated-error"])
 @pytest.mark.asyncio
@@ -713,16 +754,7 @@ async def test_commit_retry_deadline_returns_first_error_and_releases_publicatio
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, delay_response: bool
 ) -> None:
     """確定の応答が止まっても、失敗し続けても、10秒で最初のエラーを返して後続の公開を通す。"""
-    directory = _isolated_directory(tmp_path, monkeypatch)
-    processes: list[subprocess.Popen] = []
-    stop = asyncio.Event()
-    serving = None
-    try:
-        await _launch_previous_generation(
-            tmp_path, directory, "IN_PROGRESS", processes, mode="delay_response" if delay_response else "normal"
-        )
-        GenerationRegistry(directory).reserve("new", tmp_path / "new", "1.0.1")
-        serving, new = await _start_generation(directory, "new", stop)
+    async with _publisher_with_delayed_commit_response(tmp_path, monkeypatch) as new:
         deliver = service_rpc.request
         first_failure: asyncio.Future[float] = asyncio.get_running_loop().create_future()
 
@@ -743,13 +775,6 @@ async def test_commit_retry_deadline_returns_first_error_and_releases_publicatio
             async with asyncio.timeout_at(start + 12):
                 assert (await deliver(new, "publish", {}))["generation"] == "new"
                 assert await publishing - start >= 9
-    finally:
-        for process in processes:
-            process.kill()
-            process.wait()
-        stop.set()
-        if serving is not None:
-            await asyncio.gather(serving, return_exceptions=True)
 
 
 async def _failed_publication(target: dict) -> float:
