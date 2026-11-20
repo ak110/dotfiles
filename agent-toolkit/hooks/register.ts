@@ -30,7 +30,7 @@ export const register: Register = (on) => {
     if (!(await $.session.surfaces()).includes("terminal") || await isDelegated($)) return result;
     return {
       ...result,
-      description: "この会話のメインは、ユーザーへの発話（進捗、完了報告、質問、確認依頼を含む）をすべてこのツールのmessageで送る。" +
+      description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話をこのツールのmessageで送る。" +
         turnEndAfterDelivery + "表示先が使えない時は通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
       isDeferred: false,
     };

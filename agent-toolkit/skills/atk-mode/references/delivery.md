@@ -5,7 +5,8 @@
 
 ## 手段の選択
 
-表の「発話本文」はユーザーへのメッセージであり、ホストごとに次の手段で届ける。
+表の「発話本文」は、進捗・確認の前置き・完了報告など、回答を求めないメッセージを指す。
+回答を求める質問・選択の手段は表の確認の行で選ぶ。
 
 - Claude Codeは、ツール説明がこの会話の送り先に指定した時だけ`send_to_user`で届け、それ以外は通常の応答本文で伝える（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ツールの入出力」）。
 - Codexは途中経過を`commentary`、通常の最終応答を必要なツール処理の後の`final`で届ける（`agent-toolkit:atk-mode/playbooks/host-codex.md`「Codexホスト契約の適用」）。

@@ -80,6 +80,14 @@ def test_stop_while_waiting_for_answer(preface: bool, closing: str, tmp_path: pa
     assert "user_response_advisor" not in result.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
+@pytest.mark.parametrize("after_question", [[_result("q", error=True)], [_result("q"), _HUMAN]], ids=["rejected", "new-prompt"])
+def test_question_does_not_cover_unanswered_prompt(after_question: list[dict], tmp_path: pathlib.Path) -> None:
+    question = _call("AskUserQuestion", "q", {"questions": [{"question": "文体を指定しますか？"}]})
+    result = _stop([_HUMAN, question, *after_question, _text("…")], tmp_path, last_assistant_message="…")
+    assert "decision" not in result
+    assert "user_response_advisor" in result["hookSpecificOutput"]["additionalContext"]
+
+
 @pytest.mark.parametrize("first_body", ["I sent the finished one-sentence notice to the user's screen.", "…"])
 def test_reading_group_notice_stop_replay(first_body: str, tmp_path: pathlib.Path) -> None:
     """観測した読書会の会話を再生し、各差し戻しの指示に従って終了するまでを確かめる。"""

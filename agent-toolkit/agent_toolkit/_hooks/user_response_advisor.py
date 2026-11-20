@@ -4,7 +4,7 @@
 拡張思考の表示をエージェントから観測できないため、応答はユーザーへ届く本文の有無で判定する。
 ツール呼び出しより前の地の文が要約へ置き換わる事象をこの判定で検出することはしない。発話したつもりで届いていない事象は
 発話を契機とする判定では捉えられず、原文を`send_to_user`で運ぶ規範とツールで扱う（2026年10月6日、ユーザーの判断）。
-回答の意味は判定せず、拡張思考とツール呼び出しは本文へ数えない。
+回答の意味は判定しない。`AskUserQuestion`でユーザーに尋ねた場合は別の応答本文を求めない。
 例外は人間の入力が単純な了承（ユーザーが原文で示した「単純に了承したパターン」）だけの場合で、
 `…`だけの本文で終えるStopは通知しない。規範（`atk-mode`の`playbooks/main-reporting.md`「ユーザー向け発話ルール」と
 `playbooks/host-claude-code.md`「ターンの終え方」）は伝える内容が無い場合に`…`だけで終えることを許し、了承には伝える回答が無いためである。
@@ -143,6 +143,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if (
         not needs_response
         or (acknowledged_only and ellipsis_only)
+        or _asked_user(scanned[human_start:])
         or (last_ellipsis and _awaits_background(scanned[human_start:], session_id, path))
     ):
         notice.resolve_notice(session_id, "user_response_advisor", "evaluate", subject="main")
@@ -156,6 +157,23 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         subject=input_subject,
     )
     return ("notify", body) if body else ("approve", "")
+
+
+def _asked_user(entries: list[dict]) -> bool:
+    """直近の人間入力に対し、失敗していない質問の呼び出しがあるかを返す。"""
+    question_ids: set[str] = set()
+    for entry in entries:
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list) or entry.get("isApiErrorMessage"):
+            continue
+        for block in content:
+            match entry.get("type"), block:
+                case "assistant", {"type": "tool_use", "name": "AskUserQuestion", "id": str() as identifier} if identifier:
+                    question_ids.add(identifier)
+                case "user", {"type": "tool_result", "is_error": True, "tool_use_id": str() as identifier}:
+                    question_ids.discard(identifier)
+    return bool(question_ids)
 
 
 def _awaits_background(entries: list[dict], session_id: str, transcript_path: str) -> bool:

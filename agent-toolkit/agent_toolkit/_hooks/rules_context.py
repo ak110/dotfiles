@@ -207,7 +207,8 @@ def compose_session_start(
     if host == "claude" and not delegated:
         parts.append(
             _llm_notice(
-                "最初の発話から、この会話の`send_to_user`の説明がメインの発話の送り先を指定している時だけそれに従え。"
+                "その場で回答を求める質問・選択には、ツール一覧にあれば`AskUserQuestion`を使え。"
+                "発話本文は最初から、この会話の`send_to_user`の説明が送り先を指定している時だけそれで送り、"
                 "指定を確認できなければ通常の応答本文で伝えよ。"
             )
         )
