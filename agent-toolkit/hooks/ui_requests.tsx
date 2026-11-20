@@ -1,6 +1,6 @@
 import type { EngineInterface, On } from "claude-code";
 import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
-import { reportWarnings } from "./send_to_user.tsx";
+import { reportWarnings, turnEndAfterDelivery } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
 import { mountForStart } from "./periodic_recheck.ts";
@@ -78,7 +78,7 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           const placed = await $.ui.place({ id: request.id });
           ok = placed.isPlaced;
           reason = placed.isPlaced ? "" : placed.reason;
-          if (ok) reason = ["ユーザーの画面へ表示した。送達済み本文は再掲するな。", ...reportWarnings(request.input.message)].join("\n");
+          if (ok) reason = [turnEndAfterDelivery, ...reportWarnings(request.input.message)].join("\n");
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
           else if (typeof request.input.tool_use_id === "string") {
             const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};

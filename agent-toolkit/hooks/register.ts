@@ -4,6 +4,7 @@ import { automatedMessage, startNextTurn } from "./automated_message.ts";
 import { register as registerCompactConversation } from "./compact_conversation.ts";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
 import { register as registerUsageLimitResume } from "./usage_limit_resume.ts";
+import { turnEndAfterDelivery } from "./send_to_user.tsx";
 import { register as registerUIRequests } from "./ui_requests.tsx";
 import { register as registerRuntimeRestart } from "./runtime_restart.ts";
 import { register as registerAgentPanel } from "./agent_panel.ts";
@@ -30,7 +31,7 @@ export const register: Register = (on) => {
     return {
       ...result,
       description: "この会話のメインは、ユーザーへの発話（進捗、完了報告、質問、確認依頼を含む）をすべてこのツールのmessageで送る。" +
-        "表示先が使えない時は通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
+        turnEndAfterDelivery + "表示先が使えない時は通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
       isDeferred: false,
     };
   });

@@ -47,6 +47,7 @@ lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 CHECK_MODULE_NAMES = (
+    "delivered_repost_gate",
     "response_language_advisor",
     "busy_loop_guard",
     "autonomous_exit",
@@ -55,7 +56,6 @@ CHECK_MODULE_NAMES = (
     "agents_server_session_advisor",
     "user_response_advisor",
     "bugfix_gate",
-    "delivered_repost_gate",
     "termination_order_advisor",
     "submission_report_advisor",
     "queued_notification_advisor",
@@ -172,6 +172,9 @@ def evaluate(payload_text: str) -> dict[str, object]:
     yield_for_delivery = False
     halt_request: functools.partial[tuple[str, str]] | None = None
     for module_name in CODEX_CHECK_MODULE_NAMES if is_codex_payload(payload) else CHECK_MODULE_NAMES:
+        # 取り除くべき送達後の本文を、日本語で再掲させない。
+        if module_name == "response_language_advisor" and "delivered_repost_gate" in blocking_checks:
+            continue
         try:
             module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
             decision, body = (

@@ -1,4 +1,4 @@
-"""送達成功後の応答本文が2文以上の再掲になるStopを遮断し、`…`だけ・1文・送達なしは通すことを確かめる。"""
+"""送達後の終了応答と、未送達の本文への切替をStop入力で確かめる。"""
 
 import json
 import pathlib
@@ -7,12 +7,17 @@ import pytest
 
 from agent_toolkit._hooks import stop
 
-_SEND_TO_USER = "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user"
+_SEND_TO_USER = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "進捗を教えて"}}
 _SEND = {
     "type": "assistant",
     "message": {"content": [{"type": "tool_use", "id": "s1", "name": _SEND_TO_USER, "input": {"message": "進捗は順調です。"}}]},
 }
+
+
+def _call(name: str, identifier: str, inputs: dict) -> dict:
+    block = {"type": "tool_use", "id": identifier, "name": name, "input": inputs}
+    return {"type": "assistant", "message": {"content": [block]}}
 
 
 def _result(identifier: str = "s1", *, error: bool = False) -> dict:
@@ -31,9 +36,13 @@ def _text(text: str) -> dict:
 
 @pytest.fixture(autouse=True)
 def _main_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_HANDOFF_PATH"):
+    for name in (
+        "AGENT_TOOLKIT_DELEGATED_SESSION",
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "AGENT_TOOLKIT_HANDOFF_PATH",
+        "AGENT_TOOLKIT_RUN_SKILL_ID",
+    ):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("delivered_repost_gate",))
 
 
 def _stop(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> dict:
@@ -57,10 +66,57 @@ def test_two_or_more_sentences_after_delivery_are_blocked(body: str, tmp_path: p
     assert "…" in str(result["reason"])
 
 
-@pytest.mark.parametrize("body", ["…", " … … \n", "進捗は順調です。", "All checks passed."])
-def test_ellipsis_only_and_single_sentence_are_allowed(body: str, tmp_path: pathlib.Path) -> None:
-    """`…`だけと1文以下の本文は通す。"""
-    assert "decision" not in _stop([_HUMAN, _SEND, _result(), _text(body)], tmp_path)
+@pytest.mark.parametrize("first_body", ["I sent the finished one-sentence notice to the user's screen.", "…"])
+def test_reading_group_notice_stop_replay(first_body: str, tmp_path: pathlib.Path) -> None:
+    """観測した読書会の会話を再生し、各差し戻しの指示に従って終了するまでを確かめる。"""
+
+    entries = [
+        {
+            **_HUMAN,
+            "message": {
+                "content": "読書会の参加者に送る案内を1文で作ってください。"
+                "最初に短く着手を知らせてから、文体は敬体と常体のどちらがよいか私に確認してください。"
+                "回答を待ってから案内を仕上げ、完了を報告してください。"
+            },
+        },
+        _call(_SEND_TO_USER, "s1", {"message": "読書会の参加者に送る1文の案内を作り始める。先に文体を確認したい。"}),
+        _result(),
+        _call("AskUserQuestion", "q", {"questions": [{"question": "敬体と常体のどちらで書くか？"}]}),
+        {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "q", "content": "敬体"}]}},
+        _call(
+            _SEND_TO_USER,
+            "s2",
+            {
+                "message": "案内を敬体で仕上げた。\n\n"
+                "> 次回の読書会は〇月〇日（〇）〇時から〇〇にて『〇〇』を取り上げますので、皆さまぜひご参加ください。\n\n"
+                "日時・場所・書名はまだ聞いていないので「〇〇」にしてある。実際の内容に差し替えて使ってほしい。"
+            },
+        ),
+        _result("s2"),
+    ]
+    body = first_body
+    corrections: list[str] = []
+    for _ in range(3):
+        entries.append(_text(body))
+        result = _stop(entries, tmp_path, last_assistant_message=body, stop_hook_active=bool(corrections))
+        if result.get("decision") != "block":
+            break
+        reason = result["reason"]
+        if 'source="response-language"' in reason:
+            corrections.append("response-language")
+            body = "案内文はユーザーの画面へ送った。敬体の1文で、日時・場所・書名は「〇〇」の仮置きにしてある。"
+        else:
+            assert 'source="delivered_repost_gate"' in reason and "`…`だけ" in reason
+            corrections.append("delivered_repost_gate")
+            body = "…"
+    else:
+        pytest.fail(f"差し戻しが終わらない: {corrections}")
+    assert corrections == ([] if first_body == "…" else ["delivered_repost_gate"])
+
+
+@pytest.mark.parametrize("body", ["進捗は順調です。", "All checks passed."])
+def test_even_one_sentence_after_delivery_is_blocked(body: str, tmp_path: pathlib.Path) -> None:
+    assert "delivered_repost_gate" in _stop([_HUMAN, _SEND, _result(), _text(body)], tmp_path)["reason"]
 
 
 def test_without_successful_delivery_the_body_is_not_judged(tmp_path: pathlib.Path) -> None:
@@ -74,11 +130,33 @@ def test_without_successful_delivery_the_body_is_not_judged(tmp_path: pathlib.Pa
 def test_failed_final_delivery_after_progress_can_fall_back_to_text(tmp_path: pathlib.Path) -> None:
     """進捗は表示できても完了報告を表示できなければ、その本文を再掲扱いしない。"""
     report = "検証が終わりました。失敗はありません。"
-    call = {"type": "tool_use", "id": "s2", "name": _SEND_TO_USER, "input": {"message": report}}
-    send = {"type": "assistant", "message": {"content": [call]}}
-    failed = _result("s2", error=True)
-    result = _stop([_HUMAN, _SEND, _result(), send, failed, _text(report)], tmp_path)
+    send = _call(_SEND_TO_USER, "s2", {"message": report})
+    failed = [_HUMAN, _SEND, _result(), send, _result("s2", error=True)]
+    english = "The work is complete."
+    reason = _stop([*failed, _text(english)], tmp_path, last_assistant_message=english)["reason"]
+    assert 'source="response-language"' in reason and "delivered_repost_gate" not in reason
+    result = _stop([*failed, _text(report)], tmp_path, last_assistant_message=report)
     assert "decision" not in result
+
+
+@pytest.mark.parametrize("name", ["mcp__other__send_to_user", "mcp__agent-toolkit__send_to_user"])
+def test_delivery_is_scoped_to_toolkit_including_resumed_calls(name: str, tmp_path: pathlib.Path) -> None:
+    body = "画面へ送った。"
+    entries = [_HUMAN, _call(name, "s1", {"message": "案内です。"}), _result(), _text(body)]
+    assert ("delivered_repost_gate" in _stop(entries, tmp_path, last_assistant_message=body).get("reason", "")) is (
+        name == "mcp__agent-toolkit__send_to_user"
+    )
+
+
+@pytest.mark.parametrize("env", ["AGENT_TOOLKIT_RUN_SKILL_ID", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"])
+def test_automated_session_preserves_completion_sentence(
+    env: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """自動起動の完了の1文は再掲扱いせず、複数文の再掲だけを止める。"""
+    monkeypatch.setenv(env, "1")
+    for body, blocked in [("担当の工程を完了した。", False), ("担当の工程を完了した。案内を送った。", True)]:
+        result = _stop([_HUMAN, _SEND, _result(), _text(body)], tmp_path, last_assistant_message=body)
+        assert ('source="delivered_repost_gate"' in result.get("reason", "")) is blocked
 
 
 def test_pending_async_work_and_subagent(tmp_path: pathlib.Path) -> None:
