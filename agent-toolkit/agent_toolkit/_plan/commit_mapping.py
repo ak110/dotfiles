@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import re
@@ -583,28 +584,39 @@ def rewritten_commits(worktree: pathlib.Path, mapping: dict[str, set[str]], prev
     return [oid for oid in mapping if _is_ancestor(worktree, oid, previous) and not _is_ancestor(worktree, oid, "HEAD")]
 
 
+@dataclasses.dataclass(frozen=True)
+class RangeRewrite:
+    """1件の記録に追記するイベント、拒否の理由となるOID、範囲外として残すOID。"""
+
+    event: dict[str, object] | None = None
+    missing: tuple[str, ...] = ()
+    past_omissions: tuple[str, ...] = ()
+    retained: tuple[str, ...] = ()
+
+
 def range_rewrite_event(
     worktree: pathlib.Path, mapping: dict[str, set[str]], rewrite: RewriteMap, previous_head: str
-) -> tuple[dict[str, object] | None, list[str], list[str]]:
-    """1件の記録の現在の対応から、範囲全体の対応表のうちその記録に該当する履歴変更のイベントを作成する。
-
-    現在のHEADに含まれない記録済みOIDを書換え対象とし、全てが対応表にあればイベントを返す。
-    書換え対象が無い記録はイベントを返さない。対応表に無い書換え対象は、書換え前のHEADから到達できるもの
-    （今回の書換えでの対応表の不足）と到達できないもの（過去の書換えの未追記）に分けて返す。
-    """
+) -> RangeRewrite:
+    """旧HEADにだけ含まれるOIDを付け替える。両HEADに無いOIDは、同じ記録に対象が無い時だけ未追記とする。"""
     previous = _full_oid(worktree, previous_head)
-    targets = [oid for oid in mapping if not _is_ancestor(worktree, oid, "HEAD")]
-    omitted = [oid for oid in targets if oid not in rewrite]
-    current_omissions = [oid for oid in omitted if _is_ancestor(worktree, oid, previous)]
-    past_omissions = [oid for oid in omitted if oid not in current_omissions]
-    if omitted or not targets:
-        return None, current_omissions, past_omissions
+    targets = []
+    outside = []
+    for oid in mapping:
+        if _is_ancestor(worktree, oid, "HEAD"):
+            continue
+        if _is_ancestor(worktree, oid, previous):
+            targets.append(oid)
+        else:
+            outside.append(oid)
+    if not targets:
+        return RangeRewrite(past_omissions=tuple(outside))
+    if missing := tuple(oid for oid in targets if oid not in rewrite):
+        return RangeRewrite(missing=missing, retained=tuple(outside))
     resolved: RewriteMap = {}
     for oid in targets:
         _check_assignment(oid, rewrite[oid], mapping[oid])
         resolved[short_oid(worktree, oid)] = _short_value(worktree, _resolved_value(worktree, rewrite[oid], names=mapping[oid]))
-    event: dict[str, object] = {"rewrite": resolved}
-    return event, [], []
+    return RangeRewrite(event={"rewrite": resolved}, retained=tuple(outside))
 
 
 def get_commits(

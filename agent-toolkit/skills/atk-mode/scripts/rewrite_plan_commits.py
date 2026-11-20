@@ -1,7 +1,9 @@
 """履歴書換えの旧OIDから新OIDへの対応を、影響する全ての計画と引き継ぎ記録へ1回で追記する。
 
 書換えで検収した範囲全体の対応表（WI対応を持たないcommitを含む）と書換え前のHEADを受け取り、
-各記録の現在の対応のうち現在のHEADに無いcommitだけを対応表から選んで、同じstemの対応記録ファイルへ追記する。
+書換え前のHEADから到達でき、現在のHEADから到達できないcommitだけを付け替える。
+対象commitを含む記録では、どちらのHEADにも無いOIDを変えずに残し、その件数と値を表示する。
+対象commitを含まない記録にどちらのHEADにも無いOIDがあれば、過去の書換えの未追記として拒否する。
 作業中・保存済み計画とmanaged-tempから未指定の対象記録を検出し、複数の対応表は書換え順に合成する。
 全ての記録を検証してから書込みを始め、対応表の不足・過去の書換えの未追記・対応表の誤り・保存済み計画のいずれかがあれば
 どの記録も変えずに失敗する。計画には進捗ログの1行を、引き継ぎ記録には`<完了した工程>: <結果>`の1行を追記する。
@@ -31,6 +33,7 @@ _CURRENT_OMISSION_ACTION = (
     " --output <対応表の絶対パス>`で検収して再生成し、同じ引数で再実行する。amendの両baseはamend前HEADの親とする"
 )
 _PAST_OMISSION_ACTION = (
+    "今回の対象commitが無い記録を指定する必要があるか確かめる。過去の書換えを反映する場合は、"
     "当時からの対応表を書換え順に--rewrite-mapへ反復指定し、最初の書換え前HEADを--previous-headへ渡した"
     "`atk run-script plan-rewrite -- --worktree <対象worktree> --previous-head <最初のHEAD> --rewrite-map <対応表> "
     "--completed-step <工程> --result <結果> --plan <計画>`で再実行する"
@@ -124,9 +127,9 @@ def _plan_events(
     previous_head: str,
     completed_step: str,
     result: str,
-) -> tuple[list[tuple[_Record, dict[str, object] | None]], list[str], list[str]]:
+) -> tuple[list[tuple[_Record, commit_mapping.RangeRewrite]], list[str], list[str]]:
     """全記録を検証し、記録ごとの追記イベントと、対応表の不足・過去の書換えの未追記・その他の失敗の行を返す。"""
-    planned: list[tuple[_Record, dict[str, object] | None]] = []
+    planned: list[tuple[_Record, commit_mapping.RangeRewrite]] = []
     problems: list[str] = []
     actions: list[str] = []
     for record in records:
@@ -134,8 +137,8 @@ def _plan_events(
             content = record.path.read_text(encoding="utf-8")
             events = commit_mapping.read_events(record.path, content)
             mapping = commit_mapping.read_mapping(worktree, events, _allowed_wis(record, content, events))
-            event, current, past = commit_mapping.range_rewrite_event(worktree, mapping, rewrite, previous_head)
-            if event is not None:
+            change = commit_mapping.range_rewrite_event(worktree, mapping, rewrite, previous_head)
+            if change.event is not None:
                 _check_writable(record, completed_step, result)
         except _next_action.ActionableError as error:
             problems.append(f"{record.path}: {error.reason}")
@@ -152,15 +155,15 @@ def _plan_events(
             problems.append(f"{record.path}: 記録を読めません: {error}")
             actions.append("記録の絶対パスと読み書きの権限を確かめ、同じ引数で再実行する")
             continue
-        for oid in current:
+        for oid in change.missing:
             problems.append(f"{record.path}: 対応表の不足（書換え前のHEADから到達できる記録済みOIDが対応表に無い）: {oid}")
-        if current:
+        if change.missing:
             actions.append(_CURRENT_OMISSION_ACTION)
-        for oid in past:
+        for oid in change.past_omissions:
             problems.append(f"{record.path}: 過去の書換えの未追記（書換え前後のHEADのどちらにも無い記録済みOID）: {oid}")
-        if past:
+        if change.past_omissions:
             actions.append(_PAST_OMISSION_ACTION)
-        planned.append((record, event))
+        planned.append((record, change))
     return planned, problems, list(dict.fromkeys(actions))
 
 
@@ -229,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         names: set[str] = set()
-        for record, _event in planned:
+        for record, _change in planned:
             content = record.path.read_text(encoding="utf-8")
             events = commit_mapping.read_events(record.path, content)
             mapping = commit_mapping.read_mapping(args.worktree, events, _allowed_wis(record, content, events))
@@ -246,9 +249,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     for name in updated_wis:
         print(f"終了AWIの対応commitを更新: {name}")
-    for record, event in planned:
+    for record, change in planned:
+        retained = ""
+        if change.retained:
+            retained = f" 範囲外として残したOID（{len(change.retained)}件）: {', '.join(change.retained)}"
+        event = change.event
         if event is None:
-            print(f"変更なし: {record.path}")
+            print(f"変更なし: {record.path}{retained}")
             continue
         if record.handoff:
             append_progress_log.append_handoff_log(record.path, args.completed_step, args.result)
@@ -257,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         commit_mapping.append_event(record.path, event)
         rewritten = event["rewrite"]
         assert isinstance(rewritten, dict)
-        print(f"追記: {record.path}（{len(rewritten)}件）")
+        print(f"追記: {record.path}（{len(rewritten)}件）{retained}")
     return 0
 
 

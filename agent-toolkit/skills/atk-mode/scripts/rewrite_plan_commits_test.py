@@ -262,6 +262,44 @@ def _read_commits(capsys: pytest.CaptureFixture[str]) -> list[str]:
     return output["commits"]
 
 
+def test_rewrite_keeps_cherry_pick_source_and_unmerged_commit(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同じAWIのcherry-pick元と別AWIの未統合commitを残し、取り込んだcommitだけを付け替える。"""
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main")
+    base = _commit(repo, "base")
+    source = _commit(repo, "feature")
+    git_repository.git_output(repo, "reset", "--hard", base)
+    git_repository.git_output(repo, "switch", "-c", "lane")
+    pending = _commit(repo, "pending")
+    git_repository.git_output(repo, "switch", "main")
+    git_repository.git_output(repo, "cherry-pick", "--allow-empty", "-x", source)
+    old = git_repository.git_output(repo, "rev-parse", "HEAD")
+    record = _handoff(tmp_path / "handoff.md")
+    commit_mapping.append_event(record, {"commits": [source, old], "awi": [WI_A]})
+    commit_mapping.append_event(record, {"commit": pending, "awi": [WI_B]})
+    records_before = commit_mapping.mapping_path(record).read_bytes()
+
+    git_repository.git_output(repo, "commit", "--amend", "--allow-empty", "-m", "renamed feature")
+    new = git_repository.git_output(repo, "rev-parse", "HEAD")
+    rewrite = tmp_path / "rewrite.json"
+    rewrite.write_text(json.dumps({old: new}), encoding="utf-8")
+    args = [
+        f"--worktree={repo}",
+        f"--previous-head={old}",
+        f"--rewrite-map={rewrite}",
+        "--completed-step=amend",
+        "--result=件名変更",
+        f"--handoff={record}",
+    ]
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-rewrite", script_args=args)) == 0
+    line = next(line for line in capsys.readouterr().out.splitlines() if line.startswith(f"追記: {record}（1件）"))
+    assert "範囲外" in line and "2件" in line and source in line and pending in line
+    assert commit_mapping.mapping_path(record).read_bytes().startswith(records_before)
+    events = commit_mapping.read_events(record, record.read_text(encoding="utf-8"))
+    assert commit_mapping.read_mapping(repo, events, {WI_A, WI_B}) == {source: {WI_A}, new: {WI_A}, pending: {WI_B}}
+
+
 @pytest.mark.cpu_limit(
     2.5,
     reason=(
@@ -387,6 +425,7 @@ def test_fixup_squash_inherits_union(tmp_path: pathlib.Path, monkeypatch: pytest
 )
 def test_missing_recorded_oid_fails_without_writes(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
     """書換え前のHEADから到達できる記録済みOIDが対応表に無いと、全記録を変えずに失敗し、記録・OID・次の操作を示す。"""
+    commit_mapping.append_event(rebased.plan, {"commit": rebased.orphan, "awi": [WI_A]})
     records = [rebased.plan, rebased.handoff, rebased.unaffected]
     before = _snapshot(records)
 
