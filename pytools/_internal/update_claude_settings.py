@@ -358,7 +358,7 @@ def update_claude_settings(
 
     # settings.jsonはJSONC形式（コメント・末尾カンマ許容）で書かれる場合があるため
     # `pytilpack.jsonc.loads`でパースする。純JSONも受理する。
-    data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
+    data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8-sig")) if settings_path.exists() else {}
 
     original = copy.deepcopy(data)
     if strip_legacy_codex_timeout:
@@ -377,7 +377,7 @@ def update_claude_settings(
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    if not common.write_settings_hybrid(settings_path, original, data, tag=short):
+    if not common.write_settings_hybrid(settings_path, original, data, tag=short, preserve_bom=True):
         return None
     logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):

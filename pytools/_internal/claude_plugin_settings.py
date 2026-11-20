@@ -50,7 +50,7 @@ def read_enabled_plugins() -> dict[str, bool]:
     """設定が未作成・未指定なら空の辞書を返し、読めない設定とは区別する。"""
     path = claude_common.SETTINGS_JSON_PATH
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         return {}
     except (json.JSONDecodeError, UnicodeDecodeError) as error:

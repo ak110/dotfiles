@@ -2,6 +2,7 @@
 
 # pylint: disable=protected-access
 
+import codecs
 import json
 import shutil
 import sys
@@ -295,56 +296,29 @@ class TestJsoncCommentPreservation:
     構造変化（キー追加・list変更）を含む更新は現行の`json.dumps`経路にフォールバックする。
     """
 
-    def test_scalar_only_change_preserves_comments(self, tmp_path: Path):
-        """既存キーのスカラー値置換のみならコメントが維持される。"""
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+    @pytest.mark.parametrize("add_key", [False, True], ids=["scalar", "full-rewrite"])
+    def test_update_preserves_file_encoding(self, tmp_path: Path, encoding: str, add_key: bool):
+        """どちらの書き戻しでもBOMの有無とユーザー設定を保ち、値だけの更新ではコメントも残す。"""
+        managed = {"language": "english"}
+        if add_key:
+            managed["newKey"] = "newValue"
         managed_path = tmp_path / "managed.json"
-        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
-        target_path = tmp_path / "target.json"
-        target_path.write_text(
-            '{\n  // ユーザーコメント\n  "language": "japanese"\n}\n',
-            encoding="utf-8",
-        )
+        managed_path.write_text(json.dumps(managed), encoding="utf-8")
+        target_path = tmp_path / "settings.json"
+        original = '{\n  // ユーザーコメント\n  "language": "japanese",\n  "enabledPlugins": {"sample@local": false}\n}\n'
+        target_path.write_text(original, encoding=encoding)
 
-        update_claude_settings(
-            managed_path,
-            target_path,
-            removed_hook_substrings=(),
-            removed_env_keys=(),
-            removed_list_item_substrings=(),
-        )
-
-        text = target_path.read_text(encoding="utf-8")
-        assert "// ユーザーコメント" in text
-        assert '"language": "english"' in text
-
-    def test_key_addition_falls_back_to_full_rewrite(self, tmp_path: Path):
-        """新規キー追加を含む更新はコメント維持できず全書き換えへフォールバックする。"""
-        managed_path = tmp_path / "managed.json"
-        managed_path.write_text(
-            json.dumps({"language": "english", "newKey": "newValue"}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        target_path = tmp_path / "target.json"
-        target_path.write_text(
-            '{\n  // ユーザーコメント\n  "language": "japanese"\n}\n',
-            encoding="utf-8",
-        )
-
-        update_claude_settings(
-            managed_path,
-            target_path,
-            removed_hook_substrings=(),
-            removed_env_keys=(),
-            removed_list_item_substrings=(),
-        )
-
-        text = target_path.read_text(encoding="utf-8")
-        # フォールバック経路はJSONCコメントを保持しない
-        assert "// ユーザーコメント" not in text
-        # 変更後の値は反映される
-        result = json.loads(text)
-        assert result["language"] == "english"
-        assert result["newKey"] == "newValue"
+        assert update_claude_settings(managed_path, target_path) is True
+        written = target_path.read_bytes()
+        assert written.startswith(codecs.BOM_UTF8) == (encoding == "utf-8-sig")
+        text = target_path.read_text(encoding=encoding)
+        if add_key:
+            assert json.loads(text) == {**managed, "enabledPlugins": {"sample@local": False}}
+        else:
+            assert text == original.replace("japanese", "english")
+        assert update_claude_settings(managed_path, target_path) is False
+        assert target_path.read_bytes() == written
 
 
 class TestUpdateClaudeConfig:

@@ -137,6 +137,7 @@ class TestRunFlow:
             (False, True, 0),
         ],
     )
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
     def test_activation_summary(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -145,6 +146,7 @@ class TestRunFlow:
         before: bool | None,
         after: bool | None,
         expected_exit: int,
+        encoding: str,
     ) -> None:
         """明示した無効化と、導入後に設定が反映されない場合を画面と失敗件数で区別する。"""
         plugin_id = "agent-toolkit@ak110-dotfiles"
@@ -154,7 +156,7 @@ class TestRunFlow:
             enabled = {"sample-plugin@ak110-dotfiles": True}
             if value is not None:
                 enabled[plugin_id] = value
-            settings.write_text(json.dumps({"enabledPlugins": enabled}), encoding="utf-8")
+            settings.write_text(json.dumps({"enabledPlugins": enabled}), encoding=encoding)
 
         write_settings(before)
         install = make_fresh_install_fake([])
@@ -185,7 +187,7 @@ class TestRunFlow:
         else:
             assert "失敗" not in captured.err
             assert "再実行" not in captured.err + captured.out
-            enabled = json.loads(settings.read_text(encoding="utf-8"))["enabledPlugins"]
+            enabled = json.loads(settings.read_text(encoding=encoding))["enabledPlugins"]
             assert enabled[plugin_id] is (before is not False)
             assert enabled["sample-plugin@ak110-dotfiles"] is True
 
