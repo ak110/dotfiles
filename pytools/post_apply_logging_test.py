@@ -7,6 +7,7 @@ import errno
 import io
 import json
 import logging
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -85,13 +86,59 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     assert "update-dotfiles logs" in screen
     saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
     assert "一時資源1件の回収を保留" in screen
-    assert "削除権限" in captured.err
+    assert "アクセス権" in captured.err
     assert f"一時資源の回収を保留: {area / 'denied-key'}" in saved
     assert f"一時資源の回収を保留: {area / 'busy-key'}" not in saved
     for detail in ("再生成物2件", "保護対象を回収から除外", "一時資源を1件回収", "resource busy", "access denied"):
         assert detail not in screen and detail in saved
     for name in (current.name, old.name, broken.name, "busy-key", "deleted-key", "denied-key"):
         assert name not in screen and name in saved
+
+
+@pytest.mark.skipif(not hasattr(os, "O_PATH") or os.geteuid() == 0, reason="Linuxの非rootアカウントでアクセス拒否を再現する")
+@pytest.mark.parametrize(
+    ("blocked", "mode", "reason"),
+    [
+        ("project", 0o100, "走査不能"),
+        ("project/cache/CACHEDIR.TAG", 0, "再生成物の確認失敗"),
+        ("project/.venv", 0, "再生成物の確認失敗"),
+        ("project/cache", 0o500, "回収失敗"),
+    ],
+    ids=["walk", "tag-read", "marker-lookup", "remove"],
+)
+def test_update_reports_unresolved_permission_error_and_retries(blocked, mode, reason, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(tmp_path))
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    area = paths.temp_root() / "permission-test"
+    project = area / "project"
+    cache = project / (".venv" if blocked == "project/.venv" else "cache")
+    cache.mkdir(parents=True)
+    if cache.name == ".venv":
+        (cache / "pyvenv.cfg").touch()
+        (project / "uv.lock").touch()
+    else:
+        (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n", encoding="ascii")
+    restricted = area / blocked
+    original = restricted.stat().st_mode
+    restricted.chmod(mode)
+    try:
+        with post_apply._configure_logging():
+            plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+        screen = capsys.readouterr()
+        assert not screen.out and len(screen.err.splitlines()) == 1
+        assert "一時資源1件" in screen.err and "update-dotfiles logs" in screen.err
+        saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
+        assert any(
+            reason in line and str(restricted) in line and os.strerror(errno.EACCES) in line for line in saved.splitlines()
+        )
+    finally:
+        restricted.chmod(original)
+    assert cache.is_dir()
+    with post_apply._configure_logging():
+        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+    assert capsys.readouterr() == ("", "")
+    assert not cache.exists()
 
 
 def test_update_hides_success_but_preserves_manual_recovery(monkeypatch, tmp_path, capsys):

@@ -489,7 +489,11 @@ def test_sweep_recovers_unreadable_owned_tree_and_restores_retained_modes(
     locked.chmod(0)
     try:
         result = managed_temp.sweep_managed_temp(now=_NOW)
-        assert not result.failed
+        # 使用中なら探索せず、親ごと回収できた場合も、対処が必要な失敗は残らない。
+        if protection in {"fresh", "worktree"} and not os.access(locked, os.R_OK):
+            assert [target for target, _reason in result.failed] == [locked]
+        else:
+            assert not result.failed
         assert (area in result.deleted) is (protection == "expired")
         assert area.exists() is (protection != "expired")
         if protection != "expired":

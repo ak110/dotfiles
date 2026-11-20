@@ -10,6 +10,7 @@ import logging
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 from collections.abc import Callable
 from typing import Any
@@ -35,24 +36,33 @@ def log_retained(retained: list[dict[str, Any]]) -> None:
         logger.debug("再生成物の保護対象: %s", excluded)
 
 
+def _input_file(path: pathlib.Path) -> bool:
+    """判定材料の不在と、権限不足などで調べられない場合を区別する。"""
+    try:
+        return stat.S_ISREG(path.stat().st_mode)
+    except FileNotFoundError, NotADirectoryError:
+        return False
+
+
 def _regenerable(path: pathlib.Path) -> bool:
     """名前だけで決めず、生成形式と再生成入力が対応する対象を選ぶ。"""
     project = path.parent
-    if path.name == ".venv" or (path / "pyvenv.cfg").is_file():
+    venv_config = path / "pyvenv.cfg"
+    if path.name == ".venv" or _input_file(venv_config):
         return (
-            not (path / "pyvenv.cfg").is_symlink()
-            and (path / "pyvenv.cfg").is_file()
-            and any((project / name).is_file() for name in ("uv.lock", "requirements.txt", "requirements.lock", "poetry.lock"))
+            not venv_config.is_symlink()
+            and _input_file(venv_config)
+            and any(_input_file(project / name) for name in ("uv.lock", "requirements.txt", "requirements.lock", "poetry.lock"))
         )
     if path.name == "node_modules":
-        return (project / "package.json").is_file() and any(
-            (project / name).is_file() for name in ("pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock")
+        return _input_file(project / "package.json") and any(
+            _input_file(project / name) for name in ("pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock")
         )
-    if path.name == "target" and (project / "Cargo.toml").is_file() and (project / "Cargo.lock").is_file():
+    if path.name == "target" and _input_file(project / "Cargo.toml") and _input_file(project / "Cargo.lock"):
         return True
     # CACHEDIR.TAGはキャッシュ生成側の明示指定。固有のキャッシュ名の列挙を増やさない。
     tag = path / "CACHEDIR.TAG"
-    if tag.is_symlink() or not tag.is_file():
+    if tag.is_symlink() or not _input_file(tag):
         return False
     with tag.open(encoding="ascii", errors="replace") as stream:
         return stream.readline(len(_CACHE_SIGNATURE) + 2).rstrip("\r\n") == _CACHE_SIGNATURE
@@ -142,32 +152,35 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
         result["retained"].append({"path": str(root), "reason": "所有領域の実体を確認できない", "retryable": True})
         return result
 
+    def retain_error(path: str, operation: str, error: OSError | subprocess.SubprocessError) -> None:
+        result["retained"].append(
+            {"path": path, "reason": f"{operation}: {error}", "retryable": True, "failed": not _transient_error(error)}
+        )
+
     def unreadable(error: OSError) -> None:
-        result["retained"].append({"path": str(error.filename), "reason": f"走査不能: {error}", "retryable": True})
+        retain_error(str(error.filename), "走査不能", error)
 
     for directory, children, _files in os.walk(root, followlinks=False, onerror=unreadable):
         parent = pathlib.Path(directory)
-        for name in children[:]:
+        candidates = children.copy()
+        children.clear()
+        for name in candidates:
             path = parent / name
-            regenerable = False
             try:
                 metadata = path.lstat()
                 if name == ".git":
-                    children.remove(name)
                     continue
                 if paths.is_link(metadata):
-                    children.remove(name)
                     result["retained"].append(
                         {"path": str(path), "reason": "リンク先の所有と再生成指定を確認しない", "retryable": False}
                     )
                     continue
-                regenerable = _regenerable(path)
-                if not regenerable:
+                if not _regenerable(path):
                     if name in {".venv", "node_modules", "target"} or (path / "pyvenv.cfg").exists():
-                        children.remove(name)
                         result["retained"].append({"path": str(path), "reason": "再生成の前提が未確認", "retryable": True})
+                    else:
+                        children.append(name)
                     continue
-                children.remove(name)
                 protected, usage_root = _git_protected(path, root)
                 reason = None
                 retryable = False
@@ -193,15 +206,12 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
                 if reason:
                     result["retained"].append({"path": str(path), "reason": reason, "retryable": retryable})
                     continue
+            except (OSError, subprocess.SubprocessError) as error:
+                retain_error(str(path), "再生成物の確認失敗", error)
+                continue
+            try:
                 shutil.rmtree(path)
                 result["removed"].append(str(path))
-            except (OSError, subprocess.SubprocessError) as error:
-                result["retained"].append(
-                    {
-                        "path": str(path),
-                        "reason": f"回収失敗: {error}",
-                        "retryable": True,
-                        "failed": regenerable and not _transient_error(error),
-                    }
-                )
+            except OSError as error:
+                retain_error(str(path), "回収失敗", error)
     return result
