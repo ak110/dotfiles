@@ -12,7 +12,7 @@ def _verbatim_patches(repo: pathlib.Path, common: str, tip: str) -> collections.
     span = f"{common}..{tip}"
     commits = _lane_records.git(repo, "rev-list", "--no-merges", "--max-count=512", span).splitlines()
     if len(commits) >= 512:
-        raise ValueError("パッチの取込みを確かめる対象が512commit以上あるため回収しない")
+        raise ValueError("比較対象が512commit以上ある。統合先から履歴を辿れる状態になってから再判定する")
     patch = git_command.run(
         [
             "log",
