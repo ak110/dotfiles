@@ -17,6 +17,7 @@ from pytools._internal import (
     claude_common,
     claude_marketplace,
     claude_plugin_references,
+    claude_plugin_settings,
     common,
     external_pstack,
     external_web_guidance,
@@ -72,10 +73,6 @@ _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
 )
 
 
-class _PluginSettingsError(RuntimeError):
-    """導入済みpluginのユーザー設定が期待した状態でない。"""
-
-
 def run() -> post_apply_outcome.PostApplyOutcome:
     """Claude Code pluginをインストール・更新し、ユーザーへ案内する推奨コマンドを結果へ含める。
 
@@ -85,14 +82,17 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
-    external_changed = external_web_guidance.run("claude")
-    external_changed = external_pstack.run() or external_changed
+    external_changed = False
     try:
-        changed, recommendations, disable_failed_count, artifact_failed_count, deferred = _install_plugins()
-    except _PluginSettingsError as error:
+        # plugin CLI が設定を書く前に、ユーザーの選択を読み取れることを確かめる。
+        initial_enabled = claude_plugin_settings.read_enabled_plugins()
+        external_changed = external_web_guidance.run("claude")
+        external_changed = external_pstack.run() or external_changed
+        changed, recommendations, disable_failed_count, artifact_failed_count, deferred = _install_plugins(initial_enabled)
+    except claude_plugin_settings.PluginSettingsError as error:
         return post_apply_outcome.PostApplyOutcome(
             failure=str(error),
-            next_action="~/.claude/settings.json の enabledPlugins で対象pluginの設定を確認する。",
+            next_action=error.next_action,
         )
     except RuntimeError as error:
         logger.warning(
@@ -114,7 +114,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     )
 
 
-def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
+def _install_plugins(initial_enabled: dict[str, bool]) -> tuple[bool, list[str], int, int, bool]:
     """導入・更新・自動無効化を行い、結果を返す。
 
     戻り値は`(変更の有無, 推奨コマンド, 自動無効化の失敗件数, 開発用生成物の削除の失敗件数, 修復か削除の延期の有無)`。
@@ -148,27 +148,50 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
         )
         return external_changed, [], 0, 0, False
 
-    # marketplace修復もpluginの登録を変更するため、その前の明示的な無効化だけをユーザー設定として扱う。
-    initial_enabled = _read_enabled_plugins_from_file() or {}
-    initially_disabled = {plugin_id for plugin_id, enabled in initial_enabled.items() if not enabled}
-
-    if not claude_marketplace.ensure_marketplace():
-        return external_changed, [], 0, 0, False
-
-    # marketplace の修復は remove/add により導入済み登録を変更し得るため、
-    # 修復完了後の実体だけを導入判定へ用いる。
-    raw_data: object = _read_installed_plugins_from_file()
-    if raw_data is None:
-        raw_data = _get_installed_plugins_raw()
-        if raw_data is None:
-            logger.info(
-                log_format.format_status(
-                    "plugins",
-                    "インストール済み plugin 一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
-                ),
-            )
+    # remove/add が設定を消す場合もあるため、修復前の user scope の選択を使う。
+    expected = {}
+    disabled_ids = []
+    for name in target_versions:
+        plugin_id = f"{name}@{claude_common.MARKETPLACE_NAME}"
+        if plugin_id in initial_enabled:
+            expected[name] = initial_enabled[plugin_id]
+            if not expected[name]:
+                disabled_ids.append(plugin_id)
+    failed_operations: dict[str, str] = {}
+    try:
+        if not claude_marketplace.ensure_marketplace():
             return external_changed, [], 0, 0, False
 
+        # 修復で導入済み登録も変わり得るため、ここで一覧を取り直す。
+        raw_data: object = _read_installed_plugins_from_file()
+        if raw_data is None:
+            raw_data = _get_installed_plugins_raw()
+            if raw_data is None:
+                logger.info(
+                    log_format.format_status(
+                        "plugins",
+                        "インストール済み plugin 一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
+                    ),
+                )
+                return external_changed, [], 0, 0, False
+        changed, recommendations, disable_failed, artifact_failed, deferred = _sync_plugins(
+            dotfiles_root, target_versions, deprecated_names, raw_data, expected, failed_operations
+        )
+    finally:
+        # cache の再導入も install を使う。途中の失敗で無効化を取りこぼさない。
+        claude_plugin_settings.restore_disabled_plugins(disabled_ids)
+    _verify_target_plugins(target_versions, failed_operations, expected)
+    return external_changed or changed, recommendations, disable_failed, artifact_failed, deferred
+
+
+def _sync_plugins(
+    dotfiles_root: Path,
+    target_versions: dict[str, str],
+    deprecated_names: set[str],
+    raw_data: object,
+    expected: dict[str, bool],
+    failed_operations: dict[str, str],
+) -> tuple[bool, list[str], int, int, bool]:
     any_change = False
 
     # deprecated プラグインをアンインストール
@@ -196,14 +219,13 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
     updated_count = 0
     installed_count = 0
     resynced_count = 0
-    # 管理対象の導入・更新に失敗したplugin名と操作。サマリ行の後に工程の失敗として送出する。
-    failed_operations: dict[str, str] = {}
     # CLI が成功終了した plugin だけを、キャッシュ実体の検査対象にする。
     cache_check_names: list[str] = []
     for name, target in target_versions.items():
         current = installed.get(name)
         if current is None:
             if _install_plugin(name):
+                expected.setdefault(name, True)
                 any_change = True
                 installed_count += 1
                 cache_check_names.append(name)
@@ -222,6 +244,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
                 log_format.format_status(name, f"最新 ({current or '不明'}) のため directory 型キャッシュを再同期"),
             )
             if _install_plugin(name):
+                expected.setdefault(name, True)
                 any_change = True
                 resynced_count += 1
                 cache_check_names.append(name)
@@ -238,7 +261,9 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
     cache_deferred = False
     for name in cache_check_names:
         cache_state = _ensure_plugin_cache_complete(name)
-        any_change = any_change or cache_state == "repaired"
+        if cache_state == "repaired":
+            expected.setdefault(name, True)
+            any_change = True
         cache_deferred = cache_deferred or cache_state == "deferred"
     artifact_failed_count = 0
     for name in cache_check_names:
@@ -250,7 +275,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
     # 外部 marketplace の自動 disable 実行と install/enable 推奨コマンド算出 (公式プラグイン)。
     # 対象は ak110-dotfiles 以外の marketplace であり、上記のインストールループで
     # 状態が変わらないため、冒頭で取得した raw_data を再利用してよい。
-    enabled_map = _read_enabled_plugins_from_file()
+    enabled_map = claude_plugin_settings.read_enabled_plugins()
     disabled_count, disable_failed_count = _auto_disable_plugins(raw_data, enabled_map)
     if disabled_count:
         any_change = True
@@ -266,9 +291,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
             + (f" / CLI操作の失敗 {failed_count} 件" if failed_count else ""),
         ),
     )
-    # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
-    _verify_target_plugins(target_versions, failed_operations, initially_disabled)
-    return external_changed or any_change, recommendations, disable_failed_count, artifact_failed_count, cache_deferred
+    return any_change, recommendations, disable_failed_count, artifact_failed_count, cache_deferred
 
 
 def _plugin_content_matches(root: Path, name: str) -> bool:
@@ -389,10 +412,14 @@ def _auto_disable_plugins(raw_data: object, enabled_map: dict[str, bool] | None)
             continue
         if enabled_map is not None and enabled_map.get(plugin_id) is False:
             continue
-        if _disable_plugin(plugin_id):
-            disabled += 1
-        else:
+        if error := claude_plugin_settings.disable_plugin(plugin_id):
+            logger.info(
+                log_format.format_status(plugin_id, f"{error}。`claude plugin disable {plugin_id} --scope=user`を実行する")
+            )
             failed += 1
+        else:
+            logger.info(log_format.format_status(plugin_id, "推奨設定に従って無効化しました"))
+            disabled += 1
     return disabled, failed
 
 
@@ -683,45 +710,6 @@ def _update_plugin(name: str) -> bool:
         return True
 
 
-def _disable_plugin(plugin_id: str) -> bool:
-    """指定 plugin を user scope で無効化する (成功時 True を返す)。
-
-    ``plugin_id`` は ``<name>@<marketplace>`` 形式。
-    """
-    result = claude_common.run_claude(["plugin", "disable", plugin_id, "--scope=user"])
-    if result is None or result.returncode != 0:
-        logger.info(
-            log_format.format_status(
-                plugin_id,
-                f"disable に失敗: {common.format_cli_error(result)}。"
-                f"`claude plugin disable {plugin_id} --scope=user`を実行する",
-            ),
-        )
-        return False
-    logger.info(log_format.format_status(plugin_id, "推奨設定に従って無効化しました"))
-    return True
-
-
-def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
-    """`settings.json` の `enabledPlugins` を直読みして `<id> -> bool` 辞書で返す。
-
-    ファイル不在・解析失敗・`enabledPlugins` が非dictの場合は、有効・無効の状態を
-    実体から取得できなかったことを表す `None` を返す。`None` の扱いは呼び出し元ごとに異なり、
-    自動無効化と推奨コマンド算出は有効とみなし、install後の状態検証は未確認として失敗扱いとする。
-    """
-    data = common.load_json_dict(claude_common.SETTINGS_JSON_PATH)
-    if data is None:
-        return None
-    enabled = data.get("enabledPlugins")
-    if not isinstance(enabled, dict):
-        return None
-    result: dict[str, bool] = {}
-    for key, value in cast("dict[str, object]", enabled).items():
-        if isinstance(key, str) and isinstance(value, bool):
-            result[key] = value
-    return result
-
-
 def _plugin_cache_directory(name: str) -> Path | None:
     """`installed_plugins.json` が保持する user scope の導入先ディレクトリを返す。"""
     try:
@@ -933,7 +921,7 @@ def _remove_stale_source_environment(dotfiles_root: Path) -> bool:
 
 
 def _verify_target_plugins(
-    target_versions: dict[str, str], failed_operations: dict[str, str], initially_disabled: set[str]
+    target_versions: dict[str, str], failed_operations: dict[str, str], expected_enabled: dict[str, bool]
 ) -> None:
     """管理対象pluginのuser scopeの版と、明示的な無効化を含む有効設定を検証する。
 
@@ -946,7 +934,7 @@ def _verify_target_plugins(
     if raw_data is None:
         raise RuntimeError("install後のplugin一覧を取得できませんでした")
     installed = _extract_plugin_version_map(raw_data)
-    enabled = _read_enabled_plugins_from_file() or {}
+    enabled = claude_plugin_settings.read_enabled_plugins()
     missing: list[str] = []
     mismatched: list[str] = []
     setting_mismatches: list[str] = []
@@ -958,9 +946,11 @@ def _verify_target_plugins(
         elif name not in failed_operations:
             # 導入できなかったpluginの設定欠落は、独立した設定の失敗ではない。
             plugin_id = f"{name}@{claude_common.MARKETPLACE_NAME}"
-            expected = plugin_id not in initially_disabled
-            if enabled.get(plugin_id) is not expected:
-                setting_mismatches.append(f"{plugin_id} (期待値: {str(expected).lower()})")
+            # install は有効化する。導入済みの update・現状確認は未指定のキーを作らない。
+            if name in expected_enabled or plugin_id in enabled:
+                expected = expected_enabled.get(name, True)
+                if enabled.get(plugin_id) is not expected:
+                    setting_mismatches.append(f"{plugin_id} (期待値: {str(expected).lower()})")
     failures: list[str] = []
     if failed_operations:
         operations = ", ".join(f"{name} ({operation})" for name, operation in failed_operations.items())
@@ -971,7 +961,9 @@ def _verify_target_plugins(
         failures.append(f"版不一致: {', '.join(mismatched)}")
     if setting_mismatches:
         failures.append(f"enabledPlugins の設定不一致: {', '.join(setting_mismatches)}")
-        raise _PluginSettingsError(" / ".join(failures))
+        raise claude_plugin_settings.PluginSettingsError(
+            " / ".join(failures), "~/.claude/settings.json の enabledPlugins で対象pluginの設定を確認する。"
+        )
     if failures:
         message = " / ".join(failures)
         raise RuntimeError(f"Claude Code pluginのinstall後の状態検証に失敗しました: {message}")

@@ -16,6 +16,7 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import claude_plugin_references as _claude_plugin_references
+from pytools._internal import claude_plugin_settings
 from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
@@ -43,7 +44,7 @@ def test_plugin_mutations_use_management_commands_only(monkeypatch: pytest.Monke
     monkeypatch.setattr(_claude_common, "run_claude", run)
     assert _install_claude_plugins._install_plugin("sample")
     assert _install_claude_plugins._update_plugin("sample")
-    assert _install_claude_plugins._disable_plugin("sample@example")
+    assert claude_plugin_settings.disable_plugin("sample@example") is None
     assert calls == [
         ["plugin", "install", "sample@ak110-dotfiles", "--scope=user", "-y"],
         ["plugin", "update", "sample@ak110-dotfiles", "--scope=user"],
@@ -88,7 +89,7 @@ def test_installed_plugins_are_read_after_marketplace_is_ensured(
     )
     monkeypatch.setattr(_install_claude_plugins, "_uninstall_deprecated", lambda _name, _raw: False)
     monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
-    monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
+    monkeypatch.setattr(claude_plugin_settings, "read_enabled_plugins", lambda: {})
     monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
     monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
 

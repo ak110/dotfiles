@@ -133,8 +133,8 @@ class TestRunFlow:
             (True, False, 1),
             (None, False, 1),
             (None, None, 1),
-            (False, None, 1),
-            (False, True, 1),
+            (False, None, 0),
+            (False, True, 0),
         ],
     )
     def test_activation_summary(
@@ -160,6 +160,9 @@ class TestRunFlow:
         install = make_fresh_install_fake([])
 
         def install_with_settings(cmd: list[str], **kwargs: object) -> _FakeResult:
+            if command_matches(cmd, ["claude", "plugin", "disable", plugin_id, "--scope=user"]):
+                write_settings(False)
+                return _FakeResult()
             result = install(cmd, **kwargs)
             if command_matches(cmd, ["claude", "plugin", "install", plugin_id]):
                 write_settings(after)
@@ -182,6 +185,46 @@ class TestRunFlow:
         else:
             assert "失敗" not in captured.err
             assert "再実行" not in captured.err + captured.out
+            enabled = json.loads(settings.read_text(encoding="utf-8"))["enabledPlugins"]
+            assert enabled[plugin_id] is (before is not False)
+            assert enabled["sample-plugin@ak110-dotfiles"] is True
+
+    @pytest.mark.parametrize("disable_exit", [0, 1])
+    def test_failed_restore_reports_reason(self, monkeypatch: pytest.MonkeyPatch, disable_exit: int) -> None:
+        """disable の診断と、成功終了しても設定に反映されない失敗を区別する。"""
+        plugin_id = "agent-toolkit@ak110-dotfiles"
+        settings = _claude_common.SETTINGS_JSON_PATH
+        settings.write_text(json.dumps({"enabledPlugins": {plugin_id: False}}), encoding="utf-8")
+        install = make_fresh_install_fake([])
+
+        def cli(cmd: list[str], **kwargs: object) -> _FakeResult:
+            if command_matches(cmd, ["claude", "plugin", "install", plugin_id]):
+                settings.write_text(json.dumps({"enabledPlugins": {plugin_id: True}}), encoding="utf-8")
+            if command_matches(cmd, ["claude", "plugin", "disable", plugin_id]):
+                return _FakeResult(returncode=disable_exit, stderr="permission denied" if disable_exit else "")
+            return install(cmd, **kwargs)
+
+        monkeypatch.setattr(_common, "run_subprocess", cli)
+        outcome = _install_claude_plugins.run()
+        assert outcome.failure is not None and plugin_id in outcome.failure
+        assert ("permission denied" if disable_exit else "反映されていません") in outcome.failure
+
+    @pytest.mark.parametrize("content", [None, "{}", '{"enabledPlugins": {}}', "{broken"])
+    def test_installed_without_activation_setting(self, monkeypatch: pytest.MonkeyPatch, content: str | None) -> None:
+        """最新版で設定が未指定ならそのままにし、読めない JSON は明示して保持する。"""
+        settings = _claude_common.SETTINGS_JSON_PATH
+        if content is None:
+            settings.unlink()
+        else:
+            settings.write_text(content, encoding="utf-8")
+        monkeypatch.setattr(_common, "run_subprocess", make_installed_two_plugin_fake([]))
+        outcome = _install_claude_plugins.run()
+        if content == "{broken":
+            assert outcome.failure is not None
+            assert "settings.json" in outcome.failure and "JSON" in outcome.failure
+        else:
+            assert outcome.failure is None
+        assert (settings.read_text(encoding="utf-8") if settings.exists() else None) == content
 
     def test_already_installed_up_to_date_skips(self, monkeypatch: pytest.MonkeyPatch):
         """GitHub 型残存環境: version 一致で update も install も呼ばれない (回帰防止)。"""

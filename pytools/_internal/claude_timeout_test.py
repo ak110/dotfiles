@@ -5,7 +5,7 @@
 import subprocess
 from pathlib import Path
 
-from pytools._internal import claude_common, claude_marketplace, common, install_claude_plugins
+from pytools._internal import claude_common, claude_marketplace, claude_plugin_settings, common, install_claude_plugins
 
 
 def test_run_claude_uses_short_timeout_by_default(monkeypatch) -> None:
@@ -38,7 +38,7 @@ def test_plugin_install_and_update_use_extended_timeout(monkeypatch) -> None:
 
     assert install_claude_plugins._install_plugin("example")
     assert install_claude_plugins._update_plugin("example")
-    assert install_claude_plugins._disable_plugin("example@marketplace")
+    assert claude_plugin_settings.disable_plugin("example@marketplace") is None
 
     assert [kwargs for _, kwargs in observed] == [{"timeout": 300}, {"timeout": 300}, {}]
     assert observed[0][0][-1] == "-y"
