@@ -1,5 +1,6 @@
 """古いレーンの確実に取込み済みの成果を判定する。"""
 
+import collections
 import pathlib
 import typing
 
@@ -7,7 +8,7 @@ from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._git import command as git_command
 
 
-def _verbatim_patches(repo: pathlib.Path, common: str, tip: str) -> dict[bytes, bytes]:
+def _verbatim_patches(repo: pathlib.Path, common: str, tip: str) -> collections.Counter[bytes]:
     span = f"{common}..{tip}"
     commits = _lane_records.git(repo, "rev-list", "--no-merges", "--max-count=512", span).splitlines()
     if len(commits) >= 512:
@@ -20,6 +21,8 @@ def _verbatim_patches(repo: pathlib.Path, common: str, tip: str) -> dict[bytes, 
             "--no-color",
             "--no-ext-diff",
             "--no-textconv",
+            "--ignore-submodules=none",
+            "--submodule=short",
             "--full-index",
             "--no-renames",
             "--binary",
@@ -44,7 +47,7 @@ def _verbatim_patches(repo: pathlib.Path, common: str, tip: str) -> dict[bytes, 
         raise ValueError("パッチの一致結果を解釈できないため回収しない")
     if not set(commits) <= {commit.decode("ascii") for _, commit in rows}:
         raise ValueError("パッチを確認できないcommitを含むため回収しない")
-    return dict(rows)
+    return collections.Counter(patch_id for patch_id, _ in rows)
 
 
 def prove(record: dict[str, typing.Any], repo: pathlib.Path) -> dict[str, str]:
@@ -80,6 +83,33 @@ def prove(record: dict[str, typing.Any], repo: pathlib.Path) -> dict[str, str]:
     common = _lane_records.git(repo, "merge-base", head, base_head)
     lane_patches = _verbatim_patches(repo, common, head)
     base_patches = _verbatim_patches(repo, common, base_head)
-    if not lane_patches or not lane_patches.keys() <= base_patches.keys():
+    if not lane_patches or not lane_patches <= base_patches:
         raise ValueError("統合先へ含まれない変更があるため回収しない")
     return {"head": head, "base_head": base_head, "basis": "equivalent-patch"}
+
+
+def orphan_candidates(repo: pathlib.Path, registered: list[dict[str, typing.Any]]) -> list[dict[str, str | None]]:
+    """同じリポジトリの登録外の候補を、由来確認が必要な保護対象として返す。"""
+    common = _lane_records.common(repo)
+    records = [item["record"] for item in registered if item["record"].get("common_dir") == common]
+    owned_paths = {str(pathlib.Path(item["worktree"]).resolve()) for item in records}
+    owned_branches = {item["branch"] for item in records}
+    trees = _lane_records.worktrees(repo)
+    main = _lane_records.main_worktree(repo).resolve()
+
+    def named(branch: str | None) -> bool:
+        return bool(branch and branch.startswith(("orch/", "lead/", "process-wi-")))
+
+    results: list[dict[str, str | None]] = []
+    reason = "所有登録がなく作成者を確認できない。ユーザー確認なしに削除しない"
+    for path, branch in sorted(trees.items()):
+        resolved = pathlib.Path(path).resolve()
+        if resolved == main or str(resolved) in owned_paths:
+            continue
+        if named(branch) or "managed-temp" in resolved.parts or "worktrees" in resolved.parts:
+            results.append({"worktree": str(resolved), "branch": branch or None, "reason": reason})
+    linked = set(trees.values())
+    for branch in sorted(_lane_records.branches(repo)):
+        if branch not in owned_branches and branch not in linked and named(branch):
+            results.append({"worktree": None, "branch": branch, "reason": reason})
+    return results

@@ -8,7 +8,8 @@
 
 ## レーン資源の作成・再利用・回収
 
-1. 開始時に`atk lane delete --list`で、前回の残存登録、回収結果、回復処理で残ったbranchとHEADを確かめる。
+1. 開始時に`atk lane delete --list --repo <対象リポジトリ>`で、前回の残存登録、回収結果、回復処理で残ったbranchとHEADを確かめる。
+   `orphan_candidates`は登録外の候補と保持理由であり、出力だけで削除の認可とはならない。
    残る登録は、担当や関連プロセスの終了を確かめてから、元の所有sessionを指定した`atk lane delete --session-id <所有session>`で再判定する。
    再開に使う登録は、登録ファイルの`record_path`をcreateの`--reuse-record`へ渡して新しい所有sessionへ移す（旧配置の個別managed-temp配下の登録も同じ作成先のまま移せる）。
    再利用するworktreeが無ければ移さずに、元の所有sessionへのdeleteで登録を回収してから作り直す。

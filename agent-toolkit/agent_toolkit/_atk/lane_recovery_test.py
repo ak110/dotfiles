@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._atk import lane, lane_activity
+from agent_toolkit._atk import lane, lane_activity, lane_retirement
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository
@@ -83,6 +83,48 @@ def test_retired_lane_only_removes_covered_changes(
         assert code == 1 and result["retained"], stderr
         assert record_path.exists() and worktree.is_dir()
     assert git_repository.git_output(repo, "branch", "--list", "user-owned").strip() == "user-owned"
+
+
+@pytest.mark.cpu_limit(2.0, reason="実Gitのworktreeと未登録branchを、削除を伴わずに検出する。")
+def test_list_candidates_distinguishes_unregistered_resources(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """名前だけで所有を認めず、候補に出して保持する。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    git_repository.run_git(repo, "branch", "orch/unregistered")
+    detached = tmp_path / "managed-temp" / "old-copy"
+    detached.parent.mkdir()
+    git_repository.run_git(repo, "worktree", "add", "--detach", str(detached))
+
+    code, listed, stderr = _invoke(capsys, "delete", "--list", "--repo", str(repo))
+
+    assert code == 0, stderr
+    candidates = listed["orphan_candidates"]
+    assert {(r["worktree"], r["branch"]) for r in candidates} == {
+        (None, "orch/unregistered"),
+        (str(detached.resolve()), None),
+    }
+    assert all("ユーザー確認なしに削除しない" in r["reason"] for r in candidates)
+    assert pathlib.Path(record["worktree"]).is_dir() and detached.is_dir()
+
+
+@pytest.mark.cpu_limit(2.0, reason="gitlinkとGitのdiff設定がある実Gitで安全判定を検証する。")
+def test_retirement_proof_never_ignores_unmerged_gitlink(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Gitの表示設定がgitlinkを隠しても、一致の証拠としない。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "same.txt").write_text("取込済み", encoding="utf-8")
+    git_repository.run_git(worktree, "add", "same.txt")
+    git_repository.run_git(worktree, "update-index", "--add", "--cacheinfo", f"160000,{record['initial_head']},sub")
+    git_repository.run_git(worktree, "commit", "-m", "通常ファイルとgitlink")
+    (repo / "same.txt").write_text("取込済み", encoding="utf-8")
+    git_repository.commit_all(repo, "通常ファイルだけ")
+    git_repository.run_git(repo, "config", "diff.ignoreSubmodules", "all")
+
+    with pytest.raises(ValueError, match="統合先へ含まれない変更"):
+        lane_retirement.prove(record, repo)
 
 
 @pytest.mark.usefixtures("leaf_git_commands")
