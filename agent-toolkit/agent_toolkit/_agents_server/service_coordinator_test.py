@@ -235,6 +235,65 @@ async def test_failed_save_before_transfer_returns_detached_resources_to_source(
     assert [operation for operation, _published in sent] == ["prepare_move", "accept"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("returned", [False, True])
+async def test_inflight_codex_request_survives_failed_move(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, returned: bool
+) -> None:
+    """配送中で移せない間も同じclientが応答と後着通知を受け、旧所有者は照会に応じる。"""
+    coordinator, session, backend = _coordinator(tmp_path, monkeypatch, current=False)
+    identifier = session.session_id
+    runtime = coordinator._runtime
+    assert runtime is not None
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    received = asyncio.Queue()
+
+    async def request(**_kwargs: Any) -> dict:
+        started.set()
+        await finish.wait()
+        return {"result": {"done": True}}
+
+    resource_id = runtime.broker.register({"request": request, "close": AsyncMock()})
+    descriptor = {"identifier": resource_id, "sequence": 0, "origin": runtime.target, "pid": None, "environment": {}}
+    client = service_io.CodexResource.attach(runtime, descriptor, received.put, AsyncMock(), AsyncMock())
+    backend._clients[identifier] = client
+    backend._wait_compaction_turns = {}
+    conversation = coordinator.managers.conversations["parent"]
+    conversation.manager.take_over_orphaned_session = AsyncMock()
+    conversation.manager.show_session = AsyncMock(return_value={"session_id": identifier})
+    current = coordinator.registry.current()
+    sent = _transfers(monkeypatch)
+    inflight = asyncio.create_task(client.request("thread/read"))
+    try:
+        async with asyncio.timeout(5):
+            await started.wait()
+            coordinator.boundary(session, client)
+            if returned:
+                monkeypatch.setattr(coordinator.registry, "current", lambda: coordinator.target)
+            await runtime.broker.emit(resource_id, {"kind": "notification", "value": {"n": 1}})
+            with pytest.raises(RuntimeError, match="配送中"):
+                await coordinator.move(identifier)
+            params = CallToolRequestParams(name="show", arguments={"session_id": identifier})
+            shown = await coordinator.owned_call("parent", conversation.caller, params)
+            assert "result" in shown
+            conversation.manager.show_session.assert_awaited_once_with(identifier, verbose=False)
+            assert await received.get() == {"n": 1}
+            assert backend._clients[identifier] is client
+            backend.adopt_session.assert_not_awaited()
+            assert not sent
+            finish.set()
+            assert await inflight == {"done": True}
+            monkeypatch.setattr(coordinator.registry, "current", lambda: current)
+            assert await coordinator.move(identifier) == {"moved": True}
+            assert [operation for operation, _ in sent] == ["prepare_move", "accept"]
+            assert not coordinator.owns("parent", identifier)
+    finally:
+        finish.set()
+        await inflight
+        await client.detach()
+
+
 def _stoppable_client(coordinator: ServiceCoordinator, session: state.SessionState, backend: Any) -> dict:
     """終了境界で止めると切り離し済みとして観測できるclientにし、切り離したときの実行資源の記述を返す。"""
     runtime = coordinator._runtime
