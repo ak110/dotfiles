@@ -609,7 +609,7 @@ def _is_normative_document(path: pathlib.Path) -> bool:
     ):
         return True
     owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
-    return owner is not None and path.relative_to(owner).parts[0] in {"skills", "share", "rules"}
+    return owner is not None and path.relative_to(owner).parts[0] == "skills"
 
 
 def check_large_bash_read(command: str, cwd: str) -> str | None:

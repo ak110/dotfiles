@@ -113,7 +113,7 @@ def test_session_start_carries_no_rule_bodies_or_rule_file_pointers(
     output = _output(capsys)
     assert 'kind="rules-' not in output
     assert _document_references(output) <= {str(rules_context.SUBAGENT_PLAYBOOK_PATH)}
-    assert str(rules_context.SHARE_DIR.parent / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")) in output
+    assert str(rules_context.PLUGIN_ROOT / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")) in output
 
 
 _DELEGATED_ENVIRONMENTS = [None, ("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGENT_TOOLKIT_OWNER_SESSION", "owner")]
@@ -275,7 +275,7 @@ def test_session_start_guides_main_to_entry_with_one_line(
     # 同じ区分に並ぶのは1行の案内だけであり、入口の本文の行は通知のどこにも無い。
     one_line_notices = {rules_context.ENTRY_START_NOTICE, rules_context.ENTRY_COMPACT_NOTICE}
     assert set(_notice_lines(output, expected)) <= one_line_notices
-    entry = (rules_context.SHARE_DIR.parent / "skills" / "atk-mode" / "SKILL.md").read_text(encoding="utf-8")
+    entry = (rules_context.PLUGIN_ROOT / "skills" / "atk-mode" / "SKILL.md").read_text(encoding="utf-8")
     headings = [line for line in entry.split("\n---\n", 1)[1].splitlines() if line.startswith("#")]
     assert headings and not any(f"\n{heading}\n" in output for heading in headings)
 

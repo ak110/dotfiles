@@ -126,11 +126,3 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
     else:
         assert "target_repo: example.test/team/one" in prompt
         assert "candidate_file:" in prompt and "ownership_token: test-token" in prompt
-
-
-def test_role_document_names_are_unique_across_locations() -> None:
-    """移行の途中も、同じ名前の役割文書と起動・受領契約を2つの置き場所へ置かない。"""
-    root = _PLUGIN_ROOT
-    for suffix in (".subagent.md", ".parent.md"):
-        names = [path.name for path in task_documents.role_documents(root, suffix)]
-        assert names and len(names) == len(set(names)), sorted(name for name in set(names) if names.count(name) > 1)

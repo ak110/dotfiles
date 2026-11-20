@@ -418,7 +418,7 @@ def test_root_alias_uses_explicit_response_without_scanning_other_roots(
         ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x"}, "chores_fast"),
         ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "review"}, "review"),
         ("start", {"mode": "delegate", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "execute"}, "execute"),
-        ("start", {"subagent_md_path": "/plugin/share/exec.subagent.md", "cwd": "/tmp/x"}, "execute"),
+        ("start", {"subagent_md_path": "/plugin/skills/atk-mode/roles/exec.subagent.md", "cwd": "/tmp/x"}, "execute"),
         ("start", {"model_type": "review"}, "review"),
         ("start", {"mode": "unknown", "prompt": "調べる"}, None),
         # 統合前の起動ツール名で記録された呼び出しも、対応するmodeの種別を記録する。
@@ -444,8 +444,8 @@ def test_new_role_model_type_comes_from_same_declaration_as_server(tmp_path: pat
     manifest = tmp_path / ".claude-plugin/plugin.json"
     manifest.parent.mkdir()
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    document = tmp_path / "share/new-check.subagent.md"
-    document.parent.mkdir()
+    document = tmp_path / "skills/atk-mode/roles/new-check.subagent.md"
+    document.parent.mkdir(parents=True)
     document.write_text(
         "---\nmode: explore\nmodel_type: chores_fast\nusage: chores\n"
         "required_inputs: []\nwrites_worktree: false\n---\n# 読取確認\n",

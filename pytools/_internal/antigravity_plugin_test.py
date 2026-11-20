@@ -13,6 +13,7 @@ from agent_toolkit._common import plugin_environment, task_documents
 from pytools._internal import antigravity_plugin as subject
 
 _CHECK_SKILL = Path("skills") / "check" / "SKILL.md"
+_GUIDE = Path("skills") / "atk-mode" / "references" / "guide.md"
 
 
 @pytest.fixture(name="source")
@@ -32,11 +33,11 @@ def _source(tmp_path: Path) -> Path:
                 }
             }
         ),
-        # 廃止した常時規範が配布元に残っていても、常時ロードの規則へ投影しない。
+        # 廃止した常時規範と役割文書の古い置き場所が配布元に残っていても、配布物と担当の定義へ含めない。
         "share/rules/common/01-agent.md": "共通規範を守る。\n" * 1100,
         _CHECK_SKILL.as_posix(): "---\nname: check\ndescription: 検査する\n---\n${CLAUDE_PLUGIN_ROOT}/scripts/check.py\n",
         "agents/worker.md": "---\nname: worker\ndescription: 作業を行う\n---\n作業する。\n",
-        "share/guide.md": "メインの指針。\n",
+        _GUIDE.as_posix(): "メインの指針。\n",
         "share/execute.subagent.md": "---\nrequired_inputs: [対象]\n---\n担当の入力を受け取って実装する。\n",
         "skills/atk-mode/roles/review.subagent.md": "---\nrequired_inputs: [対象]\n---\n担当の入力を受け取って確かめる。\n",
         "skills/long/SKILL.md": "---\r\nname: long\r\ndescription: 長い工程を実行する\r\n---\r\n" + "全文を読む。\r\n" * 2000,
@@ -112,13 +113,13 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert set(mcp) == {"agents_server", "pyfltr"}
     assert Path(mcp["agents_server"]["args"][0]) == target / "scripts/launch.py"
     assert (target / "agents/worker.md").is_file()
-    assert (target / "agents/execute.md").is_file()
-    assert str(target / "share/execute.subagent.md") in (target / "agents/execute.md").read_text()
+    assert not (target / "agents/execute.md").exists()
     assert str(target / "skills/atk-mode/roles/review.subagent.md") in (target / "agents/review.md").read_text()
-    assert subject.ROLE_DOCUMENT_DIRECTORIES == task_documents.ROLE_DOCUMENT_DIRECTORIES
+    assert subject.ROLE_DOCUMENT_DIRECTORY == task_documents.ROLE_DOCUMENT_DIRECTORY
     assert (target / "skills/long/SKILL.md").stat().st_size < 24_000
     assert (target / "skills/long/references/antigravity-full-instructions.md").read_text() == "全文を読む。\n" * 2000
-    assert (target / "share/guide.md").is_file()
+    assert (target / _GUIDE).is_file()
+    assert not (target / "share").exists()
     assert (target / "scripts/launch.py.lock").is_file()
     assert not (target / "pyproject.toml").exists()
     assert not (target / "uv.lock").exists()
@@ -154,9 +155,9 @@ def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_
         "include_only": ["agent-toolkit-agy", "agent-basics-agy"],
     }
     assert not subject.run().changed
-    (source / "agent-toolkit/share/guide.md").write_text("更新後のメイン指針")
+    (source / "agent-toolkit" / _GUIDE).write_text("更新後のメイン指針")
     assert subject.run().changed
-    assert (source / "agent-toolkit-agy/share/guide.md").read_text() == "更新後のメイン指針"
+    assert (source / "agent-toolkit-agy" / _GUIDE).read_text() == "更新後のメイン指針"
     assert len(json.loads(registry.read_text())["entries"]) == 2
 
 

@@ -17,7 +17,6 @@ from agent_toolkit._testing.delegation_contract_support import (
     _generated_input_errors,
     _marker_values,
     _read_table_subagents,
-    _role_files,
 )
 from agent_toolkit._testing.normative_contract import document_references, read_contract, section_text
 
@@ -48,17 +47,19 @@ def test_wi_draft_review_stage_and_continuation_contract() -> None:
 
 def test_distributed_roles_have_model_types() -> None:
     """役割の追加時にテスト側の対象リストを更新せず、全配布役割の登録を検査する。"""
-    _assert_role_models_registered(pathlib.Path(__file__).resolve().parent / "share")
+    _assert_role_models_registered(pathlib.Path(__file__).resolve().parent)
 
 
 @pytest.mark.parametrize("rename", [False, True])
 def test_unregistered_added_or_renamed_role_reports_filename(tmp_path: pathlib.Path, rename: bool) -> None:
     """登録済みの集合は確認に合格し、文書だけの追加・改名は不足する名前を示して失敗する。"""
+    roles = task_documents.role_document_directory(tmp_path)
+    roles.mkdir(parents=True)
     registered_name = next(iter(launch_prompts.TASK_MODEL_TYPES))
-    registered = tmp_path / registered_name
+    registered = roles / registered_name
     registered.write_text("# 登録済みの役割\n", encoding="utf-8")
     _assert_role_models_registered(tmp_path)
-    missing = tmp_path / "unregistered-role.subagent.md"
+    missing = roles / "unregistered-role.subagent.md"
     if rename:
         registered.rename(missing)
     else:
@@ -69,7 +70,9 @@ def test_unregistered_added_or_renamed_role_reports_filename(tmp_path: pathlib.P
 
 def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.Path) -> None:
     """役割追加時の検査も宣言を読み、旧役割の対応表を新規登録の条件にしない。"""
-    recipient = tmp_path / "new-check.subagent.md"
+    roles = task_documents.role_document_directory(tmp_path)
+    roles.mkdir(parents=True)
+    recipient = roles / "new-check.subagent.md"
     recipient.write_text(
         "---\nmode: explore\nmodel_type: chores_fast\nrequired_inputs: []\nwrites_worktree: false\n---\n# 確認\n",
         encoding="utf-8",
@@ -113,18 +116,16 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
 
     軽量種別の`<役割名>.subagent.md`の委譲先はファイルを書けない1工程の担当であり、引き継ぎ記録を持たないため集合から除く。
     """
-    share = pathlib.Path(__file__).resolve().parent / "share"
-    entry = share.parent / "skills" / "atk-mode"
-    parents = _role_files(share, ".parent.md")
-    recipients = _role_files(share, ".subagent.md")
+    plugin_root = pathlib.Path(__file__).resolve().parent
+    entry = plugin_root / "skills" / "atk-mode"
+    parents = task_documents.role_documents(plugin_root, ".parent.md")
+    recipients = task_documents.role_documents(plugin_root)
     # 委譲先と委譲元が共通に読む手順書は入口`atk-mode`へ置くため、役割文書と同じ集合で引き継ぎ記録の参照を比べる。
     shared = [
         entry / "playbooks" / name
         for name in ("subagent.md", "delegation.md", "delegation-recovery.md", "host-claude-code.md", "host-codex.md")
     ] + [entry / "references" / name for name in ("work-contract.md", "conduct.md", "operations.md")]
-    markdown = {
-        path.name: path.read_text(encoding="utf-8") for path in sorted({*share.glob("*.md"), *shared, *parents, *recipients})
-    }
+    markdown = {path.name: path.read_text(encoding="utf-8") for path in sorted({*shared, *parents, *recipients})}
     lightweight = {path.name for path in recipients if _declaration(path).launch_kind in ("explore", "write", "shell")}
     parent_names = {
         path.name for path in parents if not set(_marker_values(path, _LAUNCH_TARGET_PREFIX, recipient=False)[0]) <= lightweight
@@ -140,7 +141,7 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
         (roles / "exec.parent.md", (("../playbooks/lane-receipt.md", "統合"),)),
         (roles / "exec-review.parent.md", (("../playbooks/exec-review-loop.md", "入力"),)),
     ):
-        markdown[owner.name] = read_contract(owner, share.parent, *materials)
+        markdown[owner.name] = read_contract(owner, plugin_root, *materials)
         for name, _condition in materials:
             markdown[pathlib.Path(name).name] = (owner.parent / name).read_text(encoding="utf-8")
             expected_names.add(pathlib.Path(name).name)
@@ -160,10 +161,10 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
     宣言外の項目を渡す委譲元の手順は、`agents_server`の`start`が起動を拒否するため成立しない。
     全ての`<役割名>.subagent.md`の宣言が読めること（不正な`mode:`を含まないこと）も同時に確かめる。
     """
-    share = pathlib.Path(__file__).resolve().parent / "share"
-    recipients = {path.name: path for path in _role_files(share, ".subagent.md")}
+    plugin_root = pathlib.Path(__file__).resolve().parent
+    recipients = {path.name: path for path in task_documents.role_documents(plugin_root)}
     errors: list[str] = []
-    parents = _role_files(share, ".parent.md")
+    parents = task_documents.role_documents(plugin_root, ".parent.md")
     launched = {target for parent in parents for target in _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)[0]}
     for parent in parents:
         targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
@@ -185,7 +186,7 @@ def test_every_task_document_declares_worktree_write() -> None:
     `atk lane integrate`の稼働判定は、宣言を読めない役割の担当を書込主体として数え、統合を止める。
     起動対象を持たない役割文書も判定の対象になるため、起動関係からではなく全文書を列挙して確かめる。
     """
-    documents = _role_files(pathlib.Path(__file__).resolve().parent / "share", ".subagent.md")
+    documents = task_documents.role_documents(pathlib.Path(__file__).resolve().parent)
     errors = [
         declaration for document in documents if isinstance(declaration := task_documents.read_declaration(document), str)
     ]
@@ -200,20 +201,22 @@ def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Pat
     限定の語が無いと、委譲先が規定行の前後へ要約などを加え、受領側が返却形式だけの再送を求める往復が増える。
     `text`ブロックを持たない`## 出力`節は自由な形で返す設計であり、判定の対象から外す。
     """
-    share = pathlib.Path(__file__).resolve().parent / "share"
+    plugin_root = pathlib.Path(__file__).resolve().parent
 
-    assert not _fixed_reply_errors(share), "返却を形式の行に限る語（「形式のみを返す」など）を欠く固定返却形式: " + ", ".join(
-        _fixed_reply_errors(share)
+    assert not _fixed_reply_errors(plugin_root), (
+        "返却を形式の行に限る語（「形式のみを返す」など）を欠く固定返却形式: " + ", ".join(_fixed_reply_errors(plugin_root))
     )
 
-    (tmp_path / "limited.subagent.md").write_text(
+    roles = task_documents.role_document_directory(tmp_path)
+    roles.mkdir(parents=True)
+    (roles / "limited.subagent.md").write_text(
         "# 委譲先\n\n## 出力\n\n次の形式だけを返す。\n\n```text\n状態: completed\n```\n", encoding="utf-8"
     )
-    (tmp_path / "unlimited.subagent.md").write_text(
+    (roles / "unlimited.subagent.md").write_text(
         "# 委譲先\n\n## 出力\n\n次の形式で返す。\n\n```text\n状態: completed\n```\n\n## 後始末\n\nだけを返す\n",
         encoding="utf-8",
     )
-    (tmp_path / "free.subagent.md").write_text("# 委譲先\n\n## 出力\n\n指摘を返す。\n", encoding="utf-8")
+    (roles / "free.subagent.md").write_text("# 委譲先\n\n## 出力\n\n指摘を返す。\n", encoding="utf-8")
     assert _fixed_reply_errors(tmp_path) == ["unlimited.subagent.md"]
 
 

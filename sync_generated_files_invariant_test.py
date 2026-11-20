@@ -4,8 +4,8 @@ import pathlib
 import tomllib
 
 
-def test_sync_targets_cover_agent_toolkit_skills_and_share() -> None:
-    """skillsとshareの各実在階層と、Codex向け`AGENTS.md`の生成元を生成同期の起動対象に含める。"""
+def test_sync_targets_cover_agent_toolkit_skills() -> None:
+    """skillsの各実在階層と、Codex向け`AGENTS.md`の生成元を生成同期の起動対象に含める。"""
     root = pathlib.Path(__file__).resolve().parent
     config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     targets = config["tool"]["pyfltr"]["custom-commands"]["sync-generated-files"]["targets"]

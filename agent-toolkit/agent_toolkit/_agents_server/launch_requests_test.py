@@ -38,7 +38,7 @@ async def test_public_start_distinguishes_loaded_code_from_updated_role(
 ) -> None:
     """起動時版を固定し、資源更新後の検査失敗と本来の入力不備を公開startから区別する。"""
     document = _write_declared_task_document(tmp_path, "必須入力名: 対象")
-    root = document.parent.parent
+    root = task_documents.document_plugin_root(document)
     manifest = root / ".claude-plugin/plugin.json"
     manifest.write_text('{"name":"agent-toolkit","version":"2.1.0"}', encoding="utf-8")
     runtime = RuntimeCode.capture(root)
@@ -97,10 +97,10 @@ async def test_start_rejects_prompt_missing_required_input(
     tmp_path: pathlib.Path,
 ) -> None:
     """startは`<役割名>.subagent.md`の必須入力が欠けた委譲プロンプトをbackendへ渡さない。"""
-    task_document = tmp_path / "share" / "task.subagent.md"
+    task_document = tmp_path / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     (tmp_path / ".claude-plugin").mkdir(parents=True)
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document.parent.mkdir()
+    task_document.parent.mkdir(parents=True)
     task_document.write_text(
         "# タスク\n\n## 入力\n\n```text\n必須入力名: 対象,目的\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
@@ -245,7 +245,7 @@ async def test_start_input_rejection_points_to_owning_contract(
     ("document", "extra_params", "operation"),
     [
         ("relative.subagent.md", {}, "task"),
-        ("/nonexistent/share/missing.subagent.md", {}, "task"),
+        ("/nonexistent/skills/atk-mode/roles/missing.subagent.md", {}, "task"),
         ("exec.subagent.md", {"不正 な名前": "値"}, "空白"),
     ],
     ids=["relative-path", "missing-file", "invalid-input-name"],

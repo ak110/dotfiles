@@ -52,7 +52,7 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
     entry = (playbooks / "process-wi.md").read_text(encoding="utf-8")
     question_route = next(line for line in entry.splitlines() if line.startswith("| ") and "含めた理由、除外した理由" in line)
 
-    assert not (plugin_root / "share" / "pick-wi-explain.subagent.md").exists()
+    assert task_documents.find_role_document(plugin_root, "pick-wi-explain.subagent.md") is None
     assert _LAUNCH_TARGET_PREFIX not in explanation
     assert "説明はメインエージェント自身が担当する" in explanation
     assert "`mode: explore`" in explanation

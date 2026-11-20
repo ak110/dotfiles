@@ -16,9 +16,9 @@ RULE_FILE_BYTES = 24_000
 # 更新時に必ず表示する案内。旧版からの更新検証（scripts/check_update_dotfiles_upgrade.py）も同じ文言だけを許容する。
 UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
 EVENTS = ("SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop")
-_SOURCE_DIRECTORIES = ("skills", "agents", "share", "agent_toolkit", "scripts")
-# 役割文書の置き場所。agent-toolkitの`task_documents.ROLE_DOCUMENT_DIRECTORIES`と同じ値を保つ（試験が確かめる）。
-ROLE_DOCUMENT_DIRECTORIES = ("skills/atk-mode/roles", "share")
+_SOURCE_DIRECTORIES = ("skills", "agents", "agent_toolkit", "scripts")
+# 役割文書の置き場所。agent-toolkitの`task_documents.ROLE_DOCUMENT_DIRECTORY`と同じ値を保つ（試験が確かめる）。
+ROLE_DOCUMENT_DIRECTORY = "skills/atk-mode/roles"
 _EXCLUDED = frozenset({"__pycache__", ".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache"})
 
 
@@ -91,8 +91,7 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
     result[Path(".claude-plugin/plugin.json")] = ((source / ".claude-plugin/plugin.json").read_bytes(), 0o644)
     if plugin_name == "agent-basics":
         return result
-    roles = [role for directory in ROLE_DOCUMENT_DIRECTORIES for role in (source / directory).glob("*.subagent.md")]
-    for role in sorted(roles, key=lambda path: path.name):
+    for role in sorted((source / ROLE_DOCUMENT_DIRECTORY).glob("*.subagent.md"), key=lambda path: path.name):
         name = role.name.removesuffix(".subagent.md")
         definition = (
             f"---\nname: {name}\ndescription: agent-toolkitの{name}担当を実行する\n---\n\n"

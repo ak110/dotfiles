@@ -95,15 +95,17 @@ def _accepted_role_names() -> list[str]:
 def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
     """`subagent_md_path`の絶対パスはそのまま、役割名はサーバー自身のplugin rootの役割文書へ解決する。
 
-    置き場所は`task_documents.ROLE_DOCUMENT_DIRECTORIES`が定める。
+    置き場所は`task_documents.ROLE_DOCUMENT_DIRECTORY`が定める。
 
     委譲元は自身のシェルでplugin rootを解決できないことがあり、サーバーは自身のplugin rootを一意に持つため、
     役割名を受理して委譲元と同じ版の文書へ解決する。区切り文字か接尾辞を含む相対の値は役割名として扱わずに拒否する。
     """
     task_document = pathlib.Path(subagent_md_path)
     if task_document.is_absolute():
-        # 置き場所の外の絶対パスは後段の所在の検査へ渡す。
-        owner = task_documents.document_plugin_root(task_document)
+        owner = task_documents.role_document_plugin_root(task_document)
+        if owner is None:
+            # 置き場所の外の絶対パスは、そのまま後段の所在の検査へ渡す。
+            return task_document
         return plugin_root.resolve_stable_plugin_root(owner) / task_document.relative_to(owner)
     is_role_name = not any(part in subagent_md_path for part in ("/", "\\", _TASK_DOCUMENT_SUFFIX))
     if is_role_name and subagent_md_path:

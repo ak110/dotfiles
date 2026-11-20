@@ -243,7 +243,7 @@ def _generated_input_errors(plugin_root: pathlib.Path) -> list[str]:
     return errors
 
 
-_ROLE_DIRECTORY_PATTERN = "(?:" + "|".join(re.escape(directory) for directory in task_documents.ROLE_DOCUMENT_DIRECTORIES) + ")"
+_ROLE_DIRECTORY_PATTERN = re.escape(task_documents.ROLE_DOCUMENT_DIRECTORY)
 _READ_TABLE_SUBAGENT_PATTERN = re.compile(_ROLE_DIRECTORY_PATTERN + r"/([A-Za-z0-9_.-]+\.subagent\.md)")
 
 
@@ -254,8 +254,7 @@ def _read_table_subagents(recipient: pathlib.Path, launched: set[str] | None = N
     `start`で起動されないため起動対象に挙げない。その指示を送る委譲元は、起動した委譲先の委譲元である。
     """
     content = recipient.read_text(encoding="utf-8")
-    # 隔離したテスト入力は置き場所の外にあり、従来どおり親の親をplugin rootとみなす。
-    plugin_root = task_documents.role_document_plugin_root(recipient) or recipient.parent.parent
+    plugin_root = task_documents.document_plugin_root(recipient)
     declared = [
         path.name
         for _condition, cell in read_table_rows(content)
@@ -288,25 +287,10 @@ def _instructed_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
     ]
 
 
-def _role_files(share: pathlib.Path, suffix: str) -> list[pathlib.Path]:
-    """`share`にある`suffix`の文書を返す。配布物の`share`では、同じplugin rootの他の置き場所の文書も含める。
-
-    隔離したテスト入力のディレクトリは、そのディレクトリだけを対象にする。
-    """
-    directories = [share]
-    if share.name == "share":
-        directories.extend(path for path in task_documents.role_document_directories(share.parent) if path != share)
-    return sorted((path for directory in directories for path in directory.glob(f"*{suffix}")), key=lambda path: path.name)
-
-
-def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
+def _embedded_contracts(plugin_root: pathlib.Path) -> list[_EmbeddedContract]:
     """呼び元の見出し直後に宣言した起動契約を、節の境界を保って取得する。"""
-    paths = [
-        *sorted((share.parent / "skills").rglob("*.md")),
-        *sorted(path for path in share.glob("*.md") if not path.name.endswith(".parent.md")),
-    ]
     contracts: list[_EmbeddedContract] = []
-    for path in paths:
+    for path in sorted((plugin_root / "skills").rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         lines = text.splitlines()
         headings = top_level_atx_headings(text, 2)
@@ -332,17 +316,20 @@ def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
     return contracts
 
 
-def _contract_errors(share: pathlib.Path) -> list[str]:
-    """share直下の委譲起動契約に反する箇所を返す。"""
-    parents: list[_Contract] = [*_role_files(share, ".parent.md"), *_embedded_contracts(share)]
-    recipients = {path.name: path for path in _role_files(share, ".subagent.md")}
+def _contract_errors(plugin_root: pathlib.Path) -> list[str]:
+    """`plugin_root`の委譲起動契約に反する箇所を返す。"""
+    parents: list[_Contract] = [
+        *task_documents.role_documents(plugin_root, ".parent.md"),
+        *_embedded_contracts(plugin_root),
+    ]
+    recipients = {path.name: path for path in task_documents.role_documents(plugin_root, ".subagent.md")}
     pairs: list[tuple[_Contract, str]] = []
     errors: list[str] = []
     for recipient in recipients.values():
         content = recipient.read_text(encoding="utf-8")
         table = _h2_section(content, "読込表") if "\n## 読込表\n" in content else ""
         declared = {
-            resolve_reference(reference.partition("#")[0], recipient, share.parent).name
+            resolve_reference(reference.partition("#")[0], recipient, plugin_root).name
             for _condition, cell in read_table_rows(content)
             for reference in REFERENCE.findall(cell)
         }
@@ -402,7 +389,7 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
         if not valid_structure:
             continue
         parent_populations[parent].update(required_names)
-        # 確認対象のshareは引数で固定済みであり、隔離したテスト入力にも同じ宣言解析を使う。
+        # 確認対象のplugin rootは引数で固定済みであり、隔離したテスト入力にも同じ宣言解析を使う。
         declaration = task_documents.read_declaration_unchecked(recipient)
         if isinstance(declaration, str):
             errors.append(declaration)
@@ -413,14 +400,16 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
     return errors
 
 
-def _write_pair(root: pathlib.Path, *, parent_body: str, required_name: str = "対象リポジトリ") -> None:
-    """単一の委譲関係を持つテスト入力を書く。"""
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "task.parent.md").write_text(parent_body, encoding="utf-8")
-    (root / "task.subagent.md").write_text(
+def _write_pair(plugin_root: pathlib.Path, *, parent_body: str, required_name: str = "対象リポジトリ") -> pathlib.Path:
+    """`plugin_root`の役割文書の置き場所へ、単一の委譲関係を持つテスト入力を書き、置き場所を返す。"""
+    roles = task_documents.role_document_directory(plugin_root)
+    roles.mkdir(parents=True, exist_ok=True)
+    (roles / "task.parent.md").write_text(parent_body, encoding="utf-8")
+    (roles / "task.subagent.md").write_text(
         f"# 委譲先\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} {required_name}\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
     )
+    return roles
 
 
 def _parent_body(*, marker: str = "起動対象: task.subagent.md", after_marker: str = "") -> str:
@@ -450,10 +439,10 @@ def _format_contract_error(error: str) -> str:
     return error
 
 
-def _assert_role_models_registered(share: pathlib.Path) -> None:
+def _assert_role_models_registered(plugin_root: pathlib.Path) -> None:
     """現行の宣言と旧版の読取互換から、役割のモデル種別へ到達できることを確かめる。"""
     missing = []
-    for path in _role_files(share, ".subagent.md"):
+    for path in task_documents.role_documents(plugin_root):
         text = path.read_text(encoding="utf-8")
         declaration = task_documents.read_declaration_unchecked(path, text)
         if isinstance(declaration, task_documents.TaskDocumentDeclaration) and declaration.model_type is not None:
@@ -471,10 +460,10 @@ def _declaration(task_document: pathlib.Path) -> task_documents.TaskDocumentDecl
     return declaration
 
 
-def _fixed_reply_errors(share: pathlib.Path) -> list[str]:
+def _fixed_reply_errors(plugin_root: pathlib.Path) -> list[str]:
     """`## 出力`節に`text`ブロックで固定の返却形式を示しながら、返却をその形式に限る語を持たない文書を返す。"""
     errors: list[str] = []
-    for path in _role_files(share, ".subagent.md"):
+    for path in task_documents.role_documents(plugin_root):
         content = path.read_text(encoding="utf-8")
         if "\n## 出力\n" not in content:
             continue
@@ -501,14 +490,14 @@ def _lane_planning_contract(plugin_root: pathlib.Path) -> str:
 _RETIRED_LAUNCH_DELEGATION = "「`<役割名>.subagent.md`を指定する起動」"
 
 
-def _launch_role_errors(share: pathlib.Path) -> list[str]:
+def _launch_role_errors(plugin_root: pathlib.Path) -> list[str]:
     """`<役割名>.parent.md`が起動対象ごとに`subagent_md_path`へ渡す役割名を本文に書いていない箇所を返す。
 
     役割名は起動対象のファイル名から`.subagent.md`を除いた名前とし、`subagent_md_path`と同じH2節に
     コードスパンで現れることを求める。共通節へ起動の形を委ねる旧来の記述も報告する。
     """
     errors: list[str] = []
-    for parent in _role_files(share, ".parent.md"):
+    for parent in task_documents.role_documents(plugin_root, ".parent.md"):
         content = parent.read_text(encoding="utf-8")
         sections = content.split("\n## ")
         targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)

@@ -65,8 +65,8 @@ BACKGROUND_TASKS_DISABLED_NOTICE = (
 委譲先は親の環境変数を継承するため、同じ条件でメインに限らず通知する。
 """
 
-SHARE_DIR = plugin_resources.plugin_root() / "share"
-SUBAGENT_PLAYBOOK_PATH = SHARE_DIR.parent / "skills" / "atk-mode" / "playbooks" / "subagent.md"
+PLUGIN_ROOT = plugin_resources.plugin_root()
+SUBAGENT_PLAYBOOK_PATH = PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks" / "subagent.md"
 """委譲先の入口。`agents_server`が起動の本文を切り出す原本と同じファイルである。"""
 SUBAGENT_ENTRY_NOTICE = f"委譲を受けた担当である。作業の前に、委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`を全文読め。"
 """起動の本文を受け取らない委譲先（ホストの組み込みの委譲機能で起動した担当）へ、入口の所在を示す1行。"""
@@ -269,7 +269,7 @@ def _resolve_transcript(session_id: object, transcript_path: object) -> str | No
 
 def _conversation_identity_notice(session_id: object, transcript_path: object) -> str:
     """Claudeメイン自身の原文を取得する操作へ、入力から解決した所在を束縛する。"""
-    arguments = [str(SHARE_DIR.parent / "scripts/atk"), "run-script", "session-review-evidence", "--"]
+    arguments = [str(PLUGIN_ROOT / "scripts/atk"), "run-script", "session-review-evidence", "--"]
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is not None:
         arguments.extend(["--transcript", resolved])
@@ -338,7 +338,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         result = process_tree.run_with_timeout(
             [
                 sys.executable,
-                str(SHARE_DIR.parent / "skills/atk-mode/scripts/session_review_prepare.py"),
+                str(PLUGIN_ROOT / "skills/atk-mode/scripts/session_review_prepare.py"),
                 *options,
                 "--work-dir",
                 str(output.parent),
@@ -349,7 +349,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
             errors="replace",
             timeout=15,
             check=True,
-            env=plugin_environment.direct_environment(SHARE_DIR.parent, os.environ),
+            env=plugin_environment.direct_environment(PLUGIN_ROOT, os.environ),
         )
         counts = json.loads(result.stdout)["conversation_window"]
         users, assistants = int(counts["user_count"]), int(counts["assistant_count"])
@@ -408,7 +408,7 @@ def _subagent_temp_notice(session_temp: pathlib.Path | str, agent_id: object) ->
 
 def compose_subagent_start() -> str:
     """SubagentStartへ追加する本文を返す。入口の所在とCLIの起動部分だけを示し、規範の本文を載せない。"""
-    return f"{_llm_notice(SUBAGENT_ENTRY_NOTICE)}\n\n{_llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent))}"
+    return f"{_llm_notice(SUBAGENT_ENTRY_NOTICE)}\n\n{_llm_notice(plugin_environment.cli_instructions(PLUGIN_ROOT))}"
 
 
 def _parse_payload(payload_text: str) -> dict[str, Any]:

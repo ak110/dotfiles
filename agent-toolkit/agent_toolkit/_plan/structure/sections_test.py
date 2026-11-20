@@ -437,8 +437,8 @@ def test_agent_document_target_paths() -> None:
     """配布規範とagent定義をエージェント向け文書として判定する。"""
     assert _plan_format.is_agent_doc_target_file(f"{_TOOLKIT_PREFIX}/skills/example/SKILL.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/agents/example.md")
-    assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/plan-review.parent.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/atk-mode/roles/exec.subagent.md")
+    assert not _plan_format.is_agent_doc_target_file("agent-toolkit/share/plan-review.parent.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/atk-mode/playbooks/review-fix.md")
     assert not _plan_format.is_agent_doc_target_file("pytools/example.py")
 

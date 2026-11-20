@@ -34,13 +34,13 @@ def _start_tool() -> Any:
 
 
 def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> pathlib.Path:
-    """agent-toolkitのshare配下と同じ構造の一時の`<役割名>.subagent.md`を作成し、その絶対パスを返す。"""
+    """agent-toolkitの役割文書の置き場所と同じ構造の一時の`<役割名>.subagent.md`を作成し、その絶対パスを返す。"""
     plugin_root = tmp_path / "plugin"
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document = plugin_root / "share" / "declared.subagent.md"
-    task_document.parent.mkdir()
+    task_document = plugin_root / "skills" / "atk-mode" / "roles" / "declared.subagent.md"
+    task_document.parent.mkdir(parents=True)
     if "作業ツリーへの書込: " not in input_block:
         # 書込宣言は必須行のため、宣言の他の行を確かめる試験では書き込む役割として補う。
         input_block += "\n作業ツリーへの書込: あり"

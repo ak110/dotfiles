@@ -1,6 +1,6 @@
 """agent-toolkitの役割文書（`<役割名>.subagent.md`）の所在を解決し、宣言された起動設定を読む。
 
-役割文書の置き場所は`ROLE_DOCUMENT_DIRECTORIES`だけが定める。
+役割文書の置き場所は`ROLE_DOCUMENT_DIRECTORY`だけが定める。
 
 現行形式は先頭のYAML frontmatterで、mode・モデル段位・用途・入力・継続・書込を宣言する。
 旧版の`## 入力`直後の`text`コードブロックにある宣言行は、保持された役割文書とsessionの読取互換として扱う。
@@ -53,64 +53,58 @@ WHOLE_CONTRACT_PREPARATION = (
 """
 
 
-ROLE_DOCUMENT_DIRECTORIES: tuple[str, ...] = ("skills/atk-mode/roles", "share")
+ROLE_DOCUMENT_DIRECTORY = "skills/atk-mode/roles"
 """役割文書と起動・受領契約（`<役割名>.parent.md`）を置く、plugin rootからの相対ディレクトリ。
 
-先頭は入口スキル`atk-mode`の配下（移行先）、`share`は移行前の置き場所である。
-スキルの配下だけを配置するホストへも役割文書を届けるために移行しており、移行の途中は両方を解決する。
-同じ名前の文書を両方へ置かない（`task_documents_invariant_test.py`が確かめる）。
+スキルの配下だけを配置するホストへも役割文書を届けるため、入口スキル`atk-mode`の配下に置く。
 """
+_ROLE_DOCUMENT_PARTS = tuple(ROLE_DOCUMENT_DIRECTORY.split("/"))
 
 
-def role_document_directories(plugin_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """`plugin_root`の役割文書の置き場所を、解決の優先順に返す。"""
-    return tuple(plugin_root.joinpath(*directory.split("/")) for directory in ROLE_DOCUMENT_DIRECTORIES)
+def role_document_directory(plugin_root: pathlib.Path) -> pathlib.Path:
+    """`plugin_root`の役割文書の置き場所を返す。"""
+    return plugin_root.joinpath(*_ROLE_DOCUMENT_PARTS)
 
 
 def role_document_plugin_root(path: pathlib.Path) -> pathlib.Path | None:
     """役割文書の置き場所の直下にあるパスから、その文書が属するplugin rootを返す。置き場所の外ならNoneを返す。"""
-    for directory in ROLE_DOCUMENT_DIRECTORIES:
-        parts = tuple(directory.split("/"))
-        if path.parent.parts[-len(parts) :] == parts:
-            return path.parents[len(parts)]
+    if path.parent.parts[-len(_ROLE_DOCUMENT_PARTS) :] == _ROLE_DOCUMENT_PARTS:
+        return path.parents[len(_ROLE_DOCUMENT_PARTS)]
     return None
 
 
 def document_plugin_root(path: pathlib.Path) -> pathlib.Path:
-    """役割文書が属するplugin rootを返す。置き場所の外の文書（隔離した試験の入力など）は2階層上とみなす。"""
-    return role_document_plugin_root(path) or path.parents[1]
+    """置き場所を確かめた役割文書が属するplugin rootを返す。置き場所の外の文書は`ValueError`で拒否する。"""
+    root = role_document_plugin_root(path)
+    if root is None:
+        raise ValueError(f"役割文書の置き場所（{ROLE_DOCUMENT_DIRECTORY}）の外にある: {path}")
+    return root
 
 
 def find_role_document(plugin_root: pathlib.Path, name: str) -> pathlib.Path | None:
     """ファイル名（`<役割名>.subagent.md`・`<役割名>.parent.md`）に対応する実在の文書を返す。"""
-    for directory in role_document_directories(plugin_root):
-        if (candidate := directory / name).is_file():
-            return candidate
-    return None
+    candidate = role_document_directory(plugin_root) / name
+    return candidate if candidate.is_file() else None
 
 
 def require_role_document(plugin_root: pathlib.Path, role: str) -> pathlib.Path:
     """役割名に対応する`<役割名>.subagent.md`を返す。無ければ探した置き場所を示して失敗する。"""
     document = find_role_document(plugin_root, role + TASK_DOCUMENT_SUFFIX)
     if document is None:
-        raise ValueError(
-            f"役割文書が存在しない: {plugin_root}の{'・'.join(ROLE_DOCUMENT_DIRECTORIES)}に{role}.subagent.mdが無い"
-        )
+        raise ValueError(f"役割文書が存在しない: {role_document_directory(plugin_root)}に{role}.subagent.mdが無い")
     return document
 
 
 def role_documents(plugin_root: pathlib.Path, suffix: str = TASK_DOCUMENT_SUFFIX) -> list[pathlib.Path]:
-    """全ての置き場所にある、`suffix`で終わる文書をファイル名順に返す。"""
-    found = [path for directory in role_document_directories(plugin_root) for path in directory.glob(f"*{suffix}")]
-    return sorted(found, key=lambda path: path.name)
+    """置き場所にある、`suffix`で終わる文書をファイル名順に返す。"""
+    return sorted(role_document_directory(plugin_root).glob(f"*{suffix}"), key=lambda path: path.name)
 
 
 def launch_contract_documents(plugin_root: pathlib.Path) -> list[tuple[pathlib.Path, str]]:
     """起動対象を宣言した全契約と役割名を返す。返却生成の対象表には依存しない。"""
     contracts: list[tuple[pathlib.Path, str]] = []
     markdown = markdown_it.MarkdownIt()
-    paths = [*sorted((plugin_root / "share").glob("*.md")), *sorted((plugin_root / "skills").rglob("*.md"))]
-    for path in paths:
+    for path in sorted((plugin_root / "skills").rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         if "起動対象: " not in text:
             continue

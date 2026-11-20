@@ -122,7 +122,7 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
     """保持toolkitと導入basicsを分離し、解決処理の外部一覧だけを差し替える。"""
     source = plugin_root.SERVER_PLUGIN_ROOT
     toolkit = tmp_path / "held/toolkit-2.248.0"
-    for directory in ("skills/atk-mode/playbooks", "share", "scripts", ".claude-plugin"):
+    for directory in ("skills/atk-mode/playbooks", "skills/atk-mode/roles", "scripts", ".claude-plugin"):
         (toolkit / directory).mkdir(parents=True, exist_ok=True)
     (toolkit / "skills/atk-mode/references").mkdir(parents=True)
     for relative in (
@@ -134,7 +134,7 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
         "scripts/atk.cmd",
     ):
         shutil.copyfile(source / relative, toolkit / relative)
-    task = toolkit / "share/resource-probe.subagent.md"
+    task = toolkit / "skills/atk-mode/roles/resource-probe.subagent.md"
     task.write_text(
         "---\nmode: delegate\nmodel_type: chores\nrequired_inputs: []\noptional_inputs: []\nwrites_worktree: true\n"
         "startup_documents:\n- agent-basics:writing-standards/references/writing.md\n---\n"
@@ -257,7 +257,7 @@ async def _start(
     if mode == "task":
         return await mcp_tools.start(
             cwd=str(project),
-            subagent_md_path=str(resources.toolkit / "share/resource-probe.subagent.md"),
+            subagent_md_path=str(resources.toolkit / "skills/atk-mode/roles/resource-probe.subagent.md"),
             extra_params={},
             model_type=candidates,
             whole_contract_path=str(whole),

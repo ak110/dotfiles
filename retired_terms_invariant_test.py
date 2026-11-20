@@ -652,7 +652,8 @@ def test_reader_documents_do_not_use_end_user_term() -> None:
 @pytest.mark.parametrize("term", [retired.term for retired in _RETIRED_TERMS if retired.allowed == _ENDING_TERM_ALLOWED])
 def test_ending_terms_written_back_to_current_document_are_rejected(tmp_path: pathlib.Path, term: str) -> None:
     """終了の旧表記を現行文書へ戻すと、保存済み旧形式と区別して検出する。"""
-    _init_repo(tmp_path, {"agent-toolkit/share/example.md": f"処理の{term}を確認する。\n"})
+    current = "/".join(("agent-toolkit", "skills", "atk-mode", "roles", "example.md"))
+    _init_repo(tmp_path, {current: f"処理の{term}を確認する。\n"})
     assert any(f"名称「{term}」" in violation for violation in _find_violations(tmp_path))
 
 

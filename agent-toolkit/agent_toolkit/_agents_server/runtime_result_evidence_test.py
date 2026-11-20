@@ -54,7 +54,7 @@ def test_unobserved_budget_is_held_once(
     """予算という語に限らず、実記録の無い停止を既存の1回の再提出へ返す。"""
     session = state.SessionState("runtime-test", str(tmp_path), launch_kind=kind, started_at=_START)
     if role_task:
-        role = Path(__file__).resolve().parents[2] / "share" / "exec.subagent.md"
+        role = Path(__file__).resolve().parents[2] / "skills" / "atk-mode" / "roles" / "exec.subagent.md"
         session.prompt = task_documents.task_prompt_header(role)
     monkeypatch.setattr(record_paths, "find_session_record", lambda _session_id: None)
     result = _result(reason)

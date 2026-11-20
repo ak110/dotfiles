@@ -12,12 +12,12 @@ from agent_toolkit._testing.task_document_contract import validate_frontmatter
 
 
 def _document(tmp_path: Path, name: str, settings: dict) -> Path:
-    """独立したpluginのshareへ、公開起動が受理する役割文書を置く。"""
+    """独立したpluginの役割文書の置き場所へ、公開起動が受理する役割文書を置く。"""
     manifest = tmp_path / ".claude-plugin/plugin.json"
     manifest.parent.mkdir(exist_ok=True)
     manifest.write_text(json.dumps({"name": "agent-toolkit"}), encoding="utf-8")
-    path = tmp_path / "share" / f"{name}.subagent.md"
-    path.parent.mkdir(exist_ok=True)
+    path = tmp_path / "skills" / "atk-mode" / "roles" / f"{name}.subagent.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "---\n"
         + yaml.safe_dump(settings, allow_unicode=True, sort_keys=False)

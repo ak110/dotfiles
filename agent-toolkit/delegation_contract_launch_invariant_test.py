@@ -13,9 +13,7 @@ from agent_toolkit._testing.delegation_contract_support import (
 
 def test_parent_launch_sections_name_subagent_role() -> None:
     """配布する全ての`<役割名>.parent.md`が、起動を述べる節で`subagent_md_path`へ渡す役割名を書く。"""
-    share = pathlib.Path(__file__).resolve().parent / "share"
-
-    errors = _launch_role_errors(share)
+    errors = _launch_role_errors(pathlib.Path(__file__).resolve().parent)
 
     assert not errors, "\n".join(errors)
 

@@ -1,7 +1,8 @@
 """レビュー評価セットの事例を準備し、レビュー担当の返却した指摘を期待と照合して採点する。
 
-レビュー担当への指示（`agent-toolkit/share/exec-review*.md`、`agent-basics:review-standards`など）や
-モデルの割り当てを変える前後に、同じ事例で見逃しと誤指摘の件数を比べるための手動コマンドである。
+レビュー担当への指示（`agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md`と`exec-review.parent.md`、
+`agent-basics:review-standards`など）やモデルの割り当てを変える前後に、
+同じ事例で見逃しと誤指摘の件数を比べるための手動コマンドである。
 モデルの費用がかかるため、CIや定期工程からは起動しない。
 
 起動は`uv run --frozen python scripts/review_eval.py <prepare|score|store> ...`とする。

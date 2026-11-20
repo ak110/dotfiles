@@ -31,7 +31,7 @@ def resolve_reference(reference: str, source: pathlib.Path, plugin_root: pathlib
         return (source.parent / reference).resolve()
     root = plugin_root if plugin == plugin_root.name else plugin_root.parent / plugin
     rest = rest.lstrip("/")
-    return (root / rest if rest.startswith(("skills/", "share/")) else root / "skills" / rest).resolve()
+    return (root / rest if rest.startswith("skills/") else root / "skills" / rest).resolve()
 
 
 def read_contract(source: pathlib.Path, plugin_root: pathlib.Path, *materials: tuple[str, str]) -> str:

@@ -56,10 +56,10 @@ async def test_public_start_native_recovery_uses_an_available_generator(tmp_path
     """native資料の公開start失敗で、検出した生成元の公開コマンドだけを案内する。"""
     document = _write_declared_task_document(tmp_path, "対象: 必須")
     if case == "sibling":
-        original_root = document.parent.parent
+        original_root = task_documents.document_plugin_root(document)
         native = tmp_path / "agent-toolkit-agy"
         original_root.rename(native)
-        document = native / "share" / document.name
+        document = task_documents.role_document_directory(native) / document.name
         (native / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     _declare_startup_document(document, "agent-basics:writing-standards/references/writing.md")
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
@@ -115,7 +115,7 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
     document = _write_declared_task_document(tmp_path, "対象: 必須")
     _declare_startup_document(document, "agent-basics:writing-standards/references/writing.md")
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
-    toolkit = document.parent.parent
+    toolkit = task_documents.document_plugin_root(document)
     project_a, project_b = tmp_path / "project-a", tmp_path / "project-b"
     project_a.mkdir()
     project_b.mkdir()
@@ -305,8 +305,8 @@ def test_imported_server_keeps_role_documents_after_distribution_removal(
     manifest = source / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit","version":"2.125.0"}', encoding="utf-8")
-    task = source / "share" / "declared.subagent.md"
-    task.parent.mkdir()
+    task = source / "skills" / "atk-mode" / "roles" / "declared.subagent.md"
+    task.parent.mkdir(parents=True)
     task.write_text(
         "# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n\n"
         "${CLAUDE_PLUGIN_ROOT}/skills/sample/SKILL.md\n",
@@ -347,6 +347,6 @@ def test_imported_server_keeps_role_documents_after_distribution_removal(
         "declared" if form == "role-name" else str(task), {"対象": "値"}, whole_contract_path=str(whole)
     )
     assert model_type == "execute"
-    assert str(stable / "share" / task.name) in prompt
+    assert str(stable / "skills" / "atk-mode" / "roles" / task.name) in prompt
     assert str(stable / "skills" / "sample" / "SKILL.md") in prompt
     assert (stable / "skills" / "sample" / "SKILL.md").read_text(encoding="utf-8") == "# この版の手順\n"

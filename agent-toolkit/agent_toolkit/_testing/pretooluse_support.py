@@ -31,10 +31,10 @@ _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[3] / ".claude-plugin" / "marketplace.json"
 
 
-_SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
+_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-_ROLES_DIR = pathlib.Path(__file__).resolve().parents[2] / "skills" / "atk-mode" / "roles"
+_ROLES_DIR = _PLUGIN_ROOT / "skills" / "atk-mode" / "roles"
 
 
 _SECRETS_COPY_GUIDANCE = "Bashの`cp`で原本を複製"

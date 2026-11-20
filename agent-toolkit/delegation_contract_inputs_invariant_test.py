@@ -25,9 +25,7 @@ from agent_toolkit._testing.delegation_contract_support import (
 )
 def test_distributed_delegation_contract_is_complete() -> None:
     """配布する全ての`<役割名>.parent.md`と`<役割名>.subagent.md`が起動契約を満たす。"""
-    share = pathlib.Path(__file__).resolve().parent / "share"
-
-    errors = _contract_errors(share)
+    errors = _contract_errors(pathlib.Path(__file__).resolve().parent)
 
     assert not errors, "\n".join(_format_contract_error(error) for error in errors)
 
@@ -35,14 +33,14 @@ def test_distributed_delegation_contract_is_complete() -> None:
 @pytest.mark.parametrize("declared", ["任意", "", "任意,追加", "改名"])
 def test_optional_input_changes_are_detected(tmp_path: pathlib.Path, declared: str) -> None:
     """任意入力の追加・削除・改名を必須側と区別して検出する。"""
-    _write_pair(tmp_path, parent_body=_parent_body().replace("## 起動", "- 任意入力名: `任意`\n\n## 起動"))
-    recipient = tmp_path / "task.subagent.md"
+    roles = _write_pair(tmp_path, parent_body=_parent_body().replace("## 起動", "- 任意入力名: `任意`\n\n## 起動"))
+    recipient = roles / "task.subagent.md"
     recipient.write_text(
         "---\nmode: explore\nmodel_type: review_fast\nrequired_inputs: [対象リポジトリ]\n"
         f"optional_inputs: [{declared}]\nwrites_worktree: false\n---\n# 委譲先\n",
         encoding="utf-8",
     )
-    errors = _pair_errors(tmp_path / "task.parent.md", recipient)
+    errors = _pair_errors(roles / "task.parent.md", recipient)
     if declared == "任意":
         assert not errors
     else:
@@ -53,8 +51,7 @@ def test_optional_input_changes_are_detected(tmp_path: pathlib.Path, declared: s
 @pytest.mark.parametrize("boundary", [False, True])
 def test_generated_input_diagnostic_explains_official_regeneration(tmp_path: pathlib.Path, boundary: bool) -> None:
     """境界不正と内容不一致は、修復する対象と正式生成の操作を返す。"""
-    _write_pair(tmp_path / "share", parent_body=_parent_body())
-    parent = tmp_path / "share/task.parent.md"
+    parent = _write_pair(tmp_path, parent_body=_parent_body()) / "task.parent.md"
     if boundary:
         parent.write_text(
             parent.read_text(encoding="utf-8")
@@ -71,13 +68,13 @@ def test_generated_input_diagnostic_explains_official_regeneration(tmp_path: pat
 def test_optional_input_cannot_be_listed_as_required(tmp_path: pathlib.Path) -> None:
     """任意名を必須一覧へ移した場合は両区分の不一致になる。"""
     body = _parent_body().replace("必須入力名: `対象リポジトリ`", "必須入力名: `対象リポジトリ`、`任意`")
-    _write_pair(tmp_path, parent_body=body)
-    recipient = tmp_path / "task.subagent.md"
+    roles = _write_pair(tmp_path, parent_body=body)
+    recipient = roles / "task.subagent.md"
     recipient.write_text(
         recipient.read_text(encoding="utf-8").replace("作業ツリーへの書込:", "任意入力名: 任意\n作業ツリーへの書込:"),
         encoding="utf-8",
     )
-    errors = _pair_errors(tmp_path / "task.parent.md", recipient)
+    errors = _pair_errors(roles / "task.parent.md", recipient)
     assert any("宣言外の必須入力名" in error and "任意" in error for error in errors)
     assert any("任意入力名が欠けている" in error and "任意" in error for error in errors)
 
@@ -96,14 +93,13 @@ def test_contract_diagnostics_limit_input_guidance_to_input_errors(
         body = body.replace("`対象リポジトリ`", "`対象リポジトリ`, `追加`")
     elif case == "required":
         body = body.replace("- 必須入力名: `対象リポジトリ`", "- 必須入力名:")
-    share = tmp_path / "share"
-    _write_pair(share, parent_body=body)
+    roles = _write_pair(tmp_path, parent_body=body)
     if case == "unassigned":
-        (share / "task.parent.md").unlink()
+        (roles / "task.parent.md").unlink()
     elif case == "missing":
-        (share / "task.subagent.md").unlink()
+        (roles / "task.subagent.md").unlink()
     elif case == "mode":
-        (share / "task.subagent.md").write_text(
+        (roles / "task.subagent.md").write_text(
             "---\nmode: invalid\nmodel_type: review_fast\nrequired_inputs: [対象リポジトリ]\n"
             "writes_worktree: false\n---\n# 委譲先\n",
             encoding="utf-8",
@@ -160,18 +156,16 @@ def test_contract_error_formatter_keeps_unmodified_diagnostics(diagnostic: str) 
 
 def test_embedded_launch_contract_keeps_input_coverage(tmp_path: pathlib.Path) -> None:
     """単一呼び元へ移した後も、割当と必須入力の欠落を同じ検査で判別する。"""
-    share = tmp_path / "share"
-    _write_pair(share, parent_body=_parent_body())
-    parent = share / "task.parent.md"
+    parent = _write_pair(tmp_path, parent_body=_parent_body()) / "task.parent.md"
     body = parent.read_text(encoding="utf-8")
     parent.unlink()
     caller = tmp_path / "skills/example/SKILL.md"
     caller.parent.mkdir(parents=True)
     embedded = "# 呼出側\n\n" + "\n".join("#" + line if line.startswith("#") else line for line in body.splitlines())
     caller.write_text(embedded, encoding="utf-8")
-    assert not _contract_errors(share)
+    assert not _contract_errors(tmp_path)
     caller.write_text(embedded.replace("対象リポジトリ", "現行対象"), encoding="utf-8")
-    assert any("必須入力名が欠けている" in error and "対象リポジトリ" in error for error in _contract_errors(share))
+    assert any("必須入力名が欠けている" in error and "対象リポジトリ" in error for error in _contract_errors(tmp_path))
 
 
 def test_missing_launch_target_reports_parent(tmp_path: pathlib.Path) -> None:
@@ -197,14 +191,15 @@ def test_recipient_read_by_launched_recipient_is_assigned_and_needs_parent_input
     起動しない文書を起動対象へ挙げると、委譲元の本文は起動の確認を満たすためだけの文を持つ。
     読込表の関係を割当に数えないと、その文書は未割当と誤報され、指示の入力名の欠落も検出されない。
     """
-    _write_pair(tmp_path, parent_body=_parent_body(after_marker="\n| `subagent_md_path` | `task` |\n"))
-    task = tmp_path / "task.subagent.md"
+    roles = _write_pair(tmp_path, parent_body=_parent_body(after_marker="\n| `subagent_md_path` | `task` |\n"))
+    task = roles / "task.subagent.md"
     task.write_text(
         task.read_text(encoding="utf-8")
-        + "\n## 読込表\n\n| 時点 | 資料 |\n| --- | --- |\n| 統合の指示 | `${CLAUDE_PLUGIN_ROOT}/share/merge.subagent.md` |\n",
+        + "\n## 読込表\n\n| 時点 | 資料 |\n| --- | --- |\n"
+        + "| 統合の指示 | `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/merge.subagent.md` |\n",
         encoding="utf-8",
     )
-    (tmp_path / "merge.subagent.md").write_text(
+    (roles / "merge.subagent.md").write_text(
         f"# 統合\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 統合区分\n作業ツリーへの書込: あり\n```\n", encoding="utf-8"
     )
 
@@ -212,15 +207,15 @@ def test_recipient_read_by_launched_recipient_is_assigned_and_needs_parent_input
     assert "委譲先の文書が未割当: merge.subagent.md" not in errors
     assert "必須入力名が欠けている: task.parent.md -> merge.subagent.md: 統合区分" in errors
 
-    parent = tmp_path / "task.parent.md"
+    parent = roles / "task.parent.md"
     parent.write_text(parent.read_text(encoding="utf-8") + "\n## 統合\n\n- `統合区分`: 値\n", encoding="utf-8")
     assert not [error for error in _contract_errors(tmp_path) if "merge.subagent.md" in error]
 
 
 def test_unassigned_recipient_is_reported(tmp_path: pathlib.Path) -> None:
     """どの`<役割名>.parent.md`からも選ばれない`<役割名>.subagent.md`を報告する。"""
-    _write_pair(tmp_path, parent_body=_parent_body())
-    (tmp_path / "orphan.subagent.md").write_text(
+    roles = _write_pair(tmp_path, parent_body=_parent_body())
+    (roles / "orphan.subagent.md").write_text(
         f"# 委譲先\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 対象\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
     )
@@ -260,14 +255,14 @@ def test_changed_required_input_fails_without_parent_update(tmp_path: pathlib.Pa
 )
 def test_shared_parent_input_section_matches_declaration(tmp_path: pathlib.Path, declared: str, expected: str) -> None:
     """別役割の必須入力の追加・削除・改名を対象と名前付きで検出する。"""
-    _write_pair(tmp_path, parent_body=_parent_body())
-    recipient = tmp_path / "task.subagent.md"
+    roles = _write_pair(tmp_path, parent_body=_parent_body())
+    recipient = roles / "task.subagent.md"
     names = ", ".join(declared.split(","))
     recipient.write_text(
         f"---\nmode: explore\nmodel_type: review_fast\nrequired_inputs: [{names}]\nwrites_worktree: false\n---\n# 委譲先\n",
         encoding="utf-8",
     )
-    errors = _pair_errors(tmp_path / "task.parent.md", recipient)
+    errors = _pair_errors(roles / "task.parent.md", recipient)
     assert expected in [error.splitlines()[0] for error in errors]
 
 
@@ -278,8 +273,8 @@ def test_required_input_outside_shared_input_section_is_rejected(tmp_path: pathl
         .replace("必須入力名: `対象リポジトリ`", "必須入力名: `別名`")
         .replace("対象リポジトリ: 値\n\n## 起動", "別名: 値\n\n## 起動\n\n対象リポジトリ: 値")
     )
-    _write_pair(tmp_path, parent_body=body)
-    errors = _pair_errors(tmp_path / "task.parent.md", tmp_path / "task.subagent.md")
+    roles = _write_pair(tmp_path, parent_body=body)
+    errors = _pair_errors(roles / "task.parent.md", roles / "task.subagent.md")
     assert "必須入力名が欠けている: task.parent.md -> task.subagent.md: 対象リポジトリ" in errors
 
 
@@ -296,20 +291,23 @@ def test_parent_and_recipient_versions_cannot_be_mixed(tmp_path: pathlib.Path) -
 
     assert not _contract_errors(old_root)
     assert not _contract_errors(new_root)
-    assert _pair_errors(old_root / "task.parent.md", new_root / "task.subagent.md")
-    assert _pair_errors(new_root / "task.parent.md", old_root / "task.subagent.md")
+    old_roles = task_documents.role_document_directory(old_root)
+    new_roles = task_documents.role_document_directory(new_root)
+    assert _pair_errors(old_roles / "task.parent.md", new_roles / "task.subagent.md")
+    assert _pair_errors(new_roles / "task.parent.md", old_roles / "task.subagent.md")
 
 
 def test_incomplete_new_root_keeps_existing_pair_as_fallback(tmp_path: pathlib.Path) -> None:
     """新版の`<役割名>.subagent.md`が欠ける場合は新版を不成立とし、旧版の有効な親子を維持する。"""
     old_root = tmp_path / "old"
     new_root = tmp_path / "new"
-    _write_pair(old_root, parent_body=_parent_body())
-    new_root.mkdir()
-    (new_root / "task.parent.md").write_text(_parent_body(), encoding="utf-8")
+    old_roles = _write_pair(old_root, parent_body=_parent_body())
+    new_roles = task_documents.role_document_directory(new_root)
+    new_roles.mkdir(parents=True)
+    (new_roles / "task.parent.md").write_text(_parent_body(), encoding="utf-8")
 
     assert "委譲先の文書が実在しない: task.parent.md -> task.subagent.md" in _contract_errors(new_root)
-    assert not _pair_errors(old_root / "task.parent.md", old_root / "task.subagent.md")
+    assert not _pair_errors(old_roles / "task.parent.md", old_roles / "task.subagent.md")
 
 
 def test_partial_required_input_name_does_not_match(tmp_path: pathlib.Path) -> None:
@@ -335,14 +333,15 @@ def test_extended_bullet_label_is_reported(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize("optional", [False, True])
 def test_exact_bullet_label_is_accepted(tmp_path: pathlib.Path, optional: bool) -> None:
     """必須入力名を含む長いラベルでも、必須・任意の宣言と完全一致すれば別名として報告しない。"""
-    tmp_path.mkdir(parents=True, exist_ok=True)
+    roles = task_documents.role_document_directory(tmp_path)
+    roles.mkdir(parents=True)
     required = "`対象`" if optional else "`対象`、`対象リポジトリ`"
-    (tmp_path / "task.parent.md").write_text(
+    (roles / "task.parent.md").write_text(
         "# 委譲元\n\n```text\n起動対象: task.subagent.md\n```\n\n## 入力\n\n"
         f"- 必須入力名: {required}\n\n- `対象`: 値\n- `対象リポジトリ`: 値\n",
         encoding="utf-8",
     )
-    (tmp_path / "task.subagent.md").write_text(
+    (roles / "task.subagent.md").write_text(
         "# 委譲先\n\n## 入力\n\n```text\n"
         + ("必須入力名: 対象\n任意入力名: 対象リポジトリ\n" if optional else "必須入力名: 対象,対象リポジトリ\n")
         + "作業ツリーへの書込: あり\n```\n",
@@ -392,8 +391,8 @@ def test_duplicate_launch_target_blocks_are_rejected(tmp_path: pathlib.Path) -> 
 
 def test_required_input_block_must_immediately_follow_heading(tmp_path: pathlib.Path) -> None:
     """入力見出しと必須入力名ブロックの間に本文がある文書を拒否する。"""
-    _write_pair(tmp_path, parent_body=_parent_body())
-    (tmp_path / "task.subagent.md").write_text(
+    roles = _write_pair(tmp_path, parent_body=_parent_body())
+    (roles / "task.subagent.md").write_text(
         "# 委譲先\n\n## 入力\n\n説明\n\n```text\n必須入力名: 対象リポジトリ\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
     )
@@ -413,15 +412,16 @@ def test_unclosed_marker_block_is_rejected(tmp_path: pathlib.Path) -> None:
 
 def test_delegated_launch_parent_must_be_in_read_table(tmp_path: pathlib.Path) -> None:
     """委譲先自身が起動を委ねたparentを読まない欠陥を、文書どうしの接続から検出する。"""
-    _write_pair(tmp_path, parent_body=_parent_body())
-    recipient = tmp_path / "task.subagent.md"
+    roles = _write_pair(tmp_path, parent_body=_parent_body())
+    recipient = roles / "task.subagent.md"
     original = recipient.read_text(encoding="utf-8")
-    instruction = "\n## 探索\n\n`${CLAUDE_PLUGIN_ROOT}/share/task.parent.md`に従って担当を起動する。\n"
+    instruction = "\n## 探索\n\n`${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/task.parent.md`に従って担当を起動する。\n"
     recipient.write_text(original + instruction, encoding="utf-8")
     error = "起動手順の読込が欠けている: task.subagent.md -> task.parent.md"
     assert error in _contract_errors(tmp_path)
     recipient.write_text(
-        original + "\n## 読込表\n\n| 起動前 | `${CLAUDE_PLUGIN_ROOT}/share/task.parent.md` |\n" + instruction, encoding="utf-8"
+        original + "\n## 読込表\n\n| 起動前 | `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/task.parent.md` |\n" + instruction,
+        encoding="utf-8",
     )
     assert error not in _contract_errors(tmp_path)
 

@@ -261,7 +261,7 @@ targets = [
     "agent-toolkit/.mcp.json",
     "agent-toolkit/.mcp.codex.json",
     "agent-toolkit/mcp.json",
-    # Codex plugin manifest生成器が入力にするskillsとshareの全階層を同期契機へ含める。
+    # Codex plugin manifest生成器が入力にするskillsの全階層を同期契機へ含める。
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "agent-toolkit/*.py",
     "agent-toolkit/skills/*.py",
@@ -270,7 +270,6 @@ targets = [
     "agent-toolkit/skills/*/*/*",
     "agent-toolkit/skills/atk-mode/fixtures/multi-turn/*/*/*",
     "agent-toolkit/skills/atk-mode/fixtures/multi-turn/*/__init__.py",
-    "agent-toolkit/share/*",
     "agent-toolkit/hooks/*.json",
     "agent-toolkit/scripts/**/*.py",
     "agent-toolkit/agent_toolkit/**/*.py",
@@ -370,7 +369,6 @@ error-pattern = '^(?P<file>.+?):(?P<line>\d+): (?P<severity>error|warning): (?P<
 targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "AGENTS.md",
-    "agent-toolkit/share/*.md",
     "agent-toolkit/skills/*/*.md",
     "agent-toolkit/skills/*/*/*.md",
     "agent-basics/skills/*/*.md",

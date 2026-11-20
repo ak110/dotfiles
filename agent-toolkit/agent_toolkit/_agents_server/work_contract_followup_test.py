@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from agent_toolkit._agents_server import launch_requests, mcp_tools
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import session_registry, task_documents
 from agent_toolkit._common.next_action import ActionableError
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -34,7 +34,8 @@ def _start_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode:
     """通常起動の公開入力を返す。taskは記録先を宣言しない役割文書を使う。"""
     if mode == "delegate":
         return {"prompt": "Aを実装・検収する", "model_type": "chores"}
-    document = tmp_path / "task.subagent.md"
+    document = task_documents.role_document_directory(tmp_path) / "task.subagent.md"
+    document.parent.mkdir(parents=True)
     document.write_text("# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
@@ -69,7 +70,8 @@ async def test_public_start_delivers_whole_contract_reference(
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     inputs: dict[str, Any]
     if mode == "task":
-        document = tmp_path / "task.subagent.md"
+        document = task_documents.role_document_directory(tmp_path) / "task.subagent.md"
+        document.parent.mkdir(parents=True)
         names = "対象,引き継ぎ記録先" if handoff_input is not None else "対象"
         document.write_text(
             f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n作業ツリーへの書込: あり\n```\n", encoding="utf-8"

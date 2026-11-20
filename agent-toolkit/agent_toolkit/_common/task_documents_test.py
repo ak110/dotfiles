@@ -16,9 +16,9 @@ def _document(tmp_path: pathlib.Path, block: str) -> pathlib.Path:
 
 def test_invalid_launch_target_reports_contract_and_repair(tmp_path: pathlib.Path) -> None:
     """直接読む不変条件側でも、不正な対象名の修復先を得られる。"""
-    share = tmp_path / "share"
-    share.mkdir()
-    contract = share / "task.parent.md"
+    roles = task_documents.role_document_directory(tmp_path)
+    roles.mkdir(parents=True)
+    contract = roles / "task.parent.md"
     contract.write_text("# 起動\n\n```text\n起動対象: ../other.subagent.md\n```\n", encoding="utf-8")
     with pytest.raises(ValueError) as captured:
         task_documents.launch_contract_documents(tmp_path)
@@ -60,7 +60,7 @@ def test_missing_or_invalid_worktree_write_is_a_format_violation(tmp_path: pathl
 @pytest.mark.parametrize("references_first", [False, True])
 def test_launched_task_document_round_trips_the_task_header(tmp_path: pathlib.Path, references_first: bool) -> None:
     """`task`の見出しで始まる起動本文からだけ役割文書のパスを得る。"""
-    document = tmp_path / "share" / "exec.subagent.md"
+    document = tmp_path / "skills" / "atk-mode" / "roles" / "exec.subagent.md"
     prompt = task_documents.task_prompt_header(document) + (
         "\n本文\n入力:\n対象: 内容"
         if references_first
@@ -89,10 +89,10 @@ def test_task_prompt_inputs_preserves_old_and_front_loaded_inputs(legacy: bool) 
 @pytest.mark.parametrize(
     "first_line",
     [
-        "次の文書を読んで比べよ: /plugin/share/exec.subagent.md",
-        "/plugin/share/exec.subagent.md の手順を実行せよ。",
+        "次の文書を読んで比べよ: /plugin/skills/atk-mode/roles/exec.subagent.md",
+        "/plugin/skills/atk-mode/roles/exec.subagent.md の手順を実行せよ。",
         "次の文書の手順を実行せよ（出所: skills/atk-mode/roles/exec.subagent.md）。",
-        "次の文書の手順を実行せよ（出所: /plugin/share/README.md）。",
+        "次の文書の手順を実行せよ（出所: /plugin/skills/atk-mode/roles/README.md）。",
     ],
 )
 def test_launched_task_document_ignores_other_first_lines(first_line: str) -> None:

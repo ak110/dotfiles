@@ -106,10 +106,10 @@ async def test_start_warns_and_continues_without_required_input_marker(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """必須入力名を取得できない`<役割名>.subagent.md`は警告してbackendを起動する。"""
-    task_document = tmp_path / "share" / "task.subagent.md"
+    task_document = tmp_path / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     (tmp_path / ".claude-plugin").mkdir(parents=True)
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document.parent.mkdir()
+    task_document.parent.mkdir(parents=True)
     task_document.write_text("# タスク\n\n## 入力\n\n- 対象\n", encoding="utf-8")
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
@@ -191,11 +191,11 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """別配置の正規plugin root配下でも必須入力を確かめる。"""
-    task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
-    manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
+    task_document = tmp_path / "plugin" / "skills" / "atk-mode" / "roles" / "task.subagent.md"
+    manifest = task_documents.document_plugin_root(task_document) / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document.parent.mkdir()
+    task_document.parent.mkdir(parents=True)
     task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
@@ -219,11 +219,11 @@ async def test_start_accepts_task_document_path_with_spaces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """startは表示用プロンプトへ直列化したパスを再解析しない。"""
-    task_document = tmp_path / "plugin root" / "share" / "task.subagent.md"
-    manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
+    task_document = tmp_path / "plugin root" / "skills" / "atk-mode" / "roles" / "task.subagent.md"
+    manifest = task_documents.document_plugin_root(task_document) / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document.parent.mkdir()
+    task_document.parent.mkdir(parents=True)
     task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -246,12 +246,12 @@ async def test_start_expands_plugin_root_variable_in_task_document(
 ) -> None:
     """startは`<役割名>.subagent.md`の本文のプラグインルート変数を、そのファイルが属するプラグインルートへ展開して配送する。"""
     plugin_root = tmp_path / "plugin root"
-    task_document = plugin_root / "share" / "task.subagent.md"
+    task_document = plugin_root / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document.parent.mkdir()
-    task_document.write_text("手順: `${CLAUDE_PLUGIN_ROOT}/share/other.parent.md`を読む。\n", encoding="utf-8")
+    task_document.parent.mkdir(parents=True)
+    task_document.write_text("手順: `${CLAUDE_PLUGIN_ROOT}/skills/atk-mode/roles/other.parent.md`を読む。\n", encoding="utf-8")
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "execute")
@@ -259,7 +259,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"補足": "${CLAUDE_PLUGIN_ROOT}"})
 
     prompt = manager.start.await_args.args[1]
-    assert f"`{plugin_root.resolve()}/share/other.parent.md`を読む。" in prompt
+    assert f"`{plugin_root.resolve()}/skills/atk-mode/roles/other.parent.md`を読む。" in prompt
     # 名前付き入力は委譲元の値のまま配送する
     assert task_documents.task_prompt_inputs(prompt)["補足"] == "${CLAUDE_PLUGIN_ROOT}"
 
@@ -270,11 +270,11 @@ async def test_start_rejects_task_document_that_cannot_be_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """実在確認後に読取不能となった文書ではbackendを起動しない。"""
-    task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
-    manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
+    task_document = tmp_path / "plugin" / "skills" / "atk-mode" / "roles" / "task.subagent.md"
+    manifest = task_documents.document_plugin_root(task_document) / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document.parent.mkdir()
+    task_document.parent.mkdir(parents=True)
     task_document.write_text("## 入力\n", encoding="utf-8")
     original_read_text = pathlib.Path.read_text
 
@@ -301,10 +301,10 @@ async def test_start_rejects_task_document_that_cannot_be_read(
     manager.start.assert_not_awaited()
 
 
-def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_path: pathlib.Path) -> None:
-    """manifestを持たないshare配下の文書は入力を確認する対象から除く。"""
-    task_document = tmp_path / "share" / "task.subagent.md"
-    task_document.parent.mkdir()
+def test_start_rejects_task_document_without_plugin_manifest(tmp_path: pathlib.Path) -> None:
+    """manifestを持たないplugin rootの役割文書の置き場所にある文書は、入力を確認する対象から除く。"""
+    task_document = tmp_path / "skills" / "atk-mode" / "roles" / "task.subagent.md"
+    task_document.parent.mkdir(parents=True)
     task_document.write_text("## 入力\n", encoding="utf-8")
 
     warning = launch_requests._validate_required_prompt_inputs(task_document, {})
@@ -312,13 +312,13 @@ def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_pat
     assert "`<役割名>.subagent.md`がagent-toolkitの役割文書の置き場所にありません" in warning
 
 
-def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_path: pathlib.Path) -> None:
-    """別名pluginのshare配下の文書は入力を確認する対象から除く。"""
-    task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
-    manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
+def test_start_rejects_task_document_for_other_plugin_manifest(tmp_path: pathlib.Path) -> None:
+    """別名pluginの役割文書の置き場所にある文書は入力を確認する対象から除く。"""
+    task_document = tmp_path / "plugin" / "skills" / "atk-mode" / "roles" / "task.subagent.md"
+    manifest = task_documents.document_plugin_root(task_document) / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"other-plugin"}', encoding="utf-8")
-    task_document.parent.mkdir()
+    task_document.parent.mkdir(parents=True)
     task_document.write_text("## 入力\n", encoding="utf-8")
 
     warning = launch_requests._validate_required_prompt_inputs(task_document, {})
