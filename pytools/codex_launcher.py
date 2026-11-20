@@ -121,6 +121,7 @@ class CatalogTarget(NamedTuple):
     token_env: str | None
     profile: str | None
     ignore_user_config: bool
+    command: str | None
 
 
 def series_catalog_arguments(arguments: Sequence[str]) -> CatalogTarget | None:
@@ -130,6 +131,7 @@ def series_catalog_arguments(arguments: Sequence[str]) -> CatalogTarget | None:
     remote = token_env = profile = None
     ignore_user_config = False
     command_seen = False
+    command = None
     index = 0
     while index < len(arguments):
         token = arguments[index]
@@ -161,11 +163,13 @@ def series_catalog_arguments(arguments: Sequence[str]) -> CatalogTarget | None:
         elif option == "--strict-config":
             config.append(option)
         elif not option.startswith("-") and not command_seen:
-            if option in _COMMANDS and option not in _MODEL_COMMANDS:
-                return None
+            if option in _COMMANDS:
+                if option not in _MODEL_COMMANDS:
+                    return None
+                command = option
             command_seen = True
         index += 1
-    return CatalogTarget(tuple(config), cwd, remote, token_env, profile, ignore_user_config)
+    return CatalogTarget(tuple(config), cwd, remote, token_env, profile, ignore_user_config, command)
 
 
 async def _fetch_catalog_from_channel(channel: RpcChannel) -> list[dict[str, Any]]:
@@ -191,17 +195,17 @@ async def _fetch_catalog_from_channel(channel: RpcChannel) -> list[dict[str, Any
 async def _remote_model_catalog(binary: pathlib.Path, url: str, token_env: str | None) -> list[dict[str, Any]]:
     endpoint = urlsplit(url)
     timeout = 30
+    token = os.environ.get(token_env) if token_env else None
+    if token_env and not token:
+        raise ValueError("外部App Serverの認証用環境変数が空です")
     async with asyncio.timeout(timeout):
         if endpoint.scheme == "unix" and not endpoint.netloc:
             async with native_proxy(
-                str(binary), os.environ, timeout=timeout, socket_path=unquote(endpoint.path) or None
+                str(binary), os.environ, timeout=timeout, socket_path=unquote(endpoint.path) or None, token=token
             ) as channel:
                 return await _fetch_catalog_from_channel(channel)
         if endpoint.scheme not in {"ws", "wss"} or not endpoint.hostname or endpoint.username is not None or endpoint.fragment:
             raise ValueError("外部App ServerのURLを認識できません")
-        token = os.environ.get(token_env) if token_env else None
-        if token_env and not token:
-            raise ValueError("外部App Serverの認証用環境変数が空です")
         tls = endpoint.scheme == "wss"
         reader, writer = await asyncio.open_connection(endpoint.hostname, endpoint.port or (443 if tls else 80), ssl=tls)
         try:

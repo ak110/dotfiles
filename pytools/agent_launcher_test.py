@@ -312,11 +312,12 @@ def test_codex_runtime_disappears_before_launch(
 
 
 def test_codex_completion_uses_same_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    binary = tmp_path / "native-codex"
+    monkeypatch.chdir(tmp_path)
+    binary = pathlib.Path("native-codex")
     monkeypatch.setattr(agent_launcher.codex_runtime, "find_runtime_launcher", lambda *, windows: binary)
 
     def options(path: str) -> list[str]:
-        assert path == str(binary)
+        assert path == str(binary.absolute())
         return ["--model", "--profile"]
 
     monkeypatch.setattr(agent_launcher, "_get_claude_options", options)
@@ -353,6 +354,17 @@ async def test_codex_remote_catalog_uses_the_same_authenticated_endpoint(monkeyp
         )
         await asyncio.wait_for(finished.wait(), 3)
     assert codex_models.latest_model("sol", catalog) == "gpt-12-sol"
+
+
+def test_remote_exec_does_not_attempt_forbidden_model_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(agent_launcher.codex_runtime, "find_runtime_launcher", lambda *, windows: pathlib.Path("codex"))
+    monkeypatch.setattr(codex_launcher, "resolve_series_model", lambda *a: pytest.fail("一覧を取得しない"))
+    with pytest.raises(SystemExit, match="1"):
+        agent_launcher.main_sol(["exec", "--remote", "ws://127.0.0.1:23456", "prompt"])
+    assert "対話起動" in capsys.readouterr().err
 
 
 def test_codex_missing_returns_127(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:

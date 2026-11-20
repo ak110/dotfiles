@@ -116,7 +116,7 @@ async def accept_tui(
 
 @contextlib.asynccontextmanager
 async def native_proxy(
-    binary: str, environment: Mapping[str, str], *, timeout: float, socket_path: str | None = None
+    binary: str, environment: Mapping[str, str], *, timeout: float, socket_path: str | None = None, token: str | None = None
 ) -> AsyncGenerator[RpcChannel]:
     """OSごとのcontrol socketへの接続を、Codex自身の公開proxyへ委ねる。"""
     process = await asyncio.create_subprocess_exec(
@@ -142,7 +142,7 @@ async def native_proxy(
         channel = RpcChannel(process.stdout, process.stdin, client=True)
         try:
             async with asyncio.timeout(timeout):
-                await channel.handshake()
+                await channel.handshake(token=token)
         except EOFError as error:
             await process.wait()
             diagnostic = (await stderr).decode("utf-8", errors="replace").strip()

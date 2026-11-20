@@ -34,6 +34,8 @@ dotfilesの`astra`、`sol`、`terra`は、Codex自身が返すモデル一覧か
 外部App Serverに接続する`--remote`では同じ外部接続先から一覧を取得する。
 接続先の一覧を利用できない場合や、現行Codexの一覧機能では指定のprofileや設定無視条件を再現できない場合は、完全なモデルIDを明示する。
 OSS providerを選んだ場合は、そのprovider向けのモデルを指定する。
+外部接続の`codex exec`はモデル指定を受け付けない。
+外部接続でモデルを選ぶ場合は対話起動を使う。
 
 ## daemon再起動後の作業継続
 

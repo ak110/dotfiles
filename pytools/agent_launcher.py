@@ -145,7 +145,7 @@ def _complete_codex_options(prefix: str, **_: object) -> list[str]:
     codex_bin = codex_runtime.find_runtime_launcher(windows=os.name == "nt")
     if codex_bin is None:
         return []
-    return [option for option in _get_claude_options(str(codex_bin)) if option.startswith(prefix)]
+    return [option for option in _get_claude_options(str(codex_bin.absolute())) if option.startswith(prefix)]
 
 
 def _enable_model_completion(command_name: str) -> None:
@@ -382,6 +382,12 @@ def _main_codex(family: str, argv: list[str] | None) -> NoReturn:
     try:
         catalog_args = codex_launcher.series_catalog_arguments(arguments)
         if catalog_args is not None:
+            if catalog_args.remote is not None and catalog_args.command in {"exec", "e"}:
+                print(
+                    "外部接続のcodex execはモデル指定を受け付けません。モデルを選ぶ場合は対話起動を使ってください。",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             arguments = ["-m", codex_launcher.resolve_series_model(binary, family, catalog_args), *arguments]
     except ValueError as error:
         print(
