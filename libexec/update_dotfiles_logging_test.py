@@ -5,6 +5,7 @@
 
 import collections.abc
 import contextlib
+import errno
 import io
 import logging
 import pathlib
@@ -146,6 +147,55 @@ def test_dependency_warning_points_to_its_diagnostic_once(
     if storage == "saved":
         assert "原因の明細" in logs_path.read_text(encoding="utf-8")
         assert ("原因の明細" in _run_logs_cli().stdout) == (parent_exit is not None)
+
+
+@pytest.mark.parametrize("fault", ["child-report-rename", "child-log-rename", "parent-final-append"])
+def test_child_locates_its_own_warning_before_parent_finishes(
+    logs_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], fault: str
+) -> None:
+    """同期結果や他のレコードの成否ではなく、警告の明細を書いた時の結果で所在を示す。"""
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "11-1")
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", logs_path)
+    monkeypatch.setattr(update_dotfiles_runtime, "LOG_PATH", logs_path)
+    monkeypatch.setattr(update_dotfiles_runtime, "current_run_id", "11-1")
+
+    def runner():
+        with monkeypatch.context() as child_fault:
+            if fault == "child-log-rename":
+                child_fault.setattr(post_apply.update_log.ProcessSafeRotatingFileHandler, "rotate", fail_rename)
+            command = ["warmup-fixture"]
+            result = subprocess.CompletedProcess(command, 7, "不足パッケージ名", "依存構築失敗")
+            plugin_warmup.CommandOutcome(command, result, 0).report(target="fixture", tag="warmup")
+        return [], []
+
+    def fail_rename(*_args):
+        raise PermissionError(errno.EACCES, "rename")
+
+    def no_space():
+        raise OSError(errno.ENOSPC, "parent append")
+
+    with update_dotfiles_runtime.configure_persistent_log("11-1") as parent:
+        assert parent is not None
+        with monkeypatch.context() as child_fault:
+            if fault == "child-report-rename":
+                child_fault.setattr(post_apply.sync_report.os, "replace", fail_rename)
+            if fault == "child-log-rename":
+                child_fault.setattr(post_apply, "_UPDATE_LOG_MAX_BYTES", 1)
+            with pytest.raises(SystemExit) as child:
+                post_apply.main(runner=runner)
+        assert child.value.code == 0
+        child_screen = capsys.readouterr().err
+        if fault == "parent-final-append":
+            monkeypatch.setattr(parent, "_open", no_space)
+        assert update_dotfiles_runtime.finish(0) == 0
+    parent_screen = capsys.readouterr().err
+    assert "永続ログ:" not in parent_screen and "この標準エラー" not in parent_screen
+    assert child_screen.count("手動で") == 1
+    saved = fault != "child-log-rename"
+    assert child_screen.count("update-dotfiles logs") == int(saved)
+    assert ("不足パッケージ名" in _run_logs_cli().stdout) == saved
+    assert ("不足パッケージ名" in child_screen) != saved
+    assert ("この標準エラー" in child_screen) != saved
 
 
 @pytest.mark.windows

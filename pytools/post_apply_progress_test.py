@@ -149,8 +149,8 @@ def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tm
 
 
 @pytest.mark.parametrize("via_update_dotfiles", [False, True], ids=["standalone", "via-update-dotfiles"])
-def test_recovery_guidance_is_printed_once_only_for_standalone_run(monkeypatch, capsys, via_update_dotfiles):
-    """案内は単独実行でだけ1回出し、`update-dotfiles`経由では`update-dotfiles`の終了時に任せる。"""
+def test_child_locates_its_traceback_and_leaves_update_retry_to_parent(monkeypatch, capsys, via_update_dotfiles):
+    """例外を書いた子が所在を示し、更新配下では全体の再実行だけを親へ任せる。"""
     if via_update_dotfiles:
         monkeypatch.setenv(post_apply._UPDATE_RUN_ID_ENV, "run-1")  # noqa: SLF001
 
@@ -167,7 +167,7 @@ def test_recovery_guidance_is_printed_once_only_for_standalone_run(monkeypatch, 
     screen = captured.out + captured.err
     assert screen.count("工程固有の操作") == 1
     expected = 0 if via_update_dotfiles else 1
-    assert screen.count("永続ログ:") == expected
+    assert screen.count("永続ログ:") == 1
     assert screen.count("update-dotfilesを再実行してください") == expected
 
 

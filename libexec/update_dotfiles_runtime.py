@@ -152,12 +152,12 @@ def finish(returncode: int) -> int:
             continue_after_failure("更新失敗の起票", "update-dotfiles logsで診断を確認してください。", str(error))
     if returncode == 0:
         _mark_body_completed()
+    parent_log_saved = _record_parent_diagnostics(returncode)
     if continued_failures:
         returncode = _report_continued_failures(returncode)
     logger.info("update-dotfiles終了: exit=%d", returncode)
-    diagnostic_source = None
     if current_run_id is not None:
-        post_apply = sync_report.write_finish(
+        sync_report.write_finish(
             current_run_id,
             status="succeeded" if returncode == 0 else "failed",
             exit_code=returncode,
@@ -165,19 +165,28 @@ def finish(returncode: int) -> int:
             stderr_tail=None if returncode == 0 else last_stderr_tail,
             finished_at=sync_report.now_text(),
         )
-        diagnostic_source = post_apply.get("diagnostic_source")
     if returncode != 0:
-        # post-applyは`update-dotfiles`経由の実行では失敗後の案内を出さないため、次の操作はここで1回だけ示す。
-        print("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。", file=sys.stderr)
-    if persistent_log is not None and persistent_log.write_failed:
-        print(f"永続ログへ診断を書き込めません: {LOG_PATH}。この標準エラーを確認してください。", file=sys.stderr)
-    elif diagnostic_source == "stderr":
-        print("post-applyの診断はこの標準エラーを確認してください。", file=sys.stderr)
-    elif diagnostic_source == "log" or (returncode != 0 and persistent_log is not None):
-        print(f"永続ログ: {LOG_PATH}", file=sys.stderr)
-        kind = "失敗" if returncode else "警告"
-        print(f"{kind}の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
+        stage = f"{current_stage_title}（exit={returncode}）の" if current_stage_title and not last_stderr_tail else ""
+        print(f"次の操作: {stage}失敗理由を確認し、update-dotfilesを再実行してください。", file=sys.stderr)
+        if parent_log_saved:
+            print(f"更新本体の永続ログ: {LOG_PATH}", file=sys.stderr)
+            print("失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
     return returncode
+
+
+def _record_parent_diagnostics(returncode: int) -> bool:
+    """更新本体が持つ失敗理由を記録する。標準エラーを継承した子の終了値だけでは診断先を案内しない。"""
+    details = [f"{failure.title}: {failure.detail or failure.action}" for failure in continued_failures]
+    if returncode and last_stderr_tail:
+        details.append(last_stderr_tail)
+    if not details:
+        return False
+    message = "更新本体の失敗: " + "\n".join(details)
+    if persistent_log is None:
+        print(redact_secrets(message), file=sys.stderr)
+        return False
+    logger.error("%s", message)
+    return not persistent_log.write_failed
 
 
 def _mark_body_completed() -> None:

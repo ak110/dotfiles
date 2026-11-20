@@ -103,8 +103,8 @@ def write_finish(
     failed_stage: str | None,
     stderr_tail: str | None,
     finished_at: str,
-) -> dict[str, Any]:
-    """実行の終了を記録し、同じ実行が記録したpost-apply段の結果を返す。"""
+) -> None:
+    """実行の終了を記録する。同じ実行が記録したpost-apply段の結果は保持する。"""
     current = read()
     payload = current if current.get("run_id") == run_id else {"schema": SCHEMA, "run_id": run_id, "post_apply": None}
     payload.update(
@@ -118,8 +118,6 @@ def write_finish(
     )
     payload.setdefault("started_at", finished_at)
     _write(payload)
-    post_apply = payload.get("post_apply")
-    return post_apply if isinstance(post_apply, dict) else {}
 
 
 def write_post_apply(run_id: str, post_apply: dict[str, Any]) -> None:

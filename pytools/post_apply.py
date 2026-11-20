@@ -147,16 +147,19 @@ def _configure_logging() -> Generator[update_log.ProcessSafeRotatingFileHandler 
         file_handler = None
         try:
             _UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            lookup = "、直近の更新は update-dotfiles logs" if _UPDATE_RUN_ID_ENV in os.environ else ""
             file_handler = update_log.ProcessSafeRotatingFileHandler(
                 _UPDATE_LOG_PATH,
                 max_bytes=_UPDATE_LOG_MAX_BYTES,
                 backup_count=_UPDATE_LOG_BACKUP_COUNT,
                 encoding="utf-8",
-                screen_handlers=True,
+                diagnostic_hint=(
+                    f"  post-applyの永続ログ: {_UPDATE_LOG_PATH}（run={run_id}、"
+                    f"世代移動後は .1 から .{_UPDATE_LOG_BACKUP_COUNT}{lookup}）"
+                ),
             )
         except OSError as error:
-            if _UPDATE_RUN_ID_ENV not in os.environ:
-                print(f"  永続ログを開始できませんでした: {error}。この標準エラーに診断を表示します。", file=sys.stderr)
+            print(f"  post-applyの永続ログを開始できませんでした: {error}。この標準エラーに診断を表示します。", file=sys.stderr)
         else:
             cleanup.callback(file_handler.close)
             file_handler.setLevel(logging.INFO)
@@ -173,13 +176,7 @@ def _configure_logging() -> Generator[update_log.ProcessSafeRotatingFileHandler 
         cleanup.callback(setattr, root_logger, "handlers", previous_handlers)
         root_logger.handlers[:] = handlers
         root_logger.setLevel(logging.INFO)
-        try:
-            yield file_handler
-        finally:
-            if file_handler is not None and file_handler.write_failed and _UPDATE_RUN_ID_ENV not in os.environ:
-                print(
-                    f"  永続ログへ診断を書き込めません: {_UPDATE_LOG_PATH}。この標準エラーを確認してください。", file=sys.stderr
-                )
+        yield file_handler
 
 
 @dataclass
@@ -416,18 +413,14 @@ def main(
                 sys.exit(1)
         return
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
-    with _configure_logging() as log_file:
+    with _configure_logging():
         logger.info("post-apply開始", extra=log_format.LOG_ONLY)
         results, recommendations = (runner or run)()
         failed = [r for r in results if not r.ok]
         updated = [r for r in results if r.ok and r.changed]
         skipped = [r for r in results if r.ok and not r.changed]
         notices = _pytools_install_notices() + [notice for result in results for notice in result.notices]
-        log_ready = log_file is not None and not log_file.write_failed
-        diagnostic_source = log_file.diagnostic_source if log_file else "stderr"
-        _record_sync_report(
-            updated=updated, skipped=skipped, failed=failed, notices=notices, diagnostic_source=diagnostic_source
-        )
+        _record_sync_report(updated=updated, skipped=skipped, failed=failed, notices=notices)
         logger.info(
             "完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件",
             len(updated),
@@ -438,13 +431,8 @@ def main(
         _print_plugin_recommendations(recommendations)
         if failed:
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
-        if _UPDATE_RUN_ID_ENV not in os.environ:
-            if failed:
-                logger.error("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。")
-            if diagnostic_source == "log" or (failed and log_ready and diagnostic_source != "stderr"):
-                logger.warning(
-                    "永続ログ: %s（run=%s、世代移動後は .1 から .%d）", _UPDATE_LOG_PATH, _run_id(), _UPDATE_LOG_BACKUP_COUNT
-                )
+        if failed and _UPDATE_RUN_ID_ENV not in os.environ:
+            logger.error("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。")
         _print_post_apply_notices(notices)
         logger.info("post-apply終了: exit=%d", 1 if failed else 0, extra=log_format.LOG_ONLY)
         sys.exit(1 if failed else 0)
@@ -456,7 +444,6 @@ def _record_sync_report(
     skipped: list[_StepResult],
     failed: list[_StepResult],
     notices: list[post_apply_outcome.PostApplyNotice],
-    diagnostic_source: str | None,
 ) -> None:
     """post-apply段の結果を同期結果の記録へ残す。
 
@@ -471,7 +458,6 @@ def _record_sync_report(
             "failed": len(failed),
             "failed_steps": [{"name": result.name, "reason": result.reason, "detail": result.detail} for result in failed],
             "notices": list(dict.fromkeys(notice.message for notice in notices)),
-            "diagnostic_source": diagnostic_source,
         },
     )
 
@@ -596,7 +582,7 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
             logger.error("    %s: 失敗: %s", step.name, ret.failure)
             logger.info("    %s: 次の操作: %s", step.name, ret.next_action, extra=log_format.LOG_ONLY)
         else:
-            logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action)
+            logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action, extra=log_format.SHOW)
         failure = _StepResult(
             name=step.name, ok=False, changed=ret.changed, notices=ret.notices, reason=ret.failure, deferred=ret.deferred
         )

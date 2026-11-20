@@ -103,16 +103,13 @@ class TestStepFailureStopsExecution:
         assert err.count("失敗の詳細は update-dotfiles logs") == 1
         assert err.index("失敗しても後続の段を続けた段:") < err.index("次の操作:") < err.index("永続ログ:")
 
-    def test_post_apply_failure_shows_next_action_once(
+    def test_forwarded_apply_failure_does_not_claim_to_have_saved_child_output(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """post-applyの失敗で`chezmoi apply`が失敗した実行でも、次の操作と永続ログの所在が画面に各1回出る。
-
-        post-applyは`update-dotfiles`経由では失敗後の案内を出さないため、終了時の案内が唯一の次の操作になる。
-        """
+        """標準エラーを継承した段の終了値だけでは、親は子の詳細を保存したと案内しない。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
         monkeypatch.setattr(subprocess, "run", _fake_run({"apply": 1}, calls))
@@ -121,7 +118,8 @@ class TestStepFailureStopsExecution:
         assert update_dotfiles.main() == 1
         err = capsys.readouterr().err
         assert err.count("次の操作:") == 1
-        assert err.count("永続ログ:") == 1
+        assert "chezmoi apply (post-apply実行)（exit=1）" in err
+        assert "永続ログ:" not in err
 
     def test_multiple_continued_failures_are_all_listed(
         self,
@@ -342,7 +340,7 @@ class TestCapturedStderr:
         assert "fatal: pull failed" not in captured.out
         assert captured.err == (
             "fatal: pull failed\n次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。\n"
-            f"永続ログ: {update_dotfiles_runtime.LOG_PATH}\n"  # noqa: SLF001
+            f"更新本体の永続ログ: {update_dotfiles_runtime.LOG_PATH}\n"  # noqa: SLF001
             "失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。\n"
         )
         assert len(calls) == 1
