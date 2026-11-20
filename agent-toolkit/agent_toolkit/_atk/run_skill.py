@@ -232,7 +232,7 @@ def _dispatch_with_log(
             f"--timeoutは正の秒数で指定する（指定値: {args.timeout}）",
             next_action=f"--timeoutを省略して{DEFAULT_TIMEOUT_SECONDS}秒とするか、正の秒数を指定する",
         )
-    candidates = (
+    candidates: list[tuple[str, str, str]] = (
         [(record.engine, record.model, record.effort)]
         if record is not None
         else _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する")
