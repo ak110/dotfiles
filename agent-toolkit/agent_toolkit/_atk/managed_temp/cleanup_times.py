@@ -1,4 +1,4 @@
-"""キャッシュを削除した親だけについて、掃引による更新と利用者の更新を区別する。"""
+"""キャッシュを削除した親だけについて、掃引による更新とユーザーの更新を区別する。"""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class CleanupTimes:
     def __init__(self, state_root: pathlib.Path, cutoff_ns: int) -> None:
         self._directory = state_root / ".sweep/cache-parents"
         self._records: dict[int, dict[str, dict[str, int]]] = {}
-        # 全領域の台帳ではなく、内部回収で時計が進んだ親だけの空ファイル。並行する掃引の記録を上書きしない。
+        # 全領域の台帳ではなく、内部回収で時計が進んだ親だけの空ファイル。
         with contextlib.suppress(OSError):
             for record in self._directory.iterdir():
                 try:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import enum
+import errno
 import functools
 import hashlib
 import json
@@ -228,28 +229,40 @@ def _legacy_lock_path(state_root: pathlib.Path, path: pathlib.Path) -> pathlib.P
     return state_root / f"{hashlib.sha256(os.fsencode(path)).hexdigest()}{_LEGACY_CLEANUP_LOCK_SUFFIX}"
 
 
+def _legacy_marker(area: pathlib.Path) -> dict[str, typing.Any]:
+    marker = area / paths.LEGACY_MARKER_NAME
+    try:
+        metadata = marker.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or paths.is_link(metadata):
+            return {}
+        record = json.loads(marker.read_text(encoding="utf-8"))
+    except FileNotFoundError, UnicodeError, ValueError:
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
 def _legacy_original_path(area: pathlib.Path) -> pathlib.Path:
     """旧markerが記録した元の対象パスを返す。後始末中の隔離先は元の対象のロックで旧版と排他する。"""
-    try:
-        marker = json.loads((area / paths.LEGACY_MARKER_NAME).read_text(encoding="utf-8"))
-    except OSError, UnicodeError, ValueError:
-        return area
-    recorded = marker.get("path") if isinstance(marker, dict) else None
+    recorded = _legacy_marker(area).get("path")
     return pathlib.Path(recorded) if isinstance(recorded, str) and pathlib.Path(recorded).is_absolute() else area
 
 
 @contextlib.contextmanager
-def _try_lock(path: pathlib.Path) -> typing.Generator[bool]:
-    """ロックを待たずに取得できれば真を渡す。取得できない場合は偽を渡し、対象をその回は保持する。"""
+def _try_lock(path: pathlib.Path, *, report_errors: bool = False) -> typing.Generator[bool]:
+    """競合時は待たずに偽を渡す。旧版の状態を個別に扱う場合は開けない対象も次回へ残す。"""
     try:
         handle = path.open("a+", encoding="utf-8")
     except OSError:
+        if report_errors:
+            raise
         yield False
         return
     with handle:
         try:
             file_lock.acquire_lock(handle, blocking=False)
-        except OSError:
+        except OSError as error:
+            if report_errors and error.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                raise
             yield False
             return
         try:
@@ -504,48 +517,6 @@ def _clean_regenerable(
     return [pathlib.Path(path) for path in cleaned["removed"]]
 
 
-def _reclaim_for_space(
-    state_root: pathlib.Path,
-    temp_root: pathlib.Path,
-    now_ns: int,
-    protected_sessions: set[pathlib.Path],
-    deleted: list[pathlib.Path],
-    failed: list[tuple[pathlib.Path, str]],
-    *,
-    cutoff_ns: int,
-    after_daily_sweep: bool,
-    times: CleanupTimes | None = None,
-) -> SpacePressure | None:
-    """空きは毎回確認し、再帰走査と警告を共有の5分間隔へまとめる。"""
-    if not _below_floor(temp_root):
-        return None
-    lock = state_root / ".sweep/pressure.lock"
-    try:
-        lock.parent.mkdir(mode=private_directory.MODE, exist_ok=True)
-    except OSError:
-        return None
-    # 待たずに戻ることで、別プロセスの長い走査を起動の待ち時間へ転嫁しない。
-    # ロックファイルは削除せず、異なるinodeへの同時ロックを防ぐ。
-    with _try_lock(lock) as locked:
-        if not locked or not _sweep_due(
-            state_root, now_ns, record_name=_PRESSURE_RECORD_NAME, interval_ns=_PRESSURE_INTERVAL_NS
-        ):
-            return None
-        # 試行開始を記録し、失敗や中断でも次の起動による即時の全走査を避ける。
-        _save_sweep_time(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME)
-        return _reclaim_space(
-            state_root,
-            temp_root,
-            now_ns,
-            protected_sessions,
-            deleted,
-            failed,
-            cutoff_ns=cutoff_ns,
-            after_daily_sweep=after_daily_sweep,
-            times=times if times is not None else CleanupTimes(state_root, cutoff_ns),
-        )
-
-
 def _reclaim_space(
     state_root: pathlib.Path,
     temp_root: pathlib.Path,
@@ -570,6 +541,8 @@ def _reclaim_space(
     floor = usage.total * _min_free_ratio()
     if usage.free >= floor:
         return None
+    # 失敗や中断でも次の起動による即時の全走査を避ける。
+    _save_sweep_time(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME)
     try:
         legacy_sessions = {pathlib.Path(target) for _, target in _legacy_session_references(state_root, skip_unreadable=False)}
     except OSError as error:
@@ -589,7 +562,13 @@ def _reclaim_space(
             session_area = (
                 legacy_sessions is None
                 or child in legacy_sessions
-                or (directory and child.name.startswith(f"{creation.SESSION_TEMP_PREFIX}-"))
+                or (
+                    directory
+                    and (
+                        child.name.startswith(f"{creation.SESSION_TEMP_PREFIX}-")
+                        or isinstance(_legacy_marker(child).get("session_id"), str)
+                    )
+                )
             )
             if session_area and after_daily_sweep:
                 continue
@@ -699,26 +678,31 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         state_root = paths.state_root()
     except ManagedTempError as error:
         return SweepResult([], ((paths.temp_root_path(), _failure_reason(error)),))
-    due = force or _sweep_due(state_root, now_ns)
-    if not due:
-        # 間隔内の起動は全走査をしない。空きの確認は1回のstatvfsで済むため、下限を割る場合だけ回収へ進む。
-        if not _below_floor(temp_root):
-            return SweepResult([], ())
-        protected = {
-            area
-            for identifier in registry_index.pending_session_ids()
-            if (area := creation.find_session_temp(identifier)) is not None
-        }
-        deleted_early: list[pathlib.Path] = []
-        failed_early: list[tuple[pathlib.Path, str]] = []
-        pressure = _reclaim_for_space(
-            state_root, temp_root, now_ns, protected, deleted_early, failed_early, cutoff_ns=cutoff_ns, after_daily_sweep=False
-        )
-        return SweepResult(deleted_early, tuple(failed_early), pressure)
+    if not force and not _sweep_due(state_root, now_ns) and not _below_floor(temp_root):
+        return SweepResult([], ())
+    lock = state_root / ".sweep/pressure.lock"
+    # 親の更新時刻を読む前から回収結果を保存するまで同じロックを保持する。通常のatk起動は別の掃引を待たない。
+    try:
+        lock.parent.mkdir(mode=private_directory.MODE, exist_ok=True)
+        with _try_lock(lock, report_errors=True) as locked:
+            if not locked:
+                return SweepResult([], ())
+            return _sweep_locked(temp_root, state_root, now_ns, cutoff_ns, daily=force or _sweep_due(state_root, now_ns))
+    except OSError as error:
+        return SweepResult([], ((pathlib.Path(error.filename or lock), _failure_reason(error)),))
+
+
+def _sweep_locked(
+    temp_root: pathlib.Path, state_root: pathlib.Path, now_ns: int, cutoff_ns: int, *, daily: bool
+) -> SweepResult:
+    pressure_due = _sweep_due(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME, interval_ns=_PRESSURE_INTERVAL_NS)
+    if not daily and not pressure_due:
+        return SweepResult([], ())
     times = CleanupTimes(state_root, cutoff_ns)
     # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
-    with contextlib.suppress(OSError):
-        plugin_root_leases.sweep_plugin_root_records()
+    if daily:
+        with contextlib.suppress(OSError):
+            plugin_root_leases.sweep_plugin_root_records()
     protected_sessions = {
         area
         for identifier in registry_index.pending_session_ids()
@@ -726,6 +710,42 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
     }
     deleted: list[pathlib.Path] = []
     failed: list[tuple[pathlib.Path, str]] = []
+    if daily:
+        _daily_sweep(temp_root, state_root, now_ns, cutoff_ns, protected_sessions, times, deleted, failed)
+    pressure = None
+    if pressure_due:
+        pressure = _reclaim_space(
+            state_root,
+            temp_root,
+            now_ns,
+            protected_sessions,
+            deleted,
+            failed,
+            cutoff_ns=cutoff_ns,
+            after_daily_sweep=daily,
+            times=times,
+        )
+    if failed and deleted:
+        # 再生成物の回収に失敗しても、続く期限・空き容量の掃引で親ごと回収できれば対処は不要。
+        removed = set(deleted)
+        failed = [(path, reason) for path, reason in failed if path not in removed and removed.isdisjoint(path.parents)]
+    if daily:
+        with contextlib.suppress(OSError):
+            _sweep_legacy_state(state_root)
+        _save_sweep_time(state_root, now_ns)
+    return SweepResult(deleted, tuple(failed), pressure)
+
+
+def _daily_sweep(
+    temp_root: pathlib.Path,
+    state_root: pathlib.Path,
+    now_ns: int,
+    cutoff_ns: int,
+    protected_sessions: set[pathlib.Path],
+    times: CleanupTimes,
+    deleted: list[pathlib.Path],
+    failed: list[tuple[pathlib.Path, str]],
+) -> None:
     references = functools.cache(resources.process_references)
     with os.scandir(temp_root) as children:
         listed = sorted(children, key=lambda child: child.name)
@@ -761,22 +781,3 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
                 failed.append((child, _failure_reason(error)))
-    pressure = _reclaim_for_space(
-        state_root,
-        temp_root,
-        now_ns,
-        protected_sessions,
-        deleted,
-        failed,
-        cutoff_ns=cutoff_ns,
-        after_daily_sweep=True,
-        times=times,
-    )
-    if failed and deleted:
-        # 再生成物の回収に失敗しても、続く期限・空き容量の掃引で親ごと回収できれば対処は不要。
-        removed = set(deleted)
-        failed = [(path, reason) for path, reason in failed if path not in removed and removed.isdisjoint(path.parents)]
-    with contextlib.suppress(OSError):
-        _sweep_legacy_state(state_root)
-    _save_sweep_time(state_root, now_ns)
-    return SweepResult(deleted, tuple(failed), pressure)

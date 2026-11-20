@@ -282,7 +282,7 @@ def test_sweep_record_write_failure_does_not_stop_atk(monkeypatch: pytest.Monkey
 
     assert result == sweep.SweepResult([area], ())
     record_directory = paths.state_root() / ".sweep"
-    assert not record_directory.exists() or not list(record_directory.iterdir())
+    assert {entry.name for entry in record_directory.iterdir()} == {"pressure.lock"}
     later = _area("later-abc", days=8)
     assert later in managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=1)).deleted
 
@@ -630,6 +630,50 @@ def test_cache_removal_does_not_renew_session(
     later = _NOW + (datetime.timedelta(days=1) if next_daily else datetime.timedelta(minutes=70))
     assert not managed_temp.sweep_managed_temp(now=later).failed
     assert not session.exists() and disk(session).free == 13 * mib
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["daily", "forced"])
+def test_overlapping_sweeps_do_not_renew_session(monkeypatch: pytest.MonkeyPatch, force: bool) -> None:
+    session = _area(
+        "session-boundary",
+        days=7,
+        files={
+            **{f"cache-{i}/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55" for i in range(2)},
+            "handoff": "keep",
+        },
+    )
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=6))
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    overlapping: list[sweep.SweepResult] = []
+    remove = shutil.rmtree
+
+    def remove_with_competing_sweep(cache: pathlib.Path) -> None:
+        remove(cache)
+        if not overlapping:
+            # 親の更新時刻を記録する前に、別の起動が2個目を消せる順序を再現する。
+            with monkeypatch.context() as inner:
+                inner.setattr(resources, "shutil", SimpleNamespace(rmtree=remove))
+                overlapping.append(managed_temp.sweep_managed_temp(now=_NOW, force=force))
+
+    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=remove_with_competing_sweep))
+    first = managed_temp.sweep_managed_temp(now=_NOW, force=force)
+    assert (session / "handoff").read_text(encoding="utf-8") == "keep"
+    assert overlapping == [sweep.SweepResult([], ())]
+    assert not first.failed and set(first.deleted) == {session / "cache-0", session / "cache-1"}
+    assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=70)).deleted == [session]
+
+
+def test_pressure_recognizes_legacy_session_marker_without_reference(monkeypatch: pytest.MonkeyPatch) -> None:
+    _first_sweep_done()
+    session = _area("old-prefix-abc", days=3, files={"handoff": "keep"})
+    marker = session / paths.LEGACY_MARKER_NAME
+    marker.write_text(json.dumps({"path": str(session), "session_id": "old-session", "schema_version": 6}), encoding="utf-8")
+    _age(session, 3)
+    # この領域を消せば空きの下限に戻る場合も、会話の記録を7日以内には消さない。
+    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 50 + marker.stat().st_size + 4, paths.temp_root()))
+    assert not managed_temp.sweep_managed_temp(now=_NOW).deleted
+    assert (session / "handoff").read_text(encoding="utf-8") == "keep"
+    assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(days=5), force=True).deleted == [session]
 
 
 @pytest.mark.parametrize("descriptor_walk", [False, True])
