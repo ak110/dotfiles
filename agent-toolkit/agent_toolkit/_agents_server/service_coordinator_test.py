@@ -337,6 +337,98 @@ async def test_rollback_does_not_reopen_or_decode_for_a_different_resource_owner
         await client.detach()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("detached", [False, True])
+@pytest.mark.parametrize("owner_changes", [False, True])
+async def test_returned_source_rechecks_only_unconfirmed_ownership(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, detached: bool, owner_changes: bool
+) -> None:
+    coordinator, session, _ = _coordinator(tmp_path, monkeypatch, current=False)
+    runtime = coordinator._runtime
+    assert runtime is not None
+    identifier = session.session_id
+    conversation = coordinator.managers.conversations["parent"]
+    manager = conversation.manager
+    manager.show_session = AsyncMock(return_value={"session_id": identifier})
+    manager.take_over_orphaned_session = AsyncMock()
+    manager._service_paused = set()
+
+    @contextlib.asynccontextmanager
+    async def scope(_params: CallToolRequestParams):
+        yield manager
+
+    monkeypatch.setattr(coordinator.managers, "scope", scope)
+    backend = manager._backends["codex"] = codex.AppServerManager(manager.sessions)
+    received: asyncio.Queue[dict] = asyncio.Queue()
+    monkeypatch.setattr(backend, "_handle_notification", received.put)
+    resource_id = runtime.broker.register({"close": AsyncMock()})
+    descriptor = {"identifier": resource_id, "sequence": 0, "origin": runtime.target, "pid": None, "environment": {}}
+    with service_io.bind(runtime):
+        await backend.adopt_session(session, descriptor, {})
+    client = coordinator._client(backend, identifier)
+    if not detached:
+        monkeypatch.setattr(client, "detach", AsyncMock(side_effect=RuntimeError("配送中")))
+
+    transfer = runtime.broker.transfer
+    operation = "transfer" if detached else "acknowledge"
+    confirm = getattr(runtime.broker, operation)
+    attempts = 0
+    second = asyncio.Event()
+    release = asyncio.Event()
+
+    async def lose_responses(**kwargs: Any) -> Any:
+        nonlocal attempts
+        if kwargs.get("sequence", 0) != 0:
+            return await confirm(**kwargs)
+        attempts += 1
+        response = await confirm(**kwargs)
+        if attempts == 2:
+            second.set()
+            await release.wait()
+        if attempts <= 2:
+            raise EOFError("所有確認の応答が失われた")
+        return response
+
+    monkeypatch.setattr(runtime.broker, operation, lose_responses)
+    params = CallToolRequestParams(name="show", arguments={"session_id": identifier})
+    try:
+        async with asyncio.timeout(5):
+            coordinator.boundary(session, client)
+            monkeypatch.setattr(coordinator.registry, "current", lambda: coordinator.target)
+            # 旧側に配送済みの制御要求が終わる前でも、生I/Oの所有者を確認できる。
+            async with coordinator.gate.admit(new_turn=False, session_id=identifier):
+                with pytest.raises(EOFError):
+                    await coordinator.move(identifier)
+            await runtime.broker.emit(resource_id, {"kind": "notification", "value": {"n": 1}})
+            assert await coordinator.tick()
+            await second.wait()
+            assert await coordinator.tick()
+            assert attempts == 2
+            assert await coordinator.owned_call("parent", conversation.caller, params) == {"move_required": True}
+            release.set()
+            with runtime_environment.bind(conversation.caller):
+                assert (await coordinator.call_tool(None, params)).is_error
+            assert received.empty() and attempts == 2 and identifier in manager._service_paused
+            if owner_changes:
+                assert await transfer(resource_id, runtime.owner, "other-owner")
+            assert await coordinator.tick()
+            with runtime_environment.bind(conversation.caller):
+                assert (await coordinator.call_tool(None, params)).is_error == owner_changes
+            if owner_changes:
+                assert await coordinator.owned_call("parent", conversation.caller, params) == {"move_required": True}
+                assert received.empty() and client.transferred
+                assert len(await runtime.broker.events(resource_id, "other-owner", 0)) == 1
+            else:
+                assert await received.get() == {"n": 1}
+                assert identifier not in manager._service_paused
+            assert await coordinator.tick()
+            await asyncio.sleep(0)
+            assert attempts == 3 and received.empty()
+    finally:
+        release.set()
+        await service_io.CodexResource.detach(coordinator._client(backend, identifier))
+
+
 def _stoppable_client(coordinator: ServiceCoordinator, session: state.SessionState, backend: Any) -> dict:
     """終了境界で止めると切り離し済みとして観測できるclientにし、切り離したときの実行資源の記述を返す。"""
     runtime = coordinator._runtime
