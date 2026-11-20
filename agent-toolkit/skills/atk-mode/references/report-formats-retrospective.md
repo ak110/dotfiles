@@ -124,7 +124,7 @@ batchの失敗の報告は`agent-toolkit:atk-mode/playbooks/review-session-batch
 
 ## AWI投入結果報告のフォーマット
 
-振り返りで対策のAWIを1件以上投入した場合は、予告の後の最終報告として次の書式を使う。
+振り返りで対策か調査のAWIを1件以上投入した場合は、予告の後の最終報告として次の書式を使う。
 
 ```text
 ## AWI投入結果報告
