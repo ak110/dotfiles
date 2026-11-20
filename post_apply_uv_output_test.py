@@ -10,9 +10,10 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parent
 _ROUTINE = "Resolved 128 packages in 826ms"
-_EXECUTABLES = "Installed 35 executables: test-example"
+_EXECUTABLES = "Installed 35 executables: test-example, token-inspect"
 _CHANGE = " ~ pytools==0.1.0"
 _WARNING = "warning: add the tool directory to PATH"
+_ACTION = "Run uv tool update-shell to update PATH"
 _ERROR = "error: cannot install the tool"
 
 
@@ -40,7 +41,7 @@ def test_uv_reinstall_output(tmp_path: Path, shell: str, code: int, save: bool) 
         encoding="utf-8-sig",
     )
     (binary / ("example.exe" if powershell else "example")).touch(mode=0o755)
-    lines = [_ROUTINE, _EXECUTABLES, _CHANGE, _WARNING]
+    lines = [_ROUTINE, _EXECUTABLES, "Checking the package cache", _CHANGE, _WARNING, _ACTION]
     if code:
         lines += ["diagnostic token=fixture-value", _ERROR, "hint: retry the installation"]
     if os.name == "nt":
@@ -87,6 +88,11 @@ def test_uv_reinstall_output(tmp_path: Path, shell: str, code: int, save: bool) 
     log = state / "agent-toolkit" / ("uv-pytools-failed.log" if code else "uv-pytools.log")
     if not save:
         log.mkdir(parents=True)  # 一時ファイルは書けるが、最終ファイルを発行できない。
+        if not powershell:
+            # 後始末も失敗する場合でも、uvの診断と本来の終了状態は失わない。
+            remove = binary / "rm"
+            remove.write_text("#!/bin/sh\nexit 1\n")
+            remove.chmod(0o755)
     env = {
         **os.environ,
         "HOME": str(home),
@@ -106,8 +112,8 @@ def test_uv_reinstall_output(tmp_path: Path, shell: str, code: int, save: bool) 
         detail = log.read_text(encoding="utf-8")
         assert all(line in detail for line in lines if "token=" not in line)
         assert "fixture-value" not in detail
-        assert _ROUTINE not in screen and _EXECUTABLES not in screen
-        assert _CHANGE in screen and _WARNING in screen
+        assert _ROUTINE not in screen and _EXECUTABLES not in screen and "Checking the package cache" not in screen
+        assert all(line in screen for line in (_CHANGE, _WARNING, _ACTION))
         if code:
             assert _ERROR in screen and str(log) in screen
             assert "hint: retry the installation" in screen

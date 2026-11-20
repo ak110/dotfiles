@@ -32,14 +32,24 @@ function Write-UvOutput {
     } finally {
         if ($temp) { Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue }
     }
-    $visible = @($lines | Where-Object { $_ -and $_ -cnotmatch $routine })
+    $cause = $null
+    $summary = "exit=$Code"
+    $continuation = $false
+    $visible = foreach ($line in $lines) {
+        if (-not $line -or $line -cmatch $routine) {
+            $continuation = $false
+        } elseif ($line -cmatch $actionable -or ($continuation -and $line.StartsWith(' '))) {
+            $line
+            $continuation = $true
+        } else {
+            $continuation = $false
+            $summary = $line
+            if ($line -like '*cause:*' -or $line -like 'error:*') { $cause = $line }
+        }
+    }
     if ($Code -ne 0) {
-        $diagnosis = @($visible | Where-Object { $_ -cnotmatch $actionable })
-        $summary = $diagnosis | Where-Object { $_ -like '*cause:*' -or $_ -like 'error:*' } | Select-Object -Last 1
-        if (-not $summary) { $summary = $diagnosis | Select-Object -Last 1 }
-        if (-not $summary) { $summary = "exit=$Code" }
+        if ($cause) { $summary = $cause }
         Write-UpdateError ("$summary (詳細: $log)")
-        $visible = @($visible | Where-Object { $_ -cmatch $actionable })
     }
     foreach ($line in $visible) { Write-UpdateError $line }
 }

@@ -1,5 +1,5 @@
-(authorization|bearer |basic |api[ _-]?key|token|secret|passw(or)?d|://[^ /]+@|[?&][^ =]*(key|auth|sig|credential)[^ =]*=)
-^[ ]*(warning:|hint:|help:|次の操作:|[-+~] )
+((authorization|api[ _-]?key|token|secret|passw(or)?d)[a-z0-9_.-]*[^a-z0-9_.-]*[:=]([^=]|$)|(bearer|basic) +[a-z0-9._~+/=-]+|://[^ /]+@|[?&][^ =]*(key|auth|sig|credential)[^ =]*=)
+^[ ]*(warning:|hint:|help:|note:|To |Run |Please |success:|次の操作:|[-+~] |(Updated|Upgraded|Installed) (uv|uvx|CPython|Python) |uvの導入先の記録を)
 info: Checking for updates\.\.\.
 success: You're already on version .*
 Python [0-9.]+ is already on the latest supported patch release

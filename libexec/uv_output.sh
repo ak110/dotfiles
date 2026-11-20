@@ -17,19 +17,22 @@ write_uv_output() {
     fi
     local IFS='|'
     routine="^(${patterns[*]})$"
+    local continuation=0
     while IFS= read -r line; do
         if [[ "${line,,}" =~ $sensitive || "$output" == *'PRIVATE KEY-----'* ]]; then
             saved+='[REDACTED]'$'\n'
         else
             saved+="$line"$'\n'
         fi
-        if [[ -n "$line" && ! "$line" =~ $routine ]]; then
-            if ((code == 0)) || [[ "$line" =~ $actionable ]]; then
-                visible+="$line"$'\n'
-            else
-                summary=$line
-                if [[ "$line" == *'cause:'* || "$line" == 'error:'* ]]; then cause=$line; fi
-            fi
+        if [[ -z "$line" || "$line" =~ $routine ]]; then
+            continuation=0
+        elif [[ "$line" =~ $actionable || ($continuation == 1 && "$line" == ' '*) ]]; then
+            visible+="$line"$'\n'
+            continuation=1
+        else
+            continuation=0
+            summary=$line
+            if [[ "$line" == *'cause:'* || "$line" == 'error:'* ]]; then cause=$line; fi
         fi
     done <<<"$output"
     local temp=''
@@ -42,7 +45,7 @@ write_uv_output() {
         fi
         printf '%s' "$visible" >&2
     else
-        [[ -z "$temp" ]] || rm -f -- "$temp"
+        [[ -z "$temp" ]] || rm -f -- "$temp" || :
         printf '明細を保存できません: %s。書込権限と空き容量を確認してください。\n%s\n' "$log" "$output" >&2
     fi
     return 0
