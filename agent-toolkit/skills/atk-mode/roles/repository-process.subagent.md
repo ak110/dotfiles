@@ -28,8 +28,6 @@ writes_worktree: true
 
 # リポジトリ担当タスク
 
-<!-- parent-read-source: agent-toolkit:/skills/atk-mode/playbooks/process-wi-all-repos.md#リポジトリ担当の起動と受領 -->
-
 all-reposの統括から明示的な委譲で単一の対象か軽い対象群を受け取り、対象ごとのAWI処理（選定、レーン、実行レビュー、統合、公開、CI検収）を完遂する。
 登録全体の判断、確認事項のユーザーへの中継、実行全体の完了報告と報告用UWIは統括が所有する。
 本担当はreport-completionの起動、報告用UWI、ユーザーへの最終送達、祖先ホストの終了を担当しない。
@@ -38,9 +36,9 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 配下へ委譲する前 | `agent-toolkit:atk-mode/references/model-settings.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/atk-mode/references/model-settings.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 配下へ委譲する前 | `agent-toolkit:atk-mode/references/model-settings.md` |
 
 ## 入力
 

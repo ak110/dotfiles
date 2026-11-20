@@ -27,10 +27,15 @@ def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, c
     assert run_script.dispatch(argparse.Namespace(script_name="delegation-prompt", script_args=["--help"])) == 0
     help_text = capsys.readouterr().out
     assert all(field in help_text for field in ("initial", "subagent_md_path", "extra_params", "--input"))
+    (tmp_path / "lane-01.json").write_text('{"lane": "lane-01", "base_branch": "develop"}\n', encoding="utf-8")
     params = {
         "担当種別": "レーン担当",
         "引き継ぎ記録先": str(tmp_path / "引継ぎ 記録.md"),
         "書込担当一覧": '["session-main"]',
+        "所有登録": str(tmp_path / "lane-01.json"),
+        "統合先worktree": str(tmp_path),
+        "統合先branch": "develop",
+        "レーン開始時刻": "2026-11-15T13:17:00+09:00",
         "再開位置": r"C:\資料 フォルダー\計画.md",
         "固有指示": "最初の要求\n\n追加の条件",
     }

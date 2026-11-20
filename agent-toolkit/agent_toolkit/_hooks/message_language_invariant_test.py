@@ -11,7 +11,7 @@ import pytest
 
 from agent_toolkit._hooks import work_contract
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.document_delivery import run_hook
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _ALLOWED_BARE_IDENTIFIERS = frozenset(

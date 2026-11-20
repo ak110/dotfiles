@@ -29,18 +29,18 @@ lazy import urllib.parse
 lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import mcp_environment, message_format, plugin_environment, read_triggers, skill_modes
-from agent_toolkit._git.document_acquisition import OPERATION_SKILL_READY_KEY
+from agent_toolkit._common import delegated_session, mcp_environment, message_format, plugin_environment, skill_modes
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, session_state, wait_schedule
 lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session, is_process_loop_session
 lazy from agent_toolkit._common.session_state import update_state
-lazy from agent_toolkit._hooks import document_reads, repository_protection, session_title, timing, work_contract
+lazy from agent_toolkit._hooks import repository_protection, session_title, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.message_format import xml_message
-lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path
+lazy from agent_toolkit._hooks.pretooluse import operation_skills
+lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path, forget_completion_context
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
@@ -65,16 +65,28 @@ BACKGROUND_TASKS_DISABLED_NOTICE = (
 委譲先は親の環境変数を継承するため、同じ条件でメインに限らず通知する。
 """
 
-SHARE_DIR = plugin_resources.plugin_root() / "share"
-SUBAGENT_PLAYBOOK_PATH = SHARE_DIR.parent / "skills" / "atk-mode" / "playbooks" / "subagent.md"
+PLUGIN_ROOT = plugin_resources.plugin_root()
+SUBAGENT_PLAYBOOK_PATH = PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks" / "subagent.md"
 """委譲先の入口。`agents_server`が起動の本文を切り出す原本と同じファイルである。"""
 SUBAGENT_ENTRY_NOTICE = f"委譲を受けた担当である。作業の前に、委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`を全文読め。"
 """起動の本文を受け取らない委譲先（ホストの組み込みの委譲機能で起動した担当）へ、入口の所在を示す1行。"""
-DELEGATED_COMPACT_NOTICE = (
-    "圧縮後に読む資料の限定とは別に、作業を再開する前に、"
-    f"委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`と、起動の入力が示した役割文書を読み直せ。"
-)
-"""委譲先の圧縮後に、起動の本文の原本と役割文書の読み直しを求める1行。"""
+DELEGATED_COMPACT_NOTICE = "圧縮後に読む資料の限定とは別に、作業を再開する前に、次を読み直せ: "
+"""委譲先の圧縮後に、起動の本文の原本と役割文書、起動の入力が渡した記録の読み直しを求める1行の書き出し。"""
+
+
+def delegated_compact_notice(launch: work_contract.DelegatedLaunch | None) -> str:
+    """委譲先の圧縮後に読み直す資料を、`agents_server`の登録簿にある起動入力から1行で示す。
+
+    登録簿に無い委譲先（組み込みの委譲機能の子など）へは、入口と役割文書だけを示す。
+    """
+    targets = [f"委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`", "起動の入力が示した役割文書"]
+    if launch is not None and launch.whole_contract is not None:
+        targets.append(f"全体作業契約`{launch.whole_contract}`")
+    if launch is not None and launch.handoff is not None:
+        targets.append(f"自身の引き継ぎ記録`{launch.handoff}`")
+    return DELEGATED_COMPACT_NOTICE + "、".join(targets) + "。"
+
+
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 # 圧縮後に作業契約の後へ続く通知（原文の抽出先、資料の再取得案内）へ残す文字数。
 _COMPACTION_RESERVE = 1_500
@@ -111,7 +123,9 @@ def _launch_input_process_wi(data: dict[str, Any], session_id: str) -> tuple[boo
     return skill_modes.entry_work(work) == "process-wi", work_arguments
 
 
-def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
+def compose_session_start(
+    source: str, *, delegated: bool, host: str, launch: work_contract.DelegatedLaunch | None = None
+) -> str | None:
     """SessionStartへ追加する本文を構成する。
 
     メインには文脈を引き継がずに始まる時に入口の起動を、委譲先には圧縮後に入口と役割文書の読み直しを案内する。
@@ -187,7 +201,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
             )
     if delegated:
         if source == "compact":
-            parts.append(_llm_notice(DELEGATED_COMPACT_NOTICE))
+            parts.append(_llm_notice(delegated_compact_notice(launch)))
     elif source in _CONTEXT_LOSING_SOURCES:
         parts.append(_llm_notice(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE))
     if host == "claude" and wait_schedule.background_tasks_disabled():
@@ -198,108 +212,6 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
 
 _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 """会話の文脈を引き継がずに始まるSessionStartの`source`。`resume`と`fork`は文脈を引き継ぐため含めない。"""
-_OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
-"""メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""
-READ_CONTEXT_RESET_KEY = "startup-context-reset"
-"""最初の操作より前の圧縮でも、履歴上の起動本文の取得を再計上しないための主体識別子。"""
-CARRIED_READ_TARGET_PREFIX = "read-guidance-carried:"
-"""文脈境界の前に選んだ資料を、境界の後に改めて案内するまで再書込の遮断根拠から外す記録キーの接頭辞。
-
-境界で案内の記録は消えるが選択の記録は残るため、持ち越した候補を境界後の初回書込で案内済みとすると、
-現在の操作と関係しない過去の候補だけを根拠に次の書込が止まる。
-"""
-
-
-def carried_read_target_key(path: pathlib.Path) -> str:
-    """持ち越しの印の記録キーを返す。
-
-    境界の後に資料が変わっても境界前の選択を持ち越しとして扱い続けるため、本文ハッシュを含めない。
-    """
-    return CARRIED_READ_TARGET_PREFIX + str(path.resolve())
-
-
-def reset_main_operation_skill_ready(session_id: str) -> None:
-    """メイン会話の起動済みの記録を除く。
-
-    `clear`と`compact`ではスキルの本文が文脈から外れるため、次の操作で再び取得を求める。
-    サブエージェントの記録は親の会話圧縮と独立した文脈のため変えない。
-    """
-
-    def _reset(current: dict) -> dict | None:
-        recorded = current.get(OPERATION_SKILL_READY_KEY)
-        if not isinstance(recorded, dict):
-            recorded = {}
-        updated = {
-            name: (
-                [agent for agent in agents if agent != MAIN_AGENT_ID]
-                if isinstance(agents, list)
-                and not name.startswith(
-                    (
-                        "modified-agent-document:",
-                        "review-reference:",
-                        "read-trigger-role:",
-                        "selected-read-target:",
-                        "startup-input-target:",
-                        "startup-context-observed",
-                        "resolved-project-skill:",
-                        "review-output:",
-                        "review-output-parsed:",
-                    )
-                )
-                else agents
-            )
-            for name, agents in recorded.items()
-        }
-        for name, agents in recorded.items():
-            if not name.startswith("selected-read-target:") or not isinstance(agents, list) or MAIN_AGENT_ID not in agents:
-                continue
-            try:
-                path = pathlib.Path(json.loads(name.removeprefix("selected-read-target:"))["path"])
-            except KeyError, TypeError, ValueError:
-                continue
-            updated[carried_read_target_key(path)] = [MAIN_AGENT_ID]
-        # 最初の操作より前に圧縮された場合も、旧起動本文を取得済みへ戻さない。
-        updated[READ_CONTEXT_RESET_KEY] = [MAIN_AGENT_ID]
-        # 取得マッピングが同じでも、各文脈境界で候補とrollout位置を初期化する。
-        current[OPERATION_SKILL_READY_KEY] = updated
-        current.get("document_read_candidates", {}).pop(MAIN_AGENT_ID, None)
-        current.get("document_read_pending", {}).pop(MAIN_AGENT_ID, None)
-        current.get("document_read_spools", {}).pop(MAIN_AGENT_ID, None)
-        current.get("result_read_pending", {}).pop(MAIN_AGENT_ID, None)
-        evidence = current.get("termination_evidence")
-        if isinstance(evidence, dict):
-            evidence.pop("pending_reads", None)
-        for key in current.get("document_read_offsets", {}):
-            actor, path = json.loads(key)
-            if actor == MAIN_AGENT_ID:
-                with contextlib.suppress(OSError):
-                    current["document_read_offsets"][key] = pathlib.Path(path).stat().st_size
-        return current
-
-    update_state(session_id, _reset)
-
-
-def acquisition_failure(
-    target: read_triggers.ReadTarget,
-    error: Exception,
-    *,
-    shell: bool,
-    cwd: str = "",
-) -> str:
-    """失敗した実体と原因を示し、資料または参照先の修復へ導く。"""
-    path = target.path
-    if not path.is_file():
-        return f"資料`{path}`は存在しない。資料と読込表の参照先を修復せよ。直せない場合は委譲元（無ければユーザー）へ報告せよ。"
-    prefix = f"`{target}`の取得に失敗: {error}。"
-    if target.heading and isinstance(error, ValueError) and not isinstance(error, UnicodeError):
-        return prefix + "読込表の見出しと資料を整合させ、資料を取得して元の操作へ戻れ。"
-    try:
-        invocable = shell or read_triggers.skill_invocation_required(path, host="claude", subject="main")
-    except OSError, ValueError:
-        # 起動条件も壊れた資料は再解析せず、元の失敗と本文の修復を案内する。
-        invocable = False
-    name = document_reads.reference_name(path, cwd=cwd, invocation=invocable)
-    return prefix + f"原因を修復し、`{name}`を取得して元の操作へ戻れ。"
 
 
 def _compact_recovery_context() -> str:
@@ -357,7 +269,7 @@ def _resolve_transcript(session_id: object, transcript_path: object) -> str | No
 
 def _conversation_identity_notice(session_id: object, transcript_path: object) -> str:
     """Claudeメイン自身の原文を取得する操作へ、入力から解決した所在を束縛する。"""
-    arguments = [str(SHARE_DIR.parent / "scripts/atk"), "run-script", "session-review-evidence", "--"]
+    arguments = [str(PLUGIN_ROOT / "scripts/atk"), "run-script", "session-review-evidence", "--"]
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is not None:
         arguments.extend(["--transcript", resolved])
@@ -400,7 +312,7 @@ def _discard_stale_digest(output: pathlib.Path | None) -> list[str]:
     return []
 
 
-def _compaction_notice(session_id: str, transcript_path: object, session_temp: pathlib.Path | None, *, delegated: bool) -> str:
+def _compaction_notice(session_id: str, transcript_path: object, session_temp: pathlib.Path | None) -> str:
     """発話だけの要約を作り、圧縮後に読む対象を作業契約とその1ファイルに限って通知する。"""
     scope = (
         "ほかの資料（工程のスキル、役割文書、規範）は、次に行う操作・判断の条件に該当した時に読め。"
@@ -426,7 +338,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         result = process_tree.run_with_timeout(
             [
                 sys.executable,
-                str(SHARE_DIR.parent / "skills/atk-mode/scripts/session_review_prepare.py"),
+                str(PLUGIN_ROOT / "skills/atk-mode/scripts/session_review_prepare.py"),
                 *options,
                 "--work-dir",
                 str(output.parent),
@@ -437,7 +349,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
             errors="replace",
             timeout=15,
             check=True,
-            env=plugin_environment.direct_environment(SHARE_DIR.parent, os.environ),
+            env=plugin_environment.direct_environment(PLUGIN_ROOT, os.environ),
         )
         counts = json.loads(result.stdout)["conversation_window"]
         users, assistants = int(counts["user_count"]), int(counts["assistant_count"])
@@ -445,17 +357,6 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         breakdown = f"ユーザー発話{users}件、エージェント発話{assistants}件" + (
             f"、委譲元の依頼{requests}件" if requests else ""
         )
-        if not delegated:
-            key = document_reads.selected_target_key(read_triggers.ReadTarget(output))
-
-            def select_original(state: dict) -> dict:
-                records = state.setdefault(OPERATION_SKILL_READY_KEY, {})
-                actors = records.setdefault(key, [])
-                if MAIN_AGENT_ID not in actors:
-                    actors.append(MAIN_AGENT_ID)
-                return state
-
-            update_state(session_id, select_original)
         return (
             f"会話が圧縮された。圧縮後に読むのは、作業契約と、Readのfile_pathに`{output}`を指定して読む会話の要約"
             f"（{breakdown}）だけである。{scope}"
@@ -507,7 +408,7 @@ def _subagent_temp_notice(session_temp: pathlib.Path | str, agent_id: object) ->
 
 def compose_subagent_start() -> str:
     """SubagentStartへ追加する本文を返す。入口の所在とCLIの起動部分だけを示し、規範の本文を載せない。"""
-    return f"{_llm_notice(SUBAGENT_ENTRY_NOTICE)}\n\n{_llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent))}"
+    return f"{_llm_notice(SUBAGENT_ENTRY_NOTICE)}\n\n{_llm_notice(plugin_environment.cli_instructions(PLUGIN_ROOT))}"
 
 
 def _parse_payload(payload_text: str) -> dict[str, Any]:
@@ -555,8 +456,16 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
             # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
             forget_subject_notices(session_id, subject)
+        launch = (
+            work_contract.delegated_launch(session_id)
+            if source == "compact"
+            and isinstance(session_id, str)
+            and not payload.get("agent_id")
+            and delegated_session.is_delegated(os.environ)
+            else None
+        )
         started = time.monotonic()
-        content = compose_session_start(source, delegated=delegated, host=host)
+        content = compose_session_start(source, delegated=delegated, host=host, launch=launch)
         timing.record(payload, "rules_context", started, "ok", stage="normative-content")
         if (
             not delegated
@@ -582,18 +491,11 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
             content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
-            if host == "claude":
-                # registry/MDM変更も同IDのresume・再起動で反映する。配送記録など他の状態は保つ。
-                update_state(
-                    session_id,
-                    lambda state: (
-                        {key: value for key, value in state.items() if key != "plugin_inventory"}
-                        if "plugin_inventory" in state
-                        else None
-                    ),
-                )
-            if source in _OPERATION_SKILL_RESET_SOURCES and subject == MAIN_AGENT_ID:
-                reset_main_operation_skill_ready(session_id)
+            if source in {"clear", "compact"}:
+                # 起動したスキルと案内の本文は文脈から外れるため、次の操作で再び案内する。
+                operation_skills.forget_subject(session_id, subject)
+                if subject == MAIN_AGENT_ID:
+                    forget_completion_context(session_id)
             if source == "compact" and subject == MAIN_AGENT_ID:
                 work_contract.reset_notice(session_id)
             if session_temp is not None:
@@ -620,9 +522,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 recovery = _compact_recovery_context()
                 if host == "claude" and subject == MAIN_AGENT_ID:
                     started = time.monotonic()
-                    compact_text = _compaction_notice(
-                        session_id, payload.get("transcript_path"), session_temp, delegated=delegated
-                    )
+                    compact_text = _compaction_notice(session_id, payload.get("transcript_path"), session_temp)
                     timing.record(payload, "rules_context", started, "ok", stage="compaction-recovery")
                     if compact_text:
                         recovery = _llm_notice(compact_text)

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import sync_generated_files as subject
-from agent_toolkit._common import read_triggers, task_documents
+from agent_toolkit._common import task_documents
 from agent_toolkit._testing.delegation_contract_support import _generated_input_errors
 
 
@@ -70,14 +70,14 @@ def test_input_is_handled_before_generation(monkeypatch, capsys, arguments, code
 def test_input_contract_tracks_declaration_changes(tmp_path: Path, embedded: bool, required: str, optional: str) -> None:
     """新役割の全入力の追加・削除・改名を同期し、内部手順と入力説明を保つ。"""
     plugin = tmp_path / "agent-toolkit"
-    source = plugin / "share/new-role.subagent.md"
+    source = plugin / "skills/atk-mode/roles/new-role.subagent.md"
     source.parent.mkdir(parents=True)
     original = (
         "---\nmode: explore\nmodel_type: chores\nrequired_inputs: [必須]\n"
         "optional_inputs: [任意]\nwrites_worktree: false\n---\n# 新役割\n\n内部手順。\n"
     )
     source.write_text(original, encoding="utf-8")
-    target = plugin / ("skills/example/SKILL.md" if embedded else "share/new-role.parent.md")
+    target = plugin / ("skills/example/SKILL.md" if embedded else "skills/atk-mode/roles/new-role.parent.md")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         "# 呼出側\n\n## 契約\n\n```text\n起動対象: new-role.subagent.md\n```\n\n"
@@ -116,7 +116,7 @@ def test_input_contract_tracks_declaration_changes(tmp_path: Path, embedded: boo
 @pytest.mark.parametrize("mode", task_documents.LAUNCH_KINDS)
 def test_input_contract_names_whole_contract_only_for_normal_launch(tmp_path: Path, mode: str) -> None:
     """通常起動の生成契約だけが全体作業契約の準備と公開入力を案内し、軽量の起動には前提を加えない。"""
-    source = tmp_path / "share/new-role.subagent.md"
+    source = tmp_path / "skills/atk-mode/roles/new-role.subagent.md"
     source.parent.mkdir(parents=True)
     source.write_text(
         f"---\nmode: {mode}\nmodel_type: chores\nrequired_inputs: [必須]\nwrites_worktree: false\n---\n# 新役割\n",
@@ -130,14 +130,14 @@ def test_input_contract_names_whole_contract_only_for_normal_launch(tmp_path: Pa
 def test_input_sync_checks_all_boundaries_before_writing(tmp_path: Path) -> None:
     """後続の生成境界が欠けても、先行契約を変更しない。"""
     plugin = tmp_path / "agent-toolkit"
-    share = plugin / "share"
-    share.mkdir(parents=True)
+    roles = plugin / "skills/atk-mode/roles"
+    roles.mkdir(parents=True)
     for role in ("first", "last"):
-        (share / f"{role}.subagent.md").write_text(
+        (roles / f"{role}.subagent.md").write_text(
             "---\nmode: explore\nmodel_type: chores\nrequired_inputs: []\nwrites_worktree: false\n---\n",
             encoding="utf-8",
         )
-        (share / f"{role}.parent.md").write_text(
+        (roles / f"{role}.parent.md").write_text(
             f"# 起動\n\n```text\n起動対象: {role}.subagent.md\n```\n"
             + (
                 "<!-- input-contract:first:start -->\n旧一覧\n<!-- input-contract:first:end -->"
@@ -146,7 +146,7 @@ def test_input_sync_checks_all_boundaries_before_writing(tmp_path: Path) -> None
             ),
             encoding="utf-8",
         )
-    first = share / "first.parent.md"
+    first = roles / "first.parent.md"
     before = first.read_bytes()
     with pytest.raises(ValueError, match="入力生成境界"):
         subject.sync_input_contracts(tmp_path)
@@ -237,14 +237,11 @@ def test_return_targets_cover_all_roles_and_declared_callers() -> None:
     targets = {role: relative for role, relative, _title, _level in subject.RETURN_TARGETS}
     assert len(targets) == len(subject.RETURN_TARGETS)
     assert targets.keys() == sources.keys()
+    declared: dict[str, list[str]] = {}
+    for contract, role in task_documents.launch_contract_documents(plugin):
+        declared.setdefault(role, []).append(contract.relative_to(plugin).as_posix())
     for role in sources:
-        parent = task_documents.find_role_document(plugin, f"{role}.parent.md")
-        if parent is not None:
-            assert targets[role] == parent.relative_to(plugin).as_posix()
-        else:
-            declared = read_triggers.parent_contract_targets(role, plugin)
-            assert len(declared) == 1
-            assert targets[role] == declared[0].path.relative_to(plugin).as_posix()
+        assert declared.get(role) == [targets[role]], role
 
 
 @pytest.mark.parametrize("role,relative,title,level", subject.RETURN_TARGETS)
@@ -252,7 +249,7 @@ def test_return_contract_sync_tracks_output_only(tmp_path, monkeypatch, role, re
     """正本の固有欄だけが追随し、内部手順を混入せず、再生成で差分が増えない。"""
     monkeypatch.setattr(subject, "RETURN_TARGETS", ((role, relative, title, level),))
     plugin = tmp_path / "agent-toolkit"
-    source = plugin / f"share/{role}.subagent.md"
+    source = plugin / f"skills/atk-mode/roles/{role}.subagent.md"
     target = plugin / relative
     source.parent.mkdir(parents=True)
     target.parent.mkdir(parents=True, exist_ok=True)

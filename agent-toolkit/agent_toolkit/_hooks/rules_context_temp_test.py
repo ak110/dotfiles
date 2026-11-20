@@ -15,11 +15,10 @@ import pytest
 from agent_toolkit._atk import managed_temp, run_skill_batch
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
-from agent_toolkit._hooks import plugin_resources, posttooluse, pretooluse, rules_context
+from agent_toolkit._hooks import posttooluse, pretooluse, rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
 from agent_toolkit._testing.rules_context_support import _output
-from agent_toolkit._testing.termination_evidence_support import claude_read_response
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
@@ -119,37 +118,24 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
     ("source", "delegated", "main_warns"),
     [("clear", False, True), ("compact", False, True), ("compact", True, True), ("resume", False, False)],
 )
-@pytest.mark.parametrize(
-    ("acquired", "operation"),
-    [
-        ("agent-basics:search", {"tool_name": "Bash", "tool_input": {"command": "rg x"}}),
-        (
-            "playbooks/delegation.md",
-            {"tool_name": "Agent", "tool_input": {"prompt": "調査する", "subagent_type": "specialist"}},
-        ),
-    ],
-)
 @pytest.mark.cpu_limit(
     2.25,
     reason=(
-        "main/subの取得、SessionStart、両主体の再操作の5公開hookで再取得の分離を検証する（Linux限定"
+        "main/subのスキル起動、SessionStart、両主体の再操作の5公開hookで案内の分離を検証する（Linux限定"
         "再確認のCPU合計最大0.903秒）。"
     ),
 )
-def test_session_start_resets_operation_skill_ready_for_main(
+def test_session_start_resets_operation_skill_notice_for_main(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     source: str,
     delegated: bool,
     main_warns: bool,
-    acquired: str,
-    operation: dict,
 ) -> None:
-    """`clear`・`compact`の後は検索・委譲の本文を再配送し、サブエージェントの記録と`resume`の後の判定を保つ。
-
-    検索はスキルの起動、委譲は手順書の全文の読取を取得として観測させる。
-    """
+    """`clear`・`compact`の後はメインへ検索のスキルを再び案内し、サブエージェントの起動記録と`resume`の後の判定を保つ。"""
+    acquired = "agent-basics:search"
+    operation = {"tool_name": "Bash", "tool_input": {"command": "rg x"}}
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
@@ -179,24 +165,21 @@ def test_session_start_resets_operation_skill_ready_for_main(
         return _hook_context(pretooluse.main, payload)
 
     for agent_id in (None, "sub-1"):
-        acquisition_payload = {"hook_event_name": "PostToolUse", "session_id": "reset-skill", **_acquisition(acquired)}
+        acquisition_payload = {
+            "hook_event_name": "PostToolUse",
+            "session_id": "reset-skill",
+            "tool_name": "Skill",
+            "tool_input": {"skill": acquired},
+            "tool_response": "起動成功",
+        }
         if agent_id is not None:
             acquisition_payload["agent_id"] = agent_id
         _hook_context(posttooluse.main, acquisition_payload)
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
-    # 専用定義の起動を使い、起動手段の拒否と資料の取得案内を分ける。
     assert (acquired in _operation_context(None)) is main_warns
     assert acquired not in _operation_context("sub-1")
-
-
-def _acquisition(acquired: str) -> dict[str, object]:
-    """スキル名はSkillの起動、手順書はClaude CodeのReadが全文を返した結果として、取得のPostToolUseの入力を返す。"""
-    if not acquired.endswith(".md"):
-        return {"tool_name": "Skill", "tool_input": {"skill": acquired}, "tool_response": "起動成功"}
-    path = plugin_resources.skill_document_path("atk-mode", acquired)
-    return {"tool_name": "Read", "tool_input": {"file_path": str(path)}, "tool_response": claude_read_response(path)}
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

@@ -34,13 +34,13 @@ def _start_tool() -> Any:
 
 
 def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> pathlib.Path:
-    """agent-toolkitのshare配下と同じ構造の一時の`<役割名>.subagent.md`を作成し、その絶対パスを返す。"""
+    """agent-toolkitの役割文書の置き場所と同じ構造の一時の`<役割名>.subagent.md`を作成し、その絶対パスを返す。"""
     plugin_root = tmp_path / "plugin"
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    task_document = plugin_root / "share" / "declared.subagent.md"
-    task_document.parent.mkdir()
+    task_document = plugin_root / "skills" / "atk-mode" / "roles" / "declared.subagent.md"
+    task_document.parent.mkdir(parents=True)
     if "作業ツリーへの書込: " not in input_block:
         # 書込宣言は必須行のため、宣言の他の行を確かめる試験では書き込む役割として補う。
         input_block += "\n作業ツリーへの書込: あり"
@@ -58,11 +58,16 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             handoff,
         ]
     if task_name == "exec.subagent.md":
+        (root / "lane-01.json").write_text('{"lane": "lane-01", "base_branch": "develop"}\n', encoding="utf-8")
         return [
             "担当種別: レーン担当",
             '書込担当一覧: ["root-session"]',
             f"選定結果の出力先ファイル: {root / 'selection.json'}",
             "レーン識別子: lane-01",
+            f"所有登録: {root / 'lane-01.json'}",
+            f"統合先worktree: {root}",
+            "統合先branch: develop",
+            "レーン開始時刻: 2026-10-08T00:38:16Z",
             handoff,
         ]
     if task_name == "repository-process.subagent.md":
@@ -80,10 +85,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "lane-integration.subagent.md":
         return [
             "統合区分: マージあり",
-            "レーン開始時刻: 2026-10-08T00:38:16Z",
             "実行レビュー済みHEAD: 0123abc",
-            f"統合先worktree: {root}",
-            "統合先branch: develop",
             '計画ファイル名一覧: ["plan.md"]',
             "AWI終了区分: 20260101-000000-001.md=adopt",
             '書込担当一覧: ["root-session", "lane-session"]',

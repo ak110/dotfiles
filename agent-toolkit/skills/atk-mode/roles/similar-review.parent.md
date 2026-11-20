@@ -8,9 +8,9 @@
 探す範囲、検索の式と件数、0件の時の見直しの基準は`agent-basics:bugfix/references/spread.md`にあり、母集団と判定基準を決める前と採否を決める前に読む。
 原因の判断と結果の採否は委譲元が持つ。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 担当を起動・待機・受領する前 | `agent-toolkit:atk-mode/playbooks/delegation.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/delegation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 担当を起動・待機・受領する前 | `agent-toolkit:atk-mode/playbooks/delegation.md` |
 
 ## 入力
 

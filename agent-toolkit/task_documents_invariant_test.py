@@ -9,11 +9,13 @@ from pathlib import Path
 import pytest
 from agent_toolkit._agents_server import launch_prompts, launch_requests, result_contract, state
 from agent_toolkit._common import task_documents
-from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.task_document_contract import validate_frontmatter
 
+_PLUGIN_ROOT = Path(__file__).resolve().parent
+_ROLES_DIR = _PLUGIN_ROOT / "skills" / "atk-mode" / "roles"
 
-@pytest.mark.parametrize("path", task_documents.role_documents(rules_context.SHARE_DIR.parent), ids=lambda path: path.name)
+
+@pytest.mark.parametrize("path", task_documents.role_documents(_PLUGIN_ROOT), ids=lambda path: path.name)
 def test_distributed_frontmatter_is_valid(path: Path) -> None:
     """新しい定義もファイル追加だけで静的整合性の試験へ含める。"""
     result = validate_frontmatter(path, path.read_text(encoding="utf-8"))
@@ -21,7 +23,7 @@ def test_distributed_frontmatter_is_valid(path: Path) -> None:
     assert result == task_documents.read_declaration(path)
 
 
-@pytest.mark.parametrize("path", task_documents.role_documents(rules_context.SHARE_DIR.parent), ids=lambda path: path.name)
+@pytest.mark.parametrize("path", task_documents.role_documents(_PLUGIN_ROOT), ids=lambda path: path.name)
 def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
     """将来の役割も共通契約へ接続し、理由の区分欠落・集合外・インデント違反を検出する。"""
     body = path.read_text(encoding="utf-8").split("## 出力", 1)[1]
@@ -48,7 +50,7 @@ def test_shared_classification_table_matches_runtime() -> None:
     rules = launch_prompts.result_contract()
     values = re.findall(r"^\| `([a-z_]+)` \|", rules, flags=re.MULTILINE)
     assert values and len(values) == len(set(values))
-    document = rules_context.SHARE_DIR / "exec.subagent.md"
+    document = task_documents.require_role_document(_PLUGIN_ROOT, "exec")
     session = state.SessionState("role-form", str(document.parent), prompt=task_documents.task_prompt_header(document))
     for value in values:
         session.api_error = {"type": "unavailable", "first_at": session.started_at} if value == "runtime_unavailable" else None
@@ -59,15 +61,16 @@ def test_shared_classification_table_matches_runtime() -> None:
     )
 
 
-def test_share_task_documents_have_no_bare_return_line_examples() -> None:
-    """`share/*.md`の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを確かめる。
+def test_role_documents_have_no_bare_return_line_examples() -> None:
+    """役割文書（`roles/*.md`）の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを確かめる。
 
     条件付き出力の書式例をフェンスの外へ置くと、常時出力する行と誤読される。
-    母集団は`rules_context.SHARE_DIR`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。
+    母集団は`roles/`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。
+    文書の方針を示す`方針:`の行は返却形式ではないため除く。
     """
     bare_label_line = re.compile(r"^[^\s#\-*>|`][^\n:`]*: \S.*$")
     offending: list[str] = []
-    for path in sorted(rules_context.SHARE_DIR.glob("*.md")):
+    for path in sorted(_ROLES_DIR.glob("*.md")):
         in_fence = False
         in_frontmatter = False
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -86,7 +89,7 @@ def test_share_task_documents_have_no_bare_return_line_examples() -> None:
             # HTMLコメントは機械宣言であり、返却形式の裸のラベル行には含めない。
             if line.lstrip().startswith("<!--") and line.rstrip().endswith("-->"):
                 continue
-            if bare_label_line.match(line):
+            if bare_label_line.match(line) and not line.startswith("方針: "):
                 offending.append(f"{path.name}:{lineno}: {line}")
     assert not offending
 
@@ -112,7 +115,7 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
         params["repositories"] = str(source)
     else:
         params.update(target)
-    role = rules_context.SHARE_DIR.parent / "skills/atk-mode/roles/repository-process.subagent.md"
+    role = _PLUGIN_ROOT / "skills/atk-mode/roles/repository-process.subagent.md"
     whole = tmp_path / "work-contract.md"
     whole.write_text("目的: 対象別の公開入力を保持する\n", encoding="utf-8")
     model, prompt, mode, _handoff = launch_requests.task_document_request(str(role), params, whole_contract_path=str(whole))
@@ -123,11 +126,3 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
     else:
         assert "target_repo: example.test/team/one" in prompt
         assert "candidate_file:" in prompt and "ownership_token: test-token" in prompt
-
-
-def test_role_document_names_are_unique_across_locations() -> None:
-    """移行の途中も、同じ名前の役割文書と起動・受領契約を2つの置き場所へ置かない。"""
-    root = rules_context.SHARE_DIR.parent
-    for suffix in (".subagent.md", ".parent.md"):
-        names = [path.name for path in task_documents.role_documents(root, suffix)]
-        assert names and len(names) == len(set(names)), sorted(name for name in set(names) if names.count(name) > 1)

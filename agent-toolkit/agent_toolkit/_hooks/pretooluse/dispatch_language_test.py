@@ -8,12 +8,10 @@ import sys
 
 import pytest
 
-from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
-from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._testing import pretooluse_support
+from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
 from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _write_session_state
-from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
+from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 
 class TestResponseLanguageCheck:
@@ -117,7 +115,7 @@ class TestRemovedChecksAreSilent:
     def test_edit_and_non_edit_tools_pass_without_output(
         self, tmp_path: pathlib.Path, deny_substring: str, monkeypatch
     ) -> None:
-        monkeypatch.setattr(pretooluse, "read_delivery", lambda *_args, **_kwargs: Decision())
+        monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
         home = tmp_path / "home"
         (home / ".claude" / "plans").mkdir(parents=True)
         payloads = [
@@ -146,41 +144,39 @@ class TestRemovedChecksAreSilent:
                 },
             },
         ]
-        with pretooluse_support.read_delivery_preparation_scope():
-            for index, payload in enumerate(payloads):
-                _write_session_state(
-                    tmp_path,
-                    f"removed-tool-{index}",
-                    {},
-                )
-                result = _run(
-                    {**payload, "session_id": f"removed-tool-{index}", "cwd": str(tmp_path)},
-                    env_overrides=_plan_file_state_env(tmp_path, home_dir=home),
-                )
+        for index, payload in enumerate(payloads):
+            _write_session_state(
+                tmp_path,
+                f"removed-tool-{index}",
+                {},
+            )
+            result = _run(
+                {**payload, "session_id": f"removed-tool-{index}", "cwd": str(tmp_path)},
+                env_overrides=_plan_file_state_env(tmp_path, home_dir=home),
+            )
 
-                assert result.returncode == 0, (payload, result.stderr, result.stdout)
-                assert result.stdout == "", payload
-                assert result.stderr == "", payload
+            assert result.returncode == 0, (payload, result.stderr, result.stdout)
+            assert result.stdout == "", payload
+            assert result.stderr == "", payload
 
 
 @pytest.mark.cpu_limit(
     3.0,
     reason=(
-        "旧11回周期の再注入を検出するため公開Preを最小12回反復する。対象外の資料配送は分離済み（Linux限定再確認のCP"
+        "旧11回周期の再注入を検出するため公開Preを最小12回反復する。対象外のスキルの案内は分離済み（Linux限定再確認のCP"
         "U合計最大1.373秒）。"
     ),
 )
 def test_repeated_pretooluse_does_not_reinject_language(tmp_path: pathlib.Path) -> None:
     """11回以上の呼び出しでも定期の言語指示を返さない。"""
-    with pretooluse_support.read_delivery_preparation_scope():
-        for _ in range(12):
-            result = _run(
-                {"session_id": "no-language-reinjection", "tool_name": "Read", "tool_input": {}},
-                env_overrides=_plan_file_state_env(tmp_path),
-            )
-            assert result.returncode == 0
-            assert not result.stderr
-            assert "ツール呼び出し前の短いステータス行も含めて日本語" not in result.stdout
+    for _ in range(12):
+        result = _run(
+            {"session_id": "no-language-reinjection", "tool_name": "Read", "tool_input": {}},
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert not result.stderr
+        assert "ツール呼び出し前の短いステータス行も含めて日本語" not in result.stdout
 
 
 @pytest.mark.parametrize(

@@ -6,10 +6,10 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks import bugfix_gate, posttooluse, stop
-from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
+from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_execution_payload
 
-pytestmark = pytest.mark.usefixtures("without_read_delivery")
+pytestmark = pytest.mark.usefixtures("without_skill_notices")
 
 _SEND_TO_USER = "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user"
 
@@ -153,7 +153,7 @@ def test_verification_failure_requires_same_actor_bugfix_before_changes(tmp_path
 
     monkeypatch.setattr(dispatch, "_decide", lambda *_args, **_kwargs: dispatch.Decision())
     # Skill本文の取得記録は専用の受領試験へ分担し、この遷移では全宣言の解析を繰り返さない。
-    monkeypatch.setattr(read_delivery, "observe", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
     assert not pre()
     posttooluse.main(json.dumps(failure))
     assert pre(public=True)

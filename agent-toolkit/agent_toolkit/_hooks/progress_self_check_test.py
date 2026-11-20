@@ -17,7 +17,7 @@ from agent_toolkit._common import session_state
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_MARKER
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import posttooluse, progress_self_check
-from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -29,7 +29,7 @@ _OPENING = f'<atk-auto source="{progress_self_check.SOURCE}" kind="notice">'
 @pytest.fixture(autouse=True)
 def _without_unrelated_document_observation(monkeypatch: pytest.MonkeyPatch) -> None:
     """通知の採用・予約・再試行を通し、対象外の本文取得の観測を隔離する。"""
-    monkeypatch.setattr(read_delivery, "observe", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 def _entries(session_id: str) -> dict:

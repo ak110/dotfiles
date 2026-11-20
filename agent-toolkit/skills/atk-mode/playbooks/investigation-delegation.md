@@ -34,7 +34,7 @@
 自分の作業が持ち込んだのではない既存の不具合を、AWIを起草せずに、見つけたエージェントが元の文脈で直す時に使う。
 文脈を分けるのは調査だけで、修正は見つけたエージェント自身が行う。
 AWIとして登録して処理する場合（`process-wi`の即時対応、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`を使う。
-委譲先の手順は`agent-toolkit:atk-mode/roles/defect-investigation.subagent.md`にある（所在参照）。
+委譲先の手順は`agent-toolkit:atk-mode/roles/defect-investigation.subagent.md`にある。
 
 ### 起動方法
 

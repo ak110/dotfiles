@@ -4,9 +4,7 @@ import pathlib
 
 import pytest
 from agent_toolkit._testing.delegation_contract_support import (
-    _GENERIC_READ_CONDITION,
     _RETIRED_LAUNCH_DELEGATION,
-    _launch_read_errors,
     _launch_role_errors,
     _parent_body,
     _write_pair,
@@ -15,9 +13,7 @@ from agent_toolkit._testing.delegation_contract_support import (
 
 def test_parent_launch_sections_name_subagent_role() -> None:
     """配布する全ての`<役割名>.parent.md`が、起動を述べる節で`subagent_md_path`へ渡す役割名を書く。"""
-    share = pathlib.Path(__file__).resolve().parent / "share"
-
-    errors = _launch_role_errors(share)
+    errors = _launch_role_errors(pathlib.Path(__file__).resolve().parent)
 
     assert not errors, "\n".join(errors)
 
@@ -37,22 +33,6 @@ def test_parent_launch_section_without_role_is_reported(tmp_path: pathlib.Path) 
 
     _write_pair(tmp_path, parent_body=_parent_body(after_marker="\n| `subagent_md_path` | `task` |\n"))
     assert not _launch_role_errors(tmp_path)
-
-
-@pytest.mark.cpu_limit(
-    1.75,
-    reason=(
-        "全起動契約の資料を走査し、条件付き読込と受信側の手順が起動前へ混入しないことを照合する（Linux CI CPU合計最大0.726"
-        "秒）。"
-    ),
-)
-def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> None:
-    """起動対象を宣言する全文書が、その委譲先の手順書を時点を限らない条件で読ませない。"""
-    share = pathlib.Path(__file__).resolve().parent / "share"
-
-    errors = _launch_read_errors(share)
-
-    assert not errors, "\n".join(errors)
 
 
 # test-copy-contract: 生成器が読書きする返却契約のstart/end保存標識を一意に保ち、委譲先本文の先読みを防ぐ。
@@ -81,44 +61,3 @@ def test_caller_owns_generated_return_contract_boundary(relative: str, role: str
     for line in content.splitlines():
         if line.startswith("|"):
             assert f"{role}.subagent.md#「出力」" not in line
-
-
-def test_launch_contract_generic_read_of_recipient_is_reported(tmp_path: pathlib.Path) -> None:
-    """定型の条件で委譲先の手順書や入力節を読ませる行を報告し、時点を書いた行と所在参照を受理する。"""
-    share = tmp_path / "share"
-    generic = f"| {_GENERIC_READ_CONDITION} | `task.subagent.md` | 判断 | `read:agent-toolkit:*/share/task.subagent.md` |\n"
-    section = (
-        f"| {_GENERIC_READ_CONDITION} | `task.subagent.md#「入力」` | 判断 | `read:agent-toolkit:*/share/task.subagent.md` |\n"
-    )
-    table = "\n## 名指し参照の読込方法\n\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
-    _write_pair(
-        share,
-        parent_body=_parent_body(after_marker="\n委譲先の手順は`task.subagent.md`が定める。\n" + table + generic + section),
-    )
-
-    errors = _launch_read_errors(share)
-    # 時点を書いた行が無い本文の名指しにも定型の条件の宣言が補われるため、本文の行も報告する。
-    assert len(errors) == 3 and errors[0].endswith("-> task.subagent.md") and "task.parent.md:" in errors[0]
-    assert errors[1:] == [
-        "起動する委譲先の手順書を定型の条件で読ませる: task.parent.md:13 -> task.subagent.md",
-        "起動する委譲先の手順書を定型の条件で読ませる: task.parent.md:14 -> task.subagent.md",
-    ]
-
-    timed = (
-        "| 返却を受け取った後に形式を検収する時 | `task.subagent.md#「出力」` | 判断 "
-        "| `read:agent-toolkit:*/share/task.subagent.md` |\n"
-    )
-    _write_pair(
-        share,
-        parent_body=_parent_body(after_marker="\n委譲先の手順は`task.subagent.md`が定める（所在参照）。\n" + table + timed),
-    )
-
-    assert not _launch_read_errors(share)
-
-    # 時点を書いた行がある資料の本文の名指しには、定型の条件の宣言が補われない。
-    _write_pair(
-        share,
-        parent_body=_parent_body(after_marker="\n検収では`task.subagent.md`の出力を確かめる。\n" + table + timed),
-    )
-
-    assert not _launch_read_errors(share)

@@ -10,7 +10,7 @@ from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common.persisted_output_reference import CODEX_NOTICE_REFERENCE_PREFIX
 lazy from agent_toolkit._atk import managed_temp
 lazy from agent_toolkit._common.atomic_file import atomic_write
-lazy from agent_toolkit._hooks import notice, rules_context
+lazy from agent_toolkit._hooks import notice
 
 _COUNT_HEADER_RE = re.compile(r"\A警告: \d+件\n\n")
 _NOTICE_PREFIX_RE = re.compile(rf'(?m)^<(?:{_message_format.AUTO_ELEMENT_NAME_PATTERN})\b[^>]*\bkind="warn"[^>]*>')
@@ -39,7 +39,6 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
         return context
     receipts = notice.delivery_receipts(context)
     read_manual = "agent-toolkit:atk-mode/playbooks/managed-temp.md"
-    # 案内の提示と資料本文の取得は別の記録。参照の提示では本文を取得済みにしない。
     with notice.notice_cycle(session_id, "codex-pretooluse-context", agent_id):
         format_notice = notice.formatter("pretooluse")
         if not session_id:
@@ -83,6 +82,5 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 ),
             )
         for receipt in receipts:
-            if receipt["field"] != rules_context.OPERATION_SKILL_READY_KEY or receipt["key"].startswith("read-guidance:"):
-                notice.stage_delivery(reference, receipt["session_id"], receipt["field"], receipt["key"], receipt["value"])
+            notice.stage_delivery(reference, receipt["session_id"], receipt["field"], receipt["key"], receipt["value"])
         return reference

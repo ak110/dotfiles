@@ -28,15 +28,16 @@ from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_s
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
-lazy from agent_toolkit._common import read_triggers, session_state, transcript
+lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
-lazy from agent_toolkit._hooks import document_reads, rules_context, termination_evidence
+lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+lazy from agent_toolkit._hooks.termination_evidence_state import completion_in_context
 
 _HOOK_ID = "termination_order_advisor"
 
@@ -161,14 +162,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     pending = dict(termination_evidence.pending_work(payload))
-    records = session_state.read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    records = records if isinstance(records, dict) else {}
-    playbook = termination_evidence.completion_playbook_path()
-    loaded = playbook.is_file() and (
-        document_reads.acquisition_state(records, read_triggers.ReadTarget(playbook), "main") != "missing"
-        or "main"
-        in records.get(document_reads.skill_invocation_key(playbook, document_reads.content_fingerprint(playbook)), [])
-    )
+    # 手順書の現在の版がメインの文脈にあれば、新しい作業でも読み直しを求めない。
+    loaded = completion_in_context(session_id)
     missing = {
         work_id: kinds
         for work_id, work in pending.items()
@@ -190,6 +185,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_completion_report_satisfied", {"waiting_count": len(waiting)})
         return "approve", ""
 
+    playbook = termination_evidence.completion_playbook_path()
     works = dict(termination_evidence.session_works(payload))
     lines = [f"作業 {work_id}: {'、'.join(kinds)}" for work_id, kinds in remaining.items()]
     for work_id in remaining:

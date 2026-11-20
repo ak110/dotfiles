@@ -16,6 +16,10 @@ required_inputs:
 optional_inputs:
 - 選定結果の出力先ファイル
 - レーン識別子
+- 所有登録
+- 統合先worktree
+- 統合先branch
+- レーン開始時刻
 - 固有指示
 - 上流投入結果
 - 再開位置
@@ -24,6 +28,14 @@ optional_inputs:
 - CI記録
 - 環境構築
 - 先行調査記録
+required_inputs_when:
+- when:
+    担当種別: レーン担当
+  inputs:
+  - 所有登録
+  - 統合先worktree
+  - 統合先branch
+  - レーン開始時刻
 writes_worktree: true
 continuations:
 - instruction: 実装開始
@@ -57,10 +69,7 @@ continuations:
 - instruction: 統合開始
   required:
   - 統合区分
-  - レーン開始時刻
   - 実行レビュー済みHEAD
-  - 統合先worktree
-  - 統合先branch
   - 計画ファイル名一覧
   - AWI終了区分
   - 書込担当一覧
@@ -70,6 +79,10 @@ continuations:
   paths: []
   references: []
   condition: ''
+startup_documents:
+- document: agent-toolkit:atk-mode/playbooks/process-wi-execution.md
+  when:
+    担当種別: レーン担当
 ---
 
 # レーン実行タスク
@@ -83,21 +96,21 @@ continuations:
 担当種別と工程が当たる行の資料を、その工程を始める前に全文読む。
 返す区切りの形式は、読む資料か本書「出力」にある。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| `レーン担当`が計画の要否の判定、計画の起草、再開、実行レビューの起動と収束、統合の準備を始める前（返す区切りは`計画作成完了`、`計画検査完了`、`計画なし準備完了`、`統合準備完了`）（操作対象外: 担当自身の工程の開始であり、ツールの操作の時点ではない） | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` | | |
-| 実装を始める前（`実装開始`の受領後、待機しない`計画検査完了`の通知後、修正の入力の受領後。返す区切りは`実装完了`）（操作対象外: 担当自身の工程の開始であり、ツールの操作の時点ではない） | `agent-toolkit:atk-mode/playbooks/implementation.md` | | |
-| `レビュー修正担当`か同じthreadの`レーン担当`がレビュー指摘を直してGit履歴へ統合する前（返す区切りは`対応完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md` | | |
-| `CI修正担当`が`CI記録`の失敗を直す前（前者は節「担当種別ごとの修正」を使い、返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md`、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` | | |
-| 変更範囲の検証が失敗した時（節「レーンの変更範囲の検証の失敗」を使う） | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` | | |
-| 計画の起草、計画なしの実装、修正の着手の前に、作業を内部の担当へ分けるかを決める前 | `agent-toolkit:atk-mode/playbooks/delegation.md` | | |
-| 計画の起草か実装の途中で、完成条件を対象から外すか変える前（節「完成条件の必要性と変更」を使う） | `agent-toolkit:atk-mode/playbooks/implementation.md` | | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `レーン担当`が計画の要否の判定、計画の起草、再開、実行レビューの起動と収束、統合の準備を始める前（返す区切りは`計画作成完了`、`計画検査完了`、`計画なし準備完了`、`統合準備完了`） | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` |
+| 実装を始める前（`実装開始`の受領後、待機しない`計画検査完了`の通知後、修正の入力の受領後。返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/implementation.md` |
+| `レビュー修正担当`か同じthreadの`レーン担当`がレビュー指摘を直してGit履歴へ統合する前（返す区切りは`対応完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md` |
+| `CI修正担当`が`CI記録`の失敗を直す前（前者は節「担当種別ごとの修正」を使い、返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md`、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` |
+| 変更範囲の検証が失敗した時（節「レーンの変更範囲の検証の失敗」を使う） | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` |
+| 計画の起草、計画なしの実装、修正の着手の前に、作業を内部の担当へ分けるかを決める前 | `agent-toolkit:atk-mode/playbooks/delegation.md` |
+| 計画の起草か実装の途中で、完成条件を対象から外すか変える前（節「完成条件の必要性と変更」を使う） | `agent-toolkit:atk-mode/playbooks/implementation.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `agent-toolkit:atk-mode/roles/lane-integration.subagent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/roles/lane-integration.subagent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `agent-toolkit:atk-mode/roles/lane-integration.subagent.md` |
 
 ## 入力
 
@@ -126,8 +139,11 @@ AWI本文を読んだら、本文が明示する担当とモデルの組を選�
 - `引き継ぎ記録先`: 作業の記録先で、形式は`agent-toolkit:atk-mode/references/delegation-prompt.md`にある。
   `（継続）`は先行する記録をそのまま引き継ぐ。
 - `書込担当一覧`: 重複の無いセッションIDのJSON配列で、現在のレーン担当、統合先のメインの実際のセッション、合意済みの他の書込担当を含む。
-  初回の起動の直後に自分のIDを加えて保ち、担当の範囲を引き継ぎ記録へ対応付ける。
+  初回の起動の直後に自分のIDを加えて保ち（メインは追送しない）、担当の範囲を引き継ぎ記録へ対応付ける。
   担当の交代・再開・単一レーンへの追送の時に更新を受け取り、統合の`--writer-session`には合意済みの担当のセッションを渡す。
+- `所有登録`、`統合先worktree`、`統合先branch`、`レーン開始時刻`: `レーン担当`の起動では必須で、以後この値を保つ。
+  `所有登録`は`atk lane create`の所有登録ファイル（`record_path`）の絶対パスで、開始HEADは同じファイルの`initial_head`から読む。
+  統合（`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`）では、`統合開始`で送られないこの4つの値を使う。
 - `上流投入結果`、`先行調査記録`、`再開位置`: `agent-toolkit:atk-mode/playbooks/process-wi-execution.md`の「計画の起草」と「再開」で扱う。
   `先行調査記録`の省略時は先行調査なしとして通常の調査から始める。
 - `環境構築`: `レーン担当が実行`なら、対象リポジトリの開発手順に従って実装の前に環境を作る。
@@ -174,6 +190,7 @@ private-notesへの計画の保存とWIの状態の変更は、`atk`の通常の
 レビュー修正の`autosquash`と、`agent-toolkit:atk-mode/references/lane-integration-format.md`「マージありの統合」の統合先のmergeは別の操作であり、一方の禁止を他方へ広げない。
 担当種別に必須の操作が委譲プロンプトか追加の指示で禁止されている場合は、着手せずに、禁止の文面と必須の操作を添えて「続行できない理由」を返す。
 `レビュー修正担当`として起動された担当が統合の指示を受けたら、`レーン担当`へ戻って統合する。
+統合には、起動時に受け取った`所有登録`、`統合先worktree`、`統合先branch`、`レーン開始時刻`を使う。
 担当種別の切り替えは同じthreadの継続であり、書込の所有は変わらない。
 統合は`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`の契約で行い（`統合完了`の形式も同書）、受理した返却ファイルと最終の`レビューHEAD`の組を保って、失敗したら保存された進捗と同じ入力で再開する。
 同じworktreeか内部の群へ書込を分ける時の分担は、`agent-toolkit:atk-mode/playbooks/implementation.md`「レーン内の分担」にある。

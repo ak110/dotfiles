@@ -7,7 +7,9 @@ agent-toolkitの配布物と個人用のhook、`atk`の出力を新設・変更�
 ## hookスクリプトの基本プロトコル
 
 - `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。
-- `agent-toolkit/agent_toolkit/_hooks/rules_context.py`は、`SessionStart`で委譲先を判別してメイン向けの条文を除き、`SubagentStart`でサブエージェント向けの条文を足す。
+- `agent-toolkit/agent_toolkit/_hooks/rules_context.py`は、`SessionStart`で委譲先を判別してメイン向けの案内を除く。
+  `SubagentStart`では、委譲先の入口`agent-toolkit/skills/atk-mode/playbooks/subagent.md`を読む指示と`atk`の所在を足す。
+  どちらの通知も規範の本文を載せない。
   委譲先の判別には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を使う。
 - `Stop`と`SubagentStop`の判別は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「委譲先での発火」に従う。
 
@@ -50,7 +52,6 @@ XMLタグの境界と属性の書き方は`agent-basics:writing-standards/refere
 
 - 反復の抑止は`agent_toolkit._hooks.notice`の`formatter`と`warning_formatter`が行い、単位は同じ会話、呼び出し主体、操作範囲である。
 - 既存の呼び出し元が渡す`removable_cause`、`escalate_on_repeat`、`summary`は、入力の受理形式を保つために受け付けるが、回数の通知と遮断への格上げの判定には使わない。
-- 読込の支援は`agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py`が行い、主体、対象の必要範囲、本文の版ごとに、実際に配送した案内と取得の証拠を区別する。
 
 ## 通知本文の整形
 

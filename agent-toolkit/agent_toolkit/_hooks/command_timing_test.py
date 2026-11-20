@@ -11,14 +11,14 @@ import pytest
 
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import command_timing, posttooluse, user_prompt_submit
-from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
+from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
 
 
 @pytest.fixture
 def _clock(monkeypatch):
     now = [1000.0]
     monkeypatch.setattr(command_timing, "time", types.SimpleNamespace(time=lambda: now[0]))
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
     return now
 
 

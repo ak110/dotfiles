@@ -7,7 +7,7 @@
 実装を終えた変更差分の実行レビューを起動し、返却を受領して、修正と収束を管理する起動側の文書である。
 起動するのは実装を担当したレーン担当（single-laneではメイン）自身であり、`write-plan`ではメイン、CI修正の系列では`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`が定める担当である。
 起動から収束までは`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`を上から実行する。
-担当の手順と返却形式は`agent-toolkit:atk-mode/roles/exec-review.subagent.md`が定める（所在参照）。
+担当の手順と返却形式は`agent-toolkit:atk-mode/roles/exec-review.subagent.md`が定める。
 レビューの基準は`agent-basics:review-standards`にある。
 
 ## 入力
@@ -33,13 +33,13 @@
 
 ## 条件と行動
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 起動の入力を決める前と、返却を受領し、受領確認、既存不良の受領、修正の指示、収束の判定を行う前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/exec-review-loop.md` |
-| 返却の`達成`行の根拠を受領確認する前 | `agent-toolkit:atk-mode/references/review-record.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/review-record.md` |
-| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/references/states-and-dependencies.md` |
-| 差分外の不良を受領して対処時機を決める前 | `agent-toolkit:atk-mode/playbooks/delegation-receiving.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/delegation-receiving.md` |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/atk-mode/playbooks/process-wi-immediate-fix.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 起動の入力を決める前と、返却を受領し、受領確認、既存不良の受領、修正の指示、収束の判定を行う前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md` |
+| 返却の`達成`行の根拠を受領確認する前 | `agent-toolkit:atk-mode/references/review-record.md` |
+| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` |
+| 差分外の不良を受領して対処時機を決める前 | `agent-toolkit:atk-mode/playbooks/delegation-receiving.md` |
+| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` |
 
 - 単一計画の初回でない起動は、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「起動」の手順3が示す資料を読む。
 - レビューの後にHEADが変わった時は`agent-toolkit:atk-mode/references/exec-review-head-update.md`を読む。

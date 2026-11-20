@@ -7,9 +7,24 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._common import session_state
-from agent_toolkit._hooks import document_reads, pretooluse, rules_context, user_prompt_submit, work_contract
-from agent_toolkit._testing.document_delivery import run_hook
+from agent_toolkit._agents_server import launch_requests
+from agent_toolkit._common import session_registry
+from agent_toolkit._hooks import pretooluse, rules_context, user_prompt_submit, work_contract
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook
+
+
+def _publish_launch(session_id: str, whole: pathlib.Path, handoff: pathlib.Path | None = None) -> None:
+    """`agents_server`が委譲先を起動した時と同じ起動入力（全体作業契約の全文と引き継ぎ記録先）を登録簿へ置く。"""
+    prompt = launch_requests.whole_contract_reference(whole_contract_path=str(whole))
+    if handoff is not None:
+        prompt = launch_requests.handoff_notice(handoff, whole.parent) + "\n\n" + prompt
+    session_registry.publish(
+        session_id,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
+        engine="claude",
+        cwd=str(whole.parent),
+        launch_info=session_registry.LaunchInfo(prompt=prompt),
+    )
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -115,73 +130,46 @@ def test_delegated_public_hook_has_no_missing_notice(tmp_path, monkeypatch, caps
 
 
 @pytest.mark.parametrize("codex", [False, True])
-@pytest.mark.cpu_limit(
-    5.75,
-    reason=(
-        "契約2更新と圧縮の公開Pre10回/Post/Startで、取得後と更新後の案内と本文非配送を検証する（Linux限定再"
-        "確認のCPU合計最大2.695秒）。"
-    ),
-)
 def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, monkeypatch, codex):
-    """起動時の読了後に更新した契約を1回案内し、実読取と圧縮をまたいで現行版へ戻る。"""
+    """起動入力に入れた版から更新された全体作業契約を、本文を配らずに版ごとに1回案内し、圧縮後は所在を示す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     path = tmp_path / "whole.md"
     path.write_text("# 目的\n継続する\n", encoding="utf-8")
+    handoff = tmp_path / "handoff.md"
     sid = "whole-update-" + str(codex)
-    metadata = json.dumps({"path": str(path), "heading": "", "selectors": ["input:作業契約"]})
-    records = {
-        "startup-input-target:" + metadata: ["main"],
-        document_reads.read_trigger_key(path, document_reads.content_fingerprint(path)): ["main"],
-    }
-    session_state.update_state(sid, lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: records})
+    _publish_launch(sid, path, handoff)
     extra = {"turn_id": "turn"} if codex else {}
     operation = {"session_id": sid, "tool_name": "Judge", "tool_input": {}, **extra}
-    assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
+    assert "全体作業契約が起動後に更新された" not in run_hook("pretooluse", operation).stdout
     path.write_text("# 目的\n継続する\n## 即時対応で確定した暫定規則\n契約専用の新規則\n", encoding="utf-8")
-    for tool, tool_input in (
-        ("Skill", {"skill": "agent-toolkit:atk-mode"}),
-        ("Read", {"file_path": str(path)}),
-        ("Bash", {"command": "cat -- " + str(path)}),
-    ):
-        preparation = run_hook("pretooluse", {**operation, "tool_name": tool, "tool_input": tool_input})
-        assert preparation.returncode == 0
-        assert "全体作業契約が取得後に更新された" not in preparation.stdout
     updated = run_hook("pretooluse", operation)
     assert updated.returncode == 0
-    assert "全体作業契約が取得後に更新された" in updated.stdout
+    assert "全体作業契約が起動後に更新された" in updated.stdout
     assert str(path) in updated.stdout and "契約専用の新規則" not in updated.stdout
     assert 'permissionDecision": "deny' not in updated.stdout
-    assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
-    read = run_hook(
-        "posttooluse",
-        {
-            "session_id": sid,
-            "tool_name": "Read",
-            "tool_input": {"file_path": str(path)},
-            "tool_response": path.read_text(encoding="utf-8"),
-            **extra,
-        },
-    )
-    assert read.returncode == 0
-    assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
-    compact = run_hook(
-        "rules_context",
-        {
-            "session_id": sid,
-            "hook_event_name": "SessionStart",
-            "source": "compact",
-            **extra,
-        },
-    )
+    assert "全体作業契約が起動後に更新された" not in run_hook("pretooluse", operation).stdout
+    compact = run_hook("rules_context", {"session_id": sid, "hook_event_name": "SessionStart", "source": "compact", **extra})
     assert compact.returncode == 0
-    assert "全体作業契約の現行版を全文取得したことを確認できない" not in compact.stdout
+    assert f"全体作業契約`{path}`" in compact.stdout and f"自身の引き継ぎ記録`{handoff}`" in compact.stdout
     assert "契約専用の新規則" not in compact.stdout
     path.write_text("# 目的\n## 即時対応で確定した暫定規則\n次の訂正を適用する\n", encoding="utf-8")
     reupdated = run_hook("pretooluse", operation)
     assert reupdated.returncode == 0
-    assert "全体作業契約の現行版を全文取得したことを確認できない" in reupdated.stdout
+    assert "全体作業契約が起動後に更新された" in reupdated.stdout
     assert "次の訂正を適用する" not in reupdated.stdout
-    assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
+    assert "全体作業契約が起動後に更新された" not in run_hook("pretooluse", operation).stdout
+
+
+def test_delegate_outside_registry_gets_no_contract_notice(monkeypatch):
+    """登録簿に無い委譲先（組み込みの委譲機能の子など）へは、全体作業契約の案内と圧縮後の所在を出さない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    operation = {"session_id": "unregistered-delegate", "tool_name": "Judge", "tool_input": {}}
+    assert "全体作業契約" not in run_hook("pretooluse", operation).stdout
+    compact = run_hook(
+        "rules_context", {"session_id": "unregistered-delegate", "hook_event_name": "SessionStart", "source": "compact"}
+    )
+    assert str(rules_context.SUBAGENT_PLAYBOOK_PATH) in compact.stdout
+    assert "全体作業契約`" not in compact.stdout and "引き継ぎ記録`" not in compact.stdout
 
 
 @pytest.mark.parametrize("mode", ["oversized", "unreadable", "missing-delegate"])
@@ -190,11 +178,9 @@ def test_contract_diagnostic_reaches_public_response(tmp_path, monkeypatch, caps
     monkeypatch.setattr(work_contract, "record_path", lambda *_args: path)
     if mode == "missing-delegate":
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-        metadata = json.dumps({"path": str(path), "selectors": ["input:作業契約"]})
-        session_state.update_state(
-            "missing-delegate",
-            lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: {"startup-input-target:" + metadata: ["main"]}},
-        )
+        path.write_text("目的: 全体\n", encoding="utf-8")
+        _publish_launch("missing-delegate", path)
+        path.unlink()
         assert pretooluse.main(json.dumps({"session_id": "missing-delegate", "tool_name": "Judge", "tool_input": {}})) == 0
     else:
         monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)

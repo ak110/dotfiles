@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit import hook
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import antigravity, host, notice, plugin_resources, rules_context
+from agent_toolkit._hooks import antigravity, host, notice, rules_context
 from agent_toolkit._hooks.antigravity import _Response
 from agent_toolkit._hooks.pretooluse import dispatch
 from agent_toolkit._hooks.pretooluse.decision import Decision
@@ -235,32 +235,12 @@ def test_stop_permission_has_required_native_decision(
 
 
 @pytest.mark.parametrize("encoded", [True, False])
-@pytest.mark.cpu_limit(
-    3.5,
-    reason=(
-        "両prompt形式でnative子への規範案内・取得・配送終了を公開Invocation/Preの最小系列で検証する（L"
-        "inux限定再確認のCPU合計最大1.601秒）。"
-    ),
-)
-def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], encoded: bool) -> None:
-    """invoke_subagentのPromptへ委譲先の規範を追加し、引数の符号化を保つ。"""
+def test_native_subagent_prompt_points_to_entry_without_rules(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], encoded: bool
+) -> None:
+    """invoke_subagentのPromptへ委譲先の入口文書を読む案内を加え、規範の本文（`kind="rules-…"`）は載せず、引数の符号化を保つ。"""
     prompt = json.dumps("調査せよ") if encoded else "調査せよ"
     raw = _payload(tmp_path, toolCall={"name": "invoke_subagent", "args": {"Prompt": prompt}})
-    skill = plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md")
-    initial = _run(raw, "PreToolUse", capsys)
-    assert initial["decision"] == "allow"
-    delivered = json.dumps(_run(raw, "PostInvocation", capsys), ensure_ascii=False)
-    assert "agent-toolkit:atk-mode/playbooks/delegation.md" in delivered
-    assert f"cat -- {skill}" not in delivered
-    read = _payload(
-        tmp_path,
-        toolCall={
-            "name": "read_file",
-            "args": {"Path": str(skill)},
-            "result": skill.read_text(encoding="utf-8"),
-        },
-    )
-    assert _run(read, "PostToolUse", capsys) == {}
     result = _run(raw, "PreToolUse", capsys)
     assert result["decision"] == "allow"
     assert "overwrite" in result, result
@@ -269,14 +249,6 @@ def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.C
     assert rewritten.startswith("調査せよ")
     assert rules_context.SUBAGENT_ENTRY_NOTICE in rewritten
     assert 'kind="rules-' not in rewritten
-    for _ in range(12):
-        if not _run(raw, "PostInvocation", capsys):
-            break
-        assert _run(raw, "PreToolUse", capsys)["decision"] == "allow"
-    else:
-        pytest.fail("関連資料の配送が完了しなかった")
-    assert _run(raw, "PreToolUse", capsys)["decision"] == "allow"
-    assert _run(raw, "PostInvocation", capsys) == {}
 
 
 def test_hook_entry_accepts_host_and_event(

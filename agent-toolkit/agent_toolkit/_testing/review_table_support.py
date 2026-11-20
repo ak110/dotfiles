@@ -44,6 +44,10 @@ _RESPOND_NAMESPACE_DEFAULTS = {
 
 _CLI_ACCEPTED_CASES = (
     (
+        ["review-table", "add", "review.tsv", "--round=1", f"--track={_TRACK}", "--items-file=items.json"],
+        {**_ADD_NAMESPACE_DEFAULTS, "level": None, "items_file": "items.json"},
+    ),
+    (
         ["review-table", "respond", "review.tsv", "--row-id=1", "--response-file=response.txt"],
         {**_RESPOND_NAMESPACE_DEFAULTS, "row_id": 1, "round": None, "track": None, "response_file": "response.txt"},
     ),

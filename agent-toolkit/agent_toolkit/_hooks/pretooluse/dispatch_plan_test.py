@@ -7,8 +7,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
-from agent_toolkit._hooks.pretooluse.decision import Decision
+from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
 from agent_toolkit._testing.pretooluse_support import (
     _VALID_H2_PLAN_CONTENT,
@@ -17,7 +16,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _user_facing_payload,
     _write_session_state,
 )
-from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
+from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 
 class TestAtkContractBeforeQuestion:
@@ -83,7 +82,7 @@ class TestPlanModeSkillCallSites:
     @pytest.fixture(autouse=True)
     def _isolate_read_guidance(self, monkeypatch):
         """計画modeの判定を、別契約の資料候補通知から分離する。"""
-        monkeypatch.setattr(pretooluse, "read_delivery", lambda *_args, **_kwargs: Decision())
+        monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
     @pytest.mark.parametrize("skill_name", ["agent-toolkit:atk-mode", "atk-mode"])
     def test_allowed_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):

@@ -2,7 +2,7 @@
 name: edit-dotfiles-norms
 user-invocable: false
 description: >
-  dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）、
+  dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/skills/`、
   `agent-basics/skills/`、`.claude/skills/`などのエージェント向け文書を変更・削除・縮小するとき、
   変更した規範を同じセッションへ適用するとき、規範を変更したセッションで会話圧縮後に作業を続けるとき、
   変更または新設したスキルを起動するとき、`agent-toolkit:atk-mode`の作業`process-wi`のメインがAWIごとに
@@ -25,9 +25,9 @@ description: >
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集する担当自身が全文を読む（要約、見出し一覧、部分読取、他の担当の読取結果では代えない）。方針の本文と障害事例は次節の手順で選ぶ | 操作 | `agent-document-writing` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集する担当自身が全文を読む（要約、見出し一覧、部分読取、他の担当の読取結果では代えない）。方針の本文と障害事例は次節の手順で選ぶ |
 
 ## 既存の方針との照合
 
@@ -48,7 +48,7 @@ description: >
 
 ## 変更した規範の自セッション適用
 
-対象となる規範は、`AGENTS.md`、`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）、`agent-basics/skills/`配下、および`.claude/skills/`配下の各ファイルである。
+対象となる規範は、`AGENTS.md`、`agent-toolkit/skills/`、`agent-basics/skills/`配下、および`.claude/skills/`配下の各ファイルである。
 稼働中の仕組みはセッション開始時や配布時の版で動き、作業ツリーで改訂した条文とは版が違う。
 どの版をいつから適用するかを取り違えないことが要点である。
 
@@ -58,8 +58,6 @@ description: >
 2. 変更が確定した時点から、作業ツリーの最新内容を自分の判断に適用する。
    `Skill`ツールと`${CLAUDE_PLUGIN_ROOT}`配下の文書はセッション開始時の版を返す（変更したスキルは古い内容を返し、新設したスキルは`Unknown skill`になる）ため、適用する文書は作業ツリー版を絶対パスで読む。
    会話の圧縮の後も、以降の工程を定める変更済みの文書を作業ツリー版で読み直す。
-   読込支援hookは作業ツリー版の文書が名指す資料を同じ作業ツリーから案内する。
-   案内が稼働版の資料の欠落を示す場合は、宣言元と解決先がどちらの版かを確かめ、作業ツリー版の資料を取得済みなら続ける。
 3. 影響を受ける委譲先へ、原本の絶対パス、適用する節、版（commit。未commitならその旨と確定時刻）を伝え、委譲先自身が判断の前に読む。
    未配布の採用版がメインや配下の判断を変える場合は、`agent-toolkit:atk-mode/references/work-contract.md`「記録する内容」に従い、従う版、適用対象、解除条件を全体の作業契約の暫定規則へ残す。
    委譲先は全体の記録を編集せず、同じ情報を委譲元へ渡して自分の引き継ぎ記録に保つ。

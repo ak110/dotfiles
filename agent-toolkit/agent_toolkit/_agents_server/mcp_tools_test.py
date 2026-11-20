@@ -102,7 +102,9 @@ async def test_public_start_returns_label_of_started_session(
                 if not line.startswith("引き継ぎ記録先:")
             ),
             "レーン識別子": "lane-07",
+            "所有登録": str(tmp_path / "lane-07.json"),
         }
+        (tmp_path / "lane-07.json").write_text('{"lane": "lane-07", "base_branch": "develop"}\n', encoding="utf-8")
 
         responses = {
             "lane-02": await mcp_tools.start(

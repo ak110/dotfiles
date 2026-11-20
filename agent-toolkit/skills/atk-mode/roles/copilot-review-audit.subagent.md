@@ -6,22 +6,16 @@ required_inputs:
 - 引き継ぎ記録先
 optional_inputs: []
 writes_worktree: false
+startup_documents:
+- agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md
 ---
 
 # 自動コードレビュー監査担当タスク
-
-<!-- parent-read-source: agent-toolkit:/skills/atk-mode/playbooks/process-wi-review-audit.md#自動コードレビュー監査担当の起動と受領 -->
 
 対象のGitHubリポジトリで、Copilot由来のレビュー指摘と未判定のDependabotアラートを1回取得して監査し、分類、GitHubへの記録、判定済みの記録までを終える。
 対象リポジトリの追跡対象ファイルとcommit履歴は変えない。
 要修正と判定した項目の是正とAWIへの記録は委譲元が行う。
 手順は`agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md`（起動時に届く）と`agent-toolkit:atk-mode/playbooks/process-wi-dependabot-audit.md`にある。
-
-## 読込表
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 着手時 | `agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md` | 起動時 | `role:copilot-review-audit` | |
 
 ## 入力
 

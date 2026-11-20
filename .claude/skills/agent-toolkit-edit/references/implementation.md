@@ -59,7 +59,7 @@
   rootは導入先で決まるため、リポジトリ相対のパスはエンドユーザーの環境で解決に失敗する。
   各ファイルの役割を説明するだけの参照は、リポジトリ相対のパスでよい。
 - 別のプラグイン（agent-toolkitからagent-basicsなど）の資料は、配布時に版ごとの別のディレクトリへ置かれて相対パスでは届かないため、読込表でも本文でも`agent-basics:`か`agent-toolkit:`で始まる論理名で指す。
-  `agent-toolkit/read_triggers_invariant_test.py`が、所有プラグインのrootの外を指す相対パスを拒否する。
+  `agent_toolkit_reference_delivery_invariant_test.py`が、所有プラグインのrootの外を指す相対パスを拒否する。
 - Agent PluginsのMCP定義をCodex向けに変換する時は、`args`、`cwd`、`env`の`${CLAUDE_PLUGIN_ROOT}`を`${PLUGIN_ROOT}`へ置き換える。
 
 ## 権限設定の配置

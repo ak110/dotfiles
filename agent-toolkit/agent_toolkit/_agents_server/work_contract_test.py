@@ -15,7 +15,7 @@ import pytest
 
 from agent_toolkit._agents_server import launch_requests, mcp_tools, plugin_root, session_handoff
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._common import delegated_session
+from agent_toolkit._common import delegated_session, task_documents
 from agent_toolkit._common.next_action import ActionableError
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -83,7 +83,7 @@ def test_normal_task_gets_one_record_path(
 ) -> None:
     """別rootの資料を入力の宣言・指定方法によらず1回配送し、記録先と新規・継続を保つ。"""
     root = tmp_path / "retained-plugin"
-    document = root / "share/task.subagent.md"
+    document = root / "skills/atk-mode/roles/task.subagent.md"
     document.parent.mkdir(parents=True)
     references = [root / "skills/atk-mode/references/work-contract.md"]
     for reference in references:
@@ -181,7 +181,8 @@ async def test_lightweight_task_does_not_deliver_contract_materials(
     explicit_contract: bool,
 ) -> None:
     """軽量な役割指定taskは全体契約の確認と専用記録・資料の配送を経由しない。"""
-    document = tmp_path / "task.subagent.md"
+    document = task_documents.role_document_directory(tmp_path) / "task.subagent.md"
+    document.parent.mkdir(parents=True)
     document.write_text(
         f"# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: {kind}\n作業ツリーへの書込: あり\n```\n", encoding="utf-8"
     )

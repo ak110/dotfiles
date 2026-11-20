@@ -5,7 +5,7 @@
 ```
 
 作業`process-wi`の公開工程で、メインか対象リポジトリ担当が直接実行する場合と、公開担当へ委譲して検収する場合に適用する。
-公開工程の流れは`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に、委譲先の手順は`agent-toolkit:atk-mode/roles/session-termination.subagent.md`にある（所在参照）。
+公開工程の流れは`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に、委譲先の手順は`agent-toolkit:atk-mode/roles/session-termination.subagent.md`にある。
 
 ## 起動前の前提
 

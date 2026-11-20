@@ -104,8 +104,9 @@ Codexで元担当（同じ作業のために起動済みの委譲先）を扱う
 3. レーンの担当を新しいsessionへ移す時は、検収済みの直前のcommitの短縮OID（7文字以上で一意）、完了した工程、残りの工程を渡す。
    状態の記録があれば本書「継続と新規起動」の手順4に従い、無ければ委譲元がmanaged-tempにレビュー指摘管理表を作って絶対パスで渡す。
 4. レビューの担当のsessionを続けられない時は、同じ`model_type`で新しいレビューの担当を起動する。
-   `レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、`round: <ラウンド番号>`の行、直前の修正の直接影響範囲、読取専用の対象範囲を渡す。
-   実行レビューでは、対象HEADの短縮OID（7文字以上で一意）も渡し、`agent-toolkit:atk-mode/roles/exec-review.parent.md`の生成規則で`review_contract`を作り直す。
+   実行レビューでは`agent-toolkit:atk-mode/references/exec-review-launch-handover.md`の入力（`レビュー種別: 引き継ぎ再レビュー`、`前回確認版`、`round`、作り直した`review_contract`）を渡す。
+   他のレビューの役割では、その役割の`<役割名>.parent.md`が定める引き継ぎ再レビューの入力を渡す。
+   レビュー指摘管理表とレビュー対象のHEADは担当が自分で解決するので渡さない（役割文書が宣言していない入力は`start`が拒否する）。
    ラウンド番号は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「ラウンド番号の保持先」に従い、管理表の最大値から続ける。
    新しい担当は、解消済みの指摘を調べ直さず、未解消の行とそのラウンドの確認範囲だけを扱う。
 

@@ -6,7 +6,7 @@ import re
 import pytest
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
-from agent_toolkit._common import read_triggers
+from agent_toolkit._common import task_documents
 from agent_toolkit._plan import selection
 from agent_toolkit._testing.delegation_contract_support import (
     _LAUNCH_TARGET_PREFIX,
@@ -16,7 +16,7 @@ from agent_toolkit._testing.delegation_contract_support import (
     _selection_format,
     _selection_procedure,
 )
-from agent_toolkit._testing.normative_contract import read_contract
+from agent_toolkit._testing.normative_contract import line_references, read_contract, section_text
 
 
 def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> None:
@@ -52,7 +52,7 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
     entry = (playbooks / "process-wi.md").read_text(encoding="utf-8")
     question_route = next(line for line in entry.splitlines() if line.startswith("| ") and "含めた理由、除外した理由" in line)
 
-    assert not (plugin_root / "share" / "pick-wi-explain.subagent.md").exists()
+    assert task_documents.find_role_document(plugin_root, "pick-wi-explain.subagent.md") is None
     assert _LAUNCH_TARGET_PREFIX not in explanation
     assert "説明はメインエージェント自身が担当する" in explanation
     assert "`mode: explore`" in explanation
@@ -295,6 +295,25 @@ def test_lane_launch_inputs_reach_lane_owner() -> None:
     assert not [name for name in inputs if name not in executor]
 
 
+def test_integration_start_sends_only_lane_integration_inputs() -> None:
+    """`統合開始`の継続入力は統合の役割の入力宣言と同じで、レーン担当が起動時に受け取る値を送り直さない。
+
+    同じ値を起動と継続の両方で定めると、起動時と統合時で違う統合先や開始時刻を渡す余地ができる。
+    """
+    roles = pathlib.Path(__file__).resolve().parent / "skills/atk-mode/roles"
+    executor = task_documents.read_declaration(roles / "exec.subagent.md")
+    integration = task_documents.read_declaration(roles / "lane-integration.subagent.md")
+    assert isinstance(executor, task_documents.TaskDocumentDeclaration)
+    assert isinstance(integration, task_documents.TaskDocumentDeclaration)
+    start = next(item for item in executor.continuations if item.instruction == "統合開始")
+
+    assert set(start.required) == set(integration.required)
+    assert set(start.optional) == set(integration.optional)
+    lane_owner_inputs = set(executor.required_for({"担当種別": "レーン担当"})) - set(executor.required)
+    assert lane_owner_inputs == {"所有登録", "統合先worktree", "統合先branch", "レーン開始時刻"}
+    assert not lane_owner_inputs & start.accepted
+
+
 def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
     """公開後操作の前提不足を受領し、同じcommitの未完了操作へ戻す。"""
     root = pathlib.Path(__file__).resolve().parent
@@ -329,12 +348,16 @@ def test_publication_recovery_references_resolve_to_shared_sections() -> None:
         ("skills/atk-mode/roles/session-termination.parent.md", finish, "公開工程の続行不能の回復と再開"),
         ("skills/atk-mode/roles/session-termination.subagent.md", publish, "公開工程の続行不能の受渡し"),
     ]
-    with read_triggers.resolution_scope():
-        for source, target, heading in routes:
-            resolved = [
-                found
-                for _number, line, visible in read_triggers.document_lines((root / source).read_text(encoding="utf-8"))
-                if visible and f"「{heading}」" in line
-                for found in read_triggers.material_targets(line, root / source, root, references_only=True)
-            ]
-            assert any(found.path == root / target and found.body() for found in resolved), source
+    for source, target, heading in routes:
+        # 「本書「<節>」」は名指しした文書自身の節を指す。
+        resolved = [
+            found
+            for line in (root / source).read_text(encoding="utf-8").splitlines()
+            if f"「{heading}」" in line
+            for found in (
+                *line_references(line, root / source, root),
+                *([root / source] if f"本書「{heading}」" in line else []),
+            )
+        ]
+        assert root / target in resolved, source
+        assert section_text(root / target, heading).strip(), target
