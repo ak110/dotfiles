@@ -26,6 +26,39 @@ for (const [surface, delegated, tool, shouldDeliver] of [
   });
 }
 
+for (const [surface, delegated, owner, shouldDeliver] of [
+  ["terminal", "", "", true],
+  ["terminal", "1", "", false],
+  ["terminal", "", "parent", false],
+  ["desktop", "", "", false],
+  [null, "", "", false],
+] as const) {
+  test(`入力ごとの送り先は端末のメインのモデルだけに届く: ${surface}/${delegated}/${owner}`, async ($, on) => {
+    mock.env(on, { AGENT_TOOLKIT_DELEGATED_SESSION: delegated, AGENT_TOOLKIT_OWNER_SESSION: owner });
+    on("session.surfaces", () => ({ value: surface ? [surface] : [] }));
+    const received: { text: string; context?: readonly string[] }[] = [];
+    on("prompt.submit", (_$, e) => { received.push(e); return { text: e.text }; });
+    for (const text of ["最初の依頼", "続き"]) {
+      const previous = text === "続き" ? ["既存の案内"] : undefined;
+      await $.prompt.submit({ text, context: previous, wait: false, origin: { kind: "composer" } });
+      const submitted = received.shift();
+      expect(submitted?.text).toBe(text);
+      const context = submitted?.context ?? [];
+      if (shouldDeliver) {
+        expect(context.slice(0, -1)).toEqual(previous ?? []);
+        const notice = context.at(-1) ?? "";
+        expect(notice).toMatch(/着手.*進捗.*完了報告.*send_to_user/);
+        expect(notice).toMatch(/質問.*AskUserQuestion/);
+        expect(notice).toMatch(/ツール.*表示.*通常の本文/);
+        expect(notice).toContain("…");
+        expect(notice.length).toBeLessThanOrEqual(120);
+      } else {
+        expect(context).toEqual(previous ?? []);
+      }
+    }
+  });
+}
+
 for (const [message, warns] of [
   ["気付いた改善点: 対象。AWI化ステータス: 不要 被覆 既存の処置がある", false],
   ["気付いた改善点: 対象。AWI化ステータス: 不要 原因不明", true],
