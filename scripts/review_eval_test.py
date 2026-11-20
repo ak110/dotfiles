@@ -624,7 +624,7 @@ def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, 
     assert review_eval.main(["prepare", "--out", str(out)]) == 1
     errors = capsys.readouterr().err
     assert "成立性の証拠" in errors and "次の操作: " in errors
-    assert not list(out.iterdir())
+    assert not out.exists()
 
 
 def _unittest(worktree: pathlib.Path, *targets: str) -> int:
