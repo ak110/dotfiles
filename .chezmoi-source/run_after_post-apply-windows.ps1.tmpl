@@ -127,17 +127,19 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         Write-Host '  [pytools] 期待シムが欠落 → 再インストール'
     }
     try {
-        # $ErrorActionPreference = 'Stop' はネイティブ exe の非ゼロ終了を例外化しないため、
-        # uv コマンド直後で $LASTEXITCODE を明示判定して throw する。
         # ハッシュ書き込みは uv tool install と期待シム実在再確認の両方が成功した場合のみ実行する。
         # ユーザーPATHへの`~\.local\bin`の登録は post-apply の「bin PATH 登録 (Windows)」工程が行う。
         # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
-        $ErrorActionPreference = 'Continue'
-        try {
-            $detail = & uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" 2>&1
-            $installCode = $LASTEXITCODE
-        } finally { $ErrorActionPreference = 'Stop' }
-        Write-UvOutput pytools $installCode ($detail -join "`n")
+        . "{{ joinPath .chezmoi.workingTree "libexec/update_stage.ps1" }}"
+        $uvProgram = (Get-Command uv -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+        $uvArguments = @('tool', 'install', '--exclude-newer-package', 'pyfltr=false', '--editable', '{{ .chezmoi.workingTree }}')
+        if ([IO.Path]::GetExtension($uvProgram) -in '.cmd', '.bat') {
+            # Win32のCreateProcessではバッチを直接起動できない。従来どおりPowerShellに実行させる。
+            $env:CHEZMOI_WORKING_TREE = '{{ .chezmoi.workingTree }}'
+            $uvProgram = 'powershell.exe'
+            $uvArguments = @('-NoProfile', '-Command', '& uv tool install --exclude-newer-package pyfltr=false --editable $env:CHEZMOI_WORKING_TREE; exit $LASTEXITCODE')
+        }
+        $installCode = Invoke-UpdateStage pytools return 0 $uvProgram $uvArguments
         if ($installCode -ne 0) { throw "uv tool install が失敗しました (exit=$installCode)" }
         if (-not (Test-ExpectedShims)) {
             throw '期待シムが生成されていません'

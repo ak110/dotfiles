@@ -35,7 +35,7 @@ public sealed class UpdateStageJob : IDisposable {
     [DllImport("kernel32")] static extern bool CloseHandle(IntPtr handle);
     IntPtr job,process; AnonymousPipeServerStream pipe, diagnosticPipe; Task<string> output, diagnostic; bool disposed;
     static Exception Error() { return new Win32Exception(Marshal.GetLastWin32Error()); }
-    public UpdateStageJob(string program,string arguments,bool probe) {
+    public UpdateStageJob(string program,string arguments,bool probe,TextWriter diagnostics) {
         job=CreateJobObject(IntPtr.Zero,null); if(job==IntPtr.Zero) throw Error();
         ProcessInfo info=new ProcessInfo();
         try {
@@ -53,8 +53,8 @@ public sealed class UpdateStageJob : IDisposable {
             process=info.process;
             if(!AssignProcessToJobObject(job,process)) throw Error();
             if(ResumeThread(info.thread)==0xffffffff) throw Error();
-            output=StartReader(pipe);
-            if(probe) diagnostic=StartReader(diagnosticPipe);
+            output=StartReader(pipe,probe ? null : diagnostics);
+            if(probe) diagnostic=StartReader(diagnosticPipe,diagnostics);
         } catch (Exception failure) {
             try {
                 if(process!=IntPtr.Zero) {
@@ -74,9 +74,16 @@ public sealed class UpdateStageJob : IDisposable {
         var clock=System.Diagnostics.Stopwatch.StartNew();
         while(true) { Accounting info; if(!QueryInformationJobObject(job,1,out info,Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero)) throw Error(); if(info.active==0) return; if(clock.ElapsedMilliseconds>=5000) throw new TimeoutException("Jobの所属プロセスが残っています"); Thread.Sleep(10); }
     }
-    static Task<string> StartReader(AnonymousPipeServerStream stream) {
+    static Task<string> StartReader(AnonymousPipeServerStream stream, TextWriter diagnostics) {
         stream.DisposeLocalCopyOfClientHandle();
-        return Task.Run(()=>{using(var reader=new StreamReader(stream,Encoding.UTF8)) return reader.ReadToEnd();});
+        return Task.Run(()=>{
+            using (var reader=new StreamReader(stream,Encoding.UTF8)) {
+                if (diagnostics==null) return reader.ReadToEnd();
+                string line;
+                while ((line=reader.ReadLine())!=null) diagnostics.WriteLine(line);
+                return "";
+            }
+        });
     }
     static string Read(Task<string> reader) {
         if(reader==null) return "";
@@ -104,9 +111,9 @@ public sealed class UpdateStageJob : IDisposable {
 }
 function Start-UpdateStageProcess {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = '更新段の内部起動。実行の採否は呼び出し元が判定し、生成直後のJob所有を保証する。')]
-    param([string]$Program, [string[]]$Arguments, [bool]$Probe)
+    param([string]$Program, [string[]]$Arguments, [bool]$Probe, [IO.TextWriter]$Diagnostics)
     # CommandLineToArgvW互換の引用で、末尾のバックスラッシュも引数内へ保つ。
     $quoted = @($Arguments | ForEach-Object { '"' + [regex]::Replace([regex]::Replace($_, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"' }) -join ' '
     $executable = (Get-Command -Name $Program -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-    return [UpdateStageJob]::new($executable, $quoted, $Probe)
+    return [UpdateStageJob]::new($executable, $quoted, $Probe, $Diagnostics)
 }

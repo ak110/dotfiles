@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from _test_helpers import POSIX_UPDATE_STAGE_JOB
 from pytools._internal import setup_media_remote
 
 pytestmark = pytest.mark.windows
@@ -102,7 +103,7 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     stop_loop = text.index("foreach ($p in $restorableProcs)")
     stop_process = text.index("Invoke-PytoolsMediaRemoteStop -Processes $restorableProcs", stop_loop)
     install_guard = text.index("if ($needsReinstall -and -not $reinstallDeferred)")
-    install = text.index('& uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}"')
+    install = text.index("Invoke-UpdateStage pytools")
     deferred = text.index("} elseif ($reinstallDeferred) {")
 
     assert classification < guard < stop_loop < stop_process < install_guard < install < deferred
@@ -342,10 +343,7 @@ def test_expected_shims_cover_project_scripts(template: Path, suffix: str, patte
 def test_linux_install_failure_preserves_hash_and_continues() -> None:
     """Linux側は更新対象を保持するプロセスを停止せず、成功時だけハッシュを更新する。"""
     text = _read(LINUX_TEMPLATE)
-    install = text.index(
-        "install_output=$(uv tool install --exclude-newer-package pyfltr=false "
-        '--editable "{{ .chezmoi.workingTree }}" 2>&1) || install_code=$?'
-    )
+    install = text.index("uv tool install --exclude-newer-package pyfltr=false --editable")
     hash_write = text.index('printf \'%s\' "$current_hash" >"$hash_file"')
     failure = text.index('DOTFILES_PYTOOLS_INSTALL_DETAIL="uv tool install: exit=$install_code"', hash_write)
 
@@ -431,7 +429,9 @@ public class Program {
         Console.OutputEncoding = new System.Text.UTF8Encoding(false);
         string name = Path.GetFileNameWithoutExtension(System.Reflection.Assembly.GetExecutingAssembly().Location);
         string log = Environment.GetEnvironmentVariable("BOOTSTRAP_LOG");
-        if (name == "powershell") { Console.WriteLine("info: Checking for updates..."); return 0; }
+        if (args.Length >= 2 && args[0] == "self" && args[1] == "update") {
+            Console.WriteLine("info: Checking for updates..."); return 0;
+        }
         if (name == "python") { File.AppendAllText(log, "restart\\n"); return 0; }
         if (args.Length < 2) return 0;
         if (args[0] == "python" && args[1] == "install") {
@@ -472,6 +472,7 @@ public class Program {
         tool_python.chmod(0o755)
         fake_uv.write_text(
             "#!/usr/bin/env bash\n"
+            'if [[ "$1 $2" == "self update" ]]; then echo "info: Checking for updates..."; exit 0; fi\n'
             'if [[ "$1 $2" == "python install" ]]; then '
             'echo "Python 3.15 is already on the latest supported patch release" >&2; '
             'printf "upgrade\\n" >> "$BOOTSTRAP_LOG"; exit "$UPGRADE_EXIT"; fi\n'
@@ -491,47 +492,7 @@ public class Program {
     driver = tmp_path / "driver.ps1"
     command = "arbitrary-python" if blocked else "pytools.media_remote"
     # POSIXでWin32 Jobを模擬せず呼ばない。段APIの契約を実native Processで検証し、Windowsでは実Jobを使う。
-    posix_stage = (
-        """Add-Type -TypeDefinition @'
-using System;
-using System.Diagnostics;
-using System.Threading.Tasks;
-public sealed class UpdateStageJob : IDisposable {
-    Process process; Task<string> output, error; bool disposed, isProbe;
-    public UpdateStageJob(string program, string arguments, bool probe) {
-        var start = new ProcessStartInfo(program, arguments);
-        start.UseShellExecute = false; start.RedirectStandardOutput = true; start.RedirectStandardError = true; isProbe = probe;
-        process = Process.Start(start);
-        output = Task.Run(() => process.StandardOutput.ReadToEnd());
-        error = Task.Run(() => process.StandardError.ReadToEnd());
-    }
-    public bool Wait(int milliseconds) { return process.WaitForExit(milliseconds); }
-    public int ExitCode { get { return process.ExitCode; } }
-    public void Stop() {
-        if (!process.HasExited) process.Kill(true);
-        if (!process.WaitForExit(5000)) throw new TimeoutException("native Processが残っています");
-    }
-    public string ReadOutput() {
-        if (output == null) return "";
-        if (!output.Wait(5000)) throw new TimeoutException("native出力を回収できません");
-        return output.Result + (isProbe ? "" : error.Result);
-    }
-    public string ReadDiagnostic() { return error.Result; }
-    public void Dispose() {
-        if (disposed) return;
-        try { Stop(); if (output != null && !output.Wait(5000)) throw new TimeoutException("readerが残っています"); }
-        catch (Exception error) {
-            throw new InvalidOperationException("次の操作: 試験のstdout/stderrとdriver.ps1を確認し、"
-                + "native Processとreaderの残存を回収して再実行してください。", error);
-        }
-        finally { process.Dispose(); disposed = true; }
-    }
-}
-'@
-"""
-        if os.name != "nt"
-        else ""
-    )
+    posix_stage = POSIX_UPDATE_STAGE_JOB if os.name != "nt" else ""
     driver.write_text(
         posix_stage + "if ($env:BOOTSTRAP_IS_WINDOWS -ne '1') { "
         "New-PSDrive -Name C -PSProvider FileSystem -Root $env:BOOTSTRAP_ROOT | Out-Null }\n"

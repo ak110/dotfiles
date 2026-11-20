@@ -30,7 +30,16 @@ try {
     try {
     if (-not $PrepareOnly -and $env:AGENT_TOOLKIT_PROCESS_LOOP_SESSION -ne '1') {
         Write-UpdateError 'uvの自己更新: Ctrl+Cで中断できます。'
-        [void](Invoke-UpdateStage 'uvの自己更新' continue 300 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'update_uv.ps1'), $UvPath))
+        $selfUpdate = {
+            param($attempt,$uv,$arguments,$record)
+            $record.MatchText = 'but the standalone installer was used to install uv to'
+            $status = & $attempt $uv $arguments
+            if ($status -in 0,124,130,-1073741510) { return $status }
+            if (-not $record.Matched) { return 1 }
+            $record.WriteLine('uvの導入先の記録を現在の実体へそろえるため、公式installerで再導入する。')
+            & $attempt 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'update_uv.ps1'), $uv)
+        }
+        $null = Invoke-UpdateStage 'uvの自己更新' continue 300 $UvPath @('self', 'update') -Run $selfUpdate
         Write-UpdateError '管理Pythonの更新: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。'
         $excluded = @($PID)
         $processes = @(Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction Stop)
@@ -104,6 +113,12 @@ try {
 } catch {
     Write-UpdateError ("$_")
     exit 1
+} finally {
+    if ($script:stageInterrupted) {
+        # -Fileで起動した専用ホストは、停止したパイプラインのexitだけでは0を返す場合がある。
+        if (-not $MyInvocation.Line) { $Host.SetShouldExit(130) }
+        exit 130
+    }
 }
 if ($env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -and $script:bootstrapFailures.Count) {
     try {

@@ -1,52 +1,68 @@
 #!/usr/bin/env bash
-# 管理Pythonを導入する前にも使う。各段の直近の明細はCIも回収する状態ディレクトリへ置く。
-write_uv_output() {
-    local stage=$1 code=$2 output=$3
-    [[ -n "$output" || "$code" != 0 ]] || return 0
+# 管理Pythonの導入前にも使う。前景のコマンドの出力を読みながら、対処が必要な行を端末へ渡す。
+with_uv_output() (
+    local stage=$1
+    shift
     local directory="${XDG_STATE_HOME:-$HOME/.local/state}/agent-toolkit"
-    if ((code != 0)); then stage+=-failed; fi
-    local log="$directory/uv-$stage.log" line saved='' summary='' cause='' visible='' routine
-    local rules="${BASH_SOURCE[0]%/*}/uv_output_patterns.txt" sensitive actionable
-    # 両OS共通の正規表現。保存時に伏せる行、失敗時にも表示する行、残りは既知の正常行。
+    local rules="${BASH_SOURCE[0]%/*}/uv_output_patterns.txt" sensitive actionable routine
     local -a patterns
-    if ! {
-        IFS= read -r sensitive && IFS= read -r actionable && mapfile -t patterns
-    } <"$rules"; then
-        printf '明細を分類できません: %s。更新ファイルを確認してください。\n%s\n' "$rules" "$output" >&2
-        return 0
+    if ! { IFS= read -r sensitive && IFS= read -r actionable && mapfile -t patterns; } <"$rules"; then
+        printf '明細を分類できません: %s。更新ファイルを確認してください。\n' "$rules" >&2
+        routine=''
+    else
+        local IFS='|'
+        routine="^(${patterns[*]})$"
     fi
-    local IFS='|'
-    routine="^(${patterns[*]})$"
-    local continuation=0
-    while IFS= read -r line; do
-        if [[ "${line,,}" =~ $sensitive || "$output" == *'PRIVATE KEY-----'* ]]; then
-            saved+='[REDACTED]'$'\n'
-        else
-            saved+="$line"$'\n'
-        fi
-        if [[ -z "$line" || "$line" =~ $routine ]]; then
-            continuation=0
-        elif [[ "$line" =~ $actionable || ($continuation == 1 && "$line" == ' '*) ]]; then
-            visible+="$line"$'\n'
-            continuation=1
-        else
-            continuation=0
-            summary=$line
-            if [[ "$line" == *'cause:'* || "$line" == 'error:'* ]]; then cause=$line; fi
-        fi
-    done <<<"$output"
-    local temp=''
+    local saved='' hidden='' summary='' cause='' continuation=0 private_key=0
+    local interrupted=0 code=0 line
+    trap 'interrupted=1' INT
+    # lastpipeで読み手をこのシェルに置く。INTでuvが終了してもパイプに残る末尾まで読む。
+    set +e +m
+    shopt -s lastpipe
+    # shellcheck disable=SC2329 # 呼出し元の段がこの関数を呼び、コマンドの出力を同じ記録に追記する。
+    capture_uv_command() {
+        "$@" 2>&1 | {
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                # shellcheck disable=SC2034 # stage_attemptが修復の要否をこの値から判定する。
+                if [[ -n "${match_text:-}" && "$line" == *"$match_text"* ]]; then matched=1; fi
+                if [[ -z "$routine" ]]; then
+                    printf '%s\n' "$line" >&2
+                    continue
+                fi
+                if [[ "${line,,}" =~ $sensitive ]]; then saved+='[REDACTED]'$'\n'; else saved+="$line"$'\n'; fi
+                if [[ "$line" == *'PRIVATE KEY-----'* ]]; then private_key=1; fi
+                if [[ -n "$line" && ! "$line" =~ $routine ]]; then
+                    if [[ "$line" =~ $actionable || ($continuation == 1 && "$line" == ' '*) ]]; then
+                        printf '%s\n' "$line" >&2
+                        continuation=1
+                        continue
+                    fi
+                    summary=$line
+                    if [[ "$line" == *'cause:'* || "$line" == 'error:'* ]]; then cause=$line; fi
+                fi
+                continuation=0
+                hidden+="$line"$'\n'
+            done
+        }
+        local status=${PIPESTATUS[0]}
+        ((interrupted == 0)) || return 130
+        return "$status"
+    }
+    "$@" || code=$?
+    if ((interrupted)); then code=130; fi
+    [[ -n "$routine" ]] || return "$code"
+    [[ -n "$saved" || "$code" != 0 ]] || return 0
+    if ((code != 0)); then stage+=-failed; fi
+    local log="$directory/uv-$stage.log" temp=''
+    if ((private_key)); then saved=$'[REDACTED]\n'; fi
     if { [[ -d "$directory" ]] || mkdir -p -- "$directory"; } &&
         temp=$(mktemp -- "$log.XXXXXXXX") &&
         printf '%(%FT%T%z)T exit=%s\n%s' -1 "$code" "$saved" >"$temp" &&
         mv -fT -- "$temp" "$log"; then
-        if ((code != 0)); then
-            printf '%s\n' "${cause:-${summary:-exit=$code}} (詳細: $log)" >&2
-        fi
-        printf '%s' "$visible" >&2
+        if ((code != 0)); then printf '%s\n' "${cause:-${summary:-exit=$code}} (詳細: $log)" >&2; fi
     else
         [[ -z "$temp" ]] || rm -f -- "$temp" || :
-        printf '明細を保存できません: %s。書込権限と空き容量を確認してください。\n%s\n' "$log" "$output" >&2
+        printf '明細を保存できません: %s。書込権限と空き容量を確認してください。\n%s' "$log" "$hidden" >&2
     fi
-    return 0
-}
+    return "$code"
+)

@@ -60,8 +60,9 @@ if [ "$needs_reinstall" = 1 ]; then
     # Linuxでは更新対象を保持するプロセスを停止せず、失敗時は既存版とハッシュを温存して次回へ延期する。
     # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
     install_code=0
-    install_output=$(uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" 2>&1) || install_code=$?
-    write_uv_output pytools "$install_code" "$install_output"
+    with_uv_output pytools capture_uv_command bash "{{ .chezmoi.workingTree }}/libexec/update_stage.sh" \
+        uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" || install_code=$?
+    ((install_code != 130)) || exit 130
     if [ "$install_code" = 0 ] && test_expected_shims; then
         mkdir -p "$cache_dir"
         printf '%s' "$current_hash" >"$hash_file"
@@ -74,7 +75,7 @@ if [ "$needs_reinstall" = 1 ]; then
         fi
     fi
 else
-    write_uv_output pytools-check 0 "  [pytools] 変更なし (ハッシュキャッシュヒット)"
+    with_uv_output pytools-check capture_uv_command printf '%s\n' "  [pytools] 変更なし (ハッシュキャッシュヒット)"
 fi
 
 post_apply_bin="$HOME/.local/bin/dotfiles-post-apply"
