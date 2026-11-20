@@ -77,6 +77,9 @@ _COMMANDS = frozenset(
         "help",
     }
 )
+_MODEL_COMMANDS = frozenset({"exec", "e", "review", "resume", "fork"})
+_CATALOG_VALUE_OPTIONS = frozenset({"-c", "--config", "-p", "--profile", "--enable", "--disable"})
+_CONTROL_OPTIONS = frozenset({"-h", "--help", "-V", "--version"})
 _INTERRUPTED = frozenset({130, 143, -2, -15, 0xC000013A, -1073741510})
 _TOKEN_ENV = "DOTFILES_CODEX_RECOVERY_TOKEN"
 
@@ -101,6 +104,46 @@ def _interactive(arguments: Sequence[str]) -> bool:
             continue
         return token not in _COMMANDS or token in {"resume", "fork"}
     return True
+
+
+def series_catalog_arguments(arguments: Sequence[str]) -> tuple[tuple[str, ...], str | None] | None:
+    """明示指定や管理操作を除き、系列一覧が必要な起動から設定とcwdを取る。"""
+    config: list[str] = []
+    cwd = None
+    remote = False
+    command_seen = False
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            break
+        option, equal, value = token.partition("=")
+        if len(option) > 2 and option[:2] in {"-m", "-p", "-c", "-C", "-i", "-s"} and not option.startswith("--"):
+            option, value, equal = option[:2], token[2:], "="
+        if option in _CONTROL_OPTIONS or option in {"--oss", "--local-provider", "-m", "--model"}:
+            return None
+        if option in _VALUE_OPTIONS:
+            if not equal:
+                index += 1
+                if index == len(arguments) or arguments[index].startswith("-"):
+                    return None
+                value = arguments[index]
+            if option in _CATALOG_VALUE_OPTIONS:
+                config.extend((option, value))
+            elif option in {"-C", "--cd"}:
+                cwd = value
+            elif option == "--remote":
+                remote = True
+        elif option == "--strict-config":
+            config.append(option)
+        elif not option.startswith("-") and not command_seen:
+            if option in _COMMANDS and option not in _MODEL_COMMANDS:
+                return None
+            command_seen = True
+        index += 1
+    if remote:
+        raise ValueError("外部App Serverの同じ接続先からモデル一覧を取得できません")
+    return tuple(config), cwd
 
 
 def _with_cwd(arguments: Sequence[str], cwd: str) -> list[str]:
@@ -207,6 +250,11 @@ def main(argv: list[str] | None = None) -> int:
     if binary is None:
         print("管理対象のCodexが見つからない。update-dotfilesでCodexを導入して再実行する", file=sys.stderr)
         return 1
+    return launch_resolved(binary, arguments)
+
+
+def launch_resolved(binary: pathlib.Path, arguments: list[str]) -> int:
+    """解決済みの実行体で、通常起動の復旧と管理操作の処理を共有する。"""
     if not _interactive(arguments) or not sys.stdin.isatty():
         if sys.platform == "win32":
             # WindowsのCRT execvは空白を含むargvと子の終了状態を保持しない。
