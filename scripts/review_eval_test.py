@@ -589,6 +589,44 @@ _SMALL_CASES = (
 )
 
 
+@pytest.mark.parametrize("case_id", ["intent-open-defect", "intent-open-control"])
+def test_prepare_body_review_links_dry_run_to_the_same_draft(tmp_path, capsys, case_id) -> None:
+    """本文の合成対照を公開dry-runへ渡し、レビューに必要な原稿・原要求・冒頭の対応を返す。"""
+    assert review_eval.main(["prepare", "--out", str(tmp_path), "--case", case_id]) == 0
+    (prepared,) = _results(capsys)
+    params = prepared["start"]["extra_params"]
+    assert params["確認段階"] == "本文"
+    draft = pathlib.Path(params["原稿"])
+    source = pathlib.Path(params["要求と出所"])
+    evidence = pathlib.Path(params["成立性の証拠"]).read_text(encoding="utf-8")
+    assert source.is_file()
+    assert f"原稿: {draft}" in evidence.splitlines()
+    (opening_path,) = [line.removeprefix("冒頭保存先: ") for line in evidence.splitlines() if line.startswith("冒頭保存先: ")]
+    opening = pathlib.Path(opening_path).read_text(encoding="utf-8")
+    body = draft.read_text(encoding="utf-8")
+    assert opening.startswith("# ")
+    assert body.startswith(opening)
+    assert "## 反映内容と反映先" not in opening
+    assert case_id not in str(draft)
+    assert subprocess.run(prepared["cleanup"], check=False).returncode == 0
+
+
+def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, capsys, monkeypatch) -> None:
+    """本文の事例で必須の資料を指定し忘れた場合は、worktreeを作らず修正する項目を案内する。"""
+    collection = pathlib.Path(review_eval.__file__).with_name("review_eval_draft_cases.json")
+    cases = json.loads(collection.read_text(encoding="utf-8"))["cases"]
+    case = next(case for case in cases if case["id"] == "intent-fixed-defect")
+    del case["extra_params"]["成立性の証拠"]
+    path = tmp_path / "cases.json"
+    path.write_text(json.dumps({"cases": [case]}, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(review_eval, "CASES_PATH", path)
+    out = tmp_path / "out"
+    assert review_eval.main(["prepare", "--out", str(out)]) == 1
+    errors = capsys.readouterr().err
+    assert "成立性の証拠" in errors and "次の操作: " in errors
+    assert not list(out.iterdir())
+
+
 def _unittest(worktree: pathlib.Path, *targets: str) -> int:
     # 準備したworktreeを回収できるよう、未追跡のバイトコードを書かせない。
     command = [sys.executable, "-B", "-m", "unittest", *(targets or ("discover", "-s", "tests", "-p", "*_test.py"))]
