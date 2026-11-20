@@ -16,7 +16,8 @@ for (const [surface, delegated, tool, shouldDeliver] of [
     const shown = await $.tool.describe({ tool, ...original, provider: { plugin: "mcp:agents_server", tier: "user" } });
     if (shouldDeliver) {
       expect(shown.isDeferred).toBe(false);
-      for (const purpose of ["メイン", "進捗", "完了報告", "質問", "確認依頼"]) expect(shown.description).toContain(purpose);
+      for (const purpose of ["メイン", "進捗", "完了報告", "前置き"]) expect(shown.description).toContain(purpose);
+      expect(shown.description).toContain("AskUserQuestion");
       expect(shown.description).toContain("`…`だけ");
       expect(shown.description).toContain(original.description);
     } else {

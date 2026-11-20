@@ -54,8 +54,10 @@ for (const placed of [true, false]) {
     const response = JSON.parse(responses.at(-1) ?? "{}");
     expect(response.id).toBe(id);
     expect(response.ok).toBe(placed);
-    if (placed) expect(response.reason).toContain("`…`だけ");
-    else expect(response.reason).toBe("対応画面なし");
+    if (placed) {
+      expect(response.reason).toContain("AskUserQuestion");
+      expect(response.reason).toContain("`…`だけ");
+    } else expect(response.reason).toBe("対応画面なし");
   });
 }
 

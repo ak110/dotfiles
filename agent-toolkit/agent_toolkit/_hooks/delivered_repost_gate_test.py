@@ -66,6 +66,20 @@ def test_two_or_more_sentences_after_delivery_are_blocked(body: str, tmp_path: p
     assert "…" in str(result["reason"])
 
 
+@pytest.mark.parametrize("preface", [False, True])
+@pytest.mark.parametrize("closing", ["", "…"])
+def test_stop_while_waiting_for_answer(preface: bool, closing: str, tmp_path: pathlib.Path) -> None:
+    entries = [_HUMAN]
+    if preface:
+        entries.extend([_SEND, _result()])
+    entries.append(_call("AskUserQuestion", "q", {"questions": [{"question": "敬体と常体のどちらで書きますか？"}]}))
+    if closing:
+        entries.append(_text(closing))
+    result = _stop(entries, tmp_path, last_assistant_message=closing)
+    assert "decision" not in result
+    assert "user_response_advisor" not in result.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
 @pytest.mark.parametrize("first_body", ["I sent the finished one-sentence notice to the user's screen.", "…"])
 def test_reading_group_notice_stop_replay(first_body: str, tmp_path: pathlib.Path) -> None:
     """観測した読書会の会話を再生し、各差し戻しの指示に従って終了するまでを確かめる。"""
