@@ -17,6 +17,7 @@ import pytest
 from mcp.types import CallToolRequestParams
 
 from agent_toolkit._agents_server import (
+    codex,
     service_context,
     service_coordinator,
     service_io,
@@ -240,14 +241,14 @@ async def test_failed_save_before_transfer_returns_detached_resources_to_source(
 async def test_inflight_codex_request_survives_failed_move(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, returned: bool
 ) -> None:
-    """配送中で移せない間も同じclientが応答と後着通知を受け、旧所有者は照会に応じる。"""
-    coordinator, session, backend = _coordinator(tmp_path, monkeypatch, current=False)
+    """配送中で移せない間も同じclientが応答と後着通知を受け取り、旧所有者は照会に応じる。"""
+    coordinator, session, _backend = _coordinator(tmp_path, monkeypatch, current=False)
     identifier = session.session_id
     runtime = coordinator._runtime
     assert runtime is not None
     started = asyncio.Event()
     finish = asyncio.Event()
-    received = asyncio.Queue()
+    received: asyncio.Queue[dict] = asyncio.Queue()
 
     async def request(**_kwargs: Any) -> dict:
         started.set()
@@ -256,10 +257,18 @@ async def test_inflight_codex_request_survives_failed_move(
 
     resource_id = runtime.broker.register({"request": request, "close": AsyncMock()})
     descriptor = {"identifier": resource_id, "sequence": 0, "origin": runtime.target, "pid": None, "environment": {}}
-    client = service_io.CodexResource.attach(runtime, descriptor, received.put, AsyncMock(), AsyncMock())
-    backend._clients[identifier] = client
-    backend._wait_compaction_turns = {}
     conversation = coordinator.managers.conversations["parent"]
+    backend = conversation.manager._backends["codex"] = codex.AppServerManager(conversation.manager.sessions)
+    session.hold_result(turn_state.BackgroundWait({"status": "completed"}, None))
+    session.live_child_session_ids.add("child")
+    monkeypatch.setattr(backend, "_handle_notification", received.put)
+    with service_io.bind(runtime):
+        await backend.adopt_session(session, descriptor, {})
+    client = coordinator._client(backend, identifier)
+    assert isinstance(client, service_io.CodexResource)
+    compactor = backend._wait_compactors[identifier]
+    checkpoint = compactor.checkpoint()
+    assert checkpoint["deadline"] is not None
     conversation.manager.take_over_orphaned_session = AsyncMock()
     conversation.manager.show_session = AsyncMock(return_value={"session_id": identifier})
     current = coordinator.registry.current()
@@ -279,8 +288,8 @@ async def test_inflight_codex_request_survives_failed_move(
             assert "result" in shown
             conversation.manager.show_session.assert_awaited_once_with(identifier, verbose=False)
             assert await received.get() == {"n": 1}
-            assert backend._clients[identifier] is client
-            backend.adopt_session.assert_not_awaited()
+            assert coordinator._client(backend, identifier) is client
+            assert compactor.checkpoint() == checkpoint
             assert not sent
             finish.set()
             assert await inflight == {"done": True}
@@ -291,6 +300,40 @@ async def test_inflight_codex_request_survives_failed_move(
     finally:
         finish.set()
         await inflight
+        await client.detach()
+        await compactor.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("detached", [False, True])
+async def test_rollback_does_not_reopen_or_decode_for_a_different_resource_owner(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, detached: bool
+) -> None:
+    coordinator, session, backend = _coordinator(tmp_path, monkeypatch, current=False)
+    runtime = coordinator._runtime
+    assert runtime is not None
+    identifier = session.session_id
+    resource_id = runtime.broker.register({"close": AsyncMock()})
+    descriptor = {"identifier": resource_id, "sequence": 0, "origin": runtime.target, "pid": None, "environment": {}}
+    client = service_io.CodexResource.attach(runtime, descriptor, AsyncMock(), AsyncMock(), AsyncMock())
+    backend._clients[identifier] = client
+    conversation = coordinator.managers.conversations["parent"]
+
+    async def fail_with_new_owner(*_args: Any) -> None:
+        assert await runtime.broker.transfer(resource_id, runtime.owner, "other-instance")
+        raise RuntimeError("準備失敗")
+
+    failure = conversation.manager.save_control_state if detached else backend._stop_auto_reset
+    failure.side_effect = fail_with_new_owner
+    try:
+        with pytest.raises((PermissionError, RuntimeError), match="所有"):
+            await coordinator.move(identifier)
+        params = CallToolRequestParams(name="show", arguments={"session_id": identifier})
+        assert await coordinator.owned_call("parent", conversation.caller, params) == {"move_required": True}
+        assert client.transferred
+        backend.adopt_session.assert_not_awaited()
+        assert await runtime.broker.transfer(resource_id, "other-instance", "other-instance")
+    finally:
         await client.detach()
 
 

@@ -94,6 +94,14 @@ class WaitCompaction:
         self._reservation_key = key
         self._deadline = float(deadline) if deadline is not None else None
 
+    def resume(self, session: SessionState, checkpoint: Mapping[str, object]) -> None:
+        """移譲を中止した元の所有者で予約を再開する。後着の通知で動き始めた予約は巻き戻さない。"""
+        key = checkpoint.get("reservation_key")
+        deadline = checkpoint.get("deadline")
+        if self._reservation_key is None and isinstance(key, str) and isinstance(deadline, (int, float)):
+            self._reservation_key, self._deadline = key, deadline
+        self.observe(session)
+
     async def __aenter__(self) -> Self:
         return self
 

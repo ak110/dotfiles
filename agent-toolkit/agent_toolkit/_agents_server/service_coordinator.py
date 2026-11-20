@@ -791,31 +791,37 @@ class ServiceCoordinator:
             session = manager.sessions[identifier]
             backend: Any = manager._backends.get(session.engine)
             current = self._current()
-            if current["generation"] == self.generation:
-                if self._updates:
-                    return {"moved": False}
-                # 公開元の終了などで受付先が自世代へ戻った。止めたままではこの会話のdecodeが再開しない。
-                with self.managers._bound(conversation):
-                    client = self._client(backend, identifier)
-                    if client is not None and client.transferred:
-                        auxiliary = await backend.export_service_state(identifier)
-                        descriptor = await client.detach()
-                        await self._restore_source(backend, session, descriptor, auxiliary)
+            source_is_current = current["generation"] == self.generation
+            if (source_is_current and self._updates) or (not source_is_current and not self._ended_turn(session)):
                 return {"moved": False}
-            if not self._ended_turn(session):
-                return {"moved": False}
-            await self.gate.pause_session(identifier)
             with self.managers._bound(conversation):
-                client = self._client(backend, identifier)
                 descriptor = None
                 auxiliary = {}
-                if client is not None:
-                    auxiliary = await backend.export_service_state(identifier)
-                    client.pause()
-                    await self.gate.drain_session(identifier)
+                try:
+                    if not source_is_current:
+                        await self.gate.pause_session(identifier)
+                    client = self._client(backend, identifier)
+                    if source_is_current and (client is None or not client.transferred):
+                        return {"moved": False}
+                    if client is not None:
+                        auxiliary = await backend.export_service_state(identifier)
+                        if not source_is_current:
+                            client.pause()
+                            await self.gate.drain_session(identifier)
+                            if session.engine == "codex":
+                                await backend._stop_auto_reset(identifier)
+                        descriptor = await client.detach()
+                except Exception, asyncio.CancelledError:
                     if session.engine == "codex":
-                        await backend._stop_auto_reset(identifier)
-                    descriptor = await client.detach()
+                        if (client := self._client(backend, identifier)) is not None and client.transferred:
+                            await client.resume()
+                        if checkpoint := auxiliary.get("wait_compaction"):
+                            backend._wait_compactors[identifier].resume(session, checkpoint)
+                        await self.gate.resume_session(identifier)
+                    raise
+                if source_is_current:
+                    await self._restore_source(backend, session, descriptor, auxiliary)
+                    return {"moved": False}
                 # 切り離した後、移譲先が受入を予約するまでに失敗したら所有を移さず、実行資源と制御の受付を旧側へ戻す。
                 try:
                     if client is not None and session.engine == "claude":
@@ -833,7 +839,7 @@ class ServiceCoordinator:
                         "writer_session_id": getattr(backend, "_writer_session_ids", {}).get(identifier),
                     }
                     prepared = await service_rpc.request(current, "prepare_move", packet)
-                except Exception:
+                except Exception, asyncio.CancelledError:
                     await self._restore_source(backend, session, descriptor, auxiliary)
                     raise
                 if not prepared.get("prepared"):
