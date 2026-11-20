@@ -12,7 +12,8 @@ import os
 import pathlib
 from collections.abc import Mapping
 
-from agent_toolkit._atk import config
+from agent_toolkit._atk.config_resolution import connection_order, connections_configured, resolve_mutable_setting
+from agent_toolkit._atk.config_settings import CONNECTION_KINDS, connection_order_key
 from agent_toolkit._common import claude_connection as settings
 from agent_toolkit._common import next_action
 
@@ -57,7 +58,7 @@ class Candidates:
     def require_first(self) -> Connection:
         """最初の候補を返し、全候補不成立なら原因と設定方法を示して終了する。"""
         if not self.connections:
-            key = config.connection_order_key("claude", self.role)
+            key = connection_order_key("claude", self.role)
             reasons = "; ".join(self.diagnostics) or "使用順の種別に認証が設定されていない"
             raise ValueError(
                 f"Claude接続候補がありません。{reasons}。"
@@ -68,13 +69,13 @@ class Candidates:
 
 def managed() -> bool:
     """Claudeの接続を設定で管理するか（認証キー2つと使用順2つのいずれかを設定したか）を返す。"""
-    return config.connections_configured("claude")
+    return connections_configured("claude")
 
 
 def _api_env_file(kind: str) -> tuple[str | None, str | None]:
     """API種別のenvファイルの絶対パスと、設定したのに使えない場合の診断を返す。未設定は両方`None`とする。"""
     key = _ENV_FILE_KEYS[kind]
-    raw = config.resolve_mutable_setting(key)
+    raw = resolve_mutable_setting(key)
     if not raw:
         return None, None
     path = str(pathlib.Path(raw).absolute())
@@ -96,9 +97,7 @@ def _api_env_file(kind: str) -> tuple[str | None, str | None]:
 
 def _isolation_env_files() -> tuple[str, ...]:
     """候補として使えるかと独立に、親から隔離すべき設定済みファイルを返す。"""
-    return tuple(
-        str(pathlib.Path(raw).absolute()) for key in _ENV_FILE_KEYS.values() if (raw := config.resolve_mutable_setting(key))
-    )
+    return tuple(str(pathlib.Path(raw).absolute()) for key in _ENV_FILE_KEYS.values() if (raw := resolve_mutable_setting(key)))
 
 
 def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = False) -> Candidates:
@@ -109,7 +108,7 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = F
     """
     if not managed():
         return Candidates((Connection("inherit"),), role=role)
-    order = config.connection_order("claude", role)
+    order = connection_order("claude", role)
     warnings: list[str] = []
     diagnostics: list[str] = []
     api_files: dict[str, str] = {}
@@ -149,7 +148,7 @@ def _normalize_legacy(connection: Connection) -> Connection:
     """
     if connection.kind != settings.LEGACY_API_KIND:
         return connection
-    credits_path = config.resolve_mutable_setting("claude_credits_env_file")
+    credits_path = resolve_mutable_setting("claude_credits_env_file")
     same_credits = bool(
         connection.api_env_file
         and credits_path
@@ -166,12 +165,12 @@ def outside_order(kind: str | None, role: str) -> bool:
     """
     if kind == settings.LEGACY_API_KIND or not managed():
         return False
-    return (kind == "inherit" or kind in config.CONNECTION_KINDS) and kind not in config.connection_order("claude", role)
+    return (kind == "inherit" or kind in CONNECTION_KINDS) and kind not in connection_order("claude", role)
 
 
 def order_includes(kind: str, role: str) -> bool:
     """接続を管理していない環境、または管理中の使用順が種別を含む場合に真を返す。"""
-    return not managed() or kind in config.connection_order("claude", role)
+    return not managed() or kind in connection_order("claude", role)
 
 
 def apply_current_settings(

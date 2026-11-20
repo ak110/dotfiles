@@ -11,6 +11,7 @@ import typing
 
 import pytest
 
+from pytools import post_apply
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import claude_plugin_references as _claude_plugin_references
@@ -95,14 +96,10 @@ def _disable_file_reads(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
         ]
 
     monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", read_installed_plugins)
-    monkeypatch.setattr(
-        _install_claude_plugins,
-        "_read_enabled_plugins_from_file",
-        lambda: {
-            "agent-toolkit@ak110-dotfiles": True,
-            "sample-plugin@ak110-dotfiles": True,
-        },
-    )
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"enabledPlugins": dict.fromkeys(installed_entries, True)}), encoding="utf-8")
+    monkeypatch.setattr(_claude_common, "SETTINGS_JSON_PATH", settings)
+    monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", settings)
     monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
     monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
 
@@ -127,6 +124,109 @@ class TestRunFlow:
     ``disable_file_reads`` により ``is_directory_type_registered`` は False となる (旧 GitHub 型残存環境)。
     directory 型経路の追加検証は ``TestRunFlowDirectoryType`` で行う。
     """
+
+    @pytest.mark.parametrize(
+        ("before", "after", "expected_exit"),
+        [
+            (False, False, 0),
+            (None, True, 0),
+            (True, False, 1),
+            (None, False, 1),
+            (None, None, 1),
+            (False, None, 0),
+            (False, True, 0),
+        ],
+    )
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+    def test_activation_summary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        before: bool | None,
+        after: bool | None,
+        expected_exit: int,
+        encoding: str,
+    ) -> None:
+        """明示した無効化と、導入後に設定が反映されない場合を画面と失敗件数で区別する。"""
+        plugin_id = "agent-toolkit@ak110-dotfiles"
+        settings = _claude_common.SETTINGS_JSON_PATH
+
+        def write_settings(value: bool | None) -> None:
+            enabled = {"sample-plugin@ak110-dotfiles": True}
+            if value is not None:
+                enabled[plugin_id] = value
+            settings.write_text(json.dumps({"enabledPlugins": enabled}), encoding=encoding)
+
+        write_settings(before)
+        install = make_fresh_install_fake([])
+
+        def install_with_settings(cmd: list[str], **kwargs: object) -> _FakeResult:
+            if command_matches(cmd, ["claude", "plugin", "disable", plugin_id, "--scope=user"]):
+                write_settings(False)
+                return _FakeResult()
+            result = install(cmd, **kwargs)
+            if command_matches(cmd, ["claude", "plugin", "install", plugin_id]):
+                write_settings(after)
+            return result
+
+        # 既に無効で最新版のケースではinstallを必要としない。
+        cli = make_installed_two_plugin_fake([]) if before is False and after is False else install_with_settings
+        monkeypatch.setattr(_common, "run_subprocess", cli)
+        monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update.log")
+        monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
+        with pytest.raises(SystemExit) as exit_info:
+            post_apply.main(runner=lambda: post_apply.run([("Claude Code plugin", _install_claude_plugins.run)]))
+
+        captured = capsys.readouterr()
+        assert exit_info.value.code == expected_exit
+        assert f"失敗 {expected_exit} 件" in captured.out
+        if expected_exit:
+            assert plugin_id in captured.err
+            assert "enabledPlugins" in captured.err
+        else:
+            assert "失敗" not in captured.err
+            assert "再実行" not in captured.err + captured.out
+            enabled = json.loads(settings.read_text(encoding=encoding))["enabledPlugins"]
+            assert enabled[plugin_id] is (before is not False)
+            assert enabled["sample-plugin@ak110-dotfiles"] is True
+
+    @pytest.mark.parametrize("disable_exit", [0, 1])
+    def test_failed_restore_reports_reason(self, monkeypatch: pytest.MonkeyPatch, disable_exit: int) -> None:
+        """disable の診断と、成功終了しても設定に反映されない失敗を区別する。"""
+        plugin_id = "agent-toolkit@ak110-dotfiles"
+        settings = _claude_common.SETTINGS_JSON_PATH
+        settings.write_text(json.dumps({"enabledPlugins": {plugin_id: False}}), encoding="utf-8")
+        install = make_fresh_install_fake([])
+
+        def cli(cmd: list[str], **kwargs: object) -> _FakeResult:
+            if command_matches(cmd, ["claude", "plugin", "install", plugin_id]):
+                settings.write_text(json.dumps({"enabledPlugins": {plugin_id: True}}), encoding="utf-8")
+            if command_matches(cmd, ["claude", "plugin", "disable", plugin_id]):
+                return _FakeResult(returncode=disable_exit, stderr="permission denied" if disable_exit else "")
+            return install(cmd, **kwargs)
+
+        monkeypatch.setattr(_common, "run_subprocess", cli)
+        outcome = _install_claude_plugins.run()
+        assert outcome.failure is not None and plugin_id in outcome.failure
+        assert ("permission denied" if disable_exit else "反映されていません") in outcome.failure
+
+    @pytest.mark.parametrize("content", [None, "{}", '{"enabledPlugins": {}}', "{broken"])
+    def test_installed_without_activation_setting(self, monkeypatch: pytest.MonkeyPatch, content: str | None) -> None:
+        """最新版で設定が未指定ならそのままにし、読めない JSON は明示して保持する。"""
+        settings = _claude_common.SETTINGS_JSON_PATH
+        if content is None:
+            settings.unlink()
+        else:
+            settings.write_text(content, encoding="utf-8")
+        monkeypatch.setattr(_common, "run_subprocess", make_installed_two_plugin_fake([]))
+        outcome = _install_claude_plugins.run()
+        if content == "{broken":
+            assert outcome.failure is not None
+            assert "settings.json" in outcome.failure and "JSON" in outcome.failure
+        else:
+            assert outcome.failure is None
+        assert (settings.read_text(encoding="utf-8") if settings.exists() else None) == content
 
     def test_already_installed_up_to_date_skips(self, monkeypatch: pytest.MonkeyPatch):
         """GitHub 型残存環境: version 一致で update も install も呼ばれない (回帰防止)。"""
@@ -296,11 +396,12 @@ class TestRunFlow:
     def test_install_failure_is_skipped_after_verification(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ):
-        """install が失敗し管理対象が未導入なら、最終検証の内容を警告してスキップと数える。"""
+        """他marketplaceの同名pluginは導入済みとみなさず、対象の取得失敗は警告してスキップする。"""
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             if command_matches(cmd, ["claude", "plugin", "list"]):
-                return _FakeResult(returncode=0, stdout="[]")
+                synced: dict[str, object] = {"id": "agent-toolkit@synced", "version": "0.2.0", "scope": "user"}
+                return _FakeResult(stdout=_plugin_list_json(synced))
             if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(returncode=0, stdout="[]")
             if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
@@ -315,7 +416,7 @@ class TestRunFlow:
         with caplog.at_level("WARNING"):
             outcome = _install_claude_plugins.run()
         assert outcome == post_apply_outcome.PostApplyOutcome()
-        assert "未インストール" in caplog.text
+        assert "未インストール: agent-toolkit" in caplog.text
 
     def test_claude_timeout_is_swallowed(self, monkeypatch: pytest.MonkeyPatch):
         """claude CLI のタイムアウトはスキップとして扱う (post-apply を中断させない)。"""
@@ -538,6 +639,8 @@ class TestManagedPluginFailures:
     ) -> None:
         # directory型では導入済みでも再同期のためinstallを実行する。
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: True)
+        # installが失敗したpluginの設定キーが無くても、取得失敗を設定失敗とは数えない。
+        _claude_common.SETTINGS_JSON_PATH.write_text('{"enabledPlugins": {}}', encoding="utf-8")
         calls: list[list[str]] = []
 
         def _extra(cmd: list[str]) -> _FakeResult | None:

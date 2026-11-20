@@ -235,7 +235,7 @@ def _load_known_marketplace_entry() -> dict[str, object] | None:
 
 def _load_extra_known_marketplace_entry() -> dict[str, object] | None:
     """settings.json.extraKnownMarketplaces から対象 marketplace のエントリを読み込む。"""
-    data = common.load_json_dict(_SETTINGS_JSON_PATH)
+    data = common.load_json_dict(_SETTINGS_JSON_PATH, encoding="utf-8-sig")
     if data is None:
         return None
     extra = data.get("extraKnownMarketplaces")
@@ -322,7 +322,7 @@ def _rewrite_settings_extra_known_entry(dotfiles_root: Path) -> bool:
     path = _SETTINGS_JSON_PATH
     if not path.exists():
         return True
-    data = common.load_json_dict(path, tag="marketplace")
+    data = common.load_json_dict(path, tag="marketplace", encoding="utf-8-sig")
     if data is None:
         return False
     extra = data.get("extraKnownMarketplaces")
@@ -332,4 +332,4 @@ def _rewrite_settings_extra_known_entry(dotfiles_root: Path) -> bool:
     cast("dict[str, object]", extra)[claude_common.MARKETPLACE_NAME] = {
         "source": {"source": "directory", "path": str(dotfiles_root)},
     }
-    return common.atomic_write_json(path, data, tag="marketplace")
+    return common.atomic_write_json(path, data, tag="marketplace", preserve_bom=True)

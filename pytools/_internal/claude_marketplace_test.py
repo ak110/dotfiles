@@ -16,6 +16,7 @@ TestCheckMarketplaceFromFile・TestLegacyGithubTypeMigration・TestRepairMarketp
 重複を避け、本ファイルではそれらで扱っていない分岐・パラメーター化ケースを追加する。
 """
 
+import codecs
 import json
 import pathlib
 
@@ -259,21 +260,24 @@ class TestRewriteSettingsExtraKnownEntry:
         # settings 側は installLocation を持たない
         assert "installLocation" not in entry
 
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
     def test_creates_extra_known_key_when_absent(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        encoding: str,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
         """settings.json が存在するが extraKnownMarketplaces がない場合は追加する。"""
         known, settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        settings.write_text(json.dumps({"otherSetting": True}, ensure_ascii=False), encoding="utf-8")
+        settings.write_text(json.dumps({"otherSetting": True}, ensure_ascii=False), encoding=encoding)
         monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         result = _claude_marketplace.repair_marketplace()
 
         assert result is True
-        data = json.loads(settings.read_text(encoding="utf-8"))
+        assert settings.read_bytes().startswith(codecs.BOM_UTF8) == (encoding == "utf-8-sig")
+        data = json.loads(settings.read_text(encoding=encoding))
         assert "otherSetting" in data
         assert data["extraKnownMarketplaces"][_claude_common.MARKETPLACE_NAME]["source"]["source"] == "directory"
 

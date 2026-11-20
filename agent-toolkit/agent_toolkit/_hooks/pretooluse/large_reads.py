@@ -11,7 +11,7 @@ lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
-lazy from agent_toolkit._common.bash_invocations import is_unknown_word
+lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, BashInvocation, is_unknown_word
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 
@@ -186,25 +186,45 @@ def bash_read_paths(
     `first_line_only`は`_read_operands`の同名の指定へ渡す。
     `include_piped`は警告候補専用で、加工後の出力を取得成功や容量判定の根拠にしない。
     """
-    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
-        # output_redirectedにはパイプ接続も含まれる。警告用の候補では、その接続だけを許容する。
-        if invocation.captured or invocation.output_redirected and not (include_piped and invocation.output_pipe):
-            continue
-        # 読取候補の特定（`include_partial`）では、無関係な引数が未知でも既知のファイル引数を候補に残す。
-        # 出力全体の順序と範囲を使う用途（容量の判定など）は、全引数が確定した呼出しだけを使う。
-        if not invocation.arguments_known and not include_partial:
-            continue
-        tokens = invocation.segment.tokens
-        paths = []
-        for operand in _read_operands(tokens, include_partial=include_partial, first_line_only=first_line_only):
-            if is_dynamic_read_operand(operand):
-                continue
-            if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
-                continue
-            base = current.path
-            paths.append(_resolve_path(operand, base))
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd, effects=True):
+        paths = invocation_read_paths(
+            invocation, current, include_partial=include_partial, first_line_only=first_line_only, include_piped=include_piped
+        )
         if paths:
-            yield tuple(paths)
+            yield paths
+
+
+def invocation_read_paths(
+    invocation: BashInvocation,
+    current: shell_cwd.CwdResolution,
+    *,
+    include_partial: bool,
+    first_line_only: bool,
+    include_piped: bool = False,
+) -> tuple[pathlib.Path, ...]:
+    """出力の接続先と読取時点の変数・cwdを保った呼出しから、本文表示の対象を返す。"""
+    if not invocation.execution_known or invocation.captured:
+        return ()
+    if invocation.output_redirected and not (include_piped and invocation.output_pipe):
+        return ()
+    tokens = invocation.segment.tokens
+    if not invocation.arguments_known:
+        tokens = tuple(
+            ShellWord(resolved, unquoted=word.unquoted)
+            if isinstance(word, ShellWord)
+            and is_unknown_word(word)
+            and STATIC_UNKNOWN not in resolved
+            and not resolved.startswith("~")
+            else word
+            for word, resolved in zip(tokens, invocation.variable_tokens, strict=True)
+        )
+        if not include_partial and any(is_dynamic_read_operand(token) for token in tokens):
+            return ()
+    return tuple(
+        _resolve_path(operand, current.path)
+        for operand in _read_operands(tokens, include_partial=include_partial, first_line_only=first_line_only)
+        if not is_dynamic_read_operand(operand) and (current.resolved or pathlib.Path(operand).expanduser().is_absolute())
+    )
 
 
 def _is_session_record(path: pathlib.Path, *, directory: bool = False) -> bool:

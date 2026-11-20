@@ -268,7 +268,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     """公開境界から各modeの`launch_kind`、省略時のmodel_type、用途およびlabelがManagerへ届く。"""
     requested: list[str] = []
 
-    def candidates(model_type: str) -> list[tuple[str, str, str]]:
+    def candidates(model_type: str, **_kwargs: Any) -> list[tuple[str, str, str]]:
         requested.append(model_type)
         return [("codex", "model", "high")]
 

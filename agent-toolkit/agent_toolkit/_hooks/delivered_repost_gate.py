@@ -2,7 +2,7 @@
 
 規範（`atk-mode`の`playbooks/host-claude-code.md`「ターンの終え方」）は、送達後に待機・完了を問わず`…`だけで閉じることを求める。
 最後の応答本文が`…`だけでなく、句点・終止符・改行で区切った文が2つ以上ある場合を再掲と判定する。1文以下は通す。
-判定はtranscriptの観測（同じターンの送達成功の有無と本文の形）だけで決まり、`…`だけで閉じれば回復できる。
+判定はtranscriptの観測（同じターンの直近の送達結果と本文の形）だけで決まり、`…`だけで閉じれば回復できる。
 意味の同一性は判定しないため、2文以上の新しい内容も止まる。その内容は`send_to_user`で送れば残る。
 非同期の待機が残るStopにも適用し、言語判定（`response_language_advisor`）とは独立に動く。
 
@@ -31,7 +31,7 @@ _block_notice = notice.block_formatter("delivered_repost_gate")
 
 
 def _last_text_after_delivery(entries: list[dict]) -> str:
-    """同じターンで最後に送達が成功した後の、最後の応答本文を返す。送達が無ければ空文字列を返す。"""
+    """同じターンの直近の送達結果が成功なら、その後の最後の応答本文を返す。"""
     sent_ids: set[str] = set()
     delivered = False
     last = ""
@@ -51,12 +51,9 @@ def _last_text_after_delivery(entries: list[dict]) -> str:
                     transcript.SEND_TO_USER_TOOL_SUFFIX
                 ):
                     sent_ids.add(str(block.get("id", "")))
-            elif (
-                block.get("type") == "tool_result"
-                and block.get("tool_use_id") in sent_ids
-                and block.get("is_error") is not True
-            ):
-                delivered, last = True, ""
+            elif block.get("type") == "tool_result" and block.get("tool_use_id") in sent_ids:
+                # 途中報告の後で次の送達が失敗したら、未表示の本文で終了できるようにする。
+                delivered, last = block.get("is_error") is not True, ""
         if delivered and texts:
             last = "".join(texts)
     return last

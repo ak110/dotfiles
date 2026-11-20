@@ -145,6 +145,7 @@ def test_session_start_delegated_requests_reread_only_after_compaction(
     handler(json.dumps(payload))
     output = _output(capsys)
     delegated = environment is not None or agent_id is not None
+    assert ("send_to_user" in output) == (host == "claude" and not delegated)
     assert output.count(rules_context.DELEGATED_COMPACT_NOTICE) == (1 if delegated and source == "compact" else 0)
     if delegated:
         assert rules_context.ENTRY_START_NOTICE not in output

@@ -18,6 +18,7 @@ from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.config_migration import migrate_serve_settings
+from agent_toolkit._atk.config_resolution import connection_order, connections_configured, resolve_mutable_setting
 from agent_toolkit._atk.config_settings import (
     CONNECTION_KINDS,
     MODEL_TYPES,
@@ -37,7 +38,7 @@ from agent_toolkit._atk.config_settings import MUTABLE_KEY_DEFAULTS as _MUTABLE_
 from agent_toolkit._atk.config_settings import RETIRED_CONNECTION_KEYS as _RETIRED_CONNECTION_KEYS
 from agent_toolkit._atk.config_settings import config_env_name as _config_env_name
 from agent_toolkit._atk.config_settings import config_file_path as _config_file_path
-from agent_toolkit._common import codex_models, runtime_environment
+from agent_toolkit._common import codex_models
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
@@ -52,64 +53,19 @@ __all__ = [
     "_config_file_path",
     "atomic_write",
     "config_environment_variable_names",
+    "connection_order",
     "connection_order_key",
+    "connections_configured",
     "migrate_serve_settings",
     "mutable_setting_default",
     "parse_remote_hosts",
     "process_loop_configuration_path",
     "repository_branch_settings",
     "resolve_configured_repositories",
+    "resolve_mutable_setting",
     "serve_default_port",
     "target_key",
 ]
-
-
-def connection_order(engine: str, role: str) -> tuple[str, ...]:
-    """エンジンと役割の使用順を、設定の解決結果から種別のタプルで返す。"""
-    return _config_settings.parse_connection_order(resolve_mutable_setting(_config_settings.connection_order_key(engine, role)))
-
-
-def connections_configured(engine: str) -> bool:
-    """エンジンの認証キー2つと使用順2つのいずれかを、環境変数か保存値で設定しているかを返す。
-
-    どれも設定していない環境は、接続を管理せず親環境と通常の認証解決を引き継ぐ。
-    使用順には初期値があるため、実効値ではなく明示の有無で判定する。
-    """
-    keys = [key for key in _config_settings.CONNECTION_DEFAULTS if key.startswith(f"{engine}_")]
-    if not keys:
-        raise KeyError(engine)
-    _config_migration.check_legacy_environment()
-    _config_migration.migrate_legacy_settings()
-    stored = _config_settings.load_config()
-    return any(
-        runtime_environment.environment().get(_config_settings.config_env_name(key), "") or key in stored for key in keys
-    )
-
-
-def resolve_mutable_setting(key: str) -> str:
-    """変更可能な設定は環境変数を優先し、無ければ保存値、どちらも無ければ初期値を使う。"""
-    if key not in _config_settings.MUTABLE_KEY_DEFAULTS:
-        raise KeyError(key)
-    _config_migration.check_legacy_environment()
-    _config_migration.migrate_legacy_settings()
-    env_name = _config_settings.config_env_name(key)
-    env_value = runtime_environment.environment().get(env_name, "")
-    value = _config_settings.raw_mutable_setting(key)
-    if not env_value:
-        value = config_usage.temporary_settings().get(key, value)
-    try:
-        _config_settings.validate_mutable_setting(key, value)
-    except ValueError as error:
-        source = f"環境変数{env_name}" if env_value else f"設定キー{key}"
-        next_action = (
-            f"環境変数{env_name}を受理可能書式の値へ直すか解除して再実行する"
-            if env_value
-            else f"`atk config set {key} <VALUE>`で受理可能書式の値へ直して再実行する"
-        )
-        raise _next_action.ActionableError(
-            f"{source}の値が不正です（値: {value}）。{error}", next_action=next_action
-        ) from error
-    return _config_settings.normalize_setting(key, value)
 
 
 def save_mutable_settings(updates: dict[str, str]) -> bool:
@@ -289,16 +245,22 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
     ]
 
 
-def parse_unresolved_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
-    """工程名または直接候補列から候補の3つ組を返す。"""
+def parse_unresolved_model_candidates(
+    model_type: str, *, excluded: dict[tuple[str, str, str], str] | None = None
+) -> list[tuple[str, str, str]]:
+    """工程名または直接候補列を解決する。excludedの指定時は、全滅時も起動側に除外理由を渡す。"""
     if model_type in _config_settings.MODEL_TYPES:
         selected = parse_stage_model_candidates(resolve_mutable_setting(f"{model_type}_model"))
-        return config_usage.select_candidates(
+        candidates, reason = config_usage.select_candidates(
             selected,
             model_type,
             automatic=resolve_mutable_setting("usage_auto_allocation") == "true",
             activity_mode=resolve_mutable_setting("usage_activity_mode"),
-        )[0]
+            excluded=excluded,
+        )
+        if not candidates and excluded is None:
+            raise ValueError(reason)
+        return candidates
     try:
         return parse_stage_model_candidates(model_type)
     except ValueError as error:

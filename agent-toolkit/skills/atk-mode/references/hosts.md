@@ -13,7 +13,7 @@ agent-toolkitを配布する4つのホストで、手順書が分岐に使う差
 | `agents_server`の委譲先への届き方 | 起動の本文（`agent-toolkit:atk-mode/playbooks/subagent.md`と役割文書） | 同左 | 同左 | 同左 |
 | 組み込みの委譲 | `Agent`ツール。SubagentStartの通知で`agent-toolkit:atk-mode/playbooks/subagent.md`を読む（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`） | `spawn_agent`（`agent-toolkit:atk-mode/playbooks/host-codex.md`「ツール名の読み替え」） | 生成した`agents/<役割名>.md`が役割文書を読ませる | agent-toolkitは定義を配らない |
 | `agents_server`のengine名 | `claude` | `codex` | `agy` | `opencode`（`orchestrate_model`には指定できない） |
-| ユーザーへの送達 | `send_to_user`（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ターンの終え方」） | `commentary`と`final`（`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」） | 通常の応答本文 | 通常の応答本文 |
+| ユーザーへの送達 | この会話のツール説明に指定があれば`send_to_user`、それ以外は通常の応答本文（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ツールの入出力」） | `commentary`と`final`（`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」） | 通常の応答本文 | 通常の応答本文 |
 | 構造化質問 | `AskUserQuestion`（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`） | `request_user_input`（Plan mode）、`request_user_input_async`（`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」） | `agent-toolkit:atk-mode/references/choice-construction.md`「質問の形式」の固定形式 | 同左 |
 | 背景実行と待機 | `Bash`の背景実行と完了通知、`atk agents wait`（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「待機中の定期再確認と背景転換」） | `functions.exec`と`functions.wait`・`write_stdin`の二層（`agent-toolkit:atk-mode/playbooks/host-codex.md`「agents_serverの二層待機」） | `atk agents wait`の前景の回収 | 同左 |
 | MCPツールの呼び方 | ツールとして直接呼ぶ | `functions.exec`の中から`tools.mcp__<サーバー名>__<ツール名>(...)`で呼ぶ（`agent-toolkit:atk-mode/playbooks/host-codex.md`「Codex固有の入出力」） | ツールとして直接呼ぶ（`agents_server`と`pyfltr`だけを登録） | 登録しない |

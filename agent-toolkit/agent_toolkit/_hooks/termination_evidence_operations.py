@@ -125,11 +125,11 @@ def _is_completion_playbook(path: pathlib.Path) -> bool:
     return _read_work(path) == COMPLETION_REPORT
 
 
-def _read_works(command: str, cwd: str, response: str) -> list[str]:
+def _read_works(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.CwdResolution, response: str) -> list[str]:
     """シェルのコマンドが現在の全文を返した入口の作業の手順書から、作業の名前を返す。"""
     return [
         work
-        for path in full_reads.shell_full_reads(command, cwd, response, lambda path: _read_work(path) is not None)
+        for path in full_reads.invocation_full_reads(invocation, cwd, response, lambda path: _read_work(path) is not None)
         if (work := _read_work(path)) is not None
     ]
 
@@ -189,17 +189,20 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     if tool_name in ATK_SHELL_TOOLS and isinstance(command, str):
         # Codex・Antigravityはスキルを読取で始めるため、手順書の全文を受け取った読取を起動証拠にする。
         text = full_reads.response_text(payload.get("tool_response")) if codex or is_antigravity_payload(payload) else ""
-        for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else ""):
+        for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else "", effects=True):
+            if not invocation.execution_known:
+                continue
             single = join_words(invocation.segment.tokens)
             item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
+            repository = _invocation_repository(invocation, current) if item_labels else None
             if text and current.resolved:
-                for work in _read_works(single, current.path, text):
+                for work in _read_works(invocation, current, text):
                     if work == COMPLETION_REPORT:
                         records.append({"kind": "completion"})
                     else:
                         item_labels.append(_start_label(work))
+                        repository = _git_root(current.path)
             if item_labels:
-                repository = _invocation_repository(invocation, current)
                 records.append(
                     {"kind": "deliverable", "labels": item_labels, "repository": str(repository) if repository else None}
                 )

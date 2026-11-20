@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from agent_toolkit._atk import config_settings, help_text, usage_allocation
+from agent_toolkit._atk import claude_connection, config_settings, help_text, usage_allocation
 from agent_toolkit._common import registry_index, session_registry, usage_observation
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -69,30 +69,30 @@ def _profile_windows(observed: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def select_candidates(
-    candidates: list[tuple[str, str, str]], role: str, *, automatic: bool, activity_mode: str
+    candidates: list[tuple[str, str, str]],
+    role: str,
+    *,
+    automatic: bool,
+    activity_mode: str,
+    excluded: dict[tuple[str, str, str], str] | None = None,
 ) -> tuple[list[tuple[str, str, str]], str]:
     if not automatic:
         return candidates, "自動配分は無効。通常設定と明示指定を使用する"
     temporary = temporary_settings()
     connection_key = config_settings.connection_order_key("claude", "orchestrator" if role == "orchestrate" else "delegate")
-    connections = (
+    connections = config_settings.parse_connection_order(
         os.environ.get(config_settings.config_env_name(connection_key))
         or temporary.get(connection_key)
         or config_settings.raw_mutable_setting(connection_key)
     )
-    if "payg" in connections.split(","):
-        return candidates, "明示した追加課金接続を優先し、サブスクリプション残量による除外を停止する"
+    if "payg" in connections:
+        return candidates, "明示した追加課金接続を優先し、サブスクリプション残量で候補を並べ替えない"
     observed: dict[str, Any]
     try:
         observed = usage_observation.snapshot()
     except OSError, ValueError, KeyError, TypeError:
         observed = {"windows": [], "rates": {}, "mixed": True}
     windows = [usage_observation.QuotaWindow(**item) for item in _profile_windows(observed)]
-    windows = [
-        window
-        for window in windows
-        if time.time() - window.observed_at <= 600 and (window.resets_at is None or window.resets_at > time.time())
-    ]
     activity = 1.0 if activity_mode == "continuous" else observed.get("activity_ratio", 1.0)
     if not isinstance(activity, (int, float)) or not math.isfinite(activity):
         activity = 1.0
@@ -108,10 +108,23 @@ def select_candidates(
     state = read_settings()
     decisions = state.get("decisions", {})
     previous = decisions.get(role, {}).get("engine") if isinstance(decisions, dict) else None
+
+    def subscription_only() -> bool:
+        return "credits" not in connections or not any(
+            item.kind == "credits" for item in claude_connection.candidates("delegate").connections
+        )
+
     selected, reason = usage_allocation.choose(
-        candidates, role=role, windows=windows, rates=rates, activity_ratio=activity, previous=previous
+        candidates,
+        role=role,
+        windows=windows,
+        rates=rates,
+        activity_ratio=activity,
+        previous=previous,
+        excluded=excluded,
+        subscription_only=subscription_only,
     )
-    if role != "orchestrate" and selected[0][0] != previous:
+    if selected and role != "orchestrate" and selected[0][0] != previous:
         path = settings_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.with_suffix(".lock").open("a+", encoding="utf-8") as lock:
@@ -192,14 +205,19 @@ def dispatch(
         )
     except ValueError as error:
         selected, reason = [], f"候補不足: {error}。config set execute_modelで候補を確認する"
-    print(f"優先順: {','.join(dict.fromkeys(item[0] for item in selected))}。{reason}")
+    engines = ",".join(dict.fromkeys(item[0] for item in selected)) or "なし"
+    print(f"優先順: {engines}。{reason}")
     print("統括: 保存された候補を維持し、通常の利用上限では回復を待つ")
     observed = usage_observation.snapshot()
     visible_windows = _profile_windows(observed)
     for engine in ("claude", "codex"):
         if not any(window["engine"] == engine for window in visible_windows):
             print(f"{engine}: 利用枠は取得不明。config usage --refreshで取得する")
+    effective_windows = set(
+        usage_allocation.current_windows([usage_observation.QuotaWindow(**row) for row in visible_windows], time.time())
+    )
     for window in visible_windows:
+        quota = usage_observation.QuotaWindow(**window)
         remaining = "不明" if window["used_percent"] is None else f"{100 - window['used_percent']:g}%"
         resets = (
             "不明"
@@ -208,12 +226,9 @@ def dispatch(
         )
         sampled = datetime.datetime.fromtimestamp(window["observed_at"], datetime.UTC).astimezone().isoformat()
         label = json.dumps([window["engine"], window["window_id"], window["scope"]], ensure_ascii=False)
-        pace = observed.get("rates", {}).get(usage_observation.rate_key(usage_observation.QuotaWindow(**window)))
+        pace = observed.get("rates", {}).get(usage_observation.rate_key(quota))
         pace_text = "不明" if pace is None else f"{pace:g}ポイント/稼働秒"
-        fresh = time.time() - window["observed_at"] <= 600 and (
-            window["resets_at"] is None or window["resets_at"] > time.time()
-        )
-        validity = "判定対象" if fresh else "過去の観測（現在は取得不明）"
+        validity = "判定対象" if quota in effective_windows else "過去の観測（判定対象外）"
         print(f"{label}: 観測残量={remaining}、回復={resets}、ペース={pace_text}、最終観測={sampled}、{validity}")
     normal = config_settings.load_config()
     model_settings = {
