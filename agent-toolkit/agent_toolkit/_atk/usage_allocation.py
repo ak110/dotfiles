@@ -40,14 +40,14 @@ def _claude_meter(window: QuotaWindow) -> tuple[str, str]:
 
 
 def current_windows(windows: list[QuotaWindow], now: float) -> list[QuotaWindow]:
-    """同じClaude枠の新旧を解決してから期限を見る。最新観測が期限切れでも古い拒否へは戻さない。"""
-    latest: dict[tuple[str, str, str, str], QuotaWindow] = {}
+    """現プロフィールで選別済みの観測から、Claudeの同じ枠・scopeの最新値を選んで期限を見る。"""
+    latest: dict[tuple[str, str, str], QuotaWindow] = {}
     others = []
     for window in windows:
         if window.engine != "claude":
             others.append(window)
             continue
-        key = (window.account, window.contract, *_claude_meter(window))
+        key = (window.account, *_claude_meter(window))
         previous = latest.get(key)
         if previous is None or (window.observed_at, bool(window.claude_limit_reason)) > (
             previous.observed_at,

@@ -89,7 +89,7 @@ def test_roomy_codex_precedes_claude_even_after_claude_was_preferred(monkeypatch
         assert result == ([candidates[1]] if used == 100 else candidates[::-1])
 
 
-@pytest.mark.parametrize("different", ["account", "contract", "window", "model", "surface"])
+@pytest.mark.parametrize("different", ["account", "window", "model", "surface"])
 def test_recovery_only_supersedes_same_claude_window(monkeypatch, different):
     monkeypatch.setattr(usage_allocation.time, "time", lambda: 102.0)
     rejected = QuotaWindow("claude", "a", "seven_day_opus", None, None, 100, scope="model:opus", contract="plan", rejected=True)
@@ -98,7 +98,6 @@ def test_recovery_only_supersedes_same_claude_window(monkeypatch, different):
     )
     other = {
         "account": replace(recovered, account="b"),
-        "contract": replace(recovered, contract="other"),
         "window": replace(recovered, window_id="weekly_all", scope="all"),
         "model": replace(recovered, scope='{"model":{"display_name":"Sonnet"}}'),
         "surface": replace(recovered, scope='{"surface":{"display_name":"Code"}}'),

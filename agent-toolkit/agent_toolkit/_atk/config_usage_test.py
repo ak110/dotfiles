@@ -136,6 +136,37 @@ def test_latest_claude_window_controls_allocation(
     assert decision().startswith("優先順: claude。")
 
 
+@pytest.mark.parametrize(
+    "active_plan,report_plan,expected_order",
+    [("pro", "max", "なし"), ("max", "max", "claude"), ("unknown:current", "unknown:report", "claude")],
+)
+def test_weekly_recovery_after_plan_change(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    active_plan: str,
+    report_plan: str,
+    expected_order: str,
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:opus/low")
+    monkeypatch.setattr(usage_refresh, "enabled", lambda: True)
+    usage_settings.record_metadata("claude", {"account": "account", "contract": "pro"})
+    usage_refresh.record_claude_event({"status": "rejected", "rateLimitType": "seven_day"})
+    monkeypatch.setattr(config_usage.time, "time", lambda: 101.0)
+    usage_settings.record_metadata("claude", {"contract": active_plan})
+    usage_refresh.record_claude_report(
+        {"rate_limits": {"limits": [{"kind": "weekly_all", "percent": 0}]}}, contract=report_plan
+    )
+    assert _main(tmp_path, "config", "usage") == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith(f"優先順: {expected_order}。")
+    active = [line for line in lines if line.endswith("、判定対象")]
+    assert len(active) == 1
+    assert ("seven_day" if active_plan == "pro" else "weekly_all") in active[0]
+
+
 def test_claude_only_at_limit_shows_no_candidate_unless_api_connection_available(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

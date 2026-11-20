@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import time
 from typing import Any
@@ -310,18 +311,44 @@ async def test_tight_claude_prefers_available_codex(tmp_path: pathlib.Path, monk
         assert "excluded_candidates" not in response
 
 
-@pytest.mark.asyncio
-@pytest.mark.usefixtures("claude_allocation")
-async def test_recovered_weekly_subscription_starts_claude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture(params=["plan", "", "unknown:previous", None], ids=["known", "empty", "unknown", "auth-null"])
+def recovered_weekly_subscription(
+    claude_allocation: None, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    del claude_allocation
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
-    usage_settings.record_metadata("claude", {"account": "test", "contract": "plan"})
     assert usage_refresh.enabled(force=True)
+    report = {"rate_limits": {"limits": [{"kind": "weekly_all", "percent": 0}]}}
     now = time.time()
     with monkeypatch.context() as clock:
+        clock.setattr(time, "time", lambda: now - 2)
+        if request.param is None:
+
+            async def read_codex(*_args):
+                return {}
+
+            def read_claude(argv, **_kwargs):
+                auth = {"loggedIn": True, "email": "test@example.test", "subscriptionType": None}
+                body = auth if "auth" in argv else {"usage_report": report}
+                return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(body))
+
+            clock.setattr(usage_refresh.codex_models, "with_app_server", read_codex)
+            clock.setattr(usage_refresh.process_tree, "run_with_timeout", read_claude)
+            assert not usage_refresh.refresh(quiet=True)
+        else:
+            usage_settings.record_metadata("claude", {"account": "test", "contract": request.param})
         clock.setattr(time, "time", lambda: now - 1)
         usage_refresh.record_claude_event({"status": "rejected", "rateLimitType": "seven_day"})
         clock.setattr(time, "time", lambda: now)
-        usage_refresh.record_claude_report({"rate_limits": {"limits": [{"kind": "weekly_all", "percent": 0}]}})
+        if request.param is None:
+            assert not usage_refresh.refresh(quiet=True)
+        else:
+            usage_refresh.record_claude_report(report)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("recovered_weekly_subscription")
+async def test_recovered_weekly_subscription_starts_claude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = agents_server_support.FakeClaudeClient(
         [[agents_server_support.SystemMessage("recovered"), agents_server_support.ResultMessage("完了")]]
     )
