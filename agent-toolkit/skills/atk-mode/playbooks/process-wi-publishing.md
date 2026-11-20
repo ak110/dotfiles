@@ -160,6 +160,8 @@
 ## 完了報告と終了
 
 1. 単独のメインは公開工程の検収後に`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「報告前に確かめる保存状態」を実行し、現在のキュー・再開記録・レーンの最終化との一致を確かめる。
+   保存済みのレーン計画と会話記録を使い、`agent-toolkit:atk-mode/references/review-session-cost.md`「レーンの保存済み統計」の集計結果と基準との差を既存の作業記録に残す。
+   委譲した場合は担当の返却にある結果を再利用する。
    その後`agent-toolkit:atk-mode/playbooks/report-completion.md`へ進んで、成果・検証・公開結果・未達を同じ作業完了報告へまとめる。
 2. 終了前にも選定の原本へ`atk run-script pick-wi-check -- <選定YAMLの絶対パス> --require-integrated`を実行し、公開後の追加や再開で未統合へ戻った項目が無いかを確かめる。
    未統合があれば残工程を続け、正当な延期だけを対象・理由・解除条件・再開先に対応付ける。
