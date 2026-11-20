@@ -7,8 +7,10 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import pytilpack.jsonc
 
 from pytools._internal import common
 from pytools._internal import update_claude_settings as mod
@@ -289,12 +291,53 @@ class TestHomePlaceholder:
 
 
 class TestJsoncCommentPreservation:
-    """JSONCコメント維持経路のテスト。
+    """既存のJSONCに対する設定更新と文字コードの維持を検証する。"""
 
-    既存パスの値置換のみで済む更新は`pytilpack.jsonc.edit`経由で書き戻され、
-    ユーザーが加えた行コメント・空行・独自インデントを維持する。
-    構造変化（キー追加・list変更）を含む更新は現行の`json.dumps`経路にフォールバックする。
-    """
+    @pytest.mark.parametrize("platform", ["linux", "win32"])
+    @pytest.mark.parametrize("previous", [None, 30], ids=["missing", "30-days"])
+    def test_run_updates_history_retention(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pytestconfig: pytest.Config, platform: str, previous: int | None
+    ) -> None:
+        """配布原本を新規適用し、旧設定への再適用ではコメントと独自設定を保って180日にする。"""
+        path = tmp_path / "settings.json"
+        monkeypatch.setattr(mod, "_SETTINGS_PATH", path)
+        monkeypatch.setattr(mod, "_CONFIG_PATH", tmp_path / "claude.json")
+        monkeypatch.setattr(common, "find_dotfiles_root", lambda: pytestconfig.rootpath)
+        monkeypatch.setattr(mod, "sys", SimpleNamespace(platform=platform))
+        assert mod.run().changed
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        days = settings.pop("cleanupPeriodDays")
+        assert isinstance(days, int) and days == 180
+        if previous is not None:
+            settings["cleanupPeriodDays"] = previous
+        prefix = '/* { "cleanupPeriodDays": 10 } */\n'
+        theme = '  // テーマを選んだ理由\n  "theme": "dark",'
+        source = prefix + json.dumps(settings, indent=2).removesuffix("\n}") + ",\n" + theme + "\n}\n"
+        path.write_text(source, encoding="utf-8-sig")
+
+        assert mod.run().changed
+        written = path.read_bytes()
+        assert written.startswith(codecs.BOM_UTF8)
+        text = path.read_text(encoding="utf-8-sig")
+        assert prefix in text
+        assert theme in text
+        assert pytilpack.jsonc.loads(text) == {**settings, "theme": "dark", "cleanupPeriodDays": 180}
+        assert not mod.run().changed
+        assert path.read_bytes() == written
+
+    def test_add_to_empty_jsonc(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180})
+        path.write_bytes(b"// {\r\n{\r\n  /* empty */\r\n}\r\n")
+        assert mod.run().changed
+        assert path.read_bytes() == b'// {\r\n{\r\n  "cleanupPeriodDays": 180\r\n  /* empty */\r\n}\r\n'
+
+    def test_run_leaves_invalid_jsonc_untouched(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180})
+        source = b'{\n  // incomplete value\n  "theme":\n}\n'
+        path.write_bytes(source)
+        with pytest.raises(json.JSONDecodeError):
+            mod.run()
+        assert path.read_bytes() == source
 
     @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
     @pytest.mark.parametrize("add_key", [False, True], ids=["scalar", "full-rewrite"])

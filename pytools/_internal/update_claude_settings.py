@@ -14,8 +14,9 @@ import sys
 import typing
 from pathlib import Path
 
-# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import pytilpack.jsonc
+lazy from pygments.lexers.data import JsonLexer
+lazy from pygments.token import Punctuation
 
 from pytools._internal import (
     common,
@@ -358,7 +359,8 @@ def update_claude_settings(
 
     # settings.jsonはJSONC形式（コメント・末尾カンマ許容）で書かれる場合があるため
     # `pytilpack.jsonc.loads`でパースする。純JSONも受理する。
-    data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8-sig")) if settings_path.exists() else {}
+    source = settings_path.read_text(encoding="utf-8", newline="") if settings_path.exists() else None
+    data = pytilpack.jsonc.loads(re.sub(r"\r\n?", "\n", source.removeprefix("\ufeff"))) if source is not None else {}
 
     original = copy.deepcopy(data)
     if strip_legacy_codex_timeout:
@@ -377,12 +379,29 @@ def update_claude_settings(
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    if not common.write_settings_hybrid(settings_path, original, data, tag=short, preserve_bom=True):
+    key = "cleanupPeriodDays"
+    if source is not None and key not in original and data == {**original, key: managed.get(key)}:
+        updated = _insert_root_setting(source, key, data[key], has_members=bool(original))
+        written = common.atomic_write_bytes(settings_path, updated.encode("utf-8"), tag=short)
+    else:
+        written = common.write_settings_hybrid(settings_path, original, data, tag=short, preserve_bom=True)
+    if not written:
         return None
     logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):
         logger.info(line)
     return True
+
+
+def _insert_root_setting(source: str, key: str, value: object, *, has_members: bool) -> str:
+    """jsonc.editでは追加できないキーを、解析済みのオブジェクトの開き括弧の直後へ挿入する。"""
+    # 行コメントはLFまで。CRだけの改行も位置をずらさず字句解析し、編集には元の文字列を使う。
+    tokens = JsonLexer().get_tokens_unprocessed(source.replace("\r", "\n"))
+    start = next(offset for offset, token, _ in tokens if token is Punctuation) + 1
+    rest = source[start:]
+    indent = rest[: len(rest) - len(rest.lstrip())]
+    entry = f"{json.dumps(key)}: {json.dumps(value)}"
+    return source[:start] + indent + entry + ("," if has_members else "") + rest
 
 
 def _strip_legacy_codex_timeout(data: dict) -> None:
