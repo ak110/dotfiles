@@ -218,10 +218,12 @@ class TestTargets:
 
         monkeypatch.setattr(_warmup, "_check_startup", startup)
         monkeypatch.setenv("DOTFILES_PRUNE_READY_FILE", str(tmp_path / "update-one"))
+        monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(tmp_path / "bootstrap-one.json"))
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
         assert len(started) == 1
 
         monkeypatch.setenv("DOTFILES_PRUNE_READY_FILE", str(tmp_path / "update-two"))
+        monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(tmp_path / "bootstrap-two.json"))
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
         assert len(started) == 1
 
