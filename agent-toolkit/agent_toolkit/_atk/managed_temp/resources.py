@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 import pathlib
@@ -122,6 +123,14 @@ def _git_protected(path: pathlib.Path, root: pathlib.Path) -> tuple[bool, pathli
     return False, path.parent
 
 
+def _transient_error(error: OSError | subprocess.SubprocessError) -> bool:
+    """消滅・使用中の競合は手動の対処を求めずに次回の掃引へ回す。"""
+    return isinstance(error, OSError) and (
+        error.errno in {errno.ENOENT, errno.EBUSY, errno.EAGAIN, errno.ENOTEMPTY}
+        or getattr(error, "winerror", None) in {32, 33}  # 共有違反・ロック違反
+    )
+
+
 def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pathlib.Path] | None]) -> dict[str, Any]:
     """所有・消費終了を確定した領域の環境を回収し、保持理由も同じ結果へ返す。
 
@@ -140,6 +149,7 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
         parent = pathlib.Path(directory)
         for name in children[:]:
             path = parent / name
+            regenerable = False
             try:
                 metadata = path.lstat()
                 if name == ".git":
@@ -151,7 +161,8 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
                         {"path": str(path), "reason": "リンク先の所有と再生成指定を確認しない", "retryable": False}
                     )
                     continue
-                if not _regenerable(path):
+                regenerable = _regenerable(path)
+                if not regenerable:
                     if name in {".venv", "node_modules", "target"} or (path / "pyvenv.cfg").exists():
                         children.remove(name)
                         result["retained"].append({"path": str(path), "reason": "再生成の前提が未確認", "retryable": True})
@@ -185,5 +196,12 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
                 shutil.rmtree(path)
                 result["removed"].append(str(path))
             except (OSError, subprocess.SubprocessError) as error:
-                result["retained"].append({"path": str(path), "reason": f"回収失敗: {error}", "retryable": True})
+                result["retained"].append(
+                    {
+                        "path": str(path),
+                        "reason": f"回収失敗: {error}",
+                        "retryable": True,
+                        "failed": regenerable and not _transient_error(error),
+                    }
+                )
     return result

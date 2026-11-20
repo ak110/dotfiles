@@ -3,13 +3,15 @@
 
 # pylint: disable=protected-access
 
+import errno
 import io
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from agent_toolkit._atk.managed_temp import resources
+from agent_toolkit._atk.managed_temp import paths, resources
 from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 
 from pytools import post_apply
@@ -57,16 +59,23 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     monkeypatch.setattr(plugin_environment, "record_source", lambda *args: None)
     monkeypatch.setattr(plugin_warmup.session_review, "sweep", lambda **kwargs: None)
 
-    def sweep(**_kwargs):
-        resources.log_retained(
-            [
-                {"path": "resource-key", "reason": "使用中", "retryable": True},
-                {"path": "protected", "reason": "原本", "retryable": False},
-            ]
-        )
-        return plugin_warmup.sweep.SweepResult([tmp_path / "deleted-key"], ((tmp_path / "locked-key", "使用中"),))
+    area = paths.temp_root() / "cleanup-test"
+    for name in ("deleted-key", "busy-key", "denied-key"):
+        cache = area / name
+        cache.mkdir(parents=True)
+        (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n", encoding="ascii")
+    (area / "protected").symlink_to(current, target_is_directory=True)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    remove_tree = resources.shutil.rmtree
 
-    monkeypatch.setattr(plugin_warmup.sweep, "sweep_managed_temp", sweep)
+    def remove(cache: Path) -> None:
+        if cache.name == "denied-key":
+            raise PermissionError(errno.EACCES, "access denied", str(cache))
+        if cache.name == "busy-key":
+            raise OSError(errno.EBUSY, "resource busy", str(cache))
+        remove_tree(cache)
+
+    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=remove))
 
     with post_apply._configure_logging():
         plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([["python", "--project", "root"]]))
@@ -76,9 +85,12 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     assert "update-dotfiles logs" in screen
     saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
     assert "一時資源1件の回収を保留" in screen
-    for detail in ("再生成物1件", "保護対象を回収から除外", "一時資源を1件回収"):
+    assert "削除権限" in captured.err
+    assert f"一時資源の回収を保留: {area / 'denied-key'}" in saved
+    assert f"一時資源の回収を保留: {area / 'busy-key'}" not in saved
+    for detail in ("再生成物2件", "保護対象を回収から除外", "一時資源を1件回収", "resource busy", "access denied"):
         assert detail not in screen and detail in saved
-    for name in (current.name, old.name, broken.name, "resource-key", "deleted-key", "locked-key"):
+    for name in (current.name, old.name, broken.name, "busy-key", "deleted-key", "denied-key"):
         assert name not in screen and name in saved
 
 

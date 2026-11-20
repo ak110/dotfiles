@@ -13,11 +13,12 @@ import stat
 import subprocess
 import sys
 import typing
+from types import SimpleNamespace
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.managed_temp import paths, permissions, sweep
+from agent_toolkit._atk.managed_temp import paths, permissions, resources, sweep
 from agent_toolkit._common import file_lock, plugin_root_leases, state_paths
 
 pytestmark = pytest.mark.windows
@@ -108,6 +109,21 @@ def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None
     later = _NOW + datetime.timedelta(days=1)
     assert area in managed_temp.sweep_managed_temp(now=later).deleted
     assert not record.exists()
+
+
+def test_expired_parent_reclaims_failed_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """キャッシュ単体の削除に失敗しても、同じ掃引で親ごと回収した対象には対処を求めない。"""
+    area = _area("expired-cache", days=8, files={"cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+
+    def refuse(cache: pathlib.Path) -> None:
+        raise PermissionError(f"削除権限がない: {cache}")
+
+    monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=refuse))
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert area in result.deleted
+    assert not area.exists()
+    assert not result.failed
 
 
 @pytest.mark.skipif(

@@ -66,7 +66,7 @@ class SweepResult(typing.NamedTuple):
     deleted: list[pathlib.Path]
     """自動削除したパス。"""
     failed: tuple[tuple[pathlib.Path, str], ...]
-    """期限切れでも削除できなかった対象と理由。次の掃引（1日後）に再試行する。"""
+    """再生成物や期限切れの対象の回収で対処を要する失敗とその理由。次の掃引で再試行する。"""
     pressure: SpacePressure | None = None
     """空きが下限を割った起動の回収結果。空きが下限以上の通常時はNone。"""
 
@@ -606,6 +606,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             ):
                 cleaned = resources.cleanup_regenerable(child, references=references)
                 deleted.extend(pathlib.Path(path) for path in cleaned["removed"])
+                failed.extend((pathlib.Path(row["path"]), row["reason"]) for row in cleaned["retained"] if row.get("failed"))
                 resources.log_retained(cleaned["retained"])
             if _examine(state_root, child, metadata, cutoff_ns, now_ns, protected_sessions, deleted):
                 deleted.append(child)
@@ -613,6 +614,10 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             if os.path.lexists(child):
                 failed.append((child, _failure_reason(error)))
     pressure = _reclaim_for_space(state_root, temp_root, now_ns, protected_sessions, deleted, failed)
+    if failed and deleted:
+        # 再生成物の回収に失敗しても、続く期限・空き容量の掃引で親ごと回収できれば対処は不要。
+        removed = set(deleted)
+        failed = [(path, reason) for path, reason in failed if path not in removed and removed.isdisjoint(path.parents)]
     with contextlib.suppress(OSError):
         _sweep_legacy_state(state_root)
     _save_sweep_time(state_root, now_ns)
