@@ -113,6 +113,45 @@ def test_reuse_requires_unchanged_execution_state(monkeypatch, tmp_path, changed
     assert (reused is not None) == (changed is None)
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+def test_reuse_rejects_dirty_submodule_and_legacy_clean_record(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """実測時と再利用時の両方でサブモジュールを検査し、旧判定で保存された成功は再利用しない。"""
+    source = git_repository.init_repository(tmp_path / "module", files={"tracked": "基準\n"}, commit_message="基準")
+    repo = git_repository.init_repository(tmp_path / "repo", commit_message="初期状態")
+    git_repository.run_git(repo, "-c", "protocol.file.allow=always", "submodule", "add", str(source), "sub")
+    git_repository.commit_all(repo, "サブモジュールを登録")
+    git_repository.run_git(repo, "config", "diff.ignoreSubmodules", "all")
+    child_file = repo / "sub" / "tracked"
+    argv = [sys.executable, "-c", "print('verification completed')"]
+    output_paths = (tmp_path / "dirty-record", tmp_path / "clean-record")
+    for output in output_paths:
+        output.mkdir()
+    outputs = iter(output_paths)
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: next(outputs))
+
+    child_file.write_text("未保存\n", encoding="utf-8")
+    observed, code, failure = run_command.execute(argv, repo, 30)
+    assert code == 0 and failure is None
+    child_file.write_text("基準\n", encoding="utf-8")
+    assert run_command.reusable_success(pathlib.Path(observed["record_path"]), argv, repo) is None
+    assert observed["git_status"] and observed["execution_conditions"] is None
+
+    clean, code, failure = run_command.execute(argv, repo, 30)
+    assert code == 0 and failure is None
+    record_path = pathlib.Path(clean["record_path"])
+    assert run_command.reusable_success(record_path, argv, repo) is not None
+    child_file.write_text("再利用前の未保存\n", encoding="utf-8")
+    assert run_command.reusable_success(record_path, argv, repo) is None
+    assert child_file.read_text(encoding="utf-8") == "再利用前の未保存\n"
+    child_file.write_text("基準\n", encoding="utf-8")
+
+    previous = json.loads(record_path.read_text(encoding="utf-8"))
+    previous["execution_conditions"]["version"] = 6
+    legacy_path = tmp_path / "legacy-success.json"
+    legacy_path.write_text(json.dumps(previous), encoding="utf-8")
+    assert run_command.reusable_success(legacy_path, argv, repo) is None
+
+
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
 @pytest.mark.parametrize("exit_code", [0, 7])
 def test_execute_reports_running_state_to_human_terminal(monkeypatch, tmp_path, capsys, agent, exit_code):
