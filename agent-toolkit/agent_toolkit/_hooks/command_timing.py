@@ -12,7 +12,7 @@ import re
 import time
 
 from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS
+from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_wait_command, is_atk_command, split_words
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import formatter, informational
@@ -20,6 +20,67 @@ from agent_toolkit._hooks.notice import formatter, informational
 STATE_KEY = "command_timing"
 _notice = formatter("command-timing")
 _NOTIFICATIONS = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
+_SHELL_SYNTAX = frozenset(";&|<>(){}*?[]#~!")
+_POWERSHELL_LITERAL_WORDS = re.compile(r"[-A-Za-z0-9_./:= \t]+")
+
+
+def _wait_only(tool_input: object, *, powershell: bool) -> bool:
+    """既知の待機を直接1回起動すると確定できる場合だけ集計から除く。"""
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if not isinstance(command, str) or ("wait" not in command and "watch" not in command):
+        return False
+    if "\n" in command or "\r" in command:
+        return False
+    if powershell:
+        # PowerShellの引用・展開はBashの分割器で推測しない。
+        return _POWERSHELL_LITERAL_WORDS.fullmatch(command) is not None and _wait_program(tuple(command.split()))
+    try:
+        words = split_words(command)
+    except ValueError:
+        return False
+    if any(word.expansion or not _SHELL_SYNTAX.isdisjoint(word.unquoted) for word in words):
+        return False
+    return _wait_program(tuple(words))
+
+
+def _wait_program(tokens: tuple[str, ...]) -> bool:
+    """既知のコマンドのうち、外部の完了を待つ実行形だけを識別する。"""
+    if not tokens or "-h" in tokens or "--help" in tokens:
+        return False
+    if is_agents_wait_command(tokens):
+        return True
+    if is_atk_command(tokens) and tokens[1:3] == ("run-script", "wait-ci"):
+        options = {token.split("=", 1)[0] for token in tokens[3:]}
+        return "--write-baseline" not in options and bool(options & {"--baseline", "--wait-sha"})
+    name = tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return name in {"gh", "gh.exe"} and _gh_wait(tokens[1:])
+
+
+def _gh_wait(subcommands: tuple[str, ...]) -> bool:
+    """サブコマンドより前のリポジトリ指定を除き、待機を要求する実行形を比べる。"""
+    while subcommands:
+        option = subcommands[0]
+        if option in {"-R", "--repo"}:
+            if len(subcommands) < 2:
+                return False
+            subcommands = subcommands[2:]
+        elif option.startswith(("--repo=", "-R")):
+            subcommands = subcommands[1:]
+        else:
+            break
+    operation = subcommands[:2]
+    if operation == ("run", "watch"):
+        return True
+    if operation != ("pr", "checks"):
+        return False
+    arguments = subcommands[2:]
+    if "--" in arguments:
+        arguments = arguments[: arguments.index("--")]
+    for word in reversed(arguments):
+        key, assignment, value = word.partition("=")
+        if key == "--watch":
+            return not assignment or value.lower() in {"true", "t", "1"}
+    return False
 
 
 def start(payload: dict) -> None:
@@ -32,12 +93,13 @@ def start(payload: dict) -> None:
         return
     actor = resolve_hook_agent_id(payload)
     now = time.time()
+    wait_only = _wait_only(payload.get("tool_input"), powershell=payload.get("tool_name") == "PowerShell")
 
     def record(state: dict) -> dict:
         actors = state.setdefault(STATE_KEY, {})
         current = actors.setdefault(actor, {"calls": {}, "recent": [], "kind": "", "notified": False})
         calls = current["calls"]
-        calls.setdefault(identifier, {"started": now})
+        calls.setdefault(identifier, {"started": now, "wait_only": wait_only})
         return state
 
     update_state(session, record)
@@ -124,17 +186,19 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
         if seconds is None:
             seconds = now - started if isinstance(started, (float, int)) and now >= started else None
             kind = "観測経過時間（権限待ち等を含み得る）"
+        wait_only = call.get("wait_only") is True
         call.clear()
         call["done"] = True
-        slow = seconds is not None and seconds >= REVIEW_SECONDS
-        if current["kind"] != kind or not slow:
-            current.update({"kind": kind, "recent": [], "notified": False})
-        if slow:
-            current["recent"] = [*current["recent"], seconds][-3:]
         review = []
-        if len(current["recent"]) == 3 and not current["notified"]:
-            current["notified"] = True
-            review = list(current["recent"])
+        if not wait_only:
+            slow = seconds is not None and seconds >= REVIEW_SECONDS
+            if current["kind"] != kind or not slow:
+                current.update({"kind": kind, "recent": [], "notified": False})
+            if slow:
+                current["recent"] = [*current["recent"], seconds][-3:]
+            if len(current["recent"]) == 3 and not current["notified"]:
+                current["notified"] = True
+                review = list(current["recent"])
         result.append((kind, seconds, review))
         return state
 
@@ -158,7 +222,7 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
                     subject=f"{actor}:{identifier}:review",
                     fix=(
                         "現行の目的、直接影響範囲、直近の結果から、範囲の限定・結果の再利用・重複実行の省略・短い確認手段を比べよ。"
-                        "必要な全体検証、修正後の再検証、CI待機の品質は保って続けよ。"
+                        "必要な全体検証、修正後の再検証、CI待機は省かない。"
                     ),
                 )
             )
