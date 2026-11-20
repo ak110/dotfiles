@@ -72,19 +72,30 @@ _ANSWER = {
     "message": {"content": [{"type": "tool_result", "tool_use_id": "q", "content": ""}]},
     "toolUseResult": {"questions": [{"question": "文体は？"}], "answers": {"文体は？": "敬体"}, "annotations": {}},
 }
+_REJECTED = {
+    **_result("q", error=True, content="The user doesn't want to proceed with this tool use."),
+    "toolUseResult": "User rejected tool use",
+}
 
 
 @pytest.mark.parametrize("preface", [False, True])
 @pytest.mark.parametrize("closing", ["", "…"])
-@pytest.mark.parametrize("denial", [None, "user-rejected", "interrupted"])
-def test_stop_while_waiting_for_answer(preface: bool, closing: str, denial: str | None, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    "after_question",
+    [
+        [],
+        [{**_REJECTED, "toolDenialKind": "user-rejected"}],
+        [{**_result("q", error=True, content="[Request interrupted by user for tool use]"), "toolDenialKind": "interrupted"}],
+        [_REJECTED],
+        [_result("other")],
+    ],
+    ids=["pending", "rejected", "interrupted", "rejected-without-kind", "unrelated-result"],
+)
+def test_stop_while_waiting_for_answer(preface: bool, closing: str, after_question: list[dict], tmp_path: pathlib.Path) -> None:
     entries = [_HUMAN]
     if preface:
         entries.extend([_SEND, _result()])
-    entries.append(_QUESTION)
-    if denial:
-        message = "User rejected tool use" if denial == "user-rejected" else "[Request interrupted by user for tool use]"
-        entries.append({**_result("q", error=True, content=message), "toolDenialKind": denial})
+    entries.extend([_QUESTION, *after_question])
     if closing:
         entries.append(_text(closing))
     result = _stop(entries, tmp_path, last_assistant_message=closing)
@@ -103,16 +114,19 @@ def test_answer_requires_a_response_after_the_question(preface: bool, answer: di
 
 
 @pytest.mark.parametrize(
-    "followup",
+    "followup,closing",
     [
-        [_text("読書会へぜひご参加ください。")],
-        [_call(_SEND_TO_USER, "s2", {"message": "読書会へぜひご参加ください。"}), _result("s2")],
-        [_call("AskUserQuestion", "q2", {"questions": [{"question": "何時に開始しますか？"}]})],
+        ([], "読書会へぜひご参加ください。"),
+        ([_call(_SEND_TO_USER, "s2", {"message": "読書会へぜひご参加ください。"}), _result("s2")], "…"),
+        ([_call("AskUserQuestion", "q2", {"questions": [{"question": "何時に開始しますか？"}]})], ""),
     ],
     ids=["body", "delivery", "next-question"],
 )
-def test_visible_response_or_new_question_after_an_answer(followup: list[dict], tmp_path: pathlib.Path) -> None:
-    result = _stop([_HUMAN, _QUESTION, _ANSWER, *followup, _text("…")], tmp_path, last_assistant_message="…")
+def test_visible_response_or_new_question_after_an_answer(followup: list[dict], closing: str, tmp_path: pathlib.Path) -> None:
+    entries = [_HUMAN, _QUESTION, _ANSWER, *followup]
+    if closing:
+        entries.append(_text(closing))
+    result = _stop(entries, tmp_path, last_assistant_message=closing)
     assert "decision" not in result
     assert "user_response_advisor" not in result.get("hookSpecificOutput", {}).get("additionalContext", "")
 
