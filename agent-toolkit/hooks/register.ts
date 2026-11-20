@@ -22,18 +22,29 @@ async function isDelegated($: EngineInterface): Promise<boolean> {
   return (await $.env.get("AGENT_TOOLKIT_DELEGATED_SESSION")) === "1" || Boolean(await $.env.get("AGENT_TOOLKIT_OWNER_SESSION"));
 }
 
+async function isTerminalMain($: EngineInterface): Promise<boolean> {
+  return (await $.session.surfaces()).includes("terminal") && !(await isDelegated($));
+}
+
 export const register: Register = (on) => {
   const usageLimitSession = { delegated: true, backgroundChanged: false, processLoop: false };
   // MCPはmodの無い会話にも同じツールを公開する。画面を持つmodが、その会話の説明だけを初期公開する。
   on("tool.describe", { tool: "mcp__plugin_agent-toolkit_agents_server__send_to_user" }, async ($, e, next) => {
     const result = await next(e);
-    if (!(await $.session.surfaces()).includes("terminal") || await isDelegated($)) return result;
+    if (!(await isTerminalMain($))) return result;
     return {
       ...result,
       description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話をこのツールのmessageで送る。" +
         turnEndAfterDelivery + "表示先が使えない時は通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
       isDeferred: false,
     };
+  });
+  // Code Modeのツール探索はtool.describeの指定を返さないため、現在の入力にも添える。
+  on("prompt.submit", async ($, e, next) => {
+    if (!(await isTerminalMain($))) return next(e);
+    const notice = "この入力への着手・進捗・完了報告は`send_to_user`で送る。回答を求める質問は`AskUserQuestion`で尋ねる。" +
+      "ツールが無い時や表示に失敗した時は通常の本文で伝える。最後の送達後は`…`だけで閉じる。";
+    return next({ ...e, context: [...(e.context ?? []), notice] });
   });
   on("session.start", async ($, e, next) => {
     usageLimitSession.delegated = await isDelegated($);
