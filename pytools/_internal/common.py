@@ -487,21 +487,8 @@ def _collect_value_only_updates(
     latest: object,
     path: tuple[str | int, ...] = (),
 ) -> dict[Sequence[str | int], object] | None:
-    """既存パスの値置換のみで済む差分を収集する。
-
-    `pytilpack.jsonc.edit` が扱える更新（既存パスの値書き換え）のみで
-    ``original`` から ``updated`` への変化を再現できる場合、
-    最新の設定でも同じ型のスカラーを指すパスと、まだ反映されていない新値を返す。
-    構造変化（片方のみに存在するキー・list全体の差し替え・型変化）を
-    検出した場合は ``None`` を返し、呼び出し元にフォールバック（全書き換え）を促す。
-    ``list`` は要素同一（順序含む）でなければ構造変化として扱う。
-    """
-    if type(original) is not type(updated):
-        return None
-    if type(latest) is not type(updated):
-        return {} if original == updated else None
-    if isinstance(original, dict):
-        assert isinstance(updated, dict) and isinstance(latest, dict)
+    """保存直前のJSONCに適用するスカラー置換を集める。構造変更が必要ならNoneを返す。"""
+    if isinstance(original, dict) and isinstance(updated, dict) and isinstance(latest, dict):
         original_dict = cast("dict[str | int, object]", original)
         updated_dict = cast("dict[str | int, object]", updated)
         if original_dict.keys() != updated_dict.keys():
@@ -513,9 +500,10 @@ def _collect_value_only_updates(
                 return None
             result.update(sub)
         return result
-    if updated in (original, latest):
+    # JSONの数値は表記によらず比較する。Pythonと違い、JSONのtrueと1は別の値。
+    if any(value == updated and isinstance(value, bool) == isinstance(updated, bool) for value in (original, latest)):
         return {}
-    if isinstance(original, list):
+    if any(isinstance(value, (dict, list)) for value in (original, updated, latest)):
         return None
     return {path: updated}
 
@@ -575,7 +563,7 @@ def write_settings_hybrid(
             edited = _insert_root_setting(source, insert_key, value, has_members=bool(latest))
         base = {**original, insert_key: latest.get(insert_key, value)}
 
-    updates = {} if base == data else _collect_value_only_updates(base, data, latest)
+    updates = _collect_value_only_updates(base, data, latest)
     if updates is not None:
         with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
             if updates:

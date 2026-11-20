@@ -333,19 +333,37 @@ class TestJsoncCommentPreservation:
                 '{ "cleanupPeriodDays": 180, /* new reason */ "theme": "light", "limit": 9 }',
             ),
             (
+                '{ /* new reason */ "theme": "light", "limit": 6.0 }',
+                '{ "cleanupPeriodDays": 180, /* new reason */ "theme": "light", "limit": 9 }',
+            ),
+            (
+                '{ /* new reason */ "theme": "light", "limit": 6E+0, "cleanupPeriodDays": 3e1 }',
+                '{ /* new reason */ "theme": "light", "limit": 9, "cleanupPeriodDays": 180 }',
+            ),
+            (
                 '{ /* keep */ "cleanupPeriodDays": 180, "extra": {}, "limit": 6 }',
                 '{ /* keep */ "cleanupPeriodDays": 180, "extra": {}, "limit": 9 }',
             ),
             (
-                '{ /* already saved */ "cleanupPeriodDays": 180, "limit": 9 }',
-                '{ /* already saved */ "cleanupPeriodDays": 180, "limit": 9 }',
+                '{ /* already saved */ "cleanupPeriodDays": 180.0, "limit": 9e0 }',
+                '{ /* already saved */ "cleanupPeriodDays": 180.0, "limit": 9e0 }',
             ),
             ('{ "limit": {"user": true} }', None),
             ('{ "cleanupPeriodDays": {"user": true}, "limit": 6 }', None),
             ('{ "renamed": 6 }', None),
             ('{ "theme":', None),
         ],
-        ids=["user-save", "days-already-set", "both-already-set", "changed-type", "days-object", "renamed", "invalid"],
+        ids=[
+            "user-save",
+            "decimal",
+            "exponent",
+            "days-already-set",
+            "both-already-set",
+            "changed-type",
+            "days-object",
+            "renamed",
+            "invalid",
+        ],
     )
     def test_run_merges_only_pending_changes_into_latest_save(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, latest: str, expected: str | None
