@@ -53,8 +53,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     for command in commands:
         paths.extend((Path(command[0]), Path(command[1])))
         paths.append(Path(command[command.index("--project") + 1]) if "--project" in command else Path(command[-1]))
-    # 更新実行IDはログの対応付け専用であり、毎回変わってもMCPの起動条件を変えない。
-    startup_environment = sorted((name, value) for name, value in os.environ.items() if name != "UPDATE_DOTFILES_RUN_ID")
+    # 更新側のログ対応付けと後続の整理に使う値は、管理サービスの起動条件に含めない。
+    update_markers = {"UPDATE_DOTFILES_RUN_ID", "DOTFILES_PRUNE_READY_FILE"}
+    startup_environment = sorted((name, value) for name, value in os.environ.items() if name not in update_markers)
     key = post_apply_cache.fingerprint(paths, values=[repr(commands), repr(startup_environment)])
     # 昇格したプロセスが起動した管理サービスが受付先になると、同じユーザーの非昇格の会話は接続を認証できない。
     # 起動確認を省略した回は起動条件を記録せず、次の非昇格の実行で起動確認と公開を行う。

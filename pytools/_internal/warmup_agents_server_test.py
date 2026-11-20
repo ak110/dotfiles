@@ -202,6 +202,33 @@ class TestElevated:
 class TestTargets:
     """ウォームアップ対象の列挙。"""
 
+    def test_update_marker_is_not_a_service_startup_input(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """再実行の整理用の印だけが変わっても、同じサービスの起動確認を繰り返さない。"""
+        _setup(monkeypatch, tmp_path)
+        monkeypatch.setattr(_warmup.post_apply_cache, "record_path", lambda name: tmp_path / f"{name}.json")
+        monkeypatch.setattr(_warmup.plugin_warmup, "cleanup_prepared", lambda _prepared: None)
+        monkeypatch.setattr(_warmup.windows_security, "is_elevated_above_user_processes", lambda: False)
+        started: list[list[str]] = []
+
+        async def startup(command: list[str]):
+            started.append(command)
+            return _STARTUP_OUTCOME(True, "起動確認済み")
+
+        monkeypatch.setattr(_warmup, "_check_startup", startup)
+        monkeypatch.setenv("DOTFILES_PRUNE_READY_FILE", str(tmp_path / "update-one"))
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        assert len(started) == 1
+
+        monkeypatch.setenv("DOTFILES_PRUNE_READY_FILE", str(tmp_path / "update-two"))
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        assert len(started) == 1
+
+        monkeypatch.setenv("AGENT_TOOLKIT_RUNTIME_DATA", str(tmp_path / "new-runtime"))
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        assert len(started) == 2
+
     def test_cached_full_update_reclaims_completed_bundle(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
