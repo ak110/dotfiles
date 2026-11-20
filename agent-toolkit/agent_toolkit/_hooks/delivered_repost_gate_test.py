@@ -20,11 +20,11 @@ def _call(name: str, identifier: str, inputs: dict) -> dict:
     return {"type": "assistant", "message": {"content": [block]}}
 
 
-def _result(identifier: str = "s1", *, error: bool = False) -> dict:
+def _result(identifier: str = "s1", *, error: bool = False, content: str | None = None) -> dict:
     block = {
         "type": "tool_result",
         "tool_use_id": identifier,
-        "content": "対応画面なし" if error else "表示した",
+        "content": content if content is not None else ("対応画面なし" if error else "表示した"),
         "is_error": error,
     }
     return {"type": "user", "message": {"content": [block]}}
@@ -66,13 +66,25 @@ def test_two_or_more_sentences_after_delivery_are_blocked(body: str, tmp_path: p
     assert "…" in str(result["reason"])
 
 
+_QUESTION = _call("AskUserQuestion", "q", {"questions": [{"question": "文体は？"}]})
+_ANSWER = {
+    "type": "user",
+    "message": {"content": [{"type": "tool_result", "tool_use_id": "q", "content": ""}]},
+    "toolUseResult": {"questions": [{"question": "文体は？"}], "answers": {"文体は？": "敬体"}, "annotations": {}},
+}
+
+
 @pytest.mark.parametrize("preface", [False, True])
 @pytest.mark.parametrize("closing", ["", "…"])
-def test_stop_while_waiting_for_answer(preface: bool, closing: str, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("denial", [None, "user-rejected", "interrupted"])
+def test_stop_while_waiting_for_answer(preface: bool, closing: str, denial: str | None, tmp_path: pathlib.Path) -> None:
     entries = [_HUMAN]
     if preface:
         entries.extend([_SEND, _result()])
-    entries.append(_call("AskUserQuestion", "q", {"questions": [{"question": "敬体と常体のどちらで書きますか？"}]}))
+    entries.append(_QUESTION)
+    if denial:
+        message = "User rejected tool use" if denial == "user-rejected" else "[Request interrupted by user for tool use]"
+        entries.append({**_result("q", error=True, content=message), "toolDenialKind": denial})
     if closing:
         entries.append(_text(closing))
     result = _stop(entries, tmp_path, last_assistant_message=closing)
@@ -80,10 +92,43 @@ def test_stop_while_waiting_for_answer(preface: bool, closing: str, tmp_path: pa
     assert "user_response_advisor" not in result.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
-@pytest.mark.parametrize("after_question", [[_result("q", error=True)], [_result("q"), _HUMAN]], ids=["rejected", "new-prompt"])
+@pytest.mark.parametrize("preface", [False, True])
+@pytest.mark.parametrize("answer", [_ANSWER, _result("q", content="敬体")])
+def test_answer_requires_a_response_after_the_question(preface: bool, answer: dict, tmp_path: pathlib.Path) -> None:
+    request = {**_HUMAN, "message": {"content": "文体を確認して読書会の案内を作成して"}}
+    entries = [request, *([_SEND, _result()] if preface else []), _QUESTION, answer, _text("…")]
+    result = _stop(entries, tmp_path, last_assistant_message="…")
+    assert "decision" not in result
+    assert "user_response_advisor" in result["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize(
+    "followup",
+    [
+        [_text("読書会へぜひご参加ください。")],
+        [_call(_SEND_TO_USER, "s2", {"message": "読書会へぜひご参加ください。"}), _result("s2")],
+        [_call("AskUserQuestion", "q2", {"questions": [{"question": "何時に開始しますか？"}]})],
+    ],
+    ids=["body", "delivery", "next-question"],
+)
+def test_visible_response_or_new_question_after_an_answer(followup: list[dict], tmp_path: pathlib.Path) -> None:
+    result = _stop([_HUMAN, _QUESTION, _ANSWER, *followup, _text("…")], tmp_path, last_assistant_message="…")
+    assert "decision" not in result
+    assert "user_response_advisor" not in result.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+@pytest.mark.parametrize(
+    "after_question",
+    [
+        [{**_result("q", error=True, content="PreToolUse:AskUserQuestion hook error"), "toolDenialKind": "permission-rule"}],
+        [_result("q", error=True, content="<tool_use_error>Error: No such tool available: AskUserQuestion</tool_use_error>")],
+        [_HUMAN],
+        [_call("AskUserQuestion", "q2", {"questions": [{"question": "開催日は？"}]}), _result("q2")],
+    ],
+    ids=["hook-blocked", "tool-unavailable", "new-prompt", "latest-question-answered"],
+)
 def test_question_does_not_cover_unanswered_prompt(after_question: list[dict], tmp_path: pathlib.Path) -> None:
-    question = _call("AskUserQuestion", "q", {"questions": [{"question": "文体を指定しますか？"}]})
-    result = _stop([_HUMAN, question, *after_question, _text("…")], tmp_path, last_assistant_message="…")
+    result = _stop([_HUMAN, _QUESTION, *after_question, _text("…")], tmp_path, last_assistant_message="…")
     assert "decision" not in result
     assert "user_response_advisor" in result["hookSpecificOutput"]["additionalContext"]
 
