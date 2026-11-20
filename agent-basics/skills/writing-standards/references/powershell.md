@@ -24,6 +24,10 @@ PSScriptAnalyzerが導入されている環境では、その診断に従う。
 
 ## COM操作
 
+- 共有Office文書では、最初の変更前に対象のアプリと保存先で自動保存・同期の状態を確かめる。
+  例えばExcelでは対象ブックの`AutoSaveOn`を行の追加より先に確認する。
+  後続のCOM呼び出しが失敗しても、明示的な保存を待たずに空行が同期されうる。
+  編集先の選択と設定の復元は`agent-basics:writing-standards/references/quality-principles-constraints.md`「共有Office文書の編集」に従う。
 - PowerShell 5.1のCOMの遅延バインディングでは、型変換のエラーや`DISP_E_TYPEMISMATCH`（HRESULT `0x80020005`。例: `型 "int" の "2" 値を型 "Object" に変換できません`）が起きることがある。
 - `Type.InvokeMember`、`[Type]::Missing`による省略時の引数の補完、C#の`dynamic`も同じ内部の仕組みを経由し、同じく失敗する。
 - OfficeなどのPIA（Primary Interop Assembly）を使える環境では、早期バインディングで呼ぶ。
