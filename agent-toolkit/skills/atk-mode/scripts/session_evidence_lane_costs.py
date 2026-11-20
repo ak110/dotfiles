@@ -13,6 +13,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent_toolkit._plan.structure import parse_plan_metadata, progress_log_rows
+from agent_toolkit._plan.structure.constants import PLAN_QUEUE_ID_PATTERN
+from session_evidence_lane_plans import RolloutAssignment, SavedPlan
+
 _PHASES = (
     ("観測", r"観測|実機|実描画|tmux|隔離"),
     ("レビュー", r"レビュー|指摘|review|読者|読み手|再発"),
@@ -52,32 +56,45 @@ def _classify(value: str, patterns: tuple[tuple[str, str], ...], other: str) -> 
     return next((name for name, pattern in patterns if re.search(pattern, value)), other)
 
 
-def _plan_costs(paths: list[Path]) -> tuple[dict[str, Any], dict[Path, str]]:
+def _plan_costs(paths: list[Path]) -> tuple[dict[str, Any], list[SavedPlan]]:
     per_kind: dict[str, list[float]] = defaultdict(list)
     wi_counts: Counter[str] = Counter()
     phases: dict[str, float] = defaultdict(float)
-    capped = excluded = sidecars = 0
+    capped = excluded = sidecars = undated_rows = 0
     related_wis = plans_without_wis = 0
-    worktrees = {}
+    plans: list[SavedPlan] = []
     for path in paths:
         if path.name.endswith(".bugs.md"):
             sidecars += 1
             continue
         text = path.read_text(encoding="utf-8")
-        target = re.search(r"^- 対象リポジトリ: (.+)$", text, re.M)
-        worktrees[path] = target[1].strip().strip("`").replace("\\", "/").rstrip("/") if target else ""
-        wis = set(re.findall(r"^\s+- (\d{8}-\d{6}-\d{3})\.md", text, re.M))
+        metadata, _ = parse_plan_metadata(text)
+        target = metadata.values.get("対象リポジトリ", "") if metadata else ""
+        wis = {name for name, _ in metadata.related_wi} if metadata else set()
+        if (metadata and metadata.values.get("関連WI")) or any(not PLAN_QUEUE_ID_PATTERN.fullmatch(name) for name in wis):
+            wis.clear()
+        try:
+            progress = progress_log_rows(text)
+        except ValueError:
+            progress = []
+        plans.append(SavedPlan.from_progress(path, target.replace("\\", "/").rstrip("/"), frozenset(wis), progress))
         related_wis += len(wis)
         plans_without_wis += not wis
-        rows = sorted(
-            (datetime.datetime.fromisoformat(stamp), label)
-            for stamp, label in re.findall(r"^\| (\d{4}-\d\d-\d\d[T ]\d\d:\d\d)[^|]*\|([^|]*)\|", text, re.M)
-        )
+        rows = []
+        for stamp, label, _note in progress:
+            minute = re.match(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d", stamp)
+            try:
+                if minute:
+                    rows.append((datetime.datetime.fromisoformat(minute[0]), label))
+                    continue
+            except ValueError:
+                pass
+            undated_rows += 1
+        rows.sort()
         if not wis or len(rows) < 2:
             excluded += 1
             continue
-        kind_match = re.search(r"^- 作業種別: (\S+)", text, re.M)
-        kind = kind_match[1] if kind_match else "?"
+        kind = metadata.values.get("作業種別", "?") if metadata else "?"
         minutes = 0.0
         for (start, _), (end, label) in zip(rows, rows[1:], strict=False):
             duration = (end - start).total_seconds() / 60
@@ -96,13 +113,14 @@ def _plan_costs(paths: list[Path]) -> tuple[dict[str, Any], dict[Path, str]]:
         "related_wi_count": related_wis if related_wis and not plans_without_wis else None,
         "interval_cap_minutes": 120,
         "capped_intervals": capped,
+        "progress_rows_without_minute": undated_rows,
         "plan_wi_count": total,
         "by_kind": {
             kind: {"plans": len(values), "wis": wi_counts[kind], "median_minutes_per_wi": statistics.median(values)}
             for kind, values in per_kind.items()
         },
         "phase_minutes_per_wi": {phase: minutes / total for phase, minutes in phases.items()},
-    }, worktrees
+    }, plans
 
 
 def _call_type(arguments: Any) -> str:
@@ -123,7 +141,11 @@ def _entries(path: Path) -> Iterator[dict[str, Any]]:
                 obj = json.loads(line)
             except UnicodeError, ValueError:
                 obj = None
-            yield obj if isinstance(obj, dict) and isinstance(obj.get("payload"), dict) else {}
+            yield (
+                obj
+                if isinstance(obj, dict) and isinstance(obj.get("type"), str) and isinstance(obj.get("payload"), dict)
+                else {}
+            )
 
 
 def _timestamp(entry: dict[str, Any]) -> datetime.datetime | None:
@@ -156,9 +178,9 @@ class _LaneCalls:
     read_bytes: int = 0
     read_outputs: int = 0
     lane_files: int = 0
-    worktrees: set[str] = field(default_factory=set)
+    paired: dict[Path, list[str]] = field(default_factory=lambda: defaultdict(list))
 
-    def collect(self, path: Path) -> None:
+    def collect(self, path: Path, plans: list[SavedPlan]) -> None:
         cwd = next(
             (
                 entry["payload"]["cwd"]
@@ -174,7 +196,7 @@ class _LaneCalls:
         lane = _LANE.search(cwd)
         if lane is None:
             return
-        self.worktrees.add(cwd[: lane.end()].rstrip("/"))
+        assignment = RolloutAssignment()
         self.lane_files += 1
         pending: dict[str, tuple[datetime.datetime | None, str]] = {}
         last_output = model = effort = None
@@ -184,6 +206,7 @@ class _LaneCalls:
                 last_output = None
                 continue
             payload = entry["payload"]
+            assignment.observe(entry["type"], payload)
             kind = payload.get("type")
             if entry.get("type") in {"turn_context", "session_meta"}:
                 model = payload.get("model") or model
@@ -214,6 +237,11 @@ class _LaneCalls:
                     continue
                 self.record_result(pair, last_output, payload.get("output"))
         self.gaps["unmatched_calls"] += len(pending)
+        match = assignment.pair(cwd[: lane.end()].rstrip("/"), plans)
+        if isinstance(match, Path):
+            self.paired[match].append(str(path))
+        else:
+            self.gaps[match] += 1
 
     def record_result(self, pair: tuple[datetime.datetime | None, str], end: datetime.datetime | None, output: Any) -> None:
         start, category = pair
@@ -235,16 +263,12 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
     """明示した期間の統計を返す。1件あたりの呼出数は同じ範囲の計画WI数を分母とする推定。"""
     plans, missing_plans = _files(plan_patterns)
     rollouts, missing_rollouts = _files(rollout_patterns)
-    work, worktrees = _plan_costs(plans)
+    work, saved_plans = _plan_costs(plans)
     calls = _LaneCalls()
     for path in rollouts:
-        calls.collect(path)
-    unpaired_plans: list[str] = []
-    estimate_basis = "worktrees" if any(worktrees.values()) else "selected_plans"
-    if rollouts and estimate_basis == "worktrees":
-        unpaired_plans = [str(path) for path, target in worktrees.items() if target not in calls.worktrees]
-        calls.gaps["plans_without_lane_rollout"] = len(unpaired_plans)
-        calls.gaps["rollout_worktrees_without_plan"] = len(calls.worktrees.difference(worktrees.values()))
+        calls.collect(path, saved_plans)
+    unpaired_plans = [str(plan.path) for plan in saved_plans if plan.path not in calls.paired]
+    calls.gaps["plans_without_lane_rollout"] = len(unpaired_plans)
     all_seconds = [value for group in calls.durations.values() for value in group]
     reads = len(calls.durations.get("read-norms", []))
     wis = work["related_wi_count"]
@@ -261,6 +285,7 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
         "rollout_patterns": rollout_patterns,
         "unmatched_patterns": missing,
         "unpaired_plans": unpaired_plans,
+        "paired_rollouts": {str(path): paths for path, paths in calls.paired.items()},
         "plans": work,
         "rollout_files": len(rollouts),
         "lane_files": calls.lane_files,
@@ -276,7 +301,7 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
         "read_output_chars": calls.read_chars if complete_output else None,
         "read_output_utf8_bytes": calls.read_bytes if complete_output else None,
         "estimate_plan_wis": denominator,
-        "estimate_basis": estimate_basis if denominator else None,
+        "estimate_basis": "assigned_plans" if denominator else None,
         "estimated_calls_per_wi": len(all_seconds) / denominator if denominator else None,
         "estimated_tool_seconds_per_wi": sum(all_seconds) / denominator if denominator else None,
         "estimated_thinking_seconds_per_wi": sum(thinking_seconds) / denominator if denominator and thinking_seconds else None,

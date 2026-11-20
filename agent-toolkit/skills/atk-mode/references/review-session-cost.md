@@ -130,14 +130,22 @@ atk run-script session-review-evidence -- --stats --saved-plan "$plan" --saved-r
 
 - 同じ巡回の同じレーン集合を指定する。
   日付で選んだ履歴では、計画の日付とrolloutの開始日をそろえ、どちらもファイル全体を使う。
-  計画の「対象リポジトリ」に同じ作業ディレクトリのrolloutがない場合（`unpaired_plans`）、またはrolloutのレーンに対応する計画がない場合、全体のWIあたりの値は`null`とする。
-  全計画に対象欄がない旧形式では、`estimate_basis: selected_plans` は入力を選んだ側の対応付けに基づく推定を指す。
-  その対応を特定できないときは計画とrolloutを別々に集計し、率は欠測とする。
-  呼出しの分母は全レーン計画の関連WI数（`plans.related_wi_count`）で、計画内の重複を除き、進捗行が無い計画も数える。
-  関連WIを特定できない計画（`plans.plans_without_wis`）があれば、分母とWIあたりの推定値は`null`になる。
-  `estimated_calls_per_wi`は同じ範囲の呼出しをこの分母（`estimate_plan_wis`）で割った推定であり、個々のWIに帰属する呼出しや採用件数を測った値ではない。
+  作業ディレクトリは巡回間で再利用するため、計画の識別には使えない。
+  初回呼出し前の委譲入力の「計画」欄で担当を特定する。
+  年月付きの保存名は保存先からの相対位置、作業中の名前は計画名と巡回専用branchの両方で確かめる。
+  後者は計画の進捗行に記録された対象worktree・branchの組とrolloutのGit情報を使う。
+  「担当WI」があれば計画の関連WIに含まれることも確かめる。
+  読んだ資料、出力、比較例に出てくる計画名は担当を示さない。
+  `paired_rollouts`は計画ごとに確認できたrolloutを示す。
+  `unpaired_plans`は対応するrolloutのない計画、`gaps`は担当入力なし・割当先不一致・対応が一意でないなどの理由別件数である。
+  指定した計画か対象rolloutに未対応があれば、呼出し等の実数は示し、全体のWIあたりの値は`null`とする。
+  分母は計画メタ情報の関連WI数の和（`plans.related_wi_count`、計画内の重複を除く）。
+  進捗が欠けても既知のWIは減らさず、関連WI不明の計画（`plans.plans_without_wis`）があれば分母も欠測とする。
+  `estimate_basis: assigned_plans`の率は、指定して対応を確認した記録だけの値である。
+  その巡回の全rolloutが保存されていたことや、個々のWIの実績を示さない。
 - `plans.by_kind`は作業種別ごとの計画数・WI数と、各計画の「時刻差の和÷関連WI数」の中央値である。
-  分精度の隣接時刻差を各120分で打ち切り、工程は終了側の欄の語で分類する。
+  進捗表で分まで読める行の隣接時刻差を各120分で打ち切り、工程は終了側の欄の語で分類する。
+  日付だけの行や分が未確定の行は`plans.progress_rows_without_minute`に数える。
   初回記録前・最終記録後は含まず、実働の近似である。
   `phase_minutes_per_wi`は全種別の工程別合計を、進捗が2行以上あり実働を計算できた計画の関連WI数（`plans.plan_wi_count`）で割る。
 - `matched_calls`はレーンの作業ディレクトリ内でIDと時刻がそろう呼出しから結果までの秒数。
