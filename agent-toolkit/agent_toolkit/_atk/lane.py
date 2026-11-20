@@ -128,12 +128,13 @@ def dispatch(args: argparse.Namespace) -> int:
             if getattr(args, "repo", None):
                 records = listed if args.session_id is None else _lane_records.list_resources()
                 if records["errors"]:
-                    raise ValueError("所有登録を確認できないため登録外候補を分類しない")
+                    paths = "、".join(str(item["record_path"]) for item in records["errors"])
+                    raise ValueError(f"所有登録を確認できないため登録外候補を分類しない: {paths}")
                 listed["orphan_candidates"] = lane_retirement.orphan_candidates(args.repo.resolve(), records["records"])
             print(json.dumps(listed, ensure_ascii=False))
             return 1 if listed["errors"] else 0
         except (OSError, ValueError) as error:
-            outcome.report_failure(str(error), next_action="所有登録の保存先と読取権限を確認する")
+            outcome.report_failure(str(error), next_action="指定したリポジトリと所有登録の保存先・読取権限を確認する")
             return 2
     session_id = args.session_id or _lane_records.current_session_id()
     if session_id is None:

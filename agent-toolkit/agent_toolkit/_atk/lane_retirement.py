@@ -53,13 +53,13 @@ def orphan_candidates(repo: pathlib.Path, registered: list[dict[str, typing.Any]
     main = _lane_records.main_worktree(repo).resolve()
 
     def named(branch: str | None) -> bool:
-        return bool(branch and branch.startswith(("orch/", "lead/", "process-wi-")))
+        return bool(branch and branch.startswith(("orch/", "lead/", "process-wi-", "worktree-")))
 
     results: list[dict[str, str | None]] = []
     reason = "所有登録がなく作成者を確認できない。ユーザー確認なしに削除しない"
     for path, branch in sorted(trees.items()):
         resolved = pathlib.Path(path).resolve()
-        if resolved == main or str(resolved) in owned_paths:
+        if resolved in {main, repo.resolve()} or str(resolved) in owned_paths:
             continue
         if named(branch) or "managed-temp" in resolved.parts or "worktrees" in resolved.parts:
             results.append({"worktree": str(resolved), "branch": branch or None, "reason": reason})

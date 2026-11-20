@@ -130,6 +130,24 @@ def test_retirement_proof_never_ignores_unmerged_gitlink(
         lane_retirement.prove(record, repo)
 
 
+@pytest.mark.cpu_limit(2.0, reason="Gitの実サブモジュール内の変更を隠す設定に対して保護を確かめる。")
+def test_lane_usage_check_keeps_dirty_submodule(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """サブモジュールの表示設定で隠れても、作業ツリーをcleanとして扱わない。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    child = git_repository.init_repository(
+        tmp_path / "local-submodule", files={"sub.txt": "original"}, commit_message="submodule"
+    )
+    git_repository.run_git(worktree, "-c", "protocol.file.allow=always", "submodule", "add", str(child), "sub")
+    git_repository.commit_all(worktree, "gitlink")
+    git_repository.run_git(worktree, "config", "diff.ignoreSubmodules", "all")
+    (worktree / "sub" / "sub.txt").write_text("未保存の変更", encoding="utf-8")
+
+    assert lane_activity.has_unignored_changes(worktree)
+
+
 @pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     2.0,
