@@ -168,12 +168,19 @@ async def test_parent_child_and_delegate_cost_scope(screen_harness: _ScreenHarne
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_unknown_price_is_not_shown_as_zero(screen_harness: _ScreenHarness) -> None:
-    """未知モデルの応答を無料として表示せず、単価不明の件数を示す。"""
+    """モデル名の無い親応答と、未収録モデルの子応答を無料とせず、名前と件数を示す。"""
+    child = next((screen_harness.root.parent / "claude" / "projects").glob("*/*/subagents/*.jsonl"))
+    with child.open("a", encoding="utf-8") as stream:
+        entry = {"type": "assistant", "message": {"model": "future-sol", "usage": {"input_tokens": 10}}}
+        stream.write((json.dumps(entry) + "\n") * 2)
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator('#sessions .session-item[data-engine="claude"]').first.click()
-    await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("単価不明 1件")
-    assert "$0" not in await page.locator("#detail-usage").inner_text()
+    usage = page.locator("#detail-usage")
+    await playwright.async_api.expect(usage).to_contain_text("単価不明 3件")
+    await playwright.async_api.expect(usage).to_contain_text("future-sol 2件")
+    await playwright.async_api.expect(usage).to_contain_text("モデル名なし 1件")
+    assert "$0" not in await usage.inner_text()
 
 
 @pytest.mark.asyncio(loop_scope="session")
