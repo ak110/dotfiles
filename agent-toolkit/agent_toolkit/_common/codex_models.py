@@ -25,29 +25,6 @@ def needs_catalog(candidates: list[tuple[str, str, str]]) -> bool:
     return any(engine == "codex" and model in FAMILIES for engine, model, _effort in candidates)
 
 
-def _latest_model(family: str, catalog: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
-    available: list[tuple[tuple[int, int], str, dict[str, Any]]] = []
-    for item in catalog:
-        if item.get("hidden") is True:
-            continue
-        candidate_id = item.get("model") or item.get("id")
-        if not isinstance(candidate_id, str):
-            continue
-        match = _VERSIONED_MODEL.fullmatch(candidate_id)
-        if match is None or match.group(3) != family:
-            continue
-        available.append(((int(match.group(1)), int(match.group(2) or 0)), candidate_id, item))
-    if not available:
-        raise ValueError(f"Codex App Serverのmodel/listに利用可能な{family}系列がありません")
-    _version, identifier, item = max(available, key=lambda entry: (entry[0], entry[1]))
-    return identifier, item
-
-
-def latest_model(family: str, catalog: list[dict[str, Any]]) -> str:
-    """通常起動のeffortを上書きせず、表示可能な同系列の最新版を返す。"""
-    return _latest_model(family, catalog)[0]
-
-
 def resolve_candidates(candidates: list[tuple[str, str, str]], catalog: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
     """表示可能なモデルの同系列最新版を選び、指定effortを検証する。"""
     resolved: list[tuple[str, str, str]] = []
@@ -55,10 +32,23 @@ def resolve_candidates(candidates: list[tuple[str, str, str]], catalog: list[dic
         if engine != "codex" or model not in FAMILIES:
             resolved.append((engine, model, effort))
             continue
-        try:
-            selected_id, selected = _latest_model(model, catalog)
-        except ValueError as error:
-            raise _next_action.ActionableError(str(error), next_action=_CHANGE_CANDIDATES_NEXT_ACTION) from error
+        available: list[tuple[tuple[int, int], str, dict[str, Any]]] = []
+        for item in catalog:
+            if item.get("hidden") is True:
+                continue
+            candidate_id = item.get("model") or item.get("id")
+            if not isinstance(candidate_id, str):
+                continue
+            match = _VERSIONED_MODEL.fullmatch(candidate_id)
+            if match is None or match.group(3) != model:
+                continue
+            available.append(((int(match.group(1)), int(match.group(2) or 0)), candidate_id, item))
+        if not available:
+            raise _next_action.ActionableError(
+                f"Codex App Serverのmodel/listに利用可能な{model}系列がありません",
+                next_action=_CHANGE_CANDIDATES_NEXT_ACTION,
+            )
+        _version, selected_id, selected = max(available, key=lambda item: (item[0], item[1]))
         efforts = selected.get("supportedReasoningEfforts")
         supported = (
             {item.get("reasoningEffort") for item in efforts if isinstance(item, dict)} if isinstance(efforts, list) else set()
@@ -95,19 +85,13 @@ async def fetch_catalog(request: Callable[[str, dict[str, Any]], Awaitable[dict[
         cursor = next_cursor
 
 
-async def with_app_server(
-    operation: Callable[[Callable[..., Awaitable[dict[str, Any]]]], Awaitable[Any]],
-    *,
-    command: tuple[str, ...] | None = None,
-    cwd: str | None = None,
-) -> Any:
+async def with_app_server(operation: Callable[[Callable[..., Awaitable[dict[str, Any]]]], Awaitable[Any]]) -> Any:
     """短命な読取接続の初期化・要求IDと応答IDの確認・子孫回収を共有する。"""
     with tempfile.TemporaryFile(mode="w+b") as diagnostics:
         try:
             # 時間上限なし: 常駐の接続であり、応答待ちは呼び出し側が`asyncio.wait_for`で打ち切る。
             process = await asyncio.create_subprocess_exec(
-                *(command if command is not None else _APP_SERVER_COMMAND),
-                cwd=cwd,
+                *_APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=diagnostics,
@@ -175,11 +159,6 @@ async def with_app_server(
 async def list_models_from_app_server() -> list[dict[str, Any]]:
     """短命なApp Server接続で、他の接続と独立してモデル一覧を取得する。"""
     return await with_app_server(fetch_catalog)
-
-
-def list_models_at(command: tuple[str, ...], *, cwd: str | None = None) -> list[dict[str, Any]]:
-    """通常起動が選んだ実行体と設定で一覧を取得する。"""
-    return asyncio.run(with_app_server(fetch_catalog, command=command, cwd=cwd))
 
 
 def list_models() -> list[dict[str, Any]]:

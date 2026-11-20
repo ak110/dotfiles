@@ -37,12 +37,6 @@ npm版との関係を確かめられない起動ファイル（PATH上の別の�
 [READMEの導入](../../agent-toolkit/README.md#導入)にある統合インストーラーを実行し、[導入確認](../../agent-toolkit/README.md#導入確認)と[最初の操作](../../agent-toolkit/README.md#最初の操作)へ進む。
 dotfilesユーザーは`chezmoi apply`で同じプラグインを設定する。
 
-### Claude Codeのモデル別ランチャー
-
-dotfilesの`opus`、`sonnet`、`fable`、`poteto-mode`は、それぞれ既定のClaudeモデルを選ぶ。
-`--model VALUE`または`--model=VALUE`で明示すると、その指定が既定モデルより優先される。
-`fable`のfallbackと`poteto-mode`のプラグイン設定は変わらない。
-
 ## 詳細設定と操作
 
 - [環境別の導入](claude-code-installation.md)

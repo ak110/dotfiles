@@ -69,11 +69,10 @@ class RpcChannel:
                         self._fragments.clear()
         return self._messages.popleft()
 
-    async def handshake(self, *, token: str | None = None, host: str = "localhost", target: str = "/") -> None:
+    async def handshake(self, *, token: str | None = None) -> None:
         """公開HTTP Upgradeを行い、ローカル待受では起動ごとの認証を要求する。"""
         if self.codec.client:
-            headers = [(b"authorization", f"Bearer {token}".encode("ascii"))] if token is not None else []
-            self.writer.write(self.codec.send(Request(host=host, target=target, extra_headers=headers)))
+            self.writer.write(self.codec.send(Request(host="localhost", target="/")))
             await self.writer.drain()
         while True:
             data = await self.reader.read(65536)
@@ -115,15 +114,12 @@ async def accept_tui(
 
 
 @contextlib.asynccontextmanager
-async def native_proxy(
-    binary: str, environment: Mapping[str, str], *, timeout: float, socket_path: str | None = None, token: str | None = None
-) -> AsyncGenerator[RpcChannel]:
+async def native_proxy(binary: str, environment: Mapping[str, str], *, timeout: float) -> AsyncGenerator[RpcChannel]:
     """OSごとのcontrol socketへの接続を、Codex自身の公開proxyへ委ねる。"""
     process = await asyncio.create_subprocess_exec(
         binary,
         "app-server",
         "proxy",
-        *(("--sock", socket_path) if socket_path is not None else ()),
         env=dict(environment),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
@@ -142,7 +138,7 @@ async def native_proxy(
         channel = RpcChannel(process.stdout, process.stdin, client=True)
         try:
             async with asyncio.timeout(timeout):
-                await channel.handshake(token=token)
+                await channel.handshake()
         except EOFError as error:
             await process.wait()
             diagnostic = (await stderr).decode("utf-8", errors="replace").strip()

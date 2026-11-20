@@ -9,22 +9,18 @@ import os
 import pathlib
 import sys
 from collections.abc import Sequence
-from typing import Any, NamedTuple
-from urllib.parse import unquote, urlsplit
 
 # 非対話の公開コマンドはhookから繰り返し起動される。対話端末の復旧だけが使う依存は、
 # 実行体へ引き渡すまで読み込まない（docs/development/design-hosts-codex-runtime.md「Codexの起動管理とdaemon復旧」）。
 lazy import asyncio
 
 lazy import psutil
-lazy from agent_toolkit._common import codex_models, process_identity, process_tree
-lazy from wsproto.utilities import ProtocolError
+lazy from agent_toolkit._common import process_identity, process_tree
 
 from pytools._internal import codex_runtime
 lazy from pytools._internal import common
 lazy from pytools._internal.codex_bridge import RecoveryBridge
 lazy from pytools._internal.codex_recovery import RunningTurn
-lazy from pytools._internal.codex_transport import RpcChannel, native_proxy
 
 _VALUE_OPTIONS = frozenset(
     {
@@ -46,8 +42,6 @@ _VALUE_OPTIONS = frozenset(
         "-C",
         "--cd",
         "--add-dir",
-        "-a",
-        "--ask-for-approval",
     }
 )
 _COMMANDS = frozenset(
@@ -83,9 +77,6 @@ _COMMANDS = frozenset(
         "help",
     }
 )
-_MODEL_COMMANDS = frozenset({"exec", "e", "review", "resume", "fork"})
-_CATALOG_VALUE_OPTIONS = frozenset({"-c", "--config", "--enable", "--disable"})
-_CONTROL_OPTIONS = frozenset({"-h", "--help", "-V", "--version"})
 _INTERRUPTED = frozenset({130, 143, -2, -15, 0xC000013A, -1073741510})
 _TOKEN_ENV = "DOTFILES_CODEX_RECOVERY_TOKEN"
 
@@ -110,132 +101,6 @@ def _interactive(arguments: Sequence[str]) -> bool:
             continue
         return token not in _COMMANDS or token in {"resume", "fork"}
     return True
-
-
-class CatalogTarget(NamedTuple):
-    """モデル一覧と通常起動で一致させる設定および接続先。"""
-
-    settings: tuple[str, ...]
-    cwd: str | None
-    remote: str | None
-    token_env: str | None
-    profile: str | None
-    ignore_user_config: bool
-    command: str | None
-
-
-def series_catalog_arguments(arguments: Sequence[str]) -> CatalogTarget | None:
-    """明示指定や管理操作を除き、系列一覧が必要な起動から設定とcwdを取る。"""
-    config: list[str] = []
-    cwd = None
-    remote = token_env = profile = None
-    ignore_user_config = False
-    command_seen = False
-    command = None
-    index = 0
-    while index < len(arguments):
-        token = arguments[index]
-        if token == "--":
-            break
-        option, equal, value = token.partition("=")
-        if len(option) > 2 and option[:2] in {"-m", "-p", "-c", "-C", "-i", "-s", "-a"} and not option.startswith("--"):
-            option, value, equal = option[:2], token[2:], "="
-        if option in _CONTROL_OPTIONS or option in {"--oss", "--local-provider", "-m", "--model"}:
-            return None
-        if option in _VALUE_OPTIONS:
-            if not equal:
-                index += 1
-                if index == len(arguments) or arguments[index].startswith("-"):
-                    return None
-                value = arguments[index]
-            if option in {"-p", "--profile"}:
-                profile = value
-            elif option in _CATALOG_VALUE_OPTIONS:
-                config.extend((option, value))
-            elif option in {"-C", "--cd"}:
-                cwd = value
-            elif option == "--remote":
-                remote = value
-            elif option == "--remote-auth-token-env":
-                token_env = value
-        elif option == "--ignore-user-config":
-            ignore_user_config = True
-        elif option == "--strict-config":
-            config.append(option)
-        elif not option.startswith("-") and not command_seen:
-            if option in _COMMANDS:
-                if option not in _MODEL_COMMANDS:
-                    return None
-                command = option
-            command_seen = True
-        index += 1
-    return CatalogTarget(tuple(config), cwd, remote, token_env, profile, ignore_user_config, command)
-
-
-async def _fetch_catalog_from_channel(channel: RpcChannel) -> list[dict[str, Any]]:
-    next_id = 0
-
-    async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
-        nonlocal next_id
-        next_id += 1
-        await channel.send({"id": next_id, "method": method, "params": params})
-        while True:
-            response = await channel.receive()
-            if response.get("id") != next_id:
-                continue
-            if "error" in response or not isinstance(result := response.get("result"), dict):
-                raise ValueError("外部App Serverがモデル選択に必要な応答を返しませんでした")
-            return result
-
-    await request("initialize", {"clientInfo": {"name": "dotfiles-model-launcher", "version": "1.0"}, "capabilities": {}})
-    await channel.send({"method": "initialized", "params": {}})
-    return await codex_models.fetch_catalog(request)
-
-
-async def _remote_model_catalog(binary: pathlib.Path, url: str, token_env: str | None) -> list[dict[str, Any]]:
-    endpoint = urlsplit(url)
-    timeout = 30
-    token = os.environ.get(token_env) if token_env else None
-    if token_env and not token:
-        raise ValueError("外部App Serverの認証用環境変数が空です")
-    async with asyncio.timeout(timeout):
-        if endpoint.scheme == "unix" and not endpoint.netloc:
-            async with native_proxy(
-                str(binary), os.environ, timeout=timeout, socket_path=unquote(endpoint.path) or None, token=token
-            ) as channel:
-                return await _fetch_catalog_from_channel(channel)
-        if endpoint.scheme not in {"ws", "wss"} or not endpoint.hostname or endpoint.username is not None or endpoint.fragment:
-            raise ValueError("外部App ServerのURLを認識できません")
-        tls = endpoint.scheme == "wss"
-        reader, writer = await asyncio.open_connection(endpoint.hostname, endpoint.port or (443 if tls else 80), ssl=tls)
-        try:
-            channel = RpcChannel(reader, writer, client=True)
-            target = (endpoint.path or "/") + ("?" + endpoint.query if endpoint.query else "")
-            await channel.handshake(token=token, host=endpoint.netloc, target=target)
-            return await _fetch_catalog_from_channel(channel)
-        finally:
-            writer.close()
-            await writer.wait_closed()
-
-
-def resolve_series_model(binary: pathlib.Path, family: str, target: CatalogTarget) -> str:
-    """実際の起動と同じ実行体または接続先から、系列の候補だけを取得する。"""
-    if target.profile or (target.ignore_user_config and target.remote is None):
-        # 現行のApp ServerはTUIのprofile・設定無視指定を受け取れない。
-        # 異なる認証やproviderの一覧へ置き換えない。
-        raise ValueError("指定されたprofileまたは設定無視条件でモデル一覧を取得できません")
-    if target.remote is not None and target.settings:
-        raise ValueError("外部App Serverと組み合わせた設定指定でモデル一覧を取得できません")
-    try:
-        catalog = (
-            asyncio.run(_remote_model_catalog(binary, target.remote, target.token_env))
-            if target.remote is not None
-            else codex_models.list_models_at((str(binary), *target.settings, "app-server", "--stdio"), cwd=target.cwd)
-        )
-    except (EOFError, OSError, ProtocolError, ValueError) as error:
-        # 接続先やRPCの診断に認証情報が含まれる場合がある。
-        raise ValueError("モデル一覧を取得できません") from error
-    return codex_models.latest_model(family, catalog)
 
 
 def _with_cwd(arguments: Sequence[str], cwd: str) -> list[str]:
@@ -342,11 +207,6 @@ def main(argv: list[str] | None = None) -> int:
     if binary is None:
         print("管理対象のCodexが見つからない。update-dotfilesでCodexを導入して再実行する", file=sys.stderr)
         return 1
-    return launch_resolved(binary, arguments)
-
-
-def launch_resolved(binary: pathlib.Path, arguments: list[str]) -> int:
-    """解決済みの実行体で、通常起動の復旧と管理操作の処理を共有する。"""
     if not _interactive(arguments) or not sys.stdin.isatty():
         if sys.platform == "win32":
             # WindowsのCRT execvは空白を含むargvと子の終了状態を保持しない。

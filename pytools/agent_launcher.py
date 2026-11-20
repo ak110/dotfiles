@@ -14,8 +14,6 @@ from typing import NoReturn
 
 from pytools._internal import common
 from pytools._internal.cli import enable_completion
-lazy from pytools import codex_launcher
-lazy from pytools._internal import codex_runtime
 
 _LONG_OPTION_PATTERN = re.compile(r"(?<!\S)(--[A-Za-z0-9][A-Za-z0-9-]*)")
 
@@ -24,62 +22,6 @@ type ExecutableResolver = Callable[[str, tuple[pathlib.Path, ...]], pathlib.Path
 type CommandRunner = Callable[[list[str]], int]
 type HelpRunner = Callable[[list[str]], subprocess.CompletedProcess[str] | None]
 type TerminalChecker = Callable[[int], bool]
-
-_CLAUDE_VALUE_OPTIONS = frozenset(
-    {
-        "--add-dir",
-        "--agent",
-        "--agents",
-        "--append-system-prompt",
-        "--append-system-prompt-file",
-        "--betas",
-        "--debug-file",
-        "--disallowedTools",
-        "--disallowed-tools",
-        "--effort",
-        "--fallback-model",
-        "--input-format",
-        "--json-schema",
-        "--max-budget-usd",
-        "--mcp-config",
-        "--name",
-        "--output-format",
-        "--permission-mode",
-        "--plugin-dir",
-        "--resume",
-        "-r",
-        "--session-id",
-        "--setting-sources",
-        "--settings",
-        "--system-prompt",
-        "--system-prompt-file",
-        "--tools",
-        "--allowedTools",
-        "--allowed-tools",
-    }
-)
-_CLAUDE_MANAGEMENT = frozenset({"auth", "doctor", "install", "mcp", "plugin", "plugins", "setup-token", "update", "upgrade"})
-
-
-def _suppress_claude_default_model(arguments: list[str]) -> bool:
-    index = 0
-    seen_positional = False
-    while index < len(arguments):
-        token = arguments[index]
-        if token == "--":
-            return False
-        name, equal, _value = token.partition("=")
-        if name in {"--model", "--help", "-h", "--version", "-v", "-V"}:
-            return True
-        if name in _CLAUDE_VALUE_OPTIONS and not equal:
-            if name not in {"--resume", "-r"} or (index + 1 < len(arguments) and not arguments[index + 1].startswith("-")):
-                index += 1
-        elif not name.startswith("-") and not seen_positional:
-            if name in _CLAUDE_MANAGEMENT:
-                return True
-            seen_positional = True
-        index += 1
-    return False
 
 
 def _run_command(command: list[str]) -> int:
@@ -142,10 +84,10 @@ def _complete_claude_options(prefix: str, **_: object) -> list[str]:
 
 
 def _complete_codex_options(prefix: str, **_: object) -> list[str]:
-    codex_bin = codex_runtime.find_runtime_launcher(windows=os.name == "nt")
+    codex_bin = _resolve_command("codex", pathlib.Path.home(), _resolve_executable)
     if codex_bin is None:
         return []
-    return [option for option in _get_claude_options(str(codex_bin.absolute())) if option.startswith(prefix)]
+    return [option for option in _get_claude_options(codex_bin) if option.startswith(prefix)]
 
 
 def _enable_model_completion(command_name: str) -> None:
@@ -179,8 +121,6 @@ def _run_model(
         return 127
 
     del which, isatty
-    if command_name == "claude" and _suppress_claude_default_model(argv):
-        model_args = tuple(option for option in model_args if not option.startswith("--model="))
     if os_name != "nt":
         try:
             os.execv(command_bin, [command_name, *model_args, *argv])
@@ -371,48 +311,59 @@ def main_fable(
     )
 
 
-def _main_codex(family: str, argv: list[str] | None) -> NoReturn:
-    _enable_model_completion("codex")
-    arguments = list(sys.argv[1:] if argv is None else argv)
-    binary = codex_runtime.find_runtime_launcher(windows=os.name == "nt")
-    if binary is None:
-        print("codexコマンドが見つかりません。update-dotfilesでCodexを導入して再実行してください。", file=sys.stderr)
-        sys.exit(127)
-    binary = binary.absolute()
-    try:
-        catalog_args = codex_launcher.series_catalog_arguments(arguments)
-        if catalog_args is not None:
-            if catalog_args.remote is not None and catalog_args.command in {"exec", "e"}:
-                print(
-                    "外部接続のcodex execはモデル指定を受け付けません。モデルを選ぶ場合は対話起動を使ってください。",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            arguments = ["-m", codex_launcher.resolve_series_model(binary, family, catalog_args), *arguments]
-    except ValueError as error:
-        print(
-            f"Codexの{family}系列を選べません: {error}。接続とログインを確認するか、--modelで完全IDを指定してください。",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    try:
-        status = codex_launcher.launch_resolved(binary, arguments)
-    except OSError:
-        print("codexを起動できません。update-dotfilesでCodexの導入先を確認してください。", file=sys.stderr)
-        status = 127
-    sys.exit(status)
+def _main_codex(
+    model: str,
+    argv: list[str] | None,
+    *,
+    os_name: str,
+    home: pathlib.Path | None,
+    resolve: ExecutableResolver,
+    run: CommandRunner,
+) -> NoReturn:
+    _main(
+        "codex",
+        ("-m", model),
+        argv,
+        os_name=os_name,
+        home=home,
+        which=shutil.which,
+        resolve=resolve,
+        run=run,
+        isatty=os.isatty,
+    )
 
 
-def main_astra(argv: list[str] | None = None) -> NoReturn:
-    """Astra系列の最新版でCodexを起動する。"""
-    _main_codex("astra", argv)
+def main_astra(
+    argv: list[str] | None = None,
+    *,
+    os_name: str = os.name,
+    home: pathlib.Path | None = None,
+    resolve: ExecutableResolver = _resolve_executable,
+    run: CommandRunner = _run_command,
+) -> NoReturn:
+    """AstraモデルでCodexを起動する。"""
+    _main_codex("gpt-6-astra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
 
 
-def main_sol(argv: list[str] | None = None) -> NoReturn:
-    """Sol系列の最新版でCodexを起動する。"""
-    _main_codex("sol", argv)
+def main_sol(
+    argv: list[str] | None = None,
+    *,
+    os_name: str = os.name,
+    home: pathlib.Path | None = None,
+    resolve: ExecutableResolver = _resolve_executable,
+    run: CommandRunner = _run_command,
+) -> NoReturn:
+    """SolモデルでCodexを起動する。"""
+    _main_codex("gpt-5.6-sol", argv, os_name=os_name, home=home, resolve=resolve, run=run)
 
 
-def main_terra(argv: list[str] | None = None) -> NoReturn:
-    """Terra系列の最新版でCodexを起動する。"""
-    _main_codex("terra", argv)
+def main_terra(
+    argv: list[str] | None = None,
+    *,
+    os_name: str = os.name,
+    home: pathlib.Path | None = None,
+    resolve: ExecutableResolver = _resolve_executable,
+    run: CommandRunner = _run_command,
+) -> NoReturn:
+    """TerraモデルでCodexを起動する。"""
+    _main_codex("gpt-5.6-terra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
