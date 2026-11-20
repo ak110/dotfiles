@@ -100,6 +100,14 @@ def state_root(*, create: bool = True) -> pathlib.Path:
     return _ensure_private_directory(state_root_path(), "外部状態ディレクトリ", create=create)
 
 
+def prepare_sweep_directory(root: pathlib.Path) -> pathlib.Path:
+    """掃引の記録先を作る。状態rootがまだ無い場合も所定のmodeで作る。"""
+    root.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
+    directory = root / ".sweep"
+    directory.mkdir(mode=private_directory.MODE, exist_ok=True)
+    return directory
+
+
 def is_link(metadata: os.stat_result) -> bool:
     """シンボリックリンクとWindowsのreparse point（junctionなど）を真とする。"""
     return stat.S_ISLNK(metadata.st_mode) or bool(

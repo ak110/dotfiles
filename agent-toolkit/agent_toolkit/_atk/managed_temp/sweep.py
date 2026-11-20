@@ -26,7 +26,7 @@ from agent_toolkit._atk.managed_temp import creation, paths, permissions, resour
 from agent_toolkit._atk.managed_temp.cleanup_times import CleanupTimes, update_time
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
-from agent_toolkit._atk.managed_temp.sweep_lock import Access, sweep_access
+from agent_toolkit._atk.managed_temp.sweep_lock import sweep_access
 from agent_toolkit._common import file_lock, plugin_root_leases, private_directory, process_identity, registry_index
 
 _RECORD_NAME = ".sweep/last-sweep"
@@ -401,7 +401,7 @@ def _examine(
     now_ns: int,
     protected_sessions: set[pathlib.Path],
     times: CleanupTimes,
-    deleted_children: list[pathlib.Path] | None = None,
+    deleted_children: list[pathlib.Path],
     *,
     inspected: tuple[int, bool, int] | None = None,
 ) -> bool:
@@ -410,8 +410,6 @@ def _examine(
     if child in protected_sessions or plugin_root_in_use(child) or has_live_owner(child):
         return False
     if has_git:
-        if deleted_children is None:
-            return False
         # 登録worktree自身は木全体を保護し、包含する親では無関係な兄弟だけを期限判定する。
         with permissions.directory(child) if _DESCRIPTOR_WALK else contextlib.nullcontext():
             if _registered_worktree(child / ".git", child):
@@ -693,25 +691,23 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
     if not force and not _sweep_due(state_root, now_ns) and not _below_floor(temp_root):
         return SweepResult([], ())
     try:
-        with sweep_access(temp_root, state_root) as access:
-            if access == Access.BUSY:
+        with sweep_access(temp_root, state_root) as locked:
+            if not locked:
                 return SweepResult([], ())
-            return _sweep_locked(
-                temp_root, state_root, now_ns, cutoff_ns, daily=force or _sweep_due(state_root, now_ns), access=access
-            )
+            return _sweep_locked(temp_root, state_root, now_ns, cutoff_ns, daily=force or _sweep_due(state_root, now_ns))
     except OSError as error:
         return SweepResult([], ((pathlib.Path(error.filename or state_root), _failure_reason(error)),))
 
 
 def _sweep_locked(
-    temp_root: pathlib.Path, state_root: pathlib.Path, now_ns: int, cutoff_ns: int, *, daily: bool, access: Access
+    temp_root: pathlib.Path, state_root: pathlib.Path, now_ns: int, cutoff_ns: int, *, daily: bool
 ) -> SweepResult:
     pressure_due = _sweep_due(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME, interval_ns=_PRESSURE_INTERVAL_NS)
     if not daily and not pressure_due:
         return SweepResult([], ())
     times = CleanupTimes(state_root, cutoff_ns)
     # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
-    if daily and access == Access.FULL:
+    if daily:
         with contextlib.suppress(OSError):
             plugin_root_leases.sweep_plugin_root_records()
     protected_sessions = {
@@ -721,14 +717,8 @@ def _sweep_locked(
     }
     deleted: list[pathlib.Path] = []
     failed: list[tuple[pathlib.Path, str]] = []
-    if daily or access == Access.EXPIRED_ONLY:
-        _daily_sweep(temp_root, state_root, now_ns, cutoff_ns, protected_sessions, times, deleted, failed, access=access)
-    if access == Access.EXPIRED_ONLY:
-        if not deleted:
-            failed.append(
-                (state_root / ".sweep/pressure.lock", "ディスクに空きがなく、ロックの作成前に回収できる期限切れの領域もない")
-            )
-        return SweepResult(deleted, tuple(failed))
+    if daily:
+        _daily_sweep(temp_root, state_root, now_ns, cutoff_ns, protected_sessions, times, deleted, failed)
     pressure = None
     if pressure_due:
         pressure = _reclaim_space(
@@ -762,8 +752,6 @@ def _daily_sweep(
     times: CleanupTimes,
     deleted: list[pathlib.Path],
     failed: list[tuple[pathlib.Path, str]],
-    *,
-    access: Access,
 ) -> None:
     references = functools.cache(resources.process_references)
     for child in _sweep_entries(temp_root, state_root):
@@ -785,7 +773,7 @@ def _daily_sweep(
                 now_ns,
                 protected_sessions,
                 times,
-                deleted if access == Access.FULL else None,
+                deleted,
                 inspected=inspected,
             ):
                 deleted.append(child)
@@ -793,8 +781,6 @@ def _daily_sweep(
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
                 failed.append((child, _failure_reason(error)))
-        if access == Access.EXPIRED_ONLY:
-            continue
         # 全体の走査・削除が失敗しても、別に確認できる未使用キャッシュは回収する。
         try:
             if (

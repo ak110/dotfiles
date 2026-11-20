@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import os
 import pathlib
 from collections.abc import Callable
+
+from agent_toolkit._atk.managed_temp import paths
 
 
 def update_time(metadata: os.stat_result, now_ns: int) -> int:
@@ -36,11 +39,11 @@ class CleanupTimes:
     """親の時刻は巻き戻さない。回収直後と同じ実体・更新時刻の間だけ、掃引前の利用時刻を使う。"""
 
     def __init__(self, state_root: pathlib.Path, cutoff_ns: int) -> None:
-        self._directory = state_root / ".sweep/cache-parents"
+        self._state_root = state_root
         self._records: dict[int, dict[str, dict[str, int]]] = {}
         # 全領域の台帳ではなく、内部回収で時計が進んだ親だけの空ファイル。
         with contextlib.suppress(OSError):
-            for record in self._directory.iterdir():
+            for record in (state_root / ".sweep/cache-parents").iterdir():
                 try:
                     physical, identity, signature, logical = record.name.split("_")
                     mtime, latest = int(physical), int(logical)
@@ -91,8 +94,15 @@ class CleanupTimes:
             signature = _signature(expected)
             identity = self._identity(path, after)
             mtime = after.st_mtime_ns
-            self._directory.mkdir(parents=True, exist_ok=True)
-            (self._directory / f"{mtime}_{identity}_{signature}_{latest}").touch()
+            try:
+                directory = paths.prepare_sweep_directory(self._state_root) / "cache-parents"
+                directory.mkdir(exist_ok=True)
+                (directory / f"{mtime}_{identity}_{signature}_{latest}").touch()
+            except OSError as error:
+                if error.errno != errno.ENOSPC:
+                    raise
+                # キャッシュは回収済み。親の更新の内訳が不明なら実際のmtimeを使う。
+                return
             self._add(mtime, identity, signature, latest)
 
         return finish

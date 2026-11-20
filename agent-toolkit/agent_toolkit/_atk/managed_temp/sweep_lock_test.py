@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import errno
 import hashlib
 import json
@@ -17,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.managed_temp import paths, sweep
+from agent_toolkit._atk.managed_temp import paths, resources, sweep
 from agent_toolkit._atk.managed_temp.sweep_test import _NOW, _age, _area, _FakeDisk, _first_sweep_done, _legacy_lock
 from agent_toolkit._common import file_lock
 
@@ -27,6 +28,18 @@ pytestmark = pytest.mark.windows
 @pytest.fixture(autouse=True)
 def _enable_pressure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(sweep.MIN_FREE_RATIO_ENV, raising=False)
+
+
+def _deny_lock_creation(monkeypatch: pytest.MonkeyPatch, lock: pathlib.Path) -> None:
+    original_open = pathlib.Path.open
+
+    def full(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if path == lock and any(flag in mode for flag in "awx") and not path.exists():
+            raise OSError(errno.ENOSPC, "disk full", str(path))
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "open", full)
 
 
 @pytest.mark.parametrize("existing_lock", [False, True])
@@ -43,15 +56,7 @@ def test_full_disk_can_reclaim_expired_without_creating_a_lock(
     if existing_lock:
         lock.parent.mkdir(exist_ok=True)
         lock.touch()
-    original_open = pathlib.Path.open
-
-    def full(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
-        mode = args[0] if args else kwargs.get("mode", "r")
-        if path == lock and any(flag in mode for flag in "awx") and not path.exists():
-            raise OSError(errno.ENOSPC, "disk full", str(path))
-        return original_open(path, *args, **kwargs)
-
-    monkeypatch.setattr(pathlib.Path, "open", full)
+    _deny_lock_creation(monkeypatch, lock)
     disk = _FakeDisk(10000, 1304 + (busy / sweep.OWNER_FILE).stat().st_size, paths.temp_root())
     monkeypatch.setattr(sweep, "_disk_usage", disk)
     assert disk(expired).free == 0
@@ -65,7 +70,7 @@ def test_full_disk_can_reclaim_expired_without_creating_a_lock(
                 sys.executable,
                 "-c",
                 "import pathlib, sys\nfrom agent_toolkit._atk.managed_temp.sweep_lock import sweep_access\n"
-                "with sweep_access(*map(pathlib.Path, sys.argv[1:])) as access: print(access.name)",
+                "with sweep_access(*map(pathlib.Path, sys.argv[1:])) as locked: print(locked)",
                 str(expired.parent),
                 str(lock.parent.parent),
             ],
@@ -74,13 +79,72 @@ def test_full_disk_can_reclaim_expired_without_creating_a_lock(
             check=True,
             timeout=10,
         )
-        assert attempt.stdout.strip() == "BUSY"
+        assert attempt.stdout.strip() == "False"
 
     monkeypatch.setattr(sweep, "remove_tree", competing_sweep)
     result = managed_temp.sweep_managed_temp(now=_NOW, force=entry == "forced")
     assert result.deleted == [expired] and not result.failed
     assert disk(expired).free == 1300
     assert (fresh / "handoff").read_text(encoding="utf-8") == "keep" and busy.is_dir()
+
+
+@pytest.mark.parametrize("lock_full", [False, True], ids=["ordinary-lock", "full-disk-lock"])
+@pytest.mark.parametrize("entry", ["daily", "forced", "pressure"])
+@pytest.mark.parametrize("layout", ["nested-only", "standalone-only", "mixed"])
+def test_zero_free_space_reclaims_unused_caches(
+    monkeypatch: pytest.MonkeyPatch, lock_full: bool, entry: str, layout: str
+) -> None:
+    if entry != "daily":
+        _first_sweep_done()
+    if lock_full:
+        _deny_lock_creation(monkeypatch, paths.state_root() / ".sweep/pressure.lock")
+    tag = "Signature: 8a477f597d28d172789f06886806bc55"
+    session = managed_temp.resolve_session_temp("weekend")
+    record = session / "work-contract.md"
+    record.write_bytes(b"only copy")
+    expected = set()
+    if layout in {"nested-only", "mixed"}:
+        for name in ["downloads", "build"] if layout == "mixed" else ["downloads"]:
+            cache = session / name
+            cache.mkdir()
+            (cache / "CACHEDIR.TAG").write_text(tag, encoding="ascii")
+            expected.add(cache)
+    if layout in {"standalone-only", "mixed"}:
+        expected.add(_area("standalone", days=3, files={"CACHEDIR.TAG": tag}))
+    if layout == "mixed":
+        expected.add(_area("expired", days=9))
+    _age(session, 3)
+    # 全件を合わせても下限に届かない。同じ容量・同じ時刻でロック作成の成否だけを変える。
+    root = paths.temp_root()
+    initial_size = sum(item.stat().st_size for item in root.rglob("*") if item.is_file())
+    disk = _FakeDisk(100_000, initial_size, root)
+    monkeypatch.setattr(sweep, "_disk_usage", disk)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
+    assert disk(session).free == 0
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=entry == "forced")
+    assert set(result.deleted) == expected and not result.failed
+    assert all(not path.exists() for path in expected) and disk(session).free == initial_size - record.stat().st_size
+    assert managed_temp.find_session_temp("weekend") == session and record.read_bytes() == b"only copy"
+
+
+@pytest.mark.parametrize("entry", ["daily", "forced", "pressure"])
+@pytest.mark.parametrize("observed", [False, True], ids=["unknown", "in-use"])
+def test_full_disk_retains_caches_unless_unused(monkeypatch: pytest.MonkeyPatch, entry: str, observed: bool) -> None:
+    if entry != "daily":
+        _first_sweep_done()
+    _deny_lock_creation(monkeypatch, paths.state_root() / ".sweep/pressure.lock")
+    tag = "Signature: 8a477f597d28d172789f06886806bc55"
+    session = _area("session-weekend", days=3, files={"handoff": "keep", "nested/CACHEDIR.TAG": tag})
+    other = _area("standalone", days=3, files={"CACHEDIR.TAG": tag})
+    unused = _area("separate-cache", days=3, files={"CACHEDIR.TAG": tag})
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=0))
+    monkeypatch.setattr(resources, "process_references", lambda: [session / "nested", other] if observed else None)
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=entry == "forced")
+    assert result.deleted == ([unused] if observed else []) and not result.failed
+    assert unused.exists() != observed
+    assert result.pressure is not None and result.pressure.still_low
+    assert (other / "CACHEDIR.TAG").is_file() and (session / "nested/CACHEDIR.TAG").is_file()
+    assert (session / "handoff").read_text(encoding="utf-8") == "keep"
 
 
 @pytest.mark.skipif(not hasattr(os, "O_PATH") or os.geteuid() == 0, reason="非rootの実際の権限回復を検証する")
@@ -144,25 +208,42 @@ def test_sweep_reports_lock_open_errors_without_scanning(monkeypatch: pytest.Mon
     assert len(result.failed) == 1 and result.failed[0][0] == lock and "cannot open lock" in result.failed[0][1]
 
 
-def test_full_state_directory_does_not_sweep_inside_a_retained_session(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("still_full", [False, True])
+def test_cache_recovery_does_not_require_writable_state(monkeypatch: pytest.MonkeyPatch, still_full: bool) -> None:
     area = _area(
         "session-weekend",
         days=3,
         files={"handoff": "keep", "cache/CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55"},
     )
-    root = paths.state_root()
+    cache = area / "cache"
+    root = paths.state_root_path()
+    assert not root.exists()
     original_mkdir = pathlib.Path.mkdir
 
     def full(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> None:
-        if path == root / ".sweep":
+        if path == root and (still_full or cache.exists()):
             raise OSError(errno.ENOSPC, "disk full", str(path))
         original_mkdir(path, *args, **kwargs)
 
+    monkeypatch.setattr(resources, "process_references", lambda: [])
     monkeypatch.setattr(pathlib.Path, "mkdir", full)
-    result = managed_temp.sweep_managed_temp(now=_NOW)
-    assert not result.deleted and result.failed
-    assert (area / "handoff").read_text(encoding="utf-8") == "keep" and (area / "cache").is_dir()
-    assert not (root / ".sweep").exists()
+    # 物理mtimeと掃引の判定時刻を同じ時計にそろえる。
+    now = datetime.datetime.now(datetime.UTC)
+    last_use = now - datetime.timedelta(days=3)
+    for child in [*area.rglob("*"), area]:
+        os.utime(child, (last_use.timestamp(), last_use.timestamp()))
+    result = managed_temp.sweep_managed_temp(now=now)
+    assert result.deleted == [cache] and not result.failed and not cache.exists()
+    if still_full:
+        assert not root.exists()
+    elif os.name == "posix":
+        assert stat.S_IMODE(root.stat().st_mode) == 0o700
+    assert (area / "handoff").read_text(encoding="utf-8") == "keep"
+    # 書けた場合は回収前の利用から、書けなかった場合は回収後の親のmtimeから7日を数える。
+    after_cleanup = datetime.datetime.fromtimestamp(area.stat().st_mtime, datetime.UTC)
+    retained_since = after_cleanup if still_full else last_use
+    assert not managed_temp.sweep_managed_temp(now=retained_since + datetime.timedelta(days=6), force=True).deleted
+    assert managed_temp.sweep_managed_temp(now=retained_since + datetime.timedelta(days=8), force=True).deleted == [area]
 
 
 @pytest.mark.parametrize("daily", [False, True])
