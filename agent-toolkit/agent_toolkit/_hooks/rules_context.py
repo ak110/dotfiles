@@ -204,6 +204,13 @@ def compose_session_start(
             parts.append(_llm_notice(delegated_compact_notice(launch)))
     elif source in _CONTEXT_LOSING_SOURCES:
         parts.append(_llm_notice(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE))
+    if host == "claude" and not delegated:
+        parts.append(
+            _llm_notice(
+                "最初の発話から、この会話の`send_to_user`の説明がメインの発話の送り先を指定している時だけそれに従え。"
+                "指定を確認できなければ通常の応答本文で伝えよ。"
+            )
+        )
     if host == "claude" and wait_schedule.background_tasks_disabled():
         parts.append(_llm_notice(BACKGROUND_TASKS_DISABLED_NOTICE))
     parts.append(_llm_notice(plugin_environment.cli_instructions(plugin_resources.plugin_root())))

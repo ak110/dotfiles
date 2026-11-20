@@ -23,6 +23,17 @@ async function isDelegated($: EngineInterface): Promise<boolean> {
 
 export const register: Register = (on) => {
   const usageLimitSession = { delegated: true, backgroundChanged: false, processLoop: false };
+  // MCPはmodの無い会話にも同じツールを公開する。画面を持つmodが、その会話の説明だけを初期公開する。
+  on("tool.describe", { tool: "mcp__plugin_agent-toolkit_agents_server__send_to_user" }, async ($, e, next) => {
+    const result = await next(e);
+    if (!(await $.session.surfaces()).includes("terminal") || await isDelegated($)) return result;
+    return {
+      ...result,
+      description: "この会話のメインは、ユーザーへの発話（進捗、完了報告、質問、確認依頼を含む）をすべてこのツールのmessageで送る。" +
+        "表示先が使えない時は通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
+      isDeferred: false,
+    };
+  });
   on("session.start", async ($, e, next) => {
     usageLimitSession.delegated = await isDelegated($);
     usageLimitSession.processLoop = (await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION")) === "1";

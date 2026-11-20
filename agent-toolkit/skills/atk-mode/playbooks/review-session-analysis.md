@@ -77,7 +77,7 @@ batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出�
    起草、意味の検収、保存は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に従い、原因分析を含む原稿は`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`の独立した投入前レビューを経る（原則6）。
    後の対象で同じ根本原因を見つけたら保存前の原稿へ統合し、更新した内容を検収し直す。
    保存は全対象の工程4と、`agent-toolkit:atk-mode/playbooks/review-session-batch.md`のセッション横断の整理を終えてから行い、その直前に確定した全要求を予告として送る。
-4. 予告の送達は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の手段（Claude Codeでは`mcp__plugin_agent-toolkit_agents_server__send_to_user`）を使う。
+4. 予告は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従って届ける。
 5. 要求は次の形にする。
    - `source`は`session-review`とする。
    - batchが登録するAWIは、ユーザーの内容確認を待たず、エージェント由来の要求として採否を検討する対象にする。

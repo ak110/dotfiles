@@ -15,8 +15,13 @@ _SEND = {
 }
 
 
-def _result(*, error: bool = False) -> dict:
-    block = {"type": "tool_result", "tool_use_id": "s1", "content": "表示した", "is_error": error}
+def _result(identifier: str = "s1", *, error: bool = False) -> dict:
+    block = {
+        "type": "tool_result",
+        "tool_use_id": identifier,
+        "content": "対応画面なし" if error else "表示した",
+        "is_error": error,
+    }
     return {"type": "user", "message": {"content": [block]}}
 
 
@@ -64,6 +69,16 @@ def test_without_successful_delivery_the_body_is_not_judged(tmp_path: pathlib.Pa
     assert "decision" not in _stop([_HUMAN, _text(two)], tmp_path)
     assert "decision" not in _stop([_HUMAN, _SEND, _result(error=True), _text(two)], tmp_path)
     assert "decision" not in _stop([_HUMAN, _text(two), _SEND, _result()], tmp_path)
+
+
+def test_failed_final_delivery_after_progress_can_fall_back_to_text(tmp_path: pathlib.Path) -> None:
+    """進捗は表示できても完了報告を表示できなければ、その本文を再掲扱いしない。"""
+    report = "検証が終わりました。失敗はありません。"
+    call = {"type": "tool_use", "id": "s2", "name": _SEND_TO_USER, "input": {"message": report}}
+    send = {"type": "assistant", "message": {"content": [call]}}
+    failed = _result("s2", error=True)
+    result = _stop([_HUMAN, _SEND, _result(), send, failed, _text(report)], tmp_path)
+    assert "decision" not in result
 
 
 def test_pending_async_work_and_subagent(tmp_path: pathlib.Path) -> None:

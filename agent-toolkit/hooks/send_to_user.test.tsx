@@ -1,5 +1,28 @@
-import { expect, test } from "claude-code/testing";
+import { expect, mock, test } from "claude-code/testing";
 import { reportWarnings } from "./send_to_user.tsx";
+
+for (const [surface, delegated, tool, shouldDeliver] of [
+  ["terminal", false, "mcp__plugin_agent-toolkit_agents_server__send_to_user", true],
+  ["terminal", true, "mcp__plugin_agent-toolkit_agents_server__send_to_user", false],
+  ["desktop", false, "mcp__plugin_agent-toolkit_agents_server__send_to_user", false],
+  [null, false, "mcp__plugin_agent-toolkit_agents_server__send_to_user", false],
+  ["terminal", false, "mcp__other__send_to_user", false],
+] as const) {
+  test(`初回のツール一覧で発話の送り先を示す条件: ${surface}/${delegated}/${tool}`, async ($, on) => {
+    mock.env(on, { AGENT_TOOLKIT_DELEGATED_SESSION: delegated ? "1" : "" });
+    on("session.surfaces", () => ({ value: surface ? [surface] : [] }));
+    on("tool.describe", (_$, e) => ({ description: e.description, isDeferred: true }));
+    const original = { description: "表示に成功した時だけ確認を返す。", isDeferred: true } as const;
+    const shown = await $.tool.describe({ tool, ...original, provider: { plugin: "mcp:agents_server", tier: "user" } });
+    if (shouldDeliver) {
+      expect(shown.isDeferred).toBe(false);
+      for (const purpose of ["メイン", "進捗", "完了報告", "質問", "確認依頼"]) expect(shown.description).toContain(purpose);
+      expect(shown.description).toContain(original.description);
+    } else {
+      expect(shown).toEqual(original);
+    }
+  });
+}
 
 for (const [message, warns] of [
   ["気付いた改善点: 対象。AWI化ステータス: 不要 被覆 既存の処置がある", false],
