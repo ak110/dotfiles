@@ -12,6 +12,8 @@ import sys
 from collections.abc import Callable
 from typing import NoReturn
 
+lazy from agent_toolkit._common import codex_models
+
 from pytools._internal import common
 from pytools._internal.cli import enable_completion
 
@@ -22,6 +24,60 @@ type ExecutableResolver = Callable[[str, tuple[pathlib.Path, ...]], pathlib.Path
 type CommandRunner = Callable[[list[str]], int]
 type HelpRunner = Callable[[list[str]], subprocess.CompletedProcess[str] | None]
 type TerminalChecker = Callable[[int], bool]
+
+_CLAUDE_VALUE_OPTIONS = frozenset(
+    {
+        "--add-dir",
+        "--agent",
+        "--agents",
+        "--append-system-prompt",
+        "--append-system-prompt-file",
+        "--betas",
+        "--debug-file",
+        "--disallowedTools",
+        "--disallowed-tools",
+        "--effort",
+        "--fallback-model",
+        "--input-format",
+        "--json-schema",
+        "--max-budget-usd",
+        "--mcp-config",
+        "--name",
+        "-n",
+        "--output-format",
+        "--permission-mode",
+        "--plugin-dir",
+        "--resume",
+        "-r",
+        "--session-id",
+        "--setting-sources",
+        "--settings",
+        "--system-prompt",
+        "--system-prompt-file",
+        "--tools",
+        "--allowedTools",
+        "--allowed-tools",
+    }
+)
+
+
+def _has_claude_model(arguments: list[str]) -> bool:
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            return False
+        name, equal, _value = token.partition("=")
+        if name == "--model":
+            return True
+        if (
+            name in _CLAUDE_VALUE_OPTIONS
+            and not equal
+            and (name not in {"--resume", "-r"} or (index + 1 < len(arguments) and not arguments[index + 1].startswith("-")))
+        ):
+            index += 1
+        index += 1
+    return False
 
 
 def _run_command(command: list[str]) -> int:
@@ -108,6 +164,7 @@ def _run_model(
     resolve: ExecutableResolver,
     run: CommandRunner,
     isatty: TerminalChecker,
+    family: str | None = None,
 ) -> int:
     command_bin = _resolve_command(command_name, home, resolve)
     if command_bin is None:
@@ -121,6 +178,14 @@ def _run_model(
         return 127
 
     del which, isatty
+    if command_name == "claude" and _has_claude_model(argv):
+        model_args = tuple(option for option in model_args if not option.startswith("--model="))
+    if family is not None:
+        try:
+            model_args = _codex_model_args(command_bin, family, model_args[1], argv)
+        except ValueError as error:
+            print(f"{error} --modelで完全なIDを指定して再実行できます。", file=sys.stderr)
+            return 1
     if os_name != "nt":
         try:
             os.execv(command_bin, [command_name, *model_args, *argv])
@@ -171,6 +236,7 @@ def _main(
     resolve: ExecutableResolver,
     run: CommandRunner,
     isatty: TerminalChecker,
+    family: str | None = None,
 ) -> NoReturn:
     _enable_model_completion(command_name)
     actual_argv = list(sys.argv[1:] if argv is None else argv)
@@ -186,6 +252,7 @@ def _main(
             resolve=resolve,
             run=run,
             isatty=isatty,
+            family=family,
         )
     )
 
@@ -311,7 +378,122 @@ def main_fable(
     )
 
 
+_CODEX_CONFIG_OPTIONS = frozenset({"-c", "--config", "--enable", "--disable"})
+_CODEX_CWD_OPTIONS = frozenset({"-C", "--cd"})
+_CODEX_FIXED_MODEL_OPTIONS = frozenset({"-p", "--profile", "--remote", "--ignore-user-config", "--strict-config"})
+_CODEX_VALUE_OPTIONS = (
+    _CODEX_CONFIG_OPTIONS
+    | _CODEX_CWD_OPTIONS
+    | {
+        "-p",
+        "--profile",
+        "--remote",
+        "--remote-auth-token-env",
+        "-i",
+        "--image",
+        "-s",
+        "--sandbox",
+        "-a",
+        "--ask-for-approval",
+        "--add-dir",
+        "--color",
+        "--thread-source",
+        "--cyber-access-program",
+        "--output-schema",
+        "-o",
+        "--output-last-message",
+    }
+)
+_CODEX_MANAGEMENT = frozenset(
+    {
+        "a",
+        "agents",
+        "app-server",
+        "apply",
+        "archive",
+        "cloud",
+        "completion",
+        "debug",
+        "delete",
+        "doctor",
+        "exec-server",
+        "features",
+        "help",
+        "login",
+        "logout",
+        "mcp",
+        "migrate-nfs-db",
+        "migrate-rollouts",
+        "plugin",
+        "queue",
+        "remote-control",
+        "sandbox",
+        "unarchive",
+        "update",
+    }
+)
+
+
+def _codex_model_args(binary: str, family: str, fixed_model: str, argv: list[str]) -> tuple[str, ...]:
+    settings: list[str] = []
+    cwd = None
+    fixed = False
+    provider = None
+    exec_subcommand = False
+    first_positional = True
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            break
+        option, equal, value = token.partition("=")
+        if len(option) > 2 and option[:2] in {"-m", "-p", "-c", "-C", "-i", "-s", "-a", "-o"}:
+            option, value, equal = option[:2], token[2:], "="
+        if option in {"-m", "--model", "--oss", "--local-provider", "--help", "-h", "--version", "-V"}:
+            return ()
+        if option in _CODEX_FIXED_MODEL_OPTIONS:
+            fixed = True
+        if option in _CODEX_VALUE_OPTIONS:
+            if not equal:
+                index += 1
+                if index == len(argv) or argv[index].startswith("-"):
+                    return ()
+                value = argv[index]
+            if option in _CODEX_CONFIG_OPTIONS:
+                settings.extend((option, value))
+                if option in {"-c", "--config"}:
+                    key, separator, raw = value.partition("=")
+                    if separator and key.strip().strip("\"'") == "model_provider":
+                        provider = raw.strip().strip("\"'")
+            elif option in _CODEX_CWD_OPTIONS:
+                cwd = value
+        elif exec_subcommand and not option.startswith("-"):
+            if option == "help":
+                return ()
+            exec_subcommand = False
+        elif first_positional and not option.startswith("-"):
+            if option in _CODEX_MANAGEMENT:
+                return ()
+            exec_subcommand = option in {"exec", "e"}
+            first_positional = False
+        index += 1
+    if provider not in (None, "openai"):
+        return ()
+    if fixed:
+        # 同じ設定層・接続先の一覧を取得できる範囲だけで系列を解決する。
+        return ("-m", fixed_model)
+    try:
+        catalog = codex_models.list_models_at((binary, *settings, "app-server", "--stdio"), cwd=cwd)
+    except OSError, ValueError:
+        raise ValueError("Codexのモデル一覧を取得できません。接続とログインを確認してください。") from None
+    try:
+        return ("-m", codex_models.latest_model(family, catalog))
+    except ValueError:
+        raise ValueError(f"Codexのモデル一覧に利用可能な{family}系列がありません。") from None
+
+
 def _main_codex(
+    family: str,
     model: str,
     argv: list[str] | None,
     *,
@@ -330,6 +512,7 @@ def _main_codex(
         resolve=resolve,
         run=run,
         isatty=os.isatty,
+        family=family,
     )
 
 
@@ -342,7 +525,7 @@ def main_astra(
     run: CommandRunner = _run_command,
 ) -> NoReturn:
     """AstraモデルでCodexを起動する。"""
-    _main_codex("gpt-6-astra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
+    _main_codex("astra", "gpt-6-astra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
 
 
 def main_sol(
@@ -354,7 +537,7 @@ def main_sol(
     run: CommandRunner = _run_command,
 ) -> NoReturn:
     """SolモデルでCodexを起動する。"""
-    _main_codex("gpt-5.6-sol", argv, os_name=os_name, home=home, resolve=resolve, run=run)
+    _main_codex("sol", "gpt-5.6-sol", argv, os_name=os_name, home=home, resolve=resolve, run=run)
 
 
 def main_terra(
@@ -366,4 +549,4 @@ def main_terra(
     run: CommandRunner = _run_command,
 ) -> NoReturn:
     """TerraモデルでCodexを起動する。"""
-    _main_codex("gpt-5.6-terra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
+    _main_codex("terra", "gpt-5.6-terra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
