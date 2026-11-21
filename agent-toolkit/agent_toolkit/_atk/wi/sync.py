@@ -17,6 +17,7 @@ git作業コピー（`atk wi process-loop`が上流差分を確認するdotfiles
 import contextlib
 import dataclasses
 import datetime
+import os
 import pathlib
 import re
 import subprocess
@@ -31,7 +32,6 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import legacy as _atk_wi_legacy
 from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
-from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import command as _git_command
@@ -144,8 +144,15 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
 
 def _has_no_items(root: pathlib.Path) -> bool:
     """年月配置にWIの`.md`が無く、`plans/`にも計画ファイルが無いかを返す。"""
-    if next(iter_entry_paths(root), None) is not None:
-        return False
+    # 警告に必要なのは空かどうかだけであり、WIを全件取得して並べる必要はない。
+    for month in root.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]"):
+        try:
+            with os.scandir(month) as entries:
+                if any(os.path.normcase(entry.name).endswith(".md") for entry in entries):
+                    return False
+        except OSError:
+            # globと同じく、消滅・読取不能の候補は次の月へ進む。
+            continue
     plans = root / "plans"
     return not plans.is_dir() or next(plans.rglob("*.md"), None) is None
 
