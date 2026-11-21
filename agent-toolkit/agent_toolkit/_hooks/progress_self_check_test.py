@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import subprocess
+import time
 import uuid
 from collections.abc import Mapping
 
@@ -65,9 +66,10 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
 
     notice = progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL)
     assert notice is not None and notice.startswith(_OPENING)
-    # 点検の操作は通知だけで分かり、規範のファイルへの案内を含まない。
-    assert "工程・開始時点・経過時間を目標と前回の成果に比べよ" in notice
-    assert "git -C <worktree> status --porcelain=v1" in notice
+    # 通知だけで報告の1行目を埋められる。
+    assert "1行目" in notice
+    assert "進捗 N%・完了見込み HH:MM（根拠: …）" in notice
+    assert "git -C" not in notice
     assert ".md" not in notice
     assert "cat --" not in notice and "Get-Content" not in notice
     # 生成しただけでは期日を消費せず、最終出力へ採用された時点で確定する。
@@ -80,6 +82,79 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
     assert _entries(sid)["main"]["last_notified_at"] == 1000.0 + _INTERVAL
     assert progress_self_check.claim_notice(payload, now=1000.0 + 2 * _INTERVAL) is not None
     progress_self_check.release_reservations()
+
+
+_VALID_REPORT = "進捗 50%・完了見込み 18:30（根拠: 検証があと30分）\n関連試験は完了した。"
+_SEND_TOOL = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
+
+
+def _due_notice(sid: str, *, agent: str | None = None) -> str:
+    now = time.time()
+    payload = {"session_id": sid, **({"agent_id": agent} if agent else {})}
+    _seed(sid, agent or "main", started_at=now - 2 * _INTERVAL, last_notified_at=now - _INTERVAL - 1)
+    generated = progress_self_check.claim_notice(payload, now=now)
+    assert generated is not None
+    return generated
+
+
+def _report_hook(subcommand: str, payload: dict) -> dict:
+    result = _run_hook_in_process(subcommand, payload)
+    assert result.returncode in (0, 2), result.stderr
+    return json.loads(result.stdout) if result.stdout else {}
+
+
+@pytest.mark.parametrize("tool", [_SEND_TOOL, "mcp__agent-toolkit__send_to_user"])
+def test_send_gate_waits_for_delivered_notice_and_confirmed_report(tool: str) -> None:
+    sid = _session_id()
+    generated = _due_notice(sid)
+    common = {"session_id": sid, "tool_name": tool}
+    wrong = {**common, "tool_input": {"message": "点検した。"}}
+    correct = {**common, "tool_input": {"message": _VALID_REPORT}}
+
+    assert progress_self_check.send_block(wrong, wrong["tool_input"]["message"]) is None
+    notice_module.record_delivery(generated)
+    progress_self_check.release_reservations()
+
+    blocked = _report_hook("pretooluse", {**wrong, "hook_event_name": "PreToolUse"})["hookSpecificOutput"]
+    assert blocked["permissionDecision"] == "deny"
+    assert "完了見込み" in blocked["permissionDecisionReason"]
+    accepted = _report_hook("pretooluse", {**correct, "hook_event_name": "PreToolUse"})
+    assert accepted.get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
+
+    _report_hook("posttooluse", {**correct, "hook_event_name": "PostToolUse", "tool_response": {"ok": False}})
+    assert progress_self_check.send_block(wrong, wrong["tool_input"]["message"]) is not None
+    other_tool = "mcp__other__send_to_user"
+    allowed = _report_hook("pretooluse", {**wrong, "tool_name": other_tool, "hook_event_name": "PreToolUse"})
+    assert allowed.get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
+    _report_hook(
+        "posttooluse",
+        {**correct, "tool_name": other_tool, "hook_event_name": "PostToolUse", "tool_response": {"ok": True}},
+    )
+    assert progress_self_check.send_block(wrong, wrong["tool_input"]["message"]) is not None
+    _report_hook(
+        "posttooluse", {**correct, "hook_event_name": "PostToolUse", "tool_response": {"structuredContent": {"ok": True}}}
+    )
+    assert progress_self_check.send_block(wrong, wrong["tool_input"]["message"]) is None
+
+
+@pytest.mark.parametrize("host_fields", [{}, {"turn_id": "test-turn"}], ids=["claude", "codex"])
+def test_stop_does_not_check_the_progress_report_format(host_fields: dict) -> None:
+    sid = _session_id()
+    notice_module.record_delivery(_due_notice(sid))
+    progress_self_check.release_reservations()
+    payload = {"session_id": sid, "hook_event_name": "Stop", **host_fields}
+    result = _report_hook("stop", {**payload, "last_assistant_message": "点検を終えた。"})
+    assert result.get("decision") != "block"
+    assert progress_self_check.send_block(payload, "次の進捗。") is not None
+
+
+def test_in_process_subagent_notice_does_not_require_user_report() -> None:
+    sid = _session_id()
+    generated = _due_notice(sid, agent="subagent-1")
+    assert "役割文書" in generated and "次のユーザー向け報告" not in generated
+    notice_module.record_delivery(generated)
+    progress_self_check.release_reservations()
+    assert progress_self_check.send_block({"session_id": sid}, "通常の応答") is None
 
 
 def test_undelivered_notice_keeps_the_due_time_for_the_next_call() -> None:
