@@ -80,6 +80,7 @@ def section_text(path: pathlib.Path, heading: str) -> str:
 def read_contract_section(source: pathlib.Path, plugin_root: pathlib.Path, relative: str, condition: str, heading: str) -> str:
     """操作の条件が名指しした資料の節だけを、親契約の表から取得する。"""
     target = (source.parent / relative).resolve()
+    routes = 0
     for line in source.read_text(encoding="utf-8").splitlines():
         if not line.startswith("| "):
             continue
@@ -90,9 +91,11 @@ def read_contract_section(source: pathlib.Path, plugin_root: pathlib.Path, relat
             if resolve_reference(match.group(1), source, plugin_root) == target and cell[match.end() :].startswith(
                 f"「{heading}」"
             ):
-                return section_text(target, heading)
+                routes += 1
+    if routes == 1:
+        return section_text(target, heading)
     raise AssertionError(
-        f"条件別の節の取得経路がない: {source} -> {target}「{heading}」: {condition}\n"
+        f"条件別の節の取得経路が{routes}件: {source} -> {target}「{heading}」: {condition}\n"
         "次の操作: 親契約の読込表で、参照する資料と節名を該当する条件の行へ指定する"
     )
 
