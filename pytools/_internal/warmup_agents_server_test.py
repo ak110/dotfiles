@@ -14,9 +14,12 @@ import shutil
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 from typing import Any, cast
 
 import anyio
+import mcp
+import mcp.client.stdio
 import psutil
 import pytest
 from agent_toolkit._agents_server import service_forward, service_transport
@@ -51,6 +54,10 @@ def _write_script(path: pathlib.Path) -> pathlib.Path:
     return path
 
 
+def _main_checkout_config(path: pathlib.Path) -> dict[str, str]:
+    return {"repositories": json.dumps({"github.com/ak110/dotfiles": {"path": str(path), "edit": "allow"}})}
+
+
 def _codex_list_json(*entries: dict[str, object]) -> str:
     return json.dumps({"installed": list(entries)}, ensure_ascii=False)
 
@@ -72,7 +79,9 @@ def _setup(
     `None`は実行自体の失敗（タイムアウト等）を表す。
     """
     monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
-    monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None)
+    monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(_warmup.config_settings, "load_config_strict", lambda: _main_checkout_config(tmp_path))
+    monkeypatch.setattr(_warmup.claude_common, "CLAUDE_HOME", tmp_path / "claude")
     # 合成の導入環境を参照する実プロセスはない。回収処理そのものは実行する。
     monkeypatch.setattr(plugin_environment_cleanup, "_process_references", lambda: ([], False))
 
@@ -689,9 +698,12 @@ def test_published_service_outlives_startup_check(
     # 起動確認は自身の環境を、起動する子プロセスと公開先の管理領域の解決に使う。
     monkeypatch.setattr(os, "environ", environment)
     monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 120.0)
-    # 同じ依存環境を使う次の版。コードの違いで別の世代になる。
+    # 開発worktreeを公開せず、通常の配布先として検証する。
+    previous_root = tmp_path / "previous" / "agent-toolkit"
     updated = tmp_path / "updated" / "agent-toolkit"
-    shutil.copytree(_PLUGIN_ROOT, updated, ignore=shutil.ignore_patterns(".venv", "__pycache__", "node_modules", "*_test.py"))
+    ignore = shutil.ignore_patterns(".venv", "__pycache__", "node_modules", "*_test.py")
+    shutil.copytree(_PLUGIN_ROOT, previous_root, ignore=ignore)
+    shutil.copytree(previous_root, updated, ignore=ignore)
     with (updated / "agent_toolkit" / "agents_server_mcp.py").open("a", encoding="utf-8") as script:
         script.write("# updated\n")
     registry = GenerationRegistry(tmp_path / "agent-toolkit" / "services" / "agents-server")
@@ -705,7 +717,7 @@ def test_published_service_outlives_startup_check(
         return current
 
     try:
-        previous = published(_PLUGIN_ROOT)
+        previous = published(previous_root)
         published(updated)
         # 会話を持たない旧世代は、次の世代の公開後に退出する。
         deadline = time.monotonic() + 30
@@ -843,7 +855,143 @@ class TestCoverage:
         repository = tmp_path / "dotfiles"
         _write_script(repository / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py")
         monkeypatch.setattr(_common, "find_dotfiles_root", lambda: repository)
+        monkeypatch.setattr(_warmup.config_settings, "load_config_strict", lambda: _main_checkout_config(repository))
 
         _warmup.run()
 
         assert str(repository / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py") in _warmed(calls)
+
+
+@pytest.mark.windows
+@pytest.mark.parametrize("cwd_is_primary", [False, True])
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "linked",
+        "registered-linked",
+        "registered-linked-from-primary",
+        "primary",
+        "unregistered-primary",
+        "unregistered-linked",
+        "empty-path",
+        "unknown",
+        "unapproved-install",
+    ],
+)
+def test_warmup_starts_shared_service_only_from_registered_locations(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, cwd_is_primary: bool, origin: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    primary = tmp_path / "main"
+    linked = tmp_path / "linked"
+    primary.mkdir()
+    linked.mkdir()
+    repository = linked if origin in {"linked", "registered-linked", "unregistered-linked", "empty-path"} else primary
+    installed = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
+    candidate = linked / "agent-toolkit" if origin == "unapproved-install" else installed
+    calls = _setup(
+        monkeypatch,
+        tmp_path,
+        installed_plugins={"version": 2, "plugins": {_PLUGIN_ID: [{"installPath": str(candidate)}]}},
+    )
+    registered = linked if origin.startswith("registered-linked") else primary
+    unregistered = origin.startswith("unregistered-") or origin == "empty-path"
+
+    def config():
+        if origin == "empty-path":
+            return {"repositories": json.dumps({"github.com/ak110/dotfiles": {"path": "", "edit": "allow"}})}
+        return {} if unregistered else _main_checkout_config(registered)
+
+    monkeypatch.setattr(_warmup.config_settings, "load_config_strict", config)
+
+    def locate(path: pathlib.Path):
+        assert unregistered and path == repository
+        return _warmup.config_repositories.RepositoryLocation("github.com/ak110/dotfiles", path, primary / ".git")
+
+    monkeypatch.setattr(_warmup.config_repositories, "locate", locate)
+    project = repository / "agent-toolkit"
+    _write_script(project / _warmup._SCRIPT_RELATIVE)  # pylint: disable=protected-access
+    _write_script(candidate / "agent_toolkit" / "agents_server_mcp.py")
+    for root in (project, candidate):
+        _write_script(root / "agent_toolkit" / "_agents_server" / "service.py")
+    monkeypatch.chdir(primary if cwd_is_primary else linked)
+    monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None if origin == "unknown" else repository)
+    monkeypatch.setattr(_warmup, "_check_startup", _CHECK_STARTUP)
+    saves: list[object] = []
+    cleanups: list[object] = []
+    monkeypatch.setattr(_warmup.post_apply_cache, "matches", lambda *args: args in saves)
+    monkeypatch.setattr(_warmup.post_apply_cache, "save", lambda *args: saves.append(args))
+    monkeypatch.setattr(_warmup.plugin_warmup, "cleanup_prepared", cleanups.append)
+    dependency_check = _warmup.plugin_warmup.check_command
+    startups: list[pathlib.Path] = []
+    connections: list[pathlib.Path] = []
+    published: list[pathlib.Path] = []
+
+    async def check(command, **_kwargs):
+        if command[-1] != "--check-dependencies":
+            startups.append(pathlib.Path(command[-1]))
+        return await dependency_check(command)
+
+    @contextlib.asynccontextmanager
+    async def stdio(parameters, **_kwargs):
+        connections.append(pathlib.Path(parameters.args[-1]))
+        yield (None, None)
+
+    class Client:
+        def __init__(self, *_streams):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_failure):
+            pass
+
+        async def initialize(self):
+            pass
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[object()])
+
+    def publish(_caller, root: pathlib.Path, **_kwargs):
+        published.append(root)
+
+    monkeypatch.setattr(_warmup.plugin_warmup, "check_command", check)
+    monkeypatch.setattr(mcp.client.stdio, "stdio_client", stdio)
+    monkeypatch.setattr(mcp, "ClientSession", Client)
+    monkeypatch.setattr(service_forward, "publish_service", publish)
+
+    assert _warmup.run().failure is None
+    blocked = origin in {"linked", "unregistered-linked", "empty-path", "unknown", "registered-linked-from-primary"}
+    if blocked:
+        assert _prepared(calls)
+        roots = []
+    elif origin == "unapproved-install":
+        roots = [project]
+        assert str(candidate) in caplog.text
+        assert "通常のプラグイン配布先と一致しません" in caplog.text
+    elif origin == "unregistered-primary":
+        roots = [installed]
+    else:
+        roots = [installed, project]
+    assert startups == [root / "agent_toolkit" / "agents_server_mcp.py" for root in roots]
+    assert connections == startups
+    assert published == roots
+    assert bool(saves) is not blocked
+    assert bool(cleanups) is not blocked
+    if blocked:
+        assert "共有管理サービスの起動と公開を省略" in caplog.text
+        assert f"登録先: {'なし・未確認' if unregistered else registered}" in caplog.text
+        assert f"更新元: {'未確認' if origin == 'unknown' else repository}" in caplog.text
+        assert "atk config repos set の --path" in caplog.text
+        assert "登録を主checkoutに合わせ、通常の更新を行ってください" in caplog.text
+        assert "linked worktreeを登録したまま通常の更新で復旧することには対応していません" in caplog.text
+    if origin == "unknown":
+        assert "起動元のcheckoutを確認できません" in caplog.text
+    if origin == "unapproved-install":
+        _write_script(installed / "agent_toolkit" / "_agents_server" / "service.py")
+        (tmp_path / "installed_plugins.json").write_text(
+            json.dumps({"version": 2, "plugins": {_PLUGIN_ID: [{"installPath": str(installed)}]}}),
+            encoding="utf-8",
+        )
+        assert _warmup.run().failure is None
+        assert published == [project, installed, project]

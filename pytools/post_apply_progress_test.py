@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import json
 import logging
 import logging.handlers
 import os
@@ -100,23 +101,39 @@ def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tm
     """
     monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
     warmup = post_apply.warmup_agents_server
-    commands = [["python", str(tmp_path / name)] for name in ("first", "second")]
+    monkeypatch.setattr(warmup.common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(
-        warmup.plugin_warmup, "prepare_targets", lambda *_args, **_kwargs: warmup.plugin_warmup.PreparedTargets(commands)
+        warmup.config_settings,
+        "load_config_strict",
+        lambda: {"repositories": json.dumps({"github.com/ak110/dotfiles": {"path": str(tmp_path), "edit": "allow"}})},
     )
+    monkeypatch.setattr(warmup.claude_common, "CLAUDE_HOME", tmp_path)
+    marketplace = tmp_path / "plugins" / "cache" / warmup.claude_common.MARKETPLACE_NAME / "agent-toolkit"
+    scripts = [marketplace / name / "agent_toolkit" / "agents_server_mcp.py" for name in ("first", "second")]
+    for script in scripts:
+        script.parent.mkdir(parents=True)
+        script.touch()
+    monkeypatch.setattr(warmup, "_targets", lambda: scripts)
+    commands = [["python", str(script), "--project", str(script.parents[1]), str(script)] for script in scripts]
+
+    def prepare(targets, **_kwargs):
+        assert targets() == scripts
+        return warmup.plugin_warmup.PreparedTargets(commands)
+
+    monkeypatch.setattr(warmup.plugin_warmup, "prepare_targets", prepare)
 
     async def check_targets():
         second_done = asyncio.Event()
 
         async def dependency(command):
-            if Path(command[-2]).name == "first":
+            if Path(command[-2]).parents[1].name == "first":
                 await asyncio.wait_for(second_done.wait(), 5)
             else:
                 second_done.set()
             return warmup.plugin_warmup.CommandOutcome(command, subprocess.CompletedProcess(command, 0, "", ""), 0)
 
         async def startup(command):
-            name = Path(command[-1]).name
+            name = Path(command[-1]).parents[1].name
             return warmup._StartupOutcome(not (name == "second" and fail_second), f"{name}-root-detail", inherited_job=True)
 
         monkeypatch.setattr(warmup.plugin_warmup, "check_command", dependency)

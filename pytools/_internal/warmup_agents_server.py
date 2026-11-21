@@ -20,15 +20,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_toolkit._agents_server import service_forward
+from agent_toolkit._atk import config_repositories, config_settings
 from agent_toolkit._common import dotfiles_mode, process_tree, runtime_environment, windows_security
 
-from pytools._internal import claude_common, common, log_format, plugin_warmup, post_apply_cache, post_apply_outcome
+from pytools._internal import (
+    claude_common,
+    common,
+    install_codex_plugins,
+    log_format,
+    plugin_warmup,
+    post_apply_cache,
+    post_apply_outcome,
+)
 
 _TAG = "agent-toolkit warmup"
 _SCRIPT_RELATIVE = Path("agent_toolkit") / "agents_server_mcp.py"
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 _STARTUP_TIMEOUT = 30.0
 _UNCHANGED = "コード・起動条件が同じためMCP起動確認を省略"
+_REPO_ID = "github.com/ak110/dotfiles"
 _ELEVATED = (
     "管理者権限（昇格）で実行中のため、非昇格の会話と共有する管理サービスの起動と公開を省略"
     "（非昇格の会話の転送側は昇格したプロセスの管理サービスとの接続を認証できない）"
@@ -45,8 +55,37 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """導入済みの版を解決し、起動時のデータ領域へuv環境を構築する。"""
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
-    prepared = plugin_warmup.prepare_targets(_targets, tag=_TAG)
-    commands = prepared.commands
+    checkout = common.find_dotfiles_root()
+    candidates: list[Path] = []
+
+    def targets() -> list[Path]:
+        candidates.extend(_targets())
+        return candidates
+
+    prepared = plugin_warmup.prepare_targets(targets, tag=_TAG)
+    if not prepared.commands:
+        return post_apply_outcome.PostApplyOutcome()
+    try:
+        registered = _registered_checkout()
+    except (OSError, ValueError) as error:
+        _warn_skip(f"{config_settings.config_file_path()} のリポジトリ登録を読めません: {error}", None, checkout)
+        return post_apply_outcome.PostApplyOutcome()
+    checkout_skip = _checkout_skip(checkout, registered)
+    if checkout_skip is not None:
+        _warn_skip(checkout_skip, registered, checkout)
+        return post_apply_outcome.PostApplyOutcome()
+    approved = _approved_scripts(registered, candidates)
+    commands = []
+    for command in prepared.commands:
+        try:
+            script = Path(command[-1]).resolve(strict=True)
+            project = Path(command[command.index("--project") + 1]).resolve(strict=True)
+            if script not in approved or script != project / _SCRIPT_RELATIVE:
+                raise ValueError("起動対象が登録済みの主checkoutまたは通常のプラグイン配布先と一致しません")
+        except (OSError, ValueError, IndexError) as error:
+            _warn_skip(f"{command[-1]}: {error}", registered, checkout)
+            continue
+        commands.append(command)
     if not commands:
         return post_apply_outcome.PostApplyOutcome()
     paths: list[Path] = []
@@ -252,18 +291,67 @@ def _service_root(command: Sequence[str]) -> Path | None:
     return root if (root / "agent_toolkit" / "_agents_server" / "service.py").is_file() else None
 
 
-def _targets() -> list[Path]:
-    """Claude CodeとCodexの実参照先を重複なく列挙する。
+def _registered_checkout() -> Path | None:
+    """登録ファイルを読み取るだけにし、更新試験で移行や保存を起こさない。"""
+    raw = config_settings.load_config_strict().get("repositories", "{}")
+    if not isinstance(raw, str):
+        raise ValueError("repositoriesの値がJSON文字列ではありません")
+    path = config_repositories.parse(raw, check_paths=False).get(_REPO_ID, {}).get("path")
+    return Path(path).resolve(strict=True) if isinstance(path, str) and path else None
 
-    Codexの版はプラグイン更新が失敗した場合も実際の参照先と一致させるため、
-    `codex plugin list --json`の有効なエントリから解決する。
-    """
-    targets = plugin_warmup.agent_toolkit_targets(
+
+def _checkout_skip(checkout: Path | None, registered: Path | None) -> str | None:
+    """登録を優先し、登録がない時だけ既存のGit判定で主checkoutかを確かめる。"""
+    if checkout is None:
+        return "起動元のcheckoutを確認できません"
+    if registered is not None:
+        return None if checkout == registered else "更新元が登録先と一致しません"
+    try:
+        location = config_repositories.locate(checkout)
+    except (OSError, ValueError) as error:
+        return f"起動元 {checkout} のGit作業ツリーを確認できません: {error}"
+    if location is not None and checkout == location.worktree == location.common_dir.parent:
+        return None
+    return "未登録の更新元をGitの主checkoutとも確認できません"
+
+
+def _warn_skip(reason: str, registered: Path | None, checkout: Path | None) -> None:
+    logger.warning(
+        "共有管理サービスの起動と公開を省略: %s。登録先: %s、更新元: %s。"
+        "atk config repos add または atk config repos set の --path で登録を主checkoutに合わせ、通常の更新を行ってください。"
+        "linked worktreeを登録したまま通常の更新で復旧することには対応していません",
+        reason,
+        registered if registered is not None else "なし・未確認",
+        checkout if checkout is not None else "未確認",
+    )
+
+
+def _approved_scripts(registered: Path | None, installed: Sequence[Path]) -> set[Path]:
+    """登録先と、導入一覧に載るバージョン別キャッシュの実体だけを許可する。"""
+    marketplace = Path("plugins", "cache", claude_common.MARKETPLACE_NAME, "agent-toolkit")
+    homes = (claude_common.CLAUDE_HOME, Path(os.environ.get("CODEX_HOME", install_codex_plugins.CODEX_HOME)))
+    caches = {(home / marketplace).resolve() for home in homes}
+    approved = {registered / "agent-toolkit" / _SCRIPT_RELATIVE} if registered is not None else set()
+    for script in installed:
+        try:
+            project = script.parents[1].resolve(strict=True)
+            physical = script.resolve(strict=True)
+            if project.parent in caches and physical == project / _SCRIPT_RELATIVE:
+                approved.add(physical)
+        except OSError:
+            # 起動コマンドと許可集合が一致しない理由は起動直前に表示する。
+            continue
+    return approved
+
+
+def _targets() -> list[Path]:
+    """Claude CodeとCodexの実参照先を重複なく列挙する。"""
+    installed = plugin_warmup.agent_toolkit_targets(
         _INSTALLED_PLUGINS_PATH,
         claude_relative=_SCRIPT_RELATIVE,
         codex_relative=_SCRIPT_RELATIVE,
         tag=_TAG,
     )
-    root = common.find_dotfiles_root()
-    worktree_target = root / "agent-toolkit" / _SCRIPT_RELATIVE if root is not None else None
-    return plugin_warmup.existing_targets([*targets, worktree_target], tag=_TAG)
+    checkout = common.find_dotfiles_root()
+    worktree_target = checkout / "agent-toolkit" / _SCRIPT_RELATIVE if checkout is not None else None
+    return plugin_warmup.existing_targets([*installed, worktree_target], tag=_TAG)
