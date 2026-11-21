@@ -168,7 +168,9 @@ async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_pa
     async with _manager_with_fake("claude") as (parent_manager, parent_backend):
         parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
         parent.live_child_session_ids.add(_ORPHANED_SESSION_ID)
-        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+        resume_waits.begin_auto_resume_wait(
+            parent, {"status": "completed", "agent_message": f"待機中: {_ORPHANED_SESSION_ID}", "error": None}
+        )
         parent_manager.sessions[parent.session_id] = parent
         await parent_manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
         assert _ORPHANED_SESSION_ID not in parent.live_child_session_ids
@@ -215,7 +217,9 @@ async def test_record_with_a_live_recorded_process_keeps_running_on_every_path(
     async with _manager_with_fake("claude") as (parent_manager, parent_backend):
         parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
         parent.live_child_session_ids.add(_ORPHANED_SESSION_ID)
-        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+        resume_waits.begin_auto_resume_wait(
+            parent, {"status": "completed", "agent_message": f"待機中: {_ORPHANED_SESSION_ID}", "error": None}
+        )
         parent_manager.sessions[parent.session_id] = parent
         await parent_manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
         assert _ORPHANED_SESSION_ID in parent.live_child_session_ids

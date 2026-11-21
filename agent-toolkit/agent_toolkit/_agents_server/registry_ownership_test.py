@@ -236,7 +236,7 @@ async def test_unobserved_child_stays_pending_until_terminal(
         install_backend(manager, engine, backend)
         parent = state.SessionState("parent", str(tmp_path), engine=engine)
         parent.live_child_session_ids.add("child")
-        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "待機表明", "error": None})
+        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "待機中: child", "error": None})
         manager.sessions[parent.session_id] = parent
         for _ in range(2):
             await manager._advance_child_session_wait(parent)
@@ -443,14 +443,14 @@ async def test_public_wait_holds_unknown_child_then_collects_resumed_result_once
                 }
             )
 
-        await complete("待機表明")
+        await complete("待機中: child")
         await manager._advance_child_session_wait(parent)
         await parent.drain_registration()
         writer.flush()
         with pytest.raises(SystemExit) as waiting:
             atk.main(["agents", "wait", "--root-session-id", "root-session"])
         assert waiting.value.code == 3
-        assert "待機表明" not in capsys.readouterr().out
+        assert "待機中: child" not in capsys.readouterr().out
         session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, turn_seq=2)
         await manager._advance_child_session_wait(parent)
         assert sum(method == "turn/start" for method, _params in client.requests) == 2

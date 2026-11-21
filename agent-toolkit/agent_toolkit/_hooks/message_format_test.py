@@ -199,7 +199,7 @@ async def test_start_followup_and_auto_resume_generated_deliveries_reach_shared_
         for operation in ("children", "overload", "usage-limit"):
             pending_result = {
                 "status": "completed",
-                "agent_message": "待機中",
+                "agent_message": "待機中: child-session",
                 "error": {"message": "失敗", "usageLimit": {"type": "five_hour"}},
             }
             session.hold_result(turn_state.BackgroundWait(pending_result, None))
