@@ -3,6 +3,8 @@
 import pathlib
 import re
 
+from markdown_it import MarkdownIt
+
 from agent_toolkit._common.markdown_headings import parse_headings
 
 REFERENCE = re.compile(r"`([^`]+\.md(?:#[^`]*)?)`")
@@ -80,11 +82,13 @@ def section_text(path: pathlib.Path, heading: str) -> str:
 def read_contract_section(source: pathlib.Path, plugin_root: pathlib.Path, relative: str, condition: str, heading: str) -> str:
     """操作の条件が名指しした資料の節だけを、親契約の表から取得する。"""
     target = (source.parent / relative).resolve()
+    section = section_text(source, "条件と行動")
+    lines = section.splitlines()
     routes = 0
-    for line in source.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("| "):
+    for token in MarkdownIt().enable("table").parse(section):
+        if token.type != "tr_open" or token.map is None:
             continue
-        _, row_condition, cell, *_ = line.split("|")
+        _, row_condition, cell, *_ = lines[token.map[0]].split("|")
         if condition not in row_condition:
             continue
         for match in REFERENCE.finditer(cell):
