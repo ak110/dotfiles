@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import pathlib
 import subprocess
 from types import SimpleNamespace
@@ -73,6 +75,7 @@ async def test_send_to_user_carries_tool_use_id_from_request_meta(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("shared", [True, False], ids=["shared", "stdio"])
 @pytest.mark.parametrize(
     ("message", "consulted"),
     [
@@ -82,7 +85,7 @@ async def test_send_to_user_carries_tool_use_id_from_request_meta(
     ],
 )
 async def test_send_to_user_consults_report_guidance_for_improvement_lines(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, message: str, consulted: bool
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, message: str, consulted: bool, shared: bool
 ) -> None:
     """改善点の行を含む報告だけ送達前の案内を照会し、結果を`guidance`で返す。
 
@@ -93,20 +96,49 @@ async def test_send_to_user_consults_report_guidance_for_improvement_lines(
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
     monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    monkeypatch.chdir(tmp_path)
+    caller_cwd = tmp_path / "caller"
+    caller_cwd.mkdir()
     payloads: list[dict] = []
+    run_hook = subprocess.run
 
     def run(argv: list[str], **kwargs: str) -> subprocess.CompletedProcess[str]:
-        payloads.append(json.loads(kwargs["input"]))
-        output = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "案内"}}
-        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(output), stderr="")
+        payload = json.loads(kwargs["input"])
+        payloads.append(payload)
+        if not pathlib.Path(payload.get("cwd", "")).is_absolute():
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="cwdがありません")
+        root = pathlib.Path(argv[1]).parents[1]
+        return run_hook(
+            [argv[0], str(root / argv[2]), *argv[3:]],
+            cwd=payload["cwd"],
+            env={**os.environ, "PYTHONPATH": str(root)},
+            input=kwargs["input"],
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=10,
+        )
 
     monkeypatch.setattr(mcp_tools.subprocess, "run", run)
-    with runtime_environment.bind(runtime_environment.CallerContext({}, tmp_path)):
+    caller = runtime_environment.bind(runtime_environment.CallerContext({}, caller_cwd))
+    with caller if shared else contextlib.nullcontext():
         response = await mcp_tools.mcp.call_tool("send_to_user", {"message": message})
-    expected = [{"session_id": "launcher-main", "last_assistant_message": message}] if consulted else []
+    expected = (
+        [{"session_id": "launcher-main", "last_assistant_message": message, "cwd": str(caller_cwd if shared else tmp_path)}]
+        if consulted
+        else []
+    )
     assert payloads == expected
     assert isinstance(response, CallToolResult)
-    assert response.structured_content == {"status": "confirmed", "guidance": "案内" if consulted else ""}
+    assert response.structured_content is not None
+    assert response.structured_content["status"] == "confirmed"
+    guidance = response.structured_content["guidance"]
+    if consulted:
+        assert "改善点報告の区分名が、報告行の書式と一致しない。" in guidance
+        assert "報告の案内を取得できなかった" not in guidance
+    else:
+        assert guidance == ""
+    request.assert_awaited_once_with("launcher-main", "send_to_user", {"message": message})
 
 
 @pytest.mark.asyncio
