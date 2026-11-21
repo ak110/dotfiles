@@ -150,7 +150,7 @@ def test_notice_access_error_preserves_original_and_reports_retry(
         "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json"
     )
     assert original.is_file()
-    assert "原本を保持した" in caplog.text and "atk agents waitで再回収" in caplog.text
+    assert "原本を保持した" in caplog.text and "送信元に再送" in caplog.text
     assert str(original) in caplog.text
 
 

@@ -407,7 +407,7 @@ class ManagerResponses(manager_base.ManagerBase):
             if error is not None:
                 raise ActionableError(
                     f"保存済みの子の結果を回収できない: {session_id}: {error}",
-                    next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
+                    next_action="結果ファイルの読み取り権限と内容を確認し、同じwaitを再実行する",
                 )
             return None if claimed is None else {**response, **claimed}
         if self._status_writer is not None:
@@ -421,7 +421,7 @@ class ManagerResponses(manager_base.ManagerBase):
             if error is not None:
                 raise ActionableError(
                     f"保存済みの子の結果を回収できない: {session_id}: {error}",
-                    next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
+                    next_action="結果ファイルの読み取り権限と内容を確認し、同じwaitを再実行する",
                 )
             return None if claimed is None else response
         return response

@@ -55,8 +55,9 @@ _BROKEN_STATE_NEXT_ACTION = (
     "agents_serverの状態が壊れているため、MCPの`list`で保持状態を確かめ、agents_serverの不具合としてユーザーへ報告する"
 )
 _READ_FAILURE_NEXT_ACTION = (
-    "回収済みの結果は出力済みのため再取得しない。"
-    "MCPの`show`で対象sessionの状態を確かめ、読めない状態が続く場合はagents_serverの不具合としてユーザーへ報告する"
+    "この待機では結果本文を配送していない。"
+    "MCPの`show`で対象sessionの状態を確かめ、結果ファイルの読み取り権限と内容を確認して`atk agents wait`を再実行する。"
+    "読めない状態が続く場合はagents_serverの不具合としてユーザーへ報告する"
 )
 _ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行する"
 _SAVED_RESULT_NEXT_ACTION = (

@@ -49,7 +49,7 @@ def _read_notice(path: pathlib.Path, session_id: str, source: pathlib.Path) -> P
     except OSError as exc:
         if path.name.startswith(f"{session_id}."):
             _LOG.warning(
-                "上り通知を読めないため原本を保持した: %s: %s。読取権限を確認してからatk agents waitで再回収する",
+                "上り通知を読めないため原本を保持した: %s: %s。読取権限を確認し、必要なら送信元に再送を依頼する",
                 path,
                 exc,
             )
@@ -116,7 +116,7 @@ def consume_notices(pending: list[PendingNotice]) -> list[dict[str, str]]:
         except OSError as exc:
             # 他の通知や確定済みの終了結果は返し、この原本は次回に残す。
             _LOG.warning(
-                "上り通知を削除できないため原本を保持した: %s: %s。権限を確認してからatk agents waitで再回収する",
+                "上り通知を削除できないため原本を保持した: %s: %s。権限を確認し、必要なら送信元に再送を依頼する",
                 notice.path,
                 exc,
             )
