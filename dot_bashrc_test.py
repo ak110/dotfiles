@@ -7,6 +7,23 @@ import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
 BASHRC = REPO_ROOT / ".chezmoi-source" / "dot_bashrc"
+BASH_PROFILE = REPO_ROOT / ".chezmoi-source" / "dot_bash_profile"
+
+
+def test_claude_snapshot_defers_bashrc_to_its_explicit_source(tmp_path: pathlib.Path) -> None:
+    """スナップショットは1回だけ読み、通常の非対話ログインは従来どおり読む。"""
+    bashrc = tmp_path / ".bashrc"
+    bashrc.write_text("printf '%s\\n' bashrc-loaded\n", encoding="utf-8")
+    snapshot = f'SNAPSHOT_FILE=synthetic\n\n      source "{bashrc}" < /dev/null\n      :'
+    for command, claude, count in ((snapshot, "1", 1), (snapshot, "", 2), (":", "1", 1)):
+        completed = subprocess.run(
+            ["/bin/bash", "--noprofile", "--norc", "-c", command],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={"HOME": str(tmp_path), "BASH_ENV": str(BASH_PROFILE), "CLAUDECODE": claude},
+        )
+        assert completed.stdout.splitlines() == ["bashrc-loaded"] * count
 
 
 def _write_completion_stub(path: pathlib.Path, *, fails: bool = False) -> None:
