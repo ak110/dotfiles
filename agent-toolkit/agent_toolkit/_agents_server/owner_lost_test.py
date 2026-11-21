@@ -9,6 +9,7 @@ from __future__ import annotations
 
 # 受入テストはMCPツールの関数と共有状態のファイルを直接確かめる。
 # pylint: disable=protected-access
+import asyncio
 import contextlib
 import datetime
 import json
@@ -28,6 +29,7 @@ from agent_toolkit._agents_server import (
     mcp_tools,
     owner_lost,
     resume_waits,
+    retained_results,
     shared_layout,
     shared_roots,
     shared_sweep,
@@ -43,6 +45,7 @@ from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
     ThreadReadBackend,
+    _complete,
     _install_backend,
     _show_through_tool,
     exited_process_identity,
@@ -356,11 +359,12 @@ async def test_record_whose_executor_exited_under_hung_owner_is_taken_over(
         assert owner_process.poll() is None
 
 
+@pytest.mark.parametrize("outcome", ["no-result", "return", "contention", "cancel"])
 @pytest.mark.asyncio
 async def test_registry_resolved_send_message_collects_stranded_notices(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, outcome: str
 ) -> None:
-    """登録簿から解決した終了sessionへの追送も、旧ルートに残る上り通知を回収して返す（完成条件4）。"""
+    """旧ルートの通知は追送の応答確定まで残り、終了結果の競合には巻き込まれない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         _SESSION_ID,
@@ -369,15 +373,51 @@ async def test_registry_resolved_send_message_collects_stranded_notices(
         cwd=str(tmp_path),
         turn_seq=1,
         launcher_session_id=_LAUNCHER,
+        owner_root_session_id=_OLD_ROOT,
     )
     _write_old_root(tmp_path, "終了前の通知")
+    old_writer = status_file.StatusFileWriter(
+        {}, shared_roots.StatusFileIdentity(_OLD_ROOT, "root.json", None), state_root=tmp_path
+    )
+    old_turn = state.SessionState(_SESSION_ID, str(tmp_path), engine="claude", status="completed", turn_seq=1)
+    if outcome != "no-result":
+        _complete(old_turn, message="前の結果")
+        old_writer.retain_result(old_turn)
     async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
         manager.activate()
-        _backend(monkeypatch, manager, "claude", [])
-        response = await mcp_tools.send_message(_SESSION_ID, "続行")
-        assert response["delivery"] == "reply_started"
-        assert [notice["body"] for notice in response["notices"]] == ["終了前の通知"]
+        backend = _backend(monkeypatch, manager, "claude", [])
+        if outcome == "cancel":
+            entered = asyncio.Event()
+
+            async def wait_for_cancellation(*_args, **_kwargs):
+                entered.set()
+                await asyncio.Future()
+
+            monkeypatch.setattr(manager, "_claim_resume_result", wait_for_cancellation)
+            task = asyncio.create_task(mcp_tools.send_message(_SESSION_ID, "続行"))
+            await asyncio.wait_for(entered.wait(), 2)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert owner_lost.take_stranded_notices(_SESSION_ID, _NEW_ROOT, tmp_path, recipient_session_id=_LAUNCHER) == [
+                {"body": "終了前の通知"}
+            ]
+        else:
+            lock = shared_layout.results_directory(_OLD_ROOT, tmp_path) / f".{_SESSION_ID}.claim.lock"
+            with retained_results._locked(lock) if outcome == "contention" else contextlib.nullcontext():
+                response = await mcp_tools.send_message(_SESSION_ID, "続行")
+            assert response["delivery"] == "reply_started"
+            assert response["notices"] == [{"body": "終了前の通知"}]
+            if outcome == "return":
+                assert response["previous_result"]["agent_message"] == "前の結果"
+            else:
+                assert "previous_result" not in response
+        assert backend.resume_calls == [_SESSION_ID]
+        if outcome in {"contention", "cancel"}:
+            result, error = old_writer.take_result(_SESSION_ID, collector="cli")
+            assert error is None and result is not None and result["agent_message"] == "前の結果"
         assert not _old_notice_files(tmp_path)
+        assert old_writer.take_result(_SESSION_ID, collector="cli") == (None, None)
 
 
 @pytest.mark.asyncio

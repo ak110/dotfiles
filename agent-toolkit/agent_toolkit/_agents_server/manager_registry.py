@@ -38,7 +38,11 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
         await self._drain_candidate_records()
         if self._status_writer is not None:
             await self._status_writer.drain()
+        previous = self.stopped_sessions.get(session_id)
         stopped_state = await self._resolve_stopped_session(session_id)
+        if not retain_result and previous is not None:
+            # 現在の稼働状態を確認しても、再試行する破棄の対象は元の所有者・turnのままとする。
+            stopped_state = previous
         if stopped_state is None:
             stopped_state = await self._restore_registry_session(session_id)
         already_stopped = session_id in self.stopped_sessions
@@ -70,13 +74,35 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
             resume_state = stopped_state or self.expired_sessions.get(session_id)
             if resume_state is None:
                 raise await self._unresolved_session_error(session_id, label="session")
-        result_state = None if self._status_writer is None else (await self._status_writer.result_state_async(session_id))
+        result_state = (
+            None
+            if not retain_result or self._status_writer is None
+            else (await self._status_writer.result_state_async(session_id, session=resume_state))
+        )
         registration = await run_file_operation(session_registry.resolve, session_id)
+        if (
+            not retain_result
+            and isinstance(resume_state, RegistryResumeState)
+            and registration.owner_root_session_id is not None
+            and resume_state.result_root_session_id != registration.owner_root_session_id
+            and self._status_writer is not None
+        ):
+            source = await run_file_operation(
+                self._status_writer.stopped_result_writer, session_id, registration.owner_root_session_id
+            )
+            resume_state = dataclasses.replace(
+                resume_state, result_root_session_id=source.root_session_id, result_owner_status_file=source.file_name
+            )
         expected_owner = (
             registration.server_instance,
             None if registration.recorded_turn_seq is None else resume_state.turn_seq,
         )
-        keep_result = retain_result and resume_state.finalized_at is not None and result_state != "consumed"
+        keep_result = (
+            retain_result
+            and not resume_state.result_delivered
+            and resume_state.finalized_at is not None
+            and result_state != "consumed"
+        )
         resume_state = dataclasses.replace(resume_state, result_delivered=not keep_result)
         if session is not None:
             session.result_delivered = not keep_result
@@ -95,18 +121,19 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
                 session_registry.release, session_id, reason="stopped", expected_owner=expected_owner
             )
             if released and self._status_writer is not None:
-                if not keep_result:
+                if retain_result and not keep_result:
                     (await run_file_operation(self._status_writer.delete_wait_target, session_id))
-                if (
-                    keep_result
-                    and result_state == "unpublished"
-                    and not (await run_file_operation(self._status_writer.result_exists, session_id))
-                ):
+                if not retain_result:
+                    await self._status_writer.discard_stopped_session_async(resume_state, expected_owner=expected_owner)
+                elif keep_result and result_state == "unpublished":
                     await self._status_writer.retain_result_async(resume_state)
-                elif not keep_result and (
-                    result_state == "published" or (await run_file_operation(self._status_writer.result_exists, session_id))
-                ):
-                    await self._status_writer.delete_result_async(session_id, collector="stop")
+                elif not keep_result and resume_state.finalized_at is not None:
+                    if isinstance(resume_state, RegistryResumeState) and resume_state.result_root_session_id is not None:
+                        await self._claim_resume_result(resume_state, {}, collector="stop")
+                    else:
+                        await self._status_writer.delete_result_async(
+                            session_id, collector="stop", expected_end=(resume_state.turn_seq, resume_state.finalized_at)
+                        )
                 self._status_writer.schedule()
         except Exception as exc:
             raise ActionableRuntimeError(

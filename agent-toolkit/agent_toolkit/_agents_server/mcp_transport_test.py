@@ -291,11 +291,17 @@ _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _LAUNCH_TIMEOUT = 60.0
 
 
+@pytest.fixture(scope="session", name="launcher_runtime")
+def _launcher_runtime(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
+    """同じworker内で依存環境を共有し、試験ごとの複製・削除を避ける。"""
+    return tmp_path_factory.mktemp("launcher-runtime")
+
+
 @pytest.fixture(name="launcher_environment")
-def _launcher_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> dict[str, str]:
-    """公開prepareで一時runtimeを準備し、通常起動と旧起動形へ同じ環境を渡す。"""
+def _launcher_environment(launcher_runtime: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> dict[str, str]:
+    """依存だけを共有し、各試験が指定するサービスと状態領域は分離する。"""
     environment = host_environ()
-    environment["AGENT_TOOLKIT_RUNTIME_DATA"] = str(tmp_path / "runtime")
+    environment["AGENT_TOOLKIT_RUNTIME_DATA"] = str(launcher_runtime)
     environment.pop("UV_FROZEN", None)
     prepare_plugin_environment(_PLUGIN_ROOT, environment)
     return environment

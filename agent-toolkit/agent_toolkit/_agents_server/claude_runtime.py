@@ -6,6 +6,7 @@ from __future__ import annotations
 # pylint: disable=import-outside-toplevel
 import asyncio
 import contextlib
+import weakref
 from collections.abc import Callable
 from typing import Any
 
@@ -45,6 +46,7 @@ class ClaudeRuntime:
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._channels: dict[str, _CommandChannel] = {}
+        self._reply_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._sdk_clients: dict[str, Any] = {}
         self._service_compaction_checkpoints: dict[str, dict] = {}
         self._wait_compactors: dict[str, wait_compaction.WaitCompaction] = {}

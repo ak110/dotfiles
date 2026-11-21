@@ -19,12 +19,15 @@ from agent_toolkit._testing.run_skill_support import _engine_env, _Env, _log_fil
 __all__ = ["_engine_env", "_records", "_run", "_startup_input"]
 
 
-def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, capsys: pytest.CaptureFixture[str]) -> None:
+def test_claude_session_runs_skill_with_goal_and_reports_log(
+    engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Claude候補を採用した起動はホストの`/goal`を付けない目的文で対象リポジトリのrootから始まり、成功行でログの場所を示す。
 
     目的文に報告用UWIの保存と過去の実行のUWIの適用が欠けると、定期実行の結果がユーザーへ届かず、
     回答済みの対応も実施されない。
     """
+    monkeypatch.delenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", raising=False)
     code, out, err = _run(
         ["--target-repo", str(engine_env.repo / "sub"), "--args", "対象: web", "example-plugin:check-logs"], capsys
     )
@@ -33,7 +36,7 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
     sessions = _records(engine_env, "session")
     assert len(sessions) == 1
     argv = sessions[0]["argv"]
-    assert sessions[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
+    assert sessions[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] is None
     assert argv[:2] == ["claude", "-p"]
     for option, value in (
         ("--permission-mode", "auto"),
@@ -71,18 +74,17 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
-def test_background_setting_is_limited_to_claude_child(engine_env, monkeypatch, capsys, engine) -> None:
-    """同期実行設定はClaudeの子へ限定し、起動元と他engineの設定を維持する。"""
-    monkeypatch.setenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "0")
+@pytest.mark.parametrize("disabled", ["0", "1"])
+def test_regular_run_skill_preserves_background_setting(engine_env, monkeypatch, capsys, engine, disabled) -> None:
+    """通常起動では非対話であってもホストの背景実行設定を上書きしない。"""
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", disabled)
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
 
     code, _out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
 
     assert code == 0, err
-    assert os.environ["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "0"
-    assert _records(engine_env, "session")[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == (
-        "1" if engine == "claude" else "0"
-    )
+    assert os.environ["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == disabled
+    assert _records(engine_env, "session")[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == disabled
 
 
 def test_codex_session_receives_goal_without_slash_command(

@@ -30,7 +30,7 @@ from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.service_context import Conversation, ServiceManagers
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_move_source import MoveSource
-from agent_toolkit._agents_server.service_projection import ProjectionHub
+from agent_toolkit._agents_server.service_projection import ProjectionHub, seed_from_previous
 from agent_toolkit._agents_server.service_registry import RegistryForwarder, restore_generation
 from agent_toolkit._common import file_lock, runtime_environment, session_registry
 from agent_toolkit._common.next_action import ActionableError
@@ -150,15 +150,7 @@ class ServiceCoordinator:
                         and current["generation"] != self.generation
                     ):
                         previous = current
-                        inventory = await service_rpc.request(
-                            current,
-                            "prepare_update",
-                            {
-                                "token": token,
-                                "target": self.target,
-                            },
-                        )
-                        await self.projections.seed(inventory)
+                        await seed_from_previous(self.projections, self.directory, current, self.target, token)
                     accepted = self.registry.publish(
                         self.generation,
                         endpoint=self.target["endpoint"],

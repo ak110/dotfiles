@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import manager, status_file, unavailable_candidates
+from agent_toolkit._agents_server import manager, retained_results, status_file, unavailable_candidates
 from agent_toolkit._agents_server.shared_roots import StatusFileIdentity
 from agent_toolkit._atk import config
 from agent_toolkit._common import session_registry
@@ -42,7 +42,7 @@ async def test_blocking_waits_do_not_stall_event_loop(
         observed.append(progressed.is_set() and threading.get_ident() != loop_thread)
         if operation == "registry":
             return session_registry.SessionResolution(session_registry.Resolution.MISSING)
-        return (None, None) if operation == "claim" else ([] if operation == "notices" else {})
+        return None if operation == "claim" else ([] if operation == "notices" else {})
 
     def controller() -> None:
         if entered.wait(5):
@@ -65,10 +65,10 @@ async def test_blocking_waits_do_not_stall_event_loop(
                 monkeypatch.setattr(status_file, "sweep_stale_shared_state", blocking)
                 await writer.activate_async()
             elif operation == "claim":
-                monkeypatch.setattr(status_file, "take_result", blocking)
+                monkeypatch.setattr(retained_results, "_oldest_owned", blocking)
                 await writer.take_result_async("child", collector="test")
             elif operation == "notices":
-                monkeypatch.setattr(status_file, "take_notices", blocking)
+                monkeypatch.setattr(status_file, "read_notices", blocking)
                 await writer.take_notices_async("child")
             elif operation == "candidates":
                 monkeypatch.setattr(

@@ -11,6 +11,7 @@
     "effort",
     "engine",
     "fast_mode",
+    "finalized_at",
     "label",
     "last_action",
     "launch_kind",
@@ -22,6 +23,7 @@
     "session_id",
     "started_at",
     "status",
+    "turn_seq",
     "updated_at"
   ],
   "example": {
@@ -44,6 +46,8 @@
         "launch_kind": "delegate",
         "prompt": "調査する",
         "status": "running",
+        "turn_seq": 1,
+        "finalized_at": null,
         "label": "調査",
         "created_at": "2026-10-06T23:59:00+00:00",
         "started_at": "2026-10-06T23:59:00+00:00",

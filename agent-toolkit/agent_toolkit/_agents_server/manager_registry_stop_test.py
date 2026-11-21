@@ -57,6 +57,26 @@ async def test_stop_discards_terminal_session(
 
 
 @pytest.mark.asyncio
+async def test_stop_retains_new_end_when_legacy_result_is_unreadable(tmp_path: pathlib.Path) -> None:
+    """停止による保持でも、旧名が壊れたことを別の未公開turnの公開済み判定にしない。"""
+    writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
+    async with server_manager.AgentsServerManager(writer) as manager:
+        install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+        writer.activate()
+        session = state.SessionState("child", str(tmp_path), engine="codex", announced=True, turn_seq=2)
+        _complete(session, message="後の結果")
+        manager.sessions[session.session_id] = session
+        previous = shared_layout.results_directory("root", tmp_path) / "child.json"
+        previous.parent.mkdir(parents=True, exist_ok=True)
+        previous.write_text("{", encoding="utf-8")
+
+        assert await manager.stop(session.session_id, retain_result=True) == {}
+        result, error = writer.take_result(session.session_id, collector="test")
+        assert error is None and result is not None and result["agent_message"] == "後の結果"
+        assert previous.read_text(encoding="utf-8") == "{"
+
+
+@pytest.mark.asyncio
 async def test_stop_removes_status_file_projection_and_retained_result(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
@@ -87,6 +107,47 @@ async def test_stop_removes_status_file_projection_and_retained_result(
         assert json.loads(writer.path.read_text(encoding="utf-8"))["sessions"] == []
         assert not result_path.exists()
         assert "result_deleted session_id=visible writer=root.json collector=stop" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_explicit_stop_discards_only_its_sessions_outstanding_turns(tmp_path: pathlib.Path) -> None:
+    writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("parent", "root.json", None), state_root=tmp_path)
+    async with server_manager.AgentsServerManager(writer) as manager:
+        backend = FakeBackend(manager.sessions, "codex")
+        install_backend(manager, "codex", backend)
+        writer.activate()
+        turns = []
+        for seq in (1, 2, 3):
+            session = state.SessionState("child", str(tmp_path), engine="codex", turn_seq=seq)
+            _complete(session, message=f"turn {seq}")
+            if seq == 1:
+                # 旧writerが公開した旧名の原本には、turn別の公開記録がまだない。
+                original = shared_layout.results_directory("parent", tmp_path) / "child.json"
+                original.parent.mkdir(exist_ok=True)
+                original.write_text(json.dumps(state.terminal_result_payload(session)), encoding="utf-8")
+            else:
+                writer.retain_result(session)
+            turns.append(session)
+        manager.sessions["child"] = turns[-1]
+        sibling = state.SessionState("sibling", str(tmp_path), engine="codex")
+        _complete(sibling, message="別の子")
+        writer.retain_result(sibling)
+
+        assert (await manager.kill("child"))["agent_message"] == "turn 3"
+        assert writer.result_exists("child")
+        for _ in range(2):
+            assert await manager.stop("child") == {}
+            # 破棄前の観測を再保存しても、旧名にもturn別名にも原本を戻さない。
+            for previous in turns:
+                writer.retain_result(previous)
+            await writer.flush_async()
+            assert not writer.result_exists("child")
+            assert (await manager.list_sessions())["sessions"] == []
+            assert not (await manager.show_session("child"))["result_available"]
+            assert await manager.wait() == {"status": "expired"}
+        result, error = writer.take_result("sibling", collector="cli")
+        assert error is None and result is not None and result["agent_message"] == "別の子"
+        assert backend.release_calls == ["child"]
 
 
 @pytest.mark.asyncio

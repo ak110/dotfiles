@@ -31,6 +31,7 @@ pub(crate) struct StateFile {
 #[derive(Debug)]
 struct Session {
     session_id: String,
+    result_end: Option<(u64, String)>,
     engine: String,
     model: Option<String>,
     effort: Option<String>,

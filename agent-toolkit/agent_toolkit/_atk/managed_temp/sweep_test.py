@@ -230,6 +230,25 @@ def _count_walks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
     return walks
 
 
+def test_daily_sweep_skips_protected_area_but_still_checks_other_areas(monkeypatch: pytest.MonkeyPatch) -> None:
+    """保護集合の領域は配下を調べず残し、保護外は従来どおり更新時刻で判定する。"""
+    protected = _area("session-keep", days=8, files={"nested/payload.txt": "keep"})
+    expired = _area("expired-abc", days=8)
+    fresh = _area("fresh-abc", days=1)
+    monkeypatch.setattr(sweep.registry_index, "pending_session_ids", lambda: ["keep"])
+    monkeypatch.setattr(sweep.creation, "find_session_temp", lambda _identifier: protected)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 800, 200))  # pylint: disable=protected-access
+    walks = _count_walks(monkeypatch)
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert sorted(walks) == sorted([expired, fresh])
+    assert result.deleted == [expired]
+    assert not result.failed and result.pressure is None
+    assert not expired.exists() and fresh.exists()
+    assert (protected / "nested/payload.txt").read_text(encoding="utf-8") == "keep"
+
+
 def test_sweep_runs_once_per_day(monkeypatch: pytest.MonkeyPatch) -> None:
     """前回の掃引から1日以内の起動は一覧を取らずに戻り、1日が過ぎた起動は全対象を調べ直す。"""
     fresh = _area("fresh-abc", days=1)

@@ -70,13 +70,21 @@ class ManagerRecovery(manager_resume.ManagerResume):
         if self._status_writer is not None:
             await self._status_writer.flush_async()
 
+    def _finish_recovery(self, identifier: str) -> None:
+        self._recovery_targets.discard(identifier)
+        self._clear_recovery_projection(identifier)
+
+    def _clear_recovery_projection(self, identifier: str) -> None:
+        if self._status_writer is not None:
+            self._status_writer.clear_recovery_wait(identifier)
+
     async def _settle_recovery_before_kill(self, identifier: str, delivery_timeout: float) -> None:
         """killの前に、同じsessionの自動復旧を開始前なら取り消し、開始済みならturnの開始まで待つ。
 
         復旧の途中は登録簿の記録が再開の準備中となり、killが記録無しの`unknown session`を返していた（2026-11-17）。
         開始済みの復旧はturnの開始後に通常の中断を届け、開始前の復旧は中断を求めた会話を再開しない。
         """
-        self._recovery_targets.discard(identifier)
+        self._finish_recovery(identifier)
         attempt = self._recovery_attempts.get(identifier)
         if attempt is None or attempt.done():
             return
@@ -98,7 +106,7 @@ class ManagerRecovery(manager_resume.ManagerResume):
             session_registry.OWNER_SERVER_STOPPED,
         ):
             return False
-        self._recovery_targets.discard(identifier)
+        self._finish_recovery(identifier)
         await self._publish_registry_terminal(identifier, info, "interrupted", interruption=None)
         return True
 
@@ -110,7 +118,7 @@ class ManagerRecovery(manager_resume.ManagerResume):
         except Exception as error:  # pylint: disable=broad-exception-caught
             # 一つの子の復旧失敗で、独立した他の子の復旧を中断しない。waitへ原因を返す。
             self._recovery_errors[identifier] = error
-            self._recovery_targets.discard(identifier)
+            self._finish_recovery(identifier)
             attempt = self._recovery_attempts.pop(identifier, None)
             _LOG.exception(
                 "delegation_recovery_failed session_id=%s。次の操作: %s", identifier, self._recovery_next_action(identifier)
@@ -147,24 +155,26 @@ class ManagerRecovery(manager_resume.ManagerResume):
                 return
             try:
                 attempt.result()
-            except manager_resume.ResumeClaimedElsewhere:
-                # 別の起動がバックエンド接続中でも、元turnは終了のままである。次の公開を待つ。
+            except manager_resume.ResumeDeferred:
+                # 中断結果の回収または別の親の再開が先行した。次の巡回で現在の所有者とturnを再確認する。
                 self.stopped_sessions.pop(identifier, None)
                 self.expired_sessions.pop(identifier, None)
                 del self._recovery_attempts[identifier]
                 return
             else:
                 del self._recovery_attempts[identifier]
-                self._recovery_targets.discard(identifier)
+                self._finish_recovery(identifier)
                 return
         if identifier in self.sessions:
-            self._recovery_targets.discard(identifier)
+            self._finish_recovery(identifier)
             return
         resolution = await run_file_operation(session_registry.resolve, identifier, state_root=self._state_root())
         info = resolution.resume_info or resolution.handoff_info
         if resolution.resume_pending:
+            self._clear_recovery_projection(identifier)
             return
         if resolution.state is session_registry.Resolution.RUNNING:
+            self._clear_recovery_projection(identifier)
             writer_alive = await run_file_operation(status_file.live_writer_holds_session, identifier, self._state_root())
             if writer_alive:
                 return
@@ -207,7 +217,7 @@ class ManagerRecovery(manager_resume.ManagerResume):
                 next_action=f"`atk agents show {identifier}`で診断と登録簿の所在を確認する",
             )
         if info is None:
-            self._recovery_targets.discard(identifier)
+            self._finish_recovery(identifier)
             return
         if resolution.inferred_terminal:
             await self.take_over_orphaned_session(identifier)
@@ -236,8 +246,10 @@ class ManagerRecovery(manager_resume.ManagerResume):
                 # 照会の間にkillが復旧を取り消した。中断を求めた会話を再開しない。
                 return
             # 以前のinterrupted結果は最終成果ではない。同じ会話の再開後の結果を待つ。
-            pending, _ = self._start_resume(previous, _CONTINUE, None, on_failure=self._notify_recovery_failure)
+            pending, _ = self._start_resume(
+                previous, _CONTINUE, None, on_failure=self._notify_recovery_failure, supersede_interruption=True
+            )
             self._recovery_attempts[identifier] = pending.task
             return
         # 完了・失敗の未回収結果は再実行せず、通常のwaitへ渡す。明示中止は復活させない。
-        self._recovery_targets.discard(identifier)
+        self._finish_recovery(identifier)

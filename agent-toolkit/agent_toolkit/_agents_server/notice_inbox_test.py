@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import pathlib
 
+import pytest
+
 from agent_toolkit._agents_server import (
     notice_inbox,
     shared_layout,
@@ -80,3 +82,103 @@ def test_wait_round_without_notices_reads_no_status_files(tmp_path: pathlib.Path
     (directory / "target.20260907T010000000000.0123456789abcdef.json").write_text(json.dumps(notice), encoding="utf-8")
     assert take() == [{"body": "届いた"}]
     assert loaded == ["root"]
+
+
+def test_reading_notices_is_repeatable_and_only_the_winner_delivers(tmp_path: pathlib.Path) -> None:
+    """通知の読取や破損の診断は原本を消さず、CLIとMCPのうち実際に回収できた側だけが返す。"""
+    directory = shared_layout.notices_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    session_registry.publish(
+        "target", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="parent", state_root=tmp_path
+    )
+    damaged = directory / "target.bad.json"
+    damaged.write_bytes(b"{")
+    pending = notice_inbox.read_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json"
+    )
+    assert pending == notice_inbox.read_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json"
+    )
+    assert damaged.read_bytes() == b"{"
+    taken = notice_inbox.take_notices(
+        "root",
+        "target",
+        tmp_path,
+        stash_directory=tmp_path / "run",
+        recipient_session_id="parent",
+        owner_status_file="root.json",
+    )
+    assert len(taken) == 1 and "破損" in taken[0]["body"]
+    assert "退避しました" in taken[0]["body"] and "削除しました" not in taken[0]["body"]
+    assert not notice_inbox.consume_notices(pending)
+    assert (
+        notice_inbox.take_notices(
+            "root",
+            "target",
+            tmp_path,
+            stash_directory=tmp_path / "run",
+            recipient_session_id="parent",
+            owner_status_file="root.json",
+        )
+        == taken
+    )
+
+
+@pytest.mark.parametrize("operation", ["read_text", "unlink"])
+def test_notice_access_error_preserves_original_and_reports_retry(
+    operation: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    directory = shared_layout.notices_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    session_registry.publish(
+        "target", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="parent", state_root=tmp_path
+    )
+    original = directory / "target.pending.json"
+    original.write_text(
+        json.dumps({"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "本文"}),
+        encoding="utf-8",
+    )
+    method = getattr(pathlib.Path, operation)
+
+    def denied(path: pathlib.Path, *args, **kwargs):
+        if path == original:
+            raise PermissionError("通知だけアクセス不可")
+        return method(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, operation, denied)
+    assert not notice_inbox.take_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json"
+    )
+    assert original.is_file()
+    assert "原本を保持した" in caplog.text and "送信元に再送" in caplog.text
+    assert str(original) in caplog.text
+
+
+def test_stashed_notice_with_unlink_failure_does_not_promise_next_wait(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    directory = shared_layout.notices_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    stash = tmp_path / "run"
+    stash.mkdir()
+    session_registry.publish(
+        "target", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="parent", state_root=tmp_path
+    )
+    original = directory / "target.pending.json"
+    value = json.dumps({"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "本文"})
+    original.write_text(value, encoding="utf-8")
+    (stash / original.name).write_text(value, encoding="utf-8")
+    unlink = pathlib.Path.unlink
+
+    def denied(path: pathlib.Path, *args, **kwargs):
+        if path == original:
+            raise PermissionError("旧原本の削除不可")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", denied)
+    assert not notice_inbox.take_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json", stash_directory=stash
+    )
+    assert original.read_text(encoding="utf-8") == value
+    assert "この待機で配送できなかった" in caplog.text and "送信元に再送" in caplog.text
+    assert "atk agents waitで再回収" not in caplog.text

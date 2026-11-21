@@ -105,9 +105,9 @@ def pending_session_ids(state_root: pathlib.Path | None = None) -> set[str]:
     for root in session_layout.list_root_session_ids(state_root, strict=True):
         with contextlib.suppress(FileNotFoundError), os.scandir(session_layout.results_directory(root, state_root)) as listed:
             pending.update(
-                name[: -len(".json")]
+                identifier
                 for item in listed
-                if (name := item.name).endswith(".json") and session_layout.valid_session_id(name[: -len(".json")])
+                if (identifier := session_layout.result_session_id(pathlib.Path(item.name))) is not None
             )
     for targets in _wait_targets(state_root).values():
         pending.update(targets)

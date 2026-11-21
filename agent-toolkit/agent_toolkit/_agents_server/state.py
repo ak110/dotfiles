@@ -233,6 +233,18 @@ class LiveTask:
     started_at: str
 
 
+class PreviousResult(dict[str, Any]):
+    """backendが配送前に選んだ終了結果。公開する辞書の項目と回収用の識別を分ける。"""
+
+    def __init__(self, payload: dict[str, Any], origin: SessionResumeState) -> None:
+        super().__init__(payload)
+        self.origin = origin
+
+    @property
+    def end(self) -> tuple[int, str] | None:
+        return (self.origin.turn_seq, self.origin.finalized_at) if self.origin.finalized_at is not None else None
+
+
 @dataclasses.dataclass
 class SessionState:
     """MCPから観測できる1つの委譲先sessionと最新turnの共有状態。"""
@@ -807,7 +819,7 @@ class SessionState:
         }
         if nonempty_error(self.error):
             result["error"] = self.error
-        return with_result_next_action(result, self.label)
+        return PreviousResult(with_result_next_action(result, self.label), SessionResumeState.from_session(self))
 
 
 @dataclasses.dataclass(frozen=True)

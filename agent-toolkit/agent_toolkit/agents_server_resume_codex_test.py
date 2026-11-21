@@ -31,8 +31,8 @@ from agent_toolkit._testing.agents_server_support import install_backend
 
 
 @pytest.mark.asyncio
-async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -> None:
-    """状態writerを伴う再開はbackend応答後に前turnの結果を削除する。"""
+async def test_run_resume_preserves_previous_result_until_delivery(tmp_path: pathlib.Path) -> None:
+    """再開しただけでは直前結果を受領していない。追送の応答が無ければCLIから回収できる。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root", "root.json", None),
@@ -77,8 +77,11 @@ async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -
             turn_seq=1,
         )
         result_path = shared_layout.results_directory("root", tmp_path) / f"{source.session_id}.json"
-        result_path.parent.mkdir(parents=True)
-        result_path.write_text("{}\n", encoding="utf-8")
+        source.status = "completed"
+        source.agent_message = "前の結果"
+        source.record_turn_completed()
+        source.touch()
+        writer.retain_result(source)
         writer.activate()
         resumed = await manager._run_resume(
             state.SessionResumeState.from_session(source),
@@ -86,6 +89,8 @@ async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -
         )
 
         assert resumed.turn_seq == 2
+        previous, error = writer.take_result(source.session_id, collector="cli")
+        assert error is None and previous is not None and previous["agent_message"] == "前の結果"
         assert not result_path.exists()
 
 

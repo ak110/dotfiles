@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+from collections.abc import Iterator
 from typing import Any
 
 from agent_toolkit._agents_server import notice_inbox, retained_results, shared_layout, status_file, status_reader
@@ -116,12 +117,8 @@ def take_stranded_notices(
     `roots`は呼び出し側が同じ巡回で列挙済みの所有者のいないルートで、省略時は自ら列挙する。
     """
     notices: list[dict[str, str]] = []
-    roots = _result_roots(session_id, own_root_session_id, state_root, roots=roots)
-    for root_session_id in roots:
-        # 退避先はルートごとに分ける。`take_notices`は退避先の全通知を毎回返すため、共有すると同じ通知を重ねて返す。
+    for root_session_id, owner_file in _notice_owners(session_id, own_root_session_id, state_root, recipient_session_id, roots):
         stash = None if stash_directory is None else stash_directory / root_session_id
-        owner = status_reader.load_root(root_session_id, state_root).sessions.get(session_id, {})
-        owner_file = owner.get("owner_status_file") if owner.get("host_session_id") == recipient_session_id else None
         notices.extend(
             notice_inbox.take_notices(
                 root_session_id,
@@ -130,6 +127,34 @@ def take_stranded_notices(
                 recipient_session_id=recipient_session_id,
                 owner_status_file=owner_file,
                 stash_directory=stash,
+            )
+        )
+    return notices
+
+
+def _notice_owners(
+    session_id: str,
+    own_root_session_id: str | None,
+    state_root: pathlib.Path | None,
+    recipient_session_id: str | None,
+    roots: list[str] | None = None,
+) -> Iterator[tuple[str, str | None]]:
+    roots = _result_roots(session_id, own_root_session_id, state_root, roots=roots)
+    for root_session_id in roots:
+        owner = status_reader.load_root(root_session_id, state_root).sessions.get(session_id, {})
+        owner_file = owner.get("owner_status_file") if owner.get("host_session_id") == recipient_session_id else None
+        yield root_session_id, owner_file
+
+
+def read_stranded_notices(
+    session_id: str, own_root_session_id: str | None, state_root: pathlib.Path | None, *, recipient_session_id: str | None
+) -> list[notice_inbox.PendingNotice]:
+    """旧ルートの通知も、応答確定までは原本を残す。"""
+    notices = []
+    for root, owner in _notice_owners(session_id, own_root_session_id, state_root, recipient_session_id):
+        notices.extend(
+            notice_inbox.read_notices(
+                root, session_id, state_root, recipient_session_id=recipient_session_id, owner_status_file=owner
             )
         )
     return notices

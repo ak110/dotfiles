@@ -18,13 +18,72 @@ from agent_toolkit._testing.delegation_contract_support import (
     _marker_values,
     _read_table_subagents,
 )
-from agent_toolkit._testing.normative_contract import document_references, read_contract, section_text
+from agent_toolkit._testing.normative_contract import (
+    REFERENCE,
+    document_references,
+    line_references,
+    read_contract,
+    read_table_rows,
+    section_text,
+)
 
 
 def test_all_launch_contract_inputs_are_generated() -> None:
     """返却生成の対象表にない起動契約も、入力宣言との同期を保つ。"""
     errors = _generated_input_errors(pathlib.Path(__file__).resolve().parent)
     assert not errors, "\n".join(errors)
+
+
+def _early_recipient_reads(text: str, recipient: str) -> list[str]:
+    return [
+        condition
+        for condition, materials in read_table_rows(text)
+        if "直接実行" not in condition
+        and any(ref.split("#", 1)[0].endswith(f"/{recipient}") or ref == recipient for ref in REFERENCE.findall(materials))
+    ]
+
+
+def test_callers_do_not_preread_launched_role_documents() -> None:
+    """起動契約の読込表は委譲先を先読みさせない。同じ担当の直接実行は別経路とする。"""
+    root = pathlib.Path(__file__).resolve().parent
+    for parent, role in task_documents.launch_contract_documents(root):
+        recipient = f"{role}{task_documents.TASK_DOCUMENT_SUFFIX}"
+        assert not _early_recipient_reads(parent.read_text(encoding="utf-8"), recipient), parent
+
+
+@pytest.mark.parametrize(
+    ("condition", "blocked"),
+    [("レビューの入力資料を組む前", True), ("公開工程を直接実行する前", False)],
+)
+def test_caller_preread_rule_distinguishes_direct_execution(condition: str, blocked: bool) -> None:
+    text = (
+        f"| 時点または条件 | 全文読む資料 |\n| --- | --- |\n| {condition} | `agent-toolkit:atk-mode/roles/review.subagent.md` |"
+    )
+    assert bool(_early_recipient_reads(text, "review.subagent.md")) == blocked
+    assert not _early_recipient_reads(
+        "編集対象の `agent-toolkit:atk-mode/roles/review.subagent.md` を直す。", "review.subagent.md"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "line_prefix", "role"),
+    [
+        ("references/draft-semantic-review.md", "- 付随型の`起草結果`", "add-wi"),
+        ("references/draft-semantic-review.md", "専念型の結果は", "wi-draft-review"),
+        ("roles/reader-fit-review.parent.md", "申告の形式と対象集合は", "exec-review"),
+        ("playbooks/wi-drafting.md", "担当の返却は", "add-wi"),
+    ],
+)
+def test_return_references_resolve_to_generated_contract(source: str, line_prefix: str, role: str) -> None:
+    root = pathlib.Path(__file__).resolve().parent
+    atk = root / "skills/atk-mode"
+    source_path = atk / source
+    (line,) = [line for line in source_path.read_text(encoding="utf-8").splitlines() if line.strip().startswith(line_prefix)]
+    (target,) = line_references(line, source_path, root)
+    assert target == atk / "roles" / f"{role}.parent.md"
+    generated = target.read_text(encoding="utf-8").split(f"<!-- return-contract:{role}:start -->", 1)[1]
+    generated = generated.split(f"<!-- return-contract:{role}:end -->", 1)[0]
+    assert any(f"「{heading.removeprefix('## ')}」" in line for heading in generated.splitlines() if heading.startswith("## "))
 
 
 def test_wi_draft_review_stage_and_continuation_contract() -> None:

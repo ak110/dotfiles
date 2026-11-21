@@ -55,8 +55,9 @@ _BROKEN_STATE_NEXT_ACTION = (
     "agents_serverの状態が壊れているため、MCPの`list`で保持状態を確かめ、agents_serverの不具合としてユーザーへ報告する"
 )
 _READ_FAILURE_NEXT_ACTION = (
-    "回収済みの結果は出力済みのため再取得しない。"
-    "MCPの`show`で対象sessionの状態を確かめ、読めない状態が続く場合はagents_serverの不具合としてユーザーへ報告する"
+    "この待機では結果本文を配送していない。"
+    "MCPの`show`で対象sessionの状態を確かめ、結果ファイルの読み取り権限と内容を確認して`atk agents wait`を再実行する。"
+    "読めない状態が続く場合はagents_serverの不具合としてユーザーへ報告する"
 )
 _ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行する"
 _SAVED_RESULT_NEXT_ACTION = (
@@ -644,7 +645,6 @@ def _wait_for_result(
                     owner = owners.get(session_id, {}).get("owner_status_file")
                     if owner is not None and owner != identity.file_name:
                         continue
-                    result_path = result_directory / f"{session_id}.json"
                     result, read_error = retained_results.take_result(
                         root_session_id,
                         session_id,
@@ -668,7 +668,7 @@ def _wait_for_result(
                             roots=stranded_roots,
                         )
                     if read_error is not None:
-                        read_failure = f"終了時の結果ファイルを読めません: {result_path}: {read_error}"
+                        read_failure = f"終了時の結果ファイルを読めません（session {session_id}）: {read_error}"
                         break
                     notices = notice_inbox.take_notices(
                         root_session_id,
@@ -759,18 +759,19 @@ def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status
         return set()
     retained: set[str] = set()
     for path in paths:
-        if path.suffix != ".json" or not path.is_file() or not shared_layout.valid_session_id(path.stem):
+        identifier = shared_layout.result_session_id(path)
+        if identifier is None or not path.is_file():
             continue
         result, error = _read_result(path)
         if error is not None:
             if owner_status_file == "root.json":
-                retained.add(path.stem)
+                retained.add(identifier)
             continue
         if result is None:
             continue
         recorded_owner = result.get("owner_status_file")
         if recorded_owner == owner_status_file or recorded_owner is None and owner_status_file == "root.json":
-            retained.add(path.stem)
+            retained.add(identifier)
     return retained
 
 

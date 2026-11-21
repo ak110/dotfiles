@@ -11,12 +11,14 @@ import sys
 import pytest
 
 from agent_toolkit._atk import run_skill_batch, run_skill_batch_evidence, run_skill_batch_test
-from agent_toolkit._common import session_review
+from agent_toolkit._common import session_activity, session_review
 
 
 @pytest.fixture(autouse=True)
-def _manual_identity(monkeypatch):
+def _isolate_session_inputs(monkeypatch):
     monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
+    # 失敗の保存と復旧を検証する。実ホストの会話は合成した対象の入力に含めない。
+    monkeypatch.setattr(session_activity, "host_processes", lambda: ())
 
 
 @pytest.mark.usefixtures("leaf_git_commands")
