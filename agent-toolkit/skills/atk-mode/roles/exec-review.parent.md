@@ -38,7 +38,8 @@
 | 起動の入力を決める前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「起動」 |
 | 返却を受領する前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「完成条件証拠の受領確認」 |
 | 差分外の既存不良を受領する前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「返却に含まれる既存不良の受領」 |
-| 修正の指示、再レビューに進む前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「レビュー修正」「ラウンドの遷移」 |
+| 修正の指示を行う前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「レビュー修正」 |
+| 再レビューに進む前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「ラウンドの遷移」 |
 | 収束を判定する前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「収束と統合への引渡し」 |
 | 返却の`達成`行の根拠を受領確認する前 | `agent-toolkit:atk-mode/references/review-record.md` |
 | 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` |

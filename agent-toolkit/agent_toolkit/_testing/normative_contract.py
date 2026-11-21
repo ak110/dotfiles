@@ -82,7 +82,10 @@ def section_text(path: pathlib.Path, heading: str) -> str:
 def read_contract_section(source: pathlib.Path, plugin_root: pathlib.Path, relative: str, condition: str, heading: str) -> str:
     """操作の条件が名指しした資料の節だけを、親契約の表から取得する。"""
     target = (source.parent / relative).resolve()
-    section = section_text(source, "条件と行動")
+    try:
+        section = section_text(source, "条件と行動")
+    except AssertionError as error:
+        raise AssertionError(f"{error}\n次の操作: 親契約に「条件と行動」の見出しを1つ置く") from error
     lines = section.splitlines()
     routes = 0
     for token in MarkdownIt().enable("table").parse(section):
@@ -96,12 +99,16 @@ def read_contract_section(source: pathlib.Path, plugin_root: pathlib.Path, relat
                 f"「{heading}」"
             ):
                 routes += 1
-    if routes == 1:
+    if routes != 1:
+        action = "条件の行に資料と節を指定する" if routes == 0 else "重複する経路を1行にまとめる"
+        raise AssertionError(
+            f"条件別の節の取得経路が{routes}件: {source} -> {target}「{heading}」: {condition}\n"
+            f"次の操作: 親契約の読込表で、{action}"
+        )
+    try:
         return section_text(target, heading)
-    raise AssertionError(
-        f"条件別の節の取得経路が{routes}件: {source} -> {target}「{heading}」: {condition}\n"
-        "次の操作: 親契約の読込表で、参照する資料と節名を該当する条件の行へ指定する"
-    )
+    except AssertionError as error:
+        raise AssertionError(f"{error}\n次の操作: 親契約の読込表の参照を実在する一意の節へ直す") from error
 
 
 def line_references(line: str, source: pathlib.Path, plugin_root: pathlib.Path) -> list[pathlib.Path]:
