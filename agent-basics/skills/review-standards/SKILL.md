@@ -93,7 +93,7 @@ description: >
 作成規範とは対象成果物の種類ごとに適用する作成時の品質基準で、`agent-basics:writing-standards`の該当資料と、対象リポジトリに実在する`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`配下の文書を指す。
 変更要求・方針・作業項目・計画を検収する時は、その文書自体と、要求が変更する成果物の双方にそれぞれの作成規範を適用する。
 規範の追記案は、案が成立するかと追記自体が必要かを分け、既存の記述の削除・集約で目的を満たせるかを採用前に判断する（`agent-basics:writing-standards/references/agent-documents-additions.md`「規範追記時の判定」）。
-レビュー担当は初回レビューで作成規範と`agent-basics:writing-standards/references/review-only-criteria.md`を一括して適用し、レビューイーは指摘で言及された基準だけを同資料から読む。
+レビュー担当は初回レビューで作成規範と`agent-basics:writing-standards/references/review-only-criteria.md`を一括して適用し、レビューイーは指摘が同資料に言及した時に全文を読み、言及された基準を適用する。
 
 ## 文章成果物の実害
 
