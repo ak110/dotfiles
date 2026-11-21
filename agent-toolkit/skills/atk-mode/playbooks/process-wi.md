@@ -38,6 +38,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
 | 対象がGitHub上にあり、選定の前に監査の要否を決める時 | `agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md` |
 | レーンの専用worktreeを作成・再利用・回収する時、後段レーンの先行調査をする時 | `agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md` |
 | レーンを起動し、統合を許可・受領し、失敗から再開し、完了させる時 | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` |
+| 検証対象を選ぶ時（単一レーン・複数レーン共通） | 本書「検証環境」を読む |
 | 担当として計画、実装、実行レビュー、統合準備を進める時 | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` |
 | 統合の引数、manifest、計画の最終化、AWIの終了を扱う時 | `agent-toolkit:atk-mode/references/lane-integration-format.md` |
 | 不良・是正要求・改善を観測か受領した時、ユーザーが時機として「即時対応」と指示した時、30分ごとの点検と公開工程の開始前 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` |

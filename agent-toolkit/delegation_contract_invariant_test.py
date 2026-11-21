@@ -140,13 +140,22 @@ def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.P
     assert _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True) == ([], True)
 
 
+def _read_exec_review_stage(root: pathlib.Path, condition: str, heading: str) -> str:
+    """実行レビューの親契約が、その判断で読む節を指定していることを確かめる。"""
+    entry = root / "skills/atk-mode"
+    parent = (entry / "roles/exec-review.parent.md").read_text(encoding="utf-8")
+    reference = f"`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「{heading}」"
+    table = parent.partition("## 条件と行動")[2].partition("<!-- return-contract:")[0]
+    rows = [line for line in table.splitlines() if line.startswith("| ") and condition in line.split("|")[1]]
+    assert len(rows) == 1 and reference in rows[0], (condition, heading, rows)
+    return section_text(entry / "playbooks/exec-review-loop.md", heading)
+
+
 def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> None:
     """検証結果の記録と、条件別判定行を返す実行レビュー担当の単一所有を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
     review = (root / "skills/atk-mode/roles/exec-review.subagent.md").read_text(encoding="utf-8")
-    parent = read_contract(
-        root / "skills/atk-mode/roles/exec-review.parent.md", root, ("../playbooks/exec-review-loop.md", "受領確認")
-    )
+    receiving = _read_exec_review_stage(root, "返却を受領する前", "完成条件証拠の受領確認")
     recording = (root / "skills/atk-mode/references/review-record.md").read_text(encoding="utf-8")
     launchers = [
         root / "skills" / "atk-mode" / "roles" / "exec.parent.md",
@@ -163,7 +172,7 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
         assert "検証結果" in content and "未判定検証記録" not in content, path
     assert "レビューHEAD: " in review
     # 委譲元は返却の条件別判定行を受領確認し、JSON中のHEADの付替えを行わない。
-    assert "## 完成条件証拠の受領確認" in parent and "agent_message_path" in parent
+    assert "agent_message_path" in receiving and "レビューHEAD" in receiving
     assert "判定結果と根拠を記述するのは実行レビュー担当のみ" in review
     assert "判定と根拠は実行レビュー担当だけが記入し" in recording
     for content in (review, recording):
@@ -196,14 +205,12 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     expected_names = parent_names | recipient_names | contract_names
     # 入力・統合の各判断で読む規範資料も、同じ役割の引き継ぎ契約を所有する。
     roles = entry / "roles"
-    for owner, materials in (
-        (roles / "exec.parent.md", (("../playbooks/lane-receipt.md", "統合"),)),
-        (roles / "exec-review.parent.md", (("../playbooks/exec-review-loop.md", "入力"),)),
-    ):
-        markdown[owner.name] = read_contract(owner, plugin_root, *materials)
-        for name, _condition in materials:
-            markdown[pathlib.Path(name).name] = (owner.parent / name).read_text(encoding="utf-8")
-            expected_names.add(pathlib.Path(name).name)
+    markdown["exec.parent.md"] = read_contract(roles / "exec.parent.md", plugin_root, ("../playbooks/lane-receipt.md", "統合"))
+    markdown["lane-receipt.md"] = (entry / "playbooks/lane-receipt.md").read_text(encoding="utf-8")
+    startup = _read_exec_review_stage(plugin_root, "起動の入力を決める前", "起動")
+    markdown["exec-review.parent.md"] += "\n" + startup
+    markdown["exec-review-loop.md"] = startup
+    expected_names |= {"lane-receipt.md", "exec-review-loop.md"}
     # レーン統合の役割文書は、統合の入力を定める形式の定義と合わせて引き継ぎ契約を持つ。
     markdown["lane-integration.subagent.md"] = "\n".join(
         (entry / name).read_text(encoding="utf-8")
