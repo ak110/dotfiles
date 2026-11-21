@@ -2,6 +2,7 @@
 """計画の旧書式の移行を検証する。"""
 
 import collections.abc
+import functools
 import pathlib
 import subprocess
 import sys
@@ -9,6 +10,7 @@ import sys
 import check_plan_file
 import pytest
 from agent_toolkit._plan import structure as _plan_format
+from agent_toolkit._plan.structure import markdown as _plan_markdown
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_file_check_support import (
@@ -264,6 +266,14 @@ def test_rejects_each_migration_warning_for_new_creation(
     assert message not in warnings
 
 
+@pytest.fixture
+def reuse_markdown_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """同じ本文の行分類だけを再利用し、各本文は実際のMarkdownパーサーで解析する。"""
+    classify = _plan_markdown._markdown_excluded_line_indices  # noqa: SLF001  # pylint: disable=protected-access
+    monkeypatch.setattr(_plan_markdown, "_markdown_excluded_line_indices", functools.cache(classify))
+
+
+@pytest.mark.usefixtures("reuse_markdown_layout")
 def test_rejects_progress_log_rows_only_for_new_creation(repo: tuple[pathlib.Path, str]) -> None:
     """進捗ログの内容行を持つ本文は新規作成で失敗し、既存計画の読み取りでは成功する。"""
     work_dir, _base = repo
@@ -432,6 +442,7 @@ def test_cli_accepts_review_ids_in_real_legacy_two_file_plan() -> None:
     assert "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in result.stderr
 
 
+@pytest.mark.usefixtures("reuse_markdown_layout")
 def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path, str]) -> None:
     """新しい固定H2と旧ID表を混在させたcanonical形式を拒否する。"""
     work_dir, base = repo

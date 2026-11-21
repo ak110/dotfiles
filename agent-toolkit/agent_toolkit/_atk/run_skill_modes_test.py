@@ -10,7 +10,7 @@ import pytest
 
 from agent_toolkit._atk import run_skill
 from agent_toolkit._atk.wi import frontmatter
-from agent_toolkit._common import session_review, skill_modes
+from agent_toolkit._common import session_activity, session_review, skill_modes
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 from agent_toolkit._testing.run_skill_support import _engine_env, _records, _run, _startup_input
 
@@ -37,6 +37,8 @@ def test_batch_uses_existing_runner_and_report_receipt(
     engine_env, tmp_path, monkeypatch, capsys, engine, arguments, skill
 ) -> None:
     """2会話の実prepareから偽ホスト・同期済み報告・範囲確定まで公開CLIで検証する。"""
+    # 対象は下で登録する2会話だけであり、実機の他の会話を探さない。
+    monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     for name in ("one", "two"):
         transcript = tmp_path / f"{name}.jsonl"

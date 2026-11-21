@@ -582,6 +582,8 @@ def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatc
 
 def test_review_activity_limits_to_target_and_descendants(tmp_path, monkeypatch) -> None:
     """無関係な会話の活動を除き、対象の実ターン終了と子の活動を既存判定で扱う。"""
+    # rootとchildは活動記録で与える。OS全体の会話探索はこの試験の入力に含めない。
+    monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     parent = _transcript(tmp_path, "claude", "root")
     session_activity.record_activity(
         {"hook_event_name": "Stop", "session_id": "root", "transcript_path": str(parent)},
