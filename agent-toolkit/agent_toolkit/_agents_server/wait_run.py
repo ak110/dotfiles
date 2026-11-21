@@ -57,7 +57,7 @@ class RunningRun(_Run):
                 "exit_code": exit_code,
                 "stream": stream,
                 "continuable": False,
-                "result_turns": result_turns or {},
+                **({"result_turns": result_turns} if result_turns else {}),
             }
         )
 
