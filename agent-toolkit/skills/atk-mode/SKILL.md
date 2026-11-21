@@ -9,7 +9,8 @@ description: >
 
 # atk-mode
 
-「作業と手順書」で条件に当たる資料を全文読む。
+「作業と手順書」で条件に当たる資料を読む。
+節の指定がなければ全文を読む。
 資料は本書のディレクトリから解決し、`agent-toolkit:atk-mode/playbooks/<名前>.md`の形で名指す。
 Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に従う。
 
@@ -20,7 +21,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 ## 判断の原則
 
-判断前に、括弧内の原則本文を`agent-basics:writing-standards`の`references/`から全文読む。
+判断に使う原則の本文は、その判断の前に`agent-basics:writing-standards`の`references/`から読む。
 
 1. 顧客と技術者（`quality-principles-roles.md`）: 技術判断は調べて決め、報告する。
    ユーザーだけが決める目的・要件・選好・認可は推奨を添えて尋ねる。
@@ -69,7 +70,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
-| `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md` |
+| `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md`の冒頭「読む節」から |
 | `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md` |
 | `review-session [batch]` | 会話の振り返りを求められた時 | `playbooks/review-session.md`（batchは`playbooks/review-session-batch.md`） |
 | `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
