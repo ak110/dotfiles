@@ -201,7 +201,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 3. 統括と配下のwriterの終了を確かめた対象だけ所有を解放し、既存のlaneを回収する（CLIの終了と書込担当の終了は別に観測する）。
    完成結果とwriterの停止を確認した通常の終了では、選定が未統合でもbranchの変更が統合先にあれば回収する。
    続行予定、停止が未確認、dirty、使用中、未取込み、回収失敗の資源は保持する。
-   回収の結果と理由をログへ残し、理由を解消して`atk lane delete --session-id <lane_session_id>`で判定し直す。
+   回収の結果と理由をログへ残し、理由を解消したら [レーン資源の回収](process-wi-lane-resources.md) に従って元の判定モードで再試行する。
    候補の原本と再開情報は検収まで保つ。
 4. `abort`、`abort-cancel`、`status`、`instruct`、`instruct-cancel`、`resume`、`resume-cancel`はOSアカウントごとに保たれる。
    `instruct`は次に実際に起動する1会話へ渡り、そのメインが対象に関係する部分を適用する。
