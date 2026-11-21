@@ -12,6 +12,7 @@ import typing
 from agent_toolkit._atk import config_repositories, config_settings
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk import lane_cleanup as _lane_cleanup
+from agent_toolkit._atk import lane_integration_input as _lane_integration_input
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._common import state_paths, worktree_hooks
 from agent_toolkit._git import command as git_command
@@ -260,11 +261,11 @@ def refresh_finalized_lane(record: dict[str, typing.Any]) -> None:
     worktree = pathlib.Path(record["worktree"])
     current = _lane_records.git(worktree, "rev-parse", "HEAD")
     base = _lane_records.git(pathlib.Path(record["repo"]), "rev-parse", f"refs/heads/{record['base_branch']}")
+    known_head = integration.get("new_head") or integration.get("integrated_head")
+    if current not in (base, known_head) or _lane_integration_input.has_worktree_changes(worktree):
+        raise ValueError("再開するレーンに最終化後の成果か未コミット変更がある。現在の担当へ戻して成果を検収する")
     if current == base:
         return
-    known_head = integration.get("new_head") or integration.get("integrated_head")
-    if current != known_head or _lane_records.git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
-        raise ValueError("再開するレーンに最終化後の成果か未コミット変更がある。現在の担当へ戻して成果を検収する")
     writers = _lane_activity.unowned_writers((worktree,), _lane_activity.caller_chain() | {record["session_id"]})
     if writers:
         raise ValueError(

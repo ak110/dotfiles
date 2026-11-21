@@ -7,7 +7,7 @@
 - 2026年6月: マージ解決中の`git stash`実行でpop後にMERGE_HEADが失われ、後続コミットが通常コミットへ降格してマージ履歴の追跡性が崩れた。
   直接原因: マージ進行中のstashがマージ状態ファイルを失わせる挙動を考慮しない操作
   対策: マージ進行中のstashを禁止する。
-  現行は変更の退避全般に`git stash`を使わず、担当のworktreeの一時的なcommitを使う（`agent-toolkit/share/subagent-operations.md`）
+  現行は変更の退避に`git stash`を使わず、担当のworktreeの一時的なcommitを使う（`agent-toolkit/skills/atk-mode/playbooks/subagent.md`「作業ツリーと認証情報の扱い」）
 
 - 2026年7月: 並列実装中のサブエージェントが`git stash`を実行し、他バッチの変更がpop時に復元されず再実装4件を要した。
   同型の障害（113ファイル退避、後発系のステージ区分破壊）が複数回発生。

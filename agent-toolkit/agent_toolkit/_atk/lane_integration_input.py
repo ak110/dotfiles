@@ -273,6 +273,13 @@ def amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing.
     state.update(previous_manifest=old, input=identity, input_digest=digest)
 
 
+def has_worktree_changes(tree: pathlib.Path) -> bool:
+    """子のcheckout先だけの違いを除き、親と子の未保存の変更を判定する。"""
+    status = _lane_records.git(tree, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=none")
+    # .M は親のindexに変更がなく、SC.. は子のcommitだけが異なる。パスは比較しない。
+    return any(entry and not entry.startswith("1 .M SC.. ") for entry in status.split("\0"))
+
+
 def assert_integration_tree(
     record: dict[str, typing.Any], target: pathlib.Path, branch: str, *, target_state: bool = True
 ) -> pathlib.Path:
@@ -290,7 +297,7 @@ def assert_integration_tree(
             raise ValueError(f"worktreeとbranchの登録が所有記録と異なる: {tree}")
         if tree == target and not target_state:
             continue
-        if _lane_records.git(tree, "status", "--porcelain=v1", "--untracked-files=all"):
+        if has_worktree_changes(tree):
             raise ValueError(f"統合作業ツリーに未commitまたは未追跡の変更がある: {tree}")
         for name in (
             "rebase-merge",

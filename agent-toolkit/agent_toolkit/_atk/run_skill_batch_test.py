@@ -31,9 +31,11 @@ _REAL_REPORT_CPU = pytest.mark.cpu_limit(
 
 
 @pytest.fixture(autouse=True)
-def _isolate_launch_identity(monkeypatch):
+def _isolate_session_inputs(monkeypatch):
     monkeypatch.setenv(session_review.LAUNCH_ENV, "f" * 32)
     monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
+    # 活動中・再開の入力は各試験で与え、実ホストの会話は走査しない。
+    monkeypatch.setattr(session_activity, "host_processes", lambda: ())
 
 
 def _target(tmp_path, name, target_repo: str | None = "https://example.com/team/repo"):

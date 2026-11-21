@@ -102,7 +102,7 @@ def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
     head = _git_command.optional_output(["rev-parse", "--verify", "HEAD^{commit}"], cwd, timeout=_GIT_STATE_TIMEOUT_SECONDS)
     try:
         status = _git_command.run(
-            ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"],
+            ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"],
             cwd,
             capture_output=True,
             text=True,
@@ -265,7 +265,7 @@ def execution_conditions(environment: dict[str, str] | None = None) -> dict[str,
     for name in _VOLATILE_ENVIRONMENT_NAMES & environment.keys():
         environment[name] = ""
     return {
-        "version": 6,
+        "version": 7,
         "python": {
             key: hashlib.sha256(value.encode("utf-8")).hexdigest()
             for key, value in {

@@ -1,0 +1,584 @@
+{
+  "cases": [
+    {
+      "id": "draft-cache-effect-missing",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "repo": "dotfiles",
+      "plan": "plans/2026/10/30-0137_single-lane-process",
+      "revision": "c4711ed2fa4e84e53bcdb2535e42a38b91cc09dd",
+      "description": "原要求への効果の根拠不足。仮想対照は実製品の観測と区別する",
+      "extra_params": {
+        "確認段階": "方針",
+        "方針": "{plan}",
+        "要求と出所": "{plan}",
+        "成立性の証拠": "{plan}",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "resident-lock",
+            "description": "常駐条件で回収へ進む根拠不足",
+            "patterns": [
+              "常駐|ロック",
+              "根拠|不足|未確認|保留"
+            ]
+          },
+          {
+            "id": "old-package",
+            "description": "旧パッケージの実回収根拠不足",
+            "patterns": [
+              "旧|古い",
+              "パッケージ|バージョン|版",
+              "回収|削除",
+              "根拠|不足|未確認|保証"
+            ]
+          }
+        ],
+        "absent": []
+      },
+      "fixtures": {
+        "revision": "1dd3dd20664cd280c73401fcfffe33f51d03a837",
+        "plan": "review-eval/draft-cache-effect-missing/plan.md"
+      }
+    },
+    {
+      "id": "draft-cache-effect-sufficient",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "repo": "dotfiles",
+      "plan": "plans/2026/10/30-0137_single-lane-process",
+      "revision": "c4711ed2fa4e84e53bcdb2535e42a38b91cc09dd",
+      "description": "十分な証拠の正常対照。仮想対照は実製品の観測と区別する",
+      "extra_params": {
+        "確認段階": "方針",
+        "方針": "{plan}",
+        "要求と出所": "{plan}",
+        "成立性の証拠": "{plan}",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "unnecessary-investigation",
+            "description": "十分な対象・条件・結果の証拠に追加調査を要求しない",
+            "patterns": [
+              "根拠|証拠|調査|検証",
+              "不足|追加|未確認|必要"
+            ]
+          }
+        ]
+      },
+      "fixtures": {
+        "revision": "d12855accfab53c73addb9c8395a0115681ff849",
+        "plan": "review-eval/draft-cache-effect-sufficient/plan.md"
+      }
+    },
+    {
+      "id": "intent-open-defect",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "description": "ユーザーの意図が未確定の間に全停止または入口の除外を確定する欠陥",
+      "material": {
+        "name": "draft-decisions",
+        "change": "intent-open-defect.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "方針",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）",
+        "方針": "{worktree}/draft.md"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "scope-unconfirmed",
+            "patterns": [
+              "ローカル|手動|表の整形|停止範囲",
+              "確認|未確定|意図|決定|承認"
+            ],
+            "description": "ユーザーの意図が未確定の間に全停止または入口の除外を確定する欠陥"
+          },
+          {
+            "id": "sdk-excluded",
+            "patterns": [
+              "SDK|自動ジョブ",
+              "除外|対象外|範囲"
+            ],
+            "description": "ユーザーの意図が未確定の間に全停止または入口の除外を確定する欠陥"
+          }
+        ],
+        "absent": []
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "intent-open-control",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "description": "同じ要求の下で採否と成立性を確定した正常対照",
+      "material": {
+        "name": "draft-decisions",
+        "change": "intent-open-control.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "方針",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）",
+        "方針": "{worktree}/draft.md"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "scope-unconfirmed",
+            "patterns": [
+              "ローカル|手動|表の整形|停止範囲",
+              "確認|未確定|意図|決定|承認"
+            ],
+            "description": "ユーザーの意図が未確定の間に全停止または入口の除外を確定する欠陥"
+          },
+          {
+            "id": "sdk-excluded",
+            "patterns": [
+              "SDK|自動ジョブ",
+              "除外|対象外|範囲"
+            ],
+            "description": "ユーザーの意図が未確定の間に全停止または入口の除外を確定する欠陥"
+          }
+        ]
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "intent-fixed-control",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "description": "同じ要求の下で採否と成立性を確定した正常対照",
+      "material": {
+        "name": "draft-decisions",
+        "change": "intent-fixed-control.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "local-feature-lost",
+            "patterns": [
+              "ローカル|手動|表の整形",
+              "停止|失|保持|保つ"
+            ],
+            "description": "自動連携だけを止める明示要件を、全停止や設定の名称だけで代用する欠陥"
+          },
+          {
+            "id": "empty-layer",
+            "patterns": [
+              "空表|空設定|addons",
+              "マージ|上位|消|根拠|効か"
+            ],
+            "description": "自動連携だけを止める明示要件を、全停止や設定の名称だけで代用する欠陥"
+          }
+        ]
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "intent-fixed-defect",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "description": "自動連携だけを止める明示要件を、全停止や設定の名称だけで代用する欠陥",
+      "material": {
+        "name": "draft-decisions",
+        "change": "intent-fixed-defect.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "local-feature-lost",
+            "patterns": [
+              "ローカル|手動|表の整形",
+              "停止|失|保持|保つ"
+            ],
+            "description": "自動連携だけを止める明示要件を、全停止や設定の名称だけで代用する欠陥"
+          },
+          {
+            "id": "empty-layer",
+            "patterns": [
+              "空表|空設定|addons",
+              "マージ|上位|消|根拠|効か"
+            ],
+            "description": "自動連携だけを止める明示要件を、全停止や設定の名称だけで代用する欠陥"
+          }
+        ],
+        "absent": []
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "design-question-defect",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "description": "設計の問いを確定仕様に格上げし、用途の裏付けなく組合せを露出する欠陥",
+      "material": {
+        "name": "draft-decisions",
+        "change": "design-question-defect.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "question-promoted",
+            "patterns": [
+              "問い|提案|疑問|発話",
+              "仕様|要件|確定|未合意"
+            ],
+            "description": "設計の問いを確定仕様に格上げし、用途の裏付けなく組合せを露出する欠陥"
+          },
+          {
+            "id": "combinations-without-use",
+            "patterns": [
+              "組合せ|組み合わせ|4通り|四つ",
+              "用途|根拠|場面|不要"
+            ],
+            "description": "設計の問いを確定仕様に格上げし、用途の裏付けなく組合せを露出する欠陥"
+          }
+        ],
+        "absent": []
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "design-question-control",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "description": "同じ要求の下で採否と成立性を確定した正常対照",
+      "material": {
+        "name": "draft-decisions",
+        "change": "design-question-control.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "question-promoted",
+            "patterns": [
+              "問い|提案|疑問|発話",
+              "仕様|要件|確定|未合意"
+            ],
+            "description": "設計の問いを確定仕様に格上げし、用途の裏付けなく組合せを露出する欠陥"
+          },
+          {
+            "id": "combinations-without-use",
+            "patterns": [
+              "組合せ|組み合わせ|4通り|四つ",
+              "用途|根拠|場面|不要"
+            ],
+            "description": "設計の問いを確定仕様に格上げし、用途の裏付けなく組合せを露出する欠陥"
+          }
+        ]
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "design-fixed-control",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "description": "同じ要求の下で採否と成立性を確定した正常対照",
+      "material": {
+        "name": "draft-decisions",
+        "change": "design-fixed-control.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "explicit-method-lost",
+            "patterns": [
+              "独立|別引数|プリセット",
+              "互換|確定|要件|無断|不一致|保つ"
+            ],
+            "description": "公開手段を確定した顧客の制約を、技術判断として無断で変える欠陥"
+          }
+        ]
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "design-fixed-defect",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "description": "公開手段を確定した顧客の制約を、技術判断として無断で変える欠陥",
+      "material": {
+        "name": "draft-decisions",
+        "change": "design-fixed-defect.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "explicit-method-lost",
+            "patterns": [
+              "独立|別引数|プリセット",
+              "互換|確定|要件|無断|不一致|保つ"
+            ],
+            "description": "公開手段を確定した顧客の制約を、技術判断として無断で変える欠陥"
+          }
+        ],
+        "absent": []
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "review-shift-defect",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "description": "初回の不要判定後に前提が変わる時、判定者・戻し先・解除条件が消える欠陥",
+      "material": {
+        "name": "draft-decisions",
+        "change": "review-shift-defect.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "reassignment-after-change",
+            "patterns": [
+              "判定後|不要判定|変更|更新|別案",
+              "判断者|責任者|戻し|再判定|再審査"
+            ],
+            "description": "初回の不要判定後に前提が変わる時、判定者・戻し先・解除条件が消える欠陥"
+          },
+          {
+            "id": "stale-evidence",
+            "patterns": [
+              "旧判定|証拠|入力版",
+              "失効|止め|保留|照合|復元|根拠"
+            ],
+            "description": "初回の不要判定後に前提が変わる時、判定者・戻し先・解除条件が消える欠陥"
+          }
+        ],
+        "absent": []
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "review-shift-control",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "description": "同じ要求の下で採否と成立性を確定した正常対照",
+      "material": {
+        "name": "draft-decisions",
+        "change": "review-shift-control.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "reassignment-after-change",
+            "patterns": [
+              "判定後|不要判定|変更|更新|別案",
+              "判断者|責任者|戻し|再判定|再審査"
+            ],
+            "description": "初回の不要判定後に前提が変わる時、判定者・戻し先・解除条件が消える欠陥"
+          },
+          {
+            "id": "stale-evidence",
+            "patterns": [
+              "旧判定|証拠|入力版",
+              "失効|止め|保留|照合|復元|根拠"
+            ],
+            "description": "初回の不要判定後に前提が変わる時、判定者・戻し先・解除条件が消える欠陥"
+          }
+        ]
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "config-boundaries-control",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "description": "同じ要求の下で採否と成立性を確定した正常対照",
+      "material": {
+        "name": "draft-decisions",
+        "change": "config-boundaries-control.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "retired-setting",
+            "patterns": [
+              "no_catalog|旧版|廃止",
+              "現行|4\\.2|効か|存在|根拠"
+            ],
+            "description": "旧版・設定層・既存保護が違う候補を実効設定と誤認する欠陥"
+          },
+          {
+            "id": "policy-only",
+            "patterns": [
+              "addons_deny_all|管理ポリシー",
+              "ユーザー設定|専用|効か|作用|根拠"
+            ],
+            "description": "旧版・設定層・既存保護が違う候補を実効設定と誤認する欠陥"
+          },
+          {
+            "id": "unrelated-protection",
+            "patterns": [
+              "入力フック|権限|プロジェクト",
+              "保持|廃止|削|対象外|別|要件|認可"
+            ],
+            "description": "旧版・設定層・既存保護が違う候補を実効設定と誤認する欠陥"
+          }
+        ]
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    },
+    {
+      "id": "config-boundaries-defect",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "description": "旧版・設定層・既存保護が違う候補を実効設定と誤認する欠陥",
+      "material": {
+        "name": "draft-decisions",
+        "change": "config-boundaries-defect.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求と出所": "{worktree}/requirements.md",
+        "成立性の証拠": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "retired-setting",
+            "patterns": [
+              "no_catalog|旧版|廃止",
+              "現行|4\\.2|効か|存在|根拠"
+            ],
+            "description": "旧版・設定層・既存保護が違う候補を実効設定と誤認する欠陥"
+          },
+          {
+            "id": "policy-only",
+            "patterns": [
+              "addons_deny_all|管理ポリシー",
+              "ユーザー設定|専用|効か|作用|根拠"
+            ],
+            "description": "旧版・設定層・既存保護が違う候補を実効設定と誤認する欠陥"
+          },
+          {
+            "id": "unrelated-protection",
+            "patterns": [
+              "入力フック|権限|プロジェクト",
+              "保持|廃止|削|対象外|別|要件|認可"
+            ],
+            "description": "旧版・設定層・既存保護が違う候補を実効設定と誤認する欠陥"
+          }
+        ],
+        "absent": []
+      },
+      "origin": {
+        "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
+      }
+    }
+  ]
+}

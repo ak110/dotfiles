@@ -20,7 +20,7 @@ from collections.abc import Collection, Mapping
 import markdown_it
 import yaml
 
-from agent_toolkit._common.markdown_headings import top_level_atx_headings
+from agent_toolkit._common.markdown_headings import h2_section_bodies, top_level_atx_headings
 from agent_toolkit._common.next_action import ActionableError
 
 REQUIRED_INPUT_PREFIX = "必須入力名: "
@@ -125,11 +125,12 @@ def launch_contract_documents(plugin_root: pathlib.Path) -> list[tuple[pathlib.P
 
 
 def input_contract_body(task_document: pathlib.Path) -> str:
-    """共通の宣言解析から、呼出側へ配置する入力名と所有の説明を生成する。
+    """共通の宣言と入力節から、呼出側へ配置する入力契約を生成する。
 
     通常起動の役割には、役割固有の入力とは別の共通の準備（全体作業契約）を加える。
     """
-    declaration = read_declaration_unchecked(task_document)
+    text = task_document.read_text(encoding="utf-8")
+    declaration = read_declaration_unchecked(task_document, text)
     if isinstance(declaration, str):
         raise ValueError(declaration)
     lines = [INPUT_CONTRACT_NOTICE]
@@ -154,7 +155,18 @@ def input_contract_body(task_document: pathlib.Path) -> str:
                 line = prefix
             line += ("、" if line != prefix else "") + token
         lines.append(line)
-    return "\n".join(lines)
+    start, end = "<!-- caller-input:start -->", "<!-- caller-input:end -->"
+    counts = text.splitlines().count(start), text.splitlines().count(end)
+    if counts == (0, 0):
+        return "\n".join(lines)
+    for heading, body in h2_section_bodies(text):
+        if heading != "入力" or start not in body or end not in body:
+            continue
+        if counts == (1, 1) and body.index(start) < body.index(end):
+            definitions = "\n".join(body[body.index(start) + 1 : body.index(end)]).strip()
+            if definitions:
+                return "\n".join([*lines, "", definitions])
+    raise ValueError(f"{task_document}: 呼出側の入力定義を「入力」節の一意な caller-input 境界内に置く")
 
 
 LaunchKind = typing.Literal["delegate", "explore", "shell", "write"]
