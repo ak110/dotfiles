@@ -104,7 +104,7 @@ def test_integrate_public_lifecycle(
 
 def test_processed_wis_uses_explicit_names_without_interpreting_argv() -> None:
     """明示があればargvにかかわらずその一覧を使い、省略時は旧入力の全件を扱う。"""
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"name": "done.md", "commands": [["atk", "wi", "adopt", "--note=確認済み", "done"]]},
         {"name": "rejected.md", "commands": [["echo", "wi", "reject", "--if-inbox", "rejected"]]},
         {"name": "partial.md", "commands": [["atk", "wi", "edit", "partial.md"]]},
