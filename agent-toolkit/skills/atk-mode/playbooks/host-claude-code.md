@@ -114,7 +114,7 @@ JavaScriptからツールを呼ぶCode Modeでは、ツールの一覧と背景�
 
 1. モデル、effort、背景での実行、省略時の値は、起動の時に公開されているスキーマとagent定義のfrontmatterで決める。
 2. 非対話の起動でターンを終えて通知を待つのは、通知の後に同じセッションが再開されると実行環境が保証する場合に限り、それ以外は同期の起動と公開された待機の手段で回収してfinishまで終える。
-   通常の`atk run-skill`はホストの背景実行設定を継承し、`atk run-skill --args batch agent-toolkit:review-session`ではClaudeの子に`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`を渡して前景で回収する。
+   通常の`atk run-skill`はホストの背景実行設定を継承し、[一括振り返り](review-session-batch.md#起動)ではClaudeの子に`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`を渡して前景で回収する。
 3. `agent-toolkit:atk-mode/playbooks/delegation.md`「会話を引き継ぐ委譲」でforkを選び、fork modeが有効なら`subagent_type: "fork"`で起動する。
    forkは親のモデルと会話を引き継いで背景で動き、通常と同じ完了通知で返り、親からの1階層で完結する。
    fork modeは対話のセッションで有効、`-p`の非対話の実行とAgent SDKで無効であり、無効なら`agents_server`で新しく起動する。
