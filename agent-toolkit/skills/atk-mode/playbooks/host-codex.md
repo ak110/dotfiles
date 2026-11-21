@@ -7,7 +7,7 @@ Codexで動くメインと委譲先が、agent-toolkitの手順書をCodexの公
 
 ## 読む節
 
-該当する条件の行の節だけを読む。
+本書を全文読み、表で場面に合う節を選んで適用する。
 
 | 条件 | 読む節 |
 | --- | --- |
@@ -88,7 +88,7 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
    長い終了待ちの所有者と回収時間は、本書「agents_serverの二層待機」で選ぶ。
 5. `apply_patch`で既存のファイルを全面的に置き換える時も、同じパスへのUpdateを使う（1つのpatchで同じパスをDeleteとAddに分けると適用に失敗する）。
 6. 明示の指示が無い限り、Officeファイルは原本を変えずに扱う。
-   共有原本の編集依頼だけでは途中状態の同期は認められないため、編集前に`agent-basics:writing-standards/references/quality-principles-constraints.md`「共有Office文書の編集」を読む。
+   共有原本の編集依頼だけでは途中状態の同期は認められないため、編集前に`agent-basics:writing-standards/references/quality-principles-constraints.md`を全文読み、「共有Office文書の編集」に従う。
    CSVは利用側の仕様に従う（仕様が不明ならUTF-8のBOM付き）。
 
 ### 資料の読取

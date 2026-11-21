@@ -6,7 +6,7 @@
 
 実装を終えた変更差分の実行レビューを起動し、返却を受領して、修正と収束を管理する起動側の文書である。
 起動するのは実装を担当したレーン担当（single-laneではメイン）自身であり、`write-plan`ではメイン、CI修正の系列では`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`が定める担当である。
-起動から収束までは「条件と行動」の該当する節に従う。
+起動から収束までは「条件と行動」の該当資料を全文読み、示された節を適用する。
 担当の手順と返却形式は`agent-toolkit:atk-mode/roles/exec-review.subagent.md`が定める。
 レビューの基準は`agent-basics:review-standards`にある。
 
