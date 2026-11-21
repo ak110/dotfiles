@@ -10,6 +10,7 @@ import typing
 import selection_contract
 import yaml
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
+from agent_toolkit._atk.wi.constants import WI_STATE_ADOPTED, WI_STATE_REJECTED
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
@@ -65,10 +66,15 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
                                 f"依存元のWI本文を読み込めない: {name}: {error}", next_action=_FIX_PRIVATE_NOTES
                             ) from error
                         sources[name] = parsed[0] if parsed else {}
+                        if source is not None and sources[name].get("state") is None:
+                            sources[name]["state"] = source.parent.name
                 source_name = evidence["依存元"]
-                actual = sources[source_name].get("depends_on", [])
-                if actual != evidence["depends_on"]:
-                    mismatches.append(f"depends_on: 根拠={evidence['depends_on']}、{source_name}のfrontmatter={actual}")
+                header = sources[source_name]
+                # 終了した項目は初回配分の履歴だけを残し、終了時に解除した依存を戻させない。
+                if header.get("state") not in (WI_STATE_ADOPTED, WI_STATE_REJECTED):
+                    actual = header.get("depends_on", [])
+                    if actual != evidence["depends_on"]:
+                        mismatches.append(f"depends_on: 根拠={evidence['depends_on']}、{source_name}のfrontmatter={actual}")
                 for index, name in enumerate((first, second), 1):
                     repository = sources[name].get("target_repo")
                     resolved = _git_remote.resolve_repo_identifier(repository) if isinstance(repository, str) else None
