@@ -585,7 +585,7 @@ def test_verify_updated_oid_rejects_mismatch() -> None:
         upgrade.verify_updated_oid("other", "current")
 
 
-def test_create_local_remote_can_advance_checkout(tmp_path: pathlib.Path) -> None:
+def test_create_upgrade_checkout_can_advance_without_origin(tmp_path: pathlib.Path) -> None:
     """bare remoteが旧・現行commitのobjectを持ち、旧checkoutを更新できる。"""
 
     def git(*arguments: str | pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -606,8 +606,8 @@ def test_create_local_remote_can_advance_checkout(tmp_path: pathlib.Path) -> Non
     git("-C", source_repo, "commit", "-am", "current")
     current_oid = git("-C", source_repo, "rev-parse", "HEAD").stdout.strip()
 
-    upgrade.create_local_remote(source_repo, bare_repo, old_oid)
-    git("clone", "--branch", "upgrade-check", bare_repo, checkout)
+    upgrade.create_upgrade_checkout(source_repo, bare_repo, old_oid, checkout)
+    assert git("-C", checkout, "remote").stdout.splitlines() == ["upgrade-local"]
     assert git("-C", checkout, "rev-parse", "HEAD").stdout.strip() == old_oid
 
     git("--git-dir", bare_repo, "update-ref", "refs/heads/upgrade-check", current_oid)

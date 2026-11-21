@@ -352,16 +352,19 @@ def verify_updated_oid(actual_oid: str, expected_oid: str) -> None:
         )
 
 
-def create_local_remote(
+def create_upgrade_checkout(
     source_repo: pathlib.Path,
     bare_repo: pathlib.Path,
     old_oid: str,
+    checkout: pathlib.Path,
     *,
     runner: Runner = subprocess.run,
 ) -> None:
-    """検証対象のobjectと旧commitを指す初期branchをbare remoteへ構成する。"""
+    """旧commitをローカルの合成remoteから取得し、検証用checkoutを作る。"""
     _run(("git", "clone", "--bare", source_repo, bare_repo), runner=runner)
     _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", old_oid), runner=runner)
+    # 管理サービスの起動元判定はoriginを公開リポジトリの識別に使う。合成remoteは更新用の上流にだけ使う。
+    _run(("git", "clone", "--origin", "upgrade-local", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
 
 
 def profile_watch_dirs(profile_env: Mapping[str, str], platform_name: str) -> list[pathlib.Path]:
@@ -537,8 +540,7 @@ def _run_isolated_upgrade(
         home = temp_root / "home"
         checkout = home / "dotfiles"
         home.mkdir(parents=True)
-        create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
-        _run(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
+        create_upgrade_checkout(source_repo, bare_repo, old_oid, checkout, runner=runner)
         env = _isolated_env(home, pathlib.Path(uv_path), platform_name, temp_root)
         # 検証を起動したuvが導入したPython（現行の`.python-version`の版）は検証homeからも選択できる。
         # 版を固定しない旧版のuv環境構築はその中で最新の版を選ぶため、旧版のlockがwheelを持たない新しい版で
