@@ -105,7 +105,7 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
             return f"{index}行目の続行できない区分が閉集合外です: {classification}"
     if freeform_explore and not has_reason:
         lines = message.rstrip().splitlines()
-        if not lines or not (lines[0] == "状態: completed" or lines[-1] == "状態: completed"):
+        if not lines or _STATE_HEAD not in (lines[0].rstrip(" \t"), lines[-1]):
             return "exploreの返却が完了を示しません。先頭または最終行に状態: completedが必要です"
     if document is not None and document.name == "reader-fit-review.subagent.md":
         return _reader_fit_reason(session, document, message)
