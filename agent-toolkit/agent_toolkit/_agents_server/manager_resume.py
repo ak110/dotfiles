@@ -225,12 +225,13 @@ class ManagerResume(manager_registry.ManagerRegistry):
             delivered = await run_file_operation(wait_run.delivered_children, directory, tracked_turns)
             for child_id in sorted(delivered):
                 current = await run_file_operation(session_registry.resolve, child_id)
+                if session.pending_result is not own_pending:
+                    return
                 if current.resume_pending or current.recorded_turn_seq != tracked_turns[child_id]:
                     delivered.remove(child_id)
-            if session.pending_result is not own_pending:
-                return
-            session.live_child_session_ids.difference_update(delivered)
-            session.terminal_child_session_ids.difference_update(delivered)
+                    continue
+                session.live_child_session_ids.discard(child_id)
+                session.terminal_child_session_ids.discard(child_id)
         if (
             delivered
             and own_pending is not None
@@ -246,11 +247,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
         terminal = {
             session_id
             for session_id, resolution in resolutions.items()
-            if resolution.state is session_registry.Resolution.TERMINAL
+            if resolution.state is session_registry.Resolution.TERMINAL and session_id not in delivered
         }
         unobserved: set[str] = set()
         for session_id, resolution in resolutions.items():
-            if resolution.state not in {
+            if session_id in delivered or resolution.state not in {
                 session_registry.Resolution.MISSING,
                 session_registry.Resolution.RELEASED,
                 session_registry.Resolution.UNREADABLE,

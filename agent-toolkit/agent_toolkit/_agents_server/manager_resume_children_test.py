@@ -17,7 +17,15 @@ import pytest
 
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import resume_waits, shared_layout, shared_roots, state, status_file, wait_output_tracking
+from agent_toolkit._agents_server import (
+    manager_resume,
+    resume_waits,
+    shared_layout,
+    shared_roots,
+    state,
+    status_file,
+    wait_output_tracking,
+)
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.delegated_session import FINAL_RESPONSE_NOTICE
@@ -182,6 +190,51 @@ async def test_shared_wait_delivery_releases_tracking(monkeypatch, tmp_path, cas
             assert not delegate.live_child_session_ids
         else:
             assert response["status"] == "running" and delegate.live_child_session_ids == {child}
+        assert backend.send_calls == 0
+        child_writer.deactivate()
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_delivery_does_not_remove_child_restarted_during_other_receipt_check(monkeypatch, tmp_path):
+    """複数件の照会中に新たに追跡を始めたturnを、先の配送結果で解除しない。"""
+    async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
+        children = {"child-a", "child-b"}
+        delegate.live_child_session_ids.update(children)
+        resume_waits.begin_auto_resume_wait(delegate, {"status": "completed", "agent_message": "担当の最終結果", "error": None})
+        for child in children:
+            session_registry.publish(
+                child, state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path), turn_seq=2
+            )
+        directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / f"{delegate.session_id}.json"
+        directory.mkdir(parents=True)
+        receipt = {
+            "run_id": "wait-run",
+            "status": "foreground-delivered",
+            "targets": sorted(children),
+            "output": "",
+            "exit_code": 0,
+            "result_turns": dict.fromkeys(children, 2),
+        }
+        (directory / "wait-run.json").write_text(json.dumps(receipt), encoding="utf-8")
+        run = manager_resume.run_file_operation
+        second_checks = 0
+
+        async def reenter(function, /, *args, **kwargs):
+            nonlocal second_checks
+            if function is session_registry.resolve and args == ("child-b",):
+                second_checks += 1
+                if second_checks == 2:
+                    session_registry.publish(
+                        "child-a", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), turn_seq=3
+                    )
+                    delegate.live_child_session_ids.add("child-a")
+            return await run(function, *args, **kwargs)
+
+        monkeypatch.setattr(manager_resume, "run_file_operation", reenter)
+        response = await manager.wait()
+        assert response["status"] == "running"
+        assert delegate.live_child_session_ids == {"child-a"}
         assert backend.send_calls == 0
         child_writer.deactivate()
         await manager.close()
