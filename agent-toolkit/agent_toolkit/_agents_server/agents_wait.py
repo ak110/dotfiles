@@ -229,12 +229,13 @@ def _publish_wait_result(
     *,
     stream: Literal["stdout", "stderr"] = "stdout",
     continuable: bool = False,
+    result_turns: dict[str, int] | None = None,
 ) -> int:
     output = _public_wait_output(output, stream)
     value = _read_run(run_path)
     if not isinstance(value, wait_run.RunningRun):
         raise _WaitStateReadError(f"公開する待機runがrunningではありません: {run_path}")
-    published = value.publish(_without_bodies(output, stream), code, stream)
+    published = value.publish(_without_bodies(output, stream), code, stream, result_turns=result_turns)
     _write_json(run_path, published.model_dump(exclude_unset=True))
     _print_public(output, stream)
     _write_json(run_path, published.deliver(continuable=continuable).model_dump(exclude_unset=True))
@@ -640,6 +641,7 @@ def _wait_for_result(
                 owners = status_reader.load_root(root_session_id, state_root).sessions
                 stranded_roots: list[str] | None = None
                 collected: list[dict[str, Any]] = []
+                result_turns: dict[str, int] = {}
                 read_failure: str | None = None
                 for session_id in ordered_ids:
                     owner = owners.get(session_id, {}).get("owner_status_file")
@@ -691,6 +693,9 @@ def _wait_for_result(
                         )
                     )
                     if result is not None:
+                        seq = retained_results.stashed_result_turn(run_path.with_suffix("") / "results" / f"{session_id}.json")
+                        if seq is not None:
+                            result_turns[session_id] = seq
                         result["session_id"] = session_id
                         if isinstance(result.get("agent_message"), str):
                             # 書込に失敗した場合は配送前に終え、run別の退避物と待機対象の登録を残して次の待機で再配送する。
@@ -722,7 +727,7 @@ def _wait_for_result(
                         ",".join(str(item["session_id"]) for item in collected),
                     )
                     continuable = all(item.get("status") == "running" for item in collected)
-                    return _publish_wait_result(run_path, output, 0, continuable=continuable)
+                    return _publish_wait_result(run_path, output, 0, continuable=continuable, result_turns=result_turns)
                 if read_failure is not None:
                     return _publish_wait_result(
                         run_path, with_next_action(read_failure, _READ_FAILURE_NEXT_ACTION), 6, stream="stderr"

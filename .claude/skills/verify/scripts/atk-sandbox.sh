@@ -88,13 +88,25 @@ record() {
     return "${status}"
 }
 
+remaining_sandbox_processes() {
+    grep -lzxsF -- "HOME=$1/home" /proc/[0-9]*/environ || true
+}
+
 run() {
-    local status=0
+    local status=0 remaining file pid
     record "$@" || status=$?
     cat -- "${LAST_PREFIX}.out"
     if [[ -s "${LAST_PREFIX}.err" ]]; then
         printf -- '-- 標準エラー\n'
         cat -- "${LAST_PREFIX}.err"
+    fi
+    remaining="$(remaining_sandbox_processes "$1")"
+    if [[ -n "${remaining}" ]]; then
+        printf '注意: 前景コマンドの終了後も隔離HOMEで動くプロセスが残っている。停止は行わない: %s/home\n' "$1" >&2
+        while IFS= read -r file; do
+            pid="${file#/proc/}"
+            printf '残存PID: %s\n' "${pid%/environ}" >&2
+        done <<<"${remaining}"
     fi
     return "${status}"
 }
@@ -125,7 +137,7 @@ doctor() {
 cleanup() {
     local scratch="$1" evidence remaining file pid
     evidence="$(<"${scratch}/evidence-dir")"
-    remaining="$(grep -lzxsF -- "HOME=${scratch}/home" /proc/[0-9]*/environ || true)"
+    remaining="$(remaining_sandbox_processes "${scratch}")"
     if [[ -n "${remaining}" ]]; then
         printf '失敗: 作業領域の環境で動くプロセスが残っている。起動した時の識別子で止めてから再実行する\n' >&2
         while IFS= read -r file; do

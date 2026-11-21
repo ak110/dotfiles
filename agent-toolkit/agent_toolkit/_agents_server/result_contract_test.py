@@ -164,6 +164,10 @@ def test_explore_empty_reason_is_held(tmp_path: pathlib.Path, message: str) -> N
     [
         ("状態: completed\n結果: 調査済み\n気付いた改善点: 対象の改善案", True),
         ("結果: 調査済み\n状態: completed", True),
+        ("状態: completed  \n結果: 調査済み", True),
+        ("状態: complete  \n結果: 調査済み", False),
+        (" 状態: completed  \n結果: 調査済み", False),
+        ("結果: 調査済み\n状態: completed  \n根拠: 本文中の状態行", False),
         ("結果: 読了部分\n続行できない区分: owner_input\n続行できない理由: 入力が必要\n気付いた改善点: 改善案", True),
         ("結果: 読了部分\n  続行できない区分: external_wait\n  続行できない理由: 外部完了待ち\n根拠: 観測済み", True),
         ("続行できない理由: 入力が必要", False),
@@ -171,7 +175,7 @@ def test_explore_empty_reason_is_held(tmp_path: pathlib.Path, message: str) -> N
         ("続行できない区分: owner_input\n 続行できない理由: 入力が必要", False),
         ("続行できない区分: owner_input\n続行できない理由:   ", False),
         ("続行できない区分: owner_input\n続行できない理由: 入力が必要\n続行できない理由: 別入力も必要", False),
-        ("状態: completed\n続行できない区分: unknown\n続行できない理由: 入力が必要", False),
+        ("状態: completed  \n続行できない区分: unknown  \n続行できない理由: 入力が必要", False),
         ("待機中: session-1", True),
         ("結果: 調査済み", False),
     ],
@@ -202,7 +206,7 @@ async def test_freeform_explore_publishes_common_contract(tmp_path: pathlib.Path
 @pytest.mark.parametrize(
     "message",
     [
-        "状態: completed\n結果: 完了\n根拠: 観測済み",
+        "状態: completed  \n結果: 完了\n根拠: 観測済み",
         "続行できない区分: owner_input\n続行できない理由: 委譲元の入力が必要",
         "  続行できない区分: permission_denied\n  続行できない理由: 権限が必要",
         "待機中: session-1",

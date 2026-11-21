@@ -136,12 +136,8 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         show_help_when_missing=True,
     )
     init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
-    path_help = (
-        "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.exec-review.tsv`、"
-        f"計画の無いWIの直接実装の`{_atk_help.WI_REVIEW_TABLE_NAME_FORMAT}`、"
-        f"またはCI対応レビュー指摘管理表の`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を指定する。"
-    )
-    init_parser.add_argument("path", help=path_help)
+    init_parser.add_argument("path", help="前提に示した書式で、新しく作るレビュー指摘管理表の絶対パスを指定する。")
+    path_help = "記録済みのレビュー指摘管理表の絶対パス。旧名の表を使う場合も、そのパスを指定する。"
     add_command_parser = _atk_help.add_command(
         sub,
         "add",

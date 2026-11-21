@@ -19,6 +19,60 @@ _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
 
 
+@pytest.fixture(autouse=True)
+def mock_hosted_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windowsの更新工程を模す既存テストは使い捨てrunner相当で実行する。"""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("RUNNER_ENVIRONMENT", "github-hosted")
+    monkeypatch.setenv("RUNNER_OS", "Windows")
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "actions", "environment", "runner_os"),
+    [
+        ("windows", "", "", ""),
+        ("windows", "true", "self-hosted", "Windows"),
+        ("windows", "true", "github-hosted", "Linux"),
+        ("linux", "", "", ""),
+    ],
+)
+def test_refuses_windows_upgrade_before_any_work_outside_hosted_windows(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    platform_name: str,
+    actions: str,
+    environment: str,
+    runner_os: str,
+) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", actions)
+    monkeypatch.setenv("RUNNER_ENVIRONMENT", environment)
+    monkeypatch.setenv("RUNNER_OS", runner_os)
+    monkeypatch.setenv("UV", "not-used")
+    monkeypatch.setattr(upgrade, "sys", types.SimpleNamespace(platform="win32"))
+
+    def runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        pytest.fail("実ユーザー上ではGitもセットアップも起動してはならない")
+
+    with pytest.raises(upgrade.UpgradeCheckError, match=r"WinGet.*ユーザー単位.*GitHub-hosted.*Windows"):
+        upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner)
+
+
+def test_blocked_windows_upgrade_does_not_offer_a_local_retry(tmp_path: pathlib.Path) -> None:
+    """公開CLIは続けてよい環境を示し、同じ危険な環境での再試行へ誘導しない。"""
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPT), "--platform", "windows", "--repo", str(tmp_path)],
+        env={**os.environ, "RUNNER_ENVIRONMENT": "self-hosted", "PYTHONIOENCODING": "utf-8"},
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert result.returncode == 1
+    assert "WinGet" in result.stderr and "GitHub-hosted Windows CI" in result.stderr
+    assert "再実行" not in result.stderr
+
+
 @pytest.mark.parametrize("outcome", [0, 23, "起動失敗"])
 def test_old_python_pin_reports_command_timing(
     tmp_path: pathlib.Path,

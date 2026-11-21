@@ -105,6 +105,61 @@ def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
     assert yaml.safe_load(selected.read_text(encoding="utf-8"))["レーンの所要時間"][0]["統合状態"] == "統合済み"
 
 
+@pytest.mark.parametrize("unmerged", [None, "commit", "worktree"])
+@pytest.mark.cpu_limit(3.5, reason="マージなしの最終化から再開まで、実Gitで履歴と未保存成果を照合する。")
+def test_reopen_after_no_merge_preserves_unmerged_work(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], unmerged: str | None
+) -> None:
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    original = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    (repo / "accepted.txt").write_text("統合先で保存済み", encoding="utf-8")
+    accepted = git_repository.commit_all(repo, "統合先に先行成果を保存")
+    manifest = _cleanup_integration_manifest(tmp_path, handoff_text="追加差分なし")
+    code, finalized, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, original), "--no-merge")
+    assert code == 0 and finalized["phase"] == "finalized" and finalized["integrated_head"] == accepted, stderr
+    assert git_repository.git_output(worktree, "rev-parse", "HEAD") == original != accepted
+
+    (repo / "later.txt").write_text("他レーンの後続成果", encoding="utf-8")
+    advanced = git_repository.commit_all(repo, "統合先をさらに進める")
+    assert (
+        run_script.dispatch(
+            argparse.Namespace(
+                script_name="pick-wi-check",
+                script_args=[
+                    str(selected),
+                    "--reopen-wi",
+                    "20261023-000000-001.md",
+                    "--output",
+                    str(selected),
+                    "--work-dir",
+                    str(repo),
+                ],
+            )
+        )
+        == 0
+    )
+    capsys.readouterr()
+    local_file = worktree / "local.txt"
+    local_head = original
+    if unmerged:
+        local_file.write_text("レーンにのみある成果", encoding="utf-8")
+        if unmerged == "commit":
+            local_head = git_repository.commit_all(worktree, "レーン固有の成果")
+
+    code, reused, stderr = _invoke(capsys, *_create_args(repo, selected))
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == advanced
+    if unmerged:
+        assert code == 2, stderr
+        assert git_repository.git_output(worktree, "rev-parse", "HEAD") == local_head
+        assert local_file.read_text(encoding="utf-8") == "レーンにのみある成果"
+    else:
+        assert code == 0 and reused["reused"] and reused["worktree"] == str(worktree), stderr
+        assert git_repository.git_output(worktree, "rev-parse", "HEAD") == advanced
+        assert (worktree / "later.txt").read_text(encoding="utf-8") == "他レーンの後続成果"
+
+
 @pytest.mark.cpu_limit(
     2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.881秒。"
 )

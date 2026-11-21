@@ -261,8 +261,7 @@ def refresh_finalized_lane(record: dict[str, typing.Any]) -> None:
     worktree = pathlib.Path(record["worktree"])
     current = _lane_records.git(worktree, "rev-parse", "HEAD")
     base = _lane_records.git(pathlib.Path(record["repo"]), "rev-parse", f"refs/heads/{record['base_branch']}")
-    known_head = integration.get("new_head") or integration.get("integrated_head")
-    if current not in (base, known_head) or _lane_integration_input.has_worktree_changes(worktree):
+    if _lane_integration_input.has_worktree_changes(worktree):
         raise ValueError("再開するレーンに最終化後の成果か未コミット変更がある。現在の担当へ戻して成果を検収する")
     if current == base:
         return
