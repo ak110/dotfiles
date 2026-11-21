@@ -682,7 +682,7 @@ class TestGenericAgentLaunchBlock:
     """公開hookから汎用定義の遮断・再発行と対象外の無通知を確認する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    @pytest.mark.parametrize("agent_type", ["general-purpose", "Explore", "Plan", "web-fetch", "claude", None, ""])
+    @pytest.mark.parametrize("agent_type", ["general-purpose", "Explore", "Plan", "claude", None, ""])
     def test_generic_definition_is_blocked_then_reissue_passes(
         self, tmp_path: pathlib.Path, tool_name: str, agent_type: str | None
     ) -> None:
@@ -694,7 +694,7 @@ class TestGenericAgentLaunchBlock:
         reason = _denial_reason(_run_after_skill_acquisition(payload, env_overrides=env))
         assert f"組み込みの汎用定義`{agent_type or 'general-purpose'}`" in reason
         assert "対応する`mode`" in reason
-        mode = "`explore`" if agent_type in {"Explore", "web-fetch"} else "`delegate`または役割文書のある`task`"
+        mode = "`explore`" if agent_type == "Explore" else "`delegate`または役割文書のある`task`"
         assert f"`mode`が{mode}の`agents_server`の`start`へ発行せよ" in reason
         assert "例外は、`agents_server`の`MCP`ツールを呼べない場合" in reason
         assert "ツール名と入力全体を変えずに再発行してよい" in reason
@@ -715,7 +715,7 @@ class TestGenericAgentLaunchBlock:
             ("project-reviewer", ""),
             ("Explore", "explore"),
             ("general-purpose", "shell"),
-            ("web-fetch", "write"),
+            ("web-fetch", ""),
         ],
     )
     def test_fork_dedicated_and_lightweight_are_not_blocked(
