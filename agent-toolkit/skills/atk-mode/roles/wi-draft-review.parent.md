@@ -9,7 +9,6 @@
 付随型では`agent-toolkit:atk-mode/roles/add-wi.parent.md`の委譲元による検収を使う。
 起動の要否は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」で判定する。
 `add-awi-by-user`では同節の4条件によらず毎回行い、考慮漏れの点検資料の全類型もこのレビューで検収する。
-それ以外で同節が直接起草を選べるとする原稿には、メインによる意味の検収と機械チェックを使う。
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
@@ -47,10 +46,8 @@
 
 本文段階の入力は、作成主体が次の順でそろえる。
 
-1. 保存前に原稿を原文と読み比べ、新規は`atk wi add --dry-run --body-file <原稿の絶対パス> --source <起動スキル由来のsource>`、更新は`atk wi edit <WI名> --dry-run --body-file <原稿の絶対パス>`で検証する。
-   `source`は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」に従い、原稿のfrontmatterで指定済みなら`--source`を省ける。
-   UWIの新規では`--type=uwi`と回答形式の指定も加える。
-   受領済みの抽出がある時は`--compare-opening-file <抽出の絶対パス>`も加え、複数原稿の対応順と不一致時の更新は`agent-toolkit:atk-mode/references/draft-semantic-review.md`「ユーザーが読む部分」に従う。
+1. 保存前に原稿を原文と読み比べ、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runで検証する。
+   受領済みの抽出が一致しない時の更新は`agent-toolkit:atk-mode/references/draft-semantic-review.md`「ユーザーが読む部分」に従う。
 2. 結果と、dry-runが返した入力原稿と抽出保存先の対応を成立性の証拠へ記録し、原稿、要求と出所、成立性の証拠の各ファイルを直接渡す。
    対応表の`ユーザー向け部分`には抽出保存先の絶対パスを置き、原稿を変えたらdry-runをやり直して対応を更新する。
    共通の根拠説明や対応表は、渡された形式のまま扱う。
@@ -88,7 +85,7 @@
 6. 修正後は、変えた要求識別子、現行の原稿、差分、直接の影響範囲を同じレビュー担当へ渡して再判定を頼む。
    変更の無い共通資料と合格済みの要求の結果は保ち、変わらない抽出は読者別探索の再点検を省く条件に従って再利用する。
    検収済みの参照関係に基づく正式名への置換だけの差分は、再判定へ戻さず、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入」に従って先行項目の保存結果と正式名が一致するかを確かめてから保存へ進める。
-7. 未解決の指摘が0件で、原稿と証拠の対応を確かめたら、`agent-toolkit:atk-mode/playbooks/wi-saving.md`に従って保存する。
+7. 未解決の指摘が0件になった後、原稿が変わった場合は再検証と必要な検収へ戻り、同じ原稿は検収前の有効なdry-runの結果を使って`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」の未実施項目を済ませ、「投入」「保存結果の検収」へ進む。
    ユーザー自身の判断が要る事項は、確認が取れるまで保留する。
 
 <!-- return-contract:wi-draft-review:start -->

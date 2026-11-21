@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 import yaml
 
-from agent_toolkit._atk import lane, run_script
+from agent_toolkit._atk import lane, lane_integration_input, run_script
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.lane_integration_support import (
@@ -24,16 +24,32 @@ from agent_toolkit._testing.lane_integration_support import (
 from agent_toolkit._testing.lane_support import _create, _create_args, _invoke, _selection
 
 
-@pytest.mark.parametrize("planned", [False, True])
+@pytest.mark.parametrize(("planned", "mixed"), [(False, False), (True, False), (False, True)])
 @pytest.mark.cpu_limit(
     5.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.572秒。"
 )
 def test_integrate_public_lifecycle(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], planned: bool
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    planned: bool,
+    mixed: bool,
 ) -> None:
     """レビュー済み成果を公開操作で統合し、計画あり・なしの最終化後だけ回収できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
+    done = "20261023-000000-001.md"
+    pending = ["20261023-000000-002.md", "20261023-000000-003.md"] if mixed else []
+    if pending:
+        document = yaml.safe_load(selected.read_text(encoding="utf-8"))
+        document["追加WI"] = pending
+        notes = selected.parent / "notes"
+        for wi in pending:
+            document["選定"].append(dict(document["選定"][0], WI=wi))
+            wi_entry_files.entry_path(notes, wi, state="processing").write_bytes(
+                wi_entry_files.entry_path(notes, done, state="processing").read_bytes()
+            )
+        selected.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
     worktree = pathlib.Path(record["worktree"])
     (worktree / "feature.txt").write_text("成果", encoding="utf-8")
     git_repository.commit_all(worktree, "成果")
@@ -47,7 +63,8 @@ def test_integrate_public_lifecycle(
         json.dumps(
             {
                 "plans": [{"name": "plan.md", "commands": [argv]}] if planned else [],
-                "wis": [{"name": "20261023-000000-001.md", "commands": []}],
+                "wis": [{"name": name, "commands": []} for name in [done, *pending]],
+                **({"processed_wis": [done]} if mixed else {}),
                 "verification": [],
                 "handoff": str(handoff),
             }
@@ -61,10 +78,52 @@ def test_integrate_public_lifecycle(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
     assert (repo / "feature.txt").read_text(encoding="utf-8") == "成果"
     assert saved.exists() is planned
+    record_path = pathlib.Path(record["record_path"])
+    previous = json.loads(record_path.read_text(encoding="utf-8")).get("previous_integration")
     code, repeated, stderr = _invoke(capsys, *args)
     assert code == 0 and repeated["completed"] == result["completed"], stderr
+    stored = json.loads(record_path.read_text(encoding="utf-8"))
+    assert stored.get("previous_integration") == previous
+    rows = yaml.safe_load(selected.read_text(encoding="utf-8"))["選定"]
+    assert [row["WI"] for row in rows if row.get("統合状態") == "統合済み"] == [done]
+    assert result["selection_integrated"] is not mixed
+    if mixed:
+        assert stored["selection"]["integrated"] is False
+        assert stored["selection"]["processed_wis"] == [done]
+        selected.unlink()
+        code, held, stderr = _invoke(capsys, "delete")
+        assert code == 1 and held["retained"], stderr
+        remaining = json.loads(manifest.read_text(encoding="utf-8"))
+        remaining["processed_wis"] = pending
+        manifest.write_text(json.dumps(remaining), encoding="utf-8")
+        code, final, stderr = _invoke(capsys, *args)
+        assert code == 0 and final["selection_integrated"] is True, stderr
     code, deleted, stderr = _invoke(capsys, "delete")
     assert code == 0 and deleted["removed"] == ["lane-01"], stderr
+
+
+def test_processed_wis_uses_explicit_names_without_interpreting_argv() -> None:
+    """明示があればargvにかかわらずその一覧を使い、省略時は旧入力の全件を扱う。"""
+    rows: list[dict[str, Any]] = [
+        {"name": "done.md", "commands": [["atk", "wi", "adopt", "--note=確認済み", "done"]]},
+        {"name": "rejected.md", "commands": [["echo", "wi", "reject", "--if-inbox", "rejected"]]},
+        {"name": "partial.md", "commands": [["atk", "wi", "edit", "partial.md"]]},
+        {"name": "new.md", "commands": []},
+    ]
+    assert lane_integration_input.processed_wis({"wis": rows}) == [row["name"] for row in rows]
+    assert lane_integration_input.processed_wis({"wis": rows, "processed_wis": ["done.md"]}) == ["done.md"]
+    assert lane_integration_input.processed_wis({"wis": rows, "processed_wis": []}) == []
+
+
+def test_cannot_amend_processed_wis_after_selection_write() -> None:
+    """選定への追記後に応答が途切れても、再開時に既に保存したWI集合を変えない。"""
+    rows = [{"name": "done.md", "commands": []}, {"name": "pending.md", "commands": []}]
+    base = {"reviewed_head": "a" * 40, "target": "repo", "branch": "main", "no_merge": False}
+    old = {**base, "manifest": {"plans": [], "wis": rows, "processed_wis": ["done.md"]}}
+    new = {**base, "manifest": {"plans": [], "wis": rows, "processed_wis": ["pending.md"]}}
+    state = {"phase": "git-integrated", "completed": ["selection-mark"], "input": old}
+    with pytest.raises(ValueError, match="記録済みの処置済みWIは変更できない"):
+        lane_integration_input.amend_finalization(state, new, "new-digest")
 
 
 @pytest.mark.usefixtures("leaf_git_commands")

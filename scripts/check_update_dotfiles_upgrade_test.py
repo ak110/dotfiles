@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import subprocess
@@ -13,7 +14,7 @@ import types
 import check_update_dotfiles_upgrade as upgrade
 import pytest
 
-from pytools._internal import antigravity_plugin, codex_runtime, install_codex_plugins, setup_herdr_cli
+from pytools._internal import antigravity_plugin, codex_runtime, install_codex_plugins, setup_herdr_cli, warmup_agents_server
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
@@ -385,6 +386,7 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
     monkeypatch.setenv("CODEX_INSTALL_DIR", str(tmp_path / "ci-codex-bin"))
     profile = tmp_path / "ci-profile"
     monkeypatch.setenv("LOCALAPPDATA", str(profile / "AppData" / "Local"))
+    monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(profile / "platformdirs-local"))
     monkeypatch.setenv("APPDATA", str(profile / "AppData" / "Roaming"))
     monkeypatch.setenv("HERDR_HOME", str(profile / ".herdr"))
     monkeypatch.setenv("HERDR_INSTALL_DIR", str(profile / "herdr-bin"))
@@ -397,6 +399,30 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
             assert isinstance(env, dict)
             home = pathlib.Path(env["HOME"])
             assert home.is_relative_to(runner_temp)
+            config_base = pathlib.Path(env["LOCALAPPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"])
+            config = config_base / "agent-toolkit" / "config.json"
+            assert config.is_relative_to(home)
+            if arguments[0] == "chezmoi":
+                (home / "dotfiles").mkdir()
+                config.parent.mkdir(parents=True, exist_ok=True)
+                config.write_text('{"language": "ja"}', encoding="utf-8")
+            else:
+                checkout = (home / "dotfiles").resolve()
+                settings = json.loads(config.read_text(encoding="utf-8"))
+                assert settings["language"] == "ja"
+                assert json.loads(settings["repositories"]) == {
+                    "github.com/ak110/dotfiles": {"path": str(checkout), "edit": "allow"}
+                }
+                if (platform_name == "windows") == (os.name == "nt"):
+                    config_env = "WIN_PD_OVERRIDE_LOCAL_APPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"
+                    with monkeypatch.context() as context:
+                        context.setenv(config_env, env[config_env])
+                        registered = warmup_agents_server._registered_checkout()  # pylint: disable=protected-access
+                        assert registered == checkout
+                        assert warmup_agents_server._checkout_skip(checkout, registered) is None  # pylint: disable=protected-access
+                        script = checkout / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py"
+                        approved = warmup_agents_server._approved_scripts(registered, [])  # pylint: disable=protected-access
+                        assert script in approved
             assert env["TMPDIR"] == str(runner_temp)
             assert env["CODEX_HOME"] == str(home / ".codex")
             assert pathlib.Path(env["CODEX_HOME"]).is_dir()
@@ -414,6 +440,7 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
             if platform_name == "windows":
                 local_app_data = home / "AppData" / "Local"
                 assert env["LOCALAPPDATA"] == str(local_app_data)
+                assert env["WIN_PD_OVERRIDE_LOCAL_APPDATA"] == str(local_app_data)
                 assert env["APPDATA"] == str(home / "AppData" / "Roaming")
                 assert local_app_data.is_dir() and pathlib.Path(env["APPDATA"]).is_dir()
                 herdr_bin = local_app_data / "Programs" / "Herdr" / "bin"

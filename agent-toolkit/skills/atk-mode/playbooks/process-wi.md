@@ -3,15 +3,17 @@
 `/atk-mode process-wi [single-lane|all-repos] [追加指示]`で始める、対象リポジトリのAWIを選定から計画、実装、レビュー、統合、公開まで処理する作業の入口である。
 この作業は、ユーザーの入力か`atk run-skill`・`atk wi process-loop`の起動入力が名指しした時だけ選び、実行中は自律モードで動く。
 常駐process-loopの統括もall-reposで起動する。
-本書でモードを選び、本書「条件と手順書」の条件に当たった時に、その操作・判断の前に手順書を全文読む。
-終了条件は、処理対象WIの採否と公開を終え、本書「終了」に従って報告するか委譲元へ返した時点である。
+モードを選び、「条件と手順書」「不変条件」「メインが読む対象の境界」を確認する。
+その後は選んだモードと実際に進む工程の資料を読む。
+採否と公開を終え、「終了」に従って報告するか委譲元へ返す。
 
 ## モードの選択
 
 引数の最初の語を確かめ、共通の工程を始める前にモードを1つ選ぶ。
 先頭の語が完全一致する時だけモードとして消費し、残りを追加指示として保つ（先頭の空白と語の区切りには空白・タブ・改行を使える）。
 一致しない場合と引数なしは複数レーンの処理とし、引数全体を追加指示として扱う。
-他のモードの手順書は、そのモードへ切り替える時だけ読む。
+複数レーンを扱う時は「実行順」に従う。
+all-reposではリポジトリごとにモードを決めた時点で、必要な実行順へ進む。
 
 | 最初の語 | 処理 | 手順書 |
 | --- | --- | --- |
@@ -36,12 +38,14 @@
 | 対象がGitHub上にあり、選定の前に監査の要否を決める時 | `agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md` |
 | レーンの専用worktreeを作成・再利用・回収する時、後段レーンの先行調査をする時 | `agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md` |
 | レーンを起動し、統合を許可・受領し、失敗から再開し、完了させる時 | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` |
+| 検証対象を選ぶ時（単一レーン・複数レーン共通） | 本書「検証環境」に従う |
 | 担当として計画、実装、実行レビュー、統合準備を進める時 | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` |
 | 統合の引数、manifest、計画の最終化、AWIの終了を扱う時 | `agent-toolkit:atk-mode/references/lane-integration-format.md` |
 | 不良・是正要求・改善を観測か受領した時、ユーザーが時機として「即時対応」と指示した時、30分ごとの点検と公開工程の開始前 | `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md` |
 | 処理対象WIを加える時、必須是正レーンを足す時、同一主題の追加指示を受けた時、上流へ投入する時 | `agent-toolkit:atk-mode/playbooks/process-wi-additions.md` |
 | 修正commitが必要なCI失敗か全体検証の失敗を扱う時 | `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` |
 | 公開工程を始める時 | `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md` |
+| frontmatterに`merge_branch`を持つマージ用AWIを処理する時 | `agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」 |
 | 延期adopt、反映後の観測、報告前の保存状態の確認をする時 | `agent-toolkit:atk-mode/playbooks/process-wi-observation.md` |
 | 作業契約を作成・更新する時、工程境界で要求と成果を確かめる時 | `agent-toolkit:atk-mode/references/work-contract.md` |
 | WIから受入までの工程の責務と受け渡しを確かめる時 | `agent-toolkit:atk-mode/references/workflow-phases.md` |
@@ -68,7 +72,8 @@
 ## 不変条件
 
 - 計画ファイルの作成要否は、`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」の定義を取得してからAWIごとに本文と現物で判定する。
-  計画が要るAWIは実装前に起草する計画へ含め、処理中に加えたAWIは確定済みの計画と分けて追加計画に置き、計画の要らないAWIはWIの要求と完成条件を実装とレビューの基準にする。
+  計画が要る項目は実装前に起草し、追加分は確定済みの計画から分ける。
+  計画が要らなければWIを実装とレビューの基準にする。
 - 計画の事前レビューは置かず、実装の後に各計画を最終の実装HEADで、要件と外部仕様の水準の実行レビューで確かめる。
 - 専用worktreeへの書込はレーン担当が持ち（メインが`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「同一主題の追加指示」で引き取った場合を除く）、主作業ツリーへの書込は統合の時に限る。
   担当の範囲の一部を委譲する場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従い、計画、検収、commitの対応の記録、統合、メインへの返却はレーン担当が責任を持つ。
@@ -93,9 +98,10 @@ all-reposの統括からリポジトリ担当として候補を受け取った�
    統括から受け取ったリポジトリ担当は初回の候補を使い、選定を別の担当へ委譲することは避ける。
    監査の結果が一部の候補の判断に要る場合は、その判断だけを待ち、独立した候補の選定と開始できるレーンの起動を進める。
 3. `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「レーンと資源」に従い、選定結果の`段階`と`先行レーン`で`atk lane create`へ対象を渡し、準備された資源でレーン担当を起動する。
+   frontmatterに`merge_branch`を持つマージ用AWIはレーンを割り当てず、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従ってメインが直接取り込み、公開工程へ合流する。
    後続のレーンは、先行レーンの統合と書込の主体の解放を確かめてから、現行のHEADを起点に作る。
    Claude Codeでは、各段階の最初の起動を全て終えてから、同書「各段階の全初期通常レーン起動後の会話圧縮」へ進む。
-4. 各レーンは計画、実装、実行レビューの調整、指摘への対応を進め、メインはユーザーの判断の通知を中継してレーン間の書込競合と依存を調停する。
+4. メインは各レーンからのユーザー判断の通知を中継し、レーン間の書込競合と依存を調停する。
 5. `統合準備完了`を返したレーンには、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従い、依存の条件を満たせば先行レーンの`統合完了`を待たずに`統合許可`を出す。
    各レーンは`atk lane integrate`で統合から計画の最終化、AWIの終了、選定結果への統合済みの記録までを終え、メインは返された`統合完了`を同書「統合の指示と受領」の受領条件で検収する。
 6. 処理中に加えた処理対象WIも、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理中に確定した必須是正レーン」で既存のレーンへ割り当て、同じレーン担当のスレッドで収束させて統合する。

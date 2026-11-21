@@ -58,6 +58,7 @@ class TestProcessLoopPromptAndEnv:
             "スキル`agent-toolkit:atk-mode`を作業`process-wi all-repos`で起動して始める。\n</atk-auto>"
         )
         assert argv[-1] == expected
+        assert ("--no-daemon" in argv) == (orchestrator == "codex")
 
     def test_prompt_does_not_inject_publish_destination(self) -> None:
         """対象リポジトリ固有の公開先をprocess-loopが目的文へ注入しない。"""

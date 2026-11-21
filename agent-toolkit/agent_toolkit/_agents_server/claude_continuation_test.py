@@ -472,7 +472,7 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
                     ]
                 )
             )
-            client.messages.put_nowait(ResultMessage("親のturnの結果", is_error=failed))
+            client.messages.put_nowait(ResultMessage("待機中: child", is_error=failed))
             async with manager._condition:
                 await asyncio.wait_for(manager._condition.wait_for(lambda: session.awaiting_auto_resume), 2)
             shown = await manager.show_session(session.session_id)

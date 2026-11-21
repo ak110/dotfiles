@@ -7,6 +7,22 @@ import pytest
 from agent_toolkit._agents_server import resume_waits, state, turn_state
 
 
+@pytest.mark.parametrize("finished", [False, True])
+def test_finalize_normal_body_keeps_unobserved_child_at_idle_or_eof(finished: bool) -> None:
+    """直接確定でも通常本文を保ち、終了通知の順序によらず子の識別子を返す。"""
+    parent = state.SessionState("parent-1", "/fixture")
+    children = parent.terminal_child_session_ids if finished else parent.live_child_session_ids
+    children.add("child-1")
+    parent.cli_turn_state = "idle" if finished else "running"
+    parent.hold_result(turn_state.BackgroundWait({"status": "completed", "agent_message": "完了", "error": None}, None))
+
+    resume_waits.finalize_pending_result(parent, touch=False)
+
+    assert parent.agent_message == "完了"
+    assert parent.error == {"unobservedSessions": ["child-1"]}
+    assert not parent.live_child_session_ids and not parent.terminal_child_session_ids
+
+
 @pytest.mark.parametrize("keep_resume_chain", [False, True])
 def test_finalize_pending_result_records_remaining_wait_targets_and_keeps_error(keep_resume_chain: bool) -> None:
     """保留結果の確定は残ったバックグラウンドタスクと孫sessionを既存の`error`へ併合し、継続の連鎖では記録しない。

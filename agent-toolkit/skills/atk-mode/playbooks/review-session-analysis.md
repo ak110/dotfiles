@@ -99,7 +99,7 @@ batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出�
 
 - 全候補の対応と必須性は`bundle/review-index.jsonl`が持ち、索引に表示されない候補も含めて全件を対応付ける。
 - 候補の全項目、発生位置、操作の入力、質問文と全選択肢、実際の回答は、`bundle/candidates.jsonl`と、索引の`candidate_id`・`evidence_path`が指す個別の証拠から取る。
-- 委譲の入力と規範の読込の概要は`comparison-materials.md`から取る。
+- 通読や候補の判定で、委譲時の入力や規範の読込が判断を左右すると分かった時だけ、`comparison-materials.md`から該当する区分を取る。
   区分ごとの全件・表示・省略の件数を確かめ、表示外の項目は`bundle/comparison-materials.jsonl`の`record`・`line`・`result_line`から照会する。
   直接渡された本文とファイルの参照、明示の読取とコマンド文字列だけの観測、返却本文の量と現在のファイルサイズは分けて数える。
   参照ファイルの内容量、自動配送、読了の有無は、受領の記録などの証拠が無ければ未確認とする。

@@ -3,6 +3,8 @@
 import pathlib
 import re
 
+from markdown_it import MarkdownIt
+
 from agent_toolkit._common.markdown_headings import parse_headings
 
 REFERENCE = re.compile(r"`([^`]+\.md(?:#[^`]*)?)`")
@@ -75,6 +77,38 @@ def section_text(path: pathlib.Path, heading: str) -> str:
     start, level = found[0]
     end = next((line for line, other, _name in headings if line > start and other <= level), None)
     return "\n".join(text.splitlines()[start + 1 : end])
+
+
+def read_contract_section(source: pathlib.Path, plugin_root: pathlib.Path, relative: str, condition: str, heading: str) -> str:
+    """操作の条件が名指しした資料の節だけを、親契約の表から取得する。"""
+    target = (source.parent / relative).resolve()
+    try:
+        section = section_text(source, "条件と行動")
+    except AssertionError as error:
+        raise AssertionError(f"{error}\n次の操作: 親契約に「条件と行動」の見出しを1つ置く") from error
+    lines = section.splitlines()
+    routes = 0
+    for token in MarkdownIt().enable("table").parse(section):
+        if token.type != "tr_open" or token.map is None:
+            continue
+        _, row_condition, cell, *_ = lines[token.map[0]].split("|")
+        if condition not in row_condition:
+            continue
+        for match in REFERENCE.finditer(cell):
+            if resolve_reference(match.group(1), source, plugin_root) == target and cell[match.end() :].startswith(
+                f"「{heading}」"
+            ):
+                routes += 1
+    if routes != 1:
+        action = "条件の行に資料と節を指定する" if routes == 0 else "重複する経路を1行にまとめる"
+        raise AssertionError(
+            f"条件別の節の取得経路が{routes}件: {source} -> {target}「{heading}」: {condition}\n"
+            f"次の操作: 親契約の読込表で、{action}"
+        )
+    try:
+        return section_text(target, heading)
+    except AssertionError as error:
+        raise AssertionError(f"{error}\n次の操作: 親契約の読込表の参照を実在する一意の節へ直す") from error
 
 
 def line_references(line: str, source: pathlib.Path, plugin_root: pathlib.Path) -> list[pathlib.Path]:

@@ -13,7 +13,7 @@ import pytest
 
 from agent_toolkit._atk import run_script, run_skill_batch
 from agent_toolkit._atk.wi import add, layout
-from agent_toolkit._common import session_review
+from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, session_evidence_support
 
 
@@ -39,6 +39,8 @@ def _register(path: pathlib.Path) -> dict:
 )
 def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path, monkeypatch):
     """実ログで観測したNUL335/2157バイトと不成立な末尾を最小化し、健全対象も同じ回で処理する。"""
+    # 活動は合成した記録から判定し、実機のプロセスは入力に含めない。
+    monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     notes = git_repository.init_repository(pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     parent = tmp_path / "partial-parent.jsonl"

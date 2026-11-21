@@ -93,6 +93,26 @@ async def test_public_kill_marks_wait_statement_without_review_receipt(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_public_kill_guides_recovery_of_unobserved_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    """killで通常本文を回収しても、子の回収操作はwaitの場合と同じにする。"""
+    result = {
+        "status": "completed",
+        "label": "scope-review",
+        "agent_message": "最終結果",
+        "error": {"unobservedSessions": ["child-1"]},
+    }
+    manager = SimpleNamespace(kill=AsyncMock(return_value=result))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    answer = await mcp_tools.kill("session-1", 1, False)
+
+    assert answer["error"] == result["error"]
+    assert answer["agent_message"] == "最終結果"
+    assert "`send_message`で元の委譲先に`atk agents wait`" in answer["next_action"]
+    assert "レビューの指摘を受領した" in answer["next_action"]
+
+
+@pytest.mark.asyncio
 async def test_public_start_returns_label_of_started_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

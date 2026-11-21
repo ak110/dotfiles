@@ -150,7 +150,7 @@ async def test_claude_collects_background_wait_before_holding_result(
         else:
             output.write_text(terminal, encoding="utf-8")
         client.emit(TaskUpdatedMessage("wait-job", "completed"))
-        client.emit(ResultMessage("実装完了"))
+        client.emit(ResultMessage("待機中: remaining-child" if remaining == "child" else "実装完了"))
         await _await_state(lambda: session.turn_completed or session.awaiting_auto_resume)
 
         assert child not in session.live_child_session_ids

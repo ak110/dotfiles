@@ -102,7 +102,7 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 
 新しい通常AWIを起草する前に、要求の名称と主題（外部資料が起点なら資料と実装の名前も）で全状態の既存WIを検索し、本文を読んで比べる。
 起点がユーザーの持ち込んだ新しい主題でも、類似の見直しで見つけた独立の別件でも同じく検索し、既存AWIの更新の依頼では指定された項目を取得して比べる。
-ユーザー自身が要求単位を書いた原稿の整形投入、UWI、移行と復元の作業は対象外とし、回答済みUWIとの整合確認は種別によらず`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」で行う。
+ユーザー自身が要求単位を書いた原稿の整形投入、UWI、移行と復元の作業は対象外とし、回答済みUWIとの整合確認は種別によらず`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」の手順2で行う。
 
 ```sh
 atk wi grep --summary-only --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull -F -- '<語>'

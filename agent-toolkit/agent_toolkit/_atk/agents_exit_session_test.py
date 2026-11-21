@@ -19,9 +19,11 @@ from agent_toolkit._atk import agents_exit_session
     [
         ["codex"],
         ["codex", "--model", "o3", "--search", "inspect"],
+        ["codex", "--no-daemon", "--model", "o3", "inspect"],
         ["codex", "-mo3", "--", "inspect"],
         ["codex", "resume", "--last"],
         ["codex", "resume", "session-id", "inspect"],
+        ["codex", "resume", "--no-daemon", "session-id", "inspect"],
     ],
 )
 def test_interactive_codex_argv_is_accepted(argv: list[str]) -> None:
@@ -32,6 +34,7 @@ def test_interactive_codex_argv_is_accepted(argv: list[str]) -> None:
     "argv",
     [
         ["codex", "exec", "inspect"],
+        ["codex", "exec", "--no-daemon", "inspect"],
         ["codex", "app-server"],
         ["codex", "remote-control"],
         ["codex", "--remote", "server"],
@@ -237,6 +240,26 @@ def test_versioned_executable_with_claude_argv_is_identified(tmp_path: pathlib.P
 
     assert target is not None
     assert (target.host, target.pid) == ("claude", 123)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Codexの終了対象はLinuxに限る")
+def test_codex_native_alias_requires_real_codex_and_terminal(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """配布の別名を認識しても、実行ファイル・端末・対話argvの条件を保つ。"""
+    codex = tmp_path / "codex"
+    other = tmp_path / "other"
+    for executable in (codex, other):
+        executable.write_text("", encoding="utf-8")
+    monkeypatch.setattr(agents_exit_session.process_identity, "start_id", lambda process, **kwargs: "test-generation")
+    alias = str(tmp_path / ".dotfiles-codex-native")
+    tty = "/dev/pts/3"
+
+    target = _identify([alias, "--no-daemon", "inspect"], codex, tty)
+    assert target is not None and target.host == "codex"
+    assert _identify([alias, "--no-daemon", "inspect"], other, tty) is None
+    assert _identify([alias, "--no-daemon", "inspect"], codex) is None
+    assert _identify([alias, "exec", "inspect"], codex, tty) is None
+    assert _identify([alias, "--remote", "server"], codex, tty) is None
+    assert _identify(["different-alias", "inspect"], codex, tty) is None
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="agyの終了対象はLinuxに限る")

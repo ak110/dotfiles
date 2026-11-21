@@ -20,6 +20,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import (
     manager_resume,
     resume_waits,
+    retained_results,
     shared_layout,
     shared_roots,
     state,
@@ -59,7 +60,7 @@ async def test_auto_resume_delivery_failure_terminates_as_failed(
         session.live_child_session_ids.add("child-terminal")
         resume_waits.begin_auto_resume_wait(
             session,
-            {"status": "completed", "agent_message": "保留していた本文", "error": None},
+            {"status": "completed", "agent_message": "待機中: child-terminal", "error": None},
         )
         manager.sessions[session.session_id] = session
 
@@ -72,7 +73,7 @@ async def test_auto_resume_delivery_failure_terminates_as_failed(
         response = await manager.wait()
 
         assert response["status"] == "failed"
-        assert response["agent_message"] == "保留していた本文"
+        assert response["agent_message"] == "待機中: child-terminal"
         assert response["error"] == {
             "message": "RuntimeError: delivery failed",
             "unobservedSessions": ["child-terminal"],
@@ -105,12 +106,43 @@ async def _delegate_with_child_writer(
         started = await manager.start("execute", "委譲する", str(tmp_path))
         child_writer = status_file.StatusFileWriter(
             {},
-            shared_roots.StatusFileIdentity("root-session", "delegate-host.json", "delegate-host"),
+            shared_roots.StatusFileIdentity("root-session", f"{started['session_id']}.json", started["session_id"]),
             state_root=tmp_path,
             aggregate_seconds=0,
         )
         child_writer.activate()
         yield manager, backend, manager.sessions[started["session_id"]], child_writer
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("child_finished", [False, True])
+async def test_wait_delivers_final_body_without_consuming_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, child_finished: bool
+) -> None:
+    """普通の最終本文を上流へ返しても、子の結果は元の所有者が回収できる。"""
+    async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
+        child = state.SessionState("grandchild", str(tmp_path), engine="claude", launch_kind="explore")
+        child_writer.sessions[child.session_id] = child
+        delegate.live_child_session_ids.add(child.session_id)
+        if child_finished:
+            _complete(child, message="子の結果")
+        child_writer.flush()
+        resume_waits.begin_auto_resume_wait(delegate, {"status": "completed", "agent_message": "担当の最終結果", "error": None})
+
+        response = await manager.wait()
+
+        assert response["status"] == "completed"
+        assert response["agent_message"] == "担当の最終結果"
+        assert response["error"] == {"unobservedSessions": [child.session_id]}
+        assert backend.send_calls == 0
+        if not child_finished:
+            _complete(child, message="子の結果")
+            child_writer.flush()
+        recovered, error = retained_results.take_result(
+            "root-session", child.session_id, f"{delegate.session_id}.json", collector="test", state_root=tmp_path
+        )
+        assert error is None and recovered is not None and recovered["agent_message"] == "子の結果"
+        child_writer.deactivate()
 
 
 @pytest.mark.asyncio
@@ -133,7 +165,7 @@ async def test_wait_delivers_child_session_result_without_kill(
         )
         resume_waits.begin_auto_resume_wait(
             delegate,
-            {"status": "completed", "agent_message": "子sessionの結果を待つ本文", "error": None},
+            {"status": "completed", "agent_message": "待機中: grandchild", "error": None},
         )
 
         _complete(child, message="子sessionの結果")
@@ -185,11 +217,12 @@ async def test_shared_wait_delivery_releases_tracking(monkeypatch, tmp_path, cas
         (directory / "wait-run.json").write_text(json.dumps(receipt), encoding="utf-8")
 
         response = await manager.wait()
+        assert response["status"] == "completed" and response["agent_message"] == "担当の最終結果"
         if case in {"foreground-delivered", "consumed"}:
-            assert response["status"] == "completed" and response["agent_message"] == "担当の最終結果"
-            assert not delegate.live_child_session_ids
+            assert "error" not in response
         else:
-            assert response["status"] == "running" and delegate.live_child_session_ids == {child}
+            assert response["error"] == {"unobservedSessions": [child]}
+        assert not delegate.live_child_session_ids
         assert backend.send_calls == 0
         child_writer.deactivate()
         await manager.close()
@@ -201,7 +234,9 @@ async def test_wait_delivery_does_not_remove_child_restarted_during_other_receip
     async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
         children = {"child-a", "child-b"}
         delegate.live_child_session_ids.update(children)
-        resume_waits.begin_auto_resume_wait(delegate, {"status": "completed", "agent_message": "担当の最終結果", "error": None})
+        resume_waits.begin_auto_resume_wait(
+            delegate, {"status": "completed", "agent_message": "待機中: child-a", "error": None}
+        )
         for child in children:
             session_registry.publish(
                 child, state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path), turn_seq=2
@@ -369,7 +404,9 @@ async def test_child_collected_by_background_agents_wait_is_not_unobserved(
             parent,
             f"Command running in background with ID: bqwu17av0. Output is being written to: {output}. You will be notified.",
         )
-        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+        resume_waits.begin_auto_resume_wait(
+            parent, {"status": "completed", "agent_message": "待機中: child-session", "error": None}
+        )
         manager.sessions[parent.session_id] = parent
 
         await manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
@@ -393,7 +430,7 @@ async def test_child_set_updated_during_resolution_does_not_abort_wait(
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
         parent.live_child_session_ids.add("child-a")
-        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "待機中: child-a", "error": None})
         manager.sessions[parent.session_id] = parent
         original_resolve = session_registry.resolve
 

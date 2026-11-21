@@ -239,7 +239,9 @@ async def test_owner_lost_session_stays_running_on_every_entry(
             # 予防対象の自動再開も、所有サーバーを失った実行中の子を終了した子として扱わない。
             parent = state.SessionState("parent-session", str(tmp_path), engine=engine)
             parent.live_child_session_ids.add(_SESSION_ID)
-            resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+            resume_waits.begin_auto_resume_wait(
+                parent, {"status": "completed", "agent_message": f"待機中: {_SESSION_ID}", "error": None}
+            )
             manager.sessions[parent.session_id] = parent
             await manager._advance_child_session_wait(parent)
             assert _SESSION_ID in parent.live_child_session_ids

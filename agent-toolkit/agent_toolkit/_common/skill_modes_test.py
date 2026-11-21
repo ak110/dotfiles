@@ -49,3 +49,9 @@ def test_scope_ignores_free_text_and_separates_modes():
     assert scope(skill_modes.PROCESS_WI, "single-lane A") == scope(skill_modes.PROCESS_WI, "single-lane B")
     assert scope(skill_modes.PROCESS_WI, "single-lane") != scope(skill_modes.PROCESS_WI, "all-repos")
     assert scope("agent-toolkit:review-session", "batch auto") != scope("agent-toolkit:review-session", "auto")
+
+
+def test_implement_work_is_resolved_from_entry_skill():
+    assert skill_modes.entry_work("implement") == "implement"
+    assert skill_modes.resolve_work("atk-mode", "implement 機能を足す") == ("agent-toolkit:implement", "機能を足す")
+    assert skill_modes.invocation_scope("implement", "機能を足す") == "agent-toolkit:implement"

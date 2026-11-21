@@ -19,7 +19,14 @@ from agent_toolkit._testing.lane_integration_support import (
     _record_wi_commit,
 )
 from agent_toolkit._testing.lane_support import _create, _invoke
-from agent_toolkit._testing.selection_check_support import _awi, _dispatch, _initial_allocation, _track, _write_selection
+from agent_toolkit._testing.selection_check_support import (
+    _awi,
+    _dispatch,
+    _initial_allocation,
+    _overlap_record,
+    _track,
+    _write_selection,
+)
 from agent_toolkit._testing.selection_check_support import fixture_env as fixture_env
 
 
@@ -140,6 +147,62 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
     assert path.read_bytes() == saved
 
 
+@pytest.mark.parametrize(("state", "expected"), [("adopted", 0), ("rejected", 0), ("processing", 1)])
+def test_reopen_wi_ignores_changed_dependency_of_finished_source(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    expected: int,
+) -> None:
+    """初回の依存元の終了時だけ、依存解除後も関係する未終了WIを再開できる。"""
+    repo, notes = env
+    target = "20261120-000000-001.md"
+    source = "20261120-000000-002.md"
+    _awi(notes, target, "`README.md`を変更する。")
+    _awi(notes, source, "`README.md`を変更する。")
+    legacy_source = notes / "processing" / source
+    dated_source = wi_entry_files.entry_path(notes, source)
+    text = legacy_source.read_text(encoding="utf-8")
+    dated_source.write_text(text.replace("type: awi\n", f"type: awi\nstate: {state}\n", 1), encoding="utf-8")
+    legacy_source.unlink()
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": wi, "レーン": "lane-01", "書込対象": ["README.md"], "統合状態": "統合済み"} for wi in (target, source)],
+        [{"レーン": "lane-01", "統合状態": "統合済み"}],
+    )
+    before = yaml.safe_load(path.read_text(encoding="utf-8"))
+    before["初回配分"]["不可分成分"] = [
+        {
+            "WI": [target, source],
+            "結合条件": [
+                {
+                    "WI1": target,
+                    "WI2": source,
+                    "種別": "依存",
+                    "根拠": {
+                        "リポジトリ1": "github.com/test/repo",
+                        "リポジトリ2": "github.com/test/repo",
+                        "依存元": source,
+                        "depends_on": [target],
+                    },
+                }
+            ],
+        },
+    ]
+    path.write_text(yaml.safe_dump(before, allow_unicode=True), encoding="utf-8")
+    written = path.read_bytes()
+
+    assert _dispatch(str(path), "--reopen-wi", target, "--output", str(path), "--work-dir", str(repo)) == expected
+    if expected != 0:
+        assert "結合根拠が元入力と一致しない" in capsys.readouterr().err
+        assert path.read_bytes() == written
+        return
+    after = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert after["初回配分"] == before["初回配分"]
+    assert [item["統合状態"] for item in after["選定"]] == ["未統合", "統合済み"]
+
+
 def test_reopen_wi_keeps_explicit_pending_item_of_other_integrated_lane(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
@@ -210,6 +273,72 @@ def test_public_command_records_integrated_lane(env: tuple[pathlib.Path, pathlib
     before = path.read_bytes()
     assert _dispatch(str(path), "--mark-integrated", "lane-99", "--output", str(path), "--work-dir", str(repo)) == 2
     assert path.read_bytes() == before
+
+
+def test_marks_only_processed_wis_and_requires_every_wi(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
+    """未着手・継続中のWIは残し、全項目の処置後にだけレーンも統合済みにする。"""
+    repo, notes = env
+    names = ("done.md", "partial.md", "new.md")
+    paths = ("README.md", "src/model.py", "README.md")
+    for name, path_name in zip(names, paths, strict=True):
+        _awi(notes, name, f"`{path_name}`を変える。")
+    path = _write_selection(
+        tmp_path / "state.yaml",
+        [{"WI": name, "レーン": "lane-01", "書込対象": [path_name]} for name, path_name in zip(names, paths, strict=True)],
+    )
+    args = (str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo))
+    good = path.read_bytes()
+    invalid = yaml.safe_load(good)
+    invalid["選定"][1]["書込対象"] = ["src/"]
+    path.write_text(yaml.safe_dump(invalid, allow_unicode=True), encoding="utf-8")
+    bad = path.read_bytes()
+    assert _dispatch(*args, "--mark-integrated-wis", '["done.md"]') == 1
+    assert path.read_bytes() == bad
+    path.write_bytes(good)
+    assert _dispatch(*args, "--mark-integrated-wis", '["done.md"]') == 0
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert [row.get("統合状態", "未統合") for row in data["選定"]] == ["統合済み", "未統合", "未統合"]
+    assert _dispatch(str(path), "--require-integrated", "--work-dir", str(repo)) == 1
+    before = path.read_bytes()
+    assert _dispatch(*args, "--mark-integrated-wis", '["unknown.md"]') == 2
+    assert path.read_bytes() == before
+    assert _dispatch(*args, "--mark-integrated-wis", '["partial.md","new.md"]') == 0
+    assert _dispatch(str(path), "--require-integrated", "--work-dir", str(repo)) == 0
+
+
+def test_partial_integration_keeps_existing_precedence_readable(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """処置済みWIだけが先行の根拠でも、部分統合後の検査や別レーンの統合を妨げない。"""
+    repo, notes = env
+    cases = [
+        ("a.md", "lane-01", "src/model.py"),
+        ("b.md", "lane-01", "README.md"),
+        ("c.md", "lane-02", "src/model.py"),
+        ("d.md", "lane-03", "pytools/post_apply.py"),
+    ]
+    for name, _, target in cases:
+        _awi(notes, name, f"`{target}`を変更する。")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": name, "レーン": lane, "書込対象": [target]} for name, lane, target in cases],
+        [{"レーン": "lane-01"}, {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"]}, {"レーン": "lane-03"}],
+    )
+    source = yaml.safe_load(path.read_bytes())
+    source["レーン間の重なり"] = [_overlap_record("src/model.py", "交わる")]
+    path.write_text(yaml.safe_dump(source, allow_unicode=True), encoding="utf-8")
+    args = (str(path), "--work-dir", str(repo))
+    assert _dispatch(*args) == 0
+    assert _dispatch(*args, "--mark-integrated", "lane-01", "--mark-integrated-wis", '["a.md"]', "--output", str(path)) == 0
+    saved = yaml.safe_load(path.read_bytes())
+    assert [item["WI"] for item in saved["選定"] if item.get("統合状態") == "統合済み"] == ["a.md"]
+    assert saved["レーンの所要時間"][1]["先行レーン"] == ["lane-01"]
+    assert _dispatch(*args) == 0
+    assert _dispatch(*args, "--history") == 0
+    assert _dispatch(*args, "--mark-integrated", "lane-03", "--output", str(path)) == 0
+    updated = yaml.safe_load(path.read_bytes())
+    assert [item["WI"] for item in updated["選定"] if item.get("統合状態") == "統合済み"] == ["a.md", "d.md"]
+    assert _dispatch(*args, "--require-integrated") == 1
 
 
 @pytest.mark.parametrize("problem", ["unknown-state", "state-type", "unknown-prior", "broad", "invalid-path", "conflict"])

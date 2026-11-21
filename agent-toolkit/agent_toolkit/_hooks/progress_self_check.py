@@ -24,13 +24,14 @@ in-processのサブエージェントはpayloadの`agent_id`）ごとに次の�
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import UTC, datetime
 
 from agent_toolkit._common.json_lines import split_lines
-from agent_toolkit._common.session_state import update_state
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as _notice
-from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
+from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 SELF_CHECK_INTERVAL_SECONDS = 30 * 60
@@ -43,9 +44,14 @@ SOURCE = "progress-self-check"
 """通知の生成元として`atk-auto`要素の`source`属性へ入れる名前。"""
 
 _llm_notice = _notice_formatter(SOURCE)
+_block_notice = _notice.block_formatter(SOURCE)
 
 DELIVERED_KEY = "progress_self_check_delivered"
 """最終出力へ採用された通知の生成時刻を、呼出主体ごとに受け取るセッション状態のキー。"""
+
+_REPORT_DUE_KEY = "progress_self_check_report_due"
+_REPORT_FORMAT = "進捗 N%・完了見込み HH:MM（根拠: …）"
+_REPORT_LINE = re.compile(r"進捗 (?:100|[0-9]{1,2})%・完了見込み (?:[01][0-9]|2[0-3]):[0-5][0-9]（根拠: (.+)）")
 
 RESERVATION_SECONDS = 60
 """期日到達後の予約が並列claimを抑止する秒数。同じ時点に並列で動くフックの処理時間より十分長い値にする。"""
@@ -56,15 +62,81 @@ _RESERVED_AT_KEY = "reserved_at"
 
 _reservations: list[tuple[str, str, float]] = []
 
-_SELF_CHECK_NOTICE_BODY = (
-    "作業記録・要求原本・計画を読み直し、工程・開始時点・経過時間を目標と前回の成果に比べよ。"
-    "有効な全要求について成果・証拠・未達・残工程を確かめ、全工程に対する進捗率の概算と根拠を出せ。"
-    "律速担当の内部工程の現在の残量・速度・待ちを確認し、並行化・分割・検証の集約・独立工程の前倒しを比べて、"
-    "必要な組み直しを指示せよ。品質の維持に必要な工程は省かない。"
-    "成果物の状態は`git -C <worktree> status --porcelain=v1`、`git -C <worktree> rev-parse --short HEAD`、"
-    "`wc -l -- <file>`、`stat -L -c %Y -- <file>`で観測し、担当の生存と未回収の結果は実行識別子の照会で確かめよ。"
-    "組み直さずに続ける場合は、その根拠を点検の報告（委譲先は次の工程返却）に含めよ。"
-)
+_SELF_CHECK_NOTICE_BODY = f"進捗点検。次のユーザー向け報告の1行目を埋めよ: `{_REPORT_FORMAT}`。"
+_DELEGATED_NOTICE_BODY = "進捗点検。作業記録と残工程を確かめ、委譲元への返却・通知は役割文書に従え。"
+
+
+def _report_matches(text: object) -> bool:
+    if not isinstance(text, str) or not (lines := text.splitlines()):
+        return False
+    match = _REPORT_LINE.fullmatch(lines[0])
+    return match is not None and bool(match[1].strip().strip("….").strip())
+
+
+def _report_session(payload: dict) -> str | None:
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id or not is_main_agent_context(payload):
+        return None
+    return session_id if read_state(session_id).get(_REPORT_DUE_KEY) else None
+
+
+def _report_block() -> str:
+    return _block_notice(
+        "点検通知の後、最初の報告の1行目が指定の書式に合わないため確定していない。",
+        fix=f"報告の1行目を `{_REPORT_FORMAT}` の形に直して再試行する。見込みはローカル時刻で書く。",
+    )
+
+
+def send_block(payload: dict, message: object) -> str | None:
+    """点検通知の後で、型の異なるユーザー向け送信を拒む。"""
+    if _report_session(payload) is not None and not _report_matches(message):
+        return _report_block()
+    return None
+
+
+def _observe_report(payload: dict, message: object) -> None:
+    """型の合う報告を送達したら、点検の保留を解除する。"""
+    if not _report_matches(message) or (session_id := _report_session(payload)) is None:
+        return
+
+    def clear(state: dict) -> dict | None:
+        if _REPORT_DUE_KEY not in state:
+            return None
+        state.pop(_REPORT_DUE_KEY)
+        return state
+
+    update_state(session_id, clear)
+
+
+def _delivery_succeeded(response: object) -> bool:
+    """表示を確認したMCP応答だけを受理し、背景移行・未完了・エラーを除く。"""
+    if isinstance(response, str):
+        try:
+            response = json.loads(response)
+        except ValueError:
+            return False
+    if isinstance(response, dict):
+        if response.get("isError") is True or response.get("is_error") is True:
+            return False
+        structured = response.get("structuredContent", response)
+        if isinstance(structured, dict) and "ok" in structured:
+            return structured["ok"] is True
+        response = response.get("content")
+    if isinstance(response, list) and len(response) == 1:
+        block = response[0]
+        if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+            try:
+                result = json.loads(block["text"])
+            except ValueError:
+                return False
+            return isinstance(result, dict) and result.get("ok") is True
+    return False
+
+
+def observe_send(payload: dict, message: object) -> None:
+    """ユーザー画面への表示を確認した応答だけで保留を解除する。"""
+    if _delivery_succeeded(payload.get("tool_response")):
+        _observe_report(payload, message)
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -224,11 +296,15 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         if elapsed >= 0
         else "初回観測の保存時刻が通知生成時刻より後にあるため、経過時間は不明。"
     )
-    body = f"通知生成時刻: {observed_at}。{elapsed_text}" + _saturation_text(session_id) + _SELF_CHECK_NOTICE_BODY
+    main_agent = is_main_agent_context(payload)
+    instruction = _SELF_CHECK_NOTICE_BODY if main_agent else _DELEGATED_NOTICE_BODY
+    body = f"通知生成時刻: {observed_at}。{elapsed_text}" + _saturation_text(session_id) + instruction
     text = _llm_notice(body, tag="notice")
     if not text:
         return None
     _notice.stage_delivery(text, session_id, DELIVERED_KEY, agent_id, repr(current_time))
+    if main_agent:
+        _notice.stage_delivery(text, session_id, _REPORT_DUE_KEY, agent_id, "pending")
     return text
 
 

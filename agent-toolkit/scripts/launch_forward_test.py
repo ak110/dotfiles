@@ -1,8 +1,11 @@
-"""launcherがagents_serverのMCP起動を管理サービスへ転送するか直接起動するかの分岐を検証する。"""
+"""launcherによるMCPの転送と、hook本体の直接起動を検証する。"""
 
 import contextlib
 import importlib.util
+import json
+import os
 import pathlib
+import signal
 import sys
 import typing
 
@@ -78,3 +81,83 @@ def test_agents_server_forwards_only_when_root_has_shared_service(
 
     assert launch.main() == 0
     assert calls == (["forward"] if has_service else [f"direct:{target.resolve()}"])
+
+
+@pytest.mark.parametrize("case", ["pre", "agy", "timeout", "cancel"])
+def test_hook_starts_prepared_python_under_monitor(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, case: str) -> None:
+    """再入せずにhookを起動し、監視と回収が終わるまで共有ロックを保つ。"""
+    if case == "cancel" and os.name == "nt":
+        pytest.skip("Windowsの取消は所有Jobが担う")
+    launch = _load_launch()
+    target = tmp_path / "agent_toolkit" / "hook.py"
+    target.parent.mkdir()
+    target.touch()
+    subcommand = ["antigravity", "PreInvocation"] if case == "agy" else ["pretooluse"]
+    payload = {"workspacePaths": [str(tmp_path)]} if case == "agy" else {"cwd": str(tmp_path)}
+    raw = ("  " + json.dumps({**payload, "marker": "入力"}, ensure_ascii=False) + "\n").encode()
+    input_path = tmp_path / "input"
+    input_path.write_bytes(raw)
+    direct_env = {"PYTHONPATH": str(tmp_path)}
+    prepared_python = pathlib.Path(sys.executable)
+    events: list[str] = []
+    usage_fds: tuple[int, ...] = ()
+
+    @contextlib.contextmanager
+    def fake_lock(_environment: pathlib.Path) -> typing.Generator[typing.BinaryIO]:
+        nonlocal usage_fds
+        with (tmp_path / "usage-lock").open("wb") as handle:
+            usage_fds = () if os.name == "nt" else (handle.fileno(),)
+            events.append("lock")
+            yield handle
+            events.append("unlock")
+
+    class Process:
+        def wait(self, *, timeout: float) -> int:
+            assert 0 < timeout <= 0.1
+            return 17
+
+    process = Process()
+
+    @contextlib.contextmanager
+    def fake_lifetime(
+        arguments: list[str],
+        environment: dict[str, str],
+        received: list[dict[str, str]],
+        tail: bytearray,
+        *,
+        stdin: typing.BinaryIO,
+        cwd: pathlib.Path,
+        pass_fds: tuple[int, ...],
+    ) -> typing.Generator[Process]:
+        assert arguments == [str(prepared_python), str(target), *subcommand]
+        assert environment == direct_env
+        assert cwd == tmp_path
+        assert stdin.read() == raw
+        assert pass_fds == usage_fds
+        assert not tail
+        events.append("spawn")
+        if case == "cancel":
+            received.append({"signal": "SIGTERM"})
+        try:
+            yield process
+        finally:
+            events.append("reclaim")
+
+    def stop(child: Process, *, signum: int, graceful_timeout: float) -> None:
+        assert child is process and signum == signal.SIGKILL and graceful_timeout == 0
+        events.append("cancel")
+
+    monkeypatch.setattr(launch.plugin_environment, "prepared_python", lambda *_: prepared_python)
+    monkeypatch.setattr(launch.plugin_environment, "project_environment", lambda *_: tmp_path)
+    monkeypatch.setattr(launch.plugin_environment, "direct_environment", lambda *_: direct_env)
+    monkeypatch.setattr(launch.environment_usage, "lock", fake_lock)
+    monkeypatch.setattr(launch.shutil, "which", lambda *_: "uv")
+    monkeypatch.setattr(launch, "_server_lifetime", fake_lifetime)
+    monkeypatch.setattr(launch, "_stop_server_process", stop)
+    if case == "timeout":
+        monkeypatch.setattr(launch, "_HOOK_TIMEOUT", 0)
+    monkeypatch.setattr(sys, "argv", ["launch.py", "--project", str(tmp_path), str(target), *subcommand])
+    with input_path.open("r", encoding="utf-8") as input_stream:
+        monkeypatch.setattr(sys, "stdin", input_stream)
+        assert launch.main() == {"pre": 17, "agy": 17, "timeout": 124, "cancel": 128 + signal.SIGTERM}[case]
+    assert events == ["lock", "spawn", *(["cancel"] if case == "cancel" else []), "reclaim", "unlock"]

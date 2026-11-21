@@ -11,6 +11,7 @@ import argparse
 import datetime
 import importlib
 import io
+import json
 import os
 import pathlib
 import re
@@ -285,6 +286,8 @@ def _isolated_env(
         local_app_data.mkdir(parents=True, exist_ok=True)
         roaming_app_data.mkdir(parents=True, exist_ok=True)
         env["LOCALAPPDATA"] = str(local_app_data)
+        # platformdirsは通常、環境変数よりWindowsの既知フォルダーを優先する。検証設定も同じ検証homeへ向ける。
+        env["WIN_PD_OVERRIDE_LOCAL_APPDATA"] = str(local_app_data)
         env["APPDATA"] = str(roaming_app_data)
         visible_bins.append(str(local_app_data / "Programs" / "Herdr" / "bin"))
         # Windowsのnpmは全体導入先の直下へランチャーを置く。親の導入先を外すと既定の`%APPDATA%\npm`（検証home内）になるが、
@@ -518,6 +521,18 @@ def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
     )
 
 
+def _register_upgrade_checkout(checkout: pathlib.Path, env: Mapping[str, str], platform_name: str) -> None:
+    """合成remoteを使う検証checkoutを、検証homeだけで共有サービスの起動対象に登録する。"""
+    config_base = pathlib.Path(env["LOCALAPPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"])
+    config = config_base / "agent-toolkit" / "config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    settings = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {}
+    repositories = json.loads(settings.get("repositories", "{}"))
+    repositories["github.com/ak110/dotfiles"] = {"path": str(checkout.resolve()), "edit": "allow"}
+    settings["repositories"] = json.dumps(repositories)
+    config.write_text(json.dumps(settings), encoding="utf-8")
+
+
 def _run_isolated_upgrade(
     source_repo: pathlib.Path,
     platform_name: str,
@@ -574,6 +589,7 @@ def _run_isolated_upgrade(
                     f"元の診断: {error}"
                 ) from error
         _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
+        _register_upgrade_checkout(checkout, env, platform_name)
         # 初期適用した旧版の警告は、現行版の更新の判定から分離する。
         for log in home.rglob("update-dotfiles.log*"):
             if log.is_file():

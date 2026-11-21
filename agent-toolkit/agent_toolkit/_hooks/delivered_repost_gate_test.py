@@ -9,6 +9,15 @@ from agent_toolkit._hooks import stop
 
 _SEND_TO_USER = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "進捗を教えて"}}
+_SEND_NOTICE = {
+    "type": "attachment",
+    "attachment": {
+        "type": "hook_additional_context",
+        "hookEvent": "UserPromptSubmit",
+        "hookName": "prompt.submit",
+        "content": ['<atk-auto source="send-to-user-contract" kind="notice">\n送達の案内\n</atk-auto>'],
+    },
+}
 _SEND = {
     "type": "assistant",
     "message": {"content": [{"type": "tool_use", "id": "s1", "name": _SEND_TO_USER, "input": {"message": "進捗は順調です。"}}]},
@@ -49,6 +58,59 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> dict:
     path = tmp_path / "transcript.jsonl"
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")
     return stop.evaluate(json.dumps({"session_id": "repost-gate", "transcript_path": str(path), **extra}))
+
+
+@pytest.mark.parametrize(
+    ("entries", "body", "blocked"),
+    [
+        ([_HUMAN, _SEND_NOTICE], "進捗を報告する。", True),
+        ([_HUMAN, _SEND_NOTICE, _SEND], "進捗を報告する。", True),
+        ([_HUMAN, _SEND_NOTICE, _SEND, _result("other")], "進捗を報告する。", True),
+        ([_HUMAN, _SEND_NOTICE, _SEND, _result(error=True)], "進捗を報告する。", False),
+        ([_HUMAN, _SEND_NOTICE, _SEND, _result()], "…", False),
+        ([_HUMAN], "進捗を報告する。", False),
+        ([_HUMAN, _SEND_NOTICE, _HUMAN], "進捗を報告する。", False),
+        (
+            [_HUMAN, _SEND_NOTICE, {"type": "user", "isMeta": True, "message": {"content": "<task-notification>"}}],
+            "進捗を報告する。",
+            False,
+        ),
+        ([_HUMAN, _SEND_NOTICE], "", False),
+        ([_HUMAN, _SEND_NOTICE], "…", False),
+        ([_HUMAN, _SEND_NOTICE, _call("AskUserQuestion", "q", {"questions": [{"question": "どうする？"}]})], "", False),
+        (
+            [_HUMAN, _SEND_NOTICE, _call("AskUserQuestion", "q", {"questions": [{"question": "どうする？"}]})],
+            "通常の本文。",
+            True,
+        ),
+        ([_HUMAN, _SEND_NOTICE, _SEND, _result(error=True)], "", False),
+    ],
+    ids=[
+        "missing",
+        "pending",
+        "unrelated-result",
+        "failed",
+        "delivered",
+        "no-notice",
+        "new-human",
+        "machine",
+        "no-text",
+        "ellipsis",
+        "question",
+        "question-and-body",
+        "failed-no-text",
+    ],
+)
+def test_send_route_checks_only_a_current_notice(entries: list[dict], body: str, blocked: bool, tmp_path: pathlib.Path) -> None:
+    result = _stop([*entries, _text(body)], tmp_path, last_assistant_message=body)
+    assert (result.get("decision") == "block") is blocked
+    if blocked:
+        assert f"tools['{_SEND_TO_USER}']({{message}})" in str(result["reason"])
+
+
+def test_subagent_is_not_required_to_send_to_user(tmp_path: pathlib.Path) -> None:
+    result = _stop([_HUMAN, _SEND_NOTICE, _text("結果。")], tmp_path, agent_id="child", last_assistant_message="結果。")
+    assert result.get("decision") != "block"
 
 
 @pytest.mark.parametrize(

@@ -196,6 +196,10 @@ def test_update_holds_index_lock_against_later_git_operation(
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
     """更新所有中の後発commitを実Gitが拒否し、別worktreeは独立して動く。"""
+    # 後発commitの拒否はindex.lockで確かめるため、標準テンプレートの配置は省く。
+    template = tmp_path / "empty-template"
+    template.mkdir()
+    monkeypatch.setenv("GIT_TEMPLATE_DIR", str(template))
     local, _seed, _remote = _create_git_pair(tmp_path)
     _prepare_dirty(local)
     before = _dirty_snapshot(local)

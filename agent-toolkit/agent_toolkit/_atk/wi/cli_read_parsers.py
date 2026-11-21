@@ -100,6 +100,15 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="メイン向けにtarget_commit以後の履歴の鮮度情報をJSONへ加える。",
     )
+    list_.add_argument(
+        "--staleness-for",
+        action="append",
+        metavar="FILENAME",
+        help=(
+            "YYYYMMDD-HHMMSS-NNN.md形式の指定名だけを直接読み、filenameとstalenessをJSON Linesで返す。"
+            "複数件は反復指定する。--state、--target-repo、同期の指定を使える。他の一覧条件・出力は省略値に限る。"
+        ),
+    )
     _add_mq_read_sync_args(list_)
     list_.set_defaults(subparser=list_)
 

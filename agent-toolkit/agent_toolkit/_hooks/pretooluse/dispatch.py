@@ -90,6 +90,7 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks import (
     bugfix_gate,
     command_timing,
+    progress_self_check,
     repository_protection,
     work_contract,
 )
@@ -97,6 +98,7 @@ lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
+lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
@@ -262,6 +264,8 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         )
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
+    if is_send_to_user_tool(tool_name) and (block := progress_self_check.send_block(payload, tool_input.get("message"))):
+        return Decision(block=block)
     if (
         tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX)
         and (bugfix_block := bugfix_gate.send_block(payload)) is not None

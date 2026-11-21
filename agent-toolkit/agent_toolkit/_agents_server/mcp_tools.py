@@ -509,7 +509,9 @@ async def kill(
     停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """
     result = await _manager().kill(session_id, timeout, stop)
-    if result_projection.is_finalized_wait_statement(result):
+    if result_projection.is_finalized_wait_statement(result) or (
+        not stop and result_projection.has_unobserved_children(result)
+    ):
         return result_projection.with_result_next_action(result, result.get("label"))
     return result
 
@@ -684,10 +686,13 @@ async def send_to_user(
         guidance = ""
         if runtime_inserted.reported_improvement_lines(message):
             root = pathlib.Path(__file__).resolve().parents[2]
+            cwd = caller.cwd if caller is not None else pathlib.Path.cwd()
             checked = await run_file_operation(
                 subprocess.run,
                 [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/hook.py", "improvement_status_advisor"],
-                input=json.dumps({"session_id": _manager().launcher_session_id(), "last_assistant_message": message}),
+                input=json.dumps(
+                    {"session_id": _manager().launcher_session_id(), "last_assistant_message": message, "cwd": str(cwd)}
+                ),
                 capture_output=True,
                 encoding="utf-8",
                 timeout=30,
