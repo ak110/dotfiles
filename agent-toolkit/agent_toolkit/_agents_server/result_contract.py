@@ -17,6 +17,13 @@ _REASON_PREFIX = "続行できない理由:"
 _CLASSIFICATION_PREFIX = "続行できない区分:"
 # 「返却形式の受け渡し」が全役割に定める正常結果の状態行。役割固有の固定行は宣言の`result_heads`が加える。
 _STATE_HEAD = "状態: completed"
+
+
+def is_wait_statement(message: object) -> bool:
+    """既存の待機表明だけを、通常の終了結果と区別する。"""
+    return isinstance(message, str) and re.fullmatch(r"待機中: [^\r\n]+", message.strip()) is not None
+
+
 RECOVERY_NEXT_ACTION = (
     "agents_server.send_messageのsession_idにこの結果のsession_idを指定し、promptで同じsessionへ、"
     "診断に従い、正常返却は所定の成功行、続行不能は同じインデントの有効な区分と非空の理由の"
@@ -74,7 +81,7 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
             if freeform_explore or document is not None and document.name == "reader-fit-review.subagent.md"
             else None
         )
-    if re.fullmatch(r"待機中: [^\r\n]+", message.strip()):
+    if is_wait_statement(message):
         return None
     lines = message.splitlines()
     has_reason = False

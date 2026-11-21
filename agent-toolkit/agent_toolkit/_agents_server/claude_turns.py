@@ -25,6 +25,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.claude_channels import _Command, _CommandChannel
 from agent_toolkit._agents_server.claude_diagnostics import _InitializationDiagnostic
+from agent_toolkit._agents_server.claude_messages import is_model_less_task_notification
 from agent_toolkit._agents_server.claude_plugins import ClaudePluginReloader
 from agent_toolkit._agents_server.claude_runtime import ClaudeRuntime
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -73,6 +74,12 @@ class ClaudeTurns(ClaudeRuntime):
 
     async def _consume_result_message(self, session: SessionState, message: Any) -> None:
         """未回収対象の寿命に従ってturnの結果を保留または確定する。"""
+        if is_model_less_task_notification(message):
+            if resume_waits.is_background_completion_wait(session) and not resume_waits.has_pending_auto_resume_targets(
+                session
+            ):
+                await self._finalize_pending_result(session)
+            return
         await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
         result = self._result_values(session, message)
         if session.interrupt_requested:

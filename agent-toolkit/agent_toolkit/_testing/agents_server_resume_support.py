@@ -89,10 +89,13 @@ class ResultMessage:
         *,
         origin: dict[str, str] | None = None,
         terminal_reason: str | None = None,
+        num_turns: int | None = None,
         is_error: bool = False,
         errors: list[str] | None = None,
     ) -> None:
         self.result = result
+        self.num_turns = num_turns
+        self.subtype = "success" if not is_error else "error_during_execution"
         self.origin = origin
         self.terminal_reason = terminal_reason
         self.is_error = is_error

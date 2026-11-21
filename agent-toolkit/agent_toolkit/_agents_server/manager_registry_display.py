@@ -137,13 +137,12 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
         writer = self._status_writer
         return (None, None) if writer is None else (writer.root_session_id, writer.path.name)
 
-    async def _interrupted_turns(self, session_id: str) -> list[dict[str, Any]]:
-        """登録簿が記録する中断turnの履歴を、診断参照付きの公開形で返す。読めない記録は空とする。"""
+    async def _show_registry_record(self, session_id: str) -> session_registry.SessionResolution | None:
+        """保持中のsessionを表示するとき、読める場合だけ登録簿の情報を補う。"""
         try:
-            resolution = await run_file_operation(session_registry.resolve, session_id)
+            return await run_file_operation(session_registry.resolve, session_id)
         except OSError, ValueError:
-            return []
-        return result_projection.interrupted_turns_projection(resolution.interrupted_turns)
+            return None
 
     async def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
         """保持中または再開可能なsessionの復旧用詳細を返す。
@@ -155,11 +154,13 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
         session: SessionState | SessionResumeState | None = self.sessions.get(session_id)
         if session is None and session_id in self._pending_resumes:
             session = self._pending_resumes[session_id].state
+        locally_owned = session is not None
         if session is None:
             session = self.expired_sessions.get(session_id) or self.stopped_sessions.get(session_id)
             if session is not None:
                 session = await self._refresh_resume_state(session)
         registry_resolved = False
+        resolution: session_registry.SessionResolution | None = None
         if session is None:
             resolution = await run_file_operation(session_registry.resolve, session_id)
             if resolution.state is session_registry.Resolution.RUNNING:
@@ -178,6 +179,13 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
             registry_resolved = True
         if session is None:
             raise await self._unresolved_session_error(session_id, label="session")
+        if resolution is None:
+            resolution = await self._show_registry_record(session_id)
+        queried = session_registry.owner_server_instance()
+        owner = queried if locally_owned else None
+        if not locally_owned and resolution is not None and resolution.recorded_turn_seq in (None, session.turn_seq):
+            # 表示する終了状態に、照会中に始まった別のturnの所有者を付けない。
+            owner = resolution.server_instance
         status = "running" if session_id in self._pending_resumes else session.status
         result_available = bool(
             isinstance(session, SessionState) and session.result_available and not session.result_delivered
@@ -193,6 +201,8 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
             "prompt": session.prompt,
             "cwd": session.cwd,
             "result_available": result_available,
+            "queried_server_instance": queried,
+            "owner_server_instance": owner,
         }
         activity = result_projection.activity_projection(
             updated_at=session.updated_at,
@@ -208,7 +218,7 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
         if status in TERMINAL_STATUSES and result_projection.nonempty_error(session.error):
             # 失敗で終了したsessionの原因を、結果の回収とは別に照会できるようにする。
             response["error"] = result_projection.refresh_error_diagnostics(session.error)
-        interrupted_turns = await self._interrupted_turns(session_id)
+        interrupted_turns = result_projection.interrupted_turns_projection(resolution.interrupted_turns) if resolution else []
         if interrupted_turns:
             # 再開・解放の後も、過去に中断したturnと終了診断を識別できるようにする。
             response["interrupted_turns"] = interrupted_turns
@@ -282,6 +292,8 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
             "prompt": info.launch_info.prompt,
             "cwd": info.cwd,
             "result_available": False,
+            "queried_server_instance": session_registry.owner_server_instance(),
+            "owner_server_instance": diagnosis.resolution.server_instance,
         }
         response.update(
             result_projection.activity_projection(
