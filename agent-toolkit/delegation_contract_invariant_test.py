@@ -23,6 +23,7 @@ from agent_toolkit._testing.normative_contract import (
     document_references,
     line_references,
     read_contract,
+    read_contract_section,
     read_table_rows,
     section_text,
 )
@@ -140,22 +141,17 @@ def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.P
     assert _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True) == ([], True)
 
 
-def _read_exec_review_stage(root: pathlib.Path, condition: str, heading: str) -> str:
-    """実行レビューの親契約が、その判断で読む節を指定していることを確かめる。"""
-    entry = root / "skills/atk-mode"
-    parent = (entry / "roles/exec-review.parent.md").read_text(encoding="utf-8")
-    reference = f"`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「{heading}」"
-    table = parent.partition("## 条件と行動")[2].partition("<!-- return-contract:")[0]
-    rows = [line for line in table.splitlines() if line.startswith("| ") and condition in line.split("|")[1]]
-    assert len(rows) == 1 and reference in rows[0], (condition, heading, rows)
-    return section_text(entry / "playbooks/exec-review-loop.md", heading)
-
-
 def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> None:
     """検証結果の記録と、条件別判定行を返す実行レビュー担当の単一所有を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
     review = (root / "skills/atk-mode/roles/exec-review.subagent.md").read_text(encoding="utf-8")
-    receiving = _read_exec_review_stage(root, "返却を受領する前", "完成条件証拠の受領確認")
+    receiving = read_contract_section(
+        root / "skills/atk-mode/roles/exec-review.parent.md",
+        root,
+        "../playbooks/exec-review-loop.md",
+        "返却を受領する前",
+        "完成条件証拠の受領確認",
+    )
     recording = (root / "skills/atk-mode/references/review-record.md").read_text(encoding="utf-8")
     launchers = [
         root / "skills" / "atk-mode" / "roles" / "exec.parent.md",
@@ -207,7 +203,9 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     roles = entry / "roles"
     markdown["exec.parent.md"] = read_contract(roles / "exec.parent.md", plugin_root, ("../playbooks/lane-receipt.md", "統合"))
     markdown["lane-receipt.md"] = (entry / "playbooks/lane-receipt.md").read_text(encoding="utf-8")
-    startup = _read_exec_review_stage(plugin_root, "起動の入力を決める前", "起動")
+    startup = read_contract_section(
+        roles / "exec-review.parent.md", plugin_root, "../playbooks/exec-review-loop.md", "起動の入力を決める前", "起動"
+    )
     markdown["exec-review.parent.md"] += "\n" + startup
     markdown["exec-review-loop.md"] = startup
     expected_names |= {"lane-receipt.md", "exec-review-loop.md"}

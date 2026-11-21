@@ -77,6 +77,23 @@ def section_text(path: pathlib.Path, heading: str) -> str:
     return "\n".join(text.splitlines()[start + 1 : end])
 
 
+def read_contract_section(source: pathlib.Path, plugin_root: pathlib.Path, relative: str, condition: str, heading: str) -> str:
+    """操作の条件が名指しした資料の節だけを、親契約の表から取得する。"""
+    target = (source.parent / relative).resolve()
+    for line in source.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("| "):
+            continue
+        _, row_condition, cell, *_ = line.split("|")
+        if condition not in row_condition:
+            continue
+        for match in REFERENCE.finditer(cell):
+            if resolve_reference(match.group(1), source, plugin_root) == target and cell[match.end() :].startswith(
+                f"「{heading}」"
+            ):
+                return section_text(target, heading)
+    raise AssertionError(f"条件別の節の取得経路がない: {source} -> {target}「{heading}」: {condition}")
+
+
 def line_references(line: str, source: pathlib.Path, plugin_root: pathlib.Path) -> list[pathlib.Path]:
     """1行が名指しする資料（バッククォートで囲んだ`.md`の参照。節の指定は除く）の実体のパスを返す。"""
     return [resolve_reference(reference.partition("#")[0], source, plugin_root) for reference in REFERENCE.findall(line)]
