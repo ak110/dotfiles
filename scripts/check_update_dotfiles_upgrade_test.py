@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import subprocess
@@ -12,8 +13,9 @@ import types
 
 import check_update_dotfiles_upgrade as upgrade
 import pytest
+from agent_toolkit._common import runtime_environment
 
-from pytools._internal import antigravity_plugin, codex_runtime, install_codex_plugins, setup_herdr_cli
+from pytools._internal import antigravity_plugin, codex_runtime, install_codex_plugins, setup_herdr_cli, warmup_agents_server
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
@@ -397,6 +399,28 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
             assert isinstance(env, dict)
             home = pathlib.Path(env["HOME"])
             assert home.is_relative_to(runner_temp)
+            config_base = pathlib.Path(env["LOCALAPPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"])
+            config = config_base / "agent-toolkit" / "config.json"
+            assert config.is_relative_to(home)
+            if arguments[0] == "chezmoi":
+                (home / "dotfiles").mkdir()
+                config.parent.mkdir(parents=True, exist_ok=True)
+                config.write_text('{"language": "ja"}', encoding="utf-8")
+            else:
+                checkout = (home / "dotfiles").resolve()
+                settings = json.loads(config.read_text(encoding="utf-8"))
+                assert settings["language"] == "ja"
+                assert json.loads(settings["repositories"]) == {
+                    "github.com/ak110/dotfiles": {"path": str(checkout), "edit": "allow"}
+                }
+                if (platform_name == "windows") == (os.name == "nt"):
+                    with runtime_environment.bind(runtime_environment.CallerContext(env, checkout)):
+                        registered = warmup_agents_server._registered_checkout()  # pylint: disable=protected-access
+                        assert registered == checkout
+                        assert warmup_agents_server._checkout_skip(checkout, registered) is None  # pylint: disable=protected-access
+                        script = checkout / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py"
+                        approved = warmup_agents_server._approved_scripts(registered, [])  # pylint: disable=protected-access
+                        assert script in approved
             assert env["TMPDIR"] == str(runner_temp)
             assert env["CODEX_HOME"] == str(home / ".codex")
             assert pathlib.Path(env["CODEX_HOME"]).is_dir()
@@ -585,7 +609,7 @@ def test_verify_updated_oid_rejects_mismatch() -> None:
         upgrade.verify_updated_oid("other", "current")
 
 
-def test_create_upgrade_checkout_can_advance_without_origin(tmp_path: pathlib.Path) -> None:
+def test_create_local_remote_can_advance_checkout(tmp_path: pathlib.Path) -> None:
     """bare remoteが旧・現行commitのobjectを持ち、旧checkoutを更新できる。"""
 
     def git(*arguments: str | pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -606,8 +630,8 @@ def test_create_upgrade_checkout_can_advance_without_origin(tmp_path: pathlib.Pa
     git("-C", source_repo, "commit", "-am", "current")
     current_oid = git("-C", source_repo, "rev-parse", "HEAD").stdout.strip()
 
-    upgrade.create_upgrade_checkout(source_repo, bare_repo, old_oid, checkout)
-    assert git("-C", checkout, "remote").stdout.splitlines() == ["upgrade-local"]
+    upgrade.create_local_remote(source_repo, bare_repo, old_oid)
+    git("clone", "--branch", "upgrade-check", bare_repo, checkout)
     assert git("-C", checkout, "rev-parse", "HEAD").stdout.strip() == old_oid
 
     git("--git-dir", bare_repo, "update-ref", "refs/heads/upgrade-check", current_oid)

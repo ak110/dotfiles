@@ -11,6 +11,7 @@ import argparse
 import datetime
 import importlib
 import io
+import json
 import os
 import pathlib
 import re
@@ -352,19 +353,16 @@ def verify_updated_oid(actual_oid: str, expected_oid: str) -> None:
         )
 
 
-def create_upgrade_checkout(
+def create_local_remote(
     source_repo: pathlib.Path,
     bare_repo: pathlib.Path,
     old_oid: str,
-    checkout: pathlib.Path,
     *,
     runner: Runner = subprocess.run,
 ) -> None:
-    """旧commitをローカルの合成remoteから取得し、検証用checkoutを作る。"""
+    """検証対象のobjectと旧commitを指す初期branchをbare remoteへ構成する。"""
     _run(("git", "clone", "--bare", source_repo, bare_repo), runner=runner)
     _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", old_oid), runner=runner)
-    # 管理サービスの起動元判定はoriginを公開リポジトリの識別に使う。合成remoteは更新用の上流にだけ使う。
-    _run(("git", "clone", "--origin", "upgrade-local", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
 
 
 def profile_watch_dirs(profile_env: Mapping[str, str], platform_name: str) -> list[pathlib.Path]:
@@ -521,6 +519,18 @@ def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
     )
 
 
+def _register_upgrade_checkout(checkout: pathlib.Path, env: Mapping[str, str], platform_name: str) -> None:
+    """合成remoteを使う検証checkoutを、検証homeだけで共有サービスの起動対象に登録する。"""
+    config_base = pathlib.Path(env["LOCALAPPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"])
+    config = config_base / "agent-toolkit" / "config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    settings = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {}
+    repositories = json.loads(settings.get("repositories", "{}"))
+    repositories["github.com/ak110/dotfiles"] = {"path": str(checkout.resolve()), "edit": "allow"}
+    settings["repositories"] = json.dumps(repositories)
+    config.write_text(json.dumps(settings), encoding="utf-8")
+
+
 def _run_isolated_upgrade(
     source_repo: pathlib.Path,
     platform_name: str,
@@ -540,7 +550,8 @@ def _run_isolated_upgrade(
         home = temp_root / "home"
         checkout = home / "dotfiles"
         home.mkdir(parents=True)
-        create_upgrade_checkout(source_repo, bare_repo, old_oid, checkout, runner=runner)
+        create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
+        _run(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
         env = _isolated_env(home, pathlib.Path(uv_path), platform_name, temp_root)
         # 検証を起動したuvが導入したPython（現行の`.python-version`の版）は検証homeからも選択できる。
         # 版を固定しない旧版のuv環境構築はその中で最新の版を選ぶため、旧版のlockがwheelを持たない新しい版で
@@ -576,6 +587,7 @@ def _run_isolated_upgrade(
                     f"元の診断: {error}"
                 ) from error
         _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
+        _register_upgrade_checkout(checkout, env, platform_name)
         # 初期適用した旧版の警告は、現行版の更新の判定から分離する。
         for log in home.rglob("update-dotfiles.log*"):
             if log.is_file():
