@@ -6,7 +6,7 @@
 
 実装を終えた変更差分の実行レビューを起動し、返却を受領して、修正と収束を管理する起動側の文書である。
 起動するのは実装を担当したレーン担当（single-laneではメイン）自身であり、`write-plan`ではメイン、CI修正の系列では`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`が定める担当である。
-起動から収束までは`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`を上から実行する。
+起動から収束までは「条件と行動」の該当する節に従う。
 担当の手順と返却形式は`agent-toolkit:atk-mode/roles/exec-review.subagent.md`が定める。
 レビューの基準は`agent-basics:review-standards`にある。
 
@@ -33,9 +33,14 @@
 
 ## 条件と行動
 
-| 時点または条件 | 全文読む資料 |
+| 時点または条件 | 読む資料 |
 | --- | --- |
-| 起動の入力を決める前と、返却を受領し、受領確認、既存不良の受領、修正の指示、収束の判定を行う前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md` |
+| 起動の入力を決める前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「起動」 |
+| 返却を受領する前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「完成条件証拠の受領確認」 |
+| 差分外の既存不良を受領する前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「返却に含まれる既存不良の受領」 |
+| 修正の指示を行う前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「レビュー修正」 |
+| 再レビューに進む前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「ラウンドの遷移」 |
+| 収束を判定する前 | `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「収束と統合への引渡し」 |
 | 返却の`達成`行の根拠を受領確認する前 | `agent-toolkit:atk-mode/references/review-record.md` |
 | 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:atk-mode/references/states-and-dependencies.md` |
 | 差分外の不良を受領して対処時機を決める前 | `agent-toolkit:atk-mode/playbooks/delegation-receiving.md` |

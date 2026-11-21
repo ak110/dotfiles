@@ -18,9 +18,9 @@ AWIの登録や既存AWIの存在は起票の証拠として扱い、原因の�
 | 条件 | 行動 |
 | --- | --- |
 | 引数の先頭語が`batch`と完全一致する | `agent-toolkit:atk-mode/playbooks/review-session-batch.md`を全文読んで従う |
-| それ以外（引数なしを含む） | 本書「工程」を上から行う |
-| 工程1の準備が失敗した | 本書「準備の失敗」 |
-| 事実関係の調査を独立した担当へ分担する | `agent-toolkit:atk-mode/playbooks/delegation.md`を全文読む |
+| それ以外（引数なしを含む） | 本書「工程」を読み、上から行う |
+| 工程1の準備が失敗した | 本書「準備の失敗」を読む |
+| 事実関係の調査を独立した担当へ分担する | `agent-toolkit:atk-mode/playbooks/delegation.md`「条件と行動」まで読み、起動の手順へ進む |
 | 工程の途中で追加の発話や指摘を受けた | `agent-toolkit:atk-mode/references/work-contract.md`「追加入力の統合」で要求へ反映し、既存の証拠で影響する工程へ戻って処置した後、元の未完了の工程を続ける |
 | 対話で起動した振り返りで、投入する要求が巡回や作業の進め方の改善である | `agent-toolkit:atk-mode/playbooks/add-awi-by-user.md`「稼働中の巡回への連絡」 |
 
