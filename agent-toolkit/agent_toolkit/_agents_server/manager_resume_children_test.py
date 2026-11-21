@@ -106,7 +106,7 @@ async def _delegate_with_child_writer(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("registry_state", ["released", "stale-running", "newer-running"])
+@pytest.mark.parametrize("registry_state", ["released", "stale-running", "newer-running", "resumed-during-read"])
 async def test_wait_delivers_child_session_result_without_kill(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -143,9 +143,22 @@ async def test_wait_delivers_child_session_result_without_kill(
                 turn_seq=2 if registry_state == "newer-running" else 1,
             )
 
+        if registry_state == "resumed-during-read":
+            read_result = status_file.StatusFileWriter.read_result
+
+            def read_then_resume(writer, session_id, *, expected_turn_seq=None):
+                result = read_result(writer, session_id, expected_turn_seq=expected_turn_seq)
+                if session_id == child.session_id and writer is not child_writer and result is not None:
+                    session_registry.publish(
+                        session_id, state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), turn_seq=2
+                    )
+                return result
+
+            monkeypatch.setattr(status_file.StatusFileWriter, "read_result", read_then_resume)
+
         pending = await manager.wait()
         assert child_writer.read_result(child.session_id, expected_turn_seq=1) is not None
-        if registry_state == "newer-running":
+        if registry_state in {"newer-running", "resumed-during-read"}:
             assert pending["status"] == "running" and backend.send_calls == 0
             child_writer.deactivate()
             await manager.close()

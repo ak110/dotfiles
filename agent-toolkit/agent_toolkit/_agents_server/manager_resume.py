@@ -215,14 +215,16 @@ class ManagerResume(manager_registry.ManagerRegistry):
         for session_id, resolution in resolutions.items():
             if resolution.state is session_registry.Resolution.RUNNING:
                 # 登録簿の更新が遅れても、同じturnの終了結果は子の回収を促す根拠にできる。
-                # 再開の引き継ぎ中と、別turn・turn不明の結果を根拠にすると現在の作業を飛ばす。
+                # 引き継ぎ中やturnが不明の場合は、実行中のturnを誤って完了と判定しないよう保留する。
                 turn_seq = resolution.recorded_turn_seq
                 if (
                     turn_seq is not None
                     and not resolution.resume_pending
                     and await self._child_result_is_terminal(session_id, expected_turn_seq=turn_seq)
                 ):
-                    terminal.add(session_id)
+                    current = await run_file_operation(session_registry.resolve, session_id)
+                    if not current.resume_pending and current.recorded_turn_seq == turn_seq:
+                        terminal.add(session_id)
                 continue
             if resolution.state not in {
                 session_registry.Resolution.MISSING,
