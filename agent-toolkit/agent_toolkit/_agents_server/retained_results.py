@@ -95,9 +95,10 @@ def _entries(
             payload = _read(candidate)
         except _UnreadableResult as error:
             message = str(error)
-            _warn_unreadable(message)
             if unreadable is not None:
                 unreadable.append(message)
+            else:
+                _warn_unreadable(message)
             continue
         if payload is None or (expected_turn_seq is not None and payload.get("turn_seq") != expected_turn_seq):
             continue
@@ -282,6 +283,8 @@ async def take_for_response(
                 if unreadable:
                     raise _UnreadableResult("; ".join(unreadable))
                 return None
+            for message in unreadable:
+                _warn_unreadable(message)
             if (end := result_end(entry[1])) is not None:
                 mark_published(path, end)
             return entry[0], _public_payload(entry[1])
@@ -389,6 +392,8 @@ def take_result(
                 )
                 if chosen is None:
                     return None, "; ".join(unreadable) if unreadable else None
+                for message in unreadable:
+                    _warn_unreadable(message)
                 source, payload = chosen
             else:
                 payload = stashed

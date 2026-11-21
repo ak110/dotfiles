@@ -146,9 +146,8 @@ def test_notice_access_error_preserves_original_and_reports_retry(
         return method(path, *args, **kwargs)
 
     monkeypatch.setattr(pathlib.Path, operation, denied)
-    assert (
-        notice_inbox.take_notices("root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json")
-        == []
+    assert not notice_inbox.take_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json"
     )
     assert original.is_file()
     assert "原本を保持した" in caplog.text and "atk agents waitで再回収" in caplog.text

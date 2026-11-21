@@ -209,8 +209,9 @@ async def test_result_survives_deadline_at_response_save_or_notices(tmp_path, mo
             else:
                 assert response["notices"] == [{"body": "連絡"}]
             if operation == "kill-stop":
-                retained, error = writer.take_result(session.session_id, collector="cli")
-                assert error is None and retained is not None and retained["agent_message"] == "診断本文"
+                assert "agent_message" not in response
+                result, error = writer.take_result(session.session_id, collector="cli")
+                assert error is None
         assert not writer.take_notices(session.session_id)
         assert result is not None and result["agent_message"] == "診断本文"
         assert result["status"] == "failed" and result["error"] == {"message": "失敗理由"}
