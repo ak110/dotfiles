@@ -108,10 +108,11 @@ def test_send_gate_waits_for_delivered_notice_and_confirmed_report(tool: str) ->
     sid = _session_id()
     generated = _due_notice(sid)
     common = {"session_id": sid, "tool_name": tool}
-    wrong = {**common, "tool_input": {"message": "点検した。"}}
+    wrong_message = "点検した。"
+    wrong = {**common, "tool_input": {"message": wrong_message}}
     correct = {**common, "tool_input": {"message": _VALID_REPORT}}
 
-    assert progress_self_check.send_block(wrong, wrong["tool_input"]["message"]) is None
+    assert progress_self_check.send_block(wrong, wrong_message) is None
     notice_module.record_delivery(generated)
     progress_self_check.release_reservations()
 
@@ -122,7 +123,7 @@ def test_send_gate_waits_for_delivered_notice_and_confirmed_report(tool: str) ->
     assert accepted.get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
 
     _report_hook("posttooluse", {**correct, "hook_event_name": "PostToolUse", "tool_response": {"ok": False}})
-    assert progress_self_check.send_block(wrong, wrong["tool_input"]["message"]) is not None
+    assert progress_self_check.send_block(wrong, wrong_message) is not None
     other_tool = "mcp__other__send_to_user"
     allowed = _report_hook("pretooluse", {**wrong, "tool_name": other_tool, "hook_event_name": "PreToolUse"})
     assert allowed.get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
@@ -130,11 +131,11 @@ def test_send_gate_waits_for_delivered_notice_and_confirmed_report(tool: str) ->
         "posttooluse",
         {**correct, "tool_name": other_tool, "hook_event_name": "PostToolUse", "tool_response": {"ok": True}},
     )
-    assert progress_self_check.send_block(wrong, wrong["tool_input"]["message"]) is not None
+    assert progress_self_check.send_block(wrong, wrong_message) is not None
     _report_hook(
         "posttooluse", {**correct, "hook_event_name": "PostToolUse", "tool_response": {"structuredContent": {"ok": True}}}
     )
-    assert progress_self_check.send_block(wrong, wrong["tool_input"]["message"]) is None
+    assert progress_self_check.send_block(wrong, wrong_message) is None
 
 
 @pytest.mark.parametrize("host_fields", [{}, {"turn_id": "test-turn"}], ids=["claude", "codex"])
