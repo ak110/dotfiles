@@ -286,6 +286,8 @@ def _isolated_env(
         local_app_data.mkdir(parents=True, exist_ok=True)
         roaming_app_data.mkdir(parents=True, exist_ok=True)
         env["LOCALAPPDATA"] = str(local_app_data)
+        # platformdirsは通常、環境変数よりWindowsの既知フォルダーを優先する。検証設定も同じ検証homeへ向ける。
+        env["WIN_PD_OVERRIDE_LOCAL_APPDATA"] = str(local_app_data)
         env["APPDATA"] = str(roaming_app_data)
         visible_bins.append(str(local_app_data / "Programs" / "Herdr" / "bin"))
         # Windowsのnpmは全体導入先の直下へランチャーを置く。親の導入先を外すと既定の`%APPDATA%\npm`（検証home内）になるが、

@@ -13,7 +13,6 @@ import types
 
 import check_update_dotfiles_upgrade as upgrade
 import pytest
-from agent_toolkit._common import runtime_environment
 
 from pytools._internal import antigravity_plugin, codex_runtime, install_codex_plugins, setup_herdr_cli, warmup_agents_server
 
@@ -387,6 +386,7 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
     monkeypatch.setenv("CODEX_INSTALL_DIR", str(tmp_path / "ci-codex-bin"))
     profile = tmp_path / "ci-profile"
     monkeypatch.setenv("LOCALAPPDATA", str(profile / "AppData" / "Local"))
+    monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(profile / "platformdirs-local"))
     monkeypatch.setenv("APPDATA", str(profile / "AppData" / "Roaming"))
     monkeypatch.setenv("HERDR_HOME", str(profile / ".herdr"))
     monkeypatch.setenv("HERDR_INSTALL_DIR", str(profile / "herdr-bin"))
@@ -414,7 +414,9 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
                     "github.com/ak110/dotfiles": {"path": str(checkout), "edit": "allow"}
                 }
                 if (platform_name == "windows") == (os.name == "nt"):
-                    with runtime_environment.bind(runtime_environment.CallerContext(env, checkout)):
+                    config_env = "WIN_PD_OVERRIDE_LOCAL_APPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"
+                    with monkeypatch.context() as context:
+                        context.setenv(config_env, env[config_env])
                         registered = warmup_agents_server._registered_checkout()  # pylint: disable=protected-access
                         assert registered == checkout
                         assert warmup_agents_server._checkout_skip(checkout, registered) is None  # pylint: disable=protected-access
@@ -438,6 +440,7 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
             if platform_name == "windows":
                 local_app_data = home / "AppData" / "Local"
                 assert env["LOCALAPPDATA"] == str(local_app_data)
+                assert env["WIN_PD_OVERRIDE_LOCAL_APPDATA"] == str(local_app_data)
                 assert env["APPDATA"] == str(home / "AppData" / "Roaming")
                 assert local_app_data.is_dir() and pathlib.Path(env["APPDATA"]).is_dir()
                 herdr_bin = local_app_data / "Programs" / "Herdr" / "bin"
