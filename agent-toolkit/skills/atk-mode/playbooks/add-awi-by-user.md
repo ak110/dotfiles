@@ -84,11 +84,11 @@
      基準が明確な大量走査は読取専用で分担できる。
    - 原稿確定・不採用・登録0件の前に手順6を再点検する。
      選好を要する不採用は手順7で確認し、未調査や根拠の薄い候補の撤回だけなら残る検討へ戻る。
-   - `agent-toolkit:atk-mode/references/draft-semantic-review.md`で原文との意味の一致を確認し、保存する原稿は毎回`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`で独立検収する。
+   - 起草者は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」と`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`「入力」に従い、原稿を原文と読み比べ、dry-runで冒頭の抽出を確かめる。
+     保存する原稿は毎回同じ親契約で独立検収する。
      同時にそろった原稿は識別子で要求・出所・証拠と対応付け、起動元リポジトリ、採否理由、派生先を親契約の入力に含める。
      指摘は本書「指摘の分類と処置」で扱う。
-   - `agent-toolkit:atk-mode/playbooks/wi-saving.md`の「保存前の確認」、「投入と取得」の導入と「投入」「保存結果の検収」、「返す報告に含める項目」に従い、`atk wi add --dry-run`、回答済みUWIとの整合、保存結果を検収する。
-     同書「取得」はキュー項目の取得が必要な時に読む。
+   - 独立検収後の保存とその結果の確認は、`agent-toolkit:atk-mode/playbooks/wi-saving.md`の「投入と取得」の導入と「投入」「保存結果の検収」「返す報告に含める項目」に従う。
 10. 投入を終える。
     登録0件でも手順5の対応表と採否の根拠を検収する。
     `atk wi submission end --findings-file <指摘対応記録の絶対パス>`を実行し、全てのレビュー返却を`--review-result`で添える。
