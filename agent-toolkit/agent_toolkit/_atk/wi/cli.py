@@ -180,6 +180,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--target-branch", args.target_branch),
                 ("--source", args.source),
                 ("--process-wi-timing", args.process_wi_timing),
+                ("--process-wi-kind", args.process_wi_kind),
                 ("--defer-category", args.defer_category),
                 ("REPO_PATH", args.repo_path_override),
             )
