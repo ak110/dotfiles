@@ -158,12 +158,16 @@ def test_wait_recovers_abandoned_run(tmp_path: pathlib.Path, capsys: pytest.Capt
     _write_own_status(results, [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
     results.mkdir(parents=True)
-    (results / "session-1.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+    (results / "session-1.json").write_text(
+        json.dumps({"status": "completed", "turn_seq": 3, "finalized_at": "2026-11-21T02:00:00Z"}), encoding="utf-8"
+    )
 
     assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
 
     assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
-    assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "foreground-delivered"
+    receipt = json.loads(run_path.read_text(encoding="utf-8"))
+    assert receipt["status"] == "foreground-delivered"
+    assert receipt["result_turns"] == {"session-1": 3}
 
 
 @pytest.mark.parametrize("record", ["current", "run"])

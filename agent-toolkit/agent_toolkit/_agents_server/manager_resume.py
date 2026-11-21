@@ -21,6 +21,7 @@ from agent_toolkit._agents_server import (
     service_io,
     service_turns,
     shared_layout,
+    wait_run,
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import (
@@ -37,6 +38,7 @@ from agent_toolkit._agents_server.resume_waits import (
     clear_usage_limit_wait,
     finalize_pending_result,
     has_pending_auto_resume_targets,
+    is_background_completion_wait,
 )
 from agent_toolkit._agents_server.state import PreviousResult, ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
@@ -200,18 +202,56 @@ class ManagerResume(manager_registry.ManagerRegistry):
         # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終了時の結果ファイルが消えた後も未観測にしない。
         await consume_agents_wait_background_outputs_async(session)
         # 照会の`await`の間に委譲先の出力の追跡が同じ集合を更新するため、開始時点の写しを回す。
+        own_pending = session.pending_result
         resolutions = {
             session_id: (await run_file_operation(session_registry.resolve, session_id))
             for session_id in tuple(session.live_child_session_ids)
         }
+        writer = self._status_writer
+        tracked_turns = {
+            child_id: entry.recorded_turn_seq
+            for child_id, entry in resolutions.items()
+            if entry.recorded_turn_seq is not None
+            and not entry.resume_pending
+            and entry.state in {session_registry.Resolution.TERMINAL, session_registry.Resolution.RELEASED}
+        }
+        delivered: set[str] = set()
+        if writer is not None and tracked_turns and shared_layout.valid_session_id(session.session_id):
+            directory = (
+                shared_layout.status_directory(writer.root_session_id, self._state_root())
+                / "wait-results"
+                / f"{session.session_id}.json"
+            )
+            delivered = await run_file_operation(wait_run.delivered_children, directory, tracked_turns)
+            for child_id in sorted(delivered):
+                current = await run_file_operation(session_registry.resolve, child_id)
+                if session.pending_result is not own_pending:
+                    return
+                if current.resume_pending or current.recorded_turn_seq != tracked_turns[child_id]:
+                    delivered.remove(child_id)
+                    continue
+                session.live_child_session_ids.discard(child_id)
+                session.terminal_child_session_ids.discard(child_id)
+        if (
+            delivered
+            and own_pending is not None
+            and is_background_completion_wait(session)
+            and not has_pending_auto_resume_targets(session)
+            and not session.terminal_child_session_ids
+            and not session.codex_terminal_subagent_thread_ids
+            and not session.codex_self_message_observed
+            and not result_contract.is_wait_statement(own_pending.get("agent_message"))
+        ):
+            finalize_pending_result(session)
+            return
         terminal = {
             session_id
             for session_id, resolution in resolutions.items()
-            if resolution.state is session_registry.Resolution.TERMINAL
+            if resolution.state is session_registry.Resolution.TERMINAL and session_id not in delivered
         }
         unobserved: set[str] = set()
         for session_id, resolution in resolutions.items():
-            if resolution.state not in {
+            if session_id in delivered or resolution.state not in {
                 session_registry.Resolution.MISSING,
                 session_registry.Resolution.RELEASED,
                 session_registry.Resolution.UNREADABLE,

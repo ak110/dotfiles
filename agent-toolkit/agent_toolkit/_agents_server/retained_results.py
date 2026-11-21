@@ -428,6 +428,16 @@ def take_result(
         return _public_payload(payload), None
 
 
+def stashed_result_turn(path: pathlib.Path) -> int | None:
+    """配送する退避済み結果のturn番号を返す。証拠が読めない場合は番号を推定しない。"""
+    try:
+        payload = _read(path)
+    except OSError, UnicodeError, ValueError, _UnreadableResult:
+        return None
+    end = result_end(payload) if payload is not None else None
+    return end[0] if end is not None else None
+
+
 def _public_payload(payload: dict[str, Any]) -> dict[str, Any]:
     session = payload.get("session")
     label = session.get("label") if isinstance(session, dict) else None
