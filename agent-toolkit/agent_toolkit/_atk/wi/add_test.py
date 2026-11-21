@@ -194,9 +194,12 @@ class TestAddBodyFile:
         ("source", "不要な旧レーンを回収する", [], False),
         ("process-loop", "次回へ送る判断を是正する", [], False),
         ("frontmatter", "本文で巡回を明示する", [], False),
-        ("source", "今回へ追加する", ["--process-wi-timing", "this-run"], True),
-        ("process-loop", "別環境の入力を待つ", ["--process-wi-timing", "next-run", "--defer-category", "external-wait"], True),
-        ("source", "理由が未指定", ["--process-wi-timing", "next-run"], False),
+        ("source", "今回へ追加する", ["--process-wi-timing", "this-run", "--process-wi-kind", "defect"], True),
+        ("source", "区分なしで今回にする", ["--process-wi-timing", "this-run"], False),
+        ("source", "区分なしで先送る", ["--process-wi-timing", "next-run", "--defer-category", "external-wait"], False),
+        ("source", "理由が未指定", ["--process-wi-timing", "next-run", "--process-wi-kind", "defect"], False),
+        ("ordinary", "時機を指定したが区分なし", ["--process-wi-timing", "this-run"], False),
+        ("ordinary", "時機なしで区分だけ指定", ["--process-wi-kind", "defect"], False),
         ("ordinary", "通常の投入", [], True),
     ],
 )
@@ -235,10 +238,78 @@ def test_process_wi_timing_at_add_boundary(
     assert bool(saved) == accepted
     if not accepted:
         assert "--process-wi-timing" in captured.err
-    if timing == ["--process-wi-timing", "this-run"]:
+    if accepted and "this-run" in timing:
         assert "pick-wi-check --merge" in captured.err
         assert "start-processing" in captured.err
         assert "担当へ追送" in captured.err
+
+
+@pytest.mark.parametrize(
+    ("kind", "category", "accepted"),
+    [
+        ("defect", "investigation", False),
+        ("improvement", "investigation", True),
+        ("defect", "agreement", True),
+        ("defect", "external-wait", True),
+        ("defect", "cross-repository", True),
+        ("defect", "host-unavailable", True),
+    ],
+)
+def test_process_wi_deferral_distinguishes_defects(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+    category: str,
+    accepted: bool,
+) -> None:
+    """確定欠陥の調査は今回に行い、候補の調査と正当な待ちの先送りは受け付ける。"""
+    notes = _setup_notes(tmp_path)
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+    _patch_add_git(monkeypatch, myrepo)
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    body_path = tmp_path / "body.md"
+    body_path.write_text(
+        "# 保存判定を確かめる\n\n## 反映内容と反映先\n\n隔離したキューに試験用の項目を保存する。\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "wi",
+                "add",
+                str(myrepo),
+                "--body-file",
+                str(body_path),
+                "--process-wi-timing",
+                "next-run",
+                "--process-wi-kind",
+                kind,
+                "--defer-category",
+                category,
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == (0 if accepted else 1), captured.err
+    assert bool(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == accepted
+    if not accepted:
+        assert "investigation" in captured.err
+        assert "手順2" in captured.err
+        assert "process-wi-additions.md" in captured.err
+
+
+def test_batch_rejects_process_wi_kind(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
+    """一括投入は巡回で選んだ種別を無視して保存しない。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "add", "--batch", "--process-wi-kind", "defect"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 2
+    assert "--process-wi-kindは--batchと併用できません" in capsys.readouterr().err
 
 
 def test_process_wi_dry_run_does_not_require_saving_timing(

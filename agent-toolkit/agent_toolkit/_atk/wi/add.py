@@ -390,8 +390,9 @@ def read_body_files(paths: list[str]) -> list[str]:
 
 
 def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]) -> bool:
-    """通常の投入は変えず、巡回中の新規AWIは書込み前に時機の入力を求める。"""
+    """巡回中の新規AWIの時機と種別を検査し、確定欠陥の調査は次回へ送らない。"""
     timing = getattr(args, "process_wi_timing", None)
+    kind = getattr(args, "process_wi_kind", None)
     category = getattr(args, "defer_category", None)
     if args.type != WI_TYPE_AWI:
         return False
@@ -401,13 +402,24 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
         or data.get("source") == "process-wi"
     )
     next_action = (
-        "process-wi-immediate-fix.md「即時対応」で判断し、--process-wi-timing this-run か "
-        "--process-wi-timing next-run --defer-category <区分> を指定して再投入する"
+        "process-wi-immediate-fix.md「即時対応」で判断し、--process-wi-kind <defect|improvement> と "
+        "--process-wi-timing this-run または --process-wi-timing next-run --defer-category <区分> を指定して再投入する"
     )
     if in_process_wi and timing is None:
         raise WebInputError("process-wi実行中のAWI投入には対処の時機が必要", next_action=next_action)
+    if (timing is None) != (kind is None):
+        raise WebInputError("--process-wi-kindと--process-wi-timingは一緒に指定してください", next_action=next_action)
     if (timing == "next-run" and not category) or (category is not None and timing != "next-run"):
         raise WebInputError("--defer-categoryはnext-runの場合に限って必要", next_action=next_action)
+    if timing == "next-run" and kind == "defect" and category == "investigation":
+        raise WebInputError(
+            "確定した欠陥を調査（investigation）だけを理由に次回へ送れません",
+            next_action=(
+                "process-wi-immediate-fix.md「即時対応」の手順2に戻り、"
+                "--process-wi-kind defect --process-wi-timing this-run で再投入し、"
+                "process-wi-additions.md「処理対象WIの追加」に従って今回へ追加する"
+            ),
+        )
     return timing == "this-run"
 
 
