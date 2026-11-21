@@ -42,6 +42,36 @@ def _deny_lock_creation(monkeypatch: pytest.MonkeyPatch, lock: pathlib.Path) -> 
     monkeypatch.setattr(pathlib.Path, "open", full)
 
 
+def test_daily_sweep_checks_fresh_root_ownership_only_for_regenerable_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fresh = _area("fresh-abc", days=1)
+    expired = _area("expired-abc", days=8)
+    ownership_checks: list[pathlib.Path] = []
+    regenerable_checks: list[pathlib.Path] = []
+
+    def in_use(area: pathlib.Path) -> bool:
+        ownership_checks.append(area)
+        return area == expired
+
+    def clean(area: pathlib.Path, **_kwargs: object) -> dict[str, list[object]]:
+        regenerable_checks.append(area)
+        return {"removed": [], "retained": []}
+
+    monkeypatch.setattr(sweep, "plugin_root_in_use", in_use)
+    monkeypatch.setattr(sweep, "has_live_owner", lambda _area: False)
+    monkeypatch.setattr(resources, "cleanup_regenerable", clean)
+    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(10000, 8000, paths.temp_root()))
+
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=True)
+
+    assert result.deleted == []
+    assert expired.is_dir()
+    assert ownership_checks.count(fresh) == 1
+    assert ownership_checks.count(expired) == 2
+    assert regenerable_checks == [fresh]
+
+
 @pytest.mark.parametrize("existing_lock", [False, True])
 @pytest.mark.parametrize("entry", ["daily", "forced", "pressure"])
 def test_full_disk_can_reclaim_expired_without_creating_a_lock(
