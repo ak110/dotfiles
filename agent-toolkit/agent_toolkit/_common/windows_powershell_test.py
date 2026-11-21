@@ -9,6 +9,44 @@ from pathlib import Path
 import pytest
 
 from agent_toolkit._common import plugin_environment, windows_powershell
+from agent_toolkit._testing.isolation import build_host_environ
+
+
+def _native_uv(environ: dict[str, str]) -> Path | None:
+    """uv.exeという別名でも起動できる実体を探す。"""
+    path = environ["PATH"]
+    mise = shutil.which("mise", path=path)
+    shim_target = Path(mise).resolve() if mise else None
+    shim: Path | None = None
+    for directory in path.split(os.pathsep):
+        if not (candidate := shutil.which("uv", path=directory)):
+            continue
+        resolved = Path(candidate).resolve()
+        if resolved != shim_target and resolved.name != "mise":
+            return resolved
+        shim = resolved
+    if shim is not None:
+        result = subprocess.run(
+            [str(shim), "which", "uv"], env=environ, capture_output=True, check=False, text=True, timeout=10
+        )
+        if result.returncode == 0 and (candidate := result.stdout.strip()):
+            resolved = Path(candidate).resolve()
+            if resolved != shim and resolved.name != "mise" and shutil.which(str(resolved)):
+                return resolved
+    return None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Linuxでuvをuv.exeとして起動するための探索")
+def test_native_uv_looks_past_mise_shim(tmp_path: Path) -> None:
+    shim_dir, bin_dir = tmp_path / "shims", tmp_path / "bin"
+    shim_dir.mkdir()
+    bin_dir.mkdir()
+    mise, uv = tmp_path / "mise", bin_dir / "uv"
+    for executable in (mise, uv):
+        executable.touch(mode=0o755)
+    (shim_dir / "uv").symlink_to(mise)
+
+    assert _native_uv({"PATH": os.pathsep.join(map(str, (shim_dir, bin_dir)))}) == uv
 
 
 @pytest.mark.windows
@@ -93,8 +131,10 @@ def test_notified_launcher_delivers_argv(
     shell = "powershell.exe" if os.name == "nt" else "pwsh"
     if os.name != "nt":
         monkeypatch.setattr(windows_powershell, "_execution_policy", lambda: "RemoteSigned")
-        uv = shutil.which("uv")
-        assert uv is not None
+        # miseのshimは実行名でツールを引くので、uv.exeに改名するとuvを起動できない。
+        uv = _native_uv(build_host_environ())
+        if uv is None:
+            pytest.skip("uv.exeとして起動できるネイティブのuvが見つからない。実体をPATHに加えて試験を再実行する。")
         (tmp_path / "uv.exe").symlink_to(uv)
         monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
     restart = tmp_path / "new root"
