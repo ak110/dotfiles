@@ -19,9 +19,11 @@ from agent_toolkit._atk import agents_exit_session
     [
         ["codex"],
         ["codex", "--model", "o3", "--search", "inspect"],
+        ["codex", "--no-daemon", "--model", "o3", "inspect"],
         ["codex", "-mo3", "--", "inspect"],
         ["codex", "resume", "--last"],
         ["codex", "resume", "session-id", "inspect"],
+        ["codex", "resume", "--no-daemon", "session-id", "inspect"],
     ],
 )
 def test_interactive_codex_argv_is_accepted(argv: list[str]) -> None:
@@ -32,6 +34,7 @@ def test_interactive_codex_argv_is_accepted(argv: list[str]) -> None:
     "argv",
     [
         ["codex", "exec", "inspect"],
+        ["codex", "exec", "--no-daemon", "inspect"],
         ["codex", "app-server"],
         ["codex", "remote-control"],
         ["codex", "--remote", "server"],

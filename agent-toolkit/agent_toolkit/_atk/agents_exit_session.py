@@ -30,6 +30,7 @@ _NO_VALUE = frozenset(
         "--dangerously-bypass-hook-trust",
         "--search",
         "--no-alt-screen",
+        "--no-daemon",
     }
 )
 _ONE_VALUE = frozenset(
