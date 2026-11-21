@@ -6,6 +6,8 @@ import contextlib
 import json
 import logging
 import pathlib
+import re
+import shlex
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -14,8 +16,8 @@ from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState
 from agent_toolkit._common import background_output
 from agent_toolkit._common.json_lines import split_lines
-from agent_toolkit._common.shell_segments import extract_execution_segments
-from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_wait_command
+from agent_toolkit._common.shell_segments import extract_execution_segments, split_bash_commands
+from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_wait_command, strip_redirections
 
 # 子を稼働させる操作と、その終了・回収を観測する操作の対応。
 # CLI待機はBashとCodexのcommandExecutionの両方から同じ回収処理へ入る。
@@ -150,11 +152,47 @@ WAIT_BODY_START_PREFIX = wait_summary.WAIT_BODY_START_PREFIX
 WAIT_BODY_END_PREFIX = wait_summary.WAIT_BODY_END_PREFIX
 
 
+def is_wait_command(command: str) -> bool:
+    """直接起動か、先頭の単純代入で束縛したランチャーによる待機を識別する。"""
+    if any(segment.resolved and is_agents_wait_command(segment.tokens) for segment in extract_execution_segments(command)):
+        return True
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if len(words) == 3 and pathlib.PurePosixPath(words[0]).name in {"sh", "bash"} and words[1] in {"-c", "-lc"}:
+        command = words[2]
+
+    # 変数経由の判定は、先頭の代入列と直後の待機だけに限る。条件分岐や別コマンドをまたがない。
+    bindings = {"HOME": "/home"}
+    for separator, part in split_bash_commands(command):
+        if separator not in {"", ";", "\n"}:
+            return False
+        assignment = re.fullmatch(r"([A-Za-z_]\w*)=(?:\$([A-Za-z_]\w*))?([/a-zA-Z0-9_.-]*)", part.strip())
+        if assignment is not None:
+            name, source, suffix = assignment.groups()
+            if source is not None and source not in bindings:
+                return False
+            bindings[name] = (bindings[source] if source is not None else "") + suffix
+            continue
+        match = re.match(r'^\s*"\$([A-Za-z_]\w*)"(?=\s)', part)
+        if match is None:
+            return False
+        launcher = bindings.get(match[1], "")
+        if not launcher.startswith("/") or not launcher.endswith("/scripts/atk"):
+            return False
+        segments = extract_execution_segments(shlex.quote(launcher) + part[match.end() :])
+        return (
+            len(segments) == 1
+            and segments[0].resolved
+            and strip_redirections(segments[0].tokens) == (launcher, "agents", "wait")
+        )
+    return False
+
+
 def _is_agents_wait_command(tool_input: Any) -> bool:
     command = tool_input.get("command") if isinstance(tool_input, Mapping) else None
-    return isinstance(command, str) and any(
-        segment.resolved and is_agents_wait_command(segment.tokens) for segment in extract_execution_segments(command)
-    )
+    return isinstance(command, str) and is_wait_command(command)
 
 
 def _tool_result_text(value: Any) -> str:

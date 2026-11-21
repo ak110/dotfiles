@@ -101,7 +101,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             note_admission_wait(session, ticket)
         return result
 
-    async def _child_result_is_terminal(self, session_id: str, *, expected_turn_seq: int | None = None) -> bool:
+    async def _child_result_is_terminal(self, session_id: str) -> bool:
         """孫sessionの共有された終了時の結果ファイルが終了を示すかを返す。
 
         このファイルは同じルートsessionの`results`配下を全ての書込主体が共有するため、
@@ -109,9 +109,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         """
         if self._status_writer is None or not shared_layout.valid_session_id(session_id):
             return False
-        return (
-            await run_file_operation(self._status_writer.read_result, session_id, expected_turn_seq=expected_turn_seq)
-        ) is not None
+        return (await run_file_operation(self._status_writer.read_result, session_id)) is not None
 
     async def _advance_child_session_wait(self, session: SessionState) -> None:
         """保留中の結果を、孫sessionの終了・過負荷と利用上限の待機の経過または保持期限に応じて進める。"""
@@ -213,19 +211,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
         }
         unobserved: set[str] = set()
         for session_id, resolution in resolutions.items():
-            if resolution.state is session_registry.Resolution.RUNNING:
-                # 登録簿の更新が遅れても、同じturnの終了結果は子の回収を促す根拠にできる。
-                # 引き継ぎ中やturnが不明の場合は、実行中のturnを誤って完了と判定しないよう保留する。
-                turn_seq = resolution.recorded_turn_seq
-                if (
-                    turn_seq is not None
-                    and not resolution.resume_pending
-                    and await self._child_result_is_terminal(session_id, expected_turn_seq=turn_seq)
-                ):
-                    current = await run_file_operation(session_registry.resolve, session_id)
-                    if not current.resume_pending and current.recorded_turn_seq == turn_seq:
-                        terminal.add(session_id)
-                continue
             if resolution.state not in {
                 session_registry.Resolution.MISSING,
                 session_registry.Resolution.RELEASED,

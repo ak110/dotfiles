@@ -106,18 +106,16 @@ async def _delegate_with_child_writer(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("registry_state", ["released", "stale-running", "newer-running", "resumed-during-read"])
 async def test_wait_delivers_child_session_result_without_kill(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
-    registry_state: str,
 ) -> None:
     """別プロセスが起動した子sessionの終了後、killを用いないwaitが委譲先の結果を配送する。
 
     子sessionの登録簿レコードが残らない場合も、共有の終了時の結果ファイルから終了を判定する。
     """
     async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
-        child = state.SessionState("grandchild", str(tmp_path), engine="claude", launch_kind="explore", turn_seq=1)
+        child = state.SessionState("grandchild", str(tmp_path), engine="claude", launch_kind="explore")
         child_writer.sessions[child.session_id] = child
         wait_output_tracking.consume_agents_server_tool_result(
             delegate,
@@ -133,36 +131,9 @@ async def test_wait_delivers_child_session_result_without_kill(
         _complete(child, message="子sessionの結果")
         child_writer.flush()
         # 所有側が保持期限で解放した後も、終了時の結果ファイルを第2の根拠に終了と判定する。
-        if registry_state == "released":
-            session_registry.release(child.session_id, reason="retention_expired")
-        else:
-            session_registry.publish(
-                child.session_id,
-                state=session_registry.PublicationState.PENDING_RUNNING,
-                cwd=str(tmp_path),
-                turn_seq=2 if registry_state == "newer-running" else 1,
-            )
-
-        if registry_state == "resumed-during-read":
-            read_result = status_file.StatusFileWriter.read_result
-
-            def read_then_resume(writer, session_id, *, expected_turn_seq=None):
-                result = read_result(writer, session_id, expected_turn_seq=expected_turn_seq)
-                if session_id == child.session_id and writer is not child_writer and result is not None:
-                    session_registry.publish(
-                        session_id, state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), turn_seq=2
-                    )
-                return result
-
-            monkeypatch.setattr(status_file.StatusFileWriter, "read_result", read_then_resume)
+        session_registry.release(child.session_id, reason="retention_expired")
 
         pending = await manager.wait()
-        assert child_writer.read_result(child.session_id, expected_turn_seq=1) is not None
-        if registry_state in {"newer-running", "resumed-during-read"}:
-            assert pending["status"] == "running" and backend.send_calls == 0
-            child_writer.deactivate()
-            await manager.close()
-            return
 
         # 子sessionの終了を観測した待機が、killを伴わずに継続指示を1回配送する。
         assert pending["status"] == "running"

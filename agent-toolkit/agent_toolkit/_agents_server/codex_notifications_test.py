@@ -167,6 +167,11 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
         "unrelated",
         "quoted-data",
         "chained",
+        "variable",
+        "variable-literal",
+        "variable-reassigned",
+        "variable-undelivered",
+        "variable-old-turn",
     ),
 )
 async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, delivery: str) -> None:
@@ -201,6 +206,16 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
             command = shlex.quote(str(plugin_roots.SERVER_PLUGIN_ROOT / "scripts" / "atk")) + " agents wait"
             if delivery == "absolute-shell":
                 command = "/bin/sh -c " + shlex.quote(command)
+        if delivery.startswith("variable"):
+            wrapper = "P=$HOME/.cache; D=$P/output; A=$P/root/agent-toolkit/scripts/atk; "
+            invocation = '"$A" agents wait >"$D/wait.out" 2>&1; r=$?; tail "$D/wait.out"; exit "$r"'
+            if delivery == "variable-literal":
+                invocation = invocation.replace('"$A"', "'$A'", 1)
+            if delivery == "variable-reassigned":
+                wrapper += "A=/tmp/other; "
+            if delivery == "variable-undelivered":
+                output = '{"session_id":"child-1","status":"running"}'
+            command = "/bin/bash -lc " + shlex.quote(wrapper + invocation)
         item = {
             "type": "commandExecution",
             "id": "wait-command",
@@ -210,12 +225,28 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
         }
 
         await manager.handle_notification(
-            {"method": "item/completed", "params": {"threadId": session.session_id, "turnId": session.turn_id, "item": item}}
+            {
+                "method": "item/completed",
+                "params": {
+                    "threadId": session.session_id,
+                    "turnId": "earlier-turn" if delivery == "variable-old-turn" else session.turn_id,
+                    "item": item,
+                },
+            }
         )
         await manager.handle_notification(_completed_turn(session))
 
         # 回収できなかった子は追跡に残り、自動再開まで結果を保留する。回収済みなら保留せず直ちに公開する。
-        unobserved = delivery in {"failure", "unrelated", "shell-unrelated", "quoted-data"}
+        unobserved = delivery in {
+            "failure",
+            "unrelated",
+            "shell-unrelated",
+            "quoted-data",
+            "variable-literal",
+            "variable-reassigned",
+            "variable-undelivered",
+            "variable-old-turn",
+        }
         assert session.awaiting_auto_resume is unobserved
         assert session.result_available is not unobserved
         assert session.live_child_session_ids == ({"child-1"} if unobserved else set())
