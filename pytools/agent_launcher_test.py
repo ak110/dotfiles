@@ -16,6 +16,14 @@ from pytools import agent_launcher
 type Entrypoint = Callable[..., NoReturn]
 
 
+def _capture_command(commands: list[list[str]]) -> Callable[[list[str]], int]:
+    def run(arguments: list[str]) -> int:
+        commands.append(arguments)
+        return 0
+
+    return run
+
+
 @pytest.mark.parametrize(
     ("entrypoint", "model_args"),
     [
@@ -162,9 +170,6 @@ def test_missing_claude_returns_127(capsys: pytest.CaptureFixture[str], tmp_path
             ["--permission-mode=auto", "--model=fable", "--fallback-model=opus[1m]"],
             "claude",
         ),
-        (agent_launcher.main_astra, ["-m", "gpt-6-astra"], "codex"),
-        (agent_launcher.main_sol, ["-m", "gpt-5.6-sol"], "codex"),
-        (agent_launcher.main_terra, ["-m", "gpt-5.6-terra"], "codex"),
     ],
 )
 def test_posix_launch_replaces_process_with_command_name(
@@ -195,34 +200,142 @@ def test_posix_launch_replaces_process_with_command_name(
 
 
 @pytest.mark.parametrize(
-    ("entrypoint", "model"),
+    ("entrypoint", "family"),
     [
-        (agent_launcher.main_astra, "gpt-6-astra"),
-        (agent_launcher.main_sol, "gpt-5.6-sol"),
-        (agent_launcher.main_terra, "gpt-5.6-terra"),
+        (agent_launcher.main_astra, "astra"),
+        (agent_launcher.main_sol, "sol"),
+        (agent_launcher.main_terra, "terra"),
     ],
 )
-def test_codex_entrypoint_windows_forwards_arguments_and_exit_code(
+def test_codex_entrypoint_uses_latest_visible_model_and_same_startup_context(
     entrypoint: Entrypoint,
-    model: str,
+    family: str,
     tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     commands: list[list[str]] = []
+    runtime = str(tmp_path / "codex.exe")
+    arguments = ["-C", str(tmp_path), "-c", 'model_reasoning_effort="medium"', "--", "--model"]
+
+    def list_models(command: tuple[str, ...], *, cwd: str | None) -> list[dict[str, object]]:
+        assert command == (runtime, "-c", 'model_reasoning_effort="medium"', "app-server", "--stdio")
+        assert cwd == str(tmp_path)
+        return [
+            {"id": f"gpt-6.9-{family}"},
+            {"model": f"gpt-6.12-{family}"},
+            {"id": f"gpt-7-{family}", "hidden": True},
+        ]
 
     def run(command: list[str]) -> int:
         commands.append(command)
         return 23
 
+    monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", list_models)
     with pytest.raises(SystemExit, match="23"):
         entrypoint(
-            ["--version", "追加引数"],
+            arguments,
             os_name="nt",
             home=tmp_path,
-            resolve=lambda _name, _preferred: pathlib.Path("codex.exe"),
+            resolve=lambda _name, _preferred: pathlib.Path(runtime),
             run=run,
         )
 
-    assert commands == [["codex.exe", "-m", model, "--version", "追加引数"]]
+    assert commands == [[runtime, "-m", f"gpt-6.12-{family}", *arguments]]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "defaults"),
+    [
+        (["--profile", "work"], ["-m", "gpt-5.6-sol"]),
+        (["-pwork"], ["-m", "gpt-5.6-sol"]),
+        (["--profile=work", "--model", "explicit"], []),
+        (["--model=explicit"], []),
+        (["exec", "-m", "explicit", "prompt"], []),
+        (["-mexplicit", "--model=second"], []),
+        (["--version"], []),
+        (["login", "status"], []),
+        (["exec", "help"], []),
+        (["e", "--json", "help"], []),
+        (["exec", "--color", "always", "help"], []),
+        (["exec", "--color=always", "help"], []),
+        (["--oss"], []),
+        (["-c", 'model_provider="custom"'], []),
+        (["--config='model_provider' = custom", "-m", "explicit"], []),
+    ],
+)
+def test_codex_launch_without_catalog(
+    arguments: list[str], defaults: list[str], tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commands: list[list[str]] = []
+    runtime = tmp_path / "codex.exe"
+    monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", lambda *_, **__: pytest.fail("一覧は不要"))
+    with pytest.raises(SystemExit, match="0"):
+        agent_launcher.main_sol(
+            arguments, os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
+        )
+    assert commands == [[str(runtime), *defaults, *arguments]]
+
+
+@pytest.mark.parametrize(
+    "entrypoint",
+    [agent_launcher.main_sonnet, agent_launcher.main_opus, agent_launcher.main_fable, agent_launcher.main_poteto_mode],
+)
+@pytest.mark.parametrize("explicit", [["--model", "haiku"], ["--model=haiku"]])
+def test_claude_explicit_model_is_not_duplicated(entrypoint: Entrypoint, explicit: list[str], tmp_path: pathlib.Path) -> None:
+    commands: list[list[str]] = []
+    runtime = tmp_path / "claude.exe"
+    with pytest.raises(SystemExit, match="0"):
+        entrypoint(explicit, os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands))
+    assert commands[0][-len(explicit) :] == explicit
+    assert not any(arg.startswith("--model=") for arg in commands[0][: -len(explicit)])
+    if entrypoint is agent_launcher.main_fable:
+        assert "--fallback-model=opus[1m]" in commands[0]
+    if entrypoint is agent_launcher.main_poteto_mode:
+        assert any(arg.startswith("--settings=") for arg in commands[0])
+
+
+@pytest.mark.parametrize("arguments", [["--", "--model"], ["--append-system-prompt", "--model"], ["-n", "--model"]])
+def test_claude_model_literal_does_not_remove_default(arguments: list[str], tmp_path: pathlib.Path) -> None:
+    commands: list[list[str]] = []
+    runtime = tmp_path / "claude.exe"
+    with pytest.raises(SystemExit, match="0"):
+        agent_launcher.main_opus(
+            arguments, os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
+        )
+    assert commands == [[str(runtime), "--permission-mode=auto", "--model=opus[1m]", *arguments]]
+
+
+def test_codex_explicit_help_prompt_and_openai_override_still_use_catalog(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", lambda *_a, **_kw: [{"model": "gpt-7-sol"}])
+    arguments = ["-cmodel_provider=custom", "-c", "model_provider=openai", "exec", "--color", "always", "--", "help"]
+    commands: list[list[str]] = []
+    runtime = tmp_path / "codex.exe"
+    with pytest.raises(SystemExit, match="0"):
+        agent_launcher.main_sol(
+            arguments, os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
+        )
+    assert commands == [[str(runtime), "-m", "gpt-7-sol", *arguments]]
+
+
+@pytest.mark.parametrize("missing_series", [False, True])
+def test_codex_selection_failure_is_distinguished_and_safe(
+    missing_series: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    def list_models(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        if missing_series:
+            return [{"model": "gpt-7-astra"}]
+        raise ValueError("private catalog error")
+
+    monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", list_models)
+    with pytest.raises(SystemExit, match="1"):
+        agent_launcher.main_sol(
+            [], os_name="nt", home=tmp_path, resolve=lambda *_: pathlib.Path("codex"), run=lambda _: pytest.fail("起動しない")
+        )
+    error = capsys.readouterr().err
+    assert ("sol系列がありません" if missing_series else "モデル一覧を取得できません") in error
+    assert "--modelで完全なID" in error and "private catalog error" not in error
 
 
 def test_codex_missing_returns_127(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:

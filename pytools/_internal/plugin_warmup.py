@@ -271,7 +271,8 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
         logger.warning("一時資源の回収を保留: %s: %s", target, error, extra=log_format.LOG_ONLY)
     if result.failed:
         logger.warning(
-            "一時資源%d件の回収を保留した。権限不足の場合は対象のアクセス権を修正してから update-dotfiles を再実行してください",
+            "一時資源%d件の回収を保留した。更新ログで対象と理由を確認し、権限不足の場合は対象のアクセス権を修正してください。"
+            "原因を解消した後に update-dotfiles を再実行してください",
             len(result.failed),
         )
     for target in result.deleted:

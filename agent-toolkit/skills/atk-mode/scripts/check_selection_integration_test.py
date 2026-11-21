@@ -140,6 +140,62 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
     assert path.read_bytes() == saved
 
 
+@pytest.mark.parametrize(("state", "expected"), [("adopted", 0), ("rejected", 0), ("processing", 1)])
+def test_reopen_wi_ignores_changed_dependency_of_finished_source(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    expected: int,
+) -> None:
+    """初回の依存元の終了時だけ、依存解除後も関係する未終了WIを再開できる。"""
+    repo, notes = env
+    target = "20261120-000000-001.md"
+    source = "20261120-000000-002.md"
+    _awi(notes, target, "`README.md`を変更する。")
+    _awi(notes, source, "`README.md`を変更する。")
+    legacy_source = notes / "processing" / source
+    dated_source = wi_entry_files.entry_path(notes, source)
+    text = legacy_source.read_text(encoding="utf-8")
+    dated_source.write_text(text.replace("type: awi\n", f"type: awi\nstate: {state}\n", 1), encoding="utf-8")
+    legacy_source.unlink()
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": wi, "レーン": "lane-01", "書込対象": ["README.md"], "統合状態": "統合済み"} for wi in (target, source)],
+        [{"レーン": "lane-01", "統合状態": "統合済み"}],
+    )
+    before = yaml.safe_load(path.read_text(encoding="utf-8"))
+    before["初回配分"]["不可分成分"] = [
+        {
+            "WI": [target, source],
+            "結合条件": [
+                {
+                    "WI1": target,
+                    "WI2": source,
+                    "種別": "依存",
+                    "根拠": {
+                        "リポジトリ1": "github.com/test/repo",
+                        "リポジトリ2": "github.com/test/repo",
+                        "依存元": source,
+                        "depends_on": [target],
+                    },
+                }
+            ],
+        },
+    ]
+    path.write_text(yaml.safe_dump(before, allow_unicode=True), encoding="utf-8")
+    written = path.read_bytes()
+
+    assert _dispatch(str(path), "--reopen-wi", target, "--output", str(path), "--work-dir", str(repo)) == expected
+    if expected != 0:
+        assert "結合根拠が元入力と一致しない" in capsys.readouterr().err
+        assert path.read_bytes() == written
+        return
+    after = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert after["初回配分"] == before["初回配分"]
+    assert [item["統合状態"] for item in after["選定"]] == ["未統合", "統合済み"]
+
+
 def test_reopen_wi_keeps_explicit_pending_item_of_other_integrated_lane(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:

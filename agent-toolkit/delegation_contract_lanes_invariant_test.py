@@ -16,7 +16,7 @@ from agent_toolkit._testing.delegation_contract_support import (
     _selection_format,
     _selection_procedure,
 )
-from agent_toolkit._testing.normative_contract import line_references, read_contract, section_text
+from agent_toolkit._testing.normative_contract import line_references, read_contract, read_contract_section, section_text
 
 
 def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> None:
@@ -248,10 +248,12 @@ def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
 def test_review_fix_completion_values_match_receiver() -> None:
     """実行レビューの委譲元が分岐に使う返却値を、レビュー修正の担当が返却値として定める。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    review_parent = read_contract(
+    review_parent = read_contract_section(
         plugin_root / "skills/atk-mode/roles/exec-review.parent.md",
         plugin_root,
-        ("../playbooks/exec-review-loop.md", "修正の指示"),
+        "../playbooks/exec-review-loop.md",
+        "修正の指示",
+        "レビュー修正",
     )
     executor = read_contract(
         plugin_root / "skills/atk-mode/roles/exec.subagent.md", plugin_root, ("../playbooks/review-fix.md", "Git履歴へ統合")

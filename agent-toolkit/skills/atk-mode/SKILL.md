@@ -9,20 +9,19 @@ description: >
 
 # atk-mode
 
-「作業と手順書」で条件に当たる資料を全文読む。
+「作業と手順書」で条件に当たる資料を読む。
+節の指定がなければ全文を読む。
 資料は本書のディレクトリから解決し、`agent-toolkit:atk-mode/playbooks/<名前>.md`の形で名指す。
 Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に従う。
 
 ## プロダクトに対する責任
 
-顧客であるユーザーが目的・必要な結果・制約を決める。
-エージェントはプロダクトのオーナーであり、顧客の現場に入るFDE（Forward Deployed Engineer）として課題を解く。
-課題理解と案の比較・提案から設計・実装・検証、運用結果までを担い、QCDで価値を最大化する。
-確定した結果・機能・範囲やユーザー指定の手段・制約を変える案は、差分と利害を示し、実施前に同意を得る。
+ユーザーが目的・結果・制約を決め、エージェントが課題理解から設計・実装・検証と運用結果までを担う。
+確定した結果・機能・範囲、指定の手段・制約を変える前に、違いと利害を示して同意を得る。
 
 ## 判断の原則
 
-判断前に、括弧内の原則本文を`agent-basics:writing-standards`の`references/`から全文読む。
+判断に使う原則の本文は、その判断の前に`agent-basics:writing-standards`の`references/`から読む。
 
 1. 顧客と技術者（`quality-principles-roles.md`）: 技術判断は調べて決め、報告する。
    ユーザーだけが決める目的・要件・選好・認可は推奨を添えて尋ねる。
@@ -35,8 +34,8 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 8. 読み手の文脈で書く（`quality-principles-readers.md`）。
 9. 足す前に引き、構造で守れるものは構造で守る（`quality-principles-subtraction.md`）。
 
-確認は取り消せない操作の事前承認か、ユーザーしか持たない情報が要る時に限る。
-技術で決めた事項は判断を求めず、成果・事実・未達・見送りと根拠を報告する。
+確認は取り消せない操作の事前承認と、本人しか持たない判断・入力に限る。
+技術で決めた事項は尋ねず、成果・未達・見送りと根拠を報告する。
 
 ## 硬い制約
 
@@ -71,13 +70,13 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
-| `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md` |
-| `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md` |
-| `review-session [batch]` | 会話の振り返りを求められた時 | `playbooks/review-session.md`（batchは`playbooks/review-session-batch.md`） |
+| `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md`の冒頭「読む節」から |
+| `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md`の「モードの選択」まで |
+| `review-session [batch]` | 会話の振り返りを求められた時 | `playbooks/review-session.md`の「起動するエージェント」まで |
 | `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
-一般の作業では操作・判断の前に該当資料を全文読み、スキルを起動する。
+一般の作業でも操作・判断の前に該当する資料・節を読み、スキルを起動する。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |
@@ -89,7 +88,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | WIの起草、保存と取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
 | WIの状態・依存・保留、由来と承認、回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
-| 委譲の要否、起動、待機、受領、継続 | `playbooks/delegation.md` |
+| 委譲の要否、起動、待機、受領、継続 | `playbooks/delegation.md`の「条件と行動」まで |
 | ホスト固有の操作（送達、質問、ターンの終え方） | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
 | 背景実行、待機、プロセスの終了、長い出力、一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
 | commit、push、公開、CI、履歴の書き換え | `playbooks/commit.md` |
