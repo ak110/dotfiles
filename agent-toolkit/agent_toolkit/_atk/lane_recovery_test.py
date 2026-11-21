@@ -75,6 +75,9 @@ def test_retired_lane_only_removes_covered_changes(
 
     code, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
 
+    saved = json.loads(pathlib.Path(result["result_path"]).read_text(encoding="utf-8"))
+    assert saved["retire_integrated"] is True
+
     if kind in {"merged", "same-tree"}:
         assert code == 0 and result["removed"] == ["lane-01"], stderr
         assert not record_path.exists() and not worktree.exists()

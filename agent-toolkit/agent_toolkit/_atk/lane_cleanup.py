@@ -65,6 +65,7 @@ def cleanup_session(
     自動終了ではwait_release=Falseを渡し、終了資源の解放が未確認なら理由付きで保持する。
     """
     result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": [], "recovered": [], "missing": []}
+    result["retire_integrated"] = retire_integrated
     if session_id is None or not _lane_records.session_directory(session_id).exists():
         return result
     with _lane_records.locked(session_id) as directory, contextlib.ExitStack() as lane_locks:
