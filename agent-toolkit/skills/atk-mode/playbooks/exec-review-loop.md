@@ -20,6 +20,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    - 複数の計画は`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`を読む。
    - `CI記録`だけの基準は`agent-toolkit:atk-mode/references/exec-review-launch-ci.md`を読む。
    - 引き継ぎ再レビューは`agent-toolkit:atk-mode/references/exec-review-launch-handover.md`を読む。
+     契約を作り直す時は、直前の契約か初回の計画を基準にし、方式見直しで確定した境界が未反映なら管理表の応答から要求と認可を確かめて加える。
 4. 入力を次の表で決める（入力名は`agent-toolkit:atk-mode/roles/exec-review.parent.md`「入力」）。
 
    | 入力 | 値 |
@@ -92,8 +93,10 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 4. 修正の返却（`対応完了`、`対応完了（再レビュー不要）`）に`検証結果`と`画面差分`の行が無ければ出し直させる。
    返却の種類は修正commitの有無で判定せず、本書「応答済みの判定」で未応答0件を確かめ、全ての指摘を根拠付きで不採用とした`対応完了`も再レビューへ進める。
 5. `対応完了`では、同じレビューのthreadへ`send_message`の`instruction: 再レビューせよ`と`round: <ラウンド番号>`を送る。
-   - 開始時からの累積差分に別の計画の認可commitがあれば、`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」で判定対象外commitを最新のOIDへ更新する。
-     初回の条項を含む契約は`review_contract: <絶対パス>`で渡す。
+   - 方式の見直しで守る挙動と許容する挙動を決めた時は、起動側が管理表の応答を要求と認可に照らして確かめ、`review_contract`へ反映する。
+   - 開始時からの累積差分に別の計画の認可commitがあれば、判定対象外commitを最新のOIDへ更新する。
+   - 契約を更新する時は`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」に従い、初回の条項を保つ。
+     初回が計画だけの時も契約を作り、更新をまとめた新版を`review_contract: <絶対パス>`で渡す。
    - 前回の後に履歴を書き換えたら、`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」が保存したJSONを`rewrite_map: <絶対パス>`で渡す（引き継ぎ再レビューでは`extra_params`）。
    - `画面差分: あり`なら、ユーザビリティレビューの再判定（未起動なら初回）も同時に依頼する。
 6. `対応完了（再レビュー不要）`では、修正が`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」の再レビューを省ける修正に当たることを確かめる。
@@ -108,8 +111,8 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 ## ラウンドの遷移
 
 1. 再レビューの指摘を受けたら、修正の指示を確定する前に本書「反復原因の判定」を行う。
-2. 同じレビュー担当へ、同じ`開始時のHEAD`（`CI記録`では`修正系列の開始時のHEAD`）、レビュー基準、初回に受理した`review_contract`、指摘管理表を渡して再レビューさせる。
-   計画だけから条項を作った場合は、初回の計画の内容を使い続ける。
+2. 同じレビュー担当へ、同じ`開始時のHEAD`（`CI記録`では`修正系列の開始時のHEAD`）、レビュー基準、指摘管理表を渡して再レビューさせる。
+   契約を更新した場合は本書「レビュー修正」の新版を渡し、それ以外では直前の契約か計画を使う。
    再レビューの範囲は、前回指摘の修正、前回のレビューHEADから今回のHEADまでの修正差分、変えた識別子と契約の直接影響範囲である（定義元は`agent-basics:review-standards/references/reviewer.md`「再レビューの場合」）。
 3. 本書「完成条件証拠の受領確認」の手順2で保った開始時点とHEADは、rebaseで開始時点が変わっても上書きせず、両方の差分の一致とファイル別の申告を同じ受領確認へ渡す。
    履歴を書き換えた後の開始時点には、書き換え後の対応するOIDを使う。
@@ -132,8 +135,13 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 1. `atk review-table show <表の絶対パス> --track <対象track> --format=jsonl`で過去の指摘と応答を読み、今回の指摘と比べる。
 2. 違反した規定と発生条件の一致、修正の不足、新しい要件、レビュー契約の不足を判定する。
    完成条件や指摘の件数が同じことだけで同じ指摘と判定しない。
-3. 同じ指摘なら、局所の修正の前に`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」で前回の修正が防げなかった理由を特定させる。
-4. 新しい要件か認可範囲の変更なら本書「エスカレーションの事由別の扱い」へ回し、レビュー契約の不足なら`review_contract`を直してから再レビューへ渡す。
+3. 同じ機構で同じ向きの境界の指摘が前のラウンドに続いて出たら、発生条件が違っても、個別修正の前に方式を見直す。
+   どの機構が何をどう誤って扱い、誰に何の害を生むかで比べる。
+   同じ待機判定でも、作業を待機と数える誤りと待機を作業と数える誤りは逆向きである。
+   要求を保ったまま、判定する入力を狭める案や、判定できない入力を害の少ない側へ倒す案を現方式と比べる。
+   修正側は比較と採否を管理表の応答に残し、誤りの向きによって害が異なる場合は、守る挙動と許容する挙動も書く。
+4. 同じ指摘なら、局所の修正の前に`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」で前回の修正が防げなかった理由を特定させる。
+5. 新しい要件か認可範囲の変更なら本書「エスカレーションの事由別の扱い」へ回し、レビュー契約の不足なら`review_contract`を直してから再レビューへ渡す。
 
 ## 収束と統合への引渡し
 
