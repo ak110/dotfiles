@@ -15,7 +15,8 @@ def test_claude_snapshot_defers_bashrc_to_its_explicit_source(tmp_path: pathlib.
     bashrc = tmp_path / ".bashrc"
     bashrc.write_text("printf '%s\\n' bashrc-loaded\n", encoding="utf-8")
     snapshot = f'SNAPSHOT_FILE=synthetic\n\n      source "{bashrc}" < /dev/null\n      :'
-    for command, claude, count in ((snapshot, "1", 1), (snapshot, "", 2), (":", "1", 1)):
+    inactive = f'SNAPSHOT_FILE=synthetic\nif false; then\n      source "{bashrc}" < /dev/null\nfi\n:'
+    for command, claude, count in ((snapshot, "1", 1), (snapshot, "", 2), (":", "1", 1), (inactive, "1", 1)):
         completed = subprocess.run(
             ["/bin/bash", "--noprofile", "--norc", "-c", command],
             check=True,
