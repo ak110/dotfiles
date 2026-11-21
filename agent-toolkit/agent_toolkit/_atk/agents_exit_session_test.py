@@ -242,6 +242,26 @@ def test_versioned_executable_with_claude_argv_is_identified(tmp_path: pathlib.P
     assert (target.host, target.pid) == ("claude", 123)
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Codexの終了対象はLinuxに限る")
+def test_codex_native_alias_requires_real_codex_and_terminal(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """配布の別名を認識しても、実行ファイル・端末・対話argvの条件を保つ。"""
+    codex = tmp_path / "codex"
+    other = tmp_path / "other"
+    for executable in (codex, other):
+        executable.write_text("", encoding="utf-8")
+    monkeypatch.setattr(agents_exit_session.process_identity, "start_id", lambda process, **kwargs: "test-generation")
+    alias = str(tmp_path / ".dotfiles-codex-native")
+    tty = "/dev/pts/3"
+
+    target = _identify([alias, "--no-daemon", "inspect"], codex, tty)
+    assert target is not None and target.host == "codex"
+    assert _identify([alias, "--no-daemon", "inspect"], other, tty) is None
+    assert _identify([alias, "--no-daemon", "inspect"], codex) is None
+    assert _identify([alias, "exec", "inspect"], codex, tty) is None
+    assert _identify([alias, "--remote", "server"], codex, tty) is None
+    assert _identify(["different-alias", "inspect"], codex, tty) is None
+
+
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="agyの終了対象はLinuxに限る")
 def test_interactive_agy_with_terminal_is_identified(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """端末を持つ対話のagyは終了対象とし、非対話実行と端末の無い起動は対象外とする。"""

@@ -227,6 +227,13 @@ def _target(process: psutil.Process) -> Target | None:
         if argv:
             names.add(pathlib.Path(argv[0]).name.lower())
         if names & {"codex", "codex.exe"}:
+            # pytoolsのPOSIX配布は公式実体をこの名前のシンボリックリンク経由で起動する。
+            if (
+                executable.name.lower() in {"codex", "codex.exe"}
+                and argv
+                and pathlib.Path(argv[0]).name == ".dotfiles-codex-native"
+            ):
+                argv = [executable.name, *argv[1:]]
             if not sys.platform.startswith("linux") or process.terminal() in {None, "", "?"} or not is_interactive_codex(argv):
                 return None
             host = "codex"
