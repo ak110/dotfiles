@@ -5,7 +5,6 @@
 起草は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`で終えてから本書へ進み、上から実行する。
 報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」に従う。
 
-方針は次のとおりである。
 保存前に確かめるのは、意味、必要事項、成立性、後続が引き継げることに限り、意味を変えない表現だけの推敲と、そのための再検収は省く。
 根拠は原稿、既存の作業記録、CLIの保存出力を直接参照し、揃っていればその所在だけを渡す。
 不足する情報だけを既存の記録へ補い、原稿の要約や調査の経過を別の証拠ファイルへ書き直す作業は省く。
@@ -36,12 +35,11 @@
 5. 調べ残しを片付ける。
    広がりの探索を限定した場合は、`agent-basics:bugfix/references/spread.md`に従い、探した範囲と探していない範囲を原稿と証拠に書く。
    是正の範囲は`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」で決める。
-   探していないと書いた部分を除き、未確認の範囲は、確かめる手段がある限り調べ続ける。
+   未確認の範囲は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「未確定事項と確認」に従う。
    未確認の範囲には、投入前に確定すべき事項、範囲語や開放列挙のうち未判定の対象、検索に掛からず読んでいない対象、権限と到達可能性の未確認を含む。
-   証拠や報告へ書いた未確認の範囲も、返却の理由から除く。
    確かめる手段が無い範囲は、`agent-toolkit:atk-mode/references/awi-body.md`「調査結果と判断根拠」の確認対象外の条件か、`agent-toolkit:atk-mode/references/origin-and-approval.md`「範囲語と程度」で扱う。
    どちらでも扱えない場合だけ「続行できない理由」として報告する。
-   内部設計、実装の分け方、実装後の検証手順の詳細は、後続の計画と実行の工程へ委ねる。
+   後続へ委ねる具体化は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「確定の判定」に従う。
 6. 意味の検収へ渡す。
    原稿、抽出の保存先、要求、必要な根拠を投入前レビューへ渡し、冒頭だけの先行判定に使わせる。
    付随型の投入担当は、原稿と証拠を委譲元へ返して意味の検収を待つ。
@@ -58,11 +56,9 @@
 ### 投入前の読み直し
 
 各原稿を他の原稿から切り離し、本文だけを読んで次を確かめ、全てを満たす原稿だけを保存する。
-複数のWIを続けて起草した場合も1件ずつ確かめる。
 報告用を除くUWIには、`agent-toolkit:atk-mode/references/awi-body.md`の各節と原因分析の項目を除いて当てる。
 
 - 必要性: 完成条件は、起草者が足した条件も含め、元の目的に対する必要性と由来を`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」で判定する。
-  不要なエージェント起草の条件は除く。
   ユーザーの明示要求や必要な品質を変える場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」へ渡す。
 - 原文との対応: 逐語引用と反映内容を原文と読み比べ、要求の脱落・追加・意味の変化と、ユーザーの回答とエージェントの説明の混同が無い。
   回答済みの注記は、送達した質問だけに付ける。
@@ -73,15 +69,13 @@
   保存するのは、全ての判断を反映した集合に限る。
 - 対象集合: 対象と除外が、原文、`## 反映内容と反映先`、原因分析と整合し、原因分析を含む場合は原因の条件から導いた母集団も満たす。
   仕分け・要約・統合をした本文は、`agent-toolkit:atk-mode/references/drafting-decisions.md`「対象集合の仕分け」の元の調査結果との対応を保ち、その対応を証拠に残す。
-- 本文の自己完結: 指示語の参照先が同じ本文にあり、変更対象、根拠、対応内容、完成条件を本文だけから一意に特定できる。
-  作成ホストのローカルの記録（セッション記録、実行記録、managed-tempの一時ファイル）へ届かない環境でも、処理に必要な要求・観測・診断・判断根拠が本文から分かる。
-  条件の定義は`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」にある。
+- 本文の自己完結: 指示語の参照先は同じ本文に置き、本文だけで着手できるかを`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」で確かめる。
 - 名詞句と名称: タイトルと本文で既存の要素（スキル、工程、担当、hookの通知など）を指す名詞句は、定義元が実在し、本文から定義へ到達できる。
   会話やcommitメッセージで使った呼称も確かめる。
   別の文書の節名・用語・略号の表記は`agent-basics:writing-standards/references/writing.md`「文章の共通規定」に従う。
   新しい名称は`agent-basics:writing-standards/references/defined-names.md`「命名の方針」に従い、長い正式名称でもタイトルで不当に省かない。
   ユーザーが読む部分は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」を満たす。
-- 節の内容: 各節が`agent-toolkit:atk-mode/references/awi-body.md`「要求固有性と記載量」と「節の構成と分担」を満たし、要求に固有でない一般論と他の節の再掲を含まない。
+- 節の内容: `agent-toolkit:atk-mode/references/awi-body.md`「要求固有性と記載量」と「節の構成と分担」に従う。
   既存の値を変える対象ごとに、`agent-toolkit:atk-mode/references/drafting-decisions.md`「方針と判断の記録との比較」の結果を書いている。
 - 採用案: `agent-toolkit:atk-mode/references/drafting-decisions.md`「実現方式の成立」の各項目を満たし、確かめた結論と再取得先を本文と成立性の証拠に書いている。
   観測した事象を契機とする要求では、対策が直接の原因と主要な害に確実に作用する。
@@ -92,11 +86,8 @@
   再発防止を全て見送る記録は、原因となった入力や条文を除く・改める案を比べている（`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）。
   重い案だけを挙げて見送った記録は、この条件を満たさない。
   記録の形と記録先は`agent-toolkit:atk-mode/references/analysis-records.md`に従う。
-- 完成条件: 完成状態を、目的、変更内容、原因分析、固有の補足条件から一意に判定できる。
-  対象リポジトリの外へ成果を反映する本文では、反映先ごとに完成状態を判定でき、完成条件に含める公開操作は承認元を併記できるものに限る。
-  完成条件ごとに、観測する主体、到達手段、権限、起動条件、待機の手順を調べ、同じセッションで確実に成立する観測方法を選んでいる。
-  人手、後日、配布の反映後の確認は、`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」の例外に当たる根拠を本文に書いている。
-  内部の配置場所や名称を完成条件で固定するのは、要件か公開契約がその名称を求める場合だけである。
+- 完成条件: `agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」に従い、権限・起動条件・待機の手順を調べて同じセッションで確実に観測できる方法を選ぶ。
+  人手・後日・配布後の確認を置く場合は、同節の例外に当たる根拠が本文にあるかを確かめる。
 - 具体化の記録: 対象、適用範囲、外部から観測できる結果、除外を新たに具体化した本文は、判定軸と結果を記録の形式で書いている。
   判定軸は`agent-toolkit:atk-mode/playbooks/confirmation.md`「原文からの具体化を要する軸」、記録の形式は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」に従う。
 - 複数リポジトリ: 代表AWIを参照する原稿は、`agent-toolkit:atk-mode/references/cross-repository-submission.md`「独立したAWIへの分割と依存」で参照先を取得し、共通本文と固有本文を合わせて読む。

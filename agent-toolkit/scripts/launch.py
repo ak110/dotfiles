@@ -75,7 +75,6 @@ def main() -> int:
     parser.add_argument("--project", type=Path, default=Path(__file__).resolve().parents[1], help="配布rootの絶対パス")
     parser.add_argument("--persist-claude-env", action="store_true", help="SessionStartのBash環境ファイルへCLIのPATHを追記する")
     parser.add_argument("--prepare", action="store_true", help="共有依存環境を準備して終了する")
-    parser.add_argument("--hook-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--agents-service", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--prepare-if-missing",
@@ -140,8 +139,6 @@ def main() -> int:
             next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。",
         )
         return 1
-    if target == root / "agent_toolkit/hook.py" and not options.hook_worker:
-        return _run_hook(root, target, options.arguments)
     # 共有の管理サービスを持たない旧版のroot（update-dotfilesの起動確認が新しいlauncherで確かめる、
     # ホストがまだ参照している旧版のplugin cacheなど）は、旧版のlauncherが`--agents-service`を受け付けないため、
     # 管理サービスへ転送せずにMCPサーバーを直接起動する。
@@ -151,12 +148,16 @@ def main() -> int:
 
         return forward(root=root, python=python, environment=caller_environment)
     try:
-        with environment_usage.lock(plugin_environment.project_environment(root, caller_environment)):
+        with environment_usage.lock(plugin_environment.project_environment(root, caller_environment)) as usage_lock:
             # 準備確認と使用開始の間に回収されていないことを、回収と同じ排他下で確かめる。
             if plugin_environment.prepared_python(root, caller_environment) is None:
                 raise FileNotFoundError("共有依存環境が回収されたため、update-dotfilesで再準備してください")
             arguments = [str(python), str(target), *options.arguments]
             environment = plugin_environment.direct_environment(root, caller_environment)
+            if target == root / "agent_toolkit/hook.py":
+                # 親の強制終了時も、POSIXの子が依存環境を使う間は回収を防ぐ。
+                pass_fds = () if os.name == "nt" else (usage_lock.fileno(),)
+                return _run_hook(arguments, environment, pass_fds=pass_fds)
             if options.agents_service:
                 if target != root / _AGENTS_SERVICE_TARGET:
                     parser.error("--agents-serviceは管理サービスの内部起動だけに使用する")
@@ -184,8 +185,8 @@ def main() -> int:
         return 1
 
 
-def _run_hook(root: Path, target: Path, arguments: list[str]) -> int:
-    """ホストの入力を保持し、起動準備と本体を同じ所有groupの時間予算へ含める。"""
+def _run_hook(arguments: list[str], environment: dict[str, str], *, pass_fds: tuple[int, ...]) -> int:
+    """ホストの入力を保持し、hook本体を所有groupで監視する。"""
     payload = sys.stdin.buffer.read()
     try:
         decoded = json.loads(payload)
@@ -193,7 +194,7 @@ def _run_hook(root: Path, target: Path, arguments: list[str]) -> int:
         next_action.report(str(exc), next_action="hookへ有効なJSON入力を渡して再実行してください。")
         return 1
     cwd = decoded.get("cwd") if isinstance(decoded, dict) else None
-    if arguments and arguments[0] == "antigravity" and isinstance(decoded, dict):
+    if arguments[2:3] == ["antigravity"] and isinstance(decoded, dict):
         workspace = decoded.get("workspacePaths")
         cwd = next((value for value in workspace if isinstance(value, str)), None) if isinstance(workspace, list) else None
     if not isinstance(cwd, str) or not Path(cwd).is_absolute():
@@ -202,8 +203,6 @@ def _run_hook(root: Path, target: Path, arguments: list[str]) -> int:
             next_action="ホスト入力のcwdまたはworkspacePathsの実在する絶対パスを確認してください。",
         )
         return 1
-    command = [sys.executable, str(Path(__file__).resolve()), "--project", str(root), "--hook-worker"]
-    command.extend([str(target), *arguments])
     # 元のバイト列を再シリアライズせず渡す。pipeへの書込待ちを監視側へ持ち込まない。
     with tempfile.TemporaryFile() as input_stream:
         input_stream.write(payload)
@@ -211,7 +210,7 @@ def _run_hook(root: Path, target: Path, arguments: list[str]) -> int:
         received: list[dict[str, str]] = []
         try:
             with _server_lifetime(
-                command, dict(os.environ), received, bytearray(), stdin=input_stream, cwd=Path(cwd)
+                arguments, environment, received, bytearray(), stdin=input_stream, cwd=Path(cwd), pass_fds=pass_fds
             ) as process:
                 deadline = time.monotonic() + _HOOK_TIMEOUT
                 while True:
@@ -221,7 +220,7 @@ def _run_hook(root: Path, target: Path, arguments: list[str]) -> int:
                         return 128 + getattr(signal, received[0]["signal"])
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        raise subprocess.TimeoutExpired(command, _HOOK_TIMEOUT)
+                        raise subprocess.TimeoutExpired(arguments, _HOOK_TIMEOUT)
                     with contextlib.suppress(subprocess.TimeoutExpired):
                         return _relay_server_exit(process.wait(timeout=min(remaining, 0.1)))
         except subprocess.TimeoutExpired:
@@ -407,6 +406,7 @@ def _server_lifetime(
     cwd: Path | None = None,
     inherit_stderr: bool = False,
     signal_scope: contextlib.ExitStack | None = None,
+    pass_fds: tuple[int, ...] = (),
 ) -> Generator[subprocess.Popen[bytes]]:
     """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。
 
@@ -428,6 +428,7 @@ def _server_lifetime(
             stderr=None if inherit_stderr else subprocess.PIPE,
             start_new_session=os.name != "nt",
             creationflags=0x00000004 if job is not None else 0,
+            pass_fds=pass_fds,
         )
         if process.stderr is not None:
             cleanup.callback(process.stderr.close)
