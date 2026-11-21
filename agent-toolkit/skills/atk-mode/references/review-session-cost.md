@@ -1,7 +1,7 @@
 # 振り返りの費用と所要時間の分析
 
 本書は、振り返りの分析で、費用（読込、Skill、結果量、反復、tokenの上位）と所要時間を比べて改善案を選ぶ基準を定める。
-分析の手順書`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`の費用と所要時間の段から読む。
+分析の手順書`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`を全文読み、費用を比べる時は「工程2」の手順7に従う。
 品質を保ち、その内側で費用と時間を比べる（原則2、`agent-basics:writing-standards/references/quality-principles-qcd.md`）。
 数値は観測した範囲だけを事実とし、未計測を推定で埋めない（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
 改善案は`agent-basics:bugfix/references/prevention.md`「案を比べる順」の順に比べ、採否は同書「害と費用の比べ方」、採用しない時の区分は同書「再発防止を採用しない場合」で決める。

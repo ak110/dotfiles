@@ -23,10 +23,6 @@
 
 | 条件 | 行動 |
 | --- | --- |
-| 開発機で常時稼働するサーバーを持つプロジェクト | 本書「常時稼働サーバーへの反映」 |
-| 自分で作った作業用領域が残る | `agent-toolkit:atk-mode/playbooks/managed-temp.md`「作業用ディレクトリ」 |
-| 協調モードで確認済みの公開範囲がcommitより先へ及ぶ | `agent-toolkit:atk-mode/playbooks/publish.md` |
-| 作業完了報告の本文を書く | `agent-toolkit:atk-mode/references/report-formats.md`「作業完了報告のフォーマット」 |
 | 振り返り結果報告、AWI投入結果報告を書く | `agent-toolkit:atk-mode/references/report-formats-retrospective.md` |
 | 自律モードで報告用UWIを書く | `agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」と`agent-toolkit:atk-mode/references/uwi-format.md` |
 | 独立したWI投入を受け付けて投入元の終了を判定する | `agent-toolkit:atk-mode/playbooks/wi-submission.md` |
@@ -76,8 +72,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 4. 協調モードでcommitを作り、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`でその範囲の公開を終える。
    `agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の作業`process-wi single-lane`は、それぞれの工程の中で公開する。
 5. 元の要求が求めた結果を各工程の成果から確かめ、`agent-toolkit:atk-mode/references/report-formats.md`「作業完了報告のフォーマット」の本文を確定する。
-   成果、検証、公開・反映・回収の到達点、未達、自ら確定した判断、投入したWIを1つの報告へまとめる。
-   局所工程の結果（登録結果、レビュー結果、公開担当の返却など）は、この本文を作る入力として扱う。
+   公開・反映・回収を実施した場合は、その到達点も報告する。
    確定の前に、作業記録に残る、途中報告でAWI化ステータスを`予定`とした改善点を回収する。
    今回のAWI投入、再利用した既存項目、不要の判断と比べて、各対象を`済`とWIファイル名、または`不要`と理由へ確定し、同じ作業記録へ追記する。
    確定できない対象は、不足する判断・認可・入力か具体的な競合と、再開の条件を作業記録に残し、報告の未達へ書く。
@@ -91,11 +86,11 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    報告先は起動元が渡したリポジトリとし、実行のcwdと区別する。
    起動元は本文、commit、upstreamがある場合のpushを検収する。
    batchの振り返り結果は、その実行の1件の報告へ集約し、対象セッションの作業完了報告とは別に保存する。
-   保存の成功と警告を検収した時点でユーザーへの伝達を完了とし、失敗した場合は同じUWIの保存を回復する。
+   保存に失敗した時は、同じUWIの保存を回復する。
 7. 確定した本文を、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の手段で1回送達して終了する。
    - Claude Codeで`send_to_user`を使う時は表示の成功を確かめ、起動元が求める報告後の終了操作を同じ応答で行う。
      送達後のターンの終え方は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
-   - Codexは、必要なツール処理と未達の確認を先に終え、手順5の本文そのものを`final`にする。
+   - Codexの送達順は`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」に従う。
    - `atk agents-exit-session`などでホスト本体を停止する場合は、報告用UWIの保存の検収と必要な可視の報告（Codexでは`commentary`）を先に終え、停止操作を最後のツール呼び出しにする。
 
    最終報告の末尾にだけ、次の固定文を置く。
