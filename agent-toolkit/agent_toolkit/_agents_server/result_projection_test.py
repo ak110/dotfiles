@@ -14,6 +14,24 @@ from agent_toolkit._agents_server import (
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+def test_review_wait_statement_does_not_request_review_receipt() -> None:
+    """レビュー担当の待機表明を、指摘を受領した完了結果として案内しない。"""
+    held = {
+        "status": "completed",
+        "agent_message": "待機中: child",
+        "error": {"heldResultFinalized": True},
+    }
+    waiting = result_projection.with_result_next_action(held, "scope-review")
+    assert "`show`" in waiting["next_action"]
+    assert "send_message" not in waiting["next_action"]
+    assert "レビューの指摘を受領した" not in waiting["next_action"]
+    assert "read_requirements" not in waiting
+
+    finished = result_projection.with_result_next_action({"status": "completed", "agent_message": "適合"}, "scope-review")
+    assert "レビューの指摘を受領した" in finished["next_action"]
+    assert finished["read_requirements"]
+
+
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
     """進捗本文は改行を除き、長文では末尾80文字だけを返す。"""
     assert result_projection.progress_excerpt("a\r\nb\rc\nd") == "a b c d"

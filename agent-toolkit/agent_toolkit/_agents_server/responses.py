@@ -174,6 +174,10 @@ def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
         and error.get("codexErrorInfo") == codex_resume_state.WRITER_CONFLICT
     ):
         next_action = codex_resume_state.WRITER_CONFLICT_NEXT_ACTION
+    if response["delivery"] in {"reply_started", "steered"} and result_projection.is_finalized_wait_statement(
+        public.get("previous_result", {})
+    ):
+        next_action = "追送は配送済み。同じ入力を再送せず、現在のturnの結果を`atk agents wait`で受け取る"
     if next_action is not None:
         public["next_action"] = next_action
     return public

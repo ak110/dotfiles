@@ -10,7 +10,7 @@ import time
 
 lazy import psutil
 
-from agent_toolkit._atk import help_text, managed_temp, outcome, run_command
+from agent_toolkit._atk import help_text, lane_retirement, managed_temp, outcome, run_command
 from agent_toolkit._atk import lane_cleanup as _lane_cleanup
 from agent_toolkit._atk import lane_create as _lane_create
 from agent_toolkit._atk import lane_integration as _lane_integration
@@ -71,6 +71,12 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     delete_parser = help_text.add_command(children, "delete", **help_text.HELP["atk lane delete"])
     delete_parser.add_argument("--session-id", help="回収する所有session。省略すると実行環境から解決する。")
     delete_parser.add_argument("--list", action="store_true", help="全sessionの登録と前回結果を読み、削除しない。")
+    delete_parser.add_argument("--repo", type=pathlib.Path, help="--listと併用し、登録外の回収候補を調べる。")
+    delete_parser.add_argument(
+        "--retire-integrated",
+        action="store_true",
+        help="終了確認済みの旧所有sessionで、取込み済みの未統合登録を回収する。--session-idが必要。",
+    )
     recover_parser = help_text.add_command(children, "recover", **help_text.HELP["atk lane recover"])
     recover_parser.add_argument("--session-id", required=True, help="回復する旧登録の所有session。")
     recover_parser.add_argument("--lane", action="append", default=None, help="対象のlane-NN。省略すると全登録。複数指定可能。")
@@ -119,10 +125,16 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.lane_subcommand == "delete" and getattr(args, "list", False):
         try:
             listed = _lane_records.list_resources(args.session_id)
+            if getattr(args, "repo", None):
+                records = listed if args.session_id is None else _lane_records.list_resources()
+                if records["errors"]:
+                    paths = "、".join(str(item["record_path"]) for item in records["errors"])
+                    raise ValueError(f"所有登録を確認できないため登録外候補を分類しない: {paths}")
+                listed["orphan_candidates"] = lane_retirement.orphan_candidates(args.repo.resolve(), records["records"])
             print(json.dumps(listed, ensure_ascii=False))
             return 1 if listed["errors"] else 0
         except (OSError, ValueError) as error:
-            outcome.report_failure(str(error), next_action="所有登録の保存先と読取権限を確認する")
+            outcome.report_failure(str(error), next_action="指定したリポジトリと所有登録の保存先・読取権限を確認する")
             return 2
     session_id = args.session_id or _lane_records.current_session_id()
     if session_id is None:
@@ -136,7 +148,12 @@ def dispatch(args: argparse.Namespace) -> int:
         elif args.lane_subcommand == "recover":
             result = _lane_cleanup.recover(session_id, args.lane)
         else:
-            result = _lane_cleanup.cleanup_session(session_id)
+            if getattr(args, "repo", None):
+                raise ValueError("deleteの--repoは--listと併用する")
+            retire = getattr(args, "retire_integrated", False)
+            if retire and not args.session_id:
+                raise ValueError("--retire-integratedには終了確認済みの--session-idが必要")
+            result = _lane_cleanup.cleanup_session(session_id, retire_integrated=retire)
         print(json.dumps(result, ensure_ascii=False))
         if result.get("target_advanced"):
             outcome.report_warning(

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent_toolkit._agents_server import resume_waits
+from agent_toolkit._common import session_registry
 from agent_toolkit._testing.agents_server_resume_support import (
     _RESUME_WAIT_TIMEOUT,
     AssistantMessage,
@@ -19,6 +20,7 @@ from agent_toolkit._testing.agents_server_resume_support import (
     TaskNotificationMessage,
     TaskStartedMessage,
     _await_state,
+    _emit_child_start,
     _manager,
     _session_state,
     _start,
@@ -221,3 +223,109 @@ async def test_previous_held_result_is_released_on_resumed_turn_start(
         result = await wait_task
 
         assert (result["status"], result["agent_message"]) == ("completed", "RESUMED")
+
+
+@pytest.mark.asyncio
+async def test_all_tasks_done_running_then_stream_end_is_distinguishable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """全タスクの完了通知の後、再開turnが出力する前にCLIが終わった場合に、待機表明を通常の完了と区別できるか。"""
+    monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 60.0)
+    client = ControlledClaudeClient("claude-all-done-end", report_state=True)
+    async with _manager(client, monkeypatch) as (manager, _backend):
+        session = await _start(manager, tmp_path, monkeypatch)
+        client.emit(TaskStartedMessage("bg-1", task_type="local_agent"))
+        client.finish_turn(ResultMessage("待機中: bg-1"))
+        await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+        client.emit(TaskNotificationMessage("bg-1", "completed"))
+        client.emit(_session_state("running"))
+        await _await_state(lambda: session.cli_turn_state == "running" and not session.live_tasks)
+        client.end_stream()
+        result = await _wait_with_timeout(manager, 5)
+        assert result["status"] != "running"
+        assert result["status"] != "completed" or (result.get("error") or {}).get("heldResultFinalized"), result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra", ["local_agent_task", "cli_running"])
+async def test_child_then_stream_end_then_child_done(
+    extra: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """孫sessionが残る間に受信列が終わり、その後に孫sessionが終わった場合に、保留が解消されるか。"""
+    client = ControlledClaudeClient(f"claude-child-end-{extra}", report_state=True)
+    async with _manager(client, monkeypatch) as (manager, _backend):
+        child = f"child-{extra}"
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(child, state=session_registry.PublicationState.PENDING_RUNNING)
+        _emit_child_start(client, child)
+        if extra == "local_agent_task":
+            client.emit(TaskStartedMessage("bg-1", task_type="local_agent"))
+        client.finish_turn(ResultMessage("待機中"))
+        await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+        assert session.live_child_session_ids == {child}
+        if extra == "cli_running":
+            client.emit(_session_state("running"))
+            await _await_state(lambda: session.cli_turn_state == "running")
+        client.end_stream()
+        await asyncio.sleep(0.3)
+        session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
+        result = await _wait_with_timeout(manager, 8)
+        assert result["status"] != "running", "期限も解除契機も無い保留が残った"
+
+
+@pytest.mark.asyncio
+async def test_child_only_then_stream_end_then_child_done(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    client = ControlledClaudeClient("claude-child-only", report_state=True)
+    async with _manager(client, monkeypatch) as (manager, _backend):
+        child = "child-only"
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(child, state=session_registry.PublicationState.PENDING_RUNNING)
+        _emit_child_start(client, child)
+        client.finish_turn(ResultMessage("孫を待機中"))
+        await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+        client.end_stream()
+        await asyncio.sleep(0.3)
+
+        async def dead_query(_prompt: str) -> None:
+            client.end_stream()
+            raise ConnectionError("CLI process has exited")
+
+        monkeypatch.setattr(client, "query", dead_query)
+        session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
+        result = await _wait_with_timeout(manager, 8)
+        assert result["status"] != "running"
+        assert result["status"] != "completed" or (result.get("error") or {}).get("heldResultFinalized"), result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("is_error", "complete_before_result"),
+    [(False, True), (False, False), (True, True)],
+    ids=["empty-success", "idle-after-empty-success", "actual-error"],
+)
+async def test_model_less_notification_does_not_replace_background_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, is_error: bool, complete_before_result: bool
+) -> None:
+    client = ControlledClaudeClient("notification-no-model", report_state=True)
+    async with _manager(client, monkeypatch) as (manager, _backend):
+        session = await _start(manager, tmp_path, monkeypatch)
+        client.emit(TaskStartedMessage("bg-1", task_type="local_agent"))
+        client.finish_turn(ResultMessage("待機中: bg-1"))
+        await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+        if complete_before_result:
+            client.emit(TaskNotificationMessage("bg-1", "completed"))
+        client.emit(_session_state("running"))
+        client.emit(
+            ResultMessage("", origin={"kind": "task-notification"}, num_turns=0, is_error=is_error, errors=["setup-failed"])
+        )
+        if not complete_before_result:
+            client.emit(TaskNotificationMessage("bg-1", "completed"))
+        client.emit(_session_state("idle"))
+        result = await _wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT)
+        if is_error:
+            assert result["status"] == "failed"
+            assert result["error"]["message"] == "setup-failed"
+        else:
+            assert result["status"] == "completed"
+            assert result["agent_message"] == "待機中: bg-1"
+            assert result["error"] == {"heldResultFinalized": True}

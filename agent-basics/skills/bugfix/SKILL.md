@@ -59,7 +59,7 @@ description: >
 | 問い2で原因を説明できない。外部の挙動、並行する処理、試験の作り、所要の増大、他者からの報告が関わる | `references/causes.md` |
 | 問い4の探し方を決める。害が大きく、探す範囲を広げる | `references/spread.md` |
 | 問い4で対策が既にあった。同じ誤りを繰り返した。2回目の修正でも直らない。直したら別の症状が出た | `references/recurrence.md` |
-| 再発防止を検討する（同じ害が繰り返した。ユーザーの指摘で発覚した。害が大きい） | `references/prevention.md` |
+| 再発防止を検討する（不具合を観測した場合か、費用・所要だけの改善機会の採否を決める場合） | `references/prevention.md` |
 | CIの失敗を扱う | `references/ci-failures.md` |
 | 記録や報告を、作業項目など後に残る文書へ書く | `references/quality-standards.md` |
 

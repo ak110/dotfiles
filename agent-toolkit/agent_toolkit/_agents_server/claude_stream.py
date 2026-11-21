@@ -108,6 +108,18 @@ class ClaudeStream(ClaudeTurns):
                 initialized.set_result(session)
             await self._notify_waiters()
 
+    async def _receive_eof(self, client: Any, session: SessionState | None) -> bool:
+        """受信列を閉じ、制御を新世代へ渡した場合だけ旧タスクを終える。"""
+        if isinstance(client, SdkResource) and client.transferred:
+            # 移譲で旧デコーダだけが閉じた。受信元と保留中の結果は新世代へ渡す。
+            return True
+        if session is not None and resume_waits.is_background_completion_wait(session):
+            await self._finalize_pending_result(session)
+            await self._notify_waiters()
+        elif session is None or not (session.awaiting_auto_resume or session.result_available):
+            raise session_errors.DelegateBackendError("Claude Agent SDK message stream ended before ResultMessage") from None
+        return False
+
     async def _run(
         self,
         prompt: str | ResumePrompt,
@@ -328,25 +340,9 @@ class ClaudeStream(ClaudeTurns):
                     try:
                         message = completed_message_task.result()
                     except StopAsyncIteration:
-                        if (
-                            session is not None
-                            and resume_waits.is_background_completion_wait(session)
-                            and not resume_waits.has_pending_auto_resume_targets(session)
-                        ):
-                            (await self._finalize_pending_result(session))
-                            iterator = None
-                            await self._notify_waiters()
-                        elif (
-                            session is not None
-                            and session.awaiting_auto_resume
-                            or session is not None
-                            and session.result_available
-                        ):
-                            iterator = None
-                        else:
-                            raise session_errors.DelegateBackendError(
-                                "Claude Agent SDK message stream ended before ResultMessage"
-                            ) from None
+                        if await self._receive_eof(client, session):
+                            break
+                        iterator = None
                     else:
                         processing_failed = False
                         try:
@@ -409,12 +405,14 @@ class ClaudeStream(ClaudeTurns):
                                         and runtime.started is not None
                                     ):
                                         runtime.started(session)
-                                # 完了通知で次のturnが始まった後は、前のturnの待機期限で古い待機表明を公開させない。
+                                # runningだけでは、モデルが応答するturnか通知だけのturnか分からない。
+                                # 古い期限は止めるが、実際のモデル出力か結果を受けるまでは待機表明を失わない。
                                 if (
                                     session is not None
                                     and reported == "running"
-                                    and resume_waits.release_auto_resume_hold(session)
+                                    and resume_waits.is_background_completion_wait(session)
                                 ):
+                                    session.set_background_deadline(None)
                                     await self._notify_waiters()
                                 if (
                                     session is not None

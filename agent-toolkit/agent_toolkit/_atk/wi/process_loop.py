@@ -87,7 +87,7 @@ def _finish_repository(ownership: _ownership.Ownership, *, completed: bool) -> N
     `_eligible`が判定する保持条件（未統合、使用中、未commitの変更など）が決め、未統合の資源は次の反復の再開（同じレーン所有session）へ残る。
     """
     _ownership.release(ownership, completed=completed)
-    _session.cleanup_lane_session(ownership.lane_session_id, target_repo=ownership.repo_id)
+    _session.cleanup_lane_session(ownership.lane_session_id, target_repo=ownership.repo_id, retire_integrated=completed)
 
 
 def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.LaunchInput | None) -> None:

@@ -389,6 +389,28 @@ def read_body_files(paths: list[str]) -> list[str]:
     return bodies
 
 
+def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]) -> bool:
+    """通常の投入は変えず、巡回中の新規AWIは書込み前に時機の入力を求める。"""
+    timing = getattr(args, "process_wi_timing", None)
+    category = getattr(args, "defer_category", None)
+    if args.type != WI_TYPE_AWI:
+        return False
+    in_process_wi = (
+        os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") == "1"
+        or args.source == "process-wi"
+        or data.get("source") == "process-wi"
+    )
+    next_action = (
+        "process-wi-immediate-fix.md「即時対応」で判断し、--process-wi-timing this-run か "
+        "--process-wi-timing next-run --defer-category <区分> を指定して再投入する"
+    )
+    if in_process_wi and timing is None:
+        raise WebInputError("process-wi実行中のAWI投入には対処の時機が必要", next_action=next_action)
+    if (timing == "next-run" and not category) or (category is not None and timing != "next-run"):
+        raise WebInputError("--defer-categoryはnext-runの場合に限って必要", next_action=next_action)
+    return timing == "this-run"
+
+
 def cmd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
@@ -433,6 +455,7 @@ def cmd_add(
             sys.exit(1)
         messages = [message]
     validation_errors: list[WebInputError] = []
+    join_current = False
     for message in messages:
         try:
             if is_agent_environment() and _user_comment.has_reserved_heading(message):
@@ -441,6 +464,8 @@ def cmd_add(
                     next_action=_user_comment.AGENT_USER_COMMENT_ADD_NEXT_ACTION,
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
+            if not args.dry_run:
+                join_current = _require_process_wi_timing(args, frontmatter) or join_current
             _require_agent_source(frontmatter, args.source)
             try:
                 require_agent_awi_sections(
@@ -570,6 +595,12 @@ def cmd_add(
     for filename in generated:
         print(f"  {shorten_home(_wi_entries.entry_path(private_notes, filename), home)}")
         print_entry_details(saved_details[filename])
+    if join_current:
+        print(
+            "次の操作: process-wi-additions.mdに従い、pick-wi-check --mergeで選定へ加え、"
+            "atk wi start-processingの後に同じ担当へ追送する。",
+            file=sys.stderr,
+        )
 
 
 __all__ = [

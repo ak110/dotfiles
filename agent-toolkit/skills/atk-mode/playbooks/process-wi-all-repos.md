@@ -202,7 +202,8 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 2. 所有は対象（`target`が示すoriginと系統の組）ごとで、所有待ちや準備失敗の対象を除いて独立した対象の処理を続ける。
    台帳に無いIDの明示resumeと会話選択画面からの再開では、起動入力から受け取った実IDとcwdに対応する対象の所有を確定してから元の作業を続け、選ばれなかった対象へ結果を転用しない。
 3. 統括と配下のwriterの終了を確かめた対象だけ所有を解放し、既存のlaneを回収する（CLIの終了と書込担当の終了は別に観測する）。
-   停止が未確認なら所有を保ち、未統合・dirty・使用中・回収失敗の資源を保つ。
+   完成結果とwriterの停止を確認した通常の終了では、選定が未統合でもbranchの変更が統合先にあれば回収する。
+   続行予定、停止が未確認、dirty、使用中、未取込み、回収失敗の資源は保持する。
    回収の結果と理由をログへ残し、理由を解消して`atk lane delete --session-id <lane_session_id>`で判定し直す。
    候補の原本と再開情報は検収まで保つ。
 4. `abort`、`abort-cancel`、`status`、`instruct`、`instruct-cancel`、`resume`、`resume-cancel`はOSアカウントごとに保たれる。

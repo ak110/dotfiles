@@ -696,7 +696,7 @@ class ServiceCoordinator:
                         },
                     )
                     if not value.get("move_required"):
-                        return _RESULT.validate_python(value["result"])
+                        return mcp_tools.relay_result(params.name, _RESULT.validate_python(value["result"]), owner, self.target)
                     try:
                         moved = await service_rpc.request(owner, "move", {"session_id": identifier})
                     except (RuntimeError, OSError, EOFError, TimeoutError) as error:

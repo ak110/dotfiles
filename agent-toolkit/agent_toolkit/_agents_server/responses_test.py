@@ -12,6 +12,7 @@ import pytest
 from agent_toolkit._agents_server import (
     record_paths,
     responses,
+    result_projection,
 )
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -60,3 +61,21 @@ def test_reply_guidance_distinguishes_writer_conflict(delivery: str, error_info:
         assert "next_action" not in response
     else:
         assert response["next_action"] == responses.REPLY_NEXT_ACTIONS[delivery]
+
+
+@pytest.mark.parametrize("delivery", ["reply_started", "steered", "reply_failed", "reply_ambiguous"])
+def test_reply_guidance_keeps_previous_wait_distinct_from_delivery(delivery: str) -> None:
+    """旧turnが待機表明でも、新たに配送した入力の再送を促さない。"""
+    previous = result_projection.with_result_next_action(
+        {"status": "completed", "agent_message": "待機中: child", "error": {"heldResultFinalized": True}}, "scope-review"
+    )
+    answer = responses.public_send_message_response(
+        {"delivery": delivery, "label": "scope-review", "previous_result": previous}
+    )
+    assert "send_message" not in answer["previous_result"]["next_action"]
+    assert "read_requirements" not in answer["previous_result"]
+    if delivery in {"reply_started", "steered"}:
+        assert "再送せず" in answer["next_action"]
+        assert "`atk agents wait`" in answer["next_action"]
+    else:
+        assert answer["next_action"] == responses.REPLY_NEXT_ACTIONS[delivery]
