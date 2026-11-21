@@ -19,6 +19,44 @@ _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
 
 
+@pytest.fixture(autouse=True)
+def mock_hosted_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windowsの更新工程を模す既存テストは使い捨てrunner相当で実行する。"""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("RUNNER_ENVIRONMENT", "github-hosted")
+    monkeypatch.setenv("RUNNER_OS", "Windows")
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "actions", "environment", "runner_os"),
+    [
+        ("windows", "", "", ""),
+        ("windows", "true", "self-hosted", "Windows"),
+        ("windows", "true", "github-hosted", "Linux"),
+        ("linux", "", "", ""),
+    ],
+)
+def test_refuses_windows_upgrade_before_any_work_outside_hosted_windows(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    platform_name: str,
+    actions: str,
+    environment: str,
+    runner_os: str,
+) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", actions)
+    monkeypatch.setenv("RUNNER_ENVIRONMENT", environment)
+    monkeypatch.setenv("RUNNER_OS", runner_os)
+    monkeypatch.setenv("UV", "not-used")
+    monkeypatch.setattr(upgrade, "sys", types.SimpleNamespace(platform="win32"))
+
+    def runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        pytest.fail("実ユーザー上ではGitもセットアップも起動してはならない")
+
+    with pytest.raises(upgrade.UpgradeCheckError, match=r"WinGet.*ユーザー単位.*GitHub-hosted.*Windows"):
+        upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner)
+
+
 @pytest.mark.parametrize("outcome", [0, 23, "起動失敗"])
 def test_old_python_pin_reports_command_timing(
     tmp_path: pathlib.Path,
