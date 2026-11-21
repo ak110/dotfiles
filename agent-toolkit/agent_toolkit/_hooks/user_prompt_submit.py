@@ -24,7 +24,8 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 実ユーザー発話と機械注入ターンの両方で前回通知からの経過時間に基づいて付ける。
 成立した注記を1つの`additionalContext`へまとめる。
 
-注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
+指摘を受けたときの初動は、発話の意味を受領側で判定できるよう、受付時刻とともに毎回届ける。
+ユーザー発話向けの注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
 スラッシュコマンド（Claude Codeは`/`、Codexは`$`）で始まるものも対象に含める。
 機械注入ターンでは、実ユーザー発話向けの起動案内を返さず、配送待ちの状態も消費しない。
 機械注入ターンの判定入力は次の5系統とし、いずれかが成立したターンを対象とする。
@@ -141,14 +142,20 @@ def _work_contract_notice(session_id: str, body: str) -> str:
 
 
 def _clock_notice(session_id: str) -> str:
-    """実ユーザー入力ごとに、受付時の壁時計の日時を届ける。
+    """実ユーザー入力ごとに、受付時刻と指摘への初動を届ける。
 
     時刻を推測で記録しないためで、点検通知の生成時刻とは区別する。
     入力ごとに本文が変わるため、前回の重複抑止の記録を同じ原因だけ解除して状態の増加を防ぐ。
     """
     resolve_notice(session_id, "user_prompt_submit", "_clock_notice")
     # 入力ごとに出る定型の情報であり、ユーザーの画面へは写さない。
-    return informational(_llm_notice(f"ユーザー入力の受付時刻: `{work_contract.local_time()}`"))
+    return informational(
+        _llm_notice(
+            f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n"
+            "指摘、訂正、是正要求、異議（疑問形を含む）の場合だけ、"
+            "調査より先に`agent-toolkit:atk-mode`「ユーザーの方針」の「指摘の理解」を適用する。"
+        )
+    )
 
 
 def main(payload_text: str) -> int:
