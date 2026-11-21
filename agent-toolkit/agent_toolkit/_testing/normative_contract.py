@@ -91,7 +91,10 @@ def read_contract_section(source: pathlib.Path, plugin_root: pathlib.Path, relat
                 f"「{heading}」"
             ):
                 return section_text(target, heading)
-    raise AssertionError(f"条件別の節の取得経路がない: {source} -> {target}「{heading}」: {condition}")
+    raise AssertionError(
+        f"条件別の節の取得経路がない: {source} -> {target}「{heading}」: {condition}\n"
+        "次の操作: 親契約の読込表で、参照する資料と節名を該当する条件の行へ指定する"
+    )
 
 
 def line_references(line: str, source: pathlib.Path, plugin_root: pathlib.Path) -> list[pathlib.Path]:
