@@ -10,7 +10,7 @@ import typing
 
 import pytest
 
-from agent_toolkit._atk import outcome, run_skill, run_skill_state
+from agent_toolkit._atk import config, outcome, run_skill, run_skill_state
 from agent_toolkit._common import session_review
 from agent_toolkit._testing import git_repository, session_evidence_support
 from agent_toolkit._testing.run_skill_support import _engine_env, _Env, _records, _run
@@ -96,15 +96,8 @@ def test_unreadable_record_does_not_block_new_run(engine_env: _Env, capsys: pyte
     assert broken.exists() and log_path.exists()
 
 
-@pytest.mark.cpu_limit(1.0, reason="実prepare・偽ホストの子プロセス・実Gitの報告同期を通してbatchの完了を検収する。")
-def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_path, monkeypatch, capsys) -> None:
-    """旧形式の完了記録が残っていても、Codexの待ち対象を準備し、同期済み報告と処理済み範囲を残す。"""
-    _write_record(
-        engine_env,
-        "2" * 32,
-        {"kind": "subscription", "api_env_file": None, "isolation_env_file": "/old/credits.env"},
-        status="completed",
-    )
+def _prepare_batch_run(engine_env: _Env, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    """発生時と同じく待ち対象を用意し、報告の同期先を隔離したGitにする。"""
     session_id = "11111111-1111-4111-8111-111111111111"
     codex_home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
@@ -133,6 +126,19 @@ def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_p
     git_repository.run_git(notes, "push", "-u", "origin", "HEAD")
     monkeypatch.setenv("FAKE_REPORT_REMOTE", "1")
 
+    return session_id, notes, remote
+
+
+@pytest.mark.cpu_limit(1.0, reason="実prepare・偽ホストの子プロセス・実Gitの報告同期を通してbatchの完了を検収する。")
+def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_path, monkeypatch, capsys) -> None:
+    """旧形式の完了記録が残っていても、Codexの待ち対象を準備し、同期済み報告と処理済み範囲を残す。"""
+    _write_record(
+        engine_env,
+        "2" * 32,
+        {"kind": "subscription", "api_env_file": None, "isolation_env_file": "/old/credits.env"},
+        status="completed",
+    )
+    session_id, notes, remote = _prepare_batch_run(engine_env, tmp_path, monkeypatch)
     code, _out, err = _run(["agent-toolkit:review-session", "--args", "batch"], capsys)
 
     assert code == 0, err
@@ -147,3 +153,74 @@ def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_p
     report = git_repository.git_output(remote, "show", f"{branch}:{report_path}")
     assert f"run_skill_run_id: {run_id}" in report and "run_skill_report: true" in report
     assert session_id in report
+
+
+@pytest.mark.cpu_limit(2.5, reason="実prepareとローカルGitの失敗報告保存を通し、通常のログ保護まで確かめる。")
+@pytest.mark.parametrize(
+    ("case", "exit_code", "diagnostic"),
+    [
+        ("preflight", 2, "synthetic record sweep failed"),
+        ("model-config", 2, "synthetic model settings failed"),
+        ("execution-setup", 1, "synthetic process identity failed"),
+        ("child", 7, "[stderr] session stderr line"),
+    ],
+)
+def test_batch_preserves_failure_log(
+    engine_env: _Env,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    exit_code: int,
+    diagnostic: str,
+) -> None:
+    """起動前と子実行のいずれの失敗でも、同じbatchからログと診断を取得できる。"""
+    session_id, notes, _remote = _prepare_batch_run(engine_env, tmp_path, monkeypatch)
+    if case == "preflight":
+
+        def fail_sweep(*_args: object, **_kwargs: object) -> None:
+            raise ValueError(diagnostic)
+
+        monkeypatch.setattr(run_skill, "_remove_expired_logs", fail_sweep)
+    elif case == "model-config":
+
+        def fail_settings(*_args: object, **_kwargs: object) -> None:
+            raise run_skill.ActionableError(diagnostic, next_action="合成モデル設定を確認する")
+
+        monkeypatch.setattr(config, "parse_unresolved_model_candidates", fail_settings)
+    elif case == "execution-setup":
+
+        def fail_launch(*_args: object, **_kwargs: object) -> None:
+            raise run_skill.ActionableError(diagnostic, next_action="合成プロセスの状態を確認する")
+
+        monkeypatch.setattr(run_skill, "_run_locked", fail_launch)
+    else:
+        monkeypatch.setenv("FAKE_REPORT_MODE", "missing")
+        monkeypatch.setenv("FAKE_SESSION_EXIT", str(exit_code))
+
+    code, _out, err = _run(["agent-toolkit:review-session", "--args", "batch"], capsys)
+
+    assert code == exit_code, err
+    (manifest_path,) = (session_review.directory() / "runs").glob("*.json")
+    manifest = session_review.read(manifest_path)
+    assert [item["session_id"] for item in manifest["prepared"]] == [session_id]
+    assert manifest["status"] == "failed"
+    assert manifest["exit_code"] == (None if case == "execution-setup" else exit_code)
+    log_path = pathlib.Path(manifest["log_path"])
+    assert log_path in session_review.protected_logs()
+    assert diagnostic in log_path.read_text(encoding="utf-8")
+    assert manifest["report_synced"]
+    (failure_body,) = [
+        body
+        for path in notes.rglob("*.md")
+        if f"session_review_failure_key: {manifest['failure_key']}" in (body := path.read_text(encoding="utf-8"))
+    ]
+    assert diagnostic in failure_body
+    if case == "execution-setup":
+        assert "合成プロセスの状態を確認する" in failure_body
+    if case != "child":
+        assert diagnostic in manifest["error"]
+        assert "次の操作:" in log_path.read_text(encoding="utf-8")
+        assert not _records(engine_env, "session")
+    else:
+        assert _records(engine_env, "session")

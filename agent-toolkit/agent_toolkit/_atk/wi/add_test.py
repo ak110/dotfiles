@@ -186,3 +186,78 @@ class TestAddBodyFile:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "--body-file" in captured.err
+
+
+@pytest.mark.parametrize(
+    ("context", "title", "timing", "accepted"),
+    [
+        ("source", "不要な旧レーンを回収する", [], False),
+        ("process-loop", "次回へ送る判断を是正する", [], False),
+        ("frontmatter", "本文で巡回を明示する", [], False),
+        ("source", "今回へ追加する", ["--process-wi-timing", "this-run"], True),
+        ("process-loop", "別環境の入力を待つ", ["--process-wi-timing", "next-run", "--defer-category", "external-wait"], True),
+        ("source", "理由が未指定", ["--process-wi-timing", "next-run"], False),
+        ("ordinary", "通常の投入", [], True),
+    ],
+)
+def test_process_wi_timing_at_add_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    context: str,
+    title: str,
+    timing: list[str],
+    accepted: bool,
+) -> None:
+    """巡回の由来がどの入力にあっても、時機を選ぶ前にキューを変更しない。"""
+    notes = _setup_notes(tmp_path)
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+    _patch_add_git(monkeypatch, myrepo)
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
+    extra = []
+    if context == "process-loop":
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    elif context == "source":
+        extra = ["--source", "process-wi"]
+    body = f"# {title}\n\n## 反映内容と反映先\n\n既存の処理結果を今の条件で確かめる。\n"
+    if context == "frontmatter":
+        body = f"---\nsource: process-wi\n---\n{body}"
+    body_path = tmp_path / "timing.md"
+    body_path.write_text(body, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path), *extra, *timing], home=tmp_path, now=_FIXED_DT)
+
+    captured = capsys.readouterr()
+    saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert exc_info.value.code == (0 if accepted else 1), captured.err
+    assert bool(saved) == accepted
+    if not accepted:
+        assert "--process-wi-timing" in captured.err
+    if timing == ["--process-wi-timing", "this-run"]:
+        assert "pick-wi-check --merge" in captured.err
+        assert "start-processing" in captured.err
+        assert "担当へ追送" in captured.err
+
+
+def test_process_wi_dry_run_does_not_require_saving_timing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """保存しない原稿検証では時機判定が無くても冒頭を確認できる。"""
+    notes = _setup_notes(tmp_path)
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+    _patch_add_git(monkeypatch, myrepo)
+    body = tmp_path / "body.md"
+    body.write_text("# 見出し\n\n## 反映内容と反映先\n\n前提を確認する。\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", "add", str(myrepo), "--body-file", str(body), "--source", "process-wi", "--dry-run"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0, capsys.readouterr().err
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))

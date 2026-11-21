@@ -77,7 +77,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | 発話の解釈、指摘・訂正・割り込み | `playbooks/user-utterance.md` |
 | 権限拒否、手順どおりに進められない時 | `playbooks/permission-denial.md` |
 | 確認・報告の手段、途中で送る報告 | `references/delivery.md` |
-| メインの途中報告、30分の進捗点検、改善点の報告 | `playbooks/main-reporting.md` |
+| 途中報告、進捗点検、改善点の報告 | `playbooks/main-reporting.md` |
 | WIの起草、保存と取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
 | WIの状態・依存・保留、由来と承認、回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
@@ -97,10 +97,11 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 ## 委譲
 
-独立して並行できる作業と、読む量が多く結論だけが要る調査を`agents_server`で委譲し、少数の呼び出しで済む確認は自分で行う。
-認可、全体の調整、検収、成果の所有、終了の観測は委譲元が担う。
+委譲・実行時は`references/model-settings.md`「モデル選定と判断の偏り」を読む。
 
 ## 報告に含める項目
+
+回答・成果物は`playbooks/main-reporting.md`「ユーザー向け発話ルール」に従う。
 
 - 成果と到達した状態
 - 確かめた範囲（原則6の区分で書く）

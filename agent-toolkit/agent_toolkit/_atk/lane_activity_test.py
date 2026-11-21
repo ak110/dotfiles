@@ -235,6 +235,24 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     assert lane.time.monotonic() - started < 10
 
 
+@pytest.mark.parametrize("retire_integrated", [False, True])
+def test_process_loop_cleanup_retry_preserves_retirement_mode(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], retire_integrated: bool
+) -> None:
+    """保持時の再試行が自動回収と同じ種類の判定へ戻る。"""
+
+    def retain(session_id: str, *, wait_release: bool, retire_integrated: bool = False) -> dict[str, object]:
+        assert session_id == "lane-test-session" and not wait_release
+        return {"retained": [session_id], "retirement_enabled": retire_integrated}
+
+    monkeypatch.setattr(lane, "cleanup_session", retain)
+    result = process_loop_session.cleanup_lane_session("lane-test-session", retire_integrated=retire_integrated)
+    assert result["retirement_enabled"] is retire_integrated
+    diagnostic = capsys.readouterr().err
+    option = " --retire-integrated" if retire_integrated else ""
+    assert f"atk lane delete --session-id lane-test-session{option} を実行" in diagnostic
+
+
 @pytest.mark.cpu_limit(
     3.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.685秒。"
 )

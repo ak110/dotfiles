@@ -189,80 +189,116 @@ def _is_entry_of(requested: str, saved: str) -> bool:
 def _dispatch_once(args: argparse.Namespace) -> int:
     """batchと通常起動で共有する既存の1回分を実行する。"""
     record = getattr(args, "resume_record", None)
-    if args.timeout <= 0 and record is None:
-        _outcome.report_failure(
-            f"--timeoutは正の秒数で指定する（指定値: {args.timeout}）",
-            next_action=f"--timeoutを省略して{DEFAULT_TIMEOUT_SECONDS}秒とするか、正の秒数を指定する",
-        )
-        return 2
-    candidates = (
-        [(record.engine, record.model, record.effort)]
-        if record is not None
-        else _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する")
-    )
-    work_dir = getattr(args, "work_dir", None)
-    if record is not None:
-        repo_root = record.work_dir
-        if not repo_root.is_dir():
-            _outcome.report_failure(
-                f"再開するcwdが存在しない: {repo_root}", next_action="元の作業ツリーを復元して同じ実行を再開する"
-            )
-            return 2
-    elif work_dir is not None:
-        repo_root = pathlib.Path(work_dir).expanduser()
-        if not repo_root.is_absolute() or not repo_root.is_dir() or not args.target_repo:
-            _outcome.report_failure(
-                "--work-dirは既存の絶対ディレクトリを--target-repoと併せて指定する",
-                next_action="報告先repoと実行cwdを確認して再実行する",
-            )
-            return 2
-        repo_root = repo_root.resolve()
-        args.target_repo = resolve_repo_id_or_raise(args.target_repo)
-    else:
-        repo_root = _resolve_repo_root(resolve_local_worktree(args.target_repo))
     log_dir = _state_paths.state_dir() / _LOG_DIRNAME
     log_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        _remove_expired_logs(log_dir, now=time.time())
-    except (OSError, ValueError) as error:
-        _outcome.report_failure(str(error), next_action="run-skill/runsの実行記録とログの保存先を確認して再実行する")
-        return 2
     log_path = (
         record.log_path if record is not None else _new_log_path(log_dir, skill_modes.invocation_scope(args.skill, args.args))
     )
     args.log_path = log_path
-    if manifest_path := getattr(args, "batch_manifest", None):
-        manifest = session_review.read(pathlib.Path(manifest_path))
-        manifest["log_path"] = str(log_path)
-        session_review.write(pathlib.Path(manifest_path), manifest)
     with log_path.open("a" if record is not None else "w", encoding="utf-8") as log:
+        if manifest_path := getattr(args, "batch_manifest", None):
+            manifest = session_review.read(pathlib.Path(manifest_path))
+            manifest["log_path"] = str(log_path)
+            session_review.write(pathlib.Path(manifest_path), manifest)
         progress = Progress(log, sys.stderr)
         progress.message(f"ログ: {log_path.resolve()}")
-        _write_header(log, repo_root=repo_root, args=args)
-        lock = filelock.FileLock(
-            str(
-                _lock_path(
-                    repo_root,
-                    skill_modes.invocation_scope(args.skill, args.args),
-                    target_repo=args.target_repo if getattr(args, "work_dir", None) is not None else None,
-                )
+        try:
+            return _dispatch_with_log(args, record, log, log_path, progress)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            _log_line(log, f"終了状態: 起動または実行に失敗した: {error}")
+            if isinstance(error, ActionableError):
+                _log_line(log, f"次の操作: {error.next_action}")
+            raise
+
+
+def _log_preflight_failure(args: argparse.Namespace, log: typing.TextIO, stage: str, detail: str, *, next_action: str) -> int:
+    message = redact_secrets(detail)
+    args.batch_failure = f"run-skill-preflight-{stage}: {message}"
+    _log_line(log, f"終了状態: {args.batch_failure}")
+    _log_line(log, f"次の操作: {next_action}")
+    _outcome.report_failure(message, next_action=next_action)
+    return 2
+
+
+def _dispatch_with_log(
+    args: argparse.Namespace,
+    record: _run_state.RunRecord | None,
+    log: typing.TextIO,
+    log_path: pathlib.Path,
+    progress: Progress,
+) -> int:
+    if args.timeout <= 0 and record is None:
+        return _log_preflight_failure(
+            args,
+            log,
+            "timeout",
+            f"--timeoutは正の秒数で指定する（指定値: {args.timeout}）",
+            next_action=f"--timeoutを省略して{DEFAULT_TIMEOUT_SECONDS}秒とするか、正の秒数を指定する",
+        )
+    try:
+        candidates: list[tuple[str, str, str]] = (
+            [(record.engine, record.model, record.effort)]
+            if record is not None
+            else _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する", raise_error=True)
+        )
+    except ActionableError as error:
+        return _log_preflight_failure(args, log, "model-config", str(error), next_action=error.next_action)
+    work_dir = getattr(args, "work_dir", None)
+    if record is not None:
+        repo_root = record.work_dir
+        if not repo_root.is_dir():
+            return _log_preflight_failure(
+                args,
+                log,
+                "resume-cwd",
+                f"再開するcwdが存在しない: {repo_root}",
+                next_action="元の作業ツリーを復元して同じ実行を再開する",
+            )
+    elif work_dir is not None:
+        repo_root = pathlib.Path(work_dir).expanduser()
+        if not repo_root.is_absolute() or not repo_root.is_dir() or not args.target_repo:
+            return _log_preflight_failure(
+                args,
+                log,
+                "work-dir",
+                "--work-dirは既存の絶対ディレクトリを--target-repoと併せて指定する",
+                next_action="報告先repoと実行cwdを確認して再実行する",
+            )
+        repo_root = repo_root.resolve()
+        args.target_repo = resolve_repo_id_or_raise(args.target_repo)
+    else:
+        repo_root = _resolve_repo_root(resolve_local_worktree(args.target_repo))
+    _write_header(log, repo_root=repo_root, args=args)
+    try:
+        _remove_expired_logs(_state_paths.state_dir() / _LOG_DIRNAME, now=time.time())
+    except (OSError, ValueError) as error:
+        return _log_preflight_failure(
+            args, log, "log-sweep", str(error), next_action="run-skill/runsの実行記録とログの保存先を確認して再実行する"
+        )
+    lock = filelock.FileLock(
+        str(
+            _lock_path(
+                repo_root,
+                skill_modes.invocation_scope(args.skill, args.args),
+                target_repo=args.target_repo if getattr(args, "work_dir", None) is not None else None,
             )
         )
-        with contextlib.ExitStack() as resources:
-            try:
-                resources.enter_context(lock.acquire(timeout=getattr(args, "lock_timeout", 0)))
-            except filelock.Timeout:
-                args.run_skill_concurrent = True
-                _log_line(log, "終了状態: 同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった")
-                _outcome.report_failure(
-                    f"同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった（ログ: {log_path}）",
-                    next_action="進行中の実行の終了を確認してから、`atk run-skill`を元の引数で再実行する",
-                )
-                return CONCURRENT_EXIT_CODE
-            with _console_title.console_title(_TITLE):
-                return _run_locked(
-                    args, repo_root=repo_root, candidates=candidates, log=log, log_path=log_path, progress=progress
-                )
+    )
+    with contextlib.ExitStack() as resources:
+        try:
+            resources.enter_context(lock.acquire(timeout=getattr(args, "lock_timeout", 0)))
+        except filelock.Timeout:
+            args.run_skill_concurrent = True
+            _log_line(log, "終了状態: 同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった")
+            next_action = "進行中の実行の終了を確認してから、`atk run-skill`を元の引数で再実行する"
+            _log_line(log, f"次の操作: {next_action}")
+            _outcome.report_failure(
+                f"同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった（ログ: {log_path}）",
+                next_action=next_action,
+            )
+            return CONCURRENT_EXIT_CODE
+        with _console_title.console_title(_TITLE):
+            return _run_locked(args, repo_root=repo_root, candidates=candidates, log=log, log_path=log_path, progress=progress)
 
 
 def build_goal(skill: str, skill_args: str | None, *, launch: str | None = None) -> str:
