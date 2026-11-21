@@ -10,6 +10,7 @@ WI処理の工程や運用に関わる問題の原因分析と対策、運用工
 | 利用形態 | 起動主体と公開操作 | 処理の責務 |
 | --- | --- | --- |
 | 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を処理する。計画の要否は`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決める |
+| 即時実装型 | ユーザーが`/atk-mode implement`を起動する | 対話セッションで隔離worktreeを作って実装・検証・実行レビューを完了し、一時リモートブランチをpushしてマージ用AWIを登録する。統合と公開は`process-wi`がレーンを作らず直接処理する |
 | 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と統括会話の起動を管理する。統括が`agent-toolkit:atk-mode`の作業`process-wi all-repos`で登録全体の対象を処理し、報告まで担当する |
 | まとめ処理型 | ユーザーが`agent-toolkit:atk-mode`の作業`process-wi single-lane`を手動で起動する | 蓄積されたWIを1回の実行でまとめて処理する |
 | 定期実行型 | ユーザーがcronなどに`atk run-skill`を登録する | WIキューを経由せずにスキル1件を自律モードで実行し、結果は報告用UWIで、判断を要する対応は事前承認型UWIで届ける |
@@ -59,7 +60,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 メインが全体の作業構成・結果の採否・方針転換・完了を所有し、局所の担当が設計・実装、独立した担当が実行レビューを担う。
 通常のキュー処理は初回の対象と配分を保ち、開始後の新着の確認と今回追加の判断は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従う。
 
-要求の登録は、ユーザーが`atk wi add`、`/atk-mode add-awi-by-user`、`atk serve`のWI管理画面から行うほか、処理中のエージェントと振り返り（`/atk-mode review-session`）からも投入できる。
+要求の登録は、ユーザーが`atk wi add`、`/atk-mode add-awi-by-user`、`/atk-mode implement`、`atk serve`のWI管理画面から行うほか、処理中のエージェントと振り返り（`/atk-mode review-session`）からも投入できる。
 本文の形式は`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。
 由来は`agent-toolkit:atk-mode/references/origin-and-approval.md`、状態と依存関係は`agent-toolkit:atk-mode/references/states-and-dependencies.md`に従う。
 
