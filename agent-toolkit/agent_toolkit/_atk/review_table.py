@@ -19,6 +19,7 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.review_table_format import (
     _KEY_COLUMN_COUNT,
@@ -61,7 +62,8 @@ from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 _INPUT_GUIDANCE = (
-    "記録済みのレビュー指摘管理表の絶対パスを確認する。旧名の表も改名せず、そのパスを指定する。"
+    "記録済みのレビュー指摘管理表の絶対パス（`.exec-review.tsv`）を確認する。旧名の表も改名せず、そのパスを指定する。"
+    f"CI対応の表を探す場合は`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を確認する。"
     "標準入力、パイプおよびプロセス置換は受理しない"
 )
 # `add`の不一致はlocation列かissue列で生じ、`respond`は応答列だけを更新するため、案内を操作ごとに分ける。
