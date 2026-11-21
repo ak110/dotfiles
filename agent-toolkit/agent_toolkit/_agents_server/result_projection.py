@@ -125,6 +125,21 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
             )
         )
     message = result.get("agent_message")
+    error = result.get("error")
+    if (
+        result.get("status") == "completed"
+        and not is_finalized_wait_statement(result)
+        and isinstance(error, dict)
+        and isinstance(children := error.get("unobservedSessions"), list)
+        and children
+    ):
+        guidance.append(
+            (
+                "未回収の子は`unobservedSessions`にある。agents_serverの子の結果が必要なら、"
+                "`send_message`で元の委譲先に`atk agents wait`での回収を依頼する",
+                (),
+            )
+        )
     if isinstance(message, str) and runtime_inserted.reported_improvement_lines(message):
         guidance.append(
             (IMPROVEMENT_RESULT_NEXT_ACTION, ("agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」",))

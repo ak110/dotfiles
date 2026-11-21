@@ -158,6 +158,7 @@ def finalize_pending_result(
     touch: bool = True,
     keep_resume_chain: bool = False,
     unobserved_sessions: Iterable[str] = (),
+    final_response: bool = False,
 ) -> None:
     """保留したturn結果を公開可能な終了状態へ移す。
 
@@ -168,6 +169,7 @@ def finalize_pending_result(
     待機対象が残るか再開turnの結果を受け取れずに確定したことを`heldResultFinalized`で示す。
     保留した結果は待機表明であり、待機対象が残るまま公開する結果は再開turnの結果ではないことを委譲元へ示すためである。
     追跡集合から既に外した未観測の孫sessionは`unobserved_sessions`で渡す。既存の`error`の内容は保つ。
+    通常の最終応答を返す場合（`final_response`）は、未観測の識別子だけを記録し、待機表明の印を付けない。
     """
     result = session.pending_result
     if result is None:
@@ -188,13 +190,14 @@ def finalize_pending_result(
     if not keep_resume_chain and (unfinished_tasks or unobserved or wait_statement):
         _merge_error_identifiers(session, UNFINISHED_BACKGROUND_TASKS_KEY, unfinished_tasks)
         _merge_error_identifiers(session, UNOBSERVED_SESSIONS_KEY, unobserved)
-        error: dict[str, Any]
-        if isinstance(session.error, dict):
-            error = session.error
-        else:
-            error = {"message": str(session.error)} if nonempty_error(session.error) else {}
-        error[turn_state.HELD_RESULT_FINALIZED_KEY] = True
-        session.error = error
+        if not final_response:
+            error: dict[str, Any]
+            if isinstance(session.error, dict):
+                error = session.error
+            else:
+                error = {"message": str(session.error)} if nonempty_error(session.error) else {}
+            error[turn_state.HELD_RESULT_FINALIZED_KEY] = True
+            session.error = error
     if touch:
         session.touch()
 
