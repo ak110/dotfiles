@@ -30,6 +30,10 @@ class UpgradeCheckError(RuntimeError):
     """更新経路の検証が成立しなかった場合の例外。"""
 
 
+class UnsafeWindowsUpgradeEnvironment(UpgradeCheckError):
+    """フル更新検証がWindowsの実ユーザーの状態を変えうる。"""
+
+
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 RegistryValues = dict[str, tuple[object, int]]
 """値の名前から、値と値型の組への対応。"""
@@ -440,9 +444,9 @@ def run_upgrade_check(
         and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted"
         and os.environ.get("RUNNER_OS") == "Windows"
     ):
-        raise UpgradeCheckError(
+        raise UnsafeWindowsUpgradeEnvironment(
             "Windowsの旧版更新検証は、HOMEを分けてもWinGetなどのユーザー単位の登録を共有し、実環境を変更し得るため開始しない。"
-            "使い捨てのGitHub-hosted Windows CIで実行する"
+            "使い捨てのGitHub-hosted Windows CIの update-dotfiles-upgrade (windows) ジョブで実行してください。"
         )
     # 名前解決は親のmiseのshimを返し得るため、このスクリプトを起動したuv本体を環境変数`UV`から取る。
     # uvは0.6.0以降、起動した全ての子プロセスへ`UV`を渡す（https://docs.astral.sh/uv/reference/environment/ ）。
@@ -677,6 +681,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         run_upgrade_check(args.repo.resolve(), args.platform, keep_verification_root=args.keep_verification_root)
+    except UnsafeWindowsUpgradeEnvironment as error:
+        print(error, file=sys.stderr)
+        return 1
     except (OSError, ValueError, UpgradeCheckError) as error:
         print(
             f"update-dotfiles旧版更新検証に失敗した: {error}。上記の対処を行い、"

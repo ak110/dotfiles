@@ -57,6 +57,22 @@ def test_refuses_windows_upgrade_before_any_work_outside_hosted_windows(
         upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner)
 
 
+def test_blocked_windows_upgrade_does_not_offer_a_local_retry(tmp_path: pathlib.Path) -> None:
+    """公開CLIは続けてよい環境を示し、同じ危険な環境での再試行へ誘導しない。"""
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPT), "--platform", "windows", "--repo", str(tmp_path)],
+        env={**os.environ, "RUNNER_ENVIRONMENT": "self-hosted", "PYTHONIOENCODING": "utf-8"},
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert result.returncode == 1
+    assert "WinGet" in result.stderr and "GitHub-hosted Windows CI" in result.stderr
+    assert "再実行" not in result.stderr
+
+
 @pytest.mark.parametrize("outcome", [0, 23, "起動失敗"])
 def test_old_python_pin_reports_command_timing(
     tmp_path: pathlib.Path,
