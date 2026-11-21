@@ -32,7 +32,9 @@ def test_public_plan_commits_selects_repository_from_mixed_record(
 ) -> None:
     """別repoの短縮OIDとrewriteを含む記録から対象だけ取得し、全件時は再実行を案内する。"""
     # OIDの解決にはGitの標準テンプレートを複製する必要がない。
-    monkeypatch.setenv("GIT_TEMPLATE_DIR", "")
+    template = tmp_path / "empty-template"
+    template.mkdir()
+    monkeypatch.setenv("GIT_TEMPLATE_DIR", str(template))
     repo = tmp_path / "repo"
     other = tmp_path / "other"
     _prepare_two_commits(repo)
