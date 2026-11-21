@@ -274,26 +274,23 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         response: dict[str, Any] = await self._result_response_async(session, include_progress=False)
         if "agent_message" in response and session.finalized_at is not None:
             end = session.turn_seq, session.finalized_at
-            claimed = not session.result_delivered
+            # stop=Trueでは結果をwaitに残し、中断の応答に同じ本文を載せない。
+            claimed = not stop and not session.result_delivered
             if claimed and self._status_writer is not None:
-                if stop:
-                    # kill(stop=True)は応答喪失時に備え、未受領の結果を後続のwaitにも残す。
-                    claimed = await self._status_writer.result_state_async(session.session_id, session=session) != "consumed"
-                else:
-                    try:
-                        claimed = (
-                            await self._claim_resume_result(
-                                SessionResumeState.from_session(session), response, collector="kill"
-                            )
-                            is not None
-                        )
-                    except retained_results.ResultBeingCollected:
-                        # 中断は既に決着した。回収中の本文には触れず、通知はこの応答で渡す。
-                        return self._deliver_notices({"status": response["status"], "kill_requested": kill_requested}, notices)
+                try:
+                    claimed = (
+                        await self._claim_resume_result(SessionResumeState.from_session(session), response, collector="kill")
+                        is not None
+                    )
+                except retained_results.ResultBeingCollected:
+                    # 中断は既に決着した。回収中の本文には触れず、通知はこの応答で渡す。
+                    return self._deliver_notices({"status": response["status"], "kill_requested": kill_requested}, notices)
             if not stop and not session.result_delivered and end == (session.turn_seq, session.finalized_at):
                 session.result_delivered = True
                 session.touch()
-            if not claimed:
+            if stop:
+                response.pop("agent_message", None)
+            elif not claimed:
                 response = {"status": response["status"]}
         response["kill_requested"] = kill_requested
         await self._stop_after_terminal_response(session.session_id, response, stop)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import pathlib
 
+import pytest
+
 from agent_toolkit._agents_server import (
     notice_inbox,
     shared_layout,
@@ -107,6 +109,7 @@ def test_reading_notices_is_repeatable_and_only_the_winner_delivers(tmp_path: pa
         owner_status_file="root.json",
     )
     assert len(taken) == 1 and "破損" in taken[0]["body"]
+    assert "退避しました" in taken[0]["body"] and "削除しました" not in taken[0]["body"]
     assert not notice_inbox.consume_notices(pending)
     assert (
         notice_inbox.take_notices(
@@ -119,3 +122,34 @@ def test_reading_notices_is_repeatable_and_only_the_winner_delivers(tmp_path: pa
         )
         == taken
     )
+
+
+@pytest.mark.parametrize("operation", ["read_text", "unlink"])
+def test_notice_access_error_preserves_original_and_reports_retry(
+    operation: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    directory = shared_layout.notices_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    session_registry.publish(
+        "target", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="parent", state_root=tmp_path
+    )
+    original = directory / "target.pending.json"
+    original.write_text(
+        json.dumps({"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "本文"}),
+        encoding="utf-8",
+    )
+    method = getattr(pathlib.Path, operation)
+
+    def denied(path: pathlib.Path, *args, **kwargs):
+        if path == original:
+            raise PermissionError("通知だけアクセス不可")
+        return method(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, operation, denied)
+    assert (
+        notice_inbox.take_notices("root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json")
+        == []
+    )
+    assert original.is_file()
+    assert "原本を保持した" in caplog.text and "atk agents waitで再回収" in caplog.text
+    assert str(original) in caplog.text

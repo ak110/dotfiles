@@ -38,6 +38,7 @@ class PendingNotice:
     path: pathlib.Path
     sent_at: str
     body: str
+    damaged: bool = False
 
 
 def _read_notice(path: pathlib.Path, session_id: str, source: pathlib.Path) -> PendingNotice | None:
@@ -45,7 +46,15 @@ def _read_notice(path: pathlib.Path, session_id: str, source: pathlib.Path) -> P
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except OSError as exc:
+        if path.name.startswith(f"{session_id}."):
+            _LOG.warning(
+                "上り通知を読めないため原本を保持した: %s: %s。読取権限を確認してからatk agents waitで再回収する",
+                path,
+                exc,
+            )
+        return None
+    except (UnicodeError, json.JSONDecodeError) as exc:
         reason = str(exc)
     else:
         if (
@@ -58,8 +67,15 @@ def _read_notice(path: pathlib.Path, session_id: str, source: pathlib.Path) -> P
             return PendingNotice(path, payload["sent_at"], payload["body"])
         reason = "必須項目が不正です"
     if path.name.startswith(f"{session_id}."):
-        return PendingNotice(path, "", f"破損した上り通知を削除しました: {source / path.name}: {reason}")
+        return PendingNotice(path, "", f"{source / path.name}: {reason}", damaged=True)
     return None
+
+
+def _taken_notice(notice: PendingNotice, *, action: str) -> dict[str, str]:
+    body = notice.body
+    if notice.damaged:
+        body = f"破損した上り通知を{action}しました: {body}。必要なら送信元に再送を依頼してください。"
+    return public_notice({"body": body})
 
 
 def read_notices(
@@ -97,11 +113,15 @@ def consume_notices(pending: list[PendingNotice]) -> list[dict[str, str]]:
             notice.path.unlink()
         except FileNotFoundError:
             continue
-        except OSError:
+        except OSError as exc:
             # 他の通知や確定済みの終了結果は返し、この原本は次回に残す。
-            _LOG.exception("上り通知を回収できません: %s", notice.path)
+            _LOG.warning(
+                "上り通知を削除できないため原本を保持した: %s: %s。権限を確認してからatk agents waitで再回収する",
+                notice.path,
+                exc,
+            )
             continue
-        taken.append(public_notice({"body": notice.body}))
+        taken.append(_taken_notice(notice, action="削除"))
     return taken
 
 
@@ -127,16 +147,23 @@ def take_notices(
         return consume_notices(pending)
     taken = []
     for notice in pending:
-        if notice.path.parent == stash_directory:
-            # 旧CLIが退避済みで、削除前に停止した原本。
-            (notices_directory(root_session_id, state_root) / notice.path.name).unlink(missing_ok=True)
-        else:
-            stash_directory.mkdir(parents=True, exist_ok=True)
-            try:
+        try:
+            if notice.path.parent == stash_directory:
+                # 旧CLIが退避済みで、削除前に停止した原本。
+                (notices_directory(root_session_id, state_root) / notice.path.name).unlink(missing_ok=True)
+            else:
+                stash_directory.mkdir(parents=True, exist_ok=True)
                 notice.path.replace(stash_directory / notice.path.name)
-            except FileNotFoundError:
-                continue
-        taken.append(public_notice({"body": notice.body}))
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            _LOG.warning(
+                "上り通知の退避を確定できず保持した: %s: %s。権限を確認してからatk agents waitで再回収する",
+                notice.path,
+                exc,
+            )
+            continue
+        taken.append(_taken_notice(notice, action="退避"))
     return taken
 
 

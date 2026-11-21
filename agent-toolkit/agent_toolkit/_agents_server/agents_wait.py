@@ -644,7 +644,6 @@ def _wait_for_result(
                     owner = owners.get(session_id, {}).get("owner_status_file")
                     if owner is not None and owner != identity.file_name:
                         continue
-                    result_path = result_directory / f"{session_id}.json"
                     result, read_error = retained_results.take_result(
                         root_session_id,
                         session_id,
@@ -668,7 +667,7 @@ def _wait_for_result(
                             roots=stranded_roots,
                         )
                     if read_error is not None:
-                        read_failure = f"終了時の結果ファイルを読めません: {result_path}: {read_error}"
+                        read_failure = f"終了時の結果ファイルを読めません（session {session_id}）: {read_error}"
                         break
                     notices = notice_inbox.take_notices(
                         root_session_id,

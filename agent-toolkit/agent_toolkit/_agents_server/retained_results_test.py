@@ -16,6 +16,37 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import status_file as subject
 
 
+def test_unreadable_legacy_slot_does_not_hide_a_later_end(tmp_path: pathlib.Path) -> None:
+    """古い原本の破損を保持し、別の終了結果は通常どおり公開・照会・回収する。"""
+    path = shared_layout.results_directory("root", tmp_path) / "child.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{", encoding="utf-8")
+    finalized = "2026-11-21T00:02:00Z"
+    body = {"status": "completed", "agent_message": "後の結果", "turn_seq": 2, "finalized_at": finalized}
+
+    retained_results.publish_result(path, body)
+    observed = retained_results.read_retained_result(
+        "root", "child", tmp_path, expected_turn_seq=2, expected_finalized_at=finalized
+    )
+    assert observed == body
+    assert retained_results.take_result(
+        "root", "child", "root.json", collector="test", state_root=tmp_path, expected_turn_seq=2
+    ) == ({"status": "completed", "agent_message": "後の結果"}, None)
+    assert path.read_text(encoding="utf-8") == "{"
+
+
+def test_take_reports_path_of_unreadable_separate_result(tmp_path: pathlib.Path) -> None:
+    """旧名がない場合でも、読めなかった別名の原本を診断し保持する。"""
+    directory = shared_layout.results_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    bad = directory / "child.2-bad.json"
+    bad.write_text("{", encoding="utf-8")
+
+    result, error = retained_results.take_result("root", "child", "root.json", collector="test", state_root=tmp_path)
+    assert result is None and error is not None and str(bad) in error
+    assert bad.read_text(encoding="utf-8") == "{"
+
+
 def test_take_result_checks_owner_and_consumes_once(tmp_path: pathlib.Path) -> None:
     """異なる書込主体は結果を取得できず、正しい主体への配送は1回だけ成立する。"""
     directory = shared_layout.results_directory("root-session", tmp_path)

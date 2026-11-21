@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import json
 import logging
@@ -59,23 +60,45 @@ def _locked(path: pathlib.Path, *, blocking: bool = True) -> Generator[None]:
             release_lock(stream)
 
 
+class _UnreadableResult(ValueError):
+    """指定した結果原本を読めない。別turnへの操作は続けられる。"""
+
+
 def _read(path: pathlib.Path) -> dict[str, Any] | None:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
+    except (OSError, UnicodeError, ValueError) as error:
+        raise _UnreadableResult(f"{path}: {error}") from error
     if not isinstance(value, dict):
-        raise ValueError("最上位が辞書ではありません")
+        raise _UnreadableResult(f"{path}: 最上位が辞書ではありません")
     return value
 
 
+@functools.lru_cache(maxsize=128)
+def _warn_unreadable(message: str) -> None:
+    _LOG.warning("終了結果を読めないため原本を保持した: %s。権限と内容を確認してから再回収する", message)
+
+
 def _entries(
-    path: pathlib.Path, *, expected_turn_seq: int | None = None, end: ResultEnd | None = None
+    path: pathlib.Path,
+    *,
+    expected_turn_seq: int | None = None,
+    end: ResultEnd | None = None,
+    unreadable: list[str] | None = None,
 ) -> Iterator[tuple[pathlib.Path, dict[str, Any]]]:
     others = path.parent.glob(f"{path.stem}.*.json") if end is None else [path.with_suffix(f".{_suffix(end)}.json")]
     # 別名から旧名への移動中でも両方を読み逃さないように、移動先を最後に読む。
     for candidate in (*others, path):
-        payload = _read(candidate)
+        try:
+            payload = _read(candidate)
+        except _UnreadableResult as error:
+            message = str(error)
+            _warn_unreadable(message)
+            if unreadable is not None:
+                unreadable.append(message)
+            continue
         if payload is None or (expected_turn_seq is not None and payload.get("turn_seq") != expected_turn_seq):
             continue
         if end is None or result_end(payload) == end:
@@ -114,18 +137,25 @@ def expose_legacy_slots(directory: pathlib.Path, owner: str, *, sessions: set[st
 
 def legacy_publication(path: pathlib.Path, *, missing: ResultEnd | None = None) -> ResultEnd | None:
     """旧名の識別を読む。識別を持たない原本がある場合に、不在時の判断を使わない。"""
-    payload = _read(path)
+    try:
+        payload = _read(path)
+    except _UnreadableResult as error:
+        _warn_unreadable(str(error))
+        return None
     return result_end(payload) if payload is not None else missing
 
 
 def result_state(path: pathlib.Path, end: ResultEnd) -> str:
     """指定したturnの原本が残っているか、既に回収されたかを返す。"""
     published = _published(path, end).exists()
-    if next(_entries(path, end=end), None) is not None:
+    unreadable: list[str] = []
+    if next(_entries(path, end=end, unreadable=unreadable), None) is not None:
         if not published:
             # 旧writerのファイルを実際に読めた時点で、その終了結果の公開だけを記録する。
             mark_published(path, end)
         return "published"
+    if unreadable:
+        return "unreadable"
     return "consumed" if published else "unpublished"
 
 
@@ -143,6 +173,8 @@ def publish_result(path: pathlib.Path, payload: dict[str, Any]) -> None:
             return
         if next(_entries(path, end=end), None) is None:
             destination = path.with_suffix(f".{_suffix(end)}.json") if path.exists() else path
+            if destination.exists():
+                raise _UnreadableResult(f"{destination}: 既存の原本を上書きしません")
             atomic_write(destination, json.dumps(payload, ensure_ascii=False) + "\n")
         mark_published(path, end)
 
@@ -150,8 +182,9 @@ def publish_result(path: pathlib.Path, payload: dict[str, Any]) -> None:
 def discard_result(path: pathlib.Path, owner: str, end: ResultEnd) -> bool:
     """追送などが返すメモリー上の結果を確保する。CLIが先に受領していれば返さない。"""
     with _locked(path.parent / f".{path.stem}.claim.lock"), _locked(path.with_suffix(".publish.lock")):
-        entry = next(_entries(path, end=end), None)
-        if entry is None and _published(path, end).exists():
+        unreadable: list[str] = []
+        entry = next(_entries(path, end=end, unreadable=unreadable), None)
+        if entry is None and (unreadable or _published(path, end).exists()):
             return False
         if entry is not None and not _owned(entry[1], owner):
             return False
@@ -243,8 +276,11 @@ async def take_for_response(
                     next_action="先行する操作の後に`atk agents wait`で未受領の結果を回収する",
                 ) from error
             turn_seq = _expected_turn(session_id, expected_turn_seq, state_root)
-            entry = _oldest_owned(path, owner, turn_seq, expected_finalized_at)
+            unreadable: list[str] = []
+            entry = _oldest_owned(path, owner, turn_seq, expected_finalized_at, unreadable=unreadable)
             if entry is None:
+                if unreadable:
+                    raise _UnreadableResult("; ".join(unreadable))
                 return None
             if (end := result_end(entry[1])) is not None:
                 mark_published(path, end)
@@ -300,10 +336,17 @@ def _expected_turn(session_id: str, turn_seq: int | None, state_root: pathlib.Pa
 
 
 def _oldest_owned(
-    path: pathlib.Path, owner: str, turn_seq: int | None, finalized_at: str | None
+    path: pathlib.Path,
+    owner: str,
+    turn_seq: int | None,
+    finalized_at: str | None,
+    *,
+    unreadable: list[str],
 ) -> tuple[pathlib.Path, dict[str, Any]] | None:
     end = (turn_seq, finalized_at) if turn_seq is not None and finalized_at is not None else None
-    entries = (item for item in _entries(path, expected_turn_seq=turn_seq, end=end) if _owned(item[1], owner))
+    entries = (
+        item for item in _entries(path, expected_turn_seq=turn_seq, end=end, unreadable=unreadable) if _owned(item[1], owner)
+    )
     return min(entries, key=lambda item: result_end(item[1]) or (-1, ""), default=None)
 
 
@@ -340,9 +383,12 @@ def take_result(
             expected_turn_seq = _expected_turn(session_id, expected_turn_seq, state_root)
             stashed = _read(stash_path) if stash_path is not None else None
             if stashed is None:
-                chosen = _oldest_owned(path, owner_status_file, expected_turn_seq, end[1] if end is not None else None)
+                unreadable: list[str] = []
+                chosen = _oldest_owned(
+                    path, owner_status_file, expected_turn_seq, end[1] if end is not None else None, unreadable=unreadable
+                )
                 if chosen is None:
-                    return None, None
+                    return None, "; ".join(unreadable) if unreadable else None
                 source, payload = chosen
             else:
                 payload = stashed
@@ -363,7 +409,11 @@ def take_result(
             with _locked(path.with_suffix(".publish.lock")):
                 if (end := result_end(payload)) is not None:
                     mark_published(path, end)
-                if _read(source) == payload:
+                try:
+                    unchanged = _read(source) == payload
+                except _UnreadableResult as error:
+                    return None, str(error)
+                if unchanged:
                     source.unlink()
                     _LOG.info("result_deleted session_id=%s writer=%s collector=%s", session_id, owner_status_file, collector)
         return _public_payload(payload), None
