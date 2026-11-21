@@ -272,13 +272,22 @@ def test_marks_only_processed_wis_and_requires_every_wi(env: tuple[pathlib.Path,
     """未着手・継続中のWIは残し、全項目の処置後にだけレーンも統合済みにする。"""
     repo, notes = env
     names = ("done.md", "partial.md", "new.md")
-    for name in names:
-        _awi(notes, name, "`README.md`を変える。")
+    paths = ("README.md", "src/model.py", "README.md")
+    for name, path_name in zip(names, paths, strict=True):
+        _awi(notes, name, f"`{path_name}`を変える。")
     path = _write_selection(
         tmp_path / "state.yaml",
-        [{"WI": name, "レーン": "lane-01", "書込対象": ["README.md"]} for name in names],
+        [{"WI": name, "レーン": "lane-01", "書込対象": [path_name]} for name, path_name in zip(names, paths, strict=True)],
     )
     args = (str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo))
+    good = path.read_bytes()
+    invalid = yaml.safe_load(good)
+    invalid["選定"][1]["書込対象"] = ["src/"]
+    path.write_text(yaml.safe_dump(invalid, allow_unicode=True), encoding="utf-8")
+    bad = path.read_bytes()
+    assert _dispatch(*args, "--mark-integrated-wis", '["done.md"]') == 1
+    assert path.read_bytes() == bad
+    path.write_bytes(good)
     assert _dispatch(*args, "--mark-integrated-wis", '["done.md"]') == 0
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert [row.get("統合状態", "未統合") for row in data["選定"]] == ["統合済み", "未統合", "未統合"]

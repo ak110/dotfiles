@@ -40,7 +40,6 @@ mergeの任意入力`--lane-cost-updates`は最終割当先の補正前後の実
 from __future__ import annotations
 
 import argparse
-import collections.abc
 import json
 import pathlib
 import sys
@@ -158,13 +157,11 @@ def check(
     body_wis: set[str] | None = None,
     *,
     selection: dict[str, object] | None = None,
-    integrating: collections.abc.Set[str] = frozenset(),
     validate_execution: bool = True,
 ) -> list[Violation]:
     """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。
 
-    統合済みの項目（項目か所属レーンの`統合状態`が`統合済み`の項目と、`integrating`が示す同じ呼び出しで
-    統合状態を記録するレーンの項目）には、作業ツリーの状態を前提とする項目ごとの判定を適用しない。
+    統合済みの項目には、作業ツリーの状態を前提とする項目ごとの判定を適用しない。
     """
     if selection is None:
         selection = load_selection(selection_file)
@@ -178,7 +175,7 @@ def check(
         )
     if items and not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
-    integrated_lanes = _selection.integrated_lanes(selection) | set(integrating)
+    integrated_lanes = _selection.integrated_lanes(selection)
     # 選定時の前提は作業前の作業ツリーで成り立つ条件であり、作業を統合した項目は履歴として扱う。
     # 統合後の作業ツリーで判定し直すと、レーンの作業による改名・削除・追加で統合済みの項目を拒否する。
     pending = [item for item in items if not _is_integrated(item, integrated_lanes)]
@@ -373,6 +370,25 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
     if result.returncode != 0 or not result.stdout.strip():
         raise InputError(f"現在のディレクトリからGitルートを解決できない: {result.stderr.strip()}", next_action=_FIX_PATHS)
     return pathlib.Path(result.stdout.strip())
+
+
+def _mark_integrated(selection: dict[str, object], lanes: set[str], processed_wis: set[str] | None) -> None:
+    """今回の処置済みの印をメモリ上で付け、書き込む内容そのものを検査に渡せるようにする。"""
+    items = typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions")))
+    for item in items:
+        if item.get(_selection.LANE_KEY, item.get("lane")) in lanes and (
+            processed_wis is None or str(item.get(_selection.WI_KEY, item.get("awi"))) in processed_wis
+        ):
+            item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
+    rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
+    for row in rows:
+        if row[_selection.LANE_KEY] in lanes and all(
+            item.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
+            for item in items
+            if item.get(_selection.LANE_KEY, item.get("lane")) == row[_selection.LANE_KEY]
+        ):
+            row[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
+    selection[_selection.LANE_COSTS_KEY] = rows
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -634,13 +650,14 @@ def main(argv: list[str] | None = None) -> int:
             structural, models = selection_contract.structure_errors(selection)
             if structural or models:
                 raise InputError("\n".join([*models, *structural]), next_action=_FIX_CONTENT)
+        if args.mark_integrated is not None:
+            _mark_integrated(selection, set(args.mark_integrated), processed_wis)
         errors = check(
             args.selection_file,
             work_dir,
             _plan_file.private_notes_root(),
             body_wis,
             selection=selection,
-            integrating=set(args.mark_integrated or []),
             validate_execution=not args.history and args.mark_integrated is None,
         )
     except InputError as error:
@@ -655,22 +672,6 @@ def main(argv: list[str] | None = None) -> int:
         actions = list(dict.fromkeys(error.next_action for error in errors))
         print(_next_action.next_action_line("。".join([*actions, _NEXT_RERUN])), file=sys.stderr)
         return 1
-    if args.mark_integrated is not None:
-        items = typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions")))
-        for item in items:
-            if item.get(_selection.LANE_KEY, item.get("lane")) in args.mark_integrated and (
-                processed_wis is None or str(item.get(_selection.WI_KEY, item.get("awi"))) in processed_wis
-            ):
-                item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
-        rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
-        for row in rows:
-            if row[_selection.LANE_KEY] in args.mark_integrated and all(
-                item.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
-                for item in items
-                if item.get(_selection.LANE_KEY, item.get("lane")) == row[_selection.LANE_KEY]
-            ):
-                row[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
-        selection[_selection.LANE_COSTS_KEY] = rows
     if args.output is not None:
         try:
             if args.merge is not None and args.output.resolve() == args.merge.resolve():

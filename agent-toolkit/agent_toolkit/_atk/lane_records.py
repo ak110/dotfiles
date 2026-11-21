@@ -224,13 +224,20 @@ def read_selection(record: dict[str, typing.Any]) -> dict[str, typing.Any] | Non
     except FileNotFoundError:
         return None
     document = yaml.safe_load(text)
+    items = [
+        row
+        for row in selection.decisions(document) or []
+        if isinstance(row, dict) and row.get(selection.LANE_KEY) == record["lane"] and selection.WI_KEY in row
+    ]
+    integrated = record["lane"] in selection.integrated_lanes(document)
     return {
-        "lane_wis": sorted(
+        "lane_wis": sorted(str(row[selection.WI_KEY]) for row in items),
+        "processed_wis": sorted(
             str(row[selection.WI_KEY])
-            for row in selection.decisions(document) or []
-            if isinstance(row, dict) and row.get(selection.LANE_KEY) == record["lane"] and selection.WI_KEY in row
+            for row in items
+            if integrated or row.get(selection.INTEGRATION_STATE_KEY) == selection.INTEGRATED
         ),
-        "integrated": record["lane"] in selection.integrated_lanes(document),
+        "integrated": integrated,
     }
 
 

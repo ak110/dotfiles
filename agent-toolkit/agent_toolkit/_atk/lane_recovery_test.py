@@ -336,7 +336,7 @@ def test_reuse_switches_held_selection_to_current_selection(
     )
     assert code == 0, stderr
     stored = json.loads(pathlib.Path(resumed["record_path"]).read_text(encoding="utf-8"))
-    assert stored["selection"] == {"lane_wis": ["current.md"], "integrated": False}
+    assert stored["selection"] == {"lane_wis": ["current.md"], "processed_wis": [], "integrated": False}
     current.unlink()
     code, held, _stderr = _invoke(capsys, "delete")
     assert code == 1 and held["retained"][0]["reason"] == "選定の統合状態が未統合"

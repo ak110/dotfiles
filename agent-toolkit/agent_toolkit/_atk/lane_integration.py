@@ -233,9 +233,13 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     target,
                     timeout=record["procedure_timeout"],
                 )
-            selection = _lane_records.selection_state(record)
-            if not selected.exists() and set(selection["lane_wis"]) <= set(processed):
-                selection["integrated"] = True
+            selection = _lane_records.read_selection(record)
+            if selection is None:
+                selection = _lane_records.selection_state(record)
+                known = set(selection.get("processed_wis", [])) | set(processed)
+                selection["processed_wis"] = sorted(known)
+                selection["integrated"] = selection["integrated"] or set(selection["lane_wis"]) <= known
+            record["selection"] = selection
             state["selection_integrated"] = selection["integrated"]
             state["phase"] = "finalized"
             _lane_records.save(path, record)

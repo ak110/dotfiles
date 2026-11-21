@@ -89,7 +89,15 @@ def test_integrate_public_lifecycle(
     assert result["selection_integrated"] is not mixed
     if mixed:
         assert stored["selection"]["integrated"] is False
-        return
+        assert stored["selection"]["processed_wis"] == [done]
+        selected.unlink()
+        code, held, stderr = _invoke(capsys, "delete")
+        assert code == 1 and held["retained"], stderr
+        remaining = json.loads(manifest.read_text(encoding="utf-8"))
+        remaining["processed_wis"] = pending
+        manifest.write_text(json.dumps(remaining), encoding="utf-8")
+        code, final, stderr = _invoke(capsys, *args)
+        assert code == 0 and final["selection_integrated"] is True, stderr
     code, deleted, stderr = _invoke(capsys, "delete")
     assert code == 0 and deleted["removed"] == ["lane-01"], stderr
 
@@ -97,8 +105,8 @@ def test_integrate_public_lifecycle(
 def test_processed_wis_defaults_to_terminal_actions() -> None:
     """終了操作がない部分統合と未着手を、省略時に処置済みとみなさない。"""
     rows = [
-        {"name": "done.md", "commands": [["atk", "wi", "adopt", "done.md"]]},
-        {"name": "rejected.md", "commands": [["atk", "wi", "reject", "rejected.md"]]},
+        {"name": "done.md", "commands": [["atk", "wi", "adopt", "--note=確認済み", "done"]]},
+        {"name": "rejected.md", "commands": [["atk", "wi", "reject", "--if-inbox", "rejected"]]},
         {"name": "partial.md", "commands": [["atk", "wi", "edit", "partial.md"]]},
         {"name": "new.md", "commands": []},
     ]

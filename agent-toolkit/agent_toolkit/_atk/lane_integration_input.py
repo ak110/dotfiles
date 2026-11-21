@@ -17,6 +17,7 @@ from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._common import atomic_file
 from agent_toolkit._plan import commit_mapping
 lazy from agent_toolkit._atk.wi import arguments as wi_arguments
+lazy from agent_toolkit._atk.wi import cli as wi_cli
 lazy from agent_toolkit._atk.wi import filenames as wi_filenames
 
 
@@ -102,6 +103,8 @@ def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -
             or len(processed) != len(set(processed))
         ):
             raise ValueError("processed_wisはmanifestのwisに含まれるWI名だけを重複なしの配列で指定する")
+    else:
+        processed_wis(manifest)
     if "lane_started_at" in manifest:
         # Git統合後に最終化だけが入力の誤りで止まらないよう、完了時刻より後の値は統合の前に拒否する。
         check_lane_started_before_now(lane_started_at(manifest["lane_started_at"]))
@@ -328,19 +331,47 @@ def assert_integration_tree(
     return worktree
 
 
+def _argv_for_validation(arguments: list[str]) -> list[str]:
+    """テンプレートは展開せず、引数の型検査には元のファイルを渡す。"""
+    return [
+        REFERENCE.sub(
+            lambda match: (
+                match.group(1).removeprefix("expand-file:") if match.group(1).startswith("expand-file:") else match.group(0)
+            ),
+            value,
+        )
+        for value in arguments
+    ]
+
+
 def processed_wis(manifest: dict[str, typing.Any]) -> list[str]:
     """処置済み項目の明示指定を使い、省略時は終了操作で特定できる項目だけを返す。"""
     if "processed_wis" in manifest:
         return list(manifest["processed_wis"])
-    return [
-        row["name"]
-        for row in manifest["wis"]
-        if any(
-            argv[index] == "wi" and argv[index + 1] in {"adopt", "reject"} and argv[index + 2] == row["name"]
-            for argv in row["commands"]
-            for index in range(len(argv) - 2)
-        )
-    ]
+    parser = None
+    names: list[str] = []
+    for row in manifest["wis"]:
+        name = row["name"]
+        for argv in row["commands"]:
+            position = next(
+                (i for i in range(len(argv) - 1) if argv[i] == "wi" and argv[i + 1] in {"adopt", "reject"}),
+                None,
+            )
+            if position is None:
+                continue
+            if parser is None:
+                parser = argparse.ArgumentParser(prog="atk wi", allow_abbrev=False)
+                wi_cli.build_parser(parser)
+            try:
+                ending = parser.parse_args(_argv_for_validation(argv[position + 1 :]))
+            except SystemExit as error:
+                raise ValueError(f"{name}: 終了操作の引数を採否コマンドの書式に直して再実行する") from error
+            if ending.all:
+                raise ValueError(f"{name}: 終了操作に--allを使う時はprocessed_wisへ処置済みの項目を明示する")
+            if name in {wi_filenames.normalize_md_filename(value) for value in ending.filenames}:
+                names.append(name)
+                break
+    return names
 
 
 def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Path) -> None:
@@ -354,20 +385,8 @@ def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Pa
                 parser = argparse.ArgumentParser(prog="atk wi", allow_abbrev=False)
                 sub = help_text.add_subcommands(parser, dest="wi_subcommand", required=False, show_help_when_missing=True)
                 wi_arguments.add_adopt_parser(sub)
-            # パスの型検査にはテンプレート元を使い、複製と本文展開はGit統合後の_expandで行う。
-            validation_argv = [
-                REFERENCE.sub(
-                    lambda match: (
-                        match.group(1).removeprefix("expand-file:")
-                        if match.group(1).startswith("expand-file:")
-                        else match.group(0)
-                    ),
-                    value,
-                )
-                for value in argv[position + 1 :]
-            ]
             try:
-                adopted = parser.parse_args(validation_argv)
+                adopted = parser.parse_args(_argv_for_validation(argv[position + 1 :]))
             except SystemExit as error:
                 raise ValueError(f"adoptのargvが不正: {row['name']}。atk wi adoptの公開入力へ直す") from error
             specified = adopted.commit or []
