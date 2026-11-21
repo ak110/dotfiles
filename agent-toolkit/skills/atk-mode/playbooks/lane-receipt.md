@@ -109,7 +109,7 @@ WIへ直接書かれた質問（AWIの`## ユーザーコメント`、UWIの`## 
 3. `マージあり`では、指示の前に次を確かめる。
    - 完成条件証拠: レビュー単位ごとに受理した最後の実行レビューの返却ファイル（`agent_message_path`）と`レビューHEAD`を保つ。
      `agent-toolkit:atk-mode/references/lane-integration-format.md`「入力」の`完成条件証拠`の確認をし、欠ければレビューの起動元へ差し戻す。
-     各AWIの全ての行が`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」の受理条件を満たす（各`達成`行に所在と観測内容の組がある）。
+     各AWIの全行を`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」の受理条件で検収する。
      内部の群では、群の局所の判定に加えて`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「統合とAWI終了」手順1の群間の検収を求める。
    - レビューの収束: 全ての計画が`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「収束と統合への引渡し」の収束の条件を満たし、返却と走査記録の既存の不良の処置（同書「返却に含まれる既存不良の受領」）も終わっている。
    - 画面差分: あれば並行する画面のレビューが収束し、ユーザビリティレビューの判定が`合格`か`未確定`である。
