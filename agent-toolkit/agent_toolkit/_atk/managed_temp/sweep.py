@@ -407,6 +407,8 @@ def _examine(
 ) -> bool:
     """1件を調べ、削除した場合は真を返す。日次掃引ではworktreeの外の兄弟も期限で回収する。"""
     latest, has_git, _size = inspected if inspected is not None else _inspect_entry(child, metadata, now_ns, times)
+    if latest >= cutoff_ns and not has_git:
+        return False
     if child in protected_sessions or plugin_root_in_use(child) or has_live_owner(child):
         return False
     if has_git:
@@ -423,8 +425,6 @@ def _examine(
                 )
                 if removed:
                     deleted_children.append(nested)
-        return False
-    if latest >= cutoff_ns:
         return False
     return _remove(state_root, child, metadata)
 

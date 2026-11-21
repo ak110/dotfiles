@@ -177,6 +177,22 @@ def test_update_reports_unresolved_permission_error_and_retries(blocked, mode, r
     assert not cache.exists()
 
 
+def test_update_cleanup_io_error_points_to_log_and_retry(monkeypatch, capsys):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
+    target = paths.temp_root() / "unreadable"
+    reason = os.strerror(errno.EIO)
+    monkeypatch.setattr(sweep, "sweep_managed_temp", lambda **_kwargs: sweep.SweepResult([], ((target, reason),)))
+
+    with post_apply._configure_logging():
+        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+
+    screen = capsys.readouterr()
+    assert "更新ログで対象と理由を確認" in screen.err
+    assert "原因を解消した後に update-dotfiles を再実行" in screen.err
+    saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")
+    assert f"一時資源の回収を保留: {target}: {reason}" in saved
+
+
 def test_update_hides_success_but_preserves_manual_recovery(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
     malformed = tmp_path / "settings.json"
