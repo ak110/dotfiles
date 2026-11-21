@@ -45,6 +45,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
 | 処理対象WIを加える時、必須是正レーンを足す時、同一主題の追加指示を受けた時、上流へ投入する時 | `agent-toolkit:atk-mode/playbooks/process-wi-additions.md` |
 | 修正commitが必要なCI失敗か全体検証の失敗を扱う時 | `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` |
 | 公開工程を始める時 | `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md` |
+| frontmatterに`merge_branch`を持つマージ用AWIを処理する時 | `agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」 |
 | 延期adopt、反映後の観測、報告前の保存状態の確認をする時 | `agent-toolkit:atk-mode/playbooks/process-wi-observation.md` |
 | 作業契約を作成・更新する時、工程境界で要求と成果を確かめる時 | `agent-toolkit:atk-mode/references/work-contract.md` |
 | WIから受入までの工程の責務と受け渡しを確かめる時 | `agent-toolkit:atk-mode/references/workflow-phases.md` |
@@ -97,6 +98,7 @@ all-reposの統括からリポジトリ担当として候補を受け取った�
    統括から受け取ったリポジトリ担当は初回の候補を使い、選定を別の担当へ委譲することは避ける。
    監査の結果が一部の候補の判断に要る場合は、その判断だけを待ち、独立した候補の選定と開始できるレーンの起動を進める。
 3. `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「レーンと資源」に従い、選定結果の`段階`と`先行レーン`で`atk lane create`へ対象を渡し、準備された資源でレーン担当を起動する。
+   frontmatterに`merge_branch`を持つマージ用AWIはレーンを割り当てず、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従ってメインが直接取り込み、公開工程へ合流する。
    後続のレーンは、先行レーンの統合と書込の主体の解放を確かめてから、現行のHEADを起点に作る。
    Claude Codeでは、各段階の最初の起動を全て終えてから、同書「各段階の全初期通常レーン起動後の会話圧縮」へ進む。
 4. メインは各レーンからのユーザー判断の通知を中継し、レーン間の書込競合と依存を調停する。

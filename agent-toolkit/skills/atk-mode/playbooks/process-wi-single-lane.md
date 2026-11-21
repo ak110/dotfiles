@@ -85,7 +85,8 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    - ユーザーの明示の追加と、本書「見つけた既存不良の扱い」で今回追加とした正式改善AWIは対応表へ反映して比較の基準を更新し、集合の固定後の追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の基準で扱う。
 2. `atk wi`の`adopt`や`reject`に`--commit`を渡す場合は`--target-repo`に対象worktreeの絶対パスを、それ以外の操作では保存された`target_repo`を使う。
    Gitの起点の比較、実装、検証、commit、レビューには対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
-3. 計画対象があれば、対象worktreeごとに`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」で計画を起草する。
+3. frontmatterに`merge_branch`を持つマージ用AWIは計画・実装・実行レビューを省き、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従って直接取り込んで終了する。
+   残る計画対象があれば、対象worktreeごとに`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」で計画を起草する。
    計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはそのworktreeを指定し、対応表の全ての計画対象を`--expected-wi <WIファイル名>`で繰り返し指定して、実装前に過不足なく一致することを確かめる。
    全件が直接実装対象なら計画ファイルを作らず、対応表とレビュー対象の集合の和で網羅を検収する。
 4. 対応表のworktreeで、計画対象は計画の`## 反映内容と反映先`と`## 完成条件`に従い、直接実装対象はWIの要求と完成条件に従って実装する。
