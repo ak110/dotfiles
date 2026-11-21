@@ -125,6 +125,11 @@ def _add_wi_add_parser(sub: Any) -> None:
         help="process-wi実行中のAWIを今回（this-run）か次回（next-run）へ渡す指定。",
     )
     add.add_argument(
+        "--process-wi-kind",
+        choices=("defect", "improvement"),
+        help="--process-wi-timing指定時に必須。確定した欠陥はdefect、改善・未確定の候補はimprovement。",
+    )
+    add.add_argument(
         "--defer-category",
         choices=("investigation", "agreement", "external-wait", "cross-repository", "host-unavailable"),
         help="--process-wi-timing=next-runで必要な先送り条件の区分。",
