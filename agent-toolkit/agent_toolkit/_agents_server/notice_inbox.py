@@ -158,7 +158,7 @@ def take_notices(
             continue
         except OSError as exc:
             _LOG.warning(
-                "上り通知の退避を確定できず保持した: %s: %s。権限を確認してからatk agents waitで再回収する",
+                "上り通知をこの待機で配送できなかった: %s: %s。権限を確認し、必要なら送信元に再送を依頼する",
                 notice.path,
                 exc,
             )

@@ -494,7 +494,7 @@ async def kill(
     ] = DEFAULT_KILL_TIMEOUT,
     stop: Annotated[
         bool,
-        Field(description=parameter_description("終了時の結果を返した応答に限り、同じsessionを応答後に破棄する。")),
+        Field(description=parameter_description("中断を確認してsessionを破棄する。保持した本文はatk agents waitで回収する。")),
     ] = False,
 ) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終了を待つ。
@@ -503,7 +503,8 @@ async def kill(
     `timeout`の省略時は270秒を待機上限とし、`timeout=0`を指定すると、中断要求を配送した直後の状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
     終了時の結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
-    `show`の`result_held`が真のsessionでは、保留中の結果をそのまま終了時の結果として返し、以後の`send_message`を受け付ける。
+    `show`の`result_held`が真なら保留を確定し、以後の`send_message`を受け付ける。
+    `stop=True`で未回収の本文を読み手へ残した場合、終了状態と中断情報だけを返す。本文は`atk agents wait`で回収する。
     `show`の`ownership`が`owner_lost`のsessionでは、登録簿のpidと起動時刻が一致する委譲先CLIだけを停止し、
     停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """

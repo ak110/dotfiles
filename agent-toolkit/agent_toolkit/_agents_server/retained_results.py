@@ -64,7 +64,7 @@ class _UnreadableResult(ValueError):
     """指定した結果原本を読めない。別turnへの操作は続けられる。"""
 
 
-def _read(path: pathlib.Path) -> dict[str, Any] | None:
+def _read(path: pathlib.Path, *, allow_missing_status: bool = False) -> dict[str, Any] | None:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -73,6 +73,8 @@ def _read(path: pathlib.Path) -> dict[str, Any] | None:
         raise _UnreadableResult(f"{path}: {error}") from error
     if not isinstance(value, dict):
         raise _UnreadableResult(f"{path}: 最上位が辞書ではありません")
+    if not isinstance(value.get("status"), str) and not (allow_missing_status and "status" not in value):
+        raise _UnreadableResult(f"{path}: statusが文字列ではありません")
     return value
 
 
@@ -139,7 +141,8 @@ def expose_legacy_slots(directory: pathlib.Path, owner: str, *, sessions: set[st
 def legacy_publication(path: pathlib.Path, *, missing: ResultEnd | None = None) -> ResultEnd | None:
     """旧名の識別を読む。識別を持たない原本がある場合に、不在時の判断を使わない。"""
     try:
-        payload = _read(path)
+        # 旧名の索引移行では終了の識別子だけを読み、本文としては公開しない。
+        payload = _read(path, allow_missing_status=True)
     except _UnreadableResult as error:
         _warn_unreadable(str(error))
         return None
@@ -155,8 +158,9 @@ def result_state(path: pathlib.Path, end: ResultEnd) -> str:
             # 旧writerのファイルを実際に読めた時点で、その終了結果の公開だけを記録する。
             mark_published(path, end)
         return "published"
-    if unreadable:
+    if unreadable and (published or path.with_suffix(f".{_suffix(end)}.json").exists()):
         return "unreadable"
+    # 壊れた旧名だけでは、識別が異なる新しい終了の公開を妨げない。
     return "consumed" if published else "unpublished"
 
 

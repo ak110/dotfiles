@@ -57,6 +57,26 @@ async def test_stop_discards_terminal_session(
 
 
 @pytest.mark.asyncio
+async def test_stop_retains_new_end_when_legacy_result_is_unreadable(tmp_path: pathlib.Path) -> None:
+    """停止による保持でも、旧名が壊れたことを別の未公開turnの公開済み判定にしない。"""
+    writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
+    async with server_manager.AgentsServerManager(writer) as manager:
+        install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+        writer.activate()
+        session = state.SessionState("child", str(tmp_path), engine="codex", announced=True, turn_seq=2)
+        _complete(session, message="後の結果")
+        manager.sessions[session.session_id] = session
+        previous = shared_layout.results_directory("root", tmp_path) / "child.json"
+        previous.parent.mkdir(parents=True, exist_ok=True)
+        previous.write_text("{", encoding="utf-8")
+
+        assert await manager.stop(session.session_id, retain_result=True) == {}
+        result, error = writer.take_result(session.session_id, collector="test")
+        assert error is None and result is not None and result["agent_message"] == "後の結果"
+        assert previous.read_text(encoding="utf-8") == "{"
+
+
+@pytest.mark.asyncio
 async def test_stop_removes_status_file_projection_and_retained_result(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,

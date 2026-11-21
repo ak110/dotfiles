@@ -152,3 +152,33 @@ def test_notice_access_error_preserves_original_and_reports_retry(
     assert original.is_file()
     assert "原本を保持した" in caplog.text and "atk agents waitで再回収" in caplog.text
     assert str(original) in caplog.text
+
+
+def test_stashed_notice_with_unlink_failure_does_not_promise_next_wait(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    directory = shared_layout.notices_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    stash = tmp_path / "run"
+    stash.mkdir()
+    session_registry.publish(
+        "target", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="parent", state_root=tmp_path
+    )
+    original = directory / "target.pending.json"
+    value = json.dumps({"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "本文"})
+    original.write_text(value, encoding="utf-8")
+    (stash / original.name).write_text(value, encoding="utf-8")
+    unlink = pathlib.Path.unlink
+
+    def denied(path: pathlib.Path, *args, **kwargs):
+        if path == original:
+            raise PermissionError("旧原本の削除不可")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", denied)
+    assert not notice_inbox.take_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="root.json", stash_directory=stash
+    )
+    assert original.read_text(encoding="utf-8") == value
+    assert "この待機で配送できなかった" in caplog.text and "送信元に再送" in caplog.text
+    assert "atk agents waitで再回収" not in caplog.text

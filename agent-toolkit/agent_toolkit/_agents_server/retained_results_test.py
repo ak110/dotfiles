@@ -35,6 +35,21 @@ def test_unreadable_legacy_slot_does_not_hide_a_later_end(tmp_path: pathlib.Path
     assert path.read_text(encoding="utf-8") == "{"
 
 
+def test_invalid_status_shape_does_not_hide_usable_result(tmp_path: pathlib.Path) -> None:
+    path = shared_layout.results_directory("root", tmp_path) / "child.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"status":[]}', encoding="utf-8")
+    payload = {
+        "status": "completed",
+        "agent_message": "後の結果",
+        "turn_seq": 2,
+        "finalized_at": "2026-11-21T00:02:00Z",
+    }
+    retained_results.publish_result(path, payload)
+    assert retained_results.read_retained_result("root", "child", tmp_path) == payload
+    assert path.read_text(encoding="utf-8") == '{"status":[]}'
+
+
 def test_take_reports_path_of_unreadable_separate_result(tmp_path: pathlib.Path) -> None:
     """旧名がない場合でも、読めなかった別名の原本を診断し保持する。"""
     directory = shared_layout.results_directory("root", tmp_path)
