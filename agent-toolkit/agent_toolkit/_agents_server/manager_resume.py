@@ -40,6 +40,7 @@ from agent_toolkit._agents_server.resume_waits import (
     finalize_pending_result,
     has_pending_auto_resume_targets,
     is_background_completion_wait,
+    is_final_response_with_unobserved_children,
 )
 from agent_toolkit._agents_server.state import PreviousResult, ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
@@ -237,23 +238,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         # 配送済みの子を除いた後、通常の最終本文は未回収の子だけを理由に保持しない。
         # 子の所有と保持結果は変えず、元の委譲先へ回収を頼むために識別子を添える。
-        if (
-            own_pending is not None
-            and is_background_completion_wait(session)
-            and own_pending["status"] == "completed"
-            and isinstance(message := own_pending.get("agent_message"), str)
-            and message.strip()
-            and not result_contract.is_wait_statement(message)
-            and (session.live_child_session_ids or session.terminal_child_session_ids)
-            and not session.live_tasks
-            and not session.codex_live_subagent_thread_ids
-            and not session.codex_terminal_subagent_thread_ids
-            and not cli_turn_may_continue(session)
-            and not (session.codex_self_message_observed and not session.codex_self_message_repair_consumed)
-        ):
-            unobserved_children = session.terminal_child_session_ids.copy()
-            session.terminal_child_session_ids.clear()
-            finalize_pending_result(session, unobserved_sessions=unobserved_children, final_response=True)
+        if not cli_turn_may_continue(session) and is_final_response_with_unobserved_children(session):
+            finalize_pending_result(session)
             return
         if (
             delivered

@@ -152,13 +152,30 @@ def auto_resume_wait_deadline(session: SessionState) -> float | None:
     return session.auto_resume_deadline
 
 
+def is_final_response_with_unobserved_children(session: SessionState) -> bool:
+    """明示の待機表明ではなく、未回収のagents_server子だけが残る最終結果か返す。"""
+    result = session.pending_result
+    return bool(
+        result is not None
+        and is_background_completion_wait(session)
+        and result["status"] == "completed"
+        and isinstance(message := result.get("agent_message"), str)
+        and message.strip()
+        and not result_contract.is_wait_statement(message)
+        and (session.live_child_session_ids or session.terminal_child_session_ids)
+        and not session.live_tasks
+        and not session.codex_live_subagent_thread_ids
+        and not session.codex_terminal_subagent_thread_ids
+        and not (session.codex_self_message_observed and not session.codex_self_message_repair_consumed)
+    )
+
+
 def finalize_pending_result(
     session: SessionState,
     *,
     touch: bool = True,
     keep_resume_chain: bool = False,
     unobserved_sessions: Iterable[str] = (),
-    final_response: bool = False,
 ) -> None:
     """保留したturn結果を公開可能な終了状態へ移す。
 
@@ -169,14 +186,18 @@ def finalize_pending_result(
     待機対象が残るか再開turnの結果を受け取れずに確定したことを`heldResultFinalized`で示す。
     保留した結果は待機表明であり、待機対象が残るまま公開する結果は再開turnの結果ではないことを委譲元へ示すためである。
     追跡集合から既に外した未観測の孫sessionは`unobserved_sessions`で渡す。既存の`error`の内容は保つ。
-    通常の最終応答を返す場合（`final_response`）は、未観測の識別子だけを記録し、待機表明の印を付けない。
+    未回収の子だけが残る最終応答は、既に終了を観測した子の識別子も記録し、待機表明の印を付けない。
     """
     result = session.pending_result
     if result is None:
         raise RuntimeError("auto-resume wait has no pending result")
+    final_response = is_final_response_with_unobserved_children(session)
     wait_statement = is_background_completion_wait(session) and result_contract.is_wait_statement(result.get("agent_message"))
     unfinished_tasks = set(session.live_tasks)
     unobserved = set(session.live_child_session_ids) | set(session.codex_live_subagent_thread_ids) | set(unobserved_sessions)
+    if final_response:
+        unobserved.update(session.terminal_child_session_ids)
+        session.terminal_child_session_ids.clear()
     session.clear_hold()
     if not keep_resume_chain:
         clear_overload_resume(session)
