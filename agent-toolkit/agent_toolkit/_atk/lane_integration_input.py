@@ -30,9 +30,11 @@ def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -
         "verification_timeout",
         "handoff",
         "lane_started_at",
+        "processed_wis",
     }:
         raise ValueError(
-            "manifestはplans・wis・verification・verification_records・verification_timeout・handoff・lane_started_atを持つobjectで指定する"
+            "manifestはplans・wis・verification・verification_records・verification_timeout・handoff・"
+            "lane_started_at・processed_wisを持つobjectで指定する"
         )
     verification_timeout = manifest.get("verification_timeout")
     if verification_timeout is not None and (
@@ -91,6 +93,15 @@ def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -
     expected = set(_lane_records.selection_state(record)["lane_wis"])
     if expected and expected != {row["name"] for row in manifest["wis"]}:
         raise ValueError("manifestのWI集合が選定の今回のレーン集合と一致しない")
+    if "processed_wis" in manifest:
+        processed = manifest["processed_wis"]
+        names = {row["name"] for row in manifest["wis"]}
+        if (
+            not isinstance(processed, list)
+            or not all(isinstance(wi, str) and wi in names for wi in processed)
+            or len(processed) != len(set(processed))
+        ):
+            raise ValueError("processed_wisはmanifestのwisに含まれるWI名だけを重複なしの配列で指定する")
     if "lane_started_at" in manifest:
         # Git統合後に最終化だけが入力の誤りで止まらないよう、完了時刻より後の値は統合の前に拒否する。
         check_lane_started_before_now(lane_started_at(manifest["lane_started_at"]))
@@ -250,6 +261,8 @@ def amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing.
             "Git統合後は前回と同じレビューHEADと統合先を指定する"
         )
     old, new = previous["manifest"], identity["manifest"]
+    if "selection-mark" in state["completed"] and set(processed_wis(old)) != set(processed_wis(new)):
+        raise ValueError("記録済みの処置済みWIは変更できない。processed_wisを前回と同じ値へ戻して再実行する")
     if any(old.get(key) != new.get(key) for key in ("verification", "verification_timeout", "handoff", "lane_started_at")):
         raise ValueError(
             "最終化入力の補完では検証・引き継ぎ記録・レーン開始時刻を変更しない。"
@@ -313,6 +326,21 @@ def assert_integration_tree(
             if pathlib.Path(_lane_records.git(tree, "rev-parse", "--path-format=absolute", "--git-path", name)).exists():
                 raise ValueError(f"Gitの中断状態がある: {tree}: {name}")
     return worktree
+
+
+def processed_wis(manifest: dict[str, typing.Any]) -> list[str]:
+    """処置済み項目の明示指定を使い、省略時は終了操作で特定できる項目だけを返す。"""
+    if "processed_wis" in manifest:
+        return list(manifest["processed_wis"])
+    return [
+        row["name"]
+        for row in manifest["wis"]
+        if any(
+            argv[index] == "wi" and argv[index + 1] in {"adopt", "reject"} and argv[index + 2] == row["name"]
+            for argv in row["commands"]
+            for index in range(len(argv) - 2)
+        )
+    ]
 
 
 def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Path) -> None:

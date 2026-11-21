@@ -268,6 +268,28 @@ def test_public_command_records_integrated_lane(env: tuple[pathlib.Path, pathlib
     assert path.read_bytes() == before
 
 
+def test_marks_only_processed_wis_and_requires_every_wi(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
+    """未着手・継続中のWIは残し、全項目の処置後にだけレーンも統合済みにする。"""
+    repo, notes = env
+    names = ("done.md", "partial.md", "new.md")
+    for name in names:
+        _awi(notes, name, "`README.md`を変える。")
+    path = _write_selection(
+        tmp_path / "state.yaml",
+        [{"WI": name, "レーン": "lane-01", "書込対象": ["README.md"]} for name in names],
+    )
+    args = (str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo))
+    assert _dispatch(*args, "--mark-integrated-wis", '["done.md"]') == 0
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert [row.get("統合状態", "未統合") for row in data["選定"]] == ["統合済み", "未統合", "未統合"]
+    assert _dispatch(str(path), "--require-integrated", "--work-dir", str(repo)) == 1
+    before = path.read_bytes()
+    assert _dispatch(*args, "--mark-integrated-wis", '["unknown.md"]') == 2
+    assert path.read_bytes() == before
+    assert _dispatch(*args, "--mark-integrated-wis", '["partial.md","new.md"]') == 0
+    assert _dispatch(str(path), "--require-integrated", "--work-dir", str(repo)) == 0
+
+
 @pytest.mark.parametrize("problem", ["unknown-state", "state-type", "unknown-prior", "broad", "invalid-path", "conflict"])
 def test_state_update_preserves_output_on_failure(
     env: tuple[pathlib.Path, pathlib.Path],

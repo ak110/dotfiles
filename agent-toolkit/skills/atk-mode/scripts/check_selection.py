@@ -419,9 +419,29 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--mark-integrated-wis",
+        metavar="JSON",
+        help="指定レーンのうち処置済みのWI名のJSON配列。省略すると指定レーンの全WIを記録する",
+    )
+    parser.add_argument(
         "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"
     )
     args = parser.parse_args(argv)
+    processed_wis: set[str] | None = None
+    if args.mark_integrated_wis is not None:
+        error = "--mark-integrated-wisは--mark-integratedと組で、重複のないWI名のJSON配列を指定する"
+        try:
+            values = json.loads(args.mark_integrated_wis)
+        except ValueError:
+            parser.error(error)
+        if (
+            args.mark_integrated is None
+            or not isinstance(values, list)
+            or not all(isinstance(wi, str) for wi in values)
+            or len(values) != len(set(values))
+        ):
+            parser.error(error)
+        processed_wis = set(values)
     other_updates = (
         args.merge,
         args.lane_map,
@@ -574,6 +594,15 @@ def main(argv: list[str] | None = None) -> int:
             unknown = set(args.mark_integrated) - {str(row[_selection.LANE_KEY]) for row in rows}
             if unknown:
                 raise InputError(f"統合状態の対象レーンがない: {sorted(unknown)}", next_action=_FIX_CONTENT)
+            if processed_wis is not None:
+                names = {
+                    str(item[_selection.WI_KEY])
+                    for item in typing.cast(list[dict[str, object]], _selection.decisions(selection) or [])
+                    if item.get(_selection.LANE_KEY, item.get("lane")) in args.mark_integrated
+                }
+                unknown = set(processed_wis) - names
+                if unknown:
+                    raise InputError(f"指定レーンに属さないWI: {sorted(unknown)}", next_action=_FIX_CONTENT)
         if args.merge is not None:
             assert args.lane_map is not None
             try:
@@ -627,15 +656,21 @@ def main(argv: list[str] | None = None) -> int:
         print(_next_action.next_action_line("。".join([*actions, _NEXT_RERUN])), file=sys.stderr)
         return 1
     if args.mark_integrated is not None:
+        items = typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions")))
+        for item in items:
+            if item.get(_selection.LANE_KEY, item.get("lane")) in args.mark_integrated and (
+                processed_wis is None or str(item.get(_selection.WI_KEY, item.get("awi"))) in processed_wis
+            ):
+                item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
         rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
         for row in rows:
-            if row[_selection.LANE_KEY] in args.mark_integrated:
+            if row[_selection.LANE_KEY] in args.mark_integrated and all(
+                item.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
+                for item in items
+                if item.get(_selection.LANE_KEY, item.get("lane")) == row[_selection.LANE_KEY]
+            ):
                 row[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
         selection[_selection.LANE_COSTS_KEY] = rows
-        # 後で同じレーンへ追加が合流してレーン行が未統合へ戻っても、統合済みの項目を区別できるよう項目にも記録する。
-        for item in typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions"))):
-            if item.get(_selection.LANE_KEY, item.get("lane")) in args.mark_integrated:
-                item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
     if args.output is not None:
         try:
             if args.merge is not None and args.output.resolve() == args.merge.resolve():

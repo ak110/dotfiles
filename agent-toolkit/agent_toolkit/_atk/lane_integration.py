@@ -97,7 +97,12 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         }
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
         state: dict[str, typing.Any] | None = record.get("integration")
-        if state is not None and state["phase"] == "finalized" and not _lane_records.selection_state(record)["integrated"]:
+        if (
+            state is not None
+            and state["phase"] == "finalized"
+            and not _lane_records.selection_state(record)["integrated"]
+            and (state["input_digest"] != digest or state.get("selection_integrated", True))
+        ):
             # 観測だけの再開ではHEADとmanifestが同じでも、選定の未統合を処置する必要がある。
             record["previous_integration"] = state
             state = None
@@ -199,6 +204,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                             timeout=record["procedure_timeout"],
                         )
             _lane_integration_input.integration_input(args, record)
+            processed = _lane_integration_input.processed_wis(manifest)
             selected = pathlib.Path(record["selection_file"])
             if not selected.exists() and "selection-mark" not in state["completed"]:
                 # 選定原本は失効した。統合済みの事実を所有登録の選定情報へ記録して回収判定へ渡す。
@@ -217,6 +223,8 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                         str(selected),
                         "--mark-integrated",
                         record["lane"],
+                        "--mark-integrated-wis",
+                        json.dumps(processed, ensure_ascii=False),
                         "--output",
                         str(selected),
                         "--work-dir",
@@ -225,7 +233,10 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     target,
                     timeout=record["procedure_timeout"],
                 )
-            record["selection"] = {**_lane_records.selection_state(record), "integrated": True}
+            selection = _lane_records.selection_state(record)
+            if not selected.exists() and set(selection["lane_wis"]) <= set(processed):
+                selection["integrated"] = True
+            state["selection_integrated"] = selection["integrated"]
             state["phase"] = "finalized"
             _lane_records.save(path, record)
         return dict(state, record_path=str(path))

@@ -111,6 +111,7 @@ def _manifest(path: pathlib.Path, lane_id: str, *, verification: list[list[str]]
                 "plans": [],
                 # 先頭のWIだけに終了argvを置き、残りは延期として扱う。
                 "wis": [{"name": wi, "commands": wi_commands if index == 0 else []} for index, wi in enumerate(_WIS[lane_id])],
+                "processed_wis": list(_WIS[lane_id]),
                 "verification": verification,
                 "handoff": str(handoff),
             }
