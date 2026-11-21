@@ -29,7 +29,6 @@ def _cleanup_integration_manifest(tmp_path: pathlib.Path, *, handoff_text: str) 
             {
                 "plans": [],
                 "wis": [{"name": "20261023-000000-001.md", "commands": []}],
-                "processed_wis": ["20261023-000000-001.md"],
                 "verification": [],
                 "handoff": str(handoff),
             }
@@ -385,13 +384,7 @@ def _finalization_manifest(tmp_path: pathlib.Path, **extra: Any) -> pathlib.Path
     manifest = tmp_path / "integration.json"
     manifest.write_text(
         json.dumps(
-            {
-                "plans": [],
-                "wis": [{"name": "20261023-000000-001.md", "commands": []}],
-                "processed_wis": ["20261023-000000-001.md"],
-                "handoff": str(handoff),
-                **extra,
-            }
+            {"plans": [], "wis": [{"name": "20261023-000000-001.md", "commands": []}], "handoff": str(handoff), **extra}
         ),
         encoding="utf-8",
     )

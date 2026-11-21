@@ -178,7 +178,6 @@ def test_integrate_finalizes_and_cleans_after_selection_file_expires(
             {
                 "plans": [],
                 "wis": [{"name": "20261023-000000-001.md", "commands": []}],
-                "processed_wis": ["20261023-000000-001.md"],
                 "verification": [],
                 "handoff": str(handoff),
             }

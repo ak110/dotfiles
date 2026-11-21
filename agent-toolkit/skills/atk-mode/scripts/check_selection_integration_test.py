@@ -19,7 +19,14 @@ from agent_toolkit._testing.lane_integration_support import (
     _record_wi_commit,
 )
 from agent_toolkit._testing.lane_support import _create, _invoke
-from agent_toolkit._testing.selection_check_support import _awi, _dispatch, _initial_allocation, _track, _write_selection
+from agent_toolkit._testing.selection_check_support import (
+    _awi,
+    _dispatch,
+    _initial_allocation,
+    _overlap_record,
+    _track,
+    _write_selection,
+)
 from agent_toolkit._testing.selection_check_support import fixture_env as fixture_env
 
 
@@ -297,6 +304,35 @@ def test_marks_only_processed_wis_and_requires_every_wi(env: tuple[pathlib.Path,
     assert path.read_bytes() == before
     assert _dispatch(*args, "--mark-integrated-wis", '["partial.md","new.md"]') == 0
     assert _dispatch(str(path), "--require-integrated", "--work-dir", str(repo)) == 0
+
+
+def test_explicit_mark_preserves_existing_precedence_from_processed_wi(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """処置済みWIだけが先行の根拠でも、明示した部分統合の記録を妨げない。"""
+    repo, notes = env
+    cases = [
+        ("a.md", "lane-01", "src/model.py"),
+        ("b.md", "lane-01", "README.md"),
+        ("c.md", "lane-02", "src/model.py"),
+    ]
+    for name, _, target in cases:
+        _awi(notes, name, f"`{target}`を変更する。")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": name, "レーン": lane, "書込対象": [target]} for name, lane, target in cases],
+        [{"レーン": "lane-01"}, {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"]}],
+    )
+    source = yaml.safe_load(path.read_bytes())
+    source["レーン間の重なり"] = [_overlap_record("src/model.py", "交わる")]
+    path.write_text(yaml.safe_dump(source, allow_unicode=True), encoding="utf-8")
+    args = (str(path), "--work-dir", str(repo))
+    assert _dispatch(*args) == 0
+    assert _dispatch(*args, "--mark-integrated", "lane-01", "--mark-integrated-wis", '["a.md"]', "--output", str(path)) == 0
+    saved = yaml.safe_load(path.read_bytes())
+    assert [item["WI"] for item in saved["選定"] if item.get("統合状態") == "統合済み"] == ["a.md"]
+    assert saved["レーンの所要時間"][1]["先行レーン"] == ["lane-01"]
+    assert _dispatch(*args, "--require-integrated") == 1
 
 
 @pytest.mark.parametrize("problem", ["unknown-state", "state-type", "unknown-prior", "broad", "invalid-path", "conflict"])

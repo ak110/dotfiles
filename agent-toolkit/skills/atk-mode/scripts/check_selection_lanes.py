@@ -376,6 +376,8 @@ def _check_lane_overlaps(
     costs: collections.abc.Sequence[object],
     records: list[dict[str, object]],
     integrated: set[str],
+    *,
+    preserve_historical_prior: bool = False,
 ) -> list[Violation]:
     """同段階の独立性と、別段階の重複から導く先行関係を確かめる。"""
     stages = {
@@ -389,11 +391,15 @@ def _check_lane_overlaps(
     expected: set[tuple[str, str, str]] = set()
     shared: set[tuple[str, str, str]] = set()
     dependencies: dict[str, set[str]] = {}
+    historical: dict[str, set[str]] = {}
     for left, right, lanes, overlaps in overlapping_pairs(items):
         shared.update((*lanes, path) for path in overlaps)
+        left_stage, right_stage = (stages.get(lane, (1, []))[0] for lane in lanes)
+        if preserve_historical_prior and left_stage != right_stage:
+            earlier, later = lanes if left_stage < right_stage else reversed(lanes)
+            historical.setdefault(later, set()).add(earlier)
         if _is_integrated(left, integrated) or _is_integrated(right, integrated):
             continue
-        left_stage, right_stage = (stages.get(lane, (1, []))[0] for lane in lanes)
         if left_stage == right_stage:
             expected.update((lanes[0], lanes[1], path) for path in overlaps)
         else:
@@ -430,7 +436,7 @@ def _check_lane_overlaps(
         for predecessor in prior:
             if predecessor in integrated:
                 continue
-            if not _reachable(lane, predecessor, dependencies):
+            if not _reachable(lane, predecessor, historical if preserve_historical_prior else dependencies):
                 errors.append(Violation(f"{lane}: 根拠の無い直列化: {predecessor}", next_action=_NEXT_PRIOR_UNFOUNDED))
     actual = {lane: set(prior) for lane, (_, prior) in stages.items()}
     for lane, predecessors in dependencies.items():

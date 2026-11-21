@@ -223,8 +223,11 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                         str(selected),
                         "--mark-integrated",
                         record["lane"],
-                        "--mark-integrated-wis",
-                        json.dumps(processed, ensure_ascii=False),
+                        *(
+                            ("--mark-integrated-wis", json.dumps(processed, ensure_ascii=False))
+                            if "processed_wis" in manifest
+                            else ()
+                        ),
                         "--output",
                         str(selected),
                         "--work-dir",

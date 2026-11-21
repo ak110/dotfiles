@@ -64,7 +64,7 @@ def test_integrate_public_lifecycle(
             {
                 "plans": [{"name": "plan.md", "commands": [argv]}] if planned else [],
                 "wis": [{"name": name, "commands": []} for name in [done, *pending]],
-                "processed_wis": [done],
+                **({"processed_wis": [done]} if mixed else {}),
                 "verification": [],
                 "handoff": str(handoff),
             }
@@ -102,15 +102,16 @@ def test_integrate_public_lifecycle(
     assert code == 0 and deleted["removed"] == ["lane-01"], stderr
 
 
-def test_processed_wis_defaults_to_terminal_actions() -> None:
-    """終了操作がない部分統合と未着手を、省略時に処置済みとみなさない。"""
+def test_processed_wis_uses_explicit_names_without_interpreting_argv() -> None:
+    """明示があればargvにかかわらずその一覧を使い、省略時は旧入力の全件を扱う。"""
     rows = [
         {"name": "done.md", "commands": [["atk", "wi", "adopt", "--note=確認済み", "done"]]},
-        {"name": "rejected.md", "commands": [["atk", "wi", "reject", "--if-inbox", "rejected"]]},
+        {"name": "rejected.md", "commands": [["echo", "wi", "reject", "--if-inbox", "rejected"]]},
         {"name": "partial.md", "commands": [["atk", "wi", "edit", "partial.md"]]},
         {"name": "new.md", "commands": []},
     ]
-    assert lane_integration_input.processed_wis({"wis": rows}) == ["done.md", "rejected.md"]
+    assert lane_integration_input.processed_wis({"wis": rows}) == [row["name"] for row in rows]
+    assert lane_integration_input.processed_wis({"wis": rows, "processed_wis": ["done.md"]}) == ["done.md"]
     assert lane_integration_input.processed_wis({"wis": rows, "processed_wis": []}) == []
 
 
