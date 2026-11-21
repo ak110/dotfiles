@@ -40,7 +40,7 @@ _COMMAND_TIMEOUT = 300.0
 
 
 def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutcome:
-    """公式スタンドアローン版を導入または更新し、確認後に旧npm版とmise版を移行する。
+    """公式スタンドアローン版を導入または更新し、確認後に旧npm版を案内し、mise版を移行する。
 
     取得・導入・更新と確認の失敗は警告を出力してスキップと数え、旧版の撤去と中継の再生成の失敗は失敗と数える。
     """
@@ -87,25 +87,20 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     # ユーザーが`codex`で起動する起動管理。dotfilesが見つからない場合は確認済みの公式実行体を案内する。
     canonical = _wrapper_launcher(windows=windows) or launcher
     failures, removed = _remove_mise_versions(canonical)
-    migrated = False
-    try:
-        migrated = setup_cli_common.migrate_npm_launchers(
-            "codex",
-            _PACKAGE,
-            canonical,
-            codex_runtime.standalone_root(),
-            extra_search_directories=_nvm_bin_directories(),
-            # dotfilesが配置した起動管理はnpmの導入物ではなく、帰属判定の対象から除く。
-            excluded_launchers=codex_runtime.wrapper_launchers(),
-        )
-    except RuntimeError as error:
-        failures.append(str(error))
+    setup_cli_common.warn_about_npm_launchers(
+        "codex",
+        _PACKAGE,
+        canonical,
+        codex_runtime.standalone_root(),
+        extra_search_directories=_nvm_bin_directories(),
+        excluded_launchers=codex_runtime.wrapper_launchers(),
+    )
     orphaned_shims: list[Path] = []
     if not removed and not failures:
         orphan_failures, orphaned_shims = _find_orphaned_mise_shims()
         failures.extend(orphan_failures)
     # 自身の除去履歴だけでなく、miseの申告と中継の実在が一致しない場合も再生成する。
-    if removed or migrated or orphaned_shims:
+    if removed or orphaned_shims:
         reshim_failures = _reshim_mise()
         failures.extend(reshim_failures)
         if not reshim_failures:
