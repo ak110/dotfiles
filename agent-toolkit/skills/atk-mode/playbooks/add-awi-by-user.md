@@ -24,7 +24,7 @@
    調査前に`atk wi submission begin --target-repo <リポジトリ>`で、起動時のcwdのリポジトリと既知の投入先を記録する。
    投入先が変われば、調査・採否確認中と未保存の投入先を全て指定し直す。
    巡回は投入の終了を待ち、`begin`は集合を置換して開始時刻を保つ。
-   系統は要求から選び（`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」）、決められなければ手順7で聞く。
+   系統は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入」の系統を登録したリポジトリ宛ての段に従って選び、決められなければ手順7で聞く。
    不具合・指摘・エラーは先に`agent-basics:bugfix`を起動する。
    既存AWIの更新・懸念は質問や調査の前に扱い、`inbox`・`hold`は保留し、`processing`への変更は別AWIに切り出す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」）。
 2. 起動後の入力は全て要求として読む（動作を選ぶ引数は無い）。
@@ -87,7 +87,8 @@
    - `agent-toolkit:atk-mode/references/draft-semantic-review.md`で原文との意味の一致を確認し、保存する原稿は毎回`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`で独立検収する。
      同時にそろった原稿は識別子で要求・出所・証拠と対応付け、起動元リポジトリ、採否理由、派生先を親契約の入力に含める。
      指摘は本書「指摘の分類と処置」で扱う。
-   - `agent-toolkit:atk-mode/playbooks/wi-saving.md`に従い、`atk wi add --dry-run`、回答済みUWIとの整合、保存結果を検収する。
+   - `agent-toolkit:atk-mode/playbooks/wi-saving.md`の「保存前の確認」、「投入と取得」の導入と「投入」「保存結果の検収」、「返す報告に含める項目」に従い、`atk wi add --dry-run`、回答済みUWIとの整合、保存結果を検収する。
+     同書「取得」はキュー項目の取得が必要な時に読む。
 10. 投入を終える。
     登録0件でも手順5の対応表と採否の根拠を検収する。
     `atk wi submission end --findings-file <指摘対応記録の絶対パス>`を実行し、全てのレビュー返却を`--review-result`で添える。

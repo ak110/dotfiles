@@ -183,9 +183,17 @@ def test_claude_content_match_skips_install_but_reflects_source_edits(tmp_path: 
 
 
 def test_warmup_rechecks_code_and_dependencies(tmp_path: Path, monkeypatch) -> None:
-    script = tmp_path / "server.py"
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        warmup_agents_server.config_settings,
+        "load_config_strict",
+        lambda: {"repositories": json.dumps({"github.com/ak110/dotfiles": {"path": str(tmp_path), "edit": "allow"}})},
+    )
+    project = tmp_path / "agent-toolkit"
+    script = project / "agent_toolkit" / "agents_server_mcp.py"
+    script.parent.mkdir(parents=True)
     script.write_text("# MCP", encoding="utf-8")
-    commands = [["python", str(script)]]
+    commands = [["python", str(script), "--project", str(project), str(script)]]
     monkeypatch.setattr(plugin_warmup, "prepare_targets", lambda *args, **kwargs: plugin_warmup.PreparedTargets(commands))
     startup: list[list[str]] = []
     dependency_ok = True
