@@ -131,9 +131,19 @@ def test_known_failure_skips_diagnostic_fetch(monkeypatch: pytest.MonkeyPatch, t
     assert not calls
 
 
-def test_log_excerpt_redacts_before_truncating_lines(monkeypatch: pytest.MonkeyPatch) -> None:
-    """行を切り詰める位置が資格情報の途中にあっても、資格情報の先頭を本文へ残さない。"""
+def test_log_excerpt_redacts_before_truncating_lines() -> None:
     token = "ghp_" + "A" * 40
-    _record_commands(monkeypatch, "x" * 280 + f" https://{token}@github.com/owner/repo\n")
-    result = alerts.collect_github_ci_failures("github.com/owner/repo", "main", run_list_fn=lambda *_args: [_FAILED_RUN])
-    assert "ghp_" not in result[0].details()
+    prefix = "x" * 280 + " https://"
+    # 過去版にも同じ入力を渡すため、通知の取得方式に依存しない抜粋関数を検査する。
+    # pylint: disable-next=protected-access
+    result = alerts._log_excerpt(f"{prefix}{token}@github.com/owner/repo\n正常な行\n")
+    assert result == f"        {prefix}[REDACTED]@\n        正常な行"
+
+
+def test_log_excerpt_redacts_multiline_key_outside_tail() -> None:
+    body = "secret-body\n" * 200
+    key_type = "PRIVATE KEY"
+    text = f"-----BEGIN {key_type}-----\n{body}-----END {key_type}-----\n正常な行"
+
+    # pylint: disable-next=protected-access
+    assert alerts._log_excerpt(text) == "        [REDACTED]\n        正常な行"

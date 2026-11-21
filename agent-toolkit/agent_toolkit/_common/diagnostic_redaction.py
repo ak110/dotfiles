@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Sequence
 from typing import Any
 
 REDACTED = "[REDACTED]"
@@ -65,3 +66,59 @@ def redact_diagnostic_values(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [redact_diagnostic_values(item) for item in value]
     return value
+
+
+def diagnostic_excerpt(
+    text: str,
+    *,
+    prefix_chars: int | None = None,
+    prefix_bytes: int | None = None,
+    tail_bytes: int | None = None,
+    tail_chars: int | None = None,
+    tail_lines: int | None = None,
+    collapse_whitespace: bool = False,
+) -> str:
+    """未切り詰めの診断を伏せてから、指定の単位で切り取る。UTF-8の端で分断した文字は捨てる。"""
+    safe = redact_secrets(text)
+    if collapse_whitespace:
+        safe = re.sub(r"\s+", " ", safe)
+    if tail_lines is not None:
+        safe = "\n".join(safe.strip().splitlines()[-tail_lines:]) if tail_lines else ""
+    if tail_chars is not None:
+        safe = safe[-tail_chars:] if tail_chars else ""
+    if prefix_chars is not None:
+        safe = safe[:prefix_chars]
+    if prefix_bytes is not None:
+        safe = safe.encode()[:prefix_bytes].decode(errors="ignore")
+    if tail_bytes is not None:
+        safe = safe.encode()[-tail_bytes:].decode(errors="ignore") if tail_bytes else ""
+    return safe
+
+
+def diagnostic_line_excerpt(text: str, *, line_chars: int, select: Callable[[list[str]], Sequence[int | str]]) -> list[str]:
+    """診断全体を伏せ、行を制限してから、指定された行と区切りの文字列を返す。
+
+    行を選ぶ関数には、上限より後ろにある診断語も判定できるよう、伏せ字済みの行の全文を渡す。
+    """
+    lines = redact_secrets(text).splitlines()
+    clipped = [line[:line_chars] for line in lines]
+    return [clipped[item] if isinstance(item, int) else item[:line_chars] for item in select(lines)]
+
+
+class ByteDiagnosticLine:
+    """未切り詰めのログ行から、UTF-8バイト数を制限した診断行を作る。"""
+
+    def __init__(self, text: str, *, line_bytes: int) -> None:
+        self.text = diagnostic_excerpt(text, prefix_bytes=line_bytes)
+        self.size = len(self.text.encode()) + 1
+
+
+def newest_diagnostic_lines(lines: Sequence[ByteDiagnosticLine], *, total_bytes: int) -> list[str]:
+    """改行を含むバイト予算に入る連続した末尾の診断行を返す。"""
+    kept: list[str] = []
+    for line in reversed(lines):
+        if line.size > total_bytes:
+            break
+        total_bytes -= line.size
+        kept.append(line.text)
+    return kept[::-1]

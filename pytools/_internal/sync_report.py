@@ -8,7 +8,7 @@
 
 `libexec/update_dotfiles.py`はPEP 723スクリプトとして`--no-project`で起動され、
 リポジトリ直下を`sys.path`へ加えて`pytools._internal`から本モジュールを読み込む。
-そのスクリプトの依存（`filelock`・`platformdirs`・`psutil`）だけで動くよう、本モジュールの依存は標準ライブラリと`platformdirs`に限る。
+そのスクリプトの依存（`filelock`・`platformdirs`・`psutil`）だけで動くよう、本モジュールでは標準ライブラリ、`platformdirs`、標準ライブラリだけで動くリポジトリ内の診断抜粋を使う。
 """
 
 import contextlib
@@ -20,6 +20,7 @@ import tempfile
 from typing import Any
 
 import platformdirs
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt
 
 SCHEMA = 1
 REPORT_PATH = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "sync-report.json"
@@ -34,13 +35,7 @@ def now_text() -> str:
 
 def truncate_tail(text: str) -> str | None:
     """子の出力（標準エラーを含む）の末尾を上限付きで返す。空文字列は`None`として扱う。"""
-    stripped = text.strip()
-    if not stripped:
-        return None
-    tail = "\n".join(stripped.splitlines()[-STDERR_TAIL_MAX_LINES:])
-    if len(tail) > STDERR_TAIL_MAX_CHARS:
-        tail = tail[-STDERR_TAIL_MAX_CHARS:]
-    return tail
+    return diagnostic_excerpt(text, tail_lines=STDERR_TAIL_MAX_LINES, tail_chars=STDERR_TAIL_MAX_CHARS) or None
 
 
 def read() -> dict[str, Any]:

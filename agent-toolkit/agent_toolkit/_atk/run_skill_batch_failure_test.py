@@ -310,5 +310,7 @@ def test_log_diagnostics_redact_before_truncating_lines(tmp_path):
     prefix = '{"type":"result","is_error":true,"detail":"'
     filler = "x" * (1990 - len(prefix) - len(" https://"))
     payload = f"{prefix}{filler} https://{token}@github.com/owner/repo" + '"}'
-    body, _details = _log_details(tmp_path, f"[stdout] {payload}\n[stderr] 終了 https://{filler}{token}@github.com\n")
+    body, details = _log_details(tmp_path, f"[stdout] {payload}\n[stderr] 正常な行\n")
     assert "ghp_" not in body
+    assert details["error_events"] == [f"{prefix}{filler} https://[REDACTED]"]
+    assert details["tail"] == "[stderr] 正常な行"

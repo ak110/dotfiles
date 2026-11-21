@@ -110,3 +110,21 @@ def test_finish_aggregates_bootstrap_failures_and_preserves_body_failure(
     assert runtime.finish(body_exit) == expected
     assert ("管理Pythonの更新", "exit=17") in recorded
     assert "管理Pythonの更新" in capsys.readouterr().err
+
+
+def test_bootstrap_failures_redacts_before_truncating(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = tmp_path / "update-bootstrap-11-22.json"
+    prefix = "x" * 4060 + " https://"
+    detail = f"{prefix}{'A' * 40}@example.org"
+    payload.write_text(json.dumps([{"title": "更新失敗", "detail": detail}]), encoding="utf-8")
+    monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(payload))
+
+    assert report.bootstrap_failures(tmp_path) == [("更新失敗", f"{prefix}[REDACTED]@example.org")]
+
+
+def test_sync_report_redacts_before_taking_tail() -> None:
+    token = "A" * 40 + "synthetic"
+    tail = "z" * 1965
+    raw = f"https://{token}@example.org\n{tail}"
+
+    assert runtime.sync_report.truncate_tail(raw) == f"https://[REDACTED]@example.org\n{tail}"

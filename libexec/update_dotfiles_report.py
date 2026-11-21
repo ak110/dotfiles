@@ -12,7 +12,7 @@ import subprocess
 import filelock
 from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import private_notes, process_tree, wi_layout
-from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt, redact_secrets
 
 
 def bootstrap_failures(directory: pathlib.Path) -> list[tuple[str, str]]:
@@ -39,7 +39,12 @@ def bootstrap_failures(directory: pathlib.Path) -> list[tuple[str, str]]:
         if isinstance(payload, list):
             for item in payload:
                 if isinstance(item, dict) and all(isinstance(item.get(key), str) for key in ("title", "detail")):
-                    failures.append((item["title"][:128], item["detail"][:4096]))
+                    failures.append(
+                        (
+                            diagnostic_excerpt(item["title"], prefix_chars=128),
+                            diagnostic_excerpt(item["detail"], prefix_chars=4096),
+                        )
+                    )
         path.unlink()
     except OSError, ValueError:
         pass
@@ -57,7 +62,7 @@ def report(failures: list[tuple[str, str]], state: pathlib.Path, root: pathlib.P
             current = {}
             atk = shutil.which("atk")
             for title, detail in failures:
-                title = re.sub(r"\s+", " ", redact_secrets(title))[:160]
+                title = diagnostic_excerpt(title, prefix_chars=160, collapse_whitespace=True)
                 normalized = re.sub(r"\b\d+\b", "<number>", redact_secrets(detail))
                 key = hashlib.sha256(f"{title}\n{normalized}".encode()).hexdigest()
                 old = previous.get(key, {})

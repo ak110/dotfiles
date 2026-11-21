@@ -21,7 +21,7 @@ from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import file_lock, plugin_environment, runtime_environment, windows_job
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt
 from agent_toolkit._common.next_action import report, with_next_action
 
 
@@ -34,10 +34,10 @@ def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generatio
     try:
         with path.open("rb") as stream:
             size = stream.seek(0, os.SEEK_END)
-            stream.seek(max(0, size - 65536))
-            detail = stream.read(65536).decode("utf-8", errors="replace")
+            stream.seek(0)
+            detail = diagnostic_excerpt(stream.read(size).decode("utf-8", errors="replace"), tail_bytes=65536)
         limit = "（末尾65536バイト。先頭を省略）" if size > 65536 else ""
-        error.add_note(f"{label}{limit}\n{redact_secrets(detail) if detail else '診断本文は空です。'}")
+        error.add_note(f"{label}{limit}\n{detail if detail else '診断本文は空です。'}")
     except OSError as failure:
         error.add_note(f"{label}（取得失敗: {failure}）")
 

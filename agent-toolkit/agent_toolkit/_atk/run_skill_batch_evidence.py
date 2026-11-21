@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import collections
-import collections.abc
 import datetime
 import json
 import pathlib
@@ -13,7 +12,7 @@ import sys
 from typing import Any
 
 from agent_toolkit._common import diagnostic_process, session_review
-from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.diagnostic_redaction import ByteDiagnosticLine, newest_diagnostic_lines, redact_secrets
 
 _EXCERPT_BYTES = 8192
 """実行条件・診断イベント・末尾を合わせた抜粋の上限。末尾だけを抜き出していた以前の上限と同じ量に保つ。"""
@@ -65,25 +64,6 @@ def _record_state(raw: Any) -> dict[str, Any]:
     return {"kind": "ディレクトリ" if stat.S_ISDIR(info.st_mode) else "その他"}
 
 
-def _clip(line: str) -> str:
-    """秘匿値を伏せてから1行を上限まで切り詰める。切り詰めた後に伏せると、切り詰めた位置をまたぐ資格情報が規則に一致せず、先頭が残る。"""
-    return redact_secrets(line).encode()[:_LINE_BYTES].decode(errors="ignore")
-
-
-def _size(line: str) -> int:
-    return len(line.encode()) + 1
-
-
-def _newest_within(lines: collections.abc.Iterable[str], budget: int) -> list[str]:
-    kept: list[str] = []
-    for line in reversed(list(lines)):
-        if _size(line) > budget:
-            break
-        budget -= _size(line)
-        kept.append(line)
-    return kept[::-1]
-
-
 def _log_diagnostics(raw: Any) -> dict[str, Any]:
     """実行ログ全体から、会話本文を除いた診断を有限の量で抜き出す。
 
@@ -95,9 +75,9 @@ def _log_diagnostics(raw: Any) -> dict[str, Any]:
     header: list[str] = []
     header_bytes = 0
     header_open = True
-    events: collections.deque[str] = collections.deque(maxlen=_EVENT_LIMIT)
+    events: collections.deque[ByteDiagnosticLine] = collections.deque(maxlen=_EVENT_LIMIT)
     event_count = 0
-    tail: collections.deque[str] = collections.deque()
+    tail: collections.deque[ByteDiagnosticLine] = collections.deque()
     tail_bytes = 0
     tail_truncated = False
     omitted = 0
@@ -116,26 +96,27 @@ def _log_diagnostics(raw: Any) -> dict[str, Any]:
                     # 構造化イベントには会話本文やツール入力が含まれるため、診断のイベントだけを転載する。
                     if diagnostic_process.is_error_event(payload):
                         event_count += 1
-                        events.append(_clip(payload))
+                        events.append(ByteDiagnosticLine(payload, line_bytes=_LINE_BYTES))
                     else:
                         omitted += 1
                     continue
-                clipped = _clip(line)
+                clipped = ByteDiagnosticLine(line, line_bytes=_LINE_BYTES)
                 # 子の出力より前の行は、run-skillが書く実行条件（対象、引数、候補）である。
-                header_open = header_open and len(header) < _HEADER_LINES and header_bytes + _size(clipped) <= _HEADER_BYTES
+                header_open = header_open and len(header) < _HEADER_LINES and header_bytes + clipped.size <= _HEADER_BYTES
                 if header_open:
-                    header.append(clipped)
-                    header_bytes += _size(clipped)
+                    header.append(clipped.text)
+                    header_bytes += clipped.size
                     continue
                 tail.append(clipped)
-                tail_bytes += _size(clipped)
+                tail_bytes += clipped.size
                 while tail_bytes > _EXCERPT_BYTES:
-                    tail_bytes -= _size(tail.popleft())
+                    tail_bytes -= tail.popleft().size
                     tail_truncated = True
     except OSError as error:
         return {"status": "読取不能", "error": str(error)}
-    kept_events = _newest_within(events, _EVENT_BYTES)
-    kept_tail = _newest_within(tail, _EXCERPT_BYTES - header_bytes - sum(_size(event) for event in kept_events))
+    kept_events = newest_diagnostic_lines(list(events), total_bytes=_EVENT_BYTES)
+    event_bytes = sum(len(event.encode()) + 1 for event in kept_events)
+    kept_tail = newest_diagnostic_lines(list(tail), total_bytes=_EXCERPT_BYTES - header_bytes - event_bytes)
     return {
         "status": "取得済み",
         "total_bytes": size,
