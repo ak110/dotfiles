@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import pathlib
 from typing import Annotated, Literal
 
@@ -44,7 +45,9 @@ class RunningRun(_Run):
             {**self.model_dump(exclude_unset=True), "targets": sorted(set(self.targets) | set(targets))}
         )
 
-    def publish(self, output: str, exit_code: int, stream: Literal["stdout", "stderr"]) -> PublishedRun:
+    def publish(
+        self, output: str, exit_code: int, stream: Literal["stdout", "stderr"], *, result_turns: dict[str, int] | None = None
+    ) -> PublishedRun:
         """flush前に保存する公開結果を作る。配送を確定するまで継続可能とはしない。"""
         return PublishedRun.model_validate(
             {
@@ -54,6 +57,7 @@ class RunningRun(_Run):
                 "exit_code": exit_code,
                 "stream": stream,
                 "continuable": False,
+                "result_turns": result_turns or {},
             }
         )
 
@@ -63,6 +67,7 @@ class _ResultRun(_Run):
     exit_code: int
     stream: Literal["stdout", "stderr"] = "stdout"
     continuable: bool = False
+    result_turns: dict[_Identifier, int] = Field(default_factory=dict)
 
 
 class PublishedRun(_ResultRun):
@@ -123,3 +128,18 @@ def uncollected(run: WaitRun) -> bool:
 def reusable(run: WaitRun, targets: list[str]) -> bool:
     """同じ対象の待機を再開または回復配送するrunかを返す。"""
     return run.targets == targets and (isinstance(run, RunningRun) or isinstance(run, PublishedRun) and not run.continuable)
+
+
+def delivered_children(directory: pathlib.Path, turns: dict[str, int]) -> set[str]:
+    """同じ親の記録から、指定turnの前景配送または回復配送を確定した子だけを返す。"""
+    delivered: set[str] = set()
+    for path in directory.glob("*.json"):
+        if path.name == "current.json":
+            continue
+        with contextlib.suppress(OSError, UnicodeError, ValueError):
+            run = read_run(path)
+            if isinstance(run, (ForegroundDeliveredRun, ConsumedRun)):
+                delivered.update(key for key, seq in run.result_turns.items() if turns.get(key) == seq)
+                if delivered == turns.keys():
+                    break
+    return delivered

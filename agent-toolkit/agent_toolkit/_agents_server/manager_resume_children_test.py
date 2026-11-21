@@ -153,6 +153,41 @@ async def test_wait_delivers_child_session_result_without_kill(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["foreground-delivered", "consumed", "published", "old-turn", "other-parent", "legacy"])
+async def test_shared_wait_delivery_releases_tracking(monkeypatch, tmp_path, case):
+    """親自身へ配送した子の現在turnだけで、完了の保留を解除する。"""
+    async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
+        child = "grandchild"
+        delegate.live_child_session_ids.add(child)
+        resume_waits.begin_auto_resume_wait(delegate, {"status": "completed", "agent_message": "担当の最終結果", "error": None})
+        session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path), turn_seq=2)
+        session_registry.release(child, reason="stopped")
+        parent = "different-parent" if case == "other-parent" else delegate.session_id
+        directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / f"{parent}.json"
+        directory.mkdir(parents=True)
+        receipt = {
+            "run_id": "wait-run",
+            "status": "foreground-delivered" if case in {"old-turn", "other-parent", "legacy"} else case,
+            "targets": [child],
+            "output": json.dumps({"status": "completed", "session_id": child}),
+            "exit_code": 0,
+        }
+        if case != "legacy":
+            receipt["result_turns"] = {child: 1 if case == "old-turn" else 2}
+        (directory / "wait-run.json").write_text(json.dumps(receipt), encoding="utf-8")
+
+        response = await manager.wait()
+        if case in {"foreground-delivered", "consumed"}:
+            assert response["status"] == "completed" and response["agent_message"] == "担当の最終結果"
+            assert not delegate.live_child_session_ids
+        else:
+            assert response["status"] == "running" and delegate.live_child_session_ids == {child}
+        assert backend.send_calls == 0
+        child_writer.deactivate()
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_child_collected_early_is_not_redelivered_and_remaining_child_resumes_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

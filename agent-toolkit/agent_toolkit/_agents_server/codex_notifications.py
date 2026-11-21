@@ -23,6 +23,8 @@ from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState, append_bounded
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_server_tool_result
 from agent_toolkit._atk import usage_refresh
+from agent_toolkit._common.shell_segments import extract_execution_segments
+from agent_toolkit._common.shell_tokens import is_agents_wait_command
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -518,7 +520,10 @@ class CodexNotificationsMixin:
                 item.get("exitCode") == 0
                 and isinstance(command, str)
                 and isinstance(output, str)
-                and wait_output_tracking.is_wait_command(command)
+                and any(
+                    segment.resolved and is_agents_wait_command(segment.tokens)
+                    for segment in extract_execution_segments(command)
+                )
             ):
                 await wait_output_tracking.consume_agents_wait_output_async(session, output)
         elif item_type == "mcpToolCall" and item.get("server") == "agents_server":
