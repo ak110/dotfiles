@@ -158,7 +158,6 @@ def check(
     *,
     selection: dict[str, object] | None = None,
     validate_execution: bool = True,
-    preserve_historical_prior: bool = False,
 ) -> list[Violation]:
     """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。
 
@@ -264,7 +263,6 @@ def check(
             costs,
             typing.cast(list[dict[str, object]], selection.get(_selection.LANE_OVERLAPS_KEY, [])),
             integrated_lanes,
-            preserve_historical_prior=preserve_historical_prior,
         )
     )
     errors.extend(_check_public_write_rationales(pending, work_dir))
@@ -661,7 +659,6 @@ def main(argv: list[str] | None = None) -> int:
             body_wis,
             selection=selection,
             validate_execution=not args.history and args.mark_integrated is None,
-            preserve_historical_prior=processed_wis is not None,
         )
     except InputError as error:
         _next_action.report(error.reason, next_action=error.next_action)

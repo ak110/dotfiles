@@ -306,22 +306,23 @@ def test_marks_only_processed_wis_and_requires_every_wi(env: tuple[pathlib.Path,
     assert _dispatch(str(path), "--require-integrated", "--work-dir", str(repo)) == 0
 
 
-def test_explicit_mark_preserves_existing_precedence_from_processed_wi(
+def test_partial_integration_keeps_existing_precedence_readable(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """処置済みWIだけが先行の根拠でも、明示した部分統合の記録を妨げない。"""
+    """処置済みWIだけが先行の根拠でも、部分統合後の検査や別レーンの統合を妨げない。"""
     repo, notes = env
     cases = [
         ("a.md", "lane-01", "src/model.py"),
         ("b.md", "lane-01", "README.md"),
         ("c.md", "lane-02", "src/model.py"),
+        ("d.md", "lane-03", "pytools/post_apply.py"),
     ]
     for name, _, target in cases:
         _awi(notes, name, f"`{target}`を変更する。")
     path = _write_selection(
         tmp_path / "selection.yaml",
         [{"WI": name, "レーン": lane, "書込対象": [target]} for name, lane, target in cases],
-        [{"レーン": "lane-01"}, {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"]}],
+        [{"レーン": "lane-01"}, {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"]}, {"レーン": "lane-03"}],
     )
     source = yaml.safe_load(path.read_bytes())
     source["レーン間の重なり"] = [_overlap_record("src/model.py", "交わる")]
@@ -332,6 +333,11 @@ def test_explicit_mark_preserves_existing_precedence_from_processed_wi(
     saved = yaml.safe_load(path.read_bytes())
     assert [item["WI"] for item in saved["選定"] if item.get("統合状態") == "統合済み"] == ["a.md"]
     assert saved["レーンの所要時間"][1]["先行レーン"] == ["lane-01"]
+    assert _dispatch(*args) == 0
+    assert _dispatch(*args, "--history") == 0
+    assert _dispatch(*args, "--mark-integrated", "lane-03", "--output", str(path)) == 0
+    updated = yaml.safe_load(path.read_bytes())
+    assert [item["WI"] for item in updated["選定"] if item.get("統合状態") == "統合済み"] == ["a.md", "d.md"]
     assert _dispatch(*args, "--require-integrated") == 1
 
 
