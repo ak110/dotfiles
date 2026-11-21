@@ -6,7 +6,7 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 
 ## 読む節
 
-該当する行の節だけを読む。
+本書を全文読み、表で場面に合う節を選んで適用する。
 委譲の共通の手順は`agent-toolkit:atk-mode/playbooks/delegation.md`の索引から選び、本書はClaude Codeに固有の差だけを持つ。
 
 | 主体と場面 | 読む節 |
