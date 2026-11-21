@@ -29,8 +29,12 @@
    対象WIが全状態の一覧に無い時と指定された保存版を取得できない時は、不足する原本と再開の条件を返す。
    関連するUWIがあれば、その回答を取得してから判定する。
 5. AWIの新旧の形式は`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」で判別して読み、要求単位は`agent-toolkit:atk-mode/references/review-contract.md`「記録する行と要求単位」で切り出す。
-6. WIの鮮度（staleness）は計画の`## 調査結果と判断根拠`（8節形式では`## 変更履歴`）にある条件付きの履歴確認の判断を使い、記録の無い項目は`atk wi list --with-staleness`で取る。
-   計画も`評価用WI原本`も無い時は、対象worktreeで`atk wi list --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を1回実行して取る。
+6. WIの鮮度（staleness）は計画の`## 調査結果と判断根拠`（8節形式では`## 変更履歴`）にある条件付きの履歴確認の判断を使う。
+   `評価用WI原本`を使わない場合は、鮮度の記録がない項目をファイル名の形式で分け、対象worktreeで次のとおり照会する。
+   - 固定年月形式の名前が1件以上あれば、`atk wi list --state=all --target-repo=<対象worktreeの絶対パス> --skip-pull --staleness-for <WIファイル名>`を実行する。
+     同形式の複数件は`--staleness-for`を反復して1回で照会する。
+   - 保存年月を名前から求められない旧名が1件以上あれば、`atk wi list --jsonl --state=all --target-repo=<対象worktreeの絶対パス> --skip-pull --with-staleness`を1回実行し、旧名に一致する行だけを読む。
+     この照会はキューの全件走査を伴う。
    `notice`の表示だけでは履歴を調べず、現行の内容との食い違い、既存の実装によってすでに充足されている事実、変更の巻き戻しの危険を観測した項目について変更の履歴を調べる。
 
 ## 条項の生成

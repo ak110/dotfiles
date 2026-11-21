@@ -26,12 +26,15 @@ from agent_toolkit._atk.wi.formatters import (
     body_summary,
     display_width,
     parse_source,
+    parse_target_repo,
     target_repo_budget,
     truncate_target_repo,
     uwi_body_summary,
 )
 from agent_toolkit._atk.wi.readiness import ReadinessResult
 from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id
+from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.wi_layout import DATED_NAME
 from agent_toolkit._git import command as _git_command
 
 
@@ -338,6 +341,91 @@ def _local_worktrees(args: argparse.Namespace, target_values: list[str]) -> dict
     return worktrees
 
 
+def _staleness_paths(private_notes: pathlib.Path, filenames: list[str]) -> list[pathlib.Path]:
+    """指定名の固定配置と旧状態配置だけを調べる。名前の不在から全件走査へ戻さない。"""
+    paths = []
+    for name in dict.fromkeys(filenames):
+        if DATED_NAME.fullmatch(name) is None:
+            raise ActionableError(
+                f"鮮度照会のWIファイル名が不正: {name}",
+                next_action="YYYYMMDD-HHMMSS-NNN.md形式のファイル名を指定して再実行する",
+            )
+        dated = _wi_entries.entry_path(private_notes, name)
+        candidates = (dated, *(private_notes / state / name for state in WI_STATES))
+        path = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if path is None:
+            raise ActionableError(
+                f"指定されたWIが見つからない: {name}",
+                next_action="ファイル名と同期状態を確かめ、対象のWI名を指定して再実行する",
+            )
+        if not path.resolve().is_relative_to(private_notes.resolve()):
+            raise ActionableError(
+                f"指定されたWIが管理領域の外を指す: {name}",
+                next_action="当該WIを正規の保存先へ戻して再実行する",
+            )
+        paths.append(path)
+    return paths
+
+
+def _validate_named_staleness_options(args: argparse.Namespace) -> None:
+    """指定名照会で使わない一覧条件を同期前に拒む。"""
+    if (
+        any(
+            getattr(args, option, None)
+            for option in (
+                "configured_repos",
+                "snapshot_output",
+                "new_since",
+                "count",
+                "summary_only",
+                "jsonl",
+                "no_jsonl",
+                "with_staleness",
+                "target_branch",
+                "effect_check",
+                "source",
+            )
+        )
+        or args.type != ["all"]
+        or args.answered != ["all"]
+        or args.important != "all"
+    ):
+        args.subparser.error("--staleness-forでは--state・--target-repo・同期以外の一覧条件と出力は省略値にしてください。")
+
+
+def _print_named_staleness(args: argparse.Namespace, private_notes: pathlib.Path, filenames: list[str]) -> None:
+    """指定名の鮮度を、依存・着手可否の計算をせずに返す。"""
+    targets = args.target_repo or []
+    matcher = _wi_filters.TargetRepoMatcher([resolve_repo_id(target) for target in targets] or None)
+    worktrees = _local_worktrees(args, targets)
+    branches = _wi_branches.registry()
+    states = _wi_filters.resolve_states(args.status)
+    now = datetime.datetime.now(datetime.UTC)
+    entries = []
+    texts = EntryTexts()
+    for path in _staleness_paths(private_notes, filenames):
+        try:
+            text = texts.read(path)
+        except OSError as error:
+            raise ActionableError(
+                f"指定されたWIを読めない: {path.name} ({error})",
+                next_action="対象の保存先と読取権限を確かめて再実行する",
+            ) from error
+        repo = parse_target_repo(text)
+        if not matcher.matches(repo):
+            raise ActionableError(
+                f"指定されたWIの対象リポジトリが一致しない: {path.name}",
+                next_action="WI名と対象作業ツリーを確かめて再実行する",
+            )
+        state = "inbox" if parse_frontmatter(text) is None else _wi_entries.entry_state_of(path, text)
+        if state not in states:
+            continue
+        branch = _wi_branches.effective(text, repo, branches)
+        entries.append((path.name, text, worktrees.get(repo), "HEAD" if branch is None else f"refs/remotes/origin/{branch}"))
+    for name, text, worktree, base in entries:
+        print(json.dumps({"filename": name, "staleness": _staleness(text, worktree, now, base=base)}, ensure_ascii=False))
+
+
 def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """`list`サブコマンド: AWI/`uwi`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
@@ -355,10 +443,16 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     種別見出し・エントリ行は出力しない。
     `--summary-only`指定時は、ファイル名と要約だけをJSON Linesで出力する。
     """
+    filenames = getattr(args, "staleness_for", None)
+    if filenames:
+        _validate_named_staleness_options(args)
     baseline = _wi_snapshot.read(args.new_since) if getattr(args, "new_since", None) is not None else None
     if not args.skip_pull:
         with _wi_sync.repo_lock(private_notes):
             _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+    if filenames:
+        _print_named_staleness(args, private_notes, filenames)
+        return
     if getattr(args, "configured_repos", False):
         snapshots = configured_repo_snapshot(private_notes)
         configured_branches = _wi_branches.registry()
