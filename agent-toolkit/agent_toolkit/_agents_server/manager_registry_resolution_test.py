@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import pathlib
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -67,20 +68,47 @@ async def test_show_keeps_lost_session_diagnosis_without_registry_record(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("owner", [None, "finished-owner"], ids=["unknown-owner", "recorded-owner"])
 async def test_show_returns_terminal_session_restored_from_registry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    owner: str | None,
 ) -> None:
     """登録簿から復元できた終了sessionは通常の応答として返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         session_id = "9f2a37f4-40f8-4d38-9c1b-1f6f9f52a1c3"
+        monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", owner)
         _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
+        monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", "queried")
 
         response = await manager.show_session(session_id)
 
         assert response["session_id"] == session_id
         assert response["status"] == "completed"
+        assert response["owner_server_instance"] == owner
+        assert response["queried_server_instance"] == "queried"
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_show_does_not_attribute_terminal_snapshot_to_later_turn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """別のturnの所有者を、退避済みの終了状態の所有者として返さない。"""
+    async with _manager_with_fake("codex") as (manager, _):
+        session = state.SessionResumeState("old-turn", str(tmp_path), None, None, "codex", status="completed", turn_seq=1)
+        manager.stopped_sessions[session.session_id] = session
+        record = session_registry.SessionResolution(
+            session_registry.Resolution.RUNNING, server_instance="new-owner", recorded_turn_seq=2
+        )
+        monkeypatch.setattr(manager, "_show_registry_record", AsyncMock(return_value=record))
+        monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", "queried")
+
+        response = await manager.show_session(session.session_id)
+
+        assert response["status"] == "completed"
+        assert response["queried_server_instance"] == "queried"
+        assert response["owner_server_instance"] is None
 
 
 @pytest.mark.asyncio

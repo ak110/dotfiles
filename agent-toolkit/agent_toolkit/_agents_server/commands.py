@@ -617,10 +617,17 @@ def _registry_session(session_id: str, root_session_id: str | None) -> dict[str,
 
 def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:
     """ルートsession配下の状態ファイルを統合し、開始順のsession一覧を返す。"""
-    results = shared_layout.results_directory(root_session_id)
     by_id = status_reader.load_root(root_session_id).sessions
     for session in by_id.values():
-        session["result_available"] = (results / f"{session['session_id']}.json").is_file()
+        session["result_available"] = (
+            retained_results.read_retained_result(
+                root_session_id,
+                session["session_id"],
+                expected_turn_seq=session.get("turn_seq"),
+                expected_finalized_at=session.get("finalized_at"),
+            )
+            is not None
+        )
         _add_output_activity(session)
     return sorted(by_id.values(), key=lambda session: str(session.get("started_at", "")))
 

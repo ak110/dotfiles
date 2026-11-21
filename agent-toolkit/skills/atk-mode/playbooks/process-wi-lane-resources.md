@@ -8,14 +8,23 @@
 
 ## レーン資源の作成・再利用・回収
 
-1. 開始時に`atk lane delete --list`で、前回の残存登録、回収結果、回復処理で残ったbranchとHEADを確かめる。
+1. 開始時に`atk lane delete --list --repo <対象リポジトリ>`で、前回の残存登録、回収結果、回復処理で残ったbranchとHEADを確かめる。
+   `orphan_candidates`は登録外の候補と保持理由であり、出力だけで削除の認可とはならない。
    残る登録は、担当や関連プロセスの終了を確かめてから、元の所有sessionを指定した`atk lane delete --session-id <所有session>`で再判定する。
    再開に使う登録は、登録ファイルの`record_path`をcreateの`--reuse-record`へ渡して新しい所有sessionへ移す（旧配置の個別managed-temp配下の登録も同じ作成先のまま移せる）。
    再利用するworktreeが無ければ移さずに、元の所有sessionへのdeleteで登録を回収してから作り直す。
 2. 過去のエージェントの残存資源や誤変更を認めたら、`agent-toolkit:atk-mode/references/operations.md`「プロセス終了の安全規定」で登録と実体を調べる。
    未統合・dirty・稼働中・登録なしの表示は調査の起点として扱い、現在の担当への引き継ぎと成果の保全を先にする。
    登録済みの資源は、保持の理由を解消してから同じ所有sessionへのdeleteで安全判定をやり直す。
-   CLIは主作業ツリーと登録の無い実体を自動では回収しないため、登録外の一時worktree、回復処理で保持されたbranch、誤変更は、由来・現在の利用・必要な成果・認可を確かめて既存のGit操作で個別に処置する。
+   既に終了した旧所有sessionで選定の未統合だけが残る場合は、`atk lane delete --session-id <旧所有session> --retire-integrated` で取込みを検査する。
+   保存した回収結果で `retire_integrated: true` の場合は、保持理由を解消した後も同じフラグを付けて再試行する。
+   これは選定の終了の代行ではない。
+   統合先から履歴を辿れるか、ファイル・配置・gitlinkを含むtree全体が一致する場合だけ取込みを認める。
+   clean・未使用を確かめて回収し、到達点と選定の記録を回収結果へ残す。
+   登録外の一時worktreeやbranchは、命名だけでエージェント作成と決めない。
+   作成時のsession記録やmanaged-tempの所有から作成者を確かめ、取込み・clean・未使用が確認できれば回収する。
+   作成者が不明なら候補と保持理由を残し、ユーザー確認なしに削除しない。
+   主作業ツリーは対象外とする。
 3. レーンごとの専用branch・専用worktree・所有登録を次のコマンドで作る。
 
    ```text

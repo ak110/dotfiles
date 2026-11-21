@@ -279,4 +279,4 @@ def has_unignored_changes(worktree: pathlib.Path) -> bool:
         return result.returncode == 0
 
     temp_permissions.prepare_tree(worktree, skip=ignored)
-    return bool(_lane_records.git(worktree, "status", "--porcelain=v1", "--untracked-files=all"))
+    return bool(_lane_records.git(worktree, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"))

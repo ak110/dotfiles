@@ -345,7 +345,7 @@ async def test_kill_stop_retains_result_for_agents_wait(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """stop=trueで破棄した結果をatk agents waitからも回収できる。"""
+    """stop=trueの終了応答には本文を含めず、atk agents waitだけが未受領の結果を返す。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -360,7 +360,9 @@ async def test_kill_stop_retains_result_for_agents_wait(
         _complete(session, message="CLI回収")
         manager.sessions[session.session_id] = session
 
-        await manager.kill(session.session_id, timeout=0, stop=True)
+        response = await manager.kill(session.session_id, timeout=0, stop=True)
+        assert response["status"] == "completed"
+        assert "agent_message" not in response
         result_path = shared_layout.results_directory("root-session", tmp_path) / f"{session.session_id}.json"
         assert result_path.exists()
         assert (

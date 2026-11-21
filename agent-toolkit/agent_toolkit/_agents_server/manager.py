@@ -17,6 +17,7 @@ from agent_toolkit._agents_server import (
     logging_config,
     manager_start,
     result_projection,
+    retained_results,
     state,
     status_file,
 )
@@ -130,6 +131,22 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         状態ファイルの書込主体を持つ場合は、`start`・`list`と同じく`root_session_id`を応答へ加える。
         再起動した会話が既存sessionへの`send_message`から再開しても、PostToolUseがこの値で別名索引を書けるようにするためである。
         """
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+            raise ActionableError(
+                "timeout must be positive", next_action="`timeout`を省略して270秒で待つか、正の秒数を指定する"
+            )
+        try:
+            async with asyncio.timeout(float(timeout)):
+                return await self._send_message_response(session_id, prompt, instruction, extra_params)
+        except TimeoutError as exc:
+            raise ActionableTimeoutError(
+                f"send_message timed out: {session_id}; delivery is undetermined",
+                next_action="`atk agents wait`で状態を確認し、指示が届いていないと判断した場合だけ`send_message`を再送する",
+            ) from exc
+
+    async def _send_message_response(
+        self, session_id: str, prompt: str | None, instruction: str | None, extra_params: Mapping[str, str] | None
+    ) -> dict[str, Any]:
         await self._drain_diagnostics()
         pending = self._pending_resumes.get(session_id)
         current = (
@@ -150,7 +167,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             instruction=instruction,
             extra_params=extra_params,
         )
-        response = await self._deliver_message(session_id, prompt, timeout)
+        response = await self._deliver_message(session_id, prompt)
         session = self.sessions.get(session_id)
         if session is not None and response["delivery"] != "reply_failed":
             session.followup_prompts += (prompt,)
@@ -160,120 +177,124 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             if session is not None:
                 # 開始時と同じbest-effort公開で、配送結果と同じsessionの待機登録を保つ。
                 await self._save_started_session(session)
-            response = {**response, "root_session_id": self._status_writer.root_session_id}
-        if registry_resolved:
-            response = self._response_with_notices(dict(response), await self._take_registry_notices(session_id))
-        return response
+            response["root_session_id"] = self._status_writer.root_session_id
+        notices = await self._read_registry_notices(session_id) if registry_resolved else []
+        previous: dict[str, Any] | None = response.pop("previous_result", None)
+        if isinstance(previous, state.PreviousResult) and previous.end is not None:
+            try:
+                previous = await self._claim_resume_result(previous.origin, previous, collector="send-message")
+            except retained_results.ResultBeingCollected:
+                # 配送は既に完了した。先行CLIを待たず、原本を次のwaitに残す。
+                previous = None
+        if previous:
+            response["previous_result"] = dict(previous)
+        return self._deliver_notices(response, notices)
 
-    async def _deliver_message(self, session_id: str, prompt: str, timeout: float) -> dict[str, Any]:
+    async def _deliver_message(self, session_id: str, prompt: str) -> dict[str, Any]:
         """`send_message`の配送本体。応答の`root_session_id`は呼び出し元が加える。"""
         validate_prompt(prompt)
         await self._wait_for_resource_release(session_id)
         if self._status_writer is not None:
             await self._status_writer.drain()
         await self.take_over_orphaned_session(session_id)
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
-            raise ActionableError(
-                "timeout must be positive", next_action="`timeout`を省略して270秒で待つか、正の秒数を指定する"
-            )
         prompt = wrap_delivery_body(prompt)
-        try:
-            async with asyncio.timeout(float(timeout)):
-                while True:
-                    async with self._resume_lock:
-                        pending = self._pending_resumes.get(session_id)
-                        if pending is not None:
-                            ticket, changed = pending.prompt.submit_or_observe(prompt)
-                            if ticket is not None:
-                                return await self._resume_response(pending, ticket)
-                            if changed is not None:
-                                await changed.wait()
-                            else:
-                                await asyncio.shield(pending.task)
-                            continue
-                        retained = self.sessions.get(session_id)
-                        if (
-                            retained is not None
-                            and retained.retention_deadline is not None
-                            and asyncio.get_running_loop().time() >= retained.retention_deadline
-                        ):
-                            self._expire_session(session_id)
-                        stopped_state = await self._resolve_stopped_session(session_id)
-                        if stopped_state is None:
-                            stopped_state = await self._restore_registry_session(session_id)
-                        resume_state = stopped_state or self.expired_sessions.get(session_id)
-                        if resume_state is not None:
-                            previous_result = None
-                            if stopped_state is not None:
-                                previous_result = await self._take_stopped_result(
-                                    session_id,
-                                    stopped_state,
-                                    collector="send-message",
-                                )
-                            elif (
-                                self._status_writer is None
-                                or (await self._status_writer.result_state_async(session_id)) != "consumed"
-                            ):
-                                previous_result = self._stopped_result_response(resume_state)
-                            return await self._resume_and_reply(
-                                resume_state,
-                                prompt,
-                                previous_result,
-                            )
-                        session = await self._get_session(session_id)
-                    async with session.turn_control_lock:
-                        if session.interrupt_requested and not session.terminal:
-                            raise ActionableError(
-                                f"session is being interrupted: {session_id}",
-                                next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION,
-                            )
-                    try:
-                        result = await self._send_with_resources(session, prompt)
-                    except SessionOwnerGoneError:
-                        async with self._resume_lock:
-                            if self.sessions.get(session_id) is not session:
-                                continue
-                            previous_result = session.previous_result() if session.result_available else None
-                            self._expire_session(session_id)
-                            resume_state = self.expired_sessions[session_id]
-                            return await self._resume_and_reply(
-                                resume_state,
-                                prompt,
-                                previous_result,
-                            )
-                    if self._status_writer is not None:
-                        await self._status_writer.delete_result_async(session_id, collector="send-message")
-                    delivery = result["delivery"]
-                    await session.drain_registration()
-                    if delivery in {"reply_started", "reply_ambiguous"}:
-                        session.reset_progress()
-                    response: dict[str, Any] = {"delivery": delivery, "label": session.label}
-                    error = result.get("error")
-                    if (
-                        delivery == "reply_failed"
-                        and isinstance(error, dict)
-                        and error.get("codexErrorInfo") == codex_resume_state.WRITER_CONFLICT
-                    ):
-                        response["error"] = {"codexErrorInfo": codex_resume_state.WRITER_CONFLICT}
-                    if delivery in REPLY_DELIVERIES:
-                        previous_result = result["previous_result"]
-                        if previous_result:
-                            response["previous_result"] = previous_result
-                    return response
-        except TimeoutError as exc:
-            raise ActionableTimeoutError(
-                f"send_message timed out: {session_id}; delivery is undetermined",
-                next_action="`atk agents wait`で状態を確認し、指示が届いていないと判断した場合だけ`send_message`を再送する",
-            ) from exc
+        while True:
+            async with self._resume_lock:
+                pending = self._pending_resumes.get(session_id)
+                if pending is not None:
+                    ticket, changed = pending.prompt.submit_or_observe(prompt)
+                    if ticket is not None:
+                        return await self._resume_response(pending, ticket)
+                    if changed is not None:
+                        await changed.wait()
+                    else:
+                        await asyncio.shield(pending.task)
+                    continue
+                retained = self.sessions.get(session_id)
+                if (
+                    retained is not None
+                    and retained.retention_deadline is not None
+                    and asyncio.get_running_loop().time() >= retained.retention_deadline
+                ):
+                    self._expire_session(session_id)
+                stopped_state = await self._resolve_stopped_session(session_id)
+                if stopped_state is None:
+                    stopped_state = await self._restore_registry_session(session_id)
+                resume_state = stopped_state or self.expired_sessions.get(session_id)
+                if resume_state is not None:
+                    previous_result = self._stopped_result_response(resume_state)
+                    return await self._resume_and_reply(
+                        resume_state,
+                        prompt,
+                        previous_result,
+                    )
+                session = await self._get_session(session_id)
+            async with session.turn_control_lock:
+                if session.interrupt_requested and not session.terminal:
+                    raise ActionableError(
+                        f"session is being interrupted: {session_id}",
+                        next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION,
+                    )
+            if self._status_writer is not None and session.result_available and not session.result_delivered:
+                # 配送の打ち切りで追送の応答が無くても、直前の結果はCLIに残す。
+                await self._status_writer.retain_result_async(session)
+            try:
+                result = await self._send_with_resources(session, prompt)
+            except SessionOwnerGoneError:
+                async with self._resume_lock:
+                    if self.sessions.get(session_id) is not session:
+                        continue
+                    self._expire_session(session_id)
+                    resume_state = self.expired_sessions[session_id]
+                    previous_result = self._stopped_result_response(resume_state)
+                    return await self._resume_and_reply(
+                        resume_state,
+                        prompt,
+                        previous_result,
+                    )
+            delivery = result["delivery"]
+            await session.drain_registration()
+            if delivery in {"reply_started", "reply_ambiguous"}:
+                session.reset_progress()
+            response: dict[str, Any] = {"delivery": delivery, "label": session.label}
+            error = result.get("error")
+            if (
+                delivery == "reply_failed"
+                and isinstance(error, dict)
+                and error.get("codexErrorInfo") == codex_resume_state.WRITER_CONFLICT
+            ):
+                response["error"] = {"codexErrorInfo": codex_resume_state.WRITER_CONFLICT}
+            if delivery in REPLY_DELIVERIES:
+                response["previous_result"] = result["previous_result"]
+            return response
 
-    async def _kill_result_response_async(self, session: SessionState, *, kill_requested: bool) -> dict[str, Any]:
-        """結果の回収をイベントループ上で確定し、競合する保存処理の終了と結果ファイルの削除を待ってから、killの応答本文を返す。"""
-        response = await self._result_response_async(session, include_progress=False)
+    async def _kill_result_response_async(self, session: SessionState, *, kill_requested: bool, stop: bool) -> dict[str, Any]:
+        """中断の成否を返し、回収できた本文と通知だけを添える。"""
+        notices = await self._read_notices(session.session_id)
+        response: dict[str, Any] = await self._result_response_async(session, include_progress=False)
+        if "agent_message" in response and session.finalized_at is not None:
+            end = session.turn_seq, session.finalized_at
+            # stop=Trueでは結果をwaitに残し、中断の応答に同じ本文を載せない。
+            claimed = not stop and not session.result_delivered
+            if claimed and self._status_writer is not None:
+                try:
+                    claimed = (
+                        await self._claim_resume_result(SessionResumeState.from_session(session), response, collector="kill")
+                        is not None
+                    )
+                except retained_results.ResultBeingCollected:
+                    # 中断は既に決着した。回収中の本文には触れず、通知はこの応答で渡す。
+                    return self._deliver_notices({"status": response["status"], "kill_requested": kill_requested}, notices)
+            if not stop and not session.result_delivered and end == (session.turn_seq, session.finalized_at):
+                session.result_delivered = True
+                session.touch()
+            if stop:
+                response.pop("agent_message", None)
+            elif not claimed:
+                response = {"status": response["status"]}
         response["kill_requested"] = kill_requested
-        response = self._response_with_notices(response, await self._take_notices_async(session.session_id))
-        if "agent_message" in response and self._status_writer is not None:
-            await self._status_writer.delete_result_async(session.session_id, collector="kill")
-        return response
+        await self._stop_after_terminal_response(session.session_id, response, stop)
+        return self._deliver_notices(response, notices)
 
     async def kill(
         self,
@@ -307,20 +328,23 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             await self.take_over_orphaned_session(session_id)
             owner_lost_response = await self._kill_owner_lost(session_id)
             if owner_lost_response is not None:
-                return await self._stop_after_terminal_response(session_id, owner_lost_response, stop)
+                notices = await self._read_registry_notices(session_id)
+                await self._stop_after_terminal_response(session_id, owner_lost_response, stop)
+                return self._deliver_notices(owner_lost_response, notices)
         if stopped_state is None:
             recovered_state = await self._restore_registry_session(session_id)
             stopped_state = recovered_state
         if recovered_state is not None:
             response = self._recovered_result_response(recovered_state)
             response["kill_requested"] = await self._cancel_owner_loss_recovery(session_id)
-            return self._response_with_notices(response, await self._take_registry_notices(session_id))
+            return self._deliver_notices(response, await self._read_registry_notices(session_id))
         if stopped_state is not None:
-            stopped_response = await self._take_stopped_result(session_id, stopped_state, collector="kill")
-            if stopped_response is not None:
-                stopped_response["kill_requested"] = False
-                notices = await self._take_notices_async(session_id)
-                return self._response_with_notices(stopped_response, notices)
+            notices = await self._read_notices(session_id)
+            try:
+                stopped_response = await self._take_stopped_result(session_id, stopped_state, collector="kill")
+            except retained_results.ResultBeingCollected:
+                stopped_response = {"status": stopped_state.status}
+            return self._deliver_notices({**(stopped_response or {"status": "expired"}), "kill_requested": False}, notices)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + float(timeout) if timeout > 0 else None
         delivery_deadline = deadline if deadline is not None else loop.time() + DEFAULT_SEND_MESSAGE_TIMEOUT
@@ -338,8 +362,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
                 ) from exc
             if interrupt_requested:
                 await session.drain_registration()
-                response = await self._kill_result_response_async(session, kill_requested=True)
-                return await self._stop_after_terminal_response(session_id, response, stop)
+                return await self._kill_result_response_async(session, kill_requested=True, stop=stop)
         else:
             expired_response = await self._expired_kill_response(session_id)
             if expired_response is not None:
@@ -351,8 +374,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             started_terminal = session.terminal
             requested_before_call = session.interrupt_requested
         if started_terminal:
-            response = await self._kill_result_response_async(session, kill_requested=False)
-            return await self._stop_after_terminal_response(session_id, response, stop)
+            return await self._kill_result_response_async(session, kill_requested=False, stop=stop)
 
         requested = requested_before_call
         backend = self._backend(session.engine)
@@ -392,8 +414,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
                         ) from exc
                     if session.terminal:
                         await session.drain_registration()
-                        response = await self._kill_result_response_async(session, kill_requested=False)
-                        return await self._stop_after_terminal_response(session_id, response, stop)
+                        return await self._kill_result_response_async(session, kill_requested=False, stop=stop)
                 session.interrupt_requested = True
                 session.touch()
                 try:
@@ -420,8 +441,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
 
         if not requested:
             await session.drain_registration()
-            response = await self._kill_result_response_async(session, kill_requested=False)
-            return await self._stop_after_terminal_response(session_id, response, stop)
+            return await self._kill_result_response_async(session, kill_requested=False, stop=stop)
         if timeout > 0:
             assert deadline is not None
             try:
@@ -436,8 +456,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
                     next_action="中断要求は配送済みのため`kill`を再発行しない。`atk agents wait`で終了を観測する",
                 ) from exc
         await session.drain_registration()
-        response = await self._kill_result_response_async(session, kill_requested=True)
-        return await self._stop_after_terminal_response(session_id, response, stop)
+        return await self._kill_result_response_async(session, kill_requested=True, stop=stop)
 
     async def close(self) -> None:
         """初期化済みバックエンドを停止する。"""

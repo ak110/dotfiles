@@ -11,12 +11,12 @@ import typing
 
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk import lane_records as _lane_records
-from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk import lane_retirement, managed_temp
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import worktree_hooks
 
 
-def eligible(record: dict[str, typing.Any], *, wait_release: bool = True) -> str | None:
+def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire_integrated: bool = False) -> str | None:
     repo = pathlib.Path(record["repo"])
     worktree = pathlib.Path(record["worktree"])
     state = _lane_records.resource_state(record)
@@ -24,7 +24,8 @@ def eligible(record: dict[str, typing.Any], *, wait_release: bool = True) -> str
         return None
     if not record.get("ready"):
         return "作成または環境準備が未完了"
-    if not _lane_records.selection_state(record)["integrated"]:
+    selected = _lane_records.selection_state(record)["integrated"]
+    if not selected and (not retire_integrated or not state.branch):
         return "選定の統合状態が未統合"
     if state.worktree_path:
         activity = _lane_activity.worktree_activity(worktree, wait_release=wait_release)
@@ -41,7 +42,10 @@ def eligible(record: dict[str, typing.Any], *, wait_release: bool = True) -> str
     elif state.worktree_path:
         return "登録の無いworktreeが残っている"
     if state.branch:
-        _lane_records.branch_is_integrated(record, repo)
+        if selected:
+            _lane_records.branch_is_integrated(record, repo)
+        else:
+            lane_retirement.prove(record, repo)
     return None
 
 
@@ -53,7 +57,7 @@ def retained_resource(path: pathlib.Path, error: BaseException) -> dict[str, str
 
 
 def cleanup_session(
-    session_id: str | None, *, only: pathlib.Path | None = None, wait_release: bool = True
+    session_id: str | None, *, only: pathlib.Path | None = None, wait_release: bool = True, retire_integrated: bool = False
 ) -> dict[str, typing.Any]:
     """全登録を先に判定し、安全な対象だけを回収する。結果は削除対象の外へ保持する。
 
@@ -61,6 +65,7 @@ def cleanup_session(
     自動終了ではwait_release=Falseを渡し、終了資源の解放が未確認なら理由付きで保持する。
     """
     result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": [], "recovered": [], "missing": []}
+    result["retire_integrated"] = retire_integrated
     if session_id is None or not _lane_records.session_directory(session_id).exists():
         return result
     with _lane_records.locked(session_id) as directory, contextlib.ExitStack() as lane_locks:
@@ -81,7 +86,7 @@ def cleanup_session(
                     result["recovered"].append({"record_path": str(path), **record["recovery"]})
                     continue
                 held = record.get("selection")
-                reason = eligible(record, wait_release=wait_release)
+                reason = eligible(record, wait_release=wait_release, retire_integrated=retire_integrated)
                 if record.get("selection") != held:
                     _lane_records.save(path, record)
                 if reason:
@@ -106,6 +111,17 @@ def cleanup_session(
                                 "skipped_procedure": "delete" if record["commands"].get("delete") else None,
                             }
                         )
+                    if retire_integrated and state.branch and not _lane_records.selection_state(record)["integrated"]:
+                        proof = lane_retirement.prove(record, pathlib.Path(record["repo"]))
+                        result.setdefault("retirement_inputs", []).append(
+                            {
+                                "record_path": str(path),
+                                "branch": record["branch"],
+                                "worktree": record["worktree"],
+                                "selection": _lane_records.selection_state(record),
+                                **proof,
+                            }
+                        )
                     records.append((path, record))
             except _lane_records.record_errors() as error:
                 result["retained"].append(retained_resource(path, error))
@@ -119,7 +135,7 @@ def cleanup_session(
         for path, record in records:
             try:
                 # 判定後に状態が変わった対象も、削除の直前に再判定する。
-                reason = eligible(record, wait_release=wait_release)
+                reason = eligible(record, wait_release=wait_release, retire_integrated=retire_integrated)
                 if reason:
                     raise ValueError(reason)
                 state = _lane_records.resource_state(record)
@@ -127,7 +143,7 @@ def cleanup_session(
                     _lane_records.procedure(record, "delete")
                     record["teardown_done"] = True
                     _lane_records.save(path, record)
-                reason = eligible(record, wait_release=wait_release)
+                reason = eligible(record, wait_release=wait_release, retire_integrated=retire_integrated)
                 if reason:
                     raise ValueError(reason)
                 repo = pathlib.Path(record["repo"])
@@ -156,7 +172,10 @@ def cleanup_session(
                         temp_permissions.prepare_tree(pathlib.Path(record["worktree"]))
                     _lane_records.git(repo, "worktree", "remove", *remove_args, record["worktree"])
                 if _lane_records.resource_state(record).branch:
-                    _lane_records.branch_is_integrated(record, repo)
+                    if retire_integrated and not _lane_records.selection_state(record)["integrated"]:
+                        lane_retirement.prove(record, repo)
+                    else:
+                        _lane_records.branch_is_integrated(record, repo)
                     _lane_records.git(repo, "branch", "-D", record["branch"])
                 if record["managed_temp"]:
                     managed_temp.cleanup_managed_temp(pathlib.Path(record["managed_temp"]))

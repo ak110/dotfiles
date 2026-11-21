@@ -8,6 +8,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     manager_recovery,
+    retained_results,
 )
 from agent_toolkit._agents_server.responses import (
     turn_elapsed_seconds,
@@ -51,23 +52,32 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         """破棄済みまたは期限切れsessionの未回収の終了時の結果だけを返す。"""
         stopped_state = await self._resolve_stopped_session(session_id)
         if stopped_state is not None:
-            response = await self._take_stopped_result(session_id, stopped_state, collector=collector)
-            if response is None:
+            if self._stopped_result_response(stopped_state) is None:
                 return None
-            return self._response_with_notices(response, (await self._take_registry_notices(session_id)))
-        if (await self._resolve_expired_session(session_id)) is None:
-            return None
-        response = await self._expired_result_response(session_id, collector=collector)
+            notices = await self._read_registry_notices(session_id)
+        else:
+            expired = await self._resolve_expired_session(session_id)
+            if expired is None or self._stopped_result_response(expired) is None:
+                return None
+            notices = await self._read_notices(session_id)
+        try:
+            if stopped_state is not None:
+                response = await self._take_stopped_result(session_id, stopped_state, collector=collector)
+            else:
+                response = await self._expired_result_response(session_id, collector=collector)
+        except retained_results.ResultBeingCollected:
+            return self._deliver_notices({"status": "running", "progress": ""}, notices)
         if response is None or "agent_message" not in response:
-            return None
-        return self._response_with_notices(response, (await self._take_notices_async(session_id)))
+            response = self._deliver_notices({"status": "expired"}, notices)
+            return response if "notices" in response else None
+        return self._deliver_notices(response, notices)
 
     async def _collect_wait_result(self, session: SessionState) -> dict[str, Any] | None:
         """同じturnの回収を勝ち取った場合だけ、退避した公開応答を返す。"""
         if not session.result_available or session.result_delivered:
             return None
         turn = session.turn_seq, session.finalized_at
-        response = await self._result_response_async(session, consume=False)
+        response = await self._result_response_async(session)
         if (
             self.sessions.get(session.session_id) is not session
             or turn != (session.turn_seq, session.finalized_at)
@@ -79,10 +89,10 @@ class ManagerWait(manager_recovery.ManagerRecovery):
             # 存在確認と消費の間に別の親が回収できるため、本文の返却可否は排他回収の結果だけで決める。
             await self._status_writer.retain_result_async(session)
             if self.sessions.get(session.session_id) is not session:
-                # 期限解放の保存を待つのはconditionの外側とし、退避結果の経路へ回収を引き継ぐ。
+                # 期限解放の保存はconditionの外側で待ち、退避した結果として回収する。
                 return None
             claimed, error = await self._status_writer.take_result_async(
-                session.session_id, collector="mcp-wait", expected_turn_seq=turn[0]
+                session.session_id, collector="mcp-wait", expected_turn_seq=turn[0], expected_finalized_at=turn[1]
             )
             if error is not None:
                 raise RuntimeError(f"終了時の結果を回収できません: {session.session_id}: {error}")
@@ -166,28 +176,35 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                 terminal.sort(key=lambda candidate: (candidate.finalized_at or "", candidate.session_id))
                 if terminal:
                     session = terminal[0]
-                    response = await self._collect_wait_result(session)
-                    if response is None:
+                    notices = await self._read_notices(session.session_id)
+                    try:
+                        response = await self._collect_wait_result(session)
+                    except retained_results.ResultBeingCollected:
+                        response = {"status": "running", "progress": ""}
+                    if response is not None:
+                        return {"session_id": session.session_id, **self._deliver_notices(response, notices)}
+                    if not notices:
                         continue
-                    response = self._response_with_notices(response, await self._take_notices_async(session.session_id))
-                    return {"session_id": session.session_id, **response}
+                    response = self._deliver_notices(await self._result_response_async(session, include_result=False), notices)
+                    if "notices" in response:
+                        return {"session_id": session.session_id, **response}
+                    continue
 
                 for session_id in ordered_ids:
                     session = self.sessions.get(session_id)
                     if session is None:
-                        if session_id in self._recovery_targets:
-                            notices = await self._take_registry_notices(session_id)
-                            if notices:
-                                return {
-                                    "session_id": session_id,
-                                    **self._response_with_notices({"status": "running", "progress": ""}, notices),
-                                }
-                        continue
-                    notices = await self._take_notices_async(session_id)
-                    if notices:
-                        response = self._response_with_notices(
+                        if session_id not in self._recovery_targets:
+                            continue
+                        notices = await self._read_registry_notices(session_id)
+                        response = self._deliver_notices({"status": "running", "progress": ""}, notices)
+                    else:
+                        notices = await self._read_notices(session_id)
+                        if not notices:
+                            continue
+                        response = self._deliver_notices(
                             await self._result_response_async(session, include_result=False), notices
                         )
+                    if "notices" in response:
                         return {"session_id": session_id, **response}
 
                 retained = [

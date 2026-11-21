@@ -347,10 +347,13 @@ def test_agents_wait_delivers_collected_results_before_reporting_read_failure(
     assert unreadable.exists()
 
     assert _wait_for_session_1_result(wait_environment) == 6
-    error = capsys.readouterr().err
-    assert "終了時の結果ファイルを読めません" in error
-    assert f"\n{NEXT_ACTION_PREFIX}" in error
-    assert "`show`" in error
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "終了時の結果ファイルを読めません" in captured.err
+    assert f"\n{NEXT_ACTION_PREFIX}" in captured.err
+    assert "`show`" in captured.err
+    assert "この待機では結果本文を配送していない" in captured.err
+    assert "`atk agents wait`を再実行する" in captured.err
 
 
 def test_agents_wait_outputs_terminal_result_with_notice_only_session(

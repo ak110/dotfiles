@@ -23,6 +23,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     mcp_tools,
     notify,
+    retained_results,
     shared_layout,
     shared_roots,
     shared_sweep,
@@ -208,6 +209,48 @@ async def _mcp_owner(
         )
         async with lifespan:
             yield manager, backend
+
+
+@pytest.mark.asyncio
+async def test_parent_retries_recovery_after_result_collection_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    async with _mcp_owner(monkeypatch, tmp_path, "old-root", "parent", "claude") as (old, _):
+        started = await mcp_tools.start(str(tmp_path), mode="explore", prompt="中断した作業", model_type="chores_fast")
+        identifier = started["session_id"]
+        old.sessions[identifier].agent_message = "中断前の本文"
+
+    directory = shared_layout.results_directory("old-root", tmp_path)
+    original = directory / f"{identifier}.json"
+    async with contextlib.AsyncExitStack() as owners:
+        with retained_results._locked(directory / f".{identifier}.claim.lock"):
+            owner, backend = await owners.enter_async_context(
+                _mcp_owner(monkeypatch, tmp_path, "new-root", "parent", "claude", ready_for_requests=True)
+            )
+            response = await owner.wait()
+            assert response["status"] == "running" and "notices" not in response
+            assert not backend.resume_calls
+            assert json.loads(original.read_text(encoding="utf-8"))["agent_message"] == "中断前の本文"
+
+            writer = owner._status_writer
+            assert writer is not None
+            (row,) = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+            assert (row["session_id"], row["status"], row["turn_seq"]) == (identifier, "interrupted", 1)
+            # 先行CLIが原本を受領してからロックを離す。親のCLIを巡回のやり直しに頼らせない。
+            original.unlink()
+        capsys.readouterr()
+        async with asyncio.timeout(6):
+            code = await asyncio.to_thread(
+                agents_wait.wait_for_result,
+                environment={"AGENT_TOOLKIT_OWNER_SESSION": "new-root", "CODEX_THREAD_ID": "parent"},
+                state_root=tmp_path,
+            )
+        assert code == 0
+        result = json.loads(capsys.readouterr().out)
+        assert (result["session_id"], result["status"], result["agent_message"]) == (identifier, "completed", "復旧後の成果")
+        assert (await owner.wait())["status"] == "expired"
+        assert backend.resume_calls == [identifier]
 
 
 @pytest.mark.asyncio

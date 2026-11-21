@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import sys
@@ -10,16 +11,17 @@ from typing import Any
 import pytest
 import yaml
 
-from agent_toolkit._atk import lane
+from agent_toolkit._atk import lane, run_script
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.lane_integration_support import (
+    _cleanup_integration_manifest,
     _integration_args,
     _integration_selection,
     _merged_integration,
     _write_empty_finalization_manifest,
 )
-from agent_toolkit._testing.lane_support import _create, _invoke, _selection
+from agent_toolkit._testing.lane_support import _create, _create_args, _invoke, _selection
 
 
 @pytest.mark.parametrize("planned", [False, True])
@@ -63,6 +65,141 @@ def test_integrate_public_lifecycle(
     assert code == 0 and repeated["completed"] == result["completed"], stderr
     code, deleted, stderr = _invoke(capsys, "delete")
     assert code == 0 and deleted["removed"] == ["lane-01"], stderr
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+def test_integration_and_reuse_protect_dirty_submodules(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """子を無視する設定でも未保存の変更を残して停止し、cleanな同じ資源なら進む。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    submodule = git_repository.init_repository(tmp_path / "module", files={"tracked": "基準\n"}, commit_message="基準")
+    git_repository.run_git(repo, "-c", "protocol.file.allow=always", "submodule", "add", str(submodule), "sub")
+    base = git_repository.commit_all(repo, "サブモジュールを登録")
+    git_repository.run_git(worktree, "merge", "--ff-only", base)
+    git_repository.run_git(worktree, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+    git_repository.run_git(repo, "config", "diff.ignoreSubmodules", "all")
+    (worktree / "feature").write_text("成果\n", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "統合する成果")
+    manifest = _cleanup_integration_manifest(tmp_path, handoff_text="検収済み")
+    integrate_args = _integration_args(record, repo, manifest, head)
+
+    lane_change = worktree / "sub" / "tracked"
+    target_change = repo / "sub" / "untracked"
+    for tree, change in ((worktree, lane_change), (repo, target_change)):
+        change.write_text("未保存\n", encoding="utf-8")
+        code, _result, stderr = _invoke(capsys, *integrate_args)
+        assert code == 2 and f"統合作業ツリーに未commitまたは未追跡の変更がある: {tree}" in stderr
+        assert change.read_text(encoding="utf-8") == "未保存\n"
+        assert git_repository.git_output(repo, "rev-parse", "HEAD") == base
+        assert git_repository.git_output(worktree, "rev-parse", "HEAD") == head
+        if change == lane_change:
+            change.write_text("基準\n", encoding="utf-8")
+        else:
+            change.unlink()
+
+    code, integrated, stderr = _invoke(capsys, *integrate_args)
+    assert code == 0 and integrated["phase"] == "finalized" and integrated["integrated_head"] == head, stderr
+    args = [str(selected), "--reopen-wi", "20261023-000000-001.md", "--output", str(selected), "--work-dir", str(repo)]
+    assert run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=args)) == 0
+    capsys.readouterr()
+
+    lane_change.write_text("再開前の未保存\n", encoding="utf-8")
+    create_args = _create_args(repo, selected)
+    code, _result, stderr = _invoke(capsys, *create_args)
+    assert code == 2 and "未コミット変更" in stderr
+    (repo / "other-lane").write_text("次の統合基点\n", encoding="utf-8")
+    advanced = git_repository.commit_all(repo, "統合基点を進める")
+    code, _result, stderr = _invoke(capsys, *create_args)
+    assert code == 2 and "未コミット変更" in stderr
+    assert lane_change.read_text(encoding="utf-8") == "再開前の未保存\n"
+    assert git_repository.git_output(worktree, "rev-parse", "HEAD") == head
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == advanced
+
+    lane_change.write_text("基準\n", encoding="utf-8")
+    code, reused, stderr = _invoke(capsys, *create_args)
+    assert code == 0 and reused["reused"] and reused["worktree"] == str(worktree), stderr
+    assert git_repository.git_output(worktree, "rev-parse", "HEAD") == advanced
+    assert lane_change.read_text(encoding="utf-8") == "基準\n"
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.parametrize("scenario", ["clean", "dirty", "restart"])
+def test_integration_distinguishes_own_gitlink_update_from_child_edit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    scenario: str,
+) -> None:
+    """非再帰mergeが残す子HEADは保持し、検証中に生じた未保存変更は拒否する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    name = "sub module"
+    source = git_repository.init_repository(tmp_path / "module", files={"tracked": "基準\n"}, commit_message="基準")
+    original = git_repository.git_output(source, "rev-parse", "HEAD")
+    git_repository.run_git(repo, "-c", "protocol.file.allow=always", "submodule", "add", str(source), name)
+    base = git_repository.commit_all(repo, "サブモジュールを登録")
+    git_repository.run_git(worktree, "merge", "--ff-only", base)
+    git_repository.run_git(worktree, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+    git_repository.run_git(repo, "config", "diff.ignoreSubmodules", "all")
+    (worktree / "feature").write_text("成果", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "レーンの成果")
+    (source / "tracked").write_text("次の版\n", encoding="utf-8")
+    updated = git_repository.commit_all(source, "子の次の版")
+    git_repository.run_git(repo / name, "fetch", "origin")
+    git_repository.run_git(repo / name, "checkout", "--detach", updated)
+    target = git_repository.commit_all(repo, "統合先で子を更新")
+    manifest = _cleanup_integration_manifest(tmp_path, handoff_text="検収済み")
+    script = "from pathlib import Path; assert Path('feature').read_text(encoding='utf-8') == '成果'"
+    if scenario == "dirty":
+        script += f"; Path({name!r}, 'tracked').write_text('未保存', encoding='utf-8')"
+    if scenario == "restart":
+        counter = tmp_path / "validation-attempt"
+        script += (
+            f"; counter = Path({str(counter)!r}); n = int(counter.read_text()) if counter.exists() else 0;"
+            " counter.write_text(str(n + 1)); raise SystemExit(42 if n < 2 else 0)"
+        )
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["verification"] = [[sys.executable, "-c", script]]
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert all(
+        not git_repository.git_output(tree, "status", "--porcelain=v1", "--ignore-submodules=none") for tree in (worktree, repo)
+    )
+    args = _integration_args(record, repo, manifest, head)
+    code, result, stderr = _invoke(capsys, *args)
+
+    assert git_repository.git_output(worktree / name, "rev-parse", "HEAD") == original
+    assert git_repository.git_output(repo / name, "rev-parse", "HEAD") == updated
+    if scenario == "dirty":
+        assert code == 2 and "統合作業ツリーに未commitまたは未追跡の変更がある" in stderr
+        assert git_repository.git_output(repo, "rev-parse", "HEAD") == target
+        assert (worktree / name / "tracked").read_text(encoding="utf-8") == "未保存"
+    else:
+        if scenario == "restart":
+            assert code == 2 and "終了42" in stderr
+            current = git_repository.git_output(worktree, "rev-parse", "HEAD")
+            args = (*_integration_args(record, repo, manifest, current), "--restart-review")
+            # ファイル自体がcleanなら、子のcommitだけが変わっても再開始を拒まない。
+            git_repository.run_git(worktree / name, "commit", "--allow-empty", "-m", "別の子HEAD")
+            alternate = git_repository.git_output(worktree / name, "rev-parse", "HEAD")
+            git_repository.run_git(worktree, "add", "--", name)
+            code, _result, stderr = _invoke(capsys, *args)
+            assert code == 2 and "未commitまたは未追跡の変更" in stderr
+            git_repository.run_git(worktree, "-c", "submodule.recurse=false", "restore", "--staged", "--", name)
+            code, _result, stderr = _invoke(capsys, *args)
+            assert code == 2 and "終了42" in stderr
+            assert git_repository.git_output(repo, "rev-parse", "HEAD") == target
+            code, result, stderr = _invoke(capsys, *args)
+            assert git_repository.git_output(worktree / name, "rev-parse", "HEAD") == alternate
+            args = _integration_args(record, repo, manifest, current)
+        assert code == 0 and result["phase"] == "finalized" and "verification-0" in result["completed"], stderr
+        assert git_repository.git_output(repo, "rev-parse", "HEAD") == result["integrated_head"]
+        assert (repo / "feature").read_text(encoding="utf-8") == "成果"
+        code, resumed, stderr = _invoke(capsys, *args)
+        assert code == 0 and resumed["phase"] == "finalized", stderr
 
 
 @pytest.mark.cpu_limit(

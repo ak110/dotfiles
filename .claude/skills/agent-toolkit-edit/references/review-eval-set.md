@@ -70,6 +70,9 @@
 | 方針・規範の配送との整合 | `missed-hook-body-delivery-posttooluse`、`missed-hook-body-delivery-read-table` |
 | 指摘の前提の確かめ方（撤回した誤指摘） | `false-redirect-backslash` |
 | 投入前レビューの根拠の十分性 | `draft-cache-effect-missing`、`draft-cache-effect-sufficient`、`draft-export-effect-missing`、`draft-export-effect-sufficient` |
+| 停止対象の確定と残す機能、設定の作用範囲 | `intent-open-defect`、`intent-open-control`、`intent-fixed-defect`、`intent-fixed-control`、`config-boundaries-defect`、`config-boundaries-control` |
+| 設計への問いと確定した仕様の区別 | `design-question-defect`、`design-question-control`、`design-fixed-defect`、`design-fixed-control` |
+| 工程の省略判定後に前提が変わる時の判断者と戻り先 | `review-shift-defect`、`review-shift-control` |
 | 大量の文章や複数の契約の組み合わせを探索する判断（走査の範囲、読者確認の分担など） | `correct-verification-table-scope`、`missed-known-consumer-tests` |
 
 - 共通のレビュー原則、役割文書の全体の構成、モデルの割り当て（系統、effort）を変える改訂では、全事例を比べる。
@@ -100,6 +103,7 @@ exec-reviewは従来どおり`table`のTSVを使う。
 投入前レビューは`指摘:`の直下の最上位の箇条を1件とし、字下げの補足を同じ指摘へ含めて照合する。
 `なし`は0件で、判定、未解決の指摘数、必要な欄に矛盾があれば採点を失敗させる。
 本文の段階は、ユーザー向けの部分の確認と読者別の探索も必要とする。
+`確認段階: 本文`の事例では、prepareが原稿をdry-runで検証し、冒頭の抽出と原稿の対応を成立性の証拠に加える。
 採点、cleanup、未分類の時の保持は、TSVと同じ経路を使う。
 
 キャッシュの不足の例は、初回の保存版の原要求と本文を保つ。

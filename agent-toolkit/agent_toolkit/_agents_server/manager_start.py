@@ -573,8 +573,10 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         await session.drain_registration()
         self._cancel_retention_timer(session.session_id)
         self.sessions.pop(session.session_id, None)
-        if self._status_writer is not None:
-            await self._status_writer.delete_result_async(session.session_id, collector="start-unavailable")
+        if self._status_writer is not None and session.finalized_at is not None:
+            await self._status_writer.delete_result_async(
+                session.session_id, collector="start-unavailable", expected_end=(session.turn_seq, session.finalized_at)
+            )
             self._status_writer.schedule()
 
     async def _await_start_outcome(self, session: SessionState, timeout: float = state.START_AVAILABILITY_TIMEOUT) -> None:

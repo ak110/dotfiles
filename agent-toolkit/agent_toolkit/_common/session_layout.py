@@ -111,3 +111,13 @@ def hosts_directory(root_session_id: str, state_root: pathlib.Path | None = None
 
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
+
+
+def result_session_id(path: pathlib.Path) -> str | None:
+    """従来の結果名と、未回収結果に続いて公開したturn別の名前を同じsessionへ結びつける。"""
+    if path.suffix != ".json":
+        return None
+    identifier, separator, end = path.stem.partition(".")
+    if valid_session_id(identifier) and (not separator or re.fullmatch(r"[0-9]+-[a-f0-9]{64}", end)):
+        return identifier
+    return None

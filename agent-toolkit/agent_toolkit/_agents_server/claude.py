@@ -428,6 +428,15 @@ class ClaudeServerManager(ClaudeStream):
         )
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
+        # 接続先の候補変更では、旧所有者の終了から新所有者のinitまでchannelが無い。
+        # 同じsessionの自動再開・追送はこの区間を共有し、停止や照会は待たせない。
+        lock = self._reply_locks.get(session.session_id)
+        if lock is None:
+            lock = self._reply_locks[session.session_id] = asyncio.Lock()
+        async with lock:
+            return await self._send_message_owned(session, prompt)
+
+    async def _send_message_owned(self, session: SessionState, prompt: str) -> dict[str, Any]:
         channel = self._channels.get(session.session_id)
         if channel is None:
             if service_io.rehoming(session.session_id):

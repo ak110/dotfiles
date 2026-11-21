@@ -130,7 +130,7 @@
    - 再レビューでは、既報の追跡と、今回の修正差分・直接影響範囲の指摘を分ける。
      新しい要件と初回レビューの確認不足は、通常の指摘と分けて委譲元へ伝える。
 6. 実行レビューの返却では、ファイルごとに直接確認の結果、起動結果の識別子の配列、再点検の省略のどれかを申告する。
-   申告の形式と対象集合は実行レビュー担当の返却契約（`agent-toolkit:atk-mode/roles/exec-review.subagent.md`「出力」）が定める。
+   申告の形式と対象集合は`agent-toolkit:atk-mode/roles/exec-review.parent.md`「実行レビューの返却契約」が定める。
    直接確認は、架空の起動識別子を付けずに同契約の`direct`で申告する。
 
 <!-- return-contract:reader-fit-review:start -->

@@ -222,7 +222,12 @@ def resolve_status_owner_identity(
 ) -> StatusFileIdentity | None:
     """呼出主体を共有状態の書込主体へ解決し、対応が曖昧な場合は失敗する。"""
     identity = resolve_status_file_identity(environment)
-    if identity is None or identity.host_session_id is None:
+    return None if identity is None else resolve_host_writer(identity, state_root)
+
+
+def resolve_host_writer(identity: StatusFileIdentity, state_root: pathlib.Path | None) -> StatusFileIdentity:
+    """委譲元の会話から、状態を実際に書く主体を解決する。"""
+    if identity.host_session_id is None:
         return identity
     try:
         paths = tuple(hosts_directory(identity.root_session_id, state_root).iterdir())

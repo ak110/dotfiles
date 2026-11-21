@@ -9,7 +9,7 @@ import pathlib
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import logging_config
+from agent_toolkit._agents_server import logging_config, turn_state
 from agent_toolkit._common import runtime_inserted, session_registry
 
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終了を観測してから`send_message`を再送する"
@@ -33,6 +33,11 @@ READER_FIT_REVIEW_RESULT_NEXT_ACTION = (
     "読者別探索の指摘を受領した。採否を確定する前に`agent-basics:review-standards`を起動し、"
     "`reader-fit-review.parent.md`「受領」に従って、指摘ごとの採否と根拠を確定する"
 )
+
+_REVIEW_STANDARDS_DOCUMENT = "agent-basics:review-standards/SKILL.md"
+_REVIEWEE_DOCUMENT = "agent-basics:review-standards/references/reviewee.md"
+_READER_FIT_RECEIPT_DOCUMENT = "agent-toolkit:atk-mode/roles/reader-fit-review.parent.md#「受領」"
+_REVIEW_RECEIPT_DOCUMENTS = frozenset((_REVIEW_STANDARDS_DOCUMENT, _REVIEWEE_DOCUMENT, _READER_FIT_RECEIPT_DOCUMENT))
 
 
 # 結果はメインと委譲先の双方が受け取るため、両者が実行できる操作を受け取った主体の役割ごとに示す。
@@ -61,27 +66,61 @@ def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[
 
 def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
     """受領時に必要なレビューの採否確定と改善点の転記を、既存の次の操作に併記する。"""
-    for action, _documents in result_guidance(result, label):
+    if is_finalized_wait_statement(result):
+        result = _without_review_receipt(result)
+    guidance = result_guidance(result, label)
+    for action, _documents in guidance:
         result = append_result_next_action(result, action)
-    documents = list(dict.fromkeys(document for _action, paths in result_guidance(result, label) for document in paths))
+    documents = list(dict.fromkeys(document for _action, paths in guidance for document in paths))
     if documents:
         result["read_requirements"] = documents
     return result
 
 
+def _without_review_receipt(result: dict[str, Any]) -> dict[str, Any]:
+    """旧版で待機表明に付いたレビュー受領案内だけを、回復して出力するときにも除く。"""
+    result = dict(result)
+    action = result.get("next_action")
+    if isinstance(action, str):
+        legacy = {REVIEW_RESULT_NEXT_ACTION, READER_FIT_REVIEW_RESULT_NEXT_ACTION}
+        remaining = [line for line in action.split("\n") if line not in legacy]
+        if remaining:
+            result["next_action"] = "\n".join(remaining)
+        else:
+            result.pop("next_action", None)
+    reading = result.get("read_requirements")
+    if isinstance(reading, list):
+        other = [item for item in reading if not isinstance(item, str) or item not in _REVIEW_RECEIPT_DOCUMENTS]
+        if other:
+            result["read_requirements"] = other
+        else:
+            result.pop("read_requirements", None)
+    return result
+
+
+def is_finalized_wait_statement(result: Mapping[str, Any]) -> bool:
+    """完了の形で公開された結果が、再開結果ではなく保留していた待機表明か返す。"""
+    error = result.get("error")
+    return (
+        result.get("status") == "completed"
+        and isinstance(error, dict)
+        and error.get(turn_state.HELD_RESULT_FINALIZED_KEY) is True
+    )
+
+
 def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[str, tuple[str, ...]]]:
     """受領結果の種類に対する次操作と判断資料を、公開案内と読込選択で共有する。"""
     guidance: list[tuple[str, tuple[str, ...]]] = []
-    if result.get("status") == "completed" and isinstance(label, str) and label.endswith(REVIEW_LABEL_SUFFIX):
+    if is_finalized_wait_statement(result):
+        guidance.append(("これは再開したturnの結果ではなく待機表明。`show`で現在のturnと待機対象の状態を確かめる", ()))
+    elif result.get("status") == "completed" and isinstance(label, str) and label.endswith(REVIEW_LABEL_SUFFIX):
         reader_fit = label.endswith("reader-fit-review")
         guidance.append(
             (
                 READER_FIT_REVIEW_RESULT_NEXT_ACTION if reader_fit else REVIEW_RESULT_NEXT_ACTION,
                 (
-                    "agent-basics:review-standards/SKILL.md",
-                    "agent-toolkit:atk-mode/roles/reader-fit-review.parent.md#「受領」"
-                    if reader_fit
-                    else "agent-basics:review-standards/references/reviewee.md",
+                    _REVIEW_STANDARDS_DOCUMENT,
+                    _READER_FIT_RECEIPT_DOCUMENT if reader_fit else _REVIEWEE_DOCUMENT,
                 ),
             )
         )
@@ -214,6 +253,8 @@ def public_result(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
     if nonempty_error(payload.get("error")):
         result["error"] = refresh_error_diagnostics(payload["error"])
+    if is_finalized_wait_statement(result):
+        return with_result_next_action(result, result.get("label"))
     return result
 
 

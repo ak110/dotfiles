@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-import contextlib
+import dataclasses
 import json
 import logging
 import pathlib
@@ -16,7 +16,6 @@ from agent_toolkit._agents_server import status_reader
 from agent_toolkit._agents_server.result_projection import public_notice
 from agent_toolkit._agents_server.shared_layout import notices_directory
 from agent_toolkit._common import session_launchers, session_registry
-from agent_toolkit._common.atomic_file import atomic_write
 
 
 def recipient_matches(
@@ -34,6 +33,98 @@ def recipient_matches(
     return None if launcher is None else launcher == recipient_session_id
 
 
+@dataclasses.dataclass(frozen=True)
+class PendingNotice:
+    path: pathlib.Path
+    sent_at: str
+    body: str
+    damaged: bool = False
+
+
+def _read_notice(path: pathlib.Path, session_id: str, source: pathlib.Path) -> PendingNotice | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        if path.name.startswith(f"{session_id}."):
+            _LOG.warning(
+                "上り通知を読めないため原本を保持した: %s: %s。読取権限を確認し、必要なら送信元に再送を依頼する",
+                path,
+                exc,
+            )
+        return None
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        reason = str(exc)
+    else:
+        if (
+            isinstance(payload, dict)
+            and payload.get("version") == 1
+            and payload.get("session_id") == session_id
+            and isinstance(payload.get("sent_at"), str)
+            and isinstance(payload.get("body"), str)
+        ):
+            return PendingNotice(path, payload["sent_at"], payload["body"])
+        reason = "必須項目が不正です"
+    if path.name.startswith(f"{session_id}."):
+        return PendingNotice(path, "", f"{source / path.name}: {reason}", damaged=True)
+    return None
+
+
+def _taken_notice(notice: PendingNotice, *, action: str) -> dict[str, str]:
+    body = notice.body
+    if notice.damaged:
+        body = f"破損した上り通知を{action}しました: {body}。必要なら送信元に再送を依頼してください。"
+    return public_notice({"body": body})
+
+
+def read_notices(
+    root_session_id: str,
+    session_id: str,
+    state_root: pathlib.Path | None = None,
+    *,
+    recipient_session_id: str | None,
+    owner_status_file: str | None,
+    stash_directory: pathlib.Path | None = None,
+) -> list[PendingNotice]:
+    """宛先を確認し、通知を送信時刻順に読む。原本とCLIの退避物は変更しない。"""
+    directory = notices_directory(root_session_id, state_root)
+    paths = {path.name: path for path in directory.glob("*.json") if path.is_file()}
+    if stash_directory is not None:
+        paths.update(
+            (path.name, path)
+            for path in stash_directory.glob("*.json")
+            if path.name.startswith(f"{session_id}.") and path.is_file()
+        )
+    if (
+        not paths
+        or recipient_matches(root_session_id, session_id, recipient_session_id, owner_status_file, state_root) is not True
+    ):
+        return []
+    notices = [notice for path in paths.values() if (notice := _read_notice(path, session_id, directory)) is not None]
+    return sorted(notices, key=lambda notice: (notice.sent_at, notice.path.name))
+
+
+def consume_notices(pending: list[PendingNotice]) -> list[dict[str, str]]:
+    """応答を返す時点で原本を取得できた通知だけを載せる。"""
+    taken = []
+    for notice in pending:
+        try:
+            notice.path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            # 他の通知や確定済みの終了結果は返し、この原本は次回に残す。
+            _LOG.warning(
+                "上り通知を削除できないため原本を保持した: %s: %s。権限を確認し、必要なら送信元に再送を依頼する",
+                notice.path,
+                exc,
+            )
+            continue
+        taken.append(_taken_notice(notice, action="削除"))
+    return taken
+
+
 def take_notices(
     root_session_id: str,
     session_id: str,
@@ -43,77 +134,37 @@ def take_notices(
     owner_status_file: str | None,
     stash_directory: pathlib.Path | None = None,
 ) -> list[dict[str, str]]:
-    """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
-    directory = notices_directory(root_session_id, state_root)
-    try:
-        paths = tuple(directory.iterdir())
-    except FileNotFoundError:
-        paths = ()
-    stashed: dict[str, pathlib.Path] = {}
-    if stash_directory is not None:
-        with contextlib.suppress(FileNotFoundError):
-            stashed = {
-                path.name: path
-                for path in stash_directory.iterdir()
-                if path.is_file() and path.suffix == ".json" and path.name.startswith(f"{session_id}.")
-            }
-    # 待機は対象ごとに毎巡この関数を呼び、所有者の確認はrootの全状態ファイルを読む。回収する候補が無い巡では確認を省く。
-    if not stashed and not any(path.suffix == ".json" for path in paths):
-        return []
-    # 退避済み通知にも同じ所有者の確認を適用し、誤登録の再開から他主体の本文を消費しない。
-    if recipient_matches(root_session_id, session_id, recipient_session_id, owner_status_file, state_root) is not True:
-        return []
-    matched: list[tuple[str, str, dict[str, str]]] = []
-    for path in (*stashed.values(), *paths):
-        if not path.is_file() or path.suffix != ".json":
-            continue
-        if path.parent == directory and path.name in stashed:
-            path.unlink(missing_ok=True)
-            continue
+    """CLIの同じ待機runでは退避済みの通知も再読する。"""
+    pending = read_notices(
+        root_session_id,
+        session_id,
+        state_root,
+        recipient_session_id=recipient_session_id,
+        owner_status_file=owner_status_file,
+        stash_directory=stash_directory,
+    )
+    if stash_directory is None:
+        return consume_notices(pending)
+    taken = []
+    for notice in pending:
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            if path.name.startswith(f"{session_id}."):
-                notice = {"sent_at": "", "body": f"破損した上り通知を削除しました: {directory / path.name}: {exc}"}
-                if stash_directory is not None and path.parent == directory:
-                    atomic_write(stash_directory / path.name, json.dumps({"version": 1, "session_id": session_id, **notice}))
-                if path.parent == directory:
-                    path.unlink(missing_ok=True)
-                matched.append(("", path.name, notice))
-            continue
-        if (
-            not isinstance(payload, dict)
-            or payload.get("version") != 1
-            or payload.get("session_id") != session_id
-            or not isinstance(payload.get("sent_at"), str)
-            or not isinstance(payload.get("body"), str)
-        ):
-            if path.name.startswith(f"{session_id}."):
-                notice = {"sent_at": "", "body": f"破損した上り通知を削除しました: {directory / path.name}: 必須項目が不正です"}
-                if stash_directory is not None and path.parent == directory:
-                    atomic_write(stash_directory / path.name, json.dumps({"version": 1, "session_id": session_id, **notice}))
-                if path.parent == directory:
-                    path.unlink(missing_ok=True)
-                matched.append(("", path.name, notice))
-            continue
-        notice = {"sent_at": payload["sent_at"], "body": payload["body"]}
-        if stash_directory is not None and path.parent == directory:
-            atomic_write(stash_directory / path.name, json.dumps(payload, ensure_ascii=False) + "\n", fsync=True)
-        matched.append((payload["sent_at"], path.name, notice))
-    matched.sort(key=lambda item: (item[0], item[1]))
-    taken: list[dict[str, str]] = []
-    for _sent_at, file_name, notice in matched:
-        if notice["sent_at"] == "" or stash_directory is not None:
-            taken.append(notice)
-            if stash_directory is not None:
-                (directory / file_name).unlink(missing_ok=True)
-            continue
-        try:
-            (directory / file_name).unlink()
+            if notice.path.parent == stash_directory:
+                # 旧CLIが退避済みで、削除前に停止した原本。
+                (notices_directory(root_session_id, state_root) / notice.path.name).unlink(missing_ok=True)
+            else:
+                stash_directory.mkdir(parents=True, exist_ok=True)
+                notice.path.replace(stash_directory / notice.path.name)
         except FileNotFoundError:
             continue
-        taken.append(notice)
-    return [public_notice(notice) for notice in taken]
+        except OSError as exc:
+            _LOG.warning(
+                "上り通知をこの待機で配送できなかった: %s: %s。権限を確認し、必要なら送信元に再送を依頼する",
+                notice.path,
+                exc,
+            )
+            continue
+        taken.append(_taken_notice(notice, action="退避"))
+    return taken
 
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")

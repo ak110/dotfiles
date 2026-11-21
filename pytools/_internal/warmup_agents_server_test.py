@@ -21,7 +21,7 @@ import psutil
 import pytest
 from agent_toolkit._agents_server import service_forward, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
-from agent_toolkit._common import plugin_environment, process_tree, session_review, windows_job
+from agent_toolkit._common import plugin_environment, plugin_environment_cleanup, process_tree, session_review, windows_job
 from agent_toolkit._testing import isolation, late_descendant
 from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
@@ -73,6 +73,8 @@ def _setup(
     """
     monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None)
+    # 合成の導入環境を参照する実プロセスはない。回収処理そのものは実行する。
+    monkeypatch.setattr(plugin_environment_cleanup, "_process_references", lambda: ([], False))
 
     async def ready(_command):
         return _STARTUP_OUTCOME(True, "起動確認済み")
@@ -201,6 +203,35 @@ class TestElevated:
 
 class TestTargets:
     """ウォームアップ対象の列挙。"""
+
+    def test_update_marker_is_not_a_service_startup_input(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """再実行の整理用の印だけが変わっても、同じサービスの起動確認を繰り返さない。"""
+        _setup(monkeypatch, tmp_path)
+        monkeypatch.setattr(_warmup.post_apply_cache, "record_path", lambda name: tmp_path / f"{name}.json")
+        monkeypatch.setattr(_warmup.plugin_warmup, "cleanup_prepared", lambda _prepared: None)
+        monkeypatch.setattr(_warmup.windows_security, "is_elevated_above_user_processes", lambda: False)
+        started: list[list[str]] = []
+
+        async def startup(command: list[str]):
+            started.append(command)
+            return _STARTUP_OUTCOME(True, "起動確認済み")
+
+        monkeypatch.setattr(_warmup, "_check_startup", startup)
+        monkeypatch.setenv("DOTFILES_PRUNE_READY_FILE", str(tmp_path / "update-one"))
+        monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(tmp_path / "bootstrap-one.json"))
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        assert len(started) == 1
+
+        monkeypatch.setenv("DOTFILES_PRUNE_READY_FILE", str(tmp_path / "update-two"))
+        monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(tmp_path / "bootstrap-two.json"))
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        assert len(started) == 1
+
+        monkeypatch.setenv("AGENT_TOOLKIT_RUNTIME_DATA", str(tmp_path / "new-runtime"))
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        assert len(started) == 2
 
     def test_cached_full_update_reclaims_completed_bundle(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path

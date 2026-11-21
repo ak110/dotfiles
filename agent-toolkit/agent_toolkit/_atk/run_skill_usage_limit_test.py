@@ -52,6 +52,7 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     CLIイベントとrolloutは20261014-210511-001/002の実現性で観測された形を使う。
     """
     monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{engine.upper()}_USAGE_LIMIT_WAIT", "always")
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "0")
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/high")
     monkeypatch.setenv("FAKE_SESSION_LIMIT_COUNT", "2")
     monkeypatch.setenv("FAKE_LIMIT_TYPE", limit_type)
@@ -79,8 +80,7 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     assert sleeps == [10, 300]
     sessions = _records(engine_env, "session")
     assert len(sessions) == 3
-    if engine == "claude":
-        assert all(session["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1" for session in sessions)
+    assert all(session["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "0" for session in sessions)
     first = sessions[0]["argv"]
     for session in sessions[1:]:
         argv = session["argv"]

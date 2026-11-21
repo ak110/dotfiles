@@ -12,6 +12,7 @@ from typing import Any, Literal, cast
 
 from agent_toolkit._agents_server import (
     backends,
+    notice_inbox,
     owner_lost,
     responses,
     result_projection,
@@ -189,7 +190,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
             not resume_state.result_delivered
             and resume_state.finalized_at is not None
             and self._status_writer is not None
-            and (await self._status_writer.result_state_async(session_id)) == "consumed"
+            and (await self._status_writer.result_state_async(session_id, session=resume_state)) == "consumed"
         ):
             resume_state = dataclasses.replace(resume_state, result_delivered=True)
             self.stopped_sessions[session_id] = resume_state
@@ -342,7 +343,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
         if diagnosis is None:
             return
         message = diagnosis.message()
-        notices = await self._take_registry_notices(session_id)
+        notices = notice_inbox.consume_notices(await self._read_registry_notices(session_id))
         if notices:
             message += "; notices=" + json.dumps(notices, ensure_ascii=False, separators=(",", ":"))
         raise ActionableError(message, next_action=owner_lost.OWNER_LOST_NEXT_ACTION)
@@ -390,21 +391,20 @@ class ManagerRegistryRestore(responses.ManagerResponses):
                 f"registry={current.state}",
                 next_action="`show`で同じsessionの状態を確かめ、終了していれば同じ`session_id`へ`send_message`する",
             )
-        response: dict[str, Any] = {
+        return {
             "status": current.resume_info.status,
             "kill_requested": True,
             "stopped_processes": [session_registry.process_payload(process) for process in stopped],
             "next_action": "同じ`session_id`へ`send_message`すると、停止したturnの会話を再開する",
         }
-        return self._response_with_notices(response, await self._take_registry_notices(session_id))
 
-    async def _take_registry_notices(self, session_id: str) -> list[dict[str, str]]:
-        """登録簿から解決したsessionの通知を、自身のルートと所有者のいない他のルートから回収する。"""
-        notices = await self._take_notices_async(session_id)
+    async def _read_registry_notices(self, session_id: str) -> list[notice_inbox.PendingNotice]:
+        """登録簿から解決したsessionの通知を、自身のルートと所有者のいない他のルートから読む。"""
+        notices = await self._read_notices(session_id)
         recipient = await self._status_writer.launcher_session_id_async() if self._status_writer is not None else None
         notices.extend(
             await run_file_operation(
-                owner_lost.take_stranded_notices,
+                owner_lost.read_stranded_notices,
                 session_id,
                 self._own_root_session_id(),
                 self._state_root(),
@@ -463,7 +463,9 @@ class ManagerRegistryRestore(responses.ManagerResponses):
                 ),
             )
         persisted_result = (
-            (await run_file_operation(self._status_writer.read_result, session_id)) if self._status_writer is not None else None
+            (await run_file_operation(self._status_writer.read_result, session_id, expected_turn_seq=info.turn_seq))
+            if self._status_writer is not None
+            else None
         )
         result_root = self._own_root_session_id() if persisted_result is not None else None
         if persisted_result is None:
@@ -477,7 +479,9 @@ class ManagerRegistryRestore(responses.ManagerResponses):
                 )
             )
             for root in roots:
-                payload = await run_file_operation(retained_results.read_retained_result, root, session_id, self._state_root())
+                payload = await run_file_operation(
+                    retained_results.read_retained_result, root, session_id, self._state_root(), expected_turn_seq=info.turn_seq
+                )
                 if payload is not None and (
                     isinstance(payload.get("agent_message"), str)
                     and payload.get("turn_seq") == info.turn_seq
@@ -542,40 +546,6 @@ class ManagerRegistryRestore(responses.ManagerResponses):
         if self.stopped_sessions.get(session_id) is resume_state:
             self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
         return claimed
-
-    async def _claim_resume_result(
-        self, resume_state: SessionResumeState, response: dict[str, Any], *, collector: str
-    ) -> dict[str, Any] | None:
-        """退避元の違いによらず、同じturnの排他回収に成功した本文だけを返す。"""
-        session_id = resume_state.session_id
-        if isinstance(resume_state, RegistryResumeState) and resume_state.result_root_session_id is not None:
-            claimed, error = await run_file_operation(
-                retained_results.take_result,
-                resume_state.result_root_session_id,
-                session_id,
-                resume_state.result_owner_status_file,
-                collector=collector,
-                state_root=self._state_root(),
-                expected_turn_seq=resume_state.turn_seq,
-            )
-            if error is not None:
-                raise ActionableError(
-                    f"保存済みの子の結果を回収できない: {session_id}: {error}",
-                    next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
-                )
-            return None if claimed is None else {**response, **claimed}
-        if self._status_writer is not None:
-            await self._status_writer.retain_result_async(resume_state)
-            claimed, error = await self._status_writer.take_result_async(
-                session_id, collector=collector, expected_turn_seq=resume_state.turn_seq
-            )
-            if error is not None:
-                raise ActionableError(
-                    f"保存済みの子の結果を回収できない: {session_id}: {error}",
-                    next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
-                )
-            return None if claimed is None else response
-        return response
 
     async def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
         """期限切れsessionなら中断対象が無いことを示す成功応答を返す。"""

@@ -15,7 +15,7 @@ from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
-from mcp.types import CallToolRequestParams, ToolAnnotations
+from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult, TextContent, ToolAnnotations
 from pydantic import Field
 
 from agent_toolkit._agents_server import (
@@ -23,6 +23,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     lifetime,
     logging_config,
+    result_projection,
     shared_roots,
     state,
     status_file,
@@ -452,7 +453,7 @@ async def send_message(
     終了済みsessionの未回収の終了時の結果を消費して新しいturnを開始した場合は、
     その結果を`previous_result`（`status`・`agent_message`と、ある場合は`error`）で返す。
     消費した結果は`atk agents wait`で受領できないため、委譲元は同じ応答から受け取る。
-    回収済みの結果は含めない。
+    回収済みの結果は含めない。別の回収や保存と競合した場合も追送の配送状態だけを返し、未回収の結果は`atk agents wait`に残す。
     `delivery`の値は次のとおりである。
     `steered`は実行中turnの配送キューへ指示を投入したことだけを示し、委譲先が読んだことは示さない。
     委譲先が単一の長時間コマンドを実行している間はturnの区切りに達しないため、指示はキューに残る。
@@ -493,7 +494,7 @@ async def kill(
     ] = DEFAULT_KILL_TIMEOUT,
     stop: Annotated[
         bool,
-        Field(description=parameter_description("終了時の結果を返した応答に限り、同じsessionを応答後に破棄する。")),
+        Field(description=parameter_description("中断を確認してsessionを破棄する。保持した本文はatk agents waitで回収する。")),
     ] = False,
 ) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終了を待つ。
@@ -502,11 +503,15 @@ async def kill(
     `timeout`の省略時は270秒を待機上限とし、`timeout=0`を指定すると、中断要求を配送した直後の状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
     終了時の結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
-    `show`の`result_held`が真のsessionでは、保留中の結果をそのまま終了時の結果として返し、以後の`send_message`を受け付ける。
+    `show`の`result_held`が真なら保留を確定し、以後の`send_message`を受け付ける。
+    `stop=True`で未回収の本文を読み手へ残した場合、終了状態と中断情報だけを返す。本文は`atk agents wait`で回収する。
     `show`の`ownership`が`owner_lost`のsessionでは、登録簿のpidと起動時刻が一致する委譲先CLIだけを停止し、
     停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """
-    return await _manager().kill(session_id, timeout, stop)
+    result = await _manager().kill(session_id, timeout, stop)
+    if result_projection.is_finalized_wait_statement(result):
+        return result_projection.with_result_next_action(result, result.get("label"))
+    return result
 
 
 @mcp.tool(
@@ -580,6 +585,25 @@ async def list_sessions(
     return response
 
 
+def relay_result(
+    name: str, result: CallToolResult | InputRequiredResult, owner: dict, queried: dict
+) -> CallToolResult | InputRequiredResult:
+    """別世代のshow成功応答へ、実行所有者と照会の受付先を同じ形式で示す。"""
+    if name != "show" or not isinstance(result, CallToolResult) or result.is_error or result.structured_content is None:
+        return result
+    detail = {
+        **result.structured_content,
+        "owner_server_instance": owner["server_instance"],
+        "queried_server_instance": queried["server_instance"],
+    }
+    return result.model_copy(
+        update={
+            "structured_content": detail,
+            "content": [TextContent(type="text", text=json.dumps(detail, ensure_ascii=False, indent=2))],
+        }
+    )
+
+
 @mcp.tool(
     name="show",
     title="委譲sessionの詳細",
@@ -622,8 +646,8 @@ async def show_session(
     バックグラウンドタスクの後の結果が不要なら`kill`で保留中の結果を受け取れる。
     完了通知が届かない保留は、背景実行のBashの上限（Claude Codeで環境変数を設定しない場合は2時間）に余裕を加えた期限で打ち切る。
     子session・バックグラウンドタスクの完了待ちの保留は追送では確定しない。
-    打ち切り、`kill`、または期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送で確定した時点で
-    待機対象が残った結果は`error`の`heldResultFinalized`が真で、再開したturnの結果ではない。残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
+    待機表明の保留を確定した結果は`error`の`heldResultFinalized`が真で、再開したturnの結果ではない。
+    残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
     `unobservedSessions`に識別子を持つ。`unobservedSessions`だけでは保留の確定と区別できない。
     終了したsessionが空でない`error`を保持する場合は、`error`を返す。失敗の原因と次の操作の判断に使える。
     共有の登録簿だけから復元したsessionは`error`を保持しないため返さず、原因は`atk agents wait`の終了行で受け取る。
@@ -638,6 +662,8 @@ async def show_session(
     `not_collected`（終了診断の導入前の記録）、`missing`、`unreadable`のいずれかで、`next_action`が読み取り操作を示す。
     過去に中断したturnがあるsessionは、再開・解放の後も`interrupted_turns`へturn番号・理由・`diagnostics`の組を返す。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
+    `queried_server_instance`は照会を受け付けたサーバーの起動単位、`owner_server_instance`は所有サーバーの起動単位を示す。
+    終了済みなら登録簿に残る最後の所有者を示し、識別できない値はnullとする。生存確認には`list`の世代一覧も使う。
     終了時の結果本文は返さないため、受領には`atk agents wait`を使う。
     """
     await _manager().take_over_orphaned_session(session_id)

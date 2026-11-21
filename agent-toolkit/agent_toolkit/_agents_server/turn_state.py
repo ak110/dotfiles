@@ -7,6 +7,9 @@ import dataclasses
 import enum
 from typing import Any
 
+HELD_RESULT_FINALIZED_KEY = "heldResultFinalized"
+"""再開turnの結果ではなく、元の待機表明を確定したときに`error`へ付ける項目名。"""
+
 
 class TurnStart(enum.Enum):
     """開始要求の受理段階。結果の終了と中断要求は別の状態軸である。"""
