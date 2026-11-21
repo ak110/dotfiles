@@ -305,6 +305,8 @@ def _build_session_argv(
     argv = ["codex"]
     if resume_pending:
         argv.append("resume")
+    # 共有daemonでは起動元の統括識別をhookが継承せず、終了操作も対話CLIを祖先から特定できない。
+    argv.append("--no-daemon")
     argv.extend(("--model", model, "-c", f"model_reasoning_effort={effort}"))
     if codex_provider is not None:
         argv.extend(_codex_connection.provider_arguments(codex_provider))

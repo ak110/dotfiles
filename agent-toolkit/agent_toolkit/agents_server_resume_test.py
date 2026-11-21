@@ -37,7 +37,7 @@ async def test_wait_defers_result_until_child_session_terminates(
         session = await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         _emit_child_start(client, child_session_id)
-        client.emit(ResultMessage("孫session待機中"))
+        client.emit(ResultMessage(f"待機中: {child_session_id}"))
 
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
@@ -65,7 +65,7 @@ async def test_wait_keeps_child_until_registration_recovers(
         elif registry_state == "released":
             session_registry.release(child_session_id, reason="retention_expired")
         _emit_child_start(client, child_session_id)
-        client.emit(ResultMessage("孫sessionの終了待機"))
+        client.emit(ResultMessage(f"待機中: {child_session_id}"))
         await _await_state(lambda: session.awaiting_auto_resume)
         await manager._advance_child_session_wait(session)
         assert session.live_child_session_ids == {child_session_id}
@@ -100,7 +100,7 @@ async def test_wait_preserves_unobserved_child_sessions_until_all_terminate(
             registry_path.write_text("{", encoding="utf-8")
         _emit_child_start(client, terminal_session_id)
         _emit_child_start(client, unobserved_session_id)
-        client.emit(ResultMessage("孫session混在時の初回結果"))
+        client.emit(ResultMessage(f"待機中: {unobserved_session_id}"))
 
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: session.awaiting_auto_resume)
@@ -135,7 +135,7 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
         session_registry.publish(first_terminal_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         _emit_child_start(client, first_terminal_session_id)
         _emit_child_start(client, missing_session_id)
-        client.emit(ResultMessage("1回目の孫session混在結果"))
+        client.emit(ResultMessage(f"待機中: {missing_session_id}"))
 
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: session.awaiting_auto_resume)
@@ -150,7 +150,7 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
         registry_path.write_text("{", encoding="utf-8")
         _emit_child_start(client, second_terminal_session_id)
         _emit_child_start(client, unreadable_session_id)
-        client.emit(ResultMessage("2回目の孫session混在結果"))
+        client.emit(ResultMessage(f"待機中: {unreadable_session_id}"))
         await _await_state(lambda: session.awaiting_auto_resume)
         await manager._advance_child_session_wait(session)
         assert len(client.queries) == 2 and not wait_task.done()
@@ -181,7 +181,7 @@ async def test_wait_response_keys_are_unchanged_with_child_sessions(
         session = await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         _emit_child_start(client, child_session_id)
-        client.emit(ResultMessage("孫session待機中"))
+        client.emit(ResultMessage(f"待機中: {child_session_id}"))
 
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
@@ -211,7 +211,7 @@ async def test_live_claude_child_survives_notification_deadline(
         session = await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         _emit_child_start(client, child_session_id)
-        client.emit(ResultMessage("孫session待機中"))
+        client.emit(ResultMessage(f"待機中: {child_session_id}"))
 
         await _await_state(lambda: session.awaiting_auto_resume)
         session.set_background_deadline(0.0)

@@ -53,7 +53,7 @@ async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monk
         parent.live_child_session_ids.add("first-child")
         session_registry.publish("first-child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path))
         client.messages.put_nowait(SdkSystemMessage(subtype="session_state_changed", data={"state": "idle"}))
-        client.messages.put_nowait(ResultMessage("最初の子を待つ"))
+        client.messages.put_nowait(ResultMessage("待機中: first-child"))
         async with owner._condition:
             await asyncio.wait_for(owner._condition.wait_for(lambda: parent.awaiting_auto_resume), 2)
         session_registry.publish("first-child", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path))
@@ -72,7 +72,7 @@ async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monk
         parent.live_child_session_ids.add("second-child")
         session_registry.publish("second-child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path))
         client.messages.put_nowait(SdkSystemMessage(subtype="session_state_changed", data={"state": "idle"}))
-        client.messages.put_nowait(ResultMessage("待機コマンドは未起動だが次の子が残る"))
+        client.messages.put_nowait(ResultMessage("待機中: second-child"))
         async with owner._condition:
             await asyncio.wait_for(
                 owner._condition.wait_for(lambda: parent.pending_result is not None or parent.result_available), 2

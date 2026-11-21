@@ -36,9 +36,11 @@ from agent_toolkit._agents_server.resume_waits import (
     auto_resume_wait_deadline,
     clear_overload_resume,
     clear_usage_limit_wait,
+    cli_turn_may_continue,
     finalize_pending_result,
     has_pending_auto_resume_targets,
     is_background_completion_wait,
+    is_final_response_with_unobserved_children,
 )
 from agent_toolkit._agents_server.state import PreviousResult, ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
@@ -232,6 +234,13 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     continue
                 session.live_child_session_ids.discard(child_id)
                 session.terminal_child_session_ids.discard(child_id)
+        if session.pending_result is not own_pending:
+            return
+        # 配送済みの子を除いた後、通常の最終本文は未回収の子だけを理由に保持しない。
+        # 子の所有と保持結果は変えず、元の委譲先へ回収を頼むために識別子を添える。
+        if not cli_turn_may_continue(session) and is_final_response_with_unobserved_children(session):
+            finalize_pending_result(session)
+            return
         if (
             delivered
             and own_pending is not None

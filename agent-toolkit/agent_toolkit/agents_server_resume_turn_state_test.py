@@ -281,7 +281,7 @@ async def test_child_only_then_stream_end_then_child_done(monkeypatch: pytest.Mo
         session = await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(child, state=session_registry.PublicationState.PENDING_RUNNING)
         _emit_child_start(client, child)
-        client.finish_turn(ResultMessage("孫を待機中"))
+        client.finish_turn(ResultMessage(f"待機中: {child}"))
         await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
         client.end_stream()
         await asyncio.sleep(0.3)

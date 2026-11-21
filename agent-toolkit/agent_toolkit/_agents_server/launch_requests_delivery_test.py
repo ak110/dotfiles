@@ -151,7 +151,9 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
             "child-session", state=session_registry.PublicationState.RESULT_COMPLETED, engine=engine, cwd=str(tmp_path)
         )
         session.live_child_session_ids.add("child-session")
-        resume_waits.begin_auto_resume_wait(session, {"status": "completed", "agent_message": "保留本文", "error": None})
+        resume_waits.begin_auto_resume_wait(
+            session, {"status": "completed", "agent_message": "待機中: child-session", "error": None}
+        )
         await manager.wait()
 
         payloads = [delivery_payload(value) for value in backend.prompts]

@@ -32,6 +32,19 @@ def test_review_wait_statement_does_not_request_review_receipt() -> None:
     assert finished["read_requirements"]
 
 
+def test_unobserved_child_guidance_preserves_final_review() -> None:
+    """未回収の子がいても最終本文を待機表明と取り違えず、元の所有者へ回収を案内する。"""
+    result = result_projection.with_result_next_action(
+        {"status": "completed", "agent_message": "適合", "error": {"unobservedSessions": ["child-1"]}},
+        "scope-review",
+    )
+    assert result["error"]["unobservedSessions"] == ["child-1"]
+    assert result["agent_message"] == "適合"
+    assert "レビューの指摘を受領した" in result["next_action"]
+    assert "`send_message`で元の委譲先に`atk agents wait`" in result["next_action"]
+    assert result["read_requirements"]
+
+
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
     """進捗本文は改行を除き、長文では末尾80文字だけを返す。"""
     assert result_projection.progress_excerpt("a\r\nb\rc\nd") == "a b c d"

@@ -243,7 +243,9 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
         install_backend(manager, "codex", backend)
         parent = state.SessionState("parent-session", str(tmp_path), engine="codex")
         parent.live_child_session_ids.add("child-session")
-        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+        resume_waits.begin_auto_resume_wait(
+            parent, {"status": "completed", "agent_message": "待機中: child-session", "error": None}
+        )
         manager.sessions[parent.session_id] = parent
 
         await manager.wait()

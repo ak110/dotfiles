@@ -333,6 +333,13 @@ def test_agents_wait_terminal_line_marks_result_finalized_with_remaining_waits(
         expected = " next_action=これは再開したturnの結果ではなく待機表明。`show`で現在のturnと待機対象の状態を確かめる"
         assert expected in line
         line = line.replace(expected, "")
+    elif (error or {}).get("unobservedSessions"):
+        expected = (
+            ' next_action="未回収の子は`unobservedSessions`にある。agents_serverの子の結果が必要なら、'
+            '`send_message`で元の委譲先に`atk agents wait`での回収を依頼する"'
+        )
+        assert expected in line
+        line = line.replace(expected, "")
     assert line == (f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}{suffix}")
 
 

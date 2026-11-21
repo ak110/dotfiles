@@ -108,6 +108,18 @@ def is_finalized_wait_statement(result: Mapping[str, Any]) -> bool:
     )
 
 
+def has_unobserved_children(result: Mapping[str, Any]) -> bool:
+    """通常の完了結果に、受領後も回収を要する子が残っているか返す。"""
+    error = result.get("error")
+    return (
+        result.get("status") == "completed"
+        and not is_finalized_wait_statement(result)
+        and isinstance(error, dict)
+        and isinstance(children := error.get("unobservedSessions"), list)
+        and bool(children)
+    )
+
+
 def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[str, tuple[str, ...]]]:
     """受領結果の種類に対する次操作と判断資料を、公開案内と読込選択で共有する。"""
     guidance: list[tuple[str, tuple[str, ...]]] = []
@@ -125,6 +137,14 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
             )
         )
     message = result.get("agent_message")
+    if has_unobserved_children(result):
+        guidance.append(
+            (
+                "未回収の子は`unobservedSessions`にある。agents_serverの子の結果が必要なら、"
+                "`send_message`で元の委譲先に`atk agents wait`での回収を依頼する",
+                (),
+            )
+        )
     if isinstance(message, str) and runtime_inserted.reported_improvement_lines(message):
         guidance.append(
             (IMPROVEMENT_RESULT_NEXT_ACTION, ("agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」",))

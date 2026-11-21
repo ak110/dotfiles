@@ -99,7 +99,9 @@ async def test_auto_resume_publishes_thread_writer_conflict(
         session.codex_subscription_provider = "openai"
         session.codex_state_provider = provider
         session.terminal_child_session_ids.add("finished-child")
-        resume_waits.begin_auto_resume_wait(session, {"status": "completed", "agent_message": "待機中", "error": None})
+        resume_waits.begin_auto_resume_wait(
+            session, {"status": "completed", "agent_message": "待機中: finished-child", "error": None}
+        )
         session.status = "running"
         manager.sessions[session.session_id] = session
         result = await manager.wait()

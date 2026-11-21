@@ -45,7 +45,7 @@ async def test_send_message_preserves_background_and_mixed_waits(
             session_registry.publish("mixed-child", state=session_registry.PublicationState.PENDING_RUNNING)
             _emit_child_start(client, "mixed-child")
         client.emit(TaskStartedMessage("task-1"))
-        client.emit(ResultMessage("初回結果"))
+        client.emit(ResultMessage("待機中: task-1"))
         await _await_state(lambda: session.awaiting_auto_resume)
 
         response = await manager.send_message(session.session_id, "続行", timeout=1)
@@ -58,7 +58,7 @@ async def test_send_message_preserves_background_and_mixed_waits(
         assert launched == "調査"
         assert continued == "続行"
 
-        client.emit(ResultMessage("追送後も待機"))
+        client.emit(ResultMessage("待機中: task-1"))
         await _await_state(lambda: session.awaiting_auto_resume)
         client.emit(TaskUpdatedMessage("task-1", "completed"))
         if mixed:
@@ -99,7 +99,7 @@ async def test_send_message_wait_survives_failure_and_completion_order(
                 ]
             )
         )
-        client.emit(ResultMessage("待機中"))
+        client.emit(ResultMessage(f"待機中: {child}"))
         await _await_state(lambda: session.awaiting_auto_resume)
         original_query = client.query
         monkeypatch.setattr(client, "query", AsyncMock(side_effect=RuntimeError("配送拒否")))
@@ -123,7 +123,7 @@ async def test_send_message_wait_survives_failure_and_completion_order(
             assert "previous_result" not in response
             assert session.live_child_session_ids == {child}
             assert session.agents_wait_background_outputs == {str(output)}
-            client.emit(ResultMessage("追送後の待機"))
+            client.emit(ResultMessage(f"待機中: {child}"))
             await _await_state(lambda: session.awaiting_auto_resume)
         if completion_order == "after":
             session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)

@@ -555,7 +555,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
                         ]
                     )
                 )
-                api_client.messages.put_nowait(ResultMessage("孫を待つ"))
+                api_client.messages.put_nowait(ResultMessage("待機中: child"))
                 await _until(lambda: session.awaiting_auto_resume)
                 if after_reset:
                     clock["now"] += 150

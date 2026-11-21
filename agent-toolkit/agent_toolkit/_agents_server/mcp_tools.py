@@ -509,7 +509,9 @@ async def kill(
     停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """
     result = await _manager().kill(session_id, timeout, stop)
-    if result_projection.is_finalized_wait_statement(result):
+    if result_projection.is_finalized_wait_statement(result) or (
+        not stop and result_projection.has_unobserved_children(result)
+    ):
         return result_projection.with_result_next_action(result, result.get("label"))
     return result
 
