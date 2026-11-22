@@ -195,7 +195,7 @@ JavaScriptからツールを呼ぶCode Modeでは、ツールの一覧と背景�
 タスクを設定するのはメインだけであり、`Agent`ツールのサブエージェントに設定すると、共有の`CronList`を通じてそのプロンプトが親の会話へ届く。
 `agents_server`が起動した委譲先は、独立したセッションのメインとして扱う。
 
-1. agent-toolkitのmod（会話のイベントを処理するFunction hooks module）は、メインの最初の`start`の中か、背景タスクを残してターンを終える時にタスクを設定する。
+1. agent-toolkitのmod（会話のイベントを処理するFunction hooks module）は、メインの最初の`start`の中か、バックグラウンドタスクを残してターンを終える時にタスクを設定する。
    設定に失敗した時は`start`の結果か次のターンの警告に従う。
 2. 3つのCronツールが使えてもmodが自動設定しない環境では、メインが標識を持つタスクの不在を確かめてから設定する。
    設定は`atk wait-schedule`を1回実行し、出力の`cron`と`prompt`を変えずに`CronCreate`へ渡し、`recurring: true`で1件だけ作る。

@@ -132,7 +132,7 @@ async function mount($: EngineInterface): Promise<string | undefined> {
   return undefined;
 }
 
-// startの成功時と背景タスクを残すターンの終了時に使い、届ける警告が無ければ空文字列を返す。
+// startの成功時とバックグラウンドタスクを残すターンの終了時に使い、届ける警告が無ければ空文字列を返す。
 // 同じ会話へ同じ失敗の警告を重ねず、作成の成功と既にtaskを持つ場合は既往を破棄する。
 export async function mountPeriodicRecheck($: EngineInterface): Promise<string> {
   let warning: string | undefined;
