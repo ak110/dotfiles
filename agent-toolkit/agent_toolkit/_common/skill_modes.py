@@ -6,7 +6,7 @@
 
 import re
 
-_MODES = {"process-wi": {"single-lane", "all-repos"}, "review-session": {"batch"}}
+_MODES = {"process-wi": {"single-lane", "all-repos"}, "review-session": {"batch", "meta"}}
 
 ENTRY_SKILL = "atk-mode"
 ENTRY_WORKS = ("add-awi-by-user", "implement", "process-wi", "review-session", "export-session")

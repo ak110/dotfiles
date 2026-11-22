@@ -78,6 +78,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`/atk-mode review-session batch`が非同期でまとめて分析する。
 batchが投入したAWIは、ユーザーの内容確認を待たずに採否の検討と処理の対象になり、エージェント由来の要求の採否は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」で判断する。
 手動の`/atk-mode review-session`は現在のセッション全体を対象とし、引数は追加の着眼点として扱う。
+`review-session meta`では個別の記録を準備せず、キューと既存報告から7日間の反復と対策の効果を比較する。
 自動起動は`session_review_auto_start`で切り替え、無効でも待ち記録を保持して手動のbatchで処理できる。
 
 ## 運用変更を検討する観点

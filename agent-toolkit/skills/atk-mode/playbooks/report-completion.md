@@ -86,7 +86,8 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 6. 自律モードでは、ユーザーが結果を確かめて是正を指示できるよう、事後承認型の報告用UWIをセッションにつき1件保存する。
    本文と保存は`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」に従う。
    `atk run-skill`による実行では、`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保つ。
-   scopeは、通常の起動ではスキル名だけ（自由記述は含めない）、batchでは`agent-toolkit:review-session batch`とする。
+   scopeはスキル名とモードの組とし、自由記述は含めない。
+   起動入力にscopeがある時は、モードを含むその値を保存する。
    保存CLIが付ける`run_skill_run_id`は、再開と更新でも保つ。
    報告先は起動元が渡したリポジトリとし、実行のcwdと区別する。
    起動元は本文、commit、upstreamがある場合のpushを検収する。

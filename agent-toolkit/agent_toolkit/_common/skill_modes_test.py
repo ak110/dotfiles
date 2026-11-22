@@ -16,6 +16,8 @@ from agent_toolkit._common import skill_modes
         ("review-session", "batch", "batch", ""),
         ("review-session", "batchx", None, "batchx"),
         ("review-session", "batching 注意", None, "batching 注意"),
+        ("review-session", "meta 追加の着眼点", "meta", "追加の着眼点"),
+        ("review-session", "metadata", None, "metadata"),
         ("review-session", "auto", None, "auto"),
         ("process-wi", "unknown all-repos", None, "unknown all-repos"),
         ("process-wi", "single-lanex", None, "single-lanex"),
@@ -49,6 +51,7 @@ def test_scope_ignores_free_text_and_separates_modes():
     assert scope(skill_modes.PROCESS_WI, "single-lane A") == scope(skill_modes.PROCESS_WI, "single-lane B")
     assert scope(skill_modes.PROCESS_WI, "single-lane") != scope(skill_modes.PROCESS_WI, "all-repos")
     assert scope("agent-toolkit:review-session", "batch auto") != scope("agent-toolkit:review-session", "auto")
+    assert scope("review-session", "meta 観点") == "agent-toolkit:review-session meta"
 
 
 def test_implement_work_is_resolved_from_entry_skill():

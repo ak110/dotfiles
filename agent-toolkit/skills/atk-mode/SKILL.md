@@ -72,7 +72,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
 | `implement [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/implement.md` |
 | `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md`（「モードの選択」から進む） |
-| `review-session [batch]` | 会話の振り返りを求められた時 | `playbooks/review-session.md` |
+| `review-session [batch\|meta]` | 振り返りの依頼 | `playbooks/review-session.md` |
 | `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
