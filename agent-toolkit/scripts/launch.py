@@ -503,8 +503,11 @@ def _stop_server_process(
 
 
 def _forwarding_handler(_process: subprocess.Popen[bytes], received: list[dict[str, str]]) -> Any:
+    # シグナルが続けて届いても、ハンドラー内でlazy importを再入させない。
+    clock, utc = datetime.datetime.now, datetime.UTC
+
     def handler(signum: int, _frame: Any) -> None:
-        received.append({"signal": signal.Signals(signum).name, "at": datetime.datetime.now(datetime.UTC).isoformat()})
+        received.append({"signal": signal.Signals(signum).name, "at": clock(utc).isoformat()})
 
     return handler
 
