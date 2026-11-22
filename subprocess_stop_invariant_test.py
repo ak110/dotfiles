@@ -92,6 +92,44 @@ _ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
+_WINDOWS_JOB_SOURCE = pathlib.Path("agent-toolkit/agent_toolkit/_common/windows_job.py")
+# 割当中に例外が起きた場合、再開済みの子孫はJobで、割当前の起点は元のPopenで回収する。
+_WINDOWS_OWNED_START_STOPS = frozenset({"job.terminate", "process.kill"})
+
+
+def _is_owned_start_cleanup(node: ast.Call, owner: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    if not isinstance(owner, ast.FunctionDef) or not isinstance(parents[owner], ast.Module):
+        return False
+    # Jobは引数、起点は直前に生成したPopen。再束縛する関数は例外の対象にしない。
+    stores = [child.id for child in ast.walk(owner) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)]
+    if "job" in stores or stores.count("process") != 1:
+        return False
+    if not any(
+        isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and ast.unparse(statement.targets[0]) == "process"
+        and isinstance(statement.value, ast.Call)
+        and ast.unparse(statement.value.func) == "subprocess.Popen"
+        for statement in owner.body
+    ):
+        return False
+    ancestor = parents[node]
+    while ancestor is not owner:
+        if isinstance(ancestor, ast.ExceptHandler):
+            attempt = parents[ancestor]
+            if isinstance(attempt, ast.Try) and any(
+                isinstance(child, ast.Call)
+                and ast.unparse(child.func) == "job.assign_suspended"
+                and len(child.args) == 2
+                and ast.unparse(child.args[1]) == "process.pid"
+                for statement in attempt.body
+                for child in ast.walk(statement)
+            ):
+                return True
+        ancestor = parents[ancestor]
+    return False
+
+
 def _violations(path: pathlib.Path, source: str) -> list[str]:
     tree = ast.parse(source, filename=str(path))
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
@@ -122,8 +160,18 @@ def _violations(path: pathlib.Path, source: str) -> list[str]:
         while owner is not None and not isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):
             owner = parents.get(owner)
         name = owner.name if owner is not None else "<module>"
-        if (path.as_posix(), name) not in _ALLOWED:
-            failures.append(f"{path}:{node.lineno}: {name}: {ast.unparse(function)}")
+        call = ast.unparse(function)
+        if (path.as_posix(), name) in _ALLOWED:
+            continue
+        if (
+            path == _WINDOWS_JOB_SOURCE
+            and name == "start_owned_process"
+            and call in _WINDOWS_OWNED_START_STOPS
+            and owner is not None
+            and _is_owned_start_cleanup(node, owner, parents)
+        ):
+            continue
+        failures.append(f"{path}:{node.lineno}: {name}: {call}")
     return failures
 
 
@@ -173,3 +221,29 @@ def test_goal_grader_exception_is_limited_to_report():
     assert _violations(path, source.replace("_report", "main"))
     assert _violations(path.with_name("other.py"), source)
     assert _violations(pathlib.Path("agent-toolkit/skills/atk-mode/scripts/multi_turn_trials.py"), source)
+
+
+def test_windows_owned_start_stop_exception_is_limited_to_its_resources():
+    """Windowsの起動時回収の許可は、その場で所有するJobと起点だけに限る。"""
+    source = (
+        "def start_owned_process(job):\n"
+        "    process = subprocess.Popen(['child'])\n"
+        "    try:\n"
+        "        job.assign_suspended(process.handle, process.pid)\n"
+        "    except BaseException:\n"
+        "        job.terminate()\n"
+        "        process.kill()\n"
+    )
+    assert not _violations(_WINDOWS_JOB_SOURCE, source)
+    assert _violations(_WINDOWS_JOB_SOURCE.with_name("other.py"), source)
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("start_owned_process", "start_independent_process"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("job.terminate", "other_job.terminate"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("process.kill", "other_process.kill"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("job.assign_suspended", "other_job.assign_suspended"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source + "    process.kill()\n")
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("    try:", "    job = other_job\n    try:"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("    try:", "    process = other_process\n    try:"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("subprocess.Popen(['child'])", "other_process"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("process.pid", "other.pid"))
+    nested = "def unrelated():\n" + "".join(f"    {line}\n" for line in source.splitlines())
+    assert _violations(_WINDOWS_JOB_SOURCE, nested)
