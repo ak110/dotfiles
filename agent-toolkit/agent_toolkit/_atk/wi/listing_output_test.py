@@ -10,6 +10,7 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_listing_support import _AGENT_ENVIRONMENT_VARIABLES
 from agent_toolkit._testing.wi_listing_support import _clear_agent_environment as _clear_agent_environment
 from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
@@ -113,11 +114,12 @@ class TestListJson:
         assert record["ready"] is False
         assert record["blocked_reason"] == "missing-dependency"
 
+    @pytest.mark.parametrize("initial", [False, True])
     def test_json_splits_dependency_unmet_by_candidate_set(
         self,
-        monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        initial: bool,
     ) -> None:
         """依存の未充足を、未終了の依存先が同じ出力へ現れるかで2値へ分けて報告する。"""
         notes = _setup_notes(tmp_path)
@@ -133,16 +135,31 @@ class TestListJson:
             outer.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [external.md]\n"),
             encoding="utf-8",
         )
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        repo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/foo.git")
+        args = [
+            "wi",
+            "list",
+            "--jsonl",
+            "--status=processable",
+            f"--target-repo={repo}",
+            "--target-branch=auto",
+            "--with-staleness",
+        ]
+        if initial:
+            args.extend(["--skip-pull", "--snapshot-output", str(tmp_path / "initial.json")])
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "list", "--jsonl", "--skip-pull", "--target-repo=github.com/example/foo"],
-                home=tmp_path,
-            )
+            atk.main(args, home=tmp_path)
 
         assert exc_info.value.code == 0
         records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert all(record["state"] == "inbox" and isinstance(record["staleness"], dict) for record in records)
+        incoming = {
+            record["filename"]
+            for record in records
+            if record["ready"] is True or record["blocked_reason"] == "dependency-unmet-internal"
+        }
+        assert incoming == {"inner.md", "leader.md"}
         reasons = {record["filename"]: record["blocked_reason"] for record in records}
         assert reasons == {
             "inner.md": "dependency-unmet-internal",

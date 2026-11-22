@@ -123,15 +123,8 @@
    ```
 
    all-reposの初回保存と担当への引き継ぎは`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「開始と振り分け」に従い、各対象の`snapshot_file`を使う。
-2. 30分ごとの点検と公開工程の開始前に、開始時に存在したかを問わず、現在の処理可能なinboxのWIを取得する。
-
-   ```text
-   atk wi list --jsonl --state=inbox --target-repo <対象リポジトリの絶対パス> --target-branch=auto
-   ```
-
-   一覧の`ready: true`を使い、既存の依存・保留・系統・認可の条件を満たすAWIを対象にする。
-   識別子は正規化した対象リポジトリとWIファイル名の組とし、現在の担当と選定記録に同じ識別子があるか調べる。
-   開始時の集合は新規と既存の区別に使い、依存の解消やinboxへの復帰で処理可能になった既存WIも候補に含める。
+2. 30分ごとの点検と公開工程の開始前に、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の手順5と同じ方法で現在の候補差分を取得する。
+   開始時の集合は新規と既存の区別にだけ使う。
 3. 未判定の各WIの本文を`atk wi show`で取得する。
    常駐のprocess-loopが起動した統括は、30分ごとの点検と公開開始前の新着確認で、今回の対象の処理可能なAWIが`source: implement`と`merge_branch`を持つことを確認したら、公開開始前は「即時対応」の改善の時機判定を経ず、その回の追加候補へ入れる。
    現在担当中のWIは重複して割り付けない。

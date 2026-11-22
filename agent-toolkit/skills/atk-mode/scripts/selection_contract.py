@@ -143,7 +143,13 @@ def _check_ready_selection(facts: Mapping[str, Mapping[str, typing.Any]], select
     missing = sorted(
         name
         for name, fact in facts.items()
-        if (fact.get("ready") is True or fact.get("state") == "processing") and name not in selected and name not in excluded
+        if name not in selected
+        and name not in excluded
+        and (
+            fact.get("ready") is True
+            or fact.get("state") == "processing"
+            or (fact.get("state") == "inbox" and fact.get("blocked_reason") == "dependency-unmet-internal")
+        )
     )
     if missing:
         raise ValueError(f"処理可能な候補が選定にない: {', '.join(missing)}。処理可否の判定を確かめて全件を扱う")
@@ -192,10 +198,6 @@ def generate_selection(
         decisions.append(dict(copy.deepcopy(item), **{_STALENESS_KEY: copy.deepcopy(facts[name]["staleness"])}))
     generated[_selection.DECISIONS_KEY] = decisions
     generated[_selection.LANE_COSTS_KEY] = copy.deepcopy(costs)
-    if additional:
-        if judgments.get("結合条件"):
-            raise ValueError("追加入力へ初回の結合条件を加えない。元の初回履歴を保持する")
-        return generated
     excluded = judgments.get("除外候補", [])
     if (
         not is_string_list(excluded)
@@ -205,6 +207,10 @@ def generate_selection(
     ):
         raise ValueError("除外候補は候補にある未選定WIだけを重複なく指定する")
     _check_ready_selection(facts, seen, set(excluded))
+    if additional:
+        if judgments.get("結合条件"):
+            raise ValueError("追加入力へ初回の結合条件を加えない。元の初回履歴を保持する")
+        return generated
     assignments = {item[_selection.WI_KEY]: item[_selection.LANE_KEY] for item in decisions if _selection.LANE_KEY in item}
     if len(assignments) != len(decisions):
         raise ValueError("レーン割当は意味判断として全WIへ明示する")

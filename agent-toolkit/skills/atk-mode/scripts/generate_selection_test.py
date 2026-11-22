@@ -277,6 +277,43 @@ def test_generated_addition_saves_once_and_preserves_initial_allocation(
     assert [item["WI"] for item in saved["選定"]] == ["first.md", "second.md"]
 
 
+@pytest.mark.parametrize("exclude", [False, True])
+def test_generated_addition_requires_a_decision_for_internal_dependency_wait(
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    exclude: bool,
+) -> None:
+    repo, notes = environment
+    _wi(notes, "first.md")
+    facts, judgments = _inputs(tmp_path, ["first.md"])
+    output = tmp_path / "selection.yaml"
+    assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
+    before = output.read_bytes()
+    _wi(notes, "second.md")
+    facts, addition = _inputs(tmp_path, ["second.md"])
+    omitted = {
+        "filename": "dependent.md",
+        "state": "inbox",
+        "ready": False,
+        "blocked_reason": "dependency-unmet-internal",
+        "staleness": {"status": "current"},
+    }
+    facts.write_text(facts.read_text(encoding="utf-8") + json.dumps(omitted) + "\n", encoding="utf-8")
+    if exclude:
+        document = yaml.safe_load(addition.read_text(encoding="utf-8"))
+        document["除外候補"] = ["dependent.md"]
+        addition.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+    result = _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "second.md"))
+    if exclude:
+        assert result == 0
+        assert yaml.safe_load(output.read_text(encoding="utf-8"))["追加WI"] == ["second.md"]
+    else:
+        assert result != 0
+        assert "処理可能な候補が選定にない: dependent.md" in capsys.readouterr().err
+        assert output.read_bytes() == before
+
+
 @pytest.mark.parametrize("staged", [False, True])
 @pytest.mark.parametrize("phase_correction", [False, True])
 def test_minimal_selection_generation_merge_and_integration(

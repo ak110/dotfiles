@@ -83,11 +83,13 @@
    all-reposのリポジトリ担当は、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う（`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「取得済み候補の受領」）。
 
    ```text
-   atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>
+   atk wi list --jsonl --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>
    ```
 
    追跡するブランチが登録外でコマンドが失敗した場合は、処理を始めず、示された系統と起動方法をユーザーへ報告して終了する（`agent-toolkit:atk-mode/playbooks/process-wi.md`「系統を登録したリポジトリ」）。
-3. 明示的な指定が無ければ、`processing`の全項目と、`ready`が偽かつ`blocked_reason`が`dependency-unmet-internal`以外のものを除いた`inbox`の項目を候補にする。
+3. 通常の候補は、`processing`の全項目と、`ready: true`または`blocked_reason: dependency-unmet-internal`の`inbox`の項目である。
+   未回答のUWIと報告用UWIは候補から除く。
+   追加選定にも同じ条件を使う。
    `staleness`の値は、選定結果の`鮮度`欄へそのまま保存する。
    選定時間を短く保つため、`notice`が付いただけでは履歴を調べず、内容の不一致、充足済み、巻き戻しの危険を観測した項目だけ履歴を確認する。
 4. 明示した項目が初回取得に含まれない場合は、`atk wi show <WIファイル名> --target-repo=all`で保存済みの`target_repo`を取得し、originとの不一致が移転やパス改名によるものか別リポジトリかを判定する。
@@ -101,8 +103,9 @@
 6. `depends_on`の各依存先を`atk wi show <依存ファイル名> --skip-pull`で全状態・全リポジトリから解決する。
    対象リポジトリ内にあればそれを使い、複数リポジトリに同名があれば自動選択せず`続行できない理由`を記す。
    別リポジトリの依存先は、終了済みなら充足、未終了なら`dependency-unmet-external`とする。
-7. 候補内の先行項目にだけ依存するAWIは、書込対象に包含関係があっても候補に残し、推移的な依存先を含めて同じレーン内で依存順に処理する。
-   依存先が開始時候補（実行開始時点の集合）の外にあるか着手できない場合は、後続項目だけ着手せず依存待ちを保つ。
+7. その巡回の選定済みまたは現在の候補にある先行項目だけに依存するAWIは、書込対象に包含関係があっても候補に残す。
+   推移的な依存先も含め、同じレーン内で依存順に処理する。
+   先行項目がどちらにも含まれない場合か着手できない場合は、後続項目だけ着手せず依存待ちを保つ。
    日付境界の順序要求で、先行項目の終了か公開先へのマージ完了が後続の開始条件になっている場合は、先行条件の成立を確かめてから後続を候補に含める。
    依存の辺、日付の帰属、マージ条件にユーザーだけが決める未確定事項が残る場合の保留とUWIは、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
 8. 通常起動では、次のコマンドで回答済みUWIの本文を取得し、frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く（報告用は次回の同じ起動単位の`atk run-skill`が扱う）。
