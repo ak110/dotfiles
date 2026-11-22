@@ -173,6 +173,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 ## worktreeと資源
 
 再開では既存の作業ツリーと未完了の成果を再利用する。
+対象の準備前に、[レーン資源の回収](process-wi-lane-resources.md)「レーン資源の作成・再利用・回収」の手順1・2で、前回の残存資源を回収する。
 配下のレーンは`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`の公開`atk`操作で作り、対象別の`lane_session_id`を保つ。
 準備・統合・実行レビューは同書と`agent-toolkit:atk-mode/roles/exec.parent.md`へ、公開とCIの検収は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`へつなぐ。
 
