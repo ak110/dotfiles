@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextvars
 import functools
 import os
 import pathlib
@@ -11,7 +10,15 @@ from typing import Any
 from urllib.parse import quote
 
 from agent_toolkit._atk import config_settings
-from agent_toolkit._atk.wait_ci_records import _GH_JSON_FIELDS, JobRecord, RepositoryTarget, RunListError, RunListFn, RunRecord
+from agent_toolkit._atk.wait_ci_records import (
+    _GH_JSON_FIELDS,
+    _INFERRED_GITLAB_HOST,
+    JobRecord,
+    RepositoryTarget,
+    RunListError,
+    RunListFn,
+    RunRecord,
+)
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import forge_cli as _forge_cli
@@ -23,9 +30,6 @@ def _parse_repository(repository: str) -> RepositoryTarget:
         return _git_remote.parse_remote_location(repository)
     except ValueError as error:
         raise RunListError(f"repository指定が不正: {repository!r}") from error
-
-
-_INFERRED_GITLAB_HOST = contextvars.ContextVar("wait_ci_inferred_gitlab_host", default=False)
 
 
 def _glab_environment(repository: str) -> dict[str, str]:

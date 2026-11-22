@@ -25,6 +25,12 @@ def glab_environment(
     repository: str | remote.RemoteLocation, *, prefer_environment: bool = False, inferred_host: bool = False
 ) -> dict[str, str]:
     """glabの子環境へ、待機では明示指定、通知では公開環境指定を優先して反映する。"""
+    return _glab_environment_and_unset(repository, prefer_environment=prefer_environment, inferred_host=inferred_host)[0]
+
+
+def _glab_environment_and_unset(
+    repository: str | remote.RemoteLocation, *, prefer_environment: bool, inferred_host: bool
+) -> tuple[dict[str, str], tuple[str, ...]]:
     target = remote.parse_remote_location(repository) if isinstance(repository, str) else repository
 
     authority = (
@@ -32,13 +38,16 @@ def glab_environment(
     )
     env = os.environ.copy()
     inherited_host = next((env[name] for name in _GLAB_HOST_VARIABLES if env.get(name)), None)
-    if inferred_host and inherited_host:
+    unset: tuple[str, ...] = ()
+    if inferred_host:
         try:
-            inherited_authority = urlsplit(inherited_host if "://" in inherited_host else f"//{inherited_host}").netloc
+            value = inherited_host or ""
+            inherited_authority = urlsplit(value if "://" in value else f"//{value}").netloc
         except ValueError:
             inherited_authority = ""
         if inherited_authority.lower() != authority:
-            for name in (*_GLAB_HOST_VARIABLES, *_GLAB_HOST_API_VARIABLES):
+            unset = (*_GLAB_HOST_VARIABLES, *_GLAB_HOST_API_VARIABLES)
+            for name in unset:
                 env.pop(name, None)
             inherited_host = None
     if inherited_host and (prefer_environment or authority is None):
@@ -51,7 +60,7 @@ def glab_environment(
         env["GITLAB_API_HOST"] = authority
     if explicit_endpoint and target.protocol is not None:
         env["GLAB_API_PROTOCOL"] = target.protocol
-    return env
+    return env, unset
 
 
 def glab_repository(repository: str, *, prefer_environment: bool = False, environment: dict[str, str] | None = None) -> str:
@@ -73,6 +82,7 @@ def failure_log_commands(
     *,
     job: bool = False,
     prefer_environment: bool = False,
+    inferred_host: bool = False,
 ) -> tuple[tuple[str, ...], ...]:
     """リポジトリを指定したログ取得argvを返す。job未確定なら取得とtraceを順に返す。"""
     target = remote.parse_remote_location(repository)
@@ -86,9 +96,11 @@ def failure_log_commands(
         repo = f"{target.authority}/{target.project_path}" if target.authority else target.project_path
         jobs = ("gh", "run", "view", identifier, "--repo", repo, "--json", "jobs", "--jq", GITHUB_JOB_LIST)
         return (jobs, tuple(command))
-    repo = glab_repository(repository, prefer_environment=prefer_environment)
+    environment, unset = _glab_environment_and_unset(target, prefer_environment=prefer_environment, inferred_host=inferred_host)
+    repo = glab_repository(repository, environment=environment)
     assignments: list[str] = []
-    environment = glab_environment(repository, prefer_environment=prefer_environment)
+    if inferred_host:
+        assignments.append(f"GITLAB_HOST={environment['GITLAB_HOST']}")
     inherited_host = any(os.environ.get(name) for name in _GLAB_HOST_VARIABLES)
     explicit_endpoint = target.protocol in {"http", "https"} and not (prefer_environment and inherited_host)
     if target.authority is not None and explicit_endpoint:
@@ -97,7 +109,7 @@ def failure_log_commands(
         protocol = environment.get("GLAB_API_PROTOCOL") or environment.get("API_PROTOCOL")
         if protocol:
             assignments.append(f"GLAB_API_PROTOCOL={protocol}")
-    prefix = ("env", *assignments) if assignments else ()
+    prefix = ("env", *(arg for name in unset for arg in ("-u", name)), *assignments) if unset or assignments else ()
     if job:
         return ((*prefix, "glab", "ci", "trace", identifier, "--repo", repo),)
     return (
@@ -107,9 +119,17 @@ def failure_log_commands(
 
 
 def failure_next_action(
-    forge: str, repository: str, identifier: str, *, job: bool = False, prefer_environment: bool = False
+    forge: str,
+    repository: str,
+    identifier: str,
+    *,
+    job: bool = False,
+    prefer_environment: bool = False,
+    inferred_host: bool = False,
 ) -> str:
-    commands = failure_log_commands(forge, repository, identifier, job=job, prefer_environment=prefer_environment)
+    commands = failure_log_commands(
+        forge, repository, identifier, job=job, prefer_environment=prefer_environment, inferred_host=inferred_host
+    )
     rendered = [f"`{shlex.join(command)}`" for command in commands]
     if forge == "github":
         save = "全jobログをmanaged-tempの中のファイルへ保存し、失敗箇所を読んで原因を調べる"

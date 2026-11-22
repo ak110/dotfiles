@@ -61,11 +61,11 @@ GitLabの設定は[Projects API](https://docs.gitlab.com/api/projects/)と[独�
 自動判定したホストは待機記録へ保存する。
 短縮形の再入力は、自動判定でその短縮形から作成した記録だけが受理する。
 GitLabでは、Gitの転送方式やポートではなくglabのホスト別API設定を使う。
-自動判定したGitLabホストが環境変数で指定したホストと異なる場合は、後者のAPI接続設定を引き継がない。
+自動判定したGitLabホストと環境変数のホスト指定が一致する場合だけ、環境変数のAPI接続設定を引き継ぐ。
 
 `wait_ci.py`は`--ref`で指定した宛先のブランチかタグの短縮名を、GitHubでは`gh run list --branch`へ、GitLabでは`glab ci list --ref`へ渡す。
 `--baseline`での待機と再起動はbaselineの保存値を使うため、これらを省く。
-GitLabのホストを`--repo`で省いた場合は、`GITLAB_HOST`、`GITLAB_URI`、`GL_HOST`の順に使い、どれも設定していなければglabの設定を使う。
+`--forge gitlab`を明示して`--repo`のホストを省いた場合は、`GITLAB_HOST`、`GITLAB_URI`、`GL_HOST`の順に使い、どれも設定していなければglabの設定を使う。
 GitLabでは、`GITLAB_API_HOST`をリポジトリの識別子やSSHの接続先から上書きせず、baselineの作成と監視・再開で同じ接続の設定を使う。
 
 ### 待機の起動と回収
@@ -127,12 +127,14 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
 ## 私設GitLabのCLI失敗からの回復
 
 1. `wait_ci.py`がCLIの失敗を示す終了コード3を返した時だけ、状態の照会と証拠の取得のために`curl -k`でAPIを直接呼ぶ。
+   待機の対象ホストの設定からAPIのベースURLを確認し、下の例の`API_BASE_URL`に設定する。
+   シェルの`GITLAB_HOST`や`GITLAB_TOKEN`をそのまま流用せず、対象API用のトークンであることを確かめる。
 
    ```text
    curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-     "https://${GITLAB_HOST}/api/v4/projects/<project-id>/pipelines?sha=<完全SHA>&per_page=100&page=<page>"
+     "${API_BASE_URL}/api/v4/projects/<project-id>/pipelines?sha=<完全SHA>&per_page=100&page=<page>"
    curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-     "https://${GITLAB_HOST}/api/v4/projects/<project-id>/pipelines/<pipeline-id>/jobs?include_retried=false&per_page=100&page=<page>"
+     "${API_BASE_URL}/api/v4/projects/<project-id>/pipelines/<pipeline-id>/jobs?include_retried=false&per_page=100&page=<page>"
    ```
 
    パイプラインの一覧と、パイプラインごとのジョブの一覧は、返る件数が100件未満になるまで`page`を増やして全てのページを取得する。

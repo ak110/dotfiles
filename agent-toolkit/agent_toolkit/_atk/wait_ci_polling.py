@@ -20,7 +20,6 @@ from agent_toolkit._atk.wait_ci_forge import (
 from agent_toolkit._atk.wait_ci_records import (
     _MAX_CONSECUTIVE_SNAPSHOT_FAILURES,
     _NEXT_ACTION_CI_EXCLUDED,
-    _NEXT_ACTION_FORGE_ERROR,
     _NEXT_ACTION_NO_CI_CONFIG,
     _NEXT_ACTION_NO_RUNS,
     _NEXT_ACTION_TIMEOUT,
@@ -44,6 +43,7 @@ from agent_toolkit._atk.wait_ci_records import (
     _failure_next_action,
     _failures,
     _finish,
+    _forge_error_next_action,
     _print,
     _report_new_failures,
     _snapshot_completed,
@@ -178,7 +178,7 @@ def _wait_for_completion(
             prefix = "後続run取得失敗" if follow_mode else "run list error"
             _print(elapsed, f"{prefix} (attempt {consecutive_failures}): {exc}")
             if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
-                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR), [], elapsed
+                return _finish(EXIT_GH_ERROR, _forge_error_next_action(repository)), [], elapsed
             sleep_fn(poll_interval)
             continue
         elapsed = now_fn() - start
@@ -308,12 +308,12 @@ def wait_for_ci(
             last_call_failed = True
             _print(now_fn() - start, f"run list error (attempt {consecutive_failures}): {exc}")
             if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
-                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR)
+                return _finish(EXIT_GH_ERROR, _forge_error_next_action(repository))
         elapsed = now_fn() - start
         if elapsed >= registration_grace:
             if last_call_failed:
                 _print(elapsed, "CI実行一覧またはジョブ一覧の取得失敗により期待run集合を確定できないまま登録猶予が経過")
-                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR)
+                return _finish(EXIT_GH_ERROR, _forge_error_next_action(repository))
             if not expected_ids:
                 _print(elapsed, f"run未登録のまま登録猶予{registration_grace:.0f}秒超過")
                 return _finish(EXIT_NO_RUNS, _NEXT_ACTION_NO_RUNS)
@@ -429,7 +429,7 @@ def _follow_cancelled(
             elapsed = now_fn() - start
             _print(elapsed, f"後続run取得失敗 (attempt {consecutive_failures}): {exc}")
             if consecutive_failures >= _MAX_CONSECUTIVE_SNAPSHOT_FAILURES:
-                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR)
+                return _finish(EXIT_GH_ERROR, _forge_error_next_action(repository))
         elapsed = now_fn() - start
         if follow_shas and grace_start is None:
             grace_start = now_fn()
@@ -437,7 +437,7 @@ def _follow_cancelled(
         if grace_start is not None and (now_fn() - grace_start) >= registration_grace:
             if last_call_failed:
                 _print(elapsed, "後続run取得失敗により期待run集合を確定できないまま登録猶予が経過")
-                return _finish(EXIT_GH_ERROR, _NEXT_ACTION_FORGE_ERROR)
+                return _finish(EXIT_GH_ERROR, _forge_error_next_action(repository))
             _print(elapsed, f"後続run集合確定（SHA{len(follow_shas)}件・run{len(expected_ids)}件）")
             break
         if elapsed >= remaining_timeout:

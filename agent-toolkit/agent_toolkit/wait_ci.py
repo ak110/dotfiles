@@ -24,7 +24,6 @@ from typing import NoReturn
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wait_ci_forge import (
-    _INFERRED_GITLAB_HOST,
     _default_run_list_fn,
     _follow_shas,
     _gh_job_list,
@@ -41,7 +40,7 @@ from agent_toolkit._atk.wait_ci_forge import (
 )
 from agent_toolkit._atk.wait_ci_polling import _all_cancelled, _all_success, _run_ids, _wait_for_completion, wait_for_ci
 from agent_toolkit._atk.wait_ci_records import (
-    _NEXT_ACTION_FORGE_ERROR,
+    _INFERRED_GITLAB_HOST,
     _NEXT_ACTION_INTERRUPTED,
     _NEXT_ACTION_SHA_RESOLUTION,
     _STDERR_FD,
@@ -60,6 +59,7 @@ from agent_toolkit._atk.wait_ci_records import (
     RunListError,
     RunRecord,
     _finish,
+    _forge_error_next_action,
     _load_baseline,
     _validate_baseline_context,
     _write_baseline,
@@ -309,7 +309,7 @@ def _run_wait(args: argparse.Namespace, forge: str, baseline: CiBaseline | None,
             next_action = (
                 "`--write-baseline`の保存先ディレクトリが存在し書き込めることを確かめて再実行する"
                 if isinstance(exc, OSError)
-                else _NEXT_ACTION_FORGE_ERROR
+                else _forge_error_next_action(args.repo)
             )
             return _finish(EXIT_GH_ERROR, next_action)
         print(f"[wait_ci] baseline保存: {args.write_baseline} ({len(baseline.run_ids)}件)")

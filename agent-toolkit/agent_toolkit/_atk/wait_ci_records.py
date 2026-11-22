@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import json
 import pathlib
@@ -115,10 +116,22 @@ def _finish(code: int, next_action: str) -> int:
     return code
 
 
+_INFERRED_GITLAB_HOST = contextvars.ContextVar("wait_ci_inferred_gitlab_host", default=False)
+
+
+def _forge_error_next_action(repository: str) -> str:
+    if _INFERRED_GITLAB_HOST.get():
+        host = _git_remote.parse_remote_location(repository).hostname
+        return f"`{host}` のglabホスト別設定で認証とネットワーク到達を確かめ、同じ引数で再実行する"
+    return _NEXT_ACTION_FORGE_ERROR
+
+
 def _failure_next_action(record: RunRecord | JobRecord, record_type: str, repository: str, forge: str) -> str:
     """検出済みの対象と状態から、待機を追加せず成立するログ取得を案内する。"""
     identifier = str(record.get("databaseId", "?"))
-    return _forge_cli.failure_next_action(forge, repository, identifier, job=record_type == "job")
+    return _forge_cli.failure_next_action(
+        forge, repository, identifier, job=record_type == "job", inferred_host=_INFERRED_GITLAB_HOST.get()
+    )
 
 
 class RunListError(RuntimeError):
