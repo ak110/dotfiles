@@ -228,7 +228,7 @@ gh() {
   fi
 
   [[ "$1" == release ]] || return 64
-  local action="$2" tag="$3" asset
+  local action="$2" tag="$3" asset payload
   shift 3
   case "$action" in
     view) [[ -f "$RELEASES/$tag" ]];;
@@ -237,9 +237,15 @@ gh() {
       local latest= clobber=false
       for asset in "$@"; do
         case "$asset" in
-          assets/*) assets+=("$asset");;
           --latest=*) latest="${asset#--latest=}";;
           --clobber) clobber=true;;
+          --*) ;;
+          *)
+            [[ -f "$asset" ]] || return 68
+            payload=$(cat -- "$asset")
+            [[ "$payload" == "$EXPECTED_SHA:${asset##*/}" ]] || return 69
+            assets+=("$payload")
+            ;;
         esac
       done
       if [[ "$action" == create ]]; then
@@ -268,16 +274,22 @@ gh() {
 def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late: bool) -> None:
     workflow_path = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows/release-statusline.yaml"
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
-    publish = workflow["jobs"]["release"]["steps"][-1]["run"]
+    release = workflow["jobs"]["release"]
+    publish = release["steps"][-1]
+    assert release["env"]["HEAD_SHA"] == "${{ needs.gate.outputs.head_sha }}"
+    assert release["env"]["TAG"] == "${{ needs.prepare.outputs.tag }}"
+    assert publish["env"]["TAG_EXISTS"] == "${{ steps.tag-state.outputs.tag_exists }}"
+    download = next(step["with"] for step in release["steps"] if step.get("uses", "").startswith("actions/download-artifact@"))
+    assert download["merge-multiple"] is True
     releases = repo.parent / "releases"
     releases.mkdir()
     (releases / "latest").touch()
     versions = ("0.1.9", "0.1.10")
     assets = [
-        "assets/claude-statusline-x86_64-unknown-linux-gnu",
-        "assets/claude-statusline-x86_64-pc-windows-msvc.exe",
+        "claude-statusline-x86_64-unknown-linux-gnu",
+        "claude-statusline-x86_64-pc-windows-msvc.exe",
     ]
-    assert {f"assets/{entry['asset']}" for entry in workflow["jobs"]["build"]["strategy"]["matrix"]["include"]} == set(assets)
+    assert {entry["asset"] for entry in workflow["jobs"]["build"]["strategy"]["matrix"]["include"]} == set(assets)
     commits = {}
     for version in versions:
         _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version=version))
@@ -290,12 +302,15 @@ def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late:
         assert (failure, prepared) == (None, {"changed": "true", "version": version, "tag": tag})
         failure, tag_state = check_statusline_version.release_tag_state(repo, sha)
         assert failure is None
+        for asset in assets:
+            _write(repo, f"{download['path']}/{asset}", f"{sha}:{asset}\n")
         result = subprocess.run(
-            ["bash", "-c", _GH_DOUBLE + publish],
+            ["bash", "-c", _GH_DOUBLE + publish["run"]],
             cwd=repo,
             env={
                 **os.environ,
                 "HEAD_SHA": sha,
+                "EXPECTED_SHA": sha,
                 "TAG": prepared["tag"],
                 "TAG_EXISTS": tag_state["tag_exists"],
                 "RELEASES": str(releases),
@@ -312,7 +327,8 @@ def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late:
             assert "asset upload failed" in result.stderr
             assert not (releases / tag).exists()
         else:
-            assert sorted((releases / tag).read_text(encoding="utf-8").splitlines()) == sorted(assets)
+            published = (releases / tag).read_text(encoding="utf-8").splitlines()
+            assert sorted(published) == sorted(f"{sha}:{asset}" for asset in assets)
         remote_tag = subprocess.check_output(["git", "ls-remote", "--refs", "origin", f"refs/tags/{tag}"], cwd=repo, text=True)
         assert remote_tag.strip() == f"{sha}\trefs/tags/{tag}"
 
@@ -327,6 +343,8 @@ def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late:
         assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{older}"
         run(newer)
     assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{newer}"
+    partial_release = releases / f"statusline-v{older}"
+    partial_release.write_text(f"{commits[older]}:{assets[0]}\n", encoding="utf-8")
     run(older)
     assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{newer}"
     assert {path.name for path in releases.iterdir()} == {"latest", *(f"statusline-v{version}" for version in versions)}
