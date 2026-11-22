@@ -4,6 +4,7 @@ import markdown_it
 from markdown_it.token import Token
 
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+_LITERAL_BLOCK_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": True, "linkify": False})
 
 
 def normalize_newlines(text: str) -> str:
@@ -12,11 +13,11 @@ def normalize_newlines(text: str) -> str:
 
 
 def without_literal_blocks(text: str) -> str:
-    """コードと引用の行を空行にし、本文の記号と補足資料の記号を分ける。"""
+    """コード・引用・コメントを本文の記号から分ける。"""
     normalized = normalize_newlines(text.removeprefix("\ufeff"))
     lines = normalized.split("\n")
-    for token in _MARKDOWN.parse(normalized):
-        if token.type in {"fence", "code_block", "blockquote_open"} and token.map is not None:
+    for token in _LITERAL_BLOCK_MARKDOWN.parse(normalized):
+        if token.type in {"fence", "code_block", "blockquote_open", "html_block"} and token.map is not None:
             start, end = token.map
             lines[start:end] = [""] * (end - start)
     return "\n".join(lines)

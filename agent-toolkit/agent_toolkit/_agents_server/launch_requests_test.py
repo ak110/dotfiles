@@ -514,8 +514,9 @@ async def test_add_wi_requires_destination_for_each_request_or_shared_input(
         "```md\n## 要求 例\n投入先: /example\n```\n",
         "~~~md\n## 要求 例\n投入先: /example\n",
         "> 補足資料の例\n投入先: /example\n",
+        "<!--\n## 要求 例\n投入先: /example\n-->\n",
     ],
-    ids=["fence", "unclosed-fence", "quote"],
+    ids=["fence", "unclosed-fence", "quote", "comment"],
 )
 async def test_add_wi_start_ignores_requirements_and_destinations_in_examples(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, example: str
@@ -545,6 +546,6 @@ async def test_add_wi_start_requires_unfenced_compact_input(tmp_path: pathlib.Pa
         with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
             await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
         assert not backend.start_calls
-        params["投入する要求"] = compact
+        params["投入する要求"] = compact + "\n発話: 依頼の原文"
         await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
         assert len(backend.start_calls) == 1

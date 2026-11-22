@@ -253,9 +253,9 @@ def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mappin
         reference_path = pathlib.Path(reference["path"].strip().strip("`"))
         if reference_path.is_absolute():
             common.extend(_add_wi_destination_fields(without_literal_blocks(_read_add_wi_input(reference_path))))
-    if not common and not requirements and "\n" not in text:
-        # 既存の簡略形: 識別子=対象リポジトリ=種別=趣旨
-        parts = text.split("=", maxsplit=3)
+    if not common and not requirements:
+        # 既存の簡略形が書かれた先頭行だけを読み、続く発話などの欄は対象にしない。
+        parts = text.partition("\n")[0].split("=", maxsplit=3)
         if len(parts) == 4 and parts[2].casefold() in {"awi", "uwi"}:
             common = [parts[1]]
     individual = [_add_wi_destination_fields(section) for section in requirements]
