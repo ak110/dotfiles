@@ -56,8 +56,8 @@ for (const placed of [true, false]) {
     expect(response.id).toBe(id);
     expect(response.ok).toBe(placed);
     if (placed) {
-      expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容を通常の応答本文で発話し直してはいけません。");
-      expect(response.reason).toContain("新しい報告があればsend_to_userで送る");
+      expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容の再掲・送信確認・要約を通常の応答本文に書いてはいけません。");
+      expect(response.reason).toContain("新しい報告はsend_to_userで送り");
       expect(response.reason).not.toContain("…");
     } else {
       expect(response.reason).toContain("対応画面なし");
