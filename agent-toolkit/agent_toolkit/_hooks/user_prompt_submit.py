@@ -24,7 +24,8 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 実ユーザー発話と機械注入ターンの両方で前回通知からの経過時間に基づいて付ける。
 成立した注記を1つの`additionalContext`へまとめる。
 
-発話ごとの初動（「発話の理解」）の案内は、指摘かどうかを受領側に判定させず、受付時刻とともに毎回届ける。
+発話ごとの初動（「発話の理解」）の案内は、指摘かどうかを受領側に判定させず毎回届ける。
+時刻は毎回の案内に含めない。要る時は、受領側が現在時刻を`date`で、過去の送信や操作の時刻を会話の記録の記録時刻で観測する。
 ユーザー発話向けの注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
 スラッシュコマンド（Claude Codeは`/`、Codexは`$`）で始まるものも対象に含める。
 機械注入ターンでは、実ユーザー発話向けの起動案内を返さず、配送待ちの状態も消費しない。
@@ -142,16 +143,15 @@ def _work_contract_notice(session_id: str, body: str) -> str:
     return informational(_llm_notice(body))
 
 
-def _clock_notice(session_id: str) -> str:
-    """実ユーザー入力ごとに、受付時刻と発話への初動を届ける。
+def _utterance_notice(session_id: str) -> str:
+    """実ユーザー入力ごとに、発話への初動を届ける。
 
-    時刻を推測で記録しないためで、点検通知の生成時刻とは区別する。
-    入力ごとに本文が変わるため、前回の重複抑止の記録を同じ原因だけ解除して状態の増加を防ぐ。
+    同じ本文を入力ごとに届けるため、前回の重複抑止の記録を同じ原因だけ解除して状態の増加を防ぐ。
     """
-    resolve_notice(session_id, "user_prompt_submit", "_clock_notice")
+    resolve_notice(session_id, "user_prompt_submit", "_utterance_notice")
     # 入力ごとに出る定型の情報であり、ユーザーの画面へは写さない。
     return informational(
-        _llm_notice(f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n{UTTERANCE_UNDERSTANDING_NOTICE_BODY}")
+        _llm_notice(UTTERANCE_UNDERSTANDING_NOTICE_BODY)
     )
 
 
@@ -239,7 +239,7 @@ def main(payload_text: str) -> int:
             if contract_notice is not None:
                 notices.append(_work_contract_notice(session_id, contract_notice))
         notices.extend(content_notices(prompt, "user_prompt_submit"))
-        notices.append(_clock_notice(session_id))
+        notices.append(_utterance_notice(session_id))
     if self_check_notice is not None:
         notices.append(self_check_notice)
     additional_context = "\n".join(notice for notice in notices if notice) or None

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import datetime
 import hashlib
 import os
 import pathlib
@@ -58,16 +57,10 @@ def record_path(session_id: str) -> pathlib.Path | None:
     return directory / RECORD_NAME if directory is not None else None
 
 
-def local_time(timestamp: float | None = None) -> str:
-    """通知に添える時刻を、タイムゾーン付きの壁時計の日時で返す。"""
-    moment = (
-        datetime.datetime.now().astimezone() if timestamp is None else datetime.datetime.fromtimestamp(timestamp).astimezone()
-    )
-    return moment.isoformat(timespec="seconds")
-
-
 def observe_input(session_id: str) -> str | None:
     """実ユーザー入力の後に、既存の作業契約の本文と、最終更新後の実ユーザー発話の件数を通知する。
+
+    最終更新の時刻は毎回の通知に含めない。更新後の件数で古さが分かり、時刻が要る時は受領側が記録から照会する。
 
     件数は契約ファイルの更新時刻の変化と、この関数が数える実ユーザー入力だけから求める。
     機械入力・委譲先・会話圧縮の再通知はこの関数を通らないため数えない。
@@ -108,7 +101,7 @@ def observe_input(session_id: str) -> str | None:
     if updated is not None and observed:
         scope = "今回を含む。初回観測より前は不明" if observed["partial"] else "今回を含む"
         status = (
-            f"\n作業契約の最終更新: `{local_time(updated)}`。その後の実ユーザー発話: {observed['inputs']}件（{scope}）。"
+            f"\n作業契約の最終更新後の実ユーザー発話: {observed['inputs']}件（{scope}）。"
             "件数は要求を再確認するための観測値であり、更新漏れの件数ではない。"
         )
     text = notice(session_id)

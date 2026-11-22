@@ -218,9 +218,8 @@ class TestUserConfirmationSkillPrompt:
         self._session_start("compact", tmp_path, host=host)
         restored = self._prompt("次の依頼", tmp_path, host=host)
         assert not self._has_notice(restored)
-        # 受付時刻は入力ごとに変わるため除いて比べる。
-        clock = re.compile(r"ユーザー入力の受付時刻: `[^`]*`")
-        assert clock.sub("", first) == clock.sub("", restored)
+        # 入力ごとの案内は時刻を含まないため、そのまま比べられる。
+        assert first == restored
         assert not self._has_notice(self._prompt("続けて", tmp_path, host=host))
 
     @pytest.mark.parametrize("source", ["resume", "fork"])
@@ -359,7 +358,7 @@ class TestMachineInjectedTurn:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert context.count("<atk-auto ") == 1 and "ユーザー入力の受付時刻" in context
+        assert context.count("<atk-auto ") == 1 and "発話の理解" in context
         assert _read_state(tmp_path, sid).get("last_user_prompt_at") is None
 
     @staticmethod
@@ -429,7 +428,7 @@ class TestNonMatchingPrompts:
     def _assert_no_notice(result: subprocess.CompletedProcess[str]) -> None:
         # スキル起動の案内は出さず、実入力ごとの定型通知を届ける。
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert context.count("<atk-auto ") == 1 and "ユーザー入力の受付時刻" in context
+        assert context.count("<atk-auto ") == 1 and "発話の理解" in context
 
     def test_ignores_non_skill_prompt(self, tmp_path: pathlib.Path):
         sid = "non-skill"
@@ -584,6 +583,17 @@ def test_feedback_rule_is_delivered_before_each_human_prompt(tmp_path: pathlib.P
         assert prompt not in context
 
 
+# test-copy-contract: 発言ごとの案内へ時刻を入れない契約（時刻は要る時に受領側が観測する）。
+@pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+def test_human_prompt_notice_carries_no_clock(tmp_path: pathlib.Path, host_fields: dict) -> None:
+    """発言ごとの案内に受付時刻を入れない。時刻が要る時は受領側が時計か会話の記録で観測する。"""
+    result = _run({"session_id": "no-clock", "prompt": "作業を続けて", **host_fields}, state_dir=tmp_path)
+    assert result.returncode == 0, result.stderr
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "受付時刻" not in context
+    assert re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", context) is None
+
+
 class TestExclamationDoesNotTriggerNotice:
     """全角の感嘆符は注記の契機にしない。認識のずれへの対処は受領側の発話への応答の手順が担う。"""
 
@@ -596,7 +606,7 @@ class TestExclamationDoesNotTriggerNotice:
         output = json.loads(result.stdout)["hookSpecificOutput"]
         bodies = _notice_bodies(output["additionalContext"])
         assert len(bodies) == 1
-        assert "ユーザー入力の受付時刻" in bodies[0]
+        assert "発話の理解" in bodies[0]
 
 
 class TestExampleScopeNotice:
@@ -717,7 +727,7 @@ class TestExampleScopeNotice:
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_other_notices_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
-        """同じターンで成立した受付時刻の注記と1つの`additionalContext`へ結合する。"""
+        """同じターンで成立した発話の理解の注記と1つの`additionalContext`へ結合する。"""
         sid = "example-combined"
         result = _run({"session_id": sid, "prompt": self._PROMPT, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
@@ -725,7 +735,7 @@ class TestExampleScopeNotice:
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 2
         assert "playbooks/user-utterance.md" in bodies[0]
-        assert "ユーザー入力の受付時刻" in bodies[1]
+        assert "発話の理解" in bodies[1]
 
 
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -739,7 +749,7 @@ def test_ordinary_prompts_keep_input_observation_without_reinjecting_procedure(t
         result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 1 and "ユーザー入力の受付時刻" in bodies[0]
+        assert len(bodies) == 1 and "発話の理解" in bodies[0]
         state = _read_state(tmp_path, sid)
         assert state.get("last_user_prompt_at") == legacy_time
         evidence = state["termination_evidence"]
@@ -759,7 +769,7 @@ def test_plan_state_names_session_without_procedure_injection(tmp_path):
     output = json.loads(result.stdout)["hookSpecificOutput"]
     assert output["sessionTitle"] == "current-plan"
     bodies = _notice_bodies(output["additionalContext"])
-    assert len(bodies) == 1 and "ユーザー入力の受付時刻" in bodies[0]
+    assert len(bodies) == 1 and "発話の理解" in bodies[0]
 
 
 @pytest.mark.parametrize("codex", [False, True])

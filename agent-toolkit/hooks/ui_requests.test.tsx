@@ -58,6 +58,10 @@ for (const placed of [true, false]) {
     if (placed) {
       expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容を再送したり、通常の応答本文で再掲・送信確認・要約したりしてはいけません。");
       expect(response.reason).toContain("新しい報告はsend_to_userで送る");
+      // 置いた行は本文だけを描き、送達時刻の行を加えない。
+      const rendered = JSON.stringify(await $.ui.render({ surface: "terminal", component: "Placed", requestId: "placed-row", props: { plugin: "agent-toolkit", id } }));
+      expect(rendered).toContain('"text":"表示する本文"');
+      expect(rendered).not.toContain("送達時刻");
       expect(response.reason).toContain("Claude Codeが可視の本文を求める場合の最小の応答は「…」");
     } else {
       expect(response.reason).toContain("対応画面なし");
@@ -193,7 +197,8 @@ test("再開後にまとめられた送達は展開して呼び出しごとに�
   expect(expanded).toEqual([true]);
 });
 
-test("旧modの配置状態は本文だけを保持する", () => {
-  expect(placedMessage("旧版の本文")).toEqual({ message: "旧版の本文" });
-  expect(placedMessage({ message: "新版の本文", placedAt: 10 })).toEqual({ message: "新版の本文", placedAt: 10 });
+test("配置状態からは本文だけを取り出し、送達時刻を描かない", () => {
+  expect(placedMessage("本文")).toBe("本文");
+  // 旧版が送達時刻とともに保存した状態からも本文だけを取り出す。
+  expect(placedMessage({ message: "旧版の本文", placedAt: 10 })).toBe("旧版の本文");
 });

@@ -78,11 +78,12 @@ def test_input_count_since_update_distinguishes_first_observation(
     monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
     first = work_contract.observe_input("counting")
     second = work_contract.observe_input("counting")
-    assert first is not None and "その後の実ユーザー発話: 1件（今回を含む。初回観測より前は不明）" in first
-    assert second is not None and "その後の実ユーザー発話: 2件（今回を含む。初回観測より前は不明）" in second
+    assert first is not None and "作業契約の最終更新後の実ユーザー発話: 1件（今回を含む。初回観測より前は不明）" in first
+    assert second is not None and "作業契約の最終更新後の実ユーザー発話: 2件（今回を含む。初回観測より前は不明）" in second
     assert "更新漏れの件数ではない" in second
     path.write_text("目的: A\n要件: B\n", encoding="utf-8")
     os.utime(path, (1_000_000_100, 1_000_000_100))
     updated = work_contract.observe_input("counting")
-    assert updated is not None and "その後の実ユーザー発話: 1件（今回を含む）" in updated
-    assert f"作業契約の最終更新: `{work_contract.local_time(1_000_000_100)}`" in updated
+    assert updated is not None and "作業契約の最終更新後の実ユーザー発話: 1件（今回を含む）" in updated
+    # 最終更新の時刻は毎回の通知に含めず、件数だけを示す。
+    assert "最終更新: `" not in updated
