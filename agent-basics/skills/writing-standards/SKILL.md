@@ -58,6 +58,7 @@ description: >
 | --- | --- |
 | 起動時 | `references/quality-principles.md` |
 | 成果物、報告、回答、委譲の依頼文へ事実の主張を書く時と、その裏付けを調べる時、実行・測定・検証の結果を報告・判定する時（エージェントCLIや共有状態を扱うツールを検証で起動する時、性能を測る時を含む） | `references/investigation.md` |
+| 成果物、作業記録、WI、報告に時刻（現在時刻、過去の出来事の時刻、将来の予定時刻）を書く前 | `references/quality-principles-facts.md` |
 | 観測で前提が崩れて次の確認を選ぶ時、経験を保存・再利用する時、観測に基づいてエージェント向け文書の技術的な条文を新設・改訂する時、プロジェクトの文書と既存コードの規約が違う時 | `references/investigation.md` |
 | X投稿などの外部資料の本文・日時・添付画像を取得・確認する前と、外部資料を成果物の根拠に使う前 | `agent-basics:fetch-sources/SKILL.md` |
 | 成果物や提案のレビュー、指摘の採否を判断する前 | `agent-basics:review-standards/SKILL.md` |
