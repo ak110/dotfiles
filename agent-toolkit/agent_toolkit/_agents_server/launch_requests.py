@@ -37,7 +37,7 @@ from agent_toolkit._agents_server.state import (
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import delegated_session, runtime_environment, session_registry, startup_documents, task_documents
-from agent_toolkit._common.markdown_headings import parse_headings
+from agent_toolkit._common.markdown_headings import parse_headings, without_literal_blocks
 from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote
@@ -218,7 +218,7 @@ _ADD_WI_COMMON_INPUT = re.compile(
     r"^(?:[ \t]*[-*][ \t]+)?共通(?:の入力|入力)?[：:][ \t]*(?P<path>[^`\r\n]+|`[^`\r\n]+`)[ \t]*$",
     re.MULTILINE,
 )
-_ADD_WI_REQUIREMENT = re.compile(r"^#{2,6}[ \t]+要求(?:[ \t：:]|$)", re.MULTILINE)
+_ADD_WI_REQUIREMENT = re.compile(r"^##[ \t]+要求(?:[ \t：:]|$)", re.MULTILINE)
 
 
 def _read_add_wi_input(path: pathlib.Path) -> str:
@@ -246,12 +246,12 @@ def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mappin
     text = request.strip()
     if "\n" not in text and pathlib.Path(text).is_absolute():
         text = _read_add_wi_input(pathlib.Path(text))
-    preamble, *requirements = _ADD_WI_REQUIREMENT.split(text)
+    preamble, *requirements = _ADD_WI_REQUIREMENT.split(without_literal_blocks(text))
     common = _add_wi_destination_fields(preamble)
     for reference in _ADD_WI_COMMON_INPUT.finditer(preamble):
         reference_path = pathlib.Path(reference["path"].strip().strip("`"))
         if reference_path.is_absolute():
-            common.extend(_add_wi_destination_fields(_read_add_wi_input(reference_path)))
+            common.extend(_add_wi_destination_fields(without_literal_blocks(_read_add_wi_input(reference_path))))
     if not common and not requirements:
         # 既存の簡略形: 識別子=対象リポジトリ=種別=趣旨
         parts = text.split("=", maxsplit=3)

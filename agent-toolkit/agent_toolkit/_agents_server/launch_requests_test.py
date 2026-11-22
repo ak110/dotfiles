@@ -505,3 +505,30 @@ async def test_add_wi_requires_destination_for_each_request_or_shared_input(
         params["投入する要求"] = f"共通入力: `{common}`\n\n{text}"
         await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
         assert len(backend.start_calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "example",
+    [
+        "```md\n## 要求 例\n投入先: /example\n```\n",
+        "~~~md\n## 要求 例\n投入先: /example\n",
+        "> 補足資料の例\n投入先: /example\n",
+    ],
+    ids=["fence", "unclosed-fence", "quote"],
+)
+async def test_add_wi_start_ignores_requirements_and_destinations_in_examples(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, example: str
+) -> None:
+    """コードフェンス内の見出しと値を投入口の判断へ混ぜない。"""
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        text = "## 要求 本文\n- 種別: AWI\n\n" + example
+        params = {"投入する要求": text, "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert not backend.start_calls
+        params["投入する要求"] = text.replace("- 種別:", "- 投入先: github.com/example/repository\n- 種別:")
+        await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert len(backend.start_calls) == 1

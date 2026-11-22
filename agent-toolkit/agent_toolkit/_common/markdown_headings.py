@@ -11,6 +11,17 @@ def normalize_newlines(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def without_literal_blocks(text: str) -> str:
+    """コードと引用の行を空行にし、本文の記号と補足資料の記号を分ける。"""
+    normalized = normalize_newlines(text.removeprefix("\ufeff"))
+    lines = normalized.split("\n")
+    for token in _MARKDOWN.parse(normalized):
+        if token.type in {"fence", "code_block", "blockquote_open"} and token.map is not None:
+            start, end = token.map
+            lines[start:end] = [""] * (end - start)
+    return "\n".join(lines)
+
+
 def parse_headings(text: str, level: int) -> list[tuple[Token, str]]:
     """指定レベルの見出しの開きtokenと本文を、出現順で返す。"""
     tokens = _MARKDOWN.parse(normalize_newlines(text.removeprefix("\ufeff")))
