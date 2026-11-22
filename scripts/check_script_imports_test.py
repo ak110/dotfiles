@@ -423,6 +423,19 @@ def test_agent_toolkit_allows_line_level_f821_noqa(_isolate_repo_root: pathlib.P
 
 
 @pytest.mark.parametrize(
+    "statement", ["from . import entry", "def load():\n    from .._hooks import stop_gate", "lazy from . import entry"]
+)
+def test_agent_toolkit_layers_reject_relative_imports(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], statement: str
+) -> None:
+    """層の検査を逃れる相対importを、関数内や遅延importでも拒否する。"""
+    _write_toolkit_module(_isolate_repo_root, "_common/consumer.py", statement + "\n")
+
+    assert check_script_imports.main() == 1
+    assert "_common/consumer.py:" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
     "relative_path",
     ["atk.py", "agents_server_mcp.py", "wait_ci.py", "../skills/example/scripts/tool.py"],
 )
