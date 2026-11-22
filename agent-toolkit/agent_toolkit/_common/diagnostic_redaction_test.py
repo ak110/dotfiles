@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+
 import pytest
 
 from agent_toolkit._common import diagnostic_redaction
@@ -55,3 +57,14 @@ def test_authorization_preserves_following_diagnostics(credential: str) -> None:
     saved = diagnostic_redaction.redact_secrets(f"Authorization: {credential} {suffix}")
     assert _SECRET not in saved
     assert suffix in saved
+
+
+def test_diagnostic_tail_discards_partial_line_with_bounded_read() -> None:
+
+    class Stream(io.BytesIO):
+        def read(self, size: int | None = -1, /) -> bytes:
+            assert size == 129
+            return super().read(size)
+
+    with Stream(b"x" * 1000 + b"https://" + b"A" * 150 + b"@example.org\nOK\n") as stream:
+        assert diagnostic_redaction.read_diagnostic_tail(stream, limit=64) == ("OK\n", True)

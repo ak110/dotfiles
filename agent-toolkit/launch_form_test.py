@@ -5,6 +5,7 @@
 
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -21,6 +22,7 @@ from typing import Any
 
 import psutil
 import pytest
+from agent_toolkit._agents_server import logging_config
 from agent_toolkit._common import plugin_environment, process_tree, windows_job
 from agent_toolkit._testing import late_descendant
 
@@ -665,3 +667,31 @@ def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleTy
             if detached is not None:
                 detached.kill()
                 detached.wait(timeout=5)
+
+
+@pytest.mark.parametrize("independent", [True, False])
+def test_launcher_termination_diagnostic_redacts_stderr_tail(
+    launcher: ModuleType, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, independent: bool
+) -> None:
+    token = "A" * 48
+    tail = "z" * 16350
+    data = f"https://{token}@example.org\n{tail}".encode()
+    generation = "G1"
+    (tmp_path / f"{generation}.stderr.log").write_bytes(data)
+    events = tmp_path / "events.jsonl"
+
+    @contextlib.contextmanager
+    def lifetime(_arguments, _environment, _received, buffer, **_kwargs):
+        if not independent:
+            with monkeypatch.context() as patch:
+                patch.setattr(sys, "stderr", io.TextIOWrapper(io.BytesIO(), encoding="utf-8"))
+                launcher._tee_stderr(io.BytesIO(data), buffer)
+        yield object()
+
+    monkeypatch.setattr(launcher, "_server_lifetime", lifetime)
+    monkeypatch.setattr(launcher, "_wait_owned_server", lambda *_args: 1)
+    monkeypatch.setattr(launcher, "_wait_server", lambda *_args: 1)
+    monkeypatch.setattr(logging_config, "read_launch_record", lambda _path: events)
+
+    assert launcher._run_agents_server([str(tmp_path), generation], {}, independent=independent) == 1
+    assert json.loads(events.read_text(encoding="utf-8"))["stderr_tail"] == f"https://[REDACTED]@example.org\n{tail}"

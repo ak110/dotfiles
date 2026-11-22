@@ -147,3 +147,14 @@ def test_log_excerpt_redacts_multiline_key_outside_tail() -> None:
 
     # pylint: disable-next=protected-access
     assert alerts._log_excerpt(text) == "        [REDACTED]\n        正常な行"
+
+
+def test_ci_diagnostics_keep_error_after_empty_secret_assignment(monkeypatch: pytest.MonkeyPatch) -> None:
+    line = "ERROR: 最初の検査が失敗した"
+    boundary = "x" * 280 + " https://" + "A" * 45 + "@example.org"
+    _record_commands(monkeypatch, f"EXAMPLE_TOKEN=\n{line}\n" + "後処理\n" * 20 + f"{boundary}\n")
+    result = alerts.collect_github_ci_failures("github.com/owner/repo", "main", run_list_fn=lambda *_args: [_FAILED_RUN])
+
+    assert line in result[0].details()
+    assert "[REDACTED]" in result[0].details()
+    assert "A" * 10 not in result[0].details()

@@ -9,24 +9,25 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, BinaryIO
 
 REDACTED = "[REDACTED]"
 
 _VALUE = r"""(?:\\"(?:\\.|[^"\\])*\\"|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]&]+)"""
 _AUTHORIZATION = re.compile(
-    r"""(\b(?:proxy[-_])?authorization(?:\\?["'])?\s*[:=]\s*)"""
-    r"""(?:\\"(?:\\.|[^"\\])*\\"|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:(?:Bearer|Basic|Digest|Negotiate)\s+)?[^\s,;}\]&]+)""",
+    r"""(\b(?:proxy[-_])?authorization(?:\\?["'])?[ \t]*[:=][ \t]*)"""
+    r"""(?:\\"(?:\\.|[^"\\])*\\"|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|"""
+    r"""(?:(?:Bearer|Basic|Digest|Negotiate)[ \t]+)?[^\s,;}\]&]+)""",
     re.IGNORECASE,
 )
 _NAMED_SECRET = re.compile(
-    r"""(\b[\w.-]*(?:api[ _-]?key|token|secret|password|passwd)[\w.-]*(?:\\?["'])?\s*[:=]\s*)""" + _VALUE,
+    r"""(\b[\w.-]*(?:api[ _-]?key|token|secret|password|passwd)[\w.-]*(?:\\?["'])?[ \t]*[:=][ \t]*)""" + _VALUE,
     re.IGNORECASE,
 )
 _SECRET_NAME = re.compile(
     r"(?:(?:proxy[-_])?authorization|[\w.-]*(?:api[ _-]?key|token|secret|password|passwd)[\w.-]*)", re.IGNORECASE
 )
-_SCHEME_CREDENTIAL = re.compile(r"(\b(?:Bearer|Basic)\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+_SCHEME_CREDENTIAL = re.compile(r"(\b(?:Bearer|Basic)[ \t]+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 # URLのuserinfoはパスワードの有無にかかわらず伏せる（トークンをユーザー名欄へ置く形式があるため）。
 _URL_USERINFO = re.compile(r"(\b[a-z][a-z0-9+.-]*://)[^\s/@:]*(?::[^\s/@]*)?@", re.IGNORECASE)
 _QUERY_CREDENTIAL = re.compile(
@@ -73,7 +74,6 @@ def diagnostic_excerpt(
     *,
     prefix_chars: int | None = None,
     prefix_bytes: int | None = None,
-    tail_bytes: int | None = None,
     tail_chars: int | None = None,
     tail_lines: int | None = None,
     collapse_whitespace: bool = False,
@@ -90,8 +90,6 @@ def diagnostic_excerpt(
         safe = safe[:prefix_chars]
     if prefix_bytes is not None:
         safe = safe.encode()[:prefix_bytes].decode(errors="ignore")
-    if tail_bytes is not None:
-        safe = safe.encode()[-tail_bytes:].decode(errors="ignore") if tail_bytes else ""
     return safe
 
 
@@ -122,3 +120,34 @@ def newest_diagnostic_lines(lines: Sequence[ByteDiagnosticLine], *, total_bytes:
         total_bytes -= line.size
         kept.append(line.text)
     return kept[::-1]
+
+
+def diagnostic_tail_window(limit: int) -> int:
+    """出力上限の倍まで読み、先頭行を除外しても末尾を残せる余裕を持たせる。"""
+    return limit * 2
+
+
+def diagnostic_tail(data: bytes | bytearray, *, limit: int) -> tuple[str, bool]:
+    """有界な末尾窓を伏せてからUTF-8バイト数を制限し、省略の有無を返す。
+
+    窓より長い入力は1バイト余分に受け取り、窓が途中から始まることを識別する。
+    窓の先頭行は認証値の途中か判定できないため、行末まで転載しない。
+    """
+    window = diagnostic_tail_window(limit)
+    omitted = len(data) > window
+    if omitted:
+        _, _, data = data[-window:].partition(b"\n")
+        # 開始行が窓の外にある秘密鍵は、終了行までの全体を転載しない。
+        end = re.search(rb"-----END [A-Z0-9 ]*PRIVATE KEY-----", data)
+        if end and not re.search(rb"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", data[: end.start()]):
+            _, _, data = data[end.end() :].partition(b"\n")
+    safe = redact_secrets(data.decode("utf-8", errors="replace")).encode()
+    return safe[-limit:].decode(errors="ignore"), omitted or len(safe) > limit
+
+
+def read_diagnostic_tail(stream: BinaryIO, *, limit: int) -> tuple[str, bool]:
+    """ファイル全体を読まず、上限の倍と境界判定用の1バイトだけを読む。"""
+    window = diagnostic_tail_window(limit) + 1
+    size = stream.seek(0, 2)
+    stream.seek(max(0, size - window))
+    return diagnostic_tail(stream.read(window), limit=limit)

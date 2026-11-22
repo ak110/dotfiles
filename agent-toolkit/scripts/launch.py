@@ -56,7 +56,14 @@ lazy import datetime
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 lazy from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-lazy from agent_toolkit._common import dotfiles_mode, environment_usage, inherited_venv, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    diagnostic_redaction,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    dotfiles_mode,
+    environment_usage,
+    inherited_venv,
+    next_action,
+    plugin_environment,
+)
 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
 _AGENTS_SERVICE_TARGET = Path("agent_toolkit") / "_agents_server" / "service.py"
@@ -317,9 +324,9 @@ def _run_agents_server(
             # 子が世代stderrへ直接flushしてからpeerを閉じる。tee threadの配送待ちを診断へ残さない。
             path = Path(arguments[-2]) / f"{arguments[-1]}.stderr.log"
             with path.open("rb") as stream:
-                size = stream.seek(0, os.SEEK_END)
-                stream.seek(max(0, size - _STDERR_TAIL_BYTES))
-                tail.extend(stream.read(_STDERR_TAIL_BYTES))
+                stderr_tail, _ = diagnostic_redaction.read_diagnostic_tail(stream, limit=_STDERR_TAIL_BYTES)
+        else:
+            stderr_tail, _ = diagnostic_redaction.diagnostic_tail(tail, limit=_STDERR_TAIL_BYTES)
         diagnostics = logging_config.read_launch_record(record_path)
         terminated_by = signal.Signals(-returncode).name if returncode < 0 else None
         if diagnostics is None:
@@ -327,7 +334,7 @@ def _run_agents_server(
             if returncode != 0:
                 next_action.report(
                     "診断ファイルの所在を受け取る前にagents_serverが異常終了したため、終了診断ファイルは未作成である:"
-                    f" returncode={returncode} signal={terminated_by} stderr={bytes(tail).decode('utf-8', errors='replace')}",
+                    f" returncode={returncode} signal={terminated_by} stderr={stderr_tail}",
                     next_action="この行より前の標準エラーと、親CLIのMCP接続記録の同じ時刻の記録を確認してください。",
                 )
         else:
@@ -338,7 +345,7 @@ def _run_agents_server(
                 returncode=returncode,
                 signal=terminated_by,
                 launcher_signals=received,
-                stderr_tail=bytes(tail).decode("utf-8", errors="replace"),
+                stderr_tail=stderr_tail,
             )
     return _relay_server_exit(returncode)
 
@@ -510,12 +517,13 @@ def _forwarding_handler(_process: subprocess.Popen[bytes], received: list[dict[s
 
 
 def _tee_stderr(stream: Any, tail: bytearray) -> None:
-    """子の標準エラーを受け取った順に自身の標準エラーへ出力し、末尾16KiBを保持する。"""
+    """子の標準エラーを受け取った順に自身の標準エラーへ出力し、診断抜粋の末尾窓を保持する。"""
+    window = diagnostic_redaction.diagnostic_tail_window(_STDERR_TAIL_BYTES) + 1
     while chunk := stream.read1(65536):
         sys.stderr.buffer.write(chunk)
         sys.stderr.buffer.flush()
         tail.extend(chunk)
-        del tail[:-_STDERR_TAIL_BYTES]
+        del tail[:-window]
 
 
 if __name__ == "__main__":

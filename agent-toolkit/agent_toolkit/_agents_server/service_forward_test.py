@@ -452,4 +452,5 @@ def test_service_diagnostic_redacts_before_taking_tail(tmp_path: pathlib.Path) -
     service_forward._add_service_diagnostic(error, tmp_path, "G1")
 
     detail = getattr(error, "__notes__", [""])[0].split("\n", 1)[1]
+    assert "先頭を省略" not in getattr(error, "__notes__", [""])[0]
     assert detail == f"https://[REDACTED]@example.org\n{tail}"
