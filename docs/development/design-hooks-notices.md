@@ -63,14 +63,18 @@ Claude Codeの最上位メインでは、次のhookがエージェントへ返�
 
 表示しない通知は、生成元が`notice.informational`で印を付けた次の4件だけである。
 実行時間（`_hooks/command_timing.py`の測定値）は1秒以上の実行ごとに出て操作を求めない。
-作業契約の本文の配送（`_hooks/user_prompt_submit.py`の`_work_contract_notice`）は、実ユーザーの入力ごとに、既存の作業契約を読めた場合だけ本文と、契約の最終更新後の実ユーザー発話の件数を届ける。
+作業契約の本文の配送（`_hooks/user_prompt_submit.py`の`_work_contract_notice`）は、実ユーザーの入力ごとに、作業契約のファイルがある場合に本文と、契約の最終更新後の実ユーザー発話の件数を届ける。
+本文が通知の上限を超える場合は本文に代えて所在を、読めない場合は所在と診断を届ける（`_hooks/work_contract.py`の`notice`）。
+ファイルが無ければ出ない。
 件数は要求を再確認するための観測値で、初回観測より前は不明と示し、更新漏れの判定や遮断には使わない。
 発話の理解の案内（同ファイルの`_utterance_notice`）は、実ユーザーの入力ごとに同じ文面で出る。
 機械注入のターンにはどちらも出ない。
 入力ごとの受付時刻と作業契約の最終更新時刻は、時刻が要らないターンでも文脈を消費するため、2026年11月23日のユーザー指示で通知から外した。
 時刻が要る時は、受領側が観測する。
 現在時刻は`date`で得る。
-過去の送信や操作の時刻は、会話の記録の行ごとの記録時刻を`atk run-script session-review-evidence -- <会話の記録> --tool-calls`と`--detail <record>:<line>`で引く。
+過去のツール操作（`send_to_user`による送信など）の時刻は、`atk run-script session-review-evidence -- <会話の記録> --tool-calls`で記録位置を探し、`--detail <record>:<line>`で記録時刻を引く。
+ユーザー発話の記録位置は`--user-events`で探す（`agent-toolkit:atk-mode/references/session-records.md`「本文の検索」）。
+どれも記録の時刻であり、元の受付や表示の時刻そのものではない。
 作業契約のファイルの更新時刻はこの記録時刻とは別の値であり、要る時はファイルの更新時刻を見る。
 バックグラウンドタスク完了の自動通知で始まったターンの定型案内（同ファイル）は、完了通知のたびに同じ文面が出る。
 SessionStart・SubagentStartの通知（メインへの入口のスキル`agent-toolkit:atk-mode`の起動の案内、委譲先への入口文書の所在、セッションID、managed-temp、会話圧縮後の復元案内）は情報の配送であり、写しを付けない。
