@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import pathlib
 import shutil
 import subprocess
@@ -16,7 +15,6 @@ from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._atk import lane_retirement, managed_temp
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import worktree_hooks
-from agent_toolkit._git import command as git_command
 
 
 def _unowned_data_reason(worktree: pathlib.Path, protected_paths: Iterable[str]) -> str | None:
@@ -234,19 +232,10 @@ def cleanup_session(
     return result
 
 
-def _remove_branch_config(repo: pathlib.Path, branch: str) -> None:
-    section = f"branch.{branch}"
-    result = git_command.run(
-        ["config", "--local", "--remove-section", section],
-        repo,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "LC_ALL": "C", "LANGUAGE": "C"},
-        timeout=_lane_records.TIMEOUT,
-    )
-    stderr = result.stderr.strip()
-    if result.returncode and not (result.returncode == 128 and stderr == f"fatal: no such section: {section}"):
-        raise ValueError(f"branchは回収したが設定を除けない（git config終了{result.returncode}）: {stderr}")
+def _has_branch_config(repo: pathlib.Path, branch: str) -> bool:
+    section = f"branch.{branch}".casefold()
+    keys = _lane_records.git(repo, "config", "--includes", "--name-only", "--null", "--list")
+    return any(key.rpartition(".")[0].casefold() == section for key in keys.split("\0"))
 
 
 def cleanup_orphans(repo: pathlib.Path, base_branch: str, caller: pathlib.Path) -> dict[str, typing.Any]:
@@ -280,6 +269,11 @@ def cleanup_orphans(repo: pathlib.Path, base_branch: str, caller: pathlib.Path) 
                 if reason:
                     raise ValueError(reason)
             ref = f"refs/heads/{branch}" if branch else "HEAD"
+            if branch and (_has_branch_config(repo, branch) or (worktree is not None and _has_branch_config(worktree, branch))):
+                raise ValueError(
+                    "branch固有の設定があるため回収しない。"
+                    "`git config --show-origin --name-only --list`で設定元を確かめ、回収してよいか手動で判断する"
+                )
             head = _lane_records.git(worktree or repo, "rev-parse", "--verify", ref)
             if worktree is not None and head != _lane_records.git(worktree, "rev-parse", "--verify", "HEAD"):
                 raise ValueError("worktreeのHEADがbranchの先端と異なる")
@@ -301,7 +295,6 @@ def cleanup_orphans(repo: pathlib.Path, base_branch: str, caller: pathlib.Path) 
                     raise ValueError("シンボリックrefを回収しない")
                 _lane_records.git(repo, "update-ref", "--no-deref", "-d", ref, head)
                 result["removed"].append({**candidate, **proof, "resource": "branch"})
-                _remove_branch_config(repo, branch)
         except _lane_records.record_errors() as error:
             result["retained"].append({**candidate, "reason": str(error)})
     return result

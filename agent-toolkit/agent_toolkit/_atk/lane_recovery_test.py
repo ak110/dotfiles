@@ -177,9 +177,13 @@ def test_delete_sweeps_orphans(
     git_repository.run_git(repo, "merge", "--ff-only", covered)
     git_repository.run_git(repo, "branch", "orch/obsolete")
     git_repository.run_git(repo, "branch", "orch/race")
-    git_repository.run_git(repo, "config", "--local", "branch.orch/obsolete.pushRemote", "old-remote")
-    git_repository.run_git(repo, "config", "--local", "branch.orch/obsolete.description", "old description")
-    git_repository.run_git(repo, "config", "--local", "branch.orch/race.pushRemote", "keep-remote")
+    protected_branches = ("worktree-Foo", "orch/reuse")
+    for branch in protected_branches:
+        git_repository.run_git(repo, "branch", branch)
+    with (repo / ".git" / "config").open("a", encoding="utf-8") as config:
+        config.write(
+            '\n[branch.worktree-Foo]\n\tpushRemote = legacy-remote\n[Branch "orch/reuse"]\n\tpushRemote = reuse-remote\n'
+        )
     git_repository.run_git(repo, "symbolic-ref", "refs/heads/orch/alias", "refs/heads/main")
     for branch in ("orch/rebase", "orch/bisect", "orch/sequencer"):
         git_repository.run_git(repo, "branch", branch)
@@ -252,9 +256,12 @@ def test_delete_sweeps_orphans(
     assert "無視対象" in retained["orch/ignored"]
     assert "内包" in retained["orch/nested"]
     assert "update-ref" in retained["orch/race"]
-    local_keys = git_repository.git_output(repo, "config", "--local", "--name-only", "--list").splitlines()
-    assert not any(key.rpartition(".")[0] == "branch.orch/obsolete" for key in local_keys)
-    assert git_repository.git_output(repo, "config", "--local", "branch.orch/race.pushRemote").strip() == "keep-remote"
+    for branch in protected_branches:
+        assert "branch固有の設定" in retained[branch]
+        assert "--show-origin" in retained[branch]
+        assert git_repository.git_output(repo, "rev-parse", f"refs/heads/{branch}").strip() == covered
+    assert git_repository.git_output(repo, "config", "--local", "branch.worktree-foo.pushRemote").strip() == "legacy-remote"
+    assert git_repository.git_output(repo, "config", "--local", "branch.orch/reuse.pushRemote").strip() == "reuse-remote"
     assert "シンボリックref" in retained["orch/alias"]
     assert git_repository.git_output(repo, "symbolic-ref", "refs/heads/orch/alias").strip() == "refs/heads/main"
     assert git_repository.git_output(repo, "rev-parse", "refs/heads/main").strip() == covered
