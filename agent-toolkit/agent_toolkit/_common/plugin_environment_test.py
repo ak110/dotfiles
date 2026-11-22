@@ -229,27 +229,9 @@ restarts = {
     ),
     "api_key_helper": subprocess.run(claude_connection.api_key_helper(str(key_file)), shell=True, **options),
 }
-# `atk wi submission end`が起動する登録済みスクリプトの子も、継承値を除いた`atk`の環境から読込を成立させる。
-config = pathlib.Path(sys.argv[2])
-session = "11111111-2222-3333-4444-555555555555"
-(config / "projects" / "probe").mkdir(parents=True)
-(config / "projects" / "probe" / f"{session}.jsonl").write_text(
-    json.dumps({"type": "user", "timestamp": "2099-01-01T00:00:00+00:00", "message": {"role": "user", "content": "確認"}})
-    + "\\n",
-    encoding="utf-8",
-)
-os.environ.clear()
-os.environ.update(child)
-os.environ["CLAUDE_CONFIG_DIR"] = str(config)
-from agent_toolkit._atk.wi import submission_findings
-try:
-    findings = [0, len(submission_findings.user_events(session, "2000-01-01T00:00:00+00:00").after_begin), ""]
-except Exception as error:
-    findings = [1, 0, str(error)[-2000:]]
 print(json.dumps({
     "child": json.loads(dumped.stdout),
     "restarts": {name: [r.returncode, r.stdout.strip()[-200:], r.stderr.strip()[-2000:]] for name, r in restarts.items()},
-    "submission_findings": findings,
 }))
 """
 
@@ -269,7 +251,6 @@ def test_public_launcher_child_receives_caller_environment_and_internal_restarts
 
     `uv run --no-project`が`PATH`の先頭へ加えるインタープリターの`bin`を模し、起動層がそれも呼出元の値へ戻すことを確かめる。
     内部の再起動は`lane._atk_script`、`api_key_helper`、`direct_environment`を渡す起動（委譲の引き継ぎ・hook）の3形を通す。
-    `atk wi submission end`が登録済みスクリプトを子で起動する抽出（`submission_findings.user_events`）も同じ環境で通す。
     """
     root = tmp_path / "plugin"
     _copy_plugin_code(root)
@@ -305,7 +286,6 @@ def test_public_launcher_child_receives_caller_environment_and_internal_restarts
             str(root),
             "probe.py",
             str(tmp_path / "api-key.env"),
-            str(tmp_path / "claude-config"),
         ],
         cwd=tmp_path,
         env=launched_environment,
@@ -329,7 +309,6 @@ def test_public_launcher_child_receives_caller_environment_and_internal_restarts
         "api_key_helper": 0,
     }, observed["restarts"]
     assert observed["restarts"]["api_key_helper"][1] == "probe-key"
-    assert observed["submission_findings"] == [0, 1, ""], observed["submission_findings"]
 
 
 def test_launch_preserves_callers_environment_and_cli_preserves_path(tmp_path: Path) -> None:

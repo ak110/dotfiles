@@ -78,7 +78,7 @@ async def test_settings_file_lives_until_backend_disconnect(
             assert paths[0].exists()
             await super().disconnect()
 
-    client = Client([[SystemMessage("settings-lifetime"), ResultMessage("完了")]])
+    client = Client([[SystemMessage("settings-lifetime"), ResultMessage("状態: completed\n結果: 完了")]])
 
     def factory(options: Any) -> Client:
         paths.append(pathlib.Path(options.settings))

@@ -613,12 +613,10 @@ def test_prepare_body_review_links_dry_run_to_the_same_draft(tmp_path, capsys, c
     params = prepared["start"]["extra_params"]
     assert params["確認段階"] == "本文"
     draft = pathlib.Path(params["原稿"])
-    source = pathlib.Path(params["要求と出所"])
-    evidence = pathlib.Path(params["成立性の証拠"]).read_text(encoding="utf-8")
+    source = pathlib.Path(params["要求原本"])
     assert source.is_file()
-    assert f"原稿: {draft}" in evidence.splitlines()
-    (opening_path,) = [line.removeprefix("冒頭保存先: ") for line in evidence.splitlines() if line.startswith("冒頭保存先: ")]
-    opening = pathlib.Path(opening_path).read_text(encoding="utf-8")
+    assert pathlib.Path(params["調査原本"]).is_file()
+    opening = pathlib.Path(params["ユーザー向け部分"]).read_text(encoding="utf-8")
     body = draft.read_text(encoding="utf-8")
     assert opening.startswith("# ")
     assert body.startswith(opening)
@@ -635,9 +633,9 @@ def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, 
     case = next(case for case in cases if case["id"] == "intent-fixed-defect")
     params = case["extra_params"]
     if failure == "unreadable-file":
-        params["成立性の証拠"] = "{worktree}/missing.md"
+        params["要求原本"] = "{worktree}/missing.md"
     else:
-        del params["成立性の証拠"]
+        del params["要求原本"]
         if failure == "omitted-stage":
             del params["確認段階"]
     path = tmp_path / "cases.json"
@@ -646,7 +644,7 @@ def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, 
     out = tmp_path / "out"
     assert review_eval.main(["prepare", "--out", str(out)]) == 1
     errors = capsys.readouterr().err
-    assert "成立性の証拠" in errors and "次の操作: " in errors
+    assert "要求原本" in errors and "次の操作: " in errors
     if failure == "unreadable-file":
         assert "新しい--out" in errors
         assert not list(out.glob("*/worktree"))
@@ -658,18 +656,15 @@ def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, 
     "cleanup_failure",
     [None, "start", "dirty", "decode"],
 )
-def test_prepare_body_review_recovers_from_evidence_write_failure(tmp_path, capsys, monkeypatch, cleanup_failure) -> None:
-    """抽出後の証拠保存に失敗したら、評価用worktreeを回収し、新しい出力先での再準備を案内する。"""
-
-    def create_case_with_unwritable_evidence(case_dir: pathlib.Path) -> None:
-        case_dir.mkdir(parents=True)
-        (case_dir / "evidence.md").mkdir()
-
-    monkeypatch.setattr(review_eval, "_new_case_dir", create_case_with_unwritable_evidence)
+def test_prepare_body_review_recovers_from_unreadable_opening(tmp_path, capsys, monkeypatch, cleanup_failure) -> None:
+    """取得できない冒頭を受け取ったら、評価用worktreeの回収を試みる。"""
 
     run = subprocess.run
 
     def run_with_cleanup_failure(args, *, check=False, **kwargs):
+        if "--dry-run" in args and "agent_toolkit.atk" in args:
+            draft = args[args.index("--body-file") + 1]
+            return subprocess.CompletedProcess(args, 0, f"原稿: {draft}\n冒頭保存先: {tmp_path / 'missing-opening.md'}\n", "")
         if args[0] == "git" and args[3:5] == ["worktree", "remove"]:
             if cleanup_failure == "start":
                 raise FileNotFoundError("Gitを起動できない")
@@ -684,8 +679,8 @@ def test_prepare_body_review_recovers_from_evidence_write_failure(tmp_path, caps
     try:
         assert review_eval.main(["prepare", "--out", str(out), "--case", "intent-fixed-control"]) == 1
         error = capsys.readouterr().err
-        assert "成立性の証拠を保存できない:" in error and "evidence.md" in error
-        assert "書込権限と空き容量" in error and "新しい--out" in error
+        assert "dry-runが返した冒頭を取得できない:" in error and "missing-opening.md" in error
+        assert "読取権限" in error and "新しい--out" in error
         remaining = list(out.glob("*/worktree"))
         if cleanup_failure is None:
             assert not remaining

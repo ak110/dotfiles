@@ -409,6 +409,12 @@ def _check_agent_toolkit_layers() -> list[str]:
             if "__pycache__" in source_path.parts:
                 continue
             tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.level:
+                    problems.append(
+                        f"{_display_path(source_path)}:{node.lineno}: 相対importを使っている。"
+                        "次の操作: agent_toolkitから始まる絶対importに置き換える。",
+                    )
             for reference in _extract_imports(tree):
                 components = reference.name.split(".")
                 imported_layer = components[1] if components[0] == "agent_toolkit" and len(components) > 1 else components[0]

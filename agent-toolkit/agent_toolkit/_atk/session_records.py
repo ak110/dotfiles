@@ -36,6 +36,7 @@ _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 # 登録全体の統括へ移行した後も、手動process-wiと過去の記録を検出対象に残す。
 # 入口`atk-mode`へ移した後の目的文（process-loopと`atk run-skill`）は、作業の起動の文で判別する。
 _PROCESS_WI_GOAL_BODIES = (
+    skill_modes.entry_launch("process-loop", free_text=False),
     skill_modes.PROCESS_WI_LAUNCH_MARKER,
     PROCESS_LOOP_GOAL_BODY,
     PROCESS_WI_GOAL_BODY,

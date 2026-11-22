@@ -71,9 +71,10 @@ MODE_DESCRIPTION = parameter_description(
     "`write`は確定済みの文章起草と小規模な定型書込、`shell`はコマンドの実行と結果の要約。"
     "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。\n"
     "task: 手順、権限、検証方法、返却形式は`<役割名>.subagent.md`が定め、サーバーが起動設定・必須入力・宣言外入力を検査する。"
-    "終了返却の続行不能には、理由の直前に有効な区分を同じインデントで置く必要がある。"
-    "区分の欠落・集合外は同じsessionへ1回だけ自動継続し、再違反や継続の配送失敗では元の返却本文と"
-    "error.resultContract・error.nextActionを公開する。この構造検査はtaskだけに適用する。\n"
+    "task・delegate・explore・writeでは、正常な返却の標識、待機表明、または有効な続行不能の2行を検査する。"
+    "形式違反は同じsessionへ1回だけ自動継続し、再違反や継続の配送失敗では元の返却本文と"
+    "error.resultContract・error.nextActionを公開する。taskとexploreは有効な続行不能も同じ枠で一度再確認する。"
+    "shellは終了コードと出力を返すため、この構造検査の対象外。\n"
     "delegate: 委譲先向けの共通の手順を配送する通常起動。\n"
     "explore・write・shell: 軽量起動。委譲先へ届くのは依頼本文（shellではコマンドと要約方針）と、"
     "委譲先であることの通知、委譲先の硬い制約、modeの役割、返却の決まりだけで、委譲先向けの共通の手順は届かない。"
@@ -185,6 +186,11 @@ START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
 }
 
 
+# 登録した自由本文のmodeには、対象外の理由を宣言しない限り返却形式を適用する。
+START_RESULT_CONTRACT_EXEMPTIONS = {"shell": "コマンドの終了コードと保存出力で検収する"}
+FREEFORM_RESULT_CONTRACT_KINDS = START_MODE_INPUTS.keys() - START_RESULT_CONTRACT_EXEMPTIONS.keys() - {"task"}
+
+
 START_NORMAL_TASK_EXAMPLE = (
     '`{"cwd": "<絶対パス>", "subagent_md_path": "<通常起動の役割名>", "extra_params": {...}, '
     '"whole_contract_path": "<全体作業契約の絶対パス>"}`'
@@ -252,7 +258,8 @@ START_DESCRIPTION = "\n".join(
         '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",
         "Claude Codeのメイン初回`start`では、modが定期再確認のtaskを`CronCreate`で装着する。"
-        "装着の成功は通知せず、装着できなかった場合だけ理由を示す警告をこの結果へ添える。",
+        "装着の成功は通知せず、装着できなかった場合だけ理由を示す警告をこの結果へ添える。"
+        "同じmodはバックグラウンドタスクを残したターンの終了時にも装着するため、modが動く環境では手動で先に作らない。",
         "",
         "応答は`session_id`・`status`・担当名の`label`と、保持時の`root_session_id`。"
         "起動不能候補を除外して次を試す。切替時だけ除外候補と根拠、採用した`engine`・`model`・`effort`を加える。"

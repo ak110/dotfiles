@@ -93,6 +93,35 @@ from update_dotfiles_runtime import child_env  # noqa: E402  # pylint: disable=w
 
 from pytools._internal import sync_report, update_log  # noqa: E402  # pylint: disable=wrong-import-position
 
+_LOCAL_SKILL_REFERENCE = re.compile(r"(?<![\w-])(agent-toolkit|agent-basics):([A-Za-z0-9_-]+)")
+
+
+def _warn_missing_local_skill_references(root: pathlib.Path) -> None:
+    """ローカルプラグインの文書が廃止されたスキルを指す箇所を表示する。"""
+    providers = {plugin: root / plugin / "skills" for plugin in ("agent-toolkit", "agent-basics")}
+    for source in sorted((root / "plugins").glob("*/.chezmoi-source")):
+        if source.is_symlink() or source.parent.is_symlink():
+            continue
+        for path in sorted(source.rglob("*")):
+            if not path.name.endswith((".md", ".md.tmpl")) or path.is_symlink() or not path.is_file():
+                continue
+            try:
+                lines = path.read_text(encoding="utf-8-sig").splitlines()
+            except (OSError, UnicodeError) as error:
+                update_dotfiles_runtime.logger.warning("ローカルプラグインの文書を確認できない: %r（%s）", str(path), error)
+                continue
+            for number, line in enumerate(lines, 1):
+                for plugin, skill in dict.fromkeys(_LOCAL_SKILL_REFERENCE.findall(line)):
+                    provider = providers[plugin]
+                    if provider.is_dir() and not (provider / skill / "SKILL.md").is_file():
+                        message = (
+                            f"{str(path)!r}:{number}: スキル {plugin}:{skill} は配布元に無い。"
+                            "ローカルプラグインの文書の参照を確かめてください。"
+                        )
+                        if update_dotfiles_runtime.persistent_log is not None:
+                            update_dotfiles_runtime.logger.warning("%s", message)
+                        print(message, file=sys.stderr)
+
 
 def _run_step(
     step_no: int,
@@ -352,6 +381,8 @@ def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
             log_step_no=update_dotfiles_runtime.LOG_STAGE_TOTAL,
             timeout=stage.timeout_sec,
         )
+        if returncode == 0:
+            _warn_missing_local_skill_references(update_dotfiles_runtime.DOTFILES_ROOT)
         return returncode
 
     runners = {

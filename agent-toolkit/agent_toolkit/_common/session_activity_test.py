@@ -624,3 +624,19 @@ def test_host_processes_reads_current_generation_despite_cached_previous_generat
     hosts = session_activity.host_processes()
     assert hosts == (session_activity.HostProcess("claude", current),)
     assert hosts[0].identity.exists()
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_public_submission_activity_uses_the_existing_observation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], active: bool
+) -> None:
+    def observe(targets, *, excluded_pids):
+        assert targets == {_TARGET}
+        assert os.getpid() in excluded_pids
+        return session_activity.ActivitySnapshot(active_session_ids=frozenset({"input"}) if active else frozenset())
+
+    monkeypatch.setattr(session_activity, "submission_activity", observe)
+    with pytest.raises(SystemExit) as status:
+        atk.main(["wi", "submission", "activity", "--target-repo", _TARGET], home=tmp_path)
+    assert status.value.code == 0
+    assert json.loads(capsys.readouterr().out) == {"active": active, "uncertain": False}

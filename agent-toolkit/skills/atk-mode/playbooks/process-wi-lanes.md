@@ -121,7 +121,6 @@
    合意済みの担当は`--writer-session`で指定する（`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」）。
    完了済みのレーンと所属WIの記録は、追加の作業に備えて保つ。
 5. 資源は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」の時点で`atk lane delete`で回収し、ターンごとの`SessionEnd`では回収しない。
-   通常の終了時の`atk agents-exit-session`と、`process-loop`が子セッションの終了後に行う処理も同じ回収操作を呼ぶ。
    未統合、dirty、稼働中、状態不明、途中で失敗した対象は、理由と残る操作を回収対象の外へ保存し、再実行では残りから再開する。
    セッションのmanaged-tempと証拠のファイルは専用worktreeの中に置かない（回収の対象から外すため）。
    統合済みの判定を確かめてからbranchを`-D`で削除するのは、通常の`-d`がupstreamを基準に判定し、push前のローカル統合を未統合として削除を拒否するためである。
@@ -162,7 +161,7 @@
    - 解消で生じた変更と影響するAWIを、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
    - 競合箇所、解消の方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表へ1行加え、同じ行に`atk review-table respond`で解消内容を書く。
      行の書き方は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」に従う。
-   - 影響する利用側を検証し、解消差分を実行レビューにかけ、既存の実行レビュー担当から現在のHEADの判定を受理する（`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`）。
+   - 影響する利用側を検証し、解消差分の再レビューは`agent-toolkit:atk-mode/references/exec-review-head-update.md`で要否を確かめる。
 3. クリーンな現在のHEADを`--reviewed-head`へ渡し、受理済みのレビューとcommitの対応を反映したmanifestで、`atk lane integrate`へ`--restart-review`を付けて再開する。
    統合先がさらに進んだ場合も同じ節に従って追加でmergeし、その影響だけを検収する。
 
@@ -171,7 +170,8 @@
 1. 同じレーン担当のthreadへ競合の解消を指示する（別の修正担当を起こさずに同じ担当で解く）。
    同じthreadを続けられない場合は、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従い、新しいレーン担当へ`再開位置`として`~/.claude/plans`配下の計画ファイルの絶対パスを渡す。
 2. レーン担当は本節の手順1〜3を同じthreadで終える。
-3. 新しいHEADの受理済みレビューとmanifestを保ち、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の統合前の検収に従って再開させる（既存の実装OIDの書換えや旧新の対応表は求めない）。
+3. 新しいHEADで受理した証拠とmanifestを保ち、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の統合前の検収に従って再開させる。
+   既存の実装OIDの書換えや旧新の対応表は求めない。
 
 ## 統合後の変更範囲の検証の失敗
 

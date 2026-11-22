@@ -23,7 +23,7 @@ from session_evidence_extract import (
     _unresolved_events,
     _UnresolvedRecord,
 )
-from session_evidence_hook_notices import _hook_notice_bodies, _hook_notice_keys, _hook_occurrence, _hook_records
+from session_evidence_hook_notices import _hook_notice_bodies, _hook_notice_parts, _hook_occurrence, _hook_records
 
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
@@ -67,9 +67,6 @@ _STRUCTURED_WARNING_BODY_KEYS = ("text", "message", "detail", "description", "ou
 
 
 _STRUCTURED_WARNING_STREAM_KEYS = ("stdout", "stderr")
-
-
-_HOOK_XML_END_TAGS = tuple(f"</{element}>" for element in _message_format.AUTO_ELEMENTS)
 
 
 def _is_schema_definition(value: dict[str, Any]) -> bool:
@@ -302,29 +299,8 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
     ]
     seen: set[str] = set()
     result: list[str] = []
-    for hook_record in _hook_records(entry):
-        for body in _hook_notice_bodies(hook_record):
-            for key in _hook_notice_keys(body, hook_record.get("hookName")):
-                if key.tag == "block" and key.kind_text not in seen:
-                    seen.add(key.kind_text)
-                    result.append(key.kind_text)
     for body_index, (text, marker_only, from_hook_record) in enumerate(bodies):
-        normalized_text = " ".join(text.split())
-        xml_marker = _HOOK_NOTICE_MARKER.match(normalized_text)
-        if (
-            marker_only
-            and from_hook_record
-            and xml_marker is not None
-            and xml_marker.group("tag_xml") in _STRUCTURED_WARNING_VALUES
-        ):
-            warning_body = normalized_text[xml_marker.end() :].strip()
-            for end_tag in _HOOK_XML_END_TAGS:
-                if warning_body.endswith(end_tag):
-                    warning_body = warning_body[: -len(end_tag)].rstrip()
-                    break
-            if warning_body and not _WARNING_ABSENCE_PATTERN.fullmatch(warning_body) and warning_body not in seen:
-                seen.add(warning_body)
-                result.append(warning_body)
+        if from_hook_record and marker_only and _HOOK_NOTICE_MARKER.search(text):
             continue
         # コマンドが表示した文書のコードフェンス内は過去の出力の引用であり、実行時の警告ではない。
         # hook記録と構造化された警告値は文書の表示を含まないため、この判定の対象から外す。
@@ -379,6 +355,37 @@ def _warning_hook_identities(entry: dict[str, Any], line: int) -> dict[str, list
     return identities
 
 
+def _marked_hook_warnings(
+    entry: dict[str, Any], line: int, seen: set[tuple[str, str | None, str, str]]
+) -> list[dict[str, Any]]:
+    """通知の正規化前の本文を、発生元・行と共に保存する。"""
+    events = []
+    for hook_record in _hook_records(entry):
+        hook_name = hook_record.get("hookName")
+        for body in _hook_notice_bodies(hook_record):
+            for key, full_text, display in _hook_notice_parts(body, hook_name if isinstance(hook_name, str) else None):
+                if key.tag not in {"warn", "warning", "block"}:
+                    continue
+                compact_text = " ".join(full_text.split())
+                if not compact_text or _WARNING_ABSENCE_PATTERN.fullmatch(compact_text):
+                    continue
+                identity = (_hook_occurrence(hook_record, line), key.hook, key.tag, compact_text)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                events.append(
+                    {
+                        "kind": "warning",
+                        "line": line,
+                        "text": _clip(display),
+                        "full_text": full_text,
+                        "source": key.hook or key.hook_name,
+                        **({"tool": hint} if (hint := _tool_hint(entry)) else {}),
+                    }
+                )
+    return events
+
+
 def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
     """セッション全体の実行時警告を行番号付きで返す。
 
@@ -389,9 +396,11 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
     """
     events: list[dict[str, Any]] = []
     seen_hook_warnings: set[tuple[str, str]] = set()
+    seen_marked: set[tuple[str, str | None, str, str]] = set()
     scannable = _scannable_records(records)
     tool_names = _warning_tool_names(scannable)
     for record in scannable:
+        events.extend(_marked_hook_warnings(record.entry, record.line, seen_marked))
         matched_lines = _warning_texts(record.entry, tool_names)
         if not matched_lines:
             continue

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import functools
+import os
 import re
 import sys
 from pathlib import Path
@@ -93,6 +94,8 @@ from session_evidence_warn import (
     _warning_collection_events,
 )
 from session_quality_metrics import quality_metrics
+
+_RECORD_QUERY_EXAMPLE = "発話の照会例: atk run-script session-review-evidence -- --transcript <元記録の絶対パス> --user-events"
 
 
 def main(
@@ -320,13 +323,22 @@ def main(
         args.delegation_record,
         True if args.owner_session else None,
     )
-    if sum(source is not None for source in sources) != 1:
+    source_count = sum(source is not None for source in sources)
+    if source_count == 0 and active_queries and args.bundle is None and conversation_output is None and not conversation_only:
+        claude_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+        codex_id = os.environ.get("CODEX_THREAD_ID")
+        if bool(claude_id) != bool(codex_id):
+            args.claude_session_id = claude_id or None
+            args.codex_thread_id = codex_id or None
+            source_count = 1
+    if source_count != 1:
         return _print_error(
             "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--opencode-session-id・--delegation-record・--owner-session・"
             "カタログ走査はいずれか一つだけを指定する",
             next_action=(
                 "対象の記録を`transcript_path`・`--transcript`・`--claude-session-id`・`--codex-thread-id`・`--opencode-session-id`・"
-                "--delegation-record・--owner-session・カタログ走査のいずれか1つだけで指定して再実行する"
+                "--delegation-record・--owner-session・カタログ走査のいずれか1つだけで指定して再実行する。"
+                f"{_RECORD_QUERY_EXAMPLE}"
             ),
         )
     if args.opencode_db is not None and args.opencode_session_id is None:
@@ -414,7 +426,7 @@ def main(
                 str(error),
                 next_action=(
                     "`--claude-session-id`の値を確かめる。記録が見つからない場合や複数ある場合は、"
-                    "`--transcript`で記録の絶対パスを直接渡して再実行する"
+                    f"`--transcript`で記録の絶対パスを直接渡して再実行する。{_RECORD_QUERY_EXAMPLE}"
                 ),
             )
     elif args.codex_thread_id is not None:
@@ -425,7 +437,7 @@ def main(
                 str(error),
                 next_action=(
                     "`--codex-thread-id`の値を確かめる。rolloutが別の場所にある場合は`--codex-home`へCodexのホームを渡し、"
-                    "複数ある場合は`--transcript`でrolloutの絶対パスを直接渡して再実行する"
+                    f"複数ある場合は`--transcript`でrolloutの絶対パスを直接渡して再実行する。{_RECORD_QUERY_EXAMPLE}"
                 ),
             )
     else:

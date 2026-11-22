@@ -54,6 +54,10 @@ function engine(on: On, options: Options): { calls: string[]; writes: Map<string
     if (options.listResponse === "deny") return { deny: "CronList denied" };
     return { result: { jobs: (options.jobs ?? []).map((job) => ({ cron: "*/30 * * * *", humanSchedule: "Every 30 minutes", prompt: "p", ...job })) } };
   });
+  on("tool.call", { tool: "CronCreate" }, () => {
+    calls.push("CronCreate");
+    return { result: { id: "mounted" } };
+  });
   on("tool.call", { tool: "CronDelete" }, (_$, e) => {
     calls.push(`CronDelete:${e.id}`);
     if (options.deleteResponse === "deny") return { deny: "削除が拒否された" };
@@ -144,6 +148,19 @@ for (const recheck of [undefined, "pending", "unknown", "consumed", "broken"]) {
     expect(calls).toEqual([]);
   });
 }
+
+test("背景だけの待機では定期確認を1回作る", async ($, on) => {
+  const { calls } = engine(on, { recheck: "pending-background", tools: ["CronList", "CronDelete", "CronCreate"] });
+  await $.turn.complete(MAIN_TURN);
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).toEqual(["CronList", "CronCreate"]);
+});
+
+test("既存の定期確認があれば背景待ちで増やさない", async ($, on) => {
+  const { calls } = engine(on, { recheck: "pending-background", jobs: [{ id: "common", prompt: COMMON_PROMPT }] });
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).toEqual(["CronList"]);
+});
 
 for (const deleteResponse of ["error", "deny"] as const) {
   test(`通常回収の削除${deleteResponse}は同じ会話へ理由を返す`, async ($, on) => {

@@ -33,6 +33,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.service_coordinator_test import _coordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
+from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
 from agent_toolkit._common import runtime_environment
 
 
@@ -437,3 +438,22 @@ def test_denied_generation_scenes_cover_every_liveness_caller() -> None:
             visitor.visit(ast.parse(path.read_text(encoding="utf-8")))
             found |= visitor.found
     assert found == set(_DENIED_GENERATION_SCENES)
+
+
+@pytest.mark.parametrize(
+    ("rejected", "alive", "expected"),
+    [
+        (ProcessIdentityMismatch, False, FileNotFoundError),
+        (ProcessIdentityMismatch, True, ProcessIdentityMismatch),
+        (PermissionError, False, PermissionError),
+    ],
+)
+def test_connect_distinguishes_expired_generation_from_account_denial(
+    monkeypatch: pytest.MonkeyPatch, rejected: type[PermissionError], alive: bool, expected: type[OSError]
+) -> None:
+    """終了した世代の不一致だけ変換し、アカウントの拒否は終了状態にかかわらず保持する。"""
+    monkeypatch.setattr(service_transport.connection, "Client", lambda *args, **kw: contextlib.nullcontext(Mock()))
+    monkeypatch.setattr(service_transport, "authenticate", Mock(side_effect=rejected("接続拒否")))
+    monkeypatch.setattr(service_transport, "process_alive", lambda _identity: alive)
+    with pytest.raises(expected), service_transport.connect("endpoint", "42:1"):
+        pytest.fail("操作を実行してはならない")

@@ -50,7 +50,7 @@ if prompt.endswith("auth-failure") or "\\nauth-failure\\n" in prompt:
     sys.exit(1)
 if prompt.endswith("no-output") or "\\nno-output\\n" in prompt:
     sys.exit(0)
-emit("text", part=dict(type="text", text=prompt[-8:]))
+emit("text", part=dict(type="text", text="状態: completed\\n結果: " + prompt[-8:]))
 emit("step_finish", part=dict(type="step-finish", reason="stop", cost=0.01, tokens=dict(total=30, input=20, output=10)))
 """
 
@@ -181,9 +181,6 @@ async def test_public_start_uses_configured_candidate_and_fallback(
     """公開startで候補の有無と順序を保ち、認証失敗なら次engineへ進む。"""
     capture = _install_cli(tmp_path, monkeypatch)
     script = capture.parent / "bin" / "opencode"
-    source = script.read_text(encoding="utf-8")
-    assert source.count("text=prompt[-8:]") == 1
-    script.write_text(source.replace("text=prompt[-8:]", 'text=prompt[-8:] + "\\n状態: completed"'), encoding="utf-8")
 
     async def launch_fake(*args: str, **kwargs: Any) -> asyncio.subprocess.Process:
         if args[0] == sys.executable:

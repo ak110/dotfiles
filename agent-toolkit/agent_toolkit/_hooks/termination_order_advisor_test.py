@@ -14,8 +14,8 @@ import pytest
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import automated_prompt
+from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import (
-    autonomous_exit,
     stop,
     termination_evidence,
     termination_evidence_operations,
@@ -23,7 +23,6 @@ from agent_toolkit._hooks import (
     termination_order_advisor,
     user_prompt_submit,
 )
-from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import emit_response, notice_cycle
 from agent_toolkit._testing import git_repository
@@ -877,15 +876,6 @@ def test_omission_does_not_survive_wait_or_failure_resolution(
             }
         )
     assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "notify"
-
-
-def test_omission_keeps_autonomous_exit_obligation(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """起動を省略した成果作業でも、process-loopの終了コマンドの義務は残る。"""
-    payload, _policy, _work_id = _omit_self_edit(tmp_path, monkeypatch)
-    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
-    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "self-edit")
-    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
-    assert autonomous_exit.evaluate(json.dumps(payload))[0] == "block"
 
 
 @pytest.mark.parametrize("codex", [False, True])

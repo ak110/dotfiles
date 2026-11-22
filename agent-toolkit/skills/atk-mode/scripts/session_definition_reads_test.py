@@ -381,10 +381,10 @@ def _codex_outer_result(timestamp: str, call_id: str, turn_id: str) -> dict:
 
 
 @pytest.mark.parametrize("tool_name", ["exec", "functions.exec", "Exec", "functions.EXEC"])
-def test_dynamic_outer_cell_uses_different_inner_execution_id_and_keeps_both_locations(
+def test_dynamic_outer_cell_does_not_claim_an_unlinked_inner_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tool_name: str
 ) -> None:
-    """外側call_idと内側item.idが異なっても、同一turnの実値を公開prepareへ統合する。"""
+    """同一ターンの内側実行は、帰属がなければ読取証拠を別に残す。"""
     turn_id = "turn-1"
     entries = [
         support.codex_item(
@@ -403,12 +403,12 @@ def test_dynamic_outer_cell_uses_different_inner_execution_id_and_keeps_both_loc
     output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
     reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
     call = reads["calls"][0]
-    assert call["tool"] == tool_name
-    assert call["line"] == 1 and call["targets"] == [_ROLE_PATH]
-    assert call["operations"][0]["execution_line"] == 2
-    assert call["operations"][0]["execution_result_line"] == 2
-    assert reads["locators"] == [{"record": "codex:record", "line": 1}, {"record": "codex:record", "line": 2}]
-    assert not [row for row in candidates if row["candidate_kind"] == "definition-read-unresolved"]
+    assert call["tool"] == "CommandExecution"
+    assert call["line"] == call["result_line"] == 2
+    assert call["targets"] == [_ROLE_PATH]
+    assert reads["locators"] == [{"record": "codex:record", "line": 2}]
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    assert [call["line"] for call in unresolved["calls"]] == [1]
     assert call["launch_check"]["status"] == "cleared"
     assert reads["candidate_id"] not in output["mandatory_candidates"]
 
@@ -448,7 +448,7 @@ def test_parallel_outer_cells_keep_ambiguous_execution_attribution_unresolved(
     reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
     unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
     assert reads["calls"][0]["line"] == 3 and reads["calls"][0]["targets"] == [_ROLE_PATH]
-    assert all("完結範囲が重なり" in call["operations"][0]["reason"] for call in unresolved["calls"])
+    assert [call["line"] for call in unresolved["calls"]] == [1, 2]
 
 
 def test_missing_inner_execution_is_kept_as_unresolved_with_outer_location(
@@ -471,7 +471,6 @@ def test_missing_inner_execution_is_kept_as_unresolved_with_outer_location(
     unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
     call = unresolved["calls"][0]
     assert call["line"] == 1 and call["result_line"] is None
-    assert "結果記録が無く" in call["operations"][0]["reason"]
     assert unresolved["candidate_id"] in output["mandatory_candidates"]
 
 
@@ -497,19 +496,17 @@ def test_repeated_inner_executions_remain_one_candidate_with_all_source_location
     ]
     _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
     reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
-    assert reads["count"] == 3
+    assert reads["count"] == 2
     assert reads["locators"] == [
-        {"record": "codex:record", "line": 1},
         {"record": "codex:record", "line": 2},
         {"record": "codex:record", "line": 3},
     ]
-    assert [operation["execution_line"] for operation in reads["calls"][0]["operations"]] == [2, 3]
 
 
-def test_sequential_outer_cells_use_their_completed_cell_boundaries(
+def test_sequential_outer_cells_do_not_claim_execution_by_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同一turnの逐次セルは、次の外側セルまでの実行だけを対応付ける。"""
+    """逐次セルでも前後の位置を帰属の証拠に使わない。"""
     turn_id = "turn-sequential"
     entries = [
         support.codex_item(
@@ -539,8 +536,9 @@ def test_sequential_outer_cells_use_their_completed_cell_boundaries(
     ]
     _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
     reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
-    assert [call["line"] for call in reads["calls"]] == [1, 4]
-    assert [call["operations"][0]["execution_line"] for call in reads["calls"]] == [2, 5]
+    assert [call["line"] for call in reads["calls"]] == [2, 5]
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    assert [call["line"] for call in unresolved["calls"]] == [1, 4]
 
 
 def test_static_outer_read_survives_missing_inner_execution(
@@ -625,7 +623,7 @@ def test_yielded_dynamic_execution_keeps_completion_uncertain(
     ]
     _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
     unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
-    assert "実行の完了状態が未確定" in unresolved["calls"][0]["operations"][0]["reason"]
+    assert unresolved["calls"][0]["operations"][0]["reason"] == "実行引数を静的に確定できない"
 
 
 def test_ambiguous_outer_keeps_inner_execution_as_its_own_read_material(
@@ -683,10 +681,10 @@ def test_non_command_outer_cells_do_not_create_definition_read_candidates(
     assert not any(row["candidate_kind"] in {"definition-body-read", "definition-read-unresolved"} for row in candidates)
 
 
-def test_task_started_turn_id_is_inherited_by_following_codex_records(
+def test_task_started_turn_id_does_not_prove_execution_attribution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """開始イベントだけのturn IDでも、同じタスク区間の実行を外側セルへ結び付ける。"""
+    """開始イベントで示した同一ターンも、内側実行の帰属の根拠にしない。"""
     # Codex rust-v0.164.0のprotocol/src/protocol.rsは、TurnStartedをtask_startedへ
     # serializeし、TurnStartedEventがsnake_caseのturn_idを持つと定義する。
     # https://github.com/openai/codex/blob/rust-v0.164.0/codex-rs/protocol/src/protocol.rs
@@ -708,7 +706,9 @@ def test_task_started_turn_id_is_inherited_by_following_codex_records(
     ]
     _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
     reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
-    assert reads["locators"] == [{"record": "codex:record", "line": 2}, {"record": "codex:record", "line": 3}]
+    assert reads["locators"] == [{"record": "codex:record", "line": 3}]
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    assert [call["line"] for call in unresolved["calls"]] == [2]
 
 
 def test_task_boundaries_do_not_reuse_a_previous_turn_id(
@@ -764,6 +764,10 @@ _NO_DEFINITION_READS = [
     '{ git status; } > "$W/o.txt"',
     "[ -f a ] && echo ok",
     'cat "$PWD/docs/guide.md"',
+    "cat /x/assets/*.svg",
+    "cat /x/metadata/*.json",
+    "git diff --name-only -z -- '*.py' '*.svg' '*.json' | xargs -0 cat --",
+    "python -c 'open(\"a.svg\").read()'; printf '%s' 'example.subagent.md'",
 ]
 # 手順書を読み得るが、対象やコマンドを静的に確定できない操作。
 _POSSIBLE_DEFINITION_READS = [
@@ -785,6 +789,10 @@ _POSSIBLE_DEFINITION_READS = [
     "cat $f; f=a.md",
     "f=a.md; f+=x; cat $f",
     "ls | xargs -r cat --",
+    "git diff --name-only -z -- '*.subagent.md' | xargs -0 cat --",
+    "git diff --name-only -z -- '*.md' | xargs -0 -r cat --",
+    "git diff --name-only -- '*.py' | xargs -r cat --",
+    "cat /x/other/*.subagent.md",
     "cat awi*",
     'cat "$ROLE_PATH"',
     "cat docs/$f.md",

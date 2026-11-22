@@ -107,6 +107,7 @@ READ_ONLY_COMMANDS = frozenset(
         "atk wi show",
         "atk wi grep",
         "atk wi process-loop status",
+        "atk wi submission activity",
         "atk plans list",
         "atk config",
         "atk config show",

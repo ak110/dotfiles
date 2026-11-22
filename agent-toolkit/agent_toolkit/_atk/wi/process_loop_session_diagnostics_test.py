@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 
-from agent_toolkit._atk.wi import cli, process_loop, process_loop_session, sync
+from agent_toolkit._atk.wi import cli, process_loop, process_loop_session
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
 
@@ -36,9 +36,9 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
     identity = None if failure == "identity" else session_registry.ProcessIdentity(process.pid, 1.0)
     monkeypatch.setattr(session_registry.ProcessIdentity, "of", lambda *_args, **_kwargs: identity)
 
-    def launch(_args, _notes, **_kwargs):
-        process_loop_session.run_process_session(
-            argparse.Namespace(resume=None, no_update=True, worktree="custom"),
+    def launch(args):
+        completed = process_loop_session.run_process_session(
+            args,
             tmp_path,
             "作業する",
             dict(os.environ),
@@ -47,15 +47,15 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
             effort="high",
             resume_pending=False,
         )
+        return 0 if completed else 1
 
     monkeypatch.setattr(process_loop, "cmd_process_loop", launch)
-    monkeypatch.setattr(sync, "ensure_environment", lambda *_args, **_kwargs: tmp_path)
     args = argparse.Namespace(command="wi", wi_subcommand="process-loop")
     assert cli.dispatch(args, home=tmp_path, now=datetime.datetime.now(datetime.UTC)) == (1 if failure == "identity" else 0)
     stderr = capsys.readouterr().err
     if failure == "identity":
         assert "統括CLIのPIDと起動時刻を取得できない" in stderr
-        assert "同じコマンドを再実行し、続く場合は" in stderr
+        assert "process-loop statusで状態を確認し、原因を解消して再実行する" in stderr
     else:
         expected = {
             "missing": "FileNotFoundError",
@@ -68,4 +68,3 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
         assert "atk config set claude_payg_env_file" in stderr
     assert "次の操作:" in stderr
     assert "Traceback" not in stderr
-    print(stderr)

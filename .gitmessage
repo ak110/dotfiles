@@ -25,3 +25,8 @@
 #   ファイル名や実装詳細レベルの描写は避け、エンドユーザーが理解できる粒度に留める。
 #
 # BREAKING CHANGE: <説明>（! を付けた場合のみ）
+#
+# 検証を記録する時は本文の末尾へ追加する。未実施を成功として書かない。
+# Verified-By: <pyfltrの実行IDと結果、verifyの操作と結果、未実施ならnone>
+# Verification-Revision: <検証したtreeのOID。未実施ならnone>
+# Co-Authored-Byなどの既存のトレーラーは保つ。

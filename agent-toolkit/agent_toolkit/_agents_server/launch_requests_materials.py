@@ -271,7 +271,9 @@ def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, s
         name = "方針" if stage == "方針" else "原稿"
         if not params.get(name):
             raise _material_error(name, f"{stage}段階で必要")
-        for material in (name, "要求と出所", "成立性の証拠"):
+        for material in (name, "要求原本", "調査原本", "ユーザー向け部分"):
+            if material not in params:
+                continue
             path = pathlib.Path(params[material])
             if not path.is_absolute() or not path.is_file():
                 raise _material_error(material, "実在するファイルの絶対パスが必要")

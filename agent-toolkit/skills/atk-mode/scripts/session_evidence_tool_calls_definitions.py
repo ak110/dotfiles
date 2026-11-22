@@ -85,6 +85,8 @@ def _may_name_definition(target: str) -> bool:
     最後の動的展開より後ろの固定の末尾が`.subagent.md`で終わるか、`.subagent.md`の末尾部分（空、`.md`など）であれば
     読み得るとする。`$d/test-linux.log`のように固定の末尾から手順書になり得ない対象を未確定へ出さないためである。
     """
+    if target.endswith(_SUBAGENT_SUFFIX):
+        return True
     if "**" not in target:
         parts = target.split("/")
         patterned = [index for index, part in enumerate(parts) if any(char in part for char in "*?[")]
@@ -118,6 +120,30 @@ def _may_name_definition(target: str) -> bool:
             tail_start = index
     tail = target[tail_start:]
     return tail.endswith(_SUBAGENT_SUFFIX) or _SUBAGENT_SUFFIX.endswith(tail)
+
+
+def _xargs_only_other_suffixes(value: str) -> bool:
+    """Gitの固定拡張子の列挙をNULのままcatへ渡す場合だけ、役割文書候補から外す。"""
+    pipelines = shell_segments.extract_execution_pipelines(value, expand_shell=False)
+    if len(pipelines) != 1 or len(pipelines[0]) != 2:
+        return False
+    producer, consumer = (segment.raw_tokens for segment in pipelines[0])
+    if consumer not in {("xargs", "-0", "cat", "--"), ("xargs", "-0", "-r", "cat", "--")}:
+        return False
+    if producer[:2] != ("git", "diff") or "--" not in producer:
+        return False
+    end = producer.index("--")
+    if set(producer[2:end]) != {"--name-only", "-z"}:
+        return False
+    pathspecs = producer[end + 1 :]
+    return bool(pathspecs) and all(
+        isinstance(item, shell_tokens.ShellWord)
+        and not item.expansion
+        and not item.unquoted
+        and re.fullmatch(r"[*]\.[A-Za-z0-9]+", item)
+        and not _may_name_definition(item)
+        for item in pathspecs
+    )
 
 
 def _strip_env_prefix(words: list[str]) -> list[str] | None:
@@ -165,6 +191,8 @@ def _simple_command_reads(
         return [], []
     segment = shell_segments.resolve_execution_segment(list(words))
     if not segment.resolved:
+        if words[0] == "xargs" and _xargs_only_other_suffixes(value):
+            return [], []
         if not any(pathlib.PurePosixPath(word).name == "xargs" or _may_name_definition(word) for word in words):
             return [], []
         return [], [{**original, "reason": "シェル区間の実行位置を静的に確定できない"}]
@@ -197,7 +225,8 @@ def _simple_command_reads(
         if reason is not None:
             return [], [{**original, "reason": reason}]
     else:
-        if _SUBAGENT_SUFFIX in value and re.search(r"read_text|readFile|open\s*\(|\.read\s*\(", " ".join(tokens)):
+        rendered = " ".join(tokens)
+        if _SUBAGENT_SUFFIX in rendered and re.search(r"read_text|readFile|open\s*\(|\.read\s*\(", rendered):
             unresolved.append({**original, "reason": "コード内の読取と対象の対応は静的抽出の対象外"})
         return [], unresolved
     static = []
@@ -208,38 +237,6 @@ def _simple_command_reads(
         elif target.endswith(_SUBAGENT_SUFFIX):
             static.append(target)
     return ([{**original, "targets": static}] if static else []), unresolved
-
-
-def _inner_executions(call: _ToolCall, calls: list[_ToolCall]) -> tuple[list[_ToolCall] | None, str | None]:
-    """完結した外側execの結果範囲内にある内側実行だけを返す。"""
-    if (
-        call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1].casefold() != "exec"
-        or call.turn_id is None
-        or not session_evidence_execution.command_input_observations(call.tool, call.text)
-    ):
-        return [], None
-    if call.result_line is None:
-        return None, "外側execの結果記録が無くセルの完結境界を確定できない"
-    outers = [
-        item
-        for item in calls
-        if item.turn_id == call.turn_id and item.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1].casefold() == "exec"
-    ]
-    executions = [
-        item
-        for item in calls
-        if item.turn_id == call.turn_id and item.tool == "CommandExecution" and call.line < item.line < call.result_line
-    ]
-    overlapping = [
-        other
-        for other in outers
-        if other is not call and other.line < call.result_line and (other.result_line is None or call.line < other.result_line)
-    ]
-    if overlapping:
-        return None, "同一turnの外側execの完結範囲が重なり内側実行の帰属が曖昧である"
-    if not executions:
-        return None, "外側execの範囲で完了済みCommandExecutionを確認できず、実行の完了状態が未確定"
-    return executions, None
 
 
 _START_ROLE = re.compile(r"""subagent_md_path["']?\s*:\s*["'`]([^"'`]+)["'`]""")
@@ -303,13 +300,6 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
         calls = _record_tool_calls(item.records)
         role_document = _role_document(item)
         related = []
-        associations = {call.line: _inner_executions(call, calls) for call in calls}
-        linked_executions = {
-            execution.line
-            for executions, _reason in associations.values()
-            if executions is not None
-            for execution in executions
-        }
         for call in calls:
             name = call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
             if name in {"Agent", "Task", "spawn_agent", "start", "Edit", "Write", "apply_patch"} or (
@@ -328,26 +318,8 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
         ]
         for call in calls:
             inputs = _recorded_input(entries[call.line], call.call_id)
-            executions, association_reason = associations[call.line]
-            if executions is not None and executions:
-                reads: list[dict[str, Any]] = []
-                unresolved: list[dict[str, Any]] = []
-                for execution in executions:
-                    resolved, unresolved_rows = _definition_read_operations(
-                        execution.tool, {"command": execution.text}, execution.text
-                    )
-                    for row in [*resolved, *unresolved_rows]:
-                        row["execution_line"] = execution.line
-                        row["execution_result_line"] = execution.result_line
-                    reads.extend(resolved)
-                    unresolved.extend(unresolved_rows)
-            else:
-                reads, unresolved = _definition_read_operations(call.tool, inputs, call.text)
-                if unresolved and association_reason is not None:
-                    # 入力だけでは読取の有無を決められない操作に、内側実行を使えない理由を付ける。
-                    unresolved = [{"input": call.text, "reason": association_reason, "outer_turn_id": call.turn_id}]
-            if call.tool == "CommandExecution" and call.line in linked_executions:
-                continue
+            # 同じターン・前後関係だけではセルへの帰属を確定できない。個別の記録から判定する。
+            reads, unresolved = _definition_read_operations(call.tool, inputs, call.text)
             if not reads and not unresolved:
                 continue
             before = [other for other in related if other.line < call.line]

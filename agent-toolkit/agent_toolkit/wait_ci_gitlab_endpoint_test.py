@@ -72,7 +72,7 @@ def test_port_endpoint_baseline_wait_resume(
     monkeypatch.setattr(wait_ci, "_resolve_sha", lambda *_args: "a" * 40)
     baseline = tmp_path / "baseline.json"
     options = _port_endpoint_options(repository)
-    assert wait_ci.main(["--write-baseline", str(baseline), *options]) == 0
+    assert wait_ci.main(["--write-baseline", str(baseline), "--sha", "a" * 40, *options]) == 0
     phase = "failure"
     assert wait_ci.main(["--baseline", str(baseline), *options]) == 6
     assert forge_cli.failure_next_action("gitlab", repository, "100", job=True) in capsys.readouterr().err

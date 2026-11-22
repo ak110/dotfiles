@@ -1,0 +1,5 @@
+paths:
+  ".github/workflows/release-statusline.yaml":
+    ignore:
+      # actionlint 1.7.12はGitHub公式のconcurrency.queueをまだ認識しない（rhysd/actionlint#657）。
+      - '^unexpected key "queue" for "concurrency" section\.'

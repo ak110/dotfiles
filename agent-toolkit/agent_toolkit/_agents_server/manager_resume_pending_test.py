@@ -118,7 +118,7 @@ async def test_each_manager_delivers_its_root_to_claude_start_and_resume(
 
         def client_factory(options: Any) -> FakeClaudeClient:
             options_received.append(options)
-            return FakeClaudeClient([[SystemMessage("claude-root-test"), ResultMessage("完了")]])
+            return FakeClaudeClient([[SystemMessage("claude-root-test"), ResultMessage("状態: completed\n結果: 完了")]])
 
         monkeypatch.setattr(backend, "_client_factory", client_factory)
         session = await backend.start("新規", str(tmp_path))
@@ -273,7 +273,7 @@ async def test_claude_resume_owns_saved_session(
     tmp_path: pathlib.Path,
 ) -> None:
     """Claude backendがresume後の同じsession IDを新しい所有タスクへ登録する。"""
-    client = FakeClaudeClient([[SystemMessage("claude-saved"), ResultMessage("再開結果")]])
+    client = FakeClaudeClient([[SystemMessage("claude-saved"), ResultMessage("状態: completed\n結果: 再開結果")]])
     captured: dict[str, str | None] = {}
 
     def build_options(_cwd: str, _model: str | None, _effort: str | None, session_id: str | None = None, **_kwargs: Any) -> Any:
@@ -290,7 +290,7 @@ async def test_claude_resume_owns_saved_session(
             await asyncio.sleep(0.01)
         assert captured == {"session_id": "claude-saved"}
         assert session.session_id == "claude-saved"
-        assert session.agent_message == "再開結果"
+        assert session.agent_message == "状態: completed\n結果: 再開結果"
 
 
 @pytest.mark.asyncio

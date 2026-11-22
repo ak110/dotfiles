@@ -220,12 +220,12 @@ async def test_weekly_reset_uses_reader_and_resumes_same_session(
                     "id": session.turn_id,
                     "status": "completed",
                     "error": None,
-                    "items": [{"type": "agentMessage", "id": "answer", "text": "継続後の成果"}],
+                    "items": [{"type": "agentMessage", "id": "answer", "text": "状態: completed\n結果: 継続後の成果"}],
                 },
             },
         )
         await _until(backend, lambda: session.result_available)
-        assert (await owner.wait())["agent_message"] == "継続後の成果"
+        assert (await owner.wait())["agent_message"] == "状態: completed\n結果: 継続後の成果"
         await backend.release_session(session)
         assert not backend._auto_reset_monitors and not backend._auto_reset_checks
         assert client.closed
@@ -413,7 +413,7 @@ async def test_completed_turn_cannot_start_a_later_consumption(tmp_path: Path, m
                     "id": session.turn_id,
                     "status": "completed",
                     "error": None,
-                    "items": [{"type": "agentMessage", "id": "answer", "text": "完了"}],
+                    "items": [{"type": "agentMessage", "id": "answer", "text": "状態: completed\n結果: 完了"}],
                 },
             },
         )
@@ -489,12 +489,12 @@ async def test_refresh_failure_recovers_same_session_without_second_consumption(
                     "id": session.turn_id,
                     "status": "completed",
                     "error": None,
-                    "items": [{"type": "agentMessage", "id": "answer", "text": "再取得後の成果"}],
+                    "items": [{"type": "agentMessage", "id": "answer", "text": "状態: completed\n結果: 再取得後の成果"}],
                 },
             },
         )
         await _until(backend, lambda: session.result_available)
-        assert (await owner.wait())["agent_message"] == "再取得後の成果"
+        assert (await owner.wait())["agent_message"] == "状態: completed\n結果: 再取得後の成果"
 
 
 _LOCAL_ORIGIN = {"generation": "G1", "process": "local"}

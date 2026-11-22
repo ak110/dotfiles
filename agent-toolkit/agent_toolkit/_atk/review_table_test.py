@@ -119,7 +119,7 @@ def test_respond_updates_only_reviewee_columns(tmp_path: pathlib.Path) -> None:
     table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
     table.respond(path, "1", _TRACK, "module.py:10", "修正が必要", review_bodies.response_body("条件を追加した"), "")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "module.py:10", "修正が必要", "詳細", review_bodies.response_body("条件を追加した"), ""]
+    assert row == ["1", _TRACK, "module.py:10", "修正が必要", "", review_bodies.response_body("条件を追加した"), ""]
     table.validate(path)
 
 
@@ -146,7 +146,7 @@ def test_respond_no_requires_reason_and_clears_response(tmp_path: pathlib.Path) 
     table.add(path, "1", _TRACK, "hook", "対象外")
     table.respond(path, "1", _TRACK, "hook", "対象外", "", review_bodies.reason_body("以前の契約を保持"))
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "hook", "対象外", "詳細", "", review_bodies.reason_body("以前の契約を保持")]
+    assert row == ["1", _TRACK, "hook", "対象外", "", "", review_bodies.reason_body("以前の契約を保持")]
     table.validate(path)
 
 

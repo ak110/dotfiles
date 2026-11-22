@@ -144,7 +144,6 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     # 報告用UWIの`scope`として保存済みの起動単位の名前。同名のスキルは起動しない。
     (f"{_PLUGIN_PREFIX}:wi-standards", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submit.py")): 1,
     # 移行前の起動コマンドを含むセッション記録を読む試験の入力
-    (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submission_findings_test.py")): 3,
     (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/skills/atk-mode/scripts/wi_quote_check_test.py")): 2,
     (
         f"{_PLUGIN_PREFIX}:add-awi-by-user",

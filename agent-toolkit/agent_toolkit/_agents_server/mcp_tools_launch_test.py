@@ -249,6 +249,8 @@ async def test_start_launches_repository_process_task_with_orchestrate(
     )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     params = _observed_input_params("repository-process.subagent.md", tmp_path)
+    for removed in ("ownership_record", "ownership_token"):
+        params.pop(removed, None)
     contract = tmp_path / "work-contract.md"
     contract.write_text("# 作業契約\n", encoding="utf-8")
 

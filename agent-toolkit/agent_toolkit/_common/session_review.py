@@ -24,6 +24,7 @@ import pydantic
 from agent_toolkit._common import (
     atomic_file,
     delegated_session,
+    mcp_environment,
     session_activity,
     session_family,
     session_launchers,
@@ -33,6 +34,7 @@ from agent_toolkit._common import (
     state_paths,
 )
 
+META_SCOPE = "agent-toolkit:review-session meta"
 BATCH_SCOPE = "agent-toolkit:review-session batch"
 LEGACY_BATCH_SCOPE = "agent-toolkit:session-review-batch"
 BATCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_BATCH"
@@ -401,7 +403,10 @@ def key(host: str, session_id: str) -> str:
 
 def read(path: pathlib.Path) -> dict[str, Any]:
     """保存済みJSONオブジェクトを読む。破損を空集合へ読み替えない。"""
-    value = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise ValueError(f"{path}: {error}") from error
     if not isinstance(value, dict):
         raise ValueError(f"JSONオブジェクトでない: {path}")
     return value
@@ -476,10 +481,39 @@ def auto_start_due(*, now: float) -> bool:
         started = datetime.datetime.fromisoformat(started_at).timestamp() if started_at else path.stat().st_mtime
         if now - started < interval:
             return False
-    return not any(
+    return not _consultation_open()
+
+
+def meta_start_due(*, now: float) -> bool:
+    """最後のmeta開始と現在の相談会話だけで自動起動を判定する。"""
+    path = directory() / "meta-start.json"
+    try:
+        started = datetime.datetime.fromisoformat(read(path)["started_at"]).timestamp()
+    except FileNotFoundError:
+        return not _consultation_open()
+    return now - started >= 7 * 24 * 60 * 60 and not _consultation_open()
+
+
+def _consultation_open() -> bool:
+    """投入作業の会話が開いているかを判定する。"""
+    return any(
         session_state.read_state(session_id).get("add_awi_skill_invoked") is True
         for session_id in session_activity.living_root_session_ids()
     )
+
+
+def is_review_run() -> bool:
+    """非同期振り返り自身は重ねて自動起動せず、通常の分析対象とも区別する。"""
+    if os.environ.get(BATCH_ENV):
+        return True
+    try:
+        data = json.loads(os.environ.get(mcp_environment.SESSION_START_INPUT_ENV, ""))
+    except ValueError:
+        return False
+    if not isinstance(data, dict) or not isinstance(skill := data.get("skill"), str):
+        return False
+    arguments = data.get("arguments")
+    return skill_modes.invocation_scope(skill, arguments if isinstance(arguments, str) else None) == META_SCOPE
 
 
 def _launch_path() -> pathlib.Path | None:
@@ -532,14 +566,18 @@ def launch_notice(host: str) -> str | None:
                 else "cat -- " + shlex.quote(log_path)
             )
             code = f" 終了コード{attempt.exit_code}" if attempt.exit_code is not None else ""
-            failures.append(f"{value['host']} {value['event']}{code}: `{read_command}`")
+            if value.get("mode") == "meta":
+                retry = "配布元の作業ツリーで`atk run-skill --args meta review-session`"
+            else:
+                retry = f"`{skill_modes.entry_command(host, 'review-session batch')}`"
+            failures.append(f"{value['host']} {value['event']}{code}: `{read_command}`（原因を是正してから{retry}を実行せよ）")
             attempt.notify().save(path)
     if not failures:
         return None
     return (
         "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。次のコマンドで診断ログを取得せよ: "
         + "、".join(failures)
-        + f"。原因を確認・是正して`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
+        + "。"
         "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"
     )
 
@@ -573,7 +611,7 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
             "key": name,
             "host": host,
             "session_id": session_id,
-            "review_batch": bool(os.environ.get(BATCH_ENV) or prior.get("review_batch") or previous.get("review_batch")),
+            "review_batch": bool(is_review_run() or prior.get("review_batch") or previous.get("review_batch")),
             "transcript_path": transcript,
             "cwd": payload.get("cwd") or prior.get("cwd"),
             "target_repo": target_repo or prior.get("target_repo"),
@@ -837,9 +875,38 @@ def sweep(*, now: float) -> None:
         launch_log = directory() / "launch.log"
         if not referenced and launch_log.exists() and now - launch_log.stat().st_mtime > 30 * 24 * 60 * 60:
             launch_log.unlink()
-        for path in (directory() / "reviewed").glob("*.json"):
-            value = read(path)
-            if path.stem not in referenced and all(
-                not pathlib.Path(item["path"]).exists() for item in value["records"].values()
+        _sweep_reviewed(referenced)
+
+
+def sweep_reviewed(*, now: float) -> None:
+    """単発の範囲確定後に処理済み記録だけを回収し、batchの状態は変更しない。"""
+    with locked():
+        referenced = {target["key"] for target in pending()}
+        for path in (directory() / "runs").glob("*.json"):
+            manifest = read(path)
+            try:
+                # 旧形式の完了済みbundleも、batchの回収まで成功範囲を参照する。
+                if manifest["status"] != "resolved":
+                    referenced.update(target["key"] for target in manifest["targets"])
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise ValueError(f"batchの実行記録を確認できない: {path}: {error}") from error
+        _sweep_reviewed(referenced, expired_before=now - 30 * 24 * 60 * 60)
+
+
+def _sweep_reviewed(referenced: set[str], *, expired_before: float | None = None) -> None:
+    for path in (directory() / "reviewed").glob("*.json"):
+        if path.stem in referenced:
+            continue
+        value = read(path)
+        try:
+            records = value["records"]
+            if not isinstance(records, dict):
+                raise TypeError("records")
+            if (
+                expired_before is not None
+                and path.stat().st_mtime < expired_before
+                or all(not pathlib.Path(item["path"]).exists() for item in records.values())
             ):
                 path.unlink()
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ValueError(f"処理済み範囲を回収できない: {path}: {error}") from error

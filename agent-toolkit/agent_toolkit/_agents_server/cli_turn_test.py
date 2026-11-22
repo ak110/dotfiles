@@ -36,6 +36,7 @@ async def test_large_jsonl_event_is_preserved_through_backend(
 ) -> None:
     """64 KiBを超える日本語のツール結果も、後続の終了とともに保存する。"""
     full_body = "資料の全文開始\n" + "日本語の規範本文。\n" * 10_000 + "資料の全文終了"
+    final_message = "状態: completed\n結果: 全文を確認した"
     if manager_type is antigravity.AntigravityManager:
         events = [
             {"event": "init", "conversation_id": "large-conversation"},
@@ -49,7 +50,7 @@ async def test_large_jsonl_event_is_preserved_through_backend(
                     "tool_info": {"error": {"message": full_body}},
                 },
             },
-            {"event": "result", "result": {"status": "SUCCESS", "response": "全文を確認した"}},
+            {"event": "result", "result": {"status": "SUCCESS", "response": final_message}},
         ]
     else:
         events = [
@@ -59,7 +60,7 @@ async def test_large_jsonl_event_is_preserved_through_backend(
                 "sessionID": "large-conversation",
                 "part": {"tool": "read_file", "state": {"status": "completed", "output": full_body}},
             },
-            {"type": "text", "sessionID": "large-conversation", "part": {"text": "全文を確認した"}},
+            {"type": "text", "sessionID": "large-conversation", "part": {"text": final_message}},
         ]
     lines = [json.dumps(event, ensure_ascii=False).encode() for event in events]
     assert len(lines[1]) > 64 * 1024
@@ -78,7 +79,7 @@ async def test_large_jsonl_event_is_preserved_through_backend(
         async with condition:
             await asyncio.wait_for(condition.wait_for(lambda: session.terminal), timeout=10)
         assert session.status == "completed", session.error
-        assert session.agent_message == "全文を確認した"
+        assert session.agent_message == final_message
     records = [json.loads(line) for line in (log_directory / "large-conversation.jsonl").read_text().splitlines()]
     # OpenCodeの入力補足記録を保持し、CLIが出力した3イベントの全fieldを比較する。
     observed = [record for record in records if record.get("type") != "agent_toolkit_input"]
@@ -223,9 +224,10 @@ async def test_send_message_fails_when_next_turn_cannot_launch(tmp_path: pathlib
 
     作業ディレクトリの削除後の追送で、届いていない指示を開始済みと報告しないことを確かめる。
     """
+    first_result = "状態: completed\n結果: 初回の結果"
     events = [
         {"event": "init", "conversation_id": "next-turn"},
-        {"event": "result", "result": {"status": "SUCCESS", "response": "初回の結果"}},
+        {"event": "result", "result": {"status": "SUCCESS", "response": first_result}},
     ]
     emitter = tmp_path / "emit.py"
     emitter.write_text(
@@ -242,12 +244,12 @@ async def test_send_message_fails_when_next_turn_cannot_launch(tmp_path: pathlib
         session = await manager.start("初回", str(workdir), "test-model", "low")
         async with condition:
             await condition.wait_for(lambda: session.terminal)
-        assert (session.status, session.agent_message) == ("completed", "初回の結果"), session.error
+        assert (session.status, session.agent_message) == ("completed", first_result), session.error
         workdir.rmdir()
         with pytest.raises(session_errors.DelegateBackendError, match="failed to start"):
             await manager.send_message(session, "次の指示")
     assert session.turn_seq == 1
-    assert (session.status, session.agent_message, session.error) == ("completed", "初回の結果", None)
+    assert (session.status, session.agent_message, session.error) == ("completed", first_result, None)
 
 
 @pytest.mark.parametrize("eof", [True, False])

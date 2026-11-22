@@ -26,6 +26,7 @@ _EXTERNAL = ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-wri
 class _Issue:
     offset: int
     message: str
+    warning: bool = False
 
 
 def _mask(text: str) -> str:
@@ -94,7 +95,7 @@ def _sentence_breaks(text: str) -> list[int]:
     return breaks
 
 
-def _inspect(text: str, *, sentences: bool) -> tuple[list[_Issue], dict[int, str]]:
+def _inspect(text: str, *, sentences: bool, python_examples: bool = False) -> tuple[list[_Issue], dict[int, str]]:
     source = _excluded_source(text)
     lines = source.splitlines(keepends=True)
     offsets = [0]
@@ -108,7 +109,7 @@ def _inspect(text: str, *, sentences: bool) -> tuple[list[_Issue], dict[int, str
     in_table = False
     lists: list[str] = []
     depth = 0
-    for token in tokens:
+    for token_index, token in enumerate(tokens):
         if token.type == "blockquote_open":
             quote_depth += 1
         elif token.type == "blockquote_close":
@@ -128,6 +129,24 @@ def _inspect(text: str, *, sentences: bool) -> tuple[list[_Issue], dict[int, str
             in_table = True
         elif token.type == "table_close":
             in_table = False
+        elif token.type == "heading_open" and not quote_depth and token.map is not None and sentences:
+            inline = tokens[token_index + 1]
+            title = "".join(child.content for child in inline.children or [] if child.type == "text")
+            if title.strip().endswith("について") or "ではなく" in title:
+                issues.append(
+                    _Issue(offsets[token.map[0]], "見出しの候補: 主題が分かる短い項目名になっているかを確認する", True)
+                )
+        elif (
+            token.type == "fence"
+            and python_examples
+            and not quote_depth
+            and token.map is not None
+            and (info := token.info.strip().split(maxsplit=1))
+            and info[0] in {"bash", "sh", "shell", "console"}
+        ):
+            for number, line in enumerate(token.content.splitlines(), token.map[0] + 1):
+                if re.match(r"^\s*(?:\$\s+)?python(?:\s|$)", line):
+                    issues.append(_Issue(offsets[number], "Python起動の候補: python3かuv run --frozen pythonを選ぶ", True))
         # cellのinline.mapは同じ物理行を共有するため、括弧の深さは表全体で一度だけ更新する。
         if token.type == "inline" and in_table:
             continue
@@ -174,15 +193,16 @@ def main(argv: list[str] | None = None) -> int:
             if resolved.is_relative_to(root) and "fixtures" in resolved.relative_to(root).parts:
                 continue
             sentences = not path.as_posix().endswith(_EXTERNAL)
-            issues, insertions = _inspect(text, sentences=sentences)
+            options = {"sentences": sentences, "python_examples": path.name == "AGENTS.md"}
+            issues, insertions = _inspect(text, **options)
             if args.fix and insertions:
                 newline = "\r\n" if "\r\n" in text else "\n"
                 for position, indent in sorted(insertions.items(), reverse=True):
                     text = text[:position] + newline + indent + text[position:]
                 changes[path] = text.encode("utf-8")
-                issues, _ = _inspect(text, sentences=sentences)
+                issues, _ = _inspect(text, **options)
             prepared.append((path, text, issues))
-            result = max(result, int(bool(issues)))
+            result = max(result, int(any(not issue.warning for issue in issues)))
         except (OSError, UnicodeError) as exc:
             print(f"{path}: 入力エラー: {exc}。UTF-8の読書き可能なファイルを指定する", file=sys.stderr)
             result = 2
@@ -200,7 +220,8 @@ def main(argv: list[str] | None = None) -> int:
         for issue in issues:
             line = bisect.bisect_right(starts, issue.offset)
             column = issue.offset - starts[line - 1] + 1
-            print(f"{path}:{line}:{column}: error: {issue.message}", file=sys.stderr)
+            severity = "warning" if issue.warning else "error"
+            print(f"{path}:{line}:{column}: {severity}: {issue.message}", file=sys.stderr)
     return result
 
 

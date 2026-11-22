@@ -211,7 +211,10 @@ CLI終了時に要求、応答の順に両ファイルを除き、異常終了�
 
 effortの希望値は`SessionState.effort`から既存の状態・登録簿へ射影する。
 `LaunchInfo.effort_history`は時刻・前値・後値・操作主体の4文字列組、`effort_levels`は確認済み受理段を保持し、再開・解放時も起動情報とともに保存する。
-`SessionState.effort_resume_turn`は自身で変更したturn番号を保持し、監視loopがそのturnの終了後に1回消費する。
+effortの再開状態は、予約なし、対象turn番号を持つ予約、実行中のいずれかとする。
+監視loopは予約したturnが終わった後に予約を1回消費する。
+Codexの進行中itemと受信時刻、過負荷と利用上限それぞれの連鎖の回数と初回時刻は、各組を1値で更新する。
+世代間の保存形では、稼働中の別版と互換になるよう、従来の個別項目へ射影して渡す。
 別経路で次turnが始まった場合は予約を除き、重複再開しない。
 Claudeの接続済みeffortは`claude_applied_effort`で希望値と区別し、同じ会話の次turn設定を所有タスクへ渡す。
 Codexは既存のturn/start、OpenCodeとAntigravityは既存のturn別引数を使う。

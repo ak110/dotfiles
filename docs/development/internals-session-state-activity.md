@@ -18,8 +18,7 @@
   関連する会話を特定できない生存プロセスは、どの作業にも属さないものとして集計から除く
 - WI投入作業の属性情報は、`session-activity/submissions/{session_id}.json`へ会話ごとに保存する。
   保存項目は、バージョン番号、会話ID、作業種別（`add-awi-by-user`）、正規化された投入先URLの一覧、作業開始時刻（`started_at`。最初の`begin`で付け、投入先の置換では保つ）、更新時刻である。
-  このファイルは`atk wi submission begin`が作成・更新し、`atk wi submission end`が照合の成立後か`--abort`で削除する。
-  正常な`end`は報告用要約を`session-activity/submission-reports/{session_id}.json`へ保存し、Stop hookが最終応答との照合後に削除する。
+  このファイルは `atk wi submission begin` が作成・更新し、`atk wi submission end` または `end --abort` が削除する。
   hookのSessionEndでは削除せず、セッション再開時にその属性を再び有効化できるようにする
 - 開始前判定では、投入先がprocess-loopの対象リポジトリ群と重複している属性を持つ会話、およびその子孫の活動のみを待機理由とし、属性を読み取れない会話や属性を持たない会話は除外する
 - 対象外とする会話とその子孫の判定には`_common/session_parents.py`による親子関係の解決結果を用い、process-loopの共通環境変数などの識別印だけで別ループの会話まで誤って除外しないようにする

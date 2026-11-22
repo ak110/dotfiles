@@ -252,7 +252,7 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 
     def factory(options: Any) -> FakeClaudeClient:
         options_seen.append(options)
-        return FakeClaudeClient([[SystemMessage("cli-session"), ResultMessage("完了")]])
+        return FakeClaudeClient([[SystemMessage("cli-session"), ResultMessage("状態: completed\n結果: 完了")]])
 
     async with claude.ClaudeServerManager(client_factory=factory, root_session_id="explicit-owner") as manager:
         await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
@@ -302,7 +302,7 @@ def test_explore_options_keep_search_tools_and_mcp_on_resume(tmp_path: pathlib.P
     """新規・再接続の両方でコマンド検索とpyfltrへ到達し、診断ログの指定を保つ。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore", debug_file=tmp_path / "debug.log")
     assert options.tools == {"type": "preset", "preset": "claude_code"}
-    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "mcp__pyfltr__*"}
     assert options.permission_mode == "auto"
     assert not options.hooks
     assert options.disallowed_tools == ["Skill"]
@@ -334,7 +334,7 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
     assert options.tools == {"type": "preset", "preset": "claude_code"}
-    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "mcp__pyfltr__*"}
     assert set(options.mcp_servers) == {"pyfltr"}
     assert options.extra_args == {"permission-prompts": "none", "no-chrome": None}
 

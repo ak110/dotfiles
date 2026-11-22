@@ -121,6 +121,14 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("呼出元会話を解決できない。Claude CodeでMCPへ再接続する。")
     try:
         return await function_hook_requests.request(identifier, operation, inputs)
+    except function_hook_requests.HookRequestRejected as error:
+        if operation == "send_to_user":
+            next_action = _UI_UNAVAILABLE_NEXT_ACTIONS[operation]["claude"]
+        elif operation == "apply_runtime_changes":
+            next_action = "再予約も手動反映もせずに現在のターンを終え、先行の予約の結果の通知を待つ"
+        else:
+            raise
+        raise ActionableError(str(error), next_action=next_action) from error
     except TimeoutError as error:
         host = "codex" if manager.launcher_is_codex else "claude"
         raise ActionableError(str(error), next_action=_UI_UNAVAILABLE_NEXT_ACTIONS[operation][host]) from error
@@ -778,9 +786,11 @@ async def permissions(
 
 
 @mcp.tool(name="compact_conversation", title="会話圧縮の予約", annotations=ToolAnnotations(destructive_hint=False))
-async def compact_conversation() -> dict[str, Any]:
-    """メイン専用。会話圧縮を予約する。受付後はターンを終え、ホストの圧縮結果を待つ。受付は完了ではない。"""
-    return await _ui_request("compact_conversation", {})
+async def compact_conversation(
+    resume: Annotated[bool, Field(description="trueなら圧縮成功後に対話画面の次のターンを開始する")] = False,
+) -> dict[str, Any]:
+    """メイン専用。会話圧縮を予約する。resumeを指定すると対話画面で圧縮成功後に次のターンを開始する。受付は完了ではない。"""
+    return await _ui_request("compact_conversation", {"resume": resume} if resume else {})
 
 
 @mcp.tool(name="apply_runtime_changes", title="同一会話への変更反映予約", annotations=ToolAnnotations(destructive_hint=False))

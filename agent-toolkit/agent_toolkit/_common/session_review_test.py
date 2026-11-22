@@ -42,6 +42,18 @@ def test_auto_start_reads_only_runs_updated_within_the_interval(monkeypatch):
     assert session_review.auto_start_due(now=now) is False
 
 
+def test_meta_interval_does_not_read_batch_start(monkeypatch):
+    """metaの開始日時だけで7日の境界を判定する。"""
+    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    now = 1793400000.0
+    assert session_review.meta_start_due(now=now)
+    start = session_review.directory() / "meta-start.json"
+    session_review.write(start, {"started_at": datetime.datetime.fromtimestamp(now, datetime.UTC).isoformat()})
+    assert not session_review.meta_start_due(now=now + 604799)
+    assert session_review.meta_start_due(now=now + 604800)
+    assert session_review.auto_start_due(now=now)
+
+
 @pytest.mark.parametrize("changed,unconfirmed", [(False, False), (True, False), (False, True)])
 def test_cleanup_prepared_preserves_scope_and_referenced_evidence(tmp_path, changed, unconfirmed) -> None:
     """成功した世代の全量抽出物だけを回収し、後続の証拠と変更済み抽出物を保持する。"""

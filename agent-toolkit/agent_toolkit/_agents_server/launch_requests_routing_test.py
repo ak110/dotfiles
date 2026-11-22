@@ -177,6 +177,12 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     extra_params = _observed_input_params(task_name, tmp_path)
     if task_name == "exec-review.subagent.md":
         _prepare_exec_review_plan(tmp_path)
+    if task_name == "repository-process.subagent.md":
+        # 保存した起動入力の旧ランチャー所有台帳は廃止した。現在の入力では他の値を保つ。
+        with pytest.raises(ActionableError, match="ownership_record"):
+            launch_requests._validate_required_prompt_inputs(task_document, extra_params)
+        del extra_params["ownership_record"]
+        del extra_params["ownership_token"]
 
     assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
 
@@ -355,8 +361,8 @@ async def test_start_accepts_independent_wi_draft_review(tmp_path: pathlib.Path,
     task_document = launch_requests.resolve_task_document_path("wi-draft-review")
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "review"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    params = {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求と出所", "成立性の証拠", "引き継ぎ記録先")}
-    for key in ("原稿", "要求と出所", "成立性の証拠"):
+    params = {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求原本", "引き継ぎ記録先")}
+    for key in ("原稿", "要求原本"):
         pathlib.Path(params[key]).write_text("# 資料\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=params)
     assert manager.start.await_args.args[0] == "review"
@@ -428,9 +434,7 @@ async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_
             "引き継ぎ記録先": str(tmp_path / "handoff.md"),
             "round": "1",
         },
-        "wi-draft-review": {
-            key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求と出所", "成立性の証拠", "引き継ぎ記録先")
-        },
+        "wi-draft-review": {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求原本", "引き継ぎ記録先")},
         "recurrence-self-check": {
             "観点ファイル": json.dumps([str(tmp_path / "items.md")]),
             "今回差分": str(tmp_path / "change.patch"),
@@ -442,7 +446,7 @@ async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_
     }
     inputs = additional_inputs[role] if role in additional_inputs else _observed_input_params(f"{role}.subagent.md", tmp_path)
     if role == "wi-draft-review":
-        for key in ("原稿", "要求と出所", "成立性の証拠"):
+        for key in ("原稿", "要求原本"):
             pathlib.Path(inputs[key]).write_text("# 資料\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path=role, extra_params=inputs)
     assert manager.start.await_args.args[0] == expected
@@ -455,7 +459,7 @@ def test_wi_draft_review_requires_material_for_selected_stage(tmp_path: pathlib.
     document = launch_requests.resolve_task_document_path("wi-draft-review")
     path = tmp_path / "資料.md"
     path.write_text("# 資料\n", encoding="utf-8")
-    params = {name: str(path) for name in ("要求と出所", "成立性の証拠", "引き継ぎ記録先")}
+    params = {name: str(path) for name in ("要求原本", "引き継ぎ記録先")}
     if stage is not None:
         params["確認段階"] = stage
     material = "方針" if stage == "方針" else "原稿"

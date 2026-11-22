@@ -36,13 +36,16 @@ def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
         prompt=task_documents.task_prompt_header(path),
         launch_kind=declaration.launch_kind,
     )
-    example = body.replace("<共通契約の区分>", "owner_input")
-    example = re.sub(r"(?m)^状態: <[a-z]+(?:\|[a-z]+)+>$", "状態: completed", example)
+    examples = re.findall(r"(?ms)^```text\n(.*?)^```[ \t]*$", body)
     if path.name == "reader-fit-review.subagent.md":
         session.prompt += f"\n入力:\n成果物: {path}"
-        example = body.split("```text\n", 1)[1].split("```", 1)[0]
-        example = example.replace("<絶対パス>", str(path)).replace("<completed|blocked>", "completed")
-    assert result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": example}) is None
+        examples = [examples[0].replace("<絶対パス>", str(path)).replace("<completed|blocked>", "completed")]
+    reasons = []
+    for example in examples:
+        example = example.replace("<共通契約の区分>", "owner_input")
+        example = re.sub(r"(?m)^状態: <[a-z]+(?:\|[a-z]+)+>$", "状態: completed", example)
+        reasons.append(result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": example}))
+    assert None in reasons, reasons
 
 
 def test_shared_classification_table_matches_runtime() -> None:
@@ -103,8 +106,6 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
         "candidate_file": str(tmp_path / "candidate.jsonl"),
         "readiness": "ready",
         "lane_limit": "1",
-        "ownership_record": str(tmp_path / "ownership.json"),
-        "ownership_token": "test-token",
         "lane_session_id": "test-lane-session",
     }
     params = {"引き継ぎ記録先": str(tmp_path / "handoff.md")}
@@ -125,4 +126,4 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
         assert "target_repo: example.test/team/one" not in prompt
     else:
         assert "target_repo: example.test/team/one" in prompt
-        assert "candidate_file:" in prompt and "ownership_token: test-token" in prompt
+        assert "candidate_file:" in prompt and "lane_session_id: test-lane-session" in prompt

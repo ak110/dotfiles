@@ -3,14 +3,12 @@
 import asyncio
 import errno
 import pathlib
-import threading
 from typing import Any
 
 import pytest
 
 from agent_toolkit._atk.serve import session_watch, state
 from agent_toolkit._atk.serve.plans import views
-from agent_toolkit._atk.wi import process_loop_watch
 from agent_toolkit._common import watch_observer
 from agent_toolkit._testing.serve_plans_support import _context
 
@@ -120,24 +118,6 @@ async def test_direct_start_failure_releases_partial_watch(
     assert observer.joined == polling.joined == 0
 
 
-@pytest.mark.parametrize("fail_start", [False, True])
-def test_process_loop_cleans_observer_on_start_or_wait_failure(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fail_start: bool
-) -> None:
-    """開始途中と開始後の両方で、待機の所有境界が停止を保証する。"""
-    observer = _Observer(fail_start=fail_start)
-    monkeypatch.setattr(process_loop_watch.watchdog.observers, "Observer", lambda: observer)
-
-    def fail_wait(*_args: Any, **_kwargs: Any) -> bool:
-        raise ValueError("待機失敗")
-
-    monkeypatch.setattr(process_loop_watch, "_wait_event", fail_wait)
-    with pytest.raises((OSError, ValueError)):
-        process_loop_watch.wait_for_changes(tmp_path, None, timeout=0)
-    assert observer.stopped == 1
-    assert observer.joined == (0 if fail_start else 1)
-
-
 def test_record_watch_releases_observer_after_tracker_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """複数の停止失敗を保持し、後段のjoinまで実行する。"""
     observer = _Observer()
@@ -180,39 +160,6 @@ def _exhausted(monkeypatch: pytest.MonkeyPatch) -> list[_Exhausted]:
     monkeypatch.setattr(watch_observer.watchdog.observers, "Observer", factory)
     monkeypatch.setattr(watch_observer, "POLLING_INTERVAL_SECONDS", 0.05)
     return created
-
-
-def test_process_loop_wait_falls_back_to_polling_and_warns_once(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], exhausted: list[_Exhausted]
-) -> None:
-    """inotifyの上限到達でもprocess-loopの待機は変更を検知して戻り、切替の警告は待機を繰り返しても1回だけ出る。"""
-    monkeypatch.setattr(process_loop_watch, "_polling_fallback_reported", False)
-    monkeypatch.setattr(process_loop_watch, "_DEBOUNCE_SEC", 0.01)
-    started = threading.Event()
-
-    class ReadyPollingObserver(watch_observer.watchdog.observers.polling.PollingObserver):
-        def start(self) -> None:
-            super().start()
-            started.set()
-
-    monkeypatch.setattr(watch_observer.watchdog.observers.polling, "PollingObserver", ReadyPollingObserver)
-    private_notes = tmp_path / "private-notes"
-
-    def publish(path: pathlib.Path) -> None:
-        assert started.wait(timeout=5)
-        path.write_text("本文", encoding="utf-8")
-
-    for index in range(2):
-        started.clear()
-        writer = threading.Thread(target=publish, args=(private_notes / f"entry-{index}.md",), daemon=True)
-        writer.start()
-        try:
-            assert process_loop_watch.wait_for_changes(private_notes, None, timeout=10)
-        finally:
-            writer.join(timeout=5)
-            assert not writer.is_alive()
-    assert len(exhausted) == 2 and all(observer.stopped == 1 for observer in exhausted)
-    assert capsys.readouterr().err.count("ポーリング監視へ切り替えた") == 1
 
 
 @pytest.mark.asyncio

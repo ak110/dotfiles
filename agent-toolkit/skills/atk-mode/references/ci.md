@@ -42,13 +42,16 @@ GitLabの設定は[Projects API](https://docs.gitlab.com/api/projects/)と[独�
    追加のpush（原因commitへ取り込んだ修正のforce pushを含む）のたびに、新しいディレクトリとbaselineを作る。
 2. 削除するrefを除き、更新するrefごとに、確定したrefspecの左辺`<source>`をそのまま`--source-ref`へ渡す。
    右辺の宛先のrefやリモート追跡ブランチの値とは別の値である。
-3. `(destination ref, source ref)`の組ごとに次を実行する。
+3. pushに使う作業ツリーで、push先リポジトリと `(destination ref, source ref)` の組ごとに次を実行する。
 
    ```text
    atk run-script wait-ci -- --repo <owner/repo> --forge github --ref <destination-ref> --source-ref <source-ref> \
      --write-baseline <手順1のディレクトリ>/<更新refごとに一意なファイル名>.json
    ```
 
+   ローカルでSHAを解決する場合は、現在の作業ツリーに `--repo` と一致するpush先が必要になる。
+   GitLabの接続先が設定ファイルからしか分からない場合は、`--repo` にホスト名を含める。
+   別の作業ツリーから起動する場合は、pushする作業ツリーで解決した完全長SHAを `--sha` で指定する。
    1件の作成が失敗しても、残りの作成を続ける。
 
 `--write-baseline`と`--wait-sha`では、`--repo`（ローカルパスではなく`owner/repo`かホスト名を含むURL）、`--forge <github|gitlab>`、`--ref`、`--source-ref`を全て明示する。
@@ -59,7 +62,7 @@ GitLabでは、`GITLAB_API_HOST`をリポジトリの識別子やSSHの接続先
 
 ### 待機の起動と回収
 
-push後は、baselineごとに`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を実行する。
+push後は、baselineごとに `atk run-script wait-ci -- --baseline <baselineの絶対パス> --sha <実際にpushしたSHA>` を実行する。
 push前のbaselineが無い場合と、他の主体がpushしたcommitを待つ場合は、40桁の完全長SHAを`--wait-sha`へ、managed-tempの中の待機専用のJSONを`--failure-record`へ渡す。
 この形式は対象SHAの全てのrunを判定する。
 

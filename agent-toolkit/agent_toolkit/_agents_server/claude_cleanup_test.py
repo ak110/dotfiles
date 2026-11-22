@@ -143,7 +143,7 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
                         disconnect_cancelled.set()
                         raise
 
-        client = DisconnectClient([[SystemMessage("cleanup-session"), ResultMessage("完了")]])
+        client = DisconnectClient([[SystemMessage("cleanup-session"), ResultMessage("状態: completed\n結果: 完了")]])
         client._transport = SimpleNamespace(_process=process)  # pylint: disable=protected-access
         backend = claude.ClaudeServerManager({}, client_factory=lambda _options: client)
         real_stop = process_tree.stop_tree

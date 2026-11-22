@@ -185,9 +185,12 @@ def test_session_start_resets_operation_skill_notice_for_main(
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
 @pytest.mark.parametrize("error", ["ModuleNotFoundError('agent_toolkit')", "RuntimeError('initialization-failed')"])
-def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypatch, capsys, host, event, error):
+@pytest.mark.parametrize("mode", ["batch", "meta"])
+def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypatch, capsys, host, event, error, mode):
     """実native子の受付前失敗を、次の規範配送で一度報告しpendingを保持する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "true")
+    if mode == "batch":
+        session_review.write(session_review.directory() / "meta-start.json", {"started_at": session_review.timestamp()})
     session_review.record(
         {
             "hook_event_name": "SessionStart",
@@ -217,7 +220,12 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     assert f"{host} {event}" in context
     assert "ユーザーへ伝えよ" in context
     assert "Get-Content -LiteralPath" in context or "cat --" in context
-    assert f"`{'$' if host == 'codex' else '/'}atk-mode review-session batch`" in context
+    retry = (
+        "atk run-skill --args meta review-session"
+        if mode == "meta"
+        else f"{'$' if host == 'codex' else '/'}atk-mode review-session batch"
+    )
+    assert f"`{retry}`" in context
     log_path = next((session_review.directory() / "launches").glob("*.log"))
     assert str(log_path) in context
     assert error.split("(", 1)[0] in log_path.read_text(encoding="utf-8")

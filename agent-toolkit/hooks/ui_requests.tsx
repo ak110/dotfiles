@@ -3,9 +3,9 @@ import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
 import { deliverySucceeded, newReportRoute, reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
-import { mountForStart } from "./periodic_recheck.ts";
+import { mountPeriodicRecheck } from "./periodic_recheck.ts";
 
-type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; targets?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
+type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; targets?: unknown; resume?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
 import type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 export type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 
@@ -87,9 +87,14 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
             await $.state.set({ plugin: "agent-toolkit", key: "uiCalls" }, { ...calls, [request.input.tool_use_id]: request.id });
           }
         } else if (request.operation === "compact_conversation") {
-          await $.state.set({ plugin: "agent-toolkit", key: "compactRequested" }, true);
-          ok = true;
-          reason = "圧縮を予約した。完了ではない。現在のターンを終えてホストの結果を待て。";
+          const resume = request.input.resume === true;
+          if (resume && (await $.session.surfaces()).length === 0) {
+            reason = "圧縮後の自動再開は対話画面がある時だけ予約できる。圧縮だけが必要ならcompact_conversationを引数なしで再実行せよ。";
+          } else {
+            await $.state.set({ plugin: "agent-toolkit", key: "compactRequested" }, resume ? "resume" : true);
+            ok = true;
+            reason = "圧縮を予約した。完了ではない。現在のターンを終えてホストの結果を待て。";
+          }
         } else if (request.operation === "interactive_available") {
           try {
             interactive = (await $.session.surfaces()).length > 0;
@@ -126,7 +131,7 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           }
           ok = true;
         } else if (request.operation === "periodic_recheck") {
-          reason = await mountForStart($);
+          reason = await mountPeriodicRecheck($);
           ok = true;
         } else if (request.operation === "periodic_recheck_collect") {
           // Stopが全待機の終了を判定した時点で回収し、ターンの終了直後のidleで実行中に発火時刻を迎えた発火分が届くのを防ぐ。

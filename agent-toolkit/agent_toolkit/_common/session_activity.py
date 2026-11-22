@@ -115,50 +115,6 @@ def record_submission(session_id: str, targets: Collection[str], *, state_root: 
     return started_at
 
 
-def submission_report_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """正常に終えたWI投入作業の報告用要約を、Stop hookが最終応答を検査するまで会話別に置く場所を返す。"""
-    return activity_directory(state_root) / "submission-reports"
-
-
-def record_submission_report(session_id: str, lines: Sequence[str], *, state_root: pathlib.Path | None = None) -> None:
-    """報告用要約の行と作成時刻を保存する。Stop hookが最終応答を検査した後に`clear_submission_report`で消す。"""
-    valid = _valid_session(session_id)
-    directory = submission_report_directory(state_root)
-    directory.mkdir(parents=True, exist_ok=True)
-    record = {
-        "version": 1,
-        "session_id": valid,
-        "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
-        "lines": list(lines),
-    }
-    atomic_write(directory / f"{valid}.json", json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def read_submission_report(session_id: str, *, state_root: pathlib.Path | None = None) -> tuple[str, list[str]] | None:
-    """保存した報告用要約の作成時刻と行を返す。無いか形式が違えばNoneを返す。"""
-    path = submission_report_directory(state_root) / f"{_valid_session(session_id)}.json"
-    try:
-        record = _read(path)
-    except OSError, UnicodeError, ValueError:
-        return None
-    created_at = record.get("created_at")
-    lines = record.get("lines")
-    if (
-        record.get("version") != 1
-        or record.get("session_id") != path.stem
-        or not isinstance(created_at, str)
-        or not isinstance(lines, list)
-        or not all(isinstance(line, str) for line in lines)
-    ):
-        return None
-    return created_at, lines
-
-
-def clear_submission_report(session_id: str, *, state_root: pathlib.Path | None = None) -> None:
-    """報告用要約を削除する。"""
-    (submission_report_directory(state_root) / f"{_valid_session(session_id)}.json").unlink(missing_ok=True)
-
-
 def clear_submission(session_id: str, *, state_root: pathlib.Path | None = None) -> bool:
     """会話のWI投入作業の属性を削除する。削除した属性があれば真を返す。"""
     path = submission_directory(state_root) / f"{_valid_session(session_id)}.json"

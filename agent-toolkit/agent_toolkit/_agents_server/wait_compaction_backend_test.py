@@ -145,7 +145,7 @@ async def test_codex_partial_completion_keeps_a_compaction_reservation(tmp_path,
         client = FakeCodexClient()
         monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
         session = await backend.start("複数の処理を待つ", str(tmp_path))
-        session.agent_message = "待機中"
+        session.agent_message = "待機中: child"
         request = client.request
         compactions = []
 
@@ -283,7 +283,7 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
         client = FakeCodexClient()
         monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
         session = await backend.start("待機する作業", str(tmp_path))
-        session.agent_message = "待機中"
+        session.agent_message = "待機中: child"
         await backend._handle_notification(
             {
                 "method": "item/completed",
@@ -362,7 +362,7 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
                 assert not compacting.done()
                 assert session.turn_id == original_turn and session.turn_seq == 1
                 assert (await owner.show_session(session.session_id))["result_held"]
-                assert session.agent_message == "待機中"
+                assert session.agent_message == "待機中: child"
                 await backend._handle_notification(
                     {
                         "method": "turn/completed",
@@ -395,7 +395,7 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
                     "params": {
                         "threadId": session.session_id,
                         "turnId": session.turn_id,
-                        "item": {"type": "agentMessage", "id": "reply", "text": "子の結果を回収した"},
+                        "item": {"type": "agentMessage", "id": "reply", "text": "状態: completed\n結果: 子の結果を回収した"},
                     },
                 }
             )
@@ -408,7 +408,7 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
                     },
                 }
             )
-            assert (await owner.wait())["agent_message"] == "子の結果を回収した"
+            assert (await owner.wait())["agent_message"] == "状態: completed\n結果: 子の結果を回収した"
         finally:
             if not compacting.done():
                 compacting.cancel()

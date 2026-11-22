@@ -1,8 +1,8 @@
 """commitのhookで`pyfltr fast`を起動し、統合前のブランチか同じ内容で成功済みのpytestがあればpytestだけを外す。
 
 `develop`・`master`・`main`以外のブランチ（レーンや内部群の作業ブランチ）では、pytestを外す。
-これらのブランチの変更は、統合の前に利用側と不変条件試験を含む変更範囲の`pyfltr run`を成功させ、統合する側が
-その成功を確かめてから取り込む。commitごとに不変条件試験を実行すると共有の検証枠を占め、検証の待ちが
+これらのブランチの変更は、統合の前に利用側と影響する不変条件試験を含む変更範囲の`pyfltr run`を成功させる。
+不変条件試験全量は統合後のdevelop CIが実行する。commitごとに不変条件試験を実行すると共有の検証枠を占め、検証の待ちが
 巡回の所要の大半になったためである（2026年11月13日、同時数8の比較の集計）。
 統合先のブランチへのcommitと、ブランチを特定できない状態（detached HEADなど）では、従来どおりpytestを含める。
 
@@ -53,6 +53,8 @@ import subprocess
 import sys
 import typing
 
+from agent_toolkit._common.shell_segments import extract_execution_pipelines
+from agent_toolkit._common.shell_tokens import strip_redirections
 from agent_toolkit._git import command as git_command
 from verification_targets import consumer_tests, required_tests, uncovered_tests
 
@@ -114,6 +116,71 @@ class Reuse(typing.NamedTuple):
     reason: str
 
 
+def _early_reader(tokens: tuple[str, ...]) -> str | None:
+    if not tokens:
+        return None
+    name = pathlib.PurePosixPath(tokens[0]).name
+    if name == "head":
+        return name
+    if name != "grep":
+        return None
+    args = iter(tokens[1:])
+    for token in args:
+        if token == "--":
+            break
+        if token in {"--quiet", "--silent", "--max-count"} or token.startswith("--max-count="):
+            return name
+        if token in {"--regexp", "--file", "--after-context", "--before-context", "--context", "--devices", "--directories"}:
+            next(args, None)
+        elif token.startswith("-") and not token.startswith("--"):
+            letters = token[1:]
+            for index, letter in enumerate(letters):
+                if letter in "qm":
+                    return name
+                if letter in "efABCDd":
+                    if index == len(letters) - 1:
+                        next(args, None)
+                    break
+    return None
+
+
+def _pipefail_candidate(source: str) -> str | None:
+    if "pipefail" not in source:
+        return None
+    enabled = False
+    for pipeline in extract_execution_pipelines(source, expand_shell=False):
+        segments = [strip_redirections(part.tokens) for part in pipeline]
+        if len(segments) == 1:
+            tokens = segments[0]
+            if len(tokens) == 3 and tokens[0] == "set" and tokens[1].endswith("o") and tokens[2] == "pipefail":
+                enabled = tokens[1].startswith("-")
+        elif enabled:
+            for tokens in segments[1:]:
+                if reader := _early_reader(tokens):
+                    return reader
+    return None
+
+
+def _observe_pipefail(files: list[str]) -> None:
+    root = pathlib.Path.cwd().resolve()
+    for name in files:
+        if not name.endswith((".sh", ".bash", ".sh.tmpl")):
+            continue
+        try:
+            path = (root / name).resolve()
+            if not path.is_relative_to(root):
+                continue
+            reader = _pipefail_candidate(path.read_text(encoding="utf-8"))
+        except OSError, UnicodeError:
+            continue
+        if reader is not None:
+            print(
+                f"{name}: pipefailと後段{reader}の早期終了が重なる候補。"
+                "前段の結果を確認し、必要なら全入力を読むか生成と検索を分ける。",
+                file=sys.stderr,
+            )
+
+
 def main(argv: list[str] | None = None) -> int:
     """prekが渡すファイルを`pyfltr fast`へ渡し、その終了コードを返す。"""
     for stream in (sys.stdout, sys.stderr):
@@ -129,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--verify-run",
         metavar="RUN_ID",
-        help="commitせずに、指定した実行が現在のHEADの内容で不変条件試験を含むpytestに成功したかを確かめる。"
+        help="commitせずに、指定した実行が現在のHEADの内容で必要なpytestに成功したかを確かめる。"
         "統合する側が、統合入力の作業ツリーでff統合の前に使う。成立すれば終了0、しなければ終了1。",
     )
     args = parser.parse_args(argv)
@@ -182,11 +249,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"pyfltr-precommit: run {args.verify_run}は現在のHEADの内容でpytestに成功している。")
         return 0
+    _observe_pipefail(args.files)
     branch = current_branch(pathlib.Path.cwd())
     if branch is not None and branch not in _INTEGRATION_BRANCHES:
         print(
             f"pyfltr-precommit: 統合前のブランチ{branch}のためpytestを外して実行する。"
-            "統合の前に利用側と不変条件試験を含む変更範囲の`pyfltr run`を成功させる。",
+            "統合の前に変更箇所と利用側を含む変更範囲の`pyfltr run`を成功させる。",
             file=sys.stderr,
         )
         return subprocess.run([pyfltr, "fast", "--disable", "pytest", *args.files], check=False).returncode
@@ -282,13 +350,14 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
             return Reuse(None, shown)
         meta = shown.get("meta", {})
         cwd = meta.get("cwd")
+        argv_error = argv_problem(meta.get("argv", []), allow_no_always=run_id is not None)
         if run_id is not None:
             if not isinstance(cwd, str) or not cwd or pathlib.Path(cwd).resolve() != root:
                 return Reuse(None, "cwdが現在の作業ツリーと一致しない")
             if f"pyfltr {meta.get('version')}" != version.stdout.strip():
                 return Reuse(None, "pyfltrの版が現在と一致しない")
-            if problem := argv_problem(meta.get("argv", [])):
-                return Reuse(None, problem)
+            if argv_error:
+                return Reuse(None, argv_error)
             if not any(
                 command.get("command") == "pytest" and command.get("status") == "succeeded"
                 for command in shown.get("commands", [])
@@ -300,7 +369,7 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
             and cwd
             and pathlib.Path(cwd).resolve() == root
             and f"pyfltr {meta.get('version')}" == version.stdout.strip()
-            and _neutral_argv(meta.get("argv", []))
+            and not argv_error
             and any(
                 command.get("command") == "pytest"
                 and command.get("status") == "succeeded"
@@ -382,20 +451,15 @@ def _query_json(pyfltr: str, root: pathlib.Path, arguments: list[str]) -> dict[s
     return parsed
 
 
-def _neutral_argv(argv: list[str]) -> bool:
-    """実行の引数が、試験の対象を変えない形だけかを返す。"""
-    return not argv_problem(argv)
-
-
-def argv_problem(argv: object) -> str:
-    """予定argvと実runの中立性を同じ定義で判定する。"""
+def argv_problem(argv: object, *, allow_no_always: bool = False) -> str:
+    """直接影響範囲を別途確かめる時だけ横断試験の自動追加を外せる。"""
     if not isinstance(argv, list) or any(not isinstance(token, str) for token in argv):
         return "argvが文字列配列でない"
     if not argv or argv[0] not in _REUSABLE_SUBCOMMANDS:
         return "argvの先頭はrun、ci、fastのいずれかにする"
     tokens = iter(argv[1:])
     for token in tokens:
-        if token in _NEUTRAL_FLAGS:
+        if token in _NEUTRAL_FLAGS or (allow_no_always and token == "--no-always-targets"):
             continue
         if token in _NEUTRAL_VALUE_OPTIONS:
             if next(tokens, None) is None:
@@ -443,7 +507,7 @@ def _check_planned_argv(value: str, review: object) -> int:
         planned = json.loads(value)
         if not isinstance(planned, list) or any(not isinstance(token, str) for token in planned):
             raise ValueError("argvは文字列のJSON配列で指定する")
-        reason = argv_problem(planned)
+        reason = argv_problem(planned, allow_no_always=True)
         if not reason:
             reason = _coverage_problem(pathlib.Path.cwd(), planned, review)
     except (ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:

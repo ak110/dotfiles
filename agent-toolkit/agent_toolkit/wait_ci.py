@@ -32,6 +32,7 @@ from agent_toolkit._atk.wait_ci_forge import (
     _glab_job_list,
     _glab_pipeline_list,
     _is_ancestor_of_ref,
+    _matches_local_push_target,
     _normalize_gitlab_pipeline,
     _resolve_forge,
     _resolve_sha,
@@ -268,9 +269,16 @@ def main(argv: list[str] | None = None) -> int:
     if forge is None:
         print("[wait_ci] 対象forgeを--repoと作業ディレクトリのGit remoteから判別できない", file=sys.stderr)
         return _finish(EXIT_GH_ERROR, "`--forge github`または`--forge gitlab`を明示指定して再実行する")
+    explicit_sha = args.sha.lower() if args.sha is not None and re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) else None
     if args.write_baseline is not None:
+        if explicit_sha is None and not _matches_local_push_target(forge, args.repo, args.subprocess_timeout):
+            print("[wait_ci] 現在の作業ツリーのpush先と --repo の接続先の一致を確認できません", file=sys.stderr)
+            return _finish(
+                EXIT_USAGE,
+                "pushする作業ツリーでホスト付きの `--repo` を指定するか、そのツリーで解決した完全長SHAを `--sha` で指定する",
+            )
         revision = args.sha if args.sha is not None else args.source_ref
-        sha = _resolve_sha(revision, args.subprocess_timeout)
+        sha = explicit_sha or _resolve_sha(revision, args.subprocess_timeout)
         if sha is None:
             print(f"[wait_ci] {revision}のcommit解決に失敗（git rev-parse）", file=sys.stderr)
             return _finish(EXIT_GH_ERROR, _NEXT_ACTION_SHA_RESOLUTION)
@@ -316,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.sha is None:
             sha = baseline.sha
         else:
-            sha = _resolve_sha(args.sha, args.subprocess_timeout)
+            sha = explicit_sha or _resolve_sha(args.sha, args.subprocess_timeout)
             if sha is None:
                 print(f"[wait_ci] {args.sha}のcommit解決に失敗（git rev-parse）", file=sys.stderr)
                 return _finish(EXIT_GH_ERROR, _NEXT_ACTION_SHA_RESOLUTION)

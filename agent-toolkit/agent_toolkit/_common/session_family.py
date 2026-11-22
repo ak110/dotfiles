@@ -88,6 +88,9 @@ class _CollectedRecord(NamedTuple):
     aliases: tuple[str, ...] = ()
     recoveries: tuple[_RecordRecovery, ...] = ()
     gaps: tuple[_RecordLoadFailure, ...] = ()
+    fork_context: tuple[_Record, ...] = ()
+    fork_parent: str | None = None
+    fork_attribution_known: bool = False
 
 
 class _UnresolvedRecord(NamedTuple):

@@ -14,7 +14,7 @@ from typing import Any, Literal, cast
 
 import pytest
 
-from agent_toolkit._testing import cpu_accounting, pytest_plugin
+from agent_toolkit._testing import cpu_accounting, pytest_cpu_budget, pytest_plugin
 from agent_toolkit._testing.pytest_plugin_support import _run_child_pytest
 
 # pylint: disable=protected-access
@@ -31,7 +31,7 @@ def test_cpu_retry_keeps_functional_failures_and_attempt_evidence(
     monkeypatch.setenv("CI", "1" if ci else "")
     (tmp_path / "conftest.py").write_text(
         "import json, pathlib, pytest\n"
-        "from agent_toolkit._testing import pytest_plugin as p\n"
+        "from agent_toolkit._testing import pytest_cpu_budget as p\n"
         "attempts = {}\n"
         "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
         "def pytest_runtest_makereport(item, call):\n"
@@ -82,12 +82,41 @@ def test_cpu_retry_keeps_functional_failures_and_attempt_evidence(
             assert "cpu_first_attempt_cpu_budget_seconds" not in properties
 
 
+def test_cpu_limit_scale_adjusts_net_and_gross_without_disabling_detection(tmp_path: pathlib.Path) -> None:
+    """測定値を保ったまま閾値を変え、netとgrossの超過を引き続き拒否する。"""
+    (tmp_path / "conftest.py").write_text(
+        "import pytest\n"
+        "from agent_toolkit._testing import pytest_cpu_budget as p\n"
+        "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+        "def pytest_runtest_makereport(item, call):\n"
+        "    if call.when == 'teardown':\n"
+        "        total, excluded = {'test_within': (0.69, 0), 'test_net': (0.71, 0), "
+        "'test_gross': (2.81, 2.2)}[item.name]\n"
+        "        item.stash[p._CPU_TIMES] = {'call': total}\n"
+        "        item.stash[p._CPU_EXCLUSIONS] = {'call': {'gc': excluded, 'import': 0}}\n"
+        "        item.stash[p._CPU_BUDGET] = p.cpu_accounting.CpuBudget()\n"
+        "    return (yield)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "probe_test.py").write_text(
+        "def test_within(): pass\ndef test_net(): pass\ndef test_gross(): pass\n", encoding="utf-8"
+    )
+    result = _run_child_pytest(tmp_path, "--cpu-limit-scale=1.4", "--junitxml=result.xml", "probe_test.py")
+    assert result.returncode == pytest.ExitCode.TESTS_FAILED, result.stdout + result.stderr
+    cases = {case.get("name"): case for case in ET.parse(tmp_path / "result.xml").iter("testcase")}
+    assert {name for name, case in cases.items() if case.find("error") is not None} == {"test_net", "test_gross"}
+    properties = {prop.attrib["name"]: prop.attrib["value"] for prop in cases["test_within"].findall("properties/property")}
+    assert float(properties["cpu_budget_seconds"]) == pytest.approx(0.69)
+    assert float(properties["cpu_limit_seconds"]) == pytest.approx(0.7)
+    assert float(properties["cpu_gross_limit_seconds"]) == pytest.approx(2.8)
+
+
 def test_cpu_record_only_reports_overrun_without_failure(tmp_path: pathlib.Path, monkeypatch) -> None:
     """記録のみの指定では、CPU超過を警告とJUnitへ残して合否と再試行から外し、機能失敗は保つ。"""
     monkeypatch.setenv("CI", "1")
     (tmp_path / "conftest.py").write_text(
         "import pytest\n"
-        "from agent_toolkit._testing import pytest_plugin as p\n"
+        "from agent_toolkit._testing import pytest_cpu_budget as p\n"
         "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
         "def pytest_runtest_makereport(item, call):\n"
         "    if call.when == 'teardown':\n"
@@ -126,7 +155,7 @@ def test_cpu_clock_boundary(monkeypatch: pytest.MonkeyPatch, elapsed: float, pha
     item = cast(pytest.Item, Item())
     clock = iter([0.0, elapsed])
     with monkeypatch.context() as patch:
-        patch.setattr(pytest_plugin.time, "thread_time", lambda: next(clock))
+        patch.setattr(pytest_cpu_budget.time, "thread_time", lambda: next(clock))
         patch.setattr(cpu_accounting, "main_snapshot", lambda: {"gc": 0.0, "import": 0.0})
         hook = getattr(pytest_plugin, f"pytest_runtest_{phase}")(item)
         next(hook)
@@ -197,8 +226,8 @@ def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> N
         try:
             with monkeypatch.context() as patch:
                 patch.setattr(cpu_accounting, "_thread_cpu", lambda: clocks[threading.get_ident()])
-                patch.setattr(pytest_plugin.time, "thread_time", lambda: clocks[threading.get_ident()])
-                patch.setattr(pytest_plugin.time, "process_time", lambda: sum(clocks.values()))
+                patch.setattr(pytest_cpu_budget.time, "thread_time", lambda: clocks[threading.get_ident()])
+                patch.setattr(pytest_cpu_budget.time, "process_time", lambda: sum(clocks.values()))
                 patch.setattr(cpu_accounting, "_process_threads", thread_clocks)
                 hook = pytest_plugin.pytest_runtest_setup(item)
                 next(hook)
@@ -233,7 +262,7 @@ def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> N
                     hook.send(None)
                 if mode == "spanning":
                     assert future is not None
-                    assert cpu_accounting.snapshot(item.stash[pytest_plugin._CPU_BUDGET])["worker"] == pytest.approx(0.3)
+                    assert cpu_accounting.snapshot(item.stash[pytest_cpu_budget._CPU_BUDGET])["worker"] == pytest.approx(0.3)
                     # report生成前のphase間の仕事も、試験自身の累計から失わない。
                     proceed.set()
                     future.result(timeout=10)
@@ -271,7 +300,7 @@ def test_cpu_report_preserves_outcomes_and_records_total(
 
     for recorded in (times, {}):
         item = cast(pytest.Item, Item())
-        item.stash[pytest_plugin._CPU_TIMES] = recorded
+        item.stash[pytest_cpu_budget._CPU_TIMES] = recorded
         original = "元の診断" if outcome == "failed" else ("cpu_test.py", 1, "skip理由") if outcome == "skipped" else None
         report = pytest.TestReport(item.nodeid, ("cpu_test.py", 0, "test_cpu"), {}, outcome, original, "teardown")
         hook = pytest_plugin.pytest_runtest_makereport(item, cast(Any, None))
@@ -339,16 +368,20 @@ def test_cpu_limit_rejects_invalid_default(
     ],
 )
 def test_exclusions_do_not_hide_budget_or_gross_overrun(
-    request: pytest.FixtureRequest, gross, gc_cpu, import_cpu, net_limit, failed
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, gross, gc_cpu, import_cpu, net_limit, failed
 ) -> None:
     """収集で選んだnetと共有費用込みgrossの上限を守り、原計測を失わない。"""
     assert request.node.parent is not None
     item = pytest.Function.from_parent(request.node.parent, name="cpu_probe", callobj=lambda: None)
     if net_limit != 0.5:
         item.add_marker(pytest.mark.cpu_limit(net_limit, reason="必要な境界の制御入力"))
-    pytest_plugin.pytest_collection_modifyitems(request.config, [item])
-    item.stash[pytest_plugin._CPU_TIMES] = {"call": gross}
-    item.stash[pytest_plugin._CPU_EXCLUSIONS] = {"call": {"gc": gc_cpu, "import": import_cpu}}
+    # 制御入力は倍率1の境界値。外側のpytestの設定を合成itemへ持ち込まない。
+    with monkeypatch.context() as patch:
+        patch.setattr(request.config.option, "cpu_limit_scale", 1.0)
+        patch.setattr(request.config.option, "cpu_limit_record_only", False)
+        pytest_plugin.pytest_collection_modifyitems(request.config, [item])
+    item.stash[pytest_cpu_budget._CPU_TIMES] = {"call": gross}
+    item.stash[pytest_cpu_budget._CPU_EXCLUSIONS] = {"call": {"gc": gc_cpu, "import": import_cpu}}
     report = pytest.TestReport(item.nodeid, ("cpu_test.py", 0, "test_cpu"), {}, "passed", None, "teardown")
     hook = pytest_plugin.pytest_runtest_makereport(item, cast(Any, None))
     next(hook)

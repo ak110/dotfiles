@@ -59,7 +59,9 @@ def test_warn_keeps_hook_marker_in_hook_record(
 
     assert evidence.main([str(transcript), "--warn"]) == 0
 
-    assert read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": notice}]
+    assert read_jsonl(capsys) == [
+        {"kind": "warning", "line": 1, "text": notice, "source": "pretooluse", "full_text": "実行時の警告"}
+    ]
 
 
 @pytest.mark.parametrize("element", ["agent-toolkit-hook-message", "agent-toolkit-auto-inserted"])
@@ -91,7 +93,9 @@ def test_warn_keeps_xml_hook_marker_in_hook_record(
 
     assert evidence.main([str(transcript), "--warn"]) == 0
 
-    assert read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "実行時の警告"}]
+    assert read_jsonl(capsys) == [
+        {"kind": "warning", "line": 1, "text": "実行時の警告", "source": "pretooluse", "full_text": "実行時の警告"}
+    ]
 
 
 def test_warn_keeps_command_output_warning(

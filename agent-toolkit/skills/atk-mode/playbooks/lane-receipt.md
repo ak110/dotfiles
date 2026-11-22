@@ -110,14 +110,16 @@ WIへ直接書かれた質問（AWIの`## ユーザーコメント`、UWIの`## 
    収束後に再レビューを省いた修正があれば、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「レビュー修正」で保った修正後のHEADとする。
 3. `マージあり`では、指示の前に次を確かめる。
    - 完成条件証拠: レビュー単位ごとに受理した最後の実行レビューの返却ファイル（`agent_message_path`）と`レビューHEAD`を保つ。
+     再レビュー不要の修正で採否を変える条件は、指摘管理表の応答か引き継ぎ記録にある検収済みの修正後証拠も保つ。
      `agent-toolkit:atk-mode/references/lane-integration-format.md`「入力」の`完成条件証拠`の確認をし、欠ければレビューの起動元へ差し戻す。
      各AWIの全行を`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」の受理条件で検収する。
      内部の群では、群の局所の判定に加えて`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「統合とAWI終了」手順1の群間の検収を求める。
    - レビューの収束: 全ての計画が`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「収束と統合への引渡し」の収束の条件を満たし、返却と走査記録の既存の不良の処置（同書「返却に含まれる既存不良の受領」）も終わっている。
-   - 画面差分: あれば並行する画面のレビューが収束し、ユーザビリティレビューの判定が`合格`か`未確定`である。
+   - 画面差分: あれば`agent-toolkit:atk-mode/roles/usability-review.parent.md`で双方の判定と修正後の描画の証拠を検収する。
      記録が無ければ、`agent-basics:review-standards/references/reviewer-execution.md`「指摘の分類」の種類5（完了条件を満たしていない）として保留する。
-   - HEADの一致: 統合入力HEADが対象worktreeの現在のHEADと一致し、実行レビューの`レビューHEAD`とユーザビリティレビューの`レビューしたHEAD`も統合入力HEADと一致する。
-     再レビューを省いた修正がある時だけは、`レビューHEAD`が統合入力HEADではなく、レビュー指摘管理表に記録した修正前の短縮OIDと一致する。
+   - HEADの一致: 統合入力HEADが対象worktreeの現在のHEADと一致し、実行レビューの`レビューHEAD`とユーザビリティレビューの`レビューしたHEAD`も原則として統合入力HEADと一致する。
+     実行レビューを省いた範囲の`レビューHEAD`は管理表に記録した修正前のOIDと一致させる。
+     画面の再レビューを省いた範囲は、同役割「返却後」に従い、前回の画面レビュー返却が示す版と修正後の描画を別に検収する。
      影響を受けない計画と内部の群では、引き継ぎ記録の`R`が受理済みの`レビューHEAD`と、比較先の`H`が統合入力HEADと一致する。
 4. 同じthreadへ`send_message`で`統合開始`と次の入力を送り、`start`は呼ばない（`所有登録`、`統合先worktree`、`統合先branch`、`レーン開始時刻`、`引き継ぎ記録先`は送らず、起動時の値を使わせる）。
    実装を伴わないレーンへも送り、計画の最終化と採否の確定をさせる。

@@ -16,6 +16,7 @@ from collections.abc import Callable, Generator
 from multiprocessing import connection
 from typing import TYPE_CHECKING, Any
 
+from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
 from agent_toolkit._common import runtime_environment, state_paths
 
 if TYPE_CHECKING:
@@ -169,7 +170,7 @@ def authenticate(peer: connection.Connection, *, server: bool, expected_process:
     if uid != os.geteuid():
         raise PermissionError("管理サービスの接続先が同じOSアカウントではありません")
     if expected_process is not None and process_identity(pid) != expected_process:
-        raise PermissionError("管理サービスの接続先プロセスが発見記録と一致しません")
+        raise ProcessIdentityMismatch("管理サービスの接続先プロセスが発見記録と一致しません")
     return pid
 
 
@@ -193,8 +194,15 @@ def listen(address: str) -> Generator[Any]:
 def connect(address: str, expected_process: str) -> Generator[connection.Connection]:
     """同一アカウント・元世代と確かめた接続だけを操作へ渡す。"""
     family = "AF_PIPE" if os.name == "nt" else "AF_UNIX"
-    with connection.Client(address, family=family, authkey=None) as peer:
-        authenticate(peer, server=False, expected_process=expected_process)
+    with contextlib.ExitStack() as stack:
+        try:
+            peer = stack.enter_context(connection.Client(address, family=family, authkey=None))
+            authenticate(peer, server=False, expected_process=expected_process)
+        except ProcessIdentityMismatch as error:
+            # アカウント確認後の起動単位違いだけを扱い、アクセスや本人性の拒否は隠さない。
+            if process_alive(expected_process):
+                raise
+            raise FileNotFoundError("発見記録の管理サービス世代が終了しました") from error
         yield peer
 
 

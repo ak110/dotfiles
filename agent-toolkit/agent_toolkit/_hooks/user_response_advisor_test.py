@@ -119,6 +119,28 @@ def test_stop_accepts_send_to_user_message_after_human_input(
     assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
+# test-copy-contract: hook処置の発話と本人への回答をStopで区別し、両送達経路での誤分類を検出する。
+@pytest.mark.parametrize("via_send", [False, True])
+@pytest.mark.parametrize("answer", ["", "\n結果はAです。"])
+def test_hook_notice_handling_does_not_answer_human_by_itself(
+    via_send: bool, answer: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """通知の処置しか届かなければユーザーの発話への回答を求める。"""
+    text = "hook通知への対応: 要求された資料を取得した。" + answer
+    notice_entry = _assistant(text)
+    if via_send:
+        notice_entry["message"]["content"] = [
+            {
+                "type": "tool_use",
+                "id": "notice-send",
+                "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                "input": {"message": text},
+            }
+        ]
+    output = _stop([_HUMAN, notice_entry], tmp_path, capsys)
+    assert _has_advisor_notice(output) is (not answer)
+
+
 @pytest.mark.parametrize(
     "notification",
     [

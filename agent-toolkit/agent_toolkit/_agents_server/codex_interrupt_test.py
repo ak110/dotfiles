@@ -103,11 +103,12 @@ async def test_consumer_stop_stops_own_app_server_before_failure_is_published(
         response = await owner.kill(session.session_id, timeout=5)
         assert (response["status"], response["kill_requested"]) == ("failed", False)
 
-        answer = {"type": "agentMessage", "id": "answer", "text": "別の作業の成果"}
+        final_message = "状態: completed\n結果: 別の作業の成果"
+        answer = {"type": "agentMessage", "id": "answer", "text": final_message}
         turn = {"id": other.turn_id, "status": "completed", "error": None, "items": [answer]}
         clients[1].emit("turn/completed", {"threadId": other.session_id, "turn": turn})
         await harness._until(backend, lambda: other.result_available)
-        assert (other.status, other.agent_message) == ("completed", "別の作業の成果")
+        assert (other.status, other.agent_message) == ("completed", final_message)
         assert not clients[1].stopped
 
 

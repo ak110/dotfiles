@@ -84,7 +84,7 @@ async def test_public_start_distinguishes_loaded_code_from_updated_role(
     if stage == "input":
         assert "対象" in message and "版相違" not in message
     else:
-        assert str(root) in message and "2.1.0" in message
+        assert f"root={str(root)!r}" in message and "2.1.0" in message
         assert "更新された構文を受理できない" in message
         assert ("版相違" in message) == updated
         assert ("MCP再接続" in message) == updated
@@ -204,6 +204,10 @@ async def test_start_input_rejection_points_to_owning_contract(
                 target.write_text(text, encoding="utf-8")
     document = root / role_relative
     params = _observed_input_params(document.name, tmp_path)
+    if role == "repository-process":
+        # ここでは現行の起動入力に、検査対象の不備を1つだけ作る。
+        for removed in ("ownership_record", "ownership_token"):
+            params.pop(removed, None)
     missing_name = {"exec": "担当種別", "repository-process": "引き継ぎ記録先", "add-wi": "投入する要求"}[role]
     if defect == "missing":
         params.pop(missing_name)
@@ -452,3 +456,100 @@ async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytes
         await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("file_input", [False, True])
+@pytest.mark.parametrize("normalized_remote", [False, True])
+async def test_add_wi_start_rejects_unsettled_destination_before_backend(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, file_input: bool, normalized_remote: bool
+) -> None:
+    """要求ファイル・直接本文とも未確定の投入先で起動せず、確定した値で再発行できる。"""
+    requirement = tmp_path / "request.md"
+
+    def request(destination: str | None) -> str:
+        field = f"- 投入先: {destination}\n" if destination is not None else ""
+        text = f"# 要求\n\n{field}- 種別: AWI\n"
+        if file_input:
+            requirement.write_text(text, encoding="utf-8")
+            return str(requirement)
+        return text
+
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        params = {"投入する要求": request("調査で確定"), "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        params["投入する要求"] = request(None)
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert not backend.start_calls
+        target = "github.com/example/repository" if normalized_remote else str(tmp_path)
+        params["投入する要求"] = request(target)
+        await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert len(backend.start_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_add_wi_requires_destination_for_each_request_or_shared_input(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """混在した要求では欠落を拒み、既存の別ファイルの共通入力を受理する。"""
+    common = tmp_path / "common.md"
+    common.write_text("投入先: github.com/example/repository\n", encoding="utf-8")
+    text = "## 要求 1\n- 投入先: github.com/example/repository\n## 要求 2\n- 種別: AWI\n"
+    params = {"投入する要求": text, "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert not backend.start_calls
+        params["投入する要求"] = f"共通入力: `{common}`\n\n{text}"
+        await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert len(backend.start_calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "example",
+    [
+        "```md\n## 要求 例\n投入先: /example\n```\n",
+        "~~~md\n## 要求 例\n投入先: /example\n",
+        "> 補足資料の例\n投入先: /example\n",
+        "<!--\n## 要求 例\n投入先: /example\n-->\n",
+    ],
+    ids=["fence", "unclosed-fence", "quote", "comment"],
+)
+async def test_add_wi_start_ignores_requirements_and_destinations_in_examples(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, example: str
+) -> None:
+    """コードフェンス内の見出しと値を投入口の判断へ混ぜない。"""
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        text = "## 要求 本文\n- 種別: AWI\n\n" + example
+        params = {"投入する要求": text, "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert not backend.start_calls
+        params["投入する要求"] = text.replace("- 種別:", "- 投入先: github.com/example/repository\n- 種別:")
+        await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert len(backend.start_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_add_wi_start_requires_unfenced_compact_input(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """補足資料のコードフェンス内にある簡略形を投入先として受理しない。"""
+    compact = "request=github.com/example/repository=awi=検証する"
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        params = {"投入する要求": f"```text\n{compact}\n```", "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert not backend.start_calls
+        params["投入する要求"] = compact + "\n発話: 依頼の原文"
+        await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert len(backend.start_calls) == 1

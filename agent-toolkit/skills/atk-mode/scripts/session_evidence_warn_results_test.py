@@ -372,3 +372,52 @@ def test_query_modes_with_distinct_results_can_be_combined(
 
     events = read_jsonl(capsys)
     assert {event["kind"] for event in events} >= {"warning", "match", "summary"}
+
+
+def test_bundle_preserves_each_hook_warning_and_its_full_body(tmp_path, capsys):
+    """件数行・通常通知・重複を数えず、各警告の発生元と末尾を保存する。"""
+    tail = "この対応指示を全文で取得する。"
+    notices = (
+        "警告: 3件\n"
+        '<atk-auto source="first" kind="warn">短い警告</atk-auto>\n'
+        '<atk-auto source="first" kind="notice">警告ではない</atk-auto>\n'
+        f'<atk-auto source="first" kind="warn">{"長い内容" * 500}\n{tail}</atk-auto>\n'
+        '<atk-auto source="second" kind="warn">短い警告</atk-auto>'
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "hook_success",
+                    "toolUseID": "call-1",
+                    "hookName": "PreToolUse:Bash",
+                    "stdout": json.dumps({"hookSpecificOutput": {"additionalContext": notices}}),
+                    "stderr": "",
+                },
+            },
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "toolUseID": "call-1",
+                    "hookName": "PreToolUse:Bash",
+                    "content": [notices],
+                },
+            },
+        ],
+    )
+    output = tmp_path / "bundle"
+    output.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(output)]) == 0
+    capsys.readouterr()
+    warnings = [
+        event
+        for line in (output / "warnings.jsonl").read_text(encoding="utf-8").splitlines()
+        if (event := json.loads(line))["kind"] == "warning"
+    ]
+    assert [(event["source"], event["line"]) for event in warnings] == [("first", 1), ("first", 1), ("second", 1)]
+    assert warnings[0]["full_text"] == warnings[2]["full_text"] == "短い警告"
+    assert warnings[1]["full_text"].endswith("\n" + tail) and tail not in warnings[1]["text"]
+    assert warnings[1]["record"] == warnings[0]["record"]

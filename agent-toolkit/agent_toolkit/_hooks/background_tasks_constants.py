@@ -75,4 +75,4 @@ _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
 
 # 同一hookプロセスで複数判定が同じStop入力を参照する場合に、transcriptの全走査を再利用する。
-_PENDING_ASYNC_WORK_CACHE: dict[tuple[object, ...], bool] = {}
+_PENDING_ASYNC_WORK_CACHE: dict[tuple[object, ...], str] = {}

@@ -12,6 +12,8 @@ from ctypes import wintypes as w
 from multiprocessing import connection
 from typing import Any
 
+from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
+
 # Windows専用属性はLinuxの型情報に無いため、OS境界内で動的に解決する。
 _windows: Any = ctypes
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -219,7 +221,7 @@ def authenticate(peer: Any, *, server: bool, expected_process: str | None = None
         if _sid(remote) != _sid(local):
             raise PermissionError("管理サービスの接続相手のSIDが一致しません")
         if expected_process is not None and _identity(remote, pid.value) != expected_process:
-            raise PermissionError("管理サービスの接続相手の起動世代が一致しません")
+            raise ProcessIdentityMismatch("管理サービスの接続相手の起動世代が一致しません")
     return pid.value
 
 

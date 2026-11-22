@@ -43,3 +43,4 @@ pyfltrのように検証済みの変更群を`master`へpushし、全体CIを通
 
 - ステップ間の値は`$GITHUB_OUTPUT`で渡す（非推奨の`::set-output`はactionlintの`deprecated-commands`が検出する）。
 - `run`のシェルは未定義の変数と途中の失敗で止め、`pipefail`を有効にする。
+  後段が入力を打ち切るパイプは`agent-basics:writing-standards/references/bash.md`「基本」に従う。

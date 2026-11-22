@@ -42,7 +42,7 @@ async def test_wait_defers_result_until_child_session_terminates(
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "孫session確認後の結果"
+        assert result["agent_message"] == "状態: completed\n結果: 孫session確認後の結果"
         assert child_session_id in client.queries[1]
 
 
@@ -75,7 +75,7 @@ async def test_wait_keeps_child_until_registration_recovers(
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "孫session確認後の結果"
+        assert result["agent_message"] == "状態: completed\n結果: 孫session確認後の結果"
         assert "error" not in result
         assert child_session_id in client.queries[1]
 
@@ -109,11 +109,11 @@ async def test_wait_preserves_unobserved_child_sessions_until_all_terminate(
         assert session.live_child_session_ids == {unobserved_session_id}
         session_registry.publish(unobserved_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         await _await_state(lambda: len(client.queries) == 2)
-        client.emit(ResultMessage("孫session混在時の再開結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 孫session混在時の再開結果"))
         result = await wait_task
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "孫session混在時の再開結果"
+        assert result["agent_message"] == "状態: completed\n結果: 孫session混在時の再開結果"
         assert "error" not in result
         assert terminal_session_id in client.queries[1]
         assert unobserved_session_id in client.queries[1]
@@ -157,11 +157,11 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
         session_registry.publish(unreadable_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         await _await_state(lambda: len(client.queries) == 3)
 
-        client.emit(ResultMessage("連続自動再開後の結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 連続自動再開後の結果"))
         result = await wait_task
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "連続自動再開後の結果"
+        assert result["agent_message"] == "状態: completed\n結果: 連続自動再開後の結果"
         assert "error" not in result
         assert first_terminal_session_id in client.queries[1]
         assert missing_session_id in client.queries[1]
@@ -217,7 +217,7 @@ async def test_live_claude_child_survives_notification_deadline(
         session.set_background_deadline(0.0)
         assert (await _wait_with_timeout(manager, 0))["status"] == "running"
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
-        assert result["agent_message"] == "孫session確認後の結果"
+        assert result["agent_message"] == "状態: completed\n結果: 孫session確認後の結果"
         assert "error" not in result
 
 

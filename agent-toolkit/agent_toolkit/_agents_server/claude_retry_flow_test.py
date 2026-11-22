@@ -224,7 +224,7 @@ async def test_weekly_retry_continues_same_session_on_api(
                 await asyncio.sleep(0)
         assert cli.disconnected
         assert owner.sessions[session_id].claude_connection == "payg"
-        completed = "APIで残る作業を完了した" + ("\n状態: completed" if launch_kind == "explore" else "")
+        completed = "状態: completed\n結果: APIで残る作業を完了した"
         resumed.messages.put_nowait(ResultMessage(completed))
         owner._wait_timeouts["main"] = 5  # pylint: disable=protected-access
         result = await owner.wait()
@@ -265,7 +265,7 @@ async def test_weekly_api_resume_retains_request_followup_and_completed_work(
             await super().query(prompt)
             self.history.append(prompt)
             if self.api_connection:
-                body = "\n".join(self.restored_history) + "\n残作業の索引を作成した"
+                body = "状態: completed\n" + "\n".join(self.restored_history) + "\n残作業の索引を作成した"
                 self.messages.put_nowait(AssistantMessage(body))
                 self.messages.put_nowait(ResultMessage(body))
 

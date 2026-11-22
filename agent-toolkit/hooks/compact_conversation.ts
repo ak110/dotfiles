@@ -1,6 +1,6 @@
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
-import { automatedMessage } from "./automated_message.ts";
+import { automatedMessage, startNextTurn } from "./automated_message.ts";
 import { exitStatePath } from "./session_exit.ts";
 
 // 実ホストの版・入力・結果と再検証はdocs/development/audit-records-compaction.mdの
@@ -106,18 +106,27 @@ function schedule($: EngineInterface, state: CompactState): void {
     $.clock.after(0, async () => {
       state.scheduled = false;
       if (state.turnRunning || !state.pending) return;
+      const resume = (await $.state.get({ plugin: "agent-toolkit", key: "compactRequested" })).value === "resume";
       await $.state.set({ plugin: "agent-toolkit", key: "compactRequested" }, false);
+      let compacted = false;
       try {
+        const interactive = (await $.session.surfaces()).length > 0;
+        if (resume && !interactive) {
+          state.pending = false;
+          $.ui.toast(automatedMessage("compact-conversation", "warn", "対話画面が無いため圧縮と自動再開を取り消した。圧縮だけが必要ならcompact_conversationを引数なしで再予約せよ。"));
+          return;
+        }
         const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
         await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, Object.fromEntries(Object.entries(waits).map(([id, wait]) => [id, { ...wait, used: true }])));
         // headlessでは直接APIが拒否されるため、ホストが実行する/compactを使う。
         // 実ホストの制約と両経路の観測は監査記録の
         // 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年11月4日」にある。
-        if ((await $.session.surfaces()).length === 0) {
+        if (!interactive) {
           await $.command.run({ command: "compact" });
         } else {
           const result = await $.session.compact();
-          if (result.skip !== undefined) {
+          compacted = result.skip === undefined;
+          if (!compacted) {
             $.ui.toast(automatedMessage("compact-conversation", "warn", `会話圧縮は見送られた。予約状態は解除済み。通常の作業を続け、圧縮が必要ならcompact_conversationを引数なしで再予約せよ。理由: ${result.skip}`));
           }
         }
@@ -125,6 +134,13 @@ function schedule($: EngineInterface, state: CompactState): void {
       } catch (error) {
         state.pending = false;
         $.ui.toast(automatedMessage("compact-conversation", "warn", `会話圧縮の予約実行に失敗した。予約状態は解除済み。通常の作業を続け、圧縮が必要ならcompact_conversationを引数なしで再予約せよ。原因: ${String(error)}`));
+      }
+      if (resume && compacted) {
+        try {
+          await startNextTurn($, automatedMessage("compact-conversation", "notice", "会話の圧縮が完了した。作業契約と圧縮前の記録から残る工程を復元して作業を続けよ。"));
+        } catch (error) {
+          $.ui.toast(automatedMessage("compact-conversation", "warn", `会話の圧縮は完了したが、自動再開に失敗した。作業を続ける時は次の入力で再開を指示せよ。原因: ${String(error)}`));
+        }
       }
     });
 }

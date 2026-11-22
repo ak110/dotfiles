@@ -260,11 +260,11 @@ async def test_wi_policy_review_continues_to_draft_in_same_session(
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         materials = {}
-        for name in ("方針", "原稿", "要求と出所", "成立性の証拠"):
+        for name in ("方針", "原稿", "要求原本"):
             path = tmp_path / f"{name}.md"
             path.write_text(f"# {name}\n", encoding="utf-8")
             materials[name] = str(path)
-        common = {key: materials[key] for key in ("要求と出所", "成立性の証拠")}
+        common = {key: materials[key] for key in ("要求原本",)}
         started = await mcp_tools.start(
             str(tmp_path),
             subagent_md_path="wi-draft-review",

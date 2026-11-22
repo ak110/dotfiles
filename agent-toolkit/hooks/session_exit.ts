@@ -1,7 +1,7 @@
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
 import { automatedMessage, changedWarning, startNextTurn } from "./automated_message.ts";
-import { isMarked, parseCronJobs, parseSchedule } from "./periodic_recheck.ts";
+import { isMarked, mountPeriodicRecheck, parseCronJobs, parseSchedule } from "./periodic_recheck.ts";
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -47,7 +47,9 @@ async function collectPeriodicRecheck($: EngineInterface, sessionId: string, abo
   try {
     const verdict = await $.fs.read(path);
     await $.fs.write(path, "consumed");
-    if (verdict !== "complete" || aborted) return undefined;
+    if (aborted) return undefined;
+    if (verdict === "pending-background") return (await mountPeriodicRecheck($)) || undefined;
+    if (verdict !== "complete") return undefined;
   } catch (error) {
     return isMissing(error) ? undefined : cleanupWarning(String(error));
   }

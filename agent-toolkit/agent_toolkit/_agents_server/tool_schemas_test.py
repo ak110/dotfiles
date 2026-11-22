@@ -25,7 +25,7 @@ _EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "compact_conversation": {
         "annotations": {"destructive_hint": False},
-        "input_schema": {"properties": {}, "type": "object"},
+        "input_schema": {"properties": {"resume": {"default": False, "type": "boolean"}}, "type": "object"},
         "output_schema": {"additionalProperties": True, "title": "compact_conversationDictOutput", "type": "object"},
     },
     "kill": {

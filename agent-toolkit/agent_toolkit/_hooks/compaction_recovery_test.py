@@ -109,9 +109,10 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
     session = "original-resume"
     for prompt in instructions:
         notified = run_hook("user_prompt_submit", {"session_id": session, "prompt": prompt})
-        assert notified.returncode == 0 and "要求の統合" in notified.stdout
+        assert notified.returncode == 0
         context = json.loads(notified.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert work_contract.RETURN_CRITERION in context
+        assert work_contract.short_notice(contract) in context
+        assert "目的: 作業を完了する" not in context
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text(
         "\n".join(
@@ -131,12 +132,14 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
     # hookの標準出力はJSONなので、Windowsのパス区切りはエスケープされた形で現れる。
     shown = json.dumps(str(original), ensure_ascii=False)[1:-1]
     assert compact.returncode == 0 and shown in compact.stdout
+    assert "目的: 作業を完了する" in compact.stdout
     body = original.read_text(encoding="utf-8")
     assert all(f"- ユーザー: {prompt}\n" in body for prompt in instructions)
     # 自然文の採否はエージェントの責務であり、この試験では判定済みの契約を消費側へ渡す。
     contract.write_text(f"目的: 作業を完了する\n現在の指示: {retained}\n", encoding="utf-8")
     restart = run_hook("user_prompt_submit", {"session_id": session, "prompt": "続きを進めて"})
-    assert restart.returncode == 0 and retained in restart.stdout and "要求の統合" in restart.stdout
+    assert restart.returncode == 0 and retained not in restart.stdout
+    assert work_contract.short_notice(contract) in json.loads(restart.stdout)["hookSpecificOutput"]["additionalContext"]
 
 
 @pytest.mark.parametrize("cleanup_fails", [False, True])

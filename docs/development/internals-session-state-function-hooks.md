@@ -18,22 +18,18 @@ Claude Codeが会話イベントのハンドラーを登録するために読み
 Python側は、目印が`ready`であり、かつファイルの更新時刻が現在のClaude Codeプロセス起動時刻より後である場合に限り、終了要求ファイルへ`requested`を書き込んで`exit_requested`を返す。
 `turn.complete`はメインエージェントのターンでのみこの値を読み取り、値を`consumed`へ書き換えて`/exit`をキューへ投入する。
 目印がない場合やCodexでは、対話CLIプロセスを従来どおり終了させる。
-`process-loop resume ID`で本人IDの再開を予約済みの場合は、目的が未達のまま再起動するため、このmodへ終了を遅延させず、既存のPID世代照合後に単一PIDへ終了要求を送る。
 予約の消費は次のCLIの実起動が担当し、終了コマンドは予約を保持する。
 
 `/exit`はセッション限りの未完了タスクが残ると確認画面を表示するため、`turn.complete`は`/exit`を投入する直前に、`durable`が真ではないcronタスクを削除する。
 タスク一覧の取得と削除は`$.tool.check`が`allow`の場合だけ行い、削除に失敗しても`/exit`は投入する。
-process-loopによって起動された会話の最上位Stopでは、終了要求が`requested`であり、かつStop入力の`background_tasks`に有効な通常タスク（非`teammate`タスク）が残っているかどうかを判定する。
-この条件に該当する場合、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`は終了要求を`consumed`に戻して終了をブロックする。
-Stop hookは同じターンの`turn.complete`より先に動くため、取り下げた終了要求で`/exit`が実行されることはない。
+終了要求は、セッションが配下の作業と結果を回収してから送る。
 
 process-loopの統括と`atk run-skill`が起動したセッションでは、定期再確認の通常回収と同じ範囲のtaskを、メインエージェントが最終ターンを閉じる前にも削除する。
 手順は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ターンの終え方」、経緯は`docs/development/design-hooks-periodic-recheck.md`にある。
 
 Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終了要求は、Stopの全判定が完了した後に共通ハンドラー（`stop.py`）から発行される。
 終了要求が`requested`か特定PIDへの終了要求として成立した場合、そのStop hookの応答は停止の通知だけになる。
-このため`autonomous_exit_invoked`が偽のままでも、無進捗停止の終了要求は`turn.complete`で消費される。
-`autonomous_exit_invoked`が記録するのは`atk agents-exit-session`の実行履歴だけで、Stop内部で発行した終了要求はこのフラグと独立に終了要求ファイルの状態で管理する。
+Stop内部で発行した終了要求は終了要求ファイルで管理し、`turn.complete`で消費する。
 
 通常のSessionEndでは、現行セッションの読み込み目印、終了要求、定期再確認の判定結果、および利用上限の記録ファイルを保持したまま、保持期限を過ぎた他セッションの古いファイルを回収する。
 定期再確認の判定は`docs/development/internals-session-state-function-hooks-recheck.md`に従う。

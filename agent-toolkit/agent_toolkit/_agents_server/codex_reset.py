@@ -72,9 +72,7 @@ class CodexResetMixin:
                 asyncio.get_running_loop().time() + limit.delay_seconds(time.time()),
             )
         )
-        session.usage_limit_wait_count += 1
-        if session.usage_limit_first_at is None:
-            session.usage_limit_first_at = utc_now()
+        session.advance_usage_limit_retry()
         session.api_error = {
             "type": "usage_limit",
             "limit_type": limit.limit_type,

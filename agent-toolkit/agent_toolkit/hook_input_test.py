@@ -189,6 +189,7 @@ class TestStandardInputAndPayloadDump:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: object
     ) -> None:
         """状態ファイル名へ使えない会話IDは、型によらず会話IDの無いSessionStartと同じ扱いとし、状態の継承も含めて状態を作らない。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
         transcript = tmp_path / "transcript.jsonl"
         transcript.write_text(json.dumps({"sessionId": "previous"}) + "\n", encoding="utf-8")
         absent = _run_session_start(tmp_path / "absent", "", transcript, monkeypatch)

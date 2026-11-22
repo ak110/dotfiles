@@ -5,9 +5,10 @@
 
 import asyncio
 import dataclasses
+import json
 
 import pytest
-from claude_agent_sdk import AssistantMessage, TextBlock
+from claude_agent_sdk import AssistantMessage, ResultMessage, StreamEvent, TextBlock
 
 from agent_toolkit._agents_server.service_resources import ResourceBroker, sdk_event_codec
 
@@ -179,3 +180,62 @@ async def test_release_ends_call_waiting_for_event_space_without_consumer() -> N
     with pytest.raises(PermissionError):
         await call
     assert closed == [True]
+
+
+def test_sdk_codec_reads_previous_public_release_events() -> None:
+    """旧公開版のイベントを復号し、保持した値と現行版で補う値を確認する。"""
+    # 再生成: 2.287.0 を展開し、claude-agent-sdk==0.2.182で次の値を作る。
+    # sdk_event_codec().encode() の結果をそのまま保存する。
+    raw = [
+        """{"kind":"dataclass","type":"AssistantMessage","fields":{
+  "content": {"kind":"list","items":[
+    {"kind":"dataclass","type":"TextBlock","fields":{"text":{"kind":"value","value":"旧版"}}}]},
+  "model": {"kind":"value","value":"model"},
+  "parent_tool_use_id": {"kind":"value","value":null},
+  "error": {"kind":"value","value":null},
+  "usage": {"kind":"value","value":null},
+  "message_id": {"kind":"value","value":null},
+  "stop_reason": {"kind":"value","value":null},
+  "session_id": {"kind":"value","value":null},
+  "uuid": {"kind":"value","value":null}
+}}""",
+        """{"kind":"dataclass","type":"ResultMessage","fields":{
+  "subtype": {"kind":"value","value":"success"},
+  "duration_ms": {"kind":"value","value":100},
+  "duration_api_ms": {"kind":"value","value":50},
+  "is_error": {"kind":"value","value":false},
+  "num_turns": {"kind":"value","value":1},
+  "session_id": {"kind":"value","value":"old-session"},
+  "stop_reason": {"kind":"value","value":null},
+  "total_cost_usd": {"kind":"value","value":null},
+  "usage": {"kind":"value","value":null},
+  "result": {"kind":"value","value":"完了"},
+  "structured_output": {"kind":"value","value":null},
+  "model_usage": {"kind":"value","value":null},
+  "permission_denials": {"kind":"value","value":null},
+  "deferred_tool_use": {"kind":"value","value":null},
+  "errors": {"kind":"value","value":null},
+  "api_error_status": {"kind":"value","value":null},
+  "uuid": {"kind":"value","value":null},
+  "terminal_reason": {"kind":"value","value":null},
+  "origin": {"kind":"value","value":null}
+}}""",
+        """{"kind":"dataclass","type":"StreamEvent","fields":{
+  "uuid": {"kind":"value","value":"event-1"},
+  "session_id": {"kind":"value","value":"old-session"},
+  "event": {"kind":"dict","items":{"type":{"kind":"value","value":"message_start"}}},
+  "parent_tool_use_id": {"kind":"value","value":null}
+}}""",
+    ]
+    assistant, result, stream = [sdk_event_codec().decode(json.loads(event)) for event in raw]
+    assert assistant == AssistantMessage(content=[TextBlock(text="旧版")], model="model")
+    assert result == ResultMessage(
+        subtype="success",
+        duration_ms=100,
+        duration_api_ms=50,
+        is_error=False,
+        num_turns=1,
+        session_id="old-session",
+        result="完了",
+    )
+    assert stream == StreamEvent(uuid="event-1", session_id="old-session", event={"type": "message_start"})

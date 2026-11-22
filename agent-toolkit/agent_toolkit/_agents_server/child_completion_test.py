@@ -37,7 +37,7 @@ async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monk
             [AssistantMessage("最初の子を確認した")],
             [
                 AssistantMessage("次の子も確認した"),
-                ResultMessage("全工程を確認した最終結果"),
+                ResultMessage("状態: completed\n結果: 全工程を確認した最終結果"),
                 SdkSystemMessage(subtype="session_state_changed", data={"state": "idle"}),
             ],
         ]
@@ -88,7 +88,7 @@ async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monk
             async with owner._condition:
                 await asyncio.wait_for(owner._condition.wait_for(lambda: parent.result_available), 2)
             result = await owner.wait()
-        assert result["status"] == "completed" and result["agent_message"] == "全工程を確認した最終結果"
+        assert result["status"] == "completed" and result["agent_message"] == "状態: completed\n結果: 全工程を確認した最終結果"
         assert len(client.queries) == 3
         assert not parent.live_child_session_ids and not parent.terminal_child_session_ids
     assert client.disconnected and client.readers == 0

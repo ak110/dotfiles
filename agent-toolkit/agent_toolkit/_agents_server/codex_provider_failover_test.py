@@ -257,7 +257,7 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
                             "params": {
                                 "threadId": session.session_id,
                                 "turnId": session.turn_id,
-                                "item": {"type": "agentMessage", "id": "answer", "text": "継続後の結果"},
+                                "item": {"type": "agentMessage", "id": "answer", "text": "状態: completed\n結果: 継続後の結果"},
                             },
                         }
                     )
@@ -290,7 +290,7 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
                 result = await asyncio.wait_for(wait_task, 5)
                 assert not returned_during_read, "利用上限の保留判定中に公開waitが復帰した"
                 assert result["status"] == "completed"
-                assert result["agent_message"] == "継続後の結果"
+                assert result["agent_message"] == "状態: completed\n結果: 継続後の結果"
                 public = json.dumps([started, result, (await root.list_sessions()), (await root.show_session("thread-codex"))])
                 assert "paid-a" not in public and "codex_model_provider" not in public
                 assert "isolated-fake-api-key" not in caplog.text

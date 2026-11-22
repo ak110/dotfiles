@@ -167,7 +167,7 @@ class _Server:
             "id": turn_id,
             "status": "completed",
             "error": None,
-            "items": [{"type": "agentMessage", "id": f"message-{turn_id}", "text": f"完了: {text}"}],
+            "items": [{"type": "agentMessage", "id": f"message-{turn_id}", "text": f"状態: completed\n結果: {text}"}],
         }
         completion = threading.Thread(target=self._complete_turn, args=(thread_id, turn), daemon=True)
         self._pending.append(completion)

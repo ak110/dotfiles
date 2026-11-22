@@ -86,13 +86,13 @@ async def test_release_keeps_other_session_and_resumes(tmp_path: pathlib.Path, m
         assert fake.alive(other_server) and all(fake.alive(pid) for pid in fake.mcp_pids(other_id))
         assert (await manager.send_message(other_id, "追加指示"))["delivery"] == "reply_started"
         other = await _wait_terminal(manager, other_id, fake)
-        assert other.agent_message.startswith("完了: ") and "追加指示" in other.agent_message
+        assert other.agent_message.startswith("状態: completed\n結果: ") and "追加指示" in other.agent_message
         assert fake.events("turn/start")[-1]["server"] == other_server
 
         resumed_response = await manager.send_message(stopped_id, "再開指示")
         assert resumed_response["delivery"] == "reply_started", (resumed_response, manager.sessions[stopped_id].error)
         resumed = await _wait_terminal(manager, stopped_id, fake)
-        assert resumed.agent_message.startswith("完了: ") and "再開指示" in resumed.agent_message
+        assert resumed.agent_message.startswith("状態: completed\n結果: ") and "再開指示" in resumed.agent_message
         resume_events = [record for record in fake.events("thread/resume") if record["thread"] == stopped_id]
         assert len(resume_events) == 1
         assert resume_events[0]["server"] not in {stopped_server, other_server}

@@ -6,6 +6,7 @@ import contextlib
 import logging
 import os
 import pathlib
+import re
 import uuid
 from collections.abc import Mapping
 from typing import Any
@@ -36,9 +37,10 @@ from agent_toolkit._agents_server.state import (
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import delegated_session, runtime_environment, session_registry, startup_documents, task_documents
-from agent_toolkit._common.markdown_headings import parse_headings
+from agent_toolkit._common.markdown_headings import parse_headings, without_literal_blocks
 from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._git import remote
 
 __all__ = [
     "PREFLIGHT_COMMANDS",
@@ -207,6 +209,77 @@ def shell_default_label(command: str) -> str:
     return f"shell-{pathlib.PurePath(words[0]).name}" if words else "shell"
 
 
+_ADD_WI_DESTINATION = re.compile(
+    r"^(?:[ \t]*[-*][ \t]+)?(?:共通:[ \t]*)?投入先(?:の対象リポジトリ)?(?:[：:]|[ \t])"
+    r"[ \t]*(?P<destination>[^\r\n]*)$",
+    re.MULTILINE,
+)
+_ADD_WI_COMMON_INPUT = re.compile(
+    r"^(?:[ \t]*[-*][ \t]+)?共通(?:の入力|入力)?[：:][ \t]*(?P<path>[^`\r\n]+|`[^`\r\n]+`)[ \t]*$",
+    re.MULTILINE,
+)
+_ADD_WI_REQUIREMENT = re.compile(r"^##[ \t]+要求(?:[ \t：:]|$)", re.MULTILINE)
+
+
+def _read_add_wi_input(path: pathlib.Path) -> str:
+    """投入する要求か共通入力として指定された通常ファイルを読む。"""
+    try:
+        if not path.is_absolute() or not path.is_file():
+            raise OSError("要求ファイルは通常のファイルの絶対パスでなければなりません")
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ActionableError(
+            "投入する要求か共通入力のファイルを読み取れません。委譲先は起動していない。",
+            next_action="UTF-8の要求ファイルと共通入力の絶対パスを確認して同じstartを再発行する",
+        ) from error
+
+
+def _add_wi_destination_fields(text: str) -> list[str]:
+    return [match["destination"] for match in _ADD_WI_DESTINATION.finditer(text)]
+
+
+def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> None:
+    """各要求か共通入力に確定した投入先があることを起動前に確かめる。"""
+    request = extra_params.get("投入する要求")
+    if task_document.name != "add-wi.subagent.md" or request is None:
+        return
+    text = request.strip()
+    if "\n" not in text and pathlib.Path(text).is_absolute():
+        text = _read_add_wi_input(pathlib.Path(text))
+    text = without_literal_blocks(text).strip()
+    preamble, *requirements = _ADD_WI_REQUIREMENT.split(text)
+    common = _add_wi_destination_fields(preamble)
+    for reference in _ADD_WI_COMMON_INPUT.finditer(preamble):
+        reference_path = pathlib.Path(reference["path"].strip().strip("`"))
+        if reference_path.is_absolute():
+            common.extend(_add_wi_destination_fields(without_literal_blocks(_read_add_wi_input(reference_path))))
+    if not common and not requirements:
+        # 既存の簡略形が書かれた先頭行だけを読み、続く発話などの欄は対象にしない。
+        parts = text.partition("\n")[0].split("=", maxsplit=3)
+        if len(parts) == 4 and parts[2].casefold() in {"awi", "uwi"}:
+            common = [parts[1]]
+    individual = [_add_wi_destination_fields(section) for section in requirements]
+    if (
+        all(_add_wi_destination_is_resolved(value) for value in common)
+        and (all(fields or common for fields in individual) if individual else bool(common))
+        and all(_add_wi_destination_is_resolved(value) for fields in individual for value in fields)
+    ):
+        return
+    raise ActionableError(
+        "add-wiの投入先に絶対パスか正規化したリモートURLが必要です。委譲先は起動していない。",
+        next_action="委譲元が投入先を確定し、要求ファイルか直接本文を直して同じstartを再発行する",
+    )
+
+
+def _add_wi_destination_is_resolved(value: str) -> bool:
+    location = re.split(r"[（、]", value, maxsplit=1)[0].strip().strip("`")
+    with contextlib.suppress(ValueError):
+        return pathlib.Path(location).is_absolute() or (
+            not any(character.isspace() for character in location) and remote.normalize_remote_url(location) == location
+        )
+    return False
+
+
 def _validate_required_prompt_inputs(
     task_document: pathlib.Path,
     extra_params: Mapping[str, str],
@@ -222,6 +295,7 @@ def _validate_required_prompt_inputs(
     if isinstance(declaration, str):
         return declaration
     check_declared_inputs(task_document, declaration, extra_params)
+    _check_add_wi_destinations(task_document, extra_params)
     return None
 
 
@@ -531,6 +605,7 @@ def task_document_request(
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         check_declared_inputs(task_document, declaration, extra_params)
+        _check_add_wi_destinations(task_document, extra_params)
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:

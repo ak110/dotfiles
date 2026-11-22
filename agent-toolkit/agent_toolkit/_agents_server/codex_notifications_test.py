@@ -43,13 +43,14 @@ async def test_completed_turn_with_live_child_holds_result_for_auto_resume(tmp_p
     """未観測の子sessionが残るturnは、待機表明を完了報告として公開せず、自動再開まで結果を保留する。"""
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     session.live_child_session_ids.add("child-1")
+    session.agent_message = "待機中: child-1"
     async with _InspectableAppServerManager({session.session_id: session}) as manager:
         await manager.handle_notification(_completed_turn(session))
 
         assert session.result_available is False
         assert session.awaiting_auto_resume is True
         assert session.status == "running"
-        assert session.pending_result == {"status": "completed", "agent_message": "", "error": None}
+        assert session.pending_result == {"status": "completed", "agent_message": "待機中: child-1", "error": None}
         assert session.error is None
         assert session.live_child_session_ids == {"child-1"}
         await manager.close()
@@ -114,7 +115,7 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
                 )
                 # 解放で登録が消えた後も、明示的な成功から親の最終結果を公開できる。
                 session_registry.release("child", reason="stopped")
-                final_item = {"type": "agentMessage", "id": "parent-final", "text": "親の最終結果"}
+                final_item = {"type": "agentMessage", "id": "parent-final", "text": "状態: completed\n結果: 親の最終結果"}
                 await backend._handle_notification(
                     {"method": "item/completed", "params": {"threadId": session.session_id, "item": final_item}}
                 )
@@ -123,10 +124,11 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
                 await backend._handle_notification(completion)
                 result = await manager.wait()
                 assert result["status"] == "completed"
-                assert result["agent_message"] == "親の最終結果"
+                assert result["agent_message"] == "状態: completed\n結果: 親の最終結果"
                 assert (await manager.wait())["status"] == "expired"
                 assert not session.live_child_session_ids and not session.terminal_child_session_ids
                 return
+            session.agent_message = "待機中: child"
             completion = _completed_turn(session)
             completion["params"]["turn"].update(
                 {

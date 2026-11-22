@@ -45,7 +45,7 @@
    - 資料の機能と消費形態は`agent-toolkit:atk-mode/references/omission-check.md`「資料起点の比較」で比べる。
      資料の全項目を対応付けた後に、同じ問題の操作、制約、利用場面から、資料に無い改善候補も探す。
      論文、ベンチマーク、他プロジェクトの実績を根拠にする案は、提案の前に`agent-basics:review-standards`で評価する。
-5. 資料の主張を1文ずつ、既存の規範とWIに当てる。
+5. 外部資料がある場合は、途中報告より先に`agent-basics:writing-standards/references/design-heuristics.md`「外部資料に基づく改善案の評価」の3方向で対応表を作る。
    読みは`agent-toolkit:atk-mode/references/omission-check.md`「点検類型」(l)で比較する。
    コード例は実効設定と効果を分け、`agent-toolkit:atk-mode/references/drafting-decisions.md`「採否と実現方式の確定」で成立条件と保つ機能を確かめる。
    定義元、被覆、同じ条件での観測、改善の採否と理由を対応表にする。
@@ -53,7 +53,8 @@
    CLIやSDKが入力を変換する場合は、呼出元が問題の形式を直接作らないことと、変換後の入力にも問題の形式がないことを区別する。
    採否が変わる境界だけ、実際に使うCLIやSDKの版で変換後の入力を確かめる。
    観測が取れなければ未確認とし、ユーザーへは調査中と伝える。
-   `add-awi-by-user`では、判定と観測を指摘対応記録の`material_claims`に残す（URLを含む発話を受けた投入では`atk wi submission end`が検査する）。
+   `add-awi-by-user`では、対応表を原稿の「調査結果と判断根拠」に置く。
+   登録0件で原稿を作らない場合は、比較と採否を既存の作業記録に残す。
 6. `agent-toolkit:atk-mode/references/omission-check.md`「点検類型」の全類型を点検してから、方針を決める。
 7. 確認する。
    - 「何を変えるかをエージェントが選ぶ」依頼では、本手順を必ず行う。

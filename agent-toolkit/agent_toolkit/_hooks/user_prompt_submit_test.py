@@ -16,6 +16,7 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit import hook
+from agent_toolkit._atk import run_skill_batch
 from agent_toolkit._common import automated_prompt, session_state, skill_modes
 from agent_toolkit._hooks import posttooluse, progress_self_check, user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
@@ -796,6 +797,8 @@ def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathli
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}], ids=["claude", "codex"])
 def test_progress_notice_keeps_thirty_minute_cycles_during_user_prompts(monkeypatch, capsys, record_property, host_fields):
     """公開hookの実入力・出力で、10分ごとの発話と26時間後の再開が点検を延期しないことを確かめる。"""
+    # 点検の周期と独立な振り返りの記録を、24回のhook操作で繰り返さない。
+    monkeypatch.setattr(run_skill_batch, "hook_request", lambda *_args, **_kwargs: None)
     sid = "progress-prompt-cycles"
     opening = '<atk-auto source="progress-self-check" kind="notice">'
     started_at = 1000000.0

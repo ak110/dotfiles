@@ -57,6 +57,17 @@ def test_first_observation_records_start_without_notice() -> None:
     assert _entries(sid) == {"main": {"started_at": 1000.0, "last_notified_at": 1000.0}}
 
 
+def test_periodic_recheck_absorbs_one_minute_of_clock_jitter() -> None:
+    """同じ経過時間で通常の発話は待ち、既存の定期発火だけが期日へ達する。"""
+    sid = _session_id()
+    payload = {"session_id": sid}
+    assert progress_self_check.claim_notice(payload, now=1000.0) is None
+    early = 1000.0 + _INTERVAL - 1
+    assert progress_self_check.claim_notice(payload, now=early) is None
+    assert progress_self_check.claim_notice(payload, now=early, periodic_recheck=True) is not None
+    progress_self_check.release_reservations()
+
+
 def test_notice_waits_for_interval_and_fires_once() -> None:
     sid = _session_id()
     payload = {"session_id": sid}
@@ -361,6 +372,21 @@ def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest
         clock["now"] += 10 * 60
     # 初回観測は通知せず、1800秒以上たった最初のイベントごとに1回だけ通知し、期日の延期は起きない。
     assert notified == [10_000.0 + 1800.0, 10_000.0 + 3600.0, 10_000.0 + 5400.0]
+
+
+def test_two_periodic_prompts_notify_just_before_the_normal_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """標識のある入力だけが、続く2周期で通常の期日より前に通知する。"""
+    sid = _session_id()
+    clock = {"now": 10_000.0}
+    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
+    _seed(sid, "main", started_at=clock["now"], last_notified_at=clock["now"])
+    periodic = {"session_id": sid, "prompt": f"{PERIODIC_RECHECK_MARKER}\n確認する。\n</atk-auto>"}
+    for _ in range(2):
+        clock["now"] += _INTERVAL - 1
+        assert _OPENING not in _in_process("user_prompt_submit", {"session_id": sid, "prompt": "状況は？"})
+        assert _OPENING not in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+        assert _in_process("user_prompt_submit", periodic).count(_OPENING) == 1
+        assert session_state.read_state(sid)[progress_self_check.DELIVERED_KEY]["main"] == [str(clock["now"])]
 
 
 def test_format_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:

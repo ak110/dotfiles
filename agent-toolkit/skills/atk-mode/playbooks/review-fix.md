@@ -27,7 +27,8 @@
 3. 提出前の記録との比較（`agent-basics:review-standards/references/reviewee.md`「指摘発生時の扱い」）では、提出前の主張と根拠を既存の進捗ログ、検証記録、引き継ぎ記録から読む。
    比べた結果は、専用の台帳を作らずに指摘管理表の応答へ書く。
 4. 再レビューでは、個別修正に着手する前に`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「反復原因の判定」を行う。
-   同じ指摘の反復と第3ラウンド以降の未解決の指摘には、`agent-basics:review-standards/references/reviewee.md`「同じ指摘の反復」「方式見直しと再レビュー」を適用し、理由と結論を各指摘の応答に書く。
+   同じ指摘の反復は `agent-basics:review-standards/references/reviewee.md` で扱い、方式見直しの契機は同資料の手順11で判定する。
+   理由と結論を各指摘の応答に書く。
 5. 広がりの検索と個別判定を専用の担当へ渡す時は`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動し、受け取った結果からの原因の判断と採否は自分が持つ。
 6. 採用した指摘とCI記録の失敗は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」の手順で直して試験し、返却は本書「完了報告」で行う。
    修正の方針で新しい操作・機構・副作用を採用する前に、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「計画準備の受領」手順3の禁止条件と突き合わせる。
@@ -105,20 +106,18 @@
 ## 実行レビュー反復での記録
 
 レビューイーは指摘管理表に登録された全ての指摘に、採否、根拠、対応、検証の証拠を応答として記録する。
-委譲元は`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`の`unanswered_count`が0件の時だけ再レビューへ進むため、記録の所在は返却の文面でなく表である。
+委譲元は`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`の`unanswered_count`が0件であることを確かめる。
+再レビューの要否は指摘の応答とは別に扱う。
 
 応答は`atk review-table respond`で、`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」の操作とラベルに従って記録する。
 
 ## 完了報告
 
 1. 修正した時は、本書「レビュー修正の履歴統合」と「検証結果の記録」を終えてから返す。
-2. 再レビューを省く`対応完了（再レビュー不要）`は、`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」の省略の条件に当たる時だけ返す。
-   当てはめた条件と、修正後のHEADでのリスクの段階を、指摘管理表の応答と`検証結果`に書く。
-3. 低リスクの段階を省略の根拠にする時は、対象worktreeで`atk run-script agent-doc-changes -- --repo <対象worktree> --review-risk <開始時点> <HEAD>`を単独で実行し、作業の開始時点からの全ての変更パスで判定する。
-   出力が`低リスク`の時だけ根拠に使う。
-   Git管理外の変更を受け取ったラウンドは`通常`として扱い、回答の下書きを作っただけならコマンドの出力の段階を使う。
-4. 本書「返却前の確認」を行い、次の形で返す。
-   採用が0件の時も同じ形で返し、再レビューを省く時は1行目を`対応完了（再レビュー不要）`にする。
+2. レビュー担当の返却を持つ受領側が、指摘の採否・修正後の検証と、要否と評価前提を比べる。
+   修正担当も正式な返却を受け取っていれば同じ前提を確かめ、前提が変わる時は`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」に従う。
+3. 本書「返却前の確認」を行い、次の形で返す。
+   採用が0件の時も同じ形で返し、正式な返却の「不要」の評価前提を保つと確かめた時だけ1行目を`対応完了（再レビュー不要）`にできる。
 
    ```text
    対応完了

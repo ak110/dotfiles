@@ -67,7 +67,7 @@ def local_time(timestamp: float | None = None) -> str:
 
 
 def observe_input(session_id: str) -> str | None:
-    """実ユーザー入力の後に、既存の作業契約の本文と、最終更新後の実ユーザー発話の件数を通知する。
+    """実ユーザー入力の後に、作業契約の所在、最終更新時刻、更新後の実ユーザー発話の件数を通知する。
 
     件数は契約ファイルの更新時刻の変化と、この関数が数える実ユーザー入力だけから求める。
     機械入力・委譲先・会話圧縮の再通知はこの関数を通らないため数えない。
@@ -104,15 +104,16 @@ def observe_input(session_id: str) -> str | None:
 
     update_state(session_id, count)
     resolve_notice(session_id, "pretooluse", "main", subject="main")
-    status = ""
-    if updated is not None and observed:
-        scope = "今回を含む。初回観測より前は不明" if observed["partial"] else "今回を含む"
-        status = (
-            f"\n作業契約の最終更新: `{local_time(updated)}`。その後の実ユーザー発話: {observed['inputs']}件（{scope}）。"
-            "件数は要求を再確認するための観測値であり、更新漏れの件数ではない。"
-        )
-    text = notice(session_id)
-    return text + status if text is not None else None
+    if path is None or updated is None:
+        return None
+    location = short_notice(path)
+    if not observed:
+        return location
+    scope = "今回を含む。初回観測より前は不明" if observed["partial"] else "今回を含む"
+    return (
+        location + f"\n作業契約の最終更新: `{local_time(updated)}`。その後の実ユーザー発話: {observed['inputs']}件（{scope}）。"
+        "件数は要求を再確認するための観測値であり、更新漏れの件数ではない。"
+    )
 
 
 def reset_notice(session_id: str) -> None:
@@ -210,7 +211,7 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     """既存の作業契約の本文を参照資料として返す。要求の統合と達成はエージェントが判定する。
 
     本文を毎回届けるのは、所在だけの通知では質問へ回答した後に契約を読み直さず、元の工程へ戻らない事例があったためである。
-    `budget`を超える本文と読取に失敗した本文は、所在と理由だけを示す非遮断の案内にする。
+    `budget`を超える場合と読取に失敗した場合は、本文の代わりに非遮断の案内を返す。
     """
     path = record_path(session_id)
     if path is None or not path.is_file():
@@ -226,5 +227,9 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
             f"{RETURN_CRITERION}"
         )
     if len(body) > budget:
-        return f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめよ。{RETURN_CRITERION}"
+        return (
+            f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめよ。"
+            "発話の転記、時刻、経緯、完了した要求が残っていれば、現在の目的・要件だけに書き直せ。"
+            f"{RETURN_CRITERION}"
+        )
     return f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"

@@ -191,7 +191,28 @@ def is_pending_async_work(
     session_state: object,
     owner_agent_id: str = "main",
 ) -> bool:
-    """セッションが構造的に継続中の場合に真を返す。
+    """セッションが構造的に継続中の場合に真を返す。"""
+    return (
+        pending_async_status(
+            transcript_path,
+            session_id,
+            background_tasks=background_tasks,
+            session_state=session_state,
+            owner_agent_id=owner_agent_id,
+        )
+        != "complete"
+    )
+
+
+def pending_async_status(
+    transcript_path: str,
+    session_id: str,
+    *,
+    background_tasks: object = None,
+    session_state: object,
+    owner_agent_id: str = "main",
+) -> str:
+    """待機中のうち実行中のバックグラウンドタスクだけを、装着を要する値として区別する。
 
     以下のいずれかの場合に真を返す。
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
@@ -282,14 +303,8 @@ def is_pending_async_work(
     if pending_observation:
         pending_sources.append("agents_server_observation")
     source = "+".join(pending_sources) if pending_sources else "none"
-    pending = bool(
-        last_async
-        or payload_non_teammate
-        or (host_reported_remainder and not payload_authoritative)
-        or unreported_remainder
-        or queued_notification
-        or pending_observation
-    )
+    background = bool(payload_non_teammate or (host_reported_remainder and not payload_authoritative) or unreported_remainder)
+    pending = background or last_async or queued_notification or pending_observation
     last_tool = _describe_last_tool_use(last_tool_use)
     _emit_debug(
         pending,
@@ -319,8 +334,9 @@ def is_pending_async_work(
         },
     )
     _PENDING_ASYNC_WORK_CACHE.clear()
-    _PENDING_ASYNC_WORK_CACHE[cache_key] = pending
-    return pending
+    status = "pending-background" if background else "pending" if pending else "complete"
+    _PENDING_ASYNC_WORK_CACHE[cache_key] = status
+    return status
 
 
 def pending_async_task_ids(transcript_path: str, session_id: str, *, background_tasks: object = None) -> set[str]:

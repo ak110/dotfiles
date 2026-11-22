@@ -34,7 +34,7 @@ _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 
 # 軽量起動の組込ツール。探索の読み取り専用性はプロンプトで指示する。
 _LAUNCH_TOOLS: dict[str, list[str]] = {
-    "explore": ["Read", "Glob", "Grep", "Bash"],
+    "explore": ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
     "shell": ["Bash", "Read"],
     "write": ["Read", "Write", "Edit", "Glob", "Grep"],
 }

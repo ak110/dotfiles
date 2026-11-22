@@ -15,7 +15,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 2. write-planスキル呼び出し検出 (Skill)
 3. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
-5. exit-session起動検知による`autonomous_exit_invoked`の記録と
+5. exit-sessionの実行結果に基づく
    `process_wi_skill_invoked`のリセット (Skill)、
    操作の直前に起動を求めるスキルの起動の記録（以後その主体へ起動の案内を出さない。`pretooluse/operation_skills.py`）。
    スキルの入口（`SKILL.md`）の現在の全文を返した読取も、そのスキルの起動として記録する（Read / Bash。`full_reads.py`）。
@@ -152,9 +152,6 @@ _NOTES_ONLY_ANSWER = "(notes only)"
 # 複数選択の質問の`answers`は、選んだ`label`と自由記述を`, `で連結した1つの文字列で届く（2.1.285の記録で観測）。
 _MULTI_SELECT_SEPARATOR = ", "
 
-_AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
-
-
 # --- plan fileの書式を判定する定数 ---
 
 
@@ -164,17 +161,6 @@ def _reset_process_wi_invoked(state: dict) -> dict | None:
         return None
     state["process_wi_skill_invoked"] = False
     return state
-
-
-def _record_exit_session_invoked(state: dict) -> dict | None:
-    """exit-session呼び出しを記録し、`process_wi_skill_invoked`をリセットする。"""
-    changed = False
-    if state.get(_AUTONOMOUS_EXIT_STATE_KEY) is not True:
-        state[_AUTONOMOUS_EXIT_STATE_KEY] = True
-        changed = True
-    if _reset_process_wi_invoked(state) is not None:
-        changed = True
-    return state if changed else None
 
 
 def _response_texts(value: object) -> list[str]:
@@ -208,7 +194,7 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
     segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
     exit_invoked = any(is_agents_exit_session_command(segment.tokens) for segment in segments)
     if exit_invoked and _response_has_exit_invocation(tool_response):
-        update_state(session_id, _record_exit_session_invoked)
+        update_state(session_id, _reset_process_wi_invoked)
     _record_created_plan_file(session_id, segments, tool_response)
 
 

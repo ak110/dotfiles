@@ -4,11 +4,23 @@ import markdown_it
 from markdown_it.token import Token
 
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+_LITERAL_BLOCK_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": True, "linkify": False})
 
 
 def normalize_newlines(text: str) -> str:
     """見出しの行位置を安定させるため、改行をLFへそろえる。"""
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def without_literal_blocks(text: str) -> str:
+    """コード・引用・コメントを本文の記号から分ける。"""
+    normalized = normalize_newlines(text.removeprefix("\ufeff"))
+    lines = normalized.split("\n")
+    for token in _LITERAL_BLOCK_MARKDOWN.parse(normalized):
+        if token.type in {"fence", "code_block", "blockquote_open", "html_block"} and token.map is not None:
+            start, end = token.map
+            lines[start:end] = [""] * (end - start)
+    return "\n".join(lines)
 
 
 def parse_headings(text: str, level: int) -> list[tuple[Token, str]]:

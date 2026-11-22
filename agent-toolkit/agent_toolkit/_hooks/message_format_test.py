@@ -239,7 +239,7 @@ def test_typescript_mod_emitted_values_reach_python_shared_receiver(
     script = tmp_path / "mod-deliveries.mjs"
     script.write_text(
         """const {register: compact} = await import(process.argv[2]);
-const {mountForStart} = await import(process.argv[3]);
+const {mountPeriodicRecheck} = await import(process.argv[3]);
 const {automatedMessage} = await import(process.argv[4]);
 const schedule = JSON.parse(process.argv[5]);
 const bodies = [];
@@ -263,7 +263,7 @@ await compactCall({...base, clock: {after: (_time, callback) => timers.push(call
   ui: {toast: (text) => bodies.push(text)}}, {turnId: 'turn-1'}, async () => ({}));
 await timers[0]();
 for (const success of [true, false]) {
-  const warning = await mountForStart({...base,
+  const warning = await mountPeriodicRecheck({...base,
     session: {id: async () => 'current'},
     tool: {check: async () => ({decision: 'allow'}), call: async ({tool}) => tool === 'CronList'
       ? {result: {jobs: []}} : {result: {id: 'task-1'}}},

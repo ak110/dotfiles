@@ -122,7 +122,7 @@
    atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --target-branch=auto --snapshot-output <開始時集合JSONの絶対パス>
    ```
 
-   all-reposでは、常駐から渡される集合JSONの各対象の`snapshot_file`を開始時の集合として使い、担当へ同じパスを引き継ぐ。
+   all-reposの初回保存と担当への引き継ぎは`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「開始と振り分け」に従い、各対象の`snapshot_file`を使う。
 2. 30分ごとの点検と公開工程の開始前に、開始時の集合に無い最新の処理可能WIを取得する。
 
    ```text

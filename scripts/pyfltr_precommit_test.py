@@ -77,6 +77,25 @@ def test_consumer_and_verify_modes_are_exclusive() -> None:
     assert exc.value.code == 2
 
 
+@pytest.mark.parametrize("include_consumer", [False, True])
+def test_scoped_run_is_only_reusable_for_lane_verification(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, include_consumer: bool
+) -> None:
+    """横断試験を外した照合は利用側を要求し、通常のhookの全量検査を迂回しない。"""
+    repository = _repository(tmp_path)
+    consumer = "src/consumer_test.py"
+    (repository / consumer).write_text("import a\n", encoding="utf-8")
+    commit_all(repository, "consumer")
+    monkeypatch.chdir(repository)
+    argv = ["run", "--no-always-targets", "src/a.py"]
+    if include_consumer:
+        argv.append(consumer)
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=argv)
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(argv)]) == int(not include_consumer)
+    assert (pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN").run_id == "01RUN") is include_consumer
+    assert pyfltr_precommit.find_reusable_run(repository, "pyfltr").run_id is None
+
+
 @pytest.mark.parametrize("option", ["--pytest-args=-v", "--pytest-args=-v -rA --maxfail=10", "--only-failed"])
 def test_planned_argv_rejects_same_non_neutral_input_as_verify(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], option: str
@@ -485,6 +504,40 @@ def test_main_skips_pytest_only_outside_integration_branches(
     assert pyfltr_precommit.main(["src/a.py"]) == 0
     assert launched == [["/bin/pyfltr", "fast", *expected_extra, "src/a.py"]]
     assert bool(finds) is queried
+
+
+@pytest.mark.parametrize(
+    ("script", "candidate"),
+    [
+        ("#!/usr/bin/env bash\nset -euo pipefail\nproducer | grep -qxF token\n", "grep"),
+        ("set -o pipefail; producer | grep -m 1 token", "grep"),
+        ("set -o pipefail; producer | head -n 10", "head"),
+        ("set -o pipefail; producer | grep -F token", None),
+        ("set -o pipefail; producer | grep -- -q", None),
+        ("set -o pipefail; producer | grep -e -q", None),
+        ("set -o pipefail; printf '%s\n' 'producer | head'", None),
+        ("set -o pipefail; set +o pipefail; producer | head", None),
+    ],
+)
+def test_main_observes_early_pipe_read_without_changing_exit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: str,
+    candidate: str | None,
+) -> None:
+    """候補を実行の失敗とみなさず、pyfltrの終了値をそのまま返す。"""
+    monkeypatch.chdir(tmp_path)
+    pathlib.Path("script.sh").write_text(script, encoding="utf-8")
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "current_branch", lambda directory: "lane")
+    monkeypatch.setattr(pyfltr_precommit.subprocess, "run", lambda argv, **kwargs: subprocess.CompletedProcess(argv, 7))
+
+    assert pyfltr_precommit.main(["script.sh"]) == 7
+    diagnostic = capsys.readouterr().err
+    assert ("早期終了が重なる候補" in diagnostic) is (candidate is not None)
+    if candidate is not None:
+        assert f"後段{candidate}" in diagnostic
 
 
 def test_current_branch_reads_branch_and_detached_head(tmp_path: pathlib.Path) -> None:

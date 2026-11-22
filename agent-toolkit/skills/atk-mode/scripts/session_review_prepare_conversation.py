@@ -305,7 +305,8 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
     """セッション全体の目的・判断・操作と手戻りを、担当間の時系列を合わせて1エージェントが通読できる量で示す。"""
     by_record: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for event in events:
-        by_record[str(event["record"])].append(event)
+        if event.get("kind") != "record-provenance":
+            by_record[str(event["record"])].append(event)
     if main_record is None and by_record:
         main_record = next(iter(by_record))
     header = [
@@ -322,6 +323,16 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
         "## 時系列",
         "",
     ]
+    fork_records = [event for event in events if event.get("kind") == "record-provenance" and event.get("fork_lines")]
+    if fork_records:
+        context = ["## 親から引き継いだ記録", ""]
+        for event in fork_records[:10]:
+            first, last = event["fork_lines"]
+            note = "親の記録と一致" if event["fork_attribution_known"] else "帰属不明のため操作数から除外"
+            context.append(f"- `{event['record']}:{first}〜{last}`: {note}。親の識別子: `{event['fork_parent']}`")
+        if len(fork_records) > 10:
+            context.append(f"- 残り{len(fork_records) - 10}記録の所在はbundle/timeline.jsonlのrecord-provenanceを参照する。")
+        header[-2:-2] = [*context, ""]
     main_events = by_record.pop(str(main_record), []) if main_record is not None else []
     turns = _main_turns(main_events)
     delegate_groups = [_delegate_rows(record_events) for record_events in by_record.values() if record_events]

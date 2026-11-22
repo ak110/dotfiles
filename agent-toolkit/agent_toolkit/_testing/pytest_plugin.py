@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Callable, Generator, Iterator
 from multiprocessing import resource_tracker
 from typing import Any
@@ -27,7 +26,6 @@ import pytest
 import pytest_asyncio
 import watchdog.observers
 import watchdog.observers.polling
-from _pytest.runner import runtestprotocol
 from _pytest.terminal import TerminalReporter
 from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
@@ -38,7 +36,6 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config_settings, managed_temp
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk.managed_temp import sweep
-from agent_toolkit._atk.wi import process_loop_update as _process_loop_update
 from agent_toolkit._common import codex_models, plugin_environment, process_tree
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._git import command as _git_command
@@ -50,6 +47,7 @@ from agent_toolkit._testing import (
     cpu_accounting,
     hook_support,
     isolation,
+    pytest_cpu_budget,
     resource_diagnostics,
     session_evidence_support,
     xdist_stop,
@@ -63,46 +61,12 @@ local_time_jst = session_evidence_support.local_time_jst
 
 _BROWSER_REPORTS = pytest.StashKey[dict[str, pytest.TestReport]]()
 _BROWSER_EVIDENCE = pytest.StashKey[pathlib.Path]()
-_CPU_TIMES = pytest.StashKey[dict[str, float]]()
-_CPU_LIMIT = pytest.StashKey[tuple[float, str]]()
-_CPU_EXCLUSIONS = pytest.StashKey[dict[str, dict[str, float]]]()
-_CPU_GROSS_LIMIT = pytest.StashKey[float]()
-_CPU_BUDGET = pytest.StashKey[cpu_accounting.CpuBudget]()
-_CPU_PROCESS_STARTED = pytest.StashKey[float]()
-_CPU_RETRY_CI = pytest.StashKey[bool]()
-_CPU_RECORD_ONLY = pytest.StashKey[bool]()
-_CPU_ONLY_FAILURE = pytest.StashKey[bool]()
 
 
 @pytest.hookimpl(specname="pytest_runtest_protocol", tryfirst=True)
 def pytest_runtest_cpu_retry(item: pytest.Item, nextitem: pytest.Item | None) -> bool | None:
-    """CIのCPU単独超過だけを再確認し、未確定の初回失敗を集計へ送らない。"""
-    if not item.config.stash.get(_CPU_RETRY_CI, False):
-        return None
-    item.ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
-    reports = runtestprotocol(item, log=False, nextitem=nextitem)
-    initial = reports[-1]
-    if item.stash.get(_CPU_ONLY_FAILURE, False) and all(report.passed for report in reports[:-1]):
-        history = list(initial.user_properties)
-        diagnostics = list(initial.sections)
-        keys: list[pytest.StashKey[Any]] = [
-            _CPU_TIMES,
-            _CPU_EXCLUSIONS,
-            _CPU_BUDGET,
-            _CPU_PROCESS_STARTED,
-            _BROWSER_REPORTS,
-        ]
-        for key in keys:
-            if key in item.stash:
-                del item.stash[key]
-        reports = runtestprotocol(item, log=False, nextitem=nextitem)
-        final = reports[-1]
-        final.user_properties.extend((f"cpu_first_attempt_{name}", value) for name, value in history if name.startswith("cpu_"))
-        final.sections.extend(("CPU初回超過", text) for name, text in diagnostics if name == "CPU上限")
-    for report in reports:
-        item.ihook.pytest_runtest_logreport(report=report)
-    item.ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
-    return True
+    """CPUの再試行に伴ってブラウザーの初回記録も除く。"""
+    return pytest_cpu_budget.retry(item, nextitem, _BROWSER_REPORTS)
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -115,38 +79,22 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     cpu_accounting.stop(session)
 
 
-def _measure_cpu(item: pytest.Item, phase: str) -> Generator[None, object, object]:
-    budget = item.stash.setdefault(_CPU_BUDGET, cpu_accounting.CpuBudget())
-    with cpu_accounting.activate(budget):
-        excluded = cpu_accounting.main_snapshot()
-        if _CPU_PROCESS_STARTED not in item.stash:
-            item.stash[_CPU_PROCESS_STARTED] = time.process_time()
-        started = time.thread_time()
-        try:
-            return (yield)
-        finally:
-            finished = time.thread_time()
-            after = cpu_accounting.main_snapshot()
-            item.stash.setdefault(_CPU_TIMES, {})[phase] = finished - started
-            item.stash.setdefault(_CPU_EXCLUSIONS, {})[phase] = {key: after[key] - excluded[key] for key in ("gc", "import")}
-
-
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> Generator[None, object, object]:
     """fixtureの準備を含む、試験が所有するCPUを計測する。"""
-    return (yield from _measure_cpu(item, "setup"))
+    return (yield from pytest_cpu_budget.measure(item, "setup"))
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     """待機時間や子プロセスCPUを含めず本体を計測する。"""
-    return (yield from _measure_cpu(item, "call"))
+    return (yield from pytest_cpu_budget.measure(item, "call"))
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_teardown(item: pytest.Item) -> Generator[None, object, object]:
     """回収が完了してからCPU合算の判定へ進む。"""
-    return (yield from _measure_cpu(item, "teardown"))
+    return (yield from pytest_cpu_budget.measure(item, "teardown"))
 
 
 def _tracker_state() -> tuple[int | None, float | None, bool]:
@@ -219,50 +167,7 @@ def pytest_runtest_makereport(
     """fixture終了時にも本体の失敗理由を参照できるようにする。"""
     del call
     report = yield
-    if report.when == "teardown":
-        item.stash[_CPU_ONLY_FAILURE] = False
-        recorded = item.stash.get(_CPU_TIMES, {})
-        times = {phase: recorded.get(phase, 0.0) for phase in ("setup", "call", "teardown")}
-        limit, reason = item.stash.get(_CPU_LIMIT, (0.5, "通常上限"))
-        owner = item.stash.get(_CPU_BUDGET, None)
-        # phase間も所有workerは動き得るため、完了reportで試験の累計を1回だけ加える。
-        workers = cpu_accounting.snapshot(owner) if owner is not None else {"worker": 0.0, "gc": 0.0, "import": 0.0}
-        total = sum(times.values()) + workers["worker"]
-        process_start = item.stash.get(_CPU_PROCESS_STARTED, None)
-        process_total = time.process_time() - process_start if process_start is not None else 0.0
-        excluded = item.stash.get(_CPU_EXCLUSIONS, {})
-        deductions = {kind: sum(row.get(kind, 0.0) for row in excluded.values()) + workers[kind] for kind in ("gc", "import")}
-        budget = max(0.0, total - sum(deductions.values()))
-        gross_limit = item.stash.get(_CPU_GROSS_LIMIT, max(2.0, limit))
-        report.user_properties.extend(
-            [(f"cpu_{phase}_seconds", times.get(phase, 0.0)) for phase in ("setup", "call", "teardown")]
-            + [
-                ("cpu_total_seconds", total),
-                ("cpu_worker_seconds", workers["worker"]),
-                ("cpu_process_seconds", process_total),
-                ("cpu_unattributed_seconds", max(0.0, process_total - total)),
-                ("cpu_excluded_gc_seconds", deductions["gc"]),
-                ("cpu_excluded_import_seconds", deductions["import"]),
-                ("cpu_budget_seconds", budget),
-                ("cpu_limit_seconds", limit),
-                ("cpu_gross_limit_seconds", gross_limit),
-                ("cpu_limit_reason", reason),
-            ]
-        )
-        if budget >= limit or total >= gross_limit:
-            diagnostic = (
-                f"CPU上限: {item.nodeid}: {times}, worker={workers['worker']:.6f}s, total={total:.6f}s, "
-                f"process={process_total:.6f}s, excluded={deductions}, "
-                f"budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, reason={reason}。"
-                "不要な処理を削減し、必要な実境界には理由付きcpu_limitを指定してください"
-            )
-            report.sections.append(("CPU上限", diagnostic))
-            if item.stash.get(_CPU_RECORD_ONLY, False):
-                item.warn(pytest.PytestWarning(diagnostic))
-            elif report.passed:
-                item.stash[_CPU_ONLY_FAILURE] = True
-                report.outcome = "failed"
-                report.longrepr = diagnostic
+    pytest_cpu_budget.apply_report(item, report)
     assert isinstance(report.when, str)
     item.stash.setdefault(_BROWSER_REPORTS, {})[report.when] = report
     if report.when == "teardown" and (evidence := item.stash.get(_BROWSER_EVIDENCE, None)) is not None:
@@ -347,7 +252,7 @@ def _launch_follows_patched_subprocess_run(monkeypatch: pytest.MonkeyPatch) -> N
 
         return launch_or_patched_run
 
-    for module in (_git_command, _orchestrator, _process_loop_update):
+    for module in (_git_command, _orchestrator):
         # 起動の1か所を差し替えるための参照であり、各モジュールのdocstringがこの利用を明記している。
         monkeypatch.setattr(module, "_launch", follow(module._launch))  # pylint: disable=protected-access
 
@@ -473,8 +378,7 @@ def pytest_configure(config: pytest.Config) -> None:
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
     _validate_import_root(config)
-    config.stash[_CPU_RETRY_CI] = bool(os.environ.get("CI"))
-    config.addinivalue_line("markers", "cpu_limit(seconds, reason): 理由付き所有CPU上限")
+    pytest_cpu_budget.configure(config)
     if not config.pluginmanager.is_registered(xdist_stop):
         config.pluginmanager.register(xdist_stop, "dotfiles-xdist-stop")
     # 不正な分割指定は、xdistのworkerが収集を始める前に1回だけ報告する。
@@ -563,17 +467,12 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """CPU上限の設定と、CIで1つの試験集合を複数runnerへ分ける`--test-shard`、CPU上限を記録だけにする指定を登録する。"""
-    parser.addini("cpu_limit", "試験が所有するCPUの上限（秒）", default="0.5")
+    pytest_cpu_budget.add_options(parser)
     parser.addoption(
         "--test-shard",
         metavar="INDEX/COUNT",
         default=None,
         help="収集した試験を記録所要でCOUNT個へ均衡配分し、INDEX番目（1始まり）だけを実行する",
-    )
-    parser.addoption(
-        "--cpu-limit-record-only",
-        action="store_true",
-        help="CPU上限の超過を警告とJUnitへ記録するだけにし、試験の失敗と再試行にしない",
     )
 
 
@@ -618,38 +517,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     全分割を合わせると各試験がちょうど1回実行される。
     試験ファイル単位でなく試験単位で分けるのは、多数のparametrizeを持つ重いファイルを1つのrunnerへ偏らせないためである。
     """
-    try:
-        configured_limit = config.getini("cpu_limit")
-        if isinstance(configured_limit, bool):
-            raise ValueError("真偽値はCPU秒数でない")
-        default_limit = float(configured_limit)
-    except (TypeError, ValueError, OverflowError) as error:
-        raise pytest.UsageError("cpu_limit設定には正の有限秒数を指定してください") from error
-    if not math.isfinite(default_limit) or default_limit <= 0:
-        raise pytest.UsageError("cpu_limit設定には正の有限秒数を指定してください")
-    record_only = bool(config.getoption("cpu_limit_record_only"))
-    for item in items:
-        item.stash[_CPU_RECORD_ONLY] = record_only
-        marker = item.get_closest_marker("cpu_limit")
-        seconds: Any = default_limit
-        reason = "通常上限"
-        if marker is not None:
-            if len(marker.args) != 1 or set(marker.kwargs) != {"reason"}:
-                raise pytest.UsageError(f"{item.nodeid}: cpu_limit(seconds, reason=...) が必要")
-            seconds, reason = marker.args[0], marker.kwargs["reason"]
-        if (
-            isinstance(seconds, bool)
-            or not isinstance(seconds, (int, float))
-            or abs(seconds) > sys.float_info.max
-            or not math.isfinite(seconds)
-            or seconds <= 0
-            or not isinstance(reason, str)
-            or not reason.strip()
-        ):
-            raise pytest.UsageError(f"{item.nodeid}: cpu_limitには正有限値と非空のreasonを指定してください")
-        item.stash[_CPU_LIMIT] = (float(seconds), reason)
-        # netから控除する共有初期化費用には、通常0.5/gross2と同じ余裕を重い試験にも残す。
-        item.stash[_CPU_GROSS_LIMIT] = float(seconds) + 1.5 if marker is not None else max(2.0, default_limit)
+    pytest_cpu_budget.set_limits(config, items)
     value = config.getoption("test_shard")
     if value is None:
         return

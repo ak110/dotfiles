@@ -9,7 +9,7 @@ on:
     branches:
       - master
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 jobs:
   common-ci-owner:
@@ -166,7 +166,8 @@ jobs:
           CHECK_NAME: browser-e2e
         run: bash scripts/ci_check_scope.sh
         id: selection
-      - uses: ./.github/actions/ci-browser-e2e
+      - name: ブラウザーE2Eの実行
+        uses: ./.github/actions/ci-browser-e2e
         if: steps.selection.outputs.selected == 'true'
   rust-lint:
     needs: common-ci-owner
@@ -196,7 +197,8 @@ jobs:
           CHECK_NAME: rust-lint
         run: bash scripts/ci_check_scope.sh
         id: selection
-      - uses: ./.github/actions/ci-rust-lint
+      - name: Rust検証の実行
+        uses: ./.github/actions/ci-rust-lint
         if: steps.selection.outputs.selected == 'true'
   statusline-version:
     name: statusline-version
@@ -427,7 +429,8 @@ jobs:
             echo "artifact=pytest-toolkit-junit-$shard"
           } >> "$GITHUB_OUTPUT"
           # 直下の設定と仮想環境で実行する。直下の不変条件試験はpytest直下のjobが担うため、常時対象の追加を外す。
-          pyfltr ci --no-always-targets --commands=pytest --pytest-args="-v --maxfail=0 --junitxml=$junit --test-shard=$TEST_SHARD" agent-toolkit
+          # 同一コミットのrun 45001104755の両attemptで、遅い試行の最大CPU上限比は1.351。
+          pyfltr ci --no-always-targets --commands=pytest --pytest-args="-v --maxfail=0 --junitxml=$junit --test-shard=$TEST_SHARD --cpu-limit-scale=1.4" agent-toolkit
       - name: pytest toolkitのJUnit XMLを保存
         # 失敗した試験の所要も取得するため、pytestが失敗しても保存する。保存先が決まる前の失敗では実行しない。
         if: ${{ !cancelled() && needs.common-ci-owner.outputs.owns == 'true' && steps.pytest.outputs.junit != '' }}

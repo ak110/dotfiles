@@ -28,7 +28,7 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     assert capsys.readouterr().out.startswith("成功: 指摘行を1件追加した:")
     items = [
         {"location": "日本語の位置\n行2\t列", "issue": _LABELS + '複数行\n"引用"と`記号`\t$(保持)', "level": "仕様"},
-        {"location": "別の位置", "issue": _LABELS + "結合文字e\u0301を保持\n", "level": "実装"},
+        {"location": "別の位置", "issue": _LABELS + "結合文字e\u0301を保持\n"},
     ]
     source = tmp_path / "items.json"
     source.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
@@ -63,8 +63,8 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     assert returned.value.code == 0
     assert events == ["lock", "read", "write", "read", "unlock"]
     saved = original_read(path)
-    assert saved[0] == ["1", _TRACK, "元の位置", "保持する指摘", "詳細", "", ""]
-    assert saved[1:] == [["2", _TRACK, item["location"], item["issue"], item["level"], "", ""] for item in items]
+    assert saved[0] == ["1", _TRACK, "元の位置", "保持する指摘", "", "", ""]
+    assert saved[1:] == [["2", _TRACK, item["location"], item["issue"], item.get("level", ""), "", ""] for item in items]
     output = capsys.readouterr()
     assert output.out.startswith("成功: 指摘行を2件追加した:")
     assert not output.err
@@ -75,7 +75,8 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     "suffix",
     [
         {"location": "後半", "issue": _LABELS + "不正", "level": "重大"},
-        {"location": "後半", "issue": _LABELS + "不正"},
+        {"location": "後半", "level": "詳細"},
+        {"location": "後半", "issue": _LABELS + "不正", "level": ""},
         {"location": "後半", "issue": 1, "level": "詳細"},
         {"location": "後半", "issue": _LABELS + "不正", "level": "詳細", "round": "3"},
         {"location": "  ", "issue": _LABELS + "不正", "level": "詳細"},
@@ -88,6 +89,7 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     ids=[
         "level",
         "missing-key",
+        "empty-level",
         "value-type",
         "extra-key",
         "empty-location",

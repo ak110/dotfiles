@@ -1,5 +1,6 @@
 """`atk wi`の対象リポジトリの識別子の解決と、ローカル作業ツリーとの対応。"""
 
+import os
 import pathlib
 import re
 import sys
@@ -52,8 +53,9 @@ def resolve_local_worktree(value: str | None) -> pathlib.Path:
     - `value`省略時は`git rev-parse --show-toplevel`の出力を返す。失敗時もexit 2
     """
     if value is not None:
-        local_path = pathlib.Path(value).expanduser()
-        if not local_path.exists():
+        expanded = os.path.expanduser(value)
+        local_path = pathlib.Path(expanded)
+        if (value.startswith("~") and expanded == value) or not local_path.exists():
             _outcome.report_failure(f"ローカルパスとして存在しない: {value}", next_action="実在するローカルパスを指定する")
             sys.exit(2)
         return local_path.resolve()
