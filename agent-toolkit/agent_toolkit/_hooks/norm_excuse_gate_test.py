@@ -84,6 +84,45 @@ def test_stop_flags_intermediate_text_once(monkeypatch: pytest.MonkeyPatch, tmp_
     assert norm_excuse_gate.evaluate(text)[0] == "approve"
 
 
+def test_stop_flags_codex_intermediate_text_once(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """Codexの記録形式でも、現在のターンの途中の発話と思考の要約を判定する。前のターンの発話は対象外とする。"""
+    states: dict[str, dict] = {}
+
+    def fake_update(session_id: str, updater) -> bool:
+        states[session_id] = updater(states.get(session_id, {}))
+        return True
+
+    monkeypatch.setattr(norm_excuse_gate, "update_state", fake_update)
+    monkeypatch.setattr("agent_toolkit._hooks.stop_session.append_stop_log", lambda *_args, **_kwargs: None)
+
+    def message(text: str) -> dict:
+        return {
+            "type": "response_item",
+            "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": text}]},
+        }
+
+    started = {"type": "event_msg", "payload": {"type": "task_started"}}
+    summary = {
+        "type": "response_item",
+        "payload": {"type": "reasoning", "summary": [{"type": "summary_text", "text": "既存の対策で防げるので追加しない。"}]},
+    }
+    cases = [
+        ([started, message("既存の規範で十分なので見送る。"), started, message("完了した。")], "approve"),
+        ([started, message("既存の規範で十分なので見送る。"), message("完了した。")], "block"),
+        ([started, summary, message("完了した。")], "block"),
+    ]
+    for index, (records, expected) in enumerate(cases):
+        transcript = tmp_path / f"codex-{index}.jsonl"
+        transcript.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+        payload = {
+            "session_id": f"c{index}",
+            "turn_id": "t1",
+            "transcript_path": str(transcript),
+            "last_assistant_message": "完了した。",
+        }
+        assert norm_excuse_gate.evaluate(json.dumps(payload, ensure_ascii=False))[0] == expected
+
+
 def test_stop_blocks_main_final_message(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(norm_excuse_gate, "update_state", lambda _session, updater: bool(updater({})))
     monkeypatch.setattr("agent_toolkit._hooks.stop_session.append_stop_log", lambda *_args, **_kwargs: None)

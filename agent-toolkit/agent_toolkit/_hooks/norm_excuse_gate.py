@@ -4,7 +4,7 @@
 それでも「既存の基準で足りる」「規範は足さない」と述べて構造・検査・誘因の除去を見送る報告が繰り返され、
 ユーザーが何度も同じ是正をした（2026年11月22日の対話）。
 `agent-basics:bugfix`の`references/prevention.md`「再発防止を採用しない場合」も、既に規範があることを
-採用しない理由から除く。条文の想起だけに頼る対策は効かないため、表現を機械的に検出して遮断する。
+採用しない理由から除く。条文の想起だけに頼る対策では再発が止まらなかったため、表現を機械的に検出して遮断する。
 
 判定は語の一致だけで決まり、引用の素材（コードブロック、インラインコード、`>`で始まる引用行、かぎ括弧の中）と否定の形は除く。
 誤検出でも作業を止めないよう、同じ主体が同じ本文を再発行した場合は一度だけ通す。
@@ -26,6 +26,7 @@ lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn
 
 _SUBJECT = r"(?:既存|現行|既に?ある|今ある)の?(?:規範|基準|規定|条文|対策|手順|仕組み|ルール)"
@@ -100,12 +101,45 @@ def text_block(payload: dict, text: object, delivery: str) -> str | None:
     return _block_body(phrase, delivery)
 
 
+def _codex_turn_texts(lines: list[str]) -> list[str]:
+    """Codexの記録から、最後の`task_started`以後の発話本文と思考の要約を返す。"""
+    texts: list[str] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        item = entry.get("payload") if isinstance(entry, dict) else None
+        if not isinstance(item, dict):
+            continue
+        if entry.get("type") == "event_msg" and item.get("type") == "task_started":
+            texts = []
+        elif entry.get("type") == "response_item":
+            # 発話は`message`の`output_text`、画面に出る思考の要約は`reasoning`の`summary`にある。
+            if item.get("type") == "message" and item.get("role") == "assistant":
+                blocks, kind = item.get("content"), "output_text"
+            elif item.get("type") == "reasoning":
+                blocks, kind = item.get("summary"), "summary_text"
+            else:
+                continue
+            if isinstance(blocks, list):
+                texts.extend(
+                    text
+                    for block in blocks
+                    if isinstance(block, dict) and block.get("type") == kind and isinstance(text := block.get("text"), str)
+                )
+    return texts
+
+
 def _intermediate_texts(payload: dict) -> list[str]:
     """現在のターンでツール呼出しの合間に出した発話の本文を返す。最後の応答は別に判定する。"""
     path = payload.get("transcript_path")
     lines = _transcript.read_transcript_lines(path) if isinstance(path, str) and path else None
     if not lines:
         return []
+    last = payload.get("last_assistant_message")
+    if is_codex_payload(payload):
+        return [text for text in _codex_turn_texts(lines) if text != last]
     turn = latest_human_turn(lines)
     if turn is None:
         return []
@@ -123,7 +157,6 @@ def _intermediate_texts(payload: dict) -> list[str]:
                 and isinstance(text := block.get("text" if block.get("type") == "text" else "thinking"), str)
                 and block.get("type") in {"text", "thinking"}
             )
-    last = payload.get("last_assistant_message")
     return [text for text in texts if text != last]
 
 
