@@ -169,7 +169,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
     if args.batch and args.hold:
         args.subparser.error(
             "--holdは--batchと併用できません。--batchは保存状態をinboxへ揃えて取り込むため、--holdを外すとinboxに入ります。"
-            "保留のまま保存する新規AWIは、--batchを使わずに通常の投入へ--holdを付けてください。"
+            "保留のまま保存する新規AWIは、巡回（process-wi）の外で、--batchを使わずに通常の投入へ--holdを付けてください。"
         )
     if args.batch:
         conflicting = [
