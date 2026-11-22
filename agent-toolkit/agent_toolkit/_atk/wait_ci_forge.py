@@ -9,7 +9,16 @@ import subprocess
 from typing import Any
 from urllib.parse import quote
 
-from agent_toolkit._atk.wait_ci_records import _GH_JSON_FIELDS, JobRecord, RepositoryTarget, RunListError, RunListFn, RunRecord
+from agent_toolkit._atk import config_settings
+from agent_toolkit._atk.wait_ci_records import (
+    _GH_JSON_FIELDS,
+    _INFERRED_GITLAB_HOST,
+    JobRecord,
+    RepositoryTarget,
+    RunListError,
+    RunListFn,
+    RunRecord,
+)
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import forge_cli as _forge_cli
@@ -23,6 +32,10 @@ def _parse_repository(repository: str) -> RepositoryTarget:
         raise RunListError(f"repository指定が不正: {repository!r}") from error
 
 
+def _glab_environment(repository: str) -> dict[str, str]:
+    return _forge_cli.glab_environment(repository, inferred_host=_INFERRED_GITLAB_HOST.get())
+
+
 _HTTP_PORTS = {"http": 80, "https": 443}
 
 
@@ -32,9 +45,13 @@ def _http_port(target: RepositoryTarget) -> int | None:
 
 def _matches_local_push_target(forge: str, repository: str, timeout: float) -> bool:
     try:
-        target = _parse_repository(repository if forge != "gitlab" else _forge_cli.glab_repository(repository))
+        target = _parse_repository(
+            repository
+            if forge != "gitlab"
+            else _forge_cli.glab_repository(repository, environment=_glab_environment(repository))
+        )
         if forge == "gitlab":
-            env = _forge_cli.glab_environment(repository)
+            env = _glab_environment(repository)
             if api_host := env.get("GITLAB_API_HOST"):
                 api_protocol = env.get("GLAB_API_PROTOCOL") or env.get("API_PROTOCOL") or "https"
                 endpoint = api_host if "://" in api_host else f"{api_protocol}://{api_host}"
@@ -200,13 +217,14 @@ def _normalize_gitlab_pipeline(pipeline: dict[str, Any]) -> RunRecord:
 
 
 def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout: float) -> list[RunRecord]:
+    env = _glab_environment(repository)
     payload = _run_forge_json_command(
         [
             "glab",
             "ci",
             "list",
             "--repo",
-            _forge_cli.glab_repository(repository),
+            _forge_cli.glab_repository(repository, environment=env),
             "--ref",
             _short_ref(ref),
             "--sha",
@@ -218,7 +236,7 @@ def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout:
         ],
         subprocess_timeout,
         "glab ci list",
-        env=_forge_cli.glab_environment(repository),
+        env=env,
     )
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
         raise RunListError(f"glab ci list returned unexpected JSON shape: {payload!r}")
@@ -260,9 +278,7 @@ def _glab_downstream_pipelines(
             "--output",
             "json",
         ]
-        bridges = _run_forge_json_command(
-            command, subprocess_timeout, "glab api bridges", env=_forge_cli.glab_environment(repository)
-        )
+        bridges = _run_forge_json_command(command, subprocess_timeout, "glab api bridges", env=_glab_environment(repository))
         if not isinstance(bridges, list) or not all(isinstance(item, dict) for item in bridges):
             raise RunListError(f"glab api bridges returned unexpected JSON shape: {bridges!r}")
         for bridge in bridges:
@@ -287,7 +303,7 @@ def _glab_downstream_pipelines(
                 "json",
             ]
             child = _run_forge_json_command(
-                child_command, subprocess_timeout, "glab api downstream pipeline", env=_forge_cli.glab_environment(repository)
+                child_command, subprocess_timeout, "glab api downstream pipeline", env=_glab_environment(repository)
             )
             if not isinstance(child, dict):
                 raise RunListError(f"glab api downstream pipeline returned unexpected JSON shape: {child!r}")
@@ -310,7 +326,7 @@ def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -
         "--output",
         "json",
     ]
-    payload = _run_forge_json_command(command, subprocess_timeout, "glab api jobs", env=_forge_cli.glab_environment(repository))
+    payload = _run_forge_json_command(command, subprocess_timeout, "glab api jobs", env=_glab_environment(repository))
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
         raise RunListError(f"glab api jobs returned unexpected JSON shape: {payload!r}")
     jobs: list[JobRecord] = []
@@ -412,7 +428,7 @@ def _gitlab_ci_exclusion(repository: str, sha: str, ref: str, subprocess_timeout
             ["glab", "api", endpoint, "-X", "GET", "--output", "json"],
             subprocess_timeout,
             "glab api ci lint",
-            env=_forge_cli.glab_environment(repository),
+            env=_glab_environment(repository),
         )
     except RunListError:
         return None
@@ -429,29 +445,38 @@ def _gitlab_ci_exclusion(repository: str, sha: str, ref: str, subprocess_timeout
     return errors
 
 
-def _resolve_forge(explicit: str, repository: str, cwd: pathlib.Path | None = None) -> str | None:
-    """対象forgeを`github`または`gitlab`へ解決する。判別できない場合は`None`を返す。
-
-    `explicit`が`auto`以外ならその値をそのまま返す。
-    `auto`では明示指定されたrepositoryのホスト名で判別する。
-    ホスト名をドット区切りのラベルへ分割し、いずれかのラベルが`github`と完全一致すればGitHub、
-    `gitlab`と完全一致すればGitLabとする。`github.com`とGitHub Enterprise Serverの
-    標準的なホスト名（`github.<自社ドメイン>`）が前者に該当する。
-    部分一致で判定すると`notgithub.example.com`のような無関係なホストを誤分類するため、ラベル単位の完全一致とする。
-    ホストを含まない`owner/repo`形式は`--repo`が受理する形式であるため、作業ディレクトリ（`cwd`）の
-    Git remoteのうちproject pathが一致するURLのホストで判別する。一致するremoteが無い場合と、
-    一致したremoteのホストが異なるforgeへ分かれる場合、および未知の私設ホストは、`--forge`の明示指定が必要となる。
-    """
+def _resolve_forge(explicit: str, repository: str, cwd: pathlib.Path | None = None) -> tuple[str, str]:
     if explicit != "auto":
-        return explicit
-    try:
-        target = _parse_repository(repository)
-    except RunListError:
-        return None
+        return explicit, repository
+    target = _parse_repository(repository)
     if target.hostname is not None:
-        return _forge_from_hostname(target.hostname)
-    forges = {_forge_from_hostname(hostname) for hostname in _remote_hostnames(target.project_path, cwd)}
-    return forges.pop() if len(forges) == 1 else None
+        if forge := _forge_from_hostname(target.hostname):
+            return forge, repository
+        raise RunListError("指定ホストのforge種別を判別できない")
+
+    try:
+        registered = config_settings.repository_settings(check_paths=False)
+    except (OSError, ValueError) as exc:
+        raise RunListError(f"リポジトリ登録を読み取れない: {exc}") from exc
+    hostnames = _remote_hostnames(target.project_path, cwd)
+    for key in registered:
+        try:
+            registered_target = _parse_repository(key)
+        except RunListError:
+            continue
+        if registered_target.hostname is not None and registered_target.project_path.lower() == target.project_path.lower():
+            hostnames.append(registered_target.hostname)
+    hosts = {host.lower() for host in hostnames}
+    if len(hosts) > 1:
+        raise RunListError(f"同じプロジェクトパスに複数のホストが一致: {', '.join(sorted(hosts))}")
+    if hosts:
+        host = hosts.pop()
+        if forge := _forge_from_hostname(host):
+            if "." not in host or (forge == "github" and target.project_path.count("/") != 1):
+                raise RunListError("自動判定したホストとプロジェクトパスをCI照会用の識別子に変換できない")
+            # Gitの転送方式やSSHポートはAPIの接続設定に引き継がない。  # pyfltr: allow-comment
+            return forge, f"{host}/{target.project_path}"
+    raise RunListError("一致するGit remoteとリポジトリ登録から対象forgeを判別できない")
 
 
 def _forge_from_hostname(hostname: str) -> str | None:

@@ -40,7 +40,7 @@ from agent_toolkit._atk.wait_ci_forge import (
 )
 from agent_toolkit._atk.wait_ci_polling import _all_cancelled, _all_success, _run_ids, _wait_for_completion, wait_for_ci
 from agent_toolkit._atk.wait_ci_records import (
-    _NEXT_ACTION_FORGE_ERROR,
+    _INFERRED_GITLAB_HOST,
     _NEXT_ACTION_INTERRUPTED,
     _NEXT_ACTION_SHA_RESOLUTION,
     _STDERR_FD,
@@ -59,6 +59,7 @@ from agent_toolkit._atk.wait_ci_records import (
     RunListError,
     RunRecord,
     _finish,
+    _forge_error_next_action,
     _load_baseline,
     _validate_baseline_context,
     _write_baseline,
@@ -173,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             "対象repository。--write-baselineと--wait-shaでは必須。--baselineでは省略するとbaselineの保存値を使い、"
             "指定するとbaselineの保存値と一致するかを確かめる。GitLabのホスト付き識別子とSSH指定はglabのホスト別API・認証設定を使う。"
             "明示HTTP(S) URLはscheme・authorityをAPI接続先と認証設定のホストキーに使う。"
-            "ホスト省略時はGITLAB_HOST・GITLAB_URI・GL_HOSTとglabの設定を使う"
+            "ホスト省略のまま待機する場合はGITLAB_HOST・GITLAB_URI・GL_HOSTとglabの設定を使う"
         ),
     )
     parser.add_argument(
@@ -215,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         default="auto",
         help=(
             "対象ホスティング種別。省略時はautoとして--repoのホストから自動判定する。"
-            "ホストを含まない場合は作業ディレクトリのGit remoteから判定する。"
+            "ホストを含まない場合は、同じプロジェクトパスのGit remoteとリポジトリ登録からホストが一意に決まる場合だけ判定する。"
             "--baselineで--repoを省略した場合はbaselineの保存値を使う。"
         ),
     )
@@ -238,22 +239,46 @@ def main(argv: list[str] | None = None) -> int:
         ]
         if missing:
             parser.error(f"--write-baselineと--wait-shaでは次の引数が必須です: {', '.join(missing)}")
-        forge = _resolve_forge(args.forge, args.repo)
-    else:
+    record_path = args.baseline or args.failure_record
+    if record_path is not None and (args.baseline is not None or record_path.exists()):
         try:
-            baseline = _load_baseline(args.baseline)
+            baseline = _load_baseline(record_path)
         except RunListError as exc:
-            print(f"[wait_ci] baseline検証に失敗: {exc}", file=sys.stderr)
-            return _finish(EXIT_GH_ERROR, _NEXT_ACTION_BASELINE_MISMATCH)
+            error = "baseline検証に失敗" if args.baseline is not None else "待機記録の準備に失敗"
+            print(f"[wait_ci] {error}: {exc}", file=sys.stderr)
+            next_action = (
+                _NEXT_ACTION_BASELINE_MISMATCH
+                if args.baseline is not None
+                else "対象に一致する書込可能な`--failure-record`を指定して再実行する"
+            )
+            return _finish(EXIT_GH_ERROR, next_action)
+    inferred_from = None
+    try:
+        if baseline is None:
+            original_repository = args.repo
+            forge, args.repo = _resolve_forge(args.forge, original_repository)
+            if args.repo != original_repository:
+                inferred_from = original_repository
+        else:
+            inferred_from = baseline.inferred_from
+            if args.repo is None or args.repo == inferred_from:
+                args.repo = baseline.repository
+            forge = baseline.forge if args.forge == "auto" else args.forge
+            args.ref = baseline.ref if args.ref is None else args.ref
+            args.source_ref = baseline.source_ref if args.source_ref is None else args.source_ref
+    except RunListError as exc:
+        print(f"[wait_ci] {exc}", file=sys.stderr)
+        return _finish(
+            EXIT_GH_ERROR, "ホストを含む `--repo` を指定し、必要なら `--forge github` または `--forge gitlab` を明示する"
+        )
+    token = _INFERRED_GITLAB_HOST.set(forge == "gitlab" and inferred_from is not None)
+    try:
+        return _run_wait(args, forge, baseline, inferred_from)
+    finally:
+        _INFERRED_GITLAB_HOST.reset(token)
 
-        explicit_repo = args.repo is not None
-        args.repo = baseline.repository if args.repo is None else args.repo
-        args.ref = baseline.ref if args.ref is None else args.ref
-        args.source_ref = baseline.source_ref if args.source_ref is None else args.source_ref
-        forge = _resolve_forge(args.forge, args.repo) if explicit_repo or args.forge != "auto" else baseline.forge
-    if forge is None:
-        print("[wait_ci] 対象forgeを--repoと作業ディレクトリのGit remoteから判別できない", file=sys.stderr)
-        return _finish(EXIT_GH_ERROR, "`--forge github`または`--forge gitlab`を明示指定して再実行する")
+
+def _run_wait(args: argparse.Namespace, forge: str, baseline: CiBaseline | None, inferred_from: str | None) -> int:
     explicit_sha = args.sha.lower() if args.sha is not None and re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) else None
     if args.write_baseline is not None:
         if explicit_sha is None and not _matches_local_push_target(forge, args.repo, args.subprocess_timeout):
@@ -276,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
                 source_ref=args.source_ref,
                 sha=sha,
                 run_ids=frozenset(_run_ids(runs)),
+                inferred_from=inferred_from,
             )
             _write_baseline(args.write_baseline, baseline)
         except (OSError, RunListError) as exc:
@@ -283,22 +309,23 @@ def main(argv: list[str] | None = None) -> int:
             next_action = (
                 "`--write-baseline`の保存先ディレクトリが存在し書き込めることを確かめて再実行する"
                 if isinstance(exc, OSError)
-                else _NEXT_ACTION_FORGE_ERROR
+                else _forge_error_next_action(args.repo)
             )
             return _finish(EXIT_GH_ERROR, next_action)
         print(f"[wait_ci] baseline保存: {args.write_baseline} ({len(baseline.run_ids)}件)")
         return EXIT_SUCCESS
     if args.wait_sha is not None:
         record_path = args.failure_record
-        baseline = CiBaseline(forge, args.repo, args.ref, args.source_ref, args.wait_sha, frozenset())
         try:
-            if record_path is not None:
-                if record_path.exists():
-                    baseline = _load_baseline(record_path)
-                    _validate_baseline_context(baseline, forge, args.repo, args.ref, args.source_ref, args.wait_sha)
-                    if baseline.run_ids:
-                        raise RunListError("--wait-shaの記録にbaselineの除外runが含まれている")
-                else:
+            if baseline is not None:
+                _validate_baseline_context(baseline, forge, args.repo, args.ref, args.source_ref, args.wait_sha)
+                if baseline.run_ids:
+                    raise RunListError("--wait-shaの記録にbaselineの除外runが含まれている")
+            else:
+                baseline = CiBaseline(
+                    forge, args.repo, args.ref, args.source_ref, args.wait_sha, frozenset(), inferred_from=inferred_from
+                )
+                if record_path is not None:
                     _write_baseline(record_path, baseline)
         except (OSError, RunListError) as exc:
             print(f"[wait_ci] 待機記録の準備に失敗: {exc}", file=sys.stderr)
