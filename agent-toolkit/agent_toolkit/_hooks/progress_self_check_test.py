@@ -374,6 +374,21 @@ def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest
     assert notified == [10_000.0 + 1800.0, 10_000.0 + 3600.0, 10_000.0 + 5400.0]
 
 
+def test_two_periodic_prompts_notify_just_before_the_normal_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """標識のある入力だけが、続く2周期で通常の期日より前に通知する。"""
+    sid = _session_id()
+    clock = {"now": 10_000.0}
+    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
+    _seed(sid, "main", started_at=clock["now"], last_notified_at=clock["now"])
+    periodic = {"session_id": sid, "prompt": f"{PERIODIC_RECHECK_MARKER}\n確認する。\n</atk-auto>"}
+    for _ in range(2):
+        clock["now"] += _INTERVAL - 1
+        assert _OPENING not in _in_process("user_prompt_submit", {"session_id": sid, "prompt": "状況は？"})
+        assert _OPENING not in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+        assert _in_process("user_prompt_submit", periodic).count(_OPENING) == 1
+        assert _entries(sid)["main"]["last_notified_at"] == clock["now"]
+
+
 def test_format_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
     """公開PostToolUseで通知の整形が失敗しても予約が残らず、直後の正常な呼出しで通知が採用される。"""
     sid = _session_id()
