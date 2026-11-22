@@ -769,9 +769,9 @@ async def permissions(
 
 
 @mcp.tool(name="compact_conversation", title="会話圧縮の予約", annotations=ToolAnnotations(destructive_hint=False))
-async def compact_conversation() -> dict[str, Any]:
-    """メイン専用。会話圧縮を予約する。受付後はターンを終え、ホストの圧縮結果を待つ。受付は完了ではない。"""
-    return await _ui_request("compact_conversation", {})
+async def compact_conversation(resume: bool = False) -> dict[str, Any]:
+    """メイン専用。会話圧縮を予約する。resumeを指定すると対話画面で圧縮成功後に次のターンを開始する。受付は完了ではない。"""
+    return await _ui_request("compact_conversation", {"resume": resume} if resume else {})
 
 
 @mcp.tool(name="apply_runtime_changes", title="同一会話への変更反映予約", annotations=ToolAnnotations(destructive_hint=False))
