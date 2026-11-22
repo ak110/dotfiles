@@ -46,6 +46,32 @@ def _is_type_guard(node: ast.expr, bindings: dict[str, str]) -> bool:
     )
 
 
+def _rebound_names(node: ast.AST) -> set[str]:
+    # モジュールの初期化で名前を束縛する構文（代入、for・with・exceptの名前、代入式、matchの捕捉）を集める。
+    # def・class見出し（デコレーター、引数の省略時の値、基底クラス）内の代入式、global宣言を介した束縛、import * は扱わない。
+    # 関数・ラムダの本体とクラス本体の束縛はモジュールの名前を変えないため除く。
+    names: set[str] = set()
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, ast.Name) and isinstance(current.ctx, (ast.Store, ast.Del)):
+            names.add(current.id)
+        elif (
+            isinstance(current, ast.ExceptHandler)
+            and current.name
+            or isinstance(current, (ast.MatchAs, ast.MatchStar))
+            and current.name
+        ):
+            names.add(current.name)
+        elif isinstance(current, ast.MatchMapping) and current.rest:
+            names.add(current.rest)
+        nested_scope = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+        if current is not node and isinstance(current, nested_scope):
+            continue
+        pending.extend(ast.iter_child_nodes(current))
+    return names
+
+
 def _eager_imports(node: ast.AST, bindings: dict[str, str]) -> Iterator[ast.Import | ast.ImportFrom]:
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         if not node.is_lazy:
@@ -74,25 +100,13 @@ def _eager_imports(node: ast.AST, bindings: dict[str, str]) -> Iterator[ast.Impo
                 yield from _eager_imports(statement, local_bindings)
         bindings.pop(node.name, None)
         return
-    if isinstance(node, (ast.Assign, ast.Delete)):
-        targets = node.targets
-    elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
-        targets = [node.target]
-    elif isinstance(node, ast.TypeAlias):
-        targets = [node.name]
-    else:
-        targets = []
-    if targets:
-        if bindings:
-            for target in targets:
-                for descendant in ast.walk(target):
-                    if isinstance(descendant, ast.Name) and isinstance(descendant.ctx, (ast.Store, ast.Del)):
-                        bindings.pop(descendant.id, None)
-        return
     if isinstance(node, ast.Module):
         for statement in node.body:
             yield from _eager_imports(statement, bindings)
         return
+    # 型検査ガードの名前を別の値へ束縛し直しうる文は、その名前をガードとみなさない（安全側に倒す）。
+    for name in _rebound_names(node) & bindings.keys():
+        del bindings[name]
     # 実行する分岐が分からない場合、分岐内の束縛を外側に持ち出さない。
     invalidated: set[str] = set()
     previous_bindings = bindings.copy()
@@ -220,9 +234,21 @@ def test_aliased_type_checking_guard(tmp_path: Path) -> None:
     source.write_text(guards, encoding="utf-8")
     assert not _cycles(_dependencies(root))
 
-    for rebound in ("TC = True\nif TC:", "t = object()\nif t.TYPE_CHECKING:"):
+    rebinds = (
+        "TC = True\nif TC:",
+        "t = object()\nif t.TYPE_CHECKING:",
+        "for TC in (True,):\n    pass\nif TC:",
+        "with open(__file__) as TC:\n    pass\nif TC:",
+        "(TC := True)\nif TC:",
+        "x = (TC := True)\nif TC:",
+        "try:\n    pass\nexcept Exception as TC:\n    pass\nif TC:",
+    )
+    for rebound in rebinds:
         source.write_text(f"{guards}{rebound}\n    import sample\n", encoding="utf-8")
-        assert _cycles(_dependencies(root)) == [["sample", "sample"]]
+        assert _cycles(_dependencies(root)) == [["sample", "sample"]], rebound
+
+    source.write_text(f"{guards}for TC in (True,):\n    if TC:\n        import sample\n", encoding="utf-8")
+    assert _cycles(_dependencies(root)) == [["sample", "sample"]]
 
 
 def test_cycle_through_parent_initializer(tmp_path: Path) -> None:
