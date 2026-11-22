@@ -2,6 +2,6 @@
   "name": "mise-npm-install",
   "private": true,
   "dependencies": {
-    "aws-cdk": "2.1148.0"
+    "typescript-language-server": "6.1.0"
   }
 }

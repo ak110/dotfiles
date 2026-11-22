@@ -35,6 +35,51 @@ def _userprofile(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APPDATA", _APPDATA)
 
 
+def test_missing_known_winget_paths_preserve_existing_and_unreadable_packages(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既知IDの不在だけで退役済みと判定し、共有Linksやアクセス拒否は保持する。"""
+    packages = PureWindowsPath(_LOCALAPPDATA) / "Microsoft" / "WinGet" / "Packages"
+    rg = "BurntSushi.ripgrep.MSVC_Microsoft.Winget.Source_test"
+    chezmoi = "twpayne.chezmoi_Microsoft.Winget.Source_test"
+    missing = str(packages / rg / "bin")
+    unreadable = str(packages / chezmoi)
+    existing = str(packages / f"{rg}2" / "bin")
+    unrelated = str(packages / "Example.Other_Microsoft.Winget.Source_test")
+    links = str(packages.parent / "Links")
+
+    def lstat(path: Path) -> object:
+        if str(path) == str(packages / rg):
+            raise FileNotFoundError
+        if str(path) == unreadable:
+            raise PermissionError
+        return object()
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    result, removed = cleanup_user_path._filter_retired_winget_paths(
+        ";".join([missing, unreadable, existing, unrelated, links])
+    )
+    assert removed == [missing]
+    assert result == ";".join([unreadable, existing, unrelated, links])
+
+
+def test_current_uninstall_cleans_only_exact_package_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """同じIDでも別のディレクトリは当日のアンインストール対象に含めない。"""
+    packages = PureWindowsPath(_LOCALAPPDATA) / "Microsoft" / "WinGet" / "Packages"
+    removed = packages / "Example.Other_Microsoft.Winget.Source_test"
+    keep = str(packages / "Example.Other_Microsoft.Winget.Source_test2")
+    remove = str(removed / "bin")
+    written: list[str] = []
+
+    def missing(_path: Path) -> None:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(Path, "lstat", missing)
+    monkeypatch.setattr(cleanup_user_path.winutils, "read_user_env_var", lambda _key: (f"{keep};{remove}", _REG_EXPAND_SZ))
+    monkeypatch.setattr(cleanup_user_path.winutils, "write_user_env_var", lambda _key, value, _kind: written.append(value))
+    monkeypatch.setattr(cleanup_user_path.winutils, "broadcast_environment_change", lambda: None)
+    assert cleanup_user_path.remove_winget_package_paths([Path(str(removed))])
+    assert written == [keep]
+
+
 class TestFilterUserPath:
     """`run()` 経由でシステム側・ユーザー側の重複除外と表記正規化を検証する。
 

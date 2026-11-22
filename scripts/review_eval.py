@@ -803,7 +803,15 @@ def _cleanup_scored(case: _Case, table: pathlib.Path, *, retain: bool) -> dict[s
     worktree = table.resolve().parent / "worktree"
     if not worktree.exists():
         return {"status": "absent"}
-    if worktree.parent.name != _case_dir_name(case) or not (worktree / ".git").is_file():
+    if worktree.parent.name != _case_dir_name(case):
+        return {
+            "status": "retained",
+            "reason": (
+                f"{worktree}: 現行の事例ディレクトリ名と異なり、準備時の対象と確認できないため保持。"
+                "git worktree listで登録元を調べ、準備時の版と事例IDを照合する"
+            ),
+        }
+    if not (worktree / ".git").is_file():
         return {"status": "retained", "reason": "評価用worktreeの配置を確認できない"}
     if retain:
         return {"status": "retained", "reason": "後続参照あり。" + _cleanup_retained_environment(worktree)}

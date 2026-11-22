@@ -207,7 +207,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: '0'
-      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
       - name: statuslineの版数とタグを検査
         working-directory: ${{ github.workspace }}
         env:
@@ -255,6 +255,8 @@ jobs:
         run: echo "$OWNER_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.common-ci-owner.outputs.owns == 'true'
+        with:
+          fetch-depth: '0'
       - name: ユーザー設定から隔離したlockfile検証
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: |
@@ -271,6 +273,7 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
         env:
           SKIP: cargo-fmt,cargo-clippy
+          CLAUDE_SETTINGS_BASE: ${{ github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
         run: pyfltr ci --disable=pylint,pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'
