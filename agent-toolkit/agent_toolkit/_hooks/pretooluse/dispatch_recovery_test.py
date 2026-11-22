@@ -97,6 +97,8 @@ def test_scope_review_precedes_delivery_and_is_independent_per_decision(tool, fi
     assert reason("文字起こしツールのテストが通りました。") is None
     assert reason("整理のため読んだ箇所は scope-review.jsonl:1 です。") is None
     assert reason("scope-review.jsonl:1 の決定は適用せず、新規の検証結果だけ報告する。") is None
+    assert reason("scope-review.jsonl:1 の決定に従わず、個別に検証する。") is None
+    assert reason("scope-review.jsonl:1 の決定を根拠にせず、個別に検証する。") is None
     first_notice = reason(first) or ""
     assert "まだ送信していない" in first_notice
     assert "複雑な対処はしない、制限として扱う。" in first_notice and offers[1] not in first_notice

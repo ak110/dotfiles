@@ -46,8 +46,9 @@ SHORT_NOTICE = "現行の作業契約を取得せよ: "
 _RECORD_REFERENCE = re.compile(r"`([^\n`]+):([1-9][0-9]{0,7})`")
 _QUOTED_TERM = re.compile(r"「([^」\n]+)」|`([^`\n]+)`")
 _EXCLUDED_ACTION = re.compile(r"(?:^|[。、： \s])([^。、\s]{2,12})は対象外")
-_APPLY_DECISION = r"を[^。\n]{0,24}適用(?:する|した)(?=[。\n、]|$)"
-_DECISION_CUE = re.compile(rf"(?:決定|方針|指示|合意|取り決め)(?=に従|{_APPLY_DECISION}|を根拠)")
+_DECISION_NAME = r"(?:決定|方針|指示|合意|取り決め)"
+_RELIANCE = r"(?:に従う|に従い|を根拠に(?:する|し)|を[^。\n]{0,24}適用(?:する|した))(?=[。\n、]|$)"
+_DECISION_CUE = re.compile(rf"{_DECISION_NAME}(?={_RELIANCE})")
 _DECLARED_SUBJECT = re.compile(r"(?:^|[。、： ]|^- )([^。、： ]{4,30})は(?=[^。]*(?:に限|のみ|だけ))")
 _SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
 
@@ -76,7 +77,7 @@ def scope_review_before_send(session_id: str, raw_transcript: object, message: s
                 terms.update(_DECLARED_SUBJECT.findall(line))
                 terms.update(_SCOPE_FIELD.findall(line))
                 reference = re.escape(loc[0].strip("`"))
-                cited = re.search(rf"{reference}`?\s*(?:の(?:決定|方針))?(?:を根拠|に従|{_APPLY_DECISION})", message)
+                cited = re.search(rf"{reference}`?\s*(?:の{_DECISION_NAME})?{_RELIANCE}", message)
                 if cited or _applies_decision(message, decision, terms):
                     key = hashlib.sha256(f"{loc[0]}\n{decision.strip()}".encode()).hexdigest()
                     candidates.setdefault(int(number), {})[key] = (decision.strip(), terms)
