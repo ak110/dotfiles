@@ -105,4 +105,5 @@ bugfixの`SKILL.md`と確認観点を変える時は、`.claude/skills/agent-too
 
 規範（基準、規約、手順）を足す変更では、同じ変更で既存の成果物から新しい規範への違反を探して直す。
 実行時の規定は`agent-basics:writing-standards/references/quality-principles-subtraction.md`（原則9）にある。
+努力目標の規定を新しく書く記述にだけ適用するとしていた例外（`quality-principles-constraints.md`「規定の区分と標示」、`agent-documents-additions.md`「既存対象への波及」）は、同じ日に撤去した。
 履歴から繰り返す誤りを洗い出す手順は`agent-basics:harden-from-history`にあり、各段の対策で既存の同じ型の誤りも直す。
