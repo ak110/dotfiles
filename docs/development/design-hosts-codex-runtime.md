@@ -4,9 +4,11 @@
 
 ## Codexの起動管理とdaemon復旧
 
-通常TUIの起動管理は`pytools/codex_launcher.py`が所有し、`bin/codex`とWindowsのペアから導入済みの`dotfiles-codex`を起動する。
+自動復旧を使うTUIの起動管理は`pytools/codex_launcher.py`が所有し、`dotfiles-codex`とモデル・effortの補助入口で使う。
+通常の`codex`名は公式実行体用に保つ。
 Codexの起動中は依存関係を導入せず、post-applyと同じpytools環境を使う。
-Windows公式インストーラーの可視binはpackageのbinへのjunctionであるため、その中へwrapperを書き込まず既存dotfiles/binを優先する。
+Windows公式インストーラーの可視binはpackageのbinへのjunctionであり、内容と既存のPATH順を変更しない。
+POSIXでは配布済みの旧置換リンクだけを確認済みの公式実行体へのリンクへ戻す。
 実行時の`CODEX_HOME`は設定・認証・会話の保存先として保持し、導入した実行体の選択から分離する。
 待受は起動ごとの認証トークンを必須とし、RPC本文は中継の寿命内のメモリーにだけ保持する。
 `--remote`で接続したTUIは自身のcwdを送らず、管理daemonのcwdで会話を始める。

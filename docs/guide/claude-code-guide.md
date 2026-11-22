@@ -42,6 +42,10 @@ dotfilesユーザーは`chezmoi apply`で同じプラグインを設定する。
 `opus`、`sonnet`、`fable`、`poteto-mode`は、それぞれ既定のClaudeモデルを選ぶ。
 `--model VALUE`または`--model=VALUE`で指定すると、既定のモデルを渡さない。
 `fable`のfallbackと`poteto-mode`のプラグイン設定は変わらない。
+`opus --help`などはランチャー自身のヘルプを表示する。
+本体のヘルプは`claude --help`で表示する。
+モデル別ランチャーは、手動で導入した開発機能を保ちながら、claude.aiの自動連携とChrome連携を止める。
+引数の先頭に`--full`を置くと、追加で機能を止めずに起動する。
 
 ## 詳細設定と操作
 

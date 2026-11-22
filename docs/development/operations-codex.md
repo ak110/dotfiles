@@ -17,7 +17,7 @@ Windowsでは、導入が置き換えるスタンドアローン版（`packages/
 判定は`setup_cli_common.find_windows_cli_processes`がプロセスの実行ファイルの所在で行い、除去する版ではnode・miseが起動したスクリプトの所在も見る。
 所在を読めず衝突を否定できないプロセスでも延期する。
 判定は該当したプロセスごとにPID、読めた実行パス、根拠（`Evidence`。所在を確かめたか、実行ファイル・起動引数を読めないか、名前だけで起動したか）を返し、延期の表示はこの結果から作る。
-除去の延期の表示は、削除コマンドと、旧版がPATHで先に見つかる間に使う更新済みの起動先（Codexは`bin/codex.cmd`の起動管理、Claude Codeは`~/.local/bin/claude.exe`）も示す。
+除去の延期の表示は、削除コマンドと、旧版がPATHで先に見つかる間に使う更新済みの起動先（Codexは確認済みの公式実行体、Claude Codeは`~/.local/bin/claude.exe`）も示す。
 削除コマンドは`setup_cli_common.format_user_command`が作り、推奨するPowerShell 7でそのまま実行できるよう、PowerShellのコマンドと明記して、単一引用符で囲んだ実行パスの前に呼び出し演算子`&`を付ける。
 npmの`uninstall`はパッケージと一緒に、`package.json`の`bin`の名前の起動ファイルを中身を確かめずに削除する。
 対象はWindowsではprefix直下の`<bin>`・`<bin>.cmd`・`<bin>.ps1`、POSIXでは`bin/<bin>`である。

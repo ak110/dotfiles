@@ -9,7 +9,7 @@
 
 - `executor`: `run_stages`が表の順に実行する。
 - `main`: `update_dotfiles.main`が実行器の外側で実行する（実行器を包むロックの取得と、開始前の設定検証）。
-- `inline`: 他の段の処理の内側で実行する（`chezmoi apply`の前後で行うCodex管理daemonの停止と再開）。
+- `inline`: 他の段の処理の内側で実行する（更新失敗の起票）。
 - `bootstrap`: 実行器を起動する前に`libexec/update_bootstrap.sh`・`.ps1`が実行する。
   実行器はuvの管理Pythonで動くため、uvの自己更新と管理Pythonの更新は実行器の中から行えない。
   ブートストラップは同じ分類を段名と引数で受け取り、一致を`update_dotfiles_stages_test.py`が検査する。
@@ -56,7 +56,6 @@ _TIMEOUT_CHEZMOI_LIGHT = 300
 # Windows（stheno）の永続ログ（2026-09〜11月）の成功83回の最大492秒に50%の余裕を加えて10秒単位で切り上げた。
 # CIの正常所要（直近5回の成功で最大312秒）からの遅延は、ジョブの時間上限で検出する。
 # 時間切れでない失敗は1回再試行するため、この段のchezmoiの最長待ちは2試行と再試行前の待機の合計（1485秒）になる。
-# Linuxでは各試行の前後にCodex管理daemonの停止・再開の待ちが別の上限で加わる。
 # post-applyの短縮（WI 20261118-173146-001）の後、OS別の実測から見直す。
 _TIMEOUT_CHEZMOI_APPLY = 740
 _TIMEOUT_PREPARE = 900
@@ -101,7 +100,6 @@ STAGES: tuple[Stage, ...] = (
         retries=1,
         retry_wait_sec=_RETRY_WAIT,
     ),
-    Stage(update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE, where="inline", platforms=("linux",)),
     Stage("更新失敗の起票", where="inline", timeout_sec=120),
     Stage(
         "uvの導入",

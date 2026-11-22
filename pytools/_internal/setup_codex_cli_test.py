@@ -267,7 +267,7 @@ def _prepare_windows_run(
     _isolate(monkeypatch, tmp_path, "win32")
     monkeypatch.setattr(setup_cli_common, "find_windows_cli_processes", _FIND_WINDOWS_CLI_PROCESSES)
     monkeypatch.setattr(prune_codex_packages, "run", post_apply_outcome.PostApplyOutcome)
-    monkeypatch.setattr(setup_codex_cli, "install_recovery_launcher", lambda *args, **kwargs: None)
+    monkeypatch.setattr(setup_codex_cli, "restore_native_launcher", lambda *args, **kwargs: None)
     npm_package, answer_npm = _install_npm_codex(monkeypatch, tmp_path)
     standalone = codex_runtime.standalone_root() / "releases" / "0.170.0-x86_64-pc-windows-msvc"
     processes = {
@@ -393,7 +393,8 @@ def test_windows_migration_deferral_shows_evidence_and_how_to_finish(
         assert ("起動引数を読めず" in message and f"{target}の実行を否定できない" in message) is not confirmed
         executable, arguments = removal[target]
         assert f"PowerShellで`& '{executable}' {arguments}`を実行して{target}を削除する" in message
-        assert f"`{tmp_path / 'dotfiles' / 'bin' / 'codex.cmd'}`で更新済みの版を起動する" in message
+        official = tmp_path / ".codex/packages/standalone/releases/test-version/bin/codex.exe"
+        assert f"`{official}`で更新済みの版を起動する" in message
 
 
 def test_windows_install_deferral_shows_running_process(monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -788,30 +789,33 @@ def test_install_propagates_package_removal_failure(monkeypatch, tmp_path: Path)
 
 
 @pytest.mark.windows
-def test_native_reference_is_replaced_and_tracks_current(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """参照は1個だけを交換し、currentの世代更新に追随して旧版へ固定しない。"""
+def test_dangling_wrapper_is_replaced_and_tracks_current(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """古いリンク先が配布元から消えても、currentへ到達するリンクへ戻せる。"""
     _isolate(monkeypatch, tmp_path, "linux")
     visible = tmp_path / ".local/bin"
+    visible.mkdir(parents=True)
+    root = tmp_path / "dotfiles"
+    monkeypatch.setattr(setup_codex_cli.common, "find_dotfiles_root", lambda: root)
+    (root / "bin/codex").unlink()
+    target = visible / "codex"
+    target.symlink_to(root / "bin/codex")
+    assert not target.exists()
+    home = tmp_path / ".codex"
+    selected = _release(home, "standalone", "0.166.0")
+    current = selected.parent.parent / "current"
+    current.symlink_to(selected, target_is_directory=True)
+    native = current / "bin/codex"
     reference = visible / ".dotfiles-codex-native"
-    for name in ("first-home", "second-home"):
-        home = tmp_path / name
-        selected = _release(home, "standalone", "0.166.0")
-        current = selected.parent.parent / "current"
-        current.symlink_to(selected, target_is_directory=True)
-        native = current / "bin/codex"
-        setup_codex_cli.install_recovery_launcher(native, windows=False)
-        assert reference.readlink().samefile(native)
-        runtime = codex_runtime.find_runtime_launcher(windows=False)
-        assert runtime is not None
-        assert runtime == reference
-        assert runtime.samefile(native)
-        newer = _release(home, "standalone", "0.167.0")
-        (newer / "bin/codex").write_text("new-generation", encoding="utf-8")
-        current.unlink()
-        current.symlink_to(newer, target_is_directory=True)
-        assert reference.samefile(newer / "bin/codex")
-        assert runtime.read_text(encoding="utf-8") == "new-generation"
-        assert list(visible.glob(".dotfiles-codex-native*")) == [reference]
+    reference.symlink_to(native)
+
+    setup_codex_cli.restore_native_launcher(native, windows=False)
+    setup_codex_cli.restore_native_launcher(native, windows=False)
+    assert not reference.is_symlink()
+    assert target.samefile(native)
+    newer = _release(home, "standalone", "0.167.0")
+    current.unlink()
+    current.symlink_to(newer, target_is_directory=True)
+    assert target.samefile(newer / "bin/codex")
 
 
 @pytest.mark.parametrize("windows", [False, True])

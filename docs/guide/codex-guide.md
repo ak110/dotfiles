@@ -31,14 +31,21 @@ Windowsでは親の監視ループをCtrl+Cで終了できる。
 接続とログインを確認するか、完全なモデルIDを指定する。
 ヘルプ、版の表示、補完、ログインなどの管理操作にも一覧は不要である。
 
-profileや外部接続先を指定した起動、設定の読込方法を変える起動では従来の固定IDを使う。
-これらの場合も明示したモデルを優先する。
+一覧を取得する時は、指定されたprofile、作業ディレクトリ、設定を使う。
+外部接続先の一覧を取得できない場合は、完全なモデルIDを明示する。
 OSS providerや`-c model_provider=...`でOpenAI以外のproviderを選んだ場合は、ランチャーからモデルを補わない。
+
+`sol --help`などはランチャー自身のヘルプを表示する。
+本体のヘルプは`codex --help`で表示する。
+補助入口ではApps、リモートプラグイン、画像生成などの追加機能を停止し、手動導入のプラグインやMCPを保つ。
+先頭の`--full`は今回の停止を加えず、普段のCodex設定で起動する。
 
 ## daemon再起動後の作業継続
 
-dotfilesで導入した通常の`codex`、`codex-medium`、`codex-xhigh`は、管理daemonが再起動しても同じ端末・会話・作業ディレクトリで進行中の仕事を自動で続ける。
-特別な起動コマンドは不要で、通常終了・Ctrl+C・完了済みの仕事は自動で再実行しない。
+通常の`codex`は公式CLIを起動する。
+自動復旧を使う場合は`dotfiles-codex`、`sol`・`astra`・`terra`、または`codex-medium`・`codex-xhigh`から対話を開始する。
+これらの入口は、管理daemonの再起動後に同じ端末・会話・作業ディレクトリで進行中の仕事を再開する。
+通常終了・Ctrl+C・完了済みの仕事は再実行しない。
 権限と承認の方針を保持し、再起動前の承認要求への応答を新しい要求へ転用しない。
 新しい承認や認証が必要な場合は、Codexの表示に従って操作する。
 
@@ -46,7 +53,7 @@ dotfilesで導入した通常の`codex`、`codex-medium`、`codex-xhigh`は、�
 再開した親の子孫は保存済みの委譲関係から復旧し、元の親へ結果を届ける。
 自動復旧が失敗した場合は表示された診断を確認し、`codex doctor`で状態を調べてから`codex resume`で元の会話を選ぶ。
 明示した`--remote`や`--no-daemon`の接続管理は、その指定に従う。
-Windowsで初めて起動管理を導入した後は、新しい端末を開いて更新されたPATHを使用する。
+Windowsで公式CLIを導入した後は、新しい端末を開いて更新されたPATHを使用する。
 
 ## プラグイン更新の反映
 
@@ -54,9 +61,8 @@ Codex向けプラグインは`update-dotfiles`または`chezmoi apply`で更新�
 実行中のセッションは更新前の版を使い続けるため、更新後は新しいセッションで新版を使う。
 更新前の版は、次の版の導入から7日を過ぎると以降の更新で削除する。
 7日より前に置き換わった版で始めた会話を再開すると、会話の履歴が指す旧版のスキルなどのファイルを読めないため、新しいセッションで続ける。
-agent-toolkitの追加・更新後は、利用セッションの有無にかかわらず稼働中のapp-server daemonを自動で再起動し、[既存の復旧処理](#daemon再起動後の作業継続)へ接続する。
-変更が無い場合とdaemonが停止している場合、自動再起動は実行しない。
-Linuxの`update-dotfiles`による適用前の一時停止も、適用差分があり利用セッションが無い場合に限る。
+agent-toolkitの追加・更新後も、実行中の共有daemonは停止・再起動しない。
+反映待ちの案内が出たら、利用中の会話を終えた後に`codex app-server daemon restart`を実行する。
 
 Codexのコマンド実行から`update-dotfiles`を起動すると、`CODEX_THREAD_ID`を使って更新を独立したjobへ分離する。
 起動元がdaemon再起動で終了しても、jobは更新処理を継続して出力と終了コードを保存する。
@@ -93,7 +99,7 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 `/hooks`はCodex内の操作であり、PowerShellやbashへ入力するコマンドではない。
 入口の起動を求めるSessionStartフックはセッション開始時に実行されるため、信頼した後にもう一度新しいセッションを開始する。
 永続的な信頼登録の公開手段は確認できていないため、この確認と信頼操作は手動で行う。
-daemonの自動再起動の条件は[プラグイン更新の反映](#プラグイン更新の反映)を参照。
+daemonへの更新を反映する手順は[プラグイン更新の反映](#プラグイン更新の反映)を参照。
 
 CodexのStopフックは説明言語だけを判定し、完了報告の起動忘れは通知しない。
 フックの判定内容とClaude Codeとの差は[design-hooks-host-support.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)を参照。
@@ -142,15 +148,17 @@ ChatGPTのtokenをAPIキーとして使わない。
 `atk run-skill`、`atk wi process-loop`、`agents_server`の委譲先は、Codexの利用上限の解除後に自動で作業を続ける。
 待つ範囲は`codex_usage_limit_wait`で選ぶ（[工程別モデル設定](claude-code-models.md#工程別モデル設定)を参照）。
 
-`agents_server`のCodex委譲先では、`codex_auto_reset`を明示的に有効にすると、ChatGPTの週次枠の使用率が99%以上でreset creditの在庫がある場合に1個を消費する。
-初期値は`false`である。
-設定の確認、有効化、無効化は次のコマンドで行う。
+`agents_server`のCodex委譲先では、`usage_auto_allocation`を有効にし、`usage_reset_permissions`に対象アカウント・期間・回数を明示した場合だけ、自動resetでcreditを消費できる。
+初期状態では自動配分は無効で、消費許可は空である。
+条件と設定例は[利用枠の自動配分](claude-code-models.md#利用枠の自動配分)を参照する。
 
 ```bash
-atk config get codex_auto_reset
-atk config set codex_auto_reset true
-atk config set codex_auto_reset false
+atk config get usage_auto_allocation usage_reset_permissions
 ```
+
+旧`codex_auto_reset`と環境変数`AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET`は廃止した。
+旧環境変数を解除する。
+以前の真偽値から消費許可は作成しないので、許可を設定しない場合は手動でresetする。
 
 有効な間はモデルを呼ばずに利用枠を確認し、reset後に利用枠を再取得して同じsessionの再開を判定する。
 APIキー接続は対象外で、アカウントのemailを取得できない場合もcreditを消費せず診断を記録する。

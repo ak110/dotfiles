@@ -300,7 +300,7 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
         (
             "codex",
             "@openai/codex",
-            tmp_path / "dotfiles" / "bin" / "codex",
+            launcher,
             tmp_path / ".codex" / "packages" / "standalone",
             {
                 "extra_search_directories": (),
@@ -499,7 +499,7 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
         (
             "codex",
             "@openai/codex",
-            tmp_path / "dotfiles" / "bin" / "codex",
+            launcher,
             codex_home / "packages" / "standalone",
             {
                 "extra_search_directories": (),
@@ -536,7 +536,7 @@ def test_install_success_prunes_completed_old_packages(monkeypatch, tmp_path: Pa
 @pytest.mark.cpu_limit(
     1.25, reason="Windowsでnative実体と可視リンクの保持を実filesystemで照合する4条件。実測0.61〜0.66秒へ余裕を確保"
 )
-def test_public_install_keeps_native_package_and_selects_recovery_launcher(
+def test_public_install_keeps_native_package_and_official_launcher(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, windows: bool, custom_install: bool
 ) -> None:
     """公式の可視リンクを生成し、native実体を保ったまま通常呼出を起動管理へ接続する。"""
@@ -584,12 +584,11 @@ def test_public_install_keeps_native_package_and_selects_recovery_launcher(
         assert (visible / "codex.exe").samefile(native)
         assert not (native.parent / "codex.cmd").exists()
         entries = registry.user_path().split(";")
-        assert entries.index(str(root / "bin")) < entries.index(str(visible))
+        assert entries.index(str(visible)) < entries.index(str(root / "bin"))
         assert [entry for entry in entries if entry in {before, between, after}] == [before, between, after]
     else:
-        assert (visible / "codex").samefile(root / "bin" / "codex")
-        # Windowsのreadlinkは同じ参照先へ\\?\接頭辞を付けるため、ファイルの同一性を検証する。
-        assert (visible / ".dotfiles-codex-native").readlink().samefile(native)
+        assert (visible / "codex").samefile(native)
+        assert not (visible / ".dotfiles-codex-native").is_symlink()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-runtime-home"))
     assert codex_runtime.find_standalone_launcher() is None
     runtime = codex_runtime.find_runtime_launcher(windows=windows)
@@ -607,10 +606,16 @@ def test_public_install_preserves_unmanaged_files(monkeypatch: pytest.MonkeyPatc
     protected.parent.mkdir(parents=True)
     protected.write_text("unmanaged", encoding="utf-8")
     native = tmp_path / ".codex/packages/standalone/current/bin/codex"
+    package = native.parent.parent.parent
+    selected = _release(tmp_path / ".codex", "standalone", "0.166.0")
+    (package / "current").symlink_to(selected, target_is_directory=True)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run([], launcher=native))
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     with _make_client() as client:
         outcome = setup_codex_cli.run(client)
-    assert outcome.failure is not None and str(protected) in outcome.failure
+    if name == "codex":
+        assert outcome.failure is not None and str(protected) in outcome.failure
+    else:
+        assert outcome.failure is None
     assert protected.read_text(encoding="utf-8") == "unmanaged"
     assert not protected.is_symlink()

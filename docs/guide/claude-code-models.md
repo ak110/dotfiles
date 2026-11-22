@@ -111,6 +111,12 @@ Fable限定などの対象を、他モデルや別の枠の回復へ読み替え
 `orchestrate_model`はOpenCodeを受け付けない。
 OpenCodeの導入とprovider定義は[README](dotfiles-settings.md#opencodeの委譲先)を参照。
 
+`agy`を委譲先に使うには、対応版を導入し、`~/.gemini/antigravity-cli/settings.json`で`"modelProvider": "gemini"`を選び、起動元に`GEMINI_API_KEY`を設定する。
+設定またはキーがない場合は個人ログインで起動せず、次の候補へ進む。
+再開・追送でも同じ条件を確認する。
+条件の根拠は[AntigravityのFAQ](https://antigravity.google/docs/faq)と[CLI認証の説明](https://antigravity.google/docs/install?tab=cli)を2026年11月22日に確認した。
+キーを引数やログに入れない。
+
 ```bash
 atk config show
 atk config set review_model agy:gemini-4-argon/medium
@@ -174,7 +180,6 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 | キー | 内容 |
 | --- | --- |
 | `codex_fast_mode` | `true`でCodexのfast modeを使う。初期値は`false` |
-| `codex_auto_reset` | `true`でChatGPT接続の週次利用枠を自動resetする。初期値は`false`。条件と設定例は[Codex利用ガイド](codex-guide.md#利用上限後の再開)を参照 |
 | `claude_usage_limit_wait`・`codex_usage_limit_wait` | 利用上限に達した時に解除を待つ範囲。`five-hour`（初期値）は5時間枠だけ、`always`は週次枠なども待ち、`never`は待たずに次の候補へ進む |
 | `claude_*_connections`・`codex_*_connections`ほか | Claude・Codexのサブスクリプション・APIクレジット・従量課金APIの使い分け。設定は[接続の使い分け](claude-code-connections.md#接続の使い分け)を参照 |
 

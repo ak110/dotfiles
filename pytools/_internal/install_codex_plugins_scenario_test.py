@@ -290,11 +290,6 @@ def test_update_dotfiles_public_entry_restores_all_previous_plugin_caches(
     monkeypatch.setattr(update_dotfiles.sync_report, "REPORT_PATH", tmp_path / "state/sync-report.json")
     monkeypatch.setattr(update_dotfiles.update_dotfiles_git, "update_git_with_recovery", lambda *_args, **_kwargs: 0)
 
-    def no_daemon_pause() -> None:
-        return None
-
-    monkeypatch.setattr(update_dotfiles, "_pause_codex_daemon", no_daemon_pause)
-
     def run_step(_step: int, _total: int, _title: str, command_line: list[str], **_kwargs: object) -> tuple[int, str]:
         if command_line == ["chezmoi", "apply", "--force"]:
             results, _ = post_apply.run(

@@ -506,7 +506,10 @@ def main() -> int:
     if arguments[:2] == ["app-server", "daemon"]:
         _control(arguments[2])
         return 0
-    if arguments[:1] == ["exec"]:
+    command = arguments
+    while command[:1] == ["--disable"]:
+        command = command[2:]
+    if command[:1] == ["exec"]:
         print(json.dumps({"passthrough": arguments}), flush=True)
         return 7
     try:
