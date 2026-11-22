@@ -89,6 +89,13 @@ def _run(arguments: list[str]) -> int:
             # NULもCRTのisattyでは真になる。実際のコンソールだけをCONOUT$で開き直す。
             is_console = ctypes.windll.kernel32.GetConsoleMode(ctypes.c_void_p(handle), ctypes.byref(ctypes.c_ulong(0)))
             value = "console" if is_console else f"{os.getpid()}:{handle}"
+            if os.environ.pop("DOTFILES_SHOW_CACHE_WAIT", "") == "1":
+                notice = "更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。"
+                if is_console:
+                    print(notice, file=sys.stderr, flush=True)
+                else:
+                    sys.stderr.buffer.write((notice + "\n").encode("utf-8"))
+                    sys.stderr.buffer.flush()
         else:
             fd = os.dup(2)
             stack.callback(os.close, fd)
