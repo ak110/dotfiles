@@ -314,3 +314,48 @@ def test_public_add_rejects_cooldown_for_unsupported_mode(
     assert failed.value.code != 0
     assert "cooldown" in capsys.readouterr().err
     assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+def test_public_add_hold_saves_awi_outside_readiness(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--holdのAWIは初回保存からholdにあり、unholdまで着手可能な集合に入らない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "本文")
+    with pytest.raises(SystemExit) as finished:
+        atk.main(
+            ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0], "--hold"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+    assert finished.value.code == 0
+    (path,) = notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")
+    parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["state"] == "hold"
+    assert "成功: 1件をholdへ保存した" in capsys.readouterr().out
+    assert path.name not in readiness.calculate_readiness(notes, args.target_repo).ready
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (["--type=uwi", "--question-type=yes-no"], "--holdは--type=awiでのみ"),
+        (["--process-wi-timing", "this-run", "--process-wi-kind", "defect"], "--holdは--process-wi-timingと併用できません"),
+    ],
+)
+def test_public_add_hold_rejects_uwi_and_process_wi_timing(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], extra: list[str], message: str
+) -> None:
+    """保留で保存できないUWIと、今回の巡回へ渡すAWIへの--holdを保存前に拒否する。"""
+    _setup_notes(tmp_path)
+    args = _cmd_add_args(tmp_path, "確認しますか？")
+    with pytest.raises(SystemExit) as finished:
+        atk.main(
+            ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0], "--hold", *extra],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+    assert finished.value.code == 2
+    assert message in capsys.readouterr().err

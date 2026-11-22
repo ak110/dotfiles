@@ -611,6 +611,8 @@ HELP["atk wi add"]["description"] += (
     "通常本文のfrontmatterで受理する管理キーはtarget_repo・source・confirmationである。confirmationはAWIのrequiredだけを受理し、それ以外の値とUWIへの指定は拒否する。"
     "cooldown_untilなど他の予約キーはキー名と次の操作を示して全件の保存前に拒否する。"
     "一般キーは保持し、--batchは既存の原文保持を使う。"
+    "\n保留での保存: --holdはAWIをholdへ保存し、inboxを経ずに自動処理の対象から外す。"
+    "`atk wi unhold`でinboxへ戻す。UWI・--batch・--process-wi-timingとの併用は拒否する。"
 )
 HELP["atk worktree-stash save"]["description"] += (
     "\nGC保護: 作成した退避はworktreeとラベルごとの共有refでも保護し、その成立後に今回の共有stashだけを取り除く。"

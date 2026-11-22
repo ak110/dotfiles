@@ -108,6 +108,15 @@ def _add_wi_add_parser(sub: Any) -> None:
         ),
     )
     add.add_argument(
+        "--hold",
+        action="store_true",
+        help=(
+            "AWIをinboxでなくholdへ保存し、保存した時点から自動処理の対象に入れない。"
+            "保存後に本文を仕上げてから`atk wi unhold`で戻す場合に使う。"
+            "UWI・--batch・--process-wi-timingとは併用できない。"
+        ),
+    )
+    add.add_argument(
         "--source",
         metavar="NAME",
         default=None,

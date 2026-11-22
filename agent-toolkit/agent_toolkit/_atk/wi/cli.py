@@ -179,6 +179,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--target-repo", args.target_repo),
                 ("--target-branch", args.target_branch),
                 ("--source", args.source),
+                ("--hold", args.hold or None),
                 ("--process-wi-timing", args.process_wi_timing),
                 ("--process-wi-kind", args.process_wi_kind),
                 ("--defer-category", args.defer_category),
@@ -190,6 +191,10 @@ def _validate_add_args(args: argparse.Namespace) -> None:
             args.subparser.error(f"{'・'.join(conflicting)}は--batchと併用できません。")
     if args.type is None:
         args.type = _wi_constants.WI_TYPE_AWI
+    if args.hold and args.type != _wi_constants.WI_TYPE_AWI:
+        args.subparser.error("--holdは--type=awiでのみ指定できます。")
+    if args.hold and args.process_wi_timing is not None:
+        args.subparser.error("--holdは--process-wi-timingと併用できません。今回の巡回へ渡す項目は保留しない。")
 
 
 def _pull_command(private_notes: pathlib.Path) -> None:

@@ -34,7 +34,7 @@ from agent_toolkit._atk.wi.add_validation import (
     require_cause_analysis_format,
     require_confirmed_cause,
 )
-from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import WI_STATE_HOLD, WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
@@ -171,6 +171,7 @@ def _add_entries_locked(
     submitter_session: str | None = None,
     item_branches: list[str | None] | None = None,
     target_commit_branch: str | None = None,
+    initial_state: str = WI_STATE_INBOX,
 ) -> list[tuple[str, str]]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
 
@@ -219,7 +220,7 @@ def _add_entries_locked(
         frontmatter_data: dict[str, object] = {"target_repo": item_target_repo}
         if item_branch is not None:
             frontmatter_data[_wi_branches.KEY] = item_branch
-        frontmatter_data.update(type=entry_type, state=WI_STATE_INBOX)
+        frontmatter_data.update(type=entry_type, state=initial_state)
         if target_commit is not None and item_target_repo == target_repo and item_branch == target_commit_branch:
             frontmatter_data["target_commit"] = target_commit
         if item_source:
@@ -274,6 +275,7 @@ def add_entries(
     saved_details: dict[str, dict[str, object | None]] | None = None,
     submitter_session: str | None = None,
     target_branch: str | None = None,
+    initial_state: str = WI_STATE_INBOX,
 ) -> list[str]:
     """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
 
@@ -285,6 +287,7 @@ def add_entries(
     `submitter_session`はUWI種別のfrontmatterへだけ保存し、回答の通知先としてその会話のセッション状態へファイル名を記録する。
     `target_branch`はfrontmatterに`target_branch`の無い`target_repo`宛ての項目の宛先の系統とする。
     系統を登録したrepository宛てで省略した項目はdefault_branchの系統で保存し、登録に無い系統は保存前に拒否する。
+    `initial_state`は保存する状態で、`WI_STATE_HOLD`なら保存した時点から自動処理の対象に入れない。
     `target_commit`は`target_repo`と`target_branch`の解決結果が一致する項目にだけ記録する。
     """
     parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
@@ -315,6 +318,7 @@ def add_entries(
             submitter_session=submitter_session,
             item_branches=item_branches,
             target_commit_branch=target_commit_branch,
+            initial_state=initial_state,
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
@@ -448,6 +452,7 @@ def cmd_add(
     （`_resolve_submitter_session`、`_common/uwi_watch.py`）。
     """
     body_files = getattr(args, "body_file", None)
+    hold = bool(getattr(args, "hold", False))
     if body_files:
         try:
             messages = read_body_files(body_files)
@@ -586,6 +591,7 @@ def cmd_add(
             saved_details=saved_details,
             submitter_session=_resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
             target_branch=target_branch,
+            initial_state=WI_STATE_HOLD if hold else WI_STATE_INBOX,
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
@@ -603,7 +609,7 @@ def cmd_add(
     inbox_dir = private_notes
     for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
-    _outcome.report_success(f"{count}件をinboxへ投入した")
+    _outcome.report_success(f"{count}件をholdへ保存した" if hold else f"{count}件をinboxへ投入した")
     for filename in generated:
         print(f"  {shorten_home(_wi_entries.entry_path(private_notes, filename), home)}")
         print_entry_details(saved_details[filename])
