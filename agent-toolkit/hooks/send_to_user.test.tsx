@@ -54,7 +54,7 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
         expect(notice).toMatch(/質問.*AskUserQuestion/);
         expect(notice).toContain(tool);
         if (registered) expect(notice).toContain(`await tools['${tool}']({message})`);
-        expect(notice).toContain("呼出しに失敗した時だけ通常本文");
+        expect(notice).toContain(registered ? 'source="send-to-user-contract"' : 'source="send-to-user-search"');
         expect(notice).toContain("searchTools");
         expect(notice).not.toContain("ツールが無い時");
         expect(notice).not.toContain("送信済み");

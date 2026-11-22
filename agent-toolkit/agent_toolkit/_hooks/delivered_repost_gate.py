@@ -3,11 +3,14 @@
 同じターンで成功した送達と通常本文に同じ文がある場合に限り、再掲として差し戻す。
 短い確認や新しく得た情報は、送達した文に含まれなければ差し戻さない。
 送達に失敗した場合は未表示の情報を通常本文で伝えられる。
+`send_to_user`を使えるメインには、現在の入力に限らず常に`send_to_user`を求める（記録全体に端末modの送達の指定の添付があるかで判定する）。
+入力ごとの指定は圧縮の後や完了通知で始まるターンに添わず、通常本文へ戻る事象が続いたためである（2026-11-22、ユーザー指摘）。
 連続blockの上限は`stop.py`が管理する。
 
 委譲先での実行可否: ユーザーへ送達するメインだけを対象とし、サブエージェントと委譲先、`send_to_user`の無いCodexは判定しない。
 """
 
+import json
 import re
 
 from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
@@ -19,7 +22,7 @@ lazy from agent_toolkit._common.message_format import starts_with_auto_element
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.user_response_advisor import _input_text, latest_human_turn
+lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
 
 # 再開した会話の記録では改名前のツール名も送達の根拠になる。
 _SEND_TO_USER_TOOLS = {prefix + "send_to_user" for prefix in MCP_NAMESPACES} | {
@@ -27,7 +30,7 @@ _SEND_TO_USER_TOOLS = {prefix + "send_to_user" for prefix in MCP_NAMESPACES} | {
     "mcp__agent-toolkit__send_to_user",
 }
 _SENTENCE_BREAK = re.compile(r"[。！？!?\n]|\.(?=\s|$)")
-_SEND_FOR_CURRENT_INPUT = '<atk-auto source="send-to-user-contract" kind="notice">'
+_SEND_CONTRACT = '<atk-auto source="send-to-user-contract" kind="notice">'
 _SEND_CALL = "tools['mcp__plugin_agent-toolkit_agents_server__send_to_user']({message})"
 
 _block_notice = notice.block_formatter("delivered_repost_gate")
@@ -39,12 +42,11 @@ def is_send_to_user_tool(name: object) -> bool:
 
 
 def _send_required(entries: list[dict]) -> bool:
-    """現在の人間入力に対して実際に届いた関数hookの案内を確認する。"""
-    for entry in reversed(entries):
-        if (text := _input_text(entry)) is not None and (
-            not entry.get("isMeta") or starts_with_auto_element(text) or text.lstrip().startswith("<task-notification")
-        ):
-            return False
+    """端末modの送達の指定の添付が、圧縮の前を含む記録全体に1回でもあるかを返す。
+
+    指定は端末のメインで送達ツールが登録済みの時だけ添えられ、圧縮の後や完了通知で始まるターンには添わない。
+    """
+    for entry in entries:
         attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
         if (
             isinstance(attachment, dict)
@@ -52,7 +54,7 @@ def _send_required(entries: list[dict]) -> bool:
             and attachment.get("hookEvent") == "UserPromptSubmit"
             and attachment.get("hookName") == "prompt.submit"
             and isinstance(content := attachment.get("content"), list)
-            and any(isinstance(item, str) and item.startswith(_SEND_FOR_CURRENT_INPUT) for item in content)
+            and any(isinstance(item, str) and item.startswith(_SEND_CONTRACT) for item in content)
         ):
             return True
     return False
@@ -99,6 +101,39 @@ def _sentences(text: str) -> set[str]:
     return {line for part in _SENTENCE_BREAK.split(text) if (line := " ".join(part.split()).strip(">*_`#… "))}
 
 
+def _current_turn(entries: list[dict]) -> list[dict]:
+    """直近の入力（人間の発話、完了通知、自動入力）より後の記録を返す。
+
+    同じ人間入力の後でも、完了通知などで始まる別ターンの送達を現ターンの結果と混同しない。
+    """
+    for index in range(len(entries) - 1, -1, -1):
+        entry = entries[index]
+        if entry.get("isCompactSummary") is True or (
+            entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"
+        ):
+            return entries[index + 1 :]
+        if (text := _input_text(entry)) is not None and (
+            _human_prompt(entry, text) is not None
+            or starts_with_auto_element(text)
+            or text.lstrip().startswith("<task-notification")
+        ):
+            return entries[index + 1 :]
+    return entries
+
+
+def _conversation_entries(lines: list[str]) -> list[dict]:
+    """sidechainを除いた会話全体の記録を返す。"""
+    entries: list[dict] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict) and not entry.get("isSidechain"):
+            entries.append(entry)
+    return entries
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     """指定された送達の結果がない通常本文、または送達済み本文の再掲を拒む。"""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
@@ -115,19 +150,18 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     ):
         return "approve", ""
     lines = transcript.read_transcript_lines(path)
-    turn = latest_human_turn(lines) if lines is not None else None
-    body, delivered, completed = _delivery_report(turn[1]) if turn else ("", set(), False)
+    entries = _conversation_entries(lines) if lines is not None else []
+    body, delivered, completed = _delivery_report(_current_turn(entries))
     if (
-        turn
-        and not completed
+        not completed
         and isinstance(last := payload.get("last_assistant_message"), str)
         and last.replace("…", "").strip()
-        and _send_required(turn[1])
+        and _send_required(entries)
     ):
         return "block", _block_notice(
-            "この入力の案内で指定された `send_to_user` の結果が無い。通常本文での終了を止めた。",
+            "`send_to_user` を使える会話で、このターンに `send_to_user` の結果が無い。通常本文での終了を止めた。",
             fix=f"`REPL` では `await {_SEND_CALL}` を呼べ。ツールを直接呼べる場合は "
-            "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡せ。呼出しに失敗した場合は通常本文で伝える。",
+            "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡せ。",
         )
     if not delivered.intersection(_sentences(body)):
         return "approve", ""
