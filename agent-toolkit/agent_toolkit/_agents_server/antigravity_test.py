@@ -20,6 +20,10 @@ import json
 import sys
 
 args = sys.argv[1:]
+if args == ["--version"]:
+    print("1.5.13")
+    sys.exit(0)
+assert json.loads(args[args.index("--settings") + 1]) == {{"modelProvider": "gemini"}}
 conversation = args[args.index("--conversation") + 1] if "--conversation" in args else "conv-1"
 prompt = args[args.index("-p") + 1]
 print(json.dumps({{"event": "init", "conversation_id": conversation, "init": {{"model": "gemini-3.8-flash"}}}}), flush=True)
@@ -35,6 +39,7 @@ async def test_cli_inherits_prepared_conversation_environment(monkeypatch: pytes
         monkeypatch.setenv(name.upper(), "source-context")
     mcp_tools._prepare_child_environment()  # pylint: disable=protected-access
     captured: dict[str, str] = {}
+    monkeypatch.setattr(antigravity, "_gemini_delegation_binary", lambda _environment: "agy")
 
     async def spawn(*_args: Any, **kwargs: Any) -> Any:
         captured.update(kwargs["env"])
@@ -61,6 +66,13 @@ def _install_fake_agy(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -
     fake.write_text(_FAKE_AGY.format(python=sys.executable), encoding="utf-8")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(antigravity.host_homes.claude_config_dir()))
+    home = tmp_path / "agy-home"
+    monkeypatch.setenv("USERPROFILE" if os.name == "nt" else "HOME", str(home))
+    settings = home / ".gemini" / "antigravity-cli" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text('{"modelProvider":"gemini"}', encoding="utf-8")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-used")
     return fake
 
 
@@ -88,6 +100,25 @@ def test_build_command_omits_absent_options() -> None:
     assert "--model" not in command
     assert "--effort" not in command
     assert "--conversation" not in command
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_missing_gemini_opt_in_or_key_prevents_agent_spawn(tmp_path, monkeypatch, explicit):
+    _install_fake_agy(tmp_path, monkeypatch)
+    home = tmp_path / "agy-home"
+    if explicit:
+        monkeypatch.delenv("GEMINI_API_KEY")
+    else:
+        (home / ".gemini" / "antigravity-cli" / "settings.json").write_text("{}", encoding="utf-8")
+
+    async def unexpected(*_args, **_kwargs):
+        pytest.fail("APIキー方式の要件を満たさない委譲を起動した")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", unexpected)
+    async with antigravity.AntigravityManager() as backend:
+        with pytest.raises(session_errors.DelegateBackendError, match="Gemini|GEMINI"):
+            await backend.start("試験", str(tmp_path))
 
 
 @pytest.mark.asyncio
@@ -161,13 +192,14 @@ def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkey
 
 def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """CLIが未導入の起動失敗を委譲先CLIの失敗として送出し、導入と認証の確認へ分類されるようにする。"""
+    _install_fake_agy(tmp_path, monkeypatch)
     monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
 
     async def scenario() -> None:
         async with antigravity.AntigravityManager() as manager:
             await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
 
-    with pytest.raises(session_errors.DelegateBackendError, match="failed to start Antigravity CLI"):
+    with pytest.raises(session_errors.DelegateBackendError, match="agyが見つかりません"):
         asyncio.run(scenario())
 
 
@@ -445,6 +477,7 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
     fake = bin_dir / "agy"
     fake.write_text(_GATED_AGY.format(python=sys.executable, gate_dir=str(gate_dir)), encoding="utf-8")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setattr(antigravity, "_gemini_delegation_binary", lambda _env: str(fake))
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     log_directory = tmp_path / "logs"
 
@@ -480,8 +513,9 @@ def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: p
     fake.write_text(
         _FAKE_AGY.format(python=sys.executable).replace(
             "import sys\n",
-            f'import sys\nimport os\nwith open({str(captured)!r}, "a", encoding="utf-8") as stream:\n'
-            '    stream.write(json.dumps(os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")) + "\\n")\n',
+            f'import sys\nimport os\nif sys.argv[1:] != ["--version"]:\n'
+            f'    with open({str(captured)!r}, "a", encoding="utf-8") as stream:\n'
+            '        stream.write(json.dumps(os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")) + "\\n")\n',
         ),
         encoding="utf-8",
     )

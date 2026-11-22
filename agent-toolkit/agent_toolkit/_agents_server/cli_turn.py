@@ -65,6 +65,18 @@ class CliTurnManager:
         """CLI固有の起動引数を組み立てる。"""
         raise NotImplementedError
 
+    async def prepare_command(
+        self,
+        prompt: str,
+        model: str | None,
+        effort: str | None,
+        conversation_id: str | None,
+        environment: dict[str, str],
+    ) -> list[str]:
+        """子へ実際に渡す環境で、起動条件を確かめてから引数を組み立てる。"""
+        del environment
+        return self.build_command(prompt, model, effort, conversation_id)
+
     @staticmethod
     def system_prompt(launch_kind: LaunchKind) -> str:
         """CLI固有の配送手段に合わせた規範本文を返す。"""
@@ -369,12 +381,13 @@ class CliTurnManager:
         input_recorded = False
         try:
             async with contextlib.AsyncExitStack() as resources, asyncio.timeout(self.RUN_TIMEOUT):
-                command = self.build_command(prompt, model, effort, conversation_id)
+                environment = _child_env(self._root_session_id)
+                command = await self.prepare_command(prompt, model, effort, conversation_id, environment)
                 try:
                     process = await asyncio.create_subprocess_exec(
                         *command,
                         cwd=cwd,
-                        env=_child_env(self._root_session_id),
+                        env=environment,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
