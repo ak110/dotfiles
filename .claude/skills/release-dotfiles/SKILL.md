@@ -43,8 +43,8 @@ description: >
 
    作成の直前に`agent-toolkit:atk-mode/playbooks/review-external-writes.md`を読み（タイトルも文面ファイルへ含める）、PRを作る。
 5. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチの同期、CIの確認、必要なリリースの検収まで終える。
-6. 今回`master`へ反映した変更の採用記録から、エンドユーザー側の未実施の操作を拾う。
-   `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「エンドユーザー側の操作が必要な変更」に従って設定を進め、専用の案内UWIを登録する。
+6. 今回`master`へ反映した使い方の変更を採用記録から拾い、公開版のガイドを確かめる。
+   `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」に従って設定の要否を環境ごとに確かめ、専用の案内UWIを登録する。
    `develop`へのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。
 7. 主checkoutをfast-forwardした後は、稼働中の`atk-serve.service`を再起動する。
    反映と稼働の確認は`docs/development/operations-services.md`「fast-forward後のatk serveへの反映」に従い、反映したHEAD、再起動の終了コード、active/runningとHTTPの確認結果を完了報告へ残す。
