@@ -164,7 +164,7 @@ def dispatch(args: argparse.Namespace) -> int:
         args.work_dir = str(record.work_dir) if record.input.target_repo is not None else None
         args.timeout, args.run_id = record.remaining, record.input.run_id
         args.batch_manifest, args.resume_record = record.input.batch_manifest, record
-        if args.batch_manifest is not None:
+        if args.batch_manifest is not None or skill_modes.invocation_scope(args.skill, args.args) == session_review.META_SCOPE:
             from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
             return run_skill_batch.dispatch(args, _dispatch_once)
@@ -174,7 +174,7 @@ def dispatch(args: argparse.Namespace) -> int:
         return 2
     if getattr(args, "timeout", None) is None:
         args.timeout = DEFAULT_TIMEOUT_SECONDS
-    if skill_modes.invocation_scope(args.skill, args.args) == session_review.BATCH_SCOPE:
+    if skill_modes.invocation_scope(args.skill, args.args) in {session_review.BATCH_SCOPE, session_review.META_SCOPE}:
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return run_skill_batch.dispatch(args, _dispatch_once)

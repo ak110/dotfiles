@@ -33,6 +33,7 @@ from agent_toolkit._common import (
     state_paths,
 )
 
+META_SCOPE = "agent-toolkit:review-session meta"
 BATCH_SCOPE = "agent-toolkit:review-session batch"
 LEGACY_BATCH_SCOPE = "agent-toolkit:session-review-batch"
 BATCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_BATCH"

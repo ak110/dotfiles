@@ -21,7 +21,7 @@ from agent_toolkit._testing.process_loop_session_support import _isolate_process
 def test_single_run_instruction_survives_usage_limit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, once: bool
 ) -> None:
-    """接続の切替で起動文を作り直しても単回か常駐かを保つ。"""
+    """接続の切替でプロンプトを作り直しても単回か常駐かを保つ。"""
     prompts = []
 
     def run(args, _cwd, prompt, _env, **_kwargs):

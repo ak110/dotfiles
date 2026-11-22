@@ -440,6 +440,8 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
     root.mkdir(parents=True, exist_ok=True)
     try:
         with filelock.FileLock(str(root / "batch.lock"), timeout=0):
+            if skill_modes.invocation_scope(args.skill, args.args) == session_review.META_SCOPE:
+                return execute(args)
             session_review.sweep(now=time.time())
             if getattr(args, "resume_record", None) is not None:
                 return _resume_batch(args, execute)
@@ -447,7 +449,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
     except filelock.Timeout:
         session_review.launch_result()
         print(
-            "同じOSアカウントでagent-toolkit:review-session batchが実行中。既存の実行終了後に残る対象を処理する。",
+            "同じOSアカウントで振り返りのbatchかmetaが実行中。既存の実行が終わってから再実行する。",
             file=sys.stderr,
         )
         return 1
