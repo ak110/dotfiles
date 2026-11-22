@@ -8,7 +8,6 @@ import argparse
 import json
 import os
 import pathlib
-import shlex
 import sys
 from typing import Any
 
@@ -481,7 +480,7 @@ def test_wait_summary_required_lines_do_not_grow_with_notices(tmp_path: pathlib.
     ("with_run", "run_name"),
     [
         pytest.param(True, "run.json", id="run-record"),
-        pytest.param(True, "空白 を含む run.json", id="run-record-with-space"),
+        pytest.param(True, "空白 と ' を含む run.json", id="run-record-with-quotes"),
         pytest.param(False, "", id="no-run-record"),
     ],
 )
@@ -514,7 +513,7 @@ def test_wait_public_output_when_notice_file_cannot_be_written(
     assert terminal_line in captured.out.splitlines()
     assert "次の操作:" in captured.err
     if with_run:
-        assert f"通知本文の取得: jq -r .output -- {shlex.quote(str(run_path))}" in captured.out.splitlines()
+        assert f"通知本文のrun記録: {run_path}" in captured.out.splitlines()
         assert long_body not in captured.out
         assert len(captured.out.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
     else:
@@ -541,7 +540,7 @@ def test_consumed_published_run_points_to_run_when_notice_file_cannot_be_written
     commands.agents_wait._consume_wait_result(path)
 
     captured = capsys.readouterr()
-    assert f"通知本文の取得: jq -r .output -- {shlex.quote(str(path))}" in captured.out.splitlines()
+    assert f"通知本文のrun記録: {path}" in captured.out.splitlines()
     assert long_body not in captured.out
     assert len(captured.out.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
     saved_output = json.loads(path.read_text(encoding="utf-8"))["output"]
