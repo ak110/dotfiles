@@ -105,6 +105,7 @@ def _entry_detail_events(
                         "line": line,
                         "timestamp": timestamp,
                         "tool": str(block.get("tool_use_id", "")),
+                        "is_error": block.get("is_error") is True,
                         "text": budget.clip(_tool_result_body(block, entry)),
                     }
                 )

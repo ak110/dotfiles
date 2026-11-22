@@ -167,6 +167,7 @@ def _tool_use_index(collected: list[_CollectedRecord]) -> dict[tuple[str, str], 
                             "line": record.line,
                             "timestamp": _entry_timestamp(record.entry),
                             "name": str(block.get("name", "")),
+                            "call_id": block["id"],
                             "input": block.get("input"),
                         }
             payload = record.entry.get("payload")
@@ -180,6 +181,7 @@ def _tool_use_index(collected: list[_CollectedRecord]) -> dict[tuple[str, str], 
                     "line": record.line,
                     "timestamp": _entry_timestamp(record.entry),
                     "name": str(payload.get("name", "")),
+                    "call_id": payload["call_id"],
                     "input": payload.get("arguments", payload.get("input")),
                 }
     return index

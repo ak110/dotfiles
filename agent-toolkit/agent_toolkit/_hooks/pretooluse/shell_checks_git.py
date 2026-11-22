@@ -226,9 +226,7 @@ def duplicate_autosquash_subject(command: str, cwd: str) -> str | None:
         parsed = git_subcommand_tokens(invocation.segment)
         if parsed is None or parsed[0] != "commit" or not current.resolved:
             continue
-        if not tokens or pathlib.Path(tokens[0]).name not in {"git", "git.exe"}:
-            continue
-        prefix = tokens[1 : len(tokens) - len(parsed[1]) - 1]
+        prefix = () if is_atk_command(tokens) else tokens[1 : len(tokens) - len(parsed[1]) - 1]
         if len(prefix) % 2 or any(key != "-C" for key in prefix[::2]) or any(is_unknown_word(x) for x in prefix):
             continue
         for flag, argument in git_commit_options(parsed[1]):
@@ -243,11 +241,11 @@ def duplicate_autosquash_subject(command: str, cwd: str) -> str | None:
             action = (
                 "amend/rewordのfixupを作らずautosquashを中止する。"
                 if revise
-                else f"`{flag}`を外し、件名を`{'fixup' if flag == '--fixup' else 'squash'}! {oid}`にして作り直す。"
+                else f"`{flag}`を外し、`git commit -m '{'fixup' if flag == '--fixup' else 'squash'}! {oid}'` で作り直す。"
             )
             return _block_notice(
                 "未公開の履歴に同じ件名のcommitがあり、autosquashの統合先を一意に決められない。",
-                fix=action + _COMMIT_BLOCK_RERUN,
+                fix=action + " history-rewrite.md「fixupの実行上の制約」を参照する。" + _COMMIT_BLOCK_RERUN,
             )
     return None
 

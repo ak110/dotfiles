@@ -44,10 +44,11 @@ export const register: Register = (on) => {
   // Code Modeのツール探索はtool.describeの指定を返さないため、現在の入力にも添える。
   on("prompt.submit", async ($, e, next) => {
     if (e.origin.kind !== "composer" || e.text.trimStart().startsWith("<atk-auto") || !(await isTerminalMain($))) return next(e);
-    if (!(await $.tool.list().catch(() => [])).some((tool) => tool.name === SEND_TO_USER)) return next(e);
+    const listed = (await $.tool.list().catch(() => [])).some((tool) => tool.name === SEND_TO_USER);
     const notice = automatedMessage("send-to-user-contract", "notice",
-      "着手・進捗・完了報告は `send_to_user` で送る。REPLでは `await tools['" + SEND_TO_USER +
-      "']({message})` を呼ぶ。直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。呼出しに失敗した時だけ通常本文で伝え、送達後は `…` で閉じる。");
+      "着手・進捗・完了報告は `send_to_user` で送る。" +
+      (listed ? `REPLでは \`await tools['${SEND_TO_USER}']({message})\` を呼ぶ。` : "") +
+      "直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。呼出しに失敗した時だけ通常本文で伝え、送達後は `…` で閉じる。");
     return next({ ...e, context: [...(e.context ?? []), notice] });
   });
   on("session.start", async ($, e, next) => {

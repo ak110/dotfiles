@@ -74,13 +74,11 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
         let reason = "未対応の会話操作";
         if (request.operation === "send_to_user" && typeof request.input?.message === "string") {
           const messages = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {};
-          await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, { ...messages, [request.id]: request.input.message });
+          await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, { ...messages, [request.id]: { message: request.input.message, placedAt: Date.now() } });
           const placed = await $.ui.place({ id: request.id });
           ok = placed.isPlaced;
           reason = placed.isPlaced ? "" : placed.reason;
           if (ok) {
-            const delivered = (await $.state.get({ plugin: "agent-toolkit", key: "uiDeliveryTimes" })).value ?? {};
-            await $.state.set({ plugin: "agent-toolkit", key: "uiDeliveryTimes" }, { ...delivered, [request.id]: Date.now() });
             reason = [turnEndAfterDelivery, ...reportWarnings(request.input.message)].join("\n");
           }
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
@@ -180,18 +178,17 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
   });
   on("ui.render", { component: "Placed" }, async ($, e, next) => {
     if (e.props.plugin !== $.plugin.name) return next(e);
-    const message = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value?.[e.props.id];
-    if (message === undefined) return next(e);
-    const deliveredAt = (await $.state.get({ plugin: "agent-toolkit", key: "uiDeliveryTimes" })).value?.[e.props.id];
+    const delivery = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value?.[e.props.id];
+    if (delivery === undefined) return next(e);
     const { Markdown, Box } = $.ui.resolve(e);
     // 前後の会話行と区別しやすいよう、本文の上下に1行の余白を置く。
     return (
-      <Box marginTop={1} marginBottom={1}>
-        {deliveredAt !== undefined && <Markdown text={`送達時刻: ${new Intl.DateTimeFormat("ja-JP", {
+      <Box flexDirection="column" marginTop={1} marginBottom={1}>
+        <Markdown text={`送達時刻: ${new Intl.DateTimeFormat("ja-JP", {
           year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
           hourCycle: "h23", timeZoneName: "shortOffset",
-        }).format(deliveredAt)}`} />}
-        <Markdown text={message} />
+        }).format(delivery.placedAt)}`} />
+        <Markdown text={delivery.message} />
       </Box>
     );
   });
@@ -232,7 +229,7 @@ async function placedLive($: EngineInterface, call: SendCall): Promise<boolean> 
   const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};
   if (call.tool_use_id !== undefined && Object.hasOwn(calls, call.tool_use_id)) return Object.hasOwn(messages, calls[call.tool_use_id] ?? "");
   const keyed = new Set(Object.values(calls));
-  return Object.entries(messages).some(([id, message]) => !keyed.has(id) && message === deliveredMessage(call));
+  return Object.entries(messages).some(([id, message]) => !keyed.has(id) && message.message === deliveredMessage(call));
 }
 
 // 表示に成功した呼び出しの本文を返す。実行中・失敗・中断の呼び出しは本文を描かない。

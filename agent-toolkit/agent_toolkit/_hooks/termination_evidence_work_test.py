@@ -19,6 +19,7 @@ from agent_toolkit._hooks import (
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.termination_evidence_support import (
     _missing_completion,
+    _tool,
     human_input,
     stop_payload,
     supply_commit,
@@ -172,15 +173,25 @@ def test_cancelling_current_work_keeps_missing_completion_of_other_work(tmp_path
     assert later_id not in reason
 
 
-def test_managed_temp_exemption_preserves_linked_external_repository(tmp_path, monkeypatch):
+@pytest.mark.parametrize("kind", ["isolated", "linked", "external"])
+def test_managed_temp_exemption_preserves_linked_external_repository(tmp_path, monkeypatch, kind):
     temporary = tmp_path / "managed"
     temporary.mkdir()
-    isolated = git_repository.init_repository(temporary / "clone")
-    external = git_repository.init_repository(tmp_path / "normal")
-    git_repository.run_git(external, "commit", "--allow-empty", "-m", "初期")
-    linked = temporary / "linked"
-    git_repository.run_git(external, "worktree", "add", "--detach", str(linked))
     monkeypatch.setattr(termination_evidence_operations, "temp_root_path", lambda: temporary)
-    assert termination_evidence_operations._temporary_git_repository(isolated)
-    assert not termination_evidence_operations._temporary_git_repository(linked)
-    assert not termination_evidence_operations._temporary_git_repository(external)
+    if kind == "isolated":
+        target = git_repository.init_repository(temporary / "clone")
+    else:
+        target = git_repository.init_repository(tmp_path / "normal")
+        if kind == "linked":
+            git_repository.run_git(target, "commit", "--allow-empty", "-m", "初期")
+            linked = temporary / "linked"
+            git_repository.run_git(target, "worktree", "add", "--detach", str(linked))
+            target = linked
+    human_input(tmp_path, "request", "作業を頼む")
+    _tool(tmp_path, "edit", "Write", {"file_path": str(target / "file.txt")}, {"success": True}, codex=False)
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
+    if kind == "isolated":
+        assert decision == "approve"
+    else:
+        assert decision == "notify"
+        assert "リポジトリの編集" in reason

@@ -73,7 +73,7 @@ def warning(texts: Iterable[str], payload: dict | None = None) -> str | None:
             if not match or payload is None:
                 continue
             value = match[1].rstrip("。")
-            short = _MINUTES.fullmatch(value) if line.startswith("dateで確認") else None
+            short = _MINUTES.fullmatch(value)
             if short is None and _ISO.fullmatch(value) is None:
                 continue
             session_id = payload.get("session_id")
@@ -91,11 +91,21 @@ def warning(texts: Iterable[str], payload: dict | None = None) -> str | None:
                     removable_cause=False,
                     fix="根拠とする時計の出力を確認する。",
                 )
+            now = datetime.datetime.now(datetime.UTC)
             try:
-                moment = datetime.datetime.fromisoformat(observed if short is not None and isinstance(observed, str) else value)
+                if short is None:
+                    delta = abs((now - datetime.datetime.fromisoformat(value)).total_seconds())
+                elif line.startswith("dateで確認") and isinstance(observed, str):
+                    delta = abs((now - datetime.datetime.fromisoformat(observed)).total_seconds())
+                else:
+                    local_now = now.astimezone()
+                    current_minute = local_now.hour * 60 + local_now.minute
+                    caption_minute = int(short[1]) * 60 + int(short[2])
+                    minutes = abs(current_minute - caption_minute)
+                    delta = min(minutes, 1440 - minutes) * 60
             except ValueError:
                 continue
-            if abs((datetime.datetime.now(datetime.UTC) - moment).total_seconds()) > 120:
+            if delta > 120:
                 return _llm_notice(
                     "明示された現在時刻が時計の値と離れている。取得し直して時点を確認する。",
                     tag="warn",

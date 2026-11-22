@@ -28,13 +28,13 @@ for (const [surface, delegated, tool, shouldDeliver] of [
 
 for (const [surface, delegated, owner, registered, shouldDeliver] of [
   ["terminal", "", "", true, true],
-  ["terminal", "", "", false, false],
+  ["terminal", "", "", false, true],
   ["terminal", "1", "", true, false],
   ["terminal", "", "parent", true, false],
   ["desktop", "", "", true, false],
   [null, "", "", true, false],
 ] as const) {
-  test(`入力ごとの送り先は登録済みの端末のメインだけに届く: ${surface}/${delegated}/${owner}/${registered}`, async ($, on) => {
+  test(`入力ごとの送り先は端末のメインだけに届く: ${surface}/${delegated}/${owner}/${registered}`, async ($, on) => {
     mock.env(on, { AGENT_TOOLKIT_DELEGATED_SESSION: delegated, AGENT_TOOLKIT_OWNER_SESSION: owner });
     on("session.surfaces", () => ({ value: surface ? [surface] : [] }));
     const tool = "mcp__plugin_agent-toolkit_agents_server__send_to_user";
@@ -52,7 +52,7 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
         const notice = context.at(-1) ?? "";
         expect(notice).toMatch(/着手.*進捗.*完了報告.*send_to_user/);
         expect(notice).toMatch(/質問.*AskUserQuestion/);
-        expect(notice).toContain(`await tools['${tool}']({message})`);
+        if (registered) expect(notice).toContain(`await tools['${tool}']({message})`);
         expect(notice).toContain("呼出しに失敗した時だけ通常本文");
         expect(notice).toContain("searchTools");
         expect(notice).not.toContain("ツールが無い時");
