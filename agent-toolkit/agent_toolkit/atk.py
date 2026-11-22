@@ -384,6 +384,8 @@ def main(
             lambda: _managed_temp.create_output_temp("atk-output"),
             after_save=after_save,
             force_stdout=output_as_file is not None,
+            # waitの要約は自身で境界内に収め、超過分は標準エラーだけ保存する。  # pyfltr: allow-comment
+            direct_stdout=args.command == "agents" and args.agents_subcommand == "wait",
             discard_directory=_managed_temp.cleanup_managed_temp,
         ):
             main(argv, home=home, now=now, _output_capture_active=True, _saved_show_fields=show_fields)

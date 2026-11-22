@@ -12,26 +12,28 @@ from agent_toolkit._atk import output_file
 
 
 def test_saved_streams_report_path_and_line_count(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    bodies = ("標準出力\r\n" * 3000, "標準エラー\n" * 3000)
+    bodies = ("標準出力\r\n" * 4000, "標準エラー\n" * 4000)
     with output_file.auto_save(lambda: tmp_path):
         sys.stdout.write(bodies[0])
         sys.stderr.write(bodies[1])
     captured = capsys.readouterr()
     for output, expected, prefix in zip((captured.out, captured.err), bodies, ("", "標準エラー"), strict=True):
         lines = output.splitlines()
-        assert len(lines) == 2
+        assert len(lines) == 3
         assert lines[0].startswith(f"{prefix}保存先: ")
-        assert lines[1] == f"{prefix}行数: 3000"
+        assert lines[1] == f"{prefix}行数: 4000"
+        assert lines[2].startswith("注意: 約") and "範囲を指定して読め" in lines[2]
         saved = pathlib.Path(lines[0].removeprefix(f"{prefix}保存先: "))
         assert saved.read_bytes() == expected.encode("utf-8")
 
 
 @pytest.mark.parametrize("stderr", [False, True])
-@pytest.mark.parametrize("length", [16383, 16384, 16385])
+@pytest.mark.parametrize("offset", [-1, 0, 1])
 def test_each_stream_preserves_boundary_and_entire_output(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], stderr: bool, length: int
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], stderr: bool, offset: int
 ) -> None:
     """両ストリームを混ぜず、UTF-8境界の上下で同じ全量を受領する。"""
+    length = output_file.AUTO_SAVE_THRESHOLD_BYTES + offset
     text = "x" * length
     with output_file.auto_save(lambda: tmp_path):
         (sys.stderr if stderr else sys.stdout).write(text)
@@ -97,12 +99,50 @@ def test_multibyte_output_uses_utf8_size_and_preserves_callback(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """文字数が小さくてもUTF-8の長い本文を保存し、保存後の消費側へ同じ全量を渡す。"""
-    text = "診断" * 4000
+    text = "診断" * 9000
     observed = []
     with output_file.auto_save(lambda: tmp_path, after_save=lambda path: observed.append(path.read_text(encoding="utf-8"))):
         sys.stdout.write(text)
     assert observed == [text]
     assert capsys.readouterr().out.startswith("保存先: ")
+
+
+def test_threshold_matches_host_output_limits() -> None:
+    assert output_file.AUTO_SAVE_THRESHOLD_BYTES == 48 * 1024
+    assert output_file.AUTO_SAVE_THRESHOLD_BYTES < 62_000
+    assert output_file.estimated_tokens(output_file.AUTO_SAVE_THRESHOLD_BYTES) < 20_000
+
+
+def test_combined_streams_save_the_larger_one(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    half = output_file.AUTO_SAVE_THRESHOLD_BYTES // 2
+    large, small = "o" * (half + 100), "e" * (half - 50)
+    with output_file.auto_save(lambda: tmp_path):
+        sys.stdout.write(large)
+        sys.stderr.write(small)
+    captured = capsys.readouterr()
+    assert captured.out.startswith("保存先: ")
+    assert pathlib.Path(captured.out.splitlines()[0].removeprefix("保存先: ")).read_text(encoding="utf-8") == large
+    assert len(captured.out.splitlines()) == 2
+    assert captured.err == small
+
+
+def test_combined_streams_within_limit_are_shown_directly(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    half = output_file.AUTO_SAVE_THRESHOLD_BYTES // 2
+    with output_file.auto_save(lambda: tmp_path):
+        sys.stdout.write("o" * half)
+        sys.stderr.write("e" * half)
+    captured = capsys.readouterr()
+    assert captured.out == "o" * half
+    assert captured.err == "e" * half
+    assert not list(tmp_path.iterdir())
+
+
+def test_forced_short_save_has_no_caution(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with output_file.auto_save(lambda: tmp_path, force_stdout=True):
+        print("短い結果")
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("保存先: ")
+    assert lines[1:] == ["行数: 1"]
 
 
 def run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[object, str, str]:
@@ -231,7 +271,7 @@ def test_evidence_saved_matches_list_positions_and_heads(
                 ],
             },
         }
-        for index in range(6)
+        for index in range(20)
     ]
     trace.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     query = [mode, "検索語"] if mode == "--grep" else [mode]
@@ -243,14 +283,15 @@ def test_evidence_saved_matches_list_positions_and_heads(
     events = [json.loads(line) for line in saved.read_text(encoding="utf-8").splitlines()]
     kind = "match" if mode == "--grep" else "tool-call"
     matches = [event for event in events if event["kind"] == kind]
-    assert len(matches) == 6
+    assert len(matches) == 20
     expected = []
     for event in matches:
         fields = "".join(f" {key}={event[key]}" for key in ("role", "tool") if key in event)
         head = "echo 検索語" + (" " if mode == "--tool-calls" else "") + "長" * (151 if mode == "--tool-calls" else 152) + "…"
         expected.append(f"一致: record={event['record']} line={event['line']} kind={kind}{fields} {head}")
-    assert lines[2:] == expected
-    assert [event["text"] for event in matches] == [command + ("\n末尾" if mode == "--tool-calls" else "")] * 6
+    assert lines[2].startswith("注意: ")
+    assert lines[3:] == expected
+    assert [event["text"] for event in matches] == [command + ("\n末尾" if mode == "--tool-calls" else "")] * 20
 
 
 @pytest.mark.parametrize("mode", ["--grep", "--tool-calls"])
@@ -288,9 +329,10 @@ def test_evidence_saved_many_matches_show_bounded_summary(
     events = [json.loads(line) for line in saved.read_text(encoding="utf-8").splitlines()]
     matches = [event for event in events if event["kind"] == kind]
     assert len(matches) == 500
-    assert lines[2] == "一致: 全500件（保存順の先頭20件を表示）"
-    assert lines[3].startswith("内訳: kind=" + kind)
-    assert lines[4].startswith("記録別: ")
+    assert lines[2].startswith("注意: ")
+    assert lines[3] == "一致: 全500件（保存順の先頭20件を表示）"
+    assert lines[4].startswith("内訳: kind=" + kind)
+    assert lines[5].startswith("記録別: ")
     listed = [line for line in lines if line.startswith("一致: record=")]
     assert len(listed) == 20
     assert listed[0].startswith(f"一致: record={matches[0]['record']} line={matches[0]['line']} kind={kind}")
@@ -322,7 +364,8 @@ def test_evidence_saved_empty_and_summary_modes(
     code, output, error = run_atk(["run-script", "session-review-evidence", "--", str(trace), *query], capsys)
     assert code == 0, error
     assert output.startswith("保存先: ")
-    assert output.splitlines()[2:] == expected
+    assert output.splitlines()[2].startswith("注意: ")
+    assert output.splitlines()[3:] == expected
 
 
 def test_evidence_failure_preserves_output_and_exit_when_saved(
@@ -346,7 +389,7 @@ def test_evidence_failure_preserves_output_and_exit_when_saved(
             assert not actual
             continue
         lines = actual.splitlines()
-        assert len(lines) == 2
+        assert len(lines) == 3 and lines[2].startswith("注意: ")
         path = pathlib.Path(lines[0].removeprefix(f"{prefix}保存先: "))
         assert path.read_text(encoding="utf-8") == expected
 

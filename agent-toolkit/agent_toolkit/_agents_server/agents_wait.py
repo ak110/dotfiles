@@ -240,7 +240,7 @@ def _publish_wait_result(
         raise _WaitStateReadError(f"公開する待機runがrunningではありません: {run_path}")
     published = value.publish(_without_bodies(output, stream), code, stream, result_turns=result_turns)
     _write_json(run_path, published.model_dump(exclude_unset=True))
-    _print_public(output, stream)
+    _print_public(output, stream, run_path=run_path)
     _write_json(run_path, published.deliver(continuable=continuable).model_dump(exclude_unset=True))
     _remove_wait_stash(run_path)
     return code
@@ -272,7 +272,7 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
         return 8
     if not isinstance(value, wait_run.PublishedRun):
         return _fail(f"先行する待機の終了時の結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
-    _print_public(_public_wait_output(value.output, value.stream), value.stream)
+    _print_public(_public_wait_output(value.output, value.stream), value.stream, run_path=run_path)
     _write_json(run_path, value.consume().model_dump(exclude_unset=True))
     _remove_wait_stash(run_path)
     return value.exit_code
@@ -891,7 +891,7 @@ def _with_body(row: dict[str, Any]) -> dict[str, Any]:
         return row
 
 
-def _print_public(output: str, stream: str | None) -> None:
+def _print_public(output: str, stream: str | None, *, run_path: pathlib.Path | None = None) -> None:
     """待機結果を前景へ書く。エージェント環境では本文を重ねて保存しないよう、要約を標準出力へ直接書く。
 
     要約は通知・終了の内訳と上限内の本文を示し、本文ファイルを`agent_message_path`で後続へ渡せるようにする。
@@ -905,13 +905,25 @@ def _print_public(output: str, stream: str | None) -> None:
     if not is_agent_environment():
         print("\n".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in rows), flush=True)
         return
-    others = [
+    others = "".join(
         json.dumps({key: value for key, value in row.items() if key != "notices"}, ensure_ascii=False, separators=(",", ":"))
+        + "\n"
         for row in rows
         if row.get("status") not in state.TERMINAL_STATUSES
-    ]
-    sys.stdout.write(wait_summary.render(rows) + "".join(f"{line}\n" for line in others))
+    )
+    notices_reference, warning = wait_summary.prepare_notices_reference(rows, _write_notices, run_path)
+    if warning is not None:
+        print(warning, file=sys.stderr, flush=True)
+    summary = wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8")), notices_reference=notices_reference)
+    sys.stdout.write(summary + others)
     sys.stdout.flush()
+
+
+def _write_notices(text: str) -> pathlib.Path:
+    try:
+        return _BodyFileWriter().write("notices", {"agent_message": text})
+    except _managed_temp.ManagedTempError as error:
+        raise OSError(str(error)) from error
 
 
 def _public_wait_response(payload: Mapping[str, Any]) -> dict[str, Any]:

@@ -11,21 +11,20 @@ from __future__ import annotations
 import json
 import pathlib
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import resume_waits, state, turn_state
+from agent_toolkit._atk import output_file
 
 TERMINAL_LINE_PREFIX = "終了行: "
 WAIT_BODY_START_PREFIX = "本文開始: session_id="
 """要約が委譲先の本文の前に置く行の先頭。この行から同じsession識別子の終了の行までは委譲先の本文である。"""
 WAIT_BODY_END_PREFIX = "本文終了: session_id="
 """要約が委譲先の本文の後に置く行の先頭。"""
-BODY_BUDGET_BYTES = 16 * 1024
-"""要約の標準出力全体の上限（UTF-8バイト数）。超える本文は表示せず、`agent_message_path`から読ませる。
-
-`atk`の共通の自動保存の境界と同じ値にし、要約自体が保存へ回らないようにする。
-"""
+NOTICE_FILE_PREFIX = "通知本文ファイル: "
+NOTICE_RUN_PREFIX = "通知本文のrun記録: "
+BODY_BUDGET_BYTES = output_file.AUTO_SAVE_THRESHOLD_BYTES
 
 
 _SUMMARY_LEADING_KEYS = ("session_id", "label", "status", "agent_message_path")
@@ -33,14 +32,7 @@ _SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
 _TERMINAL_STATUS_RE = re.compile(r"\sstatus=([a-z_]+)(?:\s|$)")
 
 
-def render(rows: Iterable[Mapping[str, Any]]) -> str:
-    """待機結果の行から、通知・終了の内訳と上限内の本文を持つ要約を返す。
-
-    待機表明を確定した結果は、`unfinished_waits`へ残った待機対象の件数を加える。対象が残っていなければ0とする。
-    結果本文はその時点の待機表明であり再開したturnの結果ではないことを、委譲元が終了行だけから判別できるようにする。
-    本文は`本文開始:`と`本文終了:`の行で囲み、委譲元が待機の出力を1回読むだけで本文まで受け取れるようにする。
-    要約全体が上限を超える本文と、読めない本文ファイルは表示せず、`agent_message_path`から読ませる。
-    """
+def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0, notices_reference: str | None = None) -> str:
     notice_count = 0
     notice_session_ids: set[str] = set()
     notice_bodies: list[tuple[str, str]] = []
@@ -52,11 +44,7 @@ def render(rows: Iterable[Mapping[str, Any]]) -> str:
             session_id = result.get("session_id")
             if isinstance(session_id, str):
                 notice_session_ids.add(session_id)
-                notice_bodies.extend(
-                    (session_id, notice["body"])
-                    for notice in notices
-                    if isinstance(notice, dict) and isinstance(notice.get("body"), str)
-                )
+                notice_bodies.extend(_notice_bodies(session_id, notices))
         if result.get("status") in state.TERMINAL_STATUSES:
             fields = [
                 f"session_id={result.get('session_id')}",
@@ -75,15 +63,20 @@ def render(rows: Iterable[Mapping[str, Any]]) -> str:
             terminal_lines.append((f"{TERMINAL_LINE_PREFIX}{' '.join(fields)}", _terminal_body(result)))
     notice_line = f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）\n" if notice_count else ""
     terminal_header = f"終了: {len(terminal_lines)}件\n" if terminal_lines else ""
+    notice_file_line = f"{notices_reference}\n" if notice_bodies and notices_reference is not None else ""
+    # 全文のファイルが無い通知の本文は、他に読む手段が無いため必須として扱う。  # pyfltr: allow-comment
+    required_notices = "" if notice_file_line else "".join(_body_block(*entry) for entry in notice_bodies)
     remaining = (
         BODY_BUDGET_BYTES
-        - _utf8_size(notice_line + terminal_header)
+        - reserved_bytes
+        - _utf8_size(notice_line + notice_file_line + required_notices + terminal_header)
         - sum(_utf8_size(f"{line}\n") for line, _body in terminal_lines)
     )
-    output = [notice_line]
-    for session_id, body in notice_bodies:
-        block, remaining = _body_within(session_id, body, remaining)
-        output.append(block)
+    output = [notice_line, notice_file_line, required_notices]
+    if notice_file_line:
+        for session_id, body in notice_bodies:
+            block, remaining = _body_within(session_id, body, remaining)
+            output.append(block)
     output.append(terminal_header)
     for line, body_entry in terminal_lines:
         output.append(f"{line}\n")
@@ -91,6 +84,42 @@ def render(rows: Iterable[Mapping[str, Any]]) -> str:
             block, remaining = _body_within(*body_entry, remaining)
             output.append(block)
     return "".join(output)
+
+
+def prepare_notices_reference(
+    rows: Iterable[Mapping[str, Any]], write_file: Callable[[str], pathlib.Path], run_path: pathlib.Path | None
+) -> tuple[str | None, str | None]:
+    text = notice_text(rows)
+    if not text:
+        return None, None
+    try:
+        return f"{NOTICE_FILE_PREFIX}{write_file(text)}", None
+    except OSError as error:
+        if run_path is None:
+            return None, (
+                f"警告: 通知の本文をファイルへ書けない: {error}\n"
+                "次の操作: 通知の本文は標準出力に全文を表示した。managed-tempの権限・空き容量を確認する"
+            )
+        return f"{NOTICE_RUN_PREFIX}{run_path}", (
+            f"警告: 通知の本文をファイルへ書けない: {error}\n"
+            "次の操作: 通知の本文は、通知本文のrun記録の行が示すJSONファイルの`output`（JSON Lines）の各行の"
+            "`notices`から読む。managed-tempの権限・空き容量を確認する"
+        )
+
+
+def notice_text(rows: Iterable[Mapping[str, Any]]) -> str:
+    return "".join(
+        _body_block(sender, body)
+        for row in rows
+        if isinstance(session_id := row.get("session_id"), str) and isinstance(notices := row.get("notices"), list)
+        for sender, body in _notice_bodies(session_id, notices)
+    )
+
+
+def _notice_bodies(session_id: str, notices: list[Any]) -> list[tuple[str, str]]:
+    return [
+        (session_id, notice["body"]) for notice in notices if isinstance(notice, dict) and isinstance(notice.get("body"), str)
+    ]
 
 
 def terminal_session_ids(text: str) -> set[str]:
@@ -123,11 +152,15 @@ def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
         return None
 
 
-def _body_within(session_id: str, body: str, remaining: int) -> tuple[str, int]:
+def _body_block(session_id: str, body: str) -> str:
     block = f"{WAIT_BODY_START_PREFIX}{session_id}\n{body}"
     if body and not body.endswith("\n"):
         block += "\n"
-    block += f"{WAIT_BODY_END_PREFIX}{session_id}\n"
+    return block + f"{WAIT_BODY_END_PREFIX}{session_id}\n"
+
+
+def _body_within(session_id: str, body: str, remaining: int) -> tuple[str, int]:
+    block = _body_block(session_id, body)
     size = _utf8_size(block)
     if size > remaining:
         return "", remaining
