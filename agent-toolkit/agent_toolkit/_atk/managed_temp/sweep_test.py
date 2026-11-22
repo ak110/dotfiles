@@ -563,8 +563,9 @@ def _first_sweep_done() -> None:
 def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
     """空きが10%未満なら間隔内でも古い順に回収し、使用中・保護セッションは残し、上位名を記録する。"""
     _first_sweep_done()
-    old = _area("old-abc", days=3, files={"big": "x" * 400})
-    newer = _area("newer-abc", days=1, files={"big": "x" * 400})
+    tag = "Signature: 8a477f597d28d172789f06886806bc55"
+    old = _area("old-abc", days=3, files={"big": "x" * 400, "CACHEDIR.TAG": tag})
+    newer = _area("newer-abc", days=1, files={"big": "x" * 400, "CACHEDIR.TAG": tag})
     worktree = _area("wt-abc", days=5, files={"payload.txt": "x" * 400})
     session = _area("session-keep", days=6, files={"payload.txt": "x" * 400})
     registered = pathlib.Path(paths.temp_root().parent / "gitdir-wt")
@@ -573,6 +574,7 @@ def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatc
     (worktree / ".git").write_text(f"gitdir: {registered}\n", encoding="utf-8")
     monkeypatch.setattr(sweep.registry_index, "pending_session_ids", lambda: ["keep"])
     monkeypatch.setattr(sweep.creation, "find_session_temp", lambda _identifier: session)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
     # 容量1000のうち使用1600B相当ではなく、空きが10%（100）を割るよう基準の空きを設定する。
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 1700, paths.temp_root()))
 
@@ -792,12 +794,16 @@ def test_pressure_reclaims_tagged_root_before_unclassified(monkeypatch: pytest.M
 
 
 @pytest.mark.parametrize("references_known", [True, False], ids=["busy", "unknown"])
-def test_pressure_keeps_tagged_root_unless_unused(monkeypatch: pytest.MonkeyPatch, references_known: bool) -> None:
+@pytest.mark.parametrize("days", [2, 8])
+@pytest.mark.parametrize("force", [False, True])
+def test_pressure_keeps_tagged_root_unless_unused(
+    monkeypatch: pytest.MonkeyPatch, references_known: bool, days: int, force: bool
+) -> None:
     _first_sweep_done()
-    cache = _area("standalone", days=2, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+    cache = _area("standalone", days=days, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
     monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=8))
     monkeypatch.setattr(resources, "process_references", lambda: [cache / "active"] if references_known else None)
-    result = managed_temp.sweep_managed_temp(now=_NOW)
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=force)
     assert not result.deleted and not result.failed and cache.exists()
 
 
@@ -898,7 +904,7 @@ def test_space_pressure_keeps_recently_updated_area(monkeypatch: pytest.MonkeyPa
     """空きが不足していても、作成直後（最終更新から1時間以内）の領域は使用中の可能性があるため回収しない。"""
     _first_sweep_done()
     fresh = _area("fresh-abc", days=0, files={"big": "x" * 400})
-    old = _area("old-abc", days=2, files={"big": "x" * 400})
+    old = _area("old-abc", days=8, files={"big": "x" * 400})
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 850, paths.temp_root()))
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
@@ -910,7 +916,7 @@ def test_space_pressure_keeps_recently_updated_area(monkeypatch: pytest.MonkeyPa
 def test_free_ratio_environment_disables_reclaim(monkeypatch: pytest.MonkeyPatch) -> None:
     """下限を`0`へ上書きすると、空きが少なくても回収しない。不正な値は容量の10%の下限を使う。"""
     _first_sweep_done()
-    old = _area("old-abc", days=2, files={"big": "x" * 400})
+    old = _area("old-abc", days=8, files={"big": "x" * 400})
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 450, paths.temp_root()))
     monkeypatch.setenv(sweep.MIN_FREE_RATIO_ENV, "0")
 
@@ -939,7 +945,7 @@ def test_space_pressure_keeps_area_whose_owner_process_is_alive(monkeypatch: pyt
         },
     )
     monkeypatch.setattr(resources, "process_references", lambda: [])
-    dead = _area("dead-abc", days=3, files={"big": "x" * 300, sweep.OWNER_FILE: dead_token})
+    dead = _area("dead-abc", days=8, files={"big": "x" * 300, sweep.OWNER_FILE: dead_token})
     monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=1000, free=50))
 
     result = managed_temp.sweep_managed_temp(now=_NOW)

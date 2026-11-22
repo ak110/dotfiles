@@ -34,6 +34,17 @@ def _register(path: pathlib.Path) -> dict:
     return target
 
 
+def _assert_sweeps_keep(monkeypatch, work_dirs: set[pathlib.Path], now: datetime.datetime) -> None:
+    with monkeypatch.context() as pressure:
+        pressure.setenv(sweep.MIN_FREE_RATIO_ENV, "0.1")
+        pressure.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=5000, used=5000))
+        swept = managed_temp.sweep_managed_temp(now=now, force=True)
+        assert not swept.failed and work_dirs.isdisjoint(swept.deleted)
+        pressure.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=0, used=10_000))
+        swept = managed_temp.sweep_managed_temp(now=now)
+    assert swept.pressure is not None and work_dirs.isdisjoint(swept.deleted)
+
+
 @pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     1.0,
@@ -89,14 +100,7 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         # 起動元が消えても、資料を読む実行者の所有で日次掃引から守る。
         for work_dir in work_dirs:
             (work_dir / managed_temp.OWNER_FILE).unlink()
-        with monkeypatch.context() as pressure:
-            pressure.setenv(sweep.MIN_FREE_RATIO_ENV, "0.1")
-            pressure.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=5000, used=5000))
-            swept = managed_temp.sweep_managed_temp(now=sweep_time, force=True)
-            assert not swept.failed and work_dirs.isdisjoint(swept.deleted)
-            pressure.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=0, used=10_000))
-            swept = managed_temp.sweep_managed_temp(now=sweep_time)
-        assert swept.pressure is not None and work_dirs.isdisjoint(swept.deleted)
+        _assert_sweeps_keep(monkeypatch, work_dirs, sweep_time)
         assert all((work_dir / "conversation.md").is_file() for work_dir in work_dirs)
         partial = next(item for item in manifest["prepared"] if item["session_id"] == parent.stem)
         assert partial["partial_analysis"] is True
@@ -161,7 +165,7 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
 
 def test_resumed_legacy_work_dir_remains_visible_to_sweep_while_executor_lives(monkeypatch):
     session_id = "old-batch-target"
-    root = managed_temp.resolve_session_temp(session_id)
+    root = managed_temp.resolve_session_temp("original-transcript-stem")
     work_dir = managed_temp.create_session_temp("session-review", root)
     bundle = work_dir / "bundle"
     bundle.mkdir()
@@ -178,8 +182,7 @@ def test_resumed_legacy_work_dir_remains_visible_to_sweep_while_executor_lives(m
     )
     run_skill_batch.record_executor(argparse.Namespace(batch_manifest=str(path)), os.getpid())
     now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
-    monkeypatch.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=5000, used=5000))
-    assert root not in managed_temp.sweep_managed_temp(now=now, force=True).deleted
+    _assert_sweeps_keep(monkeypatch, {root}, now)
     assert (bundle / "scope.json").is_file()
 
 

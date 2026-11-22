@@ -74,7 +74,7 @@ def test_daily_sweep_checks_fresh_root_ownership_only_for_regenerable_cleanup(
 
 @pytest.mark.parametrize("existing_lock", [False, True])
 @pytest.mark.parametrize("entry", ["daily", "forced", "pressure"])
-def test_full_disk_can_reclaim_expired_without_creating_a_lock(
+def test_full_disk_reclaims_only_caches_when_lock_cannot_be_created(
     monkeypatch: pytest.MonkeyPatch, existing_lock: bool, entry: str
 ) -> None:
     if entry == "pressure":
@@ -82,13 +82,20 @@ def test_full_disk_can_reclaim_expired_without_creating_a_lock(
     expired = _area("session-expired", days=9, files={"payload": "x" * 1300})
     fresh = _area("session-weekend", days=3, files={"handoff": "keep"})
     busy = _area("session-busy", days=9, files={sweep.OWNER_FILE: sweep.owner_token()})
+    cache = _area(
+        "restore-cache",
+        days=8,
+        files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55", "payload": "x" * 1300},
+    )
     lock = paths.state_root() / ".sweep/pressure.lock"
     if existing_lock:
         lock.parent.mkdir(exist_ok=True)
         lock.touch()
     _deny_lock_creation(monkeypatch, lock)
-    disk = _FakeDisk(10000, 1304 + (busy / sweep.OWNER_FILE).stat().st_size, paths.temp_root())
+    used = sum(item.stat().st_size for item in paths.temp_root().rglob("*") if item.is_file())
+    disk = _FakeDisk(10000, used, paths.temp_root())
     monkeypatch.setattr(sweep, "_disk_usage", disk)
+    monkeypatch.setattr(resources, "process_references", lambda: [])
     assert disk(expired).free == 0
     original_remove = sweep.remove_tree
 
@@ -113,8 +120,11 @@ def test_full_disk_can_reclaim_expired_without_creating_a_lock(
 
     monkeypatch.setattr(sweep, "remove_tree", competing_sweep)
     result = managed_temp.sweep_managed_temp(now=_NOW, force=entry == "forced")
-    assert result.deleted == [expired] and not result.failed
-    assert disk(expired).free == 1300
+    expected = {expired} if existing_lock else {cache}
+    if existing_lock and entry != "pressure":
+        expected.add(cache)
+    assert set(result.deleted) == expected and not result.failed
+    assert expired.exists() != (expired in expected) and cache.exists() != (cache in expected)
     assert (fresh / "handoff").read_text(encoding="utf-8") == "keep" and busy.is_dir()
 
 
@@ -142,18 +152,21 @@ def test_zero_free_space_reclaims_unused_caches(
     if layout in {"standalone-only", "mixed"}:
         expected.add(_area("standalone", days=3, files={"CACHEDIR.TAG": tag}))
     if layout == "mixed":
-        expected.add(_area("expired", days=9))
+        expired = _area("expired", days=9)
+        if not lock_full:
+            expected.add(expired)
     _age(session, 3)
     # 全件を合わせても下限に届かない。同じ容量・同じ時刻でロック作成の成否だけを変える。
     root = paths.temp_root()
     initial_size = sum(item.stat().st_size for item in root.rglob("*") if item.is_file())
+    expected_free = sum(item.stat().st_size for area in expected for item in area.rglob("*") if item.is_file())
     disk = _FakeDisk(100_000, initial_size, root)
     monkeypatch.setattr(sweep, "_disk_usage", disk)
     monkeypatch.setattr(resources, "process_references", lambda: [])
     assert disk(session).free == 0
     result = managed_temp.sweep_managed_temp(now=_NOW, force=entry == "forced")
     assert set(result.deleted) == expected and not result.failed
-    assert all(not path.exists() for path in expected) and disk(session).free == initial_size - record.stat().st_size
+    assert all(not path.exists() for path in expected) and disk(session).free == expected_free
     assert managed_temp.find_session_temp("weekend") == session and record.read_bytes() == b"only copy"
 
 
@@ -257,6 +270,7 @@ def test_cache_recovery_does_not_require_writable_state(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(resources, "process_references", lambda: [])
     monkeypatch.setattr(pathlib.Path, "mkdir", full)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=0))
     # 物理mtimeと掃引の判定時刻を同じ時計にそろえる。
     now = datetime.datetime.now(datetime.UTC)
     last_use = now - datetime.timedelta(days=3)
@@ -273,7 +287,8 @@ def test_cache_recovery_does_not_require_writable_state(monkeypatch: pytest.Monk
     after_cleanup = datetime.datetime.fromtimestamp(area.stat().st_mtime, datetime.UTC)
     retained_since = after_cleanup if still_full else last_use
     assert not managed_temp.sweep_managed_temp(now=retained_since + datetime.timedelta(days=6), force=True).deleted
-    assert managed_temp.sweep_managed_temp(now=retained_since + datetime.timedelta(days=8), force=True).deleted == [area]
+    expected = [] if still_full else [area]
+    assert managed_temp.sweep_managed_temp(now=retained_since + datetime.timedelta(days=8), force=True).deleted == expected
 
 
 @pytest.mark.parametrize("daily", [False, True])
@@ -303,6 +318,7 @@ def test_sweep_keeps_its_own_lock_and_session_references_in_shared_root(monkeypa
 
 def test_full_disk_recovers_when_no_sweep_state_has_ever_been_created(monkeypatch: pytest.MonkeyPatch) -> None:
     expired = _area("expired", days=9)
+    cache = _area("unused-cache", days=8, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55"})
     state = paths.state_root_path()
     assert not state.exists()
     original_mkdir = pathlib.Path.mkdir
@@ -313,5 +329,8 @@ def test_full_disk_recovers_when_no_sweep_state_has_ever_been_created(monkeypatc
         original_mkdir(path, *args, **kwargs)
 
     monkeypatch.setattr(pathlib.Path, "mkdir", full)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=0))
+    monkeypatch.setattr(resources, "process_references", lambda: [])
     result = managed_temp.sweep_managed_temp(now=_NOW)
-    assert result.deleted == [expired] and not result.failed and not state.exists()
+    assert result.deleted == [cache] and not result.failed and not state.exists()
+    assert expired.exists()

@@ -630,11 +630,8 @@ def _pin_prepared(manifest: dict[str, Any], *, executor: session_registry.Proces
             continue
         path = pathlib.Path(value)
         dedicated = path.parent == managed_temp.temp_root_path() and path.name.startswith(f"{_PREPARE_TEMP_PREFIX}-")
-        legacy = (
-            not dedicated
-            and path.name.startswith("session-review-")
-            and path.parent == managed_temp.find_session_temp(prepared["session_id"])
-        )
+        # 旧prepareの親は元記録のstemから決まり、待ちのセッションIDと異なる場合がある。
+        legacy = path.parent.parent == managed_temp.temp_root_path() and path.name.startswith("session-review-")
         if not dedicated and not legacy:
             continue
         try:

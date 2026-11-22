@@ -114,7 +114,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 
 `agent-toolkit:atk-mode/playbooks/review-session.md`の単発の振り返りは、必要時か巡回の指定の区切りで行い、本書の工程と送達の条件とは分ける。
-batchによる未処理セッションの回収は別に行う。
+非同期の`review-session batch`は、その場の`bugfix`と単発の振り返りで拾い切れなかった問題を後から扱う。
 
 ## 常時稼働サーバーへの反映
 
