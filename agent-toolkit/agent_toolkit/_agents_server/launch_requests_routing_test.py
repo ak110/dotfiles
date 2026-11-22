@@ -177,6 +177,12 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     extra_params = _observed_input_params(task_name, tmp_path)
     if task_name == "exec-review.subagent.md":
         _prepare_exec_review_plan(tmp_path)
+    if task_name == "repository-process.subagent.md":
+        # 保存した起動入力の旧ランチャー所有台帳は廃止した。現在の入力では他の値を保つ。
+        with pytest.raises(ActionableError, match="ownership_record"):
+            launch_requests._validate_required_prompt_inputs(task_document, extra_params)
+        del extra_params["ownership_record"]
+        del extra_params["ownership_token"]
 
     assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
 
