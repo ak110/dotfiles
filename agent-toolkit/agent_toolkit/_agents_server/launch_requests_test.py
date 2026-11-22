@@ -532,3 +532,19 @@ async def test_add_wi_start_ignores_requirements_and_destinations_in_examples(
         params["投入する要求"] = text.replace("- 種別:", "- 投入先: github.com/example/repository\n- 種別:")
         await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
         assert len(backend.start_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_add_wi_start_requires_unfenced_compact_input(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """簡略形も補足資料のコードフェンスからは拾わない。"""
+    compact = "request=/example=awi=検証する"
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        params = {"投入する要求": f"```text\n{compact}\n```", "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert not backend.start_calls
+        params["投入する要求"] = compact
+        await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert len(backend.start_calls) == 1

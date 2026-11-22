@@ -246,13 +246,14 @@ def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mappin
     text = request.strip()
     if "\n" not in text and pathlib.Path(text).is_absolute():
         text = _read_add_wi_input(pathlib.Path(text))
-    preamble, *requirements = _ADD_WI_REQUIREMENT.split(without_literal_blocks(text))
+    text = without_literal_blocks(text).strip()
+    preamble, *requirements = _ADD_WI_REQUIREMENT.split(text)
     common = _add_wi_destination_fields(preamble)
     for reference in _ADD_WI_COMMON_INPUT.finditer(preamble):
         reference_path = pathlib.Path(reference["path"].strip().strip("`"))
         if reference_path.is_absolute():
             common.extend(_add_wi_destination_fields(without_literal_blocks(_read_add_wi_input(reference_path))))
-    if not common and not requirements:
+    if not common and not requirements and "\n" not in text:
         # 既存の簡略形: 識別子=対象リポジトリ=種別=趣旨
         parts = text.split("=", maxsplit=3)
         if len(parts) == 4 and parts[2].casefold() in {"awi", "uwi"}:
