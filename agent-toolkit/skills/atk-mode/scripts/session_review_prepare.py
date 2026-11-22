@@ -201,6 +201,7 @@ def _extract_bundle(
     *,
     conversation_output: list[dict[str, Any]],
     conversation_only: bool,
+    conversation_main_only: bool = False,
     conversation_scope: pathlib.Path | None = None,
 ) -> tuple[str | None, list[dict[str, Any]]]:
     """bundleの成功時も未解決通知を受け渡し、走査全量と最終JSONへ混ぜない。"""
@@ -211,6 +212,7 @@ def _extract_bundle(
             conversation_output=conversation_output,
             conversation_scope=conversation_scope,
             conversation_only=conversation_only,
+            conversation_main_only=conversation_main_only,
         )
     if exit_code != 0:
         return captured.getvalue() or f"atk run-script session-review-evidenceの終了コード: {exit_code}", []
@@ -384,6 +386,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             bundle_dir,
             conversation_output=conversation_output,
             conversation_only=lightweight,
+            conversation_main_only=args.conversation_digest,
         )
     unresolved = [event for event in scope_events if event["kind"] != "recovered-record-line"]
     recovered = [event for event in scope_events if event["kind"] == "recovered-record-line"]

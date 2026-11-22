@@ -168,7 +168,7 @@ def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     def unexpected(*_args, **_kwargs):
         pytest.fail("子の圧縮でメインの会話の要約を作った")
 
-    monkeypatch.setattr(rules_context.process_tree, "run_with_timeout", unexpected)
+    monkeypatch.setattr(rules_context, "_compaction_notice", unexpected)
     session_id = "builtin-child-compact"
     main_notice, child_notice = "pretooluse|main|notice", "pretooluse|child-1|notice"
     update_state(
@@ -193,7 +193,7 @@ def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     assert state[operation_skills.NOTIFIED_KEY] == {"main": ["agent-basics:search"]}
     assert state["notice_fingerprints"] == {main_notice: ["main"]}
     assert f"このサブエージェント専用の一時領域: {tmp_path / 'agent-child-1'}" in output
-    assert "compaction-digest" not in output
+    assert "--conversation-digest" not in output
     assert not (tmp_path / "compaction-digest").exists()
     assert rules_context.DELEGATED_COMPACT_NOTICE in output
 
