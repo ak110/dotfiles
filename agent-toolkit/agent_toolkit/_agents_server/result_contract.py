@@ -9,6 +9,7 @@ from typing import Any
 
 from agent_toolkit._agents_server.runtime_result_evidence import has_runtime_evidence
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._agents_server.tool_descriptions import FREEFORM_RESULT_CONTRACT_KINDS
 from agent_toolkit._agents_server.turn_state import ResultContractWait
 from agent_toolkit._common import task_documents
 from agent_toolkit._common.next_action import ActionableError
@@ -17,7 +18,6 @@ _REASON_PREFIX = "続行できない理由:"
 _CLASSIFICATION_PREFIX = "続行できない区分:"
 # 「返却形式の受け渡し」が全役割に定める正常結果の状態行。役割固有の固定行は宣言の`result_heads`が加える。
 _STATE_HEAD = "状態: completed"
-_FREEFORM_CHECKED_KINDS = frozenset({"delegate", "explore", "write"})
 
 
 def is_wait_statement(message: object) -> bool:
@@ -67,7 +67,7 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
     if result.get("status") != "completed":
         return None
     message = result.get("agent_message")
-    if isinstance(message, str) and session.launch_kind in _FREEFORM_CHECKED_KINDS:
+    if isinstance(message, str) and session.launch_kind in FREEFORM_RESULT_CONTRACT_KINDS:
         unavailable = re.finditer(
             r"(?m)^(?P<indent>[ \t]*)続行できない区分:[ \t]*runtime_unavailable[ \t]*\r?\n"
             r"(?P=indent)続行できない理由:[ \t]*(?P<reason>[^\r\n]*)",
@@ -93,7 +93,7 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
                     "予算・時間枠・ツール回数枠の自己推定は実行不能の証拠になりません"
                 )
     document = task_documents.launched_task_document(session.prompt)
-    freeform_checked = session.launch_kind in _FREEFORM_CHECKED_KINDS and document is None
+    freeform_checked = session.launch_kind in FREEFORM_RESULT_CONTRACT_KINDS and document is None
     if not freeform_checked and (document is None or not task_documents.is_agent_toolkit_task_document(document)):
         return None
     if not isinstance(message, str):

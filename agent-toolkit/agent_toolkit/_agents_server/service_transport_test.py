@@ -439,12 +439,20 @@ def test_denied_generation_scenes_cover_every_liveness_caller() -> None:
     assert found == set(_DENIED_GENERATION_SCENES)
 
 
-@pytest.mark.parametrize("alive", [False, True])
-def test_connect_only_converts_permission_error_for_exited_generation(monkeypatch: pytest.MonkeyPatch, alive: bool) -> None:
-    """接続時の拒否でも、世代の生存中は認証失敗のまま返す。"""
-    client = Mock(side_effect=PermissionError("接続拒否"))
-    monkeypatch.setattr(service_transport.connection, "Client", client)
+@pytest.mark.parametrize(
+    ("rejected", "alive", "expected"),
+    [
+        (service_transport.ProcessIdentityMismatch, False, FileNotFoundError),
+        (service_transport.ProcessIdentityMismatch, True, service_transport.ProcessIdentityMismatch),
+        (PermissionError, False, PermissionError),
+    ],
+)
+def test_connect_distinguishes_expired_generation_from_account_denial(
+    monkeypatch: pytest.MonkeyPatch, rejected: type[PermissionError], alive: bool, expected: type[OSError]
+) -> None:
+    """終了した世代の不一致だけ変換し、アカウントの拒否は終了状態にかかわらず保持する。"""
+    monkeypatch.setattr(service_transport.connection, "Client", lambda *args, **kw: contextlib.nullcontext(Mock()))
+    monkeypatch.setattr(service_transport, "authenticate", Mock(side_effect=rejected("接続拒否")))
     monkeypatch.setattr(service_transport, "process_alive", lambda _identity: alive)
-    expected = PermissionError if alive else FileNotFoundError
     with pytest.raises(expected), service_transport.connect("endpoint", "42:1"):
         pytest.fail("操作を実行してはならない")

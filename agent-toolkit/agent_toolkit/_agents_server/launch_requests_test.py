@@ -463,8 +463,9 @@ async def test_add_wi_start_rejects_unsettled_destination_before_backend(
     """要求ファイル・直接本文とも未確定の投入先で起動せず、確定した値で再発行できる。"""
     requirement = tmp_path / "request.md"
 
-    def request(destination: str) -> str:
-        text = f"# 要求\n\n- 投入先: {destination}\n- 種別: AWI\n"
+    def request(destination: str | None) -> str:
+        field = f"- 投入先: {destination}\n" if destination is not None else ""
+        text = f"# 要求\n\n{field}- 種別: AWI\n"
         if file_input:
             requirement.write_text(text, encoding="utf-8")
             return str(requirement)
@@ -474,6 +475,9 @@ async def test_add_wi_start_rejects_unsettled_destination_before_backend(
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         params = {"投入する要求": request("調査で確定"), "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        params["投入する要求"] = request(None)
         with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
             await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
         assert not backend.start_calls

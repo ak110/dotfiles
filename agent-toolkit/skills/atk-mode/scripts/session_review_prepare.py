@@ -431,7 +431,11 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     conversation_text = (
         None
         if args.conversation_window or args.conversation_digest
-        else _conversation_document(conversation, detail_command, str(main_record) if main_record else None)
+        else _conversation_document(
+            [*conversation, *(event for event in timeline if event.get("fork_lines"))],
+            detail_command,
+            str(main_record) if main_record else None,
+        )
     )
     conversation_limit = args.conversation_max_bytes if args.conversation_window else _CONVERSATION_MAX_BYTES
     if args.conversation_digest:

@@ -219,7 +219,9 @@ def authenticate(peer: Any, *, server: bool, expected_process: str | None = None
         if _sid(remote) != _sid(local):
             raise PermissionError("管理サービスの接続相手のSIDが一致しません")
         if expected_process is not None and _identity(remote, pid.value) != expected_process:
-            raise PermissionError("管理サービスの接続相手の起動世代が一致しません")
+            from agent_toolkit._agents_server.service_transport import ProcessIdentityMismatch  # noqa: PLC0415
+
+            raise ProcessIdentityMismatch("管理サービスの接続相手の起動世代が一致しません")
     return pid.value
 
 

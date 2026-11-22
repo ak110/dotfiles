@@ -176,6 +176,9 @@ def set_limits(config: pytest.Config, items: list[pytest.Item]) -> None:
         # netから控除する共有初期化費用には、通常0.5/gross2と同じ余裕を重い試験にも残す。
         gross = float(seconds) + 1.5 if marker is not None else max(2.0, default_limit)
         if not math.isfinite(gross * scale):
-            raise pytest.UsageError(f"{item.nodeid}: 係数適用後のCPU上限が有限値ではありません")
+            raise pytest.UsageError(
+                f"{item.nodeid}: 係数適用後のCPU上限が有限値ではありません。"
+                "--cpu-limit-scaleまたはcpu_limitを下げて再実行してください"
+            )
         item.stash[_CPU_LIMIT] = (float(seconds) * scale, reason)
         item.stash[_CPU_GROSS_LIMIT] = gross * scale

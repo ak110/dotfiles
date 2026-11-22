@@ -305,7 +305,8 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
     """セッション全体の目的・判断・操作と手戻りを、担当間の時系列を合わせて1エージェントが通読できる量で示す。"""
     by_record: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for event in events:
-        by_record[str(event["record"])].append(event)
+        if event.get("kind") != "record-provenance":
+            by_record[str(event["record"])].append(event)
     if main_record is None and by_record:
         main_record = next(iter(by_record))
     header = [

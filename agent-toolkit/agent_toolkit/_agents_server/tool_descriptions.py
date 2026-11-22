@@ -186,6 +186,11 @@ START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
 }
 
 
+# 登録した自由本文のmodeには、対象外の理由を宣言しない限り返却形式を適用する。
+START_RESULT_CONTRACT_EXEMPTIONS = {"shell": "コマンドの終了コードと保存出力で検収する"}
+FREEFORM_RESULT_CONTRACT_KINDS = START_MODE_INPUTS.keys() - START_RESULT_CONTRACT_EXEMPTIONS.keys() - {"task"}
+
+
 START_NORMAL_TASK_EXAMPLE = (
     '`{"cwd": "<絶対パス>", "subagent_md_path": "<通常起動の役割名>", "extra_params": {...}, '
     '"whole_contract_path": "<全体作業契約の絶対パス>"}`'

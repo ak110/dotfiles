@@ -239,17 +239,21 @@ def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mappin
         parts = text.split("=", maxsplit=3)
         if len(parts) == 4 and parts[2].casefold() in {"awi", "uwi"}:
             destinations = [parts[1]]
-    for value in destinations:
-        location = re.split(r"[（、]", value, maxsplit=1)[0].strip().strip("`")
-        with contextlib.suppress(ValueError):
-            if pathlib.Path(location).is_absolute() or (
-                not any(character.isspace() for character in location) and remote.normalize_remote_url(location) == location
-            ):
-                continue
-        raise ActionableError(
-            "add-wiの投入先に絶対パスか正規化したリモートURLが必要です。委譲先は起動していない。",
-            next_action="委譲元が投入先を確定し、要求ファイルか直接本文を直して同じstartを再発行する",
+    if destinations and all(_add_wi_destination_is_resolved(value) for value in destinations):
+        return
+    raise ActionableError(
+        "add-wiの投入先に絶対パスか正規化したリモートURLが必要です。委譲先は起動していない。",
+        next_action="委譲元が投入先を確定し、要求ファイルか直接本文を直して同じstartを再発行する",
+    )
+
+
+def _add_wi_destination_is_resolved(value: str) -> bool:
+    location = re.split(r"[（、]", value, maxsplit=1)[0].strip().strip("`")
+    with contextlib.suppress(ValueError):
+        return pathlib.Path(location).is_absolute() or (
+            not any(character.isspace() for character in location) and remote.normalize_remote_url(location) == location
         )
+    return False
 
 
 def _validate_required_prompt_inputs(

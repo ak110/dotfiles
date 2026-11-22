@@ -297,6 +297,7 @@ def _collection_events(
                 f"{sum(_is_codex_call(row) for row in item.fork_context)} 操作は子の実行に数えない"
             ),
             "partial": True,
+            "next_action": "親記録を取得して再照会する。取得できなければ、子記録の該当行を詳細照会する。",
         }
         for item in collected
         if item.fork_context and not item.fork_attribution_known
