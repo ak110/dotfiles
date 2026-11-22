@@ -99,7 +99,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | 方針の衝突、言語の検査の通知、先送り、資格情報の発見 | `references/conduct.md` |
 | 利用上限の予告・猶予の通知 | `references/usage-limit.md` |
 | 定義済みの名前 | `references/defined-names.md` |
-| 文章、設計、実装、テストの品質 | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
+| 返答・質問・文章、設計、実装、テスト | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
 | レビュー、実行での確認、検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
 
 ## 委譲
