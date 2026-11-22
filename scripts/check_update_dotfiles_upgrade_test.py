@@ -17,6 +17,12 @@ _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
 
 
+def _write_old_script(checkout: pathlib.Path, requirement: str) -> None:
+    script = checkout / "libexec" / "update_dotfiles.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(f'# /// script\n# requires-python = "{requirement}"\n# dependencies = []\n# ///\n', encoding="utf-8")
+
+
 @pytest.fixture(autouse=True)
 def fake_preflight_probes(monkeypatch: pytest.MonkeyPatch) -> None:
     run = upgrade.run_command
@@ -26,6 +32,7 @@ def fake_preflight_probes(monkeypatch: pytest.MonkeyPatch) -> None:
             if tuple(arguments[:3]) == ("git", "remote", "get-url"):
                 return subprocess.CompletedProcess(arguments, 0, stdout=str(cwd.parents[1] / "remote.git"), stderr="")
             if tuple(arguments[1:]) == ("symbolic-ref", "HEAD"):
+                _write_old_script(cwd, ">=3.15")
                 return subprocess.CompletedProcess(arguments, 0, stdout="refs/heads/upgrade-check", stderr="")
             if arguments[1] == "for-each-ref":
                 return subprocess.CompletedProcess(arguments, 0, stdout="origin refs/heads/upgrade-check", stderr="")
@@ -59,10 +66,13 @@ def test_preflight_checks_resolved_paths(tmp_path: pathlib.Path, monkeypatch: py
         "UV_PYTHON_INSTALL_DIR": str(home / "python"),
         "UV_CACHE_DIR": str(home / "cache"),
         "UV_TOOL_BIN_DIR": str(home / "bin"),
+        "UV_PYTHON": str(outside / "bin" / "python"),
+        "VIRTUAL_ENV": str(outside),
     }
+    _write_old_script(checkout, ">=3.16,<3.18")
     upgrade.register_upgrade_checkout(checkout if escaped != "checkout登録" else outside, env, "linux")
 
-    def run(arguments, **_kwargs):
+    def run(arguments, **kwargs):
         if arguments[1] == "symbolic-ref":
             value = "refs/heads/upgrade-check"
         elif arguments[1] == "for-each-ref":
@@ -74,10 +84,14 @@ def test_preflight_checks_resolved_paths(tmp_path: pathlib.Path, monkeypatch: py
                 home / "bin" / "uv",
                 "python",
                 "find",
-                "--script",
-                checkout / "libexec" / "update_dotfiles.py",
+                "--no-project",
+                "--system",
+                "--",
+                ">=3.16,<3.18",
             )
-            value = home / "python" / "python" if escaped != "Python" else outside
+            assert "UV_PYTHON" not in kwargs["env"]
+            assert kwargs["env"]["UV_MANAGED_PYTHON"] == "1"
+            value = home / "python" / "python" if escaped != "Python" else home / ".venv" / "bin" / "python"
         return subprocess.CompletedProcess(arguments, 0, stdout=str(value), stderr="")
 
     monkeypatch.setattr(upgrade, "run_command", run)

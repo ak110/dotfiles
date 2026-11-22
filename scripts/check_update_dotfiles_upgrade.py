@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import typing
 from collections.abc import Callable, Mapping, Sequence
 
@@ -525,6 +526,18 @@ def _verify_upgrade_environment(root: pathlib.Path, env: Mapping[str, str], plat
     return _require_inside(root, "設定ファイル", _upgrade_config_path(env, platform_name))
 
 
+def script_python_requirement(script: pathlib.Path) -> str:
+    try:
+        text = script.read_text(encoding="utf-8")
+        (block,) = re.findall(r"(?m)^# /// script\n((?:^#(?: .*)?\n)+?)^# ///$", text)
+        requirement = tomllib.loads("\n".join(line[2:] for line in block.splitlines())).get("requires-python")
+    except (OSError, ValueError) as error:
+        raise UpgradeCheckError(f"更新スクリプトのPython要件を読めない: {script}。更新を起動しない。") from error
+    if not isinstance(requirement, str) or not requirement.strip():
+        raise UpgradeCheckError(f"更新スクリプトのPython要件が無い: {script}。更新を起動しない。")
+    return requirement
+
+
 def verify_upgrade_inputs(
     root: pathlib.Path,
     checkout: pathlib.Path,
@@ -562,9 +575,14 @@ def verify_upgrade_inputs(
     uv_name = "uv.exe" if platform_name == "windows" else "uv"
     uv = _require_inside(root, "uv", pathlib.Path(env["UV_TOOL_BIN_DIR"]) / uv_name)
     env["UV_MANAGED_PYTHON"] = "1"
+    install_dir = _require_inside(root, "管理Pythonの導入先", env["UV_PYTHON_INSTALL_DIR"])
     script = _require_inside(root, "更新スクリプト", checkout / "libexec" / "update_dotfiles.py")
-    python = run_command((uv, "python", "find", "--script", script), cwd=checkout, env=env, runner=runner).stdout.strip()
-    env["UV_PYTHON"] = str(_require_inside(root, "Python", python))
+    requirement = script_python_requirement(script)
+    env.pop("UV_PYTHON", None)
+    python = run_command(
+        (uv, "python", "find", "--no-project", "--system", "--", requirement), cwd=checkout, env=env, runner=runner
+    ).stdout.strip()
+    env["UV_PYTHON"] = str(_require_inside(install_dir, "Python", python))
 
 
 def _run_isolated_upgrade(
