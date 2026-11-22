@@ -11,7 +11,8 @@ from __future__ import annotations
 import json
 import pathlib
 import re
-from collections.abc import Iterable, Mapping
+import shlex
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import resume_waits, state, turn_state
@@ -24,6 +25,8 @@ WAIT_BODY_END_PREFIX = "本文終了: session_id="
 """要約が委譲先の本文の後に置く行の先頭。"""
 NOTICE_FILE_PREFIX = "通知本文ファイル: "
 """全通知の本文を書いたファイルの所在を示す行の先頭。"""
+NOTICE_RUN_PREFIX = "通知本文の取得: "
+"""通知本文ファイルを書けない時に、公開済みのrun記録から通知の本文を読む操作を示す行の先頭。"""
 BODY_BUDGET_BYTES = output_file.AUTO_SAVE_THRESHOLD_BYTES
 """要約の標準出力全体の上限（UTF-8バイト数）。超える本文は表示せず、`agent_message_path`から読ませる。
 
@@ -103,6 +106,32 @@ def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0, notice
             block, remaining = _body_within(*body_entry, remaining)
             output.append(block)
     return "".join(output)
+
+
+def prepare_notices_reference(
+    rows: Iterable[Mapping[str, Any]], write_file: Callable[[str], pathlib.Path], run_path: pathlib.Path | None
+) -> tuple[str | None, str | None]:
+    """全通知の本文を`write_file`で1ファイルへ書き、要約に置く参照の1行と、標準エラーへ書く警告を返す。
+
+    書けない場合は、通知の本文を含む公開済みのrun記録を読む操作を参照とする。
+    run記録も無い場合は参照を返さず、`render`が通知の本文を全て表示する。通知が無ければ両方とも`None`。
+    """
+    text = notice_text(rows)
+    if not text:
+        return None, None
+    try:
+        return f"{NOTICE_FILE_PREFIX}{write_file(text)}", None
+    except OSError as error:
+        if run_path is None:
+            return None, (
+                f"警告: 通知の本文をファイルへ書けない: {error}\n"
+                "次の操作: 通知の本文は標準出力に全文を表示した。managed-tempの権限・空き容量を確認する"
+            )
+        command = f"jq -r .output -- {shlex.quote(str(run_path))}"
+        return f"{NOTICE_RUN_PREFIX}{command}", (
+            f"警告: 通知の本文をファイルへ書けない: {error}\n"
+            f"次の操作: 通知の本文は`{command}`の各行のnoticesから読む。managed-tempの権限・空き容量を確認する"
+        )
 
 
 def notice_text(rows: Iterable[Mapping[str, Any]]) -> str:

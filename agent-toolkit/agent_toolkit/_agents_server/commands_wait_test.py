@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import sys
 from typing import Any
 
@@ -476,9 +477,16 @@ def test_wait_summary_required_lines_do_not_grow_with_notices(tmp_path: pathlib.
     assert output.count("通知本文ファイル: ") == (1 if count else 0)
 
 
-@pytest.mark.parametrize("with_run", [pytest.param(True, id="run-record"), pytest.param(False, id="no-run-record")])
+@pytest.mark.parametrize(
+    ("with_run", "run_name"),
+    [
+        pytest.param(True, "run.json", id="run-record"),
+        pytest.param(True, "空白 を含む run.json", id="run-record-with-space"),
+        pytest.param(False, "", id="no-run-record"),
+    ],
+)
 def test_wait_public_output_when_notice_file_cannot_be_written(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, with_run: bool
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, with_run: bool, run_name: str
 ) -> None:
     """通知本文ファイルを書けない場合は、公開済みのrun記録を読む操作を1行で示し、必須行を上限内で直接表示する。
 
@@ -495,7 +503,7 @@ def test_wait_public_output_when_notice_file_cannot_be_written(
         {"session_id": "session-1", "status": "completed", "agent_message_path": str(tmp_path / "missing.md")},
         {"session_id": "session-2", "status": "running", "notices": [{"body": long_body}]},
     ]
-    run_path = tmp_path / "run.json" if with_run else None
+    run_path = tmp_path / run_name if with_run else None
 
     commands.agents_wait._print_public(
         "\n".join(json.dumps(row, ensure_ascii=False) for row in rows), "stdout", run_path=run_path
@@ -506,11 +514,38 @@ def test_wait_public_output_when_notice_file_cannot_be_written(
     assert terminal_line in captured.out.splitlines()
     assert "次の操作:" in captured.err
     if with_run:
-        assert f"通知本文の取得: jq -r .output -- {run_path}" in captured.out.splitlines()
+        assert f"通知本文の取得: jq -r .output -- {shlex.quote(str(run_path))}" in captured.out.splitlines()
         assert long_body not in captured.out
         assert len(captured.out.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
     else:
         assert long_body in captured.out
+
+
+def test_consumed_published_run_points_to_run_when_notice_file_cannot_be_written(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開済みrunの再表示でも、通知本文ファイルを書けない時はrun記録を読む操作を示し、標準出力を上限内に保つ。"""
+    monkeypatch.setenv("CLAUDECODE", "1")
+
+    def fail_write(*_args: Any, **_kwargs: Any) -> pathlib.Path:
+        raise OSError("容量不足")
+
+    monkeypatch.setattr(commands.agents_wait._BodyFileWriter, "write", fail_write)
+    long_body = "通" * wait_summary.BODY_BUDGET_BYTES
+    row = {"session_id": "session-2", "status": "running", "notices": [{"body": long_body}]}
+    output = json.dumps(row, ensure_ascii=False)
+    run = wait_run.RunningRun(run_id="published-run", targets=["session-2"]).publish(output, 0, "stdout")
+    path = tmp_path / "published run.json"
+    path.write_text(run.model_dump_json(exclude_unset=True), encoding="utf-8")
+
+    commands.agents_wait._consume_wait_result(path)
+
+    captured = capsys.readouterr()
+    assert f"通知本文の取得: jq -r .output -- {shlex.quote(str(path))}" in captured.out.splitlines()
+    assert long_body not in captured.out
+    assert len(captured.out.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+    saved_output = json.loads(path.read_text(encoding="utf-8"))["output"]
+    assert json.loads(saved_output)["notices"][0]["body"] == long_body
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:
