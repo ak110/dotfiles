@@ -138,6 +138,7 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
 
     def execute(args):
         args.log_path = tmp_path / "meta-run.log"
+        args.log_path.write_text("失敗した段階のログ", encoding="utf-8")
         return 3
 
     monkeypatch.setattr(run_skill, "_dispatch_once", execute)
@@ -160,6 +161,22 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
     monkeypatch.setattr(run_skill_batch, "_failure_entry", failure_entry)
     assert not run_skill_batch._meta_auto_start_due(now=now)
     assert session_review.auto_start_due(now=now)
+
+
+def test_auto_meta_unregistered_worktree_reports_registration_lookup(monkeypatch):
+    """モデル起動前の失敗は、手動の別作業ツリーを使わず登録元の診断を案内する。"""
+    _automatic_launch(monkeypatch, "a" * 32)
+    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(run_skill_batch.config_settings, "repository_settings", lambda **_args: {})
+    monkeypatch.setattr(run_skill, "_dispatch_once", lambda _args: pytest.fail("起動してはならない"))
+    reports = []
+    monkeypatch.setattr(run_skill_batch, "_save_failure_report", lambda _key, message: reports.append(message()) is None)
+
+    with pytest.raises(SystemExit) as result:
+        atk.main(["run-skill", "--args", "meta", "agent-toolkit:review-session"])
+    assert result.value.code == 1
+    [report] = reports
+    assert "`atk config repos list`" in report and "実行ログは未作成" in report
 
 
 @pytest.mark.parametrize("manual", [False, True])

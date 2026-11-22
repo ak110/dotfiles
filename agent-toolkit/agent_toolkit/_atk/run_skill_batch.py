@@ -467,7 +467,7 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
     record: dict[str, Any] = {"started_at": now.isoformat()}
     session_review.write(start, record)
     session_review.launch_result()
-    stage = "inputs"
+    stage = "worktree"
     try:
         work_dir = getattr(args, "work_dir", None)
         if work_dir is None:
@@ -478,6 +478,7 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
                 registered = config_settings.repository_settings(check_paths=False).get(source)
                 if registered is None or not (work_dir := pathlib.Path(registered["path"])).is_dir():
                     raise ValueError(f"メタ分析のGit作業ツリーを `atk config repos` で登録する: {source}")
+        stage = "queue"
         args.target_repo = _meta_report_target(now=now)
         args.work_dir = str(work_dir)
         stage = "execution"
@@ -495,7 +496,7 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
         failure_version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT),
         failure_stage=stage,
         exit_code=code,
-        log_name=log_path.name if isinstance(log_path, pathlib.Path) else None,
+        log_name=log_path.name if isinstance(log_path, pathlib.Path) and log_path.is_file() else None,
         report_synced=False,
     )
     session_review.write(start, record)
@@ -505,11 +506,14 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
 
 def _save_meta_failure(start: pathlib.Path, record: dict[str, Any]) -> bool:
     failure_key = record["failure_key"]
-    locate = (
-        f"起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログ `{log_name}` で原因を確かめる。"
-        if (log_name := record.get("log_name"))
-        else "run-skillのログが未作成なら、メタ分析を起票元で手動実行し、リポジトリ登録とWI読み取りの診断を確かめる。"
-    )
+    if log_name := record.get("log_name"):
+        locate = f"起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログ `{log_name}` で原因を確かめる。"
+    elif record["failure_stage"] == "worktree-1":
+        locate = "起票元の `atk config repos list` で配布元のGit作業ツリーの登録と実体を確かめる。実行ログは未作成。"
+    elif record["failure_stage"] == "queue-1":
+        locate = "起票元で `atk wi list --state=all --target-repo=all --skip-pull` を実行し、読取の診断を確かめる。"
+    else:
+        locate = "起票元で `atk run-skill --args meta review-session` を実行して起動の診断を確かめる。"
     saved = _save_failure_report(
         failure_key,
         lambda: (
