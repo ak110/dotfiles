@@ -96,6 +96,7 @@ def test_scope_review_precedes_delivery_and_is_independent_per_decision(tool, fi
     assert reason("検証の終了を確認した。") is None
     assert reason("文字起こしツールのテストが通りました。") is None
     assert reason("整理のため読んだ箇所は scope-review.jsonl:1 です。") is None
+    assert reason("scope-review.jsonl:1 の決定は適用せず、新規の検証結果だけ報告する。") is None
     first_notice = reason(first) or ""
     assert "まだ送信していない" in first_notice
     assert "複雑な対処はしない、制限として扱う。" in first_notice and offers[1] not in first_notice
@@ -105,6 +106,24 @@ def test_scope_review_precedes_delivery_and_is_independent_per_decision(tool, fi
     assert offers[1] in second_notice and offers[0] not in second_notice
     assert "公開は対象外" in second_notice
     assert reason(second) is None
+
+
+def test_explicit_application_returns_original_when_decision_paraphrases_it(tmp_path, capsys):
+    """原文に契約の要約語が無い場合も、実際に援用する送信の前に短い発話を返す。"""
+    session_id = "scope-reference"
+    work_dir = managed_temp.resolve_session_temp(session_id)
+    transcript = tmp_path / "scope-reference.jsonl"
+    original = "作業を再開するときだけ使ってね。止める時には使わないよ。"
+    transcript.write_text(json.dumps({"type": "user", "message": {"content": original}}) + "\n", encoding="utf-8")
+    (work_dir / "work-contract.md").write_text(
+        "- 適用対象: 再開作業。除外: 停止作業。原文: `scope-reference.jsonl:1`\n",
+        encoding="utf-8",
+    )
+    payload = {"session_id": session_id, "transcript_path": str(transcript)}
+    tool = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
+    inputs = {"message": "scope-reference.jsonl:1 の決定を適用する。"}
+    assert original in (_reason(payload, tool, inputs, capsys) or "")
+    assert _reason(payload, tool, inputs, capsys) is None
 
 
 @pytest.mark.parametrize("tool", sorted(dispatch._USER_FACING_TEXT_TOOL_NAMES))

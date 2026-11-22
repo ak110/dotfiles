@@ -46,7 +46,8 @@ SHORT_NOTICE = "現行の作業契約を取得せよ: "
 _RECORD_REFERENCE = re.compile(r"`([^\n`]+):([1-9][0-9]{0,7})`")
 _QUOTED_TERM = re.compile(r"「([^」\n]+)」|`([^`\n]+)`")
 _EXCLUDED_ACTION = re.compile(r"(?:^|[。、： \s])([^。、\s]{2,12})は対象外")
-_DECISION_CUE = re.compile(r"(?:決定|方針|指示|合意|取り決め)(?=に従|を[^。]{0,24}適用|を根拠|という)")
+_APPLY_DECISION = r"を[^。\n]{0,24}適用(?:する|した)(?=[。\n、]|$)"
+_DECISION_CUE = re.compile(rf"(?:決定|方針|指示|合意|取り決め)(?=に従|{_APPLY_DECISION}|を根拠)")
 _DECLARED_SUBJECT = re.compile(r"(?:^|[。、： ]|^- )([^。、： ]{4,30})は(?=[^。]*(?:に限|のみ|だけ))")
 _SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
 
@@ -75,7 +76,7 @@ def scope_review_before_send(session_id: str, raw_transcript: object, message: s
                 terms.update(_DECLARED_SUBJECT.findall(line))
                 terms.update(_SCOPE_FIELD.findall(line))
                 reference = re.escape(loc[0].strip("`"))
-                cited = re.search(reference + r"`?\s*(?:を根拠|に従|の決定|の方針)", message)
+                cited = re.search(rf"{reference}`?\s*(?:の(?:決定|方針))?(?:を根拠|に従|{_APPLY_DECISION})", message)
                 if cited or _applies_decision(message, decision, terms):
                     key = hashlib.sha256(f"{loc[0]}\n{decision.strip()}".encode()).hexdigest()
                     candidates.setdefault(int(number), {})[key] = (decision.strip(), terms)
@@ -137,9 +138,9 @@ def _applies_decision(message: str, decision: str, terms: set[str]) -> bool:
 
 
 def _scope_review_entry(decision: str, utterance: str, terms: set[str]) -> str:
-    """短い原文のうち判断語と同じ文だけを引用する。"""
+    """短い関連箇所か、判断語が原文にない場合は短い発話全体を引用する。"""
     parts = [part for part in re.split(r"(?<=。)|\n", utterance) if any(term in part for term in terms)]
-    excerpt = "".join(parts)
+    excerpt = "".join(parts) or utterance
     original = (
         f"原文の抜粋: {json.dumps(redact_secrets(excerpt), ensure_ascii=False)}"
         if excerpt and len(excerpt) <= 800
