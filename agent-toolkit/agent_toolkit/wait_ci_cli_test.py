@@ -12,11 +12,15 @@ from unittest import mock
 import pytest
 
 from agent_toolkit import wait_ci
-from agent_toolkit._atk import wait_ci_polling
+from agent_toolkit._atk import config_settings, wait_ci_forge, wait_ci_polling
+from agent_toolkit._git import remote as git_remote
 from agent_toolkit._testing import git_repository as _git_repository_support
+from agent_toolkit._testing.config_support import _isolate_platformdirs
+from agent_toolkit._testing.config_support import _main as _config_main
 from agent_toolkit._testing.wait_ci_support import (
     _FULL_SHA,
     _git_repository,
+    _glab_pipeline_list,
     _main_args,
     _next_action,
     _run,
@@ -26,7 +30,7 @@ from agent_toolkit._testing.wait_ci_support import (
     _restore_signal_handlers as _restore_wait_ci_signal_handlers,  # noqa: F401  # pytestがfixtureとして収集する。
 )
 
-__all__ = ["_git_repository"]
+__all__ = ["_git_repository", "_isolate_platformdirs"]
 
 
 class TestMainEntrypoint:
@@ -510,3 +514,82 @@ class TestResolveShaViaMain:
         result = wait_ci.main(_main_args(baseline, sha="--not-an-option"))
 
         assert result == wait_ci.EXIT_GH_ERROR
+
+
+@pytest.mark.parametrize(
+    ("registered", "remote", "override", "expected"),
+    [
+        ("github.com/group/project", "https://github.com/other/repo", [], "github.com/group/project"),
+        (None, "git@github.com:group/project.git", [], "github.com/group/project"),
+        (None, "https://github.com/other/repo", [], None),
+        ("github.com/group/project", "https://github.example.com/group/project", [], None),
+        ("github.com/group/project", "https://gitlab.example.com/group/project", [], None),
+        ("github.com/group/project", "https://github.example.com/group/project", ["--forge", "github"], "group/project"),
+        ("github.com/group/project", "https://github.example.com/group/project", [], "github.example.com/group/project"),
+    ],
+)
+def test_cli_resolves_short_repository(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    registered: str | None,
+    remote: str,
+    override: list[str],
+    expected: str | None,
+) -> None:
+    if registered is not None:
+        assert _config_main(tmp_path, "config", "repos", "add", registered, "--edit", "awi") == 0
+    monkeypatch.setattr(git_remote, "remote_urls", lambda *_args, **_kwargs: [remote])
+    repository = "github.example.com/group/project" if expected == "github.example.com/group/project" else "group/project"
+    commands = mock.Mock(return_value=[])
+    monkeypatch.setattr(wait_ci_forge, "_run_forge_json_command", commands)
+    args = ["--repo", repository, "--ref", "main", "--source-ref", "HEAD", *override]
+    result = wait_ci.main([*args, "--write-baseline", str(tmp_path / "baseline.json"), "--sha", _FULL_SHA])
+    if expected is None:
+        assert result == wait_ci.EXIT_GH_ERROR
+        assert "ホストを含む" in capsys.readouterr().err
+        commands.assert_not_called()
+    else:
+        assert result == wait_ci.EXIT_SUCCESS
+        command = commands.call_args.args[0]
+        assert command[:5] == ["gh", "run", "list", "--repo", expected]
+
+
+@pytest.mark.parametrize("record_kind", ["baseline", "failure-record"])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_cli_resumes_saved_gitlab_target(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_kind: str, legacy: bool
+) -> None:
+    registry = mock.Mock(return_value={"gitlab.example.com/group/project": {}})
+    monkeypatch.setattr(config_settings, "repository_settings", registry)
+    monkeypatch.setattr(
+        git_remote, "remote_urls", lambda *_args, **_kwargs: ["ssh://git@gitlab.example.com:2222/group/project"]
+    )
+    monkeypatch.setenv("GITLAB_HOST", "gitlab.example.com")
+    monkeypatch.setenv("GITLAB_API_HOST", "gitlab-api.example.com:8443")
+    monkeypatch.setenv("GLAB_API_PROTOCOL", "https")
+    calls = mock.Mock(return_value=[])
+    monkeypatch.setattr(wait_ci_forge, "_run_forge_json_command", calls)
+    wait = mock.Mock(return_value=wait_ci.EXIT_SUCCESS)
+    monkeypatch.setattr(wait_ci, "_wait_from_record", wait)
+    record = tmp_path / "record.json"
+    args = ["--repo", "group/project", "--ref", "main", "--source-ref", "HEAD"]
+    create = ["--write-baseline", str(record), "--sha", _FULL_SHA]
+    resume = (
+        ["--baseline", str(record)] if record_kind == "baseline" else ["--wait-sha", _FULL_SHA, "--failure-record", str(record)]
+    )
+    if record_kind == "failure-record":
+        create = resume
+    assert wait_ci.main([*args, *create, *(["--forge", "gitlab"] if legacy else [])]) == wait_ci.EXIT_SUCCESS
+
+    registry.reset_mock(side_effect=True)
+    registry.side_effect = AssertionError("再開時に登録を読み直した")
+    monkeypatch.setattr(git_remote, "remote_urls", mock.Mock(side_effect=AssertionError("再開時にremoteを読んだ")))
+    assert wait_ci.main([*args, *resume]) == wait_ci.EXIT_SUCCESS
+    baseline = wait.call_args.args[1]
+    assert baseline.repository == ("group/project" if legacy else "gitlab.example.com/group/project")
+    _glab_pipeline_list(baseline.repository, "main", _FULL_SHA, 1)
+    command = calls.call_args.args[0]
+    assert command[:5] == ["glab", "ci", "list", "--repo", "https://gitlab.example.com/group/project"]
+    assert calls.call_args.kwargs["env"]["GITLAB_API_HOST"] == "gitlab-api.example.com:8443"
+    assert calls.call_args.kwargs["env"]["GLAB_API_PROTOCOL"] == "https"

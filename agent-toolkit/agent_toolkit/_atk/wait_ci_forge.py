@@ -9,6 +9,7 @@ import subprocess
 from typing import Any
 from urllib.parse import quote
 
+from agent_toolkit._atk import config_settings
 from agent_toolkit._atk.wait_ci_records import _GH_JSON_FIELDS, JobRecord, RepositoryTarget, RunListError, RunListFn, RunRecord
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._git import command as _git_command
@@ -429,29 +430,34 @@ def _gitlab_ci_exclusion(repository: str, sha: str, ref: str, subprocess_timeout
     return errors
 
 
-def _resolve_forge(explicit: str, repository: str, cwd: pathlib.Path | None = None) -> str | None:
-    """対象forgeを`github`または`gitlab`へ解決する。判別できない場合は`None`を返す。
-
-    `explicit`が`auto`以外ならその値をそのまま返す。
-    `auto`では明示指定されたrepositoryのホスト名で判別する。
-    ホスト名をドット区切りのラベルへ分割し、いずれかのラベルが`github`と完全一致すればGitHub、
-    `gitlab`と完全一致すればGitLabとする。`github.com`とGitHub Enterprise Serverの
-    標準的なホスト名（`github.<自社ドメイン>`）が前者に該当する。
-    部分一致で判定すると`notgithub.example.com`のような無関係なホストを誤分類するため、ラベル単位の完全一致とする。
-    ホストを含まない`owner/repo`形式は`--repo`が受理する形式であるため、作業ディレクトリ（`cwd`）の
-    Git remoteのうちproject pathが一致するURLのホストで判別する。一致するremoteが無い場合と、
-    一致したremoteのホストが異なるforgeへ分かれる場合、および未知の私設ホストは、`--forge`の明示指定が必要となる。
-    """
+def _resolve_forge(explicit: str, repository: str, cwd: pathlib.Path | None = None) -> tuple[str, str]:
     if explicit != "auto":
-        return explicit
-    try:
-        target = _parse_repository(repository)
-    except RunListError:
-        return None
+        return explicit, repository
+    target = _parse_repository(repository)
     if target.hostname is not None:
-        return _forge_from_hostname(target.hostname)
-    forges = {_forge_from_hostname(hostname) for hostname in _remote_hostnames(target.project_path, cwd)}
-    return forges.pop() if len(forges) == 1 else None
+        if forge := _forge_from_hostname(target.hostname):
+            return forge, repository
+        raise RunListError("指定ホストのforge種別を判別できない")
+
+    try:
+        registered = config_settings.repository_settings(check_paths=False)
+    except (OSError, ValueError) as exc:
+        raise RunListError(f"リポジトリ登録を読み取れない: {exc}") from exc
+    hostnames = _remote_hostnames(target.project_path, cwd)
+    for key in registered:
+        host, _, project = key.partition("/")
+        if project.lower() == target.project_path.lower():
+            hostnames.append(host)
+    hosts = {host.lower() for host in hostnames}
+    if len(hosts) > 1:
+        raise RunListError(f"同じプロジェクトパスに複数のホストが一致: {', '.join(sorted(hosts))}")
+    if hosts:
+        host = hosts.pop()
+        if forge := _forge_from_hostname(host):
+            # Gitの転送方式やSSHポートはAPIの接続設定に引き継がない。  # pyfltr: allow-comment
+            separator = ":" if forge == "gitlab" and "." not in host else "/"
+            return forge, f"{host}{separator}{target.project_path}"
+    raise RunListError("一致するGit remoteとリポジトリ登録から対象forgeを判別できない")
 
 
 def _forge_from_hostname(hostname: str) -> str | None:
