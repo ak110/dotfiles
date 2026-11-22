@@ -83,6 +83,32 @@ _llm_notice = formatter("myplugin/myhook")
 - 命名用の種別は`PostToolUse(Skill)`と手動の起動時の`UserPromptSubmit`が通常の状態に記録し、タイトルは`process-loop`の環境の印と計画名から決める。
 - セッションタイトルの設定はClaude Codeに限る。
 
+### 委譲先で配送本文を検証する
+
+ホストを起動せず、`user_prompt_submit` コマンドへ合成したJSONを標準入力で渡す。
+実際の会話IDや本文は使わず、各条件の標準出力・標準エラー・終了コードを別々に保存する。
+POSIXでは、`uv run --frozen` で依存環境を選んだ後の子プロセスに、絶対パスの `XDG_STATE_HOME`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME` を指定する。
+起動前に `XDG_STATE_HOME` を変更すると、miseの信頼済み設定を参照できなくなる場合がある。
+
+- 通常発話の対照: 子プロセスだけで `AGENT_TOOLKIT_OWNER_SESSION` を除き、`AGENT_TOOLKIT_DELEGATED_SESSION=0` にする。
+- 委譲先の対照: 別の隔離ディレクトリを使い、同じJSONを `AGENT_TOOLKIT_DELEGATED_SESSION=1` で渡す。
+  他の通知条件がない新規の合成セッションでは、`hookSpecificOutput.additionalContext` に入る通常発話向けの注記は通常発話の対照だけに現れる。
+
+次は通常発話の呼び出し例である。
+`scratch` は条件ごとに異なる隔離領域の絶対パスとする。
+委譲判定と状態保存先の変更は子プロセスに限る。
+
+```sh
+printf '%s\n' '{"hook_event_name":"UserPromptSubmit","session_id":"11111111-1111-4111-8111-111111111111","prompt":"隔離テスト","source":"user"}' > "$scratch/input.json"
+rc=0
+uv run --frozen env -u AGENT_TOOLKIT_OWNER_SESSION \
+  AGENT_TOOLKIT_DELEGATED_SESSION=0 XDG_STATE_HOME="$scratch/state" \
+  XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/data" \
+  PYTHONPATH="$PWD/agent-toolkit" python -m agent_toolkit.hook user_prompt_submit \
+  < "$scratch/input.json" > "$scratch/output.json" 2> "$scratch/stderr.log" || rc=$?
+printf '%s\n' "$rc" > "$scratch/exit-code"
+```
+
 ## atkの実行結果出力
 
 - `atk`のサブコマンドと出力の行を足す・変える時は、接頭辞の文字列を直接書かず、`agent-toolkit/agent_toolkit/_atk/outcome.py`の接頭辞と区分を使う（末端のサブコマンドの区分の登録の欠けは`atk_help_test.py`が検出する）。
