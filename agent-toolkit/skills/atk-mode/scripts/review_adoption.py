@@ -2,7 +2,7 @@
 
 振り返りのbatchが、不採用の多いレビュー担当のモデルやlevel、同じ理由の不採用の反復を改善候補にするための入力を返す。
 表の読込と期間の割当は`cost_metrics.saved_review_tables`を共有する。
-レビュー担当のモデルは、表のファイル名を本文に含み、実行レビュー担当の役割文書を配送されたセッション記録から求める。
+レビュー担当のモデルは、表のファイル名を本文に含むセッション記録から、役割の配送標識か組み込み委譲の記録を使って求める。
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import datetime
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from agent_toolkit._atk import review_table_format
 from agent_toolkit._common import private_notes
@@ -28,6 +28,8 @@ from session_evidence_stats import _parse_cli_timestamp
 _ROLE_MARKER = re.compile(r"出所: \S*(?:share|skills/atk-mode/roles)/exec-review\.subagent\.md")
 # Codexの記録で、モデルの出力として現れる`response_item`の種類。これより前の入力だけを依頼文の候補にする。
 _CODEX_OUTPUT_TYPES = frozenset({"reasoning", "function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
+_CODEX_TOOL_TYPES = frozenset({"function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
+_ROLE_DOCUMENT = re.compile(r"(?<![\w.-])roles/exec-review\.subagent\.md(?![\w.-])")
 _MODEL_UNKNOWN = "モデル不明"
 _LOCATION, _LEVEL, _NO_RESPONSE = 2, 4, 6
 
@@ -56,13 +58,38 @@ def _input_texts(entry: dict[str, Any]) -> list[str] | None:
     return []
 
 
-def _is_review_record(path: Path) -> bool:
-    """最初のモデル出力より前の入力本文に、実行レビュー担当の役割文書の配送があるかを返す。
+class _RecordRole(NamedTuple):
+    thread: str | None = None
+    marked: bool = False
+    review_parent: str | None = None
 
-    依頼文より前に置かれる内容（道具の定義、規範の配送、環境の状態）の大きさは配布物の量で変わるため、
-    先頭からの固定長では依頼文に届かない記録がある。記録の構造から依頼文の位置を決める。
-    最初のモデル出力より後ろは読まない。標識の文字列を引用しただけの会話を、レビュー担当の記録と区別するためである。
-    """
+
+def _meta(payload: object) -> tuple[str | None, str | None]:
+    """Codex記録のスレッドIDと、組み込み委譲による親IDを得る。"""
+    if not isinstance(payload, dict):
+        return None, None
+    thread = payload.get("id")
+    source = payload.get("source")
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
+    parent = spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
+    return thread if isinstance(thread, str) and thread else None, parent if isinstance(parent, str) and parent else None
+
+
+def _calls_role_document(payload: dict[str, Any]) -> bool:
+    """最初のツール呼出しが実行レビューの役割文書を参照するかを返す。"""
+    if payload["type"] == "local_shell_call":
+        action = payload.get("action")
+        command = action.get("command") if isinstance(action, dict) else None
+        return isinstance(command, list) and any(isinstance(arg, str) and _ROLE_DOCUMENT.search(arg) for arg in command)
+    command = payload.get("arguments") if payload["type"] == "function_call" else payload.get("input")
+    return isinstance(command, str) and _ROLE_DOCUMENT.search(command) is not None
+
+
+def _record_role(path: Path) -> _RecordRole:
+    """配送標識または組み込み委譲の最初のツール呼出しまでを読み、帰属の根拠を得る。"""
+    thread = parent = None
+    before_output = True
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             for line in stream:
@@ -72,14 +99,51 @@ def _is_review_record(path: Path) -> bool:
                     continue
                 if not isinstance(entry, dict):
                     continue
-                texts = _input_texts(entry)
-                if texts is None:
-                    return False
-                if any(_ROLE_MARKER.search(text) for text in texts):
-                    return True
+                if entry.get("type") == "session_meta" and before_output and thread is None:
+                    thread, parent = _meta(entry.get("payload"))
+                if before_output:
+                    texts = _input_texts(entry)
+                    if texts is None:
+                        before_output = False
+                        if parent is None:
+                            break
+                    elif any(_ROLE_MARKER.search(text) for text in texts):
+                        return _RecordRole(thread, marked=True)
+                payload = entry.get("payload")
+                if (
+                    parent
+                    and entry.get("type") == "response_item"
+                    and isinstance(payload, dict)
+                    and payload.get("type") in _CODEX_TOOL_TYPES
+                ):
+                    return _RecordRole(thread, review_parent=parent if _calls_role_document(payload) else None)
     except OSError:
-        return False
-    return False
+        return _RecordRole()
+    return _RecordRole(thread)
+
+
+def _review_records(roots: list[Path]) -> list[Path]:
+    """親の記録も同じ走査範囲から読み、主担当の記録だけを返す。"""
+    roles: dict[Path, _RecordRole] = {}
+    by_thread: dict[str, set[_RecordRole]] = collections.defaultdict(set)
+    for root in roots:
+        for path in sorted(root.rglob("*.jsonl")):
+            if path in roles or not path.is_file():
+                continue
+            role = roles[path] = _record_role(path)
+            if role.thread:
+                by_thread[role.thread].add(role)
+    # 親も実行レビューを示す場合、その配下の担当を同じ管理表の主担当にしない。
+    return [
+        path
+        for path, role in roles.items()
+        if role.marked
+        or (
+            role.review_parent != role.thread
+            and (parents := by_thread.get(role.review_parent or ""))
+            and not any(parent.marked or parent.review_parent for parent in parents)
+        )
+    ]
 
 
 def _record_identity(path: Path, text: str) -> str:
@@ -101,7 +165,7 @@ def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
     """管理表のファイル名ごとに、その名前を本文に含む実行レビュー担当の記録から求めたモデルを返す。
 
     配布先にripgrepがあるとは限らないため、外部コマンドを使わずに走査する。
-    全記録の本文を読むと重いため、最初のモデル出力より前の役割標識で対象を実行レビュー担当の記録に限定してから本文を読む。
+    全記録を末尾まで読まず、役割の情報から実行レビュー担当に絞って本文を読む。
     """
     if not names:
         return {}
@@ -109,29 +173,24 @@ def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
     names_set = set(names)
     lengths = {len(name) for name in names_set}
     table_suffix = re.compile(r"\.exec-review\.tsv")
-    for root in roots:
-        if not root.is_dir():
+    for record in _review_records(roots):
+        try:
+            text = record.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             continue
-        for record in sorted(root.rglob("*.jsonl")):
-            if not record.is_file() or not _is_review_record(record):
-                continue
-            try:
-                text = record.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            # 表はこの接尾辞で列挙される。位置から候補長ごとの文字列を表の名前と比べ、部分文字列の一致も保つ。
-            matched = {
-                text[end - length : end]
-                for suffix in table_suffix.finditer(text)
-                for end in (suffix.end(),)
-                for length in lengths
-                if length <= end and text[end - length : end] in names_set
-            }
-            if not matched:
-                continue
-            identity = _record_identity(record, text)
-            for name in matched:
-                models[name].add(identity)
+        # 表はこの接尾辞で列挙される。位置から候補長ごとの文字列を表の名前と比べ、部分文字列の一致も保つ。
+        matched = {
+            text[end - length : end]
+            for suffix in table_suffix.finditer(text)
+            for end in (suffix.end(),)
+            for length in lengths
+            if length <= end and text[end - length : end] in names_set
+        }
+        if not matched:
+            continue
+        identity = _record_identity(record, text)
+        for name in matched:
+            models[name].add(identity)
     return {name: ",".join(sorted(values)) for name, values in models.items()}
 
 
