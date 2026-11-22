@@ -45,6 +45,26 @@ def test_unobserved_child_guidance_preserves_final_review() -> None:
     assert result["read_requirements"]
 
 
+@pytest.mark.parametrize("label", ["lane-01-exec", "lane-123-exec", "exec", "lane-01-exec-review"])
+def test_lane_completion_guidance_is_specific_to_lane_executors(label: str) -> None:
+    """未達の返却にも検収を案内し、他の役割と待機表明には同じ案内を出さない。"""
+    result = result_projection.with_result_next_action(
+        {"status": "completed", "agent_message": "続行できない区分: owner_input"}, label
+    )
+    if label.endswith("-exec"):
+        assert result["next_action"] == (
+            "`lane-receipt.md`「実測と判断の検収」を読み、担当の結論が原要求・証拠・現行の方針に合うか確かめてから受理・報告する。"
+        )
+        assert result["read_requirements"] == ["agent-toolkit:atk-mode/playbooks/lane-receipt.md#「実測と判断の検収」"]
+    else:
+        assert "実測と判断の検収" not in result.get("next_action", "")
+        if label.endswith("-review"):
+            assert "レビューの指摘を受領した" in result["next_action"]
+
+    held = result_projection.with_result_next_action({"status": "completed", "error": {"heldResultFinalized": True}}, label)
+    assert "実測と判断の検収" not in held["next_action"]
+
+
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
     """進捗本文は改行を除き、長文では末尾80文字だけを返す。"""
     assert result_projection.progress_excerpt("a\r\nb\rc\nd") == "a b c d"

@@ -6,6 +6,7 @@ import datetime
 import json
 import logging
 import pathlib
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -38,6 +39,10 @@ _REVIEW_STANDARDS_DOCUMENT = "agent-basics:review-standards/SKILL.md"
 _REVIEWEE_DOCUMENT = "agent-basics:review-standards/references/reviewee.md"
 _READER_FIT_RECEIPT_DOCUMENT = "agent-toolkit:atk-mode/roles/reader-fit-review.parent.md#「受領」"
 _REVIEW_RECEIPT_DOCUMENTS = frozenset((_REVIEW_STANDARDS_DOCUMENT, _REVIEWEE_DOCUMENT, _READER_FIT_RECEIPT_DOCUMENT))
+_LANE_RECEIPT_DOCUMENT = "agent-toolkit:atk-mode/playbooks/lane-receipt.md#「実測と判断の検収」"
+_LANE_RECEIPT_ACTION = (
+    "`lane-receipt.md`「実測と判断の検収」を読み、担当の結論が原要求・証拠・現行の方針に合うか確かめてから受理・報告する。"
+)
 
 
 # 結果はメインと委譲先の双方が受け取るため、両者が実行できる操作を受け取った主体の役割ごとに示す。
@@ -136,6 +141,8 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
                 ),
             )
         )
+    elif result.get("status") == "completed" and isinstance(label, str) and re.fullmatch(r"lane-[0-9]+-exec", label):
+        guidance.append((_LANE_RECEIPT_ACTION, (_LANE_RECEIPT_DOCUMENT,)))
     message = result.get("agent_message")
     if has_unobserved_children(result):
         guidance.append(
