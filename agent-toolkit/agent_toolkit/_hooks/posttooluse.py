@@ -144,6 +144,14 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
     return [] if example is None else [example]
 
 
+UTTERANCE_UNDERSTANDING_NOTICE_BODY = (
+    "調査より先に、応答の冒頭へ`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」を置く。"
+)
+"""実ユーザーの発話ごとの初動の所在を示す注記の本文。
+
+通常発話はUserPromptSubmit、`AskUserQuestion`の自由記述はPostToolUseに届くため、両hookがこの定義を使う。
+"""
+
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 _FREE_TEXT_ANSWER_PROCEDURE = "自由記述の回答も同節に従え。"
 """`AskUserQuestion`の自由記述の回答への注記で、共通の本文に続ける手順。"""
@@ -516,7 +524,11 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                 sort_keys=True,
             )
             notices.append(
-                _llm_notice(f"{VERIFICATION_NOTICE_BODY}{_FREE_TEXT_ANSWER_PROCEDURE}", tag="notice", subject=subject)
+                _llm_notice(
+                    f"{VERIFICATION_NOTICE_BODY}{_FREE_TEXT_ANSWER_PROCEDURE}{UTTERANCE_UNDERSTANDING_NOTICE_BODY}",
+                    tag="notice",
+                    subject=subject,
+                )
             )
             for answer in answers:
                 for content_notice in content_notices(answer, _HOOK_ID, subject=subject):

@@ -50,6 +50,7 @@ from agent_toolkit._hooks.notice import begin_delivery, emit_response, informati
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    UTTERANCE_UNDERSTANDING_NOTICE_BODY,
     content_notices,
 )
 lazy from agent_toolkit._common import (
@@ -150,10 +151,7 @@ def _clock_notice(session_id: str) -> str:
     resolve_notice(session_id, "user_prompt_submit", "_clock_notice")
     # 入力ごとに出る定型の情報であり、ユーザーの画面へは写さない。
     return informational(
-        _llm_notice(
-            f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n"
-            "調査より先に、応答の冒頭へ`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」を置く。"
-        )
+        _llm_notice(f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n{UTTERANCE_UNDERSTANDING_NOTICE_BODY}")
     )
 
 

@@ -180,6 +180,7 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     assert "この注記は`AskUserQuestion`" not in context
     assert "playbooks/user-utterance.md" in context
     assert "「割り込み・訂正・中止」" in context
+    assert "「発話の理解」" in context
     assert "認識合わせ" not in context
     has_example = not text.startswith("`") and "例えば" in text
     assert ("「原文の保持と取り込み」" in context) == has_example
