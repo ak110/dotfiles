@@ -144,7 +144,7 @@ def test_public_extend_write_targets(
         assert items[0][keys[2]] == ["README.md", "docs/development/design.md", "src/save.py", "src/model.py"]
         assert items[0]["導出した新設先"] == [record]
         assert items[1] == before["decisions" if legacy else "選定"][1]
-        assert result["レーン間の重なり"] == [overlap]
+        assert result["レーン間の重なり"] == [{**overlap, "判定済みWIの組": [["a.md", "b.md"]]}]
         for key, value in before.items():
             if key not in {"選定", "decisions"}:
                 assert result[key] == value

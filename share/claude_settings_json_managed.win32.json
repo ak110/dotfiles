@@ -19,9 +19,5 @@
     "command": "__HOME__/.local/bin/claude-statusline.exe statusline",
     "padding": 0,
     "refreshInterval": 5
-  },
-  "subagentStatusLine": {
-    "type": "command",
-    "command": "__HOME__/.local/bin/claude-statusline.exe subagent-statusline"
   }
 }

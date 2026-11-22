@@ -116,6 +116,7 @@ from check_selection_paths import clear_caches, reflected_paths
 from selection_merge import (
     TemporaryLaneCollisionError,
     extend_write_targets,
+    freeze_overlap_pairs,
     merge_rerecord_pairs,
     merge_selection,
     reopen_wis,
@@ -674,6 +675,7 @@ def main(argv: list[str] | None = None) -> int:
             if structural or models:
                 raise InputError("\n".join([*models, *structural]), next_action=_FIX_CONTENT)
         if args.mark_integrated is not None:
+            freeze_overlap_pairs(selection)
             _mark_integrated(selection, set(args.mark_integrated), processed_wis)
         errors = check(
             args.selection_file,
@@ -702,6 +704,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise OSError("追加YAMLを保存先に指定できない")
             if args.extend_write_targets is not None and args.output.resolve() == args.extend_write_targets.resolve():
                 raise OSError("書込対象の追加入力YAMLを保存先に指定できない")
+            freeze_overlap_pairs(selection)
             atomic_write(args.output, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
         except OSError as error:
             _next_action.report(str(error), next_action="保存先を確認して同じ統合操作を再実行する")

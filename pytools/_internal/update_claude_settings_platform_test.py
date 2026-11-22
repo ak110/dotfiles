@@ -10,7 +10,11 @@ import pytest
 
 from pytools._internal import update_claude_settings as mod
 from pytools._internal.update_claude_settings import update_claude_settings
-from pytools._internal.update_claude_settings_test_helpers import _PROD_MANAGED_CONFIG, _setup_run_paths
+from pytools._internal.update_claude_settings_test_helpers import (
+    _PROD_MANAGED_CONFIG,
+    _PROD_MANAGED_SETTINGS,
+    _setup_run_paths,
+)
 
 
 class TestPlatformOverride:
@@ -388,3 +392,22 @@ class TestDiffLogging:
         diff_rows = [m for m in messages if m.startswith("      ")]
         keys = [m.split(":")[0].strip() for m in diff_rows]
         assert keys == ["a", "m", "z"]
+
+
+@pytest.mark.parametrize(("platform", "binary"), [("linux", "claude-statusline"), ("win32", "claude-statusline.exe")])
+def test_os_settings_remove_subagent_statusline(tmp_path: Path, platform: str, binary: str) -> None:
+    """OS別の配布設定で既存のサブエージェント行を除き、通常行を残す。"""
+    target = tmp_path / "settings.json"
+    target.write_text(
+        json.dumps({"subagentStatusLine": {"type": "command", "command": f"{binary} subagent-statusline"}}),
+        encoding="utf-8",
+    )
+    overrides = mod._platform_overrides(_PROD_MANAGED_SETTINGS, platform=platform)
+    assert overrides
+    for path in [_PROD_MANAGED_SETTINGS, *overrides]:
+        assert "subagentStatusLine" not in json.loads(path.read_text(encoding="utf-8"))
+
+    assert update_claude_settings(_PROD_MANAGED_SETTINGS, target, overrides=overrides)
+    result = json.loads(target.read_text(encoding="utf-8"))
+    assert "subagentStatusLine" not in result
+    assert result["statusLine"]["command"].endswith(f"/{binary} statusline")
