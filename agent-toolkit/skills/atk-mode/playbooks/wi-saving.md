@@ -12,7 +12,8 @@
 
 ## 保存前の確認
 
-1. 原稿と根拠資料を`agent-toolkit:atk-mode/playbooks/managed-temp.md`の一時領域へ保存する。
+1. 原稿を`agent-toolkit:atk-mode/playbooks/managed-temp.md`の一時領域へ保存する。
+   既存の根拠資料は保存し直さず、その所在を渡す。
    既存項目の更新では、`atk wi show <ファイル名>`で現行本文と保留の状態を確かめる。
 2. 回答済みUWIとの整合を確かめる。
    対象リポジトリの回答済みUWIを`atk wi list --target-repo=<対象リポジトリの絶対パス> --type=uwi --answered=yes --skip-pull --summary-only`で取得する。
@@ -41,7 +42,7 @@
    どちらでも扱えない場合だけ「続行できない理由」として報告する。
    後続へ委ねる具体化は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「確定の判定」に従う。
 6. 意味の検収へ渡す。
-   原稿、抽出の保存先、要求、必要な根拠を投入前レビューへ渡し、冒頭だけの先行判定に使わせる。
+   原稿、抽出の保存先、要求原本と必要な根拠の所在を投入前レビューへ渡し、冒頭だけの先行判定に使わせる。
    付随型の投入担当は、原稿と証拠を委譲元へ返して意味の検収を待つ。
    専念型と直接起草するメインは、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」で決めた検収へ進む。
    検収で確かめる観点は`agent-toolkit:atk-mode/references/draft-semantic-review.md`にある。

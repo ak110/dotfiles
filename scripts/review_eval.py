@@ -39,7 +39,7 @@ CASES_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_cases.json"
 MATERIALS_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_materials")
 _ISSUE_COLUMN = 3
 _LOCATION_COLUMN = 2
-_DRAFT_BODY_INPUTS = ("原稿", "要求と出所", "成立性の証拠")
+_DRAFT_BODY_INPUTS = ("原稿", "要求原本")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -478,15 +478,16 @@ def _case_dir_name(case: _Case) -> str:
 
 
 def _prepare_draft_opening(case_dir: pathlib.Path, params: dict[str, str]) -> None:
-    """本文段階の原稿を保存せず検証し、レビュー用の成立性の証拠へ抽出の対応を加える。"""
+    """本文段階の原稿を保存せず検証し、既存の冒頭抽出の所在を渡す。"""
     draft = pathlib.Path(params["原稿"])
-    texts: dict[str, str] = {}
-    for name in _DRAFT_BODY_INPUTS:
+    for name in (*_DRAFT_BODY_INPUTS, "調査原本"):
+        if name not in params:
+            continue
         path = pathlib.Path(params[name])
         try:
             if not path.is_absolute():
                 raise ValueError("絶対パスで指定する")
-            texts[name] = path.read_text(encoding="utf-8")
+            path.read_text(encoding="utf-8")
             if name == "原稿":
                 draft = path.resolve(strict=True)
         except (OSError, ValueError) as error:
@@ -538,18 +539,7 @@ def _prepare_draft_opening(case_dir: pathlib.Path, params: dict[str, str]) -> No
             f"dry-runが返した冒頭を取得できない: {opening}（{error}）",
             next_action="managed-tempの保存先と読取権限を確認し、新しい--outで同じ事例をprepareする",
         ) from error
-    evidence_path = case_dir / "evidence.md"
-    try:
-        evidence_path.write_text(
-            f"{texts['成立性の証拠'].rstrip()}\n\n原稿: {draft}\n冒頭保存先: {opening}\n",
-            encoding="utf-8",
-        )
-    except (OSError, UnicodeError) as error:
-        raise ActionableError(
-            f"本文評価の成立性の証拠を保存できない: {evidence_path}（{error}）",
-            next_action="保存先の書込権限と空き容量を確認し、新しい--outで同じ事例をprepareする",
-        ) from error
-    params["成立性の証拠"] = str(evidence_path)
+    params["ユーザー向け部分"] = str(opening)
 
 
 def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> dict[str, Any]:

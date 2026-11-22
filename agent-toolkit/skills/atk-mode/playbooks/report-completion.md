@@ -58,7 +58,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 入力が揃った手順から進め、前の出力に依存しない手順は並行してよい。
 中断から再開する時は、要求ごとに実際の成果、送達の結果、未完了の工程を確かめ、最初の未完了の工程から続ける。
 進捗、判断、報告の原本は1つの作業記録とする（計画の`## 進捗ログ`、計画が無ければ引き継ぎ記録）。
-作業完了報告はこの原本から作り、報告用UWIは作業完了報告から`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」の対応表で写す。
+この原本を使い、協調モードでは作業完了報告、自律モードでは報告用UWIにだけ報告本文を書く。
 送達の前に、主張と根拠、確認した版、未確認の範囲、判断の時点を原本へ残す（`agent-basics:writing-standards/references/quality-principles-facts.md`「報告の選別と判断記録」）。
 
 1. 常時稼働サーバーを持つプロジェクトでは、本書「常時稼働サーバーへの反映」を行う。
@@ -74,7 +74,8 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    保存では`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」の、程度の限定と確度を保つ規定を適用する。
 4. 協調モードでcommitを作り、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`でその範囲の公開を終える。
    `agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の作業`process-wi single-lane`は、それぞれの工程の中で公開する。
-5. 元の要求が求めた結果を各工程の成果から確かめ、`agent-toolkit:atk-mode/references/report-formats.md`「作業完了報告のフォーマット」の本文を確定する。
+5. 元の要求が求めた結果を各工程の成果から確かめる。
+   協調モードの本文は `agent-toolkit:atk-mode/references/report-formats.md`「作業完了報告のフォーマット」で確定する。
    公開・反映・回収を実施した場合は、その到達点も報告する。
    確定の前に、作業記録に残る、途中報告でAWI化ステータスを`予定`とした改善点を回収する。
    今回のAWI投入、再利用した既存項目、不要の判断と比べて、各対象を`済`とWIファイル名、または`不要`と理由へ確定し、同じ作業記録へ追記する。
@@ -90,7 +91,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    起動元は本文、commit、upstreamがある場合のpushを検収する。
    batchの振り返り結果は、その実行の1件の報告へ集約し、対象セッションの作業完了報告とは別に保存する。
    保存に失敗した時は、同じUWIの保存を回復する。
-7. 確定した本文を、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の手段で1回送達して終了する。
+7. 協調モードは確定した本文を、自律モードは保存を検収した報告用UWIのファイル名を、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従って1回送達する。
    - Claude Codeで`send_to_user`を使う時は表示の成功を確かめ、起動元が求める報告後の終了操作を同じ応答で行う。
      送達後のターンの終え方は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
    - Codexの送達順は`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」に従う。
@@ -105,7 +106,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    回答や委譲結果の待機、中止・置換、技術的不成立は通常の完了と分け、残工程と再開の条件を報告し、`agent-toolkit:atk-mode/references/termination-evidence.md`に従って記録する。
    送達の失敗、実害を防ぐStop hookの遮断、新しいユーザーの指示は、それぞれの回復・続行の手順へ進む。
    確認の記録は`docs/development/audit-records-completion.md`の「agent-toolkit/skills/atk-mode/playbooks/report-completion.md：最終報告送達後のターン終了：2026年10月9日」にある。
-   送達後に実際の新しい問題が分かった場合は、その問題を調べて処置し、既存の報告用UWIと報告を更新する（再検証はその問題に要る範囲に限る）。
+   送達後に実際の新しい問題が分かった場合は、その問題を調べて処置し、送達した報告の原本を更新する（再検証はその問題に要る範囲に限る）。
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 
 区切りやセッション終了時の単発の振り返りは、`agent-toolkit:atk-mode/playbooks/review-session.md`に従い、本書の工程と送達の条件とは分ける。
