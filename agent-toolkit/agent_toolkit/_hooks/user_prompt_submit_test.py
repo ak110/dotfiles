@@ -212,8 +212,7 @@ class TestUserConfirmationSkillPrompt:
         restored = self._prompt("次の依頼", tmp_path, host=host)
         assert not self._has_notice(restored)
 
-        clock = re.compile(r"ユーザー入力の受付時刻: `[^`]*`")
-        assert clock.sub("", first) == clock.sub("", restored)
+        assert first == restored
         assert not self._has_notice(self._prompt("続けて", tmp_path, host=host))
 
     @pytest.mark.parametrize("source", ["resume", "fork"])
@@ -340,7 +339,7 @@ class TestMachineInjectedTurn:
 
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert context.count("<atk-auto ") == 1 and "ユーザー入力の受付時刻" in context
+        assert context.count("<atk-auto ") == 1 and "発話の理解" in context
         assert _read_state(tmp_path, sid).get("last_user_prompt_at") is None
 
     @staticmethod
@@ -403,7 +402,7 @@ class TestNonMatchingPrompts:
     def _assert_no_notice(result: subprocess.CompletedProcess[str]) -> None:
 
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert context.count("<atk-auto ") == 1 and "ユーザー入力の受付時刻" in context
+        assert context.count("<atk-auto ") == 1 and "発話の理解" in context
 
     def test_ignores_non_skill_prompt(self, tmp_path: pathlib.Path):
         sid = "non-skill"
@@ -553,6 +552,16 @@ def test_feedback_rule_is_delivered_before_each_human_prompt(tmp_path: pathlib.P
         assert prompt not in context
 
 
+# test-copy-contract: 発言ごとの案内へ時刻を入れない契約（時刻は要る時に受領側が観測する）。
+@pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+def test_human_prompt_notice_carries_no_clock(tmp_path: pathlib.Path, host_fields: dict) -> None:
+    result = _run({"session_id": "no-clock", "prompt": "作業を続けて", **host_fields}, state_dir=tmp_path)
+    assert result.returncode == 0, result.stderr
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "受付時刻" not in context
+    assert re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", context) is None
+
+
 class TestExclamationDoesNotTriggerNotice:
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize("prompt", ["！！直してほしい", "理解が違う！！", "確認\nここです！！", "直してほしい!!"])
@@ -563,7 +572,7 @@ class TestExclamationDoesNotTriggerNotice:
         output = json.loads(result.stdout)["hookSpecificOutput"]
         bodies = _notice_bodies(output["additionalContext"])
         assert len(bodies) == 1
-        assert "ユーザー入力の受付時刻" in bodies[0]
+        assert "発話の理解" in bodies[0]
 
 
 class TestExampleScopeNotice:
@@ -679,7 +688,7 @@ class TestExampleScopeNotice:
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 2
         assert "playbooks/user-utterance.md" in bodies[0]
-        assert "ユーザー入力の受付時刻" in bodies[1]
+        assert "発話の理解" in bodies[1]
 
 
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -692,7 +701,7 @@ def test_ordinary_prompts_keep_input_observation_without_reinjecting_procedure(t
         result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 1 and "ユーザー入力の受付時刻" in bodies[0]
+        assert len(bodies) == 1 and "発話の理解" in bodies[0]
         state = _read_state(tmp_path, sid)
         assert state.get("last_user_prompt_at") == legacy_time
         evidence = state["termination_evidence"]
@@ -711,7 +720,7 @@ def test_plan_state_names_session_without_procedure_injection(tmp_path):
     output = json.loads(result.stdout)["hookSpecificOutput"]
     assert output["sessionTitle"] == "current-plan"
     bodies = _notice_bodies(output["additionalContext"])
-    assert len(bodies) == 1 and "ユーザー入力の受付時刻" in bodies[0]
+    assert len(bodies) == 1 and "発話の理解" in bodies[0]
 
 
 @pytest.mark.parametrize("codex", [False, True])
