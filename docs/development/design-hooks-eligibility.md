@@ -20,6 +20,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | --- | --- | --- |
 | `pretooluse/agent_checks.py` TaskStop・継続対象 | 実害保護、block | 起動と所有を確かめられない対象の停止・追送を防ぐ。対象IDと記録を照合する |
 | `pretooluse/agent_checks.py` 組み込みの汎用Agent定義の起動 | 明らかな行動誤りの是正、block（同じ入力の再発行は通す） | 工程別設定と終了観測の外で委譲が行われることを防ぐ。軽量起動の委譲先、`fork`、専用定義と、Webページの取得に使う`web-fetch`は対象外とする。経緯は「委譲手段の選択と待機の装着の手掛かり」にある |
+| `norm_excuse_gate.py` 既存の規範を理由に対処を見送る本文 | 明らかな行動誤りの是正、block（同じ本文の再発行は通す） | `send_to_user`、`AskUserQuestion`・`ExitPlanMode`、メインの最終応答で「既存の基準で足りる」「規範は足さない」などの言い回しを止め、誘因の除去・構造・検査のどれかを選ばせる。規範があっても起きた誤りへ文章の想起だけで応じる報告が繰り返されたため（2026年11月22日のユーザー指示） |
 | `pretooluse/shell_checks.py` heredoc置換・pattern kill | 実害保護、block | 文書の文字列が意図しないコマンドとして実行されることと、所有外プロセスの終了を防ぐ |
 | 同 Git commitの形式・帰属 | 公開契約の保護、block | 通常commitへ確定した`Co-Authored-By:`と公開メッセージの契約を保つ |
 | 同 終端後option・atk出力接続・読取述語stderr・rev-parse | 回復可能な支援、warn | 失敗や結果誤認の原因と正しい入力を一度示す。実害保護へ一般化しない |

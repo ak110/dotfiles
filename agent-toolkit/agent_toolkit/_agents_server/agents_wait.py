@@ -43,6 +43,20 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
 # 次の操作の文面。待機の結果を受け取った主体が、再待機・調査・巻き取りのどれへ進むかを応答だけで決められるようにする。
 _RERUN_WAIT_NEXT_ACTION = "`atk agents wait`を再実行して待機を続ける"
 _NOTICE_NEXT_ACTION = "`notices`の通知を読んで対処し、終了を待つ場合は`atk agents wait`を再実行する"
+
+
+def _notice_next_action(label: object) -> str:
+    """実行中の通知への次の操作。レビューのsessionは指摘を通知で届けるため、完了結果と同じ採否の案内を併記する。"""
+    if not isinstance(label, str) or not label.endswith(result_projection.REVIEW_LABEL_SUFFIX):
+        return _NOTICE_NEXT_ACTION
+    review_action = (
+        result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION
+        if label.endswith("reader-fit-review")
+        else result_projection.REVIEW_RESULT_NEXT_ACTION
+    )
+    return f"{_NOTICE_NEXT_ACTION}\n{review_action}"
+
+
 _CONSUMED_NEXT_ACTION = (
     "結果は別の`atk agents wait`が受領済みのため、その出力を参照する。後続の結果を待つ場合は`atk agents wait`を再実行する"
 )
@@ -717,7 +731,7 @@ def _wait_for_result(
                         response = _running_response(session_id, _session_output_activity(status_paths, session_id))
                         _add_session_label(response, status_paths, session_id)
                         response["notices"] = notices
-                        response["next_action"] = _NOTICE_NEXT_ACTION
+                        response["next_action"] = _notice_next_action(response.get("label"))
                         collected.append(response)
                 if collected:
                     output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
