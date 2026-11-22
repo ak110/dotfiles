@@ -58,6 +58,8 @@
 1. 走査を始める前に、文章成果物があれば本書「読者別探索」を、毎ラウンド本書「再発防止セルフチェックの起動と受領」を並行して起動する。
    起動と終了の観測は`agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」に従い、`agents_server`が使えないCodexの代替では`fork_turns: "none"`で独立した文脈を保つ。
 2. 各要求単位と変更面を`agent-basics:review-standards/references/reviewer.md`「初回レビュー」の手順で走査し、指摘は同「指摘内容」で書く。
+   モデルによらず、前提を原要求と観測に照らし、防御・分岐・検査・仕組み・文書から、確定した要求を保って削れる部分を探す。
+   追加を求める指摘には、削除・簡素化では要求を満たせない理由を添える。
    判定は`agent-basics:review-standards/references/reviewer-execution.md`「実行レビューの判定」の各節で行い、計画、WI、CI記録の読み方と語の読み替えは本書「計画と表の優先」「実行レビューの判定」による。
 3. 走査の結果は、観点を1つ終えるごとに`agent-toolkit:atk-mode/references/review-record.md`「走査記録と差分外の不良」の走査記録へ保存する。
 4. 本書「返却前の処理」へ進む。

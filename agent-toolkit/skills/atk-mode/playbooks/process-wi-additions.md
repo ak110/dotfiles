@@ -17,6 +17,7 @@
 開始後の追加は次の手順で判断し、着手済みの項目の完遂は保つ。
 
 1. 追加の操作の前に`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で、発話と発生条件から是正要求、今回混入した不良、同じ実行への明示の追加を分類する。
+   追加の承認前に`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「受領後の扱い」の前提・削減・採否の基準に従う。
    混入した不良は元の要求で是正し、独立した既存不良は即時対応の要否を判定する。
    本節の操作は、同節で今回の正式改善と確定したAWI、明示の追加、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」で必要と確定した作業に使う。
 2. ユーザーが実行中にキュー操作（UWIへの回答、AWIの投入）を伝えたら、可否を問い直さずに同じ実行への追加指示として扱う。
