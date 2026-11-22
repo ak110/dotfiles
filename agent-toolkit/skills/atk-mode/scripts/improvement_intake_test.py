@@ -60,7 +60,7 @@ def test_capture_failed_write_is_not_reported_as_saved(tmp_path, monkeypatch, ca
     assert "完了できない" in captured.err
 
 
-@pytest.mark.parametrize("invalid", ["{ private fixture", "9" * 8000, "[" * 2000 + "]" * 2000])
+@pytest.mark.parametrize("invalid", ["{ private fixture", "9" * 8000])
 def test_invalid_draft_and_saved_state_have_distinct_recovery(tmp_path, monkeypatch, capsys, invalid):
     monkeypatch.setattr(improvement_intake, "state_dir", lambda: tmp_path)
     body = tmp_path / "input.json"

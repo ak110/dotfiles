@@ -31,7 +31,7 @@ def _read_report(path: Path) -> dict[str, str]:
         raise _IntakeError("受付入力が16 KiBを超える。必要な観測だけを残す。")
     try:
         report = json.loads(raw.decode("utf-8"))
-    except UnicodeError, json.JSONDecodeError:
+    except ValueError, RecursionError:
         raise _IntakeError("原稿の形式が不正。UTF-8のJSON原稿に直して受付を再実行する。") from None
     if (
         not isinstance(report, dict)
@@ -47,7 +47,7 @@ def _load(path: Path) -> dict[str, dict[str, Any]]:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
-    except UnicodeError, json.JSONDecodeError:
+    except ValueError, RecursionError:
         raise _IntakeError("保存済みの受付記録の形式が不正。原本を保全し、正常な版から復元する。") from None
     if not isinstance(value, dict) or any(not isinstance(row, dict) for row in value.values()):
         raise _IntakeError("受付記録の書式を確認できない。原本を保護して復元する。")
