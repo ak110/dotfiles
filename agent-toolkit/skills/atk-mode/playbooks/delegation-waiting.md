@@ -138,7 +138,7 @@
 
 1. 待機へ移る時と再開する時は、残りの工程が要する具体的なデータと、共有資源、同じ箇所への書込、認可による順序の制約を分ける。
    待機の結果が内容も成否も変えず、制約も無い確定済みの作業は先に行う。
-2. 待機中に判定できる改善点は、発見した時に既存の項目との重複を確かめ、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の手順でAWIの保存まで進める。
+2. 待機中に判定できる改善点は、`agent-toolkit:atk-mode/playbooks/main-reporting.md`の判断担当が既存WIと比べ、、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`の手順でAWIの保存まで進める。
    修正を次回へ渡す判断と、結果の報告にまとめる都合は、投入を延ばす理由に含めない。
    `予定`にするのは、登録の前提が`判断待ち`、`認可待ち`、`入力待ち`、`書込競合`のいずれかに当たる時に限る。
    報告の書式は`agent-toolkit:atk-mode/playbooks/main-reporting.md`に従い、前提、再開の条件、再開の時点は既存の作業記録へ残す。

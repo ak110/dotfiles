@@ -67,7 +67,7 @@
    当座の訂正と再発防止は`agent-basics:bugfix`で決める。
 2. process-wiでの対応の時機は、`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`で決める。
    登録と修正を区別し、転記にも同じ書式を使う。
-3. 待機中に判定できる改善は、all-repos統括を含む全メインが、発見した時に既存の項目と比べてAWIを保存する。
+3. 待機中に判定できる改善は、改善点の受付で確定した判断担当が、発見した時に既存の項目と比べてAWIを保存する。
    登録の時機と`予定`の定義は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機中の先行実施」に従い、前提・再開条件・時点を作業記録へ残す。
 4. 本題の外の作業は`agents_server`の担当へ渡し、担当外の事項は根拠と未確認の点を所有者へ引き継ぐ。
    集めた証拠は後の非同期の振り返りで再利用し、調査済みの事項の再調査と同期の振り返りは終了の条件に含めない。
