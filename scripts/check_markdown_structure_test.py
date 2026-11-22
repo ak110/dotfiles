@@ -11,6 +11,29 @@ import pyfltr.config.config
 import pytest
 
 
+def test_heading_and_python_observations_do_not_block(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """候補は実際の見出しとBash例だけから拾い、既存の構造エラーと混同しない。"""
+    selected = tmp_path / "AGENTS.md"
+    source = (
+        "# 起動、終了の順\n"
+        "## 開発環境について\n"
+        "## 旧版ではなく新版\n"
+        "> ## 引用について\n"
+        "```bash\n"
+        "python script.py\n"
+        "python3 cli.py\n"
+        "uv run --frozen python check.py\n"
+        "```\n"
+    )
+    selected.write_text(source, encoding="utf-8")
+    assert check_markdown_structure.main([str(selected)]) == 0
+    diagnostics = capsys.readouterr().err.splitlines()
+    assert len(diagnostics) == 3
+    for line, expected in zip(diagnostics, (":2:1: warning:", ":3:1: warning:", ":6:1: warning:"), strict=True):
+        assert expected in line
+    assert selected.read_text(encoding="utf-8") == source
+
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
