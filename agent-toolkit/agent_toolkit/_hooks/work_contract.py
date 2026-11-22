@@ -9,11 +9,11 @@ import os
 import pathlib
 import re
 
-from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import delegated_session
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
+lazy from agent_toolkit._atk import managed_temp
 lazy from agent_toolkit._common import session_registry, startup_documents
 
 RECORD_NAME = "work-contract.md"

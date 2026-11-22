@@ -17,11 +17,14 @@ import os
 import pathlib
 import time
 from collections.abc import Collection, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import psutil
+lazy import psutil
 
-from agent_toolkit._common import (
+from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.json_lines import split_lines
+lazy from agent_toolkit._common import (
     delegated_session,
     host_homes,
     process_identity,
@@ -30,9 +33,10 @@ from agent_toolkit._common import (
     session_registry,
     state_paths,
 )
-from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._common.file_lock import acquire_lock, release_lock
-from agent_toolkit._common.json_lines import split_lines
+
+if TYPE_CHECKING:
+    # dataclassの注釈の判定は名前を名前空間から引くため、遅延読込の名前を注釈に使うと読込が確定する。
+    from agent_toolkit._common.process_identity import ProcessIdentity
 
 
 @dataclasses.dataclass(frozen=True)
@@ -40,7 +44,7 @@ class HostProcess:
     """生存ホストの実行系とPID・起動時刻。"""
 
     engine: str
-    identity: session_registry.ProcessIdentity
+    identity: ProcessIdentity
 
 
 @dataclasses.dataclass(frozen=True)
@@ -207,7 +211,7 @@ def host_process() -> HostProcess | None:
     try:
         for process in process_identity.parents(psutil.Process()):
             if (engine := _engine(process)) is not None:
-                return HostProcess(engine, session_registry.ProcessIdentity.capture(process))
+                return HostProcess(engine, process_identity.ProcessIdentity.capture(process))
     except psutil.Error, OSError:
         pass
     return None
@@ -228,7 +232,7 @@ def host_processes() -> tuple[HostProcess, ...]:
             if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 continue
             if (engine := _engine(process)) is not None:
-                found.append(HostProcess(engine, session_registry.ProcessIdentity.capture(process)))
+                found.append(HostProcess(engine, process_identity.ProcessIdentity.capture(process)))
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         except psutil.AccessDenied:
@@ -236,7 +240,7 @@ def host_processes() -> tuple[HostProcess, ...]:
             with contextlib.suppress(psutil.Error):
                 name = process.name().lower().removesuffix(".exe")
                 if name in {"claude", "codex", "agy"}:
-                    found.append(HostProcess(name, session_registry.ProcessIdentity.capture(process)))
+                    found.append(HostProcess(name, process_identity.ProcessIdentity.capture(process)))
     return tuple(found)
 
 
@@ -247,7 +251,7 @@ def _read(path: pathlib.Path) -> dict[str, Any]:
     return value
 
 
-def _identity(value: object) -> session_registry.ProcessIdentity | None:
+def _identity(value: object) -> process_identity.ProcessIdentity | None:
     if not isinstance(value, dict):
         return None
     pid, started = value.get("pid"), value.get("create_time")
@@ -260,7 +264,7 @@ def _identity(value: object) -> session_registry.ProcessIdentity | None:
         or not math.isfinite(started)
     ):
         return None
-    return session_registry.ProcessIdentity(pid, float(started), value.get("start_id"))
+    return process_identity.ProcessIdentity(pid, float(started), value.get("start_id"))
 
 
 def _valid_activity_record(record: Mapping[str, Any], session_id: str) -> bool:
