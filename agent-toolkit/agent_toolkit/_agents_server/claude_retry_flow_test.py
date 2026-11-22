@@ -224,7 +224,7 @@ async def test_weekly_retry_continues_same_session_on_api(
                 await asyncio.sleep(0)
         assert cli.disconnected
         assert owner.sessions[session_id].claude_connection == "payg"
-        completed = "APIで残る作業を完了した" + ("\n状態: completed" if launch_kind == "explore" else "")
+        completed = "状態: completed\n結果: APIで残る作業を完了した"
         resumed.messages.put_nowait(ResultMessage(completed))
         owner._wait_timeouts["main"] = 5  # pylint: disable=protected-access
         result = await owner.wait()
