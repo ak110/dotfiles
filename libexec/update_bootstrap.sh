@@ -49,18 +49,36 @@ timed_stage() {
         capture_uv_command printf '%s\n' 'uvの導入先の記録を現在の実体へそろえるため、公式installerで再導入する。'
         capture_uv_command stage_command bash "$root/update_uv.sh" "$uv_path"
     }
-    with_uv_output "$name" stage_attempt "$@" 3>&1 || code=$?
+    if [[ "${uv_defer_summary:-0}" == 1 ]]; then
+        uv_saved=$(with_uv_output "$name" stage_attempt "$@") || code=$?
+    else
+        with_uv_output "$name" stage_attempt "$@" 3>&1 || code=$?
+    fi
     ((bootstrap_interrupted == 0)) || return 130
     return "$code"
+}
+bootstrap_abort() {
+    local status=$1 entry name
+    while IFS= read -r entry; do
+        if [[ "$entry" == *$'\t''saved' ]]; then
+            name=${entry%%: *}
+            printf '%s (詳細: %s)\n' "${entry%$'\t'saved}" "${XDG_STATE_HOME:-$HOME/.local/state}/agent-toolkit/uv-$name-failed.log" >&2
+        fi
+    done <<<"$UPDATE_DOTFILES_BOOTSTRAP_FAILURES"
+    exit "$status"
 }
 run_stage() {
     local name=$1 classification=$2 limit=$3
     shift 3
-    local code=0
+    local code=0 uv_saved=''
+    local uv_defer_summary=0
+    if [[ "$classification" == continue ]]; then uv_defer_summary=1; fi
     timed_stage "$name" "$limit" "$@" || code=$?
-    ((code != 130)) || exit 130
+    ((code != 130)) || bootstrap_abort 130
     if ((code != 0)); then
-        UPDATE_DOTFILES_BOOTSTRAP_FAILURES+="$name: exit=$code"$'\n'
+        UPDATE_DOTFILES_BOOTSTRAP_FAILURES+="$name: exit=$code"
+        if [[ "$uv_saved" == saved ]]; then UPDATE_DOTFILES_BOOTSTRAP_FAILURES+=$'\t''saved'; fi
+        UPDATE_DOTFILES_BOOTSTRAP_FAILURES+=$'\n'
         if [[ "$name" == 'uvの自己更新' ]]; then
             printf '%s\n' 'uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。対応不要（dotfilesの更新処理は継続しました）。' >&2
         else
@@ -96,13 +114,13 @@ find_python() {
     timed_stage '管理Pythonの検索' 60 "$uv_path" python find --no-cache 3.15
 }
 python_path="$(find_python)" || {
-    [[ $? != 130 ]] || exit 130
+    [[ $? != 130 ]] || bootstrap_abort 130
     run_stage '管理Pythonの導入' abort 900 "$uv_path" python install 3.15 ||
-        run_stage '管理Pythonの導入' abort 900 "$uv_path" python install 3.15
-    python_path="$(find_python)"
+        run_stage '管理Pythonの導入' abort 900 "$uv_path" python install 3.15 || bootstrap_abort "$?"
+    python_path="$(find_python)" || bootstrap_abort "$?"
 }
 if [[ "$UPDATE_DOTFILES_BOOTSTRAP_FAILURES" == *'管理Pythonの更新'* && "$python_path" =~ 3\.15\.[0-9]+(a|b|rc)[0-9]+ ]]; then
     printf '%s\n' "残った管理Pythonはpre-releaseです: $python_path。次回起動時に更新を再試行します。" >&2
 fi
 trap - INT
-((bootstrap_interrupted == 0)) || exit 130
+((bootstrap_interrupted == 0)) || bootstrap_abort 130

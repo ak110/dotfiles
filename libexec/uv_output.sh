@@ -72,7 +72,11 @@ with_uv_output() (
         temp=$(mktemp -- "$log.XXXXXXXX") &&
         printf '%(%FT%T%z)T exit=%s\n%s' -1 "$code" "$saved" >"$temp" &&
         mv -fT -- "$temp" "$log"; then
-        if ((code != 0)); then publish_uv_event failure "${cause:-${summary:-exit=$code}}" "$log"; fi
+        if ((code != 0)) && { ((code == 130)) || [[ "${uv_defer_summary:-0}" == 0 ]]; }; then
+            publish_uv_event failure "${cause:-${summary:-exit=$code}}" "$log"
+        elif ((code != 0)); then
+            printf '%s\n' saved
+        fi
     else
         [[ -z "$temp" ]] || rm -f -- "$temp" || :
         publish_uv_event unsaved "$hidden" "$log"

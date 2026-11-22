@@ -5,6 +5,14 @@ $script:bootstrapFailures = @()
 $script:lastStageOutput = ''
 . (Join-Path $PSScriptRoot 'locking_process.ps1')
 . (Join-Path $PSScriptRoot 'update_stage.ps1')
+function Write-DeferredUvDiagnostic {
+    foreach ($failure in $script:bootstrapFailures) {
+        if ($failure.ContainsKey('saved') -and $failure.saved) {
+            $log = Join-Path $env:LOCALAPPDATA "agent-toolkit\uv-$($failure.title)-failed.log"
+            [UvOutputRecord]::PublishEvent("failure", "$($failure.title): $($failure.detail)", $log)
+        }
+    }
+}
 function Test-PythonPatchPending {
     # keyはビルド日付を含まず、同じpatch版の新しいビルドを検出できない。更新できない回の見送りの判定にだけ使う。
     $listed = @{}
@@ -107,10 +115,12 @@ try {
         Write-UpdateError ("残った管理Pythonはpre-releaseです: $($script:lastStageOutput)。次回起動時に更新を再試行します。")
     }
 } catch {
+    if (-not $script:stageInterrupted) { Write-DeferredUvDiagnostic }
     Write-UpdateError ("$_")
     exit 1
 } finally {
     if ($script:stageInterrupted) {
+        Write-DeferredUvDiagnostic
         # -Fileで起動した専用ホストは、停止したパイプラインのexitだけでは0を返す場合がある。
         if (-not $MyInvocation.Line) { $Host.SetShouldExit(130) }
         exit 130
@@ -121,7 +131,7 @@ if ($env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -and $script:bootstrapFailures.Count) 
         [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT))
         ConvertTo-Json -InputObject @($script:bootstrapFailures) -Compress |
             Set-Content -LiteralPath $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -Encoding UTF8
-    } catch { Write-UpdateError ("更新失敗の記録を書けませんでした（保存先: $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT）: $_。保存先の親ディレクトリの書込権限を修復してupdate-dotfilesを再実行してください。") }
+    } catch { Write-DeferredUvDiagnostic; Write-UpdateError ("更新失敗の記録を書けませんでした（保存先: $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT）: $_。保存先の親ディレクトリの書込権限を修復してupdate-dotfilesを再実行してください。") }
 }
 if ($PrintPython) { [Console]::Out.WriteLine($script:lastStageOutput) }
 exit 0

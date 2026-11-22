@@ -13,6 +13,7 @@ using System.Collections.Generic;
 public sealed class UvOutputRecord : TextWriter {
     public readonly List<string> Saved = new List<string>(), Hidden = new List<string>();
     public string Summary, Cause, MatchText;
+    public bool SavedLog;
     public bool PrivateKey, Matched;
     readonly Regex sensitive, actionable, routine;
     bool continuation;
@@ -70,7 +71,7 @@ function New-UvOutput {
     }
 }
 function Complete-UvOutput {
-    param([string]$Stage, [UvOutputRecord]$Record, [int]$Code)
+    param([string]$Stage, [UvOutputRecord]$Record, [int]$Code, [switch]$DeferSummary)
     if (-not $Record.Saved.Count -and $Code -eq 0) { return }
     $temp = $null
     $log = $null
@@ -92,7 +93,8 @@ function Complete-UvOutput {
     } finally {
         if ($temp) { Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue }
     }
-    if ($Code -ne 0) {
+    $Record.SavedLog = $true
+    if ($Code -ne 0 -and ($Code -eq 130 -or -not $DeferSummary)) {
         $summary = if ($Record.Cause) { $Record.Cause } elseif ($Record.Summary) { $Record.Summary } else { "exit=$Code" }
         [UvOutputRecord]::PublishEvent("failure", $summary, $log)
     }
