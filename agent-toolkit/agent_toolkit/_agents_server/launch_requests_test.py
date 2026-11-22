@@ -485,3 +485,23 @@ async def test_add_wi_start_rejects_unsettled_destination_before_backend(
         params["投入する要求"] = request(target)
         await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
         assert len(backend.start_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_add_wi_requires_destination_for_each_request_or_shared_input(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """混在した要求では欠落を拒み、既存の別ファイルの共通入力を受理する。"""
+    common = tmp_path / "common.md"
+    common.write_text("投入先: github.com/example/repository\n", encoding="utf-8")
+    text = "## 要求 1\n- 投入先: github.com/example/repository\n## 要求 2\n- 種別: AWI\n"
+    params = {"投入する要求": text, "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert not backend.start_calls
+        params["投入する要求"] = f"共通入力: `{common}`\n\n{text}"
+        await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert len(backend.start_calls) == 1

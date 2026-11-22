@@ -214,32 +214,55 @@ _ADD_WI_DESTINATION = re.compile(
     r"[ \t]*(?P<destination>[^\r\n]*)$",
     re.MULTILINE,
 )
+_ADD_WI_COMMON_INPUT = re.compile(
+    r"^(?:[ \t]*[-*][ \t]+)?共通(?:の入力|入力)?[：:][ \t]*(?P<path>[^`\r\n]+|`[^`\r\n]+`)[ \t]*$",
+    re.MULTILINE,
+)
+_ADD_WI_REQUIREMENT = re.compile(r"^#{2,6}[ \t]+要求(?:[ \t：:]|$)", re.MULTILINE)
+
+
+def _read_add_wi_input(path: pathlib.Path) -> str:
+    """投入する要求か共通入力として指定された通常ファイルを読む。"""
+    try:
+        if not path.is_absolute() or not path.is_file():
+            raise OSError("要求ファイルは通常のファイルの絶対パスでなければなりません")
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ActionableError(
+            "投入する要求か共通入力のファイルを読み取れません。委譲先は起動していない。",
+            next_action="UTF-8の要求ファイルと共通入力の絶対パスを確認して同じstartを再発行する",
+        ) from error
+
+
+def _add_wi_destination_fields(text: str) -> list[str]:
+    return [match["destination"] for match in _ADD_WI_DESTINATION.finditer(text)]
 
 
 def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> None:
-    """明示した投入先を、要求ファイルと直接本文で同じように検査する。"""
+    """各要求か共通入力に確定した投入先があることを起動前に確かめる。"""
     request = extra_params.get("投入する要求")
     if task_document.name != "add-wi.subagent.md" or request is None:
         return
     text = request.strip()
     if "\n" not in text and pathlib.Path(text).is_absolute():
-        try:
-            path = pathlib.Path(text)
-            if not path.is_file():
-                raise OSError("要求ファイルは通常のファイルでなければなりません")
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as error:
-            raise ActionableError(
-                "投入する要求のファイルを読み取れません。委譲先は起動していない。",
-                next_action="UTF-8の要求ファイルの絶対パスを確認して同じstartを再発行する",
-            ) from error
-    destinations = [line[1] for line in _ADD_WI_DESTINATION.finditer(text)]
-    if not destinations:
+        text = _read_add_wi_input(pathlib.Path(text))
+    preamble, *requirements = _ADD_WI_REQUIREMENT.split(text)
+    common = _add_wi_destination_fields(preamble)
+    for reference in _ADD_WI_COMMON_INPUT.finditer(preamble):
+        reference_path = pathlib.Path(reference["path"].strip().strip("`"))
+        if reference_path.is_absolute():
+            common.extend(_add_wi_destination_fields(_read_add_wi_input(reference_path)))
+    if not common and not requirements:
         # 既存の簡略形: 識別子=対象リポジトリ=種別=趣旨
         parts = text.split("=", maxsplit=3)
         if len(parts) == 4 and parts[2].casefold() in {"awi", "uwi"}:
-            destinations = [parts[1]]
-    if destinations and all(_add_wi_destination_is_resolved(value) for value in destinations):
+            common = [parts[1]]
+    individual = [_add_wi_destination_fields(section) for section in requirements]
+    if (
+        all(_add_wi_destination_is_resolved(value) for value in common)
+        and (all(fields or common for fields in individual) if individual else bool(common))
+        and all(_add_wi_destination_is_resolved(value) for fields in individual for value in fields)
+    ):
         return
     raise ActionableError(
         "add-wiの投入先に絶対パスか正規化したリモートURLが必要です。委譲先は起動していない。",

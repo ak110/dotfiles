@@ -40,6 +40,7 @@ async def test_terminal_notification_finishes_io_before_result_becomes_available
     """終了通知の読取待機中にもwriterを動かし、終了時の結果と確定時刻の一貫性を保つ。"""
     session = state.SessionState("session", str(tmp_path), engine="codex", announced=True, status="running", turn_id="turn")
     sessions = {session.session_id: session}
+    session.agent_message = "状態: completed"
     session.agents_wait_background_outputs.add(str(tmp_path / "output"))
     writer = status_file.StatusFileWriter(
         sessions, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path
