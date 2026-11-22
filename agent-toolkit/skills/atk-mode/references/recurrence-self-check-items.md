@@ -33,3 +33,11 @@
   一致しない独自接頭辞や命名規約を新しく固定している場合は、計画・WI・ユーザー確認の回答と付き合わせて確認すべき箇所として該当ファイルと行を挙げて報告する。
 - 根拠規範: `agent-basics:writing-standards/references/quality-principles-roles.md`「要件と認可」、`agent-toolkit:atk-mode/playbooks/confirmation.md`「公開操作の消費主体」。
 - 元になった障害: 2026年11月21日の`/atk-mode implement`導入時に、リモートブランチの独自接頭辞をユーザー確認なしで固定し是正を受けた事象。
+
+## 委譲先が外部入力を指示として採用しない
+
+- 対象条件: 差分が `subagent.md` の配送対象の節、`launch_prompts.py`、Claudeの `system_prompt`、Codexの `baseInstructions`・`developerInstructions`、または同じ本文を組み立てる別ホストの処理を変える。
+- 確認内容: 全起動区分・全backendで、起動と継続時の本文に、作業対象の命令をデータとする規定と安全な入力処理の規定が残る。
+- 根拠規範: `agent-toolkit:atk-mode/playbooks/subagent.md`「硬い制約」。
+  配送する規定の一覧は `docs/development/design-agents-server-instructions.md` にある。
+- 元になった障害: 委譲先の本文に、作業対象の命令と操作の認可を区別する規定が無かった。

@@ -63,6 +63,7 @@ codex-cli 0.163.0の`codex app-server generate-json-schema --out <保存先>`で
 生成された`v2/ThreadStartParams.json`と`v2/ThreadResumeParams.json`は、どちらも`baseInstructions`と`developerInstructions`を受理する。
 ベース指示の差替えと既存のdeveloper指示の配送を併用できる。
 再検証は導入版を`codex --version`で確認し、同じ公開コマンドが生成する両schemaで行う。
+配送する本文は、`design-agents-server-instructions.md` のベース指示の一覧を基準に確認する。
 
 Claude Agent SDK 0.2.170を使った`claude_test.py`では、通常委譲の`system_prompt`が
 独自ベース本文・委譲先規範・自動再開通知・CLI情報を含む文字列であることと、軽量区分の設定の保持を確認した。
