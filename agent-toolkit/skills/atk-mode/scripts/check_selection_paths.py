@@ -236,11 +236,7 @@ def _new_file_path(candidate: str, work_dir: pathlib.Path, *, allow_root_ancesto
     except OSError, RuntimeError:
         return None
     # 文章中の断片は既存のディレクトリを手掛かりにし、完全なインラインコードに限りルートだけでも認める。
-    return (
-        candidate
-        if target.parent == work_dir or allow_root_ancestor and not any(char.isspace() for char in candidate.split("/", 1)[0])
-        else None
-    )
+    return candidate if target.parent == work_dir or allow_root_ancestor else None
 
 
 def clear_caches() -> None:
