@@ -342,6 +342,16 @@ jobs:
         run: echo "$OWNER_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.common-ci-owner.outputs.owns == 'true'
+        with:
+          fetch-depth: 2
+      - name: pytestの全件履歴を取得
+        id: impact-history
+        if: needs.common-ci-owner.outputs.owns == 'true' && github.event_name == 'push' && github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/master'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .testscope
+          key: pytest-root-impact-${{ runner.os }}-${{ runner.arch }}-3.15-${{ hashFiles('uv.lock') }}-${{ github.event.before }}
+          restore-keys: pytest-root-impact-${{ runner.os }}-${{ runner.arch }}-3.15-${{ hashFiles('uv.lock') }}-
       - uses: ./.github/actions/prepare-python-check
         with:
           native: 'true'
@@ -354,10 +364,11 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
+          IMPACT_CACHE_KEY: ${{ steps.impact-history.outputs.cache-matched-key }}
         run: |
           set -euo pipefail
           git ls-files -z -- '*_test.py' 'test_*.py' \
-            ':!:agent-toolkit/**' ':!:agent-toolkit-codex/**' \
+            ':!:agent-toolkit/**' ':!:agent-toolkit-codex/**' ':!:pytools/dirsize_browser_test.py' \
             > "$RUNNER_TEMP/pytest-root-targets"
           mapfile -d '' -t targets < "$RUNNER_TEMP/pytest-root-targets"
           test "${#targets[@]}" -gt 0
@@ -366,7 +377,39 @@ jobs:
           # container jobではrunner.tempがコンテナー内のパスと異なるため、保存先をstep出力で後続へ渡す。
           junit="$RUNNER_TEMP/pytest-root-junit.xml"
           echo "junit=$junit" >> "$GITHUB_OUTPUT"
-          uv run --frozen pytest -v --junitxml="$junit" --maxfail=0 "${targets[@]}"
+          selection=()
+          baseline=false
+          impact_base=${IMPACT_CACHE_KEY##*-}
+          if [[ "$impact_base" =~ ^[0-9a-f]{40}$ && -s .testscope/map.json && -s .testscope/pyfltr.json ]] &&
+            git merge-base --is-ancestor "$impact_base" HEAD; then
+            selection=(--changed-since="$impact_base")
+          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" != refs/heads/develop && "$GITHUB_REF" != refs/heads/master ]]; then
+            baseline=true
+            # 比較できない古い復元物を、今回記録した履歴として保存しない。
+            rm -rf -- .testscope
+          else
+            uv run --frozen pytest -v --junitxml="$junit" --maxfail=0 "${targets[@]}"
+            exit
+          fi
+          uv sync --frozen --group pytest-impact
+          export UV_NO_SYNC=true
+          # 位置引数と差分の積では、テスト自体が未変更だと空になる。対象の列挙は設定で渡す。
+          export PYFLTR_GLOBAL_CONFIG="$RUNNER_TEMP/pytest-root-pyfltr.toml"
+          uv run --frozen python -c '
+          import json
+          import sys
+          print("[tool.pyfltr]")
+          print("pytest-impact-selection = true")
+          print("pytest-targets = " + json.dumps(sys.argv[1:]))
+          ' "${targets[@]}" > "$PYFLTR_GLOBAL_CONFIG"
+          PYTEST_ADDOPTS="-v --junitxml=\"$junit\" --maxfail=0" uv run --frozen pyfltr ci \
+            --commands=pytest --no-always-targets "${selection[@]}"
+          if [[ ! -s "$junit" ]]; then
+            TESTSCOPE=off uv run --frozen pytest -v --junitxml="$junit" --maxfail=0 "${targets[@]}"
+          fi
+          if [[ "$baseline" == true && -s .testscope/map.json && -s .testscope/pyfltr.json ]]; then
+            echo "impact_baseline=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: pytest 直下のJUnit XMLを保存
         # 失敗した試験の所要も取得するため、pytestが失敗しても保存する。保存先が決まる前の失敗では実行しない。
         if: ${{ !cancelled() && needs.common-ci-owner.outputs.owns == 'true' && steps.pytest.outputs.junit != '' }}
@@ -375,6 +418,12 @@ jobs:
           name: pytest-root-junit
           path: ${{ steps.pytest.outputs.junit }}
           if-no-files-found: error
+      - name: pytestの全件履歴を保存
+        if: needs.common-ci-owner.outputs.owns == 'true' && steps.pytest.outputs.impact_baseline == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .testscope
+          key: pytest-root-impact-${{ runner.os }}-${{ runner.arch }}-3.15-${{ hashFiles('uv.lock') }}-${{ github.sha }}
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv cache prune --ci

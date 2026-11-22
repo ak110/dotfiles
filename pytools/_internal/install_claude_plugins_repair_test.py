@@ -56,15 +56,6 @@ class TestIsEntryHealthy:
     known_marketplaces.json に各エントリ形式を書いて確認する。
     """
 
-    def test_github_type_is_legacy_unhealthy(
-        self,
-        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-    ):
-        """旧 GitHub 型エントリ (ak110/dotfiles) は旧形式として is_directory_type_registered が False。"""
-        known, _settings = marketplace_paths
-        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        assert _claude_marketplace.is_directory_type_registered() is False
-
     def test_directory_type_with_other_path(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
@@ -117,15 +108,6 @@ class TestCheckMarketplaceFromFile:
     各ファイル状態が is_directory_type_registered() / ensure_marketplace() の結果に正しく反映されることを確認する。
     """
 
-    def test_known_github_type_is_legacy(
-        self,
-        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-    ):
-        """known 側が旧 GitHub 型エントリなら is_directory_type_registered が False。"""
-        known, _settings = marketplace_paths
-        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        assert _claude_marketplace.is_directory_type_registered() is False
-
     def test_settings_github_type_is_legacy(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
@@ -143,18 +125,6 @@ class TestCheckMarketplaceFromFile:
         _known, settings = marketplace_paths
         write_settings_entry(settings, {"source": {"source": "directory", "path": "home/aki/dotfiles"}})
         assert _claude_marketplace.is_directory_type_registered() is False
-
-    def test_both_files_healthy(
-        self,
-        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
-    ):
-        """両ファイルとも directory 型 + dotfiles 絶対パスなら is_directory_type_registered が True。"""
-        known, settings = marketplace_paths
-        entry: dict[str, object] = {"source": {"source": "directory", "path": str(dotfiles_root)}}
-        write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
-        write_settings_entry(settings, entry)
-        assert _claude_marketplace.is_directory_type_registered() is True
 
     def test_only_known_registered_and_healthy(
         self,

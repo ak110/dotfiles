@@ -1231,7 +1231,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.32.1"
+version = "3.33.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1264,9 +1264,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8b/de/cb11683121d80ed6cfbd624db07435a6c18855238b7136f6d63e0851a20e/pyfltr-3.32.1.tar.gz", hash = "sha256:571e5ef066ba3c76c137dbae1d4a3d9007fe5e8569c33b82f240b9def1233946", size = 1212408, upload-time = "2026-11-15T12:52:35.073Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/84/da32ed8da751b8b743fb6aa9495f96ff51d560396484b32b4ebbe710f1fc/pyfltr-3.33.0.tar.gz", hash = "sha256:82f94dc3bd48cf649edaba35e646513a9250e7027e8a354e739a574eb50d0dbc", size = 977409, upload-time = "2026-11-22T04:14:44.29Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/ff/04051210b09ff4aaa470863a53819d69df6e8c96517d70a652218e7193e7/pyfltr-3.32.1-py3-none-any.whl", hash = "sha256:0cc93200b9131b79515e13e3fb74a6572289d2951e4ca2edbd3b6afc1436f07f", size = 519488, upload-time = "2026-11-15T12:52:33.228Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/23/86bf4f01683c3e77faaa88a7d550e77dbed2bf1875ee2753ec8eff931360/pyfltr-3.33.0-py3-none-any.whl", hash = "sha256:62a5d378f50546fa21327f0bd7b3620dbd4d024e28dfd083a90580993b51e8b3", size = 344863, upload-time = "2026-11-22T04:14:42.43Z" },
 ]
 
 [[package]]
@@ -1521,6 +1521,9 @@ dev = [
     { name = "pytest-xdist" },
     { name = "types-pyyaml" },
 ]
+pytest-impact = [
+    { name = "testscope" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1560,12 +1563,13 @@ dev = [
     { name = "hypothesis", specifier = ">=6.168.3" },
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "playwright", specifier = ">=1.61.0" },
-    { name = "pyfltr", extras = ["python"], specifier = ">=3.32.0" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.33.0" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "types-pyyaml" },
 ]
+pytest-impact = [{ name = "testscope", specifier = "==0.4.2" }]
 
 [[package]]
 name = "pytz"
@@ -1830,6 +1834,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7a/ec/b628c3b1613fe9340de1c5daba957f5b152159ac350b6ce4ad3d2469f822/stevedore-5.10.0.tar.gz", hash = "sha256:6005f32c09dc3159802a61c04862770e439e32db22f6da78ba56e8a735466882", size = 520466, upload-time = "2026-11-12T11:47:05.38Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/78/918aaff2864a8829d061db40acb9da04c89e5c3a01d65932b34432ebd78b/stevedore-5.10.0-py3-none-any.whl", hash = "sha256:47c48dc09e75933106c1bba0a7690eef3b5acecdb807df6d47cc40b2532fa927", size = 56789, upload-time = "2026-11-12T11:47:04.273Z" },
+]
+
+[[package]]
+name = "testscope"
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/a8/d391cbcc69ba2d706190541f1e0fefe50d9e85829f7a341946beddaf5628/testscope-0.4.2.tar.gz", hash = "sha256:ca02567fbad2effdc680446a3749c71e4c0081d8a1d83ae37077ab5a090d572f", size = 215286, upload-time = "2026-11-18T14:15:58.303Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/56/fb2bf420b272282c31fc5fd25318fd3aa562b9702752a7524f3a29c65fae/testscope-0.4.2-py3-none-any.whl", hash = "sha256:8d44ee458b0e6e42f9823b01c860d78cbb526e575997f51f9d937d672c4c191f", size = 31034, upload-time = "2026-11-18T14:15:56.416Z" },
 ]
 
 [[package]]

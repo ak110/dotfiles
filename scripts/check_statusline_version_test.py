@@ -66,7 +66,7 @@ def test_untracked_file_counts_as_change(repo: pathlib.Path) -> None:
     """statusline配下へ未追跡のファイルを加えた場合も差分として扱う。"""
     _write(repo, "rust/claude-statusline/src/new.rs", "// new\n")
 
-    assert _check(repo) is not None
+    assert _check(repo) == "statuslineの変更にはCargo.tomlの版数更新が必要である。"
 
 
 def test_committed_change_is_judged_against_current_sha(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -130,6 +130,14 @@ _ENDING_TERM_ALLOWED = (
 
 _RETIRED_TERMS = (
     *(
+        _RetiredTerm(
+            term=role,
+            replacement="exec-review.md「再発防止観点の確認」",
+            allowed=(_AllowedLocation("retired_terms_invariant_test.py", '"recurrence-self-check.'),),
+        )
+        for role in ("recurrence-self-check.parent.md", "recurrence-self-check.subagent.md")
+    ),
+    *(
         _RetiredTerm(term=term, replacement=replacement, allowed=_ENDING_TERM_ALLOWED)
         for term, replacement in (
             ("終端担当", "公開担当"),
@@ -601,9 +609,15 @@ def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = 
                 continue
             if any(location.allows(path, line) for location in retired.allowed):
                 continue
-            violations.append(
-                f"{path}:{line_number}: 撤去した名称「{retired.term}」が残っている。正式名「{retired.replacement}」へ置き換える"
-            )
+            if retired.term.endswith(".md"):
+                violations.append(
+                    f"{path}:{line_number}: 撤去した参照「{retired.term}」が残っている。移設先 {retired.replacement} を参照する"
+                )
+            else:
+                violations.append(
+                    f"{path}:{line_number}: 撤去した名称「{retired.term}」が残っている。"
+                    f"正式名「{retired.replacement}」へ置き換える"
+                )
     return violations
 
 
@@ -671,6 +685,21 @@ def test_report_direction_term_outside_allowed_paths_is_reported(tmp_path: pathl
     violations = _find_violations(tmp_path, terms)
 
     assert [violation.split(": ", 1)[0] for violation in violations] == ["docs/note.md:2"]
+
+
+def test_moved_role_in_operational_docstring_is_reported(tmp_path: pathlib.Path) -> None:
+    """旧役割を実行時に案内するdocstringと、移設先を指すdocstringを区別する。"""
+    old = next(term for term in _RETIRED_TERMS if term.term.startswith("recurrence-self-check."))
+    _init_repo(
+        tmp_path,
+        {
+            "module.py": f'"""手順は{old.term}を参照する。"""\n',
+            "current.py": f'"""手順は{old.replacement}を参照する。"""\n',
+        },
+    )
+    assert _find_violations(tmp_path, (old,)) == [
+        f"module.py:1: 撤去した参照「{old.term}」が残っている。移設先 {old.replacement} を参照する"
+    ]
 
 
 def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -> None:

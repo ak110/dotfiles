@@ -37,12 +37,22 @@ def _is_test_code(path: pathlib.Path) -> bool:
 
 def _unresolved_references(root: pathlib.Path) -> list[tuple[str, pathlib.Path]]:
     """配布物内の実体へ解決できない参照を返す。"""
-    return [(relative, source) for relative, source in _collect_references(root) if not (root / relative).exists()]
+    root = root.resolve()
+    return [(relative, source) for relative, source in _collect_references(root) if _resource_problem(root, relative)]
 
 
-def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
-    """未解決参照を参照元と対にして整形する。"""
-    return "\n".join(f"{relative} <- {source}" for relative, source in entries)
+def _resource_problem(root: pathlib.Path, relative: str) -> str:
+    target = (root / relative).resolve()
+    if not target.is_relative_to(root):
+        return "配布rootの外を指す。配布物に含まれるパスへ置き換える"
+    if not target.exists():
+        return "参照先が存在しない。配布物の現行パスへ置き換える"
+    return ""
+
+
+def _format_unresolved(root: pathlib.Path, entries: list[tuple[str, pathlib.Path]]) -> str:
+    """参照元、対象パスと解決しない理由を並べる。"""
+    return "\n".join(f"{source}: {_PREFIX}{relative}: {_resource_problem(root, relative)}" for relative, source in entries)
 
 
 @pytest.mark.cpu_limit(
@@ -54,7 +64,7 @@ def test_plugin_root_references_resolve() -> None:
     root = pathlib.Path(__file__).resolve().parent
     assert _collect_references(root)
     unresolved = _unresolved_references(root)
-    assert not unresolved, _format_unresolved(unresolved)
+    assert not unresolved, _format_unresolved(root, unresolved)
 
 
 def test_unresolved_reference_is_reported(tmp_path: pathlib.Path) -> None:
@@ -74,9 +84,21 @@ def test_unresolved_reference_is_reported(tmp_path: pathlib.Path) -> None:
     ]
     unresolved = _unresolved_references(tmp_path)
     assert unresolved == [("skills/atk-mode/roles/missing.subagent.md", pathlib.Path("references.md"))]
-    formatted = _format_unresolved(unresolved)
+    formatted = _format_unresolved(tmp_path, unresolved)
     assert "skills/atk-mode/roles/missing.subagent.md" in formatted
     assert "references.md" in formatted
+    assert "参照先が存在しない" in formatted
+
+
+def test_existing_resource_outside_plugin_is_rejected(tmp_path: pathlib.Path) -> None:
+    root = tmp_path / "plugin"
+    root.mkdir()
+    (root / "present.md").write_text("# 入口\n", encoding="utf-8")
+    (tmp_path / "outside.md").write_text("# 外部\n", encoding="utf-8")
+    (root / "references.md").write_text(f"`{_PREFIX}present.md`と`{_PREFIX}../outside.md`を読む。\n", encoding="utf-8")
+    unresolved = _unresolved_references(root)
+    assert unresolved == [("../outside.md", pathlib.Path("references.md"))]
+    assert "配布rootの外を指す" in _format_unresolved(root, unresolved)
 
 
 def test_test_files_are_excluded_from_references(tmp_path: pathlib.Path) -> None:

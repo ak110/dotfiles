@@ -97,12 +97,13 @@ dev = [
     "hypothesis>=6.168.3",
     "jsonschema>=4.26",
     "playwright>=1.61.0",
-    "pyfltr[python]>=3.32.0",
+    "pyfltr[python]>=3.33.0",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
     "types-PyYAML",
 ]
+pytest-impact = ["testscope==0.4.2"]
 
 [tool.agent-toolkit.pick-wi-check]
 # `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。

@@ -4,7 +4,8 @@ GitHubは見出しのIDを、描画した見出しの文字列（強調・リン
 英字を小文字にし、文字・結合文字・数字・連結句読点（Unicodeの一般カテゴリL・M・N・Pc）とハイフン・空白以外の文字を除き、
 空白をハイフンへ置き換える。生成済みのIDと同じになる場合は、生成済みのIDと衝突しない最小の`-1`、`-2`などを付ける。
 見出しの記法の解釈はmarkdown-it-pyのインライン解析で行い、エスケープした記号と単語内の`_`は文字として残す。
-検査対象は、リンク先がリポジトリ内のMarkdown（同じファイル内の`#...`を含む）であるフラグメント付きのリンクとする。
+検査対象は、リポジトリ内のMarkdownへのフラグメント付きリンク（同一ファイルを含む）と、
+プラグイン名で修飾された資料の節参照とする。
 フェンス付きコードブロックとインラインコードの内側、およびスキームを持つリンク先（`https:`など）は描画されたリンクにならないか、
 リンク先の見出しをリポジトリ内で取得できないため対象から外す。
 対象が追跡中の全Markdown（リポジトリ直下の`README.md`を含む）であるため、リポジトリ直下へ置く。
@@ -30,6 +31,9 @@ _INLINE_CODE_PATTERN = re.compile(r"(?P<ticks>`+)(?P<code>.+?)(?P=ticks)")
 _INLINE_LINK_PATTERN = re.compile(r"!?\[(?P<text>[^\]\n]*)\]\((?P<destination>[^)\n]*)\)")
 _LINK_TITLE_PATTERN = re.compile(r"^(?P<url>\S+)\s+(?:\"[^\"]*\"|'[^']*')$")
 _SCHEME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+_NAMED_SECTION_PATTERN = re.compile(
+    r"`(?P<plugin>agent-toolkit|agent-basics):(?P<path>/?[A-Za-z0-9_./-]+\.md)`「(?P<section>[^」]+)」"
+)
 _MARKDOWN = MarkdownIt("commonmark").enable("strikethrough")
 
 
@@ -41,9 +45,10 @@ class _UnresolvedAnchor:
     line: int
     fragment: str
     target: pathlib.Path
+    reason: str
 
     def __str__(self) -> str:
-        return f"{self.source.as_posix()}:{self.line}: #{self.fragment} -> {self.target.as_posix()}"
+        return f"{self.source.as_posix()}:{self.line}: #{self.fragment} -> {self.target.as_posix()}: {self.reason}"
 
 
 def _tracked_markdown_paths(root: pathlib.Path) -> list[pathlib.Path]:
@@ -120,10 +125,18 @@ def _heading_ids(content: str) -> set[str]:
     return ids
 
 
-def _anchor_links(content: str) -> list[tuple[int, str, str]]:
-    """フラグメント付きのリンクを、行番号・リンク先のパス・デコードしたフラグメントの組で返す。"""
-    links: list[tuple[int, str, str]] = []
+def _anchor_links(content: str, source: pathlib.Path) -> list[tuple[int, pathlib.Path, str]]:
+    """リンクと規範の節参照を、行番号・対象パス・見出しIDの組で返す。"""
+    links: list[tuple[int, pathlib.Path, str]] = []
     for number, line in _lines_outside_fences(content):
+        code_starts = {span.start() for span in _INLINE_CODE_PATTERN.finditer(line)} if "`「" in line else set()
+        for match in _NAMED_SECTION_PATTERN.finditer(line):
+            if match.start() not in code_starts:
+                continue
+            plugin_path = pathlib.Path(match["plugin"])
+            resource = match["path"]
+            target = plugin_path / resource[1:] if resource.startswith("/") else plugin_path / "skills" / resource
+            links.append((number, target, _heading_slug(match["section"])))
         line = _INLINE_CODE_PATTERN.sub("", line)
         for match in _INLINE_LINK_PATTERN.finditer(line):
             destination = match.group("destination").strip()
@@ -136,7 +149,8 @@ def _anchor_links(content: str) -> list[tuple[int, str, str]]:
             path, fragment = destination.split("#", 1)
             if path and not path.endswith(".md"):
                 continue
-            links.append((number, path, urllib.parse.unquote(fragment)))
+            target = pathlib.Path(source.parent, urllib.parse.unquote(path)) if path else source
+            links.append((number, target, urllib.parse.unquote(fragment)))
     return links
 
 
@@ -145,13 +159,16 @@ def _unresolved_anchors(root: pathlib.Path, sources: list[pathlib.Path]) -> list
     ids_cache: dict[pathlib.Path, set[str]] = {}
     unresolved: list[_UnresolvedAnchor] = []
     for source in sources:
-        for line, path, fragment in _anchor_links((root / source).read_text(encoding="utf-8")):
-            target = pathlib.Path(source.parent, urllib.parse.unquote(path)) if path else source
+        content = (root / source).read_text(encoding="utf-8")
+        for line, target, fragment in _anchor_links(content, source):
             resolved = (root / target).resolve()
+            if not resolved.is_file():
+                unresolved.append(_UnresolvedAnchor(source, line, fragment, target, "参照先が存在しない。現行のパスを指定する"))
+                continue
             if resolved not in ids_cache:
-                ids_cache[resolved] = _heading_ids(resolved.read_text(encoding="utf-8")) if resolved.is_file() else set()
+                ids_cache[resolved] = _heading_ids(resolved.read_text(encoding="utf-8"))
             if fragment not in ids_cache[resolved]:
-                unresolved.append(_UnresolvedAnchor(source, line, fragment, target))
+                unresolved.append(_UnresolvedAnchor(source, line, fragment, target, "節が存在しない。実在する見出しを指定する"))
     return unresolved
 
 
@@ -164,15 +181,12 @@ def _unresolved_anchors(root: pathlib.Path, sources: list[pathlib.Path]) -> list
     ),
 )
 def test_markdown_link_anchors_resolve() -> None:
-    """追跡中の全Markdownのフラグメント付きのリンクが、リンク先の見出しIDへ解決する。"""
+    """追跡中のMarkdownのリンクと節参照が、対象の見出しへ解決する。"""
     root = pathlib.Path(__file__).resolve().parent
     sources = _tracked_markdown_paths(root)
     assert pathlib.Path("README.md") in sources
     unresolved = _unresolved_anchors(root, sources)
-    assert not unresolved, (
-        "リンク先の見出しIDへ解決しないフラグメント（ファイル:行: #フラグメント -> リンク先）:\n"
-        + "\n".join(map(str, unresolved))
-    )
+    assert not unresolved, "見出しへ解決しない参照（ファイル:行: #見出しID -> 参照先）:\n" + "\n".join(map(str, unresolved))
 
 
 _REPOSITORY_URL_PATTERN = re.compile(r"https://github\.com/ak110/dotfiles/blob/master/(?P<path>[^\s#]+)#(?P<fragment>\S+)")
@@ -298,6 +312,27 @@ def test_unresolved_anchor_report_lists_every_link(tmp_path: pathlib.Path) -> No
     )
 
     assert list(map(str, _unresolved_anchors(tmp_path, [source]))) == [
-        "index.md:3: #確認・合意の運用 -> target.md",
-        "index.md:5: #消えた節 -> sub/../target.md",
+        "index.md:3: #確認・合意の運用 -> target.md: 節が存在しない。実在する見出しを指定する",
+        "index.md:5: #消えた節 -> sub/../target.md: 節が存在しない。実在する見出しを指定する",
+    ]
+
+
+def test_qualified_reading_table_sections_distinguish_path_and_heading(tmp_path: pathlib.Path) -> None:
+    """読込表の資料と節の有無を別に診断する。"""
+    plugin = "-".join(("agent", "toolkit"))
+    target = pathlib.Path(plugin, "skills/sample/references/target.md")
+    (tmp_path / target.parent).mkdir(parents=True)
+    (tmp_path / target).write_text("# 対象\n\n## 実行の条件\n", encoding="utf-8")
+    source = pathlib.Path("index.md")
+    (tmp_path / source).write_text(
+        f"| 現行 | `{plugin}:sample/references/target.md`「実行の条件」 |\n"
+        f"| 旧節 | `{plugin}:/skills/sample/references/target.md`「移設前の節」 |\n"
+        f"| 旧先 | `{plugin}:sample/references/missing.md`「実行の条件」 |\n"
+        f"| 記法の例 | `` `{plugin}:sample/references/missing.md`「節の名前」 `` |\n",
+        encoding="utf-8",
+    )
+    unresolved = _unresolved_anchors(tmp_path, [source])
+    assert [(entry.line, entry.reason) for entry in unresolved] == [
+        (2, "節が存在しない。実在する見出しを指定する"),
+        (3, "参照先が存在しない。現行のパスを指定する"),
     ]

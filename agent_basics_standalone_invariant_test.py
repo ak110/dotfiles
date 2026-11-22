@@ -47,6 +47,7 @@ def _unresolved_references(path: pathlib.Path, skills: pathlib.Path) -> list[str
     「`agent-basics:bugfix`の`references/x.md`」や「同スキルの`references/x.md`」のように
     スキル名を文脈で示す参照があるため、配布物内のいずれかのスキルの同じ相対位置に実体があれば解決済みとする。
     """
+    distribution = skills.parent.resolve()
     skill_dirs = [entry for entry in skills.iterdir() if entry.is_dir()]
     owner = next(parent for parent in path.parents if parent.parent == skills)
     unresolved: list[str] = []
@@ -69,11 +70,15 @@ def _unresolved_references(path: pathlib.Path, skills: pathlib.Path) -> list[str
                 candidates += [directory / "references" / value for directory in skill_dirs]
             # Claude Code・Codexともプラグインのルート（skillsの親）全体を配布するため、
             # ルート直下の第三者表示なども配布物に含める。
-            if not any(
-                candidate.resolve().is_file() and candidate.resolve().is_relative_to(skills.parent.resolve())
-                for candidate in candidates
-            ):
-                unresolved.append(f"{path}:{number}: {value}")
+            targets = [candidate.resolve() for candidate in candidates]
+            if any(target.is_relative_to(distribution) and target.is_file() for target in targets):
+                continue
+            repository_path = (distribution.parent / value).resolve()
+            if any(not target.is_relative_to(distribution) and target.is_file() for target in [*targets, repository_path]):
+                reason = "配布物の外を指す。単体配布の中から読める資料へ置き換える"
+            else:
+                reason = "資料が見つからない。単体配布の現行パスへ置き換える"
+            unresolved.append(f"{path}:{number}: {value}: {reason}")
     return unresolved
 
 
@@ -104,7 +109,7 @@ def test_agent_basics_references_resolve_inside_distribution() -> None:
     """
     unresolved = [line for path in _DISTRIBUTED_DOCUMENTS for line in _unresolved_references(path, _SKILLS)]
     assert not unresolved, (
-        "配布物の外を指す参照（監査記録は条文から指さず、記録の見出しのファイルパスと節名を索引にする）:\n"
+        "単体配布で開けない参照（監査記録は条文から指さず、記録の見出しのファイルパスと節名を索引にする）:\n"
         + "\n".join(unresolved)
     )
 
@@ -187,7 +192,10 @@ def test_toolkit_dependency_is_detected(tmp_path: pathlib.Path, line: str, expec
 
 def test_reference_outside_distribution_is_detected(tmp_path: pathlib.Path) -> None:
     """agent-basicsの中に無い役割文書と監査記録への参照を、参照先の不在として検出する。"""
-    skills = tmp_path / "skills"
+    skills = tmp_path / "plugin/skills"
+    outside = tmp_path / "docs/development/audit-records.md"
+    outside.parent.mkdir(parents=True)
+    outside.write_text("# 監査\n", encoding="utf-8")
     (skills / "sample/references").mkdir(parents=True)
     (skills / "sample/references/rule.md").write_text("# 基準\n", encoding="utf-8")
     path = skills / "sample/SKILL.md"
@@ -198,7 +206,7 @@ def test_reference_outside_distribution_is_detected(tmp_path: pathlib.Path) -> N
         encoding="utf-8",
     )
     assert _unresolved_references(path, skills) == [
-        f"{path}:3: docs/development/audit-records.md",
-        f"{path}:3: docs/development/audit-records-search.md",
-        f"{path}:3: skills/atk-mode/roles/exec.subagent.md",
+        f"{path}:3: docs/development/audit-records.md: 配布物の外を指す。単体配布の中から読める資料へ置き換える",
+        f"{path}:3: docs/development/audit-records-search.md: 資料が見つからない。単体配布の現行パスへ置き換える",
+        f"{path}:3: skills/atk-mode/roles/exec.subagent.md: 資料が見つからない。単体配布の現行パスへ置き換える",
     ]

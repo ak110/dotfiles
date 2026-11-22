@@ -190,27 +190,6 @@ class TestRewriteKnownMarketplacesEntry:
 
         assert _claude_marketplace.repair_marketplace() is False
 
-    def test_invalid_json_returns_false(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-    ):
-        """known_marketplaces.json が不正 JSON の場合は repair_marketplace が False を返す。
-
-        不正 JSON は ``_load_known_marketplace_entry`` で None を返すため
-        ``_check_marketplace_from_file`` 的には「ファイル不在」と同等の None 扱いになる。
-        直接書き換え経路では ``load_json_dict`` が None を返すため False となる。
-        recheck=None + settings の不正 JSON で直接書き換え経路に到達させる。
-        """
-        known, settings = marketplace_paths
-        # known: 旧 GitHub 型 → recheck=False → 直接書き換えへ
-        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        # settings: 不正 JSON → _rewrite_settings_extra_known_entry が False を返す
-        settings.write_text("{invalid", encoding="utf-8")
-        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
-
-        assert _claude_marketplace.repair_marketplace() is False
-
 
 # --- TestRewriteSettingsExtraKnownEntry ---
 

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import pathlib
 import re
+import subprocess
+import tomllib
 
 import pytest
 from agent_toolkit._common import skill_modes
 
-from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths
+from _test_helpers import _PLUGIN_PREFIX, _tracked_source_paths
 
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
 
@@ -20,6 +23,10 @@ _SKILL_INVOCATION_PATTERN = re.compile(rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:
 
 _SKILL_PATH_PATTERN = re.compile(
     rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/skills/[A-Za-z0-9][A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*/?"
+)
+
+_QUALIFIED_RESOURCE_PATTERN = re.compile(
+    rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:(/?[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+\.md)(?![A-Za-z0-9_./-])"
 )
 
 
@@ -221,6 +228,61 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     return unresolved
 
 
+def _reference_diagnostic(root: pathlib.Path, source: pathlib.Path, reference: str) -> str:
+    forms = [reference]
+    if reference.startswith(f"{_PLUGIN_PREFIX}/"):
+        forms.append(f"{_PLUGIN_PREFIX}:/{reference.removeprefix(f'{_PLUGIN_PREFIX}/')}")
+        if reference.startswith(f"{_PLUGIN_PREFIX}/skills/"):
+            forms.append(f"{_PLUGIN_PREFIX}:{reference.removeprefix(f'{_PLUGIN_PREFIX}/skills/')}")
+    lines = [
+        str(number)
+        for number, line in enumerate((root / source).read_text(encoding="utf-8").splitlines(), 1)
+        if any(form in line for form in forms)
+    ]
+    location = f"{source}:" + (f"{','.join(lines)}:" if lines else "")
+    if _names_retired_skill(reference, _ATK_MODE_RETIRED_SKILLS):
+        return f"{location} 廃止したスキル参照 {reference}。agent-toolkit:atk-mode/SKILL.mdの手順の索引から移設先を選ぶ。"
+    if reference == f"{_PLUGIN_PREFIX}/share/session-conversation-extraction.md":
+        return (
+            f"{location} 廃止した参照 {reference}。"
+            "agent-toolkit:atk-mode/references/work-contract.md「会話の少量取得」へ置き換える。"
+        )
+    return f"{location} 参照先が存在しない: {reference}。現行のパスへ置き換える。"
+
+
+def _missing_pyright_paths(root: pathlib.Path) -> list[str]:
+    """Pyrightの除外設定で、実体が要るリポジトリ相対のリテラルだけを調べる。"""
+    config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8")).get("tool", {}).get("pyright", {})
+    missing: list[tuple[str, str]] = []
+    for key in ("exclude", "ignore"):
+        for value in config.get(key, []):
+            # globやリポジトリの外を指す指定には、リポジトリ内に実体があることを求めない。
+            path = pathlib.PurePosixPath(value)
+            if path.is_absolute() or ".." in path.parts or any(mark in value for mark in "*?[]{}\\:"):
+                continue
+            if not (root / path).exists():
+                missing.append((key, value))
+    if not missing:
+        return []
+    # 存在しないことが正常な未生成物は、既存のGit除外規則で判定する。
+    ignored = subprocess.run(
+        ["git", "check-ignore", "--no-index", "-z", "--stdin"],
+        cwd=root,
+        input="".join(value + "\0" for _, value in missing),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert ignored.returncode in (0, 1), ignored.stderr
+    generated = set(ignored.stdout.split("\0"))
+    return [
+        f"pyproject.toml: tool.pyright.{key}: {value} が存在しない。移設後のパスへ置き換える。"
+        for key, value in missing
+        if value not in generated
+    ]
+
+
 @pytest.mark.cpu_limit(
     4.5, reason="配布規範の全参照を実ファイルへ解決し、欠落と曖昧さを検出する全量検査が必要（Linux CI CPU2.004秒）"
 )
@@ -229,8 +291,53 @@ def test_agent_toolkit_references_resolve() -> None:
     root = pathlib.Path(__file__).resolve().parent
     sources = _tracked_source_paths(root)
     assert any(path.parts[0] == ".claude" for path in sources)
-    unresolved = _unresolved_references(root, sources)
-    assert not unresolved, _format_unresolved(unresolved)
+    unresolved = [
+        _reference_diagnostic(root, source, reference)
+        for reference, source in dict.fromkeys(_unresolved_references(root, sources))
+    ]
+    unresolved.extend(_missing_pyright_paths(root))
+    assert not unresolved, "\n".join(unresolved)
+
+
+def test_pyright_rejects_only_missing_literal_repository_paths(tmp_path: pathlib.Path) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / ".gitignore").write_text("/generated/\n", encoding="utf-8")
+    (tmp_path / "present").mkdir()
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.pyright]\nexclude = ["present", "moved/path.py", "src/**", "generated/code.py"]\n',
+        encoding="utf-8",
+    )
+    assert _missing_pyright_paths(tmp_path) == [
+        "pyproject.toml: tool.pyright.exclude: moved/path.py が存在しない。移設後のパスへ置き換える。"
+    ]
+
+
+def test_qualified_resources_in_reading_table_and_docstring(tmp_path: pathlib.Path) -> None:
+    skill = tmp_path / _PLUGIN_PREFIX / "skills" / "sample"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# 入口\n", encoding="utf-8")
+    present = f"{_PLUGIN_PREFIX}:sample/SKILL.md"
+    missing = f"{_PLUGIN_PREFIX}:sample/removed.md"
+    document = pathlib.Path("source.md")
+    module = pathlib.Path("source.py")
+    tests = pathlib.Path("source_test.py")
+    (tmp_path / document).write_text(f"| 読む | `{present}` |\n", encoding="utf-8")
+    (tmp_path / module).write_text(f'"""規定は`{missing}`を参照する。"""\n', encoding="utf-8")
+    (tmp_path / tests).write_text(f'"""検証する。"""\ncase = "{missing}"\n', encoding="utf-8")
+    assert _unresolved_references(tmp_path, [document, module, tests]) == [
+        (f"{_PLUGIN_PREFIX}/skills/sample/removed.md", module)
+    ]
+
+
+def test_moved_root_resource_names_its_replacement(tmp_path: pathlib.Path) -> None:
+    source = pathlib.Path("source.md")
+    old = "share/session-conversation-extraction.md"
+    (tmp_path / source).write_text(f"# 案内\n\n`{_PLUGIN_PREFIX}:/{old}`を参照する。\n", encoding="utf-8")
+    reference = f"{_PLUGIN_PREFIX}/{old}"
+    assert _unresolved_references(tmp_path, [source]) == [(reference, source)]
+    diagnostic = _reference_diagnostic(tmp_path, source, reference)
+    assert diagnostic.startswith(f"{source}:3: 廃止した参照 {reference}。")
+    assert "work-contract.md「会話の少量取得」へ置き換える" in diagnostic
 
 
 def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
@@ -370,4 +477,16 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
             )
         else:
             references.extend((path, relative) for path in paths)
+            qualified_text = content
+            if relative.name.endswith("_test.py") and _QUALIFIED_RESOURCE_PATTERN.search(content):
+                # テストの入力文字列と、保守担当に意味を伝えるdocstringを区別する。
+                qualified_text = "\n".join(
+                    ast.get_docstring(node) or ""
+                    for node in ast.walk(ast.parse(content))
+                    if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                )
+            for match in _QUALIFIED_RESOURCE_PATTERN.finditer(qualified_text):
+                resource = match[1]
+                prefix = _PLUGIN_PREFIX if resource.startswith("/") else f"{_PLUGIN_PREFIX}/skills"
+                references.append((f"{prefix}/{resource.lstrip('/')}", relative))
     return references
