@@ -140,6 +140,12 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
                     "message": {"content": f"exec-lane-search {body_query}"},
                 }
             )
+            records.append(
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"type": "tool_use", "id": "lookup", "name": "document_lookup_demo", "input": {}}]},
+                }
+            )
             path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
             break
     assert delegated_child is not None
@@ -190,6 +196,11 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
 
         async with page.expect_response("**/api/sessions/search") as requested:
             await field.fill(body_query)
+        assert (await requested.value).ok
+        await playwright.async_api.expect(rows).to_have_count(1)
+
+        async with page.expect_response("**/api/sessions/search") as requested:
+            await field.fill("document_lookup_demo")
         assert (await requested.value).ok
         await playwright.async_api.expect(rows).to_have_count(1)
 
