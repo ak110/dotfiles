@@ -218,6 +218,8 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     # 実launcherを置換した子の寿命を保護し、終了後だけ旧依存を回収する。
     (first / "live_probe.py").write_text("import sys\nprint('ready', flush=True)\nsys.stdin.readline()\n", encoding="utf-8")
     current = plugin_environment.project_environment(second, environment)
+    with plugin_environment.prepare_lock(selected):
+        plugin_environment.register_source(first, selected, environment, python_executable=Path(sys.executable))
     with subprocess.Popen(
         [sys.executable, str(first / "scripts/launch.py"), "live_probe.py"],
         env=environment,
@@ -231,7 +233,8 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         try:
             assert process.stdout is not None
             assert process.stdout.readline().strip() == "ready"
-            plugin_environment_cleanup.cleanup([current], environment)
+            first.rename(first.with_name("retired"))
+            plugin_environment_cleanup.cleanup([current], environment, python_executable=Path(sys.executable))
             assert selected.is_dir() and current.is_dir()
             process.communicate("finish\n", timeout=15)
             assert process.returncode == 0
@@ -239,7 +242,7 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
             if process.poll() is None:
                 process.kill()
                 process.communicate(timeout=15)
-    plugin_environment_cleanup.cleanup([current], environment)
+    plugin_environment_cleanup.cleanup([current], environment, python_executable=Path(sys.executable))
     assert not selected.exists() and current.is_dir()
     # 回収後の現行環境は再準備なしで公開操作を実行できる。
     current_probe = _run([sys.executable, str(second / "scripts/launch.py"), "probe.py"], environment, tmp_path)

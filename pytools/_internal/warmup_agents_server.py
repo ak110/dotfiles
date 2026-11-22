@@ -145,7 +145,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if dependencies_ready:
         if not elevated:
             post_apply_cache.save("agents-server-startup", key)
-        plugin_warmup.cleanup_prepared(prepared)
+        plugin_warmup.cleanup_prepared(prepared, approved_commands=commands)
     if elevated:
         return post_apply_outcome.PostApplyOutcome(deferred=True, notices=(_ELEVATED_NOTICE,))
     return post_apply_outcome.PostApplyOutcome()

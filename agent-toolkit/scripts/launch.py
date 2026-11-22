@@ -107,7 +107,8 @@ def main() -> int:
         path = caller_environment.get("PATH", "").split(os.pathsep)
         if path and Path(path[0]).resolve() == Path(sys.executable).resolve().parent:
             caller_environment["PATH"] = os.pathsep.join(path[1:])
-        python = plugin_environment.prepared_python(root, caller_environment)
+        selected = plugin_environment.project_environment(root, caller_environment)
+        python = plugin_environment.prepared_environment_python(selected)
     except OSError as exc:
         next_action.report(
             f"起動環境を準備できないため、agent-toolkitを起動できません: {exc}",
@@ -139,7 +140,7 @@ def main() -> int:
         prepared = _prepare(root, uv, caller_environment)
         if prepared != 0:
             return prepared
-        python = plugin_environment.prepared_python(root, caller_environment)
+        python = plugin_environment.prepared_environment_python(selected)
     if python is None:
         reason = f"共有依存環境が未準備のため、agent-toolkitを起動できません。Python: {plugin_environment.base_python()}"
         action = "`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。"
@@ -156,12 +157,15 @@ def main() -> int:
 
         return forward(root=root, python=python, environment=caller_environment)
     try:
-        with environment_usage.lock(plugin_environment.project_environment(root, caller_environment)) as usage_lock:
+        with environment_usage.lock(selected) as usage_lock:
+            if plugin_environment.project_environment(root, caller_environment) != selected:
+                raise OSError("共有環境を選択した後に依存の固定内容が変わったため、起動を中止しました")
             # 準備確認と使用開始の間に回収されていないことを、回収と同じ排他下で確かめる。
-            if plugin_environment.prepared_python(root, caller_environment) is None:
+            python = plugin_environment.prepared_environment_python(selected)
+            if python is None:
                 raise FileNotFoundError("共有依存環境が回収されたため、update-dotfilesで再準備してください")
             arguments = [str(python), str(target), *options.arguments]
-            environment = plugin_environment.direct_environment(root, caller_environment)
+            environment = plugin_environment.direct_environment(root, caller_environment, selected=selected)
             if target == root / "agent_toolkit/hook.py":
                 # 親の強制終了時も、POSIXの子が依存環境を使う間は回収を防ぐ。
                 pass_fds = () if os.name == "nt" else (usage_lock.fileno(),)
@@ -260,7 +264,9 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
         environment = plugin_environment.launch_environment(root, environment)
         target = Path(environment["UV_PROJECT_ENVIRONMENT"])
         with plugin_environment.prepare_lock(target):
-            if plugin_environment.prepared_python(root, environment) is not None:
+            if plugin_environment.project_environment(root, environment) != target:
+                raise OSError("排他の取得前に依存の固定内容が変更されたため、共有環境の準備を中止しました")
+            if plugin_environment.prepared_environment_python(target) is not None:
                 plugin_environment.record_source(root, target)
                 return 0
             remaining = _PREPARE_TIMEOUT - (time.monotonic() - started)
@@ -293,7 +299,9 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
                     next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行してください。",
                 )
                 return returncode
-            plugin_environment.publish_prepared_environment(root, environment)
+            if plugin_environment.project_environment(root, environment) != target:
+                raise OSError("依存同期中に依存の固定内容が変更されたため、共有環境の公開を中止しました")
+            plugin_environment.publish_prepared_environment(root, environment, selected=target)
             return 0
     except (OSError, TimeoutError, subprocess.TimeoutExpired) as exc:
         next_action.report(

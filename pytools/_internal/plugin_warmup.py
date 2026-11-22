@@ -214,9 +214,10 @@ def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> PreparedT
     return PreparedTargets(commands, tuple(legacy))
 
 
-def cleanup_prepared(prepared: PreparedTargets) -> None:
+def cleanup_prepared(prepared: PreparedTargets, *, approved_commands: Sequence[Sequence[str]]) -> None:
     """実際に準備した全有効rootの依存環境を保持し、full更新後の旧資源を回収する。
 
+    準備に成功しても承認されなかったrootの環境は保持し、更新器の登録は行わない。
     旧形式の対象が登録されている間は、その版のhookとMCPが使う共有環境を特定できないため、共有環境を回収しない。
     """
     commands = prepared.commands
@@ -231,14 +232,17 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
         for command, target in zip(commands, required, strict=True):
             if target.is_dir():
                 with plugin_environment.prepare_lock(target):
-                    plugin_environment.record_source(Path(command[command.index("--project") + 1]), target)
+                    root = Path(command[command.index("--project") + 1])
+                    plugin_environment.record_source(root, target)
+                    if command in approved_commands:
+                        plugin_environment.register_source(root, target, os.environ, python_executable=Path(command[0]))
         if prepared.legacy:
             logger.info(
                 "旧形式の版が登録されているため共有環境の回収を延期: %s。登録が新しい版へ移った後のupdate-dotfilesで回収します",
                 ", ".join(log_format.home_short(target) for target in prepared.legacy),
             )
         else:
-            rows = plugin_environment_cleanup.cleanup(required, os.environ)
+            rows = plugin_environment_cleanup.cleanup(required, os.environ, python_executable=Path(commands[0][0]))
             for row in rows:
                 level = logging.WARNING if row["status"] == "deferred" else logging.INFO
                 logger.log(level, "共有依存環境: %s", json.dumps(row, ensure_ascii=False), extra=log_format.LOG_ONLY)

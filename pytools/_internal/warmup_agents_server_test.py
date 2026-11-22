@@ -1,7 +1,6 @@
 """pytools._internal.warmup_agents_server のテスト。
 
-`resolve_executable`・`common.run_subprocess`・plugin一覧の入力を差し替え、
-ウォームアップ対象の列挙と、構築の失敗をスキップと数えることを検証する。実際の`uv`は起動しない。
+外部コマンド・plugin一覧を差し替え、実際の`uv`を起動せずに対象の列挙、失敗、起動確認を検証する。
 """
 
 import asyncio
@@ -74,10 +73,8 @@ def _setup(
 ) -> list[list[str]]:
     """対象パスと外部コマンドを差し替え、記録用のコマンド一覧を返す。
 
-    `uv`・`codex`はPATH上に存在する扱いとし、`codex plugin list --json`は
-    `codex_entries`から組み立てた出力を返す。`uv python find`はテスト専用のPython実行
-    ファイルを返す。launcherの結果は`warmup_returncode`で指定し、
-    `None`は実行自体の失敗（タイムアウト等）を表す。
+    `codex_entries`をplugin一覧として返し、`uv python find`にはテスト用実行ファイルを返す。
+    `warmup_returncode=None`はlauncherの実行失敗を表す。
     """
     monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
@@ -220,7 +217,7 @@ class TestTargets:
         """再実行の整理用の印だけが変わっても、同じサービスの起動確認を繰り返さない。"""
         _setup(monkeypatch, tmp_path)
         monkeypatch.setattr(_warmup.post_apply_cache, "record_path", lambda name: tmp_path / f"{name}.json")
-        monkeypatch.setattr(_warmup.plugin_warmup, "cleanup_prepared", lambda _prepared: None)
+        monkeypatch.setattr(_warmup.plugin_warmup, "cleanup_prepared", lambda _prepared, **_kwargs: None)
         monkeypatch.setattr(_warmup.windows_security, "is_elevated_above_user_processes", lambda: False)
         started: list[list[str]] = []
 
@@ -348,11 +345,7 @@ class TestTargets:
     def test_registered_legacy_version_keeps_shared_environments_until_registration_moves(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """旧形式の版が登録されている間は共有環境を回収せず、登録が新しい版へ移った後の更新で回収する。
-
-        依存の固定内容が`uv.lock`だった旧形式の版の共有環境は、現行の起動部分では特定できない。
-        2026-11-19、Claude Codeの登録が旧版のまま更新すると、その版のhookとMCPが使う共有環境を回収し、次の起動が失敗した。
-        """
+        """2026-11-19の回帰: 旧形式の登録が解除されるまでhookとMCPが使う環境を回収しない。"""
         _setup(monkeypatch, tmp_path)
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
         claude_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit"
@@ -361,8 +354,11 @@ class TestTargets:
         (legacy / "scripts" / "launch.py.lock").unlink()
         (legacy / "pyproject.toml").write_text('[project]\nname = "agent-toolkit"\n', encoding="utf-8")
         (legacy / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-        legacy_environment = plugin_environment.runtime_data(os.environ) / "environments" / "legacy"
+        legacy_environment = plugin_environment.legacy_project_environment(
+            legacy, os.environ, python_executable=tmp_path / "python"
+        )
         (legacy_environment / "bin").mkdir(parents=True)
+        (legacy_environment / ".agent-toolkit-sources.json").write_text(json.dumps({str(legacy): "0.9.0"}), encoding="utf-8")
 
         def register(root: pathlib.Path) -> None:
             (tmp_path / "installed_plugins.json").write_text(
@@ -919,10 +915,14 @@ def test_warmup_starts_shared_service_only_from_registered_locations(
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None if origin == "unknown" else repository)
     monkeypatch.setattr(_warmup, "_check_startup", _CHECK_STARTUP)
     saves: list[object] = []
-    cleanups: list[object] = []
+    cleanups: list[pathlib.Path] = []
     monkeypatch.setattr(_warmup.post_apply_cache, "matches", lambda *args: args in saves)
     monkeypatch.setattr(_warmup.post_apply_cache, "save", lambda *args: saves.append(args))
-    monkeypatch.setattr(_warmup.plugin_warmup, "cleanup_prepared", cleanups.append)
+    monkeypatch.setattr(
+        _warmup.plugin_warmup,
+        "cleanup_prepared",
+        lambda _prepared, *, approved_commands: cleanups.extend(pathlib.Path(cmd[-1]) for cmd in approved_commands),
+    )
     dependency_check = _warmup.plugin_warmup.check_command
     startups: list[pathlib.Path] = []
     connections: list[pathlib.Path] = []
@@ -979,7 +979,7 @@ def test_warmup_starts_shared_service_only_from_registered_locations(
     assert connections == startups
     assert published == roots
     assert bool(saves) is not blocked
-    assert bool(cleanups) is not blocked
+    assert cleanups == startups
     if blocked:
         assert "共有管理サービスの起動と公開を省略" in caplog.text
         assert f"登録先: {'なし・未確認' if unregistered else registered}" in caplog.text
