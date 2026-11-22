@@ -18,7 +18,7 @@ for (const [surface, delegated, tool, shouldDeliver] of [
       expect(shown.isDeferred).toBe(false);
       for (const purpose of ["メイン", "進捗", "完了報告", "前置き"]) expect(shown.description).toContain(purpose);
       expect(shown.description).toMatch(/質問[^。]*ツール一覧[^。]*AskUserQuestion/);
-      expect(shown.description).toContain("`…`だけ");
+      expect(shown.description).not.toContain("送信済み");
       expect(shown.description).toContain(original.description);
     } else {
       expect(shown).toEqual(original);
@@ -57,7 +57,7 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
         expect(notice).toContain("呼出しに失敗した時だけ通常本文");
         expect(notice).toContain("searchTools");
         expect(notice).not.toContain("ツールが無い時");
-        expect(notice).toContain("…");
+        expect(notice).not.toContain("送信済み");
         expect(notice.length).toBeLessThanOrEqual(300);
       } else {
         expect(context).toEqual(previous ?? []);

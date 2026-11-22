@@ -57,7 +57,8 @@ for (const placed of [true, false]) {
     expect(response.ok).toBe(placed);
     if (placed) {
       expect(response.reason).toContain("AskUserQuestion");
-      expect(response.reason).toContain("`…`だけ");
+      expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容を通常の応答本文で発話し直してはいけません。");
+      expect(response.reason).not.toContain("`…`だけ");
     } else expect(response.reason).toBe("対応画面なし");
   });
 }

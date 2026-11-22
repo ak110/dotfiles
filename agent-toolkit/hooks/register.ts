@@ -4,7 +4,7 @@ import { automatedMessage, startNextTurn } from "./automated_message.ts";
 import { register as registerCompactConversation } from "./compact_conversation.ts";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
 import { register as registerUsageLimitResume } from "./usage_limit_resume.ts";
-import { turnEndAfterDelivery } from "./send_to_user.tsx";
+import { questionRoute } from "./send_to_user.tsx";
 import { register as registerUIRequests } from "./ui_requests.tsx";
 import { register as registerRuntimeRestart } from "./runtime_restart.ts";
 import { register as registerAgentPanel } from "./agent_panel.ts";
@@ -37,7 +37,7 @@ export const register: Register = (on) => {
     return {
       ...result,
       description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話をこのツールのmessageで送る。" +
-        turnEndAfterDelivery + "呼出しに失敗した時だけ通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
+        questionRoute + "呼出しに失敗した時だけ通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
       isDeferred: false,
     };
   });
@@ -48,7 +48,7 @@ export const register: Register = (on) => {
     const notice = automatedMessage("send-to-user-contract", "notice",
       "着手・進捗・完了報告は `send_to_user` で送る。" +
       (listed ? `REPL: \`await tools['${SEND_TO_USER}']({message})\`。` : `検索対象: \`${SEND_TO_USER}\`。`) +
-      "直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。呼出しに失敗した時だけ通常本文で伝え、送達後は `…` で閉じる。");
+      "直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。呼出しに失敗した時だけ通常本文で伝える。");
     return next({ ...e, context: [...(e.context ?? []), notice] });
   });
   on("session.start", async ($, e, next) => {
