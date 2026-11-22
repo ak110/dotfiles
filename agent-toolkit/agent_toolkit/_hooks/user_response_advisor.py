@@ -139,7 +139,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
                     if isinstance(content, list)
                     else {}
                 )
-            text = transcript.visible_assistant_text(message)
+            text = "\n".join(
+                line
+                for line in transcript.visible_assistant_text(message).splitlines()
+                if not line.startswith("hook通知への対応:")
+            )
             last_ellipsis = "…" in text
             if any(not char.isspace() and char != "…" for char in text):
                 needs_response = False
