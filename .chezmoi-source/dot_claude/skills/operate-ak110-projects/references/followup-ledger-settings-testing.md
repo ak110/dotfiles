@@ -76,3 +76,15 @@
 - 適用方法: 単体・結合・E2Eの配置を定め、混載を主題ごとに分け、準備・後始末を共有し、空きポート・有限の起動待ち・直接依存を使い、不足する主要処理の試験を補う
 - 参照先: `github.com/ak110/pyfltr`の`AGENTS.md`と`tests/`、`github.com/ak110/glatasks`の`vitest.config.ts`と`app/tests/helpers/`
 - 適用済みの見分け方: 配置から対象実装を引け、純粋関数をE2E環境なしで検証でき、共有の準備を使い、再配置後も既存の入力と期待値が維持される
+
+## 前の版との比較を使うCIに基準コミットを渡す
+
+- 項目ID: ci-select-base-for-change-comparison
+- 実施日: 2026年11月
+- 内容: 設定の廃止や移行漏れを検出する検証に、イベントに合う比較元を渡す
+- 理由: 現在の設定だけでは削除されたキーを列挙できず、浅いcheckoutでは比較元のコミットを読み取れない場合がある
+- 当てはまる条件: 追加・削除を判定する検証をpull requestとpushの両方で使い、比較元の選択や取得をCIが保証していない
+- 適用方法: pull requestはbase、pushは更新前のコミットを比較元として渡し、そのオブジェクトを取得する。
+  履歴がない初回pushや比較元を解決できない場合の扱いも決め、通常の削除と比較不能を区別する
+- 参照先: `github.com/ak110/dotfiles` の `.github/workflows/ci.yaml` と `scripts/check_managed_claude_settings_removals.py`
+- 適用済みの見分け方: CIログにイベント別の比較元と判定結果が残り、比較元を取得できないときに比較が成功したと表示しない
