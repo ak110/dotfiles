@@ -15,7 +15,8 @@ import subprocess
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _ROOTS = ("agent-toolkit/skills", "agent-basics/skills")
-_BUDGET_BYTES = 2_681_044
+# 2026年11月22日にユーザーが「いったん少し余裕のあるとこまで上限上げていいよ」と指示し、初期値2_681_044から上げた。
+_BUDGET_BYTES = 2_700_000
 # 整理後の目標の上限に対する比率。整理の後に、目標と上限の差だけ足せる余裕を残す。
 _TARGET_RATIO = 0.85
 
