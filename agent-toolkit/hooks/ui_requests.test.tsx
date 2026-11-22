@@ -56,9 +56,9 @@ for (const placed of [true, false]) {
     expect(response.id).toBe(id);
     expect(response.ok).toBe(placed);
     if (placed) {
-      expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容の再掲・送信確認・要約を通常の応答本文に書いてはいけません。");
-      expect(response.reason).toContain("新しい報告はsend_to_userで送り");
-      expect(response.reason).not.toContain("…");
+      expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容を再送したり、通常の応答本文で再掲・送信確認・要約したりしてはいけません。");
+      expect(response.reason).toContain("新しい報告はsend_to_userで送る");
+      expect(response.reason).toContain("Claude Codeが可視の本文を求める場合の最小の応答は「…」");
     } else {
       expect(response.reason).toContain("対応画面なし");
       expect(response.reason).toContain("未送信");
