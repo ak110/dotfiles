@@ -29,7 +29,7 @@ def _diagnostic(output: str, marker: str) -> str:
             ["書込区分（`書込対象`・`公開工程の書込対象`）に同じパスが無い"],
         ),
         ("derived-directory", "`導出した新設先`の対応が不正", ["通常ファイルではない"]),
-        ("derived-missing-parent", "`導出した新設先`の対応が不正", ["完全な新設名", "src/missing/save.py"]),
+        ("derived-parent-file", "`導出した新設先`の対応が不正", ["完全な新設名", "src/missing/save.py"]),
         ("derived-scope-outside", "`導出した新設先`の対応が不正", ["反映範囲がパスを含まない", "docs/"]),
         ("broad", "広すぎる範囲", ["src/", "src/model.py"]),
         ("edge-definitions", "結合根拠が成立しない", ["定義が交わらない", "入力", "出力"]),
@@ -50,7 +50,7 @@ def test_compound_diagnostics_name_failed_condition(
     repo, notes = env
     plan = str(tmp_path / "shared.md")
     if case.startswith("derived"):
-        record = _derived("src/missing/save.py" if case == "derived-missing-parent" else "src/save.py")
+        record = _derived("src/missing/save.py" if case == "derived-parent-file" else "src/save.py")
         item: dict[str, typing.Any] = {
             "WI": "a.md",
             "レーン": "lane-01",
@@ -58,7 +58,9 @@ def test_compound_diagnostics_name_failed_condition(
             "導出した新設先": [record],
         }
         body = "`src/`へ保存用入口を新設する。"
-        if case == "derived-scope-missing":
+        if case == "derived-parent-file":
+            (repo / "src/missing").write_text("file", encoding="utf-8")
+        elif case == "derived-scope-missing":
             record["反映範囲"] = "missing/"
         elif case == "derived-duplicate":
             item["導出した新設先"].append(dict(record))

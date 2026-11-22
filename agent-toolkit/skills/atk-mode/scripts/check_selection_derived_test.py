@@ -157,7 +157,7 @@ def test_public_check_derived_paths_from_answered_uwi(
         ("absolute", 1),
         ("escape", 1),
         ("glob", 1),
-        ("missing-parent", 1),
+        ("missing-parent", 0),
         ("outside", 1),
         ("missing-write", 1),
         ("excluded-only", 1),
