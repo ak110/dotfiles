@@ -14,9 +14,10 @@ from typing import Any
 lazy import psutil
 
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._agents_server.state import LaunchKind, append_bounded
+from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._common import process_tree
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.diagnostic_redaction import DiagnosticTail
 
 _INITIALIZATION_STDERR_LIMIT_CHARS = 4000
 
@@ -45,13 +46,18 @@ class _InitializationDiagnostic:
         self.child_pid: int | None = None
         self.child_process: psutil.Process | None = None
         self.debug_file: str | None = None
-        self.stderr = ""
+        self._stderr = DiagnosticTail(_INITIALIZATION_STDERR_LIMIT_CHARS, unit="chars")
         self.exception_type: str | None = None
         self.exception_body: str | None = None
         self.mcp_recovery_task: asyncio.Task[None] | None = None
 
     def capture_stderr(self, text: str) -> None:
-        self.stderr = append_bounded(self.stderr, text, _INITIALIZATION_STDERR_LIMIT_CHARS)
+        self._stderr.feed(text)
+
+    @property
+    def stderr(self) -> str:
+        """全体を伏せてから末尾を上限の文字数に抜粋した標準エラー。"""
+        return self._stderr.excerpt().text
 
     def capture_client(self, client: Any) -> None:
         transport = getattr(client, "_transport", None)

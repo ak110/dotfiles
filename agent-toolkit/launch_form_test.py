@@ -5,6 +5,7 @@
 
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -21,6 +22,7 @@ from typing import Any
 
 import psutil
 import pytest
+from agent_toolkit._agents_server import logging_config
 from agent_toolkit._common import plugin_environment, process_tree, windows_job
 from agent_toolkit._testing import late_descendant
 
@@ -677,3 +679,51 @@ def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleTy
             if detached is not None:
                 detached.kill()
                 detached.wait(timeout=5)
+
+
+def _launcher_stderr_tail(
+    launcher: ModuleType, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, independent: bool, data: bytes
+) -> str:
+    """世代の標準エラーまたはtee経由の末尾から、終了診断へ書いた`stderr_tail`を返す。"""
+    generation = "G1"
+    (tmp_path / f"{generation}.stderr.log").write_bytes(data)
+    events = tmp_path / "events.jsonl"
+
+    @contextlib.contextmanager
+    def lifetime(_arguments, _environment, _received, buffer, **_kwargs):
+        if not independent:
+            with monkeypatch.context() as patch:
+                patch.setattr(sys, "stderr", io.TextIOWrapper(io.BytesIO(), encoding="utf-8"))
+                launcher._tee_stderr(io.BytesIO(data), buffer)
+        yield object()
+
+    monkeypatch.setattr(launcher, "_server_lifetime", lifetime)
+    monkeypatch.setattr(launcher, "_wait_owned_server", lambda *_args: 1)
+    monkeypatch.setattr(launcher, "_wait_server", lambda *_args: 1)
+    monkeypatch.setattr(logging_config, "read_launch_record", lambda _path: events)
+
+    assert launcher._run_agents_server([str(tmp_path), generation], {}, independent=independent) == 1
+    return json.loads(events.read_text(encoding="utf-8"))["stderr_tail"]
+
+
+@pytest.mark.parametrize("independent", [True, False])
+def test_launcher_termination_diagnostic_redacts_stderr_tail(
+    launcher: ModuleType, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, independent: bool
+) -> None:
+    token = "A" * 48
+    tail = "z" * 16350
+    data = f"https://{token}@example.org\n{tail}".encode()
+    saved = _launcher_stderr_tail(launcher, tmp_path, monkeypatch, independent=independent, data=data)
+    assert saved == f"https://[REDACTED]@example.org\n{tail}"
+
+
+@pytest.mark.parametrize("independent", [True, False])
+def test_launcher_termination_diagnostic_hides_key_started_before_window(
+    launcher: ModuleType, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, independent: bool
+) -> None:
+    """末尾窓より前で始まり終端の無い秘密鍵の本文を、両方式の終了診断へ転載しない。"""
+    secret = "synthetic-key-body-0123456789"
+    key_type = "PRIVATE" + " KEY"
+    data = f"-----BEGIN RSA {key_type}-----\n".encode() + f"{secret}\n".encode() * 3000
+    saved = _launcher_stderr_tail(launcher, tmp_path, monkeypatch, independent=independent, data=data)
+    assert secret not in saved

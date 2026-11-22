@@ -110,3 +110,35 @@ def test_finish_aggregates_bootstrap_failures_and_preserves_body_failure(
     assert runtime.finish(body_exit) == expected
     assert ("管理Pythonの更新", "exit=17") in recorded
     assert "管理Pythonの更新" in capsys.readouterr().err
+
+
+def test_bootstrap_failures_redacts_before_truncating(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = tmp_path / "update-bootstrap-11-22.json"
+    prefix = "x" * 4060 + " https://"
+    detail = f"{prefix}{'A' * 40}@example.org"
+    payload.write_text(json.dumps([{"title": "更新失敗", "detail": detail}]), encoding="utf-8")
+    monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(payload))
+
+    assert report.bootstrap_failures(tmp_path) == [("更新失敗", f"{prefix}[REDACTED]@example.org")]
+
+
+def test_sync_report_redacts_before_taking_tail() -> None:
+    token = "A" * 40 + "synthetic"
+    tail = "z" * 1965
+    raw = f"https://{token}@example.org\n{tail}"
+
+    assert runtime.sync_report.truncate_tail(raw) == f"https://[REDACTED]@example.org\n{tail}"
+
+
+def test_sync_report_finish_redacts_every_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """共通の抜粋を通さずに渡された終了時の標準エラーも、保存の直前で伏せて上限を守る。"""
+    monkeypatch.setattr(runtime.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
+    raw = "z" * 5000 + "\n更新ロックの例外 password=synthetic-secret-0123456789"
+    runtime.sync_report.write_finish(
+        "run-1", status="failed", exit_code=1, failed_stage="更新ロックの取得", stderr_tail=raw, finished_at="now"
+    )
+
+    saved = runtime.sync_report.read()["stderr_tail"]
+    # 合成値は保存する末尾の範囲にあるため、伏せる処理を外すと値がそのまま残る。
+    assert saved.endswith('更新ロックの例外 password="[REDACTED]"')
+    assert len(saved) <= runtime.sync_report.STDERR_TAIL_MAX_CHARS

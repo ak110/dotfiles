@@ -878,3 +878,14 @@ async def test_stop_resident_helper_reports_unconfirmed_stop(monkeypatch: pytest
     stuck = typing.cast("asyncio.subprocess.Process", Stuck())
     assert await serve_remote.stop_resident_helper(stuck, None, grace_timeout=0) is False
     assert await serve_remote.stop_resident_helper(None, None) is True
+
+
+@pytest.mark.parametrize("prefix", ["", "x" * 600 + " "])
+def test_stderr_excerpt_redacts_credentials_before_taking_tail(prefix: str) -> None:
+    """警告本文へ埋め込む標準エラーの抜粋は、末尾を取る前に資格情報を伏せ、省略の印と上限を保つ。"""
+    stderr = f"{prefix}fatal: https://user:synthetic-secret-0123@example.org/repo password=synthetic-secret-4567".encode()
+    excerpt = serve_remote.stderr_excerpt(stderr)
+    assert "synthetic-secret" not in excerpt
+    assert "[REDACTED]" in excerpt
+    assert excerpt.startswith("...") == bool(prefix)
+    assert len(excerpt) <= serve_remote.STDERR_EXCERPT_MAX_CHARS + len("...")
