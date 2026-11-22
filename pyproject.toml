@@ -169,6 +169,7 @@ markdownlint-subproject-aware = false
 textlint-subproject-aware = false
 lychee-subproject-aware = false
 sync-generated-files-subproject-aware = false
+dotfiles-test-copies-subproject-aware = false
 check-cmd-encoding-subproject-aware = false
 check-templates-subproject-aware = false
 require-ps1-bom-subproject-aware = false
