@@ -38,6 +38,7 @@ from agent_toolkit._atk.review_table_format import (
     SIMILAR_REVIEW_LABEL,
     TRACK_VALUES,
     _cell,
+    _is_carried_row,
     _key,
     _label_values,
     _normalize_track,
@@ -45,14 +46,16 @@ from agent_toolkit._atk.review_table_format import (
     _parse_text,
     _require_labels,
     _row_position,
+    _valid_verdicts,
     _validate_rows,
+    bind_recheck,
     carried_issue,
-    carried_origin,
-    classification,
-    recheck_entries,
-    recheck_lines,
+    display_row,
     reject_recheck_label,
     require_carried_issue,
+    response_content,
+    response_with_history,
+    uses_versioned_response,
     withdrawn_reason,
 )
 from agent_toolkit._common import body_match as _body_match
@@ -219,23 +222,6 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
     """レビュー担当の指摘行を追加する。"""
     row = [round_value, _normalize_track(track), location, issue, level, "", ""]
     return _add_rows(_path(str(path)), [row])
-
-
-def _valid_verdicts(rows: list[list[str]], row_id: int) -> list[tuple[int, str, int | None]]:
-    """行に記録された有効な判定を保存順に返す。
-
-    有効な判定は、行のroundより後のroundの判定で、完了か、判定と同じroundへその指摘から登録した行を指す
-    対応不十分・未対応に限る。現在のroundの境界、判定済みの応答の固定、summaryの集計は、この同じ定義を使う。
-    """
-    row = rows[row_id - 1]
-    row_round = int(_normalized(row[0]))
-    return [
-        entry
-        for cell in (row[5], row[6])
-        for entry in recheck_entries(cell)
-        if entry[0] > row_round
-        and (entry[1] == RECHECK_DONE or (entry[2] is not None and _is_carried_row(rows, entry[2], row_id, entry[0], row[1])))
-    ]
 
 
 def _current_round(rows: list[list[str]], track: str) -> int:
@@ -425,8 +411,7 @@ def respond(
         if _valid_verdicts(rows, matches[0] + 1):
             # レビュー担当が判定した応答は変えない。変えると、古い判定のまま完了として数えられるため。
             # 同じ本文の再記録は、結果の分からない実行の再試行として表を変えずに受け付ける。
-            recorded = "\n".join(line for line in row[column].splitlines() if not line.strip().startswith(RECHECK_LABEL))
-            if recorded.strip() != (replacement or reason):
+            if response_content(row[column]).strip() != (replacement or reason):
                 raise _ActionableError(
                     f"{_row_position(matches[0] + 1)}はレビュー担当の有効な判定があり、応答を変更できない",
                     next_action=(
@@ -439,7 +424,7 @@ def respond(
             expected.append(row[column])
             return rows
         # 有効な判定でない`再確認:`の行は、応答を記録し直しても消さずに引き継ぐ。
-        body = "\n".join([replacement or reason, *recheck_lines(row[5]), *recheck_lines(row[6])])
+        body = response_with_history(replacement or reason, row[5], row[6])
         expected.append(body)
         updated = [*rows]
         updated[matches[0]] = [*row[:_KEY_COLUMN_COUNT], row[4], body if replacement else "", "" if replacement else body]
@@ -513,7 +498,7 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
             )
         require_carried_issue(remaining_issue, "--issue-file")
     round_number = int(normalized_round)
-    recorded: list[tuple[int, str]] = []
+    recorded: list[tuple[int, str, str]] = []
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
         index = _row_index(row_id, len(rows))
@@ -557,15 +542,16 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
             else:
                 updated[carried_id - 1][3:7] = [issue, row[4], "", ""]
             block += f" 行{carried_id}"
-        updated[index][column] = f"{row[column]}\n{block}"
-        recorded.append((column, block))
+        receipt = bind_recheck(block, row_id, row[column])
+        updated[index][column] = f"{row[column]}\n{receipt}"
+        recorded.append((column, receipt, block))
         return updated
 
     _locked_update(target, updater)
     saved = _read(target)[row_id - 1]
     if not recorded or not saved[recorded[0][0]].endswith(recorded[0][1]):
         raise _ActionableError(f"再確認の保存を確認できない: {target}", next_action=_SAVED_UNRESOLVED_NEXT_ACTION)
-    _outcome.report_success(f"再確認を記録した: {target}（{_row_position(row_id)}、{recorded[0][1]}）")
+    _outcome.report_success(f"再確認を記録した: {target}（{_row_position(row_id)}、{recorded[0][2]}）")
     return 0
 
 
@@ -578,23 +564,6 @@ def _carried_row_id(rows: list[list[str]], origin_row_id: int, round_value: int,
             if _is_carried_row(rows, candidate, origin_row_id, round_value, track)
         ),
         None,
-    )
-
-
-def _is_carried_row(rows: list[list[str]], row_id: int, origin_row_id: int, round_value: int, track: str) -> bool:
-    """行が、元の指摘についてrecheckが判定と同じround・trackへ登録した前回から残存の指摘かを返す。
-
-    登録した行は`元の指摘:`で元の行を1件だけ指すため、1行を複数の前回指摘で共有できない。
-    """
-    if not 1 <= row_id <= len(rows):
-        return False
-    row = rows[row_id - 1]
-    return (
-        _normalized(row[0]) == str(round_value)
-        and row[1] == track
-        and not row[2].strip().startswith(_OWN_RECORD_PREFIX)
-        and classification(row[3]) == REREGISTERED_CLASSIFICATION
-        and carried_origin(row[3]) == origin_row_id
     )
 
 
@@ -718,11 +687,18 @@ def show(
                 "指定行はtrack・roundの表示条件に一致しない",
                 next_action="--trackと--roundを外して同じ--row-idで再実行する",
             )
-        print(selected[0][2][COLUMNS.index(field)], end="")
+        print(response_content(selected[0][2][COLUMNS.index(field)]), end="")
         return 0
+    parsed_rows = [row for _, row in rows]
     if output_format == "tsv":
-        print("".join(f"{row_id}\t{raw_line}" for row_id, raw_line, _ in selected), end="")
+        for saved_row_id, raw_line, row in selected:
+            if uses_versioned_response(row):
+                shown = display_row(parsed_rows, saved_row_id)
+                print(f"{saved_row_id}\t" + "\t".join(json.dumps(value, ensure_ascii=False) for value in shown))
+            else:
+                print(f"{saved_row_id}\t{raw_line}", end="")
         return 0
-    for saved_row_id, _, row in selected:
+    for saved_row_id, _, _row in selected:
+        row = display_row(parsed_rows, saved_row_id)
         print(json.dumps({"row-id": saved_row_id, **dict(zip(COLUMNS, row, strict=True))}, ensure_ascii=False))
     return 0

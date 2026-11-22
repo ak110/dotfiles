@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import unicodedata
+import uuid
 
 from agent_toolkit._common import next_action as _next_action
 
@@ -176,7 +178,8 @@ def display_rows(text: str) -> list[list[str]]:
     保存済みの旧形式は現行の7列へそろえ、trackは記録された値のまま返す。
     形式が不正な表は`ValueError`を送出し、表示側が表として描画しない扱いを選ぶ。
     """
-    return [row for _raw_line, row in _decode_text(text)]
+    rows = [row for _raw_line, row in _decode_text(text)]
+    return [display_row(rows, row_id) for row_id in range(1, len(rows) + 1)]
 
 
 def _label_values(body: str, label: str) -> list[str]:
@@ -326,11 +329,54 @@ def classification(issue: str) -> str | None:
     return values[0] if len(values) == 1 else None
 
 
-def recheck_entries(body: str) -> list[tuple[int, str, int | None]]:
+_RESPONSE_MARKER = re.compile(r"<!-- review-response-v2:([0-9a-f]{32}) -->")
+_RECHECK_SUFFIX = re.compile(r" <!-- review-verdict:([0-9a-f]{64}) -->$")
+
+
+def _response_version(lines: list[str]) -> tuple[int, str] | None:
+    for index in range(len(lines) - 1, -1, -1):
+        if marker := _RESPONSE_MARKER.fullmatch(lines[index].strip()):
+            return index, marker[1]
+    return None
+
+
+def response_content(body: str) -> str:
+    """応答原文を判定と保存上の標識から分ける。"""
+    lines = body.split("\n")
+    version = _response_version(lines)
+    marked = version[0] if version else None
+    return "\n".join(line for index, line in enumerate(lines) if index != marked and not line.strip().startswith(RECHECK_LABEL))
+
+
+def response_with_history(body: str, *previous: str) -> str:
+    """新しい応答を旧判定と分けて保存する。対象外となった判定は履歴にだけ残す。"""
+    version = f"<!-- review-response-v2:{uuid.uuid4().hex} -->"
+    return "\n".join([body, version, *(line for cell in previous for line in recheck_lines(cell))])
+
+
+def bind_recheck(line: str, row_id: int, body: str) -> str:
+    """判定が対象とする応答の版と指摘の行を、判定本文・roundに結び付ける。"""
+    version = _response_version(body.splitlines())
+    identity = json.dumps([row_id, version[1] if version else None, response_content(body), line], ensure_ascii=False)
+    return f"{line} <!-- review-verdict:{hashlib.sha256(identity.encode()).hexdigest()} -->"
+
+
+def recheck_entries(body: str, row_id: int) -> list[tuple[int, str, int | None]]:
     """recheckが記録した判定行を、記録したround・判定・登録した行へ分解する。形式外の行は判定として扱わない。"""
     entries: list[tuple[int, str, int | None]] = []
-    for line in body.splitlines():
-        matched = _RECHECK_LINE_RE.fullmatch(line.strip())
+    lines = body.splitlines()
+    version = _response_version(lines)
+    for line in lines:
+        line = line.strip()
+        if receipt := _RECHECK_SUFFIX.search(line):
+            candidate = line[: receipt.start()]
+            if bind_recheck(candidate, row_id, body) != line:
+                continue
+        elif version is not None:
+            continue
+        else:
+            candidate = line
+        matched = _RECHECK_LINE_RE.fullmatch(candidate)
         if matched is not None:
             if matched.group(2):
                 entries.append((int(matched.group(1)), matched.group(2), None))
@@ -343,6 +389,63 @@ def carried_origin(issue: str) -> int | None:
     """recheckが登録した指摘本文の`元の指摘: 行<row-id>`を1件だけ持つ場合に、その識別子を返す。"""
     origins = [matched.group(1) for line in issue.splitlines() if (matched := _ORIGIN_LINE_RE.fullmatch(line.strip()))]
     return int(origins[0]) if len(origins) == 1 else None
+
+
+def _is_carried_row(rows: list[list[str]], row_id: int, origin_row_id: int, round_value: int, track: str) -> bool:
+    """行が、元の指摘についてrecheckが判定と同じround・trackへ登録した前回から残存の指摘かを返す。
+
+    登録した行は`元の指摘:`で元の行を1件だけ指すため、1行を複数の前回指摘で共有できない。
+    """
+    if not 1 <= row_id <= len(rows):
+        return False
+    row = rows[row_id - 1]
+    return (
+        _normalized(row[0]) == str(round_value)
+        and _normalize_track(row[1]) == _normalize_track(track)
+        and not row[2].strip().startswith(_OWN_RECORD_PREFIX)
+        and classification(row[3]) == REREGISTERED_CLASSIFICATION
+        and carried_origin(row[3]) == origin_row_id
+    )
+
+
+def _valid_verdicts(rows: list[list[str]], row_id: int) -> list[tuple[int, str, int | None]]:
+    """行に記録された有効な判定を保存順に返す。
+
+    有効な判定は、行のroundより後のroundの判定で、完了か、判定と同じroundへその指摘から登録した行を指す
+    対応不十分・未対応に限る。現在のroundの境界、判定済みの応答の固定、summaryの集計は、この同じ定義を使う。
+    """
+    row = rows[row_id - 1]
+    row_round = int(_normalized(row[0]))
+    return [
+        entry
+        for cell in (row[5], row[6])
+        for entry in recheck_entries(cell, row_id)
+        if entry[0] > row_round
+        and (entry[1] == RECHECK_DONE or (entry[2] is not None and _is_carried_row(rows, entry[2], row_id, entry[0], row[1])))
+    ]
+
+
+def display_row(rows: list[list[str]], row_id: int) -> list[str]:
+    """共有の有効判定だけを応答の後へ表示し、内部の版情報を表示しない。"""
+    row = rows[row_id - 1].copy()
+    valid = set(_valid_verdicts(rows, row_id))
+    for column in (5, 6):
+        lines = [response_content(row[column])]
+        lines.extend(
+            f"{RECHECK_LABEL} ラウンド{round_value} {verdict}" + (f" 行{carried_id}" if carried_id is not None else "")
+            for round_value, verdict, carried_id in recheck_entries(row[column], row_id)
+            if (round_value, verdict, carried_id) in valid
+        )
+        row[column] = "\n".join(lines)
+    return row
+
+
+def uses_versioned_response(row: list[str]) -> bool:
+    """旧表のTSV互換を保ち、新しい行だけを内部標識なしで表示する。"""
+    return any(
+        _response_version(cell.splitlines()) is not None or any(_RECHECK_SUFFIX.search(line) for line in cell.splitlines())
+        for cell in row[5:7]
+    )
 
 
 def require_carried_issue(issue: str, option: str) -> None:

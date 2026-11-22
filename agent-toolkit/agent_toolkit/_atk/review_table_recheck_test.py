@@ -124,7 +124,9 @@ def _cli_recheck(
     return returned.value.code
 
 
-def test_recheck_registers_carried_finding_and_summary_counts_verdicts(tmp_path: pathlib.Path) -> None:
+def test_recheck_registers_carried_finding_and_summary_counts_verdicts(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """対応不十分・未対応は元の指摘を指す行を今回のroundへ登録し、判定の行はその行を指す。未再確認の行を件数と行で返す。"""
     path = tmp_path / "plan.exec-review.tsv"
     _answered_round_one(path)
@@ -135,9 +137,13 @@ def test_recheck_registers_carried_finding_and_summary_counts_verdicts(tmp_path:
 
     assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
     assert _cli_recheck(tmp_path, path, 2, "2", "対応不十分", review_bodies.issue_body("指摘Bの残り")) == 0
+    output = capsys.readouterr().out
+    assert "再確認: ラウンド2 完了" in output
+    assert "再確認: ラウンド2 対応不十分 行3" in output
+    assert "<!--" not in output
     rows = table.read_rows(path)
-    assert rows[0][5].endswith("\n再確認: ラウンド2 完了")
-    assert rows[1][6].endswith("\n再確認: ラウンド2 対応不十分 行3")
+    assert review_table_format.recheck_entries(rows[0][5], 1) == [(2, "完了", None)]
+    assert review_table_format.recheck_entries(rows[1][6], 2) == [(2, "対応不十分", 3)]
     assert review_table_format.response_state(rows[1]) == "rejected"
     carried = rows[2]
     assert [carried[index] for index in (0, 1, 2, 4, 5, 6)] == ["2", _TRACK, rows[1][2], rows[1][4], "", ""]
@@ -148,6 +154,10 @@ def test_recheck_registers_carried_finding_and_summary_counts_verdicts(tmp_path:
     assert after.get("recheck_pending_count") == 0
     assert after.get("recheck_counts") == {"完了": 1, "対応不十分": 1, "未対応": 0}
     assert after.get("unanswered_count") == 1
+    with pytest.raises(SystemExit) as returned:
+        atk.main(["review-table", "show", str(path), "--row-id=1", "--field=response"], home=tmp_path)
+    assert returned.value.code == 0
+    assert capsys.readouterr().out == review_bodies.response_body("直した")
 
 
 def test_recheck_correction_appends_and_reuses_or_withdraws_carried_row(tmp_path: pathlib.Path) -> None:
@@ -157,7 +167,7 @@ def test_recheck_correction_appends_and_reuses_or_withdraws_carried_row(tmp_path
     assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
     assert _cli_recheck(tmp_path, path, 1, "2", "未対応", review_bodies.issue_body("指摘Aの残り")) == 0
     first = table.read_rows(path)[0][5]
-    assert first.endswith("\n再確認: ラウンド2 完了\n再確認: ラウンド2 未対応 行3")
+    assert review_table_format.recheck_entries(first, 1) == [(2, "完了", None), (2, "未対応", 3)]
     assert table.summary(path, 2).get("recheck_counts") == {"完了": 0, "対応不十分": 0, "未対応": 1}
 
     assert _cli_recheck(tmp_path, path, 1, "2", "対応不十分", review_bodies.issue_body("指摘Aの残りを書き直した")) == 0
@@ -217,7 +227,7 @@ def test_recheck_appends_and_keeps_other_lines(tmp_path: pathlib.Path) -> None:
     assert _cli_recheck(tmp_path, path, 1, "2", "未対応", review_bodies.issue_body("指摘Aの残り")) == 0
     assert _cli_recheck(tmp_path, path, 1, "3", "完了") == 0
     body = table.read_rows(path)[0][5]
-    assert body.splitlines()[-5:] == [
+    assert [line.partition(" <!--")[0] for line in review_table_format.recheck_lines(body)] == [
         "再確認: 旧形式の検証メモ",
         "再確認: ラウンド2 対応不十分",
         "再確認: ラウンド2 完了",
@@ -291,12 +301,73 @@ def test_lines_outside_verdict_format_neither_freeze_response_nor_advance_round(
     rows[0][5] = f"{rows[0][5]}\n{kept}"
     _write_rows(path, rows)
     assert table.respond(path, "", "", "", "", review_bodies.response_body("書き直した"), "", row_id=1) == 0
-    assert table.read_rows(path)[0][5].endswith(f"書き直した\n採用しない修正方針: なし\n{kept}")
+    body = table.read_rows(path)[0][5]
+    assert review_table_format.response_content(body) == review_bodies.response_body("書き直した")
+    assert review_table_format.recheck_lines(body) == kept.splitlines()
     assert _cli_add(tmp_path, path, "2", "module.py:30", review_bodies.issue_body("指摘C", "新しい変更")) == 0
 
 
 def _write_rows(path: pathlib.Path, rows: list[list[str]]) -> None:
     path.write_text("".join("\t".join(json.dumps(cell, ensure_ascii=False) for cell in row) + "\n" for row in rows), "utf-8")
+
+
+def test_summary_reads_valid_verdict_in_legacy_table(tmp_path: pathlib.Path) -> None:
+    """版標識の導入前に保存した有効な判定はそのまま集計する。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    rows = table.read_rows(path)
+    rows[0][5] = review_bodies.response_body("直した") + "\n再確認: ラウンド2 完了"
+    _write_rows(path, rows)
+
+    state = table.summary(path, 2)
+    assert state.get("recheck_pending_row_ids") == [2]
+    assert state.get("recheck_counts") == {"完了": 1, "対応不十分": 0, "未対応": 0}
+
+
+@pytest.mark.parametrize("edit", ["changed-response", "copied-verdict", "unsigned-verdict"])
+def test_summary_requires_verdict_for_current_response_and_row(tmp_path: pathlib.Path, capsys, edit: str) -> None:
+    """差し替え前の応答や別行への判定と、新版の応答へ手書きした判定を集計しない。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    if edit != "unsigned-verdict":
+        assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
+    rows = table.read_rows(path)
+
+    if edit == "changed-response":
+        rows[0][5] = rows[0][5].replace("直した", "違う対処に差し替えた")
+        pending = [1, 2]
+    elif edit == "copied-verdict":
+        # 応答本文と版ごとコピーし、判定先の行だけが違う状態を作る。
+        rows[1][5:] = [rows[0][5], ""]
+        pending = [2]
+    else:
+        rows[0][5] += "\n再確認: ラウンド2 完了"
+        pending = [1, 2]
+    _write_rows(path, rows)
+
+    state = table.summary(path, 2)
+    assert state.get("recheck_pending_row_ids") == pending
+    assert state.get("recheck_counts") == {"完了": 2 - len(pending), "対応不十分": 0, "未対応": 0}
+    capsys.readouterr()
+    for row_id in pending:
+        assert table.show(path, row_id=row_id) == 0
+        shown = capsys.readouterr().out
+        assert "再確認:" not in shown and "review-response-v2" not in shown
+
+
+def test_recording_the_original_text_again_does_not_revive_old_verdict(tmp_path: pathlib.Path) -> None:
+    """応答を書き直した後で元の本文を記録しても、以前の版の判定は引き継がない。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
+    rows = table.read_rows(path)
+    rows[0][5] = rows[0][5].replace("直した", "異なる本文に差し替えた")
+    _write_rows(path, rows)
+    assert table.summary(path, 2).get("recheck_pending_row_ids") == [1, 2]
+    assert table.respond(path, "", "", "", "", review_bodies.response_body("直した"), "", row_id=1) == 0
+    assert table.summary(path, 2).get("recheck_pending_row_ids") == [1, 2]
+    assert _cli_recheck(tmp_path, path, 1, "2", "完了") == 0
+    assert table.summary(path, 2).get("recheck_pending_row_ids") == [2]
 
 
 @pytest.mark.parametrize(
@@ -318,7 +389,8 @@ def test_summary_keeps_rows_without_valid_verdict_pending(tmp_path: pathlib.Path
     table.add(path, "2", _TRACK, "module.py:20", carried_from_b, "仕様")
 
     rows = table.read_rows(path)
-    rows[0][5] = f"{rows[0][5]}\n{line}"
+    receipt = review_table_format.bind_recheck(line, 1, rows[0][5])
+    rows[0][5] += f"\n{receipt}"
     _write_rows(path, rows)
     state = table.summary(path, 2)
     assert state.get("recheck_pending_row_ids") == [1, 2]

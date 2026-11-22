@@ -150,7 +150,8 @@ def test_respond_matches_compat_track_and_rewrites_all_rows_canonically(tmp_path
     assert table.respond(path, "1", _TRACK, "module.py:10", "更新対象", review_bodies.response_body("修正した"), "") == 0
     saved = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     assert [row[1] for row in saved] == [_TRACK, _TRACK]
-    assert saved[0][5:] == [review_bodies.response_body("修正した"), ""]
+    assert review_table_format.response_content(saved[0][5]) == review_bodies.response_body("修正した")
+    assert saved[0][6] == ""
 
 
 def test_add_normalizes_compat_track_before_saving(tmp_path: pathlib.Path) -> None:
@@ -221,7 +222,9 @@ def test_legacy_seven_columns_are_read_and_rewritten_as_eight_columns(tmp_path: 
     table.respond(path, "1", _TRACK, "位置", "指摘", review_bodies.response_body("修正した"), "")
 
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "位置", "指摘", "", review_bodies.response_body("修正した"), ""]
+    assert row[:5] == ["1", _TRACK, "位置", "指摘", ""]
+    assert review_table_format.response_content(row[5]) == review_bodies.response_body("修正した")
+    assert row[6] == ""
 
 
 def test_show_preserves_legacy_seven_columns_with_and_without_track_filter(

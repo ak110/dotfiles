@@ -10,6 +10,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import review_table as table
+from agent_toolkit._atk.review_table_format import response_content
 from agent_toolkit._common import next_action
 from agent_toolkit._testing import review_bodies
 from agent_toolkit._testing.review_table_support import _TRACK, _isolated_home
@@ -90,8 +91,12 @@ def test_same_issue_can_be_separated_by_track_and_responded_individually(tmp_pat
     table.respond(path, "1", "independent", *key, "", review_bodies.reason_body("独立した根拠を維持"))
     assert table.validate(path) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
-    assert [row for row in rows if row[1] == "plan-conformance"][0][5] == review_bodies.response_body("準拠系で修正")
-    assert [row for row in rows if row[1] == "independent"][0][6] == review_bodies.reason_body("独立した根拠を維持")
+    assert response_content(next(row[5] for row in rows if row[1] == "plan-conformance")) == review_bodies.response_body(
+        "準拠系で修正"
+    )
+    assert response_content(next(row[6] for row in rows if row[1] == "independent")) == review_bodies.reason_body(
+        "独立した根拠を維持"
+    )
 
 
 def test_initial_review_can_validate_structure_before_response_and_strict_after_response(
@@ -119,7 +124,8 @@ def test_respond_updates_only_reviewee_columns(tmp_path: pathlib.Path) -> None:
     table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
     table.respond(path, "1", _TRACK, "module.py:10", "修正が必要", review_bodies.response_body("条件を追加した"), "")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "module.py:10", "修正が必要", "", review_bodies.response_body("条件を追加した"), ""]
+    assert row[:5] == ["1", _TRACK, "module.py:10", "修正が必要", ""]
+    assert response_content(row[5]) == review_bodies.response_body("条件を追加した") and row[6] == ""
     table.validate(path)
 
 
@@ -146,7 +152,8 @@ def test_respond_no_requires_reason_and_clears_response(tmp_path: pathlib.Path) 
     table.add(path, "1", _TRACK, "hook", "対象外")
     table.respond(path, "1", _TRACK, "hook", "対象外", "", review_bodies.reason_body("以前の契約を保持"))
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "hook", "対象外", "", "", review_bodies.reason_body("以前の契約を保持")]
+    assert row[:6] == ["1", _TRACK, "hook", "対象外", "", ""]
+    assert response_content(row[6]) == review_bodies.reason_body("以前の契約を保持")
     table.validate(path)
 
 
