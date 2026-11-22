@@ -41,7 +41,7 @@ BUGFIX_SKILL = "agent-basics:bugfix"
 _BUGFIX_SKILLS = frozenset({BUGFIX_SKILL, "bugfix"})
 # 欠陥の指摘を表す語。貼り付けた素材（コードブロック、インラインコード、引用行）は除いた本文へ適用する。
 _DEFECT_RE = re.compile(
-    r"バグ|不具合|不良|欠陥|おかしい|おかしく|間違|誤り|誤っ|誤動作|壊れ|動かな|動いて(?:い)?ない|機能しな|"
+    r"バグ|不具合|不良|欠陥|おかしい|おかしく|間違|誤り|誤っ|誤動作|壊[れ]|動かな|動いて(?:い)?ない|機能しな|"
     r"できて(?:い)?ない|なって(?:い)?ない|ミス|\b(?:bug|broken|regression)\b|"
     r"調査不足|鵜呑みにせず|手戻り(?:が)?多すぎ|直すべき|になってなかったっけ|ユーザーの手を煩わせないで|また再発|反映されて(?:い)?ない",
     re.IGNORECASE,
@@ -188,17 +188,37 @@ def is_defect_report(prompt: str) -> bool:
     return _DEFECT_RE.search(QUOTED_MATERIAL_RE.sub("", prompt)) is not None
 
 
-def _invokes_bugfix(entry: dict) -> bool:
-    message = entry.get("message")
-    content = message.get("content") if entry.get("type") == "assistant" and isinstance(message, dict) else None
-    return isinstance(content, list) and any(
-        isinstance(block, dict)
-        and block.get("type") == "tool_use"
-        and block.get("name") == "Skill"
-        and isinstance(block.get("input"), dict)
-        and block["input"].get("skill") in _BUGFIX_SKILLS
-        for block in content
-    )
+def _started_bugfix(entries: list[dict]) -> bool:
+    calls: dict[str, bool] = {}
+    for entry in entries:
+        message = entry.get("message")
+        blocks = message.get("content") if isinstance(message, dict) else None
+        receipt = entry.get("toolUseResult")
+        for block in blocks if isinstance(blocks, list) else ():
+            if not isinstance(block, dict):
+                continue
+            if entry.get("type") == "assistant" and block.get("type") == "tool_use" and block.get("name") == "Skill":
+                args, identifier = block.get("input"), block.get("id")
+                skill = args.get("skill") if isinstance(args, dict) else None
+                if isinstance(identifier, str) and identifier and isinstance(skill, str) and skill in _BUGFIX_SKILLS:
+                    calls[identifier] = entry.get("isVirtual") is not True
+            elif entry.get("type") == "user" and block.get("type") == "tool_result":
+                identifier = block.get("tool_use_id")
+                if not isinstance(identifier, str) or identifier not in calls:
+                    continue
+                success = receipt.get("success") if isinstance(receipt, dict) else None
+                name = receipt.get("commandName") if isinstance(receipt, dict) else None
+                if block.get("is_error") is True or success is False:
+                    calls[identifier] = False
+                elif (
+                    entry.get("isVirtual") is True
+                    and block.get("is_error") is False
+                    and success is True
+                    and isinstance(name, str)
+                    and name in _BUGFIX_SKILLS
+                ):
+                    calls[identifier] = True
+    return any(calls.values())
 
 
 def bugfix_pending(lines: list[str]) -> bool:
@@ -206,7 +226,7 @@ def bugfix_pending(lines: list[str]) -> bool:
     if turn is None:
         return False
     prompt, entries = turn
-    return is_defect_report(prompt) and not any(_invokes_bugfix(entry) for entry in entries)
+    return is_defect_report(prompt) and not _started_bugfix(entries)
 
 
 def _block_body(delivery: str) -> str:
