@@ -18,6 +18,12 @@ from agent_toolkit._common import process_tree
 from agent_toolkit._testing import late_descendant
 
 
+@pytest.fixture(autouse=True)
+def _use_stub_command_without_credential_check(monkeypatch):
+    """共通のturnの試験では製品の認証ゲートでなく、各試験の子コマンドを使う。"""
+    monkeypatch.setattr(antigravity.AntigravityManager, "prepare_command", CliTurnManager.prepare_command)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("manager_type", [antigravity.AntigravityManager, opencode.OpenCodeManager], ids=["agy", "opencode"])
 @pytest.mark.parametrize("final_lf", [True, False], ids=["lf", "eof"])

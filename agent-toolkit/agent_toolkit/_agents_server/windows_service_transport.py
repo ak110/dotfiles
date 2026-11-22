@@ -83,6 +83,21 @@ def _process(pid: int, *, require_running: bool = False):
         _check(kernel.CloseHandle(handle))
 
 
+def current_process_elevated() -> bool:
+    """状態領域の選択に、自分の実トークンの昇格状態を使う。"""
+    kernel, security = _api()
+    token = w.HANDLE()
+    with _process(os.getpid()) as handle:
+        _check(security.OpenProcessToken(handle, 0x0008, ctypes.byref(token)))  # TOKEN_QUERY
+    try:
+        value = w.DWORD(0)
+        used = w.DWORD(0)
+        _check(security.GetTokenInformation(token, 20, ctypes.byref(value), ctypes.sizeof(value), ctypes.byref(used)))
+        return bool(value.value)  # TokenElevation
+    finally:
+        _check(kernel.CloseHandle(token))
+
+
 def _identity(handle: int, pid: int) -> str:
     kernel, _ = _api()
     created, exited, system, user = (ctypes.c_uint64(0) for _ in range(4))

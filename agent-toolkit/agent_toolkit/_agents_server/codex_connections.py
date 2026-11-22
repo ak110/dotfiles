@@ -23,10 +23,11 @@ from agent_toolkit._agents_server.codex_instructions import (
 )
 from agent_toolkit._agents_server.codex_protocol import DEFAULT_WAIT_TIMEOUT, AppServerError, JsonRpcResponseError
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._agents_server.launch_prompts import LIGHTWEIGHT_LAUNCH_KINDS, base_instructions
+from agent_toolkit._agents_server.launch_prompts import base_instructions
 from agent_toolkit._agents_server.state import SessionState, begin_reply
 from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk.usage_limit_policy import should_wait
+from agent_toolkit._common import startup_features
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -140,14 +141,17 @@ class CodexConnectionsMixin:
         if session.model is not None:
             resume_params["model"] = session.model
         resume_params["modelProvider"] = target
-        config = self._base_thread_config(lightweight=session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
+        profile = startup_features.effective(session.launch_kind, session.startup_profile)
+        config = self._base_thread_config(lightweight=profile == "lightweight")
         owner_session_id = self._root_session_id
         if owner_session_id is not None:
             writer_session_id = writer_session_id or uuid.uuid4().hex
             config.update(self._agents_server_config(owner_session_id, writer_session_id, client))
-        if session.launch_kind == "explore":
+        if session.launch_kind == "explore" and profile == "lightweight":
             config = await run_file_operation(self._explore_config, config, client)
         resume_params["config"] = config
+        if profile != "full":
+            resume_params = startup_features.codex_thread_config(resume_params)
         resume_params["developerInstructions"] = await run_file_operation(_developer_instructions, session.launch_kind)
         if owner_session_id is not None and writer_session_id is not None:
             # thread/resume中に子MCPが初期化されるため、直接親を復旧候補の選定より先に公開する。

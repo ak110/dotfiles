@@ -17,6 +17,58 @@ from agent_toolkit._agents_server import service_forward, service_rpc, service_t
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import plugin_environment, runtime_environment, windows_job
 
+
+@pytest.mark.parametrize(
+    "state", ["development", "isolated", "distribution", "agy-distribution", "agy-relative", "registered-checkout"]
+)
+def test_development_plugin_only_reaches_forwarding_with_isolated_state(tmp_path, monkeypatch, capsys, state):
+    home = tmp_path / "home"
+    root = tmp_path / "worktree" / "agent-toolkit"
+    if os.name == "nt":
+        home_key, state_key, default = "USERPROFILE", "LOCALAPPDATA", home / "AppData" / "Local"
+    else:
+        home_key, state_key, default = "HOME", "XDG_STATE_HOME", home / ".local" / "state"
+    environment = {home_key: str(home)}
+    if state == "isolated":
+        environment[state_key] = str(tmp_path / "isolated")
+    elif state == "distribution":
+        root = home / ".claude/plugins/cache/ak110-dotfiles/agent-toolkit/1.0.0"
+    elif state in {"agy-distribution", "agy-relative"}:
+        root = root.with_name("agent-toolkit-agy")
+        registry = home / ".gemini/config/plugins.json"
+        registry.parent.mkdir(parents=True)
+        path = root.parent
+        if state == "agy-relative":
+            monkeypatch.chdir(tmp_path)
+            path = path.relative_to(tmp_path)
+        registry.write_text(json.dumps({"entries": [{"path": str(path), "include_only": [root.name]}]}), encoding="utf-8")
+    elif state == "registered-checkout":
+        config_home = default if os.name == "nt" else home / ".config"
+        config = config_home / "agent-toolkit/config.json"
+        config.parent.mkdir(parents=True)
+        config.write_text(
+            json.dumps({"repositories": json.dumps({"github.com/ak110/dotfiles": {"path": str(root.parent)}})}),
+            encoding="utf-8",
+        )
+    root.mkdir(parents=True)
+
+    class EnteredForwarding(Exception):
+        pass
+
+    def enter(_caller):
+        raise EnteredForwarding
+
+    monkeypatch.setattr(service_forward, "_Forwarder", enter)
+    monkeypatch.setattr(service_forward, "_parent_settings", lambda: None)
+    if state not in {"development", "agy-relative"}:
+        with pytest.raises(EnteredForwarding):
+            service_forward.forward(root=root, environment=environment)
+    else:
+        assert service_forward.forward(root=root, environment=environment) == 1
+        assert "状態ディレクトリを明示的に分離" in capsys.readouterr().err
+        assert not default.exists()
+
+
 # 中継の監視と受信の内部状態を、公開のstdio経路を起動せずに確かめる。
 # pylint: disable=protected-access
 

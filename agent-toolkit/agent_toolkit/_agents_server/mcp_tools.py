@@ -5,14 +5,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import functools
 import json
 import logging
 import os
 import pathlib
 import subprocess
 import sys
-from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult, TextContent, ToolAnnotations
@@ -62,6 +63,7 @@ from agent_toolkit._common import (
     runtime_environment,
     runtime_inserted,
     session_registry,
+    startup_features,
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common.next_action import ActionableError
@@ -276,6 +278,18 @@ mcp = AgentsServerMCP(
 )
 
 
+def _with_startup_profile[**P, R](call: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+    @functools.wraps(call)
+    async def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        profile = kwargs.get("startup_profile")
+        if profile not in (None, "lightweight", "default", "full"):
+            raise ValueError("startup_profileはlightweight、default、fullのいずれかで指定する")
+        with startup_features.selection(cast(startup_features.StartupProfile | None, profile)):
+            return await call(*args, **kwargs)
+
+    return wrapped
+
+
 @mcp.tool(
     name="start",
     title="委譲sessionの開始",
@@ -284,6 +298,7 @@ mcp = AgentsServerMCP(
     annotations=ToolAnnotations(destructive_hint=False),
     structured_output=True,
 )
+@_with_startup_profile
 async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数として受け取る
     cwd: Annotated[str | None, Field(description=CWD_DESCRIPTION)] = None,
     mode: Annotated[StartMode | None, Field(description=MODE_DESCRIPTION)] = None,
@@ -296,9 +311,16 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     model_type: Annotated[str | None, Field(description=MODEL_TYPE_DESCRIPTION)] = None,
     handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
     whole_contract_path: Annotated[str | None, Field(description=WHOLE_CONTRACT_PATH_DESCRIPTION)] = None,
+    *,
+    startup_profile: Annotated[
+        startup_features.StartupProfile | None,
+        Field(description="起動時の追加機能を選ぶ。fullは元の設定を保つ。省略時は役割に応じてlightweightかdefault。"),
+    ] = None,
 ) -> dict[str, Any]:
     """`mode`ごとの入力を確かめ、同じ起動処理へ渡して委譲先turnを開始する。公開説明は`START_DESCRIPTION`が持つ。"""
     if handoff_from is not None:
+        if startup_profile is not None:
+            raise ValueError("引き継ぎでは元のstartup_profileを使うため指定できない")
         launch_requests.validate_handoff_inputs(
             handoff_from,
             cwd=cwd,

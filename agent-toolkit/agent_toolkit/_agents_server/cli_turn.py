@@ -343,12 +343,16 @@ class CliTurnManager:
             return initialized_session
         except TimeoutError as exc:
             await self._release_unstarted_task(task)
+            if shared_state.finish_unowned_start(initialized, turn_seq, exc):
+                await self._notify_waiters()
             raise SessionInitializationTimeoutError(
                 f"{self.NAME} did not reach init within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
                 f"cwd={cwd}, launch_kind={launch_kind}, model={model}"
             ) from exc
-        except BaseException:
+        except BaseException as exc:
             await self._release_unstarted_task(task)
+            if shared_state.finish_unowned_start(initialized, turn_seq, exc):
+                await self._notify_waiters()
             raise
 
     async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:

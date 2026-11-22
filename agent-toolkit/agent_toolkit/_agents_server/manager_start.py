@@ -47,7 +47,7 @@ from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, Sessi
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import usage_refresh
-from agent_toolkit._common import codex_models, startup_documents, task_documents
+from agent_toolkit._common import codex_models, startup_documents, startup_features, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.plugin_roots import PluginRootError
 
@@ -218,6 +218,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         validate_prompt(prompt)
         await self._drain_diagnostics()
         validate_cwd(cwd)
+        startup_features.effective(launch_kind)
         await launch_requests.check_plugin_commands(cwd)
         candidates, excluded = await self._resolve_start_candidates(
             model_type,
@@ -430,14 +431,15 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         warnings = model_override_warnings(
             predecessor.model_type if model_type is None else model_type, inherited=model_type is None
         )
-        response = await self.start(
-            predecessor.model_type if model_type is None else model_type,
-            prompt,
-            predecessor.cwd,
-            launch_kind=predecessor.launch_kind,
-            label=predecessor.label,
-            excluded_candidates=excluded,
-        )
+        with startup_features.selection(predecessor.startup_profile):
+            response = await self.start(
+                predecessor.model_type if model_type is None else model_type,
+                prompt,
+                predecessor.cwd,
+                launch_kind=predecessor.launch_kind,
+                label=predecessor.label,
+                excluded_candidates=excluded,
+            )
         response["cwd"] = predecessor.cwd
         if warnings:
             response.setdefault("warnings", []).extend(warnings)

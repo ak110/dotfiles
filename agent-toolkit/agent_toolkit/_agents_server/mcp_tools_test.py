@@ -57,6 +57,7 @@ def test_public_tools_expose_single_start_with_modes() -> None:
         "model_type",
         "handoff_from",
         "whole_contract_path",
+        "startup_profile",
     }
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     assert tuple(properties["mode"]["anyOf"][0]["enum"]) == tool_names.START_MODES

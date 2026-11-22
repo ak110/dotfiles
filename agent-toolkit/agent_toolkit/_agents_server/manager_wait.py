@@ -211,7 +211,7 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                     session
                     for session_id in ordered_ids
                     if (session := self.sessions.get(session_id)) is not None
-                    and not (session.result_available and session.result_delivered)
+                    and (session.reply_start_pending or not (session.result_available and session.result_delivered))
                 ]
                 pending_ids = [session_id for session_id in ordered_ids if session_id in self._pending_resumes]
                 observed_ids = [identifier for identifier in ordered_ids if identifier in self._recovery_targets]

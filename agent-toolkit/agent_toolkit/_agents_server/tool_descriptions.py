@@ -165,6 +165,7 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）を指定する。"
     "工程名は対応する`<工程>_model`の候補列を使う。"
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
+    "agyの委譲にはGemini APIキー方式の明示選択・APIキー・対応版が必要で、個人ログインへ切り替えない。"
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
     "handoff_fromでの省略は前任の候補を継承し、現在設定へ戻すには元の工程名を明示する。"

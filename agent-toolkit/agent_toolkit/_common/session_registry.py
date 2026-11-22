@@ -30,6 +30,7 @@ from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.process_identity import ProcessIdentity
 from agent_toolkit._common.session_registry_state import PublicationState, Resolution, RunningOwnership
+from agent_toolkit._common.startup_features import StartupProfile
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 _STATUSES = frozenset({"starting", "running", "completed", "failed", "interrupted"})
@@ -198,6 +199,7 @@ class ResumeInfo:
     claude_connection: str | None = None
     claude_role: str | None = None
     result_contract_recovery_consumed: bool = False
+    startup_profile: StartupProfile | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -310,6 +312,7 @@ def publish(
     claude_role: str | None = None,
     model_type: str | None = None,
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
+    startup_profile: StartupProfile | None = None,
     turn_seq: int = 0,
     launch_info: LaunchInfo | None = None,
     started_at: str | None = None,
@@ -354,6 +357,7 @@ def publish(
         "effort": effort,
         "model_type": model_type,
         "launch_kind": launch_kind,
+        "startup_profile": startup_profile,
         "turn_seq": turn_seq,
         "status": state.status,
         "updated_at": updated_at,
@@ -879,6 +883,7 @@ def _validate_session_id(session_id: str) -> None:
 def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
     status = payload.get("status")
     launch_kind = payload.get("launch_kind")
+    startup_profile = payload.get("startup_profile")
     if (
         not isinstance(payload.get("engine"), str)
         or not isinstance(payload.get("cwd"), str)
@@ -889,6 +894,7 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         or payload.get("model_type") is not None
         and not isinstance(payload.get("model_type"), str)
         or launch_kind not in {"delegate", "explore", "shell", "write"}
+        or startup_profile not in (None, "lightweight", "default", "full")
         or not isinstance(payload.get("turn_seq"), int)
         or isinstance(payload.get("turn_seq"), bool)
         or status not in _STATUSES
@@ -901,6 +907,7 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         effort=payload["effort"],
         model_type=payload["model_type"],
         launch_kind=launch_kind,
+        startup_profile=startup_profile,
         turn_seq=payload["turn_seq"],
         status=status,
         launch_info=LaunchInfo.from_record(payload),

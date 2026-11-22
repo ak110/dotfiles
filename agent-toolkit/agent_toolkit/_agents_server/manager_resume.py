@@ -44,7 +44,7 @@ from agent_toolkit._agents_server.resume_waits import (
 )
 from agent_toolkit._agents_server.state import PreviousResult, ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
-from agent_toolkit._common import session_registry, task_documents
+from agent_toolkit._common import session_registry, startup_features, task_documents
 from agent_toolkit._common.delegated_session import FINAL_RESPONSE_NOTICE
 from agent_toolkit._common.next_action import ActionableError
 
@@ -494,27 +494,29 @@ class ManagerResume(manager_registry.ManagerRegistry):
             # 止まっているsessionを再び動かす追送も、マシン全体の同時稼働数の上限に空きが出るまで待つ。
             ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
             try:
-                session = await backend.resume(
-                    session_id,
-                    prompt,
-                    resume_state.cwd,
-                    resume_state.model,
-                    resume_state.effort,
-                    model_type=resume_state.model_type,
-                    launch_kind=resume_state.launch_kind,
-                    excluded_candidates=resume_state.excluded_candidates,
-                    turn_seq=resume_state.turn_seq,
-                    fast_mode=resume_state.fast_mode,
-                    request_prompt=resume_state.prompt,
-                    result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
-                    **provider_args,
-                )
+                with startup_features.selection(resume_state.startup_profile):
+                    session = await backend.resume(
+                        session_id,
+                        prompt,
+                        resume_state.cwd,
+                        resume_state.model,
+                        resume_state.effort,
+                        model_type=resume_state.model_type,
+                        launch_kind=resume_state.launch_kind,
+                        excluded_candidates=resume_state.excluded_candidates,
+                        turn_seq=resume_state.turn_seq,
+                        fast_mode=resume_state.fast_mode,
+                        request_prompt=resume_state.prompt,
+                        result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
+                        **provider_args,
+                    )
             finally:
                 ticket.release()
             # 再開の応答は別の箇所で組み立てるため、待った秒数をsession単位で渡す。
             admission_wait_fields(self)[session_id] = ticket.response_fields()
             note_admission_wait(session, ticket)
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
+            session.startup_profile = resume_state.startup_profile
             session.result_contract_recovery_consumed = resume_state.result_contract_recovery_consumed
             if session.status == "starting":
                 session.status = "running"
@@ -617,7 +619,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
         timeout: float,
     ) -> tuple[SessionState, bool]:
         """保留中の再開と配下作業を回収し、中断要求の受理有無を返す。"""
-        pending.discard_previous_result()
         pending.prompt.close()
         cancellation_requested = not pending.task.done()
         if cancellation_requested:
@@ -634,28 +635,19 @@ class ManagerResume(manager_registry.ManagerRegistry):
 
         resume_state = pending.state
         session = self.sessions.get(resume_state.session_id)
-        if session is None:
-            session = SessionState(
-                session_id=resume_state.session_id,
-                cwd=resume_state.cwd,
-                model=resume_state.model,
-                effort=resume_state.effort,
-                engine=resume_state.engine,
-                model_type=resume_state.model_type,
-                codex_model_provider=resume_state.codex_model_provider,
-                codex_subscription_provider=resume_state.codex_subscription_provider,
-                codex_state_provider=resume_state.codex_state_provider,
-                claude_api_env_file=resume_state.claude_api_env_file,
-                claude_connection=resume_state.claude_connection,
-                claude_role=resume_state.claude_role,
-                launch_kind=resume_state.launch_kind,
-                excluded_candidates=resume_state.excluded_candidates,
-                announced=True,
-                turn_seq=resume_state.turn_seq + 1,
-                result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
+        if session is None or session.turn_seq <= resume_state.turn_seq:
+            identifier = resume_state.session_id
+            if session is None:
+                self.expired_sessions.pop(identifier, None)
+                self.stopped_sessions[identifier] = resume_state
+            if self._pending_resumes.get(identifier) is pending:
+                self._pending_resumes.pop(identifier, None)
+            await self._notify_waiters()
+            raise ActionableError(
+                "再開待ちを取り消した。新しいturnが成立しておらず、中断要求は未配送です",
+                next_action="showで元のturnを確認し、未回収の結果はwaitで回収する",
             )
-            session_registry.LaunchInfo.of(resume_state).apply_to(session)
-            self.sessions[session.session_id] = session
+        pending.discard_previous_result()
         self.expired_sessions.pop(session.session_id, None)
         if self._pending_resumes.get(session.session_id) is pending:
             self._pending_resumes.pop(session.session_id, None)

@@ -25,6 +25,7 @@ import pytest
 from agent_toolkit._agents_server import service_forward, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import plugin_environment, plugin_environment_cleanup, process_tree, session_review, windows_job
+from agent_toolkit._common.runtime_environment import CallerContext
 from agent_toolkit._testing import isolation, late_descendant
 from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
@@ -706,7 +707,7 @@ def test_published_service_outlives_startup_check(
     shutil.copytree(previous_root, updated, ignore=ignore)
     with (updated / "agent_toolkit" / "agents_server_mcp.py").open("a", encoding="utf-8") as script:
         script.write("# updated\n")
-    registry = GenerationRegistry(tmp_path / "agent-toolkit" / "services" / "agents-server")
+    registry = GenerationRegistry(service_transport.namespace(CallerContext(environment, tmp_path)))
 
     def published(target: pathlib.Path) -> dict:
         outcome = asyncio.run(_CHECK_STARTUP(_launch_command(target)))
@@ -731,6 +732,7 @@ def test_published_service_outlives_startup_check(
 @pytest.mark.windows
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Jobの終了が所属プロセスを止める条件を実APIで確かめる")
 @pytest.mark.timeout(240)
+@pytest.mark.cpu_limit(1.5, reason="実Windows Job・管理サービスと資源回収を通す。sthenoの所有CPU実測は1.079秒。")
 def test_service_outlives_killing_job_of_its_launcher(tmp_path: pathlib.Path, service_environment: dict[str, str]) -> None:
     """離脱を許すKILL_ON_JOB_CLOSEのJobの中から起動した管理サービスは、そのJobの終了後も生存する。
 
@@ -738,7 +740,7 @@ def test_service_outlives_killing_job_of_its_launcher(tmp_path: pathlib.Path, se
     2026-11-19、SSHのセッションから起動した管理サービスが外側のJobに残り、セッションの終了とともに終了した。
     """
     environment = dict(service_environment, XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
-    registry = GenerationRegistry(tmp_path / "agent-toolkit" / "services" / "agents-server")
+    registry = GenerationRegistry(service_transport.namespace(CallerContext(environment, tmp_path)))
     try:
         with windows_job.WindowsJob() as job:
 
