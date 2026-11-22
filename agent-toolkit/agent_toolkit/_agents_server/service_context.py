@@ -279,9 +279,12 @@ class ServiceManagers:
         identifier = metadata.get("threadId") if metadata else None
         if identifier is not None and (not isinstance(identifier, str) or not shared_roots.valid_session_id(identifier)):
             raise ActionableError("MCP要求のthreadIdが不正", next_action="ホストのMCP要求の会話IDを確認して再接続する")
-        native_codex = identifier is not None or bool(env.get("CODEX_THREAD_ID"))
         if identifier is not None:
             env["CODEX_THREAD_ID"] = identifier
+        elif env.get("CLAUDE_CODE_SESSION_ID"):
+            # Claudeの会話IDが明示されていれば、起動元から継承したCodex IDを宛先の根拠にしない。
+            env.pop("CODEX_THREAD_ID", None)
+        native_codex = bool(env.get("CODEX_THREAD_ID"))
         if identifier_override is not None:
             identifier = identifier_override
         if identifier is None:

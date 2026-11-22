@@ -130,7 +130,13 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
             raise
         raise ActionableError(str(error), next_action=next_action) from error
     except TimeoutError as error:
-        host = "codex" if manager.launcher_is_codex else "claude"
+        if caller is None:
+            is_codex = manager.launcher_is_codex(identifier)
+        else:
+            is_codex = identifier == caller.environment.get("CODEX_THREAD_ID") and identifier != caller.environment.get(
+                "CLAUDE_CODE_SESSION_ID"
+            )
+        host = "codex" if is_codex else "claude"
         raise ActionableError(str(error), next_action=_UI_UNAVAILABLE_NEXT_ACTIONS[operation][host]) from error
 
 
