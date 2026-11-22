@@ -16,6 +16,7 @@ from collections.abc import Callable, Generator
 from multiprocessing import connection
 from typing import TYPE_CHECKING, Any
 
+from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
 from agent_toolkit._common import runtime_environment, state_paths
 
 if TYPE_CHECKING:
@@ -156,10 +157,6 @@ def process_alive(identity: object) -> bool:
             return windows_service_transport.listed_process_alive(str(identity))
     except FileNotFoundError, ProcessLookupError, ValueError:
         return False
-
-
-class ProcessIdentityMismatch(PermissionError):
-    """同じアカウントの相手が発見記録の起動単位と異なる。"""
 
 
 def authenticate(peer: connection.Connection, *, server: bool, expected_process: str | None = None) -> int:

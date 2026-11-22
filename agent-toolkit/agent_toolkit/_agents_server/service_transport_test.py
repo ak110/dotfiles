@@ -33,6 +33,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.service_coordinator_test import _coordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
+from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
 from agent_toolkit._common import runtime_environment
 
 
@@ -442,8 +443,8 @@ def test_denied_generation_scenes_cover_every_liveness_caller() -> None:
 @pytest.mark.parametrize(
     ("rejected", "alive", "expected"),
     [
-        (service_transport.ProcessIdentityMismatch, False, FileNotFoundError),
-        (service_transport.ProcessIdentityMismatch, True, service_transport.ProcessIdentityMismatch),
+        (ProcessIdentityMismatch, False, FileNotFoundError),
+        (ProcessIdentityMismatch, True, ProcessIdentityMismatch),
         (PermissionError, False, PermissionError),
     ],
 )
