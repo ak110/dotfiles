@@ -7,9 +7,11 @@ import re
 
 import pytest
 
-from agent_toolkit._common import session_state, state_paths
+from agent_toolkit._agents_server import agents_wait
+from agent_toolkit._common import session_registry, session_state, state_paths, task_documents
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import agents_server_observations, stop
+from agent_toolkit._hooks import agents_server_session_advisor as advisor
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _read_state
@@ -677,3 +679,49 @@ def test_malformed_payload_allows_stop(tmp_path: pathlib.Path) -> None:
     )
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+def test_recovered_results_only_warn_for_child_still_awaiting_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    path = task_documents.require_role_document(pathlib.Path(__file__).resolve().parents[2], "exec")
+
+    def resolve(identifier, **_kwargs):
+        seq = 2 if identifier == "answered" else 1
+        head = "統合完了" if identifier == "finished" else "統合準備完了"
+        launch = session_registry.LaunchInfo(prompt=task_documents.task_prompt_header(path), final_responses=((1, head),))
+        return session_registry.SessionResolution(
+            session_registry.Resolution.TERMINAL,
+            session_registry.ResumeInfo(
+                "claude",
+                ".",
+                None,
+                None,
+                None,
+                "delegate",
+                seq,
+                "completed",
+                launch,
+                session_updated_at="2026-11-22T00:00:00+00:00",
+            ),
+        )
+
+    monkeypatch.setattr(session_registry, "resolve", resolve)
+    monkeypatch.setattr(agents_wait.result_projection, "elapsed_seconds", lambda _: 42)
+    monkeypatch.setattr(
+        advisor,
+        "read_state",
+        lambda _: {
+            "agents_server_sessions": {
+                identifier: {"owner_agent_id": "main", "pending_observation": False}
+                for identifier in ("answered", "awaiting", "finished")
+            }
+        },
+    )
+    monkeypatch.setattr(agents_server_observations, "retained_running_session_ids", lambda *_: [])
+    monkeypatch.setattr(advisor, "_notice", lambda body, **_kwargs: body)
+
+    assert agents_wait.continuation_wait_seconds("answered") is None
+    assert agents_wait.continuation_wait_seconds("awaiting") == 42
+    assert agents_wait.continuation_wait_seconds("finished") is None
+    decision, body = advisor.evaluate(json.dumps({"session_id": "owner"}))
+    assert decision == "notify"
+    assert body == "応答待ち: awaiting（返却から 42 秒）"

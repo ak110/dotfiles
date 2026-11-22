@@ -36,6 +36,7 @@ from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_s
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._agents_server.agents_wait import continuation_wait_seconds
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agents_server_observations as _observations
@@ -91,8 +92,17 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     pending_session_ids = _observations.pending_session_ids(state, owner_agent_id)
     continued = _observations.retained_running_session_ids(state, owner_agent_id)
     pending_session_ids = sorted(set(pending_session_ids) | set(continued))
-    if not pending_session_ids:
-        sessions = state.get("agents_server_sessions")
+    sessions = state.get("agents_server_sessions")
+    awaiting = [
+        f"{identifier}（返却から {seconds} 秒）"
+        for identifier, record in (sessions.items() if isinstance(sessions, dict) else ())
+        if isinstance(identifier, str)
+        and isinstance(record, dict)
+        and record.get("owner_agent_id") == owner_agent_id
+        and not record.get("kill_requested")
+        and (seconds := continuation_wait_seconds(identifier)) is not None
+    ]
+    if not pending_session_ids and not awaiting:
         if isinstance(sessions, dict) and any(
             isinstance(record, dict)
             and record.get("owner_agent_id") == owner_agent_id
@@ -106,7 +116,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if _continuation_owned(payload):
         observed |= _declared_waiting_target_ids(payload.get("last_assistant_message")) & set(pending_session_ids)
     pending_session_ids = [item for item in pending_session_ids if item not in observed]
-    if not pending_session_ids:
+    if not pending_session_ids and not awaiting:
         return "approve", ""
 
     description = (
@@ -114,5 +124,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         if set(pending_session_ids) & set(continued)
         else _WARNING_BODY
     )
-    body = f"{description}\n対象session: {', '.join(pending_session_ids)}"
-    return "notify", _notice(body, fix=_WARNING_FIX, removable_cause=True, summary=body)
+    lines = [f"{description}\n対象session: {', '.join(pending_session_ids)}"] if pending_session_ids else []
+    if awaiting:
+        lines.append(f"応答待ち: {', '.join(awaiting)}")
+    body = "\n".join(lines)
+    fix = "役割が求める指示を`send_message`で返せ。" if awaiting else ""
+    if pending_session_ids:
+        fix = f"{_WARNING_FIX}{fix}"
+    return "notify", _notice(body, fix=fix, removable_cause=True, summary=body)
