@@ -133,6 +133,20 @@ def test_windows_process_list_entries_are_read_by_pid() -> None:
     assert windows_service_transport._find_create_time(snapshot, 5) is None
 
 
+def test_windows_process_alive_does_not_report_exit_when_both_queries_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """直接照会も一覧も利用できないときは、照会の失敗を呼出元に返す。"""
+    monkeypatch.setattr(service_transport, "process_identity", _denied)
+    monkeypatch.setattr(service_transport, "os", SimpleNamespace(name="nt"))
+    error = OSError("プロセス一覧の取得に失敗しました")
+    monkeypatch.setattr(windows_service_transport, "_listed_create_time", Mock(side_effect=error))
+
+    with pytest.raises(OSError) as caught:
+        service_transport.process_alive("4242:134000000000000000")
+    assert caught.value is error
+
+
 @pytest.mark.parametrize("reports_needed", [True, False], ids=["needed", "no-needed"])
 @pytest.mark.parametrize("status", [0xC0000004, 0xC0000023], ids=["info-length-mismatch", "buffer-too-small"])
 def test_windows_process_list_grows_buffer_until_listing_fits(
