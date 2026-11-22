@@ -382,17 +382,22 @@ def direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
             if command is None:
                 continue
             for line in command.replace("`\n", " ").replace("\\\n", " ").splitlines():
-                words = line.split()
-                if "pytest" not in words:
+                if "pytest" not in line.split() or "uv run" not in line:
                     continue
-                index = words.index("pytest")
-                launch = [word for word in words[:index] if "=" not in word]
+                lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|<>")
+                lexer.whitespace_split = True
+                tokens = list(lexer)
+                if "pytest" not in tokens:
+                    continue
+                index = tokens.index("pytest")
+                launch = [token for token in tokens[:index] if "=" not in token]
                 if launch[:2] != ["uv", "run"]:
                     continue
-                arguments = shlex.split(line)[index + 1 :]
-                targets.extend(
-                    token for token in arguments if not token.startswith(("-", "$")) and ("/" in token or token.endswith(".py"))
-                )
+                for token in tokens[index + 1 :]:
+                    if token and all(char in ";&|<>" for char in token):
+                        break
+                    if not token.startswith(("-", "$")) and ("/" in token or token.endswith(".py")):
+                        targets.append(token)
     return targets
 
 
