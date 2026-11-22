@@ -61,6 +61,7 @@ from agent_toolkit._common import (
     response_language_check,
     runtime_environment,
     runtime_inserted,
+    session_launchers,
     session_registry,
     startup_features,
 )
@@ -305,6 +306,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
     whole_contract_path: Annotated[str | None, Field(description=WHOLE_CONTRACT_PATH_DESCRIPTION)] = None,
     *,
+    start_observation: Annotated[str | None, Field(description="起動応答を失った場合の回復用。PreToolUseが設定する。")] = None,
     startup_profile: Annotated[
         startup_features.StartupProfile | None,
         Field(description="起動時の追加機能を選ぶ。fullは元の設定を保つ。省略時は役割に応じてlightweightかdefault。"),
@@ -347,7 +349,10 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         model_type=model_type,
         whole_contract_path=whole_contract_path,
     )
-    with startup_features.selection(startup_profile):
+    with (
+        startup_features.selection(startup_profile),
+        session_launchers.START_OBSERVATION.set(session_launchers.valid_start_observation(start_observation)),
+    ):
         if mode == "task":
             assert subagent_md_path is not None
             params = extra_params or {}

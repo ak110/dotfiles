@@ -4,8 +4,16 @@ import typing
 
 import pytest
 import yaml
-from selection_merge_test import _allocation, _cost, _dispatch, _item, _merge_into_existing, _merge_with_costs, _overlap
-from selection_merge_test import fixture_inputs as fixture_inputs  # pylint: disable=useless-import-alias
+from selection_merge_test import (
+    _allocation,
+    _cost,
+    _dispatch,
+    _item,
+    _merge_into_existing,
+    _merge_with_costs,
+    _overlap,
+    fixture_inputs,
+)
 
 
 def test_public_merge_transforms_existing_predecessor(
@@ -423,3 +431,6 @@ def test_merge_preserves_item_integration_state(
     assert {row["レーン"]: row["統合状態"] for row in result["レーンの所要時間"]} == {"lane-01": "未統合", "lane-02": "未統合"}
     items = {item["WI"]: item.get("統合状態", "未統合") for item in result["選定"]}
     assert items == {"a.md": "統合済み", "b.md": "未統合", "c.md": "未統合", "d.md": "未統合"}
+
+
+__all__ = ["fixture_inputs"]

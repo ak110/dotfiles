@@ -129,6 +129,20 @@ def test_windows_process_list_entries_are_read_by_pid() -> None:
     assert windows_service_transport._find_create_time(snapshot, 5) is None
 
 
+def test_windows_process_alive_does_not_report_exit_when_both_queries_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """直接照会も一覧も利用できないときは、照会の失敗を呼出元に返す。"""
+    monkeypatch.setattr(service_transport, "process_identity", _denied)
+    monkeypatch.setattr(service_transport, "os", SimpleNamespace(name="nt"))
+    error = OSError("プロセス一覧の取得に失敗しました")
+    monkeypatch.setattr(windows_service_transport, "_listed_create_time", Mock(side_effect=error))
+
+    with pytest.raises(OSError) as caught:
+        service_transport.process_alive("4242:134000000000000000")
+    assert caught.value is error
+
+
 @pytest.mark.parametrize("reports_needed", [True, False], ids=["needed", "no-needed"])
 @pytest.mark.parametrize("status", [0xC0000004, 0xC0000023], ids=["info-length-mismatch", "buffer-too-small"])
 def test_windows_process_list_grows_buffer_until_listing_fits(
@@ -206,7 +220,7 @@ async def _commit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> No
     registry.publish("G0", endpoint="G0", process=_REUSED)
     monkeypatch.setattr(service_rpc, "request", AsyncMock(side_effect=EOFError))
     async with asyncio.timeout(5):
-        with pytest.raises(RuntimeError, match="正常な退役の記録"):
+        with pytest.raises(RuntimeError, match="会話移転の確定記録"):
             await coordinator._commit({"generation": "G0", "epoch": 1, "process": _REUSED}, "token")
 
 
@@ -364,7 +378,7 @@ _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch]
     "service_session_control.ServiceSessionControl._owns": _owns,
     "service_coordinator.ServiceCoordinator._supervise": _supervise,
     "service_context.ServiceManagers.generations": _generations,
-    "service_io.CodexResource.close": _close,
+    "service_io.CodexResource._close": _close,
     "service_forward.ensure_service": _ensure_service,
     "service_forward.publish_service": _publish_service,
     "service_generations.GenerationRegistry.restore": _restore,

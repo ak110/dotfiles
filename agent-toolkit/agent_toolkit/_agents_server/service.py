@@ -362,7 +362,9 @@ async def run(
                                         state.sender is None or state.redirect_acknowledged for state in peer_states.values()
                                     )
                                     and not any(not task.done() for task in coordinator._moving.values())
+                                    and coordinator.can_retire()
                                 ):
+                                    coordinator.registry.confirm_handover(generation, target["process"])
                                     stop.set()
                                     break
                             accepting = asyncio.create_task(asyncio.to_thread(listener.accept))

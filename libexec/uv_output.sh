@@ -19,6 +19,17 @@ with_uv_output() (
     # lastpipeで読み手をこのシェルに置く。INTでuvが終了してもパイプに残る末尾まで読む。
     set +e +m
     shopt -s lastpipe
+    # 準備段階にはPythonが無い場合もあるため、分類済みのイベントをこのシェルで表示する。
+    publish_uv_event() {
+        local kind=$1 message=$2 location=${3:-}
+        case "$kind" in
+        diagnostic) printf '%s\n' "$message" >&2 ;;
+        failure) printf '%s (詳細: %s)\n' "$message" "$location" >&2 ;;
+        unsaved)
+            printf '明細を保存できません: %s。書込権限と空き容量を確認してください。\n%s' "$location" "$message" >&2
+            ;;
+        esac
+    }
     # shellcheck disable=SC2329 # 呼出し元の段がこの関数を呼び、コマンドの出力を同じ記録に追記する。
     capture_uv_command() {
         "$@" 2>&1 | {
@@ -28,14 +39,14 @@ with_uv_output() (
                 # shellcheck disable=SC2034 # stage_attemptが修復の要否をこの値から判定する。
                 if [[ -n "${match_text:-}" && "$plain" == *"$match_text"* ]]; then matched=1; fi
                 if [[ -z "$routine" ]]; then
-                    printf '%s\n' "$line" >&2
+                    publish_uv_event diagnostic "$line"
                     continue
                 fi
                 if [[ "${plain,,}" =~ $sensitive ]]; then saved+='[REDACTED]'$'\n'; else saved+="$line"$'\n'; fi
                 if [[ "$plain" == *'PRIVATE KEY-----'* ]]; then private_key=1; fi
                 if [[ -n "$plain" && ! "$plain" =~ $routine ]]; then
                     if [[ "$plain" =~ $actionable || ($continuation == 1 && "$plain" == ' '*) ]]; then
-                        printf '%s\n' "$line" >&2
+                        publish_uv_event diagnostic "$line"
                         continuation=1
                         continue
                     fi
@@ -61,10 +72,14 @@ with_uv_output() (
         temp=$(mktemp -- "$log.XXXXXXXX") &&
         printf '%(%FT%T%z)T exit=%s\n%s' -1 "$code" "$saved" >"$temp" &&
         mv -fT -- "$temp" "$log"; then
-        if ((code != 0)); then printf '%s\n' "${cause:-${summary:-exit=$code}} (詳細: $log)" >&2; fi
+        if ((code != 0)) && { ((code == 130)) || [[ "${uv_defer_summary:-0}" == 0 ]]; }; then
+            publish_uv_event failure "${cause:-${summary:-exit=$code}}" "$log"
+        elif ((code != 0)); then
+            printf '%s\n' saved
+        fi
     else
         [[ -z "$temp" ]] || rm -f -- "$temp" || :
-        printf '明細を保存できません: %s。書込権限と空き容量を確認してください。\n%s' "$log" "$hidden" >&2
+        publish_uv_event unsaved "$hidden" "$log"
     fi
     return "$code"
 )

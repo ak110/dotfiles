@@ -45,7 +45,7 @@ from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, Sessi
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import usage_refresh
-from agent_toolkit._common import codex_models, startup_documents, startup_features, task_documents
+from agent_toolkit._common import codex_models, session_launchers, startup_documents, startup_features, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.plugin_roots import PluginRootError
 
@@ -306,6 +306,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             if self._status_writer is not None:
                 await self._status_writer.launcher_session_id_async()
             session.launcher_session_id = self.launcher_session_id()
+            session.start_observation = session_launchers.START_OBSERVATION.get()
             if session.status == "starting":
                 session.status = "running"
             await self._save_started_session(session)

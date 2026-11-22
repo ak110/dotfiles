@@ -197,7 +197,9 @@ def _record_iss_sidechain_probe(
         pass
 
 
-def _check_agents_server_continuation_target(session_id: str, tool_input: dict, tool_name: str) -> Decision:
+def _check_agents_server_continuation_target(
+    session_id: str, tool_input: dict, tool_name: str, *, actor: str | None = None
+) -> Decision:
     """`send_message`・`kill`の対象sessionを、呼出元に保存された絶対cwdで確認する。
 
     入力形式（`prompt`か`instruction`・`extra_params`か、`session_id`の有無と形式）の受理条件と修正案内は
@@ -210,15 +212,19 @@ def _check_agents_server_continuation_target(session_id: str, tool_input: dict, 
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         return Decision(allow=True)
-    if _agents_server_observations.session_cwd(read_state(session_id), remote_session_id) is None:
+    state = read_state(session_id)
+    record = _agents_server_observations.session_record(state, remote_session_id)
+    if record is not None and record.get("recovered_start") is True and record.get("launcher_agent_id") != actor:
+        return Decision(block=_block_notice("起動を回復した主体と操作の呼出主体が異なる。", fix="起動時の主体から操作せよ。"))
+    if _agents_server_observations.session_cwd(state, remote_session_id) is None:
         display_name = tool_name.rsplit("__", 1)[-1]
         return Decision(
             block=_block_notice(
                 f"{display_name}の対象`{remote_session_id}`に対応する絶対`cwd`が保存されていない。",
                 fix=(
                     f"`agents_server`の`show`へ`session_id={remote_session_id}`を指定して照会せよ。"
-                    "永続登録の起動元と呼出主体が一致し、応答の識別子と絶対`cwd`を確認できた場合は記録を回復するため、"
-                    "元の操作を再発行せよ。所有を確認できない場合は遮断を維持する。"
+                    "起動時の呼出主体が保存され、永続登録の起動元・応答の識別子・絶対`cwd`も確認できた場合だけ、"
+                    "元の操作を再発行せよ。起動時の識別子から呼出主体を確認できない場合は、`show`を繰り返しても回復しない。"
                     "自身が起動していない対象は、所有を確認できるまで操作しない。"
                 ),
             )

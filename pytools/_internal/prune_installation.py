@@ -753,7 +753,15 @@ def _report_previous_maintenance(group: _CacheGroup) -> post_apply_outcome.PostA
             "prune: 前回の%sの整理は保留した（%s）: %s", group, record.finished_at, record.detail, extra=log_format.LOG_ONLY
         )
         if group is _CacheGroup.UV and _UV_LOCK_TIMEOUT_MARKER in record.detail:
-            logger.info("prune: uvキャッシュが使用中のため整理を保留しました。%s詳細: %s", retry, log, extra=log_format.SHOW)
+            return post_apply_outcome.PostApplyOutcome(
+                notices=(
+                    post_apply_outcome.PostApplyNotice(
+                        f"prune: uvキャッシュが使用中のため整理を保留しました。{retry}",
+                        log=_record_path(group),
+                        warning=False,
+                    ),
+                )
+            )
     elif record.result is MaintenanceResult.COMPLETED:
         logger.info("prune: 前回の%sのキャッシュ整理は完了（%s）", group, record.finished_at, extra=log_format.LOG_ONLY)
     elif record.result is MaintenanceResult.FAILED:
@@ -898,6 +906,7 @@ def _merge(*outcomes: post_apply_outcome.PostApplyOutcome) -> post_apply_outcome
     next_actions = dict.fromkeys(outcome.next_action for outcome in outcomes if outcome.next_action is not None)
     return post_apply_outcome.PostApplyOutcome(
         changed=any(outcome.changed for outcome in outcomes),
+        notices=tuple(notice for outcome in outcomes for notice in outcome.notices),
         deferred=any(outcome.deferred for outcome in outcomes),
         failure=" / ".join(failures) or None,
         next_action=" ".join(next_actions) or None,

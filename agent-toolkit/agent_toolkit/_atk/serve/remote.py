@@ -11,6 +11,7 @@ import dataclasses
 import json
 import logging
 import re
+import secrets
 import subprocess
 import threading
 import typing
@@ -39,9 +40,7 @@ _HELPER_UV_CACHE = ".cache/agent-toolkit/remote-helper-uv"
 _SSH_CONNECTION_FAILED = 255
 # 単発のヘルパーのコードが動き始めたときに標準エラー出力へ書く1行。uvの起動の失敗とヘルパーの操作のエラーを区別する。
 _HELPER_STARTED = "atk-remote-helper-started"
-# 標準エラー出力のうち`_HELPER_STARTED`だけから成る行。WindowsのPythonは改行をCRLFで書く。
-# 接続先のシェルのコマンドのトレース（`sh -x`）はコマンドの文字列の中の印も書くため、印を部分文字列として探さない。
-_HELPER_STARTED_LINE = re.compile(rb"^" + re.escape(_HELPER_STARTED.encode()) + rb"\r?$\n?", re.MULTILINE)
+_HELPER_FINISHED = "atk-remote-helper-finished"
 
 _remote_pythons: dict[str, str] = {}
 
@@ -259,12 +258,13 @@ async def _attempts(host: str, ssh_options: tuple[str, ...], deadline: float) ->
                     yield attempt
 
 
-async def _launch(host: str, ssh_options: tuple[str, ...], program: list[str], *, timeout: float) -> tuple[str, bytes]:
+async def _launch(
+    host: str, ssh_options: tuple[str, ...], program: list[str], *, timeout: float, request: str | None = None
+) -> tuple[str, bytes]:
     """`uv run`で起動したPythonへ`python -B`以降の`program`を渡して単発SSHで実行し、起動できた版と標準出力を返す。
 
-    `_attempts`の順に試し、ヘルパーが動いた試行で終える。終了コード0か、標準エラー出力の`_HELPER_STARTED`だけの行が、
-    ヘルパーが動いた印である。ヘルパーの操作のエラーは起動し直しても変わらないため、起動し直さずに`RemoteHelperError`で送出する。
-    印が無ければuvがヘルパーを起動できなかったとして次の試行へ進み、全て失敗すれば最後の失敗を送出する。
+    単発の要求では、同じ要求の開始・結果の通知を標準エラー出力の独立した行から読む。
+    開始後の操作の失敗や結果不明では起動し直さず、起動前の失敗だけを次の試行へ渡す。
     接続先へ接続できない失敗は、選び直しても変わらないためそのまま送出する。
     版の照会と全ての試行は`timeout`秒の1つの期限を共有し、期限に達すると上限を`timeout`秒とする`subprocess.TimeoutExpired`を送出する。
     期限を過ぎた後は、照会も試行も新しいSSHを始めない。
@@ -277,8 +277,22 @@ async def _launch(host: str, ssh_options: tuple[str, ...], program: list[str], *
             async for attempt in attempts:
                 command = ["ssh", *ssh_options, host, *_uv_run_python(attempt.python, offline=attempt.offline), *program]
                 returncode, stdout, stderr = await run_ssh(command, timeout=_time_left(deadline, command))
-                helper_stderr, started = _HELPER_STARTED_LINE.subn(b"", stderr, count=1)
-                if returncode == 0 or started:
+                helper_stderr = stderr
+                finished = None
+                if request is not None:
+                    prefix = re.escape(request.encode("ascii"))
+                    started_line = re.compile(rb"^" + _HELPER_STARTED.encode() + rb" " + prefix + rb"\r?$\n?", re.MULTILINE)
+                    finished_line = re.compile(
+                        rb"^" + _HELPER_FINISHED.encode() + rb" " + prefix + rb" ([0-9]+)\r?$\n?", re.MULTILINE
+                    )
+                    finished = finished_line.search(stderr)
+                    started = started_line.search(stderr)
+                    helper_stderr = finished_line.sub(b"", started_line.sub(b"", stderr))
+                    if started and (not finished or started.start() > finished.start()):
+                        raise RemoteHelperError(returncode or 1, b"Remote operation result unknown\n" + helper_stderr)
+                    if (returncode == 0 or finished) and (not started or not finished or int(finished[1]) != returncode):
+                        raise RemoteHelperError(returncode or 1, helper_stderr + b"\nUnmatched remote operation result")
+                if returncode == 0 or finished is not None:
                     _remote_pythons[host] = attempt.python
                     if returncode != 0:
                         raise RemoteHelperError(returncode, helper_stderr)
@@ -299,10 +313,17 @@ async def run_remote_helper(
     """リモートヘルパーを単発SSHで起動し、標準出力をUTF-8文字列で返す。
 
     Pythonの版、依存の取得、失敗、期限と停止の扱いは`_launch`に従う。
-    bootstrapの前で`_HELPER_STARTED`の行を書き、ヘルパーの操作のエラーをuvの起動の失敗と区別させる。
+    ヘルパーを読み込んだ後、操作の開始と結果を要求識別子付きで通知する。
     """
-    code = f"import sys; sys.stderr.write('{_HELPER_STARTED}' + chr(10)); {bootstrap}"
-    _, stdout = await _launch(host, ssh_options, ["-c", f'"{code}"', op, *args], timeout=timeout)
+    request = secrets.token_hex(16)
+    code = (
+        f"__name__ = 'atk_remote_request'; {bootstrap}; operation = main; "
+        f"print('{_HELPER_STARTED} {request}', file=sys.stderr, flush=True); "
+        "result = operation(); "
+        f"print('{_HELPER_FINISHED} {request}', result, file=sys.stderr, flush=True); "
+        "sys.exit(result)"
+    )
+    _, stdout = await _launch(host, ssh_options, ["-c", f'"{code}"', op, *args], timeout=timeout, request=request)
     return stdout.decode("utf-8")
 
 

@@ -106,10 +106,33 @@ async def test_close_racing_reader_failure_returns_promptly() -> None:
     async with asyncio.timeout(5):
         residual = await client.close()
         await reader
+        assert client._failure_task is not None
+        await client._failure_task
 
     assert residual == []
     assert client.closed
     assert len(reported) == 1
+
+
+@pytest.mark.parametrize("shutdown_error", [False, True])
+@pytest.mark.asyncio
+async def test_read_failure_with_unconfirmed_shutdown_releases_requests(
+    monkeypatch: pytest.MonkeyPatch, shutdown_error: bool
+) -> None:
+    """停止を確認できない場合も、要求の待機を解き、失敗通知と同じ理由を返す。"""
+    on_failure = AsyncMock()
+    client = subject.JsonRpcProcess(_ignore_message, _ignore_message, on_failure)
+    pending: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
+    client._pending[1] = pending
+    close = AsyncMock(side_effect=OSError("stop failed")) if shutdown_error else AsyncMock(return_value=["running child"])
+    monkeypatch.setattr(client, "close", close)
+
+    async with asyncio.timeout(2):
+        await client._finish_read_failure(subject.AppServerError("read failed"))
+        with pytest.raises(subject.AppServerError, match="停止を確認できない対象") as failed:
+            await pending
+    assert on_failure.await_args is not None
+    assert str(on_failure.await_args.args[0]) == str(failed.value)
 
 
 @pytest.mark.parametrize("cancelled", [False, True])

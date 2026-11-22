@@ -130,8 +130,13 @@ def finish(returncode: int) -> int:
     """
     if current_run_id is not None:
         try:
-            for title, detail in update_dotfiles_report.bootstrap_failures(LOG_PATH.parent):
-                continue_after_failure(title, "次回のupdate-dotfiles起動時に再試行します。", detail)
+            for failure in update_dotfiles_report.bootstrap_failures(LOG_PATH.parent):
+                action = "次回のupdate-dotfiles起動時に再試行します。"
+                if failure.saved and failure.title in {"uvの自己更新", "管理Pythonの更新"}:
+                    log = LOG_PATH.with_name(f"uv-{failure.title}-failed.log")
+                    if log.is_file():
+                        action += f"詳細: {log}"
+                continue_after_failure(failure.title, action, failure.detail)
             failures = [(failure.title, failure.detail or "失敗") for failure in continued_failures]
             if returncode != 0:
                 failures.append((current_stage_title or "更新の開始", last_stderr_tail or f"exit={returncode}"))
@@ -147,6 +152,11 @@ def finish(returncode: int) -> int:
     parent_log_saved = _record_parent_diagnostics(returncode)
     if continued_failures:
         returncode = _report_continued_failures(returncode)
+        if ack := os.environ.get("UPDATE_DOTFILES_BOOTSTRAP_ACK"):
+            try:
+                pathlib.Path(ack).touch(exist_ok=False)
+            except OSError:
+                logger.exception("起動準備の診断表示をランチャーへ通知できませんでした")
     logger.info("update-dotfiles終了: exit=%d", returncode)
     if current_run_id is not None:
         sync_report.write_finish(
@@ -204,7 +214,7 @@ def _report_continued_failures(returncode: int) -> int:
     """
     global current_stage_title, last_stderr_tail  # noqa: PLW0603
     lines = ["失敗しても後続の段を続けた段:"]
-    for failure in continued_failures:
+    for failure in dict.fromkeys(continued_failures):
         lines.append(f"- {failure.title}: {failure.action}")
     print("\n".join(lines), file=sys.stderr)
     logger.error("続行した失敗: %s", " / ".join(failure.title for failure in continued_failures))

@@ -123,14 +123,7 @@ class ServiceCoordinator(ServiceSessionControl):
                         file_lock.release_lock(handle)
 
     async def _commit(self, previous: dict, token: str) -> None:
-        """静止させた旧世代へ確定を届ける。届かなければ、旧世代が生存する間は同じ確定を送り直し、終了していれば退役の記録で成否を決める。
-
-        確定の受理は冪等で、解除済みの準備へ届いた確定は捨てられるため、送り直しても静止の解除は1回だけになる。
-        旧世代は受付先の前進を観測しても静止を解くため、会話を持つ旧世代は確定を失っても動き続け、退役するのはturnの終了後になる。
-        会話を持たない旧世代は確定の接続より先に退役して終了することがあり、この修正より前の版の旧世代は確定の到着を待たずに退役する。
-        旧世代は引き継ぐ会話・資源を残さずに終了した場合だけ退役を記録する（`service.run`）。
-        記録が無いまま終了した旧世代は、それらを持ったまま停止・例外・強制終了で終わったことがあり得るため、公開の失敗として返す。
-        """
+        """確定を再送し、応答を失った場合は今回の移転の確定記録で判断する。"""
         arguments = {"token": token, "current": self._current()}
         loop = asyncio.get_running_loop()
         deadline = loop.time() + _COMMIT_WAIT_SECONDS
@@ -145,17 +138,11 @@ class ServiceCoordinator(ServiceSessionControl):
                         first_error = first_error or error
 
                     alive = service_transport.process_alive(previous["process"])
-                    if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
-                        _LOG.info(
-                            "旧世代が確定前に退役しました: generation=%s error=%s: %s",
-                            previous["generation"],
-                            type(first_error).__name__,
-                            first_error,
-                        )
+                    if await run_file_operation(self.registry.handover_confirmed, self.target, previous):
                         return
                     if not alive:
                         raise RuntimeError(
-                            "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
+                            "旧世代が終了し、会話移転の確定記録がありません。"
                             "旧世代の会話は新世代へ移っていないことがあります: "
                             f"generation={previous['generation']} process={previous['process']} "
                             f"error={type(first_error).__name__}: {first_error}"

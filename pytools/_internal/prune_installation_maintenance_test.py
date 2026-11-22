@@ -260,13 +260,21 @@ def test_deferred_maintenance_is_announced_with_log_path(tmp_path, monkeypatch, 
     _uv_clean_failure(monkeypatch, calls)["stderr"] = detail
     maintain(monkeypatch, tmp_path)
     capsys.readouterr()
-    with post_apply._configure_logging():
-        result = prune_installation.run()
-    assert result.failure is None
+    run_prune = prune_installation.run
+
+    def repeat_notice(*, lock):
+        result = run_prune(lock=lock)
+        assert result.failure is None
+        return post_apply_outcome.PostApplyOutcome(notices=(*result.notices, *result.notices))
+
+    monkeypatch.setattr(prune_installation, "run", repeat_notice)
+    post_apply.main(["--prune-only"], runner=lambda: pytest.fail("通常の更新工程へ到達した"))
     screen = capsys.readouterr()
     assert not screen.err
+    record = prune_installation._record_path(prune_installation._CacheGroup.UV)
+    assert record.is_file()
     assert screen.out.splitlines() == [
-        f"  prune: uvキャッシュが使用中のため整理を保留しました。整理は次回の更新時に再試行します。詳細: {update_log.LOG_PATH}"
+        f"  prune: uvキャッシュが使用中のため整理を保留しました。整理は次回の更新時に再試行します。詳細: {record}"
     ]
     assert detail in (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
 

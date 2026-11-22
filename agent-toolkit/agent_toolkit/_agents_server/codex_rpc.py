@@ -88,6 +88,7 @@ class JsonRpcProcess:
         self._write_lock = asyncio.Lock()
         self._closed = False
         self._reader_failure: BaseException | None = None
+        self._failure_task: asyncio.Task[None] | None = None
         self._stderr = DiagnosticTail(APP_SERVER_STDERR_LIMIT_CHARS, unit="chars")
         self._initialization_stage = "created"
         self._received_message_types: dict[str, int] = {}
@@ -291,21 +292,20 @@ class JsonRpcProcess:
             raise
         except BaseException as exc:
             self._reader_failure = exc
-            for future in tuple(self._pending.values()):
-                if not future.done():
-                    future.set_exception(AppServerError(str(exc)))
-            # 失敗の報告を受けたsessionは終了として公開される。読まれない出力のままturnを続けさせないよう、先に止める。
-            try:
-                residual = await self.close()
-            except Exception as error:
-                _LOG.exception("出力を読めなくなったCodex App Serverを停止できません")
-                residual = [f"停止処理の失敗: {error!r}"]
-            reported = (
-                exc if not residual else AppServerError(f"{exc}; App Serverの停止を確認できない対象: {'; '.join(residual)}")
-            )
-            if self._on_failure is not None:
-                with contextlib.suppress(Exception):
-                    await self._on_failure(reported)
+            self._failure_task = asyncio.create_task(self._finish_read_failure(exc))
+
+    async def _finish_read_failure(self, exc: BaseException) -> None:
+        """読取taskの外で停止を待ち、停止を確かめられなければ失敗報告にその理由を含める。"""
+        try:
+            residual = await self.close()
+        except Exception as error:
+            _LOG.exception("出力を読めなくなったCodex App Serverを停止できません")
+            residual = [f"停止処理の失敗: {error!r}"]
+        reported = exc if not residual else AppServerError(f"{exc}; App Serverの停止を確認できない対象: {'; '.join(residual)}")
+        self._release_pending(AppServerError(str(reported)))
+        if self._on_failure is not None:
+            with contextlib.suppress(Exception):
+                await self._on_failure(reported)
 
     async def _dispatch_stdout_line(self, raw_line: bytes) -> None:
         try:
@@ -404,13 +404,8 @@ class JsonRpcProcess:
             )
         if not self._closed:
             self._closed = True
-            # 失敗を検出した読取taskは、この停止の完了を待つ側になりうる。取り消しや完了待ちの対象に含めると
-            # 互いを待つ循環になるため、読取の失敗後は対象から除く。そのtaskは自身で失敗の報告まで進んで終わる。
             reader = self._reader_task
-            if self._reader_failure is not None:
-                reader = None
-            else:
-                self._reader_task = None
+            self._reader_task = None
             tasks = tuple(task for task in (reader, self._stderr_task) if task is not None)
             self._stderr_task = None
             for task in tasks:
@@ -486,9 +481,12 @@ class JsonRpcProcess:
         elif process is not None:
             residual.insert(0, f"{process.pid}: {' '.join(APP_SERVER_COMMAND)}")
         process_tree.log_residual(residual, context="codex app-server")
-        error = AppServerError("Codex App Server client closed")
+        if self._reader_failure is None:
+            self._release_pending(AppServerError("Codex App Server client closed"))
+        return residual
+
+    def _release_pending(self, error: AppServerError) -> None:
         for future in tuple(self._pending.values()):
             if not future.done():
                 future.set_exception(error)
         self._pending.clear()
-        return residual

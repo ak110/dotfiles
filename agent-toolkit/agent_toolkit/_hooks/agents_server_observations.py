@@ -12,6 +12,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import secrets
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 
@@ -230,6 +231,24 @@ def _live_child_session_cwds(structured: dict) -> list[tuple[str, str]]:
     return pairs
 
 
+_START_OBSERVATIONS_KEY = "agents_server_start_observations"
+
+
+def start_observation_input(session_id: str, tool_input: dict, actor: str) -> dict | None:
+    """起動応答が届かなくても、同じ呼出主体の起動を後で特定できるようにする。"""
+    cwd = tool_input.get("cwd")
+    if not shared_layout.valid_session_id(session_id) or not _is_nonempty_absolute_cwd(cwd):
+        return None
+    token = secrets.token_hex(16)
+
+    def remember(state: dict) -> dict:
+        observations = {**state.get(_START_OBSERVATIONS_KEY, {}), token: actor}
+        state[_START_OBSERVATIONS_KEY] = dict(list(observations.items())[-128:])
+        return state
+
+    return {**tool_input, session_launchers.START_OBSERVATION_KEY: token} if update_state(session_id, remember) else None
+
+
 def _record_child_session_cwds(session_id: str, structured: dict, tool_input: dict, owner_agent_id: str) -> None:
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or structured.get("session_id") != remote_session_id:
@@ -254,7 +273,24 @@ def _record_child_session_cwds(session_id: str, structured: dict, tool_input: di
         changed = False
         for child_session_id, child_cwd in pairs:
             record = session_record(state, child_session_id)
-            if record is None or record.get("launcher_agent_id") != owner_agent_id:
+            if record is None:
+                if child_session_id != remote_session_id or not isinstance(child_cwd, str):
+                    continue
+                token = session_launchers.read_start_observation(directory / f"{child_session_id}.json", session_id, child_cwd)
+                observations = state.get(_START_OBSERVATIONS_KEY, {})
+                if token is None or observations.get(token) != owner_agent_id:
+                    continue
+                observations.pop(token)
+                state.setdefault(_AGENTS_SERVER_SESSION_STATE_KEY, {})[child_session_id] = {
+                    "session_id": child_session_id,
+                    "launcher_agent_id": owner_agent_id,
+                    "recovered_start": True,
+                    "owner_agent_id": owner_agent_id,
+                    "status": structured.get("status"),
+                    "pending_observation": True,
+                }
+                changed = True
+            elif record.get("launcher_agent_id") != owner_agent_id:
                 continue
             if cwd_map.get(child_session_id) != child_cwd:
                 cwd_map[child_session_id] = child_cwd

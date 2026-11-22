@@ -396,6 +396,7 @@ def main(
             except filelock.Timeout:
                 print("他の更新が実行中のため整理を保留。次回のupdate-dotfilesで再試行します。", file=sys.stderr)
                 return
+            _print_post_apply_notices(list(result.notices))
             if result.failure is not None:
                 logger.error("%s。次の操作: %s", result.failure, result.next_action)
                 sys.exit(1)
@@ -476,9 +477,13 @@ def _print_post_apply_notices(notices: list[post_apply_outcome.PostApplyNotice])
     unique_notices = tuple(dict.fromkeys(notices))
     if not unique_notices:
         return
-    print(file=sys.stderr, flush=True)
+    if any(notice.warning for notice in unique_notices):
+        print(file=sys.stderr, flush=True)
     for notice in unique_notices:
-        logger.warning("%s", notice.render())
+        if notice.warning:
+            logger.warning("%s", notice.render())
+        else:
+            logger.info("%s", notice.render(), extra=log_format.SHOW)
 
 
 def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:

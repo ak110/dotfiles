@@ -56,6 +56,7 @@ def test_public_tools_expose_single_start_with_modes() -> None:
         "model_type",
         "handoff_from",
         "whole_contract_path",
+        "start_observation",
         "startup_profile",
     }
     assert {"engine", "model", "effort"}.isdisjoint(properties)

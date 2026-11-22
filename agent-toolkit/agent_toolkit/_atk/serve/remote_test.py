@@ -130,9 +130,13 @@ class _RemoteHost:
         helper.parent.mkdir(parents=True)
         helper.write_text(
             "import sys\n"
-            "if sys.argv[1] == 'read':\n"
-            "    sys.exit('FileNotFoundError: ' + sys.argv[2])\n"
-            "sys.stdout.write('[]')\n",
+            "def main():\n"
+            "    if sys.argv[1] == 'read':\n"
+            "        sys.exit('FileNotFoundError: ' + sys.argv[2])\n"
+            "    sys.stdout.write('[]')\n"
+            "    return 0\n"
+            "if __name__ == '__main__':\n"
+            "    sys.exit(main())\n",
             encoding="utf-8",
         )
 
@@ -363,6 +367,25 @@ async def test_helper_operation_error_is_reported_without_relaunch(
 
 
 @pytest.mark.asyncio
+async def test_one_shot_does_not_accept_another_requests_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = "a" * 32
+    monkeypatch.setattr(serve_remote.secrets, "token_hex", lambda _size: request)
+    calls: list[list[str]] = []
+
+    async def run_ssh(command: list[str], timeout: float) -> tuple[int, bytes, bytes]:
+        del timeout
+        if "list" in command and "run" not in command:
+            return 0, _INSTALLED_PYTHONS, b""
+        calls.append(command)
+        return 1, b"[]", (f"atk-remote-helper-started {request}\natk-remote-helper-finished {'b' * 32} 0\n").encode()
+
+    monkeypatch.setattr(serve_remote, "run_ssh", run_ssh)
+    with pytest.raises(serve_remote.RemoteHelperError, match="result unknown"):
+        await _run_one_shot("fixture-wrong-request")
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("remembered", [False, True], ids=["first-contact", "remembered-python-gone"])
 async def test_command_trace_of_remote_shell_is_not_taken_for_helper_start(
     add_remote_host: _AddRemoteHost, remembered: bool
@@ -499,11 +522,15 @@ async def test_helper_launch_writes_only_its_own_uv_cache_and_starts_offline_onc
         "import os, pathlib, sys, time\n"
         "sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))\n"
         "import checkout_module\n"
-        "signals = pathlib.Path(os.environ['HELPER_SIGNALS'])\n"
-        "(signals / 'started').touch()\n"
-        "while not (signals / 'release').exists():\n"
-        "    time.sleep(0.05)\n"
-        "print('[]', flush=True)\n",
+        "def main():\n"
+        "    signals = pathlib.Path(os.environ['HELPER_SIGNALS'])\n"
+        "    (signals / 'started').touch()\n"
+        "    while not (signals / 'release').exists():\n"
+        "        time.sleep(0.05)\n"
+        "    print('[]', flush=True)\n"
+        "    return 0\n"
+        "if __name__ == '__main__':\n"
+        "    sys.exit(main())\n",
         encoding="utf-8",
     )
     (checkout / "checkout_module.py").write_text("", encoding="utf-8")
@@ -579,7 +606,7 @@ async def test_one_shot_launches_when_python_listing_stalls(
     home = tmp_path / "home"
     helper = home / "dotfiles" / "agent-toolkit" / "scripts" / "atk_serve_sessions_remote_helper.py"
     helper.parent.mkdir(parents=True)
-    helper.write_text("print('[]')\n", encoding="utf-8")
+    helper.write_text("def main():\n    print('[]')\n    return 0\n", encoding="utf-8")
     wheels = tmp_path / "wheels"
     _write_dependency_wheels(wheels)
     environment = _remote_host_environment(home, tmp_path / "uv-cache", tmp_path)

@@ -26,6 +26,22 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 @pytest.mark.asyncio
+async def test_start_observation_is_bound_before_returning_to_mcp(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """公開startは応答より先に、実際に起動したsessionへ起動識別子を渡す。"""
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        token = "0123456789abcdef" * 2
+        response = await mcp_tools.start(
+            str(tmp_path), mode="explore", prompt="調査", model_type="codex:model/high", start_observation=token
+        )
+        assert manager.sessions[response["session_id"]].start_observation == token
+        assert "start_observation" not in response
+
+
+@pytest.mark.asyncio
 async def test_start_tools_accept_model_type_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     requested = _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):

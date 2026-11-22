@@ -69,6 +69,31 @@ if command == 'uv installer':
     timer.chmod(0o755)
 
 
+def test_deferred_log_is_announced_once_if_bootstrap_cannot_start_runtime(tmp_path: pathlib.Path) -> None:
+    uv = tmp_path / "uv"
+    uv.write_text(
+        "#!/bin/bash\n"
+        'case "$*" in\n'
+        '  "python install --upgrade "*) echo "error: fixture-upgrade"; exit 17;;\n'
+        '  "python "*) echo "error: fixture-bootstrap"; exit 19;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1" "$2"', "bash", str(_BOOTSTRAP), str(uv)],
+        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=10,
+    )
+    log = tmp_path / ".local/state/agent-toolkit/uv-管理Pythonの更新-failed.log"
+    assert result.returncode == 19
+    assert result.stderr.count(f"詳細: {log}") == 1
+    assert "error: fixture-upgrade" in log.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     ("stage", "label", "expected"),
     [

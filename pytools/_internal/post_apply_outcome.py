@@ -1,6 +1,7 @@
 """post-applyステップの構造化結果を定義する。"""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 CHECK_UPDATE_LOG = "失敗理由を確認し、`update-dotfiles`を再実行する"
 
@@ -11,12 +12,15 @@ class PostApplyNotice:
 
     message: str
     command: str | None = None
+    log: Path | None = None
+    warning: bool = True
 
     def render(self) -> str:
         """本文にないコマンドだけを次の行へ字下げして示す。"""
+        message = self.message if self.log is None else f"{self.message}詳細: {self.log}"
         if self.command is None or f"`{self.command}`" in self.message:
-            return self.message
-        return f"{self.message}\n    {self.command}"
+            return message
+        return f"{message}\n    {self.command}"
 
 
 @dataclass(frozen=True)

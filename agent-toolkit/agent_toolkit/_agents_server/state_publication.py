@@ -225,6 +225,7 @@ def _registration_parameters(self: SessionState) -> dict[str, Any] | None:
         else tuple(process for process in (owner, self.executor_process) if process is not None),
         "owner_root_session_id": self.owner_root_session_id,
         "launcher_session_id": self.launcher_session_id,
+        "start_observation": self.start_observation,
     }
 
 
