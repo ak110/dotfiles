@@ -104,7 +104,8 @@ def test_check_entry_does_not_pass_parent_uv_python(tmp_path: pathlib.Path, targ
     assert result.returncode == 0, result.stderr
     # 同期は親の指定を受け取ったまま`--python`で基準版を選ぶ
     assert (
-        f"uv sync --all-groups --all-extras --python 3.15 UV_PYTHON=3.13 UV_PROJECT_ENVIRONMENT={tmp_path / '.venv'}" in calls
+        f"uv sync --all-groups --no-group pytest-impact --all-extras --python 3.15 UV_PYTHON=3.13 "
+        f"UV_PROJECT_ENVIRONMENT={tmp_path / '.venv'}" in calls
     )
     assert f"uv {pyfltr_arguments} UV_PYTHON=<unset> UV_PROJECT_ENVIRONMENT={tmp_path / '.venv'}" in calls
 
@@ -215,7 +216,9 @@ def test_make_sync_preserves_external_project_environment(
     (project / "mise.toml").write_text("", encoding="utf-8")
     # 同期先の保護は依存パッケージ集合によらない。実uvの同期・削除は無依存のprojectで通す。
     (project / "pyproject.toml").write_text(
-        '[project]\nname = "sync-root"\nversion = "0.0.0"\nrequires-python = ">=3.15"\n', encoding="utf-8"
+        '[project]\nname = "sync-root"\nversion = "0.0.0"\nrequires-python = ">=3.15"\n'
+        "[dependency-groups]\npytest-impact = []\n",
+        encoding="utf-8",
     )
     (project / "agent-toolkit" / "scripts").mkdir(parents=True)
     lock_environment = host_environ()

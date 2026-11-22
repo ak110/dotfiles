@@ -889,7 +889,7 @@ def test_codex_target_without_rollout_waits_until_record_exists(tmp_path, monkey
         target_repo="https://example.com/team/repo",
     )
     with monkeypatch.context() as hook:
-        hook.setattr(session_activity, "host_process", lambda: object())
+        hook.setattr(session_activity, "host_process", object)
         hook.setattr(run_skill_batch, "meta_auto_start_due", lambda **_: False)
         hook.setattr(run_skill_batch.subprocess, "Popen", lambda *_args, **_kw: pytest.fail("batchを起動した"))
         run_skill_batch.hook_request({"hook_event_name": "SessionEnd", "session_id": thread_id}, host="codex")

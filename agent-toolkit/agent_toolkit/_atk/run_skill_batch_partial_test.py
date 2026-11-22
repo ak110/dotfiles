@@ -199,7 +199,10 @@ def test_resume_does_not_consume_prepared_files_during_sweep(monkeypatch):
             "prepared": [{"session_id": "source", "work_dir": str(work_dir)}],
         }
     )
-    args = argparse.Namespace(run_id=path.stem, batch_manifest=str(path))
+    args = argparse.Namespace(
+        run_id=path.stem, batch_manifest=str(path), timeout=1, resume_record={}, skill="review-session", args=[]
+    )
+    monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
     monkeypatch.setattr(run_skill_batch, "_finish_batch", lambda _manifest, _path: 0)
     calls = []
 
@@ -208,9 +211,9 @@ def test_resume_does_not_consume_prepared_files_during_sweep(monkeypatch):
         return 0
 
     with sweep_lock.sweep_access(paths.temp_root(), paths.state_root(create=False)) as locked:
-        assert locked and run_skill_batch._resume_batch(args, execute) == 1
+        assert locked and run_skill_batch.dispatch(args, execute) == 1
         assert not calls
-    assert run_skill_batch._resume_batch(args, execute) == 0
+    assert run_skill_batch.dispatch(args, execute) == 0
     assert calls == ["{}\n"]
 
 

@@ -242,7 +242,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
 
             try:
                 resource_instructions = await run_file_operation(
-                    launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, engine, cwd
+                    launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, engine, cwd, starting=True
                 )
                 initial_documents = await run_file_operation(
                     self._startup_documents, startup_document, startup_inputs, engine, cwd
@@ -252,8 +252,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                     + "\n\n"
                     + wrap_delivery_body(launch_requests.with_startup_documents(prompt, initial_documents))
                 )
-                if engine == backends.CODEX_ENGINE:
-                    delivery_body += "\n\n" + launch_prompts.CODEX_COMPLETION_GUIDANCE
                 if await run_file_operation(
                     advice_request.advice_request_eligible,
                     parent_model,

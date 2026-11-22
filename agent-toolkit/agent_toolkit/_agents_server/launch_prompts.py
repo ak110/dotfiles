@@ -59,7 +59,7 @@ CODEX_COMPLETION_GUIDANCE = (
 
 EXPLORE_CAPABILITIES = (
     "explore: 割り当てた探索と確認を最後まで行う。対象成果物は読み取り専用。"
-    "全文読取と所在探索を完成条件で分け、長い出力は分割して必要な範囲を読み切る。"
+    "全文読取と所在探索を完成条件で分け、長い出力は分割し必要な範囲を末尾まで取得する。"
     "省略や未読を不在・件数・網羅性の根拠にしない。"
     "行数は取得単位の選択にだけ使い、本文の有無・内容・読了は読んだ本文で判定する。"
     "読む前に空かだけ確かめる場合はwc -cかtest -sを使う。"
@@ -237,17 +237,18 @@ def cli_runtime_instructions(plugin_root: pathlib.Path) -> str:
     )
 
 
-def plugin_resource_instructions(toolkit_root: pathlib.Path, host: str, project: str) -> str:
+def plugin_resource_instructions(toolkit_root: pathlib.Path, host: str, project: str, *, starting: bool = False) -> str:
     if not toolkit_root.is_dir() or not (toolkit_root / "skills").is_dir():
         raise plugin_roots.PluginRootError(f"agent-toolkitの実在するskillsを確認できません: {toolkit_root}")
     basics_root = plugin_roots.resolve_plugin_root("agent-basics", toolkit_root, host, project)
     # Claude以外はbackendが保持済みtoolkit rootを既に案内する。
     toolkit_notice = f"agent-toolkit plugin root: {toolkit_root}\n" if host == "claude" else ""
+    completion = "\n\n" + CODEX_COMPLETION_GUIDANCE if starting and host == "codex" else ""
     return _normative(
         toolkit_notice + f"agent-basics plugin root: {basics_root}\n"
         "`agent-basics:`で始まる品質資料はagent-basicsのroot、"
         "`agent-toolkit:`のスキルと実行基盤の内部資源はagent-toolkitのrootから読む。"
-        "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てない。",
+        "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てない。" + completion,
         kind="plugin-resources",
     )
 

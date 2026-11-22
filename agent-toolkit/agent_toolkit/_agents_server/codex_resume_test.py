@@ -474,8 +474,20 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
         )
 
         try:
-            with pytest.raises(TimeoutError, match="send_message timed out: thread-pending"):
-                await manager.send_message(session_id, "再開指示", timeout=0.01)
+            send_timeout = 42.0
+            timeout = asyncio.timeout
+            boundary = timeout(None)
+
+            async def expire_after_resume() -> None:
+                await asyncio.wait_for(client.resume_started.wait(), timeout=5)
+                boundary.reschedule(asyncio.get_running_loop().time())
+
+            with monkeypatch.context() as deadline:
+                deadline.setattr(asyncio, "timeout", lambda seconds: boundary if seconds == send_timeout else timeout(seconds))
+                async with asyncio.TaskGroup() as tasks:
+                    tasks.create_task(expire_after_resume())
+                    with pytest.raises(TimeoutError, match="send_message timed out: thread-pending"):
+                        await manager.send_message(session_id, "再開指示", timeout=send_timeout)
 
             response = await manager.wait()
             assert set(response) == {"session_id", "status", "progress", "elapsed_seconds"}
@@ -486,7 +498,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
             assert session_id not in manager.expired_sessions
 
             client.release_resume.set()
-            await asyncio.wait_for(client.resume_finished.wait(), timeout=0.1)
+            await asyncio.wait_for(client.resume_finished.wait(), timeout=5)
             assert [method for method, _params in client.requests] == ["config/read", "thread/read", "thread/resume"]
             response = await manager.send_message(session_id, "後続指示", timeout=1)
 

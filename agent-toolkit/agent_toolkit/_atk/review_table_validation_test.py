@@ -9,6 +9,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import review_table as table
+from agent_toolkit._atk.review_table_format import response_content
 from agent_toolkit._common import next_action
 from agent_toolkit._testing import review_bodies
 from agent_toolkit._testing.review_table_support import _RESPONSE_WITHOUT_SEARCH, _TRACK, _isolated_home
@@ -212,5 +213,5 @@ def test_respond_records_body_with_required_labels(
     assert exc_info.value.code == 0
     assert capsys.readouterr().out.startswith("成功: ")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row[column] == body
+    assert response_content(row[column]) == body
     assert row[11 - column] == ""

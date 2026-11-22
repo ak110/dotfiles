@@ -87,8 +87,17 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
             assert "if" not in job
             # JUnit XMLの保存だけは、pytestの失敗後も実行するため所有条件へ継続条件を加える。
             for step in real:
-                uploads = "upload-artifact@" in str(step.get("uses", ""))
-                assert step.get("if") == (_JUNIT_UPLOAD if uploads else _OWNS), step
+                action = str(step.get("uses", ""))
+                expected = _JUNIT_UPLOAD if "upload-artifact@" in action else _OWNS
+                if job_name == "pytest-root":
+                    if step.get("id") == "impact-history":
+                        expected += (
+                            " && github.event_name == 'push'"
+                            " && github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/master'"
+                        )
+                    elif action.startswith("actions/cache/save@"):
+                        expected += " && steps.pytest.outputs.impact_baseline == 'true'"
+                assert step.get("if") == expected, step
 
     version = _statusline_job(workflow_data)
     assert "needs" not in version

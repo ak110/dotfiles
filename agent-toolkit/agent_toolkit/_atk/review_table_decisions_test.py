@@ -25,7 +25,8 @@ def test_respond_records_decision_and_transfer(tmp_path: Path, maker: str) -> No
         atk.main(["review-table", "respond", str(path), "--row-id=2", f"--no-response-reason-file={reason}"], home=tmp_path)
     assert result.value.code == 0
     rows = review_table.read_rows(path)
-    assert rows == [legacy, [*pending[:6], body]]
+    assert len(rows) == 2 and rows[0] == legacy and rows[1][:6] == pending[:6]
+    assert review_table_format.response_content(rows[1][6]) == body
     assert review_table_format.response_state(rows[1]) == "transferred"
 
 
