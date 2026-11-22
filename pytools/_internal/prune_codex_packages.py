@@ -106,6 +106,8 @@ def _prune_package(root: pathlib.Path, result: PruneResult, *, windows: bool, dr
             continue
         if relative.parts:
             retained.setdefault(releases / relative.parts[0], []).append(f"使用中 pid {process.pid} ({process.role})")
+    if not windows:
+        _retain_running_bundled_executables(releases, retained, {process.pid for process in identified})
     result.retained.update(retained)
     for release in entries:
         if release in retained:
@@ -122,6 +124,28 @@ def _prune_package(root: pathlib.Path, result: PruneResult, *, windows: bool, dr
             result.failures.append(f"{release}の削除に失敗: {error}")
         else:
             result.removed.append(release)
+
+
+def _retain_running_bundled_executables(
+    releases: pathlib.Path, retained: dict[pathlib.Path, list[str]], already_checked: set[int]
+) -> None:
+    resolved_releases = releases.resolve()
+    for pid in psutil.pids():
+        if pid in already_checked:
+            continue
+        try:
+            executable = psutil.Process(pid).exe()
+        except psutil.NoSuchProcess, psutil.AccessDenied:
+            continue
+        if not executable:
+            continue
+        try:
+            # OSから取得した実行パスを使い、無関係な実行体のファイルシステムをたどらない。
+            relative = pathlib.Path(executable.removesuffix(" (deleted)")).relative_to(resolved_releases)
+        except ValueError:
+            continue
+        if len(relative.parts) > 1:
+            retained.setdefault(releases / relative.parts[0], []).append(f"同梱実行体を使用中 pid {pid}")
 
 
 def _selected_releases(root: pathlib.Path) -> dict[pathlib.Path, list[str]]:

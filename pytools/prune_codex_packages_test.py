@@ -75,6 +75,7 @@ def test_cli_retains_selected_and_live_releases(
         live.append(busy)
         selected.extend([current, migration, automatic])
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: tuple(processes))
+    monkeypatch.setattr(psutil, "pids", lambda: [])
     assert cli.main(["--dry-run"]) == 0
     assert all(path.is_dir() for path in obsolete)
     assert cli.main([]) == 0

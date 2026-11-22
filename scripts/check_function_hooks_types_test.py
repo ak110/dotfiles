@@ -28,6 +28,7 @@ def test_explicit_types_priority(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(check_function_hooks_types, "_bundled_types", bundled)
+    monkeypatch.setattr(check_function_hooks_types, "_claude_version", lambda: None)
     monkeypatch.setattr(check_function_hooks_types, "run_subprocess", run)
     assert check_function_hooks_types.main() == 0
 
@@ -129,9 +130,39 @@ def test_checks_all_modules_and_propagates_status(
         assert config["compilerOptions"]["allowImportingTsExtensions"]
         return subprocess.CompletedProcess(command, status, "", "")
 
+    monkeypatch.setattr(check_function_hooks_types, "_claude_version", lambda: None)
     monkeypatch.setattr(check_function_hooks_types, "run_subprocess", run)
     assert check_function_hooks_types.main() == status
     assert all(not path.exists() for path in settings)
+
+
+@pytest.mark.parametrize(
+    ("version", "expected", "warning"), [("2.1.310", "2.1.310", True), ("2.1.312", "2.1.312", False), (None, "版不明", False)]
+)
+def test_explicit_types_report_version_without_changing_compiler_status(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    version: str | None,
+    expected: str,
+    warning: bool,
+) -> None:
+    definition = tmp_path / "claude-code.d.ts"
+    definition.write_text(f"// Written by Claude Code {version}.\n" if version else "export {};", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check", "--types", str(definition)])
+    monkeypatch.setattr(check_function_hooks_types, "_claude_version", lambda: "2.1.312")
+    monkeypatch.setattr(
+        check_function_hooks_types, "run_subprocess", lambda command, **_kwargs: subprocess.CompletedProcess(command, 1, "", "")
+    )
+    assert check_function_hooks_types.main() == 1
+    captured = capsys.readouterr()
+    assert f"明示した型: {expected}" in captured.out
+    assert "PATH上のClaude Code: 2.1.312" in captured.out
+    assert ("警告" in captured.err) is warning
+    if warning:
+        assert "指定された型で検査を続ける" in captured.err
+        assert "--types" in captured.err
 
 
 @pytest.mark.parametrize("explicit", [False, True])

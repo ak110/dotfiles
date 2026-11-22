@@ -345,7 +345,15 @@ fast = true
 type = "linter"
 path = "uv"
 args = ["run", "--frozen", "python", "scripts/check_function_hooks_types.py"]
-targets = ["agent-toolkit/hooks/*.ts", "agent-toolkit/hooks/*.tsx", "pyproject.toml", "scripts/check_function_hooks_types.py"]
+targets = ["agent-toolkit/hooks/*.ts", "agent-toolkit/hooks/*.tsx", "scripts/check_function_hooks_types.py"]
+fast = true
+pass-filenames = false
+
+[tool.pyfltr.custom-commands.managed-claude-settings-removals]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "python", "scripts/check_managed_claude_settings_removals.py"]
+targets = ["share/claude_settings_json_managed*.json", "pytools/_internal/update_claude_settings.py", "scripts/check_managed_claude_settings_removals.py"]
 fast = true
 pass-filenames = false
 

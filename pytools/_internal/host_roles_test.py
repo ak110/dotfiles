@@ -38,9 +38,9 @@ def test_media_remote_matches_previous_hostname_comparison(hostname: str) -> Non
     assert host_roles.has_role(host_roles.MEDIA_REMOTE, hostname=hostname) is _previous_is_media_remote_target(hostname)
 
 
-def test_euryale_container_is_not_linux_server() -> None:
-    """`euryale-container`は全プロジェクトの開発環境だが、自動更新とatk serveの対象に含めない。"""
-    assert host_roles.has_role("all_projects", hostname="euryale-container") is True
+def test_euryale_container_has_no_development_or_linux_server_role() -> None:
+    """廃止したホスト名を開発環境やLinuxサーバーとして扱わない。"""
+    assert host_roles.has_role("all_projects", hostname="euryale-container") is False
     assert host_roles.is_linux_server(hostname="euryale-container", platform="linux") is False
 
 

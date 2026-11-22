@@ -25,7 +25,15 @@ import sys
 import typing
 from pathlib import Path
 
-from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common, setup_mise_binary, winutils
+from pytools._internal import (
+    cleanup_user_path,
+    common,
+    log_format,
+    post_apply_outcome,
+    setup_cli_common,
+    setup_mise_binary,
+    winutils,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +89,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             continue
         removals.setdefault((removal.kind, removal.target), (removal, name))
     changed = False
+    removed_winget_dirs: list[Path] = []
     for removal, name in removals.values():
         # 削除後に同じ名前のコマンドが無くならないよう、miseが同じ名前を解決できる場合だけ削除する。
         if not _mise_resolves(mise, name):
@@ -92,7 +101,21 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 )
             )
             continue
-        changed |= _remove(removal, mise)
+        if _remove(removal, mise):
+            changed = True
+            if removal.kind == "winget" and layout.winget_packages is not None:
+                packages = common.safe_resolve(layout.winget_packages)
+                relative = removal.location.relative_to(packages)
+                removed_winget_dirs.append(packages / relative.parts[0])
+    if removed_winget_dirs:
+        try:
+            cleanup_user_path.remove_winget_package_paths(removed_winget_dirs)
+        except OSError as error:
+            return post_apply_outcome.PostApplyOutcome(
+                changed=changed,
+                failure=f"削除済みWinGetパッケージのユーザーPATHを整理できない: {error}",
+                next_action="ユーザーPATHの更新権限を確認してからupdate-dotfilesを再実行する",
+            )
     return post_apply_outcome.PostApplyOutcome(changed=changed)
 
 
