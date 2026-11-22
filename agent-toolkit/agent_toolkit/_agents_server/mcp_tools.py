@@ -121,6 +121,14 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("呼出元会話を解決できない。Claude CodeでMCPへ再接続する。")
     try:
         return await function_hook_requests.request(identifier, operation, inputs)
+    except function_hook_requests.HookRequestRejected as error:
+        if operation == "send_to_user":
+            next_action = _UI_UNAVAILABLE_NEXT_ACTIONS[operation]["claude"]
+        elif operation == "apply_runtime_changes":
+            next_action = "再予約も手動反映もせずに現在のターンを終え、先行の予約の結果の通知を待つ"
+        else:
+            raise
+        raise ActionableError(str(error), next_action=next_action) from error
     except TimeoutError as error:
         host = "codex" if manager.launcher_is_codex else "claude"
         raise ActionableError(str(error), next_action=_UI_UNAVAILABLE_NEXT_ACTIONS[operation][host]) from error

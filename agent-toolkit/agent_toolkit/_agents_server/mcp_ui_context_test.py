@@ -173,3 +173,32 @@ async def test_runtime_changes_without_conversation_mod_returns_host_recovery(
     assert "成功として扱わない" in message and "予約" in message
     assert all(text in message for text in expected) and absent not in message
     assert "`list`か`show`" not in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "inputs", "expected"),
+    [
+        ("send_to_user", {"message": "本文"}, "同じ本文を最終応答に書く"),
+        ("apply_runtime_changes", {"targets": ["agents_server"]}, "現在のターンを終え、先行の予約の結果の通知を待つ"),
+    ],
+)
+async def test_conversation_mod_rejection_returns_operation_recovery(
+    monkeypatch: pytest.MonkeyPatch, operation: str, inputs: dict[str, object], expected: str
+) -> None:
+    """会話内modが拒否した理由と、引数の修正ではない回復操作を返す。"""
+    from agent_toolkit._agents_server.manager import AgentsServerManager  # pylint: disable=import-outside-toplevel
+
+    manager = AgentsServerManager(None, launcher_environment={})
+    monkeypatch.setattr(manager, "launcher_session_id", lambda: "launcher-main")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    monkeypatch.setattr(
+        function_hook_requests, "request", AsyncMock(side_effect=function_hook_requests.HookRequestRejected("modの拒否理由"))
+    )
+    with pytest.raises(ToolError) as raised:
+        await mcp_tools.mcp.call_tool(operation, inputs)
+    message = str(raised.value)
+    assert "modの拒否理由" in message and expected in message
+    assert "引数の受理形式" not in message
