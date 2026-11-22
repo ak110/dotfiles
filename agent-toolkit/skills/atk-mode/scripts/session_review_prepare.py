@@ -99,7 +99,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="引き継ぎ用の会話の流れと原本範囲を保存する。全量分析・候補文書・統計・failure ledgerは生成・更新しない。",
     )
-    parser.add_argument("--after", metavar="PATH", help="前回のscope JSON。処理済み位置より後だけをbatchの分析対象にする。")
+    extent = parser.add_mutually_exclusive_group()
+    extent.add_argument("--after", metavar="PATH", help="前回範囲に使うscope JSONを明示する。")
+    extent.add_argument("--full", action="store_true", help="前回確定済みの範囲を使わず全量を分析する。")
     parser.add_argument("--conversation-window", action="store_true", help="会話を少量表示する。候補・統計は更新しない。")
     parser.add_argument(
         "--conversation-digest",
@@ -343,8 +345,13 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             session_arguments.extend(["--opencode-db", str(pathlib.Path(args.opencode_db).expanduser().resolve())])
     else:
         session_arguments = ["--codex-thread-id", args.codex_thread_id]
-    if args.after is not None:
-        session_arguments.extend(["--after", args.after])
+    lightweight = args.conversation_only or args.conversation_window or args.conversation_digest
+    after = args.after
+    if after is None and not args.full and not lightweight:
+        previous = session_review.previous_scope(identity)
+        after = str(previous) if previous is not None else None
+    if after is not None:
+        session_arguments.extend(["--after", after])
     if args.allow_partial_records:
         session_arguments.append("--allow-partial-records")
     bundle_dir = work_dir / "bundle"
@@ -352,7 +359,6 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     source_path = bundle_dir / "conversation-source.json"
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     observed_at = current.astimezone(datetime.UTC).isoformat()
-    lightweight = args.conversation_only or args.conversation_window or args.conversation_digest
     conversation_output: list[dict[str, Any]] = []
     if args.conversation_after is not None:
         try:

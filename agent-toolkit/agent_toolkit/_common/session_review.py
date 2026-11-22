@@ -795,9 +795,32 @@ def sweep(*, now: float) -> None:
         launch_log = directory() / "launch.log"
         if not referenced and launch_log.exists() and now - launch_log.stat().st_mtime > 30 * 24 * 60 * 60:
             launch_log.unlink()
-        for path in (directory() / "reviewed").glob("*.json"):
-            value = read(path)
-            if path.stem not in referenced and all(
-                not pathlib.Path(item["path"]).exists() for item in value["records"].values()
-            ):
-                path.unlink()
+        _sweep_reviewed(referenced)
+
+
+def sweep_reviewed(*, now: float) -> None:
+    """単発の範囲確定後に処理済み記録だけを回収し、batchの状態は変更しない。"""
+    with locked():
+        referenced = {target["key"] for target in pending()}
+        for path in (directory() / "runs").glob("*.json"):
+            try:
+                manifest = read(path)
+                # 旧形式の完了済みbundleも、batchの回収まで成功範囲を参照する。
+                if manifest["status"] != "resolved":
+                    referenced.update(target["key"] for target in manifest["targets"])
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise ValueError(f"batchの実行記録を確認できない: {path}: {error}") from error
+        _sweep_reviewed(referenced, expired_before=now - 30 * 24 * 60 * 60)
+
+
+def _sweep_reviewed(referenced: set[str], *, expired_before: float | None = None) -> None:
+    for path in (directory() / "reviewed").glob("*.json"):
+        if path.stem in referenced:
+            continue
+        value = read(path)
+        if (
+            expired_before is not None
+            and path.stat().st_mtime < expired_before
+            or all(not pathlib.Path(item["path"]).exists() for item in value["records"].values())
+        ):
+            path.unlink()

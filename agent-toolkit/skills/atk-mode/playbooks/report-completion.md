@@ -108,8 +108,8 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    送達後に実際の新しい問題が分かった場合は、その問題を調べて処置し、既存の報告用UWIと報告を更新する（再検証はその問題に要る範囲に限る）。
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 
-振り返りは`/atk-mode review-session batch`が別に処理するので、本書の工程と送達の条件の外に置く。
-手動の`/atk-mode review-session`は独立した依頼として扱う。
+区切りやセッション終了時の単発の振り返りは、`agent-toolkit:atk-mode/playbooks/review-session.md`に従い、本書の工程と送達の条件とは分ける。
+batchによる未処理セッションの回収は別に行う。
 
 ## 常時稼働サーバーへの反映
 

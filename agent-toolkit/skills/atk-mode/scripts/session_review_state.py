@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import sys
+import time
 
 from agent_toolkit._common import session_review
 
@@ -26,6 +27,15 @@ def main(argv: list[str] | None = None) -> int:
             result = {"pending_count": len(targets), "targets": targets}
         elif args.command == "complete":
             result = session_review.complete(session_review.read(pathlib.Path(args.prepared)))
+            try:
+                session_review.sweep_reviewed(now=time.time())
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                # 範囲の確定は完了済みなので、回収の診断を成功JSONに混ぜない。
+                print(
+                    f"警告: 処理済み範囲の回収を保留: {error}。保存物の内容とアクセス権を確かめ、"
+                    "原因を直して session-review-state complete を再実行する",
+                    file=sys.stderr,
+                )
         else:
             value = os.environ.get(session_review.BATCH_ENV)
             if not value:

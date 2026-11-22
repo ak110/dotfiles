@@ -26,9 +26,10 @@ AWIの登録や既存AWIの存在は起票の証拠として扱い、原因の�
 
 ## 起動するエージェント
 
-- 手動の振り返りは、現在のセッションを統括するメインが起動する。
+- 作業の区切りやセッションの終了前には、そのセッションのメインが単発の振り返りを起動する。
+  `process-loop`の区切りは、巡回の手順に従う。
 - 委譲先は振り返りを起動せず、観測した事象と調査結果を委譲元へ返す。
-- 各セッションの終了時の振り返りは、SessionStartが登録した待ちから、batchの担当が非活動の時にまとめて処理する。
+- 残ったセッションの振り返りは、SessionStartが登録した待ちから、batchの担当が非活動の時にまとめて処理する。
   中断、利用上限、未再開の記録も、最終報告の有無によらず、待ちと実際に処理した範囲で扱う。
 - 作業完了報告、公開、ホストの停止は元の作業のメインが担い、振り返りとは独立に進める。
 - 再発防止策のAWIの起草と登録は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の付随型でWI投入担当へ委譲する（`source: session-review`）。
@@ -50,6 +51,9 @@ atk run-script session-review-prepare -- --transcript <transcriptの絶対パス
 atk run-script session-review-prepare -- --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
 atk run-script session-review-prepare -- --opencode-session-id <session ID> --target-repo <対象リポジトリの絶対パス>
 ```
+
+前回の振り返りで範囲を確定していれば、その位置より後だけを分析する。
+全量を再分析する場合は `--full`、前回範囲のファイルを指定する場合は `--after <scope JSONの絶対パス>` を渡す。
 
 OpenCodeの記録の所在を明示する時は`--opencode-db <SQLiteの絶対パス>`を足す。
 OpenCodeの記録位置（line）はメッセージとパートの並びに基づく論理位置であり、元のデータベースが更新されるとずれるので、証拠は同じbundleから読む。

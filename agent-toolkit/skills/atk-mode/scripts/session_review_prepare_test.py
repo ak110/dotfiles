@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -11,7 +12,8 @@ import subprocess
 import pytest
 import session_review_evidence as evidence
 import session_review_prepare as prepare
-from agent_toolkit._common import response_language_check, session_registry
+import session_review_state
+from agent_toolkit._common import response_language_check, session_registry, session_review
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import session_evidence_support as support
 from agent_toolkit._testing.session_review_prepare_support import (
@@ -502,3 +504,54 @@ def test_prepare_reports_missing_items(
     assert captured.out == ""
     assert captured.err.splitlines()[0] == "不足: evidence_script"
     assert captured.err.splitlines()[1].startswith("次の操作: `atk run-script session-review-prepare --")
+
+
+def test_default_review_uses_completed_scope_and_full_ignores_it(tmp_path, capsys):
+    """同じ記録の追記だけを通常の単発振り返りへ渡す。"""
+    transcript = tmp_path / "session.jsonl"
+    initial = support.timestamped_entry("2026-09-06T12:00:00Z", "初回だけの発話")
+    appended = support.timestamped_entry("2026-09-06T12:01:00Z", "追記した発話")
+    support.write_jsonl(transcript, [initial])
+
+    def run(name: str, *options: str) -> tuple[str, str]:
+        work_dir = tmp_path / name
+        work_dir.mkdir()
+        assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir), *options], now=_FIXED_NOW) == 0
+        return capsys.readouterr().out, (work_dir / "conversation.md").read_text(encoding="utf-8")
+
+    initial_result, first = run("first")
+    assert "初回だけの発話" in first
+    prepared = tmp_path / "prepared.json"
+    prepared.write_text(initial_result, encoding="utf-8")
+
+    prepared_scope = pathlib.Path(json.loads(initial_result)["scope_path"])
+    reviewed = session_review.directory() / "reviewed"
+    reviewed.mkdir(exist_ok=True, parents=True)
+    expired = reviewed / "expired.json"
+    expired.write_bytes(prepared_scope.read_bytes())
+    os.utime(expired, (1_700_000_000, 1_700_000_000))
+    orphan_scope = session_review.read(prepared_scope)
+    for entry in orphan_scope["records"].values():
+        entry["path"] = str(tmp_path / "missing.jsonl")
+    orphan = reviewed / "orphan.json"
+    session_review.write(orphan, orphan_scope)
+    assert session_review_state.main(["complete", "--prepared", str(prepared)]) == 0
+    assert not orphan.exists()
+    assert not expired.exists()
+    capsys.readouterr()
+
+    support.write_jsonl(transcript, [initial, appended])
+    _, incremental = run("incremental")
+    assert "追記した発話" in incremental
+    assert "初回だけの発話" not in incremental
+    _, full = run("full", "--full")
+    assert "初回だけの発話" in full
+    assert "追記した発話" in full
+
+    broken = session_review.directory() / "runs" / "broken.json"
+    broken.write_text("{", encoding="utf-8")
+    assert session_review_state.main(["complete", "--prepared", str(prepared)]) == 0
+    result = capsys.readouterr()
+    assert json.loads(result.out)["session_id"] == transcript.stem
+    assert str(broken) in result.err
+    assert "session-review-state complete" in result.err

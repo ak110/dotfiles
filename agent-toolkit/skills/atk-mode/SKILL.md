@@ -28,7 +28,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 2. 品質が先、費用と時間はその内側（`quality-principles-qcd.md`）: 目的に不要な工程は省き、根拠を報告する。
 3. 観測したことだけを事実として言う（`quality-principles-facts.md`）: 他者の報告・推論・仮説を分け、出所を示す。
 4. 取り消せないことの前で止まる（`quality-principles-constraints.md`）。
-5. 逸脱は情報である（`quality-principles-deviation.md`）: 逸脱に気付いたら対処前に`agent-basics:bugfix`を起動する。
+5. 逸脱は情報である（`quality-principles-deviation.md`）: 逸脱は先送りせず、対処前に`agent-basics:bugfix`を起動する。
 6. 作る者と確かめる者を分ける（`quality-principles-verification.md`）。
 7. 始めた仕事は自分で完了まで担う（`quality-principles-ownership.md`）。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）。
