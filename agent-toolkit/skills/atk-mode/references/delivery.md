@@ -131,7 +131,5 @@ detected ...
 ## 起動案内と進捗通知
 
 会話の開始、`clear`、会話の圧縮の時には、入口`agent-toolkit:atk-mode`の起動を求める案内が届くので、案内に従って起動する。
-進捗のセルフチェック通知（`source="progress-self-check"`）は、呼出主体ごとに30分間隔で届く点検の契機である。
-受けた主体は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「進捗点検」に従って点検する。
-比較に使う情報は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「成果物側の観測」に従う。
+進捗点検通知（`source="progress-self-check"`）を受けた主体は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「進捗点検」に従う。
 委譲元は点検ごとの一律の受領の返答や再照会を求めず、ユーザーへの送達は本書「手段の選択」に従う。

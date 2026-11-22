@@ -90,11 +90,12 @@ def test_scope_review_precedes_delivery_and_is_independent_per_decision(tool, fi
     assert reason(first) is None
     (work_dir / "work-contract.md").write_text(
         "- 「複雑な対処はしない」。配備と再起動に限る。コード実行の転送方式には適用しない。 `scope-review.jsonl:1`\n"
-        "- 「文字起こしツール」は機能内部のみ。公開は対象外。 `scope-review.jsonl:2`\n",
+        "- 適用対象: 文字起こしツール。除外: 公開する操作。公開は対象外。 `scope-review.jsonl:2`\n",
         encoding="utf-8",
     )
     assert reason("検証の終了を確認した。") is None
     assert reason("文字起こしツールのテストが通りました。") is None
+    assert reason("整理のため読んだ箇所は scope-review.jsonl:1 です。") is None
     first_notice = reason(first) or ""
     assert "まだ送信していない" in first_notice
     assert "複雑な対処はしない、制限として扱う。" in first_notice and offers[1] not in first_notice

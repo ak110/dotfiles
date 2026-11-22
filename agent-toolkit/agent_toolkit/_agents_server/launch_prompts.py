@@ -51,22 +51,26 @@ ROLE_HEADINGS: dict[LaunchKind, str] = {"delegate": "通常の委譲", "explore"
 RESULT_CONTRACT_START = "<!-- subagent-result-contract:start -->"
 RESULT_CONTRACT_END = "<!-- subagent-result-contract:end -->"
 
+CODEX_COMPLETION_GUIDANCE = (
+    "許可された次の操作があるなら提案で止めず、要求を満たす検証まで行え。"
+    "戻せる選択は前提を短く示して進め、本人の判断・認可か、担当内で補えない外部の前提を委譲元へ渡せ。"
+)
+
 
 EXPLORE_CAPABILITIES = (
-    "explore: 対象成果物は読み取り専用。大きな検索結果は条件の絞込みか分割取得で必要範囲を最後まで読み、"
+    "explore: 割り当てた探索と確認を最後まで行う。対象成果物は読み取り専用。"
+    "全文読取と所在探索を完成条件で分け、長い出力は分割して必要な範囲を読み切る。"
     "省略や未読を不在・件数・網羅性の根拠にしない。"
-    "完成条件から全文読取と所在探索を分け、割当範囲の未読・未走査は担当内で完了する。"
-    "切り詰め・保存出力は行範囲を分けて最後まで読む。"
     "行数は取得単位の選択にだけ使い、本文の有無・内容・読了は読んだ本文で判定する。"
     "読む前に空かだけ確かめる場合はwc -cかtest -sを使う。"
     "wc -lは改行文字の数であり、改行で終わらない最終行を数えない。"
     "最後の取得範囲はsed -n '<開始行>,$p' -- <絶対パス>のように末尾まで指定する。"
-    "権限・到達不能・入力不足など自身で解消できない未確認だけを範囲と理由付きで返す。環境作成・権限拡大・再委譲は禁止。"
+    "外部の前提が不足する単位は、試した許可済みの代替手段と各結果を返す。環境作成・権限拡大・再委譲は禁止。"
     "確定した操作はshell、自由な判断を伴う書込はdelegateへ渡す。"
     "shellとdelegateは書込を拒否せず、対象と許可する操作は委譲元が定める。"
     "全backendでGitの読取照会（git grep・git show・git diff）、本文・属性検索（rg・find）、"
     "標準の読取（ハーネスのRead、cat、sed -n '<開始行>,<終了行>p' -- <絶対パス>、JSONはjq）と"
-    "pyfltr grepなどの読取MCPを使える。長い本文は行範囲を分けて最後まで読む。"
+    "pyfltr grepなどの読取MCPを使える。"
     "cat・sed・jqはPOSIXシェル向け。シェルを指定しないコマンドがPowerShellで動くなら全文は"
     "Get-Content -LiteralPath '<絶対パス>' -Encoding utf8 -ErrorAction Stopで読み、"
     "行範囲には | Select-Object -Skip <開始行-1> -First <行数>を続ける。"

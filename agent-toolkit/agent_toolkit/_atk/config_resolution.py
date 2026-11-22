@@ -28,7 +28,7 @@ def connections_configured(engine: str) -> bool:
     return any(runtime_environment.environment().get(config_settings.config_env_name(key), "") or key in stored for key in keys)
 
 
-def resolve_mutable_setting(key: str) -> str:
+def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
     """変更可能な設定は環境変数を優先し、無ければ保存値、どちらも無ければ初期値を使う。"""
     if key not in config_settings.MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
@@ -36,7 +36,11 @@ def resolve_mutable_setting(key: str) -> str:
     config_migration.migrate_legacy_settings()
     env_name = config_settings.config_env_name(key)
     env_value = runtime_environment.environment().get(env_name, "")
-    value = config_settings.raw_mutable_setting(key)
+    value = (
+        config_settings.raw_mutable_setting(key)
+        if fallback is None
+        else config_settings.raw_mutable_setting(key, fallback=fallback)
+    )
     if not env_value:
         value = temporary_settings().get(key, value)
     try:

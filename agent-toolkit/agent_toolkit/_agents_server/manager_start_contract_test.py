@@ -34,6 +34,44 @@ from agent_toolkit._testing import agents_server_support
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize(
+    ("role", "category", "exec_lane"),
+    [
+        ("exec.subagent.md", "レーン担当", True),
+        ("exec.subagent.md", "CI修正担当", False),
+        ("add-wi.subagent.md", "レーン担当", False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_default_effort_selection_recognizes_only_the_exec_lane_role(tmp_path, monkeypatch, role, category, exec_lane):
+    async def check_plugin_commands(_cwd):
+        return None
+
+    monkeypatch.setattr(launch_requests, "check_plugin_commands", check_plugin_commands)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "false")
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", raising=False)
+    async with manager.AgentsServerManager(None) as current:
+
+        async def codex_candidate(stage, **kwargs):
+            selected = kwargs.get("exec_lane", False)
+            assert stage == "execute" and selected is exec_lane
+            candidates = atk_config.parse_unresolved_model_candidates(stage, exec_lane=selected)
+            return [(engine, "test", effort) for engine, _, effort in candidates if engine == "codex"], {}
+
+        agents_server_support.install_backend(current, "codex", ObservedBackend(current.sessions, "codex"))
+        monkeypatch.setattr(current, "_startup_documents", lambda *_args: [])
+        monkeypatch.setattr(current, "_resolve_start_candidates", codex_candidate)
+        response = await current.start(
+            "execute",
+            "処理",
+            str(tmp_path),
+            startup_document=tmp_path / role,
+            startup_inputs={"担当種別": category},
+        )
+        assert response["engine"] == "codex"
+        assert current.sessions[response["session_id"]].effort == ("medium" if exec_lane else "low")
+
+
 @pytest.mark.parametrize("first_engine,selected_engine", [("codex", "claude"), ("claude", "codex")])
 @pytest.mark.asyncio
 async def test_advice_request_notice_follows_selected_candidate(tmp_path, first_engine, selected_engine):
@@ -61,6 +99,8 @@ async def test_advice_request_notice_follows_selected_candidate(tmp_path, first_
         marker = 'kind="advice-request"'
         assert (marker in unavailable.prompts[0]) is (first_engine != "codex")
         assert (marker in selected.prompts[0]) is (selected_engine != "codex")
+        completion = "許可された次の操作があるなら提案で止めず"
+        assert (completion in selected.prompts[0]) is (selected_engine == "codex")
         assert response["engine"] == selected_engine
         if selected_engine != "codex":
             assert "agent-toolkit:atk-mode/playbooks/advice-request.md" in selected.prompts[0]

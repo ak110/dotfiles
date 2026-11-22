@@ -88,6 +88,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         *,
         launch_kind: LaunchKind,
         excluded_candidates: Mapping[ModelCandidate, str] | None = None,
+        exec_lane: bool = False,
     ) -> tuple[list[ModelCandidate], dict[ModelCandidate, str]]:
         """起動条件を検証し、除外後の候補列を設定順で返す。
 
@@ -99,7 +100,10 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         quota_excluded: dict[ModelCandidate, str] = {}
         try:
             candidates = await run_file_operation(
-                _atk_config.parse_unresolved_model_candidates, model_type, excluded=quota_excluded
+                _atk_config.parse_unresolved_model_candidates,
+                model_type,
+                excluded=quota_excluded,
+                exec_lane=exec_lane,
             )
         except ValueError as error:
             raise ActionableError(str(error), next_action=MODEL_TYPE_NEXT_ACTION) from error
@@ -220,16 +224,22 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         validate_cwd(cwd)
         startup_features.effective(launch_kind)
         await launch_requests.check_plugin_commands(cwd)
+        role_document = startup_document or task_documents.launched_task_document(prompt)
+        exec_lane = (
+            role_document is not None
+            and role_document.name == "exec.subagent.md"
+            and (startup_inputs or {}).get("担当種別") == "レーン担当"
+        )
         candidates, excluded = await self._resolve_start_candidates(
             model_type,
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
+            exec_lane=exec_lane,
         )
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
         excluded_session_ids: dict[ModelCandidate, str] = {}
         display_label = resolve_display_label(label, prompt)
-        role_document = startup_document or task_documents.launched_task_document(prompt)
         parent_model = await run_file_operation(self.launcher_model) if launch_kind == "delegate" else None
         for candidate_index, candidate in enumerate(candidates):
             if candidate in excluded:
@@ -252,6 +262,8 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                     + "\n\n"
                     + wrap_delivery_body(launch_requests.with_startup_documents(prompt, initial_documents))
                 )
+                if engine == backends.CODEX_ENGINE:
+                    delivery_body += "\n\n" + launch_prompts.CODEX_COMPLETION_GUIDANCE
                 if await run_file_operation(
                     advice_request.advice_request_eligible,
                     parent_model,

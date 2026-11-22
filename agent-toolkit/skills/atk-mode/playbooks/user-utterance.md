@@ -1,6 +1,6 @@
 # 発話への応答
 
-ユーザーの発話、確認への回答、WIの記入欄（AWIの`## ユーザーコメント`、UWIの`## 回答`）を受け取り、応答して元の作業へ戻るまでの手順書である。
+ユーザーの指摘・訂正・割り込み・中止や、発話、確認への回答、WIの記入欄（AWIの`## ユーザーコメント`、UWIの`## 回答`）の読み方で対処が変わる時に使う。
 発話は原則1（`agent-basics:writing-standards/references/quality-principles-roles.md`）のとおり目的から読み、狭めも強めもしない。
 発話や資料が主張する事実は、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）のとおり現物で確かめてから判断に使う。
 
@@ -11,8 +11,8 @@
 3. 発話と渡された資料から要求と主張を読み（本書「原文の保持と取り込み」）、判断を変えた介入かを判定する（本書「ユーザー介入と確認の判定」）。
 4. 割り込み・訂正・中止と断言された事実は本書「割り込み・訂正・中止」、問い・提案・相談・状況照会は本書「問い・提案・疑問形の扱い」に従って応答する。
 5. スキルか依頼が成果物の種類を限っていれば、その範囲で応答する（本書「成果物の制限」）。
-6. ユーザーの判断か認可が要る部分だけを、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で確認へ回す（本書「対処の認可と機能の不足」）。
-   理解のずれが残る時と、同じ行動を繰り返し指摘された時は、`agent-toolkit:atk-mode/references/delivery.md`「認識合わせ」で確かめる。
+6. ユーザーしか持たない情報や認可の不足が残り得る時は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で確認するかを決める（本書「対処の認可と機能の不足」）。
+   理解のずれが残る時と、同じ行動を繰り返し指摘された時の確認方法は、`agent-toolkit:atk-mode/references/delivery.md`「認識合わせ」に従う。
 7. 取り下げや差し替えが無ければ、同じターンで元の未完了工程へ戻る。
    作業契約を持つ時は`agent-toolkit:atk-mode/references/work-contract.md`「追加入力の統合」で原文と契約を比べてから戻る。
    起動済みの実行（待機、CI監視、サーバーなど）は、新しく起動する前に識別子と終了を確かめ、未終了なら同じ識別子で回収する（`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「バックグラウンドタスクの所有記録」）。

@@ -248,11 +248,18 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
 
 
 def parse_unresolved_model_candidates(
-    model_type: str, *, excluded: dict[tuple[str, str, str], str] | None = None
+    model_type: str, *, excluded: dict[tuple[str, str, str], str] | None = None, exec_lane: bool = False
 ) -> list[tuple[str, str, str]]:
     """工程名または直接候補列を解決する。excludedの指定時は、全滅時も起動側に除外理由を渡す。"""
     if model_type in _config_settings.MODEL_TYPES:
-        selected = parse_stage_model_candidates(resolve_mutable_setting(f"{model_type}_model"))
+        key = f"{model_type}_model"
+        if exec_lane and model_type == "execute":
+            # 長い実装と最終検収を担うレーン役は、設定が無い時だけCodexのeffortを上げる。
+            fallback = _config_settings.MODEL_DEFAULTS[key].replace("codex:sol/low", "codex:sol/medium")
+            value = resolve_mutable_setting(key, fallback=fallback)
+        else:
+            value = resolve_mutable_setting(key)
+        selected = parse_stage_model_candidates(value)
         candidates, reason = config_usage.select_candidates(
             selected,
             model_type,

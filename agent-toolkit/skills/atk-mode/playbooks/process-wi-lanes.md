@@ -103,6 +103,7 @@
 ## 統合とAWI終了
 
 1. 統合前の確認は`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」に従う。
+   レーン担当が完遂できる未達は、`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「終了と報告内容の確認」に従って同じ担当へ戻す。
    レーン担当へ任せる統合の指示と、メイン自身がCLIを実行する場合の検収は`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/playbooks/lane-receipt.md`に従う。
    内部の群の焦点の検証は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」に従う。
    内部の群の独立文脈レビューは`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`に従う。

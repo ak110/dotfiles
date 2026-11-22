@@ -548,13 +548,13 @@ def mutable_setting_default(key: str) -> str:
     return MUTABLE_KEY_DEFAULTS[key]
 
 
-def raw_mutable_setting(key: str) -> str:
+def raw_mutable_setting(key: str, *, fallback: str | None = None) -> str:
     """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
     default = mutable_setting_default(key)
     explicit = runtime_environment.environment().get(config_env_name(key), "")
     if explicit:
         return explicit
-    return load_config().get(key, default)
+    return load_config().get(key, default if fallback is None else fallback)
 
 
 def normalize_setting(key: str, value: str) -> str:

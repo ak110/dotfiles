@@ -48,6 +48,7 @@ _QUOTED_TERM = re.compile(r"「([^」\n]+)」|`([^`\n]+)`")
 _EXCLUDED_ACTION = re.compile(r"(?:^|[。、： \s])([^。、\s]{2,12})は対象外")
 _DECISION_CUE = re.compile(r"(?:決定|方針|指示|合意|取り決め)(?=に従|を[^。]{0,24}適用|を根拠|という)")
 _DECLARED_SUBJECT = re.compile(r"(?:^|[。、： ]|^- )([^。、： ]{4,30})は(?=[^。]*(?:に限|のみ|だけ))")
+_SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
 
 
 def scope_review_before_send(session_id: str, raw_transcript: object, message: str, *, actor: str) -> str | None:
@@ -70,8 +71,12 @@ def scope_review_before_send(session_id: str, raw_transcript: object, message: s
                     for match in _QUOTED_TERM.finditer(_RECORD_REFERENCE.sub("", decision))
                     if len(term := match[1] or match[2]) >= 4
                 }
-                terms.update(_DECLARED_SUBJECT.findall(_RECORD_REFERENCE.sub("", decision)))
-                if loc[0].strip("`") in message or _applies_decision(message, decision, terms):
+                line = _RECORD_REFERENCE.sub("", decision)
+                terms.update(_DECLARED_SUBJECT.findall(line))
+                terms.update(_SCOPE_FIELD.findall(line))
+                reference = re.escape(loc[0].strip("`"))
+                cited = re.search(reference + r"`?\s*(?:を根拠|に従|の決定|の方針)", message)
+                if cited or _applies_decision(message, decision, terms):
                     key = hashlib.sha256(f"{loc[0]}\n{decision.strip()}".encode()).hexdigest()
                     candidates.setdefault(int(number), {})[key] = (decision.strip(), terms)
     except OSError, UnicodeError:

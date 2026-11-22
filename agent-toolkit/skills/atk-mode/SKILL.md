@@ -79,14 +79,16 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
 一般作業も操作・判断前に該当資料を通読し、スキルを起動する。
+すでに取り込んだ発話は要求の原本や現行の作業契約で確かめ、発話の読み直しで判断が変わる時だけ発話への応答手順を読み直す。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |
 | 確認の要否、承認の範囲、確認文 | `playbooks/confirmation.md` |
-| 発話の解釈、指摘・訂正・割り込み | `playbooks/user-utterance.md` |
+| ユーザーの指摘・訂正・割り込み・中止、発話やWIの記入欄の読み方で対処が変わる時 | `playbooks/user-utterance.md` |
 | 権限拒否、手順どおりに進められない時 | `playbooks/permission-denial.md` |
-| 確認・報告の手段、途中で送る報告 | `references/delivery.md` |
-| 途中報告、進捗点検、改善点の報告 | `playbooks/main-reporting.md` |
+| 報告を送るか、確認や報告をどう送るか、認識合わせを行うかを決める時 | `references/delivery.md` |
+| 途中経過・逸脱・改善点・稼働状況の報告、進捗点検、停止の回避策の共有、案の再提示、指摘・割り込み・是正要求を調べた後の回答、WIの質問への回答、一時エラー後の継続、委譲先の返却をユーザー確認へ回す時 | `playbooks/main-reporting.md` |
+| 作業契約の作成、追加の発話・工程の境界・会話の圧縮の後に目的と現行の要求を原本で確かめる時 | `references/work-contract.md`（採用した案の維持が目的になっていれば、縮小、撤回、代替案も比べる） |
 | WIの起草、保存と取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
 | WIの状態・依存・保留、由来と承認、回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
@@ -107,7 +109,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 ## 報告に含める項目
 
-回答・成果物は`playbooks/main-reporting.md`「ユーザー向け発話ルール」に従う。
+通常の説明・回答は文章の共通基準に従い、途中報告など表の条件に当たる時は`playbooks/main-reporting.md`「ユーザー向け発話ルール」も適用する。
 
 成果と到達状態、確認範囲（原則6で区分）、依頼外の変更・未達・見送りの理由、ユーザー判断事項、適用手順書を報告する。
 判断を変えた原則は名前と変えた選択を対で書く（読んだ原則だけ）。
