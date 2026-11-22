@@ -4,7 +4,6 @@ from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
-import json
 import pathlib
 import re
 from unittest.mock import AsyncMock
@@ -369,37 +368,6 @@ async def test_start_accepts_independent_wi_draft_review(tmp_path: pathlib.Path,
     assert "usage" not in manager.start.await_args.kwargs
 
 
-@pytest.mark.parametrize("model_type", [None, "chores_fast"])
-@pytest.mark.asyncio
-async def test_recurrence_self_check_public_start_keeps_review_usage(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, model_type: str | None
-) -> None:
-    """セルフチェックが宣言入力からexplore・中位で起動し、明示段位でもreview用途を保つ。"""
-    manager = TaskManager(start=AsyncMock(return_value={"session_id": "check", "status": "running", "label": "check"}))
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    params = {
-        "観点ファイル": json.dumps([str(tmp_path / "items.md")]),
-        "今回差分": str(tmp_path / "change.patch"),
-        "変更ファイル一覧": "example.py",
-        "対象worktree": str(tmp_path),
-        "未解決指摘": "なし",
-    }
-    await mcp_tools.start(str(tmp_path), subagent_md_path="recurrence-self-check", extra_params=params, model_type=model_type)
-    call = manager.start.await_args
-    assert call.args[0] == (model_type or "review")
-    assert "usage" not in call.kwargs
-    assert call.kwargs["launch_kind"] == "explore"
-    assert all(f"{key}: {value}" in call.args[1] for key, value in params.items())
-    manager.start.reset_mock()
-    with pytest.raises(ActionableError, match="未解決指摘"):
-        await mcp_tools.start(
-            str(tmp_path),
-            subagent_md_path="recurrence-self-check",
-            extra_params={key: value for key, value in params.items() if key != "未解決指摘"},
-        )
-    manager.start.assert_not_awaited()
-
-
 @pytest.mark.parametrize(
     ("role", "expected"),
     [
@@ -412,7 +380,6 @@ async def test_recurrence_self_check_public_start_keeps_review_usage(
         ("exec-review", "review"),
         ("usability-review", "review"),
         ("wi-draft-review", "review"),
-        ("recurrence-self-check", "review"),
         ("bulk-replace-review", "review_fast"),
         ("external-write-review", "review_fast"),
         ("reader-fit-review", "review_fast"),
@@ -420,7 +387,7 @@ async def test_recurrence_self_check_public_start_keeps_review_usage(
     ],
 )
 @pytest.mark.asyncio
-async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_stage(tmp_path, monkeypatch, role, expected):
+async def test_public_start_resolves_roles_to_required_engineering_stage(tmp_path, monkeypatch, role, expected):
     if role == "exec-review":
         _prepare_exec_review_plan(tmp_path)
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "role", "status": "running", "label": role}))
@@ -435,13 +402,6 @@ async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_
             "round": "1",
         },
         "wi-draft-review": {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求原本", "引き継ぎ記録先")},
-        "recurrence-self-check": {
-            "観点ファイル": json.dumps([str(tmp_path / "items.md")]),
-            "今回差分": str(tmp_path / "change.patch"),
-            "変更ファイル一覧": "example.py",
-            "対象worktree": str(tmp_path),
-            "未解決指摘": "なし",
-        },
         "refine-prompt": {"対象プロンプト": str(tmp_path / "prompt.md"), "シナリオ": "なし"},
     }
     inputs = additional_inputs[role] if role in additional_inputs else _observed_input_params(f"{role}.subagent.md", tmp_path)

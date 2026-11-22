@@ -30,7 +30,7 @@ Codex系として実行するあなたは、明示された目標や件数だけ
 | `execute` | WI選定、レーン分け、計画、設計判断を伴う実装と修正、原因分析、観点選定、候補判定、結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination` |
 | `chores` | 内容と完成判定が確定した単発のコーディング・修正・追随、中規模の走査。`refine-prompt`、`atk commit`の省略時 |
 | `chores_fast` | 定型走査、軽微な作業、コマンド実行。自由本文の`explore`・`shell`の省略時 |
-| `review` | 実行レビュー、ユーザビリティレビュー、投入前レビュー、再発防止セルフチェック。`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check` |
+| `review` | 実行レビュー、ユーザビリティレビュー、投入前レビュー。`exec-review`・`usability-review`・`wi-draft-review` |
 | `review_fast` | 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` |
 | `orchestrate` | 最上位の統括、process-loopの新規セッション、run-skill。`repository-process`（`atk`か`agents_server`が起動する） |
 | `write` | 文章の起草。`write`の省略時 |

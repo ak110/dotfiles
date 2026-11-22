@@ -288,7 +288,7 @@ def test_recurrence_viewpoint_heading_marks_only_viewpoint_files() -> None:
     """観点専用のH1を持つ文書は、全ての項目に対象条件・確認内容・根拠規範を持つ観点ファイルに限る。
 
     実行レビューは`^# 再発防止セルフチェック観点`に一致する行を持つMarkdownを観点として集める。
-    保守の資料がこのH1を持つと収集に選ばれ、セルフチェック担当が判定に使わない資料を読む（WI 20261115-145405-001）。
+    保守の資料がこのH1を持つと収集に選ばれ、実行レビュー担当が判定に使わない資料を読む（WI 20261115-145405-001）。
     """
     root = pathlib.Path(__file__).resolve().parent.parent
     tracked = subprocess.run(

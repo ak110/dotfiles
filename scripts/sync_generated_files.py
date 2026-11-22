@@ -33,7 +33,6 @@ RETURN_TARGETS = (
     ("exec-review", "skills/atk-mode/roles/exec-review.parent.md", "実行レビューの返却契約", 2),
     ("reader-fit-review", "skills/atk-mode/roles/reader-fit-review.parent.md", "読者別探索の返却契約", 2),
     ("wi-draft-review", "skills/atk-mode/roles/wi-draft-review.parent.md", "投入前レビューの返却契約", 2),
-    ("recurrence-self-check", "skills/atk-mode/roles/recurrence-self-check.parent.md", "セルフチェックの返却契約", 2),
     ("add-wi", "skills/atk-mode/roles/add-wi.parent.md", "WI投入担当の返却契約", 2),
     ("lane-integration", "skills/atk-mode/playbooks/lane-receipt.md", "統合の返却契約", 3),
     ("copilot-review-audit", "skills/atk-mode/playbooks/process-wi-review-audit.md", "監査担当の返却契約", 3),

@@ -28,7 +28,6 @@ TASK_MODEL_TYPES = {
     "lane-integration.subagent.md": "execute",
     "pick-wi-explain.subagent.md": "chores_fast",
     "reader-fit-review.subagent.md": "review_fast",
-    "recurrence-self-check.subagent.md": "review",
     "refine-prompt.subagent.md": "chores",
     "session-termination.subagent.md": "execute",
     "usability-review.subagent.md": "review",

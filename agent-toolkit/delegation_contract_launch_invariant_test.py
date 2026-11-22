@@ -44,7 +44,6 @@ def test_parent_launch_section_without_role_is_reported(tmp_path: pathlib.Path) 
         ("skills/atk-mode/roles/exec-review.parent.md", "exec-review"),
         ("skills/atk-mode/roles/reader-fit-review.parent.md", "reader-fit-review"),
         ("skills/atk-mode/roles/wi-draft-review.parent.md", "wi-draft-review"),
-        ("skills/atk-mode/roles/recurrence-self-check.parent.md", "recurrence-self-check"),
         ("skills/atk-mode/roles/add-wi.parent.md", "add-wi"),
         ("skills/atk-mode/playbooks/process-wi-review-audit.md", "copilot-review-audit"),
         ("skills/atk-mode/playbooks/refine-prompt.md", "refine-prompt"),
