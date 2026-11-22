@@ -386,7 +386,7 @@ def test_two_periodic_prompts_notify_just_before_the_normal_due_time(monkeypatch
         assert _OPENING not in _in_process("user_prompt_submit", {"session_id": sid, "prompt": "状況は？"})
         assert _OPENING not in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
         assert _in_process("user_prompt_submit", periodic).count(_OPENING) == 1
-        assert _entries(sid)["main"]["last_notified_at"] == clock["now"]
+        assert session_state.read_state(sid)[progress_self_check.DELIVERED_KEY]["main"] == [str(clock["now"])]
 
 
 def test_format_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
