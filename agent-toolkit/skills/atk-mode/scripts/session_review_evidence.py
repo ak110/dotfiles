@@ -95,6 +95,8 @@ from session_evidence_warn import (
 )
 from session_quality_metrics import quality_metrics
 
+_RECORD_QUERY_EXAMPLE = "発話の照会例: atk run-script session-review-evidence -- --transcript <元記録の絶対パス> --user-events"
+
 
 def main(
     argv: list[str] | None = None,
@@ -336,7 +338,7 @@ def main(
             next_action=(
                 "対象の記録を`transcript_path`・`--transcript`・`--claude-session-id`・`--codex-thread-id`・`--opencode-session-id`・"
                 "--delegation-record・--owner-session・カタログ走査のいずれか1つだけで指定して再実行する。"
-                "発話の照会例: atk run-script session-review-evidence -- --transcript <元記録の絶対パス> --user-events"
+                f"{_RECORD_QUERY_EXAMPLE}"
             ),
         )
     if args.opencode_db is not None and args.opencode_session_id is None:
@@ -424,7 +426,7 @@ def main(
                 str(error),
                 next_action=(
                     "`--claude-session-id`の値を確かめる。記録が見つからない場合や複数ある場合は、"
-                    "`--transcript`で記録の絶対パスを直接渡して再実行する"
+                    f"`--transcript`で記録の絶対パスを直接渡して再実行する。{_RECORD_QUERY_EXAMPLE}"
                 ),
             )
     elif args.codex_thread_id is not None:
@@ -435,7 +437,7 @@ def main(
                 str(error),
                 next_action=(
                     "`--codex-thread-id`の値を確かめる。rolloutが別の場所にある場合は`--codex-home`へCodexのホームを渡し、"
-                    "複数ある場合は`--transcript`でrolloutの絶対パスを直接渡して再実行する"
+                    f"複数ある場合は`--transcript`でrolloutの絶対パスを直接渡して再実行する。{_RECORD_QUERY_EXAMPLE}"
                 ),
             )
     else:
