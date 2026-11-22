@@ -80,6 +80,54 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, monkeypatch: pytest.Monke
     return stop.evaluate(json.dumps(_payload(entries, tmp_path, **extra)))
 
 
+@pytest.mark.parametrize(
+    ("case", "denied"),
+    [
+        ("initial", False),
+        ("already-loaded", False),
+        ("pending", True),
+        ("failed", True),
+        ("source-only", True),
+        ("prior", True),
+    ],
+)
+def test_repl_needs_the_host_skill_result_for_current_prompt(tmp_path, monkeypatch, case, denied):
+    human = _human("ここがバグっている")
+    invocation = _tool_use("Skill", {"skill": "agent-basics:bugfix"})
+    invocation["isVirtual"] = True
+    invocation["message"]["content"][0]["id"] = "repl_1"
+    result = {
+        "type": "user",
+        "isVirtual": True,
+        "message": {"content": [{"type": "tool_result", "tool_use_id": "repl_1", "content": "", "is_error": case == "failed"}]},
+        "toolUseResult": {"success": case != "failed", "commandName": "agent-basics:bugfix"},
+    }
+    if case == "source-only":
+        entries = [human, _tool_use("REPL", {"code": "tools.Skill({skill: 'agent-basics:bugfix'})"})]
+    elif case == "prior":
+        entries = [invocation, result, human]
+    elif case == "pending":
+        entries = [human, invocation]
+    else:
+        entries = [human, invocation, result]
+    if case == "already-loaded":
+        entries = [
+            _BUGFIX,
+            *entries,
+            {
+                "type": "api-request-blob",
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "Skill /agent-basics:bugfix is already loaded above; instructions unchanged."}
+                    ]
+                },
+            },
+        ]
+
+    assert _pretooluse_denied(_payload(entries, tmp_path)) is denied
+    assert (_stop(entries, tmp_path, monkeypatch).get("decision") == "block") is denied
+
+
 def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
