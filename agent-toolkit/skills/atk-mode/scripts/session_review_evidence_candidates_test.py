@@ -308,3 +308,14 @@ def test_public_search_continues_after_nonstring_record_type(tmp_path, capsys, b
     )
     assert evidence.main([str(transcript), "--grep", "検索対象"]) == 0
     assert any(event.get("kind") == "match" and event.get("line") == 2 for event in read_jsonl(capsys))
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    for flag in ("--warn", "--hook-notices", "--stats", "--tool-calls"):
+        assert evidence.main([str(transcript), flag]) == 0
+        capsys.readouterr()
+    assert evidence.main([str(transcript), "--context-at", "2", "--phrase=異常行"]) == 0
+    capsys.readouterr()
+    assert evidence.main([str(transcript), "--detail", "1"]) == 0
+    assert "異常行" in capsys.readouterr().out

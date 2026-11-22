@@ -136,6 +136,8 @@ def _codex_detail_events(line: int, entry: dict[str, Any], budget: _DetailBudget
     if not isinstance(payload, dict):
         return []
     kind = payload.get("type")
+    if not isinstance(kind, str):
+        return []
     common = {"kind": "detail", "line": line, "timestamp": _entry_timestamp(entry)}
     if entry.get("type") == "response_item":
         if kind == "message":

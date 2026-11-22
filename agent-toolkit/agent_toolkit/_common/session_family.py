@@ -161,9 +161,12 @@ def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
 
 
 def _analysis_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """記録原本を保持し、会話以外のmessageの写しを解析から外す。"""
+    """記録原本を保持し、解析対象外のフィールドを読み込み時に除く。"""
     if entry.get("type") not in {"user", "assistant"} and "message" in entry:
-        return {key: value for key, value in entry.items() if key != "message"}
+        entry = {key: value for key, value in entry.items() if key != "message"}
+    payload = entry.get("payload")
+    if isinstance(payload, dict) and "type" in payload and not isinstance(payload["type"], str):
+        entry = {**entry, "payload": {key: value for key, value in payload.items() if key != "type"}}
     return entry
 
 
