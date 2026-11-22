@@ -43,6 +43,7 @@ description: >
 
    作成の直前に`agent-toolkit:atk-mode/playbooks/review-external-writes.md`を読み（タイトルも文面ファイルへ含める）、PRを作る。
 5. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチの同期、CIの確認、必要なリリースの検収まで終える。
+   共通CIを再利用した場合も、マージした完全OIDのCI結果を`merge-pr`の手順で確かめる。
 6. 今回`master`へ反映した使い方の変更を採用記録から拾い、公開版のガイドを確かめる。
    `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」に従って設定の要否を環境ごとに確かめ、専用の案内UWIを登録する。
    `develop`へのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。

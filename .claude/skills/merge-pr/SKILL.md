@@ -48,15 +48,18 @@ PRの状態を尋ねられただけの時は、状態を1回取得して報告�
    3. 手順2でローカルの同期ができると見込んでいた場合は、実行の直前に基準のrefを`origin/master`として同期条件を判定し直し、`develop` worktreeのパスがマージ前と同じことも確かめる。
       満たせば`git -C <develop worktreeの絶対パス> merge --ff-only origin/master`を実行して`origin/master`との一致を確かめる。
       満たさなければローカルの同期だけを省き、理由、対象worktreeの絶対パス、ローカルの`develop`と`origin/master`の短縮OIDを完了報告へ書く。
-   4. マージ後の`master`と`develop`へのpushに伴うCIは、必須チェックを通ったheadと同じツリーの再確認なので、完了を待たずに進めてよい（努力目標）。
-      statuslineを含む場合は手順6で検収する。
+   4. マージコミットの完全OIDと一致する`master` pushのCIを特定して結果を確認する。
+      同じツリーの`develop` pushで全ジョブの成功を所有判定が確認した場合は、その再利用を含むCI成功を受理する。
+      それ以外は`master`側で全体を実行するため、結果を待つ。
+      statusLineを含む場合は手順6で配布を検収する。
 6. マージコミットの第一親との差分に`rust/claude-statusline/`の変更があれば、リリースを検収する（無ければ省く）。
    1. `origin/master`の完全OIDに対応する`Release statusLine`のrunを完全なdatabase IDで特定し、`prepare`ジョブが省かれずに実行されたrunの完了を待つ。
       `gate`以外の全ジョブが省かれたrunは対象外として次のrunを待ち、`prepare`の実行可否が決まるまで監視する。
       master CIの失敗でrun自体が作られない場合は本書「失敗時の対応」に従う。
    2. `Cargo.toml`の版数に対応する`statusline-v<version>`タグが`origin/master`を指すことを確かめる。
    3. GitHub Releaseがあり、`pytools/_internal/setup_statusline_binary.py`の`ASSET_NAME_POSIX`と`ASSET_NAME_WINDOWS`の名前の添付物があることを確かめる。
-   4. 同じ`origin/master`の完全OIDに対応する結果だけを検収の対象とする。
+   4. 先に新しい版が配布されていた場合は旧版へのlatestの巻き戻りがないことを確かめる。
+      同じ`origin/master`の完全OIDに対応する結果だけを検収の対象とする。
 7. マージ後に到着したレビューを1回だけ確かめる（GitHub Copilotのレビューはマージの後に遅れて届くことがある）。
    `atk review-audit pending --repo <OWNER>/<REPO>`の終了コードが0で、JSONの`reviews`と`threads`が取れて対象PRがどちらにも無ければ、取得を省く。
    それ以外（対象PRがある、終了コードが0以外、解析できない）は、対象PRのCopilotのレビュー本文とスレッドを1回取得し、取得、判定、GitHubへの記録、判定済みの記録は`agent-toolkit/skills/atk-mode/playbooks/process-wi-review-audit.md`に従って対象PRだけに行う。

@@ -77,6 +77,25 @@ def test_consumer_and_verify_modes_are_exclusive() -> None:
     assert exc.value.code == 2
 
 
+@pytest.mark.parametrize("include_consumer", [False, True])
+def test_scoped_run_is_only_reusable_for_lane_verification(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, include_consumer: bool
+) -> None:
+    """横断試験を外した照合は利用側を要求し、通常のhookの全量検査を迂回しない。"""
+    repository = _repository(tmp_path)
+    consumer = "src/consumer_test.py"
+    (repository / consumer).write_text("import a\n", encoding="utf-8")
+    commit_all(repository, "consumer")
+    monkeypatch.chdir(repository)
+    argv = ["run", "--no-always-targets", "src/a.py"]
+    if include_consumer:
+        argv.append(consumer)
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=argv)
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(argv)]) == int(not include_consumer)
+    assert (pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN").run_id == "01RUN") is include_consumer
+    assert pyfltr_precommit.find_reusable_run(repository, "pyfltr").run_id is None
+
+
 @pytest.mark.parametrize("option", ["--pytest-args=-v", "--pytest-args=-v -rA --maxfail=10", "--only-failed"])
 def test_planned_argv_rejects_same_non_neutral_input_as_verify(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], option: str
