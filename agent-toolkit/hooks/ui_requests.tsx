@@ -1,6 +1,6 @@
 import type { EngineInterface, On } from "claude-code";
 import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
-import { deliverySucceeded, questionRoute, reportWarnings } from "./send_to_user.tsx";
+import { afterDelivery, deliverySucceeded, questionRoute, reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
 import { mountForStart } from "./periodic_recheck.ts";
@@ -77,9 +77,9 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, { ...messages, [request.id]: { message: request.input.message, placedAt: Date.now() } });
           const placed = await $.ui.place({ id: request.id });
           ok = placed.isPlaced;
-          reason = placed.isPlaced ? "" : placed.reason;
+          reason = placed.isPlaced ? "" : `${placed.reason}。報告は未送信です。必要な情報は通常の応答本文で伝えてください。`;
           if (ok) {
-            reason = [deliverySucceeded, questionRoute, ...reportWarnings(request.input.message)].join("\n");
+            reason = [deliverySucceeded, afterDelivery, questionRoute, ...reportWarnings(request.input.message)].join("\n");
           }
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
           else if (typeof request.input.tool_use_id === "string") {

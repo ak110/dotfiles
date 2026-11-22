@@ -58,8 +58,15 @@ for (const placed of [true, false]) {
     if (placed) {
       expect(response.reason).toContain("AskUserQuestion");
       expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容を通常の応答本文で発話し直してはいけません。");
+      expect(response.reason).toContain("送信の確認や要約を通常の応答本文へ書かない");
+      expect(response.reason).toContain("新しい報告があればsend_to_userで送る");
       expect(response.reason).not.toContain("`…`だけ");
-    } else expect(response.reason).toBe("対応画面なし");
+    } else {
+      expect(response.reason).toContain("対応画面なし");
+      expect(response.reason).toContain("未送信");
+      expect(response.reason).toContain("通常の応答本文で伝えて");
+      expect(response.reason).not.toContain("送信済み");
+    }
   });
 }
 
