@@ -212,7 +212,7 @@ def pending_async_status(
     session_state: object,
     owner_agent_id: str = "main",
 ) -> str:
-    """待機中のうち実行中の背景タスクだけを、装着を要する値として区別する。
+    """待機中のうち実行中のバックグラウンドタスクだけを、装着を要する値として区別する。
 
     以下のいずれかの場合に真を返す。
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
