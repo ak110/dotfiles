@@ -87,7 +87,7 @@ def test_windows_known_folders_use_isolated_overrides(monkeypatch: pytest.Monkey
     def reject_host_folder(_name: str) -> str:
         raise AssertionError("ホストのKnownFolder APIへ到達した")
 
-    monkeypatch.setattr(windows, "_resolve_win_folder", reject_host_folder)
+    monkeypatch.setattr(windows, "_RESOLVE_WIN_FOLDER", reject_host_folder)
     with pytest.MonkeyPatch.context() as scoped:
         apply_fixture = typing.cast(
             typing.Callable[[pathlib.PurePath, pytest.MonkeyPatch, str], None],

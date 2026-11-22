@@ -244,7 +244,7 @@ def duplicate_autosquash_subject(command: str, cwd: str) -> str | None:
                 else f"`{flag}`を外し、`git commit -m '{'fixup' if flag == '--fixup' else 'squash'}! {oid}'` で作り直す。"
             )
             return _block_notice(
-                "未公開の履歴に同じ件名のcommitがあり、autosquashの統合先を一意に決められない。",
+                "未公開の履歴に同じ件名のコミットがあり、`autosquash`の統合先を一意に決められない。",
                 fix=action + " history-rewrite.md「fixupの実行上の制約」を参照する。" + _COMMIT_BLOCK_RERUN,
             )
     return None

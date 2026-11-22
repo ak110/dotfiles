@@ -134,5 +134,5 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     _stop_session.append_stop_log(session_id, "block_delivered_repost", {})
     return "block", _block_notice(
         "`send_to_user`で送信済みの文が通常の応答本文にある。",
-        fix="再掲した文を除き、新しく伝えることがなく、Claude Codeが可視の本文を求める場合は「…」で終える。",
+        fix="再掲した文を除き、新しく伝えることがなく、`Claude Code`が表示する本文を求める場合は「…」で終えよ。",
     )

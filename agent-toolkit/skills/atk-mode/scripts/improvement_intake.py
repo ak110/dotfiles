@@ -86,16 +86,18 @@ def _change(args: argparse.Namespace, records: dict[str, dict[str, Any]]) -> obj
 def main(argv: list[str] | None = None) -> int:
     """受付結果と処置をJSONで返す。失敗時は記録の成功を返さない。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    operations = parser.add_subparsers(dest="operation", required=True)
+    operations = parser.add_subparsers(dest="operation", required=True, help="保存・照会・処置から操作を選ぶ")
     capture = operations.add_parser("capture", help="観測を保存する")
-    capture.add_argument("--body-file", required=True, type=Path)
+    capture.add_argument("--body-file", required=True, type=Path, metavar="PATH", help="観測原稿のJSONファイル")
     listing = operations.add_parser("list", help="観測と処置を照会する")
-    listing.add_argument("--target-repo", required=True)
+    listing.add_argument("--target-repo", required=True, help="照会するリポジトリの識別子")
     decide = operations.add_parser("decide", help="メインが確定した処置を保存する")
-    decide.add_argument("--id", action="append", required=True)
-    decide.add_argument("--status", required=True, choices=("waiting", "discarded", "covered", "registered"))
-    decide.add_argument("--reason", required=True)
-    decide.add_argument("--wi")
+    decide.add_argument("--id", action="append", required=True, help="処置する受付ID（反復可）")
+    decide.add_argument(
+        "--status", required=True, choices=("waiting", "discarded", "covered", "registered"), help="確定した処置"
+    )
+    decide.add_argument("--reason", required=True, help="処置を選んだ根拠")
+    decide.add_argument("--wi", help="対応する正式WIのファイル名")
     args = parser.parse_args(argv)
     path = state_dir() / "improvement-intake.json"
     try:
