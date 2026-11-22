@@ -19,6 +19,7 @@ CODEX_HOME = Path.home() / ".codex"
 # 配布先（`~/.codex/`起点）→配布元（dotfilesルート起点）のマップ。
 # 配布先は全てディレクトリで、Windowsではディレクトリジャンクションで実現する。
 _LINKS: dict[str, str] = {
+    "skills/apply-followup-ledger": ".chezmoi-source/dot_claude/skills/apply-followup-ledger",
     "skills/operate-ak110-projects": ".chezmoi-source/dot_claude/skills/operate-ak110-projects",
     "docs": ".chezmoi-source/dot_claude/docs",
 }
