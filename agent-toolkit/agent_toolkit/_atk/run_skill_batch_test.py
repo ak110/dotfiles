@@ -146,6 +146,7 @@ def test_hook_disabled_records_and_announces_pending(tmp_path, monkeypatch) -> N
 
 def test_hook_requests_existing_cli_without_wait(tmp_path, monkeypatch) -> None:
     calls = []
+    session_review.write(session_review.directory() / "meta-start.json", {"started_at": session_review.timestamp()})
 
     def spawn(argv, **kwargs):
         calls.append((argv, kwargs))

@@ -24,7 +24,7 @@ from typing import Any
 import filelock
 import psutil
 
-from agent_toolkit._atk import config, orchestrator, outcome, run_script, run_skill_batch_evidence
+from agent_toolkit._atk import config, config_settings, orchestrator, outcome, run_script, run_skill_batch_evidence
 from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync
 from agent_toolkit._atk.wi.constants import (
     WI_STATE_ADOPTED,
@@ -33,11 +33,13 @@ from agent_toolkit._atk.wi.constants import (
     WI_STATE_PROCESSING,
     WI_STATE_REJECTED,
     WI_TYPE_AWI,
+    WI_TYPE_UWI,
 )
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import (
     delegated_session,
     diagnostic_process,
+    markdown_headings,
     plugin_environment,
     private_notes,
     session_activity,
@@ -46,6 +48,7 @@ from agent_toolkit._common import (
     skill_modes,
 )
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.wi_layout import DATED_NAME
 lazy from agent_toolkit._atk import run_skill_state
 lazy from agent_toolkit._common import windows_job
 
@@ -64,16 +67,15 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         with contextlib.suppress(WebInputError):
             target_repo = repo.resolve_repo_id_or_raise(None, cwd=pathlib.Path(cwd))
     session_review.record(payload, host=host, target_repo=target_repo)
-    if os.environ.get(session_review.BATCH_ENV):
+    if session_review.is_review_run():
         return None
     if event not in {"SessionStart", "SessionEnd"}:
         return None
     notice = session_review.launch_notice(host) if event == "SessionStart" else None
-    count = len(session_review.pending())
-    if not count:
-        return notice
+    pending = session_review.pending()
+    count = len(pending)
     if config.resolve_mutable_setting("session_review_auto_start") == "false":
-        if event == "SessionStart":
+        if event == "SessionStart" and count:
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
                 f"まとめて振り返る場合は`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
@@ -83,9 +85,12 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     if session_activity.host_process() is None:
         # ホスト外で再生したhook入力は記録だけにとどめ、実在するホストの開始・終了から起動する。
         return notice
-    if not session_review.auto_start_due(now=time.time()) or not any(
-        not target.get("review_batch") for target in session_review.pending()
-    ):
+    now = time.time()
+    if _meta_auto_start_due(now=now):
+        mode = "meta"
+    elif count and session_review.auto_start_due(now=now) and any(not target.get("review_batch") for target in pending):
+        mode = "batch"
+    else:
         return notice
     env = plugin_environment.direct_environment(PLUGIN_ROOT, orchestrator.child_env(drop=(session_review.BATCH_ENV,)))
     # セッションのstdin/stdoutを保持せず、受付前の試行と受付後の実行記録で責任を分ける。
@@ -110,6 +115,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
             {
                 "host": host,
                 "event": event,
+                "mode": mode,
                 "status": "starting",
                 "log_path": str(log_path),
                 "owner": owner.payload() if owner else None,
@@ -129,7 +135,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
                                 str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
                                 "run-skill",
                                 "--args",
-                                "batch",
+                                mode,
                                 "agent-toolkit:review-session",
                             ]
                         ),
@@ -183,12 +189,30 @@ def _blocked(target: dict[str, Any]) -> bool:
         return False
     version = run_skill_batch_evidence.plugin_version(PLUGIN_ROOT)
     failed_version = session_review.failure_version(target, version)
+    return _failure_blocks(key, same_version=failed_version == version)
+
+
+def _failure_blocks(key: str, *, same_version: bool) -> bool:
     if _failure_entry(key, _ACTIVE_FAILURE_STATES) is not None:
         return True
     if _failure_entry(key, frozenset({WI_STATE_ADOPTED, WI_STATE_REJECTED})) is not None:
         session_review.failure_reported(key, reported=False)
         return False
-    return failed_version == version
+    return same_version
+
+
+def _meta_auto_start_due(*, now: float) -> bool:
+    if not session_review.meta_start_due(now=now):
+        return False
+    try:
+        last = session_review.read(session_review.directory() / "meta-start.json")
+    except FileNotFoundError:
+        return True
+    key = last.get("failure_key")
+    if not isinstance(key, str) or last.get("report_synced") is False:
+        return True
+    version = run_skill_batch_evidence.plugin_version(PLUGIN_ROOT)
+    return not _failure_blocks(key, same_version=last.get("failure_version") == version)
 
 
 def _lacks_record(target: dict[str, Any]) -> bool:
@@ -241,6 +265,41 @@ def _report_target(targets: list[dict[str, Any]]) -> tuple[str, pathlib.Path]:
         PLUGIN_ROOT,
     )
     return chosen, cwd
+
+
+def _meta_report_target(*, now: datetime.datetime) -> str:
+    """比較期間や前回からの繰越を除き、今回の入力WIの投入先で報告先を決める。"""
+    first = (now - datetime.timedelta(days=7)).strftime("%Y%m%d-%H%M%S")
+    last = now.strftime("%Y%m%d-%H%M%S")
+    targets = []
+    for path in layout.iter_entry_paths(private_notes.default_private_notes()):
+        if DATED_NAME.fullmatch(path.name) is None or not first <= path.name[:15] <= last:
+            continue
+        parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        if parsed is None:
+            continue
+        data, body = parsed
+        kind = data.get("type")
+        scope = data.get("scope")
+        if (
+            (
+                (kind == WI_TYPE_AWI and data.get("source") in (None, "add-awi-by-user", _FAILURE_SOURCE))
+                or (kind == WI_TYPE_UWI and data.get("run_skill_report") != "true")
+                or (
+                    kind == WI_TYPE_UWI
+                    and isinstance(scope, str)
+                    and skill_modes.canonical_scope(scope) == session_review.BATCH_SCOPE
+                )
+                or any(
+                    name in {"ユーザーコメント", "回答", "ユーザー指摘の逐語引用"} and nonempty
+                    for name, nonempty in markdown_headings.h2_sections(body)
+                )
+            )
+            and isinstance(target := data.get("target_repo"), str)
+            and target
+        ):
+            targets.append({"target_repo": target})
+    return _report_target(targets)[0]
 
 
 def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
@@ -352,11 +411,16 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_
         normalized = re.sub(r"\d{4}-\d\d-\d\dT[0-9:.+-]+Z?", "<timestamp>", normalized)
         signature.append(normalized)
     failure_key = hashlib.sha256(json.dumps(signature, ensure_ascii=False).encode()).hexdigest()
-    existing = _failure_entry(failure_key, _ACTIVE_FAILURE_STATES)
     writer = session_review.BatchWriter(path)
     manifest = writer.fail(
         failure_key, reason, version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT), exit_code=exit_code
     )
+    saved = _save_failure_report(failure_key, lambda: _failure_message(failure_key, reason, path, manifest))
+    writer.report_failure(synced=saved)
+
+
+def _save_failure_report(failure_key: str, message: Callable[[], str]) -> bool:
+    existing = _failure_entry(failure_key, _ACTIVE_FAILURE_STATES)
     saved = False
     if existing is not None:
         report_path, _data = existing
@@ -374,18 +438,89 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_
         try:
             add.add_entries(
                 private_notes.default_private_notes(),
-                messages=[_failure_message(failure_key, reason, path, manifest)],
+                messages=[message()],
                 target_repo=_plugin_repository(),
                 source=_FAILURE_SOURCE,
                 now=datetime.datetime.now(datetime.UTC),
             )
             saved = True
         except OSError, ValueError, subprocess.SubprocessError:
-            _LOG.exception("振り返りの失敗報告を保存できない。次回起動時に同じ報告から再開する: %s", path)
+            _LOG.exception("振り返りの失敗報告を保存できない: %s", failure_key)
             saved = False
     if saved:
         session_review.failure_reported(failure_key, reported=True)
-    writer.report_failure(synced=saved)
+    return saved
+
+
+def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int], *, manual: bool) -> int:
+    if not manual and not _meta_auto_start_due(now=time.time()):
+        session_review.launch_result()
+        return 0
+    start = session_review.directory() / "meta-start.json"
+    if not manual and start.is_file():
+        previous = session_review.read(start)
+        if previous.get("report_synced") is False:
+            session_review.launch_result()
+            return 0 if _save_meta_failure(start, previous) else 1
+    if getattr(args, "resume_record", None) is not None:
+        return execute(args)
+    now = datetime.datetime.now(datetime.UTC)
+    record: dict[str, Any] = {"started_at": now.isoformat()}
+    session_review.write(start, record)
+    session_review.launch_result()
+    stage = "inputs"
+    try:
+        work_dir = getattr(args, "work_dir", None)
+        if work_dir is None:
+            if manual:
+                work_dir = repo.resolve_local_worktree(args.target_repo)
+            else:
+                source = _plugin_repository()
+                registered = config_settings.repository_settings(check_paths=False).get(source)
+                if registered is None or not (work_dir := pathlib.Path(registered["path"])).is_dir():
+                    raise ValueError(f"メタ分析のGit作業ツリーを `atk config repos` で登録する: {source}")
+        args.target_repo = _meta_report_target(now=now)
+        args.work_dir = str(work_dir)
+        stage = "execution"
+        code = execute(args)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        _LOG.error("メタ分析を完了できなかった: %s", redact_secrets(str(error)))
+        code = 1
+    if not code:
+        return code
+    stage = (getattr(args, "batch_failure", None) or "").partition(":")[0] or f"{stage}-{code}"
+    failure_key = hashlib.sha256(f"meta:{stage}".encode()).hexdigest()
+    record.update(
+        failure_key=failure_key,
+        failure_version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT),
+        failure_stage=stage,
+        exit_code=code,
+        report_synced=False,
+    )
+    session_review.write(start, record)
+    _save_meta_failure(start, record)
+    return code
+
+
+def _save_meta_failure(start: pathlib.Path, record: dict[str, Any]) -> bool:
+    failure_key = record["failure_key"]
+    saved = _save_failure_report(
+        failure_key,
+        lambda: (
+            f"---\nsession_review_failure_key: {json.dumps(failure_key)}\n---\n\n"
+            "# 週次メタ分析（review-session meta）の失敗の是正\n\n"
+            f"週次メタ分析が終了{record['exit_code']}となり、報告を完了できなかった"
+            f"（段階: {record['failure_stage']}、開始: {record['started_at']}）。\n\n"
+            "## 反映内容と反映先\n\n"
+            "起票元のrun-skillの実行ログで原因を特定し、配布元で是正する。\n\n"
+            "## 完成条件\n\n"
+            "原因を再現する入力で失敗と是正後の報告の保存を確かめる。"
+            "手動での確認には `atk run-skill --args meta review-session` を使う。\n"
+        ),
+    )
+    if saved:
+        session_review.write(start, {**record, "report_synced": True})
+    return saved
 
 
 def _live(manifest: dict[str, Any]) -> bool:
@@ -441,7 +576,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
     try:
         with filelock.FileLock(str(root / "batch.lock"), timeout=0):
             if skill_modes.invocation_scope(args.skill, args.args) == session_review.META_SCOPE:
-                return execute(args)
+                return _run_meta(args, execute, manual=manual)
             session_review.sweep(now=time.time())
             if getattr(args, "resume_record", None) is not None:
                 return _resume_batch(args, execute)

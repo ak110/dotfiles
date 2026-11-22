@@ -24,6 +24,7 @@ import pydantic
 from agent_toolkit._common import (
     atomic_file,
     delegated_session,
+    mcp_environment,
     session_activity,
     session_family,
     session_launchers,
@@ -455,10 +456,39 @@ def auto_start_due(*, now: float) -> bool:
         started = datetime.datetime.fromisoformat(started_at).timestamp() if started_at else path.stat().st_mtime
         if now - started < interval:
             return False
-    return not any(
+    return not _consultation_open()
+
+
+def meta_start_due(*, now: float) -> bool:
+    """最後のmeta開始と現在の相談会話だけで自動起動を判定する。"""
+    path = directory() / "meta-start.json"
+    try:
+        started = datetime.datetime.fromisoformat(read(path)["started_at"]).timestamp()
+    except FileNotFoundError:
+        return not _consultation_open()
+    return now - started >= 7 * 24 * 60 * 60 and not _consultation_open()
+
+
+def _consultation_open() -> bool:
+    """投入作業の会話が開いているかを判定する。"""
+    return any(
         session_state.read_state(session_id).get("add_awi_skill_invoked") is True
         for session_id in session_activity.living_root_session_ids()
     )
+
+
+def is_review_run() -> bool:
+    """非同期振り返り自身は重ねて自動起動せず、通常の分析対象とも区別する。"""
+    if os.environ.get(BATCH_ENV):
+        return True
+    try:
+        data = json.loads(os.environ.get(mcp_environment.SESSION_START_INPUT_ENV, ""))
+    except ValueError:
+        return False
+    if not isinstance(data, dict) or not isinstance(skill := data.get("skill"), str):
+        return False
+    arguments = data.get("arguments")
+    return skill_modes.invocation_scope(skill, arguments if isinstance(arguments, str) else None) == META_SCOPE
 
 
 def launch_result(*, manifest: pathlib.Path | None = None) -> None:
@@ -494,14 +524,16 @@ def launch_notice(host: str) -> str | None:
                 if os.name == "nt"
                 else "cat -- " + shlex.quote(log_path)
             )
-            failures.append(f"{value['host']} {value['event']}: `{read_command}`")
+            mode = "meta" if value.get("mode") == "meta" else "batch"
+            retry = skill_modes.entry_command(host, f"review-session {mode}")
+            failures.append(f"{value['host']} {value['event']}: `{read_command}`（原因を是正してから`{retry}`を実行せよ）")
             attempt.notify().save(path)
     if not failures:
         return None
     return (
         "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。次のコマンドで診断ログを取得せよ: "
         + "、".join(failures)
-        + f"。原因を確認・是正して`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
+        + "。"
         "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"
     )
 
@@ -535,7 +567,7 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
             "key": name,
             "host": host,
             "session_id": session_id,
-            "review_batch": bool(os.environ.get(BATCH_ENV) or prior.get("review_batch") or previous.get("review_batch")),
+            "review_batch": bool(is_review_run() or prior.get("review_batch") or previous.get("review_batch")),
             "transcript_path": transcript,
             "cwd": payload.get("cwd") or prior.get("cwd"),
             "target_repo": target_repo or prior.get("target_repo"),
