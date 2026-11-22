@@ -2,7 +2,7 @@
 # ログオン中のユーザーの対話セッションで非昇格（RunLevel Limited）の予定タスクを一時登録してrunner.ps1を実行し、
 # 標準出力へスクリプトの出力をそのまま書いた後、`SSH_UNELEVATED_RESULT:<RunId>`で始まる行へ結果のJSONを書く。
 param(
-    [Parameter(Mandatory)][string] $RunId,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{16}$')][string] $RunId,
     [Parameter(Mandatory)][int] $TimeoutSeconds,
     [Parameter(Mandatory)][string] $ScriptBase64,
     [Parameter(Mandatory)][string] $RunnerBase64
@@ -23,6 +23,8 @@ $workDir = [IO.Path]::Combine([IO.Path]::GetTempPath(), $name)
 # Get-ScheduledTaskは名前を指定してもフォルダーのタスクを列挙し、列挙中に別のタスクが消えると0x80070002で失敗する。
 # 同時に動く別の実行がその実行のタスクを消した時に、待っている実行の照会が失敗していた（2026年11月19日、sthenoで観測）。
 $taskFolder = $null
+$owner = $null
+$taskStateQueued = 2
 $taskStateRunning = 4
 
 function Write-Result([hashtable] $Result) {
@@ -85,7 +87,7 @@ function Get-RunTask([string] $Name) {
 function Clear-RunProcess([string] $Name) {
     # タスクの停止だけでは子孫のプロセスが残りうるため、残ったプロセスも終了させる。
     $task = Get-RunTask $Name
-    if ($task -and $task.State -eq $taskStateRunning) {
+    if ($task -and $task.State -in @($taskStateQueued, $taskStateRunning)) {
         $task.Stop(0)
     }
     $ids = @(Get-RunProcessId ([IO.Path]::Combine([IO.Path]::GetTempPath(), $Name)))
@@ -95,11 +97,11 @@ function Clear-RunProcess([string] $Name) {
     }
 }
 
-function Clear-Run([string] $Name, [bool] $ScanProcesses) {
-    # プロセスの一覧の取得は数秒かかるため、タスクが動いている場合と、中断された実行の残骸を片付ける場合に限る。
+function Clear-Run([string] $Name) {
+    # この要求のタスクがまだ動いていれば、その子孫も終了させる。
     # 正常に終えたタスクは、runner.ps1がexit.txtを書いて終了するまで待ってある。
     $task = Get-RunTask $Name
-    if ($ScanProcesses -or ($task -and $task.State -eq $taskStateRunning)) {
+    if ($task -and $task.State -in @($taskStateQueued, $taskStateRunning)) {
         Clear-RunProcess $Name
     }
     if ($task) {
@@ -111,16 +113,35 @@ function Clear-Run([string] $Name, [bool] $ScanProcesses) {
     }
 }
 
-function Clear-StaleRun {
+function Clear-StaleRun([string] $Parent) {
     # タスクの列挙は同時に別のタスクが消えると失敗しうるが、取りこぼした残骸は次回以降の実行が片付ける。
     $names = @(
         Get-ScheduledTask -TaskPath '\' -TaskName 'ssh-unelevated-*' -ErrorAction SilentlyContinue | ForEach-Object { $_.TaskName }
-        Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'ssh-unelevated-*' | ForEach-Object { $_.Name }
+        Get-ChildItem -LiteralPath $Parent -Directory -Filter 'ssh-unelevated-*' | ForEach-Object { $_.Name }
     )
     foreach ($staleName in ($names | Sort-Object -Unique)) {
-        if ($staleName -match $namePattern -and [long] $Matches[1] -lt $now) {
-            Clear-Run $staleName $true
+        if ($staleName -notmatch $namePattern -or [long] $Matches[1] -ge $now) {
+            continue
         }
+        $directory = Join-Path $Parent $staleName
+        $claimPath = Join-Path $directory 'owner.lock'
+        try {
+            # 時刻だけでは稼働中の別要求を識別できない。所有者が閉じたロックを取れた場合だけ候補にする。
+            $claim = [IO.File]::Open($claimPath, 'Open', 'ReadWrite', 'None')
+        } catch [IO.IOException], [UnauthorizedAccessException] {
+            continue
+        }
+        try {
+            $task = Get-RunTask $staleName
+            if (($task -and $task.State -in @($taskStateQueued, $taskStateRunning)) -or
+                @(Get-RunProcessId $directory).Count -gt 0) {
+                continue
+            }
+        } finally {
+            # Windowsでは開いたロックがあるディレクトリを削除できない。
+            $claim.Dispose()
+        }
+        Clear-Run $staleName
     }
 }
 
@@ -135,19 +156,33 @@ function Test-InteractiveLogon([string] $Sid) {
 }
 
 function Wait-Run {
+    $startFile = Join-Path $workDir 'started.txt'
+    $reportedStart = $false
     $exitFile = Join-Path $workDir 'exit.txt'
     $startedAt = Get-Date
     $deadline = $startedAt.AddSeconds($TimeoutSeconds)
     (Get-RunTask $name).Run($null) | Out-Null
     $started = $false
+    $checkingResult = $false
     while ($true) {
-        if (Test-Path -LiteralPath $exitFile) {
+        if (-not $reportedStart -and (Test-Path -LiteralPath $startFile) -and
+            (Get-Content -LiteralPath $startFile -Raw).Trim() -ceq $RunId) {
+            $bytes = [Text.Encoding]::ASCII.GetBytes("SSH_UNELEVATED_STARTED:$RunId`n")
+            $stdout.Write($bytes, 0, $bytes.Length)
+            $stdout.Flush()
+            $reportedStart = $true
+        }
+        $exitMatch = $null
+        if ($reportedStart -and (Test-Path -LiteralPath $exitFile)) {
+            $exitMatch = [regex]::Match((Get-Content -LiteralPath $exitFile -Raw).Trim(), "^$RunId (-?\d+)$")
+        }
+        if ($exitMatch -and $exitMatch.Success) {
             # 作業ディレクトリを消せるよう、タスクのプロセスが終わるのを待つ。
             $until = (Get-Date).AddSeconds(10)
             while ((Get-RunTask $name).State -eq $taskStateRunning -and (Get-Date) -lt $until) {
                 Start-Sleep -Milliseconds 200
             }
-            return @{ status = 'completed'; exit_code = [long] (Get-Content -LiteralPath $exitFile -Raw).Trim() }
+            return @{ status = 'completed'; exit_code = [long] $exitMatch.Groups[1].Value }
         }
         $task = Get-RunTask $name
         # COMは結果の値を符号付きで返すため、HRESULTの表記（0x8007...）に合わせて符号なしへ戻す。
@@ -156,10 +191,11 @@ function Wait-Run {
             $started = $true
         } elseif ($started -or $task.LastRunTime -ge $startedAt.AddSeconds(-5)) {
             # タスクの終了とexit.txtの出現の前後を吸収してから判定する。
-            Start-Sleep -Seconds 1
-            if (-not (Test-Path -LiteralPath $exitFile)) {
+            if ($checkingResult) {
                 return @{ status = 'no_result'; task_result = $taskResult }
             }
+            $checkingResult = $true
+            Start-Sleep -Seconds 1
             continue
         } elseif ((Get-Date) -gt $startedAt.AddSeconds(30)) {
             return @{ status = 'not_started'; task_result = $taskResult }
@@ -176,19 +212,20 @@ try {
     $service = New-Object -ComObject Schedule.Service
     $service.Connect()
     $taskFolder = $service.GetFolder('\')
-    Clear-StaleRun
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not (Test-InteractiveLogon $identity.User.Value)) {
         Write-Result @{ status = 'not_logged_on'; user = $identity.Name }
         return
     }
     New-Item -ItemType Directory -Path $workDir | Out-Null
+    $owner = [IO.File]::Open((Join-Path $workDir 'owner.lock'), 'CreateNew', 'ReadWrite', 'None')
+    Clear-StaleRun ([IO.Path]::GetDirectoryName($workDir))
     [IO.File]::WriteAllBytes((Join-Path $workDir 'script.ps1'), [Convert]::FromBase64String($ScriptBase64))
     $runner = Join-Path $workDir 'runner.ps1'
     [IO.File]::WriteAllBytes($runner, [Convert]::FromBase64String($RunnerBase64))
     # conhost.exe --headlessで、ユーザーの画面にコンソールの窓を出さない。
     $action = New-ScheduledTaskAction -Execute 'conhost.exe' -WorkingDirectory $env:USERPROFILE `
-        -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runner`" -LeaveTaskJob"
+        -Argument "--headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runner`" -LeaveTaskJob -RunId $RunId"
     # sshのセッションでは$env:USERDOMAINと$env:USERNAMEの組をSIDへ解決できないため、tokenの名前を使う。
     $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds ($TimeoutSeconds + 60)) `
@@ -201,9 +238,10 @@ try {
     Write-Result @{ status = 'error'; message = "$_" }
 } finally {
     try {
-        # タスクスケジューラーへ接続できなかった場合は、タスクも作業ディレクトリもまだ作っていない。
-        if ($taskFolder) {
-            Clear-Run $name $false
+        # 自分が作成した要求だけを片付ける。
+        if ($owner) {
+            $owner.Dispose()
+            Clear-Run $name
         }
     } catch {
         [Console]::Error.WriteLine("ssh-unelevated: 接続先の後始末に失敗した（次回の実行が片付ける）: $_")
