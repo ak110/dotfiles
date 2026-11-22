@@ -1,5 +1,6 @@
 """CI待機と通知が共有するforge起動・ログ取得の契約を検証する。"""
 
+import platform
 import shlex
 
 import pytest
@@ -108,3 +109,25 @@ def test_api_endpoint_distinguishes_http_and_ssh_ports(
     assert environment.get("GITLAB_API_HOST") == (host if protocol else None)
     assert environment.get("GLAB_API_PROTOCOL") == protocol
     assert forge_cli.glab_repository(repository) == f"{protocol or 'https'}://{host}/group/repo"
+
+
+@pytest.mark.parametrize("shell_host", ["gitlab.example.org", "gitlab.other.example"])
+def test_inferred_gitlab_log_guidance_on_windows(monkeypatch: pytest.MonkeyPatch, shell_host: str) -> None:
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setenv("GITLAB_HOST", shell_host)
+    monkeypatch.setenv("GLAB_API_PROTOCOL", "http")
+    monkeypatch.delenv("GLAB_ENABLE_CI_AUTOLOGIN", raising=False)
+    repository = "gitlab.example.org/group/repo"
+    action = forge_cli.failure_next_action("gitlab", repository, "24", inferred_host=True)
+    assert "`env " not in action
+    assert "PowerShell" in action
+    assert "glab 'ci' 'get'" in action
+    assert "glab 'ci' 'trace' '<job ID>'" in action
+    if shell_host == "gitlab.example.org":
+        assert "Remove-Item" not in action
+        assert "$env:" not in action
+        assert "'http://gitlab.example.org/group/repo'" in action
+    else:
+        assert "Remove-Item Env:GLAB_API_PROTOCOL -ErrorAction SilentlyContinue" in action
+        assert "$env:GITLAB_HOST = 'gitlab.example.org'" in action
+        assert "'https://gitlab.example.org/group/repo'" in action

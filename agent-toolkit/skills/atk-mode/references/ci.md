@@ -62,6 +62,7 @@ GitLabの設定は[Projects API](https://docs.gitlab.com/api/projects/)と[独�
 短縮形の再入力は、自動判定でその短縮形から作成した記録だけが受理する。
 GitLabでは、Gitの転送方式やポートではなくglabのホスト別API設定を使う。
 自動判定したGitLabホストと環境変数のホスト指定が一致する場合だけ、環境変数のAPI接続設定を引き継ぐ。
+GitLab CIの自動ログインは、CIのホストが自動判定したGitLabホストと一致する場合だけ引き継ぐ。
 
 `wait_ci.py`は`--ref`で指定した宛先のブランチかタグの短縮名を、GitHubでは`gh run list --branch`へ、GitLabでは`glab ci list --ref`へ渡す。
 `--baseline`での待機と再起動はbaselineの保存値を使うため、これらを省く。

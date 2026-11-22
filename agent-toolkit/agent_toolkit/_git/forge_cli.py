@@ -1,6 +1,7 @@
 """forge CLIの接続先と、非対話の失敗ログ取得案内を共有する。"""
 
 import os
+import platform
 import shlex
 from urllib.parse import urlsplit
 
@@ -17,6 +18,8 @@ _GLAB_HOST_API_VARIABLES = (
     "GITLAB_ACCESS_TOKEN",
     "OAUTH_TOKEN",
 )
+
+_GLAB_CI_AUTOLOGIN = "GLAB_ENABLE_CI_AUTOLOGIN"
 
 GITHUB_JOB_LIST = ".jobs[] | [.databaseId, .name, .conclusion] | @tsv"
 
@@ -47,9 +50,15 @@ def _glab_environment_and_unset(
             inherited_authority = ""
         if inherited_authority.lower() != authority:
             unset = (*_GLAB_HOST_VARIABLES, *_GLAB_HOST_API_VARIABLES)
-            for name in unset:
-                env.pop(name, None)
             inherited_host = None
+        if (
+            env.get(_GLAB_CI_AUTOLOGIN, "").lower() in {"true", "1"}
+            and env.get("GITLAB_CI", "").lower() in {"true", "1"}
+            and env.get("CI_SERVER_FQDN", "").lower() != authority
+        ):
+            unset += (_GLAB_CI_AUTOLOGIN,)
+        for name in unset:
+            env.pop(name, None)
     if inherited_host and (prefer_environment or authority is None):
         env["GITLAB_HOST"] = inherited_host
     elif authority is not None:
@@ -99,7 +108,7 @@ def failure_log_commands(
     environment, unset = _glab_environment_and_unset(target, prefer_environment=prefer_environment, inferred_host=inferred_host)
     repo = glab_repository(repository, environment=environment)
     assignments: list[str] = []
-    if inferred_host:
+    if inferred_host and "GITLAB_HOST" in unset:
         assignments.append(f"GITLAB_HOST={environment['GITLAB_HOST']}")
     inherited_host = any(os.environ.get(name) for name in _GLAB_HOST_VARIABLES)
     explicit_endpoint = target.protocol in {"http", "https"} and not (prefer_environment and inherited_host)
@@ -116,6 +125,30 @@ def failure_log_commands(
         (*prefix, "glab", "ci", "get", "--repo", repo, "-p", identifier, "-d", "--status=failed", "-F", "json"),
         (*prefix, "glab", "ci", "trace", "<job ID>", "--repo", repo),
     )
+
+
+def _powershell_quote(value: str) -> str:
+    return "'" + value.translate({ord(char): char * 2 for char in "'‘’"}) + "'"
+
+
+def _powershell_glab_commands(commands: tuple[tuple[str, ...], ...]) -> tuple[str, list[str]]:
+    prepare = "PowerShellで、"
+    if commands[0][0] == "env":
+        prefix = commands[0][1 : commands[0].index("glab")]
+        setup: list[str] = []
+        remaining = iter(prefix)
+        for argument in remaining:
+            if argument == "-u":
+                setup.append(f"Remove-Item Env:{next(remaining)} -ErrorAction SilentlyContinue")
+            else:
+                name, _, value = argument.partition("=")
+                setup.append(f"$env:{name} = {_powershell_quote(value)}")
+        prepare = "専用のPowerShellを開き、`" + "; ".join(setup) + "` を実行してから、"
+    rendered = [
+        "`glab " + " ".join(_powershell_quote(arg) for arg in command[command.index("glab") + 1 :]) + "`"
+        for command in commands
+    ]
+    return prepare, rendered
 
 
 def failure_next_action(
@@ -136,6 +169,9 @@ def failure_next_action(
         if job:
             return f"{rendered[0]}で{save}"
         return f"{rendered[0]}で失敗jobのIDを取得し、{rendered[1]}の`<job ID>`を置換して失敗jobごとに{save}"
+    prepare = ""
+    if inferred_host and platform.system() == "Windows":
+        prepare, rendered = _powershell_glab_commands(commands)
     if len(rendered) == 2:
-        return f"{rendered[0]}で失敗jobのIDを取得し、{rendered[1]}の`<job ID>`を置換してログを取得し原因を調べる"
-    return f"{rendered[0]}で失敗ログを取得して原因を調べる"
+        return f"{prepare}{rendered[0]}で失敗jobのIDを取得し、{rendered[1]}の`<job ID>`を置換してログを取得し原因を調べる"
+    return f"{prepare}{rendered[0]}で失敗ログを取得して原因を調べる"

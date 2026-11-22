@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import platform
 import re
 import shlex
 import subprocess
@@ -188,8 +189,13 @@ def test_port_endpoint_wait_sha_covers_downstream_states(
 
 @pytest.mark.parametrize("shell_host", [None, "gitlab.other.example", "gitlab.example.com"])
 @pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("ci_host", [None, "gitlab.other.example", "gitlab.example.com"])
 def test_inferred_gitlab_failure_commands_match_monitoring(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], shell_host: str | None, partial: bool
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    shell_host: str | None,
+    partial: bool,
+    ci_host: str | None,
 ) -> None:
     hostname = "gitlab.example.com"
     monkeypatch.setattr(config_settings, "repository_settings", lambda **_: {f"{hostname}/group/project": {}})
@@ -202,6 +208,13 @@ def test_inferred_gitlab_failure_commands_match_monitoring(
     monkeypatch.setenv("GLAB_API_PROTOCOL", "http")
     monkeypatch.setenv("API_PROTOCOL", "http")
     monkeypatch.setenv("GITLAB_TOKEN", "test-token")
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setenv("GITLAB_CI", "true")
+    monkeypatch.setenv("GLAB_ENABLE_CI_AUTOLOGIN", "true")
+    if ci_host is None:
+        monkeypatch.delenv("CI_SERVER_FQDN", raising=False)
+    else:
+        monkeypatch.setenv("CI_SERVER_FQDN", ci_host)
     inherited = os.environ.copy()
     same_host = shell_host == hostname
     repo_url = f"{'http' if same_host else 'https'}://{hostname}/group/project"
@@ -210,6 +223,7 @@ def test_inferred_gitlab_failure_commands_match_monitoring(
     def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         environment = kwargs["env"]
         assert environment["GITLAB_HOST"] == hostname
+        assert environment.get("GLAB_ENABLE_CI_AUTOLOGIN") == ("true" if ci_host == hostname else None)
         for name in ("GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL", "GITLAB_TOKEN"):
             assert environment.get(name) == (inherited[name] if same_host else None)
         if command[1:3] == ["ci", "list"]:
@@ -238,17 +252,21 @@ def test_inferred_gitlab_failure_commands_match_monitoring(
             "0",
         ]
     ) == (wait_ci.EXIT_NEW_FAILURE if partial else wait_ci.EXIT_CI_FAILED)
-    commands = [shlex.split(value) for value in re.findall(r"`(env [^`]+)`", capsys.readouterr().err)]
+    commands = [shlex.split(value) for value in re.findall(r"`((?:env|glab) [^`]+)`", capsys.readouterr().err)]
     assert [command[command.index("glab") + 2] for command in commands] == (["trace"] if partial else ["get", "trace"])
     for command in commands:
         assert command[command.index("--repo") + 1] == repo_url
         assert "test-token" not in command
         replayed = inherited.copy()
-        index = 1
-        while command[index] == "-u":
-            replayed.pop(command[index + 1], None)
-            index += 2
-        assignment = command[index]
-        assert assignment == f"GITLAB_HOST={hostname}"
-        replayed["GITLAB_HOST"] = hostname
+        assert (command[0] == "env") == (not same_host or ci_host != hostname)
+        if command[0] == "env":
+            index = 1
+            while command[index] == "-u":
+                replayed.pop(command[index + 1], None)
+                index += 2
+            if not same_host:
+                assert command[index] == f"GITLAB_HOST={hostname}"
+                replayed["GITLAB_HOST"] = hostname
+                index += 1
+            assert command[index] == "glab"
         assert replayed == monitor_env
