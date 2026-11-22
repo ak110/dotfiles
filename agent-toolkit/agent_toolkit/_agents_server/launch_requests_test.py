@@ -537,8 +537,8 @@ async def test_add_wi_start_ignores_requirements_and_destinations_in_examples(
 
 @pytest.mark.asyncio
 async def test_add_wi_start_requires_unfenced_compact_input(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """簡略形も補足資料のコードフェンスからは拾わない。"""
-    compact = "request=/example=awi=検証する"
+    """補足資料のコードフェンス内にある簡略形を投入先として受理しない。"""
+    compact = "request=github.com/example/repository=awi=検証する"
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
