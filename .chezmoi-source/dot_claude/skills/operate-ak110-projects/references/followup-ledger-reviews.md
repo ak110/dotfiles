@@ -115,7 +115,7 @@
 - 参照先: `github.com/ak110/dotfiles`の`pytools/media_remote/_assets.py`、`.chezmoi-source/dot_vim/colors/shirotelin.vim`、`agent-basics/THIRD-PARTY-NOTICES.md`
 - 適用済みの見分け方: 素材の由来と適用条件が対応し、SVG応答や展開先など実際の配布物にも必要な表示があり、原条件が不明なものを適合済みとしない
 
-## 機械向けの文字比較を利用者のロケールから分ける
+## 機械向けの文字比較をユーザーのロケールから分ける
 
 - 項目ID: machine-string-matching-independent-of-locale
 - 実施日: 2026年11月
@@ -125,7 +125,7 @@
 - 適用方法: 対象の文字に必要な比較規則を選び、表示用の言語処理と分ける。
   例えばJavaScriptでASCIIのパスを照合する箇所ではロケールに依存しない変換を使い、トルコ語の環境で `FILE.txt` を `file` で検索できることを試験する
 - 参照先: `github.com/ak110/dotfiles` の `pytools/dirsize_browser_test.py` と `agent-basics/skills/writing-standards/references/typescript.md`
-- 適用済みの見分け方: 機械向けの値の比較規則が利用者のロケールに左右されず、規則が異なるロケールで同じ検索結果を試験できる
+- 適用済みの見分け方: 機械向けの値の比較規則がユーザーのロケールに左右されず、規則が異なるロケールで同じ検索結果を試験できる
 
 ## 起動時の循環importを静的に確認する
 
