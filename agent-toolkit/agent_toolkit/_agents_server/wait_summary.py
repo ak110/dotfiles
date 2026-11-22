@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import resume_waits, state, turn_state
@@ -22,6 +22,8 @@ WAIT_BODY_START_PREFIX = "本文開始: session_id="
 """要約が委譲先の本文の前に置く行の先頭。この行から同じsession識別子の終了の行までは委譲先の本文である。"""
 WAIT_BODY_END_PREFIX = "本文終了: session_id="
 """要約が委譲先の本文の後に置く行の先頭。"""
+NOTICE_LINE_PREFIX = "通知行: "
+"""本文ファイルを持つ通知ごとに、送信元と本文ファイルの所在を示す行の先頭。"""
 BODY_BUDGET_BYTES = output_file.AUTO_SAVE_THRESHOLD_BYTES
 """要約の標準出力全体の上限（UTF-8バイト数）。超える本文は表示せず、`agent_message_path`から読ませる。
 
@@ -36,12 +38,7 @@ _SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
 _TERMINAL_STATUS_RE = re.compile(r"\sstatus=([a-z_]+)(?:\s|$)")
 
 
-def render(
-    rows: Iterable[Mapping[str, Any]],
-    *,
-    reserved_bytes: int = 0,
-    save_notice: Callable[[str, str], pathlib.Path | None] | None = None,
-) -> str:
+def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str:
     """待機結果の行から、通知・終了の内訳と上限内の本文を持つ要約を返す。
 
     待機表明を確定した結果は、`unfinished_waits`へ残った待機対象の件数を加える。対象が残っていなければ0とする。
@@ -50,12 +47,13 @@ def render(
     要約全体が上限を超える本文と、読めない本文ファイルは表示せず、`agent_message_path`から読ませる。
     `reserved_bytes`は呼び出し元が要約の後へ続けて書く行（終了していない対象の行など）のUTF-8バイト数で、
     本文の予算から先に差し引き、標準出力全体を上限内に収める。
-    上限に収まらない通知の本文は、`save_notice`が保存したファイルの所在を`通知本文保存先:`の行で示す。
-    通知の本文は終了結果と違って他に読む手段が無いため、表示しない本文を黙って落とさない。
+    本文ファイルを持つ通知（`body_path`）は、終了行と同じく所在の`通知行:`を必ず示し、本文は上限内でだけ続ける。
+    必須の行（見出し、通知行、終了行、後続の行）を全て予算から先に差し引いてから任意の本文を選ぶ。
+    本文ファイルを持たない旧形式の保存runの通知は、他に読む手段が無いため本文を必須として示す。
     """
     notice_count = 0
     notice_session_ids: set[str] = set()
-    notice_bodies: list[tuple[str, str]] = []
+    notice_bodies: list[tuple[str, str, str | None]] = []
     terminal_lines: list[tuple[str, tuple[str, str] | None]] = []
     for result in rows:
         notices = result.get("notices")
@@ -65,7 +63,7 @@ def render(
             if isinstance(session_id, str):
                 notice_session_ids.add(session_id)
                 notice_bodies.extend(
-                    (session_id, notice["body"])
+                    (session_id, notice["body"], path if isinstance(path := notice.get("body_path"), str) else None)
                     for notice in notices
                     if isinstance(notice, dict) and isinstance(notice.get("body"), str)
                 )
@@ -87,23 +85,29 @@ def render(
             terminal_lines.append((f"{TERMINAL_LINE_PREFIX}{' '.join(fields)}", _terminal_body(result)))
     notice_line = f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）\n" if notice_count else ""
     terminal_header = f"終了: {len(terminal_lines)}件\n" if terminal_lines else ""
+    notice_rows = [
+        (f"{NOTICE_LINE_PREFIX}session_id={session_id} path={path}\n" if path is not None else "", session_id, body)
+        for session_id, body, path in notice_bodies
+    ]
+    # 本文ファイルを持たない通知の本文は必須として扱い、任意の本文より先に予算から差し引く。
+    legacy_blocks = {
+        index: _body_block(session_id, body) for index, (line, session_id, body) in enumerate(notice_rows) if not line
+    }
     remaining = (
         BODY_BUDGET_BYTES
         - reserved_bytes
         - _utf8_size(notice_line + terminal_header)
+        - sum(_utf8_size(line) for line, _session_id, _body in notice_rows)
+        - sum(_utf8_size(block) for block in legacy_blocks.values())
         - sum(_utf8_size(f"{line}\n") for line, _body in terminal_lines)
     )
     output = [notice_line]
-    for session_id, body in notice_bodies:
+    for index, (line, session_id, body) in enumerate(notice_rows):
+        if index in legacy_blocks:
+            output.append(legacy_blocks[index])
+            continue
+        output.append(line)
         block, remaining = _body_within(session_id, body, remaining)
-        if not block:
-            saved = save_notice(session_id, body) if save_notice is not None else None
-            block = (
-                f"通知本文保存先: session_id={session_id} path={saved}\n"
-                if saved is not None
-                else f"通知本文省略: session_id={session_id}（上限を超え、保存もできなかった）\n"
-            )
-            remaining -= _utf8_size(block)
         output.append(block)
     output.append(terminal_header)
     for line, body_entry in terminal_lines:
@@ -154,12 +158,17 @@ def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
         return None
 
 
-def _body_within(session_id: str, body: str, remaining: int) -> tuple[str, int]:
-    """本文を区切りの行で囲んで表示できる場合だけ本文の塊を返し、残りのバイト数とともに返す。"""
+def _body_block(session_id: str, body: str) -> str:
+    """本文を区切りの行で囲んだ塊を返す。"""
     block = f"{WAIT_BODY_START_PREFIX}{session_id}\n{body}"
     if body and not body.endswith("\n"):
         block += "\n"
-    block += f"{WAIT_BODY_END_PREFIX}{session_id}\n"
+    return block + f"{WAIT_BODY_END_PREFIX}{session_id}\n"
+
+
+def _body_within(session_id: str, body: str, remaining: int) -> tuple[str, int]:
+    """本文を区切りの行で囲んで表示できる場合だけ本文の塊を返し、残りのバイト数とともに返す。"""
+    block = _body_block(session_id, body)
     size = _utf8_size(block)
     if size > remaining:
         return "", remaining

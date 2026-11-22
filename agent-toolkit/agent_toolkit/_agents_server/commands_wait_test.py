@@ -226,6 +226,9 @@ def test_agents_wait_writes_notice_summary_and_running_line(
         atk.main(["agents", "wait"])
 
     output_lines = capsys.readouterr().out.splitlines()
+    notice_line = output_lines.pop(1)
+    assert notice_line.startswith("通知行: session_id=session-1 path=")
+    assert pathlib.Path(notice_line.split(" path=", 1)[1]).read_text(encoding="utf-8") == "警告"
     assert output_lines[:4] == [
         "通知: 1件（session_id: session-1）",
         "本文開始: session_id=session-1",
@@ -262,12 +265,15 @@ def test_agents_wait_writes_notice_and_terminal_summary(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
 
-    body_path = managed_temp.session_temp_path("root-session") / "agents-wait" / "session-1.md"
+    body_directory = managed_temp.session_temp_path("root-session") / "agents-wait"
+    body_path = body_directory / "session-1.md"
     assert capsys.readouterr().out.splitlines() == [
         "通知: 2件（session_id: session-1）",
+        f"通知行: session_id=session-1 path={body_directory / 'session-1-notice.md'}",
         "本文開始: session_id=session-1",
         "通知1",
         "本文終了: session_id=session-1",
+        f"通知行: session_id=session-1 path={body_directory / 'session-1-notice-2.md'}",
         "本文開始: session_id=session-1",
         "通知2",
         "本文終了: session_id=session-1",
@@ -422,32 +428,50 @@ def test_agents_wait_is_not_resaved_with_stderr(
     assert saved.read_text(encoding="utf-8") == "警告\n"
 
 
-def test_wait_summary_saves_notice_body_over_limit(tmp_path: pathlib.Path) -> None:
-    """上限に収まらない通知の本文は保存先を示し、上限内の通知は本文を直接示す。
-
-    通知の本文は終了結果と違って本文ファイルを持たないため、省いた本文へ到達できる所在を返す。
-    """
-    saved: list[tuple[str, str]] = []
-
-    def save_notice(session_id: str, body: str) -> pathlib.Path:
-        saved.append((session_id, body))
-        return tmp_path / f"{session_id}-notice.md"
-
-    long_body = "通" * wait_summary.BODY_BUDGET_BYTES
+def test_wait_summary_shows_notice_paths_and_bodies_within_limit(tmp_path: pathlib.Path) -> None:
+    """本文ファイルを持つ通知は所在の行を必ず示し、上限に収まらない本文だけを省く。"""
+    long_path, short_path = tmp_path / "session-1-notice.md", tmp_path / "session-1-notice-2.md"
     rows: list[dict[str, Any]] = [
-        {"session_id": "session-1", "status": "running", "notices": [{"body": long_body}, {"body": "短い通知"}]},
+        {
+            "session_id": "session-1",
+            "status": "running",
+            "notices": [
+                {"body": "通" * wait_summary.BODY_BUDGET_BYTES, "body_path": str(long_path)},
+                {"body": "短い通知", "body_path": str(short_path)},
+            ],
+        },
     ]
 
-    lines = wait_summary.render(rows, save_notice=save_notice).splitlines()
-
-    assert lines == [
+    assert wait_summary.render(rows).splitlines() == [
         "通知: 2件（session_id: session-1）",
-        f"通知本文保存先: session_id=session-1 path={tmp_path / 'session-1-notice.md'}",
+        f"通知行: session_id=session-1 path={long_path}",
+        f"通知行: session_id=session-1 path={short_path}",
         "本文開始: session_id=session-1",
         "短い通知",
         "本文終了: session_id=session-1",
     ]
-    assert saved == [("session-1", long_body)]
+
+
+@pytest.mark.parametrize("later_notices", [pytest.param(1, id="one"), pytest.param(90, id="many")])
+def test_wait_summary_counts_every_notice_line_before_bodies(tmp_path: pathlib.Path, later_notices: int) -> None:
+    """先の通知の本文で上限が埋まる場合も、後続の通知行を先に予算へ入れ、標準出力全体を上限内に保つ。
+
+    後から足す行を予算に入れないと、本文を選んだ後の行の分だけ上限を超える。
+    """
+    first = {"body": "", "body_path": str(tmp_path / "first.md")}
+    later = [{"body": "後続", "body_path": str(tmp_path / f"later-{index}.md")} for index in range(later_notices)]
+    rows: list[dict[str, Any]] = [{"session_id": "session-1", "status": "running", "notices": [first]}]
+    # 先の通知だけなら本文で上限ちょうどになる長さ。
+    # 末尾に改行の無い本文には表示時に改行を補うため、その1バイトも差し引く。
+    first["body"] = "x" * (wait_summary.BODY_BUDGET_BYTES - len(wait_summary.render(rows).encode("utf-8")) - 1)
+    assert len(wait_summary.render(rows).encode("utf-8")) == wait_summary.BODY_BUDGET_BYTES
+    rows[0]["notices"] = [first, *later]
+
+    output = wait_summary.render(rows)
+
+    assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+    assert output.count("通知行: ") == 1 + later_notices
+    assert first["body"] not in output
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:

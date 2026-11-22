@@ -132,6 +132,16 @@ class _BodyFileWriter:
         raise OSError(f"結果本文のファイル名を確保できない: {directory / session_id}")
 
 
+def _with_notice_body_paths(writer: _BodyFileWriter, session_id: str, notices: list[dict[str, str]]) -> list[dict[str, str]]:
+    """本文を持つ通知ごとに本文ファイルを書き、その所在を`body_path`へ加えた通知を返す。"""
+    return [
+        {**notice, "body_path": str(writer.write(f"{session_id}-notice", {"agent_message": notice["body"]}))}
+        if isinstance(notice.get("body"), str)
+        else notice
+        for notice in notices
+    ]
+
+
 def _wait_run_directory(root_session_id: str, owner: str, state_root: pathlib.Path | None) -> pathlib.Path:
     return shared_layout.status_directory(root_session_id, state_root) / "wait-results" / owner
 
@@ -718,6 +728,19 @@ def _wait_for_result(
                             roots=stranded_roots,
                         )
                     )
+                    # エージェント環境では通知の本文も終了結果と同じく1ファイルへ書き、要約は所在を必ず示して
+                    # 本文を上限内でだけ表示する。人の端末のJSON Linesは本文を持つため書かない。
+                    # 書込に失敗した場合は配送前に終え、run別の退避物から次の待機で再配送する。
+                    try:
+                        if is_agent_environment():
+                            notices = _with_notice_body_paths(body_writer, session_id, notices)
+                    except (_managed_temp.ManagedTempError, OSError) as error:
+                        return _fail(
+                            f"通知本文のファイルを書けません: session_id={session_id}: {error}",
+                            11,
+                            next_action=_BODY_FILE_NEXT_ACTION,
+                            session_id=session_id,
+                        )
                     if result is not None:
                         seq = retained_results.stashed_result_turn(run_path.with_suffix("") / "results" / f"{session_id}.json")
                         if seq is not None:
@@ -942,16 +965,7 @@ def _print_public(output: str, stream: str | None) -> None:
         if row.get("status") not in state.TERMINAL_STATUSES
     )
     # 要約の後に続ける行の量も本文の予算から差し引き、終了行と本文を直接表示できる量に収める。
-    writer = _BodyFileWriter()
-
-    def save_notice(session_id: str, body: str) -> pathlib.Path | None:
-        try:
-            return writer.write(f"{session_id}-notice", {"agent_message": body})
-        except _managed_temp.ManagedTempError, OSError:
-            return None
-
-    summary = wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8")), save_notice=save_notice)
-    sys.stdout.write(summary + others)
+    sys.stdout.write(wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8"))) + others)
     sys.stdout.flush()
 
 
