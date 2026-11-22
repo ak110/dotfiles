@@ -485,14 +485,14 @@ def _wait_for_result(
                 origins.setdefault(session_id, set()).add("run")
     ordered_ids = sorted(origins)
     own_sessions = _read_sessions(own_status_path)
-    awaiting = continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root)
-    if awaiting and not ordered_ids:
-        _print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting), None)
-        return 0
     if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
         if root_resolution is not None and not root_resolution.mapping_confirmed:
             reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents wait")
             return _fail(reason, 4, next_action=next_action)
+        awaiting = continuation_wait.continuation_notices(recipient_session_id, set(), state_root)
+        if awaiting:
+            _print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting), None)
+            return 0
         return _absent_wait_result(identity.file_name, current_run_path, released_interruptions)
     if current_run_error is not None:
         raise current_run_error
@@ -730,16 +730,15 @@ def _wait_for_result(
                         response["notices"] = notices
                         response["next_action"] = _NOTICE_NEXT_ACTION
                         collected.append(response)
-                if awaiting and (collected or read_failure is None):
-                    collected.extend(awaiting)
                 if collected:
+                    continuable = all(item.get("status") == "running" for item in collected)
+                    collected.extend(continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root))
                     output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
                     _LOG.info(
                         "wait_return reason=collected count=%d session_ids=%s",
                         len(collected),
                         ",".join(str(item["session_id"]) for item in collected),
                     )
-                    continuable = all(item.get("status") == "running" for item in collected)
                     return _publish_wait_result(run_path, output, 0, continuable=continuable, result_turns=result_turns)
                 if read_failure is not None:
                     return _publish_wait_result(
@@ -760,7 +759,10 @@ def _wait_for_result(
                 remaining = deadline - now
                 if remaining <= 0:
                     response["next_action"] = _RERUN_WAIT_NEXT_ACTION
-                    output = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+                    awaiting = continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root)
+                    output = "\n".join(
+                        json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in (response, *awaiting)
+                    )
                     _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
                     return _publish_wait_result(run_path, output, 3, continuable=True)
                 time.sleep(min(1.0, remaining))
