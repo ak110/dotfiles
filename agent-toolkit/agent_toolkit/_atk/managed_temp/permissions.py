@@ -9,7 +9,7 @@ import stat
 import typing
 from collections.abc import Callable
 
-from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError, ManagedTempPermissionError
 
 
 @contextlib.contextmanager
@@ -82,7 +82,7 @@ def _same_directory(opened: int, before: os.stat_result, path: pathlib.Path | st
 
 def _require_owner(metadata: os.stat_result, path: pathlib.Path | str) -> None:
     if metadata.st_uid != os.geteuid():
-        raise ManagedTempError(
+        raise ManagedTempPermissionError(
             f"所有者が異なるため現在のOSアカウントでは権限を補えない: {path} (uid={metadata.st_uid})",
             next_action=f"対象: {path} (uid={metadata.st_uid})。{ManagedTempError.PERMISSION_NEXT_ACTION}",
         )

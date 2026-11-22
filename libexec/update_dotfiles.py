@@ -228,6 +228,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("command", nargs="?", choices=["logs"], help="logs: 直近1回の更新実行の保存ログを表示する")
     parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
     parser.add_argument("--prune", action="store_true", help="現在のモードで不要なツールとキャッシュを削除する")
+    parser.add_argument("--no-sudo", action="store_true", help="管理一時資源の回収でsudoやUACを使わない")
     return parser.parse_args([] if argv is None else argv)
 
 
@@ -417,6 +418,11 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if returncode != 0:
                         return update_dotfiles_runtime.finish(returncode)
+                    from agent_toolkit._atk.managed_temp.elevation import (  # pylint: disable=import-outside-toplevel
+                        sweep_for_update,
+                    )
+
+                    sweep_for_update(no_sudo=args.no_sudo, logger=update_dotfiles_runtime.logger)
             except update_dotfiles_process.GitReclaimError as error:
                 update_dotfiles_runtime.logger.exception("Git子プロセスの回収失敗")
                 print(str(error), file=sys.stderr)
