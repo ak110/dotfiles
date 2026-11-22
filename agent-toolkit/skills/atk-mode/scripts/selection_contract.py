@@ -46,6 +46,7 @@ _LANE_COST_KEYS = frozenset(
         _selection.LANE_KEY,
         _selection.STAGE_KEY,
         _selection.PRIOR_LANES_KEY,
+        _selection.START_DEPENDENCIES_KEY,
         _IMPLEMENTATION_SECONDS_KEY,
         _INTEGRATION_SECONDS_KEY,
         _selection.UNCORRECTED_IMPLEMENTATION_KEY,
@@ -385,6 +386,11 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
         prior = row.get(_selection.PRIOR_LANES_KEY, [])
         if not is_string_list(prior) or len(prior) != len(set(prior)):
             errors.append(f"{label}: `{_selection.PRIOR_LANES_KEY}`が重複のない文字列の列ではない: {prior!r}")
+        start = row.get(_selection.START_DEPENDENCIES_KEY, [])
+        if not isinstance(start, list) or any(not isinstance(item, str) for item in start) or len(set(start)) != len(start):
+            errors.append(f"{label}: `{_selection.START_DEPENDENCIES_KEY}`が重複のない文字列の列ではない: {start!r}")
+        elif isinstance(prior, list) and any(item not in prior for item in start):
+            errors.append(f"{label}: `{_selection.START_DEPENDENCIES_KEY}`は`{_selection.PRIOR_LANES_KEY}`の部分集合にする")
         for key in (_IMPLEMENTATION_SECONDS_KEY, _INTEGRATION_SECONDS_KEY):
             legacy = next(name for name, current in _LEGACY_SECONDS_KEYS.items() if current == key)
             value = row.get(key, row.get(legacy))

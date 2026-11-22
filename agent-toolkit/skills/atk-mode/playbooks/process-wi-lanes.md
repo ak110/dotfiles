@@ -9,12 +9,12 @@
 ## レーンと資源
 
 1. 目標から始める判断は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」に従う。
-2. 選定結果の`段階`を昇順に処理し、同じ段階の独立したレーンを並行して起動する。
-   段階が1つだけなら全てのレーンを同時に作って起動する。
-   `先行レーン`を持つ後段は、列挙されたすべての先行レーンの統合完了後に、統合先の最新HEADからworktreeを作成する。
+2. 選定結果の`着手前に必要なレーン`が全て統合済みのレーンを、統合先の最新HEADからworktreeを作成し、段階をまたいで並行に起動する。
+   この欄が無いレーンも起動する。
    先行工程を正当な理由で次の巡回へ回す場合は、`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」の手順10で後続の先行条件を再判定する。
-   書込競合だけで後段にした工程など、先行成果を要さないと判定した工程は同じ手順で今回始める。
-   先行成果が必要な後段は統合完了まで待ち、成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする。
+   先行成果が必要な後段は統合完了まで待つ。
+   成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする。
+   `先行レーン`は統合許可の順序に使い、着手を止めない。
 3. レーンの専用worktree・branch・所有登録の作成・再利用・回収と、`レーン開始時刻`の記録は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`に従う。
 4. 同じレーンのAWIは選定結果の依存順を守り、依存先から処理する。
    計画が要るレーンは原則1つの計画にまとめ、単一の計画では行数の警告を避けられない初回の起草に限り`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」の手順4で分ける。
@@ -111,7 +111,8 @@
    受理済みの同じ本文・環境・契約の結果は再利用し、全群の取り込み後に群間の契約、共有の生成物、組合せの差分と未達条件を検収してから統合入力を確定する。
 2. Git統合、全計画の保存、WIの採否の確定、選定の統合状態の更新は、同じ所有登録から`atk lane integrate`が一括で行う。
    引数とmanifestの作り方は`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」に従い、メイン自身が呼ぶ場合も独立文脈のレビューと完成条件の判定を通った同じ入力を使う。
-   同じ統合先へのレーンの間で直列になるのは統合先HEADの一致の確認とfast-forwardの短い更新だけであり、メインは先行レーンの`統合完了`を待たずに次のレーンへ統合を許可できる（`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」）。
+   同じ統合先へのレーンの間で直列になるのは統合先HEADの一致の確認とfast-forwardの短い更新だけであり、先行レーンに列挙したレーンの`統合完了`を待ってから統合を許可する。
+   先行レーンにないレーンの最終化の完了を待つ必要はない（`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」）。
 3. 終了コード0、`phase: finalized`、統合結果のOID、計画ファイルの保存、終了対象のAWIの採否の確定を確かめる。
    `git-integrated`は最終化の途中の状態であり、統合完了とはみなさない。
    `終了しない`項目と延期の対象は採否を確定しない。

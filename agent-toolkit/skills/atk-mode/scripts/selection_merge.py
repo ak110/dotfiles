@@ -415,9 +415,9 @@ def merge_selection(
         row[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         lane = destination(str(row[_selection.LANE_KEY]))
         row[_selection.LANE_KEY] = lane
-        row[_selection.PRIOR_LANES_KEY] = list(
-            dict.fromkeys(destination(value) for value in typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])))
-        )
+        for key in (_selection.PRIOR_LANES_KEY, _selection.START_DEPENDENCIES_KEY):
+            if key == _selection.PRIOR_LANES_KEY or key in row:
+                row[key] = list(dict.fromkeys(destination(value) for value in typing.cast(list[str], row.get(key, []))))
         prior = costs.get(lane)
         if prior is None:
             # 初回配分は保持し、新レーンも合流後の累計上限・再開計画の全体検査へ渡す。
@@ -437,14 +437,10 @@ def merge_selection(
             prior[raw] = typing.cast(float, prior[raw]) + typing.cast(float, row[raw])
             prior[key] = typing.cast(float, prior[raw]) * coefficient
         prior[_selection.RATIONALE_KEY] = f"{prior[_selection.RATIONALE_KEY]}\n{row[_selection.RATIONALE_KEY]}"
-        prior[_selection.PRIOR_LANES_KEY] = list(
-            dict.fromkeys(
-                [
-                    *typing.cast(list[str], prior.get(_selection.PRIOR_LANES_KEY, [])),
-                    *typing.cast(list[str], row[_selection.PRIOR_LANES_KEY]),
-                ]
-            )
-        )
+        for key in (_selection.PRIOR_LANES_KEY, _selection.START_DEPENDENCIES_KEY):
+            if key in row:
+                values = typing.cast(list[str], prior.get(key, [])) + typing.cast(list[str], row[key])
+                prior[key] = list(dict.fromkeys(values))
     for lane, update in typing.cast(dict[str, dict[str, object]], cost_updates or {}).items():
         costs[lane].update(update)
     overlaps = _carry_overlaps(

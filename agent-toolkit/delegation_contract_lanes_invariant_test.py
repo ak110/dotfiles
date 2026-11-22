@@ -165,13 +165,14 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
     completion = (plugin_root / "skills/atk-mode/playbooks/process-wi-all-repos-results.md").read_text(encoding="utf-8")
-    assert "すべての先行レーンの統合完了後に" in lanes
+    assert f"`{selection.START_DEPENDENCIES_KEY}`が全て統合済み" in lanes
+    assert "`先行レーン`は統合許可の順序に使い、着手を止めない" in lanes
     assert (
         "`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」の手順10で後続の先行条件を再判定する"
         in lanes
     )
     assert "先行工程を正当な理由で次の巡回へ回す場合" in lanes
-    assert "先行成果が必要な後段は統合完了まで待ち" in lanes
+    assert "先行成果が必要な後段は統合完了まで待つ" in lanes
     assert (
         "成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする"
         in lanes
@@ -179,11 +180,12 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     assert "書込競合だけで後段にした工程など先行成果を要さない工程は" in completion
     assert "今回の巡回で実装・検証まで進める" in completion
     assert "先行を次の巡回へ回し後段を今回進めると判定した時に" not in lanes
-    assert "統合先の最新HEADからworktreeを作成する" in lanes
+    assert "統合先の最新HEADからworktreeを作成し" in lanes
     output = _selection_format(plugin_root)
     yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     top_fields = set(re.findall(r"^([^\s:]+):", yaml_block, flags=re.MULTILINE))
     assert selection.SINGLE_STAGE_ESTIMATE_KEY in top_fields
+    assert f"  {selection.START_DEPENDENCIES_KEY}:" in yaml_block
     assert all(f"`{selection.SINGLE_STAGE_ESTIMATE_KEY}`" in content for content in (parent, explanation))
 
 
