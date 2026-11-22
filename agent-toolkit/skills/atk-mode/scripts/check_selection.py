@@ -185,7 +185,11 @@ def check(
     work_repo: str | None = None
     for decision in items:
         awi = typing.cast(str, decision[_selection.WI_KEY])
-        if not _needs_body_check(decision, body_wis):
+        needs_body_check = _needs_body_check(decision, body_wis)
+        checks_new_assignment = (
+            awi in merged_wis and decision[_selection.LANE_KEY] != _LANE_NONE and not _is_integrated(decision, integrated_lanes)
+        )
+        if not (needs_body_check or checks_new_assignment):
             continue
         write_files = _string_list(decision, _selection.WRITE_FILES_KEY)
         public_write_files = _string_list(decision, _selection.PUBLIC_WRITE_FILES_KEY)
@@ -210,13 +214,15 @@ def check(
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
         parsed = _wi_frontmatter.parse_frontmatter(body)
         state = parsed[0].get("state", source.parent.name) if parsed else source.parent.name
-        if awi in merged_wis and state == "inbox" and not _is_integrated(decision, integrated_lanes):
+        if checks_new_assignment and state == "inbox":
             errors.append(
                 Violation(
                     f"{awi}: 追加割当の処理開始が未完了（inbox）",
                     next_action=f"`atk wi start-processing {awi}`で処理を開始して同じ追加選定を再実行する",
                 )
             )
+            continue
+        if not needs_body_check:
             continue
         saved_repo = parsed[0].get("target_repo") if parsed else None
         if isinstance(saved_repo, str):

@@ -257,8 +257,11 @@ def dispatch(
             validity = "判定対象" if quota in effective_windows else "過去の観測（判定対象外）"
             print(f"{label}: 観測残量={remaining}、回復={resets}、ペース={pace_text}、最終観測={sampled}、{validity}")
         print(f"自動配分: {'有効' if automatic else '無効'}")
-        for failure in settings.get("refresh_failures", []):
+        failures = settings.get("refresh_failures", [])
+        for failure in failures:
             print(f"取得失敗: {failure}")
+        if failures:
+            print("取得失敗の理由を確認し、atk config usage --refreshで再取得する")
         return
     normal = config_settings.load_config()
     model_settings = {

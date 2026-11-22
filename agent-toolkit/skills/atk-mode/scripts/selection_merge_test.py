@@ -140,7 +140,8 @@ def test_public_merge_correction_and_staged_comparison(
             assert merged.get("段階案の完了見込み秒数") == comparison
 
 
-def test_public_merge_requires_processing_for_new_assignment(inputs, tmp_path, capsys):
+@pytest.mark.parametrize("limit_body", [False, True])
+def test_public_merge_requires_processing_for_new_assignment(inputs, tmp_path, capsys, limit_body):
     repo, existing, added = inputs
     notes = tmp_path / "notes"
     inbox = notes / "inbox"
@@ -163,6 +164,8 @@ def test_public_merge_requires_processing_for_new_assignment(inputs, tmp_path, c
         str(repo),
     )
 
+    if limit_body:
+        args += ("--body-wi", "d.md")
     assert _dispatch(*args) == 1
     diagnostic = capsys.readouterr().err
     assert "c.md: 追加割当の処理開始が未完了" in diagnostic

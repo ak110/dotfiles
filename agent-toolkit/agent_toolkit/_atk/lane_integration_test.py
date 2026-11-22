@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import pathlib
 import sys
@@ -196,6 +197,22 @@ def test_integration_and_reuse_protect_dirty_submodules(
         assert reused["previous_integration"]["phase"] == "finalized"
         assert "lane_started_at" not in reused
         assert reused["initial_head"] == advanced
+        (worktree / "feature").write_text("今回の成果\n", encoding="utf-8")
+        current_head = git_repository.commit_all(worktree, "今回の成果")
+        started = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=2)
+        manifest.write_text(json.dumps({**old_input, "lane_started_at": started.isoformat()}), encoding="utf-8")
+        again = _integration_args(reused, repo, manifest, current_head)
+        code, finalized, stderr = _invoke(capsys, *again)
+        assert code == 0 and finalized["phase"] == "finalized", stderr
+        persisted = json.loads(pathlib.Path(reused["record_path"]).read_text(encoding="utf-8"))
+        values = persisted["integration"]["finalization_values"]
+        assert persisted["lane_started_at"] == started.isoformat()
+        ended = datetime.datetime.fromisoformat(values["completed_at"])
+        assert abs(int(values["lane_seconds"]) - (ended - started).total_seconds()) <= 1
+        code, retried, stderr = _invoke(capsys, *again)
+        assert code == 0 and retried["phase"] == "finalized", stderr
+        latest = json.loads(pathlib.Path(reused["record_path"]).read_text(encoding="utf-8"))
+        assert latest["integration"]["finalization_values"] == values
     else:
         assert reused["integration"]["phase"] == "finalized"
         assert reused["lane_started_at"] == old_start

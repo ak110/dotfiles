@@ -98,7 +98,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
         explicit_directory = False
         directory_particle = False
         last_end = 0
-        for start, end in _path_tokens(segments, work_dir):
+        for start, end, whole_code in _path_tokens(segments, work_dir):
             candidate = _normalize_candidate(run[start:end])
             gap = run[last_end:start]
             if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or directory_particle and gap.strip() == "の"):
@@ -108,7 +108,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
                 directory = None
                 continue
             if "/" in candidate:
-                resolved = _repository_path(candidate, work_dir)
+                resolved = _repository_path(candidate, work_dir, allow_root_ancestor=whole_code)
                 if resolved is None:
                     directory = None
                     continue
@@ -133,9 +133,9 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     return paths
 
 
-def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple[int, int]]:
-    """段落を連結した文字列の中で、パス候補の開始と終了の位置を出現順に返す。"""
-    tokens: list[tuple[int, int]] = []
+def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple[int, int, bool]]:
+    """パス候補の開始・終了位置と、候補がインラインコード全体かを返す。"""
+    tokens: list[tuple[int, int, bool]] = []
     offset = 0
     for segment in segments:
         content = segment.text
@@ -145,9 +145,12 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple
             and content.strip()
             and not any(char in _GLOB_CHARS for char in content)
             and ("/" in content or "." in content)
-            and (_repository_path(content.strip(), work_dir) is not None or (work_dir / content.strip()).is_file())
+            and (
+                _repository_path(content.strip(), work_dir, allow_root_ancestor=True) is not None
+                or (work_dir / content.strip()).is_file()
+            )
         ):
-            tokens.append((offset, offset + len(content)))
+            tokens.append((offset, offset + len(content), True))
             offset += len(content)
             continue
         for match in _PATH_TOKEN_RE.finditer(content):
@@ -157,7 +160,7 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple
                 if extended is None and not _is_complete_ascii_part(match.group()):
                     continue
                 end = extended or end
-            tokens.append((offset + match.start(), offset + end))
+            tokens.append((offset + match.start(), offset + end, False))
         offset += len(content)
     return tokens
 
@@ -188,7 +191,9 @@ def _is_complete_ascii_part(value: str) -> bool:
     return value.endswith("/") or "." in value.rsplit("/", 1)[-1]
 
 
-def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name: str | None = None) -> str | None:
+def _repository_path(
+    candidate: str, work_dir: pathlib.Path, *, abbreviated_name: str | None = None, allow_root_ancestor: bool = False
+) -> str | None:
     """`/`を含む候補を、実在するパス・読み替えた追跡ファイル・新設先のいずれかへ解決する。
 
     推測した親に実体が無い略記は元の名前を追跡ファイルの末尾と比べ、複数候補には明示を求める。
@@ -211,10 +216,10 @@ def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name
             "意図するファイルをリポジトリ相対パスで明示する",
             next_action="本文の略記を意図するファイルのリポジトリ相対パスへ直し、選定を再検証する",
         )
-    return _new_file_path(candidate, work_dir)
+    return _new_file_path(candidate, work_dir, allow_root_ancestor=allow_root_ancestor)
 
 
-def _new_file_path(candidate: str, work_dir: pathlib.Path) -> str | None:
+def _new_file_path(candidate: str, work_dir: pathlib.Path, *, allow_root_ancestor: bool = False) -> str | None:
     """実在するリポジトリ内の祖先から始まる完全な新設名を返す。"""
     if _normalize_candidate(candidate) != candidate or not _COMPLETE_FILE_NAME_RE.fullmatch(candidate.rsplit("/", 1)[-1]):
         return None
@@ -230,7 +235,12 @@ def _new_file_path(candidate: str, work_dir: pathlib.Path) -> str | None:
                 return candidate if parent.is_dir() else None
     except OSError, RuntimeError:
         return None
-    return candidate if target.parent == work_dir else None
+    # 文章中の断片は既存のディレクトリを手掛かりにし、完全なインラインコードに限りルートだけでも認める。
+    return (
+        candidate
+        if target.parent == work_dir or allow_root_ancestor and not any(char.isspace() for char in candidate.split("/", 1)[0])
+        else None
+    )
 
 
 def clear_caches() -> None:

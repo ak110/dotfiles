@@ -89,7 +89,7 @@ resetの自動消費は別途`usage_reset_permissions`に、`id`、`engine`、`a
 Codexの対象は`scope`を`codex`とし、旧`codex_auto_reset=true`だけを新方式の消費許可には読み替えない。
 自然回復が近い場合や作業がない場合は消費しない。
 検収や導入だけを目的に実際の権利を消費しない。
-Claudeの在庫・期限・対象は`claude_reset_inventory`に同じ形式で手入力し、確認結果が案内する公式Usage画面で消費する。
+Claudeの在庫・期限・対象は`claude_reset_inventory`に同じ形式で手入力し、`atk config usage --json`のリセット案内にある公式Usage画面で消費する。
 消費後は在庫を更新し、`atk config usage --refresh`で残量を取り直す。
 Fable限定などの対象を、他モデルや別の枠の回復へ読み替えない。
 
