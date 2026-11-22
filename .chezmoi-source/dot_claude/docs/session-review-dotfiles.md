@@ -33,7 +33,7 @@ batchでは、対象にdotfilesの作業が含まれる場合に、再発の記�
 削除したcommitを`git -C <dotfilesの作業ツリー> log -1 --format=%H --diff-filter=D -- docs/development/incidents.md`で得る。
 `git -C <dotfilesの作業ツリー> grep -n -E '^ +再発（[0-9]{4}年' <そのcommit>^ -- 'docs/development/incidents*.md'`で事例の再発行だけを列挙し（書式例の`YYYY`の行は一致しない）、各行が属する事例を原因の単位とする。
 新しい行の元の対策が削除前の事例の対策と同じなら、同じ原因として数える。
-新旧の記録は削除の時点で分かれ、同じ再発が両方に書かれることは無い。
+削除前に記録済みの再発は新しい記録へ書き直さない（`.claude/skills/edit-dotfiles-norms/references/recurrence-record.md`）ため、同じ再発は新旧の片方だけにある。
 2回以上再発した事例を分析候補にし、`agent-basics:bugfix/references/recurrence.md`「対策の種類を変える」に従って、同じ条文や仕組みを維持・修正・撤去する案を比べる。
 効果確認が`insufficient`の採用済みAWIは件数に加えず、各`再発`行が指す是正AWIと元のAWIの対応を確かめる材料にだけ使う（同じ再発を二重に数えないため）。
 今回の分析で新たに再発と判定した不具合は、`.claude/skills/edit-dotfiles-norms/references/recurrence-record.md`に従って記録する。

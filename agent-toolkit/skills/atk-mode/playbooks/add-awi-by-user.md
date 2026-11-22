@@ -28,7 +28,6 @@
    不具合・指摘・エラーは先に`agent-basics:bugfix`を起動する。
    既存AWIの更新・懸念は質問や調査の前に扱い、`inbox`・`hold`は保留し、`processing`への変更は別AWIに切り出す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」）。
 2. `agent-toolkit:atk-mode/playbooks/request-intake.md`の手順で要求を受け付け、方針を確定する。
-   同書「依頼の種類と確認」で、着手（起草）前の質問ラウンドが要るかが決まる。
    目的の衝突、指定範囲との不一致、認可不足、変更を左右する読みの違いは、同書の手順7で扱う。
    方針を決めた時点で、中心と理由、継続費用を加える対象、除外と理由、調査済みと未調査の成果物の種類を一度知らせる。
    確認が要らない依頼では、回答を待たずに続ける。

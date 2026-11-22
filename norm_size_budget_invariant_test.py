@@ -4,7 +4,9 @@
 両プラグインにまたがるためリポジトリ直下に置く。
 規範を足す前に引く原則（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）を文章だけで
 守れず合計が増え続けたため、増やす時に差分とレビューへ表れるようにする（2026年11月22日のユーザー判断）。
-上限を上げる時は`_BUDGET_BYTES`を書き換え、理由をcommit本文に書く。
+規範を足す時は、ほかの記述を削って合計を上限以内に収める。
+上限を上げるのは、ユーザーが自分から明示的に上げてよいと指示した時に限る。
+エージェントは上限の引き上げを提案も確認もしない（2026年11月22日のユーザー指示）。
 """
 
 import pathlib
@@ -13,7 +15,7 @@ import warnings
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _ROOTS = ("agent-toolkit/skills", "agent-basics/skills")
-_BUDGET_BYTES = 2_681_896
+_BUDGET_BYTES = 2_681_044
 # 上限との差がこの比率を超えたら、上限を下げるよう警告する（減らした分を次の追加で使い切らないため）。
 _SLACK_RATIO = 0.05
 
@@ -33,8 +35,9 @@ def test_norm_markdown_within_budget() -> None:
     total = _norm_markdown_bytes(_REPO_ROOT)
     assert total <= _BUDGET_BYTES, (
         f"規範のMarkdownの合計が{total}バイトで、上限{_BUDGET_BYTES}バイトを{total - _BUDGET_BYTES}バイト超えた。"
-        "先に既存の記述の削除・統合・検査への置き換えで減らせないかを比べる。"
-        f"それでも増やす時は{pathlib.Path(__file__).name}の_BUDGET_BYTESを{total}へ上げ、理由をcommit本文に書く。"
+        "既存の記述の削除・統合・検査への置き換えで、超えた分を相殺する。"
+        f"{pathlib.Path(__file__).name}の_BUDGET_BYTESを上げるのは、ユーザーが自分から明示的に指示した時に限り、"
+        "エージェントは引き上げを提案も確認もしない。"
     )
     if _BUDGET_BYTES - total > _BUDGET_BYTES * _SLACK_RATIO:
         warnings.warn(
