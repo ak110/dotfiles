@@ -1,6 +1,7 @@
 import ast
 import pathlib
 import subprocess
+from collections import deque
 
 import pytest
 
@@ -129,18 +130,24 @@ def _is_owned_start_cleanup(node: ast.Call, owner: ast.AST, parents: dict[ast.AS
 
 def _violations(path: pathlib.Path, source: str) -> list[str]:
     tree = ast.parse(source, filename=str(path))
-    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    parents: dict[ast.AST, ast.AST] = {}
     modules = {"subprocess"}
     imports: set[str] = set()
-    for node in ast.walk(tree):
+    calls = []
+    pending: deque[ast.AST] = deque([tree])
+    while pending:
+        node = pending.popleft()
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+            pending.append(child)
         if isinstance(node, ast.Import):
             modules.update(alias.asname or alias.name for alias in node.names if alias.name == "subprocess")
         elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
             imports.update(alias.asname or alias.name for alias in node.names)
+        elif isinstance(node, ast.Call):
+            calls.append(node)
     failures = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
+    for node in calls:
         function = node.func
         subprocess_call = (
             isinstance(function, ast.Attribute) and isinstance(function.value, ast.Name) and function.value.id in modules

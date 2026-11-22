@@ -26,19 +26,14 @@ def _installed_search_path() -> tuple[str, ...]:
     return tuple(json.loads(result.stdout))
 
 
-def _imported_top_level_names(tree: ast.Module) -> set[str]:
+def _ordinary_imports(tree: ast.Module) -> set[str]:
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             names.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             names.add(node.module.split(".")[0])
-    return names
-
-
-def _extends_sys_path(tree: ast.Module) -> bool:
-    for node in ast.walk(tree):
-        if (
+        elif (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr in {"insert", "append"}
@@ -47,16 +42,14 @@ def _extends_sys_path(tree: ast.Module) -> bool:
             and isinstance(node.func.value.value, ast.Name)
             and node.func.value.value.id == "sys"
         ):
-            return True
-    return False
+            return set()
+    return names
 
 
 def _unresolved_imports(path: pathlib.Path, search_path: tuple[str, ...]) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    if _extends_sys_path(tree):
-        return []
     unresolved = []
-    for name in sorted(_imported_top_level_names(tree)):
+    for name in sorted(_ordinary_imports(tree)):
         if (path.parent / f"{name}.py").is_file() or (path.parent / name).is_dir():
             continue
         if name in sys.stdlib_module_names or name in sys.builtin_module_names:
