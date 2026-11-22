@@ -4,7 +4,7 @@ version = "0.11.12"
 edition = "2021"
 rust-version = "1.65"
 publish = false
-description = "Claude Code statusLine/subagentStatusLine用CLI"
+description = "Claude Code statusLine用CLI"
 
 [[bin]]
 name = "claude-statusline"
