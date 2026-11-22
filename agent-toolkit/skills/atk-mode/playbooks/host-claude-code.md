@@ -21,7 +21,7 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 
 ## ツールの入出力
 
-- プラグインの再読込とMCPの再接続は、メインが`apply_runtime_changes`で予約し、ターンを終えて反映の結果を確認する。
+- プラグインの再読込と`agents_server`・`pyfltr`のMCP再接続は、メインが`apply_runtime_changes`で予約し、ターンを終えて反映の結果を確認する。
   ユーザーに操作を頼まず、再接続の予約が失敗した時か接続を失った後に限り`/mcp`での復旧を依頼する。
 - Windows版のBashツールは引用符付きのheredocや単一引用符の中でも`\\`を`\`へ縮めるため、エスケープを含むコードはWriteでmanaged-tempへ保存して実行する。
 - 現在の入力に端末modが添えた指定か、この会話のツール説明の指定がある時は、進捗・完了報告などの本文を`mcp__plugin_agent-toolkit_agents_server__send_to_user`の`message`で送る（地の文はAPIで要約されうる）。

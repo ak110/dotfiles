@@ -84,7 +84,8 @@
 ## `atk agents wait`の応答の扱い
 
 1. 行の形式と待機の成立の判定は`atk agents wait --help`が定める。
-   どの依頼の行かは`label`で判別し、失敗の行は`error`と`next_action`に従う。
+   回収行の依頼は`label`で判別し、失敗の行は`error`と`next_action`に従う。
+   既回収の`awaiting_reply`行は`session_id`で依頼を識別し、結果の再回収をせず`next_action`に従う。
 2. 本文は終了行の`agent_message_path`のファイルにある。
    要約に本文が無い時、後のターンで読み直す時、他の担当へ渡す時は、このファイルを直接読む。
 3. 終了コード3と`status: running`は未終了を示し、同じコマンドを再発行して待機を続ける。

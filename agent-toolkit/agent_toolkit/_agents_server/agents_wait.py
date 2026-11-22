@@ -619,8 +619,14 @@ def _wait_for_result(
                             is not None
                         ),
                     ]
+                    awaiting = continuation_wait.continuation_notices(recipient_session_id, set(), state_root)
                     if interrupted_sessions:
                         absent_message += "; " + _interrupted_sessions_text(interrupted_sessions)
+                        if awaiting:
+                            _print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting), None)
+                    elif awaiting:
+                        output = "\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting)
+                        return _publish_wait_result(run_path, output, 0)
                     return _publish_wait_result(
                         run_path,
                         with_next_action(absent_message, _ABSENT_TARGETS_NEXT_ACTION),

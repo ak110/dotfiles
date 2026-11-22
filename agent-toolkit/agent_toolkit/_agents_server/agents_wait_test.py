@@ -389,18 +389,23 @@ def test_agents_wait_outputs_terminal_result_with_notice_only_session(
     assert not any(notices.iterdir())
 
 
-@pytest.mark.parametrize("running", [False, True])
+@pytest.mark.parametrize("mode", ["reply_only", "completes", "disappears"])
 def test_wait_displays_recovered_continuation_without_redelivering_result(
-    wait_environment: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], running: bool
+    wait_environment: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
 ) -> None:
     """一件への返答後も、もう一件の応答待ちを新しい結果とは区別して表示する。"""
-    _write_own_status(wait_environment, [{"session_id": "session-3"}] if running else [])
+    _write_own_status(wait_environment, [] if mode == "reply_only" else [{"session_id": "session-3"}])
     ticks = []
 
     def publish_result(seconds: float) -> None:
         ticks.append(seconds)
-        wait_environment.mkdir(parents=True, exist_ok=True)
-        (wait_environment / "session-3.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+        if mode == "disappears":
+            _write_own_status(wait_environment, [])
+            registry = agents_wait.session_registry
+            monkeypatch.setattr(registry, "resolve", lambda *_, **__: registry.SessionResolution(registry.Resolution.TERMINAL))
+        else:
+            wait_environment.mkdir(parents=True, exist_ok=True)
+            (wait_environment / "session-3.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
 
     monkeypatch.setattr(agents_wait.time, "sleep", publish_result)
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _: 30)
@@ -422,8 +427,8 @@ def test_wait_displays_recovered_continuation_without_redelivering_result(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert bool(ticks) is running
-    if running:
+    assert bool(ticks) is (mode != "reply_only")
+    if mode == "completes":
         assert rows.pop(0) == {"session_id": "session-3", "status": "completed"}
     (row,) = rows
     assert row["session_id"] == "session-2" and row["status"] == "awaiting_reply"
