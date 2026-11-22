@@ -14,11 +14,11 @@ Linuxは対話シェルでmiseを有効化してmiseの管理版を先頭に置�
 削除できなかった導入物は警告して次回の`update-dotfiles`で再試行する。
 """
 
-import contextlib
 import dataclasses
 import json
 import logging
 import os
+import re
 import shutil
 import stat
 import sys
@@ -60,6 +60,9 @@ class Removal:
     kind: str
     target: str
     location: Path
+    manual_only: bool = False
+    reason: str = ""
+    unreadable: bool = False
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
@@ -75,6 +78,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     layout = _host_layout()
     path_entries = [Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
     removals: dict[tuple[str, str], tuple[Removal, str]] = {}
+    warned: set[tuple[str, str, str]] = set()
     for name, found, shadows in _foreign_executables(managed, path_entries, layout):
         removal = classify(found, name, layout)
         if removal is None:
@@ -86,6 +90,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                         "導入元のアンインストーラー（Windowsは「設定」の「アプリ」、Linuxはパッケージマネージャー）で削除する",
                     )
                 )
+            continue
+        if removal.manual_only:
+            # 旧npm版（reasonが空）の配置と正規の起動先は各CLIの専用工程が案内する。
+            if removal.reason and (removal.kind, removal.target, str(removal.location)) not in warned:
+                warned.add((removal.kind, removal.target, str(removal.location)))
+                _warn_unconfirmed(removal, name, found)
             continue
         removals.setdefault((removal.kind, removal.target), (removal, name))
     changed = False
@@ -127,12 +137,41 @@ def classify(found: Path, name: str, layout: Layout) -> Removal | None:
         if package_id is not None:
             return Removal("winget", package_id, resolved)
     if name in _PNPM_NAMES and _same(found.parent, layout.pnpm_home) and _has_pnpm_binary(layout.pnpm_home):
-        return Removal("pnpm-standalone", str(layout.pnpm_home), layout.pnpm_home)
-    package = _npm_global_package(found, name)
-    if package is not None:
-        prefix, package_name = package
-        return Removal("npm", package_name, prefix)
-    return None
+        # PNPM_HOMEはディレクトリごと削除するため、pnpm本体と付属物と確認できた項目だけを含む場合に限る。
+        try:
+            unknown = _unknown_pnpm_home_entries(layout.pnpm_home)
+        except OSError as error:
+            return Removal(
+                "pnpm-standalone", str(layout.pnpm_home), layout.pnpm_home, manual_only=True, reason=str(error), unreadable=True
+            )
+        return Removal(
+            "pnpm-standalone", str(layout.pnpm_home), layout.pnpm_home, manual_only=bool(unknown), reason="、".join(unknown)
+        )
+    return _npm_global_package(found, name)
+
+
+def _warn_unconfirmed(removal: Removal, name: str, found: Path) -> None:
+    """削除してよいと確認できず保持した導入物と、ユーザーが取れる操作を案内する。"""
+    if removal.unreadable:
+        message = (
+            f"standalone版pnpmの{removal.location}の内容を読めないため、このディレクトリを削除せず保持（{removal.reason}）。"
+            "PATHでmise管理のpnpmより先に解決される間はこちらのpnpmが起動する。"
+            "読取権限と、pnpmを使うプロセスが残っていないことを確認してから`update-dotfiles`を再実行する"
+        )
+    elif removal.kind == "pnpm-standalone":
+        message = (
+            f"standalone版pnpmの{removal.location}に、pnpm本体と付属物と確認できない項目（{removal.reason}）があるため、"
+            "このディレクトリを削除せず保持。PATHでmise管理のpnpmより先に解決される間はこちらのpnpmが起動する。"
+            "列挙した項目が不要と確認できたら別の場所へ移してから`update-dotfiles`を再実行すると、このディレクトリを削除する。"
+            "旧npm版のcodex・claudeの起動ファイルは、codex・claudeの警告に従って扱う"
+        )
+    else:
+        message = (
+            f"{found}を、npmの導入先{removal.location}のパッケージ{removal.target}の起動ファイルと確認できないため"
+            f"削除せず保持（{removal.reason}）。PATHでmise管理の{name}より先に解決される間はこちらが起動する。"
+            "不要と確認できた場合だけ、自分で配置・編集したファイルを退避してから手動で削除する"
+        )
+    logger.warning(log_format.format_status(_TAG, message))
 
 
 def _managed_names(mise: Path) -> set[str]:
@@ -250,42 +289,119 @@ def _has_pnpm_binary(home: Path) -> bool:
     return any((home / name).is_file() for name in ("pnpm.exe", "pnpm"))
 
 
-def _npm_global_package(found: Path, name: str) -> tuple[Path, str] | None:
-    """npmのグローバルprefixのbinにある実行ファイルなら、prefixと所有パッケージ名を返す。
+# standalone版pnpmの`PNPM_HOME`に置かれる、pnpm本体と付属物の名前（小文字）。
+# `pnpm add --global`の起動ファイルや`pnpm env`のNodeなど、これ以外の項目がある場合はディレクトリを削除しない。
+_PNPM_HOME_ENTRIES = frozenset(
+    {
+        *(f"{name}{suffix}" for name in ("pnpm", "pnpx") for suffix in ("", ".exe", ".cmd", ".ps1")),
+        "store",
+        "global",
+        "state",
+        ".tools",
+    }
+)
+
+# npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。
+_MAX_LAUNCHER_BYTES = 64 * 1024
+_SHIM_PACKAGE = re.compile(r"node_modules/((?:@[^/\"'\s]+/)?[^/\"'\s]+)/")
+
+
+def _unknown_pnpm_home_entries(home: Path) -> list[str]:
+    """`PNPM_HOME`直下のうち、pnpm本体と付属物と確認できない項目の名前を返す。読めない場合はOSErrorを送出する。"""
+    names = sorted(entry.name for entry in home.iterdir())
+    return [name for name in names if name.lower() not in _PNPM_HOME_ENTRIES]
+
+
+def _npm_global_root(found: Path) -> tuple[Path, Path] | None:
+    """起動ファイルの所在を`bin`に持つnpmのprefixと、`npm --prefix <prefix>`が実際に使うglobal rootを返す。
+
+    npmはPOSIXでは`<prefix>/bin`と`<prefix>/lib/node_modules`、Windowsでは`<prefix>`と`<prefix>/node_modules`を使う。
+    削除の可否を確かめるrootと`npm uninstall --prefix`が操作するrootを一致させるため、この規則以外の配置は対象外とする。
+    """
+    directory = found.parent
+    if sys.platform == "win32":
+        return directory, directory / "node_modules"
+    if directory.name == "bin":
+        return directory.parent, directory.parent / "lib" / "node_modules"
+    return None
+
+
+def _launcher_package(found: Path, modules: Path) -> str | None:
+    """起動ファイルが指すglobal root配下のパッケージのインストールキーを返す。確認できなければNoneを返す。
+
+    POSIXのnpmはパッケージ内のファイルへのsymlinkを、Windowsのnpm（cmd-shim）はパッケージ内のファイル（`node_modules`配下のキーのディレクトリ）を
+    参照するスクリプトを置く。
+    """
+    root = common.safe_resolve(modules)
+    if found.is_symlink():
+        try:
+            parts = common.safe_resolve(found).relative_to(root).parts
+        except ValueError:
+            return None
+        key = "/".join(parts[:2]) if parts and parts[0].startswith("@") else (parts[0] if parts else "")
+    else:
+        try:
+            if found.stat().st_size > _MAX_LAUNCHER_BYTES:
+                return None
+            content = found.read_text(encoding="utf-8", errors="replace").replace("\\", "/")
+        except OSError:
+            return None
+        matched = _SHIM_PACKAGE.search(content)
+        if matched is None:
+            return None
+        key = matched.group(1)
+    return key if key and (modules / key).is_dir() else None
+
+
+def _npm_global_package(found: Path, name: str) -> Removal | None:
+    """npmのglobal prefixの起動ファイルなら、削除操作を返す。
+
+    削除してよいと確認できた場合だけ`manual_only`をFalseにする。条件は次の全てである。
+    - 起動ファイルが、npmの規則で`--prefix`から決まるglobal rootのパッケージを指す
+    - そのパッケージが同名のbinを宣言し、インストールキー・`name`・binのどれも旧npm版に当たらない
+    旧npm版に関係する場合は`reason`を空にして案内を専用工程へ任せ、確認できない場合は理由を返す。
+    削除の対象は、npmの別名導入でも保護の判定と同じ導入物を指すよう、インストールキーとする。
 
     Node.js本体の導入先（Program Filesの`nodejs`や`/usr`など）は同梱のnpmを含むが、
     npmのグローバルprefixではなく本体のインストーラーが管理するため対象外とする。
     """
-    directory = found.parent
-    candidates = [(directory, directory / "node_modules")]
-    if directory.name == "bin":
-        candidates.append((directory.parent, directory.parent / "lib" / "node_modules"))
-    for prefix, modules in candidates:
-        if not modules.is_dir() or _is_node_installation(prefix):
+    located = _npm_global_root(found)
+    if located is None:
+        return None
+    prefix, modules = located
+    if not modules.is_dir() or _is_node_installation(prefix):
+        return None
+    declared: dict[str, dict[object, object]] = {}
+    unreadable: list[str] = []
+    for manifest in (*modules.glob("*/package.json"), *modules.glob("@*/*/package.json")):
+        key = manifest.parent.relative_to(modules).as_posix()
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8-sig"))
+        except OSError, ValueError:
+            unreadable.append(key)
             continue
-        for manifest in (*modules.glob("*/package.json"), *modules.glob("@*/*/package.json")):
-            if name in _package_bins(manifest):
-                return prefix, json.loads(manifest.read_text(encoding="utf-8")).get("name") or manifest.parent.name
+        if not isinstance(data, dict):
+            unreadable.append(key)
+            continue
+        if name in {Path(bin_name.lower()).stem for bin_name in setup_cli_common.normalize_npm_package_bins(data)}:
+            declared[key] = data
+    owner = _launcher_package(found, modules)
+    if any(setup_cli_common.protected_npm_package(key, data) for key, data in declared.items()) or (
+        owner is not None and owner in setup_cli_common.LEGACY_NPM_CLIS
+    ):
+        return Removal("npm", owner or next(iter(declared)), prefix, manual_only=True)
+    if owner is not None and owner in declared:
+        return Removal("npm", owner, prefix)
+    if owner is not None:
+        return Removal("npm", owner, prefix, manual_only=True, reason=f"{owner}のパッケージ情報が{name}のbinを宣言していない")
+    if declared or unreadable:
+        target = next(iter(declared), None) or unreadable[0]
+        return Removal("npm", target, prefix, manual_only=True, reason="起動ファイルが指すパッケージを確認できない")
     return None
 
 
 def _is_node_installation(prefix: Path) -> bool:
     return any(path.is_file() for path in (prefix / "node.exe", prefix / "node", prefix / "bin" / "node"))
-
-
-def _package_bins(manifest: Path) -> set[str]:
-    try:
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        return set()
-    if not isinstance(data, dict):
-        return set()
-    bins = data.get("bin")
-    if isinstance(bins, str) and isinstance(data.get("name"), str):
-        return {data["name"].rsplit("/", 1)[-1].lower()}
-    if isinstance(bins, dict):
-        return {str(key).lower() for key in bins}
-    return set()
 
 
 def _mise_resolves(mise: Path, name: str) -> bool:
@@ -309,8 +425,7 @@ def _remove(removal: Removal, mise: Path) -> bool:
         ]
     else:
         command = [str(mise), "exec", "--", "npm", "uninstall", "--global", "--prefix", str(removal.location), removal.target]
-    with setup_cli_common.NPM_GLOBAL_LOCK if removal.kind == "npm" else contextlib.nullcontext():
-        result = common.run_subprocess(command, timeout=common.COMMAND_TIMEOUT, tag=_TAG, cwd=Path.home())
+    result = common.run_subprocess(command, timeout=common.COMMAND_TIMEOUT, tag=_TAG, cwd=Path.home())
     if result is None or result.returncode != 0:
         logger.warning(
             log_format.format_status(
