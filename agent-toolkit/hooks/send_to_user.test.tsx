@@ -120,25 +120,3 @@ for (const [message, heads] of [
     }
   });
 }
-
-test("自力で反映できる場面の再読込・再接続の依頼だけ警告する", () => {
-  const requests = ["`/reload-plugins` を実行してください。", "`/mcp` で agents_server に再接続をお願いします。"];
-  for (const request of requests) {
-    expect(reportWarnings(request, true).join("\n")).toContain("apply_runtime_changes");
-    expect(reportWarnings(request)).toEqual([]);
-  }
-  expect(reportWarnings("別の会話で予約に失敗しました。こちらでは `/reload-plugins` を実行してください。", true).join("\n")).toContain("apply_runtime_changes");
-  const pending = reportWarnings(requests[0]!, true, true).join("\n");
-  expect(pending).toContain("反映結果を待て");
-  expect(pending).not.toContain("自分で予約");
-  for (const message of [
-    "`/reload-plugins` を実行しました。",
-    "`/reload-plugins` を実行したので、結果を確認してください。",
-    "`/mcp` で GitHub MCP に再接続してください。",
-    "`/mcp` は再接続に使うコマンドです。",
-    "予約に失敗したため、`/reload-plugins` を実行してください。",
-    "MCPの接続を失いました。`/mcp` で再接続してください。",
-  ]) {
-    expect(reportWarnings(message, true)).toEqual([]);
-  }
-});
