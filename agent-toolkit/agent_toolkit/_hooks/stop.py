@@ -56,6 +56,7 @@ CHECK_MODULE_NAMES = (
     "agents_server_session_advisor",
     "user_response_advisor",
     "bugfix_gate",
+    "norm_excuse_gate",
     "termination_order_advisor",
     "submission_report_advisor",
     "queued_notification_advisor",
@@ -69,6 +70,7 @@ CODEX_CHECK_MODULE_NAMES = (
     "autonomous_exit",
     "run_skill_report_gate",
     "submission_report_advisor",
+    "norm_excuse_gate",
 )
 
 # 終了要求が成立し、同じStopで継続を求めてはならない`halt`の状態。

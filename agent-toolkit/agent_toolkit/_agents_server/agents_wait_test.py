@@ -387,3 +387,39 @@ def test_agents_wait_outputs_terminal_result_with_notice_only_session(
     }
     assert not (wait_environment / "session-1.json").exists()
     assert not any(notices.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [("exec-review", "references/reviewee.md"), ("lane-reader-fit-review", "reader-fit-review.parent.md"), ("lane-exec", None)],
+)
+def test_agents_wait_adds_review_receipt_to_review_session_notice(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    label: str,
+    expected: str | None,
+) -> None:
+    """レビューのsessionが実行中に届けた通知には、指摘を含む場合に限る採否の案内を併記する。"""
+    wait_environment.mkdir(parents=True)
+    _write_own_status(wait_environment, [{"session_id": "session-2", "label": label}])
+    notices = wait_environment.parent / "notices"
+    notices.mkdir(parents=True)
+    (notices / "session-2.1.json").write_text(
+        json.dumps({"version": 1, "session_id": "session-2", "sent_at": "2026-09-15T00:00:01+00:00", "body": "指摘"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    (running,) = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    action = running["next_action"]
+    assert "atk agents wait" in action
+    if expected is None:
+        assert "agent-basics:review-standards" not in action
+    else:
+        assert "agent-basics:review-standards" in action
+        assert expected in action
+        # 通知は助言依頼なども運ぶため、指摘の受領を断定しない。
+        assert "通知が指摘を含む場合" in action
+        assert "指摘を受領した" not in action
