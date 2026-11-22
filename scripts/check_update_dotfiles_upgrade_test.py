@@ -560,7 +560,7 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
         tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
     )
 
-    assert len(observations) == 2
+    assert len(observations) == (3 if platform_name == "windows" else 2)
     for env, bin_dir, tools_dir in observations:
         home = pathlib.Path(env["HOME"])
         assert env["USERPROFILE"] == str(home)

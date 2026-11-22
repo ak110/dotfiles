@@ -127,6 +127,45 @@ def test_initial_apply_pins_old_python_version(
     assert child_envs["upgrade"]["UV_PYTHON"] == str(pathlib.Path(child_envs["upgrade"]["UV_PYTHON_INSTALL_DIR"]) / "python")
 
 
+@pytest.mark.parametrize("install_exit", [0, 17])
+def test_windows_provisions_managed_python_inside_verification_home(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, install_exit: int
+) -> None:
+    uv = tmp_path / "uv"
+    uv.write_bytes(b"test-uv")
+    monkeypatch.setenv("UV", str(uv))
+    stages: list[str] = []
+
+    def runner(arguments, **kwargs):
+        if arguments[0] == "chezmoi":
+            stages.append("initial")
+        elif arguments[1:3] == ["python", "install"]:
+            stages.append("install")
+            env = kwargs["env"]
+            assert arguments[3:] == ["--no-bin", "--no-registry", "--", ">=3.15"]
+            assert pathlib.Path(arguments[0]) == pathlib.Path(env["UV_TOOL_BIN_DIR"]) / "uv.exe"
+            assert pathlib.Path(env["UV_PYTHON_INSTALL_DIR"]).is_relative_to(pathlib.Path(env["USERPROFILE"]))
+            assert env["UV_MANAGED_PYTHON"] == "1"
+            assert "UV_PYTHON" not in env
+            return subprocess.CompletedProcess(arguments, install_exit, stdout="", stderr="")
+        elif arguments[0] == "cmd.exe":
+            stages.append("upgrade")
+        return _git_answers(arguments)
+
+    def check() -> None:
+        upgrade.run_upgrade_check(
+            tmp_path, "windows", runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
+        )
+
+    if install_exit:
+        with pytest.raises(upgrade.UpgradeCheckError, match="終了コード17"):
+            check()
+        assert stages == ["initial", "install"]
+    else:
+        check()
+        assert stages == ["initial", "install", "upgrade"]
+
+
 def test_verify_updated_oid_rejects_mismatch() -> None:
     """更新後OIDが検証開始時の現行OIDと異なる場合は失敗する。"""
     with pytest.raises(upgrade.UpgradeCheckError, match="expected=current actual=other"):
@@ -357,7 +396,7 @@ def test_upgrade_check_ignores_parent_mise_shims(
 
     upgrade.run_upgrade_check(tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=profile_env)
 
-    assert len(child_envs) == 2
+    assert len(child_envs) == (3 if platform_name == "windows" else 2)
     for env in child_envs:
         entries = [pathlib.Path(entry) for entry in env["PATH"].split(os.pathsep) if entry]
         assert not any(entry.is_relative_to(mise_dir) for entry in entries), entries
@@ -441,7 +480,7 @@ def test_upgrade_check_cuts_routes_to_real_home(
         tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
     )
 
-    assert len(child_envs) == 2
+    assert len(child_envs) == (3 if platform_name == "windows" else 2)
     for env in child_envs:
         verification_home = pathlib.Path(env["HOME"])
         ceiling = pathlib.Path(env["MISE_CEILING_PATHS"])

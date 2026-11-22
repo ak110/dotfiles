@@ -579,6 +579,11 @@ def verify_upgrade_inputs(
     script = _require_inside(root, "更新スクリプト", checkout / "libexec" / "update_dotfiles.py")
     requirement = script_python_requirement(script)
     env.pop("UV_PYTHON", None)
+    if platform_name == "windows":
+        # 初期適用が成功しても検証先に管理Pythonが無い場合がある。  # pyfltr: allow-comment
+        run_command(
+            (uv, "python", "install", "--no-bin", "--no-registry", "--", requirement), cwd=checkout, env=env, runner=runner
+        )
     python = run_command(
         (uv, "python", "find", "--no-project", "--system", "--", requirement), cwd=checkout, env=env, runner=runner
     ).stdout.strip()
