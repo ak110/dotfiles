@@ -52,6 +52,7 @@ from agent_toolkit._agents_server import admission as _admission
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
@@ -399,6 +400,27 @@ def _mark_integrated(selection: dict[str, object], lanes: set[str], processed_wi
     selection[_selection.LANE_COSTS_KEY] = rows
 
 
+def _output_contents(path: pathlib.Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def _save_selection(path: pathlib.Path, original: bytes | None, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(path.name + ".lock")
+    # 本体の原子的な置換後も、並行する書込主体は同じロックファイルを使う。
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        acquire_lock(lock)
+        try:
+            if _output_contents(path) != original:
+                raise OSError(f"読取後に別の実行が保存先を更新した: {path}")
+            atomic_write(path, content)
+        finally:
+            release_lock(lock)
+
+
 def main(argv: list[str] | None = None) -> int:
 
     clear_caches()
@@ -577,6 +599,11 @@ def main(argv: list[str] | None = None) -> int:
     rerecord: tuple[dict[tuple[str, str, str], list[str]], str] | None = None
     merged_wis: frozenset[str] = frozenset()
     try:
+        original_output = _output_contents(args.output) if args.output is not None else None
+    except OSError as error:
+        _next_action.report(str(error), next_action="保存先を確認して同じ操作を再実行する")
+        return 2
+    try:
         work_dir = _resolve_work_dir(args.work_dir)
         reorder = args.output is not None and all(
             value is None
@@ -712,7 +739,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.extend_write_targets is not None and args.output.resolve() == args.extend_write_targets.resolve():
                 raise OSError("書込対象の追加入力YAMLを保存先に指定できない")
             freeze_overlap_pairs(selection)
-            atomic_write(args.output, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
+            _save_selection(args.output, original_output, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
         except OSError as error:
             _next_action.report(str(error), next_action="保存先を確認して同じ統合操作を再実行する")
             return 2

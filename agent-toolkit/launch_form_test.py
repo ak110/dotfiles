@@ -589,6 +589,8 @@ def test_launcher_windows_job_ownership(launcher: ModuleType, monkeypatch: pytes
     class Process:
         _handle = 123
         pid = 456
+        stdin = None
+        stdout = None
         stderr = SimpleNamespace(close=lambda: events.append("close-pipe"))
 
         def poll(self):

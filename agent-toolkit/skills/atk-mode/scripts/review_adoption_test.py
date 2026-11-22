@@ -253,3 +253,53 @@ def test_one_review_record_attributes_every_matching_table(dataset, capsys):
     periods = {row["period"]: row for row in _run(dataset, capsys) if row["kind"] == "review-adoption-period"}
     assert not periods["current"]["unknown_model_tables"]
     assert periods["current"]["by_model"]["claude:claude-opus-5-5/high"]["tables"] == 3
+
+
+def test_codex_spawn_attributes_only_the_primary_reviewer(dataset, capsys) -> None:
+    _, _, codex = dataset
+    table = "03-0001_unknown.exec-review.tsv"
+    role_doc = "roles/exec-review.subagent.md"
+
+    def record(session: str, model: str, first_path: str, *, parent: str | None = None, marker: str = "") -> None:
+        source = {"subagent": {"thread_spawn": {"parent_thread_id": parent}}} if parent else "vscode"
+        table_ref = "" if marker else table
+        write_jsonl(
+            codex / f"rollout-{session}.jsonl",
+            [
+                {"type": "session_meta", "payload": {"id": session, "source": source}},
+                {"type": "turn_context", "payload": {"model": model, "effort": "low"}},
+                {
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "user", "content": marker},
+                },
+                {"type": "response_item", "payload": {"type": "reasoning"}},
+                {
+                    "type": "response_item",
+                    "payload": {"type": "custom_tool_call", "name": "exec", "input": f"cat {first_path}"},
+                },
+                {
+                    "type": "response_item",
+                    "payload": {"type": "function_call", "arguments": f"cat {role_doc}; echo {table_ref}"},
+                },
+            ],
+        )
+
+    record("parent", "codex-parent-model", role_doc)
+    record("review", "codex-primary-model", role_doc, parent="parent")
+    record("support", "codex-support-model", role_doc, parent="review")
+    record("other", "codex-other-model", "roles/exec.subagent.md", parent="parent")
+    record("other-path", "codex-other-path-model", "/plugin/notroles/exec-review.subagent.md", parent="parent")
+    record("orphan", "codex-orphan-model", role_doc, parent="missing")
+    record("explicit-review", "", role_doc, marker=_ROLE_PROMPT)
+    record("explicit-support", "codex-explicit-support-model", role_doc, parent="explicit-review")
+    current = next(
+        event for event in _run(dataset, capsys) if event["kind"] == "review-adoption-period" and event["period"] == "current"
+    )
+    models = current["by_model"]
+    assert table not in current["unknown_model_tables"]
+    assert models["codex:codex-primary-model/low"]["tables"] == 1
+    assert not any(
+        f"codex-{name}-model" in identity
+        for identity in models
+        for name in ("parent", "support", "other", "other-path", "orphan", "explicit-support")
+    )

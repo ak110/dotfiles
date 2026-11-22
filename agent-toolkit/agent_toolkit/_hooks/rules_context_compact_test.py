@@ -85,3 +85,47 @@ def test_context_boundary_forgets_completion_playbook_only_for_main(
         start["agent_id"] = agent_id
     assert _run_hook_in_process("rules_context", start).returncode == 0
     assert termination_evidence_state.completion_in_context(session_id) is (agent_id is not None)
+
+
+@pytest.mark.parametrize("own_wait", [False, True])
+def test_compact_delegation_wait_is_scoped_to_current_owner(tmp_path, monkeypatch, capsys, own_wait):
+    """未回収と応答待ちを分け、別主体のロックを自分の待機に数えない。"""
+    from types import SimpleNamespace
+
+    from agent_toolkit._hooks import agents_server_observations, agents_server_session_advisor
+    from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
+
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "state")
+    monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
+    monkeypatch.setattr(
+        agents_server_observations.shared_roots,
+        "resolve_wait_identity",
+        lambda *_args: SimpleNamespace(root_session_id="root", file_name="own.json"),
+    )
+    owners = ["other.json", "own.json"] if own_wait else ["other.json"]
+    monkeypatch.setattr(agents_server_observations, "_held_wait_lock_owners", lambda _root: owners)
+    monkeypatch.setattr(agents_server_observations, "_registered_wait_targets", lambda *_args: {"running"})
+    monkeypatch.setattr(
+        agents_server_session_advisor, "continuation_wait_seconds", lambda identifier: 5 if identifier == "reply" else None
+    )
+    update_state(
+        "compact-wait",
+        lambda state: {
+            **state,
+            "agents_server_sessions": {
+                "running": {"owner_agent_id": MAIN_AGENT_ID, "pending_observation": True},
+                "reply": {"owner_agent_id": MAIN_AGENT_ID, "pending_observation": False},
+                "other-agent-child": {"owner_agent_id": "another-agent", "pending_observation": True},
+            },
+        },
+    )
+    payload = {"hook_event_name": "SessionStart", "source": "compact", "session_id": "compact-wait"}
+    assert rules_context.main(json.dumps(payload), host="claude") == 0
+    output = _output(capsys)
+    assert "未回収: running" in output and "応答待ち: reply" in output
+    assert "other-agent-child" not in output
+    if own_wait:
+        assert "自セッションが待機中: running" in output and "待機の再開は不要" in output
+    else:
+        assert "自セッションに有効な待機なし" in output and "待機の再開が必要: running" in output

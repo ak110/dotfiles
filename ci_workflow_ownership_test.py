@@ -97,7 +97,10 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
         "(github.event_name == 'push' && github.ref == 'refs/heads/develop')"
     )
     assert workflow_data["concurrency"] == {
-        "group": "ci-${{ github.event_name }}-${{ github.ref }}",
+        "group": (
+            "ci-${{ github.event_name }}-"
+            "${{ github.ref == 'refs/heads/master' && github.event_name == 'push' && github.sha || github.ref }}"
+        ),
         "cancel-in-progress": "true",
     }
 
@@ -189,7 +192,7 @@ def test_common_ci_owner_runs_workflow_judgment(
     runpy.run_path(str(script_path), run_name="__main__")
     if run_state == "api-error":
         diagnostic = capsys.readouterr().out
-        assert "このrunで共通検証を実行します" in diagnostic
+        assert "他のCIの成功を確認できないため、このrunで共通検証を実行する: URLError" in diagnostic
         assert "::warning::" not in diagnostic
     values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
     assert values["owns"] == str(expected_owns).lower()

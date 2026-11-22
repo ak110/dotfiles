@@ -98,6 +98,7 @@ def main(
     conversation_output: list[dict[str, Any]] | None = None,
     conversation_scope: Path | None = None,
     conversation_only: bool = False,
+    conversation_main_only: bool = False,
 ) -> int:
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
@@ -165,7 +166,7 @@ def main(
         _print_events(events)
         return 0
     query_modes = _single_transcript_query_modes(args)
-    main_only = (args.user_events or args.elapsed_until is not None) and sum(query_modes) == 1
+    main_only = conversation_main_only or ((args.user_events or args.elapsed_until is not None) and sum(query_modes) == 1)
     active_queries = _active_queries(args)
     if args.summary_only and (not active_queries or any(not _QUERY_OPTIONS[name][0] for name in active_queries)):
         supported = _query_option_names([name for name, (summary, _catalog) in _QUERY_OPTIONS.items() if summary])
