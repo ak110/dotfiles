@@ -132,16 +132,21 @@ function Clear-StaleRun([string] $Parent) {
             continue
         }
         try {
-            $task = Get-RunTask $staleName
-            if (($task -and $task.State -in @($taskStateQueued, $taskStateRunning)) -or
-                @(Get-RunProcessId $directory).Count -gt 0) {
-                continue
+            try {
+                $task = Get-RunTask $staleName
+                if (($task -and $task.State -in @($taskStateQueued, $taskStateRunning)) -or
+                    @(Get-RunProcessId $directory).Count -gt 0) {
+                    continue
+                }
+            } finally {
+                # Windowsでは開いたロックがあるディレクトリを削除できない。
+                $claim.Dispose()
             }
-        } finally {
-            # Windowsでは開いたロックがあるディレクトリを削除できない。
-            $claim.Dispose()
+            Clear-Run $staleName
+        } catch {
+            # 同じ孤児を別の接続も片付ける場合がある。現在の要求は続ける。
+            [Console]::Error.WriteLine("ssh-unelevated: 以前の要求の後始末を完了できなかった: $_")
         }
-        Clear-Run $staleName
     }
 }
 

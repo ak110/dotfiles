@@ -310,8 +310,11 @@ function Get-RunTask([string] $Name) {
 function Get-RunProcessId([string] $Dir) {
     if ($Dir.EndsWith('cccc')) { 20 }
 }
-function Clear-Run([string] $Name) { Write-Output $Name }
-foreach ($id in 'aaaa', 'bbbb', 'cccc', 'dddd') {
+function Clear-Run([string] $Name) {
+    if ($Name -eq 'ssh-unelevated-1-dddd') { throw 'cleanup raced' }
+    Write-Output $Name
+}
+foreach ($id in 'aaaa', 'bbbb', 'cccc', 'dddd', 'eeee') {
     $dir = Join-Path $Parent "ssh-unelevated-1-$id"
     New-Item -ItemType Directory -Path $dir | Out-Null
     New-Item -ItemType File -Path (Join-Path $dir 'owner.lock') | Out-Null
@@ -332,4 +335,5 @@ try {
         text=True,
         timeout=60,
     )
-    assert result.stdout.splitlines() == ["ssh-unelevated-1-dddd"]
+    assert result.stdout.splitlines() == ["ssh-unelevated-1-eeee"]
+    assert "cleanup raced" in result.stderr
