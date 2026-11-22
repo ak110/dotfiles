@@ -52,18 +52,18 @@ _GLOB_CHARS = frozenset("*?[{")
 _COMPLETE_FILE_NAME_RE = re.compile(r"[^/]*[^/.]\.[A-Za-z0-9]+")
 
 
-def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
+def reflected_paths(text: str, work_dir: pathlib.Path, *, declared_paths: frozenset[str] = frozenset()) -> set[str]:
     """WIファイルの全文から反映先パスの集合を返す。
 
     UWIはfrontmatterを除く本文全体、それ以外は`## 反映内容と反映先`の節を抽出の対象にする。
     """
     parsed = _wi_frontmatter.parse_frontmatter(_markdown_headings.normalize_newlines(text))
     if parsed is not None and parsed[0].get("type") == _UWI_TYPE:
-        return _explicit_paths(parsed[1], work_dir)
+        return _explicit_paths(parsed[1], work_dir, declared_paths)
     section = _section_text(text, _TARGET_SECTION)
     if section is None:
         return set()
-    return _explicit_paths(section, work_dir)
+    return _explicit_paths(section, work_dir, declared_paths)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -74,7 +74,7 @@ class _Segment:
     code: bool
 
 
-def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
+def _explicit_paths(text: str, work_dir: pathlib.Path, declared_paths: frozenset[str]) -> set[str]:
     """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
     インラインコードは、内容全体が解決可能なパスの場合に空白を含めて1つの候補とし、非ASCIIの文字を含む
@@ -98,7 +98,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
         explicit_directory = False
         directory_particle = False
         last_end = 0
-        for start, end, whole_code in _path_tokens(segments, work_dir):
+        for start, end in _path_tokens(segments, work_dir, declared_paths):
             candidate = _normalize_candidate(run[start:end])
             gap = run[last_end:start]
             if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or directory_particle and gap.strip() == "の"):
@@ -108,7 +108,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
                 directory = None
                 continue
             if "/" in candidate:
-                resolved = _repository_path(candidate, work_dir, allow_root_ancestor=whole_code)
+                resolved = _repository_path(candidate, work_dir, allow_root_ancestor=candidate in declared_paths)
                 if resolved is None:
                     directory = None
                     continue
@@ -133,21 +133,25 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     return paths
 
 
-def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple[int, int, bool]]:
-    """パス候補の開始・終了位置と、候補がインラインコード全体かを返す。"""
-    tokens: list[tuple[int, int, bool]] = []
+def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path, declared_paths: frozenset[str]) -> list[tuple[int, int]]:
+    """段落を連結した文字列の中で、パス候補の開始と終了の位置を出現順に返す。"""
+    tokens: list[tuple[int, int]] = []
     offset = 0
     for segment in segments:
         content = segment.text
+        candidate = content.strip()
         # グロブや波括弧展開を含むインラインコードは個別のパスを指さないため、文章と同じ規則で断片を除く。
         if (
             segment.code
-            and content.strip()
+            and candidate
             and not any(char in _GLOB_CHARS for char in content)
             and ("/" in content or "." in content)
-            and _whole_path_in_code(content.strip(), work_dir)
+            and (
+                _repository_path(candidate, work_dir, allow_root_ancestor=candidate in declared_paths) is not None
+                or (work_dir / candidate).is_file()
+            )
         ):
-            tokens.append((offset, offset + len(content), True))
+            tokens.append((offset, offset + len(content)))
             offset += len(content)
             continue
         for match in _PATH_TOKEN_RE.finditer(content):
@@ -157,22 +161,9 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple
                 if extended is None and not _is_complete_ascii_part(match.group()):
                     continue
                 end = extended or end
-            tokens.append((offset + match.start(), offset + end, False))
+            tokens.append((offset + match.start(), offset + end))
         offset += len(content)
     return tokens
-
-
-def _whole_path_in_code(content: str, work_dir: pathlib.Path) -> bool:
-    """既存のパス解釈を優先し、ルートだけを祖先とする新設先は個別パスの指定として扱う。"""
-    if _repository_path(content, work_dir) is not None or (work_dir / content).is_file():
-        return True
-    # コマンド中の引数として既存のパス検査で解決できる断片を、架空の新設先で覆わない。
-    if " -- " in content or any(
-        match.group() != content and "/" in match.group() and _repository_path(match.group(), work_dir) is not None
-        for match in _PATH_TOKEN_RE.finditer(content)
-    ):
-        return False
-    return _new_file_path(content, work_dir, allow_root_ancestor=True) is not None
 
 
 def _is_non_ascii_word_char(char: str) -> bool:
@@ -245,7 +236,7 @@ def _new_file_path(candidate: str, work_dir: pathlib.Path, *, allow_root_ancesto
                 return candidate if parent.is_dir() else None
     except OSError, RuntimeError:
         return None
-    # 文章中の断片は既存のディレクトリを手掛かりにし、完全なインラインコードに限りルートだけでも認める。
+    # 上位ディレクトリが無い文字列はコマンドと区別できない。本文と選定に同じ個別パスを示す場合だけ認める。
     return candidate if target.parent == work_dir or allow_root_ancestor else None
 
 

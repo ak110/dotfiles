@@ -452,7 +452,7 @@ def test_non_ascii_write_paths_do_not_require_lane_overlap_rationale(
 __all__ = ["fixture_env"]
 
 
-@pytest.mark.parametrize("directory", ["src", "new-top", "new top"])
+@pytest.mark.parametrize("directory", ["src", "new-top", "new top", "new src", "new -- dir"])
 def test_public_selection_accepts_new_directories(tmp_path, env, capsys, directory):
     repo, notes = env
     candidate = f"{directory}/new/inner/tool.py"

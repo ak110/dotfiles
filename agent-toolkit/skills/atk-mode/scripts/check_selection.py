@@ -250,7 +250,8 @@ def check(
                 )
         if _is_integrated(decision, integrated_lanes):
             continue
-        reflected = reflected_paths(body, work_dir)
+        declared_paths = frozenset([*write_files, *public_write_files, *excluded_paths])
+        reflected = reflected_paths(body, work_dir, declared_paths=declared_paths)
         errors.extend(
             check_decision(
                 awi,
