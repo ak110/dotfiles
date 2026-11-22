@@ -146,7 +146,10 @@ if os.environ.get("FAKE_SESSION_LIMIT_COUNT"):
         if rejected:
             print(json.dumps({{"type": "rate_limit_event", "rate_limit_info": {{
                 "status": "rejected", "rateLimitType": os.environ["FAKE_LIMIT_TYPE"], "resetsAt": 1010
-            }}}}))
+            }}}}), flush=True)
+            if os.environ.get("FAKE_USAGE_LIMIT_RETRY"):
+                print(json.dumps({{"type": "api_retry", "error_status": 429}}), flush=True)
+                time.sleep(30)
     else:
         assert "--json" in args
         thread = "01234567-89ab-cdef-0123-456789abcdef"
