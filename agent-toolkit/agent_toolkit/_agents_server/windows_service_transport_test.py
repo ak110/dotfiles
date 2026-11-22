@@ -13,7 +13,7 @@ from agent_toolkit._agents_server import service_transport
 from agent_toolkit._agents_server import windows_service_transport as transport
 from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
 
-pytestmark = pytest.mark.skipif(os.name != "nt", reason="実Win32 APIが必要")
+pytestmark = [pytest.mark.windows, pytest.mark.skipif(os.name != "nt", reason="実Win32 APIが必要")]
 
 
 def test_pipe_authentication_and_bytes() -> None:
