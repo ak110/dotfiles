@@ -189,8 +189,13 @@ def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
     action = REPO_ROOT / ".github" / "actions" / "upload-diagnostic-logs" / "action.yml"
     runs = workflow_mapping(workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))["runs"])
     upgrade_patterns = []
+    staging_condition = "always() && inputs.collect-windows-upgrade-logs == 'true'"
+    steps = workflow_steps(runs)
+    (collection_index,) = (index for index, step in enumerate(steps) if step.get("shell") == "pwsh")
+    collection = steps[collection_index]
+    assert collection["if"] == staging_condition
     staged_paths = []
-    for step in workflow_steps(runs):
+    for index, step in enumerate(steps):
         if not str(step.get("uses", "")).startswith("actions/upload-artifact@"):
             continue
         patterns = [line.strip() for line in str(workflow_mapping(step["with"])["path"]).splitlines() if line.strip()]
@@ -200,9 +205,12 @@ def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
         if legacy:
             assert step["if"] == "inputs.collect-windows-upgrade-logs != 'true'"
             upgrade_patterns.extend(legacy)
-        if step.get("if") == "inputs.collect-windows-upgrade-logs == 'true'":
+        if step.get("if") == staging_condition:
+            assert collection_index < index
             staged_paths.extend(patterns)
     assert staged_paths == ["${{ runner.temp }}/windows-upgrade-diagnostics/"]
+    staging_dir = staged_paths[0].removeprefix("${{ runner.temp }}/").rstrip("/")
+    assert f"$destination = Join-Path $env:RUNNER_TEMP '{staging_dir}'" in str(collection["run"])
     assert upgrade_patterns
     assert all(pattern.startswith("${{ runner.temp }}/") for pattern in upgrade_patterns), upgrade_patterns
 
