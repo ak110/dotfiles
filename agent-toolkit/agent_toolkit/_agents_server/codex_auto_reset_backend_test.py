@@ -148,7 +148,8 @@ class _MemoryAppServer(codex.JsonRpcProcess):
 async def _environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, enabled: bool = True, policy: str = "five-hour"
 ) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", "true" if enabled else "false")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true" if enabled else "false")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([_PERMISSION]))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", policy)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     clients: list[_MemoryAppServer] = []
@@ -297,12 +298,27 @@ async def test_reset_outcomes_preserve_normal_wait_policy(
 
 
 @pytest.mark.asyncio
-async def test_periodic_check_resets_near_threshold_without_model_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("automatic", ["false", "true"])
+async def test_legacy_reset_flag_does_not_authorize_consumption(tmp_path, monkeypatch, automatic):
+    async with _environment(tmp_path, monkeypatch, policy="never") as (_, backend, clients):
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", "true")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", automatic)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", "[]")
+        session = await backend.start("作業", str(tmp_path))
+        _fail(clients[0], session, tmp_path)
+        await _until(backend, lambda: session.result_available and not session.codex_auto_reset_pending)
+        assert not any(method == "account/rateLimitResetCredit/consume" for method, _ in clients[0].requests)
+
+
+@pytest.mark.asyncio
+async def test_periodic_check_resets_permitted_exhausted_window_without_model_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(codex_reset, "AUTO_RESET_CHECK_INTERVAL", 0.01)
     async with _environment(tmp_path, monkeypatch) as (_, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
-        client.weekly_usage = 99
+        client.weekly_usage = 100
         await asyncio.wait_for(client.consume_started.wait(), timeout=5)
         await _until(backend, lambda: not session.codex_auto_reset_pending)
         assert client.weekly_usage == 0
@@ -607,10 +623,10 @@ async def test_unanswered_account_read_ends_with_response_stage_diagnostic(
 
 
 @pytest.mark.asyncio
-async def test_account_read_blocked_by_full_event_queue_reports_backlog(
+async def test_account_read_reports_reply_wait_and_full_event_queue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """受信処理の保存が止まって未確認イベントが上限に達すると、送出通知の空き待ちで止まったことを記録する。"""
+    """通知列が上限でも送出を確認し、応答の未確認と未処理通知数を記録する。"""
     monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
     hold = asyncio.Event()
     release = asyncio.Event()
@@ -635,6 +651,6 @@ async def test_account_read_blocked_by_full_event_queue_reports_backlog(
             release.set()
         assert not clients[0].consume_started.is_set()
     message = _timeout_record(caplog).getMessage()
-    assert "method=account/read stage=送出確認待ち" in message
+    assert "method=account/read stage=応答待ち" in message
     assert "'consumer': '稼働中'" in message
     assert "'backlog': '256/256'" in message

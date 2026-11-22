@@ -42,10 +42,7 @@ class _Progress:
 
 
 def _reset_enabled() -> bool:
-    return (
-        _atk_config.resolve_mutable_setting("codex_auto_reset") == "true"
-        or _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
-    )
+    return _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
 
 
 class CodexResetMixin:
@@ -118,7 +115,7 @@ class CodexResetMixin:
             except ValueError:
                 _LOG.exception(
                     "Codex自動reset設定を解決できません: session_id=%s。"
-                    "atk config get codex_auto_resetとAGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESETを確認してください",
+                    "atk config get usage_auto_allocation usage_reset_permissionsを確認してください",
                     session.session_id,
                 )
                 continue
@@ -149,7 +146,7 @@ class CodexResetMixin:
             progress.method, progress.stage = method, "設定確認"
             enabled = await run_file_operation(_reset_enabled)
             if not enabled:
-                raise AppServerError("確認中にcodex_auto_resetが無効になった")
+                raise AppServerError("確認中にusage_auto_allocationが無効になった")
             if (
                 session.turn_seq != turn_seq
                 or self._owned_client(session) is not client
@@ -162,9 +159,8 @@ class CodexResetMixin:
         try:
             try:
                 root = await run_file_operation(state_paths.state_dir)
-                automatic = _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
-                permissions = json.loads(_atk_config.resolve_mutable_setting("usage_reset_permissions")) if automatic else None
-                observed = usage_observation.snapshot() if automatic else {}
+                permissions = json.loads(_atk_config.resolve_mutable_setting("usage_reset_permissions"))
+                observed = usage_observation.snapshot()
                 window_rates = observed.get("setting_rates", {}).get(usage_refresh.session_signature(session), {})
                 weekly_rates = [
                     window_rates.get(usage_observation.rate_key(usage_observation.QuotaWindow(**window)))
@@ -242,7 +238,7 @@ class CodexResetMixin:
         if not task.cancelled() and (error := task.exception()) is not None:
             _LOG.error(
                 "Codex自動resetの監視・確認taskが失敗しました。"
-                "この例外ログとatk config get codex_auto_resetを確認し、"
+                "この例外ログとatk config get usage_auto_allocation usage_reset_permissionsを確認し、"
                 "停止した会話は利用枠回復後にsend_messageで継続してください",
                 exc_info=error,
             )

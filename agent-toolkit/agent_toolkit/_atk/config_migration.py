@@ -110,6 +110,7 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
     """
     changes = dict(updates or {})
     migrated = config_repositories.migrate(plan_connection_migration(config, changes))
+    migrated.pop("codex_auto_reset", None)
     migrated.update(changes)
     if not any(key in config for key in _config_settings.RETIRED_MODEL_KEYS):
         return migrated
@@ -158,12 +159,22 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
 def migrate_legacy_settings() -> None:
     """旧モデル設定と旧接続設定の保存値を移行先へ一括移行する。環境変数は保存しない。"""
     config = _config_settings.load_config_strict()
-    legacy_keys = (*_config_settings.RETIRED_MODEL_KEYS, *_config_settings.RETIRED_CONNECTION_KEYS, "process_loop_repositories")
+    legacy_keys = (
+        *_config_settings.RETIRED_MODEL_KEYS,
+        *_config_settings.RETIRED_CONNECTION_KEYS,
+        "process_loop_repositories",
+        "codex_auto_reset",
+    )
     if not any(key in config for key in legacy_keys):
         return
     migrated = plan_legacy_migration(config)
     if migrated != config:
         _config_settings.save_config(migrated)
+        if "codex_auto_reset" in config:
+            _outcome.report_warning(
+                "廃止したcodex_auto_resetを設定から削除した。利用枠の消費許可は作成していない",
+                next_action="自動配分と明示許可はusage_auto_allocationとusage_reset_permissionsで確認する",
+            )
 
 
 def legacy_serve_config_path() -> pathlib.Path:
@@ -262,6 +273,11 @@ def migrate_serve_settings() -> None:
 def check_legacy_environment() -> None:
     """廃止キーの環境変数があれば、対応する工程別環境変数を案内する。"""
     _config_settings.check_repository_environment()
+    if runtime_environment.environment().get(_config_settings.config_env_name("codex_auto_reset")):
+        _outcome.report_warning(
+            "廃止したAGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESETを無視する",
+            next_action="旧環境変数を解除する。利用枠の自動配分と明示許可は新しい設定から確認する",
+        )
     found = sorted(
         key
         for key in _config_settings.RETIRED_MODEL_KEYS
