@@ -40,7 +40,7 @@
 未処理の追加入力があれば統合し、残る元の工程を終えてから全体を判定する。
 回収の要求では、`agent-toolkit:atk-mode/playbooks/managed-temp.md`「作業用ディレクトリ」の残存一覧と保持の根拠を使い、途中で選んだ保護の条件も元の要求と現物で評価し直す。
 
-run-skillのスキル名、モード、自由記述、scope、同一実行識別子、報告先は、SessionStartが渡す起動入力から取得する。
+run-skillのスキル名、モード、自由記述、`accepted_scopes`、同一実行識別子、報告先は、SessionStartが渡す起動入力から取得する。
 短い目的文の主語は子セッション自身で、子が担当する工程（分析、保存、finishなど）を終えた時点で目的を達成する。
 run-skill起動元による報告の同期検収は、子セッションの終了後に行われるため、子自身の完了条件へ含めない。
 子の未完了の工程は未完了として報告し、起動元の検収は起動元に任せる。
@@ -87,8 +87,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 6. 自律モードでは、ユーザーが結果を確かめて是正を指示できるよう、事後承認型の報告用UWIをセッションにつき1件保存する。
    本文と保存は`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」に従う。
    `atk run-skill`による実行では、`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保つ。
-   scopeはスキル名とモードの組とし、自由記述は含めない。
-   起動入力にscopeがある時は、モードを含むその値を保存する。
+   scopeは自由記述を含まないスキル名とモードの組とし、起動入力の`accepted_scopes`の先頭を使う。
    例えばbatchのscopeは`agent-toolkit:review-session batch`である。
    保存CLIが付ける`run_skill_run_id`は、再開と更新でも保つ。
    報告先は起動元が渡したリポジトリとし、実行のcwdと区別する。
