@@ -757,7 +757,7 @@ def test_install_propagates_package_removal_failure(monkeypatch, tmp_path: Path)
         assert setup_codex_cli.run(client).failure is not None
 
 
-@pytest.mark.windows
+@pytest.mark.skipif(os.name == "nt", reason="旧ランチャーのリンクを復元する処理はPOSIX専用")
 def test_dangling_wrapper_is_replaced_and_tracks_current(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """古いリンク先が配布元から消えても、currentへ到達するリンクへ戻せる。"""
     _isolate(monkeypatch, tmp_path, "linux")
