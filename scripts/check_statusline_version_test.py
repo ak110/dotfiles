@@ -1,8 +1,11 @@
+import os
 import pathlib
 import subprocess
+import sys
 
 import check_statusline_version
 import pytest
+import yaml
 
 _MANIFEST_TEMPLATE = '[package]\nname = "claude-statusline"\nversion = "{version}"\nedition = "2024"\n'
 
@@ -215,3 +218,115 @@ def test_release_main_appends_outputs_and_requires_current_sha(
     monkeypatch.setenv("CURRENT_SHA", head)
     assert check_statusline_version.main(["--release-tag-state", "--github-output", str(output)]) == 0
     assert output.read_text(encoding="utf-8") == "existing=1\ntag_exists=false\n"
+
+
+_GH_DOUBLE = r"""
+gh() {
+  if [[ "$1 $2" == "api graphql" ]]; then
+    printf '{"data":{"repository":{"latestRelease":{"tagName":"%s"}}}}\n' "$(cat "$RELEASES/latest")"
+    return
+  fi
+
+  [[ "$1" == release ]] || return 64
+  local action="$2" tag="$3" asset
+  shift 3
+  case "$action" in
+    view) [[ -f "$RELEASES/$tag" ]];;
+    create|upload)
+      local -a assets=()
+      local latest= clobber=false
+      for asset in "$@"; do
+        case "$asset" in
+          assets/*) assets+=("$asset");;
+          --latest=*) latest="${asset#--latest=}";;
+          --clobber) clobber=true;;
+        esac
+      done
+      if [[ "$action" == create ]]; then
+        [[ ! -e "$RELEASES/$tag" && "$latest" =~ ^(true|false)$ ]] || return 65
+        git ls-remote --exit-code --refs origin "refs/tags/$tag" >/dev/null
+      else
+        [[ -f "$RELEASES/$tag" && "$clobber" == true ]] || return 66
+      fi
+      if [[ "$FAIL_UPLOAD" == true ]]; then
+        echo "asset upload failed" >&2
+        return 67
+      fi
+      printf '%s\n' "${assets[@]}" > "$RELEASES/$tag"
+      if [[ "$latest" == true ]]; then
+        printf '%s\n' "$tag" > "$RELEASES/latest"
+      fi
+      ;;
+    *) return 64;;
+  esac
+}
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="公開jobと同じLinux上のBash・jqを使う")
+@pytest.mark.parametrize("older_arrives_late", [False, True], ids=["merge-order", "older-arrives-late"])
+def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late: bool) -> None:
+    workflow_path = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows/release-statusline.yaml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    publish = workflow["jobs"]["release"]["steps"][-1]["run"]
+    releases = repo.parent / "releases"
+    releases.mkdir()
+    (releases / "latest").touch()
+    versions = ("0.1.9", "0.1.10")
+    assets = [
+        "assets/claude-statusline-x86_64-unknown-linux-gnu",
+        "assets/claude-statusline-x86_64-pc-windows-msvc.exe",
+    ]
+    assert {f"assets/{entry['asset']}" for entry in workflow["jobs"]["build"]["strategy"]["matrix"]["include"]} == set(assets)
+    commits = {}
+    for version in versions:
+        _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version=version))
+        commits[version] = _commit(repo, version)
+
+    def run(version: str, *, fail_upload: bool = False) -> None:
+        sha = commits[version]
+        tag = f"statusline-v{version}"
+        failure, prepared = check_statusline_version.release_prepare(repo, sha, metadata_command=["true"])
+        assert (failure, prepared) == (None, {"changed": "true", "version": version, "tag": tag})
+        failure, tag_state = check_statusline_version.release_tag_state(repo, sha)
+        assert failure is None
+        result = subprocess.run(
+            ["bash", "-c", _GH_DOUBLE + publish],
+            cwd=repo,
+            env={
+                **os.environ,
+                "HEAD_SHA": sha,
+                "TAG": prepared["tag"],
+                "TAG_EXISTS": tag_state["tag_exists"],
+                "RELEASES": str(releases),
+                "FAIL_UPLOAD": str(fail_upload).lower(),
+                "GITHUB_REPOSITORY": "example/dotfiles",
+                "GITHUB_REPOSITORY_OWNER": "example",
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == (67 if fail_upload else 0), result.stderr
+        if fail_upload:
+            assert "asset upload failed" in result.stderr
+            assert not (releases / tag).exists()
+        else:
+            assert sorted((releases / tag).read_text(encoding="utf-8").splitlines()) == sorted(assets)
+        remote_tag = subprocess.check_output(["git", "ls-remote", "--refs", "origin", f"refs/tags/{tag}"], cwd=repo, text=True)
+        assert remote_tag.strip() == f"{sha}\trefs/tags/{tag}"
+
+    older, newer = versions
+    if older_arrives_late:
+        run(newer)
+        run(older, fail_upload=True)
+        assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{newer}"
+        run(older)
+    else:
+        run(older)
+        assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{older}"
+        run(newer)
+    assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{newer}"
+    run(older)
+    assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{newer}"
+    assert {path.name for path in releases.iterdir()} == {"latest", *(f"statusline-v{version}" for version in versions)}
