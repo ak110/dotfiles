@@ -216,6 +216,7 @@ def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, ca
             "line": 2,
             "timestamp": "2026-09-25T00:00:01Z",
             "name": "Bash",
+            "call_id": "toolu_target",
             "input": {"command": "find . -name '*.md'", "description": "Markdownを探す"},
         }
     ]
