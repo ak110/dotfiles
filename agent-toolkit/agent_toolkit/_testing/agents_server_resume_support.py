@@ -267,7 +267,7 @@ async def _auto_resume_after_child_termination(
     assert wait_task.done() is False
     session_registry.publish(child_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
     await _await_state(lambda: len(client.queries) == 2)
-    client.emit(ResultMessage("孫session確認後の結果"))
+    client.emit(ResultMessage("状態: completed\n結果: 孫session確認後の結果"))
     return await wait_task
 
 

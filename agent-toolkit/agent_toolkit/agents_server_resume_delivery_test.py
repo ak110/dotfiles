@@ -66,9 +66,9 @@ async def test_send_message_preserves_background_and_mixed_waits(
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         if mixed:
             await _await_state(lambda: len(client.queries) == 3)
-        client.emit(ResultMessage("reply結果", origin={"kind": "task-notification"}))
+        client.emit(ResultMessage("状態: completed\n結果: reply結果", origin={"kind": "task-notification"}))
         result = await wait_task
-        assert result["agent_message"] == "reply結果"
+        assert result["agent_message"] == "状態: completed\n結果: reply結果"
         assert "error" not in result
 
 
@@ -129,9 +129,9 @@ async def test_send_message_wait_survives_failure_and_completion_order(
             session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: len(client.queries) == 4)
-        client.emit(ResultMessage("子の結果を確認した"))
+        client.emit(ResultMessage("状態: completed\n結果: 子の結果を確認した"))
         result = await wait_task
-        assert result["agent_message"] == "子の結果を確認した"
+        assert result["agent_message"] == "状態: completed\n結果: 子の結果を確認した"
         assert "error" not in result
         assert len(client.queries) == 4
         assert "agent_message" not in await _wait_with_timeout(manager, 0)

@@ -368,14 +368,18 @@ def test_cpu_limit_rejects_invalid_default(
     ],
 )
 def test_exclusions_do_not_hide_budget_or_gross_overrun(
-    request: pytest.FixtureRequest, gross, gc_cpu, import_cpu, net_limit, failed
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, gross, gc_cpu, import_cpu, net_limit, failed
 ) -> None:
     """収集で選んだnetと共有費用込みgrossの上限を守り、原計測を失わない。"""
     assert request.node.parent is not None
     item = pytest.Function.from_parent(request.node.parent, name="cpu_probe", callobj=lambda: None)
     if net_limit != 0.5:
         item.add_marker(pytest.mark.cpu_limit(net_limit, reason="必要な境界の制御入力"))
-    pytest_plugin.pytest_collection_modifyitems(request.config, [item])
+    # 制御入力は倍率1の境界値。外側のpytestの設定を合成itemへ持ち込まない。
+    with monkeypatch.context() as patch:
+        patch.setattr(request.config.option, "cpu_limit_scale", 1.0)
+        patch.setattr(request.config.option, "cpu_limit_record_only", False)
+        pytest_plugin.pytest_collection_modifyitems(request.config, [item])
     item.stash[pytest_cpu_budget._CPU_TIMES] = {"call": gross}
     item.stash[pytest_cpu_budget._CPU_EXCLUSIONS] = {"call": {"gc": gc_cpu, "import": import_cpu}}
     report = pytest.TestReport(item.nodeid, ("cpu_test.py", 0, "test_cpu"), {}, "passed", None, "teardown")
