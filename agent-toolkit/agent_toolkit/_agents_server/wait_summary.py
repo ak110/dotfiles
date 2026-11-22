@@ -36,13 +36,15 @@ _SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
 _TERMINAL_STATUS_RE = re.compile(r"\sstatus=([a-z_]+)(?:\s|$)")
 
 
-def render(rows: Iterable[Mapping[str, Any]]) -> str:
+def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str:
     """待機結果の行から、通知・終了の内訳と上限内の本文を持つ要約を返す。
 
     待機表明を確定した結果は、`unfinished_waits`へ残った待機対象の件数を加える。対象が残っていなければ0とする。
     結果本文はその時点の待機表明であり再開したturnの結果ではないことを、委譲元が終了行だけから判別できるようにする。
     本文は`本文開始:`と`本文終了:`の行で囲み、委譲元が待機の出力を1回読むだけで本文まで受け取れるようにする。
     要約全体が上限を超える本文と、読めない本文ファイルは表示せず、`agent_message_path`から読ませる。
+    `reserved_bytes`は呼び出し元が要約の後へ続けて書く行（終了していない対象の行など）のUTF-8バイト数で、
+    本文の予算から先に差し引き、標準出力全体を上限内に収める。
     """
     notice_count = 0
     notice_session_ids: set[str] = set()
@@ -80,6 +82,7 @@ def render(rows: Iterable[Mapping[str, Any]]) -> str:
     terminal_header = f"終了: {len(terminal_lines)}件\n" if terminal_lines else ""
     remaining = (
         BODY_BUDGET_BYTES
+        - reserved_bytes
         - _utf8_size(notice_line + terminal_header)
         - sum(_utf8_size(f"{line}\n") for line, _body in terminal_lines)
     )

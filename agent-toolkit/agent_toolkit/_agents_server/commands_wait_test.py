@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import pathlib
+import sys
 from typing import Any
 
 import pytest
@@ -363,6 +364,58 @@ def test_wait_summary_budget_covers_whole_output(tmp_path: pathlib.Path, excess:
     assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
     # 本文表示の上限は独自の値を持たず、atkの共通の直接表示の上限と同じにする。
     assert wait_summary.BODY_BUDGET_BYTES == output_file.AUTO_SAVE_THRESHOLD_BYTES
+
+
+def test_wait_public_output_reserves_running_rows_within_limit(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """別対象の実行中の行と同じ巡回で返る終了も、終了行を直接示し、標準出力全体を上限内に保つ。
+
+    要約の後に続ける行を本文の予算に入れないと、出力が上限を超えて要約ごと保存へ回り、終了行を直接読めなくなる。
+    """
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body_path = tmp_path / "body.md"
+    terminal_line = f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}"
+    rows: list[dict[str, Any]] = [
+        {"session_id": "session-1", "status": "completed", "agent_message_path": str(body_path)},
+        {"session_id": "session-2", "status": "running", "label": "別の担当", "notices": [{"body": "n"}]},
+    ]
+    # 要約だけなら上限ちょうどに収まる本文。本文が空の要約は、本文の区切りと補う改行を含む固定部分の量である。
+    body_path.write_text("", encoding="utf-8")
+    fixed_size = len(wait_summary.render(rows).encode("utf-8")) + 1
+    body_path.write_text("x" * (wait_summary.BODY_BUDGET_BYTES - fixed_size), encoding="utf-8")
+    assert len(wait_summary.render(rows).encode("utf-8")) == wait_summary.BODY_BUDGET_BYTES
+
+    commands.agents_wait._print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in rows), "stdout")
+
+    output = capsys.readouterr().out
+    assert terminal_line in output.splitlines()
+    assert '"session_id":"session-2"' in output
+    assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_agents_wait_is_not_resaved_with_stderr(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """上限ちょうどの要約に標準エラーが加わっても、要約を共通の保存へ回さず直接書く。"""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    summary = "終了: 1件\n" + "x" * (output_file.AUTO_SAVE_THRESHOLD_BYTES - len("終了: 1件\n".encode()) - 1) + "\n"
+
+    def fake_wait(**_kwargs) -> int:
+        print(summary, end="")
+        print("警告", file=sys.stderr)
+        return 0
+
+    monkeypatch.setattr(commands.agents_wait, "wait_for_result", fake_wait)
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert captured.out == summary
+    assert "警告" in captured.err
+    assert not managed_temp.list_managed_temp("atk-output")
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:

@@ -935,12 +935,14 @@ def _print_public(output: str, stream: str | None) -> None:
     if not is_agent_environment():
         print("\n".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in rows), flush=True)
         return
-    others = [
+    others = "".join(
         json.dumps({key: value for key, value in row.items() if key != "notices"}, ensure_ascii=False, separators=(",", ":"))
+        + "\n"
         for row in rows
         if row.get("status") not in state.TERMINAL_STATUSES
-    ]
-    sys.stdout.write(wait_summary.render(rows) + "".join(f"{line}\n" for line in others))
+    )
+    # 要約の後に続ける行の量も本文の予算から差し引き、終了行と本文を直接表示できる量に収める。
+    sys.stdout.write(wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8"))) + others)
     sys.stdout.flush()
 
 

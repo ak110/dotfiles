@@ -222,6 +222,8 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
     ユーザーが直接呼んだ場合は出力をそのまま表示する。標準出力を逐次書き続ける常駐と追従の起動は、
     終了まで出力を受け取ると経過を表示できなくなるため対象から外す。
     原稿のdry-runは冒頭全文を直接読む契約のため対象から外す。
+    `agents wait`は自身で標準出力を共通の境界以内に収め、本文を`agent_message_path`の1ファイルに持つため対象から外す。
+    共通の保存を通すと、標準エラーとの合計が境界を超えた時に要約ごと保存され、終了行を直接読めなくなる。
     """
     if not is_agent_environment() or _is_wi_draft_preview(args):
         return False
@@ -232,6 +234,8 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
         and args.wi_subcommand == "process-loop"
         and getattr(args, "process_loop_subcommand", None) in (None, "all-repos")
     ):
+        return False
+    if args.command == "agents" and args.agents_subcommand == "wait":
         return False
     return not (args.command == "agents" and args.agents_subcommand == "logs" and getattr(args, "follow", False))
 
