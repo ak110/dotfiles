@@ -226,7 +226,7 @@ async def _commit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> No
     registry.publish("G0", endpoint="G0", process=_REUSED)
     monkeypatch.setattr(service_rpc, "request", AsyncMock(side_effect=EOFError))
     async with asyncio.timeout(5):
-        with pytest.raises(RuntimeError, match="正常な退役の記録"):
+        with pytest.raises(RuntimeError, match="会話移転の確定記録"):
             await coordinator._commit({"generation": "G0", "epoch": 1, "process": _REUSED}, "token")
 
 
@@ -391,7 +391,7 @@ _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch]
     "service_session_control.ServiceSessionControl._owns": _owns,
     "service_coordinator.ServiceCoordinator._supervise": _supervise,
     "service_context.ServiceManagers.generations": _generations,
-    "service_io.CodexResource.close": _close,
+    "service_io.CodexResource._close": _close,
     "service_forward.ensure_service": _ensure_service,
     "service_forward.publish_service": _publish_service,
     "service_generations.GenerationRegistry.restore": _restore,

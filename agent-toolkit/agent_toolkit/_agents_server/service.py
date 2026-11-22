@@ -330,7 +330,7 @@ async def run(
     resources = resources or ResourceBroker(generation, owner_identity=instance.instance_id)
     registry = RegistryForwarder(generation, directory)
     projections = ProjectionHub(generation, directory)
-    # 公開元は退役の記録で引継ぎの成否を判定するため、会話・資源を持ったまま終わる世代は停止や例外でも記録しない。
+    # 会話・資源を持ったまま終わる世代は停止や例外でも退役を記録しない。
     handed_over = True
     try:
         with registry_forwarding.bind(registry.forward):
@@ -369,7 +369,9 @@ async def run(
                                         state.sender is None or state.redirect_acknowledged for state in peer_states.values()
                                     )
                                     and not any(not task.done() for task in coordinator._moving.values())
+                                    and coordinator.can_retire()
                                 ):
+                                    coordinator.registry.confirm_handover(generation, target["process"])
                                     stop.set()
                                     break
                             accepting = asyncio.create_task(asyncio.to_thread(listener.accept))

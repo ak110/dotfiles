@@ -74,6 +74,9 @@ class GenerationRegistry:
         with self._locked() as data:
             entries = data["generations"]
             entry = entries[generation]
+            if entry.get("process") != process:
+                entry.pop("handover_source", None)
+                entry.pop("handover_confirmed", None)
             entry.update(ready=True, endpoint=endpoint, process=process)
             if server_instance is not None:
                 entry["server_instance"] = server_instance
@@ -81,9 +84,29 @@ class GenerationRegistry:
                 entry["root"] = str(root)
             current = entries.get(data["current"])
             if current is None or entry["epoch"] >= current["epoch"]:
+                if current is not None and current is not entry:
+                    entry["handover_source"] = [current["generation"], current["process"]]
+                    entry.pop("handover_confirmed", None)
                 data["current"] = generation
                 current = entry
             return dict(current)
+
+    def confirm_handover(self, generation: str, process: str) -> None:
+        """旧世代が会話と資源を持たないと確認した結果を、今回の受付先に残す。"""
+        with self._locked() as data:
+            current = data["generations"].get(data["current"])
+            if current is not None and current.get("handover_source") == [generation, process]:
+                current["handover_confirmed"] = True
+
+    def handover_confirmed(self, target: dict, previous: dict) -> bool:
+        """今回の受付先と移転元の起動単位が両方一致する確定記録だけを使う。"""
+        with self._locked(write=False) as data:
+            entry = data["generations"].get(target["generation"], {})
+            return (
+                entry.get("process") == target["process"]
+                and entry.get("handover_source") == [previous["generation"], previous["process"]]
+                and entry.get("handover_confirmed") is True
+            )
 
     def current(self) -> dict[str, Any] | None:
         """現行受付先を読み、接続先の生存・認証は通信境界で確かめる。"""

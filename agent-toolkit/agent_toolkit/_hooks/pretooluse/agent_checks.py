@@ -236,8 +236,8 @@ def _check_agents_server_continuation_target(session_id: str, tool_input: dict, 
                 f"{display_name}の対象`{remote_session_id}`に対応する絶対`cwd`が保存されていない。",
                 fix=(
                     f"`agents_server`の`show`へ`session_id={remote_session_id}`を指定して照会せよ。"
-                    "永続登録の起動元と呼出主体が一致し、応答の識別子と絶対`cwd`を確認できた場合は記録を回復するため、"
-                    "元の操作を再発行せよ。所有を確認できない場合は遮断を維持する。"
+                    "起動時の呼出主体が保存され、永続登録の起動元・応答の識別子・絶対`cwd`も確認できた場合だけ、"
+                    "元の操作を再発行せよ。起動応答の時間切れで呼出主体の記録が無ければ、`show`を繰り返しても回復しない。"
                     "自身が起動していない対象は、所有を確認できるまで操作しない。"
                 ),
             )

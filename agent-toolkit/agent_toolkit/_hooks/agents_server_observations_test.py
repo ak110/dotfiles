@@ -636,7 +636,9 @@ def test_owned_show_recovers_missing_cwd(tmp_path, monkeypatch, namespace, opera
     assert after.allow and after.block is None
 
 
-@pytest.mark.parametrize("failure", ["foreign", "unknown", "mismatched", "relative", "empty", "other-actor", "missing-actor"])
+@pytest.mark.parametrize(
+    "failure", ["foreign", "unknown", "mismatched", "relative", "empty", "other-actor", "missing-actor", "start-timeout"]
+)
 def test_foreign_show_does_not_recover_cwd(tmp_path, monkeypatch, failure):
     """所有不明、応答不一致、不正cwdと別主体のshowでは操作権限を回復しない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -651,7 +653,21 @@ def test_foreign_show_does_not_recover_cwd(tmp_path, monkeypatch, failure):
     record = {"session_id": "child", "status": "running", "owner_agent_id": "main", "pending_observation": True}
     if failure != "missing-actor":
         record["launcher_agent_id"] = "agent-a" if failure == "other-actor" else "main"
-    session_state.update_state("local", lambda _state: {"agents_server_sessions": {"child": record}})
+    if failure == "start-timeout":
+        assert (
+            _hook(
+                posttooluse.main,
+                {
+                    "session_id": "local",
+                    "tool_name": "mcp__agents_server__start",
+                    "tool_input": {"mode": "delegate", "cwd": str(tmp_path)},
+                    "tool_response": {"isError": True, "content": [{"type": "text", "text": "tools/callの応答が時間切れ"}]},
+                },
+            )
+            == 0
+        )
+    else:
+        session_state.update_state("local", lambda _state: {"agents_server_sessions": {"child": record}})
     response = {
         "session_id": "other" if failure == "mismatched" else "child",
         "status": "running",
@@ -677,6 +693,8 @@ def test_foreign_show_does_not_recover_cwd(tmp_path, monkeypatch, failure):
             "local", {"session_id": "child"}, "mcp__agents_server__" + operation
         )
         assert result.block is not None
+        if failure == "start-timeout":
+            assert "繰り返しても回復しない" in result.block
 
 
 @pytest.mark.parametrize(

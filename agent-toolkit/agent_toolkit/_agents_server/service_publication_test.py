@@ -392,16 +392,12 @@ async def test_idle_previous_generation_retires_even_if_commit_is_lost_or_late(
             resident.kill()
 
 
-@pytest.mark.parametrize("ending", ["retired", "collected", "killed", "alive"])
+@pytest.mark.parametrize("ending", ["confirmed", "collected", "retired", "killed", "alive"])
 @pytest.mark.asyncio
-async def test_publication_without_commit_succeeds_only_if_previous_generation_recorded_retirement(
+async def test_publication_without_commit_requires_handover_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, ending: str
 ) -> None:
-    """確定を受け取らずに終わった旧世代が退役を記録していれば公開を完了し、記録が無ければ公開の失敗を返す。
-
-    旧世代は受付先の前進を観測しても退役するため、確定の接続より先に終了することがある。修正前の版の旧世代も確定を待たずに退役する。
-    会話を持ったまま終了した旧世代は退役を記録しないため、記録が無ければその会話は新世代へ移っていない。
-    """
+    """旧世代の退役や回収だけでは引継ぎを成功とせず、受付先に残った確定記録で判定する。"""
     directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
     registry = GenerationRegistry(directory)
     # 同じ配置の新しい世代があると、退役した世代は索引から回収される。
@@ -418,7 +414,9 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
         async def request(_previous: dict[str, Any], operation: str, _arguments: dict, **_kwargs: Any) -> dict:
             if operation == "commit_update":
                 if ending != "alive" and process.poll() is None:
-                    if ending in {"retired", "collected"}:
+                    if ending in {"confirmed", "collected"}:
+                        registry.confirm_handover("old", old["process"])
+                    if ending in {"confirmed", "retired", "collected"}:
                         registry.retire("old", old["process"])
                     process.kill()
                     process.wait()
@@ -426,11 +424,11 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
             return {}
 
         monkeypatch.setattr(service_rpc, "request", request)
-        if ending in {"retired", "collected"}:
+        if ending in {"confirmed", "collected"}:
             accepted = await coordinator.publish()
             assert accepted["generation"] == "new"
-        elif ending == "killed":
-            with pytest.raises(RuntimeError, match="正常な退役の記録"):
+        elif ending in {"retired", "killed"}:
+            with pytest.raises(RuntimeError, match="会話移転の確定記録"):
                 await coordinator.publish()
         else:
             monkeypatch.setattr(service_coordinator, "_COMMIT_WAIT_SECONDS", 0.5)
@@ -438,7 +436,19 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
                 await coordinator.publish()
         current = registry.current()
         assert current is not None and current["generation"] == "new"
-        assert registry.retired("old", old["process"]) == (ending in {"retired", "collected"})
+        assert registry.retired("old", old["process"]) == (ending in {"confirmed", "retired", "collected"})
+
+
+def test_handover_record_does_not_survive_destination_process_replacement(tmp_path: pathlib.Path) -> None:
+    registry = GenerationRegistry(tmp_path)
+    registry.reserve("old", tmp_path, "1.0.0")
+    old = registry.publish("old", endpoint="old", process="1:1")
+    registry.reserve("new", tmp_path, "1.0.1")
+    first = registry.publish("new", endpoint="new", process="2:1")
+    registry.confirm_handover("old", old["process"])
+    assert registry.handover_confirmed(first, old)
+    replacement = registry.publish("new", endpoint="new", process="2:2")
+    assert not registry.handover_confirmed(replacement, old)
 
 
 _PREVIOUS_GENERATION = """
@@ -679,7 +689,7 @@ async def test_publication_succeeds_only_if_previous_generation_handed_over_its_
                 assert accepted["generation"] == "new"
                 assert await deliver(new, "owns", _OWNED)
             else:
-                with pytest.raises(RuntimeError, match="正常な退役の記録"):
+                with pytest.raises(RuntimeError, match="会話移転の確定記録"):
                     await deliver(new, "publish", {})
         current = registry.current()
         assert current is not None and current["generation"] == "new"

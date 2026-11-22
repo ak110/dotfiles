@@ -141,6 +141,8 @@ class CodexResource:
         self._detached = False
         self._closed = False
         self._reader_failure: BaseException | None = None
+        self._failure_task: asyncio.Task[None] | None = None
+        self._close_task: asyncio.Task[list[str]] | None = None
         self._task: asyncio.Task[None] | None = None
         self.process: Any = None
         self.parent_environment: dict[str, str] | None = None
@@ -319,18 +321,22 @@ class CodexResource:
             self._reader_failure = AppServerError(
                 f"{cause}次の操作: 管理サービスのログで停止の原因を確認し、同じ作業を新しい委譲先で起動し直してください。"
             )
-            # 失敗の報告を受けたsessionは終了として公開される。turnを続けさせないよう、App Serverを先に止める。
-            try:
-                residual = await self.resource.operation("call", operation="shutdown", arguments={})
-            except Exception as stop_error:
-                _LOG.exception("受信処理が停止したApp Serverを停止できません: sequence=%d", self._sequence)
-                residual = [f"停止要求の失敗: {stop_error!r}"]
-            if residual:
-                self._reader_failure = AppServerError(
-                    f"{cause}App Serverの停止を確認できない対象: {'; '.join(residual)}。"
-                    "次の操作: この対象の終了を確かめてから、同じ作業を新しい委譲先で起動し直してください。"
-                )
-            await self._failure(self._reader_failure)
+            self._failure_task = asyncio.create_task(self._finish_receive_failure(cause))
+
+    async def _finish_receive_failure(self, cause: str) -> None:
+        """受信taskを終了させ、closeで元I/Oを停止し登録を除いてから報告する。"""
+        try:
+            residual = await self.close()
+        except Exception as stop_error:
+            _LOG.exception("受信処理が停止したApp Serverを停止できません: sequence=%d", self._sequence)
+            residual = [f"停止要求の失敗: {stop_error!r}"]
+        if residual:
+            self._reader_failure = AppServerError(
+                f"{cause}App Serverの停止を確認できない対象: {'; '.join(residual)}。"
+                "次の操作: この対象の終了を確かめてから、同じ作業を新しい委譲先で起動し直してください。"
+            )
+        assert self._reader_failure is not None
+        await self._failure(self._reader_failure)
 
     async def _consume_events(self) -> None:
         while not self._closed and not self._detached:
@@ -411,6 +417,12 @@ class CodexResource:
 
     async def close(self) -> list[str]:
         """制御所有者の一致を確認して元I/Oを回収し、所属が残れば所有を保つ。"""
+        task = self._close_task
+        if task is None or task.done() and (task.cancelled() or task.exception() is not None or task.result()):
+            task = self._close_task = asyncio.create_task(self._close(asyncio.current_task()))
+        return await asyncio.shield(task)
+
+    async def _close(self, caller: asyncio.Task | None) -> list[str]:
         released = False
         try:
             residual = await self.resource.operation("call", operation="shutdown", arguments={})
@@ -429,7 +441,7 @@ class CodexResource:
             await self.resource.operation("release")
             released = True
         self._closed = True
-        if self._task is not None and self._task is not asyncio.current_task():
+        if self._task is not None and self._task is not caller:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
         if released:
