@@ -192,9 +192,12 @@ def _validate_add_args(args: argparse.Namespace) -> None:
     if args.type is None:
         args.type = _wi_constants.WI_TYPE_AWI
     if args.hold and args.type != _wi_constants.WI_TYPE_AWI:
-        args.subparser.error("--holdは--type=awiでのみ指定できます。")
+        args.subparser.error("--holdは--type=awiでのみ指定できます。UWIは--holdを外して投入してください。")
     if args.hold and args.process_wi_timing is not None:
-        args.subparser.error("--holdは--process-wi-timingと併用できません。今回の巡回へ渡す項目は保留しない。")
+        args.subparser.error(
+            "--holdは--process-wi-timingと併用できません。"
+            "巡回の時機を指定する項目は--holdを外して投入し、保留が要る項目は巡回の外で--holdを付けて投入してください。"
+        )
 
 
 def _pull_command(private_notes: pathlib.Path) -> None:

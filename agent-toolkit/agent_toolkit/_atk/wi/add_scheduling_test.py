@@ -359,3 +359,24 @@ def test_public_add_hold_rejects_uwi_and_process_wi_timing(
         )
     assert finished.value.code == 2
     assert message in capsys.readouterr().err
+
+
+def test_public_add_hold_in_process_wi_guides_to_drop_hold(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """巡回中の--holdは、併用できない時機の追加ではなく--holdを外す操作を案内して保存しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    args = _cmd_add_args(tmp_path, "本文")
+    with pytest.raises(SystemExit) as finished:
+        atk.main(
+            ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0], "--hold"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+    assert finished.value.code == 1
+    err = capsys.readouterr().err
+    assert "--holdで保存できない" in err
+    assert "--holdを外し" in err
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))

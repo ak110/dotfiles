@@ -409,6 +409,11 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
         "process-wi-immediate-fix.md「即時対応」で判断し、--process-wi-kind <defect|improvement> と "
         "--process-wi-timing this-run または --process-wi-timing next-run --defer-category <区分> を指定して再投入する"
     )
+    if in_process_wi and timing is None and getattr(args, "hold", False):
+        raise WebInputError(
+            "process-wi実行中のAWIは--holdで保存できない",
+            next_action=f"--holdを外し、{next_action}",
+        )
     if in_process_wi and timing is None:
         raise WebInputError("process-wi実行中のAWI投入には対処の時機が必要", next_action=next_action)
     if (timing is None) != (kind is None):
