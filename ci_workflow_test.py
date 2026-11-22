@@ -293,7 +293,6 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
 
     environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
-    assert "--maxfail=0" in str(pytest_step["run"])
 
     # 全ケースの合否と個別所要を、pytestの成否によらず各jobの同じ結果としてartifactへ保存する。
     command = str(pytest_step["run"])
@@ -313,6 +312,7 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
         assert 'junit="$RUNNER_TEMP/pytest-root-junit.xml"' in command
         assert settings["name"] == "pytest-root-junit"
     else:
+        assert "--maxfail=0" in command
         # artifact名は分割ごとに一意にし、名前に使えない`/`を分割指定から除く。
         assert 'shard="${TEST_SHARD%%/*}-of-${TEST_SHARD##*/}"' in command
         assert 'junit="$RUNNER_TEMP/pytest-toolkit-junit-$shard.xml"' in command
