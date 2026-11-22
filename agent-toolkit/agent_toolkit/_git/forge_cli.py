@@ -19,7 +19,7 @@ def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environm
     )
     env = os.environ.copy()
     inherited_host = next((env[name] for name in _GLAB_HOST_VARIABLES if env.get(name)), None)
-    if prefer_environment and inherited_host:
+    if inherited_host and (prefer_environment or authority is None):
         env["GITLAB_HOST"] = inherited_host
     elif authority is not None:
         env["GITLAB_HOST"] = authority

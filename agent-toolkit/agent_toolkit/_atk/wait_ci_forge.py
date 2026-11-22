@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import os
 import pathlib
 import subprocess
 from typing import Any
@@ -21,6 +22,57 @@ def _parse_repository(repository: str) -> RepositoryTarget:
         return _git_remote.parse_remote_location(repository)
     except ValueError as error:
         raise RunListError(f"repository指定が不正: {repository!r}") from error
+
+
+_HTTP_PORTS = {"http": 80, "https": 443}
+
+
+def _http_port(target: RepositoryTarget) -> int | None:
+    return target.port or _HTTP_PORTS.get(target.protocol or "")
+
+
+def _matches_local_push_target(forge: str, repository: str, timeout: float) -> bool:
+    """作業ツリーの有効なpush URLが一覧の照会先と一致するかを確かめる。"""
+    try:
+        target = _parse_repository(repository if forge != "gitlab" else _forge_cli.glab_repository(repository))
+        if forge == "gitlab":
+            env = _forge_cli.glab_environment(repository)
+            if api_host := env.get("GITLAB_API_HOST"):
+                api_protocol = env.get("GLAB_API_PROTOCOL") or env.get("API_PROTOCOL") or "https"
+                endpoint = api_host if "://" in api_host else f"{api_protocol}://{api_host}"
+                api = _parse_repository(f"{endpoint.rstrip('/')}/{target.project_path}")
+                if api.hostname != target.hostname or _http_port(api) != _http_port(target):
+                    return False
+    except RunListError, ValueError:
+        return False
+    hostname = target.hostname
+    if hostname is None and forge == "github":
+        hostname = os.environ.get("GH_HOST") or "github.com"
+    if hostname is None:
+        return False
+    target_port = _http_port(target) if target.protocol in _HTTP_PORTS else None
+    if forge == "github" and target.protocol is None:
+        target_port = target.port or _HTTP_PORTS["https"]
+    names = _git_command.optional_stdout(["remote"], timeout=timeout) or ""
+    for name in names.splitlines():
+        urls = _git_command.optional_stdout(["remote", "get-url", "--push", "--all", "--", name], timeout=timeout) or ""
+        for url in urls.splitlines():
+            try:
+                remote = _parse_repository(url)
+            except RunListError:
+                continue
+            if remote.hostname is None or remote.hostname.lower() != hostname.lower():
+                continue
+            if remote.project_path.lower() != target.project_path.lower():
+                continue
+            if (
+                target_port is not None
+                and (remote.protocol in _HTTP_PORTS or target.port is not None)
+                and (remote.protocol not in _HTTP_PORTS or _http_port(remote) != target_port)
+            ):
+                continue
+            return True
+    return False
 
 
 def _short_ref(ref: str) -> str:

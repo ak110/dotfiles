@@ -82,6 +82,10 @@ class TestMainEntrypoint:
         baseline = tmp_path / "baseline.json"
 
         def fake_run(cmd, **_kwargs):
+            if cmd == ["git", "remote"]:
+                return mock.Mock(stdout="upstream\n", returncode=0)
+            if cmd == ["git", "remote", "get-url", "--push", "--all", "--", "upstream"]:
+                return mock.Mock(stdout="https://github.com/owner/repository\n", returncode=0)
             if cmd[:3] == ["git", "rev-parse", "--verify"]:
                 return mock.Mock(stdout=_FULL_SHA, returncode=0, stderr="")
             if cmd[:3] == ["gh", "run", "list"]:
@@ -139,6 +143,141 @@ class TestMainEntrypoint:
 
         assert result == wait_ci.EXIT_SUCCESS
         assert json.loads(baseline.read_text(encoding="utf-8"))["sha"] == commit_sha
+
+    def test_write_baseline_checks_the_push_url_before_resolving_head(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        git_repository: tuple[pathlib.Path, str],
+    ) -> None:
+        repository, _ = git_repository
+        monkeypatch.chdir(repository)
+        baseline = tmp_path / "baseline.json"
+        _git_repository_support.run_git(
+            repository, "remote", "set-url", "--push", "upstream", "git@github.com:different/repository.git"
+        )
+        calls: list[str] = []
+
+        def list_runs(sha: str) -> list[dict]:
+            calls.append(sha)
+            return []
+
+        monkeypatch.setattr(wait_ci, "_default_run_list_fn", lambda *_args: list_runs)
+        args = [
+            "--write-baseline",
+            str(baseline),
+            "--forge=github",
+            "--repo=github.com/owner/repository",
+            "--ref=refs/heads/main",
+            "--source-ref=HEAD",
+        ]
+        assert wait_ci.main(args) == wait_ci.EXIT_USAGE
+        assert wait_ci.main([*args, "--sha", "HEAD"]) == wait_ci.EXIT_USAGE
+        assert not calls
+        assert not baseline.exists()
+        assert wait_ci.main([*args, "--sha", "b" * 40]) == wait_ci.EXIT_SUCCESS
+        assert calls == ["b" * 40]
+        monkeypatch.setattr(wait_ci, "_resolve_sha", lambda *_args: pytest.fail("完全長SHAをローカルで解決した"))
+        monkeypatch.setattr(wait_ci, "wait_for_ci", lambda *_args, **_kwargs: wait_ci.EXIT_SUCCESS)
+        assert wait_ci.main(["--baseline", str(baseline), "--sha", "b" * 40]) == wait_ci.EXIT_SUCCESS
+
+    @pytest.mark.parametrize(
+        ("forge", "target", "push_url", "expected"),
+        [
+            ("gitlab", "https://gitlab.example:8443", "https://gitlab.example:8443", wait_ci.EXIT_SUCCESS),
+            ("gitlab", "https://gitlab.example:9443", "https://gitlab.example:8443", wait_ci.EXIT_USAGE),
+            ("github", "github.com", "https://github.com:8443", wait_ci.EXIT_USAGE),
+            ("github", "github.com", "https://github.com:443", wait_ci.EXIT_SUCCESS),
+            ("github", "github.com", "ssh://git@github.com:2222", wait_ci.EXIT_SUCCESS),
+        ],
+    )
+    def test_write_baseline_compares_http_push_port(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        git_repository: tuple[pathlib.Path, str],
+        forge: str,
+        target: str,
+        push_url: str,
+        expected: int,
+    ) -> None:
+        repository, _ = git_repository
+        monkeypatch.chdir(repository)
+        baseline = tmp_path / "baseline.json"
+        _git_repository_support.run_git(repository, "remote", "set-url", "--push", "upstream", f"{push_url}/owner/repository")
+        monkeypatch.setattr(wait_ci, "_default_run_list_fn", lambda *_args: lambda _sha: [])
+        assert (
+            wait_ci.main(
+                [
+                    "--write-baseline",
+                    str(baseline),
+                    f"--forge={forge}",
+                    f"--repo={target}/owner/repository",
+                    "--ref=refs/heads/main",
+                    "--source-ref=HEAD",
+                ]
+            )
+            == expected
+        )
+        assert baseline.exists() == (expected == wait_ci.EXIT_SUCCESS)
+
+    @pytest.mark.parametrize("host_variable", ["GITLAB_URI", "GL_HOST"])
+    def test_write_baseline_uses_the_same_gitlab_environment_as_queries(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        git_repository: tuple[pathlib.Path, str],
+        host_variable: str,
+    ) -> None:
+        repository, _ = git_repository
+        monkeypatch.chdir(repository)
+        baseline = tmp_path / "baseline.json"
+        _git_repository_support.run_git(
+            repository, "remote", "set-url", "--push", "upstream", "https://gitlab.example/owner/repository"
+        )
+        for name in ("GITLAB_HOST", "GITLAB_URI", "GL_HOST", "GITLAB_API_HOST"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(host_variable, "gitlab.example")
+        monkeypatch.setattr(wait_ci, "_default_run_list_fn", lambda *_args: lambda _sha: [])
+        result = wait_ci.main(
+            [
+                "--write-baseline",
+                str(baseline),
+                "--forge=gitlab",
+                "--repo=owner/repository",
+                "--ref=refs/heads/main",
+                "--source-ref=HEAD",
+            ]
+        )
+        assert result == wait_ci.EXIT_SUCCESS
+        assert baseline.exists()
+
+    def test_write_baseline_rejects_unverified_gitlab_api_override(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        git_repository: tuple[pathlib.Path, str],
+    ) -> None:
+        repository, _ = git_repository
+        monkeypatch.chdir(repository)
+        baseline = tmp_path / "baseline.json"
+        _git_repository_support.run_git(
+            repository, "remote", "set-url", "--push", "upstream", "https://gitlab.example/owner/repository"
+        )
+        monkeypatch.setenv("GITLAB_API_HOST", "gitlab.example:9443")
+        monkeypatch.setattr(wait_ci, "_default_run_list_fn", lambda *_args: pytest.fail("接続先の比較前に照会した"))
+        result = wait_ci.main(
+            [
+                "--write-baseline",
+                str(baseline),
+                "--forge=gitlab",
+                "--repo=gitlab.example/owner/repository",
+                "--ref=refs/heads/main",
+                "--source-ref=HEAD",
+            ]
+        )
+        assert result == wait_ci.EXIT_USAGE
+        assert not baseline.exists()
 
     def test_write_baseline_rejects_source_ref_that_cannot_peel_to_commit(
         self,

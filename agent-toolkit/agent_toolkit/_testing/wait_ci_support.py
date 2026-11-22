@@ -111,6 +111,7 @@ def _git_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
     """branchと2種類のtagが同じcommitを指すテスト用repositoryを返す。"""
     repository = _git_repository_support.init_repository(tmp_path / "repository", files={"tracked.txt": "first\n"})
     commit_sha = _git_repository_support.commit_all(repository, "first")
+    _git_repository_support.run_git(repository, "remote", "add", "upstream", "https://github.com/owner/repository")
     _git_repository_support.run_git(repository, "branch", "source-branch")
     _git_repository_support.run_git(repository, "tag", "lightweight-tag")
     _git_repository_support.run_git(repository, "tag", "-a", "annotated-tag", "-m", "annotated")
