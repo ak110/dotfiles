@@ -67,7 +67,9 @@ async def test_subscription_launch_drops_parent_api_auth(
 
     def factory(options: Any) -> FakeClaudeClient:
         seen.append(options)
-        return FakeClaudeClient([[SystemMessage("isolated-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("isolated-auth"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with claude.ClaudeServerManager(client_factory=factory) as backend:
         await backend.start("作業", str(tmp_path))
@@ -100,7 +102,15 @@ async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_
     def factory(options: Any) -> FakeClaudeClient:
         seen.append(options)
         environments.append({**os.environ, **options.env})
-        return FakeClaudeClient([[SystemMessage("subscription-orchestrator"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [
+                [
+                    SystemMessage("subscription-orchestrator"),
+                    AssistantMessage("応答"),
+                    ResultMessage("状態: completed\n結果: 完了"),
+                ]
+            ]
+        )
 
     async with claude.ClaudeServerManager(client_factory=factory) as backend:
         session = await backend.start("作業", str(tmp_path), model_type="orchestrate")
@@ -133,7 +143,9 @@ async def test_explicit_subscription_orchestrator_reselects_same_conversation(
     def factory(options: Any) -> FakeClaudeClient:
         seen.append(options)
         environments.append({**os.environ, **options.env})
-        return FakeClaudeClient([[SystemMessage("fixed-conversation"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("fixed-conversation"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with claude.ClaudeServerManager(client_factory=factory) as backend:
         session = await backend.start("当初の要求", str(tmp_path), model_type="orchestrate")
@@ -190,7 +202,9 @@ async def test_unconfigured_start_and_cold_resume_preserve_parent_auth(
         settings = json.loads(options.settings)
         assert settings["apiKeyHelper"] == "parent-helper"
         assert settings["env"]["ANTHROPIC_AUTH_TOKEN"] == "settings-token"
-        return FakeClaudeClient([[SystemMessage("inherited-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("inherited-auth"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with server_manager.AgentsServerManager() as manager:
         install_backend(
@@ -375,7 +389,9 @@ async def test_api_migration_holds_result_until_old_connection_closes(
     def factory(options: Any) -> FakeClaudeClient:
         if options.resume is None:
             return Client([_rejected_stream("five_hour", None, before_init=False, session_id="migration")])
-        return FakeClaudeClient([[SystemMessage("migration"), AssistantMessage("再開"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("migration"), AssistantMessage("再開"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with (
         server_manager.AgentsServerManager() as manager,
@@ -394,7 +410,7 @@ async def test_api_migration_holds_result_until_old_connection_closes(
             assert not waiting.done()
             release.set()
             result = await asyncio.wait_for(waiting, timeout=3)
-            assert result["status"] == "completed" and result["agent_message"] == "完了"
+            assert result["status"] == "completed" and result["agent_message"] == "状態: completed\n結果: 完了"
         finally:
             release.set()
             if waiting is not None and not waiting.done():
@@ -435,8 +451,12 @@ async def test_api_switched_delegate_returns_to_subscription_after_reset(
             streams = [_rejected_stream("five_hour", int(clock["now"]) + 100, before_init=True, session_id="return-session")]
         else:
             streams = [
-                [SystemMessage(options.resume or "fresh-session"), AssistantMessage("応答"), ResultMessage("完了")],
-                [AssistantMessage("追送の応答"), ResultMessage("追送完了")],
+                [
+                    SystemMessage(options.resume or "fresh-session"),
+                    AssistantMessage("応答"),
+                    ResultMessage("状態: completed\n結果: 完了"),
+                ],
+                [AssistantMessage("追送の応答"), ResultMessage("状態: completed\n結果: 追送完了")],
             ]
         return FakeClaudeClient(streams)
 
@@ -503,7 +523,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
     api_client = QueueClaudeClient(
         [
             [SystemMessage("auto-session"), AssistantMessage("APIで作業を続ける")],
-            [AssistantMessage("子の結果を確認した"), ResultMessage("APIの最終結果")],
+            [AssistantMessage("子の結果を確認した"), ResultMessage("状態: completed\n結果: APIの最終結果")],
         ]
     )
 
@@ -519,7 +539,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
             return FakeClaudeClient(
                 [_rejected_stream("five_hour", int(clock["now"]) + 100, before_init=False, session_id="auto-session")]
             )
-        final = "再びAPIの最終結果" if mode == "still-limited" else "サブスクの最終結果"
+        final = "状態: completed\n結果: " + ("再びAPIの最終結果" if mode == "still-limited" else "サブスクの最終結果")
         return FakeClaudeClient([[SystemMessage("auto-session"), AssistantMessage("子の結果を確認した"), ResultMessage(final)]])
 
     async with server_manager.AgentsServerManager() as manager:
@@ -565,20 +585,20 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
                     result = await asyncio.wait_for(manager.wait(), 3)
                 assert result["status"] == "completed"
                 if mode == "after-reset":
-                    assert result["agent_message"] == "サブスクの最終結果"
+                    assert result["agent_message"] == "状態: completed\n結果: サブスクの最終結果"
                     assert len(options_seen) == 3
                     assert options_seen[2].resume == "auto-session"
                     assert not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
                     assert session.claude_connection == "subscription"
                 elif mode == "still-limited":
-                    assert result["agent_message"] == "再びAPIの最終結果"
+                    assert result["agent_message"] == "状態: completed\n結果: 再びAPIの最終結果"
                     assert len(options_seen) == 4
                     assert options_seen[2].resume == "auto-session" and not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
                     assert options_seen[3].resume == "auto-session"
                     assert options_seen[3].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
                     assert session.claude_connection == "payg"
                 else:
-                    assert result["agent_message"] == "APIの最終結果"
+                    assert result["agent_message"] == "状態: completed\n結果: APIの最終結果"
                     assert len(options_seen) == 2
                     assert session.claude_connection == "payg"
             finally:

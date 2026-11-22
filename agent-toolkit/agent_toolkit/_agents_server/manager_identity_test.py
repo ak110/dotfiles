@@ -63,7 +63,15 @@ async def test_parallel_claude_delegates_get_distinct_session_ids(
             environment = {**os.environ, **options.env}
             inherited.append(environment)
             identifier = parent if environment.get("CLAUDE_CODE_REMOTE_SESSION_ID") else str(uuid.uuid4())
-            return FakeClaudeClient([[SystemMessage(identifier), AssistantMessage(identifier), ResultMessage(identifier)]])
+            return FakeClaudeClient(
+                [
+                    [
+                        SystemMessage(identifier),
+                        AssistantMessage(identifier),
+                        ResultMessage(f"状態: completed\n結果: {identifier}"),
+                    ]
+                ]
+            )
 
         async with claude_backend.ClaudeServerManager(
             manager.sessions,
@@ -97,7 +105,7 @@ async def test_parallel_claude_delegates_get_distinct_session_ids(
                 await manager._status_writer.flush_async()
                 for identifier in identifiers:
                     result = manager._status_writer.read_result(identifier)
-                    assert result is not None and result["agent_message"] == identifier
+                    assert result is not None and result["agent_message"] == f"状態: completed\n結果: {identifier}"
             finally:
                 await manager.close()
 

@@ -28,7 +28,8 @@ conversation = args[args.index("--conversation") + 1] if "--conversation" in arg
 prompt = args[args.index("-p") + 1]
 print(json.dumps({{"event": "init", "conversation_id": conversation, "init": {{"model": "gemini-3.8-flash"}}}}), flush=True)
 print(json.dumps({{"event": "step_update", "step_update": {{"text_delta": "調査中"}}}}), flush=True)
-print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response": prompt[-20:]}}}}), flush=True)
+response = "状態: completed\\n結果: " + prompt[-20:]
+print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response": response}}}}), flush=True)
 """
 
 
@@ -464,7 +465,7 @@ for step_type in ("user_input", "system_message", "error_message"):
 wait_for("output")
 emit({{"event": "step_update", "step_update": {{"conversation_id": "conv-1", "state": "DONE", "step_type": "agent_response"}}}})
 wait_for("finish")
-emit({{"event": "result", "result": {{"status": "SUCCESS", "response": "完了"}}}})
+emit({{"event": "result", "result": {{"status": "SUCCESS", "response": "状態: completed\\n結果: 完了"}}}})
 """
 
 
@@ -603,7 +604,9 @@ async def test_pending_child_result_is_held_and_continues_same_conversation(
             while not session.terminal:
                 await asyncio.sleep(0.01)
         session.live_child_session_ids.add("child-session")
-        await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "待機中"}})
+        await backend.process_event(
+            session, {"event": "result", "result": {"status": "SUCCESS", "response": "待機中: child-session"}}
+        )
         assert session.awaiting_auto_resume
         assert not session.terminal
         assert session.pending_result is not None
@@ -617,8 +620,10 @@ async def test_pending_child_result_is_held_and_continues_same_conversation(
         assert session.agent_message.endswith("子が完了したため継続")
         assert not session.awaiting_auto_resume
         session.live_child_session_ids.add("second-child")
-        await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "完了"}})
+        await backend.process_event(
+            session, {"event": "result", "result": {"status": "SUCCESS", "response": "状態: completed\n結果: 完了"}}
+        )
         assert not session.terminal
         assert session.awaiting_auto_resume
         assert session.live_child_session_ids == {"second-child"}
-        assert session.pending_result == {"status": "completed", "agent_message": "完了", "error": None}
+        assert session.pending_result == {"status": "completed", "agent_message": "状態: completed\n結果: 完了", "error": None}

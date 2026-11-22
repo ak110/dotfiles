@@ -252,7 +252,7 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 
     def factory(options: Any) -> FakeClaudeClient:
         options_seen.append(options)
-        return FakeClaudeClient([[SystemMessage("cli-session"), ResultMessage("完了")]])
+        return FakeClaudeClient([[SystemMessage("cli-session"), ResultMessage("状態: completed\n結果: 完了")]])
 
     async with claude.ClaudeServerManager(client_factory=factory, root_session_id="explicit-owner") as manager:
         await manager.start("開始", str(tmp_path), launch_kind=launch_kind)

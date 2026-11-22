@@ -350,7 +350,7 @@ def recovered_weekly_subscription(
 @pytest.mark.usefixtures("recovered_weekly_subscription")
 async def test_recovered_weekly_subscription_starts_claude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = agents_server_support.FakeClaudeClient(
-        [[agents_server_support.SystemMessage("recovered"), agents_server_support.ResultMessage("完了")]]
+        [[agents_server_support.SystemMessage("recovered"), agents_server_support.ResultMessage("状態: completed\n結果: 完了")]]
     )
     async with agents_server_support.claude_manager(monkeypatch, client) as (current, _backend):
         agents_server_support.install_backend(current, "codex", UnavailableProbeBackend(current.sessions, "codex"))
