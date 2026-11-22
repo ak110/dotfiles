@@ -40,6 +40,7 @@ function Invoke-UpdateStage {
         catch { Write-UpdateError ("${Name}: $_"); return 1 }
         finally {
             if ($null -ne $process) {
+                $cleanupFailure = $null
                 try {
                     # 先にJobを回収し、パイプに残っている最後の診断もreaderが記録してから閉じる。
                     try { & $Stop $process } catch { throw [System.TimeoutException]::new("${Name}のJobを回収できません: $_。この診断を添えて保守担当へ調査を依頼し、所有対象の終了を確認してからupdate-dotfilesを再実行してください。") }
@@ -50,7 +51,17 @@ function Invoke-UpdateStage {
                             [void](& $Diagnostic $process)
                         }
                     } catch { throw [System.TimeoutException]::new("${Name}の出力を回収できません: $_。この診断を添えて保守担当へ調査を依頼し、出力取得の障害を解消してからupdate-dotfilesを再実行してください。") }
-                } finally { $process.Dispose() }
+                } catch {
+                    $cleanupFailure = $_.Exception
+                } finally {
+                    try { $process.Dispose() } catch {
+                        $detail = "$_"
+                        if ($null -ne $cleanupFailure) { $detail = "${cleanupFailure}。追加の終了処理: $detail" }
+                        else { $detail += '。更新を再実行する前に所有プロセスの終了を確認してください。' }
+                        throw [System.TimeoutException]::new("${Name}の段の終了を確認できません: $detail")
+                    }
+                }
+                if ($null -ne $cleanupFailure) { throw $cleanupFailure }
             }
         }
     }
@@ -72,4 +83,15 @@ function Invoke-UpdateStage {
     }
     if ($Classification -eq 'abort' -and $code -ne 0 -and -not $Probe) { throw "${Name}を完了できません。通信の問題を解消してupdate-dotfilesを再実行してください。" }
     return $code
+}
+
+function Invoke-UpdateInstallStage {
+    param(
+        [string]$Name, [int]$TimeoutSec, [string]$Program, [string[]]$Arguments,
+        [scriptblock]$RunStage = { param($n, $t, $p, $a) Invoke-UpdateStage $n abort $t $p $a }
+    )
+    # 所有Jobや出力の回収を確かめられない失敗では、次の導入を起動しない。
+    try { return (& $RunStage $Name $TimeoutSec $Program $Arguments) }
+    catch [System.TimeoutException] { throw }
+    catch { return (& $RunStage $Name $TimeoutSec $Program $Arguments) }
 }

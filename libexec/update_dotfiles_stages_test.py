@@ -17,6 +17,10 @@ def test_bootstrap_classification_matches_declarations(name: str) -> None:
     """外側の更新段も宣言表と同じ中断集合を使う。"""
     text = pathlib.Path(__file__).with_name(name).read_text(encoding="utf-8-sig")
     declarations = re.findall(r"(?:run_stage|Invoke-UpdateStage) '([^']+)' (abort|continue)", text)
+    if name == "update_bootstrap.ps1":
+        helpers = re.findall(r"Invoke-UpdateInstallStage '([^']+)'", text)
+        assert helpers == ["uvの導入", "管理Pythonの導入"]
+        declarations.extend((title, "abort") for title in helpers)
     expected = {item.name: item.abort for item in stages.STAGES if item.where == "bootstrap"}
     assert {title for title, _classification in declarations} == set(expected)
     for title, classification in declarations:

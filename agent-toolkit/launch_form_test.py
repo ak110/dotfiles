@@ -644,6 +644,7 @@ def test_signal_handler_uses_clock_bound_before_delivery(launcher: ModuleType, m
     assert all(event["at"].endswith("+00:00") for event in received)
 
 
+@pytest.mark.windows
 @pytest.mark.skipif(os.name != "nt", reason="実Windows Jobの継承とbreakawayが必要")
 def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleType, tmp_path: pathlib.Path) -> None:
     """起点終了後のstderr保持子を回収し、無関係・明示離脱の寿命を保つ。"""
