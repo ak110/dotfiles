@@ -12,6 +12,7 @@ import pytest
 
 from agent_toolkit._atk import lane, lane_activity, lane_retirement
 from agent_toolkit._atk import lane_records as _lane_records
+from agent_toolkit._atk.managed_temp import paths as temp_paths
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.lane_integration_support import _integration_args, _integration_selection, _legacy, _selection_with
@@ -72,7 +73,8 @@ def test_retired_lane_only_removes_covered_changes(
         monkeypatch.setattr(lane_activity, "worktree_activity", lambda *_a, **_k: "使用中")
     git_repository.run_git(repo, "branch", "user-owned")
 
-    code, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
+    mode = ("--retire-integrated",) if kind == "same-tree" else ("--repo", str(repo))
+    code, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], *mode)
 
     saved = json.loads(pathlib.Path(result["result_path"]).read_text(encoding="utf-8"))
     assert saved["retire_integrated"] is True
@@ -96,9 +98,13 @@ def test_list_candidates_distinguishes_unregistered_resources(
 ) -> None:
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     git_repository.run_git(repo, "branch", "orch/unregistered")
-    detached = tmp_path / "managed-temp" / "old-copy"
-    detached.parent.mkdir()
+    detached = temp_paths.temp_root_path() / "old-copy"
+    detached.parent.mkdir(parents=True, exist_ok=True)
     git_repository.run_git(repo, "worktree", "add", "--detach", str(detached))
+
+    unrelated = tmp_path / "outside" / "managed-temp" / "user-copy"
+    unrelated.parent.mkdir(parents=True)
+    git_repository.run_git(repo, "worktree", "add", "--detach", str(unrelated))
 
     code, listed, stderr = _invoke(capsys, "delete", "--list", "--repo", str(repo))
 
@@ -107,8 +113,12 @@ def test_list_candidates_distinguishes_unregistered_resources(
     assert {(r["worktree"], r["branch"]) for r in candidates} == {
         (None, "orch/unregistered"),
         (str(detached.resolve()), None),
+        (str(unrelated.resolve()), None),
     }
-    assert all(r["origin"] == "agent" and r["reason"] is None for r in candidates)
+    by_path = {item["worktree"]: item for item in candidates}
+    assert by_path[str(detached.resolve())]["origin"] == "agent"
+    assert by_path[str(unrelated.resolve())]["origin"] == "unknown"
+    assert "ユーザー確認" in by_path[str(unrelated.resolve())]["reason"]
     assert pathlib.Path(record["worktree"]).is_dir() and detached.is_dir()
 
 
@@ -118,7 +128,9 @@ def test_delete_sweeps_orphans(
 ) -> None:
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     other_session = "lane-other-session"
-    other_path = tmp_path / "other-session"
+    nested = tmp_path / "nested"
+    git_repository.run_git(repo, "worktree", "add", "-b", "orch/nested", str(nested))
+    other_path = nested / ".claude" / "worktrees" / "other-session"
     code, _other, stderr = _create_in(
         capsys,
         monkeypatch,
@@ -133,28 +145,51 @@ def test_delete_sweeps_orphans(
     )
     assert code == 0, stderr
     monkeypatch.setenv(lane.SESSION_ENV, record["session_id"])
+    _selection(selected, integrated=False)
+    original = pathlib.Path(record["worktree"])
+    (original / "covered.txt").write_text("取込み済み", encoding="utf-8")
+    covered = git_repository.commit_all(original, "旧レーンの成果")
+    git_repository.run_git(repo, "merge", "--ff-only", covered)
     git_repository.run_git(repo, "branch", "orch/obsolete")
+    git_repository.run_git(repo, "branch", "orch/race")
     git_repository.run_git(repo, "branch", "user-owned")
     git_repository.run_git(repo, "branch", "--track", "lead/upstream", "main")
     git_repository.run_git(repo, "branch", "worktree-process-loop")
     trees = {}
-    for name in ("clean", "dirty", "busy", "unique", "caller", "prepared"):
+    for name in ("clean", "dirty", "busy", "unique", "caller", "prepared", "ignored"):
         path = tmp_path / name
         git_repository.run_git(repo, "worktree", "add", "-b", f"orch/{name}", str(path))
         trees[name] = path
+    with (repo / ".git" / "info" / "exclude").open("a", encoding="utf-8") as exclude:
+        exclude.write("\nignored.txt\n.claude/\n")
+    (trees["ignored"] / "ignored.txt").write_text("保持するデータ", encoding="utf-8")
     (trees["dirty"] / "local.txt").write_text("未保存", encoding="utf-8")
     (trees["unique"] / "unique.txt").write_text("未取込み", encoding="utf-8")
-    git_repository.commit_all(trees["unique"], "固有の変更")
+    unique_head = git_repository.commit_all(trees["unique"], "固有の変更")
     state = pathlib.Path(record["record_path"]).parents[2] / "process-loop-ownership"
     state.mkdir()
-    (state / "ownership.json").write_text(
-        json.dumps({"common_dir": record["common_dir"], "prepared_worktree": str(trees["prepared"])}),
+    rounds = state / "rounds"
+    rounds.mkdir()
+    manifest = rounds / "round.json"
+    manifest.write_text(
+        json.dumps({"repositories": [{"common_dir": record["common_dir"], "worktree": str(trees["prepared"])}]}),
         encoding="utf-8",
     )
+    (state / "ownership.json").write_text(
+        json.dumps({"common_dir": record["common_dir"], "manifest": str(manifest)}), encoding="utf-8"
+    )
+    git = _lane_records.git
+
+    def race(path: pathlib.Path, *args: str) -> str:
+        if args[:3] == ("update-ref", "-d", "refs/heads/orch/race"):
+            git_repository.run_git(repo, "update-ref", args[2], unique_head)
+        return git(path, *args)
+
+    monkeypatch.setattr(_lane_records, "git", race)
     monkeypatch.chdir(trees["caller"])
     with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=trees["busy"]) as busy:
         try:
-            code, result, stderr = _invoke(capsys, "delete", "--repo", str(repo))
+            code, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--repo", str(repo))
         finally:
             busy.terminate()
 
@@ -172,6 +207,11 @@ def test_delete_sweeps_orphans(
     assert "含まれない" in retained["orch/unique"]
     for name in ("caller", "prepared"):
         assert "回収しない" in retained[f"orch/{name}"]
+    assert "無視対象" in retained["orch/ignored"]
+    assert "内包" in retained["orch/nested"]
+    assert "update-ref" in retained["orch/race"]
+    assert git_repository.git_output(repo, "rev-parse", "orch/race").strip() == unique_head
+    assert result["retirement_inputs"][0]["basis"] == "ancestor"
     assert "upstream" in retained["lead/upstream"]
     assert "回収しない" in retained["worktree-process-loop"]
     assert other_path.is_dir() and repo.is_dir()

@@ -234,6 +234,8 @@ def cleanup_orphans(repo: pathlib.Path, base_branch: str, caller: pathlib.Path) 
                     raise ValueError(activity)
                 if _lane_activity.has_unignored_changes(worktree):
                     raise ValueError("未commitまたは未追跡の変更がある")
+                if _lane_records.git(worktree, "status", "--porcelain=v1", "--ignored", "--untracked-files=all"):
+                    raise ValueError("Gitの無視対象または新たな変更がある")
             ref = f"refs/heads/{branch}" if branch else "HEAD"
             head = _lane_records.git(worktree or repo, "rev-parse", "--verify", ref)
             if worktree is not None and head != _lane_records.git(worktree, "rev-parse", "--verify", "HEAD"):
@@ -248,9 +250,9 @@ def cleanup_orphans(repo: pathlib.Path, base_branch: str, caller: pathlib.Path) 
             if branch:
                 if branch in lane_retirement.upstream_branches(repo):
                     raise ValueError("upstreamを設定したbranchを回収しない")
-                if head != _lane_records.git(repo, "rev-parse", "--verify", ref):
-                    raise ValueError("回収判定後にbranchの先端が変わった")
-                _lane_records.git(repo, "branch", "-D", "--", branch)
+                if branch in _lane_records.worktrees(repo).values():
+                    raise ValueError("branchがworktreeで使用中")
+                _lane_records.git(repo, "update-ref", "-d", ref, head)
                 result["removed"].append({**candidate, **proof, "resource": "branch"})
         except _lane_records.record_errors() as error:
             result["retained"].append({**candidate, "reason": str(error)})

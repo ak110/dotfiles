@@ -149,6 +149,7 @@ def dispatch(args: argparse.Namespace) -> int:
                 raise ValueError("--retire-integratedには終了確認済みの--session-idが必要")
             caller = pathlib.Path.cwd()
             repo = getattr(args, "repo", None)
+            finished_session = bool(args.session_id and repo is not None)
             base = None
             if repo is None and not args.session_id:
                 for entry in _lane_records.list_resources(session_id)["records"]:
@@ -161,7 +162,7 @@ def dispatch(args: argparse.Namespace) -> int:
             if repo is not None:
                 repo = repo.resolve()
                 base = base or _lane_records.git(repo, "symbolic-ref", "--short", "HEAD")
-            result = _lane_cleanup.cleanup_session(session_id, retire_integrated=retire)
+            result = _lane_cleanup.cleanup_session(session_id, retire_integrated=retire or finished_session)
             if repo is not None and base is not None:
                 result["orphans"] = _lane_cleanup.cleanup_orphans(repo, base, caller)
                 if result.get("result_path"):

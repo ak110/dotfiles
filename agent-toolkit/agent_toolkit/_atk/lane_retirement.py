@@ -3,6 +3,7 @@ import pathlib
 import typing
 
 from agent_toolkit._atk import lane_records as _lane_records
+from agent_toolkit._atk.managed_temp import paths as temp_paths
 from agent_toolkit._common import state_paths
 from agent_toolkit._git import command as git_command
 
@@ -57,16 +58,15 @@ def integration_worktrees(common: str) -> set[str]:
             continue
         manifest = record.get("manifest")
         manifest_path = pathlib.Path(manifest) if manifest else None
-        entries = [record]
+        for key in ("worktree", "prepared_worktree", "registered_worktree"):
+            if record.get(key):
+                paths.add(str(pathlib.Path(record[key]).resolve()))
         if manifest_path is not None and manifest_path.is_file():
-            entries.extend(json.loads(manifest_path.read_text(encoding="utf-8"))["repositories"])
-        for entry in entries:
-            if entry.get("common_dir") == common:
-                paths.update(
-                    str(pathlib.Path(entry[key]).resolve())
-                    for key in ("prepared_worktree", "registered_worktree")
-                    if entry.get(key)
-                )
+            for entry in json.loads(manifest_path.read_text(encoding="utf-8"))["repositories"]:
+                if entry.get("common_dir") == common:
+                    for key in ("worktree", "registered_worktree"):
+                        if entry.get(key):
+                            paths.add(str(pathlib.Path(entry[key]).resolve()))
     return paths
 
 
@@ -92,17 +92,22 @@ def orphan_candidates(
     if caller is not None:
         protected.update(path for path in trees if caller.resolve().is_relative_to(path))
     upstream = upstream_branches(repo)
+    managed_root = temp_paths.temp_root_path().resolve()
+    nested_paths = {parent for path in set(trees) | protected | owned_paths for parent in pathlib.Path(path).parents}
 
     def named(branch: str | None) -> bool:
         return bool(branch and branch.startswith(("orch/", "lead/", "process-wi-", "worktree-")))
 
     def candidate(path: str | None, branch: str | None) -> dict[str, str | None]:
         parts = pathlib.Path(path).parts if path else ()
-        placed = "managed-temp" in parts or (".claude", "worktrees") in zip(parts, parts[1:], strict=False)
+        placed = bool(path and pathlib.Path(path).is_relative_to(managed_root) and pathlib.Path(path) != managed_root)
+        placed |= (".claude", "worktrees") in zip(parts, parts[1:], strict=False)
         origin = "agent" if named(branch) or placed else "unknown"
         reason = None
         if path in protected or branch == "worktree-process-loop":
             reason = "主・呼出元・統合先のworktreeまたはbranchを回収しない"
+        elif path is not None and pathlib.Path(path) in nested_paths:
+            reason = "別のworktreeを内包するため回収しない"
         elif branch in upstream:
             reason = "upstreamを設定したbranchを回収しない"
         elif origin == "unknown":
