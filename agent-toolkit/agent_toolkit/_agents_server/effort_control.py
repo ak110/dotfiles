@@ -27,7 +27,20 @@ async def process_requests(
 ) -> None:
     """所有する通常sessionを更新し、登録を永続化してから応答する。"""
     pending = await run_file_operation(effort_requests.pending, state_root=state_root) if requests is None else requests
+    groups: dict[str, list[tuple[pathlib.Path, dict[str, Any]]]] = {}
     for path, payload in pending:
+        groups.setdefault(str(payload.get("session_id")), []).append((path, payload))
+    await asyncio.gather(*(_process_session(sessions, catalog, apply, group, state_root) for group in groups.values()))
+
+
+async def _process_session(
+    sessions: Mapping[str, SessionState],
+    catalog: Callable[[str], Awaitable[list[dict[str, Any]]]],
+    apply: Callable[[SessionState, str], Awaitable[None]],
+    requests: Sequence[tuple[pathlib.Path, dict[str, Any]]],
+    state_root: pathlib.Path | None,
+) -> None:
+    for path, payload in requests:
         session_id = payload.get("session_id")
         session = sessions.get(session_id) if isinstance(session_id, str) else None
         if session is not None and path.stem in session.effort_request_results:

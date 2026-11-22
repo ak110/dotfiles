@@ -150,7 +150,13 @@ class ServiceManagers:
         return dead or not (manager.sessions or manager.expired_sessions)
 
     async def _monitor(self) -> None:
-        """PID宛ての要求を一度だけ読み、対象会話の環境で操作する。"""
+        """監視の終了時は処理中の要求も同じ範囲で回収する。"""
+        async with asyncio.TaskGroup() as group:
+            await self._monitor_requests(group)
+
+    async def _monitor_requests(self, group: asyncio.TaskGroup) -> None:
+        """同じsessionの要求を重ねず、別sessionの保存待ちに巻き込まない。"""
+        active_controls: dict[str, asyncio.Task[None]] = {}
         next_heartbeat = 0.0
         # 毎巡（1秒）同じ例外の全文を記録するとログが埋まるため、失敗の種類が変わった時と回復した時だけ記録する。
         migration_failure: tuple[str, str] | None = None
@@ -162,34 +168,19 @@ class ServiceManagers:
                     for conversation in tuple(self.conversations.values())
                     for session_id in conversation.manager.sessions
                 }
-                sessions = {
-                    identifier: conversation.manager.sessions[identifier] for identifier, conversation in owners.items()
-                }
-                pending = await run_file_operation(effort_requests.pending, state_root=self._state_root)
-                for path, payload in pending:
-                    identifier = payload.get("session_id")
-                    conversation = owners.get(identifier) if isinstance(identifier, str) else None
-                    if conversation is None:
-                        continue
-                    with self._bound(conversation):
-                        manager = conversation.manager
-                        if identifier in manager._service_paused:
+                effort_requests_found = await run_file_operation(effort_requests.pending, state_root=self._state_root)
+                release_requests_found = await run_file_operation(session_release.pending, self._state_root)
+                active_controls = {identifier: task for identifier, task in active_controls.items() if not task.done()}
+                for effort_request, requests in ((True, effort_requests_found), (False, release_requests_found)):
+                    for path, payload in requests:
+                        identifier = payload.get("session_id")
+                        if not isinstance(identifier, str) or identifier in active_controls:
                             continue
-                        gate = conversation.runtime.gate if conversation.runtime else None
-                        try:
-                            async with gate.admit(new_turn=False, session_id=identifier) if gate else contextlib.nullcontext():
-                                await effort_control.process_requests(
-                                    manager.sessions,
-                                    manager._effort_catalog,
-                                    manager._apply_effort,
-                                    state_root=self._state_root,
-                                    requests=[(path, payload)],
-                                )
-                                await manager.save_control_state()
-                        except service_turns.MoveRequired:
-                            continue
-
-                await session_release.process_requests(sessions, self._stop_session, state_root=self._state_root)
+                        conversation = owners.get(identifier)
+                        if conversation is not None or not effort_request:
+                            active_controls[identifier] = group.create_task(
+                                self._process_control(conversation, path, payload, effort_request=effort_request)
+                            )
                 heartbeat = asyncio.get_running_loop().time() >= next_heartbeat
                 awaiting = False
                 before_controls = self.before_controls
@@ -225,7 +216,7 @@ class ServiceManagers:
                                     awaiting |= await conversation.manager._process_auto_resume(process_controls=False)
                             except service_turns.MoveRequired:
                                 pass
-                        if heartbeat:
+                        if heartbeat and not any(identifier in active_controls for identifier in conversation.manager.sessions):
                             await conversation.manager.save_control_state()
                 if heartbeat:
                     next_heartbeat = asyncio.get_running_loop().time() + status_file.HEARTBEAT_INTERVAL_SECONDS
@@ -234,6 +225,44 @@ class ServiceManagers:
                 _LOG.exception("共有監視の1巡が失敗しました。所有状態を保持して次の巡回で再確認します")
                 awaiting = False
             await asyncio.sleep(0.1 if awaiting else 1.0)
+
+    async def _process_control(
+        self, conversation: Conversation | None, path: pathlib.Path, payload: dict, *, effort_request: bool
+    ) -> None:
+        if conversation is None:
+            # セッション一覧から消えた後に来た解放要求にも、登録簿で解放が確認できれば結果を返す。
+            await session_release.process_requests(
+                {}, self._stop_session, state_root=self._state_root, requests=[(path, payload)]
+            )
+            return
+        conversation.active += 1
+        try:
+            with self._bound(conversation):
+                manager = conversation.manager
+                if not effort_request:
+                    await session_release.process_requests(
+                        manager.sessions, self._stop_session, state_root=self._state_root, requests=[(path, payload)]
+                    )
+                    return
+                identifier = payload["session_id"]
+                if identifier in manager._service_paused:
+                    return
+                gate = conversation.runtime.gate if conversation.runtime else None
+                async with gate.admit(new_turn=False, session_id=identifier) if gate else contextlib.nullcontext():
+                    await effort_control.process_requests(
+                        manager.sessions,
+                        manager._effort_catalog,
+                        manager._apply_effort,
+                        state_root=self._state_root,
+                        requests=[(path, payload)],
+                    )
+                    await manager.save_control_state()
+        except service_turns.MoveRequired:
+            return
+        except Exception:
+            _LOG.exception("操作要求を処理できませんでした: path=%s。要求の所在と所有状態を確認してください", path)
+        finally:
+            conversation.active -= 1
 
     async def _stop_session(self, identifier: str, *, retain_result: bool = False) -> dict:
         conversation = next(item for item in self.conversations.values() if identifier in item.manager.sessions)

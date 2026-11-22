@@ -9,10 +9,10 @@ import pathlib
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Protocol
 
-from agent_toolkit._common import atomic_file, path_ownership, registry_requests, session_layout, session_registry
+from agent_toolkit._common import path_ownership, registry_requests, session_layout, session_registry
 
 
 class OwnedSession(Protocol):
@@ -41,10 +41,6 @@ def _record(session_id: str, state_root: pathlib.Path | None) -> tuple[str, tupl
     return hashlib.sha256(raw).hexdigest(), processes
 
 
-def _save(path: pathlib.Path, value: dict[str, Any]) -> None:
-    atomic_file.atomic_write(path, json.dumps(value, ensure_ascii=False) + "\n")
-
-
 def request_release(
     session_id: str,
     worktree: pathlib.Path,
@@ -66,64 +62,81 @@ def request_release(
         return None
     request = session_registry.registry_directory(state_root) / f"{uuid.uuid4().hex}.release-request"
     response_path = request.with_suffix(".release-response")
-    try:
-        _save(
-            request,
-            {
-                "version": 1,
-                "session_id": session_id,
-                "worktree": str(worktree),
-                "record_digest": digest,
-                "deadline": deadline,
-                "owner": processes[0].payload(legacy=True),
-                "owner_identity": processes[0].payload(),
-                **({"worktree_paths": [str(path) for path in worktree_paths]} if worktree_paths is not None else {}),
-            },
-        )
-        started = time.monotonic()
-        next_progress = started
-        denial: PermissionError | None = None
-        while True:
-            current = session_registry.resolve(session_id, state_root=state_root)
-            executing = any(process.exists() for process in processes[1:])
-            if not executing and (current.state is session_registry.Resolution.RELEASED or not processes[0].exists()):
+    registry_requests.write_request(
+        request,
+        {
+            "version": 1,
+            "session_id": session_id,
+            "worktree": str(worktree),
+            "record_digest": digest,
+            "deadline": deadline,
+            "owner": processes[0].payload(legacy=True),
+            "owner_identity": processes[0].payload(),
+            **({"worktree_paths": [str(path) for path in worktree_paths]} if worktree_paths is not None else {}),
+        },
+    )
+    started = time.monotonic()
+    next_progress = started
+    denial: PermissionError | None = None
+    while True:
+        current = session_registry.resolve(session_id, state_root=state_root)
+        executing = any(process.exists() for process in processes[1:])
+        if not executing and (current.state is session_registry.Resolution.RELEASED or not processes[0].exists()):
+            return None
+        if current.state is session_registry.Resolution.RUNNING:
+            return "解放待機中に担当が再開したため保持した"
+        if current.state is session_registry.Resolution.UNREADABLE:
+            return "解放待機中の担当登録を読めないため保持した"
+        text, denial = registry_requests.read_result(request, response_path)
+        if text is not None:
+            response = json.loads(text)
+            if not isinstance(response, dict):
+                return "解放応答の形式を検収できない"
+            if response.get("session_id") != session_id or response.get("record_digest") != digest:
+                return "解放応答の対象を検収できない"
+            if response.get("error"):
+                return f"所有側が解放を完了できない: {response['error']}"
+            released = session_registry.resolve(session_id, state_root=state_root)
+            if released.state is not session_registry.Resolution.RELEASED:
+                return "解放応答後の登録簿が解放済みを示さない"
+            if not any(process.exists() for process in processes[1:]):
                 return None
-            if current.state is session_registry.Resolution.RUNNING:
-                return "解放待機中に担当が再開したため保持した"
-            if current.state is session_registry.Resolution.UNREADABLE:
-                return "解放待機中の担当登録を読めないため保持した"
-            text, denial = registry_requests.read_response(response_path)
-            if text is not None:
-                response = json.loads(text)
-                if not isinstance(response, dict):
-                    return "解放応答の形式を検収できない"
-                if response.get("session_id") != session_id or response.get("record_digest") != digest:
-                    return "解放応答の対象を検収できない"
-                if response.get("error"):
-                    return f"所有側が解放を完了できない: {response['error']}"
-                released = session_registry.resolve(session_id, state_root=state_root)
-                if released.state is not session_registry.Resolution.RELEASED:
-                    return "解放応答後の登録簿が解放済みを示さない"
-                if not any(process.exists() for process in processes[1:]):
-                    return None
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return "期限までに所有側の解放応答と実行プロセスの終了を確認できない" + registry_requests.denial_detail(
-                    response_path, denial
-                )
-            now = time.monotonic()
-            if now >= next_progress:
-                print(
-                    f"session_id={session_id}: 解放待機中（経過{now - started:.1f}秒、残り{remaining:.1f}秒）",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                next_progress = now + 5.0
-            time.sleep(min(0.05, remaining))
-    finally:
-        # JSON登録簿と拡張子を分け、異常終了時も既存のsessionファイルの7日掃引へ渡す。
-        # 所有側は応答を書いた後に要求の有無で自分の応答を消すかを決めるため、要求を先に消す。
-        registry_requests.remove_requester_files(request, response_path)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return "期限までに所有側の解放応答と実行プロセスの終了を確認できない" + registry_requests.denial_detail(
+                response_path, denial
+            )
+        now = time.monotonic()
+        if now >= next_progress:
+            print(
+                f"session_id={session_id}: 解放待機中（経過{now - started:.1f}秒、残り{remaining:.1f}秒）",
+                file=sys.stderr,
+                flush=True,
+            )
+            next_progress = now + 5.0
+        time.sleep(min(0.05, remaining))
+
+
+def pending(state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Path, dict[str, Any]]]:
+    """稼働中の所有者に宛てた未処理の解放要求だけを返す。"""
+    owner = session_registry.owner_process()
+    if owner is None:
+        return []
+    result = []
+    for path in registry_requests.request_paths(
+        session_registry.registry_directory(state_root), registry_requests.RELEASE_REQUEST_SUFFIX
+    ):
+        try:
+            payload = registry_requests.pending_payload(path, path.with_suffix(".release-response"))
+            if payload is None or not isinstance(payload.get("owner"), dict):
+                continue
+            identity = session_registry.ProcessIdentity.from_payload(payload["owner"], stable=payload.get("owner_identity"))
+            identifier = payload.get("session_id")
+            if identity.compatible_with(owner) and isinstance(identifier, str) and session_layout.valid_session_id(identifier):
+                result.append((path, payload))
+        except OSError, ValueError, KeyError, TypeError:
+            continue
+    return result
 
 
 async def process_requests(
@@ -131,31 +144,13 @@ async def process_requests(
     stop: Callable[..., Awaitable[dict[str, Any]]],
     *,
     state_root: pathlib.Path | None = None,
+    requests: Sequence[tuple[pathlib.Path, dict[str, Any]]] | None = None,
 ) -> None:
     """自プロセスが所有する終了sessionの要求だけを検収し、結果を保持してstopする。"""
-    owner = session_registry.owner_process()
-    if owner is None:
-        return
-    for request in registry_requests.request_paths(
-        session_registry.registry_directory(state_root), registry_requests.RELEASE_REQUEST_SUFFIX
-    ):
+    for request, payload in pending(state_root) if requests is None else requests:
         response_path = request.with_suffix(".release-response")
-        if response_path.exists():
-            continue
         try:
-            payload = json.loads(request.read_text(encoding="utf-8"))
-            if (
-                not isinstance(payload, dict)
-                or payload.get("version") != 1
-                or not isinstance(payload.get("owner"), dict)
-                or not session_registry.ProcessIdentity.from_payload(
-                    payload["owner"], stable=payload.get("owner_identity")
-                ).compatible_with(owner)
-            ):
-                continue
             session_id = payload["session_id"]
-            if not isinstance(session_id, str) or not session_layout.valid_session_id(session_id):
-                continue
             response = {"session_id": session_id, "record_digest": payload["record_digest"]}
             remaining = payload["deadline"] - time.monotonic()
             if remaining <= 0:

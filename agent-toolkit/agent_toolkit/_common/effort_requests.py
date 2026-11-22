@@ -13,7 +13,6 @@ from typing import Any
 import psutil
 
 from agent_toolkit._common import (
-    atomic_file,
     delegated_session,
     process_identity,
     registry_requests,
@@ -81,9 +80,8 @@ def request(
     target = target or actor
     if not session_layout.valid_session_id(target):
         raise ValueError("対象の会話IDが不正")
-    with session_registry.registry_lock(target, state_root=state_root):
-        path = session_registry.registry_directory(state_root) / f"{target}.json"
-        payload = json.loads(path.read_text(encoding="utf-8"))
+    path = session_registry.registry_directory(state_root) / f"{target}.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict) or not authorized(actor, target, payload):
         raise ValueError("effortを変更できるのは自身と直接の親だけ")
     if direction not in {"up", "down"}:
@@ -119,23 +117,18 @@ def request(
         "owner": processes[0],
         "deadline": deadline,
     }
-    try:
-        atomic_file.atomic_write(request_path, json.dumps(packet, ensure_ascii=False) + "\n")
-        denial: PermissionError | None = None
-        while time.monotonic() < deadline:
-            text, denial = registry_requests.read_response(response_path)
-            if text is not None:
-                response = json.loads(text)
-                if not isinstance(response, dict) or response.get("session_id") != target:
-                    raise ValueError("effort応答の対象を確認できない")
-                return response
-            time.sleep(0.05)
-        detail = registry_requests.denial_detail(response_path, denial)
-        raise TimeoutError(f"effort変更の応答を確認できない{detail}。atk agents showで現在値を確認し、自動で再送しない")
-    finally:
-        # 所有側は応答を書いた後に要求の有無で自分の応答を消すかを決めるため、要求を先に消す。
-        with session_registry.registry_lock(target, state_root=state_root):
-            registry_requests.remove_requester_files(request_path, response_path)
+    registry_requests.write_request(request_path, packet)
+    denial: PermissionError | None = None
+    while time.monotonic() < deadline:
+        text, denial = registry_requests.read_result(request_path, response_path)
+        if text is not None:
+            response = json.loads(text)
+            if not isinstance(response, dict) or response.get("session_id") != target:
+                raise ValueError("effort応答の対象を確認できない")
+            return response
+        time.sleep(0.05)
+    detail = registry_requests.denial_detail(response_path, denial)
+    raise TimeoutError(f"effort変更の応答を確認できない{detail}。atk agents showで現在値を確認し、自動で再送しない")
 
 
 def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Path, dict[str, Any]]]:
@@ -147,53 +140,32 @@ def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Pat
     for path in registry_requests.request_paths(
         session_registry.registry_directory(state_root), registry_requests.EFFORT_REQUEST_SUFFIX
     ):
-        if path.with_suffix(".effort-response").exists():
-            continue
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or payload.get("version") != 1:
+            payload = registry_requests.pending_payload(path, path.with_suffix(".effort-response"))
+            if payload is None:
                 continue
             identifier = payload.get("session_id")
             if not isinstance(identifier, str) or not session_layout.valid_session_id(identifier):
                 continue
-            expected_owner = session_registry.ProcessIdentity.parse(payload.get("owner"))
-            with session_registry.registry_lock(identifier, state_root=state_root):
-                payload = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(payload, dict) or payload.get("session_id") != identifier or payload.get("version") != 1:
-                    continue
-                if (
-                    path.parent != session_registry.registry_directory(state_root)
-                    or path.with_suffix(".effort-response").exists()
-                ):
-                    continue
-                if not isinstance(payload.get("deadline"), (int, float)) or payload["deadline"] <= time.monotonic():
-                    continue
-                previous = session_registry.ProcessIdentity.parse(payload.get("owner"))
-                if previous != expected_owner:
-                    continue
-                record = json.loads((path.parent / f"{identifier}.json").read_text(encoding="utf-8"))
-                if not isinstance(record, dict):
-                    continue
-                declared = session_registry.ProcessIdentity.parse(record["processes"][0])
-                receiver = record.get("effort_receiver")
-                if not isinstance(receiver, dict) or receiver.get("version") != 1:
-                    continue
-                if session_registry.ProcessIdentity.parse(receiver.get("process")) != declared:
-                    continue
-                if session_registry.ProcessIdentity.of(declared.pid) != declared:
-                    continue
-                if declared != owner:
-                    continue
-                if previous != declared:
-                    payload["owner"] = record["processes"][0]
-                    atomic_file.atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
-                if declared.compatible_with(owner):
-                    result.append((path, payload))
+            session_registry.ProcessIdentity.parse(payload.get("owner"))
+            # 登録簿の置換は原子的。各要求の確認で別プロセスの書込終了を待たない。
+            record = json.loads((path.parent / f"{identifier}.json").read_text(encoding="utf-8"))
+            if not isinstance(record, dict):
+                continue
+            declared = session_registry.ProcessIdentity.parse(record["processes"][0])
+            receiver = record.get("effort_receiver")
+            if not isinstance(receiver, dict) or receiver.get("version") != 1:
+                continue
+            if session_registry.ProcessIdentity.parse(receiver.get("process")) != declared:
+                continue
+            if declared != owner or session_registry.ProcessIdentity.of(declared.pid) != declared:
+                continue
+            result.append((path, {**payload, "owner": record["processes"][0]}))
         except OSError, ValueError, TypeError, KeyError, IndexError:
             continue
     return result
 
 
 def respond(path: pathlib.Path, response: dict[str, Any]) -> None:
-    """同名の応答を原子的に書く。要求側が要求を消した後なら、書いた応答も消して残さない。"""
+    """同じ要求IDに対する結果を確定する。"""
     registry_requests.respond(path, path.with_suffix(".effort-response"), response)

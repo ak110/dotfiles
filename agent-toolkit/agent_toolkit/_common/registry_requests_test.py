@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import pathlib
 import time
@@ -108,3 +109,52 @@ def test_absent_or_empty_registry_has_no_requests(tmp_path: pathlib.Path, state:
     if state == "empty":
         directory.mkdir(parents=True)
     assert registry_requests.request_paths(directory, registry_requests.EFFORT_REQUEST_SUFFIX) == []
+
+
+@pytest.mark.parametrize("kind", ["effort", "release"])
+def test_completion_stays_with_request_even_after_waiting_ends(tmp_path, kind):
+    request = tmp_path / f"token.{kind}-request"
+    old_response = request.with_suffix(f".{kind}-response")
+    registry_requests.write_request(request, {"version": 1, "deadline": time.monotonic() + 60})
+    assert registry_requests.pending_payload(request, old_response) is not None
+    registry_requests.write_request(request, {"version": 1, "deadline": 0})
+    assert registry_requests.pending_payload(request, old_response) is None
+
+    registry_requests.respond(request, old_response, {"observed": "完了"})
+    assert not old_response.exists() and not request.exists()
+    text, denial = registry_requests.read_result(request, old_response)
+    assert text is not None and json.loads(text) == {"observed": "完了"} and denial is None
+    registry_requests.respond(request, old_response, {"observed": "別の結果"})
+    assert registry_requests.read_result(request, old_response) == (text, None)
+
+
+def test_request_accepts_legacy_result_and_legacy_sender_still_gets_result(tmp_path):
+    request = tmp_path / "legacy.effort-request"
+    response = request.with_suffix(".effort-response")
+    request.write_text('{"version":1}', encoding="utf-8")
+    registry_requests.respond(request, response, {"observed": "完了"})
+    assert json.loads(response.read_text(encoding="utf-8")) == {"observed": "完了"}
+
+    registry_requests.write_request(request, {"version": 1, "deadline": time.monotonic() + 60})
+    assert registry_requests.read_result(request, response) == (response.read_text(encoding="utf-8"), None)
+    assert registry_requests.pending_payload(request, response) is None
+
+
+def test_inaccessible_result_can_be_read_again(tmp_path, monkeypatch):
+    request = tmp_path / "busy.effort-request"
+    response = request.with_suffix(".effort-response")
+    registry_requests.write_request(request, {"version": 1, "deadline": time.monotonic() + 60})
+    registry_requests.respond(request, response, {"observed": "完了"})
+    original = pathlib.Path.read_text
+
+    def denied(path, **kwargs):
+        if path.name.endswith("-result"):
+            raise PermissionError("一時的な共有拒否")
+        return original(path, **kwargs)
+
+    with monkeypatch.context() as attempt:
+        attempt.setattr(pathlib.Path, "read_text", denied)
+        text, denial = registry_requests.read_result(request, response)
+    assert text is None and isinstance(denial, PermissionError)
+    text, denial = registry_requests.read_result(request, response)
+    assert text is not None and json.loads(text) == {"observed": "完了"} and denial is None

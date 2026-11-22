@@ -5,18 +5,17 @@ agents_serverの監視は1秒（自動再開待ちは0.1秒）ごとに要求を
 要求の置き場所と名前は、版の異なる書き手（CLI）と読み手（所有MCP）が共有する契約なので変えない。
 要求の作成・改名・削除は直下の項目を変えてディレクトリの更新時刻を進めるため、更新時刻が前回と同じなら前回の一覧を使う。
 
-要求側のCLIは待機を終えると要求、応答の順に消す（旧版のCLIも同じ順）。
-所有MCPが要求の有無を確かめてから応答を書くまでの間にこの削除が済むと、応答だけが7日の掃引まで残っていた（2026-11-19のCIで観測）。
-所有MCPは応答を書いた後に要求の有無を確かめ直し、要求が消えていれば自分の書いた応答を消す。
-ロックで直列にすると、登録簿の書込が滞る間に要求側の終了と監視の巡回が止まるため、待ちを生まないこの形にする。
+新しい要求はファイル名に結び付けたIDを持ち、所有MCPが同じファイルに結果を記録する。
+待機終了時に要求は消さず、既存の期限切れ掃引に回収を任せる。
+旧版との組合せでは、従来の別ファイルの結果も読み書きする。
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import pathlib
-import sys
 import time
 from typing import Any
 
@@ -59,18 +58,68 @@ def request_paths(directory: pathlib.Path, suffix: str) -> list[pathlib.Path]:
 
 
 def respond(request: pathlib.Path, response_path: pathlib.Path, response: dict[str, Any]) -> None:
-    """要求への応答を原子的に書き、書いた時点で要求が消えていれば自分の応答も消す。
+    """新しい要求では同じIDへ結果を保存し、旧要求にだけ従来の応答ファイルを使う。"""
+    try:
+        packet = json.loads(request.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return
+    if isinstance(packet, dict) and "request_id" in packet:
+        if packet["request_id"] != request.stem:
+            raise ValueError("要求IDがファイル名と一致しない")
+        if "result" not in packet:
+            atomic_file.atomic_write(request, json.dumps({**packet, "result": response}, ensure_ascii=False) + "\n")
+        with contextlib.suppress(OSError):
+            request.replace(_result_path(request))
+        return
 
-    要求が残っていれば、要求側は後で応答を消す。要求が消えていれば、要求側は応答の削除を終えたか、その途中にある。
-    どちらの順で重なっても、両者の終了後に応答は残らない。
-    """
+    # 旧要求側は待機終了で要求を先に消す。遅れて書いた応答だけを残さない。
     atomic_file.atomic_write(response_path, json.dumps(response, ensure_ascii=False) + "\n")
     if not request.exists():
         response_path.unlink(missing_ok=True)
 
 
-# Windowsでは、他プロセスが開いている間や削除・置換の途中で、名前の操作や読取が一時的に共有拒否（WinError 5・32）になる。
-_TRANSIENT_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16)
+def write_request(path: pathlib.Path, packet: dict[str, Any]) -> None:
+    """旧版も解釈できる入力に、結果との対応に使う要求IDを付ける。"""
+    atomic_file.atomic_write(path, json.dumps({**packet, "request_id": path.stem}, ensure_ascii=False) + "\n")
+
+
+def _result_path(request: pathlib.Path) -> pathlib.Path:
+    return request.with_suffix(f"{request.suffix}-result")
+
+
+def pending_payload(path: pathlib.Path, response: pathlib.Path) -> dict[str, Any] | None:
+    """結果済み・期限切れを除き、そのIDでまだ受け付ける要求だけを返す。"""
+    if response.exists():
+        return None
+    packet = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(packet, dict) or packet.get("version") != 1:
+        return None
+    if packet.get("request_id", path.stem) != path.stem:
+        return None
+    if "result" in packet:
+        # 一時共有拒否の後は操作を繰り返さず、名前の更新だけを試す。
+        if packet.get("request_id") == path.stem:
+            with contextlib.suppress(OSError):
+                path.replace(_result_path(path))
+        return None
+    deadline = packet.get("deadline")
+    if not isinstance(deadline, (float, int)) or deadline <= time.monotonic():
+        return None
+    return packet
+
+
+def read_result(request: pathlib.Path, legacy_response: pathlib.Path) -> tuple[str | None, PermissionError | None]:
+    """同じ要求の結果を読み、旧所有者の応答も受け取る。共有拒否と未応答は区別する。"""
+    denial = None
+    for path in (request, _result_path(request)):
+        text, current_denial = read_response(path)
+        denial = current_denial or denial
+        if text is not None:
+            packet = json.loads(text)
+            if isinstance(packet, dict) and packet.get("request_id") == request.stem and "result" in packet:
+                return json.dumps(packet["result"], ensure_ascii=False), None
+    response, legacy_denial = read_response(legacy_response)
+    return response, legacy_denial or denial
 
 
 def read_response(response_path: pathlib.Path) -> tuple[str | None, PermissionError | None]:
@@ -84,6 +133,8 @@ def read_response(response_path: pathlib.Path) -> tuple[str | None, PermissionEr
     except FileNotFoundError:
         return None, None
     except PermissionError as error:
+        if error.filename is None:
+            error.filename = str(response_path)
         return None, error
 
 
@@ -91,22 +142,4 @@ def denial_detail(response_path: pathlib.Path, denial: PermissionError | None) -
     """期限まで応答を読めなかった理由の説明を返す。読取拒否が無ければ空文字列を返す。"""
     if denial is None:
         return ""
-    return f"（応答ファイル{response_path}を読めなかった。最後のOSエラー: {denial}）"
-
-
-def remove_requester_files(*paths: pathlib.Path) -> None:
-    """要求側の後始末として、渡した順にファイルを消す。
-
-    既に消えていれば成功として扱い、一時的な共有拒否は短い上限の中で再試行する。
-    それでも消せなければ操作の結果を上書きせず、診断を標準エラーへ出す。残ったファイルは既存の期限切れの掃引が消す。
-    """
-    for path in paths:
-        for attempt in range(len(_TRANSIENT_RETRY_DELAYS) + 1):
-            try:
-                path.unlink(missing_ok=True)
-                break
-            except OSError as error:
-                if attempt < len(_TRANSIENT_RETRY_DELAYS):
-                    time.sleep(_TRANSIENT_RETRY_DELAYS[attempt])
-                    continue
-                print(f"要求側の後始末で{path}を消せなかった（期限切れの掃引が消す）: {error}", file=sys.stderr, flush=True)
+    return f"（応答ファイル{denial.filename or response_path}を読めなかった。最後のOSエラー: {denial}）"
