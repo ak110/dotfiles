@@ -79,8 +79,14 @@ async def snapshot(session: state.SessionState) -> dict[str, Any]:
 
 def restore(payload: dict[str, Any]) -> state.SessionState:
     """受信側の既知schemaだけを復元し、同期資源と公開差分cacheは受信側で作る。"""
-    allowed = {field.name for field in dataclasses.fields(state.SessionState)} - _RUNTIME_FIELDS
-    if set(payload) != allowed:
+    declared = [field for field in dataclasses.fields(state.SessionState) if field.name not in _RUNTIME_FIELDS]
+    # 旧世代から移譲を受ける時は、新しい版で増えた省略できるフィールドが無い。
+    required = {
+        field.name
+        for field in declared
+        if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING
+    }
+    if not required <= set(payload) <= {field.name for field in declared}:
         raise ValueError("移譲元と移譲先のsession状態schemaが一致しません")
     codec = _StateCodec()
     values = {name: codec.decode(value) for name, value in payload.items()}
