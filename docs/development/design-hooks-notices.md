@@ -63,8 +63,8 @@ Claude Codeの最上位メインでは、次のhookがエージェントへ返�
 
 表示しない通知は、生成元が`notice.informational`で印を付けた次の4件だけである。
 実行時間（`_hooks/command_timing.py`の測定値）は1秒以上の実行ごとに出て操作を求めない。
-作業契約の本文の配送（`_hooks/user_prompt_submit.py`の`_work_contract_notice`）は、実ユーザーの入力ごとに、作業契約のファイルがある場合に本文と、契約の最終更新後の実ユーザー発話の件数を届ける。
-本文が通知の上限を超える場合は本文に代えて所在を、読めない場合は所在と診断を届ける（`_hooks/work_contract.py`の`notice`）。
+作業契約の通知（`_hooks/user_prompt_submit.py`の`_work_contract_notice`）は、作業契約のファイルがあれば、実ユーザーの入力ごとに所在と最終更新後の実ユーザー発話の件数を届ける（`_hooks/work_contract.py`の`observe_input`）。
+本文は会話圧縮の後にだけ届け、通知の上限を超える場合は本文に代えて所在を、読めない場合は所在と診断を届ける（同ファイルの`notice`）。
 ファイルが無ければ出ない。
 件数は要求を再確認するための観測値で、初回観測より前は不明と示し、更新漏れの判定や遮断には使わない。
 発話の理解の案内（`_hooks/user_prompt_submit.py`の`_utterance_notice`）は、実ユーザーの入力ごとに同じ文面で出る。

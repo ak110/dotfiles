@@ -130,6 +130,10 @@ _UV_LOCK_TIMEOUT_SECONDS = "30"
 _UV_LOCK_TIMEOUT_MARKER = "when waiting for lock on"
 
 
+# 更新のロック待ち上限600秒を超えないよう、uvの整理が長引いたら他ツールは次回へ回す。  # pyfltr: allow-comment
+_TOOLS_START_BUDGET_SECONDS = 300
+
+
 class _InUseError(Exception):
     pass
 
@@ -717,8 +721,12 @@ def maintain_caches() -> None:
             return
         try:
             with filelock.FileLock(str(update_path), timeout=0, preserve_lock_file=True):
+                started = time.monotonic()
                 _run_maintenance(_CacheGroup.UV, clean_uv_cache)
-                _run_maintenance(_CacheGroup.TOOLS, clean_caches)
+                if time.monotonic() - started < _TOOLS_START_BUDGET_SECONDS:
+                    _run_maintenance(_CacheGroup.TOOLS, clean_caches)
+                else:
+                    _write_maintenance_record(_CacheGroup.TOOLS, MaintenanceResult.DEFERRED, "uvの整理が長引いたため次回へ回す")
         except filelock.Timeout:
             for group in _CacheGroup:
                 _write_maintenance_record(group, MaintenanceResult.DEFERRED, "他の更新が実行中")

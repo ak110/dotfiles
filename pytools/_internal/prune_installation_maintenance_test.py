@@ -312,6 +312,15 @@ def test_tool_cleanup_holds_update_lock_and_does_not_start_duplicate_cleanup(tmp
     assert json.loads(state_path("tools-cache-maintenance.json").read_text(encoding="utf-8"))["result"] == "completed"
 
 
+def test_tool_cleanup_is_deferred_when_uv_cleanup_runs_long(tmp_path, monkeypatch):
+    _, calls = prepare(tmp_path, monkeypatch, "full")
+    monkeypatch.setattr(prune_installation, "_TOOLS_START_BUDGET_SECONDS", -1)
+    maintain(monkeypatch, tmp_path)
+    assert ["/fixture/npm", "cache", "verify"] not in calls
+    assert ["/fixture/mise", "cache", "prune"] not in calls
+    assert json.loads(state_path("tools-cache-maintenance.json").read_text(encoding="utf-8"))["result"] == "deferred"
+
+
 def test_maintenance_defers_while_update_is_running(tmp_path, monkeypatch):
     """更新が更新ロックを保持する間、独立プロセスはロックを待たずに整理を保留し、uvの排他操作を重ねない。"""
     _, calls = prepare(tmp_path, monkeypatch, "full")
