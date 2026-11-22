@@ -72,6 +72,7 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
 
     assert generated["PreToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher
     assert "spawn_agent" in generated["PreToolUse"][0]["matcher"].split("|")
+    assert "mcp__agents_server__send_to_user" in generated["PreToolUse"][0]["matcher"].split("|")
     assert generated["PostToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher
     assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
     assert "matcher" not in generated["SubagentStop"][0]
@@ -79,6 +80,9 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
         {"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop" + subject.HOOK_FAILURE_SUFFIX}]}
     ]
     assert "Bash" in generated["PostToolUse"][0]["matcher"].split("|")
+    assert {"exec_command", r"functions\.exec_command", r"functions\.exec"} <= set(
+        generated["PostToolUse"][0]["matcher"].split("|")
+    )
     # PostToolUseは資料本文を返さないため、追加コンテキストの退避上限を外さない。
     assert all("additionalContextLimit" not in handler for handler in generated["PostToolUse"][0]["hooks"])
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])

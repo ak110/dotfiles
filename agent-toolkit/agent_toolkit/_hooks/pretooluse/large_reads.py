@@ -12,6 +12,7 @@ lazy from collections.abc import Iterator, Sequence
 from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, BashInvocation, is_unknown_word
+lazy from agent_toolkit._common.codex_execution_inputs import command_inputs
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 
@@ -590,10 +591,17 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
                 paths.append(path)
     elif tool_name == "Bash" and isinstance(tool_input.get("command"), str):
         paths = _bash_session_record_paths(tool_input["command"], cwd)
+    elif tool_name in {"exec_command", "functions.exec_command"} and isinstance(command := tool_input.get("cmd"), str):
+        workdir = tool_input.get("workdir")
+        paths = _bash_session_record_paths(command, workdir if isinstance(workdir, str) else cwd)
+    elif tool_name == "functions.exec" and isinstance(code := tool_input.get("input"), str):
+        for command in command_inputs(tool_name, code):
+            # 外側セルのcwdを、別のworkdirを指定できる内側コマンドのcwdとはみなさない。
+            paths.extend(_bash_session_record_paths(command, ""))
     if not paths:
         return None
     return _notice(
-        "セッション原記録の直接参照である。\n対象: " + "、".join(str(path) for path in paths),
+        "セッション原記録の直接参照である。\n対象: " + "、".join(str(path) for path in dict.fromkeys(paths)),
         tag="warn",
         fix=(
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会せよ。"

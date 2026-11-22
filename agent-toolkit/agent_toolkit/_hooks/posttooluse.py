@@ -74,6 +74,7 @@ lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCC
 lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
+lazy from agent_toolkit._hooks.pretooluse.large_reads import session_record_reference_warning
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 # このスクリプトの hook 識別子。
@@ -248,6 +249,8 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
         return None
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
+    if tool_name == "functions.exec" and is_codex_payload(payload) and isinstance(tool_input, str):
+        tool_input = {"input": tool_input}
     if not isinstance(tool_input, dict):
         return None
     event_name = payload.get("hook_event_name", "")
@@ -605,6 +608,12 @@ def main(payload_text: str) -> int:
         notices.extend(command_timing.observe(payload, background_task_id=background_task_id))
         if tool_name in {"Bash", "exec_command", "functions.exec"}:
             clock_claims.observe(payload, tool_input.get("command"), session_id)
+        if (
+            is_codex_payload(payload)
+            and tool_name in {"exec_command", "functions.exec_command", "functions.exec"}
+            and (record_warning := session_record_reference_warning(tool_name, tool_input, cwd))
+        ):
+            notices.append(record_warning)
         if (
             is_codex_payload(payload)
             and tool_name == "Bash"

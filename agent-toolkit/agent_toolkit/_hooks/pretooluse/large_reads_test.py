@@ -6,7 +6,7 @@ import shlex
 
 import pytest
 
-from agent_toolkit._hooks import pretooluse, work_contract
+from agent_toolkit._hooks import posttooluse, pretooluse, work_contract
 from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_skills
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, sed_read_range
 
@@ -413,6 +413,38 @@ def test_static_session_record_with_unknown_search_term_keeps_the_reference_guid
     assert notice is not None and str(record) in notice
     # 入力先そのものが未知なら、cwdを入力先と推定しない。
     assert large_reads.session_record_reference_warning("Bash", {"command": 'rg needle "$DIR"'}, str(root)) is None
+
+
+@pytest.mark.parametrize("route", ["functions.exec", "functions.exec_command"])
+@pytest.mark.parametrize("kind", ["record", "ordinary", "metadata"])
+def test_codex_shell_results_guide_only_static_session_content_searches(tmp_path, capsys, route, kind):
+    codex_home = pathlib.Path.home() / ".codex/sessions/2026/11/19"
+    codex_home.mkdir(parents=True)
+    record = codex_home / "rollout-2026-11-19T03-33-00-01a1f1dd-db72-7143-bae6-845204964526.jsonl"
+    ordinary = tmp_path / "test.jsonl"
+    for target in (record, ordinary):
+        target.write_text("{}\n", encoding="utf-8")
+    command = {
+        "record": f"rg needle {shlex.quote(str(record))}",
+        "ordinary": f"rg needle {shlex.quote(str(ordinary))}",
+        "metadata": f"rg --files {shlex.quote(str(record.parent))}",
+    }[kind]
+    tool_input = (
+        f"text(await tools.exec_command({{cmd: {json.dumps(command)}}}));" if route == "functions.exec" else {"cmd": command}
+    )
+    payload = {
+        "session_id": "codex-record-search",
+        "turn_id": "turn",
+        "tool_name": route,
+        "tool_input": tool_input,
+        "cwd": str(tmp_path),
+        "tool_response": "検索の結果",
+        "hook_event_name": "PostToolUse",
+    }
+    assert posttooluse.main(json.dumps(payload)) == 0
+    result = capsys.readouterr().out
+    notice = json.loads(result)["hookSpecificOutput"].get("additionalContext", "") if result else ""
+    assert ("session-review-evidence" in notice) is (kind == "record")
 
 
 @pytest.mark.parametrize("codex", [False, True])

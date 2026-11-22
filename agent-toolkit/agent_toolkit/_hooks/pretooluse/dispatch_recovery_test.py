@@ -7,6 +7,7 @@ import json
 
 import pytest
 
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 
@@ -45,6 +46,64 @@ def test_structured_denial_separates_pending_notice(capsys) -> None:
     assert specific["permissionDecisionReason"] == "拒否理由"
     assert "保留通知" in specific["additionalContext"]
     assert "付随通知" in specific["additionalContext"]
+
+
+@pytest.mark.parametrize(
+    ("tool", "field"),
+    [
+        ("mcp__plugin_agent-toolkit_agents_server__start", "prompt"),
+        ("mcp__plugin_agent-toolkit_agents_server__send_message", "prompt"),
+        ("mcp__plugin_agent-toolkit_agents_server__send_to_user", "message"),
+        ("mcp__agents_server__send_to_user", "message"),
+        ("AskUserQuestion", None),
+    ],
+)
+def test_scope_review_precedes_delivery_and_is_independent_per_decision(tool, field, tmp_path, capsys):
+    """範囲を限った過去の決定を引いた場合、対象と原文だけを先に返す。"""
+    session_id = "scope-review"
+    work_dir = managed_temp.resolve_session_temp(session_id)
+    transcript = tmp_path / "scope-review.jsonl"
+    offers = [
+        "複雑な対処はしない、制限として扱う。この決定は配備と再起動だけの話だよ。",
+        "文字起こしツールは中身だけの実装にしておいてほしい。",
+    ]
+    codex = tool.startswith("mcp__agents_server__")
+    entries = (
+        [{"type": "event_msg", "payload": {"type": "user_message", "message": text}} for text in offers]
+        if codex
+        else [{"type": "user", "message": {"content": text}} for text in offers]
+    )
+    transcript.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries),
+        encoding="utf-8",
+    )
+    payload = {"session_id": session_id, "transcript_path": str(transcript)}
+    if codex:
+        payload["turn_id"] = "current"
+
+    def reason(message):
+        inputs = {field: message} if field else _input(tool, message)
+        return _reason(payload, tool, inputs, capsys)
+
+    first = "前の『複雑な対処はしない』という決定をコード実行の転送方式にも適用する。"
+    second = "公開予定の変更に文字起こしツールを含める。"
+    assert reason(first) is None
+    (work_dir / "work-contract.md").write_text(
+        "- 「複雑な対処はしない」。配備と再起動に限る。コード実行の転送方式には適用しない。 `scope-review.jsonl:1`\n"
+        "- 「文字起こしツール」は機能内部のみ。公開は対象外。 `scope-review.jsonl:2`\n",
+        encoding="utf-8",
+    )
+    assert reason("検証の終了を確認した。") is None
+    assert reason("文字起こしツールのテストが通りました。") is None
+    first_notice = reason(first) or ""
+    assert "まだ送信していない" in first_notice
+    assert "複雑な対処はしない、制限として扱う。" in first_notice and offers[1] not in first_notice
+    assert "コード実行の転送方式には適用しない" in first_notice
+    assert reason(first) is None
+    second_notice = reason(second) or ""
+    assert offers[1] in second_notice and offers[0] not in second_notice
+    assert "公開は対象外" in second_notice
+    assert reason(second) is None
 
 
 @pytest.mark.parametrize("tool", sorted(dispatch._USER_FACING_TEXT_TOOL_NAMES))

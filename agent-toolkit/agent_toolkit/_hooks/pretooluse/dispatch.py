@@ -185,6 +185,11 @@ _MAIN_ONLY_MCP_TOOLS = frozenset(
     for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
     for name in ("send_to_user", "compact_conversation", "apply_runtime_changes")
 )
+_SCOPE_REVIEW_MCP_TOOLS = frozenset(
+    f"{prefix}{name}"
+    for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
+    for name in ("start", "send_message", "send_to_user")
+)
 
 
 def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
@@ -263,6 +268,20 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             block=_block_notice(
                 "メイン専用ツールのため実行していない。表示・圧縮・反映の成功として扱わない。",
                 fix="結果本文を委譲元へ最終応答で返せ。",
+            )
+        )
+    if (tool_name == "AskUserQuestion" or tool_name in _SCOPE_REVIEW_MCP_TOOLS) and (
+        reminder := work_contract.scope_review_before_send(
+            session_id,
+            payload.get("transcript_path"),
+            _scope_review_text(tool_name, tool_input),
+            actor=_agent_id.resolve_hook_agent_id(payload),
+        )
+    ):
+        return Decision(
+            block=_block_notice(
+                f"決定の原文と適用範囲を見直すため、まだ送信していない。\n\n{reminder}",
+                fix="今回の対象と除外を確かめ、必要なら本文を直して再送せよ。",
             )
         )
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
@@ -553,6 +572,16 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
                 if isinstance(value, str):
                     fields.append((f"questions[{question_index}].options[{option_index}].{name}", value))
     return fields
+
+
+def _scope_review_text(tool_name: str, tool_input: dict) -> str:
+    """送信する本文だけを取り出し、宛先や識別子を決定の引用として扱わない。"""
+    if tool_name == "AskUserQuestion":
+        return "\n".join(value for _, value in _user_facing_text_fields(tool_name, tool_input))
+    values = [tool_input.get(name) for name in ("message", "prompt", "instruction")]
+    if isinstance(extra := tool_input.get("extra_params"), dict):
+        values.extend(extra.values())
+    return "\n".join(value for value in values if isinstance(value, str))
 
 
 def _language_retry(payload: dict, tool_name: str, tool_input: dict, *, remember: bool) -> bool:
