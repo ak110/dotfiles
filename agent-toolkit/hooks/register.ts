@@ -36,8 +36,8 @@ export const register: Register = (on) => {
     if (!(await isTerminalMain($))) return result;
     return {
       ...result,
-      description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話をこのツールのmessageで送る。" +
-        turnEndAfterDelivery + "呼出しに失敗した時だけ通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
+      description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話を常にこのツールのmessageで送る。" +
+        turnEndAfterDelivery + "委譲先はこのツールを使わず委譲元へ返す。" + result.description,
       isDeferred: false,
     };
   });
@@ -46,8 +46,8 @@ export const register: Register = (on) => {
     if (e.origin.kind !== "composer" || e.text.trimStart().startsWith("<atk-auto") || !(await isTerminalMain($))) return next(e);
     if (!(await $.tool.list().catch(() => [])).some((tool) => tool.name === SEND_TO_USER)) return next(e);
     const notice = automatedMessage("send-to-user-contract", "notice",
-      "着手・進捗・完了報告は `" + SEND_TO_USER + "` で送る。REPLでは `await tools['" + SEND_TO_USER +
-      "']({message})` を呼ぶ。質問は `AskUserQuestion`。呼出しに失敗した時だけ通常本文で伝え、送達後は `…` で閉じる。");
+      "着手・進捗・完了報告は常に `" + SEND_TO_USER + "` で送る。REPLでは `await tools['" + SEND_TO_USER +
+      "']({message})` を呼ぶ。質問は `AskUserQuestion`。送達後は `…` で閉じる。");
     return next({ ...e, context: [...(e.context ?? []), notice] });
   });
   on("session.start", async ($, e, next) => {
