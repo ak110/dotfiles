@@ -85,40 +85,47 @@ class TestCodexMcpExecution:
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
-    def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str]):
+    def test_preserves_omitted_sandbox(self, state_dir: dict[str, str]):
+        tool_input = {"prompt": "hello", "cwd": "/tmp/workdir"}
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "cwd": "/tmp/workdir"},
+                "tool_input": tool_input,
                 "session_id": "fix1",
             },
             env_overrides=state_dir,
         )
         assert result.returncode == 0
         out = json.loads(result.stdout)
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert isinstance(updated.pop("start_observation"), str)
+        assert updated == tool_input
         assert "systemMessage" not in out
 
     @pytest.mark.parametrize("sandbox", ["network-only", "read-only", "workspace-write"])
-    def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str]):
+    def test_preserves_other_sandbox_values(self, sandbox: str, state_dir: dict[str, str]):
+        tool_input = {"prompt": "hello", "sandbox": sandbox, "cwd": "/tmp/workdir"}
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": sandbox, "cwd": "/tmp/workdir"},
+                "tool_input": tool_input,
                 "session_id": "fix2",
             },
             env_overrides=state_dir,
         )
         assert result.returncode == 0
         out = json.loads(result.stdout)
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert isinstance(updated.pop("start_observation"), str)
+        assert updated == tool_input
         assert "systemMessage" not in out
 
-    def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str]):
+    def test_preserves_sidechain_sandbox(self, state_dir: dict[str, str]):
+        tool_input = {"prompt": "hello", "sandbox": "read-only", "cwd": "/tmp/workdir"}
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "hello", "sandbox": "read-only", "cwd": "/tmp/workdir"},
+                "tool_input": tool_input,
                 "session_id": "fix_side",
                 "isSidechain": True,
             },
@@ -126,19 +133,22 @@ class TestCodexMcpExecution:
         )
         assert result.returncode == 0
         out = json.loads(result.stdout)
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert isinstance(updated.pop("start_observation"), str)
+        assert updated == tool_input
         assert "systemMessage" not in out
 
-    def test_sandbox_correct_no_message(self, state_dir: dict[str, str]):
+    def test_preserves_explicit_defaults(self, state_dir: dict[str, str]):
+        tool_input = {
+            "prompt": "hello",
+            "sandbox": "danger-full-access",
+            "approval-policy": "never",
+            "cwd": "/tmp/workdir",
+        }
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {
-                    "prompt": "hello",
-                    "sandbox": "danger-full-access",
-                    "approval-policy": "never",
-                    "cwd": "/tmp/workdir",
-                },
+                "tool_input": tool_input,
                 "session_id": "fix3",
             },
             env_overrides=state_dir,
@@ -146,26 +156,31 @@ class TestCodexMcpExecution:
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert isinstance(updated.pop("start_observation"), str)
+        assert updated == tool_input
         assert "systemMessage" not in out
 
-    def test_approval_policy_wrong_value_auto_fix_with_correct_sandbox(self, state_dir: dict[str, str]):
+    def test_preserves_explicit_approval_policy(self, state_dir: dict[str, str]):
+        tool_input = {
+            "prompt": "hello",
+            "sandbox": "danger-full-access",
+            "approval-policy": "on-request",
+            "cwd": "/tmp/workdir",
+        }
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {
-                    "prompt": "hello",
-                    "sandbox": "danger-full-access",
-                    "approval-policy": "on-request",
-                    "cwd": "/tmp/workdir",
-                },
+                "tool_input": tool_input,
                 "session_id": "fix_ap",
             },
             env_overrides=state_dir,
         )
         assert result.returncode == 0
         out = json.loads(result.stdout)
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert isinstance(updated.pop("start_observation"), str)
+        assert updated == tool_input
         assert "systemMessage" not in out
 
 
