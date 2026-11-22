@@ -16,13 +16,9 @@ def test_existing_contract_is_not_a_input_ledger(tmp_path: pathlib.Path, monkeyp
     monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
     notice = work_contract.observe_input("session")
     assert notice is not None and str(path) in notice
-    assert "目的: A全体" in notice
-    assert "機械生成の参照資料" in notice
-    assert "成果物を編集する前に作業契約の「現在有効な要求・制約」へ反映" in notice
-    assert "質問、状況照会、継続だけなら更新しない" in notice
-    assert "「更新する時点」" in notice and "「工程境界での要求と成果の確認」" in notice
-    assert "`agent-toolkit/skills/atk-mode/references/work-contract.md`「追加入力の統合」" in notice
-    assert "部分的な回答・調査・説明・計画・途中報告だけ" not in notice
+    assert "目的: A全体" not in notice
+    assert "作業契約の最終更新:" in notice
+    assert "その後の実ユーザー発話: 1件" in notice
     assert path.read_text(encoding="utf-8") == "目的: A全体\n"
 
 
