@@ -135,7 +135,6 @@ class CodexResource:
         self.resource = resource
         self._notification, self._server_request, self._failure = notification, server_request, failure
         self._sent: dict[str, Callable[[], None]] = {}
-        self._sent_done: dict[str, asyncio.Event] = {}
         self._requests = 0
         self._sequence = 0
         self._dispatch = asyncio.Lock()
@@ -158,6 +157,7 @@ class CodexResource:
         """状態処理をraw callbackから外し、保存確認付きの1受信列へ渡す。"""
         identifier = ""
         broker = runtime.broker
+        controller: CodexResource | None = None
 
         async def emit(kind: str, value: Any) -> None:
             await broker.emit(identifier, {"kind": kind, "value": value})
@@ -179,7 +179,12 @@ class CodexResource:
 
         async def request(method: str, params: dict | None, ticket: str) -> dict:
             async def publish_sent() -> None:
-                await emit("sent", ticket)
+                if controller is not None and not controller._detached:
+                    # 同じ所有者への送出確認は、保存待ちの通知列を経由しない。
+                    controller._record_sent(ticket)
+                else:
+                    # 移譲先への既存の通知契約は維持する。
+                    await emit("sent", ticket)
 
             try:
                 value = await raw.request(method, params, on_sent_async=publish_sent)
@@ -215,7 +220,8 @@ class CodexResource:
                 "close": close,
             }
         )
-        return cls(Resource(runtime, identifier, runtime.target), notification, server_request, failure)
+        controller = cls(Resource(runtime, identifier, runtime.target), notification, server_request, failure)
+        return controller
 
     @property
     def closed(self) -> bool:
@@ -235,7 +241,7 @@ class CodexResource:
     def diagnostic(self) -> dict[str, Any]:
         """要求が進まない時に、受信処理の生存と元I/O側の未確認イベント数を返す。
 
-        未確認イベントが上限に達すると、元I/Oは送出通知と後続の受信を止める。
+        未確認イベントが上限に達すると、元I/Oは後続の受信と移譲先への送出通知を止める。
         元I/Oが別プロセスにある場合、未確認数はこのプロセスから読めない。
         """
         if not self.resource.local:
@@ -265,7 +271,6 @@ class CodexResource:
         self._requests += 1
         if on_sent is not None:
             self._sent[ticket] = on_sent
-            self._sent_done[ticket] = asyncio.Event()
         try:
             response = await self.resource.operation(
                 "call",
@@ -277,16 +282,18 @@ class CodexResource:
                 },
             )
             # 応答はwire送信後にしか届かない。終了境界でconsumerが止まってもsent通知待ちにしない。
-            callback = self._sent.pop(ticket, None)
-            if callback is not None:
-                callback()
+            self._record_sent(ticket)
             if error := response.get("response_error"):
                 raise JsonRpcResponseError(error["method"], error["code"], error["message"], error["data"])
             return response["result"]
         finally:
             self._sent.pop(ticket, None)
-            self._sent_done.pop(ticket, None)
             self._requests -= 1
+
+    def _record_sent(self, ticket: str) -> None:
+        callback = self._sent.pop(ticket, None)
+        if callback is not None:
+            callback()
 
     async def notify(self, method: str, params: dict | None = None) -> None:
         """元I/OへJSON-RPC notificationを渡す。"""
@@ -346,10 +353,7 @@ class CodexResource:
                         self._reader_failure = AppServerError(value)
                         await self._failure(self._reader_failure)
                     elif kind == "sent":
-                        callback = self._sent.pop(value, None)
-                        if callback is not None:
-                            callback()
-                            self._sent_done[value].set()
+                        self._record_sent(value)
                     else:
                         raise ValueError("未対応のApp Server生イベント")
                     sequence = event["sequence"]

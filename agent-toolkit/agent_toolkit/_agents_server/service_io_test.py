@@ -12,7 +12,7 @@ from typing import Any, cast
 
 import pytest
 
-from agent_toolkit._agents_server import service, service_io, service_transport
+from agent_toolkit._agents_server import service, service_io, service_rpc, service_transport
 from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._common import runtime_environment
@@ -268,3 +268,59 @@ async def test_closing_after_reader_stopped_releases_resource_with_unread_events
         assert await client.close() == []
     assert raw.closed >= 1
     assert broker.backlog(client.resource.identifier) is None
+
+
+@pytest.mark.asyncio
+async def test_local_wire_receipt_does_not_wait_for_full_notification_queue(tmp_path: pathlib.Path) -> None:
+    broker = ResourceBroker("G1")
+    broker._event_limit = 1  # pylint: disable=protected-access
+    caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
+    directory = service_transport.namespace(caller)
+    stop = asyncio.Event()
+    serving = asyncio.create_task(service.run(directory, "G1", stop=stop, resources=broker))
+    entered, resume, sent = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    raws: list[_RawCodex] = []
+    clients: list[service_io.CodexResource] = []
+
+    def factory(*args: Any) -> _RawCodex:
+        raw = _RawCodex(*args)
+        raws.append(raw)
+        return raw
+
+    async def held(_message: dict) -> None:
+        entered.set()
+        await resume.wait()
+
+    async def unexpected(_value: Any) -> None:
+        pytest.fail("予想外のイベント")
+
+    try:
+        async with asyncio.timeout(10):
+            ready = directory / "G1.json"
+            while not ready.exists():
+                if serving.done():
+                    await serving
+                await asyncio.sleep(0)
+            origin = json.loads(ready.read_text(encoding="utf-8"))
+            broker.owner_identity = origin["server_instance"]
+            runtime = service_io.Runtime("G1", origin, broker)
+            client = service_io.CodexResource.create(runtime, factory, held, unexpected, unexpected)
+            other = service_io.CodexResource.create(runtime, factory, unexpected, unexpected, unexpected)
+            clients.extend((client, other))
+            await client.start()
+            await other.start()
+            await raws[0].notification({"value": 1})
+            await entered.wait()
+            assert broker.backlog(client.resource.identifier) == (1, 1)
+            assert (await service_rpc.request(origin, "ping", {}))["generation"] == "G1"
+            assert await other.request("thread/read") == {"method": "thread/read"}
+            assert await client.request("account/read", on_sent=sent.set) == {"method": "account/read"}
+            assert sent.is_set()
+            assert broker.backlog(client.resource.identifier) == (1, 1)
+    finally:
+        resume.set()
+        for client in clients:
+            assert await client.close() == []
+            assert broker.backlog(client.resource.identifier) is None
+        stop.set()
+        await asyncio.wait_for(serving, 10)
