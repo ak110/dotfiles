@@ -4,6 +4,7 @@ set -euo pipefail
 uv_path=$1
 root=${BASH_SOURCE[0]%/*}
 # shellcheck source=libexec/uv_output.sh
+# shellcheck disable=SC1091 # 検査は各ファイルを個別の入力として起動する。
 source "$root/uv_output.sh"
 export UPDATE_DOTFILES_BOOTSTRAP_FAILURES=''
 if ! command -v timeout >/dev/null; then
@@ -36,6 +37,7 @@ timed_stage() {
             capture_uv_command stage_command "$@"
             return
         fi
+        # shellcheck disable=SC2034 # capture_uv_commandが呼出し側の値を読む。
         local match_text='but the standalone installer was used to install uv to' matched=0
         local deadline=$((SECONDS + limit)) status=0
         capture_uv_command stage_command "$@" || status=$?
@@ -57,22 +59,25 @@ timed_stage() {
     ((bootstrap_interrupted == 0)) || return 130
     return "$code"
 }
-bootstrap_abort() {
-    local status=$1 entry name
+report_deferred_bootstrap() {
+    local entry name
     while IFS= read -r entry; do
         if [[ "$entry" == *$'\t''saved' ]]; then
             name=${entry%%: *}
             printf '%s (詳細: %s)\n' "${entry%$'\t'saved}" "${XDG_STATE_HOME:-$HOME/.local/state}/agent-toolkit/uv-$name-failed.log" >&2
         fi
     done <<<"$UPDATE_DOTFILES_BOOTSTRAP_FAILURES"
-    exit "$status"
+}
+bootstrap_abort() {
+    report_deferred_bootstrap
+    exit "$1"
 }
 run_stage() {
     local name=$1 classification=$2 limit=$3
     shift 3
     local code=0 uv_saved=''
     local uv_defer_summary=0
-    if [[ "$classification" == continue ]]; then uv_defer_summary=1; fi
+    if [[ "$classification" == continue && "$name" != "uvの自己更新" ]]; then uv_defer_summary=1; fi
     timed_stage "$name" "$limit" "$@" || code=$?
     ((code != 130)) || bootstrap_abort 130
     if ((code != 0)); then

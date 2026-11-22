@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory = $true)][string]$UvPath, [switch]$PrepareOnly, [switch]$PrintPython)
+﻿param([Parameter(Mandatory = $true)][string]$UvPath, [switch]$PrepareOnly, [switch]$PrintPython, [switch]$ReportOnly)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:bootstrapFailures = @()
@@ -12,6 +12,27 @@ function Write-DeferredUvDiagnostic {
             [UvOutputRecord]::PublishEvent("failure", "$($failure.title): $($failure.detail)", $log)
         }
     }
+}
+if ($ReportOnly) {
+    $report = $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT
+    if (-not $report) { exit 0 }
+    $directory = Join-Path $env:LOCALAPPDATA 'agent-toolkit'
+    $file = Get-Item -LiteralPath $report -ErrorAction Ignore
+    if (-not $file -or $file.DirectoryName -ne $directory -or $file.Name -notmatch '^update-bootstrap-\d+-\d+\.json$' -or
+        $file.Length -gt 65536 -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { exit 0 }
+    $seen = [Collections.Generic.HashSet[string]]::new()
+    $failures = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($failure in $failures) {
+        if ($failure.title -notin 'uvの自己更新','管理Pythonの更新' -or $failure.detail -notmatch '^exit=-?\d+$') { continue }
+        if ($failure.PSObject.Properties['saved'] -and $failure.saved -eq $true) {
+            $log = Join-Path $directory "uv-$($failure.title)-failed.log"
+            if ((Test-Path -LiteralPath $log -PathType Leaf) -and $seen.Add("$($failure.title): $($failure.detail)")) {
+                [UvOutputRecord]::PublishEvent("failure", "$($failure.title): $($failure.detail)", $log)
+            }
+        }
+    }
+    Remove-Item -LiteralPath $file.FullName -Force
+    exit 0
 }
 function Test-PythonPatchPending {
     # keyはビルド日付を含まず、同じpatch版の新しいビルドを検出できない。更新できない回の見送りの判定にだけ使う。

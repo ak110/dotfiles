@@ -160,6 +160,11 @@ def finish(returncode: int) -> int:
     parent_log_saved = _record_parent_diagnostics(returncode)
     if continued_failures:
         returncode = _report_continued_failures(returncode)
+        if ack := os.environ.get("UPDATE_DOTFILES_BOOTSTRAP_ACK"):
+            try:
+                pathlib.Path(ack).touch(exist_ok=False)
+            except OSError:
+                logger.exception("起動準備の診断表示をランチャーへ通知できませんでした")
     logger.info("update-dotfiles終了: exit=%d", returncode)
     if current_run_id is not None:
         sync_report.write_finish(
