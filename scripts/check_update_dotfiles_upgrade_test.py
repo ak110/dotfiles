@@ -70,6 +70,13 @@ def test_preflight_checks_resolved_paths(tmp_path: pathlib.Path, monkeypatch: py
         elif arguments[0] == "git":
             value = bare if escaped != "Gitの上流" else outside
         else:
+            assert tuple(arguments) == (
+                home / "bin" / "uv",
+                "python",
+                "find",
+                "--script",
+                checkout / "libexec" / "update_dotfiles.py",
+            )
             value = home / "python" / "python" if escaped != "Python" else outside
         return subprocess.CompletedProcess(arguments, 0, stdout=str(value), stderr="")
 

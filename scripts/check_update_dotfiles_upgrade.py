@@ -563,9 +563,7 @@ def verify_upgrade_inputs(
     uv = _require_inside(root, "uv", pathlib.Path(env["UV_TOOL_BIN_DIR"]) / uv_name)
     env["UV_MANAGED_PYTHON"] = "1"
     script = _require_inside(root, "更新スクリプト", checkout / "libexec" / "update_dotfiles.py")
-    python = run_command(
-        (uv, "python", "find", "--no-project", "--script", script), cwd=checkout, env=env, runner=runner
-    ).stdout.strip()
+    python = run_command((uv, "python", "find", "--script", script), cwd=checkout, env=env, runner=runner).stdout.strip()
     env["UV_PYTHON"] = str(_require_inside(root, "Python", python))
 
 
