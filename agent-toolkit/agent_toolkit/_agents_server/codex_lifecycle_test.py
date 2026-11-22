@@ -172,7 +172,7 @@ async def test_self_message_repairs_final_response_once(tmp_path: pathlib.Path, 
         assert session.codex_self_message_repair_consumed
         assert "全文を最終応答" in str(client.requests)
         await _item(backend, session, _activity(session.session_id, "interacted", "self-again"))
-        completed = "修復後の全文" + ("\n状態: completed" if launch_kind == "explore" else "")
+        completed = "状態: completed\n結果: 修復後の全文"
         await _item(backend, session, {"id": "answer", "type": "agentMessage", "text": completed})
         await _complete(backend, session)
         assert (await owner.wait())["agent_message"] == completed

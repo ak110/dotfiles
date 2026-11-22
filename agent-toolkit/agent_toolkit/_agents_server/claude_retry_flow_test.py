@@ -265,7 +265,7 @@ async def test_weekly_api_resume_retains_request_followup_and_completed_work(
             await super().query(prompt)
             self.history.append(prompt)
             if self.api_connection:
-                body = "\n".join(self.restored_history) + "\n残作業の索引を作成した"
+                body = "状態: completed\n" + "\n".join(self.restored_history) + "\n残作業の索引を作成した"
                 self.messages.put_nowait(AssistantMessage(body))
                 self.messages.put_nowait(ResultMessage(body))
 

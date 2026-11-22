@@ -156,6 +156,7 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
         session = await manager.start("調査", str(tmp_path))
         assert session.status == "running"
         assert session.turn_start_ambiguous is True
+        session.agent_message = "状態: completed"
         await manager._handle_notification(
             {
                 "method": "turn/completed",
@@ -186,6 +187,7 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
         send_task = asyncio.create_task(manager.send_message(session, "続行"))
         await client.steer_called.wait()
         assert send_task.done() is False
+        session.agent_message = "状態: completed"
         await manager._handle_notification(
             {
                 "method": "turn/completed",

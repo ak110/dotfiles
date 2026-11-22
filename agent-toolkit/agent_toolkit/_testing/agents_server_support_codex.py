@@ -299,7 +299,12 @@ class NaturallyCompletingTurnStartClient(FakeCodexClient):
                 "method": "turn/completed",
                 "params": {
                     "threadId": session_id,
-                    "turn": {"id": self.turn_id, "status": "completed", "error": None},
+                    "turn": {
+                        "id": self.turn_id,
+                        "status": "completed",
+                        "error": None,
+                        "items": [{"type": "agentMessage", "id": "answer", "text": "状態: completed"}],
+                    },
                 },
             }
         )

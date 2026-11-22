@@ -224,9 +224,10 @@ async def test_send_message_fails_when_next_turn_cannot_launch(tmp_path: pathlib
 
     作業ディレクトリの削除後の追送で、届いていない指示を開始済みと報告しないことを確かめる。
     """
+    first_result = "状態: completed\n結果: 初回の結果"
     events = [
         {"event": "init", "conversation_id": "next-turn"},
-        {"event": "result", "result": {"status": "SUCCESS", "response": "初回の結果"}},
+        {"event": "result", "result": {"status": "SUCCESS", "response": first_result}},
     ]
     emitter = tmp_path / "emit.py"
     emitter.write_text(
@@ -243,12 +244,12 @@ async def test_send_message_fails_when_next_turn_cannot_launch(tmp_path: pathlib
         session = await manager.start("初回", str(workdir), "test-model", "low")
         async with condition:
             await condition.wait_for(lambda: session.terminal)
-        assert (session.status, session.agent_message) == ("completed", "初回の結果"), session.error
+        assert (session.status, session.agent_message) == ("completed", first_result), session.error
         workdir.rmdir()
         with pytest.raises(session_errors.DelegateBackendError, match="failed to start"):
             await manager.send_message(session, "次の指示")
     assert session.turn_seq == 1
-    assert (session.status, session.agent_message, session.error) == ("completed", "初回の結果", None)
+    assert (session.status, session.agent_message, session.error) == ("completed", first_result, None)
 
 
 @pytest.mark.parametrize("eof", [True, False])
